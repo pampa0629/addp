@@ -469,7 +469,11 @@
       class="addp-dialog"
       :title="t('security.assessment.designateTitle')"
       width="min(640px, calc(100vw - 24px))"
+      :close-on-click-modal="!manualAssessmentSaving"
+      :close-on-press-escape="!manualAssessmentSaving"
+      :show-close="!manualAssessmentSaving"
       @opened="focusManualRationale"
+      @closed="closeManualAssessment"
     >
       <el-alert type="info" :closable="false" :title="t('security.assessment.designateHint')" />
       <el-form ref="manualAssessmentFormRef" :model="manualAssessmentForm" :rules="manualAssessmentRules" class="manual-assessment-form" label-position="top">
@@ -517,7 +521,7 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="manualAssessmentDialog = false">{{ t('security.common.cancel') }}</el-button>
+        <el-button :disabled="manualAssessmentSaving" @click="closeManualAssessment">{{ t('security.common.cancel') }}</el-button>
         <el-button type="primary" :loading="manualAssessmentSaving" @click="submitManualAssessment">
           {{ t('security.assessment.confirmDesignation') }}
         </el-button>
@@ -568,7 +572,7 @@
         </template>
       </div>
       <template #footer>
-        <el-button @click="assessmentHistoryDialog = false">{{ t('security.common.close') }}</el-button>
+        <el-button @click="closeAssessmentHistory">{{ t('security.common.close') }}</el-button>
       </template>
     </el-dialog>
 
@@ -719,7 +723,7 @@
         </el-form>
       </template>
       <template #footer>
-        <el-button ref="exemptionRevokeCancelButton" :disabled="exemptionRevokeSaving" @click="exemptionRevokeDialog = false">
+        <el-button ref="exemptionRevokeCancelButton" :disabled="exemptionRevokeSaving" @click="closeExemptionRevokeDialog">
           {{ t('security.common.cancel') }}
         </el-button>
         <el-button type="danger" :loading="exemptionRevokeSaving" :disabled="exemptionRevokeConflict" @click="submitExemptionRevoke">
@@ -922,6 +926,7 @@ import { assessmentAPI, classificationAPI, detectorCapabilityAPI, findingAPI, gr
 import { useAuthStore } from '../store/auth'
 import { useProtectionAccessRequestReview } from '../composables/useProtectionAccessRequestReview.mjs'
 import { useProtectionAssessmentChange } from '../composables/useProtectionAssessmentChange.mjs'
+import { useProtectionAssessmentWorkspace } from '../composables/useProtectionAssessmentWorkspace.mjs'
 import { useProtectionEnrollmentCollection } from '../composables/useProtectionEnrollmentCollection.mjs'
 import { useProtectionEnrollmentReEnrollment } from '../composables/useProtectionEnrollmentReEnrollment.mjs'
 import { useProtectionEnrollmentRediscovery } from '../composables/useProtectionEnrollmentRediscovery.mjs'
@@ -929,6 +934,7 @@ import { useProtectionEnrollmentRelease } from '../composables/useProtectionEnro
 import { useProtectionFindingReview } from '../composables/useProtectionFindingReview.mjs'
 import { resolveFindingReviewQueueRouteState, useProtectionFindingReviewQueue } from '../composables/useProtectionFindingReviewQueue.mjs'
 import { useProtectionEnrollmentGovernance } from '../composables/useProtectionEnrollmentGovernance.mjs'
+import { useProtectionExemptionRevocation } from '../composables/useProtectionExemptionRevocation.mjs'
 import { useProtectionPolicyChange } from '../composables/useProtectionPolicyChange.mjs'
 import { createRequiredRule } from '../utils/foundationForm.mjs'
 import EnrollmentResourceList from '../components/protection-enrollment/EnrollmentResourceList.vue'
@@ -938,7 +944,6 @@ import {
   findingOutletRules,
   findingReviewState,
   isProtectionEffectStricter,
-  isResourceVersionConflict,
   isZeroFindingDiscovery,
   normalizeDiscoverySummary
 } from '../utils/protectionEnrollment.mjs'
@@ -977,11 +982,6 @@ const saving = ref(false)
 const createDrawer = ref(false)
 const createFormRef = ref(null)
 const detailDrawer = ref(false)
-const manualAssessmentDialog = ref(false)
-const manualAssessmentFormRef = ref(null)
-const assessmentHistoryDialog = ref(false)
-const exemptionRevokeDialog = ref(false)
-const exemptionRevokeFormRef = ref(null)
 const createForm = reactive({ resource: null })
 const selectedItem = ref(null)
 const selectedItemLoading = ref(false)
@@ -990,8 +990,6 @@ const detailRow = ref(null)
 const engineNames = ref(new Map())
 const focusedExemptionID = ref('')
 const exemptionSectionRef = ref(null)
-const componentOptions = ref([])
-const componentsLoading = ref(false)
 const sensitiveTypes = ref([])
 const securityClassifications = ref([])
 const securityGrades = ref([])
@@ -999,17 +997,6 @@ const protectionBaselines = ref([])
 const detectorCapabilities = ref([])
 const accessRequestDecisionFormRef = ref(null)
 const accessRequestDecisionCancelButton = ref(null)
-const manualRationaleInput = ref(null)
-const manualAssessmentSaving = ref(false)
-const manualAssessmentForm = reactive({ componentKey: '', sensitiveDataTypeID: '', securityGradeID: '', rationale: '' })
-const assessmentHistory = ref(null)
-const assessmentHistoryLoading = ref(false)
-const exemptionRevokeCancelButton = ref(null)
-const exemptionRevokeSaving = ref(false)
-const exemptionRevokeReloading = ref(false)
-const exemptionRevokeConflict = ref(false)
-const revokingExemption = ref(null)
-const exemptionRevokeForm = reactive({ rationale: '' })
 
 const {
   rows,
@@ -1045,23 +1032,12 @@ function requiredFieldRule(labelKey, options = {}) {
 const accessRequestDecisionRules = computed(() => ({
   rationale: [requiredFieldRule('security.accessRequest.decisionRationaleLabel', { trigger: 'blur', whitespace: true })]
 }))
-const manualAssessmentRules = computed(() => ({
-  componentKey: [requiredFieldRule('security.assessment.component')],
-  sensitiveDataTypeID: [requiredFieldRule('security.finding.sensitiveDataType')],
-  securityGradeID: [requiredFieldRule('security.finding.securityGrade')],
-  rationale: [requiredFieldRule('security.assessment.rationale', { trigger: 'blur', whitespace: true })]
-}))
-const exemptionRevokeRules = computed(() => ({
-  rationale: [requiredFieldRule('security.exemption.revokeRationale', { trigger: 'blur', whitespace: true })]
-}))
 async function validateRequiredForm(instanceRef) {
   if (!instanceRef.value) return false
   return instanceRef.value.validate().catch(() => false)
 }
 
 let selectedItemRequest = 0
-let assessmentHistoryRequest = 0
-let exemptionRevokeReloadRequest = 0
 let workspaceMounted = false
 
 const canCreate = computed(() => auth.hasPermission('security.enrollment.create'))
@@ -1177,6 +1153,78 @@ const {
   listPolicies: params => protectionPolicyAPI.list(params),
   listExemptions: params => protectionExemptionAPI.list(params),
   onLoadError: handleGovernanceLoadError
+})
+const {
+  designationDialog: manualAssessmentDialog,
+  designationFormRef: manualAssessmentFormRef,
+  designationRationaleInput: manualRationaleInput,
+  designationSaving: manualAssessmentSaving,
+  componentsLoading,
+  componentOptions,
+  designationForm: manualAssessmentForm,
+  designationRules: manualAssessmentRules,
+  openDesignation: openManualAssessment,
+  closeDesignation: closeManualAssessment,
+  focusDesignationRationale: focusManualRationale,
+  applyDesignationDefaultGrade: applyDefaultGrade,
+  submitDesignation: submitManualAssessment,
+  historyDialog: assessmentHistoryDialog,
+  historyLoading: assessmentHistoryLoading,
+  history: assessmentHistory,
+  openHistory: openAssessmentHistory,
+  closeHistory: closeAssessmentHistory,
+  isCurrentHistoryRevision: isCurrentAssessmentRevision,
+  dispose: disposeProtectionAssessmentWorkspace
+} = useProtectionAssessmentWorkspace({
+  getEnrollment: () => detailRow.value,
+  loadComponents: enrollmentID => protectionEnrollmentAPI.components(enrollmentID),
+  loadDefinitions: loadFindingDefinitions,
+  refreshAssessments: loadAssessments,
+  createAssessment: payload => assessmentAPI.create(payload),
+  getAssessment: id => assessmentAPI.get(id),
+  refreshCollection: options => load(options),
+  refreshGovernance: () => loadGovernance(findingsPage.value),
+  scheduleAutoRefresh,
+  defaultGradeID: typeID => {
+    const selectedType = sensitiveTypes.value.find(item => String(item.id) === String(typeID))
+    return selectedType?.default_security_grade_id
+  },
+  t,
+  onComponentsLoadError: error => ElMessage.error(error.message || t('security.assessment.componentsLoadFailed')),
+  onDesignationSaved: () => ElMessage.success(t('security.assessment.designated')),
+  onDesignationError: error => ElMessage.error(error.message || t('security.common.failed')),
+  onHistoryLoadError: error => ElMessage.error(error.message || t('security.assessment.historyLoadFailed'))
+})
+const {
+  dialog: exemptionRevokeDialog,
+  formRef: exemptionRevokeFormRef,
+  cancelButton: exemptionRevokeCancelButton,
+  saving: exemptionRevokeSaving,
+  reloading: exemptionRevokeReloading,
+  conflict: exemptionRevokeConflict,
+  exemption: revokingExemption,
+  form: exemptionRevokeForm,
+  rules: exemptionRevokeRules,
+  open: openExemptionRevoke,
+  close: closeExemptionRevokeDialog,
+  focusCancel: focusExemptionRevokeCancel,
+  reloadBaseline: reloadExemptionRevokeBaseline,
+  submit: submitExemptionRevoke,
+  dispose: disposeProtectionExemptionRevocation
+} = useProtectionExemptionRevocation({
+  getExemption: id => protectionExemptionAPI.get(id),
+  revokeExemption: (id, payload) => protectionExemptionAPI.revoke(id, payload),
+  replaceExemption,
+  refreshExemptions: loadExemptions,
+  refreshCollection: options => load(options),
+  scheduleAutoRefresh,
+  t,
+  onReloaded: () => ElMessage.success(t('security.exemption.revokeReloadedLatest')),
+  onAlreadyInactive: () => ElMessage.info(t('security.exemption.alreadyInactive')),
+  onLoadError: error => ElMessage.error(error.message || t('security.exemption.loadFailed')),
+  onRevoked: () => ElMessage.success(t('security.exemption.revoked')),
+  onVersionConflict: () => ElMessage.warning(t('security.exemption.revokeVersionConflict')),
+  onSubmitError: error => ElMessage.error(error.message || t('security.common.failed'))
 })
 const {
   revisionDialog: assessmentRevisionDialog,
@@ -1742,10 +1790,6 @@ function assessmentActorLabel(actorID) {
     : t('security.common.notAvailable')
 }
 
-function isCurrentAssessmentRevision(revision) {
-  return Number(revision?.revision) === Number(assessmentHistory.value?.current_revision)
-}
-
 function baselineForAssessment(assessment) {
   return protectionBaselines.value.find(item => item.enabled
     && String(item.sensitive_data_type_id) === String(assessment?.current?.sensitive_data_type_id)
@@ -1876,165 +1920,6 @@ async function loadGovernance(page = findingsPage.value) {
     loadGovernanceData(page),
     loadFindingDefinitions().catch(error => ElMessage.error(error.message || t('security.finding.loadDefinitionsFailed')))
   ])
-}
-
-function focusExemptionRevokeCancel() {
-  nextTick(() => {
-    exemptionRevokeFormRef.value?.clearValidate()
-    const cancelButton = exemptionRevokeCancelButton.value?.$el || exemptionRevokeCancelButton.value
-    cancelButton?.focus?.()
-  })
-}
-
-function openExemptionRevoke(exemption) {
-  if (!exemption?.id || exemption.effective_state !== 'active') return
-  exemptionRevokeReloadRequest += 1
-  revokingExemption.value = exemption
-  exemptionRevokeForm.rationale = ''
-  exemptionRevokeConflict.value = false
-  exemptionRevokeDialog.value = true
-}
-
-function closeExemptionRevokeDialog() {
-  exemptionRevokeReloadRequest += 1
-  revokingExemption.value = null
-  exemptionRevokeForm.rationale = ''
-  exemptionRevokeConflict.value = false
-  exemptionRevokeReloading.value = false
-}
-
-async function reloadExemptionRevokeBaseline() {
-  if (!revokingExemption.value?.id) return
-  const request = ++exemptionRevokeReloadRequest
-  exemptionRevokeReloading.value = true
-  try {
-    const latest = await protectionExemptionAPI.get(revokingExemption.value.id)
-    if (request !== exemptionRevokeReloadRequest) return
-    replaceExemption(latest)
-    if (latest?.effective_state !== 'active') {
-      exemptionRevokeDialog.value = false
-      ElMessage.info(t('security.exemption.alreadyInactive'))
-      return
-    }
-    revokingExemption.value = latest
-    exemptionRevokeForm.rationale = ''
-    exemptionRevokeConflict.value = false
-    ElMessage.success(t('security.exemption.revokeReloadedLatest'))
-    focusExemptionRevokeCancel()
-  } catch (error) {
-    if (request !== exemptionRevokeReloadRequest) return
-    ElMessage.error(error.message || t('security.exemption.loadFailed'))
-  } finally {
-    if (request === exemptionRevokeReloadRequest) exemptionRevokeReloading.value = false
-  }
-}
-
-async function submitExemptionRevoke() {
-  if (!revokingExemption.value?.id) return
-  if (!await validateRequiredForm(exemptionRevokeFormRef)) return
-  exemptionRevokeSaving.value = true
-  try {
-    await protectionExemptionAPI.revoke(revokingExemption.value.id, {
-      version: Number(revokingExemption.value.version),
-      rationale: exemptionRevokeForm.rationale.trim()
-    })
-    exemptionRevokeDialog.value = false
-    await Promise.all([loadExemptions(), load({ background: true })])
-    scheduleAutoRefresh({ reset: true })
-    ElMessage.success(t('security.exemption.revoked'))
-  } catch (error) {
-    if (isResourceVersionConflict(error)) {
-      exemptionRevokeConflict.value = true
-      ElMessage.warning(t('security.exemption.revokeVersionConflict'))
-      return
-    }
-    ElMessage.error(error.message || t('security.common.failed'))
-  } finally {
-    exemptionRevokeSaving.value = false
-  }
-}
-
-function applyDefaultGrade(typeID) {
-  const selectedType = sensitiveTypes.value.find(item => String(item.id) === String(typeID))
-  manualAssessmentForm.securityGradeID = String(selectedType?.default_security_grade_id || '')
-}
-
-async function openManualAssessment() {
-  manualAssessmentForm.componentKey = ''
-  manualAssessmentForm.sensitiveDataTypeID = ''
-  manualAssessmentForm.securityGradeID = ''
-  manualAssessmentForm.rationale = ''
-  componentOptions.value = []
-  manualAssessmentDialog.value = true
-  componentsLoading.value = true
-  try {
-    const [response] = await Promise.all([
-      protectionEnrollmentAPI.components(detailRow.value.id),
-      loadFindingDefinitions(),
-      loadAssessments()
-    ])
-    componentOptions.value = Array.isArray(response?.data) ? response.data : []
-  } catch (error) {
-    ElMessage.error(error.message || t('security.assessment.componentsLoadFailed'))
-  } finally {
-    componentsLoading.value = false
-  }
-}
-
-function focusManualRationale() {
-  nextTick(() => {
-    manualAssessmentFormRef.value?.clearValidate()
-    manualRationaleInput.value?.focus?.()
-  })
-}
-
-async function submitManualAssessment() {
-  if (!await validateRequiredForm(manualAssessmentFormRef)) return
-  manualAssessmentSaving.value = true
-  try {
-    await assessmentAPI.create({
-      enrollment_id: detailRow.value.id,
-      enrollment_version: Number(detailRow.value.version),
-      component_key: manualAssessmentForm.componentKey,
-      sensitive_data_type_id: Number(manualAssessmentForm.sensitiveDataTypeID),
-      security_grade_id: Number(manualAssessmentForm.securityGradeID),
-      rationale: manualAssessmentForm.rationale.trim()
-    })
-    manualAssessmentDialog.value = false
-    await load({ background: true })
-    await loadGovernance(findingsPage.value)
-    scheduleAutoRefresh({ reset: true })
-    ElMessage.success(t('security.assessment.designated'))
-  } catch (error) {
-    ElMessage.error(error.message || t('security.common.failed'))
-  } finally {
-    manualAssessmentSaving.value = false
-  }
-}
-
-async function openAssessmentHistory(assessment) {
-  if (!assessment?.id) return
-  const request = ++assessmentHistoryRequest
-  assessmentHistory.value = null
-  assessmentHistoryDialog.value = true
-  assessmentHistoryLoading.value = true
-  try {
-    const detail = await assessmentAPI.get(assessment.id)
-    if (request !== assessmentHistoryRequest) return
-    assessmentHistory.value = detail
-  } catch (error) {
-    if (request !== assessmentHistoryRequest) return
-    assessmentHistoryDialog.value = false
-    ElMessage.error(error.message || t('security.assessment.historyLoadFailed'))
-  } finally {
-    if (request === assessmentHistoryRequest) assessmentHistoryLoading.value = false
-  }
-}
-
-function closeAssessmentHistory() {
-  assessmentHistoryRequest += 1
-  assessmentHistory.value = null
-  assessmentHistoryLoading.value = false
 }
 
 async function nextDetailReviewFinding() {
@@ -2293,6 +2178,8 @@ onBeforeUnmount(() => {
   disposeFindingReviewQueue()
   disposeProtectionPolicyChange()
   disposeProtectionAssessmentChange()
+  disposeProtectionExemptionRevocation()
+  disposeProtectionAssessmentWorkspace()
 })
 </script>
 

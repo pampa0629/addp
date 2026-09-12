@@ -244,6 +244,8 @@ describe('Security product information architecture', () => {
     const enrollmentRelease = readSource('../src/composables/useProtectionEnrollmentRelease.mjs')
     const findingReview = readSource('../src/composables/useProtectionFindingReview.mjs')
     const assessmentChange = readSource('../src/composables/useProtectionAssessmentChange.mjs')
+    const assessmentWorkspace = readSource('../src/composables/useProtectionAssessmentWorkspace.mjs')
+    const exemptionRevocation = readSource('../src/composables/useProtectionExemptionRevocation.mjs')
     const accessRequestDecisionForm = readSource('../src/components/protection-enrollment/AccessRequestDecisionForm.vue')
     const findingReviewForm = readSource('../src/components/protection-enrollment/FindingReviewForm.vue')
     const protectionPolicyForm = readSource('../src/components/protection-enrollment/ProtectionPolicyForm.vue')
@@ -253,20 +255,22 @@ describe('Security product information architecture', () => {
       JSON.parse(readSource('../src/i18n/en.json'))
     ]
 
-    for (const formName of [
-      'accessRequestDecision',
-      'manualAssessment',
-      'exemptionRevoke'
-    ]) {
+    for (const formName of ['accessRequestDecision']) {
       expect(enrollment).toContain(`ref="${formName}FormRef"`)
       expect(enrollment).toContain(`:rules="${formName}Rules"`)
       expect(enrollment).toContain(`validateRequiredForm(${formName}FormRef)`)
     }
+    expect(enrollment).toContain('ref="manualAssessmentFormRef"')
+    expect(enrollment).toContain(':rules="manualAssessmentRules"')
+    expect(assessmentWorkspace).toContain('Promise.resolve(validation).catch(() => false)')
     for (const formName of ['assessmentRevision', 'assessmentRevoke']) {
       expect(enrollment).toContain(`ref="${formName}FormRef"`)
       expect(enrollment).toContain(`:rules="${formName}Rules"`)
     }
     expect(assessmentChange).toContain('Promise.resolve(validation).catch(() => false)')
+    expect(enrollment).toContain('ref="exemptionRevokeFormRef"')
+    expect(enrollment).toContain(':rules="exemptionRevokeRules"')
+    expect(exemptionRevocation).toContain('Promise.resolve(validation).catch(() => false)')
     expect(enrollment).toContain('ref="reviewFormRef"')
     expect(enrollment).toContain(':rules="reviewRules"')
     expect(findingReview).toContain('Promise.resolve(validation).catch(() => false)')
@@ -373,9 +377,17 @@ describe('Security product information architecture', () => {
 
   it('only presents components that remain eligible for manual designation', () => {
     const enrollment = readSource('../src/views/ProtectionEnrollmentList.vue')
+    const assessmentWorkspace = readSource('../src/composables/useProtectionAssessmentWorkspace.mjs')
 
     expect(enrollment).toContain('v-for="option in componentOptions"')
     expect(enrollment).not.toContain(':disabled="Boolean(option.assessment_id)"')
+    expect(enrollment).toContain('useProtectionAssessmentWorkspace({')
+    expect(enrollment).not.toContain('async function openManualAssessment(')
+    expect(enrollment).not.toContain('async function submitManualAssessment(')
+    expect(enrollment).toContain('loadComponents: enrollmentID => protectionEnrollmentAPI.components(enrollmentID)')
+    expect(enrollment).toContain('createAssessment: payload => assessmentAPI.create(payload)')
+    expect(assessmentWorkspace).toContain('Array.isArray(response?.data) ? response.data : []')
+    expect(assessmentWorkspace).toContain('enrollment_version: Number(enrollment.version)')
   })
 
   it('renders the backend-provided finding explanation as one control flow', () => {
@@ -503,6 +515,7 @@ describe('Security product information architecture', () => {
   it('keeps plaintext access on the request and approval route only', () => {
     const enrollment = readSource('../src/views/ProtectionEnrollmentList.vue')
     const accessReview = readSource('../src/composables/useProtectionAccessRequestReview.mjs')
+    const exemptionRevocation = readSource('../src/composables/useProtectionExemptionRevocation.mjs')
     const reviewWorkspace = readSource('../src/components/protection-enrollment/AccessRequestReviewWorkspace.vue')
     const exemptionSection = readSource('../src/components/protection-enrollment/EnrollmentExemptionSection.vue')
     const api = readSource('../src/api/security.js')
@@ -561,7 +574,13 @@ describe('Security product information architecture', () => {
     expect(enrollment).toContain('reloadExemptionRevokeBaseline')
     expect(enrollment).toContain(':disabled="exemptionRevokeConflict"')
     expect(enrollment).toContain('submitExemptionRevoke')
-    expect(enrollment).toContain("latest?.effective_state !== 'active'")
+    expect(enrollment).toContain('useProtectionExemptionRevocation({')
+    expect(enrollment).not.toContain('async function reloadExemptionRevokeBaseline(')
+    expect(enrollment).not.toContain('async function submitExemptionRevoke(')
+    expect(enrollment).toContain('getExemption: id => protectionExemptionAPI.get(id)')
+    expect(enrollment).toContain('revokeExemption: (id, payload) => protectionExemptionAPI.revoke(id, payload)')
+    expect(exemptionRevocation).toContain("latest?.effective_state !== 'active'")
+    expect(exemptionRevocation).toContain('isResourceVersionConflict(error)')
     expect(enrollment).not.toContain("t('security.exemption.revokePrompt'")
     expect(api).toContain('client.get(`/security/protection-exemptions/${id}`)')
     expect(reviewWorkspace).toContain('authorizationStateType')
@@ -642,6 +661,7 @@ describe('Security product information architecture', () => {
   it('revises every formal assessment through the protected-resource aggregate', () => {
     const enrollment = readSource('../src/views/ProtectionEnrollmentList.vue')
     const assessmentChange = readSource('../src/composables/useProtectionAssessmentChange.mjs')
+    const assessmentWorkspace = readSource('../src/composables/useProtectionAssessmentWorkspace.mjs')
     const findingList = readSource('../src/components/protection-enrollment/EnrollmentFindingList.vue')
     const assessmentList = readSource('../src/components/protection-enrollment/EnrollmentAssessmentList.vue')
     const api = readSource('../src/api/security.js')
@@ -655,6 +675,9 @@ describe('Security product information architecture', () => {
     expect(assessmentList).toContain("emit('history', assessment)")
     expect(enrollment).toContain('assessmentHistory.history')
     expect(enrollment).toContain('isCurrentAssessmentRevision(revision)')
+    expect(enrollment).not.toContain('async function openAssessmentHistory(')
+    expect(assessmentWorkspace).toContain('async function openHistory(assessment)')
+    expect(assessmentWorkspace).toContain('request !== historyRequest || disposed')
     expect(enrollment).toContain('assessmentRevisionConflict')
     expect(enrollment).toContain('reloadAssessmentRevisionBaseline')
     expect(enrollment).toContain(':disabled="assessmentRevisionConflict"')

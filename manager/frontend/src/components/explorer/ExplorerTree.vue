@@ -214,10 +214,7 @@ const handleNodeClick = async (node) => {
       selectedNode = resolved.node
       const syntheticLocator = locator
       locator = resolved.locator
-      if (locator !== syntheticLocator) {
-        store.collapseNode(syntheticLocator)
-        store.expandNode(locator)
-      }
+      replaceExpandedLocator(syntheticLocator, locator)
     } catch (error) {
       console.error('加载引擎内容失败:', error)
       ElMessage.error(t('manager.explorer.loadEngineFailed', { error: error.message }))
@@ -300,7 +297,8 @@ const handleNodeExpand = async (node) => {
   // 如果是 catalog root 节点且未加载过，懒加载其内容
   if (isCatalogRootNode(node) && node.engineId && !node.loaded) {
     try {
-      await loadCatalogRoot(node.engineId)
+      const catalogRoot = await loadCatalogRoot(node.engineId)
+      replaceExpandedLocator(locator, catalogRoot?.locator || catalogRoot?.id)
     } catch (error) {
       console.error('加载引擎内容失败:', error)
       ElMessage.error(t('manager.explorer.loadEngineFailed', { error: error.message }))
@@ -339,6 +337,12 @@ const branchTypes = new Set(['directory', 'bucket', 'prefix', 'schema', 'databas
 const isCatalogRootNode = (node) => {
   const fullName = node?.metadata?.full_name
   return !!node && rootTypes.has(node.type) && (fullName === '' || (node.locator || node.id || '').includes('/path/?'))
+}
+
+const replaceExpandedLocator = (previousLocator, nextLocator) => {
+  if (!nextLocator || nextLocator === previousLocator) return
+  store.collapseNode(previousLocator)
+  store.expandNode(nextLocator)
 }
 
 const loadCatalogRoot = (engineId) => {

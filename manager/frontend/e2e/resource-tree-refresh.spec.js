@@ -11,6 +11,21 @@ const TIDB_ENGINE = {
 const ROOT_LOCATOR = 'addp://engine/25/path/?type=server&node_id=377'
 const BUSINESS_LOCATOR = 'addp://engine/25/path/business?type=database&node_id=378'
 
+test('loads and expands an engine catalog root with the first arrow click', async ({ page }) => {
+  await installMockBackend(page)
+  await page.goto('/data-explorer')
+
+  const rootContent = treeNodeContent(page, TIDB_ENGINE.name)
+  const rootNode = rootContent.locator('..')
+  const expandIcon = rootContent.locator(':scope > .el-tree-node__expand-icon')
+
+  await expect(expandIcon).toHaveClass(/is-leaf/)
+  await expandIcon.click()
+
+  await expect(rootNode).toHaveAttribute('aria-expanded', 'true')
+  await expect(treeNodeContent(page, 'business')).toBeVisible()
+})
+
 test('expands an unloaded TiDB database after refreshing the catalog root', async ({ page }) => {
   const backend = await installMockBackend(page)
   await page.goto('/data-explorer')
