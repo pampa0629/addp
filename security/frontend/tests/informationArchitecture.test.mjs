@@ -242,6 +242,7 @@ describe('Security product information architecture', () => {
   it('validates every required protected-resource action field inline', () => {
     const enrollment = readSource('../src/views/ProtectionEnrollmentList.vue')
     const enrollmentRelease = readSource('../src/composables/useProtectionEnrollmentRelease.mjs')
+    const accessRequestReview = readSource('../src/composables/useProtectionAccessRequestReview.mjs')
     const findingReview = readSource('../src/composables/useProtectionFindingReview.mjs')
     const assessmentChange = readSource('../src/composables/useProtectionAssessmentChange.mjs')
     const assessmentWorkspace = readSource('../src/composables/useProtectionAssessmentWorkspace.mjs')
@@ -255,11 +256,9 @@ describe('Security product information architecture', () => {
       JSON.parse(readSource('../src/i18n/en.json'))
     ]
 
-    for (const formName of ['accessRequestDecision']) {
-      expect(enrollment).toContain(`ref="${formName}FormRef"`)
-      expect(enrollment).toContain(`:rules="${formName}Rules"`)
-      expect(enrollment).toContain(`validateRequiredForm(${formName}FormRef)`)
-    }
+    expect(enrollment).toContain('ref="accessRequestDecisionFormRef"')
+    expect(enrollment).toContain(':rules="accessRequestDecisionRules"')
+    expect(accessRequestReview).toContain('Promise.resolve(validation).catch(() => false)')
     expect(enrollment).toContain('ref="manualAssessmentFormRef"')
     expect(enrollment).toContain(':rules="manualAssessmentRules"')
     expect(assessmentWorkspace).toContain('Promise.resolve(validation).catch(() => false)')
@@ -294,7 +293,7 @@ describe('Security product information architecture', () => {
     expect(enrollment).toContain('class="enrollment-resource-field"')
     expect(enrollment).toContain('prop="resource" required')
     expect(enrollment).toContain('await createFormRef.value?.validate().catch(() => false)')
-    expect(enrollment).toContain("createRequiredRule(t('security.common.requiredField'")
+    expect(accessRequestReview).toContain("createRequiredRule(t('security.common.requiredField'")
     expect(enrollment).toContain("defineAsyncComponent(() => import('../components/protection-enrollment/AccessRequestDecisionForm.vue'))")
     expect(enrollment).toContain("defineAsyncComponent(() => import('../components/protection-enrollment/FindingReviewForm.vue'))")
     expect(enrollment).toContain("defineAsyncComponent(() => import('../components/protection-enrollment/ProtectionPolicyForm.vue'))")
@@ -318,6 +317,7 @@ describe('Security product information architecture', () => {
     expect(enrollment).not.toContain("ElMessage.warning(t('security.policy.required'))")
     expect(enrollment).not.toContain("ElMessage.warning(t('security.policy.rationaleRequired'))")
     expect(enrollment).not.toContain("ElMessage.warning(t('security.enrollment.releaseReasonRequired'))")
+    expect(enrollment).not.toContain('async function validateRequiredForm(')
 
     for (const messages of localeMessages) {
       expect(messages.security.common.requiredField).toBeTruthy()
@@ -535,13 +535,19 @@ describe('Security product information architecture', () => {
     expect(enrollment).toContain('reloadAccessRequestDecisionBaseline')
     expect(enrollment).toContain(':disabled="accessRequestDecisionConflict"')
     expect(enrollment).toContain('submitAccessRequestDecision')
+    expect(enrollment).not.toContain('async function reloadAccessRequestDecisionBaseline(')
+    expect(enrollment).not.toContain('async function submitAccessRequestDecision(')
     expect(accessReview).toContain("latest?.state !== 'pending' || !latest.can_decide")
     expect(accessReview).toContain('isProtectionAccessRequestExpired(error)')
+    expect(accessReview).toContain('Promise.resolve(validation).catch(() => false)')
+    expect(accessReview).toContain('await Promise.all([loadQueue(1), refreshCollection({ background: true })])')
+    expect(accessReview).toContain('function focusDecisionCancel()')
     expect(enrollment).not.toContain('ElMessageBox.prompt')
     expect(api).toContain('client.get(`/security/protection-access-requests/${id}`)')
     expect(reviewWorkspace).toContain('row.can_decide')
     expect(reviewWorkspace).toContain('v-else-if="row.decision_unavailable_reason"')
-    expect(enrollment).toContain('security.accessRequest.confirmActions.${accessRequestDecision}')
+    expect(enrollment).toContain('decisionConfirmLabel: accessRequestDecisionConfirmLabel')
+    expect(accessReview).toContain('security.accessRequest.confirmActions.${decision.value}')
     expect(enrollment).toContain('useProtectionAccessRequestReview({')
     expect(enrollment).not.toContain('function accessRequestQueueParams(')
     expect(enrollment).not.toContain('async function loadAccessRequestQueue(')

@@ -411,7 +411,7 @@
         @reload="reloadAccessRequestDecisionBaseline"
       />
       <template #footer>
-        <el-button ref="accessRequestDecisionCancelButton" :disabled="accessRequestDecisionSaving" @click="accessRequestDecisionDialog = false">
+        <el-button ref="accessRequestDecisionCancelButton" :disabled="accessRequestDecisionSaving" @click="closeAccessRequestDecisionDialog">
           {{ t('security.common.cancel') }}
         </el-button>
         <el-button
@@ -420,7 +420,7 @@
           :disabled="accessRequestDecisionConflict"
           @click="submitAccessRequestDecision"
         >
-          {{ t(`security.accessRequest.confirmActions.${accessRequestDecision}`) }}
+          {{ accessRequestDecisionConfirmLabel }}
         </el-button>
       </template>
     </el-dialog>
@@ -936,7 +936,6 @@ import { resolveFindingReviewQueueRouteState, useProtectionFindingReviewQueue } 
 import { useProtectionEnrollmentGovernance } from '../composables/useProtectionEnrollmentGovernance.mjs'
 import { useProtectionExemptionRevocation } from '../composables/useProtectionExemptionRevocation.mjs'
 import { useProtectionPolicyChange } from '../composables/useProtectionPolicyChange.mjs'
-import { createRequiredRule } from '../utils/foundationForm.mjs'
 import EnrollmentResourceList from '../components/protection-enrollment/EnrollmentResourceList.vue'
 import {
   discoveryRefreshMarker,
@@ -995,8 +994,6 @@ const securityClassifications = ref([])
 const securityGrades = ref([])
 const protectionBaselines = ref([])
 const detectorCapabilities = ref([])
-const accessRequestDecisionFormRef = ref(null)
-const accessRequestDecisionCancelButton = ref(null)
 
 const {
   rows,
@@ -1024,18 +1021,6 @@ const {
   onLoadError: error => ElMessage.error(error.message || t('security.common.failed')),
   onAutoRefreshTimeout: () => ElMessage.warning(t('security.enrollment.autoRefreshTimedOut'))
 })
-
-function requiredFieldRule(labelKey, options = {}) {
-  return createRequiredRule(t('security.common.requiredField', { name: t(labelKey) }), options)
-}
-
-const accessRequestDecisionRules = computed(() => ({
-  rationale: [requiredFieldRule('security.accessRequest.decisionRationaleLabel', { trigger: 'blur', whitespace: true })]
-}))
-async function validateRequiredForm(instanceRef) {
-  if (!instanceRef.value) return false
-  return instanceRef.value.validate().catch(() => false)
-}
 
 let selectedItemRequest = 0
 let workspaceMounted = false
@@ -1099,28 +1084,44 @@ const {
   filters: accessRequestFilters,
   createdRange: accessRequestCreatedRange,
   decisionDialog: accessRequestDecisionDialog,
+  decisionFormRef: accessRequestDecisionFormRef,
+  decisionCancelButton: accessRequestDecisionCancelButton,
   decisionSaving: accessRequestDecisionSaving,
   decisionReloading: accessRequestDecisionReloading,
   decisionConflict: accessRequestDecisionConflict,
   decidingRequest: decidingAccessRequest,
   decision: accessRequestDecision,
   decisionForm: accessRequestDecisionForm,
+  decisionRules: accessRequestDecisionRules,
+  decisionTitle: accessRequestDecisionTitle,
+  decisionHint: accessRequestDecisionHint,
+  decisionConfirmLabel: accessRequestDecisionConfirmLabel,
   loadQueue: loadAccessRequestQueue,
   changeScope: handleAccessRequestScopeChange,
   updateFilters: updateAccessRequestFilters,
   applyFilters: applyAccessRequestFilters,
   resetFilters: resetAccessRequestFilters,
   openDecision: openAccessRequestDecision,
-  closeDecision: closeAccessRequestDecisionState,
-  reloadDecisionBaseline,
-  submitDecision: submitAccessRequestDecisionCommand,
+  closeDecision: closeAccessRequestDecisionDialog,
+  focusDecisionCancel: focusAccessRequestDecisionCancel,
+  reloadDecisionBaseline: reloadAccessRequestDecisionBaseline,
+  submitDecision: submitAccessRequestDecision,
   dispose: disposeAccessRequestReview
 } = useProtectionAccessRequestReview({
   canReview: canReviewAccessRequests,
   listRequests: params => protectionAccessRequestAPI.reviewQueue(params),
   getRequest: id => protectionAccessRequestAPI.getForReview(id),
   decideRequest: (id, payload) => protectionAccessRequestAPI.decide(id, payload),
-  onQueueLoadError: error => ElMessage.error(error.message || t('security.accessRequest.loadFailed'))
+  refreshCollection: options => load(options),
+  t,
+  onQueueLoadError: error => ElMessage.error(error.message || t('security.accessRequest.loadFailed')),
+  onDecisionReloaded: () => ElMessage.success(t('security.accessRequest.decisionReloadedLatest')),
+  onAlreadyProcessed: () => ElMessage.info(t('security.accessRequest.alreadyProcessed')),
+  onDecisionLoadError: error => ElMessage.error(error.message || t('security.accessRequest.loadFailed')),
+  onDecisionSucceeded: decision => ElMessage.success(t(`security.accessRequest.${decision}d`)),
+  onDecisionConflict: () => ElMessage.warning(t('security.accessRequest.decisionVersionConflict')),
+  onDecisionExpired: () => ElMessage.info(t('security.accessRequest.expiredBeforeDecision')),
+  onDecisionError: error => ElMessage.error(error.message || t('security.accessRequest.decisionFailed'))
 })
 const {
   findings,
@@ -1475,8 +1476,6 @@ const refreshFeedback = computed(() => {
   const language = locale.value === 'en' ? 'en-US' : 'zh-CN'
   return t('security.enrollment.lastRefreshed', { time: lastRefreshedAt.value.toLocaleTimeString(language) })
 })
-const accessRequestDecisionTitle = computed(() => t(`security.accessRequest.${accessRequestDecision.value}`))
-const accessRequestDecisionHint = computed(() => t(`security.accessRequest.${accessRequestDecision.value}Hint`))
 const reviewRemainingLabel = computed(() => {
   if (activeWorkspace.value === 'review-queue') {
     return t('security.finding.reviewRemainingQueue', { count: reviewQueueTotal.value })
@@ -1855,54 +1854,6 @@ async function openAccessRequestAuthorization(row) {
   } catch (error) {
     ElMessage.error(error.message || t('security.exemption.loadFailed'))
   }
-}
-
-function focusAccessRequestDecisionCancel() {
-  nextTick(() => {
-    accessRequestDecisionFormRef.value?.clearValidate()
-    const cancelButton = accessRequestDecisionCancelButton.value?.$el || accessRequestDecisionCancelButton.value
-    cancelButton?.focus?.()
-  })
-}
-
-function closeAccessRequestDecisionDialog() {
-  closeAccessRequestDecisionState()
-}
-
-async function reloadAccessRequestDecisionBaseline() {
-  const result = await reloadDecisionBaseline()
-  if (result.status === 'reloaded') {
-    ElMessage.success(t('security.accessRequest.decisionReloadedLatest'))
-    focusAccessRequestDecisionCancel()
-    return
-  }
-  if (result.status === 'already_processed') {
-    await loadAccessRequestQueue(accessRequestPage.value)
-    ElMessage.info(t('security.accessRequest.alreadyProcessed'))
-    return
-  }
-  if (result.status === 'failed') ElMessage.error(result.error.message || t('security.accessRequest.loadFailed'))
-}
-
-async function submitAccessRequestDecision() {
-  if (!decidingAccessRequest.value) return
-  if (!await validateRequiredForm(accessRequestDecisionFormRef)) return
-  const result = await submitAccessRequestDecisionCommand()
-  if (result.status === 'succeeded') {
-    await Promise.all([loadAccessRequestQueue(), load({ background: true })])
-    ElMessage.success(t(`security.accessRequest.${result.decision}d`))
-    return
-  }
-  if (result.status === 'version_conflict') {
-    ElMessage.warning(t('security.accessRequest.decisionVersionConflict'))
-    return
-  }
-  if (result.status === 'expired') {
-    await loadAccessRequestQueue(accessRequestPage.value)
-    ElMessage.info(t('security.accessRequest.expiredBeforeDecision'))
-    return
-  }
-  if (result.status === 'failed') ElMessage.error(result.error.message || t('security.accessRequest.decisionFailed'))
 }
 
 function handleGovernanceLoadError(kind, error) {

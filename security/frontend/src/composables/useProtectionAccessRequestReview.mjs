@@ -1,12 +1,31 @@
-import { reactive, ref, unref } from 'vue'
+import { computed, nextTick, reactive, ref, unref } from 'vue'
+import { createRequiredRule } from '../utils/foundationForm.mjs'
 import { isProtectionAccessRequestExpired, isResourceVersionConflict } from '../utils/protectionEnrollment.mjs'
+
+function snapshotRequest(row) {
+  if (!row) return null
+  return {
+    ...row,
+    component: row.component ? { ...row.component } : null,
+    requester: row.requester ? { ...row.requester } : null
+  }
+}
 
 export function useProtectionAccessRequestReview({
   canReview,
   listRequests,
   getRequest,
   decideRequest,
-  onQueueLoadError = () => {}
+  refreshCollection,
+  t,
+  onQueueLoadError = () => {},
+  onDecisionReloaded = () => {},
+  onAlreadyProcessed = () => {},
+  onDecisionLoadError = () => {},
+  onDecisionSucceeded = () => {},
+  onDecisionConflict = () => {},
+  onDecisionExpired = () => {},
+  onDecisionError = () => {}
 }) {
   const rows = ref([])
   const total = ref(0)
@@ -18,6 +37,8 @@ export function useProtectionAccessRequestReview({
   const createdRange = ref([])
 
   const decisionDialog = ref(false)
+  const decisionFormRef = ref(null)
+  const decisionCancelButton = ref(null)
   const decisionSaving = ref(false)
   const decisionReloading = ref(false)
   const decisionConflict = ref(false)
@@ -29,6 +50,15 @@ export function useProtectionAccessRequestReview({
   let decisionReloadRequest = 0
   let decisionSubmitRequest = 0
   let disposed = false
+
+  const decisionRules = computed(() => ({
+    rationale: [createRequiredRule(t('security.common.requiredField', {
+      name: t('security.accessRequest.decisionRationaleLabel')
+    }), { trigger: 'blur', whitespace: true })]
+  }))
+  const decisionTitle = computed(() => t(`security.accessRequest.${decision.value}`))
+  const decisionHint = computed(() => t(`security.accessRequest.${decision.value}Hint`))
+  const decisionConfirmLabel = computed(() => t(`security.accessRequest.confirmActions.${decision.value}`))
 
   function queueParams(requestedPage) {
     const range = Array.isArray(createdRange.value) ? createdRange.value : []
@@ -112,27 +142,41 @@ export function useProtectionAccessRequestReview({
     if (disposed || !row?.id || !row.can_decide || !['approve', 'reject'].includes(nextDecision)) return false
     decisionReloadRequest += 1
     decisionSubmitRequest += 1
-    decidingRequest.value = row
+    clearDecisionSession()
+    decidingRequest.value = snapshotRequest(row)
     decision.value = nextDecision
-    decisionForm.rationale = ''
-    decisionConflict.value = false
     decisionDialog.value = true
     return true
   }
 
-  function closeDecision() {
-    decisionReloadRequest += 1
-    decisionSubmitRequest += 1
+  function clearDecisionSession() {
     decisionDialog.value = false
     decidingRequest.value = null
     decision.value = 'approve'
     decisionForm.rationale = ''
+    decisionSaving.value = false
     decisionConflict.value = false
     decisionReloading.value = false
   }
 
+  function closeDecision() {
+    const hasActiveSession = decisionDialog.value || Boolean(decidingRequest.value) || decisionSaving.value || decisionReloading.value
+    if (!hasActiveSession) return
+    decisionReloadRequest += 1
+    decisionSubmitRequest += 1
+    clearDecisionSession()
+  }
+
+  function focusDecisionCancel() {
+    nextTick(() => {
+      decisionFormRef.value?.clearValidate?.()
+      const button = decisionCancelButton.value?.$el || decisionCancelButton.value
+      button?.focus?.()
+    })
+  }
+
   async function reloadDecisionBaseline() {
-    if (disposed || !decidingRequest.value?.id) return { status: 'unavailable' }
+    if (disposed || decisionReloading.value || decisionSaving.value || !decidingRequest.value?.id) return { status: 'unavailable' }
     const request = ++decisionReloadRequest
     const requestID = decidingRequest.value.id
     decisionReloading.value = true
@@ -141,15 +185,21 @@ export function useProtectionAccessRequestReview({
       if (request !== decisionReloadRequest || disposed) return { status: 'stale' }
       replaceRequest(latest)
       if (latest?.state !== 'pending' || !latest.can_decide) {
-        decisionDialog.value = false
+        clearDecisionSession()
+        await loadQueue(page.value)
+        if (request !== decisionReloadRequest || disposed) return { status: 'stale' }
+        onAlreadyProcessed()
         return { status: 'already_processed', request: latest }
       }
-      decidingRequest.value = latest
+      decidingRequest.value = snapshotRequest(latest)
       decisionForm.rationale = ''
       decisionConflict.value = false
+      onDecisionReloaded()
+      focusDecisionCancel()
       return { status: 'reloaded', request: latest }
     } catch (error) {
       if (request !== decisionReloadRequest || disposed) return { status: 'stale' }
+      onDecisionLoadError(error)
       return { status: 'failed', error }
     } finally {
       if (request === decisionReloadRequest) decisionReloading.value = false
@@ -159,9 +209,18 @@ export function useProtectionAccessRequestReview({
   async function submitDecision() {
     const row = decidingRequest.value
     const submittedDecision = decision.value
-    if (disposed || !row?.id || !['approve', 'reject'].includes(submittedDecision)) return { status: 'unavailable' }
+    if (disposed || decisionSaving.value || decisionReloading.value || decisionConflict.value || !row?.id || !['approve', 'reject'].includes(submittedDecision)) {
+      return { status: 'unavailable' }
+    }
     const request = ++decisionSubmitRequest
     decisionSaving.value = true
+    const validation = decisionFormRef.value?.validate?.()
+    const valid = await Promise.resolve(validation).catch(() => false)
+    if (request !== decisionSubmitRequest || disposed) return { status: 'stale' }
+    if (!valid) {
+      decisionSaving.value = false
+      return { status: 'invalid' }
+    }
     try {
       await decideRequest(row.id, {
         version: Number(row.version),
@@ -170,19 +229,27 @@ export function useProtectionAccessRequestReview({
         rationale: decisionForm.rationale.trim()
       })
       if (request !== decisionSubmitRequest || disposed) return { status: 'stale' }
-      decisionDialog.value = false
+      clearDecisionSession()
       page.value = 1
+      await Promise.all([loadQueue(1), refreshCollection({ background: true })])
+      if (request !== decisionSubmitRequest || disposed) return { status: 'stale' }
+      onDecisionSucceeded(submittedDecision)
       return { status: 'succeeded', decision: submittedDecision }
     } catch (error) {
       if (request !== decisionSubmitRequest || disposed) return { status: 'stale' }
       if (isResourceVersionConflict(error)) {
         decisionConflict.value = true
+        onDecisionConflict()
         return { status: 'version_conflict', error }
       }
       if (isProtectionAccessRequestExpired(error)) {
-        decisionDialog.value = false
+        clearDecisionSession()
+        await loadQueue(page.value)
+        if (request !== decisionSubmitRequest || disposed) return { status: 'stale' }
+        onDecisionExpired()
         return { status: 'expired', error }
       }
+      onDecisionError(error)
       return { status: 'failed', error }
     } finally {
       if (request === decisionSubmitRequest) decisionSaving.value = false
@@ -209,12 +276,18 @@ export function useProtectionAccessRequestReview({
     filters,
     createdRange,
     decisionDialog,
+    decisionFormRef,
+    decisionCancelButton,
     decisionSaving,
     decisionReloading,
     decisionConflict,
     decidingRequest,
     decision,
     decisionForm,
+    decisionRules,
+    decisionTitle,
+    decisionHint,
+    decisionConfirmLabel,
     loadQueue,
     changeScope,
     updateFilters,
@@ -223,6 +296,7 @@ export function useProtectionAccessRequestReview({
     replaceRequest,
     openDecision,
     closeDecision,
+    focusDecisionCancel,
     reloadDecisionBaseline,
     submitDecision,
     dispose

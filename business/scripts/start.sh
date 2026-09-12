@@ -22,6 +22,7 @@
 #   bash scripts/start.sh -oceanbase         # 只启动 OceanBase CE
 #   bash scripts/start.sh -tidb              # 只启动 TiDB 8.5.8
 #   bash scripts/start.sh -opengauss         # 只启动 openGauss
+#   bash scripts/start.sh -kingbase          # 只启动 KingbaseES（必须独立使用）
 #   bash scripts/start.sh -redpanda          # 只启动业务 Redpanda
 #   bash scripts/start.sh -nfs               # 只启动 NFS
 #   bash scripts/start.sh -postgres -minio   # 启动 PostgreSQL + MinIO
@@ -33,6 +34,13 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$PROJECT_ROOT"
+
+for arg in "$@"; do
+    if [ "$arg" = "-kingbase" ]; then
+        [ "$#" -eq 1 ] || { echo "-kingbase 必须独立使用" >&2; exit 1; }
+        exec "$SCRIPT_DIR/kingbase.sh" start
+    fi
+done
 
 # 颜色定义
 GREEN='\033[0;32m'
@@ -140,6 +148,7 @@ for arg in "$@"; do
             echo "  bash scripts/start.sh -oceanbase           # 只启动 OceanBase CE"
             echo "  bash scripts/start.sh -tidb                # 只启动 TiDB 8.5.8"
             echo "  bash scripts/start.sh -opengauss           # 只启动 openGauss"
+            echo "  bash scripts/start.sh -kingbase            # 只启动 KingbaseES（必须独立使用，不属于 -all）"
             echo "  bash scripts/start.sh -redpanda            # 只启动业务 Redpanda"
             echo "  bash scripts/start.sh -nfs                  # 只启动 NFS"
             echo "  bash scripts/start.sh -postgres -minio      # 启动 PostgreSQL + MinIO"

@@ -176,7 +176,7 @@ business/
 
 openGauss 不使用 Docker Hub 第三方镜像。`scripts/lib/opengauss-official-media.sh` 固定维护 6.0.6 官方 x86_64/aarch64 tar URL 与 SHA-256；当前 Business 和 T2 只使用已通过发布认证的 x86_64 介质。6.0.6 官方 Docker 构建包含 MOT，MOT 需要有效 NUMA 拓扑；Docker Desktop for macOS 不提供该拓扑，官方 ARM64 与 x86_64 镜像都会在启动期失败。因此 macOS 本地巡检不启动 openGauss，Provider 实库门禁由 GitHub Actions 的 Linux x86_64 Job 承担，不能用跳过或第三方镜像伪装本地通过。
 
-KingbaseES 不使用第三方镜像，也不把官方介质或 License 写入仓库、Compose、日志或 Artifact。`scripts/lib/kingbase-official-media.sh` 固定 V9R1C10 `V009R001C010B0004` Linux x86_64 官方 tar 与 SHA-256；`business/scripts/kingbase.sh` 要求仓库外 `ADDP_KINGBASE_LICENSE_FILE` 及其 `ADDP_KINGBASE_LICENSE_SHA256`，通过 `docker create` 后注入授权，再启动无卷容器。内置 90 天试用 License 不作为可重复门禁路线，macOS Docker Desktop 与 GitHub Hosted 不承担正式验证。
+KingbaseES 不使用第三方镜像，也不把官方介质或 License 写入仓库、Compose、日志或 Artifact。`scripts/lib/kingbase-official-media.sh` 固定 V9R1C10 `V009R001C010B0004` Linux x86_64 官方 tar 与 SHA-256；`business/docker-compose.yml` 只声明独立 `kingbase` profile 和无卷容器结构，`business/scripts/kingbase.sh` 要求仓库外 `ADDP_KINGBASE_LICENSE_FILE` 及其 `ADDP_KINGBASE_LICENSE_SHA256`，按 `docker compose create`、License 注入、`docker compose start` 的唯一顺序启动。容器因此显示在 Docker Desktop 的 `business` Compose 分组中。内置 90 天试用 License 不作为可重复门禁路线，macOS Docker Desktop 与 GitHub Hosted 不承担正式验证。
 
 ## 脚本说明
 
@@ -203,7 +203,7 @@ TiDB Provider 的唯一 T2 入口是仓库根 `make test-common-tidb`。门禁�
 
 `bash scripts/start.sh -opengauss` 启动官方 openGauss 6.0.6 LTS 介质并幂等初始化 `${OPENGAUSS_DATABASE:-business}`。样例与 MySQL/OceanBase 的普通业务域一致，包含 `customers`、`products`、`orders`、`order_items` 和连接探针，覆盖主外键、唯一约束、复合索引、Decimal、Boolean 与时间字段。System 中必须注册为 `engine_type=opengauss`；宿主机连接 `localhost:${OPENGAUSS_PORT:-5435}`，容器网络连接 `business-opengauss:5432`，固定账号 `gaussdb`。不得登记为 PostgreSQL，也不得据 PG 兼容性宣称 PostGIS、CDC 或 PostgreSQL 扩展能力。
 
-`bash scripts/kingbase.sh start` 在 owner-managed Linux x86_64 主机启动无卷 KingbaseES PG 模式容器，并反复执行 `business/kingbase/init.sql` 收敛探针、`customers`、`products`、`orders` 与 `order_items` 样例。调用前必须从 owner-only 环境注入 `KINGBASE_PASSWORD`、`ADDP_KINGBASE_LICENSE_FILE` 与 `ADDP_KINGBASE_LICENSE_SHA256`；可选覆盖 `KINGBASE_DATABASE`、`KINGBASE_USER` 与 `KINGBASE_PORT`。System 中必须注册为 `engine_type=kingbase`，宿主机连接 `127.0.0.1:${KINGBASE_PORT:-5436}`。停止使用 `bash scripts/kingbase.sh stop`，脚本删除本轮容器并验证零残留。
+`bash scripts/start.sh -kingbase` 在 owner-managed Linux x86_64 主机启动 `kingbase` Compose profile 下的无卷 KingbaseES PG 模式容器，并反复执行 `business/kingbase/init.sql` 收敛探针、`customers`、`products`、`orders` 与 `order_items` 样例。调用前必须从 owner-only 当前 shell 注入 `KINGBASE_PASSWORD`、`ADDP_KINGBASE_LICENSE_FILE` 与 `ADDP_KINGBASE_LICENSE_SHA256`；可选覆盖 `KINGBASE_DATABASE`、`KINGBASE_USER` 与 `KINGBASE_PORT`。该选项必须独立使用，且不属于 `-all`。System 中必须注册为 `engine_type=kingbase`，宿主机连接 `127.0.0.1:${KINGBASE_PORT:-5436}`。停止和重启分别使用 `bash scripts/stop.sh -kingbase`、`bash scripts/restart.sh -kingbase`；状态检查使用 `bash scripts/kingbase.sh status`。停止会删除本轮容器并验证零残留。
 
 ### scripts/online-workbench-mysql-fixture.sh - Workbench T4 MySQL Fixture
 

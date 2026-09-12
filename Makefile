@@ -163,6 +163,10 @@ test-business-config: ## 校验 Business Compose 和服务管理脚本（不启�
 	@docker compose --env-file business/.env.example -f business/docker-compose.yml config --images | grep -Fxq pingcap/tidb:v8.5.8@sha256:df168c764bf2dfdb166dc37a5c3b0e210d29d5f3ab2d33317fd0fdf7b32037f5
 	@docker compose --env-file business/.env.example -f business/docker-compose.yml config --services | grep -Fxq opengauss
 	@docker compose --env-file business/.env.example -f business/docker-compose.yml config --images | grep -Fxq opengauss:6.0.6
+	@! docker compose --env-file /dev/null -f business/docker-compose.yml config --services | grep -Fxq kingbase
+	@docker compose --env-file /dev/null -f business/docker-compose.yml --profile kingbase config --services | grep -Fxq kingbase
+	@docker compose --env-file /dev/null -f business/docker-compose.yml --profile kingbase config --images | grep -Fxq kingbase_v009r001c010b0004_single_x86:v1
+	@docker compose --env-file /dev/null -f business/docker-compose.yml --profile kingbase config --format json | python3 -c 'import json, sys; service = json.load(sys.stdin)["services"]["kingbase"]; assert service["profiles"] == ["kingbase"]; assert service["platform"] == "linux/amd64"; assert service["environment"] == {"DB_MODE": "pg", "DB_PASSWORD": "", "DB_USER": "system"}; assert service["ports"] == [{"mode": "ingress", "host_ip": "127.0.0.1", "target": 54321, "published": "5436", "protocol": "tcp"}]; assert "volumes" not in service; assert service["labels"] == {"com.addp.business-fixture": "kingbase"}'
 	@docker compose --env-file business/.env.example -f business/docker-compose.yml config | grep -Fq '/root/boot/init.d/01-addp-business.sql'
 	@test -f business/oceanbase/init.sql
 	@test -f business/tidb/init.sql
@@ -175,6 +179,11 @@ test-business-config: ## 校验 Business Compose 和服务管理脚本（不启�
 	@grep -Fq 'CREATE TABLE IF NOT EXISTS addp_engine_probe' business/kingbase/init.sql
 	@grep -Fq 'FROM pg_database' business/scripts/kingbase.sh
 	@! grep -Fq 'sys_database' business/scripts/kingbase.sh
+	@grep -Fq 'compose create "$$COMPOSE_SERVICE"' business/scripts/kingbase.sh
+	@grep -Fq 'compose start "$$COMPOSE_SERVICE"' business/scripts/kingbase.sh
+	@grep -Fq 'compose rm --stop --force "$$COMPOSE_SERVICE"' business/scripts/kingbase.sh
+	@grep -Fq 'com.docker.compose.project' business/scripts/kingbase.sh
+	@! grep -Eq '(^|[[:space:]])docker create([[:space:]]|$$)' business/scripts/kingbase.sh
 	@grep -Fq 'V009R001C010B0004' scripts/lib/kingbase-official-media.sh
 	@grep -Fq '16a436608cc204349e510cb136b8fc1fcbdf6874aee7b204cdac20a3522282da' scripts/lib/kingbase-official-media.sh
 	@grep -Fq 'openGauss-Docker-6.0.6-x86_64.tar' scripts/lib/opengauss-official-media.sh
@@ -186,8 +195,14 @@ test-business-config: ## 校验 Business Compose 和服务管理脚本（不启�
 	@bash business/scripts/start.sh --help | grep -Fq -- '-oceanbase'
 	@bash business/scripts/start.sh --help | grep -Fq -- '-tidb'
 	@bash business/scripts/start.sh --help | grep -Fq -- '-opengauss'
+	@bash business/scripts/start.sh --help | grep -Fq -- '-kingbase'
+	@! bash business/scripts/start.sh -kingbase -postgres >/dev/null 2>&1
 	@bash business/scripts/stop.sh --help | grep -Fq -- '-oceanbase'
 	@bash business/scripts/stop.sh --help | grep -Fq -- '-opengauss'
+	@bash business/scripts/stop.sh --help | grep -Fq -- '-kingbase'
+	@! bash business/scripts/stop.sh -kingbase -postgres >/dev/null 2>&1
+	@bash business/scripts/restart.sh --help | grep -Fq -- '-kingbase'
+	@! bash business/scripts/restart.sh -kingbase -postgres >/dev/null 2>&1
 	@bash business/scripts/kingbase.sh --help | grep -Fq -- 'start|stop|status'
 	@python3 -m unittest scripts/test/common-doris-decimal-gate_test.py
 

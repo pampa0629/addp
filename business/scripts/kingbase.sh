@@ -9,6 +9,9 @@ ROOT_DIR=$(cd "$SCRIPT_DIR/../.." && pwd -P)
 source "$ROOT_DIR/scripts/lib/kingbase-official-media.sh"
 
 CONTAINER_NAME=business-kingbase-disposable
+COMPOSE_FILE=$ROOT_DIR/business/docker-compose.yml
+COMPOSE_PROJECT=business
+COMPOSE_SERVICE=kingbase
 DATABASE_NAME=${KINGBASE_DATABASE:-business}
 DATABASE_USER=${KINGBASE_USER:-system}
 DATABASE_PASSWORD=${KINGBASE_PASSWORD:-}
@@ -18,6 +21,10 @@ WORK_DIR=${TMPDIR:-/tmp}/addp-business-kingbase
 fail() {
     echo "Business KingbaseES failed: $*" >&2
     exit 1
+}
+
+compose() {
+    docker compose --project-name "$COMPOSE_PROJECT" --env-file /dev/null --file "$COMPOSE_FILE" --profile kingbase "$@"
 }
 
 action=${1:-}
@@ -45,8 +52,10 @@ container_running() {
 
 validate_container_ownership() {
     if container_exists; then
-        [ "$(docker inspect --format '{{ index .Config.Labels "com.addp.business-fixture" }}' "$CONTAINER_NAME")" = "kingbase" ] ||
-            fail "$CONTAINER_NAME is not owned by the KingbaseES Business fixture"
+        local ownership
+        ownership=$(docker inspect --format '{{ index .Config.Labels "com.docker.compose.project" }}/{{ index .Config.Labels "com.docker.compose.service" }}/{{ index .Config.Labels "com.addp.business-fixture" }}' "$CONTAINER_NAME")
+        [ "$ownership" = "$COMPOSE_PROJECT/$COMPOSE_SERVICE/kingbase" ] ||
+            fail "$CONTAINER_NAME is not owned by the Business KingbaseES Compose service"
     fi
 }
 
@@ -75,20 +84,27 @@ case "$action" in
         [ -n "$DATABASE_PASSWORD" ] || fail "KINGBASE_PASSWORD is required"
         kingbase_validate_license_input "$ROOT_DIR"
         kingbase_ensure_official_image
-        mkdir -p "$WORK_DIR"
-        chmod 0700 "$WORK_DIR"
-        if ! container_exists; then
-            docker create \
-                --name "$CONTAINER_NAME" \
-                --label com.addp.business-fixture=kingbase \
-                --publish "127.0.0.1:$HOST_PORT:$KINGBASE_DATABASE_PORT" \
-                --env DB_MODE=pg \
-                --env DB_USER="$DATABASE_USER" \
-                --env DB_PASSWORD="$DATABASE_PASSWORD" \
-                "$KINGBASE_OFFICIAL_IMAGE" >/dev/null
-            kingbase_install_license_into_created_container "$CONTAINER_NAME" "$ADDP_KINGBASE_LICENSE_FILE" "$WORK_DIR"
+        export KINGBASE_USER="$DATABASE_USER"
+        export KINGBASE_PASSWORD="$DATABASE_PASSWORD"
+        export KINGBASE_PORT="$HOST_PORT"
+        if ! container_running; then
+            mkdir -p "$WORK_DIR"
+            chmod 0700 "$WORK_DIR"
+            if container_exists; then
+                compose rm --force "$COMPOSE_SERVICE" >/dev/null
+            fi
+            compose create "$COMPOSE_SERVICE" >/dev/null
+            validate_container_ownership
+            if ! kingbase_install_license_into_created_container "$CONTAINER_NAME" "$ADDP_KINGBASE_LICENSE_FILE" "$WORK_DIR"; then
+                compose rm --force "$COMPOSE_SERVICE" >/dev/null 2>&1 || true
+                rmdir "$WORK_DIR" 2>/dev/null || true
+                fail "failed to inject the owner-managed KingbaseES License"
+            fi
             rmdir "$WORK_DIR" 2>/dev/null || true
-            docker start "$CONTAINER_NAME" >/dev/null
+            if ! compose start "$COMPOSE_SERVICE" >/dev/null; then
+                compose rm --force "$COMPOSE_SERVICE" >/dev/null 2>&1 || true
+                fail "failed to start the KingbaseES Business Compose service"
+            fi
         fi
         for _ in $(seq 1 120); do
             if container_running && kingbase_container_ready "$CONTAINER_NAME" "$DATABASE_USER"; then
@@ -103,7 +119,7 @@ case "$action" in
         ;;
     stop)
         if container_exists; then
-            docker rm --force "$CONTAINER_NAME" >/dev/null
+            compose rm --stop --force "$COMPOSE_SERVICE" >/dev/null
         fi
         rmdir "$WORK_DIR" 2>/dev/null || true
         container_exists && fail "$CONTAINER_NAME still exists after cleanup"
