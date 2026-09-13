@@ -42,6 +42,7 @@ type EnginePlugin interface {
 - `EngineOrigin()` 表达引擎来源，取值为 `general` 或 `extension`；它不是能力判断字段，上层功能判断必须基于 capabilities。
 - `connection_info` 是所有引擎连接信息的统一事实源，保持 key-value map；字段 key 使用稳定英文机器名，不承载 i18n。
 - 所有可由 System 注册的内置插件必须实现 `ConnectionSpecProvider.ConnectionSpec()`，返回 `engine.connection/v1`。字段顺序、控件类型、默认值、必填、敏感、身份、条件显示、选项和跨字段约束只能在该描述中声明一次；System API、共享前端表单、敏感字段处理和身份归一化必须消费该描述，不得维护 `engine_type` 列表或条件分支。
+- 商业数据库插件若受官方驱动平台与再分发限制，可以把不含驱动的插件控制面代码编入 System，同时通过专用 build tag 只在获准平台加载官方驱动。此时无驱动进程只允许登记和展示，不得执行 `TestConnection` 或任何数据面 Provider；调用必须返回明确的执行边界错误，不能退化为 TCP 探活、CLI 代调或第三方驱动。
 - `DefaultPort()`、`RequiredFields()`、`SensitiveFields()` 与 `ConnectionIdentityFields()` 是现有运行时接口方法；内置可注册插件的这些方法必须从 `ConnectionSpec()` 派生，不能重复保存常量或字段列表。`ValidateConnectionInfo()` 负责协议级及条件级校验，`TestConnection()` 负责真实只读连接验证。
 - `ConnectionSpec` 中 `identity=true` 的非敏感字段决定 Engine Instance 身份。MongoDB 的身份是服务端点 `host`、`port` 与认证主体 `user`、`auth_source`；`database` 只是可选的工作台初始数据库，不是身份或权限边界。其他数据库插件按自身协议声明端点字段；对象存储声明 `endpoint`；NFS 声明 `server`、`export_path`。
 - `GET /api/v1/system/engine-types` 返回当前编译进 System 且 `origin=general` 的描述数组，并同时投影 capabilities 与 Engine Catalog Model。该接口不返回连接值或凭据；新增国产或其他数据库后，注册入口必须由插件描述自动出现，不允许同步修改前端类型列表或表单分支。

@@ -131,7 +131,8 @@
       :enrollment="detailRow"
       :refresh-state="detailRefreshState"
       :governance="detailGovernance"
-      :permissions="detailPermissions"
+      :exemptions="detailExemptions"
+      :lifecycle="detailLifecycle"
       :presentation="detailPresentation"
       @update:findings-page="findingsPage = $event"
       @close="closeDetail"
@@ -669,8 +670,7 @@ const {
   outletRuleDescription,
   outletAcknowledgementPresentation,
   findingStatePresentation,
-  activeAssessmentForFinding,
-  assessmentForFinding,
+  findingAssessmentView,
   assessmentSummary,
   assessmentRevisionSummary,
   assessmentConclusionLabel,
@@ -1104,27 +1104,29 @@ const detailRefreshState = computed(() => ({
   loading: manualRefreshing.value
 }))
 const detailGovernance = computed(() => ({
+  visible: canReadFindings.value || canReadAssessments.value,
   loading: governanceLoading.value,
   findings: findings.value,
   findingsPage: findingsPage.value,
   findingsTotal: findingsTotal.value,
   findingsPageSize,
   manualAssessments: manualAssessments.value,
-  exemptionsLoading: exemptionsLoading.value,
-  exemptions: exemptions.value,
-  focusedExemptionId: focusedExemptionID.value
-}))
-const detailPermissions = computed(() => ({
   readFindings: canReadFindings.value,
-  readAssessments: canReadAssessments.value,
   createAssessments: canCreateAssessments.value,
   reviewFindings: canReviewFindings.value,
   updateAssessments: canUpdateAssessments.value,
-  revokePolicies: canRevokePolicies.value,
-  readExemptions: canReadExemptions.value,
-  revokeExemptions: canRevokeExemptions.value,
-  createEnrollment: canCreate.value,
-  updateEnrollment: canRelease.value
+  revokePolicies: canRevokePolicies.value
+}))
+const detailExemptions = computed(() => ({
+  visible: canReadExemptions.value,
+  loading: exemptionsLoading.value,
+  items: exemptions.value,
+  focusedId: focusedExemptionID.value,
+  canRevoke: canRevokeExemptions.value
+}))
+const detailLifecycle = computed(() => ({
+  canCreate: canCreate.value,
+  canUpdate: canRelease.value
 }))
 const detailPresentation = Object.freeze({
   resource: Object.freeze({
@@ -1138,29 +1140,32 @@ const detailPresentation = Object.freeze({
     isZeroFindingDiscovery
   }),
   governance: Object.freeze({
-    normalizeDiscoverySummary,
-    typeName,
-    findingState: findingStatePresentation,
-    capabilityName,
-    evidenceDescription,
-    evidenceAuditDescription,
-    capabilityText,
-    capabilityScope,
-    confidenceLabel,
-    decision: decisionPresentation,
-    effectiveDefinitionSummary,
-    baselineDescription,
-    assessmentForFinding,
-    activeAssessmentForFinding,
-    assessmentProtectionSummary,
-    ownerLabel,
-    outletRuleDescription,
-    outletAcknowledgement: outletAcknowledgementPresentation,
-    formatDateTime,
-    canConfigurePolicy,
-    policyForAssessment,
-    assessmentSummary,
-    assessmentConclusionLabel
+    summary: normalizeDiscoverySummary,
+    findings: Object.freeze({
+      typeName,
+      state: findingStatePresentation,
+      capabilityName,
+      evidenceDescription,
+      evidenceAuditDescription,
+      capabilityText,
+      capabilityScope,
+      confidenceLabel,
+      decision: decisionPresentation,
+      effectiveDefinitionSummary,
+      baselineDescription,
+      assessmentView: findingAssessmentView,
+      ownerLabel,
+      outletRuleDescription,
+      outletAcknowledgement: outletAcknowledgementPresentation,
+      formatDateTime
+    }),
+    assessments: Object.freeze({
+      summary: assessmentSummary,
+      protectionSummary: assessmentProtectionSummary,
+      conclusionLabel: assessmentConclusionLabel,
+      canConfigurePolicy,
+      policyForAssessment
+    })
   }),
   exemption: Object.freeze({
     assessmentComponent,

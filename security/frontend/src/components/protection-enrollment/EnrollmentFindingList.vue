@@ -1,13 +1,13 @@
 <template>
   <div class="finding-list">
-    <article v-for="finding in findings" :key="finding.id" class="finding-card">
+    <article v-for="{ finding, assessment } in rows" :key="finding.id" class="finding-card">
       <div class="finding-card__header">
         <div>
           <strong>{{ finding.component_key }}</strong>
-          <span>{{ typeName(finding.sensitive_data_type_id) }}</span>
+          <span>{{ presentation.typeName(finding.sensitive_data_type_id) }}</span>
         </div>
-        <el-tag size="small" :type="findingStatePresentation(finding).type">
-          {{ findingStatePresentation(finding).label }}
+        <el-tag size="small" :type="presentation.state(finding).type">
+          {{ presentation.state(finding).label }}
         </el-tag>
       </div>
       <div class="finding-explanation">
@@ -16,12 +16,12 @@
             <span>1</span>
             <strong>{{ t('security.finding.explanationStages.detection') }}</strong>
           </div>
-          <p class="explanation-primary">{{ capabilityName(finding) }}</p>
-          <p>{{ evidenceDescription(finding) }}</p>
+          <p class="explanation-primary">{{ presentation.capabilityName(finding) }}</p>
+          <p>{{ presentation.evidenceDescription(finding) }}</p>
           <dl class="detection-rule-audit">
             <div>
               <dt>{{ t('security.finding.ruleAudit.actualEvidence') }}</dt>
-              <dd>{{ evidenceAuditDescription(finding) }}</dd>
+              <dd>{{ presentation.evidenceAuditDescription(finding) }}</dd>
             </div>
             <div class="detection-rule-audit__details">
               <dt>{{ t('security.finding.ruleAudit.details') }}</dt>
@@ -33,19 +33,19 @@
                   <dl class="recognition-rule-details">
                     <div>
                       <dt>{{ t('security.finding.ruleAudit.method') }}</dt>
-                      <dd>{{ capabilityText(finding, 'method_i18n_key') }}</dd>
+                      <dd>{{ presentation.capabilityText(finding, 'method_i18n_key') }}</dd>
                     </div>
                     <div>
                       <dt>{{ t('security.finding.ruleAudit.scope') }}</dt>
-                      <dd>{{ capabilityScope(finding) }}</dd>
+                      <dd>{{ presentation.capabilityScope(finding) }}</dd>
                     </div>
                     <div>
                       <dt>{{ t('security.finding.ruleAudit.privacy') }}</dt>
-                      <dd>{{ capabilityText(finding, 'privacy_i18n_key') }}</dd>
+                      <dd>{{ presentation.capabilityText(finding, 'privacy_i18n_key') }}</dd>
                     </div>
                     <div>
                       <dt>{{ t('security.finding.ruleAudit.limitations') }}</dt>
-                      <dd>{{ capabilityText(finding, 'limitations_i18n_key') }}</dd>
+                      <dd>{{ presentation.capabilityText(finding, 'limitations_i18n_key') }}</dd>
                     </div>
                     <div>
                       <dt>{{ t('security.finding.ruleAudit.version') }}</dt>
@@ -57,13 +57,13 @@
             </div>
           </dl>
           <div class="explanation-tags">
-            <el-tag size="small" effect="plain">{{ t('security.finding.confidenceValue', { value: confidenceLabel(finding.confidence) }) }}</el-tag>
+            <el-tag size="small" effect="plain">{{ t('security.finding.confidenceValue', { value: presentation.confidenceLabel(finding.confidence) }) }}</el-tag>
             <el-tag
               v-if="finding.explanation?.automatic_adoption_threshold != null"
               size="small"
               :type="finding.explanation.meets_automatic_threshold ? 'success' : 'warning'"
             >
-              {{ t('security.finding.thresholdValue', { value: confidenceLabel(finding.explanation.automatic_adoption_threshold) }) }}
+              {{ t('security.finding.thresholdValue', { value: presentation.confidenceLabel(finding.explanation.automatic_adoption_threshold) }) }}
             </el-tag>
           </div>
         </section>
@@ -73,13 +73,13 @@
             <span>2</span>
             <strong>{{ t('security.finding.explanationStages.governance') }}</strong>
           </div>
-          <el-tag size="small" :type="decisionPresentation(finding).type">
-            {{ decisionPresentation(finding).label }}
+          <el-tag size="small" :type="presentation.decision(finding).type">
+            {{ presentation.decision(finding).label }}
           </el-tag>
-          <p class="explanation-primary">{{ effectiveDefinitionSummary(finding) }}</p>
-          <p>{{ baselineDescription(finding) }}</p>
-          <p v-if="activeAssessmentForFinding(finding)" class="resource-policy-summary">
-            {{ assessmentProtectionSummary(activeAssessmentForFinding(finding)) }}
+          <p class="explanation-primary">{{ presentation.effectiveDefinitionSummary(finding) }}</p>
+          <p>{{ presentation.baselineDescription(finding) }}</p>
+          <p v-if="assessment.active" class="resource-policy-summary">
+            {{ assessment.protectionSummary }}
           </p>
         </section>
 
@@ -90,16 +90,16 @@
           </div>
           <div class="finding-outlets">
             <div v-for="outlet in finding.explanation.outlets" :key="outlet.consumer_owner" class="finding-outlet">
-              <span>{{ ownerLabel(outlet.consumer_owner) }}</span>
-              <strong>{{ outletRuleDescription(finding, outlet.consumer_owner) }}</strong>
-              <el-tag size="small" :type="outletAcknowledgementPresentation(outlet).type">
-                {{ outletAcknowledgementPresentation(outlet).label }}
+              <span>{{ presentation.ownerLabel(outlet.consumer_owner) }}</span>
+              <strong>{{ presentation.outletRuleDescription(finding, outlet.consumer_owner) }}</strong>
+              <el-tag size="small" :type="presentation.outletAcknowledgement(outlet).type">
+                {{ presentation.outletAcknowledgement(outlet).label }}
               </el-tag>
             </div>
           </div>
         </section>
       </div>
-      <p class="finding-observed-at">{{ t('security.finding.observedAt') }}：{{ formatDateTime(finding.observed_at) }}</p>
+      <p class="finding-observed-at">{{ t('security.finding.observedAt') }}：{{ presentation.formatDateTime(finding.observed_at) }}</p>
       <div v-if="finding.review" class="review-result">
         <span>{{ t('security.finding.reviewRationale') }}</span>
         <p>{{ finding.review.rationale }}</p>
@@ -108,31 +108,31 @@
         <el-button type="danger" plain @click="emit('review', finding, 'reject')">{{ t('security.finding.markFalsePositive') }}</el-button>
         <el-button type="primary" plain @click="emit('review', finding, 'confirm')">{{ t('security.finding.review') }}</el-button>
       </div>
-      <div v-else-if="assessmentForFinding(finding)" class="finding-card__actions">
-        <el-button plain @click="emit('history', assessmentForFinding(finding))">{{ t('security.assessment.history') }}</el-button>
-        <el-button v-if="canUpdateAssessments" plain @click="emit('revise', assessmentForFinding(finding))">
+      <div v-else-if="assessment.current" class="finding-card__actions">
+        <el-button plain @click="emit('history', assessment.current)">{{ t('security.assessment.history') }}</el-button>
+        <el-button v-if="canUpdateAssessments" plain @click="emit('revise', assessment.current)">
           {{ t('security.assessment.reviseConclusion') }}
         </el-button>
         <el-button
-          v-if="activeAssessmentForFinding(finding) && canConfigurePolicy(activeAssessmentForFinding(finding))"
+          v-if="assessment.active && assessment.canConfigurePolicy"
           type="primary"
           plain
-          @click="emit('configurePolicy', activeAssessmentForFinding(finding))"
+          @click="emit('configurePolicy', assessment.active)"
         >
-          {{ policyForAssessment(activeAssessmentForFinding(finding))?.state === 'active' ? t('security.policy.adjust') : t('security.policy.tighten') }}
+          {{ assessment.policy?.state === 'active' ? t('security.policy.adjust') : t('security.policy.tighten') }}
         </el-button>
         <el-button
-          v-if="policyForAssessment(activeAssessmentForFinding(finding))?.state === 'active' && canRevokePolicies"
+          v-if="assessment.policy?.state === 'active' && canRevokePolicies"
           plain
-          @click="emit('restorePolicy', activeAssessmentForFinding(finding))"
+          @click="emit('restorePolicy', assessment.active)"
         >
           {{ t('security.policy.restoreDefault') }}
         </el-button>
         <el-button
-          v-if="activeAssessmentForFinding(finding) && canUpdateAssessments"
+          v-if="assessment.active && canUpdateAssessments"
           type="danger"
           plain
-          @click="emit('revokeAssessment', activeAssessmentForFinding(finding))"
+          @click="emit('revokeAssessment', assessment.active)"
         >
           {{ t('security.assessment.revokeConclusion') }}
         </el-button>
@@ -153,10 +153,11 @@
 </template>
 
 <script setup>
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { QuestionFilled } from '@element-plus/icons-vue'
 
-defineProps({
+const props = defineProps({
   findings: { type: Array, required: true },
   total: { type: Number, required: true },
   page: { type: Number, required: true },
@@ -164,30 +165,15 @@ defineProps({
   canReview: { type: Boolean, default: false },
   canUpdateAssessments: { type: Boolean, default: false },
   canRevokePolicies: { type: Boolean, default: false },
-  typeName: { type: Function, required: true },
-  findingStatePresentation: { type: Function, required: true },
-  capabilityName: { type: Function, required: true },
-  evidenceDescription: { type: Function, required: true },
-  evidenceAuditDescription: { type: Function, required: true },
-  capabilityText: { type: Function, required: true },
-  capabilityScope: { type: Function, required: true },
-  confidenceLabel: { type: Function, required: true },
-  decisionPresentation: { type: Function, required: true },
-  effectiveDefinitionSummary: { type: Function, required: true },
-  baselineDescription: { type: Function, required: true },
-  assessmentForFinding: { type: Function, required: true },
-  activeAssessmentForFinding: { type: Function, required: true },
-  assessmentProtectionSummary: { type: Function, required: true },
-  ownerLabel: { type: Function, required: true },
-  outletRuleDescription: { type: Function, required: true },
-  outletAcknowledgementPresentation: { type: Function, required: true },
-  formatDateTime: { type: Function, required: true },
-  canConfigurePolicy: { type: Function, required: true },
-  policyForAssessment: { type: Function, required: true }
+  presentation: { type: Object, required: true }
 })
 
 const emit = defineEmits(['review', 'history', 'revise', 'configurePolicy', 'restorePolicy', 'revokeAssessment', 'update:page', 'pageChange'])
 const { t } = useI18n()
+const rows = computed(() => props.findings.map(finding => ({
+  finding,
+  assessment: props.presentation.assessmentView(finding)
+})))
 
 function handlePageChange(page) {
   emit('update:page', page)

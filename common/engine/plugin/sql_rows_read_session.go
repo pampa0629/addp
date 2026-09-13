@@ -13,23 +13,40 @@ import (
 // the table cursor contract. The query is executed exactly once; callers own
 // the engine-specific snapshot/read-only setup before constructing the session.
 func NewSQLRowsTableReadSession(db *sql.DB, rows *sql.Rows, fields []datatype.FieldInfo) (TableReadSession, error) {
+	return newSQLRowsTableReadSession(db, nil, rows, fields)
+}
+
+// NewSQLTransactionRowsTableReadSession adapts one query running inside a
+// controlled read-only transaction to the table cursor contract.
+func NewSQLTransactionRowsTableReadSession(db *sql.DB, tx *sql.Tx, rows *sql.Rows, fields []datatype.FieldInfo) (TableReadSession, error) {
+	if tx == nil {
+		return nil, fmt.Errorf("SQL transaction table read session requires transaction")
+	}
+	return newSQLRowsTableReadSession(db, tx, rows, fields)
+}
+
+func newSQLRowsTableReadSession(db *sql.DB, tx *sql.Tx, rows *sql.Rows, fields []datatype.FieldInfo) (TableReadSession, error) {
 	if db == nil || rows == nil {
 		return nil, fmt.Errorf("SQL table read session requires database and rows")
 	}
 	columns, err := rows.Columns()
 	if err != nil {
 		_ = rows.Close()
+		if tx != nil {
+			_ = tx.Rollback()
+		}
 		_ = db.Close()
 		return nil, fmt.Errorf("read SQL cursor columns: %w", err)
 	}
 	return &sqlRowsTableReadSession{
-		db: db, rows: rows, columns: columns,
+		db: db, tx: tx, rows: rows, columns: columns,
 		fields: alignSQLReadFields(columns, fields),
 	}, nil
 }
 
 type sqlRowsTableReadSession struct {
 	db        *sql.DB
+	tx        *sql.Tx
 	rows      *sql.Rows
 	columns   []string
 	fields    []datatype.FieldInfo
@@ -88,6 +105,11 @@ func (s *sqlRowsTableReadSession) Close(context.Context) error {
 	var closeErr error
 	if s.rows != nil {
 		closeErr = s.rows.Close()
+	}
+	if s.tx != nil {
+		if err := s.tx.Commit(); err != nil && closeErr == nil {
+			closeErr = err
+		}
 	}
 	if s.db != nil {
 		if err := s.db.Close(); err != nil && closeErr == nil {

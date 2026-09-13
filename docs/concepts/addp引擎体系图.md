@@ -10,6 +10,7 @@
 | --- | --- |
 | Engine Instance | System 中的一条引擎实例，保存租户、名称、类型、连接配置、能力声明、生命周期和连通性观测；一条记录只绑定一个确定的物理端点。 |
 | Engine Plugin | `common/engine/plugins/<engine_type>` 下的内置引擎适配实现，负责非通用的连接、校验、测试和能力暴露；实现标准 Workflow Runtime 协议的外部运行时不要求编译期 Plugin。 |
+| Official-driver Execution Boundary | 受限商业驱动从固定官方介质注入并真正执行连接、目录、查询与读写 Provider 的部署边界；控制面登记可以位于边界外，但不得把无法加载驱动的宿主进程标记为具备真实连接能力。 |
 | Capability | 插件返回的结构化能力声明，版本为 `engine.capabilities/v1`。 |
 | Engine Catalog | 引擎中的真实目录层级和事实读取抽象，如 schema/table、bucket/object、database/graph；跨模块类型统一使用 `EngineCatalog*`，不带限定词的 Catalog 保留给企业资源目录。 |
 | Item | 可被描述、预览、读取或写入的叶子数据项。 |
@@ -41,6 +42,7 @@
 - System 只维护 Engine Instance 控制面事实。连接巡检与实例能力刷新在 System 就绪后按实例异步执行；单个实例失败不得终止 System、阻塞其他实例或清空最后一次成功的能力事实。
 - Engine Runtime 在自身服务就绪后通过统一 Runtime 注册接口异步自注册，System 不代注册。注册失败只表示该 Runtime 尚不可被平台发现，不影响 System 或其他模块启动。
 - 上层模块只在具体请求或 execution 需要引擎时解析绑定。实例缺失、disabled、deleting、offline、unknown、checking 或能力不匹配时，失败范围限定为当前请求或 execution，不得退出 Backend 或 Worker，也不得自动改选其他实例。可用候选过滤只是提前排除已知不可用实例，不能代替执行期再次校验。
+- `dameng` 在 macOS 开发模式中允许 System 加载插件描述、保存 Engine Instance 和投影 capabilities，但官方 Go 驱动不进入 macOS 进程；因此宿主 System 不执行 DM8 连接检测，真实 TestConnection、Engine Catalog、查询、读取和写入统一由注入同版本官方驱动的 Linux ARM64 Docker 进程执行。不得以 TCP 探活、容器内 `disql` 代调或第三方驱动把宿主进程伪装为在线数据面。
 
 ### 实时 Engine Catalog、元数据快照和数据预览的边界
 

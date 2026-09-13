@@ -8,6 +8,7 @@ import (
 const (
 	DialectPostgreSQL = "postgresql"
 	DialectOracle     = "oracle"
+	DialectDameng     = "dameng"
 	DialectMySQL      = "mysql"
 	DialectClickHouse = "clickhouse"
 	DialectSparkSQL   = "spark_sql"
@@ -41,6 +42,10 @@ func (d Dialect) IsPostgreSQL() bool {
 
 func (d Dialect) IsOracle() bool {
 	return d.name == DialectOracle
+}
+
+func (d Dialect) usesOraclePagination() bool {
+	return d.name == DialectOracle || d.name == DialectDameng
 }
 
 func (d Dialect) QuoteIdentifier(identifier string) string {
@@ -98,7 +103,7 @@ func (d Dialect) SubqueryAlias(alias string) string {
 	if alias == "" {
 		return ""
 	}
-	if d.IsOracle() {
+	if d.usesOraclePagination() {
 		return " " + alias
 	}
 	return " AS " + alias
@@ -145,7 +150,7 @@ func normalizeClause(clause, keyword string) string {
 }
 
 func (d Dialect) limitOffsetClause(limit, offset int) string {
-	if d.IsOracle() {
+	if d.usesOraclePagination() {
 		switch {
 		case limit > 0 && offset > 0:
 			return fmt.Sprintf(" OFFSET %d ROWS FETCH NEXT %d ROWS ONLY", offset, limit)

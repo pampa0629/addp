@@ -2,7 +2,7 @@
         build-iam-bootstrap build-iam-recovery build-iam-migration-repair \
         dev-start dev-restart dev-stop infra-up infra-down infra-restart infra-status prod-start prod-restart prod-stop prod-health ports-validate
 
-.PHONY: test-business-config test-common-oceanbase test-common-opengauss test-common-tidb test-common-kingbase test-common-oracle-decimal test-common-doris-decimal test-common-clickhouse-decimal test-opengauss-official-media-release test-kingbase-official-media-release test-dameng-official-media-release test-integration-owner-managed
+.PHONY: test-business-config test-common-oceanbase test-common-opengauss test-common-tidb test-common-kingbase test-common-dameng test-common-oracle-decimal test-common-doris-decimal test-common-clickhouse-decimal test-opengauss-official-media-release test-kingbase-official-media-release test-dameng-official-media-release test-integration-owner-managed
 
 # 默认目标
 .DEFAULT_GOAL := help
@@ -180,7 +180,7 @@ test-business-config: ## 校验 Business Compose 和服务管理脚本（不启�
 	@test -f business/opengauss/init.sql
 	@test -f business/kingbase/init.sql
 	@test -f business/dameng/init.sql
-	@grep -Fq "WHERE TABLE_NAME = 'ADDP_ENGINE_PROBE'" business/dameng/init.sql
+	@grep -Fq "TABLE_NAME = 'ADDP_ENGINE_PROBE'" business/dameng/init.sql
 	@grep -Fq 'TIMESTAMP '\''2026-09-13 08:00:00.000003'\''' business/dameng/init.sql
 	@grep -Fq 'SET NAMES utf8mb4;' business/oceanbase/init.sql
 	@grep -Fq 'CREATE TABLE IF NOT EXISTS addp_engine_probe' business/tidb/init.sql
@@ -209,7 +209,7 @@ test-business-config: ## 校验 Business Compose 和服务管理脚本（不启�
 	@grep -Fq '00ad2206ac93cf28c7702cd624b7c59dc1a146f9dca1f81ed19eeac430416c0b' scripts/lib/opengauss-official-media.sh
 	@grep -Fq 'opengauss_official_container_ready business-opengauss opengauss_gsql' business/scripts/start.sh
 	@test "$$(grep -c -- '--default-character-set=utf8mb4' business/scripts/start.sh)" -ge 4
-	@bash -n business/scripts/start.sh business/scripts/stop.sh business/scripts/restart.sh business/scripts/kingbase.sh business/scripts/dameng.sh scripts/utils/register-business.sh scripts/lib/opengauss-official-media.sh scripts/lib/kingbase-official-media.sh scripts/lib/dameng-official-media.sh scripts/test/common-kingbase-gate.sh scripts/test/kingbase-official-media-release-gate.sh scripts/test/dameng-official-media-release-gate.sh
+	@bash -n business/scripts/start.sh business/scripts/stop.sh business/scripts/restart.sh business/scripts/kingbase.sh business/scripts/dameng.sh scripts/utils/register-business.sh scripts/lib/opengauss-official-media.sh scripts/lib/kingbase-official-media.sh scripts/lib/dameng-official-media.sh scripts/test/common-kingbase-gate.sh scripts/test/common-dameng-gate.sh scripts/test/kingbase-official-media-release-gate.sh scripts/test/dameng-official-media-release-gate.sh
 	@bash business/scripts/start.sh --help | grep -Fq -- '-oceanbase'
 	@bash business/scripts/start.sh --help | grep -Fq -- '-tidb'
 	@bash business/scripts/start.sh --help | grep -Fq -- '-opengauss'
@@ -278,6 +278,9 @@ test-common-opengauss: ## 在 Linux x86_64 hosted runner 使用一次性 openGau
 
 test-common-kingbase: ## 在 owner-managed Linux x86_64 Runner 使用正规 License 验证 KingbaseES Provider 契约
 	@bash scripts/test/common-kingbase-gate.sh
+
+test-common-dameng: ## 在本机 Linux ARM64 Docker 使用 Business 试用实例验证 DM8 Provider 契约
+	@bash scripts/test/common-dameng-gate.sh
 
 test-common-oracle-decimal: ## 使用一次性 Oracle database 验证 Decimal Provider 契约
 	@bash scripts/test/common-oracle-decimal-gate.sh

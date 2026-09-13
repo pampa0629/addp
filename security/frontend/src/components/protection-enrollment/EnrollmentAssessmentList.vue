@@ -4,30 +4,30 @@
     <article v-for="assessment in assessments" :key="assessment.id" class="manual-assessment-card">
       <div>
         <strong>{{ assessment.component_key }}</strong>
-        <span>{{ assessmentSummary(assessment) }}</span>
+        <span>{{ presentation.summary(assessment) }}</span>
         <p>{{ assessment.current?.rationale }}</p>
         <p v-if="assessment.current?.conclusion === 'sensitive'" class="resource-policy-summary">
-          {{ assessmentProtectionSummary(assessment) }}
+          {{ presentation.protectionSummary(assessment) }}
         </p>
       </div>
       <div class="manual-assessment-card__actions">
         <el-tag :type="assessment.current?.conclusion === 'sensitive' ? 'success' : 'info'">
-          {{ assessmentConclusionLabel(assessment.current?.conclusion) }}
+          {{ presentation.conclusionLabel(assessment.current?.conclusion) }}
         </el-tag>
         <el-button link @click="emit('history', assessment)">{{ t('security.assessment.history') }}</el-button>
         <el-button v-if="canUpdate" link @click="emit('revise', assessment)">
           {{ t('security.assessment.reviseConclusion') }}
         </el-button>
         <el-button
-          v-if="assessment.current?.conclusion === 'sensitive' && canConfigurePolicy(assessment)"
+          v-if="assessment.current?.conclusion === 'sensitive' && presentation.canConfigurePolicy(assessment)"
           link
           type="primary"
           @click="emit('configurePolicy', assessment)"
         >
-          {{ policyForAssessment(assessment)?.state === 'active' ? t('security.policy.adjust') : t('security.policy.tighten') }}
+          {{ presentation.policyForAssessment(assessment)?.state === 'active' ? t('security.policy.adjust') : t('security.policy.tighten') }}
         </el-button>
         <el-button
-          v-if="assessment.current?.conclusion === 'sensitive' && policyForAssessment(assessment)?.state === 'active' && canRevokePolicies"
+          v-if="assessment.current?.conclusion === 'sensitive' && presentation.policyForAssessment(assessment)?.state === 'active' && canRevokePolicies"
           link
           @click="emit('restorePolicy', assessment)"
         >
@@ -53,11 +53,7 @@ defineProps({
   assessments: { type: Array, required: true },
   canUpdate: { type: Boolean, default: false },
   canRevokePolicies: { type: Boolean, default: false },
-  assessmentSummary: { type: Function, required: true },
-  assessmentProtectionSummary: { type: Function, required: true },
-  assessmentConclusionLabel: { type: Function, required: true },
-  canConfigurePolicy: { type: Function, required: true },
-  policyForAssessment: { type: Function, required: true }
+  presentation: { type: Object, required: true }
 })
 
 const emit = defineEmits(['history', 'revise', 'configurePolicy', 'restorePolicy', 'revoke'])

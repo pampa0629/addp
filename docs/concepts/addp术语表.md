@@ -11,6 +11,7 @@
 | OceanBase Engine | OceanBase 引擎 | 通过 `engine_type=oceanbase` 登记的 OceanBase Community Edition 数据库 Engine Instance；首版使用 MySQL 模式协议与 SQL 方言，以 database/table 为 Engine Catalog 业务路径。 | OceanBase 是独立引擎类型，不登记为 MySQL；`user` 使用 `user@tenant` 完整账号表达租户边界。MySQL 协议兼容只是插件内部复用事实。 |
 | openGauss Engine | openGauss 引擎 | 通过 `engine_type=opengauss` 登记的 openGauss 6.0.6 LTS 数据库 Engine Instance；首版使用 PG 兼容 database，以 schema/table 为 Engine Catalog 业务路径。 | openGauss 是独立引擎类型，不登记为 PostgreSQL；PostgreSQL wire protocol、驱动和 SQL 方言兼容只是插件内部复用事实，不自动获得 PostGIS、CDC 或 PostgreSQL 扩展能力。 |
 | KingbaseES Engine | KingbaseES 引擎 | 通过 `engine_type=kingbase` 登记的 KingbaseES V9R1C10 `V009R001C010B0004` 数据库 Engine Instance；首版固定 `DB_MODE=pg`，以 schema/table 为 Engine Catalog 业务路径。 | KingbaseES 是独立引擎类型，不登记为 PostgreSQL 或 openGauss；PostgreSQL wire protocol、`lib/pq`、COPY、`ON CONFLICT` 和 SQL 方言复用只限已通过真实介质认证的非空间关系能力，不自动获得 PostGIS、CDC、PostgreSQL 扩展或 openGauss `MERGE` 能力。 |
+| DM8 Engine | 达梦 DM8 引擎 | 通过 `engine_type=dameng` 登记的 DM8 `03134284604-20260707-335949-20228` ARM64 数据库 Engine Instance；首版以 schema/table 为 Engine Catalog 业务路径。 | 插件控制面可由 macOS 开发模式 System 加载；官方 Go 驱动只允许从同版本官方介质在 Linux ARM64 Docker 内原样注入并执行。宿主机 System 的登记不等于宿主进程具备连接能力，也不得据本机 Docker 结果声明通用 ARM64 或生产支持。 |
 | TiDB Engine | TiDB 引擎 | 通过 `engine_type=tidb` 登记的 TiDB 8.5.8 数据库 Engine Instance；首版使用 MySQL 协议与 SQL 方言，以 database/table 为 Engine Catalog 业务路径。 | TiDB 是独立引擎类型，不登记为 MySQL；MySQL 兼容只用于复用驱动、SQL 方言和已经过真实 TiDB 门禁认证的非空间关系能力，不自动获得 MySQL replication、CDC、分区变化应用或空间能力。 |
 | File Geodatabase | 文件地理数据库 | ArcGIS `.gdb` 目录承载的多图层矢量容器格式；ADDP 使用 `format=filegdb + layout=whole + data_type=container` 表达，feature class / table 是容器 child。 | 内置开源数据面使用 GDAL OpenFileGDB；普通图层读写不等同 Enterprise Geodatabase、SDE 注册、拓扑或版本化支持。 |
 | Microsoft Access Database | Microsoft Access 数据库 | Microsoft Jet / Access `.mdb` 承载的通用数据库容器格式；ADDP 使用 `format=access + layout=single + data_type=container` 表达。 | `.mdb` 后缀和 `application/x-msaccess` MIME 只证明 Access 容器候选，不能证明它是 ArcGIS Personal Geodatabase。 |
@@ -520,7 +521,8 @@
 | technical metadata search projection | 技术元数据搜索投影 | 只包含 DataItem 身份、名称、路径、类型、结构、字段定义和规模等 Meta 技术事实的可重建搜索投影。 | 不包含数据行、字段值、文件正文、正文预览或正文派生属性；它不是 Security `search_index` 数据出口动作。 |
 | content search projection | 数据内容搜索投影 | 包含文件正文、正文预览、数据值或其派生摘要、关键词、作者等内容信息的可重建搜索投影。 | 属于 Security `search_index` 数据出口；已纳管 DataItem 必须命中本地有效投影和独立执行器，缺失时失效关闭。 |
 | capability | 能力 | 引擎、当前进程格式实现或数据项呈现的能力。 | engine capability、format descriptor / provider status、item capability 含义不同。 |
-| official-media technical fixture | 官方介质技术夹具 | 使用固定厂商介质、完整性摘要和 disposable 生命周期验证原生运行时、驱动协议与 SQL 边界的技术环境。 | 只证明介质与协议准入，不创建 Engine Instance，不登记 `engine_type`，也不构成 capability 声明。 |
+| official-media technical fixture | 官方介质技术夹具 | 使用固定厂商介质、完整性摘要和 disposable 生命周期验证原生运行时、驱动协议与 SQL 边界的技术环境。 | 夹具自身不调用 System API，也不替代 Provider 准入与 capability 声明；独立 Provider 已准入后，夹具可作为技术验证 Engine Instance 的数据面。 |
+| official-driver execution boundary | 官方驱动执行边界 | 商业数据库官方驱动依法从固定官方介质注入、且真正加载该驱动并访问数据库的进程运行边界。 | DM8 当前固定为 Linux ARM64 Docker；仓库、镜像仓库和 Artifact 不保存或重分发驱动。System 控制面登记可位于边界外，但连接检测和数据面 Provider 调用必须位于边界内。 |
 | spatial | 空间能力 | 描述空间字段、CRS、范围、几何类型、空间索引等横切语义。 | 是横切能力，不是 data type。 |
 | CRS definition conversion | CRS 定义转换 | 在不改变几何坐标和 CRS 身份的前提下，把同一 CRS 的定义在 WKT、ESRI WKT、Proj4、PROJJSON 等表达之间转换。 | 不等于坐标重投影；当前由 GeoPython Workflow `crs_to_projjson` direct 算子执行。 |
 | quick view | 快显 | Manager 空间预览中的高性能地图浏览模式。 | 快显是 UI 能力，不是任务，也不是瓦片缓存产物。 |

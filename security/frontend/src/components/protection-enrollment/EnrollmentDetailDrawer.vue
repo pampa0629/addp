@@ -53,10 +53,9 @@
       />
 
       <EnrollmentGovernanceSection
-        v-if="permissions.readFindings || permissions.readAssessments"
+        v-if="governance.visible"
         :enrollment="enrollment"
         :governance="governance"
-        :permissions="permissions"
         :presentation="presentation.governance"
         @update:findings-page="emit('update:findingsPage', $event)"
         @designate="emit('designate')"
@@ -70,12 +69,12 @@
       />
 
       <EnrollmentExemptionSection
-        v-if="permissions.readExemptions"
+        v-if="exemptions.visible"
         ref="exemptionSectionRef"
-        :loading="governance.exemptionsLoading"
-        :exemptions="governance.exemptions"
-        :focused-exemption-id="governance.focusedExemptionId"
-        :can-revoke="permissions.revokeExemptions"
+        :loading="exemptions.loading"
+        :exemptions="exemptions.items"
+        :focused-exemption-id="exemptions.focusedId"
+        :can-revoke="exemptions.canRevoke"
         :assessment-component="presentation.exemption.assessmentComponent"
         :exemption-state-presentation="presentation.exemption.state"
         :owner-label="presentation.exemption.ownerLabel"
@@ -124,14 +123,14 @@
       </el-collapse>
 
       <div class="detail-actions">
-        <el-button v-if="permissions.createEnrollment && enrollment.state === 'released'" type="primary" @click="emit('reEnroll', enrollment)">
+        <el-button v-if="lifecycle.canCreate && enrollment.state === 'released'" type="primary" @click="emit('reEnroll', enrollment)">
           {{ t('security.enrollment.reEnroll') }}
         </el-button>
-        <el-button v-if="permissions.updateEnrollment && ['enrolling', 'active'].includes(enrollment.state)" @click="emit('rediscover', enrollment)">
+        <el-button v-if="lifecycle.canUpdate && ['enrolling', 'active'].includes(enrollment.state)" @click="emit('rediscover', enrollment)">
           {{ t('security.enrollment.rediscover') }}
         </el-button>
         <el-button
-          v-if="permissions.updateEnrollment && !['releasing', 'released'].includes(enrollment.state)"
+          v-if="lifecycle.canUpdate && !['releasing', 'released'].includes(enrollment.state)"
           type="danger"
           plain
           @click="emit('release', enrollment, presentation.resource.isZeroFindingDiscovery(enrollment) ? 'no_supported_findings' : 'manual')"
@@ -155,7 +154,8 @@ defineProps({
   enrollment: { type: Object, default: null },
   refreshState: { type: Object, required: true },
   governance: { type: Object, required: true },
-  permissions: { type: Object, required: true },
+  exemptions: { type: Object, required: true },
+  lifecycle: { type: Object, required: true },
   presentation: { type: Object, required: true }
 })
 

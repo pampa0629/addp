@@ -6,11 +6,11 @@
         <p>{{ t('security.finding.governanceHint') }}</p>
       </div>
       <div class="finding-section__actions">
-        <el-tag v-if="presentation.normalizeDiscoverySummary(enrollment).pendingReviewCount > 0" type="warning">
-          {{ t('security.finding.pendingCount', { count: presentation.normalizeDiscoverySummary(enrollment).pendingReviewCount }) }}
+        <el-tag v-if="presentation.summary(enrollment).pendingReviewCount > 0" type="warning">
+          {{ t('security.finding.pendingCount', { count: presentation.summary(enrollment).pendingReviewCount }) }}
         </el-tag>
         <el-button
-          v-if="permissions.createAssessments && !['releasing', 'released'].includes(enrollment.state)"
+          v-if="governance.createAssessments && !['releasing', 'released'].includes(enrollment.state)"
           type="primary"
           plain
           @click="emit('designate')"
@@ -23,34 +23,15 @@
     <el-skeleton v-if="governance.loading" :rows="3" animated />
     <template v-else>
       <EnrollmentFindingList
-        v-if="permissions.readFindings && governance.findings.length > 0"
+        v-if="governance.readFindings && governance.findings.length > 0"
         :page="governance.findingsPage"
         :findings="governance.findings"
         :total="governance.findingsTotal"
         :page-size="governance.findingsPageSize"
-        :can-review="permissions.reviewFindings"
-        :can-update-assessments="permissions.updateAssessments"
-        :can-revoke-policies="permissions.revokePolicies"
-        :type-name="presentation.typeName"
-        :finding-state-presentation="presentation.findingState"
-        :capability-name="presentation.capabilityName"
-        :evidence-description="presentation.evidenceDescription"
-        :evidence-audit-description="presentation.evidenceAuditDescription"
-        :capability-text="presentation.capabilityText"
-        :capability-scope="presentation.capabilityScope"
-        :confidence-label="presentation.confidenceLabel"
-        :decision-presentation="presentation.decision"
-        :effective-definition-summary="presentation.effectiveDefinitionSummary"
-        :baseline-description="presentation.baselineDescription"
-        :assessment-for-finding="presentation.assessmentForFinding"
-        :active-assessment-for-finding="presentation.activeAssessmentForFinding"
-        :assessment-protection-summary="presentation.assessmentProtectionSummary"
-        :owner-label="presentation.ownerLabel"
-        :outlet-rule-description="presentation.outletRuleDescription"
-        :outlet-acknowledgement-presentation="presentation.outletAcknowledgement"
-        :format-date-time="presentation.formatDateTime"
-        :can-configure-policy="presentation.canConfigurePolicy"
-        :policy-for-assessment="presentation.policyForAssessment"
+        :can-review="governance.reviewFindings"
+        :can-update-assessments="governance.updateAssessments"
+        :can-revoke-policies="governance.revokePolicies"
+        :presentation="presentation.findings"
         @update:page="emit('update:findingsPage', $event)"
         @review="forwardFindingReview"
         @history="emit('history', $event)"
@@ -64,13 +45,9 @@
       <EnrollmentAssessmentList
         v-if="governance.manualAssessments.length > 0"
         :assessments="governance.manualAssessments"
-        :can-update="permissions.updateAssessments"
-        :can-revoke-policies="permissions.revokePolicies"
-        :assessment-summary="presentation.assessmentSummary"
-        :assessment-protection-summary="presentation.assessmentProtectionSummary"
-        :assessment-conclusion-label="presentation.assessmentConclusionLabel"
-        :can-configure-policy="presentation.canConfigurePolicy"
-        :policy-for-assessment="presentation.policyForAssessment"
+        :can-update="governance.updateAssessments"
+        :can-revoke-policies="governance.revokePolicies"
+        :presentation="presentation.assessments"
         @history="emit('history', $event)"
         @revise="emit('revise', $event)"
         @configure-policy="emit('configurePolicy', $event)"
@@ -95,7 +72,6 @@ import EnrollmentFindingList from './EnrollmentFindingList.vue'
 defineProps({
   enrollment: { type: Object, required: true },
   governance: { type: Object, required: true },
-  permissions: { type: Object, required: true },
   presentation: { type: Object, required: true }
 })
 

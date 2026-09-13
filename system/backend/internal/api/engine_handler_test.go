@@ -65,6 +65,7 @@ func TestListEngineTypesReturnsPluginDescriptors(t *testing.T) {
 		t.Fatalf("descriptor count = %d, want registry count %d", len(response), len(expected))
 	}
 	foundOceanBase := false
+	foundDameng := false
 	for index := 1; index < len(response); index++ {
 		if response[index-1].Type >= response[index].Type {
 			t.Fatalf("descriptors are not sorted: %q then %q", response[index-1].Type, response[index].Type)
@@ -80,9 +81,18 @@ func TestListEngineTypesReturnsPluginDescriptors(t *testing.T) {
 				t.Fatalf("OceanBase descriptor = %#v", descriptor)
 			}
 		}
+		if descriptor.Type == "dameng" {
+			foundDameng = true
+			if descriptor.ConnectionSpec.DefaultPortValue() != 5236 || descriptor.Capabilities.EngineType != "dameng" {
+				t.Fatalf("DM8 descriptor = %#v", descriptor)
+			}
+		}
 	}
 	if !foundOceanBase {
 		t.Fatal("OceanBase descriptor is missing")
+	}
+	if !foundDameng {
+		t.Fatal("DM8 descriptor is missing")
 	}
 	if response[0].ConnectionSpec.SchemaVersion != engineplugin.ConnectionSpecSchemaVersion {
 		t.Fatalf("connection spec schema = %q", response[0].ConnectionSpec.SchemaVersion)

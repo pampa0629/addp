@@ -80,11 +80,24 @@ query_contains() {
     printf '%s\n' "$output" | grep -Fq "$expected"
 }
 
+business_query_contains() {
+    local sql=$1
+    local expected=$2
+    local output
+
+    output=$(printf '%s\nEXIT\n' "$sql" | dameng_business_disql "$CONTAINER_NAME" 2>&1) || return 1
+    if printf '%s\n' "$output" | grep -Eiq 'error\[|\[-[0-9]+\]'; then
+        printf '%s\n' "$output" >&2
+        return 1
+    fi
+    printf '%s\n' "$output" | grep -Fq "$expected"
+}
+
 initialize_sample() {
     run_sql_file "$ROOT_DIR/business/dameng/init.sql"
-    query_contains "SELECT ENGINE_NAME FROM ADDP_ENGINE_PROBE WHERE ID = 1;" "DM8 ARM64 technical fixture" ||
+    business_query_contains "SELECT ENGINE_NAME FROM ADDP_ENGINE_PROBE WHERE ID = 1;" "DM8 ARM64 technical fixture" ||
         fail "DM8 Business sample probe is missing"
-    query_contains "SELECT COUNT(*) FROM ADDP_RELATIONAL_SAMPLE;" "3" ||
+    business_query_contains "SELECT COUNT(*) FROM ADDP_RELATIONAL_SAMPLE;" "3" ||
         fail "DM8 Business relational sample is incomplete"
 }
 
@@ -108,8 +121,8 @@ case "$action" in
         for _ in $(seq 1 120); do
             if container_running && dameng_container_ready "$CONTAINER_NAME"; then
                 initialize_sample
-                echo "Business DM8 ARM64 technical fixture is ready on 127.0.0.1:$HOST_PORT"
-                echo "This local trial fixture is not an ADDP engine registration and expires on 2027-07-07."
+                echo "Business DM8 ARM64 database is ready on 127.0.0.1:$HOST_PORT"
+                echo "Register engine_type=dameng with user $DAMENG_BUSINESS_USER; the local trial expires on 2027-07-07."
                 exit 0
             fi
             container_running || fail "DM8 Business container exited before readiness"
@@ -127,8 +140,8 @@ case "$action" in
     status)
         container_running || fail "$CONTAINER_NAME is not running"
         dameng_container_ready "$CONTAINER_NAME" || fail "DM8 Business database is not ready"
-        query_contains "SELECT ENGINE_NAME FROM ADDP_ENGINE_PROBE WHERE ID = 1;" "DM8 ARM64 technical fixture" ||
+        business_query_contains "SELECT ENGINE_NAME FROM ADDP_ENGINE_PROBE WHERE ID = 1;" "DM8 ARM64 technical fixture" ||
             fail "DM8 Business sample probe is missing"
-        echo "Business DM8 ARM64 technical fixture is ready"
+        echo "Business DM8 ARM64 database is ready"
         ;;
 esac

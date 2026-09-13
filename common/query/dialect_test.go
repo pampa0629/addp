@@ -39,6 +39,7 @@ func TestDialectPlaceholderUsesDriverSyntax(t *testing.T) {
 	}{
 		{dialect: DialectPostgreSQL, position: 3, want: "$3"},
 		{dialect: DialectOracle, position: 4, want: ":4"},
+		{dialect: DialectDameng, position: 4, want: "?"},
 		{dialect: DialectMySQL, position: 9, want: "?"},
 	}
 	for _, tt := range tests {
@@ -69,6 +70,19 @@ func TestOracleSelectTableSQLUsesFetchPagination(t *testing.T) {
 	want := `SELECT * FROM "BUSINESS"."ORDERS" ORDER BY "ID" OFFSET 20 ROWS FETCH NEXT 10 ROWS ONLY`
 	if got != want {
 		t.Fatalf("SelectTableSQL() = %q, want %q", got, want)
+	}
+}
+
+func TestDamengUsesOracleStylePagination(t *testing.T) {
+	t.Parallel()
+
+	got := ForDialect(DialectDameng).SelectTableSQL("*", "ADDP", "ORDERS", "", `"ID"`, 10, 20)
+	want := `SELECT * FROM "ADDP"."ORDERS" ORDER BY "ID" OFFSET 20 ROWS FETCH NEXT 10 ROWS ONLY`
+	if got != want {
+		t.Fatalf("SelectTableSQL() = %q, want %q", got, want)
+	}
+	if got := ForDialect(DialectDameng).PaginateQuerySQL("SELECT * FROM ORDERS;", 50, 100); got != "SELECT * FROM (SELECT * FROM ORDERS) addp_page OFFSET 100 ROWS FETCH NEXT 50 ROWS ONLY" {
+		t.Fatalf("PaginateQuerySQL() = %q", got)
 	}
 }
 

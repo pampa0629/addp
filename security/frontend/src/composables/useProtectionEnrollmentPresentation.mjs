@@ -309,11 +309,6 @@ export function useProtectionEnrollmentPresentation({
     return assessments.value.find(item => item.id === id) || null
   }
 
-  function activeAssessmentForFinding(finding) {
-    const assessment = assessmentForFinding(finding)
-    return assessment?.current?.conclusion === 'sensitive' ? assessment : null
-  }
-
   function assessmentRevisionSummary(revision) {
     return t('security.assessment.summary', {
       type: typeName(revision?.sensitive_data_type_id),
@@ -355,24 +350,50 @@ export function useProtectionEnrollmentPresentation({
       && item.action === 'preview') || null
   }
 
-  function stricterPolicyEffects(assessment) {
-    const baseline = baselineForAssessment(assessment)
+  function stricterPolicyEffectsForBaseline(baseline) {
     return ['mask', 'suppress', 'deny'].filter(effect => isProtectionEffectStricter(effect, baseline?.effect))
   }
 
-  function canConfigurePolicy(assessment) {
-    if (!canReadPolicies.value || stricterPolicyEffects(assessment).length === 0) return false
-    return policyForAssessment(assessment) ? canUpdatePolicies.value : canCreatePolicies.value
+  function canConfigurePolicyFromContext(baseline, policy) {
+    if (!canReadPolicies.value || stricterPolicyEffectsForBaseline(baseline).length === 0) return false
+    return policy ? canUpdatePolicies.value : canCreatePolicies.value
   }
 
-  function assessmentProtectionSummary(assessment) {
-    const baseline = baselineForAssessment(assessment)
+  function protectionSummaryFromContext(baseline, policy) {
     if (!baseline) return t('security.policy.baselineMissing')
-    const policy = policyForAssessment(assessment)
     if (policy?.state === 'active' && isProtectionEffectStricter(policy.current?.effect, baseline.effect)) {
       return t('security.policy.activeSummary', { baseline: effectLabel(baseline.effect), policy: effectLabel(policy.current?.effect) })
     }
     return t('security.policy.defaultSummary', { baseline: effectLabel(baseline.effect) })
+  }
+
+  function stricterPolicyEffects(assessment) {
+    return stricterPolicyEffectsForBaseline(baselineForAssessment(assessment))
+  }
+
+  function canConfigurePolicy(assessment) {
+    return canConfigurePolicyFromContext(baselineForAssessment(assessment), policyForAssessment(assessment))
+  }
+
+  function assessmentProtectionSummary(assessment) {
+    return protectionSummaryFromContext(baselineForAssessment(assessment), policyForAssessment(assessment))
+  }
+
+  function findingAssessmentView(finding) {
+    const assessment = assessmentForFinding(finding)
+    const activeAssessment = assessment?.current?.conclusion === 'sensitive' ? assessment : null
+    if (!activeAssessment) {
+      return { current: assessment, active: null, policy: null, canConfigurePolicy: false, protectionSummary: '' }
+    }
+    const baseline = baselineForAssessment(activeAssessment)
+    const policy = policyForAssessment(activeAssessment)
+    return {
+      current: assessment,
+      active: activeAssessment,
+      policy,
+      canConfigurePolicy: canConfigurePolicyFromContext(baseline, policy),
+      protectionSummary: protectionSummaryFromContext(baseline, policy)
+    }
   }
 
   function activeGradesForType(typeID) {
@@ -419,8 +440,7 @@ export function useProtectionEnrollmentPresentation({
     outletRuleDescription,
     outletAcknowledgementPresentation,
     findingStatePresentation,
-    activeAssessmentForFinding,
-    assessmentForFinding,
+    findingAssessmentView,
     assessmentSummary,
     assessmentRevisionSummary,
     assessmentConclusionLabel,

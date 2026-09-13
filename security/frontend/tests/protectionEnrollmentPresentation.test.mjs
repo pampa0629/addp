@@ -131,11 +131,22 @@ describe('protected-resource presentation model', () => {
     expect(presentation.canConfigurePolicy(assessment)).toBe(false)
   })
 
-  it('links findings to their current formal assessment only when it remains sensitive', () => {
+  it('derives each finding assessment and policy view through one row model', () => {
     const { presentation } = createPresentation()
 
-    expect(presentation.activeAssessmentForFinding({ explanation: { assessment_id: 'assessment-1' } })?.id).toBe('assessment-1')
-    expect(presentation.activeAssessmentForFinding({ explanation: { assessment_id: 'assessment-2' } })).toBeNull()
+    const sensitive = presentation.findingAssessmentView({ explanation: { assessment_id: 'assessment-1' } })
+    expect(sensitive.current?.id).toBe('assessment-1')
+    expect(sensitive.active?.id).toBe('assessment-1')
+    expect(sensitive.policy?.id).toBe('policy-1')
+    expect(sensitive.canConfigurePolicy).toBe(true)
+    expect(sensitive.protectionSummary).toContain('security.policy.activeSummary')
+
+    const notSensitive = presentation.findingAssessmentView({ explanation: { assessment_id: 'assessment-2' } })
+    expect(notSensitive.current?.id).toBe('assessment-2')
+    expect(notSensitive.active).toBeNull()
+    expect(notSensitive.policy).toBeNull()
+    expect(notSensitive.canConfigurePolicy).toBe(false)
+    expect(notSensitive.protectionSummary).toBe('')
     expect(presentation.assessmentComponent('assessment-1')).toBe('security.exemption.unknownField')
     expect(presentation.assessmentConclusionLabel('other')).toBe('security.assessment.conclusions.not_sensitive')
   })

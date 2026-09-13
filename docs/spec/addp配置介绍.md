@@ -392,7 +392,7 @@ Business KingbaseES 不进入通用 `.env` 或 `scripts/start.sh -all`。`busine
 
 KingbaseES T5、T2 与 T4 workflow 的 `addp-kingbase` GitHub Environment 只配置 Repository Variable `ADDP_KINGBASE_GATE_ENV_FILE`，值为专用 Runner 上仓库外 owner-only 文件的绝对路径。该文件权限必须拒绝 group/other，至少包含 `ADDP_KINGBASE_LICENSE_FILE`、`ADDP_KINGBASE_LICENSE_SHA256` 与 T2 使用的 `ADDP_TEST_KINGBASE_PASSWORD`；License 路径同样必须位于仓库外。不得把 License 内容、License 路径、数据库密码或环境文件内容保存到 GitHub Repository Secret、checkout、日志或 Artifact。
 
-Business 达梦 DM8 ARM64 技术夹具不进入通用 `.env`、`scripts/start.sh -all` 或 System Engine 配置。`business/scripts/start.sh -dameng` 必须独立调用，仅从当前 shell 接受可选 `DAMENG_PORT` 和仓库外临时介质缓存目录 `ADDP_DAMENG_MEDIA_CACHE`；数据库测试账号与初始化密码固定在 disposable 本地镜像路线中，不得用于生产。脚本只接受 Docker Server `linux/arm64`，校验官方 ZIP 与内层 ISO SHA-256 后构建 `addp/dameng:dm8-20260708-arm64`，并用无卷 `business-dameng` 暴露 `127.0.0.1:${DAMENG_PORT:-5236}`。介质、镜像和官方驱动不进入 checkout 或 Artifact；当前不新增 DM8 Engine 连接变量，也不允许上层模块消费该夹具。
+Business 达梦 DM8 ARM64 不进入通用 `.env` 或 `scripts/start.sh -all`。`business/scripts/start.sh -dameng` 必须独立调用，仅从当前 shell 接受可选 `DAMENG_PORT` 和仓库外临时介质缓存目录 `ADDP_DAMENG_MEDIA_CACHE`；数据库测试账号与初始化密码固定在 disposable 本地镜像路线中，不得用于生产。脚本只接受 Docker Server `linux/arm64`，校验官方 ZIP 与内层 ISO SHA-256 后构建 `addp/dameng:dm8-20260708-arm64`，并用无卷 `business-dameng` 暴露 `127.0.0.1:${DAMENG_PORT:-5236}`。System 使用插件 ConnectionSpec 保存 `engine_type=dameng` 的 `host`、`port`、`user`、`password`；官方驱动仅由专用脚本从同版本镜像提取并校验后注入 Linux ARM64 Docker 执行进程，不进入 checkout、Module cache 或 Artifact。
 
 ```bash
 OPENGAUSS_PASSWORD=change-in-production

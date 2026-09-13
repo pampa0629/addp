@@ -16,7 +16,7 @@
 - **TiDB 8.5.8**：Apache 2.0 的国产分布式 SQL 数据库测试源，端口 4000；固定使用 PingCAP 官方 PD/TiKV/TiDB 三组件镜像及 OCI digest，不提供镜像覆盖入口。
 - **openGauss 6.0.6 LTS**：Apache 2.0 授权、PG 兼容模式的国产关系数据库测试源，端口 5435；当前只在具备 NUMA 的 Linux x86_64 主机使用并校验官方 Docker tar，统一加载为 `opengauss:6.0.6`。
 - **KingbaseES V9R1C10**：固定 `V009R001C010B0004` 官方 Docker tar 与 SHA-256、使用 owner 正规 License 的 PG 模式国产关系数据库测试源，端口 5436；只通过 owner-managed Linux x86_64 disposable 生命周期启动。
-- **达梦 DM8 ARM64 技术夹具**：固定鲲鹏 920/麒麟 10 SP1 官方安装 ZIP 与双层 SHA-256，本机只构建不可推送的 disposable 镜像，端口 5236；不代表 ADDP 已注册 DM8 Engine。
+- **达梦 DM8 ARM64**：固定鲲鹏 920/麒麟 10 SP1 官方安装 ZIP、服务端/驱动 SHA-256，本机只构建不可推送的 disposable 镜像，端口 5236；以独立 `engine_type=dameng` 登记，真实 Provider 只在 Linux ARM64 Docker 中执行。
 - **Apache Doris**：实时分析数据库，端口 9030, 8030
 - **Apache Spark**：分布式计算引擎，主机端口 7077、18088、11000；默认 Worker 为 Thrift 查询和工作流执行分别保留执行资源
 - **Redpanda**：兼容 Kafka API 的业务消息流，端口 29092
@@ -172,7 +172,7 @@ business/
 | TiDB | - | 端口 4000 |
 | openGauss | - | 端口 5435 |
 | KingbaseES | - | 端口 5436；仅 owner-managed disposable 样例 |
-| 达梦 DM8 | - | 端口 5236；仅 ARM64 官方介质技术夹具 |
+| 达梦 DM8 | - | 端口 5236；ARM64 官方介质 disposable 数据库 |
 | 用途 | ADDP 元数据（用户、资源配置、任务定义） | 用户业务数据（上传的数据、文件） |
 | 示例数据 | 用户账号、资源配置表 | Shapefile 空间数据表、用户上传文件 |
 
@@ -189,7 +189,7 @@ openGauss 不使用 Docker Hub 第三方镜像。`scripts/lib/opengauss-official
 
 KingbaseES 不使用第三方镜像，也不把官方介质或 License 写入仓库、Compose、日志或 Artifact。`scripts/lib/kingbase-official-media.sh` 固定 V9R1C10 `V009R001C010B0004` 官方 x86_64 与 ARM64 tar、官方 MD5 和 ADDP 校验的 SHA-256，并按宿主 CPU 选择后统一加载为固定中性本地镜像；`business/docker-compose.yml` 只声明一个独立 `kingbase` profile 和无卷容器结构。`business/scripts/kingbase.sh` 要求仓库外 `ADDP_KINGBASE_LICENSE_FILE` 及其 `ADDP_KINGBASE_LICENSE_SHA256`，按 `docker compose create`、License 注入、`docker compose start` 的唯一顺序启动，容器因此显示在 Docker Desktop 的 `business` Compose 分组中。macOS ARM64 可使用官方 ARM64 介质做本地功能评估，但内置 90 天试用 License 不作为可重复门禁路线；正式 T5/T2/T4 仍只在 owner-managed Linux x86_64 Runner 使用正规 License，GitHub Hosted 与 macOS Docker Desktop 不承担正式验证。
 
-达梦 DM8 只使用 `dm8_20260708_HWarm920_kylin10_sp1_64.zip`，外层 ZIP SHA-256 为 `d6871147cd4a04e1595d9dedf9d05245c55b17bff2ae738dded37fe568df9824`，内层 ISO SHA-256 为 `2a8a4844527e901718a88b4c747d7fd44460bcb2a862956bba98146760b8423e`。`bash scripts/start.sh -dameng` 仅接受 Docker Server `linux/arm64`，在本机从官方介质构建 `addp/dameng:dm8-20260708-arm64` 并启动无卷 `dameng` profile；不会上传、归档或重分发介质与镜像。该介质面向鲲鹏 920/麒麟 10 SP1，本机 Ubuntu ARM64 容器只属于非认证 ABI 技术验证；内置试用授权固定于 2027-07-07 到期，不能作为长期门禁或通过重建重置。官方 ODBC 和 Go 连接验证在 Linux ARM64 容器内执行，macOS 宿主 ADDP 进程不加载 Linux `.so`，所以当前不注册 `engine_type=dameng`，也不进入 Provider、T2 或 T4。
+达梦 DM8 只使用 `dm8_20260708_HWarm920_kylin10_sp1_64.zip`，外层 ZIP SHA-256 为 `d6871147cd4a04e1595d9dedf9d05245c55b17bff2ae738dded37fe568df9824`，内层 ISO SHA-256 为 `2a8a4844527e901718a88b4c747d7fd44460bcb2a862956bba98146760b8423e`，同介质官方 Go 驱动 ZIP SHA-256 为 `96516ecd7c9ec3c405109b81135f2c9d87ed0631632e99cd2de0e06f03b1392e`。`bash scripts/start.sh -dameng` 仅接受 Docker Server `linux/arm64`，在本机从官方介质构建 `addp/dameng:dm8-20260708-arm64` 并启动无卷 `dameng` profile；不会上传、归档或重分发介质、驱动与镜像。该介质面向鲲鹏 920/麒麟 10 SP1，本机 Ubuntu ARM64 容器只属于非认证 ABI 技术验证；内置试用授权固定于 2027-07-07 到期，不能作为长期门禁或通过重建重置。System 可在 macOS 开发模式登记 `engine_type=dameng`，但宿主进程不执行连接测试；真实 Provider T2/T4 从运行中的 Business 镜像提取并校验官方驱动后，在 Linux ARM64 Docker 内执行。
 
 ## 脚本说明
 
@@ -218,7 +218,7 @@ TiDB Provider 的唯一 T2 入口是仓库根 `make test-common-tidb`。门禁�
 
 `bash scripts/start.sh -kingbase` 在 owner-managed Linux x86_64 主机启动 `kingbase` Compose profile 下的无卷 KingbaseES PG 模式容器，并反复执行 `business/kingbase/init.sql` 收敛探针、`customers`、`products`、`orders` 与 `order_items` 样例。调用前必须从 owner-only 当前 shell 注入 `KINGBASE_PASSWORD`、`ADDP_KINGBASE_LICENSE_FILE` 与 `ADDP_KINGBASE_LICENSE_SHA256`；可选覆盖 `KINGBASE_DATABASE`、`KINGBASE_USER` 与 `KINGBASE_PORT`。该选项必须独立使用，且不属于 `-all`。System 中必须注册为 `engine_type=kingbase`，宿主机连接 `127.0.0.1:${KINGBASE_PORT:-5436}`。停止和重启分别使用 `bash scripts/stop.sh -kingbase`、`bash scripts/restart.sh -kingbase`；状态检查使用 `bash scripts/kingbase.sh status`。停止会删除本轮容器并验证零残留。
 
-`bash scripts/start.sh -dameng` 在 ARM64 Docker Server 上构建并启动 DM8 官方介质技术夹具，反复执行 `business/dameng/init.sql` 收敛 `ADDP_ENGINE_PROBE` 与 `ADDP_RELATIONAL_SAMPLE`。宿主机连接为 `127.0.0.1:${DAMENG_PORT:-5236}`，固定测试用户为 `SYSDBA`；该连接只用于手工技术观察，ADDP 当前不能注册它。停止使用 `bash scripts/stop.sh -dameng`，状态检查使用 `bash scripts/dameng.sh status`；停止会删除本轮容器并验证零残留，本地镜像与官方介质缓存由显式清理或 T5 owner 门禁回收。
+`bash scripts/start.sh -dameng` 在 ARM64 Docker Server 上构建并启动 DM8 官方介质数据库，反复执行 `business/dameng/init.sql` 收敛 `ADDP_ENGINE_PROBE` 与 `ADDP_RELATIONAL_SAMPLE`。宿主机连接为 `127.0.0.1:${DAMENG_PORT:-5236}`，固定 disposable 测试用户由脚本创建；System 以 `engine_type=dameng` 登记该端点。停止使用 `bash scripts/stop.sh -dameng`，状态检查使用 `bash scripts/dameng.sh status`；停止会删除本轮容器并验证零残留，本地镜像与官方介质缓存由显式清理或 T5 owner 门禁回收。
 
 ### scripts/online-workbench-mysql-fixture.sh - Workbench T4 MySQL Fixture
 

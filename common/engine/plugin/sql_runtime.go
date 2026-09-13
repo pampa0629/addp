@@ -129,11 +129,11 @@ func BeginControlledReadOnlySQLTransaction(ctx context.Context, db *sql.DB, dial
 	dialectName := strings.ToLower(strings.TrimSpace(dialect))
 	switch boundary {
 	case ControlledReadOnlySQLBoundaryDatabaseTransaction:
-		if dialectName != commonquery.DialectPostgreSQL && dialectName != commonquery.DialectMySQL && dialectName != commonquery.DialectOracle {
+		if dialectName != commonquery.DialectPostgreSQL && dialectName != commonquery.DialectMySQL && dialectName != commonquery.DialectOracle && dialectName != commonquery.DialectDameng {
 			return nil, fmt.Errorf("SQL 方言 %s 不支持数据库事务只读边界", dialect)
 		}
 		var options *sql.TxOptions
-		if dialectName == commonquery.DialectOracle {
+		if dialectName == commonquery.DialectOracle || dialectName == commonquery.DialectDameng {
 			if isolation != sql.LevelDefault {
 				options = &sql.TxOptions{Isolation: isolation}
 			}
@@ -144,7 +144,7 @@ func BeginControlledReadOnlySQLTransaction(ctx context.Context, db *sql.DB, dial
 		if err != nil {
 			return nil, err
 		}
-		if dialectName == commonquery.DialectOracle {
+		if dialectName == commonquery.DialectOracle || dialectName == commonquery.DialectDameng {
 			if _, err := tx.ExecContext(ctx, "SET TRANSACTION READ ONLY"); err != nil {
 				_ = tx.Rollback()
 				return nil, fmt.Errorf("设置只读事务失败：%w", err)

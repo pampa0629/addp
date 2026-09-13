@@ -130,7 +130,7 @@ if printf '%s\n' "$fixture_output" | grep -Eiq 'error\[|\[-[0-9]+\]'; then
     printf '%s\n' "$fixture_output" >&2
     exit 1
 fi
-probe_output=$(printf 'SELECT ENGINE_NAME FROM ADDP_ENGINE_PROBE WHERE ID = 1;\nEXIT\n' | dameng_disql "$CONTAINER_NAME" 2>&1)
+probe_output=$(printf 'SELECT ENGINE_NAME FROM ADDP_BUSINESS.ADDP_ENGINE_PROBE WHERE ID = 1;\nEXIT\n' | dameng_disql "$CONTAINER_NAME" 2>&1)
 printf '%s\n' "$probe_output" | grep -Fq 'DM8 ARM64 technical fixture' || {
     echo "DM8 Business sample probe is missing" >&2
     exit 1

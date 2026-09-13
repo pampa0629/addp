@@ -16,6 +16,9 @@ DAMENG_HOME=/opt/dmdbms
 DAMENG_DATABASE_PATH=/opt/dmdata/DAMENG/dm.ini
 DAMENG_DATABASE_USER=SYSDBA
 DAMENG_DATABASE_PASSWORD='AddpDameng8@'
+DAMENG_BUSINESS_USER=ADDP_BUSINESS
+DAMENG_BUSINESS_PASSWORD='AddpBusiness8X'
+DAMENG_OFFICIAL_GO_DRIVER_SHA256=96516ecd7c9ec3c405109b81135f2c9d87ed0631632e99cd2de0e06f03b1392e
 
 dameng_verify_sha256() {
     local expected=$1
@@ -154,6 +157,13 @@ dameng_disql() {
     shift
     docker exec --interactive "$container_name" timeout 30 "$DAMENG_HOME/bin/disql" \
         "$DAMENG_DATABASE_USER/\"$DAMENG_DATABASE_PASSWORD\"@127.0.0.1:$DAMENG_DATABASE_PORT" "$@"
+}
+
+dameng_business_disql() {
+    local container_name=$1
+    shift
+    docker exec --interactive "$container_name" timeout 30 "$DAMENG_HOME/bin/disql" \
+        "$DAMENG_BUSINESS_USER/\"$DAMENG_BUSINESS_PASSWORD\"@127.0.0.1:$DAMENG_DATABASE_PORT" "$@"
 }
 
 dameng_container_ready() {
