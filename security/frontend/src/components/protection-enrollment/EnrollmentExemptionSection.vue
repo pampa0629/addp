@@ -9,30 +9,30 @@
     <el-skeleton v-if="loading" class="exemption-loading" :rows="2" animated />
     <div v-else-if="exemptions.length > 0" class="exemption-list">
       <article
-        v-for="exemption in exemptions"
-        :key="exemption.id"
-        :ref="element => setCardRef(exemption.id, element)"
+        v-for="row in rows"
+        :key="row.id"
+        :ref="element => setCardRef(row.id, element)"
         class="exemption-card"
-        :class="{ 'is-focused': String(exemption.id) === String(focusedExemptionId) }"
+        :class="{ 'is-focused': String(row.id) === String(focusedExemptionId) }"
       >
         <div class="exemption-card__main">
           <div class="exemption-card__title">
-            <strong>{{ assessmentComponent(exemption.assessment_id) }}</strong>
-            <el-tag size="small" :type="exemptionStatePresentation(exemption).type">
-              {{ exemptionStatePresentation(exemption).label }}
+            <strong>{{ row.componentKey }}</strong>
+            <el-tag size="small" :type="row.state.type">
+              {{ row.state.label }}
             </el-tag>
           </div>
-          <span>{{ t('security.exemption.subject') }}：{{ exemption.subject_id }}</span>
-          <span>{{ ownerLabel(exemption.consumer_owner) }} · {{ actionLabel(exemption.action) }}</span>
-          <span>{{ t('security.exemption.expiresAt') }}：{{ formatDateTime(exemption.current?.expires_at) }}</span>
-          <p>{{ exemption.current?.rationale }}</p>
+          <span>{{ t('security.exemption.subject') }}：{{ row.subjectId }}</span>
+          <span>{{ row.outlet }}</span>
+          <span>{{ t('security.exemption.expiresAt') }}：{{ row.expiresAt }}</span>
+          <p>{{ row.rationale }}</p>
         </div>
         <div v-if="canRevoke" class="exemption-card__actions">
           <el-button
-            v-if="exemption.effective_state === 'active'"
+            v-if="row.canRevoke"
             link
             type="danger"
-            @click="emit('revoke', exemption)"
+            @click="emit('revoke', row.exemption)"
           >
             {{ t('security.exemption.revoke') }}
           </el-button>
@@ -44,7 +44,7 @@
 </template>
 
 <script setup>
-import { nextTick, onMounted, watch } from 'vue'
+import { computed, nextTick, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 const props = defineProps({
@@ -52,16 +52,13 @@ const props = defineProps({
   exemptions: { type: Array, required: true },
   focusedExemptionId: { type: [String, Number], default: '' },
   canRevoke: { type: Boolean, default: false },
-  assessmentComponent: { type: Function, required: true },
-  exemptionStatePresentation: { type: Function, required: true },
-  ownerLabel: { type: Function, required: true },
-  actionLabel: { type: Function, required: true },
-  formatDateTime: { type: Function, required: true }
+  presentation: { type: Object, required: true }
 })
 
 const emit = defineEmits(['revoke'])
 const { t } = useI18n()
 const cardRefs = new Map()
+const rows = computed(() => props.exemptions.map(exemption => props.presentation.row(exemption)))
 
 function cardKey(exemptionId) {
   return String(exemptionId ?? '')

@@ -12,25 +12,13 @@
     @closed="emit('closed')"
   >
     <FindingReviewForm
-      v-if="finding"
+      v-if="presentation"
       ref="formRef"
-      :finding="finding"
-      :remaining-label="remainingLabel"
+      :presentation="presentation"
       :basis-expanded="basisExpanded"
       :form="form"
       :rules="rules"
       :sensitive-types="sensitiveTypes"
-      :rationale-placeholder="rationalePlaceholder"
-      :active-grades-for-type="activeGradesForType"
-      :type-name="typeName"
-      :confidence-label="confidenceLabel"
-      :capability-name="capabilityName"
-      :evidence-audit-description="evidenceAuditDescription"
-      :decision-presentation="decisionPresentation"
-      :effective-definition-summary="effectiveDefinitionSummary"
-      :baseline-description="baselineDescription"
-      :owner-label="ownerLabel"
-      :outlet-rule-description="outletRuleDescription"
       @update:basis-expanded="emit('update:basisExpanded', $event)"
       @sensitive-type-change="emit('sensitiveTypeChange', $event)"
     />
@@ -52,24 +40,12 @@ import FindingReviewForm from './FindingReviewForm.vue'
 
 defineProps({
   modelValue: { type: Boolean, default: false },
-  finding: { type: Object, default: null },
-  remainingLabel: { type: String, required: true },
+  presentation: { type: Object, default: null },
   basisExpanded: { type: Array, required: true },
   saving: { type: Boolean, default: false },
   form: { type: Object, required: true },
   rules: { type: Object, required: true },
-  sensitiveTypes: { type: Array, required: true },
-  rationalePlaceholder: { type: String, required: true },
-  activeGradesForType: { type: Function, required: true },
-  typeName: { type: Function, required: true },
-  confidenceLabel: { type: Function, required: true },
-  capabilityName: { type: Function, required: true },
-  evidenceAuditDescription: { type: Function, required: true },
-  decisionPresentation: { type: Function, required: true },
-  effectiveDefinitionSummary: { type: Function, required: true },
-  baselineDescription: { type: Function, required: true },
-  ownerLabel: { type: Function, required: true },
-  outletRuleDescription: { type: Function, required: true }
+  sensitiveTypes: { type: Array, required: true }
 })
 
 const emit = defineEmits(['update:modelValue', 'update:basisExpanded', 'sensitiveTypeChange', 'close', 'closed', 'submit'])

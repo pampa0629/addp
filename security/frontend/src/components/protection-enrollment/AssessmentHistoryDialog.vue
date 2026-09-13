@@ -8,35 +8,35 @@
     @closed="emit('closed')"
   >
     <div v-loading="loading" class="assessment-history">
-      <template v-if="assessment">
+      <template v-if="presentation">
         <div class="policy-target">
-          <strong>{{ assessment.component_key }}</strong>
+          <strong>{{ presentation.componentKey }}</strong>
           <span>{{ t('security.assessment.historyHint') }}</span>
         </div>
-        <el-timeline v-if="assessment.history?.length">
+        <el-timeline v-if="presentation.items.length">
           <el-timeline-item
-            v-for="revision in assessment.history"
-            :key="revision.id"
-            :timestamp="formatDateTime(revision.created_at)"
-            :type="isCurrentRevision(revision) ? 'primary' : undefined"
+            v-for="row in presentation.items"
+            :key="row.id"
+            :timestamp="row.timestamp"
+            :type="row.current ? 'primary' : undefined"
             placement="top"
           >
             <article class="assessment-history__item">
               <div class="assessment-history__header">
-                <strong>{{ t('security.assessment.revisionLabel', { revision: revision.revision }) }}</strong>
-                <el-tag v-if="isCurrentRevision(revision)" size="small" type="primary">
+                <strong>{{ row.revisionLabel }}</strong>
+                <el-tag v-if="row.current" size="small" type="primary">
                   {{ t('security.assessment.currentRevision') }}
                 </el-tag>
-                <el-tag size="small" :type="revision.conclusion === 'sensitive' ? 'success' : 'info'">
-                  {{ assessmentConclusionLabel(revision.conclusion) }}
+                <el-tag size="small" :type="row.conclusion.type">
+                  {{ row.conclusion.label }}
                 </el-tag>
                 <el-tag size="small" effect="plain">
-                  {{ assessmentRevisionSourceLabel(revision.source_kind) }}
+                  {{ row.sourceLabel }}
                 </el-tag>
               </div>
-              <p class="assessment-history__summary">{{ assessmentRevisionSummary(revision) }}</p>
-              <p>{{ revision.rationale }}</p>
-              <small>{{ t('security.assessment.historyMeta', { actor: assessmentActorLabel(revision.created_by), time: formatDateTime(revision.created_at) }) }}</small>
+              <p class="assessment-history__summary">{{ row.summary }}</p>
+              <p>{{ row.rationale }}</p>
+              <small>{{ row.metadata }}</small>
             </article>
           </el-timeline-item>
         </el-timeline>
@@ -52,23 +52,14 @@
 <script setup>
 import { useI18n } from 'vue-i18n'
 
-const props = defineProps({
+defineProps({
   modelValue: { type: Boolean, default: false },
   loading: { type: Boolean, default: false },
-  assessment: { type: Object, default: null },
-  formatDateTime: { type: Function, required: true },
-  assessmentConclusionLabel: { type: Function, required: true },
-  assessmentRevisionSourceLabel: { type: Function, required: true },
-  assessmentRevisionSummary: { type: Function, required: true },
-  assessmentActorLabel: { type: Function, required: true }
+  presentation: { type: Object, default: null }
 })
 
 const emit = defineEmits(['update:modelValue', 'close', 'closed'])
 const { t } = useI18n()
-
-function isCurrentRevision(revision) {
-  return Number(revision?.revision) === Number(props.assessment?.current_revision)
-}
 </script>
 
 <style scoped>

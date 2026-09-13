@@ -1,13 +1,13 @@
 <template>
   <div class="finding-list">
-    <article v-for="{ finding, assessment } in rows" :key="finding.id" class="finding-card">
+    <article v-for="row in rows" :key="row.id" class="finding-card">
       <div class="finding-card__header">
         <div>
-          <strong>{{ finding.component_key }}</strong>
-          <span>{{ presentation.typeName(finding.sensitive_data_type_id) }}</span>
+          <strong>{{ row.componentKey }}</strong>
+          <span>{{ row.sensitiveTypeName }}</span>
         </div>
-        <el-tag size="small" :type="presentation.state(finding).type">
-          {{ presentation.state(finding).label }}
+        <el-tag size="small" :type="row.state.type">
+          {{ row.state.label }}
         </el-tag>
       </div>
       <div class="finding-explanation">
@@ -16,12 +16,12 @@
             <span>1</span>
             <strong>{{ t('security.finding.explanationStages.detection') }}</strong>
           </div>
-          <p class="explanation-primary">{{ presentation.capabilityName(finding) }}</p>
-          <p>{{ presentation.evidenceDescription(finding) }}</p>
+          <p class="explanation-primary">{{ row.detection.name }}</p>
+          <p>{{ row.detection.evidence }}</p>
           <dl class="detection-rule-audit">
             <div>
               <dt>{{ t('security.finding.ruleAudit.actualEvidence') }}</dt>
-              <dd>{{ presentation.evidenceAuditDescription(finding) }}</dd>
+              <dd>{{ row.detection.evidenceAudit }}</dd>
             </div>
             <div class="detection-rule-audit__details">
               <dt>{{ t('security.finding.ruleAudit.details') }}</dt>
@@ -33,23 +33,23 @@
                   <dl class="recognition-rule-details">
                     <div>
                       <dt>{{ t('security.finding.ruleAudit.method') }}</dt>
-                      <dd>{{ presentation.capabilityText(finding, 'method_i18n_key') }}</dd>
+                      <dd>{{ row.detection.method }}</dd>
                     </div>
                     <div>
                       <dt>{{ t('security.finding.ruleAudit.scope') }}</dt>
-                      <dd>{{ presentation.capabilityScope(finding) }}</dd>
+                      <dd>{{ row.detection.scope }}</dd>
                     </div>
                     <div>
                       <dt>{{ t('security.finding.ruleAudit.privacy') }}</dt>
-                      <dd>{{ presentation.capabilityText(finding, 'privacy_i18n_key') }}</dd>
+                      <dd>{{ row.detection.privacy }}</dd>
                     </div>
                     <div>
                       <dt>{{ t('security.finding.ruleAudit.limitations') }}</dt>
-                      <dd>{{ presentation.capabilityText(finding, 'limitations_i18n_key') }}</dd>
+                      <dd>{{ row.detection.limitations }}</dd>
                     </div>
                     <div>
                       <dt>{{ t('security.finding.ruleAudit.version') }}</dt>
-                      <dd class="technical-value">{{ finding.explanation?.capability?.key || finding.detector_version }}</dd>
+                      <dd class="technical-value">{{ row.detection.version }}</dd>
                     </div>
                   </dl>
                 </el-popover>
@@ -57,13 +57,13 @@
             </div>
           </dl>
           <div class="explanation-tags">
-            <el-tag size="small" effect="plain">{{ t('security.finding.confidenceValue', { value: presentation.confidenceLabel(finding.confidence) }) }}</el-tag>
+            <el-tag size="small" effect="plain">{{ t('security.finding.confidenceValue', { value: row.detection.confidence }) }}</el-tag>
             <el-tag
-              v-if="finding.explanation?.automatic_adoption_threshold != null"
+              v-if="row.detection.threshold"
               size="small"
-              :type="finding.explanation.meets_automatic_threshold ? 'success' : 'warning'"
+              :type="row.detection.threshold.type"
             >
-              {{ t('security.finding.thresholdValue', { value: presentation.confidenceLabel(finding.explanation.automatic_adoption_threshold) }) }}
+              {{ t('security.finding.thresholdValue', { value: row.detection.threshold.value }) }}
             </el-tag>
           </div>
         </section>
@@ -73,13 +73,13 @@
             <span>2</span>
             <strong>{{ t('security.finding.explanationStages.governance') }}</strong>
           </div>
-          <el-tag size="small" :type="presentation.decision(finding).type">
-            {{ presentation.decision(finding).label }}
+          <el-tag size="small" :type="row.governance.decision.type">
+            {{ row.governance.decision.label }}
           </el-tag>
-          <p class="explanation-primary">{{ presentation.effectiveDefinitionSummary(finding) }}</p>
-          <p>{{ presentation.baselineDescription(finding) }}</p>
-          <p v-if="assessment.active" class="resource-policy-summary">
-            {{ assessment.protectionSummary }}
+          <p class="explanation-primary">{{ row.governance.definition }}</p>
+          <p>{{ row.governance.baseline }}</p>
+          <p v-if="row.governance.protectionSummary" class="resource-policy-summary">
+            {{ row.governance.protectionSummary }}
           </p>
         </section>
 
@@ -89,50 +89,50 @@
             <strong>{{ t('security.finding.explanationStages.execution') }}</strong>
           </div>
           <div class="finding-outlets">
-            <div v-for="outlet in finding.explanation.outlets" :key="outlet.consumer_owner" class="finding-outlet">
-              <span>{{ presentation.ownerLabel(outlet.consumer_owner) }}</span>
-              <strong>{{ presentation.outletRuleDescription(finding, outlet.consumer_owner) }}</strong>
-              <el-tag size="small" :type="presentation.outletAcknowledgement(outlet).type">
-                {{ presentation.outletAcknowledgement(outlet).label }}
+            <div v-for="outlet in row.outlets" :key="outlet.key" class="finding-outlet">
+              <span>{{ outlet.owner }}</span>
+              <strong>{{ outlet.rule }}</strong>
+              <el-tag size="small" :type="outlet.acknowledgement.type">
+                {{ outlet.acknowledgement.label }}
               </el-tag>
             </div>
           </div>
         </section>
       </div>
-      <p class="finding-observed-at">{{ t('security.finding.observedAt') }}：{{ presentation.formatDateTime(finding.observed_at) }}</p>
-      <div v-if="finding.review" class="review-result">
+      <p class="finding-observed-at">{{ t('security.finding.observedAt') }}：{{ row.observedAt }}</p>
+      <div v-if="row.review" class="review-result">
         <span>{{ t('security.finding.reviewRationale') }}</span>
-        <p>{{ finding.review.rationale }}</p>
+        <p>{{ row.review.rationale }}</p>
       </div>
-      <div v-if="!finding.review && canReview" class="finding-card__actions">
-        <el-button type="danger" plain @click="emit('review', finding, 'reject')">{{ t('security.finding.markFalsePositive') }}</el-button>
-        <el-button type="primary" plain @click="emit('review', finding, 'confirm')">{{ t('security.finding.review') }}</el-button>
+      <div v-if="!row.review && canReview" class="finding-card__actions">
+        <el-button type="danger" plain @click="emit('review', row.finding, 'reject')">{{ t('security.finding.markFalsePositive') }}</el-button>
+        <el-button type="primary" plain @click="emit('review', row.finding, 'confirm')">{{ t('security.finding.review') }}</el-button>
       </div>
-      <div v-else-if="assessment.current" class="finding-card__actions">
-        <el-button plain @click="emit('history', assessment.current)">{{ t('security.assessment.history') }}</el-button>
-        <el-button v-if="canUpdateAssessments" plain @click="emit('revise', assessment.current)">
+      <div v-else-if="row.assessment.current" class="finding-card__actions">
+        <el-button plain @click="emit('history', row.assessment.current)">{{ t('security.assessment.history') }}</el-button>
+        <el-button v-if="canUpdateAssessments" plain @click="emit('revise', row.assessment.current)">
           {{ t('security.assessment.reviseConclusion') }}
         </el-button>
         <el-button
-          v-if="assessment.active && assessment.canConfigurePolicy"
+          v-if="row.assessment.active && row.assessment.canConfigurePolicy"
           type="primary"
           plain
-          @click="emit('configurePolicy', assessment.active)"
+          @click="emit('configurePolicy', row.assessment.active)"
         >
-          {{ assessment.policy?.state === 'active' ? t('security.policy.adjust') : t('security.policy.tighten') }}
+          {{ row.assessment.policy?.state === 'active' ? t('security.policy.adjust') : t('security.policy.tighten') }}
         </el-button>
         <el-button
-          v-if="assessment.policy?.state === 'active' && canRevokePolicies"
+          v-if="row.assessment.policy?.state === 'active' && canRevokePolicies"
           plain
-          @click="emit('restorePolicy', assessment.active)"
+          @click="emit('restorePolicy', row.assessment.active)"
         >
           {{ t('security.policy.restoreDefault') }}
         </el-button>
         <el-button
-          v-if="assessment.active && canUpdateAssessments"
+          v-if="row.assessment.active && canUpdateAssessments"
           type="danger"
           plain
-          @click="emit('revokeAssessment', assessment.active)"
+          @click="emit('revokeAssessment', row.assessment.active)"
         >
           {{ t('security.assessment.revokeConclusion') }}
         </el-button>
@@ -170,10 +170,7 @@ const props = defineProps({
 
 const emit = defineEmits(['review', 'history', 'revise', 'configurePolicy', 'restorePolicy', 'revokeAssessment', 'update:page', 'pageChange'])
 const { t } = useI18n()
-const rows = computed(() => props.findings.map(finding => ({
-  finding,
-  assessment: props.presentation.assessmentView(finding)
-})))
+const rows = computed(() => props.findings.map(finding => props.presentation.row(finding)))
 
 function handlePageChange(page) {
   emit('update:page', page)

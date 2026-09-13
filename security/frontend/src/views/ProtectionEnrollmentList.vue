@@ -58,15 +58,7 @@
         :total="total"
         :loading="loading"
         :can-create="canCreate"
-        :resource-name="resourceName"
-        :resource-path="resourcePath"
-        :item-type-label="itemTypeLabel"
-        :engine-label="engineLabel"
-        :presentation-state="presentationState"
-        :owner-label="ownerLabel"
-        :owner-presentation="ownerPresentation"
-        :format-date-time="formatDateTime"
-        :discovery-presentation="discoveryPresentation"
+        :presentation="resourceListPresentation"
         @scope-change="handleScopeChange"
         @page-change="handlePageChange"
         @open="openDetail"
@@ -86,16 +78,7 @@
       :loading="reviewQueueLoading"
       :sensitive-types="sensitiveTypes"
       :detector-capabilities="detectorCapabilities"
-      :can-review="canReviewFindings"
-      :resource-name="resourceName"
-      :resource-path="resourcePath"
-      :item-type-label="itemTypeLabel"
-      :engine-label="engineLabel"
-      :type-name="typeName"
-      :capability-name="capabilityName"
-      :evidence-description="evidenceDescription"
-      :confidence-label="confidenceLabel"
-      :format-date-time="formatDateTime"
+      :presentation="reviewQueuePresentation"
       @filter-change="handleReviewQueueFilterChange"
       @reset-filters="resetReviewQueueFilters"
       @page-change="handleReviewQueuePageChange"
@@ -177,23 +160,11 @@
       v-model="reviewDialog"
       ref="reviewDialogRef"
       v-model:basis-expanded="reviewBasisExpanded"
-      :finding="reviewingFinding"
-      :remaining-label="reviewRemainingLabel"
+      :presentation="findingReviewDialogPresentation"
       :saving="reviewSaving"
       :form="reviewForm"
       :rules="reviewRules"
       :sensitive-types="sensitiveTypes"
-      :rationale-placeholder="reviewRationalePlaceholder"
-      :active-grades-for-type="activeGradesForType"
-      :type-name="typeName"
-      :confidence-label="confidenceLabel"
-      :capability-name="capabilityName"
-      :evidence-audit-description="evidenceAuditDescription"
-      :decision-presentation="decisionPresentation"
-      :effective-definition-summary="effectiveDefinitionSummary"
-      :baseline-description="baselineDescription"
-      :owner-label="ownerLabel"
-      :outlet-rule-description="outletRuleDescription"
       @sensitive-type-change="applyReviewDefaultGrade"
       @close="closeFindingReview"
       @closed="closeFindingReview"
@@ -219,12 +190,7 @@
     <AssessmentHistoryDialog
       v-model="assessmentHistoryDialog"
       :loading="assessmentHistoryLoading"
-      :assessment="assessmentHistory"
-      :format-date-time="formatDateTime"
-      :assessment-conclusion-label="assessmentConclusionLabel"
-      :assessment-revision-source-label="assessmentRevisionSourceLabel"
-      :assessment-revision-summary="assessmentRevisionSummary"
-      :assessment-actor-label="assessmentActorLabel"
+      :presentation="assessmentHistoryPresentation"
       @close="closeAssessmentHistory"
       @closed="closeAssessmentHistory"
     />
@@ -273,16 +239,12 @@
     <ExemptionRevokeDialog
       v-model="exemptionRevokeDialog"
       ref="exemptionRevokeDialogRef"
-      :exemption="revokingExemption"
+      :presentation="exemptionRevokePresentation"
       :saving="exemptionRevokeSaving"
       :reloading="exemptionRevokeReloading"
       :conflict="exemptionRevokeConflict"
       :form="exemptionRevokeForm"
       :rules="exemptionRevokeRules"
-      :assessment-component="assessmentComponent"
-      :owner-label="ownerLabel"
-      :action-label="actionLabel"
-      :format-date-time="formatDateTime"
       @reload="reloadExemptionRevokeBaseline"
       @close="closeExemptionRevokeDialog"
       @closed="closeExemptionRevokeDialog"
@@ -637,45 +599,30 @@ const {
   manualAssessments,
   refreshFeedback,
   reviewRemainingLabel,
-  normalizeDiscoverySummary,
   isZeroFindingDiscovery,
-  ownerLabel,
   effectLabel,
   resourceName,
   resourcePath,
   engineLabel,
   itemTypeLabel,
+  resourceRowView,
   formatDateTime,
   releaseBasisLabel,
   releaseActorLabel,
   discoveryPresentation,
+  governanceSectionView,
+  resourceDetailView,
   presentationState,
   ownerPresentation,
   ownerEffectDescription,
-  typeName,
-  classificationName,
-  gradeName,
-  confidenceLabel,
-  evidenceDescription,
-  capabilityText,
-  capabilityScope,
-  evidenceAuditDescription,
-  capabilityName,
-  decisionPresentation,
-  effectiveDefinitionSummary,
-  baselineDescription,
-  actionLabel,
-  assessmentComponent,
-  exemptionStatePresentation,
-  outletRuleDescription,
-  outletAcknowledgementPresentation,
-  findingStatePresentation,
-  findingAssessmentView,
+  findingReviewRowView,
+  findingReviewDialogView,
+  exemptionRowView,
+  assessmentRowView,
+  findingRowView,
   assessmentSummary,
-  assessmentRevisionSummary,
   assessmentConclusionLabel,
-  assessmentRevisionSourceLabel,
-  assessmentActorLabel,
+  assessmentHistoryView,
   policyForAssessment,
   stricterPolicyEffects,
   canConfigurePolicy,
@@ -1128,56 +1075,40 @@ const detailLifecycle = computed(() => ({
   canCreate: canCreate.value,
   canUpdate: canRelease.value
 }))
+const resourceListPresentation = Object.freeze({
+  row: resourceRowView
+})
+const reviewQueuePresentation = Object.freeze({
+  row: finding => findingReviewRowView(finding, { canReview: canReviewFindings.value })
+})
+const findingReviewDialogPresentation = computed(() => reviewingFinding.value
+  ? findingReviewDialogView(reviewingFinding.value, {
+      remainingLabel: reviewRemainingLabel.value,
+      rationalePlaceholder: reviewRationalePlaceholder.value,
+      gradeOptions: activeGradesForType(reviewForm.sensitiveDataTypeID)
+    })
+  : null)
+const assessmentHistoryPresentation = computed(() => assessmentHistory.value
+  ? assessmentHistoryView(assessmentHistory.value)
+  : null)
+const exemptionRevokePresentation = computed(() => revokingExemption.value
+  ? exemptionRowView(revokingExemption.value)
+  : null)
 const detailPresentation = Object.freeze({
   resource: Object.freeze({
-    name: resourceName,
-    path: resourcePath,
-    state: presentationState,
-    releaseBasisLabel,
-    releaseActorLabel,
-    formatDateTime,
-    discovery: discoveryPresentation,
-    isZeroFindingDiscovery
+    detail: resourceDetailView
   }),
   governance: Object.freeze({
-    summary: normalizeDiscoverySummary,
+    section: governanceSectionView,
     findings: Object.freeze({
-      typeName,
-      state: findingStatePresentation,
-      capabilityName,
-      evidenceDescription,
-      evidenceAuditDescription,
-      capabilityText,
-      capabilityScope,
-      confidenceLabel,
-      decision: decisionPresentation,
-      effectiveDefinitionSummary,
-      baselineDescription,
-      assessmentView: findingAssessmentView,
-      ownerLabel,
-      outletRuleDescription,
-      outletAcknowledgement: outletAcknowledgementPresentation,
-      formatDateTime
+      row: findingRowView
     }),
     assessments: Object.freeze({
-      summary: assessmentSummary,
-      protectionSummary: assessmentProtectionSummary,
-      conclusionLabel: assessmentConclusionLabel,
-      canConfigurePolicy,
-      policyForAssessment
+      row: assessmentRowView
     })
   }),
   exemption: Object.freeze({
-    assessmentComponent,
-    state: exemptionStatePresentation,
-    ownerLabel,
-    actionLabel,
-    formatDateTime
-  }),
-  owner: Object.freeze({
-    label: ownerLabel,
-    effectDescription: ownerEffectDescription,
-    state: ownerPresentation
+    row: exemptionRowView
   })
 })
 

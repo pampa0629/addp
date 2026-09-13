@@ -1,21 +1,17 @@
 <template>
-  <button type="button" class="resource-cell" @click="emit('open', row)">
-    <span class="resource-name">{{ resourceName(row) }}</span>
-    <span class="resource-path">{{ resourcePath(row) }}</span>
+  <button type="button" class="resource-cell" @click="emit('open', identity.resource)">
+    <span class="resource-name">{{ identity.name }}</span>
+    <span class="resource-path">{{ identity.path }}</span>
     <span class="resource-meta">
-      <el-tag size="small" effect="plain">{{ itemTypeLabel(row.target_snapshot?.item_type) }}</el-tag>
-      <span>{{ engineLabel(row.target_snapshot?.engine_id) }}</span>
+      <el-tag size="small" effect="plain">{{ identity.itemType }}</el-tag>
+      <span>{{ identity.engine }}</span>
     </span>
   </button>
 </template>
 
 <script setup>
 defineProps({
-  row: { type: Object, required: true },
-  resourceName: { type: Function, required: true },
-  resourcePath: { type: Function, required: true },
-  itemTypeLabel: { type: Function, required: true },
-  engineLabel: { type: Function, required: true }
+  identity: { type: Object, required: true }
 })
 
 const emit = defineEmits(['open'])

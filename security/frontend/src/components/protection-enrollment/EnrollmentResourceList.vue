@@ -9,15 +9,11 @@
     </div>
 
     <el-card class="enrollment-card" shadow="never">
-      <el-table v-loading="loading" :data="rows" row-key="id">
+      <el-table v-loading="loading" :data="presentedRows" row-key="id">
         <el-table-column :label="t('security.enrollment.resource')" min-width="320">
           <template #default="{ row }">
             <EnrollmentResourceIdentity
-              :row="row"
-              :resource-name="resourceName"
-              :resource-path="resourcePath"
-              :item-type-label="itemTypeLabel"
-              :engine-label="engineLabel"
+              :identity="row.identity"
               @open="emit('open', $event)"
             />
           </template>
@@ -26,8 +22,8 @@
         <el-table-column :label="t('security.enrollment.state')" width="190">
           <template #default="{ row }">
             <div class="state-cell">
-              <el-tag :type="presentationState(row).type">{{ presentationState(row).label }}</el-tag>
-              <span>{{ presentationState(row).description }}</span>
+              <el-tag :type="row.state.type">{{ row.state.label }}</el-tag>
+              <span>{{ row.state.description }}</span>
             </div>
           </template>
         </el-table-column>
@@ -35,10 +31,10 @@
         <el-table-column :label="t('security.enrollment.progress')" min-width="430">
           <template #default="{ row }">
             <div class="owner-grid">
-              <div v-for="owner in row.owner_progress" :key="owner.consumer_owner" class="owner-item">
-                <span class="owner-name">{{ ownerLabel(owner.consumer_owner) }}</span>
-                <el-tag size="small" :type="ownerPresentation(row, owner).type">
-                  {{ ownerPresentation(row, owner).label }}
+              <div v-for="owner in row.owners" :key="owner.key" class="owner-item">
+                <span class="owner-name">{{ owner.label }}</span>
+                <el-tag size="small" :type="owner.state.type">
+                  {{ owner.state.label }}
                 </el-tag>
               </div>
             </div>
@@ -47,10 +43,10 @@
 
         <el-table-column :label="scope === 'released' ? t('security.enrollment.releaseCompletedAt') : t('security.enrollment.discovery')" width="210">
           <template #default="{ row }">
-            <span v-if="scope === 'released'" class="release-time">{{ formatDateTime(row.released_at) }}</span>
+            <span v-if="scope === 'released'" class="release-time">{{ row.releasedAt }}</span>
             <div v-else class="discovery-cell">
-              <el-tag size="small" :type="discoveryPresentation(row).type">{{ discoveryPresentation(row).label }}</el-tag>
-              <span>{{ formatDateTime(row.last_discovered_at) }}</span>
+              <el-tag size="small" :type="row.discovery.type">{{ row.discovery.label }}</el-tag>
+              <span>{{ row.discovery.observedAt }}</span>
             </div>
           </template>
         </el-table-column>
@@ -59,14 +55,14 @@
           <template #default="{ row }">
             <div class="row-actions">
               <el-button
-                v-if="canCreate && row.state === 'released'"
+                v-if="canCreate && row.canReEnroll"
                 link
                 type="primary"
-                @click="emit('reEnroll', row)"
+                @click="emit('reEnroll', row.enrollment)"
               >
                 {{ t('security.enrollment.reEnroll') }}
               </el-button>
-              <el-button link type="primary" @click="emit('open', row)">{{ t('security.enrollment.viewDetails') }}</el-button>
+              <el-button link type="primary" @click="emit('open', row.enrollment)">{{ t('security.enrollment.viewDetails') }}</el-button>
             </div>
           </template>
         </el-table-column>
@@ -104,15 +100,7 @@ const props = defineProps({
   loading: { type: Boolean, default: false },
   scope: { type: String, required: true },
   canCreate: { type: Boolean, default: false },
-  resourceName: { type: Function, required: true },
-  resourcePath: { type: Function, required: true },
-  itemTypeLabel: { type: Function, required: true },
-  engineLabel: { type: Function, required: true },
-  presentationState: { type: Function, required: true },
-  ownerLabel: { type: Function, required: true },
-  ownerPresentation: { type: Function, required: true },
-  formatDateTime: { type: Function, required: true },
-  discoveryPresentation: { type: Function, required: true }
+  presentation: { type: Object, required: true }
 })
 
 const emit = defineEmits([
@@ -139,6 +127,7 @@ const pageSizeModel = computed({
   get: () => props.pageSize,
   set: value => emit('update:pageSize', value)
 })
+const presentedRows = computed(() => props.rows.map(row => props.presentation.row(row)))
 const emptyDescription = computed(() => t(`security.enrollment.emptyStates.${props.scope}`))
 </script>
 

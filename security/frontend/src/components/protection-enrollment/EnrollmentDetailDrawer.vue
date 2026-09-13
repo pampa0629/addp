@@ -7,7 +7,7 @@
     @close="emit('close')"
     @closed="emit('closed')"
   >
-    <template v-if="enrollment">
+    <template v-if="detail">
       <div class="detail-refresh">
         <span class="refresh-feedback" aria-live="polite">{{ refreshState.feedback }}</span>
         <el-button link type="primary" :icon="Refresh" :loading="refreshState.loading" @click="emit('refresh')">
@@ -16,45 +16,45 @@
       </div>
       <section class="detail-resource">
         <div>
-          <h3>{{ presentation.resource.name(enrollment) }}</h3>
-          <p>{{ presentation.resource.path(enrollment) }}</p>
+          <h3>{{ detail.identity.name }}</h3>
+          <p>{{ detail.identity.path }}</p>
         </div>
-        <el-tag :type="presentation.resource.state(enrollment).type">{{ presentation.resource.state(enrollment).label }}</el-tag>
+        <el-tag :type="detail.state.type">{{ detail.state.label }}</el-tag>
       </section>
 
-      <template v-if="['releasing', 'released'].includes(enrollment.state)">
+      <template v-if="detail.releaseAudit">
         <h4>{{ t('security.enrollment.releaseAudit') }}</h4>
         <el-descriptions class="release-audit" :column="2" border>
           <el-descriptions-item :label="t('security.enrollment.releaseBasisLabel')">
-            {{ presentation.resource.releaseBasisLabel(enrollment.release_basis) }}
+            {{ detail.releaseAudit.basis }}
           </el-descriptions-item>
           <el-descriptions-item :label="t('security.enrollment.releaseRequestedBy')">
-            {{ presentation.resource.releaseActorLabel(enrollment.release_requested_by) }}
+            {{ detail.releaseAudit.requestedBy }}
           </el-descriptions-item>
           <el-descriptions-item :label="t('security.enrollment.releaseRequestedAt')">
-            {{ presentation.resource.formatDateTime(enrollment.release_requested_at) }}
+            {{ detail.releaseAudit.requestedAt }}
           </el-descriptions-item>
-          <el-descriptions-item v-if="enrollment.released_at" :label="t('security.enrollment.releasedAt')">
-            {{ presentation.resource.formatDateTime(enrollment.released_at) }}
+          <el-descriptions-item v-if="detail.releaseAudit.releasedAt" :label="t('security.enrollment.releasedAt')">
+            {{ detail.releaseAudit.releasedAt }}
           </el-descriptions-item>
           <el-descriptions-item :label="t('security.enrollment.releaseReasonLabel')" :span="2">
-            <span class="release-reason-text">{{ enrollment.release_reason || t('security.common.notAvailable') }}</span>
+            <span class="release-reason-text">{{ detail.releaseAudit.reason }}</span>
           </el-descriptions-item>
         </el-descriptions>
       </template>
 
       <h4>{{ t('security.enrollment.discovery') }}</h4>
       <el-alert
-        :type="presentation.resource.discovery(enrollment).alertType"
+        :type="detail.discovery.alertType"
         :closable="false"
-        :title="presentation.resource.discovery(enrollment).detailTitle"
-        :description="presentation.resource.discovery(enrollment).detailDescription"
+        :title="detail.discovery.detailTitle"
+        :description="detail.discovery.detailDescription"
         show-icon
       />
 
       <EnrollmentGovernanceSection
         v-if="governance.visible"
-        :enrollment="enrollment"
+        :enrollment="detail.enrollment"
         :governance="governance"
         :presentation="presentation.governance"
         @update:findings-page="emit('update:findingsPage', $event)"
@@ -75,11 +75,7 @@
         :exemptions="exemptions.items"
         :focused-exemption-id="exemptions.focusedId"
         :can-revoke="exemptions.canRevoke"
-        :assessment-component="presentation.exemption.assessmentComponent"
-        :exemption-state-presentation="presentation.exemption.state"
-        :owner-label="presentation.exemption.ownerLabel"
-        :action-label="presentation.exemption.actionLabel"
-        :format-date-time="presentation.exemption.formatDateTime"
+        :presentation="presentation.exemption"
         @revoke="emit('revoke', $event)"
       />
 
@@ -91,18 +87,18 @@
         :title="t('security.enrollment.ownerProtectionHint')"
       />
       <div class="owner-detail-list">
-        <div v-for="owner in enrollment.owner_progress" :key="owner.consumer_owner" class="owner-detail">
+        <div v-for="owner in detail.owners" :key="owner.key" class="owner-detail">
           <div>
-            <strong>{{ presentation.owner.label(owner.consumer_owner) }}</strong>
-            <span>{{ presentation.owner.effectDescription(owner) }}</span>
+            <strong>{{ owner.label }}</strong>
+            <span>{{ owner.effectDescription }}</span>
           </div>
-          <el-tag :type="presentation.owner.state(enrollment, owner).type">{{ presentation.owner.state(enrollment, owner).label }}</el-tag>
+          <el-tag :type="owner.state.type">{{ owner.state.label }}</el-tag>
         </div>
       </div>
 
       <el-descriptions class="detail-facts" :column="1" border>
-        <el-descriptions-item :label="t('security.enrollment.lastDiscovered')">{{ presentation.resource.formatDateTime(enrollment.last_discovered_at) }}</el-descriptions-item>
-        <el-descriptions-item :label="t('security.enrollment.createdAt')">{{ presentation.resource.formatDateTime(enrollment.created_at) }}</el-descriptions-item>
+        <el-descriptions-item :label="t('security.enrollment.lastDiscovered')">{{ detail.facts.lastDiscoveredAt }}</el-descriptions-item>
+        <el-descriptions-item :label="t('security.enrollment.createdAt')">{{ detail.facts.createdAt }}</el-descriptions-item>
         <el-descriptions-item :label="t('security.enrollment.scope')">{{ t('security.enrollment.wholeResourceScope') }}</el-descriptions-item>
       </el-descriptions>
 
@@ -110,32 +106,32 @@
         <el-collapse-item :title="t('security.enrollment.technicalDetails')" name="technical">
           <el-descriptions :column="1" size="small">
             <el-descriptions-item :label="t('security.enrollment.fingerprint')">
-              <span class="technical-value">{{ enrollment.target.resource_identity }}</span>
+              <span class="technical-value">{{ detail.technical.resourceIdentity }}</span>
             </el-descriptions-item>
             <el-descriptions-item :label="t('security.enrollment.enrollmentId')">
-              <span class="technical-value">{{ enrollment.id }}</span>
+              <span class="technical-value">{{ detail.technical.enrollmentId }}</span>
             </el-descriptions-item>
-            <el-descriptions-item v-if="enrollment.release_source_snapshot_hash" :label="t('security.enrollment.releaseSourceSnapshot')">
-              <span class="technical-value">{{ enrollment.release_source_snapshot_hash }}</span>
+            <el-descriptions-item v-if="detail.technical.releaseSourceSnapshotHash" :label="t('security.enrollment.releaseSourceSnapshot')">
+              <span class="technical-value">{{ detail.technical.releaseSourceSnapshotHash }}</span>
             </el-descriptions-item>
           </el-descriptions>
         </el-collapse-item>
       </el-collapse>
 
       <div class="detail-actions">
-        <el-button v-if="lifecycle.canCreate && enrollment.state === 'released'" type="primary" @click="emit('reEnroll', enrollment)">
+        <el-button v-if="detail.actions.canReEnroll" type="primary" @click="emit('reEnroll', detail.enrollment)">
           {{ t('security.enrollment.reEnroll') }}
         </el-button>
-        <el-button v-if="lifecycle.canUpdate && ['enrolling', 'active'].includes(enrollment.state)" @click="emit('rediscover', enrollment)">
+        <el-button v-if="detail.actions.canRediscover" @click="emit('rediscover', detail.enrollment)">
           {{ t('security.enrollment.rediscover') }}
         </el-button>
         <el-button
-          v-if="lifecycle.canUpdate && !['releasing', 'released'].includes(enrollment.state)"
+          v-if="detail.actions.release"
           type="danger"
           plain
-          @click="emit('release', enrollment, presentation.resource.isZeroFindingDiscovery(enrollment) ? 'no_supported_findings' : 'manual')"
+          @click="emit('release', detail.enrollment, detail.actions.release.basis)"
         >
-          {{ presentation.resource.isZeroFindingDiscovery(enrollment) ? t('security.enrollment.confirmNoProtectionNeeded') : t('security.enrollment.release') }}
+          {{ detail.actions.release.label }}
         </el-button>
       </div>
     </template>
@@ -143,13 +139,13 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Refresh } from '@element-plus/icons-vue'
 import EnrollmentExemptionSection from './EnrollmentExemptionSection.vue'
 import EnrollmentGovernanceSection from './EnrollmentGovernanceSection.vue'
 
-defineProps({
+const props = defineProps({
   modelValue: { type: Boolean, default: false },
   enrollment: { type: Object, default: null },
   refreshState: { type: Object, required: true },
@@ -180,6 +176,9 @@ const emit = defineEmits([
 ])
 const { t } = useI18n()
 const exemptionSectionRef = ref(null)
+const detail = computed(() => props.enrollment
+  ? props.presentation.resource.detail(props.enrollment, props.lifecycle)
+  : null)
 
 function focusExemption() {
   return exemptionSectionRef.value?.focusFocused?.()

@@ -66,6 +66,16 @@ export function useProtectionEnrollmentPresentation({
     return translated === `security.enrollment.itemTypes.${key}` ? key : translated
   }
 
+  function resourceIdentityView(resource) {
+    return {
+      resource,
+      name: resourceName(resource),
+      path: resourcePath(resource),
+      itemType: itemTypeLabel(resource?.target_snapshot?.item_type),
+      engine: engineLabel(resource?.target_snapshot?.engine_id)
+    }
+  }
+
   function formatDateTime(value) {
     if (!value) return t('security.common.notAvailable')
     const date = new Date(value)
@@ -115,6 +125,20 @@ export function useProtectionEnrollmentPresentation({
     }
   }
 
+  function governanceSectionView(enrollment, governance) {
+    const { pendingReviewCount } = normalizeDiscoverySummary(enrollment)
+    return {
+      pendingReview: pendingReviewCount > 0
+        ? {
+            count: pendingReviewCount,
+            label: t('security.finding.pendingCount', { count: pendingReviewCount })
+          }
+        : null,
+      canDesignate: Boolean(governance?.createAssessments
+        && !['releasing', 'released'].includes(enrollment?.state))
+    }
+  }
+
   function presentationState(row) {
     if (row.state === 'released') return { type: 'info', label: t('security.enrollment.states.released'), description: t('security.enrollment.stateDescriptions.released') }
     if (row.state === 'releasing') return { type: 'warning', label: t('security.enrollment.states.releasing'), description: t('security.enrollment.stateDescriptions.releasing') }
@@ -136,6 +160,29 @@ export function useProtectionEnrollmentPresentation({
     return { type: 'info', label: t('security.enrollment.ownerStates.denied') }
   }
 
+  function resourceRowView(enrollment) {
+    const discovery = discoveryPresentation(enrollment)
+    const owners = Array.isArray(enrollment?.owner_progress) ? enrollment.owner_progress : []
+    return {
+      id: enrollment?.id,
+      enrollment,
+      identity: resourceIdentityView(enrollment),
+      state: presentationState(enrollment),
+      owners: owners.map(owner => ({
+        key: owner.consumer_owner,
+        label: ownerLabel(owner.consumer_owner),
+        state: ownerPresentation(enrollment, owner)
+      })),
+      discovery: {
+        type: discovery.type,
+        label: discovery.label,
+        observedAt: formatDateTime(enrollment?.last_discovered_at)
+      },
+      releasedAt: formatDateTime(enrollment?.released_at),
+      canReEnroll: enrollment?.state === 'released'
+    }
+  }
+
   function ownerEffectDescription(owner) {
     const rules = Array.isArray(owner.rules) ? owner.rules : []
     if (!owner.acknowledged) return t('security.enrollment.ownerEffectWaiting')
@@ -151,6 +198,58 @@ export function useProtectionEnrollmentPresentation({
           })).join('；')
         })
       : t('security.enrollment.ownerEffectActive')
+  }
+
+  function resourceDetailView(enrollment, lifecycle) {
+    const state = String(enrollment?.state || '')
+    const releaseAuditVisible = ['releasing', 'released'].includes(state)
+    const zeroFindingDiscovery = isZeroFindingDiscovery(enrollment)
+    const owners = Array.isArray(enrollment?.owner_progress) ? enrollment.owner_progress : []
+    return {
+      enrollment,
+      identity: {
+        name: resourceName(enrollment),
+        path: resourcePath(enrollment)
+      },
+      state: presentationState(enrollment),
+      releaseAudit: releaseAuditVisible
+        ? {
+            basis: releaseBasisLabel(enrollment?.release_basis),
+            requestedBy: releaseActorLabel(enrollment?.release_requested_by),
+            requestedAt: formatDateTime(enrollment?.release_requested_at),
+            releasedAt: enrollment?.released_at ? formatDateTime(enrollment.released_at) : null,
+            reason: enrollment?.release_reason || t('security.common.notAvailable')
+          }
+        : null,
+      discovery: discoveryPresentation(enrollment),
+      owners: owners.map(owner => ({
+        key: owner.consumer_owner,
+        label: ownerLabel(owner.consumer_owner),
+        effectDescription: ownerEffectDescription(owner),
+        state: ownerPresentation(enrollment, owner)
+      })),
+      facts: {
+        lastDiscoveredAt: formatDateTime(enrollment?.last_discovered_at),
+        createdAt: formatDateTime(enrollment?.created_at)
+      },
+      technical: {
+        resourceIdentity: enrollment?.target?.resource_identity,
+        enrollmentId: enrollment?.id,
+        releaseSourceSnapshotHash: enrollment?.release_source_snapshot_hash || null
+      },
+      actions: {
+        canReEnroll: Boolean(lifecycle?.canCreate && state === 'released'),
+        canRediscover: Boolean(lifecycle?.canUpdate && ['enrolling', 'active'].includes(state)),
+        release: lifecycle?.canUpdate && !releaseAuditVisible
+          ? {
+              basis: zeroFindingDiscovery ? 'no_supported_findings' : 'manual',
+              label: zeroFindingDiscovery
+                ? t('security.enrollment.confirmNoProtectionNeeded')
+                : t('security.enrollment.release')
+            }
+          : null
+      }
+    }
   }
 
   function typeName(id) {
@@ -178,6 +277,56 @@ export function useProtectionEnrollmentPresentation({
     if (rule === 'terminal_field_name') return t('security.finding.evidenceRules.terminalFieldName', { type: finding?.evidence?.field_type || '-' })
     if (rule === 'exact_ascii_digit_run') return t('security.finding.evidenceRules.exactDigitRun', { count: Number(finding?.evidence?.match_count || 0) })
     return t('security.finding.evidenceRules.detectorMatch')
+  }
+
+  function findingReviewRowView(finding, permissions) {
+    return {
+      id: finding?.id,
+      finding,
+      identity: resourceIdentityView(finding),
+      candidate: {
+        componentKey: finding?.component_key,
+        sensitiveTypeName: typeName(finding?.sensitive_data_type_id)
+      },
+      recognition: {
+        name: capabilityName(finding),
+        version: finding?.detector_version
+      },
+      evidence: {
+        description: evidenceDescription(finding),
+        metadata: `${t('security.finding.confidenceValue', { value: confidenceLabel(finding?.confidence) })} · ${formatDateTime(finding?.observed_at)}`
+      },
+      actions: {
+        canReview: Boolean(permissions?.canReview)
+      }
+    }
+  }
+
+  function findingReviewDialogView(finding, context) {
+    const outlets = Array.isArray(finding?.explanation?.outlets) ? finding.explanation.outlets : []
+    return {
+      target: {
+        componentKey: finding?.component_key,
+        summary: `${typeName(finding?.sensitive_data_type_id)} · ${confidenceLabel(finding?.confidence)}`
+      },
+      remainingLabel: context?.remainingLabel || '',
+      rationalePlaceholder: context?.rationalePlaceholder || '',
+      gradeOptions: Array.isArray(context?.gradeOptions) ? context.gradeOptions : [],
+      basis: {
+        recognitionMethod: capabilityName(finding),
+        actualMatch: evidenceAuditDescription(finding),
+        governance: {
+          decision: decisionPresentation(finding),
+          definition: effectiveDefinitionSummary(finding),
+          baseline: baselineDescription(finding)
+        },
+        outlets: outlets.map(outlet => ({
+          key: outlet.consumer_owner,
+          owner: ownerLabel(outlet.consumer_owner),
+          rule: outletRuleDescription(finding, outlet.consumer_owner)
+        }))
+      }
+    }
   }
 
   function capabilityText(finding, key) {
@@ -278,6 +427,20 @@ export function useProtectionEnrollmentPresentation({
     return { type: types[state] || 'info', label: t(`security.exemption.states.${state}`) }
   }
 
+  function exemptionRowView(exemption) {
+    return {
+      id: exemption?.id,
+      exemption,
+      componentKey: assessmentComponent(exemption?.assessment_id),
+      state: exemptionStatePresentation(exemption),
+      subjectId: exemption?.subject_id,
+      outlet: `${ownerLabel(exemption?.consumer_owner)} · ${actionLabel(exemption?.action)}`,
+      expiresAt: formatDateTime(exemption?.current?.expires_at),
+      rationale: exemption?.current?.rationale || '',
+      canRevoke: exemption?.effective_state === 'active'
+    }
+  }
+
   function outletRuleDescription(finding, owner) {
     const outlet = findingOutletRules(finding, owner)
     if (!outlet) return t('security.finding.outletUnavailable')
@@ -338,6 +501,36 @@ export function useProtectionEnrollmentPresentation({
       : t('security.common.notAvailable')
   }
 
+  function assessmentHistoryView(assessment) {
+    const currentRevision = Number(assessment?.current_revision)
+    const history = Array.isArray(assessment?.history) ? assessment.history : []
+    return {
+      componentKey: assessment?.component_key,
+      items: history.map(revision => {
+        const timestamp = formatDateTime(revision?.created_at)
+        const current = Number(revision?.revision) === currentRevision
+        const conclusion = revision?.conclusion === 'sensitive' ? 'sensitive' : 'not_sensitive'
+        return {
+          id: revision?.id,
+          timestamp,
+          current,
+          revisionLabel: t('security.assessment.revisionLabel', { revision: revision?.revision }),
+          conclusion: {
+            type: conclusion === 'sensitive' ? 'success' : 'info',
+            label: assessmentConclusionLabel(conclusion)
+          },
+          sourceLabel: assessmentRevisionSourceLabel(revision?.source_kind),
+          summary: assessmentRevisionSummary(revision),
+          rationale: revision?.rationale || '',
+          metadata: t('security.assessment.historyMeta', {
+            actor: assessmentActorLabel(revision?.created_by),
+            time: timestamp
+          })
+        }
+      })
+    }
+  }
+
   function baselineForAssessment(assessment) {
     return protectionBaselines.value.find(item => item.enabled
       && String(item.sensitive_data_type_id) === String(assessment?.current?.sensitive_data_type_id)
@@ -379,8 +572,7 @@ export function useProtectionEnrollmentPresentation({
     return protectionSummaryFromContext(baselineForAssessment(assessment), policyForAssessment(assessment))
   }
 
-  function findingAssessmentView(finding) {
-    const assessment = assessmentForFinding(finding)
+  function assessmentProtectionView(assessment) {
     const activeAssessment = assessment?.current?.conclusion === 'sensitive' ? assessment : null
     if (!activeAssessment) {
       return { current: assessment, active: null, policy: null, canConfigurePolicy: false, protectionSummary: '' }
@@ -396,6 +588,80 @@ export function useProtectionEnrollmentPresentation({
     }
   }
 
+  function assessmentRowView(assessment) {
+    const protection = assessmentProtectionView(assessment)
+    return {
+      id: assessment?.id,
+      assessment,
+      componentKey: assessment?.component_key,
+      summary: assessmentSummary(assessment),
+      rationale: assessment?.current?.rationale || '',
+      conclusion: {
+        type: protection.active ? 'success' : 'info',
+        label: assessmentConclusionLabel(assessment?.current?.conclusion)
+      },
+      protectionSummary: protection.protectionSummary,
+      actions: {
+        canConfigurePolicy: Boolean(protection.active && protection.canConfigurePolicy),
+        configurePolicyLabel: protection.policy?.state === 'active'
+          ? t('security.policy.adjust')
+          : t('security.policy.tighten'),
+        canRestorePolicy: protection.policy?.state === 'active',
+        canRevokeAssessment: Boolean(protection.active)
+      }
+    }
+  }
+
+  function findingAssessmentView(finding) {
+    return assessmentProtectionView(assessmentForFinding(finding))
+  }
+
+  function findingRowView(finding) {
+    const explanation = finding?.explanation || {}
+    const assessment = findingAssessmentView(finding)
+    const threshold = explanation.automatic_adoption_threshold
+    const outlets = Array.isArray(explanation.outlets) ? explanation.outlets : []
+    return {
+      id: finding?.id,
+      finding,
+      componentKey: finding?.component_key,
+      sensitiveTypeName: typeName(finding?.sensitive_data_type_id),
+      state: findingStatePresentation(finding),
+      detection: {
+        name: capabilityName(finding),
+        evidence: evidenceDescription(finding),
+        evidenceAudit: evidenceAuditDescription(finding),
+        method: capabilityText(finding, 'method_i18n_key'),
+        scope: capabilityScope(finding),
+        privacy: capabilityText(finding, 'privacy_i18n_key'),
+        limitations: capabilityText(finding, 'limitations_i18n_key'),
+        version: explanation.capability?.key || finding?.detector_version,
+        confidence: confidenceLabel(finding?.confidence),
+        threshold: threshold == null
+          ? null
+          : {
+              value: confidenceLabel(threshold),
+              type: explanation.meets_automatic_threshold ? 'success' : 'warning'
+            }
+      },
+      governance: {
+        decision: decisionPresentation(finding),
+        definition: effectiveDefinitionSummary(finding),
+        baseline: baselineDescription(finding),
+        protectionSummary: assessment.active ? assessment.protectionSummary : ''
+      },
+      outlets: outlets.map(outlet => ({
+        key: outlet.consumer_owner,
+        owner: ownerLabel(outlet.consumer_owner),
+        rule: outletRuleDescription(finding, outlet.consumer_owner),
+        acknowledgement: outletAcknowledgementPresentation(outlet)
+      })),
+      observedAt: formatDateTime(finding?.observed_at),
+      review: finding?.review || null,
+      assessment
+    }
+  }
+
   function activeGradesForType(typeID) {
     const activeGradeIDs = new Set(protectionBaselines.value
       .filter(item => item.enabled && String(item.sensitive_data_type_id) === String(typeID))
@@ -407,45 +673,31 @@ export function useProtectionEnrollmentPresentation({
     manualAssessments,
     refreshFeedback,
     reviewRemainingLabel,
-    normalizeDiscoverySummary,
     isZeroFindingDiscovery,
-    ownerLabel,
     effectLabel,
     resourceName,
     resourcePath,
     engineLabel,
     itemTypeLabel,
+    resourceIdentityView,
+    resourceRowView,
     formatDateTime,
     releaseBasisLabel,
     releaseActorLabel,
     discoveryPresentation,
+    governanceSectionView,
+    resourceDetailView,
     presentationState,
     ownerPresentation,
     ownerEffectDescription,
-    typeName,
-    classificationName,
-    gradeName,
-    confidenceLabel,
-    evidenceDescription,
-    capabilityText,
-    capabilityScope,
-    evidenceAuditDescription,
-    capabilityName,
-    decisionPresentation,
-    effectiveDefinitionSummary,
-    baselineDescription,
-    actionLabel,
-    assessmentComponent,
-    exemptionStatePresentation,
-    outletRuleDescription,
-    outletAcknowledgementPresentation,
-    findingStatePresentation,
-    findingAssessmentView,
+    findingReviewRowView,
+    findingReviewDialogView,
+    exemptionRowView,
+    assessmentRowView,
+    findingRowView,
     assessmentSummary,
-    assessmentRevisionSummary,
     assessmentConclusionLabel,
-    assessmentRevisionSourceLabel,
-    assessmentActorLabel,
+    assessmentHistoryView,
     baselineForAssessment,
     policyForAssessment,
     stricterPolicyEffects,

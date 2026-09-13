@@ -6,11 +6,11 @@
         <p>{{ t('security.finding.governanceHint') }}</p>
       </div>
       <div class="finding-section__actions">
-        <el-tag v-if="presentation.summary(enrollment).pendingReviewCount > 0" type="warning">
-          {{ t('security.finding.pendingCount', { count: presentation.summary(enrollment).pendingReviewCount }) }}
+        <el-tag v-if="section.pendingReview" type="warning">
+          {{ section.pendingReview.label }}
         </el-tag>
         <el-button
-          v-if="governance.createAssessments && !['releasing', 'released'].includes(enrollment.state)"
+          v-if="section.canDesignate"
           type="primary"
           plain
           @click="emit('designate')"
@@ -65,11 +65,12 @@
 </template>
 
 <script setup>
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import EnrollmentAssessmentList from './EnrollmentAssessmentList.vue'
 import EnrollmentFindingList from './EnrollmentFindingList.vue'
 
-defineProps({
+const props = defineProps({
   enrollment: { type: Object, required: true },
   governance: { type: Object, required: true },
   presentation: { type: Object, required: true }
@@ -87,6 +88,7 @@ const emit = defineEmits([
   'pageChange'
 ])
 const { t } = useI18n()
+const section = computed(() => props.presentation.section(props.enrollment, props.governance))
 
 function forwardFindingReview(finding, decision) {
   emit('review', { finding, decision })

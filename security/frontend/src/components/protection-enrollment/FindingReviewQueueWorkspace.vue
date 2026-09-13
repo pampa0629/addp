@@ -32,48 +32,44 @@
     </div>
 
     <el-card class="enrollment-card review-queue-card" shadow="never">
-      <el-table v-loading="loading" :data="rows" row-key="id">
+      <el-table v-loading="loading" :data="presentedRows" row-key="id">
         <el-table-column :label="t('security.reviewQueue.resource')" min-width="260">
           <template #default="{ row }">
             <EnrollmentResourceIdentity
-              :row="row"
-              :resource-name="resourceName"
-              :resource-path="resourcePath"
-              :item-type-label="itemTypeLabel"
-              :engine-label="engineLabel"
-              @open="emit('openResource', row)"
+              :identity="row.identity"
+              @open="emit('openResource', $event)"
             />
           </template>
         </el-table-column>
         <el-table-column :label="t('security.reviewQueue.candidate')" min-width="250">
           <template #default="{ row }">
             <div class="queue-candidate">
-              <strong>{{ row.component_key }}</strong>
-              <span>{{ typeName(row.sensitive_data_type_id) }}</span>
+              <strong>{{ row.candidate.componentKey }}</strong>
+              <span>{{ row.candidate.sensitiveTypeName }}</span>
             </div>
           </template>
         </el-table-column>
         <el-table-column :label="t('security.reviewQueue.recognition')" min-width="270">
           <template #default="{ row }">
             <div class="queue-recognition">
-              <span>{{ capabilityName(row) }}</span>
-              <code>{{ row.detector_version }}</code>
+              <span>{{ row.recognition.name }}</span>
+              <code>{{ row.recognition.version }}</code>
             </div>
           </template>
         </el-table-column>
         <el-table-column :label="t('security.finding.evidence')" min-width="250">
           <template #default="{ row }">
             <div class="queue-evidence">
-              <span>{{ evidenceDescription(row) }}</span>
-              <small>{{ t('security.finding.confidenceValue', { value: confidenceLabel(row.confidence) }) }} · {{ formatDateTime(row.observed_at) }}</small>
+              <span>{{ row.evidence.description }}</span>
+              <small>{{ row.evidence.metadata }}</small>
             </div>
           </template>
         </el-table-column>
         <el-table-column :label="t('security.common.actions')" width="210" fixed="right">
           <template #default="{ row }">
             <div class="queue-actions">
-              <el-button v-if="canReview" link type="primary" @click="emit('review', row, 'confirm')">{{ t('security.finding.review') }}</el-button>
-              <el-button v-if="canReview" link type="danger" @click="emit('review', row, 'reject')">{{ t('security.finding.markFalsePositive') }}</el-button>
+              <el-button v-if="row.actions.canReview" link type="primary" @click="emit('review', row.finding, 'confirm')">{{ t('security.finding.review') }}</el-button>
+              <el-button v-if="row.actions.canReview" link type="danger" @click="emit('review', row.finding, 'reject')">{{ t('security.finding.markFalsePositive') }}</el-button>
             </div>
           </template>
         </el-table-column>
@@ -111,16 +107,7 @@ const props = defineProps({
   detectorVersion: { type: String, default: '' },
   sensitiveTypes: { type: Array, required: true },
   detectorCapabilities: { type: Array, required: true },
-  canReview: { type: Boolean, default: false },
-  resourceName: { type: Function, required: true },
-  resourcePath: { type: Function, required: true },
-  itemTypeLabel: { type: Function, required: true },
-  engineLabel: { type: Function, required: true },
-  typeName: { type: Function, required: true },
-  capabilityName: { type: Function, required: true },
-  evidenceDescription: { type: Function, required: true },
-  confidenceLabel: { type: Function, required: true },
-  formatDateTime: { type: Function, required: true }
+  presentation: { type: Object, required: true }
 })
 
 const emit = defineEmits([
@@ -152,6 +139,7 @@ const pageSizeModel = computed({
   get: () => props.pageSize,
   set: value => emit('update:pageSize', value)
 })
+const presentedRows = computed(() => props.rows.map(row => props.presentation.row(row)))
 const capabilities = computed(() => {
   const values = new Map(props.detectorCapabilities.map(item => [String(item.key || ''), item]))
   for (const finding of props.rows) {

@@ -1,43 +1,43 @@
 <template>
   <section class="manual-assessment-list">
     <h5>{{ t('security.assessment.manualConclusions') }}</h5>
-    <article v-for="assessment in assessments" :key="assessment.id" class="manual-assessment-card">
+    <article v-for="row in rows" :key="row.id" class="manual-assessment-card">
       <div>
-        <strong>{{ assessment.component_key }}</strong>
-        <span>{{ presentation.summary(assessment) }}</span>
-        <p>{{ assessment.current?.rationale }}</p>
-        <p v-if="assessment.current?.conclusion === 'sensitive'" class="resource-policy-summary">
-          {{ presentation.protectionSummary(assessment) }}
+        <strong>{{ row.componentKey }}</strong>
+        <span>{{ row.summary }}</span>
+        <p>{{ row.rationale }}</p>
+        <p v-if="row.protectionSummary" class="resource-policy-summary">
+          {{ row.protectionSummary }}
         </p>
       </div>
       <div class="manual-assessment-card__actions">
-        <el-tag :type="assessment.current?.conclusion === 'sensitive' ? 'success' : 'info'">
-          {{ presentation.conclusionLabel(assessment.current?.conclusion) }}
+        <el-tag :type="row.conclusion.type">
+          {{ row.conclusion.label }}
         </el-tag>
-        <el-button link @click="emit('history', assessment)">{{ t('security.assessment.history') }}</el-button>
-        <el-button v-if="canUpdate" link @click="emit('revise', assessment)">
+        <el-button link @click="emit('history', row.assessment)">{{ t('security.assessment.history') }}</el-button>
+        <el-button v-if="canUpdate" link @click="emit('revise', row.assessment)">
           {{ t('security.assessment.reviseConclusion') }}
         </el-button>
         <el-button
-          v-if="assessment.current?.conclusion === 'sensitive' && presentation.canConfigurePolicy(assessment)"
+          v-if="row.actions.canConfigurePolicy"
           link
           type="primary"
-          @click="emit('configurePolicy', assessment)"
+          @click="emit('configurePolicy', row.assessment)"
         >
-          {{ presentation.policyForAssessment(assessment)?.state === 'active' ? t('security.policy.adjust') : t('security.policy.tighten') }}
+          {{ row.actions.configurePolicyLabel }}
         </el-button>
         <el-button
-          v-if="assessment.current?.conclusion === 'sensitive' && presentation.policyForAssessment(assessment)?.state === 'active' && canRevokePolicies"
+          v-if="row.actions.canRestorePolicy && canRevokePolicies"
           link
-          @click="emit('restorePolicy', assessment)"
+          @click="emit('restorePolicy', row.assessment)"
         >
           {{ t('security.policy.restoreDefault') }}
         </el-button>
         <el-button
-          v-if="assessment.current?.conclusion === 'sensitive' && canUpdate"
+          v-if="row.actions.canRevokeAssessment && canUpdate"
           link
           type="danger"
-          @click="emit('revoke', assessment)"
+          @click="emit('revoke', row.assessment)"
         >
           {{ t('security.assessment.revokeConclusion') }}
         </el-button>
@@ -47,9 +47,10 @@
 </template>
 
 <script setup>
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-defineProps({
+const props = defineProps({
   assessments: { type: Array, required: true },
   canUpdate: { type: Boolean, default: false },
   canRevokePolicies: { type: Boolean, default: false },
@@ -58,6 +59,7 @@ defineProps({
 
 const emit = defineEmits(['history', 'revise', 'configurePolicy', 'restorePolicy', 'revoke'])
 const { t } = useI18n()
+const rows = computed(() => props.assessments.map(assessment => props.presentation.row(assessment)))
 </script>
 
 <style scoped>

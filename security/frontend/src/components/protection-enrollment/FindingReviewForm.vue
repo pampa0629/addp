@@ -1,10 +1,10 @@
 <template>
   <div class="review-target">
     <div class="review-target__header">
-      <strong>{{ finding.component_key }}</strong>
-      <el-tag size="small" type="warning" effect="plain">{{ remainingLabel }}</el-tag>
+      <strong>{{ presentation.target.componentKey }}</strong>
+      <el-tag size="small" type="warning" effect="plain">{{ presentation.remainingLabel }}</el-tag>
     </div>
-    <span>{{ typeName(finding.sensitive_data_type_id) }} · {{ confidenceLabel(finding.confidence) }}</span>
+    <span>{{ presentation.target.summary }}</span>
   </div>
   <el-collapse :model-value="basisExpanded" class="review-basis" @update:model-value="emit('update:basisExpanded', $event)">
     <el-collapse-item name="basis">
@@ -18,28 +18,28 @@
       <dl class="review-basis__facts">
         <div>
           <dt>{{ t('security.finding.reviewBasis.recognitionMethod') }}</dt>
-          <dd>{{ capabilityName(finding) }}</dd>
+          <dd>{{ presentation.basis.recognitionMethod }}</dd>
         </div>
         <div>
           <dt>{{ t('security.finding.reviewBasis.actualMatch') }}</dt>
-          <dd>{{ evidenceAuditDescription(finding) }}</dd>
+          <dd>{{ presentation.basis.actualMatch }}</dd>
         </div>
         <div>
           <dt>{{ t('security.finding.reviewBasis.governanceDecision') }}</dt>
           <dd>
-            <el-tag size="small" :type="decisionPresentation(finding).type">
-              {{ decisionPresentation(finding).label }}
+            <el-tag size="small" :type="presentation.basis.governance.decision.type">
+              {{ presentation.basis.governance.decision.label }}
             </el-tag>
-            <span>{{ effectiveDefinitionSummary(finding) }}</span>
-            <span>{{ baselineDescription(finding) }}</span>
+            <span>{{ presentation.basis.governance.definition }}</span>
+            <span>{{ presentation.basis.governance.baseline }}</span>
           </dd>
         </div>
         <div>
           <dt>{{ t('security.finding.reviewBasis.currentEnforcement') }}</dt>
-          <dd v-if="finding.explanation?.outlets?.length" class="review-basis__outlets">
-            <span v-for="outlet in finding.explanation.outlets" :key="outlet.consumer_owner">
-              <strong>{{ ownerLabel(outlet.consumer_owner) }}</strong>
-              {{ outletRuleDescription(finding, outlet.consumer_owner) }}
+          <dd v-if="presentation.basis.outlets.length" class="review-basis__outlets">
+            <span v-for="outlet in presentation.basis.outlets" :key="outlet.key">
+              <strong>{{ outlet.owner }}</strong>
+              {{ outlet.rule }}
             </span>
           </dd>
           <dd v-else>{{ t('security.finding.outletUnavailable') }}</dd>
@@ -63,12 +63,12 @@
       </el-form-item>
       <el-form-item :label="t('security.finding.securityGrade')" prop="securityGradeID" required>
         <el-select v-model="form.securityGradeID" class="wide" :placeholder="t('security.finding.selectSecurityGrade')">
-          <el-option v-for="item in activeGradesForType(form.sensitiveDataTypeID)" :key="item.id" :label="item.name" :value="String(item.id)" />
+          <el-option v-for="item in presentation.gradeOptions" :key="item.id" :label="item.name" :value="String(item.id)" />
         </el-select>
       </el-form-item>
     </template>
     <el-form-item :label="t('security.finding.rationale')" prop="rationale" required>
-      <el-input ref="rationaleInput" v-model="form.rationale" type="textarea" :rows="4" maxlength="2000" show-word-limit :placeholder="rationalePlaceholder" />
+      <el-input ref="rationaleInput" v-model="form.rationale" type="textarea" :rows="4" maxlength="2000" show-word-limit :placeholder="presentation.rationalePlaceholder" />
     </el-form-item>
   </el-form>
 </template>
@@ -79,23 +79,11 @@ import { useI18n } from 'vue-i18n'
 import { QuestionFilled } from '@element-plus/icons-vue'
 
 defineProps({
-  finding: { type: Object, required: true },
-  remainingLabel: { type: String, required: true },
+  presentation: { type: Object, required: true },
   basisExpanded: { type: Array, required: true },
   form: { type: Object, required: true },
   rules: { type: Object, required: true },
-  sensitiveTypes: { type: Array, required: true },
-  rationalePlaceholder: { type: String, required: true },
-  activeGradesForType: { type: Function, required: true },
-  typeName: { type: Function, required: true },
-  confidenceLabel: { type: Function, required: true },
-  capabilityName: { type: Function, required: true },
-  evidenceAuditDescription: { type: Function, required: true },
-  decisionPresentation: { type: Function, required: true },
-  effectiveDefinitionSummary: { type: Function, required: true },
-  baselineDescription: { type: Function, required: true },
-  ownerLabel: { type: Function, required: true },
-  outletRuleDescription: { type: Function, required: true }
+  sensitiveTypes: { type: Array, required: true }
 })
 
 const emit = defineEmits(['update:basisExpanded', 'sensitiveTypeChange'])

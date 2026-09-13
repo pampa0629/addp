@@ -11,7 +11,7 @@
     @opened="focusPrimary"
     @closed="emit('closed')"
   >
-    <template v-if="exemption">
+    <template v-if="presentation">
       <el-alert type="warning" :closable="false" :title="t('security.exemption.revokeHint')" />
       <div v-if="conflict" class="version-conflict-notice" role="alert">
         <span>{{ t('security.exemption.revokeVersionConflict') }}</span>
@@ -20,10 +20,10 @@
         </el-button>
       </div>
       <div class="policy-target">
-        <strong>{{ assessmentComponent(exemption.assessment_id) }}</strong>
-        <span>{{ t('security.exemption.subject') }}：{{ exemption.subject_id }}</span>
-        <span>{{ ownerLabel(exemption.consumer_owner) }} · {{ actionLabel(exemption.action) }}</span>
-        <span>{{ t('security.exemption.expiresAt') }}：{{ formatDateTime(exemption.current?.expires_at) }}</span>
+        <strong>{{ presentation.componentKey }}</strong>
+        <span>{{ t('security.exemption.subject') }}：{{ presentation.subjectId }}</span>
+        <span>{{ presentation.outlet }}</span>
+        <span>{{ t('security.exemption.expiresAt') }}：{{ presentation.expiresAt }}</span>
       </div>
       <el-form ref="formRef" :model="form" :rules="rules" label-position="top">
         <el-form-item :label="t('security.exemption.revokeRationale')" prop="rationale" required>
@@ -55,16 +55,12 @@ import { useI18n } from 'vue-i18n'
 
 defineProps({
   modelValue: { type: Boolean, default: false },
-  exemption: { type: Object, default: null },
+  presentation: { type: Object, default: null },
   saving: { type: Boolean, default: false },
   reloading: { type: Boolean, default: false },
   conflict: { type: Boolean, default: false },
   form: { type: Object, required: true },
-  rules: { type: Object, required: true },
-  assessmentComponent: { type: Function, required: true },
-  ownerLabel: { type: Function, required: true },
-  actionLabel: { type: Function, required: true },
-  formatDateTime: { type: Function, required: true }
+  rules: { type: Object, required: true }
 })
 
 const emit = defineEmits(['update:modelValue', 'reload', 'close', 'closed', 'submit'])
