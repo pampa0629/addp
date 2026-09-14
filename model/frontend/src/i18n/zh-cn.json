@@ -205,10 +205,7 @@
       "scd_3": "3 - 混合（部分历史）",
       "preview_ddl": "预览 DDL",
       "ddl_failed": "DDL 预览失败",
-      "approved_help": "已审批的模型定义只读。修改前请退回草稿。DDL 预览不会修改模型或创建物理表。",
-      "group_blocked": "此逻辑表属于以下物化组，需先移出所有物化组，才能退回草稿。",
-      "group_manage": "前往物化组：{name}",
-      "group_read_only": "请联系有物化组管理权限的人员调整成员。"
+      "approved_help": "已审批的模型定义只读。修改模型请先退回草稿；DDL 预览不修改模型或物理表。"
     },
     "field": {
       "title": "字段定义",
@@ -307,7 +304,7 @@
       "clear_config": "清空物化配置",
       "decommission": "退役物化目标",
       "decommission_title": "退役物化目标",
-      "decommission_warning": "此操作将永久删除目标物理表，且不会修改逻辑表定义。请先移除物化组和其他模块中的引用。",
+      "decommission_warning": "此操作将永久删除目标物理表，且不会修改逻辑表定义。请先移除其他模块中的引用。",
       "engine": "目标引擎",
       "engine_unknown": "引擎名称暂不可用",
       "engine_load_failed": "无法读取目标引擎名称",
@@ -322,8 +319,8 @@
       "prepare_records": "本表准备记录",
       "seal_records": "本表封存记录",
       "publish_records": "本表单独发布记录",
-      "group_records": "组发布记录 · {name}",
-      "group_publish_records": "物化组发布记录"
+      "create_target": "创建正式表",
+      "target_ready": "正式表已就绪，已有数据保持不变"
     },
     "dw_layer": {
       "title": "数仓分层配置",
@@ -419,28 +416,6 @@
       "copy_success": "DDL 已复制到剪贴板",
       "copy_failed": "复制失败，请手动选择文本复制"
     },
-    "materialization_group": {
-      "title": "物化组",
-      "subtitle": "将同一目标引擎中需要原子发布的已审批逻辑表组织在一起。",
-      "create": "新建物化组",
-      "edit": "编辑物化组",
-      "name": "名称",
-      "code": "代码",
-      "description": "描述",
-      "members": "逻辑表成员",
-      "membersPlaceholder": "选择已审批且需要一起发布的逻辑表",
-      "membersHelp": "所有成员必须已审批、指向同一数据引擎，且物理目标不得重复。",
-      "version": "版本",
-      "updatedAt": "更新时间",
-      "actions": "操作",
-      "empty": "暂无物化组",
-      "deleteConfirm": "确定删除该物化组吗？",
-      "codeRequired": "请输入物化组代码",
-      "codeFormat": "代码必须以小写字母开头，且只能包含小写字母、数字和下划线",
-      "nameRequired": "请输入物化组名称",
-      "membersRequired": "请至少选择一张逻辑表",
-      "execution_help": "需要同时对外可见的逻辑表才需分组。通过“物化流程”查看执行范围并启动关联流程。"
-    },
     "layout": {
       "title": "数据建模",
       "user": "用户",
@@ -450,7 +425,6 @@
       "entities": "业务实体",
       "erDiagram": "实体关系图",
       "logicalTables": "逻辑表设计",
-      "materializationGroups": "物化组",
       "starSchema": "星型建模视图"
     }
   }

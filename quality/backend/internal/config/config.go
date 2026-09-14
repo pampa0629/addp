@@ -25,7 +25,6 @@ type Config struct {
 
 	SystemURL           string
 	StandardURL         string
-	ModelURL            string
 	ServiceClientSecret string
 }
 
@@ -47,7 +46,6 @@ func LoadConfig() (*Config, error) {
 
 		SystemURL:           commonConfig.GetEnv("SYSTEM_URL", "http://localhost:8180"),
 		StandardURL:         commonConfig.GetEnv("STANDARD_URL", "http://localhost:8110"),
-		ModelURL:            commonConfig.GetEnv("MODEL_URL", "http://localhost:8181"),
 		ServiceClientSecret: os.Getenv("QUALITY_SERVICE_CLIENT_SECRET"),
 	}
 

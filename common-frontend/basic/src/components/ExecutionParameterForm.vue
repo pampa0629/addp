@@ -367,7 +367,7 @@ function upstreamValue(field) {
 }
 
 function setUpstreamValue(field, value) {
-  if (field.control !== 'resource_tree_picker') {
+  if (field.control !== 'resource_tree_picker' || field.schema.type === 'string') {
 	updatePath(field.path, value)
 	return
   }
@@ -427,7 +427,7 @@ function resourceLocatorName(field) {
 }
 
 function resourceLocator(field) {
-  return getPath(overrides.value, [...field.path, resourceLocatorName(field)]) || ''
+  return getPath(overrides.value, field.schema.type === 'string' ? field.path : [...field.path, resourceLocatorName(field)]) || ''
 }
 
 function resourceSummary(field, value) {
@@ -463,6 +463,11 @@ function confirmResourceSelection() {
   const locator = pickerSelection.value?.identity?.locator
   if (!locator || !activePicker.value) return
   const field = activePicker.value
+  if (field.schema.type === 'string') {
+    updatePath(field.path, locator)
+    pickerVisible.value = false
+    return
+  }
   const resourceValue = cloneValue(getPath(overrides.value, field.path) || field.defaultValue) || {}
   resourceValue[resourceLocatorName(field)] = locator
   if (field.ui?.resource_binding?.geometry_column_param) {

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ADDP_T2_SERVICES=postgres
-# transfer-postgres-gate.sh - Run Transfer PostgreSQL schema, protected export, and target override integration tests.
+# transfer-postgres-gate.sh - Run non-spatial Transfer PostgreSQL schema, protected export, and target override integration tests (no PostGIS required).
 
 set -euo pipefail
 

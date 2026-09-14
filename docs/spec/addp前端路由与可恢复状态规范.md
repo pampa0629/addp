@@ -88,7 +88,7 @@ Develop TaskProvider 的 canonical 前端路由为：
 | Quality | 问题工单详情 | path `/issues/:id` |
 | Quality | 问题工单列表筛选与分页 | `status`、`engine_id`、`page`、`page_size` |
 | Quality | 检查任务列表、创建与编辑 | `page`、`page_size`、`create=1`、`task_id`；创建和编辑保留分页上下文，默认列表省略 |
-| Quality | 物化门禁任务列表、创建与编辑 | `page`、`page_size`、`create=1`、`task_id`；创建和编辑保留分页上下文，默认列表省略 |
+| Quality | 数据校验任务列表、创建与编辑 | `page`、`page_size`、`create=1`、`task_id`；创建和编辑保留分页上下文，默认列表省略 |
 | Security | 分类分级体系 | path `/classification-grading`，以 `tab=grades` 恢复“保护等级”页签；默认“分类目录”页签省略 `tab` |
 | Security | 敏感数据定义 | path `/sensitive-data-definitions`；识别方式和默认保护都作为对应敏感类型的从属配置，不使用路由 Tab，不保留 `/protection-baselines` 公开页面路由 |
 | Security | 受保护资源与待复核候选 | path `/protection-enrollments`；资源详情内统一承载 Assessment 调整和只能收紧的 ProtectionPolicy 编辑；以 `tab=review-queue` 恢复“待复核候选”子视图，默认“受保护资源”省略 `tab`；候选子视图使用 `sensitive_data_type_id`、`detector_version`、`page`、`page_size` 恢复筛选与分页，默认值省略 |

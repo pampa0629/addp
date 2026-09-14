@@ -16,7 +16,7 @@
 
 - 规则应用管理（RuleApplication）：基于 Catalog 已审核的字段/组件标准映射，冻结数据元修订、目标和编译质量规则快照
 - 检查任务管理（CheckTask）：定义和执行确定 PostgreSQL 引擎、Schema、表范围的质量检查任务
-- 物化门禁管理（MaterializationGateTask）：对同一父编排中的 Model 物化组 staging 执行强类型发布前断言
+- 数据校验管理（DataValidationTask）：对显式绑定的正式物理表执行强类型断言
 - 质量检查执行：通过持久 worker、安全 SQL 编译和 Execution Authorization 执行规则并计算表级/字段级质量评分
 - 问题工单管理（Issue）：对检查失败的规则自动生成问题工单，支持状态流转（待处理 → 已解决/已忽略）
 - 执行记录查询：读取 `common.task_executions` 查看历史执行记录及详细结果
@@ -50,25 +50,25 @@ quality/
 │       │   ├── router.go                     # 路由配置（/api/v1/quality 前缀）
 │       │   ├── rule_application_handler.go   # 规则应用 CRUD
 │       │   ├── check_task_handler.go         # 检查任务 CRUD + 手动执行
-│       │   ├── materialization_gate_handler.go # 物化门禁任务 CRUD（只能由 Orchestrator 执行）
+│       │   ├── data_validation_handler.go # 数据校验任务 CRUD（只能由 Orchestrator 执行）
 │       │   ├── execution_handler.go          # 执行记录查询
 │       │   └── issue_handler.go              # 问题工单查询和状态更新
 │       ├── config/config.go                  # 配置加载（基于 common.BaseConfig）
 │       ├── models/
 │       │   ├── rule_application.go           # 规则应用模型
 │       │   ├── check_task.go                 # 检查任务模型
-│       │   ├── materialization_gate_task.go  # 物化门禁任务模型
+│       │   ├── data_validation_task.go  # 数据校验任务模型
 │       │   └── issue.go                      # 问题工单模型
 │       ├── repository/
 │       │   ├── rule_application_repo.go
 │       │   ├── check_task_repo.go
-│       │   ├── materialization_gate_repo.go
+│       │   ├── data_validation_repo.go
 │       │   └── issue_repo.go
 │       └── service/
 │           ├── rule_engine.go                # 规则加载与应用服务
 │           ├── check_task_service.go         # 检查任务 CRUD 服务
 │           ├── check_executor.go             # 持久 worker、Execution Authorization、评分与 Issue 协调
-│           ├── materialization_gate_executor.go # Model staging 强类型断言执行器
+│           ├── data_validation_executor.go # 正式物理表强类型断言执行器
 │           ├── sql_generator.go              # 规则→SQL 转换器（6 种规则类型）
 │           └── issue_service.go              # 问题工单服务
 └── frontend/
@@ -125,14 +125,13 @@ quality/
 | last_execution_status | string | 最近一次执行状态 |
 | created_by / updated_by | int64 | 操作人 |
 
-### `quality.materialization_gate_tasks` — 物化门禁任务定义
+### `quality.data_validation_tasks` — 数据校验任务定义
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | id / tenant_id / code / version | bigint / string | 租户内稳定身份和乐观锁版本 |
-| materialization_group_id / materialization_group_version | bigint | 绑定并冻结的 Model 物化组 |
-| table_bindings | JSONB | 与物化组成员完全一致的 `alias + logical_table_id` 数组 |
-| assertions | JSONB | `addp.quality.materialization-gate/v1` 强类型断言文档 |
+| table_bindings | JSONB | 同引擎正式表 `alias + locator` 数组 |
+| assertions | JSONB | `addp.quality.data-validation/v1` 强类型断言文档 |
 | last_execution_id / last_execution_status / last_run_at | nullable | 最近 execution 投影 |
 
 ### `quality.issues` — 质量问题工单
@@ -184,26 +183,26 @@ POST   /api/v1/quality/check-tasks/:id/run        # 手动触发执行（异步�
 
 检查任务创建和更新必须通过 System 实时 Catalog 选择并校验 PostgreSQL Schema/表；Quality 只持久化 `engine_id + schema_name + table_name`，不保存 EngineCatalogPath，也不依赖 Meta 扫描状态。
 
-### 物化门禁任务
+### 数据校验任务
 ```
-GET    /api/v1/quality/materialization-gate-tasks       # 列表
-POST   /api/v1/quality/materialization-gate-tasks       # 创建并冻结当前 Model 物化组版本
-GET    /api/v1/quality/materialization-gate-tasks/:id   # 详情
-PUT    /api/v1/quality/materialization-gate-tasks/:id   # 按 version 乐观锁更新
-DELETE /api/v1/quality/materialization-gate-tasks/:id   # 删除
+GET    /api/v1/quality/data-validation-tasks       # 列表
+POST   /api/v1/quality/data-validation-tasks       # 创建数据校验任务
+GET    /api/v1/quality/data-validation-tasks/:id   # 详情
+PUT    /api/v1/quality/data-validation-tasks/:id   # 按 version 乐观锁更新
+DELETE /api/v1/quality/data-validation-tasks/:id   # 删除
 ```
 
-任务只保存逻辑表绑定和强类型断言，不保存 Engine、Schema、物理表或 staging locator；保存和执行前均通过 Common Model Client 校验物化组。
+Quality `data_validation` 由 Orchestrator 触发，任务保存同一 Engine 中的标准物理表 `table_bindings: [{alias, locator}]` 与强类型断言。Worker 按当前 lease 派生精确 read 授权，在只读、可重复读事务内读取字段并执行断言，不依赖 Model。成功输出 `passed=true`；error 断言失败会阻止后续步骤，不回滚已完成的上游计算。
 
 ### TaskProvider 标准入口
 ```
-GET    /api/v1/quality/task-provider/tasks                        # 列表，task_type 支持 check|materialization_gate
+GET    /api/v1/quality/task-provider/tasks                        # 列表，task_type 支持 check|data_validation
 GET    /api/v1/quality/task-provider/tasks/:task_type/:id         # 详情
 POST   /api/v1/quality/task-provider/tasks/:task_type/:id/execute # 执行
 GET    /api/v1/quality/task-provider/executions/:execution_id     # 执行状态
 ```
 
-整组 TaskProvider 路由只允许 `addp-orchestrator` Service Client 的固定 Guard 与 `quality.task_provider.read|execute` 保护，不向 User Principal 或 Quality 前端暴露。物化门禁没有直接 run API，只允许 Orchestrator 通过 TaskProvider 触发。其成功输出为 `materialization_group_id + materialization_group_version`，下游 Model 物化组发布必须将二者绑定到 `expected_group_id + expected_group_version`。
+整组 TaskProvider 路由只允许 `addp-orchestrator` Service Client 的固定 Guard 与 `quality.task_provider.read|execute` 保护，不向 User Principal 或 Quality 前端暴露。数据校验没有直接 run API，只允许 Orchestrator 通过 TaskProvider 触发。其成功输出为 `passed=true`，失败会阻止后续步骤。
 
 ### 执行记录（只读，读 `common.task_executions`）
 ```
@@ -211,7 +210,7 @@ GET    /api/v1/quality/executions                 # 列表（分页）
 GET    /api/v1/quality/executions/:execution_id   # 详情及结果（含质量评分、字段评分、规则明细）
 ```
 
-这两个人用接口要求 `monitor.execution.read`，仅投影当前 Tenant 中 `module=quality` 且 `task_type IN (check, materialization_gate)` 的执行事实；列表接口是 owner 领域投影，不对应 Quality 前端列表页。模块级执行列表统一由 Monitor 展示，`cleanup_executor` 等运维执行不进入 Quality 业务领域详情。
+这两个人用接口要求 `monitor.execution.read`，仅投影当前 Tenant 中 `module=quality` 且 `task_type IN (check, data_validation)` 的执行事实；列表接口是 owner 领域投影，不对应 Quality 前端列表页。模块级执行列表统一由 Monitor 展示，`cleanup_executor` 等运维执行不进入 Quality 业务领域详情。
 
 ### 问题工单
 ```
@@ -323,9 +322,9 @@ worker 崩溃后由 lease 恢复：未达 max_attempts 返回 pending，达到�
 **被依赖**:
 - **Monitor 模块**: 通过 `common.task_executions` 中 `module='quality'` 的记录统一监控质量检查执行情况
 
-当前不支持事件触发、定时调度、取消、自定义 SQL、字段检查中的跨字段规则和自动映射；物化门禁只支持正式数据质量规范定义的六类强类型断言（`not_null`、`allowed_values`、`unique_key`、`foreign_key`、`predicate_implication`、`row_count`），需要扩展时先修改正式规范。
+当前不支持事件触发、定时调度、取消、自定义 SQL、字段检查中的跨字段规则和自动映射；数据校验只支持正式数据质量规范定义的六类强类型断言（`not_null`、`allowed_values`、`unique_key`、`foreign_key`、`predicate_implication`、`row_count`），需要扩展时先修改正式规范。
 
-MaterializationGateTask 必须绑定唯一 `materialization_group_id`，`table_bindings` 的 LogicalTable ID 集合必须与组成员完全一致，并冻结组版本。保存和执行前通过 Common Model Client 读取现有 MaterializationGroup；worker 再以当前 lease 获取 Materialization Read Context。组查询不返回 staging、DDL 或连接事实，物理读上下文不进入任务定义或 Orchestrator 参数。
+Quality `data_validation` 由 Orchestrator 触发，任务保存同一 Engine 中的标准物理表 `table_bindings: [{alias, locator}]` 与强类型断言。Worker 按当前 lease 派生精确 read 授权，在只读、可重复读事务内读取字段并执行断言，不依赖 Model。成功输出 `passed=true`；error 断言失败会阻止后续步骤，不回滚已完成的上游计算。
 
 ## 配置项
 
@@ -338,7 +337,6 @@ MaterializationGateTask 必须绑定唯一 `materialization_group_id`，`table_b
 | `QUALITY_WORKER_POLL_INTERVAL` | `500ms` | pending claim 与过期恢复轮询间隔；必须小于 lease |
 | `SYSTEM_URL` | `http://localhost:8180` | System 模块地址 |
 | `STANDARD_URL` | `http://localhost:8110` | Standard 模块地址 |
-| `MODEL_URL` | `http://localhost:8181` | Model 模块地址；物化组校验和 staging 读上下文只通过 Common Model Client 获取 |
 | `QUALITY_SERVICE_CLIENT_SECRET` | - | Quality Confidential OAuth Client Secret |
 | `REDIS_HOST` / `REDIS_PORT` | - | Redis 连接配置（用于认证缓存） |
 
@@ -349,7 +347,7 @@ Quality 是以下 Permission 的唯一 owner：
 - `quality.rule_application.*`
 - `quality.check_task.*`
 - `quality.issue.*`
-- `quality.materialization_gate.*`
+- `quality.data_validation.*`
 - `quality.task_provider.read`
 - `quality.task_provider.execute`
 
@@ -422,9 +420,9 @@ failed execution 必须在 `error_details.code` 写数据质量规范定义的�
 
 ## 前端公开路由
 
-- 模块内 Router 使用 `/rule-applications`、`/check-tasks`、`/materialization-gate-tasks`、`/executions/:execution_id`、`/issues` 等无模块前缀路径；Console 公开 URL 统一加 `/quality` 前缀。
+- 模块内 Router 使用 `/rule-applications`、`/check-tasks`、`/data-validation-tasks`、`/executions/:execution_id`、`/issues` 等无模块前缀路径；Console 公开 URL 统一加 `/quality` 前缀。
 - 执行详情唯一使用 `/executions/:execution_id`，参数名与 Task Execution 领域身份一致，不接受 `id` 别名。
 - 规则应用列表使用 `engine_id`、`schema_name`、`table_name`、`page`、`page_size` 恢复筛选和分页，默认值省略。
-- 检查任务和物化门禁任务页使用共享 `MonitorExecutionsButton` 按 `module=quality + task_type` 进入 Monitor；Quality 不保留模块级执行列表路由。
+- 检查任务和数据校验任务页使用共享 `MonitorExecutionsButton` 按 `module=quality + task_type` 进入 Monitor；Quality 不保留模块级执行列表路由。
 - 业务导航统一调用 `frontend/src/utils/moduleNavigation.js`。
 - 检查任务列表使用 `page`、`page_size` 恢复分页，使用 `create=1` 恢复创建弹窗、使用 `task_id` 恢复编辑弹窗；创建和编辑保留分页上下文，默认列表省略 query，TaskProvider `create_url` / `edit_url` 必须使用同一契约。

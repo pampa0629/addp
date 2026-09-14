@@ -237,7 +237,7 @@ graph TB
   - **Transfer Bounded Worker**: 从 `common.task_executions` PostgreSQL claim snapshot、watermark 和 bounded replay execution。
   - **Transfer Continuous Worker**: 已实现的独立长驻进程角色，通过 supervisor、DB lease、heartbeat 和 fencing 承载多个 continuous runtime session；不使用 Asynq 承载无限消费循环。当前数据面开放业务 Kafka keyed JSON -> PostgreSQL/MySQL，以及 PostgreSQL/MySQL/Oracle 单表 Debezium CDC -> PostgreSQL/MySQL/Oracle；Oracle Spatial 由 Oracle capture Provider 在源 schema 内维护 WKB 镜像表后进入同一 Debezium/consumer/apply 主路径，Oracle target 只开放 XY geometry。两类 source 共用同一 continuous runtime、position、lease 和 fencing；ArcGIS SDE 仍保留为后续独立逻辑变化源 Provider，不能并入普通 Oracle redo CDC。
   - **Meta Worker**: 从 `common.task_executions` PostgreSQL claim 扫描 execution，执行元数据扫描和索引。
-  - **Quality Worker**: 独立进程，从 `common.task_executions` PostgreSQL claim `check|materialization_gate` execution；字段检查执行评分和 Issue reconcile，物化门禁通过 Model Client 读取同批 staging 并执行强类型断言。
+  - **Quality Worker**: 独立进程，从 `common.task_executions` PostgreSQL claim `check|data_validation` execution；字段检查执行评分和 Issue reconcile，数据校验通过 Model Client 读取同批 staging 并执行强类型断言。
   - **Security Worker**: 独立进程，只领取 Security 对显式纳管目标创建的 `sensitive_data_discovery` execution，读取必要专业事实和受控样本并生成 Finding；不全量遍历 Meta，不提供通用数据代理。
 - **Manager 快显与瓦片任务**: `vector_tile_cache_generation` 与 `vector_tile_set_generation` 由 Manager Backend 按源能力选择唯一执行路径：PostgreSQL/PostGIS 表使用原生 `ST_AsMVT`，MySQL、Oracle 等标准 EWKB 可读的空间表流式物化临时 FlatGeobuf 后调用 GeoPython `vector_to_pmtiles`，文件或对象通过受控访问计划调用同一 operator；三类路径统一输出 PMTiles v3。`pptx_pdf_generation` 由 Manager 拥有任务和当前结果，通过 Common `WorkflowRuntimeProvider` direct 调用 Document Workflow `document_to_pdf`，LibreOffice 只存在于该 Runtime 镜像。任务定义、执行记录和缓存结果分别进入 Manager owner 表、`common.task_executions` 与对应 Manager 结果表。`vector_materialized_view_generation` 仍由 Manager Backend 在手动或编排触发时执行，结果进入 `manager.vector_materialized_view`。这些任务当前不启动模块自身定时调度；若需要把 Manager bounded execution 迁入附属 Worker，必须按任务类型整体切换唯一执行者，不允许 Backend 与 Worker 双轨并存。
 - **共享模块**: common 和 common-frontend 提供可复用的代码和组件
@@ -269,7 +269,7 @@ graph TB
 | **Monitor** | 执行监控:统一监控所有模块的任务执行记录、统计分析 | 8100 / 8100 | Go, Gin, PostgreSQL |
 | **Model** | 数据建模：业务实体、逻辑模型、模型关系、公共/一致性维度、维度层级和指标实现；冻结采用的 Standard 修订 | 8181 / 8181 | Go, Gin, GORM, Vue 3 |
 | **Quality** | 数据质量：基于确定资源、组件和标准修订管理规则应用、检查任务、符合性结果、质量评分和问题治理 | 8182 / 8182 | Go, Gin, GORM |
-| **Quality Worker** | Quality 有界字段检查与物化门禁执行器，独立进程 | - | Go, PostgreSQL claim/lease |
+| **Quality Worker** | Quality 有界字段检查与数据校验执行器，独立进程 | - | Go, PostgreSQL claim/lease |
 | **Standard** | 数据标准：业务域、术语、数据元、码值集、单位、指标定义和来源文档等可复用业务语义契约；不拥有维度层级、字段映射或质量执行事实 | 8110 / 8110 | Go, Gin, GORM |
 | **Asset** | 数据资产：目录对象组合、发布、申请、授权、评价和运营 | 8183 / 8183 | Go, Gin, GORM, Meilisearch |
 | **Portal** | 面向消费者的已发布资产门户 BFF | 8184 / 8184 | Go, Gin, GORM |
@@ -442,19 +442,19 @@ graph TB
 | **Transfer Bounded Worker** | Transfer | PostgreSQL claim snapshot、watermark 和 bounded replay execution，持有 execution lease 后执行 | Go, PostgreSQL claim/lease |
 | **Transfer Continuous Worker** | Transfer | 一个进程承载多个 continuous runtime session，按 task claim lease，并在 session 内受限处理 partition | Go, DB lease, Kafka client |
 | **Meta Worker** | Meta | PostgreSQL claim 扫描 execution，处理元数据扫描和索引；定时调度留在 Backend | Go, PostgreSQL claim/lease |
-| **Quality Worker** | Quality | 独立进程领取已授权 `pending` `check|materialization_gate` execution，执行字段规则或物化断言 | Go, PostgreSQL claim/lease, Model Client |
+| **Quality Worker** | Quality | 独立进程领取已授权 `pending` `check|data_validation` execution，执行字段规则或物理表断言 | Go, PostgreSQL claim/lease |
 | **TileCacheTask** | Manager | 在 Manager Backend 内按手动请求或 Orchestrator 编排触发 `vector_tile_cache_generation`，执行记录写入 `common.task_executions` | Go, TaskProvider API |
 | **VectorMaterializedViewTask** | Manager | 在 Manager Backend 内按用户手动或 Orchestrator 编排触发执行 `vector_materialized_view_generation`，创建或刷新 Manager 管理的 3857 矢量物化视图目标 | Go, TaskProvider API |
 
 **运行时说明**:
 - **Bounded execution queue**: Quality、Meta、Transfer bounded 统一以 `common.task_executions` PostgreSQL claim 为唯一领取路线，不使用 Redis/Asynq 或进程内 channel。
 - **Continuous supervisor**: Transfer continuous worker 直接 claim pending execution 和 `transfer.runtime_leases`；同一 task 同一时刻只有一个合法 owner，不把长期 session 投递为 Asynq job。
-- **Quality DB claim**: 独立 `quality-worker` 从 `common.task_executions` 领取已授权 `pending` `check|materialization_gate` execution；每个实例使用有界槽位，多实例通过 `SKIP LOCKED`、attempt 与 `lease_token` 协调。
+- **Quality DB claim**: 独立 `quality-worker` 从 `common.task_executions` 领取已授权 `pending` `check|data_validation` execution；每个实例使用有界槽位，多实例通过 `SKIP LOCKED`、attempt 与 `lease_token` 协调。
 - **CDC capture supervisor**: Transfer 已实现唯一 capture control plane，通过 Kafka Connect REST 管理 PostgreSQL/MySQL Debezium connector，并负责 generation、provider 专属捕获资源、内部 topic/group/ACL 的任务级生命周期；它不嵌入 continuous worker，也不把 Infra Kafka 注册为 System Engine。
 - **Manager 受管结果调度边界**: 瓦片缓存、矢量物化视图等受管当前结果任务均为 `supports_schedule=false`，不由 Manager 自身定时调度；周期性刷新由 Orchestrator 显式携带本次覆盖确认触发。Embedding 的逐 item owner scheduler 独立保留。
 - **执行记录**: 各模块执行状态统一写入 `common.task_executions`。
 - **角色边界**: owner scheduler 负责创建和投递 execution，execution worker 负责真实运行体与终态，Monitor dispatcher 只消费通知 outbox；固定 cleanup、collector 和 heartbeat 属于 maintenance loop，不应统称 worker。
-- **单一路线**: 同一 task type 只能有一条正式执行路线。Quality `check|materialization_gate`、Meta scan、Transfer bounded 和 Orchestrator 来源 Develop query 的正式路线均是独立 Worker + PostgreSQL claim；Backend 不执行 bounded 业务逻辑。
+- **单一路线**: 同一 task type 只能有一条正式执行路线。Quality `check|data_validation`、Meta scan、Transfer bounded 和 Orchestrator 来源 Develop query 的正式路线均是独立 Worker + PostgreSQL claim；Backend 不执行 bounded 业务逻辑。
 - **结果状态**: Manager 瓦片缓存结果状态写入 `manager.vector_tile_cache`，矢量物化视图结果状态写入 `manager.vector_materialized_view`，不由 execution 替代。
 - **未来切换条件**: 当 Manager API 响应因后台生成受影响、临时材料与 GeoPython 调用需要独立资源隔离，或需要多个执行器并行消费同一类任务时，对应任务类型应切换到唯一的 Manager Worker 或 GIS 执行引擎运行时。
 
@@ -995,8 +995,7 @@ graph TB
         TransferT["Transfer<br/>sync"]
         DevelopT["Develop<br/>query / workflow / script"]
         ManagerT["Manager<br/>vector_tile_cache_generation / vector_materialized_view_generation / embedding"]
-        QualityT["Quality<br/>check / materialization_gate"]
-        ModelT["Model<br/>materialization_prepare / materialization_seal / materialization_publish / materialization_group_publish"]
+        QualityT["Quality<br/>check / data_validation"]
         GraphT["Graph<br/>kg_build"]
         OrchestratorT["Orchestrator<br/>orchestration"]
 
@@ -1005,7 +1004,6 @@ graph TB
         DevelopT -->|"模块注册同时声明 capabilities"| ModuleRegistry
         ManagerT -->|"模块注册同时声明 capabilities"| ModuleRegistry
         QualityT -->|"模块注册同时声明 capabilities"| ModuleRegistry
-        ModelT -->|"模块注册同时声明 capabilities"| ModuleRegistry
         GraphT -->|"模块注册同时声明 capabilities"| ModuleRegistry
         OrchestratorT -->|"模块注册同时声明 capabilities"| ModuleRegistry
     end

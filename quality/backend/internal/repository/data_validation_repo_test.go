@@ -10,15 +10,14 @@ import (
 	"github.com/addp/quality/internal/models"
 )
 
-func TestMaterializationGateExecutionClaimsBeforeDynamicAuthorization(t *testing.T) {
+func TestDataValidationExecutionClaimsBeforeDynamicAuthorization(t *testing.T) {
 	db := newCheckTaskRepositoryTestDB(t)
-	repo := NewMaterializationGateRepository(db)
+	repo := NewDataValidationRepository(db)
 	now := time.Now().UTC()
-	task := models.MaterializationGateTask{
+	task := models.DataValidationTask{
 		TenantID: 7, Code: "outdoor_gate", Name: "Outdoor gate", Version: 1,
-		MaterializationGroupID: 9, MaterializationGroupVersion: 2,
-		TableBindings: []byte(`[{"alias":"orders","logical_table_id":3}]`),
-		Assertions:    []byte(`{"schema_version":"addp.quality.materialization-gate/v1","assertions":[{"assertion_key":"f3889a4a-1675-4623-b6e3-773f9125a04d","type":"not_null","severity":"error","params":{"table":"orders","column":"id"}}]}`),
+		TableBindings: []byte(`[{"alias":"orders","locator":"addp://engine/12/path/public/table_3?type=table"}]`),
+		Assertions:    []byte(`{"schema_version":"addp.quality.data-validation/v1","assertions":[{"assertion_key":"f3889a4a-1675-4623-b6e3-773f9125a04d","type":"not_null","severity":"error","params":{"table":"orders","column":"id"}}]}`),
 		CreatedBy:     1, UpdatedBy: 1, CreatedAt: now, UpdatedAt: now,
 	}
 	if err := repo.Create(context.Background(), &task); err != nil {
@@ -40,11 +39,11 @@ func TestMaterializationGateExecutionClaimsBeforeDynamicAuthorization(t *testing
 	}
 	execution := &commonExecution.TaskExecution{
 		ExecutionID: "gate-execution-1", TenantID: 7, Module: commonExecution.ModuleQuality,
-		TaskType: commonExecution.TaskTypeMaterializationGate, Source: commonExecution.ModuleOrchestrator,
+		TaskType: commonExecution.TaskTypeDataValidation, Source: commonExecution.ModuleOrchestrator,
 		ParentExecutionID: &parent, ExecutionBoundary: commonExecution.ExecutionBoundaryBounded,
 		Status: commonExecution.ExecutionStatusPending, TriggerType: commonExecution.TriggerTypeManual,
 		MaxAttempts: 3, CreatedAt: now, UpdatedAt: now,
-		ExecutionConfig: commonModels.JSONMap{"schema_version": "addp.quality.materialization-gate-execution-config/v1"},
+		ExecutionConfig: commonModels.JSONMap{"schema_version": "addp.quality.data-validation-execution-config/v1"},
 	}
 	if _, err := repo.CreateExecution(context.Background(), task.ID, task.TenantID, execution); err != nil {
 		t.Fatal(err)

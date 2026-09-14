@@ -490,7 +490,7 @@
           "logical_model": "逻辑模型",
           "management": "资产管理",
           "materialization": "模型物化",
-          "materialization_gate": "物化质量门禁",
+          "data_validation": "数据质量校验",
           "materialization_group": "物化任务组",
           "materialization_read": "物化结果读取",
           "materialized_target": "物化目标",

@@ -201,13 +201,9 @@ const (
 	// Graph 模块
 	TaskTypeKGBuild = "kg_build"
 	// Quality 模块
-	TaskTypeQualityCheck        = "check"
-	TaskTypeMaterializationGate = "materialization_gate"
+	TaskTypeQualityCheck   = "check"
+	TaskTypeDataValidation = "data_validation"
 	// Model 模块
-	TaskTypeMaterializationPrepare      = "materialization_prepare"
-	TaskTypeMaterializationSeal         = "materialization_seal"
-	TaskTypeMaterializationPublish      = "materialization_publish"
-	TaskTypeMaterializationGroupPublish = "materialization_group_publish"
 	// System 运维
 	TaskTypeCleanup         = "cleanup"
 	TaskTypeCleanupExecutor = "cleanup_executor"

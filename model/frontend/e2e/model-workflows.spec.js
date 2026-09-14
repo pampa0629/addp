@@ -42,7 +42,6 @@ const LOGICAL_TABLE = {
   scd_type: 0,
   description: '',
   version: 1,
-  materialization_groups: [],
   materialization: {
     target_parent_locator: 'addp://engine/2/path/public?type=schema&node_id=22',
     target_name: 'dwd_province',
@@ -363,89 +362,6 @@ test('approval and reopening refresh frozen field revisions without creating a d
   await expect(page.getByText('未保存', { exact: true })).toHaveCount(0)
 })
 
-test('group membership disables return to draft before sending a request and links to group management', async ({ page }) => {
-  const backend = await installMockBackend(page, { groupMember: true, permissions: [...DEFAULT_PERMISSIONS, 'model.logical_model.update', 'model.materialization_group.read', 'model.materialization_group.update'] })
-  await page.goto('/logical-tables/2')
-  await expect(page.locator('.detail-header').getByRole('button', { name: '退回草稿', exact: true })).toBeDisabled()
-  await expect(page.getByRole('alert').filter({ hasText: '需先移出所有物化组' })).toBeVisible()
-  expect(backend.getReopenRequests()).toBe(0)
-  await page.getByRole('button', { name: '前往物化组：统一发布组', exact: true }).click()
-  await expect(page).toHaveURL(/materialization-groups\?group_id=1$/)
-  await expect(page.getByRole('dialog', { name: '编辑物化组', exact: true })).toBeVisible()
-  await page.reload()
-  await expect(page.getByRole('dialog', { name: '编辑物化组', exact: true })).toBeVisible()
-  await page.goBack()
-  await expect(page.locator('.detail-header').getByRole('button', { name: '退回草稿', exact: true })).toBeDisabled()
-})
-
-test('return to draft confirms consequences and refreshes concurrent group membership conflicts', async ({ page }) => {
-  const backend = await installMockBackend(page, { concurrentGroupMember: true, permissions: [...DEFAULT_PERMISSIONS, 'model.logical_model.update'] })
-  await page.goto('/logical-tables/2')
-  await page.locator('.detail-header').getByRole('button', { name: '退回草稿', exact: true }).click()
-  const confirmation = page.getByRole('dialog', { name: '退回草稿', exact: true })
-  await expect(confirmation).toContainText('已发布的物理表保持不变')
-  await confirmation.getByRole('button', { name: '取消', exact: true }).click()
-  await expect(confirmation).not.toBeVisible()
-  expect(backend.getReopenRequests()).toBe(0)
-  await page.locator('.detail-header').getByRole('button', { name: '退回草稿', exact: true }).click()
-  await confirmation.getByRole('button', { name: '退回草稿', exact: true }).click()
-  await expect(page.locator('.detail-header').getByRole('button', { name: '退回草稿', exact: true })).toBeDisabled()
-  await expect(page.getByText('统一发布组', { exact: true })).toBeVisible()
-  await expect(page.getByText('已审批', { exact: true })).toBeVisible()
-  await expect(page.getByText('未保存', { exact: true })).toHaveCount(0)
-  expect(backend.getReopenRequests()).toBe(1)
-})
-
-test('materialization flow stays in Model, shows full scope and submits once after confirmation', async ({ page }) => {
-  await installMockBackend(page, { permissions: [...DEFAULT_PERMISSIONS, 'model.materialization_group.read', 'orchestrator.workflow.read', 'orchestrator.workflow.execute'] })
-  let executed = 0
-  await page.route('**/api/v1/orchestrator/orchestrations', route => fulfillJSON(route, [
-    { id: 10, name: '完整发布流程', steps: [{ id: 'a', name: '同步数据', provider: 'transfer', task_type: 'sync', task_id: 3 }, { id: 'b', name: '发布统一组', provider: 'model', task_type: 'materialization_group_publish', task_id: 1 }] },
-    { id: 11, name: '同号单表流程', steps: [{ id: 'c', name: '单表发布', provider: 'model', task_type: 'materialization_publish', task_id: 1 }] }
-  ]))
-  await page.route('**/api/v1/orchestrator/orchestrations/10/execute', async route => {
-    executed++
-    await new Promise(resolve => setTimeout(resolve, 250))
-    return fulfillJSON(route, { execution_id: '34d1d8e4-b697-47d1-9872-d90604d26ff0' }, 202)
-  })
-  await page.goto('/materialization-groups')
-  await page.getByRole('button', { name: '物化流程', exact: true }).click()
-  const dialog = page.getByRole('dialog', { name: '物化流程 · 统一发布组' })
-  await expect(dialog.getByText('同步数据', { exact: true })).toBeVisible()
-  await expect(dialog.getByText('发布统一组', { exact: true })).toBeVisible()
-  await expect(dialog.getByText('同号单表流程')).toHaveCount(0)
-  expect(executed).toBe(0)
-  await dialog.getByRole('button', { name: '执行', exact: true }).click()
-  let confirmation = page.getByRole('dialog', { name: '执行完整流程', exact: true })
-  await expect(confirmation).toContainText('全部 2 个步骤')
-  await confirmation.getByRole('button', { name: '取消', exact: true }).click()
-  expect(executed).toBe(0)
-  await expect(confirmation).toBeHidden()
-  await dialog.getByRole('button', { name: '执行', exact: true }).click()
-  confirmation = page.getByRole('dialog', { name: '执行完整流程', exact: true })
-  await confirmation.getByRole('button', { name: '执行', exact: true }).click()
-  await expect(dialog.getByRole('button', { name: '查看本次执行' })).toBeVisible()
-  await expect(dialog.getByRole('button', { name: '执行', exact: true })).toBeDisabled()
-  expect(executed).toBe(1)
-  await expect(page).toHaveURL(/\/materialization-groups$/)
-})
-
-for (const mode of ['empty', 'failed', 'readonly']) {
-  test(`materialization workflow ${mode} does not offer unintended execution`, async ({ page }) => {
-    await installMockBackend(page, { permissions: [...DEFAULT_PERMISSIONS, 'orchestrator.workflow.read', 'orchestrator.workflow.create'] })
-    await page.route('**/api/v1/orchestrator/orchestrations', route => mode === 'failed'
-      ? fulfillJSON(route, { error: 'failed' }, 500)
-      : fulfillJSON(route, mode === 'empty' ? [] : [{ id: 10, name: '只读流程', steps: [{ id: 'a', name: '发布', provider: 'model', task_type: 'materialization_publish', task_id: 2 }] }]))
-    await page.goto('/logical-tables/2')
-    await page.getByRole('button', { name: '物化流程', exact: true }).click()
-    const dialog = page.getByRole('dialog', { name: /物化流程/ })
-    if (mode === 'failed') { await expect(dialog).toContainText('关联流程加载失败'); await expect(dialog.getByRole('button', { name: '配置流程' })).toHaveCount(0) }
-    if (mode === 'empty') await expect(dialog.getByRole('button', { name: '配置流程' })).toBeVisible()
-    if (mode === 'readonly') await expect(dialog.getByText('只读流程')).toBeVisible()
-    await expect(dialog.getByRole('button', { name: '执行', exact: true })).toHaveCount(0)
-  })
-}
-
 test('ER entry starts scoped and restores domain and related edges from the URL', async ({ page }) => {
   await installMockBackend(page, { permissions: [...DEFAULT_PERMISSIONS, 'model.entity_relation.read'] })
   await page.goto('/er-diagram')
@@ -463,23 +379,6 @@ test('ER entry starts scoped and restores domain and related edges from the URL'
   await expect(page.getByText('Mermaid 导入将替换当前租户的全部实体模型，导出也包含全部业务域，不受当前图的筛选影响。')).toBeVisible()
 })
 
-test('table execution history distinguishes the table ID from its group ID', async ({ page, context }) => {
-  await installMockBackend(page, { groupMember: true })
-  await context.route('**/monitor/executions?**', route => route.fulfill({ contentType: 'text/html', body: '<html><body>Execution monitor</body></html>' }))
-  await page.goto('/logical-tables/2')
-  await page.getByRole('button', { name: '物化执行记录', exact: true }).click()
-  const tablePopup = context.waitForEvent('page')
-  await page.getByRole('button', { name: '本表准备记录', exact: true }).click()
-  const tableRecords = await tablePopup
-  await expect(tableRecords).toHaveURL(/monitor\/executions\?module=model&task_type=materialization_prepare&source_task_id=2$/)
-  await tableRecords.close()
-  const groupPopup = context.waitForEvent('page')
-  await page.getByRole('button', { name: '组发布记录 · 统一发布组', exact: true }).click()
-  const groupRecords = await groupPopup
-  await expect(groupRecords).toHaveURL(/monitor\/executions\?module=model&task_type=materialization_group_publish&source_task_id=1$/)
-  await groupRecords.close()
-})
-
 test('entity list opens the ER diagram in its current business domain', async ({ page }) => {
   await installMockBackend(page, { permissions: [...DEFAULT_PERMISSIONS, 'model.entity_relation.read'] })
   await page.goto('/entities?domain_id=2')
@@ -493,8 +392,6 @@ async function installMockBackend(target, options = {}) {
   let entity = structuredClone(ENTITIES[0])
   let logicalTable = structuredClone(LOGICAL_TABLE)
   let reopenRequests = 0
-  const group = { id: 1, code: 'unified', name: '统一发布组', version: 1, members: [{ logical_table_id: 2, position: 1 }] }
-  if (options.groupMember) logicalTable.materialization_groups = [{ id: group.id, name: group.name }]
   let dwLayer = structuredClone(DW_LAYER)
   if (options.concurrentLogicalTable || options.draftTable) logicalTable.status = 'draft'
   if (options.lifecycle) logicalTable.table_type = 'fact'
@@ -539,16 +436,10 @@ async function installMockBackend(target, options = {}) {
     if (path === '/api/v1/model/logical-tables/2/metric-implementations') return fulfillJSON(route, [])
     if (path === '/api/v1/model/logical-tables/2/approve' || path === '/api/v1/model/logical-tables/2/reopen') {
       if (path.endsWith('/reopen')) reopenRequests += 1
-      if ((options.groupMember || options.concurrentGroupMember) && path.endsWith('/reopen')) {
-        logicalTable.materialization_groups = [{ id: group.id, name: group.name }]
-        return fulfillJSON(route, { error_code: 'materialization_group_member_conflict', error: '逻辑表仍属于物化组，请先将其移出物化组' }, 409)
-      }
       logicalTable.status = path.endsWith('/approve') ? 'approved' : 'draft'
       logicalTable.version += 1
       return fulfillJSON(route, logicalTable)
     }
-    if (path === '/api/v1/model/materialization-groups') return fulfillJSON(route, { data: [group], total: 1 })
-    if (path === '/api/v1/model/materialization-groups/1') return fulfillJSON(route, group)
     if (path === '/api/v1/model/logical-tables') return fulfillJSON(route, { data: [logicalTable], total: 1 })
     if (path === '/api/v1/standard/domains') return fulfillJSON(route, DOMAINS)
     if (path === '/api/v1/standard/elements') return fulfillJSON(route, { data: [], total: 0 })
@@ -689,3 +580,15 @@ async function expectDialogWithinViewport(page, dialog) {
   expect(box.y + box.height).toBeLessThanOrEqual(viewport.height)
   expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false)
 }
+
+test('approved table creates its physical structure without running a workflow or becoming dirty', async ({ page }) => {
+ await installMockBackend(page,{permissions:[...DEFAULT_PERMISSIONS,'model.materialization.execute']})
+ let calls=0
+ await page.route('**/api/v1/model/logical-tables/2/materialized-target',async route=>{calls++;expect(route.request().postDataJSON()).toEqual({version:1});await new Promise(r=>setTimeout(r,150));return fulfillJSON(route,{target_locator:'addp://engine/2/path/public/dwd_province?type=table'})})
+ await page.goto('/logical-tables/2')
+ await page.getByRole('button',{name:'创建正式表',exact:true}).click()
+ await expect(page.getByRole('alert').filter({hasText:'正式表已就绪'})).toBeVisible()
+ expect(calls).toBe(1)
+ await expect(page.getByText('未保存',{exact:true})).toHaveCount(0)
+ await expect(page.getByRole('button',{name:'物化流程',exact:true})).toHaveCount(0)
+})

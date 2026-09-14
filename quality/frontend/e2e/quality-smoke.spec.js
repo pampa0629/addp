@@ -310,7 +310,7 @@ async function installMockBackend(page, options = {}) {
         authorization: { role_assignments: [{ permissions: [
           'quality.rule_application.read',
           'quality.check_task.read',
-          'quality.materialization_gate.read',
+          'quality.data_validation.read',
           'monitor.execution.read',
           'quality.issue.read'
         ] }] }
@@ -399,3 +399,26 @@ async function fulfillJSON(route, body, status = 200) {
     body: JSON.stringify(body)
   })
 }
+
+test('data validation edits physical bindings without any Model dependency', async ({ page }) => {
+ await installMockBackend(page)
+ await page.route('**/api/v1/system/auth/context',route=>fulfillJSON(route,{context:{type:'tenant'},authorization:{role_assignments:[{permissions:['quality.data_validation.read','quality.data_validation.update']}]}}))
+ const task={id:1,code:'physical_check',name:'正式表校验',version:2,table_bindings:[{alias:'customers',locator:'addp://engine/2/path/public/customers?type=table'}],assertions:{schema_version:'addp.quality.data-validation/v1',assertions:[{assertion_key:ruleKey,type:'not_null',severity:'error',params:{table:'customers',column:'id'}}]}}
+ let body
+ await page.route('**/api/v1/quality/data-validation-tasks**',route=>{
+  if(route.request().method()==='PUT'){body=route.request().postDataJSON();return fulfillJSON(route,{...task,...body,version:3})}
+  return fulfillJSON(route,new URL(route.request().url()).pathname.endsWith('/1')?task:{data:[task],total:1})
+ })
+ await page.route('**/api/v1/system/engines/2/catalog/facts',route=>fulfillJSON(route,{table:{fields:[{name:'id',type:'integer'}]}}))
+ const modelRequests=[]
+ page.on('request',request=>{if(request.url().includes('/api/v1/model/'))modelRequests.push(request.url())})
+ await page.goto('/data-validation-tasks?task_id=1')
+ const dialog=page.getByRole('dialog',{name:'编辑数据校验任务'})
+ await expect(dialog).toBeVisible()
+ await expect(dialog.getByText('customers',{exact:true}).first()).toBeVisible()
+ await dialog.getByRole('button',{name:'保存',exact:true}).click()
+ await expect.poll(()=>body?.table_bindings).toEqual(task.table_bindings)
+ expect(body.assertions).toEqual(task.assertions)
+ expect(body.materialization_group_id).toBeUndefined()
+ expect(modelRequests).toEqual([])
+})

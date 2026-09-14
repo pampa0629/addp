@@ -71,13 +71,9 @@ func TestModelRoutesEnforcePermissions(t *testing.T) {
 		{name: "dw layer list", method: http.MethodGet, path: "/api/v1/model/dw-layers", permissions: []string{"model.dw_layer.read"}},
 		{name: "dw layer create", method: http.MethodPost, path: "/api/v1/model/dw-layers", permissions: []string{"model.dw_layer.create"}, testAllowed: true},
 		{name: "dw layer read", method: http.MethodGet, path: "/api/v1/model/dw-layers/invalid", permissions: []string{"model.dw_layer.read"}, testAllowed: true},
+		{name: "materialized target create", method: http.MethodPost, path: "/api/v1/model/logical-tables/invalid/materialized-target", permissions: []string{"model.materialization.execute"}, testAllowed: true},
 		{name: "dw layer update", method: http.MethodPut, path: "/api/v1/model/dw-layers/1", permissions: []string{"model.dw_layer.update"}, testAllowed: true},
 		{name: "dw layer delete", method: http.MethodDelete, path: "/api/v1/model/dw-layers/1", permissions: []string{"model.dw_layer.delete"}, testAllowed: true},
-		{name: "materialization group list", method: http.MethodGet, path: "/api/v1/model/materialization-groups", permissions: []string{"model.materialization_group.read"}},
-		{name: "materialization group create", method: http.MethodPost, path: "/api/v1/model/materialization-groups", permissions: []string{"model.materialization_group.create"}, testAllowed: true},
-		{name: "materialization group read", method: http.MethodGet, path: "/api/v1/model/materialization-groups/invalid", permissions: []string{"model.materialization_group.read"}, testAllowed: true},
-		{name: "materialization group update", method: http.MethodPut, path: "/api/v1/model/materialization-groups/invalid", permissions: []string{"model.materialization_group.update"}, testAllowed: true},
-		{name: "materialization group delete", method: http.MethodDelete, path: "/api/v1/model/materialization-groups/invalid", permissions: []string{"model.materialization_group.delete"}, testAllowed: true},
 	}
 	authContexts := map[string][]string{
 		"Bearer no-model-permissions": {"standard.domain.read"},
@@ -93,7 +89,7 @@ func TestModelRoutesEnforcePermissions(t *testing.T) {
 	authServer := authtest.NewTenantUserAuthContextServer(t, "7", authContexts)
 	defer authServer.Close()
 
-	router := SetupRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, authServer.URL, nil, modulelifecycle.NewStandalone("model"))
+	router := SetupRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, authServer.URL, nil, modulelifecycle.NewStandalone("model"))
 
 	for index, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

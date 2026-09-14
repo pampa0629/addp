@@ -236,7 +236,6 @@ export const SIDEBAR_MENUS = {
       { index: '/modeling/dw-layers',      icon: Grid,       label: 'console.menus.modeling.dwLayers' },
       { index: '/modeling/logical-tables', icon: Connection, label: 'console.menus.modeling.logicalTables' },
       { index: '/modeling/star-schema',    icon: Grid,       label: 'console.menus.modeling.starSchema' },
-      { index: '/modeling/materialization-groups', icon: SetUp, label: 'console.menus.modeling.materializationGroups' },
     ],
   },
   quality: {
@@ -244,7 +243,7 @@ export const SIDEBAR_MENUS = {
     items: [
       { index: '/quality/rule-applications', icon: Setting, label: 'console.menus.quality.ruleApplications', recentLabel: 'console.menus.quality.recentRuleApplications', permissions: ['quality.rule_application.read'] },
       { index: '/quality/check-tasks',       icon: List,    label: 'console.menus.quality.checkTasks', recentLabel: 'console.menus.quality.recentCheckTasks', permissions: ['quality.check_task.read'] },
-      { index: '/quality/materialization-gate-tasks', icon: Lock, label: 'console.menus.quality.materializationGateTasks', recentLabel: 'console.menus.quality.recentMaterializationGateTasks', permissions: ['quality.materialization_gate.read'] },
+      { index: '/quality/data-validation-tasks', icon: Lock, label: 'console.menus.quality.dataValidationTasks', recentLabel: 'console.menus.quality.recentDataValidationTasks', permissions: ['quality.data_validation.read'] },
       { index: '/quality/issues',            icon: Warning, label: 'console.menus.quality.issues', recentLabel: 'console.menus.quality.recentIssues', permissions: ['quality.issue.read'] },
     ],
   },

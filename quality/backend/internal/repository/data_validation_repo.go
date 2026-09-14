@@ -15,26 +15,26 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-type MaterializationGateRepository struct{ db *gorm.DB }
+type DataValidationRepository struct{ db *gorm.DB }
 
-func NewMaterializationGateRepository(db *gorm.DB) *MaterializationGateRepository {
-	return &MaterializationGateRepository{db: db}
+func NewDataValidationRepository(db *gorm.DB) *DataValidationRepository {
+	return &DataValidationRepository{db: db}
 }
 
-func (r *MaterializationGateRepository) List(ctx context.Context, tenantID int64, page, pageSize int) ([]models.MaterializationGateTask, int64, error) {
+func (r *DataValidationRepository) List(ctx context.Context, tenantID int64, page, pageSize int) ([]models.DataValidationTask, int64, error) {
 	page, pageSize = normalizePage(page, pageSize)
 	query := r.db.WithContext(ctx).Where("tenant_id = ?", tenantID)
 	var total int64
-	if err := query.Model(&models.MaterializationGateTask{}).Count(&total).Error; err != nil {
+	if err := query.Model(&models.DataValidationTask{}).Count(&total).Error; err != nil {
 		return nil, 0, commonRepository.WrapDBError(err)
 	}
-	var items []models.MaterializationGateTask
+	var items []models.DataValidationTask
 	err := query.Order("updated_at DESC, id DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&items).Error
 	return items, total, commonRepository.WrapDBError(err)
 }
 
-func (r *MaterializationGateRepository) Get(ctx context.Context, tenantID, id int64) (*models.MaterializationGateTask, error) {
-	var task models.MaterializationGateTask
+func (r *DataValidationRepository) Get(ctx context.Context, tenantID, id int64) (*models.DataValidationTask, error) {
+	var task models.DataValidationTask
 	err := r.db.WithContext(ctx).Where("tenant_id = ? AND id = ?", tenantID, id).First(&task).Error
 	if err != nil {
 		return nil, commonRepository.WrapDBError(err)
@@ -42,58 +42,56 @@ func (r *MaterializationGateRepository) Get(ctx context.Context, tenantID, id in
 	return &task, nil
 }
 
-func (r *MaterializationGateRepository) Create(ctx context.Context, task *models.MaterializationGateTask) error {
+func (r *DataValidationRepository) Create(ctx context.Context, task *models.DataValidationTask) error {
 	return commonRepository.WrapDBError(r.db.WithContext(ctx).Create(task).Error)
 }
 
-func (r *MaterializationGateRepository) Replace(ctx context.Context, task *models.MaterializationGateTask, expectedVersion int64) error {
+func (r *DataValidationRepository) Replace(ctx context.Context, task *models.DataValidationTask, expectedVersion int64) error {
 	return commonRepository.WrapDBError(r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var current models.MaterializationGateTask
+		var current models.DataValidationTask
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("tenant_id = ? AND id = ?", task.TenantID, task.ID).First(&current).Error; err != nil {
 			return err
 		}
 		if current.Version != expectedVersion {
-			return fmt.Errorf("%w: materialization gate version changed", commonAPI.ErrConflict)
+			return fmt.Errorf("%w: data validation version changed", commonAPI.ErrConflict)
 		}
 		active, err := gateActiveExecutionCount(tx, task.ID, task.TenantID)
 		if err != nil {
 			return err
 		}
 		if active > 0 {
-			return fmt.Errorf("%w: materialization gate has an active execution", commonAPI.ErrConflict)
+			return fmt.Errorf("%w: data validation has an active execution", commonAPI.ErrConflict)
 		}
 		result := tx.Model(&current).Where("version = ?", expectedVersion).Updates(map[string]interface{}{
 			"name": task.Name, "description": task.Description,
-			"materialization_group_id":      task.MaterializationGroupID,
-			"materialization_group_version": task.MaterializationGroupVersion,
-			"table_bindings":                task.TableBindings, "assertions": task.Assertions,
+			"table_bindings": task.TableBindings, "assertions": task.Assertions,
 			"version": expectedVersion + 1, "updated_by": task.UpdatedBy, "updated_at": task.UpdatedAt,
 		})
 		if result.Error != nil {
 			return result.Error
 		}
 		if result.RowsAffected != 1 {
-			return fmt.Errorf("%w: materialization gate version changed", commonAPI.ErrConflict)
+			return fmt.Errorf("%w: data validation version changed", commonAPI.ErrConflict)
 		}
 		return nil
 	}))
 }
 
-func (r *MaterializationGateRepository) Delete(ctx context.Context, tenantID, id, version int64) error {
+func (r *DataValidationRepository) Delete(ctx context.Context, tenantID, id, version int64) error {
 	return commonRepository.WrapDBError(r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var task models.MaterializationGateTask
+		var task models.DataValidationTask
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("tenant_id = ? AND id = ?", tenantID, id).First(&task).Error; err != nil {
 			return err
 		}
 		if task.Version != version {
-			return fmt.Errorf("%w: materialization gate version changed", commonAPI.ErrConflict)
+			return fmt.Errorf("%w: data validation version changed", commonAPI.ErrConflict)
 		}
 		active, err := gateActiveExecutionCount(tx, id, tenantID)
 		if err != nil {
 			return err
 		}
 		if active > 0 {
-			return fmt.Errorf("%w: materialization gate has an active execution", commonAPI.ErrConflict)
+			return fmt.Errorf("%w: data validation has an active execution", commonAPI.ErrConflict)
 		}
 		return tx.Delete(&task).Error
 	}))
@@ -103,17 +101,17 @@ func gateActiveExecutionCount(tx *gorm.DB, taskID, tenantID int64) (int64, error
 	var count int64
 	err := tx.Model(&commonExecution.TaskExecution{}).Where(
 		"tenant_id = ? AND module = ? AND task_type = ? AND source_task_id = ? AND status IN ?",
-		tenantID, commonExecution.ModuleQuality, commonExecution.TaskTypeMaterializationGate, strconv.FormatInt(taskID, 10),
+		tenantID, commonExecution.ModuleQuality, commonExecution.TaskTypeDataValidation, strconv.FormatInt(taskID, 10),
 		[]string{commonExecution.ExecutionStatusPending, commonExecution.ExecutionStatusRunning},
 	).Count(&count).Error
 	return count, err
 }
 
-func (r *MaterializationGateRepository) CreateExecution(ctx context.Context, taskID, tenantID int64, execution *commonExecution.TaskExecution) (*models.MaterializationGateTask, error) {
-	var task models.MaterializationGateTask
+func (r *DataValidationRepository) CreateExecution(ctx context.Context, taskID, tenantID int64, execution *commonExecution.TaskExecution) (*models.DataValidationTask, error) {
+	var task models.DataValidationTask
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if execution.ParentExecutionID == nil {
-			return fmt.Errorf("%w: materialization gate requires parent execution", commonAPI.ErrConflict)
+			return fmt.Errorf("%w: data validation requires parent execution", commonAPI.ErrConflict)
 		}
 		var parent commonExecution.TaskExecution
 		if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).
@@ -133,7 +131,7 @@ func (r *MaterializationGateRepository) CreateExecution(ctx context.Context, tas
 			return err
 		}
 		if active > 0 {
-			return fmt.Errorf("%w: materialization gate already has an active execution", commonAPI.ErrConflict)
+			return fmt.Errorf("%w: data validation already has an active execution", commonAPI.ErrConflict)
 		}
 		execution.SourceTaskID = commonExecution.NewSourceTaskIDFromInt(int(taskID))
 		execution.SourceTaskName = &task.Name
@@ -150,13 +148,13 @@ func (r *MaterializationGateRepository) CreateExecution(ctx context.Context, tas
 	return &task, commonRepository.WrapDBError(err)
 }
 
-func (r *MaterializationGateRepository) ClaimPendingExecution(ctx context.Context, workerID string, now time.Time, lease time.Duration) (*commonExecution.TaskExecution, *models.MaterializationGateTask, error) {
+func (r *DataValidationRepository) ClaimPendingExecution(ctx context.Context, workerID string, now time.Time, lease time.Duration) (*commonExecution.TaskExecution, *models.DataValidationTask, error) {
 	var execution *commonExecution.TaskExecution
-	var task models.MaterializationGateTask
+	var task models.DataValidationTask
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var err error
 		execution, _, err = commonExecution.ClaimNext(ctx, tx, commonExecution.ClaimOptions{
-			Module: commonExecution.ModuleQuality, TaskType: commonExecution.TaskTypeMaterializationGate,
+			Module: commonExecution.ModuleQuality, TaskType: commonExecution.TaskTypeDataValidation,
 			WorkerID: workerID, Now: now, LeaseDuration: lease, RequireAuthorization: false,
 		})
 		if err != nil || execution == nil {
@@ -179,7 +177,7 @@ func (r *MaterializationGateRepository) ClaimPendingExecution(ctx context.Contex
 			return result.Error
 		}
 		if result.RowsAffected != 1 {
-			return fmt.Errorf("%w: materialization gate summary changed", commonAPI.ErrConflict)
+			return fmt.Errorf("%w: data validation summary changed", commonAPI.ErrConflict)
 		}
 		return nil
 	})
@@ -189,7 +187,7 @@ func (r *MaterializationGateRepository) ClaimPendingExecution(ctx context.Contex
 	return execution, &task, nil
 }
 
-func (r *MaterializationGateRepository) AttachExecutionAuthorization(ctx context.Context, lease commonExecution.Lease, fields map[string]interface{}) error {
+func (r *DataValidationRepository) AttachExecutionAuthorization(ctx context.Context, lease commonExecution.Lease, fields map[string]interface{}) error {
 	fields["updated_at"] = time.Now().UTC()
 	result := r.db.WithContext(ctx).Model(&commonExecution.TaskExecution{}).Where(
 		"tenant_id = ? AND execution_id = ? AND status = ? AND attempt = ? AND lease_owner = ? AND lease_token = ? AND execution_authorization_id IS NULL",
@@ -199,17 +197,17 @@ func (r *MaterializationGateRepository) AttachExecutionAuthorization(ctx context
 		return result.Error
 	}
 	if result.RowsAffected != 1 {
-		return fmt.Errorf("%w: materialization gate cannot attach authorization", commonAPI.ErrConflict)
+		return fmt.Errorf("%w: data validation cannot attach authorization", commonAPI.ErrConflict)
 	}
 	return nil
 }
 
-func (r *MaterializationGateRepository) CompleteExecutionWithLease(ctx context.Context, taskID, tenantID int64, lease commonExecution.Lease, status string, fields map[string]interface{}, completedAt time.Time) error {
+func (r *DataValidationRepository) CompleteExecutionWithLease(ctx context.Context, taskID, tenantID int64, lease commonExecution.Lease, status string, fields map[string]interface{}, completedAt time.Time) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := commonExecution.CompleteWithLease(ctx, tx, lease, status, completedAt, fields); err != nil {
 			return err
 		}
-		result := tx.Model(&models.MaterializationGateTask{}).Where(
+		result := tx.Model(&models.DataValidationTask{}).Where(
 			"tenant_id = ? AND id = ? AND last_execution_id = ? AND last_execution_status = ?",
 			tenantID, taskID, lease.ExecutionID, commonExecution.ExecutionStatusRunning,
 		).Updates(map[string]interface{}{"last_run_at": completedAt, "last_execution_status": status})
@@ -217,20 +215,20 @@ func (r *MaterializationGateRepository) CompleteExecutionWithLease(ctx context.C
 			return result.Error
 		}
 		if result.RowsAffected != 1 {
-			return fmt.Errorf("%w: materialization gate is not running", commonAPI.ErrConflict)
+			return fmt.Errorf("%w: data validation is not running", commonAPI.ErrConflict)
 		}
 		return nil
 	})
 }
 
-func (r *MaterializationGateRepository) RenewLease(ctx context.Context, lease commonExecution.Lease, expiresAt time.Time) error {
+func (r *DataValidationRepository) RenewLease(ctx context.Context, lease commonExecution.Lease, expiresAt time.Time) error {
 	return commonExecution.RenewLease(ctx, r.db, lease, expiresAt)
 }
 
-func (r *MaterializationGateRepository) RecoverExpiredExecutions(ctx context.Context, now time.Time) error {
+func (r *DataValidationRepository) RecoverExpiredExecutions(ctx context.Context, now time.Time) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		executions, err := commonExecution.FindExpiredForUpdate(ctx, tx, commonExecution.ExpiredOptions{
-			Module: commonExecution.ModuleQuality, TaskType: commonExecution.TaskTypeMaterializationGate, Now: now, Limit: 100,
+			Module: commonExecution.ModuleQuality, TaskType: commonExecution.TaskTypeDataValidation, Now: now, Limit: 100,
 		})
 		if err != nil {
 			return err
@@ -254,7 +252,7 @@ func (r *MaterializationGateRepository) RecoverExpiredExecutions(ctx context.Con
 			if execution.SourceTaskID != nil {
 				taskID, parseErr := strconv.ParseInt(*execution.SourceTaskID, 10, 64)
 				if parseErr == nil {
-					result := tx.Model(&models.MaterializationGateTask{}).Where(
+					result := tx.Model(&models.DataValidationTask{}).Where(
 						"tenant_id = ? AND id = ? AND last_execution_id = ? AND last_execution_status = ?",
 						execution.TenantID, taskID, execution.ExecutionID, commonExecution.ExecutionStatusRunning,
 					).Updates(map[string]interface{}{"last_execution_status": status})

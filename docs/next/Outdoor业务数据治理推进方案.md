@@ -2,7 +2,7 @@
 
 > 本文说明如何把 [Outdoor 业务理解](Outdoor领域理解.md) 转化为 ADDP 中可治理、可计算、可供 Copilot 使用的语义资产。它是推进方案，不把尚未审核的候选对象直接当作平台事实。
 
-> 当前状态（2026-09-05）：Outdoor 核心治理闭环只保留 `MongoDB -> Transfer ODS -> Develop DIM/DWD/DWS -> Model seal/publish -> Quality -> Service` 一条生产路线。唯一编排 `10` 已收敛为 17 步全量重算；正式物理成果为三张 ODS、两张 DIM、一张 DWD 和一张 DWS，共七张表。人员指标只预计算“当前主领队活动次数”和“参加活动次数（含当前主领队）”，两人定向重叠率改为带命名参数的即时查询服务，不再物化人员对表。旧任务和旧物理成果已退出可执行路径；历史 execution、软删除记录和 Catalog 变更记录仅作审计事实。由于尚未给定业务调度周期，暂不配置 Cron，这不是遗留迁移任务。
+> 当前目标（2026-09-14）：删除发布组和暂存批次。Model 独立创建正式表；唯一编排 10 收敛为 3 个 ODS 同步、4 个 Develop 正式表覆盖计算和 1 个 Quality 数据校验，共 8 步。保留 16 条质量断言。以下历史执行记录仅作背景，不代表当前运行路线。
 
 ## 1. 目标与边界
 
@@ -26,9 +26,9 @@
 
 - `Standard` 拥有 Outdoor 业务域、术语、数据元、码值、单位、指标和定义文档；
 - `Meta` 拥有 MongoDB collection、字段路径、动态 schema 采样事实和资源定位；
-- `Model` 拥有租户级实体、实体关系、逻辑表、Standard 指标引用和逻辑表物化结构控制面，负责受控 DDL、staging 准备、结构校验与原子发布；
+- `Model` 拥有实体与逻辑模型，负责根据审批结构创建正式表和显式退役目标；
 - `Transfer` 只负责引擎间数据同步：通过 bounded query-source 执行只读 MongoDB MQL，将嵌套 BSON 做贴源结构整理后写入任务自身配置的 PostgreSQL ODS 固定目标；它不认识 Model；
-- `Develop` 只在 PostgreSQL 内执行保存的通用关系查询：先读取 ODS 计算 DIM/DWD staging，再读取同批 sealed DIM/DWD 计算 DWS staging；它不认识 Model，生产计算不直查 MongoDB；
+- `Develop` 从 PostgreSQL ODS 计算正式 DIM/DWD，再计算正式 DWS；每次覆盖在单表事务内完成，不直接查询 MongoDB；
 - `Quality` 负责物化结果的主键、引用完整性、业务关系和指标结果门禁；
 - `Orchestrator` 只引用各 owner 模块的持久任务，形成支持手动执行和定时调度的唯一全量重算 DAG；
 - `Copilot` 只消费经过验证的资源事实、已审核语义上下文和已发布指标结果；MongoDB MQL 编译结果只保留为指标金样和开发期回归工具，不作为生产指标计算路线；
@@ -204,15 +204,10 @@ erDiagram
 生产链路固定为：
 
 ```text
-Transfer bounded query-source 任务将 MongoDB 贴源同步到固定 PostgreSQL ODS
-  -> Model 准备 DIM/DWD/DWS 物化批次与 staging
-  -> Develop SQL 查询任务读取 ODS 计算 DIM/DWD staging
-  -> Model seal DIM/DWD 批次
-  -> Develop SQL 查询任务读取同批 sealed DIM/DWD 计算 DWS staging
-  -> Model seal DWS 批次
-  -> Quality 门禁
-  -> Model 原子发布本次完整重算结果
+Model 独立创建正式 DIM/DWD/DWS 表（结构操作）
+Orchestrator 执行：Transfer 同步 ODS -> Develop 覆盖 DIM/DWD -> Develop 覆盖 DWS -> Quality 校验正式表
 ```
+
 
 Model 拥有物化结构和发布边界，只根据已审批模型生成受控 DDL；不接受任意 DDL。Transfer 只负责 MongoDB 到 PostgreSQL ODS 的跨引擎流式同步；Develop 负责 PostgreSQL 内 ODS -> DIM/DWD -> DWS 的通用关系计算。两者都不创建、删除或修改正式逻辑表，也不依赖 Model。Orchestrator 只控制依赖、触发和执行追踪，不复制任务实现。所有生产计算都从 PostgreSQL ODS 起步；DWS 只读取同批 sealed DIM/DWD，禁止直接读取 `Outdoor.Outdoors` 或 `Outdoor.Persons`。
 
@@ -245,7 +240,7 @@ MongoDB `title.level` 的真实值包含 `1.9`、`2.2` 等小数。ODS 保留贴
 
 前三个任务属于 Transfer bounded query-source：MongoDB MQL 只做 ODS 所需的确定性结构整理，普通对象子字段通过 `$project` 投影，成员数组通过 `$unwind` 展开，再写入三个固定 ODS 目标。Transfer 不解释 Standard 码值或 Model 业务粒度，不提供递归 JSON 自动摊平。后四个任务属于 Develop PostgreSQL SQL 查询：`51/52/53` 读取 ODS 生成 DIM/DWD，`49` 只读取同一父编排下已 sealed 的 DIM/DWD 生成 DWS。
 
-Transfer 三个任务按各自配置持有固定 ODS 目标；Develop 四个 writer 任务不保存物化批次标识、逻辑表标识或 Model 物理目标名。Orchestrator 先执行对应 Model prepare，再把 `staging_locator` 作为 Develop writer 的 `target_locator`；Develop 的关系查询参数只绑定 Transfer 的固定 ODS 输出或同一父编排中已 sealed 上游批次 locator。Transfer 与 Develop 都不承担模型 DDL 或正式表替换；失败不能把半成品标记为成功。
+Transfer 三个任务使用固定 ODS 目标；Develop 四个任务由 Orchestrator 显式指定固定正式表 target_locator 与 write_mode=overwrite。下游读取上游正式表；没有准备、封口或发布步骤。
 
 ### 8.2 Quality 门禁
 
@@ -638,7 +633,7 @@ Standard 侧已完成旧码值集 Tenant/Domain 不一致的收敛：`outdoor_me
 | Develop | `outdoor_dws_person_metric_refresh` / `outdoor_dws_person_pair_metric_refresh` | `49/50` | sealed DIM/DWD -> 两张 DWS staging |
 | Model | 五张逻辑表 | `3/4/5/6/7`，版本 `49/21/20/28/33` | prepare、seal、组原子发布到 `outdoor` Schema |
 | Model | `outdoor_governed_refresh` | 组 `1@13` | 五表同批原子发布 |
-| Quality | `outdoor_governed_materialization_gate` | 任务 `1`、版本 `4`，绑定组 `1@13` | 10 项阻断级断言，含 `member_status` 枚举值域 |
+| Quality | `outdoor_governed_data_validation` | 任务 `1`、版本 `4`，绑定组 `1@13` | 10 项阻断级断言，含 `member_status` 枚举值域 |
 | Quality | `Outdoor 成员状态质量检查` | RuleApplication `15`、CheckTask `10` | 按已冻结的数据元修订检查正式 DWD 字段 |
 | Service | `outdoor_person_metric` / `outdoor_person_pair_metric` | 查询服务 `24/25` | 对外提供两张 DWS 的私有 REST 查询服务 |
 | Orchestrator | `outdoor_governance_full_refresh` | 编排 `10` | 20 步唯一全量重算 DAG；支持手动执行，预留 Cron 但未配置业务调度周期 |
@@ -678,7 +673,7 @@ Standard 侧已完成旧码值集 Tenant/Domain 不一致的收敛：`outdoor_me
 
 Model 已把三个业务实体和三张 DIM/DWD 逻辑表所引用的数据元修订固化为审批时快照，并完成重新审批；当前逻辑表 `3/4/5/6/7` 的版本分别为 `49/21/20/28/33`，物化组仍为 `1@13`。这使业务定义引用稳定修订，但没有让 Develop、Transfer 或 Quality 直接依赖 Model。
 
-Quality 通用物化门禁新增 `allowed_values` 断言后，正式门禁任务 `1` 已更新到版本 `4`，在原 9 项主键、非空、外键和指标粒度断言之外，增加 `dwd_outdoor_participation.member_status` 的六值枚举门禁。字段级治理同时建立 RuleApplication `15` 和 CheckTask `10`，二者绑定“成员状态”已冻结的数据元修订与正式 DWD 字段。
+Quality 通用数据校验新增 `allowed_values` 断言后，正式门禁任务 `1` 已更新到版本 `4`，在原 9 项主键、非空、外键和指标粒度断言之外，增加 `dwd_outdoor_participation.member_status` 的六值枚举门禁。字段级治理同时建立 RuleApplication `15` 和 CheckTask `10`，二者绑定“成员状态”已冻结的数据元修订与正式 DWD 字段。
 
 最终全量回归父执行为 `333bb5e7-d92e-447f-b563-fee22d608c24`，开始于 `2026-08-28 19:44:23 +08:00`，完成于 `19:46:04`。20 个步骤全部成功；Quality 门禁 execution `82120f15-cc5c-4bb5-bef8-6de61fc69b1a` 的 10 项断言全部通过，各项 `failed_count=0`；Model 组发布 execution `17891574-b849-4b42-a4f1-59a8c0ae3bfa` 成功。正式 DWD 共 4,946 行，成员状态分布为 `signup=4,076`、`leader=670`、`leader_group=142`、`alternate=34`、`hold=24`，空值或枚举外值为 0。字段质量 execution `7bfb63df-061b-4fb7-8797-e3fab5ff5e82` 进一步得到 `quality_score=100`、`failed_rules=0`、`failed_count=0`。
 

@@ -3214,6 +3214,7 @@ func TestRunnerAgainstPostgres(t *testing.T) {
 	assertStandardDocumentCatalog(t, db)
 	assertMonitorAuthorizationCatalog(t, db)
 	assertModelAuthorizationCatalog(t, db)
+	assertPublicationRemoval(t, db)
 	assertStandardAuthorizationCatalog(t, db)
 	assertManagerAuthorizationCatalog(t, db)
 	assertManagerDataProfileAuthorizationCatalog(t, db)
@@ -3706,7 +3707,7 @@ func assertExecutionAuthorizationConstraints(t *testing.T, db *sql.DB) {
 	`).Scan(&triggerCount); err != nil {
 		t.Fatalf("count execution authorization triggers: %v", err)
 	}
-	if permissionCount != 8 || rolePermissionCount != 20 || triggerCount != 3 || audienceConstraintCount != 1 || attemptBoundaryCount != 2 {
+	if permissionCount != 6 || rolePermissionCount != 18 || triggerCount != 3 || audienceConstraintCount != 1 || attemptBoundaryCount != 2 {
 		t.Fatalf("execution authorization catalog permissions=%d role_permissions=%d triggers=%d audience_constraints=%d attempt_columns=%d", permissionCount, rolePermissionCount, triggerCount, audienceConstraintCount, attemptBoundaryCount)
 	}
 }
@@ -4020,7 +4021,7 @@ func assertServicePrincipalRuntimeConstraints(t *testing.T, db *sql.DB) {
 		transferTenantPermissions != "meta.catalog.read,meta.inspect.execute,meta.scan_task.execute,security.protection_projection.read,security.protection_projection.update,system.engine_descriptor.read,system.engine.read,system.execution_authorization.execute" ||
 		developTenantPermissions != "meta.catalog.read,meta.scan_task.execute,security.protection_projection.read,security.protection_projection.update,system.engine_descriptor.read,system.execution_authorization.execute,system.notebook_session_authorization.execute,transfer.execution.create,transfer.execution.read" ||
 		copilotTenantPermissions != "develop.task.read,inference.runtime.execute,system.engine_descriptor.read" ||
-		qualityTenantPermissions != "meta.catalog.read,model.materialization_group.read,model.materialization_read.execute,standard.element.read,system.engine.read,system.execution_authorization.execute" ||
+		qualityTenantPermissions != "meta.catalog.read,standard.element.read,system.engine.read,system.execution_authorization.execute" ||
 		catalogPlatformPermissions != "platform.tenant.read,system.runtime_registry.update" ||
 		metaPlatformPermissions != "system.runtime_registry.update" ||
 		developPlatformPermissions != "platform.tenant.read,system.runtime_registry.update" ||
@@ -4434,8 +4435,8 @@ func assertAuthorizationCatalogRetirement(t *testing.T, db *sql.DB) {
 	`).Scan(&activePermissionCount, &disabledPermissionCount); err != nil {
 		t.Fatalf("read retired Permission counts: %v", err)
 	}
-	if activePermissionCount < 345 || disabledPermissionCount != 89 {
-		t.Fatalf("Permission status counts = active:%d disabled:%d, want at least 345 and exactly 89", activePermissionCount, disabledPermissionCount)
+	if activePermissionCount < 345 || disabledPermissionCount != 100 {
+		t.Fatalf("Permission status counts = active:%d disabled:%d, want at least 345 and exactly 100", activePermissionCount, disabledPermissionCount)
 	}
 
 	var disabledRoles string
@@ -6490,5 +6491,19 @@ func TestStandardCollectionRemovalForwardMigrationAgainstPostgres(t *testing.T) 
   FROM system.role_permissions binding JOIN system.roles role ON role.id = binding.role_id JOIN system.permissions permission ON permission.id = binding.permission_id
   WHERE role.tenant_id IS NULL AND permission.permission_key = 'iam.tenant_membership.read' AND permission.status = 'active'`).Scan(&standardRead, &catalogRead); err != nil || standardRead != 0 || catalogRead != 1 {
 		t.Fatalf("standard read=%d catalog read=%d err=%v", standardRead, catalogRead, err)
+	}
+}
+
+func assertPublicationRemoval(t *testing.T, db *sql.DB) {
+	t.Helper()
+	var activeOld, bindings int
+	if err := db.QueryRow(`SELECT count(*) FROM system.permissions WHERE status='active' AND (permission_key LIKE 'model.materialization_group.%' OR permission_key LIKE 'model.materialization_read.%' OR permission_key LIKE 'model.task_provider.%' OR permission_key LIKE 'quality.materialization_gate.%')`).Scan(&activeOld); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`SELECT count(*) FROM system.role_permissions b JOIN system.roles r ON r.id=b.role_id JOIN system.permissions p ON p.id=b.permission_id WHERE r.role_key='tenant.governance_manager' AND p.permission_key LIKE 'quality.data_validation.%' AND p.status='active'`).Scan(&bindings); err != nil {
+		t.Fatal(err)
+	}
+	if activeOld != 0 || bindings != 4 {
+		t.Fatalf("retired active=%d validation bindings=%d", activeOld, bindings)
 	}
 }

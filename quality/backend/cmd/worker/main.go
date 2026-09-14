@@ -38,8 +38,7 @@ func main() {
 		log.Fatalf("Service Token Source 初始化失败: %v", err)
 	}
 	systemServiceClient := commonClient.NewSystemServiceClient(cfg.SystemURL, serviceTokenSource, nil)
-	modelClient := commonClient.NewModelClient(cfg.ModelURL, serviceTokenSource, nil)
-	gateTaskRepo := repository.NewMaterializationGateRepository(db)
+	gateTaskRepo := repository.NewDataValidationRepository(db)
 	executor := service.NewCheckExecutor(
 		systemServiceClient,
 		nil,
@@ -48,7 +47,7 @@ func main() {
 		cfg.CheckTimeout,
 		cfg.WorkerConcurrency,
 	)
-	executor.ConfigureMaterializationGate(modelClient, gateTaskRepo)
+	executor.ConfigureDataValidation(gateTaskRepo)
 	if err := executor.ConfigureWorker(cfg.WorkerLease, cfg.WorkerPoll); err != nil {
 		log.Fatalf("Quality worker 配置无效: %v", err)
 	}

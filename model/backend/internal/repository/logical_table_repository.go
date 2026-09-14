@@ -121,10 +121,7 @@ func (r *LogicalTableRepository) Delete(id, tenantID, version int64) error {
 		if err := tx.Select("id").Where("id = ? AND tenant_id = ?", id, tenantID).First(&table).Error; err != nil {
 			return commonrepo.WrapDBError(err)
 		}
-		if err := tx.Where("logical_table_id = ? AND tenant_id = ? AND status IN ?", id, tenantID, models.MaterializationBatchTerminalStatuses()).
-			Delete(&models.MaterializationBatch{}).Error; err != nil {
-			return commonrepo.WrapDBError(err)
-		}
+
 		if err := tx.Where("fact_table_id = ? AND tenant_id = ?", id, tenantID).Delete(&models.MetricImplementation{}).Error; err != nil {
 			return commonrepo.WrapDBError(err)
 		}

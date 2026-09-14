@@ -1979,7 +1979,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "逻辑表及所属物化组摘要 | Logical table with materialization group summaries",
+                        "description": "逻辑表详情 | Logical table detail",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_model_internal_models.LogicalTableDetail"
                         }
@@ -2103,7 +2103,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "仅当逻辑表为草稿、不属于物化组、已显式清空物化配置且不存在非终态物化批次时，删除终态物化批次操作状态和逻辑表聚合；通用任务执行审计继续保留。| Delete terminal materialization batch operation state and the logical-table aggregate only when the table is a draft, is not in a materialization group, has an explicitly cleared materialization configuration, and has no non-terminal materialization batch; common task execution audit history is preserved.",
+                "description": "仅删除已清空物化配置的草稿逻辑表；历史执行事实保留。 | Delete a draft logical table with cleared physical configuration; preserve execution history.",
                 "produces": [
                     "application/json"
                 ],
@@ -2161,7 +2161,7 @@ const docTemplate = `{
                         }
                     },
                     "409": {
-                        "description": "版本、状态、关联、物化组、物化配置或非终态批次冲突 | Version, state, relation, materialization group, materialization configuration, or non-terminal batch conflict",
+                        "description": "版本、状态或关联冲突 | Version, state or reference conflict",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
@@ -3391,13 +3391,100 @@ const docTemplate = `{
             }
         },
         "/logical-tables/{id}/materialized-target": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "根据已审批模型创建正式表；同归属且结构一致时幂等成功，结构不一致拒绝；不执行数据加工。| Create an approved physical target, preserving existing data when ownership and structure match; reject structural drift.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Model"
+                ],
+                "summary": "创建正式表 | Create physical target",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "逻辑表 ID | Logical table ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "模型并发版本 | Model version",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.VersionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.materialization.execute"
+                ]
+            },
             "delete": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
-                "description": "校验逻辑表版本、精确目标确认、物化组和活跃批次后，仅删除由当前逻辑表管理标记拥有的 PostgreSQL 物理表；不修改逻辑表配置。| After validating the logical-table version, exact target confirmation, materialization-group membership, and active batches, delete only the PostgreSQL table owned by the current logical-table marker; the logical-table definition is unchanged.",
+                "description": "校验逻辑表版本和精确目标确认后，仅删除由当前逻辑表管理标记拥有的 PostgreSQL 物理表；不修改逻辑表配置。| After validating the logical-table version, exact target confirmation, delete only the PostgreSQL table owned by the current logical-table marker; the logical-table definition is unchanged.",
                 "consumes": [
                     "application/json"
                 ],
@@ -3458,7 +3545,7 @@ const docTemplate = `{
                         }
                     },
                     "409": {
-                        "description": "版本、目标确认、所有权、物化组或活跃批次冲突 | Version, target confirmation, ownership, materialization group, or active batch conflict",
+                        "description": "版本、目标确认或所有权冲突 | Version, target confirmation, or ownership conflict",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
@@ -3935,7 +4022,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "退回草稿并清空字段冻结修订；物化组成员必须先移出组。 | Return to draft and clear frozen field revisions; materialization group members must be removed from their group first.",
+                "description": "退回草稿并清空字段冻结修订，已有物理表和数据保持不变。 | Return to draft and clear frozen revisions, preserving existing physical tables and data.",
                 "produces": [
                     "application/json"
                 ],
@@ -3993,7 +4080,7 @@ const docTemplate = `{
                         }
                     },
                     "409": {
-                        "description": "版本或状态冲突；物化组成员返回 materialization_group_member_conflict | Version or state conflict; group members return materialization_group_member_conflict",
+                        "description": "版本、状态或关联冲突 | Version, state or reference conflict",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
@@ -4002,445 +4089,6 @@ const docTemplate = `{
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "model.logical_model.update"
-                ]
-            }
-        },
-        "/materialization-groups": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Materialization Groups"
-                ],
-                "summary": "列出物化组 | List materialization groups",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "页码 | Page number",
-                        "name": "page",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "description": "每页数量 | Page size",
-                        "name": "page_size",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.materializationGroupListResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "403": {
-                        "description": "Forbidden",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "model.materialization_group.read"
-                ]
-            },
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Materialization Groups"
-                ],
-                "summary": "创建物化组 | Create materialization group",
-                "parameters": [
-                    {
-                        "description": "创建请求 | Create request",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.materializationGroupWriteRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "201": {
-                        "description": "Created",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_model_internal_models.MaterializationGroup"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "403": {
-                        "description": "Forbidden",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "409": {
-                        "description": "Conflict",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "model.materialization_group.create"
-                ]
-            }
-        },
-        "/materialization-groups/{id}": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Materialization Groups"
-                ],
-                "summary": "获取物化组 | Get materialization group",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "物化组 ID | Materialization group ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_model_internal_models.MaterializationGroup"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "403": {
-                        "description": "Forbidden",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "model.materialization_group.read"
-                ]
-            },
-            "put": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Materialization Groups"
-                ],
-                "summary": "更新物化组 | Update materialization group",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "物化组 ID | Materialization group ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "完整更新请求 | Full update request",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.materializationGroupWriteRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_model_internal_models.MaterializationGroup"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "403": {
-                        "description": "Forbidden",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "409": {
-                        "description": "Conflict",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "model.materialization_group.update"
-                ]
-            },
-            "delete": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Materialization Groups"
-                ],
-                "summary": "删除物化组 | Delete materialization group",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "物化组 ID | Materialization group ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "删除请求 | Delete request",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.materializationGroupDeleteRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "403": {
-                        "description": "Forbidden",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "409": {
-                        "description": "Conflict",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "model.materialization_group.delete"
-                ]
-            }
-        },
-        "/materialization-read-contexts": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "仅为 Develop 或 Quality 当前 worker lease 返回同一父编排中已完成物化批次的只读 staging 定位、列和结构指纹；不返回凭据、授权、DDL 或写能力。| Return read-only staging locators, columns, and schema fingerprints for completed materialization batches in the same parent orchestration, only to the current Develop or Quality worker lease; credentials, authorization, DDL, and write capability are never returned.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Materialization"
-                ],
-                "summary": "解析物化读上下文 | Resolve materialization read context",
-                "parameters": [
-                    {
-                        "description": "解析请求 | Resolve request",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.materializationReadContextRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_model_internal_service.MaterializationReadContext"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "403": {
-                        "description": "Forbidden",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "409": {
-                        "description": "Conflict",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "model.materialization_read.execute"
                 ]
             }
         },
@@ -4601,313 +4249,6 @@ const docTemplate = `{
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "model.standard_reference.update"
-                ]
-            }
-        },
-        "/task-provider/executions/{execution_id}": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Materialization"
-                ],
-                "summary": "获取 Model 物化执行状态 | Get Model materialization execution status",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "执行 ID | Execution ID",
-                        "name": "execution_id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/taskprovider.ExecutionStatusResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "403": {
-                        "description": "Forbidden",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "model.task_provider.read"
-                ]
-            }
-        },
-        "/task-provider/tasks": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "列出由已审批逻辑表派生的准备任务、未分组逻辑表发布任务和 Model 物化组原子发布任务。| List prepare tasks derived from approved logical tables, publish tasks for ungrouped logical tables, and Model-owned atomic materialization group publish tasks.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Materialization"
-                ],
-                "summary": "列出 Model 物化任务 | List Model materialization tasks",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "任务类型 | Task type",
-                        "name": "task_type",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "description": "页码 | Page number",
-                        "name": "page",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "description": "每页数量 | Page size",
-                        "name": "page_size",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.materializationTaskListResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "403": {
-                        "description": "Forbidden",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "model.task_provider.read"
-                ]
-            }
-        },
-        "/task-provider/tasks/{task_type}/{id}": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "获取由已审批逻辑表派生的物化任务详情。| Get materialization task detail derived from an approved logical table.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Materialization"
-                ],
-                "summary": "获取 Model 物化任务 | Get Model materialization task",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "任务类型 | Task type",
-                        "name": "task_type",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "integer",
-                        "description": "逻辑表 ID | Logical table ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.materializationTaskItem"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "403": {
-                        "description": "Forbidden",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "model.task_provider.read"
-                ]
-            }
-        },
-        "/task-provider/tasks/{task_type}/{id}/execute": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "仅接受 Orchestrator 以父 execution 血缘触发；调用方不能提交物理名称或 DDL。| Only accepts Orchestrator execution-lineage invocation; callers cannot submit physical names or DDL.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Materialization"
-                ],
-                "summary": "执行 Model 物化任务 | Execute Model materialization task",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "任务类型 | Task type",
-                        "name": "task_type",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "integer",
-                        "description": "逻辑表 ID | Logical table ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "执行请求 | Execution request",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.materializationExecuteRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "202": {
-                        "description": "Accepted",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.materializationExecuteResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "403": {
-                        "description": "Forbidden",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "409": {
-                        "description": "Conflict",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "503": {
-                        "description": "Service Unavailable",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "model.task_provider.execute"
                 ]
             }
         }
@@ -5883,12 +5224,6 @@ const docTemplate = `{
                         }
                     ]
                 },
-                "materialization_groups": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/github_com_addp_model_internal_models.MaterializationGroupSummary"
-                    }
-                },
                 "name": {
                     "type": "string"
                 },
@@ -5938,75 +5273,6 @@ const docTemplate = `{
                 },
                 "total_pages": {
                     "type": "integer"
-                }
-            }
-        },
-        "github_com_addp_model_internal_models.MaterializationGroup": {
-            "type": "object",
-            "properties": {
-                "code": {
-                    "type": "string"
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "created_by": {
-                    "type": "integer"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "members": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/github_com_addp_model_internal_models.MaterializationGroupMember"
-                    }
-                },
-                "name": {
-                    "type": "string"
-                },
-                "tenant_id": {
-                    "type": "integer"
-                },
-                "updated_at": {
-                    "type": "string"
-                },
-                "updated_by": {
-                    "type": "integer"
-                },
-                "version": {
-                    "type": "integer"
-                }
-            }
-        },
-        "github_com_addp_model_internal_models.MaterializationGroupMember": {
-            "type": "object",
-            "properties": {
-                "group_id": {
-                    "type": "integer"
-                },
-                "logical_table_id": {
-                    "type": "integer"
-                },
-                "position": {
-                    "type": "integer"
-                },
-                "tenant_id": {
-                    "type": "integer"
-                }
-            }
-        },
-        "github_com_addp_model_internal_models.MaterializationGroupSummary": {
-            "type": "object",
-            "properties": {
-                "id": {
-                    "type": "integer"
-                },
-                "name": {
-                    "type": "string"
                 }
             }
         },
@@ -6879,396 +6145,6 @@ const docTemplate = `{
             "properties": {
                 "version": {
                     "type": "integer"
-                }
-            }
-        },
-        "github_com_addp_model_internal_service.MaterializationReadColumn": {
-            "type": "object",
-            "properties": {
-                "data_type": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "nullable": {
-                    "type": "boolean"
-                }
-            }
-        },
-        "github_com_addp_model_internal_service.MaterializationReadContext": {
-            "type": "object",
-            "properties": {
-                "items": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/github_com_addp_model_internal_service.MaterializationReadItem"
-                    }
-                },
-                "schema_version": {
-                    "type": "string"
-                }
-            }
-        },
-        "github_com_addp_model_internal_service.MaterializationReadItem": {
-            "type": "object",
-            "properties": {
-                "batch_id": {
-                    "type": "string"
-                },
-                "columns": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/github_com_addp_model_internal_service.MaterializationReadColumn"
-                    }
-                },
-                "engine_id": {
-                    "type": "integer"
-                },
-                "logical_table_id": {
-                    "type": "integer"
-                },
-                "schema_fingerprint": {
-                    "type": "string"
-                },
-                "staging_locator": {
-                    "type": "string"
-                }
-            }
-        },
-        "internal_api.materializationExecuteRequest": {
-            "type": "object",
-            "properties": {
-                "parameters": {
-                    "type": "object",
-                    "additionalProperties": true
-                },
-                "parent_execution_id": {
-                    "type": "string"
-                },
-                "source": {
-                    "type": "string"
-                },
-                "trigger_type": {
-                    "type": "string"
-                }
-            }
-        },
-        "internal_api.materializationExecuteResponse": {
-            "type": "object",
-            "properties": {
-                "execution_id": {
-                    "type": "string"
-                },
-                "status": {
-                    "type": "string",
-                    "enum": [
-                        "pending"
-                    ],
-                    "example": "pending"
-                }
-            }
-        },
-        "internal_api.materializationGroupDeleteRequest": {
-            "type": "object",
-            "properties": {
-                "version": {
-                    "type": "integer"
-                }
-            }
-        },
-        "internal_api.materializationGroupListResponse": {
-            "type": "object",
-            "properties": {
-                "data": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/github_com_addp_model_internal_models.MaterializationGroup"
-                    }
-                },
-                "page": {
-                    "type": "integer"
-                },
-                "page_size": {
-                    "type": "integer"
-                },
-                "total": {
-                    "type": "integer"
-                },
-                "total_pages": {
-                    "type": "integer"
-                }
-            }
-        },
-        "internal_api.materializationGroupWriteRequest": {
-            "type": "object",
-            "properties": {
-                "code": {
-                    "type": "string"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "logical_table_ids": {
-                    "type": "array",
-                    "items": {
-                        "type": "integer"
-                    }
-                },
-                "name": {
-                    "type": "string"
-                },
-                "version": {
-                    "type": "integer"
-                }
-            }
-        },
-        "internal_api.materializationReadContextRequest": {
-            "type": "object",
-            "properties": {
-                "logical_table_ids": {
-                    "type": "array",
-                    "items": {
-                        "type": "integer"
-                    }
-                },
-                "parent_execution_id": {
-                    "type": "string"
-                },
-                "reader_attempt": {
-                    "type": "integer"
-                },
-                "reader_execution_id": {
-                    "type": "string"
-                },
-                "reader_lease_token": {
-                    "type": "string"
-                }
-            }
-        },
-        "internal_api.materializationTaskItem": {
-            "type": "object",
-            "properties": {
-                "description": {
-                    "type": "string"
-                },
-                "execution_contract": {
-                    "$ref": "#/definitions/taskprovider.ExecutionContract"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "status": {
-                    "type": "string"
-                },
-                "task_type": {
-                    "type": "string"
-                },
-                "tenant_id": {
-                    "type": "integer"
-                }
-            }
-        },
-        "internal_api.materializationTaskListResponse": {
-            "type": "object",
-            "properties": {
-                "items": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/internal_api.materializationTaskItem"
-                    }
-                },
-                "page": {
-                    "type": "integer"
-                },
-                "page_size": {
-                    "type": "integer"
-                },
-                "total": {
-                    "type": "integer"
-                }
-            }
-        },
-        "models.JSONMap": {
-            "type": "object",
-            "additionalProperties": true
-        },
-        "taskprovider.ExecutionContract": {
-            "type": "object",
-            "properties": {
-                "input_defaults": {
-                    "type": "object",
-                    "additionalProperties": true
-                },
-                "input_schema": {
-                    "type": "object",
-                    "additionalProperties": true
-                },
-                "input_ui_schema": {
-                    "type": "object",
-                    "additionalProperties": true
-                },
-                "output_schema": {
-                    "type": "object",
-                    "additionalProperties": true
-                }
-            }
-        },
-        "taskprovider.ExecutionStatusResponse": {
-            "type": "object",
-            "required": [
-                "outputs"
-            ],
-            "properties": {
-                "actor_principal_id": {
-                    "description": "User-derived execution authorization facts. The raw User/Service tokens\nand engine connection details are never persisted in task executions.",
-                    "type": "integer"
-                },
-                "actor_tenant_membership_id": {
-                    "type": "integer"
-                },
-                "attempt": {
-                    "type": "integer"
-                },
-                "authorization_expires_at": {
-                    "type": "string"
-                },
-                "bytes_read": {
-                    "description": "Transfer 读取字节数",
-                    "type": "integer"
-                },
-                "bytes_written": {
-                    "description": "Transfer 写入字节数",
-                    "type": "integer"
-                },
-                "completed_at": {
-                    "type": "string"
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "current_step": {
-                    "description": "当前步骤（Orchestrator/Workflow）",
-                    "type": "string"
-                },
-                "error_details": {
-                    "description": "错误详情（仅失败时有值）",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/models.JSONMap"
-                        }
-                    ]
-                },
-                "execution_authorization_id": {
-                    "type": "integer"
-                },
-                "execution_boundary": {
-                    "description": "ExecutionBoundary separates finite queue work from long-running runtime sessions.",
-                    "type": "string"
-                },
-                "execution_config": {
-                    "description": "JSONB 字段",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/models.JSONMap"
-                        }
-                    ]
-                },
-                "execution_id": {
-                    "description": "执行标识",
-                    "type": "string"
-                },
-                "execution_time_ms": {
-                    "description": "性能指标",
-                    "type": "integer"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "issued_authorization_version": {
-                    "type": "integer"
-                },
-                "max_attempts": {
-                    "type": "integer"
-                },
-                "metadata": {
-                    "description": "模块特有扩展数据（结果、断点、步骤结果等）",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/models.JSONMap"
-                        }
-                    ]
-                },
-                "module": {
-                    "description": "模块标识",
-                    "type": "string"
-                },
-                "outputs": {
-                    "$ref": "#/definitions/models.JSONMap"
-                },
-                "parent_execution_id": {
-                    "description": "父执行（Orchestrator 子步骤追踪父编排）",
-                    "type": "string"
-                },
-                "progress": {
-                    "description": "0-100",
-                    "type": "integer"
-                },
-                "records_read": {
-                    "description": "Transfer 读取记录数",
-                    "type": "integer"
-                },
-                "records_written": {
-                    "description": "Transfer 写入记录数",
-                    "type": "integer"
-                },
-                "retry_of_execution_id": {
-                    "type": "string"
-                },
-                "rows_affected": {
-                    "description": "SQL 影响行数",
-                    "type": "integer"
-                },
-                "source": {
-                    "description": "触发来源模块",
-                    "type": "string"
-                },
-                "source_task_id": {
-                    "description": "关联原始任务",
-                    "type": "string"
-                },
-                "source_task_name": {
-                    "description": "任务名称（冗余，便于查询）",
-                    "type": "string"
-                },
-                "started_at": {
-                    "description": "时间戳",
-                    "type": "string"
-                },
-                "status": {
-                    "description": "执行状态",
-                    "type": "string"
-                },
-                "task_type": {
-                    "description": "稳定执行类型；可来自任务定义或 ad-hoc execution",
-                    "type": "string"
-                },
-                "tenant_id": {
-                    "type": "integer"
-                },
-                "trigger_type": {
-                    "description": "触发信息",
-                    "type": "string"
-                },
-                "triggered_by": {
-                    "description": "触发用户ID",
-                    "type": "integer"
-                },
-                "updated_at": {
-                    "type": "string"
                 }
             }
         }

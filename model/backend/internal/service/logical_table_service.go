@@ -158,11 +158,7 @@ func (s *LogicalTableService) GetLogicalTable(id, tenantID int64) (*models.Logic
 	if err != nil {
 		return nil, modelResourceError(err, "logical_table_not_found", i18n.MsgTableNotFound)
 	}
-	groups, err := repository.NewMaterializationGroupRepository(s.repo.DB()).ListForLogicalTable(context.Background(), tenantID, id)
-	if err != nil {
-		return nil, err
-	}
-	return &models.LogicalTableDetail{LogicalTable: table, MaterializationGroups: groups}, nil
+	return &models.LogicalTableDetail{LogicalTable: table}, nil
 }
 
 func (s *LogicalTableService) ListLogicalTables(tenantID int64, opts repository.ListLogicalTableOptions) ([]models.LogicalTable, int64, error) {
@@ -290,24 +286,9 @@ func (s *LogicalTableService) DeleteLogicalTable(id, tenantID, version int64) er
 		if table.Status != "draft" {
 			return apperrors.Conflict("logical_table_state_conflict", i18n.MsgTableStateConflict)
 		}
-		grouped, err := repository.NewMaterializationGroupRepository(tx).ContainsLogicalTable(context.Background(), tenantID, id)
-		if err != nil {
-			return err
-		}
-		if grouped {
-			return apperrors.Conflict("materialization_group_member_conflict", i18n.MsgTableMaterializationGroupMember)
-		}
+
 		if len(table.Materialization) != 0 {
 			return apperrors.Conflict("logical_table_materialization_configured", i18n.MsgTableMaterializationConfigured)
-		}
-		batches, err := repository.NewMaterializationBatchRepository(tx).LockByLogicalTable(context.Background(), tenantID, id)
-		if err != nil {
-			return err
-		}
-		for _, batch := range batches {
-			if !models.IsMaterializationBatchTerminal(batch.Status) {
-				return apperrors.Conflict("logical_table_materialization_batch_active", i18n.MsgTableMaterializationBatchActive)
-			}
 		}
 		relations, err := repository.NewTableRelationRepository(tx).ListByTable(id, tenantID)
 		if err != nil {
@@ -393,15 +374,6 @@ func (s *LogicalTableService) updateLogicalTableStatus(id, tenantID, userID, ver
 			return apperrors.Conflict("logical_table_state_conflict", i18n.MsgTableStateConflict)
 		}
 		txRepo := repository.NewLogicalTableRepository(tx)
-		if to == "draft" {
-			grouped, err := repository.NewMaterializationGroupRepository(tx).ContainsLogicalTable(context.Background(), tenantID, id)
-			if err != nil {
-				return err
-			}
-			if grouped {
-				return apperrors.Conflict("materialization_group_member_conflict", i18n.MsgTableMaterializationGroupMember)
-			}
-		}
 		if validateApproval {
 			if err := validateLogicalTableShape(table.TableType, table.SCDType, table.GrainDescription); err != nil {
 				return err

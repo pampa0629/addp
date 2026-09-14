@@ -68,8 +68,7 @@ type CheckExecutor struct {
 	systemClient           *commonClient.SystemServiceClient
 	executionAuthorization *commonClient.SystemExecutionAuthorizationClient
 	checkTaskRepo          *repository.CheckTaskRepository
-	gateTaskRepo           *repository.MaterializationGateRepository
-	modelClient            *commonClient.ModelClient
+	gateTaskRepo           *repository.DataValidationRepository
 	issueRepo              *repository.IssueRepository
 	sqlGen                 *SQLGenerator
 	checkTimeout           time.Duration
@@ -83,8 +82,8 @@ type CheckExecutor struct {
 	workerActive           atomic.Int64
 }
 
-func (e *CheckExecutor) ConfigureMaterializationGate(modelClient *commonClient.ModelClient, gateTaskRepo *repository.MaterializationGateRepository) {
-	e.modelClient = modelClient
+func (e *CheckExecutor) ConfigureDataValidation(gateTaskRepo *repository.DataValidationRepository) {
+
 	e.gateTaskRepo = gateTaskRepo
 }
 
@@ -356,7 +355,7 @@ func (e *CheckExecutor) executionWorkerLoop(ctx context.Context, workerID string
 func (e *CheckExecutor) processExpired(ctx context.Context) {
 	if e.gateTaskRepo != nil {
 		if err := e.gateTaskRepo.RecoverExpiredExecutions(ctx, time.Now().UTC()); err != nil && ctx.Err() == nil {
-			log.Printf("quality materialization gate lease recovery failed: %v", err)
+			log.Printf("quality data validation lease recovery failed: %v", err)
 		}
 	}
 	if err := e.checkTaskRepo.RecoverExpiredExecutions(ctx, time.Now().UTC()); err != nil {
@@ -367,7 +366,7 @@ func (e *CheckExecutor) processExpired(ctx context.Context) {
 }
 
 func (e *CheckExecutor) processPending(ctx context.Context, workerID string) bool {
-	if e.gateTaskRepo != nil && e.processPendingMaterializationGate(ctx, workerID) {
+	if e.gateTaskRepo != nil && e.processPendingDataValidation(ctx, workerID) {
 		return true
 	}
 	execution, task, err := e.checkTaskRepo.ClaimPendingExecution(ctx, workerID, time.Now().UTC(), e.workerLease)

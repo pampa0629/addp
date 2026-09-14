@@ -51,7 +51,6 @@ const (
 	MsgTableStateConflict              = "model.logical_table.state_conflict"
 	MsgTableMaterializationConfigured  = "model.logical_table.materialization_configured"
 	MsgTableMaterializationBatchActive = "model.logical_table.materialization_batch_active"
-	MsgTableMaterializationGroupMember = "model.logical_table.materialization_group_member"
 	MsgTableFieldsRequired             = "model.logical_table.approval_fields_required"
 	MsgTablePrimaryKeyRequired         = "model.logical_table.approval_primary_key_required"
 	MsgFieldNotFound                   = "model.logical_table.field_not_found"

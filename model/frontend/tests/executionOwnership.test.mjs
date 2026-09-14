@@ -1,11 +1,9 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { readFileSync, existsSync } from 'node:fs'
 import test from 'node:test'
-
-const logicalTables = readFileSync(new URL('../src/views/LogicalTableList.vue', import.meta.url), 'utf8')
-const groups = readFileSync(new URL('../src/views/MaterializationGroupList.vue', import.meta.url), 'utf8')
-
-test('Model task definition workspaces expose the shared Monitor entry', () => {
-  assert.match(logicalTables, /MonitorExecutionsButton module="model"/)
-  assert.match(groups, /MonitorExecutionsButton[^>]+module="model"[^>]+task-type="materialization_group_publish"/)
+test('Model offers structural creation and no publication workflow', () => {
+ const detail=readFileSync(new URL('../src/views/LogicalTableDetail.vue',import.meta.url),'utf8')
+ assert.match(detail,/logicalTableAPI.createTarget/)
+ assert.doesNotMatch(detail,/MaterializationActions|materialization_groups/)
+ assert.equal(existsSync(new URL('../src/views/MaterializationGroupList.vue',import.meta.url)),false)
 })

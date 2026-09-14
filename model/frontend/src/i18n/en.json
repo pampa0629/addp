@@ -205,10 +205,7 @@
       "scd_3": "3 - Hybrid (partial history)",
       "preview_ddl": "Preview DDL",
       "ddl_failed": "DDL preview failed",
-      "approved_help": "Approved model definitions are read-only. Return to draft before editing. DDL preview does not modify the model or create physical tables.",
-      "group_blocked": "This logical table belongs to the following materialization groups. Remove it from all groups before returning to draft.",
-      "group_manage": "Manage group: {name}",
-      "group_read_only": "Ask someone with materialization group management permission to update its members."
+      "approved_help": "Approved definitions are read-only. Return to draft to edit. DDL preview changes neither the model nor the physical table."
     },
     "field": {
       "title": "Field Definition",
@@ -307,7 +304,7 @@
       "clear_config": "Clear Materialization Config",
       "decommission": "Decommission Target",
       "decommission_title": "Decommission Materialized Target",
-      "decommission_warning": "This permanently deletes the physical target table without changing the logical-table definition. Remove materialization-group and cross-module references first.",
+      "decommission_warning": "This permanently deletes the physical target table without changing the logical-table definition. Remove references from other modules first.",
       "engine": "Target Engine",
       "engine_unknown": "Engine name unavailable",
       "engine_load_failed": "Failed to load the target engine name",
@@ -322,8 +319,8 @@
       "prepare_records": "Table preparation history",
       "seal_records": "Table sealing history",
       "publish_records": "Individual table publishing history",
-      "group_records": "Group publishing · {name}",
-      "group_publish_records": "Group publishing history"
+      "create_target": "Create physical table",
+      "target_ready": "Physical table ready; existing data preserved"
     },
     "dw_layer": {
       "title": "DW Layer Configuration",
@@ -419,28 +416,6 @@
       "copy_success": "DDL copied to clipboard",
       "copy_failed": "Copy failed, please select text manually"
     },
-    "materialization_group": {
-      "title": "Materialization Groups",
-      "subtitle": "Group approved logical tables on one target engine for atomic publication.",
-      "create": "New Materialization Group",
-      "edit": "Edit Materialization Group",
-      "name": "Name",
-      "code": "Code",
-      "description": "Description",
-      "members": "Logical Table Members",
-      "membersPlaceholder": "Select approved logical tables to publish together",
-      "membersHelp": "All members must be approved, use the same engine, and have distinct physical targets.",
-      "version": "Version",
-      "updatedAt": "Updated At",
-      "actions": "Actions",
-      "empty": "No materialization groups",
-      "deleteConfirm": "Delete this materialization group?",
-      "codeRequired": "Enter a materialization group code",
-      "codeFormat": "Use lowercase letters, numbers, and underscores, starting with a letter",
-      "nameRequired": "Enter a materialization group name",
-      "membersRequired": "Select at least one logical table",
-      "execution_help": "Group tables only when they must become visible together. Use Materialization workflows to review and start a related workflow."
-    },
     "layout": {
       "title": "Data Modeling",
       "user": "User",
@@ -450,7 +425,6 @@
       "entities": "Business Entities",
       "erDiagram": "ER Diagram",
       "logicalTables": "Logical Table Design",
-      "materializationGroups": "Materialization Groups",
       "starSchema": "Star Schema View"
     }
   }

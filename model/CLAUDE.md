@@ -23,9 +23,9 @@ DimensionHierarchy 已整体迁入 Model，`logical_fields.hierarchy_id + hierar
 
 Model Entity 与 LogicalTable 的专业关系通过当前 User Token 读取 `/:id/relations` 一跳图；它与只供 `addp-catalog` 机器同步使用的变化流、批量摘要解析严格分离。该查询只读 Model 本地事实，不调用 Catalog 或 Standard，不保存 CatalogEntry 反向引用。
 
-Model prepare 为每个 MaterializationBatch 创建唯一 staging，通过 TaskProvider 稳定输出把 `batch_id + staging_locator` 交给 Orchestrator。任意通用 writer 只按 ResourceLocator 向已存在表写入，不调用 Model。写入成功后，Model `materialization_seal` 使用 `batch_id + writer_execution_id + target_locator` 验证同父编排、同授权主体、writer 终态、目标身份和结构，再将批次提升为 `sealed`。Model 不保存 write-attempt 实体，不识别 writer 模块，不向 Transfer/Develop 提供写入回调或专用 Permission。失败的完整编排从新 prepare 重算；新 prepare 仅在旧父编排已为失败终态且无活跃子 execution 时接管旧 `preparing|prepared|sealed` 批次，并由新 prepare worker 核验精确 ownership marker 后幂等回收历史 staging。旧父成功、仍运行或旧批次已进入 `publishing` 时禁止自动接管。不建立公开 abort 任务、Orchestrator 补偿节点或 writer 回调。
+Model 负责已审批逻辑表的正式物理表创建、结构校验与显式退役；Develop 负责计算并写入已存在表，Quality 负责正式表数据校验，Orchestrator 负责依赖、调度和完整流程。建表不计算数据，数据刷新不依赖发布组或暂存批次。
 
-`materialization_group_publish` 的 TaskProvider 输入必须显式提交 `expected_group_id + expected_group_version`。Model 在创建 execution 的事务内和 worker 实际物理发布前都校验该期望；Quality 门禁编排必须从门禁稳定输出绑定这两个字段。该参数只表达一致性交接，Model 不因此反向依赖 Quality。
+Model 不声明 TaskProvider；创建物理表由逻辑表详情独立触发，不启动编排。
 
 **端口**:
 - 后端: `8181`（环境变量 `MODEL_BACKEND_PORT`）
@@ -341,6 +341,6 @@ draft ⇄ approved
 - 实体和逻辑表详情使用 `/:id`；实体详情默认 `basic` Tab 省略，`attributes`、`relations` 使用唯一 `tab` query。
 - 星型模型当前事实表使用 `table_id`，并响应刷新及浏览器前进/后退；无选择时省略该 query。
 - 业务导航统一调用 `frontend/src/utils/moduleNavigation.js`；详情返回明确列表路由。
-- 逻辑表和物化组页面只管理 Model 任务定义与发布上下文；页头使用共享 `MonitorExecutionsButton(module=model)` 进入统一执行监控。Model 不新增模块级执行列表、菜单或通用统计页。
+- 逻辑表详情提供创建物理表、DDL 预览与退役操作；完整数据流程和记录从 Orchestrator 进入。
 
-- Model 导航顺序与 ER 图范围以概念规范“建模导航与物化操作入口”为准；默认进入业务实体。逻辑表和物化组组合 MaterializationActions，调用共享关联流程与执行确认组件；启动仍通过 Orchestrator 唯一 API。
+- Model 导航依次为业务实体、实体关系图、数仓分层、逻辑表设计、星型建模视图。

@@ -35,9 +35,6 @@
       <el-descriptions-item v-if="!gateResult" :label="t('quality.execution.passedFailed')">
         {{ result?.passed_rules ?? '-' }} / {{ result?.failed_rules ?? '-' }}
       </el-descriptions-item>
-      <el-descriptions-item v-if="gateResult" :label="t('quality.execution.materializationGroup')">
-        #{{ gateResult.materialization_group_id }} / v{{ gateResult.materialization_group_version }}
-      </el-descriptions-item>
       <el-descriptions-item v-if="gateResult" :label="t('quality.execution.gateResult')">
         <el-tag :type="gateResult.passed ? 'success' : 'danger'">
           {{ gateResult.passed ? t('quality.execution.gatePassed') : t('quality.execution.gateBlocked') }}
@@ -105,11 +102,7 @@
           <template #default="{ row }"><code>{{ JSON.stringify(row.observed || {}) }}</code></template>
         </el-table-column>
       </el-table>
-      <h3 style="margin-top:24px">{{ t('quality.execution.stagingBatches') }}</h3>
-      <el-table :data="gateBatches" border size="small">
-        <el-table-column prop="alias" :label="t('quality.execution.tableAlias')" />
-        <el-table-column prop="batch_id" :label="t('quality.execution.batchId')" min-width="280" show-overflow-tooltip />
-      </el-table>
+
     </template>
   </div>
 </template>
@@ -143,9 +136,8 @@ const result = computed(() => {
 })
 const gateResult = computed(() => {
   const metadata = execution.value?.metadata
-  return metadata?.schema_version === 'addp.quality.materialization-gate-result/v1' ? metadata : null
+  return metadata?.schema_version === 'addp.quality.data-validation-result/v1' ? metadata : null
 })
-const gateBatches = computed(() => Object.entries(gateResult.value?.batch_ids || {}).map(([alias, batch_id]) => ({ alias, batch_id })))
 const failureReason = computed(() => executionFailureLabel(execution.value, t))
 
 const statusType = (status) => {

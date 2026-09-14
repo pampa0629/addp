@@ -13,8 +13,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		t.Fatalf("LoadRepositoryAuthorizationCatalog() error = %v", err)
 	}
 	descriptors := report.Permissions
-	if len(descriptors) != 446 {
-		t.Fatalf("descriptor count = %d, want 446", len(descriptors))
+	if len(descriptors) != 439 {
+		t.Fatalf("descriptor count = %d, want 439", len(descriptors))
 	}
 	for _, descriptor := range descriptors {
 		if descriptor.OwnerModule == "security" && !reflect.DeepEqual(descriptor.AllowedScopeTypes, []string{"tenant"}) {
@@ -66,10 +66,6 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"model.logical_model.read",
 		"model.logical_model.update",
 		"model.materialization.execute",
-		"model.materialization_group.create",
-		"model.materialization_group.delete",
-		"model.materialization_group.read",
-		"model.materialization_group.update",
 		"model.materialized_target.delete",
 		"standard.domain.read",
 		"standard.element.read",
@@ -114,8 +110,6 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"manager.task_provider.read",
 		"meta.task_provider.execute",
 		"meta.task_provider.read",
-		"model.task_provider.execute",
-		"model.task_provider.read",
 		"orchestrator.task_provider.execute",
 		"orchestrator.task_provider.read",
 		"quality.task_provider.execute",
@@ -156,8 +150,6 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	})
 	assertRepositoryRolePermissions(t, roles, "tenant.quality_runtime", []string{
 		"meta.catalog.read",
-		"model.materialization_group.read",
-		"model.materialization_read.execute",
 		"standard.element.read",
 		"system.engine.read",
 		"system.execution_authorization.execute",
@@ -370,12 +362,12 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"quality.check_task.execute",
 		"quality.check_task.read",
 		"quality.check_task.update",
+		"quality.data_validation.create",
+		"quality.data_validation.delete",
+		"quality.data_validation.read",
+		"quality.data_validation.update",
 		"quality.issue.read",
 		"quality.issue.update",
-		"quality.materialization_gate.create",
-		"quality.materialization_gate.delete",
-		"quality.materialization_gate.read",
-		"quality.materialization_gate.update",
 		"quality.rule_application.create",
 		"quality.rule_application.delete",
 		"quality.rule_application.read",

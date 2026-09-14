@@ -490,7 +490,7 @@
           "logical_model": "Logical Model",
           "management": "Asset Management",
           "materialization": "Model Materialization",
-          "materialization_gate": "Materialization Quality Gate",
+          "data_validation": "Materialization Quality Gate",
           "materialization_group": "Materialization Group",
           "materialization_read": "Materialization Read",
           "materialized_target": "Materialized Target",

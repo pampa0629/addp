@@ -1159,6 +1159,7 @@ jobs:
     timeout-minutes: 20
     services:
       postgres:
+        # This gate covers non-spatial tables; keep plain PostgreSQL to catch accidental PostGIS dependencies.
         image: postgres:15@sha256:74e110c41804365e3915fcc09d5e7a1eff50161aaa94d5da0e58e0cd75ae509c
         env:
           POSTGRES_USER: addp_ci

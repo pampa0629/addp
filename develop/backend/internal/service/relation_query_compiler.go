@@ -113,6 +113,12 @@ func compileExistingTableResultQuery(
 	if err != nil || locator.EngineID != engineID || locator.Type != resourcetree.TypeTable || len(locator.Path) != 2 {
 		return nil, fmt.Errorf("target_locator 必须是与 relation 查询参数同引擎的数据表")
 	}
+	for _, input := range relationLocators {
+		source, err := resourcetree.ParseURI(input)
+		if err == nil && source.EngineID == locator.EngineID && len(source.Path) == 2 && source.Path[0] == locator.Path[0] && source.Path[1] == locator.Path[1] {
+			return nil, fmt.Errorf("输出表不能同时作为本任务输入")
+		}
+	}
 	content := models.DevTaskContent{}
 	for key, value := range task.Content {
 		content[key] = value

@@ -141,54 +141,6 @@ func TestLogicalTableDeleteRejectsCrossTenantChildDeletion(t *testing.T) {
 	assertRepositoryRecordCount(t, db, &models.LogicalField{}, 1, "table_id = ?", table.ID)
 }
 
-func TestLogicalTableDeleteRemovesAggregateInOneTenant(t *testing.T) {
-	db := setupLogicalTableRepositoryTestDB(t)
-	table := models.LogicalTable{TenantID: 1, Name: "Orders", Code: "orders", TableType: "fact", Status: "draft", CreatedBy: 1}
-	dimension := models.LogicalTable{TenantID: 1, Name: "Customer", Code: "customer", TableType: "dimension", Status: "draft", CreatedBy: 1}
-	if err := db.Create(&table).Error; err != nil {
-		t.Fatalf("create fact table: %v", err)
-	}
-	if err := db.Create(&dimension).Error; err != nil {
-		t.Fatalf("create dimension table: %v", err)
-	}
-	factField := models.LogicalField{TableID: table.ID, Name: "Customer ID", ColumnName: "customer_id", DataType: "bigint"}
-	dimensionField := models.LogicalField{TableID: dimension.ID, Name: "ID", ColumnName: "id", DataType: "bigint"}
-	if err := db.Create(&factField).Error; err != nil {
-		t.Fatalf("create fact field: %v", err)
-	}
-	if err := db.Create(&dimensionField).Error; err != nil {
-		t.Fatalf("create dimension field: %v", err)
-	}
-	relation := models.TableRelation{TenantID: 1, SourceTable: table.ID, SourceField: factField.ID, TargetTable: dimension.ID, TargetField: dimensionField.ID, RelationType: "fk"}
-	implementation := models.MetricImplementation{TenantID: 1, FactTableID: table.ID, MetricDefinitionID: 9, MetricDefinitionRevisionID: 19, Name: "Order Count", Grain: "order", SourceConfig: models.JSONB{"field_ids": []int64{factField.ID}}, DimensionConfig: models.JSONB{}, FilterConfig: models.JSONB{}, ExpressionConfig: models.JSONB{"engine": "sql", "expression": "COUNT(*)"}, Status: models.MetricImplementationActive, CreatedBy: 1}
-	if err := db.Create(&relation).Error; err != nil {
-		t.Fatalf("create table relation: %v", err)
-	}
-	if err := db.Create(&implementation).Error; err != nil {
-		t.Fatalf("create metric implementation: %v", err)
-	}
-	batch := models.MaterializationBatch{
-		ID: "published-batch", TenantID: 1, LogicalTableID: table.ID, LogicalTableVersion: table.Version,
-		EngineID: 1, TargetParentLocator: "addp://engine/1/path/public?type=schema", TargetName: "orders",
-		StagingName: "orders_staging", SchemaFingerprint: "fingerprint", Status: models.MaterializationBatchPublished,
-		PrepareExecutionID: "prepare-orders",
-	}
-	if err := db.Create(&batch).Error; err != nil {
-		t.Fatalf("create terminal materialization batch: %v", err)
-	}
-
-	if err := NewLogicalTableRepository(db).Delete(table.ID, 1, table.Version); err != nil {
-		t.Fatalf("delete logical table: %v", err)
-	}
-
-	assertRepositoryRecordCount(t, db, &models.LogicalTable{}, 0, "id = ?", table.ID)
-	assertRepositoryRecordCount(t, db, &models.LogicalField{}, 0, "table_id = ?", table.ID)
-	assertRepositoryRecordCount(t, db, &models.TableRelation{}, 0, "source_table = ? OR target_table = ?", table.ID, table.ID)
-	assertRepositoryRecordCount(t, db, &models.MetricImplementation{}, 0, "fact_table_id = ?", table.ID)
-	assertRepositoryRecordCount(t, db, &models.MaterializationBatch{}, 0, "logical_table_id = ?", table.ID)
-	assertRepositoryRecordCount(t, db, &models.LogicalTable{}, 1, "id = ?", dimension.ID)
-}
-
 func assertRepositoryRecordCount(t *testing.T, db *gorm.DB, model any, want int64, query string, args ...any) {
 	t.Helper()
 	var count int64

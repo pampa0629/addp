@@ -194,7 +194,7 @@ describe('Console navigation bridge', () => {
 	const configSource = readFileSync(new URL('../src/config/portalConfig.js', import.meta.url), 'utf8')
 	expect(configSource).toContain("index: '/quality/rule-applications', icon: Setting, label: 'console.menus.quality.ruleApplications', recentLabel: 'console.menus.quality.recentRuleApplications', permissions: ['quality.rule_application.read']")
 	expect(configSource).toContain("index: '/quality/check-tasks',       icon: List,    label: 'console.menus.quality.checkTasks', recentLabel: 'console.menus.quality.recentCheckTasks', permissions: ['quality.check_task.read']")
-	expect(configSource).toContain("index: '/quality/materialization-gate-tasks', icon: Lock, label: 'console.menus.quality.materializationGateTasks', recentLabel: 'console.menus.quality.recentMaterializationGateTasks', permissions: ['quality.materialization_gate.read']")
+	expect(configSource).toContain("index: '/quality/data-validation-tasks', icon: Lock, label: 'console.menus.quality.dataValidationTasks', recentLabel: 'console.menus.quality.recentDataValidationTasks', permissions: ['quality.data_validation.read']")
 	expect(configSource).not.toContain("index: '/quality/executions'")
 	expect(configSource).toContain("index: '/quality/issues',            icon: Warning, label: 'console.menus.quality.issues', recentLabel: 'console.menus.quality.recentIssues', permissions: ['quality.issue.read']")
   })
@@ -350,7 +350,7 @@ describe('Console navigation bridge', () => {
 it('orders modeling from entity design to table design and publishing in both shells', () => {
   const config = readFileSync(new URL('../src/config/portalConfig.js', import.meta.url), 'utf8')
   const layout = readFileSync(new URL('../../../model/frontend/src/components/Layout.vue', import.meta.url), 'utf8')
-  const routes = ['entities', 'er-diagram', 'dw-layers', 'logical-tables', 'star-schema', 'materialization-groups']
+  const routes = ['entities', 'er-diagram', 'dw-layers', 'logical-tables', 'star-schema']
   const consoleRoutes = [...config.matchAll(/index: '\/modeling\/([^']+)'/g)].map(match => match[1])
   const standaloneRoutes = [...layout.matchAll(/el-menu-item index="\/([^"]+)"/g)].map(match => match[1])
   expect(consoleRoutes).toEqual(routes)

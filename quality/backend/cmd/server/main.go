@@ -72,22 +72,21 @@ func main() {
 	}
 	systemServiceClient := commonClient.NewSystemServiceClient(cfg.SystemURL, serviceTokenSource, nil)
 	standardClient := commonClient.NewStandardClient(cfg.StandardURL, serviceTokenSource, nil)
-	modelClient := commonClient.NewModelClient(cfg.ModelURL, serviceTokenSource, nil)
 	executionAuthorizationClient := commonClient.NewSystemExecutionAuthorizationClient(cfg.SystemURL, nil)
 
 	// Repositories
 	ruleAppRepo := repository.NewRuleApplicationRepository(db)
 	checkTaskRepo := repository.NewCheckTaskRepository(db)
-	gateTaskRepo := repository.NewMaterializationGateRepository(db)
+	gateTaskRepo := repository.NewDataValidationRepository(db)
 	issueRepo := repository.NewIssueRepository(db)
 	catalogSummaryRepo := repository.NewCatalogSummaryRepository(db)
 
 	// Services
 	ruleEngineSvc := service.NewRuleEngineService(standardClient, systemServiceClient, ruleAppRepo)
 	checkTaskSvc := service.NewCheckTaskService(checkTaskRepo, systemServiceClient)
-	gateTaskSvc := service.NewMaterializationGateService(gateTaskRepo, modelClient, cfg.CheckTimeout)
+	gateTaskSvc := service.NewDataValidationService(gateTaskRepo, cfg.CheckTimeout)
 	checkExecutor := service.NewCheckExecutor(systemServiceClient, executionAuthorizationClient, checkTaskRepo, issueRepo, cfg.CheckTimeout, cfg.WorkerConcurrency)
-	checkExecutor.ConfigureMaterializationGate(modelClient, gateTaskRepo)
+	checkExecutor.ConfigureDataValidation(gateTaskRepo)
 	issueSvc := service.NewIssueService(issueRepo)
 	catalogSummarySvc := service.NewCatalogSummaryService(catalogSummaryRepo)
 	cleanupService := service.NewCleanupService(db, redisClient, commonExecution.NewTaskExecutionRepository(db))

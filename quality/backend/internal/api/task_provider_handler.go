@@ -16,11 +16,11 @@ import (
 // TaskProviderHandler 标准 TaskProvider API 处理器。
 type TaskProviderHandler struct {
 	checkTaskSvc *service.CheckTaskService
-	gateTaskSvc  *service.MaterializationGateService
+	gateTaskSvc  *service.DataValidationService
 	executor     *service.CheckExecutor
 }
 
-func NewTaskProviderHandler(checkTaskSvc *service.CheckTaskService, gateTaskSvc *service.MaterializationGateService, executor *service.CheckExecutor) *TaskProviderHandler {
+func NewTaskProviderHandler(checkTaskSvc *service.CheckTaskService, gateTaskSvc *service.DataValidationService, executor *service.CheckExecutor) *TaskProviderHandler {
 	return &TaskProviderHandler{checkTaskSvc: checkTaskSvc, gateTaskSvc: gateTaskSvc, executor: executor}
 }
 
@@ -58,10 +58,10 @@ type qualityTaskProviderExecuteResponse struct {
 
 // ListTasks 列出 Quality 检查任务。
 // @Summary 列出 TaskProvider 质量检查任务 | List TaskProvider quality check tasks
-// @Description 按标准 TaskProvider 协议列出 Quality 任务；task_type 支持 check|materialization_gate。| List Quality tasks through the standard TaskProvider protocol; task_type supports check or materialization_gate.
+// @Description 按标准 TaskProvider 协议列出 Quality 任务；task_type 支持 check|data_validation。| List Quality tasks through the standard TaskProvider protocol; task_type supports check or data_validation.
 // @Tags CheckTask
 // @Produce json
-// @Param task_type query string false "任务类型：check|materialization_gate | Task type: check or materialization_gate"
+// @Param task_type query string false "任务类型：check|data_validation | Task type: check or data_validation"
 // @Success 200 {object} taskProviderTaskListResponse "任务列表 | Task list"
 // @Failure 400 {object} qualityErrorResponse "请求参数错误 | Bad request"
 // @Failure 500 {object} qualityErrorResponse "服务器内部错误 | Internal server error"
@@ -71,7 +71,7 @@ type qualityTaskProviderExecuteResponse struct {
 // @Security BearerAuth
 func (h *TaskProviderHandler) ListTasks(c *gin.Context) {
 	taskType := strings.TrimSpace(c.Query("task_type"))
-	if taskType != "" && taskType != commonExecution.TaskTypeQualityCheck && taskType != commonExecution.TaskTypeMaterializationGate {
+	if taskType != "" && taskType != commonExecution.TaskTypeQualityCheck && taskType != commonExecution.TaskTypeDataValidation {
 		respondInvalidRequest(c, "")
 		return
 	}
@@ -94,7 +94,7 @@ func (h *TaskProviderHandler) ListTasks(c *gin.Context) {
 			items = append(items, qualityTaskListItem(task))
 		}
 	}
-	if (taskType == "" || taskType == commonExecution.TaskTypeMaterializationGate) && h.gateTaskSvc != nil {
+	if (taskType == "" || taskType == commonExecution.TaskTypeDataValidation) && h.gateTaskSvc != nil {
 		tasks, count, err := h.gateTaskSvc.List(c.Request.Context(), tenantID, page, pageSize)
 		if err != nil {
 			respondQualityServiceError(c, err, "", qualityi18n.MsgInternal)
@@ -115,10 +115,10 @@ func (h *TaskProviderHandler) ListTasks(c *gin.Context) {
 
 // TaskDetail 获取 Quality 检查任务详情。
 // @Summary 获取 TaskProvider 质量检查任务详情 | Get TaskProvider quality check task detail
-// @Description 按标准 TaskProvider 协议获取 Quality 任务详情；task_type 支持 check|materialization_gate。| Get Quality task detail through the standard TaskProvider protocol; task_type supports check or materialization_gate.
+// @Description 按标准 TaskProvider 协议获取 Quality 任务详情；task_type 支持 check|data_validation。| Get Quality task detail through the standard TaskProvider protocol; task_type supports check or data_validation.
 // @Tags CheckTask
 // @Produce json
-// @Param task_type path string true "任务类型：check|materialization_gate | Task type: check or materialization_gate"
+// @Param task_type path string true "任务类型：check|data_validation | Task type: check or data_validation"
 // @Param id path int true "检查任务ID | Check task ID"
 // @Success 200 {object} taskProviderTaskListItem "任务详情 | Task detail"
 // @Failure 400 {object} qualityErrorResponse "请求参数错误 | Bad request"
@@ -129,7 +129,7 @@ func (h *TaskProviderHandler) ListTasks(c *gin.Context) {
 // @Security BearerAuth
 func (h *TaskProviderHandler) TaskDetail(c *gin.Context) {
 	taskType := c.Param("task_type")
-	if taskType != commonExecution.TaskTypeQualityCheck && taskType != commonExecution.TaskTypeMaterializationGate {
+	if taskType != commonExecution.TaskTypeQualityCheck && taskType != commonExecution.TaskTypeDataValidation {
 		respondInvalidRequest(c, "")
 		return
 	}
@@ -140,7 +140,7 @@ func (h *TaskProviderHandler) TaskDetail(c *gin.Context) {
 		return
 	}
 
-	if taskType == commonExecution.TaskTypeMaterializationGate {
+	if taskType == commonExecution.TaskTypeDataValidation {
 		if h.gateTaskSvc == nil {
 			respondInvalidRequest(c, "")
 			return
@@ -167,7 +167,7 @@ func (h *TaskProviderHandler) TaskDetail(c *gin.Context) {
 // @Tags CheckTask
 // @Accept json
 // @Produce json
-// @Param task_type path string true "任务类型：check|materialization_gate | Task type: check or materialization_gate"
+// @Param task_type path string true "任务类型：check|data_validation | Task type: check or data_validation"
 // @Param id path int true "检查任务ID | Check task ID"
 // @Param request body qualityTaskProviderExecuteRequest true "TaskProvider 执行请求 | TaskProvider execution request"
 // @Success 202 {object} qualityTaskProviderExecuteResponse "执行ID | Execution ID"
@@ -181,7 +181,7 @@ func (h *TaskProviderHandler) TaskDetail(c *gin.Context) {
 // @Security BearerAuth
 func (h *TaskProviderHandler) TaskExecute(c *gin.Context) {
 	taskType := c.Param("task_type")
-	if taskType != commonExecution.TaskTypeQualityCheck && taskType != commonExecution.TaskTypeMaterializationGate {
+	if taskType != commonExecution.TaskTypeQualityCheck && taskType != commonExecution.TaskTypeDataValidation {
 		respondInvalidRequest(c, "")
 		return
 	}
@@ -216,7 +216,7 @@ func (h *TaskProviderHandler) TaskExecute(c *gin.Context) {
 	parentExecutionID := &parentID
 
 	var executionID string
-	if taskType == commonExecution.TaskTypeMaterializationGate {
+	if taskType == commonExecution.TaskTypeDataValidation {
 		if h.gateTaskSvc == nil {
 			respondInvalidRequest(c, "")
 			return
@@ -239,11 +239,11 @@ func (h *TaskProviderHandler) TaskExecute(c *gin.Context) {
 	})
 }
 
-func qualityGateTaskListItem(task models.MaterializationGateTask) taskProviderTaskListItem {
+func qualityGateTaskListItem(task models.DataValidationTask) taskProviderTaskListItem {
 	item := taskProviderTaskListItem{
-		ID: task.ID, TenantID: task.TenantID, TaskType: commonExecution.TaskTypeMaterializationGate,
+		ID: task.ID, TenantID: task.TenantID, TaskType: commonExecution.TaskTypeDataValidation,
 		Name: task.Name, Description: task.Description, Status: qualityGateTaskStatus(task),
-		ExecutionContract: materializationGateExecutionContract(),
+		ExecutionContract: dataValidationExecutionContract(),
 		LastExecutionID:   task.LastExecutionID, LastExecutionStatus: task.LastExecutionStatus,
 	}
 	if task.LastRunAt != nil {
@@ -252,19 +252,16 @@ func qualityGateTaskListItem(task models.MaterializationGateTask) taskProviderTa
 	return item
 }
 
-func materializationGateExecutionContract() taskprovider.ExecutionContract {
+func dataValidationExecutionContract() taskprovider.ExecutionContract {
 	return taskprovider.ExecutionContract{
 		InputSchema: taskprovider.ClosedObjectSchema(), InputDefaults: map[string]interface{}{}, InputUISchema: map[string]interface{}{},
 		OutputSchema: map[string]interface{}{
-			"type": "object", "properties": map[string]interface{}{
-				"materialization_group_id":      map[string]interface{}{"type": "integer", "minimum": float64(1)},
-				"materialization_group_version": map[string]interface{}{"type": "integer", "minimum": float64(1)},
-			}, "required": []interface{}{"materialization_group_id", "materialization_group_version"}, "additionalProperties": false,
+			"type": "object", "properties": map[string]interface{}{"passed": map[string]interface{}{"type": "boolean"}}, "required": []interface{}{"passed"}, "additionalProperties": false,
 		},
 	}
 }
 
-func qualityGateTaskStatus(task models.MaterializationGateTask) string {
+func qualityGateTaskStatus(task models.DataValidationTask) string {
 	switch task.LastExecutionStatus {
 	case commonExecution.ExecutionStatusPending, commonExecution.ExecutionStatusRunning:
 		return task.LastExecutionStatus

@@ -4,7 +4,6 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/addp/model/i18n"
 	"github.com/addp/model/internal/apperrors"
 	"github.com/addp/model/internal/models"
 	"github.com/addp/model/internal/repository"
@@ -521,75 +520,6 @@ func TestLogicalTableDeleteRequiresMaterializationConfigurationRemoval(t *testin
 	assertServiceRecordCount(t, db, &models.LogicalTable{}, 1, "id = ?", table.ID)
 }
 
-func TestLogicalTableDeleteRejectsNonTerminalMaterializationBatch(t *testing.T) {
-	db := setupLifecycleServiceTestDB(t)
-	tableRepo := repository.NewLogicalTableRepository(db)
-	table := models.LogicalTable{
-		TenantID: 1, Name: "Orders", Code: "orders", TableType: "fact", Status: "draft", CreatedBy: 1,
-		Materialization: models.JSONB{},
-	}
-	if err := db.Create(&table).Error; err != nil {
-		t.Fatalf("create logical table: %v", err)
-	}
-	batch := lifecycleMaterializationBatch(table, models.MaterializationBatchSealed)
-	if err := db.Create(&batch).Error; err != nil {
-		t.Fatalf("create sealed materialization batch: %v", err)
-	}
-
-	err := NewLogicalTableService(
-		tableRepo,
-		repository.NewEntityRepository(db),
-		repository.NewDWLayerRepository(db),
-	).DeleteLogicalTable(table.ID, 1, table.Version)
-	requireDomainErrorCode(t, err, "logical_table_materialization_batch_active")
-
-	assertServiceRecordCount(t, db, &models.LogicalTable{}, 1, "id = ?", table.ID)
-	assertServiceRecordCount(t, db, &models.MaterializationBatch{}, 1, "logical_table_id = ?", table.ID)
-}
-
-func TestLogicalTableDeleteRemovesTerminalMaterializationBatches(t *testing.T) {
-	db := setupLifecycleServiceTestDB(t)
-	tableRepo := repository.NewLogicalTableRepository(db)
-	table := models.LogicalTable{
-		TenantID: 1, Name: "Orders", Code: "orders", TableType: "fact", Status: "draft", CreatedBy: 1,
-		Materialization: models.JSONB{},
-	}
-	if err := db.Create(&table).Error; err != nil {
-		t.Fatalf("create logical table: %v", err)
-	}
-	for _, status := range []string{
-		models.MaterializationBatchPublished,
-		models.MaterializationBatchFailed,
-		models.MaterializationBatchAborted,
-	} {
-		batch := lifecycleMaterializationBatch(table, status)
-		if err := db.Create(&batch).Error; err != nil {
-			t.Fatalf("create %s materialization batch: %v", status, err)
-		}
-	}
-
-	if err := NewLogicalTableService(
-		tableRepo,
-		repository.NewEntityRepository(db),
-		repository.NewDWLayerRepository(db),
-	).DeleteLogicalTable(table.ID, 1, table.Version); err != nil {
-		t.Fatalf("delete logical table with terminal batches: %v", err)
-	}
-
-	assertServiceRecordCount(t, db, &models.LogicalTable{}, 0, "id = ?", table.ID)
-	assertServiceRecordCount(t, db, &models.MaterializationBatch{}, 0, "logical_table_id = ?", table.ID)
-}
-
-func lifecycleMaterializationBatch(table models.LogicalTable, status string) models.MaterializationBatch {
-	return models.MaterializationBatch{
-		ID: "batch-" + status, TenantID: table.TenantID, LogicalTableID: table.ID,
-		LogicalTableVersion: table.Version, EngineID: 1,
-		TargetParentLocator: "addp://engine/1/path/public?type=schema", TargetName: table.Code,
-		StagingName: table.Code + "_" + status, SchemaFingerprint: "fingerprint", Status: status,
-		PrepareExecutionID: "prepare-" + status,
-	}
-}
-
 func assertServiceRecordCount(t *testing.T, db *gorm.DB, model any, want int64, query string, args ...any) {
 	t.Helper()
 	var count int64
@@ -986,42 +916,6 @@ func metricImplementationRequest(version, fieldID int64) *models.CreateMetricImp
 	}
 }
 
-func TestLogicalTableReopenExplainsGroupMembershipAndPreservesApproval(t *testing.T) {
-	db := setupLifecycleServiceTestDB(t)
-	table := models.LogicalTable{TenantID: 1, Name: "Orders", Code: "orders", TableType: "fact", Layer: "dws", Status: "approved", Version: 3, CreatedBy: 1}
-	if err := db.Create(&table).Error; err != nil {
-		t.Fatal(err)
-	}
-	group := models.MaterializationGroup{TenantID: 1, Code: "orders", Name: "Orders", Version: 1, CreatedBy: 1, UpdatedBy: 1}
-	if err := db.Create(&group).Error; err != nil {
-		t.Fatal(err)
-	}
-	member := models.MaterializationGroupMember{GroupID: group.ID, TenantID: 1, LogicalTableID: table.ID}
-	if err := db.Create(&member).Error; err != nil {
-		t.Fatal(err)
-	}
-	revisionID := int64(5102)
-	field := models.LogicalField{TableID: table.ID, Name: "ID", ColumnName: "id", DataType: "bigint", IsPK: true, ElementRevisionID: &revisionID, FieldRole: "regular"}
-	if err := db.Create(&field).Error; err != nil {
-		t.Fatal(err)
-	}
-	svc := NewLogicalTableService(repository.NewLogicalTableRepository(db), repository.NewEntityRepository(db), repository.NewDWLayerRepository(db))
-	_, err := svc.ReopenLogicalTable(table.ID, 1, 9, table.Version)
-	requireDomainErrorCode(t, err, "materialization_group_member_conflict")
-	domainErr, _ := apperrors.As(err)
-	if domainErr.MessageID != i18n.MsgTableMaterializationGroupMember {
-		t.Fatalf("message = %s", domainErr.MessageID)
-	}
-	stored, err := svc.GetLogicalTable(table.ID, 1)
-	if err != nil || stored.Status != "approved" || stored.Version != 3 {
-		t.Fatalf("table = %#v, err = %v", stored, err)
-	}
-	fields, err := svc.GetFields(table.ID, 1)
-	if err != nil || len(fields) != 1 || fields[0].ElementRevisionID == nil || *fields[0].ElementRevisionID != revisionID {
-		t.Fatalf("fields = %#v, err = %v", fields, err)
-	}
-}
-
 func TestLogicalTableDDLPreviewPreservesApprovedDefinition(t *testing.T) {
 	db := setupLifecycleServiceTestDB(t)
 	table := models.LogicalTable{TenantID: 1, Name: "Orders", Code: "orders", TableType: "fact", Layer: "dws", Status: "approved", Version: 3, CreatedBy: 1,
@@ -1045,48 +939,5 @@ func TestLogicalTableDDLPreviewPreservesApprovedDefinition(t *testing.T) {
 	fields, err := svc.GetFields(table.ID, 1)
 	if err != nil || len(fields) != 1 || fields[0].ColumnName != "id" || fields[0].DataType != "bigint" {
 		t.Fatalf("fields = %#v, err = %v", fields, err)
-	}
-}
-
-func TestLogicalTableDetailIncludesOnlyTenantMembershipSummaries(t *testing.T) {
-	db := setupLifecycleServiceTestDB(t)
-	table := models.LogicalTable{TenantID: 1, Name: "People", Code: "people", TableType: "dimension", Status: "approved", Version: 1, CreatedBy: 1}
-	if err := db.Create(&table).Error; err != nil {
-		t.Fatal(err)
-	}
-	for _, group := range []models.MaterializationGroup{
-		{ID: 11, TenantID: 1, Code: "first", Name: "First", Version: 1, CreatedBy: 1, UpdatedBy: 1},
-		{ID: 12, TenantID: 1, Code: "second", Name: "Second", Version: 1, CreatedBy: 1, UpdatedBy: 1},
-		{ID: 13, TenantID: 2, Code: "private", Name: "Other tenant", Version: 1, CreatedBy: 1, UpdatedBy: 1},
-	} {
-		if err := db.Create(&group).Error; err != nil {
-			t.Fatal(err)
-		}
-		member := models.MaterializationGroupMember{GroupID: group.ID, TenantID: group.TenantID, LogicalTableID: table.ID, Position: 1}
-		if err := db.Create(&member).Error; err != nil {
-			t.Fatal(err)
-		}
-	}
-	svc := NewLogicalTableService(repository.NewLogicalTableRepository(db), nil, nil)
-	detail, err := svc.GetLogicalTable(table.ID, 1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := []models.MaterializationGroupSummary{{ID: 11, Name: "First"}, {ID: 12, Name: "Second"}}
-	if !reflect.DeepEqual(detail.MaterializationGroups, want) {
-		t.Fatalf("groups = %#v", detail.MaterializationGroups)
-	}
-	if _, err := svc.GetLogicalTable(table.ID, 2); err == nil {
-		t.Fatal("cross-tenant table read succeeded")
-	}
-	if err := db.Exec("DELETE FROM model.materialization_group_members WHERE tenant_id = 1").Error; err != nil {
-		t.Fatal(err)
-	}
-	detail, err = svc.GetLogicalTable(table.ID, 1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if detail.MaterializationGroups == nil || len(detail.MaterializationGroups) != 0 {
-		t.Fatalf("expected empty non-nil memberships, got %#v", detail.MaterializationGroups)
 	}
 }

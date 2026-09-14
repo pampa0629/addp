@@ -139,7 +139,7 @@ func (h *LogicalTableHandler) CreateLogicalTable(c *gin.Context) {
 // @Tags Model
 // @Produce json
 // @Param id path int true "逻辑表ID | Logical table ID"
-// @Success 200 {object} models.LogicalTableDetail "逻辑表及所属物化组摘要 | Logical table with materialization group summaries"
+// @Success 200 {object} models.LogicalTableDetail "逻辑表详情 | Logical table detail"
 // @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
 // @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
 // @Failure 400 {object} models.ErrorResponse "逻辑表 ID 无效 | Invalid logical table ID"
@@ -208,7 +208,7 @@ func (h *LogicalTableHandler) UpdateLogicalTable(c *gin.Context) {
 
 // DeleteLogicalTable DELETE /api/v1/model/logical-tables/:id
 // @Summary 删除逻辑表 | Delete logical table
-// @Description 仅当逻辑表为草稿、不属于物化组、已显式清空物化配置且不存在非终态物化批次时，删除终态物化批次操作状态和逻辑表聚合；通用任务执行审计继续保留。| Delete terminal materialization batch operation state and the logical-table aggregate only when the table is a draft, is not in a materialization group, has an explicitly cleared materialization configuration, and has no non-terminal materialization batch; common task execution audit history is preserved.
+// @Description 仅删除已清空物化配置的草稿逻辑表；历史执行事实保留。 | Delete a draft logical table with cleared physical configuration; preserve execution history.
 // @Tags Model
 // @Produce json
 // @Param id path int true "逻辑表ID | Logical table ID"
@@ -218,7 +218,7 @@ func (h *LogicalTableHandler) UpdateLogicalTable(c *gin.Context) {
 // @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
 // @Failure 400 {object} models.ErrorResponse "逻辑表 ID 无效 | Invalid logical table ID"
 // @Failure 404 {object} models.ErrorResponse "逻辑表不存在 | Logical table not found"
-// @Failure 409 {object} models.ErrorResponse "版本、状态、关联、物化组、物化配置或非终态批次冲突 | Version, state, relation, materialization group, materialization configuration, or non-terminal batch conflict"
+// @Failure 409 {object} models.ErrorResponse "版本、状态或关联冲突 | Version, state or reference conflict"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["model.logical_model.delete"]
 // @Router /logical-tables/{id} [delete]
@@ -280,7 +280,7 @@ func (h *LogicalTableHandler) ApproveLogicalTable(c *gin.Context) {
 
 // ReopenLogicalTable POST /api/v1/model/logical-tables/:id/reopen
 // @Summary 将逻辑表退回草稿 | Return logical table to draft
-// @Description 退回草稿并清空字段冻结修订；物化组成员必须先移出组。 | Return to draft and clear frozen field revisions; materialization group members must be removed from their group first.
+// @Description 退回草稿并清空字段冻结修订，已有物理表和数据保持不变。 | Return to draft and clear frozen revisions, preserving existing physical tables and data.
 // @Tags Model
 // @Produce json
 // @Param id path int true "逻辑表ID | Logical table ID"
@@ -290,7 +290,7 @@ func (h *LogicalTableHandler) ApproveLogicalTable(c *gin.Context) {
 // @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
 // @Failure 400 {object} models.ErrorResponse "逻辑表 ID 无效 | Invalid logical table ID"
 // @Failure 404 {object} models.ErrorResponse "逻辑表不存在 | Logical table not found"
-// @Failure 409 {object} models.ErrorResponse "版本或状态冲突；物化组成员返回 materialization_group_member_conflict | Version or state conflict; group members return materialization_group_member_conflict"
+// @Failure 409 {object} models.ErrorResponse "版本、状态或关联冲突 | Version, state or reference conflict"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["model.logical_model.update"]
 // @Router /logical-tables/{id}/reopen [post]

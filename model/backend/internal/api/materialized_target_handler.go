@@ -23,7 +23,7 @@ func NewMaterializedTargetHandler(materialization *service.MaterializationServic
 
 // Decommission deletes the exact physical target currently registered by a logical table.
 // @Summary 退役逻辑表物化目标 | Decommission logical-table materialized target
-// @Description 校验逻辑表版本、精确目标确认、物化组和活跃批次后，仅删除由当前逻辑表管理标记拥有的 PostgreSQL 物理表；不修改逻辑表配置。| After validating the logical-table version, exact target confirmation, materialization-group membership, and active batches, delete only the PostgreSQL table owned by the current logical-table marker; the logical-table definition is unchanged.
+// @Description 校验逻辑表版本和精确目标确认后，仅删除由当前逻辑表管理标记拥有的 PostgreSQL 物理表；不修改逻辑表配置。| After validating the logical-table version, exact target confirmation, delete only the PostgreSQL table owned by the current logical-table marker; the logical-table definition is unchanged.
 // @Tags Model
 // @Accept json
 // @Produce json
@@ -34,7 +34,7 @@ func NewMaterializedTargetHandler(materialization *service.MaterializationServic
 // @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
 // @Failure 403 {object} models.ErrorResponse "权限不足或没有目标引擎 DDL 权限 | Permission denied or target engine DDL access denied"
 // @Failure 404 {object} models.ErrorResponse "逻辑表不存在 | Logical table not found"
-// @Failure 409 {object} models.ErrorResponse "版本、目标确认、所有权、物化组或活跃批次冲突 | Version, target confirmation, ownership, materialization group, or active batch conflict"
+// @Failure 409 {object} models.ErrorResponse "版本、目标确认或所有权冲突 | Version, target confirmation, or ownership conflict"
 // @Failure 503 {object} models.ErrorResponse "System 或目标引擎暂时不可用 | System or target engine unavailable"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["model.materialized_target.delete"]
@@ -70,4 +70,43 @@ func bearerCredential(header string) string {
 		return ""
 	}
 	return parts[1]
+}
+
+// Create creates the approved physical table without modifying existing data.
+// @Summary 创建正式表 | Create physical target
+// @Description 根据已审批模型创建正式表；同归属且结构一致时幂等成功，结构不一致拒绝；不执行数据加工。| Create an approved physical target, preserving existing data when ownership and structure match; reject structural drift.
+// @Tags Model
+// @Accept json
+// @Produce json
+// @Param id path int true "逻辑表 ID | Logical table ID"
+// @Param request body models.VersionRequest true "模型并发版本 | Model version"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} models.ErrorResponse
+// @Failure 401 {object} models.ErrorResponse
+// @Failure 403 {object} models.ErrorResponse
+// @Failure 404 {object} models.ErrorResponse
+// @Failure 409 {object} models.ErrorResponse
+// @Failure 503 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["model.materialization.execute"]
+// @Router /logical-tables/{id}/materialized-target [post]
+// @Security BearerAuth
+func (h *MaterializedTargetHandler) Create(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	var request models.VersionRequest
+	if err != nil || id <= 0 || commonapi.BindOptionalJSONStrict(c, &request) != nil || request.Version <= 0 {
+		c.JSON(http.StatusBadRequest, invalidParamsResponse(c))
+		return
+	}
+	token := bearerCredential(c.GetHeader("Authorization"))
+	if token == "" {
+		c.JSON(http.StatusUnauthorized, localizedErrorResponse(c, "common.auth.authentication_required", "authentication_required"))
+		return
+	}
+	locator, err := h.materialization.CreateMaterializedTarget(c.Request.Context(), id, getTenantID(c), request.Version, token)
+	if err != nil {
+		writeServiceError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"target_locator": locator})
 }

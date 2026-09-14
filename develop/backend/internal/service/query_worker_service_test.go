@@ -181,3 +181,13 @@ func TestDevQueryTaskFromExecutionUsesFrozenSnapshot(t *testing.T) {
 		t.Fatalf("task snapshot = %#v", task)
 	}
 }
+
+func TestExistingResultRejectsSelfInputRegardlessOfCatalogHints(t *testing.T) {
+	task := &models.DevTask{Content: models.DevTaskContent{"query_type": "sql", "query": "SELECT id FROM source", "query_parameters": []interface{}{map[string]interface{}{"name": "source", "type": "relation"}}}}
+	for _, target := range []string{"addp://engine/9/path/public/source?type=table", "addp://engine/9/path/public/source?type=table&item_id=9"} {
+		_, err := compileExistingTableResultQuery(task, map[string]string{"source": "addp://engine/9/path/public/source?type=table"}, target, "postgresql")
+		if err == nil {
+			t.Fatalf("self input accepted: %s", target)
+		}
+	}
+}

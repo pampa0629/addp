@@ -85,8 +85,6 @@ func main() {
 	tableRelationRepo := repository.NewTableRelationRepository(db)
 	dimensionHierarchyRepo := repository.NewDimensionHierarchyRepository(db)
 	standardReferenceGuardRepo := repository.NewStandardReferenceGuardRepository(db)
-	materializationRepo := repository.NewMaterializationBatchRepository(db)
-	materializationGroupRepo := repository.NewMaterializationGroupRepository(db)
 	catalogResourceRepo := repository.NewCatalogResourceRepository(db)
 
 	// 创建 Services（仅 Model 相关，传入 standardURL 用于验证 element_id）
@@ -103,13 +101,9 @@ func main() {
 	dimensionHierarchySvc := service.NewDimensionHierarchyService(dimensionHierarchyRepo, logicalTableRepo)
 	standardReferenceGuardSvc := service.NewStandardReferenceGuardService(standardReferenceGuardRepo)
 	taskExecutionRepo := commonExecution.NewTaskExecutionRepository(db)
-	materializationSvc := service.NewMaterializationService(systemClient, materializationRepo, logicalTableRepo, logicalTableSvc)
+	materializationSvc := service.NewMaterializationService(systemClient, logicalTableRepo, logicalTableSvc)
 	materializationSvc.SetExecutionAuthorizationIssuer(commonClient.NewSystemExecutionAuthorizationClient(cfg.SystemURL, nil))
-	materializationGroupSvc := service.NewMaterializationGroupService(materializationGroupRepo, materializationSvc)
 	catalogResourceSvc := service.NewCatalogResourceService(catalogResourceRepo)
-	materializationSvc.SetGroupService(materializationGroupSvc)
-	materializationSvc.Start(runtimeContext)
-	defer materializationSvc.Stop()
 	cleanupSvc := service.NewCleanupService(db, redisClient, taskExecutionRepo)
 	if err := cleanupSvc.Start(runtimeContext); err != nil {
 		log.Printf("Model 资源回收执行方启动失败: %v", err)
@@ -128,7 +122,6 @@ func main() {
 		dimensionHierarchySvc,
 		standardReferenceGuardSvc,
 		materializationSvc,
-		materializationGroupSvc,
 		catalogResourceSvc,
 		taskExecutionRepo,
 		cfg.SystemURL,
@@ -155,13 +148,10 @@ func main() {
 	// 启动模块注册和心跳
 	serviceHost := commonConfig.GetServiceHost()
 	serviceURL := commonConfig.BuildServiceURL(serviceHost, cfg.Port)
-	taskProvider, err := service.ModelTaskProviderDeclaration()
-	if err != nil {
-		log.Fatalf("构建 Model TaskProvider 声明失败: %v", err)
-	}
+
 	registration := systemClient.RegisterAndHeartbeat(runtimeContext, &commonClient.ModuleRegistrationRequest{
 		ModuleName: "model", ModuleURL: serviceURL, RoutePrefix: "/model", HealthCheckURL: serviceURL + "/health/ready",
-		TaskProvider: taskProvider,
+
 		Metadata: map[string]interface{}{
 			"module": "model",
 			"capabilities": map[string]interface{}{

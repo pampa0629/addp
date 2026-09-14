@@ -58,10 +58,6 @@
               <el-icon><Star /></el-icon>
               <span>{{ t('model.layout.starSchema') }}</span>
             </el-menu-item>
-            <el-menu-item index="/materialization-groups">
-              <el-icon><SetUp /></el-icon>
-              <span>{{ t('model.layout.materializationGroups') }}</span>
-            </el-menu-item>
           </el-sub-menu>
         </el-menu>
       </el-aside>
@@ -99,7 +95,6 @@ const activeMenu = computed(() => {
   if (path.startsWith('/dw-layers')) return '/dw-layers'
   if (path.startsWith('/entities')) return '/entities'
   if (path.startsWith('/logical-tables')) return '/logical-tables'
-  if (path.startsWith('/materialization-groups')) return '/materialization-groups'
   if (path.startsWith('/er-diagram')) return '/er-diagram'
   if (path.startsWith('/star-schema')) return '/star-schema'
   return path

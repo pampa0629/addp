@@ -24,11 +24,10 @@ export const SEARCH_INDEX = [
   { labelKey: 'console.menus.modeling.dwLayers',     module: 'modeling', route: '/modeling/dw-layers',    keywords: ['数仓分层', '分层', 'data warehouse', 'layer'] },
   { labelKey: 'console.menus.modeling.entities',     module: 'modeling', route: '/modeling/entities',     keywords: ['业务实体', '实体', 'entity'] },
   { labelKey: 'console.menus.modeling.logicalTables',module: 'modeling', route: '/modeling/logical-tables',keywords: ['逻辑表', '逻辑模型', 'logical table'] },
-  { labelKey: 'console.menus.modeling.materializationGroups', module: 'modeling', route: '/modeling/materialization-groups', keywords: ['物化组', '原子发布', 'materialization group', 'publish'] },
   { labelKey: 'console.menus.modeling.starSchema',   module: 'modeling', route: '/modeling/star-schema',  keywords: ['星型建模', '星型模型', 'star schema'] },
   // 数据质量
   { labelKey: 'console.menus.quality.checkTasks',       module: 'quality', route: '/quality/check-tasks',      keywords: ['质量检查', '质量', 'quality check'] },
-  { labelKey: 'console.menus.quality.materializationGateTasks', module: 'quality', route: '/quality/materialization-gate-tasks', keywords: ['物化门禁', '发布门禁', '强类型断言', 'materialization gate'] },
+  { labelKey: 'console.menus.quality.dataValidationTasks', module: 'quality', route: '/quality/data-validation-tasks', keywords: ['数据校验', '发布门禁', '强类型断言', 'materialization gate'] },
   { labelKey: 'console.menus.quality.ruleApplications', module: 'quality', route: '/quality/rule-applications',keywords: ['规则应用', '质量规则', 'rule'] },
   { labelKey: 'console.menus.quality.issues',           module: 'quality', route: '/quality/issues',           keywords: ['质量问题', '问题工单', 'issue'] },
   // 数据安全
@@ -57,7 +56,7 @@ export const SEARCH_INDEX = [
   { labelKey: 'console.menus.monitor.metadataScanExecutions', module: 'monitor', route: '/monitor/executions?module=meta&task_type=scan', keywords: ['元数据扫描执行', '扫描执行记录', 'meta scan execution'] },
   { labelKey: 'console.menus.monitor.developExecutions', module: 'monitor', route: '/monitor/executions?module=develop', keywords: ['开发执行', '查询执行', '工作流执行', '脚本执行', 'develop execution'] },
   { labelKey: 'console.menus.monitor.qualityCheckExecutions', module: 'monitor', route: '/monitor/executions?module=quality&task_type=check', keywords: ['质量检查执行', '质量执行记录', 'quality check execution'] },
-  { labelKey: 'console.menus.monitor.materializationGateExecutions', module: 'monitor', route: '/monitor/executions?module=quality&task_type=materialization_gate', keywords: ['物化门禁执行', '门禁执行记录', 'materialization gate execution'] },
+  { labelKey: 'console.menus.monitor.dataValidationExecutions', module: 'monitor', route: '/monitor/executions?module=quality&task_type=data_validation', keywords: ['数据校验执行', '门禁执行记录', 'materialization gate execution'] },
   { labelKey: 'console.menus.monitor.managerExecutions', module: 'monitor', route: '/monitor/executions?module=manager', keywords: ['数据管理执行', '快显执行', '向量化执行', 'manager execution'] },
   { labelKey: 'console.menus.monitor.graphBuildExecutions', module: 'monitor', route: '/monitor/executions?module=graph&task_type=kg_build', keywords: ['图谱构建执行', '知识图谱任务执行', 'graph build execution'] },
   { labelKey: 'console.menus.monitor.modelExecutions', module: 'monitor', route: '/monitor/executions?module=model', keywords: ['数据建模执行', '物化执行', 'model execution'] },

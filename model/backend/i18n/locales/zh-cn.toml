@@ -118,9 +118,6 @@ other = "逻辑表仍保留物化目标配置，请先显式清空配置"
 [model.logical_table.materialization_batch_active]
 other = "逻辑表仍有未终结的物化批次，不能删除"
 
-[model.logical_table.materialization_group_member]
-other = "逻辑表仍属于物化组，请先将其移出物化组"
-
 [model.logical_table.approval_fields_required]
 other = "逻辑表至少需要一个字段才能审批"
 

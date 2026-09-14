@@ -54,3 +54,11 @@ if grep -q -- '--- SKIP:' "$WORK_DIR/common-projectionstore-postgres.log"; then
     echo "Common protection projection store PostgreSQL gate refuses skipped tests" >&2
     exit 1
 fi
+
+ADDP_TEST_TABLE_RESULT_POSTGRES_DSN="$execution_dsn" \
+    go test ./dbbridge -run '^TestTableResult.*AgainstPostgres$' \
+    -count=1 -v 2>&1 | tee "$WORK_DIR/common-table-result-postgres.log"
+if grep -q -- '--- SKIP:' "$WORK_DIR/common-table-result-postgres.log"; then
+    echo "Common table result PostgreSQL gate refuses skipped tests" >&2
+    exit 1
+fi

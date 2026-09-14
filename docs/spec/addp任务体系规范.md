@@ -36,7 +36,7 @@
 9. Monitor 只聚合观察，不成为任务 owner。
 10. ad-hoc-only execution type 可以写入统一执行记录，但在没有持久任务定义前不得声明为 TaskProvider 能力或进入 Orchestrator 任务选择。
 11. 真实读写 owner 必须在 execution 结果中写入版本化 `lineage_facts`；Meta 负责消费并维护血缘关系，Orchestrator 不重复生成资源血缘。
-12. Quality `check|materialization_gate`、Meta `scan`、Transfer bounded `sync` 和 Orchestrator 来源的 Develop `query` 的 execution worker 必须是 owner 模块附属的独立进程；Manager 的 bounded execution 统一由 Manager Backend 内嵌的有界执行监督器运行。两种部署形态都必须使用 PostgreSQL execution claim + lease，部署形态不能改变 execution 所有权协议。
+12. Quality `check|data_validation`、Meta `scan`、Transfer bounded `sync` 和 Orchestrator 来源的 Develop `query` 的 execution worker 必须是 owner 模块附属的独立进程；Manager 的 bounded execution 统一由 Manager Backend 内嵌的有界执行监督器运行。两种部署形态都必须使用 PostgreSQL execution claim + lease，部署形态不能改变 execution 所有权协议。
 13. owner scheduler 运行在 owner Backend，只负责按任务定义发现到期任务并创建 durable `pending` execution；Worker 不可用不得阻止 scheduler 创建 execution。dispatcher 只负责 outbox/delivery 投递，二者都不得替代 execution worker 成为业务执行事实源。
 14. bounded runtime queue 的唯一主路线是 `common.task_executions` PostgreSQL claim，不保留 Redis/Asynq、请求内 goroutine 或进程内 channel。独立 Worker 与 owner Backend 内嵌监督器是明确的模块级部署选择，不得在同一模块内双轨消费；continuous runtime、dispatcher 和 maintenance loop 继续使用各自专用协议，不强行迁入 bounded claim。
 15. Manager `pptx_pdf_generation` 是 bounded 预览生成任务：任务定义统一归 `manager.task_definitions`，结果归 `manager.pptx_pdf`。Manager 领域执行器通过 Common `WorkflowRuntimeProvider` direct 调用 `document_workflow/document_to_pdf`；Document Workflow 是纯执行层，LibreOffice 只作为其内部依赖，不拥有 Manager 任务、execution 或 artifact 状态。
@@ -199,7 +199,7 @@ POST /api/v1/meta/lineage/executions/{execution_id}/collect
 
 ### Bounded execution 领取、租约和恢复契约
 
-Quality `check|materialization_gate`、Meta `scan`、Transfer `runtime.boundary=bounded`、Orchestrator 来源的 Develop `query` 和 Manager bounded execution 必须遵守同一个公共所有权协议：
+Quality `check|data_validation`、Meta `scan`、Transfer `runtime.boundary=bounded`、Orchestrator 来源的 Develop `query` 和 Manager bounded execution 必须遵守同一个公共所有权协议：
 
 1. 合法执行方使用 PostgreSQL `FOR UPDATE SKIP LOCKED` 从 `common.task_executions` 领取本模块、task type、可选触发 `source` 和满足本模块授权前置条件的最早 `pending` execution。合法执行方可以是规范明确的独立 Worker，也可以是 owner Backend 内嵌监督器。Develop Query Worker 固定领取 `module=develop + task_type=query + source=orchestrator`；`source=develop` 的查询工作台与 Develop 手动执行仍由 Backend 即时运行，二者不得竞争同一 execution。
 2. claim 必须原子完成 `pending → running`、首次写入 `started_at`、递增 `attempt`、生成新的随机 `lease_token` 并写入 `lease_owner + lease_expires_at`。`lease_owner` 只用于观测，不能替代 token。
@@ -214,7 +214,7 @@ Quality `check|materialization_gate`、Meta `scan`、Transfer `runtime.boundary=
 
 公共 `common/execution` 只提供 claim、lease token、heartbeat、带所有权条件的更新和过期领取等通用原语。具体 execution 是否可恢复、owner task 摘要事务、外部副作用幂等和提交边界归 owner/Provider 实现；公共层不承诺跨系统 exactly-once。
 
-Orchestrator 来源的 Develop 查询必须把参数解析后的 `content`、`engine_id`、timeout 和有效执行输入冻结在 `execution_config`，Worker 不得在 claim 后重新读取可变任务定义。关系参数先应用任务默认绑定，再由 Orchestrator 提交值覆盖；关系结果写入只消费该有效绑定及独立的 `target_locator`，并按当前 `attempt + lease_token` 签发精确的同引擎 `read + write` 授权。Develop 不得取得 Model attempt、调用 Model 或接管 Model staging；租约失效或写入失败时当前 execution 和父编排直接失败，重算必须从新的 Model prepare 批次开始。
+Orchestrator 来源的 Develop 查询冻结 content、engine_id、timeout、有效输入、target_locator 和 write_mode；Worker 不得读取可变任务定义。Develop 关系查询写入通过执行契约显式配置固定正式表 `target_locator` 与 `write_mode=overwrite|append`。所有输入和输出必须位于同一 PostgreSQL Engine，输出不得同时作为输入。overwrite 在一个事务内锁定目标、删除旧记录并插入完整计算结果；失败或取消回滚该表写入。append 只追加。多个任务分别提交，不保证跨任务、多表同时可见。
 
 ad-hoc execution 的 `task_type` 仍必须是 owner 模块内稳定的业务执行类型，但稳定 execution type 不等于 TaskProvider task type。只有 owner 已提供可保存的任务定义、标准任务列表 / 详情 / 执行接口并允许 Orchestrator 引用时，才能把该类型加入 `task_capabilities[]`。
 
@@ -274,8 +274,7 @@ Common 不维护全量业务 `task_type` 编译期枚举。稳定 execution type
 | Transfer | `sync` | `transfer.transfer_tasks` |
 | Develop | `query` / `workflow` / `script` | `develop.dev_tasks` |
 | Manager | `vector_tile_cache_generation` / `vector_tile_set_generation` / `vector_materialized_view_generation` / `embedding` / `raster_cog_generation` / `raster_mosaic_generation` / `model_3d_glb_generation` / `model3d_tiles_generation` / `gaussian_splat_ksplat_generation` / `point_cloud_copc_generation` | 九类快显与空间派生定义统一存入 `manager.task_definitions`；`embedding` 单独使用 `manager.embedding_tasks` |
-| Quality | `check` / `materialization_gate` | `quality.check_tasks` / `quality.materialization_gate_tasks` |
-| Model | `materialization_prepare` / `materialization_seal` / `materialization_publish` / `materialization_group_publish` | 已审批 `model.logical_tables` / `model.materialization_groups` |
+| Quality | `check` / `data_validation` | `quality.check_tasks` / `quality.data_validation_tasks` |
 | Graph | `kg_build` | `graph.build_tasks` |
 | Orchestrator | `orchestration` | `orchestrator.orchestrations` |
 
@@ -285,7 +284,7 @@ System 资源回收（cleanup）不纳入 TaskProvider，也不进入 Orchestrat
 
 Transfer 的内部任务语义统一收敛为 `sync`。可复用同步配置保存为 `transfer.transfer_tasks` 并通过 TaskProvider 关联任务定义；一次性导出等用户动作直接创建 `module=transfer + task_type=sync + source_task_id=null` 的 bounded ad-hoc execution，不得先创建临时任务定义。Manager 导出和 Develop 查询完整结果导出统一调用 Transfer 的一次性执行入口，并由 Common 导出会话能力保存统一 `execution_id`、infra 临时产物 manifest 与下载状态；不得保存 Transfer 私有 task ID，也不得在 Transfer 侧并行保留 `import`、`export`、`transfer` 等旧任务类型。模块 Service Client 创建一次性 execution 使用不可委派的 `transfer.execution.create` Permission，回查结果使用不可委派的 `transfer.execution.read` Permission；`tenant.manager_runtime` 与 `tenant.develop_runtime` 仅因导出会话获得这两个窄权限，不因此获得 Transfer 任务定义的创建、读取或启动权限。Transfer 从已认证的 `addp-<module>` Client ID 推导 execution `source`，请求不得提交可伪造的 `source_module`；结果回查也必须校验 execution `source` 与当前 Client ID 对应模块完全一致，不得允许模块读取其他来源的 execution。调用方通过 Common 强类型 Client 的窄接口提交标准 Locator、查询快照、infra 目标父 Locator、文件名、格式和字段结构；Transfer 独占 planner、流式读取、编码、目标写入、保护和执行状态。导出产物不进入业务资源树、不触发 Meta scan、不形成正式业务 DataItem；需要写入业务引擎时必须使用独立的“保存结果”能力。Manager 导入仍属于可复用同步任务创建语义时继续使用持久 `sync` 任务，不与一次性导出混用。
 
-Model 的 `materialization_prepare|materialization_seal|materialization_publish` 以已审批 LogicalTable 作为来源驱动任务定义，task ID 均为 LogicalTable ID。`prepare` 冻结逻辑表版本和结构指纹，由 Model 创建本批次唯一 staging，稳定输出 `batch_id + staging_locator`；DDL、Schema 和表名仍不进入任务定义或用户输入。`seal` 必须通过运行时输入接受 prepare 的 `batch_id`、通用 writer 的 `execution_id` 和 writer 回显的 `target_locator`；Model 校验 writer 已成功、同 Tenant、同 Actor 血缘、同一父编排，target 精确等于本批 staging，并完成物理管理标记和结构校验后才把批次置为 `sealed`。`seal` 不校验 writer 所属业务模块，不引入 Transfer/Develop 硬编码。`publish` 只消费同一父编排下的 sealed 批次。
+Model 负责已审批逻辑表的正式物理表创建、结构校验与显式退役；Develop 负责计算并写入已存在表，Quality 负责正式表数据校验，Orchestrator 负责依赖、调度和完整流程。建表不计算数据，数据刷新不依赖发布组或暂存批次。
 
 业务模块之间默认不得在任务定义中保存另一业务 owner 的专有 ID，也不得以共享 Client 掩盖语义依赖。跨模块数据交接必须优先使用 TaskProvider 的稳定 outputs、Orchestrator 显式依赖与标准 ResourceLocator；只有无法用稳定公共概念表达且已在正式规范中说明的场景，才允许业务模块之间的 owner-specific 运行时调用。
 
@@ -293,13 +292,13 @@ Transfer 的 bounded snapshot 可以声明通用“单次执行覆盖既有目�
 
 Transfer 的 bounded `sync` 必须声明同一组稳定输出 `execution_id + target_locator + row_count`，其中 `target_locator` 始终回显本 execution 实际写入的目标。普通固定目标任务返回闭合空输入契约；允许目标覆盖的任务声明可选 `target_locator`，并在 `input_defaults` 中返回任务保存的默认目标 locator。固定创建目标必须保留其 locator 体系：业务引擎父资源产生 `addp://engine/...` 子资源，Manager 等模块传入的 Infra 父资源产生 `addp-infra://...` 子资源，不得用业务 ResourceLocator 解析器处理 Infra locator。不得因为目标已固定而返回空输出契约，也不得让下游从 Transfer 私有配置、任务 ID 或物理字段拼接目标位置。
 
-Develop 保存的 `query` 可以声明通用“关系参数 -> 已存在表结果”模式。`content.query_parameters[]` 是唯一参数定义事实源；`type=relation` 的参数可以在 `default.locator` 保存同一查询 Engine 中已有表的标准 ResourceLocator，也可以不保存默认绑定并由每次执行提供。执行契约把每个关系参数声明为 ResourceLocator 输入；只有缺少默认绑定的关系参数才是必填覆盖，同时把编排写入使用的 `target_locator` 声明为必填运行时输入。SQL 以未加引号、未限定 schema 的裸参数名引用已声明关系，例如参数 `activities` 写作 `FROM activities`；`input_ui_schema.<参数名>` 必须声明 `control=resource_tree_picker` 和 source 资源绑定语义，使 Orchestrator 可以直接使用默认表，也可以把不同上游的稳定 ResourceLocator 输出分别绑定到同名参数，不得要求用户手写绑定模板。Worker 校验全部有效关系参数 locator 与查询 Runtime、目标位于同一 PostgreSQL Engine，通过 AST 只改写已声明的裸关系节点，并在事务中执行 `INSERT INTO <target> SELECT ...`。CTE 与参数重名、未声明参数、未使用声明、真实物理关系、schema 限定关系、表函数数据源、非 PostgreSQL 查询或跨 Engine 输入必须拒绝。稳定输出至少包含 `execution_id + target_locator + row_count`。Develop 不得保存 LogicalTable ID、调用 Model API 或持有 Model Permission。
+Develop 关系查询写入通过执行契约显式配置固定正式表 `target_locator` 与 `write_mode=overwrite|append`。所有输入和输出必须位于同一 PostgreSQL Engine，输出不得同时作为输入。overwrite 在一个事务内锁定目标、删除旧记录并插入完整计算结果；失败或取消回滚该表写入。append 只追加。多个任务分别提交，不保证跨任务、多表同时可见。
 
-上述动态目标 writer 不允许在 worker lease 过期后单独重试；写入失败使整个父编排失败，重算必须从 Model prepare 开始新批次。后续新 prepare 只能在旧父 Orchestrator execution 已为 `failed|timeout|cancelled` 且无 `pending|running` 子 execution 时，接管同一物理目标的旧 `preparing|prepared|sealed` 批次；旧父仍运行或已成功、以及批次处于 `publishing` 时必须拒绝。旧批次转为 `aborted` 后，新 prepare worker 使用本次精确 DDL 授权，先按批次 ownership marker 幂等回收同目标的历史 `aborted|failed` staging，再创建新 staging；回收和新建必须在同一目标数据库事务中完成。不新增公开 abort TaskProvider、Orchestrator 专属补偿节点或 writer 回调。
+写入失败或失联不得自动重放可能已经提交的写入；当前 execution 和父流程失败。用户可重新执行完整流程，各覆盖任务仍按单表事务处理。
 
-Quality `materialization_gate` 仅由 Orchestrator 触发，任务绑定唯一 `materialization_group_id`，并静态保存与该组成员集合完全一致的逻辑表 alias 和类型化断言。Quality 通过 Common Model Client 读取现有 MaterializationGroup 并冻结组版本，不新增泛化只读物化契约；执行前组版本或成员变化必须拒绝。worker 必须在 claim 后以当前 reader execution 向 Model 获取完整 Materialization Read Context，再从父 execution 派生返回 Engine 集合的精确 `read` 授权。断言只允许 `not_null|unique_key|foreign_key|predicate_implication|row_count`，不接受自定义 SQL。任一 `severity=error` 断言不通过时 Quality execution 写 `failed`，Orchestrator 不得继续发布；成功后的 Model publish Step 必须引用同一个 MaterializationGroup，并将门禁输出的组 ID/版本绑定到 `expected_group_id + expected_group_version`。Model 在入队和发布时双重校验，但该交接不表示全局禁止不含 Quality 门禁的其他物化组编排。
+Quality `data_validation` 由 Orchestrator 触发，任务保存同一 Engine 中的标准物理表 `table_bindings: [{alias, locator}]` 与强类型断言。Worker 按当前 lease 派生精确 read 授权，在只读、可重复读事务内读取字段并执行断言，不依赖 Model。成功输出 `passed=true`；error 断言失败会阻止后续步骤，不回滚已完成的上游计算。
 
-Model `materialization_group_publish` 以持久 MaterializationGroup 为任务定义，仅解析同一父 execution 下全部成员的已完成批次，并在同一 PostgreSQL 目标库事务中完成全部物理交换。组成员不作为运行参数，不允许跨 Engine 组或部分发布。单逻辑表 `materialization_publish` 继续仅用于非组物化；某个批次如属于当前 MaterializationGroup 的编排发布，必须只走组发布路线。
+Model 不声明物化 TaskProvider。
 
 Transfer `sync` 的稳定语义由以下正交维度表达：
 
@@ -692,7 +691,7 @@ TaskProvider 任务列表是跨模块编排专用契约，不适用通用业务�
 
 `GET /tasks/{task_type}/{id}` 直接返回 owner 模块的任务定义摘要对象。对象必须包含 `id`、`task_type`、`name`、`status` 和该具体任务的 `execution_contract`；多任务类型 provider 可以按 `task_type` 返回不同任务定义 DTO，但不得再包一层 `data`。`enabled`、`schedule`、`next_run_at` 只允许在该 task type 明确声明并实现 `supports_schedule=true` 的 owner 调度闭环时出现；不支持调度的 TaskProvider 不得暴露这些调度活状态字段。`input_schema.required` 可以声明只能在手动触发或 Orchestrator Step 中绑定的必填运行时输入；`input_defaults` 是部分默认值，只校验已提供字段的类型和约束，不要求覆盖全部 required。执行前，owner 与 Orchestrator 必须在默认值、显式参数和上游输出绑定解析后，对完整参数再执行一次严格 required 校验。
 
-Quality `check|materialization_gate` 是纯手动/Orchestrator 显式执行类型，当前不保存或返回 `enabled`、`schedule`、`next_run_at` 等调度活状态字段。其中 `materialization_gate` 仅允许 Orchestrator 触发。`execution_contract` 是具体任务可执行输入和稳定输出的唯一事实源：
+Quality `check|data_validation` 是纯手动/Orchestrator 显式执行类型，当前不保存或返回 `enabled`、`schedule`、`next_run_at` 等调度活状态字段。其中 `data_validation` 仅允许 Orchestrator 触发。`execution_contract` 是具体任务可执行输入和稳定输出的唯一事实源：
 
 ```json
 {
@@ -714,6 +713,8 @@ Quality `check|materialization_gate` 是纯手动/Orchestrator 显式执行类�
 ```
 
 不支持执行输入覆盖或没有稳定输出的任务仍必须返回对应的闭合空对象。`input_defaults` 只提供任务定义中已保存的可覆盖默认值；它不能隐式填充任务定义本身必须持久的业务字段，也不能绕过执行时 required 校验。`input_ui_schema` 只描述 `input_schema.properties` 中已声明字段的控件语义，不得增加输入字段或覆盖服务端 Schema 约束。需要稳定展示顺序时，字段和分组必须在对应 UI Schema 节点声明从 `0` 开始的 `order`；消费者必须按 `order` 排序，不能依赖 JSON 对象属性顺序。算子工作流的分组顺序使用稳定 DAG 拓扑顺序：上游算子在前，同层并行算子按任务定义 `tasks[]` 的保存顺序排列；分组内字段按公开参数声明顺序排列，不依赖画布坐标。`format=resource-locator` 的值在契约和请求中仍使用标准 ResourceLocator，但用户界面只能展示解析后的资源路径、名称和本地化类型，不得直接显示 `addp://` URI、Engine ID、`node_id` 或 `item_id`；无法解析时统一显示“已配置资源”，不得回退为原始内部值。
+
+`resource_tree_picker` 必须遵守字段 Schema 的值类型：`type=string` 直接保存 ResourceLocator 字符串，`type=object` 按声明保存资源对象。共享执行参数表单在资源选择、摘要显示和上游绑定时保持该类型，不能把标量路径包装成对象；UI Schema 不引入另一套值类型声明。
 
 Develop 查询任务的 `content.query_parameters[]` 是全部查询参数的唯一定义事实源，每项固定包含唯一参数名 `name` 和 `type`，可选包含 `description` 与 `default`，不得再保存 `title`、显示名称或第二套引用标识。值参数类型固定为 `string`、`integer`、`number`、`boolean`，分别与 SQL `:name`、Cypher `$name` 或 MQL `{"$param":"name"}` 引用完全一致。关系参数固定使用 `type=relation`，当前只允许 PostgreSQL SQL 以未加引号、未限定 schema 的裸 `name` 引用；其可选 `default` 固定为 `{ "locator": "<ResourceLocator>" }`，只能指向与 `execution_config.engine_id` 相同的已有表。全部参数共享同一命名空间、名称唯一，且每个定义必须被查询引用、每个引用必须有定义；关系参数名不得与同一作用域的 CTE 重名。所有参数类型的 `default` 都是可选字段：已保存默认值进入 `input_defaults`，没有默认值的参数由 `input_schema.required` 声明为执行必填；布尔 `false`、数字 `0` 和空字符串都是明确默认值，不能与字段缺失混淆。`query_parameters[]` 的保存顺序决定 `input_ui_schema.<name>.order`。Copilot 查询草稿可以提议任意参数子集及可选默认值，但它必须与候选文本在同一响应中一起校验和回填；只有用户保存后才成为 Develop 任务事实。查询任务详情必须从该定义派生 `execution_contract`；未定义查询参数时返回闭合空契约。即时查询、手动任务执行和 Orchestrator 都使用“本次覆盖 > 保存默认值 > 缺失则拒绝执行”的同一解析规则，且不能把执行值写回 `content.query_parameters` 或查询文本；关系参数先经同一 AST 编译器变为只读预览查询，Orchestrator 另行提交写入目标 `target_locator`。
 
@@ -1039,9 +1040,8 @@ Monitor 是跨任务、跨模块执行列表和通用执行详情的唯一前端
 | Manager | 快显、空间、向量化任务定义与领域结果 | 模块全部执行列表 |
 | Develop | 开发任务定义、查询/工作流/脚本执行结果详情 | 模块全部执行列表、通用统计 |
 | Orchestrator | 编排定义、单编排执行历史与步骤视图 | 跨编排执行列表 |
-| Quality | 检查任务、物化门禁任务、质量分和断言详情 | 跨质量任务执行列表 |
+| Quality | 检查任务、数据校验任务、质量分和断言详情 | 跨质量任务执行列表 |
 | Graph | 图构建任务、单图及单任务构建上下文 | 跨图构建任务执行列表 |
-| Model | 逻辑表、物化组等任务定义与发布上下文 | 跨模型任务执行列表 |
 
 “模块内保留”不等于允许模块再实现一份通用 execution 表格。单任务历史必须由明确的 `source_task_id` 限定；领域详情只展示 owner 独有的业务结果、日志、诊断或操作，并提供返回统一监控的入口。模块私有 execution 查询接口可以作为单任务轮询或领域投影存在，但不得据此重新暴露模块级全局列表。
 

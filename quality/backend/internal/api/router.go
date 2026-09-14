@@ -26,7 +26,7 @@ func getUserID(c *gin.Context) int64 {
 func SetupRouter(
 	ruleEngineSvc *service.RuleEngineService,
 	checkTaskSvc *service.CheckTaskService,
-	gateTaskSvc *service.MaterializationGateService,
+	gateTaskSvc *service.DataValidationService,
 	checkExecutor *service.CheckExecutor,
 	issueSvc *service.IssueService,
 	catalogSummarySvc *service.CatalogSummaryService,
@@ -54,7 +54,7 @@ func SetupRouter(
 
 	ruleAppHandler := NewRuleApplicationHandler(ruleEngineSvc)
 	checkTaskHandler := NewCheckTaskHandler(checkTaskSvc, checkExecutor)
-	gateTaskHandler := NewMaterializationGateHandler(gateTaskSvc)
+	gateTaskHandler := NewDataValidationHandler(gateTaskSvc)
 	taskProviderHandler := NewTaskProviderHandler(checkTaskSvc, gateTaskSvc, checkExecutor)
 	executionHandler := NewExecutionHandler(commonExecution.NewTaskExecutionRepository(db))
 	issueHandler := NewIssueHandler(issueSvc)
@@ -85,13 +85,13 @@ func SetupRouter(
 			ruleApps.DELETE("/:id", permission(qualityauthorization.PermissionQualityRuleApplicationDelete), ruleAppHandler.Delete)
 		}
 
-		gateTasks := api.Group("/materialization-gate-tasks")
+		gateTasks := api.Group("/data-validation-tasks")
 		{
-			gateTasks.GET("", permission(qualityauthorization.PermissionQualityMaterializationGateRead), gateTaskHandler.List)
-			gateTasks.POST("", permission(qualityauthorization.PermissionQualityMaterializationGateCreate), gateTaskHandler.Create)
-			gateTasks.GET("/:id", permission(qualityauthorization.PermissionQualityMaterializationGateRead), gateTaskHandler.Get)
-			gateTasks.PUT("/:id", permission(qualityauthorization.PermissionQualityMaterializationGateUpdate), gateTaskHandler.Update)
-			gateTasks.DELETE("/:id", permission(qualityauthorization.PermissionQualityMaterializationGateDelete), gateTaskHandler.Delete)
+			gateTasks.GET("", permission(qualityauthorization.PermissionQualityDataValidationRead), gateTaskHandler.List)
+			gateTasks.POST("", permission(qualityauthorization.PermissionQualityDataValidationCreate), gateTaskHandler.Create)
+			gateTasks.GET("/:id", permission(qualityauthorization.PermissionQualityDataValidationRead), gateTaskHandler.Get)
+			gateTasks.PUT("/:id", permission(qualityauthorization.PermissionQualityDataValidationUpdate), gateTaskHandler.Update)
+			gateTasks.DELETE("/:id", permission(qualityauthorization.PermissionQualityDataValidationDelete), gateTaskHandler.Delete)
 		}
 
 		// 检查任务

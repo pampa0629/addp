@@ -11,13 +11,14 @@ export function sortEntriesByOrder(values, uiValues = {}) {
 }
 
 export function summarizeExecutionResource(field, value, enginesById = {}) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+  const scalar = field?.schema?.type === 'string'
+  if (!value || (scalar ? typeof value !== 'string' : typeof value !== 'object' || Array.isArray(value))) {
     return { status: 'empty', engineId: 0, engineName: '', name: '', type: '' }
   }
 
   const binding = field?.ui?.resource_binding || {}
   const locatorName = binding.mode === 'target' ? 'parent_locator' : 'locator'
-  const locatorValue = String(value[locatorName] || '').trim()
+  const locatorValue = String((scalar ? value : value[locatorName]) || '').trim()
   if (!locatorValue) {
     return { status: 'empty', engineId: 0, engineName: '', name: '', type: '' }
   }

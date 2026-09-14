@@ -2,7 +2,6 @@
   <div class="logical-table-list">
     <div class="page-header">
       <h2>{{ t('model.logical_table.title') }}</h2>
-      <MonitorExecutionsButton module="model">{{ t('model.materialization.execution_records') }}</MonitorExecutionsButton>
     </div>
     <!-- 搜索区 -->
     <el-card shadow="never" class="search-card">
@@ -174,7 +173,6 @@ import { navigateModelRoute } from '../utils/moduleNavigation'
 import { useI18n } from 'vue-i18n'
 import { getModelErrorMessage } from '../utils/apiError'
 import { buildLogicalTableListRouteQuery, resolveLogicalTableListRouteState } from '../utils/routeState'
-import { MonitorExecutionsButton } from '@common-ui'
 
 const { t } = useI18n()
 

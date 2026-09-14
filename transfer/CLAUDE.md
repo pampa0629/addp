@@ -117,6 +117,8 @@ Transfer 是 `transfer.execution.*`、`transfer.task.*` 和 `transfer.task_provi
 
 ## 开发与验证
 
+`make test-transfer-postgres` 使用普通 PostgreSQL 验证 schema、受保护导出和非空间既有表目标覆盖，不依赖 PostGIS。Planner 的通用 PostgreSQL 连接辅助函数只检查连接；PostGIS 前置检查仅属于 GeoJSON 坐标转换等空间测试。目标覆盖回归在自身连接的 `search_path=pg_catalog` 下执行，确保本地 `addp_test` 已安装的空间扩展不会掩盖非空间测试的错误依赖；不删除扩展、不创建额外 database，仍拒绝门禁中的任何 Skip。
+
 ```bash
 bash scripts/dev/start.sh -transfer
 bash scripts/dev/restart.sh -transfer

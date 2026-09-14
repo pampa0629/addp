@@ -1,6 +1,6 @@
-export const MATERIALIZATION_GATE_SCHEMA_VERSION = 'addp.quality.materialization-gate/v1'
-export const MATERIALIZATION_GATE_TYPES = ['not_null', 'allowed_values', 'unique_key', 'foreign_key', 'predicate_implication', 'row_count']
-export const MATERIALIZATION_GATE_OPERATORS = ['eq', 'not_eq', 'is_null', 'is_not_null', 'is_true', 'is_false']
+export const DATA_VALIDATION_SCHEMA_VERSION = 'addp.quality.data-validation/v1'
+export const DATA_VALIDATION_TYPES = ['not_null', 'allowed_values', 'unique_key', 'foreign_key', 'predicate_implication', 'row_count']
+export const DATA_VALIDATION_OPERATORS = ['eq', 'not_eq', 'is_null', 'is_not_null', 'is_true', 'is_false']
 
 export const bindingAlias = (code, fallback) => {
   const normalized = String(code || '').trim().toLowerCase().replace(/[^a-z0-9_]/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '')
@@ -10,7 +10,7 @@ export const bindingAlias = (code, fallback) => {
 
 const blankCondition = () => ({ column: '', operator: 'eq', value: '', value_type: 'string' })
 
-export const createMaterializationGateAssertion = (type = 'not_null', uuid = crypto.randomUUID()) => ({
+export const createDataValidationAssertion = (type = 'not_null', uuid = crypto.randomUUID()) => ({
   assertion_key: uuid,
   type,
   severity: 'error',
@@ -57,16 +57,16 @@ const assertionContract = assertion => {
   return { assertion_key: assertion.assertion_key, type: assertion.type, severity: assertion.severity, params }
 }
 
-export const buildMaterializationGateDocument = assertions => ({
-  schema_version: MATERIALIZATION_GATE_SCHEMA_VERSION,
+export const buildDataValidationDocument = assertions => ({
+  schema_version: DATA_VALIDATION_SCHEMA_VERSION,
   assertions: assertions.map(assertionContract)
 })
 
 const inferValueType = value => typeof value === 'number' ? 'number' : typeof value === 'boolean' ? 'boolean' : 'string'
 const editableCondition = condition => ({ ...condition, value: condition.value ?? '', value_type: inferValueType(condition.value) })
 
-export const parseMaterializationGateDocument = document => {
-  if (document?.schema_version !== MATERIALIZATION_GATE_SCHEMA_VERSION || !Array.isArray(document.assertions)) return []
+export const parseDataValidationDocument = document => {
+  if (document?.schema_version !== DATA_VALIDATION_SCHEMA_VERSION || !Array.isArray(document.assertions)) return []
   return document.assertions.map(assertion => {
     const params = structuredClone(assertion.params || {})
     if (assertion.type === 'predicate_implication') {

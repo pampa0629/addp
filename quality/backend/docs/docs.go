@@ -360,6 +360,285 @@ const docTemplate = `{
                 ]
             }
         },
+        "/data-validation-tasks": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "DataValidation"
+                ],
+                "summary": "列出数据校验任务 | List data validation tasks",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "页码 | Page",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量 | Page size",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityDataValidationTaskListResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "quality.data_validation.read"
+                ]
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "DataValidation"
+                ],
+                "summary": "创建数据校验任务 | Create data validation task",
+                "parameters": [
+                    {
+                        "description": "数据校验定义 | Data validation definition",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_quality_internal_service.DataValidationWriteRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityDataValidationTaskResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "quality.data_validation.create"
+                ]
+            }
+        },
+        "/data-validation-tasks/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "DataValidation"
+                ],
+                "summary": "获取数据校验任务 | Get data validation task",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "任务 ID | Task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityDataValidationTaskResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "quality.data_validation.read"
+                ]
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "DataValidation"
+                ],
+                "summary": "更新数据校验任务 | Update data validation task",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "任务 ID | Task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "完整数据校验定义 | Complete data validation definition",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_quality_internal_service.DataValidationWriteRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityDataValidationTaskResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "quality.data_validation.update"
+                ]
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "DataValidation"
+                ],
+                "summary": "删除数据校验任务 | Delete data validation task",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "任务 ID | Task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "删除版本 | Delete version",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.dataValidationDeleteRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityMessageResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "quality.data_validation.delete"
+                ]
+            }
+        },
         "/executions": {
             "get": {
                 "security": [
@@ -665,285 +944,6 @@ const docTemplate = `{
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "quality.issue.update"
-                ]
-            }
-        },
-        "/materialization-gate-tasks": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "MaterializationGate"
-                ],
-                "summary": "列出物化门禁任务 | List materialization gate tasks",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "页码 | Page",
-                        "name": "page",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "description": "每页数量 | Page size",
-                        "name": "page_size",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.qualityMaterializationGateTaskListResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "quality.materialization_gate.read"
-                ]
-            },
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "MaterializationGate"
-                ],
-                "summary": "创建物化门禁任务 | Create materialization gate task",
-                "parameters": [
-                    {
-                        "description": "物化门禁定义 | Materialization gate definition",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_quality_internal_service.MaterializationGateWriteRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "201": {
-                        "description": "Created",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.qualityMaterializationGateTaskResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
-                        }
-                    },
-                    "409": {
-                        "description": "Conflict",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "quality.materialization_gate.create"
-                ]
-            }
-        },
-        "/materialization-gate-tasks/{id}": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "MaterializationGate"
-                ],
-                "summary": "获取物化门禁任务 | Get materialization gate task",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "任务 ID | Task ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.qualityMaterializationGateTaskResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "quality.materialization_gate.read"
-                ]
-            },
-            "put": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "MaterializationGate"
-                ],
-                "summary": "更新物化门禁任务 | Update materialization gate task",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "任务 ID | Task ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "完整物化门禁定义 | Complete materialization gate definition",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_quality_internal_service.MaterializationGateWriteRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.qualityMaterializationGateTaskResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
-                        }
-                    },
-                    "409": {
-                        "description": "Conflict",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "quality.materialization_gate.update"
-                ]
-            },
-            "delete": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "MaterializationGate"
-                ],
-                "summary": "删除物化门禁任务 | Delete materialization gate task",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "任务 ID | Task ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "删除版本 | Delete version",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.materializationGateDeleteRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.qualityMessageResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
-                        }
-                    },
-                    "409": {
-                        "description": "Conflict",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "quality.materialization_gate.delete"
                 ]
             }
         },
@@ -1456,7 +1456,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "按标准 TaskProvider 协议列出 Quality 任务；task_type 支持 check|materialization_gate。| List Quality tasks through the standard TaskProvider protocol; task_type supports check or materialization_gate.",
+                "description": "按标准 TaskProvider 协议列出 Quality 任务；task_type 支持 check|data_validation。| List Quality tasks through the standard TaskProvider protocol; task_type supports check or data_validation.",
                 "produces": [
                     "application/json"
                 ],
@@ -1467,7 +1467,7 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "任务类型：check|materialization_gate | Task type: check or materialization_gate",
+                        "description": "任务类型：check|data_validation | Task type: check or data_validation",
                         "name": "task_type",
                         "in": "query"
                     }
@@ -1505,7 +1505,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "按标准 TaskProvider 协议获取 Quality 任务详情；task_type 支持 check|materialization_gate。| Get Quality task detail through the standard TaskProvider protocol; task_type supports check or materialization_gate.",
+                "description": "按标准 TaskProvider 协议获取 Quality 任务详情；task_type 支持 check|data_validation。| Get Quality task detail through the standard TaskProvider protocol; task_type supports check or data_validation.",
                 "produces": [
                     "application/json"
                 ],
@@ -1516,7 +1516,7 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "任务类型：check|materialization_gate | Task type: check or materialization_gate",
+                        "description": "任务类型：check|data_validation | Task type: check or data_validation",
                         "name": "task_type",
                         "in": "path",
                         "required": true
@@ -1576,7 +1576,7 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "任务类型：check|materialization_gate | Task type: check or materialization_gate",
+                        "description": "任务类型：check|data_validation | Task type: check or data_validation",
                         "name": "task_type",
                         "in": "path",
                         "required": true
@@ -1944,6 +1944,62 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_quality_internal_models.DataValidationTask": {
+            "type": "object",
+            "properties": {
+                "assertions": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "code": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "integer"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "last_execution_id": {
+                    "type": "string"
+                },
+                "last_execution_status": {
+                    "type": "string"
+                },
+                "last_run_at": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "table_bindings": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "integer"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
         "github_com_addp_quality_internal_models.Issue": {
             "type": "object",
             "properties": {
@@ -2026,68 +2082,6 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_addp_quality_internal_models.MaterializationGateTask": {
-            "type": "object",
-            "properties": {
-                "assertions": {
-                    "type": "array",
-                    "items": {
-                        "type": "integer"
-                    }
-                },
-                "code": {
-                    "type": "string"
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "created_by": {
-                    "type": "integer"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "last_execution_id": {
-                    "type": "string"
-                },
-                "last_execution_status": {
-                    "type": "string"
-                },
-                "last_run_at": {
-                    "type": "string"
-                },
-                "materialization_group_id": {
-                    "type": "integer"
-                },
-                "materialization_group_version": {
-                    "type": "integer"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "table_bindings": {
-                    "type": "array",
-                    "items": {
-                        "type": "integer"
-                    }
-                },
-                "tenant_id": {
-                    "type": "integer"
-                },
-                "updated_at": {
-                    "type": "string"
-                },
-                "updated_by": {
-                    "type": "integer"
-                },
-                "version": {
-                    "type": "integer"
-                }
-            }
-        },
         "github_com_addp_quality_internal_models.ResolveCatalogSummariesRequest": {
             "type": "object",
             "properties": {
@@ -2163,18 +2157,18 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_addp_quality_internal_service.MaterializationGateTableBinding": {
+        "github_com_addp_quality_internal_service.DataValidationTableBinding": {
             "type": "object",
             "properties": {
                 "alias": {
                     "type": "string"
                 },
-                "logical_table_id": {
-                    "type": "integer"
+                "locator": {
+                    "type": "string"
                 }
             }
         },
-        "github_com_addp_quality_internal_service.MaterializationGateWriteRequest": {
+        "github_com_addp_quality_internal_service.DataValidationWriteRequest": {
             "type": "object",
             "properties": {
                 "assertions": {
@@ -2189,16 +2183,13 @@ const docTemplate = `{
                 "description": {
                     "type": "string"
                 },
-                "materialization_group_id": {
-                    "type": "integer"
-                },
                 "name": {
                     "type": "string"
                 },
                 "table_bindings": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/github_com_addp_quality_internal_service.MaterializationGateTableBinding"
+                        "$ref": "#/definitions/github_com_addp_quality_internal_service.DataValidationTableBinding"
                     }
                 },
                 "version": {
@@ -2336,6 +2327,14 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_api.dataValidationDeleteRequest": {
+            "type": "object",
+            "properties": {
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
         "internal_api.issueStatusRequest": {
             "type": "object",
             "required": [
@@ -2354,14 +2353,6 @@ const docTemplate = `{
                         "ignored"
                     ],
                     "example": "resolved"
-                }
-            }
-        },
-        "internal_api.materializationGateDeleteRequest": {
-            "type": "object",
-            "properties": {
-                "version": {
-                    "type": "integer"
                 }
             }
         },
@@ -2432,6 +2423,85 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "updated_by": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api.qualityDataValidationTaskListResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_quality_internal_models.DataValidationTask"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "total_pages": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api.qualityDataValidationTaskResponse": {
+            "type": "object",
+            "properties": {
+                "assertions": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "code": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "integer"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "last_execution_id": {
+                    "type": "string"
+                },
+                "last_execution_status": {
+                    "type": "string"
+                },
+                "last_run_at": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "table_bindings": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "integer"
+                },
+                "version": {
                     "type": "integer"
                 }
             }
@@ -2595,91 +2665,6 @@ const docTemplate = `{
                 },
                 "updated_at": {
                     "type": "string"
-                }
-            }
-        },
-        "internal_api.qualityMaterializationGateTaskListResponse": {
-            "type": "object",
-            "properties": {
-                "data": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/github_com_addp_quality_internal_models.MaterializationGateTask"
-                    }
-                },
-                "page": {
-                    "type": "integer"
-                },
-                "page_size": {
-                    "type": "integer"
-                },
-                "total": {
-                    "type": "integer"
-                },
-                "total_pages": {
-                    "type": "integer"
-                }
-            }
-        },
-        "internal_api.qualityMaterializationGateTaskResponse": {
-            "type": "object",
-            "properties": {
-                "assertions": {
-                    "type": "array",
-                    "items": {
-                        "type": "integer"
-                    }
-                },
-                "code": {
-                    "type": "string"
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "created_by": {
-                    "type": "integer"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "last_execution_id": {
-                    "type": "string"
-                },
-                "last_execution_status": {
-                    "type": "string"
-                },
-                "last_run_at": {
-                    "type": "string"
-                },
-                "materialization_group_id": {
-                    "type": "integer"
-                },
-                "materialization_group_version": {
-                    "type": "integer"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "table_bindings": {
-                    "type": "array",
-                    "items": {
-                        "type": "integer"
-                    }
-                },
-                "tenant_id": {
-                    "type": "integer"
-                },
-                "updated_at": {
-                    "type": "string"
-                },
-                "updated_by": {
-                    "type": "integer"
-                },
-                "version": {
-                    "type": "integer"
                 }
             }
         },

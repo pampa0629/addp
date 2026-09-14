@@ -15,27 +15,25 @@ const positiveInteger = (value, fallback) => {
 
 const queriesEqual = (left, right) => {
   const keys = Object.keys(right)
-  return Object.keys(left).length === keys.length && keys.every(key => (
-    !Array.isArray(left[key]) && String(left[key]) === right[key]
-  ))
+  return Object.keys(left).length === keys.length && keys.every(key => !Array.isArray(left[key]) && String(left[key]) === right[key])
 }
 
-export const buildMaterializationGroupRouteQuery = ({ mode, groupID, page, pageSize }) => {
+export const buildDataValidationRouteQuery = ({ mode, taskID, page, pageSize }) => {
   const query = {}
-  if (mode === 'edit' && groupID) query.group_id = String(groupID)
+  if (mode === 'edit' && taskID) query.task_id = String(taskID)
   else if (mode === 'create') query.create = '1'
   if (page > 1) query.page = String(page)
   if (pageSize !== DEFAULT_PAGE_SIZE) query.page_size = String(pageSize)
   return query
 }
 
-export const resolveMaterializationGroupRouteState = (routeQuery = {}) => {
-  const groupIDValue = positiveInteger(routeQuery.group_id, null)
-  const groupID = groupIDValue ? String(groupIDValue) : ''
-  const mode = groupID ? 'edit' : queryValue(routeQuery.create) === '1' ? 'create' : 'list'
+export const resolveDataValidationRouteState = (routeQuery = {}) => {
+  const taskIDValue = positiveInteger(routeQuery.task_id, null)
+  const taskID = taskIDValue ? String(taskIDValue) : ''
+  const mode = taskID ? 'edit' : queryValue(routeQuery.create) === '1' ? 'create' : 'list'
   const page = positiveInteger(routeQuery.page, 1)
   const requestedPageSize = positiveInteger(routeQuery.page_size, DEFAULT_PAGE_SIZE)
   const pageSize = ALLOWED_PAGE_SIZES.has(requestedPageSize) ? requestedPageSize : DEFAULT_PAGE_SIZE
-  const query = buildMaterializationGroupRouteQuery({ mode, groupID, page, pageSize })
-  return { mode, groupID, page, pageSize, query, changed: !queriesEqual(routeQuery, query) }
+  const query = buildDataValidationRouteQuery({ mode, taskID, page, pageSize })
+  return { mode, taskID, page, pageSize, query, changed: !queriesEqual(routeQuery, query) }
 }

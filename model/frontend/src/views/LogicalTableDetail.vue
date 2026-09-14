@@ -14,7 +14,7 @@
         <el-tag v-if="isDirty" type="warning" size="small">{{ t('model.common.unsaved') }}</el-tag>
       </div>
       <div v-if="!pageLoading && !pageError" class="header-right">
-        <MaterializationActions :table-id="tableId" :groups="table.materialization_groups || []" :name="table.name" :available="table.status === 'approved'" :disabled="isDirty" />
+        <el-button v-if="table.status === 'approved' && authStore.hasPermission('model.materialization.execute')" :disabled="isDirty" :loading="creatingTarget" @click="createTarget">{{ t('model.materialization.create_target') }}</el-button>
         <el-button :title="t('model.common.refresh')" :aria-label="t('model.common.refresh')" @click="handleRefresh">
           <el-icon><Refresh /></el-icon>
         </el-button>
@@ -22,7 +22,7 @@
         <el-button v-if="table.status === 'draft' && authStore.hasPermission('model.logical_model.update')" type="success" @click="handleApprove">
           {{ t('model.common.approve') }}
         </el-button>
-        <el-button v-if="table.status === 'approved' && authStore.hasPermission('model.logical_model.update')" :disabled="!Array.isArray(table.materialization_groups) || table.materialization_groups.length > 0" :loading="reopening" @click="handleReopen">
+        <el-button v-if="table.status === 'approved' && authStore.hasPermission('model.logical_model.update')"  :loading="reopening" @click="handleReopen">
           {{ t('model.common.reopen') }}
         </el-button>
         <el-button v-if="authStore.hasPermission('model.logical_model.read')" type="success" @click="handlePreviewDDL">
@@ -55,22 +55,6 @@
       show-icon
     />
 
-    <el-alert
-      v-if="table.status === 'approved' && table.materialization_groups?.length"
-      class="reference-warning"
-      type="warning"
-      :title="t('model.logical_table.group_blocked')"
-      :closable="false"
-      show-icon
-    >
-      <div v-for="group in table.materialization_groups" :key="group.id">
-        <el-button v-if="authStore.hasPermission('model.materialization_group.read') && authStore.hasPermission('model.materialization_group.update')" link type="primary" @click="openMaterializationGroup(group)">
-          {{ t('model.logical_table.group_manage', { name: group.name }) }}
-        </el-button>
-        <span v-else>{{ group.name }}</span>
-      </div>
-      <div v-if="!authStore.hasPermission('model.materialization_group.read') || !authStore.hasPermission('model.materialization_group.update')">{{ t('model.logical_table.group_read_only') }}</div>
-    </el-alert>
 
     <el-alert
       v-if="referenceError"
@@ -548,7 +532,6 @@
 </template>
 
 <script setup>
-import MaterializationActions from '../components/MaterializationActions.vue'
 import { ref, reactive, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ResourceTreePicker, listResourceTreeEngines, parseLocator, parseLocatorSafe, isLocatorEqual, formatLocatorDisplayPath, useConsolePageDescriptor } from '@common-ui'
@@ -561,7 +544,6 @@ import { useI18n } from 'vue-i18n'
 import { confirmReturnToDraft } from '../utils/lifecycleActions'
 import { navigateModelRoute } from '../utils/moduleNavigation'
 import { useAuthStore } from '../store/auth'
-import { buildMaterializationGroupRouteQuery } from '../utils/materializationGroupRouteState'
 import { resolveLogicalTableListRouteState } from '../utils/routeState'
 import { getModelErrorMessage } from '../utils/apiError'
 import {
@@ -875,13 +857,17 @@ const handleApprove = async () => {
   catch (err) { ElMessage.error(getModelErrorMessage(err, t, 'model.common.op_failed')) }
 }
 
+const creatingTarget = ref(false)
+const createTarget = async () => {
+  if (creatingTarget.value || isDirty.value) return
+  creatingTarget.value = true
+  try { await logicalTableAPI.createTarget(tableId.value, table.value.version); ElMessage.success(t('model.materialization.target_ready')) }
+  catch(error) { ElMessage.error(getModelErrorMessage(error, t, 'model.common.op_failed')) }
+  finally { creatingTarget.value = false }
+}
 const reopening = ref(false)
-const openMaterializationGroup = group => navigateModelRoute(router, {
-  path: '/materialization-groups',
-  query: buildMaterializationGroupRouteQuery({ mode: 'edit', groupID: group.id, page: 1, pageSize: 20 })
-})
 const handleReopen = async () => {
-  if (reopening.value || !Array.isArray(table.value.materialization_groups) || table.value.materialization_groups.length) return
+  if (reopening.value) return
   if (!authStore.hasPermission('model.logical_model.update')) return
   reopening.value = true
   try {
@@ -891,7 +877,6 @@ const handleReopen = async () => {
     ElMessage.success(t('model.common.reopen_success'))
   } catch (err) {
     if (err === 'cancel' || err === 'close') return
-    if (err.response?.data?.error_code === 'materialization_group_member_conflict') await loadPage()
     ElMessage.error(getModelErrorMessage(err, t, 'model.common.op_failed'))
   } finally {
     reopening.value = false

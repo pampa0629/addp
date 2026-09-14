@@ -80,14 +80,12 @@
 | item_type | 项类型 / 叶子术语 | data item 在所属 Engine Catalog / 路径模型中的原生叶子术语。 | 例如 MinIO 为 `object`，NFS 为 `file`，PostgreSQL 为 `table`。它决定资源树路由和展示，不表示内容语义。 |
 | full_name | 逻辑全名 / 语义路径 | data item 在引擎内的稳定逻辑路径。 | 例如 `addp/image/开会.jpg`、`public.users`、`neo4j.graph`。它是定位和指纹的基础，但不是 URI。 |
 | ResourceLocator | 资源定位符 | 平台统一的资源 URI 定位形式。 | 形如 `addp://engine/{engine_id}/path/{resource_path}?type={type}&node_id={node_id}` 或 `...&item_id={item_id}`；`type` 表达 Engine Catalog 术语，`node_id` / `item_id` 表达真实 Meta 身份。 |
-| Return to draft | 退回草稿 | Model Entity / LogicalTable 从 `approved` 转为 `draft` 的显式生命周期操作，并解除冻结的数据元修订引用。 | 允许重新编辑模型；不表示重新加载页面，不改变已发布的物理表；逻辑表必须先移出全部物化组。 |
-| logical table materialization target | 逻辑表物化目标 | Model 中描述逻辑表准备落入哪个 Engine Instance 和父命名空间的设计事实。 | 使用 `target_parent_locator + target_name` 表达；Model 根据已审批逻辑表执行受控 DDL、staging 准备与原子发布。Transfer 负责跨引擎写入批次 staging，Develop 只负责目标引擎内的查询计算，Orchestrator 只编排顺序。 |
+| Return to draft | 退回草稿 | Model Entity / LogicalTable 从 `approved` 转为 `draft` 的显式生命周期操作，并解除冻结的数据元修订引用。 | 允许重新编辑模型；不表示重新加载页面，不改变已发布的物理表。 |
+| logical table materialization target | 逻辑表物化目标 | Model 中描述逻辑表准备落入哪个 Engine Instance 和父命名空间的设计事实。 | 使用 `target_parent_locator + target_name` 表达；Model 根据已审批逻辑表执行受控 DDL、正式表创建与退役。Transfer 负责跨引擎数据同步，Develop 只负责目标引擎内的查询计算，Orchestrator 只编排顺序。 |
+| Data Validation Task | 数据校验任务 | Quality 对显式绑定的同一引擎正式表执行字段、关联和集合断言。 | 读取 ResourceLocator，不依赖 Model；失败可阻止编排下游，不回滚已提交的数据。 |
 | logical table materialized target decommission | 逻辑表物化目标退役 | Model 删除某个 LogicalTable 已登记、已确认且仍由该 LogicalTable 管理的物理目标，使物理产物先于逻辑模型安全退出使用。 | 这是 Model owner 的高风险同步命令，不是可编排任务；请求只提交逻辑表并发版本和精确目标确认，不接受 SQL、动态 Locator 或跨模块引用检查。 |
-| Materialization Batch | 物化批次 | Model 为一次逻辑表重算创建的 Tenant 级受控发布聚合，绑定逻辑表版本、目标 Engine、staging、结构指纹和 prepare/publish execution。 | 同一逻辑表同时最多一个活动批次；批次不接受调用方提交 SQL、Schema、表名或 DDL。 |
-| Materialization Read Context | 物化读上下文 | Model 面向同一父 Orchestrator execution 中的 Develop/Quality reader，对已完成有效 write attempt 生成的短期只读批次投影。 | 返回精确 staging locator、字段、结构指纹和批次身份；不返回凭据、DDL 或写入能力，也不替代 reader 自身的 Execution Authorization。 |
 | query parameter | 查询参数 | Develop 查询任务声明的命名输入，统一保存在 `content.query_parameters[]`。 | `type=relation` 表示绑定 ResourceLocator 的数据表参数；`string`、`integer`、`number`、`boolean` 表示类型化值参数。全部参数共享同一命名空间、默认值与单次执行覆盖语义，且名称唯一。 |
 | relation query parameter | 关系查询参数 | 查询参数中代表关系型数据表的 `relation` 类型参数。 | 声明 `compute.query.parameters.types=relation` 的 PostgreSQL 方言引擎 SQL 直接使用未加引号、未限定 schema 的裸参数名引用；当前包括 PostgreSQL 与 openGauss。可保存已有表 ResourceLocator 作为默认绑定，也可由手动执行或 Orchestrator 覆盖。Develop 通过 PostgreSQL AST 把该关系节点编译为方言安全的物理表标识符。它不是表名字符串参数，也不绑定 LogicalTable ID。 |
-| Materialization Group | 物化组 | Model 中定义一组必须作为同一可见版本发布的已审批逻辑表。 | 组内逻辑表必须位于同一 PostgreSQL Engine；Model 在一个目标库事务中完成全部物理替换，跨 Engine 组直接拒绝。 |
 | PreparedQuery | 已准备查询 | Engine Provider 从一次 `QueryRequest` 生成的不可变、一次性查询计划，绑定 Engine、语言、参数、目标路径和 Provider 原生解析结果。 | 读取集合解析、安全门禁和真实执行必须绑定同一个 PreparedQuery；门禁后不再接受新的查询文本或参数。 |
 | QueryAnalysis | 查询分析 | PreparedQuery 基于 Provider 原生语言规则产生的结构化诊断事实，包含稳定诊断码、阶段、严重级别、位置与 schema coverage。 | Develop 等 Owner 只展示和消费该事实，不在浏览器或业务服务中再次用正则、分词或样本字段推断 SQL、MQL、Cypher 语义。 |
 | schema coverage | 模式覆盖度 | 表达一次 QueryAnalysis 用于字段结论的 schema 事实完整度，固定为 `complete`、`sampled` 或 `unknown`。 | 只有 `complete` 才允许断言字段不存在；`sampled` 和 `unknown` 只能给出覆盖不足提示，不能把未观察到的字段报成错误。 |
@@ -260,7 +258,6 @@
 | rule key | 规则身份 | Standard 为每条质量规则持有的稳定 UUID，API 字段为 `rule_key`。 | 新规则创建时生成并在编辑时保留；Quality 只能继承该身份，不得按规则应用或物理目标生成第二套身份。 |
 | RuleApplication | 规则应用 | Quality 将一份数据元质量规则快照绑定到确定 Engine Instance、schema、table 和 column 的持久事实。 | Standard 规则变化不静默改写已有快照。 |
 | quality check | 质量检查 | Quality 在一次持久 execution 中对确定表的全部有效规则应用进行完整求值的过程。 | v1 只支持 PostgreSQL；任一规则执行错误时整次 execution 失败。 |
-| Materialization Gate | 物化门禁 | Quality 在同一父编排执行域中，对一组已完成 staging 执行类型化表级、关系级和集合级断言的发布前检查。 | 只允许 Orchestrator 触发；任一 `error` 断言不通过时 execution 失败并阻断 Model 发布，不接受自定义 SQL。 |
 | quality score | 质量分 | 一次成功质量检查中各规则通过率的算术平均。 | 不按 severity 或行数加权；无有效规则不能产生质量分。 |
 | quality issue | 质量问题 | 某条规则应用中的某条规则当前仍存在未通过事实的可治理状态。 | 稳定身份为 Tenant + RuleApplication + rule key；历史发生记录保留在 execution 结果中。 |
 
@@ -296,7 +293,6 @@
 | maintenance loop | 维护循环 | 处理固定系统维护、清理、注册同步或观测采集的后台循环。 | 不等于 execution worker；只有演进为可持久执行、可审计的任务定义后，才进入 owner scheduler + execution worker 体系。 |
 | source task id | 来源任务 ID | execution 关联的 owner 模块任务定义 ID。 | 在 `common.task_executions.source_task_id` 中保存；查询时必须结合 `module + task_type`。 |
 | parent execution id | 父执行 ID | 当前 execution 的父级 execution UUID。 | 用于 Orchestrator 子步骤追踪父编排。 |
-| materialization write attempt | 物化写入尝试 | Model 为一次 Transfer/Develop worker attempt 创建的独立、受控 staging 写入边界。 | 以父编排 execution、writer execution、writer attempt 和逻辑表唯一定位；Model 创建物理表并返回受限 locator 与有序写入列。新的 worker attempt 使用新表并使旧 attempt 失效，完成后由 Model 原子地把 batch staging 指针切换到唯一 completed attempt。调用方不提交物理表名、DDL 或凭据。 |
 | ad-hoc execution | 一次性执行 | 不依赖持久任务定义、直接按本次配置创建的 execution。 | 可以没有 `source_task_id`，但必须在 `execution_config` 保存完整执行配置。 |
 | artifact state | 产物状态 | 描述派生产物当前是否可用、在哪里、由什么配置生成的状态对象。 | 例如瓦片缓存产物、embedding vectors；不是 execution。 |
 | existing result action | 已有结果动作 | 调用方在执行会刷新 owner 受管当前结果时显式声明的动作；当前只允许 `overwrite`。 | TaskProvider 请求参数为 `parameters.existing_result_action=overwrite`。前端人工执行时先二次确认再提交；Orchestrator 可将该动作保存为 Step 参数并在定时 Pipeline 中逐次提交。没有当前结果时可省略；业务派生数据不适用。 |

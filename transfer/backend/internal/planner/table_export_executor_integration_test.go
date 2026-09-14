@@ -31,6 +31,9 @@ func TestIntegrationPlannerPlanExecutesPostgresGeoJSONReadTransform(t *testing.T
 	connInfo := plannerIntegrationPostgresConnInfo(t)
 	pg := &postgresql.PostgreSQLPlugin{}
 	db := openPlannerIntegrationPostgres(t, ctx, pg, connInfo)
+	if _, err := db.ExecContext(ctx, "SELECT postgis_version()"); err != nil {
+		t.Fatalf("PostGIS is required for GeoJSON integration test: %v", err)
+	}
 
 	schemaName := plannerIntegrationPostgresTestSchema(t, ctx, db)
 	tableName := fmt.Sprintf("planner_pg_3857_to_geojson_%d", time.Now().UnixNano())
@@ -112,11 +115,21 @@ func TestIntegrationPlannerTargetOverrideAppendsOnlyToExistingPostgresTable(t *t
 	if os.Getenv("ADDP_POSTGRES_INTEGRATION") != "1" {
 		t.Skip("set ADDP_POSTGRES_INTEGRATION=1 to run PostgreSQL integration test")
 	}
+	// Keep non-spatial coverage independent of extensions installed in public.
+	// lib/pq applies this to fixture and Provider connections; t.Setenv restores it.
+	t.Setenv("PGOPTIONS", "-c search_path=pg_catalog")
 
 	ctx := context.Background()
 	connInfo := plannerIntegrationPostgresConnInfo(t)
 	pg := &postgresql.PostgreSQLPlugin{}
 	db := openPlannerIntegrationPostgres(t, ctx, pg, connInfo)
+	var postgisUnavailable bool
+	if err := db.QueryRowContext(ctx, "SELECT to_regprocedure('postgis_version()') IS NULL").Scan(&postgisUnavailable); err != nil {
+		t.Fatalf("check non-spatial test isolation failed: %v", err)
+	}
+	if !postgisUnavailable {
+		t.Fatal("target override test must run without visible PostGIS functions")
+	}
 
 	schemaName := plannerIntegrationPostgresTestSchema(t, ctx, db)
 	sourceTable := "override_source"
@@ -219,14 +232,13 @@ func openPlannerIntegrationPostgres(t *testing.T, ctx context.Context, pg *postg
 	if err != nil {
 		t.Fatalf("open postgres failed: %v", err)
 	}
-	if _, err := db.ExecContext(ctx, "SELECT postgis_version()"); err != nil {
-		_ = db.Close()
-		t.Skipf("PostGIS is not available: %v", err)
-	}
-	testpg.DropSchemasWithPrefixes(t, ctx, db, "transfer_planner_test_")
 	t.Cleanup(func() {
 		_ = db.Close()
 	})
+	if err := db.PingContext(ctx); err != nil {
+		t.Fatalf("connect PostgreSQL failed: %v", err)
+	}
+	testpg.DropSchemasWithPrefixes(t, ctx, db, "transfer_planner_test_")
 	return db
 }
 

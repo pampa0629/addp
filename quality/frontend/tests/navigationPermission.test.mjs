@@ -5,7 +5,7 @@ import test from 'node:test'
 const routerSource = readFileSync(new URL('../src/router/index.js', import.meta.url), 'utf8')
 const layoutSource = readFileSync(new URL('../src/components/Layout.vue', import.meta.url), 'utf8')
 const checkTaskSource = readFileSync(new URL('../src/views/CheckTaskList.vue', import.meta.url), 'utf8')
-const gateTaskSource = readFileSync(new URL('../src/views/MaterializationGateTaskList.vue', import.meta.url), 'utf8')
+const gateTaskSource = readFileSync(new URL('../src/views/DataValidationTaskList.vue', import.meta.url), 'utf8')
 const issueListSource = readFileSync(new URL('../src/views/IssueList.vue', import.meta.url), 'utf8')
 const issueDetailSource = readFileSync(new URL('../src/views/IssueDetail.vue', import.meta.url), 'utf8')
 
@@ -13,7 +13,7 @@ test('Quality routes declare the matching human read permission', () => {
 	for (const permission of [
 		'quality.rule_application.read',
 		'quality.check_task.read',
-		'quality.materialization_gate.read',
+		'quality.data_validation.read',
 		'monitor.execution.read',
 		'quality.issue.read'
 	]) {
@@ -26,7 +26,7 @@ test('standalone Quality navigation hides entries without their human read permi
 	for (const permission of [
 		'quality.rule_application.read',
 		'quality.check_task.read',
-		'quality.materialization_gate.read',
+		'quality.data_validation.read',
 		'quality.issue.read'
 	]) {
 		assert.ok(layoutSource.includes(`v-if="can('${permission}')"`))

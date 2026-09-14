@@ -25,7 +25,7 @@ cleanup 覆盖以下对象：
 | 任务定义残留 | 强绑定已删除 engine / item / tenant 的任务定义 | 是否删除、禁用或标记缺源由 owner 模块定义并在 cleanup result（资源回收结果）中报告。 |
 | 运行时缓存 | 内存缓存、Redis 缓存、临时文件 | 由创建缓存的模块清理。 |
 
-Model LogicalTable 的正式物化目标不属于通用 cleanup 自动发现范围。单表退出使用时必须走 Model 的物化目标退役命令：精确确认当前设计目标、验证 Model ownership marker、拒绝活跃批次和 MaterializationGroup 成员后执行非级联删除。该命令不接受任意 SQL、不注册 TaskProvider，也不由租户或 Engine cleanup 事件替代。
+Model LogicalTable 的正式物化目标不属于通用 cleanup 自动发现范围。单表退出使用时必须走 Model 的物化目标退役命令：精确确认当前设计目标、验证 Model ownership marker、锁定当前逻辑表版本后执行非级联删除。该命令不接受任意 SQL、不注册 TaskProvider，也不由租户或 Engine cleanup 事件替代。
 
 cleanup 从监控视角具有 execution 特征，必须纳入 Monitor；从编排视角属于系统运维流程，不是用户数据处理任务，不纳入 TaskProvider，也不进入 Orchestrator 编排。
 

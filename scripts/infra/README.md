@@ -822,3 +822,5 @@ MINIO_CONSOLE_PORT=19011
    - Meilisearch 索引自动初始化
    - PostgreSQL 扩展统一安装脚本
    - 镜像自动检查和拉取
+
+Common PostgreSQL 门禁同时验证正式表结果的覆盖事务：重复覆盖、失败回滚、超时取消和并发写入。Model PostgreSQL 门禁验证正式表创建幂等、归属检查和结构漂移拒绝；Quality PostgreSQL 门禁验证物理表断言。均复用既有测试库与标准入口。

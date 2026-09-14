@@ -15,7 +15,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestIntegrationPostgresMaterializationGateCopiesParentAuthorizationLineage(t *testing.T) {
+func TestIntegrationPostgresDataValidationCopiesParentAuthorizationLineage(t *testing.T) {
 	if os.Getenv("ADDP_POSTGRES_INTEGRATION") != "1" {
 		t.Skip("set ADDP_POSTGRES_INTEGRATION=1 to run PostgreSQL integration test")
 	}
@@ -46,32 +46,31 @@ func TestIntegrationPostgresMaterializationGateCopiesParentAuthorizationLineage(
 	if err := db.Create(&parent).Error; err != nil {
 		t.Fatalf("create parent execution: %v", err)
 	}
-	task := models.MaterializationGateTask{
+	task := models.DataValidationTask{
 		TenantID: tenantID, Code: "lineage_gate", Name: "Lineage gate", Version: 1,
-		MaterializationGroupID: 9, MaterializationGroupVersion: 2,
-		TableBindings: []byte(`[{"alias":"orders","logical_table_id":3}]`),
-		Assertions:    []byte(`{"schema_version":"addp.quality.materialization-gate/v1","assertions":[{"assertion_key":"f3889a4a-1675-4623-b6e3-773f9125a04d","type":"not_null","severity":"error","params":{"table":"orders","column":"id"}}]}`),
+		TableBindings: []byte(`[{"alias":"orders","locator":"addp://engine/12/path/public/table_3?type=table"}]`),
+		Assertions:    []byte(`{"schema_version":"addp.quality.data-validation/v1","assertions":[{"assertion_key":"f3889a4a-1675-4623-b6e3-773f9125a04d","type":"not_null","severity":"error","params":{"table":"orders","column":"id"}}]}`),
 		CreatedBy:     1, UpdatedBy: 1, CreatedAt: now, UpdatedAt: now,
 	}
 	if err := db.Create(&task).Error; err != nil {
-		t.Fatalf("create materialization gate task: %v", err)
+		t.Fatalf("create data validation task: %v", err)
 	}
 	childExecutionID := uuid.NewString()
 	t.Cleanup(func() {
 		_ = db.Where("execution_id IN ?", []string{childExecutionID, parentExecutionID}).Delete(&commonExecution.TaskExecution{}).Error
-		_ = db.Where("tenant_id = ?", tenantID).Delete(&models.MaterializationGateTask{}).Error
+		_ = db.Where("tenant_id = ?", tenantID).Delete(&models.DataValidationTask{}).Error
 	})
 
 	child := &commonExecution.TaskExecution{
 		ExecutionID: childExecutionID, TenantID: int(tenantID), Module: commonExecution.ModuleQuality,
-		TaskType: commonExecution.TaskTypeMaterializationGate, Source: commonExecution.ModuleOrchestrator,
+		TaskType: commonExecution.TaskTypeDataValidation, Source: commonExecution.ModuleOrchestrator,
 		ParentExecutionID: &parentExecutionID, ExecutionBoundary: commonExecution.ExecutionBoundaryBounded,
 		Status: commonExecution.ExecutionStatusPending, TriggerType: commonExecution.TriggerTypeManual,
-		MaxAttempts: 3, ExecutionConfig: commonModels.JSONMap{"schema_version": "addp.quality.materialization-gate-execution-config/v1"},
+		MaxAttempts: 3, ExecutionConfig: commonModels.JSONMap{"schema_version": "addp.quality.data-validation-execution-config/v1"},
 		CreatedAt: now, UpdatedAt: now,
 	}
-	if _, err := NewMaterializationGateRepository(db).CreateExecution(context.Background(), task.ID, tenantID, child); err != nil {
-		t.Fatalf("create materialization gate execution: %v", err)
+	if _, err := NewDataValidationRepository(db).CreateExecution(context.Background(), task.ID, tenantID, child); err != nil {
+		t.Fatalf("create data validation execution: %v", err)
 	}
 
 	var stored commonExecution.TaskExecution

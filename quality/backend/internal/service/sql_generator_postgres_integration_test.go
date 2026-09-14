@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	commonClient "github.com/addp/common/client"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -35,7 +34,7 @@ func TestIntegrationPostgresQualityQueryDeadlineCancelsStatement(t *testing.T) {
 	}
 }
 
-func TestIntegrationPostgresMaterializationGateAssertions(t *testing.T) {
+func TestIntegrationPostgresDataValidationAssertions(t *testing.T) {
 	if os.Getenv("ADDP_POSTGRES_INTEGRATION") != "1" {
 		t.Skip("set ADDP_POSTGRES_INTEGRATION=1 to run PostgreSQL integration test")
 	}
@@ -63,9 +62,9 @@ func TestIntegrationPostgresMaterializationGateAssertions(t *testing.T) {
 		t.Fatalf("insert participations: %v", err)
 	}
 
-	config := &materializationGateExecutionConfig{
-		TableBindings: []MaterializationGateTableBinding{{Alias: "persons", LogicalTableID: 1}, {Alias: "participations", LogicalTableID: 2}},
-		Assertions: MaterializationGateAssertionDocument{Assertions: []MaterializationGateAssertion{
+	config := &dataValidationExecutionConfig{
+		TableBindings: []DataValidationTableBinding{{Alias: "persons", Locator: fmt.Sprintf("addp://engine/1/path/%s/persons?type=table", schemaName)}, {Alias: "participations", Locator: fmt.Sprintf("addp://engine/1/path/%s/participations?type=table", schemaName)}},
+		Assertions: DataValidationAssertionDocument{Assertions: []DataValidationAssertion{
 			{AssertionKey: "00000000-0000-4000-8000-000000000001", Type: "not_null", Severity: "error", Params: json.RawMessage(`{"table":"participations","column":"person_id"}`)},
 			{AssertionKey: "00000000-0000-4000-8000-000000000002", Type: "allowed_values", Severity: "error", Params: json.RawMessage(`{"table":"participations","column":"member_status","values":["signup","leader"]}`)},
 			{AssertionKey: "00000000-0000-4000-8000-000000000003", Type: "unique_key", Severity: "error", Params: json.RawMessage(`{"table":"participations","columns":["person_id","activity_id"]}`)},
@@ -74,13 +73,13 @@ func TestIntegrationPostgresMaterializationGateAssertions(t *testing.T) {
 			{AssertionKey: "00000000-0000-4000-8000-000000000006", Type: "row_count", Severity: "error", Params: json.RawMessage(`{"table":"participations","exact":4}`)},
 		}},
 	}
-	readContext := &commonClient.MaterializationReadContext{Items: []commonClient.MaterializationReadItem{
-		{LogicalTableID: 1, BatchID: "persons-batch", EngineID: 1, StagingLocator: fmt.Sprintf("addp://engine/1/path/%s/persons?type=table", schemaName), Columns: []commonClient.MaterializationReadColumn{{Name: "person_id"}}},
-		{LogicalTableID: 2, BatchID: "participations-batch", EngineID: 1, StagingLocator: fmt.Sprintf("addp://engine/1/path/%s/participations?type=table", schemaName), Columns: []commonClient.MaterializationReadColumn{{Name: "person_id"}, {Name: "activity_id"}, {Name: "member_status"}, {Name: "is_actual"}, {Name: "is_signup"}}},
+	readContext := &validationReadContext{Items: []validationReadItem{
+		{EngineID: 1, Locator: fmt.Sprintf("addp://engine/1/path/%s/persons?type=table", schemaName), Columns: []validationColumn{{Name: "person_id"}}},
+		{EngineID: 1, Locator: fmt.Sprintf("addp://engine/1/path/%s/participations?type=table", schemaName), Columns: []validationColumn{{Name: "person_id"}, {Name: "activity_id"}, {Name: "member_status"}, {Name: "is_actual"}, {Name: "is_signup"}}},
 	}}
-	compiled, _, _, err := compileMaterializationGate(config, readContext)
+	compiled, _, err := compileDataValidation(config, readContext)
 	if err != nil {
-		t.Fatalf("compile materialization gate: %v", err)
+		t.Fatalf("compile data validation: %v", err)
 	}
 	wantFailed := []int64{1, 1, 1, 1, 1, 0}
 	for index, assertion := range compiled {

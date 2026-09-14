@@ -118,9 +118,6 @@ other = "The logical table still has a materialization target configuration; cle
 [model.logical_table.materialization_batch_active]
 other = "The logical table still has a non-terminal materialization batch and cannot be deleted"
 
-[model.logical_table.materialization_group_member]
-other = "The logical table still belongs to a materialization group; remove it from the group first"
-
 [model.logical_table.approval_fields_required]
 other = "The logical table must have at least one field before approval"
 

@@ -1048,16 +1048,16 @@ async function drag(page, start, delta) {
 
 test('related orchestration filter matches complete task identities and survives navigation', async ({ page }) => {
   const orchestration = createLayoutFixture()
-  orchestration.steps[0].provider = 'model'
-  orchestration.steps[0].task_type = 'materialization_group_publish'
+  orchestration.steps[0].provider = 'quality'
+  orchestration.steps[0].task_type = 'data_validation'
   orchestration.steps[0].task_id = 17
   const others = [
-    { ...orchestration, id: 'different-provider', name: '其他模块', steps: [{ provider: 'quality', task_type: 'materialization_group_publish', task_id: 17 }] },
-    { ...orchestration, id: 'different-type', name: '其他任务类型', steps: [{ provider: 'model', task_type: 'materialization_prepare', task_id: 17 }] },
-    { ...orchestration, id: 'different-id', name: '其他物化组', steps: [{ provider: 'model', task_type: 'materialization_group_publish', task_id: 18 }] }
+    { ...orchestration, id: 'different-provider', name: '其他模块', steps: [{ provider: 'develop', task_type: 'data_validation', task_id: 17 }] },
+    { ...orchestration, id: 'different-type', name: '其他任务类型', steps: [{ provider: 'quality', task_type: 'check', task_id: 17 }] },
+    { ...orchestration, id: 'different-id', name: '其他校验任务', steps: [{ provider: 'quality', task_type: 'data_validation', task_id: 18 }] }
   ]
   await installMockBackend(page, orchestration, { orchestrations: [orchestration, ...others] })
-  const filter = 'module=model&task_type=materialization_group_publish&task_id=17'
+  const filter = 'module=quality&task_type=data_validation&task_id=17'
   await page.goto(`/orchestrations?${filter}`)
   await expect(page.getByRole('cell', { name: orchestration.name, exact: true })).toBeVisible()
   for (const other of others) await expect(page.getByRole('cell', { name: other.name, exact: true })).toHaveCount(0)
@@ -1073,9 +1073,35 @@ test('related orchestration filter matches complete task identities and survives
 
 test('related orchestration filter shows empty and invalid contexts explicitly', async ({ page }) => {
   await installMockBackend(page, createLayoutFixture())
-  await page.goto('/orchestrations?module=model&task_type=materialization_group_publish&task_id=999')
+  await page.goto('/orchestrations?module=quality&task_type=data_validation&task_id=999')
   await expect(page.getByText('暂无关联编排，请先创建包含该任务的编排。', { exact: true })).toBeVisible()
-  await page.goto('/orchestrations?module=model&task_id=999')
+  await page.goto('/orchestrations?module=quality&task_id=999')
   await expect(page.getByRole('alert').filter({ hasText: '任务筛选无效' })).toBeVisible()
   await expect(page.getByRole('button', { name: '执行', exact: true })).toHaveCount(0)
+})
+
+test('related orchestration preserves scalar resource locators when binding upstream', async ({ page }) => {
+ const orchestration=createInteractionFixture()
+ orchestration.steps[1].depends_on=[SOURCE_NODE_ID]
+ const library=createPortBindingTaskLibrary()
+ library.taskDetails[8].execution_contract={
+  input_schema:{type:'object',properties:{target_locator:{type:'string',title:'正式输出表'}},required:['target_locator'],additionalProperties:false},
+  input_defaults:{target_locator:'addp://engine/2/path/public/result?type=table'},
+  input_ui_schema:{target_locator:{control:'resource_tree_picker',order:0}},
+  output_schema:{type:'object',properties:{},additionalProperties:false}
+ }
+ const backend=await installMockBackend(page,orchestration,library)
+ await page.goto(`/orchestrations/${INTERACTION_ORCHESTRATION_ID}/edit`)
+ await expect(page.getByRole('heading',{name:'编辑编排'})).toBeVisible()
+ const box=await requiredBoundingBox(page.locator('#dag-container canvas'))
+ const node=orchestration.editor_layout.nodes[TARGET_NODE_ID]
+ await page.mouse.dblclick(box.x+node.x,box.y+node.y)
+ const drawer=page.getByRole('dialog',{name:'配置步骤',exact:true})
+ const field=drawer.locator('.parameter-field').filter({hasText:'正式输出表'})
+ await expect(field).toContainText('public.result')
+ await field.getByText('上游输出', { exact: true }).click()
+ await expect.poll(()=>orchestrationNodeParameters(page,TARGET_NODE_ID)).toEqual({target_locator:`{{${SOURCE_NODE_ID}.outputs.result.resource.locator}}`})
+ await drawer.getByRole('button',{name:'Close this dialog',exact:true}).click()
+ await saveOrchestration(page)
+ expect(backend.getPersistedPayload().steps.find(s=>s.id===TARGET_NODE_ID).parameters.target_locator).toBe(`{{${SOURCE_NODE_ID}.outputs.result.resource.locator}}`)
 })

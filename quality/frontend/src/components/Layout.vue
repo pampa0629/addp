@@ -46,9 +46,9 @@
               <el-icon><List /></el-icon>
               <span>{{ t('quality.layout.checkTasks') }}</span>
             </el-menu-item>
-            <el-menu-item v-if="can('quality.materialization_gate.read')" index="/materialization-gate-tasks">
+            <el-menu-item v-if="can('quality.data_validation.read')" index="/data-validation-tasks">
               <el-icon><Lock /></el-icon>
-              <span>{{ t('quality.layout.materializationGateTasks') }}</span>
+              <span>{{ t('quality.layout.dataValidationTasks') }}</span>
             </el-menu-item>
             <el-menu-item v-if="can('quality.issue.read')" index="/issues">
               <el-icon><Warning /></el-icon>
@@ -91,7 +91,7 @@ const activeMenu = computed(() => {
   const path = route.path
   if (path.startsWith('/rule-applications')) return '/rule-applications'
   if (path.startsWith('/check-tasks')) return '/check-tasks'
-  if (path.startsWith('/materialization-gate-tasks')) return '/materialization-gate-tasks'
+  if (path.startsWith('/data-validation-tasks')) return '/data-validation-tasks'
   if (path.startsWith('/executions')) return '/check-tasks'
   if (path.startsWith('/issues')) return '/issues'
   return path

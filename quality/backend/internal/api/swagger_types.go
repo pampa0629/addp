@@ -48,14 +48,14 @@ type qualityExecutionListResponse struct {
 
 type qualityRuleApplicationResponse models.RuleApplication
 type qualityCheckTaskResponse models.CheckTask
-type qualityMaterializationGateTaskResponse models.MaterializationGateTask
+type qualityDataValidationTaskResponse models.DataValidationTask
 
-type qualityMaterializationGateTaskListResponse struct {
-	Data       []models.MaterializationGateTask `json:"data"`
-	Total      int64                            `json:"total"`
-	Page       int                              `json:"page"`
-	PageSize   int                              `json:"page_size"`
-	TotalPages int                              `json:"total_pages"`
+type qualityDataValidationTaskListResponse struct {
+	Data       []models.DataValidationTask `json:"data"`
+	Total      int64                       `json:"total"`
+	Page       int                         `json:"page"`
+	PageSize   int                         `json:"page_size"`
+	TotalPages int                         `json:"total_pages"`
 }
 type qualityIssueResponse models.Issue
 type qualityExecutionResponse commonExecution.TaskExecution

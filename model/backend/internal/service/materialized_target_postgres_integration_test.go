@@ -1,6 +1,8 @@
 package service
 
 import (
+	"database/sql"
+	"github.com/addp/model/internal/models"
 	"os"
 	"strings"
 	"testing"
@@ -51,5 +53,73 @@ func TestPostgresMaterializedTargetDecommissionIsOwnedExactAndIdempotent(t *test
 			t.Fatalf("drop accepted %s", tableName)
 		}
 		assertMaterializationTableExists(t, db, schemaName, tableName, true)
+	}
+}
+
+func assertMaterializationTableExists(t *testing.T, db *gorm.DB, schemaName, tableName string, expected bool) {
+	t.Helper()
+	var relation sql.NullString
+	if err := db.Raw("SELECT to_regclass(?)::text", schemaName+"."+tableName).Scan(&relation).Error; err != nil {
+		t.Fatalf("inspect %s: %v", tableName, err)
+	}
+	if relation.Valid != expected {
+		t.Fatalf("%s existence = %v, want %v", tableName, relation.Valid, expected)
+	}
+}
+
+func TestPostgresMaterializedTargetCreationPreservesRowsAndRejectsDrift(t *testing.T) {
+	dsn := os.Getenv("ADDP_TEST_MODEL_POSTGRES_DSN")
+	if dsn == "" {
+		t.Skip("ADDP_TEST_MODEL_POSTGRES_DSN is not set")
+	}
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	schema := "model_create_" + strings.ReplaceAll(uuid.NewString(), "-", "")[:12]
+	if err := db.Exec("CREATE SCHEMA " + schema).Error; err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Exec("DROP SCHEMA " + schema + " CASCADE"); pool, _ := db.DB(); pool.Close() })
+	table := &models.LogicalTable{ID: 77, Code: "target", Materialization: models.JSONB{"target_parent_locator": "addp://engine/1/path/" + schema + "?type=schema", "target_name": "target"}}
+	fields := []models.LogicalField{{ColumnName: "id", DataType: "int", IsPK: true, Nullable: false}}
+	fingerprint, err := materializationSchemaFingerprint(table, fields)
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := &MaterializationService{logicalTableSvc: &LogicalTableService{}}
+	create := func() error {
+		return db.Transaction(func(tx *gorm.DB) error {
+			return svc.ensureMaterializedTable(tx, table, fields, schema, "target", fingerprint, uuid.NewString())
+		})
+	}
+	done := make(chan error, 2)
+	for i := 0; i < 2; i++ {
+		go func() { done <- create() }()
+	}
+	for i := 0; i < 2; i++ {
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := db.Exec("INSERT INTO " + qualifiedIdentifier(schema, "target") + " VALUES (42)").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := create(); err != nil {
+		t.Fatal(err)
+	}
+	var count int64
+	db.Table(qualifiedIdentifier(schema, "target")).Count(&count)
+	if count != 1 {
+		t.Fatalf("rows lost: %d", count)
+	}
+	db.Exec("ALTER TABLE " + qualifiedIdentifier(schema, "target") + " ADD COLUMN extra text")
+	if err := create(); err == nil {
+		t.Fatal("untracked structural drift accepted")
+	}
+	db.Exec("ALTER TABLE " + qualifiedIdentifier(schema, "target") + " DROP COLUMN extra")
+	table.ID = 78
+	if err := create(); err == nil {
+		t.Fatal("foreign ownership accepted")
 	}
 }

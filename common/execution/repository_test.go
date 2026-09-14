@@ -101,7 +101,7 @@ func TestListFiltersByMultipleTaskTypes(t *testing.T) {
 	db := newTaskExecutionRepositoryTestDB(t)
 	repo := NewTaskExecutionRepository(db)
 	insertTaskExecutionRepositoryTestRowWithSourceTask(t, db, 1, 7, "check", ModuleQuality, TaskTypeQualityCheck, nil, ExecutionStatusSuccess, 10, "2026-01-01 10:00:00")
-	insertTaskExecutionRepositoryTestRowWithSourceTask(t, db, 2, 7, "gate", ModuleQuality, TaskTypeMaterializationGate, nil, ExecutionStatusSuccess, 20, "2026-01-01 10:01:00")
+	insertTaskExecutionRepositoryTestRowWithSourceTask(t, db, 2, 7, "gate", ModuleQuality, TaskTypeDataValidation, nil, ExecutionStatusSuccess, 20, "2026-01-01 10:01:00")
 	insertTaskExecutionRepositoryTestRowWithSourceTask(t, db, 3, 7, "cleanup", ModuleQuality, TaskTypeCleanupExecutor, nil, ExecutionStatusSuccess, 30, "2026-01-01 10:02:00")
 
 	items, total, err := repo.List(context.Background(), TaskExecutionFilter{
@@ -109,7 +109,7 @@ func TestListFiltersByMultipleTaskTypes(t *testing.T) {
 		Module:   ModuleQuality,
 		TaskTypes: []string{
 			TaskTypeQualityCheck,
-			TaskTypeMaterializationGate,
+			TaskTypeDataValidation,
 		},
 		Page: 1, PageSize: 20,
 	})

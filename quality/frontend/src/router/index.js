@@ -30,10 +30,10 @@ const routes = [
         meta: { requiresAuth: true, title: '检查任务', requiredPermissions: ['quality.check_task.read'] }
       },
       {
-        path: 'materialization-gate-tasks',
-        name: 'MaterializationGateTaskList',
-        component: () => import('../views/MaterializationGateTaskList.vue'),
-        meta: { requiresAuth: true, title: '物化门禁任务', requiredPermissions: ['quality.materialization_gate.read'] }
+        path: 'data-validation-tasks',
+        name: 'DataValidationTaskList',
+        component: () => import('../views/DataValidationTaskList.vue'),
+        meta: { requiresAuth: true, title: '数据校验任务', requiredPermissions: ['quality.data_validation.read'] }
       },
       {
         path: 'executions/:execution_id',

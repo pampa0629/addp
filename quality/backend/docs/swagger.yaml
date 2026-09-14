@@ -208,6 +208,43 @@ definitions:
       updated_by:
         type: integer
     type: object
+  github_com_addp_quality_internal_models.DataValidationTask:
+    properties:
+      assertions:
+        items:
+          type: integer
+        type: array
+      code:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        type: integer
+      description:
+        type: string
+      id:
+        type: integer
+      last_execution_id:
+        type: string
+      last_execution_status:
+        type: string
+      last_run_at:
+        type: string
+      name:
+        type: string
+      table_bindings:
+        items:
+          type: integer
+        type: array
+      tenant_id:
+        type: integer
+      updated_at:
+        type: string
+      updated_by:
+        type: integer
+      version:
+        type: integer
+    type: object
   github_com_addp_quality_internal_models.Issue:
     properties:
       column_name:
@@ -263,47 +300,6 @@ definitions:
       updated_at:
         type: string
     type: object
-  github_com_addp_quality_internal_models.MaterializationGateTask:
-    properties:
-      assertions:
-        items:
-          type: integer
-        type: array
-      code:
-        type: string
-      created_at:
-        type: string
-      created_by:
-        type: integer
-      description:
-        type: string
-      id:
-        type: integer
-      last_execution_id:
-        type: string
-      last_execution_status:
-        type: string
-      last_run_at:
-        type: string
-      materialization_group_id:
-        type: integer
-      materialization_group_version:
-        type: integer
-      name:
-        type: string
-      table_bindings:
-        items:
-          type: integer
-        type: array
-      tenant_id:
-        type: integer
-      updated_at:
-        type: string
-      updated_by:
-        type: integer
-      version:
-        type: integer
-    type: object
   github_com_addp_quality_internal_models.ResolveCatalogSummariesRequest:
     properties:
       references:
@@ -355,14 +351,14 @@ definitions:
     - schema_name
     - table_name
     type: object
-  github_com_addp_quality_internal_service.MaterializationGateTableBinding:
+  github_com_addp_quality_internal_service.DataValidationTableBinding:
     properties:
       alias:
         type: string
-      logical_table_id:
-        type: integer
+      locator:
+        type: string
     type: object
-  github_com_addp_quality_internal_service.MaterializationGateWriteRequest:
+  github_com_addp_quality_internal_service.DataValidationWriteRequest:
     properties:
       assertions:
         items:
@@ -372,13 +368,11 @@ definitions:
         type: string
       description:
         type: string
-      materialization_group_id:
-        type: integer
       name:
         type: string
       table_bindings:
         items:
-          $ref: '#/definitions/github_com_addp_quality_internal_service.MaterializationGateTableBinding'
+          $ref: '#/definitions/github_com_addp_quality_internal_service.DataValidationTableBinding'
         type: array
       version:
         type: integer
@@ -470,6 +464,11 @@ definitions:
     required:
     - enabled
     type: object
+  internal_api.dataValidationDeleteRequest:
+    properties:
+      version:
+        type: integer
+    type: object
   internal_api.issueStatusRequest:
     properties:
       note:
@@ -484,11 +483,6 @@ definitions:
     required:
     - note
     - status
-    type: object
-  internal_api.materializationGateDeleteRequest:
-    properties:
-      version:
-        type: integer
     type: object
   internal_api.qualityCheckTaskListResponse:
     properties:
@@ -535,6 +529,58 @@ definitions:
       updated_at:
         type: string
       updated_by:
+        type: integer
+    type: object
+  internal_api.qualityDataValidationTaskListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/github_com_addp_quality_internal_models.DataValidationTask'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+  internal_api.qualityDataValidationTaskResponse:
+    properties:
+      assertions:
+        items:
+          type: integer
+        type: array
+      code:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        type: integer
+      description:
+        type: string
+      id:
+        type: integer
+      last_execution_id:
+        type: string
+      last_execution_status:
+        type: string
+      last_run_at:
+        type: string
+      name:
+        type: string
+      table_bindings:
+        items:
+          type: integer
+        type: array
+      tenant_id:
+        type: integer
+      updated_at:
+        type: string
+      updated_by:
+        type: integer
+      version:
         type: integer
     type: object
   internal_api.qualityElementCandidateListResponse:
@@ -643,62 +689,6 @@ definitions:
         type: string
       updated_at:
         type: string
-    type: object
-  internal_api.qualityMaterializationGateTaskListResponse:
-    properties:
-      data:
-        items:
-          $ref: '#/definitions/github_com_addp_quality_internal_models.MaterializationGateTask'
-        type: array
-      page:
-        type: integer
-      page_size:
-        type: integer
-      total:
-        type: integer
-      total_pages:
-        type: integer
-    type: object
-  internal_api.qualityMaterializationGateTaskResponse:
-    properties:
-      assertions:
-        items:
-          type: integer
-        type: array
-      code:
-        type: string
-      created_at:
-        type: string
-      created_by:
-        type: integer
-      description:
-        type: string
-      id:
-        type: integer
-      last_execution_id:
-        type: string
-      last_execution_status:
-        type: string
-      last_run_at:
-        type: string
-      materialization_group_id:
-        type: integer
-      materialization_group_version:
-        type: integer
-      name:
-        type: string
-      table_bindings:
-        items:
-          type: integer
-        type: array
-      tenant_id:
-        type: integer
-      updated_at:
-        type: string
-      updated_by:
-        type: integer
-      version:
-        type: integer
     type: object
   internal_api.qualityMessageResponse:
     properties:
@@ -1171,6 +1161,184 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - quality.check_task.execute
+  /data-validation-tasks:
+    get:
+      parameters:
+      - description: 页码 | Page
+        in: query
+        name: page
+        type: integer
+      - description: 每页数量 | Page size
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.qualityDataValidationTaskListResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 列出数据校验任务 | List data validation tasks
+      tags:
+      - DataValidation
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - quality.data_validation.read
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 数据校验定义 | Data validation definition
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_quality_internal_service.DataValidationWriteRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_api.qualityDataValidationTaskResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 创建数据校验任务 | Create data validation task
+      tags:
+      - DataValidation
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - quality.data_validation.create
+  /data-validation-tasks/{id}:
+    delete:
+      consumes:
+      - application/json
+      parameters:
+      - description: 任务 ID | Task ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 删除版本 | Delete version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.dataValidationDeleteRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.qualityMessageResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 删除数据校验任务 | Delete data validation task
+      tags:
+      - DataValidation
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - quality.data_validation.delete
+    get:
+      parameters:
+      - description: 任务 ID | Task ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.qualityDataValidationTaskResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 获取数据校验任务 | Get data validation task
+      tags:
+      - DataValidation
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - quality.data_validation.read
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 任务 ID | Task ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 完整数据校验定义 | Complete data validation definition
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_quality_internal_service.DataValidationWriteRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.qualityDataValidationTaskResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 更新数据校验任务 | Update data validation task
+      tags:
+      - DataValidation
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - quality.data_validation.update
   /executions:
     get:
       parameters:
@@ -1371,184 +1539,6 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - quality.issue.update
-  /materialization-gate-tasks:
-    get:
-      parameters:
-      - description: 页码 | Page
-        in: query
-        name: page
-        type: integer
-      - description: 每页数量 | Page size
-        in: query
-        name: page_size
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_api.qualityMaterializationGateTaskListResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/internal_api.qualityErrorResponse'
-      security:
-      - BearerAuth: []
-      summary: 列出物化门禁任务 | List materialization gate tasks
-      tags:
-      - MaterializationGate
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - quality.materialization_gate.read
-    post:
-      consumes:
-      - application/json
-      parameters:
-      - description: 物化门禁定义 | Materialization gate definition
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/github_com_addp_quality_internal_service.MaterializationGateWriteRequest'
-      produces:
-      - application/json
-      responses:
-        "201":
-          description: Created
-          schema:
-            $ref: '#/definitions/internal_api.qualityMaterializationGateTaskResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/internal_api.qualityErrorResponse'
-        "409":
-          description: Conflict
-          schema:
-            $ref: '#/definitions/internal_api.qualityErrorResponse'
-      security:
-      - BearerAuth: []
-      summary: 创建物化门禁任务 | Create materialization gate task
-      tags:
-      - MaterializationGate
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - quality.materialization_gate.create
-  /materialization-gate-tasks/{id}:
-    delete:
-      consumes:
-      - application/json
-      parameters:
-      - description: 任务 ID | Task ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      - description: 删除版本 | Delete version
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/internal_api.materializationGateDeleteRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_api.qualityMessageResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/internal_api.qualityErrorResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/internal_api.qualityErrorResponse'
-        "409":
-          description: Conflict
-          schema:
-            $ref: '#/definitions/internal_api.qualityErrorResponse'
-      security:
-      - BearerAuth: []
-      summary: 删除物化门禁任务 | Delete materialization gate task
-      tags:
-      - MaterializationGate
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - quality.materialization_gate.delete
-    get:
-      parameters:
-      - description: 任务 ID | Task ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_api.qualityMaterializationGateTaskResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/internal_api.qualityErrorResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/internal_api.qualityErrorResponse'
-      security:
-      - BearerAuth: []
-      summary: 获取物化门禁任务 | Get materialization gate task
-      tags:
-      - MaterializationGate
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - quality.materialization_gate.read
-    put:
-      consumes:
-      - application/json
-      parameters:
-      - description: 任务 ID | Task ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      - description: 完整物化门禁定义 | Complete materialization gate definition
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/github_com_addp_quality_internal_service.MaterializationGateWriteRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_api.qualityMaterializationGateTaskResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/internal_api.qualityErrorResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/internal_api.qualityErrorResponse'
-        "409":
-          description: Conflict
-          schema:
-            $ref: '#/definitions/internal_api.qualityErrorResponse'
-      security:
-      - BearerAuth: []
-      summary: 更新物化门禁任务 | Update materialization gate task
-      tags:
-      - MaterializationGate
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - quality.materialization_gate.update
   /rule-applications:
     get:
       parameters:
@@ -1878,11 +1868,11 @@ paths:
       - quality.task_provider.read
   /task-provider/tasks:
     get:
-      description: 按标准 TaskProvider 协议列出 Quality 任务；task_type 支持 check|materialization_gate。|
+      description: 按标准 TaskProvider 协议列出 Quality 任务；task_type 支持 check|data_validation。|
         List Quality tasks through the standard TaskProvider protocol; task_type supports
-        check or materialization_gate.
+        check or data_validation.
       parameters:
-      - description: '任务类型：check|materialization_gate | Task type: check or materialization_gate'
+      - description: '任务类型：check|data_validation | Task type: check or data_validation'
         in: query
         name: task_type
         type: string
@@ -1911,11 +1901,11 @@ paths:
       - quality.task_provider.read
   /task-provider/tasks/{task_type}/{id}:
     get:
-      description: 按标准 TaskProvider 协议获取 Quality 任务详情；task_type 支持 check|materialization_gate。|
+      description: 按标准 TaskProvider 协议获取 Quality 任务详情；task_type 支持 check|data_validation。|
         Get Quality task detail through the standard TaskProvider protocol; task_type
-        supports check or materialization_gate.
+        supports check or data_validation.
       parameters:
-      - description: '任务类型：check|materialization_gate | Task type: check or materialization_gate'
+      - description: '任务类型：check|data_validation | Task type: check or data_validation'
         in: path
         name: task_type
         required: true
@@ -1957,7 +1947,7 @@ paths:
         invocation; source=orchestrator and parent_execution_id are required, and
         parameters overrides are not supported.
       parameters:
-      - description: '任务类型：check|materialization_gate | Task type: check or materialization_gate'
+      - description: '任务类型：check|data_validation | Task type: check or data_validation'
         in: path
         name: task_type
         required: true

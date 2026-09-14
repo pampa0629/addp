@@ -171,75 +171,182 @@
       "apiDocs": "API Docs",
       "system": "System"
     },
-	"configuration": {
-	  "title": "Configuration",
-	  "platformContext": "Platform configuration",
-	  "tenantContext": "Tenant configuration",
-	  "owner": "Owner module",
-	  "entry": "Entry",
-	  "scope": "Scope",
-	  "status": "Status",
-	  "available": "Available",
-	  "unavailable": "Module unavailable",
-	  "empty": "No configuration is available in the current context",
-	  "loadFailed": "Failed to load configuration entries",
-	  "reload": "Reload",
-	  "back": "Back to configuration entries",
-	  "save": "Save",
-	  "saveAll": "Save all",
-	  "pendingChanges": "{count} pending",
-	  "saveSuccess": "Configuration saved",
-	  "saveFailed": "Failed to save configuration",
-	  "versionConflict": "The configuration changed elsewhere and has been reloaded",
-	  "entries": {
-		"agentConfiguration": "Agent Configuration",
-		"copilotConfiguration": "Copilot Configuration",
-		"developConfiguration": "Develop Configuration",
-		"inferenceConfiguration": "Inference Configuration",
-		"managerConfiguration": "Manager Configuration",
-		"transferConfiguration": "Transfer Configuration",
-		"monitorConfiguration": "Monitor Configuration",
-		"serviceConfiguration": "Service Configuration"
-	  },
-	  "tabs": { "inference": "Inference Scenarios", "queryPolicy": "Query Policy", "quickViewPolicy": "Quick-view policy", "baseMap": "Basemap services", "continuousPolicy": "Continuous task policy", "runtimePolicy": "Runtime policy", "smtpRelay": "SMTP delivery" },
-	  "modules": { "system": { "name": "System Management" }, "develop": { "name": "Data Development" }, "manager": { "name": "Data Management" }, "copilot": { "name": "AI Assistant" }, "agent": { "name": "AI Agent" }, "inference": { "name": "AI Model Services" }, "transfer": { "name": "Data Transfer" }, "monitor": { "name": "Execution Monitor" }, "service": { "name": "Data Services" } },
-	  "policies": {
-		"develop": { "title": "Query policy", "defaultQueryTimeout": "Default query timeout (seconds)", "maxQueryTimeout": "Maximum query timeout (seconds)", "queryResultLimit": "Result preview limit (rows)" },
-		"manager": { "title": "Quick-view policy", "flatgeobufRows": "FlatGeobuf row limit", "mvtTimeout": "Dynamic MVT timeout budget (milliseconds)", "retryAfter": "Retry-after delay (seconds)", "rasterMosaicTimeout": "Raster mosaic generation timeout (seconds)" },
-		"transfer": { "title": "Continuous task policy", "diagnosticsInterval": "Diagnostics interval (seconds)", "retentionDegraded": "Degraded retention horizon (seconds)", "retentionCritical": "Critical retention horizon (seconds)", "checkpointStale": "Checkpoint stale threshold (seconds)", "recoveryInitial": "Initial recovery backoff (seconds)", "recoveryMax": "Maximum recovery backoff (seconds)", "maxFailures": "Maximum consecutive failures", "circuitOpen": "Circuit open duration (seconds)", "stabilityWindow": "Stability window (seconds)" },
-		"monitor": { "title": "Monitor runtime policy", "alertInterval": "Alert evaluation interval (seconds)", "webhookInterval": "Webhook dispatch interval (seconds)", "webhookTimeout": "Webhook request timeout (seconds)", "webhookLease": "Webhook lease (seconds)", "webhookAttempts": "Webhook maximum attempts", "webhookRetryInitial": "Webhook initial backoff (seconds)", "webhookRetryMax": "Webhook maximum backoff (seconds)", "emailInterval": "Email dispatch interval (seconds)", "emailTimeout": "SMTP request timeout (seconds)", "emailLease": "Email lease (seconds)", "emailAttempts": "Email maximum attempts", "emailRetryInitial": "Email initial backoff (seconds)", "emailRetryMax": "Email maximum backoff (seconds)" },
-		"service": { "title": "Scheduler policy", "healthCheckCron": "Health-check Cron", "metadataRefreshCron": "Metadata-refresh Cron" }
-	  },
-	  "resources": { "configured": "Configured", "notConfigured": "Not configured", "smtpRelay": { "title": "SMTP Relay", "enabled": "Enable delivery", "host": "Server host", "port": "Port", "tlsMode": "TLS mode", "fromAddress": "From address", "fromName": "From name", "username": "Username", "credential": "Password", "replaceCredential": "Leave blank to keep the current credential", "enterCredential": "Enter SMTP password" }, "baseMap": { "title": "Online basemap services", "provider": "Provider", "enabled": "Enabled", "order": "Order", "key": "Access key", "securityJsCode": "Security code", "enterKey": "Enter key", "enterSecurityJsCode": "Enter AMap security code" } },
-	  "ai": {
-		"scenario": "Inference scenario",
-		"modelProfile": "Model Profile",
-		"source": "Source",
-		"version": "Version",
-		"inherited": "Inherited platform default",
-		"currentScope": "Current scope",
-		"notConfigured": "Not configured",
-		"agent": { "title": "Agent inference scenarios" },
-		"copilot": { "title": "Copilot inference scenarios" },
-		"scenarios": {
-		  "reasoning": "Planning and tool calling",
-		  "general-chat": "General chat summary",
-		  "resource_resolution": "Input resource resolution",
-		  "query_generation": "Query language generation",
-		  "workflow_generation": "Workflow generation",
-		  "notebook_generation": "Notebook code generation",
-		  "transfer_generation": "Transfer task draft generation",
-		  "navigation_guide": "Platform navigation guidance",
-		  "knowledge_graph_extraction": "Knowledge graph extraction",
-		  "standard_document_extraction": "Standard document candidate extraction"
-		}
-	  },
-	  "scopes": {
-		"platform_only": "Platform",
-		"platform_default_with_tenant_override": "Platform default and tenant override",
-		"tenant_only": "Tenant"
-	  }
-	},
+    "configuration": {
+      "title": "Configuration",
+      "platformContext": "Platform configuration",
+      "tenantContext": "Tenant configuration",
+      "owner": "Owner module",
+      "entry": "Entry",
+      "scope": "Scope",
+      "status": "Status",
+      "available": "Available",
+      "unavailable": "Module unavailable",
+      "empty": "No configuration is available in the current context",
+      "loadFailed": "Failed to load configuration entries",
+      "reload": "Reload",
+      "back": "Back to configuration entries",
+      "save": "Save",
+      "saveAll": "Save all",
+      "pendingChanges": "{count} pending",
+      "saveSuccess": "Configuration saved",
+      "saveFailed": "Failed to save configuration",
+      "versionConflict": "The configuration changed elsewhere and has been reloaded",
+      "entries": {
+        "agentConfiguration": "Agent Configuration",
+        "copilotConfiguration": "Copilot Configuration",
+        "developConfiguration": "Develop Configuration",
+        "inferenceConfiguration": "Inference Configuration",
+        "managerConfiguration": "Manager Configuration",
+        "transferConfiguration": "Transfer Configuration",
+        "monitorConfiguration": "Monitor Configuration",
+        "serviceConfiguration": "Service Configuration"
+      },
+      "tabs": {
+        "inference": "Inference Scenarios",
+        "queryPolicy": "Query Policy",
+        "quickViewPolicy": "Quick-view policy",
+        "baseMap": "Basemap services",
+        "continuousPolicy": "Continuous task policy",
+        "runtimePolicy": "Runtime policy",
+        "smtpRelay": "SMTP delivery"
+      },
+      "modules": {
+        "system": {
+          "name": "System Management"
+        },
+        "develop": {
+          "name": "Data Development"
+        },
+        "manager": {
+          "name": "Data Management"
+        },
+        "copilot": {
+          "name": "AI Assistant"
+        },
+        "agent": {
+          "name": "AI Agent"
+        },
+        "inference": {
+          "name": "AI Model Services"
+        },
+        "transfer": {
+          "name": "Data Transfer"
+        },
+        "monitor": {
+          "name": "Execution Monitor"
+        },
+        "service": {
+          "name": "Data Services"
+        }
+      },
+      "policies": {
+        "develop": {
+          "title": "Query policy",
+          "defaultQueryTimeout": "Default query timeout (seconds)",
+          "maxQueryTimeout": "Maximum query timeout (seconds)",
+          "queryResultLimit": "Result preview limit (rows)"
+        },
+        "manager": {
+          "title": "Quick-view policy",
+          "flatgeobufRows": "FlatGeobuf row limit",
+          "mvtTimeout": "Dynamic MVT timeout budget (milliseconds)",
+          "retryAfter": "Retry-after delay (seconds)",
+          "rasterMosaicTimeout": "Raster mosaic generation timeout (seconds)"
+        },
+        "transfer": {
+          "title": "Continuous task policy",
+          "diagnosticsInterval": "Diagnostics interval (seconds)",
+          "retentionDegraded": "Degraded retention horizon (seconds)",
+          "retentionCritical": "Critical retention horizon (seconds)",
+          "checkpointStale": "Checkpoint stale threshold (seconds)",
+          "recoveryInitial": "Initial recovery backoff (seconds)",
+          "recoveryMax": "Maximum recovery backoff (seconds)",
+          "maxFailures": "Maximum consecutive failures",
+          "circuitOpen": "Circuit open duration (seconds)",
+          "stabilityWindow": "Stability window (seconds)"
+        },
+        "monitor": {
+          "title": "Monitor runtime policy",
+          "alertInterval": "Alert evaluation interval (seconds)",
+          "webhookInterval": "Webhook dispatch interval (seconds)",
+          "webhookTimeout": "Webhook request timeout (seconds)",
+          "webhookLease": "Webhook lease (seconds)",
+          "webhookAttempts": "Webhook maximum attempts",
+          "webhookRetryInitial": "Webhook initial backoff (seconds)",
+          "webhookRetryMax": "Webhook maximum backoff (seconds)",
+          "emailInterval": "Email dispatch interval (seconds)",
+          "emailTimeout": "SMTP request timeout (seconds)",
+          "emailLease": "Email lease (seconds)",
+          "emailAttempts": "Email maximum attempts",
+          "emailRetryInitial": "Email initial backoff (seconds)",
+          "emailRetryMax": "Email maximum backoff (seconds)"
+        },
+        "service": {
+          "title": "Scheduler policy",
+          "healthCheckCron": "Health-check Cron",
+          "metadataRefreshCron": "Metadata-refresh Cron"
+        }
+      },
+      "resources": {
+        "configured": "Configured",
+        "notConfigured": "Not configured",
+        "smtpRelay": {
+          "title": "SMTP Relay",
+          "enabled": "Enable delivery",
+          "host": "Server host",
+          "port": "Port",
+          "tlsMode": "TLS mode",
+          "fromAddress": "From address",
+          "fromName": "From name",
+          "username": "Username",
+          "credential": "Password",
+          "replaceCredential": "Leave blank to keep the current credential",
+          "enterCredential": "Enter SMTP password"
+        },
+        "baseMap": {
+          "title": "Online basemap services",
+          "provider": "Provider",
+          "enabled": "Enabled",
+          "order": "Order",
+          "key": "Access key",
+          "securityJsCode": "Security code",
+          "enterKey": "Enter key",
+          "enterSecurityJsCode": "Enter AMap security code"
+        }
+      },
+      "ai": {
+        "scenario": "Inference scenario",
+        "modelProfile": "Model Profile",
+        "source": "Source",
+        "version": "Version",
+        "inherited": "Inherited platform default",
+        "currentScope": "Current scope",
+        "notConfigured": "Not configured",
+        "agent": {
+          "title": "Agent inference scenarios"
+        },
+        "copilot": {
+          "title": "Copilot inference scenarios"
+        },
+        "scenarios": {
+          "reasoning": "Planning and tool calling",
+          "general-chat": "General chat summary",
+          "resource_resolution": "Input resource resolution",
+          "query_generation": "Query language generation",
+          "workflow_generation": "Workflow generation",
+          "notebook_generation": "Notebook code generation",
+          "transfer_generation": "Transfer task draft generation",
+          "navigation_guide": "Platform navigation guidance",
+          "knowledge_graph_extraction": "Knowledge graph extraction",
+          "standard_document_extraction": "Standard document candidate extraction"
+        }
+      },
+      "scopes": {
+        "platform_only": "Platform",
+        "platform_default_with_tenant_override": "Platform default and tenant override",
+        "tenant_only": "Tenant"
+      }
+    },
     "modules": {
       "portal": {
         "label": "Data Portal",
@@ -331,7 +438,7 @@
         "label": "Data Management",
         "dataExplorer": "Data Explorer",
         "dataRetrieval": "Data Retrieval",
-		"dataTasks": "Data Tasks",
+        "dataTasks": "Data Tasks",
         "quickViewTasks": "Quick-view Tasks",
         "spatialDataTasks": "Spatial Data Tasks",
         "embeddingTasks": "Vectorization Tasks",
@@ -349,7 +456,7 @@
       },
       "standard": {
         "label": "Data Standards",
-      "domains": "Business Domains",
+        "domains": "Business Domains",
         "glossaries": "Glossaries",
         "elements": "Data Elements",
         "codeSets": "Code Sets",
@@ -364,18 +471,17 @@
         "entities": "Business Entities",
         "erDiagram": "ER Diagram",
         "logicalTables": "Logical Tables",
-        "materializationGroups": "Materialization Groups",
         "starSchema": "Star Schema"
       },
       "quality": {
         "label": "Data Quality",
         "ruleApplications": "Rule Applications",
         "checkTasks": "Check Tasks",
-        "materializationGateTasks": "Materialization Gates",
+        "dataValidationTasks": "Materialization Gates",
         "issues": "Issues",
         "recentRuleApplications": "Quality Rule Applications",
         "recentCheckTasks": "Quality Check Tasks",
-        "recentMaterializationGateTasks": "Materialization Gate Tasks",
+        "recentDataValidationTasks": "Materialization Gate Tasks",
         "recentIssues": "Data Quality Issues"
       },
       "security": {
@@ -418,7 +524,7 @@
         "metadataScanExecutions": "Metadata Scan Executions",
         "developExecutions": "Data Development Executions",
         "qualityCheckExecutions": "Quality Check Executions",
-        "materializationGateExecutions": "Materialization Gate Executions",
+        "dataValidationExecutions": "Materialization Gate Executions",
         "managerExecutions": "Data Management Executions",
         "graphBuildExecutions": "Graph Build Executions",
         "modelExecutions": "Data Modeling Executions",

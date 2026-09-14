@@ -159,8 +159,8 @@ func TestTaskProviderExecuteRejectsUnsupportedRequestBeforeExecutor(t *testing.T
 	}
 }
 
-func TestMaterializationGateExecutionContractDeclaresVersionHandoff(t *testing.T) {
-	contract := materializationGateExecutionContract()
+func TestDataValidationExecutionContractDeclaresResult(t *testing.T) {
+	contract := dataValidationExecutionContract()
 	raw := map[string]interface{}{
 		"input_schema": contract.InputSchema, "input_defaults": contract.InputDefaults,
 		"input_ui_schema": contract.InputUISchema, "output_schema": contract.OutputSchema,
@@ -169,7 +169,7 @@ func TestMaterializationGateExecutionContractDeclaresVersionHandoff(t *testing.T
 		t.Fatal(err)
 	}
 	properties := contract.OutputSchema["properties"].(map[string]interface{})
-	if properties["materialization_group_id"] == nil || properties["materialization_group_version"] == nil {
+	if len(properties) != 1 || properties["passed"] == nil {
 		t.Fatalf("output schema = %#v", contract.OutputSchema)
 	}
 }

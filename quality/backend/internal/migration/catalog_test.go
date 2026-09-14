@@ -11,8 +11,8 @@ func TestEmbeddedCatalogContainsQualityQueryIndexes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadCatalog: %v", err)
 	}
-	if catalog.LatestVersion != 8 {
-		t.Fatalf("latest migration version = %d, want 8", catalog.LatestVersion)
+	if catalog.LatestVersion != 9 {
+		t.Fatalf("latest migration version = %d, want 9", catalog.LatestVersion)
 	}
 	queryIndexes := catalog.Files[2]
 	if queryIndexes.Name != "000003_quality_query_indexes.up.sql" {

@@ -120,12 +120,17 @@ func buildQueryExecutionContract(content map[string]interface{}, includeResultTa
 		contract.InputUISchema[definition.Name] = map[string]interface{}{"order": index}
 	}
 	if hasRelationParameters && includeResultTarget {
-		if _, exists := properties["target_locator"]; exists {
+		_, targetCollision := properties["target_locator"]
+		_, modeCollision := properties["write_mode"]
+		if targetCollision || modeCollision {
 			return nil, &QueryParameterDefinitionsError{Cause: fmt.Errorf("查询参数名称 target_locator 与运行时目标冲突")}
 		}
 		properties["target_locator"] = map[string]interface{}{"type": "string", "minLength": float64(1)}
 		contract.InputUISchema["target_locator"] = map[string]interface{}{"order": len(definitions)}
-		required = append(required, "target_locator")
+		properties["write_mode"] = map[string]interface{}{"type": "string", "enum": []interface{}{"overwrite", "append"}}
+		contract.InputUISchema["write_mode"] = map[string]interface{}{"order": len(definitions) + 1}
+		contract.InputUISchema["target_locator"] = map[string]interface{}{"order": len(definitions), "control": "resource_tree_picker", "value_shape": "locator", "selectable_node_types": []interface{}{"table"}}
+		required = append(required, "target_locator", "write_mode")
 		contract.InputSchema["required"] = required
 		contract.OutputSchema = map[string]interface{}{
 			"type": "object",
@@ -207,8 +212,10 @@ func resolveQueryParameters(
 		effectiveInputs[definition.Name] = normalized
 	}
 	if includeResultTarget {
-		if target, exists := overrides["target_locator"]; exists {
-			effectiveInputs["target_locator"] = target
+		for _, key := range []string{"target_locator", "write_mode"} {
+			if value, exists := overrides[key]; exists {
+				effectiveInputs[key] = value
+			}
 		}
 	}
 	if len(effectiveInputs) == 0 {

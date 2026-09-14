@@ -72,7 +72,7 @@ func TestBuildQueryExecutionContractRequiresRelationLocatorsAtRuntime(t *testing
 		t.Fatalf("execution contract is invalid: %v", err)
 	}
 	required := contract.InputSchema["required"].([]interface{})
-	if !reflect.DeepEqual(required, []interface{}{"activities", "target_locator"}) {
+	if !reflect.DeepEqual(required, []interface{}{"activities", "target_locator", "write_mode"}) {
 		t.Fatalf("required = %#v", required)
 	}
 	if contract.InputDefaults["status"] != "active" || len(contract.InputDefaults) != 2 {
@@ -93,6 +93,7 @@ func TestBuildQueryExecutionContractRequiresRelationLocatorsAtRuntime(t *testing
 	_, effective, _, err := resolveQueryOrchestrationParameters(content, map[string]interface{}{
 		"activities":     map[string]interface{}{"locator": "addp://engine/12/path/public/activities?type=table"},
 		"target_locator": "addp://engine/12/path/public/member_result?type=table",
+		"write_mode":     "overwrite",
 	})
 	if err != nil {
 		t.Fatal(err)

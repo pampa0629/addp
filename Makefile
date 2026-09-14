@@ -327,7 +327,7 @@ test-service-postgres: ## 使用一次性 PostgreSQL 数据库运行 Service 数
 test-standard-postgres: ## 使用测试 PostgreSQL 数据库运行 Standard 约束、旧能力清理和引用门禁
 	@bash scripts/test/standard-postgres-gate.sh
 
-test-transfer-postgres: ## 使用测试 PostgreSQL 数据库运行 Transfer schema、受保护导出与目标覆盖集成门禁
+test-transfer-postgres: ## 使用普通 PostgreSQL 测试库运行 Transfer schema、受保护导出与非空间目标覆盖门禁（无需 PostGIS）
 	@bash scripts/test/transfer-postgres-gate.sh
 
 test-workbench-postgres: ## 使用一次性 PostgreSQL 数据库运行 Workbench Data Application 集成门禁

@@ -1,6 +1,6 @@
 schema_version: addp.permission_manifest/v1
 owner_module: model
-manifest_version: 12
+manifest_version: 13
 permissions:
   - key: model.catalog.read
     allowed_scope_types: [tenant]
@@ -154,46 +154,6 @@ permissions:
     status: active
     name_i18n_key: permissions.model.materialization.execute.name
     description_i18n_key: permissions.model.materialization.execute.description
-  - key: model.materialization_group.create
-    allowed_scope_types: [tenant]
-    risk_level: medium
-    tenant_customizable: true
-    delegable: false
-    status: active
-    name_i18n_key: permissions.model.materialization_group.create.name
-    description_i18n_key: permissions.model.materialization_group.create.description
-  - key: model.materialization_group.delete
-    allowed_scope_types: [tenant]
-    risk_level: high
-    tenant_customizable: true
-    delegable: false
-    status: active
-    name_i18n_key: permissions.model.materialization_group.delete.name
-    description_i18n_key: permissions.model.materialization_group.delete.description
-  - key: model.materialization_group.read
-    allowed_scope_types: [tenant]
-    risk_level: low
-    tenant_customizable: true
-    delegable: false
-    status: active
-    name_i18n_key: permissions.model.materialization_group.read.name
-    description_i18n_key: permissions.model.materialization_group.read.description
-  - key: model.materialization_group.update
-    allowed_scope_types: [tenant]
-    risk_level: medium
-    tenant_customizable: true
-    delegable: false
-    status: active
-    name_i18n_key: permissions.model.materialization_group.update.name
-    description_i18n_key: permissions.model.materialization_group.update.description
-  - key: model.materialization_read.execute
-    allowed_scope_types: [tenant]
-    risk_level: medium
-    tenant_customizable: false
-    delegable: false
-    status: active
-    name_i18n_key: permissions.model.materialization_read.execute.name
-    description_i18n_key: permissions.model.materialization_read.execute.description
   - key: model.materialized_target.delete
     allowed_scope_types: [tenant]
     risk_level: critical
@@ -210,19 +170,3 @@ permissions:
     status: active
     name_i18n_key: permissions.model.standard_reference.update.name
     description_i18n_key: permissions.model.standard_reference.update.description
-  - key: model.task_provider.execute
-    allowed_scope_types: [tenant]
-    risk_level: medium
-    tenant_customizable: false
-    delegable: false
-    status: active
-    name_i18n_key: permissions.model.task_provider.execute.name
-    description_i18n_key: permissions.model.task_provider.execute.description
-  - key: model.task_provider.read
-    allowed_scope_types: [tenant]
-    risk_level: low
-    tenant_customizable: false
-    delegable: false
-    status: active
-    name_i18n_key: permissions.model.task_provider.read.name
-    description_i18n_key: permissions.model.task_provider.read.description

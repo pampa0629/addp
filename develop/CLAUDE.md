@@ -396,3 +396,7 @@ curl -H "Authorization: Bearer <token>" \
 - **工作流计算引擎接口规范** - [docs/spec/addp工作流计算引擎接口规范.md](../docs/spec/addp工作流计算引擎接口规范.md)
 - **System 模块说明** - [system/CLAUDE.md](../system/CLAUDE.md)
 - **共享数据库桥接** - `common/dbbridge`
+
+### 固定目标写入契约
+
+Develop 关系查询写入通过执行契约显式配置固定正式表 `target_locator` 与 `write_mode=overwrite|append`。所有输入和输出必须位于同一 PostgreSQL Engine，输出不得同时作为输入。overwrite 在一个事务内锁定目标、删除旧记录并插入完整计算结果；失败或取消回滚该表写入。append 只追加。多个任务分别提交，不保证跨任务、多表同时可见。

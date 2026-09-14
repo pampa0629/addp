@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/addp/common/dbbridge"
 	"strings"
 	"time"
 
@@ -143,18 +144,21 @@ func (s *QueryWorkerService) executeExistingTableResult(
 	if err != nil {
 		return s.completeFailure(ctx, execution, lease, startedAt, err, "develop.query.relation_compile_failed")
 	}
-	result, errorMessage, rowsAffected, errorCode := s.executor.executeQuery(ctx, compiled, execution.ExecutionID, execution.TenantID, authorization)
-	if errorMessage != "" {
-		return s.completeQueryError(ctx, execution, lease, startedAt, result, rowsAffected, errorCode, errorMessage)
+	rawInputs, _ := mapValue(devTask.ExecutionConfig["runtime_inputs"])
+	mode, _ := rawInputs["write_mode"].(string)
+	if mode != "append" && mode != "overwrite" {
+		return s.completeFailure(ctx, execution, lease, startedAt, fmt.Errorf("write_mode must be append or overwrite"), "develop.query.runtime_inputs_invalid")
 	}
-	metadata := queryExecutionMetadata(result)
-	rowCount := int64(0)
-	if rowsAffected != nil {
-		rowCount = *rowsAffected
+	timeout := s.executor.sqlEngine.normalizedTimeoutForTenant(ctx, uint(execution.TenantID), devTask.Timeout)
+	writeCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
+	defer cancel()
+	statement, _ := compiled.Content["query"].(string)
+	count, err := dbbridge.ExecuteTableResult(writeCtx, engine, target, statement, compiled.RuntimeParameters, mode)
+	if err != nil {
+		return s.completeFailure(ctx, execution, lease, startedAt, err, "develop.query.write_failed")
 	}
-	metadata["outputs"] = commonModels.JSONMap{
-		"execution_id": execution.ExecutionID, "target_locator": targetLocator, "row_count": rowCount,
-	}
+	rowsAffected := &count
+	metadata := commonModels.JSONMap{"outputs": commonModels.JSONMap{"execution_id": execution.ExecutionID, "target_locator": targetLocator, "row_count": count}}
 	return s.completeSuccess(ctx, execution, lease, startedAt, metadata, rowsAffected)
 }
 

@@ -35,7 +35,6 @@ func SetupRouter(
 	dimensionHierarchySvc *service.DimensionHierarchyService,
 	standardReferenceGuardSvc *service.StandardReferenceGuardService,
 	materializationSvc *service.MaterializationService,
-	materializationGroupSvc *service.MaterializationGroupService,
 	catalogResourceSvc *service.CatalogResourceService,
 	taskExecutionRepo *commonExecution.TaskExecutionRepository,
 	systemURL string,
@@ -75,9 +74,6 @@ func SetupRouter(
 	tableRelationHandler := NewTableRelationHandler(tableRelationSvc)
 	dimensionHierarchyHandler := NewDimensionHierarchyHandler(dimensionHierarchySvc)
 	standardReferenceGuardHandler := NewStandardReferenceGuardHandler(standardReferenceGuardSvc)
-	materializationHandler := NewMaterializationTaskProviderHandler(materializationSvc, taskExecutionRepo)
-	materializationReadContextHandler := NewMaterializationReadContextHandler(materializationSvc)
-	materializationGroupHandler := NewMaterializationGroupHandler(materializationGroupSvc)
 	materializedTargetHandler := NewMaterializedTargetHandler(materializationSvc)
 	catalogResourceHandler := NewCatalogResourceHandler(catalogResourceSvc)
 	professionalRelationHandler := NewProfessionalRelationHandler(entityRelationSvc, tableRelationSvc)
@@ -98,26 +94,6 @@ func SetupRouter(
 		catalogResources.Use(commonAuth.MustNewServiceClientGuard("addp-catalog"))
 		catalogResources.GET("/catalog-resources/changes", permission(modelauthorization.PermissionModelCatalogRead), catalogResourceHandler.ListChanges)
 		catalogResources.POST("/runtime/catalog-references/resolve", permission(modelauthorization.PermissionModelCatalogRead), catalogResourceHandler.ResolveReferences)
-
-		materializationReadContexts := api.Group("/materialization-read-contexts")
-		materializationReadContexts.Use(commonAuth.MustNewServiceClientGuard("addp-quality"))
-		materializationReadContexts.POST("", permission(modelauthorization.PermissionModelMaterializationReadExecute), materializationReadContextHandler.Resolve)
-
-		materializationGroups := api.Group("/materialization-groups")
-		materializationGroups.GET("", permission(modelauthorization.PermissionModelMaterializationGroupRead), materializationGroupHandler.List)
-		materializationGroups.POST("", permission(modelauthorization.PermissionModelMaterializationGroupCreate), materializationGroupHandler.Create)
-		materializationGroups.GET("/:id", permission(modelauthorization.PermissionModelMaterializationGroupRead), materializationGroupHandler.Get)
-		materializationGroups.PUT("/:id", permission(modelauthorization.PermissionModelMaterializationGroupUpdate), materializationGroupHandler.Update)
-		materializationGroups.DELETE("/:id", permission(modelauthorization.PermissionModelMaterializationGroupDelete), materializationGroupHandler.Delete)
-
-		taskProvider := api.Group("/task-provider")
-		taskProvider.Use(commonAuth.MustNewServiceClientGuard("addp-orchestrator"))
-		{
-			taskProvider.GET("/tasks", permission(modelauthorization.PermissionModelTaskProviderRead), materializationHandler.ListTasks)
-			taskProvider.GET("/tasks/:task_type/:id", permission(modelauthorization.PermissionModelTaskProviderRead), materializationHandler.TaskDetail)
-			taskProvider.POST("/tasks/:task_type/:id/execute", permission(modelauthorization.PermissionModelTaskProviderExecute), materializationHandler.TaskExecute)
-			taskProvider.GET("/executions/:execution_id", permission(modelauthorization.PermissionModelTaskProviderRead), materializationHandler.ExecutionStatus)
-		}
 
 		standardReferenceGuards := api.Group("/standard-reference-guards")
 		standardReferenceGuards.PUT("/:resource_type/:resource_id", permission(modelauthorization.PermissionModelStandardReferenceUpdate), standardReferenceGuardHandler.SetState)
@@ -166,6 +142,7 @@ func SetupRouter(
 			logicalTables.GET("/:id/relations", permission(modelauthorization.PermissionModelLogicalModelRead), professionalRelationHandler.GetLogicalTableRelations)
 			logicalTables.PUT("/:id", permission(modelauthorization.PermissionModelLogicalModelUpdate), logicalTableHandler.UpdateLogicalTable)
 			logicalTables.DELETE("/:id", permission(modelauthorization.PermissionModelLogicalModelDelete), logicalTableHandler.DeleteLogicalTable)
+			logicalTables.POST("/:id/materialized-target", permission(modelauthorization.PermissionModelMaterializationExecute), materializedTargetHandler.Create)
 			logicalTables.DELETE("/:id/materialized-target", permission(modelauthorization.PermissionModelMaterializedTargetDelete), materializedTargetHandler.Decommission)
 			logicalTables.POST("/:id/approve", permission(modelauthorization.PermissionModelLogicalModelUpdate), logicalTableHandler.ApproveLogicalTable)
 			logicalTables.POST("/:id/reopen", permission(modelauthorization.PermissionModelLogicalModelUpdate), logicalTableHandler.ReopenLogicalTable)

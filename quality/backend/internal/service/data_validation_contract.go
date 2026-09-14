@@ -8,29 +8,29 @@ import (
 	"regexp"
 	"strings"
 
-	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/resourcetree"
 	"github.com/google/uuid"
 )
 
 const (
-	materializationGateSchemaVersion          = "addp.quality.materialization-gate/v1"
-	materializationGateExecutionConfigVersion = "addp.quality.materialization-gate-execution-config/v1"
-	materializationGateResultVersion          = "addp.quality.materialization-gate-result/v1"
+	dataValidationSchemaVersion          = "addp.quality.data-validation/v1"
+	dataValidationExecutionConfigVersion = "addp.quality.data-validation-execution-config/v1"
+	dataValidationResultVersion          = "addp.quality.data-validation-result/v1"
 )
 
-var materializationGateNamePattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+var dataValidationNamePattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 
-type MaterializationGateTableBinding struct {
-	Alias          string `json:"alias"`
-	LogicalTableID int64  `json:"logical_table_id"`
+type DataValidationTableBinding struct {
+	Alias   string `json:"alias"`
+	Locator string `json:"locator"`
 }
 
-type MaterializationGateAssertionDocument struct {
-	SchemaVersion string                         `json:"schema_version"`
-	Assertions    []MaterializationGateAssertion `json:"assertions"`
+type DataValidationAssertionDocument struct {
+	SchemaVersion string                    `json:"schema_version"`
+	Assertions    []DataValidationAssertion `json:"assertions"`
 }
 
-type MaterializationGateAssertion struct {
+type DataValidationAssertion struct {
 	AssertionKey string          `json:"assertion_key"`
 	Type         string          `json:"type"`
 	Severity     string          `json:"severity"`
@@ -79,31 +79,42 @@ type gateRowCountParams struct {
 	Max   *int64 `json:"max,omitempty"`
 }
 
-func validateMaterializationGateContract(bindings []MaterializationGateTableBinding, raw json.RawMessage) (*MaterializationGateAssertionDocument, error) {
+func validateDataValidationContract(bindings []DataValidationTableBinding, raw json.RawMessage) (*DataValidationAssertionDocument, error) {
 	if len(bindings) == 0 || len(bindings) > 100 {
 		return nil, fmt.Errorf("table_bindings must contain between 1 and 100 items")
 	}
 	aliases := make(map[string]struct{}, len(bindings))
-	logicalTables := make(map[int64]struct{}, len(bindings))
+	targets := make(map[string]struct{}, len(bindings))
+	var engineID uint
 	for _, binding := range bindings {
-		if !materializationGateNamePattern.MatchString(binding.Alias) || binding.LogicalTableID <= 0 {
+		if !dataValidationNamePattern.MatchString(binding.Alias) {
 			return nil, fmt.Errorf("table binding is invalid")
 		}
 		if _, exists := aliases[binding.Alias]; exists {
 			return nil, fmt.Errorf("table binding alias is duplicated")
 		}
-		if _, exists := logicalTables[binding.LogicalTableID]; exists {
-			return nil, fmt.Errorf("logical table binding is duplicated")
+		locator, err := resourcetree.ParseURI(binding.Locator)
+		if err != nil || locator.EngineID == 0 || locator.Type != resourcetree.TypeTable || len(locator.Path) != 2 || locator.ToURI() != binding.Locator {
+			return nil, fmt.Errorf("table locator is invalid")
+		}
+		if engineID != 0 && engineID != locator.EngineID {
+			return nil, fmt.Errorf("table bindings must use one engine")
+		}
+		engineID = locator.EngineID
+		identityBytes, _ := json.Marshal(locator.Path)
+		identity := string(identityBytes)
+		if _, exists := targets[identity]; exists {
+			return nil, fmt.Errorf("physical table binding is duplicated")
 		}
 		aliases[binding.Alias] = struct{}{}
-		logicalTables[binding.LogicalTableID] = struct{}{}
+		targets[identity] = struct{}{}
 	}
 
-	var document MaterializationGateAssertionDocument
+	var document DataValidationAssertionDocument
 	if err := decodeStrictJSON(raw, &document); err != nil {
 		return nil, fmt.Errorf("assertions document is invalid: %w", err)
 	}
-	if document.SchemaVersion != materializationGateSchemaVersion || len(document.Assertions) == 0 || len(document.Assertions) > 500 {
+	if document.SchemaVersion != dataValidationSchemaVersion || len(document.Assertions) == 0 || len(document.Assertions) > 500 {
 		return nil, fmt.Errorf("assertions document version or size is invalid")
 	}
 	keys := make(map[string]struct{}, len(document.Assertions))
@@ -127,7 +138,7 @@ func validateMaterializationGateContract(bindings []MaterializationGateTableBind
 	return &document, nil
 }
 
-func validateGateAssertion(assertion MaterializationGateAssertion, aliases map[string]struct{}) error {
+func validateGateAssertion(assertion DataValidationAssertion, aliases map[string]struct{}) error {
 	requireTable := func(table string) error {
 		if _, exists := aliases[table]; !exists {
 			return fmt.Errorf("table alias %q is not bound", table)
@@ -231,22 +242,6 @@ func validateGateCondition(condition gateCondition) error {
 		}
 	default:
 		return fmt.Errorf("condition op is unsupported")
-	}
-	return nil
-}
-
-func validateGateGroup(group *commonClient.MaterializationGroup, bindings []MaterializationGateTableBinding, expectedVersion int64) error {
-	if group == nil || (expectedVersion > 0 && group.Version != expectedVersion) || len(group.Members) != len(bindings) {
-		return fmt.Errorf("materialization group version or members changed")
-	}
-	members := make(map[int64]struct{}, len(group.Members))
-	for _, member := range group.Members {
-		members[member.LogicalTableID] = struct{}{}
-	}
-	for _, binding := range bindings {
-		if _, exists := members[binding.LogicalTableID]; !exists {
-			return fmt.Errorf("table bindings do not match materialization group")
-		}
 	}
 	return nil
 }
