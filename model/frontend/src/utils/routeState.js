@@ -66,15 +66,15 @@ export const buildLogicalTableListRouteQuery = state => buildListRouteQuery(stat
 export const resolveLogicalTableListRouteState = (routeQuery = {}) =>
   resolveListRouteState(routeQuery, { includeLayer: true })
 
-export const buildERDiagramRouteQuery = ({ domainId }) =>
-  domainId ? { domain_id: String(domainId) } : {}
+export const buildERDiagramRouteQuery = ({ domainId, includeRelated = false }) => {
+  const query = domainId ? { domain_id: String(domainId) } : {}
+  if (domainId && domainId !== 'all' && includeRelated) query.related = '1'
+  return query
+}
 
 export const resolveERDiagramRouteState = (routeQuery = {}) => {
-  const domainId = positiveInteger(routeQuery.domain_id, null)
-  const query = buildERDiagramRouteQuery({ domainId })
-  return {
-    domainId,
-    query,
-    changed: !queriesEqual(routeQuery, query)
-  }
+  const domainId = routeQuery.domain_id === 'all' ? 'all' : positiveInteger(routeQuery.domain_id, null)
+  const includeRelated = Boolean(domainId && domainId !== 'all' && routeQuery.related === '1')
+  const query = buildERDiagramRouteQuery({ domainId, includeRelated })
+  return { domainId, includeRelated, query, changed: !queriesEqual(routeQuery, query) }
 }

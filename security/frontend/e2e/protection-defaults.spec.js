@@ -130,6 +130,437 @@ test('opens the protected resource and focuses the approved grant from review hi
   expect(browserErrors).toEqual([])
 })
 
+test('keeps required feedback when submission precedes the dialog opened event', async ({ page }) => {
+  const backend = await installMockBackend(page, { governanceValidation: true })
+  backend.policies.push({
+    id: policyID, assessment_id: assessmentID, consumer_owner: 'manager', action: 'preview',
+    state: 'active', version: '1', current_revision: '1',
+    current: { revision: '1', state: 'active', effect: 'deny', rationale: '专项保护' }
+  })
+  await page.goto('/protection-enrollments')
+  await page.getByRole('button', { name: '查看详情' }).click()
+  const detailDrawer = page.locator('.el-drawer').filter({ hasText: '资源保护详情' })
+  // Keep the open event pending while controls remain stationary and usable.
+  await page.addStyleTag({ content: `
+    .dialog-fade-enter-active { animation-duration: 3s !important; }
+    .dialog-fade-enter-active .el-overlay-dialog { animation: none !important; }
+  ` })
+  await detailDrawer.getByRole('button', { name: '恢复默认保护' }).click()
+  const dialog = page.getByRole('dialog', { name: '恢复默认保护' })
+  await dialog.getByRole('button', { name: '确认恢复' }).click()
+  const error = dialog.locator('.el-form-item__error')
+  await expect(error).toHaveText('请完整填写恢复依据', { timeout: 1500 })
+  await expect(page.locator('.dialog-fade-enter-active')).toHaveCount(0)
+  await expect(error).toHaveText('请完整填写恢复依据')
+  expect(backend.policyRevokeRequests).toHaveLength(0)
+})
+
+test('keeps the default protection editor stable across drawer switches and cancelled edits', async ({ page }) => {
+  const backend = await installMockBackend(page, { governanceValidation: true })
+  const originalBaselines = structuredClone(backend.baselines)
+  const browserErrors = []
+  page.on('pageerror', error => browserErrors.push(error.message))
+  await page.goto('/sensitive-data-definitions')
+
+  await page.getByRole('row', { name: /电子邮箱/ }).getByRole('button', { name: /0 个参与/ }).click()
+  const detectorDrawer = page.locator('.el-drawer').filter({ hasText: '管理识别方式' })
+  await detectorDrawer.getByRole('button', { name: '添加识别方式' }).click()
+  const detectorDialog = page.getByRole('dialog', { name: '添加识别方式' })
+  await expect(detectorDialog.locator('.el-form-item.is-required').filter({ hasText: '识别能力' })).toBeVisible()
+  const thresholdField = detectorDialog.locator('.el-form-item.is-required').filter({ hasText: '自动采用条件' })
+  await expect(thresholdField).toBeVisible()
+  await thresholdField.getByRole('spinbutton').fill('')
+  await detectorDialog.getByRole('button', { name: '保存' }).click()
+  await expect(thresholdField.locator('.el-form-item__error')).toHaveText('请完整填写自动采用条件')
+  expect(backend.detectorCreateRequests).toHaveLength(0)
+  await detectorDialog.getByRole('button', { name: '取消' }).click()
+  await detectorDrawer.locator('.el-drawer__close-btn').click()
+
+  await page.getByRole('row', { name: /电子邮箱/ }).getByRole('button', { name: '遮盖' }).click()
+  const baselineDrawer = page.locator('.el-drawer').filter({ hasText: '管理默认保护' })
+  await expect(baselineDrawer.getByText('初始规则', { exact: true })).toBeVisible()
+  await expect(baselineDrawer.getByRole('row').filter({ hasText: '初始规则' }).getByRole('button', { name: '删除' })).toHaveCount(0)
+  await baselineDrawer.getByRole('row').filter({ hasText: '初始规则' }).getByRole('button', { name: '编辑' }).click()
+  const baselineDialog = page.getByRole('dialog', { name: '编辑默认保护规则' })
+  await expect(baselineDialog.locator('.el-form-item.is-required').filter({ hasText: '保留前部字符数' })).toBeVisible()
+  const baselineSuffixField = baselineDialog.locator('.el-form-item.is-required').filter({ hasText: '保留后部字符数' })
+  await expect(baselineSuffixField).toBeVisible()
+  await baselineSuffixField.getByRole('spinbutton').fill('')
+  await baselineDialog.getByRole('button', { name: '保存' }).click()
+  await expect(baselineSuffixField.locator('.el-form-item__error')).toHaveText('请完整填写保留后部字符数')
+  await baselineSuffixField.getByRole('spinbutton').fill('9')
+  await baselineSuffixField.getByRole('spinbutton').press('Tab')
+  await expect(baselineSuffixField.locator('.el-form-item__error')).toHaveCount(0)
+  await baselineDialog.getByRole('button', { name: '取消' }).click()
+
+  await expect(baselineDialog).not.toBeVisible()
+  await expect(baselineDrawer).toBeVisible()
+
+  const initialRule = baselineDrawer.getByRole('row').filter({ hasText: '初始规则' })
+  await initialRule.getByRole('button', { name: '编辑' }).click()
+  await expect(baselineSuffixField.getByRole('spinbutton')).toHaveValue('3')
+  await expect(baselineDialog.locator('.el-form-item__error')).toHaveCount(0)
+  await baselineSuffixField.getByRole('spinbutton').fill('')
+  await baselineDialog.getByRole('button', { name: '保存' }).click()
+  await expect(baselineSuffixField.locator('.el-form-item__error')).toHaveText('请完整填写保留后部字符数')
+  await baselineDialog.getByRole('button', { name: '取消' }).click()
+  await expect(baselineDialog).not.toBeVisible()
+  await expect(baselineDrawer).toBeVisible()
+
+  await baselineDrawer.locator('.el-drawer__close-btn').click()
+  await page.getByRole('row', { name: /电子邮箱/ }).getByRole('button', { name: '遮盖' }).click()
+  await initialRule.getByRole('button', { name: '编辑' }).click()
+  await expect(baselineSuffixField.getByRole('spinbutton')).toHaveValue('3')
+  await expect(baselineDialog.locator('.el-form-item__error')).toHaveCount(0)
+  await baselineDialog.getByRole('button', { name: '取消' }).click()
+
+  expect(backend.baselines).toEqual(originalBaselines)
+  expect(backend.unhandledRequests).toEqual([])
+  expect(browserErrors).toEqual([])
+})
+
+for (const closeMethod of ['Escape', 'backdrop']) {
+  test(`closes only the default protection editor with ${closeMethod} and resets cancelled input`, async ({ page }) => {
+    const backend = await installMockBackend(page, { governanceValidation: true })
+    const originalBaselines = structuredClone(backend.baselines)
+    await page.goto('/sensitive-data-definitions')
+    await page.getByRole('row', { name: /电子邮箱/ }).getByRole('button', { name: '遮盖' }).click()
+    const drawer = page.locator('.el-drawer').filter({ hasText: '管理默认保护' })
+    const editButton = drawer.getByRole('row').filter({ hasText: '初始规则' }).getByRole('button', { name: '编辑' })
+    const dialog = page.getByRole('dialog', { name: '编辑默认保护规则' })
+    const suffixField = dialog.locator('.el-form-item').filter({ hasText: '保留后部字符数' })
+
+    for (const value of ['9', '']) {
+      await test.step(`dismiss ${value === '' ? 'invalid' : 'changed'} input`, async () => {
+        await editButton.click()
+        await expect(suffixField.getByRole('spinbutton')).toHaveValue('3')
+        await expect(dialog.locator('.el-form-item__error')).toHaveCount(0)
+        await suffixField.getByRole('spinbutton').fill(value)
+        if (value === '') {
+          await dialog.getByRole('button', { name: '保存' }).click()
+          await expect(suffixField.locator('.el-form-item__error')).toHaveText('请完整填写保留后部字符数')
+        }
+        if (closeMethod === 'Escape') {
+          await page.keyboard.press('Escape')
+        } else {
+          // The dialog role belongs to the full-screen overlay; its corner is outside the panel.
+          await dialog.click({ position: { x: 8, y: 8 } })
+        }
+        await expect(dialog).not.toBeVisible()
+        await expect(drawer).toBeVisible()
+        await expect(editButton).toBeFocused()
+      })
+    }
+
+    await editButton.click()
+    await expect(suffixField.getByRole('spinbutton')).toHaveValue('3')
+    await expect(dialog.locator('.el-form-item__error')).toHaveCount(0)
+    await dialog.getByRole('button', { name: '取消' }).click()
+    expect(backend.baselines).toEqual(originalBaselines)
+    expect(backend.unhandledRequests).toEqual([])
+  })
+}
+
+test('locks the default protection editor until saving settles and preserves failed input for retry', async ({ page }) => {
+  const backend = await installMockBackend(page, { governanceValidation: true })
+  const saveRoutes = []
+  let holdRefresh = false
+  let pendingRefresh
+  await page.route('**/api/v1/security/protection-baselines/40', route => { saveRoutes.push(route) })
+  await page.route('**/api/v1/security/protection-baselines', route => {
+    if (holdRefresh) pendingRefresh = route
+    else return route.fallback()
+  })
+  await page.goto('/sensitive-data-definitions')
+  await page.getByRole('row', { name: /电子邮箱/ }).getByRole('button', { name: '遮盖' }).click()
+  const drawer = page.locator('.el-drawer').filter({ hasText: '管理默认保护' })
+  const editButton = drawer.getByRole('row').filter({ hasText: '初始规则' }).getByRole('button', { name: '编辑' })
+  const dialog = page.getByRole('dialog', { name: '编辑默认保护规则' })
+  const suffix = dialog.locator('.el-form-item').filter({ hasText: '保留后部字符数' }).getByRole('spinbutton')
+  const saveButton = dialog.getByRole('button', { name: '保存' })
+  const cancelButton = dialog.getByRole('button', { name: '取消' })
+  await editButton.click()
+  await suffix.fill('7')
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    await saveButton.click()
+    await expect.poll(() => saveRoutes.length).toBe(attempt + 1)
+    await expect(cancelButton).toBeDisabled()
+    await expect(suffix).toBeDisabled()
+    await expect(saveButton).toHaveClass(/is-loading/)
+    await expect(dialog.locator('.el-dialog__headerbtn')).toHaveCount(0)
+    await page.keyboard.press('Escape')
+    await dialog.click({ position: { x: 8, y: 8 } })
+    await expect(dialog).toBeVisible()
+    await expect(dialog.locator('..')).not.toHaveClass(/dialog-fade-leave-active/)
+    expect(saveRoutes[attempt].request().method()).toBe('PUT')
+    expect(saveRoutes[attempt].request().postDataJSON()).toMatchObject({ keep_suffix: 7, version: 1 })
+    if (attempt === 0) {
+      await fulfillJSON(saveRoutes[attempt], { error: '模拟保存失败', detail: '诊断详情不应展示' }, 500)
+      await expect(page.locator('.el-message--error')).toHaveText('模拟保存失败')
+      await expect(cancelButton).toBeEnabled()
+      await expect(suffix).toBeEnabled()
+      await expect(suffix).toHaveValue('7')
+      await expect(saveButton).not.toHaveClass(/is-loading/)
+    }
+  }
+  holdRefresh = true
+  Object.assign(backend.baselines[0], saveRoutes[1].request().postDataJSON(), { version: '2' })
+  await fulfillJSON(saveRoutes[1], backend.baselines[0])
+  await expect.poll(() => Boolean(pendingRefresh)).toBe(true)
+  await expect(dialog).toBeVisible()
+  await expect(cancelButton).toBeDisabled()
+  holdRefresh = false
+  await fulfillJSON(pendingRefresh, backend.baselines)
+  await expect(dialog).not.toBeVisible()
+  await expect(drawer).toBeVisible()
+  await expect(editButton).toBeFocused()
+  await editButton.click()
+  await expect(suffix).toBeEnabled()
+  await expect(suffix).toHaveValue('7')
+  await suffix.fill('9')
+  await cancelButton.click()
+  await expect(dialog).not.toBeVisible()
+  expect(saveRoutes).toHaveLength(2)
+  expect(backend.baselines[0].keep_suffix).toBe(7)
+  expect(backend.unhandledRequests).toEqual([])
+})
+
+test('recovers a committed default protection save by retrying only the failed list refresh', async ({ page }) => {
+  const backend = await installMockBackend(page, { governanceValidation: true })
+  let failRefresh = false
+  let listReads = 0
+  const writes = []
+  await page.route('**/api/v1/security/protection-baselines', route => {
+    listReads += 1
+    return failRefresh ? fulfillJSON(route, { error: '列表暂不可用' }, 503) : route.fallback()
+  })
+  await page.route('**/api/v1/security/protection-baselines/40', route => {
+    writes.push(route.request().postDataJSON())
+    Object.assign(backend.baselines[0], writes.at(-1), { version: String(writes.length + 1) })
+    failRefresh = true
+    return fulfillJSON(route, backend.baselines[0])
+  })
+  await page.goto('/sensitive-data-definitions')
+  await page.getByRole('row', { name: /电子邮箱/ }).getByRole('button', { name: '遮盖' }).click()
+  const drawer = page.locator('.el-drawer').filter({ hasText: '管理默认保护' })
+  const edit = drawer.getByRole('row').filter({ hasText: '初始规则' }).getByRole('button', { name: '编辑' })
+  await edit.click()
+  const dialog = page.getByRole('dialog', { name: '编辑默认保护规则' })
+  const suffix = dialog.locator('.el-form-item').filter({ hasText: '保留后部字符数' }).getByRole('spinbutton')
+  const readsBeforeSave = listReads
+  await suffix.fill('7')
+  await dialog.getByRole('button', { name: '保存' }).click()
+  await expect(dialog).not.toBeVisible()
+  await expect(drawer.getByText('变更已保存，但列表刷新失败。请刷新列表，无需重复保存。')).toBeVisible()
+  await expect(drawer.getByText('保留前 2 个和后 7 个字符，其余字符使用 * 遮盖', { exact: true })).toBeVisible()
+  await expect(edit).toBeDisabled()
+  await expect(page.locator('.el-message--error')).toHaveCount(0)
+  expect(listReads).toBe(readsBeforeSave + 1)
+  const refresh = drawer.getByRole('button', { name: '刷新列表', exact: true })
+  await expect(refresh).toBeFocused()
+  await refresh.click()
+  await expect(refresh).not.toHaveClass(/is-loading/)
+  await expect(edit).toBeDisabled()
+  expect(writes).toHaveLength(1)
+  failRefresh = false
+  await refresh.click()
+  await expect(refresh).not.toBeVisible()
+  await expect(drawer.locator('.baseline-bindings')).toBeFocused()
+  await edit.click()
+  await expect(suffix).toHaveValue('7')
+  await suffix.fill('8')
+  await dialog.getByRole('button', { name: '保存' }).click()
+  await expect(dialog).not.toBeVisible()
+  expect(writes.map(item => item.version)).toEqual([1, 2])
+  expect(backend.baselines[0].keep_suffix).toBe(8)
+  expect(backend.unhandledRequests).toEqual([])
+})
+
+test('preserves default protection conflict input until explicitly loading the latest rule', async ({ page }) => {
+  const backend = await installMockBackend(page, { governanceValidation: true })
+  const writes = []
+  let failReload = true
+  await page.route('**/api/v1/security/protection-baselines/40', route => {
+    if (route.request().method() === 'GET') return failReload
+      ? fulfillJSON(route, { error: '最新规则暂不可用' }, 503)
+      : fulfillJSON(route, backend.baselines[0])
+    writes.push(route.request().postDataJSON())
+    if (writes.length === 1) {
+      Object.assign(backend.baselines[0], { keep_suffix: 5, version: '2' })
+      return fulfillJSON(route, { error: '规则已被修改', error_code: 'resource_version_conflict' }, 409)
+    }
+    Object.assign(backend.baselines[0], writes.at(-1), { version: '3' })
+    return fulfillJSON(route, backend.baselines[0])
+  })
+  await page.goto('/sensitive-data-definitions')
+  await page.getByRole('row', { name: /电子邮箱/ }).getByRole('button', { name: '遮盖' }).click()
+  const drawer = page.locator('.el-drawer').filter({ hasText: '管理默认保护' })
+  await drawer.getByRole('row').filter({ hasText: '初始规则' }).getByRole('button', { name: '编辑' }).click()
+  const dialog = page.getByRole('dialog', { name: '编辑默认保护规则' })
+  const suffix = dialog.locator('.el-form-item').filter({ hasText: '保留后部字符数' }).getByRole('spinbutton')
+  const save = dialog.getByRole('button', { name: '保存' })
+  await suffix.fill('7')
+  await save.click()
+  const reload = dialog.getByRole('button', { name: '放弃当前输入并加载最新规则' })
+  await expect(reload).toBeVisible()
+  await expect(suffix).toHaveValue('7')
+  await expect(save).toBeDisabled()
+  await page.setViewportSize({ width: 390, height: 844 })
+  expect(await dialog.locator('.el-dialog').evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
+  await reload.click()
+  await expect(page.locator('.el-message--error')).toHaveText('最新规则暂不可用')
+  await expect(suffix).toHaveValue('7')
+  await expect(save).toBeDisabled()
+  expect(writes).toHaveLength(1)
+  failReload = false
+  await reload.click()
+  await expect(reload).not.toBeVisible()
+  await expect(suffix).toHaveValue('5')
+  await expect(save).toBeEnabled()
+  await suffix.fill('9')
+  await save.click()
+  await expect(dialog).not.toBeVisible()
+  expect(writes.map(item => item.version)).toEqual([1, 2])
+  expect(backend.baselines[0].keep_suffix).toBe(9)
+  expect(backend.unhandledRequests).toEqual([])
+})
+
+test('retries an initial default protection load failure without presenting an empty list', async ({ page }) => {
+  const backend = await installMockBackend(page, { governanceValidation: true })
+  await page.goto('/sensitive-data-definitions')
+  const trigger = page.getByRole('row', { name: /电子邮箱/ }).getByRole('button', { name: '遮盖' })
+  await expect(trigger).toBeVisible()
+  let failLoad = true
+  await page.route('**/api/v1/security/protection-baselines', route => failLoad
+    ? fulfillJSON(route, { error: '列表暂不可用' }, 503) : route.fallback())
+  await trigger.click()
+  const drawer = page.locator('.el-drawer').filter({ hasText: '管理默认保护' })
+  await expect(drawer.getByText('默认保护列表加载失败，请重试。')).toBeVisible()
+  await expect(drawer.locator('.el-table, .el-empty')).toHaveCount(0)
+  failLoad = false
+  await drawer.getByRole('button', { name: '刷新列表' }).click()
+  await expect(drawer.getByRole('row').filter({ hasText: '初始规则' }).getByRole('button', { name: '编辑' })).toBeEnabled()
+  expect(backend.unhandledRequests).toEqual([])
+})
+
+test('keeps created and deleted default protection results when list refresh fails', async ({ page }) => {
+  const backend = await installMockBackend(page, { governanceValidation: true })
+  let failRefresh = false
+  const creates = []
+  const deletes = []
+  await page.route('**/api/v1/security/protection-baselines', route => {
+    if (route.request().method() === 'POST') {
+      creates.push(route.request().postDataJSON())
+      const created = { ...creates[0], id: '41', version: '1', keep_suffix: 6 }
+      backend.baselines.push(created)
+      failRefresh = true
+      return fulfillJSON(route, created, 201)
+    }
+    return failRefresh ? fulfillJSON(route, { error: '列表暂不可用' }, 503) : route.fallback()
+  })
+  await page.route('**/api/v1/security/protection-baselines/41', route => {
+    deletes.push(route.request().postDataJSON())
+    if (deletes.length === 1) {
+      backend.baselines.find(item => item.id === '41').version = '2'
+      return fulfillJSON(route, { error: '规则已被修改', error_code: 'resource_version_conflict' }, 409)
+    }
+    backend.baselines = backend.baselines.filter(item => item.id !== '41')
+    failRefresh = true
+    return fulfillJSON(route, { message: '已删除' })
+  })
+  await page.goto('/sensitive-data-definitions')
+  await page.getByRole('row', { name: /电子邮箱/ }).getByRole('button', { name: '遮盖' }).click()
+  const drawer = page.locator('.el-drawer').filter({ hasText: '管理默认保护' })
+  await drawer.getByRole('button', { name: '新增默认保护规则' }).click()
+  const dialog = page.getByRole('dialog', { name: '新增默认保护规则' })
+  await dialog.locator('.el-form-item').filter({ hasText: '保留后部字符数' }).getByRole('spinbutton').fill('7')
+  await dialog.getByRole('button', { name: '保存' }).click()
+  await expect(dialog).not.toBeVisible()
+  const refresh = drawer.getByRole('button', { name: '刷新列表' })
+  await expect(refresh).toBeFocused()
+  const createdRow = drawer.getByRole('row').filter({ hasText: '高风险（l4）' })
+  await expect(createdRow).toContainText('后 6 个字符')
+  await expect(drawer.getByRole('button', { name: '新增默认保护规则' })).toHaveCount(0)
+  failRefresh = false
+  await refresh.click()
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    await createdRow.getByRole('button', { name: '删除' }).click()
+    await page.locator('.el-message-box').getByRole('button', { name: '删除', exact: true }).click()
+    if (attempt === 0) {
+      await expect(drawer.getByText('规则已被其他操作修改，请刷新列表后重新确认。')).toBeVisible()
+      await expect(createdRow.getByRole('button', { name: '删除' })).toBeDisabled()
+      await refresh.click()
+    }
+  }
+  await expect(createdRow).toHaveCount(0)
+  await expect(drawer.getByText('变更已保存，但列表刷新失败。请刷新列表，无需重复保存。')).toBeVisible()
+  failRefresh = false
+  await refresh.click()
+  await expect(drawer.getByRole('button', { name: '新增默认保护规则' })).toBeEnabled()
+  expect(creates).toHaveLength(1)
+  expect(deletes.map(item => item.version)).toEqual([1, 2])
+  expect(backend.baselines).toHaveLength(1)
+  expect(backend.unhandledRequests).toEqual([])
+  await expect(page.locator('.el-message--error')).toHaveCount(0)
+})
+
+test('ignores a late default protection save response after leaving the editor page', async ({ page }) => {
+  const backend = await installMockBackend(page, { governanceValidation: true })
+  let pendingSave
+  let listReads = 0
+  await page.route('**/api/v1/security/protection-baselines/40', route => { pendingSave = route })
+  await page.route('**/api/v1/security/protection-baselines', route => { listReads += 1; return route.fallback() })
+  await page.goto('/classification-grading')
+  await page.getByRole('menuitem', { name: '敏感数据定义' }).click()
+  await page.getByRole('row', { name: /电子邮箱/ }).getByRole('button', { name: '遮盖' }).click()
+  const drawer = page.locator('.el-drawer').filter({ hasText: '管理默认保护' })
+  await drawer.getByRole('row').filter({ hasText: '初始规则' }).getByRole('button', { name: '编辑' }).click()
+  await page.getByRole('dialog', { name: '编辑默认保护规则' }).getByRole('button', { name: '保存' }).click()
+  await expect.poll(() => Boolean(pendingSave)).toBe(true)
+  const previousReads = listReads
+  await page.goBack()
+  await expect(page).toHaveURL(/classification-grading/)
+  const responsePromise = page.waitForResponse('**/api/v1/security/protection-baselines/40')
+  await fulfillJSON(pendingSave, { ...backend.baselines[0], version: '2' })
+  await (await responsePromise).finished()
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+  await expect(page.locator('.el-message')).toHaveCount(0)
+  expect(listReads).toBe(previousReads)
+  expect(backend.unhandledRequests).toEqual([])
+})
+
+for (const failure of [
+  { name: 'missing error', body: { detail: '诊断详情不应展示' } },
+  { name: 'blank error', body: { error: '   ' } },
+  { name: 'non-text error', body: { error: { message: '非规范内容不应展示' } } },
+  { name: 'network failure', network: true }
+]) {
+  test(`shows localized fallback for default protection save with ${failure.name}`, async ({ page }) => {
+    const backend = await installMockBackend(page, { governanceValidation: true })
+    const originalBaselines = structuredClone(backend.baselines)
+    let attempts = 0
+    await page.route('**/api/v1/security/protection-baselines/40', route => {
+      attempts += 1
+      return failure.network ? route.abort('failed') : fulfillJSON(route, failure.body, 500)
+    })
+    await page.goto('/sensitive-data-definitions')
+    await page.getByRole('row', { name: /电子邮箱/ }).getByRole('button', { name: '遮盖' }).click()
+    const drawer = page.locator('.el-drawer').filter({ hasText: '管理默认保护' })
+    await drawer.getByRole('row').filter({ hasText: '初始规则' }).getByRole('button', { name: '编辑' }).click()
+    const dialog = page.getByRole('dialog', { name: '编辑默认保护规则' })
+    const suffix = dialog.locator('.el-form-item').filter({ hasText: '保留后部字符数' }).getByRole('spinbutton')
+    await suffix.fill('7')
+    await dialog.getByRole('button', { name: '保存' }).click()
+    await expect(page.locator('.el-message--error')).toHaveText('操作失败')
+    await expect(suffix).toBeEnabled()
+    await expect(suffix).toHaveValue('7')
+    await expect(dialog.getByRole('button', { name: '取消' })).toBeEnabled()
+    expect(attempts).toBe(1)
+    expect(backend.baselines).toEqual(originalBaselines)
+    expect(backend.unhandledRequests).toEqual([])
+  })
+}
+
 test('creates a sensitive definition and safely revises, tightens, restores, and revokes protection', async ({ page }) => {
   const backend = await installMockBackend(page)
   const browserErrors = []
@@ -181,37 +612,6 @@ test('creates a sensitive definition and safely revises, tightens, restores, and
     }
   })
   await expect(page.getByRole('row', { name: /客户手机号/ })).toContainText('遮盖')
-
-  await page.getByRole('row', { name: /客户手机号/ }).getByRole('button', { name: /0 个参与/ }).click()
-  const detectorDrawer = page.locator('.el-drawer').filter({ hasText: '管理识别方式' })
-  await detectorDrawer.getByRole('button', { name: '添加识别方式' }).click()
-  const detectorDialog = page.getByRole('dialog', { name: '添加识别方式' })
-  await expect(detectorDialog.locator('.el-form-item.is-required').filter({ hasText: '识别能力' })).toBeVisible()
-  const thresholdField = detectorDialog.locator('.el-form-item.is-required').filter({ hasText: '自动采用条件' })
-  await expect(thresholdField).toBeVisible()
-  await thresholdField.getByRole('spinbutton').fill('')
-  await detectorDialog.getByRole('button', { name: '保存' }).click()
-  await expect(thresholdField.locator('.el-form-item__error')).toHaveText('请完整填写自动采用条件')
-  expect(backend.detectorCreateRequests).toHaveLength(0)
-  await detectorDialog.getByRole('button', { name: '取消' }).click()
-  await detectorDrawer.locator('.el-drawer__close-btn').click()
-
-  await page.getByRole('row', { name: /客户手机号/ }).getByRole('button', { name: '遮盖' }).click()
-  const baselineDrawer = page.locator('.el-drawer').filter({ hasText: '管理默认保护' })
-  await expect(baselineDrawer.getByText('初始规则', { exact: true })).toBeVisible()
-  await expect(baselineDrawer.getByRole('row').filter({ hasText: '初始规则' }).getByRole('button', { name: '删除' })).toHaveCount(0)
-  await baselineDrawer.getByRole('row').filter({ hasText: '初始规则' }).getByRole('button', { name: '编辑' }).click()
-  const baselineDialog = page.getByRole('dialog', { name: '编辑默认保护规则' })
-  await expect(baselineDialog.locator('.el-form-item.is-required').filter({ hasText: '保留前部字符数' })).toBeVisible()
-  const baselineSuffixField = baselineDialog.locator('.el-form-item.is-required').filter({ hasText: '保留后部字符数' })
-  await expect(baselineSuffixField).toBeVisible()
-  await baselineSuffixField.getByRole('spinbutton').fill('')
-  await baselineDialog.getByRole('button', { name: '保存' }).click()
-  await expect(baselineSuffixField.locator('.el-form-item__error')).toHaveText('请完整填写保留后部字符数')
-  await baselineSuffixField.getByRole('spinbutton').fill('4')
-  await baselineSuffixField.getByRole('spinbutton').press('Tab')
-  await expect(baselineSuffixField.locator('.el-form-item__error')).toHaveCount(0)
-  await baselineDialog.getByRole('button', { name: '取消' }).click()
 
   await page.goto('/protection-enrollments')
   const accessReviewCard = page.locator('.access-review-card')

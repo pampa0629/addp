@@ -22,6 +22,7 @@ const enforceEntryChunkBudget = () => ({
 })
 
 export default defineConfig({
+  cacheDir: isE2E ? 'node_modules/.vite-e2e' : 'node_modules/.vite',
   plugins: [
     vue(),
     Components({ resolvers: [ElementPlusResolver({ importStyle: false })] }),

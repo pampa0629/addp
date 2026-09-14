@@ -24,18 +24,6 @@ const routes = [
         meta: { requiresAuth: true, title: '业务域管理' }
       },
       {
-        path: 'collections',
-        name: 'StandardCollectionList',
-        component: () => import('../views/StandardCollectionList.vue'),
-        meta: { requiresAuth: true, title: '标准集管理' }
-      },
-      {
-        path: 'collections/:id',
-        name: 'StandardCollectionDetail',
-        component: () => import('../views/StandardCollectionDetail.vue'),
-        meta: { requiresAuth: true, title: '标准集详情' }
-      },
-      {
         path: 'glossaries',
         name: 'GlossaryList',
         component: () => import('../views/GlossaryList.vue'),

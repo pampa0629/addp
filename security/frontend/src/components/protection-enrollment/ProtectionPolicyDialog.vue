@@ -13,18 +13,14 @@
     @closed="emit('closed')"
   >
     <ProtectionPolicyForm
-      v-if="assessment"
+      v-if="presentation"
       ref="formRef"
       :mode="mode"
-      :assessment="assessment"
-      :assessment-summary="assessmentSummary"
-      :protection-summary="protectionSummary"
+      :presentation="presentation"
       :conflict="conflict"
       :reloading="reloading"
       :form="form"
       :rules="rules"
-      :effects="effects"
-      :effect-label="effectLabel"
       @reload="emit('reload')"
     />
     <template #footer>
@@ -46,16 +42,12 @@ import ProtectionPolicyForm from './ProtectionPolicyForm.vue'
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
   mode: { type: String, required: true, validator: value => ['tighten', 'restore'].includes(value) },
-  assessment: { type: Object, default: null },
-  assessmentSummary: { type: String, default: '' },
-  protectionSummary: { type: String, default: '' },
+  presentation: { type: Object, default: null },
   saving: { type: Boolean, default: false },
   reloading: { type: Boolean, default: false },
   conflict: { type: Boolean, default: false },
   form: { type: Object, required: true },
-  rules: { type: Object, required: true },
-  effects: { type: Array, default: () => [] },
-  effectLabel: { type: Function, required: true }
+  rules: { type: Object, required: true }
 })
 
 const emit = defineEmits(['update:modelValue', 'reload', 'close', 'closed', 'submit'])
@@ -75,7 +67,6 @@ function clearValidate() {
 
 function focusPrimary() {
   if (props.mode !== 'restore') return
-  clearValidate()
   const button = cancelButton.value?.$el || cancelButton.value
   button?.focus?.()
 }

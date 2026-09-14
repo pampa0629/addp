@@ -44,7 +44,8 @@ func TestEnrollmentLifecycleAgainstPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	releasedAt := time.Now().UTC()
+	// Include sub-microsecond precision so the test does not depend on the host clock.
+	releasedAt := time.Date(2026, time.September, 13, 13, 10, 47, 497390123, time.UTC)
 	releaseRequestedAt := releasedAt.Add(-5 * time.Minute)
 	if err := tx.Model(&models.ProtectionEnrollment{}).Where("tenant_id = ? AND id = ?", 7, created.ID).Updates(map[string]any{
 		"state": models.EnrollmentStateReleased, "release_basis": models.ReleaseBasisManual,
@@ -57,6 +58,11 @@ func TestEnrollmentLifecycleAgainstPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if source.ReleaseRequestedAt == nil || !source.ReleaseRequestedAt.Equal(releaseRequestedAt.Truncate(time.Microsecond)) || source.ReleasedAt == nil || !source.ReleasedAt.Equal(releasedAt.Truncate(time.Microsecond)) {
+		t.Fatalf("postgres persisted audit timestamps: requested=%v, released=%v", source.ReleaseRequestedAt, source.ReleasedAt)
+	}
+	// Re-enrollment must preserve the persisted audit exactly, not the input's nanoseconds.
+	persistedReleaseRequestedAt, persistedReleasedAt := *source.ReleaseRequestedAt, *source.ReleasedAt
 	result, err := service.ReEnroll(context.Background(), 7, 21, source.ID, models.ReEnrollProtectionEnrollmentRequest{Version: source.Version})
 	if err != nil {
 		t.Fatal(err)
@@ -79,8 +85,14 @@ func TestEnrollmentLifecycleAgainstPostgres(t *testing.T) {
 		t.Fatalf("postgres duplicate active lifecycle error = %v", err)
 	}
 	unchanged, err := service.Get(context.Background(), 7, source.ID)
-	if err != nil || unchanged.State != models.EnrollmentStateReleased || unchanged.Version != source.Version+1 || unchanged.ReleaseBasis != models.ReleaseBasisManual || unchanged.ReleaseReason != "postgres lifecycle test" || unchanged.ReleaseRequestedBy == nil || *unchanged.ReleaseRequestedBy != 17 || unchanged.ReleaseRequestedAt == nil || !unchanged.ReleaseRequestedAt.Equal(releaseRequestedAt) || unchanged.ReleasedAt == nil || !unchanged.ReleasedAt.Equal(releasedAt) {
+	if err != nil || unchanged.State != models.EnrollmentStateReleased || unchanged.Version != source.Version+1 || unchanged.ReleaseBasis != models.ReleaseBasisManual || unchanged.ReleaseReason != "postgres lifecycle test" || unchanged.ReleaseRequestedBy == nil || *unchanged.ReleaseRequestedBy != 17 {
 		t.Fatalf("postgres released audit = %#v, err=%v", unchanged, err)
+	}
+	if unchanged.ReleaseRequestedAt == nil || !unchanged.ReleaseRequestedAt.Equal(persistedReleaseRequestedAt) {
+		t.Fatalf("postgres release_requested_at changed: got=%v, want=%v", unchanged.ReleaseRequestedAt, persistedReleaseRequestedAt)
+	}
+	if unchanged.ReleasedAt == nil || !unchanged.ReleasedAt.Equal(persistedReleasedAt) {
+		t.Fatalf("postgres released_at changed: got=%v, want=%v", unchanged.ReleasedAt, persistedReleasedAt)
 	}
 }
 

@@ -6,6 +6,9 @@ import path from 'path'
 import { resolve } from 'path'
 
 export default defineConfig({
+  // Browser gates must not replace dependency chunks used by the live dev server.
+  cacheDir: process.env.ADDP_E2E === '1' ? 'node_modules/.vite-e2e' : 'node_modules/.vite',
+  optimizeDeps: { include: ['element-plus/es'] },
   plugins: [
     vue(),
     Components({ resolvers: [ElementPlusResolver({ importStyle: false })] })

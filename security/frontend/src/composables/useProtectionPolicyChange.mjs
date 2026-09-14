@@ -199,6 +199,7 @@ export function useProtectionPolicyChange({
 
   function focusRestoreDialogPrimary() {
     nextTick(() => {
+      restoreDialogRef.value?.clearValidate?.()
       restoreDialogRef.value?.focusPrimary?.()
     })
   }

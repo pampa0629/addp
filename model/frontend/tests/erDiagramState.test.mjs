@@ -23,7 +23,7 @@ test('business-domain filter keeps only entities and fully visible relations in 
 })
 
 test('unfiltered ER diagram still rejects relations whose endpoints are missing', () => {
-  assert.deepEqual(filterERDiagramByDomain(entities, relations), {
+  assert.deepEqual(filterERDiagramByDomain(entities, relations, 'all'), {
     entities,
     relations: relations.slice(0, 3)
   })
@@ -33,5 +33,12 @@ test('unknown business domain returns a coherent empty diagram', () => {
   assert.deepEqual(filterERDiagramByDomain(entities, relations, 999), {
     entities: [],
     relations: []
+  })
+})
+
+test('missing domain prompts for selection; related view expands only one hop', () => {
+  assert.deepEqual(filterERDiagramByDomain(entities, relations), { entities: [], relations: [] })
+  assert.deepEqual(filterERDiagramByDomain(entities, relations, 2, true), {
+    entities, relations: relations.slice(0, 2)
   })
 })

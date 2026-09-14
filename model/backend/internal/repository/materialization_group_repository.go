@@ -169,3 +169,12 @@ func lockMaterializationGroupDefinitions(tx *gorm.DB, tenantID int64, expectedVe
 }
 
 func IsMaterializationGroupNotFound(err error) bool { return errors.Is(err, gorm.ErrRecordNotFound) }
+
+func (r *MaterializationGroupRepository) ListForLogicalTable(ctx context.Context, tenantID, tableID int64) ([]models.MaterializationGroupSummary, error) {
+	groups := make([]models.MaterializationGroupSummary, 0)
+	err := r.db.WithContext(ctx).Table("model.materialization_groups AS g").Select("g.id, g.name").
+		Joins("JOIN model.materialization_group_members AS m ON m.group_id = g.id AND m.tenant_id = g.tenant_id").
+		Where("g.tenant_id = ? AND m.logical_table_id = ?", tenantID, tableID).
+		Order("g.id ASC").Scan(&groups).Error
+	return groups, err
+}

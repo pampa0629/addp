@@ -50,12 +50,8 @@ func TestPublicCreateEntryPointsRejectInvalidStableCodes(t *testing.T) {
 			_, err := NewDomainService(nil, refs, nil).CreateDomain(&models.CreateDomainRequest{Code: invalid}, 7, 9)
 			return err
 		}},
-		{name: "standard collection", call: func() error {
-			_, err := NewStandardCollectionService(nil, refs, nil).Create(t.Context(), 7, 9, &models.CreateStandardCollectionRequest{Code: invalid})
-			return err
-		}},
 		{name: "glossary", call: func() error {
-			_, err := NewGlossaryService(nil, refs).CreateGlossary(&models.CreateGlossaryRequest{ScopeType: models.StandardScopeTenantCommon, Code: invalid}, 7, 9)
+			_, err := NewGlossaryService(nil, refs).CreateGlossary(&models.CreateGlossaryRequest{ScopeType: models.StandardScopeTenantCommon, Code: invalid}, 7, 9, "初始创建")
 			return err
 		}},
 		{name: "element", call: func() error {

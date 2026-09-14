@@ -407,7 +407,8 @@ test('submits a new glossary only once when the confirm action fires twice', asy
   await dialog.getByRole('textbox', { name: '编码' }).fill('duplicate_submit')
   await dialog.getByRole('textbox', { name: '术语名称' }).fill('重复提交测试')
   await dialog.getByRole('textbox', { name: '定义' }).fill('验证写请求只能发送一次')
-  await dialog.getByRole('textbox', { name: '变更说明' }).fill('初始修订')
+  await expect(dialog.getByRole('textbox', { name: '变更说明' })).toHaveCount(0)
+  const createRequest = page.waitForRequest(request => request.method() === 'POST' && request.url().endsWith('/glossaries'))
   const confirmButton = dialog.getByRole('button', { name: '确定' })
   await confirmButton.evaluate(button => {
     button.click()
@@ -416,6 +417,7 @@ test('submits a new glossary only once when the confirm action fires twice', asy
 
   await expect(dialog).not.toBeVisible()
   expect(backend.getGlossaryCreateRequests()).toBe(1)
+  expect((await createRequest).postDataJSON()).not.toHaveProperty('change_summary')
 })
 
 test('hides glossary delete after any publication history exists', async ({ page }) => {

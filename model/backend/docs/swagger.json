@@ -1364,7 +1364,7 @@
                 "tags": [
                     "Model"
                 ],
-                "summary": "重新打开实体 | Reopen entity",
+                "summary": "将实体退回草稿 | Return entity to draft",
                 "parameters": [
                     {
                         "type": "integer",
@@ -1385,7 +1385,7 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "重新打开成功 | Reopened successfully",
+                        "description": "退回草稿成功 | Returned to draft successfully",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_model_internal_models.Entity"
                         }
@@ -1972,9 +1972,9 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "逻辑表详情 | Logical table details",
+                        "description": "逻辑表及所属物化组摘要 | Logical table with materialization group summaries",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_model_internal_models.LogicalTable"
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.LogicalTableDetail"
                         }
                     },
                     "400": {
@@ -3928,13 +3928,14 @@
                         "BearerAuth": []
                     }
                 ],
+                "description": "退回草稿并清空字段冻结修订；物化组成员必须先移出组。 | Return to draft and clear frozen field revisions; materialization group members must be removed from their group first.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Model"
                 ],
-                "summary": "重新打开逻辑表 | Reopen logical table",
+                "summary": "将逻辑表退回草稿 | Return logical table to draft",
                 "parameters": [
                     {
                         "type": "integer",
@@ -3955,7 +3956,7 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "重新打开成功 | Reopened successfully",
+                        "description": "退回草稿成功 | Returned to draft successfully",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_model_internal_models.LogicalTable"
                         }
@@ -3985,7 +3986,7 @@
                         }
                     },
                     "409": {
-                        "description": "逻辑表状态冲突 | Logical table state conflict",
+                        "description": "版本或状态冲突；物化组成员返回 materialization_group_member_conflict | Version or state conflict; group members return materialization_group_member_conflict",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
@@ -5833,6 +5834,83 @@
                 }
             }
         },
+        "github_com_addp_model_internal_models.LogicalTableDetail": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "description": "英文表名（物化时使用）",
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "integer"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "domain_id": {
+                    "type": "integer"
+                },
+                "entity_id": {
+                    "description": "关联实体（可选）",
+                    "type": "integer"
+                },
+                "grain_description": {
+                    "description": "仅 fact 表：粒度声明（如\"每行代表一笔支付事务\"）",
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "layer": {
+                    "description": "当前 Tenant 中已存在的 DWLayer 编码",
+                    "type": "string"
+                },
+                "materialization": {
+                    "description": "物化配置",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.JSONB"
+                        }
+                    ]
+                },
+                "materialization_groups": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_model_internal_models.MaterializationGroupSummary"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "scd_type": {
+                    "description": "仅 dimension 表：缓慢变化维类型 0=静态/1=覆盖/2=拉链/3=混合",
+                    "type": "integer"
+                },
+                "status": {
+                    "description": "draft/approved",
+                    "type": "string"
+                },
+                "table_type": {
+                    "description": "建模角色：entity/fact/dimension",
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "integer"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
         "github_com_addp_model_internal_models.LogicalTableListResponse": {
             "type": "object",
             "properties": {
@@ -5911,6 +5989,17 @@
                 },
                 "tenant_id": {
                     "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_model_internal_models.MaterializationGroupSummary": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
                 }
             }
         },

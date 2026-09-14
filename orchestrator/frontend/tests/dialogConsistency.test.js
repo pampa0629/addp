@@ -75,15 +75,9 @@ test('orchestration execution requires confirmation and locks duplicate submissi
   const zhCn = JSON.parse(await readFile(resolve('src/i18n/zh-cn.json'), 'utf8'))
   const en = JSON.parse(await readFile(resolve('src/i18n/en.json'), 'utf8'))
 
-  assert.match(source, /:loading="executingId === scope\.row\.id"/)
   assert.match(source, /:disabled="executingId !== null"/)
   assert.match(source, /const executingId = ref\(null\)/)
-  assert.match(source, /orchestrationList\.executeConfirmTitle/)
-  assert.match(source, /orchestrationList\.executeConfirmMessage/)
-  assert.match(source, /orchestrationList\.executeConfirmAction/)
-  assert.match(source, /orchestrationList\.executeConfirmCancel/)
-  assert.ok(source.indexOf('ElMessageBox.confirm(') < source.indexOf('orchestrationAPI.execute(row.id)'))
+  assert.match(source, /OrchestrationExecuteButton/)
+  assert.doesNotMatch(source, /async function handleExecute/)
 
-  assert.equal(zhCn.orchestrator.orchestrationList.executeConfirmAction, '执行')
-  assert.equal(en.orchestrator.orchestrationList.executeConfirmAction, 'Execute')
 })

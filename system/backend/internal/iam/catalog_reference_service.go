@@ -98,18 +98,6 @@ func (s *CatalogReferenceService) Resolve(
 	return s.resolve(ctx, tenantID, references, CatalogSubjectTypeDepartment, CatalogSubjectTypeUser, CatalogSubjectTypeProjectGroup)
 }
 
-func (s *CatalogReferenceService) ResolveStandardGovernanceUsers(
-	ctx context.Context,
-	tenantID int64,
-	serviceClientID string,
-	references []CatalogReference,
-) ([]CatalogReferenceResolution, error) {
-	if serviceClientID != "addp-standard" {
-		return nil, ErrInvalidCatalogReferenceRequest
-	}
-	return s.resolve(ctx, tenantID, references, CatalogSubjectTypeUser)
-}
-
 func (s *CatalogReferenceService) ResolveSecurityAccessActors(
 	ctx context.Context,
 	tenantID int64,

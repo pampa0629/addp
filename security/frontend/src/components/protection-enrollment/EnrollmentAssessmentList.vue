@@ -1,7 +1,7 @@
 <template>
   <section class="manual-assessment-list">
     <h5>{{ t('security.assessment.manualConclusions') }}</h5>
-    <article v-for="row in rows" :key="row.id" class="manual-assessment-card">
+    <article v-for="row in presentation.rows" :key="row.id" class="manual-assessment-card">
       <div>
         <strong>{{ row.componentKey }}</strong>
         <span>{{ row.summary }}</span>
@@ -15,7 +15,7 @@
           {{ row.conclusion.label }}
         </el-tag>
         <el-button link @click="emit('history', row.assessment)">{{ t('security.assessment.history') }}</el-button>
-        <el-button v-if="canUpdate" link @click="emit('revise', row.assessment)">
+        <el-button v-if="presentation.permissions.canUpdate" link @click="emit('revise', row.assessment)">
           {{ t('security.assessment.reviseConclusion') }}
         </el-button>
         <el-button
@@ -27,14 +27,14 @@
           {{ row.actions.configurePolicyLabel }}
         </el-button>
         <el-button
-          v-if="row.actions.canRestorePolicy && canRevokePolicies"
+          v-if="row.actions.canRestorePolicy && presentation.permissions.canRevokePolicies"
           link
           @click="emit('restorePolicy', row.assessment)"
         >
           {{ t('security.policy.restoreDefault') }}
         </el-button>
         <el-button
-          v-if="row.actions.canRevokeAssessment && canUpdate"
+          v-if="row.actions.canRevokeAssessment && presentation.permissions.canUpdate"
           link
           type="danger"
           @click="emit('revoke', row.assessment)"
@@ -47,19 +47,14 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-const props = defineProps({
-  assessments: { type: Array, required: true },
-  canUpdate: { type: Boolean, default: false },
-  canRevokePolicies: { type: Boolean, default: false },
+defineProps({
   presentation: { type: Object, required: true }
 })
 
 const emit = defineEmits(['history', 'revise', 'configurePolicy', 'restorePolicy', 'revoke'])
 const { t } = useI18n()
-const rows = computed(() => props.assessments.map(assessment => props.presentation.row(assessment)))
 </script>
 
 <style scoped>

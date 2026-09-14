@@ -90,6 +90,13 @@ Authorization Request 的读取和批准都必须复核当前 User AuthContext�
 不是“外部 OAuth Client”。它固定使用 `client_credentials`、`client_secret_basic`、`addp.api`
 Scope/Audience，不配置 redirect URI，也不进入 `/tenant/oauth_clients` 查询或管理路径。
 
+Tenant 与 Platform Client Credentials 的 Service Access Token 最长有效期均为 5 分钟。
+System 以数据库时间确定过期点，并在签发事务提交前以数据库当前时间计算响应的
+`expires_in`（向下取整的剩余秒数，范围 1–300）。不得把数据库过期点与应用服务器
+时钟相减，也不得通过放宽客户端上限或把越界结果截成 300 秒来掩盖时钟问题。
+若签发期间已不足 1 秒、数据库时钟回退导致剩余时间超过 5 分钟，或无法读取当前
+数据库时间，必须回滚本次签发并返回 HTTP 503 / `temporarily_unavailable`。
+
 服务账号管理 API 固定为：
 
 | Method | Path | 语义 |

@@ -217,7 +217,7 @@ Model 第一阶段资源回收执行方只治理 Model-owned 建模状态：
 
 Standard 第一阶段资源回收执行方只治理 Standard-owned 标准治理状态和标准文档文件：
 
-- `tenant.deleted` 时，扫描该租户下 Standard-owned 业务域、标准集、术语、数据元、码值集、单位、指标定义、标准文档及其修订和关联状态；维度层级属于 Model，安全分类分级属于 Security。
+- `tenant.deleted` 时，扫描该租户下 Standard-owned 业务域、术语、数据元、码值集、单位、指标定义、标准文档及其修订和关联状态；维度层级属于 Model，安全分类分级属于 Security。
 - `logical_cleanup` 将有状态的术语、数据元和指标置为 `deprecated`；标准文档文件不因逻辑清理删除。
 - `physical_cleanup` 在租户删除范围内删除 Standard-owned PostgreSQL 状态记录，并删除 `standard.documents.file_key` 明确登记的 `standard` bucket 文档对象。
 - 单个标准文档由用户显式删除时，可以同步删除 PG 状态和 `file_key` 指向的 MinIO 文件。

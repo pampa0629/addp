@@ -8,6 +8,7 @@
     :close-on-press-escape="!saving"
     :show-close="!saving"
     @update:model-value="emit('update:modelValue', $event)"
+    @open="clearValidate"
     @opened="focusPrimary"
     @closed="emit('closed')"
   >
@@ -77,7 +78,6 @@ function clearValidate() {
 }
 
 function focusPrimary() {
-  clearValidate()
   const button = cancelButton.value?.$el || cancelButton.value
   button?.focus?.()
 }

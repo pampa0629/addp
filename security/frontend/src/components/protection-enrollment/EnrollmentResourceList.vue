@@ -9,7 +9,7 @@
     </div>
 
     <el-card class="enrollment-card" shadow="never">
-      <el-table v-loading="loading" :data="presentedRows" row-key="id">
+      <el-table v-loading="loading" :data="presentation.rows" row-key="id">
         <el-table-column :label="t('security.enrollment.resource')" min-width="320">
           <template #default="{ row }">
             <EnrollmentResourceIdentity
@@ -68,7 +68,7 @@
         </el-table-column>
       </el-table>
 
-      <el-empty v-if="!loading && rows.length === 0" :description="emptyDescription">
+      <el-empty v-if="!loading && presentation.rows.length === 0" :description="emptyDescription">
         <el-button v-if="canCreate && scope === 'current'" type="primary" @click="emit('create')">{{ t('security.enrollment.create') }}</el-button>
       </el-empty>
 
@@ -93,7 +93,6 @@ import { useI18n } from 'vue-i18n'
 import EnrollmentResourceIdentity from './EnrollmentResourceIdentity.vue'
 
 const props = defineProps({
-  rows: { type: Array, required: true },
   total: { type: Number, required: true },
   page: { type: Number, required: true },
   pageSize: { type: Number, required: true },
@@ -127,7 +126,6 @@ const pageSizeModel = computed({
   get: () => props.pageSize,
   set: value => emit('update:pageSize', value)
 })
-const presentedRows = computed(() => props.rows.map(row => props.presentation.row(row)))
 const emptyDescription = computed(() => t(`security.enrollment.emptyStates.${props.scope}`))
 </script>
 

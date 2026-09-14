@@ -82,3 +82,9 @@ curl http://localhost:8084/health/ready
 - `orchestrator/docs/tables/executions表.md`
 - `docs/spec/addp引擎能力声明规范.md`
 - `docs/spec/addp工作流计算引擎接口规范.md`
+
+- 编排列表支持按任务引用 `module + task_type + task_id` 筛选，三者必须同时提供；匹配编排任一步骤的完整任务身份。筛选保存在 URL，并随编辑/执行历史的返回保留；无匹配展示空状态，非法筛选显示错误，不降级为全部编排。共享 `buildOrchestrationListRoute` 为跨模块入口的唯一构造器。
+
+- 前端门禁 `make test-orchestrator-frontend` 包含确定性测试、`test:e2e:routes` 关联编排路由浏览器回归及构建；Platform CI 的 Orchestrator 矩阵安装 Chromium 后执行同一入口。已有视觉截图用例仍由完整 `npm run test:e2e` 执行。
+
+Model 可在页内通过共享关联流程对话框消费现有 list/get/execute API；完整流程执行仍由 Orchestrator 拥有。执行确认统一为共享 OrchestrationExecuteButton，不保留模块内重复确认实现。

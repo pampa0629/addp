@@ -83,7 +83,6 @@ func main() {
 	metricCatRepo := repository.NewMetricCategoryRepository(db)
 	metricRepo := repository.NewMetricRepository(db)
 	documentRepo := repository.NewDocumentRepository(db)
-	collectionRepo := repository.NewStandardCollectionRepository(db)
 	tenantReferenceRepo := repository.NewTenantReferenceRepository(db)
 	referenceResolutionRepo := repository.NewReferenceResolutionRepository(db)
 	catalogResourceRepo := repository.NewCatalogResourceRepository(db)
@@ -123,7 +122,6 @@ func main() {
 		CopilotURL:         cfg.CopilotURL,
 		ServiceTokenSource: serviceTokenSource,
 	})
-	collectionSvc := service.NewStandardCollectionService(collectionRepo, tenantReferenceRepo, systemClient)
 	defer documentSvc.Stop()
 	referenceResolutionSvc := service.NewReferenceResolutionService(referenceResolutionRepo)
 	elementRevisionResolutionSvc := service.NewElementRevisionResolutionService(elementRepo, codeSetRepo)
@@ -147,7 +145,6 @@ func main() {
 		unitSvc,
 		metricSvc,
 		documentSvc,
-		collectionSvc,
 		referenceResolutionSvc,
 		elementRevisionResolutionSvc,
 		catalogResourceSvc,

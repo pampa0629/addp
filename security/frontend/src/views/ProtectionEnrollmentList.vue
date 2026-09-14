@@ -35,13 +35,10 @@
         v-model:created-range="accessRequestCreatedRange"
         v-model:page="accessRequestPage"
         v-model:page-size="accessRequestPageSize"
-        :rows="accessRequestRows"
         :total="accessRequestTotal"
         :loading="accessRequestLoading"
         :filters="accessRequestFilters"
-        :can-read-exemptions="canReadExemptions"
-        :release-actor-label="releaseActorLabel"
-        :format-date-time="formatDateTime"
+        :presentation="accessRequestReviewPresentation"
         @update:filters="updateAccessRequestFilters"
         @scope-change="handleAccessRequestScopeChange"
         @apply-filters="applyAccessRequestFilters"
@@ -54,7 +51,6 @@
         v-model:scope="listScope"
         v-model:page="currentPage"
         v-model:page-size="pageSize"
-        :rows="rows"
         :total="total"
         :loading="loading"
         :can-create="canCreate"
@@ -73,11 +69,8 @@
       v-model:detector-version="reviewQueueDetectorVersion"
       v-model:page="reviewQueuePage"
       v-model:page-size="reviewQueuePageSize"
-      :rows="reviewQueueRows"
       :total="reviewQueueTotal"
       :loading="reviewQueueLoading"
-      :sensitive-types="sensitiveTypes"
-      :detector-capabilities="detectorCapabilities"
       :presentation="reviewQueuePresentation"
       @filter-change="handleReviewQueueFilterChange"
       @reset-filters="resetReviewQueueFilters"
@@ -92,14 +85,11 @@
       :can-create="canCreate"
       :saving="saving"
       :selected-item-loading="selectedItemLoading"
-      :selected-item="selectedItem"
+      :presentation="enrollmentCreationPresentation"
       :existing-enrollment="existingEnrollment"
       :initial-locator="initialLocator"
       :form="createForm"
       :rules="createFormRules"
-      :item-type-label="itemTypeLabel"
-      :engine-label="engineLabel"
-      :format-date-time="formatDateTime"
       :before-close="beforeCreateClose"
       @resource-model-update="handleResourceModelUpdate"
       @resource-select="handleResourceSelect"
@@ -111,11 +101,7 @@
     <EnrollmentDetailDrawer
       v-model="detailDrawer"
       ref="detailDrawerRef"
-      :enrollment="detailRow"
       :refresh-state="detailRefreshState"
-      :governance="detailGovernance"
-      :exemptions="detailExemptions"
-      :lifecycle="detailLifecycle"
       :presentation="detailPresentation"
       @update:findings-page="findingsPage = $event"
       @close="closeDetail"
@@ -138,18 +124,12 @@
     <AccessRequestDecisionDialog
       v-model="accessRequestDecisionDialog"
       ref="accessRequestDecisionDialogRef"
-      :decision="accessRequestDecision"
-      :request="decidingAccessRequest"
-      :title="accessRequestDecisionTitle"
-      :hint="accessRequestDecisionHint"
-      :confirm-label="accessRequestDecisionConfirmLabel"
+      :presentation="accessRequestDecisionPresentation"
       :saving="accessRequestDecisionSaving"
       :conflict="accessRequestDecisionConflict"
       :reloading="accessRequestDecisionReloading"
       :form="accessRequestDecisionForm"
       :rules="accessRequestDecisionRules"
-      :release-actor-label="releaseActorLabel"
-      :format-date-time="formatDateTime"
       @reload="reloadAccessRequestDecisionBaseline"
       @close="closeAccessRequestDecisionDialog"
       @closed="closeAccessRequestDecisionDialog"
@@ -164,7 +144,6 @@
       :saving="reviewSaving"
       :form="reviewForm"
       :rules="reviewRules"
-      :sensitive-types="sensitiveTypes"
       @sensitive-type-change="applyReviewDefaultGrade"
       @close="closeFindingReview"
       @closed="closeFindingReview"
@@ -175,12 +154,9 @@
       v-model="manualAssessmentDialog"
       ref="manualAssessmentDialogRef"
       :saving="manualAssessmentSaving"
-      :components-loading="componentsLoading"
-      :component-options="componentOptions"
-      :sensitive-types="sensitiveTypes"
+      :presentation="manualAssessmentDialogPresentation"
       :form="manualAssessmentForm"
       :rules="manualAssessmentRules"
-      :active-grades-for-type="activeGradesForType"
       @sensitive-type-change="applyDefaultGrade"
       @close="closeManualAssessment"
       @closed="closeManualAssessment"
@@ -199,16 +175,12 @@
       v-model="assessmentRevisionDialog"
       ref="assessmentRevisionDialogRef"
       mode="revise"
-      :assessment="revisingAssessment"
+      :presentation="assessmentRevisionPresentation"
       :saving="assessmentRevisionSaving"
       :reloading="assessmentRevisionReloading"
       :conflict="assessmentRevisionConflict"
       :form="assessmentRevisionForm"
       :rules="assessmentRevisionRules"
-      :sensitive-types="sensitiveTypes"
-      :active-grades-for-type="activeGradesForType"
-      :assessment-summary="assessmentSummary"
-      :assessment-conclusion-label="assessmentConclusionLabel"
       @reload="reloadAssessmentRevisionBaseline"
       @sensitive-type-change="applyAssessmentRevisionDefaultGrade"
       @close="closeAssessmentRevision"
@@ -220,16 +192,12 @@
       v-model="assessmentRevokeDialog"
       ref="assessmentRevokeDialogRef"
       mode="revoke"
-      :assessment="revokingAssessment"
+      :presentation="assessmentRevokePresentation"
       :saving="assessmentRevokeSaving"
       :reloading="assessmentRevokeReloading"
       :conflict="assessmentRevokeConflict"
       :form="assessmentRevokeForm"
       :rules="assessmentRevokeRules"
-      :sensitive-types="sensitiveTypes"
-      :active-grades-for-type="activeGradesForType"
-      :assessment-summary="assessmentSummary"
-      :assessment-conclusion-label="assessmentConclusionLabel"
       @reload="reloadAssessmentRevokeBaseline"
       @close="closeAssessmentRevokeDialog"
       @closed="closeAssessmentRevokeDialog"
@@ -255,16 +223,12 @@
       v-model="policyDialog"
       ref="policyDialogRef"
       mode="tighten"
-      :assessment="policyAssessment"
-      :assessment-summary="policyAssessment ? assessmentSummary(policyAssessment) : ''"
-      :protection-summary="policyAssessment ? assessmentProtectionSummary(policyAssessment) : ''"
+      :presentation="policyDialogPresentation"
       :saving="policySaving"
       :reloading="policyReloading"
       :conflict="policyVersionConflict"
       :form="policyForm"
       :rules="policyRules"
-      :effects="policyEffects"
-      :effect-label="effectLabel"
       @reload="reloadPolicyBaseline"
       @close="closePolicyDialog"
       @closed="closePolicyDialog"
@@ -275,15 +239,12 @@
       v-model="policyRestoreDialog"
       ref="policyRestoreDialogRef"
       mode="restore"
-      :assessment="policyRestoreAssessment"
-      :assessment-summary="policyRestoreAssessment ? assessmentSummary(policyRestoreAssessment) : ''"
-      :protection-summary="policyRestoreAssessment ? assessmentProtectionSummary(policyRestoreAssessment) : ''"
+      :presentation="policyRestoreDialogPresentation"
       :saving="policyRestoreSaving"
       :reloading="policyRestoreReloading"
       :conflict="policyRestoreConflict"
       :form="policyRestoreForm"
       :rules="policyRestoreRules"
-      :effect-label="effectLabel"
       @reload="reloadPolicyRestoreBaseline"
       @close="closePolicyRestoreDialog"
       @closed="closePolicyRestoreDialog"
@@ -294,13 +255,10 @@
       v-model="reEnrollmentDialog"
       ref="reEnrollmentDialogRef"
       mode="re-enroll"
-      :enrollment="reEnrollmentSource"
+      :presentation="reEnrollmentDialogPresentation"
       :saving="reEnrollmentSaving"
       :reloading="reEnrollmentReloading"
       :conflict="reEnrollmentConflict"
-      :resource-name="resourceName"
-      :release-basis-label="releaseBasisLabel"
-      :format-date-time="formatDateTime"
       @reload="reloadReEnrollmentBaseline"
       @close="closeReEnrollmentDialog"
       @closed="closeReEnrollmentDialog"
@@ -311,13 +269,10 @@
       v-model="rediscoveryDialog"
       ref="rediscoveryDialogRef"
       mode="rediscover"
-      :enrollment="rediscoveryEnrollment"
+      :presentation="rediscoveryDialogPresentation"
       :saving="rediscoverySaving"
       :reloading="rediscoveryReloading"
       :conflict="rediscoveryConflict"
-      :resource-name="resourceName"
-      :release-basis-label="releaseBasisLabel"
-      :format-date-time="formatDateTime"
       @reload="reloadRediscoveryBaseline"
       @close="closeRediscoveryDialog"
       @closed="closeRediscoveryDialog"
@@ -327,14 +282,12 @@
     <EnrollmentReleaseDialog
       v-model="releaseDialog"
       ref="releaseDialogRef"
-      :enrollment="releasing"
-      :basis="releaseBasis"
+      :presentation="releaseDialogPresentation"
       :saving="releaseSaving"
       :reloading="releaseReloading"
       :conflict="releaseConflict"
       :form="releaseForm"
       :rules="releaseRules"
-      :release-basis-label="releaseBasisLabel"
       @reload="reloadReleaseBaseline"
       @close="closeReleaseDialog"
       @closed="closeReleaseDialog"
@@ -534,9 +487,6 @@ const {
   decision: accessRequestDecision,
   decisionForm: accessRequestDecisionForm,
   decisionRules: accessRequestDecisionRules,
-  decisionTitle: accessRequestDecisionTitle,
-  decisionHint: accessRequestDecisionHint,
-  decisionConfirmLabel: accessRequestDecisionConfirmLabel,
   loadQueue: loadAccessRequestQueue,
   changeScope: handleAccessRequestScopeChange,
   updateFilters: updateAccessRequestFilters,
@@ -600,34 +550,30 @@ const {
   refreshFeedback,
   reviewRemainingLabel,
   isZeroFindingDiscovery,
-  effectLabel,
-  resourceName,
-  resourcePath,
-  engineLabel,
-  itemTypeLabel,
-  resourceRowView,
-  formatDateTime,
-  releaseBasisLabel,
-  releaseActorLabel,
+  resourceListView,
+  enrollmentCreationSelectionView,
+  accessRequestDecisionDialogView,
+  accessRequestReviewWorkspaceView,
+  enrollmentLifecycleActionDialogView,
+  enrollmentReleaseDialogView,
   discoveryPresentation,
-  governanceSectionView,
+  governanceDetailView,
   resourceDetailView,
   presentationState,
   ownerPresentation,
   ownerEffectDescription,
-  findingReviewRowView,
+  findingReviewQueueView,
   findingReviewDialogView,
   exemptionRowView,
-  assessmentRowView,
-  findingRowView,
-  assessmentSummary,
-  assessmentConclusionLabel,
+  exemptionSectionView,
+  assessmentChangeDialogView,
   assessmentHistoryView,
   policyForAssessment,
   stricterPolicyEffects,
   canConfigurePolicy,
-  assessmentProtectionSummary,
-  activeGradesForType
+  protectionPolicyDialogView,
+  activeGradesForType,
+  manualAssessmentDialogView
 } = useProtectionEnrollmentPresentation({
   t,
   locale,
@@ -1050,37 +996,18 @@ const detailRefreshState = computed(() => ({
   feedback: refreshFeedback.value,
   loading: manualRefreshing.value
 }))
-const detailGovernance = computed(() => ({
-  visible: canReadFindings.value || canReadAssessments.value,
-  loading: governanceLoading.value,
-  findings: findings.value,
-  findingsPage: findingsPage.value,
-  findingsTotal: findingsTotal.value,
-  findingsPageSize,
-  manualAssessments: manualAssessments.value,
-  readFindings: canReadFindings.value,
-  createAssessments: canCreateAssessments.value,
-  reviewFindings: canReviewFindings.value,
-  updateAssessments: canUpdateAssessments.value,
-  revokePolicies: canRevokePolicies.value
-}))
-const detailExemptions = computed(() => ({
-  visible: canReadExemptions.value,
-  loading: exemptionsLoading.value,
-  items: exemptions.value,
-  focusedId: focusedExemptionID.value,
-  canRevoke: canRevokeExemptions.value
-}))
 const detailLifecycle = computed(() => ({
   canCreate: canCreate.value,
   canUpdate: canRelease.value
 }))
-const resourceListPresentation = Object.freeze({
-  row: resourceRowView
-})
-const reviewQueuePresentation = Object.freeze({
-  row: finding => findingReviewRowView(finding, { canReview: canReviewFindings.value })
-})
+const resourceListPresentation = computed(() => resourceListView(rows.value))
+const reviewQueuePresentation = computed(() => findingReviewQueueView(reviewQueueRows.value, {
+  detectorCapabilities: detectorCapabilities.value,
+  canReview: canReviewFindings.value
+}))
+const accessRequestReviewPresentation = computed(() => accessRequestReviewWorkspaceView(accessRequestRows.value, {
+  canReadExemptions: canReadExemptions.value
+}))
 const findingReviewDialogPresentation = computed(() => reviewingFinding.value
   ? findingReviewDialogView(reviewingFinding.value, {
       remainingLabel: reviewRemainingLabel.value,
@@ -1088,29 +1015,71 @@ const findingReviewDialogPresentation = computed(() => reviewingFinding.value
       gradeOptions: activeGradesForType(reviewForm.sensitiveDataTypeID)
     })
   : null)
+const accessRequestDecisionPresentation = computed(() => decidingAccessRequest.value
+  ? accessRequestDecisionDialogView(decidingAccessRequest.value, accessRequestDecision.value)
+  : null)
+const manualAssessmentDialogPresentation = computed(() => manualAssessmentDialogView({
+  componentsLoading: componentsLoading.value,
+  componentOptions: componentOptions.value,
+  sensitiveDataTypeID: manualAssessmentForm.sensitiveDataTypeID
+}))
 const assessmentHistoryPresentation = computed(() => assessmentHistory.value
   ? assessmentHistoryView(assessmentHistory.value)
+  : null)
+const enrollmentCreationPresentation = computed(() => selectedItem.value
+  ? enrollmentCreationSelectionView(selectedItem.value, {
+      engineName: createForm.resource?.display?.engine_name
+    })
+  : null)
+const assessmentRevisionPresentation = computed(() => revisingAssessment.value
+  ? assessmentChangeDialogView(revisingAssessment.value, {
+      gradeOptions: activeGradesForType(assessmentRevisionForm.sensitiveDataTypeID)
+    })
+  : null)
+const assessmentRevokePresentation = computed(() => revokingAssessment.value
+  ? assessmentChangeDialogView(revokingAssessment.value)
+  : null)
+const policyDialogPresentation = computed(() => policyAssessment.value
+  ? protectionPolicyDialogView(policyAssessment.value, { effects: policyEffects.value })
+  : null)
+const policyRestoreDialogPresentation = computed(() => policyRestoreAssessment.value
+  ? protectionPolicyDialogView(policyRestoreAssessment.value)
   : null)
 const exemptionRevokePresentation = computed(() => revokingExemption.value
   ? exemptionRowView(revokingExemption.value)
   : null)
-const detailPresentation = Object.freeze({
-  resource: Object.freeze({
-    detail: resourceDetailView
+const reEnrollmentDialogPresentation = computed(() => reEnrollmentSource.value
+  ? enrollmentLifecycleActionDialogView(reEnrollmentSource.value, 're-enroll')
+  : null)
+const rediscoveryDialogPresentation = computed(() => rediscoveryEnrollment.value
+  ? enrollmentLifecycleActionDialogView(rediscoveryEnrollment.value, 'rediscover')
+  : null)
+const releaseDialogPresentation = computed(() => enrollmentReleaseDialogView(releasing.value, releaseBasis.value))
+const detailPresentation = computed(() => ({
+  resource: detailRow.value
+    ? resourceDetailView(detailRow.value, detailLifecycle.value)
+    : null,
+  governance: governanceDetailView(detailRow.value, {
+    loading: governanceLoading.value,
+    findings: findings.value,
+    findingsPage: findingsPage.value,
+    findingsTotal: findingsTotal.value,
+    findingsPageSize,
+    manualAssessments: manualAssessments.value,
+    canReadFindings: canReadFindings.value,
+    canReadAssessments: canReadAssessments.value,
+    canCreateAssessments: canCreateAssessments.value,
+    canReviewFindings: canReviewFindings.value,
+    canUpdateAssessments: canUpdateAssessments.value,
+    canRevokePolicies: canRevokePolicies.value
   }),
-  governance: Object.freeze({
-    section: governanceSectionView,
-    findings: Object.freeze({
-      row: findingRowView
-    }),
-    assessments: Object.freeze({
-      row: assessmentRowView
-    })
-  }),
-  exemption: Object.freeze({
-    row: exemptionRowView
+  exemption: exemptionSectionView(exemptions.value, {
+    loading: exemptionsLoading.value,
+    canRead: canReadExemptions.value,
+    focusedId: focusedExemptionID.value,
+    canRevoke: canRevokeExemptions.value
   })
-})
+}))
 
 watch(() => route.query, async routeQuery => {
   await handleWorkspaceRouteChange(routeQuery)

@@ -125,7 +125,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import orchestrationAPI from '../api/orchestration'
-import { navigateOrchestratorRoute } from '@/utils/moduleNavigation'
+import { navigateOrchestratorRoute, orchestrationListLocation } from '@/utils/moduleNavigation'
 import { MonitorExecutionsButton, openMonitorExecution, useConsolePageDescriptor } from '@common-ui'
 
 const { t } = useI18n()
@@ -205,7 +205,7 @@ function handlePageChange() {
 }
 
 function handleBack() {
-  navigateOrchestratorRoute(router, '/orchestrations', { history: 'replace' })
+  navigateOrchestratorRoute(router, orchestrationListLocation(route.query), { history: 'replace' })
 }
 
 function getStatusType(status) {

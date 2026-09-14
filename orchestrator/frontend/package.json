@@ -7,7 +7,8 @@
     "build": "vite build",
     "test": "node --test tests/*.test.js",
     "test:e2e": "playwright test",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:e2e:routes": "playwright test --grep 'related orchestration'"
   },
   "dependencies": {
     "@addp/common-frontend": "file:../../common-frontend",

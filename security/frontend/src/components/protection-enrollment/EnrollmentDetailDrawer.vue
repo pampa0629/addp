@@ -53,9 +53,7 @@
       />
 
       <EnrollmentGovernanceSection
-        v-if="governance.visible"
-        :enrollment="detail.enrollment"
-        :governance="governance"
+        v-if="presentation.governance.visible"
         :presentation="presentation.governance"
         @update:findings-page="emit('update:findingsPage', $event)"
         @designate="emit('designate')"
@@ -69,12 +67,8 @@
       />
 
       <EnrollmentExemptionSection
-        v-if="exemptions.visible"
+        v-if="presentation.exemption.visible"
         ref="exemptionSectionRef"
-        :loading="exemptions.loading"
-        :exemptions="exemptions.items"
-        :focused-exemption-id="exemptions.focusedId"
-        :can-revoke="exemptions.canRevoke"
         :presentation="presentation.exemption"
         @revoke="emit('revoke', $event)"
       />
@@ -147,11 +141,7 @@ import EnrollmentGovernanceSection from './EnrollmentGovernanceSection.vue'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
-  enrollment: { type: Object, default: null },
   refreshState: { type: Object, required: true },
-  governance: { type: Object, required: true },
-  exemptions: { type: Object, required: true },
-  lifecycle: { type: Object, required: true },
   presentation: { type: Object, required: true }
 })
 
@@ -176,9 +166,7 @@ const emit = defineEmits([
 ])
 const { t } = useI18n()
 const exemptionSectionRef = ref(null)
-const detail = computed(() => props.enrollment
-  ? props.presentation.resource.detail(props.enrollment, props.lifecycle)
-  : null)
+const detail = computed(() => props.presentation.resource)
 
 function focusExemption() {
   return exemptionSectionRef.value?.focusFocused?.()

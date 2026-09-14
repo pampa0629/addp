@@ -18,7 +18,6 @@
       :basis-expanded="basisExpanded"
       :form="form"
       :rules="rules"
-      :sensitive-types="sensitiveTypes"
       @update:basis-expanded="emit('update:basisExpanded', $event)"
       @sensitive-type-change="emit('sensitiveTypeChange', $event)"
     />
@@ -44,8 +43,7 @@ defineProps({
   basisExpanded: { type: Array, required: true },
   saving: { type: Boolean, default: false },
   form: { type: Object, required: true },
-  rules: { type: Object, required: true },
-  sensitiveTypes: { type: Array, required: true }
+  rules: { type: Object, required: true }
 })
 
 const emit = defineEmits(['update:modelValue', 'update:basisExpanded', 'sensitiveTypeChange', 'close', 'closed', 'submit'])

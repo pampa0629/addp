@@ -14,8 +14,8 @@ func TestEmbeddedMigrationCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadCatalog() error = %v", err)
 	}
-	if catalog.LatestVersion != 139 {
-		t.Fatalf("LatestVersion = %d, want 139", catalog.LatestVersion)
+	if catalog.LatestVersion != 140 {
+		t.Fatalf("LatestVersion = %d, want 140", catalog.LatestVersion)
 	}
 }
 
@@ -268,23 +268,6 @@ func TestStandardMetricPublishMigrationCreatesExactPermission(t *testing.T) {
 	} {
 		if !strings.Contains(sql, fragment) {
 			t.Fatalf("migration 122 missing %q", fragment)
-		}
-	}
-}
-
-func TestStandardCollectionMigrationPublishesGovernancePermissionsAndRuntimeRead(t *testing.T) {
-	data, err := fs.ReadFile(EmbeddedSQL, "sql/000120_iam_standard_governance_user_read.up.sql")
-	if err != nil {
-		t.Fatalf("read migration 120: %v", err)
-	}
-	sql := string(data)
-	for _, fragment := range []string{
-		"'standard.collection.create'", "'standard.collection.delete'", "'standard.collection.publish'",
-		"'standard.collection.read'", "'standard.collection.update'", "'standard.collection_assignment.update'",
-		"'tenant.governance_manager'", "'iam.tenant_membership.read'", "'tenant.standard_runtime'",
-	} {
-		if !strings.Contains(sql, fragment) {
-			t.Fatalf("migration 120 missing %q", fragment)
 		}
 	}
 }

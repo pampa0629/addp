@@ -2,6 +2,7 @@ package repository
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/addp/standard/internal/models"
 	"gorm.io/gorm"
@@ -24,6 +25,9 @@ func Migrate(db *gorm.DB) error {
 		if err := acquireStandardSchemaLock(tx); err != nil {
 			return err
 		}
+		if err := removeRetiredCollectionTables(tx); err != nil {
+			return err
+		}
 		if err := prepareStandardSchemaMigration(tx); err != nil {
 			return err
 		}
@@ -41,11 +45,6 @@ func Migrate(db *gorm.DB) error {
 		}
 		if err := tx.AutoMigrate(
 			&models.Domain{},
-			&models.StandardCollection{},
-			&models.StandardCollectionRevision{},
-			&models.StandardCollectionMember{},
-			&models.StandardCollectionAssignment{},
-			&models.StandardCollectionEvent{},
 			&models.Glossary{},
 			&models.GlossaryRevision{},
 			&models.GlossaryElementMapping{},
@@ -831,11 +830,6 @@ func postgresStandardSchemaStatements() []string {
 		FROM ordered WHERE ordered.id = revision.id AND ordered.next_from IS NOT NULL
 			AND (revision.effective_to IS NULL OR revision.effective_to > ordered.next_from)`,
 		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_domains_tenant_code ON standard.domains (tenant_id, code)",
-		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_collections_tenant_code ON standard.standard_collections (tenant_id, code)",
-		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_collection_revisions_collection_no ON standard.standard_collection_revisions (collection_id, revision_no)",
-		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_collection_members_revision_member ON standard.standard_collection_members (collection_revision_id, member_type, member_id)",
-		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_collection_assignments_collection_principal_role ON standard.standard_collection_assignments (collection_id, principal_id, role)",
-		"CREATE INDEX IF NOT EXISTS idx_standard_collection_events_collection_id ON standard.standard_collection_events (collection_id, id DESC)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_glossaries_tenant_code ON standard.glossaries (tenant_id, code)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_glossary_revisions_glossary_no ON standard.glossary_revisions (glossary_id, revision_no)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_elements_tenant_code ON standard.elements (tenant_id, code)",
@@ -872,10 +866,6 @@ func postgresStandardSchemaStatements() []string {
 		"ALTER TABLE standard.document_glossary_mappings DROP CONSTRAINT IF EXISTS document_glossary_mappings_document_id_glossary_id_key",
 		"ALTER TABLE standard.document_metric_mappings DROP CONSTRAINT IF EXISTS document_metric_mappings_document_id_metric_id_key",
 
-		"DO $do$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'standard.standard_collection_revisions'::regclass AND conname = 'ck_standard_collection_revisions_status') THEN ALTER TABLE standard.standard_collection_revisions ADD CONSTRAINT ck_standard_collection_revisions_status CHECK (status IN ('draft','in_review','published','withdrawn')); END IF; END $do$",
-		"DO $do$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'standard.standard_collection_members'::regclass AND conname = 'ck_standard_collection_members_type') THEN ALTER TABLE standard.standard_collection_members ADD CONSTRAINT ck_standard_collection_members_type CHECK (member_type IN ('element','code_set','metric','glossary','document')); END IF; END $do$",
-		"DO $do$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'standard.standard_collection_assignments'::regclass AND conname = 'ck_standard_collection_assignments_role') THEN ALTER TABLE standard.standard_collection_assignments ADD CONSTRAINT ck_standard_collection_assignments_role CHECK (role IN ('owner','maintainer','reviewer')); END IF; END $do$",
-		"DO $do$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'standard.standard_collection_events'::regclass AND conname = 'ck_standard_collection_events_type') THEN ALTER TABLE standard.standard_collection_events ADD CONSTRAINT ck_standard_collection_events_type CHECK (event_type IN ('created','draft_created','draft_updated','submitted','returned','published','assignments_replaced')); END IF; END $do$",
 		"DO $do$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'standard.glossary_revisions'::regclass AND conname = 'ck_standard_glossary_revisions_status') THEN ALTER TABLE standard.glossary_revisions ADD CONSTRAINT ck_standard_glossary_revisions_status CHECK (status IN ('draft','in_review','published','withdrawn')); END IF; END $do$",
 		"DO $do$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'standard.glossary_revisions'::regclass AND conname = 'ck_standard_glossary_revisions_effective_interval') THEN ALTER TABLE standard.glossary_revisions ADD CONSTRAINT ck_standard_glossary_revisions_effective_interval CHECK ((status <> 'published' OR effective_from IS NOT NULL) AND (effective_to IS NULL OR (effective_from IS NOT NULL AND effective_from < effective_to))); END IF; END $do$",
 		"ALTER TABLE standard.glossaries DROP CONSTRAINT IF EXISTS ck_standard_glossaries_scope",
@@ -1062,12 +1052,6 @@ func postgresStandardSchemaStatements() []string {
 		onDelete   string
 	}{
 		{"standard.domains", "fk_standard_domains_parent", "parent_id", "standard.domains(id)", "RESTRICT"},
-		{"standard.standard_collections", "fk_standard_collections_draft_revision", "draft_revision_id", "standard.standard_collection_revisions(id)", "SET NULL"},
-		{"standard.standard_collection_revisions", "fk_standard_collection_revisions_collection", "collection_id", "standard.standard_collections(id)", "CASCADE"},
-		{"standard.standard_collection_members", "fk_standard_collection_members_revision", "collection_revision_id", "standard.standard_collection_revisions(id)", "CASCADE"},
-		{"standard.standard_collection_assignments", "fk_standard_collection_assignments_collection", "collection_id", "standard.standard_collections(id)", "CASCADE"},
-		{"standard.standard_collection_events", "fk_standard_collection_events_collection", "collection_id", "standard.standard_collections(id)", "CASCADE"},
-		{"standard.standard_collection_events", "fk_standard_collection_events_revision", "revision_id", "standard.standard_collection_revisions(id)", "CASCADE"},
 		{"standard.glossaries", "fk_standard_glossaries_owner_domain", "owner_domain_id", "standard.domains(id)", "RESTRICT"},
 		{"standard.glossaries", "fk_standard_glossaries_draft_revision", "draft_revision_id", "standard.glossary_revisions(id)", "SET NULL"},
 		{"standard.glossary_revisions", "fk_standard_glossary_revisions_glossary", "glossary_id", "standard.glossaries(id)", "CASCADE"},
@@ -1124,11 +1108,6 @@ func postgresForeignKeyStatement(table, name, columns, references, onDelete stri
 func sqliteStandardSchemaStatements() []string {
 	return []string{
 		"CREATE UNIQUE INDEX IF NOT EXISTS standard.uq_standard_domains_tenant_code ON domains (tenant_id, code)",
-		"CREATE UNIQUE INDEX IF NOT EXISTS standard.uq_standard_collections_tenant_code ON standard_collections (tenant_id, code)",
-		"CREATE UNIQUE INDEX IF NOT EXISTS standard.uq_standard_collection_revisions_collection_no ON standard_collection_revisions (collection_id, revision_no)",
-		"CREATE UNIQUE INDEX IF NOT EXISTS standard.uq_standard_collection_members_revision_member ON standard_collection_members (collection_revision_id, member_type, member_id)",
-		"CREATE UNIQUE INDEX IF NOT EXISTS standard.uq_standard_collection_assignments_collection_principal_role ON standard_collection_assignments (collection_id, principal_id, role)",
-		"CREATE INDEX IF NOT EXISTS standard.idx_standard_collection_events_collection_id ON standard_collection_events (collection_id, id DESC)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS standard.uq_standard_glossaries_tenant_code ON glossaries (tenant_id, code)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS standard.uq_standard_glossary_revisions_glossary_no ON glossary_revisions (glossary_id, revision_no)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS standard.uq_standard_elements_tenant_code ON elements (tenant_id, code)",
@@ -1164,4 +1143,19 @@ func sqliteStandardSchemaStatements() []string {
 		"CREATE INDEX IF NOT EXISTS standard.idx_standard_document_candidate_formalizations_standard ON document_candidate_formalizations (standard_id, revision_id)",
 		"CREATE INDEX IF NOT EXISTS standard.idx_standard_document_extraction_evidences_revision ON document_extraction_evidences (document_revision_id, id)",
 	}
+}
+
+// removeRetiredCollectionTables permanently removes the retired governance container.
+// The combined PostgreSQL DROP handles the identity/revision reference cycle.
+func removeRetiredCollectionTables(tx *gorm.DB) error {
+	tables := []string{"standard.standard_collection_events", "standard.standard_collection_assignments", "standard.standard_collection_members", "standard.standard_collection_revisions", "standard.standard_collections"}
+	if tx.Dialector.Name() == "postgres" {
+		return tx.Exec("DROP TABLE IF EXISTS " + strings.Join(tables, ", ")).Error
+	}
+	for _, table := range tables {
+		if err := tx.Exec("DROP TABLE IF EXISTS " + table).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }

@@ -14,6 +14,7 @@
         <el-tag v-if="isDirty" type="warning" size="small">{{ t('model.common.unsaved') }}</el-tag>
       </div>
       <div v-if="!pageLoading && !pageError" class="header-right">
+        <MaterializationActions :table-id="tableId" :groups="table.materialization_groups || []" :name="table.name" :available="table.status === 'approved'" :disabled="isDirty" />
         <el-button :title="t('model.common.refresh')" :aria-label="t('model.common.refresh')" @click="handleRefresh">
           <el-icon><Refresh /></el-icon>
         </el-button>
@@ -21,7 +22,7 @@
         <el-button v-if="table.status === 'draft' && authStore.hasPermission('model.logical_model.update')" type="success" @click="handleApprove">
           {{ t('model.common.approve') }}
         </el-button>
-        <el-button v-if="table.status === 'approved' && authStore.hasPermission('model.logical_model.update')" @click="handleReopen">
+        <el-button v-if="table.status === 'approved' && authStore.hasPermission('model.logical_model.update')" :disabled="!Array.isArray(table.materialization_groups) || table.materialization_groups.length > 0" :loading="reopening" @click="handleReopen">
           {{ t('model.common.reopen') }}
         </el-button>
         <el-button v-if="authStore.hasPermission('model.logical_model.read')" type="success" @click="handlePreviewDDL">
@@ -44,6 +45,32 @@
     </el-result>
 
     <template v-else>
+
+    <el-alert
+      v-if="table.status === 'approved'"
+      class="reference-warning"
+      type="info"
+      :title="t('model.logical_table.approved_help')"
+      :closable="false"
+      show-icon
+    />
+
+    <el-alert
+      v-if="table.status === 'approved' && table.materialization_groups?.length"
+      class="reference-warning"
+      type="warning"
+      :title="t('model.logical_table.group_blocked')"
+      :closable="false"
+      show-icon
+    >
+      <div v-for="group in table.materialization_groups" :key="group.id">
+        <el-button v-if="authStore.hasPermission('model.materialization_group.read') && authStore.hasPermission('model.materialization_group.update')" link type="primary" @click="openMaterializationGroup(group)">
+          {{ t('model.logical_table.group_manage', { name: group.name }) }}
+        </el-button>
+        <span v-else>{{ group.name }}</span>
+      </div>
+      <div v-if="!authStore.hasPermission('model.materialization_group.read') || !authStore.hasPermission('model.materialization_group.update')">{{ t('model.logical_table.group_read_only') }}</div>
+    </el-alert>
 
     <el-alert
       v-if="referenceError"
@@ -273,6 +300,7 @@
               <el-col :xs="24" :sm="12" :md="8">
                 <el-form-item :label="t('model.materialization.target_schema')">
                   <ResourceTreePicker
+                    v-if="canEdit"
                     v-model="targetParentSelection"
                     api-base-url="/api/v1/meta"
                     mode="node"
@@ -282,8 +310,13 @@
                     :show-selection-summary="false"
                     :show-count="false"
                     tree-height="260px"
-                    @update:model-value="handleTargetParentSelect"
                     @select="handleTargetParentSelect"
+                  />
+                  <el-input
+                    v-else
+                    :model-value="formatLocatorDisplayPath(materializationForm.target_parent_locator)"
+                    :placeholder="t('model.materialization.not_configured')"
+                    disabled
                   />
                 </el-form-item>
               </el-col>
@@ -317,6 +350,8 @@
     <!-- 字段对话框 -->
     <el-dialog
       v-model="fieldDialogVisible"
+      :before-close="closeFieldDialog"
+      :close-on-click-modal="false"
       class="addp-dialog"
       :title="editingField ? t('model.field.edit') : t('model.field.add')"
       width="min(580px, calc(100vw - 32px))"
@@ -410,7 +445,7 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="fieldDialogVisible = false">{{ t('model.common.cancel') }}</el-button>
+        <el-button @click="closeFieldDialog">{{ t('model.common.cancel') }}</el-button>
         <el-button type="primary" @click="handleFieldSubmit" :loading="fieldSubmitting">
           {{ editingField ? t('model.common.save') : t('model.common.add') }}
         </el-button>
@@ -418,7 +453,7 @@
     </el-dialog>
 
     <!-- 指标实现对话框 -->
-    <el-dialog v-model="metricDialogVisible" class="addp-dialog" :title="editingMetricImplementation ? t('model.metric.edit') : t('model.metric.add')" width="min(760px, calc(100vw - 32px))">
+    <el-dialog v-model="metricDialogVisible" :before-close="closeMetricDialog" :close-on-click-modal="false" class="addp-dialog" :title="editingMetricImplementation ? t('model.metric.edit') : t('model.metric.add')" width="min(760px, calc(100vw - 32px))">
       <el-form :model="metricForm" label-width="120px">
         <el-form-item :label="t('model.metric.definition_name')" required>
           <el-select
@@ -456,7 +491,7 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="metricDialogVisible = false">{{ t('model.common.cancel') }}</el-button>
+        <el-button @click="closeMetricDialog">{{ t('model.common.cancel') }}</el-button>
         <el-button type="primary" @click="saveMetricImplementation" :loading="metricSubmitting">{{ t('model.common.save') }}</el-button>
       </template>
     </el-dialog>
@@ -513,17 +548,20 @@
 </template>
 
 <script setup>
+import MaterializationActions from '../components/MaterializationActions.vue'
 import { ref, reactive, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ResourceTreePicker, listResourceTreeEngines, parseLocator, useConsolePageDescriptor } from '@common-ui'
+import { ResourceTreePicker, listResourceTreeEngines, parseLocator, parseLocatorSafe, isLocatorEqual, formatLocatorDisplayPath, useConsolePageDescriptor } from '@common-ui'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft, Plus, Refresh, View } from '@element-plus/icons-vue'
 import { logicalTableAPI, domainAPI, elementAPI, standardMetricAPI, dwLayerAPI } from '../api/model'
 import DDLPreviewDialog from '../components/DDLPreviewDialog.vue'
 import DimensionHierarchyEditor from '../components/DimensionHierarchyEditor.vue'
 import { useI18n } from 'vue-i18n'
+import { confirmReturnToDraft } from '../utils/lifecycleActions'
 import { navigateModelRoute } from '../utils/moduleNavigation'
 import { useAuthStore } from '../store/auth'
+import { buildMaterializationGroupRouteQuery } from '../utils/materializationGroupRouteState'
 import { resolveLogicalTableListRouteState } from '../utils/routeState'
 import { getModelErrorMessage } from '../utils/apiError'
 import {
@@ -532,7 +570,8 @@ import {
   buildLogicalTableUpdateRequest,
   canPerformDraftAction,
   isEditableDraft,
-  resolvePositiveRouteId
+  resolvePositiveRouteId,
+  snapshotUnsavedState
 } from '../utils/modelDetailState'
 import { useUnsavedChanges } from '../composables/useUnsavedChanges'
 
@@ -673,13 +712,23 @@ const fieldRules = {
   data_type: [{ required: true, message: t('model.field.type_required'), trigger: 'change' }]
 }
 
+const fieldBaseline = ref('')
+const metricBaseline = ref('')
+const fieldDirty = computed(() => fieldDialogVisible.value && snapshotUnsavedState(fieldForm) !== fieldBaseline.value)
+const metricDirty = computed(() => metricDialogVisible.value && snapshotUnsavedState(metricForm) !== metricBaseline.value)
 const unsavedState = computed(() => ({
   form: { ...form },
-  materialization: { ...materializationForm },
-  field_draft: fieldDialogVisible.value ? { ...fieldForm } : null,
-  metric_draft: metricDialogVisible.value ? { ...metricForm } : null
+  materialization: buildDDLPreviewRequest(materializationForm).materialization
 }))
-const { isDirty, markSaved, confirmDiscardChanges } = useUnsavedChanges({ state: unsavedState, t })
+const { isDirty, markSaved, confirmDiscardChanges, confirmDiscardState } = useUnsavedChanges({
+  state: unsavedState, t, additionalDirty: computed(() => fieldDirty.value || metricDirty.value)
+})
+const closeFieldDialog = async () => {
+  if (await confirmDiscardState(fieldDirty.value)) fieldDialogVisible.value = false
+}
+const closeMetricDialog = async () => {
+  if (await confirmDiscardState(metricDirty.value)) metricDialogVisible.value = false
+}
 
 const statusTagType = (s) => ({ draft: 'info', approved: 'success' }[s] ?? 'info')
 const statusLabel = (s) => ({
@@ -733,10 +782,14 @@ const applyTable = resource => {
   targetParentSelection.value = null
 }
 
-const isSchemaSelection = (node, { locator }) => Boolean(canEdit.value) && node?.type === 'schema' && locator.type === 'schema' && !locator.itemId
+const isSchemaSelection = (node, { locator }) => node?.type === 'schema' && locator.type === 'schema' && !locator.itemId
 
 const handleTargetParentSelect = selection => {
-  materializationForm.target_parent_locator = selection?.identity?.locator || ''
+  if (!canEdit.value || !selection?.identity?.locator) return
+  const next = parseLocatorSafe(selection.identity.locator)
+  if (next.type !== 'schema' || next.itemId) return
+  const current = parseLocatorSafe(materializationForm.target_parent_locator)
+  if (!isLocatorEqual(current, next)) materializationForm.target_parent_locator = selection.identity.locator
 }
 
 const clearMaterializationConfig = () => {
@@ -815,26 +868,34 @@ const handleApprove = async () => {
     return
   }
   try {
-    const updated = await logicalTableAPI.approve(tableId.value, table.value.version)
-    applyTable(updated)
-    markSaved()
+    await logicalTableAPI.approve(tableId.value, table.value.version)
+    await loadPage()
     ElMessage.success(t('model.common.approve_success'))
   }
   catch (err) { ElMessage.error(getModelErrorMessage(err, t, 'model.common.op_failed')) }
 }
 
+const reopening = ref(false)
+const openMaterializationGroup = group => navigateModelRoute(router, {
+  path: '/materialization-groups',
+  query: buildMaterializationGroupRouteQuery({ mode: 'edit', groupID: group.id, page: 1, pageSize: 20 })
+})
 const handleReopen = async () => {
-  if (!authStore.hasPermission('model.logical_model.update')) {
-    ElMessage.error(t('model.common.permission_denied'))
-    return
-  }
+  if (reopening.value || !Array.isArray(table.value.materialization_groups) || table.value.materialization_groups.length) return
+  if (!authStore.hasPermission('model.logical_model.update')) return
+  reopening.value = true
   try {
-    const updated = await logicalTableAPI.reopen(tableId.value, table.value.version)
-    applyTable(updated)
-    markSaved()
+    await confirmReturnToDraft(t)
+    await logicalTableAPI.reopen(tableId.value, table.value.version)
+    await loadPage()
     ElMessage.success(t('model.common.reopen_success'))
+  } catch (err) {
+    if (err === 'cancel' || err === 'close') return
+    if (err.response?.data?.error_code === 'materialization_group_member_conflict') await loadPage()
+    ElMessage.error(getModelErrorMessage(err, t, 'model.common.op_failed'))
+  } finally {
+    reopening.value = false
   }
-  catch (err) { ElMessage.error(getModelErrorMessage(err, t, 'model.common.op_failed')) }
 }
 
 const handlePreviewDDL = async () => {
@@ -914,6 +975,7 @@ const openFieldDialog = (field = null) => {
       field_role: 'regular', sort_order: 0
     })
   }
+  fieldBaseline.value = snapshotUnsavedState(fieldForm)
   fieldDialogVisible.value = true
 }
 
@@ -1003,6 +1065,7 @@ const openMetricDialog = (implementation = null) => {
       note: implementation.note || ''
     })
   }
+  metricBaseline.value = snapshotUnsavedState(metricForm)
   metricDialogVisible.value = true
   loadAvailableMetrics()
 }

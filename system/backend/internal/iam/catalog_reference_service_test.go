@@ -71,7 +71,6 @@ func TestCatalogReferenceServiceResolvesModuleSpecificUserReferences(t *testing.
 		clientID string
 		resolve  func(context.Context, int64, string, []CatalogReference) ([]CatalogReferenceResolution, error)
 	}{
-		{name: "standard", clientID: "addp-standard", resolve: service.ResolveStandardGovernanceUsers},
 		{name: "security", clientID: "addp-security", resolve: service.ResolveSecurityAccessActors},
 	} {
 		t.Run(test.name, func(t *testing.T) {

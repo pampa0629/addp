@@ -70,6 +70,7 @@ export function useProtectionExemptionRevocation({
 
   function focusDialogPrimary() {
     nextTick(() => {
+      dialogRef.value?.clearValidate?.()
       dialogRef.value?.focusPrimary?.()
     })
   }

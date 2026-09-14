@@ -133,7 +133,7 @@ export const PAGE_MAPS = {
     '': 'domains',
   },
   modeling: {
-    '': 'dw-layers',
+    '': 'entities',
   },
   quality: {
     '': 'check-tasks',
@@ -174,7 +174,7 @@ export const DEFAULT_ROUTES = {
   workbench:    '/workbench/applications',
   monitor:      '/monitor/dashboard',
   standard:     '/standard/domains',
-  modeling:     '/modeling/dw-layers',
+  modeling:     '/modeling/entities',
   quality:      '/quality/check-tasks',
   security:     '/security/sensitive-data-definitions',
   catalog:      '/catalog/entries',
@@ -220,7 +220,6 @@ export const SIDEBAR_MENUS = {
     label: 'console.menus.standard.label', icon: Reading,
     items: [
       { index: '/standard/domains',              icon: Share,        label: 'console.menus.standard.domains' },
-      { index: '/standard/collections',          icon: FolderOpened, label: 'console.menus.standard.collections' },
       { index: '/standard/glossaries',           icon: Document,     label: 'console.menus.standard.glossaries' },
       { index: '/standard/elements',             icon: DataBoard,    label: 'console.menus.standard.elements' },
       { index: '/standard/code-sets',            icon: List,         label: 'console.menus.standard.codeSets' },
@@ -232,12 +231,12 @@ export const SIDEBAR_MENUS = {
   modeling: {
     label: 'console.menus.modeling.label', icon: Grid,
     items: [
-      { index: '/modeling/dw-layers',      icon: Grid,       label: 'console.menus.modeling.dwLayers' },
       { index: '/modeling/entities',       icon: DataBoard,  label: 'console.menus.modeling.entities' },
       { index: '/modeling/er-diagram',     icon: Share,      label: 'console.menus.modeling.erDiagram' },
+      { index: '/modeling/dw-layers',      icon: Grid,       label: 'console.menus.modeling.dwLayers' },
       { index: '/modeling/logical-tables', icon: Connection, label: 'console.menus.modeling.logicalTables' },
-      { index: '/modeling/materialization-groups', icon: SetUp, label: 'console.menus.modeling.materializationGroups' },
       { index: '/modeling/star-schema',    icon: Grid,       label: 'console.menus.modeling.starSchema' },
+      { index: '/modeling/materialization-groups', icon: SetUp, label: 'console.menus.modeling.materializationGroups' },
     ],
   },
   quality: {

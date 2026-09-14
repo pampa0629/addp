@@ -30,23 +30,23 @@
       </el-form>
 
       <el-skeleton v-if="selectedItemLoading" :rows="3" animated />
-      <section v-else-if="selectedItem" class="selection-card">
+      <section v-else-if="presentation" class="selection-card">
         <div class="selection-card__title">
           <div>
-            <strong>{{ selectedItem.name }}</strong>
-            <span>{{ selectedItem.full_name }}</span>
+            <strong>{{ presentation.name }}</strong>
+            <span>{{ presentation.fullName }}</span>
           </div>
-          <el-tag effect="plain">{{ itemTypeLabel(selectedItem.item_type) }}</el-tag>
+          <el-tag effect="plain">{{ presentation.itemType }}</el-tag>
         </div>
         <el-descriptions :column="2" border size="small">
           <el-descriptions-item :label="t('security.enrollment.engine')">
-            {{ form.resource?.display?.engine_name || engineLabel(selectedItem.engine_id) }}
+            {{ presentation.engine }}
           </el-descriptions-item>
           <el-descriptions-item :label="t('security.enrollment.lastScanned')">
-            {{ formatDateTime(selectedItem.scanned_at) }}
+            {{ presentation.lastScannedAt }}
           </el-descriptions-item>
           <el-descriptions-item :label="t('security.enrollment.scope')" :span="2">
-            {{ t('security.enrollment.wholeResourceScope') }}
+            {{ presentation.scope }}
           </el-descriptions-item>
         </el-descriptions>
         <el-alert
@@ -83,14 +83,11 @@ defineProps({
   canCreate: { type: Boolean, default: false },
   saving: { type: Boolean, default: false },
   selectedItemLoading: { type: Boolean, default: false },
-  selectedItem: { type: Object, default: null },
+  presentation: { type: Object, default: null },
   existingEnrollment: { type: Object, default: null },
   initialLocator: { type: String, default: '' },
   form: { type: Object, required: true },
   rules: { type: Object, required: true },
-  itemTypeLabel: { type: Function, required: true },
-  engineLabel: { type: Function, required: true },
-  formatDateTime: { type: Function, required: true },
   beforeClose: { type: Function, required: true }
 })
 

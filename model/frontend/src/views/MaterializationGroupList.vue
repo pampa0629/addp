@@ -4,9 +4,10 @@
       <div>
         <h2>{{ t('model.materialization_group.title') }}</h2>
         <p>{{ t('model.materialization_group.subtitle') }}</p>
+        <p>{{ t('model.materialization_group.execution_help') }}</p>
       </div>
       <div class="header-actions">
-        <MonitorExecutionsButton module="model" task-type="materialization_group_publish" />
+        <MonitorExecutionsButton module="model" task-type="materialization_group_publish">{{ t('model.materialization.group_publish_records') }}</MonitorExecutionsButton>
         <el-button v-if="can('model.materialization_group.create')" type="primary" :icon="Plus" @click="openCreate">
           {{ t('model.materialization_group.create') }}
         </el-button>
@@ -32,8 +33,9 @@
         <el-table-column prop="updated_at" :label="t('model.materialization_group.updatedAt')" width="180">
           <template #default="{ row }">{{ formatTime(row.updated_at) }}</template>
         </el-table-column>
-        <el-table-column :label="t('model.materialization_group.actions')" width="150" fixed="right">
+        <el-table-column :label="t('model.materialization_group.actions')" width="400" fixed="right">
           <template #default="{ row }">
+            <MaterializationActions :groups="[{ id: row.id, name: row.name }]" :name="row.name" />
             <el-button v-if="can('model.materialization_group.update')" link type="primary" @click="openEdit(row)">{{ t('model.common.edit') }}</el-button>
             <el-popconfirm
               v-if="can('model.materialization_group.delete')"
@@ -92,6 +94,7 @@
 </template>
 
 <script setup>
+import MaterializationActions from '../components/MaterializationActions.vue'
 import { onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'

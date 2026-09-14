@@ -74,13 +74,14 @@ Develop TaskProvider 的 canonical 前端路由为：
 | Manager | 数据任务工作区 | 分类使用 `/manager/tasks/quick-view`、`/manager/tasks/spatial`、`/manager/tasks/embedding` 三个 canonical path；query 只保存 `task_type`、向量化页内 `tab`、`task_id`、`create=1` 及页面定义的创建来源参数，默认页内任务视图省略 `tab` |
 | Develop | SQL、工作流、Notebook 创建或编辑 | `action`、`id` |
 | Monitor | 统一执行列表筛选与分页 | `module`、`task_type`、`source_task_id`、`execution_id`、`status`、`trigger_type`、`start_date`、`end_date`、`page`、`page_size`；业务模块不得复制同构列表状态 |
+| Orchestrator | 编排列表任务引用筛选 | `module`、`task_type`、`task_id` 同时提供，三者精确匹配步骤；编辑与执行历史返回保留筛选 |
 | Orchestrator | 编排创建与编辑 | path `/orchestrations/new`、`/orchestrations/:id/edit` |
 | Graph | 本体/审核稳定 Tab、知识服务当前图谱 | `tab`、`graph_id` |
 | Service | 服务目录类型 Tab | `tab`，默认 `all` 省略 |
 | Modeling | 实体列表筛选与分页 | `keyword`、`domain_id`、`status`、`page`、`page_size` |
 | Modeling | 逻辑表列表筛选与分页 | `keyword`、`domain_id`、`layer`、`status`、`page`、`page_size` |
 | Modeling | 物化组列表、创建与编辑 | `page`、`page_size`、`create=1`、`group_id`；创建和编辑保留分页上下文，默认列表省略 |
-| Modeling | ER 图业务域筛选 | `domain_id` |
+| Modeling | ER 图业务域筛选与跨域展开 | `domain_id`（正整数或 `all`）、`related=1` |
 | Modeling | 实体详情 Tab、星型模型事实表 | `tab`、`table_id` |
 | Quality | 执行详情 | path parameter `execution_id` |
 | Quality | 规则应用列表筛选与分页 | `engine_id`、`schema_name`、`table_name`、`page`、`page_size` |
@@ -144,3 +145,5 @@ Console iframe 模式下，一次用户导航只能产生一条公开历史记�
 5. 同步导航不会重复增加历史，也不会无故重载 iframe。
 6. standalone 模式使用相同模块内 URL 契约。
 7. URL 中不包含 Token、票据、凭据或未保存业务内容。
+
+Model ER 图的 `domain_id` 省略表示等待选择，`all` 表示显式全域总览，正整数表示业务域；`related=1` 只在指定域时展示一跳跨域关联。Model 默认入口为 `/modeling/entities`。Model 页内关联流程查询与执行直接消费 Orchestrator 公开 API，执行使用共享确认组件，完整步骤范围必须在执行前可见。

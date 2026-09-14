@@ -33,7 +33,7 @@ test('unsaved state snapshots change only when editable state changes', () => {
 test('entity and logical table details preserve unsaved drafts across navigation and conflicts', async () => {
   for (const filename of ['EntityDetail.vue', 'LogicalTableDetail.vue']) {
     const source = await readFile(new URL(`../src/views/${filename}`, import.meta.url), 'utf8')
-    assert.match(source, /useUnsavedChanges\(\{ state: unsavedState, t \}\)/)
+    assert.match(source, /useUnsavedChanges\(\{\s*state: unsavedState, t/)
     assert.match(source, /v-if="isDirty"/)
     assert.match(source, /confirmDiscardChanges\(\)/)
     assert.match(source, /markSaved\(\)/)
@@ -61,7 +61,7 @@ test('logical table materialization binds a schema locator and target name', asy
   const source = await readFile(new URL('../src/views/LogicalTableDetail.vue', import.meta.url), 'utf8')
   assert.match(source, /mode="node"/)
   assert.match(source, /:selectable-filter="isSchemaSelection"/)
-  assert.match(source, /@update:model-value="handleTargetParentSelect"/)
+  assert.doesNotMatch(source, /@update:model-value="handleTargetParentSelect"/)
   assert.match(source, /target_parent_locator/)
   assert.match(source, /clearMaterializationConfig/)
   assert.match(source, /model\.materialization\.clear_config/)

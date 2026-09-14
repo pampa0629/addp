@@ -12,6 +12,25 @@ import (
 
 const serviceAccessTokenLifespan = 5 * time.Minute
 
+// ServiceCredentialResponseLifespan projects the remaining lifetime using the
+// same clock authority as issuance. The transaction clock is intentionally not
+// used here: time spent issuing the token must reduce the response lifetime.
+func (s *Storage) ServiceCredentialResponseLifespan(ctx context.Context, requester fosite.AccessRequester) (time.Duration, error) {
+	if requester == nil || requester.GetSession() == nil ||
+		!requester.GetGrantTypes().ExactOne(string(fosite.GrantTypeClientCredentials)) {
+		return 0, fosite.ErrInvalidRequest
+	}
+	var now time.Time
+	if err := s.dbFromContext(ctx).Raw("SELECT clock_timestamp()").Scan(&now).Error; err != nil {
+		return 0, fosite.ErrTemporarilyUnavailable
+	}
+	remaining := requester.GetSession().GetExpiresAt(fosite.AccessToken).Sub(now)
+	if remaining < time.Second || remaining > serviceAccessTokenLifespan {
+		return 0, fosite.ErrTemporarilyUnavailable
+	}
+	return remaining, nil
+}
+
 type serviceCredentialSessionRow struct {
 	PrincipalID          int64     `gorm:"column:principal_id"`
 	AuthorizationVersion int64     `gorm:"column:authorization_version"`

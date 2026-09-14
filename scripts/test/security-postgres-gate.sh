@@ -25,3 +25,9 @@ if grep -q -- '--- SKIP:' "$WORK_DIR/service.log"; then
     echo "Security PostgreSQL gate refuses skipped tests" >&2
     exit 1
 fi
+
+go test ./internal/api -run '^TestDefaultProtectionHTTPAgainstPostgres$' -count=1 -v 2>&1 | tee "$WORK_DIR/api.log"
+if grep -q -- '--- SKIP:' "$WORK_DIR/api.log"; then
+    echo "Security PostgreSQL gate refuses skipped tests" >&2
+    exit 1
+fi

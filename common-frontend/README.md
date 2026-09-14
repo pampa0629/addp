@@ -58,6 +58,10 @@ const format = detectFormatByExtension('data.shp') // "shapefile"
 const isGeo = isGeospatialFormat('shapefile') // true
 ```
 
+### 按任务查看关联编排
+
+`buildOrchestrationListRoute({ module, task_type, task_id })` 构造 Orchestrator 编排列表的唯一公开筛选路由，配合 `openConsoleRoute()` 跨模块导航。筛选三项必须完整，任务 ID 为正整数；`resolveOrchestrationTaskFilter(query)` 供 owner 恢复、验证同一契约。关联由编排步骤引用即时决定，不持久化反向绑定。
+
 ### 统一任务监控跳转
 
 业务模块的任务定义列表和任务详情应使用共享按钮进入带 owner 筛选的 Monitor，不得各自实现模块级执行列表或重复导航逻辑：
@@ -708,3 +712,7 @@ ResourceType.API             // API
 ## 许可
 
 MIT
+
+### 关联流程与执行确认
+
+`RelatedOrchestrationsDialog` 接收完整任务引用集合、由宿主认证 client 创建的 `createOrchestrationAPI(client)` 和权限布尔值，展示匹配流程及其全部步骤。`OrchestrationExecuteButton` 是 Model 与 Orchestrator 唯一执行确认实现，防止重复提交并返回 execution_id；不自动重试执行请求。Model 只组合物化任务身份。匹配复用 `matchesOrchestrationTask`，不按名称猜测关联。

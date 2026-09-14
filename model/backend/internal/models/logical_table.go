@@ -170,3 +170,14 @@ type TableRelationDetail struct {
 	TargetFieldName string `json:"target_field_name"`
 	RelationType    string `json:"relation_type"`
 }
+
+// LogicalTableDetail includes the current tenant's group membership for lifecycle guidance.
+type LogicalTableDetail struct {
+	*LogicalTable
+	MaterializationGroups []MaterializationGroupSummary `json:"materialization_groups"`
+}
+
+type MaterializationGroupSummary struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+}

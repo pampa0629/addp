@@ -10,6 +10,16 @@ import { isSynchronizedIframeRoute, splitConsoleRoute } from '../src/utils/conso
 import { searchIndex } from '../src/config/searchIndex'
 
 describe('Console navigation bridge', () => {
+  it('removes retired Standard collection entry points', () => {
+    const configSource = readFileSync(new URL('../src/config/portalConfig.js', import.meta.url), 'utf8')
+    const zhCn = JSON.parse(readFileSync(new URL('../src/i18n/zh-cn.json', import.meta.url), 'utf8'))
+    const en = JSON.parse(readFileSync(new URL('../src/i18n/en.json', import.meta.url), 'utf8'))
+    expect(configSource).not.toContain("/standard/collections")
+    expect(searchIndex('标准集', key => key, []).map(item => item.route)).not.toContain('/standard/collections')
+    expect(zhCn.console.menus.standard.collections).toBeUndefined()
+    expect(en.console.menus.standard.collections).toBeUndefined()
+  })
+
   it('builds explicit push and synchronized replace requests', () => {
     expect(buildConsoleNavigationRequest('/monitor/executions')).toEqual({
       route: '/monitor/executions',
@@ -179,17 +189,6 @@ describe('Console navigation bridge', () => {
       .toContain('/catalog/governance/coverage')
   })
 
-  it('exposes Standard collections in navigation and search', () => {
-    const configSource = readFileSync(new URL('../src/config/portalConfig.js', import.meta.url), 'utf8')
-    const zhCn = JSON.parse(readFileSync(new URL('../src/i18n/zh-cn.json', import.meta.url), 'utf8'))
-    const en = JSON.parse(readFileSync(new URL('../src/i18n/en.json', import.meta.url), 'utf8'))
-
-    expect(configSource).toContain("index: '/standard/collections'")
-    expect(searchIndex('标准集', key => key === 'console.menus.standard.collections' ? zhCn.console.menus.standard.collections : key, ['standard.collection.read']).map(item => item.route))
-      .toContain('/standard/collections')
-    expect(zhCn.console.menus.standard.collections).toBe('标准集管理')
-    expect(en.console.menus.standard.collections).toBe('Standard Collections')
-  })
 
   it('shows Quality navigation only for matching human permissions', () => {
 	const configSource = readFileSync(new URL('../src/config/portalConfig.js', import.meta.url), 'utf8')
@@ -345,4 +344,16 @@ describe('Console navigation bridge', () => {
       synchronized: true
     })
   })
+})
+
+
+it('orders modeling from entity design to table design and publishing in both shells', () => {
+  const config = readFileSync(new URL('../src/config/portalConfig.js', import.meta.url), 'utf8')
+  const layout = readFileSync(new URL('../../../model/frontend/src/components/Layout.vue', import.meta.url), 'utf8')
+  const routes = ['entities', 'er-diagram', 'dw-layers', 'logical-tables', 'star-schema', 'materialization-groups']
+  const consoleRoutes = [...config.matchAll(/index: '\/modeling\/([^']+)'/g)].map(match => match[1])
+  const standaloneRoutes = [...layout.matchAll(/el-menu-item index="\/([^"]+)"/g)].map(match => match[1])
+  expect(consoleRoutes).toEqual(routes)
+  expect(standaloneRoutes).toEqual(routes)
+  expect(config).toContain("modeling:     '/modeling/entities'")
 })

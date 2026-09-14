@@ -232,7 +232,7 @@ GET/POST/PUT/DELETE .../dimension-hierarchies             # 维度表聚合内�
 /modeling/entities/:id           # 实体详情（属性、关系、Mermaid 图）
 /modeling/logical-tables         # 逻辑表列表
 /modeling/logical-tables/:id     # 逻辑表详情（字段、维度层级、DDL 预览）
-/modeling/er-diagram             # 全局 ER 图视图
+/modeling/er-diagram             # 按业务域查看 ER 图；domain_id=all 显式全域
 /modeling/star-schema            # 星型建模视图（事实表-维度表-指标三维关联）
 ```
 
@@ -264,7 +264,7 @@ Model 和 Standard 使用不同的 PostgreSQL Schema，**无数据库外键约�
 
 Model 是 `model.logical_model.*` 第一批 Permission 的唯一 owner，机器可读事实源是 [authorization/permissions.yaml](authorization/permissions.yaml)。该 Manifest 由 `common/authorization` 在构建/发布期统一发现、校验和聚合，Model 服务启动时不向 System 动态注册 Permission。
 
-Entity、EntityRelation、DWLayer 和 LogicalModel 分别使用 `model.entity.*`、`model.entity_relation.*`、`model.dw_layer.*`、`model.logical_model.*`。EntityAttribute 是 Entity 聚合内子资源；LogicalField、TableRelation、DimensionHierarchy 和 MetricImplementation 是 LogicalModel 聚合内子资源，不建立平行宽泛 Permission。Mermaid 导入是破坏性全量替换，按 Entity 与 EntityRelation 的 create/delete 执行 all-of 校验；导出按两者的 read 执行 all-of 校验。已审批实体必须先全部重新打开，导入不会绕过生命周期约束。
+Entity、EntityRelation、DWLayer 和 LogicalModel 分别使用 `model.entity.*`、`model.entity_relation.*`、`model.dw_layer.*`、`model.logical_model.*`。EntityAttribute 是 Entity 聚合内子资源；LogicalField、TableRelation、DimensionHierarchy 和 MetricImplementation 是 LogicalModel 聚合内子资源，不建立平行宽泛 Permission。Mermaid 导入是破坏性全量替换，按 Entity 与 EntityRelation 的 create/delete 执行 all-of 校验；导出按两者的 read 执行 all-of 校验。已审批实体必须先全部退回草稿，导入不会绕过生命周期约束。
 
 并发契约以 [Model 概念与数据约束规范](docs/model概念与数据约束规范.md) 为事实源。后端必须把版本校验、生命周期校验、聚合写入和版本递增放在同一事务中；前端收到 `409 resource_version_conflict` 后保留本地未保存状态，不自动重试。
 
@@ -282,7 +282,7 @@ EntityRelation 使用完整 `PUT`：请求包含变更后的 source_entity、tar
 draft ⇄ approved
 ```
 
-只有 `draft` 可修改；审批和重新打开必须使用显式状态转换。`materialized` 不属于当前正式状态，DDL 预览不改变状态。
+只有 `draft` 可修改；审批和退回草稿必须使用显式状态转换。`materialized` 不属于当前正式状态，DDL 预览不改变状态。
 
 ### `dimension-relations` 查询返回 JOIN 结果
 
@@ -342,3 +342,5 @@ draft ⇄ approved
 - 星型模型当前事实表使用 `table_id`，并响应刷新及浏览器前进/后退；无选择时省略该 query。
 - 业务导航统一调用 `frontend/src/utils/moduleNavigation.js`；详情返回明确列表路由。
 - 逻辑表和物化组页面只管理 Model 任务定义与发布上下文；页头使用共享 `MonitorExecutionsButton(module=model)` 进入统一执行监控。Model 不新增模块级执行列表、菜单或通用统计页。
+
+- Model 导航顺序与 ER 图范围以概念规范“建模导航与物化操作入口”为准；默认进入业务实体。逻辑表和物化组组合 MaterializationActions，调用共享关联流程与执行确认组件；启动仍通过 Orchestrator 唯一 API。

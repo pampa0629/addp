@@ -1233,7 +1233,7 @@ jobs:
           go-version-file: standard/backend/go.mod
           cache: false
 
-      - name: Run Standard PostgreSQL gate
+      - name: Run Standard PostgreSQL constraints and retired feature removal gate
         env:
           STANDARD_POSTGRES_TEST_DSN: postgres://addp_ci:addp_ci_password@127.0.0.1:5432/addp_standard_test?sslmode=disable
         run: make test-standard-postgres

@@ -54,6 +54,7 @@ export * from './utils/taskOwnerUrl'
 export * from './composables/useConsolePageDescriptor'
 export * from './utils/moduleRouteNavigation'
 export * from './utils/managerDataExplorerRoute'
+export * from './utils/orchestrationRoute'
 export * from './utils/recoverableRouteState'
 export * from './utils/resourceSelection'
 export * from './utils/resourceCandidateSelection.mjs'
@@ -127,3 +128,8 @@ export {
 
 // I18n Components
 export { default as LangSwitcher } from './components/LangSwitcher.vue'
+
+export { createOrchestrationAPI } from './utils/orchestrationAPI'
+export { matchesOrchestrationTask } from './utils/orchestrationRoute'
+export { default as OrchestrationExecuteButton } from './components/OrchestrationExecuteButton.vue'
+export { default as RelatedOrchestrationsDialog } from './components/RelatedOrchestrationsDialog.vue'

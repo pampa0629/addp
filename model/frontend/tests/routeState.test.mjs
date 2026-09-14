@@ -35,3 +35,9 @@ test('invalid business-domain route values are removed from canonical URL state'
   assert.equal(resolveERDiagramRouteState({ domain_id: 'outside' }).domainId, null)
   assert.deepEqual(resolveERDiagramRouteState({ domain_id: 'outside' }).query, {})
 })
+
+test('ER overview and cross-domain expansion are explicit and recoverable', () => {
+  assert.deepEqual(resolveERDiagramRouteState({ domain_id: 'all', related: '1' }).query, { domain_id: 'all' })
+  assert.deepEqual(resolveERDiagramRouteState({ domain_id: '2', related: '1' }).query, { domain_id: '2', related: '1' })
+  assert.deepEqual(resolveERDiagramRouteState({ related: '1' }).query, {})
+})

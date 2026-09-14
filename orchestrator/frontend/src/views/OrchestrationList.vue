@@ -8,7 +8,16 @@
       </div>
     </div>
 
-    <el-table :data="orchestrations" style="width: 100%" v-loading="loading">
+    <el-alert v-if="filterState.error" :title="t('orchestrator.orchestrationList.invalidTaskFilter')" type="error" :closable="false" show-icon>
+      <el-button link type="primary" @click="clearTaskFilter">{{ t('orchestrator.orchestrationList.showAll') }}</el-button>
+    </el-alert>
+    <el-alert v-else-if="filterState.filter" :title="t('orchestrator.orchestrationList.relatedTaskFilter')" type="info" :closable="false" show-icon>
+      <el-button link type="primary" @click="clearTaskFilter">{{ t('orchestrator.orchestrationList.showAll') }}</el-button>
+    </el-alert>
+    <el-alert v-if="loadError" :title="t('orchestrator.orchestrationList.loadFailed')" type="error" :closable="false" show-icon>
+      <el-button link type="primary" @click="loadOrchestrations">{{ t('orchestrator.orchestrationList.retry') }}</el-button>
+    </el-alert>
+    <el-table v-else :data="visibleOrchestrations" :empty-text="t(filterState.filter ? 'orchestrator.orchestrationList.noRelatedOrchestrations' : 'common.noData')" style="width: 100%" v-loading="loading">
       <el-table-column prop="id" :label="t('orchestrator.orchestrationList.colId')" width="80"></el-table-column>
       <el-table-column prop="name" :label="t('orchestrator.orchestrationList.colName')" width="200"></el-table-column>
       <el-table-column prop="description" :label="t('orchestrator.orchestrationList.colDescription')"></el-table-column>
@@ -35,15 +44,7 @@
       <el-table-column :label="t('orchestrator.orchestrationList.colActions')" width="300">
         <template #default="scope">
           <el-button size="small" @click="handleEdit(scope.row)">{{ t('orchestrator.orchestrationList.editBtn') }}</el-button>
-          <el-button
-            size="small"
-            type="success"
-            :loading="executingId === scope.row.id"
-            :disabled="executingId !== null"
-            @click="handleExecute(scope.row)"
-          >
-            {{ t('orchestrator.orchestrationList.executeBtn') }}
-          </el-button>
+          <OrchestrationExecuteButton v-if="authStore.hasPermission('orchestrator.workflow.execute')" size="small" :orchestration="scope.row" :execute="orchestrationAPI.execute" :disabled="executingId !== null" @busy="executingId = $event ? scope.row.id : null" />
           <el-button size="small" type="info" @click="handleViewExecutions(scope.row)">{{ t('orchestrator.orchestrationList.recordsBtn') }}</el-button>
           <el-button size="small" type="danger" @click="handleDelete(scope.row)">{{ t('orchestrator.orchestrationList.deleteBtn') }}</el-button>
         </template>
@@ -53,16 +54,32 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, computed, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useAuthStore } from '../store/auth'
 import orchestrationAPI from '../api/orchestration'
-import { describeCron, MonitorExecutionsButton } from '@common-ui'
+import { describeCron, MonitorExecutionsButton, resolveOrchestrationTaskFilter, matchesOrchestrationTask, OrchestrationExecuteButton } from '@common-ui'
 import { navigateOrchestratorRoute } from '@/utils/moduleNavigation'
 
 const { t } = useI18n()
 const router = useRouter()
+const authStore = useAuthStore()
+const route = useRoute()
+const loadError = ref(false)
+const filterState = computed(() => {
+  try { return { filter: resolveOrchestrationTaskFilter(route.query), error: false } }
+  catch { return { filter: null, error: true } }
+})
+const visibleOrchestrations = computed(() => {
+  if (filterState.value.error) return []
+  const filter = filterState.value.filter
+  if (!filter) return orchestrations.value
+  return orchestrations.value.filter(orchestration => matchesOrchestrationTask(orchestration, filter))
+})
+const clearTaskFilter = () => navigateOrchestratorRoute(router, '/orchestrations', { history: 'replace' })
+const detailLocation = path => ({ path, query: filterState.value.filter || {} })
 const orchestrations = ref([])
 const loading = ref(false)
 const executingId = ref(null)
@@ -73,50 +90,27 @@ onMounted(() => {
 
 async function loadOrchestrations() {
   loading.value = true
+  loadError.value = false
   try {
     orchestrations.value = await orchestrationAPI.list()
   } catch (error) {
-    ElMessage.error(t('orchestrator.orchestrationList.loadFailed'))
+    loadError.value = true
+    orchestrations.value = []
   } finally {
     loading.value = false
   }
 }
 
 function handleCreate() {
-  navigateOrchestratorRoute(router, '/orchestrations/new')
+  navigateOrchestratorRoute(router, detailLocation('/orchestrations/new'))
 }
 
 function handleEdit(row) {
-  navigateOrchestratorRoute(router, `/orchestrations/${row.id}/edit`)
-}
-
-async function handleExecute(row) {
-  try {
-    await ElMessageBox.confirm(
-      t('orchestrator.orchestrationList.executeConfirmMessage', { name: row.name }),
-      t('orchestrator.orchestrationList.executeConfirmTitle'),
-      {
-        type: 'warning',
-        customClass: 'addp-message-box',
-        confirmButtonText: t('orchestrator.orchestrationList.executeConfirmAction'),
-        cancelButtonText: t('orchestrator.orchestrationList.executeConfirmCancel')
-      }
-    )
-
-    executingId.value = row.id
-    await orchestrationAPI.execute(row.id)
-    ElMessage.success(t('orchestrator.orchestrationList.executeSuccess'))
-  } catch (error) {
-    if (error !== 'cancel' && error !== 'close') {
-      ElMessage.error(t('orchestrator.orchestrationList.executeFailed'))
-    }
-  } finally {
-    executingId.value = null
-  }
+  navigateOrchestratorRoute(router, detailLocation(`/orchestrations/${row.id}/edit`))
 }
 
 function handleViewExecutions(row) {
-  navigateOrchestratorRoute(router, `/orchestrations/${row.id}/executions`)
+  navigateOrchestratorRoute(router, detailLocation(`/orchestrations/${row.id}/executions`))
 }
 
 async function handleDelete(row) {

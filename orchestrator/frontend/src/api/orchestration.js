@@ -1,15 +1,8 @@
+import { createOrchestrationAPI } from '@common-ui'
 import client from './client'
 
 export default {
-  // 获取编排列表
-  list() {
-    return client.get('/orchestrator/orchestrations')
-  },
-
-  // 获取编排详情
-  get(id) {
-    return client.get(`/orchestrator/orchestrations/${id}`)
-  },
+  ...createOrchestrationAPI(client),
 
   // 创建编排
   create(data) {
@@ -24,11 +17,6 @@ export default {
   // 删除编排
   delete(id) {
     return client.delete(`/orchestrator/orchestrations/${id}`)
-  },
-
-  // 手动触发执行
-  execute(id) {
-    return client.post(`/orchestrator/orchestrations/${id}/execute`)
   },
 
   // 获取执行列表

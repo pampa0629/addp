@@ -153,12 +153,16 @@ func (s *LogicalTableService) CreateLogicalTable(req *models.CreateLogicalTableR
 	return table, nil
 }
 
-func (s *LogicalTableService) GetLogicalTable(id, tenantID int64) (*models.LogicalTable, error) {
+func (s *LogicalTableService) GetLogicalTable(id, tenantID int64) (*models.LogicalTableDetail, error) {
 	table, err := s.repo.GetByID(id, tenantID)
 	if err != nil {
 		return nil, modelResourceError(err, "logical_table_not_found", i18n.MsgTableNotFound)
 	}
-	return table, nil
+	groups, err := repository.NewMaterializationGroupRepository(s.repo.DB()).ListForLogicalTable(context.Background(), tenantID, id)
+	if err != nil {
+		return nil, err
+	}
+	return &models.LogicalTableDetail{LogicalTable: table, MaterializationGroups: groups}, nil
 }
 
 func (s *LogicalTableService) ListLogicalTables(tenantID int64, opts repository.ListLogicalTableOptions) ([]models.LogicalTable, int64, error) {
@@ -395,7 +399,7 @@ func (s *LogicalTableService) updateLogicalTableStatus(id, tenantID, userID, ver
 				return err
 			}
 			if grouped {
-				return apperrors.Conflict("materialization_group_member_conflict", i18n.MsgTableStateConflict)
+				return apperrors.Conflict("materialization_group_member_conflict", i18n.MsgTableMaterializationGroupMember)
 			}
 		}
 		if validateApproval {

@@ -207,7 +207,7 @@ describe('protection access request review', () => {
     expect(review.decisionDialog.value).toBe(true)
   })
 
-  it('owns required validation and decision presentation', () => {
+  it('owns required validation and decision state', () => {
     const { review } = createReview()
     const row = { id: 1, state: 'pending', can_decide: true, version: 1 }
 
@@ -215,9 +215,7 @@ describe('protection access request review', () => {
     expect(review.decidingRequest.value).toMatchObject(row)
     expect(review.decidingRequest.value).not.toBe(row)
     expect(review.decisionRules.value.rationale[0]).toMatchObject({ required: true, whitespace: true })
-    expect(review.decisionTitle.value).toBe('security.accessRequest.reject')
-    expect(review.decisionHint.value).toBe('security.accessRequest.rejectHint')
-    expect(review.decisionConfirmLabel.value).toBe('security.accessRequest.confirmActions.reject')
+    expect(review.decision.value).toBe('reject')
   })
 
   it('reports decision load and submit failures without closing the dialog', async () => {

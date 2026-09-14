@@ -412,6 +412,7 @@ jobs:
           - module: orchestrator
             name: Orchestrator
             target: test-orchestrator-frontend
+            playwright: true
           - module: portal
             name: Portal
             target: test-portal-frontend
@@ -466,6 +467,15 @@ jobs:
       - name: Run ${{ matrix.name }} frontend gate
         if: steps.selection.outputs.run == 'true'
         run: make ${{ matrix.target }}
+
+      - name: Upload Security browser failure evidence
+        if: failure() && matrix.module == 'security' && steps.selection.outputs.run == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: security-browser-failure-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/addp-security-playwright-results/
+          if-no-files-found: ignore
+          retention-days: 14
 
       - name: Report skipped ${{ matrix.name }} frontend gate
         if: steps.selection.outputs.run != 'true'

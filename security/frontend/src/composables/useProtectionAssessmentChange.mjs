@@ -121,6 +121,7 @@ export function useProtectionAssessmentChange({
 
   function focusRevisionRationale() {
     nextTick(() => {
+      revisionDialogRef.value?.clearValidate?.()
       revisionDialogRef.value?.focusPrimary?.()
     })
   }
@@ -220,6 +221,7 @@ export function useProtectionAssessmentChange({
 
   function focusRevokeCancel() {
     nextTick(() => {
+      revokeDialogRef.value?.clearValidate?.()
       revokeDialogRef.value?.focusPrimary?.()
     })
   }

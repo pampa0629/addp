@@ -20,17 +20,17 @@
           class="wide"
           filterable
           :placeholder="t('security.assessment.selectComponent')"
-          :loading="componentsLoading"
+          :loading="presentation.componentsLoading"
         >
           <el-option
-            v-for="option in componentOptions"
-            :key="option.component.key"
-            :value="option.component.key"
-            :label="option.component.key"
+            v-for="option in presentation.componentOptions"
+            :key="option.value"
+            :value="option.value"
+            :label="option.label"
           >
             <div class="component-option">
-              <span>{{ option.component.key }}</span>
-              <small>{{ option.component.value_type }}</small>
+              <span>{{ option.label }}</span>
+              <small>{{ option.valueType }}</small>
             </div>
           </el-option>
         </el-select>
@@ -42,12 +42,12 @@
           :placeholder="t('security.finding.selectSensitiveDataType')"
           @change="emit('sensitiveTypeChange', $event)"
         >
-          <el-option v-for="item in sensitiveTypes" :key="item.id" :label="item.name" :value="String(item.id)" />
+          <el-option v-for="option in presentation.sensitiveTypeOptions" :key="option.value" :label="option.label" :value="option.value" />
         </el-select>
       </el-form-item>
       <el-form-item :label="t('security.finding.securityGrade')" prop="securityGradeID" required>
         <el-select v-model="form.securityGradeID" class="wide" :placeholder="t('security.finding.selectSecurityGrade')">
-          <el-option v-for="item in activeGradesForType(form.sensitiveDataTypeID)" :key="item.id" :label="item.name" :value="String(item.id)" />
+          <el-option v-for="option in presentation.gradeOptions" :key="option.value" :label="option.label" :value="option.value" />
         </el-select>
       </el-form-item>
       <el-form-item :label="t('security.assessment.rationale')" prop="rationale" required>
@@ -78,12 +78,9 @@ import { useI18n } from 'vue-i18n'
 defineProps({
   modelValue: { type: Boolean, default: false },
   saving: { type: Boolean, default: false },
-  componentsLoading: { type: Boolean, default: false },
-  componentOptions: { type: Array, default: () => [] },
-  sensitiveTypes: { type: Array, default: () => [] },
+  presentation: { type: Object, required: true },
   form: { type: Object, required: true },
-  rules: { type: Object, required: true },
-  activeGradesForType: { type: Function, required: true }
+  rules: { type: Object, required: true }
 })
 
 const emit = defineEmits(['update:modelValue', 'sensitiveTypeChange', 'close', 'closed', 'submit'])

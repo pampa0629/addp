@@ -345,6 +345,7 @@ import mermaid from 'mermaid'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '../store/auth'
 import { resolveCanonicalTabRouteState } from '@common-ui'
+import { confirmReturnToDraft } from '../utils/lifecycleActions'
 import { navigateModelRoute } from '../utils/moduleNavigation'
 import { resolveEntityListRouteState } from '../utils/routeState'
 import { initializeMermaidTheme, observeThemeChange } from '../utils/mermaidTheme'
@@ -569,11 +570,13 @@ const handleReopen = async () => {
     return
   }
   try {
+    await confirmReturnToDraft(t)
     const updated = await entityAPI.reopen(entityId.value, entity.value.version)
     applyEntity(updated)
     markSaved()
     ElMessage.success(t('model.common.reopen_success'))
   } catch (err) {
+    if (err === 'cancel' || err === 'close') return
     ElMessage.error(getModelErrorMessage(err, t, 'model.common.op_failed'))
   }
 }

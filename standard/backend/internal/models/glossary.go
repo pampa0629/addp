@@ -151,7 +151,6 @@ type CreateGlossaryRequest struct {
 	Example       string     `json:"example"`
 	Note          string     `json:"note"`
 	RelatedIDs    []int64    `json:"related_ids"`
-	ChangeSummary string     `json:"change_summary" binding:"required"`
 	EffectiveFrom *time.Time `json:"effective_from,omitempty"`
 	EffectiveTo   *time.Time `json:"effective_to,omitempty"`
 }

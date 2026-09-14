@@ -34,7 +34,6 @@ export const createGlossaryForm = domainID => ({
   note: '',
   related_ids: [],
   tags: [],
-  change_summary: '',
   effective_from: null,
   effective_to: null
 })

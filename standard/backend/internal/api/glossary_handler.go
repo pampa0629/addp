@@ -102,6 +102,7 @@ func (h *GlossaryHandler) ListGlossaries(c *gin.Context) {
 
 // CreateGlossary godoc
 // @Summary 创建业务术语及首个草稿修订 | Create glossary with initial draft revision
+// @Description 首个草稿的变更说明由后端按请求语言自动记录为“初始创建”，请求不包含 change_summary；后续修订仍必填。 | The server records a localized Initial creation summary for the first draft. The request does not include change_summary; subsequent revisions still require it.
 // @Tags Standard
 // @Accept json
 // @Produce json
@@ -117,7 +118,7 @@ func (h *GlossaryHandler) CreateGlossary(c *gin.Context) {
 	if !bindJSON(c, &req) {
 		return
 	}
-	result, err := h.svc.CreateGlossary(&req, getTenantID(c), getUserID(c))
+	result, err := h.svc.CreateGlossary(&req, getTenantID(c), getUserID(c), commoni18n.T(c, sysi18n.MsgGlossaryInitialCreation))
 	if err != nil {
 		respondError(c, http.StatusBadRequest, err)
 		return

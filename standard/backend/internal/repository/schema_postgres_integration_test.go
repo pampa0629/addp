@@ -703,54 +703,56 @@ func TestPostgresGlossaryScopeConstraint(t *testing.T) {
 	}
 }
 
-func TestPostgresStandardCollectionGovernanceConstraints(t *testing.T) {
+func TestPostgresRemovesRetiredCollectionTables(t *testing.T) {
 	dsn := os.Getenv("STANDARD_POSTGRES_TEST_DSN")
 	if dsn == "" {
 		t.Skip("STANDARD_POSTGRES_TEST_DSN is not set")
 	}
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
-		t.Fatalf("open postgres: %v", err)
+		t.Fatal(err)
 	}
-	if err := Migrate(db); err != nil {
-		t.Fatalf("Migrate() error = %v", err)
+	tx := db.Begin()
+	if tx.Error != nil {
+		t.Fatal(tx.Error)
 	}
-
-	tenantID := int64(9_000_000_004)
-	defer func() { _ = db.Where("tenant_id = ?", tenantID).Delete(&models.StandardCollection{}).Error }()
-	repo := NewStandardCollectionRepository(db)
-	collection := &models.StandardCollection{TenantID: tenantID, Code: "governed", CreatedBy: 101}
-	revision := &models.StandardCollectionRevision{Name: "Governed", Description: "Governed standards", ChangeSummary: "initial", CreatedBy: 101}
-	if err := repo.Create(collection, revision, []models.StandardCollectionMember{{MemberType: models.CollectionMemberElement, MemberID: 501}}); err != nil {
-		t.Fatalf("create collection: %v", err)
+	defer tx.Rollback()
+	if err := Migrate(tx); err != nil {
+		t.Fatal(err)
 	}
-	if err := repo.ReplaceAssignments(collection.ID, tenantID, 101, 1, []models.StandardCollectionAssignment{
-		{PrincipalID: 101, Role: models.CollectionAssignmentOwner},
-		{PrincipalID: 102, Role: models.CollectionAssignmentReviewer},
-	}); err != nil {
-		t.Fatalf("replace assignments: %v", err)
+	domain := models.Domain{TenantID: 987321, Name: "Preserved domain", Code: "preserved_domain", CreatedBy: 1}
+	if err := tx.Create(&domain).Error; err != nil {
+		t.Fatal(err)
 	}
-	if err := repo.Transition(collection.ID, revision.ID, tenantID, 101, 2, models.RevisionStatusDraft, models.RevisionStatusInReview); err != nil {
-		t.Fatalf("submit revision: %v", err)
+	for _, statement := range []string{
+		"CREATE TABLE standard.standard_collections (id BIGINT PRIMARY KEY, draft_revision_id BIGINT)",
+		"CREATE TABLE standard.standard_collection_revisions (id BIGINT PRIMARY KEY, collection_id BIGINT REFERENCES standard.standard_collections(id))",
+		"ALTER TABLE standard.standard_collections ADD FOREIGN KEY (draft_revision_id) REFERENCES standard.standard_collection_revisions(id)",
+		"CREATE TABLE standard.standard_collection_members (id BIGINT PRIMARY KEY, collection_revision_id BIGINT REFERENCES standard.standard_collection_revisions(id))",
+		"CREATE TABLE standard.standard_collection_assignments (id BIGINT PRIMARY KEY, collection_id BIGINT REFERENCES standard.standard_collections(id))",
+		"CREATE TABLE standard.standard_collection_events (id BIGINT PRIMARY KEY, collection_id BIGINT REFERENCES standard.standard_collections(id), revision_id BIGINT REFERENCES standard.standard_collection_revisions(id))",
+		"INSERT INTO standard.standard_collections VALUES (1, NULL)",
+		"INSERT INTO standard.standard_collection_revisions VALUES (1, 1)",
+		"UPDATE standard.standard_collections SET draft_revision_id = 1 WHERE id = 1",
+		"INSERT INTO standard.standard_collection_members VALUES (1, 1)",
+		"INSERT INTO standard.standard_collection_assignments VALUES (1, 1)",
+		"INSERT INTO standard.standard_collection_events VALUES (1, 1, 1)",
+	} {
+		if err := tx.Exec(statement).Error; err != nil {
+			t.Fatal(err)
+		}
 	}
-	if err := repo.Publish(collection.ID, revision.ID, tenantID, 102, 3); err != nil {
-		t.Fatalf("publish revision: %v", err)
-	}
-	events, eventTotal, err := repo.ListEvents(collection.ID, tenantID, 1, 20)
-	if err != nil || eventTotal != 4 || len(events) != 4 || events[0].EventType != models.CollectionEventPublished {
-		t.Fatalf("events=%#v total=%d err=%v", events, eventTotal, err)
-	}
-	items, total, err := repo.List(tenantID, 102, "Governed", models.RevisionStatusPublished, 1, 20)
-	if err != nil || total != 1 || len(items) != 1 || items[0].CurrentRevision == nil {
-		t.Fatalf("published collection list=%#v total=%d err=%v", items, total, err)
-	}
-
-	invalidAssignment := models.StandardCollectionAssignment{CollectionID: collection.ID, PrincipalID: 103, Role: "approver", CreatedBy: 101}
-	if err := db.Create(&invalidAssignment).Error; err == nil {
-		t.Fatal("non-canonical collection assignment role should be rejected")
-	}
-	invalidEvent := models.StandardCollectionEvent{CollectionID: collection.ID, EventType: "edited", ActorID: 101, Detail: models.JSONB{}}
-	if err := db.Create(&invalidEvent).Error; err == nil {
-		t.Fatal("non-canonical collection event type should be rejected")
+	for attempt := 0; attempt < 2; attempt++ {
+		if err := Migrate(tx); err != nil {
+			t.Fatalf("migration %d: %v", attempt, err)
+		}
+		var count int64
+		if err := tx.Raw("SELECT count(*) FROM information_schema.tables WHERE table_schema = 'standard' AND table_name IN ('standard_collections','standard_collection_revisions','standard_collection_members','standard_collection_assignments','standard_collection_events')").Scan(&count).Error; err != nil || count != 0 {
+			t.Fatalf("retired table count=%d err=%v", count, err)
+		}
+		var preserved models.Domain
+		if err := tx.First(&preserved, domain.ID).Error; err != nil || preserved.Code != domain.Code {
+			t.Fatalf("domain was changed by removal: %#v, %v", preserved, err)
+		}
 	}
 }

@@ -17,13 +17,16 @@ func TestGlossaryServiceCreatesAndPublishesRevision(t *testing.T) {
 	effectiveFrom := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
 	aggregate, err := svc.CreateGlossary(&models.CreateGlossaryRequest{
 		ScopeType: models.StandardScopeTenantCommon, Code: "customer", Name: "客户",
-		Definition: "购买产品或服务的主体", ChangeSummary: "初始定义", EffectiveFrom: &effectiveFrom,
-	}, 7, 9)
+		Definition: "购买产品或服务的主体", EffectiveFrom: &effectiveFrom,
+	}, 7, 9, "初始创建")
 	if err != nil {
 		t.Fatalf("CreateGlossary() error = %v", err)
 	}
 	if aggregate.DraftRevision == nil || aggregate.DraftRevision.Status != models.RevisionStatusDraft || aggregate.Code != "customer" {
 		t.Fatalf("created aggregate = %#v", aggregate)
+	}
+	if aggregate.DraftRevision.RevisionNo != 1 || aggregate.DraftRevision.ChangeSummary != "初始创建" {
+		t.Fatalf("initial revision = %#v", aggregate.DraftRevision)
 	}
 	if aggregate.HasPublicationHistory {
 		t.Fatal("new draft glossary must not report publication history")
@@ -42,6 +45,15 @@ func TestGlossaryServiceCreatesAndPublishesRevision(t *testing.T) {
 	if !aggregate.HasPublicationHistory {
 		t.Fatal("published glossary must report publication history")
 	}
+	for _, summary := range []string{"", "   "} {
+		if _, err := svc.CreateRevision(aggregate.ID, 7, 9, &models.CreateGlossaryRevisionRequest{Version: aggregate.Version, ChangeSummary: summary}); !errors.Is(err, ErrInvalidStandardRevision) {
+			t.Fatalf("CreateRevision(%q) error = %v, want invalid revision", summary, err)
+		}
+	}
+	aggregate, err = svc.CreateRevision(aggregate.ID, 7, 9, &models.CreateGlossaryRevisionRequest{Version: aggregate.Version, ChangeSummary: "补充客户定义"})
+	if err != nil || aggregate.DraftRevision.RevisionNo != 2 || aggregate.DraftRevision.ChangeSummary != "补充客户定义" {
+		t.Fatalf("CreateRevision() aggregate = %#v, error = %v", aggregate, err)
+	}
 	if err := svc.DeleteGlossary(aggregate.ID, 7); !errors.Is(err, ErrGlossaryPublicationHistory) {
 		t.Fatalf("DeleteGlossary() error = %v, want publication history conflict", err)
 	}
@@ -50,10 +62,10 @@ func TestGlossaryServiceCreatesAndPublishesRevision(t *testing.T) {
 func TestGlossaryServiceRejectsInvalidScopeAndSelfRelation(t *testing.T) {
 	db := openGlossaryServiceTestDB(t)
 	svc := NewGlossaryService(repository.NewGlossaryRepository(db), repository.NewTenantReferenceRepository(db))
-	if _, err := svc.CreateGlossary(&models.CreateGlossaryRequest{ScopeType: models.StandardScopeDomain, Code: "customer", Name: "客户", Definition: "定义", ChangeSummary: "初始"}, 7, 9); !errors.Is(err, ErrInvalidStandardScope) {
+	if _, err := svc.CreateGlossary(&models.CreateGlossaryRequest{ScopeType: models.StandardScopeDomain, Code: "customer", Name: "客户", Definition: "定义"}, 7, 9, "初始创建"); !errors.Is(err, ErrInvalidStandardScope) {
 		t.Fatalf("CreateGlossary() error = %v, want invalid scope", err)
 	}
-	aggregate, err := svc.CreateGlossary(&models.CreateGlossaryRequest{ScopeType: models.StandardScopeTenantCommon, Code: "customer", Name: "客户", Definition: "定义", ChangeSummary: "初始"}, 7, 9)
+	aggregate, err := svc.CreateGlossary(&models.CreateGlossaryRequest{ScopeType: models.StandardScopeTenantCommon, Code: "customer", Name: "客户", Definition: "定义"}, 7, 9, "初始创建")
 	if err != nil {
 		t.Fatalf("CreateGlossary() error = %v", err)
 	}
@@ -70,8 +82,8 @@ func TestGlossaryServiceDeletesNeverPublishedIdentityAndDraft(t *testing.T) {
 	svc := NewGlossaryService(repository.NewGlossaryRepository(db), repository.NewTenantReferenceRepository(db))
 	aggregate, err := svc.CreateGlossary(&models.CreateGlossaryRequest{
 		ScopeType: models.StandardScopeTenantCommon, Code: "temporary", Name: "临时术语",
-		Definition: "尚未发布的临时定义", ChangeSummary: "初始定义",
-	}, 7, 9)
+		Definition: "尚未发布的临时定义",
+	}, 7, 9, "初始创建")
 	if err != nil {
 		t.Fatalf("CreateGlossary() error = %v", err)
 	}

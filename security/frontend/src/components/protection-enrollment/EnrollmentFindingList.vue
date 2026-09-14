@@ -1,6 +1,6 @@
 <template>
   <div class="finding-list">
-    <article v-for="row in rows" :key="row.id" class="finding-card">
+    <article v-for="row in presentation.rows" :key="row.id" class="finding-card">
       <div class="finding-card__header">
         <div>
           <strong>{{ row.componentKey }}</strong>
@@ -104,13 +104,13 @@
         <span>{{ t('security.finding.reviewRationale') }}</span>
         <p>{{ row.review.rationale }}</p>
       </div>
-      <div v-if="!row.review && canReview" class="finding-card__actions">
+      <div v-if="!row.review && presentation.permissions.canReview" class="finding-card__actions">
         <el-button type="danger" plain @click="emit('review', row.finding, 'reject')">{{ t('security.finding.markFalsePositive') }}</el-button>
         <el-button type="primary" plain @click="emit('review', row.finding, 'confirm')">{{ t('security.finding.review') }}</el-button>
       </div>
       <div v-else-if="row.assessment.current" class="finding-card__actions">
         <el-button plain @click="emit('history', row.assessment.current)">{{ t('security.assessment.history') }}</el-button>
-        <el-button v-if="canUpdateAssessments" plain @click="emit('revise', row.assessment.current)">
+        <el-button v-if="presentation.permissions.canUpdateAssessments" plain @click="emit('revise', row.assessment.current)">
           {{ t('security.assessment.reviseConclusion') }}
         </el-button>
         <el-button
@@ -122,14 +122,14 @@
           {{ row.assessment.policy?.state === 'active' ? t('security.policy.adjust') : t('security.policy.tighten') }}
         </el-button>
         <el-button
-          v-if="row.assessment.policy?.state === 'active' && canRevokePolicies"
+          v-if="row.assessment.policy?.state === 'active' && presentation.permissions.canRevokePolicies"
           plain
           @click="emit('restorePolicy', row.assessment.active)"
         >
           {{ t('security.policy.restoreDefault') }}
         </el-button>
         <el-button
-          v-if="row.assessment.active && canUpdateAssessments"
+          v-if="row.assessment.active && presentation.permissions.canUpdateAssessments"
           type="danger"
           plain
           @click="emit('revokeAssessment', row.assessment.active)"
@@ -140,37 +140,28 @@
     </article>
   </div>
   <el-pagination
-    v-if="total > pageSize"
-    :current-page="page"
+    v-if="presentation.pagination.total > presentation.pagination.pageSize"
+    :current-page="presentation.pagination.page"
     class="finding-pagination"
     small
     background
     layout="total, prev, pager, next"
-    :page-size="pageSize"
-    :total="total"
+    :page-size="presentation.pagination.pageSize"
+    :total="presentation.pagination.total"
     @current-change="handlePageChange"
   />
 </template>
 
 <script setup>
-import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { QuestionFilled } from '@element-plus/icons-vue'
 
-const props = defineProps({
-  findings: { type: Array, required: true },
-  total: { type: Number, required: true },
-  page: { type: Number, required: true },
-  pageSize: { type: Number, required: true },
-  canReview: { type: Boolean, default: false },
-  canUpdateAssessments: { type: Boolean, default: false },
-  canRevokePolicies: { type: Boolean, default: false },
+defineProps({
   presentation: { type: Object, required: true }
 })
 
 const emit = defineEmits(['review', 'history', 'revise', 'configurePolicy', 'restorePolicy', 'revokeAssessment', 'update:page', 'pageChange'])
 const { t } = useI18n()
-const rows = computed(() => props.findings.map(finding => props.presentation.row(finding)))
 
 function handlePageChange(page) {
   emit('update:page', page)

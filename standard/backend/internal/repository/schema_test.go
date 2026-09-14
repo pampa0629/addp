@@ -143,8 +143,6 @@ func TestPostgresSchemaStatementsDefineDeletePolicies(t *testing.T) {
 		"CONSTRAINT ck_standard_document_candidate_family_decisions_members CHECK",
 		"CONSTRAINT ck_standard_document_candidate_formalizations_action CHECK",
 		"CONSTRAINT ck_standard_document_candidate_formalizations_status CHECK",
-		"CONSTRAINT ck_standard_collection_events_type CHECK",
-		"CONSTRAINT fk_standard_collection_events_revision FOREIGN KEY (revision_id) REFERENCES standard.standard_collection_revisions(id) ON DELETE CASCADE",
 	} {
 		if !strings.Contains(joined, expected) {
 			t.Fatalf("postgres schema statements missing %q", expected)
@@ -164,11 +162,6 @@ func openStandardSchemaTestDB(t *testing.T) *gorm.DB {
 	statements := []string{
 		`CREATE TABLE standard.reference_deletions (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, resource_type TEXT NOT NULL, resource_id INTEGER NOT NULL)`,
 		`CREATE TABLE standard.domains (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, code TEXT NOT NULL)`,
-		`CREATE TABLE standard.standard_collections (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, code TEXT NOT NULL)`,
-		`CREATE TABLE standard.standard_collection_revisions (id INTEGER PRIMARY KEY, collection_id INTEGER NOT NULL, revision_no INTEGER NOT NULL)`,
-		`CREATE TABLE standard.standard_collection_members (id INTEGER PRIMARY KEY, collection_revision_id INTEGER NOT NULL, member_type TEXT NOT NULL, member_id INTEGER NOT NULL)`,
-		`CREATE TABLE standard.standard_collection_assignments (id INTEGER PRIMARY KEY, collection_id INTEGER NOT NULL, principal_id INTEGER NOT NULL, role TEXT NOT NULL)`,
-		`CREATE TABLE standard.standard_collection_events (id INTEGER PRIMARY KEY, collection_id INTEGER NOT NULL, revision_id INTEGER, event_type TEXT NOT NULL, actor_id INTEGER NOT NULL, detail TEXT NOT NULL)`,
 		`CREATE TABLE standard.glossaries (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, code TEXT NOT NULL)`,
 		`CREATE TABLE standard.glossary_revisions (id INTEGER PRIMARY KEY, glossary_id INTEGER NOT NULL, revision_no INTEGER NOT NULL)`,
 		`CREATE TABLE standard.elements (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, code TEXT NOT NULL)`,

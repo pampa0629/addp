@@ -873,51 +873,10 @@ erDiagram
         timestamp updated_at
     }
 
-    StandardCollection {
-        uint id PK
-        uint tenant_id FK
-        string code UK
-        uint draft_revision_id FK
-        int version "并发控制"
-        timestamp created_at
-        timestamp updated_at
-    }
 
-    StandardCollectionRevision {
-        uint id PK
-        uint collection_id FK
-        int revision_no
-        string status "draft|in_review|published|withdrawn"
-        string name
-        string description
-        string change_summary
-        uint submitted_by
-        uint published_by
-    }
 
-    StandardCollectionMember {
-        uint id PK
-        uint collection_revision_id FK
-        string member_type "element|code_set|metric|glossary|document"
-        uint member_id "对应标准稳定身份"
-    }
 
-    StandardCollectionAssignment {
-        uint id PK
-        uint collection_id FK
-        uint principal_id "System User Principal"
-        string role "owner|maintainer|reviewer"
-    }
 
-    StandardCollectionEvent {
-        uint id PK
-        uint collection_id FK
-        uint revision_id FK
-        string event_type "created|draft_created|draft_updated|submitted|returned|published|assignments_replaced"
-        uint actor_id "System User Principal"
-        jsonb detail "最小事件详情"
-        timestamp created_at
-    }
 
     StandardCategory {
         uint id PK
@@ -1162,16 +1121,6 @@ erDiagram
     Domain ||--o{ MetricDefinition : "治理归属(scope=domain)"
     Domain ||--o{ Glossary : "治理归属(scope=domain)"
     Domain ||--o{ Document : "治理归属(scope=domain)"
-    StandardCollection ||--o{ StandardCollectionRevision : "含治理配置修订"
-    StandardCollection ||--o{ StandardCollectionAssignment : "职责分配"
-    StandardCollection ||--o{ StandardCollectionEvent : "不可变治理事件"
-    StandardCollectionRevision ||--o{ StandardCollectionEvent : "关联审核修订"
-    StandardCollectionRevision ||--o{ StandardCollectionMember : "冻结成员清单"
-    StandardCollectionMember }o--o{ Element : "成员稳定身份"
-    StandardCollectionMember }o--o{ CodeSet : "成员稳定身份"
-    StandardCollectionMember }o--o{ MetricDefinition : "成员稳定身份"
-    StandardCollectionMember }o--o{ Glossary : "成员稳定身份"
-    StandardCollectionMember }o--o{ Document : "成员稳定身份"
     StandardCategory ||--o{ StandardCategory : "父子分类(self-ref)"
     StandardCategory ||--o{ Element : "导航分类"
     StandardCategory ||--o{ CodeSet : "导航分类"
@@ -1203,7 +1152,6 @@ erDiagram
 |---|----------|----------|------|
 | ST-1 | 数据元、码值集、指标定义、业务术语和标准文档均采用稳定身份 + 不可变修订 | ✅ 已实现 | 标准定义及来源文档都可冻结到确定修订，并按生效区间解析 |
 | ST-2 | `DimensionHierarchy` 已整体迁入 Model，Standard 旧表、API、权限与前端入口已删除 | ✅ 已实现 | 维度层级成为 LogicalTable 聚合内单一事实，不再跨模块软引用 |
-| ST-4 | StandardCollection 已按“稳定身份 + 治理配置修订 + 成员快照 + 对象级职责分配 + 不可变治理事件”实现 | ✅ 已实现 | 可独立配置跨域标准集的成员、维护人、对象级权限和审核流程，且不改变成员自身发布状态 |
 | ST-5 | 指标定义与指标实现已经拆分 | ✅ 已实现 | Standard 只保留修订级语义口径与冻结的语义依赖；粒度、来源、连接、过滤和可执行表达式归 Model MetricImplementation 所有 |
 | ST-6 | 标准文档提炼固定输入修订并保存候选、章节/行号/原文证据及人工处置；读取时确定性比对当前同编码标准 | ✅ 已实现 | Copilot 与 Standard 双端约束候选数据类型和值域类型；枚举数据元候选通过 `code_set_code` 闭合同批码值集候选，正式发布时再冻结具体码值集修订；结果可稳定回溯，治理人员可区分新增、完全一致、内容冲突和范围冲突，并直接核对字段级候选值与当前标准值，且不会绕过 Standard 审核形成正式标准 |
 | ST-7 | 码值层级与跨码值集映射尚未形成规范 | 待讨论 | 需要先区分标准间语义映射与 Transfer 的资产级转换执行，再决定是否建立父子码项和 crosswalk 资源 |

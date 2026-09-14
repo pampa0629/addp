@@ -12,9 +12,9 @@
       "start": "开始导出"
     },
     "executionParameters": {
-	  "title": "执行参数",
+      "title": "执行参数",
       "workflowConfiguration": "任务默认值",
-	  "executionOverride": "执行时指定",
+      "executionOverride": "执行时指定",
       "upstream": "上游输出",
       "selectOutput": "请选择上游输出",
       "selectResource": "选择资源",
@@ -26,24 +26,24 @@
       "geometryMultiple": "检测到多个几何字段，请选择",
       "geometryNotDetected": "未识别到几何字段",
       "noDefault": "未配置",
-	  "resourceTypes": {
-		"table": "数据表",
-		"collection": "集合",
-		"graph": "图",
-		"object": "对象",
-		"file": "文件",
-		"directory": "目录",
-		"prefix": "目录",
-		"database": "数据库",
-		"schema": "Schema",
-		"bucket": "Bucket",
-		"root": "根目录",
-		"server": "服务",
-		"service": "服务"
-	  },
-	  "empty": "该任务没有可覆盖的执行参数",
-	  "addItem": "添加一项",
-	  "removeItem": "删除此项"
+      "resourceTypes": {
+        "table": "数据表",
+        "collection": "集合",
+        "graph": "图",
+        "object": "对象",
+        "file": "文件",
+        "directory": "目录",
+        "prefix": "目录",
+        "database": "数据库",
+        "schema": "Schema",
+        "bucket": "Bucket",
+        "root": "根目录",
+        "server": "服务",
+        "service": "服务"
+      },
+      "empty": "该任务没有可覆盖的执行参数",
+      "addItem": "添加一项",
+      "removeItem": "删除此项"
     },
     "executionMonitor": {
       "viewExecutions": "查看执行记录",
@@ -107,7 +107,24 @@
     "deleteSuccess": "删除成功",
     "saveSuccess": "保存成功",
     "copySuccess": "复制成功",
-    "copyFailed": "复制失败"
+    "copyFailed": "复制失败",
+    "orchestration": {
+      "execute": "执行",
+      "confirmMessage": "将执行“{name}”的全部 {count} 个步骤，包含流程中的数据同步、计算和发布操作。是否继续？",
+      "confirmTitle": "执行完整流程",
+      "cancel": "取消",
+      "started": "执行已提交",
+      "executeFailed": "执行失败，请检查权限或流程配置",
+      "scopeHelp": "以下流程引用了当前物化任务。启动将执行所选流程的全部步骤，请先确认执行范围。",
+      "noPermission": "无权查看关联流程",
+      "loadFailed": "关联流程加载失败",
+      "retry": "重试",
+      "empty": "尚未配置关联流程。请配置数据来源、计算步骤和物化发布任务。",
+      "configure": "配置流程",
+      "edit": "编辑流程",
+      "steps": "执行范围：全部 {count} 个步骤",
+      "viewExecution": "查看本次执行"
+    }
   },
   "auth": {
     "login": {

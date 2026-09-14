@@ -291,6 +291,7 @@ func (h *IAMOAuthHandler) DecideDeviceAuthorization(c *gin.Context) {
 
 // Token godoc
 // @Summary      兑换 OAuth Token | Exchange OAuth token
+// @Description  Client Credentials 的 expires_in 按数据库当前时间计算，为 1–300 秒；签发期间有效期异常时回滚并返回 503 | Client Credentials expires_in uses current database time and is 1–300 seconds; invalid lifetime during issuance rolls back and returns 503
 // @Tags         OAuth
 // @Accept       application/x-www-form-urlencoded
 // @Produce      json
@@ -307,6 +308,7 @@ func (h *IAMOAuthHandler) DecideDeviceAuthorization(c *gin.Context) {
 // @Param        tenant_id formData integer false "Tenant Runtime Client Credentials 必填，用于选择有效 Tenant Membership；与 context_type 互斥 | Required for Tenant Runtime Client Credentials to select an effective Tenant Membership; mutually exclusive with context_type"
 // @Param        context_type formData string false "平台控制面 Client Credentials 固定为 platform；与 tenant_id 互斥 | Fixed to platform for control-plane Client Credentials; mutually exclusive with tenant_id" Enums(platform)
 // @Success      200 {object} IAMOAuthTokenResponse
+// @Failure      503 {object} fosite.RFC6749ErrorJson "暂时无法签发有效令牌 | Temporarily unable to issue a valid token"
 // @x-addp-auth-mode "public"
 // @Router       /oauth/token [post]
 func (h *IAMOAuthHandler) Token(c *gin.Context) {
@@ -374,6 +376,14 @@ func (h *IAMOAuthHandler) Token(c *gin.Context) {
 		return
 	}
 	if serviceCredentialTransaction {
+		remaining, err := h.provider.Storage.ServiceCredentialResponseLifespan(responseContext, requester)
+		if err != nil {
+			_ = h.provider.Storage.Rollback(responseContext)
+			setIAMOAuthFailure(c, "oauth.token.failed", clientID, grantType, "", scope, err)
+			h.provider.OAuth2.WriteAccessError(auditContext, c.Writer, requester, err)
+			return
+		}
+		response.SetExpiresIn(remaining)
 		if err := h.provider.Storage.Commit(responseContext); err != nil {
 			_ = h.provider.Storage.Rollback(responseContext)
 			setIAMOAuthFailure(c, "oauth.token.failed", clientID, grantType, "", scope, err)

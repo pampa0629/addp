@@ -21,8 +21,8 @@
       "confirm": "确认",
       "approve": "审批通过",
       "approve_success": "审批通过",
-      "reopen": "重新打开",
-      "reopen_success": "已重新打开",
+      "reopen": "退回草稿",
+      "reopen_success": "已退回草稿",
       "loading": "加载中...",
       "design": "设计",
       "add": "添加",
@@ -54,7 +54,8 @@
       "continue_editing": "继续编辑",
       "save_before_action": "请先保存当前修改，再执行审批操作。",
       "copy_success": "已复制到剪贴板",
-      "copy_failed": "复制失败"
+      "copy_failed": "复制失败",
+      "reopen_confirm": "退回草稿后，模型可编辑，审批时冻结的数据元修订引用将解除。再次使用前需要重新审批。已发布的物理表保持不变。是否继续？"
     },
     "entity": {
       "recentVisitTitle": "业务实体",
@@ -130,7 +131,7 @@
       "import_mermaid": "导入Mermaid",
       "export_mermaid": "导出Mermaid",
       "refresh": "刷新",
-      "domain_filter": "全部业务域",
+      "domain_filter": "请选择业务域",
       "entity_count": "当前显示 {count} 个实体，{relations} 个关系",
       "no_entities": "当前筛选条件下暂无实体",
       "import_dialog_title": "导入Mermaid ER图",
@@ -142,7 +143,7 @@
       "click_upload": "点击上传",
       "upload_tip": "支持 .md, .mmd, .mermaid, .txt 格式",
       "import_replace": "导入并全量替换",
-      "import_confirm_msg": "导入将全量替换当前租户的草稿实体、属性和关系，任一步失败都会整体回滚。存在已审批实体时，请先全部重新打开。是否继续？",
+      "import_confirm_msg": "导入将全量替换当前租户的草稿实体、属性和关系，任一步失败都会整体回滚。存在已审批实体时，请先全部退回草稿。是否继续？",
       "import_confirm_title": "确认导入",
       "import_success": "导入成功：创建{created}个实体和{relations}个关系",
       "import_failed": "导入失败：{msg}",
@@ -154,7 +155,12 @@
       "copy_mermaid": "复制Mermaid代码",
       "copy_mermaid_success": "Mermaid代码已复制到剪贴板",
       "local_er_title": "实体关系图",
-      "generate_failed": "生成ER图失败"
+      "generate_failed": "生成ER图失败",
+      "all_domains": "全部业务域",
+      "choose_domain": "请先选择业务域，或主动选择全部业务域查看总览",
+      "include_related": "展开跨域关联",
+      "unassigned_domain": "未分配业务域",
+      "transfer_scope": "Mermaid 导入将替换当前租户的全部实体模型，导出也包含全部业务域，不受当前图的筛选影响。"
     },
     "logical_table": {
       "recentVisitTitle": "逻辑表",
@@ -198,7 +204,11 @@
       "scd_2": "2 - 拉链（保留历史）",
       "scd_3": "3 - 混合（部分历史）",
       "preview_ddl": "预览 DDL",
-      "ddl_failed": "DDL 预览失败"
+      "ddl_failed": "DDL 预览失败",
+      "approved_help": "已审批的模型定义只读。修改前请退回草稿。DDL 预览不会修改模型或创建物理表。",
+      "group_blocked": "此逻辑表属于以下物化组，需先移出所有物化组，才能退回草稿。",
+      "group_manage": "前往物化组：{name}",
+      "group_read_only": "请联系有物化组管理权限的人员调整成员。"
     },
     "field": {
       "title": "字段定义",
@@ -304,7 +314,16 @@
       "confirm_label": "输入 {target} 以确认删除",
       "confirm_decommission": "确认退役",
       "decommission_success": "物化目标已退役",
-      "decommission_failed": "物化目标退役失败"
+      "decommission_failed": "物化目标退役失败",
+      "not_configured": "未配置",
+      "workflows": "物化流程",
+      "workflow_title": "物化流程 · {name}",
+      "execution_records": "物化执行记录",
+      "prepare_records": "本表准备记录",
+      "seal_records": "本表封存记录",
+      "publish_records": "本表单独发布记录",
+      "group_records": "组发布记录 · {name}",
+      "group_publish_records": "物化组发布记录"
     },
     "dw_layer": {
       "title": "数仓分层配置",
@@ -419,7 +438,8 @@
       "codeRequired": "请输入物化组代码",
       "codeFormat": "代码必须以小写字母开头，且只能包含小写字母、数字和下划线",
       "nameRequired": "请输入物化组名称",
-      "membersRequired": "请至少选择一张逻辑表"
+      "membersRequired": "请至少选择一张逻辑表",
+      "execution_help": "需要同时对外可见的逻辑表才需分组。通过“物化流程”查看执行范围并启动关联流程。"
     },
     "layout": {
       "title": "数据建模",

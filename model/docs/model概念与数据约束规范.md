@@ -29,7 +29,8 @@ PostgreSQL DDL 预览仍只是设计辅助能力，不改变逻辑模型状态�
 一次完整重算遵循唯一顺序：
 
 ```text
-Model prepare -> generic writer -> Model seal -> Quality materialization gate -> Model group publish
+Model prepare -> generic writer -> Model seal -> publish（单表）
+Model prepare -> generic writer -> Model seal -> Quality materialization gate -> group publish（组）
 ```
 
 - `prepare` 只接受已审批且配置完整物化目标的 LogicalTable ID。Model 冻结逻辑表版本、物化目标和结构指纹，使用 `audience=model` 的 Execution Authorization 验证目标边界，并创建本批唯一可写 staging。稳定输出为 `batch_id + staging_locator`，不返回 DDL 或凭据。
@@ -66,7 +67,7 @@ Model prepare -> generic writer -> Model seal -> Quality materialization gate ->
 - 唯一路由为 `DELETE /api/v1/model/logical-tables/{id}/materialized-target`。请求必须提交当前 LogicalTable 正整数 `version`，并逐字提交当前 `target_parent_locator + target_name` 作为人机确认快照；不接受 SQL、另一个目标或服务端版本兜底。
 - Model 必须在控制库事务中锁定 LogicalTable，校验 Tenant、版本、当前物化配置、该表已不属于任何 MaterializationGroup，且不存在 `preparing|prepared|sealed|publishing` 批次；随后使用当前用户授权访问配置中的精确 Engine 和目标。
 - 删除前必须读取物理表管理标记。目标不存在按幂等成功处理；目标存在时标记必须合法且 LogicalTable ID 与当前逻辑表一致，结构指纹和历史 batch ID 只作为该物理产物版本事实，不阻止退役。未标记、标记损坏或属于其他 LogicalTable 的物理表一律拒绝。
-- 物理操作只允许对配置解析出的精确限定表执行 `DROP TABLE`，不接受级联删除。物理删除成功后不修改 LogicalTable 配置或并发版本；后续如需删除逻辑模型，必须按既有流程先重新打开为 `draft`，再通过 LogicalTable 删除接口提交当时版本。
+- 物理操作只允许对配置解析出的精确限定表执行 `DROP TABLE`，不接受级联删除。物理删除成功后不修改 LogicalTable 配置或并发版本；后续如需删除逻辑模型，必须按既有流程先退回草稿为 `draft`，再通过 LogicalTable 删除接口提交当时版本。
 - Model 不调用 Catalog、Service、Develop、Quality 或 Orchestrator 检查引用。治理流程必须先由各 owner 删除对该逻辑表或物理目标的配置引用，再移出 MaterializationGroup、退役物理目标，最后删除逻辑模型；模块边界不能由 Model 的 DDL 操作穿透。
 
 ### 逻辑表删除闭环
@@ -112,7 +113,7 @@ Permission Guard 只判断候选能力，Repository 和 Service 仍必须对每�
 
 EntityAttribute 与 LogicalField 在草稿阶段只维护长期引用 `element_id`，`element_revision_id` 必须为空。Entity 或 LogicalTable 审批时，Model 使用同一个审批时点批量解析全部 `element_id` 对应的 Standard 当前生效修订，并在本地审批事务中把结果冻结到各属性或字段的 `element_revision_id`；任一数据元在该时点没有生效修订时，审批整体失败且不产生状态、版本或冻结字段副作用。
 
-审批后的 DDL、物化、质量规则和历史展示必须以被冻结的 `element_revision_id` 为语义事实，不得动态跟随 Standard 后续生效修订。重新打开聚合时，Model 在同一事务中把聚合转回 `draft` 并清空所属属性或字段的 `element_revision_id`；再次审批重新按新的统一审批时点解析。`element_revision_id` 是审批快照，不接受前端写入，也不建立绕过聚合审批的单独更新接口。
+审批后的 DDL、物化、质量规则和历史展示必须以被冻结的 `element_revision_id` 为语义事实，不得动态跟随 Standard 后续生效修订。退回草稿聚合时，Model 在同一事务中把聚合转回 `draft` 并清空所属属性或字段的 `element_revision_id`；再次审批重新按新的统一审批时点解析。`element_revision_id` 是审批快照，不接受前端写入，也不建立绕过聚合审批的单独更新接口。
 
 引入冻结字段时，历史已审批聚合如果含有 `element_id`，不能仅凭当前 Standard 状态反推当初审批时使用的精确修订。迁移必须将这类聚合转回 `draft` 并推进版本，由用户在确认后显式重新审批；禁止用迁移时的当前修订伪造历史快照。
 
@@ -128,9 +129,13 @@ Standard 删除遵循唯一顺序：Standard 先持久化删除协调记录并�
 
 ## 四、生命周期
 
-Entity 和 LogicalTable 当前生命周期统一为 `draft` 与 `approved`。只有 `draft` 可修改；审批前必须完成聚合校验。Entity 必须至少包含一个定义完整的属性且至少一个属性为主键；LogicalTable 必须至少包含一个字段且至少一个字段为主键。审批失败必须通过稳定错误码和本地化消息指出缺少属性、字段或主键等具体前置条件，不能统一降级为通用请求校验失败。已审批资源如需修改，必须通过显式重新打开操作回到 `draft`，不能在 `approved` 状态直接修改子资源。
+Entity 和 LogicalTable 当前生命周期统一为 `draft` 与 `approved`。只有 `draft` 可修改；审批前必须完成聚合校验。Entity 必须至少包含一个定义完整的属性且至少一个属性为主键；LogicalTable 必须至少包含一个字段且至少一个字段为主键。审批失败必须通过稳定错误码和本地化消息指出缺少属性、字段或主键等具体前置条件，不能统一降级为通用请求校验失败。已审批资源如需修改，必须通过显式退回草稿操作回到 `draft`，不能在 `approved` 状态直接修改子资源。
 
-`materialized` 不属于当前正式状态。租户资源回收的 logical 模式可以将已审批资源重新打开为 `draft`，physical 模式必须在单个数据库事务中按聚合顺序删除。
+详情页打开、引用回显、查看或复制 DDL 均为只读行为，不改变模型，也不得产生未保存状态。已审批或无更新权限时，物化目标只读展示已有 ResourceLocator；草稿编辑中的资源选择器状态不是模型配置的第二事实源，初始化回显失败或未选中不得清空已保存目标。只有用户显式选择新目标或清空配置才能修改物化目标。
+
+未保存状态按可提交的页面数据与保存基线、弹窗数据与打开时基线分别比较；打开或关闭未修改的弹窗、异步引用加载不视为编辑。弹窗真实修改后的关闭须确认放弃，成功提交只清除对应编辑范围的脏状态。审批或退回草稿成功后必须同步重新读取字段等聚合内容，展示与后端冻结修订一致；退回草稿不得绕过物化组约束，组内成员返回 `409 materialization_group_member_conflict` 并明确提示先移出物化组。
+
+`materialized` 不属于当前正式状态。租户资源回收的 logical 模式可以将已审批资源退回草稿为 `draft`，physical 模式必须在单个数据库事务中按聚合顺序删除。
 
 ### 完整更新语义
 
@@ -144,9 +149,9 @@ Model 遵循平台 API 规范中的资源并发版本规则。`Entity`、`Logica
 
 | 写入对象 | 并发版本主体 | 事务边界 |
 | --- | --- | --- |
-| Entity 基本信息、审批、重新打开、删除 | Entity | 按 `tenant_id + id + version` 条件写入并推进 Entity 版本 |
+| Entity 基本信息、审批、退回草稿、删除 | Entity | 按 `tenant_id + id + version` 条件写入并推进 Entity 版本 |
 | EntityAttribute 新增、更新、删除 | 所属 Entity | 校验 Entity 为 `draft`、写入属性并推进 Entity 版本 |
-| LogicalTable 基本信息、审批、重新打开、删除 | LogicalTable | 按 `tenant_id + id + version` 条件写入并推进 LogicalTable 版本 |
+| LogicalTable 基本信息、审批、退回草稿、删除 | LogicalTable | 按 `tenant_id + id + version` 条件写入并推进 LogicalTable 版本 |
 | LogicalField 新增、更新、删除 | 所属 LogicalTable | 校验 LogicalTable 为 `draft`、写入字段并推进 LogicalTable 版本 |
 | TableRelation 新增、删除 | 事实侧 LogicalTable | 锁定并校验事实表和维度表均为 `draft`，写入关系并只推进事实表版本 |
 | DimensionHierarchy 及层级成员新增、更新、删除 | 所属维度 LogicalTable | 校验维度表为 `draft`、层级字段均属于该表、`level_num` 从 1 开始且不重复，写入并推进 LogicalTable 版本 |
@@ -163,9 +168,9 @@ MetricImplementation 的 `source_config` 与 `expression_config` 必须是非空
 
 跨 Standard 的 HTTP 引用校验在进入本地数据库事务前完成，不能持有 Model 行锁等待网络请求。本地资源版本、生命周期、父子归属和外键引用仍必须在事务内重新锁定并校验。
 
-已有资源的更新、删除、审批和重新打开必须在 JSON body 中携带自己的 `version`；聚合子资源写入必须在 JSON body 中携带父资源 `version`。成功的子资源写入至少返回新的父版本，前端后续写请求必须顺序使用该值。`DELETE` 同样只使用 JSON body 传递版本，不接受 query、Header 或服务端当前值兜底。
+已有资源的更新、删除、审批和退回草稿必须在 JSON body 中携带自己的 `version`；聚合子资源写入必须在 JSON body 中携带父资源 `version`。成功的子资源写入至少返回新的父版本，前端后续写请求必须顺序使用该值。`DELETE` 同样只使用 JSON body 传递版本，不接受 query、Header 或服务端当前值兜底。
 
-直接资源更新、审批和重新打开返回更新后的完整资源。聚合子资源新增、更新返回 `{ "resource": ..., "version": n }`，其中 `resource` 使用具体业务字段名 `attribute`、`field`、`relation` 或 `mapping`；聚合子资源删除返回 `{ "version": n }`。删除聚合根或独立关系成功后资源已不存在，只返回删除结果，不返回新版本。
+直接资源更新、审批和退回草稿返回更新后的完整资源。聚合子资源新增、更新返回 `{ "resource": ..., "version": n }`，其中 `resource` 使用具体业务字段名 `attribute`、`field`、`relation` 或 `mapping`；聚合子资源删除返回 `{ "version": n }`。删除聚合根或独立关系成功后资源已不存在，只返回删除结果，不返回新版本。
 
 并发版本不替代生命周期冲突。请求版本过期统一返回 `409 resource_version_conflict`；版本仍有效但资源状态不允许操作时，继续返回具体的 `entity_state_conflict`、`logical_table_state_conflict` 等领域错误。前端收到版本冲突后必须保留弹窗、表单、未保存内容和脏状态，由用户主动刷新后再建立新基线，不得自动换用最新版本重试。
 
@@ -196,11 +201,11 @@ Standard 引用校验只有明确的 `404` 或跨 Tenant 隐藏结果映射为�
 
 Mermaid 导入采用 Tenant 级“实体模型集合”全量替换语义：该集合包含当前 Tenant 的全部 Entity、EntityAttribute 和 EntityRelation。由于它跨越多个独立聚合，不能使用任一 Entity 或 EntityRelation 的 `version` 作为并发边界；Model 必须为每个 Tenant 维护非空 `BIGINT revision`，初始值为 `1`，并由 `model.entity_model_revisions` 的租户单行事实承载。
 
-`revision` 是整个实体模型集合的编辑基线，不只用于串行化两次 Mermaid 导入。任何改变 Entity、EntityAttribute 或 EntityRelation 的创建、更新、删除、审批、重新打开、Mermaid 导入和内部 Cleanup 都必须在同一事务中锁定 Tenant 修订行并推进 `revision`。创建独立资源不要求客户端携带 `revision`，但服务端仍必须推进它；这样导出后的任意普通写入都会使旧 Mermaid 导入产生版本冲突。
+`revision` 是整个实体模型集合的编辑基线，不只用于串行化两次 Mermaid 导入。任何改变 Entity、EntityAttribute 或 EntityRelation 的创建、更新、删除、审批、退回草稿、Mermaid 导入和内部 Cleanup 都必须在同一事务中锁定 Tenant 修订行并推进 `revision`。创建独立资源不要求客户端携带 `revision`，但服务端仍必须推进它；这样导出后的任意普通写入都会使旧 Mermaid 导入产生版本冲突。
 
 导出响应必须同时返回 `mermaid_code` 和当前 `revision`；导入请求必须同时携带 `mermaid_code` 和作为编辑基线的 `revision`。导入先完整解析和校验可逆子集，再在单个事务中锁定 Tenant 修订行、校验修订版本、替换集合并执行 `revision = revision + 1`。修订行必须在 Tenant 首次导出或导入前稳定存在，不能依赖锁定现有 Entity 行，因为空集合没有可锁定成员。修订冲突同样返回 `409 resource_version_conflict`，且集合和修订版本均保持不变。
 
-导入是破坏性聚合写入，要求 Entity 与 EntityRelation 的创建、删除权限；租户存在已审批实体时必须先全部重新打开。任何解析、校验、修订冲突或写入错误都整体回滚，不返回部分成功。导入成功后返回新 `revision`，前端立即替换本地修订基线。
+导入是破坏性聚合写入，要求 Entity 与 EntityRelation 的创建、删除权限；租户存在已审批实体时必须先全部退回草稿。任何解析、校验、修订冲突或写入错误都整体回滚，不返回部分成功。导入成功后返回新 `revision`，前端立即替换本地修订基线。
 
 Mermaid 可逆子集必须通过 ADDP 元数据注释完整保存所有可编辑 Model 字段：Entity 的 code、显示名、domain_id、description；EntityAttribute 的 column_name、显示名、element_id、data_type、主键、可空性、description、sort_order；EntityRelation 的两端实体 code、关系类型、name 和 description。导出后不做修改立即导入必须保持上述业务字段不变；数据库身份、资源版本、创建人和时间戳由导入生成新值。子集外语法必须明确拒绝，不能静默丢失。
 
@@ -217,3 +222,18 @@ PostgreSQL DDL 预览只接受结构化物化配置。物化目标统一使用 `
 - 聚合删除、Mermaid 导入和 physical cleanup 使用事务。
 - Model Schema 使用版本化 migration，不在服务启动时执行 `AutoMigrate`。
 - API 错误包含稳定 `error_code`，Swagger、前端和跨模块客户端保持同步。
+
+### 生命周期操作与编排入口
+
+- 用户界面统一将 `approved → draft` 称为“退回草稿”（Return to draft）；现有 `/reopen` 状态转换 API 保持唯一入口。执行前明确确认将解除审批及数据元修订冻结，不改变已发布物理表。
+- 逻辑表详情 GET 返回 `materialization_groups: [{id, name}]`，为空时返回 `[]`。这是当前租户逻辑表的归属摘要，随 `model.logical_model.read` 返回，不包含物化组其他成员或配置；进入物化组管理仍检查物化组权限。前端展示全部所属组，并在有成员关系时禁用“退回草稿”。摘要不能替代写入事务的最终校验；并发新增成员仍返回 409，前端刷新归属信息。
+- 物化组提供“物化流程”，在 Model 内展示关联流程及完整执行范围，编辑流程进入 Orchestrator。关联来自编排步骤中 `module=model + task_type=materialization_group_publish + task_id=物化组ID` 的精确引用，不建立 Model 到 Orchestrator 的后端依赖或额外绑定副本。执行由 Orchestrator 统一调度，也可从 Model 内的关联流程入口触发。
+
+### 建模导航与物化操作入口
+
+- 导航固定为业务实体、实体关系图、数仓分层、逻辑表设计、星型建模视图、物化组，模块默认进入业务实体。顺序表达实体建模、表模型设计、物化发布三个阶段，不构成强制工作流。
+- ER 图无业务域上下文时先选域；`domain_id=all` 显式进入全域总览，正整数表示指定域，省略表示未选择。`related=1` 仅在指定域时展开一跳跨域关系，两端实体必须存在；外域实体标注业务域。实体列表进入 ER 图保留当前域。Mermaid 导入、导出始终作用于全租户实体模型，界面必须明确范围。
+- Model 页内可选择并启动关联 Orchestrator 流程；启动的是所选流程全部步骤，须展示步骤与范围并确认。关联按完整任务身份即时解析，不保存反向绑定，不自动生成计算逻辑。单表使用 `materialization_publish`，组内成员使用所属组的 `materialization_group_publish`。没有关联时引导配置，查询失败显示错误而非空列表。
+- 物化执行记录属于 Model 的 prepare/seal/publish/group_publish 任务，不是模型编辑、审批或 DDL 预览历史。逻辑表详情按任务类型及表 ID 筛选，组发布按任务类型及组 ID 筛选；不能仅凭数值 ID 混查表和组。完整流程记录从父 Orchestrator execution 查看。
+- 单表发布不要求创建物化组；只有要求共同可见发布的表才分组。组成员不得单独发布。所有流程仍使用 Orchestrator 唯一调度路径和 Model 唯一物理执行路径。
+- 本轮前端验证复用 `make test-model-frontend`、`make test-console-frontend`、`make test-orchestrator-frontend`、`make test-platform`。现有 Platform CI 的 Model 浏览器任务、Console/Orchestrator 矩阵与共享门禁自动覆盖，无新增 API 或测试入口。

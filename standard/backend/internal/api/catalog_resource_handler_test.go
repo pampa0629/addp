@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -59,7 +60,13 @@ func TestCatalogResourceRoutesRequireCatalogServiceAndResolveCurrentMetric(t *te
 	})
 	defer authServer.Close()
 	catalogService := service.NewCatalogResourceService(repository.NewCatalogResourceRepository(db))
-	router := SetupRouter(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, catalogService, authServer.URL, modulelifecycle.NewStandalone("standard"))
+	router := SetupRouter(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, catalogService, authServer.URL, modulelifecycle.NewStandalone("standard"))
+
+	for _, route := range router.Routes() {
+		if strings.HasPrefix(route.Path, "/api/v1/standard/collections") || route.Path == "/api/v1/standard/collection-user-candidates" {
+			t.Fatalf("retired route is still registered: %s %s", route.Method, route.Path)
+		}
+	}
 
 	changesResponse := performTenantRequest(router, http.MethodGet, "/api/v1/standard/catalog-resources/changes", "catalog-token", "")
 	if changesResponse.Code != http.StatusOK {

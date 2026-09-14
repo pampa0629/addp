@@ -8,10 +8,11 @@
     :close-on-press-escape="!saving"
     :show-close="!saving"
     @update:model-value="emit('update:modelValue', $event)"
+    @open="clearValidate"
     @opened="focusPrimary"
     @closed="emit('closed')"
   >
-    <template v-if="assessment">
+    <template v-if="presentation">
       <el-alert :type="mode === 'revise' ? 'info' : 'warning'" :closable="false" :title="t(hintKey)" />
       <div v-if="conflict" class="version-conflict-notice" role="alert">
         <span>{{ t(conflictKey) }}</span>
@@ -20,9 +21,9 @@
         </el-button>
       </div>
       <div class="policy-target">
-        <strong>{{ assessment.component_key }}</strong>
-        <span>{{ assessmentConclusionLabel(assessment.current?.conclusion) }}</span>
-        <span>{{ assessmentSummary(assessment) }}</span>
+        <strong>{{ presentation.componentKey }}</strong>
+        <span>{{ presentation.conclusionLabel }}</span>
+        <span>{{ presentation.summary }}</span>
       </div>
       <el-form ref="formRef" :model="form" :rules="rules" label-position="top">
         <template v-if="mode === 'revise'">
@@ -33,12 +34,12 @@
               :placeholder="t('security.finding.selectSensitiveDataType')"
               @change="emit('sensitiveTypeChange', $event)"
             >
-              <el-option v-for="item in sensitiveTypes" :key="item.id" :label="item.name" :value="String(item.id)" />
+              <el-option v-for="option in presentation.sensitiveTypeOptions" :key="option.value" :label="option.label" :value="option.value" />
             </el-select>
           </el-form-item>
           <el-form-item :label="t('security.finding.securityGrade')" prop="securityGradeID" required>
             <el-select v-model="form.securityGradeID" class="wide" :placeholder="t('security.finding.selectSecurityGrade')">
-              <el-option v-for="item in activeGradesForType(form.sensitiveDataTypeID)" :key="item.id" :label="item.name" :value="String(item.id)" />
+              <el-option v-for="option in presentation.gradeOptions" :key="option.value" :label="option.label" :value="option.value" />
             </el-select>
           </el-form-item>
         </template>
@@ -73,16 +74,12 @@ import { useI18n } from 'vue-i18n'
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
   mode: { type: String, required: true, validator: value => ['revise', 'revoke'].includes(value) },
-  assessment: { type: Object, default: null },
+  presentation: { type: Object, default: null },
   saving: { type: Boolean, default: false },
   reloading: { type: Boolean, default: false },
   conflict: { type: Boolean, default: false },
   form: { type: Object, required: true },
-  rules: { type: Object, required: true },
-  sensitiveTypes: { type: Array, default: () => [] },
-  activeGradesForType: { type: Function, required: true },
-  assessmentSummary: { type: Function, required: true },
-  assessmentConclusionLabel: { type: Function, required: true }
+  rules: { type: Object, required: true }
 })
 
 const emit = defineEmits(['update:modelValue', 'reload', 'sensitiveTypeChange', 'close', 'closed', 'submit'])
@@ -108,7 +105,6 @@ function clearValidate() {
 }
 
 function focusPrimary() {
-  clearValidate()
   const target = props.mode === 'revise'
     ? rationaleInput.value
     : (cancelButton.value?.$el || cancelButton.value)

@@ -350,7 +350,6 @@
       "standard": {
         "label": "数据标准",
       "domains": "业务域管理",
-      "collections": "标准集管理",
         "glossaries": "业务术语",
         "elements": "数据元管理",
         "codeSets": "码值集管理",

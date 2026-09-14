@@ -66,7 +66,6 @@
         <el-form-item :label="$t('standard.glossary.exampleLabel')"><el-input v-model="form.example" type="textarea" :rows="2" /></el-form-item>
         <el-form-item :label="$t('standard.glossary.noteLabel')"><el-input v-model="form.note" type="textarea" :rows="2" /></el-form-item>
         <el-form-item :label="$t('standard.common.tags')"><el-select v-model="form.tags" multiple filterable allow-create default-first-option style="width:100%" /></el-form-item>
-        <el-form-item :label="$t('standard.revision.changeSummary')" prop="change_summary"><el-input v-model="form.change_summary" /></el-form-item>
         <el-form-item :label="$t('standard.revision.effectiveFrom')"><el-date-picker v-model="form.effective_from" type="datetime" value-format="YYYY-MM-DDTHH:mm:ssZ" style="width:100%" /></el-form-item>
       </el-form>
       <template #footer><el-button @click="dialogVisible=false">{{ $t('standard.common.cancel') }}</el-button><el-button type="primary" :loading="submitting" @click="handleSubmit">{{ $t('standard.common.confirm') }}</el-button></template>
@@ -100,7 +99,6 @@ const rules = computed(() => ({
   code: buildStandardCodeRules(t, 'standard.glossary.codeRequired'),
   name: [{ required: true, message: t('standard.glossary.nameRequired'), trigger: 'blur' }],
   definition: [{ required: true, message: t('standard.glossary.definitionRequired'), trigger: 'blur' }],
-  change_summary: [{ required: true, message: t('standard.revision.changeSummaryRequired'), trigger: 'blur' }],
   owner_domain_id: [{ required: form.value.scope_type === 'domain', message: t('standard.common.selectDomain'), trigger: 'change' }]
 }))
 const displayRevision = row => row.draft_revision || row.current_revision

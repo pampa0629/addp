@@ -2,7 +2,7 @@
   <div class="logical-table-list">
     <div class="page-header">
       <h2>{{ t('model.logical_table.title') }}</h2>
-      <MonitorExecutionsButton module="model" />
+      <MonitorExecutionsButton module="model">{{ t('model.materialization.execution_records') }}</MonitorExecutionsButton>
     </div>
     <!-- 搜索区 -->
     <el-card shadow="never" class="search-card">

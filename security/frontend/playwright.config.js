@@ -8,12 +8,13 @@ export default defineConfig({
   workers: 1,
   retries: 0,
   reporter: 'line',
-  outputDir: resolve(tmpdir(), 'addp-security-playwright-results'),
+  outputDir: resolve(process.env.RUNNER_TEMP || tmpdir(), 'addp-security-playwright-results'),
   timeout: 60_000,
   expect: { timeout: 10_000 },
   use: {
     baseURL: 'http://127.0.0.1:4191',
     headless: true,
+    trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     viewport: { width: 1440, height: 900 }
   },

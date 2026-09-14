@@ -1,5 +1,5 @@
 <template>
-  <el-alert type="warning" :closable="false" :title="hint" />
+  <el-alert type="warning" :closable="false" :title="presentation.hint" />
   <div v-if="conflict" class="version-conflict-notice" role="alert">
     <span>{{ t('security.accessRequest.decisionVersionConflict') }}</span>
     <el-button link type="primary" :loading="reloading" @click="emit('reload')">
@@ -7,10 +7,8 @@
     </el-button>
   </div>
   <div class="policy-target">
-    <strong>{{ request.target_full_name }} · {{ request.component?.key }}</strong>
-    <span>{{ t('security.accessRequest.requester') }}：{{ request.requester?.display_name }}（{{ releaseActorLabel(request.requester?.id) }}）</span>
-    <span>{{ t('security.accessRequest.requestedUntil') }}：{{ formatDateTime(request.requested_expires_at) }}</span>
-    <span>{{ t('security.accessRequest.rationale') }}：{{ request.rationale }}</span>
+    <strong>{{ presentation.target }}</strong>
+    <span v-for="detail in presentation.details" :key="detail.key">{{ detail.label }}：{{ detail.value }}</span>
   </div>
   <el-form ref="formRef" :model="form" :rules="rules" label-position="top">
     <el-form-item :label="t('security.accessRequest.decisionRationaleLabel')" prop="rationale" required>
@@ -31,14 +29,11 @@ import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 defineProps({
-  request: { type: Object, required: true },
-  hint: { type: String, required: true },
+  presentation: { type: Object, required: true },
   conflict: { type: Boolean, default: false },
   reloading: { type: Boolean, default: false },
   form: { type: Object, required: true },
-  rules: { type: Object, required: true },
-  releaseActorLabel: { type: Function, required: true },
-  formatDateTime: { type: Function, required: true }
+  rules: { type: Object, required: true }
 })
 
 const emit = defineEmits(['reload'])

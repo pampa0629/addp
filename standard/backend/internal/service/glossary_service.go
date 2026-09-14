@@ -20,7 +20,8 @@ func NewGlossaryService(repo *repository.GlossaryRepository, refs *repository.Te
 	return &GlossaryService{repo: repo, refs: refs}
 }
 
-func (s *GlossaryService) CreateGlossary(req *models.CreateGlossaryRequest, tenantID, userID int64) (*models.GlossaryAggregate, error) {
+// CreateGlossary receives the initial summary from server-side localization, never from the request DTO.
+func (s *GlossaryService) CreateGlossary(req *models.CreateGlossaryRequest, tenantID, userID int64, initialSummary string) (*models.GlossaryAggregate, error) {
 	scopeType, err := validateTenantStandardScope(s.refs, tenantID, req.ScopeType, req.OwnerDomainID)
 	if err != nil {
 		return nil, err
@@ -39,7 +40,7 @@ func (s *GlossaryService) CreateGlossary(req *models.CreateGlossaryRequest, tena
 	revision := &models.GlossaryRevision{
 		Name: strings.TrimSpace(req.Name), Alias: req.Alias, Definition: strings.TrimSpace(req.Definition),
 		Example: req.Example, Note: req.Note, RelatedIDs: req.RelatedIDs,
-		ChangeSummary: strings.TrimSpace(req.ChangeSummary), EffectiveFrom: req.EffectiveFrom,
+		ChangeSummary: initialSummary, EffectiveFrom: req.EffectiveFrom,
 		EffectiveTo: req.EffectiveTo, CreatedBy: userID,
 	}
 	if err := s.validateRevision(revision, tenantID, 0); err != nil {

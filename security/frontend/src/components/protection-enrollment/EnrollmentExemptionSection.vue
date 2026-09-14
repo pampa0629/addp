@@ -6,14 +6,14 @@
         <p>{{ t('security.exemption.hint') }}</p>
       </div>
     </div>
-    <el-skeleton v-if="loading" class="exemption-loading" :rows="2" animated />
-    <div v-else-if="exemptions.length > 0" class="exemption-list">
+    <el-skeleton v-if="presentation.loading" class="exemption-loading" :rows="2" animated />
+    <div v-else-if="presentation.rows.length > 0" class="exemption-list">
       <article
-        v-for="row in rows"
+        v-for="row in presentation.rows"
         :key="row.id"
         :ref="element => setCardRef(row.id, element)"
         class="exemption-card"
-        :class="{ 'is-focused': String(row.id) === String(focusedExemptionId) }"
+        :class="{ 'is-focused': row.focused }"
       >
         <div class="exemption-card__main">
           <div class="exemption-card__title">
@@ -27,7 +27,7 @@
           <span>{{ t('security.exemption.expiresAt') }}：{{ row.expiresAt }}</span>
           <p>{{ row.rationale }}</p>
         </div>
-        <div v-if="canRevoke" class="exemption-card__actions">
+        <div v-if="presentation.canRevoke" class="exemption-card__actions">
           <el-button
             v-if="row.canRevoke"
             link
@@ -44,21 +44,16 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, watch } from 'vue'
+import { nextTick, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 const props = defineProps({
-  loading: { type: Boolean, default: false },
-  exemptions: { type: Array, required: true },
-  focusedExemptionId: { type: [String, Number], default: '' },
-  canRevoke: { type: Boolean, default: false },
   presentation: { type: Object, required: true }
 })
 
 const emit = defineEmits(['revoke'])
 const { t } = useI18n()
 const cardRefs = new Map()
-const rows = computed(() => props.exemptions.map(exemption => props.presentation.row(exemption)))
 
 function cardKey(exemptionId) {
   return String(exemptionId ?? '')
@@ -71,14 +66,14 @@ function setCardRef(exemptionId, element) {
 }
 
 async function focusFocused() {
-  const key = cardKey(props.focusedExemptionId)
+  const key = cardKey(props.presentation.rows.find(row => row.focused)?.id)
   if (!key) return
   await nextTick()
   cardRefs.get(key)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
 }
 
 watch(
-  () => [props.focusedExemptionId, props.exemptions],
+  () => props.presentation.rows,
   focusFocused,
   { flush: 'post' }
 )

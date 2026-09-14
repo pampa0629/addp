@@ -42,6 +42,7 @@ export function useProtectionEnrollmentRelease({
 
   function focusDialogPrimary() {
     nextTick(() => {
+      dialogRef.value?.clearValidate?.()
       dialogRef.value?.focusPrimary?.()
     })
   }

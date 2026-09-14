@@ -42,10 +42,6 @@
               <el-icon><Grid /></el-icon>
               <span>{{ $t('standard.layout.domains') }}</span>
             </el-menu-item>
-            <el-menu-item index="/collections">
-              <el-icon><FolderOpened /></el-icon>
-              <span>{{ $t('standard.layout.collections') }}</span>
-            </el-menu-item>
             <el-menu-item index="/glossaries">
               <el-icon><Reading /></el-icon>
               <span>{{ $t('standard.layout.glossaries') }}</span>
@@ -89,7 +85,7 @@ import {
   User, ArrowDown, SwitchButton, Document,
   Grid, Reading, Collection, DataAnalysis,
   List,
-  Odometer, TrendCharts, Files, FolderOpened
+  Odometer, TrendCharts, Files
 } from '@element-plus/icons-vue'
 
 const router = useRouter()
@@ -104,7 +100,6 @@ onMounted(() => {
 const activeMenu = computed(() => {
   const path = route.path
   if (path.startsWith('/domains')) return '/domains'
-  if (path.startsWith('/collections')) return '/collections'
   if (path.startsWith('/glossaries')) return '/glossaries'
   if (path.startsWith('/elements')) return '/elements'
   if (path.startsWith('/code-sets')) return '/code-sets'

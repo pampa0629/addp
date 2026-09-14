@@ -267,12 +267,12 @@ func (h *EntityHandler) ApproveEntity(c *gin.Context) {
 }
 
 // ReopenEntity POST /api/v1/model/entities/:id/reopen
-// @Summary 重新打开实体 | Reopen entity
+// @Summary 将实体退回草稿 | Return entity to draft
 // @Tags Model
 // @Produce json
 // @Param id path int true "实体ID | Entity ID"
 // @Param body body models.VersionRequest true "资源版本 | Resource version"
-// @Success 200 {object} models.Entity "重新打开成功 | Reopened successfully"
+// @Success 200 {object} models.Entity "退回草稿成功 | Returned to draft successfully"
 // @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
 // @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
 // @Failure 400 {object} models.ErrorResponse "实体 ID 无效 | Invalid entity ID"

@@ -386,6 +386,25 @@ item 刷新原先复用了 catalog scan 的入口，把 `item_id` 先转换为 c
 
 ## 后端问题
 
+### 服务令牌有效期越界导致模块退出
+
+现象：后端日志出现 `service_token_response_invalid`、`response_reason="expires_in"`
+及 `module registration lifecycle failed; stopping process`，Console 随后提示模块不可用。
+
+2026-09-14 的排查确认了一条可复现链路：Client Credentials 使用数据库时间设置
+5 分钟过期点，而 Fosite 默认以应用服务器时间计算响应剩余秒数。数据库比应用快
+10 分钟时，响应会变成约 899 秒，被服务客户端的 1–300 秒契约拒绝。
+历史日志未记录具体秒数，因此不能仅据该日志断言当时的主机偏差值或偏差原因。
+
+修复位于 System 现有签发事务：使用数据库 `clock_timestamp()` 计算响应有效期；
+签发耗时会扣除，剩余不足 1 秒、超过 5 分钟或时间查询失败时回滚并返回可重试的
+503 / `temporarily_unavailable`。不放宽客户端校验，不返回已过期令牌。
+
+复查时比较主机 UTC 时间与 PostgreSQL `clock_timestamp()`，并检查模块就绪端点和
+注册心跳日志。不要记录令牌、Client Secret 或完整 OAuth 成功响应，也不要通过
+修改主机/共享数据库时钟来验证。自动回归使用测试连接的时间投影，标准入口为
+`make test-system-iam-postgres`（仅 `addp_iam_test`）。服务恢复沿用本指南的开发保活入口。
+
 ### 1. Transfer 写出 Shapefile 后资源树看不到 `.prj`
 
 #### 问题现象
@@ -1182,3 +1201,10 @@ dist/release-$(go env GOOS)-$(go env GOARCH)/addp-iam-migration-repair --migrati
 cd system/backend && go test ./internal/migration
 ADDP_SYSTEM_POSTGRES_TEST_DSN='<disposable-postgres-dsn>' make test-system-iam-postgres
 ```
+
+
+### Standard 页面重启后白屏，Vite 提示依赖分块不存在
+
+如果浏览器请求 `node_modules/.vite/deps/chunk-*.js` 返回缺失，而当前生成目录已不再引用该分块，先检查测试与开发进程是否共用预构建缓存。Standard 的自动组件导入会在页面请求时引入 `element-plus/es`；开发服务与 Playwright 服务共用 `.vite` 时，测试重新预构建可能替换正在使用的分块。
+
+Standard 在 Vite 中显式预构建 `element-plus/es`，并将 `ADDP_E2E=1` 的缓存隔离到 `node_modules/.vite-e2e`；开发服务使用 `node_modules/.vite`。两种环境仍运行同一配置和代码。验证使用 `make test-standard-frontend`，并在测试完成后刷新实际开发页面，确认新建术语等入口可用。不应通过修改依赖锁文件或排除整个组件库绕过缓存问题。

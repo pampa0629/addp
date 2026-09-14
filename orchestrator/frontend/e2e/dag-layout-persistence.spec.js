@@ -863,6 +863,7 @@ async function installMockBackend(page, initialOrchestration, taskLibrary = {}) 
     if (path === '/api/v1/system/refresh') {
       return fulfillJSON(route, { access_token: 'dag-e2e-token', expires_in: 3600 })
     }
+    if (path === '/api/v1/system/auth/context') return fulfillJSON(route, { context: { type: 'tenant' }, authorization: { role_assignments: [{ permissions: ['orchestrator.workflow.read', 'orchestrator.workflow.execute'] }] } })
     if (path === '/api/v1/system/users/me') {
       return fulfillJSON(route, { id: 1, username: 'dag-e2e' })
     }
@@ -898,7 +899,7 @@ async function installMockBackend(page, initialOrchestration, taskLibrary = {}) 
       return fulfillJSON(route, { execution_id: 'orchestration-execution-e2e' })
     }
     if (path === '/api/v1/orchestrator/orchestrations' && request.method() === 'GET') {
-      return fulfillJSON(route, [orchestration])
+      return fulfillJSON(route, taskLibrary.orchestrations || [orchestration])
     }
     if (path === `${detailPath}/executions` && request.method() === 'GET') {
       return fulfillJSON(route, { data: executions, total: executions.length })
@@ -1043,3 +1044,38 @@ async function drag(page, start, delta) {
   await page.mouse.move(start.x + delta.x, start.y + delta.y, { steps: 8 })
   await page.mouse.up()
 }
+
+
+test('related orchestration filter matches complete task identities and survives navigation', async ({ page }) => {
+  const orchestration = createLayoutFixture()
+  orchestration.steps[0].provider = 'model'
+  orchestration.steps[0].task_type = 'materialization_group_publish'
+  orchestration.steps[0].task_id = 17
+  const others = [
+    { ...orchestration, id: 'different-provider', name: '其他模块', steps: [{ provider: 'quality', task_type: 'materialization_group_publish', task_id: 17 }] },
+    { ...orchestration, id: 'different-type', name: '其他任务类型', steps: [{ provider: 'model', task_type: 'materialization_prepare', task_id: 17 }] },
+    { ...orchestration, id: 'different-id', name: '其他物化组', steps: [{ provider: 'model', task_type: 'materialization_group_publish', task_id: 18 }] }
+  ]
+  await installMockBackend(page, orchestration, { orchestrations: [orchestration, ...others] })
+  const filter = 'module=model&task_type=materialization_group_publish&task_id=17'
+  await page.goto(`/orchestrations?${filter}`)
+  await expect(page.getByRole('cell', { name: orchestration.name, exact: true })).toBeVisible()
+  for (const other of others) await expect(page.getByRole('cell', { name: other.name, exact: true })).toHaveCount(0)
+  await page.reload()
+  await expect(page.getByRole('button', { name: '执行', exact: true })).toHaveCount(1)
+  await page.getByRole('button', { name: '编辑', exact: true }).click()
+  await expect(page).toHaveURL(new RegExp(`/edit\\?${filter}$`))
+  await page.getByRole('button', { name: '取消', exact: true }).click()
+  await expect(page).toHaveURL(new RegExp(`/orchestrations\\?${filter}$`))
+  await page.getByRole('button', { name: '查看全部编排', exact: true }).click()
+  await expect(page.getByRole('button', { name: '执行', exact: true })).toHaveCount(4)
+})
+
+test('related orchestration filter shows empty and invalid contexts explicitly', async ({ page }) => {
+  await installMockBackend(page, createLayoutFixture())
+  await page.goto('/orchestrations?module=model&task_type=materialization_group_publish&task_id=999')
+  await expect(page.getByText('暂无关联编排，请先创建包含该任务的编排。', { exact: true })).toBeVisible()
+  await page.goto('/orchestrations?module=model&task_id=999')
+  await expect(page.getByRole('alert').filter({ hasText: '任务筛选无效' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '执行', exact: true })).toHaveCount(0)
+})

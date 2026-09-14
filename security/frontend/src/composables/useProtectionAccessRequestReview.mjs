@@ -55,9 +55,6 @@ export function useProtectionAccessRequestReview({
       name: t('security.accessRequest.decisionRationaleLabel')
     }), { trigger: 'blur', whitespace: true })]
   }))
-  const decisionTitle = computed(() => t(`security.accessRequest.${decision.value}`))
-  const decisionHint = computed(() => t(`security.accessRequest.${decision.value}Hint`))
-  const decisionConfirmLabel = computed(() => t(`security.accessRequest.confirmActions.${decision.value}`))
 
   function queueParams(requestedPage) {
     const range = Array.isArray(createdRange.value) ? createdRange.value : []
@@ -168,6 +165,7 @@ export function useProtectionAccessRequestReview({
 
   function focusDecisionDialogPrimary() {
     nextTick(() => {
+      decisionDialogRef.value?.clearValidate?.()
       decisionDialogRef.value?.focusPrimary?.()
     })
   }
@@ -281,9 +279,6 @@ export function useProtectionAccessRequestReview({
     decision,
     decisionForm,
     decisionRules,
-    decisionTitle,
-    decisionHint,
-    decisionConfirmLabel,
     loadQueue,
     changeScope,
     updateFilters,

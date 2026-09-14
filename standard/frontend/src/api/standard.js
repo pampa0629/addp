@@ -13,22 +13,6 @@ export const domainAPI = {
   delete(id, version) { return client.delete(`/standard/domains/${id}`, { data: { version } }) }
 }
 
-// ========== 标准集 API ==========
-export const standardCollectionAPI = {
-  list(params) { return client.get('/standard/collections', { params }) },
-  create(data) { return client.post('/standard/collections', data) },
-  get(id) { return client.get(`/standard/collections/${id}`) },
-  delete(id, version) { return client.delete(`/standard/collections/${id}`, { data: { version } }) },
-  listRevisions(id) { return client.get(`/standard/collections/${id}/revisions`) },
-  listEvents(id, params) { return client.get(`/standard/collections/${id}/events`, { params }) },
-  createRevision(id, data) { return client.post(`/standard/collections/${id}/revisions`, data) },
-  updateRevision(id, revisionId, data) { return client.put(`/standard/collections/${id}/revisions/${revisionId}`, data) },
-  submitRevision(id, revisionId, version) { return client.post(`/standard/collections/${id}/revisions/${revisionId}/submit`, { version }) },
-  returnRevision(id, revisionId, version) { return client.post(`/standard/collections/${id}/revisions/${revisionId}/return`, { version }) },
-  publishRevision(id, revisionId, version) { return client.post(`/standard/collections/${id}/revisions/${revisionId}/publish`, { version }) },
-  replaceAssignments(id, data) { return client.put(`/standard/collections/${id}/assignments`, data) },
-  listUserCandidates(params) { return client.get('/standard/collection-user-candidates', { params }) }
-}
 
 // ========== 业务术语 API ==========
 export const glossaryAPI = {

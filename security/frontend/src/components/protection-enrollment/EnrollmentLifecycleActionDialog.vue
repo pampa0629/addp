@@ -11,8 +11,8 @@
     @opened="focusPrimary"
     @closed="emit('closed')"
   >
-    <template v-if="enrollment">
-      <el-alert :type="mode === 're-enroll' ? 'warning' : 'info'" :closable="false" :title="hintTitle" />
+    <template v-if="presentation">
+      <el-alert :type="presentation.alert.type" :closable="false" :title="presentation.alert.title" />
       <div v-if="conflict" class="version-conflict-notice" role="alert">
         <span>{{ t(conflictKey) }}</span>
         <el-button link type="primary" :loading="reloading" @click="emit('reload')">
@@ -20,13 +20,8 @@
         </el-button>
       </div>
       <div class="policy-target">
-        <strong>{{ enrollment.target_snapshot?.full_name || t('security.common.notAvailable') }}</strong>
-        <template v-if="mode === 're-enroll'">
-          <span>{{ t('security.enrollment.releaseBasisLabel') }}：{{ releaseBasisLabel(enrollment.release_basis) }}</span>
-          <span>{{ t('security.enrollment.releasedAt') }}：{{ formatDateTime(enrollment.released_at) }}</span>
-          <span>{{ t('security.enrollment.releaseReasonLabel') }}：{{ enrollment.release_reason || t('security.common.notAvailable') }}</span>
-        </template>
-        <span v-else>{{ t('security.enrollment.lastDiscovered') }}：{{ formatDateTime(enrollment.last_discovered_at) }}</span>
+        <strong>{{ presentation.targetName }}</strong>
+        <span v-for="detail in presentation.details" :key="detail.key">{{ detail.label }}：{{ detail.value }}</span>
       </div>
     </template>
     <template #footer>
@@ -47,13 +42,10 @@ import { useI18n } from 'vue-i18n'
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
   mode: { type: String, required: true, validator: value => ['re-enroll', 'rediscover'].includes(value) },
-  enrollment: { type: Object, default: null },
+  presentation: { type: Object, default: null },
   saving: { type: Boolean, default: false },
   reloading: { type: Boolean, default: false },
-  conflict: { type: Boolean, default: false },
-  resourceName: { type: Function, required: true },
-  releaseBasisLabel: { type: Function, required: true },
-  formatDateTime: { type: Function, required: true }
+  conflict: { type: Boolean, default: false }
 })
 
 const emit = defineEmits(['update:modelValue', 'reload', 'close', 'closed', 'submit'])
@@ -64,9 +56,6 @@ const titleKey = computed(() => props.mode === 're-enroll' ? 'security.enrollmen
 const conflictKey = computed(() => props.mode === 're-enroll' ? 'security.enrollment.reEnrollmentVersionConflict' : 'security.enrollment.rediscoveryVersionConflict')
 const reloadKey = computed(() => props.mode === 're-enroll' ? 'security.enrollment.reloadLatestForReEnrollment' : 'security.enrollment.reloadLatestForRediscovery')
 const confirmKey = computed(() => props.mode === 're-enroll' ? 'security.enrollment.confirmReEnroll' : 'security.enrollment.confirmRediscover')
-const hintTitle = computed(() => props.mode === 're-enroll'
-  ? t('security.enrollment.reEnrollWarning', { resource: props.resourceName(props.enrollment) })
-  : t('security.enrollment.rediscoverHint'))
 
 function focusPrimary() {
   const button = cancelButton.value?.$el || cancelButton.value

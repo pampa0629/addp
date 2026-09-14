@@ -102,6 +102,12 @@ Tenant Client 停用由 IAM 管理服务在单个事务内完成 Client 状态�
 
 Service Principal 使用独立 Confidential Client 和 Client Credentials；Service Access Token 不可刷新，且必须绑定明确 Tenant Context 或 Platform Service Context。
 
+Client Credentials 的过期点和 `expires_in` 统一使用数据库时间。Fosite 继续负责唯一签发流程，
+System Storage 在现有 Client Credentials 事务提交前，用 `clock_timestamp()` 计算剩余
+有效期并写入同一个 Fosite Response，避免 Fosite 默认应用时钟与数据库时钟混算。
+不足 1 秒、超过 5 分钟或读取时钟失败时返回 OAuth `temporarily_unavailable` 并回滚
+Token、Family 和成功审计。客户端仍严格接受 1–300 秒，无额外 Token 接口或宽限分支。
+
 ## 八、错误与审计
 
 协议端点使用 Fosite 标准 OAuth error，不包装为普通业务成功响应。授权页面和 Device 页面使用短期、不可猜测且只保存 Hash 的交互 Secret。
@@ -130,8 +136,7 @@ Service Principal 使用独立 Confidential Client 和 Client Credentials；Serv
 ## 十、验证
 
 ```bash
-cd system/backend
-go test ./internal/iam/oauth ./internal/api ./internal/middleware
+make test-module MODULE=system
 ```
 
 完整协议事务需要专用 PostgreSQL 门禁：
@@ -139,5 +144,10 @@ go test ./internal/iam/oauth ./internal/api ./internal/middleware
 ```bash
 ADDP_SYSTEM_POSTGRES_TEST_DSN='postgres://.../addp_iam_test?...' make test-system-iam-postgres
 ```
+
+服务令牌时间回归包含数据库与应用时钟偏差、签发耗时、时钟回退及失败事务回滚，
+并对 Tenant / Platform 两种 Context 运行。它属于现有 API PostgreSQL 套件，已由
+`test-system-iam-postgres` 与 `release-and-t2-gates.yml` 的 System IAM Job 自动覆盖，
+无需新增测试入口或 CI 路径登记。
 
 正式 CLI 发布还必须运行 `make test-release RELEASE_SUITE=common-python-cli`，验证 wheel 安装、RFC 8252 loopback、Device Flow、刷新、撤销和真实 OS Keychain。

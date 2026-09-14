@@ -255,3 +255,5 @@ ADDP_SYSTEM_POSTGRES_TEST_DSN='postgres://.../addp_iam_test?...' make test-syste
 ```
 
 该门禁会重建目标数据库的 `system` 和 `common` Schema，禁止指向开发库或生产库。
+
+标准成员清单能力退出后，迁移 000140 停用其六项 Permission、删除全部 Role 关联并撤销受影响会话，并撤销 `tenant.standard_runtime` 的人员目录读取授权；已应用的历史迁移保持校验和不变。Catalog 的组织引用继续只允许 `addp-catalog` 调用，由 Catalog 专用解析方法处理。

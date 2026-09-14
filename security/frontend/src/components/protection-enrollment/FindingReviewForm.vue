@@ -58,12 +58,12 @@
     <template v-if="form.decision === 'adjust'">
       <el-form-item :label="t('security.finding.sensitiveDataType')" prop="sensitiveDataTypeID" required>
         <el-select v-model="form.sensitiveDataTypeID" class="wide" :placeholder="t('security.finding.selectSensitiveDataType')" @change="emit('sensitiveTypeChange', $event)">
-          <el-option v-for="item in sensitiveTypes" :key="item.id" :label="item.name" :value="String(item.id)" />
+          <el-option v-for="option in presentation.sensitiveTypeOptions" :key="option.value" :label="option.label" :value="option.value" />
         </el-select>
       </el-form-item>
       <el-form-item :label="t('security.finding.securityGrade')" prop="securityGradeID" required>
         <el-select v-model="form.securityGradeID" class="wide" :placeholder="t('security.finding.selectSecurityGrade')">
-          <el-option v-for="item in presentation.gradeOptions" :key="item.id" :label="item.name" :value="String(item.id)" />
+          <el-option v-for="option in presentation.gradeOptions" :key="option.value" :label="option.label" :value="option.value" />
         </el-select>
       </el-form-item>
     </template>
@@ -82,8 +82,7 @@ defineProps({
   presentation: { type: Object, required: true },
   basisExpanded: { type: Array, required: true },
   form: { type: Object, required: true },
-  rules: { type: Object, required: true },
-  sensitiveTypes: { type: Array, required: true }
+  rules: { type: Object, required: true }
 })
 
 const emit = defineEmits(['update:basisExpanded', 'sensitiveTypeChange'])

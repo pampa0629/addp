@@ -12,8 +12,10 @@
               clearable
               @change="handleDomainChange"
             >
+              <el-option :label="t('model.er_diagram.all_domains')" value="all" />
               <el-option v-for="domain in domains" :key="domain.id" :label="domain.name" :value="domain.id" />
             </el-select>
+            <el-checkbox v-if="selectedDomainId && selectedDomainId !== 'all'" v-model="includeRelated" @change="handleDomainChange">{{ t('model.er_diagram.include_related') }}</el-checkbox>
           </div>
           <div class="toolbar">
             <el-button v-if="canImport" type="primary" @click="showImportDialog">
@@ -49,14 +51,21 @@
         :closable="false"
       />
 
-      <div v-if="!loadError" class="diagram-info">
+      <el-alert :title="t('model.er_diagram.transfer_scope')" type="info" :closable="false" show-icon />
+      <el-empty v-if="!loadError && !selectedDomainId" :description="t('model.er_diagram.choose_domain')" />
+      <div v-if="!loadError && selectedDomainId" class="diagram-info">
         <el-alert type="info" :closable="false">
           {{ t('model.er_diagram.entity_count', { count: entities.length, relations: relations.length }) }}
         </el-alert>
       </div>
 
+      <div v-if="selectedDomainId && !loadError" class="domain-legend">
+        <el-tag v-for="entity in entities" :key="entity.id" :type="selectedDomainId !== 'all' && entity.domain_id !== selectedDomainId ? 'warning' : 'info'">
+          {{ entity.code }} · {{ domainLabel(entity.domain_id) }}
+        </el-tag>
+      </div>
       <!-- ER图渲染区域 -->
-      <div v-if="!loadError" ref="diagramContainer" class="diagram-container" v-loading="diagramLoading">
+      <div v-if="!loadError && selectedDomainId" ref="diagramContainer" class="diagram-container" v-loading="diagramLoading">
         <el-empty
           v-if="!diagramLoading && entities.length === 0"
           :description="t('model.er_diagram.no_entities')"
@@ -72,6 +81,7 @@
       :title="t('model.er_diagram.import_dialog_title')"
       width="min(800px, calc(100vw - 32px))"
     >
+      <el-alert :title="t('model.er_diagram.transfer_scope')" type="warning" :closable="false" show-icon />
       <el-tabs v-model="importTab">
         <el-tab-pane :label="t('model.er_diagram.paste_code')" name="paste">
           <el-input
@@ -167,6 +177,9 @@ const relations = ref([])
 const domains = ref([])
 const referenceError = ref('')
 const selectedDomainId = ref(null)
+const includeRelated = ref(false)
+const domainLabel = id => domains.value.find(domain => domain.id === id)?.name || t('model.er_diagram.unassigned_domain')
+let diagramSequence = 0
 const globalMermaidCode = ref('')
 const exportedMermaidCode = ref('')
 const entityModelRevision = ref(null)
@@ -183,12 +196,13 @@ let stopThemeObserver = null
 const applyRouteState = query => {
   const routeState = resolveERDiagramRouteState(query)
   selectedDomainId.value = routeState.domainId
+  includeRelated.value = routeState.includeRelated
   return routeState
 }
 
 const syncRoute = () => navigateModelRoute(router, {
   path: '/er-diagram',
-  query: buildERDiagramRouteQuery({ domainId: selectedDomainId.value })
+  query: buildERDiagramRouteQuery({ domainId: selectedDomainId.value, includeRelated: includeRelated.value })
 }, { history: 'replace' })
 
 const loadDomains = async () => {
@@ -209,6 +223,7 @@ const reload = async () => {
 
 // 加载数据并生成ER图
 const refreshDiagram = async () => {
+  const sequence = ++diagramSequence
   diagramLoading.value = true
   loadError.value = ''
   if (!canExport.value) {
@@ -225,37 +240,41 @@ const refreshDiagram = async () => {
       entityRelationAPI.list(),
       entityAPI.exportMermaid()
     ])
+    if (sequence !== diagramSequence) return
     entityModelRevision.value = exportRes.revision
     exportedMermaidCode.value = exportRes.mermaid_code || ''
     const allEntities = entitiesRes || []
     const filteredDiagram = filterERDiagramByDomain(
       allEntities,
       relationsRes || [],
-      selectedDomainId.value
+      selectedDomainId.value, includeRelated.value
     )
     entities.value = filteredDiagram.entities
     relations.value = filteredDiagram.relations
 
     // 生成Mermaid代码
-    await generateGlobalMermaidCode()
+    const code = await generateGlobalMermaidCode(filteredDiagram)
+    if (sequence !== diagramSequence) return
+    globalMermaidCode.value = code
 
     // 渲染
     await nextTick()
     if (entities.value.length > 0) await renderMermaid()
   } catch (err) {
+    if (sequence !== diagramSequence) return
     console.error('加载ER图失败:', err)
     loadError.value = getModelErrorMessage(err, t, 'model.er_diagram.load_failed')
   } finally {
-    diagramLoading.value = false
+    if (sequence === diagramSequence) diagramLoading.value = false
   }
 }
 
 // 生成全局Mermaid代码
-const generateGlobalMermaidCode = async () => {
+const generateGlobalMermaidCode = async ({ entities: diagramEntities, relations: diagramRelations }) => {
   let code = 'erDiagram\n'
 
   // 所有实体定义
-  for (const entity of entities.value) {
+  for (const entity of diagramEntities) {
     code += `  ${entity.code} {\n`
 
     // 查询属性
@@ -275,9 +294,9 @@ const generateGlobalMermaidCode = async () => {
   }
 
   // 所有关系
-  relations.value.forEach(relation => {
-    const sourceEntity = entities.value.find(e => e.id === relation.source_entity)
-    const targetEntity = entities.value.find(e => e.id === relation.target_entity)
+  diagramRelations.forEach(relation => {
+    const sourceEntity = diagramEntities.find(e => e.id === relation.source_entity)
+    const targetEntity = diagramEntities.find(e => e.id === relation.target_entity)
 
     if (sourceEntity && targetEntity) {
       const symbol = convertToMermaidSymbol(relation.relation_type)
@@ -287,7 +306,7 @@ const generateGlobalMermaidCode = async () => {
     }
   })
 
-  globalMermaidCode.value = code
+  return code
 }
 
 // 转换关系类型为Mermaid符号
@@ -301,8 +320,8 @@ const convertToMermaidSymbol = (relationType) => {
 }
 
 const handleDomainChange = async () => {
+  if (!selectedDomainId.value || selectedDomainId.value === 'all') includeRelated.value = false
   await syncRoute()
-  await refreshDiagram()
 }
 
 // 渲染Mermaid图
@@ -408,12 +427,12 @@ const executeImport = async () => {
 }
 
 const restoreDiagramFromRoute = async query => {
-  const previousDomainId = selectedDomainId.value
   const routeState = applyRouteState(query)
   if (routeState.changed) {
     await navigateModelRoute(router, { path: '/er-diagram', query: routeState.query }, { history: 'replace' })
+    return
   }
-  if (selectedDomainId.value !== previousDomainId) await refreshDiagram()
+  await refreshDiagram()
 }
 
 watch(() => route.query, restoreDiagramFromRoute, { deep: true })
@@ -440,6 +459,7 @@ onBeforeUnmount(() => stopThemeObserver?.())
 </script>
 
 <style scoped>
+.domain-legend { display:flex; flex-wrap:wrap; gap:8px; margin:12px 0; }
 .er-diagram-manager {
   padding: 20px;
 }

@@ -324,7 +324,7 @@ test-security-postgres: ## 使用一次性 PostgreSQL 数据库运行 Security �
 test-service-postgres: ## 使用一次性 PostgreSQL 数据库运行 Service 数据保护与 Consumer Catalog 集成门禁
 	@bash scripts/test/service-postgres-gate.sh
 
-test-standard-postgres: ## 使用一次性 PostgreSQL 数据库运行 Standard 集成门禁
+test-standard-postgres: ## 使用测试 PostgreSQL 数据库运行 Standard 约束、旧能力清理和引用门禁
 	@bash scripts/test/standard-postgres-gate.sh
 
 test-transfer-postgres: ## 使用测试 PostgreSQL 数据库运行 Transfer schema、受保护导出与目标覆盖集成门禁
@@ -465,8 +465,9 @@ test-monitor-frontend: ## 运行 Monitor 前端确定性测试与构建
 	@cd monitor/frontend && npm test
 	@cd monitor/frontend && npm run build
 
-test-orchestrator-frontend: ## 运行 Orchestrator 前端确定性测试与构建
+test-orchestrator-frontend: ## 运行 Orchestrator 前端确定性测试、路由浏览器回归与构建
 	@cd orchestrator/frontend && npm test
+	@cd orchestrator/frontend && npm run test:e2e:routes
 	@cd orchestrator/frontend && npm run build
 
 test-portal-frontend: ## 运行 Portal 前端确定性测试与构建

@@ -1,5 +1,14 @@
 {
   "security": {
+    "baselineRecovery": {
+      "loadFailed": "默认保护列表加载失败，请重试。",
+      "savedRefreshFailed": "变更已保存，但列表刷新失败。请刷新列表，无需重复保存。",
+      "refresh": "刷新列表",
+      "listConflict": "规则已被其他操作修改，请刷新列表后重新确认。",
+      "versionConflict": "该规则已被其他操作修改；当前输入已保留，请加载最新规则后重新确认。",
+      "reloadLatest": "放弃当前输入并加载最新规则",
+      "reloadFailed": "加载最新默认保护规则失败"
+    },
     "layout": { "title": "数据安全与隐私保护", "logout": "退出登录" },
     "login": { "title": "数据安全登录", "username": "用户名", "password": "密码", "submit": "登录" },
     "resources": { "classificationGrading": "分类分级体系", "sensitiveDataDefinition": "敏感数据定义", "classification": "分类目录", "grade": "保护等级", "sensitiveDataType": "敏感类型", "protectionEnrollment": "受保护资源" },

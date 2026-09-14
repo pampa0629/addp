@@ -46,7 +46,7 @@ func TestElementRevisionResolutionRouteRequiresCatalogOrModelService(t *testing.
 	})
 	defer authServer.Close()
 	resolutionService := service.NewElementRevisionResolutionService(repository.NewElementRepository(db), repository.NewCodeSetRepository(db))
-	router := SetupRouter(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, resolutionService, nil, authServer.URL, modulelifecycle.NewStandalone("standard"))
+	router := SetupRouter(db, nil, nil, nil, nil, nil, nil, nil, nil, resolutionService, nil, authServer.URL, modulelifecycle.NewStandalone("standard"))
 	body := `{"element_ids":["10","20","999"],"as_of":"2026-08-28T10:00:00Z"}`
 	for _, token := range []string{"catalog-token", "model-token"} {
 		response := performTenantRequest(router, http.MethodPost, "/api/v1/standard/runtime/element-revisions/resolve", token, body)

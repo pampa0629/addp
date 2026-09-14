@@ -12,9 +12,9 @@
       "start": "Start Export"
     },
     "executionParameters": {
-	  "title": "Execution parameters",
+      "title": "Execution parameters",
       "workflowConfiguration": "Task default",
-	  "executionOverride": "Execution override",
+      "executionOverride": "Execution override",
       "upstream": "Upstream output",
       "selectOutput": "Select an upstream output",
       "selectResource": "Select resource",
@@ -26,24 +26,24 @@
       "geometryMultiple": "Multiple geometry fields detected; select one",
       "geometryNotDetected": "No geometry field detected",
       "noDefault": "Not configured",
-	  "resourceTypes": {
-		"table": "Table",
-		"collection": "Collection",
-		"graph": "Graph",
-		"object": "Object",
-		"file": "File",
-		"directory": "Directory",
-		"prefix": "Directory",
-		"database": "Database",
-		"schema": "Schema",
-		"bucket": "Bucket",
-		"root": "Root",
-		"server": "Service",
-		"service": "Service"
-	  },
-	  "empty": "This task has no overridable execution parameters",
-	  "addItem": "Add item",
-	  "removeItem": "Remove item"
+      "resourceTypes": {
+        "table": "Table",
+        "collection": "Collection",
+        "graph": "Graph",
+        "object": "Object",
+        "file": "File",
+        "directory": "Directory",
+        "prefix": "Directory",
+        "database": "Database",
+        "schema": "Schema",
+        "bucket": "Bucket",
+        "root": "Root",
+        "server": "Service",
+        "service": "Service"
+      },
+      "empty": "This task has no overridable execution parameters",
+      "addItem": "Add item",
+      "removeItem": "Remove item"
     },
     "executionMonitor": {
       "viewExecutions": "View executions",
@@ -107,7 +107,24 @@
     "deleteSuccess": "Deleted successfully",
     "saveSuccess": "Saved successfully",
     "copySuccess": "Copied to clipboard",
-    "copyFailed": "Copy failed"
+    "copyFailed": "Copy failed",
+    "orchestration": {
+      "execute": "Execute",
+      "confirmMessage": "Run all {count} steps of \"{name}\", including its data synchronization, computation and publishing operations?",
+      "confirmTitle": "Execute entire workflow",
+      "cancel": "Cancel",
+      "started": "Execution submitted",
+      "executeFailed": "Execution failed. Check permissions or workflow configuration.",
+      "scopeHelp": "These workflows reference the current materialization task. Starting one runs all its steps. Review the full scope first.",
+      "noPermission": "Permission to read workflows is required.",
+      "loadFailed": "Failed to load related workflows",
+      "retry": "Retry",
+      "empty": "No related workflow is configured. Configure data sources, computation steps and materialization publishing.",
+      "configure": "Configure workflow",
+      "edit": "Edit workflow",
+      "steps": "Execution scope: all {count} steps",
+      "viewExecution": "View this execution"
+    }
   },
   "auth": {
     "login": {

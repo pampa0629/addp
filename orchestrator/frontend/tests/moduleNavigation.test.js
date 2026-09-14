@@ -8,8 +8,8 @@ const formSource = readFileSync(new URL('../src/views/OrchestrationForm.vue', im
 
 test('Orchestrator business navigation delegates to the shared Console navigation', () => {
   assert.match(navigationSource, /navigateConsoleModuleRoute\(router, 'orchestrator', location, options\)/)
-  assert.match(listSource, /navigateOrchestratorRoute\(router, `\/orchestrations\/\$\{row\.id\}\/edit`\)/)
-  assert.match(formSource, /navigateOrchestratorRoute\(router, '\/orchestrations', \{ history: 'replace' \}\)/)
+  assert.match(listSource, /navigateOrchestratorRoute\(router, detailLocation\(`/)
+  assert.match(formSource, /navigateOrchestratorRoute\(router, orchestrationListLocation\(route.query\), \{ history: 'replace' \}\)/)
   assert.doesNotMatch(listSource, /router\.(?:push|replace|back)\(/)
   assert.doesNotMatch(formSource, /router\.(?:push|replace|back)\(/)
 })

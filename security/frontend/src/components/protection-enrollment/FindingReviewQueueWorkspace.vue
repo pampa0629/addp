@@ -15,7 +15,7 @@
         :placeholder="t('security.reviewQueue.allSensitiveTypes')"
         @change="emit('filterChange')"
       >
-        <el-option v-for="item in sensitiveTypes" :key="item.id" :label="item.name" :value="String(item.id)" />
+        <el-option v-for="option in presentation.filters.sensitiveTypeOptions" :key="option.value" :label="option.label" :value="option.value" />
       </el-select>
       <el-select
         v-model="detectorVersionModel"
@@ -24,7 +24,7 @@
         :placeholder="t('security.reviewQueue.allRecognitionMethods')"
         @change="emit('filterChange')"
       >
-        <el-option v-for="item in capabilities" :key="item.key" :label="capabilityOptionLabel(item)" :value="item.key" />
+        <el-option v-for="option in presentation.filters.recognitionMethodOptions" :key="option.value" :label="option.label" :value="option.value" />
       </el-select>
       <el-button v-if="typeId || detectorVersion" @click="emit('resetFilters')">
         {{ t('security.reviewQueue.clearFilters') }}
@@ -32,7 +32,7 @@
     </div>
 
     <el-card class="enrollment-card review-queue-card" shadow="never">
-      <el-table v-loading="loading" :data="presentedRows" row-key="id">
+      <el-table v-loading="loading" :data="presentation.rows" row-key="id">
         <el-table-column :label="t('security.reviewQueue.resource')" min-width="260">
           <template #default="{ row }">
             <EnrollmentResourceIdentity
@@ -75,7 +75,7 @@
         </el-table-column>
       </el-table>
 
-      <el-empty v-if="!loading && rows.length === 0" :description="t('security.reviewQueue.empty')" />
+      <el-empty v-if="!loading && presentation.rows.length === 0" :description="t('security.reviewQueue.empty')" />
 
       <div v-if="total > pageSize" class="pagination">
         <el-pagination
@@ -98,15 +98,12 @@ import { useI18n } from 'vue-i18n'
 import EnrollmentResourceIdentity from './EnrollmentResourceIdentity.vue'
 
 const props = defineProps({
-  rows: { type: Array, required: true },
   total: { type: Number, required: true },
   page: { type: Number, required: true },
   pageSize: { type: Number, required: true },
   loading: { type: Boolean, default: false },
   typeId: { type: [String, Number], default: '' },
   detectorVersion: { type: String, default: '' },
-  sensitiveTypes: { type: Array, required: true },
-  detectorCapabilities: { type: Array, required: true },
   presentation: { type: Object, required: true }
 })
 
@@ -139,24 +136,6 @@ const pageSizeModel = computed({
   get: () => props.pageSize,
   set: value => emit('update:pageSize', value)
 })
-const presentedRows = computed(() => props.rows.map(row => props.presentation.row(row)))
-const capabilities = computed(() => {
-  const values = new Map(props.detectorCapabilities.map(item => [String(item.key || ''), item]))
-  for (const finding of props.rows) {
-    const capability = finding?.explanation?.capability
-    const key = String(finding?.detector_version || '')
-    if (key && !values.has(key)) values.set(key, capability?.key ? capability : { key })
-  }
-  return [...values.values()].filter(item => item.key).sort((left, right) => String(left.key).localeCompare(String(right.key)))
-})
-
-function capabilityOptionLabel(capability) {
-  const key = String(capability?.key || '')
-  const i18nKey = String(capability?.name_i18n_key || '')
-  const translated = i18nKey ? t(i18nKey) : ''
-  const name = translated && translated !== i18nKey ? translated : key
-  return name === key ? key : `${name}（${key}）`
-}
 </script>
 
 <style scoped>

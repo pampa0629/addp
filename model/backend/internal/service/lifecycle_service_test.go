@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/addp/model/i18n"
 	"github.com/addp/model/internal/apperrors"
 	"github.com/addp/model/internal/models"
 	"github.com/addp/model/internal/repository"
@@ -982,5 +983,110 @@ func metricImplementationRequest(version, fieldID int64) *models.CreateMetricImp
 		DimensionConfig: map[string]interface{}{}, FilterConfig: map[string]interface{}{},
 		ExpressionConfig: map[string]interface{}{"engine": "sql", "expression": "COUNT(*)"},
 		Status:           models.MetricImplementationActive,
+	}
+}
+
+func TestLogicalTableReopenExplainsGroupMembershipAndPreservesApproval(t *testing.T) {
+	db := setupLifecycleServiceTestDB(t)
+	table := models.LogicalTable{TenantID: 1, Name: "Orders", Code: "orders", TableType: "fact", Layer: "dws", Status: "approved", Version: 3, CreatedBy: 1}
+	if err := db.Create(&table).Error; err != nil {
+		t.Fatal(err)
+	}
+	group := models.MaterializationGroup{TenantID: 1, Code: "orders", Name: "Orders", Version: 1, CreatedBy: 1, UpdatedBy: 1}
+	if err := db.Create(&group).Error; err != nil {
+		t.Fatal(err)
+	}
+	member := models.MaterializationGroupMember{GroupID: group.ID, TenantID: 1, LogicalTableID: table.ID}
+	if err := db.Create(&member).Error; err != nil {
+		t.Fatal(err)
+	}
+	revisionID := int64(5102)
+	field := models.LogicalField{TableID: table.ID, Name: "ID", ColumnName: "id", DataType: "bigint", IsPK: true, ElementRevisionID: &revisionID, FieldRole: "regular"}
+	if err := db.Create(&field).Error; err != nil {
+		t.Fatal(err)
+	}
+	svc := NewLogicalTableService(repository.NewLogicalTableRepository(db), repository.NewEntityRepository(db), repository.NewDWLayerRepository(db))
+	_, err := svc.ReopenLogicalTable(table.ID, 1, 9, table.Version)
+	requireDomainErrorCode(t, err, "materialization_group_member_conflict")
+	domainErr, _ := apperrors.As(err)
+	if domainErr.MessageID != i18n.MsgTableMaterializationGroupMember {
+		t.Fatalf("message = %s", domainErr.MessageID)
+	}
+	stored, err := svc.GetLogicalTable(table.ID, 1)
+	if err != nil || stored.Status != "approved" || stored.Version != 3 {
+		t.Fatalf("table = %#v, err = %v", stored, err)
+	}
+	fields, err := svc.GetFields(table.ID, 1)
+	if err != nil || len(fields) != 1 || fields[0].ElementRevisionID == nil || *fields[0].ElementRevisionID != revisionID {
+		t.Fatalf("fields = %#v, err = %v", fields, err)
+	}
+}
+
+func TestLogicalTableDDLPreviewPreservesApprovedDefinition(t *testing.T) {
+	db := setupLifecycleServiceTestDB(t)
+	table := models.LogicalTable{TenantID: 1, Name: "Orders", Code: "orders", TableType: "fact", Layer: "dws", Status: "approved", Version: 3, CreatedBy: 1,
+		Materialization: models.JSONB{"target_parent_locator": "addp://engine/2/path/public?type=schema&node_id=22", "target_name": "orders"}}
+	if err := db.Create(&table).Error; err != nil {
+		t.Fatal(err)
+	}
+	field := models.LogicalField{TableID: table.ID, Name: "ID", ColumnName: "id", DataType: "bigint", IsPK: true, FieldRole: "regular"}
+	if err := db.Create(&field).Error; err != nil {
+		t.Fatal(err)
+	}
+	svc := NewLogicalTableService(repository.NewLogicalTableRepository(db), repository.NewEntityRepository(db), repository.NewDWLayerRepository(db))
+	ddl, err := svc.PreviewDDL(table.ID, 1, map[string]interface{}(table.Materialization))
+	if err != nil || ddl == "" {
+		t.Fatalf("PreviewDDL = %q, %v", ddl, err)
+	}
+	stored, err := svc.GetLogicalTable(table.ID, 1)
+	if err != nil || stored.Status != "approved" || stored.Version != 3 || !reflect.DeepEqual(stored.Materialization, table.Materialization) {
+		t.Fatalf("table = %#v, err = %v", stored, err)
+	}
+	fields, err := svc.GetFields(table.ID, 1)
+	if err != nil || len(fields) != 1 || fields[0].ColumnName != "id" || fields[0].DataType != "bigint" {
+		t.Fatalf("fields = %#v, err = %v", fields, err)
+	}
+}
+
+func TestLogicalTableDetailIncludesOnlyTenantMembershipSummaries(t *testing.T) {
+	db := setupLifecycleServiceTestDB(t)
+	table := models.LogicalTable{TenantID: 1, Name: "People", Code: "people", TableType: "dimension", Status: "approved", Version: 1, CreatedBy: 1}
+	if err := db.Create(&table).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, group := range []models.MaterializationGroup{
+		{ID: 11, TenantID: 1, Code: "first", Name: "First", Version: 1, CreatedBy: 1, UpdatedBy: 1},
+		{ID: 12, TenantID: 1, Code: "second", Name: "Second", Version: 1, CreatedBy: 1, UpdatedBy: 1},
+		{ID: 13, TenantID: 2, Code: "private", Name: "Other tenant", Version: 1, CreatedBy: 1, UpdatedBy: 1},
+	} {
+		if err := db.Create(&group).Error; err != nil {
+			t.Fatal(err)
+		}
+		member := models.MaterializationGroupMember{GroupID: group.ID, TenantID: group.TenantID, LogicalTableID: table.ID, Position: 1}
+		if err := db.Create(&member).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	svc := NewLogicalTableService(repository.NewLogicalTableRepository(db), nil, nil)
+	detail, err := svc.GetLogicalTable(table.ID, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []models.MaterializationGroupSummary{{ID: 11, Name: "First"}, {ID: 12, Name: "Second"}}
+	if !reflect.DeepEqual(detail.MaterializationGroups, want) {
+		t.Fatalf("groups = %#v", detail.MaterializationGroups)
+	}
+	if _, err := svc.GetLogicalTable(table.ID, 2); err == nil {
+		t.Fatal("cross-tenant table read succeeded")
+	}
+	if err := db.Exec("DELETE FROM model.materialization_group_members WHERE tenant_id = 1").Error; err != nil {
+		t.Fatal(err)
+	}
+	detail, err = svc.GetLogicalTable(table.ID, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if detail.MaterializationGroups == nil || len(detail.MaterializationGroups) != 0 {
+		t.Fatalf("expected empty non-nil memberships, got %#v", detail.MaterializationGroups)
 	}
 }

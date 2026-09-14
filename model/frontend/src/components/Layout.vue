@@ -38,10 +38,6 @@
               <el-icon><Box /></el-icon>
               <span>{{ t('model.layout.modeling') }}</span>
             </template>
-            <el-menu-item index="/dw-layers">
-              <el-icon><Tickets /></el-icon>
-              <span>{{ t('model.layout.dwLayers') }}</span>
-            </el-menu-item>
             <el-menu-item index="/entities">
               <el-icon><Memo /></el-icon>
               <span>{{ t('model.layout.entities') }}</span>
@@ -50,17 +46,21 @@
               <el-icon><Connection /></el-icon>
               <span>{{ t('model.layout.erDiagram') }}</span>
             </el-menu-item>
+            <el-menu-item index="/dw-layers">
+              <el-icon><Tickets /></el-icon>
+              <span>{{ t('model.layout.dwLayers') }}</span>
+            </el-menu-item>
             <el-menu-item index="/logical-tables">
               <el-icon><Operation /></el-icon>
               <span>{{ t('model.layout.logicalTables') }}</span>
             </el-menu-item>
-            <el-menu-item index="/materialization-groups">
-              <el-icon><SetUp /></el-icon>
-              <span>{{ t('model.layout.materializationGroups') }}</span>
-            </el-menu-item>
             <el-menu-item index="/star-schema">
               <el-icon><Star /></el-icon>
               <span>{{ t('model.layout.starSchema') }}</span>
+            </el-menu-item>
+            <el-menu-item index="/materialization-groups">
+              <el-icon><SetUp /></el-icon>
+              <span>{{ t('model.layout.materializationGroups') }}</span>
             </el-menu-item>
           </el-sub-menu>
         </el-menu>

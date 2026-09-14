@@ -13,8 +13,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		t.Fatalf("LoadRepositoryAuthorizationCatalog() error = %v", err)
 	}
 	descriptors := report.Permissions
-	if len(descriptors) != 452 {
-		t.Fatalf("descriptor count = %d, want 452", len(descriptors))
+	if len(descriptors) != 446 {
+		t.Fatalf("descriptor count = %d, want 446", len(descriptors))
 	}
 	for _, descriptor := range descriptors {
 		if descriptor.OwnerModule == "security" && !reflect.DeepEqual(descriptor.AllowedScopeTypes, []string{"tenant"}) {
@@ -127,7 +127,6 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	assertRepositoryRolePrincipalTypes(t, roles, "tenant.standard_runtime", []string{"service_principal"})
 	assertRepositoryRolePermissions(t, roles, "tenant.standard_runtime", []string{
 		"copilot.standard_document.execute",
-		"iam.tenant_membership.read",
 		"model.standard_reference.update",
 	})
 	assertRepositoryRolePermissions(t, roles, "tenant.transfer_runtime", []string{
@@ -386,12 +385,6 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"standard.code_set.publish",
 		"standard.code_set.read",
 		"standard.code_set.update",
-		"standard.collection.create",
-		"standard.collection.delete",
-		"standard.collection.publish",
-		"standard.collection.read",
-		"standard.collection.update",
-		"standard.collection_assignment.update",
 		"standard.document.create",
 		"standard.document.delete",
 		"standard.document.publish",

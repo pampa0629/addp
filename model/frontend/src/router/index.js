@@ -14,7 +14,7 @@ const routes = [
   {
     path: '/',
     component: Layout,
-    redirect: '/dw-layers',
+    redirect: '/entities',
     meta: { requiresAuth: true },
     children: [
       {

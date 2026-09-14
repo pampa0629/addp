@@ -21,8 +21,8 @@
       "confirm": "Confirm",
       "approve": "Approve",
       "approve_success": "Approved",
-      "reopen": "Reopen",
-      "reopen_success": "Reopened",
+      "reopen": "Return to draft",
+      "reopen_success": "Returned to draft",
       "loading": "Loading...",
       "design": "Design",
       "add": "Add",
@@ -54,7 +54,8 @@
       "continue_editing": "Continue editing",
       "save_before_action": "Save your current changes before approving.",
       "copy_success": "Copied to clipboard",
-      "copy_failed": "Copy failed"
+      "copy_failed": "Copy failed",
+      "reopen_confirm": "Returning to draft makes the model editable and clears the data element revision references frozen at approval. Approve the model again before use. Published physical tables remain unchanged. Continue?"
     },
     "entity": {
       "recentVisitTitle": "Business Entity",
@@ -130,7 +131,7 @@
       "import_mermaid": "Import Mermaid",
       "export_mermaid": "Export Mermaid",
       "refresh": "Refresh",
-      "domain_filter": "All business domains",
+      "domain_filter": "Select a business domain",
       "entity_count": "Showing {count} entities, {relations} relations",
       "no_entities": "No entities match the current filter",
       "import_dialog_title": "Import Mermaid ER Diagram",
@@ -154,7 +155,12 @@
       "copy_mermaid": "Copy Mermaid Code",
       "copy_mermaid_success": "Mermaid code copied to clipboard",
       "local_er_title": "Entity Relationship Diagram",
-      "generate_failed": "Failed to generate ER diagram"
+      "generate_failed": "Failed to generate ER diagram",
+      "all_domains": "All business domains",
+      "choose_domain": "Select a business domain, or explicitly choose all domains for an overview",
+      "include_related": "Expand cross-domain relations",
+      "unassigned_domain": "Unassigned domain",
+      "transfer_scope": "Mermaid import replaces the entire tenant entity model. Export also includes all domains, regardless of the diagram filter."
     },
     "logical_table": {
       "recentVisitTitle": "Logical Table",
@@ -198,7 +204,11 @@
       "scd_2": "2 - Type 2 (full history)",
       "scd_3": "3 - Hybrid (partial history)",
       "preview_ddl": "Preview DDL",
-      "ddl_failed": "DDL preview failed"
+      "ddl_failed": "DDL preview failed",
+      "approved_help": "Approved model definitions are read-only. Return to draft before editing. DDL preview does not modify the model or create physical tables.",
+      "group_blocked": "This logical table belongs to the following materialization groups. Remove it from all groups before returning to draft.",
+      "group_manage": "Manage group: {name}",
+      "group_read_only": "Ask someone with materialization group management permission to update its members."
     },
     "field": {
       "title": "Field Definition",
@@ -304,7 +314,16 @@
       "confirm_label": "Enter {target} to confirm deletion",
       "confirm_decommission": "Confirm Decommission",
       "decommission_success": "Materialized target decommissioned",
-      "decommission_failed": "Failed to decommission materialized target"
+      "decommission_failed": "Failed to decommission materialized target",
+      "not_configured": "Not configured",
+      "workflows": "Materialization workflows",
+      "workflow_title": "Materialization workflows · {name}",
+      "execution_records": "Materialization executions",
+      "prepare_records": "Table preparation history",
+      "seal_records": "Table sealing history",
+      "publish_records": "Individual table publishing history",
+      "group_records": "Group publishing · {name}",
+      "group_publish_records": "Group publishing history"
     },
     "dw_layer": {
       "title": "DW Layer Configuration",
@@ -419,7 +438,8 @@
       "codeRequired": "Enter a materialization group code",
       "codeFormat": "Use lowercase letters, numbers, and underscores, starting with a letter",
       "nameRequired": "Enter a materialization group name",
-      "membersRequired": "Select at least one logical table"
+      "membersRequired": "Select at least one logical table",
+      "execution_help": "Group tables only when they must become visible together. Use Materialization workflows to review and start a related workflow."
     },
     "layout": {
       "title": "Data Modeling",

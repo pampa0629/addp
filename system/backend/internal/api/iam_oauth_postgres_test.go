@@ -228,6 +228,84 @@ func TestIAMOAuthClientCredentialsAuthContextAgainstPostgres(t *testing.T) {
 	if response := performIAMOAuthClientCredentialsRequest(t, router, rotatedSecrets["addp-manager"], tenantID); response.Code != http.StatusBadRequest {
 		t.Fatalf("suspended service principal token status = %d body=%s", response.Code, response.Body.String())
 	}
+	assertServiceTokenDatabaseClockAgainstPostgres(t, db, router, rotatedSecrets["addp-meta"], tenantID)
+}
+
+// Shift only this test connection's explicit clock projections. The host and
+// shared PostgreSQL clocks remain untouched.
+func assertServiceTokenDatabaseClockAgainstPostgres(t *testing.T, db *gorm.DB, router http.Handler, secret string, tenantID int64) {
+	t.Helper()
+	for _, test := range []struct {
+		name           string
+		issuedOffset   int
+		responseOffset int
+		status         int
+	}{
+		{"database_ahead", 600, 600, http.StatusOK},
+		{"database_behind", -60, -60, http.StatusOK},
+		{"issuance_takes_time", 0, 30, http.StatusOK},
+		{"less_than_one_second", 0, 299, http.StatusServiceUnavailable},
+		{"issuance_expired", 0, 301, http.StatusServiceUnavailable},
+		{"clock_moved_backwards", 0, -10, http.StatusServiceUnavailable},
+	} {
+		for _, contextType := range []string{"platform", "tenant"} {
+			t.Run(test.name+"/"+contextType, func(t *testing.T) {
+				counts := func() [3]int64 {
+					var values [3]int64
+					for i, table := range []string{"system.access_tokens", "system.refresh_token_families", "system.audit_logs"} {
+						query := db.Table(table)
+						if i == 2 {
+							query = query.Where("event_name = ?", "oauth.token.issued")
+						}
+						if err := query.Count(&values[i]).Error; err != nil {
+							t.Fatal(err)
+						}
+					}
+					return values
+				}
+				before := counts()
+				const callback = "test:service_token_database_clock"
+				if err := db.Callback().Row().Before("gorm:row").Register(callback, func(query *gorm.DB) {
+					sql := query.Statement.SQL.String()
+					sql = strings.ReplaceAll(sql, "transaction_timestamp()", fmt.Sprintf("(transaction_timestamp() + interval '%d seconds')", test.issuedOffset))
+					sql = strings.ReplaceAll(sql, "clock_timestamp()", fmt.Sprintf("(clock_timestamp() + interval '%d seconds')", test.responseOffset))
+					query.Statement.SQL.Reset()
+					query.Statement.SQL.WriteString(sql)
+				}); err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() { _ = db.Callback().Row().Remove(callback) })
+				form := url.Values{"context_type": {"platform"}}
+				if contextType == "tenant" {
+					form = url.Values{"tenant_id": {strconv.FormatInt(tenantID, 10)}}
+				}
+				response := performIAMOAuthClientCredentialsFormRequest(t, router, "addp-meta", secret, form)
+				var payload struct {
+					ExpiresIn int64  `json:"expires_in"`
+					Error     string `json:"error"`
+				}
+				if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+					t.Fatal(err)
+				}
+				if response.Code != test.status {
+					t.Fatalf("status=%d, want %d; expires_in=%d error=%s", response.Code, test.status, payload.ExpiresIn, payload.Error)
+				}
+				if test.status == http.StatusOK {
+					maximum := int64(300 - (test.responseOffset - test.issuedOffset))
+					if payload.ExpiresIn < maximum-10 || payload.ExpiresIn > maximum {
+						t.Fatalf("expires_in=%d, want database-relative lifetime in [%d,%d]", payload.ExpiresIn, maximum-10, maximum)
+					}
+				} else {
+					if payload.Error != "temporarily_unavailable" {
+						t.Fatalf("error=%s", payload.Error)
+					}
+					if after := counts(); after != before {
+						t.Fatalf("failed issuance changed token/family/success-audit counts: before=%v after=%v", before, after)
+					}
+				}
+			})
+		}
+	}
 }
 
 func assertMetaServiceEngineDetailAgainstPostgres(

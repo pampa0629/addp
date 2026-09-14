@@ -6,11 +6,11 @@
         <p>{{ t('security.finding.governanceHint') }}</p>
       </div>
       <div class="finding-section__actions">
-        <el-tag v-if="section.pendingReview" type="warning">
-          {{ section.pendingReview.label }}
+        <el-tag v-if="presentation.section.pendingReview" type="warning">
+          {{ presentation.section.pendingReview.label }}
         </el-tag>
         <el-button
-          v-if="section.canDesignate"
+          v-if="presentation.section.canDesignate"
           type="primary"
           plain
           @click="emit('designate')"
@@ -20,17 +20,10 @@
       </div>
     </div>
 
-    <el-skeleton v-if="governance.loading" :rows="3" animated />
+    <el-skeleton v-if="presentation.loading" :rows="3" animated />
     <template v-else>
       <EnrollmentFindingList
-        v-if="governance.readFindings && governance.findings.length > 0"
-        :page="governance.findingsPage"
-        :findings="governance.findings"
-        :total="governance.findingsTotal"
-        :page-size="governance.findingsPageSize"
-        :can-review="governance.reviewFindings"
-        :can-update-assessments="governance.updateAssessments"
-        :can-revoke-policies="governance.revokePolicies"
+        v-if="presentation.findings.visible"
         :presentation="presentation.findings"
         @update:page="emit('update:findingsPage', $event)"
         @review="forwardFindingReview"
@@ -43,10 +36,7 @@
       />
 
       <EnrollmentAssessmentList
-        v-if="governance.manualAssessments.length > 0"
-        :assessments="governance.manualAssessments"
-        :can-update="governance.updateAssessments"
-        :can-revoke-policies="governance.revokePolicies"
+        v-if="presentation.assessments.visible"
         :presentation="presentation.assessments"
         @history="emit('history', $event)"
         @revise="emit('revise', $event)"
@@ -56,7 +46,7 @@
       />
 
       <el-empty
-        v-if="governance.findings.length === 0 && governance.manualAssessments.length === 0"
+        v-if="presentation.empty"
         :description="t('security.finding.noGovernanceConclusions')"
         :image-size="72"
       />
@@ -65,14 +55,11 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import EnrollmentAssessmentList from './EnrollmentAssessmentList.vue'
 import EnrollmentFindingList from './EnrollmentFindingList.vue'
 
-const props = defineProps({
-  enrollment: { type: Object, required: true },
-  governance: { type: Object, required: true },
+defineProps({
   presentation: { type: Object, required: true }
 })
 
@@ -88,7 +75,6 @@ const emit = defineEmits([
   'pageChange'
 ])
 const { t } = useI18n()
-const section = computed(() => props.presentation.section(props.enrollment, props.governance))
 
 function forwardFindingReview(finding, decision) {
   emit('review', { finding, decision })

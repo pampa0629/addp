@@ -3,19 +3,19 @@ import { onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import { snapshotUnsavedState } from '../utils/modelDetailState'
 
-export function useUnsavedChanges({ state, t }) {
+export function useUnsavedChanges({ state, t, additionalDirty = false }) {
   const savedSnapshot = ref('')
   const ready = ref(false)
   const currentSnapshot = computed(() => snapshotUnsavedState(toValue(state)))
-  const isDirty = computed(() => ready.value && savedSnapshot.value !== currentSnapshot.value)
+  const isDirty = computed(() => ready.value && (savedSnapshot.value !== currentSnapshot.value || toValue(additionalDirty)))
 
   const markSaved = () => {
     savedSnapshot.value = currentSnapshot.value
     ready.value = true
   }
 
-  const confirmDiscardChanges = async () => {
-    if (!isDirty.value) return true
+  const confirmDiscardState = async dirty => {
+    if (!dirty) return true
     try {
       await ElMessageBox.confirm(
         t('model.common.unsaved_confirm'),
@@ -33,6 +33,8 @@ export function useUnsavedChanges({ state, t }) {
     }
   }
 
+  const confirmDiscardChanges = () => confirmDiscardState(isDirty.value)
+
   const handleBeforeUnload = event => {
     if (!isDirty.value) return
     event.preventDefault()
@@ -48,5 +50,5 @@ export function useUnsavedChanges({ state, t }) {
   onMounted(() => window.addEventListener('beforeunload', handleBeforeUnload))
   onBeforeUnmount(() => window.removeEventListener('beforeunload', handleBeforeUnload))
 
-  return { isDirty, markSaved, confirmDiscardChanges }
+  return { isDirty, markSaved, confirmDiscardChanges, confirmDiscardState }
 }

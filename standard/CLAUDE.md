@@ -13,7 +13,6 @@ Metric 的指标依赖与基准指标关系通过当前 User Token 读取 `GET /
 **Standard 模块** 是 ADDP 平台的数据标准和治理中心，负责：
 
 - 业务域（Domain）树形组织管理
-- 标准集（StandardCollection）：跨业务域成员快照、对象级职责、审核发布和不可变治理事件
 - 业务术语（Glossary）：以稳定身份和不可变修订统一业务语言、别名、定义、生效区间与关联数据元
 - 数据元（Element）：数据标准的核心原子对象，定义数据规格和质量规则
 - 码值集（CodeSet）：系统/自定义码值集及码值项
@@ -33,16 +32,15 @@ Metric 的指标依赖与基准指标关系通过当前 User Token 读取 `GET /
 
 ## 已确认的目标边界与迁移顺序
 
-- 业务域只表达业务语义与治理责任，不表达可见范围、审核容器或目录分类。
-- 业务域、业务术语、数据元、码值集、指标定义、标准文档、标准集和标准分类的稳定编码统一使用小写 `snake_case`，在对应 Tenant 和类型内唯一且创建后不可变；创建入口不自动转换非法编码。归属域和适用范围可以独立调整，所以业务域编码不是正式标准编码的强制前缀；该前缀只约束 Copilot 新候选。
+- 业务域只表达业务语义与治理责任，不表达可见范围、审核容器或目录分类。标准对象独立维护修订和发布流程，不再建立标准成员清单的独立治理容器。
+- 业务域、业务术语、数据元、码值集、指标定义、标准文档和标准分类的稳定编码统一使用小写 `snake_case`，在对应 Tenant 和类型内唯一且创建后不可变；创建入口不自动转换非法编码。归属域和适用范围可以独立调整，所以业务域编码不是正式标准编码的强制前缀；该前缀只约束 Copilot 新候选。
 - 上述稳定身份和分类的创建 API 必须在 Repository 写入前校验编码；不合规时统一返回 HTTP 400、`error_code=invalid_standard_code`。候选正式化同样先校验历史候选编码，禁止绕过公开创建约束。
+- 手工新建业务术语不提交 `change_summary`，后端按请求语言生成并保存“初始创建 / Initial creation”作为 R1 的说明；新建表单不展示该字段，后续修订仍必填变更说明。候选正式化继续保留其来源与处置说明。
 - 发布型标准采用“稳定身份 + 不可变修订”；统一状态为 `draft → in_review → published → withdrawn`，按半开生效区间动态解析当前修订。
 - 标准对象显式保存 `scope_type=platform|tenant_common|domain`；仅 `domain` 必须指定 `owner_domain_id`。码值集不得再以“租户自定义”为由强制归属业务域。
 - 范围模型只保留 `scope_type + owner_domain_id`；启动迁移遇到历史 `domain_id` 时必须一次性回填归属和范围并删除旧列，即使新旧列曾同时存在，也不得保留双轨字段。
-- StandardCollection 采用“稳定身份 + 治理配置修订 + 成员快照 + 对象级职责分配”。集合修订只审核名称、说明和成员清单，不替代成员对象自身的修订发布；StandardCategory 只承担浏览导航，两者均不得替代业务域和适用范围。
-- StandardCollectionAssignment 只绑定当前租户的 User Principal，角色固定为 `owner|maintainer|reviewer`。模块 Permission 是粗粒度门禁，Assignment 是集合对象级门禁；Owner 可管理职责分配并维护草稿，Maintainer 可编辑和提交，Reviewer 可退回和发布，且发布者不得是提交者。
 - Copilot 只生成标准候选，必须保留文档修订、页码/章节/行号/文本片段等来源证据。Standard 保存提炼批次、候选、人工处置和候选正式化事实；`retained` 只表示保留为后续建标输入。正式化由人工另行发起，只能创建 R1 草稿、为既有身份创建新草稿，或关联内容一致的既有修订，绝不能提交审核或发布。
-- Element、CodeSet、MetricDefinition、Glossary、Document 的 Scope、归属域和修订生命周期统一；StandardCollection 已按上述单一路径实现；DimensionHierarchy 已整体迁入 Model。下一批补齐 Catalog → Quality 落标闭环。
+- Element、CodeSet、MetricDefinition、Glossary、Document 的 Scope、归属域和修订生命周期统一；DimensionHierarchy 已整体迁入 Model。下一批补齐 Catalog → Quality 落标闭环。
 
 文档文件采用“新对象上传、数据库切换引用、旧对象补偿清理”的顺序。失效对象记录在 `standard.document_file_cleanups`，该表仅用于物理清理重试，不作为文档当前文件引用。
 
@@ -60,7 +58,6 @@ standard/
 │   └── internal/
 │       ├── api/
 │       │   ├── router.go              # 路由配置
-│       │   ├── standard_collection_handler.go
 │       │   ├── domain_handler.go
 │       │   ├── glossary_handler.go
 │       │   ├── element_handler.go
@@ -71,7 +68,6 @@ standard/
 │       │   └── document_handler.go
 │       ├── config/config.go
 │       ├── models/
-│       │   ├── standard_collection.go
 │       │   ├── domain.go
 │       │   ├── glossary.go
 │       │   ├── element.go
@@ -89,7 +85,6 @@ standard/
         │   └── standard.js            # 所有 API 调用
         ├── views/
         │   ├── DomainList.vue
-        │   ├── StandardCollectionList.vue / StandardCollectionDetail.vue
         │   ├── GlossaryList.vue / GlossaryDetail.vue
         │   ├── ElementList.vue / ElementDetail.vue
         │   ├── CodeSetList.vue / CodeSetDetail.vue
@@ -113,18 +108,6 @@ standard/
 | name / code | string | 显示名 / 英文标识符 |
 | icon | string | 图标标识 |
 | sort_order | int | 同层排序 |
-
-### `standard.standard_collections` 与治理子表 — 标准集
-
-| 表 | 核心事实 |
-|------|------|
-| `standard_collections` | 租户内唯一且不可变的 `code`、当前草稿指针、并发 `version` |
-| `standard_collection_revisions` | 名称、说明、成员清单的修订身份和 `draft → in_review → published → withdrawn` 状态 |
-| `standard_collection_members` | 修订内冻结的 `member_type + member_id`；只引用标准对象稳定身份 |
-| `standard_collection_assignments` | 当前租户 User Principal 的 `owner / maintainer / reviewer` 对象级职责 |
-| `standard_collection_events` | 创建、草稿更新、提交、退回、发布和职责替换的不可变事件 |
-
-标准集不保存 `domain_id` 或 `scope_type`，允许跨业务域组织成员。发布新集合修订会在同一事务中撤回上一已发布修订。已发布标准集不能删除；职责人员后来停用或移除时，历史职责与事件仍可读取并明确显示为不可用，但不能再被新增到职责分配。
 
 ### `standard.glossaries` — 业务术语稳定身份
 
@@ -338,20 +321,6 @@ GET/POST /api/v1/standard/domains
 GET/PUT/DELETE /api/v1/standard/domains/:id
 ```
 
-### 标准集
-```
-GET/POST /api/v1/standard/collections
-GET/DELETE /api/v1/standard/collections/:id
-GET/POST /api/v1/standard/collections/:id/revisions
-GET /api/v1/standard/collections/:id/events
-PUT /api/v1/standard/collections/:id/revisions/:revision_id
-POST /api/v1/standard/collections/:id/revisions/:revision_id/submit
-POST /api/v1/standard/collections/:id/revisions/:revision_id/return
-POST /api/v1/standard/collections/:id/revisions/:revision_id/publish
-PUT /api/v1/standard/collections/:id/assignments
-GET /api/v1/standard/collection-user-candidates
-```
-
 ### 业务术语
 ```
 GET/POST /api/v1/standard/glossaries                 # 创建稳定身份时同时创建首个草稿
@@ -441,8 +410,6 @@ GET/PUT /api/v1/standard/documents/:id/mappings # 多维关联（数据元/术�
 
 ```
 /standard/domains                    # 业务域（树形管理）
-/standard/collections                # 标准集列表
-/standard/collections/:id            # 标准集配置、职责、修订与审核事件
 /standard/glossaries                 # 业务术语列表
 /standard/glossaries/:id             # 术语详情（属性、关联数据元、文档）
 /standard/elements                   # 数据元列表
@@ -458,7 +425,7 @@ GET/PUT /api/v1/standard/documents/:id/mappings # 多维关联（数据元/术�
 ## 模块依赖关系
 
 **依赖**:
-- **System 模块**: JWT 认证；标准集职责候选与人员状态通过 `tenant.standard_runtime` 的 `iam.tenant_membership.read` 服务身份解析（`SYSTEM_URL`）
+- **System 模块**: 统一身份认证、模块注册与心跳（`SYSTEM_URL`）
 - **Model 模块**: 删除业务域、数据元和指标定义前冻结 Model 标准引用删除屏障并执行权威影响扫描（`MODEL_URL`）；维度层级是 Model 本地聚合
 - **Copilot 模块**: Standard 使用当前 Tenant 的 `addp-standard` Service Access Token 调用候选提炼端点（`COPILOT_URL`）；Copilot 不回写 Standard 数据库
 - **MinIO**: 标准文档文件存储（bucket: `standard`）
@@ -473,8 +440,6 @@ GET/PUT /api/v1/standard/documents/:id/mappings # 多维关联（数据元/术�
 Standard 是以下第一批 Permission 的唯一 owner：
 
 - `standard.domain.*`
-- `standard.collection.*`
-- `standard.collection_assignment.update`
 - `standard.element.*`
 - `standard.metric.*`
 - `standard.catalog.read`（仅 `addp-catalog` 的 `tenant.catalog_runtime`）
@@ -518,14 +483,6 @@ draft → in_review → published → withdrawn
 - `withdrawn` 用于撤回错误发布，不代表创建新版本；稳定身份仍保留历史。
 - 业务术语、数据元、码值集、指标定义与标准文档稳定身份各自最多持有一个草稿，可以有多个区间不重叠的已发布修订。
 
-### 标准集审核与职责边界
-
-- 创建者自动成为首位 `owner`；职责替换必须至少保留一名 `owner`。
-- `owner` 可维护草稿并管理职责，`maintainer` 可维护和提交，`reviewer` 可退回和发布；提交人与发布人必须不同。
-- 提交前必须至少有一个成员，并配置一名不同于提交人的审核人。
-- 集合修订只冻结集合名称、说明和成员稳定身份，不冻结或代替成员对象自己的发布修订。
-- 状态变化与职责替换在业务事务中追加 `standard_collection_events`，不以可变状态字段冒充审核历史。
-
 ### 值域与质量规则的单一事实源
 
 数据元修订必须在 `unrestricted`、`range`、`enumeration` 中三选一。`range` 只使用结构化 `range_constraint`；`enumeration` 必须绑定具体 `code_set_revision_id`。两者互斥，且绑定的码值集修订必须已经发布、值类型必须与数据元类型相容，码值集修订生效区间必须覆盖数据元修订生效区间。
@@ -555,7 +512,7 @@ Model 可引用的 Domain、Element 和 Metric 使用独立 `lifecycle_state=act
 
 ### 数据库约束与启动收敛
 
-Standard 当前使用单一启动迁移入口 `repository.Migrate`：在同一个 PostgreSQL advisory transaction lock 内，先由 GORM `AutoMigrate` 维护表和字段，再幂等收紧唯一索引与 CHECK 约束。约束冲突必须阻止服务启动并暴露具体失败语句，不允许自动删除、合并或改写存量业务数据。
+Standard 当前使用单一启动迁移入口 `repository.Migrate`：在同一个 PostgreSQL advisory transaction lock 内，先删除退出能力的五张成员清单表，再由 GORM `AutoMigrate` 维护保留能力的表和字段，再幂等收紧唯一索引与 CHECK 约束。约束冲突必须阻止服务启动并暴露具体失败语句，不允许自动删除、合并或改写存量业务数据。
 
 租户资源的编码唯一性以 `(tenant_id, code)` 为准；聚合子资源和映射表使用完整业务键去重。Standard Schema 内部引用可以使用数据库约束，跨 Schema 引用仍只允许通过事实 owner 的 API 校验。
 

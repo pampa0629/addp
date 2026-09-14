@@ -15,7 +15,6 @@ export const SEARCH_INDEX = [
   { labelKey: 'console.menus.manager.embeddingTasks', module: 'manager', route: '/manager/tasks/embedding', keywords: ['数据任务', '向量化任务', '向量化', '向量', 'vector', 'embedding'] },
   // 数据标准
   { labelKey: 'console.menus.standard.domains',      module: 'standard', route: '/standard/domains',      keywords: ['业务域', '业务领域', 'domain'] },
-  { labelKey: 'console.menus.standard.collections',  module: 'standard', route: '/standard/collections',  keywords: ['标准集', '标准包', '审核', 'standard collection'] },
   { labelKey: 'console.menus.standard.glossaries',   module: 'standard', route: '/standard/glossaries',   keywords: ['业务术语', '术语', 'glossary', 'term'] },
   { labelKey: 'console.menus.standard.elements',     module: 'standard', route: '/standard/elements',     keywords: ['数据元', '元素', 'element', 'standard'] },
   { labelKey: 'console.menus.standard.codeSets',     module: 'standard', route: '/standard/code-sets',    keywords: ['码值', '码值集', 'code', 'codeset'] },

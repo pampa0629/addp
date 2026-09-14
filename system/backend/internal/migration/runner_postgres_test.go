@@ -4434,8 +4434,8 @@ func assertAuthorizationCatalogRetirement(t *testing.T, db *sql.DB) {
 	`).Scan(&activePermissionCount, &disabledPermissionCount); err != nil {
 		t.Fatalf("read retired Permission counts: %v", err)
 	}
-	if activePermissionCount < 345 || disabledPermissionCount != 83 {
-		t.Fatalf("Permission status counts = active:%d disabled:%d, want at least 345 and exactly 83", activePermissionCount, disabledPermissionCount)
+	if activePermissionCount < 345 || disabledPermissionCount != 89 {
+		t.Fatalf("Permission status counts = active:%d disabled:%d, want at least 345 and exactly 89", activePermissionCount, disabledPermissionCount)
 	}
 
 	var disabledRoles string
@@ -4477,8 +4477,8 @@ func assertStandardAuthorizationCatalog(t *testing.T, db *sql.DB) {
 	`).Scan(&permissionCount); err != nil {
 		t.Fatalf("read Standard authorization permissions: %v", err)
 	}
-	if permissionCount != 41 {
-		t.Fatalf("Standard authorization permission count = %d, want 41", permissionCount)
+	if permissionCount != 35 {
+		t.Fatalf("Standard authorization permission count = %d, want 35", permissionCount)
 	}
 	var publishPermissionCount, disabledApproveCount, disabledLegacyMetricPermissionCount, disabledLegacyGlossaryPermissionCount int
 	if err := db.QueryRow(`
@@ -4507,8 +4507,8 @@ func assertStandardAuthorizationCatalog(t *testing.T, db *sql.DB) {
 	`).Scan(&rolePermissionCount); err != nil {
 		t.Fatalf("read Governance Manager Standard permissions: %v", err)
 	}
-	if rolePermissionCount != 40 {
-		t.Fatalf("Governance Manager Standard permission count = %d, want 40", rolePermissionCount)
+	if rolePermissionCount != 34 {
+		t.Fatalf("Governance Manager Standard permission count = %d, want 34", rolePermissionCount)
 	}
 
 	var retiredHierarchyPermissions, retiredHierarchyBindings int
@@ -4531,6 +4531,10 @@ func assertStandardAuthorizationCatalog(t *testing.T, db *sql.DB) {
 		t.Fatalf("retired Standard dimension hierarchy permissions=%d bindings=%d, want 4 and 0", retiredHierarchyPermissions, retiredHierarchyBindings)
 	}
 
+	var retiredCollectionPermissions int
+	if err := db.QueryRow(`SELECT count(*) FROM system.permissions WHERE status = 'active' AND (permission_key LIKE 'standard.collection.%' OR permission_key = 'standard.collection_assignment.update')`).Scan(&retiredCollectionPermissions); err != nil || retiredCollectionPermissions != 0 {
+		t.Fatalf("retired collection permission count=%d err=%v", retiredCollectionPermissions, err)
+	}
 	var collectionPermissionCount, runtimeMembershipReadCount int
 	if err := db.QueryRow(`
 		SELECT
@@ -4546,8 +4550,8 @@ func assertStandardAuthorizationCatalog(t *testing.T, db *sql.DB) {
 	`).Scan(&collectionPermissionCount, &runtimeMembershipReadCount); err != nil {
 		t.Fatalf("read Standard collection role permissions: %v", err)
 	}
-	if collectionPermissionCount != 6 || runtimeMembershipReadCount != 1 {
-		t.Fatalf("Standard collection bindings = governance:%d runtime_user_read:%d, want 6 and 1", collectionPermissionCount, runtimeMembershipReadCount)
+	if collectionPermissionCount != 0 || runtimeMembershipReadCount != 0 {
+		t.Fatalf("Standard collection bindings = governance:%d runtime_user_read:%d, want 0 and 0", collectionPermissionCount, runtimeMembershipReadCount)
 	}
 }
 
@@ -6432,4 +6436,59 @@ func latestMigrationVersion(t *testing.T) int {
 		t.Fatalf("read embedded migration catalog: %v", err)
 	}
 	return int(catalog.LatestVersion)
+}
+
+func TestStandardCollectionRemovalForwardMigrationAgainstPostgres(t *testing.T) {
+	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
+	if dsn == "" {
+		t.Skip("ADDP_SYSTEM_POSTGRES_TEST_DSN is not set")
+	}
+	testsupport.RequireDisposablePostgresDSN(t, dsn)
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec("DROP SCHEMA IF EXISTS system CASCADE; DROP SCHEMA IF EXISTS common CASCADE"); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	before, through := migrationFilesBeforeAndThrough(t, "000140_iam_remove_standard_collections.up.sql")
+	if err := (&Runner{DSN: dsn, FS: before, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	principalID, tenantID := seedInitializedMigrationTenant(t, db, "collection-removal", "Collection Removal")
+	if _, err := db.Exec(`INSERT INTO system.role_assignments
+  (principal_id, role_id, scope_type, tenant_id, status, valid_from, source_type)
+  SELECT $1, id, 'tenant', $2, 'active', now(), 'bootstrap'
+  FROM system.roles WHERE tenant_id IS NULL AND role_key = 'tenant.governance_manager'`, principalID, tenantID); err != nil {
+		t.Fatal(err)
+	}
+	var oldVersion, newVersion int64
+	if err := db.QueryRow("SELECT authorization_version FROM system.principals WHERE id = $1", principalID).Scan(&oldVersion); err != nil {
+		t.Fatal(err)
+	}
+	runner := &Runner{DSN: dsn, FS: through, Root: DefaultMigrationsRoot}
+	if err := runner.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := runner.Run(ctx); err != nil {
+		t.Fatalf("repeat migration: %v", err)
+	}
+	if err := db.QueryRow("SELECT authorization_version FROM system.principals WHERE id = $1", principalID).Scan(&newVersion); err != nil || newVersion <= oldVersion {
+		t.Fatalf("authorization version %d -> %d, err=%v", oldVersion, newVersion, err)
+	}
+	var active, bindings, historical int
+	if err := db.QueryRow(`SELECT count(*) FILTER (WHERE permission.status = 'active'), count(binding.permission_id), count(DISTINCT permission.id)
+  FROM system.permissions permission LEFT JOIN system.role_permissions binding ON binding.permission_id = permission.id
+  WHERE permission.permission_key LIKE 'standard.collection.%' OR permission.permission_key = 'standard.collection_assignment.update'`).Scan(&active, &bindings, &historical); err != nil || active != 0 || bindings != 0 || historical != 6 {
+		t.Fatalf("active=%d bindings=%d history=%d err=%v", active, bindings, historical, err)
+	}
+	var standardRead, catalogRead int
+	if err := db.QueryRow(`SELECT count(*) FILTER (WHERE role.role_key = 'tenant.standard_runtime'), count(*) FILTER (WHERE role.role_key = 'tenant.catalog_runtime')
+  FROM system.role_permissions binding JOIN system.roles role ON role.id = binding.role_id JOIN system.permissions permission ON permission.id = binding.permission_id
+  WHERE role.tenant_id IS NULL AND permission.permission_key = 'iam.tenant_membership.read' AND permission.status = 'active'`).Scan(&standardRead, &catalogRead); err != nil || standardRead != 0 || catalogRead != 1 {
+		t.Fatalf("standard read=%d catalog read=%d err=%v", standardRead, catalogRead, err)
+	}
 }

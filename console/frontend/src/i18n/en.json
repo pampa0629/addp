@@ -350,7 +350,6 @@
       "standard": {
         "label": "Data Standards",
       "domains": "Business Domains",
-      "collections": "Standard Collections",
         "glossaries": "Glossaries",
         "elements": "Data Elements",
         "codeSets": "Code Sets",

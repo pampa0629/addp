@@ -7,9 +7,9 @@
     </el-button>
   </div>
   <div class="policy-target">
-    <strong>{{ assessment.component_key }}</strong>
-    <span>{{ assessmentSummary }}</span>
-    <span>{{ protectionSummary }}</span>
+    <strong>{{ presentation.componentKey }}</strong>
+    <span>{{ presentation.assessmentSummary }}</span>
+    <span>{{ presentation.protectionSummary }}</span>
   </div>
   <el-form ref="formRef" :model="form" :rules="rules" label-position="top">
     <template v-if="mode === 'tighten'">
@@ -18,11 +18,11 @@
       </el-form-item>
       <el-form-item :label="t('security.policy.effect')" prop="effect" required>
         <el-radio-group v-model="form.effect">
-          <el-radio-button v-for="effect in effects" :key="effect" :value="effect">
-            {{ effectLabel(effect) }}
+          <el-radio-button v-for="option in presentation.effectOptions" :key="option.value" :value="option.value">
+            {{ option.label }}
           </el-radio-button>
         </el-radio-group>
-        <div class="field-help">{{ t(`security.baseline.effectImpact.${form.effect}`) }}</div>
+        <div class="field-help">{{ selectedEffectImpact }}</div>
       </el-form-item>
       <el-form-item :label="t('security.policy.rationale')" prop="rationale" required>
         <el-input v-model="form.rationale" type="textarea" :rows="4" maxlength="2000" show-word-limit :placeholder="t('security.policy.rationalePlaceholder')" />
@@ -47,15 +47,11 @@ import { useI18n } from 'vue-i18n'
 
 const props = defineProps({
   mode: { type: String, required: true, validator: value => ['tighten', 'restore'].includes(value) },
-  assessment: { type: Object, required: true },
-  assessmentSummary: { type: String, required: true },
-  protectionSummary: { type: String, required: true },
+  presentation: { type: Object, required: true },
   conflict: { type: Boolean, default: false },
   reloading: { type: Boolean, default: false },
   form: { type: Object, required: true },
-  rules: { type: Object, required: true },
-  effects: { type: Array, default: () => [] },
-  effectLabel: { type: Function, required: true }
+  rules: { type: Object, required: true }
 })
 
 const emit = defineEmits(['reload'])
@@ -64,6 +60,8 @@ const formRef = ref(null)
 const hintKey = computed(() => props.mode === 'restore' ? 'security.policy.restoreHint' : 'security.policy.hint')
 const conflictKey = computed(() => props.mode === 'restore' ? 'security.policy.restoreVersionConflict' : 'security.policy.versionConflict')
 const reloadKey = computed(() => props.mode === 'restore' ? 'security.policy.reloadLatestForRestore' : 'security.policy.reloadLatest')
+const selectedEffectImpact = computed(() => props.presentation.effectOptions
+  .find(option => option.value === props.form.effect)?.impact || '')
 
 function validate() {
   return formRef.value?.validate() ?? Promise.resolve(false)

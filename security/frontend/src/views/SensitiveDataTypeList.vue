@@ -133,7 +133,7 @@
         v-if="selectedBaselineType"
         :key="`${selectedBaselineType.id}:${baselineDrawerRevision}`"
         :sensitive-type="selectedBaselineType"
-        @changed="load"
+        @changed="applyBaselineSnapshot"
       />
     </el-drawer>
   </section>
@@ -244,6 +244,13 @@ async function load() {
   } finally {
     loading.value = false
   }
+}
+
+function applyBaselineSnapshot({ sensitiveTypeID, baselines: updated }) {
+  baselines.value = [
+    ...baselines.value.filter(item => String(item.sensitive_data_type_id) !== String(sensitiveTypeID)),
+    ...updated
+  ]
 }
 
 function reset(row = {}) {

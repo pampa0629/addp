@@ -1,5 +1,14 @@
 {
   "security": {
+    "baselineRecovery": {
+      "loadFailed": "The default protection list could not be loaded. Please retry.",
+      "savedRefreshFailed": "Changes were saved, but the list could not be refreshed. Refresh the list; do not save again.",
+      "refresh": "Refresh list",
+      "listConflict": "A rule was changed by another operation. Refresh the list and review it before trying again.",
+      "versionConflict": "This rule was changed by another operation. Your input is preserved. Load the latest rule and review it before saving.",
+      "reloadLatest": "Discard current input and load the latest rule",
+      "reloadFailed": "Failed to load the latest default protection rule"
+    },
     "layout": { "title": "Data Security and Privacy Protection", "logout": "Sign out" },
     "login": { "title": "Security Sign In", "username": "Username", "password": "Password", "submit": "Sign in" },
     "resources": { "classificationGrading": "Classification & Grading", "sensitiveDataDefinition": "Sensitive Data Definitions", "classification": "Classification Catalog", "grade": "Protection Grades", "sensitiveDataType": "Sensitive Types", "protectionEnrollment": "Protected Resources" },

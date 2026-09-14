@@ -59,12 +59,6 @@ describe('protected-resource presentation model', () => {
 
     const resource = { target_snapshot: { full_name: 'business.customers', item_type: 'table', engine_id: 7 } }
 
-    expect(presentation.resourceName(resource)).toBe('customers')
-    expect(presentation.resourcePath({ target_snapshot: {} })).toBe('security.enrollment.snapshotUnavailable')
-    expect(presentation.engineLabel(7)).toBe('Business MySQL')
-    expect(presentation.engineLabel(99)).toContain('"id":99')
-    expect(presentation.itemTypeLabel('TABLE')).toBe('Table')
-    expect(presentation.itemTypeLabel('custom')).toBe('custom')
     expect(presentation.resourceIdentityView(resource)).toEqual({
       resource,
       name: 'customers',
@@ -72,8 +66,171 @@ describe('protected-resource presentation model', () => {
       itemType: 'Table',
       engine: 'Business MySQL'
     })
-    expect(presentation.releaseBasisLabel('invalid')).toBe('security.common.notAvailable')
-    expect(presentation.releaseActorLabel(8)).toContain('"id":8')
+  })
+
+  it('derives the selected enrollment resource through one creation presentation model', () => {
+    const { presentation } = createPresentation()
+    const item = {
+      name: 'customers',
+      full_name: 'business.customers',
+      item_type: 'table',
+      engine_id: 7,
+      scanned_at: '2026-01-02T03:04:05Z'
+    }
+
+    const selection = presentation.enrollmentCreationSelectionView(item, { engineName: 'Selected Business Engine' })
+    expect(selection).toEqual({
+      name: 'customers',
+      fullName: 'business.customers',
+      itemType: 'Table',
+      engine: 'Selected Business Engine',
+      lastScannedAt: expect.not.stringContaining('security.common.notAvailable'),
+      scope: 'security.enrollment.wholeResourceScope'
+    })
+
+    const fallback = presentation.enrollmentCreationSelectionView({ ...item, item_type: 'custom', engine_id: 99 }, {})
+    expect(fallback.itemType).toBe('custom')
+    expect(fallback.engine).toContain('"id":99')
+  })
+
+  it('derives lifecycle action warnings and resource details through one dialog model', () => {
+    const { presentation } = createPresentation()
+    const enrollment = {
+      target_snapshot: { full_name: 'business.customers', item_type: 'table' },
+      release_basis: 'manual',
+      released_at: '2026-01-04T03:04:05Z',
+      release_reason: 'retired',
+      last_discovered_at: '2026-01-02T03:04:05Z'
+    }
+
+    const reEnrollment = presentation.enrollmentLifecycleActionDialogView(enrollment, 're-enroll')
+    expect(reEnrollment.alert.type).toBe('warning')
+    expect(reEnrollment.alert.title).toContain('"resource":"customers"')
+    expect(reEnrollment.targetName).toBe('business.customers')
+    expect(reEnrollment.details.map(detail => detail.key)).toEqual(['basis', 'releasedAt', 'reason'])
+    expect(reEnrollment.details[0].value).toBe('security.enrollment.releaseBases.manual')
+    expect(reEnrollment.details[2].value).toBe('retired')
+
+    const rediscovery = presentation.enrollmentLifecycleActionDialogView(enrollment, 'rediscover')
+    expect(rediscovery.alert).toEqual({ type: 'info', title: 'security.enrollment.rediscoverHint' })
+    expect(rediscovery.details.map(detail => detail.key)).toEqual(['lastDiscoveredAt'])
+    expect(rediscovery.details[0].value).not.toBe('security.common.notAvailable')
+  })
+
+  it('derives enrollment release content through one dialog presentation model', () => {
+    const { presentation } = createPresentation()
+    const enrollment = { target_snapshot: { full_name: 'business.customers' } }
+
+    const manual = presentation.enrollmentReleaseDialogView(enrollment, 'manual')
+    expect(manual).toEqual({
+      title: 'security.enrollment.release',
+      warning: 'security.enrollment.releaseWarning',
+      targetName: 'business.customers',
+      basisLabel: 'security.enrollment.releaseBases.manual',
+      reasonPlaceholder: 'security.enrollment.releaseReason',
+      confirmLabel: 'security.enrollment.confirmRelease'
+    })
+
+    const noSupportedFindings = presentation.enrollmentReleaseDialogView(enrollment, 'no_supported_findings')
+    expect(noSupportedFindings.title).toBe('security.enrollment.confirmNoProtectionNeeded')
+    expect(noSupportedFindings.warning).toBe('security.enrollment.noFindingsReleaseWarning')
+    expect(noSupportedFindings.basisLabel).toBe('security.enrollment.releaseBases.no_supported_findings')
+    expect(noSupportedFindings.reasonPlaceholder).toBe('security.enrollment.noFindingsReleaseReason')
+    expect(noSupportedFindings.confirmLabel).toBe('security.enrollment.confirmNoProtectionNeededAction')
+
+    expect(presentation.enrollmentReleaseDialogView(null, 'invalid').targetName).toBe('security.common.notAvailable')
+    expect(presentation.enrollmentReleaseDialogView(null, 'invalid').basisLabel).toBe('security.common.notAvailable')
+  })
+
+  it('derives manual assessment choices through one dialog presentation model', () => {
+    const { presentation } = createPresentation()
+    const componentOptions = [{ component: { key: 'email', value_type: 'string' } }]
+
+    const dialog = presentation.manualAssessmentDialogView({
+      componentsLoading: true,
+      componentOptions,
+      sensitiveDataTypeID: '11'
+    })
+
+    expect(dialog).toEqual({
+      componentsLoading: true,
+      componentOptions: [{ value: 'email', label: 'email', valueType: 'string' }],
+      sensitiveTypeOptions: [{ value: '11', label: 'Phone' }],
+      gradeOptions: [{ value: '13', label: 'High' }]
+    })
+    expect(presentation.manualAssessmentDialogView().gradeOptions).toEqual([])
+  })
+
+  it('derives access request decision content through one dialog presentation model', () => {
+    const { presentation } = createPresentation()
+    const request = {
+      target_full_name: 'business.customers',
+      component: { key: 'phone' },
+      requester: { id: 8, display_name: 'Alice' },
+      requested_expires_at: '2026-01-04T03:04:05Z',
+      rationale: 'support case'
+    }
+
+    const rejection = presentation.accessRequestDecisionDialogView(request, 'reject')
+    expect(rejection.title).toBe('security.accessRequest.reject')
+    expect(rejection.hint).toBe('security.accessRequest.rejectHint')
+    expect(rejection.confirmLabel).toBe('security.accessRequest.confirmActions.reject')
+    expect(rejection.confirmType).toBe('danger')
+    expect(rejection.target).toBe('business.customers · phone')
+    expect(rejection.details.map(detail => detail.key)).toEqual(['requester', 'requestedUntil', 'rationale'])
+    expect(rejection.details[0].value).toContain('Alice')
+    expect(rejection.details[2].value).toBe('support case')
+
+    const approval = presentation.accessRequestDecisionDialogView(request, 'approve')
+    expect(approval.confirmType).toBe('primary')
+    expect(approval.confirmLabel).toBe('security.accessRequest.confirmActions.approve')
+  })
+
+  it('derives pending and historical access requests through one row presentation model', () => {
+    const { presentation } = createPresentation()
+    const request = {
+      id: 21,
+      target_full_name: 'business.customers',
+      component: { key: 'phone' },
+      requester: { id: 8, display_name: 'Alice' },
+      requested_expires_at: '2026-01-04T03:04:05Z',
+      created_at: '2026-01-02T03:04:05Z',
+      rationale: 'support case',
+      state: 'approved',
+      authorization_state: 'active',
+      authorized_until: '2026-01-04T03:04:05Z',
+      enrollment_id: 'enrollment-1',
+      exemption_id: 'exemption-1',
+      reviewer: { id: 9, display_name: 'Bob' },
+      decided_at: '2026-01-03T03:04:05Z',
+      decision_rationale: 'approved',
+      can_decide: false,
+      decision_unavailable_reason: 'self_approval_forbidden'
+    }
+
+    const row = presentation.accessRequestReviewRowView(request, { canReadExemptions: true })
+    expect(row.request).toBe(request)
+    expect(row.target).toEqual({ fullName: 'business.customers', componentKey: 'phone' })
+    expect(row.requester.displayName).toBe('Alice')
+    expect(row.requester.idLabel).toContain('"id":8')
+    expect(row.state).toEqual({ type: 'success', label: 'security.accessRequest.states.approved' })
+    expect(row.authorization?.state.type).toBe('success')
+    expect(row.authorization?.canOpen).toBe(true)
+    expect(row.reviewer?.displayName).toBe('Bob')
+    expect(row.decisionRationale).toBe('approved')
+    expect(row.actions.canDecide).toBe(false)
+    expect(row.actions.unavailable?.label).toBe('security.accessRequest.unavailableLabels.self_approval_forbidden')
+
+    const workspace = presentation.accessRequestReviewWorkspaceView([request], { canReadExemptions: true })
+    expect(workspace.rows).toHaveLength(1)
+    expect(workspace.rows[0].request).toBe(request)
+    expect(workspace.rows[0].authorization?.canOpen).toBe(true)
+
+    const pending = presentation.accessRequestReviewRowView({ ...request, state: 'pending', authorization_state: '', reviewer: null, can_decide: true })
+    expect(pending.state.type).toBe('info')
+    expect(pending.authorization).toBeNull()
+    expect(pending.reviewer).toBeNull()
+    expect(pending.actions.canDecide).toBe(true)
   })
 
   it('derives each protected resource list row through one presentation model', () => {
@@ -104,6 +261,11 @@ describe('protected-resource presentation model', () => {
     expect(row.discovery.observedAt).not.toBe('security.common.notAvailable')
     expect(row.releasedAt).not.toBe('security.common.notAvailable')
     expect(row.canReEnroll).toBe(true)
+
+    const list = presentation.resourceListView([enrollment])
+    expect(list.rows).toHaveLength(1)
+    expect(list.rows[0].enrollment).toBe(enrollment)
+    expect(list.rows[0].canReEnroll).toBe(true)
   })
 
   it('derives resource identity, owners, audit, and lifecycle actions through one detail view', () => {
@@ -180,23 +342,35 @@ describe('protected-resource presentation model', () => {
   it('derives the governance header through one section view', () => {
     const { presentation } = createPresentation()
 
-    expect(presentation.governanceSectionView({
+    const active = presentation.governanceDetailView({
       state: 'active',
       discovery_summary: { status: 'completed', finding_count: 2, pending_review_count: 2 }
-    }, { createAssessments: true })).toEqual({
+    }, {
+      loading: true,
+      canReadFindings: true,
+      canCreateAssessments: true
+    })
+    expect(active.visible).toBe(true)
+    expect(active.loading).toBe(true)
+    expect(active.section).toEqual({
       pendingReview: {
         count: 2,
         label: 'security.finding.pendingCount:{"count":2}'
       },
       canDesignate: true
     })
-    expect(presentation.governanceSectionView({
+    expect(active.empty).toBe(true)
+
+    const released = presentation.governanceDetailView({
       state: 'released',
       discovery_summary: { status: 'completed', finding_count: 0, pending_review_count: 0 }
-    }, { createAssessments: true })).toEqual({
+    }, { canCreateAssessments: true })
+    expect(released.section).toEqual({
       pendingReview: null,
       canDesignate: false
     })
+    expect(released.visible).toBe(false)
+    expect(released.loading).toBe(false)
   })
 
   it('presents owner rules and finding outlet rules from the same action and effect labels', () => {
@@ -252,6 +426,26 @@ describe('protected-resource presentation model', () => {
     expect(row.governance.protectionSummary).toContain('security.policy.activeSummary')
     expect(row.outlets[0].acknowledgement.type).toBe('success')
     expect(row.assessment.active?.id).toBe('assessment-1')
+
+    const list = presentation.governanceDetailView({}, {
+      findings: [finding],
+      findingsPage: 2,
+      findingsTotal: 11,
+      findingsPageSize: 10,
+      canReadFindings: true,
+      canReviewFindings: true,
+      canUpdateAssessments: true,
+      canRevokePolicies: false
+    }).findings
+    expect(list.rows).toHaveLength(1)
+    expect(list.rows[0].finding).toBe(finding)
+    expect(list.visible).toBe(true)
+    expect(list.pagination).toEqual({ page: 2, total: 11, pageSize: 10 })
+    expect(list.permissions).toEqual({
+      canReview: true,
+      canUpdateAssessments: true,
+      canRevokePolicies: false
+    })
   })
 
   it('derives each pending review candidate through one row model', () => {
@@ -282,6 +476,18 @@ describe('protected-resource presentation model', () => {
     expect(row.evidence.metadata).toContain('88%')
     expect(row.actions.canReview).toBe(true)
     expect(presentation.findingReviewRowView(finding).actions.canReview).toBe(false)
+
+    const queue = presentation.findingReviewQueueView([finding], {
+      canReview: true,
+      detectorCapabilities: [{ key: 'phone-metadata/v1', name_i18n_key: 'security.detectorCapabilities.phoneMetadata.name' }]
+    })
+    expect(queue.rows).toHaveLength(1)
+    expect(queue.rows[0].actions.canReview).toBe(true)
+    expect(queue.filters.sensitiveTypeOptions).toEqual([{ value: '11', label: 'Phone' }])
+    expect(queue.filters.recognitionMethodOptions).toEqual([{
+      value: 'phone-metadata/v1',
+      label: 'Phone metadata（phone-metadata/v1）'
+    }])
   })
 
   it('derives the finding review dialog through one presentation model', () => {
@@ -317,7 +523,8 @@ describe('protected-resource presentation model', () => {
     expect(dialog.target).toEqual({ componentKey: 'phone', summary: 'Phone · 88%' })
     expect(dialog.remainingLabel).toBe('3 remaining')
     expect(dialog.rationalePlaceholder).toBe('Explain the decision')
-    expect(dialog.gradeOptions).toBe(gradeOptions)
+    expect(dialog.sensitiveTypeOptions).toEqual([{ value: '11', label: 'Phone' }])
+    expect(dialog.gradeOptions).toEqual([{ value: '13', label: 'High' }])
     expect(dialog.basis.recognitionMethod).toBe('Phone metadata')
     expect(dialog.basis.actualMatch).toContain('security.finding.ruleAudit.metadataEvidence')
     expect(dialog.basis.governance.decision.type).toBe('danger')
@@ -338,10 +545,32 @@ describe('protected-resource presentation model', () => {
     expect(presentation.stricterPolicyEffects(assessment)).toEqual(['suppress', 'deny'])
     expect(presentation.activeGradesForType(11).map(item => item.id)).toEqual([13])
     expect(presentation.canConfigurePolicy(assessment)).toBe(true)
-    expect(presentation.assessmentProtectionSummary(assessment)).toContain('security.policy.activeSummary')
 
     dependencies.canUpdatePolicies.value = false
     expect(presentation.canConfigurePolicy(assessment)).toBe(false)
+  })
+
+  it('derives policy target summaries and stricter effects through one dialog presentation model', () => {
+    const { dependencies, presentation } = createPresentation()
+    const assessment = dependencies.assessments.value[0]
+
+    const dialog = presentation.protectionPolicyDialogView(assessment, { effects: ['suppress', 'deny'] })
+
+    expect(dialog.componentKey).toBe('phone')
+    expect(dialog.assessmentSummary).toContain('"type":"Phone"')
+    expect(dialog.protectionSummary).toContain('security.policy.activeSummary')
+    expect(dialog.effectOptions).toEqual([
+      {
+        value: 'suppress',
+        label: 'security.enrollment.effects.suppress',
+        impact: 'security.baseline.effectImpact.suppress'
+      },
+      {
+        value: 'deny',
+        label: 'security.enrollment.effects.deny',
+        impact: 'security.baseline.effectImpact.deny'
+      }
+    ])
   })
 
   it('derives each finding assessment and policy view through one row model', () => {
@@ -360,7 +589,23 @@ describe('protected-resource presentation model', () => {
     expect(notSensitive.policy).toBeNull()
     expect(notSensitive.canConfigurePolicy).toBe(false)
     expect(notSensitive.protectionSummary).toBe('')
-    expect(presentation.assessmentConclusionLabel('other')).toBe('security.assessment.conclusions.not_sensitive')
+  })
+
+  it('derives assessment change dialog content and grade choices through one presentation model', () => {
+    const { dependencies, presentation } = createPresentation()
+    const gradeOptions = [{ id: 13, name: 'High' }]
+
+    const dialog = presentation.assessmentChangeDialogView(dependencies.assessments.value[0], { gradeOptions })
+    expect(dialog.componentKey).toBe('phone')
+    expect(dialog.conclusionLabel).toBe('security.assessment.conclusions.sensitive')
+    expect(dialog.summary).toContain('"type":"Phone"')
+    expect(dialog.sensitiveTypeOptions).toEqual([{ value: '11', label: 'Phone' }])
+    expect(dialog.gradeOptions).toEqual([{ value: '13', label: 'High' }])
+
+    const fallback = presentation.assessmentChangeDialogView(dependencies.assessments.value[1])
+    expect(fallback.conclusionLabel).toBe('security.assessment.conclusions.not_sensitive')
+    expect(fallback.sensitiveTypeOptions).toEqual([{ value: '11', label: 'Phone' }])
+    expect(fallback.gradeOptions).toEqual([])
   })
 
   it('derives each assessment card through one row model', () => {
@@ -379,6 +624,16 @@ describe('protected-resource presentation model', () => {
       canRestorePolicy: true,
       canRevokeAssessment: true
     })
+
+    const list = presentation.governanceDetailView({}, {
+      manualAssessments: dependencies.assessments.value,
+      canUpdateAssessments: true,
+      canRevokePolicies: false
+    }).assessments
+    expect(list.rows).toHaveLength(2)
+    expect(list.rows[0].assessment).toBe(dependencies.assessments.value[0])
+    expect(list.visible).toBe(true)
+    expect(list.permissions).toEqual({ canUpdate: true, canRevokePolicies: false })
 
     const notSensitive = presentation.assessmentRowView(dependencies.assessments.value[1])
     expect(notSensitive.conclusion).toEqual({ type: 'info', label: 'security.assessment.conclusions.not_sensitive' })
@@ -467,5 +722,46 @@ describe('protected-resource presentation model', () => {
     const expired = presentation.exemptionRowView({ ...exemption, effective_state: 'expired' })
     expect(expired.state).toEqual({ type: 'info', label: 'security.exemption.states.expired' })
     expect(expired.canRevoke).toBe(false)
+  })
+
+  it('derives the temporary authorization section through one presentation contract', () => {
+    const { presentation } = createPresentation()
+    const exemptions = [
+      {
+        id: 'exemption-1',
+        assessment_id: 'assessment-1',
+        subject_id: 'user-8',
+        consumer_owner: 'manager',
+        action: 'preview',
+        effective_state: 'active',
+        current: { expires_at: '2026-01-05T03:04:05Z', rationale: 'approved research' }
+      },
+      {
+        id: 'exemption-2',
+        assessment_id: 'assessment-1',
+        effective_state: 'expired',
+        current: {}
+      }
+    ]
+
+    const section = presentation.exemptionSectionView(exemptions, {
+      canRead: true,
+      loading: true,
+      focusedId: 'exemption-2',
+      canRevoke: true
+    })
+
+    expect(section.visible).toBe(true)
+    expect(section.loading).toBe(true)
+    expect(section.canRevoke).toBe(true)
+    expect(section.rows).toHaveLength(2)
+    expect(section.rows[0].focused).toBe(false)
+    expect(section.rows[1].focused).toBe(true)
+    expect(presentation.exemptionSectionView(null)).toEqual({
+      visible: false,
+      loading: false,
+      rows: [],
+      canRevoke: false
+    })
   })
 })
