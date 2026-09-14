@@ -42,8 +42,11 @@ make test-module MODULE=<module>
 # 全部已登记 disposable 基础设施门禁
 make test-integration
 
-# 仅在持有合法 License 的受保护 self-hosted Runner 运行
+# 仅在持有合法 License 的 owner 受控 Linux 主机人工运行，不进入 GitHub Actions
 make test-integration-owner-managed
+
+# 本地与 CI 共用的发布工作流安全审计（首次执行需下载固定版本工具）
+make test-workflow-security
 
 # 一个已登记的跨模块 Online suite
 make test-online ONLINE_SUITE=<suite>
@@ -82,7 +85,7 @@ T2 使用真实但可丢弃的基础设施，并满足：
 - CI Job 使用独占 Service 和随 Job 销毁的数据库。
 - 托管外部服务的 owner gate 必须在脚本头声明 `# ADDP_T2_SERVICES=<service,...>`；模块门禁、CI 注册和后续新增数据库类型都消费该声明，不按数据库名称维护发现分支。
 - 必须由调用方注入连接条件的 owner gate 同时声明 `# ADDP_T2_REQUIRED_ENV=<name[|alternative],...>`，逗号表示“同时需要”，竖线表示等价的安全前置条件。`make test-module` 与 `make test-changed` 必须在执行任何 T0/T1 前一次性检查全部所需条件，缺失时失败关闭并给出 owner、变量及安全测试环境提示；`--dry-run` 仅展示计划，不要求真实连接条件。CI 登记检查必须确认对应 Job 显式提供每组条件中的至少一个变量。
-- 需要 owner 持有合法 License 或受控介质的门禁必须声明 `# ADDP_T2_OWNER_MANAGED=<runtime>`，只进入受保护 self-hosted Runner 的 `make test-integration-owner-managed`，不进入 GitHub Hosted、普通 `make test-integration` 或 macOS 定时巡检。脚本必须验证官方介质与 License SHA-256、拥有 disposable 容器全生命周期并验证零残留。
+- 需要 owner 持有合法 License 或受控介质的门禁必须声明 `# ADDP_T2_OWNER_MANAGED=<runtime>`，只通过 owner 受控 Linux 主机上的 `make test-integration-owner-managed` 人工执行，不进入 GitHub Actions、普通 `make test-integration` 或 macOS 定时巡检。登记检查必须拒绝 workflow 调用这类目标及其聚合入口。脚本必须验证官方介质与 License SHA-256、拥有 disposable 容器全生命周期并验证零残留。
 - 本地共享 `addp-postgres` 只允许使用 `addp_test` 与 `addp_iam_test`，并且只能通过根 `Makefile` 或 `scripts/test/` 的标准入口操作。
 - 禁止为单次验证直接创建或删除数据库；现有标准入口不能满足隔离时，先完善入口及自动清理。
 - 门禁在任何破坏性动作前校验数据库身份，拒绝开发库、生产库或不满足 owner 安全约束的连接。
@@ -209,7 +212,11 @@ T5 按产品或 Runtime 独立准备真实前置条件，例如 macOS Keychain�
 
 未具备真实凭据或 Runtime 的 T5 suite 不得登记占位实现；需要人工认证时必须明确记录未验证项和后续责任门禁。
 
+KingbaseES 的 T2 Provider 与 T5 官方介质认证暂不接入 GitHub Actions，保留标准命令与确定性回归，由持有正规 License 的 owner 在受控 Linux x86_64 主机人工执行。T5 未声明 `workflow_job` 表示不由 GitHub Actions 编排，登记检查拒绝 workflow 调用其 suite 或内部 owner 目标；恢复自动执行前需另行确认 Runner 隔离与生命周期方案。此调整不改变 Online T4 的现有协议，脚本回归通过不代表真实授权认证通过。
+
 ## 七、CI 编排与登记
+
+发布工作流安全审计统一由 `make test-workflow-security` 执行，并纳入本地 `test-platform` 与 CI 现有 System IAM required Job。唯一脚本固定 zizmor 1.28.0，只扫描 `.github/workflows/release-and-t2-gates.yml`，使用 auditor、medium 最低严重级别、关闭在线审计，不读取自定义配置或忽略标记；安装、扫描或输入收集失败必须阻断。首次运行需联网取得固定版本的二进制 wheel，使用临时虚拟环境且退出时清理；不依赖 ADDP 服务或数据库。
 
 Workflow 只负责：
 

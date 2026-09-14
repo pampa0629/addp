@@ -144,10 +144,7 @@ class ReleaseGateTest(unittest.TestCase):
             RELEASE_GATE.SUITES["kingbase-official-media"].target,
             "test-kingbase-official-media-release",
         )
-        self.assertEqual(
-            RELEASE_GATE.SUITES["kingbase-official-media"].workflow_job,
-            "kingbase-official-media-certification",
-        )
+        self.assertIsNone(RELEASE_GATE.SUITES["kingbase-official-media"].workflow_job)
 
     def test_rejects_unknown_suite(self) -> None:
         with self.assertRaisesRegex(RELEASE_GATE.ReleaseGateError, "registered suites"):

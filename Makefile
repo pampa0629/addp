@@ -258,7 +258,7 @@ test-integration-hosted: test-integration ## 严格串行追加 hosted-only disp
 	@$(MAKE) test-common-doris-decimal
 	@$(MAKE) test-common-clickhouse-decimal
 
-test-integration-owner-managed: ## 仅在具备合法凭据的 owner-managed Runner 串行运行受控门禁
+test-integration-owner-managed: ## 仅在具备合法凭据的 owner 受控 Linux 主机人工串行运行门禁
 	@$(MAKE) test-common-kingbase
 
 test-common-postgres: ## 使用一次性 PostgreSQL 数据库运行 Common Engine Provider、execution store 与保护投影存储集成门禁
@@ -276,7 +276,7 @@ test-common-tidb: ## 使用一次性 TiDB database 验证 Engine Provider 契约
 test-common-opengauss: ## 在 Linux x86_64 hosted runner 使用一次性 openGauss database 验证 Provider 契约
 	@bash scripts/test/common-opengauss-gate.sh
 
-test-common-kingbase: ## 在 owner-managed Linux x86_64 Runner 使用正规 License 验证 KingbaseES Provider 契约
+test-common-kingbase: ## 在 owner 受控 Linux x86_64 主机使用正规 License 人工验证 KingbaseES Provider 契约
 	@bash scripts/test/common-kingbase-gate.sh
 
 test-common-dameng: ## 在本机 Linux ARM64 Docker 使用 Business 试用实例验证 DM8 Provider 契约
@@ -353,8 +353,12 @@ test-online-runner: ## 运行 Online 分发器和预检器的确定性测试
 test-release: ## 运行指定 T5 发布套件；用法：make test-release RELEASE_SUITE=common-python-cli
 	@python3 scripts/test/release-gate.py --repository "$(CURDIR)" --suite "$(RELEASE_SUITE)"
 
+.PHONY: test-workflow-security
+test-workflow-security: ## 使用固定版本 zizmor 审计发布工作流
+	@python3 scripts/test/workflow-security-gate.py --repository "$(CURDIR)"
+
 test-release-runner: ## 运行 T5 分发器和 CI 登记检查的确定性测试
-	@python3 -m unittest scripts/test/release-gate_test.py scripts/test/opengauss-official-media-release-gate_test.py scripts/test/kingbase-official-media-release-gate_test.py scripts/test/dameng-official-media-release-gate_test.py scripts/ci/check-release-ci-registration_test.py
+	@python3 -m unittest scripts/test/release-gate_test.py scripts/test/opengauss-official-media-release-gate_test.py scripts/test/kingbase-official-media-release-gate_test.py scripts/test/dameng-official-media-release-gate_test.py scripts/test/workflow-security-gate_test.py scripts/ci/check-release-ci-registration_test.py
 	@python3 scripts/ci/check-release-ci-registration.py --repository "$(CURDIR)"
 
 test-platform: ## 运行无外部服务依赖的平台一致性门禁
@@ -376,6 +380,7 @@ test-platform: ## 运行无外部服务依赖的平台一致性门禁
 	@python3 scripts/ci/check-t2-ci-registration.py --repository "$(CURDIR)"
 	@python3 scripts/ci/check-release-eligibility_test.py
 	@$(MAKE) test-release-runner
+	@$(MAKE) test-workflow-security
 	@python3 scripts/ci/select-module-gate_test.py
 	@python3 scripts/ci/update-cli-version_test.py
 	@python3 scripts/test/module-gate_test.py

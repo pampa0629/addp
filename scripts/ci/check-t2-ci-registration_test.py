@@ -225,26 +225,6 @@ class T2CIRegistrationTest(unittest.TestCase):
             + "\t@bash scripts/test/common-kingbase-gate.sh\n",
             encoding="utf-8",
         )
-        self.workflow.write_text(
-            self._workflow_text()
-            + "  common-kingbase:\n"
-            + "    if: github.event_name == 'workflow_dispatch'\n"
-            + "    runs-on: [self-hosted, Linux, X64, addp-kingbase]\n"
-            + "    environment: addp-kingbase\n"
-            + "    env:\n"
-            + "      ADDP_KINGBASE_GATE_ENV_FILE: ${{ vars.ADDP_KINGBASE_GATE_ENV_FILE }}\n"
-            + "    steps:\n"
-            + "      - name: Select common gate\n"
-            + "        id: common\n"
-            + "        run: python3 scripts/ci/select-module-gate.py --module common\n"
-            + "      - name: Run KingbaseES gate\n"
-            + "        run: make test-common-kingbase\n"
-            + "      - name: Upload evidence\n"
-            + "        uses: actions/upload-artifact@sha\n"
-            + "      - name: Summarize\n"
-            + "        uses: ./.github/actions/ci-gate-summary\n",
-            encoding="utf-8",
-        )
 
     def _set_sample_disposable_database_contract(self, database: str) -> None:
         script = self.repository / "scripts/test/sample-postgres-gate.sh"
@@ -420,6 +400,37 @@ class T2CIRegistrationTest(unittest.TestCase):
             "test-common-kingbase must not run in test-integration",
             MODULE.validate_registration(self.repository),
         )
+
+    def test_rejects_manual_gate_in_any_workflow(self) -> None:
+        self._add_owner_managed_gate()
+        for command in (
+            "make test-common-kingbase",
+            "make test-integration-owner-managed",
+            "bash scripts/test/common-kingbase-gate.sh",
+        ):
+            with self.subTest(command=command):
+                workflow = self.workflow.parent / "other.yaml"
+                workflow.write_text(
+                    f"jobs:\n  manual:\n    steps:\n      - run: |\n          {command}\n",
+                    encoding="utf-8",
+                )
+                self.assertTrue(any(
+                    "must not run in GitHub Actions" in error
+                    for error in MODULE.validate_registration(self.repository)
+                ))
+
+    def test_rejects_missing_manual_aggregate_invocation(self) -> None:
+        self._add_owner_managed_gate()
+        makefile = self.repository / "Makefile"
+        makefile.write_text(
+            makefile.read_text(encoding="utf-8").replace(
+                "\t@$(MAKE) test-common-kingbase\n", "\t@true\n"
+            ), encoding="utf-8",
+        )
+        self.assertTrue(any(
+            "test-integration-owner-managed does not invoke" in error
+            for error in MODULE.validate_registration(self.repository)
+        ))
 
     def test_rejects_hosted_only_gate_in_local_aggregate(self) -> None:
         self._add_hosted_only_gate()

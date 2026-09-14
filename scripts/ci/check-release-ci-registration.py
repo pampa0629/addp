@@ -133,6 +133,7 @@ def validate_registration(repository: Path) -> list[str]:
         runner_recipe = ""
     for required in (
         "scripts/test/release-gate_test.py",
+        "scripts/test/workflow-security-gate_test.py",
         "scripts/ci/check-release-ci-registration_test.py",
         "scripts/ci/check-release-ci-registration.py",
     ):
@@ -140,11 +141,37 @@ def validate_registration(repository: Path) -> list[str]:
             errors.append(f"Makefile test-release-runner must run {required}")
     if "test-release-runner" not in platform_recipe:
         errors.append("Makefile test-platform must run test-release-runner")
+    if not re.search(r"(?m)^\t@?\$\(MAKE\)\s+test-workflow-security\s*$", platform_recipe):
+        errors.append("Makefile test-platform must run test-workflow-security")
+    audit_recipe = make_recipe(makefile, "test-workflow-security") or ""
+    if not re.fullmatch(
+        r'\t@?python3 scripts/test/workflow-security-gate\.py --repository "\$\(CURDIR\)"\n',
+        audit_recipe,
+    ):
+        errors.append("Makefile test-workflow-security must call the shared audit script")
 
     workflow_path = repository / ".github/workflows/release-and-t2-gates.yml"
     workflow = workflow_path.read_text(encoding="utf-8") if workflow_path.is_file() else ""
+    iam_job = workflow_job(workflow, "system-iam-postgres-verification")
+    if not re.search(r"(?m)^\s*-\s*name: Audit release workflow\n\s+run: make test-workflow-security\s*$", iam_job):
+        errors.append("System IAM job must call the shared workflow security gate")
+    if "zizmorcore/zizmor-action@" in workflow:
+        errors.append("workflow must not duplicate the shared zizmor audit")
     for suite, registration in sorted(suites.items()):
         if registration.workflow_job is None:
+            for path in sorted((repository / ".github/workflows").glob("*")):
+                if path.suffix not in (".yml", ".yaml"):
+                    continue
+                content = path.read_text(encoding="utf-8")
+                if re.search(
+                    rf"\bRELEASE_SUITE\s*[:=]\s*['\"]?{re.escape(suite)}(?![\w-])"
+                    rf"|(?<![\w-]){re.escape(registration.target)}(?![\w-])",
+                    content,
+                ):
+                    errors.append(
+                        f"release suite {suite}: manual suite must not run in GitHub Actions "
+                        f"({path.relative_to(repository)})"
+                    )
             continue
         job = workflow_job(workflow, registration.workflow_job)
         if not job:

@@ -470,35 +470,18 @@ def validate_registration(repository: Path) -> list[str]:
                 errors.append(
                     f"{script}: owner-managed target {target} must not run in {aggregate}"
                 )
-        target_job = next(
-            (
-                job
-                for job in jobs
-                if re.search(
-                    rf"(?m)^\s*(?:-\s*)?run:\s*make\s+{re.escape(target)}\s*$",
-                    job,
-                )
-            ),
-            None,
-        )
-        if target_job is None:
-            errors.append(f"{script}: GitHub Actions target {target} is missing")
-        else:
-            required_job_fragments = (
-                "github.event_name == 'workflow_dispatch'",
-                "self-hosted",
-                "Linux",
-                "X64",
-                f"environment: addp-{runtime}",
-                f"ADDP_{runtime.upper().replace('-', '_')}_GATE_ENV_FILE:",
-                "actions/upload-artifact@",
-                "./.github/actions/ci-gate-summary",
-            )
-            for fragment in required_job_fragments:
-                if fragment not in target_job:
+        for path in sorted((repository / ".github/workflows").glob("*")):
+            if path.suffix not in (".yml", ".yaml"):
+                continue
+            content = path.read_text(encoding="utf-8")
+            for manual_target in (target, "test-integration-owner-managed"):
+                if re.search(rf"(?<![\w-]){re.escape(manual_target)}(?![\w-])", content):
                     errors.append(
-                        f"{script}: owner-managed {runtime} job is missing {fragment}"
+                        f"{script}: manual target {manual_target} must not run in "
+                        f"GitHub Actions ({path.relative_to(repository)})"
                     )
+            if script in content:
+                errors.append(f"{script}: manual owner script must not run in GitHub Actions")
         script_content = (repository / script).read_text(encoding="utf-8")
         required_script_fragments = (
             "disposable",
@@ -511,19 +494,6 @@ def validate_registration(repository: Path) -> list[str]:
             errors.append(
                 f"{script}: owner-managed {runtime} gate must own licensed disposable Docker lifecycle and SHA evidence"
             )
-        selection_step = next(
-            (
-                step
-                for step in steps
-                if re.search(rf"(?m)^\s*id:\s*{re.escape(owner)}\s*$", step)
-            ),
-            None,
-        )
-        if selection_step is None or not re.search(
-            rf"python3\s+scripts/ci/select-module-gate\.py\s+--module\s+['\"]?{re.escape(owner)}['\"]?",
-            selection_step or "",
-        ):
-            errors.append(f"{script}: shared module change selector is missing")
     return errors
 
 

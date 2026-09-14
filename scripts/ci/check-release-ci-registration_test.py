@@ -30,10 +30,13 @@ class ReleaseCIRegistrationTest(unittest.TestCase):
             "test-common-python-cli-release:\n\t@true\n\n"
             "test-agent-eval-release:\n\t@true\n\n"
             "test-release-runner:\n"
-            "\t@python3 -m unittest scripts/test/release-gate_test.py scripts/ci/check-release-ci-registration_test.py\n"
+            "\t@python3 -m unittest scripts/test/release-gate_test.py scripts/test/workflow-security-gate_test.py scripts/ci/check-release-ci-registration_test.py\n"
             "\t@python3 scripts/ci/check-release-ci-registration.py --repository .\n\n"
             "test-platform:\n"
-            "\t@$(MAKE) test-release-runner\n",
+            "\t@$(MAKE) test-release-runner\n"
+            "\t@$(MAKE) test-workflow-security\n\n"
+            "test-workflow-security:\n"
+            '\t@python3 scripts/test/workflow-security-gate.py --repository "$(CURDIR)"\n',
         )
         self._write(
             ".github/workflows/release-and-t2-gates.yml",
@@ -51,7 +54,11 @@ class ReleaseCIRegistrationTest(unittest.TestCase):
             "          path: /tmp/release\n"
             "      - uses: ./.github/actions/ci-gate-summary\n"
             "        with:\n"
-            "          details-file: /tmp/release/release-summary.md\n",
+            "          details-file: /tmp/release/release-summary.md\n"
+            "  system-iam-postgres-verification:\n"
+            "    steps:\n"
+            "      - name: Audit release workflow\n"
+            "        run: make test-workflow-security\n",
         )
 
     def tearDown(self) -> None:
@@ -64,6 +71,40 @@ class ReleaseCIRegistrationTest(unittest.TestCase):
 
     def test_accepts_complete_registration(self) -> None:
         self.assertEqual([], MODULE.validate_registration(self.repository))
+
+    def test_rejects_manual_suite_in_any_workflow(self) -> None:
+        for command in (
+            "make test-release RELEASE_SUITE=agent-evaluation",
+            "make test-release RELEASE_SUITE='agent-evaluation'",
+            "make test-agent-eval-release",
+        ):
+            with self.subTest(command=command):
+                self._write(
+                    ".github/workflows/other.yaml",
+                    f"jobs:\n  manual:\n    steps:\n      - run: |\n          {command}\n",
+                )
+                self.assertTrue(any(
+                    "manual suite must not run in GitHub Actions" in error
+                    for error in MODULE.validate_registration(self.repository)
+                ))
+
+    def test_rejects_missing_or_duplicate_audit_entry(self) -> None:
+        cases = (
+            ("Makefile", "\t@$(MAKE) test-workflow-security\n", "", "test-platform must run test-workflow-security"),
+            ("Makefile", "workflow-security-gate.py", "other.py", "must call the shared audit script"),
+            ("Makefile", "scripts/test/workflow-security-gate_test.py", "", "must run scripts/test/workflow-security-gate_test.py"),
+            (".github/workflows/release-and-t2-gates.yml", "run: make test-workflow-security", "run: true", "System IAM job must call"),
+            (".github/workflows/release-and-t2-gates.yml", "run: make test-workflow-security", "uses: zizmorcore/zizmor-action@sha", "must not duplicate"),
+        )
+        for relative, old, new, expected in cases:
+            with self.subTest(expected=expected):
+                path = self.repository / relative
+                original = path.read_text(encoding="utf-8")
+                try:
+                    path.write_text(original.replace(old, new), encoding="utf-8")
+                    self.assertTrue(any(expected in error for error in MODULE.validate_registration(self.repository)))
+                finally:
+                    path.write_text(original, encoding="utf-8")
 
     def test_rejects_missing_owner_target(self) -> None:
         makefile = self.repository / "Makefile"
