@@ -67,10 +67,15 @@ const DEFAULT_PERMISSIONS = [
   'model.logical_model.read'
 ]
 
-const MERMAID_SNAPSHOT = `erDiagram
+const MERMAID_SNAPSHOT = `# ADDP Entity Relationship Diagram
+
+\`\`\`mermaid
+erDiagram
+  %% addp:document {"format":"addp.model.er/v1","scope":"domain","domain_id":2}
   %% addp:entity {"code":"outdoor","name":"活动","domain_id":2,"description":"户外活动"}
   outdoor {
   }
+\`\`\`
 `
 
 test('shows an explicit permission error instead of an empty entity page after a 403', async ({ page }) => {
@@ -220,23 +225,19 @@ test('preserves Mermaid import text when the entity-model revision becomes stale
     permissions: [
       ...DEFAULT_PERMISSIONS,
       'model.entity.create',
-      'model.entity.delete',
       'model.entity_relation.read',
-      'model.entity_relation.create',
-      'model.entity_relation.delete'
+      'model.entity_relation.create'
     ]
   })
 
   await page.goto('/er-diagram')
   await page.getByRole('button', { name: '导入Mermaid', exact: true }).click()
-  const importDialog = page.getByRole('dialog', { name: '导入Mermaid ER图' })
+  const importDialog = page.getByRole('dialog', { name: '导入 Mermaid Markdown ER 图' })
   const editor = importDialog.locator('textarea')
   await editor.fill(MERMAID_SNAPSHOT)
-  await importDialog.getByRole('button', { name: '导入并全量替换', exact: true }).click()
-
-  const confirmDialog = page.getByRole('dialog', { name: '确认导入' })
-  await expect(confirmDialog).toContainText('导入将全量替换当前租户的草稿实体、属性和关系')
-  await confirmDialog.getByRole('button', { name: '确定', exact: true }).click()
+  await importDialog.getByRole('button', { name: '预览导入', exact: true }).click()
+  await expect(importDialog).toContainText('预计创建 1 个实体、0 个关系')
+  await importDialog.getByRole('button', { name: '确认增量导入', exact: true }).click()
 
   await expect(page.getByRole('alert').filter({
     hasText: '导入失败：资源已被其他用户修改，当前未保存内容已保留。请确认后手动刷新，再重新提交。'
@@ -244,7 +245,7 @@ test('preserves Mermaid import text when the entity-model revision becomes stale
   await expect(importDialog).toBeVisible()
   await expect(editor).toHaveValue(MERMAID_SNAPSHOT)
   expect(backend.getMermaidImports()).toEqual([{
-    mermaid_code: MERMAID_SNAPSHOT,
+    markdown: MERMAID_SNAPSHOT,
     revision: 5
   }])
 })
@@ -350,12 +351,16 @@ test('approval and reopening refresh frozen field revisions without creating a d
 })
 
 test('ER entry starts scoped and restores domain and related edges from the URL', async ({ page }) => {
-  await installMockBackend(page, { permissions: [...DEFAULT_PERMISSIONS, 'model.entity_relation.read'] })
+  const backend = await installMockBackend(page, { permissions: [...DEFAULT_PERMISSIONS, 'model.entity_relation.read'] })
   await page.goto('/er-diagram')
   await expect(page.getByText('请先选择业务域，或主动选择全部业务域查看总览')).toBeVisible()
   await expect(page.locator('.diagram-container')).toHaveCount(0)
   await page.goto('/er-diagram?domain_id=2&related=1')
   await expect(page.getByRole('checkbox', { name: '展开跨域关联' })).toBeChecked()
+  const domainDownload = page.waitForEvent('download')
+  await page.getByRole('button', { name: '导出Mermaid', exact: true }).click()
+  expect((await domainDownload).suggestedFilename()).toBe('er-diagram-domain-2.md')
+  expect(backend.getMermaidExports()).toEqual([{ domain_id: '2' }])
   await page.reload()
   await expect(page.getByRole('checkbox', { name: '展开跨域关联' })).toBeChecked()
   await page.getByText('展开跨域关联', { exact: true }).click()
@@ -363,7 +368,7 @@ test('ER entry starts scoped and restores domain and related edges from the URL'
   await page.goto('/er-diagram?domain_id=all')
   await expect(page.getByRole('checkbox', { name: '展开跨域关联' })).toHaveCount(0)
   await expect(page.locator('.diagram-container')).toBeVisible()
-  await expect(page.getByText('Mermaid 导入将替换当前租户的全部实体模型，导出也包含全部业务域，不受当前图的筛选影响。')).toBeVisible()
+  await expect(page.getByText('导出遵循当前业务域选择；“展开跨域关联”仅影响画布。导入会先预览，只增量创建缺失项，不删除或覆盖现有实体与关系。')).toBeVisible()
 })
 
 test('entity list opens the ER diagram in its current business domain', async ({ page }) => {
@@ -505,6 +510,7 @@ async function installMockBackend(target, options = {}) {
   const logicalTableUpdateVersions = []
   const dwLayerUpdateVersions = []
   const mermaidImports = []
+  const mermaidExports = []
   const permissions = options.permissions || DEFAULT_PERMISSIONS
 
   await target.addInitScript(({ theme }) => {
@@ -547,7 +553,20 @@ async function installMockBackend(target, options = {}) {
     if (path === '/api/v1/standard/domains') return fulfillJSON(route, DOMAINS)
     if (path === '/api/v1/standard/elements') return fulfillJSON(route, { data: [], total: 0 })
     if (path === '/api/v1/model/entities/export-mermaid') {
-      return fulfillJSON(route, { mermaid_code: MERMAID_SNAPSHOT, revision: 5 })
+      mermaidExports.push(Object.fromEntries(url.searchParams))
+      return fulfillJSON(route, { markdown: MERMAID_SNAPSHOT, scope: url.searchParams.has('domain_id') ? 'domain' : 'all', domain_id: Number(url.searchParams.get('domain_id')) || undefined })
+    }
+    if (path === '/api/v1/model/entities/import-mermaid/preview' && request.method() === 'POST') {
+      return fulfillJSON(route, {
+        revision: 5,
+        scope: 'domain',
+        domain_id: 2,
+        created_entities: 1,
+        unchanged_entities: 0,
+        created_relations: 0,
+        unchanged_relations: 0,
+        conflicts: []
+      })
     }
     if (path === '/api/v1/model/entities/import-mermaid' && request.method() === 'POST') {
       mermaidImports.push(request.postDataJSON())
@@ -649,6 +668,7 @@ async function installMockBackend(target, options = {}) {
     getDWLayerUpdateVersions: () => [...dwLayerUpdateVersions],
     getLogicalTableUpdateVersions: () => [...logicalTableUpdateVersions],
     getMermaidImports: () => structuredClone(mermaidImports),
+    getMermaidExports: () => structuredClone(mermaidExports),
     getUpdateVersions: () => [...updateVersions]
   }
 }

@@ -198,7 +198,7 @@ func TestIssueSQLExecutionAuthorizationFromExecutionCarriesClaimLease(t *testing
 	defer system.Close()
 
 	service := NewSQLEngineService(
-		&config.Config{DefaultQueryTimeout: 30, MaxQueryTimeout: 300},
+		&config.Config{},
 		commonClient.NewSystemServiceClient(system.URL, staticServiceTokenSource("addp_at_develop"), system.Client()),
 		nil,
 	)
@@ -432,8 +432,9 @@ func TestWorkflowProducedTargetScanOptionsUseTargetsForTableTargets(t *testing.T
 }
 
 func TestQueryResultAppliesPreviewLimitAndTruncation(t *testing.T) {
-	executor := &DevExecutor{queryResultLimit: 2}
+	executor := &DevExecutor{}
 	result, errorMessage, rowsAffected := executor.queryResult(
+		2,
 		[]string{"id"},
 		[]map[string]interface{}{{"id": 1}, {"id": 2}, {"id": 3}},
 		3,
@@ -461,8 +462,9 @@ func TestQueryResultAppliesPreviewLimitAndTruncation(t *testing.T) {
 }
 
 func TestQueryResultPreservesRowsAffectedForWrite(t *testing.T) {
-	executor := &DevExecutor{queryResultLimit: 2}
+	executor := &DevExecutor{}
 	result, errorMessage, rowsAffected := executor.queryResult(
+		2,
 		nil,
 		nil,
 		7,

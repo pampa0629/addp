@@ -49,6 +49,7 @@ func (s *QueryExecutionService) Execute(
 	if err != nil {
 		return s.completeFailure(ctx, execution, lease, startedAt, err, "develop.query.snapshot_invalid")
 	}
+	ctx = contextWithQuerySnapshot(ctx, devTask)
 	executionID, err := uuid.Parse(execution.ExecutionID)
 	if err != nil {
 		return s.completeFailure(ctx, execution, lease, startedAt, err, "develop.query.execution_invalid")
@@ -126,7 +127,7 @@ func (s *QueryExecutionService) ordinaryAuthorization(
 		return nil, false, fmt.Errorf("Develop query snapshot has no engine or query")
 	}
 	if devTask.GetQueryType() != "sql" {
-		timeout := s.executor.sqlEngine.normalizedTimeoutForTenant(ctx, uint(execution.TenantID), devTask.Timeout)
+		timeout := devTask.Timeout
 		authorization, err := s.executor.sqlEngine.issueExecutionAuthorizationFromExecution(
 			ctx, uint(execution.TenantID), parentExecutionID, executionID, lease.Attempt, lease.Token,
 			[]uint{*engineID}, []SQLExecutionEffect{SQLExecutionEffectRead}, int64(timeout+30), commonExecution.AudienceDevelop,
@@ -228,7 +229,7 @@ func (s *QueryExecutionService) executeExistingTableResult(
 	if mode != "append" && mode != "overwrite" {
 		return s.completeFailure(ctx, execution, lease, startedAt, fmt.Errorf("write_mode must be append or overwrite"), "develop.query.runtime_inputs_invalid")
 	}
-	timeout := s.executor.sqlEngine.normalizedTimeoutForTenant(ctx, uint(execution.TenantID), devTask.Timeout)
+	timeout := devTask.Timeout
 	writeCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
 	defer cancel()
 	statement, _ := compiled.Content["query"].(string)
@@ -381,12 +382,16 @@ func devQueryTaskFromExecution(execution *commonExecution.TaskExecution) (*model
 	if !ok {
 		return nil, fmt.Errorf("Develop query execution timeout snapshot is invalid")
 	}
+	resultLimit, ok := positiveInt(execution.ExecutionConfig["query_result_limit"])
+	if !ok {
+		return nil, fmt.Errorf("Develop query result limit snapshot is invalid")
+	}
 	runtimeParameters, _ := mapValue(execution.ExecutionConfig["runtime_parameters"])
 	config := models.DevTaskContent{"engine_id": execution.ExecutionConfig["engine_id"]}
 	task := &models.DevTask{
 		DevType: commonExecution.TaskTypeQuery, Content: models.DevTaskContent(content),
 		ExecutionConfig: config, Timeout: timeout, TenantID: uint(execution.TenantID),
-		RuntimeParameters: runtimeParameters,
+		RuntimeParameters: runtimeParameters, QueryResultLimit: resultLimit,
 	}
 	if err := validateDevTaskExecutionConfig(task.DevType, task.Content, task.ExecutionConfig); err != nil {
 		return nil, err

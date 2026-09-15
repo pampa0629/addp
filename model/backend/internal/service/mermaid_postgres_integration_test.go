@@ -1,8 +1,9 @@
 package service
 
 import (
+	"fmt"
 	"os"
-	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -13,7 +14,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestPostgresMermaidRoundTripAndRevisionConflict(t *testing.T) {
+func TestPostgresMermaidIncrementalImportAndRevisionConflict(t *testing.T) {
 	dsn := os.Getenv("ADDP_TEST_MODEL_POSTGRES_DSN")
 	if dsn == "" {
 		t.Skip("ADDP_TEST_MODEL_POSTGRES_DSN is not set")
@@ -34,6 +35,7 @@ func TestPostgresMermaidRoundTripAndRevisionConflict(t *testing.T) {
 	tenantID := time.Now().UnixNano()
 	userID := tenantID + 1
 	domainID := tenantID + 2
+	otherDomainID := tenantID + 4
 	elementID := tenantID + 3
 	entityRepo := repository.NewEntityRepository(tx)
 	relationRepo := repository.NewEntityRelationRepository(tx)
@@ -45,7 +47,7 @@ func TestPostgresMermaidRoundTripAndRevisionConflict(t *testing.T) {
 		Status: "draft", Version: 1, CreatedBy: userID,
 	}
 	target := models.Entity{
-		TenantID: tenantID, Name: "PostgreSQL Order", Code: "pg_order",
+		TenantID: tenantID, DomainID: &otherDomainID, Name: "PostgreSQL Order", Code: "pg_order",
 		Description: "order round-trip description", Status: "draft", Version: 1, CreatedBy: userID,
 	}
 	if err := tx.Create(&source).Error; err != nil {
@@ -70,61 +72,66 @@ func TestPostgresMermaidRoundTripAndRevisionConflict(t *testing.T) {
 		t.Fatalf("create relation: %v", err)
 	}
 
-	exported, err := svc.ExportToMermaid(tenantID)
+	exported, err := svc.ExportToMermaid(tenantID, &domainID)
 	if err != nil {
-		t.Fatalf("export Mermaid snapshot: %v", err)
+		t.Fatalf("export domain Mermaid document: %v", err)
 	}
-	result, err := svc.ImportFromMermaid(tenantID, userID, &models.MermaidImportRequest{
-		MermaidCode: exported.MermaidCode,
-		Revision:    exported.Revision,
-	})
+	if exported.Scope != "domain" || exported.DomainID == nil || *exported.DomainID != domainID ||
+		!strings.Contains(exported.Markdown, "```mermaid") || strings.Contains(exported.Markdown, target.Code) {
+		t.Fatalf("domain export = %+v, want only domain %d", exported, domainID)
+	}
+	preview, err := svc.PreviewMermaidImport(tenantID, &models.MermaidImportPreviewRequest{Markdown: exported.Markdown})
 	if err != nil {
-		t.Fatalf("import exported Mermaid snapshot: %v", err)
+		t.Fatalf("preview exported Mermaid document: %v", err)
 	}
-	if result.CreatedEntities != 2 || result.CreatedRelations != 1 || result.Revision != exported.Revision+1 {
-		t.Fatalf("round-trip result = %+v, exported revision = %d", result, exported.Revision)
+	if preview.CreatedEntities != 0 || preview.UnchangedEntities != 1 || preview.CreatedRelations != 0 || len(preview.Conflicts) != 0 {
+		t.Fatalf("domain import preview = %+v, want one unchanged entity", preview)
+	}
+	result, err := svc.ImportFromMermaid(tenantID, userID, &models.MermaidImportRequest{Markdown: exported.Markdown, Revision: preview.Revision})
+	if err != nil || result.Revision != preview.Revision || result.UnchangedEntities != 1 {
+		t.Fatalf("no-op import result = %+v, err = %v", result, err)
 	}
 
+	additiveMarkdown := fmt.Sprintf("# ADDP Entity Relationship Diagram\n\n```mermaid\nerDiagram\n  %%%% addp:document {\"format\":\"addp.model.er/v1\",\"scope\":\"all\"}\n  %%%% addp:entity {\"code\":\"%s\",\"name\":\"%s\",\"domain_id\":%d,\"description\":\"%s\"}\n  %s {\n    %%%% addp:attribute {\"entity\":\"%s\",\"column\":\"customer_id\",\"name\":\"PostgreSQL Customer ID\",\"nullable\":true,\"element_id\":%d,\"description\":\"attribute round-trip description\",\"sort_order\":7}\n    bigint customer_id PK\n  }\n  %%%% addp:entity {\"code\":\"pg_invoice\",\"name\":\"PostgreSQL Invoice\",\"domain_id\":null,\"description\":\"new invoice\"}\n  pg_invoice {\n  }\n  %%%% addp:relation {\"source\":\"%s\",\"target\":\"pg_invoice\",\"relation_type\":\"one_to_many\",\"name\":\"billed_as\",\"description\":\"new relation\"}\n  %s ||--o{ pg_invoice : \"billed_as\"\n```\n",
+		source.Code, source.Name, domainID, source.Description, source.Code, source.Code, elementID, source.Code, source.Code)
+	additivePreview, err := svc.PreviewMermaidImport(tenantID, &models.MermaidImportPreviewRequest{Markdown: additiveMarkdown})
+	if err != nil {
+		t.Fatalf("preview additive import: %v", err)
+	}
+	if additivePreview.CreatedEntities != 1 || additivePreview.UnchangedEntities != 1 || additivePreview.CreatedRelations != 1 || len(additivePreview.Conflicts) != 0 {
+		t.Fatalf("additive preview = %+v", additivePreview)
+	}
+	additiveResult, err := svc.ImportFromMermaid(tenantID, userID, &models.MermaidImportRequest{Markdown: additiveMarkdown, Revision: additivePreview.Revision})
+	if err != nil || additiveResult.CreatedEntities != 1 || additiveResult.CreatedRelations != 1 || additiveResult.Revision != additivePreview.Revision+1 {
+		t.Fatalf("additive result = %+v, err = %v", additiveResult, err)
+	}
 	reloadedSource, err := entityRepo.GetByCode(tenantID, source.Code)
-	if err != nil {
-		t.Fatalf("reload round-trip source entity: %v", err)
+	if err != nil || reloadedSource.ID != source.ID {
+		t.Fatalf("existing source was replaced: %+v, err = %v", reloadedSource, err)
 	}
-	reloadedTarget, err := entityRepo.GetByCode(tenantID, target.Code)
-	if err != nil {
-		t.Fatalf("reload round-trip target entity: %v", err)
-	}
-	if reloadedSource.Name != source.Name || !reflect.DeepEqual(reloadedSource.DomainID, source.DomainID) ||
-		reloadedSource.Description != source.Description || reloadedTarget.Name != target.Name ||
-		reloadedTarget.Description != target.Description {
-		t.Fatalf("round-trip entities = (%+v, %+v), want editable fields from (%+v, %+v)", reloadedSource, reloadedTarget, source, target)
-	}
-	attributes, err := entityRepo.GetAttributes(reloadedSource.ID)
-	if err != nil {
-		t.Fatalf("reload round-trip attributes: %v", err)
-	}
-	if len(attributes) != 1 {
-		t.Fatalf("round-trip attribute count = %d, want 1", len(attributes))
-	}
-	actualAttribute := attributes[0]
-	if actualAttribute.Name != attribute.Name || actualAttribute.ColumnName != attribute.ColumnName ||
-		actualAttribute.DataType != attribute.DataType || actualAttribute.IsPK != attribute.IsPK ||
-		actualAttribute.Nullable != attribute.Nullable || !reflect.DeepEqual(actualAttribute.ElementID, attribute.ElementID) ||
-		actualAttribute.Description != attribute.Description || actualAttribute.SortOrder != attribute.SortOrder {
-		t.Fatalf("round-trip attribute = %+v, want editable fields from %+v", actualAttribute, attribute)
+	if _, err := entityRepo.GetByCode(tenantID, target.Code); err != nil {
+		t.Fatalf("out-of-document entity was removed: %v", err)
 	}
 	relations, err := relationRepo.ListByTenantID(tenantID)
-	if err != nil {
-		t.Fatalf("reload round-trip relations: %v", err)
-	}
-	if len(relations) != 1 || relations[0].SourceEntity != reloadedSource.ID ||
-		relations[0].TargetEntity != reloadedTarget.ID || relations[0].RelationType != relation.RelationType ||
-		relations[0].Name != relation.Name || relations[0].Description != relation.Description {
-		t.Fatalf("round-trip relations = %+v, want editable fields from %+v", relations, relation)
+	if err != nil || len(relations) != 2 {
+		t.Fatalf("relations after additive import = %+v, err = %v", relations, err)
 	}
 
-	staleSnapshot, err := svc.ExportToMermaid(tenantID)
+	conflictMarkdown := strings.Replace(additiveMarkdown, source.Name, "Conflicting Customer", 1)
+	conflictPreview, err := svc.PreviewMermaidImport(tenantID, &models.MermaidImportPreviewRequest{Markdown: conflictMarkdown})
+	if err != nil || len(conflictPreview.Conflicts) == 0 || conflictPreview.Conflicts[0].ResourceType != "entity" {
+		t.Fatalf("conflict preview = %+v, err = %v", conflictPreview, err)
+	}
+	_, err = svc.ImportFromMermaid(tenantID, userID, &models.MermaidImportRequest{Markdown: conflictMarkdown, Revision: conflictPreview.Revision})
+	requireDomainErrorCode(t, err, "mermaid_import_conflict")
+
+	staleSnapshot, err := svc.ExportToMermaid(tenantID, nil)
 	if err != nil {
-		t.Fatalf("export stale Mermaid snapshot: %v", err)
+		t.Fatalf("export stale Mermaid document: %v", err)
+	}
+	stalePreview, err := svc.PreviewMermaidImport(tenantID, &models.MermaidImportPreviewRequest{Markdown: staleSnapshot.Markdown})
+	if err != nil {
+		t.Fatalf("preview stale Mermaid document: %v", err)
 	}
 	updated, err := svc.UpdateEntity(reloadedSource.ID, tenantID, userID, &models.UpdateEntityRequest{
 		Version: reloadedSource.Version, DomainID: reloadedSource.DomainID,
@@ -134,8 +141,8 @@ func TestPostgresMermaidRoundTripAndRevisionConflict(t *testing.T) {
 		t.Fatalf("advance entity after Mermaid export: %v", err)
 	}
 	_, err = svc.ImportFromMermaid(tenantID, userID, &models.MermaidImportRequest{
-		MermaidCode: staleSnapshot.MermaidCode,
-		Revision:    staleSnapshot.Revision,
+		Markdown: staleSnapshot.Markdown,
+		Revision: stalePreview.Revision,
 	})
 	requireDomainErrorCode(t, err, "resource_version_conflict")
 	reloadedAfterConflict, err := entityRepo.GetByID(updated.ID, tenantID)

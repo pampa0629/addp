@@ -76,6 +76,9 @@ other = "不允许创建自关联关系"
 [model.entity_relation.conflict]
 other = "相同的实体关系已存在"
 
+[model.mermaid.import_conflict]
+other = "Mermaid 导入内容与现有实体模型冲突，请根据预览结果修改后重试"
+
 [model.logical_table.not_found]
 other = "逻辑表不存在"
 

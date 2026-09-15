@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import subprocess
 import tempfile
 import unittest
@@ -54,6 +55,41 @@ class FrontendCIRegistrationTest(unittest.TestCase):
 
     def test_accepts_complete_registration(self) -> None:
         self.assertEqual([], MODULE.validate_registration(self.repository))
+
+    def enable_browser_suite(self) -> None:
+        path = self.repository / "sample/frontend/package.json"
+        package = json.loads(path.read_text())
+        package["scripts"]["test:e2e"] = "playwright test"
+        path.write_text(json.dumps(package), encoding="utf-8")
+        makefile = self.repository / "Makefile"
+        makefile.write_text(makefile.read_text() + "\t@cd sample/frontend && npm run test:e2e\n", encoding="utf-8")
+        self.workflow.write_text(
+            self.workflow.read_text().replace(
+                "          target: test-sample-frontend\n",
+                "          target: test-sample-frontend\n          playwright: true\n",
+            ) + "      - if: matrix.playwright == true\n        run: npx playwright install --with-deps chromium\n",
+            encoding="utf-8",
+        )
+
+    def test_accepts_registered_browser_suite(self) -> None:
+        self.enable_browser_suite()
+        self.assertEqual([], MODULE.validate_registration(self.repository))
+
+    def test_rejects_browser_suite_missing_from_root_gate(self) -> None:
+        self.enable_browser_suite()
+        path = self.repository / "Makefile"
+        path.write_text(path.read_text().replace(" && npm run test:e2e", " && npm test"))
+        self.assertIn("sample: root frontend gate must run a declared Playwright suite", MODULE.validate_registration(self.repository))
+
+    def test_rejects_missing_browser_installation(self) -> None:
+        self.enable_browser_suite()
+        self.workflow.write_text(self.workflow.read_text().replace("npx playwright install --with-deps chromium", "true"))
+        self.assertIn("sample: frontend CI job must install Chromium", MODULE.validate_registration(self.repository))
+
+    def test_rejects_browser_matrix_flag_removed_from_one_module(self) -> None:
+        self.enable_browser_suite()
+        self.workflow.write_text(self.workflow.read_text().replace("          playwright: true\n", ""))
+        self.assertIn("sample: frontend CI matrix must enable Playwright", MODULE.validate_registration(self.repository))
 
     def test_rejects_missing_workflow_target(self) -> None:
         self.workflow.write_text("jobs: {}\n", encoding="utf-8")

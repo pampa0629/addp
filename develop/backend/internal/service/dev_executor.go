@@ -35,7 +35,6 @@ type DevExecutor struct {
 	sqlEngine                *SQLEngineService
 	federatedQuery           federatedQueryExecutor
 	notebookExecutionService *NotebookExecutionService
-	queryResultLimit         int
 	notifyQueryExecution     func()
 }
 
@@ -83,7 +82,6 @@ func NewDevExecutor(
 	sqlEngine *SQLEngineService,
 	federatedQuery federatedQueryExecutor,
 	notebookExecutionService *NotebookExecutionService,
-	queryResultLimit int,
 ) *DevExecutor {
 	return &DevExecutor{
 		devTaskRepo:              devTaskRepo,
@@ -94,7 +92,6 @@ func NewDevExecutor(
 		sqlEngine:                sqlEngine,
 		federatedQuery:           federatedQuery,
 		notebookExecutionService: notebookExecutionService,
-		queryResultLimit:         queryResultLimit,
 	}
 }
 
@@ -214,7 +211,7 @@ func (e *DevExecutor) prepareContentExecutionWithConfirmation(
 			return nil, err
 		}
 	}
-	if timeout <= 0 {
+	if timeout <= 0 && devType != commonExecution.TaskTypeQuery {
 		timeout = 300
 	}
 
@@ -292,6 +289,11 @@ func (e *DevExecutor) prepareContentExecutionWithConfirmation(
 	if devType == commonExecution.TaskTypeQuery {
 		tempItem, err = e.compileRelationQueryPreview(ctx, tempItem, effectiveInputs, tenantID)
 		if err != nil {
+			return nil, err
+		}
+	}
+	if devType == commonExecution.TaskTypeQuery {
+		if err := e.freezeQueryPolicy(ctx, tempItem, tenantID); err != nil {
 			return nil, err
 		}
 	}
@@ -379,6 +381,7 @@ func (e *DevExecutor) prepareSQLExecutionAuthorization(
 	if devTask == nil || devTask.DevType != commonExecution.TaskTypeQuery {
 		return nil, nil
 	}
+	ctx = contextWithQuerySnapshot(ctx, devTask)
 	if strings.TrimSpace(userAccessToken) == "" {
 		return nil, fmt.Errorf("异步 SQL 执行必须由当前 User Access Token 派生 Execution Authorization")
 	}
@@ -936,12 +939,13 @@ func (e *DevExecutor) executeSQL(ctx context.Context, devTask *models.DevTask, e
 		}
 		federatedResult, executeErr := e.federatedQuery.ExecuteQuery(
 			ctx, uint(tenantID), *runtimeEngineID, parsedExecutionID, authorization.AuthorizationID,
-			sqlContent, devTask.Timeout, e.queryFetchLimit(), authorization.EngineIDs,
+			sqlContent, devTask.Timeout, (devTask.QueryResultLimit + 1), authorization.EngineIDs,
 		)
 		if executeErr != nil {
 			return nil, fmt.Sprintf("联邦查询执行失败: %v", executeErr), nil, ""
 		}
 		response, message, affected := e.queryResult(
+			devTask.QueryResultLimit,
 			federatedResult.Columns, federatedResult.Rows, int64(federatedResult.RowCount),
 			SQLExecutionEffectRead, "table", nil,
 		)
@@ -957,7 +961,7 @@ func (e *DevExecutor) executeSQL(ctx context.Context, devTask *models.DevTask, e
 	var result *SQLResult
 	if devTask.GetQueryType() == "sql" {
 		result, err = e.sqlEngine.ExecuteIssuedSQLAuthorization(
-			ctx, uint(tenantID), parsedExecutionID, *engineID, sqlContent, devTask.RuntimeParameters, devTask.Timeout, e.queryFetchLimit(), authorization,
+			ctx, uint(tenantID), parsedExecutionID, *engineID, sqlContent, devTask.RuntimeParameters, devTask.Timeout, (devTask.QueryResultLimit + 1), authorization,
 		)
 	} else {
 		engine, accessErr := e.sqlEngine.executionEngine(ctx, uint(tenantID), parsedExecutionID, *engineID, authorization)
@@ -1008,7 +1012,7 @@ func (e *DevExecutor) executeSQL(ctx context.Context, devTask *models.DevTask, e
 			}
 			defer endProtection()
 			graphResult, graphErr := dbbridge.ExecuteReadOnlyGraphQueryWithPath(
-				execCtx, engine, devTask.GetQueryType(), sqlContent, devTask.RuntimeParameters, e.queryFetchLimit(), targetPath,
+				execCtx, engine, devTask.GetQueryType(), sqlContent, devTask.RuntimeParameters, (devTask.QueryResultLimit + 1), targetPath,
 			)
 			queryErr = graphErr
 			if graphResult != nil {
@@ -1027,7 +1031,7 @@ func (e *DevExecutor) executeSQL(ctx context.Context, devTask *models.DevTask, e
 				prepared, prepareErr := provider.PrepareQuery(execCtx, plugin.ConnectionInfo(engine.ConnectionInfo), plugin.QueryRequest{
 					EngineID: engine.ID, Language: devTask.GetQueryType(), Query: sqlContent, TargetPath: targetPath,
 					Options: plugin.QueryOptions{
-						EngineID: engine.ID, EngineType: engine.EngineType, Limit: e.queryFetchLimit(),
+						EngineID: engine.ID, EngineType: engine.EngineType, Limit: (devTask.QueryResultLimit + 1),
 						ReadOnly: true, Parameters: devTask.RuntimeParameters,
 					},
 				})
@@ -1058,7 +1062,7 @@ func (e *DevExecutor) executeSQL(ctx context.Context, devTask *models.DevTask, e
 				Columns: queryResult.Columns, Rows: queryResult.Rows, RowsAffected: int64(len(queryResult.Rows)), Effect: SQLExecutionEffectRead,
 			}
 			if err == nil {
-				response, message, affected := e.queryResult(result.Columns, result.Rows, result.RowsAffected, result.Effect, resultKind, graphData)
+				response, message, affected := e.queryResult(devTask.QueryResultLimit, result.Columns, result.Rows, result.RowsAffected, result.Effect, resultKind, graphData)
 				return response, message, affected, ""
 			}
 		}
@@ -1066,7 +1070,7 @@ func (e *DevExecutor) executeSQL(ctx context.Context, devTask *models.DevTask, e
 	if err != nil {
 		return nil, fmt.Sprintf("查询执行失败: %v", err), nil, queryErrorCode(err)
 	}
-	response, message, affected := e.queryResult(result.Columns, result.Rows, result.RowsAffected, result.Effect, "table", nil)
+	response, message, affected := e.queryResult(devTask.QueryResultLimit, result.Columns, result.Rows, result.RowsAffected, result.Effect, "table", nil)
 	return response, message, affected, ""
 }
 
@@ -1074,18 +1078,8 @@ func queryErrorCode(err error) string {
 	return string(plugin.QueryErrorCodeOf(err))
 }
 
-func (e *DevExecutor) queryResultLimitValue() int {
-	if e != nil && e.queryResultLimit > 0 {
-		return e.queryResultLimit
-	}
-	return 500
-}
-
-func (e *DevExecutor) queryFetchLimit() int {
-	return e.queryResultLimitValue() + 1
-}
-
 func (e *DevExecutor) queryResult(
+	limit int,
 	columns []string,
 	rows []map[string]interface{},
 	rowsAffected int64,
@@ -1093,7 +1087,6 @@ func (e *DevExecutor) queryResult(
 	resultKind string,
 	graphData *plugin.GraphData,
 ) (commonModels.JSONMap, string, *int64) {
-	limit := e.queryResultLimitValue()
 	if rows == nil {
 		rows = []map[string]interface{}{}
 	}
@@ -1612,6 +1605,11 @@ func (e *DevExecutor) prepareParameterizedDevTask(
 			return nil, err
 		}
 	}
+	if task.DevType == commonExecution.TaskTypeQuery {
+		if err := e.freezeQueryPolicy(ctx, task, tenantID); err != nil {
+			return nil, err
+		}
+	}
 	return &preparedParameterizedDevTask{template: devTask, task: task, inputs: inputs}, nil
 }
 
@@ -1746,6 +1744,9 @@ func devTaskExecutionRecordConfig(devTask *models.DevTask, inputs commonModels.J
 		config["engine_id"] = devTask.GetEngineID()
 		config["content"] = devTask.Content
 		config["timeout"] = devTask.Timeout
+		if devTask.DevType == commonExecution.TaskTypeQuery {
+			config["query_result_limit"] = devTask.QueryResultLimit
+		}
 		if devTask.RuntimeParameters != nil {
 			config["runtime_parameters"] = devTask.RuntimeParameters
 		}

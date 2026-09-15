@@ -158,13 +158,9 @@ func TestEntityLifecycleRejectsApprovedAggregateWrites(t *testing.T) {
 	if err := entityService.DeleteEntity(approved.ID, 1, approved.Version); err == nil {
 		t.Fatal("delete approved entity error = nil")
 	}
-	_, err := entityService.ImportFromMermaid(1, 1, &models.MermaidImportRequest{
-		MermaidCode: "erDiagram\n  product {\n    bigint id PK\n  }", Revision: 1,
-	})
-	requireDomainErrorCode(t, err, "entity_state_conflict")
 
 	relationService := NewEntityRelationService(relationRepo, entityRepo)
-	_, err = relationService.Create(1, &models.CreateEntityRelationRequest{
+	_, err := relationService.Create(1, &models.CreateEntityRelationRequest{
 		SourceEntity: approved.ID, TargetEntity: draft.ID, RelationType: "one_to_many",
 	})
 	requireDomainErrorCode(t, err, "entity_relation_state_conflict")
@@ -534,7 +530,7 @@ func assertServiceRecordCount(t *testing.T, db *gorm.DB, model any, want int64, 
 	}
 }
 
-func TestMermaidExportImportPreservesEditableEntityModelFields(t *testing.T) {
+func TestMermaidDomainExportAndNoopImportPreserveExistingResources(t *testing.T) {
 	db := setupLifecycleServiceTestDB(t)
 	entityRepo := repository.NewEntityRepository(db)
 	relationRepo := repository.NewEntityRelationRepository(db)
@@ -570,11 +566,14 @@ func TestMermaidExportImportPreservesEditableEntityModelFields(t *testing.T) {
 		t.Fatalf("create relation: %v", err)
 	}
 
-	exported, err := svc.ExportToMermaid(1)
+	exported, err := svc.ExportToMermaid(1, &domainID)
 	if err != nil {
 		t.Fatalf("export mermaid: %v", err)
 	}
-	parsed, err := ParseMermaidER(exported.MermaidCode)
+	if exported.Scope != "domain" || exported.DomainID == nil || *exported.DomainID != domainID {
+		t.Fatalf("export scope = %+v, want domain %d", exported, domainID)
+	}
+	parsed, err := ParseMermaidER(exported.Markdown)
 	if err != nil {
 		t.Fatalf("parse exported mermaid: %v", err)
 	}
@@ -588,9 +587,19 @@ func TestMermaidExportImportPreservesEditableEntityModelFields(t *testing.T) {
 	if parsedSource == nil || len(parsedSource.Attributes) != 1 || !parsedSource.Attributes[0].Nullable {
 		t.Fatalf("parsed mermaid did not preserve nullable metadata: %+v", parsed.Entities)
 	}
+	if len(parsed.Entities) != 1 || len(parsed.Relations) != 0 {
+		t.Fatalf("domain export contains out-of-scope resources: %+v", parsed)
+	}
+	preview, err := svc.PreviewMermaidImport(1, &models.MermaidImportPreviewRequest{Markdown: exported.Markdown})
+	if err != nil {
+		t.Fatalf("preview exported mermaid: %v", err)
+	}
+	if preview.CreatedEntities != 0 || preview.UnchangedEntities != 1 || len(preview.Conflicts) != 0 {
+		t.Fatalf("preview = %+v, want one unchanged entity", preview)
+	}
 	if _, err := svc.ImportFromMermaid(1, 9, &models.MermaidImportRequest{
-		MermaidCode: exported.MermaidCode,
-		Revision:    exported.Revision,
+		Markdown: exported.Markdown,
+		Revision: preview.Revision,
 	}); err != nil {
 		t.Fatalf("import exported mermaid: %v", err)
 	}
@@ -638,9 +647,13 @@ func TestEntityWriteInvalidatesExportedMermaidRevision(t *testing.T) {
 		t.Fatalf("create entity: %v", err)
 	}
 
-	exported, err := svc.ExportToMermaid(1)
+	exported, err := svc.ExportToMermaid(1, nil)
 	if err != nil {
 		t.Fatalf("export mermaid: %v", err)
+	}
+	preview, err := svc.PreviewMermaidImport(1, &models.MermaidImportPreviewRequest{Markdown: exported.Markdown})
+	if err != nil {
+		t.Fatalf("preview mermaid: %v", err)
 	}
 	updated, err := svc.UpdateEntity(entity.ID, 1, 2, &models.UpdateEntityRequest{
 		Version: entity.Version, Name: entity.Name, Description: "after",
@@ -653,8 +666,8 @@ func TestEntityWriteInvalidatesExportedMermaidRevision(t *testing.T) {
 	}
 
 	_, err = svc.ImportFromMermaid(1, 3, &models.MermaidImportRequest{
-		MermaidCode: exported.MermaidCode,
-		Revision:    exported.Revision,
+		Markdown: exported.Markdown,
+		Revision: preview.Revision,
 	})
 	requireDomainErrorCode(t, err, "resource_version_conflict")
 	reloaded, err := entityRepo.GetByID(entity.ID, 1)

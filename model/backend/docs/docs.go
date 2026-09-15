@@ -578,12 +578,27 @@ const docTemplate = `{
                 "tags": [
                     "Model"
                 ],
-                "summary": "导出 Mermaid ER 图 | Export Mermaid ER diagram",
+                "summary": "导出 Mermaid Markdown ER 图 | Export Mermaid Markdown ER diagram",
+                "parameters": [
+                    {
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "业务域 ID；省略时导出全部业务域 | Business domain ID; omit to export all domains",
+                        "name": "domain_id",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
-                        "description": "Mermaid ER 图代码 | Mermaid ER diagram code",
+                        "description": "Markdown Mermaid ER 图文档 | Markdown Mermaid ER document",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_model_internal_models.MermaidExportResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "业务域 ID 无效 | Invalid domain ID",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
                     },
                     "401": {
@@ -594,6 +609,18 @@ const docTemplate = `{
                     },
                     "403": {
                         "description": "权限不足 | Permission denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "业务域不存在 | Domain not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "标准引用校验服务不可用 | Standard reference validation unavailable",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
@@ -622,10 +649,10 @@ const docTemplate = `{
                 "tags": [
                     "Model"
                 ],
-                "summary": "从 Mermaid ER 图导入实体 | Import entities from Mermaid ER diagram",
+                "summary": "确认 Mermaid Markdown 增量导入 | Apply incremental Mermaid Markdown import",
                 "parameters": [
                     {
-                        "description": "导入请求 | Import request",
+                        "description": "确认导入请求 | Apply import request",
                         "name": "body",
                         "in": "body",
                         "required": true,
@@ -642,7 +669,7 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "Mermaid 内容无效 | Invalid Mermaid content",
+                        "description": "Markdown 或 Mermaid 内容无效 | Invalid Markdown or Mermaid content",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
@@ -659,8 +686,20 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
                     },
+                    "404": {
+                        "description": "业务域或数据元不存在 | Domain or data element not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
                     "409": {
-                        "description": "存在已审批实体 | Approved entities exist",
+                        "description": "预览基线已过期或存在导入冲突 | Preview baseline expired or import conflicts exist",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "标准引用校验服务不可用 | Standard reference validation unavailable",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
@@ -669,9 +708,80 @@ const docTemplate = `{
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "model.entity.create",
-                    "model.entity.delete",
-                    "model.entity_relation.create",
-                    "model.entity_relation.delete"
+                    "model.entity_relation.create"
+                ]
+            }
+        },
+        "/entities/import-mermaid/preview": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Model"
+                ],
+                "summary": "预览 Mermaid Markdown 增量导入 | Preview incremental Mermaid Markdown import",
+                "parameters": [
+                    {
+                        "description": "导入预览请求 | Import preview request",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.MermaidImportPreviewRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "导入预览 | Import preview",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.MermaidImportPreview"
+                        }
+                    },
+                    "400": {
+                        "description": "Markdown 或 Mermaid 内容无效 | Invalid Markdown or Mermaid content",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Authentication required",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Permission denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "业务域或数据元不存在 | Domain or data element not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "标准引用校验服务不可用 | Standard reference validation unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.entity.create",
+                    "model.entity_relation.create"
                 ]
             }
         },
@@ -6075,22 +6185,100 @@ const docTemplate = `{
         "github_com_addp_model_internal_models.MermaidExportResponse": {
             "type": "object",
             "properties": {
-                "mermaid_code": {
+                "domain_id": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "markdown": {
                     "type": "string"
+                },
+                "scope": {
+                    "type": "string",
+                    "enum": [
+                        "all",
+                        "domain"
+                    ]
+                }
+            }
+        },
+        "github_com_addp_model_internal_models.MermaidImportConflict": {
+            "type": "object",
+            "properties": {
+                "key": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string",
+                    "enum": [
+                        "definition_mismatch",
+                        "entity_state_conflict"
+                    ]
+                },
+                "resource_type": {
+                    "type": "string",
+                    "enum": [
+                        "entity",
+                        "relation"
+                    ]
+                }
+            }
+        },
+        "github_com_addp_model_internal_models.MermaidImportPreview": {
+            "type": "object",
+            "properties": {
+                "conflicts": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_model_internal_models.MermaidImportConflict"
+                    }
+                },
+                "created_entities": {
+                    "type": "integer"
+                },
+                "created_relations": {
+                    "type": "integer"
+                },
+                "domain_id": {
+                    "type": "integer",
+                    "minimum": 1
                 },
                 "revision": {
                     "type": "integer"
+                },
+                "scope": {
+                    "type": "string",
+                    "enum": [
+                        "all",
+                        "domain"
+                    ]
+                },
+                "unchanged_entities": {
+                    "type": "integer"
+                },
+                "unchanged_relations": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_model_internal_models.MermaidImportPreviewRequest": {
+            "type": "object",
+            "required": [
+                "markdown"
+            ],
+            "properties": {
+                "markdown": {
+                    "type": "string"
                 }
             }
         },
         "github_com_addp_model_internal_models.MermaidImportRequest": {
             "type": "object",
             "required": [
-                "mermaid_code",
+                "markdown",
                 "revision"
             ],
             "properties": {
-                "mermaid_code": {
+                "markdown": {
                     "type": "string"
                 },
                 "revision": {
@@ -6109,6 +6297,12 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "revision": {
+                    "type": "integer"
+                },
+                "unchanged_entities": {
+                    "type": "integer"
+                },
+                "unchanged_relations": {
                     "type": "integer"
                 }
             }

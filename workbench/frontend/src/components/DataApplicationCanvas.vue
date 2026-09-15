@@ -203,8 +203,8 @@ async function loadDescriptors() {
 }
 
 async function loadDescriptor(item) {
-  const current = componentStates[item.id] || createComponentState()
-  componentStates[item.id] = current
+  componentStates[item.id] ||= createComponentState()
+  const current = componentStates[item.id]
   const request = current.descriptorRequests.begin(item.id)
   current.descriptor_error = ''
   try {

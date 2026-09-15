@@ -166,15 +166,15 @@ Standard 引用校验只有明确的 `404` 或跨 Tenant 隐藏结果映射为�
 
 ## 五、Mermaid 与 DDL
 
-Mermaid 导入采用 Tenant 级“实体模型集合”全量替换语义：该集合包含当前 Tenant 的全部 Entity、EntityAttribute 和 EntityRelation。由于它跨越多个独立聚合，不能使用任一 Entity 或 EntityRelation 的 `version` 作为并发边界；Model 必须为每个 Tenant 维护非空 `BIGINT revision`，初始值为 `1`，并由 `model.entity_model_revisions` 的租户单行事实承载。
+Mermaid 交换文档的唯一格式是 Markdown：文件后缀为 `.md`，且只包含一个 `mermaid` fenced code block。代码块内使用 `addp.model.er/v1` 文档元数据注释声明 `all|domain` 范围；不再输出裸 `.mmd`，也不接受只改后缀、没有 Markdown 围栏的文件。
 
-`revision` 是整个实体模型集合的编辑基线，不只用于串行化两次 Mermaid 导入。任何改变 Entity、EntityAttribute 或 EntityRelation 的创建、更新、删除、审批、退回草稿、Mermaid 导入和内部 Cleanup 都必须在同一事务中锁定 Tenant 修订行并推进 `revision`。创建独立资源不要求客户端携带 `revision`，但服务端仍必须推进它；这样导出后的任意普通写入都会使旧 Mermaid 导入产生版本冲突。
+导出与 ER 图当前业务域上下文一致：正整数 `domain_id` 导出该业务域归属的 Entity、EntityAttribute，以及两端都在该域内的 EntityRelation；省略 `domain_id` 才表示显式全域导出。“展开跨域关联”只是查看上下文，不改变导出边界，避免将外域实体误表达为本域交换成员。
 
-导出响应必须同时返回 `mermaid_code` 和当前 `revision`；导入请求必须同时携带 `mermaid_code` 和作为编辑基线的 `revision`。导入先完整解析和校验可逆子集，再在单个事务中锁定 Tenant 修订行、校验修订版本、替换集合并执行 `revision = revision + 1`。修订行必须在 Tenant 首次导出或导入前稳定存在，不能依赖锁定现有 Entity 行，因为空集合没有可锁定成员。修订冲突同样返回 `409 resource_version_conflict`，且集合和修订版本均保持不变。
+Mermaid 导入是非破坏性的显式成员批量创建，不是 Tenant 实体模型集合替换。导入文档中缺失的现有 Entity、EntityAttribute 或 EntityRelation 始终保留，不得推导为删除。以 Entity `code` 作为稳定匹配键：不存在时创建草稿实体及属性；已存在且全部可编辑业务字段相同时记为未变更；同编码定义不同时记为冲突，不自动更新或覆盖。EntityRelation 以两端实体编码、关系类型和名称作为稳定匹配键，同键描述不同同样是冲突。导入不保留另一条全量替换、自动 upsert 或删除重建路线。
 
-导入是破坏性聚合写入，要求 Entity 与 EntityRelation 的创建、删除权限；租户存在已审批实体时必须先全部退回草稿。任何解析、校验、修订冲突或写入错误都整体回滚，不返回部分成功。导入成功后返回新 `revision`，前端立即替换本地修订基线。
+前端必须先请求导入预览，展示将新建、未变更和冲突的实体与关系数量；存在冲突时不允许提交。`model.entity_model_revisions` 继续作为 Tenant 实体模型集合的非空 `BIGINT revision`，但只用于将预览结果绑定到确认提交时的集合基线。任何 Entity、EntityAttribute、EntityRelation 或 Cleanup 写入仍在事务中推进它；确认导入在同一事务中锁定并校验预览返回的 `revision`，过期返回 `409 resource_version_conflict`。预览本身不写业务资源；确认导入在单个事务中重新计划并创建全部新成员，任何冲突或写入错误整体回滚。
 
-Mermaid 可逆子集必须通过 ADDP 元数据注释完整保存所有可编辑 Model 字段：Entity 的 code、显示名、domain_id、description；EntityAttribute 的 column_name、显示名、element_id、data_type、主键、可空性、description、sort_order；EntityRelation 的两端实体 code、关系类型、name 和 description。导出后不做修改立即导入必须保持上述业务字段不变；数据库身份、资源版本、创建人和时间戳由导入生成新值。子集外语法必须明确拒绝，不能静默丢失。
+Mermaid 可逆子集必须通过 ADDP 元数据注释完整保存所有可编辑 Model 字段：Entity 的 code、显示名、domain_id、description；EntityAttribute 的 column_name、显示名、element_id、data_type、主键、可空性、description、sort_order；EntityRelation 的两端实体 code、关系类型、name 和 description。业务域文档中所有 Entity 的 `domain_id` 必须与文档范围一致；全域文档可包含多个业务域和未归属实体。子集外语法必须明确拒绝，不能静默丢失。
 
 Cleanup 是内部强制生命周期写入，不从外部请求接收 `version`。它仍必须锁定受影响资源，推进被修改资源的 `version`，并在涉及实体模型集合时推进 Tenant `revision`；physical cleanup 必须在单个事务中完成锁定、删除和修订推进。
 
@@ -205,7 +205,7 @@ PostgreSQL DDL 预览只接受结构化物化配置。物化目标统一使用 `
 - 维度建模以事实表为中心展示维度关联、度量与指标实现，图标题统一为“模型关系图”。业务域复用 Standard 的 Domain 和 LogicalTable.domain_id；筛选仅约束左侧事实表，已选事实表的跨域维度关系及可关联维度不受该筛选裁剪。事实表详情展示归属业务域。
 - 维度建模沿用唯一公开路由 `/modeling/star-schema`；`domain_id` 正整数表示指定业务域，省略表示全部业务域（包含未归属表），`table_id` 表示当前事实表。切换域时清除不属于新域的当前事实表；刷新及浏览器前进/后退恢复同一筛选和选择，不自动选择其他事实表。
 - 维度建模前端变更复用 `make test-model-frontend` 和 `make test-console-frontend`，由现有前端 CI 自动发现执行，不新增测试入口。
-- ER 图无业务域上下文时先选域；`domain_id=all` 显式进入全域总览，正整数表示指定域，省略表示未选择。`related=1` 仅在指定域时展开一跳跨域关系，两端实体必须存在；外域实体标注业务域。实体列表进入 ER 图保留当前域。Mermaid 导入、导出始终作用于全租户实体模型，界面必须明确范围。
+- ER 图无业务域上下文时先选域；`domain_id=all` 显式进入全域总览，正整数表示指定域，省略表示未选择。`related=1` 仅在指定域时展开一跳跨域关系，两端实体必须存在；外域实体标注业务域。实体列表进入 ER 图保留当前域。Mermaid 导出复用当前业务域或显式全域选择；导入从 Markdown 文档元数据读取范围，先预览再增量创建，不覆盖或删除现有模型。
 - 编排流程统一从 Orchestrator 进入；逻辑表详情的执行记录按钮只展示该表的物化执行。
 - 已删除任务的历史执行事实仅保留审计，不提供再次执行入口。
 - 当前不提供发布组或多表原子切换；仅在未来明确出现共同可见需求时重新设计。

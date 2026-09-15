@@ -110,6 +110,16 @@ func SetupRouter(
 		{
 			entities.GET("", permission(modelauthorization.PermissionModelEntityRead), entityHandler.ListEntities)
 			entities.POST("", permission(modelauthorization.PermissionModelEntityCreate), entityHandler.CreateEntity)
+			// Mermaid Markdown 导入导出动作路由必须位于实体 ID 路由之前。
+			entities.POST("/import-mermaid/preview", permission(
+				modelauthorization.PermissionModelEntityCreate,
+				modelauthorization.PermissionModelEntityRelationCreate,
+			), entityHandler.PreviewMermaidImport)
+			entities.POST("/import-mermaid", permission(
+				modelauthorization.PermissionModelEntityCreate,
+				modelauthorization.PermissionModelEntityRelationCreate,
+			), entityHandler.ImportMermaid)
+			entities.GET("/export-mermaid", permission(modelauthorization.PermissionModelEntityRead, modelauthorization.PermissionModelEntityRelationRead), entityHandler.ExportMermaid)
 			entities.GET("/:id", permission(modelauthorization.PermissionModelEntityRead), entityHandler.GetEntity)
 			entities.GET("/:id/relations", permission(modelauthorization.PermissionModelEntityRead, modelauthorization.PermissionModelEntityRelationRead), professionalRelationHandler.GetEntityRelations)
 			entities.PUT("/:id", permission(modelauthorization.PermissionModelEntityUpdate), entityHandler.UpdateEntity)
@@ -120,14 +130,6 @@ func SetupRouter(
 			entities.POST("/:id/attributes", permission(modelauthorization.PermissionModelEntityCreate), entityHandler.CreateAttribute)
 			entities.PUT("/:id/attributes/:aid", permission(modelauthorization.PermissionModelEntityUpdate), entityHandler.UpdateAttribute)
 			entities.DELETE("/:id/attributes/:aid", permission(modelauthorization.PermissionModelEntityDelete), entityHandler.DeleteAttribute)
-			// Mermaid 导入导出
-			entities.POST("/import-mermaid", permission(
-				modelauthorization.PermissionModelEntityCreate,
-				modelauthorization.PermissionModelEntityDelete,
-				modelauthorization.PermissionModelEntityRelationCreate,
-				modelauthorization.PermissionModelEntityRelationDelete,
-			), entityHandler.ImportMermaid)
-			entities.GET("/export-mermaid", permission(modelauthorization.PermissionModelEntityRead, modelauthorization.PermissionModelEntityRelationRead), entityHandler.ExportMermaid)
 		}
 
 		// 实体关系路由

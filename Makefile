@@ -500,6 +500,7 @@ test-transfer-frontend: ## 运行 Transfer 前端确定性测试与构建
 
 test-workbench-frontend: ## 运行 Workbench 前端确定性测试与构建
 	@cd workbench/frontend && npm test
+	@cd workbench/frontend && npm run test:e2e
 	@cd workbench/frontend && npm run build
 
 test-go: ## 校验依赖文件并使用临时 workspace 运行全部已跟踪 Go 模块测试

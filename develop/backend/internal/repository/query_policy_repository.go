@@ -65,7 +65,8 @@ func (r *QueryPolicyRepository) Save(ctx context.Context, value *models.QueryPol
 		value.ID, value.Version = current.ID, current.Version+1
 		result := tx.Model(&models.QueryPolicy{}).Where("id = ? AND version = ?", current.ID, expected).Updates(map[string]interface{}{
 			"default_query_timeout": value.DefaultQueryTimeout, "max_query_timeout": value.MaxQueryTimeout,
-			"query_result_limit": value.QueryResultLimit, "version": value.Version, "updated_by": value.UpdatedBy,
+			"query_result_limit": value.QueryResultLimit,
+			"query_concurrency":  value.QueryConcurrency, "query_per_engine_concurrency": value.QueryPerEngineConcurrency, "version": value.Version, "updated_by": value.UpdatedBy,
 		})
 		if result.Error != nil {
 			return result.Error

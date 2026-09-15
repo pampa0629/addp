@@ -21,7 +21,7 @@
             <el-button v-if="canImport" type="primary" @click="showImportDialog">
               <el-icon><Upload /></el-icon> {{ t('model.er_diagram.import_mermaid') }}
             </el-button>
-            <el-button v-if="canExport" @click="exportMermaid">
+            <el-button v-if="canExport" :disabled="!selectedDomainId" @click="exportMermaid">
               <el-icon><Download /></el-icon> {{ t('model.er_diagram.export_mermaid') }}
             </el-button>
             <el-button @click="refreshDiagram">
@@ -85,7 +85,7 @@
       <el-tabs v-model="importTab">
         <el-tab-pane :label="t('model.er_diagram.paste_code')" name="paste">
           <el-input
-            v-model="importMermaidCode"
+            v-model="importMarkdown"
             type="textarea"
             :rows="20"
             :placeholder="t('model.er_diagram.paste_placeholder')"
@@ -94,17 +94,16 @@
             <el-alert type="info" :closable="false">
               <template #title>
                 <p><strong>{{ t('model.er_diagram.format_example') }}</strong></p>
-                <pre style="margin-top: 10px; font-size: 12px;">erDiagram
-    CUSTOMER {
-        bigint id PK
-        string name
-        string email
-    }
-    ORDER {
-        bigint id PK
-        bigint customer_id FK
-    }
-    CUSTOMER ||--o{ ORDER : "places"</pre>
+                <pre style="margin-top: 10px; font-size: 12px;"># ADDP Entity Relationship Diagram
+
+```mermaid
+erDiagram
+  %% addp:document {"format":"addp.model.er/v1","scope":"domain","domain_id":2}
+  %% addp:entity {"code":"customer","name":"客户","domain_id":2,"description":""}
+  customer {
+    bigint id PK
+  }
+```</pre>
               </template>
             </el-alert>
           </div>
@@ -113,7 +112,7 @@
         <el-tab-pane :label="t('model.er_diagram.upload_file')" name="file">
           <el-upload
             drag
-            accept=".md,.mmd,.mermaid,.txt"
+            accept=".md,.markdown"
             :before-upload="handleFileUpload"
             :auto-upload="false"
             :show-file-list="false"
@@ -131,10 +130,36 @@
         </el-tab-pane>
       </el-tabs>
 
+      <el-alert
+        v-if="importPreview"
+        class="import-preview"
+        :type="importPreview.conflicts.length ? 'error' : 'success'"
+        :closable="false"
+        show-icon
+        :title="t('model.er_diagram.preview_summary', {
+          created: importPreview.created_entities,
+          unchanged: importPreview.unchanged_entities,
+          relations: importPreview.created_relations,
+          unchangedRelations: importPreview.unchanged_relations
+        })"
+      >
+        <ul v-if="importPreview.conflicts.length" class="conflict-list">
+          <li v-for="conflict in importPreview.conflicts" :key="`${conflict.resource_type}:${conflict.key}`">
+            {{ t(`model.er_diagram.conflict_${conflict.reason}`, {
+              type: t(`model.er_diagram.resource_${conflict.resource_type}`),
+              key: conflict.key
+            }) }}
+          </li>
+        </ul>
+      </el-alert>
+
       <template #footer>
         <el-button @click="importDialogVisible = false">{{ t('model.common.cancel') }}</el-button>
-        <el-button type="primary" @click="executeImport" :loading="importing">
-          {{ t('model.er_diagram.import_replace') }}
+        <el-button @click="previewImport" :loading="previewing" :disabled="importing">
+          {{ t('model.er_diagram.preview_import') }}
+        </el-button>
+        <el-button type="primary" @click="executeImport" :loading="importing" :disabled="previewing || !canApplyImport">
+          {{ t('model.er_diagram.confirm_import') }}
         </el-button>
       </template>
     </el-dialog>
@@ -144,7 +169,7 @@
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { Upload, Download, Refresh, UploadFilled } from '@element-plus/icons-vue'
 import mermaid from 'mermaid'
 import { entityAPI, entityRelationAPI, domainAPI } from '../api/model'
@@ -163,9 +188,7 @@ const authStore = useAuthStore()
 const hasPermissions = permissions => permissions.every(permission => authStore.hasPermission(permission))
 const canImport = computed(() => hasPermissions([
   'model.entity.create',
-  'model.entity.delete',
-  'model.entity_relation.create',
-  'model.entity_relation.delete'
+  'model.entity_relation.create'
 ]))
 const canExport = computed(() => hasPermissions([
   'model.entity.read',
@@ -181,16 +204,19 @@ const includeRelated = ref(false)
 const domainLabel = id => domains.value.find(domain => domain.id === id)?.name || t('model.er_diagram.unassigned_domain')
 let diagramSequence = 0
 const globalMermaidCode = ref('')
-const exportedMermaidCode = ref('')
-const entityModelRevision = ref(null)
 const diagramContainer = ref(null)
 const diagramLoading = ref(false)
 const loadError = ref('')
 
 const importDialogVisible = ref(false)
 const importTab = ref('paste')
-const importMermaidCode = ref('')
+const importMarkdown = ref('')
+const importPreview = ref(null)
+const previewedMarkdown = ref('')
+const previewing = ref(false)
 const importing = ref(false)
+const canApplyImport = computed(() => importPreview.value &&
+  previewedMarkdown.value === importMarkdown.value && importPreview.value.conflicts.length === 0)
 let stopThemeObserver = null
 
 const applyRouteState = query => {
@@ -235,14 +261,11 @@ const refreshDiagram = async () => {
   }
   try {
     // 加载所有实体和关系
-    const [entitiesRes, relationsRes, exportRes] = await Promise.all([
+    const [entitiesRes, relationsRes] = await Promise.all([
       entityAPI.listAll(),
-      entityRelationAPI.list(),
-      entityAPI.exportMermaid()
+      entityRelationAPI.list()
     ])
     if (sequence !== diagramSequence) return
-    entityModelRevision.value = exportRes.revision
-    exportedMermaidCode.value = exportRes.mermaid_code || ''
     const allEntities = entitiesRes || []
     const filteredDiagram = filterERDiagramByDomain(
       allEntities,
@@ -346,15 +369,15 @@ const renderMermaid = async () => {
 
 // 导出Mermaid
 const exportMermaid = async () => {
+  if (!selectedDomainId.value) return
   try {
-    const snapshot = await entityAPI.exportMermaid()
-    entityModelRevision.value = snapshot.revision
-    exportedMermaidCode.value = snapshot.mermaid_code || ''
-    const blob = new Blob([exportedMermaidCode.value], { type: 'text/plain' })
+    const domainID = selectedDomainId.value === 'all' ? null : selectedDomainId.value
+    const snapshot = await entityAPI.exportMermaid(domainID ? { domain_id: domainID } : undefined)
+    const blob = new Blob([snapshot.markdown || ''], { type: 'text/markdown;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
-    link.download = `er-diagram-${new Date().getTime()}.mmd`
+    link.download = domainID ? `er-diagram-domain-${domainID}.md` : 'er-diagram-all.md'
     link.click()
     URL.revokeObjectURL(url)
 
@@ -367,7 +390,9 @@ const exportMermaid = async () => {
 
 // 显示导入对话框
 const showImportDialog = () => {
-  importMermaidCode.value = ''
+  importMarkdown.value = ''
+  importPreview.value = null
+  previewedMarkdown.value = ''
   importTab.value = 'paste'
   importDialogVisible.value = true
 }
@@ -376,51 +401,62 @@ const showImportDialog = () => {
 const handleFileUpload = (file) => {
   const reader = new FileReader()
   reader.onload = (e) => {
-    importMermaidCode.value = e.target.result
+    importMarkdown.value = e.target.result
     importTab.value = 'paste'
   }
   reader.readAsText(file)
   return false // 阻止自动上传
 }
 
-// 执行导入
-const executeImport = async () => {
+const previewImport = async () => {
   if (!canImport.value) {
     ElMessage.error(t('model.common.permission_denied'))
     return
   }
-  if (!importMermaidCode.value.trim()) {
+  if (!importMarkdown.value.trim()) {
     ElMessage.warning(t('model.er_diagram.import_empty'))
     return
   }
 
   try {
+    previewing.value = true
+    importPreview.value = null
+    previewedMarkdown.value = ''
+    const markdown = importMarkdown.value
+    const result = await entityAPI.previewMermaidImport({ markdown })
+    if (importMarkdown.value === markdown) {
+      importPreview.value = result
+      previewedMarkdown.value = markdown
+    }
+  } catch (error) {
+    const errorMsg = getModelErrorMessage(error, t, 'model.common.op_failed')
+    ElMessage.error(t('model.er_diagram.preview_failed', { msg: errorMsg }))
+  } finally {
+    previewing.value = false
+  }
+}
+
+// 确认增量导入
+const executeImport = async () => {
+  if (!canApplyImport.value) return
+  try {
     importing.value = true
-
-    await ElMessageBox.confirm(
-      t('model.er_diagram.import_confirm_msg'),
-      t('model.er_diagram.import_confirm_title'),
-      { type: 'warning' }
-    )
-
-    // 调用后端API导入
     const result = await entityAPI.importMermaid({
-      mermaid_code: importMermaidCode.value,
-      revision: entityModelRevision.value
+      markdown: importMarkdown.value,
+      revision: importPreview.value.revision
     })
-    entityModelRevision.value = result.revision
 
     ElMessage.success(t('model.er_diagram.import_success', {
       created: result.created_entities,
-      relations: result.created_relations
+      unchanged: result.unchanged_entities,
+      relations: result.created_relations,
+      unchangedRelations: result.unchanged_relations
     }))
     importDialogVisible.value = false
     await refreshDiagram()
   } catch (error) {
-    if (error !== 'cancel') {
-      const errorMsg = getModelErrorMessage(error, t, 'model.common.op_failed')
-      ElMessage.error(t('model.er_diagram.import_failed', { msg: errorMsg }))
-    }
+    const errorMsg = getModelErrorMessage(error, t, 'model.common.op_failed')
+    ElMessage.error(t('model.er_diagram.import_failed', { msg: errorMsg }))
   } finally {
     importing.value = false
   }
@@ -436,6 +472,10 @@ const restoreDiagramFromRoute = async query => {
 }
 
 watch(() => route.query, restoreDiagramFromRoute, { deep: true })
+watch(importMarkdown, () => {
+  importPreview.value = null
+  previewedMarkdown.value = ''
+})
 
 onMounted(async () => {
   initializeMermaidTheme(mermaid, {
@@ -460,6 +500,8 @@ onBeforeUnmount(() => stopThemeObserver?.())
 
 <style scoped>
 .domain-legend { display:flex; flex-wrap:wrap; gap:8px; margin:12px 0; }
+.import-preview { margin-top: 16px; }
+.conflict-list { margin: 8px 0 0; padding-left: 20px; }
 .er-diagram-manager {
   padding: 20px;
 }

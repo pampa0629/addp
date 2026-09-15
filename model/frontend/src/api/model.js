@@ -119,13 +119,17 @@ export const entityAPI = {
   deleteAttribute(entityId, attrId, version) {
     return client.delete(`/model/entities/${entityId}/attributes/${attrId}`, { data: { version } })
   },
-  // 导入 Mermaid ER 图
+  // 预览 Mermaid Markdown 增量导入
+  previewMermaidImport(data) {
+    return client.post('/model/entities/import-mermaid/preview', data)
+  },
+  // 确认 Mermaid Markdown 增量导入
   importMermaid(data) {
     return client.post('/model/entities/import-mermaid', data)
   },
-  // 导出 Mermaid ER 图
-  exportMermaid() {
-    return client.get('/model/entities/export-mermaid')
+  // 导出 Mermaid Markdown ER 图
+  exportMermaid(params) {
+    return client.get('/model/entities/export-mermaid', { params })
   }
 }
 

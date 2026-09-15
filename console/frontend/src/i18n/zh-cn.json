@@ -244,7 +244,10 @@
           "title": "查询策略",
           "defaultQueryTimeout": "默认查询超时（秒）",
           "maxQueryTimeout": "最大查询超时（秒）",
-          "queryResultLimit": "结果预览上限（行）"
+          "queryResultLimit": "结果预览上限（行）",
+          "queryConcurrency": "总查询并发上限（每个 Backend）",
+          "queryPerEngineConcurrency": "单引擎查询并发上限",
+          "applyHint": "保存后无需重启。并发调整作用于后续调度，已有查询继续完成；超时和预览行数作用于新建执行。"
         },
         "manager": {
           "title": "快显策略",

@@ -102,12 +102,14 @@ func (s *SQLEngineService) IssueSQLExecutionAuthorization(
 	if s == nil || s.cfg == nil || s.executionAuthorizations == nil || tenantID == 0 || engineID == 0 || executionID == uuid.Nil {
 		return nil, fmt.Errorf("SQL 执行授权服务未正确初始化")
 	}
-	timeout = s.normalizedTimeoutForTenant(ctx, tenantID, timeout)
+	timeout, err := s.normalizedTimeoutForTenant(ctx, tenantID, timeout)
+	if err != nil {
+		return nil, err
+	}
 	effect, expiresIn, err := s.sqlExecutionAuthorizationRequest(sqlContent, timeout)
 	if err != nil {
 		return nil, err
 	}
-	timeout = s.normalizedTimeoutForTenant(ctx, tenantID, timeout)
 	return s.issueExecutionAuthorization(
 		ctx, tenantID, userAccessToken, executionID, []uint{engineID}, []SQLExecutionEffect{effect}, expiresIn, "develop",
 	)
@@ -124,10 +126,13 @@ func (s *SQLEngineService) IssueReadExecutionAuthorization(
 	if s == nil || s.cfg == nil {
 		return nil, fmt.Errorf("SQL 执行授权服务未正确初始化")
 	}
-	timeout = s.normalizedTimeoutForTenant(ctx, tenantID, timeout)
+	timeout, err := s.normalizedTimeoutForTenant(ctx, tenantID, timeout)
+	if err != nil {
+		return nil, err
+	}
 	return s.issueExecutionAuthorization(
 		ctx, tenantID, userAccessToken, executionID, engineIDs, []SQLExecutionEffect{SQLExecutionEffectRead},
-		int64(s.normalizedTimeout(timeout)+30), "develop",
+		int64(timeout+30), "develop",
 	)
 }
 
@@ -139,10 +144,13 @@ func (s *SQLEngineService) IssueFederatedReadExecutionAuthorization(
 	engineIDs []uint,
 	timeout int,
 ) (*IssuedSQLExecutionAuthorization, error) {
-	timeout = s.normalizedTimeoutForTenant(ctx, tenantID, timeout)
+	timeout, err := s.normalizedTimeoutForTenant(ctx, tenantID, timeout)
+	if err != nil {
+		return nil, err
+	}
 	return s.issueExecutionAuthorization(
 		ctx, tenantID, userAccessToken, executionID, engineIDs, []SQLExecutionEffect{SQLExecutionEffectRead},
-		int64(s.normalizedTimeout(timeout)+30), "duckdb",
+		int64(timeout+30), "duckdb",
 	)
 }
 
@@ -181,7 +189,10 @@ func (s *SQLEngineService) TestAuthorizedConnection(
 		tenantID == 0 || engineID == 0 || executionID == uuid.Nil {
 		return fmt.Errorf("SQL 连接测试服务未正确初始化")
 	}
-	timeout := s.normalizedTimeoutForTenant(ctx, tenantID, 0)
+	timeout, err := s.normalizedTimeoutForTenant(ctx, tenantID, 0)
+	if err != nil {
+		return err
+	}
 	authorization, err := s.IssueReadExecutionAuthorization(
 		ctx, tenantID, userAccessToken, executionID, []uint{engineID}, timeout,
 	)
@@ -216,12 +227,14 @@ func (s *SQLEngineService) IssueSQLExecutionAuthorizationFromExecution(
 		parentExecutionID == uuid.Nil || executionID == uuid.Nil || attempt <= 0 || strings.TrimSpace(leaseToken) == "" {
 		return nil, fmt.Errorf("SQL 执行授权服务未正确初始化")
 	}
-	timeout = s.normalizedTimeoutForTenant(ctx, tenantID, timeout)
+	timeout, err := s.normalizedTimeoutForTenant(ctx, tenantID, timeout)
+	if err != nil {
+		return nil, err
+	}
 	effect, expiresIn, err := s.sqlExecutionAuthorizationRequest(sqlContent, timeout)
 	if err != nil {
 		return nil, err
 	}
-	timeout = s.normalizedTimeoutForTenant(ctx, tenantID, timeout)
 	return s.issueExecutionAuthorizationFromExecution(
 		ctx, tenantID, parentExecutionID, executionID, attempt, leaseToken,
 		[]uint{engineID}, []SQLExecutionEffect{effect}, expiresIn, "develop",
@@ -239,10 +252,13 @@ func (s *SQLEngineService) IssueReadExecutionAuthorizationFromExecution(
 	if s == nil || s.cfg == nil {
 		return nil, fmt.Errorf("SQL 执行授权服务未正确初始化")
 	}
-	timeout = s.normalizedTimeoutForTenant(ctx, tenantID, timeout)
+	timeout, err := s.normalizedTimeoutForTenant(ctx, tenantID, timeout)
+	if err != nil {
+		return nil, err
+	}
 	return s.issueExecutionAuthorizationFromExecution(
 		ctx, tenantID, parentExecutionID, executionID, 0, "", engineIDs, []SQLExecutionEffect{SQLExecutionEffectRead},
-		int64(s.normalizedTimeout(timeout)+30), "develop",
+		int64(timeout+30), "develop",
 	)
 }
 
@@ -256,11 +272,14 @@ func (s *SQLEngineService) IssueFederatedReadExecutionAuthorizationFromExecution
 	leaseToken string,
 	timeout int,
 ) (*IssuedSQLExecutionAuthorization, error) {
-	timeout = s.normalizedTimeoutForTenant(ctx, tenantID, timeout)
+	timeout, err := s.normalizedTimeoutForTenant(ctx, tenantID, timeout)
+	if err != nil {
+		return nil, err
+	}
 	return s.issueExecutionAuthorizationFromExecution(
 		ctx, tenantID, parentExecutionID, executionID, attempt, leaseToken,
 		engineIDs, []SQLExecutionEffect{SQLExecutionEffectRead},
-		int64(s.normalizedTimeout(timeout)+30), "duckdb",
+		int64(timeout+30), "duckdb",
 	)
 }
 
@@ -278,7 +297,10 @@ func (s *SQLEngineService) IssueExistingTableWriteAuthorizationFromExecution(
 		parentExecutionID == uuid.Nil || executionID == uuid.Nil || attempt <= 0 || strings.TrimSpace(leaseToken) == "" {
 		return nil, fmt.Errorf("既有表写入查询授权服务未正确初始化")
 	}
-	timeout = s.normalizedTimeoutForTenant(ctx, tenantID, timeout)
+	timeout, err := s.normalizedTimeoutForTenant(ctx, tenantID, timeout)
+	if err != nil {
+		return nil, err
+	}
 	effects := []SQLExecutionEffect{SQLExecutionEffectRead, SQLExecutionEffectWrite}
 	issued, err := s.systemService.WithTenantID(tenantID).IssueExecutionAuthorizationFromExecution(
 		ctx,
@@ -286,7 +308,7 @@ func (s *SQLEngineService) IssueExistingTableWriteAuthorizationFromExecution(
 			ParentExecutionID: parentExecutionID.String(), Audience: commonExecution.AudienceDevelop,
 			ExecutionID: executionID.String(), Attempt: attempt, LeaseToken: leaseToken,
 			Accesses:  executionEngineAccessScopes([]uint{engineID}, effects),
-			ExpiresIn: int64(s.normalizedTimeout(timeout) + 30),
+			ExpiresIn: int64(timeout + 30),
 		},
 	)
 	if err != nil {
@@ -349,7 +371,9 @@ func (s *SQLEngineService) sqlExecutionAuthorizationRequest(
 	if err != nil {
 		return "", 0, fmt.Errorf("%w: %v", ErrSQLExecutionUnclassifiable, err)
 	}
-	timeout = s.normalizedTimeout(timeout)
+	if timeout <= 0 {
+		return "", 0, fmt.Errorf("query authorization timeout must be positive")
+	}
 	return effect, int64(timeout + 30), nil
 }
 
@@ -396,12 +420,18 @@ func (s *SQLEngineService) ExecuteIssuedSQLAuthorization(
 	limit int,
 	authorization *IssuedSQLExecutionAuthorization,
 ) (*SQLResult, error) {
-	timeout = s.normalizedTimeoutForTenant(ctx, tenantID, timeout)
-	if limit <= 0 && s.queryPolicy != nil {
-		_, _, policyLimit, err := s.queryPolicy.ResolveRuntime(ctx, tenantID)
-		if err == nil {
-			limit = policyLimit
+	timeout, err := s.normalizedTimeoutForTenant(ctx, tenantID, timeout)
+	if err != nil {
+		return nil, err
+	}
+	if snapshot, ok := ctx.Value(querySnapshotKey{}).(querySnapshot); ok {
+		limit = snapshot.ResultLimit + 1
+	} else if limit <= 0 {
+		_, _, policyLimit, policyErr := s.resolveQueryPolicy(ctx, tenantID)
+		if policyErr != nil {
+			return nil, policyErr
 		}
+		limit = policyLimit
 	}
 	engine, err := s.executionEngine(ctx, tenantID, executionID, engineID, authorization)
 	if err != nil {
@@ -692,28 +722,19 @@ func containsEngineID(engineIDs []uint, target uint) bool {
 	return false
 }
 
-func (s *SQLEngineService) normalizedTimeout(timeout int) int {
+func (s *SQLEngineService) normalizedTimeoutForTenant(ctx context.Context, tenantID uint, timeout int) (int, error) {
+	if snapshot, ok := ctx.Value(querySnapshotKey{}).(querySnapshot); ok {
+		return snapshot.Timeout, nil
+	}
+	defaultTimeout, maxTimeout, _, err := s.resolveQueryPolicy(ctx, tenantID)
+	if err != nil {
+		return 0, err
+	}
 	if timeout <= 0 {
-		timeout = s.cfg.DefaultQueryTimeout
+		timeout = defaultTimeout
 	}
-	if timeout > s.cfg.MaxQueryTimeout {
-		timeout = s.cfg.MaxQueryTimeout
+	if timeout > maxTimeout {
+		timeout = maxTimeout
 	}
-	return timeout
-}
-
-func (s *SQLEngineService) normalizedTimeoutForTenant(ctx context.Context, tenantID uint, timeout int) int {
-	if s.queryPolicy != nil {
-		defaultTimeout, maxTimeout, _, err := s.queryPolicy.ResolveRuntime(ctx, tenantID)
-		if err == nil {
-			if timeout <= 0 {
-				timeout = defaultTimeout
-			}
-			if timeout > maxTimeout {
-				timeout = maxTimeout
-			}
-			return timeout
-		}
-	}
-	return s.normalizedTimeout(timeout)
+	return timeout, nil
 }

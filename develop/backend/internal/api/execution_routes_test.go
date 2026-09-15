@@ -119,7 +119,7 @@ func TestProviderExecutionUsesOnlyStableMetadataOutputs(t *testing.T) {
 	if err := repo.Create(t.Context(), execution); err != nil {
 		t.Fatal(err)
 	}
-	executor := service.NewDevExecutor(nil, repo, nil, nil, nil, nil, nil, nil, 1000)
+	executor := service.NewDevExecutor(nil, repo, nil, nil, nil, nil, nil, nil)
 	handler := NewExecutionHandler(executor, nil, nil)
 	router := gin.New()
 	router.Use(func(c *gin.Context) {

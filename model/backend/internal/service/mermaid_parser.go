@@ -10,6 +10,9 @@ import (
 )
 
 var mermaidIdentifierPattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+var mermaidMarkdownFencePattern = regexp.MustCompile("(?ms)^```mermaid[ \\t]*\\r?\\n(.*?)^```[ \\t]*$")
+
+const mermaidDocumentFormat = "addp.model.er/v1"
 
 var mermaidDataTypes = map[string]struct{}{
 	"string": {}, "int": {}, "bigint": {}, "float": {}, "decimal": {},
@@ -18,8 +21,15 @@ var mermaidDataTypes = map[string]struct{}{
 
 // MermaidERParser Mermaid ER图解析器
 type MermaidERParser struct {
+	Document  MermaidDocumentMetadata
 	Entities  []EntityDefinition
 	Relations []RelationDefinition
+}
+
+type MermaidDocumentMetadata struct {
+	Format   string `json:"format"`
+	Scope    string `json:"scope"`
+	DomainID *int64 `json:"domain_id,omitempty"`
 }
 
 // EntityDefinition 实体定义
@@ -77,8 +87,17 @@ type RelationDefinition struct {
 	Description string
 }
 
+func mermaidRelationKey(source, target, relationType, name string) string {
+	return source + "->" + target + ":" + relationType + ":" + name
+}
+
 // ParseMermaidER 解析Mermaid ER图代码
 func ParseMermaidER(code string) (*MermaidERParser, error) {
+	blocks := mermaidMarkdownFencePattern.FindAllStringSubmatch(strings.ReplaceAll(code, "\r\n", "\n"), -1)
+	if len(blocks) != 1 {
+		return nil, fmt.Errorf("Markdown 必须且只能包含一个 mermaid 代码块")
+	}
+	code = blocks[0][1]
 	parser := &MermaidERParser{
 		Entities:  []EntityDefinition{},
 		Relations: []RelationDefinition{},
@@ -89,10 +108,21 @@ func ParseMermaidER(code string) (*MermaidERParser, error) {
 	entityMetadata := map[string]mermaidEntityMetadata{}
 	attributeMetadata := map[string]mermaidAttributeMetadata{}
 	var relationMetadata *mermaidRelationMetadata
+	documentSeen := false
 
 	headerSeen := false
 	for lineNumber, line := range lines {
 		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "%% addp:document ") {
+			if documentSeen {
+				return nil, fmt.Errorf("第 %d 行 ADDP 文档元数据重复", lineNumber+1)
+			}
+			if err := json.Unmarshal([]byte(strings.TrimPrefix(line, "%% addp:document ")), &parser.Document); err != nil {
+				return nil, fmt.Errorf("第 %d 行 ADDP 文档元数据无效", lineNumber+1)
+			}
+			documentSeen = true
+			continue
+		}
 
 		if strings.HasPrefix(line, "%% addp:entity ") {
 			var metadata mermaidEntityMetadata
@@ -209,6 +239,12 @@ func ParseMermaidER(code string) (*MermaidERParser, error) {
 	if !headerSeen {
 		return nil, fmt.Errorf("缺少 erDiagram 声明")
 	}
+	if !documentSeen || parser.Document.Format != mermaidDocumentFormat ||
+		(parser.Document.Scope != "all" && parser.Document.Scope != "domain") ||
+		(parser.Document.Scope == "all" && parser.Document.DomainID != nil) ||
+		(parser.Document.Scope == "domain" && (parser.Document.DomainID == nil || *parser.Document.DomainID <= 0)) {
+		return nil, fmt.Errorf("ADDP 文档范围元数据无效")
+	}
 	if currentEntity != nil {
 		return nil, fmt.Errorf("实体 %s 缺少结束括号", currentEntity.Name)
 	}
@@ -246,6 +282,13 @@ func ParseMermaidER(code string) (*MermaidERParser, error) {
 	if len(entityMetadata) > 0 || len(attributeMetadata) > 0 {
 		return nil, fmt.Errorf("ADDP 元数据引用了不存在的实体或属性")
 	}
+	if parser.Document.Scope == "domain" {
+		for _, entity := range parser.Entities {
+			if entity.DomainID == nil || *entity.DomainID != *parser.Document.DomainID {
+				return nil, fmt.Errorf("实体 %s 不属于文档声明的业务域", entity.Name)
+			}
+		}
+	}
 	if err := validateMermaidStorageLengths(parser); err != nil {
 		return nil, err
 	}
@@ -273,6 +316,7 @@ func validateMermaidStorageLengths(parser *MermaidERParser) error {
 
 func validateMermaidER(parser *MermaidERParser) error {
 	entities := make(map[string]struct{}, len(parser.Entities))
+	relations := make(map[string]struct{}, len(parser.Relations))
 	for _, entity := range parser.Entities {
 		if _, exists := entities[entity.Name]; exists {
 			return fmt.Errorf("实体重复: %s", entity.Name)
@@ -296,6 +340,11 @@ func validateMermaidER(parser *MermaidERParser) error {
 		if relation.Source == relation.Target {
 			return fmt.Errorf("关系不能连接同一实体: %s", relation.Source)
 		}
+		key := mermaidRelationKey(relation.Source, relation.Target, ConvertRelationType(relation.Symbol), relation.Label)
+		if _, exists := relations[key]; exists {
+			return fmt.Errorf("关系重复: %s", key)
+		}
+		relations[key] = struct{}{}
 	}
 	return nil
 }

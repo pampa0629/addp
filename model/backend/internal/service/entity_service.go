@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"strconv"
 	"time"
 	"unicode/utf8"
@@ -457,13 +456,15 @@ func (s *EntityService) DeleteAttribute(attrID, entityID, tenantID, version int6
 	return response, err
 }
 
-// ImportFromMermaid 从 Mermaid ER 图全量替换当前租户的实体模型。
-func (s *EntityService) ImportFromMermaid(tenantID, userID int64, req *models.MermaidImportRequest) (*models.MermaidImportResult, error) {
-	if req == nil || req.Revision <= 0 {
-		return nil, invalidRequest()
-	}
-	result := &models.MermaidImportResult{}
-	parsed, err := ParseMermaidER(req.MermaidCode)
+type mermaidImportPlan struct {
+	preview      models.MermaidImportPreview
+	newEntities  []EntityDefinition
+	newRelations []RelationDefinition
+	entityIDs    map[string]int64
+}
+
+func (s *EntityService) parseMermaidImport(tenantID int64, markdown string) (*MermaidERParser, error) {
+	parsed, err := ParseMermaidER(markdown)
 	if err != nil {
 		return nil, apperrors.Wrap(apperrors.KindValidation, "mermaid_invalid", i18n.MsgValidationFailed, err)
 	}
@@ -477,15 +478,158 @@ func (s *EntityService) ImportFromMermaid(tenantID, userID int64, req *models.Me
 			}
 		}
 	}
-	err = s.repo.DB().Transaction(func(tx *gorm.DB) error {
-		references := make([]models.StandardReference, 0, len(parsed.Entities)*2)
-		for _, entity := range parsed.Entities {
-			references = append(references, standardReference(models.StandardResourceDomain, entity.DomainID))
-			for _, attribute := range entity.Attributes {
-				references = append(references, standardReference(models.StandardResourceElement, attribute.ElementID))
-			}
+	return parsed, nil
+}
+
+func sameOptionalID(left, right *int64) bool {
+	return (left == nil && right == nil) || (left != nil && right != nil && *left == *right)
+}
+
+func sameEntityDefinition(entity models.Entity, attributes []models.EntityAttribute, definition EntityDefinition) bool {
+	if !sameOptionalID(entity.DomainID, definition.DomainID) || entity.Name != definition.DisplayName || entity.Description != definition.Description || len(attributes) != len(definition.Attributes) {
+		return false
+	}
+	byColumn := make(map[string]models.EntityAttribute, len(attributes))
+	for _, attribute := range attributes {
+		byColumn[attribute.ColumnName] = attribute
+	}
+	for _, definition := range definition.Attributes {
+		attribute, ok := byColumn[definition.Name]
+		if !ok || attribute.Name != definition.DisplayName || attribute.DataType != definition.Type ||
+			attribute.IsPK != definition.IsPK || attribute.Nullable != definition.Nullable ||
+			!sameOptionalID(attribute.ElementID, definition.ElementID) || attribute.Description != definition.Description ||
+			attribute.SortOrder != definition.SortOrder {
+			return false
 		}
-		if err := lockStandardReferences(tx, tenantID, references...); err != nil {
+	}
+	return true
+}
+
+func (s *EntityService) buildMermaidImportPlan(tx *gorm.DB, tenantID, revision int64, parsed *MermaidERParser) (*mermaidImportPlan, error) {
+	plan := &mermaidImportPlan{
+		preview: models.MermaidImportPreview{
+			Revision: revision, Scope: parsed.Document.Scope, DomainID: parsed.Document.DomainID,
+			Conflicts: []models.MermaidImportConflict{},
+		},
+		entityIDs: make(map[string]int64, len(parsed.Entities)),
+	}
+	entityRepo := repository.NewEntityRepository(tx)
+	existingEntities, err := entityRepo.ListByTenantID(tenantID)
+	if err != nil {
+		return nil, err
+	}
+	existingByCode := make(map[string]models.Entity, len(existingEntities))
+	for _, entity := range existingEntities {
+		existingByCode[entity.Code] = entity
+	}
+	for _, definition := range parsed.Entities {
+		entity, exists := existingByCode[definition.Name]
+		if !exists {
+			plan.newEntities = append(plan.newEntities, definition)
+			plan.preview.CreatedEntities++
+			continue
+		}
+		plan.entityIDs[definition.Name] = entity.ID
+		attributes, err := entityRepo.GetAttributes(entity.ID)
+		if err != nil {
+			return nil, err
+		}
+		if !sameEntityDefinition(entity, attributes, definition) {
+			plan.preview.Conflicts = append(plan.preview.Conflicts, models.MermaidImportConflict{
+				ResourceType: "entity", Key: definition.Name, Reason: "definition_mismatch",
+			})
+			continue
+		}
+		plan.preview.UnchangedEntities++
+	}
+
+	relations, err := repository.NewEntityRelationRepository(tx).ListByTenantID(tenantID)
+	if err != nil {
+		return nil, err
+	}
+	codeByID := make(map[int64]string, len(existingEntities))
+	for _, entity := range existingEntities {
+		codeByID[entity.ID] = entity.Code
+	}
+	existingRelations := make(map[string]models.EntityRelation, len(relations))
+	for _, relation := range relations {
+		key := mermaidRelationKey(codeByID[relation.SourceEntity], codeByID[relation.TargetEntity], relation.RelationType, relation.Name)
+		existingRelations[key] = relation
+	}
+	for _, definition := range parsed.Relations {
+		relationType := ConvertRelationType(definition.Symbol)
+		key := mermaidRelationKey(definition.Source, definition.Target, relationType, definition.Label)
+		if relation, exists := existingRelations[key]; exists {
+			if relation.Description != definition.Description {
+				plan.preview.Conflicts = append(plan.preview.Conflicts, models.MermaidImportConflict{
+					ResourceType: "relation", Key: key, Reason: "definition_mismatch",
+				})
+			} else {
+				plan.preview.UnchangedRelations++
+			}
+			continue
+		}
+		source, sourceExists := existingByCode[definition.Source]
+		target, targetExists := existingByCode[definition.Target]
+		if (sourceExists && source.Status != "draft") || (targetExists && target.Status != "draft") {
+			plan.preview.Conflicts = append(plan.preview.Conflicts, models.MermaidImportConflict{
+				ResourceType: "relation", Key: key, Reason: "entity_state_conflict",
+			})
+			continue
+		}
+		plan.newRelations = append(plan.newRelations, definition)
+		plan.preview.CreatedRelations++
+	}
+	return plan, nil
+}
+
+func standardReferencesFromMermaid(parsed *MermaidERParser) []models.StandardReference {
+	references := make([]models.StandardReference, 0, len(parsed.Entities)*2)
+	for _, entity := range parsed.Entities {
+		references = append(references, standardReference(models.StandardResourceDomain, entity.DomainID))
+		for _, attribute := range entity.Attributes {
+			references = append(references, standardReference(models.StandardResourceElement, attribute.ElementID))
+		}
+	}
+	return references
+}
+
+func (s *EntityService) PreviewMermaidImport(tenantID int64, req *models.MermaidImportPreviewRequest) (*models.MermaidImportPreview, error) {
+	if req == nil || req.Markdown == "" {
+		return nil, invalidRequest()
+	}
+	parsed, err := s.parseMermaidImport(tenantID, req.Markdown)
+	if err != nil {
+		return nil, err
+	}
+	var preview *models.MermaidImportPreview
+	err = s.repo.DB().Transaction(func(tx *gorm.DB) error {
+		revision, err := repository.LockEntityModelRevision(tx, tenantID)
+		if err != nil {
+			return err
+		}
+		plan, err := s.buildMermaidImportPlan(tx, tenantID, revision.Revision, parsed)
+		if err != nil {
+			return err
+		}
+		preview = &plan.preview
+		return nil
+	})
+	return preview, err
+}
+
+// ImportFromMermaid 在预览基线上增量创建缺失的实体和关系。
+func (s *EntityService) ImportFromMermaid(tenantID, userID int64, req *models.MermaidImportRequest) (*models.MermaidImportResult, error) {
+	if req == nil || req.Revision <= 0 || req.Markdown == "" {
+		return nil, invalidRequest()
+	}
+	parsed, err := s.parseMermaidImport(tenantID, req.Markdown)
+	if err != nil {
+		return nil, err
+	}
+	result := &models.MermaidImportResult{}
+	err = s.repo.DB().Transaction(func(tx *gorm.DB) error {
+		if err := lockStandardReferences(tx, tenantID, standardReferencesFromMermaid(parsed)...); err != nil {
 			return err
 		}
 		revision, err := repository.LockEntityModelRevision(tx, tenantID)
@@ -495,35 +639,23 @@ func (s *EntityService) ImportFromMermaid(tenantID, userID int64, req *models.Me
 		if err := requireVersion(revision.Revision, req.Revision); err != nil {
 			return err
 		}
-		var existingEntities []models.Entity
-		if err := tx.Where("tenant_id = ?", tenantID).Find(&existingEntities).Error; err != nil {
+		plan, err := s.buildMermaidImportPlan(tx, tenantID, revision.Revision, parsed)
+		if err != nil {
 			return err
 		}
-		for _, entity := range existingEntities {
-			if entity.Status != "draft" {
-				return apperrors.Conflict("entity_state_conflict", i18n.MsgEntityStateConflict)
-			}
+		if len(plan.preview.Conflicts) > 0 {
+			return apperrors.Conflict("mermaid_import_conflict", i18n.MsgMermaidImportConflict)
 		}
 		entityRepo := repository.NewEntityRepository(tx)
-		relationRepo := repository.NewEntityRelationRepository(tx)
-		if err := tx.Where("tenant_id = ?", tenantID).Delete(&models.EntityRelation{}).Error; err != nil {
-			return err
-		}
-		if err := tx.Where("tenant_id = ?", tenantID).Delete(&models.Entity{}).Error; err != nil {
-			return err
-		}
-
-		entityIDs := make(map[string]int64, len(parsed.Entities))
-		for _, definition := range parsed.Entities {
+		for _, definition := range plan.newEntities {
 			entity := &models.Entity{
 				TenantID: tenantID, DomainID: definition.DomainID, Name: definition.DisplayName,
 				Code: definition.Name, Description: definition.Description, Status: "draft", Version: 1, CreatedBy: userID,
 			}
 			if err := entityRepo.Create(entity); err != nil {
-				return fmt.Errorf("创建实体 %s: %w", definition.Name, err)
+				return modelResourceError(err, "entity_code", i18n.MsgEntityCodeConflict)
 			}
-			entityIDs[definition.Name] = entity.ID
-			result.CreatedEntities++
+			plan.entityIDs[definition.Name] = entity.ID
 			for _, definition := range definition.Attributes {
 				attribute := &models.EntityAttribute{
 					EntityID: entity.ID, ElementID: definition.ElementID, Name: definition.DisplayName,
@@ -531,22 +663,29 @@ func (s *EntityService) ImportFromMermaid(tenantID, userID int64, req *models.Me
 					Nullable: definition.Nullable, Description: definition.Description, SortOrder: definition.SortOrder,
 				}
 				if err := entityRepo.CreateAttribute(attribute); err != nil {
-					return fmt.Errorf("创建实体 %s 的属性 %s: %w", entity.Code, definition.Name, err)
+					return modelResourceError(err, "entity_attribute_column", i18n.MsgAttributeColumnConflict)
 				}
 			}
 		}
-		for _, definition := range parsed.Relations {
+		relationRepo := repository.NewEntityRelationRepository(tx)
+		for _, definition := range plan.newRelations {
 			relation := &models.EntityRelation{
-				TenantID: tenantID, SourceEntity: entityIDs[definition.Source], TargetEntity: entityIDs[definition.Target],
+				TenantID: tenantID, SourceEntity: plan.entityIDs[definition.Source], TargetEntity: plan.entityIDs[definition.Target],
 				RelationType: ConvertRelationType(definition.Symbol), Name: definition.Label,
 				Description: definition.Description, Version: 1,
 			}
 			if err := relationRepo.Create(relation); err != nil {
-				return fmt.Errorf("创建关系 %s -> %s: %w", definition.Source, definition.Target, err)
+				return modelResourceError(err, "entity_relation", i18n.MsgRelationConflict)
 			}
-			result.CreatedRelations++
 		}
-		result.Revision, err = repository.AdvanceEntityModelRevision(tx, tenantID, revision.Revision)
+		result.CreatedEntities = plan.preview.CreatedEntities
+		result.UnchangedEntities = plan.preview.UnchangedEntities
+		result.CreatedRelations = plan.preview.CreatedRelations
+		result.UnchangedRelations = plan.preview.UnchangedRelations
+		result.Revision = revision.Revision
+		if result.CreatedEntities > 0 || result.CreatedRelations > 0 {
+			result.Revision, err = repository.AdvanceEntityModelRevision(tx, tenantID, revision.Revision)
+		}
 		return err
 	})
 	if err != nil {
@@ -555,11 +694,17 @@ func (s *EntityService) ImportFromMermaid(tenantID, userID int64, req *models.Me
 	return result, nil
 }
 
-// ExportToMermaid 导出实体和关系为Mermaid代码
-func (s *EntityService) ExportToMermaid(tenantID int64) (*models.MermaidExportResponse, error) {
+// ExportToMermaid 按可选业务域导出 Markdown Mermaid 文档。
+func (s *EntityService) ExportToMermaid(tenantID int64, domainID *int64) (*models.MermaidExportResponse, error) {
+	if !validOptionalID(domainID) {
+		return nil, invalidRequest()
+	}
+	if err := s.validateReferences(tenantID, domainID, nil); err != nil {
+		return nil, err
+	}
 	response := &models.MermaidExportResponse{}
 	err := s.repo.DB().Transaction(func(tx *gorm.DB) error {
-		revision, err := repository.LockEntityModelRevision(tx, tenantID)
+		_, err := repository.LockEntityModelRevision(tx, tenantID)
 		if err != nil {
 			return err
 		}
@@ -569,11 +714,26 @@ func (s *EntityService) ExportToMermaid(tenantID int64) (*models.MermaidExportRe
 		if err != nil {
 			return err
 		}
+		if domainID != nil {
+			filtered := make([]models.Entity, 0, len(entities))
+			for _, entity := range entities {
+				if entity.DomainID != nil && *entity.DomainID == *domainID {
+					filtered = append(filtered, entity)
+				}
+			}
+			entities = filtered
+		}
 		relations, err := relationRepo.ListByTenantID(tenantID)
 		if err != nil {
 			return err
 		}
-		code := "erDiagram\n"
+		document := MermaidDocumentMetadata{Format: mermaidDocumentFormat, Scope: "all"}
+		if domainID != nil {
+			document.Scope = "domain"
+			document.DomainID = domainID
+		}
+		documentJSON, _ := json.Marshal(document)
+		code := "erDiagram\n  %% addp:document " + string(documentJSON) + "\n"
 
 		// 实体定义
 		for _, entity := range entities {
@@ -624,8 +784,9 @@ func (s *EntityService) ExportToMermaid(tenantID int64) (*models.MermaidExportRe
 				code += "  " + sourceEntity.Code + " " + ConvertToMermaidSymbol(relation.RelationType) + " " + targetEntity.Code + " : " + strconv.Quote(relation.Name) + "\n"
 			}
 		}
-		response.MermaidCode = code
-		response.Revision = revision.Revision
+		response.Markdown = "# ADDP Entity Relationship Diagram\n\n```mermaid\n" + code + "```\n"
+		response.Scope = document.Scope
+		response.DomainID = document.DomainID
 		return nil
 	})
 	if err != nil {

@@ -75,7 +75,7 @@ func TestPersistedAuthorizationRehydratesDevelopQueryWithoutCredentialMaterial(t
 		IssuedAuthorizationVersion: &version,
 	}
 	queryService := &QueryExecutionService{executor: &DevExecutor{
-		sqlEngine: NewSQLEngineService(&config.Config{DefaultQueryTimeout: 30, MaxQueryTimeout: 300}, nil, nil),
+		sqlEngine: NewSQLEngineService(&config.Config{}, nil, nil),
 	}}
 	authorization, err := queryService.persistedAuthorization(context.Background(), execution, &models.DevTask{
 		DevType: commonExecution.TaskTypeQuery, Timeout: 30,
@@ -353,7 +353,7 @@ func TestDevQueryTaskFromExecutionUsesFrozenSnapshot(t *testing.T) {
 	execution := &commonExecution.TaskExecution{
 		TenantID: 7, TaskType: commonExecution.TaskTypeQuery,
 		ExecutionConfig: commonModels.JSONMap{
-			"engine_id": 9, "timeout": 45,
+			"engine_id": 9, "timeout": 45, "query_result_limit": 2,
 			"content":            commonModels.JSONMap{"query_type": "sql", "query": "SELECT :limit", "query_parameters": []interface{}{map[string]interface{}{"name": "limit", "type": "integer", "default": 1}}},
 			"runtime_parameters": commonModels.JSONMap{"limit": 3},
 		},
@@ -362,8 +362,14 @@ func TestDevQueryTaskFromExecutionUsesFrozenSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("devQueryTaskFromExecution: %v", err)
 	}
-	if task.Timeout != 45 || task.GetEngineID() == nil || *task.GetEngineID() != 9 || task.RuntimeParameters["limit"] != 3 {
+	if task.Timeout != 45 || task.QueryResultLimit != 2 || task.GetEngineID() == nil || *task.GetEngineID() != 9 || task.RuntimeParameters["limit"] != 3 {
 		t.Fatalf("task snapshot = %#v", task)
+	}
+	for _, invalid := range []interface{}{nil, 0, -1, 1.5, "2"} {
+		execution.ExecutionConfig["query_result_limit"] = invalid
+		if _, err := devQueryTaskFromExecution(execution); err == nil {
+			t.Fatalf("invalid result limit snapshot accepted: %v", invalid)
+		}
 	}
 }
 

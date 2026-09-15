@@ -65,7 +65,7 @@ DuckDB 执行前从 SQL 中解析已注册的 Source Engine 引用，为本次 e
 
 即时查询 execution 使用 `module=develop`、`task_type=query`、`source_task_id=null`。请求在 `execution_config` 中保存查询内容、真实 Engine ID 和 timeout 快照。查询工作台不调用同步返回结果的 `/develop/execute`。
 
-成功结果位于 `metadata.result`，至少包含 `columns`、`rows_count`、`rows_affected`、`effect`、`result_kind`、`result_limit`、`truncated` 和 `summary.preview_rows`；图查询可以附带 `graph_data`。结果预览上限由服务端 `QUERY_RESULT_LIMIT` 控制，默认 500 行。
+成功结果位于 `metadata.result`，至少包含 `columns`、`rows_count`、`rows_affected`、`effect`、`result_kind`、`result_limit`、`truncated` 和 `summary.preview_rows`；图查询可以附带 `graph_data`。结果预览上限由服务端 Develop 配置中的 `query_result_limit` 控制，默认 500 行。
 
 完整导出不使用 `metadata.result.rows`。该入口在单 Engine 表格查询成功后显示，不以预览是否截断为前提；DuckDB 联邦查询在具备统一流式查询 Provider 前不提供完整导出。用户只选择格式并填写文件名，Develop 后端从原查询 execution 恢复冻结查询与有效参数，通过 `common/exportartifact` 创建 Transfer `source_task_id=null` 的 bounded `sync` execution，将结果暂存到 infra；页面轮询导出会话，完成后通过 Resource Ticket 保护的文件入口直接下载。前端不得选择业务存储、提交或展示 Transfer task ID，也不得自行拼装 Transfer planner 配置、infra 路径或预览 CSV。
 
@@ -266,7 +266,7 @@ CREATE TABLE common.task_executions (
 3. **调度能力**: 当前 Develop 不声明自身定时调度能力；如后续需要，必须先补 owner scheduler / `next_run_at` due claim 闭环。
 4. **资源权限**: 用户只能访问所属租户的资源和任务
 5. **执行授权**: SQL 效果分类、非 SQL 只读边界和 Execution Authorization 由后端强制执行
-6. **结果限制**: `QUERY_RESULT_LIMIT` 只控制 execution 预览，不代表查询数据总量
+6. **结果限制**: Develop 配置中的 `query_result_limit` 只控制 execution 预览，不代表查询数据总量
 
 ## 后续扩展
 

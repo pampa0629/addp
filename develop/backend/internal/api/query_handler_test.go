@@ -379,7 +379,7 @@ func newAuthorizedQueryHandlerForTest(systemURL string) *QueryHandler {
 		systemURL, staticDevelopServiceTokens("addp_at_service"), nil,
 	)
 	sqlEngine := service.NewSQLEngineService(
-		&config.Config{DefaultQueryTimeout: 30, MaxQueryTimeout: 300, EncryptionKey: []byte("preflight-test-key")},
+		&config.Config{EncryptionKey: []byte("preflight-test-key")},
 		systemService,
 		commonClient.NewSystemExecutionAuthorizationClient(systemURL, nil),
 	)

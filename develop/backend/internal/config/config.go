@@ -34,17 +34,9 @@ type Config struct {
 	ManagerServiceURL  string
 	CopilotServiceURL  string
 
-	// SQL 执行配置
-	DefaultQueryTimeout int // 默认查询超时(秒)
-	MaxQueryTimeout     int // 最大查询超时(秒)
-	QueryResultLimit    int // execution 结果预览最大行数
-
-	QueryConcurrency          int
-	QueryPerEngineConcurrency int
-	QueryLeaseDuration        time.Duration
-	QueryHeartbeatInterval    time.Duration
-	QueryClaimInterval        time.Duration
-	QueryIdleMaxInterval      time.Duration
+	QueryLeaseDuration     time.Duration
+	QueryHeartbeatInterval time.Duration
+	QueryClaimInterval     time.Duration
 
 	// Redis 配置（资源回收 request/result）
 	RedisHost     string
@@ -84,16 +76,9 @@ func Load() *Config {
 		ManagerServiceURL:  getEnv("MANAGER_URL", "http://localhost:8081"),
 		CopilotServiceURL:  getEnv("COPILOT_URL", "http://localhost:8087"),
 
-		// SQL 执行配置
-		DefaultQueryTimeout:       30,
-		MaxQueryTimeout:           300,
-		QueryResultLimit:          getEnvAsInt("QUERY_RESULT_LIMIT", 500),
-		QueryConcurrency:          getEnvAsInt("DEVELOP_QUERY_CONCURRENCY", 20),
-		QueryPerEngineConcurrency: getEnvAsInt("DEVELOP_QUERY_PER_ENGINE_CONCURRENCY", 5),
-		QueryLeaseDuration:        time.Duration(getEnvAsInt("DEVELOP_QUERY_LEASE_SECONDS", 120)) * time.Second,
-		QueryHeartbeatInterval:    time.Duration(getEnvAsInt("DEVELOP_QUERY_HEARTBEAT_SECONDS", 30)) * time.Second,
-		QueryClaimInterval:        time.Duration(getEnvAsInt("DEVELOP_QUERY_CLAIM_INTERVAL_SECONDS", 1)) * time.Second,
-		QueryIdleMaxInterval:      time.Duration(getEnvAsInt("DEVELOP_QUERY_IDLE_MAX_INTERVAL_SECONDS", 30)) * time.Second,
+		QueryLeaseDuration:     time.Duration(getEnvAsInt("DEVELOP_QUERY_LEASE_SECONDS", 120)) * time.Second,
+		QueryHeartbeatInterval: time.Duration(getEnvAsInt("DEVELOP_QUERY_HEARTBEAT_SECONDS", 30)) * time.Second,
+		QueryClaimInterval:     time.Duration(getEnvAsInt("DEVELOP_QUERY_CLAIM_INTERVAL_SECONDS", 1)) * time.Second,
 
 		// Redis 配置
 		RedisHost:     getEnv("REDIS_HOST", "localhost"),

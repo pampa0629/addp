@@ -39,6 +39,7 @@ const (
 	MsgRelationStateConflict    = "model.entity_relation.state_conflict"
 	MsgRelationSelfConflict     = "model.entity_relation.self_conflict"
 	MsgRelationConflict         = "model.entity_relation.conflict"
+	MsgMermaidImportConflict    = "model.mermaid.import_conflict"
 
 	// 实体关系
 	MsgRelationNotFound = "model.entity_relation.not_found"

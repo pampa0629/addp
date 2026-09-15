@@ -248,3 +248,9 @@ other = "启动任务执行失败"
 
 [develop.query.parameter_definitions_invalid]
 other = "查询参数定义无效，请检查参数名、类型、默认值和查询中的参数引用"
+
+[develop.query_policy.invalid]
+other = "查询策略读取或更新失败"
+
+[develop.query_policy.conflict]
+other = "查询策略已被修改，请刷新后重试"

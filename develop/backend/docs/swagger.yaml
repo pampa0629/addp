@@ -1311,6 +1311,44 @@ definitions:
         description: 算子类型 (scan/transfer/spatial等)
         type: string
     type: object
+  github_com_addp_develop_backend_internal_service.QueryPolicyResponse:
+    properties:
+      default_query_timeout:
+        type: integer
+      inherited:
+        type: boolean
+      max_query_timeout:
+        type: integer
+      query_concurrency:
+        type: integer
+      query_per_engine_concurrency:
+        type: integer
+      query_result_limit:
+        type: integer
+      scope_type:
+        type: string
+      tenant_id:
+        type: integer
+      version:
+        type: integer
+    type: object
+  github_com_addp_develop_backend_internal_service.UpdateQueryPolicyInput:
+    properties:
+      default_query_timeout:
+        type: integer
+      max_query_timeout:
+        type: integer
+      query_concurrency:
+        type: integer
+      query_per_engine_concurrency:
+        type: integer
+      query_result_limit:
+        type: integer
+      version:
+        type: integer
+    required:
+    - default_query_timeout
+    type: object
   github_com_addp_develop_backend_internal_service.WorkflowValidationIssue:
     properties:
       code:
@@ -3388,8 +3426,7 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_service.QueryPolicyResponse'
       security:
       - BearerAuth: []
       summary: 获取查询策略 | Get query policy
@@ -3401,22 +3438,24 @@ paths:
     put:
       consumes:
       - application/json
+      description: 平台维护并发、超时和预览策略；租户仅可覆盖默认超时。保存后并发热更新，新执行冻结超时和预览上限。 | Platform manages
+        concurrency, timeout and preview limits; tenants override only the default
+        timeout. Concurrency reloads without restart; new executions freeze their
+        timeout and preview limits.
       parameters:
       - description: 查询策略 | Query policy
         in: body
         name: request
         required: true
         schema:
-          additionalProperties: true
-          type: object
+          $ref: '#/definitions/github_com_addp_develop_backend_internal_service.UpdateQueryPolicyInput'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_service.QueryPolicyResponse'
         "409":
           description: Conflict
           schema:

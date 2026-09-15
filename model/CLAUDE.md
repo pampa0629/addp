@@ -167,12 +167,12 @@ model/
 | sort_order | int | 显示顺序 |
 | version | int64 | DWLayer 的资源并发版本，从 1 开始 |
 
-### `model.entity_model_revisions` — Tenant 实体模型集合修订
+### `model.entity_model_revisions` — Mermaid 导入预览基线
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | tenant_id | int64 PK | Tenant 唯一集合修订行 |
-| revision | int64 | Mermaid 全量导入的集合修订版本，从 1 开始 |
+| revision | int64 | Mermaid 导入预览到确认提交之间的 Tenant 集合基线，从 1 开始 |
 
 ## API 端点（`/api/v1/model`）
 
@@ -186,15 +186,16 @@ PUT    /api/v1/model/entities/:id           # 更新
 DELETE /api/v1/model/entities/:id           # 删除
 POST   /api/v1/model/entities/:id/approve   # 审批通过（status: draft → approved）
 GET/POST/PUT/DELETE .../attributes       # 实体属性 CRUD
-POST   /api/v1/model/entities/import-mermaid # 从 Mermaid ER 图导入
-GET    /api/v1/model/entities/export-mermaid # 导出 Mermaid ER 图
+POST   /api/v1/model/entities/import-mermaid/preview # 预览 Markdown Mermaid 增量导入
+POST   /api/v1/model/entities/import-mermaid         # 确认 Markdown Mermaid 增量导入
+GET    /api/v1/model/entities/export-mermaid         # 按可选 domain_id 导出 Markdown Mermaid
 ```
 
 Entity、LogicalTable、DWLayer 和 EntityRelation 是独立并发版本主体。EntityAttribute 使用父 Entity 版本；LogicalField、TableRelation、DimensionHierarchy 使用父 LogicalTable 版本；MetricImplementation 使用独立版本，其修订使用实现版本。已有资源及聚合子资源的所有写操作都在 JSON body 中携带对应 `version`，成功后返回新版本；不接受 query、Header 或服务端版本兜底。
 
-Mermaid 导出返回 `{ "mermaid_code": "...", "revision": 1 }`，导入提交同一结构并在单个事务内推进 Tenant 实体模型集合 `revision`。不得保留只返回字符串或不带修订版本的并行接口。
+Mermaid 导出返回 `{ "markdown": "...", "scope": "domain", "domain_id": 1 }`；省略 `domain_id` 表示全域。预览提交 `{ "markdown": "..." }` 并返回创建、未变更、冲突计划与 `revision`；确认导入提交同一 Markdown 和预览 `revision`。文件缺失成员不表示删除，同编码不同定义明确冲突，不保留全量替换或自动 upsert 路线。
 
-Tenant 实体模型集合的 `revision` 由所有 Entity、EntityAttribute、EntityRelation 写入推进，不只由 Mermaid 导入推进。Mermaid ADDP 元数据必须完整往返这些资源的可编辑业务字段，导出后立即导入不得丢失 domain、描述、Standard 引用或排序信息。
+Tenant 实体模型集合的 `revision` 由所有 Entity、EntityAttribute、EntityRelation 写入推进，确保预览后发生的普通写入会使确认导入返回版本冲突。Mermaid ADDP 元数据必须完整保存这些资源的可编辑业务字段。
 
 ### 实体关系
 
@@ -256,7 +257,7 @@ Model 和 Standard 使用不同的 PostgreSQL Schema，**无数据库外键约�
 
 Model 是 `model.logical_model.*` 第一批 Permission 的唯一 owner，机器可读事实源是 [authorization/permissions.yaml](authorization/permissions.yaml)。该 Manifest 由 `common/authorization` 在构建/发布期统一发现、校验和聚合，Model 服务启动时不向 System 动态注册 Permission。
 
-Entity、EntityRelation、DWLayer 和 LogicalModel 分别使用 `model.entity.*`、`model.entity_relation.*`、`model.dw_layer.*`、`model.logical_model.*`。EntityAttribute 是 Entity 聚合内子资源；LogicalField、TableRelation、DimensionHierarchy 是 LogicalModel 聚合内子资源；MetricImplementation 是独立聚合，使用 model.metric_implementation 精确权限。Mermaid 导入是破坏性全量替换，按 Entity 与 EntityRelation 的 create/delete 执行 all-of 校验；导出按两者的 read 执行 all-of 校验。已审批实体必须先全部退回草稿，导入不会绕过生命周期约束。
+Entity、EntityRelation、DWLayer 和 LogicalModel 分别使用 `model.entity.*`、`model.entity_relation.*`、`model.dw_layer.*`、`model.logical_model.*`。EntityAttribute 是 Entity 聚合内子资源；LogicalField、TableRelation、DimensionHierarchy 是 LogicalModel 聚合内子资源；MetricImplementation 是独立聚合，使用 model.metric_implementation 精确权限。Mermaid 导入预览和确认均按 Entity 与 EntityRelation 的 create 执行 all-of 校验；导出按两者的 read 执行 all-of 校验。导入只创建缺失成员，不要求全租户已审批实体退回草稿；新关系仍不得绕过两端实体的生命周期约束。
 
 并发契约以 [Model 概念与数据约束规范](docs/model概念与数据约束规范.md) 为事实源。后端必须把版本校验、生命周期校验、聚合写入和版本递增放在同一事务中；前端收到 `409 resource_version_conflict` 后保留本地未保存状态，不自动重试。
 
@@ -266,7 +267,7 @@ EntityRelation 使用完整 `PUT`：请求包含变更后的 source_entity、tar
 
 ### Mermaid 解析器
 
-`backend/internal/service/mermaid_parser.go` 实现了 Mermaid ER 图的解析，支持将 ER 图批量导入为实体和关系。适合从已有文档快速初始化数据模型。
+`backend/internal/service/mermaid_parser.go` 实现了 ADDP Markdown Mermaid ER 文档的解析，支持预览后将缺失的实体和关系批量创建。它不覆盖或删除现有模型。
 
 ### Entity 与逻辑表状态机
 

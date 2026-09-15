@@ -101,6 +101,27 @@ def validate_registration(repository: Path) -> list[str]:
         )
         if direct_selector is None and not matrix_selector:
             errors.append(f"{module}: shared module change selector is missing from {target} job")
+        package = json.loads((repository / module / "frontend/package.json").read_text(encoding="utf-8"))
+        browser_scripts = [
+            name for name, command in package.get("scripts", {}).items()
+            if name.startswith("test:e2e") and "playwright test" in command
+        ]
+        if browser_scripts:
+            recipe = re.search(rf"(?m)^{re.escape(target)}:[^\n]*\n(?P<body>(?:[\t ][^\n]*\n|\n)*)", makefile)
+            if not recipe or not any(
+                re.search(rf"npm run {re.escape(name)}(?:\s|$)", recipe.group("body"))
+                for name in browser_scripts
+            ):
+                errors.append(f"{module}: root frontend gate must run a declared Playwright suite")
+            if not re.search(r"playwright install (?:--with-deps )?chromium", target_job):
+                errors.append(f"{module}: frontend CI job must install Chromium")
+            if "matrix.playwright" in target_job:
+                entry = re.search(
+                    rf"(?m)^\s*- module:\s*{re.escape(module)}\s*\n(?P<body>(?:(?!\s*- module:|\s*steps:)[^\n]*\n)*)",
+                    target_job,
+                )
+                if not entry or not re.search(r"(?m)^\s*playwright:\s*true\s*$", entry.group("body")):
+                    errors.append(f"{module}: frontend CI matrix must enable Playwright")
         test_target = re.search(r"(?m)^test\s*:(?P<dependencies>[^\n]*)", logical_makefile)
         if (
             test_target is None

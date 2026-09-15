@@ -8,6 +8,7 @@ import (
 
 	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/develop/backend/internal/models"
 	"github.com/google/uuid"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -29,6 +30,32 @@ func TestQueryExecutionQueueAgainstPostgres(t *testing.T) {
 	defer tx.Rollback()
 	if err := commonExecution.EnsureStore(tx); err != nil {
 		t.Fatal(err)
+	}
+
+	// Verify the deployed GORM schema and persisted limits on PostgreSQL.
+	if err := tx.Exec("CREATE SCHEMA IF NOT EXISTS develop").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.AutoMigrate(&models.QueryPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	policyRepo := NewQueryPolicyRepository(tx)
+	tenant := uint(time.Now().UnixNano())
+	policy := &models.QueryPolicy{ScopeType: "tenant", TenantID: &tenant, DefaultQueryTimeout: 30, MaxQueryTimeout: 300, QueryResultLimit: 500, UpdatedBy: 1}
+	if err := policyRepo.Save(context.Background(), policy, 0); err != nil {
+		t.Fatal(err)
+	}
+	if policy.QueryConcurrency != 20 || policy.QueryPerEngineConcurrency != 5 {
+		t.Fatalf("schema defaults: %#v", policy)
+	}
+	version := policy.Version
+	policy.QueryConcurrency, policy.QueryPerEngineConcurrency = 12, 3
+	if err := policyRepo.Save(context.Background(), policy, version); err != nil {
+		t.Fatal(err)
+	}
+	storedPolicy, err := NewQueryPolicyRepository(tx).Get(context.Background(), "tenant", &tenant)
+	if err != nil || storedPolicy.QueryConcurrency != 12 || storedPolicy.QueryPerEngineConcurrency != 3 {
+		t.Fatalf("persisted policy: %#v %v", storedPolicy, err)
 	}
 
 	createdAt := time.Unix(1, 0).UTC()

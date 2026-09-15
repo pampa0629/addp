@@ -460,19 +460,52 @@ func (h *EntityHandler) DeleteAttribute(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
-// ImportMermaid POST /api/v1/model/entities/import-mermaid
-// @Summary 从 Mermaid ER 图导入实体 | Import entities from Mermaid ER diagram
+// PreviewMermaidImport POST /api/v1/model/entities/import-mermaid/preview
+// @Summary 预览 Mermaid Markdown 增量导入 | Preview incremental Mermaid Markdown import
 // @Tags Model
 // @Accept json
 // @Produce json
-// @Param body body models.MermaidImportRequest true "导入请求 | Import request"
+// @Param body body models.MermaidImportPreviewRequest true "导入预览请求 | Import preview request"
+// @Success 200 {object} models.MermaidImportPreview "导入预览 | Import preview"
+// @Failure 400 {object} models.ErrorResponse "Markdown 或 Mermaid 内容无效 | Invalid Markdown or Mermaid content"
+// @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
+// @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
+// @Failure 404 {object} models.ErrorResponse "业务域或数据元不存在 | Domain or data element not found"
+// @Failure 503 {object} models.ErrorResponse "标准引用校验服务不可用 | Standard reference validation unavailable"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["model.entity.create","model.entity_relation.create"]
+// @Router /entities/import-mermaid/preview [post]
+// @Security BearerAuth
+func (h *EntityHandler) PreviewMermaidImport(c *gin.Context) {
+	var req models.MermaidImportPreviewRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, invalidParamsResponse(c))
+		return
+	}
+
+	result, err := h.svc.PreviewMermaidImport(getTenantID(c), &req)
+	if err != nil {
+		writeServiceError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+// ImportMermaid POST /api/v1/model/entities/import-mermaid
+// @Summary 确认 Mermaid Markdown 增量导入 | Apply incremental Mermaid Markdown import
+// @Tags Model
+// @Accept json
+// @Produce json
+// @Param body body models.MermaidImportRequest true "确认导入请求 | Apply import request"
 // @Success 200 {object} models.MermaidImportResult "导入结果 | Import result"
 // @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
 // @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
-// @Failure 400 {object} models.ErrorResponse "Mermaid 内容无效 | Invalid Mermaid content"
-// @Failure 409 {object} models.ErrorResponse "存在已审批实体 | Approved entities exist"
+// @Failure 400 {object} models.ErrorResponse "Markdown 或 Mermaid 内容无效 | Invalid Markdown or Mermaid content"
+// @Failure 404 {object} models.ErrorResponse "业务域或数据元不存在 | Domain or data element not found"
+// @Failure 409 {object} models.ErrorResponse "预览基线已过期或存在导入冲突 | Preview baseline expired or import conflicts exist"
+// @Failure 503 {object} models.ErrorResponse "标准引用校验服务不可用 | Standard reference validation unavailable"
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["model.entity.create","model.entity.delete","model.entity_relation.create","model.entity_relation.delete"]
+// @x-addp-required-permissions ["model.entity.create","model.entity_relation.create"]
 // @Router /entities/import-mermaid [post]
 // @Security BearerAuth
 func (h *EntityHandler) ImportMermaid(c *gin.Context) {
@@ -495,22 +528,35 @@ func (h *EntityHandler) ImportMermaid(c *gin.Context) {
 }
 
 // ExportMermaid GET /api/v1/model/entities/export-mermaid
-// @Summary 导出 Mermaid ER 图 | Export Mermaid ER diagram
+// @Summary 导出 Mermaid Markdown ER 图 | Export Mermaid Markdown ER diagram
 // @Tags Model
 // @Produce json
-// @Success 200 {object} models.MermaidExportResponse "Mermaid ER 图代码 | Mermaid ER diagram code"
+// @Param domain_id query int false "业务域 ID；省略时导出全部业务域 | Business domain ID; omit to export all domains" minimum(1)
+// @Success 200 {object} models.MermaidExportResponse "Markdown Mermaid ER 图文档 | Markdown Mermaid ER document"
+// @Failure 400 {object} models.ErrorResponse "业务域 ID 无效 | Invalid domain ID"
 // @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
 // @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
+// @Failure 404 {object} models.ErrorResponse "业务域不存在 | Domain not found"
+// @Failure 503 {object} models.ErrorResponse "标准引用校验服务不可用 | Standard reference validation unavailable"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["model.entity.read","model.entity_relation.read"]
 // @Router /entities/export-mermaid [get]
 // @Security BearerAuth
 func (h *EntityHandler) ExportMermaid(c *gin.Context) {
 	tenantID := getTenantID(c)
+	var domainID *int64
+	if raw, exists := c.Request.URL.Query()["domain_id"]; exists {
+		value, err := parseSinglePositiveInt64(raw)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, invalidParamsResponse(c))
+			return
+		}
+		domainID = &value
+	}
 
-	mermaidCode, err := h.svc.ExportToMermaid(tenantID)
+	mermaidCode, err := h.svc.ExportToMermaid(tenantID, domainID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, operationFailedResponse(c))
+		writeServiceError(c, err)
 		return
 	}
 

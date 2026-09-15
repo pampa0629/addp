@@ -69,7 +69,7 @@ Notebook、查询和工作流 Copilot 都只生成待确认的候选结果。Not
 
 ### 查询执行超时怎么办？
 
-提高 `timeout` 参数（默认 30 秒，最长 5 分钟）或优化查询。结果预览行数由 `QUERY_RESULT_LIMIT` 控制。详见 [CLAUDE.md#场景1：执行SQL查询](./CLAUDE.md#场景-1执行-sql-查询)
+提高 `timeout` 参数（默认 30 秒，最长 5 分钟）或优化查询。结果预览行数由 Develop 配置中的 `query_result_limit` 控制。详见 [CLAUDE.md#场景1：执行SQL查询](./CLAUDE.md#场景-1执行-sql-查询)
 
 ### 工作流执行失败？
 

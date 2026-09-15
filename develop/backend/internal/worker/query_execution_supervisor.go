@@ -10,25 +10,26 @@ import (
 
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/develop/backend/internal/repository"
-	"github.com/addp/develop/backend/internal/service"
 )
 
 type QueryExecutionSupervisorConfig struct {
-	InstanceID           string
-	Concurrency          int
-	PerEngineConcurrency int
-	LeaseDuration        time.Duration
-	HeartbeatInterval    time.Duration
-	ClaimInterval        time.Duration
-	IdleMaxInterval      time.Duration
+	InstanceID         string
+	ResolveConcurrency func(context.Context) (int, int, error)
+	LeaseDuration      time.Duration
+	HeartbeatInterval  time.Duration
+	ClaimInterval      time.Duration
 }
 
 type QueryExecutionSupervisor struct {
-	queries         *repository.QueryExecutionRepository
-	service         *service.QueryExecutionService
+	queries *repository.QueryExecutionRepository
+	service interface {
+		Execute(context.Context, *commonExecution.TaskExecution, commonExecution.Lease) error
+	}
 	config          QueryExecutionSupervisorConfig
 	logger          *slog.Logger
 	active          atomic.Int64
+	capacity        atomic.Int64
+	nextOwner       uint64
 	wake            chan struct{}
 	activeEnginesMu sync.Mutex
 	activeEngines   map[uint]int
@@ -36,16 +37,18 @@ type QueryExecutionSupervisor struct {
 
 func NewQueryExecutionSupervisor(
 	queries *repository.QueryExecutionRepository,
-	queryService *service.QueryExecutionService,
+	queryService interface {
+		Execute(context.Context, *commonExecution.TaskExecution, commonExecution.Lease) error
+	},
 	config QueryExecutionSupervisorConfig,
 	logger *slog.Logger,
 ) (*QueryExecutionSupervisor, error) {
 	if queries == nil || queryService == nil {
 		return nil, fmt.Errorf("Develop Query Execution Supervisor dependencies are required")
 	}
-	if config.InstanceID == "" || config.Concurrency <= 0 || config.PerEngineConcurrency <= 0 || config.LeaseDuration <= 0 ||
+	if config.InstanceID == "" || config.ResolveConcurrency == nil || config.LeaseDuration <= 0 ||
 		config.HeartbeatInterval <= 0 || config.ClaimInterval <= 0 ||
-		config.IdleMaxInterval < config.ClaimInterval || config.HeartbeatInterval >= config.LeaseDuration {
+		config.HeartbeatInterval >= config.LeaseDuration {
 		return nil, fmt.Errorf("Develop Query Execution Supervisor config is invalid")
 	}
 	if logger == nil {
@@ -57,10 +60,12 @@ func NewQueryExecutionSupervisor(
 	}, nil
 }
 
+func (s *QueryExecutionSupervisor) Capacity() int { return int(s.capacity.Load()) }
+
 func (s *QueryExecutionSupervisor) ActiveCount() int { return int(s.active.Load()) }
 
-// Notify interrupts local idle backoff after this Backend commits a pending
-// query. PostgreSQL polling remains the cross-instance fallback.
+// Notify wakes scheduling after a local query or policy change. PostgreSQL
+// polling discovers changes committed by other Backend instances.
 func (s *QueryExecutionSupervisor) Notify() {
 	if s == nil {
 		return
@@ -79,100 +84,73 @@ func (s *QueryExecutionSupervisor) Run(ctx context.Context, canClaim func() bool
 		s.recoveryLoop(ctx, canClaim)
 	}()
 
-	availableSlots := make(chan int, s.config.Concurrency)
-	for slot := 1; slot <= s.config.Concurrency; slot++ {
-		availableSlots <- slot
-	}
-	idleInterval := s.config.ClaimInterval
 	for ctx.Err() == nil {
-		worked := false
 		if canClaim == nil || canClaim() {
-			worked = s.claimAvailable(ctx, availableSlots, &group)
+			s.claimAvailable(ctx, &group)
 		}
-		if ctx.Err() != nil {
-			break
-		}
-		if worked {
-			idleInterval = s.config.ClaimInterval
-			continue
-		}
-		if len(availableSlots) == 0 {
-			select {
-			case <-ctx.Done():
-			case <-s.wake:
-			}
-			continue
-		}
-
-		timer := time.NewTimer(idleInterval)
+		timer := time.NewTimer(s.config.ClaimInterval)
 		select {
 		case <-ctx.Done():
-			if !timer.Stop() {
-				<-timer.C
-			}
 		case <-s.wake:
-			if !timer.Stop() {
-				<-timer.C
-			}
-			idleInterval = s.config.ClaimInterval
 		case <-timer.C:
-			idleInterval = nextIdleInterval(idleInterval, s.config.IdleMaxInterval)
 		}
+		timer.Stop()
 	}
 	group.Wait()
 }
 
-func (s *QueryExecutionSupervisor) claimAvailable(ctx context.Context, availableSlots chan int, group *sync.WaitGroup) bool {
-	worked := false
-	for {
-		select {
-		case slot := <-availableSlots:
-			owner := fmt.Sprintf("%s-%d", s.config.InstanceID, slot)
-			execution, lease, err := s.queries.ClaimNext(
-				ctx, owner, time.Now().UTC(), s.config.LeaseDuration, s.saturatedEngineIDs(),
-			)
-			if err != nil {
-				availableSlots <- slot
-				if ctx.Err() == nil {
-					s.logger.Error("claim Develop query execution failed", "owner", owner, "error", err)
-				}
-				return worked
-			}
-			if execution == nil || lease == nil {
-				availableSlots <- slot
-				return worked
-			}
-			worked = true
-			engineID, hasEngineID := queryExecutionEngineID(execution)
-			if hasEngineID {
-				s.reserveEngine(engineID)
-			}
-			s.active.Add(1)
-			group.Add(1)
-			go func(slot int, execution *commonExecution.TaskExecution, lease commonExecution.Lease, engineID uint, hasEngineID bool) {
-				defer group.Done()
-				defer func() {
-					if hasEngineID {
-						s.releaseEngine(engineID)
-					}
-					s.active.Add(-1)
-					availableSlots <- slot
-					s.Notify()
-				}()
-				s.processClaimed(ctx, execution, lease)
-			}(slot, execution, *lease, engineID, hasEngineID)
-		default:
-			return worked
+// Limits are read as one version before each scheduling pass. Running queries
+// keep their slots when limits shrink; only subsequent claims are throttled.
+func (s *QueryExecutionSupervisor) claimAvailable(ctx context.Context, group *sync.WaitGroup) {
+	concurrency, perEngine, err := s.config.ResolveConcurrency(ctx)
+	if err != nil || concurrency <= 0 || perEngine <= 0 || perEngine > concurrency {
+		if ctx.Err() == nil {
+			s.logger.Error("read Develop query concurrency failed", "error", err)
 		}
+		return
+	}
+	s.capacity.Store(int64(concurrency))
+	// Bound each pass so a continuous stream of fast queries cannot postpone
+	// reloading a changed policy indefinitely.
+	for claimed := 0; claimed < concurrency && ctx.Err() == nil && s.ActiveCount() < concurrency; claimed++ {
+		s.nextOwner++
+		owner := fmt.Sprintf("%s-%d", s.config.InstanceID, s.nextOwner)
+		execution, lease, err := s.queries.ClaimNext(ctx, owner, time.Now().UTC(), s.config.LeaseDuration, s.saturatedEngineIDs(perEngine))
+		if err != nil {
+			if ctx.Err() == nil {
+				s.logger.Error("claim Develop query execution failed", "error", err)
+			}
+			return
+		}
+		if execution == nil || lease == nil {
+			return
+		}
+		engineID, hasEngineID := queryExecutionEngineID(execution)
+		if hasEngineID {
+			s.reserveEngine(engineID)
+		}
+		s.active.Add(1)
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			defer func() {
+				if hasEngineID {
+					s.releaseEngine(engineID)
+				}
+				s.active.Add(-1)
+				s.Notify()
+			}()
+			s.processClaimed(ctx, execution, *lease)
+		}()
 	}
 }
 
-func (s *QueryExecutionSupervisor) saturatedEngineIDs() []uint {
+func (s *QueryExecutionSupervisor) saturatedEngineIDs(limit int) []uint {
 	s.activeEnginesMu.Lock()
 	defer s.activeEnginesMu.Unlock()
 	engineIDs := make([]uint, 0, len(s.activeEngines))
 	for engineID, count := range s.activeEngines {
-		if count >= s.config.PerEngineConcurrency {
+		if count >= limit {
 			engineIDs = append(engineIDs, engineID)
 		}
 	}
@@ -286,11 +264,4 @@ func (s *QueryExecutionSupervisor) recoveryLoop(ctx context.Context, canRecover 
 		case <-ticker.C:
 		}
 	}
-}
-
-func nextIdleInterval(current, maximum time.Duration) time.Duration {
-	if current >= maximum || current > maximum/2 {
-		return maximum
-	}
-	return current * 2
 }

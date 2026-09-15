@@ -60,6 +60,27 @@ func TestReporterAcceptsEmbeddedExecutionSupervisorRole(t *testing.T) {
 	}
 }
 
+func TestReporterPublishesLiveCapacityDuringDrain(t *testing.T) {
+	repo := NewRepository(newRuntimeHealthTestDB(t))
+	capacity := 20
+	reporter, err := NewReporter(repo, ReporterConfig{
+		InstanceID: "dynamic", Module: "develop", Role: RoleExecutionSupervisor, RuntimeName: "query",
+		CurrentCapacity: func() int { return capacity }, ActiveCount: func() int { return 12 },
+		Interval: time.Second, TTL: 3 * time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	reporter.publish(context.Background(), now)
+	capacity = 5
+	reporter.publish(context.Background(), now.Add(time.Second))
+	items, err := repo.ListSince(context.Background(), now.Add(-time.Second))
+	if err != nil || len(items) != 1 || items[0].Capacity != 5 || items[0].ActiveCount != 12 {
+		t.Fatalf("draining heartbeat=%#v %v", items, err)
+	}
+}
+
 func newRuntimeHealthTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})

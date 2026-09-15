@@ -76,6 +76,9 @@ other = "Self-referencing entity relations are not allowed"
 [model.entity_relation.conflict]
 other = "The same entity relation already exists"
 
+[model.mermaid.import_conflict]
+other = "The Mermaid import conflicts with the existing entity model. Revise the document using the preview results and try again"
+
 [model.logical_table.not_found]
 other = "Logical table not found"
 

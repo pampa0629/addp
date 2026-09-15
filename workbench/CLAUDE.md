@@ -32,3 +32,11 @@ Workbench 是面向数据消费者、以已发布 Service 为唯一数据入口�
 - Workbench 不代理真实数据查询，浏览器按 Descriptor operation 直接调用 Service。
 - 创作入口使用 Console iframe；正式数据应用运行入口只使用 Console 同 origin 的 `/data-apps/:application_id`，不增加第二条 iframe 运行 URL。
 - Workbench 不是 TaskProvider；在线查看、筛选和刷新不进入 Orchestrator。
+
+## 前端验证
+
+统一执行 `make test-workbench-frontend`，依次运行 Node 确定性测试、Playwright 浏览器回归和产品构建。首次运行前如缺少浏览器，执行 `npm --prefix workbench/frontend exec -- playwright install chromium`；CI 的 Workbench 前端矩阵负责安装 Chromium。
+
+`frontend/e2e/metric-publication.spec.js` 使用真实 Vue 页面和内存 HTTP fixture，覆盖契约变化后显式重配组件、保存与发布不可变修订、运行参数选择、异步 Descriptor 就绪、中英文显示及共享参数冲突。Model 的 `metric-workspace.spec.js` 负责服务来源重绑交互；Workbench 回归从重绑后的 Consumer Descriptor 边界开始，不跨模块读取 Model 内部事实。这些测试不等同于真实后端与数据库的在线联调。
+
+Playwright 自动管理独立的 `127.0.0.1:4190` Vite 测试服务，使用独立缓存并关闭 Gateway 代理，不接管已有开发服务。失败截图和 trace 写入系统临时目录 `addp-workbench-playwright-results`，CI 失败时上传对应 artifact。真实后端联调仍使用既有 `make test-online ONLINE_SUITE=workbench-service-consumption`，并满足该入口声明的环境条件。

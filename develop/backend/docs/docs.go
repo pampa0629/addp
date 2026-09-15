@@ -2309,8 +2309,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_service.QueryPolicyResponse"
                         }
                     }
                 },
@@ -2325,6 +2324,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "平台维护并发、超时和预览策略；租户仅可覆盖默认超时。保存后并发热更新，新执行冻结超时和预览上限。 | Platform manages concurrency, timeout and preview limits; tenants override only the default timeout. Concurrency reloads without restart; new executions freeze their timeout and preview limits.",
                 "consumes": [
                     "application/json"
                 ],
@@ -2342,8 +2342,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_service.UpdateQueryPolicyInput"
                         }
                     }
                 ],
@@ -2351,8 +2350,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_service.QueryPolicyResponse"
                         }
                     },
                     "409": {
@@ -5148,6 +5146,64 @@ const docTemplate = `{
                 "type": {
                     "description": "算子类型 (scan/transfer/spatial等)",
                     "type": "string"
+                }
+            }
+        },
+        "github_com_addp_develop_backend_internal_service.QueryPolicyResponse": {
+            "type": "object",
+            "properties": {
+                "default_query_timeout": {
+                    "type": "integer"
+                },
+                "inherited": {
+                    "type": "boolean"
+                },
+                "max_query_timeout": {
+                    "type": "integer"
+                },
+                "query_concurrency": {
+                    "type": "integer"
+                },
+                "query_per_engine_concurrency": {
+                    "type": "integer"
+                },
+                "query_result_limit": {
+                    "type": "integer"
+                },
+                "scope_type": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_develop_backend_internal_service.UpdateQueryPolicyInput": {
+            "type": "object",
+            "required": [
+                "default_query_timeout"
+            ],
+            "properties": {
+                "default_query_timeout": {
+                    "type": "integer"
+                },
+                "max_query_timeout": {
+                    "type": "integer"
+                },
+                "query_concurrency": {
+                    "type": "integer"
+                },
+                "query_per_engine_concurrency": {
+                    "type": "integer"
+                },
+                "query_result_limit": {
+                    "type": "integer"
+                },
+                "version": {
+                    "type": "integer"
                 }
             }
         },

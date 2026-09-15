@@ -90,6 +90,16 @@ System 的 `platform.configuration.read/update` 只允许管理 System-owned 的
 
 配置变更必须记录 owner、scope、配置版本、操作者、结果和脱敏后的差异。Secret 只能记录是否设置、版本或引用，不能进入响应、日志、审计详情或管理能力声明。
 
+### Develop 查询策略
+
+Develop 配置统一由 `develop.query_policy` 持久化。平台管理员维护默认查询超时、最大超时、预览行数、单 Backend 总并发（默认 20）和单 Engine Instance 并发（默认 5）；Tenant 只能覆盖默认超时，不能改写平台上限。两个并发数必须为正整数，单引擎上限不得大于总并发。
+
+并发采用 `hot_reload`：每次调度从平台策略读取一对完整上限，默认每秒检查一次；本进程保存后唤醒调度器，其他实例在下一轮读取生效。调高增加可领取数量；调低不取消已运行查询，活动数低于新上限后再领取。按 execution 冻结的 Runtime `engine_id` 分组，不按租户或 source 分裂。同一实例内所有来源共享限额；部署多个 Backend 时各实例独立应用上限。Monitor 心跳报告最新应用容量与真实活动数，缩容期间允许活动数暂时高于容量。
+
+超时、结果预览采用 `execution_snapshot`：创建 execution 时解析平台策略及租户默认超时，固化有效 `timeout` 和 `query_result_limit`；查询授权预算、实际执行及结果裁剪都消费该快照。配置读取失败必须返回错误，不回退环境变量。并发不是 execution 快照，pending 查询按领取时策略调度。缺少必需快照的 execution 明确失败，不保留旧运行路径。
+
+这些普通运行配置不再提供环境变量入口。租约、心跳和领取轮询仍属于进程部署参数。此变更由 Develop Go T1、PostgreSQL T2、Console 配置浏览器测试和现有平台门禁覆盖。
+
 ## 根目录环境配置唯一路径
 
 - 根目录 `.env.example` 是 ADDP 开发与部署环境变量的唯一模板。
@@ -446,8 +456,6 @@ PUBLIC_API_URL=http://localhost:8000
 CONSOLE_URL=http://localhost:5170
 # Develop 自身的模块间可达地址；Notebook Runtime 使用它回调会话限定的只读能力接口。
 DEVELOP_URL=http://localhost:8185
-# Develop 查询 execution 保存的最大预览行数；实际读取多一行用于判断 truncated。
-QUERY_RESULT_LIMIT=500
 # DuckDB Runtime 请求期只加载此目录中的扩展，扩展由开发启动或镜像构建阶段预先准备。
 DUCKDB_EXTENSION_DIRECTORY=.cache/duckdb/extensions
 # 容器 Runtime 访问登记为 loopback 的业务 Engine 时使用；根 Compose 固定为 host.docker.internal，本地二进制留空。
@@ -494,14 +502,10 @@ TRANSFER_BOUNDED_WORKER_CONCURRENCY=10
 TRANSFER_BOUNDED_LEASE_DURATION=2m
 TRANSFER_BOUNDED_HEARTBEAT_INTERVAL=30s
 TRANSFER_BOUNDED_CLAIM_INTERVAL=1s
-# Develop Backend 内嵌 Query Execution Supervisor。时间项单位为秒；并发只按显式配置固定调整，不自动伸缩。
-# 单 Backend 总执行槽位默认 20；同一 engine_id 默认最多占用 5 个槽位。
-DEVELOP_QUERY_CONCURRENCY=20
-DEVELOP_QUERY_PER_ENGINE_CONCURRENCY=5
+# Develop Query Supervisor 的部署参数；并发、超时及预览策略由配置管理维护。
 DEVELOP_QUERY_LEASE_SECONDS=120
 DEVELOP_QUERY_HEARTBEAT_SECONDS=30
 DEVELOP_QUERY_CLAIM_INTERVAL_SECONDS=1
-DEVELOP_QUERY_IDLE_MAX_INTERVAL_SECONDS=30
 SERVICE_SERVICE_CLIENT_SECRET=
 STANDARD_SERVICE_CLIENT_SECRET=
 TRANSFER_SERVICE_CLIENT_SECRET=

@@ -47,6 +47,7 @@ type DevTask struct {
 	LastRunAt           *time.Time `json:"last_run_at,omitempty"`
 
 	ExecutionContract *taskprovider.ExecutionContract `gorm:"-" json:"execution_contract,omitempty"`
+	QueryResultLimit  int                             `gorm:"-" json:"-"`
 	RuntimeParameters map[string]interface{}          `gorm:"-" json:"-"`
 }
 

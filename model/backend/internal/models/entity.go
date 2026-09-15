@@ -122,23 +122,48 @@ type UpdateEntityRelationRequest struct {
 	Description  string `json:"description"`
 }
 
-// MermaidImportRequest Mermaid导入请求
+// MermaidImportPreviewRequest Mermaid 导入预览请求。
+type MermaidImportPreviewRequest struct {
+	Markdown string `json:"markdown" binding:"required"`
+}
+
+// MermaidImportRequest Mermaid 导入确认请求。
 type MermaidImportRequest struct {
-	MermaidCode string `json:"mermaid_code" binding:"required"`
-	Revision    int64  `json:"revision" binding:"required,gt=0" minimum:"1"`
+	Markdown string `json:"markdown" binding:"required"`
+	Revision int64  `json:"revision" binding:"required,gt=0" minimum:"1"`
 }
 
-// MermaidImportResult Mermaid导入结果
+type MermaidImportConflict struct {
+	ResourceType string `json:"resource_type" enums:"entity,relation"`
+	Key          string `json:"key"`
+	Reason       string `json:"reason" enums:"definition_mismatch,entity_state_conflict"`
+}
+
+type MermaidImportPreview struct {
+	Revision           int64                   `json:"revision"`
+	Scope              string                  `json:"scope" enums:"all,domain"`
+	DomainID           *int64                  `json:"domain_id,omitempty" minimum:"1"`
+	CreatedEntities    int                     `json:"created_entities"`
+	UnchangedEntities  int                     `json:"unchanged_entities"`
+	CreatedRelations   int                     `json:"created_relations"`
+	UnchangedRelations int                     `json:"unchanged_relations"`
+	Conflicts          []MermaidImportConflict `json:"conflicts"`
+}
+
+// MermaidImportResult Mermaid 增量导入结果。
 type MermaidImportResult struct {
-	CreatedEntities  int   `json:"created_entities"`
-	CreatedRelations int   `json:"created_relations"`
-	Revision         int64 `json:"revision"`
+	CreatedEntities    int   `json:"created_entities"`
+	UnchangedEntities  int   `json:"unchanged_entities"`
+	CreatedRelations   int   `json:"created_relations"`
+	UnchangedRelations int   `json:"unchanged_relations"`
+	Revision           int64 `json:"revision"`
 }
 
-// MermaidExportResponse 是实体模型集合的结构化导出结果。
+// MermaidExportResponse 是实体关系图的 Markdown 导出结果。
 type MermaidExportResponse struct {
-	MermaidCode string `json:"mermaid_code"`
-	Revision    int64  `json:"revision"`
+	Markdown string `json:"markdown"`
+	Scope    string `json:"scope" enums:"all,domain"`
+	DomainID *int64 `json:"domain_id,omitempty" minimum:"1"`
 }
 
 type EntityAttributeMutationResponse struct {

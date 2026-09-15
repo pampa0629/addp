@@ -51,7 +51,7 @@ func newQueryExportServiceForTest(t *testing.T, db *gorm.DB, repository *commonE
 		"develop",
 		"/api/v1/develop/exports",
 	)
-	return NewQueryExportService(NewDevExecutor(nil, repository, nil, nil, nil, nil, nil, nil, 500), artifacts)
+	return NewQueryExportService(NewDevExecutor(nil, repository, nil, nil, nil, nil, nil, nil), artifacts)
 }
 
 func TestQueryExportUsesFrozenSuccessfulExecutionSnapshot(t *testing.T) {

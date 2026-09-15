@@ -141,7 +141,7 @@ func main() {
 	log.Printf("✅ OperatorDiscoveryService 初始化完成")
 
 	// 8. DevExecutor 统一执行器（执行前复用正式工作流校验）
-	devExecutor := service.NewDevExecutor(devTaskRepo, taskExecutionRepo, workflowEngine, operatorDiscovery, metaClient, sqlEngine, federatedQueryService, notebookExecutionService, cfg.QueryResultLimit)
+	devExecutor := service.NewDevExecutor(devTaskRepo, taskExecutionRepo, workflowEngine, operatorDiscovery, metaClient, sqlEngine, federatedQueryService, notebookExecutionService)
 	log.Printf("✅ DevExecutor 初始化完成（使用统一执行表）")
 	queryExecutionRepo := repository.NewQueryExecutionRepository(db)
 	queryExecutionService, err := service.NewQueryExecutionService(devExecutor, queryExecutionRepo)
@@ -201,12 +201,10 @@ func main() {
 		queryExecutionRepo,
 		queryExecutionService,
 		worker.QueryExecutionSupervisorConfig{
-			InstanceID:           querySupervisorInstanceID,
-			Concurrency:          cfg.QueryConcurrency,
-			PerEngineConcurrency: cfg.QueryPerEngineConcurrency,
-			LeaseDuration:        cfg.QueryLeaseDuration,
-			HeartbeatInterval:    cfg.QueryHeartbeatInterval, ClaimInterval: cfg.QueryClaimInterval,
-			IdleMaxInterval: cfg.QueryIdleMaxInterval,
+			InstanceID:         querySupervisorInstanceID,
+			ResolveConcurrency: queryPolicyService.ResolveConcurrency,
+			LeaseDuration:      cfg.QueryLeaseDuration,
+			HeartbeatInterval:  cfg.QueryHeartbeatInterval, ClaimInterval: cfg.QueryClaimInterval,
 		},
 		nil,
 	)
@@ -218,7 +216,7 @@ func main() {
 		commonRuntimeHealth.ReporterConfig{
 			InstanceID: querySupervisorInstanceID, Module: commonExecution.ModuleDevelop,
 			Role: commonRuntimeHealth.RoleExecutionSupervisor, RuntimeName: "query",
-			Capacity: cfg.QueryConcurrency, Interval: commonRuntimeHealth.DefaultInterval,
+			CurrentCapacity: querySupervisor.Capacity, Interval: commonRuntimeHealth.DefaultInterval,
 			TTL: commonRuntimeHealth.DefaultTTL, ActiveCount: querySupervisor.ActiveCount,
 			Logger: slog.Default(),
 		},
@@ -227,6 +225,7 @@ func main() {
 		log.Fatalf("Query Execution Supervisor 心跳配置无效: %v", err)
 	}
 	devExecutor.SetQueryExecutionNotifier(querySupervisor.Notify)
+	queryPolicyService.SetOnChange(querySupervisor.Notify)
 	projectionstore.NewRunner(
 		protectionStore, securityClient, systemServiceClient, 30*time.Second,
 		developprotection.NewExecutionBarrier(db, protectionGate, notebookHandler),

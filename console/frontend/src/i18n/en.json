@@ -244,7 +244,10 @@
           "title": "Query policy",
           "defaultQueryTimeout": "Default query timeout (seconds)",
           "maxQueryTimeout": "Maximum query timeout (seconds)",
-          "queryResultLimit": "Result preview limit (rows)"
+          "queryResultLimit": "Result preview limit (rows)",
+          "queryConcurrency": "Total query concurrency (per Backend)",
+          "queryPerEngineConcurrency": "Per-engine query concurrency",
+          "applyHint": "No restart required after saving. Concurrency changes apply to subsequent scheduling; running queries finish normally. Timeout and preview limits apply to new executions."
         },
         "manager": {
           "title": "Quick-view policy",

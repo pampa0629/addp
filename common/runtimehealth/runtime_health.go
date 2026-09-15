@@ -128,11 +128,13 @@ type ReporterConfig struct {
 	Role        string
 	RuntimeName string
 	Capacity    int
-	Interval    time.Duration
-	TTL         time.Duration
-	Retention   time.Duration
-	ActiveCount func() int
-	Logger      *slog.Logger
+	// CurrentCapacity supplies a runtime-adjustable limit; static workers use Capacity.
+	CurrentCapacity func() int
+	Interval        time.Duration
+	TTL             time.Duration
+	Retention       time.Duration
+	ActiveCount     func() int
+	Logger          *slog.Logger
 }
 
 type Reporter struct {
@@ -150,7 +152,7 @@ func NewReporter(repo *Repository, config ReporterConfig) (*Reporter, error) {
 	default:
 		return nil, fmt.Errorf("unsupported background runtime role %q", config.Role)
 	}
-	if config.Capacity <= 0 || config.Interval <= 0 || config.TTL <= config.Interval {
+	if (config.Capacity <= 0 && config.CurrentCapacity == nil) || config.Interval <= 0 || config.TTL <= config.Interval {
 		return nil, fmt.Errorf("background runtime reporter capacity, interval, and TTL are invalid")
 	}
 	if config.Retention <= 0 {
@@ -188,12 +190,17 @@ func (r *Reporter) publish(ctx context.Context, now time.Time) {
 	if active < 0 {
 		active = 0
 	}
-	if active > r.config.Capacity {
-		active = r.config.Capacity
+	capacity := r.config.Capacity
+	if r.config.CurrentCapacity != nil {
+		capacity = r.config.CurrentCapacity()
+	}
+	// Zero means this runtime has not successfully loaded its initial policy.
+	if capacity <= 0 {
+		return
 	}
 	heartbeat := &Heartbeat{
 		InstanceID: r.config.InstanceID, Module: r.config.Module, Role: r.config.Role,
-		RuntimeName: r.config.RuntimeName, Capacity: r.config.Capacity, ActiveCount: active,
+		RuntimeName: r.config.RuntimeName, Capacity: capacity, ActiveCount: active,
 		StartedAt: r.startedAt, HeartbeatAt: now, ExpiresAt: now.Add(r.config.TTL), UpdatedAt: now,
 	}
 	if err := r.repo.Publish(ctx, heartbeat); err != nil && ctx.Err() == nil {

@@ -5,6 +5,8 @@ import (
 	"net/http"
 
 	commonAuth "github.com/addp/common/middleware/auth"
+	commoni18n "github.com/addp/common/middleware/i18n"
+	modulei18n "github.com/addp/develop/backend/i18n"
 	"github.com/addp/develop/backend/internal/repository"
 	developService "github.com/addp/develop/backend/internal/service"
 	"github.com/gin-gonic/gin"
@@ -23,7 +25,7 @@ func NewQueryPolicyHandler(s *developService.QueryPolicyService) *QueryPolicyHan
 // @Tags 配置管理 | Configuration Management
 // @Produce json
 // @Security BearerAuth
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} developService.QueryPolicyResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["develop.configuration.read"]
 // @Router /settings/query-policy [get]
@@ -35,7 +37,7 @@ func (h *QueryPolicyHandler) Get(c *gin.Context) {
 	}
 	value, err := h.service.Get(c.Request.Context(), scope, tenantID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.TWithDetail(c, modulei18n.MsgQueryPolicyInvalid, err.Error())})
 		return
 	}
 	c.JSON(http.StatusOK, value)
@@ -47,8 +49,9 @@ func (h *QueryPolicyHandler) Get(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Security BearerAuth
-// @Param request body map[string]interface{} true "查询策略 | Query policy"
-// @Success 200 {object} map[string]interface{}
+// @Description 平台维护并发、超时和预览策略；租户仅可覆盖默认超时。保存后并发热更新，新执行冻结超时和预览上限。 | Platform manages concurrency, timeout and preview limits; tenants override only the default timeout. Concurrency reloads without restart; new executions freeze their timeout and preview limits.
+// @Param request body developService.UpdateQueryPolicyInput true "查询策略 | Query policy"
+// @Success 200 {object} developService.QueryPolicyResponse
 // @Failure 409 {object} map[string]string
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["develop.configuration.update"]
@@ -56,7 +59,7 @@ func (h *QueryPolicyHandler) Get(c *gin.Context) {
 func (h *QueryPolicyHandler) Update(c *gin.Context) {
 	var input developService.UpdateQueryPolicyInput
 	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.TWithDetail(c, modulei18n.MsgQueryPolicyInvalid, err.Error())})
 		return
 	}
 	scope, tenantID, ok := queryPolicyScope(c)
@@ -71,11 +74,11 @@ func (h *QueryPolicyHandler) Update(c *gin.Context) {
 	}
 	value, err := h.service.Update(c.Request.Context(), scope, tenantID, input, uint(principalID))
 	if errors.Is(err, repository.ErrQueryPolicyVersionConflict) {
-		c.JSON(http.StatusConflict, gin.H{"error": "query_policy_version_conflict"})
+		c.JSON(http.StatusConflict, gin.H{"error": commoni18n.T(c, modulei18n.MsgQueryPolicyConflict), "error_code": "query_policy_version_conflict"})
 		return
 	}
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.TWithDetail(c, modulei18n.MsgQueryPolicyInvalid, err.Error())})
 		return
 	}
 	c.JSON(http.StatusOK, value)
