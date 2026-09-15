@@ -147,6 +147,11 @@ describe('explorer refreshItem', () => {
     store.engineTreeDepths[12] = 1
     store.selectedLocator = nodeLocator
     mocks.refreshNode.mockResolvedValue({ data: { status: 'accepted' } })
+    mocks.getTreeAncestors.mockResolvedValue({ ancestors: [
+      { ...initialTree, children: [] },
+      { ...initialTree.children[0], children: [] },
+      { ...initialTree.children[0].children[0], children: [] }
+    ] })
     mocks.getNodeChildren.mockResolvedValue({
       id: nodeLocator,
       locator: nodeLocator,
@@ -208,6 +213,10 @@ describe('explorer refreshItem', () => {
       hasChildren: false,
       children: []
     })
+    mocks.getTreeAncestors.mockResolvedValue({ ancestors: [
+      { ...store.engineTrees[12], children: [] },
+      { ...store.engineTrees[12].children[0], children: [] }
+    ] })
 
     await store.refreshNode(nodeLocator)
 

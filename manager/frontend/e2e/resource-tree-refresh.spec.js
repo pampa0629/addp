@@ -119,6 +119,9 @@ async function installMockBackend(page) {
       state.childRequests.push(locator)
       return fulfillJSON(route, locator === BUSINESS_LOCATOR ? businessNode(true) : shallowTree())
     }
+    if (path === `/api/v1/meta/resource-tree/${TIDB_ENGINE.id}/ancestors`) {
+      return fulfillJSON(route, { ancestors: [{ ...shallowTree(), children: [] }], target_locator: ROOT_LOCATOR })
+    }
 
     return fulfillJSON(route, {})
   })

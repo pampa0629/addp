@@ -419,6 +419,8 @@ item 刷新原先复用了 catalog scan 的入口，把 `item_id` 先转换为 c
 
 统计变更的 PostgreSQL 迁移和 10 万 item 批量查询验证已登记到 `make test-meta-postgres`，由现有 Meta T2 workflow 调用。部署时需一起重启 Meta Backend 与 Worker，使旧进程不再向已删除的统计列写入；不需要为计数重新扫描业务存储。
 
+真实浏览器验收还发现第三层遗漏：上传后当前目录数量已更新，切换上级仍显示旧数量，整页重载才恢复。这是前端只替换目标节点、未回读祖先事实造成的缓存不一致。`loadNodeChildren(locator, true)` 统一回读 ancestors 并复用定位流程的事实合并，再加载目标子资源；失效链上 children 缓存，保留 sibling、展开与选择状态，不在前端维护计数。回归应包含“上传完成后直接切换上级”，不能只验证当前目录或整页重载后的结果；执行 `make test-manager-frontend`。
+
 ### 1. Transfer 写出 Shapefile 后资源树看不到 `.prj`
 
 #### 问题现象

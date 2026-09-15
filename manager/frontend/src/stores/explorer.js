@@ -319,7 +319,6 @@ export const useExplorerStore = defineStore('explorer', {
           notifyRefreshHook(hooks.onScanCompleted, result.run)
         }
 
-        delete this.nodeChildrenCache[locator]
         await this.loadNodeChildren(locator, true)
 
         return result
@@ -596,14 +595,10 @@ export const useExplorerStore = defineStore('explorer', {
     /**
      * 增量加载节点子节点（新增）
      * @param {string} locator - 父节点的 ResourceLocator URI
-     * @param {boolean} forceRefresh - 是否强制刷新（忽略缓存）
+     * @param {boolean} forceRefresh - 是否回读目标及祖先事实（不触发扫描）
      */
     async loadNodeChildren(locator, forceRefresh = false) {
       const loc = parseLocator(locator)
-      const existingNode = this.engineTrees[loc.engineId]
-        ? findNodeByLocator(this.engineTrees[loc.engineId], locator)
-        : null
-
       // 1. 检查缓存
       if (!forceRefresh && this.nodeChildrenCache[locator]) {
         const cache = this.nodeChildrenCache[locator]
@@ -613,6 +608,13 @@ export const useExplorerStore = defineStore('explorer', {
       }
 
       try {
+        if (forceRefresh) {
+          // 上传、导入和扫描都可能改变整个祖先链的统计；不能只更新当前目录。
+          const { chain } = await this.loadAncestorFacts(locator)
+          for (const ancestor of chain) {
+            delete this.nodeChildrenCache[ancestor.locator]
+          }
+        }
         // 3. 调用后端 API
         const response = await dataExplorerAPI.getNodeChildren(loc.engineId, locator)
         // API 客户端已经通过 extractData 提取了 response.data。
@@ -657,11 +659,8 @@ export const useExplorerStore = defineStore('explorer', {
       }
     },
 
-    /**
-     * 根据 locator 展开资源树并选中目标节点。
-     * 后端负责返回 catalog root 到目标自身的事实链，前端只合并树节点。
-     */
-    async revealLocator(locator) {
+    // 定位与强制重载共用同一事实合并路径；本动作不改变选择或展开状态。
+    async loadAncestorFacts(locator) {
       const loc = parseLocator(locator)
       if (!loc?.engineId) {
         throw new Error('invalid locator')
@@ -673,7 +672,6 @@ export const useExplorerStore = defineStore('explorer', {
       if (!this.engineTrees[loc.engineId]) {
         await this.loadTree(loc.engineId, 1)
       }
-
       const response = await dataExplorerAPI.getTreeAncestors(loc.engineId, locator)
       const chain = Array.isArray(response?.ancestors) ? response.ancestors : []
       if (chain.length === 0) {
@@ -693,6 +691,17 @@ export const useExplorerStore = defineStore('explorer', {
         [loc.engineId]: deepCloneTree(merged.path[0] || merged.nodes[0])
       }
       this.engineTreeDepths[loc.engineId] = Math.max(Number(this.engineTreeDepths[loc.engineId] || 0), 1)
+
+      return { response, chain, merged }
+    },
+
+    /**
+     * 根据 locator 展开资源树并选中目标节点。
+     * 后端负责返回 catalog root 到目标自身的事实链，前端只合并树节点。
+     */
+    async revealLocator(locator) {
+      const loc = parseLocator(locator)
+      const { response, chain, merged } = await this.loadAncestorFacts(locator)
 
       const expanded = new Set(this.expandedLocators)
       for (const nodeLocator of merged.expandedKeys) {
