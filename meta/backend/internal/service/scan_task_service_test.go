@@ -127,7 +127,6 @@ func TestCreateManualRunResolvesNodeTargetToCatalogPaths(t *testing.T) {
 		FullName:   "",
 		Depth:      1,
 		Path:       "1",
-		ItemCount:  1,
 		ScanStatus: "completed",
 	}
 	if err := db.Create(&root).Error; err != nil {
@@ -142,7 +141,6 @@ func TestCreateManualRunResolvesNodeTargetToCatalogPaths(t *testing.T) {
 		FullName:     "manager",
 		Depth:        2,
 		Path:         "1/2",
-		ItemCount:    7,
 		ScanStatus:   "completed",
 	}
 	if err := db.Create(&bucket).Error; err != nil {

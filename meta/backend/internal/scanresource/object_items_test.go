@@ -235,7 +235,7 @@ func TestObjectCatalogCompositeNameUsesSingleFilePrimaryContentPath(t *testing.T
 		Item: &metaitem.DetectedItem{
 			ResolvedItem: commondataitem.ResolvedItem{
 				Layout:             format.LayoutSingle,
-				PrimaryContentPath: "addp/lake/sales.parquet",
+				PrimaryContentPath: "lake/sales.parquet",
 			},
 		},
 	})
@@ -245,30 +245,6 @@ func TestObjectCatalogCompositeNameUsesSingleFilePrimaryContentPath(t *testing.T
 	}
 	if objectPath != "lake/sales.parquet" {
 		t.Fatalf("objectPath = %q, want lake/sales.parquet", objectPath)
-	}
-}
-
-func TestPlanObjectCatalogRelativePathRemovesScanPrefix(t *testing.T) {
-	t.Parallel()
-
-	plan := PlanObjectRelativePath("datasets/roads/roads.shp", "datasets")
-	if plan.ExactBase {
-		t.Fatal("child path should not be treated as exact base")
-	}
-	if len(plan.Segments) != 2 || plan.Segments[0] != "roads" || plan.Segments[1] != "roads.shp" {
-		t.Fatalf("segments = %#v, want roads/roads.shp", plan.Segments)
-	}
-}
-
-func TestPlanObjectCatalogRelativePathDetectsExactScanPrefix(t *testing.T) {
-	t.Parallel()
-
-	plan := PlanObjectRelativePath("datasets", "datasets")
-	if !plan.ExactBase {
-		t.Fatal("exact scan prefix should be detected")
-	}
-	if len(plan.Segments) != 0 {
-		t.Fatalf("segments = %#v, want none", plan.Segments)
 	}
 }
 
@@ -288,6 +264,9 @@ func TestPlanObjectCatalogSingleItemBuildsIdentityAndAttributes(t *testing.T) {
 
 	if plan.ItemType != "object" || plan.ItemName != "profile.json" {
 		t.Fatalf("item identity = %#v", plan)
+	}
+	if plan.ParentPath != "datasets/" {
+		t.Fatalf("parent path = %q, want bucket-relative datasets/", plan.ParentPath)
 	}
 	if plan.FullName != "addp/datasets/profile.json" || plan.Fingerprint == "" {
 		t.Fatalf("fullName/fingerprint = %q/%q", plan.FullName, plan.Fingerprint)
@@ -320,7 +299,7 @@ func TestPlanObjectCatalogCompositeItemBuildsStandardAttributes(t *testing.T) {
 			ResolvedItem: commondataitem.ResolvedItem{
 				DataType:           datatype.Table,
 				Layout:             format.LayoutMulti,
-				PrimaryContentPath: "addp/datasets/roads/roads.shp",
+				PrimaryContentPath: "datasets/roads/roads.shp",
 				SizeBytes:          int64PtrForTest(256),
 			},
 			Fields: []datatype.FieldInfo{{

@@ -204,6 +204,10 @@ func (s *MetadataQueryService) GetItemAncestors(tenantID, itemID uint) (*models.
 		ancestors[i] = metaquery.ToMetaNodeLite(node)
 	}
 
+	if err := s.populateMetaNodeStatistics(tenantID, ancestors); err != nil {
+		return nil, err
+	}
+
 	return &models.MetaItemAncestorsResponse{
 		Item:      metaquery.ToMetaItemLite(item),
 		Ancestors: ancestors,

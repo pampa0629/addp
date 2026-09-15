@@ -14,7 +14,7 @@ import (
 func (d *EngineCatalogScanDispatcher) dispatchBranchLeafScan(ctx context.Context, enginePlugin plugin.EnginePlugin, req scanflow.DispatchRequest) (scanflow.DispatchResult, error) {
 	catalogNodes, items, fields, err := d.scanBranchLeaves(ctx, enginePlugin, req.Resource, req.TenantID, scanflow.TopCatalogTargets(req.CatalogPaths), req.ScanDepth, req.Force, req.Mode, req.Reporter)
 	if err == nil {
-		err = d.finalizeEngineCatalogRootAfterScan(req.Resource, req.TenantID, items, req.ScanDepth)
+		err = d.finalizeEngineCatalogRootAfterScan(req.Resource, req.TenantID, req.ScanDepth)
 	}
 	return scanflow.DispatchResult{CatalogNodes: catalogNodes, Items: items, Fields: fields}, err
 }

@@ -56,6 +56,12 @@ Kafka common Engine 插件已实现 `service -> topic` 路径、Engine Catalog�
 
 bucket、schema、database、directory 是 root 下第一层业务 branch。它们可以对用户可见，也可以作为扫描目标，但不再被称为引擎根。
 
+### 声明层级与公共路径转换
+
+`server` 目录的公共 `ResourceLocator → EngineCatalogPath` 转换按 `EngineCatalogModelSpec.Levels` 的顺序匹配，不固定为两个业务段。各中间段必须匹配 branch，终点类型匹配对应 level 的 term 或 kind；显式声明的 optional level 可以省略。原始路径名称必须逐段保留，不修剪大小写、空格或特殊字符，也不从连接配置补充缺失 namespace。
+
+原始 ResourceLocator 的 path 只有名称，不能表达中间段的 term；当多个可选层级都能解释同一路径时，转换必须拒绝歧义，不能猜测所属 catalog/schema。路径层级、模型和输入均有预算限制；错误不回显物理名称。这个转换只解释声明层级，不认证数据库计算能力，也不替代引擎对原生来源类型的校验。对象存储和文件系统的可重复 prefix/directory 继续遵守各自现有路径语义。
+
 ### item_type 与 data_type 分工
 
 `meta_item.item_type` 表达 data item 在所属引擎 catalog / 路径模型中的原生叶子术语，用于路由、树展示和路径解析；`attributes.item.data_type` 表达平台对内容语义的理解，用于预览、读取、检索和传输能力选择。二者不得混用。

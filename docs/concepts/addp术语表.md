@@ -25,7 +25,7 @@
 | storage engine binding | 存储引擎绑定 | owner 任务或配置通过标准 ResourceLocator 对某个存储 Engine Instance 的显式引用集合。 | Engine 进入 `deleted` 后绑定保持原 ID 并变为不可执行；原实例经用户显式恢复且重新在线后可恢复执行。绑定不同物理端点仍由 owner 在用户确认后原子改写 Locator，不按名称自动匹配。 |
 | task binding status | 任务绑定状态 | 任务 owner 对任务全部强资源绑定是否仍可用的聚合状态。 | 统一使用 `active`、`missing`；`missing` 由 `missing_engine` 或 `missing_source` 说明原因。它不是最近执行状态，也不是引擎连通性观测；任务经 owner 校验并显式重绑有效资源后恢复为 `active`。 |
 | external artifact abandonment | 外部产物放弃 | 当外部引擎不可达时，管理员明确接受平台不再删除某个 owner 已登记外部产物，并把后续处置交给外部系统管理员。 | 必须保留对象身份、最后错误、放弃时间和审计；不得伪装成物理删除成功。 |
-| node | 资源节点 | 引擎内用于组织资源树的节点。 | 例如目录、bucket、prefix、schema。node 不等同于 data item。 |
+| node | 资源节点 | 引擎内用于组织资源树的节点。 | 例如目录、bucket、prefix、schema。node 不等同于 data item。节点数量和大小表示 Meta 当前有效子树内的逻辑数据项数量和已知大小合计，由查询派生，不是上次扫描快照。 |
 | resource tree | 资源树 | 以树形方式展示 engine 内 node 和 data item 的视图。 | 用于浏览、展开、刷新和定位；不是新的身份层。 |
 | resource tree search | 资源树搜索 | 在资源树视图内按名称、路径或轻量展示信息定位 node / data item 的浏览辅助能力。 | 不等同于全文检索或语义检索。 |
 | resource | 资源 | Engine Catalog 或资源树语境下的外部对象统称。 | 当讨论内容读写边界时优先使用 content / ref，避免把 engine 资源模型带入 format。 |
@@ -88,6 +88,10 @@
 | query parameter | 查询参数 | Develop 查询任务声明的命名输入，统一保存在 `content.query_parameters[]`。 | `type=relation` 表示绑定 ResourceLocator 的数据表参数；`string`、`integer`、`number`、`boolean` 表示类型化值参数。全部参数共享同一命名空间、默认值与单次执行覆盖语义，且名称唯一。 |
 | relation query parameter | 关系查询参数 | 查询参数中代表关系型数据表的 `relation` 类型参数。 | 声明 `compute.query.parameters.types=relation` 的 PostgreSQL 方言引擎 SQL 直接使用未加引号、未限定 schema 的裸参数名引用；当前包括 PostgreSQL 与 openGauss。可保存已有表 ResourceLocator 作为默认绑定，也可由手动执行或 Orchestrator 覆盖。Develop 通过 PostgreSQL AST 把该关系节点编译为方言安全的物理表标识符。它不是表名字符串参数，也不绑定 LogicalTable ID。 |
 | PreparedQuery | 已准备查询 | Engine Provider 从一次 `QueryRequest` 生成的不可变、一次性查询计划，绑定 Engine、语言、参数、目标路径和 Provider 原生解析结果。 | 读取集合解析、安全门禁和真实执行必须绑定同一个 PreparedQuery；门禁后不再接受新的查询文本或参数。 |
+| analytical logical plan | 分析计算逻辑计划 | 以类型化关系节点、表达式和断言描述计算含义的数据库无关计划，契约为 `addp.query_plan/v1`。 | 使用计划内数据源／列身份，不包含原生 SQL、Model 身份或物理目录；指标只是该计划的一类 owner 来源。目标设计详见引擎插件接口规范。 |
+| analytical source binding | 分析计算来源绑定 | 将逻辑计划数据源和列映射到确定 Engine Instance、完整 EngineCatalogPath leaf 及物理列路径的编译输入。 | 与计划计算语义分离；不授予访问权限，不能替代执行期 QueryReadSet。 |
+| analytical compiler | 分析计算编译器 | 通过开放接口校验并将中立计划转换为特定引擎原生查询的无连接实现。 | 各引擎独立实现和认证，公共层可提供共享组件；不接收指标公式，编译器身份与实现版本必须参与发布依赖。 |
+| analytical plan package | 分析计算计划包 | 冻结逻辑计划、物理来源绑定、目标引擎、编译器身份及指纹的可序列化发布契约，schema 为 `addp.analytical_plan/v1`。 | 不包含请求参数值、凭据或运行时句柄，不是一次性的 PreparedQuery；Model 修订身份保留在 owner 外壳。 |
 | QueryAnalysis | 查询分析 | PreparedQuery 基于 Provider 原生语言规则产生的结构化诊断事实，包含稳定诊断码、阶段、严重级别、位置与 schema coverage。 | Develop 等 Owner 只展示和消费该事实，不在浏览器或业务服务中再次用正则、分词或样本字段推断 SQL、MQL、Cypher 语义。 |
 | schema coverage | 模式覆盖度 | 表达一次 QueryAnalysis 用于字段结论的 schema 事实完整度，固定为 `complete`、`sampled` 或 `unknown`。 | 只有 `complete` 才允许断言字段不存在；`sampled` 和 `unknown` 只能给出覆盖不足提示，不能把未观察到的字段报成错误。 |
 | QueryReadSet | 查询读取集合 | PreparedQuery 在执行前产生的、完整且去重的 Engine Catalog leaf 路径集合，回答“这次查询可能读取哪些资源”。 | 它不是查询语句或查询结果；不是调用方自报的授权范围，不包含数据行、Meta ID、DataItem 指纹、Security 策略或 Catalog 身份。 |
@@ -116,7 +120,7 @@
 | metric definition | 指标定义 | 对指标业务含义、统计口径、单位、责任归属及适用范围形成的可复用语义契约。 | 属于 Standard，用来指导和约束实现；不保存具体表、字段、连接、过滤器或可直接执行的引擎表达式。正式发布的指标定义必须引用不可变修订。 |
 | metric definition dependency | 指标定义依赖 | 指标定义修订之间的业务语义依赖，区分派生指标的基准依赖和复合指标的组成依赖。 | 草稿维护被依赖指标的稳定身份，发布时冻结为确定的已发布指标定义修订；只表达语义组成，不承载字段、连接、过滤或可执行表达式。 |
 | dimensional modeling | 维度建模 | 以事实表的业务粒度为中心，组织维度关联、度量和指标实现的逻辑建模能力。 | 属于 Model；产品页面称“维度建模”，其中“模型关系图”展示显式建模关系，不代表加工血缘。业务域筛选只限定中心事实表，不裁剪其跨域维度关系。 |
-| metric implementation | 指标实现 | 在确定模型上实现某个指标定义的计算设计，明确粒度、事实来源、维度、连接、过滤和可执行表达式。 | 属于 Model，以独立稳定身份、并发版本和不可变实现修订管理，并冻结所依据的指标定义修订；来源事实表不是生命周期父聚合。同一指标定义可以有多个面向不同模型或引擎的实现。 |
+| metric implementation | 指标实现 | 在确定模型上实现某个指标定义的数据库无关计算设计，明确粒度、事实来源、维度、连接、过滤和结构化运算。 | 属于 Model，以独立稳定身份、并发版本和不可变实现修订管理，并冻结所依据的指标定义修订；来源事实表不是生命周期父聚合。逻辑计划由 Model 构建，物理表达由独立引擎编译器生成，不进入指标定义或计算契约。同一指标定义可有不同来源模型的实现；更换数据库不应要求重写计算逻辑。 |
 | directional overlap | 定向重叠率 | 在同一范围内，以主体完整集合为分母、主体与对比对象的交集为分子的比例。 | 单方向产生一个值，零分母为 0；双向展示是同一实现交换角色后的组合查询，必须共享一次数据库快照。 |
 | dimension hierarchy | 维度层级 | 在数据模型中定义维度成员从汇总到明细的有序层次及层级字段。 | 属于 Model，而不是 Standard；层级字段可以引用已发布的数据元修订以获得统一语义。跨模型复用通过 Model 的公共/一致性维度实现。 |
 | standard document revision | 标准文档修订 | 标准来源文档一次不可变的内容快照及其版本、来源和生效信息。 | 属于 Standard。Copilot 可从修订内容提取标准候选项，但提取结果必须保留页码、章节或文本片段等证据，并经人工审核后才能发布为正式标准修订。 |

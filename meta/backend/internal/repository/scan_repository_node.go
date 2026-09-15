@@ -263,26 +263,20 @@ func mergeScannedDepth(current, requested string) string {
 func (r *ScanRepository) FinalizeNodeState(
 	node *models.MetaNode,
 	status string,
-	itemCount int,
-	totalSize int64,
 	errMsg string,
 ) error {
-	return r.FinalizeNodeStateWithDepth(node, status, itemCount, totalSize, errMsg, "")
+	return r.FinalizeNodeStateWithDepth(node, status, errMsg, "")
 }
 
 func (r *ScanRepository) FinalizeNodeStateWithDepth(
 	node *models.MetaNode,
 	status string,
-	itemCount int,
-	totalSize int64,
 	errMsg string,
 	scanDepth string,
 ) error {
 	update := map[string]interface{}{
-		"scan_status":      status,
-		"item_count":       itemCount,
-		"total_size_bytes": totalSize,
-		"scan_error":       errMsg,
+		"scan_status": status,
+		"scan_error":  errMsg,
 	}
 
 	if status == "completed" {

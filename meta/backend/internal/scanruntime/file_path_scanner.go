@@ -83,11 +83,11 @@ func scanFilePaths(
 			nodeStateErr = scanErr
 		}
 		if nodeStateErr != nil {
-			if err := repo.FinalizeNodeState(scanNode, "failed", items, 0, nodeStateErr.Error()); err != nil {
+			if err := repo.FinalizeNodeState(scanNode, "failed", nodeStateErr.Error()); err != nil {
 				failures.Add(rootPath, err)
 			}
 		} else {
-			if err := repo.FinalizeNodeStateWithDepth(scanNode, "completed", items, 0, "", scanDepth); err != nil {
+			if err := repo.FinalizeNodeStateWithDepth(scanNode, "completed", "", scanDepth); err != nil {
 				failures.Add(rootPath, err)
 			}
 		}

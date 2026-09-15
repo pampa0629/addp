@@ -84,6 +84,8 @@ const (
 
 	// 指标实现
 	MsgInvalidMetricImplementationID = "model.metric_implementation.invalid_id"
+	MsgMetricEngineUnavailable       = "model.metric_implementation.engine_unavailable"
+	MsgMetricEngineUnsupported       = "model.metric_implementation.engine_unsupported"
 	MsgMetricImplementationConflict  = "model.metric_implementation.conflict"
 
 	// 维度关联

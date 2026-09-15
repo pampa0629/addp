@@ -40,6 +40,13 @@ func TestPostgresMermaidIncrementalImportAndRevisionConflict(t *testing.T) {
 	entityRepo := repository.NewEntityRepository(tx)
 	relationRepo := repository.NewEntityRelationRepository(tx)
 	svc := NewEntityService(entityRepo, relationRepo)
+	svc.SetStandardClient(newMermaidStandardClient(t, tenantID,
+		[]mermaidStandardFixture{
+			{ID: domainID, Code: "customer", Name: "Customer"},
+			{ID: otherDomainID, Code: "order", Name: "Order"},
+		},
+		[]mermaidStandardFixture{{ID: elementID, Code: "customer_id", Name: "Customer ID"}},
+	))
 
 	source := models.Entity{
 		TenantID: tenantID, DomainID: &domainID, Name: "PostgreSQL Customer",
@@ -76,7 +83,7 @@ func TestPostgresMermaidIncrementalImportAndRevisionConflict(t *testing.T) {
 	if err != nil {
 		t.Fatalf("export domain Mermaid document: %v", err)
 	}
-	if exported.Scope != "domain" || exported.DomainID == nil || *exported.DomainID != domainID ||
+	if exported.Scope != "domain" || exported.DomainCode == nil || *exported.DomainCode != "customer" ||
 		!strings.Contains(exported.Markdown, "```mermaid") || strings.Contains(exported.Markdown, target.Code) {
 		t.Fatalf("domain export = %+v, want only domain %d", exported, domainID)
 	}
@@ -92,8 +99,8 @@ func TestPostgresMermaidIncrementalImportAndRevisionConflict(t *testing.T) {
 		t.Fatalf("no-op import result = %+v, err = %v", result, err)
 	}
 
-	additiveMarkdown := fmt.Sprintf("# ADDP Entity Relationship Diagram\n\n```mermaid\nerDiagram\n  %%%% addp:document {\"format\":\"addp.model.er/v1\",\"scope\":\"all\"}\n  %%%% addp:entity {\"code\":\"%s\",\"name\":\"%s\",\"domain_id\":%d,\"description\":\"%s\"}\n  %s {\n    %%%% addp:attribute {\"entity\":\"%s\",\"column\":\"customer_id\",\"name\":\"PostgreSQL Customer ID\",\"nullable\":true,\"element_id\":%d,\"description\":\"attribute round-trip description\",\"sort_order\":7}\n    bigint customer_id PK\n  }\n  %%%% addp:entity {\"code\":\"pg_invoice\",\"name\":\"PostgreSQL Invoice\",\"domain_id\":null,\"description\":\"new invoice\"}\n  pg_invoice {\n  }\n  %%%% addp:relation {\"source\":\"%s\",\"target\":\"pg_invoice\",\"relation_type\":\"one_to_many\",\"name\":\"billed_as\",\"description\":\"new relation\"}\n  %s ||--o{ pg_invoice : \"billed_as\"\n```\n",
-		source.Code, source.Name, domainID, source.Description, source.Code, source.Code, elementID, source.Code, source.Code)
+	additiveMarkdown := fmt.Sprintf("# ADDP Entity Relationship Diagram\n\n```mermaid\nerDiagram\n  %%%% addp:document {\"format\":\"addp.model.er/v2\",\"scope\":\"all\"}\n  %%%% addp:entity {\"code\":\"%s\",\"name\":\"%s\",\"domain_code\":\"customer\",\"description\":\"%s\"}\n  %s {\n    %%%% addp:attribute {\"entity\":\"%s\",\"column\":\"customer_id\",\"name\":\"PostgreSQL Customer ID\",\"nullable\":true,\"element_code\":\"customer_id\",\"description\":\"attribute round-trip description\",\"sort_order\":7}\n    bigint customer_id PK\n  }\n  %%%% addp:entity {\"code\":\"pg_invoice\",\"name\":\"PostgreSQL Invoice\",\"domain_code\":null,\"description\":\"new invoice\"}\n  pg_invoice {\n  }\n  %%%% addp:relation {\"source\":\"%s\",\"target\":\"pg_invoice\",\"relation_type\":\"one_to_many\",\"name\":\"billed_as\",\"description\":\"new relation\"}\n  %s ||--o{ pg_invoice : \"billed_as\"\n```\n",
+		source.Code, source.Name, source.Description, source.Code, source.Code, source.Code, source.Code)
 	additivePreview, err := svc.PreviewMermaidImport(tenantID, &models.MermaidImportPreviewRequest{Markdown: additiveMarkdown})
 	if err != nil {
 		t.Fatalf("preview additive import: %v", err)

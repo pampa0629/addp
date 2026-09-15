@@ -78,7 +78,7 @@ func scanObjectCatalogPaths(
 	bucketNodes := make(map[string]*models.MetaNode)
 	processedBuckets := make(map[string]bool)
 	processedPrefixes := make(map[string]map[string]bool)
-	nodeStats := make(map[uint]*scanflow.ObjectCatalogNodeAggregate)
+	scannedNodes := make(map[uint]*models.MetaNode)
 	scannedFingerprints := make(map[string]bool)
 
 	result := scanflow.DispatchResult{}
@@ -173,7 +173,7 @@ func scanObjectCatalogPaths(
 
 		if len(resources) == 0 {
 			if fullBucket {
-				scanflow.EnsureObjectCatalogNodeAggregate(nodeStats, bucketNode)
+				scannedNodes[bucketNode.ID] = bucketNode
 			}
 			completed++
 			if reporter != nil {
@@ -184,10 +184,13 @@ func scanObjectCatalogPaths(
 		}
 
 		scanPathPrefix := prefix
+		scopeNodes := scannedNodes
 		if target.Object != "" {
 			scanPathPrefix = scanresource.ParentObjectPath(target.Object)
+			// 单个对象并未枚举完整父目录，不能更新父目录扫描状态。
+			scopeNodes = nil
 		}
-		objectCount, pathExtractionStats, err := runtime.persistObjectResources(ctx, resource, tenantID, engineID, bucketNode, resources, nodeStats, fullBucket, scanDepth, force, scanPathPrefix, scannedFingerprints, itemTerm)
+		objectCount, pathExtractionStats, err := runtime.persistObjectResources(ctx, resource, tenantID, engineID, bucketNode, resources, scopeNodes, fullBucket, scanDepth, force, scanPathPrefix, scannedFingerprints, itemTerm)
 		result.Items += objectCount
 		result.Extraction = scanflow.MergeExtractionCounts(result.Extraction, pathExtractionStats)
 		if err != nil {
@@ -243,25 +246,25 @@ func scanObjectCatalogPaths(
 		if !processedBuckets[bucketName] {
 			continue
 		}
-		agg, ok := nodeStats[bucketNode.ID]
+		_, ok := scannedNodes[bucketNode.ID]
 		if !ok {
 			continue
 		}
 		if failedBuckets[bucketName] {
-			if err := repo.FinalizeNodeState(bucketNode, "failed", agg.ItemCount, agg.TotalSize, "one or more object scan targets failed"); err != nil {
+			if err := repo.FinalizeNodeState(bucketNode, "failed", "one or more object scan targets failed"); err != nil {
 				failures.Add(bucketName, err)
 			}
-		} else if err := repo.FinalizeNodeStateWithDepth(bucketNode, "completed", agg.ItemCount, agg.TotalSize, "", scanDepth); err != nil {
+		} else if err := repo.FinalizeNodeStateWithDepth(bucketNode, "completed", "", scanDepth); err != nil {
 			failures.Add(bucketName, err)
 		}
 	}
 
-	for _, agg := range nodeStats {
-		if agg.Node.NodeType == "bucket" {
+	for _, node := range scannedNodes {
+		if node.NodeType == "bucket" {
 			continue
 		}
-		if err := repo.FinalizeObjectCatalogPrefixNodeWithDepth(agg.Node, agg.ItemCount, agg.TotalSize, scanDepth); err != nil {
-			failures.Add(agg.Node.FullName, err)
+		if err := repo.FinalizeNodeStateWithDepth(node, "completed", "", scanDepth); err != nil {
+			failures.Add(node.FullName, err)
 		}
 	}
 

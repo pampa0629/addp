@@ -2,7 +2,9 @@ package scanresource
 
 import (
 	"fmt"
+	"maps"
 	"path"
+	"slices"
 	"strings"
 
 	"github.com/addp/common/format"
@@ -15,6 +17,7 @@ import (
 type ObjectCompositeItem struct {
 	Bucket string
 	Prefix string
+	// Item 的所有路径来自 detector，均为 bucket 内路径。
 	Item   *metaitem.DetectedItem
 	Claims metaitem.ResourceClaimSet
 }
@@ -34,7 +37,7 @@ func ObjectCompositeName(composite ObjectCompositeItem) (name, objectPath string
 		switch composite.Item.Layout {
 		case format.LayoutSingle, format.LayoutMulti:
 			if composite.Item.PrimaryContentPath != "" {
-				objectPath = ObjectPathFromClaim(composite.Bucket, composite.Item.PrimaryContentPath)
+				objectPath = strings.Trim(composite.Item.PrimaryContentPath, "/")
 				if objectPath != "" {
 					return path.Base(objectPath), objectPath
 				}
@@ -66,16 +69,11 @@ func ObjectCompositeMode(item *metaitem.DetectedItem) string {
 	}
 }
 
-type ObjectRelativePathPlan struct {
-	Segments   []string
-	ExactBase  bool
-	SkipReason string
-}
-
 type ObjectSingleItemPlan struct {
 	ItemType    string
 	ItemName    string
 	ObjectName  string
+	ParentPath  string
 	FullName    string
 	Fingerprint string
 	Attributes  models.JSONMap
@@ -91,33 +89,7 @@ type ObjectCompositeItemPlan struct {
 	Fingerprint string
 	SizeBytes   int64
 	Attributes  models.JSONMap
-}
-
-func PlanObjectRelativePath(trimmedPath, scanPathPrefix string) ObjectRelativePathPlan {
-	trimmedPath = strings.Trim(trimmedPath, "/")
-	scanPathPrefix = strings.Trim(scanPathPrefix, "/")
-
-	switch {
-	case scanPathPrefix != "" && trimmedPath == scanPathPrefix:
-		return ObjectRelativePathPlan{
-			ExactBase:  true,
-			SkipReason: "trimmed==scanPathPrefix",
-		}
-	case scanPathPrefix != "" && strings.HasPrefix(trimmedPath, scanPathPrefix+"/"):
-		remaining := strings.TrimPrefix(trimmedPath, scanPathPrefix+"/")
-		return ObjectRelativePathPlan{
-			Segments:   splitObjectCatalogPathSegments(remaining),
-			SkipReason: "trimmed以scanPathPrefix/开头，去掉前缀",
-		}
-	case trimmedPath != "":
-		return ObjectRelativePathPlan{
-			Segments: splitObjectCatalogPathSegments(trimmedPath),
-		}
-	default:
-		return ObjectRelativePathPlan{
-			SkipReason: "空路径",
-		}
-	}
+	DataItem    *metaitem.DetectedItem
 }
 
 func PlanObjectSingleItem(engineID uint, resource StorageResource, trimmedPath string, itemType string) ObjectSingleItemPlan {
@@ -153,6 +125,7 @@ func PlanObjectSingleItem(engineID uint, resource StorageResource, trimmedPath s
 		ItemType:    itemType,
 		ItemName:    objectName,
 		ObjectName:  objectName,
+		ParentPath:  dir,
 		FullName:    fullName,
 		Fingerprint: commonModels.GenerateItemFingerprint(engineID, fullName),
 		Attributes:  attrs,
@@ -165,12 +138,16 @@ func PlanObjectCompositeItem(engineID uint, composite ObjectCompositeItem, itemT
 		return ObjectCompositeItemPlan{}, false
 	}
 
-	qualifyObjectDetectedItemPaths(composite.Bucket, composite.Item)
 	itemName, objectPath := ObjectCompositeName(composite)
 	parentPath := ParentObjectPath(objectPath)
 	fullName := commonModels.JoinObjectPath(composite.Bucket, parentPath, itemName)
+	// detector 保持 bucket 内坐标；持久化计划持有独立的完整 content path 副本。
+	dataItem := *composite.Item
+	dataItem.RefList = slices.Clone(composite.Item.RefList)
+	dataItem.RefPaths = maps.Clone(composite.Item.RefPaths)
+	qualifyObjectDetectedItemPaths(composite.Bucket, &dataItem)
 
-	attrs := models.JSONMap(metaattr.BuildAttributes(metaitem.AttributeInput(composite.Item)))
+	attrs := models.JSONMap(metaattr.BuildAttributes(metaitem.AttributeInput(&dataItem)))
 	if len(composite.Item.Fields) > 0 {
 		metaattr.SetTableFields(attrs, composite.Item.Fields)
 	}
@@ -189,6 +166,7 @@ func PlanObjectCompositeItem(engineID uint, composite ObjectCompositeItem, itemT
 		Fingerprint: commonModels.GenerateItemFingerprint(engineID, fullName),
 		SizeBytes:   composite.Item.Size(),
 		Attributes:  attrs,
+		DataItem:    &dataItem,
 	}, true
 }
 
@@ -218,11 +196,8 @@ func qualifyObjectContentPath(bucket, pathValue string) string {
 	if pathValue == "" {
 		return ""
 	}
-	objectPath := ObjectPathFromClaim(bucket, pathValue)
-	if objectPath == "" {
-		return pathValue
-	}
-	return strings.Trim(strings.Trim(bucket, "/")+"/"+objectPath, "/")
+	// detector 输出固定为 bucket 内路径；首段与 bucket 同名也是实际目录。
+	return strings.Trim(bucket, "/") + "/" + pathValue
 }
 
 func ParentObjectPath(pathValue string) string {
@@ -231,12 +206,6 @@ func ParentObjectPath(pathValue string) string {
 		return ""
 	}
 	return strings.Trim(dir, "/") + "/"
-}
-
-func ObjectPathFromClaim(bucket, claimPath string) string {
-	trimmed := strings.Trim(claimPath, "/")
-	prefix := strings.Trim(bucket, "/") + "/"
-	return strings.TrimPrefix(trimmed, prefix)
 }
 
 func splitObjectCatalogPathSegments(pathValue string) []string {

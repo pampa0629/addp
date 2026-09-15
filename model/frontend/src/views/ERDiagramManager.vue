@@ -19,7 +19,7 @@
           </div>
           <div class="toolbar">
             <el-button v-if="canImport" type="primary" @click="showImportDialog">
-              <el-icon><Upload /></el-icon> {{ t('model.er_diagram.import_mermaid') }}
+              <el-icon><DocumentAdd /></el-icon> {{ t('model.er_diagram.import_mermaid') }}
             </el-button>
             <el-button v-if="canExport" :disabled="!selectedDomainId" @click="exportMermaid">
               <el-icon><Download /></el-icon> {{ t('model.er_diagram.export_mermaid') }}
@@ -98,8 +98,8 @@
 
 ```mermaid
 erDiagram
-  %% addp:document {"format":"addp.model.er/v1","scope":"domain","domain_id":2}
-  %% addp:entity {"code":"customer","name":"客户","domain_id":2,"description":""}
+  %% addp:document {"format":"addp.model.er/v2","scope":"domain","domain_code":"sales"}
+  %% addp:entity {"code":"customer","name":"客户","domain_code":"sales","description":""}
   customer {
     bigint id PK
   }
@@ -113,7 +113,7 @@ erDiagram
           <el-upload
             drag
             accept=".md,.markdown"
-            :before-upload="handleFileUpload"
+            :on-change="handleFileChange"
             :auto-upload="false"
             :show-file-list="false"
           >
@@ -143,6 +143,12 @@ erDiagram
           unchangedRelations: importPreview.unchanged_relations
         })"
       >
+        <div v-if="importPreview.resolved_domains.length" class="resolved-domains">
+          <span>{{ t('model.er_diagram.resolved_domains') }}</span>
+          <el-tag v-for="domain in importPreview.resolved_domains" :key="domain.code" type="info">
+            {{ domain.name }}（{{ domain.code }}）
+          </el-tag>
+        </div>
         <ul v-if="importPreview.conflicts.length" class="conflict-list">
           <li v-for="conflict in importPreview.conflicts" :key="`${conflict.resource_type}:${conflict.key}`">
             {{ t(`model.er_diagram.conflict_${conflict.reason}`, {
@@ -170,7 +176,7 @@ erDiagram
 import { ref, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Upload, Download, Refresh, UploadFilled } from '@element-plus/icons-vue'
+import { DocumentAdd, Download, Refresh, UploadFilled } from '@element-plus/icons-vue'
 import mermaid from 'mermaid'
 import { entityAPI, entityRelationAPI, domainAPI } from '../api/model'
 import { useI18n } from 'vue-i18n'
@@ -373,11 +379,12 @@ const exportMermaid = async () => {
   try {
     const domainID = selectedDomainId.value === 'all' ? null : selectedDomainId.value
     const snapshot = await entityAPI.exportMermaid(domainID ? { domain_id: domainID } : undefined)
+    if (domainID && !snapshot.domain_code) throw new Error('missing domain_code in Mermaid export response')
     const blob = new Blob([snapshot.markdown || ''], { type: 'text/markdown;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
-    link.download = domainID ? `er-diagram-domain-${domainID}.md` : 'er-diagram-all.md'
+    link.download = domainID ? `er-diagram-${snapshot.domain_code}.md` : 'er-diagram-all.md'
     link.click()
     URL.revokeObjectURL(url)
 
@@ -398,14 +405,16 @@ const showImportDialog = () => {
 }
 
 // 文件上传处理
-const handleFileUpload = (file) => {
+const handleFileChange = (uploadFile) => {
+  const file = uploadFile.raw
+  if (!file) return
+
   const reader = new FileReader()
   reader.onload = (e) => {
     importMarkdown.value = e.target.result
     importTab.value = 'paste'
   }
   reader.readAsText(file)
-  return false // 阻止自动上传
 }
 
 const previewImport = async () => {
@@ -501,6 +510,7 @@ onBeforeUnmount(() => stopThemeObserver?.())
 <style scoped>
 .domain-legend { display:flex; flex-wrap:wrap; gap:8px; margin:12px 0; }
 .import-preview { margin-top: 16px; }
+.resolved-domains { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:8px; }
 .conflict-list { margin: 8px 0 0; padding-left: 20px; }
 .er-diagram-manager {
   padding: 20px;

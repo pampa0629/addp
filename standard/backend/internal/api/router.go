@@ -82,10 +82,9 @@ func SetupRouter(
 
 		api.POST(
 			"/references/resolve",
-			commonAuth.MustNewServiceClientGuard("addp-catalog"),
+			commonAuth.MustNewServiceClientGuard("addp-catalog", "addp-model"),
 			permission(
 				standardauthorization.PermissionStandardDomainRead,
-				standardauthorization.PermissionStandardGlossaryRead,
 				standardauthorization.PermissionStandardElementRead,
 			),
 			referenceResolutionHandler.Resolve,

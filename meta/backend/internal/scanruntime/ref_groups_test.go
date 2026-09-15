@@ -49,6 +49,10 @@ func TestObjectScanRefGroupsPersistsSingleShapefileItem(t *testing.T) {
 	if !ok {
 		t.Fatal("shapefile item not found")
 	}
+	stats, err := metaRepo.QueryNodeStatistics(db, 1, resource.ID, []uint{item.NodeID})
+	if err != nil || len(stats) != 1 || stats[0].ItemCount != 1 {
+		t.Fatalf("multi-file upload must count one logical item: %#v, %v", stats, err)
+	}
 	assertShapefileLogicalItem(t, item.Attributes, []string{
 		"manager/a5.shp",
 		"manager/a5.shx",
@@ -99,6 +103,53 @@ func TestObjectScanRefGroupsPersistsSingleUploadedObjectItem(t *testing.T) {
 	}
 	if storage["bucket"] != "manager" || storage["name"] != "ZX书单.rtf" {
 		t.Fatalf("storage attributes = %#v, want bucket manager and object name", storage)
+	}
+}
+
+func TestObjectScanRefGroupsKeepsCanonicalParent(t *testing.T) {
+	for _, objectPath := range []string{"note.md", "doc/note.md", "doc/nested/note.md", "manager/doc/note.md"} {
+		t.Run(objectPath, func(t *testing.T) {
+			provider := &objectRefGroupScanTestProvider{content: "hello", buckets: []string{"manager"}}
+			pluginRegisterForTest(t, provider)
+			db := openObjectCatalogScanTestDB(t)
+			repo := metaRepo.NewScanRepository(db)
+			runtime := NewObjectStorageCatalogRuntime(db, slog.New(slog.NewTextHandler(io.Discard, nil)), repo, nil)
+			resource := &commonModels.Engine{ID: 19, Name: "Object Store", EngineType: provider.Type()}
+			fullName := "manager/" + objectPath
+			group := models.ScanRefGroup{Primary: fullName, Refs: []models.ScanRef{{Path: fullName, Role: "main", Required: true}}}
+			for _, depth := range []string{models.ScannedDepthBasic, models.ScannedDepthDeep} {
+				if _, err := runtime.ScanRefGroups(context.Background(), resource, 1, []models.ScanRefGroup{group}, depth, true, nil); err != nil {
+					t.Fatal(err)
+				}
+				item, exists, err := repo.FindItemByFullName(1, 19, fullName)
+				if err != nil || !exists {
+					t.Fatalf("item not persisted: %v", err)
+				}
+				var parent models.MetaNode
+				if err := db.First(&parent, item.NodeID).Error; err != nil {
+					t.Fatal(err)
+				}
+				if got := parent.FullName + "/" + item.Name; got != fullName {
+					t.Fatalf("%s: parent/item = %q, want %q", depth, got, fullName)
+				}
+				var nodeIDs []uint
+				if err := db.Model(&models.MetaNode{}).Where("tenant_id = ? AND engine_id = ?", 1, 19).Pluck("id", &nodeIDs).Error; err != nil {
+					t.Fatal(err)
+				}
+				stats, err := metaRepo.QueryNodeStatistics(db, 1, resource.ID, nodeIDs)
+				if err != nil || len(stats) != len(nodeIDs) {
+					t.Fatalf("upload statistics: %#v, %v", stats, err)
+				}
+				for _, stat := range stats {
+					if stat.ItemCount != 1 || !stat.HasChildren {
+						t.Fatalf("upload/overwrite ancestor statistics: %#v", stat)
+					}
+				}
+				if parent.ScannedAt != nil || parent.ScanStatus == "completed" {
+					t.Fatalf("ref group incorrectly completed parent scan: %#v", parent)
+				}
+			}
+		})
 	}
 }
 

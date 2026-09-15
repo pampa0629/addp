@@ -151,3 +151,17 @@ func TestPostgresTableNativeReturnsNilForEmptyFacts(t *testing.T) {
 		t.Fatalf("postgresTableNative() = %#v, want nil", got)
 	}
 }
+
+func TestAnalyticalDialectRequiresNativeProviderCertification(t *testing.T) {
+	dialect, err := plugin.ResolveAnalyticalSQLDialect("postgresql")
+	if err != nil || dialect.Name() != "postgresql" {
+		t.Fatalf("native dialect: %v %v", dialect, err)
+	}
+	protocol := NewProtocolCompatiblePlugin(ProtocolIdentity{EngineType: "other_postgres_protocol", DisplayName: "Other"})
+	if _, err := protocol.AnalyticalSQLDialect(); err == nil {
+		t.Fatal("protocol compatibility enabled analytical SQL without certification")
+	}
+	if _, err := plugin.ResolveAnalyticalSQLDialect("unregistered_analytical_engine"); err == nil {
+		t.Fatal("unknown engine accepted")
+	}
+}

@@ -86,7 +86,7 @@ func DetectObjectCatalogCompositeItems(
 				continue
 			}
 			for _, path := range detected.RefFilePaths() {
-				skipPaths[scanresource.ObjectPathFromClaim(bucket, path)] = true
+				skipPaths[strings.Trim(path, "/")] = true
 			}
 			acceptedAny = true
 			items = append(items, scanresource.ObjectCompositeItem{
@@ -99,7 +99,7 @@ func DetectObjectCatalogCompositeItems(
 		if includeWholeScope && acceptedAny {
 			for path, claimed := range detection.Claims {
 				if claimed {
-					skipPaths[scanresource.ObjectPathFromClaim(bucket, path)] = true
+					skipPaths[strings.Trim(path, "/")] = true
 				}
 			}
 		}

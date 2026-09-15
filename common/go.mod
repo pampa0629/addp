@@ -8,6 +8,7 @@ require (
 	github.com/alicebob/miniredis/v2 v2.35.0
 	github.com/apache/arrow-go/v18 v18.5.1
 	github.com/beltran/gohive v1.8.1
+	github.com/dolthub/vitess v0.0.0-20250512224608-8fb9c6ea092c
 	github.com/gin-gonic/gin v1.11.0
 	github.com/go-sql-driver/mysql v1.9.3
 	github.com/godoes/gorm-oracle v1.6.20
@@ -33,7 +34,6 @@ require (
 	github.com/twpayne/go-geom v1.6.1
 	github.com/vmware/go-nfs-client v0.0.0-20190605212624-d43b92724c1b
 	github.com/xuri/excelize/v2 v2.10.0
-	github.com/xwb1989/sqlparser v0.0.0-20180606152119-120387863bf2
 	go.mongodb.org/mongo-driver v1.11.4
 	golang.org/x/image v0.25.0
 	golang.org/x/text v0.33.0
@@ -43,6 +43,11 @@ require (
 	gorm.io/driver/postgres v1.6.0
 	gorm.io/driver/sqlite v1.6.0
 	gorm.io/gorm v1.31.2
+)
+
+require (
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20251029180050-ab9386a59fda // indirect
+	google.golang.org/grpc v1.78.0 // indirect
 )
 
 require (

@@ -19,6 +19,7 @@ import (
 	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/models"
+	metaRepo "github.com/addp/meta/internal/repository"
 	"github.com/addp/meta/internal/scanflow"
 	"github.com/jonas-p/go-shp"
 )
@@ -59,10 +60,14 @@ func TestRefreshKnownMultiItemUsesStoredRefsWithoutCatalogRediscovery(t *testing
 	if err := db.Create(&bucketNode).Error; err != nil {
 		t.Fatalf("create bucket node: %v", err)
 	}
+	parentNode, err := metaRepo.NewScanRepository(db).EnsureObjectCatalogPrefixPath(tenantID, engineID, &bucketNode, "gis")
+	if err != nil {
+		t.Fatal(err)
+	}
 	item := models.MetaItem{
 		TenantID:    tenantID,
 		EngineID:    engineID,
-		NodeID:      bucketNode.ID,
+		NodeID:      parentNode.ID,
 		ItemType:    "object",
 		Name:        "roads.shp",
 		FullName:    "addp/gis/roads.shp",
@@ -239,11 +244,15 @@ func TestRefreshKnownTIFFItemKeepsBaseAttributesWhenMediaDescribeFails(t *testin
 	if err := db.Create(&node).Error; err != nil {
 		t.Fatalf("create node: %v", err)
 	}
+	parentNode, err := metaRepo.NewScanRepository(db).EnsureObjectCatalogPrefixPath(tenantID, engineID, &node, "image")
+	if err != nil {
+		t.Fatal(err)
+	}
 	size := int64(len(content))
 	item := models.MetaItem{
 		TenantID:    tenantID,
 		EngineID:    engineID,
-		NodeID:      node.ID,
+		NodeID:      parentNode.ID,
 		ItemType:    "object",
 		Name:        "srtm_40_01.tif",
 		FullName:    "addp/image/srtm_40_01.tif",
@@ -320,11 +329,15 @@ func TestRefreshKnownDOCXItemExtractsTextFacts(t *testing.T) {
 	if err := db.Create(&node).Error; err != nil {
 		t.Fatalf("create node: %v", err)
 	}
+	parentNode, err := metaRepo.NewScanRepository(db).EnsureObjectCatalogPrefixPath(tenantID, engineID, &node, "doc")
+	if err != nil {
+		t.Fatal(err)
+	}
 	size := int64(len(content))
 	item := models.MetaItem{
 		TenantID:    tenantID,
 		EngineID:    engineID,
-		NodeID:      node.ID,
+		NodeID:      parentNode.ID,
 		ItemType:    "object",
 		Name:        "关于时空底座.docx",
 		FullName:    "addp/doc/关于时空底座.docx",

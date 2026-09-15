@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/addp/common/engine/plugin"
-	"github.com/xwb1989/sqlparser"
+	"github.com/dolthub/vitess/go/vt/sqlparser"
 )
 
 // MySQLCompatibleQueryProvenance provides fail-closed query source and output
@@ -80,7 +80,7 @@ func (p MySQLCompatibleQueryProvenance) inspectReadReferences(query string) ([]m
 	if strings.Contains(query, "/*!") {
 		return nil, p.readSetError("executable comments are not supported")
 	}
-	statement, err := sqlparser.Parse(query)
+	statement, err := parseMySQLReadQuery(query)
 	if err != nil {
 		return nil, p.readSetError("query must contain exactly one supported SELECT")
 	}
@@ -95,19 +95,20 @@ func (p MySQLCompatibleQueryProvenance) inspectReadReferences(query string) ([]m
 			if strings.TrimSpace(typed.Lock) != "" {
 				return false, p.readSetError("row locking is not a read-only query source")
 			}
-		case *sqlparser.FuncExpr:
-			return false, p.readSetError("function calls are not supported")
 		case *sqlparser.AliasedTableExpr:
 			relation, ok := typed.Expr.(sqlparser.TableName)
 			if !ok {
 				return true, nil
 			}
 			name := strings.TrimSpace(relation.Name.String())
+			if relation.DbQualifier.IsEmpty() && strings.EqualFold(name, "dual") {
+				return false, nil
+			}
 			if name == "" {
 				return false, p.readSetError("relation name is unresolved")
 			}
 			references = append(references, mysqlCompatibleRelationReference{
-				Database: strings.TrimSpace(relation.Qualifier.String()),
+				Database: strings.TrimSpace(relation.DbQualifier.String()),
 				Name:     name,
 			})
 		}

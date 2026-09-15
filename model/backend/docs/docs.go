@@ -572,6 +572,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "domain_id 仅选择当前运行时业务域；响应与 addp.model.er/v2 文档使用稳定 domain_code 和 element_code | domain_id only selects the current runtime domain; the response and addp.model.er/v2 document use stable domain_code and element_code values",
                 "produces": [
                     "application/json"
                 ],
@@ -640,6 +641,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "按预览 revision 确认 addp.model.er/v2 增量创建；不会更新、覆盖或删除现有模型 | Apply addp.model.er/v2 incremental creation against the preview revision without updating, overwriting, or deleting existing models",
                 "consumes": [
                     "application/json"
                 ],
@@ -719,6 +721,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "解析唯一 addp.model.er/v2 文档，按当前 Tenant 精确解析 domain_code 与 element_code，并返回业务域映射和非破坏性增量计划 | Parse the sole addp.model.er/v2 document, resolve domain_code and element_code exactly in the current tenant, and return domain mappings plus a non-destructive incremental plan",
                 "consumes": [
                     "application/json"
                 ],
@@ -4283,6 +4286,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "保存数据库无关的结构化计算契约；来源引擎必须提供分析 SQL 能力。 | Saves a database-independent structured computation contract; the source engine must provide analytical SQL capabilities.",
                 "consumes": [
                     "application/json"
                 ],
@@ -4460,6 +4464,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "重新校验来源与方言依赖后冻结发布；依赖变化须重新保存草稿。 | Revalidates source and dialect dependencies before publication; changed dependencies require saving the draft again.",
                 "consumes": [
                     "application/json"
                 ],
@@ -6185,9 +6190,8 @@ const docTemplate = `{
         "github_com_addp_model_internal_models.MermaidExportResponse": {
             "type": "object",
             "properties": {
-                "domain_id": {
-                    "type": "integer",
-                    "minimum": 1
+                "domain_code": {
+                    "type": "string"
                 },
                 "markdown": {
                     "type": "string"
@@ -6238,9 +6242,14 @@ const docTemplate = `{
                 "created_relations": {
                     "type": "integer"
                 },
-                "domain_id": {
-                    "type": "integer",
-                    "minimum": 1
+                "domain_code": {
+                    "type": "string"
+                },
+                "resolved_domains": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_model_internal_models.MermaidResolvedDomain"
+                    }
                 },
                 "revision": {
                     "type": "integer"
@@ -6304,6 +6313,17 @@ const docTemplate = `{
                 },
                 "unchanged_relations": {
                     "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_model_internal_models.MermaidResolvedDomain": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
                 }
             }
         },

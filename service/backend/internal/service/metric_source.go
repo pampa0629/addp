@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/addp/common/datatype"
+	"github.com/addp/common/engine/plugin"
 	"github.com/addp/service/internal/models"
 )
 
@@ -30,8 +31,8 @@ func (s *QueryServiceService) resolveMetricSource(ctx context.Context, req *mode
 	if err != nil {
 		return nil, err
 	}
-	if engine.EngineType != "postgresql" && engine.EngineType != "postgres" && engine.EngineType != "postgis" {
-		return nil, fmt.Errorf("%w: metric plan requires PostgreSQL", ErrInvalidStructuredQuery)
+	if _, err := plugin.ResolveAnalyticalSQLDialect(engine.EngineType); err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrInvalidStructuredQuery, err)
 	}
 	req.SqlQuery = plan.SQL
 	req.EngineID = &plan.EngineID

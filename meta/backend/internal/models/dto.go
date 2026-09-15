@@ -211,9 +211,9 @@ type MetaNodeLite struct {
 	ScanStatus     string                 `json:"scan_status"`
 	ScannedDepth   string                 `json:"scanned_depth"`
 	ScannedAt      *string                `json:"scanned_at,omitempty"`
-	ItemCount      int                    `json:"item_count"`
+	ItemCount      int                    `json:"item_count"` // 当前有效子树的逻辑数据项数量 | Active logical items in the current subtree
 	HasChildren    bool                   `json:"has_children"`
-	TotalSizeBytes int64                  `json:"total_size_bytes"`
+	TotalSizeBytes int64                  `json:"total_size_bytes"` // 子树内已知数据项大小合计 | Sum of known item sizes in the subtree
 	Attributes     map[string]interface{} `json:"attributes,omitempty"`
 }
 

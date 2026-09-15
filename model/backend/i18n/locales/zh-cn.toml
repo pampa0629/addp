@@ -195,3 +195,9 @@ other = "单向（主体→比较对象）"
 
 [model.metric.option.directions.both]
 other = "双向"
+
+[model.metric_implementation.engine_unavailable]
+other = "无法读取指标来源引擎信息，请稍后重试。"
+
+[model.metric_implementation.engine_unsupported]
+other = "来源引擎尚未提供经验证的分析 SQL 能力。"

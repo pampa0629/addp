@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/addp/common/engine/plugin"
-	"github.com/xwb1989/sqlparser"
+	"github.com/dolthub/vitess/go/vt/sqlparser"
 )
 
 type mysqlCompatibleLineageOrigin struct {
@@ -43,7 +43,7 @@ func (p MySQLCompatibleQueryProvenance) ResolveOutputLineage(
 	if err != nil {
 		return nil, err
 	}
-	statement, err := sqlparser.Parse(strings.TrimSpace(req.Query))
+	statement, err := parseMySQLReadQuery(req.Query)
 	if err != nil {
 		return nil, p.outputLineageError("query must contain exactly one supported SELECT")
 	}
@@ -96,7 +96,10 @@ func (p MySQLCompatibleQueryProvenance) resolveSelectOutputLineage(
 	}
 	for _, output := range projection.order {
 		origin := projection.columns[output]
-		if origin.sourceIndex < 0 || origin.sourceIndex >= len(result) {
+		if origin.sourceIndex < 0 {
+			continue
+		}
+		if origin.sourceIndex >= len(result) {
 			return nil, p.outputLineageError("projection source is outside the read set")
 		}
 		result[origin.sourceIndex].Bindings = append(result[origin.sourceIndex].Bindings, plugin.QueryOutputBinding{
@@ -113,6 +116,29 @@ func (p MySQLCompatibleQueryProvenance) resolveSelectProjection(
 	statement sqlparser.SelectStatement,
 	sources []plugin.QueryOutputSource,
 ) (*mysqlCompatibleLineageProjection, error) {
+	if paren, ok := statement.(*sqlparser.ParenSelect); ok {
+		return p.resolveSelectProjection(defaultDatabase, paren.Select, sources)
+	}
+	if union, ok := statement.(*sqlparser.SetOp); ok {
+		left, err := p.resolveSelectProjection(defaultDatabase, union.Left, sources)
+		if err != nil {
+			return nil, err
+		}
+		right, err := p.resolveSelectProjection(defaultDatabase, union.Right, sources)
+		if err != nil {
+			return nil, err
+		}
+		if len(left.order) != len(right.order) {
+			return nil, p.outputLineageError("UNION column count mismatch")
+		}
+		for i, name := range left.order {
+			a, b := left.columns[name], right.columns[right.order[i]]
+			if a.sourceIndex != b.sourceIndex || strings.Join(a.sourcePath, "\x00") != strings.Join(b.sourcePath, "\x00") {
+				left.columns[name] = mysqlCompatibleLineageOrigin{sourceIndex: -1}
+			}
+		}
+		return left, nil
+	}
 	selectNode, ok := statement.(*sqlparser.Select)
 	if !ok {
 		return nil, p.outputLineageError("UNION and parenthesized top-level queries are not supported")
@@ -130,17 +156,19 @@ func (p MySQLCompatibleQueryProvenance) resolveSelectProjection(
 		if !ok {
 			return nil, p.outputLineageError("wildcard and non-column projections are not supported")
 		}
-		column, ok := aliased.Expr.(*sqlparser.ColName)
-		if !ok {
-			return nil, p.outputLineageError("only direct column projections are supported")
-		}
-		origin, err := p.resolveLineageColumn(scope, column)
-		if err != nil {
-			return nil, err
-		}
+		origin := mysqlCompatibleLineageOrigin{sourceIndex: -1}
 		output := strings.TrimSpace(aliased.As.String())
-		if output == "" {
-			output = strings.TrimSpace(column.Name.String())
+		if column, ok := aliased.Expr.(*sqlparser.ColName); ok {
+			var err error
+			origin, err = p.resolveLineageColumn(scope, column)
+			if err != nil {
+				return nil, err
+			}
+			if output == "" {
+				output = strings.TrimSpace(column.Name.String())
+			}
+		} else if output == "" {
+			output = sqlparser.String(aliased.Expr)
 		}
 		if output == "" || hasMySQLCompatibleIdentifier(projection.columns, output) {
 			return nil, p.outputLineageError("output column names must be unique")
@@ -212,7 +240,10 @@ func (p MySQLCompatibleQueryProvenance) buildAliasedLineageRelation(
 	alias := strings.TrimSpace(expression.As.String())
 	switch relation := expression.Expr.(type) {
 	case sqlparser.TableName:
-		database := strings.TrimSpace(relation.Qualifier.String())
+		if relation.DbQualifier.IsEmpty() && strings.EqualFold(relation.Name.String(), "dual") {
+			return scope, nil
+		}
+		database := strings.TrimSpace(relation.DbQualifier.String())
 		if database == "" {
 			database = defaultDatabase
 		}
@@ -308,7 +339,7 @@ func (p MySQLCompatibleQueryProvenance) resolveLineageColumn(scope *mysqlCompati
 		return mysqlCompatibleLineageOrigin{}, p.outputLineageError("column name is missing")
 	}
 	qualifier := strings.TrimSpace(column.Qualifier.Name.String())
-	if database := strings.TrimSpace(column.Qualifier.Qualifier.String()); database != "" {
+	if database := strings.TrimSpace(column.Qualifier.DbQualifier.String()); database != "" {
 		qualifier = database + "." + qualifier
 	}
 	if qualifier != "" {

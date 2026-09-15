@@ -67,15 +67,16 @@ func validateMetricOperationInput(operation string, input models.MetricQueryInpu
 	return nil
 }
 
-func quoteMetricIdentifier(value string) string {
-	return `"` + strings.ReplaceAll(value, `"`, `""`) + `"`
-}
-
-func metricRelationName(source metricPlanSource) string {
-	return quoteMetricIdentifier(source.Schema) + "." + quoteMetricIdentifier(source.Table)
-}
-
-func compileMetricSQL(contract models.MetricContract, bindings metricPlanBindings) (string, error) {
+func compileMetricSQL(contract models.MetricContract, bindings metricPlanBindings, dialect commonquery.AnalyticalDialect) (string, error) {
+	quote := dialect.QuoteIdentifier
+	relationName := func(source metricPlanSource) string { return dialect.QualifiedTable(source.Schema, source.Table) }
+	column := func(alias string, f models.LogicalField) string {
+		expr := alias + "." + quote(f.ColumnName)
+		if f.DataType == "string" {
+			return dialect.ExactText(expr)
+		}
+		return expr
+	}
 	overlap := contract.Operation == "directional_overlap"
 	if (!overlap && contract.Operation != "count_distinct") || (overlap && len(contract.Filters) != 0) || contract.Subject.RelationID != 0 || contract.Subject.FieldID <= 0 || contract.Distinct.FieldID <= 0 || contract.Time.FieldID <= 0 {
 		return "", invalidRequest()
@@ -108,7 +109,7 @@ func compileMetricSQL(contract models.MetricContract, bindings metricPlanBinding
 			}
 			source, alias = relation.Target, fmt.Sprintf("d%d", ref.RelationID)
 			if !used[ref.RelationID] {
-				joins = append(joins, "JOIN "+metricRelationName(source)+" "+alias+" ON f."+quoteMetricIdentifier(left.ColumnName)+" = "+alias+"."+quoteMetricIdentifier(right.ColumnName))
+				joins = append(joins, "JOIN "+relationName(source)+" "+alias+" ON "+column("f", left)+" = "+column(alias, right))
 				used[ref.RelationID] = true
 			}
 		}
@@ -116,7 +117,7 @@ func compileMetricSQL(contract models.MetricContract, bindings metricPlanBinding
 		if !found || resolved.ColumnName == "" || (expectedType != "" && resolved.DataType != expectedType) {
 			return "", invalidRequest()
 		}
-		return alias + "." + quoteMetricIdentifier(resolved.ColumnName), nil
+		return column(alias, resolved), nil
 	}
 	subject, err := field(contract.Subject, "string")
 	if err != nil {
@@ -165,43 +166,39 @@ func compileMetricSQL(contract models.MetricContract, bindings metricPlanBinding
 		requiredValues := ""
 		for _, ref := range []models.MetricFieldReference{contract.Time, contract.Distinct} {
 			if ref.RelationID == id {
-				requiredValues += " AND q." + quoteMetricIdentifier(relation.Target.Fields[ref.FieldID].ColumnName) + " IS NOT NULL"
+				requiredValues += " AND q." + quote(relation.Target.Fields[ref.FieldID].ColumnName) + " IS NOT NULL"
 			}
 		}
-		qualityFailures = append(qualityFailures, "(SELECT COUNT(*) FROM "+metricRelationName(relation.Target)+" q WHERE q."+quoteMetricIdentifier(right.ColumnName)+" = f."+quoteMetricIdentifier(left.ColumnName)+requiredValues+") <> 1")
+		qualityFailures = append(qualityFailures, "(SELECT COUNT(*) FROM "+relationName(relation.Target)+" q WHERE "+column("q", right)+" = "+column("f", left)+requiredValues+") <> 1")
 	}
 	for _, ref := range []models.MetricFieldReference{contract.Time, contract.Distinct} {
 		if ref.RelationID == 0 {
-			qualityFailures = append(qualityFailures, "f."+quoteMetricIdentifier(bindings.Fact.Fields[ref.FieldID].ColumnName)+" IS NULL")
+			qualityFailures = append(qualityFailures, "f."+quote(bindings.Fact.Fields[ref.FieldID].ColumnName)+" IS NULL")
 		}
 	}
 
-	qualityCheck := "COALESCE((SELECT failure FROM (VALUES (0),(1)) rejected(failure) WHERE EXISTS (SELECT 1 FROM " + metricRelationName(bindings.Fact) + " f WHERE " + strings.Join(qualityConditions, " AND ") + " AND (" + strings.Join(qualityFailures, " OR ") + ")) OR (SELECT COUNT(*) FROM " + metricRelationName(identity.Target) + " p WHERE p." + quoteMetricIdentifier(key.ColumnName) + " = :subject_id) > 1),0)"
+	qualityCheck := "COALESCE((SELECT failure FROM " + dialect.IntegerRows("failure", 2) + " rejected WHERE EXISTS (SELECT 1 FROM " + relationName(bindings.Fact) + " f WHERE " + strings.Join(qualityConditions, " AND ") + " AND (" + strings.Join(qualityFailures, " OR ") + ")) OR (SELECT COUNT(*) FROM " + relationName(identity.Target) + " p WHERE " + column("p", key) + " = :subject_id) > 1),0)"
 	if overlap {
-		qualityCheck = "COALESCE((SELECT failure FROM (VALUES (0),(1)) rejected(failure) WHERE EXISTS (SELECT 1 FROM " + metricRelationName(bindings.Fact) + " f WHERE " + strings.Join(qualityConditions, " AND ") + " AND (" + strings.Join(qualityFailures, " OR ") + ")) OR EXISTS (SELECT 1 FROM " + metricRelationName(identity.Target) + " p WHERE p." + quoteMetricIdentifier(key.ColumnName) + " IN (:subject_id, :comparison_id) GROUP BY p." + quoteMetricIdentifier(key.ColumnName) + " HAVING COUNT(*) > 1)),0)"
+		qualityCheck = "COALESCE((SELECT failure FROM " + dialect.IntegerRows("failure", 2) + " rejected WHERE EXISTS (SELECT 1 FROM " + relationName(bindings.Fact) + " f WHERE " + strings.Join(qualityConditions, " AND ") + " AND (" + strings.Join(qualityFailures, " OR ") + ")) OR EXISTS (SELECT 1 FROM " + relationName(identity.Target) + " p WHERE " + column("p", key) + " IN (:subject_id, :comparison_id) GROUP BY " + column("p", key) + " HAVING COUNT(*) > 1)),0)"
 	}
-	// A bounded calendar is part of the deterministic plan. It uses only VALUES
+	// A bounded calendar is part of the deterministic plan. It uses only constant rows
 	// and scalar date operations, so it introduces no table-function read source.
-	offsets := make([]string, 120)
-	for index := range offsets {
-		offsets[index] = fmt.Sprintf("(%d)", index)
-	}
-	bucket := "CASE WHEN :grain = 'month' THEN date_trunc('month', " + date + ")::date ELSE CAST(:start_date AS date) END"
-	prefix := "WITH calendar AS (SELECT (date_trunc('month', CAST(:start_date AS date)) + n * INTERVAL '1 month')::date AS bucket FROM (VALUES " + strings.Join(offsets, ",") + ") offsets(n)), " +
+	bucket := "CASE WHEN :grain = 'month' THEN " + dialect.MonthStart(date) + " ELSE " + dialect.Date(":start_date") + " END"
+	prefix := "WITH calendar AS (SELECT " + dialect.AddMonths(dialect.MonthStart(dialect.Date(":start_date")), "n") + " AS bucket FROM " + dialect.IntegerRows("n", 120) + " offsets), " +
 		"buckets AS (SELECT bucket FROM calendar WHERE :grain = 'month' AND bucket < CAST(:end_date AS date) UNION ALL SELECT CAST(:start_date AS date) WHERE :grain = 'total'), "
 	if overlap {
-		sets := "members AS (SELECT DISTINCT " + subject + " AS person_id, " + bucket + " AS bucket, " + distinct + " AS member_id FROM " + metricRelationName(bindings.Fact) + " f " + strings.Join(joins, " ") + " WHERE " + strings.Join(conditions, " AND ") + "), "
-		counts := "a_counts AS (SELECT bucket, COUNT(*) AS value FROM members WHERE person_id = :subject_id GROUP BY bucket), b_counts AS (SELECT bucket, COUNT(*) AS value FROM members WHERE person_id = :comparison_id GROUP BY bucket), shared AS (SELECT a.bucket, COUNT(*) AS value FROM members a JOIN members z ON a.bucket=z.bucket AND a.member_id=z.member_id WHERE a.person_id=:subject_id AND z.person_id=:comparison_id GROUP BY a.bucket), "
-		stats := "stats AS (SELECT b.bucket, COALESCE(a.value,0) AS a_count, COALESCE(z.value,0) AS b_count, COALESCE(c.value,0) AS shared_count FROM buckets b LEFT JOIN a_counts a ON a.bucket=b.bucket LEFT JOIN b_counts z ON z.bucket=b.bucket LEFT JOIN shared c ON c.bucket=b.bucket), "
-		roles := "roles AS (SELECT 'forward'::text AS direction, CAST(:subject_id AS text) AS subject_id, CAST(:comparison_id AS text) AS comparison_id UNION ALL SELECT 'reverse'::text, CAST(:comparison_id AS text), CAST(:subject_id AS text) WHERE :directions='both') "
+		sets := "members AS (SELECT DISTINCT " + subject + " AS person_id, " + bucket + " AS bucket, " + distinct + " AS member_id FROM " + relationName(bindings.Fact) + " f " + strings.Join(joins, " ") + " WHERE " + strings.Join(conditions, " AND ") + "), "
+		counts := "a_counts AS (SELECT bucket, COUNT(*) AS value FROM members WHERE person_id = :subject_id GROUP BY bucket), b_counts AS (SELECT bucket, COUNT(*) AS value FROM members WHERE person_id = :comparison_id GROUP BY bucket), " + quote("shared") + " AS (SELECT a.bucket, COUNT(*) AS value FROM members a JOIN members z ON a.bucket=z.bucket AND a.member_id=z.member_id WHERE a.person_id=:subject_id AND z.person_id=:comparison_id GROUP BY a.bucket), "
+		stats := "stats AS (SELECT b.bucket, COALESCE(a.value,0) AS a_count, COALESCE(z.value,0) AS b_count, COALESCE(c.value,0) AS shared_count FROM buckets b LEFT JOIN a_counts a ON a.bucket=b.bucket LEFT JOIN b_counts z ON z.bucket=b.bucket LEFT JOIN " + quote("shared") + " c ON c.bucket=b.bucket), "
+		roles := quote("roles") + " AS (SELECT " + dialect.Text("'forward'") + " AS direction, " + dialect.Text(":subject_id") + " AS subject_id, " + dialect.Text(":comparison_id") + " AS comparison_id UNION ALL SELECT " + dialect.Text("'reverse'") + ", " + dialect.Text(":comparison_id") + ", " + dialect.Text(":subject_id") + " WHERE :directions='both') "
 		denominator := "CASE WHEN r.direction='forward' THEN s.a_count ELSE s.b_count END"
 		other := "CASE WHEN r.direction='forward' THEN s.b_count ELSE s.a_count END"
-		return prefix + sets + counts + stats + roles + "SELECT r.direction,r.subject_id,r.comparison_id,s.bucket,(CASE WHEN (" + denominator + ")=0 THEN 0::numeric ELSE s.shared_count::numeric/(" + denominator + ") END + " + qualityCheck + ")::numeric AS value,(" + denominator + ")::bigint AS subject_count,(" + other + ")::bigint AS comparison_count,s.shared_count::bigint AS shared_count FROM roles r CROSS JOIN stats s JOIN " + metricRelationName(identity.Target) + " p ON p." + quoteMetricIdentifier(key.ColumnName) + "=r.subject_id JOIN " + metricRelationName(identity.Target) + " other_person ON other_person." + quoteMetricIdentifier(key.ColumnName) + "=r.comparison_id", nil
+		value := dialect.Decimal("CASE WHEN (" + denominator + ")=0 THEN 0 ELSE " + dialect.Decimal("s.shared_count") + "/(" + denominator + ") END + " + qualityCheck)
+		return prefix + sets + counts + stats + roles + "SELECT r.direction,r.subject_id,r.comparison_id,s.bucket," + value + " AS value," + dialect.Integer(denominator) + " AS subject_count," + dialect.Integer(other) + " AS comparison_count," + dialect.Integer("s.shared_count") + " AS shared_count FROM " + quote("roles") + " r CROSS JOIN stats s JOIN " + relationName(identity.Target) + " p ON " + column("p", key) + "=r.subject_id JOIN " + relationName(identity.Target) + " other_person ON " + column("other_person", key) + "=r.comparison_id", nil
 	}
-	return "WITH calendar AS (SELECT (date_trunc('month', CAST(:start_date AS date)) + n * INTERVAL '1 month')::date AS bucket FROM (VALUES " + strings.Join(offsets, ",") + ") offsets(n)), " +
-		"buckets AS (SELECT bucket FROM calendar WHERE :grain = 'month' AND bucket < CAST(:end_date AS date) UNION ALL SELECT CAST(:start_date AS date) WHERE :grain = 'total'), " +
-		"counts AS (SELECT " + bucket + " AS bucket, COUNT(DISTINCT " + distinct + ") AS value FROM " + metricRelationName(bindings.Fact) + " f " + strings.Join(joins, " ") + " WHERE " + strings.Join(conditions, " AND ") + " GROUP BY 1) " +
-		"SELECT p." + quoteMetricIdentifier(key.ColumnName) + " AS subject_id, b.bucket, (COALESCE(c.value, 0) + " + qualityCheck + ")::bigint AS value FROM " + metricRelationName(identity.Target) + " p CROSS JOIN buckets b LEFT JOIN counts c ON c.bucket = b.bucket WHERE p." + quoteMetricIdentifier(key.ColumnName) + " = :subject_id", nil
+	return prefix + "counts AS (SELECT " + bucket + " AS bucket, COUNT(DISTINCT " + distinct + ") AS value FROM " + relationName(bindings.Fact) + " f " + strings.Join(joins, " ") + " WHERE " + strings.Join(conditions, " AND ") + " GROUP BY 1) " +
+		"SELECT p." + quote(key.ColumnName) + " AS subject_id, b.bucket, " + dialect.Integer("COALESCE(c.value, 0) + "+qualityCheck) + " AS value FROM " + relationName(identity.Target) + " p CROSS JOIN buckets b LEFT JOIN counts c ON c.bucket = b.bucket WHERE " + column("p", key) + " = :subject_id", nil
+
 }
 
 func sortedMetricRelationIDs(relations map[int64]metricPlanRelation) []int64 {

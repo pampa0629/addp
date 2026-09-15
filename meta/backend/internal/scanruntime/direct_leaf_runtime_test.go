@@ -41,8 +41,12 @@ func TestDirectLeafRuntimeScansRootLeavesAndDeletesMissingItems(t *testing.T) {
 	if root.NodeType != plugin.EngineCatalogTermService || root.FullName != "" {
 		t.Fatalf("root type/full_name = %q/%q, want service/empty", root.NodeType, root.FullName)
 	}
-	if root.ScanStatus != "completed" || root.ItemCount != 2 || root.ScannedDepth != models.ScannedDepthBasic {
-		t.Fatalf("root status/count/depth = %q/%d/%q, want completed/2/basic", root.ScanStatus, root.ItemCount, root.ScannedDepth)
+	stats, err := metaRepo.QueryNodeStatistics(db, 1, resource.ID, []uint{root.ID})
+	if err != nil || len(stats) != 1 {
+		t.Fatalf("statistics: %v, %v", stats, err)
+	}
+	if root.ScanStatus != "completed" || stats[0].ItemCount != 2 || root.ScannedDepth != models.ScannedDepthBasic {
+		t.Fatalf("root status/count/depth = %q/%d/%q, want completed/2/basic", root.ScanStatus, stats[0].ItemCount, root.ScannedDepth)
 	}
 
 	orders, ok, err := repo.FindItemByFullName(1, resource.ID, "orders")
@@ -79,8 +83,12 @@ func TestDirectLeafRuntimeScansRootLeavesAndDeletesMissingItems(t *testing.T) {
 	if err := db.Where("tenant_id = ? AND engine_id = ? AND parent_node_id IS NULL", 1, resource.ID).First(&root).Error; err != nil {
 		t.Fatalf("query second root node: %v", err)
 	}
-	if root.ItemCount != 1 || root.ScannedDepth != models.ScannedDepthDeep {
-		t.Fatalf("second root count/depth = %d/%q, want 1/deep", root.ItemCount, root.ScannedDepth)
+	stats, err = metaRepo.QueryNodeStatistics(db, 1, resource.ID, []uint{root.ID})
+	if err != nil || len(stats) != 1 {
+		t.Fatalf("statistics: %v, %v", stats, err)
+	}
+	if stats[0].ItemCount != 1 || root.ScannedDepth != models.ScannedDepthDeep {
+		t.Fatalf("second root count/depth = %d/%q, want 1/deep", stats[0].ItemCount, root.ScannedDepth)
 	}
 }
 

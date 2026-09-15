@@ -431,9 +431,9 @@ GET/PUT /api/v1/standard/documents/:id/mappings # 多维关联（数据元/术�
 - **MinIO**: 标准文档文件存储（bucket: `standard`）
 
 **被依赖**（其他模块调用 Standard 的 API）:
-- **Model 模块**: 验证 domain_id、element_id / element_revision_id、metric_definition_revision_id；维度层级只校验 Model 本地事实
+- **Model 模块**: 验证 domain_id、element_id / element_revision_id、metric_definition_revision_id；Mermaid 交换文档通过稳定 `domain_code / element_code` 精确解析当前 Tenant 运行时 ID；维度层级只校验 Model 本地事实
 
-`/api/v1/standard` 路由只接受 canonical Bearer Tenant AuthContext；文档下载还可使用 Standard owner 的 Browser Resource Ticket。Catalog 对 Domain、Glossary、Element 语义引用的校验只走 `/api/v1/standard/references/resolve`；Metric 目录来源只走 `/catalog-resources/changes` 与 `/runtime/catalog-references/resolve`，两类契约不可混用，也不提供面向 Asset 的自动发现接口。
+`/api/v1/standard` 路由只接受 canonical Bearer Tenant AuthContext；文档下载还可使用 Standard owner 的 Browser Resource Ticket。Catalog 与 Model 对 Domain、Glossary、Element 稳定身份的精确校验只走 `/api/v1/standard/references/resolve`，每项必须且只能提交 Tenant 内代理 `id` 或不可变 `code`；`addp-model` 只解析 Domain 与 Element，Glossary 仍只允许 `addp-catalog`。Metric 目录来源只走 `/catalog-resources/changes` 与 `/runtime/catalog-references/resolve`，两类契约不可混用，也不提供面向 Asset 的自动发现接口。
 
 ## IAM Permission 所有权
 

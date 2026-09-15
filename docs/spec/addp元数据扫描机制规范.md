@@ -76,6 +76,17 @@ Meta 扫描只保留四个核心维度：
 5. `item_id` selector 解析出的 `ScanScope` 和 execution config 必须保持 item 模式，不得为了执行方便补写父级 `catalog_paths` 或 sibling `ref_groups`。
 6. Manager preview、Meta 查询 API 和其他消费方只能读取已落库 attributes 与 `access_index`；缺失或不可用时应降级读取或提示用户执行 item refresh，不得在预览或查询链路自动触发扫描、写回 attributes 或临时构建 `access_index`。
 
+### 对象目录归属不变量
+
+对象 item 的父 node 只能由其规范 bucket 内路径决定，与 selector、扫描起点及扫描深度无关。`full_name = 父 node.full_name + "/" + item.name` 必须成立；whole 布局使用逻辑 item 路径的父目录，不能使用内部主文件的父目录。
+
+- `scanresource` 规划 item 身份与 bucket 内父路径；repository 从 bucket 构造完整 prefix 链，普通对象、组合对象与上传 `ref_groups` 共用这一条实现。
+- 对象 detector 的 scope、content refs 与回调参数统一使用 bucket 内路径；构造持久化 item plan 时只添加一次 bucket。禁止通过首段是否等于 bucket 猜测路径类型，否则同名目录会被误删。进入 processor 的 refs 则使用外部完整 content path。
+- 不得将扫描起点当作资源树根、从 item 路径剥离扫描前缀后另行拼接父链，或要求调用者预先建好扫描起点作为隐式前置条件。
+- 创建 prefix 链不等于枚举父目录，不扩大 `ref_groups` 的内容边界。节点扫描状态只覆盖本次完整枚举的范围；引用组扫描不宣称完成父目录扫描，也不写目录数量或大小。
+- 写入前必须检查对象 item 身份与父节点是否一致，不能把挂错目录的写入报告为成功。目录扫描遇到既有错误归属时，即使内容未变化，也必须按规范路径重新归属。
+
+
 ## ScanTask 与 Execution 边界
 
 Meta 扫描必须区分任务定义和执行记录：
@@ -313,7 +324,15 @@ Meta API 和扫描任务参数中，路径型扫描目标统一使用 `catalog_p
 
 Meta 扫描必须先通过 `EngineCatalogProvider.ListChildren()` 获得 `EngineCatalogEntry`，再按条目角色、扫描深度和 provider 组合决定是否进一步读取 `EngineCatalogFacts`。
 
-对 `meta_node`，通常只消费 `EngineCatalogEntry`：root、schema、database、bucket、prefix、directory 等 branch 的身份、层级、展示名、`full_name`、`LeafCount` 和低成本 `Storage.Path` 足以建立资源树。node 的 `item_count`、`total_size`、`scan_status`、`scanned_depth` 来自 Meta 扫描聚合和过程状态，不是 engine 对 node 的原生 facts。第一阶段不为 node 设计 deep-only facts；如果后续要持久化 bucket region、owner、目录权限、生命周期策略等原生事实，必须先单独扩展规范，不能把它们混入 item facts。
+对 `meta_node`，通常只消费 `EngineCatalogEntry`：root、schema、database、bucket、prefix、directory 等 branch 的身份、层级、展示名、`full_name` 和低成本 `Storage.Path` 足以建立资源树。node 的 `scan_status`、`scanned_depth`、`scanned_at` 来自扫描过程，不是 engine 对 node 的原生 facts。第一阶段不为 node 设计 deep-only facts；如果后续要持久化 bucket region、owner、目录权限、生命周期策略等原生事实，必须先单独扩展规范，不能把它们混入 item facts。
+
+### 节点统计的唯一事实来源
+
+- 节点 API 的 `item_count`、`total_size_bytes` 是 Meta 查询层的派生结果，不是 `meta_node` 存储字段，也不是上次扫描快照。所有树、详情、子节点和祖先链入口共用 repository 的批量子树聚合。
+- 子树按当前 `parent_node_id` 关系确定，包含节点自身，限定相同 tenant、engine，并排除已删除节点及其不可达后代。只统计这些节点下未删除的 `meta_item`；每个逻辑 DataItem 计一次，multi/whole 的 content refs 和容器内部 children 不单独计数。
+- `total_size_bytes` 汇总已登记 item 的 `size_bytes`，忽略未知值；没有已知大小时返回 0。这是已知大小合计，不声称大小信息完整，也不访问源引擎补全。
+- 上传、覆盖、删除、归属修正只改变节点和 item 事实；查询自然反映最新已提交记录。不得逐入口加减计数、写回祖先统计或维护另一份统计缓存。API 保持现有字段和路由，不增加兼容字段。
+- 目录统计与扫描状态独立。局部内容同步不能更新父目录完整扫描时间、深度或状态。Manager 等待 Meta 同步完成后重新读取目录；同步失败不能以文件上传成功代替目录已同步。
 
 对 `meta_item`，`EngineCatalogEntry` 只提供路径坐标、身份和列表级摘要，不能当作完整详情事实使用。`basic` 可以使用 `EngineCatalogEntry.Table`、`EngineCatalogEntry.Storage`、`EngineCatalogEntry.UpdatedAt` 等低成本摘要建立 item 身份、存储属性和跳过判断；需要字段、主键、索引、graph schema、动态 schema 采样、文件内容格式信息、容器 children 或访问索引时，必须显式通过 `EngineCatalogFactsProvider`、`DynamicSchemaSamplingProvider`、content reader 或 format info provider 获取。
 

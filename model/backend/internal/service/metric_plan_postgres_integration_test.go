@@ -36,7 +36,7 @@ func TestPostgresMetricCompiledMonthlyCountGolden(t *testing.T) {
 		`CREATE TABLE model.metric_golden_people(person_id text PRIMARY KEY)`,
 		`CREATE TABLE model.metric_golden_events(event_id text PRIMARY KEY,event_date date NOT NULL)`,
 		`CREATE TABLE model.metric_golden_facts(person_id text NOT NULL,event_id text NOT NULL,leader bool NOT NULL)`,
-		`INSERT INTO model.metric_golden_people VALUES ('A'),('B'),('C'),('quoted''person')`,
+		`INSERT INTO model.metric_golden_people VALUES ('A'),('B'),('C'),('a'),('A '),('quoted''person')`,
 		`INSERT INTO model.metric_golden_events VALUES ('e1','2026-01-01'),('e2','2026-01-02'),('e3','2026-01-03'),('e6','2026-01-06'),('e4','2026-02-01'),('e5','2026-03-01'),('previous','2025-12-31'),('following','2027-01-01')`,
 		`INSERT INTO model.metric_golden_facts VALUES ('A','e1',true),('A','e2',true),('A','e6',true),('A','e4',true),('A','e5',false),('B','e1',false),('B','e3',true),('B','e4',false),('A','e1',true),('A','previous',true),('A','following',true)`,
 	} {
@@ -45,7 +45,7 @@ func TestPostgresMetricCompiledMonthlyCountGolden(t *testing.T) {
 		}
 	}
 	contract, bindings := metricGoldenContract()
-	sql, err := compileMetricSQL(contract, bindings)
+	sql, err := compileMetricSQL(contract, bindings, metricTestDialect(t, "postgresql"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,6 +54,8 @@ func TestPostgresMetricCompiledMonthlyCountGolden(t *testing.T) {
 		want                             []int64
 	}{
 		{"monthly", "A", "2026-01-01", "2027-01-01", "month", []int64{3, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}},
+		{"case-sensitive", "a", "2026-01-01", "2027-01-01", "total", []int64{0}},
+		{"trailing-space", "A ", "2026-01-01", "2027-01-01", "total", []int64{0}},
 		{"annual", "A", "2026-01-01", "2027-01-01", "total", []int64{4}},
 		{"empty-person", "C", "2026-01-01", "2026-03-01", "month", []int64{0, 0}},
 		{"missing-person", "missing", "2026-01-01", "2027-01-01", "total", nil},
@@ -111,7 +113,7 @@ func TestMetricCompilerRejectsAmbiguousDimensionsAndUnknownFields(t *testing.T) 
 			case "duplicate-filter":
 				contract.Filters = append(contract.Filters, contract.Filters[0])
 			}
-			if _, err := compileMetricSQL(contract, bindings); err == nil {
+			if _, err := compileMetricSQL(contract, bindings, metricTestDialect(t, "postgresql")); err == nil {
 				t.Fatal("invalid contract accepted")
 			}
 		})
@@ -133,7 +135,7 @@ func TestPostgresMetricCountRejectsBrokenDimensionData(t *testing.T) {
 		}
 	}
 	contract, bindings := metricGoldenContract()
-	sql, err := compileMetricSQL(contract, bindings)
+	sql, err := compileMetricSQL(contract, bindings, metricTestDialect(t, "postgresql"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -170,10 +172,10 @@ func TestPostgresMetricPlanUsesSharedPreparedQuery(t *testing.T) {
 	}
 	defer db.Close()
 	schema := fmt.Sprintf("metric_plan_%d", time.Now().UnixNano())
-	if _, err := db.Exec("CREATE SCHEMA " + quoteMetricIdentifier(schema)); err != nil {
+	if _, err := db.Exec("CREATE SCHEMA " + query.ForDialect(query.DialectPostgreSQL).QuoteIdentifier(schema)); err != nil {
 		t.Fatal(err)
 	}
-	defer db.Exec("DROP SCHEMA " + quoteMetricIdentifier(schema) + " CASCADE")
+	defer db.Exec("DROP SCHEMA " + query.ForDialect(query.DialectPostgreSQL).QuoteIdentifier(schema) + " CASCADE")
 	for _, statement := range []string{
 		`CREATE TABLE SCHEMA.metric_golden_people(person_id text PRIMARY KEY)`,
 		`CREATE TABLE SCHEMA.metric_golden_events(event_id text PRIMARY KEY,event_date date NOT NULL)`,
@@ -182,7 +184,7 @@ func TestPostgresMetricPlanUsesSharedPreparedQuery(t *testing.T) {
 		`INSERT INTO SCHEMA.metric_golden_events VALUES ('e1','2026-01-01')`,
 		`INSERT INTO SCHEMA.metric_golden_facts VALUES ('A','e1',true)`,
 	} {
-		if _, err := db.Exec(strings.ReplaceAll(statement, "SCHEMA", quoteMetricIdentifier(schema))); err != nil {
+		if _, err := db.Exec(strings.ReplaceAll(statement, "SCHEMA", query.ForDialect(query.DialectPostgreSQL).QuoteIdentifier(schema))); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -203,7 +205,7 @@ func TestPostgresMetricPlanUsesSharedPreparedQuery(t *testing.T) {
 				input["directions"] = "both"
 				wantRows = 4
 			}
-			compiled, err := compileMetricSQL(contract, bindings)
+			compiled, err := compileMetricSQL(contract, bindings, metricTestDialect(t, "postgresql"))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -264,7 +266,7 @@ func TestPostgresDirectionalOverlapGolden(t *testing.T) {
 	contract, bindings := metricGoldenContract()
 	contract.Operation = "directional_overlap"
 	contract.Filters = nil
-	compiled, err := compileMetricSQL(contract, bindings)
+	compiled, err := compileMetricSQL(contract, bindings, metricTestDialect(t, "postgresql"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -321,7 +323,7 @@ func TestPostgresDirectionalOverlapGolden(t *testing.T) {
 func TestDirectionalOverlapRejectsUndeclaredRoleFiltersAndParameters(t *testing.T) {
 	c, b := metricGoldenContract()
 	c.Operation = "directional_overlap"
-	if _, err := compileMetricSQL(c, b); err == nil {
+	if _, err := compileMetricSQL(c, b, metricTestDialect(t, "postgresql")); err == nil {
 		t.Fatal("leader-specific filter accepted for overlap")
 	}
 	input := models.MetricQueryInput{SubjectID: "A", StartDate: "2026-01-01", EndDate: "2027-01-01", Grain: "total"}
@@ -337,4 +339,13 @@ func TestDirectionalOverlapRejectsUndeclaredRoleFiltersAndParameters(t *testing.
 	if validateMetricOperationInput("directional_overlap", input) == nil {
 		t.Fatal("unknown direction accepted")
 	}
+}
+
+func metricTestDialect(t *testing.T, engine string) query.AnalyticalDialect {
+	t.Helper()
+	dialect, err := plugin.ResolveAnalyticalSQLDialect(engine)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return dialect
 }

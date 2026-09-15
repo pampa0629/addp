@@ -23,3 +23,11 @@ test('PDF preview compares stable watch sources instead of a newly allocated arr
   assert.match(pdfPreview, /watch\(\s*\[\s*\(\) => props\.data\?\.object\?\.path/)
   assert.doesNotMatch(pdfPreview, /watch\(\s*\(\) => \[/)
 })
+
+test('PDF preview loads character maps and standard fonts for non-embedded CID fonts', () => {
+  const pdfPreview = source('common-frontend/basic/src/components/previews/PdfPreview.vue')
+
+  assert.match(pdfPreview, /cMapUrl:\s*pdfjsAssetUrl\('cmaps\/'\)/)
+  assert.match(pdfPreview, /cMapPacked:\s*true/)
+  assert.match(pdfPreview, /standardFontDataUrl:\s*pdfjsAssetUrl\('standard_fonts\/'\)/)
+})

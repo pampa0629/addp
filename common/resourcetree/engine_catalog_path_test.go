@@ -187,3 +187,67 @@ func assertCatalogSegments(t *testing.T, path plugin.EngineCatalogPath, want []p
 		t.Fatalf("segments = %#v, want %#v", path.Segments, want)
 	}
 }
+
+func TestProviderCatalogPathFromLocatorDeclaredLevels(t *testing.T) {
+	model := plugin.EngineCatalogModelSpec{PathVersion: plugin.EngineCatalogPathVersion, RootTerm: plugin.EngineCatalogTermServer, Levels: []plugin.EngineCatalogLevelSpec{
+		{Term: "catalog", Kinds: []string{"namespace"}, Role: plugin.EngineCatalogRoleBranch},
+		{Term: "schema", Kinds: []string{"namespace"}, Role: plugin.EngineCatalogRoleBranch},
+		{Term: "table", Kinds: []string{"table", "view"}, Role: plugin.EngineCatalogRoleLeaf},
+	}}
+	loc := &ResourceLocator{EngineID: 7, Type: ResourceType("view"), Path: []string{"Lake", " sales ", "Order/detail"}}
+	got, err := EngineCatalogPathFromLocator(model, loc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertCatalogSegments(t, got, []plugin.EngineCatalogSegment{{Term: "server", Kind: "server"}, {Term: "catalog", Kind: "namespace", Name: "Lake"}, {Term: "schema", Kind: "namespace", Name: " sales "}, {Term: "table", Kind: "view", Name: "Order/detail"}})
+	if !reflect.DeepEqual(loc.Path, []string{"Lake", " sales ", "Order/detail"}) {
+		t.Fatal("locator mutated")
+	}
+	for _, name := range []string{"catalog", "schema"} {
+		length := 1
+		if name == "schema" {
+			length = 2
+		}
+		branch, err := EngineCatalogPathFromLocator(model, &ResourceLocator{EngineID: 7, Type: ResourceType(name), Path: loc.Path[:length]})
+		if err != nil || branch.Segments[len(branch.Segments)-1].Term != name {
+			t.Fatalf("branch %s: %v", name, err)
+		}
+	}
+	model.Levels[0].Optional = true
+	_, err = EngineCatalogPathFromLocator(model, &ResourceLocator{EngineID: 7, Type: TypeTable, Path: []string{"sales", "orders"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	model.Levels[1].Optional = true
+	if _, err = EngineCatalogPathFromLocator(model, &ResourceLocator{EngineID: 7, Type: TypeTable, Path: []string{"sales", "orders"}}); err == nil {
+		t.Fatal("ambiguous optional level silently resolved")
+	}
+}
+
+func TestProviderCatalogPathFromLocatorRejectsInvalidDeclaredPath(t *testing.T) {
+	model := plugin.TabularCatalogModel(plugin.EngineCatalogTermSchema)
+	for _, path := range [][]string{{"public"}, {"public", "orders", "extra"}, {"", "orders"}, {"public", "bad\x00name"}} {
+		if _, err := EngineCatalogPathFromLocator(model, &ResourceLocator{EngineID: 7, Type: TypeTable, Path: path}); err == nil {
+			t.Fatal("invalid declared path accepted")
+		}
+	}
+	model.PathVersion = "future"
+	if _, err := EngineCatalogPathFromLocator(model, &ResourceLocator{EngineID: 7, Type: TypeTable, Path: []string{"public", "orders"}}); err == nil {
+		t.Fatal("unknown path schema accepted")
+	}
+}
+
+func TestProviderCatalogPathFromLocatorRejectsResourceBudget(t *testing.T) {
+	model := plugin.TabularCatalogModel(plugin.EngineCatalogTermSchema)
+	names := make([]string, 129)
+	for i := range names {
+		names[i] = "x"
+	}
+	if _, err := EngineCatalogPathFromLocator(model, &ResourceLocator{EngineID: 7, Type: TypeTable, Path: names}); err == nil {
+		t.Fatal("oversized path accepted")
+	}
+	model.Levels = make([]plugin.EngineCatalogLevelSpec, 129)
+	if _, err := EngineCatalogPathFromLocator(model, &ResourceLocator{EngineID: 7, Type: TypeServer}); err == nil {
+		t.Fatal("oversized model accepted")
+	}
+}

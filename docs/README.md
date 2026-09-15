@@ -62,6 +62,7 @@
 - [国际化体系图](concepts/addp国际化体系图.md)
 - [国际化开发规范](spec/addp国际化开发规范.md)
 - [前端路由与可恢复状态规范](spec/addp前端路由与可恢复状态规范.md)
+- [数据库无关分析计算契约（目标设计）](spec/addp引擎插件接口规范.md#数据库无关分析计算契约)
 - [测试与验收规范](spec/addp测试与验收规范.md)
 - [Online 专用 Runner 首次验收待办](next/ADDP统一测试与Online验收体系方案.md)
 - [GitHub 外部治理与 T4 Runner 待办](next/ADDP持续集成体系改进专题.md)

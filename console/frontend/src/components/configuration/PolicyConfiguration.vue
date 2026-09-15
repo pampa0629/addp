@@ -1,12 +1,14 @@
 <template>
   <section class="policy-configuration">
-    <header class="policy-header"><div><h2>{{ t(`console.configuration.policies.${owner}.title`) }}</h2><p>{{ contextLabel }}</p></div><el-button :icon="Refresh" circle :loading="loading" @click="load" /></header>
-    <el-form v-loading="loading" :model="form" label-position="top" class="policy-form">
+    <header class="policy-header"><div><h2>{{ t(`console.configuration.policies.${owner}.title`) }}</h2><p>{{ contextLabel }}</p></div><el-button :icon="Refresh" :aria-label="t('common.refresh')" circle :loading="loading" @click="load" /></header>
+    <el-form v-if="owner !== 'develop' || loaded" v-loading="loading" :model="form" label-position="top" class="policy-form">
       <template v-if="owner === 'develop'">
-        <el-alert :title="t('console.configuration.policies.develop.applyHint')" type="info" :closable="false" show-icon />
+        <h3 v-if="!isPlatform" class="policy-group-title">{{ t('console.configuration.policies.develop.tenantSettings') }}</h3>
+        <el-alert :title="t(`console.configuration.policies.develop.${isPlatform ? 'applyHint' : 'tenantApplyHint'}`)" type="info" :closable="false" show-icon />
         <el-form-item :label="t('console.configuration.policies.develop.defaultQueryTimeout')">
-          <el-input-number v-model="form.default_query_timeout" :min="1" :max="3600" controls-position="right" />
+          <el-input-number v-model="form.default_query_timeout" :disabled="!canUpdate" :min="1" :max="3600" controls-position="right" />
         </el-form-item>
+        <p v-if="!isPlatform" class="policy-hint">{{ t(`console.configuration.policies.develop.${form.inherited ? 'inheritedTimeout' : 'tenantTimeout'}`) }}</p>
         <template v-if="isPlatform">
           <el-form-item :label="t('console.configuration.policies.develop.maxQueryTimeout')">
             <el-input-number v-model="form.max_query_timeout" :min="1" :max="86400" controls-position="right" />
@@ -28,6 +30,16 @@
       <template v-else-if="owner === 'service'"><el-form-item :label="t('console.configuration.policies.service.healthCheckCron')"><el-input v-model="form.health_check_cron" /></el-form-item><el-form-item :label="t('console.configuration.policies.service.metadataRefreshCron')"><el-input v-model="form.metadata_refresh_cron" /></el-form-item></template>
       <footer class="form-actions"><el-button type="primary" :icon="Check" :loading="saving" :disabled="!canUpdate" @click="save">{{ t('console.configuration.save') }}</el-button></footer>
     </el-form>
+    <section v-if="owner === 'develop' && !isPlatform && loaded" class="platform-constraints" :aria-label="t('console.configuration.policies.develop.platformConstraints')">
+      <h3 class="policy-group-title">{{ t('console.configuration.policies.develop.platformConstraints') }}</h3>
+      <p class="policy-hint">{{ t('console.configuration.policies.develop.platformManagedHint') }}</p>
+      <el-descriptions :column="1" border>
+        <el-descriptions-item v-for="field in DEVELOP_PLATFORM_FIELDS" :key="field.key" :label="t(`console.configuration.policies.develop.${field.label}`)">
+          {{ form[field.key] }}
+        </el-descriptions-item>
+      </el-descriptions>
+      <p class="policy-hint">{{ t('console.configuration.policies.develop.sharedConcurrencyHint') }}</p>
+    </section>
   </section>
 </template>
 <script setup>
@@ -39,6 +51,13 @@ import { useAuthStore } from '../../store/auth'
 import { getPolicyConfiguration, updatePolicyConfiguration } from '../../api/policyConfiguration'
 const props = defineProps({ owner: { type: String, required: true } }); const owner = props.owner
 const { t } = useI18n(); const authStore = useAuthStore(); const loading = ref(false); const saving = ref(false)
+const loaded = ref(false)
+const DEVELOP_PLATFORM_FIELDS = [
+  { key: 'max_query_timeout', label: 'maxQueryTimeout' },
+  { key: 'query_result_limit', label: 'queryResultLimit' },
+  { key: 'query_concurrency', label: 'queryConcurrency' },
+  { key: 'query_per_engine_concurrency', label: 'queryPerEngineConcurrency' }
+]
 const form = reactive({ version: 0, default_query_timeout: 30, max_query_timeout: 300, query_result_limit: 500, query_concurrency: 20, query_per_engine_concurrency: 5, direct_flatgeobuf_max_rows: 2000, realtime_tile_timeout_ms: 2500, realtime_tile_retry_after_sec: 60, raster_mosaic_generation_timeout_seconds: 7200, alert_evaluation_interval_seconds: 15, webhook_dispatch_interval_seconds: 2, webhook_http_timeout_seconds: 10, webhook_lease_duration_seconds: 30, webhook_max_attempts: 8, webhook_retry_initial_backoff_seconds: 5, webhook_retry_max_backoff_seconds: 300, email_dispatch_interval_seconds: 2, email_smtp_timeout_seconds: 15, email_lease_duration_seconds: 30, email_max_attempts: 8, email_retry_initial_backoff_seconds: 5, email_retry_max_backoff_seconds: 300, diagnostics_interval_seconds: 15, retention_degraded_horizon_seconds: 21600, retention_critical_horizon_seconds: 3600, checkpoint_stale_after_seconds: 300, recovery_initial_backoff_seconds: 1, recovery_max_backoff_seconds: 60, recovery_max_failures: 5, recovery_circuit_open_seconds: 300, recovery_stability_window_seconds: 300 })
 const TRANSFER_FIELDS = [
   { key: 'diagnostics_interval_seconds', label: 'diagnosticsInterval', min: 1, max: 86400 },
@@ -67,7 +86,18 @@ const MONITOR_FIELDS = [
   { key: 'email_retry_max_backoff_seconds', label: 'emailRetryMax', min: 1, max: 31536000 }
 ]
 const isPlatform = computed(() => authStore.contextType === 'platform'); const contextLabel = computed(() => isPlatform.value ? t('console.configuration.platformContext') : t('console.configuration.tenantContext')); const canUpdate = computed(() => authStore.hasPermission(`${owner}.configuration.update`))
-async function load() { loading.value = true; try { Object.assign(form, await getPolicyConfiguration(owner)) } catch (error) { ElMessage.error(error?.response?.data?.error || t('console.configuration.loadFailed')) } finally { loading.value = false } }
+async function load() {
+  loading.value = true
+  try {
+    Object.assign(form, await getPolicyConfiguration(owner))
+    loaded.value = true
+  } catch (error) {
+    loaded.value = false
+    ElMessage.error(error?.response?.data?.error || t('console.configuration.loadFailed'))
+  } finally {
+    loading.value = false
+  }
+}
 function savePayload() {
   if (owner !== 'develop') return { ...form }
   const payload = { version: form.version, default_query_timeout: form.default_query_timeout }
@@ -80,4 +110,17 @@ function savePayload() {
 async function save() { saving.value = true; try { await updatePolicyConfiguration(owner, savePayload()); ElMessage.success(t('console.configuration.saveSuccess')); await load() } catch (error) { if (error?.response?.status === 409) { ElMessage.warning(t('console.configuration.versionConflict')) } else ElMessage.error(error?.response?.data?.error || t('console.configuration.saveFailed')) } finally { saving.value = false } }
 onMounted(load)
 </script>
-<style scoped>.policy-configuration{width:100%}.policy-header{display:flex;align-items:center;justify-content:space-between;gap:20px;margin-bottom:20px}.policy-header h2{margin:0 0 6px;color:var(--addp-text-primary);font-size:20px;font-weight:600;letter-spacing:0}.policy-header p{margin:0;color:var(--addp-text-secondary);font-size:14px}.policy-form{max-width:560px}.policy-form .el-alert{margin-bottom:20px}.form-actions{display:flex;justify-content:flex-end;margin-top:12px}</style>
+<style scoped>
+.policy-configuration{width:100%}
+.policy-header{display:flex;align-items:center;justify-content:space-between;gap:20px;margin-bottom:20px}
+.policy-header h2{margin:0 0 6px;color:var(--addp-text-primary);font-size:20px;font-weight:600;letter-spacing:0}
+.policy-header p{margin:0;color:var(--addp-text-secondary);font-size:14px}
+.policy-form,.platform-constraints{max-width:560px}
+.policy-form .el-alert{margin-bottom:20px}
+.form-actions{display:flex;justify-content:flex-end;margin-top:12px}
+.platform-constraints{margin-top:32px}
+.policy-group-title{margin:0 0 16px;color:var(--addp-text-primary);font-size:16px;font-weight:600}
+.policy-hint{margin:12px 0;color:var(--addp-text-secondary);font-size:14px;line-height:1.5}
+.platform-constraints :deep(.el-descriptions__table){table-layout:fixed}
+.platform-constraints :deep(.el-descriptions__label){width:70%;overflow-wrap:anywhere}
+</style>

@@ -17,7 +17,6 @@ import (
 	"github.com/addp/meta/internal/metaenrich"
 	"github.com/addp/meta/internal/models"
 	metaRepo "github.com/addp/meta/internal/repository"
-	"github.com/addp/meta/internal/scanflow"
 	"github.com/addp/meta/internal/scanresource"
 	"gorm.io/gorm"
 )
@@ -134,21 +133,19 @@ func TestDetectObjectCatalogResourceFormatKeepsUnknownBinary(t *testing.T) {
 	}
 }
 
-func TestEnsureObjectCatalogPrefixNodesUsesCompositeItemParentPath(t *testing.T) {
+func TestEnsureObjectCatalogPrefixChainUsesCompositeItemParentPath(t *testing.T) {
 	db := openObjectCatalogScanTestDB(t)
 	repo := metaRepo.NewScanRepository(db)
-	runtime := NewObjectStorageCatalogRuntime(db, slog.New(slog.NewTextHandler(io.Discard, nil)), repo, nil)
-
 	bucketNode, err := repo.UpsertNode(1, 9, nil, "bucket", "addp", strPtr("addp"), scanresource.ObjectBucketNodeAttributes("addp"))
 	if err != nil {
 		t.Fatalf("create bucket node: %v", err)
 	}
 
-	stats := map[uint]*scanflow.ObjectCatalogNodeAggregate{}
-	parentNode, err := runtime.ensureObjectCatalogPrefixNodes(1, 9, bucketNode, bucketNode, "gis/", "", stats)
+	chain, err := repo.EnsureObjectCatalogPrefixChain(1, 9, bucketNode, "gis/")
 	if err != nil {
 		t.Fatalf("ensure prefix nodes: %v", err)
 	}
+	parentNode := chain[len(chain)-1]
 
 	if parentNode.ID == bucketNode.ID {
 		t.Fatal("composite item under addp/gis should attach to gis prefix, not bucket scope")
@@ -156,8 +153,69 @@ func TestEnsureObjectCatalogPrefixNodesUsesCompositeItemParentPath(t *testing.T)
 	if parentNode.NodeType != "prefix" || parentNode.Name != "gis" || parentNode.FullName != "addp/gis" {
 		t.Fatalf("parent node = %#v, want addp/gis prefix", parentNode)
 	}
-	if _, ok := stats[parentNode.ID]; !ok {
-		t.Fatalf("gis prefix aggregate was not initialized")
+	if len(chain) != 2 || chain[0].ID != bucketNode.ID {
+		t.Fatalf("parent chain = %#v, want bucket and gis", chain)
+	}
+}
+
+func TestObjectCatalogParentIsIndependentOfScanScope(t *testing.T) {
+	for _, layout := range []string{"single", "multi"} {
+		t.Run(layout, func(t *testing.T) {
+			reader := staticObjectContentReader{content: ""}
+			pluginRegisterForTest(t, reader)
+			db := openObjectCatalogScanTestDB(t)
+			repo := metaRepo.NewScanRepository(db)
+			runtime := NewObjectStorageCatalogRuntime(db, slog.New(slog.NewTextHandler(io.Discard, nil)), repo, nil)
+			bucket, err := repo.UpsertNode(1, 9, nil, "bucket", "addp", strPtr("addp"), scanresource.ObjectBucketNodeAttributes("addp"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			// 首层目录故意与 bucket 同名，确保路径转换不靠前缀猜测。
+			resources := []scanresource.StorageResource{objectResourceForTest(9, "addp", "addp/nested/note.md", 5, "markdown")}
+			if layout == "multi" {
+				resources = []scanresource.StorageResource{
+					shapefileObjectResource(9, "addp", "addp/nested/roads.shp", 5),
+					shapefileObjectResource(9, "addp", "addp/nested/roads.shx", 5),
+					shapefileObjectResource(9, "addp", "addp/nested/roads.dbf", 5),
+				}
+			}
+			// 复现历史坏事实：身份和内容正确，唯独 node_id 错挂 bucket。
+			plan := scanresource.PlanObjectSingleItem(9, resources[0], resources[0].Path, "object")
+			seed, err := repo.UpsertItemWithDepth(1, 9, bucket, "object", plan.ItemName, plan.FullName, plan.Attributes, nil, &resources[0].SizeBytes, nil, models.ScannedDepthBasic)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var parentID uint
+			for _, scope := range []string{"addp/nested", "addp", ""} {
+				stats := map[uint]*models.MetaNode{}
+				count, _, err := runtime.persistObjectResources(context.Background(), &commonModels.Engine{ID: 9, EngineType: reader.Type()}, 1, 9, bucket, resources, stats, scope == "", models.ScannedDepthBasic, false, scope, nil, "object")
+				if err != nil || count != 1 {
+					t.Fatalf("scope %q: count=%d, err=%v", scope, count, err)
+				}
+				item, exists, err := repo.FindItemByFullName(1, 9, plan.FullName)
+				if err != nil || !exists || item.ID != seed.ID {
+					t.Fatalf("scope %q changed item identity: %#v, err=%v", scope, item, err)
+				}
+				var parent models.MetaNode
+				if err := db.First(&parent, item.NodeID).Error; err != nil {
+					t.Fatal(err)
+				}
+				if parent.FullName != "addp/addp/nested" || parent.FullName+"/"+item.Name != item.FullName {
+					t.Fatalf("scope %q: wrong parent %q for %q", scope, parent.FullName, item.FullName)
+				}
+				if parentID != 0 && parent.ID != parentID {
+					t.Fatalf("scope %q changed parent identity", scope)
+				}
+				parentID = parent.ID
+				if got := commonJSON.String(parent.Attributes, "storage", "path"); got != "addp/nested/" {
+					t.Fatalf("scope %q: prefix storage.path = %q", scope, got)
+				}
+				wantNodes := map[string]int{"addp/nested": 1, "addp": 2, "": 3}[scope]
+				if len(stats) != wantNodes {
+					t.Fatalf("scope %q: aggregate nodes=%d, want %d", scope, len(stats), wantNodes)
+				}
+			}
+		})
 	}
 }
 
@@ -187,7 +245,7 @@ func TestObjectCatalogBasicScanGroupsShapefileRefsWithoutSidecarItems(t *testing
 		9,
 		bucketNode,
 		resources,
-		map[uint]*scanflow.ObjectCatalogNodeAggregate{},
+		map[uint]*models.MetaNode{},
 		true,
 		models.ScannedDepthBasic,
 		true,
@@ -241,7 +299,7 @@ func TestObjectCatalogBasicScanGroupsGeoTIFFRefsWithoutSidecarItems(t *testing.T
 		geotiffObjectResource(9, "addp", "image/srtm_40_01.hdr", 20),
 		geotiffObjectResource(9, "addp", "image/srtm_40_01.tif.aux.xml", 30),
 	}
-	stats := map[uint]*scanflow.ObjectCatalogNodeAggregate{}
+	stats := map[uint]*models.MetaNode{}
 	count, _, err := runtime.persistObjectResources(context.Background(),
 		&commonModels.Engine{ID: 9, EngineType: reader.Type()},
 		1,
@@ -262,7 +320,7 @@ func TestObjectCatalogBasicScanGroupsGeoTIFFRefsWithoutSidecarItems(t *testing.T
 	if count != 1 {
 		t.Fatalf("persisted count = %d, want one logical GeoTIFF item", count)
 	}
-	if agg := stats[bucketNode.ID]; agg == nil || agg.ItemCount != 1 {
+	if agg := stats[bucketNode.ID]; agg == nil {
 		t.Fatalf("bucket aggregate = %#v, want one logical GeoTIFF item", agg)
 	}
 
@@ -323,7 +381,7 @@ func TestObjectCatalogDeepScanDetectsRasterMosaicDatasetItem(t *testing.T) {
 		geotiffObjectResource(9, "addp", "mosaics/srtm-test/srtm-test/leaf/srtm_40_01.cog.tif", 4000),
 		geotiffObjectResource(9, "addp", "mosaics/srtm-test/srtm-test/leaf/srtm_46_02.cog.tif", 5000),
 	}
-	stats := map[uint]*scanflow.ObjectCatalogNodeAggregate{}
+	stats := map[uint]*models.MetaNode{}
 	count, _, err := runtime.persistObjectResources(context.Background(),
 		&commonModels.Engine{ID: 9, EngineType: reader.Type()},
 		1,
@@ -420,7 +478,7 @@ func TestObjectCatalogDeepScanDetectsGLBModel3DItem(t *testing.T) {
 		9,
 		bucketNode,
 		resources,
-		map[uint]*scanflow.ObjectCatalogNodeAggregate{},
+		map[uint]*models.MetaNode{},
 		true,
 		models.ScannedDepthDeep,
 		true,
@@ -490,7 +548,7 @@ func TestObjectCatalogDeepScanDetects3DTilesModel3DItem(t *testing.T) {
 		9,
 		bucketNode,
 		resources,
-		map[uint]*scanflow.ObjectCatalogNodeAggregate{},
+		map[uint]*models.MetaNode{},
 		true,
 		models.ScannedDepthDeep,
 		true,
@@ -555,7 +613,7 @@ func TestObjectCatalogDeepScanDetectsLASPointCloudItem(t *testing.T) {
 		9,
 		bucketNode,
 		resources,
-		map[uint]*scanflow.ObjectCatalogNodeAggregate{},
+		map[uint]*models.MetaNode{},
 		true,
 		models.ScannedDepthDeep,
 		true,
@@ -593,6 +651,53 @@ func TestObjectCatalogDeepScanDetectsLASPointCloudItem(t *testing.T) {
 	formatInfo := commonJSON.Section(item.Attributes, "format_info.las")
 	if formatInfo["version"] != "1.4" {
 		t.Fatalf("format_info.las = %#v, want version 1.4", formatInfo)
+	}
+}
+
+func TestObjectCatalogLeafScanUpdatesCountWithoutChangingParentScanState(t *testing.T) {
+	reader := objectCatalogScanTestProvider{content: ""}
+	pluginRegisterForTest(t, reader)
+	db := openObjectCatalogScanTestDB(t)
+	repo := metaRepo.NewScanRepository(db)
+	runtime := NewObjectStorageCatalogRuntime(db, slog.New(slog.NewTextHandler(io.Discard, nil)), repo, nil)
+	resource := &commonModels.Engine{ID: 9, Name: "Object Store", EngineType: reader.Type()}
+	root, err := metaRepo.EnsureEngineCatalogRootNode(repo, 1, resource, reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bucket, err := repo.UpsertNode(1, 9, root, "bucket", "addp", strPtr("addp"), scanresource.ObjectBucketNodeAttributes("addp"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	parent, err := repo.EnsureObjectCatalogPrefixPath(1, 9, bucket, "image")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.FinalizeNodeStateWithDepth(parent, "completed", "", models.ScannedDepthDeep); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.First(parent, parent.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	result, err := runtime.ScanPaths(context.Background(), resource, 1, []string{"addp/image/srtm_40_01.tif"}, nil, models.ScannedDepthBasic, true, nil)
+	if err != nil || result.Items != 1 {
+		t.Fatalf("leaf scan: result=%#v, err=%v", result, err)
+	}
+	var after models.MetaNode
+	if err := db.First(&after, parent.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if after.ScanStatus != "completed" || after.ScannedDepth != models.ScannedDepthDeep || after.ScannedAt == nil || !after.ScannedAt.Equal(*parent.ScannedAt) {
+		t.Fatalf("leaf scan overwrote parent scan state: %#v", after)
+	}
+	stats, err := metaRepo.QueryNodeStatistics(db, 1, resource.ID, []uint{parent.ID, bucket.ID, root.ID})
+	if err != nil || len(stats) != 3 {
+		t.Fatalf("leaf statistics: %#v, %v", stats, err)
+	}
+	for _, stat := range stats {
+		if stat.ItemCount != 1 {
+			t.Fatalf("leaf scan missing from ancestor count: %#v", stat)
+		}
 	}
 }
 
@@ -717,7 +822,7 @@ func TestObjectCatalogPrefixScanDeletesStalePrefixConflictingWithWholeItem(t *te
 		objectResourceForTest(9, "addp", "mosaics/bigmosaic/bigmosaic/overviews/overview.cog.tif", 10, "tiff"),
 		objectResourceForTest(9, "addp", "mosaics/bigmosaic/bigmosaic/leaf/a.cog.tif", 10, "tiff"),
 	}
-	stats := map[uint]*scanflow.ObjectCatalogNodeAggregate{}
+	stats := map[uint]*models.MetaNode{}
 	scanned := map[string]bool{}
 	count, _, err := runtime.persistObjectResources(context.Background(),
 		resource,
@@ -810,7 +915,7 @@ func TestObjectCatalogPrefixScanKeepsWholeItemAtScanRoot(t *testing.T) {
 		objectResourceForTest(9, "addp", "mosaics/srtm-e2e/overviews/overview.cog.tif", 10, "tiff"),
 		objectResourceForTest(9, "addp", "mosaics/srtm-e2e/leaf/a.cog.tif", 10, "tiff"),
 	}
-	stats := map[uint]*scanflow.ObjectCatalogNodeAggregate{}
+	stats := map[uint]*models.MetaNode{}
 	count, _, err := runtime.persistObjectResources(context.Background(),
 		resource,
 		1,

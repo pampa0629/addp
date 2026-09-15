@@ -24,6 +24,7 @@ require (
 )
 
 require (
+	github.com/dolthub/vitess v0.0.0-20250512224608-8fb9c6ea092c // indirect
 	github.com/gogama/flatgeobuf v1.0.1 // indirect
 	github.com/jonas-p/go-shp v0.1.1 // indirect
 	github.com/parquet-go/parquet-go v0.25.1 // indirect
@@ -33,8 +34,9 @@ require (
 	github.com/xuri/efp v0.0.1 // indirect
 	github.com/xuri/excelize/v2 v2.10.0 // indirect
 	github.com/xuri/nfp v0.0.2-0.20250530014748-2ddeb826f9a9 // indirect
-	github.com/xwb1989/sqlparser v0.0.0-20180606152119-120387863bf2 // indirect
 	golang.org/x/image v0.25.0 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20251029180050-ab9386a59fda // indirect
+	google.golang.org/grpc v1.78.0 // indirect
 )
 
 require (

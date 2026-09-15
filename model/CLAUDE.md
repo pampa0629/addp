@@ -193,7 +193,7 @@ GET    /api/v1/model/entities/export-mermaid         # 按可选 domain_id 导�
 
 Entity、LogicalTable、DWLayer 和 EntityRelation 是独立并发版本主体。EntityAttribute 使用父 Entity 版本；LogicalField、TableRelation、DimensionHierarchy 使用父 LogicalTable 版本；MetricImplementation 使用独立版本，其修订使用实现版本。已有资源及聚合子资源的所有写操作都在 JSON body 中携带对应 `version`，成功后返回新版本；不接受 query、Header 或服务端版本兜底。
 
-Mermaid 导出返回 `{ "markdown": "...", "scope": "domain", "domain_id": 1 }`；省略 `domain_id` 表示全域。预览提交 `{ "markdown": "..." }` 并返回创建、未变更、冲突计划与 `revision`；确认导入提交同一 Markdown 和预览 `revision`。文件缺失成员不表示删除，同编码不同定义明确冲突，不保留全量替换或自动 upsert 路线。
+Mermaid 导出仍以可选 `domain_id` query 选择当前运行时资源，但交换响应和 Markdown 使用 Standard 稳定编码，例如 `{ "markdown": "...", "scope": "domain", "domain_code": "outdoor" }`；省略 query 表示全域。交换格式唯一为 `addp.model.er/v2`，文档及实体使用 `domain_code`，属性使用 `element_code`，不输出或兼容解析 `domain_id / element_id`。预览提交 `{ "markdown": "..." }`，先按当前 Tenant 经 Standard API 精确解析编码，再返回解析后的业务域显示摘要、创建、未变更、冲突计划与 `revision`；确认导入提交同一 Markdown 和预览 `revision`。文件缺失成员不表示删除，同编码不同定义明确冲突，不保留全量替换或自动 upsert 路线。
 
 Tenant 实体模型集合的 `revision` 由所有 Entity、EntityAttribute、EntityRelation 写入推进，确保预览后发生的普通写入会使确认导入返回版本冲突。Mermaid ADDP 元数据必须完整保存这些资源的可编辑业务字段。
 
@@ -267,7 +267,7 @@ EntityRelation 使用完整 `PUT`：请求包含变更后的 source_entity、tar
 
 ### Mermaid 解析器
 
-`backend/internal/service/mermaid_parser.go` 实现了 ADDP Markdown Mermaid ER 文档的解析，支持预览后将缺失的实体和关系批量创建。它不覆盖或删除现有模型。
+`backend/internal/service/mermaid_parser.go` 实现了 `addp.model.er/v2` ADDP Markdown Mermaid ER 文档的解析，支持预览后将缺失的实体和关系批量创建。交换文档只携带稳定 `domain_code / element_code`，Service 通过 Standard API 在当前 Tenant 精确解析为运行时 ID；它不覆盖或删除现有模型。
 
 ### Entity 与逻辑表状态机
 
@@ -334,6 +334,8 @@ draft ⇄ approved
      make -C ../.. test-model-postgres
    ```
    PostgreSQL 集成测试未设置 `ADDP_TEST_MODEL_POSTGRES_DSN` 时会跳过；并发、事务和迁移相关改动必须通过根 Makefile 的第二条标准门禁执行，不能直接创建临时 database。
+
+指标计算已确认采用“Model 构建中立计划 → 引擎独立编译器 → 唯一 PreparedQuery”目标设计，完整契约见 [Model 约束](docs/model概念与数据约束规范.md#数据库无关计划与修订已确认设计待代码替换) 和 [引擎插件规范](../docs/spec/addp引擎插件接口规范.md#数据库无关分析计算契约)。当前封闭方言表达器与指标 SQL 拼接属于待替换阶段代码。元数据生命周期及 PG 金样沿 `make test-model-postgres`；MySQL 真实计算沿 `ADDP_TEST_MYSQL_PASSWORD=<disposable-password> make test-model-mysql`，自动清理 addp_model_mysql_it_* 并拒绝跳过，两者已登记 T2。新代码需把双方言金样改为验证同一中立计划，不另建并行编译路线；页面物理绑定与建表扩展另行跟踪。
 
 维度关联改动沿用现有自动发现门禁：`make test-module MODULE=model` 覆盖平台一致性、Go 单元、前端路由及交互、PostgreSQL 事务测试；其中数据库测试需配置上述测试 DSN。`make test-model-frontend` 包含关系入口唯一所有权、URL 恢复、审批只读、原位更新和冲突保留测试；CI 继续使用已登记的 Model 前端与 PostgreSQL 作业。
 

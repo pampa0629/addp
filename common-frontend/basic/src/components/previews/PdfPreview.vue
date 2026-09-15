@@ -111,6 +111,10 @@ import { ElMessage } from 'element-plus'
 import { getAccessToken } from '../../auth/authSession'
 import { formatBytes } from '../../utils/formatters'
 
+const PDFJS_VERSION = '3.11.174'
+const PDFJS_CDN_BASE = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${PDFJS_VERSION}/`
+const pdfjsAssetUrl = (path) => `${PDFJS_CDN_BASE}${path}`
+
 const props = defineProps({
   data: {
     type: Object,
@@ -209,7 +213,7 @@ const loadPDFJS = async () => {
     if (!window.pdfjsLib) {
       await new Promise((resolve, reject) => {
         const script = document.createElement('script')
-        script.src = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js'
+        script.src = pdfjsAssetUrl('build/pdf.min.js')
         script.onload = resolve
         script.onerror = reject
         document.head.appendChild(script)
@@ -217,7 +221,7 @@ const loadPDFJS = async () => {
 
       // 设置 worker
       window.pdfjsLib.GlobalWorkerOptions.workerSrc =
-        'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js'
+        pdfjsAssetUrl('build/pdf.worker.min.js')
     }
 
     pdfLib = window.pdfjsLib
@@ -363,6 +367,11 @@ const loadPDF = async (token) => {
       rangeChunkSize: 65536,       // 每次请求 64KB 分块
       disableAutoFetch: true,       // 禁用自动预加载所有页面
       disableStream: false,         // 启用流式传输
+
+      // 非嵌入 CID 字体需要预定义 CMap 才能把字符编码映射为可渲染字形。
+      cMapUrl: pdfjsAssetUrl('cmaps/'),
+      cMapPacked: true,
+      standardFontDataUrl: pdfjsAssetUrl('standard_fonts/'),
 
       // 性能优化
       enableXfa: false,             // 禁用 XFA 表单渲染(提升性能)

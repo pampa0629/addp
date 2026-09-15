@@ -48,7 +48,7 @@ func ObjectRefGroupCandidateSet(engineID uint, bucket, objectPath string, resour
 		DirPath:              prefix,
 		Files:                objectStorageFileRefs(files),
 		ResolveOptions:       metaitem.ResolveOptions{IncludeSingleResources: true},
-		EngineCatalogPathFor: objectRefEngineCatalogPathForBucket(engineID, bucket),
+		EngineCatalogPathFor: plugin.ObjectItemPathForBucket(engineID, bucket),
 	}
 }
 
@@ -159,10 +159,6 @@ func ScanRefGroupPrimaryPath(group models.ScanRefGroup) string {
 
 func objectRefGroupPrefix(objectPath string) string {
 	return strings.Trim(scanresource.ParentObjectPath(objectPath), "/")
-}
-
-func objectRefEngineCatalogPathForBucket(engineID uint, bucket string) func(string) plugin.EngineCatalogPath {
-	return plugin.ObjectItemPathForBucketRef(engineID, bucket)
 }
 
 func objectStorageFileRefs(resources []scanresource.StorageResource) []metaitem.StorageFileRef {

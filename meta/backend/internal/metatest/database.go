@@ -68,8 +68,6 @@ func createMetaNodeTable(t testing.TB, db *gorm.DB) {
 			scanned_depth TEXT,
 			scanned_at DATETIME,
 			scan_error TEXT,
-			item_count INTEGER,
-			total_size_bytes INTEGER,
 			attributes JSON,
 			created_at DATETIME,
 			deleted_at DATETIME

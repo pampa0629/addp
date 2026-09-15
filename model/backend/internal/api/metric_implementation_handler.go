@@ -118,6 +118,7 @@ func (h *MetricImplementationHandler) Create(c *gin.Context) {
 }
 
 // @Summary 保存指标实现草稿 | Save metric implementation draft
+// @Description 保存数据库无关的结构化计算契约；来源引擎必须提供分析 SQL 能力。 | Saves a database-independent structured computation contract; the source engine must provide analytical SQL capabilities.
 // @Tags Model
 // @Produce json
 // @Accept json
@@ -153,6 +154,7 @@ func (h *MetricImplementationHandler) SaveDraft(c *gin.Context) {
 }
 
 // @Summary 发布指标实现修订 | Publish metric implementation revision
+// @Description 重新校验来源与方言依赖后冻结发布；依赖变化须重新保存草稿。 | Revalidates source and dialect dependencies before publication; changed dependencies require saving the draft again.
 // @Tags Model
 // @Produce json
 // @Accept json

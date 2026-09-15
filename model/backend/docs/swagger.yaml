@@ -759,9 +759,8 @@ definitions:
     type: object
   github_com_addp_model_internal_models.MermaidExportResponse:
     properties:
-      domain_id:
-        minimum: 1
-        type: integer
+      domain_code:
+        type: string
       markdown:
         type: string
       scope:
@@ -795,9 +794,12 @@ definitions:
         type: integer
       created_relations:
         type: integer
-      domain_id:
-        minimum: 1
-        type: integer
+      domain_code:
+        type: string
+      resolved_domains:
+        items:
+          $ref: '#/definitions/github_com_addp_model_internal_models.MermaidResolvedDomain'
+        type: array
       revision:
         type: integer
       scope:
@@ -840,6 +842,13 @@ definitions:
         type: integer
       unchanged_relations:
         type: integer
+    type: object
+  github_com_addp_model_internal_models.MermaidResolvedDomain:
+    properties:
+      code:
+        type: string
+      name:
+        type: string
     type: object
   github_com_addp_model_internal_models.MessageResponse:
     properties:
@@ -2579,6 +2588,9 @@ paths:
       - model.entity.update
   /entities/export-mermaid:
     get:
+      description: domain_id 仅选择当前运行时业务域；响应与 addp.model.er/v2 文档使用稳定 domain_code 和
+        element_code | domain_id only selects the current runtime domain; the response
+        and addp.model.er/v2 document use stable domain_code and element_code values
       parameters:
       - description: 业务域 ID；省略时导出全部业务域 | Business domain ID; omit to export all domains
         in: query
@@ -2625,6 +2637,9 @@ paths:
     post:
       consumes:
       - application/json
+      description: 按预览 revision 确认 addp.model.er/v2 增量创建；不会更新、覆盖或删除现有模型 | Apply addp.model.er/v2
+        incremental creation against the preview revision without updating, overwriting,
+        or deleting existing models
       parameters:
       - description: 确认导入请求 | Apply import request
         in: body
@@ -2677,6 +2692,10 @@ paths:
     post:
       consumes:
       - application/json
+      description: 解析唯一 addp.model.er/v2 文档，按当前 Tenant 精确解析 domain_code 与 element_code，并返回业务域映射和非破坏性增量计划
+        | Parse the sole addp.model.er/v2 document, resolve domain_code and element_code
+        exactly in the current tenant, and return domain mappings plus a non-destructive
+        incremental plan
       parameters:
       - description: 导入预览请求 | Import preview request
         in: body
@@ -4523,6 +4542,9 @@ paths:
     put:
       consumes:
       - application/json
+      description: 保存数据库无关的结构化计算契约；来源引擎必须提供分析 SQL 能力。 | Saves a database-independent
+        structured computation contract; the source engine must provide analytical
+        SQL capabilities.
       parameters:
       - description: 请求 | Request
         in: body
@@ -4638,6 +4660,9 @@ paths:
     post:
       consumes:
       - application/json
+      description: 重新校验来源与方言依赖后冻结发布；依赖变化须重新保存草稿。 | Revalidates source and dialect
+        dependencies before publication; changed dependencies require saving the draft
+        again.
       parameters:
       - description: 请求 | Request
         in: body

@@ -3240,6 +3240,7 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "item_count": {
+                    "description": "当前有效子树的逻辑数据项数量 | Active logical items in the current subtree",
                     "type": "integer"
                 },
                 "name": {
@@ -3267,6 +3268,7 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "total_size_bytes": {
+                    "description": "子树内已知数据项大小合计 | Sum of known item sizes in the subtree",
                     "type": "integer"
                 }
             }

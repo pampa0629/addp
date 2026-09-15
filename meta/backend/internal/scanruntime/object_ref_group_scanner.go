@@ -43,7 +43,6 @@ func scanObjectRefGroups(
 	}
 
 	result := scanflow.DispatchResult{}
-	stats := map[uint]*scanflow.ObjectCatalogNodeAggregate{}
 	seenBuckets := map[string]*models.MetaNode{}
 	scannedFingerprints := map[string]bool{}
 
@@ -100,7 +99,8 @@ func scanObjectRefGroups(
 				Claims: detection.Claims,
 			})
 		}
-		count, extractionStats, err := runtime.persistObjectCatalogCompositeItems(ctx, resource, tenantID, resource.ID, bucketNode, bucketNode, composites, stats, false, candidates.DirPath, scannedFingerprints, itemTerm, contentReader, connInfo, scanDepth)
+		// 引用组没有枚举完整目录，不更新目录扫描统计。
+		count, extractionStats, err := runtime.persistObjectCatalogCompositeItems(ctx, resource, tenantID, resource.ID, bucketNode, composites, nil, false, "", scannedFingerprints, itemTerm, contentReader, connInfo, scanDepth)
 		if err != nil {
 			return result, err
 		}

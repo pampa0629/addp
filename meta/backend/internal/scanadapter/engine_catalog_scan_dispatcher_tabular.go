@@ -46,7 +46,7 @@ func (d *EngineCatalogScanDispatcher) dispatchTabularScan(ctx context.Context, e
 		if err := d.softDeleteMissingTabularNamespaces(req.Resource, req.TenantID, plan.BranchTerm, visibleNamespaces); err != nil {
 			return result, err
 		}
-		if err := d.finalizeEngineCatalogRootAfterScan(req.Resource, req.TenantID, result.Items, req.ScanDepth); err != nil {
+		if err := d.finalizeEngineCatalogRootAfterScan(req.Resource, req.TenantID, req.ScanDepth); err != nil {
 			return result, err
 		}
 	}

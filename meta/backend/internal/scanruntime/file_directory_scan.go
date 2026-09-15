@@ -184,11 +184,11 @@ func (s *FilesystemCatalogRuntime) scanDirectory(
 			nodeStateErr = scanErr
 		}
 		if nodeStateErr != nil {
-			if err := s.repo.FinalizeNodeState(subdirNode, "failed", items, 0, nodeStateErr.Error()); err != nil {
+			if err := s.repo.FinalizeNodeState(subdirNode, "failed", nodeStateErr.Error()); err != nil {
 				failures.Add(subdir.Path, err)
 			}
 		} else {
-			if err := s.repo.FinalizeNodeStateWithDepth(subdirNode, "completed", items, 0, "", scanDepth); err != nil {
+			if err := s.repo.FinalizeNodeStateWithDepth(subdirNode, "completed", "", scanDepth); err != nil {
 				failures.Add(subdir.Path, err)
 			}
 		}

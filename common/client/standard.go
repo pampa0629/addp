@@ -149,6 +149,11 @@ type StandardReference struct {
 	ID         int64  `json:"id"`
 }
 
+type StandardCodeReference struct {
+	ObjectType string `json:"object_type"`
+	Code       string `json:"code"`
+}
+
 type StandardReferenceResolution struct {
 	ObjectType     string `json:"object_type"`
 	ID             int64  `json:"id"`
@@ -167,8 +172,46 @@ type standardReferenceResolutionRequest struct {
 	References []StandardReference `json:"references"`
 }
 
+type standardCodeReferenceResolutionRequest struct {
+	References []StandardCodeReference `json:"references"`
+}
+
 type standardReferenceResolutionResponse struct {
 	Results []StandardReferenceResolution `json:"results"`
+}
+
+func (c *StandardClient) ResolveReferencesByCode(
+	ctx context.Context,
+	references []StandardCodeReference,
+) ([]StandardReferenceResolution, error) {
+	if len(references) == 0 || len(references) > 200 {
+		return nil, errors.New("standard resolve references by code requires 1 to 200 references")
+	}
+	for _, reference := range references {
+		if strings.TrimSpace(reference.Code) == "" || reference.Code != strings.TrimSpace(reference.Code) ||
+			(reference.ObjectType != "domain" && reference.ObjectType != "glossary" && reference.ObjectType != "element") {
+			return nil, errors.New("standard resolve references by code contains an invalid reference")
+		}
+	}
+	var response standardReferenceResolutionResponse
+	if err := c.doJSON(
+		ctx,
+		http.MethodPost,
+		"/api/v1/standard/references/resolve",
+		standardCodeReferenceResolutionRequest{References: references},
+		&response,
+	); err != nil {
+		return nil, fmt.Errorf("standard resolve references by code: %w", err)
+	}
+	if len(response.Results) != len(references) {
+		return nil, errors.New("standard resolve references by code returned a result count mismatch")
+	}
+	for index, result := range response.Results {
+		if result.ObjectType != references[index].ObjectType || result.Code != references[index].Code {
+			return nil, errors.New("standard resolve references by code returned results out of request order")
+		}
+	}
+	return response.Results, nil
 }
 
 type StandardReferenceCandidate struct {

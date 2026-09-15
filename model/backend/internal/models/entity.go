@@ -139,10 +139,16 @@ type MermaidImportConflict struct {
 	Reason       string `json:"reason" enums:"definition_mismatch,entity_state_conflict"`
 }
 
+type MermaidResolvedDomain struct {
+	Code string `json:"code"`
+	Name string `json:"name"`
+}
+
 type MermaidImportPreview struct {
 	Revision           int64                   `json:"revision"`
 	Scope              string                  `json:"scope" enums:"all,domain"`
-	DomainID           *int64                  `json:"domain_id,omitempty" minimum:"1"`
+	DomainCode         *string                 `json:"domain_code,omitempty"`
+	ResolvedDomains    []MermaidResolvedDomain `json:"resolved_domains"`
 	CreatedEntities    int                     `json:"created_entities"`
 	UnchangedEntities  int                     `json:"unchanged_entities"`
 	CreatedRelations   int                     `json:"created_relations"`
@@ -161,9 +167,9 @@ type MermaidImportResult struct {
 
 // MermaidExportResponse 是实体关系图的 Markdown 导出结果。
 type MermaidExportResponse struct {
-	Markdown string `json:"markdown"`
-	Scope    string `json:"scope" enums:"all,domain"`
-	DomainID *int64 `json:"domain_id,omitempty" minimum:"1"`
+	Markdown   string  `json:"markdown"`
+	Scope      string  `json:"scope" enums:"all,domain"`
+	DomainCode *string `json:"domain_code,omitempty"`
 }
 
 type EntityAttributeMutationResponse struct {

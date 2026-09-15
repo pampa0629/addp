@@ -362,7 +362,7 @@ jobs:
           go-version-file: meta/backend/go.mod
           cache: false
 
-      - name: Run Meta PostgreSQL gate
+      - name: Run Meta PostgreSQL migrations and directory statistics gate
         env:
           META_POSTGRES_TEST_DSN: postgres://addp_ci:addp_ci_password@127.0.0.1:5432/addp_meta_test?sslmode=disable
         run: make test-meta-postgres
@@ -749,9 +749,9 @@ jobs:
           status: ${{ job.status }}
 
   common-mysql-data-protection:
-    name: Common and Owner data protection contracts (MySQL 8)
+    name: Common, Owner protection and Model metric contracts (MySQL 8)
     needs: selection
-    if: needs.selection.outputs.common == 'true' || needs.selection.outputs.manager == 'true' || needs.selection.outputs.develop == 'true' || needs.selection.outputs.service == 'true' || needs.selection.outputs.transfer == 'true'
+    if: needs.selection.outputs.common == 'true' || needs.selection.outputs.manager == 'true' || needs.selection.outputs.develop == 'true' || needs.selection.outputs.service == 'true' || needs.selection.outputs.transfer == 'true' || needs.selection.outputs.model == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     services:
@@ -787,11 +787,19 @@ jobs:
           ADDP_TEST_MYSQL_PASSWORD: addp_ci_password
         run: make test-common-mysql-data-protection
 
-      - name: Summarize MySQL data protection gate
+      - name: Run Model MySQL metric gate
+        env:
+          ADDP_TEST_MYSQL_HOST: 127.0.0.1
+          ADDP_TEST_MYSQL_PORT: 3306
+          ADDP_TEST_MYSQL_USER: root
+          ADDP_TEST_MYSQL_PASSWORD: addp_ci_password
+        run: make test-model-mysql
+
+      - name: Summarize MySQL protection and metric gates
         if: always()
         uses: ./.github/actions/ci-gate-summary
         with:
-          gate: Common and Owner data protection contracts (MySQL 8)
+          gate: Common, Owner protection and Model metric contracts (MySQL 8)
           status: ${{ job.status }}
 
   manager-postgres:

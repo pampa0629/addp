@@ -2,10 +2,41 @@ package plugin
 
 import (
 	"fmt"
+	commonquery "github.com/addp/common/query"
 	"sort"
 	"strings"
 	"sync"
 )
+
+func ResolveAnalyticalSQLDialect(engineType string) (commonquery.AnalyticalDialect, error) {
+	engine, err := Get(engineType)
+	if err != nil {
+		return commonquery.AnalyticalDialect{}, err
+	}
+	provider, ok := engine.(AnalyticalSQLProvider)
+	if !ok {
+		return commonquery.AnalyticalDialect{}, fmt.Errorf("engine %s does not provide analytical SQL expressions", engineType)
+	}
+	return provider.AnalyticalSQLDialect()
+}
+
+// ResolveAnalyticalCompiler uses the single engine registry. Resolving an
+// implementation alone does not certify instance capability or authorize use.
+func ResolveAnalyticalCompiler(engineType string) (AnalyticalCompiler, error) {
+	engine, err := Get(engineType)
+	if err != nil {
+		return nil, ErrAnalyticalUnsupported
+	}
+	provider, ok := engine.(AnalyticalCompilerProvider)
+	if !ok {
+		return nil, ErrAnalyticalUnsupported
+	}
+	compiler := provider.AnalyticalCompiler()
+	if compiler == nil || !compiler.Identity().valid() {
+		return nil, ErrAnalyticalUnsupported
+	}
+	return compiler, nil
+}
 
 // Registry 全局插件注册表
 type Registry struct {

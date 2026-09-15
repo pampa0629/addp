@@ -229,6 +229,9 @@ func PrepareSQLRuntimeQuery(
 	if provider == nil {
 		return nil, fmt.Errorf("SQL query runtime provider cannot be nil")
 	}
+	if err := validateAnalyticalQueryRequest(provider, req); err != nil {
+		return nil, err
+	}
 	preparedReq, err := prepareQueryRequest(provider.Type(), req)
 	if err != nil {
 		return nil, err
@@ -262,12 +265,28 @@ func PrepareSQLRuntimeQuery(
 	var lineage func(context.Context, *QueryReadSet) (*QueryOutputLineage, error)
 	if resolveLineage != nil {
 		lineage = func(ctx context.Context, readSet *QueryReadSet) (*QueryOutputLineage, error) {
-			return resolveLineage(ctx, cloneQueryConnectionInfo(preparedConnInfo), cloneQueryRequest(preparedReq), readSet.Clone())
+			result, err := resolveLineage(ctx, cloneQueryConnectionInfo(preparedConnInfo), cloneQueryRequest(preparedReq), readSet.Clone())
+			if err == nil && preparedReq.analytical != nil {
+				result = preparedReq.analytical.normalizeLineage(result)
+			}
+			return result, err
 		}
 	}
 	prepared, err := NewPreparedQuery(analysis, readSet, lineage, func(ctx context.Context) (*QueryResult, error) {
 		request := cloneQueryRequest(preparedReq)
-		return provider.ExecuteSQL(ctx, cloneQueryConnectionInfo(preparedConnInfo), request.Query, request.Options)
+		if request.analytical != nil && request.Options.Timeout > 0 {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(ctx, request.Options.Timeout)
+			defer cancel()
+		}
+		result, err := provider.ExecuteSQL(ctx, cloneQueryConnectionInfo(preparedConnInfo), request.Query, request.Options)
+		if err != nil {
+			return nil, err
+		}
+		if request.analytical != nil {
+			return request.analytical.normalizeResult(result)
+		}
+		return result, nil
 	})
 	if err != nil {
 		return nil, err
@@ -295,6 +314,10 @@ func ConsumeSQLPreparedQuery(prepared PreparedQuery, provider SQLQueryRuntimePro
 	plan, ok := prepared.(*preparedSQLQuery)
 	if !ok || provider == nil || plan.providerType != provider.Type() {
 		return nil, QueryRequest{}, fmt.Errorf("SQL query read session requires a PreparedQuery from the same provider type")
+	}
+	// Streaming cannot release data before all analytical checks are consumed.
+	if plan.request.analytical != nil {
+		return nil, QueryRequest{}, ErrAnalyticalUnsupported
 	}
 	plan.mu.Lock()
 	defer plan.mu.Unlock()

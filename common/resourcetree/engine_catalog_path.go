@@ -3,6 +3,7 @@ package resourcetree
 import (
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/addp/common/engine/plugin"
 )
@@ -56,51 +57,99 @@ func singleLevelServiceCatalogPathFromLocator(model plugin.EngineCatalogModelSpe
 }
 
 func serverCatalogPathFromLocator(model plugin.EngineCatalogModelSpec, loc *ResourceLocator) (plugin.EngineCatalogPath, error) {
+	const maxLevels = 128
+	if model.PathVersion != plugin.EngineCatalogPathVersion || model.RootTerm != plugin.EngineCatalogTermServer || len(model.Levels) == 0 || len(model.Levels) > maxLevels || len(loc.Path) > maxLevels {
+		return plugin.EngineCatalogPath{}, fmt.Errorf("invalid or oversized server catalog model/path")
+	}
+	for i, level := range model.Levels {
+		if level.Term == "" || len(level.Kinds) == 0 || (level.Role != plugin.EngineCatalogRoleBranch && level.Role != plugin.EngineCatalogRoleLeaf) || (level.Role == plugin.EngineCatalogRoleLeaf && i != len(model.Levels)-1) {
+			return plugin.EngineCatalogPath{}, fmt.Errorf("invalid server catalog level")
+		}
+		for _, kind := range level.Kinds {
+			if kind == "" {
+				return plugin.EngineCatalogPath{}, fmt.Errorf("catalog kind is required")
+			}
+		}
+	}
 	if len(loc.Path) == 0 {
 		if !isRootLocatorType(loc.Type) {
-			return plugin.EngineCatalogPath{}, fmt.Errorf("catalog root locator requires root type, got %s", loc.Type)
+			return plugin.EngineCatalogPath{}, fmt.Errorf("catalog root locator requires root type")
 		}
 		return plugin.EngineCatalogRootPath(model, loc.EngineID), nil
 	}
-	if len(model.Levels) < 2 {
-		return plugin.EngineCatalogPath{}, fmt.Errorf("server catalog model requires branch and leaf levels")
+	for _, name := range loc.Path {
+		if name == "" || len(name) > 1024 || !utf8.ValidString(name) || strings.ContainsRune(name, 0) {
+			return plugin.EngineCatalogPath{}, fmt.Errorf("invalid catalog segment name")
+		}
 	}
-
-	branchLevel := model.Levels[0]
-	leafLevel := model.Levels[len(model.Levels)-1]
-	branchName := strings.TrimSpace(loc.Path[0])
-	if branchName == "" {
-		return plugin.EngineCatalogPath{}, fmt.Errorf("catalog branch segment is required")
+	// Name-only locators can omit optional levels only when the full path and
+	// endpoint type have exactly one interpretation. Memoization bounds optional
+	// matching to O(levels * path length), including deliberately ambiguous input.
+	type matchedLevel struct {
+		index int
+		next  *matchedLevel
+	}
+	type match struct {
+		head  *matchedLevel
+		count int
+	}
+	memo := map[[2]int]match{}
+	var resolve func(int, int) match
+	resolve = func(levelIndex, pathIndex int) match {
+		key := [2]int{levelIndex, pathIndex}
+		if found, ok := memo[key]; ok {
+			return found
+		}
+		if levelIndex >= len(model.Levels) {
+			return match{}
+		}
+		level := model.Levels[levelIndex]
+		found := match{}
+		if pathIndex == len(loc.Path)-1 {
+			if resourceTypeMatchesLevel(loc.Type, level) {
+				found = match{head: &matchedLevel{index: levelIndex}, count: 1}
+			}
+		} else if level.Role == plugin.EngineCatalogRoleBranch {
+			child := resolve(levelIndex+1, pathIndex+1)
+			if child.count > 0 {
+				found = match{head: &matchedLevel{index: levelIndex, next: child.head}, count: child.count}
+			}
+		}
+		if level.Optional {
+			skipped := resolve(levelIndex+1, pathIndex)
+			if skipped.count > 0 {
+				if found.count == 0 {
+					found.head = skipped.head
+				}
+				found.count += skipped.count
+				if found.count > 2 {
+					found.count = 2
+				}
+			}
+		}
+		memo[key] = found
+		return found
+	}
+	found := resolve(0, 0)
+	if found.count == 0 {
+		return plugin.EngineCatalogPath{}, fmt.Errorf("locator does not match declared catalog levels")
+	}
+	if found.count != 1 {
+		return plugin.EngineCatalogPath{}, fmt.Errorf("locator has ambiguous optional catalog levels")
 	}
 	path := plugin.EngineCatalogRootPath(model, loc.EngineID)
-	path.Segments = append(path.Segments, plugin.EngineCatalogSegment{
-		Term: branchLevel.Term,
-		Kind: firstCatalogKind(branchLevel, plugin.EngineCatalogKindNamespace),
-		Name: branchName,
-	})
-
-	if len(loc.Path) == 1 {
-		if !resourceTypeMatchesLevel(loc.Type, branchLevel) {
-			return plugin.EngineCatalogPath{}, fmt.Errorf("catalog leaf path requires branch and %s segments", leafLevel.Term)
+	for i, entry := 0, found.head; entry != nil; i, entry = i+1, entry.next {
+		level := model.Levels[entry.index]
+		kind := level.Kinds[0]
+		if entry.next == nil {
+			var err error
+			kind, err = catalogKindForResourceType(loc.Type, level)
+			if err != nil {
+				return plugin.EngineCatalogPath{}, err
+			}
 		}
-		return path, nil
+		path.Segments = append(path.Segments, plugin.EngineCatalogSegment{Term: level.Term, Kind: kind, Name: loc.Path[i]})
 	}
-	if len(loc.Path) > 2 {
-		return plugin.EngineCatalogPath{}, fmt.Errorf("catalog path for %s requires exactly two business segments", leafLevel.Term)
-	}
-	leafName := strings.TrimSpace(loc.Path[1])
-	if leafName == "" {
-		return plugin.EngineCatalogPath{}, fmt.Errorf("catalog leaf segment is required")
-	}
-	leafKind, err := catalogKindForResourceType(loc.Type, leafLevel)
-	if err != nil {
-		return plugin.EngineCatalogPath{}, err
-	}
-	path.Segments = append(path.Segments, plugin.EngineCatalogSegment{
-		Term: leafLevel.Term,
-		Kind: leafKind,
-		Name: leafName,
-	})
 	return path, nil
 }
 

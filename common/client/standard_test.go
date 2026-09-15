@@ -46,6 +46,38 @@ func TestStandardClientResolvesExactReferencesInRequestOrder(t *testing.T) {
 	}
 }
 
+func TestStandardClientResolvesExactStableCodesInRequestOrder(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/standard/references/resolve" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		var request standardCodeReferenceResolutionRequest
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		if len(request.References) != 2 || request.References[0].Code != "sales" || request.References[1].ObjectType != "element" {
+			t.Fatalf("request = %#v", request)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"results":[{"object_type":"domain","id":7,"code":"sales","found":true,"referenceable":true,"name":"Sales"},{"object_type":"element","id":9,"code":"customer_id","found":true,"referenceable":true,"name":"Customer ID"}]}`))
+	}))
+	defer server.Close()
+
+	client := NewStandardClient(server.URL, ServiceTokenProviderFunc(func(context.Context, uint) (string, error) {
+		return "tenant-token", nil
+	}), server.Client()).WithTenantID(7)
+	results, err := client.ResolveReferencesByCode(context.Background(), []StandardCodeReference{
+		{ObjectType: "domain", Code: "sales"},
+		{ObjectType: "element", Code: "customer_id"},
+	})
+	if err != nil {
+		t.Fatalf("ResolveReferencesByCode() error = %v", err)
+	}
+	if len(results) != 2 || results[0].ID != 7 || results[1].ID != 9 {
+		t.Fatalf("results = %#v", results)
+	}
+}
+
 func TestStandardClientRejectsMisorderedReferenceResults(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

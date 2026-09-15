@@ -5,6 +5,9 @@ import (
 	"net/http"
 	"strconv"
 
+	commonapi "github.com/addp/common/api"
+	commonAuth "github.com/addp/common/middleware/auth"
+	standardauthorization "github.com/addp/standard/internal/authorization"
 	"github.com/addp/standard/internal/service"
 	"github.com/gin-gonic/gin"
 )
@@ -25,9 +28,9 @@ func NewReferenceResolutionHandler(resolutionService *service.ReferenceResolutio
 	return &ReferenceResolutionHandler{service: resolutionService}
 }
 
-// Resolve 精确解析 Catalog 提交的 Standard 引用。
+// Resolve 精确解析内部消费者提交的 Standard 引用。
 // @Summary 精确批量解析 Standard 引用 | Resolve exact Standard references in batch
-// @Description 仅 addp-catalog Tenant Service Principal 可按当前 Tenant 解析 Domain、Glossary 和 Element；跨 Tenant 与不存在统一返回 found=false | Only the addp-catalog tenant service principal may resolve domains, glossaries, and elements in the current tenant; cross-tenant and missing references both return found=false
+// @Description 仅 addp-catalog 与 addp-model Tenant Service Principal 可按当前 Tenant 通过 ID 或稳定编码精确解析 Domain、Glossary 和 Element；每项必须且只能提供 id 或 code，跨 Tenant 与不存在统一返回 found=false；Glossary 仅允许 addp-catalog 解析 | Only addp-catalog and addp-model tenant service principals may resolve domains, glossaries, and elements in the current tenant by exact ID or stable code; each item must provide exactly one of id or code, cross-tenant and missing references both return found=false, and only addp-catalog may resolve glossaries
 // @Tags CatalogReferences
 // @Accept json
 // @Produce json
@@ -35,10 +38,11 @@ func NewReferenceResolutionHandler(resolutionService *service.ReferenceResolutio
 // @Success 200 {object} referenceResolutionResponse
 // @Failure 400 {object} map[string]string "请求无效 | Invalid request"
 // @Failure 401 {object} map[string]string "需要认证 | Authentication required"
-// @Failure 403 {object} map[string]string "仅允许 addp-catalog 且需三个读取权限 | addp-catalog and all three read permissions required"
+// @Failure 403 {object} map[string]string "仅允许指定运行时客户端且需对应读取权限 | Allowed runtime client and corresponding read permissions required"
 // @Failure 500 {object} map[string]string "解析失败 | Resolution failed"
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["standard.domain.read","standard.glossary.read","standard.element.read"]
+// @x-addp-required-permissions ["standard.domain.read","standard.element.read"]
+// @x-addp-conditional-permissions ["standard.glossary.read"]
 // @Router /references/resolve [post]
 // @Security BearerAuth
 func (h *ReferenceResolutionHandler) Resolve(c *gin.Context) {
@@ -46,6 +50,12 @@ func (h *ReferenceResolutionHandler) Resolve(c *gin.Context) {
 	if h == nil || h.service == nil || c.ShouldBindJSON(&request) != nil {
 		respondError(c, http.StatusBadRequest, service.ErrInvalidReferenceResolutionRequest)
 		return
+	}
+	for _, reference := range request.References {
+		if reference.ObjectType == service.ReferenceTypeGlossary && !commonAuth.HasRolePermission(c, standardauthorization.PermissionStandardGlossaryRead) {
+			respondError(c, http.StatusForbidden, commonapi.ErrForbidden)
+			return
+		}
 	}
 	results, err := h.service.Resolve(c.Request.Context(), getTenantID(c), request.References)
 	if err != nil {

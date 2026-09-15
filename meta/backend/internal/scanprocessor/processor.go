@@ -150,6 +150,15 @@ func validateInput(input input) error {
 	if input.Detected == nil {
 		return fmt.Errorf("detected item is nil")
 	}
+	if input.IndexRootName != "" {
+		parent := input.ParentNode
+		if parent.TenantID != input.TenantID || parent.EngineID != input.EngineID ||
+			(parent.NodeType != "bucket" && parent.NodeType != "prefix") ||
+			!strings.HasPrefix(input.FullName, input.IndexRootName+"/") ||
+			input.FullName != parent.FullName+"/"+input.ItemName {
+			return fmt.Errorf("object catalog identity mismatch: item %q, parent %q (node %d)", input.FullName, parent.FullName, parent.ID)
+		}
+	}
 	return nil
 }
 

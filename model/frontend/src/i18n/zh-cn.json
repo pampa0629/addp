@@ -128,13 +128,13 @@
     },
     "er_diagram": {
       "title": "实体关系图（ER图）",
-      "import_mermaid": "导入Mermaid",
-      "export_mermaid": "导出Mermaid",
+      "import_mermaid": "导入 ER 文档",
+      "export_mermaid": "导出 ER 文档",
       "refresh": "刷新",
       "domain_filter": "请选择业务域",
       "entity_count": "当前显示 {count} 个实体，{relations} 个关系",
       "no_entities": "当前筛选条件下暂无实体",
-      "import_dialog_title": "导入 Mermaid Markdown ER 图",
+      "import_dialog_title": "导入 ER 文档（Mermaid Markdown）",
       "paste_code": "粘贴 Markdown",
       "upload_file": "上传文件",
       "paste_placeholder": "粘贴包含 Mermaid 代码块的 Markdown 文档...",
@@ -145,6 +145,7 @@
       "preview_import": "预览导入",
       "confirm_import": "确认增量导入",
       "preview_summary": "预计创建 {created} 个实体、{relations} 个关系；保留 {unchanged} 个已有实体、{unchangedRelations} 个已有关系",
+      "resolved_domains": "解析到业务域：",
       "preview_failed": "预览失败：{msg}",
       "resource_entity": "实体",
       "resource_relation": "关系",
@@ -165,7 +166,7 @@
       "choose_domain": "请先选择业务域，或主动选择全部业务域查看总览",
       "include_related": "展开跨域关联",
       "unassigned_domain": "未分配业务域",
-      "transfer_scope": "导出遵循当前业务域选择；“展开跨域关联”仅影响画布。导入会先预览，只增量创建缺失项，不删除或覆盖现有实体与关系。"
+      "transfer_scope": "导出遵循当前业务域选择；“展开跨域关联”仅影响画布。导入按当前租户精确解析业务域与数据元编码，先预览且只增量创建缺失项，不删除或覆盖现有实体与关系。"
     },
     "logical_table": {
       "recentVisitTitle": "逻辑表",

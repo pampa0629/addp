@@ -101,8 +101,8 @@ func TestResourceTreeGetTreeMarksNodeOnlyPrefixAsExpandableAtDepthLimit(t *testi
 
 	root := createResourceTreeNode(t, db, models.MetaNode{TenantID: 7, EngineID: 9, NodeType: "service", Name: "MinIO", FullName: "", Depth: 0})
 	bucket := createResourceTreeNode(t, db, models.MetaNode{TenantID: 7, EngineID: 9, ParentNodeID: &root.ID, NodeType: "bucket", Name: "addp", FullName: "addp", Depth: 1})
-	mosaics := createResourceTreeNode(t, db, models.MetaNode{TenantID: 7, EngineID: 9, ParentNodeID: &bucket.ID, NodeType: "prefix", Name: "mosaics", FullName: "addp/mosaics", Depth: 2, ItemCount: 0})
-	createResourceTreeNode(t, db, models.MetaNode{TenantID: 7, EngineID: 9, ParentNodeID: &mosaics.ID, NodeType: "prefix", Name: "srtm-test", FullName: "addp/mosaics/srtm-test", Depth: 3, ItemCount: 0})
+	mosaics := createResourceTreeNode(t, db, models.MetaNode{TenantID: 7, EngineID: 9, ParentNodeID: &bucket.ID, NodeType: "prefix", Name: "mosaics", FullName: "addp/mosaics", Depth: 2})
+	createResourceTreeNode(t, db, models.MetaNode{TenantID: 7, EngineID: 9, ParentNodeID: &mosaics.ID, NodeType: "prefix", Name: "srtm-test", FullName: "addp/mosaics/srtm-test", Depth: 3})
 
 	tree, err := svc.GetTree(t.Context(), 7, 9, 2)
 	if err != nil {
@@ -292,7 +292,7 @@ func TestResourceTreePreservesLiteTimeFactsInTreeMetadata(t *testing.T) {
 	bucket := createResourceTreeNode(t, db, models.MetaNode{
 		TenantID: 7, EngineID: 9, ParentNodeID: &root.ID,
 		NodeType: "bucket", Name: "addp", FullName: "addp", Depth: 1,
-		ScannedAt: &scannedAt, ItemCount: 1,
+		ScannedAt: &scannedAt,
 	})
 	item := createResourceTreeItem(t, db, models.MetaItem{
 		TenantID: 7, EngineID: 9, NodeID: bucket.ID,

@@ -195,3 +195,9 @@ other = "Forward (subject to comparison)"
 
 [model.metric.option.directions.both]
 other = "Both directions"
+
+[model.metric_implementation.engine_unavailable]
+other = "Metric source engine metadata is unavailable. Please retry later."
+
+[model.metric_implementation.engine_unsupported]
+other = "The source engine does not provide certified analytical SQL capabilities."

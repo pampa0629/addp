@@ -12,6 +12,18 @@ import (
 )
 
 func TestPostgresMetricRevisionLifecycleIsIndependentAndImmutable(t *testing.T) {
+	for _, engineType := range []string{"postgresql", "mysql"} {
+		t.Run(engineType, func(t *testing.T) { testMetricRevisionLifecycle(t, engineType) })
+	}
+}
+
+// Metadata ownership always uses PostgreSQL; the metric source dialect varies.
+func testMetricRevisionLifecycle(t *testing.T, engineType string) {
+	namespaceType := "schema"
+	if engineType == "mysql" {
+		namespaceType = "database"
+	}
+
 	tx, tenant := beginModelAggregatePostgresTransaction(t)
 	ctx := context.Background()
 	contract, bindings := metricGoldenContract()
@@ -25,7 +37,7 @@ func TestPostgresMetricRevisionLifecycleIsIndependentAndImmutable(t *testing.T) 
 		source metricPlanSource
 		kind   string
 	}{{1, bindings.Fact, "fact"}, {2, bindings.Relations[10].Target, "dimension"}, {3, bindings.Relations[11].Target, "dimension"}} {
-		table := models.LogicalTable{TenantID: tenant, Name: entry.source.Table, Code: entry.source.Table, TableType: entry.kind, Layer: "metric_test", Status: "approved", Version: 7, CreatedBy: 1, Materialization: models.JSONB{"target_parent_locator": "addp://engine/2/path/model?type=schema", "target_name": entry.source.Table}}
+		table := models.LogicalTable{TenantID: tenant, Name: entry.source.Table, Code: entry.source.Table, TableType: entry.kind, Layer: "metric_test", Status: "approved", Version: 7, CreatedBy: 1, Materialization: models.JSONB{"target_parent_locator": "addp://engine/2/path/model?type=" + namespaceType, "target_name": entry.source.Table}}
 		if err := tx.Create(&table).Error; err != nil {
 			t.Fatal(err)
 		}
@@ -64,19 +76,37 @@ func TestPostgresMetricRevisionLifecycleIsIndependentAndImmutable(t *testing.T) 
 	contract.Filters[0].Field.FieldID = fields[3]
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/api/v1/system/runtime/engine-descriptors/2" {
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"id": 2, "engine_type": engineType})
+			return
+		}
 		_ = json.NewEncoder(w).Encode(commonclient.PublishedMetricDefinitionRevision{ID: 9, TenantID: tenant, RevisionID: 19, RevisionNo: 1, Name: "Leader count", Status: "published", LifecycleState: "active"})
 	}))
 	defer server.Close()
 	svc := NewMetricImplementationService(repository.NewMetricImplementationRepository(tx), repository.NewLogicalTableRepository(tx))
 	svc.SetStandardClient(newElementRevisionSnapshotClient(server))
+	svc.SetSystemClient(commonclient.NewSystemServiceClient(server.URL, materializationTestTokens{}, nil))
 	item, err := svc.Create(context.Background(), tenant, 1, &models.CreateMetricImplementationRequest{FactTableID: tables[1], MetricDefinitionID: 9, Name: "Leader count"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	req := &models.SaveMetricImplementationRevisionRequest{Version: item.Version, MetricDefinitionRevisionID: 19, Contract: contract}
+	nativeEngineType := engineType
+	engineType = "duckdb"
+	if _, err := svc.SaveDraft(ctx, item.ID, tenant, 1, req); err == nil {
+		t.Fatal("unsupported provider accepted a draft")
+	}
+	engineType = nativeEngineType
+	unchanged, err := svc.Get(item.ID, tenant)
+	if err != nil || unchanged.Version != item.Version || len(unchanged.Revisions) != 0 {
+		t.Fatalf("unsupported provider changed draft: %#v %v", unchanged, err)
+	}
 	item, err = svc.SaveDraft(ctx, item.ID, tenant, 1, req)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if item.Revisions[0].DependencySnapshot["sql_dialect"] != engineType {
+		t.Fatalf("missing dialect dependency: %#v", item.Revisions[0].DependencySnapshot)
 	}
 	draftID := item.Revisions[0].ID
 	if _, err := svc.SaveDraft(ctx, item.ID, tenant, 1, req); err == nil {

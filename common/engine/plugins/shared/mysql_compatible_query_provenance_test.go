@@ -8,7 +8,7 @@ import (
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
-	"github.com/xwb1989/sqlparser"
+	"github.com/dolthub/vitess/go/vt/sqlparser"
 )
 
 func TestMySQLCompatibleQueryProvenanceInspectsPublishedServiceJoin(t *testing.T) {
@@ -37,7 +37,7 @@ func TestMySQLCompatibleQueryProvenanceRejectsUnprovenSources(t *testing.T) {
 	for name, query := range map[string]string{
 		"ordinary function": `SELECT lower(name) FROM customers`,
 		"row locking":       `SELECT * FROM orders FOR UPDATE`,
-		"cte":               `WITH recent AS (SELECT * FROM orders) SELECT * FROM recent`,
+		"recursive cte":     `WITH RECURSIVE recent AS (SELECT * FROM orders) SELECT * FROM recent`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := provenance.inspectReadReferences(query)
@@ -118,16 +118,16 @@ func TestMySQLCompatibleQueryProvenanceResolvesJoinOutputLineage(t *testing.T) {
 	assertMySQLCompatibleLineageBindings(t, resolved, "orders", map[string]string{"order_no": "order_no", "total_amount": "total_amount"})
 }
 
-func TestMySQLCompatibleQueryProvenanceRejectsUnprovenProjection(t *testing.T) {
+func TestMySQLCompatibleQueryProvenanceDoesNotMislabelComputedProjection(t *testing.T) {
 	provenance := testMySQLCompatibleQueryProvenance("OceanBase")
 	sources := []plugin.QueryOutputSource{testMySQLCompatibleLineageSource(23, "business", "orders", "id", "total_amount")}
 	statement, err := sqlparser.Parse(`SELECT total_amount + 1 AS adjusted FROM orders`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = provenance.resolveSelectOutputLineage("business", statement, sources)
-	if !errors.Is(err, plugin.ErrQueryOutputLineageUnresolved) {
-		t.Fatalf("error = %v, want ErrQueryOutputLineageUnresolved", err)
+	result, err := provenance.resolveSelectOutputLineage("business", statement, sources)
+	if err != nil || len(result) != 1 || len(result[0].Bindings) != 0 {
+		t.Fatalf("computed projection must retain source facts without direct bindings: %#v %v", result, err)
 	}
 }
 

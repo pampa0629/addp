@@ -537,6 +537,10 @@ func TestMermaidDomainExportAndNoopImportPreserveExistingResources(t *testing.T)
 	svc := NewEntityService(entityRepo, relationRepo)
 	domainID := int64(31)
 	elementID := int64(41)
+	svc.SetStandardClient(newMermaidStandardClient(t, 1,
+		[]mermaidStandardFixture{{ID: domainID, Code: "sales", Name: "Sales"}},
+		[]mermaidStandardFixture{{ID: elementID, Code: "customer_id", Name: "Customer ID"}},
+	))
 	source := models.Entity{
 		TenantID: 1, DomainID: &domainID, Name: "Customer Display", Code: "customer",
 		Description: "customer description", Status: "draft", CreatedBy: 9, Version: 1,
@@ -570,8 +574,8 @@ func TestMermaidDomainExportAndNoopImportPreserveExistingResources(t *testing.T)
 	if err != nil {
 		t.Fatalf("export mermaid: %v", err)
 	}
-	if exported.Scope != "domain" || exported.DomainID == nil || *exported.DomainID != domainID {
-		t.Fatalf("export scope = %+v, want domain %d", exported, domainID)
+	if exported.Scope != "domain" || exported.DomainCode == nil || *exported.DomainCode != "sales" {
+		t.Fatalf("export scope = %+v, want sales domain", exported)
 	}
 	parsed, err := ParseMermaidER(exported.Markdown)
 	if err != nil {
@@ -596,6 +600,9 @@ func TestMermaidDomainExportAndNoopImportPreserveExistingResources(t *testing.T)
 	}
 	if preview.CreatedEntities != 0 || preview.UnchangedEntities != 1 || len(preview.Conflicts) != 0 {
 		t.Fatalf("preview = %+v, want one unchanged entity", preview)
+	}
+	if len(preview.ResolvedDomains) != 1 || preview.ResolvedDomains[0].Code != "sales" || preview.ResolvedDomains[0].Name != "Sales" {
+		t.Fatalf("resolved domains = %+v", preview.ResolvedDomains)
 	}
 	if _, err := svc.ImportFromMermaid(1, 9, &models.MermaidImportRequest{
 		Markdown: exported.Markdown,
@@ -632,6 +639,39 @@ func TestMermaidDomainExportAndNoopImportPreserveExistingResources(t *testing.T)
 	if len(relations) != 1 || relations[0].RelationType != relation.RelationType ||
 		relations[0].Name != relation.Name || relations[0].Description != relation.Description {
 		t.Fatalf("imported relations = %+v, want editable fields from %+v", relations, relation)
+	}
+}
+
+func TestMermaidImportRejectsUnknownStableStandardCodesBeforePlanning(t *testing.T) {
+	svc := NewEntityService(repository.NewEntityRepository(setupLifecycleServiceTestDB(t)), nil)
+	svc.SetStandardClient(newMermaidStandardClient(t, 1, nil, nil))
+	tests := []struct {
+		name     string
+		markdown string
+		code     string
+	}{
+		{
+			name: "domain code",
+			markdown: mermaidMarkdown("domain", "missing_domain", `%% addp:entity {"code":"customer","name":"Customer","domain_code":"missing_domain","description":""}
+customer {
+}`),
+			code: "domain_not_found",
+		},
+		{
+			name: "element code",
+			markdown: mermaidMarkdown("all", "", `%% addp:entity {"code":"customer","name":"Customer","domain_code":null,"description":""}
+customer {
+  %% addp:attribute {"entity":"customer","column":"id","name":"ID","nullable":false,"element_code":"missing_element","description":"","sort_order":0}
+  bigint id PK
+}`),
+			code: "element_not_found",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := svc.PreviewMermaidImport(1, &models.MermaidImportPreviewRequest{Markdown: test.markdown})
+			requireDomainErrorCode(t, err, test.code)
+		})
 	}
 }
 

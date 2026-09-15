@@ -9,6 +9,7 @@ import (
 
 	"github.com/addp/common/datatype"
 	commoninference "github.com/addp/common/inference"
+	commonquery "github.com/addp/common/query"
 	"github.com/addp/common/resume"
 )
 
@@ -373,6 +374,13 @@ type SQLDialectProvider interface {
 	SQLDialect() string
 }
 
+// AnalyticalSQLProvider supplies native expression rendering without owning
+// any caller's business semantics. Queries still execute through PreparedQuery.
+type AnalyticalSQLProvider interface {
+	SQLQueryRuntimeProvider
+	AnalyticalSQLDialect() (commonquery.AnalyticalDialect, error)
+}
+
 type SQLQueryRuntimeProvider interface {
 	QueryRuntimeProvider
 	SQLDialectProvider
@@ -694,9 +702,11 @@ type SampleQueryOptions struct {
 }
 
 type QueryRequest struct {
-	EngineID uint
-	Language string
-	Query    string
+	// analytical is set only by the immutable compiled-query bridge.
+	analytical *CompiledQuery
+	EngineID   uint
+	Language   string
+	Query      string
 	// TargetPath identifies the catalog resource used by this query. Runtime
 	// providers must use it to select the concrete namespace when applicable.
 	TargetPath *EngineCatalogPath

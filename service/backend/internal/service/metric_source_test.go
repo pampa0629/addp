@@ -15,8 +15,18 @@ import (
 )
 
 func TestMetricServiceBindingIsExactAndCannotOverrideCompiledFormula(t *testing.T) {
+	for _, engineType := range []string{"postgresql", "mysql"} {
+		t.Run(engineType, func(t *testing.T) { testMetricServiceBinding(t, engineType) })
+	}
+}
+func testMetricServiceBinding(t *testing.T, engineType string) {
+	dialect, err := commonquery.NewAnalyticalDialect(engineType)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	ctx := context.Background()
-	plan := commonclient.ModelMetricPlan{ImplementationID: 3, RevisionID: 7, MetricDefinitionID: 9, MetricDefinitionRevisionID: 19, EngineID: 2, DependencyHash: strings.Repeat("a", 64), SQL: "SELECT :subject_id AS subject_id,CAST(:start_date AS date) AS bucket,1::bigint AS value WHERE :grain = 'total' AND CAST(:end_date AS date)>CAST(:start_date AS date)"}
+	plan := commonclient.ModelMetricPlan{ImplementationID: 3, RevisionID: 7, MetricDefinitionID: 9, MetricDefinitionRevisionID: 19, EngineID: 2, DependencyHash: strings.Repeat("a", 64), SQL: "SELECT :subject_id AS subject_id,CAST(:start_date AS date) AS bucket," + dialect.Integer("1") + " AS value WHERE :grain = 'total' AND CAST(:end_date AS date)>CAST(:start_date AS date)"}
 	plan.Parameters = []commonclient.ModelMetricParameter{{Name: "subject_id", Type: datatype.FieldTypeString, Required: true}, {Name: "start_date", Type: datatype.FieldTypeDate, Required: true}, {Name: "end_date", Type: datatype.FieldTypeDate, Required: true}, {Name: "grain", Type: datatype.FieldTypeString, Required: true}}
 	plan.Parameters[3].Options = []commonquery.ParameterOption{{Value: "total", Labels: map[string]string{"zh-cn": "全期", "en": "Total"}}}
 	plan.Fields = []datatype.FieldInfo{{Name: "subject_id", Type: datatype.FieldTypeString}, {Name: "bucket", Type: datatype.FieldTypeDate}, {Name: "value", Type: datatype.FieldTypeBigInt}}
@@ -37,7 +47,7 @@ func TestMetricServiceBindingIsExactAndCannotOverrideCompiledFormula(t *testing.
 			_ = json.NewEncoder(w).Encode(plan)
 			return
 		}
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"id": 2, "engine_type": "postgresql"})
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"id": 2, "engine_type": engineType})
 	}))
 	defer server.Close()
 	tokens := commonclient.ServiceTokenProviderFunc(func(_ context.Context, tenant uint) (string, error) {

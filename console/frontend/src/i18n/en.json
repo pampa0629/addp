@@ -247,7 +247,14 @@
           "queryResultLimit": "Result preview limit (rows)",
           "queryConcurrency": "Total query concurrency (per Backend)",
           "queryPerEngineConcurrency": "Per-engine query concurrency",
-          "applyHint": "No restart required after saving. Concurrency changes apply to subsequent scheduling; running queries finish normally. Timeout and preview limits apply to new executions."
+          "applyHint": "No restart required after saving. Concurrency changes apply to subsequent scheduling; running queries finish normally. Timeout and preview limits apply to new executions.",
+          "tenantSettings": "Tenant settings",
+          "tenantApplyHint": "No restart is required after saving the default query timeout. It applies to new executions in this tenant; existing executions keep their timeout. The platform maximum query timeout still applies.",
+          "inheritedTimeout": "Saved configuration source: inherited platform default",
+          "tenantTimeout": "Saved configuration source: tenant override",
+          "platformConstraints": "Platform constraints (read-only)",
+          "platformManagedHint": "These settings are managed centrally and also apply to this tenant's queries. To request changes, contact your platform administrator.",
+          "sharedConcurrencyHint": "Total and per-engine concurrency limits are shared across all tenants and query sources within each Backend. They are not dedicated quotas for this tenant."
         },
         "manager": {
           "title": "Quick-view policy",

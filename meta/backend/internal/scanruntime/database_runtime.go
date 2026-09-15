@@ -95,23 +95,12 @@ func (s *DatabaseRuntime) ScanNamespace(ctx context.Context, p plugin.EnginePlug
 	// 3. 扫描表
 	tables, fields, err := s.scanTables(ctx, resource, scanCatalog, tenantID, engineID, schemaNode, namespaceName, scanDepth, force)
 	if err != nil {
-		_ = s.repo.FinalizeNodeState(schemaNode, "failed", tables, 0, err.Error())
+		_ = s.repo.FinalizeNodeState(schemaNode, "failed", err.Error())
 		return 0, tables, fields, err
 	}
 
 	// 6. 完成扫描
-	var totalSize int64
-	tableItems, err := s.repo.GetItemsByNodeAndType(tenantID, engineID, schemaNode.ID, scanCatalog.itemTerm)
-	if err != nil {
-		return 0, tables, fields, err
-	}
-	for _, item := range tableItems {
-		if item.SizeBytes != nil {
-			totalSize += *item.SizeBytes
-		}
-	}
-
-	if err := s.repo.FinalizeNodeStateWithDepth(schemaNode, "completed", tables, totalSize, "", scanDepth); err != nil {
+	if err := s.repo.FinalizeNodeStateWithDepth(schemaNode, "completed", "", scanDepth); err != nil {
 		return 0, tables, fields, err
 	}
 

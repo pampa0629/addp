@@ -23,6 +23,13 @@ type PostgreSQLPlugin struct {
 	identity *ProtocolIdentity
 }
 
+func (p *PostgreSQLPlugin) AnalyticalSQLDialect() (commonquery.AnalyticalDialect, error) {
+	if p.identity != nil {
+		return commonquery.AnalyticalDialect{}, fmt.Errorf("analytical expressions require independent certification for %s", p.Type())
+	}
+	return commonquery.NewAnalyticalDialect(p.SQLDialect())
+}
+
 // ProtocolIdentity identifies an engine that reuses PostgreSQL protocol
 // behavior. It does not copy PostgreSQL capabilities into that engine.
 type ProtocolIdentity struct {

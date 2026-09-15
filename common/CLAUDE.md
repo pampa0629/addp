@@ -52,7 +52,8 @@ common/
 - `common` schema 中的共享表应按领域归入 `common/<domain>`，由领域包提供模型、仓储和 `EnsureStore`；执行记录必须复用 `common/execution.TaskExecution`、`common/execution.TaskExecutionRepository` 和 `common/execution.EnsureStore`。
 - API 响应优先复用 `common/api`。
 - 用户 Bearer Token 统一调用 System `/api/v1/system/auth/context`；业务模块不通过 `/users/me` 验证 Token，不自行解析 JWT。
-- `common/query` 承载查询参数绑定、SQL 副作用分析和跨 SQL 引擎的基础方言差异；PostGIS 等空间扩展能力归入 `common/spatial`。
+- `common/query` 承载查询参数绑定、SQL 副作用分析和共享查询能力。已确认的分析计算目标契约由 `common/query/plan` 的中立计划、`common/engine/plugin` 的开放编译接口与各引擎实现组成，见 [引擎插件规范](../docs/spec/addp引擎插件接口规范.md#数据库无关分析计算契约)；`query/plan` 已实现类型化 DAG、严格 JSON、语义校验与稳定指纹；`engine/plugin/analytical*.go` 已实现开放编译接口、物理绑定、冻结包及内部结果检查协议；SQL PreparedQuery 已接入不可变编译请求校验、检查记录消费及类型规范化，仍走原有一次性 Execute。`query/sqlcompile/result.go` 通过引擎注入的 ResultDialect 组合独立断言与结果根，不能对组合后的查询追加外层分页。真实 PostgreSQL 结果协议验证纳入 `make test-common-postgres`，但完整 PG/MySQL 编译器尚未交付。当前尚未接入生产引擎和 Model/Service；封闭 AnalyticalSQLProvider/AnalyticalDialect 阶段实现待整体替换，不继续扩展其引擎 switch。新包由 `make test-go` 的 Common `./...` 和既有 platform-ci Go 作业自动发现，无额外注册入口。PostGIS 等空间能力仍归 `common/spatial`。
+- MySQL 读取集合与输出血缘共用 Dolthub Vitess AST，非递归 CTE 在分析树内按作用域展开；执行保持原 SQL。只接受已证明无副作用的函数，展开受节点和深度预算限制；计算输出不可伪造为源字段直通绑定。
 - `common/engine/plugin.PreparedQuery` 是普通查询唯一的执行计划边界；Provider 必须从同一计划提供 `Analysis()`、`ReadSet()` 与一次性 `Execute()`，Owner 不得直接调用 `ExecuteSQL()`，也不得另行解析查询语义或依赖。生产搬运的 `QueryReadSessionProvider` 也必须消费这一个不可变计划；SQL Provider 通过共享的 SQL PreparedQuery 消费边界取回已绑定请求，不得二次绑定或另建执行路线。字段诊断只有在 `schema_coverage=complete` 时才能断言不存在；暂未实现完整读取集合的方言必须返回 `ErrQueryReadSetUnresolved`。
 - `common/config` 承载部署配置读取和进程启动辅助；模块端口事实必须来自各模块已加载的配置，不维护第二张模块默认端口表。
 - `common/secretcipher` 只承载跨模块敏感配置值的 AES-256-GCM 加解密，不承载 IAM、Permission 或业务字段识别。

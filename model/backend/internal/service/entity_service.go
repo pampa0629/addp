@@ -3,7 +3,10 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"sort"
 	"strconv"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -463,22 +466,95 @@ type mermaidImportPlan struct {
 	entityIDs    map[string]int64
 }
 
-func (s *EntityService) parseMermaidImport(tenantID int64, markdown string) (*MermaidERParser, error) {
+func (s *EntityService) parseMermaidImport(tenantID int64, markdown string) (*MermaidERParser, []models.MermaidResolvedDomain, error) {
 	parsed, err := ParseMermaidER(markdown)
 	if err != nil {
-		return nil, apperrors.Wrap(apperrors.KindValidation, "mermaid_invalid", i18n.MsgValidationFailed, err)
+		return nil, nil, apperrors.Wrap(apperrors.KindValidation, "mermaid_invalid", i18n.MsgValidationFailed, err)
 	}
-	for _, entity := range parsed.Entities {
-		if err := s.validateReferences(tenantID, entity.DomainID, nil); err != nil {
-			return nil, err
+	resolvedDomains, err := s.resolveMermaidImportReferences(tenantID, parsed)
+	if err != nil {
+		return nil, nil, err
+	}
+	return parsed, resolvedDomains, nil
+}
+
+func (s *EntityService) resolveMermaidImportReferences(tenantID int64, parsed *MermaidERParser) ([]models.MermaidResolvedDomain, error) {
+	references := make([]commonClient.StandardCodeReference, 0, len(parsed.Entities)*2+1)
+	seen := map[string]struct{}{}
+	appendReference := func(objectType string, code *string) {
+		if code == nil {
+			return
 		}
+		key := objectType + ":" + *code
+		if _, exists := seen[key]; exists {
+			return
+		}
+		seen[key] = struct{}{}
+		references = append(references, commonClient.StandardCodeReference{ObjectType: objectType, Code: *code})
+	}
+	appendReference("domain", parsed.Document.DomainCode)
+	for index := range parsed.Entities {
+		entity := &parsed.Entities[index]
+		appendReference("domain", entity.DomainCode)
 		for _, attribute := range entity.Attributes {
-			if err := s.validateReferences(tenantID, nil, attribute.ElementID); err != nil {
-				return nil, err
+			appendReference("element", attribute.ElementCode)
+		}
+	}
+	if len(references) == 0 {
+		return []models.MermaidResolvedDomain{}, nil
+	}
+	if s.standard == nil {
+		return nil, standardReferenceError(errors.New("standard client is required to resolve Mermaid references"), "domain_not_found")
+	}
+	resolved := make(map[string]commonClient.StandardReferenceResolution, len(references))
+	client := s.standard.WithTenantID(uint(tenantID))
+	for offset := 0; offset < len(references); offset += 200 {
+		end := offset + 200
+		if end > len(references) {
+			end = len(references)
+		}
+		batch, resolveErr := client.ResolveReferencesByCode(context.Background(), references[offset:end])
+		if resolveErr != nil {
+			return nil, standardReferenceError(resolveErr, "domain_not_found")
+		}
+		for _, resolution := range batch {
+			if !resolution.Found || !resolution.Referenceable {
+				if resolution.Found && resolution.LifecycleState == "deleting" {
+					return nil, standardReferenceError(commonClient.ErrStandardReferenceDeleting, resolution.ObjectType+"_not_found")
+				}
+				return nil, standardReferenceError(commonClient.ErrTenantReferenceNotFound, resolution.ObjectType+"_not_found")
+			}
+			resolved[resolution.ObjectType+":"+resolution.Code] = resolution
+		}
+	}
+	domainSummaries := map[string]models.MermaidResolvedDomain{}
+	for index := range parsed.Entities {
+		entity := &parsed.Entities[index]
+		if entity.DomainCode != nil {
+			resolution := resolved["domain:"+*entity.DomainCode]
+			id := resolution.ID
+			entity.DomainID = &id
+			domainSummaries[resolution.Code] = models.MermaidResolvedDomain{Code: resolution.Code, Name: resolution.Name}
+		}
+		for attributeIndex := range entity.Attributes {
+			attribute := &entity.Attributes[attributeIndex]
+			if attribute.ElementCode != nil {
+				resolution := resolved["element:"+*attribute.ElementCode]
+				id := resolution.ID
+				attribute.ElementID = &id
 			}
 		}
 	}
-	return parsed, nil
+	if parsed.Document.DomainCode != nil {
+		resolution := resolved["domain:"+*parsed.Document.DomainCode]
+		domainSummaries[resolution.Code] = models.MermaidResolvedDomain{Code: resolution.Code, Name: resolution.Name}
+	}
+	summaries := make([]models.MermaidResolvedDomain, 0, len(domainSummaries))
+	for _, summary := range domainSummaries {
+		summaries = append(summaries, summary)
+	}
+	sort.Slice(summaries, func(i, j int) bool { return summaries[i].Code < summaries[j].Code })
+	return summaries, nil
 }
 
 func sameOptionalID(left, right *int64) bool {
@@ -508,7 +584,7 @@ func sameEntityDefinition(entity models.Entity, attributes []models.EntityAttrib
 func (s *EntityService) buildMermaidImportPlan(tx *gorm.DB, tenantID, revision int64, parsed *MermaidERParser) (*mermaidImportPlan, error) {
 	plan := &mermaidImportPlan{
 		preview: models.MermaidImportPreview{
-			Revision: revision, Scope: parsed.Document.Scope, DomainID: parsed.Document.DomainID,
+			Revision: revision, Scope: parsed.Document.Scope, DomainCode: parsed.Document.DomainCode,
 			Conflicts: []models.MermaidImportConflict{},
 		},
 		entityIDs: make(map[string]int64, len(parsed.Entities)),
@@ -598,7 +674,7 @@ func (s *EntityService) PreviewMermaidImport(tenantID int64, req *models.Mermaid
 	if req == nil || req.Markdown == "" {
 		return nil, invalidRequest()
 	}
-	parsed, err := s.parseMermaidImport(tenantID, req.Markdown)
+	parsed, resolvedDomains, err := s.parseMermaidImport(tenantID, req.Markdown)
 	if err != nil {
 		return nil, err
 	}
@@ -613,6 +689,7 @@ func (s *EntityService) PreviewMermaidImport(tenantID int64, req *models.Mermaid
 			return err
 		}
 		preview = &plan.preview
+		preview.ResolvedDomains = resolvedDomains
 		return nil
 	})
 	return preview, err
@@ -623,7 +700,7 @@ func (s *EntityService) ImportFromMermaid(tenantID, userID int64, req *models.Me
 	if req == nil || req.Revision <= 0 || req.Markdown == "" {
 		return nil, invalidRequest()
 	}
-	parsed, err := s.parseMermaidImport(tenantID, req.Markdown)
+	parsed, _, err := s.parseMermaidImport(tenantID, req.Markdown)
 	if err != nil {
 		return nil, err
 	}
@@ -694,103 +771,165 @@ func (s *EntityService) ImportFromMermaid(tenantID, userID int64, req *models.Me
 	return result, nil
 }
 
+type mermaidExportEntity struct {
+	Entity     models.Entity
+	Attributes []models.EntityAttribute
+}
+
+func (s *EntityService) resolveMermaidExportReferences(tenantID int64, domainID *int64, entities []mermaidExportEntity) (map[int64]commonClient.StandardReferenceResolution, map[int64]commonClient.StandardReferenceResolution, error) {
+	references := make([]commonClient.StandardReference, 0, len(entities)*2+1)
+	seen := map[string]struct{}{}
+	appendReference := func(objectType string, id *int64) {
+		if id == nil {
+			return
+		}
+		key := objectType + ":" + strconv.FormatInt(*id, 10)
+		if _, exists := seen[key]; exists {
+			return
+		}
+		seen[key] = struct{}{}
+		references = append(references, commonClient.StandardReference{ObjectType: objectType, ID: *id})
+	}
+	appendReference("domain", domainID)
+	for _, snapshot := range entities {
+		appendReference("domain", snapshot.Entity.DomainID)
+		for _, attribute := range snapshot.Attributes {
+			appendReference("element", attribute.ElementID)
+		}
+	}
+	domains := map[int64]commonClient.StandardReferenceResolution{}
+	elements := map[int64]commonClient.StandardReferenceResolution{}
+	if len(references) == 0 {
+		return domains, elements, nil
+	}
+	if s.standard == nil {
+		return nil, nil, standardReferenceError(errors.New("standard client is required to export Mermaid references"), "domain_not_found")
+	}
+	client := s.standard.WithTenantID(uint(tenantID))
+	for offset := 0; offset < len(references); offset += 200 {
+		end := offset + 200
+		if end > len(references) {
+			end = len(references)
+		}
+		batch, err := client.ResolveReferences(context.Background(), references[offset:end])
+		if err != nil {
+			return nil, nil, standardReferenceError(err, "domain_not_found")
+		}
+		for _, resolution := range batch {
+			if !resolution.Found || !resolution.Referenceable {
+				if resolution.Found && resolution.LifecycleState == "deleting" {
+					return nil, nil, standardReferenceError(commonClient.ErrStandardReferenceDeleting, resolution.ObjectType+"_not_found")
+				}
+				return nil, nil, standardReferenceError(commonClient.ErrTenantReferenceNotFound, resolution.ObjectType+"_not_found")
+			}
+			if resolution.ObjectType == "domain" {
+				domains[resolution.ID] = resolution
+			} else {
+				elements[resolution.ID] = resolution
+			}
+		}
+	}
+	return domains, elements, nil
+}
+
 // ExportToMermaid 按可选业务域导出 Markdown Mermaid 文档。
 func (s *EntityService) ExportToMermaid(tenantID int64, domainID *int64) (*models.MermaidExportResponse, error) {
 	if !validOptionalID(domainID) {
 		return nil, invalidRequest()
 	}
-	if err := s.validateReferences(tenantID, domainID, nil); err != nil {
-		return nil, err
-	}
-	response := &models.MermaidExportResponse{}
+	var entities []mermaidExportEntity
+	var relations []models.EntityRelation
 	err := s.repo.DB().Transaction(func(tx *gorm.DB) error {
-		_, err := repository.LockEntityModelRevision(tx, tenantID)
-		if err != nil {
+		if _, err := repository.LockEntityModelRevision(tx, tenantID); err != nil {
 			return err
 		}
 		entityRepo := repository.NewEntityRepository(tx)
-		relationRepo := repository.NewEntityRelationRepository(tx)
-		entities, err := entityRepo.ListByTenantID(tenantID)
+		allEntities, err := entityRepo.ListByTenantID(tenantID)
 		if err != nil {
 			return err
 		}
-		if domainID != nil {
-			filtered := make([]models.Entity, 0, len(entities))
-			for _, entity := range entities {
-				if entity.DomainID != nil && *entity.DomainID == *domainID {
-					filtered = append(filtered, entity)
-				}
+		for _, entity := range allEntities {
+			if domainID != nil && (entity.DomainID == nil || *entity.DomainID != *domainID) {
+				continue
 			}
-			entities = filtered
-		}
-		relations, err := relationRepo.ListByTenantID(tenantID)
-		if err != nil {
-			return err
-		}
-		document := MermaidDocumentMetadata{Format: mermaidDocumentFormat, Scope: "all"}
-		if domainID != nil {
-			document.Scope = "domain"
-			document.DomainID = domainID
-		}
-		documentJSON, _ := json.Marshal(document)
-		code := "erDiagram\n  %% addp:document " + string(documentJSON) + "\n"
-
-		// 实体定义
-		for _, entity := range entities {
-			metadata, _ := json.Marshal(mermaidEntityMetadata{
-				Code: entity.Code, Name: entity.Name, DomainID: entity.DomainID, Description: entity.Description,
-			})
-			code += "  %% addp:entity " + string(metadata) + "\n"
-			code += "  " + entity.Code + " {\n"
-
 			attributes, err := entityRepo.GetAttributes(entity.ID)
 			if err != nil {
 				return err
 			}
-			for _, attr := range attributes {
-				metadata, _ := json.Marshal(mermaidAttributeMetadata{
-					Entity: entity.Code, Column: attr.ColumnName, Name: attr.Name, Nullable: attr.Nullable,
-					ElementID: attr.ElementID, Description: attr.Description, SortOrder: attr.SortOrder,
-				})
-				code += "    %% addp:attribute " + string(metadata) + "\n"
-				pk := ""
-				if attr.IsPK {
-					pk = " PK"
-				}
-				code += "    " + attr.DataType + " " + attr.ColumnName + pk + "\n"
-			}
-
-			code += "  }\n"
+			entities = append(entities, mermaidExportEntity{Entity: entity, Attributes: attributes})
 		}
-
-		// 关系定义
-		for _, relation := range relations {
-			var sourceEntity, targetEntity *models.Entity
-			for i := range entities {
-				if entities[i].ID == relation.SourceEntity {
-					sourceEntity = &entities[i]
-				}
-				if entities[i].ID == relation.TargetEntity {
-					targetEntity = &entities[i]
-				}
-			}
-
-			if sourceEntity != nil && targetEntity != nil {
-				metadata, _ := json.Marshal(mermaidRelationMetadata{
-					Source: sourceEntity.Code, Target: targetEntity.Code, RelationType: relation.RelationType,
-					Name: relation.Name, Description: relation.Description,
-				})
-				code += "  %% addp:relation " + string(metadata) + "\n"
-				code += "  " + sourceEntity.Code + " " + ConvertToMermaidSymbol(relation.RelationType) + " " + targetEntity.Code + " : " + strconv.Quote(relation.Name) + "\n"
-			}
-		}
-		response.Markdown = "# ADDP Entity Relationship Diagram\n\n```mermaid\n" + code + "```\n"
-		response.Scope = document.Scope
-		response.DomainID = document.DomainID
-		return nil
+		relations, err = repository.NewEntityRelationRepository(tx).ListByTenantID(tenantID)
+		return err
 	})
 	if err != nil {
 		return nil, err
 	}
-	return response, nil
+	domainReferences, elementReferences, err := s.resolveMermaidExportReferences(tenantID, domainID, entities)
+	if err != nil {
+		return nil, err
+	}
+	document := MermaidDocumentMetadata{Format: mermaidDocumentFormat, Scope: "all"}
+	if domainID != nil {
+		document.Scope = "domain"
+		code := domainReferences[*domainID].Code
+		document.DomainCode = &code
+	}
+	documentJSON, _ := json.Marshal(document)
+	var code strings.Builder
+	code.WriteString("erDiagram\n  %% addp:document ")
+	code.Write(documentJSON)
+	code.WriteByte('\n')
+	entityByID := make(map[int64]models.Entity, len(entities))
+	for _, snapshot := range entities {
+		entity := snapshot.Entity
+		entityByID[entity.ID] = entity
+		var domainCode *string
+		if entity.DomainID != nil {
+			value := domainReferences[*entity.DomainID].Code
+			domainCode = &value
+		}
+		metadata, _ := json.Marshal(mermaidEntityMetadata{
+			Code: entity.Code, Name: entity.Name, DomainCode: domainCode, Description: entity.Description,
+		})
+		code.WriteString("  %% addp:entity ")
+		code.Write(metadata)
+		code.WriteString("\n  " + entity.Code + " {\n")
+		for _, attribute := range snapshot.Attributes {
+			var elementCode *string
+			if attribute.ElementID != nil {
+				value := elementReferences[*attribute.ElementID].Code
+				elementCode = &value
+			}
+			metadata, _ := json.Marshal(mermaidAttributeMetadata{
+				Entity: entity.Code, Column: attribute.ColumnName, Name: attribute.Name, Nullable: attribute.Nullable,
+				ElementCode: elementCode, Description: attribute.Description, SortOrder: attribute.SortOrder,
+			})
+			code.WriteString("    %% addp:attribute ")
+			code.Write(metadata)
+			code.WriteString("\n    " + attribute.DataType + " " + attribute.ColumnName)
+			if attribute.IsPK {
+				code.WriteString(" PK")
+			}
+			code.WriteByte('\n')
+		}
+		code.WriteString("  }\n")
+	}
+	for _, relation := range relations {
+		sourceEntity, sourceExists := entityByID[relation.SourceEntity]
+		targetEntity, targetExists := entityByID[relation.TargetEntity]
+		if !sourceExists || !targetExists {
+			continue
+		}
+		metadata, _ := json.Marshal(mermaidRelationMetadata{
+			Source: sourceEntity.Code, Target: targetEntity.Code, RelationType: relation.RelationType,
+			Name: relation.Name, Description: relation.Description,
+		})
+		code.WriteString("  %% addp:relation ")
+		code.Write(metadata)
+		code.WriteString("\n  " + sourceEntity.Code + " " + ConvertToMermaidSymbol(relation.RelationType) + " " + targetEntity.Code + " : " + strconv.Quote(relation.Name) + "\n")
+	}
+	return &models.MermaidExportResponse{
+		Markdown: "# ADDP Entity Relationship Diagram\n\n```mermaid\n" + code.String() + "```\n",
+		Scope:    document.Scope, DomainCode: document.DomainCode,
+	}, nil
 }

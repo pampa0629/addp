@@ -400,12 +400,20 @@ type QueryCapability struct {
     ReadSession     bool     `json:"read_session,omitempty"`
     Parameters      *QueryParameterCapability `json:"parameters,omitempty"`
     Federation      *QueryFederationCapability `json:"federation,omitempty"`
+    Analytical      *AnalyticalCapability `json:"analytical,omitempty"`
 }
 
 type QueryParameterCapability struct {
     Supported bool     `json:"supported"`
     Languages []string `json:"languages"`
     Types     []string `json:"types"`
+}
+
+// 目标契约；仅在编译接口与实例认证完成后投影为实际能力。
+type AnalyticalCapability struct {
+    Supported        bool     `json:"supported"`
+    PlanVersions     []string `json:"plan_versions"`
+    SemanticProfiles []string `json:"semantic_profiles"`
 }
 
 type QueryFederationCapability struct {
@@ -429,6 +437,7 @@ type QueryFederationCapability struct {
 | `read_session` | 是否支持通过 `QueryReadSessionProvider` 连续、无隐式结果行数上限地读取只读查询结果。 |
 | `parameters` | 可选的类型化查询参数能力；声明后必须由 Provider 原生安全绑定。 |
 | `federation` | 可选的多数据源联邦查询能力；声明后必须实现 `FederatedQueryRuntimeProvider`。 |
+| `analytical` | 已确认的目标扩展：中立分析计划的版本与语义配置支持；实现与实例认证完成后才可声明，详见 4.1.1。 |
 
 `parameters.languages` 只列出当前 Provider 或 Owner 安全编译器已实现参数绑定的查询语言，`parameters.types` 允许 `string`、`integer`、`number`、`boolean` 与 `relation`。查询工作台只能开放当前语言实际声明的参数类型，不得再根据 `engine_type` 补充。SQL 值参数的用户输入语法统一为 `:name`，Provider 必须编译为当前驱动占位符并通过 `QueryOptions.Args` 绑定；Cypher 使用 `$name` 并通过原生参数 Map 执行；MQL 使用 `{\"$param\":\"name\"}` 结构化参数节点，在 JSON 解析后替换为类型化值。`relation` 只能由 Develop 的 PostgreSQL AST 编译器在同一引擎内将已声明的裸关系名替换为 ResourceLocator 解析得到的方言安全物理表标识符；当前由 PostgreSQL、openGauss 与 KingbaseES 声明。所有参数能力都不得通过字符串替换实现，也不得用于任意动态标识符或查询片段。
 
@@ -441,6 +450,28 @@ DuckDB Runtime 第一阶段声明 `runtime_api="addp.query-runtime/v1"`、`sourc
 查询语言差异通过 `languages` / `default_language` / `identifier_quotes` 和 `QueryRequest.Language` 表达，不新增按数据库类别拆分的 query provider。`identifier_quotes` 只是编辑器插入标识符所需的语法事实，查询生成、校验和执行仍归当前 Query Runtime Provider。`result_kinds=document` 只表示原生查询结果可能是 JSON document / record 形态，不表示 data item 的 `data_type=document`。图结构查询如果需要节点 / 关系结构结果，仍使用 `GraphQueryProvider`。
 
 查询工作台的默认样例不属于静态 capability。样例必须在用户切换具体 Engine Instance 时，通过执行授权消费该实例连接、实时发现有数据的 Engine Catalog leaf，再由 Query Runtime 按 `default_language` 生成。Engine Catalog 发现失败或当前实例没有有数据的 leaf 时返回明确错误，不允许用固定诊断查询伪装成实例样例。
+
+### 4.1.1 分析计算能力（已确认设计，待实现）
+
+`compute.query.analytical` 表达引擎在已实现编译器和具体实例条件下可以兑现的通用分析计算能力，不表示 Model 页面适配情况，不使用 `model_supported` 或指标名称作为字段。完整计划、编译、发布和执行契约见 [引擎插件接口规范](addp引擎插件接口规范.md#数据库无关分析计算契约)。
+
+首个可声明配置如下；这是目标格式示例，不代表当前数据库实例已经支持：
+
+```json
+{
+  "supported": true,
+  "plan_versions": ["addp.query_plan/v1"],
+  "semantic_profiles": ["relational_analytics_v1"]
+}
+```
+
+- 仅当 `compute.query.supported=true`、有表格结果能力、存在 `AnalyticalCompilerProvider`、所声明配置经过认证且实例条件满足时，才能声明 analytical supported。协议相同、驱动可连接、代码实现了一个日期函数都不构成认证。
+- 语义配置声明是一组确定操作和结果语义的承诺；参数类型、资源结构、数据精度等具体条件仍由 `Check(CompileRequest)` 返回逐计划支持结论。不能用 `supported=true` 跳过计划校验，也不能以通用标记掩盖整个配置中未实现的基本操作。
+- 未支持时可以缺省 analytical 或明确 supported=false，均表示不具备能力；false 时版本和语义配置列表为空。true 时版本与配置列表必须非空、唯一且均被该编译实现识别，未知值拒绝。
+- System 沿现有静态模板、实例能力解析和刷新路径保存能力；不新增中心数据库名单，不把实例探测加入启动/readiness。探测与生命周期、在线状态继续遵守本规范既有规则。
+- 公共 `engine/selection` 统一派生可选择／当前可执行状态。前端展示支持性和不可用原因；后端绑定与执行时仍重新检查当前实例状态、能力和本地编译器身份。
+- 仅实现接口而未完成声明及认证的插件不能作为生产候选；第三方言契约测试的虚拟实现不得进入生产能力列表。首批计划只认证 PostgreSQL 和 MySQL 8，后续引擎逐个独立增加实现和门禁。
+- 当前代码中的 AnalyticalSQLProvider/AnalyticalDialect 不满足上述新接口；完成替换前不得通过修改 capabilities JSON 提前开放入口。
 
 ### 4.2 WorkflowCapability
 

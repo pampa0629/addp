@@ -96,6 +96,7 @@ func main() {
 	dwLayerSvc := service.NewDWLayerService(dwLayerRepo)
 	metricImplementationSvc := service.NewMetricImplementationService(metricImplementationRepo, logicalTableRepo)
 	metricImplementationSvc.SetStandardClient(standardClient)
+	metricImplementationSvc.SetSystemClient(systemClient)
 	tableRelationSvc := service.NewTableRelationService(tableRelationRepo, logicalTableRepo)
 	tableRelationSvc.SetProfessionalRelationSources(entityRepo, metricImplementationRepo)
 	dimensionHierarchySvc := service.NewDimensionHierarchyService(dimensionHierarchyRepo, logicalTableRepo)

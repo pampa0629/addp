@@ -11,7 +11,9 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/datatype"
+	"github.com/addp/common/engine/plugin"
 	commoni18n "github.com/addp/common/middleware/i18n"
+	commonmodels "github.com/addp/common/models"
 	commonquery "github.com/addp/common/query"
 	"github.com/addp/common/resourcetree"
 	"github.com/addp/model/i18n"
@@ -26,6 +28,7 @@ type MetricImplementationService struct {
 	repo      *repository.MetricImplementationRepository
 	tableRepo *repository.LogicalTableRepository
 	standard  *commonClient.StandardClient
+	system    *commonClient.SystemServiceClient
 }
 
 func NewMetricImplementationService(repo *repository.MetricImplementationRepository, tables *repository.LogicalTableRepository) *MetricImplementationService {
@@ -33,6 +36,9 @@ func NewMetricImplementationService(repo *repository.MetricImplementationReposit
 }
 func (s *MetricImplementationService) SetStandardClient(client *commonClient.StandardClient) {
 	s.standard = client
+}
+func (s *MetricImplementationService) SetSystemClient(client *commonClient.SystemServiceClient) {
+	s.system = client
 }
 func (s *MetricImplementationService) List(factID, tenantID int64) ([]models.MetricImplementation, error) {
 	if factID > 0 {
@@ -124,6 +130,10 @@ func (s *MetricImplementationService) SaveDraft(ctx context.Context, id, tenantI
 	if _, err := s.standard.WithTenantID(uint(tenantID)).GetPublishedMetricDefinitionRevision(ctx, item.MetricDefinitionID, req.MetricDefinitionRevisionID); err != nil {
 		return nil, standardReferenceError(err, "metric_definition_revision_not_found")
 	}
+	engine, err := s.metricEngineDescriptor(ctx, item)
+	if err != nil {
+		return nil, err
+	}
 	err = s.repo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := lockStandardReferences(tx, tenantID, requiredStandardReference(models.StandardResourceMetric, item.MetricDefinitionID)); err != nil {
 			return err
@@ -132,7 +142,7 @@ func (s *MetricImplementationService) SaveDraft(ctx context.Context, id, tenantI
 		if err != nil {
 			return err
 		}
-		_, snapshot, hash, err := resolveMetricPlan(tx, locked, req.Contract)
+		_, snapshot, hash, err := resolveMetricPlan(tx, locked, req.Contract, engine)
 		if err != nil {
 			return err
 		}
@@ -183,6 +193,13 @@ func (s *MetricImplementationService) ChangeRevisionState(ctx context.Context, i
 			return nil, standardReferenceError(err, "metric_definition_revision_not_found")
 		}
 	}
+	var engine *commonmodels.EngineRuntimeDescriptor
+	if publish {
+		engine, err = s.metricEngineDescriptor(ctx, item)
+		if err != nil {
+			return nil, err
+		}
+	}
 	err = s.repo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := lockStandardReferences(tx, tenantID, requiredStandardReference(models.StandardResourceMetric, item.MetricDefinitionID)); err != nil {
 			return err
@@ -199,7 +216,7 @@ func (s *MetricImplementationService) ChangeRevisionState(ctx context.Context, i
 			if revision.Status != models.MetricImplementationDraft {
 				return metricConflict()
 			}
-			_, _, hash, err := resolveMetricPlan(tx, locked, revision.Contract)
+			_, _, hash, err := resolveMetricPlan(tx, locked, revision.Contract, engine)
 			if err != nil {
 				return err
 			}
@@ -283,6 +300,10 @@ func (s *MetricImplementationService) PublishedPlan(ctx context.Context, id, rev
 	if _, err := s.standard.WithTenantID(uint(tenantID)).GetPublishedMetricDefinitionRevision(ctx, identity.MetricDefinitionID, definitionRevisionID); err != nil {
 		return nil, standardReferenceError(err, "metric_definition_revision_not_found")
 	}
+	engine, err := s.metricEngineDescriptor(ctx, identity)
+	if err != nil {
+		return nil, err
+	}
 	var result *MetricCompiledPlan
 	err = s.repo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		item, err := repository.NewMetricImplementationRepository(tx).GetByID(id, tenantID)
@@ -306,7 +327,7 @@ func (s *MetricImplementationService) PublishedPlan(ctx context.Context, id, rev
 				return err
 			}
 		}
-		sql, snapshot, hash, err := resolveMetricPlan(tx, item, revision.Contract)
+		sql, snapshot, hash, err := resolveMetricPlan(tx, item, revision.Contract, engine)
 		if err != nil {
 			return err
 		}
@@ -321,7 +342,32 @@ func (s *MetricImplementationService) PublishedPlan(ctx context.Context, id, rev
 	return result, err
 }
 
-func resolveMetricPlan(tx *gorm.DB, item *models.MetricImplementation, contract models.MetricContract) (string, models.JSONB, string, error) {
+// Fetch remote metadata before taking local aggregate locks. The compiler checks
+// the locked sources against this descriptor and includes the dialect in its hash.
+func (s *MetricImplementationService) metricEngineDescriptor(ctx context.Context, item *models.MetricImplementation) (*commonmodels.EngineRuntimeDescriptor, error) {
+	table, err := s.tableRepo.GetByID(item.FactTableID, item.TenantID)
+	if err != nil {
+		return nil, metricNotFound()
+	}
+	uri, _ := table.Materialization["target_parent_locator"].(string)
+	locator, err := resourcetree.ParseURI(uri)
+	if err != nil || locator.EngineID == 0 {
+		return nil, invalidRequest()
+	}
+	if s.system == nil {
+		return nil, apperrors.Unavailable("engine_descriptor_unavailable", i18n.MsgMetricEngineUnavailable)
+	}
+	engine, err := s.system.WithTenantID(uint(item.TenantID)).GetEngineRuntimeDescriptor(ctx, locator.EngineID)
+	if err != nil {
+		return nil, apperrors.Wrap(apperrors.KindUnavailable, "engine_descriptor_unavailable", i18n.MsgMetricEngineUnavailable, err)
+	}
+	if engine == nil || engine.ID != locator.EngineID {
+		return nil, metricConflict()
+	}
+	return engine, nil
+}
+
+func resolveMetricPlan(tx *gorm.DB, item *models.MetricImplementation, contract models.MetricContract, engine *commonmodels.EngineRuntimeDescriptor) (string, models.JSONB, string, error) {
 	bindings := metricPlanBindings{Relations: map[int64]metricPlanRelation{}}
 	var engineID uint
 	tables := map[int64]models.JSONB{}
@@ -341,7 +387,7 @@ func resolveMetricPlan(tx *gorm.DB, item *models.MetricImplementation, contract 
 			return metricPlanSource{}, invalidRequest()
 		}
 		locator, err := resourcetree.ParseURI(uri)
-		if err != nil || locator.Type != resourcetree.TypeSchema || len(locator.Path) != 1 || locator.EngineID == 0 {
+		if err != nil || len(locator.Path) != 1 || locator.EngineID == 0 {
 			return metricPlanSource{}, invalidRequest()
 		}
 		name, ok := table.Materialization["target_name"].(string)
@@ -397,7 +443,36 @@ func resolveMetricPlan(tx *gorm.DB, item *models.MetricImplementation, contract 
 		bindings.Relations[relation.ID] = metricPlanRelation{SourceField: relation.SourceField, TargetField: relation.TargetField, Target: target}
 		refs = append(refs, models.MetricFieldReference{FieldID: relation.SourceField}, models.MetricFieldReference{FieldID: relation.TargetField, RelationID: relation.ID})
 	}
-	query, err := compileMetricSQL(contract, bindings)
+	if engine == nil || engine.ID != engineID {
+		return "", nil, "", metricConflict()
+	}
+	dialect, err := plugin.ResolveAnalyticalSQLDialect(engine.EngineType)
+	if err != nil {
+		return "", nil, "", apperrors.Wrap(apperrors.KindValidation, "analytical_sql_unavailable", i18n.MsgMetricEngineUnsupported, err)
+	}
+	enginePlugin, err := plugin.Get(engine.EngineType)
+	if err != nil {
+		return "", nil, "", invalidRequest()
+	}
+	catalogProvider, ok := enginePlugin.(plugin.EngineCatalogModelProvider)
+	if !ok {
+		return "", nil, "", invalidRequest()
+	}
+	for _, table := range tables {
+		locator, err := resourcetree.ParseURI(table["locator"].(string))
+		if err != nil {
+			return "", nil, "", invalidRequest()
+		}
+		path, err := resourcetree.EngineCatalogPathFromLocator(catalogProvider.EngineCatalogModel(), locator)
+		if err != nil {
+			return "", nil, "", invalidRequest()
+		}
+		segments := plugin.EngineCatalogPathWithoutRoot(path).Segments
+		if len(segments) != 1 || segments[0].Kind != plugin.EngineCatalogKindNamespace {
+			return "", nil, "", invalidRequest()
+		}
+	}
+	query, err := compileMetricSQL(contract, bindings, dialect)
 	if err != nil {
 		return "", nil, "", err
 	}
@@ -419,7 +494,7 @@ func resolveMetricPlan(tx *gorm.DB, item *models.MetricImplementation, contract 
 	for _, relation := range relations {
 		relationSnapshot = append(relationSnapshot, models.JSONB{"id": relation.ID, "source_table": relation.SourceTable, "source_field": relation.SourceField, "target_table": relation.TargetTable, "target_field": relation.TargetField, "relation_type": relation.RelationType})
 	}
-	snapshot := models.JSONB{"engine_id": engineID, "tables": tables, "fields": dependencies, "relations": relationSnapshot, "contract": contract}
+	snapshot := models.JSONB{"engine_id": engineID, "sql_dialect": dialect.Name(), "tables": tables, "fields": dependencies, "relations": relationSnapshot, "contract": contract}
 	raw, err := json.Marshal(snapshot)
 	if err != nil {
 		return "", nil, "", err

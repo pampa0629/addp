@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"strings"
 	"testing"
 
 	"github.com/addp/common/dataitem"
@@ -26,6 +27,10 @@ func TestEnrichObjectStorageJSONTableUpdatesItemDataType(t *testing.T) {
 	parentNode, err := repo.UpsertNode(1, 7, nil, "bucket", "addp", strPtr("addp"), scanresource.ObjectBucketNodeAttributes("addp"))
 	if err != nil {
 		t.Fatalf("create parent node: %v", err)
+	}
+	parentNode, err = repo.EnsureObjectCatalogPrefixPath(1, 7, parentNode, "datasets")
+	if err != nil {
+		t.Fatalf("create datasets prefix: %v", err)
 	}
 	resource := scanresource.StorageResource{
 		RootName:          "addp",
@@ -72,6 +77,27 @@ func TestEnrichObjectStorageJSONTableUpdatesItemDataType(t *testing.T) {
 	table := typeInfo["table"].(map[string]interface{})
 	if table["fields"] == nil {
 		t.Fatalf("type_info.table.fields missing: %#v", table)
+	}
+}
+
+func TestObjectProcessorRejectsInconsistentParentBeforeWriting(t *testing.T) {
+	db := openObjectCatalogProcessorTestDB(t)
+	repo := metaRepo.NewScanRepository(db)
+	bucket, err := repo.UpsertNode(1, 7, nil, "bucket", "addp", strPtr("addp"), scanresource.ObjectBucketNodeAttributes("addp"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resource := scanresource.StorageResource{RootName: "addp", Path: "doc/note.md", FullPath: "addp/doc/note.md", Format: "markdown"}
+	plan := scanresource.PlanObjectSingleItem(7, resource, resource.Path, "object")
+	_, err = New(repo, nil, slog.New(slog.NewTextHandler(io.Discard, nil))).Process(context.Background(), ObjectSingleInput(
+		&commonModels.Engine{ID: 7}, 1, 7, bucket, plan, resource, plan.Attributes, resource.Path, nil, nil, models.ScannedDepthBasic,
+	))
+	if err == nil || !strings.Contains(err.Error(), "object catalog identity mismatch") {
+		t.Fatalf("error = %v, want identity mismatch", err)
+	}
+	var count int64
+	if err := db.Model(&models.MetaItem{}).Count(&count).Error; err != nil || count != 0 {
+		t.Fatalf("persisted items = %d, err = %v, want no writes", count, err)
 	}
 }
 

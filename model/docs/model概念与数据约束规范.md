@@ -117,13 +117,31 @@ Model 遵循平台 API 规范中的资源并发版本规则。`Entity`、`Logica
 
 MetricImplementation 使用稳定身份与不可变修订，稳定身份保存来源事实表、指标定义身份、名称和自身 `version`；修订保存指标定义发布修订、结构化 `contract`、依赖快照及 hash。修订状态为 `draft|published|withdrawn`，同一实现最多一个草稿。已发布内容不可修改；撤回后拒绝新执行。未发布身份可删除，曾发布身份保留。旧 `source_config/dimension_config/filter_config/expression_config` 和 `active|disabled` 写路径删除。
 
-首期 `contract.operation=count_distinct`；`subject/distinct/time` 使用 `{field_id, relation_id}` 引用，`relation_id=0` 只表示来源事实自身。`subject_relation_id` 指向主体维度唯一主键，用于区分不存在主体与零活动。`filters` 只接受 `{field,value:boolean}` 固定条件，不接受 SQL。时间字段必须为 DATE。输出为 `subject_id,bucket,value`；查询参数为 `subject_id,start_date,end_date,grain`，粒度仅 `month|total`，时间左闭右开，最多 120 个相交月份。月查询对已存在主体补零，不存在主体返回空结果。首期编译目标为 PostgreSQL，其他引擎不自动降级。
+首期 `contract.operation=count_distinct`；`subject/distinct/time` 使用 `{field_id, relation_id}` 引用，`relation_id=0` 只表示来源事实自身。`subject_relation_id` 指向主体维度唯一主键，用于区分不存在主体与零活动。`filters` 只接受 `{field,value:boolean}` 固定条件，不接受 SQL。时间字段必须为 DATE。输出为 `subject_id,bucket,value`；查询参数为 `subject_id,start_date,end_date,grain`，粒度仅 `month|total`，时间左闭右开，最多 120 个相交月份。月查询对已存在主体补零，不存在主体返回空结果。编译目标由来源引擎的分析 SQL Provider 决定，缺少能力时明确拒绝。
 
-`contract.operation=directional_overlap` 复用同一事实来源、主体字段、主体维度、集合成员去重字段与 DATE 字段；两个人员角色共享字段映射，角色由必填 `subject_id` 和 `comparison_id` 明确绑定。此操作不接受额外固定过滤，避免把主领队过滤或未定义作用范围的条件带入参加活动集合。额外必填参数 `directions=forward|both` 选择单方向或交换角色的双向组合；两者只使用一条 PostgreSQL 语句和同一快照。任一人员不存在时整次结果为空；人员存在但集合为空时对应方向为 0；同人非空为 1。
+`contract.operation=directional_overlap` 复用同一事实来源、主体字段、主体维度、集合成员去重字段与 DATE 字段；两个人员角色共享字段映射，角色由必填 `subject_id` 和 `comparison_id` 明确绑定。此操作不接受额外固定过滤，避免把主领队过滤或未定义作用范围的条件带入参加活动集合。额外必填参数 `directions=forward|both` 选择单方向或交换角色的双向组合；两者只使用一条目标引擎 SQL 语句和同一快照。任一人员不存在时整次结果为空；人员存在但集合为空时对应方向为 0；同人非空为 1。
 
 双向结果每方向每个时间桶一行，输出 `direction,subject_id,comparison_id,bucket,value,subject_count,comparison_count,shared_count`；`direction=forward|reverse` 区分有序角色，即使两个人相同也保持唯一行键 `direction,bucket`。`value` 为未按展示精度提前舍入的 decimal 比例，三个 count 为解释字段，不另建指标。月份比例和全期比例各自从范围内集合计算。先分别去重形成双方完整集合，再计算交集和分母，禁止从内连接结果统计分母。质量检查覆盖两个人员。
 
 Model 编译计划显式返回参数声明、输出字段和稳定键，由 Service 冻结消费；Service 不按操作名称拼装参数、类型或公式。既有 count_distinct 的四个参数和输出保持其定义，新增操作不为计数查询引入对比人员参数。
+
+#### 数据库无关计划与修订（已确认设计，待代码替换）
+
+指标定义和 `MetricContract` 不包含数据库方言。Model 以同一套 `buildMetricPlan` 构建去重、连接、聚合、时间桶和补零逻辑；各引擎只消费通用计划。完整结构、接口和语义以 [引擎插件接口规范](../../docs/spec/addp引擎插件接口规范.md#数据库无关分析计算契约) 为唯一事实源，Model 不重复定义计划节点或编译器接口。
+
+`metric_plan.go` 只负责从现有指标契约构建逻辑计划；`metric_implementation_service.go` 继续负责来源模型、定义修订、审批、并发与发布。Model 表／字段／关联 ID 映射为计划内 SourceID／ColumnID；物理来源放入独立 SourceBinding，以完整 EngineCatalogPath leaf 表达。禁止在指标编译器中假设一个 namespace 加表名，禁止接收 SQL 字符串或数据库原生函数参数。
+
+草稿保存：校验 Standard 发布定义、已审批事实／维度及关联，生成确定的 Plan 与 Sources，调用当前引擎编译器 Check/Compile 验证可表达性，保存中立计划包及 owner 依赖。编译是结构与支持性验证，不执行业务数据查询，页面必须继续区分结构校验和真实数据验收。远程 Standard 与 System 请求在本地行锁之前完成，事务内重新核对本地版本、引用和来源引擎身份。
+
+发布：重新构建并比较计划包和依赖，确认当前编译器身份、实例能力及定义发布状态；变化要求先保存草稿再发布。冻结内容包括业务契约、确定定义修订、分析计划包和 owner dependency_hash；原生查询不成为第二份持久指标定义。计划包中的 schema、语义配置、绑定与编译器实现版本均参与计算依赖。
+
+`MetricCompiledPlan` 与 `common/client.ModelMetricPlan` 的公开计划响应使用 owner 外壳（实现身份、实现修订、定义身份／修订、dependency_hash）和唯一 `execution_plan`（AnalyticalPlanPackage），删除 `sql` 及其消费校验。外壳不重复保存 engine_id、参数、字段和稳定键事实，这些由计划包投影。现有 `POST /metric-implementations/:id/revisions/:revision_id/plan` 继续是唯一入口；输入验证、授权及发布状态边界保留，不新增 v2 路由或兼容响应字段。
+
+取计划与执行：返回明确修订的冻结包，并根据当前模型与引擎验证依赖。描述变化不修改计算结果，但参数显示名、选项标签等消费契约仍按既有 owner 规则版本化。换物理字段、连接、来源类型、编译器实现或语义必须发布新实现修订、重绑服务并更新应用，不自动改写历史快照。客户端只能提交声明的指标参数，不能修改通用计划、引擎、结果类型或原生查询。
+
+当前的闭合 `AnalyticalDialect`、Model SQL 拼接与 sql_dialect 依赖是待替换的阶段代码，必须在新主路径交付时删除；旧发布包不兼容读取。部署前应盘点受影响实现／服务／应用并安排正式新修订切换，不在迁移 SQL 中伪造发布审批或把旧 SQL 自动改写为新计划。
+
+首期仍限定同一引擎内的表格计算；指标业务语义、参数及结果保持前文所述。PG/MySQL 的物理表绑定入口和建表、退役能力另行跟踪。本轮计算契约既不授权 Model 跨模块管理数据，也不自动扩展物化 DDL；MySQL 测试夹具的 SourceBinding 不代表页面来源配置链路已经交付。
 
 `/metric-implementations` 是唯一管理资源：GET 列表（可用 `fact_table_id` 筛选）、POST 创建；`/{id}` GET/DELETE；`/{id}/draft` PUT；`/{id}/revisions/{revision_id}/publish|withdraw` POST；`/{id}/revisions/{revision_id}/plan` POST（请求体可携带类型化 `input`） 读取确定发布修订。写入已有资源携带实现 `version`，不保留逻辑表嵌套写路由。使用 `model.metric_implementation.read/create/update/delete/publish/offline` 精确权限。
 
@@ -133,7 +151,7 @@ Model 编译计划显式返回参数声明、输出字段和稳定键，由 Serv
 
 版本校验、生命周期校验、引用锁定、业务写入和版本递增必须在同一数据库事务中完成。Service 先读取 `draft` 状态、Repository 随后无条件写入的做法不成立，因为审批可能在两步之间完成。LogicalTable 审批必须在事务内锁定聚合根并校验字段完整性；Entity 审批同理。版本或状态冲突不得留下属性、字段、关系、指标映射或回收队列副作用。
 
-跨 Standard 的 HTTP 引用校验在进入本地数据库事务前完成，不能持有 Model 行锁等待网络请求。本地资源版本、生命周期、父子归属和外键引用仍必须在事务内重新锁定并校验。
+跨 Standard 的 HTTP 引用校验和 System 引擎运行描述读取在进入本地数据库事务前完成，不能持有 Model 行锁等待网络请求。指标计划在事务内重新核对来源引擎身份，并将完整来源绑定和编译器身份冻结入依赖。本地资源版本、生命周期、父子归属和外键引用仍必须在事务内重新锁定并校验。
 
 已有资源的更新、删除、审批和退回草稿必须在 JSON body 中携带自己的 `version`；聚合子资源写入必须在 JSON body 中携带父资源 `version`。成功的子资源写入至少返回新的父版本，前端后续写请求必须顺序使用该值。`DELETE` 同样只使用 JSON body 传递版本，不接受 query、Header 或服务端当前值兜底。
 
@@ -166,7 +184,7 @@ Standard 引用校验只有明确的 `404` 或跨 Tenant 隐藏结果映射为�
 
 ## 五、Mermaid 与 DDL
 
-Mermaid 交换文档的唯一格式是 Markdown：文件后缀为 `.md`，且只包含一个 `mermaid` fenced code block。代码块内使用 `addp.model.er/v1` 文档元数据注释声明 `all|domain` 范围；不再输出裸 `.mmd`，也不接受只改后缀、没有 Markdown 围栏的文件。
+Mermaid 交换文档的唯一格式是 Markdown：文件后缀为 `.md`，且只包含一个 `mermaid` fenced code block。代码块内使用 `addp.model.er/v2` 文档元数据注释声明 `all|domain` 范围；不再输出裸 `.mmd`，也不接受只改后缀、没有 Markdown 围栏的文件。`v1` 数字 ID 格式已删除，不保留兼容解析路线。
 
 导出与 ER 图当前业务域上下文一致：正整数 `domain_id` 导出该业务域归属的 Entity、EntityAttribute，以及两端都在该域内的 EntityRelation；省略 `domain_id` 才表示显式全域导出。“展开跨域关联”只是查看上下文，不改变导出边界，避免将外域实体误表达为本域交换成员。
 
@@ -174,7 +192,9 @@ Mermaid 导入是非破坏性的显式成员批量创建，不是 Tenant 实体�
 
 前端必须先请求导入预览，展示将新建、未变更和冲突的实体与关系数量；存在冲突时不允许提交。`model.entity_model_revisions` 继续作为 Tenant 实体模型集合的非空 `BIGINT revision`，但只用于将预览结果绑定到确认提交时的集合基线。任何 Entity、EntityAttribute、EntityRelation 或 Cleanup 写入仍在事务中推进它；确认导入在同一事务中锁定并校验预览返回的 `revision`，过期返回 `409 resource_version_conflict`。预览本身不写业务资源；确认导入在单个事务中重新计划并创建全部新成员，任何冲突或写入错误整体回滚。
 
-Mermaid 可逆子集必须通过 ADDP 元数据注释完整保存所有可编辑 Model 字段：Entity 的 code、显示名、domain_id、description；EntityAttribute 的 column_name、显示名、element_id、data_type、主键、可空性、description、sort_order；EntityRelation 的两端实体 code、关系类型、name 和 description。业务域文档中所有 Entity 的 `domain_id` 必须与文档范围一致；全域文档可包含多个业务域和未归属实体。子集外语法必须明确拒绝，不能静默丢失。
+Mermaid 可逆子集必须通过 ADDP 元数据注释完整保存所有可编辑 Model 字段：Entity 的 code、显示名、`domain_code`、description；EntityAttribute 的 column_name、显示名、`element_code`、data_type、主键、可空性、description、sort_order；EntityRelation 的两端实体 code、关系类型、name 和 description。交换文档只使用当前 Tenant 内不可变且唯一的 Standard 稳定编码，不写入 Model 数据库中的 `domain_id` 或 `element_id` 代理键。
+
+业务域文档的 `addp:document.domain_code` 必填，且所有 Entity 的 `domain_code` 必须与文档范围一致；全域文档的文档级 `domain_code` 必须为空，Entity 可分别声明不同业务域编码或不归属业务域。属性未绑定数据元时 `element_code` 为空。导入预览在进入 Model 本地事务前，通过 Standard 唯一 API 按当前 Tenant 精确解析全部非空 `domain_code` 和 `element_code`，不按显示名猜测、不使用当前页面业务域兜底，也不接受模糊匹配。任一编码不存在、不可引用或属于其他 Tenant 时，整次预览以对应 `domain_not_found` 或 `element_not_found` 失败；Standard 不可用时返回 `standard_service_unavailable`。预览响应必须返回已解析业务域的稳定编码和显示名，使用户能够确认落入哪个当前 Tenant 业务域。子集外语法必须明确拒绝，不能静默丢失。
 
 Cleanup 是内部强制生命周期写入，不从外部请求接收 `version`。它仍必须锁定受影响资源，推进被修改资源的 `version`，并在涉及实体模型集合时推进 Tenant `revision`；physical cleanup 必须在单个事务中完成锁定、删除和修订推进。
 

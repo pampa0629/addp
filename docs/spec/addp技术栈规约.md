@@ -40,9 +40,9 @@
   - **Doris 兼容性要求**: v1.8.x 版本无法正常连接 Doris,会返回 "invalid connection" 错误
   - **影响**: 所有需要连接 MySQL/Doris 的模块必须使用 v1.9.3+
   - **相关模块**: System (资源测试), Develop (SQL 工作台)
-- **MySQL SQL AST**: `github.com/xwb1989/sqlparser@v0.0.0-20180606152119-120387863bf2`
-  - **用途**: Common MySQL Provider 对无普通函数的只读 SELECT/JOIN/派生子查询生成完整 `QueryReadSet`。
-  - **边界**: 解析失败、CTE、View、函数或非基础表必须返回 unresolved，不得回退到顶层对象摘要或字符串匹配。
+- **MySQL SQL AST**: `github.com/dolthub/vitess@v0.0.0-20250512224608-8fb9c6ea092c`
+  - **用途**: Common MySQL Provider 使用单一 AST 路径分析 SELECT、JOIN、派生查询、非递归 CTE 和 UNION ALL；删除旧解析器依赖。
+  - **边界**: 只接受显式审查的无外部读取内置函数；递归 CTE、View、存储函数、可执行注释、行锁及无法闭合的来源必须返回 unresolved，不得回退到字符串匹配或直接执行。CTE 按词法作用域解析，不作为物理表；计算字段不得伪装成源字段直接投影。
 
 #### 缓存与执行领取
 

@@ -185,7 +185,7 @@ func TestObjectCompositeDetectedItemInputKeepsBucketAndObjectPaths(t *testing.T)
 				DataType:           datatype.Table,
 				Format:             string(format.FormatShapefile),
 				Layout:             format.LayoutMulti,
-				PrimaryContentPath: "addp/datasets/roads/roads.shp",
+				PrimaryContentPath: "datasets/roads/roads.shp",
 				SizeBytes:          &size,
 			},
 		},
@@ -193,6 +193,10 @@ func TestObjectCompositeDetectedItemInputKeepsBucketAndObjectPaths(t *testing.T)
 	plan, ok := scanresource.PlanObjectCompositeItem(resource.ID, composite, "object")
 	if !ok {
 		t.Fatal("object composite item plan should be created")
+	}
+	repeated, ok := scanresource.PlanObjectCompositeItem(resource.ID, composite, "object")
+	if !ok || repeated.FullName != plan.FullName || composite.Item.PrimaryContentPath != "datasets/roads/roads.shp" {
+		t.Fatal("planning must preserve detector paths and produce stable identity")
 	}
 
 	input := ObjectCompositeInput(resource, 1, resource.ID, parent, plan, composite, nil, nil, models.ScannedDepthDeep)
@@ -231,12 +235,12 @@ func TestObjectCompositeMultiTIFFInputUsesPrimaryObject(t *testing.T) {
 				DataType:           datatype.Media,
 				Format:             string(format.FormatTIFF),
 				Layout:             format.LayoutMulti,
-				PrimaryContentPath: "addp/image/srtm_40_01.tif",
+				PrimaryContentPath: "image/srtm_40_01.tif",
 				RefList: []dataitem.ItemRef{
-					{Path: "addp/image/srtm_40_01.tif", Role: "main", Required: true, Primary: true, Extension: ".tif"},
-					{Path: "addp/image/srtm_40_01.tfw", Role: "world_file", Extension: ".tfw"},
-					{Path: "addp/image/srtm_40_01.hdr", Role: "header", Extension: ".hdr"},
-					{Path: "addp/image/srtm_40_01.tif.aux.xml", Role: "auxiliary_metadata", Extension: ".aux.xml"},
+					{Path: "image/srtm_40_01.tif", Role: "main", Required: true, Primary: true, Extension: ".tif"},
+					{Path: "image/srtm_40_01.tfw", Role: "world_file", Extension: ".tfw"},
+					{Path: "image/srtm_40_01.hdr", Role: "header", Extension: ".hdr"},
+					{Path: "image/srtm_40_01.tif.aux.xml", Role: "auxiliary_metadata", Extension: ".aux.xml"},
 				},
 				SizeBytes: &size,
 			},

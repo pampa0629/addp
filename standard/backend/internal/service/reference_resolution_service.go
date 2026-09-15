@@ -24,7 +24,8 @@ const (
 
 type ReferenceResolutionRequest struct {
 	ObjectType ReferenceType `json:"object_type" binding:"required" enums:"domain,glossary,element"`
-	ID         int64         `json:"id" binding:"required,gt=0" minimum:"1"`
+	ID         int64         `json:"id,omitempty" minimum:"1"`
+	Code       string        `json:"code,omitempty"`
 }
 
 type ReferenceResolution struct {
@@ -63,6 +64,9 @@ type ReferenceResolutionRepository interface {
 	ResolveDomains(ctx context.Context, tenantID int64, ids []int64) ([]models.Domain, error)
 	ResolveGlossaries(ctx context.Context, tenantID int64, ids []int64) ([]models.PublishedGlossaryReference, error)
 	ResolveElements(ctx context.Context, tenantID int64, ids []int64) ([]models.PublishedElementReference, error)
+	ResolveDomainsByCodes(ctx context.Context, tenantID int64, codes []string) ([]models.Domain, error)
+	ResolveGlossariesByCodes(ctx context.Context, tenantID int64, codes []string) ([]models.PublishedGlossaryReference, error)
+	ResolveElementsByCodes(ctx context.Context, tenantID int64, codes []string) ([]models.PublishedElementReference, error)
 	ListDomainCandidates(ctx context.Context, tenantID int64, search string, page, pageSize int) ([]models.Domain, int64, error)
 	ListGlossaryCandidates(ctx context.Context, tenantID int64, search string, page, pageSize int) ([]models.PublishedGlossaryReference, int64, error)
 	ListElementCandidates(ctx context.Context, tenantID int64, search string, page, pageSize int) ([]models.PublishedElementReference, int64, error)
@@ -88,14 +92,21 @@ func (s *ReferenceResolutionService) Resolve(
 	idsByType := map[ReferenceType][]int64{
 		ReferenceTypeDomain: {}, ReferenceTypeGlossary: {}, ReferenceTypeElement: {},
 	}
+	codesByType := map[ReferenceType][]string{
+		ReferenceTypeDomain: {}, ReferenceTypeGlossary: {}, ReferenceTypeElement: {},
+	}
 	for _, reference := range references {
-		if reference.ID <= 0 {
-			return nil, ErrInvalidReferenceResolutionRequest
-		}
 		if _, ok := idsByType[reference.ObjectType]; !ok {
 			return nil, fmt.Errorf("%w: unsupported object_type %q", ErrInvalidReferenceResolutionRequest, reference.ObjectType)
 		}
-		idsByType[reference.ObjectType] = append(idsByType[reference.ObjectType], reference.ID)
+		if (reference.ID > 0) == (reference.Code != "") || (reference.ID == 0 && !validReferenceCode(reference.ObjectType, reference.Code)) {
+			return nil, ErrInvalidReferenceResolutionRequest
+		}
+		if reference.ID > 0 {
+			idsByType[reference.ObjectType] = append(idsByType[reference.ObjectType], reference.ID)
+		} else {
+			codesByType[reference.ObjectType] = append(codesByType[reference.ObjectType], reference.Code)
+		}
 	}
 
 	domains, err := s.repository.ResolveDomains(ctx, tenantID, uniqueReferenceIDs(idsByType[ReferenceTypeDomain]))
@@ -107,6 +118,18 @@ func (s *ReferenceResolutionService) Resolve(
 		return nil, err
 	}
 	elements, err := s.repository.ResolveElements(ctx, tenantID, uniqueReferenceIDs(idsByType[ReferenceTypeElement]))
+	if err != nil {
+		return nil, err
+	}
+	domainsByCode, err := s.repository.ResolveDomainsByCodes(ctx, tenantID, uniqueReferenceCodes(codesByType[ReferenceTypeDomain]))
+	if err != nil {
+		return nil, err
+	}
+	glossariesByCode, err := s.repository.ResolveGlossariesByCodes(ctx, tenantID, uniqueReferenceCodes(codesByType[ReferenceTypeGlossary]))
+	if err != nil {
+		return nil, err
+	}
+	elementsByCode, err := s.repository.ResolveElementsByCodes(ctx, tenantID, uniqueReferenceCodes(codesByType[ReferenceTypeElement]))
 	if err != nil {
 		return nil, err
 	}
@@ -136,16 +159,52 @@ func (s *ReferenceResolutionService) Resolve(
 			LifecycleState: element.LifecycleState, Version: element.Version, RevisionID: element.RevisionID, RevisionNo: element.RevisionNo,
 		}
 	}
+	for _, domain := range domainsByCode {
+		resolved[referenceCodeResolutionKey(ReferenceTypeDomain, domain.Code)] = ReferenceResolution{
+			ObjectType: ReferenceTypeDomain, ID: domain.ID, Found: true,
+			Referenceable: domain.LifecycleState == "active", Name: domain.Name, Code: domain.Code,
+			Status: domain.LifecycleState, LifecycleState: domain.LifecycleState, Version: domain.Version,
+		}
+	}
+	for _, glossary := range glossariesByCode {
+		resolved[referenceCodeResolutionKey(ReferenceTypeGlossary, glossary.Code)] = ReferenceResolution{
+			ObjectType: ReferenceTypeGlossary, ID: glossary.ID, Found: true,
+			Referenceable: glossary.Status == models.RevisionStatusPublished && glossary.LifecycleState == "active",
+			Name:          glossary.Name, Code: glossary.Code, Status: glossary.Status,
+			LifecycleState: glossary.LifecycleState, Version: glossary.Version,
+			RevisionID: glossary.RevisionID, RevisionNo: glossary.RevisionNo,
+		}
+	}
+	for _, element := range elementsByCode {
+		resolved[referenceCodeResolutionKey(ReferenceTypeElement, element.Code)] = ReferenceResolution{
+			ObjectType: ReferenceTypeElement, ID: element.ID, Found: true,
+			Referenceable: element.Status == models.RevisionStatusPublished && element.LifecycleState == "active",
+			Name:          element.Name, Code: element.Code, Status: element.Status,
+			LifecycleState: element.LifecycleState, Version: element.Version, RevisionID: element.RevisionID, RevisionNo: element.RevisionNo,
+		}
+	}
 
 	results := make([]ReferenceResolution, 0, len(references))
 	for _, reference := range references {
-		if result, ok := resolved[referenceResolutionKey(reference.ObjectType, reference.ID)]; ok {
+		key := referenceResolutionKey(reference.ObjectType, reference.ID)
+		if reference.Code != "" {
+			key = referenceCodeResolutionKey(reference.ObjectType, reference.Code)
+		}
+		if result, ok := resolved[key]; ok {
 			results = append(results, result)
 			continue
 		}
-		results = append(results, ReferenceResolution{ObjectType: reference.ObjectType, ID: reference.ID})
+		results = append(results, ReferenceResolution{ObjectType: reference.ObjectType, ID: reference.ID, Code: reference.Code})
 	}
 	return results, nil
+}
+
+func validReferenceCode(objectType ReferenceType, code string) bool {
+	maxLength := maxStandardStableCodeLength
+	if objectType == ReferenceTypeDomain {
+		maxLength = maxStandardCategoryCodeLength
+	}
+	return validStandardStableCode(code, maxLength)
 }
 
 func (s *ReferenceResolutionService) ListCandidates(
@@ -211,6 +270,26 @@ func uniqueReferenceIDs(ids []int64) []int64 {
 	return result
 }
 
+func uniqueReferenceCodes(codes []string) []string {
+	if len(codes) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(codes))
+	result := make([]string, 0, len(codes))
+	for _, code := range codes {
+		if _, ok := seen[code]; ok {
+			continue
+		}
+		seen[code] = struct{}{}
+		result = append(result, code)
+	}
+	return result
+}
+
 func referenceResolutionKey(objectType ReferenceType, id int64) string {
 	return fmt.Sprintf("%s:%d", objectType, id)
+}
+
+func referenceCodeResolutionKey(objectType ReferenceType, code string) string {
+	return fmt.Sprintf("%s:code:%s", objectType, code)
 }

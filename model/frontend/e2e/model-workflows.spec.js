@@ -1,8 +1,8 @@
 import { expect, test } from '@playwright/test'
 
 const DOMAINS = [
-  { id: 1, name: '客户域' },
-  { id: 2, name: '户外域' }
+  { id: 1, name: '客户域', code: 'customer' },
+  { id: 2, name: '户外域', code: 'outdoor' }
 ]
 
 const ENTITIES = [
@@ -71,8 +71,8 @@ const MERMAID_SNAPSHOT = `# ADDP Entity Relationship Diagram
 
 \`\`\`mermaid
 erDiagram
-  %% addp:document {"format":"addp.model.er/v1","scope":"domain","domain_id":2}
-  %% addp:entity {"code":"outdoor","name":"活动","domain_id":2,"description":"户外活动"}
+  %% addp:document {"format":"addp.model.er/v2","scope":"domain","domain_code":"outdoor"}
+  %% addp:entity {"code":"outdoor","name":"活动","domain_code":"outdoor","description":"户外活动"}
   outdoor {
   }
 \`\`\`
@@ -231,12 +231,13 @@ test('preserves Mermaid import text when the entity-model revision becomes stale
   })
 
   await page.goto('/er-diagram')
-  await page.getByRole('button', { name: '导入Mermaid', exact: true }).click()
-  const importDialog = page.getByRole('dialog', { name: '导入 Mermaid Markdown ER 图' })
+  await page.getByRole('button', { name: '导入 ER 文档', exact: true }).click()
+  const importDialog = page.getByRole('dialog', { name: '导入 ER 文档（Mermaid Markdown）' })
   const editor = importDialog.locator('textarea')
   await editor.fill(MERMAID_SNAPSHOT)
   await importDialog.getByRole('button', { name: '预览导入', exact: true }).click()
   await expect(importDialog).toContainText('预计创建 1 个实体、0 个关系')
+  await expect(importDialog).toContainText('户外域（outdoor）')
   await importDialog.getByRole('button', { name: '确认增量导入', exact: true }).click()
 
   await expect(page.getByRole('alert').filter({
@@ -248,6 +249,32 @@ test('preserves Mermaid import text when the entity-model revision becomes stale
     markdown: MERMAID_SNAPSHOT,
     revision: 5
   }])
+})
+
+test('reads a selected Mermaid Markdown file before previewing the incremental import', async ({ page }) => {
+  await installMockBackend(page, {
+    permissions: [
+      ...DEFAULT_PERMISSIONS,
+      'model.entity.create',
+      'model.entity_relation.read',
+      'model.entity_relation.create'
+    ]
+  })
+
+  await page.goto('/er-diagram')
+  await page.getByRole('button', { name: '导入 ER 文档', exact: true }).click()
+  const importDialog = page.getByRole('dialog', { name: '导入 ER 文档（Mermaid Markdown）' })
+  await importDialog.getByRole('tab', { name: '上传文件', exact: true }).click()
+  await importDialog.locator('input[type="file"]').setInputFiles({
+    name: 'er-diagram-outdoor.md',
+    mimeType: 'text/markdown',
+    buffer: Buffer.from(MERMAID_SNAPSHOT)
+  })
+
+  const editor = importDialog.locator('textarea')
+  await expect(editor).toHaveValue(MERMAID_SNAPSHOT)
+  await importDialog.getByRole('button', { name: '预览导入', exact: true }).click()
+  await expect(importDialog).toContainText('预计创建 1 个实体、0 个关系')
 })
 
 test.describe('DDL preview', () => {
@@ -358,8 +385,8 @@ test('ER entry starts scoped and restores domain and related edges from the URL'
   await page.goto('/er-diagram?domain_id=2&related=1')
   await expect(page.getByRole('checkbox', { name: '展开跨域关联' })).toBeChecked()
   const domainDownload = page.waitForEvent('download')
-  await page.getByRole('button', { name: '导出Mermaid', exact: true }).click()
-  expect((await domainDownload).suggestedFilename()).toBe('er-diagram-domain-2.md')
+  await page.getByRole('button', { name: '导出 ER 文档', exact: true }).click()
+  expect((await domainDownload).suggestedFilename()).toBe('er-diagram-outdoor.md')
   expect(backend.getMermaidExports()).toEqual([{ domain_id: '2' }])
   await page.reload()
   await expect(page.getByRole('checkbox', { name: '展开跨域关联' })).toBeChecked()
@@ -368,7 +395,7 @@ test('ER entry starts scoped and restores domain and related edges from the URL'
   await page.goto('/er-diagram?domain_id=all')
   await expect(page.getByRole('checkbox', { name: '展开跨域关联' })).toHaveCount(0)
   await expect(page.locator('.diagram-container')).toBeVisible()
-  await expect(page.getByText('导出遵循当前业务域选择；“展开跨域关联”仅影响画布。导入会先预览，只增量创建缺失项，不删除或覆盖现有实体与关系。')).toBeVisible()
+  await expect(page.getByText('导出遵循当前业务域选择；“展开跨域关联”仅影响画布。导入按当前租户精确解析业务域与数据元编码，先预览且只增量创建缺失项，不删除或覆盖现有实体与关系。')).toBeVisible()
 })
 
 test('entity list opens the ER diagram in its current business domain', async ({ page }) => {
@@ -554,13 +581,14 @@ async function installMockBackend(target, options = {}) {
     if (path === '/api/v1/standard/elements') return fulfillJSON(route, { data: [], total: 0 })
     if (path === '/api/v1/model/entities/export-mermaid') {
       mermaidExports.push(Object.fromEntries(url.searchParams))
-      return fulfillJSON(route, { markdown: MERMAID_SNAPSHOT, scope: url.searchParams.has('domain_id') ? 'domain' : 'all', domain_id: Number(url.searchParams.get('domain_id')) || undefined })
+      return fulfillJSON(route, { markdown: MERMAID_SNAPSHOT, scope: url.searchParams.has('domain_id') ? 'domain' : 'all', domain_code: url.searchParams.has('domain_id') ? 'outdoor' : undefined })
     }
     if (path === '/api/v1/model/entities/import-mermaid/preview' && request.method() === 'POST') {
       return fulfillJSON(route, {
         revision: 5,
         scope: 'domain',
-        domain_id: 2,
+        domain_code: 'outdoor',
+        resolved_domains: [{ code: 'outdoor', name: '户外域' }],
         created_entities: 1,
         unchanged_entities: 0,
         created_relations: 0,

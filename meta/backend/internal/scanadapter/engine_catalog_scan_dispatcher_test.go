@@ -82,9 +82,6 @@ func TestEngineCatalogScanDispatcherFinalizesContentCatalogRoot(t *testing.T) {
 			if root.ScanStatus != "completed" || root.ScannedDepth != models.ScannedDepthDeep {
 				t.Fatalf("root scan status/depth = %q/%q, want completed/deep", root.ScanStatus, root.ScannedDepth)
 			}
-			if root.ItemCount != tt.wantItems {
-				t.Fatalf("root item_count = %d, want %d", root.ItemCount, tt.wantItems)
-			}
 		})
 	}
 }
@@ -197,8 +194,8 @@ func TestEngineCatalogScanDispatcherFullTabularScanReconcilesNamespacesAndRoot(t
 	if err := db.First(root, root.ID).Error; err != nil {
 		t.Fatalf("reload root: %v", err)
 	}
-	if root.ScanStatus != "completed" || root.ScannedDepth != models.ScannedDepthDeep || root.ItemCount != 4 {
-		t.Fatalf("root status/depth/items = %q/%q/%d, want completed/deep/4", root.ScanStatus, root.ScannedDepth, root.ItemCount)
+	if root.ScanStatus != "completed" || root.ScannedDepth != models.ScannedDepthDeep {
+		t.Fatalf("root status/depth = %q/%q, want completed/deep", root.ScanStatus, root.ScannedDepth)
 	}
 }
 

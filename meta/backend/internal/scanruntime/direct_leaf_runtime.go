@@ -53,7 +53,7 @@ func (s *DirectLeafRuntime) ScanRoot(
 		return 0, err
 	}
 	fail := func(scanErr error) (int, error) {
-		_ = s.repo.FinalizeNodeState(rootNode, "failed", 0, 0, scanErr.Error())
+		_ = s.repo.FinalizeNodeState(rootNode, "failed", scanErr.Error())
 		return 0, scanErr
 	}
 
@@ -110,10 +110,10 @@ func (s *DirectLeafRuntime) ScanRoot(
 		failures.Add(resource.Name, fmt.Errorf("failed to delete missing direct catalog leaves: %w", err))
 	}
 	if scanErr := failures.Err(); scanErr != nil {
-		_ = s.repo.FinalizeNodeState(rootNode, "failed", len(keepFingerprints), 0, scanErr.Error())
+		_ = s.repo.FinalizeNodeState(rootNode, "failed", scanErr.Error())
 		return len(keepFingerprints), scanErr
 	}
-	if err := s.repo.FinalizeNodeStateWithDepth(rootNode, "completed", len(keepFingerprints), 0, "", scanDepth); err != nil {
+	if err := s.repo.FinalizeNodeStateWithDepth(rootNode, "completed", "", scanDepth); err != nil {
 		return 0, err
 	}
 	s.log.Info("direct catalog leaf 扫描完成",

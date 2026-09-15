@@ -10,22 +10,19 @@ func ToMetaNodeLite(node models.MetaNode) models.MetaNodeLite {
 	}
 
 	return models.MetaNodeLite{
-		ID:             node.ID,
-		TenantID:       node.TenantID,
-		EngineID:       node.EngineID,
-		ParentNodeID:   node.ParentNodeID,
-		NodeType:       node.NodeType,
-		Name:           node.Name,
-		FullName:       node.FullName,
-		Depth:          node.Depth,
-		Path:           node.Path,
-		ScanStatus:     node.ScanStatus,
-		ScannedDepth:   node.ScannedDepth,
-		ScannedAt:      scannedAt,
-		ItemCount:      node.ItemCount,
-		HasChildren:    node.ItemCount > 0,
-		TotalSizeBytes: node.TotalSizeBytes,
-		Attributes:     node.Attributes,
+		ID:           node.ID,
+		TenantID:     node.TenantID,
+		EngineID:     node.EngineID,
+		ParentNodeID: node.ParentNodeID,
+		NodeType:     node.NodeType,
+		Name:         node.Name,
+		FullName:     node.FullName,
+		Depth:        node.Depth,
+		Path:         node.Path,
+		ScanStatus:   node.ScanStatus,
+		ScannedDepth: node.ScannedDepth,
+		ScannedAt:    scannedAt,
+		Attributes:   node.Attributes,
 	}
 }
 

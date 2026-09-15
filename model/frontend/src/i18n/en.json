@@ -128,13 +128,13 @@
     },
     "er_diagram": {
       "title": "Entity Relationship Diagram (ER Diagram)",
-      "import_mermaid": "Import Mermaid",
-      "export_mermaid": "Export Mermaid",
+      "import_mermaid": "Import ER Document",
+      "export_mermaid": "Export ER Document",
       "refresh": "Refresh",
       "domain_filter": "Select a business domain",
       "entity_count": "Showing {count} entities, {relations} relations",
       "no_entities": "No entities match the current filter",
-      "import_dialog_title": "Import Mermaid Markdown ER Diagram",
+      "import_dialog_title": "Import ER Document (Mermaid Markdown)",
       "paste_code": "Paste Markdown",
       "upload_file": "Upload File",
       "paste_placeholder": "Paste a Markdown document containing a Mermaid block...",
@@ -145,6 +145,7 @@
       "preview_import": "Preview Import",
       "confirm_import": "Apply Incremental Import",
       "preview_summary": "Will create {created} entities and {relations} relations; keep {unchanged} existing entities and {unchangedRelations} existing relations",
+      "resolved_domains": "Resolved business domains:",
       "preview_failed": "Preview failed: {msg}",
       "resource_entity": "Entity",
       "resource_relation": "Relation",
@@ -165,7 +166,7 @@
       "choose_domain": "Select a business domain, or explicitly choose all domains for an overview",
       "include_related": "Expand cross-domain relations",
       "unassigned_domain": "Unassigned domain",
-      "transfer_scope": "Export follows the selected business domain; cross-domain expansion affects only the canvas. Import is previewed first and only creates missing items without deleting or overwriting existing entities or relations."
+      "transfer_scope": "Export follows the selected business domain; cross-domain expansion affects only the canvas. Import resolves business-domain and data-element codes exactly in the current tenant, is previewed first, and only creates missing items without deleting or overwriting existing entities or relations."
     },
     "logical_table": {
       "recentVisitTitle": "Logical Table",

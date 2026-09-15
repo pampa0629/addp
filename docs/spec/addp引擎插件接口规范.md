@@ -620,6 +620,130 @@ TiDB 8.5.8 的 MySQL 协议层会拒绝驱动为 `ReadOnly=true` 生成的事务
 
 `SQLQueryRuntimeProvider.ExecuteSQL()` 是 SQL 执行 helper 和 SQL dialect 适配层，当前仍可保留给 SQL 引擎和 batch read 适配使用；新增非 SQL 查询语言不得仿照它继续新增按数据库类别拆分的 provider。旧 `DocumentQueryRuntimeProvider` 已删除，不得恢复。
 
+### 数据库无关分析计算契约
+
+> 状态：2026-09-15 目标设计已确认；Common 中立计划、开放编译接口、冻结包、内部结果协议和 SQL PreparedQuery 桥接已实现；PG 结果分支已通过真实数据库测试，生产执行链替换尚未完成。目前只有测试编译器使用新接口，PG/MySQL 完整原生编译、实例能力投影和 Model/Service 切换仍待交付。当前生产路径的 `AnalyticalSQLProvider` 与封闭 `AnalyticalDialect` 属于待删除的阶段实现，不能据此声明“新增引擎无需修改上层”已经兑现。
+
+#### 所有权与依赖
+
+分析计算采用唯一链路：owner 构建逻辑计划 → 通用校验与能力判断 → 当前引擎编译器 → QueryRequest → 既有 PreparedQuery → 授权和数据保护 → Execute。首批验证 PostgreSQL、MySQL 8；新增数据库应只增加或扩展对应引擎实现、注册和测试，不修改已有 Model 指标逻辑、Service 指标执行逻辑或前端引擎名单。
+
+- `common/query/plan` 定义中立计算结构，只依赖通用数据类型和纯值契约，不依赖 `engine/plugin`、`resourcetree`、owner、数据库驱动或 HTTP client。
+- `common/engine/plugin` 定义编译请求、物理来源绑定及公开接口，可以依赖 `query/plan`；计划内不包含 `EngineCatalogPath`，以避免包循环。
+- 各 `common/engine/plugins/<engine>` 拥有引擎实现。`common/query/sqlcompile` 只承载显式共享的 SQL 编译组件，不导入具体引擎，不维护引擎名称分支。
+- Model 拥有指标定义修订的引用、业务计算契约、关系解析和逻辑计划构建。Common 和引擎实现不接受指标 ID、`count_distinct`／`directional_overlap` 业务操作名或 Outdoor 专用字段。
+- Service 拥有发布服务、消费权限、结构化请求校验、cursor 和结果输出；排序、筛选、分页转为通用结果请求，不对指标原生查询做字符串包装。Workbench 仍只消费 Service 契约。
+
+```mermaid
+flowchart LR
+    M["Model：指标契约与逻辑计划"] --> P["Common：计划校验与编译入口"]
+    S["Service：冻结计划包与结果请求"] --> P
+    P --> E["当前引擎：独立编译器"]
+    E --> Q["QueryRequest → PreparedQuery"]
+    Q --> G["既有授权与数据保护"]
+    G --> X["Execute → 统一结果"]
+```
+
+#### 契约一：逻辑计划
+
+逻辑计划 schema 固定为 `addp.query_plan/v1`；首个语义配置固定为 `relational_analytics_v1`，仅面向同一引擎内的表格分析。此语义配置是可执行操作及结果语义的共同契约，不是模块开关。跨引擎联邦、写入、DDL、递归、任意 UDF、窗口计算和通用优化器不在首期范围；未来需要新语义时显式扩展契约，不能由某个引擎暗加节点。
+
+核心结构采用 Go 类型化节点及明确的 JSON 标签联合，不使用 `map[string]any`、任意函数名、原生查询片段或接口地址扩展计划。下列名字为实现必须保持的概念职责；具体字段共享已有类型时不得另造重复 DTO。
+
+| 结构 | 必须表达的内容 |
+| --- | --- |
+| `Plan` | `schema_version`、`semantic_profile`、节点集合、根节点、参数声明、输出契约及断言 |
+| `Node` | 唯一节点 ID、确定操作标签和唯一对应的类型化载荷；输入只能引用当前计划节点 |
+| `SourceID` / `ColumnID` | 计划内的数据源与列身份，不是 Model 表／字段 ID，不是原生标识符 |
+| `Expr` | 列引用、参数引用、类型化常量、布尔／比较／算术／条件／日期表达式；无 native expression 扩展口 |
+| `Parameter` | 唯一名称、类型、必填、允许值等；复用既有参数值和选项语义，实际请求值不进入冻结计划 |
+| `OutputContract` | 唯一字段、数据类型、可空性、必要的精度及非空唯一稳定键；复用 `common/datatype`，稳定键由 owner 与通用校验共同约束 |
+| `Assertion` | 违例关系节点和通用稳定错误码；`assert_empty` 表示违例关系必须为空。引擎负责执行，不自行定义检查范围 |
+
+Common 基础契约的具体编码如下：
+
+- 节点、来源和列使用计划内的确定名称；列引用由 `ColumnRef{Input, Name}` 表达。名称仅允许字母／下划线开头，后续为字母、数字和下划线，最长 128 字符；物理名称不受这个逻辑名称规则限制。
+- 首期标量类型为 string、bool、int、bigint、decimal、date。`Literal{Type, Text, Null}` 以文本保存精确值，decimal 使用 DECIMAL(38,18)，不经过浮点数；参数 `Allowed` 仅存这些语义值，多语言展示标签留在 owner。
+- 逻辑字段复用 `datatype.FieldInfo` 的 Name、Type、Nullable、Precision、Scale，其余原生／展示／表达式注解必须为空。`StableKey` 校验字段存在、无重复且非空；数据唯一性必须由 owner 保证，必要时构造违例断言，不能将结构校验误解为已经查询并证明源数据唯一。
+- `plan.Decode` 拒绝未知或大小写别名字段、重复 JSON 键和多个 JSON 文档；`Validate` 同时约束程序构造的计划。当前资源上限为 512 节点、128 层关系深度、16384 表达式、128 层表达式深度和 1 MiB JSON；参数／断言各最多 128 个，参数允许值最多 100 个，常量关系最多 1024 行。还限制程序内结构遍历的工作量，拒绝循环 Go 值。`limit` 上限 100001 是编译资源上限，实际服务策略可以更严格。
+- `CanonicalJSON` / `Fingerprint` 不修改输入；规范化数值、节点集合、断言集合和允许值集合，保留有语义的参数、输出列、常量行及排序键顺序。
+
+首期节点集合为 `scan`、`filter`、`project`、`join`（inner/left/cross）、`distinct`、`aggregate`、`union_all`、`constant_rows`、`date_buckets`、`sort`、`limit`。聚合只需 count；求交、分母和补零由这些操作组合，不能设计指标专用节点。条件表达式包含明确的日期转换、月桶、整数／decimal 转换和精确文本比较语义。未知操作、重复节点、悬空引用、环、超预算计划和不成立的类型推导均拒绝。
+
+统一语义：
+
+- DATE 只表示日历日期，不隐含时区转换；参数范围左闭右开。月份时间桶从覆盖范围的月初生成，结果中的月桶可以早于范围起点，源数据仍严格按输入区间过滤；现有指标最多 120 个相交月份。
+- 普通比较遇 NULL 得到 unknown，filter 只保留 true；`is_null` 显式判断 NULL，普通算术传播 NULL。count_rows 统计所有输入行，count_value 只计非 NULL 值；distinct 将相同键中的 NULL 合并，group 将 NULL 键归为同组；去重后再 count_rows 不能被擅自替换为忽略 NULL 的 COUNT(DISTINCT)。当前指标若要求排除 NULL，应由 Model 显式构建过滤／断言。补零必须显式由连接与条件表达式表达。
+- 文本身份和集合成员精确比较，大小写与尾空格有意义；不支持此语义的来源类型或数据库条件应返回不支持，不能静默 lower/trim。sort 必须显式指定每个键的方向和 NULL 位置；文本排序使用同一确定的 UTF-8 二进制顺序，不能依赖实例默认排序规则。
+- 比例采用 DECIMAL(38,18)，除法明确采用至少该精度的十进制运算并以确定的舍入规则规范化输出；首期选定最终 18 位小数、最近值舍入且中点远离零。禁止经过 float64 中转；展示舍入与计算分离。溢出必须报错。
+- 约束检查与结果计算必须处于同一可靠的一致性视图。分页、投影和结果过滤不得裁剪或跳过原计划断言。首期原生编译产物只允许一条只读查询；无法在该边界兑现约束的实现明确拒绝，不通过多次独立查询拼出结果。
+- 参数只作为值绑定，源路径、字段名与操作不得由用户字符串参数提供。实际值在既有 Query Provider 内只绑定一次。
+
+#### 契约二：编译接口与物理来源
+
+`common/engine/plugin/analytical.go` 定义以下接口；不绑定 SQL 方言名称，也不要求上层持有具体实现结构体：
+
+```go
+type AnalyticalCompilerProvider interface {
+    QueryRuntimeProvider
+    AnalyticalCompiler() AnalyticalCompiler
+}
+
+type AnalyticalCompiler interface {
+    Identity() CompilerIdentity
+    Check(CompileRequest) (SupportReport, error)
+    Compile(CompileRequest) (CompiledQuery, error)
+}
+```
+
+`CompileRequest` 包含 Plan、完整 SourceBindings 和无凭据的实例能力条件。`SourceBinding` 将 SourceID 映射到当前 engine_id 的完整 `EngineCatalogPath` leaf 与列路径／类型；Catalog root、层级和原生名称通过引擎目录模型验证，不能限制为一层 namespace 加表名，也不能回退到连接默认数据库。它不包含凭据、数据行或任意 SQL。首期每个 binding 的 engine_id 必须与计划包目标相同。
+
+具体绑定复用 `ColumnBinding{Column, Field datatype.FieldInfo}`：Column 是计划列身份，Field.Path 是来源内部完整列路径且最后一段等于 Field.Name；同时保留 Type、NativeType、Nullable 和必要的长度／精度事实，禁止混入描述、默认表达式和业务身份。Common 检查来源／列完整对应、同引擎、显式 root 和非空路径；目录是否为合法 leaf、原生类型是否兑现语义，仍由当前引擎 Check/Compile 按目录模型验证，不能把通用结构检查当作原生认证。
+
+`AnalyticalInstance` 只向编译请求传递 EngineID 和已经收敛的 `AnalyticalCapability`，不传递连接信息或实例配置自由字典。定义该类型不等于已在 System 的能力响应中启用它；生产能力投影须与编译实现及真实数据库认证一起接入。
+
+`CompilerIdentity` 由实现 ID 和编译实现版本组成，不是运行时 Provider 指针；现有唯一插件注册表通过当前引擎返回接口。Check 不执行数据面查询，区分 `supported=false` 的已知能力限制与校验／内部错误，返回稳定 code、node_id 和可本地化参数，禁止将原生 SQL 或凭据放入诊断。Compile 必须自行再次校验请求，不依赖调用方已调用 Check。
+
+`CompiledQuery` 由通用执行层消费，包含可转换为既有 QueryRequest 的原生语言与查询模板、预期输出契约、编译器身份和确定性指纹。它是运行时派生物，不替代 Model 业务定义、不授予执行权限、不接受调用方改写。编译器是无连接、无请求值、确定性的实现；类型和错误规范化由实际 Query Provider 按预期输出契约完成。不得为分析查询新建第二个 Execute 接口或绕开 PreparedQuery 状态机。
+
+首期编译结果统一采用内部检查记录协议，由 Query Provider 消费，owner 不解析：
+
+- `AnalyticalResultLayout` 从规范化计划确定控制列名，避开业务输出列；结果列顺序为原输出字段加控制列。控制值 `data` 表示业务行，`complete` 表示完整查询结果结束标记，每个断言还必须恰好返回一条 `ok:<index>` 或 `fail:<index>`（index 为按 code、violation 排序后的 1 起始断言序号，允许多个检查共用错误码） 记录。控制记录的业务字段全部为 NULL。即使没有业务行也必须返回完整标记和所有断言记录；缺失、重复、未知记录或不匹配的列结构均报错，不返回部分结果。
+- 原生编译器负责在同一条只读查询中组合结果根和断言分支；排序、过滤与 limit 仅作用于业务根。不能把检查仅附着于业务行，也不能通过多条查询补查。该协议证明记录完整性；断言 SQL 的正确性及一致性仍必须经真实数据库认证。
+- `CompiledQuery.QueryRequest` 只接收声明过的类型化参数和超时，生成绑定编译产物的不可变内部上下文。SQL Prepare 校验模板、语言、目标引擎和编译器身份没有改变，禁止外层 Limit/Offset、Describe、Spatial 和调用方位置参数；值在既有绑定处转换一次。分析查询暂不开放流式消费，避免检查未结束前输出业务行。
+- 既有 SQL PreparedQuery 在 Execute 返回前消费全部检查记录并按逻辑输出类型规范化结果；保留原生 Provider 的完整读取集合。内部控制列上的输出血缘转为无业务输出路径的 derived 依赖，不能移除其源或伪造直接映射。整数保持整数，decimal 保持精确十进制文本，DATE 保持日历日期，拒绝浮点中转、超精度值和违反非空契约的结果。
+
+`common/query/sqlcompile/result.go` 已提供结果根与断言关系的统一组合组件，使用 `ResultDialect` 注入类型化 NULL 和排序语法；节点 DAG 的完整原生渲染仍待实现。该组件及普通单元测试由 Common `./...` 自动发现，PostgreSQL 真实结果验证纳入既有 `make test-common-postgres` 与 T2 作业。
+
+公共 SQL 组件按通用计划操作分派；引擎差异通过接口组合、渲染策略或对应编译器覆盖提供。不得以可注入 raw SQL 节点绕过中立计划，也不得新增中央 `engine_type` switch 来启用后续引擎。仅改几个函数名不足以认证引擎，必须验证路径、NULL、日期、精度、读取集合、输出血缘和一致性。
+
+#### 契约三：发布计划包与执行
+
+通用计划包 schema 固定为 `addp.analytical_plan/v1`，由 `AnalyticalPlanPackage` 表达并包含 Plan、SourceBindings、目标 engine_id、CompilerIdentity 及 package_hash。计划输出契约只在 Plan 内有一份事实；前端和 Service DTO 需要的参数／输出摘要只能从中投影。Model 在 owner 外壳中保存实现身份、实现修订、定义修订和 owner dependency_hash，不能把这些指标身份下沉到 Common 计划。
+
+发布冻结中立计划包；原生查询由精确版本编译器从计划包派生，不把冻结 SQL 作为指标计算的第二份事实。`package_hash` 覆盖 schema、语义配置、规范化计划、来源绑定、目标和编译器身份。节点／来源 ID 必须确定性生成；对象键与无语义集合按规范排序，参数、输出、排序键等有语义顺序的数组保留顺序；日期、十进制和类型化常量使用无精度损失的规范表示。描述、显示名称、时间戳和实际参数值不进入计算指纹；owner 独立维护它们的展示或消费契约版本。参数允许值等执行约束必须入 hash，不能作为纯展示文字排除。
+
+Common 的 `NewAnalyticalPlanPackage` 在通用校验和编译器 Check 通过后深拷贝并规范化计划包。`package_hash` 的计算方式为：将该字段置为空字符串，对规范化包的 JSON 编码计算 SHA-256，输出小写十六进制；该字段不是签名或授权凭据。`Verify` 检查 hash、目标实例及精确编译器身份，再检查当前实例能力。`CompiledQuery` 的内容通过只读访问方法提供，输出字段返回副本；它仍不能替代实际 Provider 的 ReadSet、OutputLineage 或执行授权。
+
+源定义、字段类型、列路径、关联、语义配置或编译实现变化必须拒绝原发布依赖。不同进程必须校验冻结的 CompilerIdentity 与本地可用实现完全相符；不能自动替换为“最新可用编译器”，不为旧编译版本保留旁路实现。变更通过保存新草稿、发布新实现修订、显式服务重绑和应用新修订完成；更新显示文字是否影响消费契约仍遵守 owner 既有规则。
+
+执行顺序固定如下：
+
+1. owner 校验租户、用户权限、服务与实现的精确发布状态，并获取 System 当前实例状态与能力；远程校验在本地行锁之前完成，本地引用与版本在事务内复核。
+2. 通用层校验冻结包、hash、编译器身份和实例能力。已有引用失效或实例不可用时拒绝，不自动换引擎。
+3. Service 只把已验证的结果字段选择、类型化过滤、稳定排序及 keyset 边界转换为通用 ResultRequest；Common 以结果过滤、keyset 边界、稳定排序、limit+1 和输出投影的确定顺序包装根节点，内部保留生成 cursor 所需的稳定键，原始计划与断言保持不变。结果过滤和 keyset 字面值同样使用声明的运行时参数引用，不注入查询文本，不写入冻结计划包。
+4. ResultRequest 使用既有 cursor/keyset 语义和 `limit + 1`，不恢复 offset/page。cursor 的加密、版本绑定与审计仍由 Service 负责，编译器不解析 token、不见令牌密钥。任何结果操作不被支持时明确拒绝，禁止拉回全量数据在 Service 中排序或分页。
+5. 引擎编译器编译有效计划，公共桥接生成 QueryRequest；一次性 PreparedQuery 冻结原生请求、参数和 Provider 解析结果。执行期完整 ReadSet／OutputLineage 仍由实际 Provider 证明，不能把 SourceBindings 当作已授权读取集合。
+6. 既有授权及数据保护门禁通过后才能 Execute；结果按类型契约规范化后继续走既有保护与协议输出。聚合来源受保护且无法证明允许输出时仍拒绝。
+
+新增分析能力沿现有公开 API 返回错误：非法结构或明确不支持的计划使用 400 与稳定领域码；发布、依赖或编译版本变化使用 409；依赖服务不可用使用 503。其他认证、授权和资源错误沿现有 API 规范，不把“引擎不支持”伪装为空数据成功。数据断言失败使用既有执行失败分类并携带通用断言码，不返回部分指标结果。
+
+#### 版本、扩展与验证边界
+
+Plan schema、语义配置、CompilerIdentity、Model 修订和 Service 消费版本具有不同职责，不能合并成单个递增数字。新增引擎只实现既有契约时不升级 Plan schema，也不改 owner；新增业务计算语义才扩展 Plan 与 owner 构建逻辑。契约版本只用于明确匹配与失败，不作为保留旧技术路线的理由。
+
+新增引擎必须通过共享语义用例与真实数据库门禁后才声明能力。第三方言测试实现只用于证明公开接口、目录层级和物理语法可替换，不进入生产注册或 capabilities。替换必须删除封闭 AnalyticalDialect、ResolveAnalyticalSQLDialect、Model 指标 SQL 拼接和 Service 指标 SQL 包装；普通用户 SQL 查询来源继续使用既有查询能力，不属于被删除的指标旧路线。
+
 图查询不属于普通查询的一个返回格式变体。图查询使用独立 `GraphQueryProvider`，返回 `GraphQueryResult`，面向 Graph 模块、图可视化和图算法等需要节点 / 关系结构的调用方。Neo4j 可同时实现 `QueryRuntimeProvider` 和 `GraphQueryProvider`：前者用于普通 Cypher 表格结果和 Manager 预览兜底，后者用于图结构结果。图结构摘要由 `EngineCatalogFactsProvider` 的 `EngineCatalogFacts.Graph` 提供，图样本由 `GraphSampleProvider` 或 `GraphQueryProvider` 提供。
 
 ```go

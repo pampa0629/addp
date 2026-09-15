@@ -15,10 +15,10 @@ func (s *ObjectStorageCatalogRuntime) persistObjectCatalogCompositeItems(
 	ctx context.Context,
 	resource *commonModels.Engine,
 	tenantID, engineID uint,
-	bucketNode, basePrefixNode *models.MetaNode,
+	bucketNode *models.MetaNode,
 	items []scanresource.ObjectCompositeItem,
-	stats map[uint]*scanflow.ObjectCatalogNodeAggregate,
-	includeBucketAggregate bool,
+	scannedNodes map[uint]*models.MetaNode,
+	includeBucketScan bool,
 	scanPathPrefix string,
 	scannedFingerprints map[string]bool,
 	itemTerm string,
@@ -44,12 +44,13 @@ func (s *ObjectStorageCatalogRuntime) persistObjectCatalogCompositeItems(
 		if scannedFingerprints != nil {
 			scannedFingerprints[itemPlan.Fingerprint] = true
 		}
-		parentNode, err := s.ensureObjectCatalogPrefixNodes(tenantID, engineID, bucketNode, basePrefixNode, itemPlan.ParentPath, scanPathPrefix, stats)
+		parentChain, err := s.repo.EnsureObjectCatalogPrefixChain(tenantID, engineID, bucketNode, itemPlan.ParentPath)
 		if err != nil {
 			failures.Add(itemPlan.FullName, err)
 			continue
 		}
 
+		parentNode := parentChain[len(parentChain)-1]
 		result, err := scanprocessor.New(s.repo, s.indexer, s.log).WithContainerInspector(s.containerInspector).Process(ctx, scanprocessor.ObjectCompositeInput(
 			resource,
 			tenantID,
@@ -68,19 +69,7 @@ func (s *ObjectStorageCatalogRuntime) persistObjectCatalogCompositeItems(
 		}
 		extractionStats = scanflow.MergeExtractionCounts(extractionStats, result.Extraction)
 		count++
-		updatedNodes := map[uint]bool{}
-		for _, node := range []*models.MetaNode{bucketNode, parentNode} {
-			if node == nil || updatedNodes[node.ID] {
-				continue
-			}
-			if !includeBucketAggregate && node.ID == bucketNode.ID {
-				continue
-			}
-			updatedNodes[node.ID] = true
-			agg := scanflow.EnsureObjectCatalogNodeAggregate(stats, node)
-			agg.ItemCount++
-			agg.TotalSize += itemPlan.SizeBytes
-		}
+		recordObjectCatalogScanNodes(scannedNodes, parentChain, scanPathPrefix, includeBucketScan)
 	}
 	return count, extractionStats, failures.Err()
 }

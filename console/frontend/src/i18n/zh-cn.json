@@ -247,7 +247,14 @@
           "queryResultLimit": "结果预览上限（行）",
           "queryConcurrency": "总查询并发上限（每个 Backend）",
           "queryPerEngineConcurrency": "单引擎查询并发上限",
-          "applyHint": "保存后无需重启。并发调整作用于后续调度，已有查询继续完成；超时和预览行数作用于新建执行。"
+          "applyHint": "保存后无需重启。并发调整作用于后续调度，已有查询继续完成；超时和预览行数作用于新建执行。",
+          "tenantSettings": "本租户配置",
+          "tenantApplyHint": "默认查询超时保存后无需重启，对本租户新建执行生效；已有执行保持原超时，实际超时受平台最大查询超时约束。",
+          "inheritedTimeout": "已保存配置来源：继承平台默认",
+          "tenantTimeout": "已保存配置来源：本租户已设置",
+          "platformConstraints": "平台统一约束（只读）",
+          "platformManagedHint": "以下配置由平台统一管理，对本租户的查询同样生效。如需调整，请联系平台管理员。",
+          "sharedConcurrencyHint": "总并发和单引擎并发均为每个 Backend 内所有租户、所有查询来源共享的上限，不是本租户独享配额。"
         },
         "manager": {
           "title": "快显策略",

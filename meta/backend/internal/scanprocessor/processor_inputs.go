@@ -143,7 +143,7 @@ func ObjectCompositeInput(
 		ItemName:             itemPlan.ItemName,
 		FullName:             itemPlan.FullName,
 		Attributes:           itemPlan.Attributes,
-		Detected:             composite.Item,
+		Detected:             itemPlan.DataItem,
 		ContentReader:        contentReader,
 		ConnInfo:             connInfo,
 		EngineCatalogPathFor: plugin.ObjectItemPathForBucketRef(engineID, composite.Bucket),

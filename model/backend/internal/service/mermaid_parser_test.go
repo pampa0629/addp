@@ -6,10 +6,10 @@ import (
 	"testing"
 )
 
-func mermaidMarkdown(scope string, domainID string, code string) string {
-	metadata := fmt.Sprintf(`%%%% addp:document {"format":"addp.model.er/v1","scope":%q`, scope)
-	if domainID != "" {
-		metadata += `,"domain_id":` + domainID
+func mermaidMarkdown(scope string, domainCode string, code string) string {
+	metadata := fmt.Sprintf(`%%%% addp:document {"format":"addp.model.er/v2","scope":%q`, scope)
+	if domainCode != "" {
+		metadata += fmt.Sprintf(`,"domain_code":%q`, domainCode)
 	}
 	metadata += "}\n"
 	return "# ADDP Entity Relationship Diagram\n\n```mermaid\nerDiagram\n" + metadata + code + "\n```\n"
@@ -51,7 +51,7 @@ customer ||--o{ order : places`))
 }
 
 func TestParseMermaidERRestoresADDPDisplayMetadata(t *testing.T) {
-	parsed, err := ParseMermaidER(mermaidMarkdown("domain", "7", `%% addp:entity {"code":"customer","name":"Customer Display","domain_id":7,"description":""}
+	parsed, err := ParseMermaidER(mermaidMarkdown("domain", "sales", `%% addp:entity {"code":"customer","name":"Customer Display","domain_code":"sales","description":""}
 customer {
   %% addp:attribute {"entity":"customer","column":"display_name","name":"Display Name","nullable":false}
   string display_name
@@ -85,12 +85,21 @@ func TestParseMermaidERRejectsValuesBeyondDatabaseLengths(t *testing.T) {
 }
 
 func TestParseMermaidERRequiresDocumentScopeToMatchEntities(t *testing.T) {
-	input := mermaidMarkdown("domain", "7", `%% addp:entity {"code":"customer","name":"Customer","domain_id":8,"description":""}
+	input := mermaidMarkdown("domain", "sales", `%% addp:entity {"code":"customer","name":"Customer","domain_code":"marketing","description":""}
 customer {
   bigint id PK
 }`)
 	if _, err := ParseMermaidER(input); err == nil {
 		t.Fatal("expected domain-scoped document to reject an entity from another domain")
+	}
+}
+
+func TestParseMermaidERRejectsV1NumericReferenceMetadata(t *testing.T) {
+	input := "# ADDP Entity Relationship Diagram\n\n```mermaid\nerDiagram\n" +
+		"  %% addp:document {\"format\":\"addp.model.er/v1\",\"scope\":\"domain\",\"domain_id\":7}\n" +
+		"  customer {\n    bigint id PK\n  }\n```\n"
+	if _, err := ParseMermaidER(input); err == nil {
+		t.Fatal("expected v1 numeric reference metadata to be rejected")
 	}
 }
 

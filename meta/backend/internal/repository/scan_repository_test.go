@@ -67,7 +67,7 @@ func TestEnsureCatalogRootNodeCanBeFinalized(t *testing.T) {
 		t.Fatal("test setup unexpectedly completed root node")
 	}
 
-	if err := repo.FinalizeNodeStateWithDepth(root, "completed", 1, 0, "", models.ScannedDepthDeep); err != nil {
+	if err := repo.FinalizeNodeStateWithDepth(root, "completed", "", models.ScannedDepthDeep); err != nil {
 		t.Fatalf("finalize root node: %v", err)
 	}
 
@@ -77,9 +77,6 @@ func TestEnsureCatalogRootNodeCanBeFinalized(t *testing.T) {
 	}
 	if got.ScanStatus != "completed" || got.ScannedDepth != models.ScannedDepthDeep {
 		t.Fatalf("root scan status/depth = %q/%q, want completed/deep", got.ScanStatus, got.ScannedDepth)
-	}
-	if got.ItemCount != 1 {
-		t.Fatalf("root item_count = %d, want 1", got.ItemCount)
 	}
 }
 
@@ -151,8 +148,6 @@ func openScanRepositoryTestDB(t *testing.T) *gorm.DB {
 			scanned_depth TEXT,
 			scanned_at DATETIME,
 			scan_error TEXT,
-			item_count INTEGER,
-			total_size_bytes INTEGER,
 			attributes JSON,
 			created_at DATETIME,
 			deleted_at DATETIME

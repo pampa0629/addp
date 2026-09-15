@@ -37,12 +37,35 @@ func TestReferenceResolutionServicePreservesOrderAndReferenceability(t *testing.
 	}
 }
 
+func TestReferenceResolutionServiceResolvesStableCodesInRequestOrder(t *testing.T) {
+	repository := &fakeReferenceResolutionRepository{
+		domainsByCode:  []models.Domain{{ID: 1, TenantID: 7, Name: "Sales", Code: "sales", Version: 2, LifecycleState: "active"}},
+		elementsByCode: []models.PublishedElementReference{{ID: 4, TenantID: 7, Name: "Customer ID", Code: "customer_id", Version: 5, Status: models.RevisionStatusPublished, LifecycleState: "active", RevisionID: 40, RevisionNo: 2}},
+	}
+	results, err := NewReferenceResolutionService(repository).Resolve(context.Background(), 7, []ReferenceResolutionRequest{
+		{ObjectType: ReferenceTypeElement, Code: "customer_id"},
+		{ObjectType: ReferenceTypeDomain, Code: "missing_domain"},
+		{ObjectType: ReferenceTypeDomain, Code: "sales"},
+	})
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if len(results) != 3 || results[0].ID != 4 || !results[0].Referenceable || results[1].Found || results[1].Code != "missing_domain" || results[2].ID != 1 {
+		t.Fatalf("results = %#v", results)
+	}
+	if len(repository.domainCodes) != 2 || repository.domainCodes[0] != "missing_domain" || repository.domainCodes[1] != "sales" {
+		t.Fatalf("domain codes = %#v", repository.domainCodes)
+	}
+}
+
 func TestReferenceResolutionServiceRejectsInvalidBatch(t *testing.T) {
 	service := NewReferenceResolutionService(&fakeReferenceResolutionRepository{})
 	for _, references := range [][]ReferenceResolutionRequest{
 		nil,
 		{{ObjectType: "metric", ID: 1}},
 		{{ObjectType: ReferenceTypeDomain, ID: 0}},
+		{{ObjectType: ReferenceTypeDomain, ID: 1, Code: "sales"}},
+		{{ObjectType: ReferenceTypeDomain, Code: "Sales"}},
 	} {
 		if _, err := service.Resolve(context.Background(), 7, references); !errors.Is(err, ErrInvalidReferenceResolutionRequest) {
 			t.Fatalf("Resolve(%#v) error = %v", references, err)
@@ -70,12 +93,18 @@ func TestReferenceResolutionServiceListsReferenceableCandidates(t *testing.T) {
 }
 
 type fakeReferenceResolutionRepository struct {
-	domains     []models.Domain
-	glossaries  []models.PublishedGlossaryReference
-	elements    []models.PublishedElementReference
-	domainIDs   []int64
-	glossaryIDs []int64
-	elementIDs  []int64
+	domains          []models.Domain
+	glossaries       []models.PublishedGlossaryReference
+	elements         []models.PublishedElementReference
+	domainsByCode    []models.Domain
+	glossariesByCode []models.PublishedGlossaryReference
+	elementsByCode   []models.PublishedElementReference
+	domainIDs        []int64
+	glossaryIDs      []int64
+	elementIDs       []int64
+	domainCodes      []string
+	glossaryCodes    []string
+	elementCodes     []string
 }
 
 func (r *fakeReferenceResolutionRepository) ListDomainCandidates(context.Context, int64, string, int, int) ([]models.Domain, int64, error) {
@@ -103,4 +132,19 @@ func (r *fakeReferenceResolutionRepository) ResolveGlossaries(_ context.Context,
 func (r *fakeReferenceResolutionRepository) ResolveElements(_ context.Context, _ int64, ids []int64) ([]models.PublishedElementReference, error) {
 	r.elementIDs = append([]int64(nil), ids...)
 	return r.elements, nil
+}
+
+func (r *fakeReferenceResolutionRepository) ResolveDomainsByCodes(_ context.Context, _ int64, codes []string) ([]models.Domain, error) {
+	r.domainCodes = append([]string(nil), codes...)
+	return r.domainsByCode, nil
+}
+
+func (r *fakeReferenceResolutionRepository) ResolveGlossariesByCodes(_ context.Context, _ int64, codes []string) ([]models.PublishedGlossaryReference, error) {
+	r.glossaryCodes = append([]string(nil), codes...)
+	return r.glossariesByCode, nil
+}
+
+func (r *fakeReferenceResolutionRepository) ResolveElementsByCodes(_ context.Context, _ int64, codes []string) ([]models.PublishedElementReference, error) {
+	r.elementCodes = append([]string(nil), codes...)
+	return r.elementsByCode, nil
 }

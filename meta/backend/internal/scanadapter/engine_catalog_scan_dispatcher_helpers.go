@@ -18,7 +18,7 @@ func (d *EngineCatalogScanDispatcher) clearLock(ctx context.Context, acquired bo
 	}
 }
 
-func (d *EngineCatalogScanDispatcher) finalizeEngineCatalogRootAfterScan(resource *commonModels.Engine, tenantID uint, items int, scanDepth string) error {
+func (d *EngineCatalogScanDispatcher) finalizeEngineCatalogRootAfterScan(resource *commonModels.Engine, tenantID uint, scanDepth string) error {
 	enginePlugin, err := plugin.Get(resource.EngineType)
 	if err != nil {
 		d.log.Warn("获取插件失败，跳过 root 扫描状态更新", "engine_type", resource.EngineType, "error", err)
@@ -29,7 +29,7 @@ func (d *EngineCatalogScanDispatcher) finalizeEngineCatalogRootAfterScan(resourc
 		d.log.Warn("同步 root 节点失败，跳过 root 扫描状态更新", "engine_id", resource.ID, "error", err)
 		return fmt.Errorf("ensure catalog root: %w", err)
 	}
-	if err := d.repo.FinalizeNodeStateWithDepth(rootNode, "completed", items, 0, "", scanDepth); err != nil {
+	if err := d.repo.FinalizeNodeStateWithDepth(rootNode, "completed", "", scanDepth); err != nil {
 		d.log.Warn("更新 root 扫描状态失败", "engine_id", resource.ID, "node_id", rootNode.ID, "error", err)
 		return fmt.Errorf("finalize catalog root: %w", err)
 	}

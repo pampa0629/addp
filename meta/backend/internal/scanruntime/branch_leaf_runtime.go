@@ -88,23 +88,12 @@ func (s *BranchLeafRuntime) ScanBranch(
 	totalObjects, totalFields, err = s.scanCatalogLeaves(ctx, scanCatalog, resource, tenantID, branchNode, branchName, scanDepth, force)
 
 	if err != nil {
-		_ = s.repo.FinalizeNodeState(branchNode, "failed", totalObjects, 0, err.Error())
+		_ = s.repo.FinalizeNodeState(branchNode, "failed", err.Error())
 		return 0, totalObjects, totalFields, err
 	}
 
 	// 3. 完成扫描
-	var totalSize int64
-	collectionItems, err := s.repo.GetItemsByNode(branchNode.ID)
-	if err != nil {
-		return 0, totalObjects, totalFields, err
-	}
-	for _, item := range collectionItems {
-		if item.SizeBytes != nil {
-			totalSize += *item.SizeBytes
-		}
-	}
-
-	if err := s.repo.FinalizeNodeStateWithDepth(branchNode, "completed", totalObjects, totalSize, "", scanDepth); err != nil {
+	if err := s.repo.FinalizeNodeStateWithDepth(branchNode, "completed", "", scanDepth); err != nil {
 		return 0, totalObjects, totalFields, err
 	}
 

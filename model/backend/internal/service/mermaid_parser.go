@@ -1,8 +1,10 @@
 package service
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"regexp"
 	"strconv"
 	"strings"
@@ -12,7 +14,7 @@ import (
 var mermaidIdentifierPattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 var mermaidMarkdownFencePattern = regexp.MustCompile("(?ms)^```mermaid[ \\t]*\\r?\\n(.*?)^```[ \\t]*$")
 
-const mermaidDocumentFormat = "addp.model.er/v1"
+const mermaidDocumentFormat = "addp.model.er/v2"
 
 var mermaidDataTypes = map[string]struct{}{
 	"string": {}, "int": {}, "bigint": {}, "float": {}, "decimal": {},
@@ -27,15 +29,16 @@ type MermaidERParser struct {
 }
 
 type MermaidDocumentMetadata struct {
-	Format   string `json:"format"`
-	Scope    string `json:"scope"`
-	DomainID *int64 `json:"domain_id,omitempty"`
+	Format     string  `json:"format"`
+	Scope      string  `json:"scope"`
+	DomainCode *string `json:"domain_code,omitempty"`
 }
 
 // EntityDefinition 实体定义
 type EntityDefinition struct {
 	Name        string
 	DisplayName string
+	DomainCode  *string
 	DomainID    *int64
 	Description string
 	Attributes  []AttributeDefinition
@@ -49,25 +52,26 @@ type AttributeDefinition struct {
 	IsPK        bool
 	IsFK        bool
 	Nullable    bool
+	ElementCode *string
 	ElementID   *int64
 	Description string
 	SortOrder   int
 }
 
 type mermaidEntityMetadata struct {
-	Code        string `json:"code"`
-	Name        string `json:"name"`
-	DomainID    *int64 `json:"domain_id"`
-	Description string `json:"description"`
+	Code        string  `json:"code"`
+	Name        string  `json:"name"`
+	DomainCode  *string `json:"domain_code"`
+	Description string  `json:"description"`
 }
 type mermaidAttributeMetadata struct {
-	Entity      string `json:"entity"`
-	Column      string `json:"column"`
-	Name        string `json:"name"`
-	Nullable    bool   `json:"nullable"`
-	ElementID   *int64 `json:"element_id"`
-	Description string `json:"description"`
-	SortOrder   int    `json:"sort_order"`
+	Entity      string  `json:"entity"`
+	Column      string  `json:"column"`
+	Name        string  `json:"name"`
+	Nullable    bool    `json:"nullable"`
+	ElementCode *string `json:"element_code"`
+	Description string  `json:"description"`
+	SortOrder   int     `json:"sort_order"`
 }
 
 type mermaidRelationMetadata struct {
@@ -89,6 +93,18 @@ type RelationDefinition struct {
 
 func mermaidRelationKey(source, target, relationType, name string) string {
 	return source + "->" + target + ":" + relationType + ":" + name
+}
+
+func decodeMermaidMetadata(raw string, target any) error {
+	decoder := json.NewDecoder(bytes.NewBufferString(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(target); err != nil {
+		return err
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return fmt.Errorf("元数据包含多余内容")
+	}
+	return nil
 }
 
 // ParseMermaidER 解析Mermaid ER图代码
@@ -117,7 +133,7 @@ func ParseMermaidER(code string) (*MermaidERParser, error) {
 			if documentSeen {
 				return nil, fmt.Errorf("第 %d 行 ADDP 文档元数据重复", lineNumber+1)
 			}
-			if err := json.Unmarshal([]byte(strings.TrimPrefix(line, "%% addp:document ")), &parser.Document); err != nil {
+			if err := decodeMermaidMetadata(strings.TrimPrefix(line, "%% addp:document "), &parser.Document); err != nil {
 				return nil, fmt.Errorf("第 %d 行 ADDP 文档元数据无效", lineNumber+1)
 			}
 			documentSeen = true
@@ -126,7 +142,8 @@ func ParseMermaidER(code string) (*MermaidERParser, error) {
 
 		if strings.HasPrefix(line, "%% addp:entity ") {
 			var metadata mermaidEntityMetadata
-			if err := json.Unmarshal([]byte(strings.TrimPrefix(line, "%% addp:entity ")), &metadata); err != nil || metadata.Code == "" || metadata.Name == "" {
+			if err := decodeMermaidMetadata(strings.TrimPrefix(line, "%% addp:entity "), &metadata); err != nil || metadata.Code == "" || metadata.Name == "" ||
+				(metadata.DomainCode != nil && !validMermaidStableCode(*metadata.DomainCode, 50)) {
 				return nil, fmt.Errorf("第 %d 行 ADDP 实体元数据无效", lineNumber+1)
 			}
 			if _, exists := entityMetadata[metadata.Code]; exists {
@@ -137,7 +154,8 @@ func ParseMermaidER(code string) (*MermaidERParser, error) {
 		}
 		if strings.HasPrefix(line, "%% addp:attribute ") {
 			var metadata mermaidAttributeMetadata
-			if err := json.Unmarshal([]byte(strings.TrimPrefix(line, "%% addp:attribute ")), &metadata); err != nil || metadata.Entity == "" || metadata.Column == "" || metadata.Name == "" || metadata.SortOrder < 0 {
+			if err := decodeMermaidMetadata(strings.TrimPrefix(line, "%% addp:attribute "), &metadata); err != nil || metadata.Entity == "" || metadata.Column == "" || metadata.Name == "" || metadata.SortOrder < 0 ||
+				(metadata.ElementCode != nil && !validMermaidStableCode(*metadata.ElementCode, 100)) {
 				return nil, fmt.Errorf("第 %d 行 ADDP 属性元数据无效", lineNumber+1)
 			}
 			key := metadata.Entity + "." + metadata.Column
@@ -152,7 +170,7 @@ func ParseMermaidER(code string) (*MermaidERParser, error) {
 				return nil, fmt.Errorf("第 %d 行前一条 ADDP 关系元数据未被关系定义消费", lineNumber+1)
 			}
 			var metadata mermaidRelationMetadata
-			if err := json.Unmarshal([]byte(strings.TrimPrefix(line, "%% addp:relation ")), &metadata); err != nil ||
+			if err := decodeMermaidMetadata(strings.TrimPrefix(line, "%% addp:relation "), &metadata); err != nil ||
 				metadata.Source == "" || metadata.Target == "" || !validMermaidRelationType(metadata.RelationType) {
 				return nil, fmt.Errorf("第 %d 行 ADDP 关系元数据无效", lineNumber+1)
 			}
@@ -241,8 +259,8 @@ func ParseMermaidER(code string) (*MermaidERParser, error) {
 	}
 	if !documentSeen || parser.Document.Format != mermaidDocumentFormat ||
 		(parser.Document.Scope != "all" && parser.Document.Scope != "domain") ||
-		(parser.Document.Scope == "all" && parser.Document.DomainID != nil) ||
-		(parser.Document.Scope == "domain" && (parser.Document.DomainID == nil || *parser.Document.DomainID <= 0)) {
+		(parser.Document.Scope == "all" && parser.Document.DomainCode != nil) ||
+		(parser.Document.Scope == "domain" && (parser.Document.DomainCode == nil || !validMermaidStableCode(*parser.Document.DomainCode, 50))) {
 		return nil, fmt.Errorf("ADDP 文档范围元数据无效")
 	}
 	if currentEntity != nil {
@@ -259,7 +277,7 @@ func ParseMermaidER(code string) (*MermaidERParser, error) {
 		entity.DisplayName = entity.Name
 		if metadata, ok := entityMetadata[entity.Name]; ok && metadata.Name != "" {
 			entity.DisplayName = metadata.Name
-			entity.DomainID = metadata.DomainID
+			entity.DomainCode = metadata.DomainCode
 			entity.Description = metadata.Description
 			delete(entityMetadata, entity.Name)
 		}
@@ -272,7 +290,7 @@ func ParseMermaidER(code string) (*MermaidERParser, error) {
 					attribute.DisplayName = metadata.Name
 				}
 				attribute.Nullable = metadata.Nullable
-				attribute.ElementID = metadata.ElementID
+				attribute.ElementCode = metadata.ElementCode
 				attribute.Description = metadata.Description
 				attribute.SortOrder = metadata.SortOrder
 				delete(attributeMetadata, entity.Name+"."+attribute.Name)
@@ -284,7 +302,7 @@ func ParseMermaidER(code string) (*MermaidERParser, error) {
 	}
 	if parser.Document.Scope == "domain" {
 		for _, entity := range parser.Entities {
-			if entity.DomainID == nil || *entity.DomainID != *parser.Document.DomainID {
+			if entity.DomainCode == nil || *entity.DomainCode != *parser.Document.DomainCode {
 				return nil, fmt.Errorf("实体 %s 不属于文档声明的业务域", entity.Name)
 			}
 		}
@@ -293,6 +311,10 @@ func ParseMermaidER(code string) (*MermaidERParser, error) {
 		return nil, err
 	}
 	return parser, nil
+}
+
+func validMermaidStableCode(code string, maxLength int) bool {
+	return utf8.RuneCountInString(code) <= maxLength && mermaidIdentifierPattern.MatchString(code)
 }
 
 func validateMermaidStorageLengths(parser *MermaidERParser) error {

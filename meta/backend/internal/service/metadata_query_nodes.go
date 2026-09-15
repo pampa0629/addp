@@ -5,6 +5,7 @@ import (
 
 	"github.com/addp/meta/internal/metaquery"
 	"github.com/addp/meta/internal/models"
+	"github.com/addp/meta/internal/repository"
 )
 
 func (s *MetadataQueryService) GetMetadataTree(tenantID, engineID uint) (*models.MetadataTreeResponse, error) {
@@ -31,7 +32,7 @@ func (s *MetadataQueryService) GetMetadataTree(tenantID, engineID uint) (*models
 	for i, node := range topNodes {
 		topNodesLite[i] = metaquery.ToMetaNodeLite(node)
 	}
-	if err := s.populateMetaNodeHasChildren(tenantID, topNodesLite); err != nil {
+	if err := s.populateMetaNodeStatistics(tenantID, topNodesLite); err != nil {
 		return nil, err
 	}
 
@@ -39,7 +40,7 @@ func (s *MetadataQueryService) GetMetadataTree(tenantID, engineID uint) (*models
 	for i, node := range childNodes {
 		childNodesLite[i] = metaquery.ToMetaNodeLite(node)
 	}
-	if err := s.populateMetaNodeHasChildren(tenantID, childNodesLite); err != nil {
+	if err := s.populateMetaNodeStatistics(tenantID, childNodesLite); err != nil {
 		return nil, err
 	}
 
@@ -62,11 +63,11 @@ func (s *MetadataQueryService) GetNodeByCatalogPath(tenantID, engineID uint, cat
 		err := s.db.Where("tenant_id = ? AND engine_id = ? AND full_name = ? AND deleted_at IS NULL", tenantID, engineID, candidate).
 			First(&node).Error
 		if err == nil {
-			result := metaquery.ToMetaNodeLite(node)
-			if err := s.populateMetaNodeHasChildren(tenantID, []models.MetaNodeLite{result}); err != nil {
+			result := []models.MetaNodeLite{metaquery.ToMetaNodeLite(node)}
+			if err := s.populateMetaNodeStatistics(tenantID, result); err != nil {
 				return nil, err
 			}
-			return &result, nil
+			return &result[0], nil
 		}
 	}
 
@@ -75,11 +76,11 @@ func (s *MetadataQueryService) GetNodeByCatalogPath(tenantID, engineID uint, cat
 		err := s.db.Where("tenant_id = ? AND engine_id = ? AND name = ? AND parent_node_id IS NULL AND deleted_at IS NULL", tenantID, engineID, trimmed).
 			First(&node).Error
 		if err == nil {
-			result := metaquery.ToMetaNodeLite(node)
-			if err := s.populateMetaNodeHasChildren(tenantID, []models.MetaNodeLite{result}); err != nil {
+			result := []models.MetaNodeLite{metaquery.ToMetaNodeLite(node)}
+			if err := s.populateMetaNodeStatistics(tenantID, result); err != nil {
 				return nil, err
 			}
-			return &result, nil
+			return &result[0], nil
 		}
 	}
 
@@ -94,7 +95,7 @@ func (s *MetadataQueryService) GetNodeChildren(tenantID, nodeID uint) ([]models.
 		return nil, fmt.Errorf("parent node not found: %w", err)
 	}
 
-	if err := s.db.Where("tenant_id = ? AND parent_node_id = ? AND deleted_at IS NULL", tenantID, nodeID).
+	if err := s.db.Where("tenant_id = ? AND engine_id = ? AND parent_node_id = ? AND deleted_at IS NULL", tenantID, parentNode.EngineID, nodeID).
 		Order("name").
 		Find(&nodes).Error; err != nil {
 		return nil, fmt.Errorf("failed to query child nodes: %w", err)
@@ -104,7 +105,7 @@ func (s *MetadataQueryService) GetNodeChildren(tenantID, nodeID uint) ([]models.
 	for i, node := range nodes {
 		result[i] = metaquery.ToMetaNodeLite(node)
 	}
-	if err := s.populateMetaNodeHasChildren(tenantID, result); err != nil {
+	if err := s.populateMetaNodeStatistics(tenantID, result); err != nil {
 		return nil, err
 	}
 
@@ -118,11 +119,11 @@ func (s *MetadataQueryService) GetMetaNodeByID(tenantID, nodeID uint) (*models.M
 		return nil, fmt.Errorf("node not found: %w", err)
 	}
 
-	result := metaquery.ToMetaNodeLite(node)
-	if err := s.populateMetaNodeHasChildren(tenantID, []models.MetaNodeLite{result}); err != nil {
+	result := []models.MetaNodeLite{metaquery.ToMetaNodeLite(node)}
+	if err := s.populateMetaNodeStatistics(tenantID, result); err != nil {
 		return nil, err
 	}
-	return &result, nil
+	return &result[0], nil
 }
 
 func (s *MetadataQueryService) GetNodeAncestors(tenantID, nodeID uint) ([]models.MetaNodeLite, error) {
@@ -139,60 +140,37 @@ func (s *MetadataQueryService) GetNodeAncestors(tenantID, nodeID uint) ([]models
 	for i, node := range nodes {
 		result[i] = metaquery.ToMetaNodeLite(node)
 	}
-	if err := s.populateMetaNodeHasChildren(tenantID, result); err != nil {
+	if err := s.populateMetaNodeStatistics(tenantID, result); err != nil {
 		return nil, err
 	}
 	return result, nil
 }
 
-func (s *MetadataQueryService) populateMetaNodeHasChildren(tenantID uint, nodes []models.MetaNodeLite) error {
+func (s *MetadataQueryService) populateMetaNodeStatistics(tenantID uint, nodes []models.MetaNodeLite) error {
 	if len(nodes) == 0 {
 		return nil
 	}
-	nodeIDs := make([]uint, 0, len(nodes))
-	indexByID := make(map[uint]int, len(nodes))
-	for i, node := range nodes {
-		if node.ID == 0 {
-			continue
+	engineID := nodes[0].EngineID
+	nodeIDs := make([]uint, len(nodes))
+	for i := range nodes {
+		if nodes[i].EngineID != engineID || nodes[i].TenantID != tenantID {
+			return fmt.Errorf("node statistics require one tenant and engine scope")
 		}
-		nodeIDs = append(nodeIDs, node.ID)
-		indexByID[node.ID] = i
-		nodes[i].HasChildren = nodes[i].HasChildren || node.ItemCount > 0
+		nodeIDs[i] = nodes[i].ID
 	}
-	if len(nodeIDs) == 0 {
-		return nil
+	stats, err := repository.QueryNodeStatistics(s.db, tenantID, engineID, nodeIDs)
+	if err != nil {
+		return fmt.Errorf("failed to query node statistics: %w", err)
 	}
-
-	var childNodeRefs []struct {
-		ParentNodeID uint
+	byID := make(map[uint]repository.NodeStatistics, len(stats))
+	for _, stat := range stats {
+		byID[stat.NodeID] = stat
 	}
-	if err := s.db.Model(&models.MetaNode{}).
-		Select("parent_node_id").
-		Where("tenant_id = ? AND parent_node_id IN ? AND deleted_at IS NULL", tenantID, nodeIDs).
-		Group("parent_node_id").
-		Find(&childNodeRefs).Error; err != nil {
-		return fmt.Errorf("failed to query child node refs: %w", err)
-	}
-	for _, ref := range childNodeRefs {
-		if idx, ok := indexByID[ref.ParentNodeID]; ok {
-			nodes[idx].HasChildren = true
-		}
-	}
-
-	var itemRefs []struct {
-		NodeID uint
-	}
-	if err := s.db.Model(&models.MetaItem{}).
-		Select("node_id").
-		Where("tenant_id = ? AND node_id IN ? AND deleted_at IS NULL", tenantID, nodeIDs).
-		Group("node_id").
-		Find(&itemRefs).Error; err != nil {
-		return fmt.Errorf("failed to query child item refs: %w", err)
-	}
-	for _, ref := range itemRefs {
-		if idx, ok := indexByID[ref.NodeID]; ok {
-			nodes[idx].HasChildren = true
-		}
+	for i := range nodes {
+		stat := byID[nodes[i].ID]
+		nodes[i].ItemCount = stat.ItemCount
+		nodes[i].TotalSizeBytes = stat.TotalSizeBytes
+		nodes[i].HasChildren = stat.HasChildren
 	}
 	return nil
 }

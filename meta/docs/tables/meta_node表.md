@@ -21,8 +21,6 @@
 | `scanned_depth` | VARCHAR(10) | 已完成扫描深度：none/basic/deep，默认 `none` |
 | `scanned_at` | TIMESTAMP | 节点的最后扫描时间，nullable |
 | `scan_error` | TEXT | 最后一次节点扫描错误信息，nullable |
-| `item_count` | INTEGER | 子项数量，默认 0 |
-| `total_size_bytes` | BIGINT | 总大小（字节），默认 0 |
 | `attributes` | JSONB | 节点属性，nullable |
 | `created_at` | TIMESTAMP | 创建时间 |
 | `deleted_at` | TIMESTAMP | 软删除时间（GORM 软删除），nullable |
@@ -35,6 +33,8 @@
 - **scan_error**: 最近一次节点扫描失败时的错误信息
 
 扫描调度配置不属于 `meta_node`。定时、手动、engine 绑定扫描策略统一由 `scan_tasks` 和 `common.task_executions` 表达。
+
+节点 API 的 `item_count` 和 `total_size_bytes` 不存储在本表。Meta 查询层按当前有效父子关系批量聚合子树内未删除的逻辑数据项数量和已知 `size_bytes` 合计；上传、覆盖、删除和重新归属后读取即可更新，且不改变本表扫描状态。旧统计列由 `024_drop_node_scan_statistics.sql` 删除，无需重新扫描源数据。
 
 ## 相关文档
 

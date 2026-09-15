@@ -5746,7 +5746,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "仅 addp-catalog Tenant Service Principal 可按当前 Tenant 解析 Domain、Glossary 和 Element；跨 Tenant 与不存在统一返回 found=false | Only the addp-catalog tenant service principal may resolve domains, glossaries, and elements in the current tenant; cross-tenant and missing references both return found=false",
+                "description": "仅 addp-catalog 与 addp-model Tenant Service Principal 可按当前 Tenant 通过 ID 或稳定编码精确解析 Domain、Glossary 和 Element；每项必须且只能提供 id 或 code，跨 Tenant 与不存在统一返回 found=false；Glossary 仅允许 addp-catalog 解析 | Only addp-catalog and addp-model tenant service principals may resolve domains, glossaries, and elements in the current tenant by exact ID or stable code; each item must provide exactly one of id or code, cross-tenant and missing references both return found=false, and only addp-catalog may resolve glossaries",
                 "consumes": [
                     "application/json"
                 ],
@@ -5794,7 +5794,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "仅允许 addp-catalog 且需三个读取权限 | addp-catalog and all three read permissions required",
+                        "description": "仅允许指定运行时客户端且需对应读取权限 | Allowed runtime client and corresponding read permissions required",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -5813,9 +5813,11 @@ const docTemplate = `{
                     }
                 },
                 "x-addp-auth-mode": "permission",
+                "x-addp-conditional-permissions": [
+                    "standard.glossary.read"
+                ],
                 "x-addp-required-permissions": [
                     "standard.domain.read",
-                    "standard.glossary.read",
                     "standard.element.read"
                 ]
             }
@@ -10063,10 +10065,12 @@ const docTemplate = `{
         "github_com_addp_standard_internal_service.ReferenceResolutionRequest": {
             "type": "object",
             "required": [
-                "id",
                 "object_type"
             ],
             "properties": {
+                "code": {
+                    "type": "string"
+                },
                 "id": {
                     "type": "integer",
                     "minimum": 1

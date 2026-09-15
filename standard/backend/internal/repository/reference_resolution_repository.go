@@ -52,6 +52,41 @@ func (r *ReferenceResolutionRepository) ResolveElements(ctx context.Context, ten
 	return result, wrapDBError(err)
 }
 
+func (r *ReferenceResolutionRepository) ResolveDomainsByCodes(ctx context.Context, tenantID int64, codes []string) ([]models.Domain, error) {
+	result := make([]models.Domain, 0)
+	if len(codes) == 0 {
+		return result, nil
+	}
+	err := r.db.WithContext(ctx).Where("tenant_id = ? AND code IN ?", tenantID, codes).Find(&result).Error
+	return result, wrapDBError(err)
+}
+
+func (r *ReferenceResolutionRepository) ResolveGlossariesByCodes(ctx context.Context, tenantID int64, codes []string) ([]models.PublishedGlossaryReference, error) {
+	result := make([]models.PublishedGlossaryReference, 0)
+	if len(codes) == 0 {
+		return result, nil
+	}
+	asOf := time.Now().UTC()
+	err := r.db.WithContext(ctx).Table("standard.glossaries AS g").
+		Select("g.id, g.tenant_id, g.scope_type, g.owner_domain_id, g.code, g.lifecycle_state, g.version, gr.id AS revision_id, gr.revision_no, gr.name, gr.status").
+		Joins("JOIN standard.glossary_revisions gr ON gr.glossary_id = g.id AND gr.status = ? AND gr.effective_from <= ? AND (gr.effective_to IS NULL OR gr.effective_to > ?)", models.RevisionStatusPublished, asOf, asOf).
+		Where("g.tenant_id = ? AND g.code IN ?", tenantID, codes).Scan(&result).Error
+	return result, wrapDBError(err)
+}
+
+func (r *ReferenceResolutionRepository) ResolveElementsByCodes(ctx context.Context, tenantID int64, codes []string) ([]models.PublishedElementReference, error) {
+	result := make([]models.PublishedElementReference, 0)
+	if len(codes) == 0 {
+		return result, nil
+	}
+	asOf := time.Now().UTC()
+	err := r.db.WithContext(ctx).Table("standard.elements AS e").
+		Select("e.id, e.tenant_id, e.scope_type, e.owner_domain_id, e.code, e.lifecycle_state, e.version, er.id AS revision_id, er.revision_no, er.name, er.status").
+		Joins("JOIN standard.element_revisions er ON er.element_id = e.id AND er.status = ? AND er.effective_from <= ? AND (er.effective_to IS NULL OR er.effective_to > ?)", models.RevisionStatusPublished, asOf, asOf).
+		Where("e.tenant_id = ? AND e.code IN ?", tenantID, codes).Scan(&result).Error
+	return result, wrapDBError(err)
+}
+
 func (r *ReferenceResolutionRepository) ListDomainCandidates(ctx context.Context, tenantID int64, search string, page, pageSize int) ([]models.Domain, int64, error) {
 	query := r.db.WithContext(ctx).Model(&models.Domain{}).
 		Where("tenant_id = ? AND lifecycle_state = ?", tenantID, "active")

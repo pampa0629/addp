@@ -61,7 +61,7 @@ Manager infra 中的 PMTiles 快显缓存同样不是 data item。只有通过 `
 | `catalog` | 这个 node 在 catalog 树中的结构事实是什么 | root_term、native_name、display_name_source |
 | `storage` | 这个 branch 对应的低成本存储范围是什么 | bucket、path |
 
-`meta_node.attributes` 不表达 data item 语义，不写入 `item`、`type_info`、`format_info`、`access_index` 或 `capabilities`。node 的 `item_count`、`total_size_bytes`、`scan_status`、`scanned_depth`、`scanned_at` 是 `meta_node` 表字段，不写入 attributes。历史裸 `bucket` / `path` 字段不保留兼容读取或兼容写入；旧数据应重新扫描生成新结构。
+`meta_node.attributes` 不表达 data item 语义，不写入 `item`、`type_info`、`format_info`、`access_index` 或 `capabilities`。node 的 `scan_status`、`scanned_depth`、`scanned_at` 是 `meta_node` 表字段；API 的 `item_count`、`total_size_bytes` 由 Meta 查询层按当前有效子树和 item 记录聚合，不持久化，也不写入 attributes。统计口径见《addp元数据扫描机制规范》的“节点统计的唯一事实来源”。历史裸 `bucket` / `path` 字段不保留兼容读取或兼容写入；旧数据应重新扫描生成新结构。
 
 ## 术语统一
 

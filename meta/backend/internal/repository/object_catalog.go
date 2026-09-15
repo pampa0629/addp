@@ -1,23 +1,38 @@
 package repository
 
 import (
+	"fmt"
 	"strings"
-	"time"
 
 	"github.com/addp/meta/internal/metapath"
 	"github.com/addp/meta/internal/models"
+	"github.com/addp/meta/internal/scanresource"
 	"gorm.io/gorm"
 )
 
 func (r *ScanRepository) EnsureObjectCatalogPrefixPath(
 	tenantID, engineID uint,
 	bucketNode *models.MetaNode,
-	scanPathPrefix string,
+	prefix string,
 ) (*models.MetaNode, error) {
-	if bucketNode == nil || scanPathPrefix == "" {
-		return bucketNode, nil
+	chain, err := r.EnsureObjectCatalogPrefixChain(tenantID, engineID, bucketNode, prefix)
+	if err != nil {
+		return nil, err
 	}
-	prefixSegments := strings.Split(metapath.SanitizeObjectPath(scanPathPrefix), "/")
+	return chain[len(chain)-1], nil
+}
+
+// EnsureObjectCatalogPrefixChain 构造 bucket 内规范路径的完整父链，不接受扫描起点。
+func (r *ScanRepository) EnsureObjectCatalogPrefixChain(
+	tenantID, engineID uint,
+	bucketNode *models.MetaNode,
+	prefix string,
+) ([]*models.MetaNode, error) {
+	if bucketNode == nil || bucketNode.NodeType != "bucket" || bucketNode.TenantID != tenantID || bucketNode.EngineID != engineID {
+		return nil, fmt.Errorf("object prefix chain requires a bucket in tenant %d engine %d", tenantID, engineID)
+	}
+	chain := []*models.MetaNode{bucketNode}
+	prefixSegments := strings.Split(metapath.SanitizeObjectPath(prefix), "/")
 	currentParent := bucketNode
 	for idx, segment := range prefixSegments {
 		if segment == "" {
@@ -25,78 +40,15 @@ func (r *ScanRepository) EnsureObjectCatalogPrefixPath(
 		}
 		fullName := metapath.ComposeNodeFullName(segment, currentParent, "/")
 		pathSoFar := strings.Join(prefixSegments[:idx+1], "/")
-		attrs := objectPrefixNodeAttributes(bucketNode.Name, pathSoFar+"/")
+		attrs := scanresource.ObjectPrefixNodeAttributes(bucketNode.Name, pathSoFar+"/")
 		childNode, err := r.UpsertNode(tenantID, engineID, currentParent, "prefix", segment, &fullName, attrs)
 		if err != nil {
 			return nil, err
 		}
 		currentParent = childNode
+		chain = append(chain, childNode)
 	}
-	return currentParent, nil
-}
-
-func (r *ScanRepository) EnsureObjectCatalogPrefixRelativePath(
-	tenantID, engineID uint,
-	bucketNode, basePrefixNode *models.MetaNode,
-	prefix string,
-	scanPathPrefix string,
-) (*models.MetaNode, []*models.MetaNode, error) {
-	parent := bucketNode
-	if basePrefixNode != nil {
-		parent = basePrefixNode
-	}
-	if bucketNode == nil {
-		return parent, nil, nil
-	}
-
-	parentPrefix := strings.Trim(prefix, "/")
-	normalizedScanPrefix := strings.Trim(scanPathPrefix, "/")
-	if normalizedScanPrefix != "" {
-		if parentPrefix == "" {
-			return bucketNode, nil, nil
-		}
-		if strings.HasPrefix(normalizedScanPrefix, parentPrefix+"/") {
-			parentNode, err := r.EnsureObjectCatalogPrefixPath(tenantID, engineID, bucketNode, parentPrefix)
-			return parentNode, nil, err
-		}
-	}
-	relative := strings.Trim(parentPrefix, "/")
-	if normalizedScanPrefix != "" && strings.HasPrefix(relative, normalizedScanPrefix) {
-		relative = strings.TrimPrefix(relative, normalizedScanPrefix)
-		relative = strings.Trim(relative, "/")
-	}
-	if relative == "" {
-		return parent, nil, nil
-	}
-
-	current := parent
-	created := []*models.MetaNode{}
-	segments := strings.Split(relative, "/")
-	for idx, segment := range segments {
-		if segment == "" {
-			continue
-		}
-		fullName := metapath.ComposeNodeFullName(segment, current, "/")
-		pathSoFar := metapath.JoinObjectPathParts(strings.Trim(scanPathPrefix, "/"), strings.Join(segments[:idx+1], "/"))
-		attrs := objectPrefixNodeAttributes(bucketNode.Name, pathSoFar+"/")
-		childNode, err := r.UpsertNode(tenantID, engineID, current, "prefix", segment, &fullName, attrs)
-		if err != nil {
-			return nil, nil, err
-		}
-		current = childNode
-		created = append(created, childNode)
-	}
-	return current, created, nil
-}
-
-func objectPrefixNodeAttributes(bucket, path string) models.JSONMap {
-	return models.JSONMap{
-		"schema_version": 1,
-		"storage": map[string]interface{}{
-			"bucket": bucket,
-			"path":   path,
-		},
-	}
+	return chain, nil
 }
 
 func (r *ScanRepository) SoftDeleteObjectMetaItemsMissingFingerprints(tenantID, engineID uint, bucketName string, scannedFingerprints map[string]bool) ([]models.MetaItem, error) {
@@ -133,21 +85,6 @@ func (r *ScanRepository) SoftDeleteObjectMetaItemsMissingFingerprintsInPrefix(te
 		deleted = append(deleted, item)
 	}
 	return deleted, nil
-}
-
-func (r *ScanRepository) FinalizeObjectCatalogPrefixNode(node *models.MetaNode, itemCount int, totalSize int64) error {
-	return r.FinalizeObjectCatalogPrefixNodeWithDepth(node, itemCount, totalSize, "")
-}
-
-func (r *ScanRepository) FinalizeObjectCatalogPrefixNodeWithDepth(node *models.MetaNode, itemCount int, totalSize int64, scanDepth string) error {
-	now := time.Now()
-	return r.db.Model(node).Updates(map[string]interface{}{
-		"item_count":       itemCount,
-		"total_size_bytes": totalSize,
-		"scan_status":      "completed",
-		"scanned_at":       now,
-		"scanned_depth":    mergeScannedDepth(node.ScannedDepth, scanDepth),
-	}).Error
 }
 
 func (r *ScanRepository) FindItemByFingerprintUnscoped(fingerprint string) (*models.MetaItem, bool, error) {

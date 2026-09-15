@@ -235,6 +235,7 @@ test-business-config: ## 校验 Business Compose 和服务管理脚本（不启�
 test-integration: ## 严格串行运行所有本地可执行的 disposable 基础设施集成门禁
 	@$(MAKE) test-common-postgres
 	@$(MAKE) test-common-mysql-data-protection
+	@$(MAKE) test-model-mysql
 	@$(MAKE) test-common-oceanbase
 	@$(MAKE) test-common-tidb
 	@$(MAKE) test-manager-postgres
@@ -266,6 +267,10 @@ test-common-postgres: ## 使用一次性 PostgreSQL 数据库运行 Common Engin
 
 test-common-mysql-data-protection: ## 使用一次性 MySQL database 验证 Provider 与四个 Owner 的数据保护契约
 	@bash scripts/test/common-mysql-data-protection-gate.sh
+
+.PHONY: test-model-mysql
+test-model-mysql: ## 使用一次性 MySQL database 验证数据库无关指标逻辑及 Provider 查询
+	@bash scripts/test/model-mysql-gate.sh
 
 test-common-oceanbase: ## 使用一次性 OceanBase database 验证 Engine Provider 契约
 	@bash scripts/test/common-oceanbase-gate.sh
@@ -303,7 +308,7 @@ test-system-iam-postgres: ## 使用一次性 PostgreSQL 数据库运行 System I
 test-asset-postgres: ## 使用一次性 PostgreSQL 数据库运行 Asset 授权履约迁移门禁
 	@bash scripts/test/asset-postgres-gate.sh
 
-test-meta-postgres: ## 使用一次性 PostgreSQL 数据库运行 Meta 迁移集成门禁
+test-meta-postgres: ## 使用一次性 PostgreSQL 数据库运行 Meta 迁移与目录统计集成门禁
 	@bash scripts/test/meta-postgres-gate.sh
 
 test-catalog-postgres: ## 使用一次性 PostgreSQL 数据库运行 Catalog 约束集成门禁

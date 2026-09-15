@@ -158,11 +158,11 @@ func TestObjectRefGroupCandidateSetUsesBucketRelativeDetectionScope(t *testing.T
 	}
 }
 
-func TestObjectRefGroupCandidateSetAcceptsBucketQualifiedPath(t *testing.T) {
+func TestObjectRefGroupCandidateSetPreservesDirectoryNamedLikeBucket(t *testing.T) {
 	t.Parallel()
 
-	candidates := ObjectRefGroupCandidateSet(7, "bucket", "path/roads.shp", nil)
-	if got := candidates.EngineCatalogPathFor("bucket/path/roads.shp").StringPath(); got != "bucket/path/roads.shp" {
-		t.Fatalf("catalog path = %q, want bucket/path/roads.shp", got)
+	candidates := ObjectRefGroupCandidateSet(7, "bucket", "bucket/path/roads.shp", nil)
+	if got := candidates.EngineCatalogPathFor("bucket/path/roads.shp").StringPath(); got != "bucket/bucket/path/roads.shp" {
+		t.Fatalf("catalog path = %q, want bucket/bucket/path/roads.shp", got)
 	}
 }

@@ -92,6 +92,8 @@ Meta 只负责把正式规范中的 data type、type info 和横切事实写入�
 
 对象存储 catalog scan：
 
+目录归属只取决于 bucket 内规范路径，不取决于扫描起点。single、composite 和 `ref_groups` 必须共用 repository 的完整 prefix 链构造；扫描范围只控制枚举与扫描状态，不能参与父节点路径拼接。目录数量和大小只由查询层从有效子树的 item 记录批量聚合，不存储在 node，不由扫描或上传入口维护。详见《addp元数据扫描机制规范》的“对象目录归属不变量”和“节点统计的唯一事实来源”。
+
 ```text
 service.ScanService
   -> scanadapter.EngineCatalogContentScanner
