@@ -13,8 +13,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		t.Fatalf("LoadRepositoryAuthorizationCatalog() error = %v", err)
 	}
 	descriptors := report.Permissions
-	if len(descriptors) != 439 {
-		t.Fatalf("descriptor count = %d, want 439", len(descriptors))
+	if len(descriptors) != 447 {
+		t.Fatalf("descriptor count = %d, want 447", len(descriptors))
 	}
 	for _, descriptor := range descriptors {
 		if descriptor.OwnerModule == "security" && !reflect.DeepEqual(descriptor.AllowedScopeTypes, []string{"tenant"}) {
@@ -67,6 +67,12 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"model.logical_model.update",
 		"model.materialization.execute",
 		"model.materialized_target.delete",
+		"model.metric_implementation.create",
+		"model.metric_implementation.delete",
+		"model.metric_implementation.offline",
+		"model.metric_implementation.publish",
+		"model.metric_implementation.read",
+		"model.metric_implementation.update",
 		"standard.domain.read",
 		"standard.element.read",
 		"standard.metric.read",
@@ -74,6 +80,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	})
 	assertRepositoryRolePrincipalTypes(t, roles, "tenant.manager_runtime", []string{"service_principal"})
 	assertRepositoryRolePermissions(t, roles, "tenant.manager_runtime", []string{
+		"audit.tenant_event.create",
 		"inference.runtime.execute",
 		"meta.catalog.read",
 		"meta.scan_task.execute",
@@ -102,6 +109,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"system.execution_authorization.execute",
 	})
 	assertRepositoryRolePermissions(t, roles, "tenant.orchestrator_runtime", []string{
+		"audit.tenant_event.create",
 		"develop.task_provider.execute",
 		"develop.task_provider.read",
 		"graph.task_provider.execute",
@@ -110,6 +118,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"manager.task_provider.read",
 		"meta.task_provider.execute",
 		"meta.task_provider.read",
+		"model.task_provider.execute",
+		"model.task_provider.read",
 		"orchestrator.task_provider.execute",
 		"orchestrator.task_provider.read",
 		"quality.task_provider.execute",
@@ -124,6 +134,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"model.standard_reference.update",
 	})
 	assertRepositoryRolePermissions(t, roles, "tenant.transfer_runtime", []string{
+		"audit.tenant_event.create",
 		"meta.catalog.read",
 		"meta.inspect.execute",
 		"meta.scan_task.execute",
@@ -285,7 +296,9 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"transfer.task.update",
 	})
 	assertRepositoryRolePermissions(t, roles, "tenant.develop_runtime", []string{
+		"audit.tenant_event.create",
 		"meta.catalog.read",
+		"meta.lineage.create",
 		"meta.scan_task.execute",
 		"security.protection_projection.read",
 		"security.protection_projection.update",
@@ -315,6 +328,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"audit.tenant_event.create",
 		"meta.catalog.read",
 		"meta.lineage.create",
+		"model.metric_implementation.read",
 		"security.protection_projection.read",
 		"security.protection_projection.update",
 		"system.engine.read",

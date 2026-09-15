@@ -558,7 +558,8 @@
           "transfer": "Data Transfer Generation",
           "unit": "Unit of Measure",
           "user": "User Account",
-          "workflow": "Workflow"
+          "workflow": "Workflow",
+          "metric_implementation": "Metric implementation"
         },
         "types": {
           "tenant_builtin": "Tenant Built-in Role",

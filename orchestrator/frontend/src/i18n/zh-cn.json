@@ -51,8 +51,7 @@
       "recentVisitTitle": "编排任务",
       "createTitle": "创建编排",
       "statusLabel": "编排状态",
-      "editTitle": "编辑编排",
-      "disabledLabel": "禁用",
+      "disabledLabel": "定时调度已关闭",
       "scheduleBtn": "调度",
       "viewJsonBtn": "查看 JSON",
       "cancelBtn": "取消",
@@ -63,14 +62,14 @@
       "namePlaceholder": "请输入编排名称",
       "descriptionLabel": "描述",
       "descriptionPlaceholder": "请输入描述信息",
-      "enabledLabel": "启用",
+      "enabledLabel": "定时调度已开启",
       "saveDialogTitle": "保存编排信息",
       "saveDialogCancel": "取消",
       "saveDialogConfirm": "确认保存",
       "scheduleDialogTitle": "设置定时调度",
       "scheduleDialogCancel": "取消",
       "scheduleDialogConfirm": "确认",
-      "scheduleSaved": "调度已更新",
+      "scheduleSaved": "调度设置已应用，请保存编排",
       "jsonDialogTitle": "编排 JSON 配置",
       "jsonDialogClose": "关闭",
       "copyJsonBtn": "复制 JSON",
@@ -85,7 +84,11 @@
       "loadFailed": "加载编排失败",
       "jsonCopied": "JSON 已复制到剪贴板",
       "copyFailed": "复制失败",
-      "jsonDownloaded": "JSON 已下载"
+      "jsonDownloaded": "JSON 已下载",
+      "unsavedChanges": "有未保存的修改",
+      "saveBeforeExecute": "请先保存编排，再执行已保存的版本",
+      "scheduleEnabledLabel": "启用定时调度",
+      "editMetadata": "编辑名称与描述"
     },
     "executionList": {
       "recentVisitTitle": "编排执行历史",
@@ -135,7 +138,10 @@
       "createTaskTooltip": "创建任务",
       "addToCanvas": "添加到画布",
       "editTaskTooltip": "编辑任务",
-      "openUrlMissing": "任务入口未配置"
+      "openUrlMissing": "任务入口未配置",
+      "latestExecution": "最近执行：{status}",
+      "taskStatus": "任务状态：{status}",
+      "statusOther": "{status}"
     },
     "dagEditor": {
       "canvasAriaLabel": "编排 DAG 画布",
@@ -205,7 +211,36 @@
       "taskAdded": "已添加任务: {name}",
       "addNodeFailed": "添加节点失败: {error}",
       "jsonError": "参数 JSON 格式错误",
-      "jsonObjectError": "执行参数必须是 JSON 对象"
+      "jsonObjectError": "执行参数必须是 JSON 对象",
+      "parameterConnection": "参数传值",
+      "controlConnection": "执行依赖",
+      "connections": "关联连线",
+      "noConnections": "暂无关联连线",
+      "clearFocus": "取消聚焦",
+      "actualSize": "原始大小",
+      "connectionHint": "选中任务或连线查看起点与终点"
+    },
+    "liveExecution": {
+      "alreadyRunning": "本次编排正在执行，请等待执行结束",
+      "title": "本次执行",
+      "completed": "已结束 {completed}/{total} 个步骤",
+      "viewMonitor": "查看执行详情",
+      "dismiss": "收起状态",
+      "definitionChanged": "编排配置已修改，已隐藏本次执行的节点状态。",
+      "refreshFailed": "状态刷新失败，当前显示上次获取的状态。",
+      "retry": "重试刷新",
+      "nodeExecution": "节点执行状态",
+      "duration": "耗时：{duration} 毫秒",
+      "childExecution": "查看子任务执行",
+      "status": {
+        "pending": "等待执行",
+        "running": "运行中",
+        "success": "成功",
+        "failed": "失败",
+        "timeout": "超时",
+        "cancelled": "已取消",
+        "not_started": "未执行"
+      }
     }
   }
 }

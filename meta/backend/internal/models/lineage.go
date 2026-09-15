@@ -29,6 +29,8 @@ func (LineageItemRelation) TableName() string { return "meta.lineage_item_relati
 
 // LineageServiceDependency 是 data item 到已发布服务版本的当前依赖投影。
 type LineageServiceDependency struct {
+	ServiceName       string     `gorm:"size:255;not null" json:"service_name"`
+	ServiceUpdatedAt  time.Time  `json:"service_updated_at"`
 	ID                uint       `gorm:"primaryKey" json:"id"`
 	TenantID          uint       `gorm:"not null;index" json:"tenant_id"`
 	SourceItemID      uint       `gorm:"not null;index" json:"source_item_id"`

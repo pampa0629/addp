@@ -41,6 +41,25 @@ func TestRepositoryPublishesAndStopsOneRuntimeInstance(t *testing.T) {
 	}
 }
 
+func TestReporterAcceptsEmbeddedExecutionSupervisorRole(t *testing.T) {
+	repo := NewRepository(newRuntimeHealthTestDB(t))
+	reporter, err := NewReporter(repo, ReporterConfig{
+		InstanceID: "develop-query-1", Module: "develop", Role: RoleExecutionSupervisor,
+		RuntimeName: "query", Capacity: 1, Interval: time.Second, TTL: 3 * time.Second,
+		ActiveCount: func() int { return 1 },
+	})
+	if err != nil || reporter == nil {
+		t.Fatalf("NewReporter() = %#v, %v", reporter, err)
+	}
+	now := time.Date(2026, 9, 15, 1, 2, 3, 0, time.UTC)
+	reporter.publish(context.Background(), now)
+	items, err := repo.ListSince(context.Background(), now.Add(-time.Second))
+	if err != nil || len(items) != 1 || items[0].Role != RoleExecutionSupervisor ||
+		items[0].Capacity != 1 || items[0].ActiveCount != 1 {
+		t.Fatalf("published supervisor heartbeat = %#v, %v", items, err)
+	}
+}
+
 func newRuntimeHealthTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})

@@ -78,3 +78,32 @@ export const resolveERDiagramRouteState = (routeQuery = {}) => {
   const query = buildERDiagramRouteQuery({ domainId, includeRelated })
   return { domainId, includeRelated, query, changed: !queriesEqual(routeQuery, query) }
 }
+
+export const buildDimensionalModelRouteQuery = ({ domainId, tableId }) => {
+  const query = {}
+  if (domainId) query.domain_id = String(domainId)
+  if (tableId) query.table_id = String(tableId)
+  return query
+}
+
+export const resolveDimensionalModelRouteState = (routeQuery = {}) => {
+  const domainId = positiveInteger(routeQuery.domain_id, null)
+  const tableId = positiveInteger(routeQuery.table_id, null)
+  const query = buildDimensionalModelRouteQuery({ domainId, tableId })
+  return { domainId, tableId, query, changed: !queriesEqual(routeQuery, query) }
+}
+
+export const resolveLogicalTableDetailRouteState = (routeQuery = {}, tableType) => {
+  const query = resolveLogicalTableListRouteState(routeQuery).query
+  const supportsRelations = tableType === 'fact' || tableType === 'dimension'
+  const tab = supportsRelations && queryValue(routeQuery.tab) === 'relations' ? 'relations' : 'definition'
+  const relationId = tab === 'relations' ? positiveInteger(routeQuery.relation_id, null) : null
+  if (tab === 'relations') query.tab = tab
+  if (relationId) query.relation_id = String(relationId)
+  return { tab, relationId, query, changed: !queriesEqual(routeQuery, query) }
+}
+
+export const buildTableRelationRoute = (tableId, relationId = null, contextQuery = {}) => ({
+  path: `/logical-tables/${tableId}`,
+  query: resolveLogicalTableDetailRouteState({ ...contextQuery, tab: 'relations', relation_id: relationId }, 'fact').query
+})

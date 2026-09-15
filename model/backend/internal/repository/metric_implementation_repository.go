@@ -13,30 +13,45 @@ func NewMetricImplementationRepository(db *gorm.DB) *MetricImplementationReposit
 }
 func (r *MetricImplementationRepository) DB() *gorm.DB { return r.db }
 func (r *MetricImplementationRepository) ListByFactTable(factTableID, tenantID int64) ([]models.MetricImplementation, error) {
-	var items []models.MetricImplementation
-	err := r.db.Where("fact_table_id = ? AND tenant_id = ?", factTableID, tenantID).Order("created_at ASC,id ASC").Find(&items).Error
-	return items, commonrepo.WrapDBError(err)
+	items := []models.MetricImplementation{}
+	q := r.db.Where("tenant_id = ?", tenantID)
+	if factTableID > 0 {
+		q = q.Where("fact_table_id = ?", factTableID)
+	}
+	if err := q.Order("id ASC").Find(&items).Error; err != nil {
+		return nil, commonrepo.WrapDBError(err)
+	}
+	ids := make([]int64, len(items))
+	for i := range items {
+		ids[i] = items[i].ID
+		items[i].Revisions = []models.MetricImplementationRevision{}
+	}
+	if len(ids) == 0 {
+		return items, nil
+	}
+	var revisions []models.MetricImplementationRevision
+	if err := r.db.Where("tenant_id = ? AND implementation_id IN ?", tenantID, ids).Order("revision_no DESC").Find(&revisions).Error; err != nil {
+		return nil, commonrepo.WrapDBError(err)
+	}
+	positions := map[int64]int{}
+	for i := range items {
+		positions[items[i].ID] = i
+	}
+	for _, rev := range revisions {
+		i := positions[rev.ImplementationID]
+		items[i].Revisions = append(items[i].Revisions, rev)
+	}
+	return items, nil
 }
-func (r *MetricImplementationRepository) GetByID(id, factTableID, tenantID int64) (*models.MetricImplementation, error) {
+func (r *MetricImplementationRepository) GetByID(id, tenantID int64) (*models.MetricImplementation, error) {
 	var item models.MetricImplementation
-	err := r.db.Where("id = ? AND fact_table_id = ? AND tenant_id = ?", id, factTableID, tenantID).First(&item).Error
+	if err := r.db.Where("id = ? AND tenant_id = ?", id, tenantID).First(&item).Error; err != nil {
+		return nil, commonrepo.WrapDBError(err)
+	}
+	item.Revisions = []models.MetricImplementationRevision{}
+	err := r.db.Where("implementation_id = ? AND tenant_id = ?", id, tenantID).Order("revision_no DESC").Find(&item.Revisions).Error
 	return &item, commonrepo.WrapDBError(err)
 }
 func (r *MetricImplementationRepository) Create(item *models.MetricImplementation) error {
 	return commonrepo.WrapDBError(r.db.Create(item).Error)
-}
-func (r *MetricImplementationRepository) Update(item *models.MetricImplementation) error {
-	return commonrepo.WrapDBError(r.db.Model(&models.MetricImplementation{}).Where("id = ? AND fact_table_id = ? AND tenant_id = ?", item.ID, item.FactTableID, item.TenantID).Updates(map[string]interface{}{
-		"metric_definition_id": item.MetricDefinitionID, "metric_definition_revision_id": item.MetricDefinitionRevisionID, "name": item.Name, "grain": item.Grain, "source_config": item.SourceConfig, "dimension_config": item.DimensionConfig, "filter_config": item.FilterConfig, "expression_config": item.ExpressionConfig, "status": item.Status, "note": item.Note, "updated_by": item.UpdatedBy,
-	}).Error)
-}
-func (r *MetricImplementationRepository) Delete(id, factTableID, tenantID int64) error {
-	result := r.db.Where("id = ? AND fact_table_id = ? AND tenant_id = ?", id, factTableID, tenantID).Delete(&models.MetricImplementation{})
-	if result.Error != nil {
-		return commonrepo.WrapDBError(result.Error)
-	}
-	if result.RowsAffected == 0 {
-		return commonrepo.WrapDBError(gorm.ErrRecordNotFound)
-	}
-	return nil
 }

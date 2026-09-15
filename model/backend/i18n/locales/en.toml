@@ -143,7 +143,7 @@ other = "The DW layer is still referenced by logical tables and cannot be delete
 other = "Invalid metric implementation ID"
 
 [model.metric_implementation.conflict]
-other = "Metric implementation name and definition revision already exist"
+other = "The metric implementation state or source dependencies have changed; refresh and review before retrying"
 
 [model.table_relation.invalid_relation_id]
 other = "Invalid relation ID"
@@ -177,3 +177,18 @@ other = "Level numbers and fields must be unique within a dimension hierarchy"
 
 [model.dimension_hierarchy.field_in_use]
 other = "The logical field is still referenced by a dimension hierarchy and cannot be deleted"
+
+[model.table_relation.source_state_conflict]
+other = "Only a draft fact table can change dimension relations; referenced dimensions may remain approved"
+
+[model.metric.option.grain.total]
+other = "Total"
+
+[model.metric.option.grain.month]
+other = "Monthly"
+
+[model.metric.option.directions.forward]
+other = "Forward (subject to comparison)"
+
+[model.metric.option.directions.both]
+other = "Both directions"

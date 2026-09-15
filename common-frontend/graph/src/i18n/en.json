@@ -52,6 +52,14 @@
     "granularities": {
       "item": "Item level",
       "field": "Field level"
-    }
+    },
+    "depth": "Depth",
+    "layers": "{count} levels",
+    "truncated": "Display limit reached. Reduce the depth to see a smaller graph.",
+    "expand": {
+      "upstream": "Up +{count}",
+      "downstream": "Down +{count}"
+    },
+    "viewExecution": "View source execution"
   }
 }

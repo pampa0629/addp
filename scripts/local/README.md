@@ -55,7 +55,6 @@ localhost:5001/addp-meta-backend         latest
 localhost:5001/addp-transfer-backend     latest
 localhost:5001/addp-orchestrator-backend latest
 localhost:5001/addp-develop-backend      latest
-localhost:5001/addp-develop-query-worker latest
 localhost:5001/addp-gateway              latest
 localhost:5001/addp-console               latest
 localhost:5001/addp-nginx                latest
@@ -99,7 +98,7 @@ bash scripts/local/start.sh
 5. ✓ 等待关键服务健康检查通过
 6. ✓ 显示访问地址和管理命令
 
-**幂等性**: 可重复执行,已运行的容器会被跳过,使用 `docker compose up -d` 确保服务存在且运行。
+**幂等性**: 可重复执行,已运行的容器会被跳过,使用 `docker compose up -d --remove-orphans` 确保服务存在且运行，并清理已从单一部署路线删除的旧服务容器。
 
 **镜像检查**: 如果发现缺少镜像,会提示:
 ```
@@ -213,7 +212,6 @@ Worker 服务:
   quality-worker
   transfer-bounded-worker
   transfer-continuous-worker
-  develop-query-worker
 
 前端服务:
   system-frontend      (port 8090)

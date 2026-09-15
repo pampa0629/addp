@@ -143,7 +143,7 @@ other = "数仓分层仍被逻辑表引用，不能删除"
 other = "无效的指标实现 ID"
 
 [model.metric_implementation.conflict]
-other = "指标实现名称与定义修订重复"
+other = "指标实现状态或来源依赖已变化，请刷新检查后重试"
 
 [model.table_relation.invalid_relation_id]
 other = "无效的关联关系ID"
@@ -177,3 +177,18 @@ other = "同一维度层级中的层级序号和字段不能重复"
 
 [model.dimension_hierarchy.field_in_use]
 other = "逻辑字段仍被维度层级引用，不能删除"
+
+[model.table_relation.source_state_conflict]
+other = "仅草稿状态的事实表可修改维度关联；被引用维度表可保持已审批状态"
+
+[model.metric.option.grain.total]
+other = "全期"
+
+[model.metric.option.grain.month]
+other = "按月"
+
+[model.metric.option.directions.forward]
+other = "单向（主体→比较对象）"
+
+[model.metric.option.directions.both]
+other = "双向"

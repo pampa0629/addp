@@ -191,7 +191,7 @@ func consumerNamedParameters(parameters []models.QueryServiceNamedParameter) []m
 	for _, parameter := range parameters {
 		result = append(result, models.ConsumerNamedParameter{
 			Name: parameter.Name, Type: parameter.Type, Required: parameter.Required,
-			Description: parameter.Description, Default: parameter.Default,
+			Description: parameter.Description, Default: parameter.Default, Options: parameter.Options,
 		})
 	}
 	return result

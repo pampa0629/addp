@@ -318,7 +318,6 @@ START_ORCHESTRATOR_BACKEND=false
 START_ORCHESTRATOR_FRONTEND=false
 START_DEVELOP_BACKEND=false
 START_DEVELOP_FRONTEND=false
-START_DEVELOP_QUERY_WORKER=false
 START_SERVICE_BACKEND=false
 START_SERVICE_FRONTEND=false
 START_MONITOR_BACKEND=false
@@ -386,7 +385,6 @@ if [ "$START_ALL" = true ]; then
   START_ORCHESTRATOR_FRONTEND=true
   START_DEVELOP_BACKEND=true
   START_DEVELOP_FRONTEND=true
-  START_DEVELOP_QUERY_WORKER=true
   START_SERVICE_BACKEND=true
   START_SERVICE_FRONTEND=true
   START_MONITOR_BACKEND=true
@@ -469,7 +467,6 @@ else
     develop)
       START_DEVELOP_BACKEND=true
       START_DEVELOP_FRONTEND=true
-      START_DEVELOP_QUERY_WORKER=true
       ;;
     service)
       START_SERVICE_BACKEND=true
@@ -568,7 +565,6 @@ else
       START_TRANSFER_CONTINUOUS_WORKER=true
       START_ORCHESTRATOR_BACKEND=true
       START_DEVELOP_BACKEND=true
-      START_DEVELOP_QUERY_WORKER=true
       START_SERVICE_BACKEND=true
       START_MONITOR_BACKEND=true
       START_COPILOT_BACKEND=true
@@ -594,7 +590,6 @@ else
       START_ORCHESTRATOR_FRONTEND=true
       START_DEVELOP_BACKEND=true
       START_DEVELOP_FRONTEND=true
-      START_DEVELOP_QUERY_WORKER=true
       START_SERVICE_BACKEND=true
       START_SERVICE_FRONTEND=true
       START_MONITOR_BACKEND=true
@@ -781,20 +776,6 @@ build_transfer_continuous_worker() {
         return 1
     }
     echo "  ✓ addp-transfer-continuous-worker 编译完成"
-}
-
-build_develop_query_worker() {
-    local binary_path=".dev-bins/addp-develop-query-worker"
-    if addp_go_build_is_current "develop/backend" "$binary_path" ./cmd/query-worker; then
-        echo "  ✓ addp-develop-query-worker 已是最新"
-        return 0
-    fi
-    echo "  🔨 编译 addp-develop-query-worker..."
-    addp_atomic_go_build "develop-query-worker" "develop/backend" "$binary_path" ./cmd/query-worker || {
-        echo "  ✗ 编译失败: develop query worker"
-        return 1
-    }
-    echo "  ✓ addp-develop-query-worker 编译完成"
 }
 
 # 编译 Gateway 二进制
@@ -1112,11 +1093,6 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
     BUILD_PIDS+=($!)
   fi
 
-  if [ "$START_DEVELOP_QUERY_WORKER" = true ]; then
-    build_develop_query_worker &
-    BUILD_PIDS+=($!)
-  fi
-
   # 等待所有编译完成；任何一个构建失败都禁止进入服务启动阶段。
   if ! addp_wait_for_parallel_builds "${BUILD_PIDS[@]}"; then
     echo -e "${RED}✗ 一个或多个后端服务编译失败，已终止启动${NC}"
@@ -1367,16 +1343,6 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
       echo $TRANSFER_CONTINUOUS_WORKER_PID > .dev-pids/transfer-continuous-worker.pid
     else
       TRANSFER_CONTINUOUS_WORKER_PID=$(cat .dev-pids/transfer-continuous-worker.pid 2>/dev/null)
-    fi
-  fi
-
-  if [ "$START_DEVELOP_QUERY_WORKER" = true ]; then
-    if check_service_running "develop-query-worker" ""; then
-      .dev-bins/addp-develop-query-worker > logs/develop-query-worker.log 2>&1 &
-      DEVELOP_QUERY_WORKER_PID=$!
-      echo $DEVELOP_QUERY_WORKER_PID > .dev-pids/develop-query-worker.pid
-    else
-      DEVELOP_QUERY_WORKER_PID=$(cat .dev-pids/develop-query-worker.pid 2>/dev/null)
     fi
   fi
 
@@ -1651,7 +1617,6 @@ echo "  Meta Worker:        PID $META_WORKER_PID"
 echo "  Quality Worker:     PID $QUALITY_WORKER_PID"
 echo "  Transfer Bounded Worker: PID $TRANSFER_BOUNDED_WORKER_PID"
 echo "  Transfer Continuous Worker: PID $TRANSFER_CONTINUOUS_WORKER_PID"
-echo "  Develop Query Worker: PID $DEVELOP_QUERY_WORKER_PID"
 echo ""
 
 # DuckDB Runtime 必须在 System 和 Meta 就绪后启动。扩展只在启动准备阶段
@@ -3079,7 +3044,6 @@ echo "  Meta Worker:          $META_WORKER_PID"
 echo "  Quality Worker:       $QUALITY_WORKER_PID"
 echo "  Transfer Bounded Worker: $TRANSFER_BOUNDED_WORKER_PID"
 echo "  Transfer Continuous Worker: $TRANSFER_CONTINUOUS_WORKER_PID"
-echo "  Develop Query Worker: $DEVELOP_QUERY_WORKER_PID"
 echo ""
 echo "日志文件:"
 echo "  System:   logs/system-backend.log"
@@ -3112,7 +3076,6 @@ echo "  Transfer Bounded Worker: logs/transfer-bounded-worker.log"
 echo "  Transfer Continuous Worker: logs/transfer-continuous-worker.log"
 echo "  Meta Worker: logs/meta-worker.log"
 echo "  Quality Worker: logs/quality-worker.log"
-echo "  Develop Query Worker: logs/develop-query-worker.log"
 echo "  Meta FE:  logs/meta-frontend.log"
 echo "  Transfer FE:  logs/transfer-frontend.log"
 echo "  Develop FE:  logs/develop-frontend.log"

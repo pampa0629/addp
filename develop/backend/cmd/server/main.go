@@ -3,8 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
-	commonExecution "github.com/addp/common/execution"
 	"log"
+	"log/slog"
 	"net"
 	"os"
 	"os/signal"
@@ -17,14 +17,18 @@ import (
 	"github.com/addp/common/dataprotection/projectionstore"
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/events"
+	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/exportartifact"
 	"github.com/addp/common/modulelifecycle"
+	commonRuntimeHealth "github.com/addp/common/runtimehealth"
 	"github.com/addp/develop/backend/internal/api"
 	developauthorization "github.com/addp/develop/backend/internal/authorization"
 	"github.com/addp/develop/backend/internal/config"
 	developprotection "github.com/addp/develop/backend/internal/protection"
 	"github.com/addp/develop/backend/internal/repository"
 	"github.com/addp/develop/backend/internal/service"
+	"github.com/addp/develop/backend/internal/worker"
+	"github.com/google/uuid"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/redis/go-redis/v9"
@@ -139,6 +143,11 @@ func main() {
 	// 8. DevExecutor 统一执行器（执行前复用正式工作流校验）
 	devExecutor := service.NewDevExecutor(devTaskRepo, taskExecutionRepo, workflowEngine, operatorDiscovery, metaClient, sqlEngine, federatedQueryService, notebookExecutionService, cfg.QueryResultLimit)
 	log.Printf("✅ DevExecutor 初始化完成（使用统一执行表）")
+	queryExecutionRepo := repository.NewQueryExecutionRepository(db)
+	queryExecutionService, err := service.NewQueryExecutionService(devExecutor, queryExecutionRepo)
+	if err != nil {
+		log.Fatalf("Query Execution Service 初始化失败: %v", err)
+	}
 	toolApprovalService := service.NewToolApprovalService(db, devExecutor)
 	transferClient := commonClient.NewTransferClient(cfg.TransferServiceURL, serviceTokenSource)
 	minioConfig := commonConfig.LoadBuiltinMinIOConfig()
@@ -186,6 +195,38 @@ func main() {
 	serviceURL := commonConfig.BuildServiceURL(serviceHost, cfg.ServerAddr)
 	runtimeContext, stopRuntime := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopRuntime()
+	hostname, _ := os.Hostname()
+	querySupervisorInstanceID := fmt.Sprintf("%s-%d-%s", hostname, os.Getpid(), uuid.NewString())
+	querySupervisor, err := worker.NewQueryExecutionSupervisor(
+		queryExecutionRepo,
+		queryExecutionService,
+		worker.QueryExecutionSupervisorConfig{
+			InstanceID:           querySupervisorInstanceID,
+			Concurrency:          cfg.QueryConcurrency,
+			PerEngineConcurrency: cfg.QueryPerEngineConcurrency,
+			LeaseDuration:        cfg.QueryLeaseDuration,
+			HeartbeatInterval:    cfg.QueryHeartbeatInterval, ClaimInterval: cfg.QueryClaimInterval,
+			IdleMaxInterval: cfg.QueryIdleMaxInterval,
+		},
+		nil,
+	)
+	if err != nil {
+		log.Fatalf("Query Execution Supervisor 配置无效: %v", err)
+	}
+	querySupervisorReporter, err := commonRuntimeHealth.NewReporter(
+		commonRuntimeHealth.NewRepository(db),
+		commonRuntimeHealth.ReporterConfig{
+			InstanceID: querySupervisorInstanceID, Module: commonExecution.ModuleDevelop,
+			Role: commonRuntimeHealth.RoleExecutionSupervisor, RuntimeName: "query",
+			Capacity: cfg.QueryConcurrency, Interval: commonRuntimeHealth.DefaultInterval,
+			TTL: commonRuntimeHealth.DefaultTTL, ActiveCount: querySupervisor.ActiveCount,
+			Logger: slog.Default(),
+		},
+	)
+	if err != nil {
+		log.Fatalf("Query Execution Supervisor 心跳配置无效: %v", err)
+	}
+	devExecutor.SetQueryExecutionNotifier(querySupervisor.Notify)
 	projectionstore.NewRunner(
 		protectionStore, securityClient, systemServiceClient, 30*time.Second,
 		developprotection.NewExecutionBarrier(db, protectionGate, notebookHandler),
@@ -210,6 +251,12 @@ func main() {
 		lifecycleController.AttachRegistration(registration)
 		modulelifecycle.CancelRuntimeOnFatal(registration, stopRuntime)
 	}
+	querySupervisorDone := make(chan struct{})
+	go querySupervisorReporter.Run(runtimeContext)
+	go func() {
+		defer close(querySupervisorDone)
+		querySupervisor.Run(runtimeContext, func() bool { return registration != nil && registration.IsRegistered() })
+	}()
 
 	// 启动服务器（非阻塞）
 	log.Printf("🎉 Develop Service is running on %s", addr)
@@ -228,6 +275,7 @@ func main() {
 	if registration != nil {
 		<-registration.Done()
 	}
+	<-querySupervisorDone
 	sessionShutdownContext, cancelSessionShutdown := context.WithTimeout(context.Background(), 20*time.Second)
 	notebookHandler.ShutdownSessions(sessionShutdownContext)
 	cancelSessionShutdown()

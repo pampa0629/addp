@@ -455,5 +455,11 @@
     "typeDatabase": "数据库",
     "typeTable": "数据表",
     "typeView": "视图"
+  },
+  "unsavedChanges": {
+    "title": "有未保存的修改",
+    "message": "离开后将丢失尚未保存的修改。确定离开吗？",
+    "leave": "放弃修改并离开",
+    "stay": "继续编辑"
   }
 }

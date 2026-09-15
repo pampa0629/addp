@@ -81,6 +81,8 @@ type MetaLineageServiceDependency struct {
 }
 
 type MetaLineageServicePublication struct {
+	ServiceName       string                         `json:"service_name"`
+	ServiceUpdatedAt  time.Time                      `json:"service_updated_at"`
 	ServiceID         uint                           `json:"service_id"`
 	PublishedRevision string                         `json:"published_revision"`
 	DependencyHash    string                         `json:"dependency_hash,omitempty"`

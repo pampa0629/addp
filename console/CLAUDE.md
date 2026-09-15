@@ -48,3 +48,5 @@ cd console/frontend && npm run build
 - `common-frontend/CLAUDE.md`
 - `common-frontend/docs/addp前端风格设计规范.md`
 - `docs/guide/addp部署和开发步骤.md`
+
+Console 通过共享 `useConsoleUnsavedChangesGuard` 拦截活动 iframe 有未保存修改时的菜单、跨模块及历史导航。模块内部已完成确认的同步导航不重复确认；桥接返回取消结果。`make test-console-frontend` 包含确定性测试、离页与认证浏览器回归及构建，Platform CI 同步安装 Chromium。

@@ -52,6 +52,14 @@
     "granularities": {
       "item": "数据项级",
       "field": "字段级"
-    }
+    },
+    "depth": "展示层数",
+    "layers": "{count} 层",
+    "truncated": "已达到显示上限，请减少层数查看。",
+    "expand": {
+      "upstream": "上游 +{count}",
+      "downstream": "下游 +{count}"
+    },
+    "viewExecution": "查看来源执行"
   }
 }

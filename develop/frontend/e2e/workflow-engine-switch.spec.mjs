@@ -1083,3 +1083,38 @@ async function expectDialogWithinViewport(page, dialog) {
   expect(box.y + box.height).toBeLessThanOrEqual(viewport.height)
   expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false)
 }
+
+test('workflow editor uses shared protection and clears it after saving', async ({ page }) => {
+  await installMockBackend(page)
+  await openSavedWorkflow(page)
+  await page.locator('#workflow-dag-container').evaluate(el => {
+    const graph = el.__vueParentComponent.setupState.graph
+    const node = graph.getNodes()[0]
+    graph.updateItem(node, { x: node.getModel().x + 70 })
+    graph.emit('node:dragend', { item: node })
+  })
+  await page.locator('.workflow-editor-page').evaluate(el => { void el.__vueParentComponent.proxy.$router.push('/tasks') })
+  const dialog = page.getByRole('dialog', { name: '有未保存的修改', exact: true })
+  await dialog.getByRole('button', { name: '继续编辑' }).click()
+  await expect(dialog).toHaveCount(0)
+  await expect(page).toHaveURL(/\/workflow\?action=edit&id=42$/)
+  await primarySaveButton(page).click()
+  await expect(page.locator('.el-message').filter({ hasText: '保存成功' })).toBeVisible()
+  await page.locator('.workflow-editor-page').evaluate(el => { void el.__vueParentComponent.proxy.$router.push('/tasks') })
+  await expect(page).toHaveURL(/\/tasks$/)
+  await expect(dialog).toHaveCount(0)
+})
+
+test('workflow viewport navigation does not count as an unsaved edit', async ({ page }) => {
+  await installMockBackend(page)
+  await openSavedWorkflow(page)
+  await page.locator('#workflow-dag-container').evaluate(el => {
+    const graph = el.__vueParentComponent.setupState.graph
+    graph.zoomTo(0.8)
+    graph.translate(10, 20)
+    graph.emit('canvas:dragend', {})
+  })
+  await page.locator('.workflow-editor-page').evaluate(el => { void el.__vueParentComponent.proxy.$router.push('/tasks') })
+  await expect(page).toHaveURL(/\/tasks$/)
+  await expect(page.getByRole('dialog', { name: '有未保存的修改', exact: true })).toHaveCount(0)
+})

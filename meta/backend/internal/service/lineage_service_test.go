@@ -3,6 +3,9 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"reflect"
+	"sort"
 	"testing"
 	"time"
 
@@ -161,7 +164,7 @@ func TestRecordServicePublicationIsIdempotentAndReturnsEvidence(t *testing.T) {
 	svc := NewLineageService(db, lineageTestEngineCatalog{})
 	source := createLineageItem(t, db, 7, "source", "fp-source")
 	request := models.RecordServicePublicationRequest{
-		ServiceID: 19, PublishedRevision: "revision-1", DependencyHash: "revision-1",
+		ServiceID: 19, ServiceName: "人员指标服务", ServiceUpdatedAt: time.Now().UTC(), PublishedRevision: "revision-1", DependencyHash: "revision-1",
 		Dependencies: []models.LineageServiceDependencyInput{{SourceItemID: source.ID, DependencyKind: "table"}},
 	}
 	if err := svc.RecordServicePublication(context.Background(), 7, request); err != nil {
@@ -211,7 +214,7 @@ func openLineageTestDB(t *testing.T) *gorm.DB {
 			created_at DATETIME, updated_at DATETIME)`,
 		`CREATE TABLE meta.lineage_service_dependencies (
 			id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, source_item_id INTEGER NOT NULL,
-			service_id INTEGER NOT NULL, published_revision TEXT NOT NULL, dependency_hash TEXT,
+			service_id INTEGER NOT NULL, service_name TEXT NOT NULL, service_updated_at DATETIME, published_revision TEXT NOT NULL, dependency_hash TEXT,
 			dependency_kind TEXT NOT NULL, granularity TEXT NOT NULL, dependency_fields JSON,
 			status TEXT NOT NULL, first_observed_at DATETIME NOT NULL, last_observed_at DATETIME NOT NULL,
 			closed_at DATETIME, created_at DATETIME, updated_at DATETIME)`,
@@ -263,5 +266,204 @@ func insertLineageExecution(t *testing.T, db *gorm.DB, executionID string, tenan
 		VALUES (?, ?, 'transfer', 'sync', 'transfer', 'success', 100, 'manual', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
 		tenantID, executionID, string(payload)).Error; err != nil {
 		t.Fatalf("insert execution: %v", err)
+	}
+}
+
+func TestLineageGraphFollowsOnlyDirectedPaths(t *testing.T) {
+	db := openLineageTestDB(t)
+	svc := NewLineageService(db, lineageTestEngineCatalog{})
+	items := map[string]models.MetaItem{}
+	for _, name := range []string{"ancestor", "input", "root", "output", "descendant", "sibling", "coinput", "deleted", "hidden"} {
+		items[name] = createLineageItem(t, db, 7, name, "fp-"+name)
+	}
+	now := time.Now().UTC()
+	for _, pair := range [][2]string{{"ancestor", "input"}, {"input", "root"}, {"root", "output"}, {"output", "descendant"}, {"input", "sibling"}, {"coinput", "output"}, {"hidden", "deleted"}, {"deleted", "root"}} {
+		r := models.LineageItemRelation{TenantID: 7, SourceItemID: items[pair[0]].ID, TargetItemID: items[pair[1]].ID, RelationKind: "derive", Granularity: "item", Status: "active", FirstObservedAt: now, LastObservedAt: now}
+		if err := db.Create(&r).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	deleted := items["deleted"]
+	if err := db.Delete(&deleted).Error; err != nil {
+		t.Fatal(err)
+	}
+	// Even malformed cross-tenant relation rows must not bridge tenant boundaries.
+	foreign := models.LineageItemRelation{TenantID: 8, SourceItemID: items["hidden"].ID, TargetItemID: items["root"].ID, RelationKind: "derive", Granularity: "item", Status: "active"}
+	if err := db.Create(&foreign).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"input", "root", "output"} {
+		if err := svc.RecordServicePublication(context.Background(), 7, models.RecordServicePublicationRequest{ServiceID: items[name].ID, ServiceName: "service-" + name, ServiceUpdatedAt: now, PublishedRevision: "r1", Dependencies: []models.LineageServiceDependencyInput{{SourceItemID: items[name].ID, DependencyKind: "table"}}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	root := items["root"]
+	for _, tt := range []struct {
+		direction string
+		depth     int
+		names     []string
+		edgeCount int
+	}{
+		{"both", 0, []string{"root"}, 0},
+		{"both", 1, []string{"input", "output", "root", "service-root"}, 3},
+		{"both", 2, []string{"ancestor", "descendant", "input", "output", "root", "service-output", "service-root"}, 6},
+		{"upstream", 2, []string{"ancestor", "input", "root"}, 2},
+		{"downstream", 2, []string{"descendant", "output", "root", "service-output", "service-root"}, 4},
+	} {
+		t.Run(fmt.Sprintf("%s-%d", tt.direction, tt.depth), func(t *testing.T) {
+			graph, err := svc.GetGraph(context.Background(), 7, models.LineageGraphRequest{SubjectKind: "data_item", ItemID: &root.ID, Direction: tt.direction, Depth: tt.depth, Limit: 50})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var names []string
+			for _, node := range graph.Nodes {
+				if node.ItemID != nil {
+					names = append(names, node.Name)
+				} else {
+					for name, item := range items {
+						if item.ID == *node.ServiceID {
+							names = append(names, "service-"+name)
+						}
+					}
+				}
+			}
+			sort.Strings(names)
+			if !reflect.DeepEqual(names, tt.names) || len(graph.Edges) != tt.edgeCount {
+				t.Fatalf("nodes=%v edges=%d; want %v / %d", names, len(graph.Edges), tt.names, tt.edgeCount)
+			}
+		})
+	}
+	for _, depth := range []int{0, 1, 2} {
+		graph, err := svc.GetGraph(context.Background(), 7, models.LineageGraphRequest{SubjectKind: "published_service", ServiceID: &root.ID, Revision: "r1", Direction: "both", Depth: depth, Limit: 50})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(graph.Nodes) != depth+1 || len(graph.Edges) != depth {
+			t.Fatalf("service depth %d: %#v", depth, graph)
+		}
+	}
+	// A cycle terminates; limits keep the root and a connected, closed graph.
+	cycle := models.LineageItemRelation{TenantID: 7, SourceItemID: root.ID, TargetItemID: items["input"].ID, RelationKind: "derive", Granularity: "item", Status: "active", FirstObservedAt: now, LastObservedAt: now}
+	if err := db.Create(&cycle).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, limit := range []int{1, 2, 3, 50} {
+		graph, err := svc.GetGraph(context.Background(), 7, models.LineageGraphRequest{SubjectKind: "data_item", ItemID: &root.ID, Direction: "both", Depth: 20, Limit: limit})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(graph.Nodes) > limit || len(graph.Edges) > limit || *graph.Subject.ItemID != root.ID {
+			t.Fatalf("limit %d: %#v", limit, graph)
+		}
+		if limit < 4 && !graph.Truncated {
+			t.Fatal("expected truncation")
+		}
+		connected := map[string]bool{lineageGraphNodeKey(graph.Subject): true}
+		for _, edge := range graph.Edges {
+			source, target := lineageGraphNodeKey(edge.Source), lineageGraphNodeKey(edge.Target)
+			if !connected[source] && !connected[target] {
+				t.Fatal("disconnected edge")
+			}
+			connected[source], connected[target] = true, true
+		}
+		if len(connected) != len(graph.Nodes) {
+			t.Fatal("orphan nodes")
+		}
+	}
+}
+
+func TestLineageExpansionKeepsRootDirectionAndCountsHiddenNeighbours(t *testing.T) {
+	db := openLineageTestDB(t)
+	svc := NewLineageService(db, lineageTestEngineCatalog{})
+	items := make([]models.MetaItem, 8)
+	for i := range items {
+		items[i] = createLineageItem(t, db, 7, fmt.Sprintf("n%d", i), fmt.Sprintf("fp%d", i))
+	}
+	now := time.Now().UTC()
+	// 0 -> 1 -> 2(root) -> 3 -> 4; 1 -> 5 is a sibling; 6 -> 3 a coinput; 7 -> 0.
+	for _, pair := range [][2]int{{0, 1}, {1, 2}, {2, 3}, {3, 4}, {1, 5}, {6, 3}, {7, 0}} {
+		if err := db.Create(&models.LineageItemRelation{TenantID: 7, SourceItemID: items[pair[0]].ID, TargetItemID: items[pair[1]].ID, RelationKind: "derive", Granularity: "item", Status: "active", FirstObservedAt: now, LastObservedAt: now}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	req := models.LineageGraphRequest{SubjectKind: "data_item", ItemID: &items[2].ID, Direction: "both", Depth: 1, Limit: 50}
+	graph, err := svc.GetGraph(context.Background(), 7, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, node := range graph.Nodes {
+		switch *node.ItemID {
+		case items[1].ID:
+			if node.HiddenUpstreamCount != 1 || node.HiddenDownstreamCount != 0 {
+				t.Fatalf("input counts = %+v", node)
+			}
+		case items[3].ID:
+			if node.HiddenUpstreamCount != 0 || node.HiddenDownstreamCount != 1 {
+				t.Fatalf("output counts = %+v", node)
+			}
+		}
+	}
+	req.ExpandUpstream = []uint{items[1].ID, items[3].ID} // output cannot become an upstream root
+	req.ExpandDownstream = []uint{items[1].ID}            // input's sibling must stay hidden
+	graph, err = svc.GetGraph(context.Background(), 7, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(graph.Nodes) != 4 || *graph.Subject.ItemID != items[2].ID {
+		t.Fatalf("expanded graph = %+v", graph)
+	}
+	for _, node := range graph.Nodes {
+		if *node.ItemID == items[0].ID && node.HiddenUpstreamCount != 1 {
+			t.Fatalf("next layer count = %+v", node)
+		}
+		if *node.ItemID == items[4].ID || *node.ItemID == items[5].ID || *node.ItemID == items[6].ID || *node.ItemID == items[7].ID {
+			t.Fatalf("unexpected branch = %+v", node)
+		}
+	}
+	req.ExpandUpstream = append(req.ExpandUpstream, items[0].ID)
+	graph, err = svc.GetGraph(context.Background(), 7, req)
+	if err != nil || len(graph.Nodes) != 5 {
+		t.Fatalf("second expansion = %+v, %v", graph, err)
+	}
+}
+
+func TestServicePublicationDisplaysCurrentNameAndRejectsStaleReplay(t *testing.T) {
+	db := openLineageTestDB(t)
+	svc := NewLineageService(db, lineageTestEngineCatalog{})
+	source := createLineageItem(t, db, 7, "source", "fp-source")
+	first := models.RecordServicePublicationRequest{ServiceID: 24, ServiceName: "旧名称", ServiceUpdatedAt: time.Now().UTC().Add(-time.Hour), PublishedRevision: "v1", Dependencies: []models.LineageServiceDependencyInput{{SourceItemID: source.ID, DependencyKind: "table"}}}
+	if err := svc.RecordServicePublication(context.Background(), 7, first); err != nil {
+		t.Fatal(err)
+	}
+	latest := first
+	latest.ServiceName = "人员指标查询"
+	latest.ServiceUpdatedAt = first.ServiceUpdatedAt.Add(time.Minute)
+	latest.PublishedRevision = "v2"
+	for _, req := range []models.RecordServicePublicationRequest{latest, first, latest} {
+		if err := svc.RecordServicePublication(context.Background(), 7, req); err != nil {
+			t.Fatal(err)
+		}
+	}
+	graph, err := svc.GetGraph(context.Background(), 7, models.LineageGraphRequest{SubjectKind: "data_item", ItemID: &source.ID, Direction: "downstream", Depth: 1, Limit: 20})
+	if err != nil || len(graph.Edges) != 1 || graph.Edges[0].Target.Name != "人员指标查询" || graph.Edges[0].Target.PublishedRevision != "v2" {
+		t.Fatalf("current service = %+v %v", graph, err)
+	}
+	var observations int64
+	db.Model(&models.LineageObservation{}).Count(&observations)
+	if observations != 2 {
+		t.Fatalf("history count = %d", observations)
+	}
+	latest.Dependencies = nil
+	latest.ServiceUpdatedAt = latest.ServiceUpdatedAt.Add(time.Minute)
+	if err := svc.RecordServicePublication(context.Background(), 7, latest); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.RecordServicePublication(context.Background(), 7, first); err != nil {
+		t.Fatal(err)
+	}
+	var active int64
+	db.Model(&models.LineageServiceDependency{}).Where("status = 'active'").Count(&active)
+	if active != 0 {
+		t.Fatalf("inactive replay restored %d dependencies", active)
 	}
 }

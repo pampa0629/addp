@@ -11,6 +11,7 @@ import (
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	engineselection "github.com/addp/common/engine/selection"
+	"github.com/addp/common/logger"
 	commonquery "github.com/addp/common/query"
 	"github.com/addp/common/resourcetree"
 	"github.com/addp/service/internal/models"
@@ -18,6 +19,7 @@ import (
 )
 
 type QueryServiceService struct {
+	modelClient  *client.ModelClient
 	repo         *repository.QueryServiceRepository
 	systemClient *client.SystemClient
 	metaClient   *client.MetaClient
@@ -41,8 +43,14 @@ func NewQueryServiceService(repo *repository.QueryServiceRepository, systemClien
 	}
 }
 
+func (s *QueryServiceService) SetModelClient(c *client.ModelClient) { s.modelClient = c }
+
 // CreateService 创建新的查询服务
 func (s *QueryServiceService) CreateService(ctx context.Context, req *models.CreateQueryServiceRequest, tenantID uint, createdBy uint) (*models.QueryServiceDTO, error) {
+	metricSnapshot, metricErr := s.resolveMetricSource(ctx, req, tenantID)
+	if metricErr != nil {
+		return nil, metricErr
+	}
 	// 1. 验证配置类型
 	if req.ConfigType != "table" && req.ConfigType != "sql" {
 		return nil, errors.New("invalid config_type: must be 'table' or 'sql'")
@@ -153,6 +161,7 @@ func (s *QueryServiceService) CreateService(ctx context.Context, req *models.Cre
 	if err := validateQueryFieldPolicy(dataConfig, snapshot.Table); err != nil {
 		return nil, err
 	}
+	snapshot.MetricSource = metricSnapshot
 	snapshot.DependencyHash = queryServiceDependencyHash(snapshot)
 	dataConfig["stable_key"] = stableKey
 	if req.ConfigType == "table" {
@@ -216,7 +225,7 @@ func (s *QueryServiceService) CreateService(ctx context.Context, req *models.Cre
 	if err := s.repo.Create(service); err != nil {
 		return nil, fmt.Errorf("create service failed: %w", err)
 	}
-	if err := s.recordLineagePublication(service); err != nil {
+	if err := s.recordLineagePublication(context.Background(), service); err != nil {
 		if cleanupErr := s.repo.Delete(service.ID); cleanupErr != nil {
 			return nil, fmt.Errorf("record service lineage publication failed: %v; remove failed service %d: %w", err, service.ID, cleanupErr)
 		}
@@ -945,7 +954,7 @@ func (s *QueryServiceService) RefreshSourceSnapshot(id, tenantID uint) (*models.
 	if err != nil {
 		return nil, fmt.Errorf("get refreshed service failed: %w", err)
 	}
-	if err := s.recordLineagePublication(updated); err != nil {
+	if err := s.recordLineagePublication(context.Background(), updated); err != nil {
 		return nil, fmt.Errorf("record refreshed service lineage publication failed: %w", err)
 	}
 	return s.convertToDTO(updated), nil
@@ -977,7 +986,7 @@ func dependencyHashOf(snapshot *models.QueryServiceDependencySnapshot) string {
 	return snapshot.DependencyHash
 }
 
-func (s *QueryServiceService) recordLineagePublication(service *models.QueryService) error {
+func (s *QueryServiceService) recordLineagePublication(ctx context.Context, service *models.QueryService) error {
 	if s == nil || s.metaClient == nil || service == nil {
 		return nil
 	}
@@ -989,16 +998,21 @@ func (s *QueryServiceService) recordLineagePublication(service *models.QueryServ
 	if strings.TrimSpace(revision) == "" {
 		return nil
 	}
-	return s.metaClient.WithTenantID(service.TenantID).RecordServicePublication(context.Background(), client.MetaLineageServicePublication{
-		ServiceID: service.ID, PublishedRevision: revision, DependencyHash: snapshot.DependencyHash,
-		Dependencies: []client.MetaLineageServiceDependency{{SourceItemID: snapshot.Source.ItemID, DependencyKind: service.ConfigType, Granularity: "item"}},
+	dependencies := []client.MetaLineageServiceDependency{}
+	if service.Status == "active" {
+		dependencies = append(dependencies, client.MetaLineageServiceDependency{SourceItemID: snapshot.Source.ItemID, DependencyKind: service.ConfigType, Granularity: "item"})
+	}
+	return s.metaClient.WithTenantID(service.TenantID).RecordServicePublication(ctx, client.MetaLineageServicePublication{
+		ServiceID: service.ID, ServiceName: service.Title, ServiceUpdatedAt: service.UpdatedAt, PublishedRevision: revision, DependencyHash: snapshot.DependencyHash,
+		Dependencies: dependencies,
 	})
 }
 
 // convertToDTO 将服务模型转换为 DTO
 func (s *QueryServiceService) convertToDTO(service *models.QueryService) *models.QueryServiceDTO {
 	dto := &models.QueryServiceDTO{
-		ID: service.ID,
+		ServiceVersion: QueryServiceVersion(service),
+		ID:             service.ID,
 
 		TenantID:    service.TenantID,
 		ServiceName: service.ServiceName,
@@ -1055,4 +1069,44 @@ func (s *QueryServiceService) buildEndpoints(service *models.QueryService) map[s
 	}
 
 	return endpoints
+}
+
+// RunLineagePublisher replays owner facts after startup and retries failed delivery.
+// Meta owns the idempotent projection; Service owns names and published revisions.
+func (s *QueryServiceService) RunLineagePublisher(ctx context.Context, interval time.Duration) {
+	if s.metaClient == nil {
+		return
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		if err := s.replayLineagePublications(ctx); err != nil && ctx.Err() == nil {
+			logger.L().Warn("Service lineage publication replay failed", "error", err)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+func (s *QueryServiceService) replayLineagePublications(ctx context.Context) error {
+	var afterID uint
+	var failures []error
+	for {
+		rows, err := s.repo.ListLineagePublications(ctx, afterID, 100)
+		if err != nil {
+			return errors.Join(append(failures, err)...)
+		}
+		for i := range rows {
+			if err := s.recordLineagePublication(ctx, &rows[i]); err != nil {
+				failures = append(failures, fmt.Errorf("service %d: %w", rows[i].ID, err))
+			}
+			afterID = rows[i].ID
+		}
+		if len(rows) < 100 {
+			return errors.Join(failures...)
+		}
+	}
 }

@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"reflect"
 	"strings"
@@ -291,6 +292,23 @@ func TestQueryTokenRejectsTamperingAndBindsCompositeFeatureID(t *testing.T) {
 	}
 	if len(filter.And) != 2 || filter.And[0].Field != "id" || filter.And[1].Field != "name" {
 		t.Fatalf("feature filter = %#v", filter)
+	}
+}
+
+func TestFinalizeResultEncodesNoMatchesAsEmptyArray(t *testing.T) {
+	t.Parallel()
+	executor := &QueryExecutorService{}
+	plan := &compiledQueryPlan{Limit: 20, SelectedFields: []string{"id"}, ServiceVersion: "revision-1"}
+	result, err := executor.finalizeResult(testPublishedQueryService(), plan, &plugin.QueryResult{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(encoded, []byte(`"data":[]`)) || result.Page.HasMore || result.Page.NextCursor != "" {
+		t.Fatalf("empty query must return an empty array and terminal page: %s", encoded)
 	}
 }
 

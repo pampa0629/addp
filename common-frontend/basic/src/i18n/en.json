@@ -455,5 +455,11 @@
     "typeDatabase": "Database",
     "typeTable": "Table",
     "typeView": "View"
+  },
+  "unsavedChanges": {
+    "title": "Unsaved changes",
+    "message": "Leaving will discard your unsaved changes. Leave this page?",
+    "leave": "Discard and leave",
+    "stay": "Keep editing"
   }
 }

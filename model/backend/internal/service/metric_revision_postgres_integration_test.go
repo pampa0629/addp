@@ -1,0 +1,153 @@
+package service
+
+import (
+	"context"
+	"encoding/json"
+	commonclient "github.com/addp/common/client"
+	"github.com/addp/model/internal/models"
+	"github.com/addp/model/internal/repository"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+)
+
+func TestPostgresMetricRevisionLifecycleIsIndependentAndImmutable(t *testing.T) {
+	tx, tenant := beginModelAggregatePostgresTransaction(t)
+	ctx := context.Background()
+	contract, bindings := metricGoldenContract()
+	if err := tx.Create(&models.DWLayer{TenantID: tenant, LayerCode: "metric_test", LayerName: "Metric test", Version: 1}).Error; err != nil {
+		t.Fatal(err)
+	}
+	tables := map[int64]int64{}
+	fields := map[int64]int64{}
+	for _, entry := range []struct {
+		old    int64
+		source metricPlanSource
+		kind   string
+	}{{1, bindings.Fact, "fact"}, {2, bindings.Relations[10].Target, "dimension"}, {3, bindings.Relations[11].Target, "dimension"}} {
+		table := models.LogicalTable{TenantID: tenant, Name: entry.source.Table, Code: entry.source.Table, TableType: entry.kind, Layer: "metric_test", Status: "approved", Version: 7, CreatedBy: 1, Materialization: models.JSONB{"target_parent_locator": "addp://engine/2/path/model?type=schema", "target_name": entry.source.Table}}
+		if err := tx.Create(&table).Error; err != nil {
+			t.Fatal(err)
+		}
+		tables[entry.old] = table.ID
+		for old, field := range entry.source.Fields {
+			field.ID = 0
+			field.TableID = table.ID
+			field.Name = field.ColumnName
+			if err := tx.Create(&field).Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := tx.Model(&field).Update("nullable", false).Error; err != nil {
+				t.Fatal(err)
+			}
+			fields[old] = field.ID
+		}
+	}
+	rels := map[int64]int64{}
+	for _, old := range []int64{10, 11} {
+		r := bindings.Relations[old]
+		target := int64(2)
+		if old == 11 {
+			target = 3
+		}
+		relation := models.TableRelation{TenantID: tenant, SourceTable: tables[1], SourceField: fields[r.SourceField], TargetTable: tables[target], TargetField: fields[r.TargetField], RelationType: "fk"}
+		if err := tx.Create(&relation).Error; err != nil {
+			t.Fatal(err)
+		}
+		rels[old] = relation.ID
+	}
+	contract.Subject.FieldID = fields[1]
+	contract.SubjectRelationID = rels[10]
+	contract.Distinct.FieldID = fields[2]
+	contract.Time.FieldID = fields[6]
+	contract.Time.RelationID = rels[11]
+	contract.Filters[0].Field.FieldID = fields[3]
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(commonclient.PublishedMetricDefinitionRevision{ID: 9, TenantID: tenant, RevisionID: 19, RevisionNo: 1, Name: "Leader count", Status: "published", LifecycleState: "active"})
+	}))
+	defer server.Close()
+	svc := NewMetricImplementationService(repository.NewMetricImplementationRepository(tx), repository.NewLogicalTableRepository(tx))
+	svc.SetStandardClient(newElementRevisionSnapshotClient(server))
+	item, err := svc.Create(context.Background(), tenant, 1, &models.CreateMetricImplementationRequest{FactTableID: tables[1], MetricDefinitionID: 9, Name: "Leader count"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := &models.SaveMetricImplementationRevisionRequest{Version: item.Version, MetricDefinitionRevisionID: 19, Contract: contract}
+	item, err = svc.SaveDraft(ctx, item.ID, tenant, 1, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	draftID := item.Revisions[0].ID
+	if _, err := svc.SaveDraft(ctx, item.ID, tenant, 1, req); err == nil {
+		t.Fatal("stale update accepted")
+	}
+	item, err = svc.ChangeRevisionState(ctx, item.ID, draftID, tenant, 1, item.Version, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := svc.PublishedPlan(ctx, item.ID, draftID, tenant, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.PublishedPlan(ctx, item.ID, draftID, tenant+1, nil); err == nil {
+		t.Fatal("cross-tenant plan accepted")
+	}
+	// Descriptive changes do not invalidate a compiled dependency.
+	if err := tx.Model(&models.LogicalField{}).Where("id = ?", fields[6]).Updates(map[string]interface{}{"name": "renamed label", "description": "new help"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	after, err := svc.PublishedPlan(ctx, item.ID, draftID, tenant, nil)
+	if err != nil || after.DependencyHash != plan.DependencyHash {
+		t.Fatalf("display change invalidated plan: %v", err)
+	}
+	req.Version = item.Version
+	req.Contract.Filters[0].Value = false
+	item, err = svc.SaveDraft(ctx, item.ID, tenant, 1, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(item.Revisions) != 2 || item.Revisions[0].RevisionNo != 2 || !item.Revisions[1].Contract.Filters[0].Value {
+		t.Fatalf("published content mutated: %#v", item.Revisions)
+	}
+	after, err = svc.PublishedPlan(ctx, item.ID, draftID, tenant, nil)
+	if err != nil || after.SQL != plan.SQL {
+		t.Fatalf("draft changed publication: %v", err)
+	}
+	if err := svc.Delete(item.ID, tenant, 1, item.Version); err == nil {
+		t.Fatal("published history deleted")
+	}
+	var fact models.LogicalTable
+	if err := tx.First(&fact, tables[1]).Error; err != nil {
+		t.Fatal(err)
+	}
+	if fact.Version != 7 || fact.Status != "approved" {
+		t.Fatalf("fact changed: %#v", fact)
+	}
+	if err := tx.Model(&models.LogicalField{}).Where("id = ?", fields[6]).Update("column_name", "changed_date").Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.PublishedPlan(ctx, item.ID, draftID, tenant, nil); err == nil {
+		t.Fatal("changed physical column accepted")
+	}
+	if err := tx.Model(&models.LogicalField{}).Where("id = ?", fields[6]).Update("column_name", "event_date").Error; err != nil {
+		t.Fatal(err)
+	}
+	item, err = svc.ChangeRevisionState(ctx, item.ID, draftID, tenant, 1, item.Version, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.PublishedPlan(ctx, item.ID, draftID, tenant, nil); err == nil {
+		t.Fatal("withdrawn revision executed")
+	}
+}
+
+func metricReferenceTestClient(t *testing.T, tenant int64) *commonclient.StandardClient {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(commonclient.PublishedMetricDefinitionRevision{ID: 9, TenantID: tenant, RevisionID: 19, RevisionNo: 1, Name: "Metric", Status: "published", LifecycleState: "active"})
+	}))
+	t.Cleanup(server.Close)
+	return newElementRevisionSnapshotClient(server)
+}

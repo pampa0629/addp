@@ -145,6 +145,7 @@ func TestIAMOAuthClientCredentialsAuthContextAgainstPostgres(t *testing.T) {
 	}
 	if len(authContext.Authorization.RoleAssignments) != 1 || authContext.Authorization.RoleAssignments[0].RoleKey != "tenant.manager_runtime" ||
 		!slices.Equal(authContext.Authorization.RoleAssignments[0].Permissions, []string{
+			"audit.tenant_event.create",
 			"inference.runtime.execute",
 			"meta.catalog.read",
 			"meta.scan_task.execute",

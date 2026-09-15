@@ -142,25 +142,8 @@ func setupModelCleanupTestDB(t *testing.T) *gorm.DB {
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
-		`CREATE TABLE model.metric_implementations (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			tenant_id INTEGER NOT NULL,
-			fact_table_id INTEGER NOT NULL,
-			metric_definition_id INTEGER NOT NULL,
-			metric_definition_revision_id INTEGER NOT NULL,
-			name TEXT NOT NULL,
-			grain TEXT NOT NULL,
-			source_config TEXT NOT NULL,
-			dimension_config TEXT NOT NULL,
-			filter_config TEXT NOT NULL,
-			expression_config TEXT NOT NULL,
-			status TEXT NOT NULL,
-			note TEXT,
-			created_by INTEGER NOT NULL,
-			updated_by INTEGER,
-			updated_at DATETIME,
-			created_at DATETIME
-		)`,
+		`CREATE TABLE model.metric_implementations (id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, fact_table_id INTEGER NOT NULL, metric_definition_id INTEGER NOT NULL, name TEXT NOT NULL, note TEXT, version INTEGER NOT NULL DEFAULT 1, created_by INTEGER NOT NULL, updated_by INTEGER, created_at DATETIME, updated_at DATETIME)`,
+		`CREATE TABLE model.metric_implementation_revisions (id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, implementation_id INTEGER NOT NULL, revision_no INTEGER NOT NULL, metric_definition_revision_id INTEGER NOT NULL, contract TEXT NOT NULL, dependency_snapshot TEXT NOT NULL, dependency_hash TEXT NOT NULL, status TEXT NOT NULL, published_at DATETIME, created_at DATETIME, updated_at DATETIME)`,
 	} {
 		if err := db.Exec(ddl).Error; err != nil {
 			t.Fatalf("create cleanup test table: %v", err)
@@ -321,7 +304,7 @@ func seedModelCleanupTenantState(t *testing.T, db *gorm.DB, tenantID int64) (int
 	if err := db.Create(&tableRelation).Error; err != nil {
 		t.Fatalf("create table relation: %v", err)
 	}
-	implementation := models.MetricImplementation{TenantID: tenantID, FactTableID: factTable.ID, MetricDefinitionID: 9, MetricDefinitionRevisionID: 19, Name: "Customer Count", Grain: "customer", SourceConfig: models.JSONB{"field_ids": []int64{factField.ID}}, DimensionConfig: models.JSONB{}, FilterConfig: models.JSONB{}, ExpressionConfig: models.JSONB{"engine": "sql", "expression": "COUNT(*)"}, Status: models.MetricImplementationActive, CreatedBy: 1}
+	implementation := models.MetricImplementation{TenantID: tenantID, FactTableID: factTable.ID, MetricDefinitionID: 9, Name: "Customer Count", Version: 1, CreatedBy: 1}
 	if err := db.Create(&implementation).Error; err != nil {
 		t.Fatalf("create metric implementation: %v", err)
 	}

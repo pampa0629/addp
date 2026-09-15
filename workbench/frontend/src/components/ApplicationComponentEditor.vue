@@ -11,6 +11,8 @@
   >
     <div v-loading="loading" class="component-editor" data-testid="application-component-editor">
       <el-alert v-if="contractChanged" data-testid="contract-changed-alert" type="warning" :closable="false" :title="t('workbench.contractChanged')" />
+      <el-button v-if="contractChanged" :disabled="loading" @click="selectService()">{{ t('workbench.reconfigureContract') }}</el-button>
+      <p v-if="contractChanged">{{ t('workbench.reconfigureContractHint') }}</p>
       <div class="editor-grid">
         <el-form label-position="top" class="configuration-form">
           <el-form-item :label="t('workbench.service')">
@@ -146,18 +148,7 @@
               <el-select v-else v-model="parameter.operator" @change="syncParameterControl(parameter)">
                 <el-option v-for="operator in operatorsFor(parameter.field)" :key="operator" :label="operator" :value="operator" />
               </el-select>
-              <el-input-number v-if="parameter.controlType === 'number'" v-model="parameter.value" :controls="false" @change="resetResult" />
-              <el-switch v-else-if="parameter.controlType === 'checkbox'" v-model="parameter.value" @change="resetResult" />
-              <el-select v-else-if="parameter.controlType === 'select'" v-model="parameter.value" clearable @change="resetResult">
-                <el-option :value="true" :label="t('workbench.booleanValues.true')" />
-                <el-option :value="false" :label="t('workbench.booleanValues.false')" />
-              </el-select>
-              <el-select v-else-if="parameter.controlType === 'multiselect'" v-model="parameter.value" multiple filterable allow-create default-first-option @change="resetResult" />
-              <div v-else-if="parameter.controlType === 'bbox'" class="bbox-inputs">
-                <el-input-number v-for="position in 4" :key="position" v-model="parameter.value[position - 1]" :controls="false" @change="resetResult" />
-              </div>
-              <el-date-picker v-else-if="parameter.controlType === 'date' || parameter.controlType === 'datetime'" v-model="parameter.value" :type="parameter.controlType === 'datetime' ? 'datetime' : 'date'" :value-format="parameter.controlType === 'datetime' ? 'YYYY-MM-DDTHH:mm:ssZ' : 'YYYY-MM-DD'" @change="resetResult" />
-              <el-input v-else v-model="parameter.value" :placeholder="t('workbench.defaultValue')" @change="resetResult" />
+              <ParameterValueInput v-model="parameter.value" :control-type="parameter.controlType" :options="parameter.options || []" @update:model-value="resetResult" />
               <el-button link type="danger" :disabled="parameter.bindingKind === 'named'" @click="removeParameter(index)">{{ t('workbench.delete') }}</el-button>
             </div>
           </template>
@@ -187,6 +178,7 @@
 </template>
 
 <script setup>
+import ParameterValueInput from '../../../../common-frontend/basic/src/components/ParameterValueInput.vue'
 import { computed, onBeforeUnmount, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
@@ -593,5 +585,5 @@ function submit() {
 </script>
 
 <style scoped>
-.component-editor,.configuration-form,.preview-panel{display:flex;flex-direction:column;gap:16px}.editor-grid{display:grid;grid-template-columns:minmax(360px,5fr) minmax(480px,7fr);gap:16px}.full{width:100%}.preview-panel{min-height:520px;padding:16px;background:var(--addp-bg-primary);border:1px solid var(--addp-border-color);border-radius:8px}.preview-header,.section-header,.parameter-actions,.cursor-actions{display:flex;align-items:center;justify-content:space-between;gap:8px}.parameter-actions span,.field-presentation-header span{font-size:12px;color:var(--addp-text-secondary)}.parameter{display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr auto;gap:8px;align-items:center;padding:12px;border:1px solid var(--addp-border-color);border-radius:8px}.value-item{display:grid;grid-template-columns:minmax(140px,1fr) minmax(120px,1fr) minmax(80px,.7fr) 110px auto;gap:8px;align-items:center;padding:10px;border:1px solid var(--addp-border-color);border-radius:8px}.value-state-rules{grid-column:1/-1}.field-presentation{display:flex;flex-direction:column;gap:8px;padding:10px;border:1px solid var(--addp-border-color);border-radius:8px}.field-presentation-fields{display:grid;grid-template-columns:minmax(120px,1fr) minmax(120px,1fr) repeat(3,minmax(90px,.7fr));gap:8px;align-items:center;width:100%}.bbox-inputs{display:grid;grid-template-columns:1fr 1fr;gap:4px}.cursor-actions{justify-content:center}@media(max-width:1000px){.editor-grid{grid-template-columns:1fr}.parameter,.value-item,.field-presentation-fields{grid-template-columns:1fr 1fr}.preview-panel{min-height:360px}}
+.component-editor,.configuration-form,.preview-panel{display:flex;flex-direction:column;gap:16px}.editor-grid{display:grid;grid-template-columns:minmax(360px,5fr) minmax(480px,7fr);gap:16px}.full{width:100%}.preview-panel{min-height:520px;padding:16px;background:var(--addp-bg-primary);border:1px solid var(--addp-border-color);border-radius:8px}.preview-header,.section-header,.parameter-actions,.cursor-actions{display:flex;align-items:center;justify-content:space-between;gap:8px}.parameter-actions span,.field-presentation-header span{font-size:12px;color:var(--addp-text-secondary)}.parameter{display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr auto;gap:8px;align-items:center;padding:12px;border:1px solid var(--addp-border-color);border-radius:8px}.value-item{display:grid;grid-template-columns:minmax(140px,1fr) minmax(120px,1fr) minmax(80px,.7fr) 110px auto;gap:8px;align-items:center;padding:10px;border:1px solid var(--addp-border-color);border-radius:8px}.value-state-rules{grid-column:1/-1}.field-presentation{display:flex;flex-direction:column;gap:8px;padding:10px;border:1px solid var(--addp-border-color);border-radius:8px}.field-presentation-fields{display:grid;grid-template-columns:minmax(120px,1fr) minmax(120px,1fr) repeat(3,minmax(90px,.7fr));gap:8px;align-items:center;width:100%}.cursor-actions{justify-content:center}@media(max-width:1000px){.editor-grid{grid-template-columns:1fr}.parameter,.value-item,.field-presentation-fields{grid-template-columns:1fr 1fr}.preview-panel{min-height:360px}}
 </style>

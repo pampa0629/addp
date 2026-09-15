@@ -133,3 +133,7 @@ export { createOrchestrationAPI } from './utils/orchestrationAPI'
 export { matchesOrchestrationTask } from './utils/orchestrationRoute'
 export { default as OrchestrationExecuteButton } from './components/OrchestrationExecuteButton.vue'
 export { default as RelatedOrchestrationsDialog } from './components/RelatedOrchestrationsDialog.vue'
+
+export { useUnsavedChangesGuard, useConsoleUnsavedChangesGuard } from './composables/useUnsavedChangesGuard'
+
+export { default as ParameterValueInput } from './components/ParameterValueInput.vue'

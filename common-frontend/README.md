@@ -158,7 +158,7 @@ console.log(FormatType.SHAPEFILE) // "shapefile"
 
 ### 数据血缘组件
 
-`@addp/common-frontend/graph` 提供 `LineageViewer`、`createLineageApi` 和 `normalizeLineageGraph`，消费 Meta `GET /api/v1/meta/lineage/graph` 返回的 `{ nodes, edges }`，可在 Service、Manager、Asset 页面内嵌展示。请求函数由宿主注入，组件不处理 Token。
+`@addp/common-frontend/graph` 提供 `LineageViewer`、`createLineageApi` 和 `normalizeLineageGraph`，消费 Meta `GET /api/v1/meta/lineage/graph` 返回的 `{ nodes, edges }`，可在 Service、Manager、Asset 页面内嵌展示。请求函数由宿主注入，组件不处理 Token。`LineageViewer` 填满宿主容器，宿主须提供有界的 flex 高度；通过 `v-model:depth` 接收层数变化并重查 API，默认一层。共享组件负责交叉连线隔离、悬停/选中高亮和截断提示。
 
 ### ResourceLocator 定位符系统
 
@@ -716,3 +716,15 @@ MIT
 ### 关联流程与执行确认
 
 `RelatedOrchestrationsDialog` 接收完整任务引用集合、由宿主认证 client 创建的 `createOrchestrationAPI(client)` 和权限布尔值，展示匹配流程及其全部步骤。`OrchestrationExecuteButton` 是 Model 与 Orchestrator 唯一执行确认实现，防止重复提交并返回 execution_id；不自动重试执行请求。Model 只组合物化任务身份。匹配复用 `matchesOrchestrationTask`，不按名称猜测关联。
+
+血缘节点以 `hidden_upstream_count` / `hidden_downstream_count` 提示未显示的直接邻居；方向按钮触发 `expand`，业务页面通过现有图接口请求局部展开。节点主体查看详情，`view-execution` 由业务页面调用共享 Monitor 导航。局部展开保留原始根节点、缩放和展开节点的位置。
+
+### 未保存修改的离页保护
+
+编辑器使用 `useUnsavedChangesGuard({ router, isDirty, shouldConfirmUpdate })`，传入响应式修改判定函数与同组件业务对象切换判定。它统一处理 Vue Router 守卫、刷新关闭提醒和 iframe 状态发布；业务页面不复制确认框或 `beforeunload`。Console 使用 `useConsoleUnsavedChangesGuard` 在导航提交前保护活动 iframe，同步完成的模块导航不重复确认。状态只驻留内存，保存失败不能清除修改状态。
+
+该契约见 `docs/spec/addp前端路由与可恢复状态规范.md`。共享所有权由 `make test-common-frontend` 验证；真实 Vue Router、iframe、历史及导航桥回归由 `make test-console-frontend` 执行，Platform CI 安装 Chromium 后执行同一入口。
+
+### 服务参数输入
+
+`ParameterValueInput` 是类型化服务参数输入的唯一控件，接受 `modelValue`、`controlType`、`options` 和 `disabled`。有限选项优先按契约呈现，名称按当前语言取 `labels`，只提交 `value`。Service 与 Workbench 负责各自的显式绑定和契约校验，不重复实现控件分支。

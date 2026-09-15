@@ -2852,11 +2852,11 @@
                 "tags": [
                     "Model"
                 ],
-                "summary": "查询维度关联列表 | List dimension relations",
+                "summary": "查询维度关联或被引用关系 | List outgoing or incoming dimension relations",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "事实表ID | Fact table ID",
+                        "description": "逻辑表ID | Logical table ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -2873,7 +2873,7 @@
                         }
                     },
                     "400": {
-                        "description": "事实表 ID 或表类型无效 | Invalid fact table ID or table type",
+                        "description": "逻辑表 ID 或表类型无效 | Invalid logical table ID or table type",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
@@ -2932,7 +2932,7 @@
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_model_internal_models.CreateTableRelationRequest"
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.SaveTableRelationRequest"
                         }
                     }
                 ],
@@ -2981,6 +2981,90 @@
             }
         },
         "/logical-tables/{id}/dimension-relations/{rid}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Model"
+                ],
+                "summary": "原位更新维度关联 | Update dimension relation in place",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "事实表ID | Fact table ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "关联ID | Relation ID",
+                        "name": "rid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "完整更新请求 | Full update request",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.SaveTableRelationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "已更新的关联 | Updated relation",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.TableRelationMutationResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "表或字段类型无效 | Invalid table or field type",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Authentication required",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Permission denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "逻辑表或字段不存在 | Logical table or field not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "表状态或关联冲突 | Table state or relation conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.logical_model.update"
+                ]
+            },
             "delete": {
                 "security": [
                     {
@@ -3390,7 +3474,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "根据已审批模型创建正式表；同归属且结构一致时幂等成功，结构不一致拒绝；不执行数据加工。| Create an approved physical target, preserving existing data when ownership and structure match; reject structural drift.",
+                "description": "提交统一执行队列，根据已审批模型创建正式表；同归属且结构一致时幂等成功，结构不一致拒绝；不执行数据加工。| Enqueue creation of an approved physical target, preserving existing data when ownership and structure match; reject structural drift.",
                 "consumes": [
                     "application/json"
                 ],
@@ -3420,13 +3504,10 @@
                     }
                 ],
                 "responses": {
-                    "200": {
-                        "description": "OK",
+                    "202": {
+                        "description": "Accepted",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
+                            "$ref": "#/definitions/internal_api.materializationExecuteResponse"
                         }
                     },
                     "400": {
@@ -3553,317 +3634,6 @@
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "model.materialized_target.delete"
-                ]
-            }
-        },
-        "/logical-tables/{id}/metric-implementations": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Model"
-                ],
-                "summary": "查询事实表指标实现 | List fact table metric implementations",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "事实表 ID | Fact table ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/github_com_addp_model_internal_models.MetricImplementation"
-                            }
-                        }
-                    },
-                    "400": {
-                        "description": "请求无效 | Invalid request",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "未认证 | Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
-                        }
-                    },
-                    "403": {
-                        "description": "无权限 | Forbidden",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "事实表不存在 | Fact table not found",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "model.logical_model.read"
-                ]
-            },
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Model"
-                ],
-                "summary": "创建指标实现 | Create metric implementation",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "事实表 ID | Fact table ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "完整指标实现与父版本 | Full metric implementation and parent version",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_model_internal_models.CreateMetricImplementationRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "201": {
-                        "description": "Created",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_model_internal_models.MetricImplementationMutationResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "请求无效 | Invalid request",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "未认证 | Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
-                        }
-                    },
-                    "403": {
-                        "description": "无权限 | Forbidden",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "事实表、字段或指标定义修订不存在 | Fact table, field, or metric definition revision not found",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
-                        }
-                    },
-                    "409": {
-                        "description": "版本、状态或唯一性冲突 | Version, state, or uniqueness conflict",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "model.logical_model.update"
-                ]
-            }
-        },
-        "/logical-tables/{id}/metric-implementations/{implementation_id}": {
-            "put": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Model"
-                ],
-                "summary": "更新指标实现 | Update metric implementation",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "事实表 ID | Fact table ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "integer",
-                        "description": "指标实现 ID | Metric implementation ID",
-                        "name": "implementation_id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "完整指标实现与父版本 | Full metric implementation and parent version",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_model_internal_models.UpdateMetricImplementationRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_model_internal_models.MetricImplementationMutationResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "请求无效 | Invalid request",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "未认证 | Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
-                        }
-                    },
-                    "403": {
-                        "description": "无权限 | Forbidden",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "指标实现、字段或指标定义修订不存在 | Metric implementation, field, or metric definition revision not found",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
-                        }
-                    },
-                    "409": {
-                        "description": "版本、状态或唯一性冲突 | Version, state, or uniqueness conflict",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "model.logical_model.update"
-                ]
-            },
-            "delete": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Model"
-                ],
-                "summary": "删除指标实现 | Delete metric implementation",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "事实表 ID | Fact table ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "integer",
-                        "description": "指标实现 ID | Metric implementation ID",
-                        "name": "implementation_id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "父资源版本 | Parent resource version",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_model_internal_models.VersionRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_model_internal_models.VersionResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "请求无效 | Invalid request",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "未认证 | Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
-                        }
-                    },
-                    "403": {
-                        "description": "无权限 | Forbidden",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "指标实现或事实表不存在 | Metric implementation or fact table not found",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
-                        }
-                    },
-                    "409": {
-                        "description": "版本或状态冲突 | Version or state conflict",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "model.logical_model.update"
                 ]
             }
         },
@@ -4085,6 +3855,671 @@
                 ]
             }
         },
+        "/metric-implementations": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Model"
+                ],
+                "summary": "查询指标实现 | List metric implementations",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "来源事实表 | Source fact table",
+                        "name": "fact_table_id",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_addp_model_internal_models.MetricImplementation"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "请求无效 | Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "无权限 | Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "资源不存在 | Resource not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "版本或依赖冲突 | Version or dependency conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "依赖不可用 | Dependency unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.metric_implementation.read"
+                ]
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Model"
+                ],
+                "summary": "创建独立指标实现 | Create independent metric implementation",
+                "parameters": [
+                    {
+                        "description": "请求 | Request",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.CreateMetricImplementationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.MetricImplementation"
+                        }
+                    },
+                    "400": {
+                        "description": "请求无效 | Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "无权限 | Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "资源不存在 | Resource not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "版本或依赖冲突 | Version or dependency conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "依赖不可用 | Dependency unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.metric_implementation.create"
+                ]
+            }
+        },
+        "/metric-implementations/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Model"
+                ],
+                "summary": "读取指标实现及修订 | Read metric implementation and revisions",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "指标实现 ID | Metric implementation ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.MetricImplementation"
+                        }
+                    },
+                    "400": {
+                        "description": "请求无效 | Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "无权限 | Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "资源不存在 | Resource not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "版本或依赖冲突 | Version or dependency conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "依赖不可用 | Dependency unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.metric_implementation.read"
+                ]
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Model"
+                ],
+                "summary": "删除未发布指标实现 | Delete unpublished metric implementation",
+                "parameters": [
+                    {
+                        "description": "请求 | Request",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.MetricImplementationVersionRequest"
+                        }
+                    },
+                    {
+                        "type": "integer",
+                        "description": "指标实现 ID | Metric implementation ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "已删除 | Deleted"
+                    },
+                    "400": {
+                        "description": "请求无效 | Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "无权限 | Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "资源不存在 | Resource not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "版本或依赖冲突 | Version or dependency conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "依赖不可用 | Dependency unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.metric_implementation.delete"
+                ]
+            }
+        },
+        "/metric-implementations/{id}/draft": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Model"
+                ],
+                "summary": "保存指标实现草稿 | Save metric implementation draft",
+                "parameters": [
+                    {
+                        "description": "请求 | Request",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.SaveMetricImplementationRevisionRequest"
+                        }
+                    },
+                    {
+                        "type": "integer",
+                        "description": "指标实现 ID | Metric implementation ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.MetricImplementation"
+                        }
+                    },
+                    "400": {
+                        "description": "请求无效 | Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "无权限 | Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "资源不存在 | Resource not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "版本或依赖冲突 | Version or dependency conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "依赖不可用 | Dependency unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.metric_implementation.update"
+                ]
+            }
+        },
+        "/metric-implementations/{id}/revisions/{revision_id}/plan": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Model"
+                ],
+                "summary": "读取已发布指标计算计划 | Read published metric computation plan",
+                "parameters": [
+                    {
+                        "description": "计划参数 | Plan parameters",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.MetricPlanRequest"
+                        }
+                    },
+                    {
+                        "type": "integer",
+                        "description": "指标实现 ID | Metric implementation ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "修订 ID | Revision ID",
+                        "name": "revision_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_service.MetricCompiledPlan"
+                        }
+                    },
+                    "400": {
+                        "description": "请求无效 | Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "无权限 | Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "资源不存在 | Resource not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "版本或依赖冲突 | Version or dependency conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "依赖不可用 | Dependency unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.metric_implementation.read"
+                ]
+            }
+        },
+        "/metric-implementations/{id}/revisions/{revision_id}/publish": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Model"
+                ],
+                "summary": "发布指标实现修订 | Publish metric implementation revision",
+                "parameters": [
+                    {
+                        "description": "请求 | Request",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.MetricImplementationVersionRequest"
+                        }
+                    },
+                    {
+                        "type": "integer",
+                        "description": "指标实现 ID | Metric implementation ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "修订 ID | Revision ID",
+                        "name": "revision_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.MetricImplementation"
+                        }
+                    },
+                    "400": {
+                        "description": "请求无效 | Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "无权限 | Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "资源不存在 | Resource not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "版本或依赖冲突 | Version or dependency conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "依赖不可用 | Dependency unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.metric_implementation.publish"
+                ]
+            }
+        },
+        "/metric-implementations/{id}/revisions/{revision_id}/withdraw": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Model"
+                ],
+                "summary": "撤回指标实现修订 | Withdraw metric implementation revision",
+                "parameters": [
+                    {
+                        "description": "请求 | Request",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.MetricImplementationVersionRequest"
+                        }
+                    },
+                    {
+                        "type": "integer",
+                        "description": "指标实现 ID | Metric implementation ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "修订 ID | Revision ID",
+                        "name": "revision_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.MetricImplementation"
+                        }
+                    },
+                    "400": {
+                        "description": "请求无效 | Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "无权限 | Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "资源不存在 | Resource not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "版本或依赖冲突 | Version or dependency conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "依赖不可用 | Dependency unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.metric_implementation.offline"
+                ]
+            }
+        },
         "/runtime/catalog-references/resolve": {
             "post": {
                 "security": [
@@ -4244,9 +4679,424 @@
                     "model.standard_reference.update"
                 ]
             }
+        },
+        "/task-provider/executions/{execution_id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Model"
+                ],
+                "summary": "获取物化执行状态 | Get materialization execution status",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "执行 UUID | Execution UUID",
+                        "name": "execution_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/taskprovider.ExecutionStatusResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.task_provider.read"
+                ]
+            }
+        },
+        "/task-provider/tasks": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅返回已审批且配置物化目标的逻辑表。| Return approved logical tables with a configured target.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Model"
+                ],
+                "summary": "列出逻辑表物化任务 | List logical table materialization tasks",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "任务类型 | Task type",
+                        "name": "task_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "页码 | Page",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页条数 | Page size",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.materializationTaskList"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.task_provider.read"
+                ]
+            }
+        },
+        "/task-provider/tasks/{task_type}/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Model"
+                ],
+                "summary": "获取逻辑表物化任务 | Get logical table materialization task",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "任务类型 | Task type",
+                        "name": "task_type",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "逻辑表 ID | Logical table ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_service.MaterializationTask"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.task_provider.read"
+                ]
+            }
+        },
+        "/task-provider/tasks/{task_type}/{id}/execute": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅接受 addp-orchestrator 和有效父执行；参数只允许模型版本。| Only addp-orchestrator with a valid parent execution; parameters only allow model version.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Model"
+                ],
+                "summary": "编排执行逻辑表物化 | Execute orchestrated logical table materialization",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "任务类型 | Task type",
+                        "name": "task_type",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "逻辑表 ID | Logical table ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "执行请求 | Execution request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.materializationTaskRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.materializationExecuteResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.task_provider.execute"
+                ]
+            }
         }
     },
     "definitions": {
+        "client.ModelMetricParameter": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "options": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/query.ParameterOption"
+                    }
+                },
+                "required": {
+                    "type": "boolean"
+                },
+                "type": {
+                    "$ref": "#/definitions/datatype.FieldType"
+                }
+            }
+        },
+        "datatype.FieldInfo": {
+            "type": "object",
+            "properties": {
+                "comment": {
+                    "type": "string"
+                },
+                "default_expression": {
+                    "type": "string"
+                },
+                "element_type": {
+                    "$ref": "#/definitions/datatype.FieldType"
+                },
+                "generated": {
+                    "type": "boolean"
+                },
+                "generation_expression": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "native_type": {
+                    "type": "string"
+                },
+                "nullable": {
+                    "type": "boolean"
+                },
+                "ordinal_position": {
+                    "type": "integer"
+                },
+                "path": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "precision": {
+                    "type": "integer"
+                },
+                "primary_key": {
+                    "type": "boolean"
+                },
+                "scale": {
+                    "type": "integer"
+                },
+                "size": {
+                    "type": "integer"
+                },
+                "type": {
+                    "$ref": "#/definitions/datatype.FieldType"
+                }
+            }
+        },
+        "datatype.FieldType": {
+            "type": "string",
+            "enum": [
+                "unknown",
+                "string",
+                "bool",
+                "bytes",
+                "mixed",
+                "int",
+                "bigint",
+                "float",
+                "double",
+                "decimal",
+                "date",
+                "time",
+                "timestamp",
+                "json",
+                "array",
+                "uuid",
+                "geometry"
+            ],
+            "x-enum-varnames": [
+                "FieldTypeUnknown",
+                "FieldTypeString",
+                "FieldTypeBool",
+                "FieldTypeBytes",
+                "FieldTypeMixed",
+                "FieldTypeInt",
+                "FieldTypeBigInt",
+                "FieldTypeFloat",
+                "FieldTypeDouble",
+                "FieldTypeDecimal",
+                "FieldTypeDate",
+                "FieldTypeTime",
+                "FieldTypeTimestamp",
+                "FieldTypeJSON",
+                "FieldTypeArray",
+                "FieldTypeUUID",
+                "FieldTypeGeometry"
+            ]
+        },
         "github_com_addp_model_internal_models.CatalogReference": {
             "type": "object",
             "required": [
@@ -4632,40 +5482,16 @@
         "github_com_addp_model_internal_models.CreateMetricImplementationRequest": {
             "type": "object",
             "required": [
-                "dimension_config",
-                "expression_config",
-                "filter_config",
-                "grain",
+                "fact_table_id",
                 "metric_definition_id",
-                "metric_definition_revision_id",
-                "name",
-                "source_config",
-                "status",
-                "version"
+                "name"
             ],
             "properties": {
-                "dimension_config": {
-                    "type": "object",
-                    "additionalProperties": true
-                },
-                "expression_config": {
-                    "type": "object",
-                    "additionalProperties": true
-                },
-                "filter_config": {
-                    "type": "object",
-                    "additionalProperties": true
-                },
-                "grain": {
-                    "type": "string"
+                "fact_table_id": {
+                    "type": "integer"
                 },
                 "metric_definition_id": {
-                    "type": "integer",
-                    "minimum": 1
-                },
-                "metric_definition_revision_id": {
-                    "type": "integer",
-                    "minimum": 1
+                    "type": "integer"
                 },
                 "name": {
                     "type": "string",
@@ -4673,56 +5499,6 @@
                 },
                 "note": {
                     "type": "string"
-                },
-                "source_config": {
-                    "type": "object",
-                    "additionalProperties": true
-                },
-                "status": {
-                    "type": "string",
-                    "enum": [
-                        "active",
-                        "disabled"
-                    ]
-                },
-                "version": {
-                    "type": "integer",
-                    "minimum": 1
-                }
-            }
-        },
-        "github_com_addp_model_internal_models.CreateTableRelationRequest": {
-            "type": "object",
-            "required": [
-                "source_field",
-                "target_field",
-                "target_table",
-                "version"
-            ],
-            "properties": {
-                "relation_type": {
-                    "description": "fk/join，默认 fk",
-                    "type": "string",
-                    "enum": [
-                        "fk",
-                        "join"
-                    ]
-                },
-                "source_field": {
-                    "type": "integer",
-                    "minimum": 1
-                },
-                "target_field": {
-                    "type": "integer",
-                    "minimum": 1
-                },
-                "target_table": {
-                    "type": "integer",
-                    "minimum": 1
-                },
-                "version": {
-                    "type": "integer",
-                    "minimum": 1
                 }
             }
         },
@@ -5339,6 +6115,66 @@
                 }
             }
         },
+        "github_com_addp_model_internal_models.MetricBooleanFilter": {
+            "type": "object",
+            "properties": {
+                "field": {
+                    "$ref": "#/definitions/github_com_addp_model_internal_models.MetricFieldReference"
+                },
+                "value": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "github_com_addp_model_internal_models.MetricContract": {
+            "type": "object",
+            "required": [
+                "operation",
+                "subject_relation_id"
+            ],
+            "properties": {
+                "distinct": {
+                    "$ref": "#/definitions/github_com_addp_model_internal_models.MetricFieldReference"
+                },
+                "filters": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_model_internal_models.MetricBooleanFilter"
+                    }
+                },
+                "operation": {
+                    "type": "string",
+                    "enum": [
+                        "count_distinct",
+                        "directional_overlap"
+                    ]
+                },
+                "subject": {
+                    "$ref": "#/definitions/github_com_addp_model_internal_models.MetricFieldReference"
+                },
+                "subject_relation_id": {
+                    "type": "integer"
+                },
+                "time": {
+                    "$ref": "#/definitions/github_com_addp_model_internal_models.MetricFieldReference"
+                }
+            }
+        },
+        "github_com_addp_model_internal_models.MetricFieldReference": {
+            "type": "object",
+            "required": [
+                "field_id"
+            ],
+            "properties": {
+                "field_id": {
+                    "type": "integer"
+                },
+                "relation_id": {
+                    "type": "integer",
+                    "minimum": 0
+                }
+            }
+        },
         "github_com_addp_model_internal_models.MetricImplementation": {
             "type": "object",
             "properties": {
@@ -5348,28 +6184,13 @@
                 "created_by": {
                     "type": "integer"
                 },
-                "dimension_config": {
-                    "$ref": "#/definitions/github_com_addp_model_internal_models.JSONB"
-                },
-                "expression_config": {
-                    "$ref": "#/definitions/github_com_addp_model_internal_models.JSONB"
-                },
                 "fact_table_id": {
                     "type": "integer"
-                },
-                "filter_config": {
-                    "$ref": "#/definitions/github_com_addp_model_internal_models.JSONB"
-                },
-                "grain": {
-                    "type": "string"
                 },
                 "id": {
                     "type": "integer"
                 },
                 "metric_definition_id": {
-                    "type": "integer"
-                },
-                "metric_definition_revision_id": {
                     "type": "integer"
                 },
                 "name": {
@@ -5378,15 +6199,11 @@
                 "note": {
                     "type": "string"
                 },
-                "source_config": {
-                    "$ref": "#/definitions/github_com_addp_model_internal_models.JSONB"
-                },
-                "status": {
-                    "type": "string",
-                    "enum": [
-                        "active",
-                        "disabled"
-                    ]
+                "revisions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_model_internal_models.MetricImplementationRevision"
+                    }
                 },
                 "tenant_id": {
                     "type": "integer"
@@ -5396,17 +6213,108 @@
                 },
                 "updated_by": {
                     "type": "integer"
-                }
-            }
-        },
-        "github_com_addp_model_internal_models.MetricImplementationMutationResponse": {
-            "type": "object",
-            "properties": {
-                "implementation": {
-                    "$ref": "#/definitions/github_com_addp_model_internal_models.MetricImplementation"
                 },
                 "version": {
                     "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_model_internal_models.MetricImplementationRevision": {
+            "type": "object",
+            "properties": {
+                "contract": {
+                    "$ref": "#/definitions/github_com_addp_model_internal_models.MetricContract"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "dependency_hash": {
+                    "type": "string"
+                },
+                "dependency_snapshot": {
+                    "$ref": "#/definitions/github_com_addp_model_internal_models.JSONB"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "implementation_id": {
+                    "type": "integer"
+                },
+                "metric_definition_revision_id": {
+                    "type": "integer"
+                },
+                "published_at": {
+                    "type": "string"
+                },
+                "revision_no": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "draft",
+                        "published",
+                        "withdrawn"
+                    ]
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_model_internal_models.MetricImplementationVersionRequest": {
+            "type": "object",
+            "required": [
+                "version"
+            ],
+            "properties": {
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_model_internal_models.MetricPlanRequest": {
+            "type": "object",
+            "properties": {
+                "input": {
+                    "$ref": "#/definitions/github_com_addp_model_internal_models.MetricQueryInput"
+                }
+            }
+        },
+        "github_com_addp_model_internal_models.MetricQueryInput": {
+            "type": "object",
+            "required": [
+                "end_date",
+                "grain",
+                "start_date",
+                "subject_id"
+            ],
+            "properties": {
+                "comparison_id": {
+                    "type": "string"
+                },
+                "directions": {
+                    "type": "string"
+                },
+                "end_date": {
+                    "type": "string"
+                },
+                "grain": {
+                    "type": "string",
+                    "enum": [
+                        "month",
+                        "total"
+                    ]
+                },
+                "start_date": {
+                    "type": "string"
+                },
+                "subject_id": {
+                    "type": "string",
+                    "maxLength": 200
                 }
             }
         },
@@ -5558,6 +6466,60 @@
                 }
             }
         },
+        "github_com_addp_model_internal_models.SaveMetricImplementationRevisionRequest": {
+            "type": "object",
+            "required": [
+                "contract",
+                "metric_definition_revision_id",
+                "version"
+            ],
+            "properties": {
+                "contract": {
+                    "$ref": "#/definitions/github_com_addp_model_internal_models.MetricContract"
+                },
+                "metric_definition_revision_id": {
+                    "type": "integer"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_model_internal_models.SaveTableRelationRequest": {
+            "type": "object",
+            "required": [
+                "source_field",
+                "target_field",
+                "target_table",
+                "version"
+            ],
+            "properties": {
+                "relation_type": {
+                    "description": "fk/join，默认 fk",
+                    "type": "string",
+                    "enum": [
+                        "fk",
+                        "join"
+                    ]
+                },
+                "source_field": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "target_field": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "target_table": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "version": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            }
+        },
         "github_com_addp_model_internal_models.SetStandardReferenceGuardRequest": {
             "type": "object",
             "required": [
@@ -5679,14 +6641,26 @@
                 "source_field": {
                     "type": "integer"
                 },
+                "source_field_code": {
+                    "type": "string"
+                },
                 "source_field_name": {
                     "type": "string"
                 },
                 "source_table": {
                     "type": "integer"
                 },
+                "source_table_code": {
+                    "type": "string"
+                },
+                "source_table_name": {
+                    "type": "string"
+                },
                 "target_field": {
                     "type": "integer"
+                },
+                "target_field_code": {
+                    "type": "string"
                 },
                 "target_field_name": {
                     "type": "string"
@@ -6032,68 +7006,6 @@
                 }
             }
         },
-        "github_com_addp_model_internal_models.UpdateMetricImplementationRequest": {
-            "type": "object",
-            "required": [
-                "dimension_config",
-                "expression_config",
-                "filter_config",
-                "grain",
-                "metric_definition_id",
-                "metric_definition_revision_id",
-                "name",
-                "source_config",
-                "status",
-                "version"
-            ],
-            "properties": {
-                "dimension_config": {
-                    "type": "object",
-                    "additionalProperties": true
-                },
-                "expression_config": {
-                    "type": "object",
-                    "additionalProperties": true
-                },
-                "filter_config": {
-                    "type": "object",
-                    "additionalProperties": true
-                },
-                "grain": {
-                    "type": "string"
-                },
-                "metric_definition_id": {
-                    "type": "integer",
-                    "minimum": 1
-                },
-                "metric_definition_revision_id": {
-                    "type": "integer",
-                    "minimum": 1
-                },
-                "name": {
-                    "type": "string",
-                    "maxLength": 200
-                },
-                "note": {
-                    "type": "string"
-                },
-                "source_config": {
-                    "type": "object",
-                    "additionalProperties": true
-                },
-                "status": {
-                    "type": "string",
-                    "enum": [
-                        "active",
-                        "disabled"
-                    ]
-                },
-                "version": {
-                    "type": "integer",
-                    "minimum": 1
-                }
-            }
-        },
         "github_com_addp_model_internal_models.UpsertDimensionHierarchyLevelRequest": {
             "type": "object",
             "required": [
@@ -6138,6 +7050,319 @@
             "properties": {
                 "version": {
                     "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_model_internal_service.MaterializationTask": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "execution_contract": {
+                    "$ref": "#/definitions/taskprovider.ExecutionContract"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "task_type": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_model_internal_service.MetricCompiledPlan": {
+            "type": "object",
+            "properties": {
+                "dependency_hash": {
+                    "type": "string"
+                },
+                "engine_id": {
+                    "type": "integer"
+                },
+                "fields": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/datatype.FieldInfo"
+                    }
+                },
+                "implementation_id": {
+                    "type": "integer"
+                },
+                "metric_definition_id": {
+                    "type": "integer"
+                },
+                "metric_definition_revision_id": {
+                    "type": "integer"
+                },
+                "parameters": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/client.ModelMetricParameter"
+                    }
+                },
+                "revision_id": {
+                    "type": "integer"
+                },
+                "sql": {
+                    "type": "string"
+                },
+                "stable_key": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "internal_api.materializationExecuteResponse": {
+            "type": "object",
+            "properties": {
+                "execution_id": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.materializationTaskList": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_model_internal_service.MaterializationTask"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api.materializationTaskRequest": {
+            "type": "object",
+            "properties": {
+                "parameters": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "parent_execution_id": {
+                    "type": "string"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "trigger_type": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.JSONMap": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "query.ParameterOption": {
+            "type": "object",
+            "properties": {
+                "labels": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "value": {
+                    "description": "Value 与参数声明类型一致的标量。| Scalar matching the declared parameter type."
+                }
+            }
+        },
+        "taskprovider.ExecutionContract": {
+            "type": "object",
+            "properties": {
+                "input_defaults": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "input_schema": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "input_ui_schema": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "output_schema": {
+                    "type": "object",
+                    "additionalProperties": true
+                }
+            }
+        },
+        "taskprovider.ExecutionStatusResponse": {
+            "type": "object",
+            "required": [
+                "outputs"
+            ],
+            "properties": {
+                "actor_principal_id": {
+                    "description": "User-derived execution authorization facts. The raw User/Service tokens\nand engine connection details are never persisted in task executions.",
+                    "type": "integer"
+                },
+                "actor_tenant_membership_id": {
+                    "type": "integer"
+                },
+                "attempt": {
+                    "type": "integer"
+                },
+                "authorization_expires_at": {
+                    "type": "string"
+                },
+                "bytes_read": {
+                    "description": "Transfer 读取字节数",
+                    "type": "integer"
+                },
+                "bytes_written": {
+                    "description": "Transfer 写入字节数",
+                    "type": "integer"
+                },
+                "completed_at": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "current_step": {
+                    "description": "当前步骤（Orchestrator/Workflow）",
+                    "type": "string"
+                },
+                "error_details": {
+                    "description": "错误详情（仅失败时有值）",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/models.JSONMap"
+                        }
+                    ]
+                },
+                "execution_authorization_id": {
+                    "type": "integer"
+                },
+                "execution_boundary": {
+                    "description": "ExecutionBoundary separates finite queue work from long-running runtime sessions.",
+                    "type": "string"
+                },
+                "execution_config": {
+                    "description": "JSONB 字段",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/models.JSONMap"
+                        }
+                    ]
+                },
+                "execution_id": {
+                    "description": "执行标识",
+                    "type": "string"
+                },
+                "execution_time_ms": {
+                    "description": "性能指标",
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "issued_authorization_version": {
+                    "type": "integer"
+                },
+                "max_attempts": {
+                    "type": "integer"
+                },
+                "metadata": {
+                    "description": "模块特有扩展数据（结果、断点、步骤结果等）",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/models.JSONMap"
+                        }
+                    ]
+                },
+                "module": {
+                    "description": "模块标识",
+                    "type": "string"
+                },
+                "outputs": {
+                    "$ref": "#/definitions/models.JSONMap"
+                },
+                "parent_execution_id": {
+                    "description": "父执行（Orchestrator 子步骤追踪父编排）",
+                    "type": "string"
+                },
+                "progress": {
+                    "description": "0-100",
+                    "type": "integer"
+                },
+                "records_read": {
+                    "description": "Transfer 读取记录数",
+                    "type": "integer"
+                },
+                "records_written": {
+                    "description": "Transfer 写入记录数",
+                    "type": "integer"
+                },
+                "retry_of_execution_id": {
+                    "type": "string"
+                },
+                "rows_affected": {
+                    "description": "SQL 影响行数",
+                    "type": "integer"
+                },
+                "source": {
+                    "description": "触发来源模块",
+                    "type": "string"
+                },
+                "source_task_id": {
+                    "description": "关联原始任务",
+                    "type": "string"
+                },
+                "source_task_name": {
+                    "description": "任务名称（冗余，便于查询）",
+                    "type": "string"
+                },
+                "started_at": {
+                    "description": "时间戳",
+                    "type": "string"
+                },
+                "status": {
+                    "description": "执行状态",
+                    "type": "string"
+                },
+                "task_type": {
+                    "description": "稳定执行类型；可来自任务定义或 ad-hoc execution",
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "trigger_type": {
+                    "description": "触发信息",
+                    "type": "string"
+                },
+                "triggered_by": {
+                    "description": "触发用户ID",
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
                 }
             }
         }

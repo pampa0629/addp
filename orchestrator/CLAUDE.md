@@ -58,7 +58,7 @@ Orchestrator 是 `orchestrator.workflow.*` 的 Permission owner；定义只存�
 ## 前端公开路由
 
 - Orchestrator 前端遵守 `docs/spec/addp前端路由与可恢复状态规范.md`，模块内公开导航统一通过 `src/utils/moduleNavigation.js`。
-- 编排身份固定使用 `/orchestrations/:id/edit`，执行历史固定使用 `/orchestrations/:id/executions`；列表进入目标使用 `push`，保存、取消或返回列表使用 `replace`。
+- 编排身份固定使用 `/orchestrations/:id/edit`，执行历史固定使用 `/orchestrations/:id/executions`；列表进入目标使用 `push`，已有编排保存后停留当前编辑页；新建保存成功、取消或返回列表使用 `replace`。
 - Orchestrator 不提供模块级全局执行列表页面；编排列表通过 `openMonitorExecutions({ module: 'orchestrator', task_type: 'orchestration' })` 进入统一 Monitor。单编排执行历史保留步骤结果和子执行入口，并可按 `source_task_id` 进入统一监控。
 - TaskProvider 创建入口固定为 `/orchestrator/orchestrations/new`，编辑入口固定为 `/orchestrator/orchestrations/:id/edit`；列表页不作为创建入口。
 
@@ -85,6 +85,16 @@ curl http://localhost:8084/health/ready
 
 - 编排列表支持按任务引用 `module + task_type + task_id` 筛选，三者必须同时提供；匹配编排任一步骤的完整任务身份。筛选保存在 URL，并随编辑/执行历史的返回保留；无匹配展示空状态，非法筛选显示错误，不降级为全部编排。共享 `buildOrchestrationListRoute` 为跨模块入口的唯一构造器。
 
-- 前端门禁 `make test-orchestrator-frontend` 包含确定性测试、`test:e2e:routes` 关联编排路由浏览器回归及构建；Platform CI 的 Orchestrator 矩阵安装 Chromium 后执行同一入口。已有视觉截图用例仍由完整 `npm run test:e2e` 执行。
+- 前端门禁 `make test-orchestrator-frontend` 包含确定性测试、`test:e2e:routes` 编辑器与关联编排路由浏览器回归及构建；Platform CI 的 Orchestrator 矩阵安装 Chromium 后执行同一入口。已有视觉截图用例仍由完整 `npm run test:e2e` 执行。
 
 Model 可在页内通过共享关联流程对话框消费现有 list/get/execute API；完整流程执行仍由 Orchestrator 拥有。执行确认统一为共享 OrchestrationExecuteButton，不保留模块内重复确认实现。
+
+编排编辑器交互约定：标题只展示当前编排名称，名称旁保留独立的基本信息编辑入口；`enabled` 只控制定时调度，不限制手动执行，没有 schedule 时只显示手动触发。任务库区分最近执行摘要与任务状态，名称换行，操作独立成行。编辑页复用共享执行确认，有未保存的执行配置时要求先保存；已有编排点击保存直接提交，不弹出基本信息对话框，保存后留在当前页，可继续执行；新建编排首次保存时填写名称。执行仅消费已保存定义。连线用实线表示参数传值、虚线表示执行依赖，点击选中节点或连线可查看完整端点并聚焦关联连接，鼠标经过不切换聚焦；点击画布空白处清除选中与聚焦；自动布局使用卡片实际尺寸，不改写执行依赖。
+
+编辑器改进覆盖 T0/T1 共享 DAG 与模块测试、T3 受控 API 浏览器回归和前端构建。`make test-orchestrator-frontend` 同时运行路由与编辑器非截图回归，Platform CI 复用该入口；共享能力由 `make test-common-frontend` 验证。此类展示与组合改动不涉及后端 API 或 Swagger 契约。
+
+编辑页手动执行后，使用返回的执行记录 ID 查询现有执行详情，每两秒刷新一次；请求串行，终态停止刷新，离页清理请求，刷新失败保留最后一次状态并提供重试。步骤状态取自 `metadata.step_results`，串行执行中的当前节点由 `current_step` 标识；终态未开始的节点展示“未执行”，不得推测为成功。执行器每完成一个步骤即持久化结果，再进入下一步骤。运行中节点用主题高亮边框作缓慢呼吸动画，步骤结束或状态清除时移除；减少动态效果偏好下使用静态高亮。状态标签和动画只属于画布展示，不进入编排定义、布局或撤销历史；修改执行配置后隐藏本次节点状态，避免把旧执行结果映射到新配置。执行概览保留本次记录、总体状态、进度及 Monitor 入口。
+
+编排编辑器通过共享 `useUnsavedChangesGuard` 保护未保存的定义和节点位置；缩放和平移不触发离页提醒。保存成功更新基线，失败保留保护；切换编排身份时重新加载编辑器。
+
+节点执行状态验证覆盖后端 SQLite/HTTP 受控集成（下一步骤启动前检查前一步结果与进度）、前端状态映射和浏览器执行链路；由既有 Go 模块测试和 `make test-orchestrator-frontend` 自动发现。Swagger 执行详情说明同步逐步更新语义。

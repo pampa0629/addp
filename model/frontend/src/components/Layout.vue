@@ -54,6 +54,7 @@
               <el-icon><Operation /></el-icon>
               <span>{{ t('model.layout.logicalTables') }}</span>
             </el-menu-item>
+            <el-menu-item index="/metric-implementations"><el-icon><Operation /></el-icon><span>{{ t('model.metric_workspace.title') }}</span></el-menu-item>
             <el-menu-item index="/star-schema">
               <el-icon><Star /></el-icon>
               <span>{{ t('model.layout.starSchema') }}</span>

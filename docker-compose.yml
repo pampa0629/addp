@@ -554,6 +554,12 @@ services:
       - POSTGRES_DB=${POSTGRES_DB:-addp}
       - DB_SCHEMA=develop
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - DEVELOP_QUERY_CONCURRENCY=${DEVELOP_QUERY_CONCURRENCY:-20}
+      - DEVELOP_QUERY_PER_ENGINE_CONCURRENCY=${DEVELOP_QUERY_PER_ENGINE_CONCURRENCY:-5}
+      - DEVELOP_QUERY_LEASE_SECONDS=${DEVELOP_QUERY_LEASE_SECONDS:-120}
+      - DEVELOP_QUERY_HEARTBEAT_SECONDS=${DEVELOP_QUERY_HEARTBEAT_SECONDS:-30}
+      - DEVELOP_QUERY_CLAIM_INTERVAL_SECONDS=${DEVELOP_QUERY_CLAIM_INTERVAL_SECONDS:-1}
+      - DEVELOP_QUERY_IDLE_MAX_INTERVAL_SECONDS=${DEVELOP_QUERY_IDLE_MAX_INTERVAL_SECONDS:-30}
       - GIN_MODE=release
     ports:
       - "8185:8185"
@@ -569,34 +575,6 @@ services:
       timeout: 5s
       retries: 30
       start_period: 60s
-
-  develop-query-worker:
-    image: ${REGISTRY:-localhost:5001}/addp-develop-query-worker:${IMAGE_TAG:-latest}
-    environment:
-      - SYSTEM_URL=http://system-backend:8180
-      - META_URL=http://meta-backend:8082
-      - DEVELOP_SERVICE_CLIENT_SECRET=${DEVELOP_SERVICE_CLIENT_SECRET}
-      - POSTGRES_HOST=postgres
-      - POSTGRES_PORT=5432
-      - POSTGRES_USER=${POSTGRES_USER:-addp}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - POSTGRES_DB=${POSTGRES_DB:-addp}
-      - DB_SCHEMA=develop
-      - QUERY_RESULT_LIMIT=${QUERY_RESULT_LIMIT:-500}
-      - DEVELOP_QUERY_WORKER_CONCURRENCY=${DEVELOP_QUERY_WORKER_CONCURRENCY:-4}
-      - DEVELOP_QUERY_LEASE_SECONDS=${DEVELOP_QUERY_LEASE_SECONDS:-120}
-      - DEVELOP_QUERY_HEARTBEAT_SECONDS=${DEVELOP_QUERY_HEARTBEAT_SECONDS:-30}
-      - DEVELOP_QUERY_CLAIM_INTERVAL_SECONDS=${DEVELOP_QUERY_CLAIM_INTERVAL_SECONDS:-1}
-    networks:
-      - addp-network
-    depends_on:
-      system-backend:
-        condition: service_healthy
-      develop-backend:
-        condition: service_healthy
-      model-backend:
-        condition: service_healthy
-    restart: unless-stopped
 
   develop-frontend:
     image: ${REGISTRY:-localhost:5001}/addp-develop-frontend:${IMAGE_TAG:-latest}
@@ -621,6 +599,7 @@ services:
       - SYSTEM_URL=http://system-backend:8180
       - MANAGER_URL=http://manager-backend:8081
       - META_URL=http://meta-backend:8082
+      - MODEL_URL=http://model-backend:8181
       - SERVICE_SERVICE_CLIENT_SECRET=${SERVICE_SERVICE_CLIENT_SECRET}
       - REDIS_HOST=redis
       - REDIS_PORT=6379

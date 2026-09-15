@@ -1,7 +1,5 @@
 <template>
   <div class="lineage-viewer">
-    <el-empty v-if="!nodes.length" :description="t('lineage.noData')" :image-size="56" />
-    <template v-else>
       <div class="lineage-toolbar">
         <div class="lineage-summary">
           <span>{{ t('lineage.summary', { nodes: nodes.length, edges: edges.length }) }}</span>
@@ -15,6 +13,10 @@
           </span>
         </div>
         <div class="lineage-tools">
+          <span class="lineage-depth-label">{{ t('lineage.depth') }}</span>
+          <el-select :model-value="depth" :aria-label="t('lineage.depth')" class="lineage-depth" size="small" @update:model-value="emit('update:depth', $event)">
+            <el-option v-for="value in [1, 2, 3, 5, 10, 20]" :key="value" :value="value" :label="t('lineage.layers', { count: value })" />
+          </el-select>
           <el-tooltip :content="t('lineage.zoomOut')" placement="bottom">
             <el-button text circle size="small" :aria-label="t('lineage.zoomOut')" @click="zoomBy(0.8)">
               <el-icon><ZoomOut /></el-icon>
@@ -33,11 +35,13 @@
         </div>
       </div>
 
+      <div v-if="graph.truncated" class="lineage-truncated" role="status">{{ t('lineage.truncated') }}</div>
       <div class="lineage-stage">
+        <el-empty v-if="!nodes.length" :description="t('lineage.noData')" :image-size="56" />
         <div
+          v-else
           ref="canvasRef"
           class="lineage-canvas"
-          :style="{ height: `${height}px` }"
           role="img"
           :aria-label="t('lineage.graphLabel')"
         />
@@ -46,8 +50,11 @@
       <div v-if="selectedNode" class="lineage-inspector" aria-live="polite">
         <div class="lineage-inspector-heading">
           <span class="lineage-inspector-kind">{{ nodeTypeLabel(selectedNode) }}</span>
-          <strong>{{ nodeDisplayName(selectedNode) }}</strong>
-          <span v-if="selectedNode.full_name" class="lineage-inspector-path">{{ selectedNode.full_name }}</span>
+          <strong :title="nodeDisplayName(selectedNode)">{{ nodeDisplayName(selectedNode) }}</strong>
+          <span v-if="selectedNode.full_name" class="lineage-inspector-path" :title="selectedNode.full_name">{{ selectedNode.full_name }}</span>
+        </div>
+        <div class="lineage-expand-actions">
+          <el-button v-for="direction in ['upstream', 'downstream']" v-show="selectedNode[`hidden_${direction}_count`] > 0" :key="direction" size="small" :disabled="graph.truncated" @click="expandNode(selectedNode, direction)">{{ t(`lineage.expand.${direction}`, { count: selectedNode[`hidden_${direction}_count`] }) }}</el-button>
         </div>
         <dl class="lineage-inspector-fields">
           <div v-if="selectedNode.engine_name">
@@ -66,6 +73,7 @@
             <dt>{{ t('lineage.fingerprint') }}</dt>
             <dd class="lineage-mono">{{ selectedNode.item_fingerprint }}</dd>
           </div>
+          <div v-if="selectedNode.service_id"><dt>{{ t('lineage.serviceId') }}</dt><dd>{{ selectedNode.service_id }}</dd></div>
           <div v-if="selectedNode.published_revision">
             <dt>{{ t('lineage.revision') }}</dt>
             <dd>{{ selectedNode.published_revision }}</dd>
@@ -92,11 +100,10 @@
           </div>
           <div v-if="selectedEdge.evidence?.execution_id" class="lineage-inspector-field-wide">
             <dt>{{ t('lineage.executionId') }}</dt>
-            <dd class="lineage-mono">{{ selectedEdge.evidence.execution_id }}</dd>
+            <dd class="lineage-mono">{{ selectedEdge.evidence.execution_id }} <el-button link type="primary" @click="emit('view-execution', selectedEdge.evidence.execution_id)">{{ t('lineage.viewExecution') }}</el-button></dd>
           </div>
         </dl>
       </div>
-    </template>
   </div>
 </template>
 
@@ -105,8 +112,10 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { FullScreen, ZoomIn, ZoomOut } from '@element-plus/icons-vue'
 import G6 from '@antv/g6'
+import { focusDAGConnections } from '../../dag/src/utils/connections.js'
 
 const LINEAGE_NODE_TYPE = 'addp-lineage-card'
+const LINEAGE_EDGE_TYPE = 'addp-lineage-link'
 const NODE_WIDTH = 280
 const NODE_HEIGHT = 108
 const FIT_PADDING = 48
@@ -114,9 +123,10 @@ const FIT_PADDING = 48
 const { t, locale } = useI18n()
 const props = defineProps({
   graph: { type: Object, default: () => ({ nodes: [], edges: [] }) },
-  height: { type: Number, default: 420 }
+  depth: { type: Number, default: 2 }
 })
 
+const emit = defineEmits(['update:depth', 'expand', 'view-execution'])
 const canvasRef = ref(null)
 const selectedNode = ref(null)
 const selectedEdge = ref(null)
@@ -124,6 +134,8 @@ let graphInstance
 let resizeObserver
 let themeObserver
 let observedCanvas
+let expansionAnchor
+let renderSequence = 0
 
 function nodeId(node) {
   if (!node) return ''
@@ -168,7 +180,7 @@ function themePalette() {
 }
 
 function nodeDisplayName(node) {
-  return String(node?.name || node?.full_name || node?.published_revision || node?.kind || '')
+  return String(node?.name || node?.full_name || nodeTypeLabel(node))
 }
 
 function nodeQualifiedName(node) {
@@ -177,7 +189,6 @@ function nodeQualifiedName(node) {
 
 function nodePath(node) {
   if (node?.full_name && node.full_name !== node.name) return String(node.full_name)
-  if (node?.kind === 'published_service' && node.service_id) return `${t('lineage.serviceId')} ${node.service_id}`
   return ''
 }
 
@@ -396,6 +407,13 @@ function registerLineageNode() {
         })
       }
 
+      for (const direction of ['upstream', 'downstream']) {
+        const count = cfg._node[`hidden_${direction}_count`]
+        if (!count) continue
+        const x = direction === 'upstream' ? -NODE_WIDTH / 2 - 38 : NODE_WIDTH / 2 + 38
+        group.addShape('rect', { name: `lineage-expand-${direction}`, attrs: { x: x - 34, y: -12, width: 68, height: 24, radius: 12, fill: visual.fill, stroke: visual.accent, cursor: 'pointer' } })
+        group.addShape('text', { name: `lineage-expand-${direction}`, attrs: { x, y: 0, text: cfg._expandLabels[direction], textAlign: 'center', textBaseline: 'middle', fill: visual.accent, fontSize: 11, cursor: 'pointer' } })
+      }
       return card
     },
 
@@ -435,6 +453,7 @@ function graphData() {
         type: LINEAGE_NODE_TYPE,
         size: [NODE_WIDTH, NODE_HEIGHT],
         _node: node,
+        _expandLabels: Object.fromEntries(['upstream', 'downstream'].map(direction => [direction, t(`lineage.expand.${direction}`, { count: node[`hidden_${direction}_count`] })])),
         _title: truncate(nodeDisplayName(node), isSubject ? 23 : 30),
         _path: truncate(nodePath(node), 40),
         _engineName: truncate(node.engine_name, 29),
@@ -460,12 +479,16 @@ function graphData() {
     edges: edges.value.map((edge, index) => ({
       id: `lineage-edge:${index}`,
       source: nodeId(edge.source),
+      sourceAnchor: 1,
+      targetAnchor: 0,
       target: nodeId(edge.target),
       label: relationLabel(edge.relation_kind),
       _edge: edge,
       style: {
         stroke: palette.textTertiary,
         lineWidth: 1.5,
+        radius: 8,
+        offset: 28,
         lineAppendWidth: 12,
         endArrow: {
           path: G6.Arrow.triangle(8, 6, 0),
@@ -487,6 +510,42 @@ function graphData() {
   }
 }
 
+// The halo belongs to each edge group: the upper edge masks the lower edge at
+// crossings, without drawing a false junction. Hover brings the whole group up.
+function registerLineageEdge() {
+  G6.registerEdge(LINEAGE_EDGE_TYPE, {
+    afterDraw(cfg, group) {
+      const key = group.get('children')[0]
+      const halo = group.addShape('path', {
+        attrs: { path: key.attr('path'), stroke: themePalette().canvas, lineWidth: 7, lineJoin: 'round' },
+        name: 'lineage-edge-halo', capture: false
+      })
+      halo.toBack()
+    },
+    afterUpdate(cfg, item) {
+      const halo = item.getContainer().find(shape => shape.get('name') === 'lineage-edge-halo')
+      halo?.attr('path', item.getKeyShape().attr('path'))
+    }
+  }, 'polyline')
+}
+
+function focusItem(item) {
+  if (!graphInstance) return
+  const focused = focusDAGConnections(graphInstance, item)
+  for (const edge of graphInstance.getEdges()) {
+    graphInstance.setItemState(edge, 'hover', focused.includes(edge))
+  }
+  for (const edge of focused) {
+    edge.getSource().toFront()
+    edge.getTarget().toFront()
+  }
+}
+
+function restoreFocus() {
+  const selected = [...(graphInstance?.getNodes() || []), ...(graphInstance?.getEdges() || [])].find(item => item.hasState('selected'))
+  focusItem(selected)
+}
+
 function fitView() {
   if (!graphInstance) return
   graphInstance.fitView(FIT_PADDING)
@@ -498,7 +557,7 @@ function fitView() {
 
 function zoomBy(ratio) {
   if (!graphInstance) return
-  const nextZoom = Math.min(2.5, Math.max(0.35, graphInstance.getZoom() * ratio))
+  const nextZoom = Math.min(2.5, Math.max(0.1, graphInstance.getZoom() * ratio))
   graphInstance.zoomTo(nextZoom)
 }
 
@@ -507,18 +566,21 @@ function clearSelection() {
   graphInstance?.getEdges().forEach(item => graphInstance.setItemState(item, 'selected', false))
   selectedNode.value = null
   selectedEdge.value = null
+  focusItem(null)
 }
 
 function selectNode(item) {
   clearSelection()
   graphInstance.setItemState(item, 'selected', true)
   selectedNode.value = item.getModel()._node
+  focusItem(item)
 }
 
 function selectEdge(item) {
   clearSelection()
   graphInstance.setItemState(item, 'selected', true)
   selectedEdge.value = item.getModel()._edge
+  focusItem(item)
 }
 
 function destroyGraph() {
@@ -533,11 +595,25 @@ function observeCanvasSize() {
   resizeObserver.observe(observedCanvas)
 }
 
+function expandNode(node, direction) {
+  if (props.graph.truncated || !node.item_id) return
+  const item = graphInstance?.findById(nodeId(node))
+  if (item) {
+    const { x, y } = item.getModel()
+    expansionAnchor = { id: nodeId(node), subject: subjectId.value, zoom: graphInstance.getZoom(), point: graphInstance.getCanvasByPoint(x, y) }
+  }
+  emit('expand', { item_id: node.item_id, direction })
+}
+
 async function renderGraph() {
+  const sequence = ++renderSequence
+  const anchor = expansionAnchor?.subject === subjectId.value ? expansionAnchor : null
+  expansionAnchor = null
   destroyGraph()
-  selectedNode.value = null
-  selectedEdge.value = null
+  if (!anchor) { selectedNode.value = null; selectedEdge.value = null }
+  else if (selectedNode.value) selectedNode.value = nodes.value.find(node => nodeId(node) === nodeId(selectedNode.value)) || null
   await nextTick()
+  if (sequence !== renderSequence) return
   if (!canvasRef.value || !nodes.value.length) return
   observeCanvasSize()
 
@@ -545,36 +621,58 @@ async function renderGraph() {
   if (width <= 0) return
 
   registerLineageNode()
+  registerLineageEdge()
   const palette = themePalette()
   graphInstance = new G6.Graph({
     container: canvasRef.value,
     width,
-    height: props.height,
-    minZoom: 0.35,
+    height: canvasRef.value.clientHeight,
+    minZoom: 0.1,
     maxZoom: 2.5,
     modes: { default: ['drag-canvas', 'zoom-canvas'] },
-    layout: { type: 'dagre', rankdir: 'LR', nodesep: 56, ranksep: 112 },
+    plugins: [new G6.Tooltip({
+      itemTypes: ['node'], offsetX: 12, offsetY: 12,
+      getContent(event) {
+        const content = document.createElement('div')
+        content.textContent = nodeQualifiedName(event.item.getModel()._node)
+        content.style.cssText = 'max-width: 480px; overflow-wrap: anywhere; padding: 8px 12px; background: var(--addp-bg-primary); color: var(--addp-text-primary); border: 1px solid var(--addp-border-color); border-radius: 4px;'
+        return content
+      }
+    })],
+    layout: { type: 'dagre', rankdir: 'LR', nodesep: 48, ranksep: 170, controlPoints: true },
     defaultNode: { type: LINEAGE_NODE_TYPE, size: [NODE_WIDTH, NODE_HEIGHT] },
-    defaultEdge: { type: 'polyline' },
+    defaultEdge: { type: LINEAGE_EDGE_TYPE },
     edgeStateStyles: {
       selected: { stroke: palette.primary, lineWidth: 2.5 },
       hover: { stroke: palette.primaryHover, lineWidth: 2 }
     }
   })
 
-  graphInstance.on('node:click', event => selectNode(event.item))
+  graphInstance.on('node:click', event => {
+    const shape = event.target?.get('name')
+    const direction = ['upstream', 'downstream'].find(value => shape === `lineage-expand-${value}`)
+    if (direction) expandNode(event.item.getModel()._node, direction)
+    else selectNode(event.item)
+  })
   graphInstance.on('edge:click', event => selectEdge(event.item))
   graphInstance.on('canvas:click', clearSelection)
-  graphInstance.on('node:mouseenter', event => graphInstance.setItemState(event.item, 'hover', true))
-  graphInstance.on('node:mouseleave', event => graphInstance.setItemState(event.item, 'hover', false))
-  graphInstance.on('edge:mouseenter', event => graphInstance.setItemState(event.item, 'hover', true))
-  graphInstance.on('edge:mouseleave', event => graphInstance.setItemState(event.item, 'hover', false))
-  graphInstance.on('afterlayout', fitView)
+  graphInstance.on('node:mouseenter', event => focusItem(event.item))
+  graphInstance.on('node:mouseleave', restoreFocus)
+  graphInstance.on('edge:mouseenter', event => focusItem(event.item))
+  graphInstance.on('edge:mouseleave', restoreFocus)
+  const restoreViewport = () => {
+    if (!graphInstance) return
+    const item = anchor && graphInstance.findById(anchor.id)
+    if (!item) { fitView(); return }
+    graphInstance.zoomTo(anchor.zoom)
+    const { x, y } = item.getModel()
+    const point = graphInstance.getCanvasByPoint(x, y)
+    graphInstance.translate(anchor.point.x - point.x, anchor.point.y - point.y)
+  }
+  graphInstance.once('afterrender', restoreViewport)
   graphInstance.data(graphData())
   graphInstance.render()
 
-  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(fitView)
-  else fitView()
 }
 
 onMounted(() => {
@@ -585,9 +683,10 @@ onMounted(() => {
       renderGraph()
       return
     }
-    graphInstance.changeSize(width, props.height)
-    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(fitView)
-    else fitView()
+    const height = Math.floor(entries[0]?.contentRect?.height || canvasRef.value?.clientHeight || 0)
+    if (height <= 0) return
+    graphInstance.changeSize(width, height)
+    // Resizing the inspector/canvas must not reset user zoom or local expansion.
   })
 
   themeObserver = new MutationObserver(mutations => {
@@ -598,6 +697,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  renderSequence++
   resizeObserver?.disconnect()
   observedCanvas = undefined
   themeObserver?.disconnect()
@@ -606,13 +706,14 @@ onUnmounted(() => {
 
 watch(() => props.graph, renderGraph, { deep: true })
 watch(locale, renderGraph)
+watch(() => props.depth, () => { expansionAnchor = null })
 </script>
 
 <style scoped>
 .lineage-viewer {
   position: relative;
   width: 100%;
-  min-height: 300px;
+  min-height: 0;
   height: 100%;
   display: flex;
   flex-direction: column;
@@ -624,7 +725,9 @@ watch(locale, renderGraph)
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 8px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
   min-height: 42px;
   padding: 0 12px;
   border-bottom: 1px solid var(--addp-border-color-light);
@@ -662,21 +765,29 @@ watch(locale, renderGraph)
   background: var(--el-color-primary);
 }
 
+.lineage-depth { width: 94px; margin-right: 8px; }
+.lineage-depth-label { margin-right: 6px; white-space: nowrap; }
+.lineage-truncated { padding: 6px 12px; color: var(--el-color-warning); font-size: 12px; }
+
 .lineage-tools {
   flex: 0 0 auto;
   gap: 2px;
 }
 
 .lineage-stage {
+  position: relative;
+  display: flex;
+  flex-direction: column;
   flex: 1;
-  min-height: 260px;
+  min-height: 0;
   padding: 12px;
   background: var(--addp-bg-secondary);
 }
 
 .lineage-canvas {
+  flex: 1;
   width: 100%;
-  min-height: 260px;
+  min-height: 0;
   overflow: hidden;
   background: var(--addp-bg-secondary);
 }
@@ -750,12 +861,13 @@ watch(locale, renderGraph)
 }
 
 .lineage-inspector-fields dd {
+  overflow-wrap: anywhere;
   min-width: 0;
   margin: 0;
   overflow: hidden;
   color: var(--addp-text-secondary);
   text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
 }
 
 .lineage-mono {

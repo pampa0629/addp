@@ -84,7 +84,7 @@ func validateCreateLogicalFieldRequest(req *models.CreateLogicalFieldRequest) er
 	return nil
 }
 
-func validateCreateTableRelationRequest(req *models.CreateTableRelationRequest) error {
+func validateSaveTableRelationRequest(req *models.SaveTableRelationRequest) error {
 	if req == nil || req.TargetTable <= 0 || req.SourceField <= 0 || req.TargetField <= 0 ||
 		(req.RelationType != "" && !validValue(req.RelationType, "fk", "join")) {
 		return invalidRequest()

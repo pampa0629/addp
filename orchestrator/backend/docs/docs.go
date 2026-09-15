@@ -124,6 +124,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "返回编排当前执行状态、当前步骤和逐步更新的 metadata.step_results；步骤结束后即可查询结果，无需等待整个编排结束。| Return the current orchestration status, current step, and incrementally updated metadata.step_results; completed step results are available before the orchestration finishes.",
                 "produces": [
                     "application/json"
                 ],

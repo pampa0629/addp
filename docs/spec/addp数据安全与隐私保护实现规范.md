@@ -432,7 +432,7 @@ Owner 的同步收敛明确分为两个不同屏障，不得混为一次“保�
 
 后置屏障失败时不得回滚已经安全安装的本地投影和 cursor，也不得 acknowledgement；同步进程必须以同一 cursor 幂等重试后置屏障。新请求在此期间已经依据持久新 cursor 门禁，旧请求由后置屏障阻止回执，因此不会出现“Security 已确认、旧数据流仍在输出”的窗口。
 
-Develop 的后置屏障必须依据真实执行边界，而不是仅依据历史 `status`：本进程已经通过门禁且尚未结束的读取由 Gate 活动计数追踪，Notebook 由会话活动执行追踪，跨进程 bounded Worker 只认 `running` 且尚未过期的 execution lease，无租约的本地异步执行只认 `running` 且尚未过期的 Execution Authorization。`pending` 尚未开始读取，启动时必须按持久新 cursor 重新过门禁，因此不得阻塞回执；租约和授权均已过期的遗留 `running` 记录也不得形成永久屏障。不得通过手工改写历史 execution 状态推进回执。
+Develop 的后置屏障必须依据真实执行边界，而不是仅依据历史 `status`：本进程已经通过门禁且尚未结束的读取由 Gate 活动计数追踪，Notebook 由会话活动执行追踪，Backend 内嵌 Query Execution Supervisor 只认 `running` 且尚未过期的 execution lease，无租约的本地异步执行只认 `running` 且尚未过期的 Execution Authorization。`pending` 尚未开始读取，启动时必须按持久新 cursor 重新过门禁，因此不得阻塞回执；租约和授权均已过期的遗留 `running` 记录也不得形成永久屏障。不得通过手工改写历史 execution 状态推进回执。
 
 ```http
 POST /api/v1/security/runtime/protection-projection-acknowledgements

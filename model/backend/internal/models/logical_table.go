@@ -104,8 +104,8 @@ type PreviewLogicalTableDDLRequest struct {
 	Materialization map[string]interface{} `json:"materialization" binding:"required"`
 }
 
-// CreateTableRelationRequest 创建逻辑表关联请求
-type CreateTableRelationRequest struct {
+// SaveTableRelationRequest 创建或完整更新逻辑表关联请求
+type SaveTableRelationRequest struct {
 	Version      int64  `json:"version" binding:"required,gt=0" minimum:"1"`
 	TargetTable  int64  `json:"target_table" binding:"required,gt=0" minimum:"1"`
 	SourceField  int64  `json:"source_field" binding:"required,gt=0" minimum:"1"`
@@ -160,14 +160,18 @@ type TableRelationMutationResponse struct {
 type TableRelationDetail struct {
 	ID              int64  `json:"id"`
 	SourceTable     int64  `json:"source_table"`
+	SourceTableName string `json:"source_table_name"`
+	SourceTableCode string `json:"source_table_code"`
 	SourceField     int64  `json:"source_field"`
 	SourceFieldName string `json:"source_field_name"`
+	SourceFieldCode string `json:"source_field_code"`
 	TargetTable     int64  `json:"target_table"`
 	TargetTableName string `json:"target_table_name"`
 	TargetTableCode string `json:"target_table_code"`
 	TargetSCDType   int    `json:"target_scd_type"`
 	TargetField     int64  `json:"target_field"`
 	TargetFieldName string `json:"target_field_name"`
+	TargetFieldCode string `json:"target_field_code"`
 	RelationType    string `json:"relation_type"`
 }
 

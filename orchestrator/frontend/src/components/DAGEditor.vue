@@ -39,14 +39,20 @@
           <el-button circle size="small" :aria-label="t('orchestrator.dagEditor.fitView')" @click="handleFitView"><el-icon><FullScreen /></el-icon></el-button>
         </el-tooltip>
         <el-tooltip :content="t('orchestrator.dagEditor.autoLayout')">
-          <el-button circle size="small" :aria-label="t('orchestrator.dagEditor.autoLayout')" @click="handleAutoLayout"><el-icon><Rank /></el-icon></el-button>
+          <el-button size="small" :aria-label="t('orchestrator.dagEditor.autoLayout')" @click="handleAutoLayout"><el-icon><Rank /></el-icon>{{ t('orchestrator.dagEditor.autoLayout') }}</el-button>
         </el-tooltip>
+        <el-button size="small" :aria-label="t('orchestrator.dagEditor.actualSize')" @click="handleActualSize">{{ Math.round(zoom * 100) }}%</el-button>
       </div>
       <el-tooltip :content="t('orchestrator.dagEditor.clearBtn')">
         <el-button circle size="small" :aria-label="t('orchestrator.dagEditor.clearBtn')" @click="handleClear"><el-icon><DocumentDelete /></el-icon></el-button>
       </el-tooltip>
     </div>
 
+    <div class="connection-legend">
+      <span><i class="parameter-line"></i>{{ t('orchestrator.dagEditor.parameterConnection') }}</span>
+      <span><i class="control-line"></i>{{ t('orchestrator.dagEditor.controlConnection') }}</span>
+      <span class="connection-hint">{{ t('orchestrator.dagEditor.connectionHint') }}</span>
+    </div>
     <div
       id="dag-container"
       ref="container"
@@ -59,6 +65,26 @@
       @drop="handleDrop"
       @keydown="handleKeydown"
     ></div>
+
+    <section v-if="focusedName || focusedConnections.length" class="connection-inspector" :aria-label="t('orchestrator.dagEditor.connections')">
+      <div class="connection-heading">
+        <strong>{{ focusedName || t('orchestrator.dagEditor.connections') }}</strong>
+        <el-button size="small" text @click="resetConnectionFocus">{{ t('orchestrator.dagEditor.clearFocus') }}</el-button>
+      </div>
+      <div v-if="focusedExecution" class="node-execution-detail" :aria-label="t('orchestrator.liveExecution.nodeExecution')">
+        <el-tag :type="executionStatusType(focusedExecution.status)">{{ t(`orchestrator.liveExecution.status.${focusedExecution.status}`) }}</el-tag>
+        <span v-if="focusedExecution.duration != null">{{ t('orchestrator.liveExecution.duration', { duration: focusedExecution.duration }) }}</span>
+        <el-button v-if="focusedExecution.executionId" size="small" text @click="openMonitorExecution(focusedExecution.executionId)">{{ t('orchestrator.liveExecution.childExecution') }}</el-button>
+        <p v-if="focusedExecution.error" class="node-execution-error">{{ focusedExecution.error }}</p>
+      </div>
+      <div v-if="!focusedConnections.length">{{ t('orchestrator.dagEditor.noConnections') }}</div>
+      <button v-for="connection in focusedConnections" :key="connection.id" class="connection-row" @click="focusConnection(connection.id)">
+        <span>{{ t(connection.kind === 'parameter' ? 'orchestrator.dagEditor.parameterConnection' : 'orchestrator.dagEditor.controlConnection') }}</span>
+        <span>{{ connection.source }}<template v-if="connection.output"> · {{ connection.output }}</template></span>
+        <span aria-hidden="true">→</span>
+        <span>{{ connection.target }}<template v-if="connection.input"> · {{ connection.input }}</template></span>
+      </button>
+    </section>
 
     <!-- 节点配置抽屉 -->
     <el-drawer
@@ -170,11 +196,12 @@ import {
   ZoomIn,
   ZoomOut
 } from '@element-plus/icons-vue'
-import { buildTaskOwnerUrl, ExecutionParameterForm, StatusAnnouncer } from '@addp/common-frontend'
+import { openMonitorExecution, buildTaskOwnerUrl, ExecutionParameterForm, StatusAnnouncer } from '@addp/common-frontend'
 import {
   createDAGKeyboardHandler,
   createDAGDirectEdgeBehavior,
   createDAGDragNodeBehavior,
+  focusDAGConnections,
   generateColor,
   getDAGIncomingEdgeModels,
   getDAGUpstreamCandidates,
@@ -201,13 +228,18 @@ import {
 import {
   ORCHESTRATION_NODE_TYPE,
   orchestrationAnchor,
+  orchestrationNodeSize,
   orchestrationPort,
-  registerOrchestrationEditorNode
+  registerOrchestrationEditorNode,
+  renderOrchestrationNodeExecution
 } from './orchestrationEditorNode'
 
-const { t } = useI18n()
+import { executionStatusType } from '../utils/executionPresentation'
+
+const { t, locale } = useI18n()
 
 const props = defineProps({
+  executionStates: { type: Object, default: () => ({}) },
   initialSteps: {
     type: Array,
     default: () => []
@@ -218,7 +250,7 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['update:steps', 'update:layout'])
+const emit = defineEmits(['update:steps', 'update:layout', 'ready'])
 
 const container = ref(null)
 const drawerVisible = ref(false)
@@ -257,8 +289,8 @@ const { graph, initGraph, loadData } = useDAGCore(container, {
     type: ORCHESTRATION_NODE_TYPE
   },
   defaultEdge: {
-    type: 'polyline',
-    style: parameterEdgeStyle()
+    type: 'cubic-horizontal',
+    style: { ...parameterEdgeStyle(), lineAppendWidth: 12 }
   }
 })
 
@@ -275,7 +307,9 @@ const {
 } = useDAGSelection(graph, {
   focusTarget: container
 })
-const { canZoomIn, canZoomOut, zoomIn, zoomOut, fitView, autoLayout } = useDAGViewport(graph)
+const { zoom, syncZoom, canZoomIn, canZoomOut, zoomIn, zoomOut, fitView, autoLayout } = useDAGViewport(graph, {
+  layout: { type: 'dagre', rankdir: 'LR', nodesep: 48, ranksep: 64 }
+})
 const { captureLayout, applyNodePositions, restoreViewport } = useDAGLayout(graph)
 const { copiedNode, copy, paste } = useDAGClipboard(graph, { createNodeId: createCopiedNodeId })
 const {
@@ -289,7 +323,53 @@ const {
   capture: () => graph.value?.save?.() || { nodes: [], edges: [] },
   restore: restoreGraphSnapshot
 })
+const focusedExecution = computed(() => {
+  const item = selectedItem.value
+  return item?.getType?.() === 'node' ? props.executionStates[item.getID()] : null
+})
+function renderExecutionStates() {
+  for (const node of graph.value?.getNodes?.() || []) {
+    const state = props.executionStates[node.getID()]
+    renderOrchestrationNodeExecution(node, state, state ? t(`orchestrator.liveExecution.status.${state.status}`) : '')
+  }
+  graph.value?.paint?.()
+}
+watch([() => props.executionStates, locale], renderExecutionStates)
 const canCopyNode = computed(() => selectedItem.value?.getType?.() === 'node')
+const focusedConnections = ref([])
+const focusedName = ref('')
+function refreshConnectionFocus() {
+  const candidate = selectedItem.value
+  const active = candidate && !candidate.destroyed ? candidate : null
+  const edges = focusDAGConnections(graph.value, active)
+  focusedName.value = active?.getType?.() === 'node' ? (active.getModel().name || active.getModel().label || active.getID()) : ''
+  focusedConnections.value = edges.map(edge => {
+    const model = edge.getModel()
+    const source = graph.value.findById(model.source)?.getModel()
+    const target = graph.value.findById(model.target)?.getModel()
+    return {
+      id: edge.getID(),
+      kind: model.edgeKind,
+      source: source?.name || source?.label || model.source,
+      target: target?.name || target?.label || model.target,
+      output: source?.outputPorts?.find(port => port.name === model.sourceOutput)?.label || model.sourceOutput,
+      input: target?.inputPorts?.find(port => port.name === model.targetInput)?.label || model.targetInput
+    }
+  })
+}
+watch(selectedItem, refreshConnectionFocus)
+function focusConnection(id) {
+  selectItem(graph.value.findById(id))
+}
+function resetConnectionFocus() {
+  clearSelection()
+}
+function handleActualSize() {
+  graph.value?.zoomTo(1)
+  if (selectedItem.value) graph.value.focusItem(selectedItem.value)
+  syncZoom()
+  emitLayout()
+}
 const navigationAnnouncement = computed(() => {
   if (selectedItem.value?.getType?.() !== 'node') return ''
   const model = selectedItem.value.getModel()
@@ -345,6 +425,7 @@ onMounted(async () => {
   registerOrchestrationEditorNode()
   initGraph()
   initSelectionListener()
+  graph.value.on('afterremoveitem', refreshConnectionFocus)
   await loadTaskProviderRuntimeMetadata()
 
   // 双击节点事件
@@ -367,9 +448,15 @@ onMounted(async () => {
     recordHistory()
     emitLayout()
   })
+  graph.value.on('click', event => {
+    if (!event.item) resetConnectionFocus()
+  })
   graph.value.on('canvas:dragend', emitLayout)
-  graph.value.on('wheelzoom', emitLayout)
+  graph.value.on('wheelzoom', () => { syncZoom(); emitLayout() })
 
+  graph.value.on('afterrender', renderExecutionStates)
+  graph.value.on('afteradditem', renderExecutionStates)
+  graph.value.on('afterupdateitem', renderExecutionStates)
   await loadStepsWithRuntimeMetadata(props.initialSteps)
 })
 
@@ -552,6 +639,7 @@ function parameterEdgeConfig(source, target, output, input) {
 function controlEdgeStyle() {
   return {
     stroke: canvasColors.warning,
+    lineAppendWidth: 12,
     lineWidth: 1.5,
     lineDash: [6, 4],
     endArrow: edgeEndArrow(canvasColors.warning)
@@ -561,6 +649,7 @@ function controlEdgeStyle() {
 function parameterEdgeStyle() {
   return {
     stroke: canvasColors.primary,
+    lineAppendWidth: 12,
     lineWidth: 1.8,
     endArrow: edgeEndArrow(canvasColors.primary)
   }
@@ -773,6 +862,7 @@ async function addTask(nodeData, point = null) {
       y: targetPoint.y
     }
 
+    nodeModel.size = orchestrationNodeSize(nodeModel)
     const item = graph.value.addItem('node', nodeModel)
     graph.value.paint()
     selectGraphItem(item)
@@ -801,6 +891,7 @@ function emitSteps() {
   const data = graph.value.save()
   const steps = convertToSteps(data)
   lastStepsSignature.value = stepsSignature(steps)
+  refreshConnectionFocus()
   emit('update:steps', steps)
 }
 
@@ -832,7 +923,7 @@ function convertToSteps(graphData) {
   return Array.from(nodeMap.values())
 }
 
-function loadSteps(steps) {
+async function loadSteps(steps) {
   if (!graph.value) return
 
   const nodes = []
@@ -884,12 +975,15 @@ function loadSteps(steps) {
     })
   })
 
+  nodes.forEach(node => { node.size = orchestrationNodeSize(node) })
+  selectedItem.value = null
   loadData(applyNodePositions(nodes, props.initialLayout), edges)
   lastStepsSignature.value = stepsSignature(steps)
   if (hasStoredLayout(props.initialLayout)) {
     restoreViewport(props.initialLayout)
+    syncZoom()
   } else if (nodes.length > 0) {
-    autoLayout()
+    await autoLayout()
   }
   resetHistory(graph.value.save())
   emitLayout()
@@ -980,8 +1074,8 @@ function handleFitView() {
   fitView()
 }
 
-function handleAutoLayout() {
-  autoLayout()
+async function handleAutoLayout() {
+  await autoLayout()
   recordHistory()
   emitLayout()
 }
@@ -1074,10 +1168,12 @@ async function loadTaskProviderRuntimeMetadata() {
 }
 
 async function loadStepsWithRuntimeMetadata(steps) {
+  emit('ready', false)
   const generation = ++stepsLoadGeneration
   await ensureTaskRuntimeMetadataForSteps(steps)
   if (generation !== stepsLoadGeneration) return
-  loadSteps(steps)
+  await loadSteps(steps)
+  emit('ready', true)
 }
 
 async function ensureTaskRuntimeMetadataForSteps(steps) {
@@ -1186,7 +1282,10 @@ defineExpose({
 </script>
 
 <style scoped>
+.node-execution-detail { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
+.node-execution-error { width: 100%; color: var(--el-color-danger); overflow-wrap: anywhere; margin: 0; }
 .dag-editor {
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -1206,7 +1305,8 @@ defineExpose({
 
 .toolbar-left {
   display: flex;
-  gap: 12px;
+  gap: 6px;
+  flex-wrap: wrap;
   align-items: center;
 }
 
@@ -1241,6 +1341,7 @@ defineExpose({
 
 #dag-container {
   flex: 1;
+  min-height: 100px;
   background: var(--addp-bg-secondary) !important;
   position: relative;
   overflow: hidden;
@@ -1253,5 +1354,88 @@ defineExpose({
 :deep(.el-alert__title) {
   font-size: 12px;
 }
+.toolbar-left :deep(.el-button + .el-button) {
+  margin-left: 0;
+}
+
+.connection-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--addp-text-secondary);
+}
+
+.connection-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.connection-legend i {
+  width: 22px;
+  border-top: 2px solid var(--el-color-primary);
+}
+
+.connection-legend .control-line {
+  border-color: var(--el-color-warning);
+  border-top-style: dashed;
+}
+
+.connection-inspector {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  max-height: 180px;
+  overflow: auto;
+  padding: 10px 14px;
+  border-top: 1px solid var(--addp-border-color);
+  background: var(--addp-bg-primary);
+  font-size: 13px;
+}
+
+.connection-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.connection-heading strong {
+  overflow-wrap: anywhere;
+}
+
+.connection-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  border: 0;
+  border-radius: 4px;
+  padding: 8px;
+  text-align: left;
+  background: transparent;
+  color: var(--addp-text-primary);
+  cursor: pointer;
+  font: inherit;
+}
+
+.connection-row:hover, .connection-row:focus-visible {
+  background: var(--addp-bg-secondary);
+  outline: 1px solid var(--el-color-primary);
+}
+
+.connection-row span {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.connection-row span:first-child {
+  color: var(--addp-text-secondary);
+  flex-shrink: 0;
+}
+
+
 </style>
-    recordHistory()

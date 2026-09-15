@@ -20,12 +20,12 @@ func NewTableRelationHandler(svc *service.TableRelationService) *TableRelationHa
 }
 
 // ListDimensionRelations GET /api/v1/model/logical-tables/:id/dimension-relations
-// @Summary 查询维度关联列表 | List dimension relations
+// @Summary 查询维度关联或被引用关系 | List outgoing or incoming dimension relations
 // @Tags Model
 // @Produce json
-// @Param id path int true "事实表ID | Fact table ID"
+// @Param id path int true "逻辑表ID | Logical table ID"
 // @Success 200 {array} models.TableRelationDetail "维度关联列表 | Dimension relation list"
-// @Failure 400 {object} models.ErrorResponse "事实表 ID 或表类型无效 | Invalid fact table ID or table type"
+// @Failure 400 {object} models.ErrorResponse "逻辑表 ID 或表类型无效 | Invalid logical table ID or table type"
 // @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
 // @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
 // @Failure 404 {object} models.ErrorResponse "逻辑表不存在 | Logical table not found"
@@ -54,7 +54,7 @@ func (h *TableRelationHandler) ListDimensionRelations(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param id path int true "事实表ID | Fact table ID"
-// @Param body body models.CreateTableRelationRequest true "创建请求 | Create request"
+// @Param body body models.SaveTableRelationRequest true "创建请求 | Create request"
 // @Success 201 {object} models.TableRelationMutationResponse "已创建的关联 | Created relation"
 // @Failure 400 {object} models.ErrorResponse "表或字段类型无效 | Invalid table or field type"
 // @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
@@ -71,7 +71,7 @@ func (h *TableRelationHandler) AddDimensionRelation(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, errorResponseWithCode(commoni18n.T(c, modeli18n.MsgInvalidID), "invalid_id"))
 		return
 	}
-	var req models.CreateTableRelationRequest
+	var req models.SaveTableRelationRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, invalidParamsResponse(c))
 		return
@@ -83,6 +83,49 @@ func (h *TableRelationHandler) AddDimensionRelation(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusCreated, rel)
+}
+
+// UpdateDimensionRelation PUT /api/v1/model/logical-tables/:id/dimension-relations/:rid
+// @Summary 原位更新维度关联 | Update dimension relation in place
+// @Tags Model
+// @Accept json
+// @Produce json
+// @Param id path int true "事实表ID | Fact table ID"
+// @Param rid path int true "关联ID | Relation ID"
+// @Param body body models.SaveTableRelationRequest true "完整更新请求 | Full update request"
+// @Success 200 {object} models.TableRelationMutationResponse "已更新的关联 | Updated relation"
+// @Failure 400 {object} models.ErrorResponse "表或字段类型无效 | Invalid table or field type"
+// @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
+// @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
+// @Failure 404 {object} models.ErrorResponse "逻辑表或字段不存在 | Logical table or field not found"
+// @Failure 409 {object} models.ErrorResponse "表状态或关联冲突 | Table state or relation conflict"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["model.logical_model.update"]
+// @Router /logical-tables/{id}/dimension-relations/{rid} [put]
+// @Security BearerAuth
+func (h *TableRelationHandler) UpdateDimensionRelation(c *gin.Context) {
+	tableID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || tableID <= 0 {
+		c.JSON(http.StatusBadRequest, errorResponseWithCode(commoni18n.T(c, modeli18n.MsgInvalidID), "invalid_id"))
+		return
+	}
+	relationID, err := strconv.ParseInt(c.Param("rid"), 10, 64)
+	if err != nil || relationID <= 0 {
+		c.JSON(http.StatusBadRequest, errorResponseWithCode(commoni18n.T(c, modeli18n.MsgInvalidRelationID), "invalid_table_relation_id"))
+		return
+	}
+	var req models.SaveTableRelationRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, invalidParamsResponse(c))
+		return
+	}
+	tenantID := getTenantID(c)
+	rel, err := h.svc.UpdateDimensionRelation(relationID, tableID, tenantID, &req)
+	if err != nil {
+		writeServiceError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, rel)
 }
 
 // RemoveDimensionRelation DELETE /api/v1/model/logical-tables/:id/dimension-relations/:rid

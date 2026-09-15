@@ -2064,6 +2064,92 @@ const docTemplate = `{
                 ]
             }
         },
+        "/query/{id}/metric-source": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "保留服务身份，比较当前发布版本后原子替换编译契约 | Preserve service identity and atomically replace the compiled contract after checking the current publication version",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "QueryService"
+                ],
+                "summary": "切换指标来源修订 | Rebind metric source revision",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "服务 ID | Service ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "指标绑定与当前发布版本 | Metric binding and current publication version",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_service_internal_models.RebindMetricSourceRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_service_internal_models.QueryServiceDTO"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "service.definition.update"
+                ]
+            }
+        },
         "/query/{id}/refresh-source-snapshot": {
             "post": {
                 "security": [
@@ -4070,6 +4156,12 @@ const docTemplate = `{
                 "name": {
                     "type": "string"
                 },
+                "options": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/query.ParameterOption"
+                    }
+                },
                 "required": {
                     "type": "boolean"
                 },
@@ -4414,6 +4506,9 @@ const docTemplate = `{
                     "maximum": 10000,
                     "minimum": 1
                 },
+                "metric_source": {
+                    "$ref": "#/definitions/github_com_addp_service_internal_models.MetricSourceRequest"
+                },
                 "named_parameters": {
                     "description": "SQL 中使用 :name 引用的强类型标量参数。",
                     "type": "array",
@@ -4752,6 +4847,41 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_service_internal_models.MetricSourceRequest": {
+            "type": "object",
+            "required": [
+                "implementation_id",
+                "revision_id"
+            ],
+            "properties": {
+                "implementation_id": {
+                    "type": "integer"
+                },
+                "revision_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_service_internal_models.MetricSourceSnapshot": {
+            "type": "object",
+            "properties": {
+                "dependency_hash": {
+                    "type": "string"
+                },
+                "implementation_id": {
+                    "type": "integer"
+                },
+                "metric_definition_id": {
+                    "type": "integer"
+                },
+                "metric_definition_revision_id": {
+                    "type": "integer"
+                },
+                "revision_id": {
+                    "type": "integer"
+                }
+            }
+        },
         "github_com_addp_service_internal_models.ParameterDef": {
             "type": "object",
             "properties": {
@@ -4976,6 +5106,9 @@ const docTemplate = `{
                 "service_name": {
                     "type": "string"
                 },
+                "service_version": {
+                    "type": "string"
+                },
                 "sql_query": {
                     "description": "SQL配置",
                     "type": "string"
@@ -5022,6 +5155,9 @@ const docTemplate = `{
                         "type": "integer"
                     }
                 },
+                "metric_source": {
+                    "$ref": "#/definitions/github_com_addp_service_internal_models.MetricSourceSnapshot"
+                },
                 "object_table": {
                     "$ref": "#/definitions/dataitem.ItemDescriptor"
                 },
@@ -5053,6 +5189,12 @@ const docTemplate = `{
                 },
                 "name": {
                     "type": "string"
+                },
+                "options": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/query.ParameterOption"
+                    }
                 },
                 "required": {
                     "type": "boolean"
@@ -5121,6 +5263,21 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "scanned_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_service_internal_models.RebindMetricSourceRequest": {
+            "type": "object",
+            "required": [
+                "metric_source",
+                "service_version"
+            ],
+            "properties": {
+                "metric_source": {
+                    "$ref": "#/definitions/github_com_addp_service_internal_models.MetricSourceRequest"
+                },
+                "service_version": {
                     "type": "string"
                 }
             }
@@ -5969,6 +6126,20 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/datatype.FieldInfo"
                     }
+                }
+            }
+        },
+        "query.ParameterOption": {
+            "type": "object",
+            "properties": {
+                "labels": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "value": {
+                    "description": "Value 与参数声明类型一致的标量。| Scalar matching the declared parameter type."
                 }
             }
         }

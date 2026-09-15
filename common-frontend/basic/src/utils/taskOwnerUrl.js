@@ -130,12 +130,12 @@ export async function openConsoleRoute(route, options = {}) {
   const request = buildConsoleNavigationRequest(route, { history })
 
   if (typeof window !== 'undefined' && window.parent !== window) {
-    await requestConsoleBridge(
+    const result = await requestConsoleBridge(
       CONSOLE_NAVIGATION_CHANNEL,
       request,
-      { source, timeout }
+      { source, timeout, allowPending: true }
     )
-    return true
+    return result?.cancelled !== true
   }
 
   const url = resolveConsoleRouteUrl(request.route, options)
@@ -159,16 +159,16 @@ export async function syncConsoleRoute(route, options = {}) {
     timeout = 1500,
     history = 'replace'
   } = options
-  await requestConsoleBridge(
+  const result = await requestConsoleBridge(
     CONSOLE_NAVIGATION_CHANNEL,
     buildConsoleNavigationRequest(route, {
       history,
       synchronized: true,
       pageDescriptor: options.pageDescriptor
     }),
-    { source, timeout }
+    { source, timeout, allowPending: true }
   )
-  return true
+  return result?.cancelled !== true
 }
 
 export function openMonitorExecution(executionId, options = {}) {

@@ -10,7 +10,7 @@
 
 - 业务实体（Entity）设计与属性定义
 - 逻辑表（LogicalTable）设计：支持实体表、事实表、维度表三种建模角色
-- 星型建模视图：事实表与维度表的显式关联关系
+- 维度建模：事实表与维度表的显式关联关系
 - 公共/一致性维度与维度层级：由 Model 独占定义，层级成员关联本模型字段
 - 指标实现：冻结 Standard 指标定义修订并维护粒度、来源、连接、过滤和可执行表达式
 - ER 图 Mermaid 导入导出
@@ -25,7 +25,7 @@ Model Entity 与 LogicalTable 的专业关系通过当前 User Token 读取 `/:i
 
 Model 负责已审批逻辑表的正式物理表创建、结构校验与显式退役；Develop 负责计算并写入已存在表，Quality 负责正式表数据校验，Orchestrator 负责依赖、调度和完整流程。建表不计算数据，数据刷新不依赖发布组或暂存批次。
 
-Model 不声明 TaskProvider；创建物理表由逻辑表详情独立触发，不启动编排。
+Model 声明 `logical_table_materialization` TaskProvider；已持久化的 LogicalTable 是任务定义事实源，任务 ID 等于逻辑表 ID，不新增或复制建表配置。仅已审批且配置目标的逻辑表可执行。手动入口和 Orchestrator 入口复用同一执行服务，写入 `common.task_executions`；执行冻结逻辑表版本，运行时必须匹配该版本。成功输出 `execution_id + target_locator`。
 
 **端口**:
 - 后端: `8181`（环境变量 `MODEL_BACKEND_PORT`）
@@ -72,7 +72,7 @@ model/
         │   ├── EntityDetail.vue
         │   ├── LogicalTableList.vue
         │   ├── LogicalTableDetail.vue
-        │   ├── StarSchemaView.vue   # 星型建模视图
+        │   ├── StarSchemaView.vue   # 维度建模
         │   ├── ERDiagramManager.vue # 实体关系图
         │   └── DWLayerList.vue
         └── components/
@@ -152,17 +152,9 @@ model/
 | relation_type | string | `fk`（外键关联）/ `join`（宽泛关联） |
 | tenant_id | int64 | 租户隔离 |
 
-### `model.metric_implementations` — 指标实现
+### `model.metric_implementations` / `model.metric_implementation_revisions`
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| fact_table_id | int64 | 所属事实表 ID，共用父 LogicalTable 版本 |
-| metric_definition_id | int64 | Standard 指标定义稳定身份，用于引用屏障 |
-| metric_definition_revision_id | int64 | 冻结的已发布 Standard 指标定义修订 |
-| name / grain | string | 实现名称 / 计算粒度 |
-| source_config / dimension_config | JSONB | 事实来源与字段 / 参与维度与连接 |
-| filter_config / expression_config | JSONB | 过滤条件 / 可执行表达式 |
-| status | string | `active` / `disabled` |
+指标实现是独立版本主体；稳定身份保存 `fact_table_id`、`metric_definition_id`、名称和 `version`。修订保存 `revision_no`、`metric_definition_revision_id`、类型化 `contract`、依赖快照与 hash，以及 `draft|published|withdrawn` 状态。同一实现最多一个草稿，发布内容不可变；事实表只是来源引用，不拥有实现生命周期。API 与完整契约以正式规范为准。
 
 ### `model.dw_layers` — 数仓分层
 
@@ -198,7 +190,7 @@ POST   /api/v1/model/entities/import-mermaid # 从 Mermaid ER 图导入
 GET    /api/v1/model/entities/export-mermaid # 导出 Mermaid ER 图
 ```
 
-Entity、LogicalTable、DWLayer 和 EntityRelation 是独立并发版本主体。EntityAttribute 使用父 Entity 版本；LogicalField、TableRelation、DimensionHierarchy 和 MetricImplementation 使用父 LogicalTable 版本。已有资源及聚合子资源的所有写操作都在 JSON body 中携带对应 `version`，成功后返回新版本；不接受 query、Header 或服务端版本兜底。
+Entity、LogicalTable、DWLayer 和 EntityRelation 是独立并发版本主体。EntityAttribute 使用父 Entity 版本；LogicalField、TableRelation、DimensionHierarchy 使用父 LogicalTable 版本；MetricImplementation 使用独立版本，其修订使用实现版本。已有资源及聚合子资源的所有写操作都在 JSON body 中携带对应 `version`，成功后返回新版本；不接受 query、Header 或服务端版本兜底。
 
 Mermaid 导出返回 `{ "mermaid_code": "...", "revision": 1 }`，导入提交同一结构并在单个事务内推进 Tenant 实体模型集合 `revision`。不得保留只返回字符串或不带修订版本的并行接口。
 
@@ -219,8 +211,8 @@ POST   /api/v1/model/logical-tables                          # 创建
 GET/PUT/DELETE /api/v1/model/logical-tables/:id              # 详情/更新/删除
 GET/POST/PUT/DELETE /api/v1/model/logical-tables/:id/fields  # 字段 CRUD
 POST   /api/v1/model/logical-tables/:id/preview-ddl          # 预览 DDL
-GET/POST/PUT/DELETE .../metric-implementations            # 事实表指标实现
-GET/POST/DELETE .../dimension-relations                   # 事实表关联维度表（含字段映射）
+GET/POST /metric-implementations                         # 独立指标实现及修订，详见正式规范
+GET/POST/PUT/DELETE .../dimension-relations                   # 事实表关联维度表（含字段映射）
 GET/POST/PUT/DELETE .../dimension-hierarchies             # 维度表聚合内层级及成员
 ```
 
@@ -233,7 +225,7 @@ GET/POST/PUT/DELETE .../dimension-hierarchies             # 维度表聚合内�
 /modeling/logical-tables         # 逻辑表列表
 /modeling/logical-tables/:id     # 逻辑表详情（字段、维度层级、DDL 预览）
 /modeling/er-diagram             # 按业务域查看 ER 图；domain_id=all 显式全域
-/modeling/star-schema            # 星型建模视图（事实表-维度表-指标三维关联）
+/modeling/star-schema            # 维度建模（事实表-维度表-指标三维关联）
 ```
 
 ## 模块依赖关系
@@ -256,7 +248,7 @@ Model 和 Standard 使用不同的 PostgreSQL Schema，**无数据库外键约�
 | `entities.domain_id` | `standard.domains.id` |
 | `entity_attributes.element_id` | `standard.elements.id` |
 | `logical_fields.element_id` | `standard.elements.id` |
-| `metric_implementations.metric_definition_revision_id` | `standard.metric_definition_revisions.id` |
+| `metric_implementation_revisions.metric_definition_revision_id` | `standard.metric_definition_revisions.id` |
 
 创建/更新时，Service 层通过 HTTP 调用 Standard 模块 API 验证 ID 是否存在。前端直接调用 Standard 的唯一公开 API，Model 不提供 Standard 代理路径。
 
@@ -264,7 +256,7 @@ Model 和 Standard 使用不同的 PostgreSQL Schema，**无数据库外键约�
 
 Model 是 `model.logical_model.*` 第一批 Permission 的唯一 owner，机器可读事实源是 [authorization/permissions.yaml](authorization/permissions.yaml)。该 Manifest 由 `common/authorization` 在构建/发布期统一发现、校验和聚合，Model 服务启动时不向 System 动态注册 Permission。
 
-Entity、EntityRelation、DWLayer 和 LogicalModel 分别使用 `model.entity.*`、`model.entity_relation.*`、`model.dw_layer.*`、`model.logical_model.*`。EntityAttribute 是 Entity 聚合内子资源；LogicalField、TableRelation、DimensionHierarchy 和 MetricImplementation 是 LogicalModel 聚合内子资源，不建立平行宽泛 Permission。Mermaid 导入是破坏性全量替换，按 Entity 与 EntityRelation 的 create/delete 执行 all-of 校验；导出按两者的 read 执行 all-of 校验。已审批实体必须先全部退回草稿，导入不会绕过生命周期约束。
+Entity、EntityRelation、DWLayer 和 LogicalModel 分别使用 `model.entity.*`、`model.entity_relation.*`、`model.dw_layer.*`、`model.logical_model.*`。EntityAttribute 是 Entity 聚合内子资源；LogicalField、TableRelation、DimensionHierarchy 是 LogicalModel 聚合内子资源；MetricImplementation 是独立聚合，使用 model.metric_implementation 精确权限。Mermaid 导入是破坏性全量替换，按 Entity 与 EntityRelation 的 create/delete 执行 all-of 校验；导出按两者的 read 执行 all-of 校验。已审批实体必须先全部退回草稿，导入不会绕过生命周期约束。
 
 并发契约以 [Model 概念与数据约束规范](docs/model概念与数据约束规范.md) 为事实源。后端必须把版本校验、生命周期校验、聚合写入和版本递增放在同一事务中；前端收到 `409 resource_version_conflict` 后保留本地未保存状态，不自动重试。
 
@@ -286,19 +278,26 @@ draft ⇄ approved
 
 ### `dimension-relations` 查询返回 JOIN 结果
 
+事实表查询出向关联，维度表查询被哪些事实表引用；详情包含两端表名、编码、字段名和列名。关系唯一编辑入口为事实表详情 `?tab=relations&relation_id=<id>`；维度建模只导航。新增、更新、删除只要求事实表为草稿，引用已审批维度不解除其审批或冻结修订。
+
 `GET /api/v1/model/logical-tables/:id/dimension-relations` 返回的是带字段名的详情（通过 Raw SQL JOIN），而非原始 ID，前端可直接展示，无需二次请求：
 
 ```json
 {
   "id": 1,
+  "source_table": 2,
+  "source_table_name": "订单事实",
+  "source_table_code": "dwd_order",
   "source_field": 3,
   "source_field_name": "客户ID",
+  "source_field_code": "customer_id",
   "target_table": 5,
   "target_table_name": "客户维度表",
   "target_table_code": "dim_customer",
   "target_scd_type": 2,
   "target_field": 8,
   "target_field_name": "客户主键",
+  "target_field_code": "id",
   "relation_type": "fk"
 }
 ```
@@ -335,12 +334,14 @@ draft ⇄ approved
    ```
    PostgreSQL 集成测试未设置 `ADDP_TEST_MODEL_POSTGRES_DSN` 时会跳过；并发、事务和迁移相关改动必须通过根 Makefile 的第二条标准门禁执行，不能直接创建临时 database。
 
+维度关联改动沿用现有自动发现门禁：`make test-module MODULE=model` 覆盖平台一致性、Go 单元、前端路由及交互、PostgreSQL 事务测试；其中数据库测试需配置上述测试 DSN。`make test-model-frontend` 包含关系入口唯一所有权、URL 恢复、审批只读、原位更新和冲突保留测试；CI 继续使用已登记的 Model 前端与 PostgreSQL 作业。
+
 ## 前端公开路由
 
 - 模块内 Router 使用 `/dw-layers`、`/entities`、`/logical-tables`、`/er-diagram`、`/star-schema`；Console 模块名为 `modeling`，公开 URL 统一加 `/modeling` 前缀。
 - 实体和逻辑表详情使用 `/:id`；实体详情默认 `basic` Tab 省略，`attributes`、`relations` 使用唯一 `tab` query。
-- 星型模型当前事实表使用 `table_id`，并响应刷新及浏览器前进/后退；无选择时省略该 query。
+- 维度建模业务域使用 `domain_id`（省略表示全部），当前事实表使用 `table_id`，并响应刷新及浏览器前进/后退；无选择时省略该 query。
 - 业务导航统一调用 `frontend/src/utils/moduleNavigation.js`；详情返回明确列表路由。
 - 逻辑表详情提供创建物理表、DDL 预览与退役操作；完整数据流程和记录从 Orchestrator 进入。
 
-- Model 导航依次为业务实体、实体关系图、数仓分层、逻辑表设计、星型建模视图。
+- Model 导航依次为业务实体、实体关系图、数仓分层、逻辑表设计、维度建模。

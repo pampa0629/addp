@@ -36,6 +36,22 @@ type DevExecutor struct {
 	federatedQuery           federatedQueryExecutor
 	notebookExecutionService *NotebookExecutionService
 	queryResultLimit         int
+	notifyQueryExecution     func()
+}
+
+// SetQueryExecutionNotifier wakes the embedded query supervisor after a
+// pending execution has committed. PostgreSQL polling remains the durable
+// cross-instance fallback.
+func (e *DevExecutor) SetQueryExecutionNotifier(notify func()) {
+	if e != nil {
+		e.notifyQueryExecution = notify
+	}
+}
+
+func (e *DevExecutor) notifyPendingQuery() {
+	if e != nil && e.notifyQueryExecution != nil {
+		e.notifyQueryExecution()
+	}
 }
 
 type federatedQueryExecutor interface {
@@ -48,7 +64,6 @@ type preparedContentExecution struct {
 	execution             *commonExecution.TaskExecution
 	devTask               *models.DevTask
 	tenantID              int
-	sqlAuthorization      *IssuedSQLExecutionAuthorization
 	workflowAuthorization *IssuedWorkflowExecutionAuthorization
 }
 
@@ -313,10 +328,15 @@ func (e *DevExecutor) prepareContentExecutionWithConfirmation(
 	}
 	applySQLExecutionAuthorizationFacts(execution, sqlAuthorization)
 	applyWorkflowExecutionAuthorizationFacts(execution, workflowAuthorization)
+	if devType == commonExecution.TaskTypeQuery {
+		execution.ExecutionBoundary = commonExecution.ExecutionBoundaryBounded
+		execution.MaxAttempts = 1
+		execution.ExecutionConfig = devTaskExecutionRecordConfig(tempItem, inputs)
+	}
 
 	return &preparedContentExecution{
 		execution: execution, devTask: tempItem, tenantID: int(tenantID),
-		sqlAuthorization: sqlAuthorization, workflowAuthorization: workflowAuthorization,
+		workflowAuthorization: workflowAuthorization,
 	}, nil
 }
 
@@ -337,12 +357,14 @@ func (e *DevExecutor) startPreparedContentExecution(prepared *preparedContentExe
 		prepared.execution.ExecutionID,
 		prepared.devTask.DevType,
 	)
+	if prepared.devTask.DevType == commonExecution.TaskTypeQuery {
+		e.notifyPendingQuery()
+		return
+	}
 	go e.executeAsync(
-		prepared.execution.ID,
 		prepared.execution.ExecutionID,
 		prepared.devTask,
 		prepared.tenantID,
-		prepared.sqlAuthorization,
 		prepared.workflowAuthorization,
 	)
 }
@@ -505,18 +527,16 @@ func workflowEngineIDFromExecutionConfig(executionConfig map[string]interface{})
 
 // executeAsync 异步执行任务（核心执行逻辑）
 func (e *DevExecutor) executeAsync(
-	recordID int64,
 	executionID string,
 	devTask *models.DevTask,
 	tenantID int,
-	sqlAuthorization *IssuedSQLExecutionAuthorization,
 	workflowAuthorization *IssuedWorkflowExecutionAuthorization,
 ) {
 	log.Printf("🟢 [DevExecutor] executeAsync 开始: execution_id=%s", executionID)
 	ctx := context.Background()
 	startTime := time.Now()
 
-	// 只有真正进入 worker 后才从 pending 切换为 running 并写 started_at。
+	// 只有真正进入执行体后才从 pending 切换为 running 并写 started_at。
 	if err := e.taskExecutionRepo.StartExecution(ctx, executionID, tenantID, startTime); err != nil {
 		log.Printf("❌ [DevExecutor] 启动执行失败: execution_id=%s error=%v", executionID, err)
 		return
@@ -526,16 +546,12 @@ func (e *DevExecutor) executeAsync(
 	var result commonModels.JSONMap
 	var stableOutputs commonModels.JSONMap
 	var errorMessage string
-	var errorCode string
-	var rowsAffected *int64
 
 	// 根据类型分发到不同引擎
 	log.Printf("🟢 [DevExecutor] 开始分发到引擎: execution_id=%s type=%s", executionID, devTask.DevType)
 	switch devTask.DevType {
 	case "workflow":
 		result, stableOutputs, errorMessage = e.executeWorkflow(ctx, devTask, executionID, tenantID, workflowAuthorization)
-	case "query":
-		result, errorMessage, rowsAffected, errorCode = e.executeQuery(ctx, devTask, executionID, tenantID, sqlAuthorization)
 	case "script":
 		result, errorMessage = e.executeScript(ctx, devTask, executionID, tenantID)
 	default:
@@ -563,7 +579,6 @@ func (e *DevExecutor) executeAsync(
 	execution.Progress = 100
 	execution.ExecutionTimeMs = &executionTime
 	execution.CompletedAt = &completedAt
-	execution.RowsAffected = rowsAffected
 	execution.CurrentStep = nil // 清空当前步骤
 
 	// 将 result 和 size 存入 metadata JSONB
@@ -593,10 +608,6 @@ func (e *DevExecutor) executeAsync(
 	if errorMessage != "" {
 		execution.ErrorDetails = commonModels.JSONMap{
 			"message": errorMessage,
-		}
-		if errorCode != "" {
-			execution.ErrorDetails["error_code"] = errorCode
-			execution.ErrorDetails["details"] = errorMessage
 		}
 	}
 
@@ -907,7 +918,6 @@ func (e *DevExecutor) executeQuery(ctx context.Context, devTask *models.DevTask,
 
 // executeSQL 执行SQL
 func (e *DevExecutor) executeSQL(ctx context.Context, devTask *models.DevTask, executionID string, tenantID int, authorization *IssuedSQLExecutionAuthorization) (commonModels.JSONMap, string, *int64, string) {
-	_ = e.updateExecutionStatus(ctx, executionID, tenantID, commonExecution.ExecutionStatusRunning, 30, "执行查询")
 	sqlContent, ok := devTask.Content["query"].(string)
 	parsedExecutionID, err := uuid.Parse(executionID)
 	if !ok || err != nil {
@@ -1476,6 +1486,10 @@ func (e *DevExecutor) ExecuteWithParamsWithContext(
 		CreatedAt:         now,
 		UpdatedAt:         now,
 	}
+	if devTask.DevType == commonExecution.TaskTypeQuery {
+		execution.ExecutionBoundary = commonExecution.ExecutionBoundaryBounded
+		execution.MaxAttempts = 1
+	}
 	applySQLExecutionAuthorizationFacts(execution, sqlAuthorization)
 	applyWorkflowExecutionAuthorizationFacts(execution, workflowAuthorization)
 
@@ -1486,9 +1500,14 @@ func (e *DevExecutor) ExecuteWithParamsWithContext(
 	log.Printf("🚀 [DevExecutor] 参数化执行已创建 execution_id=%s task_id=%d params=%v",
 		executionID, itemID, executionInputs["submitted_parameters"])
 
-	// 异步执行任务
+	if devTask.DevType == commonExecution.TaskTypeQuery {
+		e.notifyPendingQuery()
+		return executionID, nil
+	}
+
+	// Workflow 与 Script 仍由 Backend 的既有即时路线执行。
 	go e.executeAsync(
-		execution.ID, executionID, tempItem, int(tenantID), sqlAuthorization, workflowAuthorization,
+		executionID, tempItem, int(tenantID), workflowAuthorization,
 	)
 
 	return executionID, nil
@@ -1651,26 +1670,23 @@ func (e *DevExecutor) ExecuteWithParamsFromParentExecution(
 		TaskType: preparedTask.template.DevType, Source: commonExecution.ModuleOrchestrator,
 		SourceTaskID: commonExecution.NewSourceTaskIDFromUint(itemID), SourceTaskName: &preparedTask.template.Name,
 		ParentExecutionID: &parentID, Status: commonExecution.ExecutionStatusPending, Progress: 0,
-		ExecutionBoundary: commonExecution.ExecutionBoundaryBounded, MaxAttempts: 3,
+		ExecutionBoundary: commonExecution.ExecutionBoundaryBounded, MaxAttempts: 1,
 		TriggerType: normalizedTriggerType, TriggeredBy: &triggeredBy,
 		ActorPrincipalID: &principalID, ActorTenantMembershipID: &membershipID,
 		IssuedAuthorizationVersion: &authorizationVersion,
 		ExecutionConfig:            devTaskExecutionRecordConfig(preparedTask.task, preparedTask.inputs),
 		CreatedAt:                  now, UpdatedAt: now,
 	}
-	if _, relationResult, _ := relationParameterBindingsFromContent(preparedTask.task.Content); relationResult {
-		execution.MaxAttempts = 1
-	}
 	if err := e.taskExecutionRepo.Create(ctx, execution); err != nil {
 		return "", fmt.Errorf("failed to create child execution record: %w", err)
 	}
 	if preparedTask.task.DevType == commonExecution.TaskTypeQuery {
-		// Orchestrator 查询统一由 develop-query-worker 领取。查询所需的
-		// Execution Authorization 必须在 claim 后按当前执行边界签发。
+		// Orchestrator 查询由 Backend 内嵌 Supervisor 领取；查询所需的
+		// Execution Authorization 在 claim 后按当前执行边界签发。
+		e.notifyPendingQuery()
 		return executionID, nil
 	}
 
-	var sqlAuthorization *IssuedSQLExecutionAuthorization
 	var workflowAuthorization *IssuedWorkflowExecutionAuthorization
 	switch preparedTask.task.DevType {
 	case commonExecution.TaskTypeWorkflow:
@@ -1681,7 +1697,6 @@ func (e *DevExecutor) ExecuteWithParamsFromParentExecution(
 	if err != nil {
 		return executionID, e.failPendingAuthorization(ctx, execution, err)
 	}
-	applySQLExecutionAuthorizationFacts(execution, sqlAuthorization)
 	applyWorkflowExecutionAuthorizationFacts(execution, workflowAuthorization)
 	if execution.ActorPrincipalID == nil || *execution.ActorPrincipalID != principalID ||
 		execution.ActorTenantMembershipID == nil || *execution.ActorTenantMembershipID != membershipID ||
@@ -1694,7 +1709,7 @@ func (e *DevExecutor) ExecuteWithParamsFromParentExecution(
 	}
 	e.startPreparedContentExecution(&preparedContentExecution{
 		execution: execution, devTask: preparedTask.task, tenantID: int(tenantID),
-		sqlAuthorization: sqlAuthorization, workflowAuthorization: workflowAuthorization,
+		workflowAuthorization: workflowAuthorization,
 	})
 	return executionID, nil
 }

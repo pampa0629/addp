@@ -74,8 +74,9 @@ describe('P1 module public route contracts', () => {
   it('persists stable Model and Asset object selections in canonical query parameters', () => {
 
     const starSchema = readRepoFile('model/frontend/src/views/StarSchemaView.vue')
-    expect(starSchema).toContain('route.query.table_id')
-    expect(starSchema).toContain("query: { table_id: tableId }")
+    expect(starSchema).toContain('resolveDimensionalModelRouteState(route.query)')
+    expect(starSchema).toContain('query: buildDimensionalModelRouteQuery(')
+    expect(starSchema).toContain('watch(() => route.query, () => syncSelectedTableFromRoute())')
 
     const assetManager = readRepoFile('asset/frontend/src/views/AssetManager.vue')
     expect(assetManager).toContain('route.query.category_id')

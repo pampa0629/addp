@@ -195,42 +195,28 @@
                     maxlength="64"
                     @input="resetSQLOutputContract"
                   />
-                  <el-select v-model="parameter.type" @change="handleNamedParameterDefinitionChange(parameter)" class="named-parameter-type">
+                  <el-select v-model="parameter.type" @change="parameter.options = []; handleNamedParameterDefinitionChange(parameter)" class="named-parameter-type">
                     <el-option v-for="type in sqlNamedParameterTypes" :key="type" :label="type" :value="type" />
                   </el-select>
                   <el-checkbox v-model="parameter.required" @change="handleNamedParameterDefinitionChange(parameter)">
                     {{ t('service.query.namedParameterRequired') }}
                   </el-checkbox>
-                  <el-select v-if="parameter.type === 'bool'" v-model="parameter.value" clearable @change="resetSQLOutputContract">
-                    <el-option :value="true" :label="t('service.common.yes')" />
-                    <el-option :value="false" :label="t('service.common.no')" />
-                  </el-select>
-                  <el-input-number
-                    v-else-if="numericSQLNamedParameterTypes.has(parameter.type)"
-                    v-model="parameter.value"
-                    :controls="false"
-                    :placeholder="parameter.required ? t('service.query.namedParameterSample') : t('service.query.namedParameterDefault')"
-                    @change="resetSQLOutputContract"
-                  />
-                  <el-date-picker
-                    v-else-if="parameter.type === 'date' || parameter.type === 'timestamp'"
-                    v-model="parameter.value"
-                    :type="parameter.type === 'timestamp' ? 'datetime' : 'date'"
-                    :value-format="parameter.type === 'timestamp' ? 'YYYY-MM-DDTHH:mm:ssZ' : 'YYYY-MM-DD'"
-                    @change="resetSQLOutputContract"
-                  />
-                  <el-input
-                    v-else
-                    v-model="parameter.value"
-                    :placeholder="parameter.required ? t('service.query.namedParameterSample') : t('service.query.namedParameterDefault')"
-                    @input="resetSQLOutputContract"
-                  />
+                  <ParameterValueInput v-model="parameter.value" :control-type="parameterControlType(parameter.type)" :options="parameter.options" @update:model-value="resetSQLOutputContract" />
                   <el-input
                     v-model="parameter.description"
                     :placeholder="t('service.query.namedParameterDescription')"
                     maxlength="500"
                   />
                   <el-button link type="danger" @click="removeSQLNamedParameter(index)">{{ t('service.common.delete') }}</el-button>
+                  <div class="parameter-options-editor">
+                    <div v-for="(option, optionIndex) in parameter.options" :key="optionIndex" class="parameter-option-row">
+                      <ParameterValueInput v-model="option.value" :control-type="parameterControlType(parameter.type)" @update:model-value="resetSQLOutputContract" />
+                      <el-input v-model="option.labels['zh-cn']" :placeholder="t('service.query.optionLabelZh')" maxlength="100" />
+                      <el-input v-model="option.labels.en" :placeholder="t('service.query.optionLabelEn')" maxlength="100" />
+                      <el-button link type="danger" @click="parameter.options.splice(optionIndex, 1); resetSQLOutputContract()">{{ t('service.common.delete') }}</el-button>
+                    </div>
+                    <el-button link type="primary" :disabled="parameter.options.length >= 100" @click="parameter.options.push({ value: null, labels: { 'zh-cn': '', en: '' } }); resetSQLOutputContract()">{{ t('service.query.addParameterOption') }}</el-button>
+                  </div>
                 </div>
                 <el-button type="primary" plain @click="addSQLNamedParameter">
                   {{ t('service.query.addNamedParameter') }}
@@ -440,6 +426,8 @@
 </template>
 
 <script setup>
+import ParameterValueInput from '../../../../common-frontend/basic/src/components/ParameterValueInput.vue'
+import { parameterControlType, parameterOptionsAllow, validParameterOptions } from '../../../../common-frontend/basic/src/utils/parameterInput.mjs'
 import { ref, reactive, computed, onMounted, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -610,6 +598,7 @@ const validSQLNamedParameters = computed(() => {
     const name = String(parameter.name || '').trim()
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name) || names.has(name) || !sqlNamedParameterTypes.includes(parameter.type)) return false
     names.add(name)
+    if (!validParameterOptions(parameter.options, parameter.type) || !parameterOptionsAllow(parameter.options, parameter.value)) return false
 	if (parameter.value === '' || parameter.value === null || parameter.value === undefined) return false
 	if (numericSQLNamedParameterTypes.has(parameter.type)) {
 	  const number = Number(parameter.value)
@@ -718,7 +707,7 @@ const resetSQLOutputContract = () => {
 
 const addSQLNamedParameter = () => {
   if (sqlNamedParameters.value.length >= 32) return
-  sqlNamedParameters.value.push({ name: '', type: 'string', required: true, description: '', value: '' })
+  sqlNamedParameters.value.push({ name: '', type: 'string', required: true, description: '', value: '', options: [] })
   resetSQLOutputContract()
 }
 
@@ -957,6 +946,7 @@ const handleSubmit = async () => {
 		  name: String(parameter.name || '').trim(),
 		  type: parameter.type,
 		  required: parameter.required,
+          options: (parameter.options || []).map(option => ({ value: option.value, labels: { ...option.labels } })),
 		  description: String(parameter.description || '').trim(),
 		  ...(!parameter.required ? { default: normalizeSQLNamedParameterValue(parameter) } : {})
 		}))
@@ -1037,6 +1027,7 @@ onMounted(async () => {
 		name: parameter.name,
 		type: parameter.type,
 		required: parameter.required,
+          options: (parameter.options || []).map(option => ({ value: option.value, labels: { ...option.labels } })),
 		description: parameter.description || '',
 		value: parameter.required ? '' : parameter.default
 	  }))
@@ -1246,4 +1237,9 @@ onMounted(async () => {
   padding-top: 20px;
   border-top: 1px solid #ebeef5;
 }
+</style>
+
+<style scoped>
+.parameter-options-editor { grid-column: 1 / -1; width: 100%; }
+.parameter-option-row { display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 8px; margin: 8px 0; }
 </style>

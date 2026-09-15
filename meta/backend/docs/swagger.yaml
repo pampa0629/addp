@@ -291,6 +291,10 @@ definitions:
         type: string
       full_name:
         type: string
+      hidden_downstream_count:
+        type: integer
+      hidden_upstream_count:
+        type: integer
       item_fingerprint:
         type: string
       item_id:
@@ -482,6 +486,10 @@ definitions:
         type: string
       service_id:
         type: integer
+      service_name:
+        type: string
+      service_updated_at:
+        type: string
     type: object
   github_com_addp_meta_internal_models.ResourceTreeAncestorsResponse:
     properties:
@@ -1476,16 +1484,27 @@ paths:
         name: revision
         type: string
       - default: both
-        description: '方向：upstream、downstream 或 both | Direction: upstream, downstream
-          or both'
+        description: '方向：upstream、downstream 或两者有向遍历并集 both，不含旁系 | Direction: upstream,
+          downstream or their directed union both; excludes sibling branches'
         in: query
         name: direction
         type: string
-      - default: 3
-        description: 展开深度，范围 0-20 | Traversal depth, 0-20
+      - default: 2
+        description: 每条派生或服务依赖边计一层，0 只显示主体，范围 0-20 | Each derive or serve edge is
+          one hop; 0 returns only the subject; range 0-20
         in: query
         name: depth
         type: integer
+      - description: 额外向上展开的 item ID，逗号分隔，最多100个 | Item IDs to expand upstream, comma
+          separated, max 100
+        in: query
+        name: expand_upstream
+        type: string
+      - description: 额外向下展开的 item ID，逗号分隔，最多100个 | Item IDs to expand downstream,
+          comma separated, max 100
+        in: query
+        name: expand_downstream
+        type: string
       - default: 100
         description: 节点和边上限，范围 1-500 | Node and edge limit, 1-500
         in: query
@@ -1526,6 +1545,9 @@ paths:
     post:
       consumes:
       - application/json
+      description: Service 同步名称、更新时间与当前版本依赖；更新关闭旧版本，忽略过期通知 | Service publishes its
+        name, update time and current revision dependencies; superseded revisions
+        close and stale notifications are ignored
       parameters:
       - description: 服务发布血缘事实 | Service publication lineage
         in: body
@@ -1540,6 +1562,10 @@ paths:
           description: No Content
         "400":
           description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_meta_internal_models.LineageErrorResponse'
+        "500":
+          description: Internal Server Error
           schema:
             $ref: '#/definitions/github_com_addp_meta_internal_models.LineageErrorResponse'
       security:

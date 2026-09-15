@@ -76,15 +76,15 @@ Develop 普通查询保护只消费同一 `PreparedQuery` 的 `ReadSet()` 与 `O
 
 保存的 `query` 任务可以声明通用“关系参数 -> 已存在表结果”模式，且参数绑定、查询 Runtime 与目标必须位于同一个显式声明 `compute.query.parameters.types=relation` 的 PostgreSQL 方言 Engine；当前包括 PostgreSQL 与 openGauss。任务只在 `content.query_parameters[]` 保存唯一参数定义；关系参数使用 `type=relation`，可在 `default.locator` 保存同一查询 Engine 中已有表的标准 ResourceLocator，不保存其他模块专有 ID；`content.query` 只保存单条只读 `SELECT`，并以未加引号、未限定 schema 的裸参数名引用已声明关系，例如参数 `activities` 写作 `FROM activities`。关系参数名不得与同一作用域的 CTE 重名。TaskProvider 契约把每个关系参数声明为 ResourceLocator 资源输入，没有默认绑定时才要求调用方提供；编排写入另行声明必填 `target_locator`。`input_ui_schema.<参数名>` 使用 `control=resource_tree_picker`，按参数保存顺序暴露独立输入端口，供 Orchestrator 使用任务默认表或分别绑定不同直接上游的稳定 ResourceLocator 输出，不得要求用户手写输出模板。
 
-Worker 使用 PostgreSQL AST 验证关系作用域，只把与已声明 `type=relation` 参数同名的裸关系节点改写为执行期参数绑定的 locator，再安全编译为 `INSERT INTO <target> SELECT ...`。CTE、子查询和 JOIN 可以使用，但 CTE 与参数重名、未声明参数、未使用声明、真实物理关系、schema 限定关系、表函数数据源、未声明 `relation` 的引擎、非 PostgreSQL 方言查询或跨 Engine 输入必须拒绝。Develop 只使用当前父 execution 派生的精确 Engine `read + write` 授权，不获得 DDL effect；稳定输出为 `execution_id + target_locator + row_count`。Develop 不调用 Model API，不持有 Model Permission。
+Query Execution Service 使用 PostgreSQL AST 验证关系作用域，只把与已声明 `type=relation` 参数同名的裸关系节点改写为执行期参数绑定的 locator，再安全编译为 `INSERT INTO <target> SELECT ...`。CTE、子查询和 JOIN 可以使用，但 CTE 与参数重名、未声明参数、未使用声明、真实物理关系、schema 限定关系、表函数数据源、未声明 `relation` 的引擎、非 PostgreSQL 方言查询或跨 Engine 输入必须拒绝。Develop 只使用当前父 execution 派生的精确 Engine `read + write` 授权，不获得 DDL effect；稳定输出为 `execution_id + target_locator + row_count`。Develop 不调用 Model API，不持有 Model Permission。
 
-查询工作台即时执行和 Develop 手动任务执行使用同一参数解析与 PostgreSQL AST 编译器，但不接收 `target_locator`：关系参数应用默认绑定及本次覆盖后编译为只读物理表查询，返回受限结果预览。Orchestrator 执行在相同有效输入上增加独立结果目标并由 Worker 编译为写入；输出目标不是查询参数。
+查询工作台即时执行和 Develop 手动任务执行使用同一参数解析与 PostgreSQL AST 编译器，但不接收 `target_locator`：关系参数应用默认绑定及本次覆盖后编译为只读物理表查询，返回受限结果预览。Orchestrator 执行在相同有效输入上增加独立结果目标并由 Query Execution Service 编译为写入；输出目标不是查询参数。
 
 查询结果区必须区分有限预览与全部结果导出：预览只用于有界展示，不提供“下载预览”旁路；单 Engine 表格查询 execution 成功后提供“导出全部结果”，不以预览是否截断为前提，DuckDB 联邦查询在具备统一流式查询 Provider 前不得显示该入口。完整导出由 `POST /api/v1/develop/executions/{execution_id}/exports` 从该 execution 冻结的查询内容、有效值参数、全部有效关系输入、Engine 与结果字段构造只读查询快照，再通过 Common 强类型 Transfer Client 创建无任务定义的 bounded `sync` execution；关系输入必须按参数名稳定排序写入 `source.query.inputs[]`，供 Transfer 校验和记录完整执行血缘，不得只挑一个输入或重新解析 SQL 推断资源。Develop 使用 Common 导出会话能力把产物暂存到 infra，在 Workbench 内轮询并下载到本地；不选择业务存储、不触发 Meta scan、不保存 Transfer task ID。格式、文件名、状态与下载交互必须复用 `common-frontend` 的唯一导出组件。
 
 查询、工作流和脚本的 TaskProvider 稳定输出统一只写入 `common.task_executions.metadata.outputs`；不得保存或读取旧的 `metadata.result.outputs`。`GET /task-provider/executions/:execution_id` 使用 `common/taskprovider` 标准状态响应把同一对象投影为顶层闭合 `outputs`，用户执行详情可以附带任务信息，但不得形成第二套输出提取规则。
 
-独立 `develop-query-worker` 固定领取 `module=develop + task_type=query + source=orchestrator` 的 bounded execution；Backend 不得同时启动这些查询。Worker 只消费 execution 中冻结的解析后 `content`、`engine_id`、timeout 和已解析运行时参数，不在领取后重读可变任务定义。所有 Orchestrator 查询在租约失效后都收敛失败，动态目标不进行跨 lease 重放。查询工作台和 `source=develop` 的手动查询继续由 Backend 即时异步执行，不进入该 Worker 队列。
+全部 `module=develop + task_type=query` 的 bounded execution 统一由 Develop Backend 内嵌 Query Execution Supervisor 领取，不按 `source=develop|orchestrator` 分裂执行路线，也不保留请求外 goroutine 或独立 Query Worker。监督器只消费 execution 中冻结的解析后 `content`、`engine_id`、timeout 和已解析运行时参数，不在领取后重读可变任务定义；单个 Backend 默认共有 20 个执行槽位，同一 `engine_id` 默认最多同时占用 5 个槽位，达到上限后该引擎的 pending execution 保持排队，不阻塞其他引擎被领取。当前 Engine capability 不声明实例查询并发上限，因此不从连接数或连接池大小推断容量；两级上限只允许通过显式配置固定调整，不自动伸缩。监督器以 `execution_supervisor/query` 角色向 `common.background_runtime_heartbeats` 发布当前活动槽位与固定总容量，Monitor 将其与 query execution 的当前积压和平均/P95 排队时长组合展示；观测事实不参与 claim 或自动调节并发。`source=develop` 在创建 execution 前由当前 User Access Token 签发授权并持久化不可变授权引用；`source=orchestrator` 在 claim 后按当前 parent execution 与 lease attempt 派生授权。全部查询在租约失效后都收敛失败，外部效果不进行跨 lease 重放。
 
 查询工作台 Copilot 只在当前选中的 Query Runtime 范围内生成候选查询语言。前端必须提交当前 Runtime `engine_id` 和 capability 声明的 `query_language`；已有具体 data item 选择时直接提交其 locator（联邦 Runtime 下 locator 保留 Source Engine ID），已有明确容器范围但尚未确定具体 data item 时通过 `resource_scope_locator` 提交 discovery scope，未选择范围时 Copilot 通过带该 Runtime `engine_id` 的共享 `data.search` 粗筛。范围枚举统一走 `resource.children.list → resource.facts.get`，全局发现统一走 `data.search → resource.ancestors.get → resource.facts.get`。同一输入角色存在多个候选时由用户确认一个。Copilot 不得扫描其他工作台 Runtime、拼接 locator、假定字段名或直接执行生成结果；生成的 `query` 和 `query_parameters[]` 必须作为同一查询草稿原子回填编辑器与参数面板，之后仍走同一 preflight 和 execution 主路径。
 
@@ -161,7 +161,9 @@ Develop 只对已持久化且可重复使用的 `dev_tasks.dev_type=query|workfl
 
 ### 核心服务文件
 
-- [dev_executor.go](backend/internal/service/dev_executor.go) - **统一执行器**（调度 SQL/工作流/Notebook 执行）
+- [dev_executor.go](backend/internal/service/dev_executor.go) - **统一执行入口**（Query 入队，Workflow/Notebook 分发）
+- [query_execution_service.go](backend/internal/service/query_execution_service.go) - Query 的冻结快照、授权与带 lease 终态执行服务
+- [query_execution_supervisor.go](backend/internal/worker/query_execution_supervisor.go) - Develop Backend 内嵌 Query Execution Supervisor
 - [sql_engine_service.go](backend/internal/service/sql_engine_service.go) - SQL 执行服务
 - [workflow_engine_service.go](backend/internal/service/workflow_engine_service.go) - GIS 工作流执行服务
 - [jupyter_service.go](backend/internal/service/jupyter_service.go) - Jupyter Notebook 服务
@@ -400,3 +402,7 @@ curl -H "Authorization: Bearer <token>" \
 ### 固定目标写入契约
 
 Develop 关系查询写入通过执行契约显式配置固定正式表 `target_locator` 与 `write_mode=overwrite|append`。所有输入和输出必须位于同一 PostgreSQL Engine，输出不得同时作为输入。overwrite 在一个事务内锁定目标、删除旧记录并插入完整计算结果；失败或取消回滚该表写入。append 只追加。多个任务分别提交，不保证跨任务、多表同时可见。
+
+Query Execution Service 在业务写入提交后，以本次冻结并经编译校验的全部 relation 绑定和实际目标构造统一 `lineage_facts`，覆盖写入映射为 `replace`，追加映射为 `append`。事实与成功终态一起通过 lease 校验落库，随后复用 Develop 的 Meta 采集通知；通知失败由 Meta 周期采集器重试。建表依赖不产生数据派生边，失败和失去 lease 的执行不发布成功事实。回归测试由现有 `make test-module MODULE=develop` 和 CI Go 模块自动发现门禁覆盖。
+
+查询和工作流编辑器统一使用共享 `useUnsavedChangesGuard`，删除原模块内路由确认与 beforeunload 实现；修改状态仍由编辑器定义。Console 导航与 standalone 导航消费同一共享保护契约。

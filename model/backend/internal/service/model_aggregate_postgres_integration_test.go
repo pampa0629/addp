@@ -171,8 +171,9 @@ func TestPostgresLogicalTableAssociationsShareAggregateVersion(t *testing.T) {
 	metricRepo := repository.NewMetricImplementationRepository(tx)
 	relationSvc := NewTableRelationService(relationRepo, tableRepo)
 	metricSvc := NewMetricImplementationService(metricRepo, tableRepo)
+	metricSvc.SetStandardClient(metricReferenceTestClient(t, tenantID))
 
-	relationResult, err := relationSvc.AddDimensionRelation(fact.ID, tenantID, &models.CreateTableRelationRequest{
+	relationResult, err := relationSvc.AddDimensionRelation(fact.ID, tenantID, &models.SaveTableRelationRequest{
 		Version: 1, TargetTable: dimension.ID, SourceField: factField.ID,
 		TargetField: dimensionField.ID, RelationType: "fk",
 	})
@@ -183,58 +184,34 @@ func TestPostgresLogicalTableAssociationsShareAggregateVersion(t *testing.T) {
 		t.Fatalf("version after dimension relation = %d, want 2", relationResult.Version)
 	}
 
-	metricID := tenantID + 2
-	staleRequest := metricImplementationRequest(1, factField.ID)
-	staleRequest.MetricDefinitionID = metricID
-	staleRequest.MetricDefinitionRevisionID = metricID + 1000
-	staleRequest.Note = "stale metric implementation"
-	_, err = metricSvc.Create(fact.ID, tenantID, userID, staleRequest)
-	requireDomainErrorCode(t, err, "resource_version_conflict")
-	assertMetricImplementationCount(t, tx, fact.ID, tenantID, 0)
-	var staleGuardCount int64
-	if err := tx.Model(&models.StandardReferenceGuard{}).
-		Where("tenant_id = ? AND resource_type = ? AND resource_id = ?", tenantID, models.StandardResourceMetric, metricID).
-		Count(&staleGuardCount).Error; err != nil {
-		t.Fatalf("count reference guards after stale metric mapping: %v", err)
+	// Metrics have an independent version and require an approved source.
+	_, err = metricSvc.Create(context.Background(), tenantID, userID, metricImplementationRequest(fact.ID))
+	requireDomainErrorCode(t, err, "metric_implementation_state_conflict")
+	if err := tx.Model(&models.LogicalTable{}).Where("id = ?", fact.ID).Update("status", "approved").Error; err != nil {
+		t.Fatal(err)
 	}
-	if staleGuardCount != 0 {
-		t.Fatalf("reference guard count after stale metric mapping = %d, want 0", staleGuardCount)
-	}
-
-	currentRequest := metricImplementationRequest(relationResult.Version, factField.ID)
-	currentRequest.MetricDefinitionID = metricID
-	currentRequest.MetricDefinitionRevisionID = metricID + 1000
-	currentRequest.Note = "current metric implementation"
-	metricResult, err := metricSvc.Create(fact.ID, tenantID, userID, currentRequest)
+	metricResult, err := metricSvc.Create(context.Background(), tenantID, userID, metricImplementationRequest(fact.ID))
 	if err != nil {
-		t.Fatalf("create PostgreSQL metric implementation: %v", err)
+		t.Fatal(err)
 	}
-	if metricResult.Version != 3 {
-		t.Fatalf("version after metric implementation = %d, want 3", metricResult.Version)
+	if metricResult.Version != 1 {
+		t.Fatalf("metric version %d", metricResult.Version)
 	}
-
-	_, err = relationSvc.RemoveDimensionRelation(relationResult.Relation.ID, fact.ID, tenantID, relationResult.Version)
+	err = metricSvc.Delete(metricResult.ID, tenantID, userID, 2)
 	requireDomainErrorCode(t, err, "resource_version_conflict")
-	_, err = metricSvc.Delete(metricResult.Implementation.ID, fact.ID, tenantID, relationResult.Version)
-	requireDomainErrorCode(t, err, "resource_version_conflict")
-	assertTableRelationCount(t, tx, fact.ID, tenantID, 1)
 	assertMetricImplementationCount(t, tx, fact.ID, tenantID, 1)
-
-	metricDelete, err := metricSvc.Delete(metricResult.Implementation.ID, fact.ID, tenantID, metricResult.Version)
+	if err := metricSvc.Delete(metricResult.ID, tenantID, userID, 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Model(&models.LogicalTable{}).Where("id = ?", fact.ID).Update("status", "draft").Error; err != nil {
+		t.Fatal(err)
+	}
+	relationDelete, err := relationSvc.RemoveDimensionRelation(relationResult.Relation.ID, fact.ID, tenantID, relationResult.Version)
 	if err != nil {
-		t.Fatalf("delete PostgreSQL metric implementation: %v", err)
+		t.Fatal(err)
 	}
-	if metricDelete.Version != 4 {
-		t.Fatalf("version after metric removal = %d, want 4", metricDelete.Version)
-	}
-	relationDelete, err := relationSvc.RemoveDimensionRelation(
-		relationResult.Relation.ID, fact.ID, tenantID, metricDelete.Version,
-	)
-	if err != nil {
-		t.Fatalf("remove PostgreSQL dimension relation: %v", err)
-	}
-	if relationDelete.Version != 5 {
-		t.Fatalf("version after relation removal = %d, want 5", relationDelete.Version)
+	if relationDelete.Version != 3 {
+		t.Fatalf("fact version %d", relationDelete.Version)
 	}
 	assertTableRelationCount(t, tx, fact.ID, tenantID, 0)
 	assertMetricImplementationCount(t, tx, fact.ID, tenantID, 0)
@@ -247,8 +224,8 @@ func TestPostgresLogicalTableAssociationsShareAggregateVersion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload dimension table after association mutations: %v", err)
 	}
-	if reloadedFact.Version != 5 || reloadedDimension.Version != 1 {
-		t.Fatalf("association aggregate versions = fact:%d dimension:%d, want 5 and 1", reloadedFact.Version, reloadedDimension.Version)
+	if reloadedFact.Version != 3 || reloadedDimension.Version != 1 {
+		t.Fatalf("association aggregate versions = fact:%d dimension:%d, want 3 and 1", reloadedFact.Version, reloadedDimension.Version)
 	}
 }
 

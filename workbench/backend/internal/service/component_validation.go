@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/addp/common/datatype"
+	commonquery "github.com/addp/common/query"
 	"github.com/addp/workbench/internal/models"
 )
 
@@ -42,6 +43,12 @@ func validateComponentConfiguration(input models.ComponentConfiguration, descrip
 		}
 		if parameter.Default != nil && validateScalarValue(parameter.Default, parameter.Type) != nil {
 			return fmt.Errorf("%w: invalid service named parameter default", ErrInvalidComponentConfiguration)
+		}
+		if err := commonquery.ValidateParameterOptions(parameter.Options, func(v any) error { return validateScalarValue(v, parameter.Type) }); err != nil {
+			return fmt.Errorf("%w: %v", ErrInvalidComponentConfiguration, err)
+		}
+		if parameter.Default != nil && !commonquery.ParameterOptionAllows(parameter.Options, parameter.Default) {
+			return fmt.Errorf("%w: invalid option default", ErrInvalidComponentConfiguration)
 		}
 		namedParameters[parameter.Name] = parameter
 	}
@@ -134,7 +141,8 @@ func validateComponentConfiguration(input models.ComponentConfiguration, descrip
 		if !exists {
 			return fmt.Errorf("%w: invalid default parameter %s", ErrInvalidComponentConfiguration, key)
 		}
-		if err := validateRawNamedParameterValue(raw, namedParameters[binding.Name].Type); err != nil {
+		parameter := namedParameters[binding.Name]
+		if err := validateRawParameterTarget(raw, componentParameterTarget{Type: parameter.Type, Operator: "eq", Options: parameter.Options}, 1); err != nil {
 			return fmt.Errorf("%w: invalid default parameter %s: %v", ErrInvalidComponentConfiguration, key, err)
 		}
 	}
@@ -182,10 +190,6 @@ func componentNamedParameterBindingFromTemplate(template models.ComponentQueryTe
 		}
 	}
 	return models.ComponentNamedParameterBinding{}, false
-}
-
-func validateRawNamedParameterValue(raw json.RawMessage, fieldType datatype.FieldType) error {
-	return validateRawFilterValue(raw, models.ConsumerQueryField{Type: fieldType}, "eq", 1)
 }
 
 func validConsumerOperation(descriptor *models.ConsumerDescriptor) bool {

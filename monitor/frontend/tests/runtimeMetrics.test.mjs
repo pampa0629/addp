@@ -22,3 +22,13 @@ test('runtime metric refresh is slower than execution summary polling', () => {
   assert.match(dashboardSource, /setInterval\(refreshExecutionSummary, 5000\)/)
   assert.match(dashboardSource, /setInterval\(\(\) => loadRuntimeMetrics\(\{ silent: true \}\), 30000\)/)
 })
+
+test('runtime health renders the embedded execution supervisor as a first-class role', () => {
+  const dashboardSource = readFileSync(new URL('../src/views/Dashboard.vue', import.meta.url), 'utf8')
+  const zhCnMessages = readFileSync(new URL('../src/i18n/zh-cn.json', import.meta.url), 'utf8')
+  const enMessages = readFileSync(new URL('../src/i18n/en.json', import.meta.url), 'utf8')
+
+  assert.match(dashboardSource, /runtimeRoleText\(row\.role\)/)
+  assert.match(zhCnMessages, /"execution_supervisor": "内嵌执行监督器"/)
+  assert.match(enMessages, /"execution_supervisor": "Embedded Execution Supervisor"/)
+})

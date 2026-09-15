@@ -145,6 +145,7 @@ func SetupRouter(
 			queryAPI.GET("", permission(serviceauthorization.PermissionServiceDefinitionRead), queryServiceHandler.ListServices)
 			queryAPI.GET("/:id", permission(serviceauthorization.PermissionServiceDefinitionRead), queryServiceHandler.GetService)
 			queryAPI.PUT("/:id", permission(serviceauthorization.PermissionServiceDefinitionUpdate), queryServiceHandler.UpdateService)
+			queryAPI.PUT("/:id/metric-source", permission(serviceauthorization.PermissionServiceDefinitionUpdate), queryServiceHandler.RebindMetricSource)
 			queryAPI.DELETE("/:id", permission(serviceauthorization.PermissionServiceDefinitionDelete), queryServiceHandler.DeleteService)
 			queryAPI.GET("/:id/source-snapshot-diff", permission(serviceauthorization.PermissionServiceDefinitionRead), queryServiceHandler.CheckSourceSnapshot)
 			queryAPI.POST("/:id/refresh-source-snapshot", permission(serviceauthorization.PermissionServiceDefinitionUpdate), queryServiceHandler.RefreshSourceSnapshot)

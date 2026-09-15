@@ -25,7 +25,7 @@ export default {
   },
 
   // 获取执行详情
-  getExecution(id) {
-    return client.get(`/orchestrator/orch-executions/${id}`)
+  getExecution(id, options = {}) {
+    return client.get(`/orchestrator/orch-executions/${id}`, options)
   }
 }

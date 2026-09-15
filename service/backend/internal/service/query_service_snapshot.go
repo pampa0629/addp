@@ -139,6 +139,7 @@ func queryServiceDependencyHash(snapshot *models.QueryServiceDependencySnapshot)
 		objectTable = &projected
 	}
 	payload := struct {
+		MetricSource             *models.MetricSourceSnapshot `json:"metric_source,omitempty"`
 		QueryHash                string                       `json:"query_hash,omitempty"`
 		Table                    *datatype.TableInfo          `json:"table,omitempty"`
 		Spatial                  *datatype.SpatialInfo        `json:"spatial,omitempty"`
@@ -146,6 +147,7 @@ func queryServiceDependencyHash(snapshot *models.QueryServiceDependencySnapshot)
 		FederatedSourceEngineIDs []uint                       `json:"federated_source_engine_ids,omitempty"`
 		FederatedObjectTables    map[string]map[string]string `json:"federated_object_tables,omitempty"`
 	}{
+		MetricSource:             snapshot.MetricSource,
 		QueryHash:                snapshot.QueryHash,
 		Table:                    projectTableInfo(snapshot.Table),
 		Spatial:                  spatial,

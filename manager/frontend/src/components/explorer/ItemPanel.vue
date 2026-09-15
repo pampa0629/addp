@@ -327,7 +327,7 @@
           style="margin-bottom: 12px"
         />
         <div v-loading="lineageLoading" class="lineage-panel">
-          <LineageViewer :graph="lineageGraph" :height="420" />
+          <LineageViewer :graph="lineageGraph" v-model:depth="lineageDepth" @expand="expandLineage" @view-execution="openMonitorExecution" />
         </div>
       </div>
     </div>
@@ -383,7 +383,7 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import PreviewPanel from '@/components/explorer/PreviewPanel.vue'
 import { optionalCount, pickNestedCount } from '@/utils/metadataRowCount'
-import { openConsoleRoute, parseLocator } from '@addp/common-frontend'
+import { openConsoleRoute, openMonitorExecution, parseLocator } from '@addp/common-frontend'
 import client from '@/api/client'
 import { getCatalogEntryBySourceIdentity } from '@/api/catalog'
 import { useAuthStore } from '@/store/auth'
@@ -440,6 +440,8 @@ const lineageVisited = ref(false)
 const lineageLoading = ref(false)
 const lineageError = ref('')
 const lineageGraph = ref(normalizeLineageGraph())
+const lineageDepth = ref(2)
+const lineageExpansion = { upstream: [], downstream: [] }
 // 模块 client 已将 /api/v1 作为 baseURL，这里只提供模块路径前缀。
 const lineageApi = createLineageApi({ request: client, baseUrl: '/meta' })
 let lineageRequestSeq = 0
@@ -457,7 +459,6 @@ const loadLineage = async () => {
   const itemId = selectedItemId.value
   const requestSeq = ++lineageRequestSeq
   lineageError.value = ''
-  lineageGraph.value = normalizeLineageGraph()
   if (!itemId || props.activeTab !== 'lineage') return
   lineageLoading.value = true
   try {
@@ -465,7 +466,9 @@ const loadLineage = async () => {
       subject_kind: 'data_item',
       item_id: itemId,
       direction: 'both',
-      depth: 3,
+      depth: lineageDepth.value,
+      expand_upstream: lineageExpansion.upstream.join(',') || undefined,
+      expand_downstream: lineageExpansion.downstream.join(',') || undefined,
       limit: 100
     })
     if (requestSeq === lineageRequestSeq) lineageGraph.value = normalizeLineageGraph(response)
@@ -475,6 +478,14 @@ const loadLineage = async () => {
     if (requestSeq === lineageRequestSeq) lineageLoading.value = false
   }
 }
+
+const resetLineageExpansion = () => { lineageExpansion.upstream = []; lineageExpansion.downstream = [] }
+const expandLineage = async ({ item_id, direction }) => {
+  if (lineageLoading.value || !['upstream', 'downstream'].includes(direction)) return
+  if (!lineageExpansion[direction].includes(item_id)) lineageExpansion[direction].push(item_id)
+  await loadLineage()
+}
+watch(lineageDepth, () => { resetLineageExpansion(); loadLineage() })
 
 const openLineageTab = () => {
   lineageVisited.value = true
@@ -708,6 +719,7 @@ watch(() => props.selectedNode?.locator, () => {
   lineageRequestSeq += 1
   lineageLoading.value = false
   lineageError.value = ''
+  resetLineageExpansion()
   lineageGraph.value = normalizeLineageGraph()
   if (props.activeTab === 'lineage') {
     lineageVisited.value = true
@@ -1795,6 +1807,8 @@ const compareKeys = (a, b, order) => {
 }
 
 .lineage-tab-pane {
+  display: flex;
+  flex-direction: column;
   flex: 1;
   height: 100%;
   min-height: 0;
@@ -1804,7 +1818,9 @@ const compareKeys = (a, b, order) => {
 }
 
 .lineage-panel {
-  min-height: 300px;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .attributes-panel {

@@ -103,23 +103,25 @@ graph TB
 
 ### 执行运行时角色矩阵
 
-`common.task_executions` 统一记录执行事实。Quality、Meta 和 Transfer bounded 使用相同的 PostgreSQL claim + execution lease 所有权协议；continuous runtime、dispatcher 和 maintenance loop 保持各自专用机制。下面的矩阵区分这些角色，避免把名称相同的后台组件误认为同一机制。
+`common.task_executions` 统一记录执行事实。Quality、Meta、Security 和 Transfer bounded 的独立 execution worker，以及 Develop Query、Manager bounded 和 Model materialization 的 Backend 内嵌 execution supervisor，使用相同的 PostgreSQL claim + execution lease 所有权协议；continuous runtime、dispatcher 和 maintenance loop 保持各自专用机制。下面的矩阵区分这些角色，避免把名称相同的后台组件误认为同一机制。
 
 | 运行时角色 | 所属模块 | 进程边界 | 领取/投递事实 | 并发与恢复 | 与 `common.task_executions` 的关系 |
 |---|---|---|---|---|---|
 | Quality execution worker | Quality | 独立 `quality-worker` | PostgreSQL claim 已授权 `quality/check/pending` execution | 有界槽位；lease token、heartbeat、attempt 和按执行契约恢复 | 执行质量检查、评分和 Issue reconcile，并带所有权条件写终态 |
 | Meta scan worker | Meta | 独立 `meta-worker` | PostgreSQL claim `meta/scan/pending` execution | 有界槽位；lease token、heartbeat、attempt 和按扫描提交协议恢复 | 执行扫描、Meta 当前投影更新和终态写入 |
+| Security discovery worker | Security | 独立 `security-worker` | PostgreSQL claim `security/sensitive_data_discovery/pending` execution | 有界槽位；lease token、heartbeat；仅扫描显式纳管目标 | 生成 Security Finding 并带所有权条件写终态，不承担全量 Meta 遍历 |
 | Transfer bounded worker | Transfer | 独立 `transfer-bounded-worker` | PostgreSQL claim `transfer/sync/pending` bounded execution | 有界槽位；lease token、heartbeat；仅对明确可安全重放的模式自动恢复 | 承担 snapshot、watermark 和 bounded replay，不承载 continuous session |
+| Develop query execution supervisor | Develop | 内嵌 `develop-backend` | PostgreSQL claim 全部 `develop/query/pending` bounded execution | 固定有界槽位；lease token、heartbeat；租约失效后收敛失败 | 同一路径执行 Workbench、手动任务与 Orchestrator query；不启动独立 Query Worker |
 | Transfer continuous worker | Transfer | 独立 `transfer-continuous-worker` 进程 | `transfer.runtime_leases`、Kafka/CDC position | capacity、heartbeat、fencing；恢复创建新的 recovery execution | 承担 continuous runtime session；`sync_states` 是业务 committed position，不替代 execution 历史 |
 | Webhook/Email dispatcher | Monitor | 内嵌 `monitor-backend` | Monitor delivery outbox + `SKIP LOCKED` | 投递 lease、至少一次语义、指数退避和 dead 终态 | 消费告警生命周期 delivery，不创建或改写业务 execution |
 
 **角色边界**:
 
-- execution worker 负责“执行什么以及如何完成”；owner scheduler 只负责“何时创建 execution”；dispatcher 只负责“如何投递通知”。
+- execution worker 与 execution supervisor 负责“执行什么以及如何完成”，差别仅在独立进程或 Backend 内嵌的部署边界；owner scheduler 只负责“何时创建 execution”；dispatcher 只负责“如何投递通知”。
 - Orchestrator scheduler、Manager embedding scheduler、Meta lineage collector 和各模块 cleanup 属于 scheduler/maintenance loop，不自动等同 execution worker。
-- Quality、Meta、Transfer bounded 只使用 PostgreSQL claim 单一路线；Backend 只创建 execution，不执行 bounded 业务逻辑，也不保留 Asynq 或本地 channel fallback。
+- Quality、Meta、Security、Transfer bounded 只使用 PostgreSQL claim 单一路线；Backend 只创建 execution，不执行 bounded 业务逻辑，也不保留 Asynq 或本地 channel fallback。
 - 每次 claim 生成不可复用 `lease_token`。heartbeat、进度和终态写入同时校验 attempt 与 token；仅凭 Worker 名称或消息 active 状态不能证明所有权。
-- `common.background_runtime_heartbeats` 只回答后台进程是否仍在上报，以及其容量与当前占用；Monitor 必须把它与 execution lease、continuous runtime lease 和 delivery lease 分开展示。实例心跳过期不能直接改写任何业务 execution。
+- `common.background_runtime_heartbeats` 只回答后台运行组件是否仍在上报，以及其容量与当前占用；Monitor 必须把它与 execution lease、continuous runtime lease 和 delivery lease 分开展示。实例心跳过期不能直接改写任何业务 execution。
 - Monitor 对外只投影 `lease_owner`、`lease_expires_at`、attempt、排队/执行时长和恢复原因等安全观测字段，绝不返回 `lease_token` 或 continuous fencing token。
 
 ---
@@ -228,7 +230,7 @@ sequenceDiagram
 - 按模块分组的成功率/失败率
 - 按任务类型分组的平均耗时
 - TaskProvider provider health：注册状态、模块 `/health/ready`、capabilities 基础结构，以及标准 `GET /tasks?task_type=` 任务发现响应体是否符合 `{items,total,page,page_size}`
-- 后台运行实例健康：分别展示 bounded execution worker、continuous worker 和 dispatcher 的存活实例、容量、当前占用、最近心跳与过期时间
+- 后台运行实例健康：分别展示 bounded execution worker、Backend 内嵌 execution supervisor、continuous worker 和 dispatcher 的存活实例、容量、当前占用、最近心跳与过期时间
 - 执行运行指标：按模块、任务类型和执行边界展示当前积压、吞吐、平均/P95 排队时长、平均/P95 运行时长、失败率、自动 attempt 重试、用户 retry 和恢复次数
 
 执行运行指标使用以下统一口径：
@@ -246,7 +248,7 @@ sequenceDiagram
 | 吞吐 | 窗口内终态 execution 数除以窗口小时数；不使用当前 Worker 容量伪造理论吞吐 |
 | 失败率 | 窗口内 `(failed + timeout) / (success + failed + timeout + cancelled)`；尚未终态的 execution 不进入分母 |
 
-这些指标只用于容量与调度决策，不反向修改 owner task、execution 或 Worker 容量。只有在实际 P95 排队、积压和槽位利用事实持续证明存在隔离需求后，才讨论优先级、租户配额或任务级限流。
+这些指标只用于容量与调度决策，不反向修改 owner task、execution 或运行时容量。只有在实际 P95 排队、积压和槽位利用事实持续证明存在隔离需求后，才讨论优先级、租户配额或任务级限流。
 
 Monitor 通过 `GET /executions/runtime-metrics?duration=24h|7d|30d` 暴露上述分组指标，使用 `monitor.statistics.read` 权限；Dashboard 默认展示最近 24 小时，并以低于执行状态列表的频率刷新聚合查询。
 

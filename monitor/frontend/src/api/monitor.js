@@ -45,7 +45,7 @@ export function checkAllProviderHealth() {
   return client.get('/monitor/providers/health')
 }
 
-// 查询 execution worker、continuous worker 和 dispatcher 进程健康
+// 查询 execution worker、execution supervisor、continuous worker 和 dispatcher 运行健康
 export function listRuntimeHealth() {
   return client.get('/monitor/runtime-instances/health')
 }

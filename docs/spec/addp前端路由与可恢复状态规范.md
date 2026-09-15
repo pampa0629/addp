@@ -82,7 +82,9 @@ Develop TaskProvider 的 canonical 前端路由为：
 | Modeling | 逻辑表列表筛选与分页 | `keyword`、`domain_id`、`layer`、`status`、`page`、`page_size` |
 | Modeling | 物化组列表、创建与编辑 | `page`、`page_size`、`create=1`、`group_id`；创建和编辑保留分页上下文，默认列表省略 |
 | Modeling | ER 图业务域筛选与跨域展开 | `domain_id`（正整数或 `all`）、`related=1` |
-| Modeling | 实体详情 Tab、星型模型事实表 | `tab`、`table_id` |
+| Modeling | 实体详情 Tab | `tab` |
+| Modeling | 逻辑表详情维度关联 | `tab=relations`、`relation_id`；默认模型定义页签省略，关系 ID 只用于关联页签 |
+| Modeling | 维度建模业务域与当前事实表 | `domain_id`（正整数；省略表示全部）、`table_id`；域筛选不裁剪跨域维度关系 |
 | Quality | 执行详情 | path parameter `execution_id` |
 | Quality | 规则应用列表筛选与分页 | `engine_id`、`schema_name`、`table_name`、`page`、`page_size` |
 | Quality | 问题工单详情 | path `/issues/:id` |
@@ -126,6 +128,15 @@ Console iframe 模式下，一次用户导航只能产生一条公开历史记�
 5. 页面不得只在 `onMounted` 读取身份参数；同组件复用时还必须响应 canonical path/query 的变化，保证 standalone 前进/后退一致。
 
 ## 八、实现与验收要求
+
+### 未保存修改的离页保护
+
+- `common-frontend` 统一拥有离页确认、浏览器卸载提醒和 Console iframe 修改状态同步。编辑器只提供修改状态及同组件切换业务对象的判定，不得各自复制守卫。
+- 编辑器内部导航在模块 Router 提交前确认；Console 菜单、跨模块导航和浏览器前进/后退在 Console Router 提交前确认。已经完成模块内确认的同步导航不重复询问。取消时不得改变页面或公开 URL。
+- Console 只接受活动 iframe 的来源窗口及 origin 匹配的修改状态，切换 iframe 时清理状态；状态只含是否修改及注册身份，不传递表单内容。提醒由导航发起侧展示，不依赖 iframe 在用户确认期间继续响应。
+- 导航桥收到 Console 的处理中回执后允许用户完成确认，不以传输超时中断确认框；未收到回执时仍按原超时失败。取消导航必须返回取消结果，不能报告成功。
+- 刷新或关闭使用浏览器原生 `beforeunload` 提示；保存成功后解除保护，保存失败保留保护。布局位置属于需要保存的编辑成果，画布缩放和平移不作为离页提醒依据。
+- 首批消费者为 Orchestrator 编排编辑器、Develop 查询与工作流编辑器。不新增自动保存、草稿或浏览器存储旁路。
 
 共享实现必须位于 `common-frontend`。业务模块只负责：
 

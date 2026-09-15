@@ -5,8 +5,11 @@ import { fileURLToPath } from 'url'
 import { viteStaticCopy } from 'vite-plugin-static-copy'
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url))
+const isE2E = process.env.ADDP_E2E === '1'
 
 export default defineConfig({
+  // Browser tests must not invalidate the running development server's chunks.
+  cacheDir: isE2E ? 'node_modules/.vite-e2e' : 'node_modules/.vite',
   plugins: [
     vue(),
     viteStaticCopy({
@@ -40,7 +43,7 @@ export default defineConfig({
       'mermaid': resolve(__dirname, 'node_modules/mermaid'),
       'proj4': resolve(__dirname, 'node_modules/proj4')
     },
-    dedupe: ['ol', 'vue', 'vue-i18n', 'element-plus', '@element-plus/icons-vue', 'marked', 'mammoth', 'dompurify', 'jszip', 'mermaid', 'geotiff', 'proj4', 'axios', '@amap/amap-jsapi-loader', '@antv/g6']
+    dedupe: ['ol', 'vue', 'vue-router', 'vue-i18n', 'element-plus', '@element-plus/icons-vue', 'marked', 'mammoth', 'dompurify', 'jszip', 'mermaid', 'geotiff', 'proj4', 'axios', '@amap/amap-jsapi-loader', '@antv/g6']
   },
   optimizeDeps: {
     include: [
@@ -78,7 +81,7 @@ export default defineConfig({
   server: {
     port: 5174,
     strictPort: true, // 端口被占用时报错，不自动切换
-    hmr: {
+    hmr: isE2E ? false : {
       protocol: 'ws',
       host: 'localhost',
       port: 5174,

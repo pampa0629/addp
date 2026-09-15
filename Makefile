@@ -437,8 +437,9 @@ test-catalog-frontend: ## 运行 Catalog 前端路由状态测试与构建
 	@cd catalog/frontend && npm test
 	@cd catalog/frontend && npm run build
 
-test-console-frontend: ## 运行 Console 前端确定性测试与构建
+test-console-frontend: ## 运行 Console 前端确定性测试、浏览器回归与构建
 	@cd console/frontend && npm test
+	@cd console/frontend && npm run test:e2e
 	@cd console/frontend && npm run build
 
 test-common-frontend: ## 运行共享前端组件、契约与唯一所有权门禁
@@ -470,7 +471,7 @@ test-monitor-frontend: ## 运行 Monitor 前端确定性测试与构建
 	@cd monitor/frontend && npm test
 	@cd monitor/frontend && npm run build
 
-test-orchestrator-frontend: ## 运行 Orchestrator 前端确定性测试、路由浏览器回归与构建
+test-orchestrator-frontend: ## 运行 Orchestrator 前端确定性测试、编辑器与路由浏览器回归及构建
 	@cd orchestrator/frontend && npm test
 	@cd orchestrator/frontend && npm run test:e2e:routes
 	@cd orchestrator/frontend && npm run build

@@ -59,9 +59,9 @@
       <el-table v-else :data="application.snapshot.parameters">
         <el-table-column prop="key" :label="t('workbench.parameterKey')" min-width="190" />
         <el-table-column :label="t('workbench.parameterLabel')" min-width="180"><template #default="scope"><el-input v-model="scope.row.label" /></template></el-table-column>
-        <el-table-column prop="control_type" :label="t('workbench.controlType')" width="130" />
+        <el-table-column :label="t('workbench.controlType')" width="130"><template #default="scope">{{ t(`workbench.controlTypes.${parameterDomain(scope.row.key).options.length ? 'select' : scope.row.control_type}`) }}</template></el-table-column>
         <el-table-column :label="t('workbench.defaultValue')" min-width="220">
-          <template #default="scope"><ApplicationParameterValueInput v-model="scope.row.default_value" :control-type="scope.row.control_type" /></template>
+          <template #default="scope"><ParameterValueInput v-model="scope.row.default_value" :control-type="scope.row.control_type" :options="parameterDomain(scope.row.key).options" :disabled="!parameterDomain(scope.row.key).ready" /><span v-if="!parameterDomain(scope.row.key).ready">{{ t('workbench.parameterOptionsUnavailable', { components: parameterDomain(scope.row.key).components.join(', ') }) }}</span></template>
         </el-table-column>
         <el-table-column :label="t('workbench.required')" width="100"><template #default="scope"><el-switch v-model="scope.row.required" /></template></el-table-column>
       </el-table>
@@ -85,7 +85,7 @@
           <div class="parameter-grid">
             <label v-for="parameter in application.snapshot.parameters" :key="parameter.key" class="parameter-field">
               <span>{{ parameter.label }}<em v-if="parameter.required">*</em></span>
-              <ApplicationParameterValueInput v-model="preset.parameter_values[parameter.key]" :control-type="parameter.control_type" />
+              <ParameterValueInput v-model="preset.parameter_values[parameter.key]" :control-type="parameter.control_type" :options="parameterDomain(parameter.key).options" :disabled="!parameterDomain(parameter.key).ready" />
             </label>
           </div>
         </div>
@@ -184,6 +184,7 @@
 </template>
 
 <script setup>
+import { applicationParameterOptions, assertApplicationOptionValues } from '../utils/applicationParameterOptions.mjs'
 import { computed, onBeforeUnmount, reactive, ref, toRaw, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
@@ -196,7 +197,7 @@ import { APPLICATION_PRESENTATION_SECTIONS, canHideApplicationParameters } from 
 import { affectedSelectionComponentIDs, compatibleSelectionParameters as compatibleSelectionParameterList, selectionSourceFields } from '../utils/dataApplicationSelection.mjs'
 import { navigateWorkbenchRoute } from '../utils/moduleNavigation'
 import ApplicationComponentEditor from '../components/ApplicationComponentEditor.vue'
-import ApplicationParameterValueInput from '../components/ApplicationParameterValueInput.vue'
+import ParameterValueInput from '../../../../common-frontend/basic/src/components/ParameterValueInput.vue'
 import DataApplicationCanvas from '../components/DataApplicationCanvas.vue'
 import DataApplicationDeliveryDialog from '../components/DataApplicationDeliveryDialog.vue'
 import SpatialExplorationWizard from '../components/SpatialExplorationWizard.vue'
@@ -447,6 +448,7 @@ async function loadComponentDescriptor(component, loadRequest = null) {
     const { data } = await getConsumerDescriptor(component.service_ref)
     const commit = () => {
       if (data.contract_fingerprint === component.contract_fingerprint) descriptorByComponent[component.id] = data
+      else delete descriptorByComponent[component.id]
     }
     if (loadRequest) commitEditorLoad(loadRequest, commit)
     else commit()
@@ -462,6 +464,7 @@ function normalizedSnapshot() {
 }
 
 function openDraftPreview() {
+  if (!validateParameterOptions()) return
   if (!validatePresentationSections()) return
   if (!validateParameterPresets()) return
   if (!application.name.trim() || !application.snapshot.page.title.trim() || application.snapshot.components.length === 0) {
@@ -494,7 +497,17 @@ async function load(routeName, applicationID) {
   }
 }
 
+function parameterDomain(key) { return applicationParameterOptions(application.snapshot, descriptorByComponent, key) }
+function validateParameterOptions() {
+ try {
+  const snapshot = normalizedSnapshot()
+  assertApplicationOptionValues(snapshot, descriptorByComponent, Object.fromEntries(snapshot.parameters.map((p) => [p.key, p.default_value])))
+  for (const preset of snapshot.parameter_presets || []) assertApplicationOptionValues(snapshot, descriptorByComponent, preset.parameter_values)
+  return true
+ } catch { ElMessage.error(t('workbench.parameterOptionsInvalid')); return false }
+}
 async function save() {
+  if (!validateParameterOptions()) return
   if (!validatePresentationSections()) return
   if (!validateParameterPresets()) return
   if (!application.name.trim() || application.snapshot.components.length === 0) return ElMessage.warning(t('workbench.incompleteDataApplication'))
@@ -522,6 +535,7 @@ async function save() {
 }
 
 async function publish() {
+  if (!validateParameterOptions()) return
   if (dirty.value) return ElMessage.warning(t('workbench.saveBeforePublish'))
   const action = 'publish'
   const request = beginEditorMutation(action)

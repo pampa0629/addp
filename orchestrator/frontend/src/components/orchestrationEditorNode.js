@@ -3,7 +3,7 @@ import G6 from '@antv/g6'
 export const ORCHESTRATION_NODE_TYPE = 'orchestration-task-node'
 
 const NODE_WIDTH = 280
-const HEADER_HEIGHT = 42
+const HEADER_HEIGHT = 62
 const ROW_HEIGHT = 24
 const BODY_PADDING = 14
 
@@ -47,13 +47,14 @@ export function registerOrchestrationEditorNode() {
       })
       group.addShape('text', {
         attrs: {
-          text: truncate(cfg.label || cfg.name || cfg.id, 26),
+          text: nodeTitle(cfg.label || cfg.name || cfg.id),
           x: -NODE_WIDTH / 2 + 14,
           y: -height / 2 + HEADER_HEIGHT / 2,
           textAlign: 'left',
           textBaseline: 'middle',
           fill: colors.textPrimary,
-          fontSize: 13,
+          fontSize: 14,
+          lineHeight: 20,
           fontWeight: 600
         },
         name: 'orchestration-node-title',
@@ -106,7 +107,7 @@ export function registerOrchestrationEditorNode() {
     update(cfg, item) {
       const group = item?.getContainer?.()
       group?.find(shape => shape.get('name') === 'orchestration-node-title')?.attr({
-        text: truncate(cfg.label || cfg.name || cfg.id, 26)
+        text: nodeTitle(cfg.label || cfg.name || cfg.id)
       })
       group?.find(shape => shape.get('name') === 'orchestration-node-accent')?.attr({
         stroke: cfg.providerColor || themeColors().primary
@@ -191,17 +192,38 @@ function drawParameterPort(group, { x, y, port, direction, colors }) {
   })
   group.addShape('text', {
     attrs: {
-      text: truncate(port.label || port.name, 21),
+      text: portLabel(port.label || port.name),
       x: x + (direction === 'input' ? 13 : -13),
       y,
       textAlign: direction === 'input' ? 'left' : 'right',
       textBaseline: 'middle',
       fill: colors.textSecondary,
-      fontSize: 10
+      fontSize: 11
     },
     name: `${direction}-label-${port.name}`,
     capture: false
   })
+}
+
+export function orchestrationNodeSize(model) {
+  return [NODE_WIDTH, nodeHeight(Math.max(model.inputPorts?.length || 0, model.outputPorts?.length || 0, 1))]
+}
+
+function nodeTitle(value) {
+  const lines = ['']
+  for (const character of String(value || '')) {
+    const index = lines.length - 1
+    if (G6.Util.getTextSize(lines[index] + character, 14)[0] > NODE_WIDTH - 32) {
+      if (lines.length === 2) {
+        lines[index] = lines[index].slice(0, -1) + '…'
+        break
+      }
+      lines.push(character)
+    } else {
+      lines[index] += character
+    }
+  }
+  return lines.join('\n')
 }
 
 function nodeHeight(rows) {
@@ -220,9 +242,13 @@ function normalizedY(height, y) {
   return (y + height / 2) / height
 }
 
-function truncate(value, length) {
+function portLabel(value) {
   const text = String(value || '')
-  return text.length > length ? `${text.slice(0, length - 1)}...` : text
+  let label = text
+  while (label && G6.Util.getTextSize(label + (label === text ? '' : '…'), 11)[0] > NODE_WIDTH / 2 - 24) {
+    label = label.slice(0, -1)
+  }
+  return label === text ? label : `${label}…`
 }
 
 function themeColors() {
@@ -238,4 +264,51 @@ function themeColors() {
     warning: color('--el-color-warning'),
     danger: color('--el-color-danger')
   }
+}
+
+// Execution adornments live only in render shapes, never in the editable node model.
+export function renderOrchestrationNodeExecution(item, state, label) {
+  const group = item?.getContainer?.()
+  if (!group) return
+  for (const name of ['execution-badge', 'execution-label']) {
+    group.find(shape => shape.get('name') === name)?.remove()
+  }
+  const existingPulse = group.find(shape => shape.get('name') === 'execution-pulse')
+  if (state?.status !== 'running' && existingPulse) {
+    existingPulse.stopAnimate()
+    existingPulse.remove()
+  }
+  if (!state) return
+  const colors = themeColors()
+  const color = ({ running: colors.warning, success: colors.success, failed: colors.danger,
+    timeout: colors.danger })[state.status] || colors.textSecondary
+  const height = orchestrationNodeSize(item.getModel())[1]
+  if (state.status === 'running') {
+    const attrs = { x: -NODE_WIDTH / 2 - 5, y: -height / 2 - 5,
+      width: NODE_WIDTH + 10, height: height + 10, radius: 10,
+      stroke: color, lineWidth: 4 }
+    if (existingPulse) {
+      // Keep the animation phase when polling updates the same running step.
+      existingPulse.attr(attrs)
+    } else {
+      const pulse = group.addShape('rect', {
+        attrs: { ...attrs, opacity: 1 }, name: 'execution-pulse', capture: false
+      })
+      if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        pulse.animate(ratio => ({ opacity: 0.65 + 0.35 * Math.cos(ratio * Math.PI * 2) }),
+          { duration: 1600, repeat: true })
+      }
+    }
+  }
+  const width = Math.min(NODE_WIDTH, G6.Util.getTextSize(label, 12)[0] + 20)
+  group.addShape('rect', {
+    attrs: { x: NODE_WIDTH / 2 - width, y: -height / 2 - 20, width, height: 18,
+      fill: colors.background, stroke: color, radius: 4 },
+    name: 'execution-badge', capture: false
+  })
+  group.addShape('text', {
+    attrs: { text: label, x: NODE_WIDTH / 2 - width / 2, y: -height / 2 - 11,
+      fill: color, textAlign: 'center', textBaseline: 'middle', fontSize: 12, fontWeight: 600 },
+    name: 'execution-label', capture: false
+  })
 }

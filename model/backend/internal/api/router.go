@@ -75,6 +75,7 @@ func SetupRouter(
 	dimensionHierarchyHandler := NewDimensionHierarchyHandler(dimensionHierarchySvc)
 	standardReferenceGuardHandler := NewStandardReferenceGuardHandler(standardReferenceGuardSvc)
 	materializedTargetHandler := NewMaterializedTargetHandler(materializationSvc)
+	materializationTaskHandler := NewMaterializationTaskHandler(materializationSvc, taskExecutionRepo)
 	catalogResourceHandler := NewCatalogResourceHandler(catalogResourceSvc)
 	professionalRelationHandler := NewProfessionalRelationHandler(entityRelationSvc, tableRelationSvc)
 
@@ -90,6 +91,12 @@ func SetupRouter(
 	}
 
 	{
+		provider := api.Group("/task-provider")
+		provider.Use(commonAuth.MustNewServiceClientGuard("addp-orchestrator"))
+		provider.GET("/tasks", permission(modelauthorization.PermissionModelTaskProviderRead), materializationTaskHandler.List)
+		provider.GET("/tasks/:task_type/:id", permission(modelauthorization.PermissionModelTaskProviderRead), materializationTaskHandler.Detail)
+		provider.POST("/tasks/:task_type/:id/execute", permission(modelauthorization.PermissionModelTaskProviderExecute), materializationTaskHandler.Execute)
+		provider.GET("/executions/:execution_id", permission(modelauthorization.PermissionModelTaskProviderRead), materializationTaskHandler.Status)
 		catalogResources := api.Group("")
 		catalogResources.Use(commonAuth.MustNewServiceClientGuard("addp-catalog"))
 		catalogResources.GET("/catalog-resources/changes", permission(modelauthorization.PermissionModelCatalogRead), catalogResourceHandler.ListChanges)
@@ -134,6 +141,16 @@ func SetupRouter(
 		}
 
 		// 逻辑表路由
+		metrics := api.Group("/metric-implementations")
+		metrics.GET("", permission(modelauthorization.PermissionModelMetricImplementationRead), metricImplementationHandler.List)
+		metrics.GET("/:id", permission(modelauthorization.PermissionModelMetricImplementationRead), metricImplementationHandler.Get)
+		metrics.POST("", permission(modelauthorization.PermissionModelMetricImplementationCreate), metricImplementationHandler.Create)
+		metrics.PUT("/:id/draft", permission(modelauthorization.PermissionModelMetricImplementationUpdate), metricImplementationHandler.SaveDraft)
+		metrics.POST("/:id/revisions/:revision_id/publish", permission(modelauthorization.PermissionModelMetricImplementationPublish), metricImplementationHandler.Publish)
+		metrics.POST("/:id/revisions/:revision_id/withdraw", permission(modelauthorization.PermissionModelMetricImplementationOffline), metricImplementationHandler.Withdraw)
+		metrics.DELETE("/:id", permission(modelauthorization.PermissionModelMetricImplementationDelete), metricImplementationHandler.Delete)
+		metrics.POST("/:id/revisions/:revision_id/plan", permission(modelauthorization.PermissionModelMetricImplementationRead), metricImplementationHandler.Plan)
+
 		logicalTables := api.Group("/logical-tables")
 		{
 			logicalTables.GET("", permission(modelauthorization.PermissionModelLogicalModelRead), logicalTableHandler.ListLogicalTables)
@@ -151,13 +168,10 @@ func SetupRouter(
 			logicalTables.PUT("/:id/fields/:fid", permission(modelauthorization.PermissionModelLogicalModelUpdate), logicalTableHandler.UpdateField)
 			logicalTables.DELETE("/:id/fields/:fid", permission(modelauthorization.PermissionModelLogicalModelDelete), logicalTableHandler.DeleteField)
 			logicalTables.POST("/:id/preview-ddl", permission(modelauthorization.PermissionModelLogicalModelRead), logicalTableHandler.PreviewDDL)
-			logicalTables.GET("/:id/metric-implementations", permission(modelauthorization.PermissionModelLogicalModelRead), metricImplementationHandler.List)
-			logicalTables.POST("/:id/metric-implementations", permission(modelauthorization.PermissionModelLogicalModelUpdate), metricImplementationHandler.Create)
-			logicalTables.PUT("/:id/metric-implementations/:implementation_id", permission(modelauthorization.PermissionModelLogicalModelUpdate), metricImplementationHandler.Update)
-			logicalTables.DELETE("/:id/metric-implementations/:implementation_id", permission(modelauthorization.PermissionModelLogicalModelUpdate), metricImplementationHandler.Delete)
 			// 事实表关联维度表
 			logicalTables.GET("/:id/dimension-relations", permission(modelauthorization.PermissionModelLogicalModelRead), tableRelationHandler.ListDimensionRelations)
 			logicalTables.POST("/:id/dimension-relations", permission(modelauthorization.PermissionModelLogicalModelUpdate), tableRelationHandler.AddDimensionRelation)
+			logicalTables.PUT("/:id/dimension-relations/:rid", permission(modelauthorization.PermissionModelLogicalModelUpdate), tableRelationHandler.UpdateDimensionRelation)
 			logicalTables.DELETE("/:id/dimension-relations/:rid", permission(modelauthorization.PermissionModelLogicalModelUpdate), tableRelationHandler.RemoveDimensionRelation)
 			// 维度表聚合内的维度层级与成员
 			logicalTables.GET("/:id/dimension-hierarchies", permission(modelauthorization.PermissionModelLogicalModelRead), dimensionHierarchyHandler.List)

@@ -161,6 +161,8 @@
 
       <!-- SQL配置模式 -->
       <div v-else-if="service?.config_type === 'sql'">
+        <el-alert v-if="sourceSnapshot?.metric_source" :title="t('service.query.metricOrigin')" :description="t('service.query.metricOriginDescription')" type="info" :closable="false" />
+        <el-button v-if="sourceSnapshot?.metric_source" link type="primary" @click="openConsoleRoute(`/modeling/metric-implementations/${sourceSnapshot.metric_source.implementation_id}?revision_id=${sourceSnapshot.metric_source.revision_id}`)">{{ t('service.query.metricOriginDetail') }} · #{{ sourceSnapshot.metric_source.revision_id }}</el-button>
         <el-alert
           type="info"
           :title="t('service.query.sqlModeTitle')"
@@ -180,22 +182,7 @@
                 <code>:{{ parameter.name }}</code>
                 <span v-if="parameter.description" class="named-parameter-description">{{ parameter.description }}</span>
               </template>
-              <el-select v-if="parameter.type === 'bool'" v-model="previewNamedParameterValues[parameter.name]" clearable>
-                <el-option :value="true" :label="t('service.common.yes')" />
-                <el-option :value="false" :label="t('service.common.no')" />
-              </el-select>
-              <el-input-number
-                v-else-if="numericNamedParameterTypes.has(parameter.type)"
-                v-model="previewNamedParameterValues[parameter.name]"
-                :controls="false"
-              />
-              <el-date-picker
-                v-else-if="parameter.type === 'date' || parameter.type === 'timestamp'"
-                v-model="previewNamedParameterValues[parameter.name]"
-                :type="parameter.type === 'timestamp' ? 'datetime' : 'date'"
-                :value-format="parameter.type === 'timestamp' ? 'YYYY-MM-DDTHH:mm:ssZ' : 'YYYY-MM-DD'"
-              />
-              <el-input v-else v-model="previewNamedParameterValues[parameter.name]" />
+              <ParameterValueInput v-model="previewNamedParameterValues[parameter.name]" :control-type="parameterControlType(parameter.type)" :options="parameter.options || []" />
             </el-form-item>
           </el-form>
         </div>
@@ -364,6 +351,8 @@
 </template>
 
 <script setup>
+import ParameterValueInput from '../../../../common-frontend/basic/src/components/ParameterValueInput.vue'
+import { parameterControlType } from '../../../../common-frontend/basic/src/utils/parameterInput.mjs'
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -374,7 +363,7 @@ import queryServiceAPI from '@/api/queryService'
 import { buildQueryServicePreview, queryServicePreviewFields } from '@/utils/queryServicePreview'
 import { copyToClipboard } from '../utils/serviceHelper'
 import { navigateServiceRoute } from '@/utils/moduleNavigation'
-import { useConsolePageDescriptor } from '@common-ui'
+import { useConsolePageDescriptor, openConsoleRoute } from '@common-ui'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -391,7 +380,6 @@ const snapshotChecking = ref(false)
 const snapshotRefreshing = ref(false)
 const snapshotDiff = ref(null)
 const previewNamedParameterValues = reactive({})
-const numericNamedParameterTypes = new Set(['int', 'bigint', 'float', 'double', 'decimal'])
 
 // 数据预览相关状态
 const previewData = ref([])
@@ -623,6 +611,9 @@ const loadPreviewData = async () => {
   }
 
   previewLoading.value = true
+  previewData.value = []
+  previewPagination.value.hasMore = false
+  previewPagination.value.nextCursor = ''
   try {
 	const missingParameter = (service.value.named_parameters || []).find(parameter => (
 	  parameter.required && (previewNamedParameterValues[parameter.name] === '' || previewNamedParameterValues[parameter.name] === null || previewNamedParameterValues[parameter.name] === undefined)

@@ -21,6 +21,7 @@ import (
 
 // QueryExecutorService 执行已发布查询服务的结构化查询计划。
 type QueryExecutorService struct {
+	modelClient    *client.ModelClient
 	systemClient   *client.SystemClient
 	systemService  *client.SystemServiceClient
 	tokenCodec     *queryTokenCodec
@@ -48,6 +49,8 @@ func NewQueryExecutorService(
 	}
 }
 
+func (s *QueryExecutorService) SetModelClient(c *client.ModelClient) { s.modelClient = c }
+
 // ExecuteQuery 执行 REST 查询服务请求。
 func (s *QueryExecutorService) ExecuteQuery(
 	ctx context.Context,
@@ -74,6 +77,9 @@ func (s *QueryExecutorService) execute(
 ) (*models.QueryExecutionResult, error) {
 	if queryService == nil || request == nil {
 		return nil, fmt.Errorf("%w: query service request is incomplete", ErrInvalidStructuredQuery)
+	}
+	if err := s.validateMetricSource(ctx, queryService, request.Parameters); err != nil {
+		return nil, err
 	}
 	if queryService.UsesFederatedQueryRuntime() {
 		return s.executeFederatedQuery(ctx, queryService, request, protocol)
@@ -295,6 +301,9 @@ func (s *QueryExecutorService) finalizeResult(
 		return nil, errors.New("query service returned no result")
 	}
 	rows := result.Rows
+	if rows == nil {
+		rows = make([]map[string]interface{}, 0)
+	}
 	if err := normalizePublishedResultRows(rows, queryService.GetTableInfo()); err != nil {
 		return nil, err
 	}

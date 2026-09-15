@@ -118,7 +118,6 @@ test('data application components own service selection, rendering, parameters, 
   const draft = readSource('../src/utils/componentDraft.mjs')
   assert.match(editor, /listConsumerServices\(\{ service_type: ['"]query['"]/) // catalog is capability-scoped
   assert.match(editor, /getConsumerDescriptor\(sourceComponent\.service_ref\)/)
-  assert.match(draft, /field\?\.type === ['"]bool['"]\) return ['"]select['"]/) // boolean values preserve an unset state
   assert.match(editor, /:disabled="parameterizableFields\.length === 0"/)
   assert.match(draft, /export function createParameterDraft/)
   assert.match(editor, /const requestBody = buildQueryRequest/)

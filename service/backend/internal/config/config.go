@@ -15,6 +15,7 @@ type Config struct {
 	// 模块集成配置
 	ManagerServiceURL   string
 	MetaServiceURL      string
+	ModelServiceURL     string
 	SecurityServiceURL  string
 	ServiceClientSecret string
 
@@ -46,6 +47,7 @@ func Load() *Config {
 		GatewayURL:          commonConfig.GetEnv("GATEWAY_URL", "http://localhost:8000"),
 		ManagerServiceURL:   managerURL,
 		MetaServiceURL:      metaURL,
+		ModelServiceURL:     commonConfig.GetEnv("MODEL_URL", "http://localhost:8181"),
 		SecurityServiceURL:  commonConfig.GetEnv("SECURITY_URL", "http://localhost:8194"),
 		ServiceClientSecret: commonConfig.GetEnv("SERVICE_SERVICE_CLIENT_SECRET", ""),
 	}

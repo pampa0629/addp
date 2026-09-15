@@ -129,6 +129,7 @@ import {
   createIframeAuthCoordinator,
   getAccessToken,
   getAccessTokenExpiresAt,
+  useConsoleUnsavedChangesGuard,
   registerConsoleBridgeHandler
 } from '@common-ui'
 import { useI18n } from 'vue-i18n'
@@ -173,6 +174,12 @@ let iframeAuthCoordinator = null
 let narrowViewportQuery = null
 let syncNarrowViewport = null
 let synchronizedIframeModule = ''
+let synchronizedIframeRoute = ''
+const leaveProtection = useConsoleUnsavedChangesGuard(router, {
+  getIframe: () => document.querySelector('iframe.module-iframe'),
+  skipNavigation: to => synchronizedIframeRoute === to.fullPath
+})
+watch(iframeNavigationKey, () => leaveProtection.reset(), { flush: 'sync' })
 
 const effectiveSidebarCollapsed = computed(() => isCollapsed.value || isNarrowViewport.value)
 
@@ -218,7 +225,7 @@ onMounted(async () => {
   stopConsoleNavigationBridge = registerConsoleBridgeHandler(
     CONSOLE_NAVIGATION_CHANNEL,
     handleConsoleNavigationBridge,
-    { allowedSources: ['addp-module'] }
+    { allowedSources: ['addp-module'], acknowledgePending: true }
   )
   stopEngineScanPolicyBridge = registerConsoleBridgeHandler(
     ENGINE_SCAN_POLICY_CHANNEL,
@@ -260,13 +267,22 @@ const handleConsoleNavigationBridge = async (payload = {}, _message, event) => {
       throw new Error('synchronized navigation must stay within the active module')
     }
     synchronizedIframeModule = targetModule
+    synchronizedIframeRoute = resolvedRoute
   }
 
-  await router[history](resolvedRoute)
-  await nextTick()
-  if (synchronizedIframeModule === targetModule) {
-    synchronizedIframeModule = ''
+  let failure
+  try {
+    if (router.currentRoute.value.fullPath !== resolvedRoute) {
+      failure = await router[history](resolvedRoute)
+    }
+    await nextTick()
+  } finally {
+    if (synchronizedIframeRoute === resolvedRoute) {
+      synchronizedIframeModule = ''
+      synchronizedIframeRoute = ''
+    }
   }
+  if (failure) return { cancelled: true }
   if (payload.pageDescriptor && targetModule) {
     recordRecentVisit(targetModule, resolvedRoute, payload.pageDescriptor)
   }
@@ -379,7 +395,7 @@ function syncRouteToPortal(fullPath) {
     return
   }
   const module = parts[0]
-  const keepCurrentIframe = isSynchronizedIframeRoute(synchronizedIframeModule, fullPath)
+  const keepCurrentIframe = synchronizedIframeRoute === fullPath && isSynchronizedIframeRoute(synchronizedIframeModule, fullPath)
   if (keepCurrentIframe) {
     synchronizedIframeModule = ''
   }
@@ -451,6 +467,7 @@ const openPortal = () => {
 }
 
 const handleIframeLoad = () => {
+  leaveProtection.requestState()
   console.log('[Console] Iframe loaded:', iframeUrl.value)
   // 向刚加载的 iframe 发送当前语言（解决跨 origin localStorage 隔离问题）
   const iframe = document.querySelector('iframe.module-iframe')

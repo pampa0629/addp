@@ -14,7 +14,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestQueryExecutionRepositoryClaimsOnlyOrchestratorQueries(t *testing.T) {
+func TestQueryExecutionRepositoryClaimsDevelopAndOrchestratorQueries(t *testing.T) {
 	db := newQueryExecutionTestDB(t)
 	now := time.Now().UTC()
 	task := createQueryExecutionTestTask(t, db)
@@ -32,12 +32,56 @@ func TestQueryExecutionRepositoryClaimsOnlyOrchestratorQueries(t *testing.T) {
 			t.Fatalf("create query execution: %v", err)
 		}
 	}
-	claimed, lease, err := NewQueryExecutionRepository(db).ClaimNext(context.Background(), "query-worker", now, time.Minute)
+	repo := NewQueryExecutionRepository(db)
+	for _, wantSource := range []string{commonExecution.ModuleDevelop, commonExecution.ModuleOrchestrator} {
+		claimed, lease, err := repo.ClaimNext(context.Background(), "query-supervisor", now, time.Minute, nil)
+		if err != nil || claimed == nil || lease == nil {
+			t.Fatalf("ClaimNext = %#v %#v, %v", claimed, lease, err)
+		}
+		if claimed.Source != wantSource || claimed.Attempt != 1 {
+			t.Fatalf("claimed execution = %#v, want source %s", claimed, wantSource)
+		}
+		if err := repo.CompleteWithLease(context.Background(), claimed, *lease, commonExecution.ExecutionStatusSuccess, now, nil); err != nil {
+			t.Fatalf("complete claimed execution: %v", err)
+		}
+	}
+}
+
+func TestQueryExecutionRepositorySkipsSaturatedEngineWithoutBlockingOthers(t *testing.T) {
+	db := newQueryExecutionTestDB(t)
+	now := time.Now().UTC()
+	for index, engineID := range []int{9, 9, 10} {
+		execution := commonExecution.TaskExecution{
+			TenantID: 7, ExecutionID: uuid.NewString(), Module: commonExecution.ModuleDevelop,
+			TaskType: commonExecution.TaskTypeQuery, Source: commonExecution.ModuleDevelop,
+			Status: commonExecution.ExecutionStatusPending, ExecutionBoundary: commonExecution.ExecutionBoundaryBounded,
+			TriggerType:     commonExecution.TriggerTypeManual,
+			ExecutionConfig: commonModels.JSONMap{"engine_id": engineID},
+			CreatedAt:       now.Add(time.Duration(index) * time.Second), UpdatedAt: now,
+		}
+		if err := db.Create(&execution).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	claimed, lease, err := NewQueryExecutionRepository(db).ClaimNext(
+		context.Background(), "query-supervisor", now, time.Minute, []uint{9},
+	)
 	if err != nil || claimed == nil || lease == nil {
 		t.Fatalf("ClaimNext = %#v %#v, %v", claimed, lease, err)
 	}
-	if claimed.Source != commonExecution.ModuleOrchestrator || claimed.Attempt != 1 {
-		t.Fatalf("claimed execution = %#v", claimed)
+	engineID, ok := claimed.ExecutionConfig.GetInt("engine_id")
+	if !ok || engineID != 10 {
+		t.Fatalf("claimed engine_id = %d, %t; want 10", engineID, ok)
+	}
+	var pendingOnSaturatedEngine int64
+	if err := db.Model(&commonExecution.TaskExecution{}).
+		Where("status = ?", commonExecution.ExecutionStatusPending).
+		Count(&pendingOnSaturatedEngine).Error; err != nil {
+		t.Fatal(err)
+	}
+	if pendingOnSaturatedEngine != 2 {
+		t.Fatalf("pending executions = %d, want 2", pendingOnSaturatedEngine)
 	}
 }
 
@@ -49,7 +93,7 @@ func TestQueryExecutionRepositoryFailsAllExpiredQueries(t *testing.T) {
 			task := createQueryExecutionTestTask(t, db)
 			executionID := uuid.NewString()
 			leaseToken := uuid.NewString()
-			leaseOwner := "query-worker-1"
+			leaseOwner := "query-supervisor-1"
 			expiresAt := now.Add(-time.Minute)
 			authorizationExpiresAt := now.Add(time.Hour)
 			authorizationID := int64(81)
@@ -97,6 +141,33 @@ func TestQueryExecutionRepositoryFailsAllExpiredQueries(t *testing.T) {
 				t.Fatalf("expired query was not failed closed = %#v", recovered)
 			}
 		})
+	}
+}
+
+func TestQueryExecutionRepositoryFailsUnleasedRunningQuery(t *testing.T) {
+	db := newQueryExecutionTestDB(t)
+	now := time.Now().UTC()
+	startedAt := now.Add(-time.Minute)
+	execution := commonExecution.TaskExecution{
+		TenantID: 7, ExecutionID: uuid.NewString(), Module: commonExecution.ModuleDevelop,
+		TaskType: commonExecution.TaskTypeQuery, Source: commonExecution.ModuleDevelop,
+		Status: commonExecution.ExecutionStatusRunning, ExecutionBoundary: commonExecution.ExecutionBoundaryBounded,
+		TriggerType: commonExecution.TriggerTypeManual, StartedAt: &startedAt,
+		CreatedAt: startedAt, UpdatedAt: startedAt,
+	}
+	if err := db.Create(&execution).Error; err != nil {
+		t.Fatal(err)
+	}
+	count, err := NewQueryExecutionRepository(db).RecoverUnleased(context.Background(), now, 10)
+	if err != nil || count != 1 {
+		t.Fatalf("RecoverUnleased = %d, %v", count, err)
+	}
+	var stored commonExecution.TaskExecution
+	if err := db.Where("execution_id = ?", execution.ExecutionID).First(&stored).Error; err != nil {
+		t.Fatal(err)
+	}
+	if stored.Status != commonExecution.ExecutionStatusFailed || stored.ErrorDetails["code"] != "develop.query.lease_missing" {
+		t.Fatalf("recovered execution = %#v", stored)
 	}
 }
 

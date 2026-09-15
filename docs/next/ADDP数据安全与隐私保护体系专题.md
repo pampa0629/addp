@@ -424,7 +424,7 @@ Security 治理与 Owner 执行共用 owner 稳定专业资源身份：Assessmen
 
 2026-09-05 将 Owner 本地投影存储从“共享首次建表代码”收敛为版本化公共契约：Manager、Develop、Service、Transfer 继续在各自 schema 保存 `protection_projection_entries`、`protection_projection_checkpoints` 和迁移版本，但 DDL、有序迁移、schema 级 PostgreSQL advisory lock 与启动结构校验只由 `common/dataprotection/projectionstore` 定义。首次升级可在不改写已有投影表的情况下登记初始版本；未知迁移、列/约束/索引漂移或并发迁移失败都阻止 Owner 启动。真实 PostgreSQL 门禁同时初始化四个现有 Owner 和一个模拟未来 Owner，平台一致性门禁禁止任何其他 Go/SQL 文件复制这些表定义。
 
-Develop 的回执屏障已进一步按真实活动边界收敛：进程内 Gate 和 Notebook 追踪当前读取，跨进程 Worker 追踪未过期 execution lease，无租约异步执行追踪未过期 Execution Authorization；`pending` 与租约、授权均已过期的历史 `running` 不阻塞回执，后续启动仍必须按新 cursor 过门禁。开发库遗留状态不得通过手工改表消除。
+Develop 的回执屏障已进一步按真实活动边界收敛：进程内 Gate 和 Notebook 追踪当前读取，Backend 内嵌 Query Execution Supervisor 追踪未过期 execution lease，无租约异步执行追踪未过期 Execution Authorization；`pending` 与租约、授权均已过期的历史 `running` 不阻塞回执，后续启动仍必须按新 cursor 过门禁。开发库遗留状态不得通过手工改表消除。
 
 ### 阶段 4：结构化敏感发现、评估与唯一编译器
 

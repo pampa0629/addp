@@ -431,6 +431,10 @@ definitions:
         type: string
       name:
         type: string
+      options:
+        items:
+          $ref: '#/definitions/query.ParameterOption'
+        type: array
       required:
         type: boolean
       type:
@@ -661,6 +665,8 @@ definitions:
         maximum: 10000
         minimum: 1
         type: integer
+      metric_source:
+        $ref: '#/definitions/github_com_addp_service_internal_models.MetricSourceRequest'
       named_parameters:
         description: SQL 中使用 :name 引用的强类型标量参数。
         items:
@@ -903,6 +909,29 @@ definitions:
       status_code:
         type: integer
     type: object
+  github_com_addp_service_internal_models.MetricSourceRequest:
+    properties:
+      implementation_id:
+        type: integer
+      revision_id:
+        type: integer
+    required:
+    - implementation_id
+    - revision_id
+    type: object
+  github_com_addp_service_internal_models.MetricSourceSnapshot:
+    properties:
+      dependency_hash:
+        type: string
+      implementation_id:
+        type: integer
+      metric_definition_id:
+        type: integer
+      metric_definition_revision_id:
+        type: integer
+      revision_id:
+        type: integer
+    type: object
   github_com_addp_service_internal_models.ParameterDef:
     properties:
       default: {}
@@ -1058,6 +1087,8 @@ definitions:
         type: string
       service_name:
         type: string
+      service_version:
+        type: string
       sql_query:
         description: SQL配置
         type: string
@@ -1089,6 +1120,8 @@ definitions:
         items:
           type: integer
         type: array
+      metric_source:
+        $ref: '#/definitions/github_com_addp_service_internal_models.MetricSourceSnapshot'
       object_table:
         $ref: '#/definitions/dataitem.ItemDescriptor'
       query_hash:
@@ -1110,6 +1143,10 @@ definitions:
         type: string
       name:
         type: string
+      options:
+        items:
+          $ref: '#/definitions/query.ParameterOption'
+        type: array
       required:
         type: boolean
       type:
@@ -1155,6 +1192,16 @@ definitions:
         type: integer
       scanned_at:
         type: string
+    type: object
+  github_com_addp_service_internal_models.RebindMetricSourceRequest:
+    properties:
+      metric_source:
+        $ref: '#/definitions/github_com_addp_service_internal_models.MetricSourceRequest'
+      service_version:
+        type: string
+    required:
+    - metric_source
+    - service_version
     type: object
   github_com_addp_service_internal_models.RefreshMetadataRequest:
     properties:
@@ -1723,6 +1770,15 @@ definitions:
         items:
           $ref: '#/definitions/datatype.FieldInfo'
         type: array
+    type: object
+  query.ParameterOption:
+    properties:
+      labels:
+        additionalProperties:
+          type: string
+        type: object
+      value:
+        description: Value 与参数声明类型一致的标量。| Scalar matching the declared parameter type.
     type: object
 host: localhost:8086
 info:
@@ -3079,6 +3135,63 @@ paths:
       security:
       - BearerAuth: []
       summary: 更新查询服务 | Update query service
+      tags:
+      - QueryService
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - service.definition.update
+  /query/{id}/metric-source:
+    put:
+      consumes:
+      - application/json
+      description: 保留服务身份，比较当前发布版本后原子替换编译契约 | Preserve service identity and atomically
+        replace the compiled contract after checking the current publication version
+      parameters:
+      - description: 服务 ID | Service ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 指标绑定与当前发布版本 | Metric binding and current publication version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_service_internal_models.RebindMetricSourceRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_service_internal_models.QueryServiceDTO'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 切换指标来源修订 | Rebind metric source revision
       tags:
       - QueryService
       x-addp-auth-mode: permission

@@ -139,7 +139,6 @@ stop_services_concurrent() {
   # 清理 go run 进程
   pkill -9 -f "go run cmd/server/main.go" 2>/dev/null || true
   pkill -9 -f "go run cmd/worker/main.go" 2>/dev/null || true
-  pkill -9 -f "go run cmd/query-worker/main.go" 2>/dev/null || true
   pkill -9 -f "go run cmd/gateway/main.go" 2>/dev/null || true
   # 清理二进制进程（新方式）
   pkill -9 -f "addp-system" 2>/dev/null || true

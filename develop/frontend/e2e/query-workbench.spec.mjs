@@ -551,3 +551,21 @@ async function expectNoDocumentOverflow(page) {
   expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.clientWidth)
   expect(overflow.bodyScrollWidth).toBeLessThanOrEqual(overflow.clientWidth)
 }
+
+test('query editor uses shared protection for route updates and leaving the page', async ({ page }) => {
+  await installMockBackend(page, { resultKind: 'table' })
+  await page.goto('/sql?action=create')
+  await expect(page.getByRole('heading', { name: '查询开发', exact: true })).toBeVisible()
+  await expect(page.locator('.catalog-panel').getByRole('treeitem', { name: ENGINE.name, exact: true })).toBeVisible()
+  await page.locator('.query-workbench').evaluate(el => {
+    el.__vueParentComponent.setupState.queryContent = 'SELECT 42'
+    void el.__vueParentComponent.proxy.$router.push('/sql?action=edit&id=999')
+  })
+  const dialog = page.getByRole('dialog', { name: '有未保存的修改', exact: true })
+  await dialog.getByRole('button', { name: '继续编辑' }).click()
+  await expect(dialog).toHaveCount(0)
+  await expect(page).toHaveURL(/\/sql\?action=create$/)
+  await page.locator('.query-workbench').evaluate(el => { void el.__vueParentComponent.proxy.$router.push('/tasks') })
+  await dialog.getByRole('button', { name: '放弃修改并离开' }).click()
+  await expect(page).toHaveURL(/\/tasks$/)
+})

@@ -323,7 +323,7 @@ func materializationResourceError(err error) error {
 }
 
 // CreateMaterializedTarget creates the approved structure without changing any existing records.
-func (s *MaterializationService) CreateMaterializedTarget(ctx context.Context, id, tenantID, version int64, token string) (string, error) {
+func (s *MaterializationService) createMaterializedTarget(ctx context.Context, id, tenantID, version int64, authorizationID, operationID string) (string, error) {
 	if id <= 0 || tenantID <= 0 || version <= 0 || s.authorizationIssuer == nil || s.systemClient == nil {
 		return "", apperrors.Validation("materialized_target_request_invalid", modeli18n.MsgMaterializationInvalid)
 	}
@@ -333,14 +333,6 @@ func (s *MaterializationService) CreateMaterializedTarget(ctx context.Context, i
 	}
 	if err = requireVersion(table.Version, version); err != nil {
 		return "", err
-	}
-	operationID := uuid.NewString()
-	issued, err := s.authorizationIssuer.Issue(ctx, token, commonClient.IssueExecutionAuthorizationRequest{
-		Audience: commonExecution.AudienceModel, ExecutionID: operationID,
-		Accesses: []commonClient.ExecutionEngineAccessScope{{EngineID: strconv.FormatUint(uint64(locator.EngineID), 10), Effects: []string{"read", "ddl"}}}, ExpiresIn: materializationAuthorizationTTL,
-	})
-	if err != nil {
-		return "", materializedTargetAuthorizationError(err)
 	}
 	err = s.logicalTableRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		locked, err := repository.LockLogicalTable(tx, id, tenantID)
@@ -361,7 +353,7 @@ func (s *MaterializationService) CreateMaterializedTarget(ctx context.Context, i
 		if err != nil {
 			return err
 		}
-		access, err := s.systemClient.WithTenantID(uint(tenantID)).GetExecutionEngineAccess(ctx, issued.ID, commonClient.ExecutionEngineAccessRequest{ExecutionID: operationID, EngineID: strconv.FormatUint(uint64(locator.EngineID), 10), RequiredEffects: []string{"read", "ddl"}})
+		access, err := s.systemClient.WithTenantID(uint(tenantID)).GetExecutionEngineAccess(ctx, authorizationID, commonClient.ExecutionEngineAccessRequest{ExecutionID: operationID, EngineID: strconv.FormatUint(uint64(locator.EngineID), 10), RequiredEffects: []string{"read", "ddl"}})
 		if err != nil {
 			return materializedTargetAuthorizationError(err)
 		}

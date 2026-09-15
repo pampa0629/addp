@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -141,6 +142,8 @@ func openQueryServiceCreateTestDB(t *testing.T) *gorm.DB {
 	)`).Error; err != nil {
 		t.Fatal(err)
 	}
+	sqlDB, _ := db.DB()
+	t.Cleanup(func() { sqlDB.Close() })
 	return db
 }
 
@@ -354,4 +357,58 @@ func TestMatchesFederatedObjectTable(t *testing.T) {
 func boundingBoxPtr(minX, minY, maxX, maxY float64) *datatype.BoundingBox {
 	bbox := datatype.NewBoundingBox(minX, minY, maxX, maxY)
 	return &bbox
+}
+
+func TestLineagePublicationReplayUsesOwnerNamesAndTenant(t *testing.T) {
+	db := openQueryServiceCreateTestDB(t)
+	// Two pages prove replay does not stop at the first batch.
+	for i := 1; i <= 101; i++ {
+		if err := db.Exec(`INSERT INTO service.query_services (tenant_id,service_name,title,config_type,data_config,protocols,created_by,status,updated_at) VALUES (7,?,?,'table',?,X'7B7D',1,?,?)`, fmt.Sprintf("svc%d", i), fmt.Sprintf("指标服务%d", i), []byte(`{"source_snapshot":{"dependency_hash":"current","source":{"item_id":33}}}`), map[bool]string{true: "active", false: "inactive"}[i%2 == 1], time.Now().UTC()).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	var received []commonClient.MetaLineageServicePublication
+	var fail bool = true
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req commonClient.MetaLineageServicePublication
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Error(err)
+		}
+		received = append(received, req)
+		if fail && req.ServiceID == 1 {
+			http.Error(w, "unavailable", 503)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+	provider := &recordingQueryServiceTokenProvider{}
+	svc := NewQueryServiceService(repository.NewQueryServiceRepository(db), nil, commonClient.NewMetaClient(server.URL, provider), "")
+	if err := svc.replayLineagePublications(context.Background()); err == nil {
+		t.Fatal("expected delivery failure")
+	}
+	if len(received) != 101 {
+		t.Fatalf("replayed %d services", len(received))
+	}
+	fail = false
+	received = nil
+	if err := svc.replayLineagePublications(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(received) != 101 || provider.tenantID.Load() != 7 {
+		t.Fatalf("replay count %d tenant %d", len(received), provider.tenantID.Load())
+	}
+	for _, req := range received {
+		if req.ServiceName != fmt.Sprintf("指标服务%d", req.ServiceID) || req.ServiceUpdatedAt.IsZero() || req.PublishedRevision != "current" {
+			t.Fatalf("owner fact = %+v", req)
+		}
+		want := 0
+		if req.ServiceID%2 == 1 {
+			want = 1
+		}
+		if len(req.Dependencies) != want {
+			t.Fatalf("status dependencies = %+v", req)
+		}
+	}
 }

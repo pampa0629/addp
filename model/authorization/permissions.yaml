@@ -1,6 +1,6 @@
 schema_version: addp.permission_manifest/v1
 owner_module: model
-manifest_version: 13
+manifest_version: 15
 permissions:
   - key: model.catalog.read
     allowed_scope_types: [tenant]
@@ -162,6 +162,54 @@ permissions:
     status: active
     name_i18n_key: permissions.model.materialized_target.delete.name
     description_i18n_key: permissions.model.materialized_target.delete.description
+  - key: model.metric_implementation.create
+    allowed_scope_types: [tenant]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.model.metric_implementation.create.name
+    description_i18n_key: permissions.model.metric_implementation.create.description
+  - key: model.metric_implementation.delete
+    allowed_scope_types: [tenant]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.model.metric_implementation.delete.name
+    description_i18n_key: permissions.model.metric_implementation.delete.description
+  - key: model.metric_implementation.offline
+    allowed_scope_types: [tenant]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.model.metric_implementation.offline.name
+    description_i18n_key: permissions.model.metric_implementation.offline.description
+  - key: model.metric_implementation.publish
+    allowed_scope_types: [tenant]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.model.metric_implementation.publish.name
+    description_i18n_key: permissions.model.metric_implementation.publish.description
+  - key: model.metric_implementation.read
+    allowed_scope_types: [tenant]
+    risk_level: low
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.model.metric_implementation.read.name
+    description_i18n_key: permissions.model.metric_implementation.read.description
+  - key: model.metric_implementation.update
+    allowed_scope_types: [tenant]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.model.metric_implementation.update.name
+    description_i18n_key: permissions.model.metric_implementation.update.description
   - key: model.standard_reference.update
     allowed_scope_types: [tenant]
     risk_level: high
@@ -170,3 +218,19 @@ permissions:
     status: active
     name_i18n_key: permissions.model.standard_reference.update.name
     description_i18n_key: permissions.model.standard_reference.update.description
+  - key: model.task_provider.execute
+    allowed_scope_types: [tenant]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.model.task_provider.execute.name
+    description_i18n_key: permissions.model.task_provider.execute.description
+  - key: model.task_provider.read
+    allowed_scope_types: [tenant]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.model.task_provider.read.name
+    description_i18n_key: permissions.model.task_provider.read.description

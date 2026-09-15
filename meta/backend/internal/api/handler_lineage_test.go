@@ -2,8 +2,10 @@ package api
 
 import (
 	"encoding/json"
+	"github.com/gin-gonic/gin"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -165,5 +167,22 @@ func insertLineageRouteExecution(t *testing.T, db *gorm.DB, executionID string, 
 		VALUES (?, ?, 'develop', 'workflow', 'develop', 'success', 100, 'manual', ?, ?, ?)`,
 		tenantID, executionID, string(payload), time.Now(), time.Now()).Error; err != nil {
 		t.Fatalf("insert lineage execution: %v", err)
+	}
+}
+
+func TestLineageGraphRequestExpansion(t *testing.T) {
+	for _, tt := range []struct {
+		query string
+		valid bool
+	}{{"", true}, {"&expand_upstream=1,2&expand_downstream=3", true}, {"&expand_upstream=0", false}, {"&expand_upstream=-1", false}, {"&expand_upstream=abc", false}, {"&expand_upstream=" + strings.Repeat("1,", 100) + "1", false}} {
+		c, _ := gin.CreateTestContext(httptest.NewRecorder())
+		c.Request = httptest.NewRequest("GET", "/graph?subject_kind=data_item&item_id=3"+tt.query, nil)
+		req, err := parseLineageGraphRequest(c)
+		if (err == nil) != tt.valid {
+			t.Fatalf("%s: %v", tt.query, err)
+		}
+		if err == nil && req.Depth != 2 {
+			t.Fatalf("default depth = %d", req.Depth)
+		}
 	}
 }

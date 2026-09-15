@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"fmt"
 	commonrepo "github.com/addp/common/repository"
 	"github.com/addp/model/internal/models"
 	"gorm.io/gorm"
@@ -122,8 +123,12 @@ func (r *LogicalTableRepository) Delete(id, tenantID, version int64) error {
 			return commonrepo.WrapDBError(err)
 		}
 
-		if err := tx.Where("fact_table_id = ? AND tenant_id = ?", id, tenantID).Delete(&models.MetricImplementation{}).Error; err != nil {
+		var metricReferences int64
+		if err := tx.Model(&models.MetricImplementation{}).Where("fact_table_id = ? AND tenant_id = ?", id, tenantID).Count(&metricReferences).Error; err != nil {
 			return commonrepo.WrapDBError(err)
+		}
+		if metricReferences > 0 {
+			return fmt.Errorf("logical table is referenced by metric implementations")
 		}
 		if err := tx.Where("tenant_id = ? AND (source_table = ? OR target_table = ?)", tenantID, id, id).Delete(&models.TableRelation{}).Error; err != nil {
 			return commonrepo.WrapDBError(err)

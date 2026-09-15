@@ -267,10 +267,11 @@ func (q *QueryService) IsOGCFeaturesEnabled() bool {
 
 // CreateQueryServiceRequest 创建查询服务请求
 type CreateQueryServiceRequest struct {
-	ServiceName string   `json:"service_name" binding:"required"`
-	Title       string   `json:"title" binding:"required"`
-	Description string   `json:"description"`
-	Keywords    []string `json:"keywords"`
+	MetricSource *MetricSourceRequest `json:"metric_source,omitempty"`
+	ServiceName  string               `json:"service_name" binding:"required"`
+	Title        string               `json:"title" binding:"required"`
+	Description  string               `json:"description"`
+	Keywords     []string             `json:"keywords"`
 
 	// 配置方式（table 或 sql）
 	ConfigType string `json:"config_type" binding:"required,oneof=table sql"`
@@ -324,7 +325,8 @@ type UpdateQueryServiceRequest struct {
 
 // QueryServiceDTO 查询服务 DTO
 type QueryServiceDTO struct {
-	ID uint `json:"id"`
+	ServiceVersion string `json:"service_version"`
+	ID             uint   `json:"id"`
 
 	TenantID    uint     `json:"tenant_id"`
 	ServiceName string   `json:"service_name"`

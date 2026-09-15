@@ -52,7 +52,7 @@ bash scripts/prod/wait-infra.sh
 
 # 第二步：启动 System Backend（其他服务依赖它）
 echo -e "${YELLOW}[2/4] 启动 System Backend...${NC}"
-docker compose -f docker-compose.yml up -d system-backend
+docker compose -f docker-compose.yml up -d --remove-orphans system-backend
 
 echo -e "${YELLOW}等待 System Backend 就绪...${NC}"
 timeout=60
@@ -79,7 +79,6 @@ docker compose -f docker-compose.yml up -d \
   transfer-continuous-worker \
   orchestrator-backend \
   develop-backend \
-  develop-query-worker \
   service-backend \
   copilot-backend \
   inference-backend \

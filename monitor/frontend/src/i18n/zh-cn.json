@@ -299,6 +299,7 @@
         "load_failed": "加载后台运行实例健康失败",
         "roles": {
           "execution_worker": "有界执行 Worker",
+          "execution_supervisor": "内嵌执行监督器",
           "continuous_worker": "持续运行 Worker",
           "dispatcher": "通知投递器"
         },

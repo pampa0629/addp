@@ -14,9 +14,9 @@ test.describe('responsive orchestration dialogs', () => {
   test('keeps editor dialogs visible and visually stable in a narrow window', async ({ page }) => {
     await installMockBackend(page, createLayoutFixture())
     await page.goto(`/orchestrations/${ORCHESTRATION_ID}/edit`)
-    await expect(page.getByRole('heading', { name: '编辑编排' })).toBeVisible()
+    await expect(page.locator('.orchestration-form .orchestration-name')).toBeVisible()
 
-    await page.getByRole('button', { name: '保存', exact: true }).click()
+    await page.getByRole('button', { name: '编辑名称与描述', exact: true }).click()
     const saveDialog = page.getByRole('dialog', { name: '保存编排信息', exact: true })
     const saveSurface = visibleDialogSurface(page)
     await expectDialogWithinViewport(page, saveSurface)
@@ -29,6 +29,7 @@ test.describe('responsive orchestration dialogs', () => {
     const scheduleSurface = visibleDialogSurface(page)
     await expectDialogWithinViewport(page, scheduleSurface)
     await expect(scheduleSurface.locator('.el-dialog__body')).toHaveCSS('overflow', 'auto')
+    await page.mouse.move(0, 0)
     await expect(scheduleSurface).toHaveScreenshot('orchestration-schedule-narrow.png', { animations: 'disabled' })
 
     await scheduleDialog.getByRole('button', { name: '自定义时间', exact: true }).click()
@@ -83,20 +84,20 @@ test('confirms orchestration execution and locks duplicate submissions', async (
 
   const executeButton = page.locator('.orchestration-list').getByRole('button', { name: '执行', exact: true })
   await executeButton.click()
-  let confirmDialog = page.getByRole('dialog', { name: '确认执行', exact: true })
-  await expect(confirmDialog).toContainText(`确定要执行编排“${orchestration.name}”吗？`)
+  let confirmDialog = page.getByRole('dialog', { name: '执行完整流程', exact: true })
+  await expect(confirmDialog).toContainText(`将执行“${orchestration.name}”的全部 ${orchestration.steps.length} 个步骤`)
   await confirmDialog.getByRole('button', { name: '取消', exact: true }).click()
   await expect(confirmDialog).not.toBeVisible()
   expect(backend.getExecuteRequestCount()).toBe(0)
 
   await executeButton.click()
-  confirmDialog = page.getByRole('dialog', { name: '确认执行', exact: true })
+  confirmDialog = page.getByRole('dialog', { name: '执行完整流程', exact: true })
   await confirmDialog.getByRole('button', { name: '执行', exact: true }).click()
   await expect.poll(() => backend.getExecuteRequestCount()).toBe(1)
   await expect(executeButton).toBeDisabled()
 
   backend.releaseExecute()
-  await expect(page.locator('.el-message').filter({ hasText: '编排已触发' })).toBeVisible()
+  await expect(page.locator('.el-message').filter({ hasText: '执行已提交' })).toBeVisible()
   await expect(executeButton).toBeEnabled()
 })
 
@@ -111,7 +112,7 @@ test('persists node position and viewport across reload', async ({ page }) => {
   })
 
   await page.goto(`/orchestrations/${ORCHESTRATION_ID}/edit`)
-  await expect(page.getByRole('heading', { name: '编辑编排' })).toBeVisible()
+  await expect(page.locator('.orchestration-form .orchestration-name')).toBeVisible()
 
   const canvas = page.locator('#dag-container canvas')
   await expect(canvas).toHaveCount(1)
@@ -132,9 +133,7 @@ test('persists node position and viewport across reload', async ({ page }) => {
   }, { x: -70, y: -45 })
 
   await page.getByRole('button', { name: '保存', exact: true }).click()
-  await expect(page.getByRole('dialog', { name: '保存编排信息' })).toBeVisible()
-  await page.getByRole('button', { name: '确认保存' }).click()
-  await expect(page.getByRole('heading', { name: '任务编排' })).toBeVisible()
+  await expect(page.locator('.el-message').filter({ hasText: '更新成功' })).toBeVisible()
 
   const persistedPayload = backend.getPersistedPayload()
   expect(persistedPayload).not.toBeNull()
@@ -145,9 +144,9 @@ test('persists node position and viewport across reload', async ({ page }) => {
   expect(Math.abs(persistedPayload.editor_layout.viewport.translate_y)).toBeGreaterThan(0)
 
   await page.goto(`/orchestrations/${ORCHESTRATION_ID}/edit`)
-  await expect(page.getByRole('heading', { name: '编辑编排' })).toBeVisible()
+  await expect(page.locator('.orchestration-form .orchestration-name')).toBeVisible()
   await page.reload()
-  await expect(page.getByRole('heading', { name: '编辑编排' })).toBeVisible()
+  await expect(page.locator('.orchestration-form .orchestration-name')).toBeVisible()
   await expect(canvas).toHaveCount(1)
 
   const restoredBox = await requiredBoundingBox(canvas)
@@ -172,7 +171,7 @@ test('loads execution contracts only for referenced steps and new tasks on deman
   const backend = await installMockBackend(page, orchestration, taskLibrary)
 
   await page.goto(`/orchestrations/${ORCHESTRATION_ID}/edit`)
-  await expect(page.getByRole('heading', { name: '编辑编排' })).toBeVisible()
+  await expect(page.locator('.orchestration-form .orchestration-name')).toBeVisible()
   await expect.poll(() => backend.getTaskDetailRequestIDs()).toEqual([7])
 
   await page.locator('.task-panel').getByPlaceholder('搜索任务').fill('Unused task')
@@ -186,7 +185,7 @@ test('keeps a selected custom node visually stable without duplicate titles', as
   const orchestration = createLayoutFixture()
   await installMockBackend(page, orchestration, createPortBindingTaskLibrary())
   await page.goto(`/orchestrations/${ORCHESTRATION_ID}/edit`)
-  await expect(page.getByRole('heading', { name: '编辑编排' })).toBeVisible()
+  await expect(page.locator('.orchestration-form .orchestration-name')).toBeVisible()
 
   const canvas = page.locator('#dag-container canvas')
   const canvasBox = await requiredBoundingBox(canvas)
@@ -204,9 +203,9 @@ test('keeps orchestration dialog and canvas focus predictable', async ({ page })
   const orchestration = createLayoutFixture()
   await installMockBackend(page, orchestration)
   await page.goto(`/orchestrations/${ORCHESTRATION_ID}/edit`)
-  await expect(page.getByRole('heading', { name: '编辑编排' })).toBeVisible()
+  await expect(page.locator('.orchestration-form .orchestration-name')).toBeVisible()
 
-  const saveTrigger = page.getByRole('button', { name: '保存', exact: true })
+  const saveTrigger = page.getByRole('button', { name: '编辑名称与描述', exact: true })
   await saveTrigger.click()
   const saveDialog = page.getByRole('dialog', { name: '保存编排信息', exact: true })
   await expect(saveDialog.getByPlaceholder('请输入编排名称', { exact: true })).toBeFocused()
@@ -255,33 +254,31 @@ test('announces orchestration save progress', async ({ page }) => {
   const orchestration = createLayoutFixture()
   const backend = await installMockBackend(page, orchestration, { deferPersist: true })
   await page.goto(`/orchestrations/${ORCHESTRATION_ID}/edit`)
-  await expect(page.getByRole('heading', { name: '编辑编排' })).toBeVisible()
+  await expect(page.locator('.orchestration-form .orchestration-name')).toBeVisible()
 
   await page.getByRole('button', { name: '保存', exact: true }).click()
-  const saveDialog = page.getByRole('dialog', { name: '保存编排信息', exact: true })
-  await saveDialog.getByRole('button', { name: '确认保存', exact: true }).click()
 
   await expect.poll(() => backend.getPersistedPayload()).not.toBeNull()
   await expect(page.locator('.orchestration-form')).toHaveAttribute('aria-busy', 'true')
   await expect(page.getByRole('status', { name: '编排状态' })).toHaveText('正在保存编排')
 
   backend.releasePersist()
-  await expect(page).toHaveURL(/\/orchestrations$/)
+  await expect(page).toHaveURL(/\/orchestrations\/[^/]+\/edit$/)
 })
 
 test('resizes the task library with the keyboard', async ({ page }) => {
   await installMockBackend(page, createLayoutFixture())
   await page.goto(`/orchestrations/${ORCHESTRATION_ID}/edit`)
-  await expect(page.getByRole('heading', { name: '编辑编排' })).toBeVisible()
+  await expect(page.locator('.orchestration-form .orchestration-name')).toBeVisible()
 
   const splitter = page.getByRole('separator', { name: '调整任务库宽度', exact: true })
   const taskPanel = page.locator('#task-library-panel')
-  await expect(splitter).toHaveAttribute('aria-valuenow', '320')
+  await expect(splitter).toHaveAttribute('aria-valuenow', '360')
   await splitter.focus()
 
   await page.keyboard.press('ArrowRight')
-  await expect(splitter).toHaveAttribute('aria-valuenow', '336')
-  await expect(taskPanel).toHaveCSS('width', '336px')
+  await expect(splitter).toHaveAttribute('aria-valuenow', '376')
+  await expect(taskPanel).toHaveCSS('width', '376px')
 
   await page.keyboard.press('Home')
   await expect(splitter).toHaveAttribute('aria-valuenow', '240')
@@ -297,7 +294,7 @@ test('connects ports and preserves the redone edge without copying it', async ({
   const backend = await installMockBackend(page, orchestration)
 
   await page.goto(`/orchestrations/${INTERACTION_ORCHESTRATION_ID}/edit`)
-  await expect(page.getByRole('heading', { name: '编辑编排' })).toBeVisible()
+  await expect(page.locator('.orchestration-form .orchestration-name')).toBeVisible()
 
   const canvas = page.locator('#dag-container canvas')
   await expect(canvas).toHaveCount(1)
@@ -314,13 +311,7 @@ test('connects ports and preserves the redone edge without copying it', async ({
     sourceFillBeforeSelection
   )).toBeLessThanOrEqual(3)
 
-  await drag(page, {
-    x: canvasBox.x + source.x + 140,
-    y: canvasBox.y + source.y - 26
-  }, {
-    x: target.x - source.x - 280,
-    y: target.y - source.y
-  })
+  await connectFixturePorts(page, 'control')
 
   const undo = page.getByRole('button', { name: '撤销', exact: true })
   const redo = page.getByRole('button', { name: '重做', exact: true })
@@ -352,8 +343,7 @@ test('connects ports and preserves the redone edge without copying it', async ({
   await paste.click()
 
   await page.getByRole('button', { name: '保存', exact: true }).click()
-  await page.getByRole('button', { name: '确认保存' }).click()
-  await expect(page.getByRole('heading', { name: '任务编排' })).toBeVisible()
+  await expect(page.locator('.el-message').filter({ hasText: '更新成功' })).toBeVisible()
 
   const persistedPayload = backend.getPersistedPayload()
   expect(persistedPayload).not.toBeNull()
@@ -373,27 +363,15 @@ test('binds a stable output to an execution input without duplicating the depend
   const taskLibrary = createPortBindingTaskLibrary()
   const backend = await installMockBackend(page, orchestration, taskLibrary)
   await page.goto(`/orchestrations/${INTERACTION_ORCHESTRATION_ID}/edit`)
-  await expect(page.getByRole('heading', { name: '编辑编排' })).toBeVisible()
+  await expect(page.locator('.orchestration-form .orchestration-name')).toBeVisible()
 
   const canvas = page.locator('#dag-container canvas')
   const canvasBox = await requiredBoundingBox(canvas)
   const source = orchestration.editor_layout.nodes[SOURCE_NODE_ID]
   const target = orchestration.editor_layout.nodes[TARGET_NODE_ID]
 
-  await drag(page, {
-    x: canvasBox.x + source.x + 140,
-    y: canvasBox.y + source.y - 26
-  }, {
-    x: target.x - source.x - 280,
-    y: target.y - source.y
-  })
-  await drag(page, {
-    x: canvasBox.x + source.x + 140,
-    y: canvasBox.y + source.y + 21
-  }, {
-    x: target.x - source.x - 280,
-    y: target.y - source.y
-  })
+  await connectFixturePorts(page, 'control')
+  await connectFixturePorts(page, 'parameter')
 
   const edges = await page.locator('#dag-container').evaluate(element => {
     const graph = element.__vueParentComponent?.setupState?.graph
@@ -412,8 +390,7 @@ test('binds a stable output to an execution input without duplicating the depend
   expect(targetAppearance.titles).toEqual(['Target task'])
 
   await page.getByRole('button', { name: '保存', exact: true }).click()
-  await page.getByRole('button', { name: '确认保存' }).click()
-  await expect(page.getByRole('heading', { name: '任务编排' })).toBeVisible()
+  await expect(page.locator('.el-message').filter({ hasText: '更新成功' })).toBeVisible()
 
   const targetStep = backend.getPersistedPayload().steps.find(step => step.id === TARGET_NODE_ID)
   expect(targetStep.depends_on).toEqual([SOURCE_NODE_ID])
@@ -432,12 +409,12 @@ test('deleting the final parameter edge clears its binding and implicit dependen
   orchestration.editor_layout.nodes[TARGET_NODE_ID].x = 650
   const backend = await installMockBackend(page, orchestration, createPortBindingTaskLibrary())
   await page.goto(`/orchestrations/${INTERACTION_ORCHESTRATION_ID}/edit`)
-  await expect(page.getByRole('heading', { name: '编辑编排' })).toBeVisible()
+  await expect(page.locator('.orchestration-form .orchestration-name')).toBeVisible()
 
   const { canvasBox, source, target } = await bindStableResourceOutput(page, orchestration)
   await page.mouse.click(
     canvasBox.x + (source.x + target.x) / 2,
-    canvasBox.y + source.y + 21
+    canvasBox.y + source.y + 31
   )
   const deleteButton = page.getByRole('button', { name: '删除选中项', exact: true })
   await expect(deleteButton).toBeEnabled()
@@ -461,14 +438,14 @@ test('switching a bound parameter back to workflow configuration removes the edg
   orchestration.editor_layout.nodes[TARGET_NODE_ID].x = 650
   const backend = await installMockBackend(page, orchestration, createPortBindingTaskLibrary())
   await page.goto(`/orchestrations/${INTERACTION_ORCHESTRATION_ID}/edit`)
-  await expect(page.getByRole('heading', { name: '编辑编排' })).toBeVisible()
+  await expect(page.locator('.orchestration-form .orchestration-name')).toBeVisible()
 
   const { canvasBox, target } = await bindStableResourceOutput(page, orchestration)
   await page.mouse.dblclick(canvasBox.x + target.x, canvasBox.y + target.y)
   const drawer = page.getByRole('dialog', { name: '配置步骤', exact: true })
   const sourceParameter = drawer.locator('.parameter-field').filter({ hasText: '数据源' })
-  await sourceParameter.getByText('工作流配置', { exact: true }).click()
-  await expect(sourceParameter.locator('.el-radio-button').filter({ hasText: '工作流配置' })).toHaveClass(/is-active/)
+  await sourceParameter.getByText('任务默认值', { exact: true }).click()
+  await expect(sourceParameter.locator('.el-radio-button').filter({ hasText: '任务默认值' })).toHaveClass(/is-active/)
   await expect.poll(() => canvasEdgeModels(page)).toEqual([])
   await expect.poll(() => orchestrationNodeParameters(page, TARGET_NODE_ID)).toEqual({})
   await drawer.getByRole('button', { name: 'Close this dialog', exact: true }).click()
@@ -483,7 +460,7 @@ test('edits predecessor steps in the drawer and disables circular candidates', a
   const orchestration = createInteractionFixture()
   const backend = await installMockBackend(page, orchestration)
   await page.goto(`/orchestrations/${INTERACTION_ORCHESTRATION_ID}/edit`)
-  await expect(page.getByRole('heading', { name: '编辑编排' })).toBeVisible()
+  await expect(page.locator('.orchestration-form .orchestration-name')).toBeVisible()
 
   const canvas = page.locator('#dag-container canvas')
   const canvasBox = await requiredBoundingBox(canvas)
@@ -513,8 +490,7 @@ test('edits predecessor steps in the drawer and disables circular candidates', a
   await drawer.getByRole('button', { name: 'Close this dialog', exact: true }).click()
 
   await page.getByRole('button', { name: '保存', exact: true }).click()
-  await page.getByRole('button', { name: '确认保存', exact: true }).click()
-  await expect(page.getByRole('heading', { name: '任务编排' })).toBeVisible()
+  await expect(page.locator('.el-message').filter({ hasText: '更新成功' })).toBeVisible()
   const persistedTarget = backend.getPersistedPayload().steps.find(step => step.id === TARGET_NODE_ID)
   expect(persistedTarget.depends_on).toEqual([SOURCE_NODE_ID])
 })
@@ -537,7 +513,7 @@ test('persists a structured node parameter without a separate config save', asyn
   const backend = await installMockBackend(page, orchestration, taskLibrary)
 
   await page.goto(`/orchestrations/${ORCHESTRATION_ID}/edit`)
-  await expect(page.getByRole('heading', { name: '编辑编排' })).toBeVisible()
+  await expect(page.locator('.orchestration-form .orchestration-name')).toBeVisible()
 
   const canvas = page.locator('#dag-container canvas')
   const canvasBox = await requiredBoundingBox(canvas)
@@ -556,8 +532,7 @@ test('persists a structured node parameter without a separate config save', asyn
   await drawer.getByRole('button', { name: 'Close this dialog', exact: true }).click()
 
   await page.getByRole('button', { name: '保存', exact: true }).click()
-  await page.getByRole('button', { name: '确认保存', exact: true }).click()
-  await expect(page.getByRole('heading', { name: '任务编排' })).toBeVisible()
+  await expect(page.locator('.el-message').filter({ hasText: '更新成功' })).toBeVisible()
 
   const persistedPayload = backend.getPersistedPayload()
   expect(persistedPayload).not.toBeNull()
@@ -578,7 +553,7 @@ test('keeps task types collapsed and expands only matching search paths', async 
   const backend = await installMockBackend(page, orchestration, createTaskLibraryFixture())
 
   await page.goto(`/orchestrations/${TASK_LIBRARY_ORCHESTRATION_ID}/edit`)
-  await expect(page.getByRole('heading', { name: '编辑编排' })).toBeVisible()
+  await expect(page.locator('.orchestration-form .orchestration-name')).toBeVisible()
 
   const taskPanel = page.locator('.task-panel')
   const search = taskPanel.getByPlaceholder('搜索任务')
@@ -686,6 +661,8 @@ function createTaskLibraryFixture() {
     taskProviders: [{
       id: 1,
       module_name: 'develop',
+      available: true,
+      enabled: true,
       display_name: '开发中心',
       capabilities: {
         schema_version: 'task.capabilities/v2',
@@ -726,6 +703,8 @@ function createPortBindingTaskLibrary() {
     taskProviders: [{
       id: 1,
       module_name: 'develop',
+      available: true,
+      enabled: true,
       display_name: '开发中心',
       capabilities: {
         schema_version: 'task.capabilities/v2',
@@ -887,7 +866,8 @@ async function installMockBackend(page, initialOrchestration, taskLibrary = {}) 
     if (path === detailPath && request.method() === 'GET') {
       return fulfillJSON(route, orchestration)
     }
-    if (path === detailPath && request.method() === 'PUT') {
+    if ((path === detailPath && request.method() === 'PUT') ||
+        (path === '/api/v1/orchestrator/orchestrations' && request.method() === 'POST')) {
       persistedPayload = request.postDataJSON()
       if (persistGate) await persistGate
       orchestration = { ...orchestration, ...persistedPayload }
@@ -896,7 +876,7 @@ async function installMockBackend(page, initialOrchestration, taskLibrary = {}) 
     if (path === `${detailPath}/execute` && request.method() === 'POST') {
       executeRequestCount += 1
       if (executeGate) await executeGate
-      return fulfillJSON(route, { execution_id: 'orchestration-execution-e2e' })
+      return fulfillJSON(route, { id: EXECUTION_ID, execution_id: 'orchestration-execution-e2e', status: 'pending' })
     }
     if (path === '/api/v1/orchestrator/orchestrations' && request.method() === 'GET') {
       return fulfillJSON(route, taskLibrary.orchestrations || [orchestration])
@@ -937,18 +917,26 @@ async function orchestrationNodeAppearance(page, nodeID, label) {
   }, { nodeID, label })
 }
 
+async function connectFixturePorts(page, kind) {
+  const positions = await page.locator('#dag-container').evaluate((element, kind) => {
+    const graph = element.__vueParentComponent.setupState.graph
+    return [['source-step', 'output'], ['target-step', 'input']].map(([id, direction]) => {
+      const node = graph.findById(id)
+      const shape = node.getContainer().get('children').find(shape => shape.get('portDirection') === direction && shape.get('portKind') === kind)
+      const box = shape.getBBox()
+      const model = node.getModel()
+      return graph.getClientByPoint(model.x + (box.minX + box.maxX) / 2, model.y + (box.minY + box.maxY) / 2)
+    })
+  }, kind)
+  await drag(page, positions[0], { x: positions[1].x - positions[0].x, y: positions[1].y - positions[0].y })
+}
+
 async function bindStableResourceOutput(page, orchestration) {
   const canvas = page.locator('#dag-container canvas')
   const canvasBox = await requiredBoundingBox(canvas)
   const source = orchestration.editor_layout.nodes[SOURCE_NODE_ID]
   const target = orchestration.editor_layout.nodes[TARGET_NODE_ID]
-  await drag(page, {
-    x: canvasBox.x + source.x + 140,
-    y: canvasBox.y + source.y + 21
-  }, {
-    x: target.x - source.x - 280,
-    y: target.y - source.y
-  })
+  await connectFixturePorts(page, 'parameter')
   await expect.poll(async () => (await canvasEdgeModels(page)).length).toBe(1)
   return { canvas, canvasBox, source, target }
 }
@@ -976,8 +964,7 @@ async function selectedGraphItemModel(page) {
 
 async function saveOrchestration(page) {
   await page.getByRole('button', { name: '保存', exact: true }).click()
-  await page.getByRole('button', { name: '确认保存' }).click()
-  await expect(page.getByRole('heading', { name: '任务编排' })).toBeVisible()
+  await expect(page.locator('.el-message').filter({ hasText: '更新成功' })).toBeVisible()
 }
 
 async function fulfillJSON(route, body) {
@@ -1092,7 +1079,7 @@ test('related orchestration preserves scalar resource locators when binding upst
  }
  const backend=await installMockBackend(page,orchestration,library)
  await page.goto(`/orchestrations/${INTERACTION_ORCHESTRATION_ID}/edit`)
- await expect(page.getByRole('heading',{name:'编辑编排'})).toBeVisible()
+ await expect(page.locator('.orchestration-form .orchestration-name')).toBeVisible()
  const box=await requiredBoundingBox(page.locator('#dag-container canvas'))
  const node=orchestration.editor_layout.nodes[TARGET_NODE_ID]
  await page.mouse.dblclick(box.x+node.x,box.y+node.y)
@@ -1104,4 +1091,378 @@ test('related orchestration preserves scalar resource locators when binding upst
  await drawer.getByRole('button',{name:'Close this dialog',exact:true}).click()
  await saveOrchestration(page)
  expect(backend.getPersistedPayload().steps.find(s=>s.id===TARGET_NODE_ID).parameters.target_locator).toBe(`{{${SOURCE_NODE_ID}.outputs.result.resource.locator}}`)
+})
+
+test('editor usability: identifies the orchestration and saves before manual execution', async ({ page }) => {
+  const fixture = createLayoutFixture()
+  fixture.schedule = '0 2 * * *'
+  const backend = await installMockBackend(page, fixture)
+  await page.goto(`/orchestrations/${fixture.id}/edit`)
+  await expect(page.locator('.header > .header-title')).toContainText(fixture.name)
+  await expect(page.locator('.header-summary')).toContainText('定时调度已关闭')
+  const execute = page.locator('.header-actions').getByRole('button', { name: '执行', exact: true })
+  await expect(execute).toBeEnabled()
+  await page.getByRole('button', { name: '调度', exact: true }).click()
+  await page.getByRole('dialog').locator('.el-switch').click()
+  await page.getByRole('dialog').getByRole('button', { name: '确认', exact: true }).click()
+  await expect(execute).toBeDisabled()
+  await expect(page.locator('.header-summary')).toContainText('有未保存的修改')
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(page.locator('.el-message').filter({ hasText: '更新成功' })).toBeVisible()
+  await expect(execute).toBeEnabled()
+  await execute.click()
+  await page.getByRole('dialog', { name: '执行完整流程', exact: true }).getByRole('button', { name: '执行', exact: true }).click()
+  await expect.poll(() => backend.getExecuteRequestCount()).toBe(1)
+  expect(backend.getPersistedPayload().enabled).toBe(true)
+})
+
+test('editor usability: wraps task names and traces selected connections', async ({ page }) => {
+  const fixture = createInteractionFixture()
+  fixture.steps[1].depends_on = [SOURCE_NODE_ID]
+  const library = createTaskLibraryFixture()
+  library.taskDetails[7] = { execution_contract: createEmptyExecutionContract() }
+  library.taskDetails[8] = { execution_contract: createEmptyExecutionContract() }
+  library.deferTaskRequests = false
+  library.taskProviders[0].available = true
+  library.taskProviders[0].enabled = true
+  const taskName = '验证户外人员活动明细与组织成员关系数据完整性任务'
+  library.tasksByType.query[0].display_name = taskName
+  library.tasksByType.query[0].last_execution_status = 'success'
+  await installMockBackend(page, fixture, library)
+  await page.goto(`/orchestrations/${fixture.id}/edit`)
+  await page.locator('.task-panel').getByPlaceholder('搜索任务').fill(taskName)
+  const task = page.locator('.task-node').filter({ hasText: taskName })
+  await expect(task).toContainText('最近执行：成功')
+  await expect(task.locator('.task-name')).toHaveCSS('white-space', 'normal')
+  expect(await task.locator('.task-name').evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBe(true)
+  await page.locator('#dag-container').evaluate(el => {
+    const state = el.__vueParentComponent.setupState
+    state.selectItem(state.graph.getEdges()[0])
+  })
+  await expect(page.locator('.connection-inspector')).toContainText('Source task')
+  await expect(page.locator('.connection-inspector')).toContainText('Target task')
+  await expect(page.locator('.connection-inspector')).toContainText('执行依赖')
+  await page.getByRole('button', { name: '自动布局', exact: true }).click()
+  await expect.poll(async () => {
+    const nodes = await page.locator('#dag-container').evaluate(el => el.__vueParentComponent.setupState.graph.getNodes().map(node => node.getBBox()))
+    return nodes[1].minX - nodes[0].maxX
+  }).toBeGreaterThan(60)
+  await expect(task.getByRole('button', { name: '添加到画布' })).toBeVisible()
+  await expect(task.getByRole('button', { name: '添加到画布' })).toBeInViewport({ ratio: 1 })
+  const bounds = await page.locator('#dag-container').evaluate(el => {
+    const graph = el.__vueParentComponent.setupState.graph
+    return graph.getNodes().map(node => {
+      const box = node.getBBox()
+      return { left: graph.getCanvasByPoint(box.minX, box.minY).x, right: graph.getCanvasByPoint(box.maxX, box.maxY).x, width: el.clientWidth }
+    })
+  })
+  expect(bounds.every(box => box.left >= 0 && box.right <= box.width)).toBe(true)
+  await page.screenshot({ path: test.info().outputPath('editor-usability.png') })
+})
+
+test('editor refinements: existing orchestration saves directly under its own name', async ({ page }) => {
+  const fixture = createLayoutFixture()
+  const backend = await installMockBackend(page, fixture, { deferPersist: true })
+  await page.goto(`/orchestrations/${fixture.id}/edit`)
+  await expect(page.locator('.orchestration-form .header').getByRole('heading')).toHaveText(fixture.name)
+  const save = page.getByRole('button', { name: '保存', exact: true })
+  await save.click()
+  await expect.poll(() => backend.getPersistedPayload()?.name).toBe(fixture.name)
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await expect(save).toBeDisabled()
+  backend.releasePersist()
+  await expect(page.locator('.el-message').filter({ hasText: '更新成功' })).toBeVisible()
+  await expect(page).toHaveURL(new RegExp(`/orchestrations/${fixture.id}/edit$`))
+})
+
+test('editor refinements: hovering never changes the clicked connection focus', async ({ page }) => {
+  const fixture = createInteractionFixture()
+  fixture.steps[1].depends_on = [SOURCE_NODE_ID]
+  await installMockBackend(page, fixture)
+  await page.goto(`/orchestrations/${fixture.id}/edit`)
+  const canvas = page.locator('#dag-container canvas')
+  await expect(canvas).toBeVisible()
+  const box = await requiredBoundingBox(canvas)
+  const source = fixture.editor_layout.nodes[SOURCE_NODE_ID]
+  const target = fixture.editor_layout.nodes[TARGET_NODE_ID]
+  await page.mouse.move(box.x + source.x, box.y + source.y)
+  await expect(page.locator('.connection-inspector')).not.toBeVisible()
+  await page.mouse.click(box.x + source.x, box.y + source.y)
+  const title = page.locator('.connection-inspector strong')
+  await expect(title).toHaveText(fixture.steps[0].name)
+  await page.mouse.move(box.x + target.x, box.y + target.y)
+  await expect(title).toHaveText(fixture.steps[0].name)
+  // Exercise edge hover too, regardless of the curve's layout.
+  await page.locator('#dag-container').evaluate(el => {
+    const graph = el.__vueParentComponent.setupState.graph
+    const item = graph.getEdges()[0]
+    graph.emit('edge:mouseenter', { item })
+    graph.emit('edge:mouseleave', { item })
+  })
+  await expect(title).toHaveText(fixture.steps[0].name)
+  await page.mouse.click(box.x + target.x, box.y + target.y)
+  await expect(title).toHaveText(fixture.steps[1].name)
+})
+
+test('editor refinements: blank canvas clears node and edge focus', async ({ page }) => {
+  const fixture = createInteractionFixture()
+  fixture.steps[1].depends_on = [SOURCE_NODE_ID]
+  await installMockBackend(page, fixture)
+  await page.goto(`/orchestrations/${fixture.id}/edit`)
+  await expect(page.getByRole('button', { name: '保存', exact: true })).toBeEnabled()
+  const container = page.locator('#dag-container')
+  for (const kind of ['node', 'edge']) {
+    await container.evaluate((el, kind) => {
+      const state = el.__vueParentComponent.setupState
+      state.selectItem(kind === 'node' ? state.graph.getNodes()[0] : state.graph.getEdges()[0])
+    }, kind)
+    await expect(page.locator('.connection-inspector')).toBeVisible()
+    const box = await requiredBoundingBox(container)
+    await page.mouse.click(box.x + box.width - 30, box.y + 30)
+    await expect(page.locator('.connection-inspector')).not.toBeVisible()
+    await expect(page.getByRole('button', { name: '删除选中项', exact: true })).toBeDisabled()
+    expect(await container.evaluate(el => {
+      const graph = el.__vueParentComponent.setupState.graph
+      return [...graph.getNodes(), ...graph.getEdges()].every(item => !item.hasState('selected') && item.getContainer().attr('opacity') === 1)
+    })).toBe(true)
+  }
+})
+
+test('editor refinements: metadata editing remains explicit and validates the name', async ({ page }) => {
+  const fixture = createLayoutFixture()
+  const backend = await installMockBackend(page, fixture)
+  await page.goto(`/orchestrations/${fixture.id}/edit`)
+  await page.getByRole('button', { name: '编辑名称与描述', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: '保存编排信息', exact: true })
+  await dialog.getByPlaceholder('请输入编排名称').fill('')
+  await dialog.getByRole('button', { name: '确认保存', exact: true }).click()
+  await expect(dialog).toBeVisible()
+  expect(backend.getPersistedPayload()).toBeNull()
+  await dialog.getByPlaceholder('请输入编排名称').fill('更新后的编排名称')
+  await dialog.getByPlaceholder('请输入描述信息').fill('更新后的描述')
+  await dialog.getByRole('button', { name: '确认保存', exact: true }).click()
+  await expect(page.getByRole('heading', { name: '更新后的编排名称', exact: true })).toBeVisible()
+  await expect.poll(() => backend.getPersistedPayload()?.description).toBe('更新后的描述')
+})
+
+test('editor refinements: a new orchestration requests its name on first save', async ({ page }) => {
+  const backend = await installMockBackend(page, createLayoutFixture(), createPortBindingTaskLibrary())
+  await page.goto('/orchestrations/new')
+  await expect(page.getByRole('heading', { name: '创建编排', exact: true })).toBeVisible()
+  await page.getByPlaceholder('搜索任务').fill('Source task')
+  await page.locator('.task-node').filter({ hasText: 'Source task' }).getByRole('button', { name: '添加到画布' }).click()
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: '保存编排信息', exact: true })
+  await expect(dialog.getByPlaceholder('请输入编排名称')).toBeFocused()
+  expect(backend.getPersistedPayload()).toBeNull()
+  await dialog.getByPlaceholder('请输入编排名称').fill('新建编排')
+  await dialog.getByRole('button', { name: '确认保存', exact: true }).click()
+  await expect.poll(() => backend.getPersistedPayload()?.name).toBe('新建编排')
+  await expect(page).toHaveURL(/\/orchestrations$/)
+})
+
+test('unsaved changes: moving a node protects cancellation, saving releases it', async ({ page }) => {
+  const fixture = createLayoutFixture()
+  await installMockBackend(page, fixture)
+  await page.goto(`/orchestrations/${fixture.id}/edit`)
+  await expect(page.getByRole('button', { name: '保存', exact: true })).toBeEnabled()
+  await expect(page.locator('.unsaved-status')).toHaveCount(0)
+  await page.locator('#dag-container').evaluate(el => {
+    const state = el.__vueParentComponent.setupState
+    const node = state.graph.getNodes()[0]
+    state.graph.updateItem(node, { x: node.getModel().x + 70 })
+    state.graph.emit('node:dragend', { item: node })
+  })
+  await expect(page.locator('.unsaved-status')).toBeVisible()
+  await page.locator('.header-actions').getByRole('button', { name: '取消', exact: true }).click()
+  const warning = page.getByRole('dialog', { name: '有未保存的修改', exact: true })
+  await expect(warning).toBeVisible()
+  await warning.getByRole('button', { name: '继续编辑' }).click()
+  await expect(page).toHaveURL(new RegExp(`/${fixture.id}/edit$`))
+  await expect(page.locator('.unsaved-status')).toBeVisible()
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(page.locator('.unsaved-status')).toHaveCount(0)
+  await page.locator('.header-actions').getByRole('button', { name: '取消', exact: true }).click()
+  await expect(page).toHaveURL(/\/orchestrations$/)
+  await expect(warning).toHaveCount(0)
+})
+
+test('unsaved changes: viewport changes are clean and failed saves keep protection', async ({ page }) => {
+  const fixture = createLayoutFixture()
+  await installMockBackend(page, fixture)
+  await page.goto(`/orchestrations/${fixture.id}/edit`)
+  await expect(page.getByRole('button', { name: '保存', exact: true })).toBeEnabled()
+  await page.locator('#dag-container').evaluate(el => {
+    const state = el.__vueParentComponent.setupState
+    state.graph.zoomTo(0.8)
+    state.graph.translate(10, 20)
+    state.graph.emit('canvas:dragend', {})
+  })
+  await expect(page.locator('.unsaved-status')).toHaveCount(0)
+  await page.getByRole('button', { name: '调度', exact: true }).click()
+  const schedule = page.getByRole('dialog', { name: '设置定时调度', exact: true })
+  await schedule.getByRole('button', { name: '每小时', exact: true }).click()
+  await schedule.getByRole('button', { name: '确认', exact: true }).click()
+  await page.route('**/api/v1/orchestrator/orchestrations/' + fixture.id, async route => {
+    if (route.request().method() === 'PUT') await route.fulfill({ status: 500, json: { error: 'test failure' } })
+    else await route.fallback()
+  })
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(page.locator('.el-message').filter({ hasText: '更新失败' })).toBeVisible()
+  await page.locator('.header-actions').getByRole('button', { name: '取消', exact: true }).click()
+  const warning = page.getByRole('dialog', { name: '有未保存的修改', exact: true })
+  await warning.getByRole('button', { name: '放弃修改并离开' }).click()
+  await expect(page).toHaveURL(/\/orchestrations$/)
+})
+
+test('unsaved changes: metadata drafts protect refresh and cancel discards only the draft', async ({ page }) => {
+  const fixture = createLayoutFixture()
+  await installMockBackend(page, fixture)
+  await page.goto(`/orchestrations/${fixture.id}/edit`)
+  await page.getByRole('button', { name: '编辑名称与描述', exact: true }).click()
+  const metadata = page.getByRole('dialog', { name: '保存编排信息', exact: true })
+  await metadata.getByPlaceholder('请输入编排名称').fill('尚未确认的名称')
+  const prompt = page.waitForEvent('dialog')
+  await page.evaluate(() => { setTimeout(() => location.reload(), 0) })
+  const unload = await prompt
+  expect(unload.type()).toBe('beforeunload')
+  await unload.dismiss()
+  await expect(metadata.getByPlaceholder('请输入编排名称')).toHaveValue('尚未确认的名称')
+  await metadata.getByRole('button', { name: '取消', exact: true }).click()
+  await expect(page.locator('.unsaved-status')).toHaveCount(0)
+  await page.locator('.header-actions').getByRole('button', { name: '取消', exact: true }).click()
+  await expect(page).toHaveURL(/\/orchestrations$/)
+})
+
+async function startLiveExecution(page) {
+  await page.locator('.header-actions').getByRole('button', { name: '执行', exact: true }).click()
+  await page.getByRole('dialog').getByRole('button', { name: '执行', exact: true }).click()
+  await expect(page.locator('.execution-summary')).toBeVisible()
+}
+async function executionLabels(page) {
+  return page.locator('#dag-container').evaluate(el => Object.fromEntries(
+    el.__vueParentComponent.setupState.graph.getNodes().map(node => [node.getID(),
+      node.getContainer().find(shape => shape.get('name') === 'execution-label')?.attr('text') || ''])
+  ))
+}
+
+async function executionPulses(page) {
+  return page.locator('#dag-container').evaluate(el => Object.fromEntries(
+    el.__vueParentComponent.setupState.graph.getNodes().flatMap(node => {
+      const pulse = node.getContainer().find(shape => shape.get('name') === 'execution-pulse')
+      return pulse ? [[node.getID(), { opacity: pulse.attr('opacity'), animations: pulse.get('animations')?.length || 0 }]] : []
+    })
+  ))
+}
+
+test('live execution displays running and completed nodes, exposes failure, and stops polling at terminal state', async ({ page }) => {
+  const fixture = createInteractionFixture()
+  fixture.steps[1].depends_on = [SOURCE_NODE_ID]
+  await installMockBackend(page, fixture)
+  let requests = 0
+  let state = { id: EXECUTION_ID, execution_id: 'orchestration-execution-e2e', status: 'running', current_step: SOURCE_NODE_ID, metadata: { step_results: {} } }
+  await page.route('**/api/v1/orchestrator/orch-executions/' + EXECUTION_ID, route => { requests++; return fulfillJSON(route, state) })
+  await page.goto(`/orchestrations/${fixture.id}/edit`)
+  await startLiveExecution(page)
+  await expect.poll(() => executionLabels(page)).toEqual({ [SOURCE_NODE_ID]: '运行中', [TARGET_NODE_ID]: '等待执行' })
+  await expect.poll(async () => Object.keys(await executionPulses(page))).toEqual([SOURCE_NODE_ID])
+  const initialOpacity = (await executionPulses(page))[SOURCE_NODE_ID].opacity
+  await expect.poll(async () => Math.abs((await executionPulses(page))[SOURCE_NODE_ID].opacity - initialOpacity)).toBeGreaterThan(0.1)
+  state = { ...state, current_step: TARGET_NODE_ID, metadata: { step_results: { [SOURCE_NODE_ID]: { status: 'success', duration: 25 } } } }
+  await expect.poll(() => executionLabels(page)).toEqual({ [SOURCE_NODE_ID]: '成功', [TARGET_NODE_ID]: '运行中' })
+  await expect.poll(async () => Object.keys(await executionPulses(page))).toEqual([TARGET_NODE_ID])
+  await expect(page.locator('.execution-summary')).toContainText('已结束 1/2 个步骤')
+  await expect(page.locator('.header-actions').getByRole('button', { name: '执行', exact: true })).toBeDisabled()
+  state = { ...state, status: 'failed', error_details: { message: 'Fixture input failed' }, metadata: { step_results: {
+    ...state.metadata.step_results, [TARGET_NODE_ID]: { status: 'failed', error: 'Fixture input failed', duration: 100 }
+  } } }
+  await expect.poll(() => executionLabels(page)).toEqual({ [SOURCE_NODE_ID]: '成功', [TARGET_NODE_ID]: '失败' })
+  await page.locator('#dag-container').evaluate((el, id) => {
+    const setup = el.__vueParentComponent.setupState
+    setup.selectItem(setup.graph.findById(id))
+  }, TARGET_NODE_ID)
+  await expect(page.locator('.node-execution-detail')).toContainText('Fixture input failed')
+  await expect(page.locator('.node-execution-detail')).toContainText('100 毫秒')
+  await page.screenshot({ path: test.info().outputPath('live-execution-failure.png') })
+  await page.setViewportSize({ width: 620, height: 560 })
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false)
+  await expect(page.locator('.execution-summary')).toBeInViewport()
+  await page.screenshot({ path: test.info().outputPath('live-execution-narrow.png') })
+  await page.setViewportSize({ width: 1280, height: 800 })
+  await expect(page.locator('.unsaved-status')).toHaveCount(0)
+  expect(await executionPulses(page)).toEqual({})
+  const terminalCount = requests
+  await page.waitForTimeout(2300)
+  expect(requests).toBe(terminalCount)
+  const modelJSON = await page.locator('#dag-container').evaluate(el => JSON.stringify(el.__vueParentComponent.setupState.graph.save()))
+  expect(modelJSON).not.toContain('Fixture input failed')
+  expect(modelJSON).not.toContain('execution-badge')
+  expect(modelJSON).not.toContain('execution-pulse')
+  await page.getByRole('button', { name: '收起状态', exact: true }).click()
+  await expect.poll(() => executionLabels(page)).toEqual({ [SOURCE_NODE_ID]: '', [TARGET_NODE_ID]: '' })
+})
+
+test('live execution retains last state on refresh failure, retries, and hides stale labels when the definition changes', async ({ page }) => {
+  const fixture = createInteractionFixture()
+  await installMockBackend(page, fixture)
+  let fail = false
+  let requests = 0
+  const state = { id: EXECUTION_ID, execution_id: 'orchestration-execution-e2e', status: 'running', current_step: SOURCE_NODE_ID, metadata: { step_results: {} } }
+  await page.route('**/api/v1/orchestrator/orch-executions/' + EXECUTION_ID, route => {
+    requests++
+    return fail ? route.fulfill({ status: 503, json: { error: 'temporary failure' } }) : fulfillJSON(route, state)
+  })
+  await page.goto(`/orchestrations/${fixture.id}/edit`)
+  await startLiveExecution(page)
+  await expect.poll(() => executionLabels(page)).toEqual({ [SOURCE_NODE_ID]: '运行中', [TARGET_NODE_ID]: '等待执行' })
+  fail = true
+  await expect(page.locator('.execution-refresh-error')).toBeVisible()
+  await expect.poll(() => executionLabels(page)).toEqual({ [SOURCE_NODE_ID]: '运行中', [TARGET_NODE_ID]: '等待执行' })
+  fail = false
+  await page.getByRole('button', { name: '重试刷新' }).click()
+  await expect(page.locator('.execution-refresh-error')).toHaveCount(0)
+  await page.getByRole('button', { name: '调度', exact: true }).click()
+  const schedule = page.getByRole('dialog', { name: '设置定时调度', exact: true })
+  await schedule.getByRole('button', { name: '每小时', exact: true }).click()
+  await schedule.getByRole('button', { name: '确认', exact: true }).click()
+  await expect(page.locator('.execution-summary')).toContainText('编排配置已修改')
+  await expect.poll(() => executionLabels(page)).toEqual({ [SOURCE_NODE_ID]: '', [TARGET_NODE_ID]: '' })
+  await page.locator('.header-actions').getByRole('button', { name: '取消', exact: true }).click()
+  await page.getByRole('dialog', { name: '有未保存的修改' }).getByRole('button', { name: '放弃修改并离开' }).click()
+  await expect(page).toHaveURL(/\/orchestrations$/)
+  const leftCount = requests
+  await page.waitForTimeout(2300)
+  expect(requests).toBe(leftCount)
+})
+
+test('live execution does not attach a delayed submission to another orchestration page', async ({ page }) => {
+  const fixture = createInteractionFixture()
+  const backend = await installMockBackend(page, fixture, { deferExecute: true })
+  await page.goto(`/orchestrations/${fixture.id}/edit`)
+  await page.locator('.header-actions').getByRole('button', { name: '执行', exact: true }).click()
+  await page.getByRole('dialog').getByRole('button', { name: '执行', exact: true }).click()
+  await expect.poll(() => backend.getExecuteRequestCount()).toBe(1)
+  await page.locator('.orchestration-form').evaluate(el => { void el.__vueParentComponent.proxy.$router.push('/orchestrations/new') })
+  await expect(page.getByRole('heading', { name: '创建编排', exact: true })).toBeVisible()
+  backend.releaseExecute()
+  await expect(page.getByRole('button', { name: '保存', exact: true })).toBeEnabled()
+  await expect(page.locator('.execution-summary')).toHaveCount(0)
+})
+
+test('live execution uses a static running outline for reduced motion', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  const fixture = createInteractionFixture()
+  await installMockBackend(page, fixture)
+  await page.route('**/api/v1/orchestrator/orch-executions/' + EXECUTION_ID, route => fulfillJSON(route, {
+    id: EXECUTION_ID, execution_id: 'orchestration-execution-e2e', status: 'running',
+    current_step: SOURCE_NODE_ID, metadata: { step_results: {} }
+  }))
+  await page.goto(`/orchestrations/${fixture.id}/edit`)
+  await startLiveExecution(page)
+  await expect.poll(() => executionPulses(page)).toEqual({ [SOURCE_NODE_ID]: { opacity: 1, animations: 0 } })
+  await page.getByRole('button', { name: '调度', exact: true }).click()
+  const schedule = page.getByRole('dialog', { name: '设置定时调度', exact: true })
+  await schedule.getByRole('button', { name: '每小时', exact: true }).click()
+  await schedule.getByRole('button', { name: '确认', exact: true }).click()
+  await expect.poll(() => executionPulses(page)).toEqual({})
 })

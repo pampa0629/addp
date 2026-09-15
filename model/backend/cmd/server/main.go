@@ -104,6 +104,8 @@ func main() {
 	materializationSvc := service.NewMaterializationService(systemClient, logicalTableRepo, logicalTableSvc)
 	materializationSvc.SetExecutionAuthorizationIssuer(commonClient.NewSystemExecutionAuthorizationClient(cfg.SystemURL, nil))
 	catalogResourceSvc := service.NewCatalogResourceService(catalogResourceRepo)
+	materializationDone := materializationSvc.StartMaterializationRunner(runtimeContext)
+	defer func() { stopRuntime(); <-materializationDone }()
 	cleanupSvc := service.NewCleanupService(db, redisClient, taskExecutionRepo)
 	if err := cleanupSvc.Start(runtimeContext); err != nil {
 		log.Printf("Model 资源回收执行方启动失败: %v", err)
@@ -151,6 +153,7 @@ func main() {
 
 	registration := systemClient.RegisterAndHeartbeat(runtimeContext, &commonClient.ModuleRegistrationRequest{
 		ModuleName: "model", ModuleURL: serviceURL, RoutePrefix: "/model", HealthCheckURL: serviceURL + "/health/ready",
+		TaskProvider: service.ModelTaskProviderDeclaration(),
 
 		Metadata: map[string]interface{}{
 			"module": "model",

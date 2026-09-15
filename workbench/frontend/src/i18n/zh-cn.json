@@ -171,6 +171,8 @@
     "loadFailed": "加载失败",
     "saveFailed": "保存失败",
     "incomplete": "请补齐服务、名称、展示字段、必填参数和展示配置",
+    "reconfigureContract": "按当前服务契约重新配置",
+    "reconfigureContractHint": "重新选择当前服务的字段和参数；确认组件后，请检查应用参数映射，再保存并发布新修订。",
     "contractChanged": "服务消费契约已变化，查询已阻断；请检查字段和配置后显式保存新版本",
     "chartType": "图表类型",
     "chartTypes": { "bar": "柱状图", "line": "折线图", "pie": "饼图" },
@@ -224,6 +226,18 @@
       "unknown_crs": "服务未声明可识别的坐标参考系，地图展示已阻断",
       "unsupported_crs": "当前客户端不支持服务声明的坐标参考系，地图展示已阻断"
     },
-    "login": { "title": "登录工作台", "username": "用户名", "password": "密码", "submit": "登录", "failed": "登录失败" }
+    "login": { "title": "登录工作台", "username": "用户名", "password": "密码", "submit": "登录", "failed": "登录失败" },
+    "parameterOptionsUnavailable": "参数契约不可用或存在冲突：{components}",
+    "parameterOptionsInvalid": "参数值不符合关联组件的服务契约，请检查参数及选项。",
+    "controlTypes": {
+      "text": "文本",
+      "number": "数值",
+      "checkbox": "开关",
+      "date": "日期",
+      "datetime": "日期时间",
+      "select": "单选",
+      "multiselect": "多选",
+      "bbox": "空间范围"
+    }
   }
 }

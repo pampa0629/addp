@@ -26,13 +26,18 @@ PostgreSQL DDL 预览只读，不改变生命周期或创建物理资源。真�
 
 ### 正式表结构落地
 
+Model 声明 `logical_table_materialization` TaskProvider；已持久化的 LogicalTable 是任务定义事实源，任务 ID 等于逻辑表 ID，不新增或复制建表配置。仅已审批且配置目标的逻辑表可执行。手动入口和 Orchestrator 入口复用同一执行服务，写入 `common.task_executions`；执行冻结逻辑表版本，运行时必须匹配该版本。成功输出 `execution_id + target_locator`。
+
+建表使用公共 bounded execution 领取和租约协议；先签发精确引擎 read+ddl 授权再领取，执行上限 45 秒、租约 90 秒。过期租约收敛失败，不自动重放；用户重试产生新 execution。后台退出停止领取并取消在途执行。任务版本改变、草稿或结构冲突明确失败；不自动 ALTER。任务发现和状态协议沿用 TaskProvider，人工查看执行记录使用 Monitor。
+
+
 Model 只负责由已审批 LogicalTable 创建正式物理表和显式退役目标；不拥有数据刷新、暂存批次、封存或原子发布组。删除 MaterializationGroup、MaterializationBatch、物化读上下文和 prepare/seal/publish TaskProvider，不保留兼容入口。
 
-`POST /logical-tables/{id}/materialized-target` 使用当前用户授权及逻辑表 `version`，在目标 PostgreSQL 事务中创建配置的正式表。目标不存在时创建；已存在时必须归属本逻辑表且结构完全一致，幂等成功并保留记录。结构不一致明确拒绝，不自动丢弃或替换表。结构升级需要单独明确设计，当前不猜测 ALTER 或破坏性重建。
+`POST /logical-tables/{id}/materialized-target` 使用当前用户授权及逻辑表 `version`，返回 202 和统一执行标识。TaskProvider 执行入口仅接受 addp-orchestrator 与有效父 execution，二者调用同一服务，交由 Model Backend 内嵌执行方领取后在目标 PostgreSQL 事务中建表。目标不存在时创建；已存在时必须归属本逻辑表且结构完全一致，幂等成功并保留记录。结构不一致明确拒绝，不自动丢弃或替换表。结构升级需要单独明确设计，当前不猜测 ALTER 或破坏性重建。
 
 `DELETE /logical-tables/{id}/materialized-target` 继续要求精确目标确认和版本，只删除属于当前逻辑表的目标。创建及退役在控制库锁定 LogicalTable，在目标库对目标串行化；不改写模型定义。物理结构操作不执行数据加工或质量检查。
 
-Develop 查询任务通过 ResourceLocator 指定已存在的正式输出表；在同一目标事务内执行覆盖或追加，不负责模型 DDL。Orchestrator 仅按任务依赖调度计算和 Quality 数据校验；任何步骤失败不回滚其他已提交步骤。Quality 校验读取正式表，不引用 Model 私有资源，也不执行发布。
+Develop 查询任务通过 ResourceLocator 指定已存在的正式输出表；在同一目标事务内执行覆盖或追加，不负责模型 DDL。Orchestrator 按任务依赖调度可选建表步骤、计算和 Quality 数据校验；任何步骤失败不回滚其他已提交步骤。Quality 校验读取正式表，不引用 Model 私有资源，也不执行发布。
 
 逻辑表删除仍需草稿、版本匹配且显式清空物化配置；不再检查已删除的组或批次。历史 common.task_executions 保留原始审计事实，不作为可执行旧任务定义。
 
@@ -51,7 +56,7 @@ Permission Guard 只判断候选能力，Repository 和 Service 仍必须对每�
 ## 三、聚合与引用
 
 - Entity 聚合包含 EntityAttribute；EntityRelation 是连接两个 Entity 聚合的独立关系事实。
-- LogicalTable 聚合包含 LogicalField、TableRelation、DimensionHierarchy 和 MetricImplementation；维度层级成员只能引用同一 LogicalTable 的字段，MetricImplementation 只允许归属事实表。
+- LogicalTable 聚合包含 LogicalField、TableRelation 和 DimensionHierarchy；维度层级成员只能引用同一 LogicalTable 的字段。MetricImplementation 是独立聚合，首期声明一个来源事实表并显式引用其维度关系。
 - LogicalTable 的可选 Entity 引用只表达概念模型来源，不自动同步属性与字段。需要重新生成时必须由显式操作整体替换，不能隐式双向同步。
 - DWLayer 是 Tenant 可配置事实。LogicalTable 必须引用已存在的 DWLayer，前端不得维护固定分层枚举作为第二事实源。
 - Model 内部引用由数据库外键、唯一约束和 CHECK 约束保证；跨 Standard Schema 的引用先由 Standard HTTP API 验证，再在 Model 写事务中锁定对应的标准引用删除屏障。后台调用、Mermaid 导入和普通 API 写入必须使用同一屏障路径。
@@ -92,7 +97,7 @@ Model 资源统一使用 `PUT` 表达完整更新，不提供并行的部分更�
 
 ### 并发版本与聚合写入
 
-Model 遵循平台 API 规范中的资源并发版本规则。`Entity`、`LogicalTable`、`DWLayer` 和 `EntityRelation` 是独立版本主体，数据库均保存非空 `BIGINT version`，创建时从 `1` 开始。`EntityAttribute` 共用所属 `Entity.version`；`LogicalField`、`TableRelation`、`DimensionHierarchy`、层级成员和 `MetricImplementation` 共用所属 LogicalTable 的 `version`，这些聚合子资源不得再建立自己的并发版本。
+Model 遵循平台 API 规范中的资源并发版本规则。`Entity`、`LogicalTable`、`DWLayer` 和 `EntityRelation` 是独立版本主体，数据库均保存非空 `BIGINT version`，创建时从 `1` 开始。`EntityAttribute` 共用所属 `Entity.version`；`LogicalField`、`TableRelation`、`DimensionHierarchy` 和层级成员共用所属 LogicalTable 的 `version`，这些聚合子资源不得再建立自己的并发版本。
 
 | 写入对象 | 并发版本主体 | 事务边界 |
 | --- | --- | --- |
@@ -100,14 +105,29 @@ Model 遵循平台 API 规范中的资源并发版本规则。`Entity`、`Logica
 | EntityAttribute 新增、更新、删除 | 所属 Entity | 校验 Entity 为 `draft`、写入属性并推进 Entity 版本 |
 | LogicalTable 基本信息、审批、退回草稿、删除 | LogicalTable | 按 `tenant_id + id + version` 条件写入并推进 LogicalTable 版本 |
 | LogicalField 新增、更新、删除 | 所属 LogicalTable | 校验 LogicalTable 为 `draft`、写入字段并推进 LogicalTable 版本 |
-| TableRelation 新增、删除 | 事实侧 LogicalTable | 锁定并校验事实表和维度表均为 `draft`，写入关系并只推进事实表版本 |
+| TableRelation 新增、更新、删除 | 事实侧 LogicalTable | 写入时锁定并校验事实表为 `draft`；新增和更新同时锁定目标维度并校验同租户、表类型与字段，允许引用已审批维度。只推进事实表版本，不改变维度审批及冻结修订 |
 | DimensionHierarchy 及层级成员新增、更新、删除 | 所属维度 LogicalTable | 校验维度表为 `draft`、层级字段均属于该表、`level_num` 从 1 开始且不重复，写入并推进 LogicalTable 版本 |
-| MetricImplementation 新增、更新、删除 | 所属事实 LogicalTable | 校验事实表为 `draft`、指标定义修订已发布且实现契约完整，写入并推进 LogicalTable 版本 |
+| MetricImplementation 新增、草稿修改、发布、撤回、删除 | MetricImplementation | 使用独立版本；来源必须为已审批事实表；冻结发布的指标定义修订并校验依赖，不修改事实表状态或版本 |
 
-MetricImplementation 的 `source_config` 与 `expression_config` 必须是非空 JSON 对象，`dimension_config` 与 `filter_config` 必须是 JSON 对象。当前唯一契约要求 `source_config.field_ids` 是至少包含一个当前事实表字段 ID 的数组，`expression_config.engine` 和 `expression_config.expression` 是非空字符串；扩展配置必须在本规范先定义后实现，不能由前端任意创造第二套结构。`metric_definition_id` 与 `metric_definition_revision_id` 必须经 Standard API 验证属于同一指标定义，且修订状态为 `published`。实现状态固定为 `active|disabled`，它只控制该实现是否可用于后续计算选择，不改变所冻结定义修订的有效性。
 | EntityRelation 更新、删除 | EntityRelation | `PUT` 携带完整端点和关系定义；校验关系版本，同时锁定并校验变更前后涉及的全部 Entity 均为 `draft` |
 | EntityRelation 创建 | 创建时无关系版本 | 同一事务锁定并校验两端 Entity 均为 `draft`，新关系版本从 `1` 开始 |
 | DWLayer 更新、删除 | DWLayer | 更新按版本条件写入；删除在同一事务完成版本校验、LogicalTable 引用检查和删除 |
+
+### 指标实现独立修订
+
+MetricImplementation 使用稳定身份与不可变修订，稳定身份保存来源事实表、指标定义身份、名称和自身 `version`；修订保存指标定义发布修订、结构化 `contract`、依赖快照及 hash。修订状态为 `draft|published|withdrawn`，同一实现最多一个草稿。已发布内容不可修改；撤回后拒绝新执行。未发布身份可删除，曾发布身份保留。旧 `source_config/dimension_config/filter_config/expression_config` 和 `active|disabled` 写路径删除。
+
+首期 `contract.operation=count_distinct`；`subject/distinct/time` 使用 `{field_id, relation_id}` 引用，`relation_id=0` 只表示来源事实自身。`subject_relation_id` 指向主体维度唯一主键，用于区分不存在主体与零活动。`filters` 只接受 `{field,value:boolean}` 固定条件，不接受 SQL。时间字段必须为 DATE。输出为 `subject_id,bucket,value`；查询参数为 `subject_id,start_date,end_date,grain`，粒度仅 `month|total`，时间左闭右开，最多 120 个相交月份。月查询对已存在主体补零，不存在主体返回空结果。首期编译目标为 PostgreSQL，其他引擎不自动降级。
+
+`contract.operation=directional_overlap` 复用同一事实来源、主体字段、主体维度、集合成员去重字段与 DATE 字段；两个人员角色共享字段映射，角色由必填 `subject_id` 和 `comparison_id` 明确绑定。此操作不接受额外固定过滤，避免把主领队过滤或未定义作用范围的条件带入参加活动集合。额外必填参数 `directions=forward|both` 选择单方向或交换角色的双向组合；两者只使用一条 PostgreSQL 语句和同一快照。任一人员不存在时整次结果为空；人员存在但集合为空时对应方向为 0；同人非空为 1。
+
+双向结果每方向每个时间桶一行，输出 `direction,subject_id,comparison_id,bucket,value,subject_count,comparison_count,shared_count`；`direction=forward|reverse` 区分有序角色，即使两个人相同也保持唯一行键 `direction,bucket`。`value` 为未按展示精度提前舍入的 decimal 比例，三个 count 为解释字段，不另建指标。月份比例和全期比例各自从范围内集合计算。先分别去重形成双方完整集合，再计算交集和分母，禁止从内连接结果统计分母。质量检查覆盖两个人员。
+
+Model 编译计划显式返回参数声明、输出字段和稳定键，由 Service 冻结消费；Service 不按操作名称拼装参数、类型或公式。既有 count_distinct 的四个参数和输出保持其定义，新增操作不为计数查询引入对比人员参数。
+
+`/metric-implementations` 是唯一管理资源：GET 列表（可用 `fact_table_id` 筛选）、POST 创建；`/{id}` GET/DELETE；`/{id}/draft` PUT；`/{id}/revisions/{revision_id}/publish|withdraw` POST；`/{id}/revisions/{revision_id}/plan` POST（请求体可携带类型化 `input`） 读取确定发布修订。写入已有资源携带实现 `version`，不保留逻辑表嵌套写路由。使用 `model.metric_implementation.read/create/update/delete/publish/offline` 精确权限。
+
+草稿保存验证字段、类型、单键维度关联和同引擎来源，生成确定性计划及依赖快照；发布再次校验依赖与 Standard 修订。结构校验不等于真实数据验证，页面必须区分两者。查询前重新校验发布状态及依赖 hash；物理字段、连接或被冻结标准语义变化必须拒绝旧计划。名称等展示属性不参与依赖签名。服务必须绑定确定修订，不自动选择最新版。
 
 删除 LogicalTable 若级联移除其他事实表拥有的 TableRelation，必须在同一事务中锁定这些事实表，并将每个幸存事实表的 `version` 推进一次；同一事实表存在多条被级联删除的关系时也只推进一次。
 
@@ -178,9 +198,18 @@ PostgreSQL DDL 预览只接受结构化物化配置。物化目标统一使用 `
 
 ### 建模导航与物化操作入口
 
-- 导航固定为业务实体、实体关系图、数仓分层、逻辑表设计、星型建模视图；默认进入业务实体。
+- 导航固定为业务实体、实体关系图、数仓分层、逻辑表设计、维度建模；默认进入业务实体。
+- 维度关联唯一编辑入口是事实表详情的“维度关联”页签；维度建模只展示和导航，删除该页原有编辑对话框。维度表详情的“被引用关系”页签只读展示入向关系，编辑跳转回来源事实表。所有关系均显示两端表名、表编码、字段名、列名和类型。
+- 逻辑表详情默认模型定义页签省略 `tab`；关联页签使用 `tab=relations`，`relation_id` 只在该页签表示定位关系。查看关联打开来源事实表及指定关系；查看维度表打开目标表定义，两者不得混用。刷新、前进后退恢复页签与关系定位，关系不存在时明确提示。
+- `GET /logical-tables/:id/dimension-relations` 对事实表返回出向关系，对维度表返回入向关系；仍只读 Model 本地事实。`PUT /logical-tables/:id/dimension-relations/:rid` 完整提交目标维度、两端字段、关系类型及事实表版本，保持关系 ID；与新增、删除共用父版本与事务校验。禁止通过删除后重建模拟编辑。
+- 维度建模以事实表为中心展示维度关联、度量与指标实现，图标题统一为“模型关系图”。业务域复用 Standard 的 Domain 和 LogicalTable.domain_id；筛选仅约束左侧事实表，已选事实表的跨域维度关系及可关联维度不受该筛选裁剪。事实表详情展示归属业务域。
+- 维度建模沿用唯一公开路由 `/modeling/star-schema`；`domain_id` 正整数表示指定业务域，省略表示全部业务域（包含未归属表），`table_id` 表示当前事实表。切换域时清除不属于新域的当前事实表；刷新及浏览器前进/后退恢复同一筛选和选择，不自动选择其他事实表。
+- 维度建模前端变更复用 `make test-model-frontend` 和 `make test-console-frontend`，由现有前端 CI 自动发现执行，不新增测试入口。
 - ER 图无业务域上下文时先选域；`domain_id=all` 显式进入全域总览，正整数表示指定域，省略表示未选择。`related=1` 仅在指定域时展开一跳跨域关系，两端实体必须存在；外域实体标注业务域。实体列表进入 ER 图保留当前域。Mermaid 导入、导出始终作用于全租户实体模型，界面必须明确范围。
-- 数据计算、质量校验和完整执行记录统一从 Orchestrator 进入。
+- 编排流程统一从 Orchestrator 进入；逻辑表详情的执行记录按钮只展示该表的物化执行。
 - 已删除任务的历史执行事实仅保留审计，不提供再次执行入口。
 - 当前不提供发布组或多表原子切换；仅在未来明确出现共同可见需求时重新设计。
-- 本轮前端验证复用 `make test-model-frontend`、`make test-console-frontend`、`make test-orchestrator-frontend`、`make test-platform`。现有 Platform CI 的 Model 浏览器任务、Console/Orchestrator 矩阵与共享门禁自动覆盖，无新增 API 或测试入口。
+- 验证复用 `make test-model-frontend`、`make test-model-postgres`、`make test-authorization`、`make test-platform` 和 System IAM PostgreSQL migration 门禁。现有 CI 自动命中新物化任务生命周期、路由权限和迁移测试；TaskProvider 新增 API 同步 Swagger 与权限声明，不新增测试入口。
+
+
+指标编译计划的命名参数通过 `options` 声明有限允许值及完整 `zh-cn/en` 名称。内置名称取自 Model 国际化资源；允许值同时用于 Model 输入校验，不能在编译签名和校验中分别维护。Service 原样冻结，不把编译器元数据变成第二套指标定义。

@@ -290,6 +290,14 @@ func (s *LogicalTableService) DeleteLogicalTable(id, tenantID, version int64) er
 		if len(table.Materialization) != 0 {
 			return apperrors.Conflict("logical_table_materialization_configured", i18n.MsgTableMaterializationConfigured)
 		}
+		var metricCount int64
+		if err := tx.Model(&models.MetricImplementation{}).Where("fact_table_id = ? AND tenant_id = ?", id, tenantID).Count(&metricCount).Error; err != nil {
+			return err
+		}
+		if metricCount > 0 {
+			return metricConflict()
+		}
+
 		relations, err := repository.NewTableRelationRepository(tx).ListByTable(id, tenantID)
 		if err != nil {
 			return err

@@ -471,7 +471,8 @@
         "entities": "Business Entities",
         "erDiagram": "ER Diagram",
         "logicalTables": "Logical Tables",
-        "starSchema": "Star Schema"
+        "starSchema": "Dimensional Modeling",
+        "metricImplementations": "Metric implementations"
       },
       "quality": {
         "label": "Data Quality",

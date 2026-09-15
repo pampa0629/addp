@@ -155,6 +155,12 @@
       "loadFailed": "Failed to load service catalog"
     },
     "query": {
+      "metricOrigin": "Source: published metric implementation",
+      "metricOriginDescription": "This service binds an exact implementation revision. Dependencies are rechecked before querying; new revisions do not replace this binding.",
+      "metricOriginDetail": "View bound implementation revision",
+      "addParameterOption": "Add allowed option",
+      "optionLabelZh": "Chinese option label",
+      "optionLabelEn": "English option label",
       "recentVisitTitle": "Query Service",
       "listTitle": "Query Services",
       "searchPlaceholder": "Search query services...",

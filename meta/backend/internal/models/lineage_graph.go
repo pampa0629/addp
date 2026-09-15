@@ -3,14 +3,16 @@ package models
 import "time"
 
 type LineageGraphRequest struct {
-	SubjectKind string
-	ItemID      *uint
-	ServiceID   *uint
-	Revision    string
-	Direction   string
-	Depth       int
-	Limit       int
-	AsOf        *time.Time
+	SubjectKind      string
+	ItemID           *uint
+	ServiceID        *uint
+	Revision         string
+	Direction        string
+	ExpandUpstream   []uint
+	ExpandDownstream []uint
+	Depth            int
+	Limit            int
+	AsOf             *time.Time
 }
 
 type LineageServiceDependencyInput struct {
@@ -21,6 +23,8 @@ type LineageServiceDependencyInput struct {
 }
 
 type RecordServicePublicationRequest struct {
+	ServiceName       string                          `json:"service_name"`
+	ServiceUpdatedAt  time.Time                       `json:"service_updated_at"`
 	ServiceID         uint                            `json:"service_id"`
 	PublishedRevision string                          `json:"published_revision"`
 	DependencyHash    string                          `json:"dependency_hash,omitempty"`
@@ -41,16 +45,18 @@ type LineageErrorResponse struct {
 }
 
 type LineageNode struct {
-	Kind              string `json:"kind"`
-	ItemID            *uint  `json:"item_id,omitempty"`
-	ItemFingerprint   string `json:"item_fingerprint,omitempty"`
-	EngineID          *uint  `json:"engine_id,omitempty"`
-	EngineName        string `json:"engine_name,omitempty"`
-	ItemType          string `json:"item_type,omitempty"`
-	Name              string `json:"name,omitempty"`
-	FullName          string `json:"full_name,omitempty"`
-	ServiceID         *uint  `json:"service_id,omitempty"`
-	PublishedRevision string `json:"published_revision,omitempty"`
+	HiddenUpstreamCount   int    `json:"hidden_upstream_count"`
+	HiddenDownstreamCount int    `json:"hidden_downstream_count"`
+	Kind                  string `json:"kind"`
+	ItemID                *uint  `json:"item_id,omitempty"`
+	ItemFingerprint       string `json:"item_fingerprint,omitempty"`
+	EngineID              *uint  `json:"engine_id,omitempty"`
+	EngineName            string `json:"engine_name,omitempty"`
+	ItemType              string `json:"item_type,omitempty"`
+	Name                  string `json:"name,omitempty"`
+	FullName              string `json:"full_name,omitempty"`
+	ServiceID             *uint  `json:"service_id,omitempty"`
+	PublishedRevision     string `json:"published_revision,omitempty"`
 }
 
 type LineageEdge struct {

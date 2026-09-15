@@ -87,24 +87,11 @@ func setupLogicalTableRepositoryTestDB(t *testing.T) *gorm.DB {
 			updated_at DATETIME
 		)`,
 		`CREATE TABLE model.metric_implementations (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			tenant_id INTEGER NOT NULL,
-			fact_table_id INTEGER NOT NULL,
-			metric_definition_id INTEGER NOT NULL,
-			metric_definition_revision_id INTEGER NOT NULL,
-			name TEXT NOT NULL,
-			grain TEXT NOT NULL,
-			source_config TEXT NOT NULL,
-			dimension_config TEXT NOT NULL,
-			filter_config TEXT NOT NULL,
-			expression_config TEXT NOT NULL,
-			status TEXT NOT NULL,
-			note TEXT,
-			created_by INTEGER NOT NULL,
-			updated_by INTEGER,
-			updated_at DATETIME,
-			created_at DATETIME
-		)`,
+ id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, fact_table_id INTEGER NOT NULL,
+ metric_definition_id INTEGER NOT NULL, name TEXT NOT NULL, note TEXT,
+ version INTEGER NOT NULL DEFAULT 1, created_by INTEGER NOT NULL, updated_by INTEGER,
+ created_at DATETIME, updated_at DATETIME
+ )`,
 		`CREATE TABLE model.materialization_batches (
 			id TEXT PRIMARY KEY, tenant_id INTEGER NOT NULL, logical_table_id INTEGER NOT NULL,
 			logical_table_version INTEGER NOT NULL, engine_id INTEGER NOT NULL,

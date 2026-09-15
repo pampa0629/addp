@@ -2,6 +2,18 @@
   <div class="star-schema-view">
     <div class="view-header">
       <span class="view-title">{{ t('model.star_schema.title') }}</span>
+      <div class="domain-filter">
+        <span id="model-domain-label">{{ t('model.star_schema.domain') }}</span>
+        <el-select
+          :model-value="selectedDomainId || ''"
+          aria-labelledby="model-domain-label"
+          filterable
+          @change="changeDomain"
+        >
+          <el-option :label="t('model.star_schema.all_domains')" value="" />
+          <el-option v-for="domain in domains" :key="domain.id" :label="domain.name" :value="domain.id" />
+        </el-select>
+      </div>
     </div>
 
     <el-alert
@@ -48,7 +60,7 @@
         </el-card>
       </el-col>
 
-      <!-- 右侧：星型图 -->
+      <!-- 右侧：维度建模 -->
       <el-col :xs="24" :md="18">
         <div v-if="!selectedTable" class="empty-placeholder">
           <el-empty :description="t('model.star_schema.select_fact_table')" />
@@ -62,6 +74,7 @@
                 <span class="fact-detail-name">{{ selectedTable.name }}</span>
                 <el-tag type="danger" size="small">{{ t('model.star_schema.fact_table_tag') }}</el-tag>
                 <el-tag v-if="selectedTable.layer" type="info" size="small">{{ selectedTable.layer.toUpperCase() }}</el-tag>
+                <el-tag type="info" size="small" class="owner-domain">{{ selectedTableDomainName }}</el-tag>
                 <el-button
                   link
                   type="primary"
@@ -98,8 +111,8 @@
                 <template #header>
                   <div class="card-header-with-action">
                     <span class="card-title">{{ t('model.star_schema.dimension_relations') }}</span>
-                    <el-button v-if="canEditSelectedTable" type="primary" size="small" @click="openAddDimDialog">
-                      {{ t('model.star_schema.add_relation') }}
+                    <el-button link type="primary" @click="openRelation()">
+                      {{ t('model.table_relation.view_all') }}
                     </el-button>
                   </div>
                 </template>
@@ -108,27 +121,12 @@
                   <div class="dim-item-left">
                     <span class="dim-name">{{ rel.target_table_name }}</span>
                     <el-tag v-if="rel.target_scd_type > 0" type="warning" size="small">SCD{{ rel.target_scd_type }}</el-tag>
-                    <span class="join-hint">{{ rel.source_field_name }} → {{ rel.target_field_name }}</span>
+                    <span class="join-hint">{{ rel.source_table_code }}.{{ rel.source_field_code }} = {{ rel.target_table_code }}.{{ rel.target_field_code }}</span>
                     <el-tag size="small" type="info">{{ rel.relation_type === 'fk' ? 'FK' : 'JOIN' }}</el-tag>
                   </div>
                   <div class="dim-item-actions">
-                    <el-button
-                      link
-                      type="primary"
-                      size="small"
-                      @click="openLogicalTable(rel.target_table)"
-                    >
-                      {{ t('model.star_schema.detail') }}
-                    </el-button>
-                    <el-button
-                      v-if="canModifyDimensionRelation(rel)"
-                      link
-                      type="danger"
-                      size="small"
-                      @click="handleRemoveDimRelation(rel)"
-                    >
-                      {{ t('model.star_schema.remove') }}
-                    </el-button>
+                    <el-button link type="primary" size="small" @click="openRelation(rel)">{{ t('model.table_relation.view') }}</el-button>
+                    <el-button link type="primary" size="small" @click="openLogicalTable(rel.target_table)">{{ t('model.table_relation.view_dimension') }}</el-button>
                   </div>
                 </div>
               </el-card>
@@ -140,9 +138,10 @@
                 <template #header>
                   <span class="card-title">{{ t('model.metric.title') }}</span>
                 </template>
-                <div v-if="factMetrics.length === 0" class="empty-hint">{{ t('model.star_schema.no_metrics') }}</div>
+                <el-alert v-if="metricLoadError" :title="metricLoadError" type="info" :closable="false" />
+                <div v-else-if="factMetrics.length === 0" class="empty-hint">{{ t('model.star_schema.no_metrics') }}</div>
                 <div v-for="m in factMetrics" :key="m.id" class="metric-item">
-                  <span class="metric-name">{{ m.name }}</span>
+                  <el-button link type="primary" @click="navigateModelRoute(router, { path: `/metric-implementations/${m.id}` })">{{ m.name }}</el-button>
                   <el-tag :type="metricTypeTagType(metricTypeMap[m.metric_definition_id])" size="small">
                     {{ metricNameMap[m.metric_definition_id] || `指标#${m.metric_definition_id}` }} · {{ metricTypeLabel(metricTypeMap[m.metric_definition_id]) }}
                   </el-tag>
@@ -151,7 +150,7 @@
             </el-col>
           </el-row>
 
-          <!-- Mermaid 星型图 -->
+          <!-- 模型关系图 -->
           <el-card shadow="never" style="margin-top:12px">
             <template #header>
               <span class="card-title">{{ t('model.star_schema.topology') }}</span>
@@ -162,86 +161,22 @@
       </el-col>
     </el-row>
 
-    <!-- 添加维度关联对话框 -->
-    <el-dialog v-model="addDimDialogVisible" class="addp-dialog" :title="t('model.star_schema.add_dim_title')" width="min(480px, calc(100vw - 32px))" :close-on-click-modal="false">
-      <el-form :model="addDimForm" label-width="100px" ref="addDimFormRef">
-        <el-form-item :label="t('model.star_schema.dim_table')" prop="target_table" :rules="[{ required: true, message: t('model.star_schema.dim_table_required') }]">
-          <el-select
-            v-model="addDimForm.target_table"
-            :placeholder="t('model.star_schema.dim_table_placeholder')"
-            style="width:100%"
-            filterable
-            @change="onDimTableChange"
-          >
-            <el-option
-              v-for="dim in editableDimensionTables"
-              :key="dim.id"
-              :label="dim.name"
-              :value="dim.id"
-            >
-              <span>{{ dim.name }}</span>
-              <span style="color:var(--addp-text-secondary);font-size:12px;margin-left:8px">{{ dim.code }}</span>
-            </el-option>
-          </el-select>
-        </el-form-item>
-        <el-form-item :label="t('model.star_schema.source_field')" prop="source_field" :rules="[{ required: true, message: t('model.star_schema.source_field_required') }]">
-          <el-select v-model="addDimForm.source_field" :placeholder="t('model.star_schema.source_field_placeholder')" style="width:100%" filterable>
-            <el-option
-              v-for="f in tableFields"
-              :key="f.id"
-              :label="f.name"
-              :value="f.id"
-            >
-              <span>{{ f.name }}</span>
-              <span style="color:var(--addp-text-secondary);font-size:12px;margin-left:8px">{{ f.column_name }}</span>
-            </el-option>
-          </el-select>
-        </el-form-item>
-        <el-form-item :label="t('model.star_schema.target_field')" prop="target_field" :rules="[{ required: true, message: t('model.star_schema.target_field_required') }]">
-          <el-select
-            v-model="addDimForm.target_field"
-            :placeholder="t('model.star_schema.target_field_placeholder')"
-            style="width:100%"
-            filterable
-            :disabled="!addDimForm.target_table"
-          >
-            <el-option
-              v-for="f in dimTableFields"
-              :key="f.id"
-              :label="f.name"
-              :value="f.id"
-            >
-              <span>{{ f.name }}</span>
-              <span style="color:var(--addp-text-secondary);font-size:12px;margin-left:8px">{{ f.column_name }}</span>
-            </el-option>
-          </el-select>
-        </el-form-item>
-        <el-form-item :label="t('model.star_schema.relation_type')">
-          <el-radio-group v-model="addDimForm.relation_type">
-            <el-radio value="fk">{{ t('model.star_schema.fk') }}</el-radio>
-            <el-radio value="join">{{ t('model.star_schema.join') }}</el-radio>
-          </el-radio-group>
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="addDimDialogVisible = false">{{ t('model.common.cancel') }}</el-button>
-        <el-button type="primary" :loading="addingDim" @click="handleAddDimRelation">{{ t('model.star_schema.confirm_relation') }}</el-button>
-      </template>
-    </el-dialog>
+
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import mermaid from 'mermaid'
-import { logicalTableAPI, standardMetricAPI } from '../api/model'
+import { logicalTableAPI, standardMetricAPI, domainAPI } from '../api/model'
 import { useI18n } from 'vue-i18n'
 import { navigateModelRoute } from '../utils/moduleNavigation'
 import { useAuthStore } from '../store/auth'
 import { getModelErrorMessage } from '../utils/apiError'
 import { initializeMermaidTheme, observeThemeChange, readMermaidTheme } from '../utils/mermaidTheme'
+import { buildDimensionalModelRouteQuery, resolveDimensionalModelRouteState, buildTableRelationRoute } from '../utils/routeState'
 
 const { t } = useI18n()
 
@@ -252,44 +187,29 @@ const authStore = useAuthStore()
 const loadingTables = ref(false)
 const loadingRelated = ref(false)
 const loadingMetrics = ref(false)
+const metricLoadError = ref('')
 const loadError = ref('')
 const referenceError = ref('')
 
 const factTables = ref([])
-const factTablesReady = ref(false)
+const domains = ref([])
+const selectedDomainId = computed(() => resolveDimensionalModelRouteState(route.query).domainId)
 const selectedTableId = ref(null)
 const selectedTable = ref(null)
 const tableFields = ref([])
 const dimensionRelations = ref([])
 const factMetrics = ref([])
 const allMetrics = ref([])
+const selectedTableDomainName = computed(() => {
+  const domainId = selectedTable.value?.domain_id
+  if (!domainId) return t('model.star_schema.unassigned_domain')
+  return domains.value.find(domain => domain.id === domainId)?.name ||
+    t('model.star_schema.unknown_domain', { id: domainId })
+})
 
-// 添加维度关联对话框
-const addDimDialogVisible = ref(false)
-const addingDim = ref(false)
-const allDimensionTables = ref([])
-const dimTableFields = ref([])
-const addDimFormRef = ref(null)
 const mermaidContainer = ref(null)
 const mermaidThemeVersion = ref(0)
 let stopThemeObserver = null
-const addDimForm = ref({
-  target_table: null,
-  source_field: null,
-  target_field: null,
-  relation_type: 'fk'
-})
-
-const canEditSelectedTable = computed(() =>
-  selectedTable.value?.status === 'draft' && authStore.hasPermission('model.logical_model.update')
-)
-const editableDimensionTables = computed(() =>
-  allDimensionTables.value.filter(table => table.status === 'draft')
-)
-const canModifyDimensionRelation = relation => {
-  if (!canEditSelectedTable.value) return false
-  return allDimensionTables.value.find(table => table.id === relation.target_table)?.status === 'draft'
-}
 
 const metricNameMap = computed(() => {
   const map = {}
@@ -362,31 +282,6 @@ const metricTypeLabel = (type) => {
   return type || t('model.star_schema.metric_unknown')
 }
 
-const loadFactTables = async () => {
-  loadingTables.value = true
-  loadError.value = ''
-  try {
-    const res = await logicalTableAPI.listAll({ table_type: 'fact' })
-    factTables.value = res
-  } catch (err) {
-    factTables.value = []
-    loadError.value = getModelErrorMessage(err, t, 'model.common.load_failed')
-  } finally {
-    loadingTables.value = false
-    factTablesReady.value = true
-  }
-}
-
-const loadAllDimensionTables = async () => {
-  try {
-    const res = await logicalTableAPI.listAll({ table_type: 'dimension' })
-    allDimensionTables.value = res
-  } catch (err) {
-    allDimensionTables.value = []
-    referenceError.value = t('model.common.reference_data_unavailable')
-  }
-}
-
 let selectionGeneration = 0
 
 const clearSelection = () => {
@@ -396,6 +291,7 @@ const clearSelection = () => {
   tableFields.value = []
   dimensionRelations.value = []
   factMetrics.value = []
+  metricLoadError.value = ''
   loadingRelated.value = false
   loadingMetrics.value = false
 }
@@ -407,6 +303,7 @@ const loadSelectedTable = async (table) => {
   tableFields.value = []
   dimensionRelations.value = []
   factMetrics.value = []
+  metricLoadError.value = ''
 
   loadingRelated.value = true
   loadingMetrics.value = true
@@ -414,12 +311,15 @@ const loadSelectedTable = async (table) => {
     const [fieldsRes, relationsRes, metricsRes] = await Promise.all([
       logicalTableAPI.getFields(table.id),
       logicalTableAPI.listDimensionRelations(table.id),
-      logicalTableAPI.listMetricImplementations(table.id),
+      authStore.hasPermission('model.metric_implementation.read')
+        ? logicalTableAPI.listMetricImplementations(table.id).then(data => ({ data }), error => ({ error: getModelErrorMessage(error, t, 'model.metric_workspace.load_failed') }))
+        : Promise.resolve({ error: t('model.metric_workspace.unavailable') }),
     ])
     if (requestGeneration !== selectionGeneration) return
     tableFields.value = fieldsRes || []
     dimensionRelations.value = relationsRes || []
-    factMetrics.value = metricsRes || []
+    factMetrics.value = metricsRes.data || []
+    metricLoadError.value = metricsRes.error || ''
   } catch (err) {
     if (requestGeneration === selectionGeneration) {
       loadError.value = getModelErrorMessage(err, t, 'model.common.load_failed')
@@ -431,39 +331,77 @@ const loadSelectedTable = async (table) => {
     }
   }
 
-  if (requestGeneration !== selectionGeneration) return
-  await nextTick()
-  renderMermaid()
 }
 
 const selectTable = async (table) => {
-  const tableId = String(table.id)
-  if (route.query.table_id === tableId) {
-    if (selectedTableId.value !== table.id) await loadSelectedTable(table)
-    return
-  }
+  if (selectedTableId.value === table.id) return
   await navigateModelRoute(router, {
     path: '/star-schema',
-    query: { table_id: tableId }
-  }, { history: 'replace' })
+    query: buildDimensionalModelRouteQuery({ domainId: selectedDomainId.value, tableId: table.id })
+  })
 }
 
-const syncSelectedTableFromRoute = async () => {
-  if (!factTablesReady.value) return
+const changeDomain = async (value) => {
+  const domainId = value || null
+  const tableId = !domainId || selectedTable.value?.domain_id === domainId
+    ? selectedTableId.value
+    : null
+  await navigateModelRoute(router, {
+    path: '/star-schema',
+    query: buildDimensionalModelRouteQuery({ domainId, tableId })
+  })
+}
 
-  const tableId = route.query.table_id
-  if (tableId === undefined) {
+let routeGeneration = 0
+let loadedDomainId
+
+const syncSelectedTableFromRoute = async (forceReload = false) => {
+  const generation = ++routeGeneration
+  const state = resolveDimensionalModelRouteState(route.query)
+  if (state.changed) {
+    await navigateModelRoute(router, { path: '/star-schema', query: state.query }, { history: 'replace' })
+    return
+  }
+  loadError.value = ''
+  if (!authStore.hasPermission('model.logical_model.read')) {
+    loadError.value = t('model.common.permission_denied')
+    return
+  }
+
+  if (forceReload || loadedDomainId !== state.domainId) {
+    clearSelection()
+    factTables.value = []
+    loadedDomainId = undefined
+    loadingTables.value = true
+    try {
+      const tables = await logicalTableAPI.listAll({
+        table_type: 'fact',
+        domain_id: state.domainId || undefined
+      })
+      if (generation !== routeGeneration) return
+      factTables.value = tables
+      loadedDomainId = state.domainId
+    } catch (err) {
+      if (generation === routeGeneration) loadError.value = getModelErrorMessage(err, t, 'model.common.load_failed')
+      return
+    } finally {
+      if (generation === routeGeneration) loadingTables.value = false
+    }
+  }
+
+  if (!state.tableId) {
     clearSelection()
     return
   }
-
-  const table = typeof tableId === 'string'
-    ? factTables.value.find(item => String(item.id) === tableId)
-    : null
+  const table = factTables.value.find(item => item.id === state.tableId)
 
   if (!table) {
     clearSelection()
-    await navigateModelRoute(router, '/star-schema', { history: 'replace' })
+    ElMessage.error(t('model.star_schema.table_unavailable'))
+    await navigateModelRoute(router, {
+      path: '/star-schema',
+      query: buildDimensionalModelRouteQuery({ domainId: state.domainId })
+    }, { history: 'replace' })
     return
   }
 
@@ -474,96 +412,21 @@ const openLogicalTable = (tableId) => {
   navigateModelRoute(router, `/logical-tables/${tableId}`)
 }
 
-const openAddDimDialog = () => {
-  addDimForm.value = { target_table: null, source_field: null, target_field: null, relation_type: 'fk' }
-  dimTableFields.value = []
-  addDimDialogVisible.value = true
-}
+const openRelation = relation => navigateModelRoute(router,
+  buildTableRelationRoute(selectedTable.value.id, relation?.id, { domain_id: selectedDomainId.value })
+)
 
-const onDimTableChange = async (dimTableId) => {
-  addDimForm.value.target_field = null
-  dimTableFields.value = []
-  if (!dimTableId) return
-  try {
-    const res = await logicalTableAPI.getFields(dimTableId)
-    dimTableFields.value = res || []
-  } catch (err) {
-    ElMessage.error(getModelErrorMessage(err, t, 'model.star_schema.load_failed'))
-  }
-}
-
-const handleAddDimRelation = async () => {
-  if (!canEditSelectedTable.value) {
-    ElMessage.error(t('model.common.permission_denied'))
-    return
-  }
-  if (!addDimFormRef.value) return
-  try {
-    await addDimFormRef.value.validate()
-  } catch {
-    return
-  }
-  const targetTableIsEditable = editableDimensionTables.value.some(
-    table => table.id === addDimForm.value.target_table
-  )
-  if (!targetTableIsEditable) {
-    ElMessage.error(t('model.common.permission_denied'))
-    return
-  }
-  addingDim.value = true
-  try {
-    const result = await logicalTableAPI.addDimensionRelation(selectedTable.value.id, {
-      version: selectedTable.value.version,
-      target_table: addDimForm.value.target_table,
-      source_field: addDimForm.value.source_field,
-      target_field: addDimForm.value.target_field,
-      relation_type: addDimForm.value.relation_type,
-    })
-    selectedTable.value.version = result.version
-    ElMessage.success(t('model.star_schema.add_success'))
-    addDimDialogVisible.value = false
-    const res = await logicalTableAPI.listDimensionRelations(selectedTable.value.id)
-    dimensionRelations.value = res || []
-  } catch (e) {
-    ElMessage.error(getModelErrorMessage(e, t, 'model.star_schema.add_failed'))
-  } finally {
-    addingDim.value = false
-  }
-}
-
-const handleRemoveDimRelation = async (rel) => {
-  if (!canModifyDimensionRelation(rel)) {
-    ElMessage.error(t('model.common.permission_denied'))
-    return
-  }
-  try {
-    await ElMessageBox.confirm(
-      t('model.star_schema.remove_confirm', { name: rel.target_table_name }),
-      t('model.star_schema.remove_title'),
-      { type: 'warning', confirmButtonText: t('model.star_schema.remove_btn'), cancelButtonText: t('model.common.cancel') }
-    )
-  } catch {
-    return
-  }
-  try {
-    const result = await logicalTableAPI.removeDimensionRelation(
-      selectedTable.value.id,
-      rel.id,
-      selectedTable.value.version
-    )
-    selectedTable.value.version = result.version
-    ElMessage.success(t('model.star_schema.remove_success'))
-    dimensionRelations.value = dimensionRelations.value.filter(r => r.id !== rel.id)
-  } catch (e) {
-    ElMessage.error(getModelErrorMessage(e, t, 'model.star_schema.remove_failed'))
-  }
-}
-
+let renderGeneration = 0
 const renderMermaid = async () => {
-  if (!mermaidContainer.value || !mermaidCode.value) return
+  const generation = ++renderGeneration
+  const container = mermaidContainer.value
+  const code = mermaidCode.value
+  if (!container || !code) return
   try {
-    const { svg } = await mermaid.render('mermaid-star-schema-' + Date.now(), mermaidCode.value)
-    mermaidContainer.value.innerHTML = svg
+    const { svg } = await mermaid.render('mermaid-model-' + crypto.randomUUID(), code)
+    if (generation === renderGeneration && container === mermaidContainer.value && code === mermaidCode.value) {
+      container.innerHTML = svg
+    }
   } catch (err) {
     console.error('Mermaid渲染错误:', err)
   }
@@ -574,7 +437,7 @@ watch(mermaidCode, async () => {
   renderMermaid()
 })
 
-watch(() => route.query.table_id, syncSelectedTableFromRoute)
+watch(() => route.query, () => syncSelectedTableFromRoute())
 
 const reload = async () => {
   clearSelection()
@@ -584,16 +447,12 @@ const reload = async () => {
     loadError.value = t('model.common.permission_denied')
     return
   }
-  await loadFactTables()
+  await syncSelectedTableFromRoute(true)
   if (loadError.value) return
-  await syncSelectedTableFromRoute()
-  if (loadError.value) return
-  await loadAllDimensionTables()
-  try {
-    const res = await standardMetricAPI.listAll()
-    allMetrics.value = res
-  } catch (err) {
-    allMetrics.value = []
+  const [domainResult, metricResult] = await Promise.allSettled([domainAPI.list(), standardMetricAPI.listAll()])
+  domains.value = domainResult.status === 'fulfilled' ? domainResult.value : []
+  allMetrics.value = metricResult.status === 'fulfilled' ? metricResult.value : []
+  if (domainResult.status === 'rejected' || metricResult.status === 'rejected') {
     referenceError.value = t('model.common.reference_data_unavailable')
   }
 }
@@ -607,7 +466,12 @@ onMounted(async () => {
   await reload()
 })
 
-onBeforeUnmount(() => stopThemeObserver?.())
+onBeforeUnmount(() => {
+  routeGeneration += 1
+  selectionGeneration += 1
+  renderGeneration += 1
+  stopThemeObserver?.()
+})
 </script>
 
 <style scoped>
@@ -618,6 +482,25 @@ onBeforeUnmount(() => stopThemeObserver?.())
 .view-header {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 16px 32px;
+}
+
+.domain-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  color: var(--addp-text-secondary);
+}
+
+.domain-filter > span {
+  flex-shrink: 0;
+}
+
+.domain-filter .el-select {
+  width: 220px;
+  min-width: 0;
 }
 
 .view-title {
@@ -719,8 +602,10 @@ onBeforeUnmount(() => stopThemeObserver?.())
 .dim-item {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  padding: 8px 0;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 0;
   border-bottom: 1px solid var(--addp-border-color-light);
 }
 
@@ -729,6 +614,7 @@ onBeforeUnmount(() => stopThemeObserver?.())
 }
 
 .dim-item-left {
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -747,6 +633,8 @@ onBeforeUnmount(() => stopThemeObserver?.())
 }
 
 .join-hint {
+  width: 100%;
+  overflow-wrap: anywhere;
   color: var(--addp-text-secondary);
   font-size: 12px;
 }

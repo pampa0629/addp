@@ -558,7 +558,8 @@
           "transfer": "数据传输生成",
           "unit": "计量单位",
           "user": "用户账号",
-          "workflow": "工作流"
+          "workflow": "工作流",
+          "metric_implementation": "指标实现"
         },
         "types": {
           "tenant_builtin": "租户内置角色",

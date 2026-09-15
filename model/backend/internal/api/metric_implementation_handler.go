@@ -1,14 +1,13 @@
 package api
 
 import (
-	"net/http"
-	"strconv"
-
 	commoni18n "github.com/addp/common/middleware/i18n"
 	modeli18n "github.com/addp/model/i18n"
 	"github.com/addp/model/internal/models"
 	"github.com/addp/model/internal/service"
 	"github.com/gin-gonic/gin"
+	"net/http"
+	"strconv"
 )
 
 type MetricImplementationHandler struct {
@@ -27,140 +26,283 @@ func metricImplementationPathID(c *gin.Context, name string) (int64, bool) {
 	return id, true
 }
 
-// @Summary 查询事实表指标实现 | List fact table metric implementations
+// @Summary 查询指标实现 | List metric implementations
 // @Tags Model
 // @Produce json
-// @Param id path int true "事实表 ID | Fact table ID"
+// @Param fact_table_id query int false "来源事实表 | Source fact table"
 // @Success 200 {array} models.MetricImplementation
 // @Failure 400 {object} models.ErrorResponse "请求无效 | Invalid request"
 // @Failure 401 {object} models.ErrorResponse "未认证 | Unauthorized"
 // @Failure 403 {object} models.ErrorResponse "无权限 | Forbidden"
-// @Failure 404 {object} models.ErrorResponse "事实表不存在 | Fact table not found"
+// @Failure 404 {object} models.ErrorResponse "资源不存在 | Resource not found"
+// @Failure 409 {object} models.ErrorResponse "版本或依赖冲突 | Version or dependency conflict"
+// @Failure 503 {object} models.ErrorResponse "依赖不可用 | Dependency unavailable"
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["model.logical_model.read"]
-// @Router /logical-tables/{id}/metric-implementations [get]
+// @x-addp-required-permissions ["model.metric_implementation.read"]
+// @Router /metric-implementations [get]
 // @Security BearerAuth
 func (h *MetricImplementationHandler) List(c *gin.Context) {
-	tableID, ok := metricImplementationPathID(c, "id")
-	if !ok {
-		return
+	var factID int64
+	if raw := c.Query("fact_table_id"); raw != "" {
+		var err error
+		factID, err = strconv.ParseInt(raw, 10, 64)
+		if err != nil || factID <= 0 {
+			c.JSON(400, invalidParamsResponse(c))
+			return
+		}
 	}
-	items, err := h.svc.List(tableID, getTenantID(c))
+	result, err := h.svc.List(factID, getTenantID(c))
 	if err != nil {
 		writeServiceError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, items)
+	c.JSON(200, result)
 }
 
-// @Summary 创建指标实现 | Create metric implementation
+// @Summary 读取指标实现及修订 | Read metric implementation and revisions
 // @Tags Model
-// @Accept json
 // @Produce json
-// @Param id path int true "事实表 ID | Fact table ID"
-// @Param body body models.CreateMetricImplementationRequest true "完整指标实现与父版本 | Full metric implementation and parent version"
-// @Success 201 {object} models.MetricImplementationMutationResponse
+// @Param id path int true "指标实现 ID | Metric implementation ID"
+// @Success 200 {object} models.MetricImplementation
 // @Failure 400 {object} models.ErrorResponse "请求无效 | Invalid request"
 // @Failure 401 {object} models.ErrorResponse "未认证 | Unauthorized"
 // @Failure 403 {object} models.ErrorResponse "无权限 | Forbidden"
-// @Failure 404 {object} models.ErrorResponse "事实表、字段或指标定义修订不存在 | Fact table, field, or metric definition revision not found"
-// @Failure 409 {object} models.ErrorResponse "版本、状态或唯一性冲突 | Version, state, or uniqueness conflict"
+// @Failure 404 {object} models.ErrorResponse "资源不存在 | Resource not found"
+// @Failure 409 {object} models.ErrorResponse "版本或依赖冲突 | Version or dependency conflict"
+// @Failure 503 {object} models.ErrorResponse "依赖不可用 | Dependency unavailable"
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["model.logical_model.update"]
-// @Router /logical-tables/{id}/metric-implementations [post]
+// @x-addp-required-permissions ["model.metric_implementation.read"]
+// @Router /metric-implementations/{id} [get]
+// @Security BearerAuth
+func (h *MetricImplementationHandler) Get(c *gin.Context) {
+	id, ok := metricImplementationPathID(c, "id")
+	if !ok {
+		return
+	}
+	result, err := h.svc.Get(id, getTenantID(c))
+	if err != nil {
+		writeServiceError(c, err)
+		return
+	}
+	c.JSON(200, result)
+}
+
+// @Summary 创建独立指标实现 | Create independent metric implementation
+// @Tags Model
+// @Produce json
+// @Accept json
+// @Param body body models.CreateMetricImplementationRequest true "请求 | Request"
+// @Success 201 {object} models.MetricImplementation
+// @Failure 400 {object} models.ErrorResponse "请求无效 | Invalid request"
+// @Failure 401 {object} models.ErrorResponse "未认证 | Unauthorized"
+// @Failure 403 {object} models.ErrorResponse "无权限 | Forbidden"
+// @Failure 404 {object} models.ErrorResponse "资源不存在 | Resource not found"
+// @Failure 409 {object} models.ErrorResponse "版本或依赖冲突 | Version or dependency conflict"
+// @Failure 503 {object} models.ErrorResponse "依赖不可用 | Dependency unavailable"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["model.metric_implementation.create"]
+// @Router /metric-implementations [post]
 // @Security BearerAuth
 func (h *MetricImplementationHandler) Create(c *gin.Context) {
-	tableID, ok := metricImplementationPathID(c, "id")
-	if !ok {
-		return
-	}
 	var req models.CreateMetricImplementationRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, invalidParamsResponse(c))
+		c.JSON(400, invalidParamsResponse(c))
 		return
 	}
-	item, err := h.svc.Create(tableID, getTenantID(c), getUserID(c), &req)
+	result, err := h.svc.Create(c.Request.Context(), getTenantID(c), getUserID(c), &req)
 	if err != nil {
 		writeServiceError(c, err)
 		return
 	}
-	c.JSON(http.StatusCreated, item)
+	c.JSON(201, result)
 }
 
-// @Summary 更新指标实现 | Update metric implementation
+// @Summary 保存指标实现草稿 | Save metric implementation draft
 // @Tags Model
-// @Accept json
 // @Produce json
-// @Param id path int true "事实表 ID | Fact table ID"
-// @Param implementation_id path int true "指标实现 ID | Metric implementation ID"
-// @Param body body models.UpdateMetricImplementationRequest true "完整指标实现与父版本 | Full metric implementation and parent version"
-// @Success 200 {object} models.MetricImplementationMutationResponse
+// @Accept json
+// @Param body body models.SaveMetricImplementationRevisionRequest true "请求 | Request"
+// @Param id path int true "指标实现 ID | Metric implementation ID"
+// @Success 200 {object} models.MetricImplementation
 // @Failure 400 {object} models.ErrorResponse "请求无效 | Invalid request"
 // @Failure 401 {object} models.ErrorResponse "未认证 | Unauthorized"
 // @Failure 403 {object} models.ErrorResponse "无权限 | Forbidden"
-// @Failure 404 {object} models.ErrorResponse "指标实现、字段或指标定义修订不存在 | Metric implementation, field, or metric definition revision not found"
-// @Failure 409 {object} models.ErrorResponse "版本、状态或唯一性冲突 | Version, state, or uniqueness conflict"
+// @Failure 404 {object} models.ErrorResponse "资源不存在 | Resource not found"
+// @Failure 409 {object} models.ErrorResponse "版本或依赖冲突 | Version or dependency conflict"
+// @Failure 503 {object} models.ErrorResponse "依赖不可用 | Dependency unavailable"
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["model.logical_model.update"]
-// @Router /logical-tables/{id}/metric-implementations/{implementation_id} [put]
+// @x-addp-required-permissions ["model.metric_implementation.update"]
+// @Router /metric-implementations/{id}/draft [put]
 // @Security BearerAuth
-func (h *MetricImplementationHandler) Update(c *gin.Context) {
-	tableID, ok := metricImplementationPathID(c, "id")
+func (h *MetricImplementationHandler) SaveDraft(c *gin.Context) {
+	id, ok := metricImplementationPathID(c, "id")
 	if !ok {
 		return
 	}
-	implementationID, ok := metricImplementationPathID(c, "implementation_id")
-	if !ok {
-		return
-	}
-	var req models.UpdateMetricImplementationRequest
+	var req models.SaveMetricImplementationRevisionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, invalidParamsResponse(c))
+		c.JSON(400, invalidParamsResponse(c))
 		return
 	}
-	item, err := h.svc.Update(implementationID, tableID, getTenantID(c), getUserID(c), &req)
+	result, err := h.svc.SaveDraft(c.Request.Context(), id, getTenantID(c), getUserID(c), &req)
 	if err != nil {
 		writeServiceError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, item)
+	c.JSON(200, result)
 }
 
-// @Summary 删除指标实现 | Delete metric implementation
+// @Summary 发布指标实现修订 | Publish metric implementation revision
 // @Tags Model
-// @Accept json
 // @Produce json
-// @Param id path int true "事实表 ID | Fact table ID"
-// @Param implementation_id path int true "指标实现 ID | Metric implementation ID"
-// @Param body body models.VersionRequest true "父资源版本 | Parent resource version"
-// @Success 200 {object} models.VersionResponse
+// @Accept json
+// @Param body body models.MetricImplementationVersionRequest true "请求 | Request"
+// @Param id path int true "指标实现 ID | Metric implementation ID"
+// @Param revision_id path int true "修订 ID | Revision ID"
+// @Success 200 {object} models.MetricImplementation
 // @Failure 400 {object} models.ErrorResponse "请求无效 | Invalid request"
 // @Failure 401 {object} models.ErrorResponse "未认证 | Unauthorized"
 // @Failure 403 {object} models.ErrorResponse "无权限 | Forbidden"
-// @Failure 404 {object} models.ErrorResponse "指标实现或事实表不存在 | Metric implementation or fact table not found"
-// @Failure 409 {object} models.ErrorResponse "版本或状态冲突 | Version or state conflict"
+// @Failure 404 {object} models.ErrorResponse "资源不存在 | Resource not found"
+// @Failure 409 {object} models.ErrorResponse "版本或依赖冲突 | Version or dependency conflict"
+// @Failure 503 {object} models.ErrorResponse "依赖不可用 | Dependency unavailable"
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["model.logical_model.update"]
-// @Router /logical-tables/{id}/metric-implementations/{implementation_id} [delete]
+// @x-addp-required-permissions ["model.metric_implementation.publish"]
+// @Router /metric-implementations/{id}/revisions/{revision_id}/publish [post]
+// @Security BearerAuth
+func (h *MetricImplementationHandler) Publish(c *gin.Context) {
+	id, ok := metricImplementationPathID(c, "id")
+	if !ok {
+		return
+	}
+	revisionID, ok := metricImplementationPathID(c, "revision_id")
+	if !ok {
+		return
+	}
+	var req models.MetricImplementationVersionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(400, invalidParamsResponse(c))
+		return
+	}
+	result, err := h.svc.ChangeRevisionState(c.Request.Context(), id, revisionID, getTenantID(c), getUserID(c), req.Version, true)
+	if err != nil {
+		writeServiceError(c, err)
+		return
+	}
+	c.JSON(200, result)
+}
+
+// @Summary 撤回指标实现修订 | Withdraw metric implementation revision
+// @Tags Model
+// @Produce json
+// @Accept json
+// @Param body body models.MetricImplementationVersionRequest true "请求 | Request"
+// @Param id path int true "指标实现 ID | Metric implementation ID"
+// @Param revision_id path int true "修订 ID | Revision ID"
+// @Success 200 {object} models.MetricImplementation
+// @Failure 400 {object} models.ErrorResponse "请求无效 | Invalid request"
+// @Failure 401 {object} models.ErrorResponse "未认证 | Unauthorized"
+// @Failure 403 {object} models.ErrorResponse "无权限 | Forbidden"
+// @Failure 404 {object} models.ErrorResponse "资源不存在 | Resource not found"
+// @Failure 409 {object} models.ErrorResponse "版本或依赖冲突 | Version or dependency conflict"
+// @Failure 503 {object} models.ErrorResponse "依赖不可用 | Dependency unavailable"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["model.metric_implementation.offline"]
+// @Router /metric-implementations/{id}/revisions/{revision_id}/withdraw [post]
+// @Security BearerAuth
+func (h *MetricImplementationHandler) Withdraw(c *gin.Context) {
+	id, ok := metricImplementationPathID(c, "id")
+	if !ok {
+		return
+	}
+	revisionID, ok := metricImplementationPathID(c, "revision_id")
+	if !ok {
+		return
+	}
+	var req models.MetricImplementationVersionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(400, invalidParamsResponse(c))
+		return
+	}
+	result, err := h.svc.ChangeRevisionState(c.Request.Context(), id, revisionID, getTenantID(c), getUserID(c), req.Version, false)
+	if err != nil {
+		writeServiceError(c, err)
+		return
+	}
+	c.JSON(200, result)
+}
+
+// @Summary 删除未发布指标实现 | Delete unpublished metric implementation
+// @Tags Model
+// @Produce json
+// @Accept json
+// @Param body body models.MetricImplementationVersionRequest true "请求 | Request"
+// @Param id path int true "指标实现 ID | Metric implementation ID"
+// @Success 204 "已删除 | Deleted"
+// @Failure 400 {object} models.ErrorResponse "请求无效 | Invalid request"
+// @Failure 401 {object} models.ErrorResponse "未认证 | Unauthorized"
+// @Failure 403 {object} models.ErrorResponse "无权限 | Forbidden"
+// @Failure 404 {object} models.ErrorResponse "资源不存在 | Resource not found"
+// @Failure 409 {object} models.ErrorResponse "版本或依赖冲突 | Version or dependency conflict"
+// @Failure 503 {object} models.ErrorResponse "依赖不可用 | Dependency unavailable"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["model.metric_implementation.delete"]
+// @Router /metric-implementations/{id} [delete]
 // @Security BearerAuth
 func (h *MetricImplementationHandler) Delete(c *gin.Context) {
-	tableID, ok := metricImplementationPathID(c, "id")
+	id, ok := metricImplementationPathID(c, "id")
 	if !ok {
 		return
 	}
-	implementationID, ok := metricImplementationPathID(c, "implementation_id")
-	if !ok {
-		return
-	}
-	var req models.VersionRequest
+	var req models.MetricImplementationVersionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, invalidParamsResponse(c))
+		c.JSON(400, invalidParamsResponse(c))
 		return
 	}
-	result, err := h.svc.Delete(implementationID, tableID, getTenantID(c), req.Version)
+	err := h.svc.Delete(id, getTenantID(c), getUserID(c), req.Version)
 	if err != nil {
 		writeServiceError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, result)
+	c.Status(204)
+}
+
+// @Accept json
+// @Param body body models.MetricPlanRequest true "计划参数 | Plan parameters"
+// @Summary 读取已发布指标计算计划 | Read published metric computation plan
+// @Tags Model
+// @Produce json
+// @Param id path int true "指标实现 ID | Metric implementation ID"
+// @Param revision_id path int true "修订 ID | Revision ID"
+// @Success 200 {object} service.MetricCompiledPlan
+// @Failure 400 {object} models.ErrorResponse "请求无效 | Invalid request"
+// @Failure 401 {object} models.ErrorResponse "未认证 | Unauthorized"
+// @Failure 403 {object} models.ErrorResponse "无权限 | Forbidden"
+// @Failure 404 {object} models.ErrorResponse "资源不存在 | Resource not found"
+// @Failure 409 {object} models.ErrorResponse "版本或依赖冲突 | Version or dependency conflict"
+// @Failure 503 {object} models.ErrorResponse "依赖不可用 | Dependency unavailable"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["model.metric_implementation.read"]
+// @Router /metric-implementations/{id}/revisions/{revision_id}/plan [post]
+// @Security BearerAuth
+func (h *MetricImplementationHandler) Plan(c *gin.Context) {
+	id, ok := metricImplementationPathID(c, "id")
+	if !ok {
+		return
+	}
+	revisionID, ok := metricImplementationPathID(c, "revision_id")
+	if !ok {
+		return
+	}
+	var req models.MetricPlanRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(400, invalidParamsResponse(c))
+		return
+	}
+	result, err := h.svc.PublishedPlan(c.Request.Context(), id, revisionID, getTenantID(c), req.Input)
+	if err != nil {
+		writeServiceError(c, err)
+		return
+	}
+	c.JSON(200, result)
 }

@@ -139,9 +139,6 @@
       "saveAndSwitchSuccess": "Query saved and switched to query engine \"{name}\"",
       "engineUnavailable": "Engine unavailable (ID: {id})",
       "unsaved": "Unsaved",
-      "unsavedTitle": "Unsaved changes",
-      "unsavedConfirm": "Leaving will discard the current unsaved query.",
-      "leave": "Leave",
       "executionSubmitted": "Query submitted",
       "executionIdMissing": "Execution response is missing execution_id",
       "clearResult": "Clear",
@@ -373,8 +370,7 @@
       "validationWarnings": "Workflow has {count} warnings",
       "validationUnavailable": "Workflow validation is temporarily unavailable",
       "workflowLevelIssue": "Workflow",
-      "viewIssues": "View issues",
-      "leaveConfirm": "This workflow has unsaved changes. Leave anyway?"
+      "viewIssues": "View issues"
     },
     "operatorPalette": {
       "searchPlaceholder": "Search operators...",

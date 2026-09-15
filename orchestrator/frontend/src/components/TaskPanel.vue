@@ -44,7 +44,7 @@
           <!-- 模块节点 -->
           <template v-if="data.type === 'module'">
             <el-icon class="module-icon"><FolderOpened /></el-icon>
-            <span class="module-name">{{ data.label }}</span>
+            <span class="module-name" :title="data.label">{{ data.label }}</span>
             <el-icon v-if="data.metadata?.loading" class="task-loading module-loading is-loading">
               <Loading />
             </el-icon>
@@ -66,7 +66,7 @@
           <!-- 任务类型节点 -->
           <template v-else-if="data.type === 'taskType'">
             <el-icon class="task-type-icon"><FolderOpened /></el-icon>
-            <span class="task-type-name">{{ data.label }}</span>
+            <span class="task-type-name" :title="data.label">{{ data.label }}</span>
             <el-icon v-if="data.metadata?.loading" class="task-loading task-type-loading is-loading">
               <Loading />
             </el-icon>
@@ -105,14 +105,14 @@
           <!-- 任务节点 -->
           <template v-else-if="data.type === 'task'">
             <el-icon class="drag-icon"><Rank /></el-icon>
-            <span class="task-name">{{ data.label }}</span>
+            <span class="task-name" :title="data.label">{{ data.label }}</span>
             <div class="task-actions" @click.stop>
               <el-tag
                 v-if="data.metadata?.status"
                 size="small"
                 :type="getStatusColor(data.metadata.status)"
               >
-                {{ data.metadata.status }}
+                {{ t(data.metadata.statusSource === 'execution' ? 'orchestrator.taskPanel.latestExecution' : 'orchestrator.taskPanel.taskStatus', { status: statusLabel(data.metadata.status) }) }}
               </el-tag>
               <el-tooltip
                 :content="t('orchestrator.taskPanel.addToCanvas')"
@@ -370,6 +370,7 @@ function buildTaskNode(identifier, task, taskTypeDef) {
       graphId: task.graph_id,
       editUrl: taskTypeDef?.editUrl || '',
       status: task.last_execution_status || task.status || null,
+      statusSource: task.last_execution_status ? 'execution' : 'task',
       enabled: task.enabled,
       parameters: task.parameters || {}
     }
@@ -443,12 +444,19 @@ function startDrag(data, event) {
   event.dataTransfer.effectAllowed = 'copy'
 }
 
+function statusLabel(status) {
+  const keys = { pending: 'statusPending', running: 'statusRunning', success: 'statusSuccess', failed: 'statusFailed', timeout: 'statusTimeout', cancelled: 'statusCancelled' }
+  return keys[status] ? t(`orchestrator.executionList.${keys[status]}`) : t('orchestrator.taskPanel.statusOther', { status })
+}
+
 function getStatusColor(status) {
   const colors = {
     pending: 'info',
     running: 'warning',
     success: 'success',
     failed: 'danger',
+    timeout: 'danger',
+    cancelled: 'info',
     scheduled: 'primary'
   }
   return colors[status] || 'info'
@@ -560,6 +568,8 @@ function getStatusColor(status) {
 /* 任务节点 */
 .task-node {
   cursor: move;
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
   padding: 8px;
   margin: 2px 0;
   border: 1px solid var(--addp-border-color);
@@ -570,7 +580,7 @@ function getStatusColor(status) {
 .task-node:hover {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
   border-color: var(--el-color-primary);
-  transform: translateX(2px);
+
 }
 
 .drag-icon {
@@ -579,20 +589,27 @@ function getStatusColor(status) {
 }
 
 .task-name {
-  flex: 1;
   min-width: 0;
   font-size: 14px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.5;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .task-actions {
+  grid-column: 2;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 4px;
-  flex-shrink: 0;
-  margin-left: auto;
+  min-width: 0;
+}
+.task-actions :deep(.el-button + .el-button) { margin-left: 0; }
+.task-actions :deep(.el-tag) {
+  max-width: 100%;
+  height: auto;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 /* 覆盖 ResourceTree 的样式 */

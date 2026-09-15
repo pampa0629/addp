@@ -233,12 +233,13 @@ graph TB
 - **企业目录主线**: Meta 维护 DataItem 技术事实并提供可恢复变化；Catalog 建立企业目录身份、业务语义关联、责任和搜索；Asset 从 Catalog 选择并组合目录对象；Portal 只消费已发布资产。图中的虚线业务调用都是运行软依赖，不构成启动或 Ready 条件。
 - **数据标准主线**: Standard 拥有业务域、术语、数据元、码值集、单位、指标定义和标准来源文档等语义契约；Model 拥有逻辑模型、公共/一致性维度、维度层级和指标实现，并冻结采用的 Standard 修订；Catalog 拥有实际字段/组件到标准修订的映射；Quality 拥有规则应用、执行、符合性结果和问题。Standard 可以聚合展示落标与符合性，但不复制后三者的事实。
 - **数据安全主线**: Security 与 Catalog 并行消费 Meta 事实，但只精确读取已显式纳管目标；Security 编译 Owner-specific 保护投影，Manager、Transfer、Develop 和 Service 后台拉取后在本模块服务端出口执行。Catalog 只联邦展示 Security 专业事实，不是安全发现或保护生效的前置。
-- **Worker运行时**: bounded execution 数据面使用 owner 模块附属的独立进程；owner Backend 只承担 API、调度和控制面。
+- **Worker运行时**: Quality、Meta、Security 与 Transfer bounded execution 使用 owner 模块附属的独立 Worker；Develop Query、Manager bounded 与 Model logical table materialization 使用 owner Backend 内嵌 Supervisor。每种 task type 只能选择其中一条路线。
   - **Transfer Bounded Worker**: 从 `common.task_executions` PostgreSQL claim snapshot、watermark 和 bounded replay execution。
   - **Transfer Continuous Worker**: 已实现的独立长驻进程角色，通过 supervisor、DB lease、heartbeat 和 fencing 承载多个 continuous runtime session；不使用 Asynq 承载无限消费循环。当前数据面开放业务 Kafka keyed JSON -> PostgreSQL/MySQL，以及 PostgreSQL/MySQL/Oracle 单表 Debezium CDC -> PostgreSQL/MySQL/Oracle；Oracle Spatial 由 Oracle capture Provider 在源 schema 内维护 WKB 镜像表后进入同一 Debezium/consumer/apply 主路径，Oracle target 只开放 XY geometry。两类 source 共用同一 continuous runtime、position、lease 和 fencing；ArcGIS SDE 仍保留为后续独立逻辑变化源 Provider，不能并入普通 Oracle redo CDC。
   - **Meta Worker**: 从 `common.task_executions` PostgreSQL claim 扫描 execution，执行元数据扫描和索引。
   - **Quality Worker**: 独立进程，从 `common.task_executions` PostgreSQL claim `check|data_validation` execution；字段检查执行评分和 Issue reconcile，数据校验通过 Model Client 读取同批 staging 并执行强类型断言。
   - **Security Worker**: 独立进程，只领取 Security 对显式纳管目标创建的 `sensitive_data_discovery` execution，读取必要专业事实和受控样本并生成 Finding；不全量遍历 Meta，不提供通用数据代理。
+  - **Develop Query Execution Supervisor**: 内嵌于 Develop Backend，通过 PostgreSQL claim/lease 领取全部 `module=develop + task_type=query` execution，不启动独立 Query Worker。
 - **Manager 快显与瓦片任务**: `vector_tile_cache_generation` 与 `vector_tile_set_generation` 由 Manager Backend 按源能力选择唯一执行路径：PostgreSQL/PostGIS 表使用原生 `ST_AsMVT`，MySQL、Oracle 等标准 EWKB 可读的空间表流式物化临时 FlatGeobuf 后调用 GeoPython `vector_to_pmtiles`，文件或对象通过受控访问计划调用同一 operator；三类路径统一输出 PMTiles v3。`pptx_pdf_generation` 由 Manager 拥有任务和当前结果，通过 Common `WorkflowRuntimeProvider` direct 调用 Document Workflow `document_to_pdf`，LibreOffice 只存在于该 Runtime 镜像。任务定义、执行记录和缓存结果分别进入 Manager owner 表、`common.task_executions` 与对应 Manager 结果表。`vector_materialized_view_generation` 仍由 Manager Backend 在手动或编排触发时执行，结果进入 `manager.vector_materialized_view`。这些任务当前不启动模块自身定时调度；若需要把 Manager bounded execution 迁入附属 Worker，必须按任务类型整体切换唯一执行者，不允许 Backend 与 Worker 双轨并存。
 - **共享模块**: common 和 common-frontend 提供可复用的代码和组件
 - **扩展运行时**: `engines/` 目录集中放置不拥有业务配置事实的独立计算 / Notebook Runtime 实现，由业务模块通过统一 Provider 调用。Inference 同时拥有 Provider、Deployment、Profile、凭据和配置管理入口，因此保留为根目录业务模块；其数据面端点另以 `inference_runtime` Engine Instance 纳入统一引擎体系，不在 `engines/` 下复制 owner 实现。
@@ -371,7 +372,7 @@ graph LR
 
 ## Worker 运行时
 
-ADDP 的 execution worker 是执行 owner 的运行时角色。Quality、Meta 和 Transfer bounded 使用各模块附属的独立 Worker 进程，Transfer continuous 使用专用长期运行时 Worker；对应 Backend 只承担控制面。Manager 当前的受管快显任务由 Manager Backend 持有领域 execution 并把重型计算委托给独立专业 Workflow Runtime；`pptx_pdf_generation` 唯一调用 Document Workflow `document_to_pdf`，LibreOffice 不进入 Manager 进程。PostgreSQL/PostGIS 原生 MVT、MySQL/Oracle 临时 FlatGeobuf 到 GeoPython PMTiles、文件或对象到 GeoPython PMTiles，以及矢量物化视图仍按各自既有唯一执行路线运行。Manager 受管当前结果任务不启动 owner scheduler；Embedding 的逐 item 调度器独立保留。后续若统一引入 Manager Worker，必须整体迁移对应任务类型的 execution owner，不保留 Backend 与 Worker 双轨。
+ADDP 的 execution worker 是执行 owner 的运行时角色。Quality、Meta、Security 和 Transfer bounded 使用各模块附属的独立 Worker 进程，Transfer continuous 使用专用长期运行时 Worker；Develop 全部 Query、Manager bounded 与 Model logical table materialization 使用各自 Backend 内嵌的有界执行监督器。Manager 当前的受管快显任务由 Manager Backend 持有领域 execution 并把重型计算委托给独立专业 Workflow Runtime；`pptx_pdf_generation` 唯一调用 Document Workflow `document_to_pdf`，LibreOffice 不进入 Manager 进程。PostgreSQL/PostGIS 原生 MVT、MySQL/Oracle 临时 FlatGeobuf 到 GeoPython PMTiles、文件或对象到 GeoPython PMTiles，以及矢量物化视图仍按各自既有唯一执行路线运行。Manager 受管当前结果任务不启动 owner scheduler；Embedding 的逐 item 调度器独立保留。后续若统一引入 Manager Worker，必须整体迁移对应任务类型的 execution owner，不保留 Backend 与 Worker 双轨。
 
 ### 模块启动与引擎可用性边界
 
@@ -454,7 +455,7 @@ graph TB
 - **Manager 受管结果调度边界**: 瓦片缓存、矢量物化视图等受管当前结果任务均为 `supports_schedule=false`，不由 Manager 自身定时调度；周期性刷新由 Orchestrator 显式携带本次覆盖确认触发。Embedding 的逐 item owner scheduler 独立保留。
 - **执行记录**: 各模块执行状态统一写入 `common.task_executions`。
 - **角色边界**: owner scheduler 负责创建和投递 execution，execution worker 负责真实运行体与终态，Monitor dispatcher 只消费通知 outbox；固定 cleanup、collector 和 heartbeat 属于 maintenance loop，不应统称 worker。
-- **单一路线**: 同一 task type 只能有一条正式执行路线。Quality `check|data_validation`、Meta scan、Transfer bounded 和 Orchestrator 来源 Develop query 的正式路线均是独立 Worker + PostgreSQL claim；Backend 不执行 bounded 业务逻辑。
+- **单一路线**: 同一 task type 只能有一条正式执行路线。Quality `check|data_validation`、Meta scan、Security `sensitive_data_discovery` 和 Transfer bounded 的正式路线是独立 Worker + PostgreSQL claim；Develop 全部 query、Manager bounded 与 Model logical table materialization 的正式路线是 Backend 内嵌 Supervisor + PostgreSQL claim，不保留请求外 goroutine 或独立 Worker 双轨。
 - **结果状态**: Manager 瓦片缓存结果状态写入 `manager.vector_tile_cache`，矢量物化视图结果状态写入 `manager.vector_materialized_view`，不由 execution 替代。
 - **未来切换条件**: 当 Manager API 响应因后台生成受影响、临时材料与 GeoPython 调用需要独立资源隔离，或需要多个执行器并行消费同一类任务时，对应任务类型应切换到唯一的 Manager Worker 或 GIS 执行引擎运行时。
 

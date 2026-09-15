@@ -213,16 +213,7 @@ export const logicalTableAPI = {
     return client.delete(`/model/logical-tables/${id}/materialized-target`, { data })
   },
   listMetricImplementations(tableId) {
-    return client.get(`/model/logical-tables/${tableId}/metric-implementations`)
-  },
-  createMetricImplementation(tableId, data) {
-    return client.post(`/model/logical-tables/${tableId}/metric-implementations`, data)
-  },
-  updateMetricImplementation(tableId, implementationId, data) {
-    return client.put(`/model/logical-tables/${tableId}/metric-implementations/${implementationId}`, data)
-  },
-  deleteMetricImplementation(tableId, implementationId, version) {
-    return client.delete(`/model/logical-tables/${tableId}/metric-implementations/${implementationId}`, { data: { version } })
+    return metricImplementationAPI.list({ fact_table_id: tableId })
   },
   // 获取事实表关联的维度表列表
   listDimensionRelations(tableId) {
@@ -233,6 +224,9 @@ export const logicalTableAPI = {
     return client.post(`/model/logical-tables/${tableId}/dimension-relations`, data)
   },
   // 删除维度表关联
+  updateDimensionRelation(tableId, relationId, data) {
+    return client.put(`/model/logical-tables/${tableId}/dimension-relations/${relationId}`, data)
+  },
   removeDimensionRelation(tableId, relationId, version) {
     return client.delete(`/model/logical-tables/${tableId}/dimension-relations/${relationId}`, { data: { version } })
   },
@@ -260,10 +254,27 @@ export const logicalTableAPI = {
 }
 
 export const standardMetricAPI = {
+  revisions(id) { return standardClient.get(`/standard/metrics/${id}/revisions`) },
   list(params) {
     return standardClient.get('/standard/metrics', { params })
   },
   listAll(params) {
     return listAll(standardClient, '/standard/metrics', { status: 'published', ...params })
   }
+}
+
+export const metricImplementationAPI = {
+ list: params => client.get('/model/metric-implementations', { params }),
+ get: id => client.get(`/model/metric-implementations/${id}`),
+ create: data => client.post('/model/metric-implementations', data),
+ saveDraft: (id, data) => client.put(`/model/metric-implementations/${id}/draft`, data),
+ publish: (id, revision, version) => client.post(`/model/metric-implementations/${id}/revisions/${revision}/publish`, { version }),
+ withdraw: (id, revision, version) => client.post(`/model/metric-implementations/${id}/revisions/${revision}/withdraw`, { version }),
+ delete: (id, version) => client.delete(`/model/metric-implementations/${id}`, { data: { version } })
+}
+const serviceClient = refreshAuthorizationOnForbidden(createAPIClient(() => useAuthStore(), { moduleName: 'Service' }))
+export const metricServiceAPI = {
+ create: data => serviceClient.post('/service/query', data),
+ search: search => serviceClient.get('/service/query', {params:{search,limit:100,page:1}}),
+ rebind: (id,data) => serviceClient.put(`/service/query/${id}/metric-source`,data)
 }

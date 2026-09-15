@@ -317,19 +317,6 @@ test('dialog baselines track real edits and preserve the page draft when discard
   await dialog.getByRole('textbox', { name: '字段显示名', exact: false }).first().fill('编号')
   await expect(page.getByText('未保存', { exact: true })).toHaveCount(0)
   await dialog.getByRole('button', { name: '取消', exact: true }).click()
-  await page.getByRole('button', { name: '新建指标实现', exact: true }).click()
-  const metricDialog = page.getByRole('dialog', { name: '新建指标实现' })
-  await expect(page.getByText('未保存', { exact: true })).toHaveCount(0)
-  await metricDialog.getByRole('textbox', { name: '实现名称', exact: false }).fill('临时指标')
-  await expect(page.getByText('未保存', { exact: true })).toBeVisible()
-  await metricDialog.locator('.el-dialog__headerbtn').click()
-  const discardMetric = page.getByRole('dialog', { name: '存在未保存内容' })
-  await expect(discardMetric).toBeVisible()
-  await discardMetric.getByRole('button', { name: '继续编辑', exact: true }).click()
-  await expect(metricDialog.getByRole('textbox', { name: '实现名称', exact: false })).toHaveValue('临时指标')
-  await metricDialog.getByRole('textbox', { name: '实现名称', exact: false }).fill('')
-  await expect(page.getByText('未保存', { exact: true })).toHaveCount(0)
-  await metricDialog.getByRole('button', { name: '取消', exact: true }).click()
   await page.getByRole('textbox', { name: '逻辑表名', exact: true }).fill('本地草稿')
   await page.getByRole('row').filter({ hasText: '编号' }).getByRole('button', { name: '编辑', exact: true }).click()
   await dialog.getByRole('textbox', { name: '字段显示名', exact: false }).first().fill('修改编号')
@@ -387,6 +374,122 @@ test('entity list opens the ER diagram in its current business domain', async ({
   await expect(page.locator('.domain-filter')).toContainText('户外域')
 })
 
+test('dimensional modeling filters facts by domain and restores selection with cross-domain dimensions', async ({ page }) => {
+  const requests = await installDimensionalModelBackend(page)
+  await page.goto('/star-schema?domain_id=2&table_id=3')
+  await expect(page.locator('.view-title')).toHaveText('维度建模')
+  await expect(page.locator('.owner-domain')).toHaveText('户外域')
+  await expect(page.locator('.fact-item')).toHaveCount(2)
+  await expect(page.locator('.dim-item')).toContainText('省份')
+  await expect(page.locator('.mermaid-container svg')).toContainText('省份')
+  await expect(page.getByText('模型关系图', { exact: true })).toBeVisible()
+  expect(requests.filter(query => query.table_type === 'dimension').every(query => !query.domain_id)).toBe(true)
+
+  await page.reload()
+  await expect(page.locator('.fact-item.active')).toContainText('活动参与事实')
+  await expect(page.locator('.owner-domain')).toHaveText('户外域')
+
+  await selectModelDomain(page, '客户域')
+  await expect(page).toHaveURL(/\/star-schema\?domain_id=1$/)
+  await expect(page.locator('.fact-item')).toHaveCount(1)
+  await expect(page.locator('.fact-item')).toContainText('订单明细表')
+  await expect(page.locator('.fact-detail-card')).toHaveCount(0)
+  await page.locator('.fact-item').click()
+  await expect(page).toHaveURL(/domain_id=1&table_id=1$/)
+  await expect(page.locator('.owner-domain')).toHaveText('客户域')
+
+  await page.goBack()
+  await expect(page.locator('.fact-detail-card')).toHaveCount(0)
+  await page.goBack()
+  await expect(page.locator('.fact-item.active')).toContainText('活动参与事实')
+  await expect(page.locator('.dim-item')).toContainText('省份')
+  await page.goForward()
+  await expect(page.locator('.fact-item')).toHaveCount(1)
+  await expect(page.locator('.fact-detail-card')).toHaveCount(0)
+
+  await selectModelDomain(page, '全部业务域')
+  await expect(page).toHaveURL(/\/star-schema$/)
+  await expect(page.locator('.fact-item')).toHaveCount(4)
+  await page.locator('.fact-item').filter({ hasText: '未归属事实' }).click()
+  await expect(page.locator('.owner-domain')).toHaveText('未归属业务域')
+})
+
+test('dimensional modeling ignores a stale domain response and handles a domain with no facts', async ({ page }) => {
+  await installDimensionalModelBackend(page)
+  let releaseCustomer
+  const customerResponse = new Promise(resolve => { releaseCustomer = resolve })
+  let customerRequested = false
+  await page.route('**/api/v1/model/logical-tables?**', async route => {
+    const url = new URL(route.request().url())
+    if (url.searchParams.get('domain_id') !== '1') return route.fallback()
+    customerRequested = true
+    await customerResponse
+    return route.fallback()
+  })
+  await page.goto('/star-schema?domain_id=2&table_id=3')
+  await expect(page.locator('.owner-domain')).toHaveText('户外域')
+  await selectModelDomain(page, '客户域')
+  await expect.poll(() => customerRequested).toBe(true)
+  await selectModelDomain(page, '户外域')
+  await expect(page.locator('.fact-item')).toHaveCount(2)
+  const lateResponse = page.waitForResponse(response => new URL(response.url()).searchParams.get('domain_id') === '1')
+  releaseCustomer()
+  await lateResponse
+  await expect(page.locator('.fact-item')).toHaveCount(2)
+  await expect(page.locator('.fact-item').filter({ hasText: '订单明细表' })).toHaveCount(0)
+
+  await selectModelDomain(page, '空业务域')
+  await expect(page).toHaveURL(/domain_id=10$/)
+  await expect(page.getByText('暂无事实表', { exact: true })).toBeVisible()
+  await expect(page.locator('.fact-detail-card')).toHaveCount(0)
+})
+
+test('dimensional modeling uses English labels and fits the domain selector in a narrow viewport', async ({ page }) => {
+  await installDimensionalModelBackend(page)
+  await page.addInitScript(() => localStorage.setItem('addp-lang', 'en'))
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/star-schema?domain_id=2&table_id=3')
+  await expect(page.locator('.view-title')).toHaveText('Dimensional Modeling')
+  await expect(page.getByText('Model Relationship Diagram', { exact: true })).toBeVisible()
+  const bounds = await page.locator('.domain-filter').boundingBox()
+  expect(bounds.x).toBeGreaterThanOrEqual(0)
+  expect(bounds.x + bounds.width).toBeLessThanOrEqual(390)
+})
+
+async function selectModelDomain(page, name) {
+  await page.locator('.domain-filter .el-select').click()
+  await page.getByRole('option', { name, exact: true }).click()
+}
+
+async function installDimensionalModelBackend(page) {
+  await installMockBackend(page)
+  const facts = [
+    { id: 1, name: '订单明细表', code: 'dwd_order_detail', domain_id: 1 },
+    { id: 3, name: '活动参与事实', code: 'dwd_outdoor_participation', domain_id: 2 },
+    { id: 6, name: '人员指标汇总', code: 'dws_outdoor_person_metric', domain_id: 2 },
+    { id: 9, name: '未归属事实', code: 'dwd_unassigned', domain_id: null }
+  ].map(table => ({ ...table, table_type: 'fact', layer: 'dwd', status: 'approved', version: 1 }))
+  const requests = []
+  await page.route('**/api/v1/standard/domains', route => fulfillJSON(route, [...DOMAINS, { id: 10, name: '空业务域' }]))
+  await page.route('**/api/v1/model/logical-tables**', async route => {
+    const url = new URL(route.request().url())
+    if (url.pathname === '/api/v1/model/logical-tables') {
+      const query = Object.fromEntries(url.searchParams)
+      requests.push(query)
+      const data = query.table_type === 'dimension' ? [LOGICAL_TABLE] :
+        facts.filter(table => !query.domain_id || String(table.domain_id) === query.domain_id)
+      return fulfillJSON(route, { data, total: data.length })
+    }
+    if (url.pathname === '/api/v1/model/logical-tables/3/dimension-relations') {
+      return fulfillJSON(route, [{ id: 1, source_field: 31, source_field_name: '省份编码', target_table: 2,
+        target_table_name: '省份', target_field: 21, target_field_name: '省份编码', relation_type: 'fk' }])
+    }
+    if (/\/(fields|dimension-relations|metric-implementations)$/.test(url.pathname)) return fulfillJSON(route, [])
+    return route.fallback()
+  })
+  return requests
+}
+
 async function installMockBackend(target, options = {}) {
   let entityListRequests = 0
   let entity = structuredClone(ENTITIES[0])
@@ -433,7 +536,7 @@ async function installMockBackend(target, options = {}) {
     if (path === '/api/v1/meta/resource-tree/2/ancestors') return fulfillJSON(route, { ancestors: options.missingTarget ? [] : [root, schema] })
     if (path === '/api/v1/meta/resource-tree/2/node') return fulfillJSON(route, schema)
     if (path === '/api/v1/standard/metrics') return fulfillJSON(route, { data: [], total: 0 })
-    if (path === '/api/v1/model/logical-tables/2/metric-implementations') return fulfillJSON(route, [])
+    if (path === '/api/v1/model/metric-implementations') return fulfillJSON(route, [])
     if (path === '/api/v1/model/logical-tables/2/approve' || path === '/api/v1/model/logical-tables/2/reopen') {
       if (path.endsWith('/reopen')) reopenRequests += 1
       logicalTable.status = path.endsWith('/approve') ? 'approved' : 'draft'
@@ -581,14 +684,152 @@ async function expectDialogWithinViewport(page, dialog) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false)
 }
 
-test('approved table creates its physical structure without running a workflow or becoming dirty', async ({ page }) => {
+test('approved table queues materialization and links only its task executions without becoming dirty', async ({ page }) => {
  await installMockBackend(page,{permissions:[...DEFAULT_PERMISSIONS,'model.materialization.execute']})
  let calls=0
- await page.route('**/api/v1/model/logical-tables/2/materialized-target',async route=>{calls++;expect(route.request().postDataJSON()).toEqual({version:1});await new Promise(r=>setTimeout(r,150));return fulfillJSON(route,{target_locator:'addp://engine/2/path/public/dwd_province?type=table'})})
+ await page.route('**/api/v1/model/logical-tables/2/materialized-target',async route=>{calls++;expect(route.request().postDataJSON()).toEqual({version:1});await new Promise(r=>setTimeout(r,150));return fulfillJSON(route,{execution_id:'11111111-1111-4111-8111-111111111111',status:'pending'})})
  await page.goto('/logical-tables/2')
  await page.getByRole('button',{name:'创建正式表',exact:true}).click()
- await expect(page.getByRole('alert').filter({hasText:'正式表已就绪'})).toBeVisible()
+ await expect(page.getByRole('alert').filter({hasText:'建表任务已提交'})).toBeVisible()
  expect(calls).toBe(1)
  await expect(page.getByText('未保存',{exact:true})).toHaveCount(0)
  await expect(page.getByRole('button',{name:'物化流程',exact:true})).toHaveCount(0)
+ await page.context().route('**/monitor/executions?**', route => route.fulfill({ status: 200, contentType: 'text/html', body: '<p>Execution monitor</p>' }))
+ const popupPromise = page.waitForEvent('popup')
+ await page.getByRole('button', { name: '在统一监控中查看', exact: true }).click()
+ const popup = await popupPromise
+ await popup.waitForLoadState()
+ const monitorURL = new URL(popup.url())
+ expect(monitorURL.pathname).toBe('/monitor/executions')
+ expect(Object.fromEntries(monitorURL.searchParams)).toEqual({ module: 'model', task_type: 'logical_table_materialization', source_task_id: '2' })
+ await popup.close()
+})
+
+async function installRelationBackend(page, { draft = false, conflict = false } = {}) {
+  await installMockBackend(page, { permissions: [...DEFAULT_PERMISSIONS, 'model.logical_model.update'] })
+  const fact = { id: 3, name: '活动参与事实', code: 'dwd_outdoor_participation', table_type: 'fact', domain_id: 2, layer: 'dwd', status: draft ? 'draft' : 'approved', version: 10, materialization: {}, grain_description: '每次参与一行' }
+  const dimension = structuredClone(LOGICAL_TABLE)
+  const sourceFields = [{ id: 31, table_id: 3, name: '省份编码', column_name: 'province_code', data_type: 'string', field_role: 'dimension_fk' }]
+  const targetFields = [
+    { id: 21, table_id: 2, name: '省份编码', column_name: 'code', data_type: 'string', is_pk: true, element_id: 51, element_revision_id: 5102 },
+    { id: 22, table_id: 2, name: '省份简称', column_name: 'short_code', data_type: 'string', is_pk: false }
+  ]
+  let relations = [{ id: 7, source_table: 3, source_field: 31, target_table: 2, target_field: 21, relation_type: 'fk' }]
+  const writes = []
+  const enriched = () => relations.map(relation => ({ ...relation, source_table_name: fact.name, source_table_code: fact.code,
+    source_field_name: sourceFields[0].name, source_field_code: sourceFields[0].column_name,
+    target_table_name: dimension.name, target_table_code: dimension.code,
+    target_field_name: targetFields.find(field => field.id === relation.target_field).name,
+    target_field_code: targetFields.find(field => field.id === relation.target_field).column_name }))
+  await page.route('**/api/v1/model/logical-tables**', async route => {
+    const request = route.request()
+    const url = new URL(request.url())
+    const path = url.pathname
+    if (path === '/api/v1/model/logical-tables') {
+      const data = url.searchParams.get('table_type') === 'dimension' ? [dimension] : [fact]
+      return fulfillJSON(route, { data, total: data.length })
+    }
+    if (path === '/api/v1/model/logical-tables/3') return fulfillJSON(route, fact)
+    if (path === '/api/v1/model/logical-tables/2') return fulfillJSON(route, dimension)
+    if (/\/3\/(reopen|approve)$/.test(path)) {
+      writes.push({ path, method: request.method(), body: request.postDataJSON() })
+      fact.status = path.endsWith('reopen') ? 'draft' : 'approved'
+      fact.version += 1
+      return fulfillJSON(route, fact)
+    }
+    if (path.endsWith('/3/fields')) return fulfillJSON(route, sourceFields)
+    if (path.endsWith('/2/fields')) return fulfillJSON(route, targetFields)
+    if (/\/(metric-implementations|dimension-hierarchies)$/.test(path)) return fulfillJSON(route, [])
+    if (/\/dimension-relations(?:\/\d+)?$/.test(path)) {
+      if (request.method() === 'GET') return fulfillJSON(route, enriched())
+      const body = request.postDataJSON()
+      writes.push({ path, method: request.method(), body })
+      if (conflict || body.version !== fact.version) return fulfillJSON(route, { error: '资源版本冲突', error_code: 'resource_version_conflict' }, 409)
+      fact.version += 1
+      if (request.method() === 'DELETE') {
+        relations = []
+        return fulfillJSON(route, { version: fact.version })
+      }
+      const relation = { ...body, id: request.method() === 'POST' ? 8 : 7, source_table: fact.id }
+      relations = [relation]
+      return fulfillJSON(route, { relation, version: fact.version }, request.method() === 'POST' ? 201 : 200)
+    }
+    return route.fallback()
+  })
+  return { writes, fact, dimension }
+}
+
+test('relation details navigate to the source mapping and incoming references return to the same relation', async ({ page }) => {
+  await installRelationBackend(page)
+  await page.goto('/star-schema?domain_id=2&table_id=3')
+  await page.getByRole('button', { name: '查看关联', exact: true }).click()
+  await expect(page).toHaveURL(/\/logical-tables\/3\?domain_id=2&tab=relations&relation_id=7$/)
+  const card = page.locator('[data-relation-id="7"]')
+  await expect(card).toHaveClass(/selected/)
+  await expect(card.locator('code')).toHaveText('dwd_outdoor_participation.province_code = dwd_province.code')
+  await expect(page.getByText('修改前请在顶部将该事实表退回草稿', { exact: false })).toBeVisible()
+  await expect(card.getByRole('button', { name: '编辑', exact: true })).toHaveCount(0)
+  await page.reload()
+  await expect(card).toHaveClass(/selected/)
+  await card.getByRole('button', { name: '查看维度表', exact: true }).click()
+  await expect(page).toHaveURL(/\/logical-tables\/2$/)
+  await page.getByRole('tab', { name: '被引用关系', exact: true }).click()
+  await expect(page).toHaveURL(/\/logical-tables\/2\?tab=relations$/)
+  await expect(card.locator('code')).toHaveText('dwd_outdoor_participation.province_code = dwd_province.code')
+  await page.getByRole('button', { name: '查看事实表关联', exact: true }).click()
+  await expect(page).toHaveURL(/\/logical-tables\/3\?tab=relations&relation_id=7$/)
+  await expect(card).toHaveClass(/selected/)
+  await page.goBack()
+  await expect(page.getByRole('tab', { name: '被引用关系', exact: true })).toHaveAttribute('aria-selected', 'true')
+})
+
+test('draft facts edit, remove and add references to an approved dimension without reopening it', async ({ page }) => {
+  const backend = await installRelationBackend(page, { draft: true })
+  await page.goto('/logical-tables/3?tab=relations&relation_id=7')
+  await page.locator('[data-relation-id="7"]').getByRole('button', { name: '编辑', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: '编辑维度关联', exact: true })
+  await dialog.locator('label.el-radio').filter({ hasText: 'JOIN（字段等值关联）' }).click()
+  await dialog.locator('.el-form-item').filter({ hasText: '目标字段' }).locator('.el-select__wrapper').click()
+  await page.getByRole('option', { name: '省份简称（short_code）', exact: true }).click()
+  await dialog.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(dialog).toBeHidden()
+  await expect(page.locator('[data-relation-id="7"] code')).toHaveText('dwd_outdoor_participation.province_code = dwd_province.short_code')
+  expect(backend.writes[0]).toMatchObject({ method: 'PUT', path: '/api/v1/model/logical-tables/3/dimension-relations/7', body: { version: 10, target_table: 2, target_field: 22, relation_type: 'join' } })
+  await page.locator('[data-relation-id="7"]').getByRole('button', { name: '删除', exact: true }).click()
+  await page.getByRole('dialog').getByRole('button', { name: '删除', exact: true }).click()
+  await expect(page.locator('[data-relation-id]')).toHaveCount(0)
+  await expect(page).toHaveURL(/\/logical-tables\/3\?tab=relations$/)
+  await page.getByRole('button', { name: '添加维度关联', exact: true }).click()
+  const createDialog = page.getByRole('dialog', { name: '添加维度关联', exact: true })
+  await createDialog.locator('.el-form-item').filter({ hasText: '事实表字段' }).locator('.el-select__wrapper').click()
+  await page.getByRole('option', { name: '省份编码（province_code）', exact: true }).click()
+  await createDialog.locator('.el-form-item').filter({ hasText: '维度表' }).locator('.el-select__wrapper').click()
+  await page.getByRole('option', { name: '省份（dwd_province）', exact: true }).click()
+  await createDialog.locator('.el-form-item').filter({ hasText: '目标字段' }).locator('.el-select__wrapper').click()
+  await page.getByRole('option', { name: '省份编码（code） · PK', exact: true }).click()
+  await createDialog.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(createDialog).toBeHidden()
+  await expect(page.locator('[data-relation-id="8"]')).toBeVisible()
+  expect(backend.writes.map(write => [write.method, write.body.version])).toEqual([['PUT', 10], ['DELETE', 11], ['POST', 12]])
+  expect(backend.dimension.status).toBe('approved')
+  expect(backend.dimension.version).toBe(1)
+})
+
+test('relation conflicts preserve the edited mapping and unsaved dialog until explicitly discarded', async ({ page }) => {
+  const backend = await installRelationBackend(page, { draft: true, conflict: true })
+  await page.goto('/logical-tables/3?tab=relations&relation_id=7')
+  await page.locator('[data-relation-id="7"]').getByRole('button', { name: '编辑', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: '编辑维度关联', exact: true })
+  await dialog.locator('label.el-radio').filter({ hasText: 'JOIN（字段等值关联）' }).click()
+  await dialog.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(dialog.getByRole('alert').filter({ hasText: '资源已被其他用户修改' })).toBeVisible()
+  await expect(dialog.getByRole('radio', { name: 'JOIN（字段等值关联）', exact: true })).toBeChecked()
+  await dialog.getByRole('button', { name: '取消', exact: true }).click()
+  const confirmation = page.getByRole('dialog', { name: '存在未保存内容', exact: true })
+  await confirmation.getByRole('button', { name: '继续编辑', exact: true }).click()
+  await expect(dialog).toBeVisible()
+  await dialog.getByRole('button', { name: '取消', exact: true }).click()
+  await confirmation.getByRole('button', { name: '放弃并继续', exact: true }).click()
+  await expect(dialog).toBeHidden()
+  expect(backend.writes).toHaveLength(1)
 })

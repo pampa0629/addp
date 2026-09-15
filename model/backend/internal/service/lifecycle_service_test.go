@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"reflect"
 	"testing"
 
@@ -98,14 +99,8 @@ func setupLifecycleServiceTestDB(t *testing.T) *gorm.DB {
 			target_table INTEGER NOT NULL, target_field INTEGER NOT NULL,
 			relation_type TEXT NOT NULL, created_at DATETIME, updated_at DATETIME
 		)`,
-		`CREATE TABLE model.metric_implementations (
-			id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL,
-			fact_table_id INTEGER NOT NULL, metric_definition_id INTEGER NOT NULL,
-			metric_definition_revision_id INTEGER NOT NULL, name TEXT NOT NULL, grain TEXT NOT NULL,
-			source_config TEXT NOT NULL, dimension_config TEXT NOT NULL, filter_config TEXT NOT NULL,
-			expression_config TEXT NOT NULL, status TEXT NOT NULL, note TEXT,
-			created_by INTEGER NOT NULL, updated_by INTEGER, created_at DATETIME, updated_at DATETIME
-		)`,
+		`CREATE TABLE model.metric_implementations (id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, fact_table_id INTEGER NOT NULL, metric_definition_id INTEGER NOT NULL, name TEXT NOT NULL, note TEXT, version INTEGER NOT NULL DEFAULT 1, created_by INTEGER NOT NULL, updated_by INTEGER, created_at DATETIME, updated_at DATETIME)`,
+		`CREATE TABLE model.metric_implementation_revisions (id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, implementation_id INTEGER NOT NULL, revision_no INTEGER NOT NULL, metric_definition_revision_id INTEGER NOT NULL, contract TEXT NOT NULL, dependency_snapshot TEXT NOT NULL, dependency_hash TEXT NOT NULL, status TEXT NOT NULL, published_at DATETIME, created_at DATETIME, updated_at DATETIME)`,
 		`CREATE TABLE model.materialization_groups (
 			id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL,
 			code TEXT NOT NULL, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '',
@@ -233,11 +228,19 @@ func TestLogicalModelLifecycleRejectsApprovedIndirectWrites(t *testing.T) {
 	}
 
 	metricService := NewMetricImplementationService(metricRepo, tableRepo)
-	_, err := metricService.Create(fact.ID, 1, 1, metricImplementationRequest(fact.Version, 1))
-	requireDomainErrorCode(t, err, "metric_implementation_state_conflict")
+	metricService.SetStandardClient(metricReferenceTestClient(t, 1))
+	created, err := metricService.Create(context.Background(), 1, 1, metricImplementationRequest(fact.ID))
+	if err != nil || created.Version != 1 {
+		t.Fatalf("independent metric creation: %v", err)
+	}
+	var unchanged models.LogicalTable
+	db.First(&unchanged, fact.ID)
+	if unchanged.Version != fact.Version {
+		t.Fatal("metric creation changed fact version")
+	}
 
 	tableRelationService := NewTableRelationService(relationRepo, tableRepo)
-	_, err = tableRelationService.AddDimensionRelation(fact.ID, 1, &models.CreateTableRelationRequest{
+	_, err = tableRelationService.AddDimensionRelation(fact.ID, 1, &models.SaveTableRelationRequest{
 		Version: fact.Version, TargetTable: dimension.ID, SourceField: 1, TargetField: 2,
 	})
 	requireDomainErrorCode(t, err, "table_relation_state_conflict")
@@ -893,12 +896,12 @@ func TestAggregateChildrenRejectCrossTenantParentsAndTargets(t *testing.T) {
 
 	metricSvc := NewMetricImplementationService(metricRepo, tableRepo)
 	_, err = metricSvc.List(foreignFact.ID, 1)
-	requireDomainErrorCode(t, err, "logical_table_not_found")
-	_, err = metricSvc.Create(foreignFact.ID, 1, 1, metricImplementationRequest(foreignFact.Version, foreignField.ID))
-	requireDomainErrorCode(t, err, "logical_table_not_found")
+	requireDomainErrorCode(t, err, "metric_implementation_not_found")
+	_, err = metricSvc.Create(context.Background(), 1, 1, metricImplementationRequest(foreignFact.ID))
+	requireDomainErrorCode(t, err, "metric_implementation_not_found")
 
 	tableRelationSvc := NewTableRelationService(tableRelationRepo, tableRepo)
-	_, err = tableRelationSvc.AddDimensionRelation(localFact.ID, 1, &models.CreateTableRelationRequest{
+	_, err = tableRelationSvc.AddDimensionRelation(localFact.ID, 1, &models.SaveTableRelationRequest{
 		TargetTable: foreignDimension.ID, SourceField: 1, TargetField: 2,
 	})
 	requireDomainErrorCode(t, err, "logical_table_not_found")
@@ -906,14 +909,8 @@ func TestAggregateChildrenRejectCrossTenantParentsAndTargets(t *testing.T) {
 	requireDomainErrorCode(t, err, "logical_table_not_found")
 }
 
-func metricImplementationRequest(version, fieldID int64) *models.CreateMetricImplementationRequest {
-	return &models.CreateMetricImplementationRequest{
-		Version: version, MetricDefinitionID: 9, MetricDefinitionRevisionID: 19,
-		Name: "Order Count", Grain: "order", SourceConfig: map[string]interface{}{"field_ids": []int64{fieldID}},
-		DimensionConfig: map[string]interface{}{}, FilterConfig: map[string]interface{}{},
-		ExpressionConfig: map[string]interface{}{"engine": "sql", "expression": "COUNT(*)"},
-		Status:           models.MetricImplementationActive,
-	}
+func metricImplementationRequest(factID int64) *models.CreateMetricImplementationRequest {
+	return &models.CreateMetricImplementationRequest{FactTableID: factID, MetricDefinitionID: 9, Name: "Order Count"}
 }
 
 func TestLogicalTableDDLPreviewPreservesApprovedDefinition(t *testing.T) {

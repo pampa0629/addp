@@ -62,7 +62,7 @@
 | asset category assignment | 资产归类 | Asset 对自身主展示分类的权威归属关系。 | 由 Asset owner 维护，可参考组成 CatalogEntry 的语义，但不得自动复制或继承企业资源目录结构。 |
 | Workbench module | Workbench 模块 | ADDP 面向数据消费者、以已发布 Service 为唯一数据入口的动态查询、可视化和数据应用创作 owner。 | 不直连 Engine、不拥有 SQL、指标、物化或任务编排；Service 不可达只失败依赖该服务的当前请求，不影响 Workbench Ready。 |
 | Service Consumer Descriptor | 服务消费描述 | Service owner 面向消费者发布的、版本化且不包含管理事实的服务输入、输出、分页、格式和执行 operation 契约。 | 稳定协议从 `addp.service_consumer/v1` 开始；不暴露 SQL、Engine 凭据、表名或 Workbench renderer。 |
-| query service named parameter | 查询服务命名参数 | Query Service 发布时声明、执行时由消费者按名称提交并由 Service 强类型校验的标量输入。 | 只用于参数影响固定 SQL 内部计算、且不能表达为输出字段筛选的场景；不是字段名、表名、SQL 片段或 Workbench 私有参数。SQL 使用 `:name`，执行时走引擎原生绑定，禁止字符串替换。 |
+| query service named parameter | 查询服务命名参数 | Query Service 发布时声明、执行时由消费者按名称提交并由 Service 强类型校验的标量输入。 | 可通过 `options` 声明类型化允许值及 `zh-cn/en` 名称，由 Service 冻结发布并校验，消费端不得扩大允许值。只用于参数影响固定 SQL 内部计算、且不能表达为输出字段筛选的场景；不是字段名、表名、SQL 片段或 Workbench 私有参数。SQL 使用 `:name`，执行时走引擎原生绑定，禁止字符串替换。 |
 | ServiceReference | 服务引用 | 消费者对一个已发布 Service 的强类型稳定引用，由 `service_type + service_id` 组成。 | Data Application Component 保存该引用并通过 Service Consumer Catalog 解析，不能保存或猜测执行 URL。 |
 | Data Application Component | 数据应用组件 | Data Application 内直接绑定一个 ServiceReference，并保存经 Consumer Descriptor 校验的查询模板、参数定义、契约指纹和 renderer 配置的内聚实体。 | 不是独立聚合根，不单独发布或共享；不保存查询结果、cursor、Token、SQL 或 Service 管理 DTO。 |
 | Field Presentation | 字段呈现规则 | Data Application Component 对已选服务输出字段声明的最终展示语义，包含标签以及与字段类型匹配的单位、精度、时间格式或表格列宽。 | 位于 renderer 配置并进入 Application Revision；只改变 Table、Chart、Map 的显示，不改变字段名、查询、联动、导出、Service 契约或原始结果。 |
@@ -82,6 +82,7 @@
 | ResourceLocator | 资源定位符 | 平台统一的资源 URI 定位形式。 | 形如 `addp://engine/{engine_id}/path/{resource_path}?type={type}&node_id={node_id}` 或 `...&item_id={item_id}`；`type` 表达 Engine Catalog 术语，`node_id` / `item_id` 表达真实 Meta 身份。 |
 | Return to draft | 退回草稿 | Model Entity / LogicalTable 从 `approved` 转为 `draft` 的显式生命周期操作，并解除冻结的数据元修订引用。 | 允许重新编辑模型；不表示重新加载页面，不改变已发布的物理表。 |
 | logical table materialization target | 逻辑表物化目标 | Model 中描述逻辑表准备落入哪个 Engine Instance 和父命名空间的设计事实。 | 使用 `target_parent_locator + target_name` 表达；Model 根据已审批逻辑表执行受控 DDL、正式表创建与退役。Transfer 负责跨引擎数据同步，Develop 只负责目标引擎内的查询计算，Orchestrator 只编排顺序。 |
+| logical table materialization task | 逻辑表物化任务 | Model 从已审批 LogicalTable 投影出的建表任务，支持人工与编排触发。 | 任务定义复用逻辑表，不复制字段或目标配置；只创建或验证正式表，不计算数据、不自动改表。 |
 | Data Validation Task | 数据校验任务 | Quality 对显式绑定的同一引擎正式表执行字段、关联和集合断言。 | 读取 ResourceLocator，不依赖 Model；失败可阻止编排下游，不回滚已提交的数据。 |
 | logical table materialized target decommission | 逻辑表物化目标退役 | Model 删除某个 LogicalTable 已登记、已确认且仍由该 LogicalTable 管理的物理目标，使物理产物先于逻辑模型安全退出使用。 | 这是 Model owner 的高风险同步命令，不是可编排任务；请求只提交逻辑表并发版本和精确目标确认，不接受 SQL、动态 Locator 或跨模块引用检查。 |
 | query parameter | 查询参数 | Develop 查询任务声明的命名输入，统一保存在 `content.query_parameters[]`。 | `type=relation` 表示绑定 ResourceLocator 的数据表参数；`string`、`integer`、`number`、`boolean` 表示类型化值参数。全部参数共享同一命名空间、默认值与单次执行覆盖语义，且名称唯一。 |
@@ -114,7 +115,9 @@
 | code item | 码值项 | 码值集修订中的一个允许值，由机器编码、显示名称和业务定义组成。 | 码值项从属于码值集修订，不具有独立发布生命周期；停用或替代码值通过新修订表达。 |
 | metric definition | 指标定义 | 对指标业务含义、统计口径、单位、责任归属及适用范围形成的可复用语义契约。 | 属于 Standard，用来指导和约束实现；不保存具体表、字段、连接、过滤器或可直接执行的引擎表达式。正式发布的指标定义必须引用不可变修订。 |
 | metric definition dependency | 指标定义依赖 | 指标定义修订之间的业务语义依赖，区分派生指标的基准依赖和复合指标的组成依赖。 | 草稿维护被依赖指标的稳定身份，发布时冻结为确定的已发布指标定义修订；只表达语义组成，不承载字段、连接、过滤或可执行表达式。 |
-| metric implementation | 指标实现 | 在确定模型上实现某个指标定义的计算设计，明确粒度、事实来源、维度、连接、过滤和可执行表达式。 | 属于 Model，并冻结所依据的指标定义修订；同一指标定义可以有多个面向不同模型或引擎的实现。 |
+| dimensional modeling | 维度建模 | 以事实表的业务粒度为中心，组织维度关联、度量和指标实现的逻辑建模能力。 | 属于 Model；产品页面称“维度建模”，其中“模型关系图”展示显式建模关系，不代表加工血缘。业务域筛选只限定中心事实表，不裁剪其跨域维度关系。 |
+| metric implementation | 指标实现 | 在确定模型上实现某个指标定义的计算设计，明确粒度、事实来源、维度、连接、过滤和可执行表达式。 | 属于 Model，以独立稳定身份、并发版本和不可变实现修订管理，并冻结所依据的指标定义修订；来源事实表不是生命周期父聚合。同一指标定义可以有多个面向不同模型或引擎的实现。 |
+| directional overlap | 定向重叠率 | 在同一范围内，以主体完整集合为分母、主体与对比对象的交集为分子的比例。 | 单方向产生一个值，零分母为 0；双向展示是同一实现交换角色后的组合查询，必须共享一次数据库快照。 |
 | dimension hierarchy | 维度层级 | 在数据模型中定义维度成员从汇总到明细的有序层次及层级字段。 | 属于 Model，而不是 Standard；层级字段可以引用已发布的数据元修订以获得统一语义。跨模型复用通过 Model 的公共/一致性维度实现。 |
 | standard document revision | 标准文档修订 | 标准来源文档一次不可变的内容快照及其版本、来源和生效信息。 | 属于 Standard。Copilot 可从修订内容提取标准候选项，但提取结果必须保留页码、章节或文本片段等证据，并经人工审核后才能发布为正式标准修订。 |
 | standard extraction | 标准提炼批次 | Standard 针对一个确定的标准文档修订发起、由 Copilot 执行的一次候选标准提炼。 | Standard 保存批次、结果与人工处置事实；Copilot 只返回候选内容，不保存 Standard 业务状态，也不能创建或发布正式标准。重复提炼形成新批次，不覆盖旧结果。 |
@@ -277,11 +280,12 @@
 | task type | 任务类型 | owner 模块内稳定的业务执行类型标识。 | 例如 `scan`、`vector_tile_cache_generation`、`embedding`；只有存在持久任务定义并允许编排时才由 TaskProvider capabilities 声明，ad-hoc-only execution type 不因此自动成为 TaskProvider 类型。 |
 | TaskProvider | 任务提供者 | 模块定义中声明的可编排任务能力角色，不是独立注册实体。 | 按模块声明，不按任务类型注册；一个 provider 在 `task_capabilities[]` 中声明多个任务类型能力。Provider ID 复用模块定义 ID，能力声明随模块定义版本变化；运行地址只从当前有效 Backend 模块实例解析。 |
 | execution worker | 执行工作器 | 执行 owner 消费已创建 execution、推进真实运行体并写入 execution 终态的独立后台进程角色。 | Quality `check`、Meta `scan` 和 Transfer bounded `sync` 统一从 PostgreSQL claim `common.task_executions`；Backend 不执行这些 bounded execution。 |
+| execution supervisor | 执行监督器 | 内嵌于 owner Backend、以固定有界槽位消费已创建 execution 并推进终态的后台组件角色。 | 与独立 execution worker 使用相同的 PostgreSQL claim、execution lease 和 fencing 协议，但不形成独立部署进程；Develop Query、Manager bounded 与 Model logical table materialization 使用此形态。 |
 | owner scheduler | Owner 调度器 | 按任务定义中的 schedule 发现到期任务并创建 execution 的 owner Backend 组件。 | 调度器负责“何时创建 execution”，不等待 Worker、也不执行业务逻辑；Worker 不可用时仍可留下 durable `pending` execution。 |
 | runtime queue | 运行时队列 | execution 从创建到被执行 worker 领取之间的持久领取机制。 | bounded execution 的唯一主路线是 PostgreSQL execution claim；continuous runtime 使用专用 runtime lease。Redis/Asynq 和进程内 channel 不作为 bounded execution 路线。 |
 | execution attempt | 执行尝试 | 同一未终态 execution 在一次合法 claim 下的实际运行尝试。 | 每次 claim 原子递增 `attempt` 并生成新的 `lease_token`；用户 retry 不是新 attempt，而是创建新的 execution。 |
 | execution lease | 执行租约 | bounded execution worker 对当前 execution attempt 的限时运行所有权。 | 由不可复用 `lease_token`、观测用 `lease_owner` 和 `lease_expires_at` 构成；heartbeat、进度和终态写入必须匹配当前 attempt 与 token。 |
-| background runtime heartbeat | 后台运行实例心跳 | ADDP 应用层后台进程周期写入的公共活性观测事实。 | 统一记录模块、运行时角色、运行时名称、实例、容量、当前占用和过期时间；只用于 Monitor 判断 execution worker、continuous worker 与 dispatcher 的进程健康，不授予 execution/runtime/delivery 所有权，也不替代对应 lease。 |
+| background runtime heartbeat | 后台运行实例心跳 | ADDP 应用层后台运行组件周期写入的公共活性观测事实。 | 统一记录模块、运行时角色、运行时名称、实例、容量、当前占用和过期时间；只用于 Monitor 判断 execution worker、execution supervisor、continuous worker 与 dispatcher 的运行健康，不授予 execution/runtime/delivery 所有权，也不替代对应 lease。 |
 | module definition | 模块定义 | System 中按稳定 `module_name` 保存的持久模块身份、路由前缀、管理员启用状态和模块级能力入口声明。 | 模块进程离线不删除定义；`enabled` 表示管理员意图，不由心跳覆盖。 |
 | module runtime instance | 模块运行实例 | 某模块 Backend、Worker 或 Scheduler 进程的一次具体运行登记。 | 使用进程级唯一 `instance_id`，保存 role、端点、元数据和租约状态；只有 `enabled + backend + up + lease valid` 的实例可进入 Gateway 路由。平台模块列表只返回当前运行投影，全部实例历史通过模块下的只读分页集合查询；实例历史不是追加式审计事件。 |
 | module runtime lease | 模块运行租约 | System 根据运行实例注册和周期心跳维护的短期存活事实。 | 心跳只续租，不修改模块定义或管理员启用状态；超时标记实例 `down`，不删除模块定义和实例历史。 |

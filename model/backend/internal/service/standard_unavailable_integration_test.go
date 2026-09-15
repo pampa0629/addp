@@ -59,7 +59,11 @@ func TestStandardPermissionFailureMapsToUnavailableAcrossModelServices(t *testin
 
 	metricImplementationService := NewMetricImplementationService(metricRepo, tableRepo)
 	metricImplementationService.SetStandardClient(standardClient)
-	_, err = metricImplementationService.Create(table.ID, 1, 1, metricImplementationRequest(table.Version, 1))
+	item := models.MetricImplementation{TenantID: 1, FactTableID: table.ID, MetricDefinitionID: 9, Name: "Metric", Version: 1, CreatedBy: 1}
+	if err := db.Create(&item).Error; err != nil {
+		t.Fatal(err)
+	}
+	_, err = metricImplementationService.SaveDraft(context.Background(), item.ID, 1, 1, &models.SaveMetricImplementationRevisionRequest{Version: 1, MetricDefinitionRevisionID: 19})
 	requireUnavailableDomainError(t, err)
 }
 

@@ -83,7 +83,7 @@ func TestClaimNextFiltersTriggerSource(t *testing.T) {
 	}
 	claimed, _, err := execution.ClaimNext(context.Background(), db, execution.ClaimOptions{
 		Module: execution.ModuleDevelop, TaskType: execution.TaskTypeQuery, Source: execution.ModuleOrchestrator,
-		WorkerID: "develop-query-worker", Now: now, LeaseDuration: time.Minute,
+		WorkerID: "develop-query-supervisor", Now: now, LeaseDuration: time.Minute,
 	})
 	if err != nil {
 		t.Fatalf("ClaimNext: %v", err)

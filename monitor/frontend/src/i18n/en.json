@@ -299,6 +299,7 @@
         "load_failed": "Failed to load background runtime health",
         "roles": {
           "execution_worker": "Bounded Execution Worker",
+          "execution_supervisor": "Embedded Execution Supervisor",
           "continuous_worker": "Continuous Worker",
           "dispatcher": "Notification Dispatcher"
         },

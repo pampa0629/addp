@@ -18,13 +18,14 @@ export const SEARCH_INDEX = [
   { labelKey: 'console.menus.standard.glossaries',   module: 'standard', route: '/standard/glossaries',   keywords: ['业务术语', '术语', 'glossary', 'term'] },
   { labelKey: 'console.menus.standard.elements',     module: 'standard', route: '/standard/elements',     keywords: ['数据元', '元素', 'element', 'standard'] },
   { labelKey: 'console.menus.standard.codeSets',     module: 'standard', route: '/standard/code-sets',    keywords: ['码值', '码值集', 'code', 'codeset'] },
+  { labelKey: 'console.menus.modeling.metricImplementations', module: 'modeling', route: '/modeling/metric-implementations', keywords: ['指标实现', 'metric implementation'] },
   { labelKey: 'console.menus.standard.metrics',      module: 'standard', route: '/standard/metrics',      keywords: ['指标', '指标管理', 'metric', 'kpi'] },
   { labelKey: 'console.menus.standard.documents',    module: 'standard', route: '/standard/documents',    keywords: ['标准文档', '文档', 'document'] },
   // 数据建模
   { labelKey: 'console.menus.modeling.dwLayers',     module: 'modeling', route: '/modeling/dw-layers',    keywords: ['数仓分层', '分层', 'data warehouse', 'layer'] },
   { labelKey: 'console.menus.modeling.entities',     module: 'modeling', route: '/modeling/entities',     keywords: ['业务实体', '实体', 'entity'] },
   { labelKey: 'console.menus.modeling.logicalTables',module: 'modeling', route: '/modeling/logical-tables',keywords: ['逻辑表', '逻辑模型', 'logical table'] },
-  { labelKey: 'console.menus.modeling.starSchema',   module: 'modeling', route: '/modeling/star-schema',  keywords: ['星型建模', '星型模型', 'star schema'] },
+  { labelKey: 'console.menus.modeling.starSchema',   module: 'modeling', route: '/modeling/star-schema',  keywords: ['维度建模', '事实表', '维度表', 'dimensional modeling'] },
   // 数据质量
   { labelKey: 'console.menus.quality.checkTasks',       module: 'quality', route: '/quality/check-tasks',      keywords: ['质量检查', '质量', 'quality check'] },
   { labelKey: 'console.menus.quality.dataValidationTasks', module: 'quality', route: '/quality/data-validation-tasks', keywords: ['数据校验', '发布门禁', '强类型断言', 'materialization gate'] },

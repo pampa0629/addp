@@ -1,10 +1,42 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { readFile } from 'node:fs/promises'
+import vm from 'node:vm'
 
 import {
   buildQueryServicePreview,
   queryServicePreviewFields
 } from '../src/utils/queryServicePreview.js'
+
+test('a new preview clears previous rows and cursor metadata even when it fails or returns no array', async () => {
+  const source = await readFile(new URL('../src/views/QueryServiceDetail.vue', import.meta.url), 'utf8')
+  const method = source.slice(source.indexOf('const loadPreviewData = async'), source.indexOf('const handlePreviewPageChange'))
+  for (const outcome of ['empty', 'invalid', 'error']) {
+    let settle
+    const pending = new Promise((resolve, reject) => {
+      settle = () => outcome === 'error' ? reject(new Error('query failed')) : resolve({ data: outcome === 'empty' ? [] : null })
+    })
+    const state = {
+      service: { value: { service_name: 'metric', config_type: 'sql', named_parameters: [] } },
+      previewData: { value: [{ subject_id: 'previous-person', value: 224 }] },
+      previewLoading: { value: false },
+      previewPagination: { value: { page: 1, pageSize: 20, cursors: [''], hasMore: true, nextCursor: 'old-cursor' } },
+      previewNamedParameterValues: {}, defaultFields: { value: null }, spatialInfo: { value: null },
+      queryServicePreviewFields: () => [], queryServiceAPI: { testQuery: () => pending },
+      ElMessage: { warning() {}, success() {}, error() {} }, t: key => key, console: { error() {} }
+    }
+    const context = vm.createContext(state)
+    const load = vm.runInContext(`${method}\nloadPreviewData`, context)
+    const result = load()
+    assert.equal(state.previewData.value.length, 0, `${outcome}: old rows remain during request`)
+    assert.equal(state.previewPagination.value.hasMore, false)
+    assert.equal(state.previewPagination.value.nextCursor, '')
+    settle()
+    await result
+    assert.equal(state.previewData.value.length, 0, `${outcome}: old rows reappeared`)
+    assert.equal(state.previewLoading.value, false)
+  }
+})
 
 test('uses published geometry metadata for map preview', () => {
   const rows = [{ id: 1, custom_shape: '{"type":"Point","coordinates":[120,30]}' }]

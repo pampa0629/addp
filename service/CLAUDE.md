@@ -63,6 +63,9 @@ Service 是 `service.definition.*`、`service.external_registration.*` 和 `serv
 - 查询服务 SQL 样例按 Engine capability 发现，不按 `engine_type` 固定列表。样例必须从当前 Engine Catalog 构造，并在当前用户的 `service.definition.create + service.data_read.execute` 边界内以最多 10 行真实执行且返回非空数据后才能展示；展示给发布表单的是不含 `LIMIT/OFFSET` 的基础 SQL，由查询服务执行层统一分页，不得回退到 `SELECT 1`、硬编码业务表或在样例 SQL 内固化分页。
 - 表、固定 SQL 和联邦 SQL 只表达查询服务的来源与执行绑定。REST Query、OGC API Features 和 WFS 必须共用唯一结构化查询内核；协议层不得拼接 SQL。发布契约必须包含非空唯一稳定排序键；业务数据查询统一使用 cursor/keyset 分页、读取 `limit + 1` 行判断下一页，默认不执行 `COUNT(*)`，不得保留 `page/offset`、原始 `filter/orderBy` 或兼容双轨。
 - SQL 模式 Query Service 可以声明强类型标量命名参数，SQL 只用 `:name` 引用；参数定义、SQL 引用和执行请求必须完全一致，并通过 `common` 查询运行层绑定，禁止字符串替换。表模式继续使用输出字段结构化筛选，不接受命名参数；Service 不接受关系、字段名、表名或 SQL 片段参数。
+- Model 指标实现通过既有 SQL 查询服务发布：创建请求只给出 `metric_source.implementation_id/revision_id`，Service 向 Model 获取确定发布修订的计划，冻结绑定、SQL、编译器声明的命名参数、输出结构与稳定键（计数四参，定向重叠率六参）。调用方不得同时覆盖引擎、SQL、参数或输出契约。它不是第三种查询执行模式，也不是 Service 中的第二套指标公式。
+- 现有 SQL 服务切换指标来源只走 `PUT /query/:id/metric-source`：请求绑定确切实现修订并携带当前 `service_version`，在行锁事务内比较发布指纹与替换配置；保留服务身份和访问设置，消费方须重新绑定新契约。
+- 指标来源记录在 `source_snapshot.metric_source`；每次执行前用 Model 校验确定修订的发布状态、依赖 hash 与 SQL，撤回或失效即拒绝执行，不切换到最新修订。随后完整复用 Service 查询授权、数据保护、参数绑定和分页。编译器声明的结构不等于真实业务数据验收；受保护来源若无法证明聚合输出血缘，仍由现有保护门禁拒绝，不能豁免。`MODEL_URL` 指定 Model owner 地址，默认 `http://localhost:8181`。
 - Query Service 普通查询与单次有界导出使用同一 operation；可选 `X-ADDP-Query-Intent: query | export` 只表达审计用途，不改变授权与上限。CSV 和 GeoJSON 都必须返回 `X-ADDP-Has-More`、`X-ADDP-Next-Cursor` 和 `X-ADDP-Service-Version`，审计不得记录筛选字面值、cursor、原始 Body、SQL 或返回数据。
 - 已发布 QueryService 的 REST Query 与 OGC API Features 通过同一 PreparedQuery 执行 `service_execute` 保护；命中纳管资源后必须使用完整 ReadSet、OutputLineage 和 Security 下发的 Service 独立规则在服务端格式化前保护结果。分页 cursor 与 feature ID 使用 AEAD 不透明令牌，不能暴露稳定键或排序值。联邦、图、旧 Data API、查询样例和瓦片在独立动作执行器完成前继续资源级拒绝，不复用 `service_execute`。
 - 表模式 QueryService 的直接查询必须从发布快照的输出契约枚举完整源字段，不得生成 `SELECT *`；请求选择字段仍由结构化查询计划在外层收窄。这样 PreparedQuery 可以证明完整输出血缘，并对被抑制或遮盖的字段执行统一保护。
@@ -103,3 +106,5 @@ curl http://localhost:8086/health/ready
 - 资源身份和创建、编辑、详情、测试职责使用 path 表达；创建成功后用 `replace` 进入详情，其余列表到详情使用 `push`。
 - 服务目录默认 `all` Tab 省略，其他稳定类型使用唯一 `tab` query。
 - 业务导航统一调用 `frontend/src/utils/moduleNavigation.js`。
+
+查询服务血缘通过现有 Meta 发布接口同步人类可读的 `Title`（`service_name`）及 `UpdatedAt`（`service_updated_at`）。Service 启动后及每分钟按主键分页重放 owner 发布事实，补齐名称并重试失败投递；非 active 状态同步空依赖。Meta 关闭旧版本当前投影，保留历史观察，并拒绝过期通知。不得借用仅面向 Catalog 的 resolver 权限。此契约由 Service T1、Meta T1 和 Meta PostgreSQL lifecycle migration 门禁验证。

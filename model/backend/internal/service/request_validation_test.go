@@ -93,7 +93,7 @@ func TestCreateRequestValidationRejectsInvalidReferencesAndRanges(t *testing.T) 
 			return validateCreateLogicalFieldRequest(&models.CreateLogicalFieldRequest{Name: "ID", ColumnName: "id", DataType: "bigint", SortOrder: -1})
 		}},
 		{name: "table relation target", err: func() error {
-			return validateCreateTableRelationRequest(&models.CreateTableRelationRequest{TargetTable: 0, SourceField: 1, TargetField: 2})
+			return validateSaveTableRelationRequest(&models.SaveTableRelationRequest{TargetTable: 0, SourceField: 1, TargetField: 2})
 		}},
 		{name: "dw layer sort order", err: func() error {
 			return validateCreateDWLayerRequest(&models.CreateDWLayerRequest{LayerCode: "dwd", LayerName: "DWD", SortOrder: -1})
@@ -120,7 +120,7 @@ func TestCreateRequestValidationAcceptsBoundaryValues(t *testing.T) {
 		{name: "entity relation", err: validateCreateEntityRelationRequest(&models.CreateEntityRelationRequest{SourceEntity: 1, TargetEntity: 2, RelationType: "one_to_many"})},
 		{name: "logical table", err: validateCreateLogicalTableRequest(&models.CreateLogicalTableRequest{Name: "Order", Code: "order", TableType: "entity", Layer: "dwd", DomainID: &positiveID, EntityID: &positiveID})},
 		{name: "logical field", err: validateCreateLogicalFieldRequest(&models.CreateLogicalFieldRequest{Name: "Region", ColumnName: "region", DataType: "string", Length: &positiveLength, SortOrder: 0})},
-		{name: "table relation", err: validateCreateTableRelationRequest(&models.CreateTableRelationRequest{TargetTable: 2, SourceField: 1, TargetField: 2, RelationType: "fk"})},
+		{name: "table relation", err: validateSaveTableRelationRequest(&models.SaveTableRelationRequest{TargetTable: 2, SourceField: 1, TargetField: 2, RelationType: "fk"})},
 		{name: "dw layer", err: validateCreateDWLayerRequest(&models.CreateDWLayerRequest{LayerCode: "dwd", LayerName: "DWD", SortOrder: 0})},
 	}
 
@@ -133,20 +133,23 @@ func TestCreateRequestValidationAcceptsBoundaryValues(t *testing.T) {
 	}
 }
 
-func TestMetricImplementationRequestValidation(t *testing.T) {
-	valid := metricImplementationRequest(1, 2)
-	if err := validateMetricImplementationRequest(valid); err != nil {
-		t.Fatalf("valid metric implementation rejected: %v", err)
+func TestMetricQueryInputValidation(t *testing.T) {
+	valid := models.MetricQueryInput{SubjectID: "person", StartDate: "2026-01-01", EndDate: "2027-01-01", Grain: "month"}
+	if err := validateMetricQueryInput(valid); err != nil {
+		t.Fatal(err)
 	}
-
-	invalid := *valid
-	invalid.SourceConfig = map[string]interface{}{"field_ids": []int64{0}}
-	if err := validateMetricImplementationRequest(&invalid); err != nil {
-		// Field identity is checked against the local aggregate in the transactional validation.
-		return
-	}
-	if _, err := positiveIDList(invalid.SourceConfig["field_ids"]); err == nil {
-		t.Fatal("zero source field ID accepted")
+	for _, change := range []func(*models.MetricQueryInput){
+		func(v *models.MetricQueryInput) { v.EndDate = v.StartDate },
+		func(v *models.MetricQueryInput) { v.StartDate = "2026-02-30" },
+		func(v *models.MetricQueryInput) { v.EndDate = "2037-01-01" },
+		func(v *models.MetricQueryInput) { v.Grain = "raw_sql" },
+		func(v *models.MetricQueryInput) { v.SubjectID = "" },
+	} {
+		input := valid
+		change(&input)
+		if validateMetricQueryInput(input) == nil {
+			t.Fatalf("accepted invalid input: %+v", input)
+		}
 	}
 }
 

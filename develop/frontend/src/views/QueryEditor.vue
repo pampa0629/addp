@@ -736,8 +736,9 @@
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
+import { useUnsavedChangesGuard } from '@common-ui'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Close,
@@ -2363,36 +2364,10 @@ async function applyQueryTaskRoute() {
   }
 }
 
-const confirmUnsavedRouteChange = async () => {
-  if (bypassUnsavedRouteConfirm.value) return true
-  if (!isDirty.value) return true
-  try {
-    await ElMessageBox.confirm(
-      t('develop.query.unsavedConfirm'),
-      t('develop.query.unsavedTitle'),
-      {
-        confirmButtonText: t('develop.query.leave'),
-        cancelButtonText: t('develop.query.cancel'),
-        type: 'warning',
-        customClass: 'addp-message-box'
-      }
-    )
-    return true
-  } catch {
-    return false
-  }
-}
-
-const handleBeforeUnload = (event) => {
-  if (!isDirty.value) return
-  event.preventDefault()
-  event.returnValue = ''
-}
-
-onBeforeRouteLeave(confirmUnsavedRouteChange)
-onBeforeRouteUpdate((to, from) => {
-  if (String(to.query.id || '') === String(from.query.id || '')) return true
-  return confirmUnsavedRouteChange()
+useUnsavedChangesGuard({
+  router,
+  isDirty: () => !bypassUnsavedRouteConfirm.value && isDirty.value,
+  shouldConfirmUpdate: (to, from) => String(to.query.id || '') !== String(from.query.id || '')
 })
 
 onMounted(async () => {
@@ -2400,7 +2375,6 @@ onMounted(async () => {
   compactMediaListener = event => { isCompact.value = event.matches }
   isCompact.value = mediaQuery.matches
   mediaQuery.addEventListener('change', compactMediaListener)
-  window.addEventListener('beforeunload', handleBeforeUnload)
   await loadEngines()
   await applyQueryTaskRoute()
   queryTaskRouteReady.value = true
@@ -2448,7 +2422,6 @@ onBeforeUnmount(() => {
   catalogEngineRequestSequence += 1
   queryDiagnosticsRequestSequence += 1
   if (queryDiagnosticsDebounce) window.clearTimeout(queryDiagnosticsDebounce)
-  window.removeEventListener('beforeunload', handleBeforeUnload)
   if (mediaQuery && compactMediaListener) {
     mediaQuery.removeEventListener('change', compactMediaListener)
   }

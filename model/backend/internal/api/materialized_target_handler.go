@@ -72,15 +72,15 @@ func bearerCredential(header string) string {
 	return parts[1]
 }
 
-// Create creates the approved physical table without modifying existing data.
+// Create enqueues approved physical table creation in the unified execution queue.
 // @Summary 创建正式表 | Create physical target
-// @Description 根据已审批模型创建正式表；同归属且结构一致时幂等成功，结构不一致拒绝；不执行数据加工。| Create an approved physical target, preserving existing data when ownership and structure match; reject structural drift.
+// @Description 提交统一执行队列，根据已审批模型创建正式表；同归属且结构一致时幂等成功，结构不一致拒绝；不执行数据加工。| Enqueue creation of an approved physical target, preserving existing data when ownership and structure match; reject structural drift.
 // @Tags Model
 // @Accept json
 // @Produce json
 // @Param id path int true "逻辑表 ID | Logical table ID"
 // @Param request body models.VersionRequest true "模型并发版本 | Model version"
-// @Success 200 {object} map[string]string
+// @Success 202 {object} materializationExecuteResponse
 // @Failure 400 {object} models.ErrorResponse
 // @Failure 401 {object} models.ErrorResponse
 // @Failure 403 {object} models.ErrorResponse
@@ -92,6 +92,10 @@ func bearerCredential(header string) string {
 // @Router /logical-tables/{id}/materialized-target [post]
 // @Security BearerAuth
 func (h *MaterializedTargetHandler) Create(c *gin.Context) {
+	if getUserID(c) <= 0 {
+		c.JSON(http.StatusForbidden, localizedErrorResponse(c, "common.auth.permission_denied", "permission_denied"))
+		return
+	}
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	var request models.VersionRequest
 	if err != nil || id <= 0 || commonapi.BindOptionalJSONStrict(c, &request) != nil || request.Version <= 0 {
@@ -103,10 +107,10 @@ func (h *MaterializedTargetHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, localizedErrorResponse(c, "common.auth.authentication_required", "authentication_required"))
 		return
 	}
-	locator, err := h.materialization.CreateMaterializedTarget(c.Request.Context(), id, getTenantID(c), request.Version, token)
+	item, err := h.materialization.EnqueueMaterialization(c.Request.Context(), id, getTenantID(c), request.Version, token, "", "manual")
 	if err != nil {
 		writeServiceError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"target_locator": locator})
+	c.JSON(http.StatusAccepted, materializationExecuteResponse{ExecutionID: item.ExecutionID, Status: item.Status})
 }

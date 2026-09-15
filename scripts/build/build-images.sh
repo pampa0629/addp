@@ -669,11 +669,6 @@ build_service() {
             fi
             ;;
 
-        develop-query-worker)
-            dockerfile_path="${service_dir}/Dockerfile.prebuilt.query-worker"
-            build_context="."
-            ;;
-
         transfer-continuous-worker)
             dockerfile_path="${service_dir}/Dockerfile.prebuilt.continuous-worker"
             build_context="."
@@ -975,7 +970,6 @@ main() {
         "transfer-backend:transfer/backend"
         "orchestrator-backend:orchestrator/backend"
         "develop-backend:develop/backend"
-        "develop-query-worker:develop/backend"
         "service-backend:service/backend"
         "monitor-backend:monitor/backend"
         "standard-backend:standard/backend"

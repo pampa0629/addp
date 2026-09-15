@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/addp/common/datatype"
+	commonquery "github.com/addp/common/query"
 	"github.com/addp/workbench/internal/models"
 	"github.com/addp/workbench/internal/repository"
 	"github.com/google/uuid"
@@ -314,7 +316,7 @@ func validateApplicationParameterPresets(presets []models.DataApplicationParamet
 					}
 					continue
 				}
-				if validateRawFilterValue(raw, models.ConsumerQueryField{Type: target.Type}, target.Operator, descriptors[binding.ComponentID].InputContract.Filter.MaxInValues) != nil {
+				if validateRawParameterTarget(raw, target, descriptors[binding.ComponentID].InputContract.Filter.MaxInValues) != nil {
 					return ErrInvalidDataApplication
 				}
 			}
@@ -377,6 +379,7 @@ func validateApplicationParameters(parameters []models.DataApplicationParameter,
 		}
 		applicationParameters[parameter.Key] = parameter
 	}
+	domains := make(map[string]componentParameterTarget)
 	targetBindings := make(map[string]struct{}, len(bindings))
 	boundApplicationParameters := make(map[string]struct{}, len(bindings))
 	for _, binding := range bindings {
@@ -398,10 +401,26 @@ func validateApplicationParameters(parameters []models.DataApplicationParameter,
 		}
 		targetBindings[targetKey] = struct{}{}
 		boundApplicationParameters[binding.ApplicationParameterKey] = struct{}{}
+
+		target, exists := componentParameterTargetFor(component, descriptors[binding.ComponentID], binding.ComponentParameterKey)
+		if !exists {
+			return ErrInvalidDataApplication
+		}
+		if prior, ok := domains[applicationParameter.Key]; ok {
+			if prior.Type != target.Type {
+				return fmt.Errorf("%w: parameter %s type conflict at component %s", ErrInvalidDataApplication, applicationParameter.Label, component.Title)
+			}
+			options, err := commonquery.IntersectParameterOptions(prior.Options, target.Options)
+			if err != nil {
+				return fmt.Errorf("%w: parameter %s at component %s: %v", ErrInvalidDataApplication, applicationParameter.Label, component.Title, err)
+			}
+			target.Options = options
+		}
+		domains[applicationParameter.Key] = target
 		if len(applicationParameter.DefaultValue) > 0 {
 			descriptor := descriptors[binding.ComponentID]
 			target, exists := componentParameterTargetFor(component, descriptor, binding.ComponentParameterKey)
-			if !exists || validateRawFilterValue(applicationParameter.DefaultValue, models.ConsumerQueryField{Type: target.Type}, target.Operator, descriptor.InputContract.Filter.MaxInValues) != nil {
+			if !exists || validateRawParameterTarget(applicationParameter.DefaultValue, target, descriptor.InputContract.Filter.MaxInValues) != nil {
 				return ErrInvalidDataApplication
 			}
 		}
@@ -431,6 +450,7 @@ func componentParameterFilter(component models.DataApplicationComponent, key str
 }
 
 type componentParameterTarget struct {
+	Options  []commonquery.ParameterOption
 	Type     datatype.FieldType
 	Operator string
 }
@@ -446,7 +466,7 @@ func componentParameterTargetFor(component models.DataApplicationComponent, desc
 		}
 		for _, parameter := range descriptor.InputContract.NamedParameters {
 			if parameter.Name == binding.Name {
-				return componentParameterTarget{Type: parameter.Type, Operator: "eq"}, true
+				return componentParameterTarget{Type: parameter.Type, Operator: "eq", Options: parameter.Options}, true
 			}
 		}
 	}
@@ -825,4 +845,20 @@ func mapDataApplicationRepositoryError(err error) error {
 	default:
 		return err
 	}
+}
+
+func validateRawParameterTarget(raw json.RawMessage, target componentParameterTarget, maxIn int) error {
+	if err := validateRawFilterValue(raw, models.ConsumerQueryField{Type: target.Type}, target.Operator, maxIn); err != nil {
+		return err
+	}
+	var value any
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	if err := decoder.Decode(&value); err != nil {
+		return err
+	}
+	if !commonquery.ParameterOptionAllows(target.Options, value) {
+		return fmt.Errorf("value is outside parameter options")
+	}
+	return nil
 }

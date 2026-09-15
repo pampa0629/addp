@@ -17,7 +17,7 @@ func NewRuntimeHealthHandler(runtimeHealthService *service.RuntimeHealthService)
 
 // ListHealth 查询后台运行实例健康状态
 // @Summary 查询后台运行实例健康状态 | List background runtime health
-// @Description 分角色返回 execution worker、continuous worker 和 dispatcher 的公共进程心跳；该接口不返回任何 lease token 或 fencing token。| Return public process heartbeats for execution workers, continuous workers, and dispatchers by role; no lease token or fencing token is returned.
+// @Description 分角色返回 execution worker、execution supervisor、continuous worker 和 dispatcher 的公共运行时心跳；该接口不返回任何 lease token 或 fencing token。| Return public runtime heartbeats for execution workers, execution supervisors, continuous workers, and dispatchers by role; no lease token or fencing token is returned.
 // @Tags Monitor
 // @Produce json
 // @Success 200 {array} service.RuntimeHealthSummary

@@ -41,7 +41,8 @@ export function requestConsoleBridge(channel, payload, options = {}) {
     source = 'addp-module',
     timeout = 15000,
     targetOrigin = '*',
-    timeoutMessage = 'Console bridge request timed out'
+    timeoutMessage = 'Console bridge request timed out',
+    allowPending = false
   } = options
 
   if (!channel) {
@@ -61,7 +62,8 @@ export function requestConsoleBridge(channel, payload, options = {}) {
     function handleMessage(event) {
       const message = event.data
       if (
-        !message ||
+        !message || event.source !== window.parent ||
+        (targetOrigin !== '*' && event.origin !== targetOrigin) ||
         message.type !== CONSOLE_BRIDGE_RESPONSE ||
         message.channel !== channel ||
         message.requestId !== requestId
@@ -70,6 +72,7 @@ export function requestConsoleBridge(channel, payload, options = {}) {
       }
 
       window.clearTimeout(timer)
+      if (allowPending && message.pending === true) return
       window.removeEventListener('message', handleMessage)
       if (message.ok) {
         resolve(message.data)
@@ -92,7 +95,8 @@ export function requestConsoleBridge(channel, payload, options = {}) {
 export function registerConsoleBridgeHandler(channel, handler, options = {}) {
   const {
     source = 'addp-console',
-    allowedSources = []
+    allowedSources = [],
+    acknowledgePending = false
   } = options
 
   if (!channel) {
@@ -124,6 +128,7 @@ export function registerConsoleBridgeHandler(channel, handler, options = {}) {
     }
 
     try {
+      if (acknowledgePending) reply({ pending: true })
       const data = await handler(message.payload, message, event)
       reply({ ok: true, data })
     } catch (error) {

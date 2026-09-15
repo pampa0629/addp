@@ -627,3 +627,19 @@ func (c *StandardClient) GetPublishedMetricDefinitionRevision(ctx context.Contex
 	}
 	return &result, nil
 }
+
+// ValidateMetricDefinition verifies the stable Standard identity before Model
+// creates a long-lived reference. Revision validation belongs to draft saving.
+func (c *StandardClient) ValidateMetricDefinition(ctx context.Context, id int64) error {
+	var resource tenantReferenceResponse
+	if err := c.doJSON(ctx, http.MethodGet, fmt.Sprintf("/api/v1/standard/metrics/%d", id), nil, &resource); err != nil {
+		return err
+	}
+	if c.tenantID == nil || resource.ID != id || resource.TenantID != int64(*c.tenantID) {
+		return ErrTenantReferenceNotFound
+	}
+	if resource.LifecycleState != "active" {
+		return ErrStandardReferenceDeleting
+	}
+	return nil
+}

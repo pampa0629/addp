@@ -79,7 +79,9 @@ func (h *QueryServiceHandler) CreateService(c *gin.Context) {
 	result, err := h.svc.CreateService(c.Request.Context(), &req, tenantID, userID)
 	if err != nil {
 		// 区分不同的错误类型
-		if errors.Is(err, commonapi.ErrNotFound) {
+		if errors.Is(err, svc.ErrInvalidParameterOptions) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, servicei18n.MsgInvalidParameterOptions)})
+		} else if errors.Is(err, commonapi.ErrNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		} else {
 			// 验证错误和业务错误都返回 400
@@ -501,6 +503,10 @@ func (h *QueryServiceHandler) QueryData(c *gin.Context) {
 }
 
 func writeQueryExecutionError(c *gin.Context, err error) {
+	if errors.Is(err, svc.ErrInvalidParameterOptions) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, servicei18n.MsgInvalidParameterOptions), "error_code": queryExecutionErrorCode(err)})
+		return
+	}
 	errorCode := queryExecutionErrorCode(err)
 	if errors.Is(err, svc.ErrInvalidStructuredQuery) || errors.Is(err, svc.ErrInvalidQueryCursor) || errors.Is(err, svc.ErrInvalidFeatureID) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.TWithDetail(c, servicei18n.MsgInvalidStructuredQuery, err.Error()), "error_code": errorCode})
@@ -514,4 +520,49 @@ func queryExecutionErrorCode(err error) string {
 		return "invalid_structured_query"
 	}
 	return "query_execution_failed"
+}
+
+// RebindMetricSource 切换 SQL 服务的指标来源修订。
+// @Summary 切换指标来源修订 | Rebind metric source revision
+// @Description 保留服务身份，比较当前发布版本后原子替换编译契约 | Preserve service identity and atomically replace the compiled contract after checking the current publication version
+// @Tags QueryService
+// @Accept json
+// @Produce json
+// @Param id path int true "服务 ID | Service ID"
+// @Param request body models.RebindMetricSourceRequest true "指标绑定与当前发布版本 | Metric binding and current publication version"
+// @Success 200 {object} models.QueryServiceDTO
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Failure 409 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["service.definition.update"]
+// @Router /query/{id}/metric-source [put]
+// @Security BearerAuth
+func (h *QueryServiceHandler) RebindMetricSource(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	var req models.RebindMetricSourceRequest
+	if err != nil || id == 0 || c.ShouldBindJSON(&req) != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, servicei18n.MsgInvalidQueryRequest), "error_code": "invalid_metric_publication"})
+		return
+	}
+	result, err := h.svc.RebindMetricSource(c.Request.Context(), uint(id), tenantIDValue(c), &req)
+	if err != nil {
+		status, key, code := http.StatusInternalServerError, servicei18n.MsgMetricPublicationFailed, "metric_publication_failed"
+		if errors.Is(err, svc.ErrInvalidStructuredQuery) || errors.Is(err, svc.ErrInvalidConsumerContract) {
+			status, key, code = http.StatusBadRequest, servicei18n.MsgInvalidStructuredQuery, "invalid_metric_publication"
+		}
+		if errors.Is(err, commonapi.ErrNotFound) {
+			status, key, code = http.StatusNotFound, servicei18n.MsgServiceNotFound, "service_not_found"
+		}
+		if errors.Is(err, svc.ErrInvalidParameterOptions) {
+			status, key, code = http.StatusBadRequest, servicei18n.MsgInvalidParameterOptions, "invalid_metric_publication"
+		}
+		if errors.Is(err, commonapi.ErrConflict) {
+			status, key, code = http.StatusConflict, servicei18n.MsgMetricPublicationConflict, "service_publication_conflict"
+		}
+		c.JSON(status, gin.H{"error": commoni18n.T(c, key), "error_code": code})
+		return
+	}
+	c.JSON(http.StatusOK, result)
 }

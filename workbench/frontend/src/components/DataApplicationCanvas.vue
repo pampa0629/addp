@@ -32,7 +32,7 @@
       <div class="parameter-grid">
         <label v-for="parameter in application.snapshot.parameters" :key="parameter.key" class="parameter-field">
           <span>{{ parameter.label }}<em v-if="parameter.required">*</em></span>
-          <ApplicationParameterValueInput :model-value="parameterValues[parameter.key]" :control-type="parameter.control_type" @update:model-value="updateParameterValue(parameter.key, $event)" />
+          <ParameterValueInput :model-value="parameterValues[parameter.key]" :control-type="parameter.control_type" :options="parameterDomain(parameter.key).options" :disabled="!parameterDomain(parameter.key).ready" @update:model-value="updateParameterValue(parameter.key, $event)" /><span v-if="!parameterDomain(parameter.key).ready">{{ t('workbench.parameterOptionsUnavailable', { components: parameterDomain(parameter.key).components.join(', ') }) }}</span>
         </label>
       </div>
     </el-card>
@@ -79,6 +79,7 @@
 </template>
 
 <script setup>
+import { applicationParameterOptions, assertApplicationOptionValues } from '../utils/applicationParameterOptions.mjs'
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
@@ -87,7 +88,7 @@ import { executeDescriptorOperation, getConsumerDescriptor } from '../api/servic
 import { defaultApplicationParameterValues } from '../utils/dataApplicationParameters.mjs'
 import { applicationParameterPreset, applicationRefreshDelayMilliseconds, buildComponentQuery, buildSelectionUpdate, canAttemptApplicationQuery, canExecuteComponentQuery, canRunApplicationRefresh, canRunPublishedApplicationInitialQuery, commitLatestComponentDescriptorState, componentBlockingError, initialApplicationParameterValues, invalidateApplicationParameterResults, runtimeGridStyle, runtimeLayoutStyle, runtimeSectionVisible } from '../utils/dataApplicationRuntime.mjs'
 import { descriptorSupportsExport, downloadCurrentBoundedExport, exportFormatForRenderer } from '../utils/boundedExport.mjs'
-import ApplicationParameterValueInput from './ApplicationParameterValueInput.vue'
+import ParameterValueInput from '../../../../common-frontend/basic/src/components/ParameterValueInput.vue'
 import WorkbenchRendererHost from './WorkbenchRendererHost.vue'
 
 const props = defineProps({
@@ -139,7 +140,17 @@ function createComponentState() {
   return { rows: [], page: { has_more: false, next_cursor: '' }, descriptor: null, descriptor_error: '', contract_error: '', query_error: '', querying: false, exporting: false, query_completed: false, preserve_map_view: false, cursors: [''], cursor_index: 0, descriptorRequests: createLatestRequestCoordinator(), requests: createLatestRequestCoordinator() }
 }
 
+function runtimeDescriptors() {
+  return Object.fromEntries(Object.entries(componentStates).map(([id, state]) => [id, state.contract_error || state.descriptor_error ? null : state.descriptor]))
+}
+function parameterDomain(key) { return applicationParameterOptions(application.value.snapshot, runtimeDescriptors(), key) }
+function assertComponentOptions(item) {
+ const keys = application.value.snapshot.parameter_bindings.filter((b) => b.component_id === item.id).map((b) => b.application_parameter_key)
+ assertApplicationOptionValues(application.value.snapshot, runtimeDescriptors(), parameterValues, keys)
+}
 function updateParameterValues(values, presetKey = '') {
+  try { assertApplicationOptionValues(application.value.snapshot, runtimeDescriptors(), values) }
+  catch { ElMessage.error(t('workbench.parameterOptionsInvalid')); return false }
   const parameterKeys = Object.keys(values)
   queryAllRequests.invalidate()
   queryingAll.value = false
@@ -149,6 +160,7 @@ function updateParameterValues(values, presetKey = '') {
   }
   Object.assign(parameterValues, structuredClone(values))
   selectedPresetKey.value = presetKey
+  return true
 }
 
 function updateParameterValue(parameterKey, value) {
@@ -158,7 +170,7 @@ function updateParameterValue(parameterKey, value) {
 async function applyParameterPreset(presetKey) {
   const preset = applicationParameterPreset(application.value.snapshot, presetKey)
   if (!preset) return
-  updateParameterValues(initialApplicationParameterValues(application.value.snapshot, preset.key), preset.key)
+  if (!updateParameterValues(initialApplicationParameterValues(application.value.snapshot, preset.key), preset.key)) return
   await queryAll()
 }
 
@@ -228,6 +240,7 @@ async function queryComponent(componentID, cursor = '', cursorIndex = 0, cursors
   current.querying = true
   current.query_error = ''
   try {
+    assertComponentOptions(item)
     const operation = current.descriptor.operations.find((candidate) => candidate.key === 'query')
     const { data } = await executeDescriptorOperation(operation, buildComponentQuery(application.value.snapshot, item, parameterValues, cursor))
     if (!current.requests.isCurrent(request, componentID)) return
@@ -238,7 +251,7 @@ async function queryComponent(componentID, cursor = '', cursorIndex = 0, cursors
     current.cursor_index = cursorIndex
   } catch (error) {
     if (!current.requests.isCurrent(request, componentID)) return
-    current.query_error = error?.response?.data?.error || (String(error?.message || '').startsWith('missing required') ? t('workbench.requiredParameterMissing') : t('workbench.queryFailed'))
+    current.query_error = error?.response?.data?.error || (String(error?.message || '').startsWith('parameter-options:') ? t('workbench.parameterOptionsInvalid') : String(error?.message || '').startsWith('missing required') ? t('workbench.requiredParameterMissing') : t('workbench.queryFailed'))
   } finally {
     if (current.requests.isCurrent(request, componentID)) current.querying = false
   }
@@ -250,7 +263,7 @@ async function applySelection(componentID, selection) {
   try {
     const update = buildSelectionUpdate(application.value.snapshot, componentID, current.descriptor, current.rows, selection)
     if (!update) return
-    updateParameterValues(update.parameter_values)
+    if (!updateParameterValues(update.parameter_values)) return
     await Promise.all(update.component_ids.map((targetID) => queryComponent(targetID, '', 0, [''], {
       preserveMapView: component(targetID)?.renderer_type === 'map',
     })))
@@ -285,6 +298,7 @@ async function exportComponent(componentID) {
   const request = current.requests.begin(componentID)
   const descriptor = current.descriptor
   const operation = descriptor.operations.find((candidate) => candidate.key === 'query')
+  try { assertComponentOptions(item) } catch { return ElMessage.error(t('workbench.parameterOptionsInvalid')) }
   const requestBody = buildComponentQuery(application.value.snapshot, item, parameterValues, '', format)
   current.exporting = true
   try {
@@ -309,6 +323,8 @@ async function queryAll() {
   try {
     await Promise.all(application.value.snapshot.components.map(async (item) => {
       if (!componentStates[item.id]?.descriptor && !componentStates[item.id]?.contract_error) await loadDescriptor(item)
+    }))
+    await Promise.all(application.value.snapshot.components.map(async (item) => {
       if (!queryAllRequests.isCurrent(request, 'query-all')) return
       if (canExecuteComponentQuery(componentStates[item.id])) await queryComponent(item.id)
     }))

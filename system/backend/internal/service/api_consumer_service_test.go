@@ -16,6 +16,13 @@ func TestAPIConsumerServiceEnforcesTenantOwnershipAndExactGrant(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// SQLite ATTACH is connection-local; all fixture queries must share this connection.
+	sqlDB.SetMaxOpenConns(1)
+	t.Cleanup(func() { _ = sqlDB.Close() })
 	if err := db.Exec("ATTACH DATABASE ':memory:' AS system").Error; err != nil {
 		t.Fatal(err)
 	}

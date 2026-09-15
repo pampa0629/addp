@@ -60,7 +60,7 @@ export function parameterBindings(parameters, inputPorts) {
 
 export function setParameterBinding(parameters, inputPort, template) {
   const next = cloneValue(parameters) || {}
-  if (inputPort.resource) {
+  if (inputPort.resourceObject) {
     const current = getPath(next, inputPort.path)
     setPath(next, inputPort.path, {
       ...(cloneValue(inputPort.defaultValue) || {}),
@@ -85,6 +85,7 @@ export function arePortTypesCompatible(outputPort, inputPort) {
 
 function inputPort({ name, schema, ui, path, defaultValue, groupTitle = '' }) {
   const resource = ui?.control === 'resource_tree_picker'
+  const resourceObject = resource && schema?.type === 'object'
   const locatorName = ui?.resource_binding?.mode === 'target' ? 'parent_locator' : 'locator'
   const title = ui?.display_name || schema?.title || name
   return {
@@ -92,9 +93,10 @@ function inputPort({ name, schema, ui, path, defaultValue, groupTitle = '' }) {
     label: groupTitle ? `${groupTitle} / ${title}` : title,
     type: resource ? 'string' : schema?.type,
     path,
-    bindingPath: resource ? [...path, locatorName] : path,
+    bindingPath: resourceObject ? [...path, locatorName] : path,
     defaultValue,
-    resource
+    resource,
+    resourceObject
   }
 }
 

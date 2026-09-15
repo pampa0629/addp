@@ -471,7 +471,8 @@
         "entities": "业务实体",
         "erDiagram": "实体关系图",
         "logicalTables": "逻辑表设计",
-        "starSchema": "星型建模视图"
+        "starSchema": "维度建模",
+        "metricImplementations": "指标实现"
       },
       "quality": {
         "label": "数据质量",

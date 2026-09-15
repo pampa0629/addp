@@ -10,6 +10,8 @@ import (
 
 const maxQueryServiceNamedParameters = 32
 
+var ErrInvalidParameterOptions = fmt.Errorf("%w: invalid parameter options", ErrInvalidStructuredQuery)
+
 func validateQueryServiceNamedParameters(configType, query string, definitions []models.QueryServiceNamedParameter) ([]models.QueryServiceNamedParameter, error) {
 	if configType != "sql" {
 		if len(definitions) > 0 {
@@ -42,6 +44,9 @@ func validateQueryServiceNamedParameters(configType, query string, definitions [
 			return nil, fmt.Errorf("named_parameters contains duplicate name %s", definition.Name)
 		}
 		defined[definition.Name] = struct{}{}
+		if err := commonquery.ValidateParameterOptions(definition.Options, func(value any) error { _, err := normalizeBoundValue(value, definition.Type); return err }); err != nil {
+			return nil, fmt.Errorf("%w: %s: %v", ErrInvalidParameterOptions, definition.Name, err)
+		}
 		if definition.Required && definition.Default != nil {
 			return nil, fmt.Errorf("required named parameter %s must not declare a default", definition.Name)
 		}
@@ -52,6 +57,9 @@ func validateQueryServiceNamedParameters(configType, query string, definitions [
 			normalized, normalizeErr := normalizeBoundValue(definition.Default, definition.Type)
 			if normalizeErr != nil {
 				return nil, fmt.Errorf("named parameter %s default is invalid: %w", definition.Name, normalizeErr)
+			}
+			if !commonquery.ParameterOptionAllows(definition.Options, normalized) {
+				return nil, fmt.Errorf("%w: %s default", ErrInvalidParameterOptions, definition.Name)
 			}
 			definition.Default = normalized
 		}
@@ -107,6 +115,9 @@ func bindQueryServiceNamedParameters(service *models.QueryService, engineType, b
 		normalized, normalizeErr := normalizeBoundValue(value, definition.Type)
 		if normalizeErr != nil {
 			return "", nil, nil, fmt.Errorf("%w: named parameter %s is invalid: %v", ErrInvalidStructuredQuery, definition.Name, normalizeErr)
+		}
+		if !commonquery.ParameterOptionAllows(definition.Options, normalized) {
+			return "", nil, nil, fmt.Errorf("%w: %s", ErrInvalidParameterOptions, definition.Name)
 		}
 		resolved[definition.Name] = normalized
 	}

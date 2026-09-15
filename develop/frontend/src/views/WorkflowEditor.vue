@@ -651,9 +651,10 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
+import { useUnsavedChangesGuard } from '@common-ui'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   ArrowLeft,
@@ -1780,7 +1781,7 @@ async function focusValidationIssue(issue) {
 function editorStateSignature() {
   return JSON.stringify({
     workflow: workflowData.value,
-    editorLayout: editorLayout.value,
+    nodePositions: editorLayout.value?.nodes || {},
     workflowEngineId: workflowEngineId.value,
     sparkRuntimeId: sparkRuntimeId.value
   })
@@ -1916,12 +1917,6 @@ function resourceCandidateFacts(candidate) {
   ].filter(Boolean).join(' · ')
 }
 
-function handleBeforeUnload(event) {
-  if (!isDirty.value) return
-  event.preventDefault()
-  event.returnValue = ''
-}
-
 function workflowConfirmOptions({ danger = false } = {}) {
   return {
     type: 'warning',
@@ -1932,25 +1927,10 @@ function workflowConfirmOptions({ danger = false } = {}) {
   }
 }
 
-async function confirmUnsavedRouteChange() {
-  if (!isDirty.value) return true
-  try {
-    await ElMessageBox.confirm(
-      t('develop.workflow.leaveConfirm'),
-      t('develop.workflow.unsaved'),
-      workflowConfirmOptions()
-    )
-    return true
-  } catch {
-    return false
-  }
-}
-
-onBeforeRouteLeave(confirmUnsavedRouteChange)
-
-onBeforeRouteUpdate((to, from) => {
-  if (String(to.query.id || '') === String(from.query.id || '')) return true
-  return confirmUnsavedRouteChange()
+useUnsavedChangesGuard({
+  router,
+  isDirty: () => isDirty.value,
+  shouldConfirmUpdate: (to, from) => String(to.query.id || '') !== String(from.query.id || '')
 })
 
 const workflowTaskRouteReady = ref(false)
@@ -1998,7 +1978,6 @@ async function applyWorkflowTaskRoute({ initializeCreate = false } = {}) {
 }
 
 onMounted(async () => {
-  window.addEventListener('beforeunload', handleBeforeUnload)
   await Promise.all([loadWorkflowEngines(), loadResourceEngines()])
   await applyWorkflowTaskRoute({ initializeCreate: true })
   workflowTaskRouteReady.value = true
@@ -2006,10 +1985,6 @@ onMounted(async () => {
 
 watch(() => route.fullPath, () => {
   if (workflowTaskRouteReady.value) applyWorkflowTaskRoute()
-})
-
-onBeforeUnmount(() => {
-  window.removeEventListener('beforeunload', handleBeforeUnload)
 })
 
 </script>

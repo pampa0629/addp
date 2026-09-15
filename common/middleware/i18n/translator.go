@@ -67,7 +67,15 @@ func TWithData(c *gin.Context, messageID string, templateData map[string]interfa
 }
 
 func localize(c *gin.Context, messageID string, templateData map[string]interface{}) string {
-	lang := GetLang(c)
+	return localizeLanguage(GetLang(c), messageID, templateData)
+}
+
+// ForLanguage resolves owner display metadata without depending on request language.
+func ForLanguage(lang, messageID string) string {
+	return localizeLanguage(lang, messageID, nil)
+}
+
+func localizeLanguage(lang, messageID string, templateData map[string]interface{}) string {
 	localizer := goi18n.NewLocalizer(getBundle(), lang)
 	config := &goi18n.LocalizeConfig{MessageID: messageID, TemplateData: templateData}
 	msg, err := localizer.Localize(config)

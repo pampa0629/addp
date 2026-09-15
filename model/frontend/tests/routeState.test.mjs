@@ -1,12 +1,16 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  buildTableRelationRoute,
+  resolveLogicalTableDetailRouteState,
   buildEntityListRouteQuery,
   buildERDiagramRouteQuery,
   buildLogicalTableListRouteQuery,
   resolveEntityListRouteState,
   resolveLogicalTableListRouteState,
-  resolveERDiagramRouteState
+  resolveERDiagramRouteState,
+  buildDimensionalModelRouteQuery,
+  resolveDimensionalModelRouteState
 } from '../src/utils/routeState.js'
 
 test('entity detail return state preserves business-domain filter', () => {
@@ -40,4 +44,32 @@ test('ER overview and cross-domain expansion are explicit and recoverable', () =
   assert.deepEqual(resolveERDiagramRouteState({ domain_id: 'all', related: '1' }).query, { domain_id: 'all' })
   assert.deepEqual(resolveERDiagramRouteState({ domain_id: '2', related: '1' }).query, { domain_id: '2', related: '1' })
   assert.deepEqual(resolveERDiagramRouteState({ related: '1' }).query, {})
+})
+
+test('dimensional modeling restores domain and fact selection without inventing defaults', () => {
+  const state = resolveDimensionalModelRouteState({ domain_id: '2', table_id: '6' })
+  assert.equal(state.domainId, 2)
+  assert.equal(state.tableId, 6)
+  assert.equal(state.changed, false)
+  assert.deepEqual(buildDimensionalModelRouteQuery(state), { domain_id: '2', table_id: '6' })
+  assert.deepEqual(buildDimensionalModelRouteQuery({ domainId: null, tableId: 6 }), { table_id: '6' })
+  assert.deepEqual(buildDimensionalModelRouteQuery({ domainId: 2, tableId: null }), { domain_id: '2' })
+  assert.deepEqual(resolveDimensionalModelRouteState().query, {})
+})
+
+test('dimensional modeling canonicalizes invalid IDs and removes unrelated query state', () => {
+  assert.deepEqual(resolveDimensionalModelRouteState({ domain_id: '-2', table_id: 'invalid', tab: 'basic' }).query, {})
+  const state = resolveDimensionalModelRouteState({ domain_id: '02', table_id: '06' })
+  assert.equal(state.changed, true)
+  assert.deepEqual(state.query, { domain_id: '2', table_id: '6' })
+})
+
+test('table relation links preserve source identity and recoverable selection', () => {
+  assert.deepEqual(buildTableRelationRoute(3, 7, { domain_id: '2', table_id: '6' }), {
+    path: '/logical-tables/3', query: { domain_id: '2', tab: 'relations', relation_id: '7' }
+  })
+  assert.deepEqual(resolveLogicalTableDetailRouteState({ tab: 'relations', relation_id: '7' }, 'dimension').relationId, 7)
+  assert.deepEqual(resolveLogicalTableDetailRouteState({ tab: 'relations', relation_id: '7' }, 'entity').query, {})
+  assert.deepEqual(resolveLogicalTableDetailRouteState({ tab: 'definition', relation_id: '7', domain_id: '2' }, 'fact').query, { domain_id: '2' })
+  assert.deepEqual(resolveLogicalTableDetailRouteState({ tab: 'relations', relation_id: '-7' }, 'fact').query, { tab: 'relations' })
 })

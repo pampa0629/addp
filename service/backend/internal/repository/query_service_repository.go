@@ -1,11 +1,13 @@
 package repository
 
 import (
+	"context"
 	"strings"
 
 	commonrepo "github.com/addp/common/repository"
 	"github.com/addp/service/internal/models"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type QueryServiceRepository struct {
@@ -221,4 +223,26 @@ func (r *QueryServiceRepository) CountByEngine(engineID uint) (int64, error) {
 	var count int64
 	err := r.db.Model(&models.QueryService{}).Where("engine_id = ?", engineID).Count(&count).Error
 	return count, err
+}
+
+// ListLineagePublications is an owner-internal replay cursor, never a catalog API.
+func (r *QueryServiceRepository) ListLineagePublications(ctx context.Context, afterID uint, limit int) ([]models.QueryService, error) {
+	var rows []models.QueryService
+	err := r.db.WithContext(ctx).Where("id > ?", afterID).Order("id").Limit(limit).Find(&rows).Error
+	return rows, err
+}
+
+// UpdatePublication keeps the published-contract comparison and replacement in one transaction.
+func (r *QueryServiceRepository) UpdatePublication(ctx context.Context, id, tenantID uint, change func(*models.QueryService) error) (*models.QueryService, error) {
+	var item models.QueryService
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND tenant_id = ?", id, tenantID).First(&item).Error; err != nil {
+			return commonrepo.WrapDBError(err)
+		}
+		if err := change(&item); err != nil {
+			return err
+		}
+		return tx.Save(&item).Error
+	})
+	return &item, err
 }

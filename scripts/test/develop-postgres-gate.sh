@@ -20,7 +20,7 @@ case "$database" in *test*|*disposable*) ;; *) echo "DEVELOP_POSTGRES_TEST_DSN m
 
 cd "$ROOT_DIR/develop/backend"
 go test ./internal/repository \
-    -run '^(TestCatalogDevTaskChangeFeedAgainstPostgres|TestExportSessionScopeAgainstPostgres)$' \
+    -run '^(TestCatalogDevTaskChangeFeedAgainstPostgres|TestExportSessionScopeAgainstPostgres|TestQueryExecutionQueueAgainstPostgres)$' \
     -count=1 -v 2>&1 | tee "$WORK_DIR/develop.log"
 if grep -q -- '--- SKIP:' "$WORK_DIR/develop.log"; then
     echo "Develop PostgreSQL gate refuses skipped tests" >&2

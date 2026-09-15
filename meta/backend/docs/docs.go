@@ -793,15 +793,27 @@ const docTemplate = `{
                     {
                         "type": "string",
                         "default": "both",
-                        "description": "方向：upstream、downstream 或 both | Direction: upstream, downstream or both",
+                        "description": "方向：upstream、downstream 或两者有向遍历并集 both，不含旁系 | Direction: upstream, downstream or their directed union both; excludes sibling branches",
                         "name": "direction",
                         "in": "query"
                     },
                     {
                         "type": "integer",
-                        "default": 3,
-                        "description": "展开深度，范围 0-20 | Traversal depth, 0-20",
+                        "default": 2,
+                        "description": "每条派生或服务依赖边计一层，0 只显示主体，范围 0-20 | Each derive or serve edge is one hop; 0 returns only the subject; range 0-20",
                         "name": "depth",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "额外向上展开的 item ID，逗号分隔，最多100个 | Item IDs to expand upstream, comma separated, max 100",
+                        "name": "expand_upstream",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "额外向下展开的 item ID，逗号分隔，最多100个 | Item IDs to expand downstream, comma separated, max 100",
+                        "name": "expand_downstream",
                         "in": "query"
                     },
                     {
@@ -857,6 +869,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "Service 同步名称、更新时间与当前版本依赖；更新关闭旧版本，忽略过期通知 | Service publishes its name, update time and current revision dependencies; superseded revisions close and stale notifications are ignored",
                 "consumes": [
                     "application/json"
                 ],
@@ -884,6 +897,12 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_meta_internal_models.LineageErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_meta_internal_models.LineageErrorResponse"
                         }
@@ -3069,6 +3088,12 @@ const docTemplate = `{
                 "full_name": {
                     "type": "string"
                 },
+                "hidden_downstream_count": {
+                    "type": "integer"
+                },
+                "hidden_upstream_count": {
+                    "type": "integer"
+                },
                 "item_fingerprint": {
                     "type": "string"
                 },
@@ -3357,6 +3382,12 @@ const docTemplate = `{
                 },
                 "service_id": {
                     "type": "integer"
+                },
+                "service_name": {
+                    "type": "string"
+                },
+                "service_updated_at": {
+                    "type": "string"
                 }
             }
         },

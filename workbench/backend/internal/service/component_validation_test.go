@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/addp/common/datatype"
+	commonquery "github.com/addp/common/query"
 	"github.com/addp/workbench/internal/models"
 )
 
@@ -34,6 +35,12 @@ func TestValidateComponentBindsRequiredServiceNamedParameters(t *testing.T) {
 	if err := validateComponentConfiguration(component, descriptor); err != nil {
 		t.Fatalf("validateComponentConfiguration() error = %v", err)
 	}
+
+	descriptor.InputContract.NamedParameters[0].Options = []commonquery.ParameterOption{{Value: "person-2", Labels: map[string]string{"zh-cn": "Person two", "en": "Person two"}}}
+	if err := validateComponentConfiguration(component, descriptor); err == nil {
+		t.Fatal("component default outside published options accepted")
+	}
+	descriptor.InputContract.NamedParameters[0].Options = nil
 
 	component.QueryTemplate.NamedParameterBindings = nil
 	if err := validateComponentConfiguration(component, descriptor); err == nil {

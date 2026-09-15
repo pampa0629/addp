@@ -287,6 +287,7 @@ describe('Console navigation bridge', () => {
         postedMessages.push(message)
         queueMicrotask(() => {
           listeners.get('message')?.({
+            source: parent,
             data: {
               type: 'addp:console-bridge:response',
               channel: message.channel,
@@ -350,7 +351,7 @@ describe('Console navigation bridge', () => {
 it('orders modeling from entity design to table design and publishing in both shells', () => {
   const config = readFileSync(new URL('../src/config/portalConfig.js', import.meta.url), 'utf8')
   const layout = readFileSync(new URL('../../../model/frontend/src/components/Layout.vue', import.meta.url), 'utf8')
-  const routes = ['entities', 'er-diagram', 'dw-layers', 'logical-tables', 'star-schema']
+  const routes = ['entities', 'er-diagram', 'dw-layers', 'logical-tables', 'metric-implementations', 'star-schema']
   const consoleRoutes = [...config.matchAll(/index: '\/modeling\/([^']+)'/g)].map(match => match[1])
   const standaloneRoutes = [...layout.matchAll(/el-menu-item index="\/([^"]+)"/g)].map(match => match[1])
   expect(consoleRoutes).toEqual(routes)

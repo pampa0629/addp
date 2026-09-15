@@ -235,6 +235,7 @@ export const SIDEBAR_MENUS = {
       { index: '/modeling/er-diagram',     icon: Share,      label: 'console.menus.modeling.erDiagram' },
       { index: '/modeling/dw-layers',      icon: Grid,       label: 'console.menus.modeling.dwLayers' },
       { index: '/modeling/logical-tables', icon: Connection, label: 'console.menus.modeling.logicalTables' },
+      { index: '/modeling/metric-implementations', icon: TrendCharts, label: 'console.menus.modeling.metricImplementations', permissions: ['model.metric_implementation.read'] },
       { index: '/modeling/star-schema',    icon: Grid,       label: 'console.menus.modeling.starSchema' },
     ],
   },

@@ -60,6 +60,19 @@ func TestDevelopLineageFactsUsesWorkflowDefinitionResourcesAndOutputs(t *testing
 	}
 }
 
+func TestStartPreparedContentExecutionNotifiesQuerySupervisor(t *testing.T) {
+	notifications := 0
+	executor := &DevExecutor{}
+	executor.SetQueryExecutionNotifier(func() { notifications++ })
+	executor.startPreparedContentExecution(&preparedContentExecution{
+		execution: &commonExecution.TaskExecution{ExecutionID: uuid.NewString()},
+		devTask:   &models.DevTask{DevType: commonExecution.TaskTypeQuery},
+	})
+	if notifications != 1 {
+		t.Fatalf("query supervisor notifications = %d, want 1", notifications)
+	}
+}
+
 func TestExecuteWithParamsFromParentExecutionQueuesQueryWithoutBackendAuthorization(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:"+strings.ReplaceAll(t.Name(), "/", "_")+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
@@ -128,18 +141,21 @@ func TestExecuteWithParamsFromParentExecutionQueuesQueryWithoutBackendAuthorizat
 		devTaskRepo: devTaskRepo, taskExecutionRepo: executionRepo,
 		sqlEngine: NewSQLEngineService(&config.Config{}, systemClient, nil),
 	}
+	notifications := 0
+	executor.SetQueryExecutionNotifier(func() { notifications++ })
 	childExecutionID, err := executor.ExecuteWithParamsFromParentExecution(
 		context.Background(), devTask.ID, nil, 7, commonExecution.TriggerTypeScheduled,
 		commonExecution.ModuleOrchestrator, parentExecutionID, commonExecution.TaskTypeQuery,
 	)
-	if err != nil || childExecutionID == "" || called {
-		t.Fatalf("child execution id=%q error=%v called=%t", childExecutionID, err, called)
+	if err != nil || childExecutionID == "" || called || notifications != 1 {
+		t.Fatalf("child execution id=%q error=%v called=%t notifications=%d", childExecutionID, err, called, notifications)
 	}
 	child, loadErr := executionRepo.GetByExecutionID(context.Background(), childExecutionID, 7)
 	if loadErr != nil {
 		t.Fatalf("load failed child execution: %v", loadErr)
 	}
 	if child.Status != commonExecution.ExecutionStatusPending || child.CompletedAt != nil ||
+		child.ExecutionBoundary != commonExecution.ExecutionBoundaryBounded || child.MaxAttempts != 1 ||
 		child.ParentExecutionID == nil || *child.ParentExecutionID != parentExecutionID ||
 		child.ActorPrincipalID == nil || *child.ActorPrincipalID != principalID ||
 		child.ActorTenantMembershipID == nil || *child.ActorTenantMembershipID != membershipID ||

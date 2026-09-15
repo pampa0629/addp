@@ -68,6 +68,7 @@ Service 模块将服务分为三大类：
 - 端点：`POST /api/query/{serviceName}/query`
 - 请求体：`parameters`、`select`、结构化 `filter`、`order_by`、`page.limit`、`page.cursor`、`format`；`parameters` 只接受服务发布契约中声明的命名参数
 - 输出格式：JSON、CSV、GeoJSON（有空间字段时）
+- JSON 查询结果的 `data` 始终为数组，无匹配记录返回 `[]`；预览发起新查询时清除上一查询结果，空结果或请求失败均不得继续展示上一查询的数据。
 
 **OGC API Features（自动启用）**
 - 启用条件：检测到空间字段
@@ -936,3 +937,14 @@ Service 模块重构设计的核心改进：
 ---
 
 **文档结束**
+
+#### 指标来源发布切换
+
+`PUT /query/{id}/metric-source` 是现有 SQL 查询服务切换到确定指标实现修订的唯一命令，使用 `service.definition.update`。请求包含 `metric_source` 与读取服务详情时取得的 `service_version`；这里比较既有查询发布契约的版本指纹，不创建另一套指标版本。Service 在同一事务锁定当前租户的服务并比较发布版本，再原子替换 SQL、参数、输出结构、稳定键和指标绑定；陈旧发布版本返回 409。服务 ID、编码和访问控制不变，旧 SQL 不保留执行分支。Model 提供完整参数及输出声明，Service 不自行定义重叠率公式。切换会改变 Consumer Descriptor 指纹，Workbench 必须重新绑定并发布应用新修订，旧应用发布快照不可原地修改。
+
+
+### 命名参数固定选项
+
+命名参数可声明 `options`，每项为 `{value, labels: {"zh-cn": "显示名称", "en": "Display label"}}`。不声明或空集合表示无枚举限制；非空集合至多 100 项，值必须是与参数类型匹配的非空标量且不重复，每种内置语言名称均非空、至多 100 字符，不接受其他语言键。类型化值比较区分数字、布尔与字符串。必填性与默认值继续遵循原有规则，默认值及执行输入必须属于允许值集合。
+
+完整选项集合（含所有语言名称）纳入发布签名和 Consumer Descriptor 指纹，语言切换只影响客户端显示。指标来源由 Model 编译计划声明，Service 冻结且禁止管理请求覆盖；普通 SQL 服务由发布者声明。消费者只能读取 `input_contract.named_parameters[].options`，不得按参数名推断选项或扩展取值。现有服务须显式重绑、应用须发布新修订，不自动改写历史快照。

@@ -155,7 +155,7 @@
             <span>{{ t('workbench.spatialWizard.sharedParameterHint') }}</span>
           </div>
           <el-form-item :label="t('workbench.defaultValue')">
-            <ApplicationParameterValueInput v-model="draft.defaultValue" :control-type="parameterControlType" />
+            <ParameterValueInput v-model="draft.defaultValue" :control-type="parameterControlType" />
           </el-form-item>
         </section>
       </el-form>
@@ -176,7 +176,7 @@ import { getConsumerDescriptor, listConsumerServices } from '../api/services'
 import { controlTypeFor, emptyControlValue } from '../utils/componentDraft.mjs'
 import { commitLatestDataApplicationRequest } from '../utils/dataApplicationDraft.mjs'
 import { buildSpatialExplorationDraft } from '../utils/spatialExplorationDraft.mjs'
-import ApplicationParameterValueInput from './ApplicationParameterValueInput.vue'
+import ParameterValueInput from '../../../../common-frontend/basic/src/components/ParameterValueInput.vue'
 
 defineProps({ modelValue: Boolean })
 const emit = defineEmits(['update:modelValue', 'apply'])

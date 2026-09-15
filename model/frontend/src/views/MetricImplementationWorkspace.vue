@@ -1,0 +1,750 @@
+<template>
+  <div class="metric-workspace" v-loading="loading">
+    <div class="workspace-header">
+      <h2>{{ item?.name || t('model.metric_workspace.title') }}</h2>
+      <el-button v-if="route.params.id" @click="go()">{{
+        t('model.metric_workspace.back')
+      }}</el-button
+      ><el-button v-else-if="can('create')" type="primary" @click="go('new')">{{
+        t('model.metric_workspace.create')
+      }}</el-button>
+    </div>
+    <el-alert
+      v-if="error"
+      :title="error"
+      type="error"
+      show-icon
+      :closable="false"
+    />
+    <el-card v-if="!route.params.id && !error" shadow="never">
+      <el-table :data="items" stripe
+        ><el-table-column prop="name" :label="t('model.metric_workspace.name')"
+          ><template #default="{ row }"
+            ><el-button link type="primary" @click="go(row.id)">{{
+              row.name
+            }}</el-button></template
+          ></el-table-column
+        ><el-table-column :label="t('model.metric_workspace.source')"
+          ><template #default="{ row }">{{
+            tables.find((table) => table.id === row.fact_table_id)?.name || '—'
+          }}</template></el-table-column
+        ></el-table
+      >
+    </el-card>
+    <el-card v-else-if="isNew && !error" shadow="never">
+      <el-form label-position="top" :disabled="!can('create') || busy">
+        <el-form-item :label="t('model.metric_workspace.definition')" required
+          ><el-select
+            v-model="identity.metric_definition_id"
+            filterable
+            @change="selectDefinition"
+            ><el-option
+              v-for="definition in definitions"
+              :key="definition.id"
+              :value="definition.id"
+              :label="
+                definition.current_revision?.name || definition.code
+              " /></el-select
+        ></el-form-item>
+        <el-form-item :label="t('model.metric_workspace.source')" required
+          ><el-select v-model="identity.fact_table_id" filterable
+            ><el-option
+              v-for="table in tables.filter(
+                (v) => v.table_type === 'fact' && v.status === 'approved',
+              )"
+              :key="table.id"
+              :value="table.id"
+              :label="table.name" /></el-select
+        ></el-form-item>
+        <el-form-item :label="t('model.metric_workspace.name')" required
+          ><el-input v-model="identity.name" maxlength="200"
+        /></el-form-item>
+        <el-button type="primary" :loading="busy" @click="create">{{
+          t('model.metric_workspace.create')
+        }}</el-button>
+      </el-form>
+    </el-card>
+    <template v-else-if="item && !error">
+      <el-card shadow="never">
+        <div class="workspace-header">
+          <el-button link type="primary" @click="openDefinition">{{
+            t('model.metric_workspace.definition_detail')
+          }}</el-button
+          ><el-button
+            link
+            type="primary"
+            @click="
+              navigateModelRoute(router, {
+                path: `/logical-tables/${item.fact_table_id}`,
+              })
+            "
+            >{{
+              tables.find((v) => v.id === item.fact_table_id)?.name
+            }}</el-button
+          >
+        </div>
+        <el-select
+          :model-value="selectedRevision"
+          :placeholder="t('model.metric_workspace.revision')"
+          @change="selectRevision"
+          ><el-option
+            v-for="revision in item.revisions"
+            :key="revision.id"
+            :value="revision.id"
+            :label="`R${revision.revision_no} · ${t(`model.metric_workspace.${revision.status}`)}`"
+        /></el-select>
+        <el-tag
+          v-if="revision"
+          :type="revision.status === 'published' ? 'success' : 'info'"
+          >{{ t(`model.metric_workspace.${revision.status}`) }}</el-tag
+        >
+        <el-button v-if="!editable && can('update')" @click="startDraft">{{
+          t('model.metric_workspace.new_draft')
+        }}</el-button>
+        <el-popconfirm
+          v-if="
+            can('delete') && item.revisions.every((v) => v.status === 'draft')
+          "
+          :title="t('model.metric_workspace.confirm_delete')"
+          @confirm="remove"
+          ><template #reference
+            ><el-button link type="danger">{{
+              t('model.metric_workspace.delete')
+            }}</el-button></template
+          ></el-popconfirm
+        >
+      </el-card>
+      <el-card shadow="never">
+        <el-alert
+          v-if="!editable"
+          :title="t('model.metric_workspace.immutable')"
+          type="info"
+          :closable="false"
+        />
+        <el-form
+          label-position="top"
+          :disabled="!editable || !can('update') || busy"
+        >
+          <el-form-item :label="t('model.metric_workspace.operation')" required>
+            <el-select v-model="form.operation" @change="operationChanged">
+              <el-option
+                value="count_distinct"
+                :label="t('model.metric_workspace.count_distinct')"
+              />
+              <el-option
+                value="directional_overlap"
+                :label="t('model.metric_workspace.directional_overlap')"
+              />
+            </el-select>
+          </el-form-item>
+          <el-alert
+            v-if="form.operation === 'directional_overlap'"
+            :title="t('model.metric_workspace.overlap_contract')"
+            type="info"
+            :closable="false"
+          />
+          <el-form-item
+            :label="t('model.metric_workspace.choose_revision')"
+            required
+            ><el-select v-model="form.metric_definition_revision_id"
+              ><el-option
+                v-for="definition in definitionRevisions"
+                :key="definition.id"
+                :value="definition.id"
+                :label="`${definition.name} · R${definition.revision_no}`" /></el-select
+          ></el-form-item>
+          <div class="field-grid">
+            <el-form-item :label="t('model.metric_workspace.subject')" required
+              ><el-select v-model="form.subject_field_id"
+                ><el-option
+                  v-for="field in choices.filter(
+                    (v) => v.relation_id === 0 && v.data_type === 'string',
+                  )"
+                  :key="field.key"
+                  :value="field.field_id"
+                  :label="field.label" /></el-select
+            ></el-form-item>
+            <el-form-item
+              :label="t('model.metric_workspace.subject_relation')"
+              required
+              ><el-select v-model="form.subject_relation_id"
+                ><el-option
+                  v-for="relation in relations.filter(
+                    (v) => v.source_field === form.subject_field_id,
+                  )"
+                  :key="relation.id"
+                  :value="relation.id"
+                  :label="
+                    relation.target_table_name ||
+                    tables.find((v) => v.id === relation.target_table)?.name
+                  " /></el-select
+            ></el-form-item>
+            <el-form-item :label="t('model.metric_workspace.distinct')" required
+              ><el-select v-model="form.distinct"
+                ><el-option
+                  v-for="field in choices"
+                  :key="field.key"
+                  :value="field.key"
+                  :label="field.label" /></el-select
+            ></el-form-item>
+            <el-form-item :label="t('model.metric_workspace.time')" required
+              ><el-select v-model="form.time"
+                ><el-option
+                  v-for="field in choices.filter((v) => v.data_type === 'date')"
+                  :key="field.key"
+                  :value="field.key"
+                  :label="field.label" /></el-select
+            ></el-form-item>
+          </div>
+          <el-form-item
+            v-if="form.operation === 'count_distinct'"
+            :label="t('model.metric_workspace.filters')"
+            ><div class="filters">
+              <div
+                v-for="(filter, index) in form.filters"
+                :key="index"
+                class="filter-row"
+              >
+                <el-select v-model="filter.field"
+                  ><el-option
+                    v-for="field in choices.filter(
+                      (v) => v.data_type === 'bool',
+                    )"
+                    :key="field.key"
+                    :value="field.key"
+                    :label="field.label" /></el-select
+                ><el-select v-model="filter.value"
+                  ><el-option
+                    :value="true"
+                    :label="t('model.metric_workspace.true')" /><el-option
+                    :value="false"
+                    :label="t('model.metric_workspace.false')" /></el-select
+                ><el-button @click="form.filters.splice(index, 1)">{{
+                  t('model.common.delete')
+                }}</el-button>
+              </div>
+              <el-button
+                @click="form.filters.push({ field: '', value: true })"
+                >{{ t('model.metric_workspace.add_filter') }}</el-button
+              >
+            </div></el-form-item
+          >
+          <el-button
+            v-if="editable"
+            type="primary"
+            :loading="busy"
+            @click="save"
+            >{{ t('model.metric_workspace.save') }}</el-button
+          >
+        </el-form>
+      </el-card>
+      <el-card v-if="revision" shadow="never">
+        <p>{{ t('model.metric_workspace.contract_valid') }}</p>
+        <el-button
+          v-if="revision.status === 'draft' && can('publish')"
+          type="primary"
+          :disabled="isDirty"
+          :loading="busy"
+          @click="changeState(true)"
+          >{{ t('model.metric_workspace.publish') }}</el-button
+        >
+        <el-button
+          v-if="revision.status === 'published' && can('offline')"
+          :loading="busy"
+          @click="changeState(false)"
+          >{{ t('model.metric_workspace.withdraw') }}</el-button
+        >
+        <el-button
+          v-if="
+            revision.status === 'published' &&
+            !editingNew &&
+            (auth.hasPermission('service.definition.create') ||
+              auth.hasPermission('service.definition.update'))
+          "
+          type="primary"
+          @click="openServiceDialog"
+          >{{ t('model.metric_workspace.service') }}</el-button
+        >
+      </el-card>
+    </template>
+    <el-dialog
+      class="addp-dialog"
+      v-model="serviceDialog"
+      :title="t('model.metric_workspace.service')"
+      width="min(520px, calc(100vw - 32px))"
+      ><el-form label-position="top">
+        <el-form-item :label="t('model.metric_workspace.service_target')">
+          <el-radio-group v-model="serviceMode">
+            <el-radio
+              value="create"
+              :disabled="!auth.hasPermission('service.definition.create')"
+              >{{ t('model.metric_workspace.create_service') }}</el-radio
+            >
+            <el-radio
+              value="rebind"
+              :disabled="
+                !auth.hasPermission('service.definition.update') ||
+                !auth.hasPermission('service.definition.read')
+              "
+              >{{ t('model.metric_workspace.rebind_service') }}</el-radio
+            >
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item
+          v-if="serviceMode === 'rebind'"
+          :label="t('model.metric_workspace.existing_service')"
+        >
+          <el-select
+            v-model="existingServiceID"
+            filterable
+            remote
+            :remote-method="searchServices"
+            :loading="serviceSearchLoading"
+          >
+            <el-option
+              v-for="service in existingServices"
+              :key="service.id"
+              :value="service.id"
+              :label="`${service.title} (${service.service_name})`"
+            />
+          </el-select>
+        </el-form-item>
+        <el-alert
+          v-if="serviceMode === 'rebind'"
+          :title="t('model.metric_workspace.rebind_warning')"
+          type="warning"
+          :closable="false" />
+        <el-form-item v-else :label="t('model.metric_workspace.service_name')"
+          ><el-input v-model="serviceName" /></el-form-item></el-form
+      ><template #footer
+        ><el-button type="primary" :loading="busy" @click="publishService">{{
+          t('model.metric_workspace.service')
+        }}</el-button></template
+      ></el-dialog
+    >
+  </div>
+</template>
+<script setup>
+import { computed, reactive, ref, watch } from 'vue';
+import { useRouter, useRoute, onBeforeRouteUpdate } from 'vue-router';
+import { useI18n } from 'vue-i18n';
+import { ElMessage } from 'element-plus';
+import { openConsoleRoute } from '@common-ui';
+import {
+  logicalTableAPI,
+  standardMetricAPI,
+  metricImplementationAPI as api,
+  metricServiceAPI,
+} from '../api/model';
+import { useAuthStore } from '../store/auth';
+import { navigateModelRoute } from '../utils/moduleNavigation';
+import { useUnsavedChanges } from '../composables/useUnsavedChanges';
+import { getModelErrorMessage } from '../utils/apiError';
+const router = useRouter(),
+  route = useRoute(),
+  auth = useAuthStore(),
+  { t } = useI18n();
+const items = ref([]),
+  item = ref(null),
+  tables = ref([]),
+  definitions = ref([]),
+  definitionRevisions = ref([]),
+  relations = ref([]),
+  choices = ref([]);
+const loading = ref(false),
+  busy = ref(false),
+  error = ref(''),
+  selectedRevision = ref(null),
+  editingNew = ref(false),
+  serviceDialog = ref(false),
+  serviceName = ref('');
+const identity = reactive({
+  fact_table_id: null,
+  metric_definition_id: null,
+  name: '',
+  note: '',
+});
+const blank = () => ({
+  operation: 'count_distinct',
+  metric_definition_revision_id: null,
+  subject_field_id: null,
+  subject_relation_id: null,
+  distinct: '',
+  time: '',
+  filters: [],
+});
+const form = reactive(blank());
+const isNew = computed(() => route.params.id === 'new');
+const revision = computed(() =>
+  item.value?.revisions.find((v) => v.id === selectedRevision.value),
+);
+const editable = computed(
+  () =>
+    editingNew.value || !revision.value || revision.value.status === 'draft',
+);
+const can = (action) =>
+  auth.hasPermission(`model.metric_implementation.${action}`);
+const { isDirty, markSaved, confirmDiscardChanges } = useUnsavedChanges({
+  state: computed(() => (isNew.value ? identity : form)),
+  t,
+});
+const go = (id) =>
+  navigateModelRoute(router, {
+    path: `/metric-implementations${id ? `/${id}` : ''}`,
+  });
+const refKey = (v) => `${v.relation_id}:${v.field_id}`;
+const fieldRef = (key) => {
+  const [relation_id, field_id] = key.split(':').map(Number);
+  if (
+    !Number.isInteger(relation_id) ||
+    relation_id < 0 ||
+    !Number.isInteger(field_id) ||
+    field_id <= 0
+  )
+    throw Error(t('model.metric_workspace.required'));
+  return { relation_id, field_id };
+};
+function setRevision(id) {
+  selectedRevision.value = id;
+  editingNew.value = false;
+  Object.assign(form, blank());
+  const r = revision.value;
+  if (r) {
+    const c = r.contract;
+    Object.assign(form, {
+      metric_definition_revision_id: r.metric_definition_revision_id,
+      operation: c.operation,
+      subject_field_id: c.subject.field_id,
+      subject_relation_id: c.subject_relation_id,
+      distinct: refKey(c.distinct),
+      time: refKey(c.time),
+      filters: c.filters.map((v) => ({
+        field: refKey(v.field),
+        value: v.value,
+      })),
+    });
+  }
+  serviceName.value = item.value
+    ? `metric_${item.value.id}_r${r?.revision_no || 1}`
+    : '';
+  markSaved();
+}
+const selectRevision = async (id) => {
+  if (await confirmDiscardChanges()) setRevision(id);
+};
+const startDraft = async () => {
+  if (await confirmDiscardChanges()) {
+    const draft = item.value.revisions.find((v) => v.status === 'draft');
+    if (draft) setRevision(draft.id);
+    else {
+      editingNew.value = true;
+      markSaved();
+    }
+  }
+};
+const selectDefinition = (id) => {
+  identity.name =
+    definitions.value.find((v) => v.id === id)?.current_revision?.name || '';
+};
+const openDefinition = () =>
+  openConsoleRoute(`/standard/metrics/${item.value.metric_definition_id}`);
+let generation = 0;
+async function load() {
+  const request = ++generation;
+  loading.value = true;
+  error.value = '';
+  item.value = null;
+  if (!can('read')) {
+    error.value = t('model.metric_workspace.unavailable');
+    loading.value = false;
+    return;
+  }
+  try {
+    const [allTables, defs] = await Promise.all([
+      logicalTableAPI.listAll(),
+      standardMetricAPI.listAll(),
+    ]);
+    if (request !== generation) return;
+    tables.value = allTables;
+    definitions.value = defs;
+    if (!route.params.id) {
+      items.value = await api.list(
+        route.query.fact_table_id
+          ? { fact_table_id: Number(route.query.fact_table_id) }
+          : {},
+      );
+      markSaved();
+      return;
+    }
+    if (isNew.value) {
+      Object.assign(identity, {
+        fact_table_id: Number(route.query.fact_table_id) || null,
+        metric_definition_id: null,
+        name: '',
+        note: '',
+      });
+      markSaved();
+      return;
+    }
+    const current = await api.get(Number(route.params.id));
+    if (request !== generation) return;
+    const [factFields, links, revisions] = await Promise.all([
+      logicalTableAPI.getFields(current.fact_table_id),
+      logicalTableAPI.listDimensionRelations(current.fact_table_id),
+      standardMetricAPI.revisions(current.metric_definition_id),
+    ]);
+    const related = await Promise.all(
+      links.map(async (link) => ({
+        link,
+        fields: await logicalTableAPI.getFields(link.target_table),
+      })),
+    );
+    if (request !== generation) return;
+    item.value = current;
+    relations.value = links;
+    definitionRevisions.value = revisions.filter(
+      (v) => v.status === 'published',
+    );
+    const convert = (fields, rid, label) =>
+      fields.map((field) => ({
+        field_id: field.id,
+        relation_id: rid,
+        data_type: field.data_type,
+        key: `${rid}:${field.id}`,
+        label: `${label} · ${field.name} (${field.column_name})`,
+      }));
+    choices.value = [
+      ...convert(
+        factFields,
+        0,
+        tables.value.find((v) => v.id === current.fact_table_id)?.name || '',
+      ),
+      ...related.flatMap(({ link, fields }) =>
+        convert(
+          fields,
+          link.id,
+          tables.value.find((v) => v.id === link.target_table)?.name || '',
+        ),
+      ),
+    ];
+    const requested = Number(route.query.revision_id);
+    if (requested && !current.revisions.some((v) => v.id === requested))
+      throw Error(t('model.metric_workspace.unavailable'));
+    setRevision(requested || current.revisions[0]?.id || null);
+  } catch (err) {
+    if (request === generation)
+      error.value = getModelErrorMessage(
+        err,
+        t,
+        'model.metric_workspace.load_failed',
+      );
+  } finally {
+    if (request === generation) loading.value = false;
+  }
+}
+async function action(fn) {
+  busy.value = true;
+  try {
+    await fn();
+  } catch (err) {
+    ElMessage.error(
+      getModelErrorMessage(err, t, 'model.metric_workspace.action_failed'),
+    );
+  } finally {
+    busy.value = false;
+  }
+}
+const create = () =>
+  action(async () => {
+    if (
+      !identity.fact_table_id ||
+      !identity.metric_definition_id ||
+      !identity.name.trim()
+    )
+      throw Error(t('model.metric_workspace.required'));
+    const created = await api.create({ ...identity });
+    markSaved();
+    await go(created.id);
+  });
+const save = () =>
+  action(async () => {
+    if (
+      !form.metric_definition_revision_id ||
+      !form.subject_field_id ||
+      !form.subject_relation_id
+    )
+      throw Error(t('model.metric_workspace.required'));
+    const contract = {
+      operation: form.operation,
+      subject: { relation_id: 0, field_id: form.subject_field_id },
+      subject_relation_id: form.subject_relation_id,
+      distinct: fieldRef(form.distinct),
+      time: fieldRef(form.time),
+      filters: form.filters.map((v) => ({
+        field: fieldRef(v.field),
+        value: v.value,
+      })),
+    };
+    item.value = await api.saveDraft(item.value.id, {
+      version: item.value.version,
+      metric_definition_revision_id: form.metric_definition_revision_id,
+      contract,
+    });
+    setRevision(item.value.revisions.find((v) => v.status === 'draft').id);
+    ElMessage.success(t('model.metric_workspace.saved'));
+  });
+const changeState = (publish) =>
+  action(async () => {
+    const id = revision.value.id;
+    item.value = await (publish ? api.publish : api.withdraw)(
+      item.value.id,
+      id,
+      item.value.version,
+    );
+    setRevision(id);
+  });
+const remove = () =>
+  action(async () => {
+    await api.delete(item.value.id, item.value.version);
+    markSaved();
+    await go();
+  });
+const serviceMode = ref('create'),
+  existingServiceID = ref(null),
+  existingServices = ref([]),
+  serviceSearchLoading = ref(false);
+let serviceSearchGeneration = 0;
+async function searchServices(search = '') {
+  const request = ++serviceSearchGeneration;
+  serviceSearchLoading.value = true;
+  try {
+    const response = await metricServiceAPI.search(search);
+    if (request === serviceSearchGeneration)
+      existingServices.value = response.data.filter(
+        (v) => v.config_type === 'sql',
+      );
+  } catch (err) {
+    if (request === serviceSearchGeneration) {
+      existingServices.value = [];
+      ElMessage.error(
+        getModelErrorMessage(err, t, 'model.metric_workspace.load_failed'),
+      );
+    }
+  } finally {
+    if (request === serviceSearchGeneration) serviceSearchLoading.value = false;
+  }
+}
+const openServiceDialog = () =>
+  action(async () => {
+    serviceMode.value = auth.hasPermission('service.definition.create')
+      ? 'create'
+      : 'rebind';
+    existingServiceID.value = null;
+    serviceDialog.value = true;
+    if (
+      auth.hasPermission('service.definition.update') &&
+      auth.hasPermission('service.definition.read')
+    )
+      await searchServices();
+  });
+const operationChanged = () => {
+  if (form.operation === 'directional_overlap') form.filters = [];
+};
+const publishService = () =>
+  action(async () => {
+    const metric_source = {
+      implementation_id: item.value.id,
+      revision_id: revision.value.id,
+    };
+    let service;
+    if (serviceMode.value === 'rebind') {
+      const target = existingServices.value.find(
+        (v) => v.id === existingServiceID.value,
+      );
+      if (!target?.service_version)
+        throw Error(t('model.metric_workspace.required'));
+      service = await metricServiceAPI.rebind(target.id, {
+        metric_source,
+        service_version: target.service_version,
+      });
+    } else {
+      if (!serviceName.value.trim())
+        throw Error(t('model.metric_workspace.required'));
+      service = await metricServiceAPI.create({
+        service_name: serviceName.value.trim(),
+        title: item.value.name,
+        config_type: 'sql',
+        metric_source,
+        public_access: false,
+        max_features:
+          revision.value.contract.operation === 'directional_overlap'
+            ? 240
+            : 120,
+      });
+    }
+    serviceDialog.value = false;
+    await openConsoleRoute(`/service/query-services/${service.id}`);
+  });
+onBeforeRouteUpdate((to, from) =>
+  String(to.params.id) === String(from.params.id) &&
+  to.fullPath !== from.fullPath
+    ? confirmDiscardChanges()
+    : true,
+);
+watch(
+  () => [route.params.id, route.query.fact_table_id, route.query.revision_id],
+  load,
+  { immediate: true },
+);
+</script>
+<style scoped>
+.metric-workspace {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  color: var(--addp-text-primary);
+}
+.workspace-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: space-between;
+}
+.workspace-header h2 {
+  margin: 0;
+}
+.field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.el-select {
+  width: 100%;
+}
+.el-tag {
+  margin: 12px 8px 12px 0;
+}
+.filters {
+  width: 100%;
+  display: grid;
+  gap: 8px;
+}
+.filter-row {
+  display: grid;
+  grid-template-columns: 2fr 1fr auto;
+  gap: 8px;
+}
+@media (max-width: 720px) {
+  .metric-workspace {
+    padding: 12px;
+  }
+  .field-grid {
+    grid-template-columns: 1fr;
+  }
+  .filter-row {
+    grid-template-columns: 1fr;
+  }
+}
+</style>

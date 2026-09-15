@@ -115,6 +115,9 @@ func main() {
 	queryServiceService := serviceInternal.NewQueryServiceService(queryServiceRepo, systemClient, metaClient, cfg.GatewayURL)
 	queryExecutorService := serviceInternal.NewQueryExecutorService(systemClient, systemServiceClient, cfg.EncryptionKey)
 	queryExecutorService.SetProtectionGate(protectionGate)
+	modelClient := commonClient.NewModelClient(cfg.ModelServiceURL, tokenSource, nil)
+	queryServiceService.SetModelClient(modelClient)
+	queryExecutorService.SetModelClient(modelClient)
 	querySampleService := serviceInternal.NewQuerySampleService(
 		systemServiceClient,
 		commonClient.NewSystemExecutionAuthorizationClient(cfg.SystemServiceURL, nil),
@@ -202,6 +205,7 @@ func main() {
 	// ========== 模块注册（注册到 System service_registry）==========
 	runtimeContext, stopRuntime := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopRuntime()
+	go queryServiceService.RunLineagePublisher(runtimeContext, time.Minute)
 	projectionstore.NewRunner(
 		protectionStore, securityClient, systemServiceClient, 30*time.Second,
 		serviceprotection.NewAcknowledgementBarrier(

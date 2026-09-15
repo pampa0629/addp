@@ -17,6 +17,7 @@ const routes = [
     redirect: '/entities',
     meta: { requiresAuth: true },
     children: [
+      { path: 'metric-implementations/:id?', name: 'MetricImplementationWorkspace', component: () => import('../views/MetricImplementationWorkspace.vue'), meta: { requiresAuth: true, title: '指标实现' } },
       {
         path: 'dw-layers',
         name: 'DWLayerList',
@@ -57,7 +58,7 @@ const routes = [
         path: 'star-schema',
         name: 'StarSchema',
         component: () => import('../views/StarSchemaView.vue'),
-        meta: { requiresAuth: true, title: '星型建模视图' }
+        meta: { requiresAuth: true, title: '维度建模' }
       }
     ]
   }

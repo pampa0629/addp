@@ -148,3 +148,31 @@ test('parameter bindings preserve resource defaults and revert the whole logical
   }])
   assert.deepEqual(clearParameterBinding(parameters, input), {})
 })
+
+test('string resource picker binds materialization output directly to the query target', () => {
+  const original = { target_locator: 'addp://engine/2/path/outdoor/dim_person?type=table', write_mode: 'overwrite' }
+  const [input] = executionInputPorts({
+    input_schema: { type: 'object', properties: { target_locator: { type: 'string', format: 'resource-locator' } } },
+    input_defaults: original,
+    input_ui_schema: { target_locator: { control: 'resource_tree_picker', resource_binding: { mode: 'existing' } } }
+  })
+  const template = '{{materialize.outputs.target_locator}}'
+  const bound = setParameterBinding(original, input, template)
+  assert.deepEqual(input.bindingPath, ['target_locator'])
+  assert.deepEqual(bound, { target_locator: template, write_mode: 'overwrite' })
+  assert.equal(parameterBindings(bound, [input])[0].stepId, 'materialize')
+  assert.deepEqual(clearParameterBinding(bound, input), { write_mode: 'overwrite' })
+  assert.equal(original.target_locator, 'addp://engine/2/path/outdoor/dim_person?type=table')
+})
+
+test('object target resource binds its parent and retains target configuration', () => {
+  const [input] = executionInputPorts({
+    input_schema: { type: 'object', properties: { target: { type: 'object', properties: { parent_locator: { type: 'string' }, name: { type: 'string' } } } } },
+    input_defaults: { target: { name: 'default_table' } },
+    input_ui_schema: { target: { control: 'resource_tree_picker', resource_binding: { mode: 'target' } } }
+  })
+  const template = '{{source.outputs.schema_locator}}'
+  const bound = setParameterBinding({ target: { name: 'chosen_table' } }, input, template)
+  assert.deepEqual(bound, { target: { name: 'chosen_table', parent_locator: template } })
+  assert.equal(parameterBindings(bound, [input])[0].stepId, 'source')
+})

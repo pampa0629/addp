@@ -594,7 +594,11 @@ func serviceDependencyVersion(service *models.QueryService) string {
 		if snapshot.DependencyHash == "" || len(service.GetStableKey()) == 0 {
 			return ""
 		}
-		return hashString(snapshot.DependencyHash + "\x00" + strings.Join(service.GetStableKey(), "\x00"))
+		parameters, err := json.Marshal(service.NamedParameters)
+		if err != nil {
+			return ""
+		}
+		return hashString(snapshot.DependencyHash + "\x00" + strings.Join(service.GetStableKey(), "\x00") + "\x00" + string(parameters))
 	}
 	return ""
 }

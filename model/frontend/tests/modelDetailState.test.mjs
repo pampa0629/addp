@@ -41,20 +41,16 @@ test('entity and logical table details preserve unsaved drafts across navigation
   }
 })
 
-test('logical table details render executable metric implementations against published definitions', async () => {
+test('metric editing has one independent owner and tables only navigate to it', async () => {
   const source = await readFile(new URL('../src/views/LogicalTableDetail.vue', import.meta.url), 'utf8')
+  const workspace = await readFile(new URL('../src/views/MetricImplementationWorkspace.vue', import.meta.url), 'utf8')
   const api = await readFile(new URL('../src/api/model.js', import.meta.url), 'utf8')
-  assert.match(source, /@click="openMetricDialog\(\)"/)
-  assert.match(source, /Promise\.all\(\[loadFields\(\), loadMetrics\(\), loadAvailableMetrics\(\)\]\)/)
-  assert.match(source, /const metricNameMap = computed\(\(\) => \{/)
-  assert.match(source, /metric_definition_revision_id/)
-  assert.match(source, /v-for="f in metricSourceFields"/)
-  assert.match(source, /const metricSourceFields = computed\(\(\) => fields\.value\)/)
-  assert.doesNotMatch(source, /const measureFields = computed\(\(\) =>\s*fields\.value\.filter/)
-  assert.match(source, /source_config: \{ field_ids: metricForm\.field_ids \}/)
-  assert.match(source, /expression_config: \{ engine:/)
-  assert.match(api, /metric-implementations/)
-  assert.doesNotMatch(api, /logical-tables\/\$\{tableId\}\/metrics/)
+  assert.match(source, /<MetricImplementationLinks/)
+  assert.doesNotMatch(source, /openMetricDialog|saveMetric|expression_config|metricForm/)
+  assert.match(workspace, /version:\s*item.value.version/)
+  assert.match(workspace, /metric_definition_revision_id/)
+  assert.match(workspace, /metric_source[,:]/)
+  assert.doesNotMatch(api, /logical-tables\/\$\{tableId\}\/metric-implementations/)
 })
 
 test('logical table materialization binds a schema locator and target name', async () => {

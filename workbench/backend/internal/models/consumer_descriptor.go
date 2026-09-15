@@ -1,6 +1,7 @@
 package models
 
 import "github.com/addp/common/datatype"
+import commonquery "github.com/addp/common/query"
 
 const ConsumerDescriptorSchemaVersion = "addp.service_consumer/v1"
 
@@ -38,11 +39,12 @@ type StructuredQueryInputContract struct {
 }
 
 type ConsumerNamedParameter struct {
-	Name        string             `json:"name"`
-	Type        datatype.FieldType `json:"type"`
-	Required    bool               `json:"required"`
-	Description string             `json:"description"`
-	Default     interface{}        `json:"default,omitempty" swaggertype:"object"`
+	Options     []commonquery.ParameterOption `json:"options,omitempty"`
+	Name        string                        `json:"name"`
+	Type        datatype.FieldType            `json:"type"`
+	Required    bool                          `json:"required"`
+	Description string                        `json:"description"`
+	Default     interface{}                   `json:"default,omitempty" swaggertype:"object"`
 }
 
 type ConsumerQueryField struct {

@@ -92,15 +92,18 @@ func (e *Executor) executeSync(ctx context.Context, executionID uint) error {
 
 		// 更新当前步骤
 		if err := e.executionService.UpdateCurrentStep(ctx, executionID, step.ID); err != nil {
-			// 记录日志但继续执行
+			return e.markFailed(ctx, executionID, err)
 		}
 
 		// 执行步骤（传递父执行 UUID 用于 parent_execution_id）
 		result, err := e.executeStep(ctx, step, stepResults, execution.ExecutionID, execution.TriggerType, execution.TenantID)
 		stepResults[step.ID] = result
 
+		// 每一步结束后立即发布结果，供执行详情和画布观察；下一步不能越过持久化失败。
+		if persistErr := e.executionService.UpdateStepResults(ctx, executionID, stepResults); persistErr != nil {
+			return e.markFailed(ctx, executionID, persistErr)
+		}
 		if err != nil {
-			e.executionService.UpdateStepResults(ctx, executionID, stepResults)
 			return e.markFailed(ctx, executionID, fmt.Errorf("步骤 %s 失败: %w", step.Name, err))
 		}
 	}

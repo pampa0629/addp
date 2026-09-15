@@ -110,7 +110,7 @@ echo ""
 # All ADDP services - must stay in sync with build-images.sh
 ALL_SERVICES=(
     "system-backend" "manager-backend" "meta-backend"
-    "transfer-backend" "orchestrator-backend" "develop-backend" "develop-query-worker" "service-backend"
+    "transfer-backend" "orchestrator-backend" "develop-backend" "service-backend"
     "monitor-backend" "standard-backend" "copilot-backend" "agent-backend" "model-backend" "quality-backend" "security-backend" "asset-backend" "catalog-backend" "workbench-backend" "portal-backend" "graph-backend" "inference-backend"
     "geopython-workflow-engine" "raster-mosaic-runtime" "model3d-workflow-engine" "pointcloud-workflow-engine" "supermap-workflow-engine" "spark-workflow-engine" "jupyter-engine" "duckdb-engine"
     "gateway"

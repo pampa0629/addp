@@ -11,11 +11,12 @@ import (
 )
 
 const (
-	RoleExecutionWorker  = "execution_worker"
-	RoleContinuousWorker = "continuous_worker"
-	RoleDispatcher       = "dispatcher"
-	DefaultInterval      = 10 * time.Second
-	DefaultTTL           = 30 * time.Second
+	RoleExecutionWorker     = "execution_worker"
+	RoleExecutionSupervisor = "execution_supervisor"
+	RoleContinuousWorker    = "continuous_worker"
+	RoleDispatcher          = "dispatcher"
+	DefaultInterval         = 10 * time.Second
+	DefaultTTL              = 30 * time.Second
 )
 
 // Heartbeat is a public liveness fact for one ADDP application background
@@ -145,7 +146,7 @@ func NewReporter(repo *Repository, config ReporterConfig) (*Reporter, error) {
 		return nil, fmt.Errorf("background runtime reporter identity is required")
 	}
 	switch config.Role {
-	case RoleExecutionWorker, RoleContinuousWorker, RoleDispatcher:
+	case RoleExecutionWorker, RoleExecutionSupervisor, RoleContinuousWorker, RoleDispatcher:
 	default:
 		return nil, fmt.Errorf("unsupported background runtime role %q", config.Role)
 	}

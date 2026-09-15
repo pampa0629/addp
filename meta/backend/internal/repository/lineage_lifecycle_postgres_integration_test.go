@@ -91,6 +91,21 @@ func TestLineageLifecycleMigrationAgainstPostgres(t *testing.T) {
 	}
 	assertLineageRelationStatus(t, tx, 4, "stale")
 	assertLineageDependencyStatus(t, tx, 102, "stale")
+	if err := tx.Exec(`INSERT INTO meta.lineage_service_dependencies (tenant_id,source_item_id,service_id,published_revision,dependency_kind,granularity,status,first_observed_at,last_observed_at) VALUES (7,3,103,'r1','table','item','active',NOW(),NOW())`).Error; err != nil {
+		t.Fatal(err)
+	}
+	displayMigration, err := metaMigrations.FS.ReadFile("023_lineage_service_display.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Exec(string(displayMigration)).Error; err != nil {
+		t.Fatal(err)
+	}
+	assertLineageDependencyStatus(t, tx, 103, "unverified")
+	assertLineageDependencyStatus(t, tx, 102, "stale")
+	if err := tx.Exec("UPDATE meta.lineage_service_dependencies SET service_name = '指标服务', service_updated_at = NOW() WHERE service_id = 103").Error; err != nil {
+		t.Fatal(err)
+	}
 }
 
 func assertLineageRelationStatus(t *testing.T, db *gorm.DB, targetItemID uint, want string) {

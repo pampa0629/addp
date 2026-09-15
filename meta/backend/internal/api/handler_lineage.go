@@ -55,12 +55,14 @@ func (h *Handler) CollectExecutionLineage(c *gin.Context) {
 
 // RecordServicePublication receives a publication snapshot from Service.
 // @Summary 记录服务发布血缘事实 | Record service publication lineage
+// @Description Service 同步名称、更新时间与当前版本依赖；更新关闭旧版本，忽略过期通知 | Service publishes its name, update time and current revision dependencies; superseded revisions close and stale notifications are ignored
 // @Tags Meta Lineage
 // @Accept json
 // @Produce json
 // @Param request body models.RecordServicePublicationRequest true "服务发布血缘事实 | Service publication lineage"
 // @Success 204
 // @Failure 400 {object} models.LineageErrorResponse
+// @Failure 500 {object} models.LineageErrorResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["meta.lineage.create"]
 // @Router /lineage/services [post]
@@ -71,8 +73,12 @@ func (h *Handler) RecordServicePublication(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, models.LineageErrorResponse{Error: commoni18n.T(c, metai18n.MsgLineageInvalidQuery), ErrorCode: "invalid_lineage_publication"})
 		return
 	}
+	if request.ServiceID == 0 || strings.TrimSpace(request.ServiceName) == "" || request.ServiceUpdatedAt.IsZero() || strings.TrimSpace(request.PublishedRevision) == "" {
+		c.JSON(http.StatusBadRequest, models.LineageErrorResponse{Error: commoni18n.T(c, metai18n.MsgLineageInvalidQuery), ErrorCode: "invalid_lineage_publication"})
+		return
+	}
 	if err := h.lineageService.RecordServicePublication(c.Request.Context(), commonAuth.GetTenantID(c), request); err != nil {
-		c.JSON(http.StatusBadRequest, models.LineageErrorResponse{Error: err.Error(), ErrorCode: "invalid_lineage_publication"})
+		c.JSON(http.StatusInternalServerError, models.LineageErrorResponse{Error: commoni18n.T(c, metai18n.MsgLineageQueryFailed), ErrorCode: "lineage_publication_failed"})
 		return
 	}
 	c.Status(http.StatusNoContent)
@@ -87,8 +93,10 @@ func (h *Handler) RecordServicePublication(c *gin.Context) {
 // @Param item_id query int false "数据项 ID，subject_kind=data_item 时必填 | Item ID, required for data_item"
 // @Param service_id query int false "服务 ID，subject_kind=published_service 时必填 | Service ID, required for published_service"
 // @Param revision query string false "服务发布版本，subject_kind=published_service 时必填 | Published revision, required for published_service"
-// @Param direction query string false "方向：upstream、downstream 或 both | Direction: upstream, downstream or both" default(both)
-// @Param depth query int false "展开深度，范围 0-20 | Traversal depth, 0-20" default(3)
+// @Param direction query string false "方向：upstream、downstream 或两者有向遍历并集 both，不含旁系 | Direction: upstream, downstream or their directed union both; excludes sibling branches" default(both)
+// @Param depth query int false "每条派生或服务依赖边计一层，0 只显示主体，范围 0-20 | Each derive or serve edge is one hop; 0 returns only the subject; range 0-20" default(2)
+// @Param expand_upstream query string false "额外向上展开的 item ID，逗号分隔，最多100个 | Item IDs to expand upstream, comma separated, max 100"
+// @Param expand_downstream query string false "额外向下展开的 item ID，逗号分隔，最多100个 | Item IDs to expand downstream, comma separated, max 100"
 // @Param limit query int false "节点和边上限，范围 1-500 | Node and edge limit, 1-500" default(100)
 // @Param as_of query string false "历史观察时间（RFC3339） | Historical observation time (RFC3339)"
 // @Success 200 {object} models.LineageGraphResponse "血缘图 | Lineage graph"
@@ -126,10 +134,25 @@ func parseLineageGraphRequest(c *gin.Context) (models.LineageGraphRequest, error
 	request := models.LineageGraphRequest{
 		SubjectKind: c.Query("subject_kind"),
 		Direction:   c.DefaultQuery("direction", "both"),
-		Depth:       3,
+		Depth:       2,
 		Limit:       100,
 	}
 	var err error
+	for key, target := range map[string]*[]uint{"expand_upstream": &request.ExpandUpstream, "expand_downstream": &request.ExpandDownstream} {
+		if raw := c.Query(key); raw != "" {
+			values := strings.Split(raw, ",")
+			if len(values) > 100 {
+				return request, fmt.Errorf("%s allows at most 100 items", key)
+			}
+			for _, value := range values {
+				id, err := strconv.ParseUint(value, 10, 32)
+				if err != nil || id == 0 {
+					return request, fmt.Errorf("%s requires positive item IDs", key)
+				}
+				*target = append(*target, uint(id))
+			}
+		}
+	}
 	if raw := c.Query("item_id"); raw != "" {
 		value, parseErr := strconv.ParseUint(raw, 10, 32)
 		if parseErr != nil || value == 0 {

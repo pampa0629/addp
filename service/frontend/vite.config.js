@@ -15,7 +15,7 @@ export default defineConfig({
       'proj4': resolve(__dirname, 'node_modules/proj4'),
       'vue-i18n': resolve(__dirname, 'node_modules/vue-i18n')
     },
-  dedupe: ['ol', 'proj4', 'vue', 'vue-i18n', 'element-plus', '@element-plus/icons-vue', 'axios', '@antv/g6']
+  dedupe: ['ol', 'proj4', 'vue', 'vue-router', 'vue-i18n', 'element-plus', '@element-plus/icons-vue', 'axios', '@antv/g6']
   },
   optimizeDeps: {
     include: ['@amap/amap-jsapi-loader', 'ol', 'proj4']

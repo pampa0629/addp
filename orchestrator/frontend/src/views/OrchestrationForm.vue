@@ -3,15 +3,36 @@
     <StatusAnnouncer :label="t('orchestrator.orchestrationForm.statusLabel')" :message="formAnnouncement" />
     <div class="header">
       <div class="header-title">
-        <h2>{{ isEdit ? t('orchestrator.orchestrationForm.editTitle') : t('orchestrator.orchestrationForm.createTitle') }}</h2>
+        <div class="title-row">
+          <h2 class="orchestration-name">{{ isEdit ? form.name : t('orchestrator.orchestrationForm.createTitle') }}</h2>
+          <el-tooltip v-if="isEdit" :content="t('orchestrator.orchestrationForm.editMetadata')">
+            <el-button
+              text circle size="small"
+              :aria-label="t('orchestrator.orchestrationForm.editMetadata')"
+              :disabled="!loaded || !editorReady || saving || executing"
+              @click="openMetadataDialog"
+            ><el-icon><Edit /></el-icon></el-button>
+          </el-tooltip>
+        </div>
         <div class="header-summary">
           <ScheduleDisplay :cron="form.schedule" :empty-text="t('schedule.manualTrigger')" />
-          <el-tag size="small" :type="form.enabled ? 'success' : 'info'">
+          <el-tag v-if="form.schedule" size="small" :type="form.enabled ? 'success' : 'info'">
             {{ form.enabled ? t('orchestrator.orchestrationForm.enabledLabel') : t('orchestrator.orchestrationForm.disabledLabel') }}
           </el-tag>
+          <span v-if="hasUnsavedChanges" class="unsaved-status">{{ t('orchestrator.orchestrationForm.unsavedChanges') }}</span>
         </div>
       </div>
       <div class="header-actions">
+        <el-tooltip v-if="authStore.hasPermission('orchestrator.workflow.execute')" :content="activeExecution ? t('orchestrator.liveExecution.alreadyRunning') : t('orchestrator.orchestrationForm.saveBeforeExecute')" :disabled="!executionDisabled">
+          <span><OrchestrationExecuteButton
+            :key="route.params.id"
+            :orchestration="{ ...form, id: route.params.id }"
+            :execute="orchestrationAPI.execute"
+            :disabled="executionDisabled"
+            @busy="executing = $event"
+            @executed="handleExecuted"
+          /></span>
+        </el-tooltip>
         <el-button @click="handleOpenScheduleDialog">
           <el-icon><Clock /></el-icon>
           {{ t('orchestrator.orchestrationForm.scheduleBtn') }}
@@ -24,12 +45,29 @@
           <el-icon><Close /></el-icon>
           {{ t('orchestrator.orchestrationForm.cancelBtn') }}
         </el-button>
-        <el-button type="primary" @click="handleSave" :loading="saving">
+        <el-button type="primary" @click="handleSave" :loading="saving" :disabled="!loaded || !editorReady || executing">
           <el-icon><Check /></el-icon>
           {{ t('orchestrator.orchestrationForm.saveBtn') }}
         </el-button>
       </div>
     </div>
+
+    <section v-if="execution" class="execution-summary" :aria-label="t('orchestrator.liveExecution.title')">
+      <div class="execution-summary-row">
+        <strong>{{ t('orchestrator.liveExecution.title') }}</strong>
+        <el-tag role="status" :type="executionStatusType(execution.status)">{{ t(`orchestrator.liveExecution.status.${execution.status}`) }}</el-tag>
+        <span>{{ execution.execution_id }}</span>
+        <span>{{ t('orchestrator.liveExecution.completed', { completed: completedSteps, total: executionSteps.length }) }}</span>
+        <el-button size="small" @click="openMonitorExecution(execution.execution_id)">{{ t('orchestrator.liveExecution.viewMonitor') }}</el-button>
+        <el-button v-if="!activeExecution" size="small" text @click="clearExecution">{{ t('orchestrator.liveExecution.dismiss') }}</el-button>
+      </div>
+      <p v-if="execution.error_details?.message" class="execution-error">{{ execution.error_details.message }}</p>
+      <p v-if="!executionMatchesDefinition">{{ t('orchestrator.liveExecution.definitionChanged') }}</p>
+      <div v-if="executionRefreshFailed" class="execution-refresh-error" role="alert">
+        {{ t('orchestrator.liveExecution.refreshFailed') }}
+        <el-button size="small" :loading="executionRefreshing" @click="refreshExecution">{{ t('orchestrator.liveExecution.retry') }}</el-button>
+      </div>
+    </section>
 
     <!-- 三栏布局 -->
     <div class="three-column-layout">
@@ -55,11 +93,15 @@
       <!-- 中央 DAG 画布 -->
       <div class="center-panel">
         <DAGEditor
+          v-if="loaded"
+          :key="route.params.id || 'new'"
           ref="dagEditor"
           :initial-steps="form.steps"
           :initial-layout="form.editor_layout"
+          :execution-states="executionMatchesDefinition ? executionStates : {}"
           @update:steps="handleStepsUpdate"
           @update:layout="handleLayoutUpdate"
+          @ready="handleEditorReady"
         />
       </div>
     </div>
@@ -108,7 +150,7 @@
       @opened="focusScheduleEnabled"
     >
       <el-form :model="scheduleDraft" label-position="top">
-        <el-form-item :label="t('orchestrator.orchestrationForm.enabledLabel')">
+        <el-form-item :label="t('orchestrator.orchestrationForm.scheduleEnabledLabel')">
           <el-switch ref="scheduleEnabledSwitchRef" v-model="scheduleDraft.enabled" />
         </el-form-item>
         <el-form-item>
@@ -153,19 +195,25 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, watch, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
-import { Check, Clock, Close, Document } from '@element-plus/icons-vue'
+import { Check, Clock, Close, Document, Edit } from '@element-plus/icons-vue'
+import { useAuthStore } from '../store/auth'
+import { useUnsavedChangesGuard, openMonitorExecution } from '@common-ui'
+import { useExecutionTracking } from '../composables/useExecutionTracking'
+import { executionStepStates, executionStatusType } from '../utils/executionPresentation'
 import DAGEditor from '../components/DAGEditor.vue'
 import TaskPanel from '../components/TaskPanel.vue'
 import orchestrationAPI from '../api/orchestration'
 import { buildOrchestrationPayload } from '../utils/orchestrationPayload'
-import { focusElement, ScheduleConfig, ScheduleDisplay, StatusAnnouncer, useResizable, useConsolePageDescriptor } from '@common-ui'
+import { focusElement, ScheduleConfig, ScheduleDisplay, StatusAnnouncer, useResizable, useConsolePageDescriptor, OrchestrationExecuteButton } from '@common-ui'
 import { navigateOrchestratorRoute, orchestrationListLocation } from '@/utils/moduleNavigation'
 
 const { t } = useI18n()
+const authStore = useAuthStore()
+const editorReady = ref(false)
 const router = useRouter()
 const route = useRoute()
 const dagEditor = ref(null)
@@ -175,6 +223,26 @@ const jsonCloseButtonRef = ref(null)
 
 const isEdit = ref(false)
 const saving = ref(false)
+const executing = ref(false)
+const executionSteps = ref([])
+const executedDefinition = ref('')
+const {
+  execution, active: activeExecution, refreshFailed: executionRefreshFailed,
+  refreshing: executionRefreshing, start: trackExecution, clear: clearExecution, refresh: refreshExecution
+} = useExecutionTracking(orchestrationAPI)
+const executionStates = computed(() => executionStepStates(execution.value, executionSteps.value))
+const completedSteps = computed(() => Object.values(executionStates.value).filter(step => ['success', 'failed', 'timeout', 'cancelled'].includes(step.status)).length)
+const executionMatchesDefinition = computed(() => executedDefinition.value === definitionSignature())
+function handleExecuted(result) {
+  executedDefinition.value = savedDefinition.value
+  executionSteps.value = JSON.parse(savedDefinition.value).steps
+  trackExecution(result)
+}
+const loaded = ref(false)
+const savedDefinition = ref('')
+const savedPositions = ref('')
+const layoutBaselinePending = ref(true)
+let loadGeneration = 0
 const jsonDialogVisible = ref(false)
 const metadataDialogVisible = ref(false)
 const scheduleDialogVisible = ref(false)
@@ -184,7 +252,7 @@ const {
   maxSize: leftPanelMaxWidth,
   startResize: startLeftPanelResize,
   handleResizeKeydown: handleLeftPanelResizeKeydown
-} = useResizable(320, 240, 560, 'horizontal')
+} = useResizable(360, 240, 560, 'horizontal')
 
 const form = reactive({
   name: '',
@@ -210,6 +278,32 @@ const scheduleDraft = reactive({
   schedule: ''
 })
 
+function definitionSignature() {
+  const { editor_layout, ...definition } = buildOrchestrationPayload(form)
+  return JSON.stringify(definition)
+}
+const hasDefinitionChanges = computed(() => loaded.value && definitionSignature() !== savedDefinition.value)
+function positionsSignature() {
+  return JSON.stringify(Object.entries(form.editor_layout?.nodes || {}).sort(([a], [b]) => a.localeCompare(b)))
+}
+const hasUnsavedChanges = computed(() => loaded.value && (hasDefinitionChanges.value ||
+  (metadataDialogVisible.value && (metadataDraft.name !== form.name || metadataDraft.description !== form.description)) ||
+  (scheduleDialogVisible.value && (scheduleDraft.enabled !== form.enabled || scheduleDraft.schedule !== form.schedule)) ||
+  (!layoutBaselinePending.value && positionsSignature() !== savedPositions.value)))
+useUnsavedChangesGuard({
+  router,
+  isDirty: () => hasUnsavedChanges.value,
+  shouldConfirmUpdate: (to, from) => to.params.id !== from.params.id
+})
+function handleEditorReady(ready) {
+  editorReady.value = ready
+  if (ready && layoutBaselinePending.value) {
+    savedPositions.value = positionsSignature()
+    layoutBaselinePending.value = false
+  }
+}
+const executionDisabled = computed(() => !loaded.value || !editorReady.value || !isEdit.value || saving.value || activeExecution.value || hasDefinitionChanges.value)
+
 // 格式化 JSON 用于展示
 const formattedJSON = computed(() => {
   return JSON.stringify(form, null, 2)
@@ -218,19 +312,32 @@ const formAnnouncement = computed(() => saving.value
   ? t('orchestrator.orchestrationForm.savingStatus')
   : '')
 
-onMounted(async () => {
-  const id = route.params.id
-  if (id && id !== 'new') {
-    isEdit.value = true
-    await loadOrchestration(id)
+watch(() => route.params.id, async id => {
+  clearExecution()
+  executing.value = false
+  const generation = ++loadGeneration
+  loaded.value = false
+  editorReady.value = false
+  layoutBaselinePending.value = true
+  isEdit.value = Boolean(id && id !== 'new')
+  if (isEdit.value) {
+    await loadOrchestration(id, generation)
+  } else {
+    Object.assign(form, buildOrchestrationPayload())
+    savedDefinition.value = definitionSignature()
+    loaded.value = true
   }
-})
+}, { immediate: true })
 
-async function loadOrchestration(id) {
+async function loadOrchestration(id, generation) {
   try {
     const data = await orchestrationAPI.get(id)
+    if (generation !== loadGeneration) return
     Object.assign(form, buildOrchestrationPayload(data))
+    savedDefinition.value = definitionSignature()
+    loaded.value = true
   } catch (error) {
+    if (generation !== loadGeneration) return
     ElMessage.error(t('orchestrator.orchestrationForm.loadFailed'))
   }
 }
@@ -256,6 +363,7 @@ function hasTaskReference(step) {
 }
 
 async function handleSave() {
+  if (!loaded.value || !editorReady.value || saving.value || executing.value) return
   const latestSteps = dagEditor.value?.getSteps ? dagEditor.value.getSteps() : form.steps
   form.steps = latestSteps || []
   form.editor_layout = dagEditor.value?.getLayout ? dagEditor.value.getLayout() : form.editor_layout
@@ -270,6 +378,14 @@ async function handleSave() {
     return
   }
 
+  if (isEdit.value) {
+    await persistForm()
+    return
+  }
+  openMetadataDialog()
+}
+
+function openMetadataDialog() {
   metadataDraft.name = form.name
   metadataDraft.description = form.description
   metadataDialogVisible.value = true
@@ -284,7 +400,8 @@ async function confirmMetadataDialog() {
   form.name = metadataDraft.name.trim()
   form.description = metadataDraft.description
   metadataDialogVisible.value = false
-  await persistForm()
+  if (isEdit.value) await handleSave()
+  else await persistForm()
 }
 
 function handleOpenScheduleDialog() {
@@ -303,7 +420,9 @@ function confirmScheduleDialog() {
 async function persistForm() {
   saving.value = true
   try {
-    const payload = buildOrchestrationPayload(form)
+    const payload = JSON.parse(JSON.stringify(buildOrchestrationPayload(form)))
+    const savedSignature = definitionSignature()
+    const savedPositionSignature = positionsSignature()
     if (isEdit.value) {
       await orchestrationAPI.update(route.params.id, payload)
       ElMessage.success(t('orchestrator.orchestrationForm.updateSuccess'))
@@ -311,7 +430,9 @@ async function persistForm() {
       await orchestrationAPI.create(payload)
       ElMessage.success(t('orchestrator.orchestrationForm.createSuccess'))
     }
-    await navigateOrchestratorRoute(router, orchestrationListLocation(route.query), { history: 'replace' })
+    savedDefinition.value = savedSignature
+    savedPositions.value = savedPositionSignature
+    if (!isEdit.value) await navigateOrchestratorRoute(router, orchestrationListLocation(route.query), { history: 'replace' })
   } catch (error) {
     ElMessage.error(isEdit.value ? t('orchestrator.orchestrationForm.updateFailed') : t('orchestrator.orchestrationForm.createFailed'))
   } finally {
@@ -378,6 +499,7 @@ function downloadJSON() {
   margin-bottom: 20px;
   flex-shrink: 0;
   gap: 16px;
+  flex-wrap: wrap;
 }
 
 .header h2 {
@@ -392,12 +514,37 @@ function downloadJSON() {
   min-width: 0;
 }
 
+.title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.title-row .el-button {
+  flex-shrink: 0;
+}
+
+.orchestration-name {
+  font-size: 18px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+  color: var(--addp-text-primary);
+}
+
+.unsaved-status {
+  color: var(--el-color-warning);
+  font-size: 12px;
+}
+
 .header-summary {
   display: flex;
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
 }
+
+.header-actions :deep(.el-button + .el-button) { margin-left: 0; }
 
 .header-actions {
   display: flex;
@@ -406,6 +553,21 @@ function downloadJSON() {
   flex-wrap: wrap;
   justify-content: flex-end;
 }
+
+.execution-summary {
+  flex-shrink: 0;
+  margin-bottom: 12px;
+  padding: 12px;
+  border: 1px solid var(--addp-border-color);
+  border-radius: 6px;
+  color: var(--addp-text-primary);
+  font-size: 13px;
+}
+.execution-summary-row { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.execution-summary-row > span { overflow-wrap: anywhere; }
+.execution-summary p { margin: 8px 0 0; }
+.execution-error { color: var(--el-color-danger); overflow-wrap: anywhere; }
+.execution-refresh-error { margin-top: 8px; color: var(--el-color-warning); }
 
 .three-column-layout {
   flex: 1;

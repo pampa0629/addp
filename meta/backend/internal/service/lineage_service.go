@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"sort"
 	"strings"
 	"time"
 
@@ -92,11 +91,24 @@ func (s *LineageService) CollectExecution(ctx context.Context, tenantID uint, ex
 
 // RecordServicePublication records one immutable publication observation and updates the active projection.
 func (s *LineageService) RecordServicePublication(ctx context.Context, tenantID uint, request models.RecordServicePublicationRequest) error {
-	if request.ServiceID == 0 || strings.TrimSpace(request.PublishedRevision) == "" {
-		return fmt.Errorf("service_id and published_revision are required")
+	if request.ServiceID == 0 || strings.TrimSpace(request.PublishedRevision) == "" || strings.TrimSpace(request.ServiceName) == "" || request.ServiceUpdatedAt.IsZero() {
+		return fmt.Errorf("service_id, service_name, service_updated_at and published_revision are required")
 	}
 	now := time.Now().UTC()
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Serialize publications for a service on PostgreSQL, including its first publication.
+		if tx.Dialector.Name() == "postgres" {
+			if err := tx.Exec("SELECT pg_advisory_xact_lock(?, ?)", int32(tenantID), int32(request.ServiceID)).Error; err != nil {
+				return err
+			}
+		}
+		var newer int64
+		if err := tx.Model(&models.LineageServiceDependency{}).Where("tenant_id = ? AND service_id = ? AND service_updated_at > ?", tenantID, request.ServiceID, request.ServiceUpdatedAt).Count(&newer).Error; err != nil {
+			return err
+		}
+		if newer > 0 {
+			return nil
+		}
 		for _, dependency := range request.Dependencies {
 			if dependency.SourceItemID == 0 {
 				continue
@@ -130,17 +142,17 @@ func (s *LineageService) RecordServicePublication(ctx context.Context, tenantID 
 			var projection models.LineageServiceDependency
 			err := tx.Where("tenant_id = ? AND source_item_id = ? AND service_id = ? AND published_revision = ? AND granularity = ? AND status <> 'closed'", tenantID, dependency.SourceItemID, request.ServiceID, request.PublishedRevision, granularity).First(&projection).Error
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				projection = models.LineageServiceDependency{TenantID: tenantID, SourceItemID: dependency.SourceItemID, ServiceID: request.ServiceID, PublishedRevision: request.PublishedRevision, DependencyHash: stringPtrIfNotEmpty(request.DependencyHash), DependencyKind: kind, Granularity: granularity, DependencyFields: dependency.DependencyFields, Status: "active", FirstObservedAt: now, LastObservedAt: now}
+				projection = models.LineageServiceDependency{ServiceName: request.ServiceName, ServiceUpdatedAt: request.ServiceUpdatedAt, TenantID: tenantID, SourceItemID: dependency.SourceItemID, ServiceID: request.ServiceID, PublishedRevision: request.PublishedRevision, DependencyHash: stringPtrIfNotEmpty(request.DependencyHash), DependencyKind: kind, Granularity: granularity, DependencyFields: dependency.DependencyFields, Status: "active", FirstObservedAt: now, LastObservedAt: now}
 				if err := tx.Create(&projection).Error; err != nil {
 					return err
 				}
 			} else if err != nil {
 				return err
-			} else if err := tx.Model(&projection).Updates(map[string]interface{}{"dependency_hash": request.DependencyHash, "dependency_kind": kind, "dependency_fields": commonModels.JSONMap(dependency.DependencyFields), "status": "active", "last_observed_at": now, "updated_at": now}).Error; err != nil {
+			} else if err := tx.Model(&projection).Updates(map[string]interface{}{"service_name": request.ServiceName, "service_updated_at": request.ServiceUpdatedAt, "dependency_hash": request.DependencyHash, "dependency_kind": kind, "dependency_fields": commonModels.JSONMap(dependency.DependencyFields), "status": "active", "last_observed_at": now, "updated_at": now}).Error; err != nil {
 				return err
 			}
 		}
-		return tx.Model(&models.LineageServiceDependency{}).Where("tenant_id = ? AND service_id = ? AND published_revision = ? AND status <> 'closed'", tenantID, request.ServiceID, request.PublishedRevision).Where("last_observed_at < ?", now).Updates(map[string]interface{}{"status": "closed", "closed_at": now, "updated_at": now}).Error
+		return tx.Model(&models.LineageServiceDependency{}).Where("tenant_id = ? AND service_id = ? AND status <> 'closed'", tenantID, request.ServiceID).Where("published_revision <> ? OR last_observed_at < ?", request.PublishedRevision, now).Updates(map[string]interface{}{"status": "closed", "closed_at": now, "updated_at": now, "service_updated_at": request.ServiceUpdatedAt}).Error
 	})
 }
 
@@ -377,6 +389,9 @@ func stringPtr(value string) *string { return &value }
 
 // GetGraph returns the current item projection and service dependencies.
 func (s *LineageService) GetGraph(ctx context.Context, tenantID uint, request models.LineageGraphRequest) (models.LineageGraphResponse, error) {
+	if len(request.ExpandUpstream) > 100 || len(request.ExpandDownstream) > 100 {
+		return models.LineageGraphResponse{}, fmt.Errorf("at most 100 expansions per direction")
+	}
 	if request.Depth < 0 || request.Depth > 20 {
 		return models.LineageGraphResponse{}, fmt.Errorf("depth must be between 0 and 20")
 	}
@@ -396,108 +411,7 @@ func (s *LineageService) GetGraph(ctx context.Context, tenantID uint, request mo
 		return models.LineageGraphResponse{}, fmt.Errorf("service_id and revision are required for published_service")
 	}
 
-	response := models.LineageGraphResponse{AsOf: request.AsOf}
-	itemIDs := make(map[uint]struct{})
-	if request.SubjectKind == "data_item" {
-		itemIDs[*request.ItemID] = struct{}{}
-		response.Subject = models.LineageNode{Kind: "data_item", ItemID: request.ItemID}
-	} else {
-		response.Subject = models.LineageNode{Kind: "published_service", ServiceID: request.ServiceID, PublishedRevision: request.Revision}
-		var deps []models.LineageServiceDependency
-		query := s.db.WithContext(ctx).Where("tenant_id = ? AND service_id = ? AND published_revision = ? AND status <> 'closed'", tenantID, *request.ServiceID, request.Revision)
-		if request.AsOf != nil {
-			query = query.Where("last_observed_at <= ?", *request.AsOf)
-		}
-		if err := query.Limit(request.Limit).Find(&deps).Error; err != nil {
-			return response, err
-		}
-		for _, dep := range deps {
-			itemIDs[dep.SourceItemID] = struct{}{}
-		}
-	}
-
-	if request.SubjectKind == "data_item" && request.Depth > 0 {
-		seed := *request.ItemID
-		var walked []struct {
-			ItemID uint `gorm:"column:item_id"`
-		}
-		directionPredicate := "r.source_item_id = w.item_id OR r.target_item_id = w.item_id"
-		if request.Direction == "upstream" {
-			directionPredicate = "r.target_item_id = w.item_id"
-		} else if request.Direction == "downstream" {
-			directionPredicate = "r.source_item_id = w.item_id"
-		}
-		statusClause := "r.status = 'active'"
-		if request.AsOf != nil {
-			statusClause = "(r.status = 'active' OR (r.status = 'closed' AND r.closed_at > ?))"
-		}
-		args := []interface{}{seed}
-		if request.AsOf != nil {
-			args = append(args, *request.AsOf)
-			args = append(args, *request.AsOf)
-		}
-		asOfClause := ""
-		if request.AsOf != nil {
-			asOfClause = " AND r.last_observed_at <= ?"
-			args = append(args, *request.AsOf)
-		}
-		args = append(args, request.Depth)
-		query := fmt.Sprintf(`WITH RECURSIVE walk(item_id, depth) AS (
-			SELECT CAST(? AS BIGINT), 0
-			UNION
-			SELECT CASE WHEN r.source_item_id = w.item_id THEN r.target_item_id ELSE r.source_item_id END, w.depth + 1
-			FROM walk w
-			JOIN meta.lineage_item_relations r ON (%s) AND %s%s
-			WHERE w.depth < ?
-		) SELECT item_id FROM walk`, directionPredicate, statusClause, asOfClause)
-		if err := s.db.WithContext(ctx).Raw(query, args...).Scan(&walked).Error; err != nil {
-			return response, err
-		}
-		for _, row := range walked {
-			itemIDs[row.ItemID] = struct{}{}
-		}
-	}
-
-	ids := make([]uint, 0, len(itemIDs))
-	for id := range itemIDs {
-		ids = append(ids, id)
-	}
-	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
-	if len(ids) > request.Limit {
-		response.Truncated = true
-		ids = ids[:request.Limit]
-	}
-	var items []models.MetaItem
-	if len(ids) > 0 {
-		if err := s.db.WithContext(ctx).Where("tenant_id = ? AND id IN ?", tenantID, ids).Find(&items).Error; err != nil {
-			return response, err
-		}
-	}
-	engineNames, err := s.lineageEngineNames(tenantID, items)
-	if err != nil {
-		return response, err
-	}
-	nodesByID := make(map[uint]models.LineageNode, len(items))
-	activeItemIDs := make([]uint, 0, len(items))
-	for _, item := range items {
-		node := models.LineageNode{
-			Kind: "data_item", ItemID: uintPtr(item.ID), ItemFingerprint: item.Fingerprint,
-			EngineID: uintPtr(item.EngineID), EngineName: engineNames[item.EngineID],
-			ItemType: item.ItemType, Name: item.Name, FullName: item.FullName,
-		}
-		nodesByID[item.ID] = node
-		activeItemIDs = append(activeItemIDs, item.ID)
-		response.Nodes = append(response.Nodes, node)
-	}
-	sort.Slice(activeItemIDs, func(i, j int) bool { return activeItemIDs[i] < activeItemIDs[j] })
-	if request.SubjectKind == "data_item" {
-		subject, ok := nodesByID[*request.ItemID]
-		if !ok {
-			return response, gorm.ErrRecordNotFound
-		}
-		response.Subject = subject
-	}
-	return s.populateGraphEdges(ctx, tenantID, request, activeItemIDs, response, nodesByID)
+	return s.buildLineageGraph(ctx, tenantID, request)
 }
 
 func (s *LineageService) lineageEngineNames(tenantID uint, items []models.MetaItem) (map[uint]string, error) {
@@ -523,66 +437,6 @@ func (s *LineageService) lineageEngineNames(tenantID uint, items []models.MetaIt
 		}
 	}
 	return names, nil
-}
-
-func (s *LineageService) populateGraphEdges(ctx context.Context, tenantID uint, request models.LineageGraphRequest, ids []uint, response models.LineageGraphResponse, nodesByID map[uint]models.LineageNode) (models.LineageGraphResponse, error) {
-	if len(ids) == 0 {
-		return response, nil
-	}
-	var relations []models.LineageItemRelation
-	statusClause := "status = 'active'"
-	if request.AsOf != nil {
-		statusClause = "(status = 'active' OR (status = 'closed' AND closed_at > ?))"
-	}
-	queryArgs := []interface{}{tenantID}
-	if request.AsOf != nil {
-		queryArgs = append(queryArgs, *request.AsOf)
-	}
-	queryArgs = append(queryArgs, ids, ids)
-	query := s.db.WithContext(ctx).Where("tenant_id = ? AND "+statusClause+" AND source_item_id IN ? AND target_item_id IN ?", queryArgs...)
-	if request.AsOf != nil {
-		query = query.Where("last_observed_at <= ?", *request.AsOf)
-	}
-	if err := query.Limit(request.Limit).Find(&relations).Error; err != nil {
-		return response, err
-	}
-	for _, relation := range relations {
-		if request.SubjectKind == "data_item" && request.Direction == "upstream" && relation.TargetItemID != *request.ItemID {
-			continue
-		}
-		if request.SubjectKind == "data_item" && request.Direction == "downstream" && relation.SourceItemID != *request.ItemID {
-			continue
-		}
-		evidence, err := s.latestEvidence(ctx, tenantID, relation)
-		if err != nil {
-			return response, err
-		}
-		response.Edges = append(response.Edges, models.LineageEdge{Source: nodesByID[relation.SourceItemID], Target: nodesByID[relation.TargetItemID], RelationKind: relation.RelationKind, Granularity: relation.Granularity, Evidence: evidence, Status: relation.Status, LastObservedAt: relation.LastObservedAt})
-	}
-	var deps []models.LineageServiceDependency
-	depQuery := s.db.WithContext(ctx).Where("tenant_id = ? AND source_item_id IN ? AND status = 'active'", tenantID, ids)
-	if request.SubjectKind == "published_service" {
-		depQuery = depQuery.Where("service_id = ? AND published_revision = ?", *request.ServiceID, request.Revision)
-	}
-	if request.AsOf != nil {
-		depQuery = depQuery.Where("last_observed_at <= ?", *request.AsOf)
-	}
-	if err := depQuery.Limit(request.Limit).Find(&deps).Error; err != nil {
-		return response, err
-	}
-	for _, dep := range deps {
-		serviceNode := models.LineageNode{Kind: "published_service", ServiceID: uintPtr(dep.ServiceID), PublishedRevision: dep.PublishedRevision}
-		response.Nodes = append(response.Nodes, serviceNode)
-		if request.SubjectKind == "data_item" && request.Direction == "upstream" {
-			continue
-		}
-		evidence, err := s.latestServiceEvidence(ctx, tenantID, dep)
-		if err != nil {
-			return response, err
-		}
-		response.Edges = append(response.Edges, models.LineageEdge{Source: nodesByID[dep.SourceItemID], Target: serviceNode, RelationKind: "serve", Granularity: dep.Granularity, Evidence: evidence, Status: dep.Status, LastObservedAt: dep.LastObservedAt})
-	}
-	return response, nil
 }
 
 func (s *LineageService) latestServiceEvidence(ctx context.Context, tenantID uint, dependency models.LineageServiceDependency) (map[string]interface{}, error) {

@@ -1203,8 +1203,14 @@ ADDP_SYSTEM_POSTGRES_TEST_DSN='<disposable-postgres-dsn>' make test-system-iam-p
 ```
 
 
-### Standard 页面重启后白屏，Vite 提示依赖分块不存在
+### 前端页面重启后白屏，Vite 提示依赖分块不存在
 
 如果浏览器请求 `node_modules/.vite/deps/chunk-*.js` 返回缺失，而当前生成目录已不再引用该分块，先检查测试与开发进程是否共用预构建缓存。Standard 的自动组件导入会在页面请求时引入 `element-plus/es`；开发服务与 Playwright 服务共用 `.vite` 时，测试重新预构建可能替换正在使用的分块。
 
 Standard 在 Vite 中显式预构建 `element-plus/es`，并将 `ADDP_E2E=1` 的缓存隔离到 `node_modules/.vite-e2e`；开发服务使用 `node_modules/.vite`。两种环境仍运行同一配置和代码。验证使用 `make test-standard-frontend`，并在测试完成后刷新实际开发页面，确认新建术语等入口可用。不应通过修改依赖锁文件或排除整个组件库绕过缓存问题。
+
+Manager 同样隔离 `ADDP_E2E=1` 的缓存到 `node_modules/.vite-e2e`，并关闭测试服务 HMR，防止测试 HTTP 端口为 4174 时仍占用开发服务 5174 的 WebSocket 端口。`make test-manager-frontend` 包含数据探查血缘的实际画布高度、窗口缩放、层数请求与截断提示验证；测试完成后刷新运行中的 `5174` 开发页面，确认未被测试预构建破坏。现有 Makefile 和平台 CI 的 Manager 前端门禁自动发现 `e2e/*.spec.js`，无需另建测试启动路径。
+
+### 血缘图自动适配后节点过小或偏离中心
+
+血缘连线的交叉描边与主路径必须同步更新。G6 初次绘制路径可能早于 Dagre 最终布局；若只在 `afterDraw` 创建描边，旧路径即使与画布同色，也会进入整体包围盒，导致自动适配错误。共享 `LineageViewer` 在 `afterUpdate` 同步描边路径，并在 `afterrender` 完成一次视口适配。回归使用 `make test-manager-frontend`，其中双节点图的中心连线点击与来源执行跳转验证适配后的实际位置。

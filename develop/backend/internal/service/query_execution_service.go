@@ -4,10 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/addp/common/dbbridge"
+	"sort"
 	"strings"
 	"time"
 
+	"github.com/addp/common/dbbridge"
 	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
@@ -16,39 +17,37 @@ import (
 	"github.com/google/uuid"
 )
 
-type QueryWorkerService struct {
+type QueryExecutionService struct {
 	executor *DevExecutor
 	queries  *repository.QueryExecutionRepository
 }
 
-func NewQueryWorkerService(
+func NewQueryExecutionService(
 	executor *DevExecutor,
 	queries *repository.QueryExecutionRepository,
-) (*QueryWorkerService, error) {
+) (*QueryExecutionService, error) {
 	if executor == nil || executor.sqlEngine == nil || executor.taskExecutionRepo == nil || queries == nil {
-		return nil, fmt.Errorf("Develop Query Worker dependencies are required")
+		return nil, fmt.Errorf("Develop Query Execution Service dependencies are required")
 	}
-	return &QueryWorkerService{executor: executor, queries: queries}, nil
+	return &QueryExecutionService{executor: executor, queries: queries}, nil
 }
 
-func (s *QueryWorkerService) Execute(
+func (s *QueryExecutionService) Execute(
 	ctx context.Context,
 	execution *commonExecution.TaskExecution,
 	lease commonExecution.Lease,
 ) error {
 	startedAt := time.Now().UTC()
 	if execution == nil || execution.ExecutionID != lease.ExecutionID || execution.TenantID != lease.TenantID ||
-		execution.Source != commonExecution.ModuleOrchestrator || execution.TaskType != commonExecution.TaskTypeQuery ||
-		execution.ParentExecutionID == nil {
+		execution.Module != commonExecution.ModuleDevelop || execution.TaskType != commonExecution.TaskTypeQuery {
 		return fmt.Errorf("claimed Develop query execution is invalid")
+	}
+	if execution.Source != commonExecution.ModuleDevelop && execution.Source != commonExecution.ModuleOrchestrator {
+		return s.completeFailure(ctx, execution, lease, startedAt, fmt.Errorf("unsupported query source %q", execution.Source), "develop.query.source_invalid")
 	}
 	devTask, err := devQueryTaskFromExecution(execution)
 	if err != nil {
 		return s.completeFailure(ctx, execution, lease, startedAt, err, "develop.query.snapshot_invalid")
-	}
-	parentExecutionID, err := uuid.Parse(strings.TrimSpace(*execution.ParentExecutionID))
-	if err != nil {
-		return s.completeFailure(ctx, execution, lease, startedAt, err, "develop.query.parent_invalid")
 	}
 	executionID, err := uuid.Parse(execution.ExecutionID)
 	if err != nil {
@@ -59,54 +58,129 @@ func (s *QueryWorkerService) Execute(
 	if err != nil {
 		return s.completeFailure(ctx, execution, lease, startedAt, err, "develop.query.relation_parameters_invalid")
 	}
-	if relationResult {
+	if relationResult && execution.Source == commonExecution.ModuleOrchestrator {
+		if execution.ParentExecutionID == nil {
+			return s.completeFailure(ctx, execution, lease, startedAt, fmt.Errorf("orchestrator query has no parent execution"), "develop.query.parent_invalid")
+		}
+		parentExecutionID, parseErr := uuid.Parse(strings.TrimSpace(*execution.ParentExecutionID))
+		if parseErr != nil {
+			return s.completeFailure(ctx, execution, lease, startedAt, parseErr, "develop.query.parent_invalid")
+		}
 		return s.executeExistingTableResult(ctx, execution, lease, devTask, parentExecutionID, executionID, startedAt)
 	}
-	return s.executeOrdinary(ctx, execution, lease, devTask, parentExecutionID, executionID, startedAt)
+	return s.executeOrdinary(ctx, execution, lease, devTask, executionID, startedAt)
 }
 
-func (s *QueryWorkerService) executeOrdinary(
+func (s *QueryExecutionService) executeOrdinary(
 	ctx context.Context,
 	execution *commonExecution.TaskExecution,
 	lease commonExecution.Lease,
 	devTask *models.DevTask,
-	parentExecutionID, executionID uuid.UUID,
+	executionID uuid.UUID,
 	startedAt time.Time,
 ) error {
-	var authorization *IssuedSQLExecutionAuthorization
-	var err error
-	if s.executor.isFederatedQuery(ctx, devTask, uint(execution.TenantID)) {
-		engineIDs, resolveErr := s.executor.federatedReadEngineIDs(ctx, devTask, uint(execution.TenantID))
-		if resolveErr != nil {
-			err = resolveErr
-		} else {
-			authorization, err = s.executor.sqlEngine.IssueFederatedReadExecutionAuthorizationFromExecution(
-				ctx, uint(execution.TenantID), parentExecutionID, executionID, engineIDs,
-				lease.Attempt, lease.Token, devTask.Timeout,
-			)
-		}
-	} else {
-		engineID := devTask.GetEngineID()
-		queryText, _ := devTask.Content["query"].(string)
-		if engineID == nil || *engineID == 0 || strings.TrimSpace(queryText) == "" {
-			err = fmt.Errorf("Develop query snapshot has no engine or query")
-		} else {
-			authorization, err = s.executor.sqlEngine.IssueSQLExecutionAuthorizationFromExecution(
-				ctx, uint(execution.TenantID), parentExecutionID, executionID, *engineID,
-				lease.Attempt, lease.Token, queryText, devTask.Timeout,
-			)
-		}
-	}
+	authorization, attach, err := s.ordinaryAuthorization(ctx, execution, lease, devTask, executionID)
 	if err != nil {
 		return s.completeFailure(ctx, execution, lease, startedAt, err, "develop.query.authorization_failed")
 	}
-	if err := s.attachAuthorization(ctx, execution, lease, authorization); err != nil {
-		return err
+	if attach {
+		if err := s.attachAuthorization(ctx, execution, lease, authorization); err != nil {
+			return err
+		}
 	}
 	return s.executeAndComplete(ctx, execution, lease, devTask, authorization, startedAt)
 }
 
-func (s *QueryWorkerService) executeExistingTableResult(
+func (s *QueryExecutionService) ordinaryAuthorization(
+	ctx context.Context,
+	execution *commonExecution.TaskExecution,
+	lease commonExecution.Lease,
+	devTask *models.DevTask,
+	executionID uuid.UUID,
+) (*IssuedSQLExecutionAuthorization, bool, error) {
+	if execution.Source == commonExecution.ModuleDevelop {
+		authorization, err := s.persistedAuthorization(ctx, execution, devTask)
+		return authorization, false, err
+	}
+	if execution.ParentExecutionID == nil {
+		return nil, false, fmt.Errorf("orchestrator query has no parent execution")
+	}
+	parentExecutionID, err := uuid.Parse(strings.TrimSpace(*execution.ParentExecutionID))
+	if err != nil {
+		return nil, false, fmt.Errorf("invalid parent execution: %w", err)
+	}
+	if s.executor.isFederatedQuery(ctx, devTask, uint(execution.TenantID)) {
+		engineIDs, err := s.executor.federatedReadEngineIDs(ctx, devTask, uint(execution.TenantID))
+		if err != nil {
+			return nil, false, err
+		}
+		authorization, err := s.executor.sqlEngine.IssueFederatedReadExecutionAuthorizationFromExecution(
+			ctx, uint(execution.TenantID), parentExecutionID, executionID, engineIDs,
+			lease.Attempt, lease.Token, devTask.Timeout,
+		)
+		return authorization, true, err
+	}
+	engineID := devTask.GetEngineID()
+	queryText, _ := devTask.Content["query"].(string)
+	if engineID == nil || *engineID == 0 || strings.TrimSpace(queryText) == "" {
+		return nil, false, fmt.Errorf("Develop query snapshot has no engine or query")
+	}
+	if devTask.GetQueryType() != "sql" {
+		timeout := s.executor.sqlEngine.normalizedTimeoutForTenant(ctx, uint(execution.TenantID), devTask.Timeout)
+		authorization, err := s.executor.sqlEngine.issueExecutionAuthorizationFromExecution(
+			ctx, uint(execution.TenantID), parentExecutionID, executionID, lease.Attempt, lease.Token,
+			[]uint{*engineID}, []SQLExecutionEffect{SQLExecutionEffectRead}, int64(timeout+30), commonExecution.AudienceDevelop,
+		)
+		return authorization, true, err
+	}
+	authorization, err := s.executor.sqlEngine.IssueSQLExecutionAuthorizationFromExecution(
+		ctx, uint(execution.TenantID), parentExecutionID, executionID, *engineID,
+		lease.Attempt, lease.Token, queryText, devTask.Timeout,
+	)
+	return authorization, true, err
+}
+
+func (s *QueryExecutionService) persistedAuthorization(
+	ctx context.Context,
+	execution *commonExecution.TaskExecution,
+	devTask *models.DevTask,
+) (*IssuedSQLExecutionAuthorization, error) {
+	if execution.ExecutionAuthorizationID == nil || *execution.ExecutionAuthorizationID <= 0 ||
+		execution.AuthorizationExpiresAt == nil || !execution.AuthorizationExpiresAt.After(time.Now().UTC()) ||
+		execution.ActorPrincipalID == nil || *execution.ActorPrincipalID <= 0 ||
+		execution.ActorTenantMembershipID == nil || *execution.ActorTenantMembershipID <= 0 ||
+		execution.IssuedAuthorizationVersion == nil || *execution.IssuedAuthorizationVersion <= 0 {
+		return nil, fmt.Errorf("persisted query execution authorization is incomplete or expired")
+	}
+	engineID := devTask.GetEngineID()
+	if engineID == nil || *engineID == 0 {
+		return nil, fmt.Errorf("Develop query snapshot has no engine")
+	}
+	engineIDs := []uint{*engineID}
+	effects := []SQLExecutionEffect{SQLExecutionEffectRead}
+	if s.executor.isFederatedQuery(ctx, devTask, uint(execution.TenantID)) {
+		resolved, err := s.executor.federatedReadEngineIDs(ctx, devTask, uint(execution.TenantID))
+		if err != nil {
+			return nil, err
+		}
+		engineIDs = resolved
+	} else if devTask.GetQueryType() == "sql" {
+		queryText, _ := devTask.Content["query"].(string)
+		effect, _, err := s.executor.sqlEngine.sqlExecutionAuthorizationRequest(queryText, devTask.Timeout)
+		if err != nil {
+			return nil, err
+		}
+		effects = []SQLExecutionEffect{effect}
+	}
+	return &IssuedSQLExecutionAuthorization{
+		AuthorizationID: *execution.ExecutionAuthorizationID, Effects: effects, EngineIDs: engineIDs,
+		ActorPrincipalID: *execution.ActorPrincipalID, ActorTenantMembershipID: *execution.ActorTenantMembershipID,
+		IssuedAuthorizationVersion: *execution.IssuedAuthorizationVersion,
+		ExpiresAt:                  execution.AuthorizationExpiresAt.UTC(),
+	}, nil
+}
+
+func (s *QueryExecutionService) executeExistingTableResult(
 	ctx context.Context,
 	execution *commonExecution.TaskExecution,
 	lease commonExecution.Lease,
@@ -136,6 +210,11 @@ func (s *QueryWorkerService) executeExistingTableResult(
 	if err := s.attachAuthorization(ctx, execution, lease, authorization); err != nil {
 		return err
 	}
+	if err := s.queries.UpdateWithLease(ctx, lease, map[string]interface{}{
+		"progress": 30, "current_step": "执行查询",
+	}); err != nil {
+		return err
+	}
 	engine, err := s.executor.sqlEngine.executionEngine(ctx, uint(execution.TenantID), executionID, *engineID, authorization)
 	if err != nil {
 		return s.completeFailure(ctx, execution, lease, startedAt, err, "develop.query.engine_access_failed")
@@ -158,11 +237,41 @@ func (s *QueryWorkerService) executeExistingTableResult(
 		return s.completeFailure(ctx, execution, lease, startedAt, err, "develop.query.write_failed")
 	}
 	rowsAffected := &count
-	metadata := commonModels.JSONMap{"outputs": commonModels.JSONMap{"execution_id": execution.ExecutionID, "target_locator": targetLocator, "row_count": count}}
+	metadata := tableResultExecutionMetadata(execution.ExecutionID, relationLocators, targetLocator, mode, count)
 	return s.completeSuccess(ctx, execution, lease, startedAt, metadata, rowsAffected)
 }
 
-func (s *QueryWorkerService) executeAndComplete(
+// Called only after the relation contract is compiled and the write commits.
+// Orchestration dependencies are deliberately not an input to resource lineage.
+func tableResultExecutionMetadata(executionID string, inputs map[string]string, targetLocator, mode string, count int64) commonModels.JSONMap {
+	names := make([]string, 0, len(inputs))
+	for name := range inputs {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	refs := make([]commonExecution.LineageResourceRef, 0, len(names))
+	ports := make([]string, 0, len(names))
+	for _, name := range names {
+		port := "input." + name
+		refs = append(refs, commonExecution.LineageResourceRef{Port: port, Locator: inputs[name]})
+		ports = append(ports, port)
+	}
+	writeMode := mode
+	if mode == "overwrite" {
+		writeMode = "replace"
+	}
+	return commonModels.JSONMap{
+		"outputs": commonModels.JSONMap{"execution_id": executionID, "target_locator": targetLocator, "row_count": count},
+		"lineage_facts": &commonExecution.LineageFacts{
+			SchemaVersion: commonExecution.LineageFactsSchemaVersion,
+			Inputs:        refs,
+			Outputs:       []commonExecution.LineageResourceRef{{Port: "target", Locator: targetLocator, WriteMode: writeMode}},
+			Operations:    []commonExecution.LineageOperation{{Kind: "derive", Operator: "develop", InputPorts: ports, OutputPorts: []string{"target"}}},
+		},
+	}
+}
+
+func (s *QueryExecutionService) executeAndComplete(
 	ctx context.Context,
 	execution *commonExecution.TaskExecution,
 	lease commonExecution.Lease,
@@ -170,6 +279,11 @@ func (s *QueryWorkerService) executeAndComplete(
 	authorization *IssuedSQLExecutionAuthorization,
 	startedAt time.Time,
 ) error {
+	if err := s.queries.UpdateWithLease(ctx, lease, map[string]interface{}{
+		"progress": 30, "current_step": "执行查询",
+	}); err != nil {
+		return err
+	}
 	result, errorMessage, rowsAffected, errorCode := s.executor.executeQuery(
 		ctx, devTask, execution.ExecutionID, execution.TenantID, authorization,
 	)
@@ -180,7 +294,7 @@ func (s *QueryWorkerService) executeAndComplete(
 	return s.completeSuccess(ctx, execution, lease, startedAt, metadata, rowsAffected)
 }
 
-func (s *QueryWorkerService) attachAuthorization(
+func (s *QueryExecutionService) attachAuthorization(
 	ctx context.Context,
 	execution *commonExecution.TaskExecution,
 	lease commonExecution.Lease,
@@ -204,7 +318,7 @@ func (s *QueryWorkerService) attachAuthorization(
 	return nil
 }
 
-func (s *QueryWorkerService) completeQueryError(
+func (s *QueryExecutionService) completeQueryError(
 	ctx context.Context,
 	execution *commonExecution.TaskExecution,
 	lease commonExecution.Lease,
@@ -219,7 +333,7 @@ func (s *QueryWorkerService) completeQueryError(
 	return s.queries.CompleteWithLease(ctx, execution, lease, status, time.Now().UTC(), fields)
 }
 
-func (s *QueryWorkerService) completeFailure(
+func (s *QueryExecutionService) completeFailure(
 	ctx context.Context,
 	execution *commonExecution.TaskExecution,
 	lease commonExecution.Lease,
@@ -235,7 +349,7 @@ func (s *QueryWorkerService) completeFailure(
 	return nil
 }
 
-func (s *QueryWorkerService) completeSuccess(
+func (s *QueryExecutionService) completeSuccess(
 	ctx context.Context,
 	execution *commonExecution.TaskExecution,
 	lease commonExecution.Lease,
@@ -243,10 +357,16 @@ func (s *QueryWorkerService) completeSuccess(
 	metadata commonModels.JSONMap,
 	rowsAffected *int64,
 ) error {
-	return s.queries.CompleteWithLease(
+	if err := s.queries.CompleteWithLease(
 		ctx, execution, lease, commonExecution.ExecutionStatusSuccess, time.Now().UTC(),
 		terminalQueryFields(startedAt, metadata, rowsAffected),
-	)
+	); err != nil {
+		return err
+	}
+	if metadata["lineage_facts"] != nil {
+		s.executor.notifyExecutionLineage(ctx, uint(execution.TenantID), execution.ExecutionID)
+	}
+	return nil
 }
 
 func devQueryTaskFromExecution(execution *commonExecution.TaskExecution) (*models.DevTask, error) {

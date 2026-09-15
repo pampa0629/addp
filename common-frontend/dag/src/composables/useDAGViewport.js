@@ -70,8 +70,14 @@ export function useDAGViewport(graph, {
 
   function autoLayout() {
     if (!graph.value || graph.value.getNodes().length === 0) return
-    graph.value.updateLayout({ ...layout })
-    fitView()
+    const instance = graph.value
+    return new Promise(resolve => {
+      instance.once('afterlayout', () => {
+        fitView()
+        resolve()
+      })
+      instance.updateLayout({ ...layout })
+    })
   }
 
   return {

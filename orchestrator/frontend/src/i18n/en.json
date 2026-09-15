@@ -51,8 +51,7 @@
       "recentVisitTitle": "Orchestration",
       "createTitle": "Create Orchestration",
       "statusLabel": "Orchestration status",
-      "editTitle": "Edit Orchestration",
-      "disabledLabel": "Disabled",
+      "disabledLabel": "Scheduled runs disabled",
       "scheduleBtn": "Schedule",
       "viewJsonBtn": "View JSON",
       "cancelBtn": "Cancel",
@@ -63,14 +62,14 @@
       "namePlaceholder": "Enter orchestration name",
       "descriptionLabel": "Description",
       "descriptionPlaceholder": "Enter description",
-      "enabledLabel": "Enabled",
+      "enabledLabel": "Scheduled runs enabled",
       "saveDialogTitle": "Save Orchestration Info",
       "saveDialogCancel": "Cancel",
       "saveDialogConfirm": "Confirm Save",
       "scheduleDialogTitle": "Set Schedule",
       "scheduleDialogCancel": "Cancel",
       "scheduleDialogConfirm": "Confirm",
-      "scheduleSaved": "Schedule updated",
+      "scheduleSaved": "Schedule applied; save the orchestration",
       "jsonDialogTitle": "Orchestration JSON Config",
       "jsonDialogClose": "Close",
       "copyJsonBtn": "Copy JSON",
@@ -85,7 +84,11 @@
       "loadFailed": "Failed to load orchestration",
       "jsonCopied": "JSON copied to clipboard",
       "copyFailed": "Copy failed",
-      "jsonDownloaded": "JSON downloaded"
+      "jsonDownloaded": "JSON downloaded",
+      "unsavedChanges": "Unsaved changes",
+      "saveBeforeExecute": "Save the orchestration before executing the saved version",
+      "scheduleEnabledLabel": "Enable scheduled runs",
+      "editMetadata": "Edit name and description"
     },
     "executionList": {
       "recentVisitTitle": "Orchestration Execution History",
@@ -135,7 +138,10 @@
       "createTaskTooltip": "Create task",
       "addToCanvas": "Add to canvas",
       "editTaskTooltip": "Edit task",
-      "openUrlMissing": "Task entry URL is not configured"
+      "openUrlMissing": "Task entry URL is not configured",
+      "latestExecution": "Last run: {status}",
+      "taskStatus": "Task status: {status}",
+      "statusOther": "{status}"
     },
     "dagEditor": {
       "canvasAriaLabel": "Orchestration DAG canvas",
@@ -205,7 +211,36 @@
       "taskAdded": "Task added: {name}",
       "addNodeFailed": "Failed to add node: {error}",
       "jsonError": "Invalid JSON format",
-      "jsonObjectError": "Execution parameters must be a JSON object"
+      "jsonObjectError": "Execution parameters must be a JSON object",
+      "parameterConnection": "Parameter binding",
+      "controlConnection": "Execution dependency",
+      "connections": "Connections",
+      "noConnections": "No connections",
+      "clearFocus": "Clear focus",
+      "actualSize": "Actual size",
+      "connectionHint": "Select a task or connection to inspect its endpoints"
+    },
+    "liveExecution": {
+      "alreadyRunning": "This orchestration is running. Wait until it finishes.",
+      "title": "Current execution",
+      "completed": "{completed}/{total} steps finished",
+      "viewMonitor": "View execution details",
+      "dismiss": "Hide status",
+      "definitionChanged": "The orchestration has changed. Node states for this execution are hidden.",
+      "refreshFailed": "Status refresh failed. Showing the last received state.",
+      "retry": "Retry refresh",
+      "nodeExecution": "Node execution status",
+      "duration": "Duration: {duration} ms",
+      "childExecution": "View child execution",
+      "status": {
+        "pending": "Pending",
+        "running": "Running",
+        "success": "Success",
+        "failed": "Failed",
+        "timeout": "Timed out",
+        "cancelled": "Cancelled",
+        "not_started": "Not started"
+      }
     }
   }
 }

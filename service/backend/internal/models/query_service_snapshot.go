@@ -34,6 +34,7 @@ type SQLQueryOutputContractRequest struct {
 
 // QueryServiceDependencySnapshot 是查询服务运行和对外契约依赖的冻结事实。
 type QueryServiceDependencySnapshot struct {
+	MetricSource             *MetricSourceSnapshot        `json:"metric_source,omitempty"`
 	Source                   *QueryServiceSourceRef       `json:"source,omitempty"`
 	CapturedAt               time.Time                    `json:"captured_at"`
 	DependencyHash           string                       `json:"dependency_hash"`

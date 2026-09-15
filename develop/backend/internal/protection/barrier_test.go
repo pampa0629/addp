@@ -22,7 +22,7 @@ func TestExecutionBarrierUsesLiveExecutionBoundaries(t *testing.T) {
 	now := time.Now().UTC()
 	past := now.Add(-time.Minute)
 	future := now.Add(time.Minute)
-	leaseOwner := "develop-query-worker"
+	leaseOwner := "develop-query-supervisor"
 	leaseToken := "00000000-0000-0000-0000-000000000001"
 
 	items := []commonexecution.TaskExecution{

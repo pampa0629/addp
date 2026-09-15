@@ -6,6 +6,7 @@ import (
 
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/exportartifact"
+	commonRuntimeHealth "github.com/addp/common/runtimehealth"
 	"github.com/addp/develop/backend/internal/config"
 	"github.com/addp/develop/backend/internal/models"
 	"gorm.io/driver/postgres"
@@ -22,6 +23,9 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 
 	if err := commonExecution.EnsureStore(db); err != nil {
 		return nil, fmt.Errorf("failed to ensure execution store: %w", err)
+	}
+	if err := commonRuntimeHealth.EnsureStore(db); err != nil {
+		return nil, fmt.Errorf("failed to ensure background runtime health store: %w", err)
 	}
 	if err := exportartifact.EnsureStore(db, "develop.export_sessions"); err != nil {
 		return nil, fmt.Errorf("failed to ensure export session store: %w", err)
@@ -150,7 +154,7 @@ func migrateCatalogDevTaskChanges(db *gorm.DB) error {
 }
 
 // ConnectDatabase opens the Develop store without running owner migrations.
-// Worker processes use this path; the Backend remains the only schema owner.
+// InitDatabase remains the only schema-owner entry point.
 func ConnectDatabase(cfg *config.Config) (*gorm.DB, error) {
 	dsn := fmt.Sprintf(
 		"host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",

@@ -139,9 +139,6 @@
       "saveAndSwitchSuccess": "查询已保存，并已切换到查询引擎“{name}”",
       "engineUnavailable": "引擎不可用 (ID: {id})",
       "unsaved": "未保存",
-      "unsavedTitle": "存在未保存内容",
-      "unsavedConfirm": "离开后将丢失当前未保存的查询内容。",
-      "leave": "离开",
       "executionSubmitted": "查询已提交执行",
       "executionIdMissing": "执行响应缺少 execution_id",
       "clearResult": "清空",
@@ -375,8 +372,7 @@
       "validationWarnings": "工作流存在 {count} 个警告",
       "validationUnavailable": "暂时无法校验工作流",
       "workflowLevelIssue": "工作流",
-      "viewIssues": "查看问题",
-      "leaveConfirm": "当前工作流有未保存修改，确定要离开吗？"
+      "viewIssues": "查看问题"
     },
     "operatorPalette": {
       "searchPlaceholder": "搜索算子...",

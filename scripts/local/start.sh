@@ -68,7 +68,6 @@ check_images() {
         "${REGISTRY}/addp-transfer-backend:${IMAGE_TAG}"
         "${REGISTRY}/addp-orchestrator-backend:${IMAGE_TAG}"
         "${REGISTRY}/addp-develop-backend:${IMAGE_TAG}"
-        "${REGISTRY}/addp-develop-query-worker:${IMAGE_TAG}"
         "${REGISTRY}/addp-copilot-backend:${IMAGE_TAG}"
         "${REGISTRY}/addp-geopython-workflow-engine:${IMAGE_TAG}"
         "${REGISTRY}/addp-model3d-workflow-engine:${IMAGE_TAG}"
@@ -175,7 +174,7 @@ echo -e "${BLUE}🚀 Starting Application Layer${NC}"
 echo -e "${BLUE}========================================${NC}"
 
 echo -e "${YELLOW}▶️  Starting application services...${NC}"
-docker compose -f docker-compose.yml up -d
+docker compose -f docker-compose.yml up -d --remove-orphans
 
 echo -e "${CYAN}Application services:${NC}"
 docker compose -f docker-compose.yml ps

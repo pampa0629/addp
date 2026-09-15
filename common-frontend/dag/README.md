@@ -139,3 +139,7 @@ const dagData = {
   }
 }
 ```
+
+`focusDAGConnections(graph, item)` 聚焦节点的直接关联连线或单条连线，传 `null` 恢复全图；只改变渲染透明度，不写入节点、边或布局模型。
+
+`useDAGViewport().autoLayout()` 在 `afterlayout` 后适配视图并返回 Promise；需要记录布局历史或保存坐标时应等待完成。节点实际宽高通过 G6 节点模型的 `size: [width, height]` 提供。

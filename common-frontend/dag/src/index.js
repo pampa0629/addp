@@ -37,6 +37,7 @@ export {
   sortDAGNodesSpatially
 } from './utils/keyboard.js'
 export {
+  focusDAGConnections,
   getDAGIncomingEdgeModels,
   getDAGUpstreamCandidates
 } from './utils/connections.js'

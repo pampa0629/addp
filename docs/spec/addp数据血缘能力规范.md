@@ -197,7 +197,7 @@ Service 发布或变更一个版本时，必须向 Meta collector 提供等价�
 | 模块 | 第一阶段处理 |
 | --- | --- |
 | Transfer | `sync` 的成功读写和写入模式 |
-| Develop | 持久化 Workflow 的资源输入输出；写 SQL/DDL 后续接入 |
+| Develop | 持久化 Workflow 的资源输入输出，以及通过 relation 参数契约向固定正式表写入的查询；任意写 SQL/DDL 不自动推断 |
 | Manager | 只有产物成为业务 data item 时才接入 |
 | Service | 发布版本的 source dependency，关系为 `serve` |
 | Graph | 输出形成稳定 graph item 时接入 |
@@ -224,10 +224,18 @@ owner execution/publication fact
 执行事实的采集触发遵循单一处理路径：
 
 1. owner 必须先把成功状态和 `lineage_facts` 原子地持久化到统一 execution，再通知 Meta 采集指定 execution。
-2. Develop 通过 `POST /api/v1/meta/lineage/executions/{execution_id}/collect` 通知；该入口只接受 `addp-develop` Service Principal 和 `meta.lineage.create` Permission。
+2. Develop 通过 `POST /api/v1/meta/lineage/executions/{execution_id}/collect` 通知；该入口只接受 `addp-develop` Service Principal 和 `meta.lineage.create` Permission。该 Permission 必须在内置 `tenant.develop_runtime` Role 的发布清单及数据库迁移中同时声明；不能依赖管理员身份或周期补采掩盖即时通知权限缺失。
 3. 立即通知与周期 collector 必须共同调用 `LineageService.CollectExecution`，不得分别实现两套解析或投影逻辑。
 4. 通知失败不得把已成功的数据执行改为失败；Meta 周期 collector 负责漏采和失败重试。
 5. Item 元数据刷新只更新资源元数据，不触发血缘采集；血缘事实的触发依据始终是 owner execution，而不是用户刷新行为。
+
+### 5.1 固定正式表查询写入
+
+Develop Query Execution Supervisor 必须在业务写入事务成功提交后，将 `lineage_facts` 与成功终态在同一次带 lease 校验的执行记录事务中保存，再复用已有通知入口调用 Meta collector。输入采用本次冻结的、已通过 relation 查询编译校验的全部实际关系绑定，按参数名稳定排序；目标采用本次实际写入的 `target_locator`。不得从 Orchestrator 的 `depends_on` 推导资源边，也不得将逻辑表建表任务作为数据来源。
+
+覆盖计算的 `overwrite` 映射为血缘 `replace`；`append` 保留为 `append`。失败、取消、失去 lease 或终态保存失败时不通知采集、不建立成功关系；通知失败保留已落库的成功事实，由 Meta 周期 collector 重试。业务库提交与平台执行记录提交不是跨库事务，二者之间进程中断的执行不能自动冒充成功或补造血缘。
+
+这一路径记录显式 relation 契约的 data item 级派生关系，不扩大为任意 SQL 的隐式读取闭包或字段级自动解析。历史缺少事实的执行不能由 Meta 反向猜测；通过新的真实执行生成证据。
 
 ## 六、粒度
 
@@ -259,6 +267,7 @@ GET /api/v1/meta/lineage/graph
 | `revision` | 服务发布版本，服务根节点必须明确版本 |
 | `direction` | `upstream` / `downstream` / `both`，默认 `both` |
 | `depth` | 展开深度，服务端限制最大值 |
+| `expand_upstream` / `expand_downstream` | 逗号分隔的 data item ID；在根主体对应方向已可达的节点处额外展开一层，最多各 100 个。不作为新的根，不能借此进入旁系。 |
 | `limit` | 节点和边上限，超过时返回 `truncated=true` |
 | `as_of` | 可选历史观察时间 |
 
@@ -284,6 +293,8 @@ GET /api/v1/meta/lineage/graph
 节点可以包含 `data_item`、`published_service`、`execution` 和 `field_ref`，但资源身份和执行身份必须保持不同。`data_item` 节点必须返回所属 `engine_id` 和 System 当前的 `engine_name`，用于在同名 schema / table、跨引擎派生等场景中明确资源边界；共享前端不得解析 locator 或调用其他模块补猜引擎名称。边必须返回 relation kind、granularity、evidence summary 和时间状态。
 
 当前图响应必须保持结构闭合：每条 edge 的 source 和 target 都必须存在于同一响应的 nodes 中。当前已软删除的 data item 不进入 nodes，其相关 `stale` 投影也不进入当前 edges；历史证据通过 observation 和后续历史视图查询，不得以缺失端点的边混入当前图。
+
+图查询以当前主体为根，`upstream` 只沿输入方向追溯，`downstream` 只沿输出方向展开，`both` 为这两种有向遍历的并集；遍历中不能改变方向进入共同上游的其他产物或共同下游的其他输入。其他主体之间真实存在的事实继续保留，不能因为不在当前视图中而删除。每条资源派生或服务依赖边计一层，`depth=0` 只返回主体；服务是下游终点，以服务为主体时可沿依赖继续追溯数据项。租户和未删除端点约束在每一层遍历时执行。超出节点或边上限时保留根及已连通部分，并返回 `truncated=true`。
 
 该 API 必须执行 Tenant、Meta lineage read Permission 和 owner 资源可见性校验。不得因为用户能看到某个服务，就自动泄露该服务无权访问的上游数据项名称。
 
@@ -322,6 +333,10 @@ POST /api/v1/meta/lineage/executions/{execution_id}/collect
 共享组件只负责展示、交互和节点事件，不负责权限、Token、业务路由、Service/Asset DTO 解析或 Meta 数据刷新。Manager、Catalog、Service、Asset、Portal 通过宿主页面传入根主体和导航回调，集成同一个查看器。Catalog 必须使用当前 User Access Token 直接查询 Meta，不得使用 Catalog Service Principal 扩权代查。
 
 组件放在 `common-frontend/graph`，不放入 `basic`；消费模块按需声明 G6 依赖，保持 Vue 单实例和共享前端无自有 `node_modules`。
+
+Manager 血缘画布填满标签页可用空间，并随容器宽高变化调整。默认显示上下游各两层，工具栏提供 1、2、3、5、10、20 层的有界选择，层数变化由宿主请求同一图 API 并清空局部展开。节点的 `hidden_upstream_count` / `hidden_downstream_count` 只统计当前根有向血缘范围内尚未显示的直接邻居；点击节点查看详情，点击其方向提示追加一层。累计展开仍受最大 20 层及节点、边数量上限约束，保留视图缩放和被展开节点的位置。连线交叉使用背景隔离描边，选中或悬停连线时突出该连线及端点；截断状态必须可见，详情支持完整名称和证据查看。存在 execution 证据时由宿主使用统一 Monitor 导航打开来源执行。
+
+Service 发布事实同时传递人类可读的 `service_name` 和单调递增的 owner 更新时间 `service_updated_at`；Meta 在依赖投影保存该名称和时间，不从版本哈希推断名称。较新的发布事实关闭该服务其他版本的当前依赖，较旧的通知不得覆盖新版本，历史 observation 保留。Service 定期重放自身现有服务发布事实，以补齐名称并重试漏发；非 active 服务重放空依赖。当前图服务卡片以名称为标题，ID 和版本只在详情展示。
 
 ## 九、当前状态与后续边界
 

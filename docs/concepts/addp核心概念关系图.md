@@ -208,6 +208,7 @@ mindmap
           Security Discovery Worker
         Backend 内嵌 Execution Worker
           Quality Check Worker
+          Develop Query Execution Supervisor
         非 Execution Worker
           Owner Scheduler
           Dispatcher

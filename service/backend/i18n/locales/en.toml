@@ -90,3 +90,12 @@ other = "Invalid service runtime policy"
 other = "Authentication is required"
 [service.configuration.version_conflict]
 other = "Service runtime policy was updated by another administrator"
+
+["service.metric.publication_conflict"]
+other = "The service publication changed. Refresh before selecting the metric source again."
+
+[service.metric.publication_failed]
+other = "Failed to update the metric publication."
+
+[service.err.invalid_parameter_options]
+other = "Invalid parameter options or value. Check allowed values, defaults, and Chinese and English labels."

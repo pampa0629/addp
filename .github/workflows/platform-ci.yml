@@ -389,6 +389,7 @@ jobs:
           - module: console
             name: Console
             target: test-console-frontend
+            playwright: true
           - module: develop
             name: Develop
             target: test-develop-frontend
@@ -409,6 +410,7 @@ jobs:
           - module: monitor
             name: Monitor
             target: test-monitor-frontend
+          # 同时覆盖编排编辑器交互和关联编排路由（根 Makefile 标准入口）。
           - module: orchestrator
             name: Orchestrator
             target: test-orchestrator-frontend

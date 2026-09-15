@@ -15,10 +15,11 @@
       </div>
       <div v-if="!pageLoading && !pageError" class="header-right">
         <el-button v-if="table.status === 'approved' && authStore.hasPermission('model.materialization.execute')" :disabled="isDirty" :loading="creatingTarget" @click="createTarget">{{ t('model.materialization.create_target') }}</el-button>
+        <MonitorExecutionsButton module="model" task-type="logical_table_materialization" :source-task-id="tableId" scope="task" />
         <el-button :title="t('model.common.refresh')" :aria-label="t('model.common.refresh')" @click="handleRefresh">
           <el-icon><Refresh /></el-icon>
         </el-button>
-        <el-button v-if="canEdit" type="primary" @click="handleSave" :loading="saving">{{ t('model.common.save') }}</el-button>
+        <el-button v-if="canEdit && detailRouteState.tab === 'definition'" type="primary" @click="handleSave" :loading="saving">{{ t('model.common.save') }}</el-button>
         <el-button v-if="table.status === 'draft' && authStore.hasPermission('model.logical_model.update')" type="success" @click="handleApprove">
           {{ t('model.common.approve') }}
         </el-button>
@@ -65,6 +66,8 @@
       :closable="false"
     />
 
+    <el-tabs :model-value="detailRouteState.tab" @tab-change="changeDetailTab">
+    <el-tab-pane name="definition" :label="t('model.table_relation.definition')">
     <el-row :gutter="16">
       <!-- 基本信息 -->
       <el-col :span="24">
@@ -210,48 +213,8 @@
         />
       </el-col>
 
-      <!-- 指标实现（仅事实表） -->
       <el-col v-if="form.table_type === 'fact'" :span="24" style="margin-top:16px">
-        <el-card shadow="never">
-          <template #header>
-            <div class="card-header-with-action">
-              <span class="card-title">{{ t('model.metric.title') }}</span>
-              <el-button v-if="canEdit && authStore.hasPermission('model.logical_model.update')" type="primary" size="small" @click="openMetricDialog()">
-                <el-icon><Plus /></el-icon>
-                {{ t('model.metric.add') }}
-              </el-button>
-            </div>
-          </template>
-          <el-table :data="metricImplementations" v-loading="metricLoading" stripe>
-            <el-table-column :label="t('model.metric.definition_name')" min-width="160">
-              <template #default="{ row }">
-                {{ metricNameMap[row.metric_definition_id] || `指标#${row.metric_definition_id}` }}
-              </template>
-            </el-table-column>
-            <el-table-column :label="t('model.metric.implementation_name')" prop="name" min-width="150" />
-            <el-table-column :label="t('model.metric.grain')" prop="grain" min-width="150" show-overflow-tooltip />
-            <el-table-column :label="t('model.metric.source_fields')" min-width="180">
-              <template #default="{ row }">
-                <el-tag v-for="fieldId in sourceFieldIDs(row)" :key="fieldId" size="small" class="source-field-tag">
-                  {{ fieldNameMap[fieldId] || `字段#${fieldId}` }}
-                </el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column :label="t('model.metric.engine')" min-width="100"><template #default="{ row }">{{ row.expression_config?.engine || '—' }}</template></el-table-column>
-            <el-table-column :label="t('model.metric.status')" width="100"><template #default="{ row }"><el-tag :type="row.status === 'active' ? 'success' : 'info'" size="small">{{ t(`model.metric.status_${row.status}`) }}</el-tag></template></el-table-column>
-            <el-table-column :label="t('model.metric.note')" prop="note" show-overflow-tooltip />
-            <el-table-column :label="t('model.metric.actions')" width="130" fixed="right">
-              <template #default="{ row }">
-                <el-button v-if="canEdit && authStore.hasPermission('model.logical_model.update')" link type="primary" @click="openMetricDialog(row)">{{ t('model.common.edit') }}</el-button>
-                <el-popconfirm v-if="canEdit && authStore.hasPermission('model.logical_model.update')" :title="t('model.metric.delete_confirm')" @confirm="deleteMetricImplementation(row.id)">
-                  <template #reference>
-                    <el-button link type="danger">{{ t('model.common.delete') }}</el-button>
-                  </template>
-                </el-popconfirm>
-              </template>
-            </el-table-column>
-          </el-table>
-        </el-card>
+        <MetricImplementationLinks :table-id="tableId" />
       </el-col>
 
       <!-- 物化配置 -->
@@ -330,6 +293,11 @@
         </el-card>
       </el-col>
     </el-row>
+    </el-tab-pane>
+    <el-tab-pane v-if="table.table_type === 'fact' || table.table_type === 'dimension'" name="relations" :label="t(table.table_type === 'fact' ? 'model.table_relation.title' : 'model.table_relation.incoming')">
+      <TableRelationEditor v-if="detailRouteState.tab === 'relations'" :key="`${tableId}-${detailRouteState.relationId || ''}`" :table="table" :fields="fields" :editable="canEdit" :relation-id="detailRouteState.relationId" :confirm-discard="confirmDiscardState" @dirty-change="relationDirty = $event" @update-version="table.version = $event" @relation-removed="clearRemovedRelation" />
+    </el-tab-pane>
+    </el-tabs>
 
     <!-- 字段对话框 -->
     <el-dialog
@@ -437,48 +405,7 @@
     </el-dialog>
 
     <!-- 指标实现对话框 -->
-    <el-dialog v-model="metricDialogVisible" :before-close="closeMetricDialog" :close-on-click-modal="false" class="addp-dialog" :title="editingMetricImplementation ? t('model.metric.edit') : t('model.metric.add')" width="min(760px, calc(100vw - 32px))">
-      <el-form :model="metricForm" label-width="120px">
-        <el-form-item :label="t('model.metric.definition_name')" required>
-          <el-select
-            v-model="metricForm.metric_definition_id"
-            filterable
-            :placeholder="t('model.metric.select_placeholder')"
-            style="width:100%"
-            @focus="loadAvailableMetrics"
-            @change="selectMetricDefinition"
-          >
-            <el-option
-              v-for="m in availableMetrics"
-              :key="m.id"
-              :label="`${m.current_revision?.name || m.code} (${m.code}, R${m.current_revision?.revision_no || '-'})`"
-              :value="m.id"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item :label="t('model.metric.implementation_name')" required><el-input v-model="metricForm.name" maxlength="200" /></el-form-item>
-        <el-form-item :label="t('model.metric.grain')" required><el-input v-model="metricForm.grain" type="textarea" :rows="2" :placeholder="t('model.metric.grain_placeholder')" /></el-form-item>
-        <el-form-item :label="t('model.metric.source_fields')" required>
-          <el-select v-model="metricForm.field_ids" multiple filterable :placeholder="t('model.metric.field_placeholder')" style="width:100%">
-            <el-option
-              v-for="f in metricSourceFields"
-              :key="f.id"
-              :label="`${f.name} (${f.column_name})`"
-              :value="f.id"
-            />
-          </el-select>
-        </el-form-item>
-        <el-row :gutter="12"><el-col :span="12"><el-form-item :label="t('model.metric.engine')" required><el-input v-model="metricForm.engine" placeholder="sql" /></el-form-item></el-col><el-col :span="12"><el-form-item :label="t('model.metric.status')" required><el-select v-model="metricForm.status" style="width:100%"><el-option :label="t('model.metric.status_active')" value="active" /><el-option :label="t('model.metric.status_disabled')" value="disabled" /></el-select></el-form-item></el-col></el-row>
-        <el-form-item :label="t('model.metric.expression')" required><el-input v-model="metricForm.expression" type="textarea" :rows="4" :placeholder="t('model.metric.expression_placeholder')" /></el-form-item>
-        <el-form-item :label="t('model.metric.note')">
-          <el-input v-model="metricForm.note" type="textarea" :rows="2" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="closeMetricDialog">{{ t('model.common.cancel') }}</el-button>
-        <el-button type="primary" @click="saveMetricImplementation" :loading="metricSubmitting">{{ t('model.common.save') }}</el-button>
-      </template>
-    </el-dialog>
+
 
     <!-- DDL 预览对话框 -->
     <DDLPreviewDialog v-model="ddlDialogVisible" :ddl="ddlContent" />
@@ -533,18 +460,20 @@
 
 <script setup>
 import { ref, reactive, computed, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import { ResourceTreePicker, listResourceTreeEngines, parseLocator, parseLocatorSafe, isLocatorEqual, formatLocatorDisplayPath, useConsolePageDescriptor } from '@common-ui'
+import { useRoute, useRouter, onBeforeRouteUpdate } from 'vue-router'
+import { MonitorExecutionsButton, ResourceTreePicker, listResourceTreeEngines, parseLocator, parseLocatorSafe, isLocatorEqual, formatLocatorDisplayPath, useConsolePageDescriptor } from '@common-ui'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft, Plus, Refresh, View } from '@element-plus/icons-vue'
-import { logicalTableAPI, domainAPI, elementAPI, standardMetricAPI, dwLayerAPI } from '../api/model'
+import { logicalTableAPI, domainAPI, elementAPI, dwLayerAPI } from '../api/model'
 import DDLPreviewDialog from '../components/DDLPreviewDialog.vue'
 import DimensionHierarchyEditor from '../components/DimensionHierarchyEditor.vue'
+import TableRelationEditor from '../components/TableRelationEditor.vue'
+import MetricImplementationLinks from '../components/MetricImplementationLinks.vue'
 import { useI18n } from 'vue-i18n'
 import { confirmReturnToDraft } from '../utils/lifecycleActions'
 import { navigateModelRoute } from '../utils/moduleNavigation'
 import { useAuthStore } from '../store/auth'
-import { resolveLogicalTableListRouteState } from '../utils/routeState'
+import { resolveLogicalTableListRouteState, resolveLogicalTableDetailRouteState } from '../utils/routeState'
 import { getModelErrorMessage } from '../utils/apiError'
 import {
   buildDDLPreviewRequest,
@@ -584,15 +513,21 @@ const decommissionEngineName = ref('')
 const editingField = ref(null)
 const fieldFormRef = ref(null)
 
-// 指标实现相关
-const metricLoading = ref(false)
-const metricDialogVisible = ref(false)
-const metricSubmitting = ref(false)
-const metricImplementations = ref([])
-const availableMetrics = ref([])
-const editingMetricImplementation = ref(null)
-
 const table = ref({})
+const relationDirty = ref(false)
+const detailRouteState = computed(() => resolveLogicalTableDetailRouteState(route.query, table.value.table_type))
+const changeDetailTab = tab => {
+  if (tab === detailRouteState.value.tab) return
+  const query = resolveLogicalTableDetailRouteState({ ...route.query, tab, relation_id: null }, table.value.table_type).query
+  navigateModelRoute(router, { path: route.path, query }, { history: 'replace' })
+}
+const clearRemovedRelation = id => {
+  if (detailRouteState.value.relationId !== id) return
+  const query = { ...detailRouteState.value.query }
+  delete query.relation_id
+  navigateModelRoute(router, { path: route.path, query }, { history: 'replace' })
+}
+
 useConsolePageDescriptor(router, 'modeling', {
   title: computed(() => t('model.logical_table.recentVisitTitle')),
   subject: computed(() => table.value?.name || ''),
@@ -652,36 +587,6 @@ const canClearMaterialization = computed(() => canEdit.value && Boolean(
   String(materializationForm.partition_by || '').trim()
 ))
 
-const blankMetricImplementation = () => ({
-  metric_definition_id: null,
-  metric_definition_revision_id: null,
-  name: '',
-  grain: '',
-  field_ids: [],
-  engine: 'sql',
-  expression: '',
-  status: 'active',
-  note: ''
-})
-const metricForm = reactive(blankMetricImplementation())
-
-// 指标来源可以是度量、业务键、维度键或过滤字段，唯一边界是属于当前事实表。
-const metricSourceFields = computed(() => fields.value)
-
-// 指标名称映射（id -> name）
-const metricNameMap = computed(() => {
-  const map = {}
-  availableMetrics.value.forEach(m => { map[m.id] = m.current_revision?.name || m.code })
-  return map
-})
-
-// 字段名称映射（id -> name）
-const fieldNameMap = computed(() => {
-  const map = {}
-  fields.value.forEach(f => { map[f.id] = `${f.name}(${f.column_name})` })
-  return map
-})
-
 const fieldForm = reactive({
   name: '', column_name: '', data_type: 'string', length: null,
   nullable: true, is_pk: false, is_partition: false,
@@ -695,22 +600,24 @@ const fieldRules = {
 }
 
 const fieldBaseline = ref('')
-const metricBaseline = ref('')
 const fieldDirty = computed(() => fieldDialogVisible.value && snapshotUnsavedState(fieldForm) !== fieldBaseline.value)
-const metricDirty = computed(() => metricDialogVisible.value && snapshotUnsavedState(metricForm) !== metricBaseline.value)
 const unsavedState = computed(() => ({
   form: { ...form },
   materialization: buildDDLPreviewRequest(materializationForm).materialization
 }))
 const { isDirty, markSaved, confirmDiscardChanges, confirmDiscardState } = useUnsavedChanges({
-  state: unsavedState, t, additionalDirty: computed(() => fieldDirty.value || metricDirty.value)
+  state: unsavedState, t, additionalDirty: computed(() => fieldDirty.value || relationDirty.value)
+})
+onBeforeRouteUpdate((to, from) => {
+  if (to.params.id === from.params.id && (to.query.tab !== from.query.tab || to.query.relation_id !== from.query.relation_id)) {
+    return confirmDiscardState(relationDirty.value)
+  }
+  return true
 })
 const closeFieldDialog = async () => {
   if (await confirmDiscardState(fieldDirty.value)) fieldDialogVisible.value = false
 }
-const closeMetricDialog = async () => {
-  if (await confirmDiscardState(metricDirty.value)) metricDialogVisible.value = false
-}
+
 
 const statusTagType = (s) => ({ draft: 'info', approved: 'success' }[s] ?? 'info')
 const statusLabel = (s) => ({
@@ -796,27 +703,6 @@ const loadFields = async () => {
   }
 }
 
-const loadMetrics = async () => {
-  if (form.table_type !== 'fact') return
-  metricLoading.value = true
-  try {
-    const res = await logicalTableAPI.listMetricImplementations(tableId.value)
-    metricImplementations.value = res || []
-  } finally {
-    metricLoading.value = false
-  }
-}
-
-const loadAvailableMetrics = async () => {
-  if (availableMetrics.value.length > 0) return
-  try {
-    const res = await standardMetricAPI.listAll()
-    availableMetrics.value = res
-  } catch (err) {
-    ElMessage.error(getModelErrorMessage(err, t, 'model.metric.load_failed'))
-  }
-}
-
 const handleRefresh = async () => {
   if (await confirmDiscardChanges()) await loadPage()
 }
@@ -861,7 +747,7 @@ const creatingTarget = ref(false)
 const createTarget = async () => {
   if (creatingTarget.value || isDirty.value) return
   creatingTarget.value = true
-  try { await logicalTableAPI.createTarget(tableId.value, table.value.version); ElMessage.success(t('model.materialization.target_ready')) }
+  try { await logicalTableAPI.createTarget(tableId.value, table.value.version); ElMessage.success(t('model.materialization.target_submitted')) }
   catch(error) { ElMessage.error(getModelErrorMessage(error, t, 'model.common.op_failed')) }
   finally { creatingTarget.value = false }
 }
@@ -1026,92 +912,6 @@ const deleteField = async (fieldId) => {
   }
 }
 
-const sourceFieldIDs = row => Array.isArray(row?.source_config?.field_ids) ? row.source_config.field_ids : []
-
-const selectMetricDefinition = definitionID => {
-  const selected = availableMetrics.value.find(item => item.id === definitionID)
-  metricForm.metric_definition_revision_id = selected?.current_revision?.id || null
-  if (!metricForm.name) metricForm.name = selected?.current_revision?.name || selected?.code || ''
-}
-
-const openMetricDialog = (implementation = null) => {
-  editingMetricImplementation.value = implementation
-  Object.assign(metricForm, blankMetricImplementation())
-  if (implementation) {
-    Object.assign(metricForm, {
-      metric_definition_id: implementation.metric_definition_id,
-      metric_definition_revision_id: implementation.metric_definition_revision_id,
-      name: implementation.name,
-      grain: implementation.grain,
-      field_ids: sourceFieldIDs(implementation),
-      engine: implementation.expression_config?.engine || 'sql',
-      expression: implementation.expression_config?.expression || '',
-      status: implementation.status,
-      note: implementation.note || ''
-    })
-  }
-  metricBaseline.value = snapshotUnsavedState(metricForm)
-  metricDialogVisible.value = true
-  loadAvailableMetrics()
-}
-
-const saveMetricImplementation = async () => {
-  if (!canEdit.value || !authStore.hasPermission('model.logical_model.update')) {
-    ElMessage.error(t('model.common.permission_denied'))
-    return
-  }
-  if (!metricForm.metric_definition_id || !metricForm.metric_definition_revision_id) {
-    ElMessage.warning(t('model.metric.select_required'))
-    return
-  }
-  if (!metricForm.name.trim() || !metricForm.grain.trim() || !metricForm.field_ids.length || !metricForm.engine.trim() || !metricForm.expression.trim()) {
-    ElMessage.warning(t('model.metric.required_fields'))
-    return
-  }
-  metricSubmitting.value = true
-  try {
-    const payload = {
-      version: table.value.version,
-      metric_definition_id: metricForm.metric_definition_id,
-      metric_definition_revision_id: metricForm.metric_definition_revision_id,
-      name: metricForm.name.trim(),
-      grain: metricForm.grain.trim(),
-      source_config: { field_ids: metricForm.field_ids },
-      dimension_config: {},
-      filter_config: {},
-      expression_config: { engine: metricForm.engine.trim(), expression: metricForm.expression.trim() },
-      status: metricForm.status,
-      note: metricForm.note.trim()
-    }
-    const result = editingMetricImplementation.value
-      ? await logicalTableAPI.updateMetricImplementation(tableId.value, editingMetricImplementation.value.id, payload)
-      : await logicalTableAPI.createMetricImplementation(tableId.value, payload)
-    table.value.version = result.version
-    ElMessage.success(t(editingMetricImplementation.value ? 'model.common.update_success' : 'model.common.create_success'))
-    metricDialogVisible.value = false
-    loadMetrics()
-  } catch (err) {
-    ElMessage.error(getModelErrorMessage(err, t, 'model.metric.save_failed'))
-  } finally {
-    metricSubmitting.value = false
-  }
-}
-
-const deleteMetricImplementation = async (implementationId) => {
-  if (!canEdit.value || !authStore.hasPermission('model.logical_model.update')) {
-    ElMessage.error(t('model.common.permission_denied'))
-    return
-  }
-  try {
-    const result = await logicalTableAPI.deleteMetricImplementation(tableId.value, implementationId, table.value.version)
-    table.value.version = result.version
-    ElMessage.success(t('model.common.delete_success'))
-    loadMetrics()
-  } catch (err) {
-    ElMessage.error(getModelErrorMessage(err, t, 'model.common.op_failed'))
-  }
-}
-
 let loadGeneration = 0
 const loadPage = async () => {
   const generation = ++loadGeneration
@@ -1119,11 +919,9 @@ const loadPage = async () => {
   pageError.value = ''
   referenceError.value = ''
   fieldDialogVisible.value = false
-  metricDialogVisible.value = false
   editingField.value = null
   table.value = {}
   fields.value = []
-  metricImplementations.value = []
   if (!tableId.value) {
     pageLoading.value = false
     pageError.value = t('model.common.invalid_detail_id')
@@ -1132,7 +930,7 @@ const loadPage = async () => {
   try {
     await loadTable()
     if (generation !== loadGeneration) return
-    await Promise.all([loadFields(), loadMetrics(), loadAvailableMetrics()])
+    await loadFields()
     const [domainsResult, elementsResult, layersResult] = await Promise.allSettled([
       domainAPI.list(), elementAPI.listAll(), dwLayerAPI.list()
     ])
@@ -1152,6 +950,11 @@ const loadPage = async () => {
 }
 
 watch(() => route.params.id, loadPage, { immediate: true })
+watch([() => route.query, () => pageLoading.value], () => {
+  if (pageLoading.value || pageError.value || !table.value.table_type) return
+  const state = detailRouteState.value
+  if (state.changed) navigateModelRoute(router, { path: route.path, query: state.query }, { history: 'replace' })
+})
 </script>
 
 <style scoped>

@@ -90,3 +90,12 @@ other = "服务运行策略无效"
 other = "需要身份认证"
 [service.configuration.version_conflict]
 other = "服务运行策略已被其他管理员更新"
+
+["service.metric.publication_conflict"]
+other = "服务发布版本已变化，请刷新后重新选择指标来源。"
+
+[service.metric.publication_failed]
+other = "指标来源发布更新失败。"
+
+[service.err.invalid_parameter_options]
+other = "参数选项或取值无效，请检查允许值、默认值及中英文名称。"

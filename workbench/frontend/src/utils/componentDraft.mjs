@@ -1,3 +1,4 @@
+import { parameterOptionsAllow, parameterControlType } from '../../../../common-frontend/basic/src/utils/parameterInput.mjs'
 import { defaultFieldPresentation } from '../../../../common-frontend/basic/src/utils/fieldPresentation.mjs'
 
 const NUMERIC_TYPES = new Set(['int', 'bigint', 'float', 'double', 'decimal'])
@@ -13,7 +14,7 @@ export function hasParameterValue(parameter) {
 }
 
 export function requiredParameterValuesPresent(parameters) {
-  return parameters.every((parameter) => !parameter.required || hasParameterValue(parameter))
+  return parameters.every((parameter) => (!parameter.required || hasParameterValue(parameter)) && (!hasParameterValue(parameter) || parameterOptionsAllow(parameter.options, parameter.value)))
 }
 
 export function createParameterDraft(field, index = 0) {
@@ -42,6 +43,7 @@ export function createNamedParameterDraft(parameter, index = 0) {
     controlType,
     required: parameter.required === true,
     bindingKind: 'named',
+    options: parameter.options || [],
     name: parameter.name,
     fieldType: parameter.type,
     operator: 'eq',
@@ -50,6 +52,7 @@ export function createNamedParameterDraft(parameter, index = 0) {
 }
 
 export function buildQueryRequest(descriptor, draft, cursor = '', format = 'json') {
+  if (draft.parameters.some((parameter) => hasParameterValue(parameter) && !parameterOptionsAllow(parameter.options, parameter.value))) throw new Error('parameter-options: invalid-value')
   const predicates = draft.parameters.filter((parameter) => parameter.bindingKind !== 'named' && hasParameterValue(parameter)).map(buildPredicate)
   const parameters = Object.fromEntries(
     draft.parameters
@@ -128,6 +131,7 @@ export function draftFromComponent(component, descriptor) {
         field: filterBinding?.field,
         operator: namedBinding ? 'eq' : filterBinding?.operator,
         fieldType: field?.type || 'string',
+        options: namedBinding ? field?.options || [] : [],
         value: component.default_parameter_values?.[definition.key] ?? emptyControlValue(definition.control_type),
       }
     }),
@@ -193,11 +197,7 @@ export function controlTypeFor(field, operator) {
   if (operator === 'bbox_intersects') return 'bbox'
   if (operator === 'in') return 'multiselect'
   if (operator === 'is_null' || operator === 'is_not_null') return 'checkbox'
-  if (field?.type === 'bool') return 'select'
-  if (field?.type === 'date') return 'date'
-  if (field?.type === 'timestamp') return 'datetime'
-  if (NUMERIC_TYPES.has(field?.type)) return 'number'
-  return 'text'
+  return parameterControlType(field?.type)
 }
 
 export function emptyControlValue(controlType) {
