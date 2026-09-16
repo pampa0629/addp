@@ -39,10 +39,10 @@ func TestCatalogResourceServiceListsOpaqueVersionedChanges(t *testing.T) {
 }
 
 func TestCatalogResourceServiceResolvesInRequestOrder(t *testing.T) {
-	domainID, entityID := int64(30), int64(8)
+	domainID := int64(30)
 	service := NewCatalogResourceService(&catalogResourceRepositoryStub{
 		entities:      []models.Entity{{ID: 8, TenantID: 7, Name: "Order", Code: "order", Status: "draft", Version: 2, DomainID: &domainID}},
-		logicalTables: []models.LogicalTable{{ID: 12, TenantID: 7, Name: "Orders", Code: "fact_orders", Status: "approved", Version: 3, TableType: "fact", Layer: "dwd", EntityID: &entityID}},
+		logicalTables: []models.LogicalTable{{ID: 12, TenantID: 7, Name: "Orders", Code: "fact_orders", Status: "approved", Version: 3, TableType: "fact", Layer: "dwd"}},
 	})
 	result, err := service.Resolve(context.Background(), 7, []models.CatalogReference{
 		{SourceType: "logical_table", SourceIdentity: "12"},

@@ -24,7 +24,6 @@ func TestListRequestValidationRejectsInvalidFilters(t *testing.T) {
 	db := setupLifecycleServiceTestDB(t)
 	logicalTableService := NewLogicalTableService(
 		repository.NewLogicalTableRepository(db),
-		repository.NewEntityRepository(db),
 		repository.NewDWLayerRepository(db),
 	)
 	_, _, err = logicalTableService.ListLogicalTables(1, repository.ListLogicalTableOptions{TableType: "aggregate"})
@@ -83,9 +82,6 @@ func TestCreateRequestValidationRejectsInvalidReferencesAndRanges(t *testing.T) 
 		{name: "entity relation source", err: func() error {
 			return validateCreateEntityRelationRequest(&models.CreateEntityRelationRequest{SourceEntity: 0, TargetEntity: 2, RelationType: "one_to_many"})
 		}},
-		{name: "logical table entity", err: func() error {
-			return validateCreateLogicalTableRequest(&models.CreateLogicalTableRequest{Name: "Order", Code: "order", TableType: "entity", Layer: "dwd", EntityID: &zeroID})
-		}},
 		{name: "logical field length", err: func() error {
 			return validateCreateLogicalFieldRequest(&models.CreateLogicalFieldRequest{Name: "ID", ColumnName: "id", DataType: "bigint", Length: &zeroLength})
 		}},
@@ -118,7 +114,7 @@ func TestCreateRequestValidationAcceptsBoundaryValues(t *testing.T) {
 		{name: "entity", err: validateCreateEntityRequest(&models.CreateEntityRequest{Name: "Order", Code: "order", DomainID: &positiveID})},
 		{name: "attribute", err: validateCreateEntityAttributeRequest(&models.CreateEntityAttributeRequest{Name: "ID", ColumnName: "id", DataType: "bigint", ElementID: &positiveID, SortOrder: 0})},
 		{name: "entity relation", err: validateCreateEntityRelationRequest(&models.CreateEntityRelationRequest{SourceEntity: 1, TargetEntity: 2, RelationType: "one_to_many"})},
-		{name: "logical table", err: validateCreateLogicalTableRequest(&models.CreateLogicalTableRequest{Name: "Order", Code: "order", TableType: "entity", Layer: "dwd", DomainID: &positiveID, EntityID: &positiveID})},
+		{name: "logical table", err: validateCreateLogicalTableRequest(&models.CreateLogicalTableRequest{Name: "Order", Code: "order", TableType: "entity", Layer: "dwd", DomainID: &positiveID})},
 		{name: "logical field", err: validateCreateLogicalFieldRequest(&models.CreateLogicalFieldRequest{Name: "Region", ColumnName: "region", DataType: "string", Length: &positiveLength, SortOrder: 0})},
 		{name: "table relation", err: validateSaveTableRelationRequest(&models.SaveTableRelationRequest{TargetTable: 2, SourceField: 1, TargetField: 2, RelationType: "fk"})},
 		{name: "dw layer", err: validateCreateDWLayerRequest(&models.CreateDWLayerRequest{LayerCode: "dwd", LayerName: "DWD", SortOrder: 0})},

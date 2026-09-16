@@ -157,8 +157,6 @@ definitions:
     type: object
   github_com_addp_quality_internal_models.CatalogSummaryResolution:
     properties:
-      check_task_id:
-        type: integer
       configured:
         type: boolean
       detail_path:
@@ -176,74 +174,26 @@ definitions:
       reference:
         $ref: '#/definitions/github_com_addp_quality_internal_models.CatalogSummaryReference'
     type: object
-  github_com_addp_quality_internal_models.CheckTask:
+  github_com_addp_quality_internal_models.CheckBindings:
     properties:
-      created_at:
+      column:
         type: string
-      created_by:
-        type: integer
-      description:
-        type: string
-      engine_id:
-        description: 目标引擎
-        type: integer
-      id:
-        type: integer
-      last_execution_id:
-        type: string
-      last_execution_status:
-        type: string
-      last_run_at:
-        type: string
-      name:
-        type: string
-      schema_name:
-        type: string
-      table_name:
-        type: string
-      tenant_id:
-        type: integer
-      updated_at:
-        type: string
-      updated_by:
-        type: integer
-    type: object
-  github_com_addp_quality_internal_models.DataValidationTask:
-    properties:
-      assertions:
+      columns:
         items:
-          type: integer
+          type: string
         type: array
-      code:
-        type: string
-      created_at:
-        type: string
-      created_by:
-        type: integer
-      description:
-        type: string
-      id:
-        type: integer
-      last_execution_id:
-        type: string
-      last_execution_status:
-        type: string
-      last_run_at:
-        type: string
-      name:
-        type: string
-      table_bindings:
+      reference_columns:
         items:
-          type: integer
+          type: string
         type: array
-      tenant_id:
-        type: integer
-      updated_at:
+      reference_table:
         type: string
-      updated_by:
-        type: integer
-      version:
-        type: integer
+      table:
+        type: string
+      then_column:
+        type: string
+      when_column:
+        type: string
     type: object
   github_com_addp_quality_internal_models.Issue:
     properties:
@@ -272,13 +222,13 @@ definitions:
         type: string
       pass_rate:
         type: number
+      plan_id:
+        type: integer
       resolution_note:
         type: string
       resolved_at:
         type: string
       resolved_by:
-        type: integer
-      rule_application_id:
         type: integer
       rule_key:
         type: string
@@ -300,6 +250,93 @@ definitions:
       updated_at:
         type: string
     type: object
+  github_com_addp_quality_internal_models.PlanCheckItem:
+    properties:
+      bindings:
+        $ref: '#/definitions/github_com_addp_quality_internal_models.CheckBindings'
+      disabled:
+        type: boolean
+      revision_no:
+        type: integer
+      rule:
+        $ref: '#/definitions/github_com_addp_quality_internal_models.RuleRevision'
+      rule_id:
+        type: integer
+      rule_key:
+        type: string
+      severity:
+        type: string
+    type: object
+  github_com_addp_quality_internal_models.QualityPlan:
+    properties:
+      check_items:
+        items:
+          $ref: '#/definitions/github_com_addp_quality_internal_models.PlanCheckItem'
+        type: array
+      code:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        type: integer
+      description:
+        type: string
+      id:
+        type: integer
+      last_execution_id:
+        type: string
+      last_execution_status:
+        type: string
+      last_run_at:
+        type: string
+      name:
+        type: string
+      table_bindings:
+        items:
+          type: integer
+        type: array
+      tenant_id:
+        type: integer
+      updated_at:
+        type: string
+      updated_by:
+        type: integer
+      version:
+        type: integer
+    type: object
+  github_com_addp_quality_internal_models.QualityRule:
+    properties:
+      code:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        type: integer
+      description:
+        type: string
+      id:
+        type: integer
+      name:
+        type: string
+      params:
+        type: object
+      plan_count:
+        type: integer
+      revision_no:
+        type: integer
+      source:
+        $ref: '#/definitions/github_com_addp_quality_internal_models.RuleSource'
+      tenant_id:
+        type: integer
+      type:
+        type: string
+      updated_at:
+        type: string
+      updated_by:
+        type: integer
+      version:
+        type: integer
+    type: object
   github_com_addp_quality_internal_models.ResolveCatalogSummariesRequest:
     properties:
       references:
@@ -314,70 +351,54 @@ definitions:
           $ref: '#/definitions/github_com_addp_quality_internal_models.CatalogSummaryResolution'
         type: array
     type: object
-  github_com_addp_quality_internal_service.CreateCheckTaskRequest:
+  github_com_addp_quality_internal_models.RuleRevision:
     properties:
+      created_at:
+        type: string
+      created_by:
+        type: integer
       description:
         type: string
-      engine_id:
+      latest_revision_no:
         type: integer
       name:
         type: string
-      schema_name:
+      params:
+        type: object
+      revision_no:
+        type: integer
+      rule_id:
+        type: integer
+      source:
+        $ref: '#/definitions/github_com_addp_quality_internal_models.RuleSource'
+      type:
         type: string
-      table_name:
-        type: string
-    required:
-    - engine_id
-    - name
-    - schema_name
-    - table_name
     type: object
-  github_com_addp_quality_internal_service.CreateRuleApplicationRequest:
+  github_com_addp_quality_internal_models.RuleSource:
     properties:
-      column_name:
-        type: string
       element_id:
         type: integer
-      engine_id:
+      element_revision_id:
         type: integer
-      schema_name:
-        type: string
-      table_name:
-        type: string
-    required:
-    - column_name
-    - element_id
-    - engine_id
-    - schema_name
-    - table_name
-    type: object
-  github_com_addp_quality_internal_service.DataValidationTableBinding:
-    properties:
-      alias:
-        type: string
-      locator:
+      rule_key:
         type: string
     type: object
-  github_com_addp_quality_internal_service.DataValidationWriteRequest:
+  github_com_addp_quality_internal_service.PlanCheckRequest:
     properties:
-      assertions:
-        items:
-          type: integer
-        type: array
-      code:
-        type: string
-      description:
-        type: string
-      name:
-        type: string
-      table_bindings:
-        items:
-          $ref: '#/definitions/github_com_addp_quality_internal_service.DataValidationTableBinding'
-        type: array
-      version:
+      bindings:
+        $ref: '#/definitions/github_com_addp_quality_internal_models.CheckBindings'
+      disabled:
+        type: boolean
+      revision_no:
         type: integer
+      rule_id:
+        type: integer
+      rule_key:
+        type: string
+      severity:
+        type: string
     type: object
-  github_com_addp_quality_internal_service.RuleApplicationElementCandidate:
+  github_com_addp_quality_internal_service.PlanElementCandidate:
     properties:
       code:
         type: string
@@ -392,80 +413,46 @@ definitions:
       revision_no:
         type: integer
     type: object
-  github_com_addp_quality_internal_service.RuleApplicationElementSummary:
+  github_com_addp_quality_internal_service.PlanTableBinding:
+    properties:
+      alias:
+        type: string
+      locator:
+        type: string
+    type: object
+  github_com_addp_quality_internal_service.PlanWriteRequest:
+    properties:
+      check_items:
+        items:
+          $ref: '#/definitions/github_com_addp_quality_internal_service.PlanCheckRequest'
+        type: array
+      code:
+        type: string
+      description:
+        type: string
+      name:
+        type: string
+      table_bindings:
+        items:
+          $ref: '#/definitions/github_com_addp_quality_internal_service.PlanTableBinding'
+        type: array
+      version:
+        type: integer
+    type: object
+  github_com_addp_quality_internal_service.RuleWriteRequest:
     properties:
       code:
         type: string
-      id:
-        type: integer
-      name:
-        type: string
-    type: object
-  github_com_addp_quality_internal_service.RuleApplicationListItem:
-    properties:
-      column_name:
-        type: string
-      created_at:
-        type: string
-      created_by:
-        type: integer
-      element:
-        $ref: '#/definitions/github_com_addp_quality_internal_service.RuleApplicationElementSummary'
-      element_id:
-        description: standard.elements.id
-        type: integer
-      element_revision_id:
-        description: standard.element_revisions.id
-        type: integer
-      enabled:
-        type: boolean
-      engine_id:
-        type: integer
-      id:
-        type: integer
-      rule_config:
-        description: 质量规则快照
-        items:
-          type: integer
-        type: array
-      schema_name:
-        type: string
-      table_name:
-        type: string
-      tenant_id:
-        type: integer
-      updated_at:
-        type: string
-      updated_by:
-        type: integer
-    type: object
-  github_com_addp_quality_internal_service.UpdateCheckTaskRequest:
-    properties:
       description:
         type: string
-      engine_id:
-        type: integer
       name:
         type: string
-      schema_name:
+      params:
+        type: object
+      source:
+        $ref: '#/definitions/github_com_addp_quality_internal_models.RuleSource'
+      type:
         type: string
-      table_name:
-        type: string
-    required:
-    - engine_id
-    - name
-    - schema_name
-    - table_name
-    type: object
-  github_com_addp_quality_internal_service.UpdateRuleApplicationRequest:
-    properties:
-      enabled:
-        type: boolean
-    required:
-    - enabled
-    type: object
-  internal_api.dataValidationDeleteRequest:
-    properties:
       version:
         type: integer
     type: object
@@ -484,102 +471,8 @@ definitions:
     - note
     - status
     type: object
-  internal_api.qualityCheckTaskListResponse:
+  internal_api.planDeleteRequest:
     properties:
-      data:
-        items:
-          $ref: '#/definitions/github_com_addp_quality_internal_models.CheckTask'
-        type: array
-      page:
-        type: integer
-      page_size:
-        type: integer
-      total:
-        type: integer
-      total_pages:
-        type: integer
-    type: object
-  internal_api.qualityCheckTaskResponse:
-    properties:
-      created_at:
-        type: string
-      created_by:
-        type: integer
-      description:
-        type: string
-      engine_id:
-        description: 目标引擎
-        type: integer
-      id:
-        type: integer
-      last_execution_id:
-        type: string
-      last_execution_status:
-        type: string
-      last_run_at:
-        type: string
-      name:
-        type: string
-      schema_name:
-        type: string
-      table_name:
-        type: string
-      tenant_id:
-        type: integer
-      updated_at:
-        type: string
-      updated_by:
-        type: integer
-    type: object
-  internal_api.qualityDataValidationTaskListResponse:
-    properties:
-      data:
-        items:
-          $ref: '#/definitions/github_com_addp_quality_internal_models.DataValidationTask'
-        type: array
-      page:
-        type: integer
-      page_size:
-        type: integer
-      total:
-        type: integer
-      total_pages:
-        type: integer
-    type: object
-  internal_api.qualityDataValidationTaskResponse:
-    properties:
-      assertions:
-        items:
-          type: integer
-        type: array
-      code:
-        type: string
-      created_at:
-        type: string
-      created_by:
-        type: integer
-      description:
-        type: string
-      id:
-        type: integer
-      last_execution_id:
-        type: string
-      last_execution_status:
-        type: string
-      last_run_at:
-        type: string
-      name:
-        type: string
-      table_bindings:
-        items:
-          type: integer
-        type: array
-      tenant_id:
-        type: integer
-      updated_at:
-        type: string
-      updated_by:
-        type: integer
       version:
         type: integer
     type: object
@@ -587,7 +480,7 @@ definitions:
     properties:
       data:
         items:
-          $ref: '#/definitions/github_com_addp_quality_internal_service.RuleApplicationElementCandidate'
+          $ref: '#/definitions/github_com_addp_quality_internal_service.PlanElementCandidate'
         type: array
       page:
         type: integer
@@ -662,13 +555,13 @@ definitions:
         type: string
       pass_rate:
         type: number
+      plan_id:
+        type: integer
       resolution_note:
         type: string
       resolved_at:
         type: string
       resolved_by:
-        type: integer
-      rule_application_id:
         type: integer
       rule_key:
         type: string
@@ -695,11 +588,11 @@ definitions:
       message:
         type: string
     type: object
-  internal_api.qualityRuleApplicationListResponse:
+  internal_api.qualityPlanListResponse:
     properties:
       data:
         items:
-          $ref: '#/definitions/github_com_addp_quality_internal_service.RuleApplicationListItem'
+          $ref: '#/definitions/github_com_addp_quality_internal_models.QualityPlan'
         type: array
       page:
         type: integer
@@ -710,40 +603,89 @@ definitions:
       total_pages:
         type: integer
     type: object
-  internal_api.qualityRuleApplicationResponse:
+  internal_api.qualityPlanResponse:
     properties:
-      column_name:
+      check_items:
+        items:
+          $ref: '#/definitions/github_com_addp_quality_internal_models.PlanCheckItem'
+        type: array
+      code:
         type: string
       created_at:
         type: string
       created_by:
         type: integer
-      element_id:
-        description: standard.elements.id
-        type: integer
-      element_revision_id:
-        description: standard.element_revisions.id
-        type: integer
-      enabled:
-        type: boolean
-      engine_id:
-        type: integer
+      description:
+        type: string
       id:
         type: integer
-      rule_config:
-        description: 质量规则快照
+      last_execution_id:
+        type: string
+      last_execution_status:
+        type: string
+      last_run_at:
+        type: string
+      name:
+        type: string
+      table_bindings:
         items:
           type: integer
         type: array
-      schema_name:
-        type: string
-      table_name:
-        type: string
       tenant_id:
         type: integer
       updated_at:
         type: string
       updated_by:
+        type: integer
+      version:
+        type: integer
+    type: object
+  internal_api.qualityRuleListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/github_com_addp_quality_internal_models.QualityRule'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+  internal_api.qualityRuleResponse:
+    properties:
+      code:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        type: integer
+      description:
+        type: string
+      id:
+        type: integer
+      name:
+        type: string
+      params:
+        type: object
+      plan_count:
+        type: integer
+      revision_no:
+        type: integer
+      source:
+        $ref: '#/definitions/github_com_addp_quality_internal_models.RuleSource'
+      tenant_id:
+        type: integer
+      type:
+        type: string
+      updated_at:
+        type: string
+      updated_by:
+        type: integer
+      version:
         type: integer
     type: object
   internal_api.qualityTaskProviderExecuteRequest:
@@ -767,6 +709,11 @@ definitions:
         - pending
         example: pending
         type: string
+    type: object
+  internal_api.ruleDeleteRequest:
+    properties:
+      version:
+        type: integer
     type: object
   internal_api.taskProviderTaskListItem:
     properties:
@@ -937,408 +884,6 @@ info:
   title: ADDP Quality API
   version: "1.0"
 paths:
-  /check-tasks:
-    get:
-      parameters:
-      - default: 1
-        description: 页码 | Page
-        in: query
-        name: page
-        type: integer
-      - default: 20
-        description: 每页数量 | Page size
-        in: query
-        maximum: 100
-        name: page_size
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_api.qualityCheckTaskListResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/internal_api.qualityErrorResponse'
-      security:
-      - BearerAuth: []
-      summary: 获取检查任务列表 | List check tasks
-      tags:
-      - CheckTask
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - quality.check_task.read
-    post:
-      consumes:
-      - application/json
-      description: 创建前校验目标 PostgreSQL Schema 和数据表属于当前租户引擎 | Validate the target PostgreSQL
-        schema and table against the tenant engine before creation
-      parameters:
-      - description: 任务信息 | Task info
-        in: body
-        name: body
-        required: true
-        schema:
-          $ref: '#/definitions/github_com_addp_quality_internal_service.CreateCheckTaskRequest'
-      produces:
-      - application/json
-      responses:
-        "201":
-          description: Created
-          schema:
-            $ref: '#/definitions/internal_api.qualityCheckTaskResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/internal_api.qualityErrorResponse'
-        "409":
-          description: Conflict
-          schema:
-            $ref: '#/definitions/internal_api.qualityErrorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/internal_api.qualityErrorResponse'
-      security:
-      - BearerAuth: []
-      summary: 创建检查任务 | Create check task
-      tags:
-      - CheckTask
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - quality.check_task.create
-  /check-tasks/{id}:
-    delete:
-      parameters:
-      - description: 任务ID | Task ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_api.qualityMessageResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/internal_api.qualityErrorResponse'
-        "409":
-          description: Conflict
-          schema:
-            $ref: '#/definitions/internal_api.qualityErrorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/internal_api.qualityErrorResponse'
-      security:
-      - BearerAuth: []
-      summary: 删除检查任务 | Delete check task
-      tags:
-      - CheckTask
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - quality.check_task.delete
-    get:
-      parameters:
-      - description: 任务ID | Task ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_api.qualityCheckTaskResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/internal_api.qualityErrorResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/internal_api.qualityErrorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/internal_api.qualityErrorResponse'
-      security:
-      - BearerAuth: []
-      summary: 获取检查任务详情 | Get check task detail
-      tags:
-      - CheckTask
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - quality.check_task.read
-    put:
-      consumes:
-      - application/json
-      description: 更新前校验目标 PostgreSQL Schema 和数据表属于当前租户引擎 | Validate the target PostgreSQL
-        schema and table against the tenant engine before update
-      parameters:
-      - description: 任务ID | Task ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      - description: 更新信息 | Update info
-        in: body
-        name: body
-        required: true
-        schema:
-          $ref: '#/definitions/github_com_addp_quality_internal_service.UpdateCheckTaskRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_api.qualityCheckTaskResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/internal_api.qualityErrorResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/internal_api.qualityErrorResponse'
-        "409":
-          description: Conflict
-          schema:
-            $ref: '#/definitions/internal_api.qualityErrorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/internal_api.qualityErrorResponse'
-      security:
-      - BearerAuth: []
-      summary: 更新检查任务 | Update check task
-      tags:
-      - CheckTask
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - quality.check_task.update
-  /check-tasks/{id}/run:
-    post:
-      parameters:
-      - description: 任务ID | Task ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "202":
-          description: Accepted
-          schema:
-            $ref: '#/definitions/internal_api.qualityTaskProviderExecuteResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/internal_api.qualityErrorResponse'
-        "409":
-          description: 任务已有活动 execution | Task already has an active execution
-          schema:
-            $ref: '#/definitions/internal_api.qualityErrorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/internal_api.qualityErrorResponse'
-      security:
-      - BearerAuth: []
-      summary: 执行检查任务 | Run check task
-      tags:
-      - CheckTask
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - quality.check_task.execute
-  /data-validation-tasks:
-    get:
-      parameters:
-      - description: 页码 | Page
-        in: query
-        name: page
-        type: integer
-      - description: 每页数量 | Page size
-        in: query
-        name: page_size
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_api.qualityDataValidationTaskListResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/internal_api.qualityErrorResponse'
-      security:
-      - BearerAuth: []
-      summary: 列出数据校验任务 | List data validation tasks
-      tags:
-      - DataValidation
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - quality.data_validation.read
-    post:
-      consumes:
-      - application/json
-      parameters:
-      - description: 数据校验定义 | Data validation definition
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/github_com_addp_quality_internal_service.DataValidationWriteRequest'
-      produces:
-      - application/json
-      responses:
-        "201":
-          description: Created
-          schema:
-            $ref: '#/definitions/internal_api.qualityDataValidationTaskResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/internal_api.qualityErrorResponse'
-        "409":
-          description: Conflict
-          schema:
-            $ref: '#/definitions/internal_api.qualityErrorResponse'
-      security:
-      - BearerAuth: []
-      summary: 创建数据校验任务 | Create data validation task
-      tags:
-      - DataValidation
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - quality.data_validation.create
-  /data-validation-tasks/{id}:
-    delete:
-      consumes:
-      - application/json
-      parameters:
-      - description: 任务 ID | Task ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      - description: 删除版本 | Delete version
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/internal_api.dataValidationDeleteRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_api.qualityMessageResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/internal_api.qualityErrorResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/internal_api.qualityErrorResponse'
-        "409":
-          description: Conflict
-          schema:
-            $ref: '#/definitions/internal_api.qualityErrorResponse'
-      security:
-      - BearerAuth: []
-      summary: 删除数据校验任务 | Delete data validation task
-      tags:
-      - DataValidation
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - quality.data_validation.delete
-    get:
-      parameters:
-      - description: 任务 ID | Task ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_api.qualityDataValidationTaskResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/internal_api.qualityErrorResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/internal_api.qualityErrorResponse'
-      security:
-      - BearerAuth: []
-      summary: 获取数据校验任务 | Get data validation task
-      tags:
-      - DataValidation
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - quality.data_validation.read
-    put:
-      consumes:
-      - application/json
-      parameters:
-      - description: 任务 ID | Task ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      - description: 完整数据校验定义 | Complete data validation definition
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/github_com_addp_quality_internal_service.DataValidationWriteRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_api.qualityDataValidationTaskResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/internal_api.qualityErrorResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/internal_api.qualityErrorResponse'
-        "409":
-          description: Conflict
-          schema:
-            $ref: '#/definitions/internal_api.qualityErrorResponse'
-      security:
-      - BearerAuth: []
-      summary: 更新数据校验任务 | Update data validation task
-      tags:
-      - DataValidation
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - quality.data_validation.update
   /executions:
     get:
       parameters:
@@ -1539,30 +1084,15 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - quality.issue.update
-  /rule-applications:
+  /plans:
     get:
       parameters:
-      - description: 引擎ID | Engine ID
-        in: query
-        name: engine_id
-        type: integer
-      - description: Schema名称 | Schema name
-        in: query
-        name: schema_name
-        type: string
-      - description: 表名 | Table name
-        in: query
-        name: table_name
-        type: string
-      - default: 1
-        description: 页码 | Page
+      - description: 页码 | Page
         in: query
         name: page
         type: integer
-      - default: 20
-        description: 每页数量 | Page size
+      - description: 每页数量 | Page size
         in: query
-        maximum: 100
         name: page_size
         type: integer
       produces:
@@ -1571,72 +1101,69 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_api.qualityRuleApplicationListResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/internal_api.qualityErrorResponse'
+            $ref: '#/definitions/internal_api.qualityPlanListResponse'
         "500":
           description: Internal Server Error
           schema:
             $ref: '#/definitions/internal_api.qualityErrorResponse'
       security:
       - BearerAuth: []
-      summary: 获取规则应用列表 | List rule applications
+      summary: 列出质量检查方案 | List quality plan tasks
       tags:
-      - RuleApplication
+      - Plan
       x-addp-auth-mode: permission
       x-addp-required-permissions:
-      - quality.rule_application.read
+      - quality.plan.read
     post:
       consumes:
       - application/json
       parameters:
-      - description: 规则应用信息 | Rule application info
+      - description: 质量检查定义 | Quality plan definition
         in: body
-        name: body
+        name: request
         required: true
         schema:
-          $ref: '#/definitions/github_com_addp_quality_internal_service.CreateRuleApplicationRequest'
+          $ref: '#/definitions/github_com_addp_quality_internal_service.PlanWriteRequest'
       produces:
       - application/json
       responses:
         "201":
           description: Created
           schema:
-            $ref: '#/definitions/internal_api.qualityRuleApplicationResponse'
+            $ref: '#/definitions/internal_api.qualityPlanResponse'
         "400":
           description: Bad Request
-          schema:
-            $ref: '#/definitions/internal_api.qualityErrorResponse'
-        "404":
-          description: Not Found
           schema:
             $ref: '#/definitions/internal_api.qualityErrorResponse'
         "409":
           description: Conflict
           schema:
             $ref: '#/definitions/internal_api.qualityErrorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/internal_api.qualityErrorResponse'
       security:
       - BearerAuth: []
-      summary: 创建规则应用 | Create rule application
+      summary: 创建质量检查方案 | Create quality plan task
       tags:
-      - RuleApplication
+      - Plan
       x-addp-auth-mode: permission
       x-addp-required-permissions:
-      - quality.rule_application.create
-  /rule-applications/{id}:
+      - quality.plan.create
+      - quality.rule.read
+  /plans/{id}:
     delete:
+      consumes:
+      - application/json
       parameters:
-      - description: 规则应用ID | Rule application ID
+      - description: 任务 ID | Task ID
         in: path
         name: id
         required: true
         type: integer
+      - description: 删除版本 | Delete version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.planDeleteRequest'
       produces:
       - application/json
       responses:
@@ -1644,6 +1171,10 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/internal_api.qualityMessageResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
         "404":
           description: Not Found
           schema:
@@ -1652,21 +1183,17 @@ paths:
           description: Conflict
           schema:
             $ref: '#/definitions/internal_api.qualityErrorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/internal_api.qualityErrorResponse'
       security:
       - BearerAuth: []
-      summary: 删除规则应用 | Delete rule application
+      summary: 删除质量检查方案 | Delete quality plan task
       tags:
-      - RuleApplication
+      - Plan
       x-addp-auth-mode: permission
       x-addp-required-permissions:
-      - quality.rule_application.delete
+      - quality.plan.delete
     get:
       parameters:
-      - description: 规则应用ID | Rule application ID
+      - description: 任务 ID | Task ID
         in: path
         name: id
         required: true
@@ -1677,7 +1204,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_api.qualityRuleApplicationResponse'
+            $ref: '#/definitions/internal_api.qualityPlanResponse'
         "400":
           description: Bad Request
           schema:
@@ -1686,40 +1213,36 @@ paths:
           description: Not Found
           schema:
             $ref: '#/definitions/internal_api.qualityErrorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/internal_api.qualityErrorResponse'
       security:
       - BearerAuth: []
-      summary: 获取规则应用详情 | Get rule application detail
+      summary: 获取质量检查方案 | Get quality plan task
       tags:
-      - RuleApplication
+      - Plan
       x-addp-auth-mode: permission
       x-addp-required-permissions:
-      - quality.rule_application.read
+      - quality.plan.read
     put:
       consumes:
       - application/json
       parameters:
-      - description: 规则应用ID | Rule application ID
+      - description: 任务 ID | Task ID
         in: path
         name: id
         required: true
         type: integer
-      - description: 更新信息 | Update info
+      - description: 完整质量检查定义 | Complete quality plan definition
         in: body
-        name: body
+        name: request
         required: true
         schema:
-          $ref: '#/definitions/github_com_addp_quality_internal_service.UpdateRuleApplicationRequest'
+          $ref: '#/definitions/github_com_addp_quality_internal_service.PlanWriteRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_api.qualityRuleApplicationResponse'
+            $ref: '#/definitions/internal_api.qualityPlanResponse'
         "400":
           description: Bad Request
           schema:
@@ -1732,35 +1255,282 @@ paths:
           description: Conflict
           schema:
             $ref: '#/definitions/internal_api.qualityErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 更新质量检查方案 | Update quality plan task
+      tags:
+      - Plan
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - quality.plan.update
+      - quality.rule.read
+  /plans/{id}/run:
+    post:
+      parameters:
+      - description: 方案 ID | Plan ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/internal_api.qualityTaskProviderExecuteResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 执行质量检查方案 | Run quality plan
+      tags:
+      - QualityPlan
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - quality.plan.execute
+  /rules:
+    get:
+      parameters:
+      - description: 名称或编码 | Name or code
+        in: query
+        name: search
+        type: string
+      - description: 页码 | Page
+        in: query
+        name: page
+        type: integer
+      - description: 每页数量 | Page size
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.qualityRuleListResponse'
         "500":
           description: Internal Server Error
           schema:
             $ref: '#/definitions/internal_api.qualityErrorResponse'
       security:
       - BearerAuth: []
-      summary: 更新规则应用 | Update rule application
+      summary: 列出质量规则 | List quality rules
       tags:
-      - RuleApplication
+      - QualityRule
       x-addp-auth-mode: permission
       x-addp-required-permissions:
-      - quality.rule_application.update
-  /rule-applications/element-candidates:
+      - quality.rule.read
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 质量规则定义 | Quality rule definition
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_quality_internal_service.RuleWriteRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_api.qualityRuleResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 创建质量规则 | Create quality rule
+      tags:
+      - QualityRule
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - quality.rule.create
+  /rules/{id}:
+    delete:
+      consumes:
+      - application/json
+      parameters:
+      - description: 规则 ID | Rule ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 删除版本 | Delete version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.ruleDeleteRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.qualityMessageResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 删除质量规则 | Delete quality rule
+      tags:
+      - QualityRule
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - quality.rule.delete
     get:
       parameters:
-      - description: 名称、编码或定义关键字 | Name, code, or definition keyword
+      - description: 规则 ID | Rule ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.qualityRuleResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 获取质量规则 | Get quality rule
+      tags:
+      - QualityRule
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - quality.rule.read
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 规则 ID | Rule ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 完整质量规则定义 | Complete quality rule definition
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_quality_internal_service.RuleWriteRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.qualityRuleResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 更新质量规则 | Update quality rule
+      tags:
+      - QualityRule
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - quality.rule.update
+  /rules/{id}/plans:
+    get:
+      parameters:
+      - description: 规则 ID | Rule ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 页码 | Page
+        in: query
+        name: page
+        type: integer
+      - description: 每页数量 | Page size
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.qualityPlanListResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 查询引用规则的方案 | List plans referencing a rule
+      tags:
+      - QualityRule
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - quality.rule.read
+      - quality.plan.read
+  /rules/element-candidates:
+    get:
+      parameters:
+      - description: 搜索词 | Search keyword
         in: query
         name: keyword
         required: true
         type: string
-      - default: 1
-        description: 页码 | Page
+      - description: 页码 | Page
         in: query
         name: page
         type: integer
-      - default: 20
-        description: 每页数量 | Page size
+      - description: 每页数量 | Page size
         in: query
-        maximum: 100
         name: page_size
         type: integer
       produces:
@@ -1780,12 +1550,12 @@ paths:
             $ref: '#/definitions/internal_api.qualityErrorResponse'
       security:
       - BearerAuth: []
-      summary: 搜索规则应用数据元候选 | Search data element candidates for rule applications
+      summary: 搜索标准规则来源 | Search standard rule sources
       tags:
-      - RuleApplication
+      - QualityRule
       x-addp-auth-mode: permission
       x-addp-required-permissions:
-      - quality.rule_application.create
+      - quality.rule.read
   /runtime/catalog-summaries/resolve:
     post:
       consumes:
@@ -1868,11 +1638,11 @@ paths:
       - quality.task_provider.read
   /task-provider/tasks:
     get:
-      description: 按标准 TaskProvider 协议列出 Quality 任务；task_type 支持 check|data_validation。|
-        List Quality tasks through the standard TaskProvider protocol; task_type supports
-        check or data_validation.
+      description: 按标准 TaskProvider 协议列出 Quality 任务；task_type 支持 quality_plan。| List
+        Quality tasks through the standard TaskProvider protocol; task_type supports
+        quality_plan.
       parameters:
-      - description: '任务类型：check|data_validation | Task type: check or data_validation'
+      - description: '任务类型：quality_plan | Task type: quality_plan'
         in: query
         name: task_type
         type: string
@@ -1895,17 +1665,17 @@ paths:
       - BearerAuth: []
       summary: 列出 TaskProvider 质量检查任务 | List TaskProvider quality check tasks
       tags:
-      - CheckTask
+      - QualityPlan
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - quality.task_provider.read
   /task-provider/tasks/{task_type}/{id}:
     get:
-      description: 按标准 TaskProvider 协议获取 Quality 任务详情；task_type 支持 check|data_validation。|
+      description: 按标准 TaskProvider 协议获取 Quality 任务详情；task_type 支持 quality_plan。|
         Get Quality task detail through the standard TaskProvider protocol; task_type
-        supports check or data_validation.
+        supports quality_plan.
       parameters:
-      - description: '任务类型：check|data_validation | Task type: check or data_validation'
+      - description: '任务类型：quality_plan | Task type: quality_plan'
         in: path
         name: task_type
         required: true
@@ -1934,7 +1704,7 @@ paths:
       - BearerAuth: []
       summary: 获取 TaskProvider 质量检查任务详情 | Get TaskProvider quality check task detail
       tags:
-      - CheckTask
+      - QualityPlan
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - quality.task_provider.read
@@ -1947,7 +1717,7 @@ paths:
         invocation; source=orchestrator and parent_execution_id are required, and
         parameters overrides are not supported.
       parameters:
-      - description: '任务类型：check|data_validation | Task type: check or data_validation'
+      - description: '任务类型：quality_plan | Task type: quality_plan'
         in: path
         name: task_type
         required: true
@@ -1990,7 +1760,7 @@ paths:
       - BearerAuth: []
       summary: 执行 TaskProvider 质量检查任务 | Execute TaskProvider quality check task
       tags:
-      - CheckTask
+      - QualityPlan
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - quality.task_provider.execute

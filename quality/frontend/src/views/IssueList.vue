@@ -34,7 +34,9 @@
       <el-table-column :label="t('quality.issue.passRate')" width="100">
         <template #default="{ row }">{{ row.pass_rate?.toFixed(1) }}%</template>
       </el-table-column>
-      <el-table-column prop="failed_count" :label="t('quality.issue.failedCount')" width="100" />
+      <el-table-column :label="t('quality.issue.failedCount')" width="100">
+        <template #default="{ row }">{{ row.type === 'row_count' ? '-' : row.failed_count }}</template>
+      </el-table-column>
       <el-table-column :label="t('quality.issue.relatedExecutions')" min-width="320">
         <template #default="{ row }">
           <div class="execution-links">

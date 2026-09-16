@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	commonapi "github.com/addp/common/api"
 	"github.com/addp/common/client"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
@@ -52,8 +53,8 @@ func (s *QueryServiceService) CreateService(ctx context.Context, req *models.Cre
 		return nil, metricErr
 	}
 	// 1. 验证配置类型
-	if req.ConfigType != "table" && req.ConfigType != "sql" {
-		return nil, errors.New("invalid config_type: must be 'table' or 'sql'")
+	if req.ConfigType != "table" && req.ConfigType != "sql" && req.ConfigType != "analytical" {
+		return nil, errors.New("invalid config_type: must be 'table', 'sql' or 'analytical'")
 	}
 
 	var tableRef *tableResourceRef
@@ -139,6 +140,8 @@ func (s *QueryServiceService) CreateService(ctx context.Context, req *models.Cre
 		if err != nil {
 			return nil, fmt.Errorf("build table dependency snapshot failed: %w", err)
 		}
+	} else if req.ConfigType == "analytical" {
+		snapshot = &models.QueryServiceDependencySnapshot{CapturedAt: time.Now(), MetricSource: metricSnapshot}
 	} else {
 		snapshot = buildSQLDependencySnapshot(req.SqlQuery, req.OutputContract, time.Now())
 		if req.RuntimeEngineID != nil && *req.RuntimeEngineID > 0 {
@@ -154,16 +157,17 @@ func (s *QueryServiceService) CreateService(ctx context.Context, req *models.Cre
 			snapshot.DependencyHash = queryServiceDependencyHash(snapshot)
 		}
 	}
-	stableKey, err := publishedStableKey(req.ConfigType, dataConfig, snapshot)
-	if err != nil {
-		return nil, err
+	if req.ConfigType != "analytical" {
+		stableKey, err := publishedStableKey(req.ConfigType, dataConfig, snapshot)
+		if err != nil {
+			return nil, err
+		}
+		if err := validateQueryFieldPolicy(dataConfig, snapshot.Table); err != nil {
+			return nil, err
+		}
+		dataConfig["stable_key"] = stableKey
 	}
-	if err := validateQueryFieldPolicy(dataConfig, snapshot.Table); err != nil {
-		return nil, err
-	}
-	snapshot.MetricSource = metricSnapshot
 	snapshot.DependencyHash = queryServiceDependencyHash(snapshot)
-	dataConfig["stable_key"] = stableKey
 	if req.ConfigType == "table" {
 		if snapshot != nil && snapshot.ObjectTable != nil {
 			if req.RuntimeEngineID == nil || *req.RuntimeEngineID == 0 {
@@ -204,7 +208,7 @@ func (s *QueryServiceService) CreateService(ctx context.Context, req *models.Cre
 		SchemaName:      req.SchemaName,
 		TargetTable:     req.TableName,
 		SqlQuery:        req.SqlQuery,
-		NamedParameters: append([]models.QueryServiceNamedParameter(nil), req.NamedParameters...),
+		NamedParameters: append([]models.QueryServiceNamedParameter{}, req.NamedParameters...),
 
 		DataConfig: dataConfig,
 		Protocols:  protocols,
@@ -226,7 +230,7 @@ func (s *QueryServiceService) CreateService(ctx context.Context, req *models.Cre
 		return nil, fmt.Errorf("create service failed: %w", err)
 	}
 	if err := s.recordLineagePublication(context.Background(), service); err != nil {
-		if cleanupErr := s.repo.Delete(service.ID); cleanupErr != nil {
+		if cleanupErr := s.repo.Delete(ctx, service.ID, service.TenantID, service.Version); cleanupErr != nil {
 			return nil, fmt.Errorf("record service lineage publication failed: %v; remove failed service %d: %w", err, service.ID, cleanupErr)
 		}
 		return nil, fmt.Errorf("record service lineage publication failed: %w", err)
@@ -758,129 +762,71 @@ func (s *QueryServiceService) SearchServices(tenantID uint, keyword string, offs
 }
 
 // UpdateService 更新服务
-func (s *QueryServiceService) UpdateService(id uint, req *models.UpdateQueryServiceRequest) (*models.QueryServiceDTO, error) {
-	// 获取现有服务
-	service, err := s.repo.GetByID(id)
-	if err != nil {
-		return nil, fmt.Errorf("get service failed: %w", err)
+func (s *QueryServiceService) UpdateService(ctx context.Context, id, tenantID uint, req *models.UpdateQueryServiceRequest) (*models.QueryServiceDTO, error) {
+	if req == nil || req.Version <= 0 || tenantID == 0 {
+		return nil, ErrInvalidStructuredQuery
 	}
-
-	// 构建更新字段
-	updates := make(map[string]interface{})
-
-	if req.Title != nil {
-		updates["title"] = *req.Title
-	}
-	if req.Description != nil {
-		updates["description"] = *req.Description
-	}
-	if req.Keywords != nil {
-		updates["keywords"] = models.StringArray(req.Keywords)
-	}
-	if req.DataConfig != nil {
-		mutableConfig, err := queryServiceMutableDataConfig(req.DataConfig, service.ConfigType)
-		if err != nil {
-			return nil, err
+	item, err := s.repo.UpdateVersioned(ctx, id, tenantID, req.Version, func(item *models.QueryService) error {
+		if req.Title != nil {
+			item.Title = *req.Title
 		}
-		// 只合并用户可修改配置，locator 和 source_snapshot 保持发布时事实。
-		currentConfig := service.DataConfig
-		if currentConfig == nil {
-			currentConfig = make(map[string]interface{})
+		if req.Description != nil {
+			item.Description = *req.Description
 		}
-		for k, v := range mutableConfig {
-			currentConfig[k] = v
+		if req.Keywords != nil {
+			item.Keywords = models.StringArray(req.Keywords)
 		}
-		if err := validateQueryFieldPolicy(currentConfig, service.GetTableInfo()); err != nil {
-			return nil, err
-		}
-		updates["data_config"] = currentConfig
-	}
-	if req.Protocols != nil {
-		// 合并现有协议配置和新配置
-		currentProtocols := service.Protocols
-		if currentProtocols == nil {
-			currentProtocols = make(map[string]interface{})
-		}
-		for k, v := range req.Protocols {
-			currentProtocols[k] = v
-		}
-		if !service.HasGeometry() {
-			currentProtocols["ogc_features"] = map[string]interface{}{
-				"enabled": false,
-				"version": "1.0",
+		if req.DataConfig != nil {
+			mutableConfig, err := queryServiceMutableDataConfig(req.DataConfig, item.ConfigType)
+			if err != nil {
+				return err
+			}
+			if item.DataConfig == nil {
+				item.DataConfig = models.JSONB{}
+			}
+			for k, v := range mutableConfig {
+				item.DataConfig[k] = v
+			}
+			if err := validateQueryFieldPolicy(item.DataConfig, item.GetTableInfo()); err != nil {
+				return err
 			}
 		}
-		updates["protocols"] = currentProtocols
-	}
-	if req.PublicAccess != nil {
-		updates["public_access"] = *req.PublicAccess
-	}
-	if req.MaxFeatures != nil {
-		updates["max_features"] = *req.MaxFeatures
-	}
-	if req.Status != nil {
-		updates["status"] = *req.Status
-	}
-
-	candidate := *service
-	if dataConfig, ok := updates["data_config"].(models.JSONB); ok {
-		candidate.DataConfig = dataConfig
-	}
-	if protocols, ok := updates["protocols"].(models.JSONB); ok {
-		candidate.Protocols = protocols
-	}
-	if status, ok := updates["status"].(string); ok {
-		candidate.Status = status
-	}
-	if maxFeatures, ok := updates["max_features"].(int); ok {
-		candidate.MaxFeatures = maxFeatures
-	}
-	if candidate.Status == "active" && candidate.IsRESTAPIEnabled() {
-		if err := ValidateQueryConsumerContract(&candidate); err != nil {
-			return nil, fmt.Errorf("cannot activate query service: %w", err)
+		if req.Protocols != nil {
+			if item.Protocols == nil {
+				item.Protocols = models.JSONB{}
+			}
+			for k, v := range req.Protocols {
+				item.Protocols[k] = v
+			}
+			if !item.HasGeometry() {
+				item.Protocols["ogc_features"] = map[string]interface{}{"enabled": false, "version": "1.0"}
+			}
 		}
-	}
-
-	// 执行更新
-	if err := s.repo.Update(id, updates); err != nil {
-		return nil, fmt.Errorf("update service failed: %w", err)
-	}
-
-	// 重新加载服务
-	service, err = s.repo.GetByID(id)
-	if err != nil {
-		return nil, fmt.Errorf("get updated service failed: %w", err)
-	}
-
-	return s.convertToDTO(service), nil
-}
-
-// DeleteService 删除服务
-func (s *QueryServiceService) DeleteService(id uint) error {
-	if err := s.repo.Delete(id); err != nil {
-		return fmt.Errorf("delete service failed: %w", err)
-	}
-	return nil
-}
-
-// UpdateServiceStatus 更新服务状态
-func (s *QueryServiceService) UpdateServiceStatus(id uint, status string, errorMessage string) error {
-	if status == "active" {
-		service, err := s.repo.GetByID(id)
-		if err != nil {
-			return fmt.Errorf("get service failed: %w", err)
+		if req.PublicAccess != nil {
+			item.PublicAccess = *req.PublicAccess
 		}
-		service.Status = status
-		if service.IsRESTAPIEnabled() {
-			if err := ValidateQueryConsumerContract(service); err != nil {
+		if req.MaxFeatures != nil {
+			item.MaxFeatures = *req.MaxFeatures
+		}
+		if req.Status != nil {
+			item.Status = *req.Status
+		}
+		if item.Status == "active" && item.IsRESTAPIEnabled() {
+			if err := ValidateQueryConsumerContract(item); err != nil {
 				return fmt.Errorf("cannot activate query service: %w", err)
 			}
 		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
-	if err := s.repo.UpdateStatus(id, status, errorMessage); err != nil {
-		return fmt.Errorf("update service status failed: %w", err)
-	}
-	return nil
+	return s.convertToDTO(item), nil
+}
+
+// DeleteService deletes only the exact tenant-owned version observed by the caller.
+func (s *QueryServiceService) DeleteService(ctx context.Context, id, tenantID uint, version int64) error {
+	return s.repo.Delete(ctx, id, tenantID, version)
 }
 
 // CheckSourceSnapshot 显式读取 Meta 当前事实并比较已发布快照。
@@ -909,13 +855,16 @@ func (s *QueryServiceService) CheckSourceSnapshot(id, tenantID uint) (*models.Qu
 }
 
 // RefreshSourceSnapshot 用 Meta 当前事实替换表模式查询服务的依赖快照。
-func (s *QueryServiceService) RefreshSourceSnapshot(id, tenantID uint) (*models.QueryServiceDTO, error) {
+func (s *QueryServiceService) RefreshSourceSnapshot(ctx context.Context, id, tenantID uint, version int64) (*models.QueryServiceDTO, error) {
 	service, err := s.repo.GetByID(id)
 	if err != nil {
 		return nil, fmt.Errorf("get service failed: %w", err)
 	}
 	if service.TenantID != tenantID {
-		return nil, errors.New("query service does not belong to current tenant")
+		return nil, commonapi.ErrNotFound
+	}
+	if version <= 0 || service.Version != version {
+		return nil, commonapi.ErrConflict
 	}
 	if !service.IsTableMode() {
 		return nil, errors.New("SQL mode uses an output contract snapshot and has no single Meta item to refresh")
@@ -947,15 +896,21 @@ func (s *QueryServiceService) RefreshSourceSnapshot(id, tenantID uint) (*models.
 		}
 		updates["protocols"] = protocols
 	}
-	if err := s.repo.Update(id, updates); err != nil {
-		return nil, fmt.Errorf("refresh source snapshot failed: %w", err)
-	}
-	updated, err := s.repo.GetByID(id)
+	updated, err := s.repo.UpdateVersioned(ctx, id, tenantID, version, func(item *models.QueryService) error {
+		item.DataConfig = dataConfig
+		if protocols, ok := updates["protocols"].(models.JSONB); ok {
+			item.Protocols = protocols
+		}
+		if item.Status == "active" && item.IsRESTAPIEnabled() {
+			return ValidateQueryConsumerContract(item)
+		}
+		return nil
+	})
 	if err != nil {
-		return nil, fmt.Errorf("get refreshed service failed: %w", err)
+		return nil, err
 	}
 	if err := s.recordLineagePublication(context.Background(), updated); err != nil {
-		return nil, fmt.Errorf("record refreshed service lineage publication failed: %w", err)
+		logger.L().Warn("Refreshed service lineage publication will be replayed", "service_id", updated.ID, "error", err)
 	}
 	return s.convertToDTO(updated), nil
 }
@@ -1011,6 +966,7 @@ func (s *QueryServiceService) recordLineagePublication(ctx context.Context, serv
 // convertToDTO 将服务模型转换为 DTO
 func (s *QueryServiceService) convertToDTO(service *models.QueryService) *models.QueryServiceDTO {
 	dto := &models.QueryServiceDTO{
+		Version:        service.Version,
 		ServiceVersion: QueryServiceVersion(service),
 		ID:             service.ID,
 
@@ -1037,7 +993,16 @@ func (s *QueryServiceService) convertToDTO(service *models.QueryService) *models
 		CreatedAt: service.CreatedAt,
 		UpdatedAt: service.UpdatedAt,
 	}
-	dto.NamedParameters = append([]models.QueryServiceNamedParameter(nil), service.NamedParameters...)
+	dto.NamedParameters = service.GetNamedParameters()
+	dto.OutputContract = &models.QueryServiceOutputContract{Table: service.GetTableInfo()}
+	if snapshot := service.SourceSnapshot(); snapshot != nil {
+		dto.OutputContract.Spatial = snapshot.Spatial.Clone()
+	}
+	dto.StableKey = service.GetStableKey()
+	if service.ConfigType == "analytical" {
+		id := service.GetEngineID()
+		dto.EngineID = &id
+	}
 
 	// 根据配置类型设置相应字段
 	if service.IsTableMode() {

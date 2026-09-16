@@ -24,10 +24,8 @@ func getUserID(c *gin.Context) int64 {
 }
 
 func SetupRouter(
-	ruleEngineSvc *service.RuleEngineService,
-	checkTaskSvc *service.CheckTaskService,
-	gateTaskSvc *service.DataValidationService,
-	checkExecutor *service.CheckExecutor,
+	planSvc *service.PlanService,
+	ruleSvc *service.RuleService,
 	issueSvc *service.IssueService,
 	catalogSummarySvc *service.CatalogSummaryService,
 	db *gorm.DB,
@@ -52,10 +50,9 @@ func SetupRouter(
 	})
 	router.Use(commoni18n.I18nMiddleware())
 
-	ruleAppHandler := NewRuleApplicationHandler(ruleEngineSvc)
-	checkTaskHandler := NewCheckTaskHandler(checkTaskSvc, checkExecutor)
-	gateTaskHandler := NewDataValidationHandler(gateTaskSvc)
-	taskProviderHandler := NewTaskProviderHandler(checkTaskSvc, gateTaskSvc, checkExecutor)
+	planHandler := NewPlanHandler(planSvc)
+	ruleHandler := NewRuleHandler(ruleSvc)
+	taskProviderHandler := NewTaskProviderHandler(planSvc)
 	executionHandler := NewExecutionHandler(commonExecution.NewTaskExecutionRepository(db))
 	issueHandler := NewIssueHandler(issueSvc)
 	catalogSummaryHandler := NewCatalogSummaryHandler(catalogSummarySvc)
@@ -73,63 +70,34 @@ func SetupRouter(
 		catalogSummary := api.Group("/runtime/catalog-summaries")
 		catalogSummary.Use(commonAuth.MustNewServiceClientGuard("addp-catalog"))
 		catalogSummary.POST("/resolve", permission(qualityauthorization.PermissionQualityCatalogRead), catalogSummaryHandler.Resolve)
-
-		// 规则应用（字段-规则映射）
-		ruleApps := api.Group("/rule-applications")
-		{
-			ruleApps.GET("", permission(qualityauthorization.PermissionQualityRuleApplicationRead), ruleAppHandler.List)
-			ruleApps.GET("/element-candidates", permission(qualityauthorization.PermissionQualityRuleApplicationCreate), ruleAppHandler.ListElementCandidates)
-			ruleApps.POST("", permission(qualityauthorization.PermissionQualityRuleApplicationCreate), ruleAppHandler.Create)
-			ruleApps.GET("/:id", permission(qualityauthorization.PermissionQualityRuleApplicationRead), ruleAppHandler.Get)
-			ruleApps.PUT("/:id", permission(qualityauthorization.PermissionQualityRuleApplicationUpdate), ruleAppHandler.Update)
-			ruleApps.DELETE("/:id", permission(qualityauthorization.PermissionQualityRuleApplicationDelete), ruleAppHandler.Delete)
-		}
-
-		gateTasks := api.Group("/data-validation-tasks")
-		{
-			gateTasks.GET("", permission(qualityauthorization.PermissionQualityDataValidationRead), gateTaskHandler.List)
-			gateTasks.POST("", permission(qualityauthorization.PermissionQualityDataValidationCreate), gateTaskHandler.Create)
-			gateTasks.GET("/:id", permission(qualityauthorization.PermissionQualityDataValidationRead), gateTaskHandler.Get)
-			gateTasks.PUT("/:id", permission(qualityauthorization.PermissionQualityDataValidationUpdate), gateTaskHandler.Update)
-			gateTasks.DELETE("/:id", permission(qualityauthorization.PermissionQualityDataValidationDelete), gateTaskHandler.Delete)
-		}
-
-		// 检查任务
-		checkTasks := api.Group("/check-tasks")
-		{
-			checkTasks.GET("", permission(qualityauthorization.PermissionQualityCheckTaskRead), checkTaskHandler.List)
-			checkTasks.POST("", permission(qualityauthorization.PermissionQualityCheckTaskCreate), checkTaskHandler.Create)
-			checkTasks.GET("/:id", permission(qualityauthorization.PermissionQualityCheckTaskRead), checkTaskHandler.Get)
-			checkTasks.PUT("/:id", permission(qualityauthorization.PermissionQualityCheckTaskUpdate), checkTaskHandler.Update)
-			checkTasks.DELETE("/:id", permission(qualityauthorization.PermissionQualityCheckTaskDelete), checkTaskHandler.Delete)
-			checkTasks.POST("/:id/run", permission(qualityauthorization.PermissionQualityCheckTaskExecute), checkTaskHandler.Run)
-		}
-
-		// TaskProvider 只允许 Orchestrator Runtime 使用专用最小权限访问。
-		taskProvider := api.Group("/task-provider")
-		taskProvider.Use(commonAuth.MustNewServiceClientGuard("addp-orchestrator"))
-		{
-			taskProvider.GET("/tasks", permission(qualityauthorization.PermissionQualityTaskProviderRead), taskProviderHandler.ListTasks)
-			taskProvider.GET("/tasks/:task_type/:id", permission(qualityauthorization.PermissionQualityTaskProviderRead), taskProviderHandler.TaskDetail)
-			taskProvider.POST("/tasks/:task_type/:id/execute", permission(qualityauthorization.PermissionQualityTaskProviderExecute), taskProviderHandler.TaskExecute)
-			taskProvider.GET("/executions/:execution_id", permission(qualityauthorization.PermissionQualityTaskProviderRead), executionHandler.ProviderGet)
-		}
-
-		// 执行记录（读 common.task_executions）
+		plans := api.Group("/plans")
+		plans.GET("", permission(qualityauthorization.PermissionQualityPlanRead), planHandler.List)
+		plans.POST("", permission(qualityauthorization.PermissionQualityPlanCreate, qualityauthorization.PermissionQualityRuleRead), planHandler.Create)
+		plans.GET("/:id", permission(qualityauthorization.PermissionQualityPlanRead), planHandler.Get)
+		plans.PUT("/:id", permission(qualityauthorization.PermissionQualityPlanUpdate, qualityauthorization.PermissionQualityRuleRead), planHandler.Update)
+		plans.DELETE("/:id", permission(qualityauthorization.PermissionQualityPlanDelete), planHandler.Delete)
+		plans.POST("/:id/run", permission(qualityauthorization.PermissionQualityPlanExecute), planHandler.Run)
+		rules := api.Group("/rules")
+		rules.GET("", permission(qualityauthorization.PermissionQualityRuleRead), ruleHandler.List)
+		rules.GET("/element-candidates", permission(qualityauthorization.PermissionQualityRuleRead), ruleHandler.ListElementCandidates)
+		rules.POST("", permission(qualityauthorization.PermissionQualityRuleCreate), ruleHandler.Create)
+		rules.GET("/:id", permission(qualityauthorization.PermissionQualityRuleRead), ruleHandler.Get)
+		rules.PUT("/:id", permission(qualityauthorization.PermissionQualityRuleUpdate), ruleHandler.Update)
+		rules.DELETE("/:id", permission(qualityauthorization.PermissionQualityRuleDelete), ruleHandler.Delete)
+		rules.GET("/:id/plans", permission(qualityauthorization.PermissionQualityRuleRead, qualityauthorization.PermissionQualityPlanRead), ruleHandler.Plans)
+		provider := api.Group("/task-provider")
+		provider.Use(commonAuth.MustNewServiceClientGuard("addp-orchestrator"))
+		provider.GET("/tasks", permission(qualityauthorization.PermissionQualityTaskProviderRead), taskProviderHandler.ListTasks)
+		provider.GET("/tasks/:task_type/:id", permission(qualityauthorization.PermissionQualityTaskProviderRead), taskProviderHandler.TaskDetail)
+		provider.POST("/tasks/:task_type/:id/execute", permission(qualityauthorization.PermissionQualityTaskProviderExecute), taskProviderHandler.TaskExecute)
+		provider.GET("/executions/:execution_id", permission(qualityauthorization.PermissionQualityTaskProviderRead), executionHandler.ProviderGet)
 		executions := api.Group("/executions")
-		{
-			executions.GET("", permission("monitor.execution.read"), executionHandler.List)
-			executions.GET("/:execution_id", permission("monitor.execution.read"), executionHandler.Get)
-		}
-
-		// 问题工单
+		executions.GET("", permission("monitor.execution.read"), executionHandler.List)
+		executions.GET("/:execution_id", permission("monitor.execution.read"), executionHandler.Get)
 		issues := api.Group("/issues")
-		{
-			issues.GET("", permission(qualityauthorization.PermissionQualityIssueRead), issueHandler.List)
-			issues.GET("/:id", permission(qualityauthorization.PermissionQualityIssueRead), issueHandler.Get)
-			issues.PUT("/:id/status", permission(qualityauthorization.PermissionQualityIssueUpdate), issueHandler.UpdateStatus)
-		}
+		issues.GET("", permission(qualityauthorization.PermissionQualityIssueRead), issueHandler.List)
+		issues.GET("/:id", permission(qualityauthorization.PermissionQualityIssueRead), issueHandler.Get)
+		issues.PUT("/:id/status", permission(qualityauthorization.PermissionQualityIssueUpdate), issueHandler.UpdateStatus)
 	}
-
 	return router
 }

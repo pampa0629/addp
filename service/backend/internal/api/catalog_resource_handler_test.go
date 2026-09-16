@@ -29,6 +29,7 @@ func TestCatalogResourceRoutesRequireCatalogServiceAndResolveCurrentQueryService
 			id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, source_type TEXT NOT NULL,
 			source_identity INTEGER NOT NULL, operation TEXT NOT NULL, snapshot JSON NOT NULL, observed_at DATETIME NOT NULL)`,
 		`CREATE TABLE service.query_services (
+        version INTEGER NOT NULL DEFAULT 1,
 			id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, service_name TEXT NOT NULL, title TEXT NOT NULL,
 			config_type TEXT NOT NULL, public_access BOOLEAN NOT NULL, status TEXT NOT NULL,
 			engine_id INTEGER, runtime_engine_id INTEGER)`,

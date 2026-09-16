@@ -80,13 +80,13 @@ Mermaid 图默认与 PG 表字段保持一致，便于发现并修正字段设�
 | 编排工作流   | Orchestration | orchestrator  | 跨模块任务的 DAG 编排定义，**本身也是一种任务**       |
 | 瓦片缓存生成任务 | TileCacheTask | manager | 生成瓦片缓存的任务定义，执行后更新 TileCache 结果事实 |
 | 向量化任务   | EmbeddingTask | manager       | 对 data item 范围执行向量化的任务定义                 |
-| 质量检查任务 | CheckTask     | quality       | 数据质量检查任务定义                                  |
+| 质量检查方案 | QualityPlan     | quality       | 数据质量检查任务定义                                  |
 | 图谱构建任务 | GraphBuildTask | graph        | 知识图谱构建任务定义                                  |
 
 **任务的共同能力**：
 - **Schedule**：所有 Task 均可配置定时调度（Cron 表达式）
 - **Execution**：所有 Task 执行后写入 `common.task_executions` 统一记录
-- **可被 Orchestration 编排**：ScanTask / TransferTask / DevTask / TileCacheTask / VectorMaterializedViewTask / EmbeddingTask / CheckTask / GraphBuildTask / Orchestration 均可作为 Orchestration 的步骤（Step）
+- **可被 Orchestration 编排**：ScanTask / TransferTask / DevTask / TileCacheTask / VectorMaterializedViewTask / EmbeddingTask / QualityPlan / GraphBuildTask / Orchestration 均可作为 Orchestration 的步骤（Step）
 - **Orchestration 的递归性**：Orchestration 执行完也产生 Execution，并以 `task_type=orchestration` 暴露给任务库；保存和执行时必须防止递归引用
 
 **任务类型（task_type in common.task_executions）**：
@@ -159,7 +159,19 @@ Mermaid 图默认与 PG 表字段保持一致，便于发现并修正字段设�
 
 | 中文         | 英文标识符 | 说明                         |
 | ------------ | ---------- | ---------------------------- |
-| 质量检查任务 | CheckTask  | Task 派生，执行数据质量规则检查 |
+| 质量检查方案 | QualityPlan  | Task 派生，执行数据质量规则检查 |
+| 质量规则 | QualityRule | 独立可复用的约束定义，不是 Task |
+| 规则修订 | RuleRevision | 不可变约束及来源快照 |
+| 方案检查项 | PlanCheckItem | 方案聚合内的固定规则修订引用、目标绑定与策略 |
+
+方案与规则通过检查项形成多对多关系。一次执行冻结检查项和规则修订，不回读最新定义。
+
+```mermaid
+erDiagram
+    QualityRule ||--|{ RuleRevision : revisions
+    QualityPlan ||--o{ PlanCheckItem : owns
+    RuleRevision ||--o{ PlanCheckItem : pinned_by
+```
 
 ---
 
@@ -457,21 +469,21 @@ erDiagram
         timestamp deleted_at
     }
 
-    CheckTask {
+    QualityPlan {
         uint id PK
         uint tenant_id FK
+        string code UK
+        bigint version
         string name
         string description
-        string schedule "Cron 表达式"
-        bool enabled
+        json table_bindings
+        json rules
         timestamp last_run_at
-        timestamp next_run_at
         string last_execution_id
         string last_execution_status
         uint created_by FK
         timestamp created_at
         timestamp updated_at
-        timestamp deleted_at
     }
 
     GraphBuildTask {
@@ -523,14 +535,14 @@ erDiagram
     Orchestration ||--o{ TaskExecution : "产生"
     TileCacheTask ||--o{ TaskExecution : "产生"
     EmbeddingTask ||--o{ TaskExecution : "产生"
-    CheckTask ||--o{ TaskExecution : "产生"
+    QualityPlan ||--o{ TaskExecution : "产生"
     GraphBuildTask ||--o{ TaskExecution : "产生"
     Orchestration }o--o{ ScanTask : "编排步骤"
     Orchestration }o--o{ TransferTask : "编排步骤"
     Orchestration }o--o{ DevTask : "编排步骤"
     Orchestration }o--o{ TileCacheTask : "编排步骤"
     Orchestration }o--o{ EmbeddingTask : "编排步骤"
-    Orchestration }o--o{ CheckTask : "编排步骤"
+    Orchestration }o--o{ QualityPlan : "编排步骤"
     Orchestration }o--o{ GraphBuildTask : "编排步骤"
     Orchestration }o--o{ Orchestration : "编排步骤（需防递归）"
     TaskExecution ||--o{ TaskExecution : "parent_execution_id 子步骤追踪父编排"
@@ -1211,7 +1223,6 @@ erDiagram
         uint id PK
         uint tenant_id FK
         uint domain_id FK "软引用 Standard.Domain"
-        uint entity_id FK "实体表时关联(可选)"
         uint dw_layer_id FK
         string name
         string code UK
@@ -1221,6 +1232,35 @@ erDiagram
         string status
         timestamp created_at
         timestamp updated_at
+    }
+
+    LogicalTableEntityMapping {
+        uint id PK
+        uint tenant_id FK
+        uint table_id FK
+        uint entity_id FK
+        string mapping_role "represents|derives_from"
+        int entity_version "冻结实体版本"
+    }
+
+    LogicalFieldAttributeMapping {
+        uint id PK
+        uint tenant_id FK
+        uint table_id FK
+        uint field_id FK
+        uint entity_id FK
+        uint entity_attribute_id FK
+        string mapping_role "direct|derived"
+    }
+
+    TableRelationEntityRelationMapping {
+        uint id PK
+        uint tenant_id FK
+        uint table_id FK
+        uint table_relation_id FK
+        uint entity_relation_id FK
+        string orientation "same|inverse"
+        int entity_relation_version "冻结实体关系版本"
     }
 
     LogicalField {
@@ -1283,9 +1323,14 @@ erDiagram
     DWLayer ||--o{ LogicalTable : "所在层"
     Entity ||--o{ EntityAttribute : "含属性"
     Entity ||--o{ EntityRelation : "源实体"
-    LogicalTable ||--o| Entity : "关联实体(可选)"
     LogicalTable ||--o{ LogicalField : "含字段"
     LogicalTable ||--o{ TableRelation : "源表关系"
+    LogicalTable ||--o{ LogicalTableEntityMapping : "实现概念实体"
+    Entity ||--o{ LogicalTableEntityMapping : "被逻辑表实现"
+    LogicalField ||--o{ LogicalFieldAttributeMapping : "实现概念属性"
+    EntityAttribute ||--o{ LogicalFieldAttributeMapping : "被逻辑字段实现"
+    TableRelation ||--o{ TableRelationEntityRelationMapping : "实现概念关系"
+    EntityRelation ||--o{ TableRelationEntityRelationMapping : "被表关系实现"
     LogicalTable ||--o{ DimensionHierarchy : "含维度层级(维度表)"
     LogicalTable ||--o{ MetricImplementation : "指标实现(事实表)"
     DimensionHierarchy ||--o{ DimensionHierarchyLevel : "含层级"
@@ -1298,7 +1343,7 @@ erDiagram
 |---|----------|----------|------|
 | MO-1 | 当前 EntityAttribute / LogicalField 已逐步增加 `element_revision_id`，但仍需确认所有审批、导入和展示路径只以确定修订作为正式引用 | 待收口 | 跨 schema 无 DB FK 是合理边界，但正式模型不能动态跟随数据元当前版本 |
 | MO-2 | 旧 `FactMetricMapping` 已整体替换为 Model 所属的 MetricImplementation | ✅ 已实现 | 同时保存稳定定义身份并冻结 `metric_definition_revision_id`，完整拥有粒度、来源、连接、过滤与可执行表达式 |
-| MO-3 | `Entity` 和 `LogicalTable` 都有 `domain_id`，都软引用 `Standard.Domain`，两者的关系（Entity 是 LogicalTable 的模板）通过 `LogicalTable.entity_id` 可选关联，但未强制 | 设计如此 | 允许逻辑表不依赖实体直接建模 |
+| MO-3 | Entity 与 LogicalTable 的跨层追溯已从旧 `LogicalTable.entity_id` 单指针收敛为表、字段、关系三类概念实现映射 | ✅ 已实现 | 事实表和维度表直接作为唯一逻辑表实现概念模型，不创建第二套实体逻辑表 |
 | MO-4 | Model 已独占 DimensionHierarchy 与层级成员，LogicalField 不再保存 `hierarchy_id + hierarchy_level` | ✅ 已实现 | 层级序号从 1 开始，成员只引用同一 LogicalTable 的字段并共用父版本 |
 
 ---
@@ -1347,8 +1392,8 @@ graph LR
     end
 
     subgraph QLT["Quality"]
-        CheckTask
-        RuleApplication
+        QualityPlan
+        Issue
         ConformanceResult
     end
 
@@ -1428,7 +1473,7 @@ graph LR
     Orchestration -.->|"编排步骤(JSONB)"| DevTask
     Orchestration -.->|"编排步骤(JSONB)"| TileCacheTask
     Orchestration -.->|"编排步骤(JSONB)"| EmbeddingTask
-    Orchestration -.->|"编排步骤(JSONB)"| CheckTask
+    Orchestration -.->|"编排步骤(JSONB)"| QualityPlan
     Orchestration -.->|"编排步骤(JSONB)"| GraphBuildTask
     Orchestration -.->|"编排步骤(JSONB，防递归)"| Orchestration
 
@@ -1439,7 +1484,7 @@ graph LR
     Orchestration --> TaskExecution
     TileCacheTask --> TaskExecution
     EmbeddingTask --> TaskExecution
-    CheckTask --> TaskExecution
+    QualityPlan --> TaskExecution
     GraphBuildTask --> TaskExecution
 
     %% Service 图层
@@ -1464,7 +1509,12 @@ graph LR
     LogicalTable --> LogicalField
     LogicalTable --> DimensionHierarchy
     LogicalTable --> MetricImplementation
-    Entity --> LogicalTable
+    LogicalTable --> LogicalTableEntityMapping
+    Entity --> LogicalTableEntityMapping
+    LogicalField --> LogicalFieldAttributeMapping
+    EntityAttribute --> LogicalFieldAttributeMapping
+    TableRelation --> TableRelationEntityRelationMapping
+    EntityRelation --> TableRelationEntityRelationMapping
 
     %% Model → Standard 软引用（跨 schema）
     LogicalField -.->|"冻结 Standard.ElementRevision"| ElementRevision
@@ -1476,9 +1526,9 @@ graph LR
     CatalogEntry --> CatalogComponent
     CatalogComponent --> StandardMapping
     StandardMapping -.->|"引用确定标准修订"| ElementRevision
-    RuleApplication -.->|"检查确定映射与修订"| StandardMapping
-    CheckTask --> ConformanceResult
-    RuleApplication --> ConformanceResult
+    QualityPlan -.->|"可选导入冻结来源"| ElementRevision
+    QualityPlan --> ConformanceResult
+    QualityPlan --> Issue
 ```
 
 **说明**：
@@ -1500,7 +1550,7 @@ graph TD
     DEV["Develop\nDevTask"]
     ORC["Orchestrator\nOrchestration"]
     MGR["Manager\nTileCacheTask / TileCache / PreviewState / EmbeddingTask / Embedding"]
-    QLT["Quality\nRuleApplication / CheckTask / ConformanceResult"]
+    QLT["Quality\nQualityPlan / Issue / TaskExecution"]
     GPH["Graph\nGraphBuildTask"]
     MON["Monitor (公共)\nTaskExecution"]
     SVC["Service\nQueryService / TileService / RegisteredService"]
@@ -1567,4 +1617,4 @@ graph TD
 | ST-2 | Standard | DimensionHierarchy 所有权与实现已统一迁入 Model | — | ✅ 已完成，Standard 旧路线已删除 |
 | MO-1 | Model    | 正式模型必须冻结 Standard.ElementRevision，不能只动态引用 Element | 高 | 已有冻结字段，待收口全部审批与消费路径 |
 | MO-2 | Model    | 指标实现必须引用确定的 Standard 指标定义修订 | — | ✅ 已由 MetricImplementation 冻结 MetricDefinitionRevision，旧 FactMetricMapping 已删除 |
-| MO-3 | Model    | Entity 和 LogicalTable 都软引用 Domain，LogicalTable 可不经 Entity 直接建模 | —  | 已确认合理 |
+| MO-3 | Model    | Entity 与 LogicalTable 通过表、字段、关系三类概念实现映射建立追溯，不保留 `LogicalTable.entity_id` 或第二套逻辑表 | —  | ✅ 已实现 |

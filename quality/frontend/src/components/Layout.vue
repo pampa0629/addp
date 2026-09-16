@@ -38,17 +38,10 @@
               <el-icon><CircleCheck /></el-icon>
               <span>{{ t('quality.layout.qualityManagement') }}</span>
             </template>
-            <el-menu-item v-if="can('quality.rule_application.read')" index="/rule-applications">
-              <el-icon><Setting /></el-icon>
-              <span>{{ t('quality.layout.ruleApplications') }}</span>
-            </el-menu-item>
-            <el-menu-item v-if="can('quality.check_task.read')" index="/check-tasks">
-              <el-icon><List /></el-icon>
-              <span>{{ t('quality.layout.checkTasks') }}</span>
-            </el-menu-item>
-            <el-menu-item v-if="can('quality.data_validation.read')" index="/data-validation-tasks">
+            <el-menu-item v-if="can('quality.rule.read')" index="/rules"><el-icon><List /></el-icon><span>{{ t('quality.rule.title') }}</span></el-menu-item>
+            <el-menu-item v-if="can('quality.plan.read')" index="/plans">
               <el-icon><Lock /></el-icon>
-              <span>{{ t('quality.layout.dataValidationTasks') }}</span>
+              <span>{{ t('quality.layout.qualityPlans') }}</span>
             </el-menu-item>
             <el-menu-item v-if="can('quality.issue.read')" index="/issues">
               <el-icon><Warning /></el-icon>
@@ -71,7 +64,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '../store/auth'
 import {
   User, ArrowDown, SwitchButton, CircleCheck,
-  Setting, List, Warning, Lock
+  Warning, Lock, List
 } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 
@@ -89,10 +82,9 @@ onMounted(() => {
 
 const activeMenu = computed(() => {
   const path = route.path
-  if (path.startsWith('/rule-applications')) return '/rule-applications'
-  if (path.startsWith('/check-tasks')) return '/check-tasks'
-  if (path.startsWith('/data-validation-tasks')) return '/data-validation-tasks'
-  if (path.startsWith('/executions')) return '/check-tasks'
+  if (path.startsWith('/rules')) return '/rules'
+  if (path.startsWith('/plans')) return '/plans'
+  if (path.startsWith('/executions')) return '/plans'
   if (path.startsWith('/issues')) return '/issues'
   return path
 })

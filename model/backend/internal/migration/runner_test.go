@@ -129,6 +129,24 @@ func TestMaterializationPartitionNormalizationMigrationRemovesEmptyDesign(t *tes
 	}
 }
 
+func TestPhysicalTargetMigrationRemovesPartitionOptions(t *testing.T) {
+	content, err := fs.ReadFile(migrationFiles, "sql/024_remove_partition_materialization_options.up.sql")
+	if err != nil {
+		t.Fatalf("read physical target migration: %v", err)
+	}
+	sql := string(content)
+	for _, fragment := range []string{
+		"materialization - 'partition_by' - 'partition_type'",
+		"materialization ? 'partition_by'",
+		"materialization ? 'partition_type'",
+		"DROP COLUMN is_partition",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("physical target migration missing %s", fragment)
+		}
+	}
+}
+
 func TestMaterializationTargetPredecessorMigrationPersistsCompareAndSwapState(t *testing.T) {
 	content, err := fs.ReadFile(migrationFiles, "sql/017_capture_materialization_target_predecessor.up.sql")
 	if err != nil {
@@ -240,6 +258,26 @@ func TestCatalogResourceChangeMigrationUsesRootTriggersAndMinimalProjection(t *t
 	for _, forbidden := range []string{"materialization'", "entity_attributes", "logical_fields", "fact_metric_mappings"} {
 		if strings.Contains(sql, forbidden) {
 			t.Fatalf("catalog resource change migration copies forbidden professional fact %s", forbidden)
+		}
+	}
+}
+
+func TestConceptRealizationMigrationReplacesSingleEntityPointer(t *testing.T) {
+	content, err := fs.ReadFile(migrationFiles, "sql/022_add_concept_realization_mappings.up.sql")
+	if err != nil {
+		t.Fatalf("read concept realization migration: %v", err)
+	}
+	sql := string(content)
+	for _, fragment := range []string{
+		"model.logical_table_entity_mappings",
+		"model.logical_field_attribute_mappings",
+		"model.table_relation_entity_relation_mappings",
+		"DROP COLUMN entity_id",
+		"mapping_role IN ('represents', 'derives_from')",
+		"orientation IN ('same', 'inverse')",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("concept realization migration missing %s", fragment)
 		}
 	}
 }

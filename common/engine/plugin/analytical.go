@@ -1,6 +1,8 @@
 package plugin
 
 import (
+	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"reflect"
@@ -26,6 +28,13 @@ var (
 type AnalyticalCompilerProvider interface {
 	QueryRuntimeProvider
 	AnalyticalCompiler() AnalyticalCompiler
+}
+
+// AnalyticalSQLExecutionValidator is a native SQL compiler integration hook,
+// not an owner API or a second executor. The caller owns the read-only
+// transaction; implementations retain source schema locks until it finishes.
+type AnalyticalSQLExecutionValidator interface {
+	ValidateAnalyticalExecution(context.Context, *sql.Tx, []SourceBinding) error
 }
 
 // AnalyticalCompiler is deterministic and connection-free. Check must validate
@@ -90,6 +99,9 @@ func (r CompileRequest) Validate() error {
 		return err
 	}
 	c := r.Instance.Capability
+	if err := c.Validate(); err != nil {
+		return fmt.Errorf("%w: %v", ErrAnalyticalInvalid, err)
+	}
 	if !c.Supported || !slices.Contains(c.PlanVersions, r.Plan.SchemaVersion) || !slices.Contains(c.SemanticProfiles, r.Plan.SemanticProfile) {
 		return ErrAnalyticalUnsupported
 	}

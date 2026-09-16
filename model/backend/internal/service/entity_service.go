@@ -19,12 +19,17 @@ import (
 )
 
 type EntityService struct {
-	repo         *repository.EntityRepository
-	relationRepo *repository.EntityRelationRepository
-	standard     *commonClient.StandardClient
+	repo               *repository.EntityRepository
+	relationRepo       *repository.EntityRelationRepository
+	conceptMappingRepo *repository.ConceptMappingRepository
+	standard           *commonClient.StandardClient
 }
 
 func (s *EntityService) SetStandardClient(client *commonClient.StandardClient) { s.standard = client }
+
+func (s *EntityService) SetConceptMappingRepository(repo *repository.ConceptMappingRepository) {
+	s.conceptMappingRepo = repo
+}
 
 func (s *EntityService) validateReferences(tenantID int64, domainID, elementID *int64) error {
 	if s.standard == nil {
@@ -169,6 +174,15 @@ func (s *EntityService) DeleteEntity(id, tenantID, version int64) error {
 		if entity.Status != "draft" {
 			return apperrors.Conflict("entity_state_conflict", i18n.MsgEntityStateConflict)
 		}
+		if s.conceptMappingRepo != nil {
+			inUse, err := repository.NewConceptMappingRepository(tx).HasLogicalTableForEntity(id, tenantID)
+			if err != nil {
+				return err
+			}
+			if inUse {
+				return apperrors.Conflict("concept_mapping_in_use", i18n.MsgConceptMappingInUse)
+			}
+		}
 		relationRepo := repository.NewEntityRelationRepository(tx)
 		relations, err := relationRepo.GetByEntityID(tenantID, id)
 		if err != nil {
@@ -243,6 +257,15 @@ func (s *EntityService) updateEntityStatus(id, tenantID, userID, version int64, 
 		}
 		if entity.Status != from {
 			return apperrors.Conflict("entity_state_conflict", i18n.MsgEntityStateConflict)
+		}
+		if to == "draft" && s.conceptMappingRepo != nil {
+			inUse, err := repository.NewConceptMappingRepository(tx).HasApprovedLogicalTableForEntity(id, tenantID)
+			if err != nil {
+				return err
+			}
+			if inUse {
+				return apperrors.Conflict("concept_mapping_in_use", i18n.MsgConceptMappingInUse)
+			}
 		}
 		txRepo := repository.NewEntityRepository(tx)
 		if validateApproval {

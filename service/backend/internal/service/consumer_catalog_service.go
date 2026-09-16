@@ -117,7 +117,7 @@ func BuildQueryConsumerDescriptor(service *models.QueryService) (*models.Consume
 		InputKind: "structured_query", OutputKind: outputKind,
 	}
 	input := models.StructuredQueryInputContract{
-		Kind: "structured_query", NamedParameters: consumerNamedParameters(service.NamedParameters), Fields: inputFields, DefaultSelection: append([]string(nil), defaultSelection...),
+		Kind: "structured_query", NamedParameters: consumerNamedParameters(service.GetNamedParameters()), Fields: inputFields, DefaultSelection: append([]string(nil), defaultSelection...),
 		Filter:  models.ConsumerFilterContract{Combinators: []string{"and", "or", "not"}, MaxDepth: 16, MaxNodes: 256, MaxInValues: 1000},
 		Order:   models.ConsumerOrderContract{Directions: []string{"asc", "desc"}, StableKey: append([]string(nil), stableKey...)},
 		Page:    models.ConsumerPageContract{Kind: "cursor", DefaultLimit: defaultLimit, MaxLimit: maxLimit},
@@ -150,9 +150,14 @@ func ValidateQueryConsumerContract(service *models.QueryService) error {
 	if service == nil || service.Status != "active" || !service.IsRESTAPIEnabled() {
 		return fmt.Errorf("%w: query service is not consumable", ErrInvalidConsumerContract)
 	}
-	if _, err := validateQueryServiceNamedParameters(service.ConfigType, service.SqlQuery, service.NamedParameters); err != nil {
+	if service.ConfigType == "analytical" {
+		if err := validateAnalyticalPublication(service); err != nil {
+			return fmt.Errorf("%w: %v", ErrInvalidConsumerContract, err)
+		}
+	} else if _, err := validateQueryServiceNamedParameters(service.ConfigType, service.SqlQuery, service.NamedParameters); err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalidConsumerContract, err)
 	}
+
 	table := service.GetTableInfo()
 	if table == nil || len(table.Fields) == 0 {
 		return fmt.Errorf("%w: output fields are missing", ErrInvalidConsumerContract)
@@ -191,7 +196,7 @@ func consumerNamedParameters(parameters []models.QueryServiceNamedParameter) []m
 	for _, parameter := range parameters {
 		result = append(result, models.ConsumerNamedParameter{
 			Name: parameter.Name, Type: parameter.Type, Required: parameter.Required,
-			Description: parameter.Description, Default: parameter.Default, Options: parameter.Options,
+			Presentation: parameter.Presentation, Description: parameter.Description, Default: parameter.Default, Options: parameter.Options,
 		})
 	}
 	return result

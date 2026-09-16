@@ -31,28 +31,23 @@ func TestIntegrationPostgresCatalogSummaryRepository(t *testing.T) {
 	}
 	tenantID := time.Now().UnixNano()%100000000 + 930000000
 	now := time.Now().UTC()
-	task := models.CheckTask{TenantID: tenantID, Name: "Catalog summary", EngineID: 7, SchemaName: "public", Table: "orders", CreatedBy: 1, LastRunAt: &now, LastExecutionID: fmt.Sprintf("quality-summary-%d", tenantID), LastExecutionStatus: commonExecution.ExecutionStatusSuccess}
+	task := models.QualityPlan{TenantID: tenantID, Name: "Catalog summary", Code: "catalog_summary", Version: 1, TableBindings: []byte(`[{"alias":"orders","locator":"addp://engine/7/path/public/orders?type=table"}]`), Rules: []byte(`{"schema_version":"addp.quality.plan-rules/v1","rules":[]}`), CreatedBy: 1, LastRunAt: &now, LastExecutionID: fmt.Sprintf("quality-summary-%d", tenantID), LastExecutionStatus: commonExecution.ExecutionStatusSuccess}
 	if err := db.Create(&task).Error; err != nil {
 		t.Fatal(err)
 	}
 	sourceTaskID := fmt.Sprintf("%d", task.ID)
-	execution := commonExecution.TaskExecution{TenantID: int(tenantID), ExecutionID: task.LastExecutionID, Module: commonExecution.ModuleQuality, TaskType: commonExecution.TaskTypeQualityCheck, Source: commonExecution.ModuleQuality, SourceTaskID: &sourceTaskID, Status: commonExecution.ExecutionStatusSuccess, ExecutionBoundary: commonExecution.ExecutionBoundaryBounded, TriggerType: commonExecution.TriggerTypeManual, Metadata: commonModels.JSONMap{"schema_version": "addp.quality.execution-result/v1", "quality_score": 96.25}, CreatedAt: now, UpdatedAt: now}
+	execution := commonExecution.TaskExecution{TenantID: int(tenantID), ExecutionID: task.LastExecutionID, Module: commonExecution.ModuleQuality, TaskType: commonExecution.TaskTypeQualityPlan, Source: commonExecution.ModuleQuality, SourceTaskID: &sourceTaskID, Status: commonExecution.ExecutionStatusSuccess, ExecutionBoundary: commonExecution.ExecutionBoundaryBounded, TriggerType: commonExecution.TriggerTypeManual, Metadata: commonModels.JSONMap{"schema_version": "addp.quality.plan-result/v1", "quality_score": 96.25}, CreatedAt: now, UpdatedAt: now}
 	if err := db.Create(&execution).Error; err != nil {
 		t.Fatal(err)
 	}
-	ruleApplication := models.RuleApplication{TenantID: tenantID, ElementID: tenantID, ElementRevisionID: tenantID + 1, EngineID: 7, SchemaName: "public", Table: "orders", ColumnName: "id", RuleConfig: []byte(`{"schema_version":"addp.quality.rules/v1","rules":[]}`), Enabled: true, CreatedBy: 1}
-	if err := db.Create(&ruleApplication).Error; err != nil {
-		t.Fatal(err)
-	}
-	issue := models.Issue{TenantID: tenantID, ExecutionID: execution.ExecutionID, LastExecutionID: execution.ExecutionID, RuleApplicationID: ruleApplication.ID, RuleKey: "0fef14f6-50fb-44fd-a193-28430c7e4b42", RuleType: "not_null", Severity: "error", ColumnName: "id", Table: "orders", SchemaName: "public", EngineID: 7, FailedCount: 1, TotalCount: 10, PassRate: 90, Status: "open"}
+	issue := models.Issue{TenantID: tenantID, ExecutionID: execution.ExecutionID, LastExecutionID: execution.ExecutionID, PlanID: task.ID, RuleKey: "0fef14f6-50fb-44fd-a193-28430c7e4b42", RuleType: "not_null", Severity: "error", ColumnName: "id", Table: "orders", SchemaName: "public", EngineID: 7, FailedCount: 1, TotalCount: 10, PassRate: 90, Status: "open"}
 	if err := db.Create(&issue).Error; err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
 		_ = db.Where("tenant_id = ?", tenantID).Delete(&models.Issue{}).Error
 		_ = db.Where("tenant_id = ?", tenantID).Delete(&commonExecution.TaskExecution{}).Error
-		_ = db.Where("tenant_id = ?", tenantID).Delete(&models.CheckTask{}).Error
-		_ = db.Where("tenant_id = ?", tenantID).Delete(&models.RuleApplication{}).Error
+		_ = db.Where("tenant_id = ?", tenantID).Delete(&models.QualityPlan{}).Error
 	})
 	facts, err := NewCatalogSummaryRepository(db).Resolve(context.Background(), tenantID, []models.CatalogSummaryReference{{EngineID: 7, SchemaName: "public", TableName: "orders"}})
 	if err != nil {

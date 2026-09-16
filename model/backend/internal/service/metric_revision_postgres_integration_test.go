@@ -4,11 +4,18 @@ import (
 	"context"
 	"encoding/json"
 	commonclient "github.com/addp/common/client"
+	"github.com/addp/common/datatype"
+	"github.com/addp/common/engine/plugin"
+	commonmodels "github.com/addp/common/models"
+	queryplan "github.com/addp/common/query/plan"
 	"github.com/addp/model/internal/models"
 	"github.com/addp/model/internal/repository"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestPostgresMetricRevisionLifecycleIsIndependentAndImmutable(t *testing.T) {
@@ -37,7 +44,7 @@ func testMetricRevisionLifecycle(t *testing.T, engineType string) {
 		source metricPlanSource
 		kind   string
 	}{{1, bindings.Fact, "fact"}, {2, bindings.Relations[10].Target, "dimension"}, {3, bindings.Relations[11].Target, "dimension"}} {
-		table := models.LogicalTable{TenantID: tenant, Name: entry.source.Table, Code: entry.source.Table, TableType: entry.kind, Layer: "metric_test", Status: "approved", Version: 7, CreatedBy: 1, Materialization: models.JSONB{"target_parent_locator": "addp://engine/2/path/model?type=" + namespaceType, "target_name": entry.source.Table}}
+		table := models.LogicalTable{TenantID: tenant, Name: entry.source.Metadata.Name, Code: entry.source.Metadata.Name, TableType: entry.kind, Layer: "metric_test", Status: "approved", Version: 7, CreatedBy: 1, Materialization: models.JSONB{"target_parent_locator": "addp://engine/2/path/model?type=" + namespaceType, "target_name": entry.source.Metadata.Name}}
 		if err := tx.Create(&table).Error; err != nil {
 			t.Fatal(err)
 		}
@@ -77,7 +84,50 @@ func testMetricRevisionLifecycle(t *testing.T, engineType string) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.URL.Path == "/api/v1/system/runtime/engine-descriptors/2" {
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{"id": 2, "engine_type": engineType})
+			provider, lookupErr := plugin.Get(engineType)
+			if lookupErr != nil {
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"id": 2, "engine_type": engineType})
+				return
+			}
+			caps := provider.Capabilities()
+			if caps.Compute != nil && caps.Compute.Query != nil {
+				caps.Compute.Query.Analytical = &plugin.AnalyticalCapability{Supported: true, PlanVersions: []string{queryplan.SchemaVersion}, SemanticProfiles: []string{queryplan.SemanticProfile}}
+			}
+			raw, _ := json.Marshal(caps)
+			value := commonmodels.JSONString(raw)
+			_ = json.NewEncoder(w).Encode(commonmodels.EngineRuntimeDescriptor{ID: 2, EngineType: engineType, Capabilities: &value})
+			return
+		}
+		if r.URL.Path == "/api/v1/meta/items/by-catalog-path" {
+			full := r.URL.Query().Get("catalog_path")
+			var source metricPlanSource
+			for _, candidate := range []metricPlanSource{bindings.Fact, bindings.Relations[10].Target, bindings.Relations[11].Target} {
+				if strings.HasSuffix(full, "."+candidate.Metadata.Name) {
+					source = candidate
+				}
+			}
+			var physical []datatype.FieldInfo
+			for _, field := range source.Fields {
+				f := datatype.FieldInfo{Name: field.ColumnName, Type: datatype.FieldType(field.DataType)}
+				switch field.DataType {
+				case "string":
+					f.NativeType = "text"
+					if engineType == "mysql" {
+						f.NativeType = "varchar(200)"
+						f.Size = 200
+					}
+				case "bool":
+					f.NativeType = "boolean"
+					if engineType == "mysql" {
+						f.NativeType = "tinyint(1)"
+					}
+				case "date":
+					f.NativeType = "date"
+				}
+				physical = append(physical, f)
+			}
+			now := time.Now()
+			_ = json.NewEncoder(w).Encode(commonmodels.MetaItem{ID: 1, TenantID: uint(tenant), EngineID: 2, FullName: full, ScannedAt: &now, Attributes: map[string]interface{}{"type_info": map[string]interface{}{"table": datatype.TableInfo{Fields: physical}}}})
 			return
 		}
 		_ = json.NewEncoder(w).Encode(commonclient.PublishedMetricDefinitionRevision{ID: 9, TenantID: tenant, RevisionID: 19, RevisionNo: 1, Name: "Leader count", Status: "published", LifecycleState: "active"})
@@ -86,6 +136,7 @@ func testMetricRevisionLifecycle(t *testing.T, engineType string) {
 	svc := NewMetricImplementationService(repository.NewMetricImplementationRepository(tx), repository.NewLogicalTableRepository(tx))
 	svc.SetStandardClient(newElementRevisionSnapshotClient(server))
 	svc.SetSystemClient(commonclient.NewSystemServiceClient(server.URL, materializationTestTokens{}, nil))
+	svc.SetMetaClient(commonclient.NewMetaClient(server.URL, materializationTestTokens{}))
 	item, err := svc.Create(context.Background(), tenant, 1, &models.CreateMetricImplementationRequest{FactTableID: tables[1], MetricDefinitionID: 9, Name: "Leader count"})
 	if err != nil {
 		t.Fatal(err)
@@ -105,8 +156,8 @@ func testMetricRevisionLifecycle(t *testing.T, engineType string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if item.Revisions[0].DependencySnapshot["sql_dialect"] != engineType {
-		t.Fatalf("missing dialect dependency: %#v", item.Revisions[0].DependencySnapshot)
+	if item.Revisions[0].DependencySnapshot["execution_plan"] == nil {
+		t.Fatalf("missing execution package: %#v", item.Revisions[0].DependencySnapshot)
 	}
 	draftID := item.Revisions[0].ID
 	if _, err := svc.SaveDraft(ctx, item.ID, tenant, 1, req); err == nil {
@@ -123,12 +174,18 @@ func testMetricRevisionLifecycle(t *testing.T, engineType string) {
 	if _, err := svc.PublishedPlan(ctx, item.ID, draftID, tenant+1, nil); err == nil {
 		t.Fatal("cross-tenant plan accepted")
 	}
+	if len(plan.ParameterPresentation) != 4 || plan.ParameterPresentation["end_date"].Labels["zh-cn"] != "结束日期" {
+		t.Fatalf("missing frozen presentation: %#v", plan.ParameterPresentation)
+	}
+	if err := tx.Model(&models.LogicalField{}).Where("id = ?", fields[1]).Update("name", "new subject label").Error; err != nil {
+		t.Fatal(err)
+	}
 	// Descriptive changes do not invalidate a compiled dependency.
 	if err := tx.Model(&models.LogicalField{}).Where("id = ?", fields[6]).Updates(map[string]interface{}{"name": "renamed label", "description": "new help"}).Error; err != nil {
 		t.Fatal(err)
 	}
 	after, err := svc.PublishedPlan(ctx, item.ID, draftID, tenant, nil)
-	if err != nil || after.DependencyHash != plan.DependencyHash {
+	if err != nil || after.DependencyHash != plan.DependencyHash || !reflect.DeepEqual(after.ParameterPresentation, plan.ParameterPresentation) {
 		t.Fatalf("display change invalidated plan: %v", err)
 	}
 	req.Version = item.Version
@@ -141,7 +198,7 @@ func testMetricRevisionLifecycle(t *testing.T, engineType string) {
 		t.Fatalf("published content mutated: %#v", item.Revisions)
 	}
 	after, err = svc.PublishedPlan(ctx, item.ID, draftID, tenant, nil)
-	if err != nil || after.SQL != plan.SQL {
+	if err != nil || after.ExecutionPlan.PackageHash != plan.ExecutionPlan.PackageHash {
 		t.Fatalf("draft changed publication: %v", err)
 	}
 	if err := svc.Delete(item.ID, tenant, 1, item.Version); err == nil {

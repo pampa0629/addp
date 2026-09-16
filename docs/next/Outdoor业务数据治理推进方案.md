@@ -190,6 +190,8 @@ Model 只保存经过 Standard 验证的引用，第一批建议形成：
 
 当前 MongoDB 把成员嵌入活动文档，不代表逻辑模型也必须保持嵌套。Model 的实体关系应服务于粒度和指标计算，但不能伪造 MongoDB 中不存在的历史事实。
 
+Outdoor 采用“概念模型直接映射事实/维度 LogicalTable”的唯一主路径，不另建 `core_*` 或第二套实体型逻辑表：`OutdoorPerson -> dim_outdoor_person`、`OutdoorActivity -> dim_outdoor_activity`、`OutdoorParticipation -> dwd_outdoor_participation`。实体属性映射到对应逻辑字段，两条 Participation 关联分别映射到事实表的人员维度和活动维度关联。映射只提供语义追溯、审批一致性和影响确认；数据加工继续由 Develop 从 ODS 进入正式 DIM/DWD，不由映射执行。
+
 ```mermaid
 erDiagram
     OutdoorPerson ||--o{ OutdoorParticipation : participates
@@ -1445,3 +1447,144 @@ CompileRelations 改为接收完整 CompileRequest，在渲染前统一验证来
 实施前确定门禁为 make test-go、make test-common-postgres、make test-common-mysql-data-protection、make test-platform；新增 AnalyticalScan 已登记两个 scripts/test 数据库门禁，根 Make 与 release-and-t2-gates 原 Common 作业自动覆盖。PG 测试仅使用 addp_test 中标准测试 Schema 和自身创建／清理的表；MySQL 使用既有临时容器配置与自动清理测试 database。无新 API、Swagger、前端或开发服务启动变更。月份桶、text 表达式、正式原生编译器与实例能力认证、上层单路径切换仍待完成。
 
 最终验证：make test-go 全仓库通过，make test-common-postgres、make test-common-mysql-data-protection 与 make test-platform 均通过；PG/MySQL 真实表扫描、字段映射、读取集合、血缘和非法值检查全部通过，原有关系／标量矩阵保持通过。gofmt 与 git diff --check 通过。初轮 PG 的带引号表名暴露了旧测试建表 helper 未转义的问题，本测试改用原生引用器显式创建／清理自己的表，没有修改业务代码绕过标识符校验。本轮标准临时 MySQL 已清理，未启动、重启或接管开发服务。下一步优先补齐月份桶，支持按月指标的时间范围展开；实例认证、来源漂移检查与生产路径切换仍未交付。
+
+
+### 13.40 有界月份桶（2026-09-16）
+
+月份桶沿用现有指标范围契约：结束日期必须晚于开始日期，按左闭右开区间覆盖的月份生成月初；结束日期为月初时排除该月，月中起点仍输出所在月月初。节点 MaxMonths 必须为 1 至 120，空／反向／超限范围产生求值错误，不返回空集或截断。
+
+共享关系编译器新增 date_buckets.go，日期参数与计算表达式复用原有表达式编译；有界常量偏移关系与 CalendarDialect 的月初／偏移操作组合，无引擎名称分支、递归查询或额外执行入口。相交月份数直接按年／月／日计算，避免结束日期减一天在最低日期下溢；未选择的偏移在原生日期运算前屏蔽，避免最高年份额外月份溢出。范围与子表达式错误通过节点 EvaluationCheck 汇入原结果协议，下游过滤／分页不能隐藏。
+
+实施前确定门禁为 make test-go、make test-common-postgres、make test-common-mysql-data-protection、make test-platform。AnalyticalDateBuckets 同步登记两个数据库脚本，根 Make 与既有 Common CI 作业继续覆盖，无新服务依赖或 API／Swagger 变更。真实 PG/MySQL 矩阵覆盖常量／参数、月中起止、跨年、闰日、上下日期边界、120／121 个月、计算日期错误和隐藏错误的过滤／分页。生产编译器注册、实例认证、来源漂移校验和上层单路径切换仍未完成。
+
+最终验证：四项标准门禁全部通过；PG/MySQL 各通过 117 个新增月份桶场景，原有扫描、关系及标量验证保持通过。gofmt 与 git diff --check 通过。MySQL 门禁复用已运行的标准临时测试实例，仅创建／清理本次测试 database，未停止或接管该容器，未启动／重启开发服务。下一步优先明确并补齐 text 的统一转换语义，避免后续上层切换时依赖数据库默认文本 CAST。
+
+
+### 13.41 规范化文本转换（2026-09-16）
+
+text 沿用现有 Plan Literal.Canonical 的值表示：string 原样保留、整数完整十进制、decimal 去除小数尾零但保留整数零、布尔小写 true/false、DATE 固定 YYYY-MM-DD、NULL 保持 NULL。属于跨引擎值转换，不新增展示格式配置或隐含舍入。
+
+共享 text.go 负责类型分派与错误传递；固定 decimal(38,18) 转文本后才去小数尾零，整数不经浮点，日期由原生固定格式函数输出而不依赖 DateStyle。ExpressionDialect 新增两个原生格式原语，无引擎名称分支。已有子表达式错误继续进入原有 EvaluationCheck，并遵守 CASE/COALESCE 求值范围；生产执行路径仍未切换。
+
+实施前确定门禁为 make test-go、make test-common-postgres、make test-common-mysql-data-protection、make test-platform；AnalyticalText 已登记两个数据库脚本，根 Make 与既有 Common CI 自动覆盖。共享矩阵覆盖六种类型的常量／参数／NULL、精确数值边界、非 ASCII 文本及尾空格、计算结果与错误传播；原生会话测试改变 PG DateStyle／时区及 MySQL 日期语言，并检查 MySQL 警告。无新 API、Swagger、服务依赖或开发服务启动变更。
+
+最终验证：四项标准门禁全部通过；每个引擎新增 46 个原生文本检查及 162 个 PreparedQuery 场景（81 组分别保留／过滤全部结果），MySQL 无转换警告，已有月份桶／扫描／关系／标量矩阵保持通过。gofmt 与 git diff --check 通过。本轮自行启动的标准临时 MySQL 容器已清理，没有启动、重启或接管开发服务。首期表达式与关系节点已有共享编译实现，但正式编译器注册、实例认证、来源漂移核验与 Model/Service 单路径替换仍未交付；下一步优先完成实例能力认证，为正式注册原生编译器提供可验证前提。
+
+
+### 13.42 原生实例认证原语（2026-09-16）
+
+用户确认首批范围为 PostgreSQL 15 与 MySQL 8.0。版本／产品、编码和会话隔离条件分别由原生 analytical_instance.go 检查；没有中心引擎名单。PG 检查服务器／客户端 UTF8；MySQL 检查客户端／连接／结果 utf8mb4，并拒绝 READ-UNCOMMITTED。原生 MySQL 官方社区／商业版本格式外的构建不自动继承认证。
+
+同一调用方连接／事务上的 ProbeInstanceSemantics 使用现有表达式编译器生成九项固定无业务来源的 SELECT，核验精确数值、月份偏移、日期边界格式、文本大小写／尾空格／编码和 NULL。完整 CI 矩阵继续负责覆盖全部操作；轻量实例探测不替代它。原生入口默认 5 秒并尊重调用方更短 deadline，不修改会话设置。条件或语义不满足返回稳定 SupportReport 诊断；探测失败保留 error 与取消／超时因果链，不沿用旧成功结论。
+
+本轮交付认证原语及测试，尚未发布 compute.query.analytical、实现正式编译器注册或接入生产能力刷新。执行期复核仍须进入现有 PreparedQuery 事务并结合来源结构／事务语义检查，不能把此认证原语或数据库默认存储引擎当作来源一致性保证。
+
+实施前确定门禁为 make test-go、make test-common-postgres、make test-common-mysql-data-protection、make test-platform；AnalyticalInstance 登记两个 scripts/test 入口，根 Make 与既有 Common CI 继续覆盖。新增原生事实矩阵和真实连接认证、拒绝编码／隔离条件、语义不匹配、取消、超时及失效连接验证。没有新增 API、Swagger、持久化状态或开发服务启动变更。
+
+验证结果：make test-common-postgres、make test-common-mysql-data-protection、make test-platform 通过；make test-go 中 Common 全包通过，但全仓库门禁被并行 Model 变更阻断：logical_table_repository.go:103 仍引用已从 LogicalTable 删除的 EntityID。本轮未修改该并行工作；待其完成后需再次运行 make test-go（CI 对应 platform-ci Go 作业）。PG 首轮暴露驱动在已取消连接上返回 bad connection，认证入口现先检查 Context，探测出错时优先保留取消／超时因果；新增实际执行中超时验证，PG/MySQL 均通过。MySQL 先查询版本再查询 8.0 特有条件，旧版本拒绝测试确保不会访问后续条件。两引擎同时验证连接和只读事务复用。gofmt 与 git diff --check 通过，所有本轮自建临时 MySQL 容器已清理，未启动／接管开发服务。下一步将实例认证与来源结构复核一起接入现有执行事务，完成后再正式注册能力。
+
+
+### 13.43 事务内实例与来源复核（2026-09-16）
+
+CompiledQuery 保存深拷贝的完整来源绑定，PreparedQuery 执行桥接通过 QueryOptions 私有标记传递；普通 SQL 不带此标记，沿用原事务行为。共享 ExecuteSQLWithConnectionPool 在分析请求中使用显式 READ COMMITTED 只读事务，并在数据查询前调用原生 AnalyticalSQLExecutionValidator。没有第二个 Execute 接口、owner 参数、兼容开关或引擎名称分派。
+
+两引擎按确定表名顺序取得结构锁，并在同一事务认证实例与读取原生字段目录。PG 使用 ACCESS SHARE；MySQL 使用零行读取取得 metadata lock。锁持续到查询完成／失败后事务结束，业务数据与内部检查仍在同一 SQL 快照计算。复用现有字段目录读取器，使其同时接受 DB 或 Tx，避免新增重复类型推导。比对参与绑定的类型、原生类型、可空性与精度，结构改变明确失败；未绑定新列不影响原计划。
+
+当前来源子集为 PG 无继承／分区且未启用 RLS 的普通 heap 表，以及 MySQL InnoDB 基础表。其他来源拒绝；缺失来源／变化字段返回 ErrAnalyticalPlanChanged，实例或存储语义不满足返回不支持，探测／权限错误保留。正式编译器注册与生产能力发布仍未开放。
+
+实施前确定门禁为 make test-go、make test-common-postgres、make test-common-mysql-data-protection、make test-platform。已有 AnalyticalScan 和所有 Prepared 标量／关系矩阵自动覆盖新执行路径，原两数据库脚本与根 Make／Common CI 入口继续适用。新增冻结绑定不可变、执行桥接私有标记、准备后修改字段、RLS／MyISAM 拒绝、事务期间 DDL 阻塞及事务结束后 DDL 可执行验证。无 HTTP API／Swagger 或前端变更。
+
+最终验证：make test-common-postgres、make test-common-mysql-data-protection、make test-platform 均通过；make test-go 中 Common 全包通过，全仓库仍被并行 Model 变更中 logical_table_repository.go:103 对已删除 EntityID 的引用阻断，待该任务完成后重跑（CI 对应 platform-ci Go 作业）。两引擎均验证精度、长度、可空性和列名变化、来源删除、不支持来源拒绝、结构锁与新增无关列；失败不返回部分结果。MySQL 锁测试使用服务端 lock_wait_timeout 确认 DDL 超时，避免仅取消客户端后遗留等待中的服务端 DDL；PG 按 SQLSTATE 识别缺失来源，避免把错误分类绑定到连接池驱动的具体类型。gofmt 与 git diff --check 通过。本轮自建标准临时 MySQL 容器已清理，未启动、重启或接管开发服务。下一步优先接入正式原生编译器注册与实例能力解析，之后再协调 Model/Service 单路径替换；当前生产能力仍未发布。
+
+
+### 13.44 正式编译器与实例能力解析（2026-09-16）
+
+PG/MySQL 分别实现 AnalyticalCompilerProvider，使用各自编译器 Identity 与已验证的原生组件，经共享 RelationalCompiler 完成无连接 Check／Compile。唯一插件注册表的 ResolveAnalyticalCompiler 直接解析正式实现。原 RelationalFixtureCompiler 和 integerPreparedProvider 测试包装删除，既有整数、条件、算术、日期、文本、关系、月份桶和真实扫描矩阵全部改为调用正式 Provider。PostgreSQL 协议复用身份返回无编译器，不继承原生认证。
+
+QueryCapability 接入已有 AnalyticalCapability 契约；静态模板不声明支持，原生 InstanceCapabilitiesResolver 在固定连接认证后投影版本和语义配置。已知条件不满足返回 false 和空列表，探测失败使本次刷新报错，没有成功 JSON；传入模板和既有能力快照不被 analytical 投影修改。PG 保持现有扩展／空间事实解析。实例生成入口验证本地编译器存在且 Identity 合法；能力序列化、解析及编译请求校验拒绝空／未知／重复支持列表和缺少表格查询前提的声明。
+
+engine/selection 新增统一分析能力与选择状态派生，不建立中心引擎名单；active 的离线支持实例仍作为可见选项，但只有 online 可以执行。注册能力不等于业务指标入口已切换，Model/Service 中立计划转换与旧 AnalyticalSQLProvider 路径删除仍须整体交付。
+
+实施前确定门禁仍为 make test-go、make test-common-postgres、make test-common-mysql-data-protection 和 make test-platform。新增原生编译器契约测试由 Common ./... 自动发现；实例解析集成子测试归现有 AnalyticalInstance，根 Make、scripts/test 与既有 Common CI 自动命中，无新增服务或测试入口。System Swagger 引用了共享 QueryCapability，已按标准脚本同步其生成产物；无路由、请求格式或前端改动。
+
+最终验证：四项标准门禁均通过，全仓库 Go 已不再受上一轮并行 Model 的 EntityID 编译问题阻断。PG/MySQL 正式 Provider 的完整语义矩阵及实例能力解析通过；覆盖注册解析、确定性编译、能力撤销、未知／重复版本拒绝、无编译器声明拒绝、静态模板不开放、模板／快照不变、取消刷新不发布 JSON，以及未来引擎按能力参与选择、离线可见但不可执行。System Swagger 生成和平台路由覆盖通过，gofmt 与 git diff --check 通过。原测试编译器／Provider 包装已无代码引用。本轮自建的标准临时 MySQL 容器已清理，未启动或重启开发服务，也未手工刷新业务实例能力。下一步优先完成 Model/Service 指标定义到中立 Plan 的整体切换并删除旧 AnalyticalSQLProvider／AnalyticalDialect 消费路径，再做右侧浏览器端到端验收。
+
+
+### 13.45 中立结果请求与 Meta 来源边界（2026-09-16）
+
+按用户确认，Model 构建指标计划所需物理表结构统一来自 Meta 已扫描的 type_info.table，经完整 Catalog 路径定位。不新增 System 实时结构权限或读取通道；Meta 事实缺失要求扫描／刷新，Provider 仍在执行事务内核对真实结构。本轮已将该边界补入 Model 规范，业务读取接线随 Model/Service 整体切换完成。
+
+Common 新增 ResultRequest 与 ApplyResultRequest，深拷贝原计划并在结果根后追加过滤、keyset、稳定排序、limit+1、输出投影。稳定键自动补入排序，未选择的排序键保留为隐藏输出供 Service 生成 cursor；字段精确类型、非空排序及 cursor 对齐先校验。比较／IN／NULL／布尔过滤转为已有计划表达式，用户值只进入独立运行时参数，参数名避让原节点和参数，不拼接 SQL。原始节点、断言及 owner 参数保持不变；过滤和分页不能掩盖计算错误或改变聚合输入。原计划和结果包装共用参数、表达式、节点及大小预算，不存在无限制的请求扩张。
+
+实施前确定沿用 make test-go、make test-common-postgres、make test-common-mysql-data-protection 与 make test-platform。单元测试由 Common ./... 自动发现，新增共享真实执行矩阵作为两引擎已登记 AnalyticalRelations 的子测试运行；根 Make、scripts/test 及现有 CI 编排已覆盖，无新测试入口或服务依赖。本轮不修改公开 API 或前端，Swagger 无新产物。
+
+最终验证：上述四项标准门禁全部通过。两引擎覆盖小数末位精确筛选、大小写／尾空格精确 IN、混合升降序续页、稳定键隐藏投影、limit+1、空页、聚合后筛选，以及结果为空／分页后仍保留独立断言和求值错误。单元测试覆盖原计划深拷贝、参数避让、参数预算、循环／超限／非法请求拒绝。首轮全仓库测试遭遇共享 Go 构建缓存文件缺失，改用临时独立 GOCACHE 后完成验证；其间修正测试误把规范化后首节点当作 scan 的错误假设。当前改动范围内 gofmt 与 git diff --check 通过；共享工作区 ToDO.md 的既有末尾空行未改动。本轮标准临时 MySQL 已清理，没有启动或接管开发服务。Model/Service 整体切换与旧路径删除尚未完成，下一步直接推进 Meta 来源绑定、冻结计划包及 owner 消费替换，再进行右侧浏览器验收。
+
+
+### 13.46 Model / Service 切换到冻结分析计划（2026-09-16）
+
+Model 的 buildMetricPlan 统一表达两类指标计算，来源由 Meta type_info.table 经完整 Catalog 身份绑定，不读取引擎内部结构、不拼 SQL。保存／发布／取计划在行锁外获取 Meta、Standard 和 System 事实，再核对锁内模型版本。计划包、参与计算字段与关系、定义修订和显示枚举标签共同构成依赖；已发布包严格校验 hash 与当前重建包。
+
+Service 显式使用 analytical 来源，冻结 owner 引用、计划包与标签，DTO / Consumer Descriptor 的引擎、参数、输出及稳定键只读派生。请求筛选、排序、cursor 和 limit+1 通过共享 ResultRequest 接在结果根后，再由注册编译器生成 QueryRequest，仍只走原有 PreparedQuery、ReadSet/OutputLineage、保护门禁与 Execute。旧 Model SQL 拼接、AnalyticalSQLProvider、AnalyticalDialect 及重复消费字段已删除。查询服务旧指标 SQL 记录迁移为停用 analytical，清除旧配置并保留 owner 引用，必须显式重新绑定，禁止自动批准新修订。
+
+本轮受影响门禁：make test-go、test-model-postgres、test-model-mysql、test-service-postgres、test-model-frontend、test-service-frontend、test-platform，以及 Model / Service Swagger 生成与覆盖检查。Model 数据库矩阵复用两个现有门禁；Service 的迁移及真实分析执行测试已登记到 service-postgres-gate.sh，根 Make 与现有 CI 自动消费，无新服务依赖。前端指标发布改用 analytical，查询服务详情区分指标来源和 SQL。
+
+Model Runtime 复用既有 meta.catalog.read 权限读取来源事实；builtin_roles manifest_version 升至 97，通过 System 前向迁移 000146 为既有运行身份补授并更新 authorization_version。对应测试由 scripts/test/system-iam-postgres-gate.sh --package migration 自动发现，使用标准 addp_iam_test 数据库；不增加读取引擎结构的 System 权限。
+
+最终验证：make test-go、make test-platform、make test-model-postgres、make test-model-mysql、make test-service-postgres、make test-model-frontend、make test-service-frontend，以及 System IAM migration PostgreSQL 标准门禁均通过；Model / Service Swagger 生成与覆盖检查通过。相同指标黄金数据在 PG/MySQL 验证 count_distinct 与 directional_overlap，并验证被日期范围排除的数据仍触发独立质量断言；Service 验证重新绑定、冻结快照哈希、旧发布停用迁移，以及真实 PreparedQuery 执行经过保护门禁。新增第三种测试引擎通过注册编译器被 Model client / Service 消费，验证上层无需引擎名单；它不代表第三种真实数据库已经认证。
+
+右侧浏览器连接重试后恢复，现有服务 35 的详情仍显示 SQL 配置与旧 SQL，确认运行环境尚未加载本次后端改动；本轮未执行开发服务启动／重启或业务发布写入，不宣称新链路页面端到端通过。下一步由用户按标准入口重启全部服务（涉及 common），再刷新引擎能力、确认 Meta 来源结构已扫描、发布新的指标实现修订并显式重新绑定旧服务，完成右侧浏览器验收。旧服务迁移后保持停用，重新绑定本身不自动恢复活跃状态。本轮自行启动的标准临时 MySQL 容器已清理；共享工作区其他任务改动保留。
+
+2026-09-16 重启后页面核验：Service 35 已显示 analytical（指标实现）并处于非活跃状态，迁移已生效。补齐迁移后待绑定状态的前端说明：不再显示 Engine #0 或已绑定可执行修订的提示，未取得计划包时禁用测试／加载数据按钮；中英文同步。make test-service-frontend、前端 CI 注册检查和本轮 git diff --check 通过，右侧浏览器整页刷新后确认提示及禁用状态。浏览器自动化读取正常，但点击与键盘操作持续返回 Click target is no longer available / Keyboard focus root is no longer available；刷新、可见性切换和新建验证标签页均未恢复交互。本轮未发布新修订、未重新绑定或启用服务，完整执行验收仍待浏览器交互连接恢复。
+
+### 13.47 查询服务定义并发版本与计算契约版本分离（2026-09-16）
+
+现场重新绑定失败发生在前端提交前：迁移后的 analytical 服务缺少执行快照，service_version 为空，原发布窗口据此拒绝提交。用户确认分离版本语义后，Service 管理 DTO 新增 definition_version，由已保存定义与 UTC 审计时间生成确定性指纹，不新增数据库列；重新绑定请求及行锁内比较统一改为 definition_version，旧 service_version 请求字段严格拒绝。service_version 的计算、查询／游标与消费校验保持原有契约，定义版本不使停用服务可执行。
+
+Model 发布窗口改读 definition_version，并将“选择 SQL 查询服务”改为“选择查询服务”；缺少定义版本时明确提示重新打开窗口。术语表、Service 架构文档与 Swagger 同步。回归范围包括真实迁移后的列表 DTO 版本、显式重绑、并发定义修改后拒绝旧版本、元数据重绑、停用状态保留、事务失败回滚、严格请求字段与前端实际请求体。现有 TestMetricSourcePublicationAgainstPostgres 子场景及 metric-workspace 浏览器回归自动纳入根 Makefile 和既有 CI，无新增运行依赖或测试入口。
+
+本轮验证：Service 后端 `go test ./...`、`make test-service-postgres`、`make test-model-frontend`（29 条浏览器用例与构建）、Service Swagger 生成／覆盖、前端 CI 注册与改动范围 diff 检查通过。Model 初轮回归因旧测试字段／文案未同步失败，已修正；随后维度建模用例在并行测试负载下超时，单独重跑全套通过。全仓库 `make test-go` 初轮被并行 Quality 改动缺少 normalizePage 阻塞，重跑时该函数已补齐，但 Quality permission manifest 未排序导致 Common authorization 校验失败；本轮不修改另一任务的权限定义，待其收口后由既有 platform-ci Go 门禁再次验证。`make test-platform` 在固定 zizmor 1.28.0 下载阶段 DNS 解析失败，workflow-security 门禁未完成，由既有 CI 同名门禁验证。
+
+当前开发服务尚未加载本轮 Service 后端改动，需要用户通过 `./scripts/dev/restart.sh -service` 重启后，关闭并重新打开指标发布窗口，使用 R2 再次重新绑定服务 35。R2 已发布事实不变；本轮没有代为重启服务、更新业务数据库或提交代码，不宣称现场重新绑定已成功。
+
+
+### 13.48 查询服务统一管理版本与显式启停（2026-09-16）
+
+用户已完成实现 3 的 R2（revision_id=4）发布并重新绑定 Service 35，页面出现冻结计划、参数和引擎，重绑成功但保持 inactive。随后“测试”被后端的未启用检查拒绝；实际指标计算尚未执行。进一步核对发现查询服务前端没有启停入口，普通管理写入也未执行并发控制。用户确认统一修复。
+
+本节替代 13.47 的定义指纹方案：QueryService 新增非空正整数 BIGINT `version`，创建与存量迁移为 1；编辑、启停、删除、刷新来源快照及指标重绑均使用请求体版本。Repository 唯一管理更新事务按 tenant_id + id 锁行，在版本匹配后执行领域校验、写入并递增；冲突使用 409 / resource_version_conflict，跨租户与不存在均为 404。删除使用同一锁内比较；刷新 Meta 期间发生的并发编辑在最终事务中仍会阻断。删除定义指纹函数、DTO 字段和旧请求路线；service_version 继续表示查询消费契约，不承担管理并发控制。现有 AutoMigrate 自动补齐版本，重启 Service 即可应用，无需重新发布指标修订或再次重绑。
+
+详情页增加启用／停用按钮，操作只发送 version 与 status，不修改访问设置；未完整绑定的指标不可启用，停用时禁用测试和加载数据并显示启用指引。启停成功保留查询参数、清除旧结果与游标。编辑、快照刷新、删除与 Model 重绑调用方同步携带资源版本。冲突保留本地输入或选择，提供显式重新加载，不自动提交陈旧请求；编辑页刷新前提示丢弃未保存修改。Online 消费与安全验收脚本的查询服务更新／清理同步使用管理版本。
+
+测试与 CI 沿用根标准入口：新 TestQueryServiceVersionAgainstPostgres 已登记 service-postgres-gate.sh，既有 release-and-t2-gates 调用自动覆盖；Service 前端新增测试通过 tests/*.test.js 自动发现，Model 仍由既有 Playwright 门禁覆盖，无新增数据库或依赖。Swagger 与术语／模块设计同步。
+
+验证结果：Service 后端 go test ./... 全包通过；make test-service-postgres 通过（含存量补齐与迁移幂等、启停版本递增、陈旧编辑／删除／刷新无副作用、跨租户拒绝、刷新期间并发冲突、指标重绑与失败回滚）；make test-service-frontend 30 项测试与构建通过；make test-model-frontend 38 项 Node 测试、30 项浏览器测试与构建通过；Service Swagger 60 个公开路由方法覆盖、前端 CI 注册、git diff --check 通过。make test-go 与 make test-platform 均被本轮未修改的 common/authorization/repository_manifests_test.go 中 Quality 权限预期顺序差异阻断，不能宣称全工作区门禁通过。首次 module gate 的 Online 清理 fixture 缺少 version 已修正，后续 platform 的 Online 确定性测试通过。
+
+右侧浏览器已确认启用按钮、停用提示和测试禁用状态。尚未重启用户服务、启用 Service 35 或实际执行查询；后端重启后先读取最新 version，再显式启用并用已记录的 2026 年月度样本验收。未提交代码。
+
+### 13.49 Quality 统一质量检查方案（2026-09-16）
+
+用户确认不以 Catalog 为前置，并合并原 RuleApplication / CheckTask 与 DataValidationTask。QualityPlan 成为唯一配置和可执行资源：方案内维护规则实例、实际表绑定与并发版本；数据元导入冻结已发布修订和规则来源，运行时不回查 Standard、Model 或 Catalog。Model 结构约束本期可作为手工配置依据，自动导入尚未实现。执行类型统一 quality_plan，手动执行和 Orchestrator 共用持久 worker；error 失败阻断、warning/info 失败保留问题但不阻断，规则通过率与门禁结果分开表达。
+
+首期只执行 PostgreSQL，同一引擎的多表检查在只读可重复读事务中完成。SQL、路径解释和物理结构读取集中在 PG 适配文件；领域契约不保存 SQL 或连接参数。多引擎能力矩阵、编译与执行扩展接口尚待讨论，不把首期适配声明为通用框架已经完成。
+
+Quality 存量定义／问题、System IAM 权限及 Orchestrator 任务引用分别由各模块前向迁移处理；存在旧活动执行时拒绝迁移。旧表、配置路由和可执行分支删除，历史 execution 保留原始契约供 Monitor 查询。Catalog 仅同步既有只读摘要 DTO，移除失效的 CheckTask ID，不改其流程。
+
+验证通过：make test-module MODULE=quality（含平台一致性、Quality 单元／前端和真实 PG 门禁），System IAM 全量迁移 PostgreSQL 门禁，Console／System 前端、Copilot 确定性测试，以及 Common、System、Catalog、Orchestrator 和 Monitor 受影响包。Quality 前端包括 32 项确定性测试和 9 项模拟 API 浏览器用例；真实 PG 覆盖规则失败、超时、warning 放行、修复后自动解决及旧数据迁移。该结果同时确认前节记录的 Quality 权限预期顺序问题已修复。
+
+本轮未重启开发服务，未对业务数据库执行迁移或运行户外方案，未提交代码。下一步先讨论多引擎扩展边界；实际户外验收需在受控重启、迁移后，核对迁移后的方案目标与规则，再显式执行并验证 Orchestrator 阻断链路。
+
+
+### 13.50 指标参数展示契约与引擎名称（2026-09-16）
+
+Service 35 已由用户启用并完成实际查询：样例人员 2026 全年按月返回 12 行，1—3 月为 5、1、4，其余为 0；存在但无参与事实的人员返回 12 行 0。当前 PostgreSQL 指标回归同时通过半开日期边界、月中范围、未知主体与补零校验。这些计数是当前样例证据，不写入业务定义常量。
+
+用户确认由 Model 提供参数名称和说明，而非 Service 按 subject_id 猜测“人员”。本轮增加可选 ParameterPresentation（labels/descriptions，完整 zh-cn/en），新草稿／发布从主体字段和 Model 国际化文本生成并校验，随修订快照冻结。中文主体名称取逻辑字段名；其他主体与日期提示使用通用词汇，英文主体显示 Subject。已发布修订只读取冻结展示信息，不因当前字段名称或文案改变而重写；缺省展示信息仍仅显示声明参数名，不追补历史发布内容。展示信息不参与计算依赖 hash，由 Service 服务版本与 Consumer Descriptor 指纹覆盖，重绑后应用需按既有流程更新。普通 SQL 发布者的 description 与 presentation 互斥。
+
+Service 管理 DTO、Consumer Descriptor 和 Workbench 消费模型透传 presentation；Service 参数表单及 Workbench 组件编辑器复用 ParameterCaption 和共享名称／说明解析，支持当前语言。Workbench 应用自定义标签继续属于应用配置，选择服务时采用当前语言生成初始标签，不覆盖已有自定义标签。引擎详情复用 System 现有引擎列表读取实际名称、类型和编号，存储引擎与查询运行时分别展示；读取失败明确提示且不阻断查询。右侧浏览器已确认 Business PostgreSQL · postgresql (#2)。
+
+实施前确认门禁为 Common/Service/Workbench 前端、Model/Service PostgreSQL、受影响后端与全仓一致性；新测试沿用既有测试目录自动发现和根 Makefile、platform-ci、release-and-t2-gates，无新测试服务／数据库或 CI 入口。验证通过：共享前端 92 项；Service 前端 31 项与构建；Workbench 前端 92 项、6 项模拟 API 浏览器用例与构建；Model/Service/Workbench 后端全包；Model 与 Service PostgreSQL；三个模块 Swagger 生成、140 个公开路由方法覆盖、20 个前端 CI 注册和 scoped diff 检查。发布冻结／字段改名不失效、展示透传、元数据漂移拒绝及重绑更新消费版本均有回归。
+
+全仓 make test-go 与 make test-platform 当前仍因另一组权限清单变更失败：内置角色 manifest_version／权限总数预期不同，以及 Quality rule CRUD 权限尚无 OpenAPI 引用。本轮未改动这些权限文件，不能宣称全仓门禁通过。受影响包已独立补验；修复权限清单后仍由既有全仓门禁重跑。
+
+未重启开发服务、未发布或重绑业务修订、未提交代码。因为修改 common 协议类型，下一步由用户运行 ./scripts/dev/restart.sh -all，随后新建、保存、发布指标实现修订并显式重绑 Service 35，验收新的参数名称和说明。R2 与现有服务绑定没有被自动改写。

@@ -19,8 +19,8 @@ func TestQualityExecutionFilterIsScopedToBusinessQualityTaskTypes(t *testing.T) 
 	if filter.TenantID != 7 || filter.Module != commonExecution.ModuleQuality || filter.Page != 2 || filter.PageSize != 50 {
 		t.Fatalf("quality execution filter = %#v", filter)
 	}
-	wantTaskTypes := []string{commonExecution.TaskTypeQualityCheck, commonExecution.TaskTypeDataValidation}
-	if len(filter.TaskTypes) != len(wantTaskTypes) || filter.TaskTypes[0] != wantTaskTypes[0] || filter.TaskTypes[1] != wantTaskTypes[1] {
+	wantTaskTypes := []string{commonExecution.TaskTypeQualityPlan}
+	if len(filter.TaskTypes) != len(wantTaskTypes) || filter.TaskTypes[0] != wantTaskTypes[0] {
 		t.Fatalf("quality execution task types = %#v, want %#v", filter.TaskTypes, wantTaskTypes)
 	}
 }
@@ -52,10 +52,10 @@ func TestExecutionListRejectsUnsupportedStatus(t *testing.T) {
 func TestExecutionListUsesQualityAndTenantFilters(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db := newExecutionHandlerTestDB(t)
-	insertExecutionHandlerRow(t, db, 1, 7, "quality-7", commonExecution.ModuleQuality, commonExecution.TaskTypeQualityCheck, commonExecution.ExecutionStatusSuccess)
-	insertExecutionHandlerRow(t, db, 2, 8, "quality-8", commonExecution.ModuleQuality, commonExecution.TaskTypeQualityCheck, commonExecution.ExecutionStatusSuccess)
+	insertExecutionHandlerRow(t, db, 1, 7, "quality-7", commonExecution.ModuleQuality, commonExecution.TaskTypeQualityPlan, commonExecution.ExecutionStatusSuccess)
+	insertExecutionHandlerRow(t, db, 2, 8, "quality-8", commonExecution.ModuleQuality, commonExecution.TaskTypeQualityPlan, commonExecution.ExecutionStatusSuccess)
 	insertExecutionHandlerRow(t, db, 3, 7, "other-7", commonExecution.ModuleSystem, "cleanup", commonExecution.ExecutionStatusSuccess)
-	insertExecutionHandlerRow(t, db, 4, 7, "gate-7", commonExecution.ModuleQuality, commonExecution.TaskTypeDataValidation, commonExecution.ExecutionStatusSuccess)
+	insertExecutionHandlerRow(t, db, 4, 7, "gate-7", commonExecution.ModuleQuality, commonExecution.TaskTypeQualityPlan, commonExecution.ExecutionStatusSuccess)
 	insertExecutionHandlerRow(t, db, 5, 7, "cleanup-7", commonExecution.ModuleQuality, commonExecution.TaskTypeCleanupExecutor, commonExecution.ExecutionStatusSuccess)
 	handler := NewExecutionHandler(commonExecution.NewTaskExecutionRepository(db))
 	router := gin.New()
@@ -78,10 +78,10 @@ func TestExecutionListUsesQualityAndTenantFilters(t *testing.T) {
 	}
 }
 
-func TestExecutionGetExposesDataValidationOutputs(t *testing.T) {
+func TestExecutionGetExposesPlanOutputs(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db := newExecutionHandlerTestDB(t)
-	insertExecutionHandlerRow(t, db, 1, 7, "gate-7", commonExecution.ModuleQuality, commonExecution.TaskTypeDataValidation, commonExecution.ExecutionStatusSuccess)
+	insertExecutionHandlerRow(t, db, 1, 7, "gate-7", commonExecution.ModuleQuality, commonExecution.TaskTypeQualityPlan, commonExecution.ExecutionStatusSuccess)
 	if err := db.Exec(`UPDATE common.task_executions SET metadata = ? WHERE execution_id = ?`,
 		`{"outputs":{"passed":true}}`, "gate-7").Error; err != nil {
 		t.Fatalf("set gate outputs: %v", err)
@@ -109,7 +109,7 @@ func TestExecutionGetExposesDataValidationOutputs(t *testing.T) {
 func TestExecutionGetRejectsCrossTenantAndNonQualityExecution(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db := newExecutionHandlerTestDB(t)
-	insertExecutionHandlerRow(t, db, 1, 7, "quality-7", commonExecution.ModuleQuality, commonExecution.TaskTypeQualityCheck, commonExecution.ExecutionStatusSuccess)
+	insertExecutionHandlerRow(t, db, 1, 7, "quality-7", commonExecution.ModuleQuality, commonExecution.TaskTypeQualityPlan, commonExecution.ExecutionStatusSuccess)
 	insertExecutionHandlerRow(t, db, 2, 7, "system-7", commonExecution.ModuleSystem, "cleanup", commonExecution.ExecutionStatusSuccess)
 	handler := NewExecutionHandler(commonExecution.NewTaskExecutionRepository(db))
 
@@ -153,20 +153,22 @@ func insertExecutionHandlerRow(t *testing.T, db *gorm.DB, id, tenantID int, exec
 }
 
 func TestIsQualityExecution(t *testing.T) {
-	valid := &commonExecution.TaskExecution{Module: commonExecution.ModuleQuality, TaskType: commonExecution.TaskTypeQualityCheck}
+	valid := &commonExecution.TaskExecution{Module: commonExecution.ModuleQuality, TaskType: commonExecution.TaskTypeQualityPlan}
 	if !isQualityExecution(valid) {
 		t.Fatal("check execution was rejected")
 	}
 	for _, item := range []*commonExecution.TaskExecution{
 		nil,
 		{Module: commonExecution.ModuleQuality, TaskType: "cleanup_executor"},
-		{Module: commonExecution.ModuleSystem, TaskType: commonExecution.TaskTypeQualityCheck},
+		{Module: commonExecution.ModuleQuality, TaskType: "check"},
+		{Module: commonExecution.ModuleQuality, TaskType: "data_validation"},
+		{Module: commonExecution.ModuleSystem, TaskType: commonExecution.TaskTypeQualityPlan},
 	} {
 		if isQualityExecution(item) {
 			t.Fatalf("non-quality check execution accepted: %#v", item)
 		}
 	}
-	if !isQualityExecution(&commonExecution.TaskExecution{Module: commonExecution.ModuleQuality, TaskType: commonExecution.TaskTypeDataValidation}) {
-		t.Fatal("data validation execution was rejected")
+	if !isQualityExecution(&commonExecution.TaskExecution{Module: commonExecution.ModuleQuality, TaskType: commonExecution.TaskTypeQualityPlan}) {
+		t.Fatal("quality plan execution was rejected")
 	}
 }

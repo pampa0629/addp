@@ -36,9 +36,10 @@ func TestCatalogQueryServiceChangeFeedAgainstPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	tenantID := uint(time.Now().UnixNano())
+	engine := uint(2)
 	queryService := models.QueryService{
 		TenantID: tenantID, ServiceName: fmt.Sprintf("catalog_service_%d", tenantID), Title: "Catalog query service",
-		ConfigType: "sql", SqlQuery: "SELECT 1", DataConfig: models.JSONB{}, Protocols: models.JSONB{},
+		ConfigType: "sql", EngineID: &engine, SqlQuery: "SELECT 1", DataConfig: models.JSONB{}, Protocols: models.JSONB{},
 		Status: "active", CreatedBy: 1,
 	}
 	if err := tx.Create(&queryService).Error; err != nil {

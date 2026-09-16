@@ -1,7 +1,6 @@
 package api
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"io"
@@ -16,6 +15,7 @@ import (
 	"github.com/addp/service/internal/models"
 	svc "github.com/addp/service/internal/service"
 	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
 )
 
 // QueryServiceHandler 处理查询服务相关的 HTTP 请求
@@ -45,7 +45,7 @@ func NewQueryServiceHandler(s *svc.QueryServiceService, executorSvc *svc.QueryEx
 // @Accept json
 // @Produce json
 // @Param request body models.CreateQueryServiceRequest true "创建请求 | Create request"
-// @Success 201 {object} map[string]interface{}
+// @Success 201 {object} models.QueryServiceDTO
 // @Failure 400 {object} map[string]string
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["service.definition.create"]
@@ -54,16 +54,8 @@ func NewQueryServiceHandler(s *svc.QueryServiceService, executorSvc *svc.QueryEx
 func (h *QueryServiceHandler) CreateService(c *gin.Context) {
 	var req models.CreateQueryServiceRequest
 
-	// 先读取原始请求体用于调试
-	bodyBytes, _ := io.ReadAll(c.Request.Body)
-	log.Printf("[QueryService] CreateService request body: %s", string(bodyBytes))
-
-	// 重新设置请求体以便绑定
-	c.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
-
-	if err := c.ShouldBindJSON(&req); err != nil {
-		log.Printf("[QueryService] Failed to bind request: %v", err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body: " + err.Error()})
+	if err := bindQueryDefinition(c, &req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, servicei18n.MsgInvalidQueryRequest), "error_code": "invalid_query_request"})
 		return
 	}
 
@@ -164,7 +156,7 @@ func (h *QueryServiceHandler) ListServices(c *gin.Context) {
 // @Tags QueryService
 // @Produce json
 // @Param id path int true "服务ID | Service ID"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} models.QueryServiceDTO
 // @Failure 404 {object} map[string]string
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["service.definition.read"]
@@ -198,8 +190,9 @@ func (h *QueryServiceHandler) GetService(c *gin.Context) {
 // @Produce json
 // @Param id path int true "服务ID | Service ID"
 // @Param request body models.UpdateQueryServiceRequest true "更新请求 | Update request"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} models.QueryServiceDTO
 // @Failure 400 {object} map[string]string
+// @Failure 409 {object} map[string]string "资源版本冲突 | Resource version conflict"
 // @Failure 404 {object} map[string]string
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["service.definition.update"]
@@ -214,13 +207,16 @@ func (h *QueryServiceHandler) UpdateService(c *gin.Context) {
 	}
 
 	var req models.UpdateQueryServiceRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err := bindQueryDefinition(c, &req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body: " + err.Error()})
 		return
 	}
 
-	result, err := h.svc.UpdateService(uint(id), &req)
+	result, err := h.svc.UpdateService(c.Request.Context(), uint(id), tenantIDValue(c), &req)
 	if err != nil {
+		if writeQueryVersionConflict(c, err) {
+			return
+		}
 		if errors.Is(err, commonapi.ErrNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Service not found"})
 		} else {
@@ -235,9 +231,12 @@ func (h *QueryServiceHandler) UpdateService(c *gin.Context) {
 // DeleteService 删除服务
 // @Summary 删除查询服务 | Delete query service
 // @Tags QueryService
+// @Accept json
 // @Produce json
 // @Param id path int true "服务ID | Service ID"
+// @Param request body models.QueryServiceVersionRequest true "当前资源版本 | Current resource version"
 // @Success 200 {object} map[string]string
+// @Failure 409 {object} map[string]string "资源版本冲突 | Resource version conflict"
 // @Failure 404 {object} map[string]string
 // @Failure 500 {object} map[string]string
 // @x-addp-auth-mode "permission"
@@ -252,7 +251,15 @@ func (h *QueryServiceHandler) DeleteService(c *gin.Context) {
 		return
 	}
 
-	if err := h.svc.DeleteService(uint(id)); err != nil {
+	var req models.QueryServiceVersionRequest
+	if err := bindQueryDefinition(c, &req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, servicei18n.MsgInvalidQueryRequest), "error_code": "invalid_query_request"})
+		return
+	}
+	if err := h.svc.DeleteService(c.Request.Context(), uint(id), tenantIDValue(c), req.Version); err != nil {
+		if writeQueryVersionConflict(c, err) {
+			return
+		}
 		if errors.Is(err, commonapi.ErrNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Service not found"})
 		} else {
@@ -300,10 +307,13 @@ func (h *QueryServiceHandler) CheckSourceSnapshot(c *gin.Context) {
 // @Summary 刷新查询服务依赖快照 | Refresh query service dependency snapshot
 // @Description 用 Meta 当前事实替换表模式查询服务已发布快照 | Replace a table-mode query service snapshot with current Meta facts
 // @Tags QueryService
+// @Accept json
 // @Produce json
 // @Param id path int true "服务ID | Service ID"
+// @Param request body models.QueryServiceVersionRequest true "当前资源版本 | Current resource version"
 // @Success 200 {object} models.QueryServiceDTO "刷新后的查询服务 | Refreshed query service"
 // @Failure 400 {object} map[string]string "请求错误 | Bad request"
+// @Failure 409 {object} map[string]string "资源版本冲突 | Resource version conflict"
 // @Failure 404 {object} map[string]string "服务不存在 | Service not found"
 // @Failure 500 {object} map[string]string "刷新失败 | Refresh failed"
 // @x-addp-auth-mode "permission"
@@ -316,8 +326,16 @@ func (h *QueryServiceHandler) RefreshSourceSnapshot(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, commoni18n.MsgInvalidID)})
 		return
 	}
-	result, err := h.svc.RefreshSourceSnapshot(uint(id), tenantIDValue(c))
+	var req models.QueryServiceVersionRequest
+	if err := bindQueryDefinition(c, &req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, servicei18n.MsgInvalidQueryRequest), "error_code": "invalid_query_request"})
+		return
+	}
+	result, err := h.svc.RefreshSourceSnapshot(c.Request.Context(), uint(id), tenantIDValue(c), req.Version)
 	if err != nil {
+		if writeQueryVersionConflict(c, err) {
+			return
+		}
 		status := http.StatusBadRequest
 		if errors.Is(err, commonapi.ErrNotFound) {
 			status = http.StatusNotFound
@@ -522,14 +540,14 @@ func queryExecutionErrorCode(err error) string {
 	return "query_execution_failed"
 }
 
-// RebindMetricSource 切换 SQL 服务的指标来源修订。
+// RebindMetricSource 显式切换查询服务的指标来源修订。
 // @Summary 切换指标来源修订 | Rebind metric source revision
-// @Description 保留服务身份，比较当前发布版本后原子替换编译契约 | Preserve service identity and atomically replace the compiled contract after checking the current publication version
+// @Description 保留服务身份，校验资源 version 后原子替换计算契约并递增版本 | Preserve service identity and atomically replace the computation contract after checking and incrementing the resource version
 // @Tags QueryService
 // @Accept json
 // @Produce json
 // @Param id path int true "服务 ID | Service ID"
-// @Param request body models.RebindMetricSourceRequest true "指标绑定与当前发布版本 | Metric binding and current publication version"
+// @Param request body models.RebindMetricSourceRequest true "指标绑定与当前定义并发版本 | Metric binding and current definition concurrency version"
 // @Success 200 {object} models.QueryServiceDTO
 // @Failure 400 {object} map[string]string
 // @Failure 404 {object} map[string]string
@@ -542,7 +560,7 @@ func queryExecutionErrorCode(err error) string {
 func (h *QueryServiceHandler) RebindMetricSource(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	var req models.RebindMetricSourceRequest
-	if err != nil || id == 0 || c.ShouldBindJSON(&req) != nil {
+	if err != nil || id == 0 || bindQueryDefinition(c, &req) != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, servicei18n.MsgInvalidQueryRequest), "error_code": "invalid_metric_publication"})
 		return
 	}
@@ -559,10 +577,32 @@ func (h *QueryServiceHandler) RebindMetricSource(c *gin.Context) {
 			status, key, code = http.StatusBadRequest, servicei18n.MsgInvalidParameterOptions, "invalid_metric_publication"
 		}
 		if errors.Is(err, commonapi.ErrConflict) {
-			status, key, code = http.StatusConflict, servicei18n.MsgMetricPublicationConflict, "service_publication_conflict"
+			status, key, code = http.StatusConflict, servicei18n.MsgQueryVersionConflict, "resource_version_conflict"
 		}
 		c.JSON(status, gin.H{"error": commoni18n.T(c, key), "error_code": code})
 		return
 	}
 	c.JSON(http.StatusOK, result)
+}
+
+// Publications accept owner references, never arbitrary plan or source overrides.
+func bindQueryDefinition(c *gin.Context, destination interface{}) error {
+	decoder := json.NewDecoder(c.Request.Body)
+	decoder.DisallowUnknownFields()
+	decoder.UseNumber()
+	if err := decoder.Decode(destination); err != nil {
+		return err
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return errors.New("expected a single JSON object")
+	}
+	return binding.Validator.ValidateStruct(destination)
+}
+
+func writeQueryVersionConflict(c *gin.Context, err error) bool {
+	if !errors.Is(err, commonapi.ErrConflict) {
+		return false
+	}
+	c.JSON(http.StatusConflict, gin.H{"error": commoni18n.T(c, servicei18n.MsgQueryVersionConflict), "error_code": "resource_version_conflict"})
+	return true
 }

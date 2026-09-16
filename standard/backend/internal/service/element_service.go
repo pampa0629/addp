@@ -184,16 +184,12 @@ func (s *ElementService) GetPublishedQualityRulesAt(id, tenantID int64, asOf tim
 }
 
 func (s *ElementService) revisionFromCreate(req *models.CreateElementRequest, tenantID, userID int64) (*models.ElementRevision, error) {
-	extra, err := normalizeExtraQualityRules(req.ExtraQualityRules)
-	if err != nil {
-		return nil, err
-	}
 	revision := &models.ElementRevision{
 		Name: strings.TrimSpace(req.Name), Definition: strings.TrimSpace(req.Definition), DataType: strings.TrimSpace(req.DataType), Length: req.Length,
 		PrecisionNum: req.PrecisionNum, Scale: req.Scale, Nullable: req.Nullable, DefaultValue: req.DefaultValue, Format: req.Format,
 		ValueDomainKind: req.ValueDomainKind, RangeConstraint: req.RangeConstraint, CodeSetRevisionID: req.CodeSetRevisionID,
 		UnitID: req.UnitID, ExampleValues: req.ExampleValues,
-		ExtraQualityRules: extra, ChangeSummary: strings.TrimSpace(req.ChangeSummary), EffectiveFrom: req.EffectiveFrom, EffectiveTo: req.EffectiveTo, CreatedBy: userID,
+		ChangeSummary: strings.TrimSpace(req.ChangeSummary), EffectiveFrom: req.EffectiveFrom, EffectiveTo: req.EffectiveTo, CreatedBy: userID,
 	}
 	if err := s.validateRevision(revision, tenantID); err != nil {
 		return nil, err
@@ -202,16 +198,12 @@ func (s *ElementService) revisionFromCreate(req *models.CreateElementRequest, te
 }
 
 func (s *ElementService) revisionFromUpdate(elementID, revisionID int64, req *models.UpdateElementRevisionRequest, tenantID, userID int64) (*models.ElementRevision, error) {
-	extra, err := normalizeExtraQualityRules(req.ExtraQualityRules)
-	if err != nil {
-		return nil, err
-	}
 	revision := &models.ElementRevision{
 		ID: revisionID, ElementID: elementID, Name: strings.TrimSpace(req.Name), Definition: strings.TrimSpace(req.Definition), DataType: strings.TrimSpace(req.DataType),
 		Length: req.Length, PrecisionNum: req.PrecisionNum, Scale: req.Scale, Nullable: req.Nullable, DefaultValue: req.DefaultValue, Format: req.Format,
 		ValueDomainKind: req.ValueDomainKind, RangeConstraint: req.RangeConstraint, CodeSetRevisionID: req.CodeSetRevisionID,
 		UnitID: req.UnitID, ExampleValues: req.ExampleValues,
-		ExtraQualityRules: extra, ChangeSummary: strings.TrimSpace(req.ChangeSummary), EffectiveFrom: req.EffectiveFrom, EffectiveTo: req.EffectiveTo, UpdatedBy: &userID,
+		ChangeSummary: strings.TrimSpace(req.ChangeSummary), EffectiveFrom: req.EffectiveFrom, EffectiveTo: req.EffectiveTo, UpdatedBy: &userID,
 	}
 	if err := s.validateRevision(revision, tenantID); err != nil {
 		return nil, err
@@ -288,10 +280,7 @@ func (s *ElementService) validateRevision(revision *models.ElementRevision, tena
 }
 
 func (s *ElementService) compileQualityRules(elementID int64, revision *models.ElementRevision, tenantID int64) (models.JSONB, error) {
-	document, err := dataquality.FromValue(revision.ExtraQualityRules)
-	if err != nil {
-		return nil, err
-	}
+	document := dataquality.EmptyDocument()
 	add := func(kind string, params dataquality.Parameters) {
 		document.Rules = append(document.Rules, dataquality.Rule{RuleKey: stableRuleKey(elementID, kind), Type: kind, Enabled: true, Severity: dataquality.SeverityError, Message: "", Params: params})
 	}
@@ -327,24 +316,6 @@ func (s *ElementService) compileQualityRules(elementID int64, revision *models.E
 	}
 	value, err := dataquality.ToMap(document)
 	return models.JSONB(value), err
-}
-
-func normalizeExtraQualityRules(value map[string]interface{}) (models.JSONB, error) {
-	document := dataquality.EmptyDocument()
-	var err error
-	if value != nil {
-		document, err = dataquality.FromValue(value)
-		if err != nil {
-			return nil, err
-		}
-	}
-	for _, rule := range document.Rules {
-		if rule.Type != dataquality.RuleTypeUnique {
-			return nil, fmt.Errorf("%w: structural quality rule %q must be defined by data element fields", ErrInvalidStandardRevision, rule.Type)
-		}
-	}
-	normalized, err := dataquality.ToMap(document)
-	return models.JSONB(normalized), err
 }
 
 func stableRuleKey(elementID int64, kind string) string {

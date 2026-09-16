@@ -41,7 +41,7 @@ func TestPostgresCatalogResourceChangeFeedCapturesOwnerLifecycle(t *testing.T) {
 		t.Fatalf("create layer: %v", err)
 	}
 	logicalTable := models.LogicalTable{
-		TenantID: tenantID, DomainID: &domainID, EntityID: &entity.ID, Name: "Catalog table",
+		TenantID: tenantID, DomainID: &domainID, Name: "Catalog table",
 		Code: fmt.Sprintf("catalog_table_%d", tenantID), TableType: "fact", Layer: "dwd",
 		Status: "draft", Version: 1, CreatedBy: 1,
 	}

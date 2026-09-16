@@ -30,13 +30,13 @@
             <el-tag :type="severityTagType(issue.severity)">{{ issue.severity || '-' }}</el-tag>
           </el-descriptions-item>
           <el-descriptions-item :label="t('quality.issue.engineId')">{{ issue.engine_id ?? '-' }}</el-descriptions-item>
-          <el-descriptions-item :label="t('quality.issue.ruleApplicationId')">{{ issue.rule_application_id ?? '-' }}</el-descriptions-item>
+          <el-descriptions-item :label="t('quality.issue.planId')">{{ issue.plan_id ?? '-' }}</el-descriptions-item>
           <el-descriptions-item :label="t('quality.issue.ruleKey')" :span="2">{{ issue.rule_key || '-' }}</el-descriptions-item>
           <el-descriptions-item :label="t('quality.issue.schema')">{{ issue.schema_name || '-' }}</el-descriptions-item>
           <el-descriptions-item :label="t('quality.issue.tableName')">{{ issue.table_name || '-' }}</el-descriptions-item>
           <el-descriptions-item :label="t('quality.issue.column')">{{ issue.column_name || '-' }}</el-descriptions-item>
           <el-descriptions-item :label="t('quality.issue.passRate')">{{ formatPassRate(issue.pass_rate) }}</el-descriptions-item>
-          <el-descriptions-item :label="t('quality.issue.failedCount')">{{ issue.failed_count ?? '-' }}</el-descriptions-item>
+          <el-descriptions-item :label="t('quality.issue.failedCount')">{{ issue.type === 'row_count' ? '-' : issue.failed_count ?? '-' }}</el-descriptions-item>
           <el-descriptions-item :label="t('quality.issue.totalCount')">{{ issue.total_count ?? '-' }}</el-descriptions-item>
           <el-descriptions-item :label="t('quality.issue.message')" :span="2">{{ issue.message || '-' }}</el-descriptions-item>
         </el-descriptions>

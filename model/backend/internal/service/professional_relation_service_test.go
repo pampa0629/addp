@@ -19,14 +19,16 @@ func TestProfessionalRelationsExposeOwnerFactsWithoutCatalogCopies(t *testing.T)
 		`ATTACH DATABASE ':memory:' AS model`,
 		`CREATE TABLE model.entities (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, name TEXT, code TEXT, status TEXT)`,
 		`CREATE TABLE model.entity_relations (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, source_entity INTEGER NOT NULL, target_entity INTEGER NOT NULL, relation_type TEXT, name TEXT, description TEXT, created_at DATETIME)`,
-		`CREATE TABLE model.logical_tables (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, entity_id INTEGER, name TEXT, code TEXT, status TEXT, table_type TEXT)`,
+		`CREATE TABLE model.logical_tables (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, name TEXT, code TEXT, status TEXT, table_type TEXT)`,
+		`CREATE TABLE model.logical_table_entity_mappings (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, table_id INTEGER NOT NULL, entity_id INTEGER NOT NULL, mapping_role TEXT, entity_version INTEGER)`,
 		`CREATE TABLE model.logical_fields (id INTEGER PRIMARY KEY, table_id INTEGER NOT NULL, element_revision_id INTEGER, name TEXT)`,
 		`CREATE TABLE model.table_relations (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, source_table INTEGER NOT NULL, source_field INTEGER NOT NULL, target_table INTEGER NOT NULL, target_field INTEGER NOT NULL, relation_type TEXT)`,
 		`CREATE TABLE model.metric_implementations (id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, fact_table_id INTEGER NOT NULL, metric_definition_id INTEGER NOT NULL, name TEXT NOT NULL, note TEXT, version INTEGER NOT NULL DEFAULT 1, created_by INTEGER NOT NULL, updated_by INTEGER, created_at DATETIME, updated_at DATETIME)`,
 		`CREATE TABLE model.metric_implementation_revisions (id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, implementation_id INTEGER NOT NULL, revision_no INTEGER NOT NULL, metric_definition_revision_id INTEGER NOT NULL, contract TEXT NOT NULL, dependency_snapshot TEXT NOT NULL, dependency_hash TEXT NOT NULL, status TEXT NOT NULL, published_at DATETIME, created_at DATETIME, updated_at DATETIME)`,
 		`INSERT INTO model.entities VALUES (1, 7, 'Order', 'order', 'approved'), (2, 7, 'Customer', 'customer', 'approved'), (3, 8, 'Other', 'other', 'approved')`,
 		`INSERT INTO model.entity_relations VALUES (11, 7, 1, 2, 'one_to_many', 'contains', 'Customer has orders', CURRENT_TIMESTAMP)`,
-		`INSERT INTO model.logical_tables VALUES (21, 7, 1, 'Fact order', 'fact_order', 'approved', 'fact'), (22, 7, NULL, 'Dim customer', 'dim_customer', 'approved', 'dimension')`,
+		`INSERT INTO model.logical_tables VALUES (21, 7, 'Fact order', 'fact_order', 'approved', 'fact'), (22, 7, 'Dim customer', 'dim_customer', 'approved', 'dimension')`,
+		`INSERT INTO model.logical_table_entity_mappings VALUES (23, 7, 21, 1, 'represents', 1)`,
 		`INSERT INTO model.logical_fields VALUES (31, 21, NULL, 'customer_id'), (32, 22, NULL, 'id')`,
 		`INSERT INTO model.table_relations VALUES (41, 7, 21, 31, 22, 32, 'fk')`,
 		`INSERT INTO model.metric_implementations (id,tenant_id,fact_table_id,metric_definition_id,name,note,version,created_by,created_at) VALUES (51,7,21,61,'Amount','amount metric',1,1,CURRENT_TIMESTAMP)`,
@@ -50,7 +52,7 @@ func TestProfessionalRelationsExposeOwnerFactsWithoutCatalogCopies(t *testing.T)
 	}
 
 	tableService := NewTableRelationService(repository.NewTableRelationRepository(db), repository.NewLogicalTableRepository(db))
-	tableService.SetProfessionalRelationSources(entityRepo, repository.NewMetricImplementationRepository(db))
+	tableService.SetProfessionalRelationSources(entityRepo, repository.NewConceptMappingRepository(db), repository.NewMetricImplementationRepository(db))
 	tableGraph, err := tableService.GetProfessionalRelations(7, 21, 100)
 	if err != nil {
 		t.Fatal(err)
@@ -107,7 +109,7 @@ func TestPostgresProfessionalRelationsUseOwnerSchemaAndTenantBoundary(t *testing
 		t.Fatal(err)
 	}
 	fact := &models.LogicalTable{
-		TenantID: tenantID, EntityID: &firstEntity.ID, Name: "PG fact", Code: "pg_fact",
+		TenantID: tenantID, Name: "PG fact", Code: "pg_fact",
 		TableType: "fact", Layer: layer.LayerCode, Status: "approved", Materialization: models.JSONB{}, Version: 1, CreatedBy: 1,
 	}
 	dimension := &models.LogicalTable{
@@ -118,6 +120,12 @@ func TestPostgresProfessionalRelationsUseOwnerSchemaAndTenantBoundary(t *testing
 		if err := tx.Create(table).Error; err != nil {
 			t.Fatal(err)
 		}
+	}
+	if err := tx.Create(&models.LogicalTableEntityMapping{
+		TenantID: tenantID, TableID: fact.ID, EntityID: firstEntity.ID,
+		MappingRole: "represents", EntityVersion: firstEntity.Version,
+	}).Error; err != nil {
+		t.Fatal(err)
 	}
 	sourceField := &models.LogicalField{TableID: fact.ID, Name: "Customer ID", ColumnName: "customer_id", DataType: "bigint"}
 	targetField := &models.LogicalField{TableID: dimension.ID, Name: "ID", ColumnName: "id", DataType: "bigint", IsPK: true}
@@ -138,7 +146,7 @@ func TestPostgresProfessionalRelationsUseOwnerSchemaAndTenantBoundary(t *testing
 		t.Fatal(err)
 	}
 	tableService := NewTableRelationService(repository.NewTableRelationRepository(tx), repository.NewLogicalTableRepository(tx))
-	tableService.SetProfessionalRelationSources(entityRepo, repository.NewMetricImplementationRepository(tx))
+	tableService.SetProfessionalRelationSources(entityRepo, repository.NewConceptMappingRepository(tx), repository.NewMetricImplementationRepository(tx))
 	tableGraph, err := tableService.GetProfessionalRelations(tenantID, fact.ID, 100)
 	if err != nil {
 		t.Fatal(err)

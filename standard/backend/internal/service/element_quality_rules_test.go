@@ -1,63 +1,132 @@
 package service
 
 import (
+	"encoding/json"
+	"reflect"
 	"testing"
 
 	"github.com/addp/common/dataquality"
+	"github.com/addp/standard/internal/models"
+	"github.com/addp/standard/internal/repository"
 )
 
-func TestNormalizeExtraQualityRulesDefaultsToVersionedEmptyDocument(t *testing.T) {
-	rules, err := normalizeExtraQualityRules(nil)
+func TestCompileElementRulesUsesOnlyIntrinsicConstraints(t *testing.T) {
+	length := 32
+	revision := &models.ElementRevision{Nullable: false, Length: &length, Format: "^[a-z]+$", ValueDomainKind: models.ValueDomainUnrestricted}
+	svc := &ElementService{}
+	first, err := svc.compileQualityRules(42, revision, 7)
 	if err != nil {
-		t.Fatalf("normalizeQualityRules(nil) error = %v", err)
+		t.Fatal(err)
 	}
-	if rules["schema_version"] != dataquality.RulesSchemaVersion {
-		t.Fatalf("schema_version = %v", rules["schema_version"])
+	document, err := dataquality.FromValue(first)
+	if err != nil {
+		t.Fatal(err)
 	}
-	items, ok := rules["rules"].([]interface{})
-	if !ok || len(items) != 0 {
-		t.Fatalf("rules = %#v, want empty array", rules["rules"])
+	want := []string{dataquality.RuleTypeNotNull, dataquality.RuleTypeLength, dataquality.RuleTypeFormat}
+	if len(document.Rules) != len(want) {
+		t.Fatalf("rules = %#v", document.Rules)
+	}
+	for i, rule := range document.Rules {
+		if rule.Type != want[i] || rule.RuleKey != stableRuleKey(42, rule.Type) {
+			t.Fatalf("rule = %#v", rule)
+		}
+	}
+	length = 64
+	second, err := svc.compileQualityRules(42, revision, 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed, err := dataquality.FromValue(second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range document.Rules {
+		if document.Rules[i].RuleKey != changed.Rules[i].RuleKey {
+			t.Fatal("changing parameters changed rule identity")
+		}
+	}
+	if changed.Rules[1].Params.Max.String() != "64" || document.Rules[1].Params.Max.String() != "32" {
+		t.Fatal("compiled snapshots are not independent")
+	}
+	if stableRuleKey(42, dataquality.RuleTypeLength) == stableRuleKey(43, dataquality.RuleTypeLength) {
+		t.Fatal("different data elements share an identity")
 	}
 }
 
-func TestNormalizeExtraQualityRulesRejectsStructuralRuleTypes(t *testing.T) {
-	tests := []struct {
-		name  string
-		value map[string]interface{}
-	}{
-		{name: "legacy array wrapper", value: map[string]interface{}{"rules": []interface{}{}}},
-		{name: "custom rule", value: qualityRuleDocumentForTest("custom")},
-		{name: "data type rule", value: qualityRuleDocumentForTest("data_type")},
-		{name: "not null rule", value: qualityRuleDocumentForTest("not_null")},
+func TestElementCreationPreservesExplicitNotNull(t *testing.T) {
+	db := setupStandardCleanupTestDB(t)
+	svc := NewElementService(repository.NewElementRepository(db), nil, repository.NewTenantReferenceRepository(db), nil)
+	result, err := svc.CreateElement(&models.CreateElementRequest{
+		Code: "person_id", ScopeType: models.StandardScopeTenantCommon, Name: "Person ID", Definition: "Person identifier",
+		DataType: "string", Nullable: false, ValueDomainKind: models.ValueDomainUnrestricted, ChangeSummary: "Initial definition",
+	}, 7, 1)
+	if err != nil {
+		t.Fatal(err)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if _, err := normalizeExtraQualityRules(tt.value); err == nil {
-				t.Fatalf("normalizeQualityRules(%#v) error = nil", tt.value)
-			}
-		})
+	if result.DraftRevision.Nullable {
+		t.Fatal("explicit nullable=false was replaced by the ORM default")
+	}
+	compiled, err := svc.compileQualityRules(result.ID, result.DraftRevision, 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	document, err := dataquality.FromValue(compiled)
+	if err != nil || len(document.Rules) != 1 || document.Rules[0].Type != dataquality.RuleTypeNotNull {
+		t.Fatalf("required element lost not-null rule: %#v, %v", document, err)
 	}
 }
 
-func TestNormalizeExtraQualityRulesAcceptsUniqueRule(t *testing.T) {
-	rules, err := normalizeExtraQualityRules(qualityRuleDocumentForTest("unique"))
+func TestCompileElementRulesRangeAndEmptyConstraints(t *testing.T) {
+	svc := &ElementService{}
+	empty, err := svc.compileQualityRules(1, &models.ElementRevision{Nullable: true, ValueDomainKind: models.ValueDomainUnrestricted}, 7)
 	if err != nil {
-		t.Fatalf("normalizeQualityRules() error = %v", err)
+		t.Fatal(err)
 	}
-	document, err := dataquality.FromValue(rules)
+	document, err := dataquality.FromValue(empty)
+	if err != nil || len(document.Rules) != 0 {
+		t.Fatalf("empty document = %#v, error = %v", document, err)
+	}
+	min, max, exclusive := json.Number("0"), json.Number("100"), false
+	value, err := svc.compileQualityRules(1, &models.ElementRevision{Nullable: true, ValueDomainKind: models.ValueDomainRange,
+		RangeConstraint: &models.RangeConstraint{Min: &min, Max: &max, MinInclusive: &exclusive}}, 7)
 	if err != nil {
-		t.Fatalf("normalized document error = %v", err)
+		t.Fatal(err)
 	}
-	if len(document.Rules) != 1 || document.Rules[0].Type != dataquality.RuleTypeUnique {
-		t.Fatalf("normalized document = %#v", document)
+	document, err = dataquality.FromValue(value)
+	if err != nil || len(document.Rules) != 1 || document.Rules[0].Type != dataquality.RuleTypeValueRange {
+		t.Fatalf("range = %#v, error = %v", document, err)
+	}
+	if document.Rules[0].Params.MinInclusive == nil || *document.Rules[0].Params.MinInclusive {
+		t.Fatal("exclusive lower bound lost")
 	}
 }
 
-func qualityRuleDocumentForTest(ruleType string) map[string]interface{} {
-	return map[string]interface{}{
-		"schema_version": dataquality.RulesSchemaVersion,
-		"rules": []interface{}{map[string]interface{}{
-			"rule_key": "00000000-0000-4000-8000-000000000001", "type": ruleType, "enabled": true, "severity": "error", "message": "required", "params": map[string]interface{}{},
-		}},
+func TestCompileElementEnumerationUsesExactPublishedCodeSet(t *testing.T) {
+	db := openElementResolutionTestDB(t)
+	for _, statement := range []string{
+		`INSERT INTO standard.code_sets (id, tenant_id, scope_type, origin, code, lifecycle_state) VALUES (50, 7, 'tenant_common', 'tenant', 'member_status', 'active')`,
+		`INSERT INTO standard.code_set_revisions (id, code_set_id, revision_no, status, name, description, value_type) VALUES (501, 50, 1, 'published', 'Member status', 'Member status', 'string'), (502, 50, 2, 'published', 'New status', 'New status', 'string')`,
+		`INSERT INTO standard.code_set_revision_items (id, code_set_revision_id, code, label, sort_order, status) VALUES (1, 501, 'signup', 'Signup', 1, 'active'), (2, 501, 'leader', 'Leader', 2, 'active'), (3, 501, 'old', 'Old', 3, 'deprecated'), (4, 502, 'future', 'Future', 1, 'active')`,
+	} {
+		if err := db.Exec(statement).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	svc := &ElementService{codeSets: repository.NewCodeSetRepository(db)}
+	revisionID := int64(501)
+	revision := &models.ElementRevision{Nullable: true, ValueDomainKind: models.ValueDomainEnumeration, CodeSetRevisionID: &revisionID}
+	value, err := svc.compileQualityRules(1, revision, 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	document, err := dataquality.FromValue(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(document.Rules) != 1 || !reflect.DeepEqual(document.Rules[0].Params.Values, []string{"signup", "leader"}) {
+		t.Fatalf("rules = %#v", document.Rules)
+	}
+	if _, err := svc.compileQualityRules(1, revision, 8); err == nil {
+		t.Fatal("accepted code set from another tenant")
 	}
 }

@@ -39,12 +39,13 @@ type StructuredQueryInputContract struct {
 }
 
 type ConsumerNamedParameter struct {
-	Options     []commonquery.ParameterOption `json:"options,omitempty"`
-	Name        string                        `json:"name"`
-	Type        datatype.FieldType            `json:"type"`
-	Required    bool                          `json:"required"`
-	Description string                        `json:"description"`
-	Default     interface{}                   `json:"default,omitempty" swaggertype:"object"`
+	Presentation *commonquery.ParameterPresentation `json:"presentation,omitempty"`
+	Options      []commonquery.ParameterOption      `json:"options,omitempty"`
+	Name         string                             `json:"name"`
+	Type         datatype.FieldType                 `json:"type"`
+	Required     bool                               `json:"required"`
+	Description  string                             `json:"description"`
+	Default      interface{}                        `json:"default,omitempty" swaggertype:"object"`
 }
 
 type ConsumerQueryField struct {

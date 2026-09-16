@@ -36,6 +36,9 @@ func (expressionTestDialect) Comparable(s string, _ datatype.FieldType) (string,
 	return "EXACT(" + s + ")", nil
 }
 
+func (expressionTestDialect) TrimDecimalText(s string) string { return "TRIM_DECIMAL(" + s + ")" }
+func (expressionTestDialect) ISODateText(s string) string     { return "ISO_DATE_TEXT(" + s + ")" }
+
 func TestCompileExpressionBindingAndCanonicalValue(t *testing.T) {
 	ref := plan.ColumnRef{Input: "source", Name: "id"}
 	scope := ExpressionScope{Fields: map[plan.NodeID][]datatype.FieldInfo{"source": {{Name: "id", Type: datatype.FieldTypeInt}}}, Columns: map[plan.ColumnRef]ExpressionColumn{ref: {Relation: `a"b`, Name: `x";DROP TABLE t;--`}}}
@@ -67,7 +70,7 @@ func TestCompileExpressionRejectsInvalidAndUnsupported(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := CompileExpression(plan.Expr{Op: "text", Args: []plan.Expr{p}}, scope, expressionTestDialect{}); !errors.Is(err, plugin.ErrAnalyticalUnsupported) {
+	if out, err := CompileExpression(plan.Expr{Op: "text", Args: []plan.Expr{p}}, scope, expressionTestDialect{}); err != nil || out.Type != datatype.FieldTypeString {
 		t.Fatal(err)
 	}
 	if _, err := CompileExpression(p, scope, nil); !errors.Is(err, plugin.ErrAnalyticalInvalid) {

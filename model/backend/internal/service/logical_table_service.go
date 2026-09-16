@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"regexp"
 	"strings"
@@ -18,10 +19,10 @@ import (
 )
 
 type LogicalTableService struct {
-	repo        *repository.LogicalTableRepository
-	entityRepo  *repository.EntityRepository
-	dwLayerRepo *repository.DWLayerRepository
-	standard    *commonClient.StandardClient
+	repo               *repository.LogicalTableRepository
+	dwLayerRepo        *repository.DWLayerRepository
+	conceptMappingRepo *repository.ConceptMappingRepository
+	standard           *commonClient.StandardClient
 }
 
 func (s *LogicalTableService) SetStandardClient(client *commonClient.StandardClient) {
@@ -68,29 +69,13 @@ func validateLogicalTableShape(tableType string, scdType int, grain string) erro
 
 func NewLogicalTableService(
 	repo *repository.LogicalTableRepository,
-	entityRepo *repository.EntityRepository,
 	dwLayerRepo *repository.DWLayerRepository,
 ) *LogicalTableService {
-	return &LogicalTableService{repo: repo, entityRepo: entityRepo, dwLayerRepo: dwLayerRepo}
+	return &LogicalTableService{repo: repo, dwLayerRepo: dwLayerRepo}
 }
 
-func (s *LogicalTableService) validateOwnedReferences(tenantID int64, entityID *int64, layer string) error {
-	if entityID != nil {
-		if *entityID <= 0 {
-			return apperrors.NotFound("entity_not_found", i18n.MsgEntityNotFound)
-		}
-		if _, err := s.entityRepo.GetByID(*entityID, tenantID); err != nil {
-			return apperrors.NotFound("entity_not_found", i18n.MsgEntityNotFound)
-		}
-	}
-	exists, err := s.dwLayerRepo.ExistsByCode(layer, tenantID, 0)
-	if err != nil {
-		return err
-	}
-	if !exists {
-		return apperrors.NotFound("dw_layer_not_found", i18n.MsgLayerNotFound)
-	}
-	return nil
+func (s *LogicalTableService) SetConceptMappingRepository(repo *repository.ConceptMappingRepository) {
+	s.conceptMappingRepo = repo
 }
 
 func (s *LogicalTableService) CreateLogicalTable(req *models.CreateLogicalTableRequest, tenantID, userID int64) (*models.LogicalTable, error) {
@@ -100,7 +85,6 @@ func (s *LogicalTableService) CreateLogicalTable(req *models.CreateLogicalTableR
 	table := &models.LogicalTable{
 		TenantID:         tenantID,
 		DomainID:         req.DomainID,
-		EntityID:         req.EntityID,
 		Name:             req.Name,
 		Code:             req.Code,
 		Description:      req.Description,
@@ -126,11 +110,6 @@ func (s *LogicalTableService) CreateLogicalTable(req *models.CreateLogicalTableR
 		if err := lockStandardReferences(tx, tenantID, standardReference(models.StandardResourceDomain, req.DomainID)); err != nil {
 			return err
 		}
-		if req.EntityID != nil {
-			if _, err := repository.LockEntity(tx, *req.EntityID, tenantID); err != nil {
-				return apperrors.NotFound("entity_not_found", i18n.MsgEntityNotFound)
-			}
-		}
 		if _, err := repository.LockDWLayerByCode(tx, req.Layer, tenantID); err != nil {
 			return apperrors.NotFound("dw_layer_not_found", i18n.MsgLayerNotFound)
 		}
@@ -154,11 +133,25 @@ func (s *LogicalTableService) CreateLogicalTable(req *models.CreateLogicalTableR
 }
 
 func (s *LogicalTableService) GetLogicalTable(id, tenantID int64) (*models.LogicalTableDetail, error) {
-	table, err := s.repo.GetByID(id, tenantID)
-	if err != nil {
-		return nil, modelResourceError(err, "logical_table_not_found", i18n.MsgTableNotFound)
-	}
-	return &models.LogicalTableDetail{LogicalTable: table}, nil
+	var detail *models.LogicalTableDetail
+	err := s.repo.DB().Transaction(func(tx *gorm.DB) error {
+		repo := repository.NewLogicalTableRepository(tx)
+		table, err := repo.GetByID(id, tenantID)
+		if err != nil {
+			return modelResourceError(err, "logical_table_not_found", i18n.MsgTableNotFound)
+		}
+		fields, err := repo.GetFields(id)
+		if err != nil {
+			return err
+		}
+		relations, err := repository.NewTableRelationRepository(tx).ListDetailsByTable(id, tenantID)
+		if err != nil {
+			return err
+		}
+		detail = &models.LogicalTableDetail{LogicalTable: table, StructuralConstraints: deriveStructuralConstraints(id, fields, relations)}
+		return nil
+	}, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+	return detail, err
 }
 
 func (s *LogicalTableService) ListLogicalTables(tenantID int64, opts repository.ListLogicalTableOptions) ([]models.LogicalTable, int64, error) {
@@ -179,7 +172,7 @@ func (s *LogicalTableService) ListLogicalTables(tenantID int64, opts repository.
 }
 
 func (s *LogicalTableService) UpdateLogicalTable(id, tenantID, userID int64, req *models.UpdateLogicalTableRequest) (*models.LogicalTable, error) {
-	if req == nil || !validOptionalID(req.DomainID) || !validOptionalID(req.EntityID) ||
+	if req == nil || !validOptionalID(req.DomainID) ||
 		!validRequiredString(req.Name, 200) || !validValue(req.TableType, "entity", "fact", "dimension") ||
 		!validRequiredString(req.Layer, 20) || req.SCDType == nil || req.Materialization == nil {
 		return nil, apperrors.Validation("invalid_request", i18n.MsgValidationFailed)
@@ -237,17 +230,11 @@ func (s *LogicalTableService) UpdateLogicalTable(id, tenantID, userID int64, req
 		if err := validateMaterialization(previewTable, fields); err != nil {
 			return apperrors.Wrap(apperrors.KindValidation, "materialization_invalid", i18n.MsgValidationFailed, err)
 		}
-		if req.EntityID != nil {
-			if _, err := repository.LockEntity(tx, *req.EntityID, tenantID); err != nil {
-				return apperrors.NotFound("entity_not_found", i18n.MsgEntityNotFound)
-			}
-		}
 		if _, err := repository.LockDWLayerByCode(tx, req.Layer, tenantID); err != nil {
 			return apperrors.NotFound("dw_layer_not_found", i18n.MsgLayerNotFound)
 		}
 		table.Name = req.Name
 		table.DomainID = req.DomainID
-		table.EntityID = req.EntityID
 		table.Description = req.Description
 		table.TableType = req.TableType
 		table.Layer = req.Layer
@@ -383,6 +370,11 @@ func (s *LogicalTableService) updateLogicalTableStatus(id, tenantID, userID, ver
 		}
 		txRepo := repository.NewLogicalTableRepository(tx)
 		if validateApproval {
+			if s.conceptMappingRepo != nil {
+				if err := validateCurrentConceptMappings(tx, id, tenantID); err != nil {
+					return err
+				}
+			}
 			if err := validateLogicalTableShape(table.TableType, table.SCDType, table.GrainDescription); err != nil {
 				return err
 			}
@@ -465,7 +457,6 @@ func (s *LogicalTableService) CreateField(tableID, tenantID int64, req *models.C
 		Length:       req.Length,
 		Nullable:     req.Nullable,
 		IsPK:         req.IsPK,
-		IsPartition:  req.IsPartition,
 		DefaultValue: req.DefaultValue,
 		Description:  req.Description,
 		SortOrder:    req.SortOrder,
@@ -515,7 +506,7 @@ func (s *LogicalTableService) UpdateField(fieldID, tableID, tenantID int64, req 
 	if !validRequiredString(req.Name, 200) || !modelCodePattern.MatchString(req.ColumnName) || utf8.RuneCountInString(req.ColumnName) > 200 ||
 		!validValue(req.DataType, modelDataTypes...) || !validValue(req.FieldRole, modelFieldRoles...) ||
 		!validOptionalID(req.ElementID) ||
-		req.Nullable == nil || req.IsPK == nil || req.IsPartition == nil || req.SortOrder == nil || *req.SortOrder < 0 ||
+		req.Nullable == nil || req.IsPK == nil || req.SortOrder == nil || *req.SortOrder < 0 ||
 		(req.Length != nil && *req.Length <= 0) {
 		return nil, apperrors.Validation("invalid_request", i18n.MsgValidationFailed)
 	}
@@ -554,7 +545,6 @@ func (s *LogicalTableService) UpdateField(fieldID, tableID, tenantID int64, req 
 		field.Length = req.Length
 		field.Nullable = *req.Nullable
 		field.IsPK = *req.IsPK
-		field.IsPartition = *req.IsPartition
 		field.DefaultValue = req.DefaultValue
 		field.Description = req.Description
 		field.SortOrder = *req.SortOrder
@@ -605,7 +595,7 @@ func (s *LogicalTableService) DeleteField(fieldID, tableID, tenantID, version in
 	return response, err
 }
 
-// PreviewDDL 预览生成的 DDL（仅支持 PostgreSQL）
+// PreviewDDL 预览生成的建表语句（仅支持 PostgreSQL）
 func (s *LogicalTableService) PreviewDDL(tableID, tenantID int64, materialization map[string]interface{}) (string, error) {
 	table, err := s.repo.GetByID(tableID, tenantID)
 	if err != nil {
@@ -649,28 +639,6 @@ func normalizeMaterialization(config map[string]interface{}) models.JSONB {
 			normalized[key] = trimmed
 		}
 	}
-	rawPartitionBy, exists := normalized["partition_by"]
-	if !exists || rawPartitionBy == nil {
-		delete(normalized, "partition_by")
-		delete(normalized, "partition_type")
-		return normalized
-	}
-	partitionBy, ok := rawPartitionBy.(string)
-	if !ok {
-		return normalized
-	}
-	partitionBy = strings.TrimSpace(partitionBy)
-	if partitionBy == "" {
-		delete(normalized, "partition_by")
-		delete(normalized, "partition_type")
-		return normalized
-	}
-	normalized["partition_by"] = partitionBy
-	partitionType, ok := normalized["partition_type"].(string)
-	if !ok || strings.TrimSpace(partitionType) == "" {
-		partitionType = "range"
-	}
-	normalized["partition_type"] = strings.ToLower(strings.TrimSpace(partitionType))
 	return normalized
 }
 
@@ -727,18 +695,7 @@ func (s *LogicalTableService) generatePostgreSQLDDL(table *models.LogicalTable, 
 	// 5. 闭合括号
 	ddl.WriteString("\n)")
 
-	// 6. 分区（可选）
-	if table.Materialization != nil {
-		if partitionBy, ok := table.Materialization["partition_by"].(string); ok && partitionBy != "" {
-			partitionType := "RANGE"
-			if pt, ok := table.Materialization["partition_type"].(string); ok && pt != "" {
-				partitionType = strings.ToUpper(pt)
-			}
-			ddl.WriteString(fmt.Sprintf("\nPARTITION BY %s (%s)", partitionType, quoteIdentifier(partitionBy)))
-		}
-	}
-
-	// 8. 结尾
+	// 6. 结尾
 	ddl.WriteString(";")
 
 	return ddl.String()
@@ -809,12 +766,10 @@ func validateMaterializationKeys(config map[string]interface{}) error {
 	allowedKeys := map[string]struct{}{
 		"target_parent_locator": {},
 		"target_name":           {},
-		"partition_by":          {},
-		"partition_type":        {},
 	}
 	for key := range config {
 		if _, ok := allowedKeys[key]; !ok {
-			return fmt.Errorf("不支持的物化配置字段: %s", key)
+			return fmt.Errorf("不支持的物理目标配置字段: %s", key)
 		}
 	}
 	return nil
@@ -856,36 +811,7 @@ func validateMaterialization(table *models.LogicalTable, fields []models.Logical
 			return fmt.Errorf("物化目标 schema 不是合法标识符")
 		}
 		if !identifierPattern.MatchString(targetName) {
-			return fmt.Errorf("物化配置 target_name 不是合法标识符")
-		}
-	}
-	partitionBy, err := requiredMaterializationString(config, "partition_by")
-	if err != nil {
-		return err
-	}
-	if partitionBy != "" && !identifierPattern.MatchString(partitionBy) {
-		return fmt.Errorf("物化配置 partition_by 不是合法标识符")
-	}
-	partitionType, err := requiredMaterializationString(config, "partition_type")
-	if err != nil {
-		return err
-	}
-	if partitionBy != "" {
-		partitionType = strings.ToLower(partitionType)
-		if partitionType != "range" && partitionType != "list" && partitionType != "hash" {
-			return fmt.Errorf("不支持的分区类型: %s", partitionType)
-		}
-	}
-	if partitionBy != "" && len(fields) > 0 {
-		found := false
-		for _, field := range fields {
-			if field.ColumnName == partitionBy {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return fmt.Errorf("分区字段不存在: %s", partitionBy)
+			return fmt.Errorf("物理目标配置 target_name 不是合法标识符")
 		}
 	}
 	for _, field := range fields {
@@ -906,7 +832,7 @@ func requiredMaterializationString(config models.JSONB, key string) (string, err
 	}
 	text, ok := value.(string)
 	if !ok {
-		return "", fmt.Errorf("物化配置 %s 必须是字符串", key)
+		return "", fmt.Errorf("物理目标配置 %s 必须是字符串", key)
 	}
 	return strings.TrimSpace(text), nil
 }
@@ -918,11 +844,6 @@ func materializationString(config models.JSONB, key string) (string, bool) {
 	}
 	text, ok := value.(string)
 	return strings.TrimSpace(text), ok
-}
-
-func materializationHasPartitioning(config models.JSONB) bool {
-	partitionBy, ok := materializationString(config, "partition_by")
-	return ok && partitionBy != ""
 }
 
 // quoteDefault 处理默认值引号

@@ -1,24 +1,3 @@
-[quality.rule_app.not_found]
-other = "Rule application not found"
-
-[quality.rule_app.create_failed]
-other = "Failed to create rule application"
-
-[quality.rule_app.delete_failed]
-other = "Failed to delete rule application"
-
-[quality.check_task.not_found]
-other = "Check task not found"
-
-[quality.check_task.run_failed]
-other = "Failed to run check task"
-
-[quality.check_task.active]
-other = "The check task already has a pending or running execution"
-
-[quality.check_task.delete_failed]
-other = "Failed to delete check task"
-
 [quality.issue.not_found]
 other = "Issue not found"
 
@@ -37,15 +16,6 @@ other = "Resource state conflict; refresh and try again"
 [quality.internal.error]
 other = "Quality service is temporarily unavailable"
 
-[quality.rule_app.update_failed]
-other = "Failed to update rule application"
-
-[quality.check_task.create_failed]
-other = "Failed to create check task"
-
-[quality.check_task.update_failed]
-other = "Failed to update check task"
-
 [quality.execution.list_failed]
 other = "Failed to load execution records"
 
@@ -57,3 +27,12 @@ other = "Deleted successfully"
 
 [quality.operation.updated]
 other = "Updated successfully"
+
+[quality.plan.not_found]
+other = "Quality plan not found"
+[quality.rule.not_found]
+other = "Quality rule not found"
+[quality.rule.referenced]
+other = "The rule is referenced by plans. Remove those references before deleting it."
+[quality.request.version_conflict]
+other = "The resource has changed. Reload before trying again."

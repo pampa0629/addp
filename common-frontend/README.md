@@ -728,3 +728,5 @@ MIT
 ### 服务参数输入
 
 `ParameterValueInput` 是类型化服务参数输入的唯一控件，接受 `modelValue`、`controlType`、`options` 和 `disabled`。有限选项优先按契约呈现，名称按当前语言取 `labels`，只提交 `value`。Service 与 Workbench 负责各自的显式绑定和契约校验，不重复实现控件分支。
+
+`ParameterCaption` 与 `parameterLabel/parameterDescription` 是参数名称及说明的唯一展示实现，读取 owner 提供的 `presentation.labels/descriptions`，跟随当前语言，不按参数名推断业务语义。Workbench 的应用自定义标签独立保存，服务说明从消费契约读取。

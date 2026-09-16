@@ -40,7 +40,7 @@ func TestAggregateChildWritesReturnStableUniqueConflictCodes(t *testing.T) {
 	requireDomainErrorCode(t, err, "entity_attribute_column_conflict")
 
 	tableRepo := repository.NewLogicalTableRepository(db)
-	logicalTableService := NewLogicalTableService(tableRepo, entityRepo, repository.NewDWLayerRepository(db))
+	logicalTableService := NewLogicalTableService(tableRepo, repository.NewDWLayerRepository(db))
 	table := models.LogicalTable{TenantID: 1, Name: "Orders", Code: "orders", TableType: "fact", Status: "draft", CreatedBy: 1}
 	if err := db.Create(&table).Error; err != nil {
 		t.Fatalf("create logical table: %v", err)
@@ -106,7 +106,7 @@ func TestAggregateChildUpdatesReturnStableUniqueConflictCodes(t *testing.T) {
 	requireDomainErrorCode(t, err, "entity_attribute_column_conflict")
 
 	tableRepo := repository.NewLogicalTableRepository(db)
-	logicalTableService := NewLogicalTableService(tableRepo, entityRepo, repository.NewDWLayerRepository(db))
+	logicalTableService := NewLogicalTableService(tableRepo, repository.NewDWLayerRepository(db))
 	table := models.LogicalTable{TenantID: 1, Name: "Orders", Code: "orders", TableType: "fact", Status: "draft", CreatedBy: 1}
 	if err := db.Create(&table).Error; err != nil {
 		t.Fatalf("create logical table: %v", err)
@@ -121,7 +121,7 @@ func TestAggregateChildUpdatesReturnStableUniqueConflictCodes(t *testing.T) {
 	}
 	_, err = logicalTableService.UpdateField(secondField.Field.ID, table.ID, 1, &models.UpdateLogicalFieldRequest{
 		Version: secondField.Version, Name: "Code", ColumnName: "id", DataType: "string", Nullable: &trueValue, IsPK: &falseValue,
-		IsPartition: &falseValue, SortOrder: &zero, FieldRole: "regular",
+		SortOrder: &zero, FieldRole: "regular",
 	})
 	requireDomainErrorCode(t, err, "logical_field_column_conflict")
 

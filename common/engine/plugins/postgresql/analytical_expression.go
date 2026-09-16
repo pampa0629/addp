@@ -69,3 +69,11 @@ func (analyticalExpressionDialect) Comparable(sql string, typ datatype.FieldType
 	}
 	return sql, nil
 }
+
+func (analyticalExpressionDialect) TrimDecimalText(value string) string {
+	return "pg_catalog.rtrim(pg_catalog.rtrim(" + value + ", '0'), '.')"
+}
+
+func (analyticalExpressionDialect) ISODateText(value string) string {
+	return "pg_catalog.to_char(CAST(" + value + " AS timestamp without time zone), 'YYYY-MM-DD')"
+}

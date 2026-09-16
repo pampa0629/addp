@@ -44,6 +44,15 @@ func (p AnalyticalPlanPackage) Verify(instance AnalyticalInstance, c AnalyticalC
 	if c == nil || p.Compiler != c.Identity() || p.EngineID != instance.EngineID {
 		return ErrAnalyticalPlanChanged
 	}
+	if err := p.Validate(); err != nil {
+		return err
+	}
+	return checkAnalyticalRequest(CompileRequest{Plan: p.Plan, Sources: p.Sources, Instance: instance}, c)
+}
+
+// Validate checks frozen structure and integrity without consulting an engine.
+// It does not establish publication ownership or current instance support.
+func (p AnalyticalPlanPackage) Validate() error {
 	normalized, err := p.canonical()
 	if err != nil {
 		return err
@@ -55,7 +64,7 @@ func (p AnalyticalPlanPackage) Verify(instance AnalyticalInstance, c AnalyticalC
 	if p.PackageHash != analyticalHash(data) {
 		return ErrAnalyticalPlanChanged
 	}
-	return checkAnalyticalRequest(CompileRequest{Plan: p.Plan, Sources: p.Sources, Instance: instance}, c)
+	return nil
 }
 
 func (p AnalyticalPlanPackage) canonical() (AnalyticalPlanPackage, error) {
@@ -109,6 +118,7 @@ type CompiledQuery struct {
 	engineID    uint
 	parameters  []plan.Parameter
 	layout      AnalyticalResultLayout
+	sources     []SourceBinding
 }
 
 func NewCompiledQuery(r CompileRequest, identity CompilerIdentity, language, template string, evaluations []EvaluationCheck) (CompiledQuery, error) {
@@ -135,7 +145,20 @@ func NewCompiledQuery(r CompileRequest, identity CompilerIdentity, language, tem
 	if err != nil {
 		return CompiledQuery{}, err
 	}
-	return CompiledQuery{language: language, template: template, output: normalized.Plan.Output, compiler: identity, fingerprint: analyticalHash(data), engineID: r.Instance.EngineID, parameters: normalized.Plan.Parameters, layout: layout}, nil
+	return CompiledQuery{language: language, template: template, output: normalized.Plan.Output, compiler: identity, fingerprint: analyticalHash(data), engineID: r.Instance.EngineID, parameters: normalized.Plan.Parameters, layout: layout, sources: normalized.Sources}, nil
+}
+
+func (q CompiledQuery) sourceBindings() []SourceBinding {
+	out := append([]SourceBinding(nil), q.sources...)
+	for i := range out {
+		out[i].Path.Segments = append(out[i].Path.Segments[:0:0], out[i].Path.Segments...)
+		out[i].Columns = append(out[i].Columns[:0:0], out[i].Columns...)
+		for j := range out[i].Columns {
+			f := &out[i].Columns[j].Field
+			f.Path = append(f.Path[:0:0], f.Path...)
+		}
+	}
+	return out
 }
 func (q CompiledQuery) Language() string           { return q.language }
 func (q CompiledQuery) Template() string           { return q.template }

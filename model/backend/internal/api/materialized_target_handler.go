@@ -22,14 +22,14 @@ func NewMaterializedTargetHandler(materialization *service.MaterializationServic
 }
 
 // Decommission deletes the exact physical target currently registered by a logical table.
-// @Summary 退役逻辑表物化目标 | Decommission logical-table materialized target
-// @Description 校验逻辑表版本和精确目标确认后，仅删除由当前逻辑表管理标记拥有的 PostgreSQL 物理表；不修改逻辑表配置。| After validating the logical-table version, exact target confirmation, delete only the PostgreSQL table owned by the current logical-table marker; the logical-table definition is unchanged.
+// @Summary 删除逻辑表的目标物理表 | Delete logical-table physical target
+// @Description 校验逻辑表版本和精确目标确认后，仅删除由当前逻辑表管理标记拥有的 PostgreSQL 物理表；保留逻辑表及物理目标配置。| After validating the logical-table version and exact target confirmation, delete only the PostgreSQL table owned by the current logical-table marker; preserve the logical table and its physical-target configuration.
 // @Tags Model
 // @Accept json
 // @Produce json
 // @Param id path int true "逻辑表 ID | Logical table ID"
-// @Param request body models.MaterializedTargetDecommissionRequest true "物化目标精确确认 | Exact materialized target confirmation"
-// @Success 200 {object} models.MessageResponse "退役成功或目标已不存在 | Decommissioned or target already absent"
+// @Param request body models.PhysicalTargetDeleteRequest true "目标物理表精确确认 | Exact physical target confirmation"
+// @Success 200 {object} models.MessageResponse "删除成功或目标已不存在 | Deleted or target already absent"
 // @Failure 400 {object} models.ErrorResponse "请求或目标确认无效 | Invalid request or target confirmation"
 // @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
 // @Failure 403 {object} models.ErrorResponse "权限不足或没有目标引擎 DDL 权限 | Permission denied or target engine DDL access denied"
@@ -46,7 +46,7 @@ func (h *MaterializedTargetHandler) Decommission(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, errorResponseWithCode(commoni18n.T(c, modeli18n.MsgInvalidID), "invalid_id"))
 		return
 	}
-	var request models.MaterializedTargetDecommissionRequest
+	var request models.PhysicalTargetDeleteRequest
 	if err := commonapi.BindOptionalJSONStrict(c, &request); err != nil || request.Version <= 0 ||
 		strings.TrimSpace(request.TargetParentLocator) == "" || strings.TrimSpace(request.TargetName) == "" {
 		c.JSON(http.StatusBadRequest, invalidParamsResponse(c))
@@ -61,7 +61,7 @@ func (h *MaterializedTargetHandler) Decommission(c *gin.Context) {
 		writeServiceError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "decommissioned"})
+	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
 }
 
 func bearerCredential(header string) string {
@@ -73,8 +73,8 @@ func bearerCredential(header string) string {
 }
 
 // Create enqueues approved physical table creation in the unified execution queue.
-// @Summary 创建正式表 | Create physical target
-// @Description 提交统一执行队列，根据已审批模型创建正式表；同归属且结构一致时幂等成功，结构不一致拒绝；不执行数据加工。| Enqueue creation of an approved physical target, preserving existing data when ownership and structure match; reject structural drift.
+// @Summary 创建或校验目标物理表 | Create or verify physical target table
+// @Description 提交统一执行队列，根据已审批模型创建目标表；目标已存在且归属及结构一致时校验成功并保留数据，结构不一致时拒绝；不执行数据加工。| Enqueue creation of an approved physical target table; verify and preserve an existing table when ownership and structure match, and reject structural drift; do not process data.
 // @Tags Model
 // @Accept json
 // @Produce json

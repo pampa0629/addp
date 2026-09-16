@@ -63,10 +63,11 @@ Service 是 `service.definition.*`、`service.external_registration.*` 和 `serv
 - 查询服务 SQL 样例按 Engine capability 发现，不按 `engine_type` 固定列表。样例必须从当前 Engine Catalog 构造，并在当前用户的 `service.definition.create + service.data_read.execute` 边界内以最多 10 行真实执行且返回非空数据后才能展示；展示给发布表单的是不含 `LIMIT/OFFSET` 的基础 SQL，由查询服务执行层统一分页，不得回退到 `SELECT 1`、硬编码业务表或在样例 SQL 内固化分页。
 - 表、固定 SQL 和联邦 SQL 只表达查询服务的来源与执行绑定。REST Query、OGC API Features 和 WFS 必须共用唯一结构化查询内核；协议层不得拼接 SQL。发布契约必须包含非空唯一稳定排序键；业务数据查询统一使用 cursor/keyset 分页、读取 `limit + 1` 行判断下一页，默认不执行 `COUNT(*)`，不得保留 `page/offset`、原始 `filter/orderBy` 或兼容双轨。
 - SQL 模式 Query Service 可以声明强类型标量命名参数，SQL 只用 `:name` 引用；参数定义、SQL 引用和执行请求必须完全一致，并通过 `common` 查询运行层绑定，禁止字符串替换。表模式继续使用输出字段结构化筛选，不接受命名参数；Service 不接受关系、字段名、表名或 SQL 片段参数。
-- 指标来源计划采用已确认、待实施的数据库无关契约，规范见 [引擎插件接口规范](../docs/spec/addp引擎插件接口规范.md#数据库无关分析计算契约) 和 [Model 约束](../model/docs/model概念与数据约束规范.md#数据库无关计划与修订已确认设计待代码替换)。当前仍冻结指标 SQL 的阶段代码须在该重构中替换。
+- 指标来源计划采用数据库无关契约，规范见 [引擎插件接口规范](../docs/spec/addp引擎插件接口规范.md#数据库无关分析计算契约) 和 [Model 约束](../model/docs/model概念与数据约束规范.md#数据库无关计划与修订)。冻结 SQL 路径已删除。参数选项的多语言标签由 Model 的 `parameter_labels` 冻结，值域以 Plan 参数声明为准，Service 校验两者一致。
 - 指标来源使用显式 `config_type=analytical`，这是来源表达，不是新的执行通道；首期只能由 `metric_source.implementation_id/revision_id` 解析受信任 Model 发布包，客户端不得直接提交 Plan。不得与 sql/table 来源字段、runtime_engine_id 或调用方参数／输出覆盖并存。既有 SQL/table 查询来源继续各自规范，最终共用 PreparedQuery 授权与执行边界。
 - Service 冻结确定修订的 owner 引用、dependency_hash 和唯一 AnalyticalPlanPackage；命名参数、输出字段和稳定键作为该包的只读投影供 DTO、校验与 Consumer Descriptor 使用，不能另存可编辑副本。不把指标包拷贝到 SqlQuery，不要求原生 language 必须为 sql。
-- 已有服务切换指标来源继续只走 `PUT /query/:id/metric-source`：携带精确实现修订和 service_version，在行锁事务内核对后原子替换来源与消费契约；保留服务身份、访问设置和当前版本规则，清除旧来源专用字段。旧冻结 SQL 不能与新包并行执行，消费方仍须显式应用新契约。
+- 旧指标 SQL 发布记录迁移为停用的 analytical 来源，清除 SQL、重复引擎、参数、输出及稳定键副本，仅保留 owner 修订引用用于显式重新绑定；禁止自动生成或批准新修订。历史 Model 修订缺少计划包时须重新发布。
+- 已有服务切换指标来源继续只走 `PUT /query/:id/metric-source`：携带精确实现修订和 正整数 version（查询服务聚合根版本，不依赖可执行快照），在行锁事务内核对后原子替换来源与消费契约；保留服务身份、访问设置和当前版本规则，清除旧来源专用字段。旧冻结 SQL 不能与新包并行执行，消费方仍须显式应用新契约。
 - 每次指标查询先向 Model 验证指定修订与依赖，再校验当前引擎能力、本地 CompilerIdentity、请求参数和服务消费版本；撤回、漂移或实现版本不匹配即拒绝，不选最新版。MODEL_URL 与现有 Tenant Service Token 路径保留。
 - 指标的结果筛选、选择、排序及 keyset 分页由 Service 校验后形成中立 ResultRequest，Common 包装计划根节点再交给引擎编译；结果筛选不能改变原指标分母，分页不能裁剪原计划断言。参数值（包括结果过滤及 keyset 值）继续单次绑定；cursor 加密、limit+1、保护门禁及输出格式仍沿既有契约。不得进入旧指标 SQL 包装或拉回全量数据后在 Service 中补算。
 - 指标执行经既有 QueryRuntimeProvider.PrepareQuery、完整 ReadSet/OutputLineage 和 Service 数据保护门禁。编译期 SourceBindings 不是权限证明；受保护聚合来源不能证明允许输出时仍拒绝。新发布计划包和 Consumer Descriptor 必须同步验证，Workbench 不解析引擎、计划或原生查询。

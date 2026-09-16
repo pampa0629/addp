@@ -3108,6 +3108,19 @@ definitions:
         description: 任务状态端点
         type: string
     type: object
+  plugin.AnalyticalCapability:
+    properties:
+      plan_versions:
+        items:
+          type: string
+        type: array
+      semantic_profiles:
+        items:
+          type: string
+        type: array
+      supported:
+        type: boolean
+    type: object
   plugin.ChangeStreamReadCapability:
     properties:
       partitioned:
@@ -3483,6 +3496,8 @@ definitions:
     type: object
   plugin.QueryCapability:
     properties:
+      analytical:
+        $ref: '#/definitions/plugin.AnalyticalCapability'
       default_language:
         type: string
       federation:
@@ -4004,7 +4019,7 @@ paths:
       - develop.data_ddl.execute
       - develop.data_external_effect.execute
       - model.materialization.execute
-      - quality.check_task.execute
+      - quality.plan.execute
       - service.definition.create
       - service.data_read.execute
       x-addp-required-permissions:

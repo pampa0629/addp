@@ -68,6 +68,11 @@ func (r *Runner) Run(ctx context.Context) error {
 			if err := tx.Exec(file.Contents).Error; err != nil {
 				return fmt.Errorf("apply quality migration %s: %w", file.Name, err)
 			}
+			if file.Version == 10 {
+				if err := migrateQualityPlans(tx); err != nil {
+					return fmt.Errorf("migrate quality plans: %w", err)
+				}
+			}
 			if err := tx.Table("quality.schema_migrations").Create(&appliedMigration{
 				Version: file.Version, Filename: file.Name, SHA256: file.SHA256,
 			}).Error; err != nil {

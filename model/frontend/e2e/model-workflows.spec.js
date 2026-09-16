@@ -42,12 +42,58 @@ const LOGICAL_TABLE = {
   scd_type: 0,
   description: '',
   version: 1,
+  structural_constraints: { primary_key: [], required_fields: [], foreign_keys: [] },
   materialization: {
     target_parent_locator: 'addp://engine/2/path/public?type=schema&node_id=22',
-    target_name: 'dwd_province',
-    partition_by: '',
-    partition_type: 'range'
+    target_name: 'dwd_province'
   }
+}
+
+const OUTDOOR_CONCEPT_ENTITIES = [
+  { id: 70, tenant_id: 1, domain_id: 2, name: '户外参与', code: 'outdoor_participation', status: 'approved', version: 3 },
+  { id: 71, tenant_id: 1, domain_id: 2, name: '户外人员', code: 'outdoor_person', status: 'approved', version: 2 }
+]
+
+const OUTDOOR_CONCEPT_MAPPINGS = {
+  version: 4,
+  table_mappings: [{
+    id: 101,
+    table_id: 2,
+    entity_id: 70,
+    entity_name: '户外参与',
+    entity_code: 'outdoor_participation',
+    mapping_role: 'represents',
+    entity_version: 3,
+    current_entity_version: 3,
+    in_sync: true
+  }],
+  field_mappings: [{
+    id: 102,
+    table_id: 2,
+    field_id: 21,
+    field_name: '参与人编号',
+    field_column_name: 'person_id',
+    entity_id: 70,
+    entity_attribute_id: 701,
+    entity_name: '户外参与',
+    entity_code: 'outdoor_participation',
+    entity_attribute_name: '参与人编号',
+    attribute_column_name: 'person_id',
+    mapping_role: 'direct'
+  }],
+  relation_mappings: [{
+    id: 103,
+    table_id: 2,
+    table_relation_id: 201,
+    entity_relation_id: 301,
+    entity_relation_name: '参与人',
+    source_entity_name: '户外人员',
+    target_entity_name: '户外参与',
+    orientation: 'inverse',
+    entity_relation_version: 2,
+    current_entity_relation_version: 2,
+    in_sync: true
+  }]
 }
 
 const DW_LAYER = {
@@ -57,7 +103,6 @@ const DW_LAYER = {
   layer_name: '明细层',
   description: '明细数据分层',
   naming_rule: 'dwd_{domain}_{entity}',
-  quality_sla: {},
   sort_order: 2,
   version: 1
 }
@@ -197,6 +242,37 @@ test('preserves an unsaved logical-table draft when another page advances the ag
   }
 })
 
+test('walks the outdoor conceptual model directly into its fact table without a second logical-table set', async ({ page }) => {
+  const backend = await installMockBackend(page, {
+    conceptMappings: true,
+    permissions: [...DEFAULT_PERMISSIONS, 'model.logical_model.update']
+  })
+
+  await page.goto('/logical-tables/2?domain_id=2&tab=concept-mappings')
+
+  await expect(page.getByRole('tab', { name: '概念实现映射', exact: true })).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByText('维度表、事实表就是实体概念的实现，不需要再建立一套中间逻辑表。', { exact: false })).toBeVisible()
+  const tableMappingCard = page.locator('.concept-mapping-editor .el-card').first()
+  const fieldMappingCard = page.locator('.concept-mapping-editor .el-card').nth(1)
+  const relationMappingCard = page.locator('.concept-mapping-editor .el-card').nth(2)
+  await expect(tableMappingCard.getByText('户外参与 (outdoor_participation)', { exact: true })).toBeVisible()
+  await expect(fieldMappingCard.getByText('户外参与.参与人编号 (person_id)', { exact: true })).toBeVisible()
+  await expect(relationMappingCard.getByText('户外人员 → 户外参与 (参与人)', { exact: true })).toBeVisible()
+
+  await tableMappingCard.locator('.el-select').nth(1).click()
+  await page.getByRole('option', { name: '派生自实体', exact: true }).click()
+  await page.locator('.concept-mapping-editor .mapping-toolbar').getByRole('button', { name: '保存', exact: true }).click()
+
+  await expect(page.getByRole('alert').filter({ hasText: '保存成功' })).toBeVisible()
+  await expect(page.getByText('逻辑表聚合版本：5', { exact: true })).toBeVisible()
+  expect(backend.getConceptMappingWrites()).toEqual([{
+    version: 4,
+    table_mappings: [{ entity_id: 70, mapping_role: 'derives_from' }],
+    field_mappings: [{ field_id: 21, entity_attribute_id: 701, mapping_role: 'direct' }],
+    relation_mappings: [{ table_relation_id: 201, entity_relation_id: 301, orientation: 'inverse' }]
+  }])
+})
+
 test('keeps the DW-layer edit dialog and draft open after a version conflict', async ({ page }) => {
   const backend = await installMockBackend(page, {
     dwLayerConflict: true,
@@ -277,6 +353,26 @@ test('reads a selected Mermaid Markdown file before previewing the incremental i
   await expect(importDialog).toContainText('预计创建 1 个实体、0 个关系')
 })
 
+test('shows a composite primary key and outgoing references as read-only model constraints', async ({ page }) => {
+  await installMockBackend(page)
+  const primaryKey = [{ field_id: 21, column_name: 'person_id' }, { field_id: 22, column_name: 'activity_id' }]
+  await page.route('**/api/v1/model/logical-tables/2', route => fulfillJSON(route, {
+    ...LOGICAL_TABLE,
+    structural_constraints: {
+      primary_key: primaryKey,
+      required_fields: [...primaryKey, { field_id: 23, column_name: 'member_status' }],
+      foreign_keys: [{ id: 1, source_field_code: 'person_id', target_table_code: 'dim_outdoor_person', target_field_code: 'person_id' }]
+    }
+  }))
+  await page.goto('/logical-tables/2')
+  const constraints = page.locator('.el-card').filter({ has: page.getByText('结构约束', { exact: true }) })
+  await expect(constraints.getByText('person_id + activity_id', { exact: true })).toBeVisible()
+  await expect(constraints.getByText('person_id, activity_id, member_status', { exact: true })).toBeVisible()
+  await expect(constraints.getByText('dim_outdoor_person', { exact: true })).toBeVisible()
+  await expect(constraints.getByRole('button')).toHaveCount(0)
+  await expect(page.getByText('未保存', { exact: true })).toHaveCount(0)
+})
+
 test.describe('DDL preview', () => {
   test.use({ viewport: { width: 620, height: 560 }, colorScheme: 'dark' })
 
@@ -284,8 +380,9 @@ test.describe('DDL preview', () => {
     const backend = await installMockBackend(page, { theme: 'dark' })
 
     await page.goto('/logical-tables/2?domain_id=1')
-    await expect(page.getByRole('button', { name: '预览 DDL', exact: true })).toBeVisible()
-    await page.getByRole('button', { name: '预览 DDL', exact: true }).click()
+    await page.getByRole('tab', { name: '物理目标', exact: true }).click()
+    await expect(page.getByRole('button', { name: '预览建表语句', exact: true })).toBeVisible()
+    await page.getByRole('button', { name: '预览建表语句', exact: true }).click()
 
     const dialog = page.locator('.el-dialog.addp-dialog:visible')
     await expect(dialog).toHaveCount(1)
@@ -306,9 +403,10 @@ for (const draftTable of [false, true]) {
     const backend = await installMockBackend(page, { draftTable })
     await page.goto('/logical-tables/2')
     await expect(page.getByRole('textbox', { name: '逻辑表名', exact: true })).toBeDisabled()
+    await page.getByRole('tab', { name: '物理目标', exact: true }).click()
     await expect(page.locator('.resource-tree-picker')).toHaveCount(0)
     await expect(page.getByText('未保存', { exact: true })).toHaveCount(0)
-    await page.getByRole('button', { name: '预览 DDL', exact: true }).click()
+    await page.getByRole('button', { name: '预览建表语句', exact: true }).click()
     await expect(page.locator('.ddl-wrapper')).toBeVisible()
     expect(backend.getDDLRequests()[0].materialization.target_parent_locator).toBe(LOGICAL_TABLE.materialization.target_parent_locator)
     await page.locator('.el-dialog:visible .el-dialog__headerbtn').click()
@@ -323,8 +421,9 @@ for (const missingTarget of [false, true]) {
     const backend = await installMockBackend(page, { draftTable: true, withoutNodeID: true, missingTarget, permissions: [...DEFAULT_PERMISSIONS, 'model.logical_model.update'] })
     const restored = page.waitForResponse(response => response.url().includes('/resource-tree/2/ancestors'))
     await page.goto('/logical-tables/2')
+    await page.getByRole('tab', { name: '物理目标', exact: true }).click()
     await restored
-    await page.getByRole('button', { name: '预览 DDL', exact: true }).click()
+    await page.getByRole('button', { name: '预览建表语句', exact: true }).click()
     await expect(page.locator('.ddl-wrapper')).toBeVisible()
     expect(backend.getDDLRequests()[0].materialization.target_parent_locator).toBe('addp://engine/2/path/public?type=schema')
     await expect(page.getByText('未保存', { exact: true })).toHaveCount(0)
@@ -334,7 +433,9 @@ for (const missingTarget of [false, true]) {
 test('dialog baselines track real edits and preserve the page draft when discarded', async ({ page }) => {
   await installMockBackend(page, { draftTable: true, lifecycle: true, permissions: [...DEFAULT_PERMISSIONS, 'model.logical_model.update', 'model.logical_model.create'] })
   await page.goto('/logical-tables/2')
+  await page.getByRole('tab', { name: '物理目标', exact: true }).click()
   await expect(page.locator('.resource-tree-picker')).toBeVisible()
+  await page.getByRole('tab', { name: '模型定义', exact: true }).click()
   await expect(page.getByText('未保存', { exact: true })).toHaveCount(0)
   await page.getByRole('row').filter({ hasText: '编号' }).getByRole('button', { name: '编辑', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: '编辑字段' })
@@ -526,6 +627,7 @@ async function installMockBackend(target, options = {}) {
   let entityListRequests = 0
   let entity = structuredClone(ENTITIES[0])
   let logicalTable = structuredClone(LOGICAL_TABLE)
+  let conceptMappings = structuredClone(OUTDOOR_CONCEPT_MAPPINGS)
   let reopenRequests = 0
   let dwLayer = structuredClone(DW_LAYER)
   if (options.concurrentLogicalTable || options.draftTable) logicalTable.status = 'draft'
@@ -538,7 +640,22 @@ async function installMockBackend(target, options = {}) {
   const dwLayerUpdateVersions = []
   const mermaidImports = []
   const mermaidExports = []
+  const conceptMappingWrites = []
   const permissions = options.permissions || DEFAULT_PERMISSIONS
+
+  if (options.conceptMappings) {
+    logicalTable = {
+      ...logicalTable,
+      domain_id: 2,
+      name: '户外参与事实',
+      code: 'dwd_outdoor_participation',
+      table_type: 'fact',
+      layer: 'dwd',
+      status: 'draft',
+      grain_description: '每次人员参与户外活动一行',
+      version: conceptMappings.version
+    }
+  }
 
   await target.addInitScript(({ theme }) => {
     localStorage.setItem('addp-lang', 'zh-cn')
@@ -622,6 +739,9 @@ async function installMockBackend(target, options = {}) {
       dwLayer = { ...dwLayer, ...body, version: dwLayer.version + 1 }
       return fulfillJSON(route, dwLayer)
     }
+    if (path === '/api/v1/model/entities/70/attributes' && options.conceptMappings) {
+      return fulfillJSON(route, [{ id: 701, entity_id: 70, name: '参与人编号', column_name: 'person_id', data_type: 'string' }])
+    }
     if (path === '/api/v1/model/entities/7/attributes') return fulfillJSON(route, [])
     if (path === '/api/v1/model/entities/7' && request.method() === 'GET') {
       return fulfillJSON(route, entity)
@@ -638,6 +758,9 @@ async function installMockBackend(target, options = {}) {
       entity = { ...entity, ...body, version: entity.version + 1 }
       return fulfillJSON(route, entity)
     }
+    if (path === '/api/v1/model/entity-relations' && options.conceptMappings) {
+      return fulfillJSON(route, [{ id: 301, source_entity: 71, target_entity: 70, name: '参与人', relation_type: 'one_to_many', version: 2 }])
+    }
     if (path === '/api/v1/model/entity-relations') return fulfillJSON(route, [])
     if (path === '/api/v1/model/entities' && request.method() === 'GET') {
       entityListRequests += 1
@@ -648,7 +771,7 @@ async function installMockBackend(target, options = {}) {
         }, 403)
       }
       const domainID = Number(url.searchParams.get('domain_id'))
-      const entities = options.concurrentEntity ? [entity] : ENTITIES
+      const entities = options.conceptMappings ? OUTDOOR_CONCEPT_ENTITIES : options.concurrentEntity ? [entity] : ENTITIES
       const data = domainID ? entities.filter(item => item.domain_id === domainID) : entities
       return fulfillJSON(route, { data, total: data.length })
     }
@@ -656,6 +779,12 @@ async function installMockBackend(target, options = {}) {
       fieldName = request.postDataJSON().name
       logicalTable.version += 1
       return fulfillJSON(route, { field: { id: 21, name: fieldName }, version: logicalTable.version })
+    }
+    if (path === '/api/v1/model/logical-tables/2/fields' && options.conceptMappings) {
+      return fulfillJSON(route, [{
+        id: 21, table_id: 2, name: '参与人编号', column_name: 'person_id', data_type: 'string', is_pk: false,
+        nullable: false, field_role: 'dimension_fk'
+      }])
     }
     if (path === '/api/v1/model/logical-tables/2/fields') return fulfillJSON(route, options.lifecycle ? [{
       id: 21, table_id: 2, name: fieldName, column_name: 'code', data_type: 'string', is_pk: true, nullable: false, field_role: 'regular',
@@ -682,6 +811,35 @@ async function installMockBackend(target, options = {}) {
     if (path === '/api/v1/model/logical-tables/2' && request.method() === 'GET') {
       return fulfillJSON(route, logicalTable)
     }
+    if (path === '/api/v1/model/logical-tables/2/dimension-relations' && options.conceptMappings) {
+      return fulfillJSON(route, [{
+        id: 201,
+        source_table: 2,
+        source_field: 21,
+        source_field_name: '参与人编号',
+        source_field_code: 'person_id',
+        target_table: 3,
+        target_table_name: '户外人员维度',
+        target_field: 31,
+        target_field_name: '人员编号',
+        target_field_code: 'person_id',
+        relation_type: 'fk'
+      }])
+    }
+    if (path === '/api/v1/model/logical-tables/2/concept-mappings' && request.method() === 'GET' && options.conceptMappings) {
+      return fulfillJSON(route, conceptMappings)
+    }
+    if (path === '/api/v1/model/logical-tables/2/concept-mappings' && request.method() === 'PUT' && options.conceptMappings) {
+      const body = request.postDataJSON()
+      conceptMappingWrites.push(body)
+      conceptMappings = {
+        ...conceptMappings,
+        version: conceptMappings.version + 1,
+        table_mappings: conceptMappings.table_mappings.map(mapping => ({ ...mapping, mapping_role: body.table_mappings[0].mapping_role }))
+      }
+      logicalTable.version = conceptMappings.version
+      return fulfillJSON(route, conceptMappings)
+    }
 
     return fulfillJSON(route, {
       error: `Unexpected E2E request: ${request.method()} ${path}`
@@ -697,6 +855,7 @@ async function installMockBackend(target, options = {}) {
     getLogicalTableUpdateVersions: () => [...logicalTableUpdateVersions],
     getMermaidImports: () => structuredClone(mermaidImports),
     getMermaidExports: () => structuredClone(mermaidExports),
+    getConceptMappingWrites: () => structuredClone(conceptMappingWrites),
     getUpdateVersions: () => [...updateVersions]
   }
 }
@@ -737,11 +896,13 @@ test('approved table queues materialization and links only its task executions w
  let calls=0
  await page.route('**/api/v1/model/logical-tables/2/materialized-target',async route=>{calls++;expect(route.request().postDataJSON()).toEqual({version:1});await new Promise(r=>setTimeout(r,150));return fulfillJSON(route,{execution_id:'11111111-1111-4111-8111-111111111111',status:'pending'})})
  await page.goto('/logical-tables/2')
- await page.getByRole('button',{name:'创建正式表',exact:true}).click()
- await expect(page.getByRole('alert').filter({hasText:'建表任务已提交'})).toBeVisible()
+ await page.getByRole('tab', { name: '物理目标', exact: true }).click()
+ await expect(page.getByText('业务库', { exact: false })).toBeVisible()
+ await expect(page.getByText('(postgresql)', { exact: true })).toBeVisible()
+ await page.getByRole('button',{name:'创建/校验目标表',exact:true}).click()
+ await expect(page.getByRole('alert').filter({hasText:'建表校验任务已提交'})).toBeVisible()
  expect(calls).toBe(1)
  await expect(page.getByText('未保存',{exact:true})).toHaveCount(0)
- await expect(page.getByRole('button',{name:'物化流程',exact:true})).toHaveCount(0)
  await page.context().route('**/monitor/executions?**', route => route.fulfill({ status: 200, contentType: 'text/html', body: '<p>Execution monitor</p>' }))
  const popupPromise = page.waitForEvent('popup')
  await page.getByRole('button', { name: '在统一监控中查看', exact: true }).click()

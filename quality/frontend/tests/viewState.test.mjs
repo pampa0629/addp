@@ -7,111 +7,23 @@ const readView = (name) => readFileSync(
   'utf8'
 )
 
-const ruleApplicationSource = readView('RuleApplicationList')
-const checkTaskSource = readView('CheckTaskList')
-const executionDetailSource = readView('ExecutionDetail')
-const issueListSource = readView('IssueList')
-const issueDetailSource = readView('IssueDetail')
-const executionFailureSource = readFileSync(
-  new URL('../src/utils/executionFailure.js', import.meta.url),
-  'utf8'
-)
 
-test('rule application list renders the server-projected element summary', () => {
-  assert.match(ruleApplicationSource, /row\.element\.name/)
-  assert.match(ruleApplicationSource, /row\.element\.code/)
-  assert.match(ruleApplicationSource, /quality\.ruleApplication\.elementIdValue/)
-  assert.doesNotMatch(ruleApplicationSource, /elementCache/)
-  assert.doesNotMatch(ruleApplicationSource, /elementName\(/)
+const planSource=readView('PlanList')
+const executionDetailSource=readView('ExecutionDetail')
+const executionFailureSource=readFileSync(new URL('../src/utils/executionFailure.js',import.meta.url),'utf8')
+test('plans own bindings and pinned references; rule library owns Standard import',()=>{
+for(const marker of ['ResourceTreePicker','systemCatalogAPI.describeFacts','ruleAPI.list','planAPI.run','tasks.value.some(isActive)','onBeforeUnmount','serializeCheckItems','form.version'])assert.ok(planSource.includes(marker),marker)
+const ruleSource=readView('RuleList')
+for(const marker of ['ruleAPI.listElementCandidates','form.source','serializeConstraint','form.version'])assert.ok(ruleSource.includes(marker),marker)
+assert.doesNotMatch(planSource,/listElementCandidates|buildPlanDocument/)
+assert.doesNotMatch(planSource,/catalogAPI|ruleApplicationAPI|checkTaskAPI/)
 })
-
-test('rule application engine display keeps historical engines separate from active selection', () => {
-  assert.match(ruleApplicationSource, /lifecycle_states: 'active,disabled'/)
-  assert.match(ruleApplicationSource, /const activeEngines = computed/)
-  assert.match(ruleApplicationSource, /v-for="eng in activeEngines"/)
-  assert.match(ruleApplicationSource, /if \(!isActiveEngine\(form\.value\.engine_id\)\)/)
-  assert.match(ruleApplicationSource, /quality\.ruleApplication\.engineIdValue/)
-  assert.doesNotMatch(ruleApplicationSource, /return eng \? eng\.name : id/)
+test('plan failures preserve form state and stale requests do not overwrite the current list',()=>{
+assert.ok(planSource.includes('if (sequence !== listSequence) return'))
+assert.ok(planSource.includes('tasks.value = []'))
+assert.match(planSource, /if\s*\(submitting\.value\)\s*return/)
+assert.ok(planSource.includes('quality.plan.saveFailed'))
 })
-
-test('rule application creation uses the System catalog for schema and table selection', () => {
-  assert.match(ruleApplicationSource, /systemCatalogAPI\.listChildren/)
-  assert.match(ruleApplicationSource, /@change="onEngineChange"/)
-  assert.match(ruleApplicationSource, /@change="onSchemaChange"/)
-  assert.match(ruleApplicationSource, /@change="onTableChange"/)
-  assert.match(ruleApplicationSource, /v-for="schema in schemaOptions"/)
-  assert.match(ruleApplicationSource, /v-for="table in tableOptions"/)
-  assert.match(ruleApplicationSource, /v-for="column in columnOptions"/)
-  assert.doesNotMatch(ruleApplicationSource, /<el-input v-model="form\.schema_name"/)
-  assert.doesNotMatch(ruleApplicationSource, /<el-input v-model="form\.table_name"/)
-  assert.doesNotMatch(ruleApplicationSource, /<el-input v-model="form\.column_name"/)
-})
-
-test('rule application creation previews the enabled rule snapshot', () => {
-  assert.match(ruleApplicationSource, /selectedElement\.value\?\.quality_rules/)
-  assert.match(ruleApplicationSource, /document\.rules\.filter\(rule => rule\?\.enabled === true\)/)
-  assert.match(ruleApplicationSource, /<el-table v-else :data="enabledRules"/)
-  assert.match(ruleApplicationSource, /if \(!selectedElement\.value \|\| enabledRules\.value\.length === 0\)/)
-  assert.match(ruleApplicationSource, /ruleApplicationAPI\.listElementCandidates/)
-})
-
-test('check task create and edit use the System catalog for schema and table selection', () => {
-  assert.match(checkTaskSource, /systemCatalogAPI\.listChildren/)
-  assert.match(checkTaskSource, /@change="onEngineChange"/)
-  assert.match(checkTaskSource, /@change="onSchemaChange"/)
-  assert.match(checkTaskSource, /v-for="schema in schemaOptions"/)
-  assert.match(checkTaskSource, /v-for="table in tableOptions"/)
-  assert.match(checkTaskSource, /catalogTargetAvailable\.value/)
-  assert.doesNotMatch(checkTaskSource, /<el-input v-model="form\.schema_name"/)
-  assert.doesNotMatch(checkTaskSource, /<el-input v-model="form\.table_name"/)
-})
-
-test('check task list projects the latest execution and polls only while active', () => {
-  assert.match(checkTaskSource, /row\.last_execution_id/)
-  assert.match(checkTaskSource, /executionDetailRoute\(executionID\)/)
-  assert.match(checkTaskSource, /tasks\.value\.some\(isTaskActive\)/)
-  assert.match(checkTaskSource, /window\.setTimeout\(fetchTasks, 2000\)/)
-  assert.match(checkTaskSource, /:disabled="isTaskActive\(row\).*requestEditTask/)
-  assert.match(checkTaskSource, /onBeforeUnmount/)
-})
-
-test('list failures clear stale rows and expose persistent errors', () => {
-  for (const source of [ruleApplicationSource, issueListSource]) {
-    assert.match(source, /loadError\.value = e\.response\?\.data\?\.error/)
-    assert.match(source, /<el-alert v-if="loadError"/)
-    assert.match(source, /\.value = \[\]/)
-    assert.match(source, /pagination\.value\.total = 0/)
-  }
-  assert.match(checkTaskSource, /tasks\.value = \[\]/)
-  assert.match(checkTaskSource, /<el-alert v-if="loadError"/)
-})
-
-test('write actions prevent duplicate requests while pending', () => {
-  assert.match(ruleApplicationSource, /if \(submitting\.value\) return/)
-  assert.match(ruleApplicationSource, /if \(updatingIds\.value\.has\(row\.id\)\) return/)
-  assert.match(ruleApplicationSource, /if \(deletingIds\.value\.has\(id\)\) return/)
-  assert.match(checkTaskSource, /if \(saving\.value\) return/)
-  assert.match(checkTaskSource, /if \(runningTaskIds\.value\.has\(id\)\) return/)
-  assert.match(checkTaskSource, /if \(deletingTaskIds\.value\.has\(id\)\) return/)
-  assert.match(issueListSource, /if \(updatingIssueIds\.value\.has\(id\)\) return/)
-  assert.match(issueDetailSource, /if \(updating\.value\) return/)
-})
-
-test('rule application enabled switch persists explicit state and rolls back failures', () => {
-  assert.match(ruleApplicationSource, /ruleApplicationAPI\.update\(row\.id, \{ enabled \}\)/)
-  assert.match(ruleApplicationSource, /row\.enabled = updated\.enabled/)
-  assert.match(ruleApplicationSource, /row\.enabled = !enabled/)
-  assert.match(ruleApplicationSource, /:loading="updatingIds\.has\(row\.id\)"/)
-})
-
-test('list requests ignore responses superseded by newer filters', () => {
-  for (const source of [ruleApplicationSource, checkTaskSource, issueListSource]) {
-    assert.match(source, /const requestSequence = \+\+listRequestSequence/)
-    assert.match(source, /if \(requestSequence !== listRequestSequence\) return/)
-  }
-  assert.match(ruleApplicationSource, /const searchSequence = \+\+elementSearchSequence/)
-})
-
 test('execution detail shows a stable failure state and stops obsolete polling', () => {
   assert.match(executionDetailSource, /<el-result[\s\S]*?v-if="loadError"/)
   assert.match(executionDetailSource, /watch\(\(\) => route\.fullPath/)

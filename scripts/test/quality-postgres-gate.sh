@@ -13,6 +13,10 @@ cleanup() {
 trap cleanup EXIT
 
 database=${ADDP_TEST_POSTGRES_DATABASE:-addp_test}
+if [[ "${CI:-}" != "true" && "$database" != "addp_test" ]]; then
+    echo "Local Quality tests must use addp_test" >&2
+    exit 1
+fi
 case "$database" in
     *test*|*disposable*) ;;
     *)
@@ -38,3 +42,7 @@ cd "$ROOT_DIR/quality/backend"
 for package in ./internal/migration ./internal/repository ./internal/service; do
     run_without_skips "$package"
 done
+
+# Quality task identities are also referenced in Orchestrator-owned definitions.
+cd "$ROOT_DIR/orchestrator/backend"
+run_without_skips ./internal/repository

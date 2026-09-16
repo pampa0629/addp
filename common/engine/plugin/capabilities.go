@@ -261,6 +261,7 @@ type QueryCapability struct {
 	ReadSession      bool                       `json:"read_session,omitempty"`
 	Parameters       *QueryParameterCapability  `json:"parameters,omitempty"`
 	Federation       *QueryFederationCapability `json:"federation,omitempty"`
+	Analytical       *AnalyticalCapability      `json:"analytical,omitempty"`
 }
 
 type QueryParameterCapability struct {
@@ -299,6 +300,9 @@ type InferenceCapability struct {
 }
 
 func MarshalEngineCapabilities(capabilities EngineCapabilities) (string, error) {
+	if err := validateAnalyticalQueryCapability(capabilities.Compute); err != nil {
+		return "", err
+	}
 	if capabilities.SchemaVersion == "" {
 		capabilities.SchemaVersion = CapabilitiesSchemaVersion
 	}
@@ -316,6 +320,9 @@ func ParseEngineCapabilities(capabilitiesJSON string) (*EngineCapabilities, erro
 
 	var capabilities EngineCapabilities
 	if err := json.Unmarshal([]byte(capabilitiesJSON), &capabilities); err != nil {
+		return nil, err
+	}
+	if err := validateAnalyticalQueryCapability(capabilities.Compute); err != nil {
 		return nil, err
 	}
 

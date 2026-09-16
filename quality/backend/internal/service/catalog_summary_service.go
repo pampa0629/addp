@@ -43,7 +43,6 @@ func (s *CatalogSummaryService) Resolve(ctx context.Context, tenantID int64, ref
 		fact, exists := facts[qualityCatalogSummaryKey(reference)]
 		if exists {
 			result.Configured = true
-			result.CheckTaskID = fact.Task.ID
 			result.LastExecutionID = fact.Task.LastExecutionID
 			result.LastExecutionStatus = fact.Task.LastExecutionStatus
 			result.OpenIssueCount = fact.OpenIssues
@@ -52,7 +51,7 @@ func (s *CatalogSummaryService) Resolve(ctx context.Context, tenantID int64, ref
 			if result.LastExecutionID != "" {
 				result.DetailPath = "/quality/executions/" + result.LastExecutionID
 			} else {
-				result.DetailPath = "/quality/check-tasks"
+				result.DetailPath = "/quality/plans"
 			}
 		}
 		results = append(results, result)

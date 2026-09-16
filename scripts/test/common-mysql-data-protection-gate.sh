@@ -26,7 +26,7 @@ fi
 cd "$ROOT_DIR/common"
 ADDP_MYSQL_INTEGRATION=1 \
     go test ./engine/plugins/mysql \
-    -run '^TestIntegrationMySQL(AnalyticalScan|AnalyticalRelations|AnalyticalCalendar|AnalyticalExpressions|AnalyticalArithmetic|LosslessAnalyticalInteger|BoundedWatermarkResumeAndIdempotentUpsert|DataProtectionReadContracts)$' \
+    -run '^TestIntegrationMySQL(AnalyticalInstance|AnalyticalText|AnalyticalDateBuckets|AnalyticalScan|AnalyticalRelations|AnalyticalCalendar|AnalyticalExpressions|AnalyticalArithmetic|LosslessAnalyticalInteger|BoundedWatermarkResumeAndIdempotentUpsert|DataProtectionReadContracts)$' \
     -count=1 -v 2>&1 | tee "$WORK_DIR/common-mysql-data-protection.log"
 
 if grep -q -- '--- SKIP:' "$WORK_DIR/common-mysql-data-protection.log"; then

@@ -6,6 +6,10 @@
     </div>
 
     <!-- 步骤条（仅新建模式显示） -->
+    <el-alert v-if="versionConflict" type="warning" :closable="false" style="margin-bottom: 16px">
+      {{ t('service.query.versionConflict') }}
+      <el-button link type="primary" @click="reloadDefinition">{{ t('service.query.reloadDefinition') }}</el-button>
+    </el-alert>
     <el-steps
       v-if="!isEdit"
       :active="currentStep"
@@ -430,7 +434,7 @@ import ParameterValueInput from '../../../../common-frontend/basic/src/component
 import { parameterControlType, parameterOptionsAllow, validParameterOptions } from '../../../../common-frontend/basic/src/utils/parameterInput.mjs'
 import { ref, reactive, computed, onMounted, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Grid, Document, Search } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import queryServiceAPI from '@/api/queryService'
@@ -474,7 +478,17 @@ const tablePickerRef = ref(null)
 const isEdit = computed(() => !!route.params.id)
 
 // 表单数据
+const versionConflict = ref(false)
+const reloadDefinition = async () => {
+  try {
+    await ElMessageBox.confirm(t('service.query.reloadDiscardConfirm'), t('service.query.reloadDefinition'), {
+      confirmButtonText: t('service.common.confirm'), cancelButtonText: t('service.common.cancel'), type: 'warning'
+    })
+    window.location.reload()
+  } catch { /* Keep unsaved input when reload is cancelled. */ }
+}
 const form = reactive({
+  version: null,
   config_type: 'table',
   engine_id: null,
   runtime_engine_id: null,
@@ -899,6 +913,7 @@ const parseFieldInput = value => String(value || '').split(',').map(field => fie
 
 // 方法：提交表单
 const handleSubmit = async () => {
+  if (versionConflict.value) return
   submitting.value = true
   try {
     // 构建请求数据
@@ -935,7 +950,7 @@ const handleSubmit = async () => {
       }
     }
     // SQL 模式特有字段
-    else {
+    else if (form.config_type === 'sql') {
       if (form.runtime_engine_id) {
         requestData.runtime_engine_id = form.runtime_engine_id
       } else {
@@ -970,7 +985,17 @@ const handleSubmit = async () => {
 
     // 提交
     if (isEdit.value) {
-      await queryServiceAPI.updateService(route.params.id, requestData)
+      const updated = await queryServiceAPI.updateService(route.params.id, {
+        version: form.version,
+        title: requestData.title,
+        description: requestData.description,
+        keywords: requestData.keywords,
+        public_access: requestData.public_access,
+        max_features: requestData.max_features,
+        protocols: requestData.protocols,
+        ...(requestData.data_config ? { data_config: requestData.data_config } : {})
+      })
+      form.version = updated.version
       ElMessage.success(t('service.query.updateSuccess'))
     } else {
       await queryServiceAPI.createService(requestData)
@@ -979,6 +1004,11 @@ const handleSubmit = async () => {
 
     await navigateServiceRoute(router, '/query-services', { history: 'replace' })
   } catch (error) {
+    if (error.response?.data?.error_code === 'resource_version_conflict') {
+      versionConflict.value = true
+      ElMessage.warning(t('service.query.versionConflict'))
+      return
+    }
     ElMessage.error(t('service.query.submitFailed') + ': ' + (error.response?.data?.error || error.message || t('service.common.unknownError')))
     console.error('Failed to submit:', error)
   } finally {
@@ -1007,6 +1037,7 @@ onMounted(async () => {
       Object.assign(form, {
         service_name: service.service_name,
         title: service.title,
+        version: service.version,
         description: service.description,
         keywords: service.keywords || [],
         public_access: service.public_access,
@@ -1055,8 +1086,8 @@ onMounted(async () => {
 		  extent: spatial.extent || null
 		} : { hasGeometry: false }
 	  } else {
-		sqlOutputContract.value = { table: snapshot?.table || null, spatial: spatial || null }
-		sqlStableKey.value = service.data_config?.stable_key || []
+		sqlOutputContract.value = service.output_contract
+		sqlStableKey.value = service.stable_key || []
 		sqlHasGeometry.value = !!primary
 		sqlGeometryColumn.value = primary?.name || ''
 		sqlSrid.value = primary?.srid || spatial?.srid || 0

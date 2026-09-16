@@ -40,7 +40,7 @@ describe('Standard revision form mapping', () => {
     })
   })
 
-  it('builds one canonical element revision payload and preserves rule identity', () => {
+  it('submits semantic constraints without an independently editable rule document', () => {
     const payload = buildElementRevisionPayload({
       name: 'Amount',
       definition: 'Transaction amount',
@@ -53,11 +53,12 @@ describe('Standard revision form mapping', () => {
       example_values: ['12.50'],
       change_summary: 'Define amount',
       effective_from: '2026-09-01T00:00:00+08:00'
-    }, 4, '00000000-0000-4000-8000-000000000001', true)
+    }, 4)
 
     expect(payload.version).toBe(4)
     expect(payload.code_set_revision_id).toBeNull()
-    expect(payload.extra_quality_rules.rules[0].rule_key).toBe('00000000-0000-4000-8000-000000000001')
+    expect(payload).not.toHaveProperty('extra_quality_rules')
+    expect(payload).not.toHaveProperty('compiled_quality_rules')
     expect(payload.effective_to).toBeNull()
   })
 

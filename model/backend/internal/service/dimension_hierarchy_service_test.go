@@ -44,7 +44,7 @@ func TestDimensionHierarchyUsesLogicalTableAggregateVersion(t *testing.T) {
 	if len(items) != 1 || len(items[0].Levels) != 1 || items[0].Levels[0].LevelName != "Year" {
 		t.Fatalf("unexpected hierarchy list: %+v", items)
 	}
-	_, err = NewLogicalTableService(repository.NewLogicalTableRepository(db), nil, nil).DeleteField(field.ID, table.ID, 1, level.Version)
+	_, err = NewLogicalTableService(repository.NewLogicalTableRepository(db), nil).DeleteField(field.ID, table.ID, 1, level.Version)
 	requireDomainErrorCode(t, err, "dimension_hierarchy_field_in_use")
 
 	_, err = svc.Update(created.Hierarchy.ID, table.ID, 1, &models.UpdateDimensionHierarchyRequest{Version: 2, Name: "Stale"})

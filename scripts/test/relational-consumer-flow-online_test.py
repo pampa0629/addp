@@ -222,12 +222,13 @@ class RelationalConsumerFlowOnlineTest(unittest.TestCase):
     def test_cleanup_service_confirms_the_resource_is_absent(self) -> None:
         client = Mock()
         client.request.side_effect = [
-            ONLINE.SUPPORT.Response(200, {"id": 9}),
+            ONLINE.SUPPORT.Response(200, {"id": 9, "version": 4}),
             ONLINE.SUPPORT.Response(200, {"message": "deleted"}),
             ONLINE.SUPPORT.Response(404, {"error_code": "not_found"}),
         ]
 
         ONLINE.cleanup_service(client, 9)
+        self.assertEqual(client.request.call_args_list[1].args[3], {"version": 4})
 
         self.assertEqual(
             [call.args[:3] for call in client.request.call_args_list],

@@ -319,7 +319,7 @@ func (v *validator) node(n Node, scope map[NodeID][]datatype.FieldInfo) ([]datat
 }
 
 func validateParameters(parameters []Parameter) (map[string]Parameter, error) {
-	if len(parameters) > 128 {
+	if len(parameters) > MaxParameters {
 		return nil, fmt.Errorf("too many parameters")
 	}
 	v := validator{parameters: map[string]Parameter{}}

@@ -3,7 +3,10 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"github.com/addp/quality/internal/testsupport"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -20,9 +23,8 @@ func TestQualityCleanupScanFindsEngineBoundState(t *testing.T) {
 
 	db := newQualityCleanupTestDB(t)
 	svc := NewCleanupService(db, nil, nil)
-	createQualityCleanupRuleApplication(t, db, 7, 12, "rule-match")
-	createQualityCleanupRuleApplication(t, db, 7, 13, "rule-other")
-	createQualityCleanupCheckTask(t, db, 7, 12, "task-match")
+	createQualityCleanupPlan(t, db, 7, 13, "task_other")
+	createQualityCleanupPlan(t, db, 7, 12, "task-match")
 	createQualityCleanupIssue(t, db, 7, 12, "issue-match", "open")
 	createQualityCleanupIssue(t, db, 7, 13, "issue-other", "open")
 
@@ -30,7 +32,7 @@ func TestQualityCleanupScanFindsEngineBoundState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ScanReclaimCandidates() error = %v", err)
 	}
-	if stats.RuleApplications != 1 || stats.CheckTasks != 1 || stats.Issues != 1 {
+	if stats.Plans != 1 || stats.Issues != 1 {
 		t.Fatalf("stats = %#v, want one rule application, check task and issue", stats)
 	}
 
@@ -38,7 +40,7 @@ func TestQualityCleanupScanFindsEngineBoundState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ScanReclaimCandidates() without context error = %v", err)
 	}
-	if stats.RuleApplications != 0 || stats.CheckTasks != 0 || stats.Issues != 0 {
+	if stats.Plans != 0 || stats.Issues != 0 {
 		t.Fatalf("stats without lifecycle context = %#v, want empty", stats)
 	}
 }
@@ -48,8 +50,7 @@ func TestQualityCleanupLogicalDisablesEngineBoundState(t *testing.T) {
 
 	db := newQualityCleanupTestDB(t)
 	svc := NewCleanupService(db, nil, nil)
-	rule := createQualityCleanupRuleApplication(t, db, 7, 12, "rule-match")
-	task := createQualityCleanupCheckTask(t, db, 7, 12, "task-match")
+	task := createQualityCleanupPlan(t, db, 7, 12, "task-match")
 	issue := createQualityCleanupIssue(t, db, 7, 12, "issue-match", "open")
 	resolvedIssue := createQualityCleanupIssue(t, db, 7, 12, "issue-resolved", "resolved")
 
@@ -57,18 +58,11 @@ func TestQualityCleanupLogicalDisablesEngineBoundState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExecuteCleanup() error = %v", err)
 	}
-	if stats.DisabledRuleApps != 1 || stats.IgnoredIssues != 1 {
+	if stats.IgnoredIssues != 1 {
 		t.Fatalf("stats = %#v, want disabled rule and one ignored issue", stats)
 	}
 
-	var updatedRule models.RuleApplication
-	if err := db.First(&updatedRule, rule.ID).Error; err != nil {
-		t.Fatalf("load rule application: %v", err)
-	}
-	if updatedRule.Enabled {
-		t.Fatal("rule application should be disabled")
-	}
-	var updatedTask models.CheckTask
+	var updatedTask models.QualityPlan
 	if err := db.First(&updatedTask, task.ID).Error; err != nil {
 		t.Fatalf("load check task: %v", err)
 	}
@@ -91,22 +85,21 @@ func TestQualityCleanupLogicalDisablesEngineBoundState(t *testing.T) {
 	}
 }
 
-func TestQualityEngineDeletionImpactKeepsCheckTaskRebindable(t *testing.T) {
+func TestQualityEngineDeletionImpactKeepsPlanRebindable(t *testing.T) {
 	t.Parallel()
 
 	candidates := qualityCleanupCandidates{
-		ruleApplications: []models.RuleApplication{{ID: 1}},
-		checkTasks:       []models.CheckTask{{ID: 2}},
-		issues:           []models.Issue{{ID: 3}},
+		plans:  []models.QualityPlan{{ID: 2}},
+		issues: []models.Issue{{ID: 3}},
 	}
 	impact, err := qualityEngineDeletionImpact(candidates, nil)
 	if err != nil {
 		t.Fatalf("qualityEngineDeletionImpact() error = %v", err)
 	}
-	if impact.Summary.Rebindable != 1 || impact.Summary.WillDisable != 2 || impact.Summary.WillDelete != 0 {
+	if impact.Summary.Rebindable != 1 || impact.Summary.WillDisable != 1 || impact.Summary.WillDelete != 0 {
 		t.Fatalf("impact summary = %#v, want one rebindable task and two state records to disable", impact.Summary)
 	}
-	if impact.ManagementPath != "/quality/check-tasks" {
+	if impact.ManagementPath != "/quality/plans" {
 		t.Fatalf("management path = %q", impact.ManagementPath)
 	}
 }
@@ -114,14 +107,14 @@ func TestQualityEngineDeletionImpactKeepsCheckTaskRebindable(t *testing.T) {
 func TestQualityEngineDeletionImpactUsesExecutionFacts(t *testing.T) {
 	db := newQualityCleanupTestDB(t)
 	svc := NewCleanupService(db, nil, nil)
-	task := createQualityCleanupCheckTask(t, db, 7, 12, "task-match")
+	task := createQualityCleanupPlan(t, db, 7, 12, "task-match")
 	createQualityCleanupExecution(t, db, task, commonExecution.ExecutionStatusRunning)
 
-	activeTaskIDs, err := svc.listActiveQualityCleanupTaskIDs(context.Background(), []models.CheckTask{task})
+	activeTaskIDs, err := svc.listActiveQualityCleanupTaskIDs(context.Background(), []models.QualityPlan{task})
 	if err != nil {
 		t.Fatalf("listActiveQualityCleanupTaskIDs() error = %v", err)
 	}
-	impact, err := qualityEngineDeletionImpact(qualityCleanupCandidates{checkTasks: []models.CheckTask{task}}, activeTaskIDs)
+	impact, err := qualityEngineDeletionImpact(qualityCleanupCandidates{plans: []models.QualityPlan{task}}, activeTaskIDs)
 	if err != nil {
 		t.Fatalf("qualityEngineDeletionImpact() error = %v", err)
 	}
@@ -133,7 +126,6 @@ func TestQualityEngineDeletionImpactUsesExecutionFacts(t *testing.T) {
 func TestQualityCleanupLogicalRollsBackWhenIssueUpdateFails(t *testing.T) {
 	db := newQualityCleanupTestDB(t)
 	svc := NewCleanupService(db, nil, nil)
-	rule := createQualityCleanupRuleApplication(t, db, 7, 12, "rule-match")
 	issue := createQualityCleanupIssue(t, db, 7, 12, "issue-match", "open")
 	if err := db.Exec(`CREATE TRIGGER quality.fail_quality_issue_ignore
 		BEFORE UPDATE OF status ON quality.issues
@@ -146,15 +138,8 @@ func TestQualityCleanupLogicalRollsBackWhenIssueUpdateFails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExecuteCleanup() error = %v", err)
 	}
-	if len(stats.Errors) != 1 || stats.DisabledRuleApps != 0 || stats.IgnoredIssues != 0 {
+	if len(stats.Errors) != 1 || stats.IgnoredIssues != 0 {
 		t.Fatalf("stats = %#v, want one error and no committed updates", stats)
-	}
-	var storedRule models.RuleApplication
-	if err := db.First(&storedRule, rule.ID).Error; err != nil {
-		t.Fatalf("load rule application: %v", err)
-	}
-	if !storedRule.Enabled {
-		t.Fatal("rule application was disabled despite transaction rollback")
 	}
 	var storedIssue models.Issue
 	if err := db.First(&storedIssue, issue.ID).Error; err != nil {
@@ -168,32 +153,24 @@ func TestQualityCleanupLogicalRollsBackWhenIssueUpdateFails(t *testing.T) {
 func TestQualityCleanupLogicalRejectsActiveExecutionWhenSummaryIsStale(t *testing.T) {
 	db := newQualityCleanupTestDB(t)
 	svc := NewCleanupService(db, nil, nil)
-	rule := createQualityCleanupRuleApplication(t, db, 7, 12, "rule-match")
-	task := createQualityCleanupCheckTask(t, db, 7, 12, "task-match")
+	task := createQualityCleanupPlan(t, db, 7, 12, "task-match")
 	createQualityCleanupExecution(t, db, task, commonExecution.ExecutionStatusPending)
 
 	stats, err := svc.ExecuteCleanup(context.Background(), 7, events.CleanupModeLogical, map[string]interface{}{"tenant_id": uint(7)})
 	if err != nil {
 		t.Fatalf("ExecuteCleanup() error = %v", err)
 	}
-	if len(stats.Errors) != 1 || stats.DisabledRuleApps != 0 {
+	if len(stats.Errors) != 1 {
 		t.Fatalf("stats = %#v, want running task error and no committed updates", stats)
 	}
-	var storedRule models.RuleApplication
-	if err := db.First(&storedRule, rule.ID).Error; err != nil {
-		t.Fatalf("load rule application: %v", err)
-	}
-	if !storedRule.Enabled {
-		t.Fatal("rule application was disabled while task was running")
-	}
+
 }
 
 func TestQualityCleanupLogicalIgnoresStaleRunningSummary(t *testing.T) {
 	db := newQualityCleanupTestDB(t)
 	svc := NewCleanupService(db, nil, nil)
-	rule := createQualityCleanupRuleApplication(t, db, 7, 12, "rule-match")
-	task := createQualityCleanupCheckTask(t, db, 7, 12, "task-match")
-	if err := db.Model(&models.CheckTask{}).Where("id = ?", task.ID).Update("last_execution_status", "running").Error; err != nil {
+	task := createQualityCleanupPlan(t, db, 7, 12, "task-match")
+	if err := db.Model(&models.QualityPlan{}).Where("id = ?", task.ID).Update("last_execution_status", "running").Error; err != nil {
 		t.Fatalf("mark task summary running: %v", err)
 	}
 
@@ -201,16 +178,10 @@ func TestQualityCleanupLogicalIgnoresStaleRunningSummary(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExecuteCleanup() error = %v", err)
 	}
-	if len(stats.Errors) != 0 || stats.DisabledRuleApps != 1 {
+	if len(stats.Errors) != 0 {
 		t.Fatalf("stats = %#v, want cleanup driven by execution facts", stats)
 	}
-	var storedRule models.RuleApplication
-	if err := db.First(&storedRule, rule.ID).Error; err != nil {
-		t.Fatalf("load rule application: %v", err)
-	}
-	if storedRule.Enabled {
-		t.Fatal("stale task summary incorrectly blocked cleanup")
-	}
+
 }
 
 func TestQualityCleanupPhysicalDeletesTenantOwnedState(t *testing.T) {
@@ -218,30 +189,26 @@ func TestQualityCleanupPhysicalDeletesTenantOwnedState(t *testing.T) {
 
 	db := newQualityCleanupTestDB(t)
 	svc := NewCleanupService(db, nil, nil)
-	rule := createQualityCleanupRuleApplication(t, db, 7, 12, "tenant-rule")
-	task := createQualityCleanupCheckTask(t, db, 7, 12, "tenant-task")
+	task := createQualityCleanupPlan(t, db, 7, 12, "tenant-task")
 	issue := createQualityCleanupIssue(t, db, 7, 12, "tenant-issue", "open")
-	otherTenantRule := createQualityCleanupRuleApplication(t, db, 8, 12, "other-rule")
+	otherTenantRule := createQualityCleanupPlan(t, db, 8, 12, "other-rule")
 
 	stats, err := svc.ExecuteCleanup(context.Background(), 7, events.CleanupModePhysical, map[string]interface{}{"tenant_id": uint(7)})
 	if err != nil {
 		t.Fatalf("ExecuteCleanup() error = %v", err)
 	}
-	if stats.DeletedRuleApplications != 1 || stats.DeletedCheckTasks != 1 || stats.DeletedIssues != 1 {
+	if stats.DeletedPlans != 1 || stats.DeletedIssues != 1 {
 		t.Fatalf("stats = %#v, want tenant-owned quality state deleted", stats)
 	}
 	for name, id := range map[string]int64{
-		"rule":  rule.ID,
 		"task":  task.ID,
 		"issue": issue.ID,
 	} {
 		var count int64
 		var model interface{}
 		switch name {
-		case "rule":
-			model = &models.RuleApplication{}
 		case "task":
-			model = &models.CheckTask{}
+			model = &models.QualityPlan{}
 		case "issue":
 			model = &models.Issue{}
 		}
@@ -252,7 +219,7 @@ func TestQualityCleanupPhysicalDeletesTenantOwnedState(t *testing.T) {
 			t.Fatalf("%s should be deleted", name)
 		}
 	}
-	if err := db.First(&models.RuleApplication{}, otherTenantRule.ID).Error; err != nil {
+	if err := db.First(&models.QualityPlan{}, otherTenantRule.ID).Error; err != nil {
 		t.Fatalf("other tenant rule application should remain: %v", err)
 	}
 }
@@ -260,11 +227,10 @@ func TestQualityCleanupPhysicalDeletesTenantOwnedState(t *testing.T) {
 func TestQualityCleanupPhysicalRollsBackWhenTaskDeleteFails(t *testing.T) {
 	db := newQualityCleanupTestDB(t)
 	svc := NewCleanupService(db, nil, nil)
-	rule := createQualityCleanupRuleApplication(t, db, 7, 12, "tenant-rule")
-	task := createQualityCleanupCheckTask(t, db, 7, 12, "tenant-task")
+	task := createQualityCleanupPlan(t, db, 7, 12, "tenant-task")
 	issue := createQualityCleanupIssue(t, db, 7, 12, "tenant-issue", "open")
 	if err := db.Exec(`CREATE TRIGGER quality.fail_quality_task_delete
-		BEFORE DELETE ON quality.check_tasks
+		BEFORE DELETE ON quality.plans
 		BEGIN SELECT RAISE(ABORT, 'forced task delete failure'); END`).Error; err != nil {
 		t.Fatalf("create failure trigger: %v", err)
 	}
@@ -273,17 +239,15 @@ func TestQualityCleanupPhysicalRollsBackWhenTaskDeleteFails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExecuteCleanup() error = %v", err)
 	}
-	if len(stats.Errors) != 1 || stats.DeletedIssues != 0 || stats.DeletedCheckTasks != 0 || stats.DeletedRuleApplications != 0 {
+	if len(stats.Errors) != 1 || stats.DeletedIssues != 0 || stats.DeletedPlans != 0 {
 		t.Fatalf("stats = %#v, want one error and no committed deletes", stats)
 	}
-	for name, id := range map[string]int64{"rule": rule.ID, "task": task.ID, "issue": issue.ID} {
+	for name, id := range map[string]int64{"task": task.ID, "issue": issue.ID} {
 		var count int64
 		var model interface{}
 		switch name {
-		case "rule":
-			model = &models.RuleApplication{}
 		case "task":
-			model = &models.CheckTask{}
+			model = &models.QualityPlan{}
 		case "issue":
 			model = &models.Issue{}
 		}
@@ -298,7 +262,7 @@ func TestQualityCleanupPhysicalRollsBackWhenTaskDeleteFails(t *testing.T) {
 
 func newQualityCleanupTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
@@ -309,30 +273,12 @@ func newQualityCleanupTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("ensure SQLite execution store: %v", err)
 	}
 	statements := []string{
-		`CREATE TABLE quality.rule_applications (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			tenant_id INTEGER NOT NULL,
-			element_id INTEGER NOT NULL,
-			element_revision_id INTEGER NOT NULL,
-			engine_id INTEGER NOT NULL,
-			schema_name TEXT,
-			table_name TEXT NOT NULL,
-			column_name TEXT NOT NULL,
-			rule_config JSON NOT NULL,
-			enabled BOOLEAN,
-			created_by INTEGER NOT NULL,
-			updated_by INTEGER,
-			created_at DATETIME,
-			updated_at DATETIME
-		)`,
-		`CREATE TABLE quality.check_tasks (
+		`CREATE TABLE quality.plans (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			tenant_id INTEGER NOT NULL,
 			name TEXT NOT NULL,
 			description TEXT,
-			engine_id INTEGER NOT NULL,
-			schema_name TEXT,
-			table_name TEXT,
+			code TEXT NOT NULL, version INTEGER NOT NULL, table_bindings JSON NOT NULL,
 			created_by INTEGER NOT NULL,
 			updated_by INTEGER,
 			created_at DATETIME,
@@ -346,7 +292,7 @@ func newQualityCleanupTestDB(t *testing.T) *gorm.DB {
 			tenant_id INTEGER NOT NULL,
 			execution_id TEXT NOT NULL,
 			last_execution_id TEXT NOT NULL DEFAULT '',
-				rule_application_id INTEGER NOT NULL,
+				plan_id INTEGER NOT NULL,
 				rule_key TEXT NOT NULL,
 			rule_type TEXT NOT NULL,
 			severity TEXT NOT NULL DEFAULT 'error',
@@ -373,39 +319,14 @@ func newQualityCleanupTestDB(t *testing.T) *gorm.DB {
 			t.Fatalf("create test table: %v", err)
 		}
 	}
+	testsupport.EnsureRuleTables(t, db)
 	return db
 }
 
-func createQualityCleanupRuleApplication(t *testing.T, db *gorm.DB, tenantID int64, engineID int64, name string) models.RuleApplication {
+func createQualityCleanupPlan(t *testing.T, db *gorm.DB, tenantID int64, engineID int64, name string) models.QualityPlan {
 	t.Helper()
-	item := models.RuleApplication{
-		TenantID:          tenantID,
-		ElementID:         1,
-		ElementRevisionID: 101,
-		EngineID:          engineID,
-		SchemaName:        "public",
-		Table:             name,
-		ColumnName:        "value",
-		RuleConfig:        json.RawMessage(`{"schema_version":"addp.quality.rules/v1","rules":[]}`),
-		Enabled:           true,
-		CreatedBy:         1,
-	}
-	if err := db.Create(&item).Error; err != nil {
-		t.Fatalf("create rule application: %v", err)
-	}
-	return item
-}
-
-func createQualityCleanupCheckTask(t *testing.T, db *gorm.DB, tenantID int64, engineID int64, name string) models.CheckTask {
-	t.Helper()
-	item := models.CheckTask{
-		TenantID:   tenantID,
-		Name:       name,
-		EngineID:   engineID,
-		SchemaName: "public",
-		Table:      name,
-		CreatedBy:  1,
-	}
+	bindings, _ := json.Marshal([]PlanTableBinding{{Alias: "target", Locator: fmt.Sprintf("addp://engine/%d/path/public/%s?type=table", engineID, name)}})
+	item := models.QualityPlan{TenantID: tenantID, Name: name, Code: strings.ReplaceAll(name, "-", "_"), Version: 1, CreatedBy: 1, UpdatedBy: 1, TableBindings: bindings, Rules: json.RawMessage(`{"schema_version":"addp.quality.plan-rules/v1","rules":[]}`)}
 	if err := db.Create(&item).Error; err != nil {
 		t.Fatalf("create check task: %v", err)
 	}
@@ -415,20 +336,20 @@ func createQualityCleanupCheckTask(t *testing.T, db *gorm.DB, tenantID int64, en
 func createQualityCleanupIssue(t *testing.T, db *gorm.DB, tenantID int64, engineID int64, name string, status string) models.Issue {
 	t.Helper()
 	item := models.Issue{
-		TenantID:          tenantID,
-		ExecutionID:       "exec-" + name,
-		RuleApplicationID: 1,
-		RuleKey:           "00000000-0000-4000-8000-000000000001",
-		RuleType:          "not_null",
-		ColumnName:        "value",
-		Table:             name,
-		SchemaName:        "public",
-		EngineID:          engineID,
-		FailedCount:       1,
-		TotalCount:        10,
-		PassRate:          90,
-		Detail:            json.RawMessage(`{}`),
-		Status:            status,
+		TenantID:    tenantID,
+		ExecutionID: "exec-" + name,
+		PlanID:      1,
+		RuleKey:     "00000000-0000-4000-8000-000000000001",
+		RuleType:    "not_null",
+		ColumnName:  "value",
+		Table:       name,
+		SchemaName:  "public",
+		EngineID:    engineID,
+		FailedCount: 1,
+		TotalCount:  10,
+		PassRate:    90,
+		Detail:      json.RawMessage(`{}`),
+		Status:      status,
 	}
 	if err := db.Create(&item).Error; err != nil {
 		t.Fatalf("create issue: %v", err)
@@ -436,7 +357,7 @@ func createQualityCleanupIssue(t *testing.T, db *gorm.DB, tenantID int64, engine
 	return item
 }
 
-func createQualityCleanupExecution(t *testing.T, db *gorm.DB, task models.CheckTask, status string) commonExecution.TaskExecution {
+func createQualityCleanupExecution(t *testing.T, db *gorm.DB, task models.QualityPlan, status string) commonExecution.TaskExecution {
 	t.Helper()
 	now := time.Now().UTC()
 	sourceTaskID := strconv.FormatInt(task.ID, 10)
@@ -444,7 +365,7 @@ func createQualityCleanupExecution(t *testing.T, db *gorm.DB, task models.CheckT
 	if err := db.Exec(`INSERT INTO common.task_executions
 		(tenant_id, execution_id, module, task_type, source, source_task_id, status, trigger_type, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		task.TenantID, item.ExecutionID, commonExecution.ModuleQuality, commonExecution.TaskTypeQualityCheck,
+		task.TenantID, item.ExecutionID, commonExecution.ModuleQuality, commonExecution.TaskTypeQualityPlan,
 		commonExecution.ModuleQuality, sourceTaskID, status, commonExecution.TriggerTypeManual, now, now).Error; err != nil {
 		t.Fatalf("create task execution: %v", err)
 	}

@@ -34,7 +34,7 @@ func TestIntegrationPostgresQualityQueryDeadlineCancelsStatement(t *testing.T) {
 	}
 }
 
-func TestIntegrationPostgresDataValidationAssertions(t *testing.T) {
+func TestIntegrationPostgresPlanRules(t *testing.T) {
 	if os.Getenv("ADDP_POSTGRES_INTEGRATION") != "1" {
 		t.Skip("set ADDP_POSTGRES_INTEGRATION=1 to run PostgreSQL integration test")
 	}
@@ -62,35 +62,35 @@ func TestIntegrationPostgresDataValidationAssertions(t *testing.T) {
 		t.Fatalf("insert participations: %v", err)
 	}
 
-	config := &dataValidationExecutionConfig{
-		TableBindings: []DataValidationTableBinding{{Alias: "persons", Locator: fmt.Sprintf("addp://engine/1/path/%s/persons?type=table", schemaName)}, {Alias: "participations", Locator: fmt.Sprintf("addp://engine/1/path/%s/participations?type=table", schemaName)}},
-		Assertions: DataValidationAssertionDocument{Assertions: []DataValidationAssertion{
-			{AssertionKey: "00000000-0000-4000-8000-000000000001", Type: "not_null", Severity: "error", Params: json.RawMessage(`{"table":"participations","column":"person_id"}`)},
-			{AssertionKey: "00000000-0000-4000-8000-000000000002", Type: "allowed_values", Severity: "error", Params: json.RawMessage(`{"table":"participations","column":"member_status","values":["signup","leader"]}`)},
-			{AssertionKey: "00000000-0000-4000-8000-000000000003", Type: "unique_key", Severity: "error", Params: json.RawMessage(`{"table":"participations","columns":["person_id","activity_id"]}`)},
-			{AssertionKey: "00000000-0000-4000-8000-000000000004", Type: "foreign_key", Severity: "error", Params: json.RawMessage(`{"table":"participations","columns":["person_id"],"reference_table":"persons","reference_columns":["person_id"]}`)},
-			{AssertionKey: "00000000-0000-4000-8000-000000000005", Type: "predicate_implication", Severity: "error", Params: json.RawMessage(`{"table":"participations","when":{"column":"is_actual","operator":"is_true"},"then":{"column":"is_signup","operator":"is_true"}}`)},
-			{AssertionKey: "00000000-0000-4000-8000-000000000006", Type: "row_count", Severity: "error", Params: json.RawMessage(`{"table":"participations","exact":4}`)},
+	config := &planExecutionConfig{
+		TableBindings: []PlanTableBinding{{Alias: "persons", Locator: fmt.Sprintf("addp://engine/1/path/%s/persons?type=table", schemaName)}, {Alias: "participations", Locator: fmt.Sprintf("addp://engine/1/path/%s/participations?type=table", schemaName)}},
+		Rules: PlanRuleDocument{Rules: []PlanRule{
+			{RuleKey: "00000000-0000-4000-8000-000000000001", Type: "not_null", Severity: "error", Params: json.RawMessage(`{"table":"participations","column":"person_id"}`)},
+			{RuleKey: "00000000-0000-4000-8000-000000000002", Type: "allowed_values", Severity: "error", Params: json.RawMessage(`{"table":"participations","column":"member_status","values":["signup","leader"]}`)},
+			{RuleKey: "00000000-0000-4000-8000-000000000003", Type: "unique_key", Severity: "error", Params: json.RawMessage(`{"table":"participations","columns":["person_id","activity_id"]}`)},
+			{RuleKey: "00000000-0000-4000-8000-000000000004", Type: "foreign_key", Severity: "error", Params: json.RawMessage(`{"table":"participations","columns":["person_id"],"reference_table":"persons","reference_columns":["person_id"]}`)},
+			{RuleKey: "00000000-0000-4000-8000-000000000005", Type: "predicate_implication", Severity: "error", Params: json.RawMessage(`{"table":"participations","when":{"column":"is_actual","operator":"is_true"},"then":{"column":"is_signup","operator":"is_true"}}`)},
+			{RuleKey: "00000000-0000-4000-8000-000000000006", Type: "row_count", Severity: "error", Params: json.RawMessage(`{"table":"participations","exact":4}`)},
 		}},
 	}
 	readContext := &validationReadContext{Items: []validationReadItem{
 		{EngineID: 1, Locator: fmt.Sprintf("addp://engine/1/path/%s/persons?type=table", schemaName), Columns: []validationColumn{{Name: "person_id"}}},
 		{EngineID: 1, Locator: fmt.Sprintf("addp://engine/1/path/%s/participations?type=table", schemaName), Columns: []validationColumn{{Name: "person_id"}, {Name: "activity_id"}, {Name: "member_status"}, {Name: "is_actual"}, {Name: "is_signup"}}},
 	}}
-	compiled, _, err := compileDataValidation(config, readContext)
+	compiled, _, err := compilePlan(config, readContext)
 	if err != nil {
-		t.Fatalf("compile data validation: %v", err)
+		t.Fatalf("compile quality plan: %v", err)
 	}
-	wantFailed := []int64{1, 1, 1, 1, 1, 0}
-	for index, assertion := range compiled {
-		var counts gateCounts
-		if err := db.Raw(assertion.SQL, assertion.Args...).Scan(&counts).Error; err != nil {
-			t.Fatalf("execute %s: %v", assertion.Assertion.Type, err)
+	wantFailed := []int64{1, 1, 2, 1, 1, 0}
+	for index, rule := range compiled {
+		var counts planCounts
+		if err := db.Raw(rule.SQL, rule.Args...).Scan(&counts).Error; err != nil {
+			t.Fatalf("execute %s: %v", rule.Rule.Type, err)
 		}
 		if counts.TotalCount != 4 || counts.FailedCount != wantFailed[index] {
-			t.Fatalf("%s counts = %#v, want total=4 failed=%d", assertion.Assertion.Type, counts, wantFailed[index])
+			t.Fatalf("%s counts = %#v, want total=4 failed=%d", rule.Rule.Type, counts, wantFailed[index])
 		}
-		if assertion.RowCount != nil && !gateRowCountPassed(counts.TotalCount, *assertion.RowCount) {
+		if rule.RowCount != nil && !planRowCountPassed(counts.TotalCount, *rule.RowCount) {
 			t.Fatalf("row_count unexpectedly failed: %#v", counts)
 		}
 	}
@@ -138,7 +138,7 @@ func TestIntegrationPostgresSixQualityRules(t *testing.T) {
 			if err != nil {
 				t.Fatalf("GenerateCheckSQL: %v", err)
 			}
-			var counts CheckCounts
+			var counts planCounts
 			if err := db.Raw(compiled.SQL, compiled.Args...).Scan(&counts).Error; err != nil {
 				t.Fatalf("execute compiled quality SQL: %v", err)
 			}

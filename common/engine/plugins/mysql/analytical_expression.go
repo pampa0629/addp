@@ -63,3 +63,11 @@ func (analyticalExpressionDialect) Comparable(sql string, typ datatype.FieldType
 	}
 	return sql, nil
 }
+
+func (analyticalExpressionDialect) TrimDecimalText(value string) string {
+	return "TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM " + value + "))"
+}
+
+func (analyticalExpressionDialect) ISODateText(value string) string {
+	return "DATE_FORMAT(" + value + ", '%Y-%m-%d')"
+}

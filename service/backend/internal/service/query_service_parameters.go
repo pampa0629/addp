@@ -31,6 +31,14 @@ func validateQueryServiceNamedParameters(configType, query string, definitions [
 	for index, definition := range definitions {
 		definition.Name = strings.TrimSpace(definition.Name)
 		definition.Description = strings.TrimSpace(definition.Description)
+		if definition.Presentation != nil {
+			if definition.Description != "" {
+				return nil, fmt.Errorf("parameter presentation and description are mutually exclusive")
+			}
+			if err := definition.Presentation.Validate(); err != nil {
+				return nil, err
+			}
+		}
 		if definition.Name == "" || len(definition.Name) > 64 || !commonquery.ValidName(definition.Name) {
 			return nil, fmt.Errorf("named_parameters[%d].name is invalid", index)
 		}

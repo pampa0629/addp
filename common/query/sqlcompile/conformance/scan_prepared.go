@@ -48,6 +48,31 @@ func scanRequest(s plugin.SourceBinding) plugin.CompileRequest {
 	r.Plan.Output = plan.OutputContract{Fields: fields, StableKey: []string{"key"}}
 	return r
 }
+
+// PrepareScanForPreflight freezes the old source facts before a test changes
+// the table. Execution must validate them again, after authorization discovery.
+func PrepareScanForPreflight(t *testing.T, p plugin.AnalyticalCompilerProvider, conn plugin.ConnectionInfo, source plugin.SourceBinding) plugin.PreparedQuery {
+	t.Helper()
+	compiled, err := p.AnalyticalCompiler().Compile(scanRequest(source))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req, err := compiled.QueryRequest(map[string]plan.Literal{"keep": {Type: datatype.FieldTypeBool, Text: "true"}}, 10*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared, err := p.PrepareQuery(t.Context(), conn, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = prepared.ReadSet(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = prepared.OutputLineage(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	return prepared
+}
 func executeScan(t *testing.T, p plugin.AnalyticalCompilerProvider, conn plugin.ConnectionInfo, r plugin.CompileRequest, keep bool) (*plugin.QueryResult, error) {
 	t.Helper()
 	c, err := p.AnalyticalCompiler().Compile(r)

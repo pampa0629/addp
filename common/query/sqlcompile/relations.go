@@ -38,8 +38,7 @@ type relationBuilder struct {
 
 // CompileRelations renders supported relational operators through the shared
 // scalar compiler. It is not an instance/source certification or a registered
-// engine compiler. Native scans require an explicit ScanDialect; date_buckets
-// remains unsupported until range compilation is implemented.
+// engine compiler. Native scans require an explicit ScanDialect.
 func CompileRelations(r plugin.CompileRequest, expression ExpressionDialect, result ResultDialect, scan ScanDialect) (RenderedRelations, error) {
 	if expression == nil || result == nil {
 		return RenderedRelations{}, plugin.ErrAnalyticalInvalid
@@ -190,6 +189,14 @@ func (b *relationBuilder) visit(id plan.NodeID) error {
 		}
 	}
 	switch n.Op {
+	case "date_buckets":
+		var check string
+		var err error
+		query, check, err = b.dateBuckets(n)
+		if err != nil {
+			return err
+		}
+		checks = append(checks, check)
 	case "scan":
 		if b.scan == nil {
 			return plugin.ErrAnalyticalUnsupported

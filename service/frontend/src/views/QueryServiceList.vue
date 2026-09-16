@@ -171,11 +171,11 @@ export default {
       }
 
       try {
-        await queryServiceAPI.deleteService(id)
+        await queryServiceAPI.deleteService(id, this.services.find(item => item.id === id).version)
         alert(this.$t('service.query.deleteSuccess'))
         this.loadServices()
       } catch (error) {
-        alert(this.$t('service.query.deleteFailed') + ': ' + (error.message || this.$t('service.common.unknownError')))
+        alert(this.$t('service.query.deleteFailed') + ': ' + (error.response?.data?.error || error.message || this.$t('service.common.unknownError')))
         console.error('Failed to delete query service:', error)
       }
     },
@@ -191,7 +191,8 @@ export default {
     configTypeText(configType) {
       const typeMap = {
         table: this.$t('service.query.configTypeTable'),
-        sql: this.$t('service.query.configTypeSql')
+        sql: this.$t('service.query.configTypeSql'),
+        analytical: this.$t('service.query.configTypeAnalytical')
       }
       return typeMap[configType] || configType
     },

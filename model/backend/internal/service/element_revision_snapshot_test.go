@@ -67,7 +67,7 @@ func TestLogicalTableApprovalFreezesAndReopenClearsElementRevision(t *testing.T)
 		t.Fatal(err)
 	}
 
-	service := NewLogicalTableService(repository.NewLogicalTableRepository(db), repository.NewEntityRepository(db), repository.NewDWLayerRepository(db))
+	service := NewLogicalTableService(repository.NewLogicalTableRepository(db), repository.NewDWLayerRepository(db))
 	service.SetStandardClient(newElementRevisionSnapshotClient(server))
 	approved, err := service.ApproveLogicalTable(table.ID, 1, 9, table.Version)
 	if err != nil {

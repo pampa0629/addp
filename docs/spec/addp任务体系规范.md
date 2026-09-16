@@ -36,7 +36,7 @@
 9. Monitor 只聚合观察，不成为任务 owner。
 10. ad-hoc-only execution type 可以写入统一执行记录，但在没有持久任务定义前不得声明为 TaskProvider 能力或进入 Orchestrator 任务选择。
 11. 真实读写 owner 必须在 execution 结果中写入版本化 `lineage_facts`；Meta 负责消费并维护血缘关系，Orchestrator 不重复生成资源血缘。
-12. Quality `check|data_validation`、Meta `scan` 和 Transfer bounded `sync` 的 execution worker 必须是 owner 模块附属的独立进程；Develop 全部 `query`、Manager bounded execution 与 Model `logical_table_materialization` 分别由各自 Backend 内嵌的有界执行监督器运行。两种部署形态都必须使用 PostgreSQL execution claim + lease，部署形态不能改变 execution 所有权协议。
+12. Quality `quality_plan`、Meta `scan` 和 Transfer bounded `sync` 的 execution worker 必须是 owner 模块附属的独立进程；Develop 全部 `query`、Manager bounded execution 与 Model `logical_table_materialization` 分别由各自 Backend 内嵌的有界执行监督器运行。两种部署形态都必须使用 PostgreSQL execution claim + lease，部署形态不能改变 execution 所有权协议。
 13. owner scheduler 运行在 owner Backend，只负责按任务定义发现到期任务并创建 durable `pending` execution；Worker 不可用不得阻止 scheduler 创建 execution。dispatcher 只负责 outbox/delivery 投递，二者都不得替代 execution worker 成为业务执行事实源。
 14. bounded runtime queue 的唯一主路线是 `common.task_executions` PostgreSQL claim，不保留 Redis/Asynq、请求内 goroutine 或进程内 channel。独立 Worker 与 owner Backend 内嵌监督器是明确的模块级部署选择，不得在同一模块内双轨消费；continuous runtime、dispatcher 和 maintenance loop 继续使用各自专用协议，不强行迁入 bounded claim。
 15. Manager `pptx_pdf_generation` 是 bounded 预览生成任务：任务定义统一归 `manager.task_definitions`，结果归 `manager.pptx_pdf`。Manager 领域执行器通过 Common `WorkflowRuntimeProvider` direct 调用 `document_workflow/document_to_pdf`；Document Workflow 是纯执行层，LibreOffice 只作为其内部依赖，不拥有 Manager 任务、execution 或 artifact 状态。
@@ -199,7 +199,7 @@ POST /api/v1/meta/lineage/executions/{execution_id}/collect
 
 ### Bounded execution 领取、租约和恢复契约
 
-Quality `check|data_validation`、Meta `scan`、Transfer `runtime.boundary=bounded`、Develop 全部 `query`、Manager bounded execution 和 Model `logical_table_materialization` 必须遵守同一个公共所有权协议：
+Quality `quality_plan`、Meta `scan`、Transfer `runtime.boundary=bounded`、Develop 全部 `query`、Manager bounded execution 和 Model `logical_table_materialization` 必须遵守同一个公共所有权协议：
 
 1. 合法执行方使用 PostgreSQL `FOR UPDATE SKIP LOCKED` 从 `common.task_executions` 领取本模块、task type、可选触发 `source` 和满足本模块授权前置条件的最早 `pending` execution。合法执行方可以是规范明确的独立 Worker，也可以是 owner Backend 内嵌监督器。Develop Query Execution Supervisor 固定领取全部 `module=develop + task_type=query`：`source=develop` 必须在入队前保存完整且未过期的 Execution Authorization 引用，`source=orchestrator` 必须保存完整父执行身份血缘并在 claim 后按当前 lease 派生授权；任何其他 source 或残缺授权状态均由当前 lease 收敛失败。
 2. claim 必须原子完成 `pending → running`、首次写入 `started_at`、递增 `attempt`、生成新的随机 `lease_token` 并写入 `lease_owner + lease_expires_at`。`lease_owner` 只用于观测，不能替代 token。
@@ -274,7 +274,7 @@ Common 不维护全量业务 `task_type` 编译期枚举。稳定 execution type
 | Transfer | `sync` | `transfer.transfer_tasks` |
 | Develop | `query` / `workflow` / `script` | `develop.dev_tasks` |
 | Manager | `vector_tile_cache_generation` / `vector_tile_set_generation` / `vector_materialized_view_generation` / `embedding` / `raster_cog_generation` / `raster_mosaic_generation` / `model_3d_glb_generation` / `model3d_tiles_generation` / `gaussian_splat_ksplat_generation` / `point_cloud_copc_generation` | 九类快显与空间派生定义统一存入 `manager.task_definitions`；`embedding` 单独使用 `manager.embedding_tasks` |
-| Quality | `check` / `data_validation` | `quality.check_tasks` / `quality.data_validation_tasks` |
+| Quality | `quality_plan` | `quality.plans` |
 | Graph | `kg_build` | `graph.build_tasks` |
 | Orchestrator | `orchestration` | `orchestrator.orchestrations` |
 
@@ -298,7 +298,7 @@ Develop 关系查询写入通过执行契约显式配置固定正式表 `target_
 
 写入失败或失联不得自动重放可能已经提交的写入；当前 execution 和父流程失败。用户可重新执行完整流程，各覆盖任务仍按单表事务处理。
 
-Quality `data_validation` 由 Orchestrator 触发，任务保存同一 Engine 中的标准物理表 `table_bindings: [{alias, locator}]` 与强类型断言。Worker 按当前 lease 派生精确 read 授权，在只读、可重复读事务内读取字段并执行断言，不依赖 Model。成功输出 `passed=true`；error 断言失败会阻止后续步骤，不回滚已完成的上游计算。
+Quality `quality_plan` 支持手动执行及 Orchestrator 触发，保存同一 Engine 中的物理表 `table_bindings: [{alias, locator}]` 与方案内强类型规则。两种入口共用持久 worker；手动执行签发用户 read 授权，编排执行按当前 lease 派生 read 授权。首期在 PostgreSQL 只读、可重复读事务内检查，不依赖 Standard、Model 或 Catalog 的执行期回读。error 规则失败使 execution=failed 并保留完整结果，阻止后续步骤；warning/info 只记录问题。不会回滚已完成的上游计算。
 
 Model 声明 `logical_table_materialization` TaskProvider；已持久化的 LogicalTable 是任务定义事实源，任务 ID 等于逻辑表 ID，不新增或复制建表配置。仅已审批且配置目标的逻辑表可执行。手动入口和 Orchestrator 入口复用同一执行服务，写入 `common.task_executions`；执行冻结逻辑表版本，运行时必须匹配该版本。成功输出 `execution_id + target_locator`。
 
@@ -693,7 +693,7 @@ TaskProvider 任务列表是跨模块编排专用契约，不适用通用业务�
 
 `GET /tasks/{task_type}/{id}` 直接返回 owner 模块的任务定义摘要对象。对象必须包含 `id`、`task_type`、`name`、`status` 和该具体任务的 `execution_contract`；多任务类型 provider 可以按 `task_type` 返回不同任务定义 DTO，但不得再包一层 `data`。`enabled`、`schedule`、`next_run_at` 只允许在该 task type 明确声明并实现 `supports_schedule=true` 的 owner 调度闭环时出现；不支持调度的 TaskProvider 不得暴露这些调度活状态字段。`input_schema.required` 可以声明只能在手动触发或 Orchestrator Step 中绑定的必填运行时输入；`input_defaults` 是部分默认值，只校验已提供字段的类型和约束，不要求覆盖全部 required。执行前，owner 与 Orchestrator 必须在默认值、显式参数和上游输出绑定解析后，对完整参数再执行一次严格 required 校验。
 
-Quality `check|data_validation` 是纯手动/Orchestrator 显式执行类型，当前不保存或返回 `enabled`、`schedule`、`next_run_at` 等调度活状态字段。其中 `data_validation` 仅允许 Orchestrator 触发。`execution_contract` 是具体任务可执行输入和稳定输出的唯一事实源：
+Quality `quality_plan` 是纯手动/Orchestrator 显式执行类型，当前不保存或返回 `enabled`、`schedule`、`next_run_at` 等调度活状态字段。`execution_contract` 是具体任务可执行输入和稳定输出的唯一事实源：
 
 ```json
 {
@@ -1042,7 +1042,7 @@ Monitor 是跨任务、跨模块执行列表和通用执行详情的唯一前端
 | Manager | 快显、空间、向量化任务定义与领域结果 | 模块全部执行列表 |
 | Develop | 开发任务定义、查询/工作流/脚本执行结果详情 | 模块全部执行列表、通用统计 |
 | Orchestrator | 编排定义、单编排执行历史与步骤视图 | 跨编排执行列表 |
-| Quality | 检查任务、数据校验任务、质量分和断言详情 | 跨质量任务执行列表 |
+| Quality | 质量检查方案、规则通过率和规则结果详情 | 跨质量任务执行列表 |
 | Graph | 图构建任务、单图及单任务构建上下文 | 跨图构建任务执行列表 |
 
 “模块内保留”不等于允许模块再实现一份通用 execution 表格。单任务历史必须由明确的 `source_task_id` 限定；领域详情只展示 owner 独有的业务结果、日志、诊断或操作，并提供返回统一监控的入口。模块私有 execution 查询接口可以作为单任务轮询或领域投影存在，但不得据此重新暴露模块级全局列表。

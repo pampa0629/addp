@@ -486,7 +486,7 @@ const docTemplate = `{
                     "develop.data_ddl.execute",
                     "develop.data_external_effect.execute",
                     "model.materialization.execute",
-                    "quality.check_task.execute",
+                    "quality.plan.execute",
                     "service.definition.create",
                     "service.data_read.execute"
                 ],
@@ -13950,6 +13950,26 @@ const docTemplate = `{
                 }
             }
         },
+        "plugin.AnalyticalCapability": {
+            "type": "object",
+            "properties": {
+                "plan_versions": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "semantic_profiles": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "supported": {
+                    "type": "boolean"
+                }
+            }
+        },
         "plugin.ChangeStreamReadCapability": {
             "type": "object",
             "properties": {
@@ -14524,6 +14544,9 @@ const docTemplate = `{
         "plugin.QueryCapability": {
             "type": "object",
             "properties": {
+                "analytical": {
+                    "$ref": "#/definitions/plugin.AnalyticalCapability"
+                },
                 "default_language": {
                     "type": "string"
                 },

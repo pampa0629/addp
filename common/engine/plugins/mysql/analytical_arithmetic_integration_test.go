@@ -58,5 +58,5 @@ func TestIntegrationMySQLAnalyticalArithmetic(t *testing.T) {
 			}
 		})
 	}
-	conformance.PreparedArithmetic(t, &integerPreparedProvider{MySQLPlugin: provider, compiler: conformance.RelationalFixtureCompiler{Expression: analyticalExpressionDialect{}, Result: analyticalResultDialect{}, Scan: analyticalScanDialect{}}}, info)
+	conformance.PreparedArithmetic(t, provider, info)
 }

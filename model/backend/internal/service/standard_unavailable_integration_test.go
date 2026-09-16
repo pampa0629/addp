@@ -50,7 +50,7 @@ func TestStandardPermissionFailureMapsToUnavailableAcrossModelServices(t *testin
 	if err := db.Create(&table).Error; err != nil {
 		t.Fatalf("create table: %v", err)
 	}
-	logicalTableService := NewLogicalTableService(tableRepo, entityRepo, layerRepo)
+	logicalTableService := NewLogicalTableService(tableRepo, layerRepo)
 	logicalTableService.SetStandardClient(standardClient)
 	_, err = logicalTableService.CreateField(table.ID, 1, &models.CreateLogicalFieldRequest{
 		ElementID: int64Pointer(9), Name: "Amount", ColumnName: "amount", DataType: "decimal",

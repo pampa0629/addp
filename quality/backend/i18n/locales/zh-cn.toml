@@ -1,24 +1,3 @@
-[quality.rule_app.not_found]
-other = "规则应用不存在"
-
-[quality.rule_app.create_failed]
-other = "创建规则应用失败"
-
-[quality.rule_app.delete_failed]
-other = "删除规则应用失败"
-
-[quality.check_task.not_found]
-other = "检查任务不存在"
-
-[quality.check_task.run_failed]
-other = "执行检查任务失败"
-
-[quality.check_task.active]
-other = "检查任务已有待执行或运行中的执行记录"
-
-[quality.check_task.delete_failed]
-other = "删除检查任务失败"
-
 [quality.issue.not_found]
 other = "问题工单不存在"
 
@@ -37,15 +16,6 @@ other = "资源状态冲突，请刷新后重试"
 [quality.internal.error]
 other = "质量服务暂时不可用"
 
-[quality.rule_app.update_failed]
-other = "更新规则应用失败"
-
-[quality.check_task.create_failed]
-other = "创建检查任务失败"
-
-[quality.check_task.update_failed]
-other = "更新检查任务失败"
-
 [quality.execution.list_failed]
 other = "读取执行记录失败"
 
@@ -57,3 +27,12 @@ other = "删除成功"
 
 [quality.operation.updated]
 other = "更新成功"
+
+[quality.plan.not_found]
+other = "质量检查方案不存在"
+[quality.rule.not_found]
+other = "质量规则不存在"
+[quality.rule.referenced]
+other = "规则仍被检查方案引用，请先移除方案中的引用"
+[quality.request.version_conflict]
+other = "资源已被其他用户修改，请重新加载后重试"

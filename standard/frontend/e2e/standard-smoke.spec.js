@@ -534,6 +534,22 @@ test('preserves code-set filters through detail and back navigation', async ({ p
   await expect(page).toHaveURL(/\/code-sets\?keyword=gender&scope_type=domain$/)
 })
 
+test('shows compiled standard constraints without a uniqueness editor', async ({ page }) => {
+  await installMockBackend(page, {
+    elements: [{
+      id: 41, name: '活动编号', code: 'activity_id', data_type: 'string', domain_id: 2, status: 'approved',
+      compiled_quality_rules: { schema_version: 'addp.quality.rules/v1', rules: [{
+        rule_key: '00000000-0000-4000-8000-000000000001', type: 'length', enabled: true, severity: 'error', message: '', params: { max: 32 }
+      }] }
+    }]
+  })
+  await page.goto('/elements/41')
+  const rules = page.locator('.el-card').filter({ has: page.getByText('标准约束规则', { exact: true }) })
+  await expect(rules.getByText('长度范围', { exact: true })).toBeVisible()
+  await expect(rules.getByText('{"max":32}', { exact: true })).toBeVisible()
+  await expect(rules.getByRole('checkbox')).toHaveCount(0)
+})
+
 test('submits and publishes a draft data element revision', async ({ page }) => {
   const backend = await installMockBackend(page, {
     elements: [{
@@ -1054,6 +1070,7 @@ async function installMockBackend(page, options = {}) {
       nullable: true,
       value_domain_kind: 'unrestricted',
       example_values: [],
+      compiled_quality_rules: item.compiled_quality_rules || null,
       change_summary: '初始修订',
       status: item.status === 'approved' ? 'published' : item.status,
       created_at: '2026-08-12T08:00:00Z'

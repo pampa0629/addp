@@ -34,7 +34,6 @@ func (s *DWLayerService) CreateDWLayer(req *models.CreateDWLayerRequest, tenantI
 		LayerName:   req.LayerName,
 		Description: req.Description,
 		NamingRule:  req.NamingRule,
-		QualitySLA:  req.QualitySLA,
 		SortOrder:   req.SortOrder,
 		Version:     1,
 	}
@@ -74,7 +73,6 @@ func (s *DWLayerService) UpdateDWLayer(id, tenantID int64, req *models.UpdateDWL
 		layer.LayerName = req.LayerName
 		layer.Description = req.Description
 		layer.NamingRule = req.NamingRule
-		layer.QualitySLA = req.QualitySLA
 		layer.SortOrder = *req.SortOrder
 		return repository.NewDWLayerRepository(tx).Update(layer)
 	})

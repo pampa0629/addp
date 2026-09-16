@@ -64,7 +64,7 @@ func TestGetStatisticsFiltersBySourceTaskID(t *testing.T) {
 func TestGetByExecutionIDScopesTenant(t *testing.T) {
 	db := newTaskExecutionRepositoryTestDB(t)
 	repo := NewTaskExecutionRepository(db)
-	insertTaskExecutionRepositoryTestRowWithSourceTask(t, db, 1, 7, "tenant-7-execution", ModuleQuality, TaskTypeQualityCheck, nil, ExecutionStatusSuccess, 10, "2026-01-01 10:00:00")
+	insertTaskExecutionRepositoryTestRowWithSourceTask(t, db, 1, 7, "tenant-7-execution", ModuleQuality, TaskTypeQualityPlan, nil, ExecutionStatusSuccess, 10, "2026-01-01 10:00:00")
 
 	if _, err := repo.GetByExecutionID(context.Background(), "tenant-7-execution", 8); !errors.Is(err, commonapi.ErrNotFound) {
 		t.Fatalf("cross-tenant execution lookup error = %v, want ErrNotFound", err)
@@ -73,7 +73,7 @@ func TestGetByExecutionIDScopesTenant(t *testing.T) {
 	if err != nil {
 		t.Fatalf("same-tenant execution lookup: %v", err)
 	}
-	if item.Module != ModuleQuality || item.TaskType != TaskTypeQualityCheck {
+	if item.Module != ModuleQuality || item.TaskType != TaskTypeQualityPlan {
 		t.Fatalf("execution identity = module %q task_type %q", item.Module, item.TaskType)
 	}
 }
@@ -81,11 +81,11 @@ func TestGetByExecutionIDScopesTenant(t *testing.T) {
 func TestListUsesStableCreatedAtAndIDOrder(t *testing.T) {
 	db := newTaskExecutionRepositoryTestDB(t)
 	repo := NewTaskExecutionRepository(db)
-	insertTaskExecutionRepositoryTestRowWithSourceTask(t, db, 1, 7, "older", ModuleQuality, TaskTypeQualityCheck, nil, ExecutionStatusSuccess, 10, "2026-01-01 10:00:00")
-	insertTaskExecutionRepositoryTestRowWithSourceTask(t, db, 2, 7, "same-time-low", ModuleQuality, TaskTypeQualityCheck, nil, ExecutionStatusSuccess, 20, "2026-01-01 10:01:00")
-	insertTaskExecutionRepositoryTestRowWithSourceTask(t, db, 3, 7, "same-time-high", ModuleQuality, TaskTypeQualityCheck, nil, ExecutionStatusFailed, 30, "2026-01-01 10:01:00")
+	insertTaskExecutionRepositoryTestRowWithSourceTask(t, db, 1, 7, "older", ModuleQuality, TaskTypeQualityPlan, nil, ExecutionStatusSuccess, 10, "2026-01-01 10:00:00")
+	insertTaskExecutionRepositoryTestRowWithSourceTask(t, db, 2, 7, "same-time-low", ModuleQuality, TaskTypeQualityPlan, nil, ExecutionStatusSuccess, 20, "2026-01-01 10:01:00")
+	insertTaskExecutionRepositoryTestRowWithSourceTask(t, db, 3, 7, "same-time-high", ModuleQuality, TaskTypeQualityPlan, nil, ExecutionStatusFailed, 30, "2026-01-01 10:01:00")
 
-	items, total, err := repo.List(context.Background(), TaskExecutionFilter{TenantID: 7, Module: ModuleQuality, TaskType: TaskTypeQualityCheck, Page: 1, PageSize: 20})
+	items, total, err := repo.List(context.Background(), TaskExecutionFilter{TenantID: 7, Module: ModuleQuality, TaskType: TaskTypeQualityPlan, Page: 1, PageSize: 20})
 	if err != nil {
 		t.Fatalf("list executions: %v", err)
 	}
@@ -100,16 +100,16 @@ func TestListUsesStableCreatedAtAndIDOrder(t *testing.T) {
 func TestListFiltersByMultipleTaskTypes(t *testing.T) {
 	db := newTaskExecutionRepositoryTestDB(t)
 	repo := NewTaskExecutionRepository(db)
-	insertTaskExecutionRepositoryTestRowWithSourceTask(t, db, 1, 7, "check", ModuleQuality, TaskTypeQualityCheck, nil, ExecutionStatusSuccess, 10, "2026-01-01 10:00:00")
-	insertTaskExecutionRepositoryTestRowWithSourceTask(t, db, 2, 7, "gate", ModuleQuality, TaskTypeDataValidation, nil, ExecutionStatusSuccess, 20, "2026-01-01 10:01:00")
+	insertTaskExecutionRepositoryTestRowWithSourceTask(t, db, 1, 7, "check", ModuleQuality, TaskTypeQualityPlan, nil, ExecutionStatusSuccess, 10, "2026-01-01 10:00:00")
+	insertTaskExecutionRepositoryTestRowWithSourceTask(t, db, 2, 7, "gate", ModuleQuality, "historical_type", nil, ExecutionStatusSuccess, 20, "2026-01-01 10:01:00")
 	insertTaskExecutionRepositoryTestRowWithSourceTask(t, db, 3, 7, "cleanup", ModuleQuality, TaskTypeCleanupExecutor, nil, ExecutionStatusSuccess, 30, "2026-01-01 10:02:00")
 
 	items, total, err := repo.List(context.Background(), TaskExecutionFilter{
 		TenantID: 7,
 		Module:   ModuleQuality,
 		TaskTypes: []string{
-			TaskTypeQualityCheck,
-			TaskTypeDataValidation,
+			TaskTypeQualityPlan,
+			"historical_type",
 		},
 		Page: 1, PageSize: 20,
 	})

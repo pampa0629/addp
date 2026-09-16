@@ -41,8 +41,8 @@ func NewMaterializationTaskHandler(svc *service.MaterializationService, repo *ex
 }
 
 // List lists saved approved logical tables as materialization tasks.
-// @Summary 列出逻辑表物化任务 | List logical table materialization tasks
-// @Description 仅返回已审批且配置物化目标的逻辑表。| Return approved logical tables with a configured target.
+// @Summary 列出逻辑表建表任务 | List logical-table creation tasks
+// @Description 仅返回已审批且配置物理目标的逻辑表。| Return approved logical tables with a configured physical target.
 // @Tags Model
 // @Produce json
 // @Param task_type query string false "任务类型 | Task type"
@@ -97,7 +97,7 @@ func materializationTaskID(c *gin.Context) (int64, bool) {
 }
 
 // Detail returns the task execution contract from its logical table.
-// @Summary 获取逻辑表物化任务 | Get logical table materialization task
+// @Summary 获取逻辑表建表任务 | Get logical-table creation task
 // @Tags Model
 // @Produce json
 // @Param task_type path string true "任务类型 | Task type"
@@ -126,7 +126,7 @@ func (h *MaterializationTaskHandler) Detail(c *gin.Context) {
 }
 
 // Execute enqueues a materialization child with verified orchestration lineage.
-// @Summary 编排执行逻辑表物化 | Execute orchestrated logical table materialization
+// @Summary 编排执行逻辑表建表 | Execute orchestrated logical-table creation
 // @Description 仅接受 addp-orchestrator 和有效父执行；参数只允许模型版本。| Only addp-orchestrator with a valid parent execution; parameters only allow model version.
 // @Tags Model
 // @Accept json
@@ -190,7 +190,7 @@ func (h *MaterializationTaskHandler) Execute(c *gin.Context) {
 
 // Status returns the unified execution and its stable outputs.
 // @Failure 400 {object} models.ErrorResponse
-// @Summary 获取物化执行状态 | Get materialization execution status
+// @Summary 获取建表执行状态 | Get table-creation execution status
 // @Tags Model
 // @Produce json
 // @Param execution_id path string true "执行 UUID | Execution UUID"

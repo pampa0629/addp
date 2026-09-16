@@ -6742,10 +6742,6 @@ const docTemplate = `{
                         "type": "string"
                     }
                 },
-                "extra_quality_rules": {
-                    "type": "object",
-                    "additionalProperties": true
-                },
                 "format": {
                     "type": "string"
                 },
@@ -8104,9 +8100,6 @@ const docTemplate = `{
                         "type": "string"
                     }
                 },
-                "extra_quality_rules": {
-                    "$ref": "#/definitions/github_com_addp_standard_internal_models.JSONB"
-                },
                 "format": {
                     "type": "string"
                 },
@@ -9417,10 +9410,6 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
-                },
-                "extra_quality_rules": {
-                    "type": "object",
-                    "additionalProperties": true
                 },
                 "format": {
                     "type": "string"

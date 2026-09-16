@@ -20,8 +20,7 @@ func qualityExecutionFilter(tenantID, page, pageSize int) commonExecution.TaskEx
 		TenantID: tenantID,
 		Module:   commonExecution.ModuleQuality,
 		TaskTypes: []string{
-			commonExecution.TaskTypeQualityCheck,
-			commonExecution.TaskTypeDataValidation,
+			commonExecution.TaskTypeQualityPlan,
 		},
 		Page:     page,
 		PageSize: pageSize,
@@ -40,7 +39,7 @@ func qualityExecutionStatus(value string) (string, error) {
 }
 
 func isQualityExecution(item *commonExecution.TaskExecution) bool {
-	return item != nil && item.Module == commonExecution.ModuleQuality && (item.TaskType == commonExecution.TaskTypeQualityCheck || item.TaskType == commonExecution.TaskTypeDataValidation)
+	return item != nil && item.Module == commonExecution.ModuleQuality && item.TaskType == commonExecution.TaskTypeQualityPlan
 }
 
 func NewExecutionHandler(executionRepo *commonExecution.TaskExecutionRepository) *ExecutionHandler {

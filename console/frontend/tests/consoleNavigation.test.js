@@ -192,9 +192,10 @@ describe('Console navigation bridge', () => {
 
   it('shows Quality navigation only for matching human permissions', () => {
 	const configSource = readFileSync(new URL('../src/config/portalConfig.js', import.meta.url), 'utf8')
-	expect(configSource).toContain("index: '/quality/rule-applications', icon: Setting, label: 'console.menus.quality.ruleApplications', recentLabel: 'console.menus.quality.recentRuleApplications', permissions: ['quality.rule_application.read']")
-	expect(configSource).toContain("index: '/quality/check-tasks',       icon: List,    label: 'console.menus.quality.checkTasks', recentLabel: 'console.menus.quality.recentCheckTasks', permissions: ['quality.check_task.read']")
-	expect(configSource).toContain("index: '/quality/data-validation-tasks', icon: Lock, label: 'console.menus.quality.dataValidationTasks', recentLabel: 'console.menus.quality.recentDataValidationTasks', permissions: ['quality.data_validation.read']")
+	expect(configSource).toContain("index: '/quality/rules', icon: List, label: 'console.menus.quality.rules', permissions: ['quality.rule.read']")
+	expect(searchIndex('质量规则', key => key, []).map(item => item.route)).not.toContain('/quality/rules')
+	expect(searchIndex('质量规则', key => key, ['quality.rule.read']).map(item => item.route)).toContain('/quality/rules')
+	expect(configSource).toContain("index: '/quality/plans', icon: List, label: 'console.menus.quality.plans', recentLabel: 'console.menus.quality.recentPlans', permissions: ['quality.plan.read']")
 	expect(configSource).not.toContain("index: '/quality/executions'")
 	expect(configSource).toContain("index: '/quality/issues',            icon: Warning, label: 'console.menus.quality.issues', recentLabel: 'console.menus.quality.recentIssues', permissions: ['quality.issue.read']")
   })

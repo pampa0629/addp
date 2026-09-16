@@ -9,41 +9,7 @@ import (
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/query/plan"
-	"github.com/addp/common/query/sqlcompile"
 )
-
-// RelationalFixtureCompiler only supplies a test engine identity around the
-// production relation renderer. It has no private DAG or expression compiler.
-// Native source certification and production capability remain unregistered.
-type RelationalFixtureCompiler struct {
-	Expression sqlcompile.ExpressionDialect
-	Result     sqlcompile.ResultDialect
-	Scan       sqlcompile.ScanDialect
-}
-
-func (c RelationalFixtureCompiler) Identity() plugin.CompilerIdentity {
-	return plugin.CompilerIdentity{ID: "conformance.relations", Version: "1"}
-}
-func (c RelationalFixtureCompiler) Check(r plugin.CompileRequest) (plugin.SupportReport, error) {
-	if err := r.Validate(); err != nil {
-		return plugin.SupportReport{}, err
-	}
-	_, err := sqlcompile.CompileRelations(r, c.Expression, c.Result, c.Scan)
-	if errors.Is(err, plugin.ErrAnalyticalUnsupported) {
-		return plugin.SupportReport{Diagnostics: []plugin.SupportDiagnostic{{Code: "unsupported_relation_plan"}}}, nil
-	}
-	return plugin.SupportReport{Supported: err == nil}, err
-}
-func (c RelationalFixtureCompiler) Compile(r plugin.CompileRequest) (plugin.CompiledQuery, error) {
-	if err := r.Validate(); err != nil {
-		return plugin.CompiledQuery{}, err
-	}
-	rendered, err := sqlcompile.CompileRelations(r, c.Expression, c.Result, c.Scan)
-	if err != nil {
-		return plugin.CompiledQuery{}, err
-	}
-	return plugin.NewCompiledQuery(r, c.Identity(), "sql", rendered.SQL, rendered.Evaluations)
-}
 
 func integerRequest(engineID uint) plugin.CompileRequest {
 	id := datatype.FieldInfo{Name: "id", Type: datatype.FieldTypeInt}
@@ -152,4 +118,36 @@ func executeIntegerFixture(t *testing.T, provider plugin.AnalyticalCompilerProvi
 	}
 	value, err := strconv.ParseInt(*text, 10, 64)
 	return &value, invalid, err
+}
+
+// CompilerContract runs without a database and exercises the registered compiler.
+func CompilerContract(t *testing.T, c plugin.AnalyticalCompiler) {
+	t.Helper()
+	r := integerRequest(42)
+	report, err := c.Check(r)
+	if err != nil || !report.Supported {
+		t.Fatalf("check=%#v err=%v", report, err)
+	}
+	first, err := c.Compile(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Plan.Nodes[0], r.Plan.Nodes[2] = r.Plan.Nodes[2], r.Plan.Nodes[0]
+	second, err := c.Compile(r)
+	if err != nil || first.Fingerprint() != second.Fingerprint() || first.Template() != second.Template() {
+		t.Fatalf("non deterministic compilation: %v", err)
+	}
+	r.Instance.Capability = plugin.AnalyticalCapability{}
+	report, err = c.Check(r)
+	if err != nil || report.Supported || len(report.Diagnostics) == 0 {
+		t.Fatalf("revoked check=%#v err=%v", report, err)
+	}
+	if _, err = c.Compile(r); !errors.Is(err, plugin.ErrAnalyticalUnsupported) {
+		t.Fatalf("revoked compile=%v", err)
+	}
+	r = integerRequest(42)
+	r.Plan.Root = "missing"
+	if _, err = c.Compile(r); !errors.Is(err, plugin.ErrAnalyticalInvalid) {
+		t.Fatalf("invalid compile=%v", err)
+	}
 }

@@ -22,7 +22,6 @@ func setupLogicalTableRepositoryTestDB(t *testing.T) *gorm.DB {
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			tenant_id INTEGER NOT NULL,
 			domain_id INTEGER,
-			entity_id INTEGER,
 			name TEXT NOT NULL,
 			code TEXT NOT NULL,
 			description TEXT,

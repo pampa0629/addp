@@ -16,6 +16,93 @@ import (
 	"github.com/addp/system/internal/testsupport"
 )
 
+func TestModelMetaCatalogReadForwardMigrationAgainstPostgres(t *testing.T) {
+	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
+	if dsn == "" {
+		t.Skip("set ADDP_SYSTEM_POSTGRES_TEST_DSN to a disposable PostgreSQL database")
+	}
+	testsupport.RequireDisposablePostgresDSN(t, dsn)
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`DROP SCHEMA IF EXISTS system CASCADE; DROP SCHEMA IF EXISTS common CASCADE`); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	before, after := migrationFilesBeforeAndThrough(t, "000146_iam_model_meta_catalog_read.up.sql")
+	if err := (&Runner{DSN: dsn, FS: before, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	readState := func() (int, map[string]int64) {
+		t.Helper()
+		var grants int
+		if err := db.QueryRow(`
+			SELECT count(*)
+			FROM system.role_permissions AS role_permission
+			JOIN system.roles AS role ON role.id = role_permission.role_id
+			JOIN system.permissions AS permission ON permission.id = role_permission.permission_id
+			WHERE role.role_key IN ('tenant.model_runtime')
+			  AND permission.permission_key = 'meta.catalog.read'
+			  AND role_permission.source_type = 'product'
+		`).Scan(&grants); err != nil {
+			t.Fatal(err)
+		}
+		rows, err := db.Query(`
+			SELECT service_principal.name, principal.authorization_version
+			FROM system.service_principals AS service_principal
+			JOIN system.principals AS principal ON principal.id = service_principal.id
+			WHERE service_principal.name IN ('addp-model')
+			ORDER BY service_principal.name
+		`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer rows.Close()
+		versions := map[string]int64{}
+		for rows.Next() {
+			var name string
+			var version int64
+			if err := rows.Scan(&name, &version); err != nil {
+				t.Fatal(err)
+			}
+			versions[name] = version
+		}
+		if err := rows.Err(); err != nil {
+			t.Fatal(err)
+		}
+		return grants, versions
+	}
+
+	grantsBefore, versionsBefore := readState()
+	if grantsBefore != 0 || len(versionsBefore) != 1 {
+		t.Fatalf("pre-migration grants=%d versions=%v", grantsBefore, versionsBefore)
+	}
+	runner := &Runner{DSN: dsn, FS: after, Root: DefaultMigrationsRoot}
+	if err := runner.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	grantsAfter, versionsAfter := readState()
+	if grantsAfter != 1 {
+		t.Fatalf("post-migration grants=%d, want 1", grantsAfter)
+	}
+	for name, versionBefore := range versionsBefore {
+		if versionsAfter[name] != versionBefore+1 {
+			t.Fatalf("%s authorization version=%d, want %d", name, versionsAfter[name], versionBefore+1)
+		}
+	}
+	if err := runner.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	grantsAgain, versionsAgain := readState()
+	if grantsAgain != grantsAfter || !reflect.DeepEqual(versionsAgain, versionsAfter) {
+		t.Fatalf("migration rerun changed grants or versions: grants=%d versions=%v", grantsAgain, versionsAgain)
+	}
+}
+
 func TestRuntimeAuditEventCreateForwardMigrationAgainstPostgres(t *testing.T) {
 	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
 	if dsn == "" {
@@ -4637,8 +4724,8 @@ func assertAuthorizationCatalogRetirement(t *testing.T, db *sql.DB) {
 	`).Scan(&activePermissionCount, &disabledPermissionCount); err != nil {
 		t.Fatalf("read retired Permission counts: %v", err)
 	}
-	if activePermissionCount < 345 || disabledPermissionCount != 98 {
-		t.Fatalf("Permission status counts = active:%d disabled:%d, want at least 345 and exactly 98", activePermissionCount, disabledPermissionCount)
+	if activePermissionCount < 345 || disabledPermissionCount != 111 {
+		t.Fatalf("Permission status counts = active:%d disabled:%d, want at least 345 and exactly 111", activePermissionCount, disabledPermissionCount)
 	}
 
 	var disabledRoles string
@@ -6702,14 +6789,14 @@ func assertPublicationRemoval(t *testing.T, db *sql.DB) {
 	if err := db.QueryRow(`SELECT count(*) FROM system.permissions WHERE status='active' AND (permission_key LIKE 'model.materialization_group.%' OR permission_key LIKE 'model.materialization_read.%' OR permission_key LIKE 'quality.materialization_gate.%')`).Scan(&activeOld); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.QueryRow(`SELECT count(*) FROM system.role_permissions b JOIN system.roles r ON r.id=b.role_id JOIN system.permissions p ON p.id=b.permission_id WHERE r.role_key='tenant.governance_manager' AND p.permission_key LIKE 'quality.data_validation.%' AND p.status='active'`).Scan(&bindings); err != nil {
+	if err := db.QueryRow(`SELECT count(*) FROM system.role_permissions b JOIN system.roles r ON r.id=b.role_id JOIN system.permissions p ON p.id=b.permission_id WHERE r.role_key='tenant.governance_manager' AND p.permission_key LIKE 'quality.plan.%' AND p.status='active'`).Scan(&bindings); err != nil {
 		t.Fatal(err)
 	}
 	var providerBindings, unexpectedBindings int
 	if err := db.QueryRow(`SELECT count(*) FILTER (WHERE r.role_key='tenant.orchestrator_runtime'), count(*) FILTER (WHERE r.role_key<>'tenant.orchestrator_runtime') FROM system.role_permissions b JOIN system.roles r ON r.id=b.role_id JOIN system.permissions p ON p.id=b.permission_id WHERE p.permission_key IN ('model.task_provider.read','model.task_provider.execute') AND p.status='active'`).Scan(&providerBindings, &unexpectedBindings); err != nil || providerBindings != 2 || unexpectedBindings != 0 {
 		t.Fatalf("model task provider grants=%d unexpected=%d err=%v", providerBindings, unexpectedBindings, err)
 	}
-	if activeOld != 0 || bindings != 4 {
+	if activeOld != 0 || bindings != 5 {
 		t.Fatalf("retired active=%d validation bindings=%d", activeOld, bindings)
 	}
 }

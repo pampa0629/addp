@@ -91,8 +91,8 @@ other = "需要身份认证"
 [service.configuration.version_conflict]
 other = "服务运行策略已被其他管理员更新"
 
-["service.metric.publication_conflict"]
-other = "服务发布版本已变化，请刷新后重新选择指标来源。"
+["service.query.version_conflict"]
+other = "资源已被其他用户修改，请重新加载后重试"
 
 [service.metric.publication_failed]
 other = "指标来源发布更新失败。"

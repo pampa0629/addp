@@ -33,10 +33,6 @@ func mysqlCatalogFieldType(nativeType string) datatype.FieldType {
 // MySQLPlugin MySQL 数据库插件
 type MySQLPlugin struct{}
 
-func (p *MySQLPlugin) AnalyticalSQLDialect() (commonquery.AnalyticalDialect, error) {
-	return commonquery.NewAnalyticalDialect(p.SQLDialect())
-}
-
 var (
 	_ plugin.BoundedWatermarkReadProvider        = (*MySQLPlugin)(nil)
 	_ plugin.SpatialFeatureReadProvider          = (*MySQLPlugin)(nil)

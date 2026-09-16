@@ -309,6 +309,10 @@
             />
           </el-select>
         </el-form-item>
+        <el-alert v-if="serviceVersionConflict" type="warning" :closable="false">
+          {{ t('model.metric_workspace.rebind_conflict') }}
+          <el-button link type="primary" :loading="busy" @click="reloadServiceTarget">{{ t('model.metric_workspace.reload_service') }}</el-button>
+        </el-alert>
         <el-alert
           v-if="serviceMode === 'rebind'"
           :title="t('model.metric_workspace.rebind_warning')"
@@ -317,7 +321,7 @@
         <el-form-item v-else :label="t('model.metric_workspace.service_name')"
           ><el-input v-model="serviceName" /></el-form-item></el-form
       ><template #footer
-        ><el-button type="primary" :loading="busy" @click="publishService">{{
+        ><el-button type="primary" :loading="busy" :disabled="serviceVersionConflict" @click="publishService">{{
           t('model.metric_workspace.service')
         }}</el-button></template
       ></el-dialog
@@ -609,6 +613,7 @@ const remove = () =>
     markSaved();
     await go();
   });
+const serviceVersionConflict = ref(false);
 const serviceMode = ref('create'),
   existingServiceID = ref(null),
   existingServices = ref([]),
@@ -621,7 +626,7 @@ async function searchServices(search = '') {
     const response = await metricServiceAPI.search(search);
     if (request === serviceSearchGeneration)
       existingServices.value = response.data.filter(
-        (v) => v.config_type === 'sql',
+        (v) => ['sql', 'table', 'analytical'].includes(v.config_type),
       );
   } catch (err) {
     if (request === serviceSearchGeneration) {
@@ -640,6 +645,7 @@ const openServiceDialog = () =>
       ? 'create'
       : 'rebind';
     existingServiceID.value = null;
+    serviceVersionConflict.value = false;
     serviceDialog.value = true;
     if (
       auth.hasPermission('service.definition.update') &&
@@ -650,8 +656,14 @@ const openServiceDialog = () =>
 const operationChanged = () => {
   if (form.operation === 'directional_overlap') form.filters = [];
 };
+const reloadServiceTarget = () => action(async () => {
+  const target = await metricServiceAPI.get(existingServiceID.value);
+  existingServices.value = [target, ...existingServices.value.filter(v => v.id !== target.id)];
+  serviceVersionConflict.value = false;
+});
 const publishService = () =>
   action(async () => {
+    if (serviceVersionConflict.value) return;
     const metric_source = {
       implementation_id: item.value.id,
       revision_id: revision.value.id,
@@ -661,19 +673,31 @@ const publishService = () =>
       const target = existingServices.value.find(
         (v) => v.id === existingServiceID.value,
       );
-      if (!target?.service_version)
-        throw Error(t('model.metric_workspace.required'));
-      service = await metricServiceAPI.rebind(target.id, {
-        metric_source,
-        service_version: target.service_version,
-      });
+      if (!target) {
+        ElMessage.error(t('model.metric_workspace.required'));
+        return;
+      }
+      if (!Number.isSafeInteger(target.version) || target.version <= 0) {
+        ElMessage.error(t('model.metric_workspace.rebind_version_unavailable'));
+        return;
+      }
+      try {
+        service = await metricServiceAPI.rebind(target.id, {
+          metric_source,
+          version: target.version,
+        });
+      } catch (err) {
+        if (err.response?.data?.error_code !== 'resource_version_conflict') throw err;
+        serviceVersionConflict.value = true;
+        return;
+      }
     } else {
       if (!serviceName.value.trim())
         throw Error(t('model.metric_workspace.required'));
       service = await metricServiceAPI.create({
         service_name: serviceName.value.trim(),
         title: item.value.name,
-        config_type: 'sql',
+        config_type: 'analytical',
         metric_source,
         public_access: false,
         max_features:

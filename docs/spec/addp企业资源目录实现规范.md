@@ -103,7 +103,7 @@ StandardMapping 是独立、可审核、可并发编辑的关系事实，不是 
 
 - `element_revision_id` 必须属于 `element_id` 且已经发布；正式映射不得动态跟随数据元当前修订。
 - `source` 区分人工与 Copilot 建议；Copilot 只能创建 `proposed` 候选，不能直接写入 `approved`。
-- `review_status` 固定为 `proposed|approved|rejected|withdrawn`。只有 `approved` 计入治理覆盖率、进入数据字典并可被 Quality 创建 RuleApplication。
+- `review_status` 固定为 `proposed|approved|rejected|withdrawn`。只有 `approved` 计入治理覆盖率并进入数据字典。Quality 检查方案独立配置，不以该映射为执行前置。
 - 同一组件在任一时点最多一个 `approved` 映射。批准新候选时必须在同一事务撤回旧映射并推进双方版本，不能依赖先查后写。
 - `evidence` 保存推荐依据和来源定位；置信度只辅助审核，不代替审核结论。
 - CatalogEntry 为 `certified` 时禁止直接创建、编辑、批准、拒绝或撤回映射；必须先走既有撤销认证动作。
@@ -391,7 +391,7 @@ Meta DataItem 变化摘要必须由技术事实直接携带 `schema_name` 和 `t
 POST /api/v1/quality/runtime/catalog-summaries/resolve
 ```
 
-详情读取时按精确物理表引用动态组合 `configured`、最近 execution 状态、当前有效评分、open Issue 数量和 Quality 详情路径。Quality 不可达时 Catalog 返回 `unavailable`，不回退到旧评分；未配置返回 `not_configured`，不解释为高质量或失败。本阶段只在 Catalog 详情动态展示，不提供质量搜索过滤或排序，避免为了分页投影复制 Quality 事实。
+详情读取时按精确物理表引用动态组合 `configured`、最近 execution 状态、当前关联方案的规则通过率、open Issue 数量和 Quality 详情路径。Quality 不可达时 Catalog 返回 `unavailable`，不回退到旧评分；未配置返回 `not_configured`，不解释为高质量或失败。本阶段只在 Catalog 详情动态展示，不提供质量搜索过滤或排序，避免为了分页投影复制 Quality 事实。
 
 ### 5.9 Meta 数据血缘的用户上下文联邦视图
 
@@ -501,7 +501,7 @@ GET /api/v1/catalog/entries/{id}/data-dictionary?as_of={RFC3339}
 - `as_of` 可选，省略时由 Catalog 在一次请求中固定一个 UTC 服务器时点；显式值必须是带时区的 RFC3339 时间。
 - Catalog 先使用现有目录可见性规则校验条目，再使用 `addp-catalog` Tenant Service Access Token 调用 Meta `GET /api/v1/meta/items/{item_id}/fields?include_details=true` 读取当前物理字段。Catalog 不从已观察摘要伪造当前字段，也不解析路径猜测 Meta 身份。
 - Catalog 用自身权威且已审核的 StandardMapping 把 Meta 字段连接到确定的 `element_revision_id`，然后通过 Standard 的精确修订批量读取契约解析该不可变数据元修订及其固定引用的码值集修订；不得按稳定 `element_id` 和查询时点重新选择另一修订。
-- `as_of` 只用于说明映射所指修订在该业务时点是否处于生效区间，不改变 StandardMapping 的修订选择。Model 审批按统一审批时点解析“当前生效修订”，Catalog / Quality 对既有映射则按 `element_revision_id` 精确读取，两种契约不可合并或互相兜底。
+- `as_of` 只用于说明映射所指修订在该业务时点是否处于生效区间，不改变 StandardMapping 的修订选择。Model 审批按统一审批时点解析“当前生效修订”，Catalog 对既有映射则按 `element_revision_id` 精确读取，两种契约不可合并或互相兜底。
 - 响应按 Meta 字段顺序返回物理名称、原生类型、通用类型、可空、主键、默认表达式、注释等物理事实，并可选组合数据元编码、名称、定义、数据类型、格式、值域、安全等级、生效区间及码项。未关联 Element 的物理字段仍必须返回，其标准解释为 `null`。
 - `as_of` 只回溯 Standard 修订语义；Meta 当前没有物理 Schema 时态版本，因此不得把本视图表述为历史物理结构快照。
 

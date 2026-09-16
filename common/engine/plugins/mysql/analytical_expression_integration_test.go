@@ -10,7 +10,7 @@ func TestIntegrationMySQLAnalyticalExpressions(t *testing.T) {
 	defer db.Close()
 	defer dropMySQLIntegrationDatabase(db, database)
 	info["database"] = database
-	conformance.PreparedExpressions(t, &integerPreparedProvider{MySQLPlugin: provider, compiler: conformance.RelationalFixtureCompiler{Expression: analyticalExpressionDialect{}, Result: analyticalResultDialect{}, Scan: analyticalScanDialect{}}}, info)
+	conformance.PreparedExpressions(t, provider, info)
 }
 
 func TestIntegrationMySQLAnalyticalCalendar(t *testing.T) {
@@ -29,7 +29,7 @@ func TestIntegrationMySQLAnalyticalCalendar(t *testing.T) {
 			t.Fatalf("warnings=%d err=%v", warnings, err)
 		}
 	})
-	conformance.PreparedCalendar(t, &integerPreparedProvider{MySQLPlugin: provider, compiler: conformance.RelationalFixtureCompiler{Expression: analyticalExpressionDialect{}, Result: analyticalResultDialect{}, Scan: analyticalScanDialect{}}}, info)
+	conformance.PreparedCalendar(t, provider, info)
 }
 
 func TestIntegrationMySQLAnalyticalRelations(t *testing.T) {
@@ -37,5 +37,36 @@ func TestIntegrationMySQLAnalyticalRelations(t *testing.T) {
 	defer db.Close()
 	defer dropMySQLIntegrationDatabase(db, database)
 	info["database"] = database
-	conformance.PreparedRelations(t, &integerPreparedProvider{MySQLPlugin: provider, compiler: conformance.RelationalFixtureCompiler{Expression: analyticalExpressionDialect{}, Result: analyticalResultDialect{}, Scan: analyticalScanDialect{}}}, info)
+	conformance.PreparedRelations(t, provider, info)
+	t.Run("result requests", func(t *testing.T) { conformance.PreparedResultRequests(t, provider, info) })
+}
+
+func TestIntegrationMySQLAnalyticalDateBuckets(t *testing.T) {
+	db, provider, info, database := openMySQLUpsertIntegration(t)
+	defer db.Close()
+	defer dropMySQLIntegrationDatabase(db, database)
+	info["database"] = database
+	conformance.PreparedDateBuckets(t, provider, info)
+}
+
+func TestIntegrationMySQLAnalyticalText(t *testing.T) {
+	db, provider, info, database := openMySQLUpsertIntegration(t)
+	defer db.Close()
+	defer dropMySQLIntegrationDatabase(db, database)
+	info["database"] = database
+	conn, err := db.Conn(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if _, err = conn.ExecContext(t.Context(), "SET lc_time_names = 'de_DE'"); err != nil {
+		t.Fatal(err)
+	}
+	conformance.NativeText(t, conn, analyticalExpressionDialect{}, func(t *testing.T) {
+		var warnings int
+		if err := conn.QueryRowContext(t.Context(), "SHOW COUNT(*) WARNINGS").Scan(&warnings); err != nil || warnings != 0 {
+			t.Fatalf("warnings=%d err=%v", warnings, err)
+		}
+	})
+	conformance.PreparedText(t, provider, info)
 }

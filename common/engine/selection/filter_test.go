@@ -1,10 +1,35 @@
 package selection
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/addp/common/models"
 )
+
+func TestAnalyticalSelectionUsesInstanceCapability(t *testing.T) {
+	capabilities := models.JSONString(`{"schema_version":"engine.capabilities/v1","compute":{"query":{"supported":true,"result_kinds":["table"],"analytical":{"supported":true,"plan_versions":["addp.query_plan/v1"],"semantic_profiles":["relational_analytics_v1"]}}}}`)
+	engine := &models.Engine{EngineType: "future_engine", Capabilities: &capabilities, LifecycleState: models.EngineLifecycleActive, ConnectionStatus: models.EngineConnectionOnline}
+	if !SupportsAnalytical(engine) || !IsAnalyticalSelectionOption(engine) || !IsAvailableForAnalytical(engine) {
+		t.Fatal("certified future engine rejected")
+	}
+	engine.ConnectionStatus = models.EngineConnectionOffline
+	if !IsAnalyticalSelectionOption(engine) || IsAvailableForAnalytical(engine) {
+		t.Fatal("offline option hidden or enabled")
+	}
+	engine.LifecycleState = models.EngineLifecycleDisabled
+	if IsAnalyticalSelectionOption(engine) || IsAvailableForAnalytical(engine) {
+		t.Fatal("disabled option enabled")
+	}
+	capabilities = models.JSONString(strings.Replace(string(capabilities), "relational_analytics_v1", "unknown", 1))
+	if SupportsAnalytical(engine) || SupportsAnalytical(nil) {
+		t.Fatal("invalid capability accepted")
+	}
+	capabilities = models.JSONString(`{"schema_version":"engine.capabilities/v1","compute":{"query":{"supported":true,"result_kinds":["table"]}}}`)
+	if SupportsAnalytical(engine) {
+		t.Fatal("ordinary query inferred as analytical")
+	}
+}
 
 func TestStructuredCapabilitiesStorageFilter(t *testing.T) {
 	caps := `{

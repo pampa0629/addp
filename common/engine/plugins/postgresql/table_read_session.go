@@ -387,7 +387,9 @@ func (c postgresColumnInfo) IsSpatial() bool {
 	}
 }
 
-func postgresTableColumns(ctx context.Context, db *sql.DB, schema, table string) ([]postgresColumnInfo, error) {
+func postgresTableColumns(ctx context.Context, db interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+}, schema, table string) ([]postgresColumnInfo, error) {
 	if db == nil {
 		return nil, fmt.Errorf("postgresql table columns requires db")
 	}

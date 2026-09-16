@@ -96,9 +96,14 @@ export const resolveDimensionalModelRouteState = (routeQuery = {}) => {
 export const resolveLogicalTableDetailRouteState = (routeQuery = {}, tableType) => {
   const query = resolveLogicalTableListRouteState(routeQuery).query
   const supportsRelations = tableType === 'fact' || tableType === 'dimension'
-  const tab = supportsRelations && queryValue(routeQuery.tab) === 'relations' ? 'relations' : 'definition'
+  const requestedTab = queryValue(routeQuery.tab)
+  const tab = requestedTab === 'physical-target'
+    ? 'physical-target'
+    : requestedTab === 'concept-mappings'
+    ? 'concept-mappings'
+    : supportsRelations && requestedTab === 'relations' ? 'relations' : 'definition'
   const relationId = tab === 'relations' ? positiveInteger(routeQuery.relation_id, null) : null
-  if (tab === 'relations') query.tab = tab
+  if (tab !== 'definition') query.tab = tab
   if (relationId) query.relation_id = String(relationId)
   return { tab, relationId, query, changed: !queriesEqual(routeQuery, query) }
 }

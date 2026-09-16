@@ -1,424 +1,564 @@
-import { expect, test } from '@playwright/test'
-
-const executionID = 'bb1a324d-53a3-4f02-b666-d51385d258c8'
-const ruleKey = 'bfed8f3b-e3b4-8a8e-8140-860d0b0585ea'
-
-const engines = [
-  { id: 2, name: '业务 PostgreSQL', engine_type: 'postgresql', lifecycle_state: 'active' }
-]
-
-const qualityResult = {
-  schema_version: 'addp.quality.execution-result/v1',
-  quality_score: 86.67,
-  total_rules: 3,
-  passed_rules: 2,
-  failed_rules: 1,
-  field_scores: [{ column: 'mobile_phone', score: 86.67, rule_count: 3 }],
-  rule_details: [{
-    rule_application_id: 9,
-    rule_key: ruleKey,
-    type: 'format',
-    severity: 'error',
-    message: '手机号格式不正确',
-    column: 'mobile_phone',
-    table: 'customers',
-    schema: 'public',
-    pass_rate: 86.67,
-    failed_count: 4,
-    total_count: 30,
-    passed: false
-  }]
-}
-
-const executions = [{
-  execution_id: executionID,
-  source_task_name: '客户表质量检查',
-  source_task_id: '12',
-  task_type: 'check',
-  status: 'success',
-  execution_time_ms: 142,
-  created_at: '2026-08-14T08:00:00Z',
-  metadata: qualityResult
-}]
-
-const issues = [{
-  id: 17,
-  type: 'format',
-  rule_key: ruleKey,
-  table_name: 'customers',
-  column_name: 'mobile_phone',
-  pass_rate: 86.67,
-  failed_count: 4,
-  execution_id: executionID,
-  last_execution_id: executionID,
-  engine_id: 2,
-  status: 'ignored',
-  created_at: '2026-08-14T08:00:00Z'
-}]
-
-const ruleApplications = [{
-  id: 9,
-  element: { id: 3, name: '手机号', code: 'mobile_phone' },
-  engine_id: 2,
-  schema_name: 'public',
-  table_name: 'customers',
-  column_name: 'mobile_phone',
-  enabled: true
-}]
-
-const checkTasks = [{
+import { expect, test } from "@playwright/test";
+const executionID = "bb1a324d-53a3-4f02-b666-d51385d258c8";
+const ruleKey = "bfed8f3b-e3b4-8a8e-8140-860d0b0585ea";
+const locator = "addp://engine/2/path/public/customers?type=table&node_id=23";
+const rule = {
+  id: 7,
+  code: "required",
+  name: "客户标识非空",
+  type: "not_null",
+  params: {},
+  revision_no: 1,
+  version: 1,
+  plan_count: 1,
+};
+const plan = {
   id: 12,
-  name: '客户表质量检查',
-  description: '客户核心字段质量检查',
-  engine_id: 2,
-  schema_name: 'public',
-  table_name: 'customers',
+  code: "customers_check",
+  name: "客户质量检查",
+  version: 2,
+  table_bindings: [{ alias: "customers", locator }],
+  check_items: [
+    {
+      rule_key: ruleKey,
+      rule_id: 7,
+      revision_no: 1,
+      severity: "error",
+      disabled: false,
+      bindings: { table: "customers", column: "id" },
+      rule: { ...rule, rule_id: 7, latest_revision_no: 1 },
+    },
+  ],
   last_execution_id: executionID,
-  last_execution_status: 'success',
-  last_run_at: '2026-08-14T08:00:00Z'
-}]
+  last_execution_status: "failed",
+};
+const execution = {
+  execution_id: executionID,
+  source_task_name: plan.name,
+  source_task_id: "12",
+  task_type: "quality_plan",
+  status: "failed",
+  execution_time_ms: 142,
+  created_at: "2026-08-14T08:00:00Z",
+  error_details: { code: "quality.plan.rule_failed" },
+  metadata: {
+    schema_version: "addp.quality.plan-result/v1",
+    quality_score: 0,
+    passed: false,
+    rules: [
+      {
+        rule_key: ruleKey,
+        name: "客户标识非空",
+        type: "not_null",
+        severity: "error",
+        table: "customers",
+        columns: ["id"],
+        total_count: 30,
+        failed_count: 4,
+        passed: false,
+        observed: {},
+      },
+    ],
+  },
+};
 
-test('loads Quality management pages with stable business fields', async ({ page }) => {
-  await installMockBackend(page)
+test("single plan navigation and failed execution retain evidence", async ({
+  page,
+}) => {
+  await installMockBackend(page);
+  await page.goto("/plans");
+  await expect(
+    page.getByRole("heading", { name: "质量检查方案" }),
+  ).toBeVisible();
+  await expect(
+    page.locator(".sidebar-menu").getByText("规则应用配置", { exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.locator(".sidebar-menu").getByText("执行记录", { exact: true }),
+  ).toHaveCount(0);
+  await page.getByRole("button", { name: "执行详情", exact: true }).click();
+  await expect(page.getByText(ruleKey, { exact: true })).toBeVisible();
+  await expect(page.getByText("客户标识非空", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("至少一条 error 级质量规则未通过", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "在统一监控中查看" }),
+  ).toBeVisible();
+});
+test("edits versioned plan without Catalog or Model dependency", async ({
+  page,
+}) => {
+  const state = await installMockBackend(page);
+  await page.goto("/plans?task_id=12");
+  const dialog = page.getByRole("dialog", { name: "编辑质量检查方案" });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "保存", exact: true }).click();
+  await expect.poll(() => state.writes.length).toBe(1);
+  expect(state.writes[0]).toMatchObject({
+    version: 2,
+    table_bindings: plan.table_bindings,
+    check_items: plan.check_items.map(({ rule, ...item }) => item),
+  });
+  expect(state.unexpected).toEqual([]);
+});
+test("creates with physical picker and starts a plan, preventing duplicate submit", async ({
+  page,
+}) => {
+  const state = await installMockBackend(page);
+  await page.goto("/plans?create=1");
+  const dialog = page.getByRole("dialog", { name: "新建质量检查方案" });
+  await dialog.getByRole("textbox").nth(0).fill("outdoor_check");
+  await dialog.getByRole("textbox").nth(1).fill("户外数据质量检查");
+  await dialog.locator(".resource-tree-picker .el-select").click();
+  await page.getByRole("option", { name: "业务 PostgreSQL" }).click();
+  const tree = dialog.locator(".resource-tree-picker");
+  await tree
+    .getByRole("treeitem", { name: "public", exact: true })
+    .locator(".el-tree-node__expand-icon")
+    .first()
+    .click();
+  await tree.getByText("customers", { exact: true }).click();
+  await expect(
+    dialog.locator(".binding-table").getByRole("textbox"),
+  ).toHaveValue("customers");
+  await dialog.locator(".rules-heading .el-select").click();
+  await page.getByRole("option", { name: "客户标识非空 · R1" }).click();
+  await dialog.getByRole("button", { name: "添加检查项", exact: true }).click();
+  await dialog.locator(".rule-card .rule-grid .el-select").nth(1).click();
+  await page.getByRole("option", { name: "id", exact: true }).click();
+  await dialog
+    .getByRole("button", { name: "保存", exact: true })
+    .evaluate((button) => {
+      button.click();
+      button.click();
+    });
+  await expect.poll(() => state.writes.length).toBe(1);
+  expect(state.writes[0].version).toBeUndefined();
+  expect(state.writes[0].check_items[0]).toMatchObject({
+    rule_id: 7,
+    revision_no: 1,
+    bindings: { table: "customers", column: "id" },
+  });
+  await page
+    .getByRole("row", { name: /户外数据质量检查/ })
+    .getByRole("button", { name: "执行", exact: true })
+    .click();
+  await expect.poll(() => state.runs).toEqual([13]);
+  await expect(page).toHaveURL(new RegExp("/executions/" + executionID));
+  expect(state.unexpected).toEqual([]);
+});
+test("keeps edits on version conflict", async ({ page }) => {
+  const state = await installMockBackend(page, {
+    writeError: "方案版本已变化，请重新加载",
+  });
+  await page.goto("/plans?task_id=12");
+  const dialog = page.getByRole("dialog", { name: "编辑质量检查方案" });
+  await dialog.getByRole("textbox").nth(1).fill("保留本次编辑");
+  await dialog.getByRole("button", { name: "保存", exact: true }).click();
+  await expect.poll(() => state.writes.length).toBe(1);
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("textbox").nth(1)).toHaveValue("保留本次编辑");
+  await expect(
+    page.getByText("方案版本已变化，请重新加载", { exact: true }),
+  ).toBeVisible();
+});
+test("imports a frozen Standard constraint in the independent rule library", async ({
+  page,
+}, testInfo) => {
+  const state = await installMockBackend(page);
+  await page.goto("/rules?create=1");
+  const dialog = page.getByRole("dialog", {
+    name: "新建质量规则",
+    exact: true,
+  });
+  await dialog.getByRole("textbox").nth(0).fill("customer_identifier_length");
+  await dialog
+    .getByRole("button", { name: "从数据元导入", exact: true })
+    .click();
+  const source = page.getByRole("dialog", {
+    name: "从数据元导入",
+    exact: true,
+  });
+  await source.locator(".el-select").nth(0).getByRole("combobox").fill("标识");
+  await page.getByRole("option", { name: "客户标识 · R3" }).click();
+  await source.locator(".el-select").nth(1).click();
+  await page.getByRole("option", { name: "长度", exact: true }).click();
+  await source
+    .getByRole("button", { name: "从数据元导入", exact: true })
+    .click();
+  await expect(dialog.getByText("标准修订 #31", { exact: true })).toBeVisible();
+  await expect(source).toBeHidden();
+  await page.screenshot({
+    path: testInfo.outputPath("rule-editor.png"),
+    fullPage: true,
+  });
+  await dialog.getByRole("button", { name: "保存", exact: true }).click();
+  await expect.poll(() => state.ruleWrites.length).toBe(1);
+  expect(state.ruleWrites[0]).toMatchObject({
+    type: "length",
+    source: { element_id: 3, element_revision_id: 31, rule_key: ruleKey },
+    params: { constraint: { min: 1, max: 64 } },
+  });
+  expect(state.writes).toEqual([]);
+});
+test("upgrades a pinned rule only by explicit action in the plan editor", async ({
+  page,
+}, testInfo) => {
+  const state = await installMockBackend(page, { latestRevision: 2 });
+  await page.goto("/plans?task_id=12");
+  const dialog = page.getByRole("dialog", { name: "编辑质量检查方案" });
+  await expect(dialog.locator(".rule-header")).toContainText("R1");
+  await dialog.getByRole("button", { name: "检查新修订", exact: true }).click();
+  await expect(dialog.locator(".rule-header")).toContainText("R1");
+  await dialog.getByRole("button", { name: "升级至 R2", exact: true }).click();
+  await expect(dialog.locator(".rule-header")).toContainText("R2");
+  await page.screenshot({
+    path: testInfo.outputPath("plan-editor.png"),
+    fullPage: true,
+  });
+  await dialog.getByRole("button", { name: "保存", exact: true }).click();
+  await expect.poll(() => state.writes.length).toBe(1);
+  expect(state.writes[0].check_items[0]).toMatchObject({
+    rule_id: 7,
+    revision_no: 2,
+    rule_key: ruleKey,
+  });
+});
+test("rule update conflict preserves edits and offers explicit reload", async ({
+  page,
+}) => {
+  const state = await installMockBackend(page, { ruleConflict: true });
+  await page.goto("/rules?rule_id=7");
+  const dialog = page.getByRole("dialog", { name: "编辑质量规则" });
+  await dialog.getByRole("textbox").nth(1).fill("保留规则编辑");
+  await dialog.getByRole("button", { name: "保存", exact: true }).click();
+  await expect.poll(() => state.ruleWrites.length).toBe(1);
+  await expect(dialog.getByRole("textbox").nth(1)).toHaveValue("保留规则编辑");
+  await expect(
+    dialog.getByRole("button", { name: "重新加载", exact: true }),
+  ).toBeVisible();
+});
+test("unavailable physical target remains editable for rebinding", async ({
+  page,
+}) => {
+  await installMockBackend(page, { missingTarget: true });
+  await page.goto("/plans?task_id=12");
+  const dialog = page.getByRole("dialog", { name: "编辑质量检查方案" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.locator(".binding-table")).toContainText("customers");
+});
+test("requires and persists a note when resolving an issue", async ({
+  page,
+}) => {
+  const backend = await installMockBackend(page, { issueStatus: "open" });
+  await page.goto("/issues");
 
-  await page.goto('/issues?status=ignored&engine_id=2&page_size=50')
-  await expect(page.getByRole('heading', { name: '问题工单' })).toBeVisible()
-  await expect(page.getByText('mobile_phone', { exact: true }).first()).toBeVisible()
-  await expect(page.getByText('已忽略', { exact: true }).first()).toBeVisible()
+  await page.getByRole("button", { name: "标记解决" }).click();
+  const prompt = page.getByRole("dialog", { name: "填写处理说明" });
+  await prompt.getByRole("textbox").fill("已修复手机号格式校验");
+  await prompt.getByRole("button", { name: "确定" }).click();
 
-  await page.goto('/rule-applications?engine_id=2&schema_name=public&table_name=customers&page_size=50')
-  await expect(page.getByRole('heading', { name: '规则应用配置' })).toBeVisible()
-  await expect(page.getByText('手机号（mobile_phone）', { exact: true }).first()).toBeVisible()
-  await expect(page.getByText('customers', { exact: true }).first()).toBeVisible()
-
-  await page.goto('/check-tasks?page_size=50')
-  await expect(page.getByRole('heading', { name: '检查任务' })).toBeVisible()
-  await expect(page.getByText('客户表质量检查', { exact: true }).first()).toBeVisible()
-  await expect(page.getByText('查看详情', { exact: true }).first()).toBeVisible()
-  await expect(page.getByRole('button', { name: '查看执行记录' })).toBeVisible()
-})
-
-test('retains Quality domain execution detail and links back to Monitor', async ({ page }) => {
-  await installMockBackend(page)
-  await page.goto(`/executions/${executionID}`)
-
-  await expect(page.getByText('执行详情', { exact: false }).first()).toBeVisible()
-  await expect(page.getByText(ruleKey, { exact: true }).first()).toBeVisible()
-  await expect(page.getByText('86.7%', { exact: true }).first()).toBeVisible()
-  await expect(page.getByText('format', { exact: true }).first()).toBeVisible()
-  await expect(page.getByText('4', { exact: true }).first()).toBeVisible()
-  await expect(page.getByRole('button', { name: '在统一监控中查看' })).toBeVisible()
-})
-
-test('standalone navigation no longer exposes a duplicate execution list', async ({ page }) => {
-  await installMockBackend(page)
-  await page.goto('/check-tasks')
-  await expect(page.locator('.sidebar-menu').getByText('执行记录', { exact: true })).toHaveCount(0)
-})
-
-test('persists rule application enable changes', async ({ page }) => {
-  const backend = await installMockBackend(page, { ruleApplicationEnabled: false })
-  await page.goto('/rule-applications')
-
-  const enabledSwitch = page.getByRole('switch', { name: '启用' }).first()
-  await expect(enabledSwitch).toHaveAttribute('aria-checked', 'false')
-  await page.locator('.el-switch').first().click()
-
-  await expect.poll(() => backend.enabledRequests.length).toBe(1)
-  expect(backend.enabledRequests[0]).toEqual({ id: 9, enabled: true })
-  await expect(enabledSwitch).toHaveAttribute('aria-checked', 'true')
-
-  await page.locator('.el-switch').first().click()
-  await expect.poll(() => backend.enabledRequests.length).toBe(2)
-  expect(backend.enabledRequests[1]).toEqual({ id: 9, enabled: false })
-  await expect(enabledSwitch).toHaveAttribute('aria-checked', 'false')
-})
-
-test('creates and starts a check task through the catalog-backed form', async ({ page }) => {
-  const backend = await installMockBackend(page)
-  await page.goto('/check-tasks')
-  await page.getByRole('button', { name: '新建任务' }).click()
-
-  const dialog = page.getByRole('dialog', { name: '新建检查任务' })
-  await expect(page).toHaveURL(/\/check-tasks\?create=1$/)
-  await fillCheckTaskForm(page, dialog, '新增客户质量检查')
-  await dialog.getByRole('button', { name: '确定' }).click()
-
-  await expect.poll(() => backend.taskCreateRequests.length).toBe(1)
-  expect(backend.taskCreateRequests[0]).toMatchObject({
-    name: '新增客户质量检查',
-    engine_id: 2,
-    schema_name: 'public',
-    table_name: 'customers'
-  })
-  const createdRow = page.getByRole('row', { name: /新增客户质量检查/ })
-  await expect(createdRow).toBeVisible()
-
-  await createdRow.getByRole('button', { name: '执行' }).click()
-  await expect.poll(() => backend.taskRunRequests.length).toBe(1)
-  expect(backend.taskRunRequests[0]).toBe(13)
-  await expect(createdRow.getByText('待执行', { exact: true })).toBeVisible()
-})
-
-test('requires and persists a note when resolving an issue', async ({ page }) => {
-  const backend = await installMockBackend(page, { issueStatus: 'open' })
-  await page.goto('/issues')
-
-  await page.getByRole('button', { name: '标记解决' }).click()
-  const prompt = page.getByRole('dialog', { name: '填写处理说明' })
-  await prompt.getByRole('textbox').fill('已修复手机号格式校验')
-  await prompt.getByRole('button', { name: '确定' }).click()
-
-  await expect.poll(() => backend.issueStatusRequests.length).toBe(1)
+  await expect.poll(() => backend.issueStatusRequests.length).toBe(1);
   expect(backend.issueStatusRequests[0]).toEqual({
     id: 17,
-    status: 'resolved',
-    note: '已修复手机号格式校验'
-  })
-  await expect(page.getByText('已解决', { exact: true }).first()).toBeVisible()
-  await expect(page.getByRole('button', { name: '标记解决' })).toHaveCount(0)
-})
+    status: "resolved",
+    note: "已修复手机号格式校验",
+  });
+  await expect(page.getByText("已解决", { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "标记解决" })).toHaveCount(0);
+});
 
-test('requires and persists a note when ignoring an issue', async ({ page }) => {
-  const backend = await installMockBackend(page, { issueStatus: 'open' })
-  await page.goto('/issues')
+test("requires and persists a note when ignoring an issue", async ({
+  page,
+}) => {
+  const backend = await installMockBackend(page, { issueStatus: "open" });
+  await page.goto("/issues");
 
-  await page.getByRole('button', { name: '忽略' }).click()
-  const prompt = page.getByRole('dialog', { name: '填写处理说明' })
-  await prompt.getByRole('textbox').fill('业务确认该异常可忽略')
-  await prompt.getByRole('button', { name: '确定' }).click()
+  await page.getByRole("button", { name: "忽略" }).click();
+  const prompt = page.getByRole("dialog", { name: "填写处理说明" });
+  await prompt.getByRole("textbox").fill("业务确认该异常可忽略");
+  await prompt.getByRole("button", { name: "确定" }).click();
 
-  await expect.poll(() => backend.issueStatusRequests.length).toBe(1)
+  await expect.poll(() => backend.issueStatusRequests.length).toBe(1);
   expect(backend.issueStatusRequests[0]).toEqual({
     id: 17,
-    status: 'ignored',
-    note: '业务确认该异常可忽略'
-  })
-  await expect(page.getByText('已忽略', { exact: true }).first()).toBeVisible()
-  await expect(page.getByRole('button', { name: '忽略' })).toHaveCount(0)
-})
+    status: "ignored",
+    note: "业务确认该异常可忽略",
+  });
+  await expect(page.getByText("已忽略", { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "忽略" })).toHaveCount(0);
+});
 
-test('rolls rule application state back when the update is rejected', async ({ page }) => {
+test("keeps an issue open when its status update is rejected", async ({
+  page,
+}) => {
   const backend = await installMockBackend(page, {
-    ruleApplicationEnabled: false,
-    ruleApplicationUpdateError: '规则应用已被其他用户修改'
-  })
-  await page.goto('/rule-applications')
+    issueStatus: "open",
+    issueStatusError: "问题工单已被处理",
+  });
+  await page.goto("/issues");
 
-  const enabledSwitch = page.getByRole('switch', { name: '启用' }).first()
-  await page.locator('.el-switch').first().click()
-  await expect.poll(() => backend.enabledRequests.length).toBe(1)
-  await expect(enabledSwitch).toHaveAttribute('aria-checked', 'false')
-  await expect(page.getByText('规则应用已被其他用户修改', { exact: true })).toBeVisible()
-})
+  await page.getByRole("button", { name: "标记解决" }).click();
+  const prompt = page.getByRole("dialog", { name: "填写处理说明" });
+  await prompt.getByRole("textbox").fill("尝试解决");
+  await prompt.getByRole("button", { name: "确定" }).click();
 
-test('keeps a valid check task form open when creation is rejected', async ({ page }) => {
-  const backend = await installMockBackend(page, { taskCreateError: '同名检查任务已存在' })
-  await page.goto('/check-tasks')
-  await page.getByRole('button', { name: '新建任务' }).click()
-
-  const dialog = page.getByRole('dialog', { name: '新建检查任务' })
-  await fillCheckTaskForm(page, dialog, '重复名称质量检查')
-  await dialog.getByRole('button', { name: '确定' }).click()
-
-  await expect.poll(() => backend.taskCreateRequests.length).toBe(1)
-  await expect(dialog).toBeVisible()
-  await expect(dialog.getByRole('textbox').first()).toHaveValue('重复名称质量检查')
-  await expect(page.getByText('同名检查任务已存在', { exact: true })).toBeVisible()
-  await expect(page.getByRole('row', { name: /重复名称质量检查/ })).toHaveCount(0)
-})
-
-test('keeps an issue open when its status update is rejected', async ({ page }) => {
-  const backend = await installMockBackend(page, {
-    issueStatus: 'open',
-    issueStatusError: '问题工单已被处理'
-  })
-  await page.goto('/issues')
-
-  await page.getByRole('button', { name: '标记解决' }).click()
-  const prompt = page.getByRole('dialog', { name: '填写处理说明' })
-  await prompt.getByRole('textbox').fill('尝试解决')
-  await prompt.getByRole('button', { name: '确定' }).click()
-
-  await expect.poll(() => backend.issueStatusRequests.length).toBe(1)
-  await expect(page.getByText('问题工单已被处理', { exact: true })).toBeVisible()
-  await expect(page.getByText('待处理', { exact: true }).first()).toBeVisible()
-  await expect(page.getByRole('button', { name: '标记解决' })).toBeVisible()
-})
-
-test('submits a check task create request only once while it is pending', async ({ page }) => {
-  const backend = await installMockBackend(page, { taskCreateDelay: 150 })
-  await page.goto('/check-tasks')
-  await page.getByRole('button', { name: '新建任务' }).click()
-
-  const dialog = page.getByRole('dialog', { name: '新建检查任务' })
-  await fillCheckTaskForm(page, dialog, '防重提交质量检查')
-  await dialog.getByRole('button', { name: '确定' }).evaluate(button => {
-    button.click()
-    button.click()
-  })
-
-  await expect.poll(() => backend.taskCreateRequests.length).toBe(1)
-  await expect(page.getByRole('row', { name: /防重提交质量检查/ })).toBeVisible()
-})
-
-async function fillCheckTaskForm(page, dialog, name) {
-  await dialog.getByRole('textbox').first().fill(name)
-  const selectByLabel = (label) => dialog.locator('.el-form-item').filter({ hasText: label }).locator('.el-select')
-  await selectByLabel('PostgreSQL 引擎').click()
-  await page.getByRole('option', { name: '业务 PostgreSQL' }).click()
-  await selectByLabel('Schema').click()
-  await page.getByRole('option', { name: 'public' }).click()
-  await selectByLabel('数据表').click()
-  await page.getByRole('option', { name: 'customers' }).click()
-}
+  await expect.poll(() => backend.issueStatusRequests.length).toBe(1);
+  await expect(
+    page.getByText("问题工单已被处理", { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText("待处理", { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "标记解决" })).toBeVisible();
+});
 
 async function installMockBackend(page, options = {}) {
   const state = {
-    ruleApplications: ruleApplications.map(item => ({
-      ...item,
-      element: { ...item.element },
-      enabled: options.ruleApplicationEnabled ?? item.enabled
-    })),
-    issues: issues.map(item => ({ ...item, status: options.issueStatus ?? item.status })),
-    checkTasks: checkTasks.map(item => ({ ...item })),
-    enabledRequests: [],
+    plans: [structuredClone(plan)],
+    writes: [],
+    ruleWrites: [],
+    runs: [],
+    unexpected: [],
     issueStatusRequests: [],
-    taskCreateRequests: [],
-    taskRunRequests: []
-  }
-
+    issues: [
+      {
+        id: 17,
+        type: "format",
+        rule_key: ruleKey,
+        plan_id: 12,
+        table_name: "customers",
+        column_name: "mobile_phone",
+        pass_rate: 86.67,
+        failed_count: 4,
+        execution_id: executionID,
+        last_execution_id: executionID,
+        engine_id: 2,
+        status: options.issueStatus || "open",
+        created_at: "2026-08-14T08:00:00Z",
+      },
+    ],
+  };
   await page.addInitScript(() => {
-    localStorage.setItem('addp-lang', 'zh-cn')
-    localStorage.setItem('theme-mode', 'light')
-  })
-
-  await page.route('**/api/v1/**', async route => {
-    const request = route.request()
-    const url = new URL(request.url())
-    const path = url.pathname
-
-    if (path === '/api/v1/system/refresh') {
-      return fulfillJSON(route, { access_token: 'quality-e2e-token', expires_in: 3600 })
-    }
-    if (path === '/api/v1/system/users/me') {
-      return fulfillJSON(route, { id: 1, username: 'quality-e2e' })
-    }
-    if (path === '/api/v1/system/auth/context') {
+    localStorage.setItem("addp-lang", "zh-cn");
+    localStorage.setItem("theme-mode", "light");
+  });
+  await page.route("**/api/v1/**", async (route) => {
+    const req = route.request(),
+      url = new URL(req.url()),
+      path = url.pathname;
+    if (path === "/api/v1/system/refresh")
       return fulfillJSON(route, {
-        context: { type: 'tenant' },
-        authorization: { role_assignments: [{ permissions: [
-          'quality.rule_application.read',
-          'quality.check_task.read',
-          'quality.data_validation.read',
-          'monitor.execution.read',
-          'quality.issue.read'
-        ] }] }
-      })
+        access_token: "quality-e2e-token",
+        expires_in: 3600,
+      });
+    if (path === "/api/v1/system/users/me")
+      return fulfillJSON(route, { id: 1, username: "quality-e2e" });
+    if (path === "/api/v1/system/auth/context")
+      return fulfillJSON(route, {
+        context: { type: "tenant" },
+        authorization: {
+          role_assignments: [
+            {
+              permissions: [
+                ...["read", "create", "update", "delete", "execute"].map(
+                  (a) => "quality.plan." + a,
+                ),
+                ...["read", "create", "update", "delete"].map(
+                  (a) => "quality.rule." + a,
+                ),
+                "quality.issue.read",
+                "quality.issue.update",
+                "monitor.execution.read",
+                "system.engine.read",
+                "meta.catalog.read",
+              ],
+            },
+          ],
+        },
+      });
+    const engines = [
+      {
+        id: 2,
+        name: "业务 PostgreSQL",
+        engine_type: "postgresql",
+        engine_family: "tabular",
+        lifecycle_state: "active",
+        connection_status: "online",
+      },
+    ];
+    if (["/api/v1/system/engines", "/api/v1/meta/engines"].includes(path))
+      return fulfillJSON(route, engines);
+    const table = {
+      id: "table-23",
+      label: "customers",
+      type: "table",
+      locator,
+      children: [],
+      has_children: false,
+      metadata: { node_id: 23 },
+    };
+    const schema = {
+      id: "schema-22",
+      label: "public",
+      type: "schema",
+      locator: "addp://engine/2/path/public?type=schema&node_id=22",
+      children: [table],
+      has_children: true,
+    };
+    if (path === "/api/v1/meta/resource-tree/2")
+      return fulfillJSON(route, {
+        id: "db-21",
+        label: "业务 PostgreSQL",
+        type: "database",
+        locator: "addp://engine/2/path/?type=database&node_id=21",
+        children: [schema],
+        has_children: true,
+      });
+    if (path === "/api/v1/meta/resource-tree/2/node")
+      return fulfillJSON(route, {
+        children: url.searchParams.get("locator").includes("type=database")
+          ? [schema]
+          : [table],
+      });
+    if (path === "/api/v1/system/engines/2/catalog/children") {
+      const segments = req.postDataJSON()?.path?.segments || [],
+        next = ["database", "public", "customers"][segments.length];
+      return fulfillJSON(route, {
+        nodes: options.missingTarget
+          ? []
+          : [
+              {
+                name: next,
+                role: segments.length === 2 ? "leaf" : "branch",
+                path: { segments: [...segments, next] },
+              },
+            ],
+      });
     }
-    if (path === '/api/v1/system/engines') return fulfillJSON(route, engines)
-
-    if (request.method() === 'POST' && path === '/api/v1/system/engines/2/catalog/children') {
-      const segments = request.postDataJSON()?.path?.segments || []
-      if (segments.length === 0) {
-        return fulfillJSON(route, { nodes: [{ name: '数据库', role: 'branch', path: { segments: ['database'] } }] })
+    if (path === "/api/v1/system/engines/2/catalog/facts")
+      return fulfillJSON(route, {
+        table: {
+          fields: [
+            { name: "id", type: "integer" },
+            { name: "mobile_phone", type: "text" },
+          ],
+        },
+      });
+    if (path === "/api/v1/quality/rules/element-candidates")
+      return fulfillJSON(route, {
+        data: [
+          {
+            id: 3,
+            revision_id: 31,
+            revision_no: 3,
+            name: "客户标识",
+            quality_rules: {
+              schema_version: "addp.quality.rules/v1",
+              rules: [
+                {
+                  rule_key: ruleKey,
+                  type: "length",
+                  severity: "error",
+                  enabled: true,
+                  params: { min: 1, max: 64 },
+                },
+              ],
+            },
+          },
+        ],
+        total: 1,
+      });
+    if (path.startsWith("/api/v1/quality/rules")) {
+      if (["POST", "PUT"].includes(req.method())) {
+        const body = req.postDataJSON();
+        state.ruleWrites.push(body);
+        if (options.ruleConflict)
+          return fulfillJSON(
+            route,
+            {
+              error: "规则版本已变化",
+              error_code: "resource_version_conflict",
+            },
+            409,
+          );
+        return fulfillJSON(
+          route,
+          { ...body, id: 7, revision_no: 2, version: 2 },
+          req.method() === "POST" ? 201 : 200,
+        );
       }
-      if (segments.length === 1) {
-        return fulfillJSON(route, { nodes: [{ name: 'public', role: 'branch', path: { segments: ['database', 'public'] } }] })
+      if (path.endsWith("/plans"))
+        return fulfillJSON(route, {
+          data: state.plans,
+          total: state.plans.length,
+        });
+      const latest = { ...rule, revision_no: options.latestRevision || 1 };
+      return fulfillJSON(
+        route,
+        path.endsWith("/7") ? latest : { data: [latest], total: 1 },
+      );
+    }
+    if (path.startsWith("/api/v1/quality/plans")) {
+      if (path.endsWith("/run")) {
+        state.runs.push(Number(path.split("/").at(-2)));
+        return fulfillJSON(route, { execution_id: executionID });
       }
-      return fulfillJSON(route, { nodes: [{ name: 'customers', role: 'leaf', path: { segments: ['database', 'public', 'customers'] } }] })
-    }
-
-    if (request.method() === 'PUT' && path === '/api/v1/quality/rule-applications/9') {
-      const body = request.postDataJSON()
-      const row = state.ruleApplications.find(item => item.id === 9)
-      state.enabledRequests.push({ id: 9, enabled: Boolean(body.enabled) })
-      if (options.ruleApplicationUpdateError) {
-        return fulfillJSON(route, { error: options.ruleApplicationUpdateError }, 409)
+      if (["PUT", "POST"].includes(req.method())) {
+        const body = req.postDataJSON();
+        state.writes.push(body);
+        if (options.writeError)
+          return fulfillJSON(
+            route,
+            {
+              error: options.writeError,
+              error_code: "resource_version_conflict",
+            },
+            409,
+          );
+        const saved = {
+          ...body,
+          id: req.method() === "POST" ? 13 : 12,
+          version: 3,
+        };
+        if (req.method() === "POST") state.plans.push(saved);
+        else state.plans[0] = saved;
+        return fulfillJSON(route, saved, req.method() === "POST" ? 201 : 200);
       }
-      row.enabled = Boolean(body.enabled)
-      return fulfillJSON(route, row)
+      return fulfillJSON(
+        route,
+        path.endsWith("/12")
+          ? state.plans[0]
+          : { data: state.plans, total: state.plans.length },
+      );
     }
-    if (request.method() === 'POST' && path === '/api/v1/quality/check-tasks') {
-      const body = request.postDataJSON()
-      state.taskCreateRequests.push(body)
-      if (options.taskCreateDelay) {
-        await new Promise(resolve => setTimeout(resolve, options.taskCreateDelay))
-      }
-      if (options.taskCreateError) {
-        return fulfillJSON(route, { error: options.taskCreateError }, 409)
-      }
-      const task = { id: 13, ...body, last_execution_id: null, last_execution_status: null, last_run_at: null }
-      state.checkTasks.push(task)
-      return fulfillJSON(route, task, 201)
+    if (path === "/api/v1/quality/executions/" + executionID)
+      return fulfillJSON(route, execution);
+    if (req.method() === "PUT" && path === "/api/v1/quality/issues/17/status") {
+      const body = req.postDataJSON();
+      state.issueStatusRequests.push({
+        id: 17,
+        status: body.status,
+        note: body.note,
+      });
+      if (options.issueStatusError)
+        return fulfillJSON(route, { error: options.issueStatusError }, 409);
+      state.issues[0].status = body.status;
+      return fulfillJSON(route, state.issues[0]);
     }
-    if (request.method() === 'POST' && path === '/api/v1/quality/check-tasks/13/run') {
-      state.taskRunRequests.push(13)
-      const task = state.checkTasks.find(item => item.id === 13)
-      task.last_execution_id = 'execution-created-13'
-      task.last_execution_status = 'pending'
-      return fulfillJSON(route, { execution_id: 'execution-created-13' })
+    if (path === "/api/v1/quality/issues") {
+      const status = url.searchParams.get("status"),
+        data = state.issues.filter((i) => !status || i.status === status);
+      return fulfillJSON(route, { data, total: data.length });
     }
-    if (request.method() === 'PUT' && path === '/api/v1/quality/issues/17/status') {
-      const body = request.postDataJSON()
-      const issue = state.issues.find(item => item.id === 17)
-      state.issueStatusRequests.push({ id: 17, status: body.status, note: body.note })
-      if (options.issueStatusError) {
-        return fulfillJSON(route, { error: options.issueStatusError }, 409)
-      }
-      issue.status = body.status
-      return fulfillJSON(route, issue)
-    }
-
-    if (path === '/api/v1/quality/executions') {
-      const data = url.searchParams.get('status') === 'failed' ? [] : executions
-      return fulfillJSON(route, { data, total: data.length })
-    }
-    if (path === `/api/v1/quality/executions/${executionID}`) return fulfillJSON(route, executions[0])
-    if (path === '/api/v1/quality/issues') {
-      const requestedStatus = url.searchParams.get('status')
-      const data = state.issues.filter(issue => !requestedStatus || issue.status === requestedStatus)
-      return fulfillJSON(route, { data, total: data.length })
-    }
-    if (path === '/api/v1/quality/rule-applications') {
-      return fulfillJSON(route, { data: state.ruleApplications, total: state.ruleApplications.length })
-    }
-    if (path === '/api/v1/quality/check-tasks') {
-      return fulfillJSON(route, { data: state.checkTasks, total: state.checkTasks.length })
-    }
-    return fulfillJSON(route, {})
-  })
-
-  return state
+    state.unexpected.push(req.method() + " " + path);
+    return fulfillJSON(route, { error: "Unmocked request" }, 500);
+  });
+  return state;
 }
-
 async function fulfillJSON(route, body, status = 200) {
   await route.fulfill({
     status,
-    contentType: 'application/json',
-    body: JSON.stringify(body)
-  })
+    contentType: "application/json",
+    body: JSON.stringify(body),
+  });
 }
-
-test('data validation edits physical bindings without any Model dependency', async ({ page }) => {
- await installMockBackend(page)
- await page.route('**/api/v1/system/auth/context',route=>fulfillJSON(route,{context:{type:'tenant'},authorization:{role_assignments:[{permissions:['quality.data_validation.read','quality.data_validation.update']}]}}))
- const task={id:1,code:'physical_check',name:'正式表校验',version:2,table_bindings:[{alias:'customers',locator:'addp://engine/2/path/public/customers?type=table'}],assertions:{schema_version:'addp.quality.data-validation/v1',assertions:[{assertion_key:ruleKey,type:'not_null',severity:'error',params:{table:'customers',column:'id'}}]}}
- let body
- await page.route('**/api/v1/quality/data-validation-tasks**',route=>{
-  if(route.request().method()==='PUT'){body=route.request().postDataJSON();return fulfillJSON(route,{...task,...body,version:3})}
-  return fulfillJSON(route,new URL(route.request().url()).pathname.endsWith('/1')?task:{data:[task],total:1})
- })
- await page.route('**/api/v1/system/engines/2/catalog/facts',route=>fulfillJSON(route,{table:{fields:[{name:'id',type:'integer'}]}}))
- const modelRequests=[]
- page.on('request',request=>{if(request.url().includes('/api/v1/model/'))modelRequests.push(request.url())})
- await page.goto('/data-validation-tasks?task_id=1')
- const dialog=page.getByRole('dialog',{name:'编辑数据校验任务'})
- await expect(dialog).toBeVisible()
- await expect(dialog.getByText('customers',{exact:true}).first()).toBeVisible()
- await dialog.getByRole('button',{name:'保存',exact:true}).click()
- await expect.poll(()=>body?.table_bindings).toEqual(task.table_bindings)
- expect(body.assertions).toEqual(task.assertions)
- expect(body.materialization_group_id).toBeUndefined()
- expect(modelRequests).toEqual([])
-})

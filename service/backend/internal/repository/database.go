@@ -60,6 +60,9 @@ func AutoMigrate(db *gorm.DB) error {
 			return fmt.Errorf("failed to migrate %T: %w", model, err)
 		}
 	}
+	if err := migrateAnalyticalPublications(db); err != nil {
+		return err
+	}
 	if err := migrateCatalogQueryServiceChanges(db); err != nil {
 		return err
 	}

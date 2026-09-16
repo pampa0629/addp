@@ -139,7 +139,7 @@ func TestContainsAllExecutionPermissionsRequiresModelMaterializationAndEveryEffe
 
 func TestContainsAllExecutionPermissionsRequiresQualityExecuteAndDataRead(t *testing.T) {
 	rows := []RoleAssignmentPermissionProjection{
-		{PermissionKey: "quality.check_task.execute"},
+		{PermissionKey: "quality.plan.execute"},
 		{PermissionKey: executionEffectPermissions["read"]},
 	}
 	if !containsAllExecutionPermissions(rows, commonExecution.AudienceQuality, []string{"read"}) {

@@ -39,7 +39,7 @@ func TestIntegrationPostgresExecutionRuntimeMetrics(t *testing.T) {
 	executions := []commonExecution.TaskExecution{
 		{
 			TenantID: tenantID, ExecutionID: fmt.Sprintf("metrics-success-%d", tenantID),
-			Module: commonExecution.ModuleQuality, TaskType: commonExecution.TaskTypeQualityCheck,
+			Module: commonExecution.ModuleQuality, TaskType: commonExecution.TaskTypeQualityPlan,
 			Source: commonExecution.ModuleQuality, Status: commonExecution.ExecutionStatusSuccess,
 			ExecutionBoundary: commonExecution.ExecutionBoundaryBounded, RetryOfExecutionID: &retryOf,
 			Attempt: 2, MaxAttempts: 3, TriggerType: "manual",
@@ -49,7 +49,7 @@ func TestIntegrationPostgresExecutionRuntimeMetrics(t *testing.T) {
 		},
 		{
 			TenantID: tenantID, ExecutionID: fmt.Sprintf("metrics-pending-%d", tenantID),
-			Module: commonExecution.ModuleQuality, TaskType: commonExecution.TaskTypeQualityCheck,
+			Module: commonExecution.ModuleQuality, TaskType: commonExecution.TaskTypeQualityPlan,
 			Source: commonExecution.ModuleQuality, Status: commonExecution.ExecutionStatusPending,
 			ExecutionBoundary: commonExecution.ExecutionBoundaryBounded,
 			Attempt:           0, MaxAttempts: 3, TriggerType: "scheduled",

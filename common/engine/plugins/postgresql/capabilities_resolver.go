@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/query/plan"
 )
 
 type postgresExtensionFact struct {
@@ -35,6 +36,10 @@ type postgresInstanceCapabilityFacts struct {
 const superMapSDXSystemTableThreshold = 3
 
 func (p *PostgreSQLPlugin) ResolveCapabilities(ctx context.Context, connInfo plugin.ConnectionInfo, base plugin.EngineCapabilities) (plugin.EngineCapabilities, error) {
+	base, err := plugin.WithAnalyticalCapability(base, plugin.AnalyticalCapability{})
+	if err != nil || p.identity != nil {
+		return base, err
+	}
 	dsn, err := p.BuildDSN(connInfo)
 	if err != nil {
 		return base, fmt.Errorf("build postgresql capability probe dsn: %w", err)
@@ -54,7 +59,20 @@ func (p *PostgreSQLPlugin) ResolveCapabilities(ctx context.Context, connInfo plu
 	if err != nil {
 		return base, err
 	}
-	return applyPostgresInstanceCapabilities(base, facts), nil
+	base = applyPostgresInstanceCapabilities(base, facts)
+	conn, err := db.Conn(probeCtx)
+	if err != nil {
+		return base, err
+	}
+	defer conn.Close()
+	report, err := certifyAnalyticalInstance(probeCtx, conn)
+	if err != nil {
+		return base, err
+	}
+	if !report.Supported {
+		return base, nil
+	}
+	return plugin.WithAnalyticalCapability(base, plugin.AnalyticalCapability{Supported: true, PlanVersions: []string{plan.SchemaVersion}, SemanticProfiles: []string{plan.SemanticProfile}})
 }
 
 func queryPostgresInstanceCapabilityFacts(ctx context.Context, db *sql.DB) (postgresInstanceCapabilityFacts, error) {

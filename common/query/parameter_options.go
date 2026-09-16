@@ -15,6 +15,30 @@ type ParameterOption struct {
 	Labels map[string]string `json:"labels"`
 }
 
+// ParameterPresentation is optional owner-declared display metadata, never computation semantics.
+type ParameterPresentation struct {
+	Labels       map[string]string `json:"labels"`
+	Descriptions map[string]string `json:"descriptions"`
+}
+
+func (p ParameterPresentation) Validate() error {
+	for _, entry := range []struct {
+		values map[string]string
+		max    int
+	}{{p.Labels, 100}, {p.Descriptions, 500}} {
+		if len(entry.values) != 2 {
+			return fmt.Errorf("parameter presentation requires zh-cn and en")
+		}
+		for _, lang := range []string{"zh-cn", "en"} {
+			value := entry.values[lang]
+			if strings.TrimSpace(value) == "" || len([]rune(value)) > entry.max {
+				return fmt.Errorf("invalid parameter presentation text")
+			}
+		}
+	}
+	return nil
+}
+
 // ParameterValueKey preserves scalar types and compares numeric values exactly.
 func ParameterValueKey(value any) string {
 	raw, err := json.Marshal(value)

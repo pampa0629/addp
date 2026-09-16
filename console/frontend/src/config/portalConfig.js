@@ -136,7 +136,7 @@ export const PAGE_MAPS = {
     '': 'entities',
   },
   quality: {
-    '': 'check-tasks',
+    '': 'plans',
   },
   security: {
     '': 'sensitive-data-definitions',
@@ -175,7 +175,7 @@ export const DEFAULT_ROUTES = {
   monitor:      '/monitor/dashboard',
   standard:     '/standard/domains',
   modeling:     '/modeling/entities',
-  quality:      '/quality/check-tasks',
+  quality:      '/quality/plans',
   security:     '/security/sensitive-data-definitions',
   catalog:      '/catalog/entries',
   asset:        '/asset/assets',
@@ -242,9 +242,8 @@ export const SIDEBAR_MENUS = {
   quality: {
     label: 'console.menus.quality.label', icon: CircleCheck,
     items: [
-      { index: '/quality/rule-applications', icon: Setting, label: 'console.menus.quality.ruleApplications', recentLabel: 'console.menus.quality.recentRuleApplications', permissions: ['quality.rule_application.read'] },
-      { index: '/quality/check-tasks',       icon: List,    label: 'console.menus.quality.checkTasks', recentLabel: 'console.menus.quality.recentCheckTasks', permissions: ['quality.check_task.read'] },
-      { index: '/quality/data-validation-tasks', icon: Lock, label: 'console.menus.quality.dataValidationTasks', recentLabel: 'console.menus.quality.recentDataValidationTasks', permissions: ['quality.data_validation.read'] },
+      { index: '/quality/rules', icon: List, label: 'console.menus.quality.rules', permissions: ['quality.rule.read'] },
+      { index: '/quality/plans', icon: List, label: 'console.menus.quality.plans', recentLabel: 'console.menus.quality.recentPlans', permissions: ['quality.plan.read'] },
       { index: '/quality/issues',            icon: Warning, label: 'console.menus.quality.issues', recentLabel: 'console.menus.quality.recentIssues', permissions: ['quality.issue.read'] },
     ],
   },

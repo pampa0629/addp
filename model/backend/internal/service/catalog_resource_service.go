@@ -144,9 +144,6 @@ func logicalTableCatalogSummary(logicalTable models.LogicalTable) map[string]any
 	if logicalTable.DomainID != nil {
 		result["domain_id"] = strconv.FormatInt(*logicalTable.DomainID, 10)
 	}
-	if logicalTable.EntityID != nil {
-		result["entity_id"] = strconv.FormatInt(*logicalTable.EntityID, 10)
-	}
 	return result
 }
 

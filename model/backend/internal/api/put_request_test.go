@@ -23,6 +23,7 @@ func TestModelPutRequestsRequireCompleteEditableState(t *testing.T) {
 		{name: "entity relation", target: &models.UpdateEntityRelationRequest{}},
 		{name: "logical table", target: &models.UpdateLogicalTableRequest{}},
 		{name: "logical field", target: &models.UpdateLogicalFieldRequest{}},
+		{name: "concept mappings", target: &models.ReplaceConceptMappingsRequest{}},
 		{name: "dw layer", target: &models.UpdateDWLayerRequest{}},
 	}
 
@@ -51,9 +52,10 @@ func TestModelPutRequestsAcceptCompleteZeroAndNullableValues(t *testing.T) {
 		{name: "entity", body: `{"version":1,"name":"Order","domain_id":null,"description":""}`, target: &models.UpdateEntityRequest{}},
 		{name: "entity attribute", body: `{"version":1,"name":"ID","column_name":"id","data_type":"bigint","element_id":null,"is_pk":false,"nullable":false,"description":"","sort_order":0}`, target: &models.UpdateEntityAttributeRequest{}},
 		{name: "entity relation", body: `{"version":1,"source_entity":1,"target_entity":2,"relation_type":"one_to_many","name":"","description":""}`, target: &models.UpdateEntityRelationRequest{}},
-		{name: "logical table", body: `{"version":1,"name":"Order","domain_id":null,"entity_id":null,"table_type":"entity","layer":"dwd","grain_description":"","scd_type":0,"description":"","materialization":{}}`, target: &models.UpdateLogicalTableRequest{}},
-		{name: "logical field", body: `{"version":1,"name":"ID","column_name":"id","data_type":"bigint","element_id":null,"length":null,"nullable":false,"is_pk":false,"is_partition":false,"default_value":"","description":"","sort_order":0,"field_role":"regular"}`, target: &models.UpdateLogicalFieldRequest{}},
-		{name: "dw layer", body: `{"version":1,"layer_name":"DWD","description":"","naming_rule":"","quality_sla":null,"sort_order":0}`, target: &models.UpdateDWLayerRequest{}},
+		{name: "logical table", body: `{"version":1,"name":"Order","domain_id":null,"table_type":"entity","layer":"dwd","grain_description":"","scd_type":0,"description":"","materialization":{}}`, target: &models.UpdateLogicalTableRequest{}},
+		{name: "logical field", body: `{"version":1,"name":"ID","column_name":"id","data_type":"bigint","element_id":null,"length":null,"nullable":false,"is_pk":false,"default_value":"","description":"","sort_order":0,"field_role":"regular"}`, target: &models.UpdateLogicalFieldRequest{}},
+		{name: "concept mappings", body: `{"version":1,"table_mappings":[],"field_mappings":[],"relation_mappings":[]}`, target: &models.ReplaceConceptMappingsRequest{}},
+		{name: "dw layer", body: `{"version":1,"layer_name":"DWD","description":"","naming_rule":"","sort_order":0}`, target: &models.UpdateDWLayerRequest{}},
 	}
 
 	for _, tt := range tests {

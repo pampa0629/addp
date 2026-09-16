@@ -1,18 +1,5 @@
 basePath: /api/v1/model
 definitions:
-  client.ModelMetricParameter:
-    properties:
-      name:
-        type: string
-      options:
-        items:
-          $ref: '#/definitions/query.ParameterOption'
-        type: array
-      required:
-        type: boolean
-      type:
-        $ref: '#/definitions/datatype.FieldType'
-    type: object
   datatype.FieldInfo:
     properties:
       comment:
@@ -145,6 +132,23 @@ definitions:
       schema_version:
         type: string
     type: object
+  github_com_addp_model_internal_models.ConceptMappingsResponse:
+    properties:
+      field_mappings:
+        items:
+          $ref: '#/definitions/github_com_addp_model_internal_models.FieldAttributeMappingView'
+        type: array
+      relation_mappings:
+        items:
+          $ref: '#/definitions/github_com_addp_model_internal_models.RelationConceptMappingView'
+        type: array
+      table_mappings:
+        items:
+          $ref: '#/definitions/github_com_addp_model_internal_models.TableEntityMappingView'
+        type: array
+      version:
+        type: integer
+    type: object
   github_com_addp_model_internal_models.CreateDWLayerRequest:
     properties:
       description:
@@ -157,9 +161,6 @@ definitions:
         type: string
       naming_rule:
         type: string
-      quality_sla:
-        additionalProperties: true
-        type: object
       sort_order:
         minimum: 0
         type: integer
@@ -300,8 +301,6 @@ definitions:
         - dimension_fk
         - degenerate_dim
         type: string
-      is_partition:
-        type: boolean
       is_pk:
         type: boolean
       length:
@@ -332,9 +331,6 @@ definitions:
       description:
         type: string
       domain_id:
-        minimum: 1
-        type: integer
-      entity_id:
         minimum: 1
         type: integer
       grain_description:
@@ -400,8 +396,6 @@ definitions:
       naming_rule:
         description: 命名规范（如：dwd_{domain}_{entity}_d）
         type: string
-      quality_sla:
-        $ref: '#/definitions/github_com_addp_model_internal_models.JSONB'
       sort_order:
         type: integer
       tenant_id:
@@ -577,8 +571,69 @@ definitions:
         example: model_operation_failed
         type: string
     type: object
+  github_com_addp_model_internal_models.FieldAttributeMappingInput:
+    properties:
+      entity_attribute_id:
+        minimum: 1
+        type: integer
+      field_id:
+        minimum: 1
+        type: integer
+      mapping_role:
+        enum:
+        - direct
+        - derived
+        type: string
+    required:
+    - entity_attribute_id
+    - field_id
+    - mapping_role
+    type: object
+  github_com_addp_model_internal_models.FieldAttributeMappingView:
+    properties:
+      attribute_column_name:
+        type: string
+      created_at:
+        type: string
+      entity_attribute_id:
+        type: integer
+      entity_attribute_name:
+        type: string
+      entity_code:
+        type: string
+      entity_id:
+        type: integer
+      entity_name:
+        type: string
+      field_column_name:
+        type: string
+      field_id:
+        type: integer
+      field_name:
+        type: string
+      id:
+        type: integer
+      mapping_role:
+        enum:
+        - direct
+        - derived
+        type: string
+      table_id:
+        type: integer
+      tenant_id:
+        type: integer
+      updated_at:
+        type: string
+    type: object
   github_com_addp_model_internal_models.JSONB:
     additionalProperties: true
+    type: object
+  github_com_addp_model_internal_models.LogicalConstraintField:
+    properties:
+      column_name:
+        type: string
+      field_id:
+        type: integer
     type: object
   github_com_addp_model_internal_models.LogicalField:
     properties:
@@ -606,9 +661,6 @@ definitions:
         type: string
       id:
         type: integer
-      is_partition:
-        description: 是否分区字段
-        type: boolean
       is_pk:
         type: boolean
       length:
@@ -635,7 +687,7 @@ definitions:
   github_com_addp_model_internal_models.LogicalTable:
     properties:
       code:
-        description: 英文表名（物化时使用）
+        description: 逻辑表稳定编码
         type: string
       created_at:
         type: string
@@ -644,9 +696,6 @@ definitions:
       description:
         type: string
       domain_id:
-        type: integer
-      entity_id:
-        description: 关联实体（可选）
         type: integer
       grain_description:
         description: 仅 fact 表：粒度声明（如"每行代表一笔支付事务"）
@@ -659,7 +708,7 @@ definitions:
       materialization:
         allOf:
         - $ref: '#/definitions/github_com_addp_model_internal_models.JSONB'
-        description: 物化配置
+        description: 物理目标配置
       name:
         type: string
       scd_type:
@@ -683,7 +732,7 @@ definitions:
   github_com_addp_model_internal_models.LogicalTableDetail:
     properties:
       code:
-        description: 英文表名（物化时使用）
+        description: 逻辑表稳定编码
         type: string
       created_at:
         type: string
@@ -692,9 +741,6 @@ definitions:
       description:
         type: string
       domain_id:
-        type: integer
-      entity_id:
-        description: 关联实体（可选）
         type: integer
       grain_description:
         description: 仅 fact 表：粒度声明（如"每行代表一笔支付事务"）
@@ -707,7 +753,7 @@ definitions:
       materialization:
         allOf:
         - $ref: '#/definitions/github_com_addp_model_internal_models.JSONB'
-        description: 物化配置
+        description: 物理目标配置
       name:
         type: string
       scd_type:
@@ -716,6 +762,8 @@ definitions:
       status:
         description: draft/approved
         type: string
+      structural_constraints:
+        $ref: '#/definitions/github_com_addp_model_internal_models.LogicalTableStructuralConstraints'
       table_type:
         description: 建模角色：entity/fact/dimension
         type: string
@@ -743,19 +791,20 @@ definitions:
       total_pages:
         type: integer
     type: object
-  github_com_addp_model_internal_models.MaterializedTargetDecommissionRequest:
+  github_com_addp_model_internal_models.LogicalTableStructuralConstraints:
     properties:
-      target_name:
-        type: string
-      target_parent_locator:
-        type: string
-      version:
-        minimum: 1
-        type: integer
-    required:
-    - target_name
-    - target_parent_locator
-    - version
+      foreign_keys:
+        items:
+          $ref: '#/definitions/github_com_addp_model_internal_models.TableRelationDetail'
+        type: array
+      primary_key:
+        items:
+          $ref: '#/definitions/github_com_addp_model_internal_models.LogicalConstraintField'
+        type: array
+      required_fields:
+        items:
+          $ref: '#/definitions/github_com_addp_model_internal_models.LogicalConstraintField'
+        type: array
     type: object
   github_com_addp_model_internal_models.MermaidExportResponse:
     properties:
@@ -992,6 +1041,20 @@ definitions:
     - start_date
     - subject_id
     type: object
+  github_com_addp_model_internal_models.PhysicalTargetDeleteRequest:
+    properties:
+      target_name:
+        type: string
+      target_parent_locator:
+        type: string
+      version:
+        minimum: 1
+        type: integer
+    required:
+    - target_name
+    - target_parent_locator
+    - version
+    type: object
   github_com_addp_model_internal_models.PreviewLogicalTableDDLRequest:
     properties:
       materialization:
@@ -1070,6 +1133,78 @@ definitions:
         type: string
       resource_type:
         type: string
+    type: object
+  github_com_addp_model_internal_models.RelationConceptMappingInput:
+    properties:
+      entity_relation_id:
+        minimum: 1
+        type: integer
+      orientation:
+        enum:
+        - same
+        - inverse
+        type: string
+      table_relation_id:
+        minimum: 1
+        type: integer
+    required:
+    - entity_relation_id
+    - orientation
+    - table_relation_id
+    type: object
+  github_com_addp_model_internal_models.RelationConceptMappingView:
+    properties:
+      created_at:
+        type: string
+      current_entity_relation_version:
+        type: integer
+      entity_relation_id:
+        type: integer
+      entity_relation_name:
+        type: string
+      entity_relation_version:
+        type: integer
+      id:
+        type: integer
+      in_sync:
+        type: boolean
+      orientation:
+        enum:
+        - same
+        - inverse
+        type: string
+      source_entity_name:
+        type: string
+      table_id:
+        type: integer
+      table_relation_id:
+        type: integer
+      target_entity_name:
+        type: string
+      tenant_id:
+        type: integer
+      updated_at:
+        type: string
+    type: object
+  github_com_addp_model_internal_models.ReplaceConceptMappingsRequest:
+    properties:
+      field_mappings:
+        items:
+          $ref: '#/definitions/github_com_addp_model_internal_models.FieldAttributeMappingInput'
+        type: array
+      relation_mappings:
+        items:
+          $ref: '#/definitions/github_com_addp_model_internal_models.RelationConceptMappingInput'
+        type: array
+      table_mappings:
+        items:
+          $ref: '#/definitions/github_com_addp_model_internal_models.TableEntityMappingInput'
+        type: array
+      version:
+        minimum: 1
+        type: integer
+    required:
+    - version
     type: object
   github_com_addp_model_internal_models.ResolveCatalogReferencesRequest:
     properties:
@@ -1178,6 +1313,52 @@ definitions:
       owner_type:
         type: string
     type: object
+  github_com_addp_model_internal_models.TableEntityMappingInput:
+    properties:
+      entity_id:
+        minimum: 1
+        type: integer
+      mapping_role:
+        enum:
+        - represents
+        - derives_from
+        type: string
+    required:
+    - entity_id
+    - mapping_role
+    type: object
+  github_com_addp_model_internal_models.TableEntityMappingView:
+    properties:
+      created_at:
+        type: string
+      current_entity_version:
+        type: integer
+      entity_code:
+        type: string
+      entity_id:
+        type: integer
+      entity_name:
+        type: string
+      entity_status:
+        type: string
+      entity_version:
+        type: integer
+      id:
+        type: integer
+      in_sync:
+        type: boolean
+      mapping_role:
+        enum:
+        - represents
+        - derives_from
+        type: string
+      table_id:
+        type: integer
+      tenant_id:
+        type: integer
+      updated_at:
+        type: string
+    type: object
   github_com_addp_model_internal_models.TableRelation:
     properties:
       created_at:
@@ -1249,10 +1430,6 @@ definitions:
         type: string
       naming_rule:
         type: string
-      quality_sla:
-        additionalProperties: true
-        type: object
-        x-nullable: true
       sort_order:
         minimum: 0
         type: integer
@@ -1407,8 +1584,6 @@ definitions:
         - dimension_fk
         - degenerate_dim
         type: string
-      is_partition:
-        type: boolean
       is_pk:
         type: boolean
       length:
@@ -1430,7 +1605,6 @@ definitions:
     - column_name
     - data_type
     - field_role
-    - is_partition
     - is_pk
     - name
     - nullable
@@ -1442,10 +1616,6 @@ definitions:
       description:
         type: string
       domain_id:
-        minimum: 1
-        type: integer
-        x-nullable: true
-      entity_id:
         minimum: 1
         type: integer
         x-nullable: true
@@ -1533,30 +1703,26 @@ definitions:
     properties:
       dependency_hash:
         type: string
-      engine_id:
-        type: integer
-      fields:
-        items:
-          $ref: '#/definitions/datatype.FieldInfo'
-        type: array
+      execution_plan:
+        $ref: '#/definitions/plugin.AnalyticalPlanPackage'
       implementation_id:
         type: integer
       metric_definition_id:
         type: integer
       metric_definition_revision_id:
         type: integer
-      parameters:
-        items:
-          $ref: '#/definitions/client.ModelMetricParameter'
-        type: array
+      parameter_labels:
+        additionalProperties:
+          items:
+            $ref: '#/definitions/query.ParameterOption'
+          type: array
+        type: object
+      parameter_presentation:
+        additionalProperties:
+          $ref: '#/definitions/query.ParameterPresentation'
+        type: object
       revision_id:
         type: integer
-      sql:
-        type: string
-      stable_key:
-        items:
-          type: string
-        type: array
     type: object
   internal_api.materializationExecuteResponse:
     properties:
@@ -1593,6 +1759,308 @@ definitions:
   models.JSONMap:
     additionalProperties: true
     type: object
+  plan.Aggregate:
+    properties:
+      groups:
+        items:
+          $ref: '#/definitions/plan.Projection'
+        type: array
+      input:
+        type: string
+      measures:
+        items:
+          $ref: '#/definitions/plan.Measure'
+        type: array
+    type: object
+  plan.Assertion:
+    properties:
+      code:
+        type: string
+      violation:
+        type: string
+    type: object
+  plan.ColumnRef:
+    properties:
+      input:
+        type: string
+      name:
+        type: string
+    type: object
+  plan.ConstantRows:
+    properties:
+      fields:
+        items:
+          $ref: '#/definitions/datatype.FieldInfo'
+        type: array
+      rows:
+        items:
+          items:
+            $ref: '#/definitions/plan.Literal'
+          type: array
+        type: array
+    type: object
+  plan.DateBuckets:
+    properties:
+      end:
+        $ref: '#/definitions/plan.Expr'
+      max_months:
+        type: integer
+      name:
+        type: string
+      start:
+        $ref: '#/definitions/plan.Expr'
+    type: object
+  plan.Expr:
+    properties:
+      args:
+        items:
+          $ref: '#/definitions/plan.Expr'
+        type: array
+      column:
+        $ref: '#/definitions/plan.ColumnRef'
+      literal:
+        $ref: '#/definitions/plan.Literal'
+      op:
+        type: string
+      parameter:
+        type: string
+    type: object
+  plan.Filter:
+    properties:
+      input:
+        type: string
+      predicate:
+        $ref: '#/definitions/plan.Expr'
+    type: object
+  plan.Join:
+    properties:
+      kind:
+        type: string
+      left:
+        type: string
+      "on":
+        $ref: '#/definitions/plan.Expr'
+      right:
+        type: string
+    type: object
+  plan.Limit:
+    properties:
+      count:
+        type: integer
+      input:
+        type: string
+    type: object
+  plan.Literal:
+    properties:
+      "null":
+        type: boolean
+      text:
+        type: string
+      type:
+        $ref: '#/definitions/datatype.FieldType'
+    type: object
+  plan.Measure:
+    properties:
+      name:
+        type: string
+      op:
+        type: string
+      value:
+        $ref: '#/definitions/plan.Expr'
+    type: object
+  plan.Node:
+    properties:
+      aggregate:
+        $ref: '#/definitions/plan.Aggregate'
+      constant_rows:
+        $ref: '#/definitions/plan.ConstantRows'
+      date_buckets:
+        $ref: '#/definitions/plan.DateBuckets'
+      distinct:
+        $ref: '#/definitions/plan.Unary'
+      filter:
+        $ref: '#/definitions/plan.Filter'
+      id:
+        type: string
+      join:
+        $ref: '#/definitions/plan.Join'
+      limit:
+        $ref: '#/definitions/plan.Limit'
+      op:
+        type: string
+      project:
+        $ref: '#/definitions/plan.Project'
+      scan:
+        $ref: '#/definitions/plan.Scan'
+      sort:
+        $ref: '#/definitions/plan.Sort'
+      union_all:
+        $ref: '#/definitions/plan.UnionAll'
+    type: object
+  plan.OutputContract:
+    properties:
+      fields:
+        items:
+          $ref: '#/definitions/datatype.FieldInfo'
+        type: array
+      stable_key:
+        items:
+          type: string
+        type: array
+    type: object
+  plan.Parameter:
+    properties:
+      allowed:
+        items:
+          $ref: '#/definitions/plan.Literal'
+        type: array
+      name:
+        type: string
+      required:
+        type: boolean
+      type:
+        $ref: '#/definitions/datatype.FieldType'
+    type: object
+  plan.Plan:
+    properties:
+      assertions:
+        items:
+          $ref: '#/definitions/plan.Assertion'
+        type: array
+      nodes:
+        items:
+          $ref: '#/definitions/plan.Node'
+        type: array
+      output:
+        $ref: '#/definitions/plan.OutputContract'
+      parameters:
+        items:
+          $ref: '#/definitions/plan.Parameter'
+        type: array
+      root:
+        type: string
+      schema_version:
+        type: string
+      semantic_profile:
+        type: string
+    type: object
+  plan.Project:
+    properties:
+      columns:
+        items:
+          $ref: '#/definitions/plan.Projection'
+        type: array
+      input:
+        type: string
+    type: object
+  plan.Projection:
+    properties:
+      expr:
+        $ref: '#/definitions/plan.Expr'
+      name:
+        type: string
+    type: object
+  plan.Scan:
+    properties:
+      fields:
+        items:
+          $ref: '#/definitions/datatype.FieldInfo'
+        type: array
+      source:
+        type: string
+    type: object
+  plan.Sort:
+    properties:
+      input:
+        type: string
+      keys:
+        items:
+          $ref: '#/definitions/plan.SortKey'
+        type: array
+    type: object
+  plan.SortKey:
+    properties:
+      direction:
+        type: string
+      name:
+        type: string
+      nulls:
+        type: string
+    type: object
+  plan.Unary:
+    properties:
+      input:
+        type: string
+    type: object
+  plan.UnionAll:
+    properties:
+      inputs:
+        items:
+          type: string
+        type: array
+    type: object
+  plugin.AnalyticalPlanPackage:
+    properties:
+      compiler:
+        $ref: '#/definitions/plugin.CompilerIdentity'
+      engine_id:
+        type: integer
+      package_hash:
+        type: string
+      plan:
+        $ref: '#/definitions/plan.Plan'
+      schema_version:
+        type: string
+      sources:
+        items:
+          $ref: '#/definitions/plugin.SourceBinding'
+        type: array
+    type: object
+  plugin.ColumnBinding:
+    properties:
+      column:
+        type: string
+      field:
+        $ref: '#/definitions/datatype.FieldInfo'
+    type: object
+  plugin.CompilerIdentity:
+    properties:
+      id:
+        type: string
+      version:
+        type: string
+    type: object
+  plugin.EngineCatalogPath:
+    properties:
+      engine_id:
+        type: integer
+      segments:
+        items:
+          $ref: '#/definitions/plugin.EngineCatalogSegment'
+        type: array
+      version:
+        type: string
+    type: object
+  plugin.EngineCatalogSegment:
+    properties:
+      kind:
+        type: string
+      name:
+        type: string
+      term:
+        type: string
+    type: object
+  plugin.SourceBinding:
+    properties:
+      columns:
+        items:
+          $ref: '#/definitions/plugin.ColumnBinding'
+        type: array
+      path:
+        $ref: '#/definitions/plugin.EngineCatalogPath'
+      source:
+        type: string
+    type: object
   query.ParameterOption:
     properties:
       labels:
@@ -1601,6 +2069,17 @@ definitions:
         type: object
       value:
         description: Value 与参数声明类型一致的标量。| Scalar matching the declared parameter type.
+    type: object
+  query.ParameterPresentation:
+    properties:
+      descriptions:
+        additionalProperties:
+          type: string
+        type: object
+      labels:
+        additionalProperties:
+          type: string
+        type: object
     type: object
   taskprovider.ExecutionContract:
     properties:
@@ -3079,8 +3558,8 @@ paths:
       - model.logical_model.create
   /logical-tables/{id}:
     delete:
-      description: 仅删除已清空物化配置的草稿逻辑表；历史执行事实保留。 | Delete a draft logical table with
-        cleared physical configuration; preserve execution history.
+      description: 仅删除已移除物理目标配置的草稿逻辑表；历史执行事实保留。 | Delete a draft logical table after
+        removing its physical-target configuration; preserve execution history.
       parameters:
       - description: 逻辑表ID | Logical table ID
         in: path
@@ -3129,6 +3608,9 @@ paths:
       x-addp-required-permissions:
       - model.logical_model.delete
     get:
+      description: 返回逻辑表及同一快照派生的主键组合、必填字段和出向外键；不是质量执行结果 | Return the logical table
+        and same-snapshot primary key, required fields and outgoing foreign keys,
+        not quality execution results
       parameters:
       - description: 逻辑表ID | Logical table ID
         in: path
@@ -3264,6 +3746,102 @@ paths:
       security:
       - BearerAuth: []
       summary: 审批逻辑表 | Approve logical table
+      tags:
+      - Model
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - model.logical_model.update
+  /logical-tables/{id}/concept-mappings:
+    get:
+      description: 返回逻辑表、字段和表关系到已审批业务实体模型的版本化映射。 | Return versioned mappings from
+        a logical table, its fields, and table relations to the approved business
+        entity model.
+      parameters:
+      - description: 逻辑表ID | Logical table ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 概念实现映射 | Concept realization mappings
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ConceptMappingsResponse'
+        "400":
+          description: 逻辑表 ID 无效 | Invalid logical table ID
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "401":
+          description: 未认证 | Authentication required
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "403":
+          description: 权限不足 | Permission denied
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "404":
+          description: 逻辑表不存在 | Logical table not found
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 获取概念实现映射 | Get concept realization mappings
+      tags:
+      - Model
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - model.logical_model.read
+    put:
+      consumes:
+      - application/json
+      description: 在一个事务中完整替换逻辑表聚合的实体、属性和关系映射，并推进逻辑表版本。映射源必须已审批。 | Atomically replace
+        entity, attribute, and relation mappings for the logical-table aggregate and
+        advance its version. Mapping sources must be approved.
+      parameters:
+      - description: 逻辑表ID | Logical table ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 完整映射集合 | Complete mapping set
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_model_internal_models.ReplaceConceptMappingsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 已保存的概念实现映射 | Saved concept realization mappings
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ConceptMappingsResponse'
+        "400":
+          description: 映射请求无效 | Invalid mapping request
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "401":
+          description: 未认证 | Authentication required
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "403":
+          description: 权限不足 | Permission denied
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "404":
+          description: 逻辑表不存在 | Logical table not found
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+        "409":
+          description: 版本、状态或概念模型漂移冲突 | Version, state, or conceptual-model drift
+            conflict
+          schema:
+            $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 替换概念实现映射 | Replace concept realization mappings
       tags:
       - Model
       x-addp-auth-mode: permission
@@ -4083,27 +4661,27 @@ paths:
     delete:
       consumes:
       - application/json
-      description: 校验逻辑表版本和精确目标确认后，仅删除由当前逻辑表管理标记拥有的 PostgreSQL 物理表；不修改逻辑表配置。| After
-        validating the logical-table version, exact target confirmation, delete only
-        the PostgreSQL table owned by the current logical-table marker; the logical-table
-        definition is unchanged.
+      description: 校验逻辑表版本和精确目标确认后，仅删除由当前逻辑表管理标记拥有的 PostgreSQL 物理表；保留逻辑表及物理目标配置。|
+        After validating the logical-table version and exact target confirmation,
+        delete only the PostgreSQL table owned by the current logical-table marker;
+        preserve the logical table and its physical-target configuration.
       parameters:
       - description: 逻辑表 ID | Logical table ID
         in: path
         name: id
         required: true
         type: integer
-      - description: 物化目标精确确认 | Exact materialized target confirmation
+      - description: 目标物理表精确确认 | Exact physical target confirmation
         in: body
         name: request
         required: true
         schema:
-          $ref: '#/definitions/github_com_addp_model_internal_models.MaterializedTargetDecommissionRequest'
+          $ref: '#/definitions/github_com_addp_model_internal_models.PhysicalTargetDeleteRequest'
       produces:
       - application/json
       responses:
         "200":
-          description: 退役成功或目标已不存在 | Decommissioned or target already absent
+          description: 删除成功或目标已不存在 | Deleted or target already absent
           schema:
             $ref: '#/definitions/github_com_addp_model_internal_models.MessageResponse'
         "400":
@@ -4134,7 +4712,7 @@ paths:
             $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
       security:
       - BearerAuth: []
-      summary: 退役逻辑表物化目标 | Decommission logical-table materialized target
+      summary: 删除逻辑表的目标物理表 | Delete logical-table physical target
       tags:
       - Model
       x-addp-auth-mode: permission
@@ -4143,9 +4721,10 @@ paths:
     post:
       consumes:
       - application/json
-      description: 提交统一执行队列，根据已审批模型创建正式表；同归属且结构一致时幂等成功，结构不一致拒绝；不执行数据加工。| Enqueue creation
-        of an approved physical target, preserving existing data when ownership and
-        structure match; reject structural drift.
+      description: 提交统一执行队列，根据已审批模型创建目标表；目标已存在且归属及结构一致时校验成功并保留数据，结构不一致时拒绝；不执行数据加工。|
+        Enqueue creation of an approved physical target table; verify and preserve
+        an existing table when ownership and structure match, and reject structural
+        drift; do not process data.
       parameters:
       - description: 逻辑表 ID | Logical table ID
         in: path
@@ -4191,7 +4770,7 @@ paths:
             $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
       security:
       - BearerAuth: []
-      summary: 创建正式表 | Create physical target
+      summary: 创建或校验目标物理表 | Create or verify physical target table
       tags:
       - Model
       x-addp-auth-mode: permission
@@ -4207,7 +4786,7 @@ paths:
         name: id
         required: true
         type: integer
-      - description: 当前物化配置 | Current materialization configuration
+      - description: 当前物理目标配置 | Current physical-target configuration
         in: body
         name: body
         required: true
@@ -4217,11 +4796,11 @@ paths:
       - application/json
       responses:
         "200":
-          description: DDL 预览 | DDL preview
+          description: 建表语句预览 | Create statement preview
           schema:
             $ref: '#/definitions/github_com_addp_model_internal_models.DDLPreviewResponse'
         "400":
-          description: 请求或物化配置无效 | Invalid request or materialization configuration
+          description: 请求或物理目标配置无效 | Invalid request or physical-target configuration
           schema:
             $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
         "401":
@@ -4238,7 +4817,7 @@ paths:
             $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
       security:
       - BearerAuth: []
-      summary: 预览 DDL | Preview DDL
+      summary: 预览建表语句 | Preview create statement
       tags:
       - Model
       x-addp-auth-mode: permission
@@ -4542,9 +5121,8 @@ paths:
     put:
       consumes:
       - application/json
-      description: 保存数据库无关的结构化计算契约；来源引擎必须提供分析 SQL 能力。 | Saves a database-independent
-        structured computation contract; the source engine must provide analytical
-        SQL capabilities.
+      description: 保存数据库无关的结构化计算契约；来源结构来自 Meta，执行引擎必须声明分析计算能力。 | Saves a database-independent
+        computation contract using Meta source facts and a certified analytical engine.
       parameters:
       - description: 请求 | Request
         in: body
@@ -4920,7 +5498,7 @@ paths:
             $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
       security:
       - BearerAuth: []
-      summary: 获取物化执行状态 | Get materialization execution status
+      summary: 获取建表执行状态 | Get table-creation execution status
       tags:
       - Model
       x-addp-auth-mode: permission
@@ -4928,8 +5506,8 @@ paths:
       - model.task_provider.read
   /task-provider/tasks:
     get:
-      description: 仅返回已审批且配置物化目标的逻辑表。| Return approved logical tables with a configured
-        target.
+      description: 仅返回已审批且配置物理目标的逻辑表。| Return approved logical tables with a configured
+        physical target.
       parameters:
       - description: 任务类型 | Task type
         in: query
@@ -4968,7 +5546,7 @@ paths:
             $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
       security:
       - BearerAuth: []
-      summary: 列出逻辑表物化任务 | List logical table materialization tasks
+      summary: 列出逻辑表建表任务 | List logical-table creation tasks
       tags:
       - Model
       x-addp-auth-mode: permission
@@ -5016,7 +5594,7 @@ paths:
             $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
       security:
       - BearerAuth: []
-      summary: 获取逻辑表物化任务 | Get logical table materialization task
+      summary: 获取逻辑表建表任务 | Get logical-table creation task
       tags:
       - Model
       x-addp-auth-mode: permission
@@ -5078,7 +5656,7 @@ paths:
             $ref: '#/definitions/github_com_addp_model_internal_models.ErrorResponse'
       security:
       - BearerAuth: []
-      summary: 编排执行逻辑表物化 | Execute orchestrated logical table materialization
+      summary: 编排执行逻辑表建表 | Execute orchestrated logical-table creation
       tags:
       - Model
       x-addp-auth-mode: permission

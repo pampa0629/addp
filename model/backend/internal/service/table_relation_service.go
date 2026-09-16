@@ -14,11 +14,17 @@ type TableRelationService struct {
 	repo                     *repository.TableRelationRepository
 	tableRepo                *repository.LogicalTableRepository
 	entityRepo               *repository.EntityRepository
+	conceptMappingRepo       *repository.ConceptMappingRepository
 	metricImplementationRepo *repository.MetricImplementationRepository
 }
 
-func (s *TableRelationService) SetProfessionalRelationSources(entityRepo *repository.EntityRepository, metricImplementationRepo *repository.MetricImplementationRepository) {
+func (s *TableRelationService) SetProfessionalRelationSources(
+	entityRepo *repository.EntityRepository,
+	conceptMappingRepo *repository.ConceptMappingRepository,
+	metricImplementationRepo *repository.MetricImplementationRepository,
+) {
 	s.entityRepo = entityRepo
+	s.conceptMappingRepo = conceptMappingRepo
 	s.metricImplementationRepo = metricImplementationRepo
 }
 

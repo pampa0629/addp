@@ -137,7 +137,7 @@ func TestAnalyticalPrepareFreezesAndConsumesOnce(t *testing.T) {
 	if len(result.Rows) != 1 || result.Rows[0]["value"] != int64(9007199254740993) {
 		t.Fatalf("result=%#v", result)
 	}
-	if p.lastSQL != "SELECT $1 AS value, 'data' AS __addp_record" || p.lastOptions.Parameters != nil || p.lastOptions.Args[0] != int64(9007199254740993) || p.lastOptions.Limit != 0 {
+	if p.lastOptions.analytical == nil || p.lastSQL != "SELECT $1 AS value, 'data' AS __addp_record" || p.lastOptions.Parameters != nil || p.lastOptions.Args[0] != int64(9007199254740993) || p.lastOptions.Limit != 0 {
 		t.Fatalf("bound request changed: %s %#v", p.lastSQL, p.lastOptions)
 	}
 	if !p.deadline {

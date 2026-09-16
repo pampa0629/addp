@@ -185,6 +185,12 @@ export const logicalTableAPI = {
   get(id) {
     return client.get(`/model/logical-tables/${id}`)
   },
+  getConceptMappings(id) {
+    return client.get(`/model/logical-tables/${id}/concept-mappings`)
+  },
+  replaceConceptMappings(id, data) {
+    return client.put(`/model/logical-tables/${id}/concept-mappings`, data)
+  },
   // 更新逻辑表
   update(id, data) {
     return client.put(`/model/logical-tables/${id}`, data)
@@ -209,7 +215,7 @@ export const logicalTableAPI = {
   deleteField(tableId, fieldId, version) {
     return client.delete(`/model/logical-tables/${tableId}/fields/${fieldId}`, { data: { version } })
   },
-  // 预览 DDL
+  // 预览建表语句
   previewDDL(id, data) {
     return client.post(`/model/logical-tables/${id}/preview-ddl`, data)
   },
@@ -278,6 +284,7 @@ export const metricImplementationAPI = {
 }
 const serviceClient = refreshAuthorizationOnForbidden(createAPIClient(() => useAuthStore(), { moduleName: 'Service' }))
 export const metricServiceAPI = {
+ get: id => serviceClient.get(`/service/query/${id}`),
  create: data => serviceClient.post('/service/query', data),
  search: search => serviceClient.get('/service/query', {params:{search,limit:100,page:1}}),
  rebind: (id,data) => serviceClient.put(`/service/query/${id}/metric-source`,data)

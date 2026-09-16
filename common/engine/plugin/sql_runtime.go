@@ -19,20 +19,23 @@ import (
 func ExecuteSQLWithConnectionPool(ctx context.Context, poolPlugin interface {
 	ConnectionPoolPlugin
 	SQLQueryRuntimeProvider
-}, connInfo ConnectionInfo, sql string, opts QueryOptions) (*QueryResult, error) {
+}, connInfo ConnectionInfo, querySQL string, opts QueryOptions) (*QueryResult, error) {
+	if opts.analytical != nil && !opts.ReadOnly {
+		return nil, ErrAnalyticalInvalid
+	}
 	if poolPlugin == nil {
 		return nil, fmt.Errorf("connection pool plugin cannot be nil")
 	}
-	boundSQL, boundArgs, err := BindSQLRuntimeParameters(poolPlugin.SQLDialect(), sql, opts)
+	boundSQL, boundArgs, err := BindSQLRuntimeParameters(poolPlugin.SQLDialect(), querySQL, opts)
 	if err != nil {
 		return nil, err
 	}
 	if opts.Parameters != nil {
-		sql = boundSQL
+		querySQL = boundSQL
 		opts.Args = boundArgs
 	}
 	if opts.ReadOnly {
-		if err := commonquery.RequireReadOnly(sql); err != nil {
+		if err := commonquery.RequireReadOnly(querySQL); err != nil {
 			return nil, fmt.Errorf("read-only SQL validation failed: %w", err)
 		}
 	}
@@ -48,7 +51,7 @@ func ExecuteSQLWithConnectionPool(ctx context.Context, poolPlugin interface {
 		}
 	}
 	if opts.Limit > 0 {
-		sql = commonquery.ForDialect(poolPlugin.SQLDialect()).PaginateQuerySQL(sql, opts.Limit, 0)
+		querySQL = commonquery.ForDialect(poolPlugin.SQLDialect()).PaginateQuerySQL(querySQL, opts.Limit, 0)
 	}
 
 	var db *gorm.DB
@@ -80,21 +83,35 @@ func ExecuteSQLWithConnectionPool(ctx context.Context, poolPlugin interface {
 	}
 
 	if opts.ReadOnly {
-		return executeReadOnlySQL(ctx, db, poolPlugin.SQLDialect(), readOnlyBoundary, sql, opts.Args)
+		var preflight func(context.Context, *sql.Tx) error
+		if opts.analytical != nil {
+			validator, ok := any(poolPlugin).(AnalyticalSQLExecutionValidator)
+			if !ok {
+				return nil, ErrAnalyticalUnsupported
+			}
+			preflight = func(ctx context.Context, tx *sql.Tx) error {
+				return validator.ValidateAnalyticalExecution(ctx, tx, opts.analytical.sourceBindings())
+			}
+		}
+		return executeReadOnlySQL(ctx, db, poolPlugin.SQLDialect(), readOnlyBoundary, querySQL, opts.Args, preflight)
 	}
-	rows, err := db.WithContext(ctx).Raw(sql, opts.Args...).Rows()
+	rows, err := db.WithContext(ctx).Raw(querySQL, opts.Args...).Rows()
 	if err != nil {
 		return nil, err
 	}
 	return scanRuntimeSQLRows(rows)
 }
 
-func executeReadOnlySQL(ctx context.Context, db *gorm.DB, dialect string, boundary ControlledReadOnlySQLBoundary, query string, args []interface{}) (*QueryResult, error) {
+func executeReadOnlySQL(ctx context.Context, db *gorm.DB, dialect string, boundary ControlledReadOnlySQLBoundary, query string, args []interface{}, preflight func(context.Context, *sql.Tx) error) (*QueryResult, error) {
 	sqlDB, err := db.DB()
 	if err != nil {
 		return nil, fmt.Errorf("获取数据库连接失败：%w", err)
 	}
-	tx, err := BeginControlledReadOnlySQLTransaction(ctx, sqlDB, dialect, boundary, sql.LevelDefault)
+	isolation := sql.LevelDefault
+	if preflight != nil {
+		isolation = sql.LevelReadCommitted
+	}
+	tx, err := BeginControlledReadOnlySQLTransaction(ctx, sqlDB, dialect, boundary, isolation)
 	if err != nil {
 		return nil, fmt.Errorf("开启只读事务失败：%w", err)
 	}
@@ -104,6 +121,14 @@ func executeReadOnlySQL(ctx context.Context, db *gorm.DB, dialect string, bounda
 			_ = tx.Rollback()
 		}
 	}()
+	if preflight != nil {
+		if err := preflight(ctx, tx); err != nil {
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			return nil, err
+		}
+	}
 	rows, err := tx.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
@@ -274,6 +299,7 @@ func PrepareSQLRuntimeQuery(
 	}
 	prepared, err := NewPreparedQuery(analysis, readSet, lineage, func(ctx context.Context) (*QueryResult, error) {
 		request := cloneQueryRequest(preparedReq)
+		request.Options.analytical = request.analytical
 		if request.analytical != nil && request.Options.Timeout > 0 {
 			var cancel context.CancelFunc
 			ctx, cancel = context.WithTimeout(ctx, request.Options.Timeout)

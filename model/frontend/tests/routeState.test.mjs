@@ -72,4 +72,6 @@ test('table relation links preserve source identity and recoverable selection', 
   assert.deepEqual(resolveLogicalTableDetailRouteState({ tab: 'relations', relation_id: '7' }, 'entity').query, {})
   assert.deepEqual(resolveLogicalTableDetailRouteState({ tab: 'definition', relation_id: '7', domain_id: '2' }, 'fact').query, { domain_id: '2' })
   assert.deepEqual(resolveLogicalTableDetailRouteState({ tab: 'relations', relation_id: '-7' }, 'fact').query, { tab: 'relations' })
+  assert.deepEqual(resolveLogicalTableDetailRouteState({ tab: 'concept-mappings', relation_id: '7' }, 'entity').query, { tab: 'concept-mappings' })
+  assert.deepEqual(resolveLogicalTableDetailRouteState({ tab: 'physical-target', relation_id: '7' }, 'entity').query, { tab: 'physical-target' })
 })

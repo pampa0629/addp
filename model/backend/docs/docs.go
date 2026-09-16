@@ -2074,6 +2074,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "返回逻辑表及同一快照派生的主键组合、必填字段和出向外键；不是质量执行结果 | Return the logical table and same-snapshot primary key, required fields and outgoing foreign keys, not quality execution results",
                 "produces": [
                     "application/json"
                 ],
@@ -2216,7 +2217,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "仅删除已清空物化配置的草稿逻辑表；历史执行事实保留。 | Delete a draft logical table with cleared physical configuration; preserve execution history.",
+                "description": "仅删除已移除物理目标配置的草稿逻辑表；历史执行事实保留。 | Delete a draft logical table after removing its physical-target configuration; preserve execution history.",
                 "produces": [
                     "application/json"
                 ],
@@ -2351,6 +2352,146 @@ const docTemplate = `{
                     },
                     "409": {
                         "description": "逻辑表状态冲突 | Logical table state conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.logical_model.update"
+                ]
+            }
+        },
+        "/logical-tables/{id}/concept-mappings": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回逻辑表、字段和表关系到已审批业务实体模型的版本化映射。 | Return versioned mappings from a logical table, its fields, and table relations to the approved business entity model.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Model"
+                ],
+                "summary": "获取概念实现映射 | Get concept realization mappings",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "逻辑表ID | Logical table ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "概念实现映射 | Concept realization mappings",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ConceptMappingsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "逻辑表 ID 无效 | Invalid logical table ID",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Authentication required",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Permission denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "逻辑表不存在 | Logical table not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.logical_model.read"
+                ]
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "在一个事务中完整替换逻辑表聚合的实体、属性和关系映射，并推进逻辑表版本。映射源必须已审批。 | Atomically replace entity, attribute, and relation mappings for the logical-table aggregate and advance its version. Mapping sources must be approved.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Model"
+                ],
+                "summary": "替换概念实现映射 | Replace concept realization mappings",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "逻辑表ID | Logical table ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "完整映射集合 | Complete mapping set",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ReplaceConceptMappingsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "已保存的概念实现映射 | Saved concept realization mappings",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ConceptMappingsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "映射请求无效 | Invalid mapping request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Authentication required",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Permission denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "逻辑表不存在 | Logical table not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "版本、状态或概念模型漂移冲突 | Version, state, or conceptual-model drift conflict",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
@@ -3594,7 +3735,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "提交统一执行队列，根据已审批模型创建正式表；同归属且结构一致时幂等成功，结构不一致拒绝；不执行数据加工。| Enqueue creation of an approved physical target, preserving existing data when ownership and structure match; reject structural drift.",
+                "description": "提交统一执行队列，根据已审批模型创建目标表；目标已存在且归属及结构一致时校验成功并保留数据，结构不一致时拒绝；不执行数据加工。| Enqueue creation of an approved physical target table; verify and preserve an existing table when ownership and structure match, and reject structural drift; do not process data.",
                 "consumes": [
                     "application/json"
                 ],
@@ -3604,7 +3745,7 @@ const docTemplate = `{
                 "tags": [
                     "Model"
                 ],
-                "summary": "创建正式表 | Create physical target",
+                "summary": "创建或校验目标物理表 | Create or verify physical target table",
                 "parameters": [
                     {
                         "type": "integer",
@@ -3678,7 +3819,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "校验逻辑表版本和精确目标确认后，仅删除由当前逻辑表管理标记拥有的 PostgreSQL 物理表；不修改逻辑表配置。| After validating the logical-table version, exact target confirmation, delete only the PostgreSQL table owned by the current logical-table marker; the logical-table definition is unchanged.",
+                "description": "校验逻辑表版本和精确目标确认后，仅删除由当前逻辑表管理标记拥有的 PostgreSQL 物理表；保留逻辑表及物理目标配置。| After validating the logical-table version and exact target confirmation, delete only the PostgreSQL table owned by the current logical-table marker; preserve the logical table and its physical-target configuration.",
                 "consumes": [
                     "application/json"
                 ],
@@ -3688,7 +3829,7 @@ const docTemplate = `{
                 "tags": [
                     "Model"
                 ],
-                "summary": "退役逻辑表物化目标 | Decommission logical-table materialized target",
+                "summary": "删除逻辑表的目标物理表 | Delete logical-table physical target",
                 "parameters": [
                     {
                         "type": "integer",
@@ -3698,18 +3839,18 @@ const docTemplate = `{
                         "required": true
                     },
                     {
-                        "description": "物化目标精确确认 | Exact materialized target confirmation",
+                        "description": "目标物理表精确确认 | Exact physical target confirmation",
                         "name": "request",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_model_internal_models.MaterializedTargetDecommissionRequest"
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.PhysicalTargetDeleteRequest"
                         }
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "退役成功或目标已不存在 | Decommissioned or target already absent",
+                        "description": "删除成功或目标已不存在 | Deleted or target already absent",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_model_internal_models.MessageResponse"
                         }
@@ -3773,7 +3914,7 @@ const docTemplate = `{
                 "tags": [
                     "Model"
                 ],
-                "summary": "预览 DDL | Preview DDL",
+                "summary": "预览建表语句 | Preview create statement",
                 "parameters": [
                     {
                         "type": "integer",
@@ -3783,7 +3924,7 @@ const docTemplate = `{
                         "required": true
                     },
                     {
-                        "description": "当前物化配置 | Current materialization configuration",
+                        "description": "当前物理目标配置 | Current physical-target configuration",
                         "name": "body",
                         "in": "body",
                         "required": true,
@@ -3794,13 +3935,13 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "DDL 预览 | DDL preview",
+                        "description": "建表语句预览 | Create statement preview",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_model_internal_models.DDLPreviewResponse"
                         }
                     },
                     "400": {
-                        "description": "请求或物化配置无效 | Invalid request or materialization configuration",
+                        "description": "请求或物理目标配置无效 | Invalid request or physical-target configuration",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
@@ -4286,7 +4427,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "保存数据库无关的结构化计算契约；来源引擎必须提供分析 SQL 能力。 | Saves a database-independent structured computation contract; the source engine must provide analytical SQL capabilities.",
+                "description": "保存数据库无关的结构化计算契约；来源结构来自 Meta，执行引擎必须声明分析计算能力。 | Saves a database-independent computation contract using Meta source facts and a certified analytical engine.",
                 "consumes": [
                     "application/json"
                 ],
@@ -4815,7 +4956,7 @@ const docTemplate = `{
                 "tags": [
                     "Model"
                 ],
-                "summary": "获取物化执行状态 | Get materialization execution status",
+                "summary": "获取建表执行状态 | Get table-creation execution status",
                 "parameters": [
                     {
                         "type": "string",
@@ -4870,14 +5011,14 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "仅返回已审批且配置物化目标的逻辑表。| Return approved logical tables with a configured target.",
+                "description": "仅返回已审批且配置物理目标的逻辑表。| Return approved logical tables with a configured physical target.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Model"
                 ],
-                "summary": "列出逻辑表物化任务 | List logical table materialization tasks",
+                "summary": "列出逻辑表建表任务 | List logical-table creation tasks",
                 "parameters": [
                     {
                         "type": "string",
@@ -4949,7 +5090,7 @@ const docTemplate = `{
                 "tags": [
                     "Model"
                 ],
-                "summary": "获取逻辑表物化任务 | Get logical table materialization task",
+                "summary": "获取逻辑表建表任务 | Get logical-table creation task",
                 "parameters": [
                     {
                         "type": "string",
@@ -5027,7 +5168,7 @@ const docTemplate = `{
                 "tags": [
                     "Model"
                 ],
-                "summary": "编排执行逻辑表物化 | Execute orchestrated logical table materialization",
+                "summary": "编排执行逻辑表建表 | Execute orchestrated logical-table creation",
                 "parameters": [
                     {
                         "type": "string",
@@ -5105,26 +5246,6 @@ const docTemplate = `{
         }
     },
     "definitions": {
-        "client.ModelMetricParameter": {
-            "type": "object",
-            "properties": {
-                "name": {
-                    "type": "string"
-                },
-                "options": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/query.ParameterOption"
-                    }
-                },
-                "required": {
-                    "type": "boolean"
-                },
-                "type": {
-                    "$ref": "#/definitions/datatype.FieldType"
-                }
-            }
-        },
         "datatype.FieldInfo": {
             "type": "object",
             "properties": {
@@ -5308,6 +5429,32 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_model_internal_models.ConceptMappingsResponse": {
+            "type": "object",
+            "properties": {
+                "field_mappings": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_model_internal_models.FieldAttributeMappingView"
+                    }
+                },
+                "relation_mappings": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_model_internal_models.RelationConceptMappingView"
+                    }
+                },
+                "table_mappings": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_model_internal_models.TableEntityMappingView"
+                    }
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
         "github_com_addp_model_internal_models.CreateDWLayerRequest": {
             "type": "object",
             "required": [
@@ -5328,10 +5475,6 @@ const docTemplate = `{
                 },
                 "naming_rule": {
                     "type": "string"
-                },
-                "quality_sla": {
-                    "type": "object",
-                    "additionalProperties": true
                 },
                 "sort_order": {
                     "type": "integer",
@@ -5522,9 +5665,6 @@ const docTemplate = `{
                         "degenerate_dim"
                     ]
                 },
-                "is_partition": {
-                    "type": "boolean"
-                },
                 "is_pk": {
                     "type": "boolean"
                 },
@@ -5566,10 +5706,6 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "domain_id": {
-                    "type": "integer",
-                    "minimum": 1
-                },
-                "entity_id": {
                     "type": "integer",
                     "minimum": 1
                 },
@@ -5655,9 +5791,6 @@ const docTemplate = `{
                 "naming_rule": {
                     "description": "命名规范（如：dwd_{domain}_{entity}_d）",
                     "type": "string"
-                },
-                "quality_sla": {
-                    "$ref": "#/definitions/github_com_addp_model_internal_models.JSONB"
                 },
                 "sort_order": {
                     "type": "integer"
@@ -5924,9 +6057,99 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_model_internal_models.FieldAttributeMappingInput": {
+            "type": "object",
+            "required": [
+                "entity_attribute_id",
+                "field_id",
+                "mapping_role"
+            ],
+            "properties": {
+                "entity_attribute_id": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "field_id": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "mapping_role": {
+                    "type": "string",
+                    "enum": [
+                        "direct",
+                        "derived"
+                    ]
+                }
+            }
+        },
+        "github_com_addp_model_internal_models.FieldAttributeMappingView": {
+            "type": "object",
+            "properties": {
+                "attribute_column_name": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "entity_attribute_id": {
+                    "type": "integer"
+                },
+                "entity_attribute_name": {
+                    "type": "string"
+                },
+                "entity_code": {
+                    "type": "string"
+                },
+                "entity_id": {
+                    "type": "integer"
+                },
+                "entity_name": {
+                    "type": "string"
+                },
+                "field_column_name": {
+                    "type": "string"
+                },
+                "field_id": {
+                    "type": "integer"
+                },
+                "field_name": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "mapping_role": {
+                    "type": "string",
+                    "enum": [
+                        "direct",
+                        "derived"
+                    ]
+                },
+                "table_id": {
+                    "type": "integer"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_model_internal_models.JSONB": {
             "type": "object",
             "additionalProperties": true
+        },
+        "github_com_addp_model_internal_models.LogicalConstraintField": {
+            "type": "object",
+            "properties": {
+                "column_name": {
+                    "type": "string"
+                },
+                "field_id": {
+                    "type": "integer"
+                }
+            }
         },
         "github_com_addp_model_internal_models.LogicalField": {
             "type": "object",
@@ -5962,10 +6185,6 @@ const docTemplate = `{
                 },
                 "id": {
                     "type": "integer"
-                },
-                "is_partition": {
-                    "description": "是否分区字段",
-                    "type": "boolean"
                 },
                 "is_pk": {
                     "type": "boolean"
@@ -6006,7 +6225,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "code": {
-                    "description": "英文表名（物化时使用）",
+                    "description": "逻辑表稳定编码",
                     "type": "string"
                 },
                 "created_at": {
@@ -6021,10 +6240,6 @@ const docTemplate = `{
                 "domain_id": {
                     "type": "integer"
                 },
-                "entity_id": {
-                    "description": "关联实体（可选）",
-                    "type": "integer"
-                },
                 "grain_description": {
                     "description": "仅 fact 表：粒度声明（如\"每行代表一笔支付事务\"）",
                     "type": "string"
@@ -6037,7 +6252,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "materialization": {
-                    "description": "物化配置",
+                    "description": "物理目标配置",
                     "allOf": [
                         {
                             "$ref": "#/definitions/github_com_addp_model_internal_models.JSONB"
@@ -6077,7 +6292,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "code": {
-                    "description": "英文表名（物化时使用）",
+                    "description": "逻辑表稳定编码",
                     "type": "string"
                 },
                 "created_at": {
@@ -6092,10 +6307,6 @@ const docTemplate = `{
                 "domain_id": {
                     "type": "integer"
                 },
-                "entity_id": {
-                    "description": "关联实体（可选）",
-                    "type": "integer"
-                },
                 "grain_description": {
                     "description": "仅 fact 表：粒度声明（如\"每行代表一笔支付事务\"）",
                     "type": "string"
@@ -6108,7 +6319,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "materialization": {
-                    "description": "物化配置",
+                    "description": "物理目标配置",
                     "allOf": [
                         {
                             "$ref": "#/definitions/github_com_addp_model_internal_models.JSONB"
@@ -6125,6 +6336,9 @@ const docTemplate = `{
                 "status": {
                     "description": "draft/approved",
                     "type": "string"
+                },
+                "structural_constraints": {
+                    "$ref": "#/definitions/github_com_addp_model_internal_models.LogicalTableStructuralConstraints"
                 },
                 "table_type": {
                     "description": "建模角色：entity/fact/dimension",
@@ -6167,23 +6381,26 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_addp_model_internal_models.MaterializedTargetDecommissionRequest": {
+        "github_com_addp_model_internal_models.LogicalTableStructuralConstraints": {
             "type": "object",
-            "required": [
-                "target_name",
-                "target_parent_locator",
-                "version"
-            ],
             "properties": {
-                "target_name": {
-                    "type": "string"
+                "foreign_keys": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_model_internal_models.TableRelationDetail"
+                    }
                 },
-                "target_parent_locator": {
-                    "type": "string"
+                "primary_key": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_model_internal_models.LogicalConstraintField"
+                    }
                 },
-                "version": {
-                    "type": "integer",
-                    "minimum": 1
+                "required_fields": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_model_internal_models.LogicalConstraintField"
+                    }
                 }
             }
         },
@@ -6539,6 +6756,26 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_model_internal_models.PhysicalTargetDeleteRequest": {
+            "type": "object",
+            "required": [
+                "target_name",
+                "target_parent_locator",
+                "version"
+            ],
+            "properties": {
+                "target_name": {
+                    "type": "string"
+                },
+                "target_parent_locator": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            }
+        },
         "github_com_addp_model_internal_models.PreviewLogicalTableDDLRequest": {
             "type": "object",
             "required": [
@@ -6657,6 +6894,112 @@ const docTemplate = `{
                 },
                 "resource_type": {
                     "type": "string"
+                }
+            }
+        },
+        "github_com_addp_model_internal_models.RelationConceptMappingInput": {
+            "type": "object",
+            "required": [
+                "entity_relation_id",
+                "orientation",
+                "table_relation_id"
+            ],
+            "properties": {
+                "entity_relation_id": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "orientation": {
+                    "type": "string",
+                    "enum": [
+                        "same",
+                        "inverse"
+                    ]
+                },
+                "table_relation_id": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            }
+        },
+        "github_com_addp_model_internal_models.RelationConceptMappingView": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "current_entity_relation_version": {
+                    "type": "integer"
+                },
+                "entity_relation_id": {
+                    "type": "integer"
+                },
+                "entity_relation_name": {
+                    "type": "string"
+                },
+                "entity_relation_version": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "in_sync": {
+                    "type": "boolean"
+                },
+                "orientation": {
+                    "type": "string",
+                    "enum": [
+                        "same",
+                        "inverse"
+                    ]
+                },
+                "source_entity_name": {
+                    "type": "string"
+                },
+                "table_id": {
+                    "type": "integer"
+                },
+                "table_relation_id": {
+                    "type": "integer"
+                },
+                "target_entity_name": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_model_internal_models.ReplaceConceptMappingsRequest": {
+            "type": "object",
+            "required": [
+                "version"
+            ],
+            "properties": {
+                "field_mappings": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_model_internal_models.FieldAttributeMappingInput"
+                    }
+                },
+                "relation_mappings": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_model_internal_models.RelationConceptMappingInput"
+                    }
+                },
+                "table_mappings": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_model_internal_models.TableEntityMappingInput"
+                    }
+                },
+                "version": {
+                    "type": "integer",
+                    "minimum": 1
                 }
             }
         },
@@ -6817,6 +7160,74 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_model_internal_models.TableEntityMappingInput": {
+            "type": "object",
+            "required": [
+                "entity_id",
+                "mapping_role"
+            ],
+            "properties": {
+                "entity_id": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "mapping_role": {
+                    "type": "string",
+                    "enum": [
+                        "represents",
+                        "derives_from"
+                    ]
+                }
+            }
+        },
+        "github_com_addp_model_internal_models.TableEntityMappingView": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "current_entity_version": {
+                    "type": "integer"
+                },
+                "entity_code": {
+                    "type": "string"
+                },
+                "entity_id": {
+                    "type": "integer"
+                },
+                "entity_name": {
+                    "type": "string"
+                },
+                "entity_status": {
+                    "type": "string"
+                },
+                "entity_version": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "in_sync": {
+                    "type": "boolean"
+                },
+                "mapping_role": {
+                    "type": "string",
+                    "enum": [
+                        "represents",
+                        "derives_from"
+                    ]
+                },
+                "table_id": {
+                    "type": "integer"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_model_internal_models.TableRelation": {
             "type": "object",
             "properties": {
@@ -6928,11 +7339,6 @@ const docTemplate = `{
                 },
                 "naming_rule": {
                     "type": "string"
-                },
-                "quality_sla": {
-                    "type": "object",
-                    "additionalProperties": true,
-                    "x-nullable": true
                 },
                 "sort_order": {
                     "type": "integer",
@@ -7093,7 +7499,6 @@ const docTemplate = `{
                 "column_name",
                 "data_type",
                 "field_role",
-                "is_partition",
                 "is_pk",
                 "name",
                 "nullable",
@@ -7143,9 +7548,6 @@ const docTemplate = `{
                         "degenerate_dim"
                     ]
                 },
-                "is_partition": {
-                    "type": "boolean"
-                },
                 "is_pk": {
                     "type": "boolean"
                 },
@@ -7186,11 +7588,6 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "domain_id": {
-                    "type": "integer",
-                    "minimum": 1,
-                    "x-nullable": true
-                },
-                "entity_id": {
                     "type": "integer",
                     "minimum": 1,
                     "x-nullable": true
@@ -7306,14 +7703,8 @@ const docTemplate = `{
                 "dependency_hash": {
                     "type": "string"
                 },
-                "engine_id": {
-                    "type": "integer"
-                },
-                "fields": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/datatype.FieldInfo"
-                    }
+                "execution_plan": {
+                    "$ref": "#/definitions/plugin.AnalyticalPlanPackage"
                 },
                 "implementation_id": {
                     "type": "integer"
@@ -7324,23 +7715,23 @@ const docTemplate = `{
                 "metric_definition_revision_id": {
                     "type": "integer"
                 },
-                "parameters": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/client.ModelMetricParameter"
+                "parameter_labels": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/definitions/query.ParameterOption"
+                        }
+                    }
+                },
+                "parameter_presentation": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/query.ParameterPresentation"
                     }
                 },
                 "revision_id": {
                     "type": "integer"
-                },
-                "sql": {
-                    "type": "string"
-                },
-                "stable_key": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
                 }
             }
         },
@@ -7397,6 +7788,473 @@ const docTemplate = `{
             "type": "object",
             "additionalProperties": true
         },
+        "plan.Aggregate": {
+            "type": "object",
+            "properties": {
+                "groups": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/plan.Projection"
+                    }
+                },
+                "input": {
+                    "type": "string"
+                },
+                "measures": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/plan.Measure"
+                    }
+                }
+            }
+        },
+        "plan.Assertion": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "violation": {
+                    "type": "string"
+                }
+            }
+        },
+        "plan.ColumnRef": {
+            "type": "object",
+            "properties": {
+                "input": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "plan.ConstantRows": {
+            "type": "object",
+            "properties": {
+                "fields": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/datatype.FieldInfo"
+                    }
+                },
+                "rows": {
+                    "type": "array",
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/definitions/plan.Literal"
+                        }
+                    }
+                }
+            }
+        },
+        "plan.DateBuckets": {
+            "type": "object",
+            "properties": {
+                "end": {
+                    "$ref": "#/definitions/plan.Expr"
+                },
+                "max_months": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "start": {
+                    "$ref": "#/definitions/plan.Expr"
+                }
+            }
+        },
+        "plan.Expr": {
+            "type": "object",
+            "properties": {
+                "args": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/plan.Expr"
+                    }
+                },
+                "column": {
+                    "$ref": "#/definitions/plan.ColumnRef"
+                },
+                "literal": {
+                    "$ref": "#/definitions/plan.Literal"
+                },
+                "op": {
+                    "type": "string"
+                },
+                "parameter": {
+                    "type": "string"
+                }
+            }
+        },
+        "plan.Filter": {
+            "type": "object",
+            "properties": {
+                "input": {
+                    "type": "string"
+                },
+                "predicate": {
+                    "$ref": "#/definitions/plan.Expr"
+                }
+            }
+        },
+        "plan.Join": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string"
+                },
+                "left": {
+                    "type": "string"
+                },
+                "on": {
+                    "$ref": "#/definitions/plan.Expr"
+                },
+                "right": {
+                    "type": "string"
+                }
+            }
+        },
+        "plan.Limit": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "input": {
+                    "type": "string"
+                }
+            }
+        },
+        "plan.Literal": {
+            "type": "object",
+            "properties": {
+                "null": {
+                    "type": "boolean"
+                },
+                "text": {
+                    "type": "string"
+                },
+                "type": {
+                    "$ref": "#/definitions/datatype.FieldType"
+                }
+            }
+        },
+        "plan.Measure": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "op": {
+                    "type": "string"
+                },
+                "value": {
+                    "$ref": "#/definitions/plan.Expr"
+                }
+            }
+        },
+        "plan.Node": {
+            "type": "object",
+            "properties": {
+                "aggregate": {
+                    "$ref": "#/definitions/plan.Aggregate"
+                },
+                "constant_rows": {
+                    "$ref": "#/definitions/plan.ConstantRows"
+                },
+                "date_buckets": {
+                    "$ref": "#/definitions/plan.DateBuckets"
+                },
+                "distinct": {
+                    "$ref": "#/definitions/plan.Unary"
+                },
+                "filter": {
+                    "$ref": "#/definitions/plan.Filter"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "join": {
+                    "$ref": "#/definitions/plan.Join"
+                },
+                "limit": {
+                    "$ref": "#/definitions/plan.Limit"
+                },
+                "op": {
+                    "type": "string"
+                },
+                "project": {
+                    "$ref": "#/definitions/plan.Project"
+                },
+                "scan": {
+                    "$ref": "#/definitions/plan.Scan"
+                },
+                "sort": {
+                    "$ref": "#/definitions/plan.Sort"
+                },
+                "union_all": {
+                    "$ref": "#/definitions/plan.UnionAll"
+                }
+            }
+        },
+        "plan.OutputContract": {
+            "type": "object",
+            "properties": {
+                "fields": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/datatype.FieldInfo"
+                    }
+                },
+                "stable_key": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "plan.Parameter": {
+            "type": "object",
+            "properties": {
+                "allowed": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/plan.Literal"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "required": {
+                    "type": "boolean"
+                },
+                "type": {
+                    "$ref": "#/definitions/datatype.FieldType"
+                }
+            }
+        },
+        "plan.Plan": {
+            "type": "object",
+            "properties": {
+                "assertions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/plan.Assertion"
+                    }
+                },
+                "nodes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/plan.Node"
+                    }
+                },
+                "output": {
+                    "$ref": "#/definitions/plan.OutputContract"
+                },
+                "parameters": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/plan.Parameter"
+                    }
+                },
+                "root": {
+                    "type": "string"
+                },
+                "schema_version": {
+                    "type": "string"
+                },
+                "semantic_profile": {
+                    "type": "string"
+                }
+            }
+        },
+        "plan.Project": {
+            "type": "object",
+            "properties": {
+                "columns": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/plan.Projection"
+                    }
+                },
+                "input": {
+                    "type": "string"
+                }
+            }
+        },
+        "plan.Projection": {
+            "type": "object",
+            "properties": {
+                "expr": {
+                    "$ref": "#/definitions/plan.Expr"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "plan.Scan": {
+            "type": "object",
+            "properties": {
+                "fields": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/datatype.FieldInfo"
+                    }
+                },
+                "source": {
+                    "type": "string"
+                }
+            }
+        },
+        "plan.Sort": {
+            "type": "object",
+            "properties": {
+                "input": {
+                    "type": "string"
+                },
+                "keys": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/plan.SortKey"
+                    }
+                }
+            }
+        },
+        "plan.SortKey": {
+            "type": "object",
+            "properties": {
+                "direction": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "nulls": {
+                    "type": "string"
+                }
+            }
+        },
+        "plan.Unary": {
+            "type": "object",
+            "properties": {
+                "input": {
+                    "type": "string"
+                }
+            }
+        },
+        "plan.UnionAll": {
+            "type": "object",
+            "properties": {
+                "inputs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "plugin.AnalyticalPlanPackage": {
+            "type": "object",
+            "properties": {
+                "compiler": {
+                    "$ref": "#/definitions/plugin.CompilerIdentity"
+                },
+                "engine_id": {
+                    "type": "integer"
+                },
+                "package_hash": {
+                    "type": "string"
+                },
+                "plan": {
+                    "$ref": "#/definitions/plan.Plan"
+                },
+                "schema_version": {
+                    "type": "string"
+                },
+                "sources": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/plugin.SourceBinding"
+                    }
+                }
+            }
+        },
+        "plugin.ColumnBinding": {
+            "type": "object",
+            "properties": {
+                "column": {
+                    "type": "string"
+                },
+                "field": {
+                    "$ref": "#/definitions/datatype.FieldInfo"
+                }
+            }
+        },
+        "plugin.CompilerIdentity": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "plugin.EngineCatalogPath": {
+            "type": "object",
+            "properties": {
+                "engine_id": {
+                    "type": "integer"
+                },
+                "segments": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/plugin.EngineCatalogSegment"
+                    }
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "plugin.EngineCatalogSegment": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "term": {
+                    "type": "string"
+                }
+            }
+        },
+        "plugin.SourceBinding": {
+            "type": "object",
+            "properties": {
+                "columns": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/plugin.ColumnBinding"
+                    }
+                },
+                "path": {
+                    "$ref": "#/definitions/plugin.EngineCatalogPath"
+                },
+                "source": {
+                    "type": "string"
+                }
+            }
+        },
         "query.ParameterOption": {
             "type": "object",
             "properties": {
@@ -7408,6 +8266,23 @@ const docTemplate = `{
                 },
                 "value": {
                     "description": "Value 与参数声明类型一致的标量。| Scalar matching the declared parameter type."
+                }
+            }
+        },
+        "query.ParameterPresentation": {
+            "type": "object",
+            "properties": {
+                "descriptions": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "labels": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
                 }
             }
         },

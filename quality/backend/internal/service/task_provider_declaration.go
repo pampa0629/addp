@@ -13,32 +13,20 @@ func QualityTaskProviderDeclaration() (*commonModels.TaskProviderDeclaration, er
 		"schema_version": "task.capabilities/v2",
 		"task_capabilities": []map[string]interface{}{
 			{
-				"type":                      "check",
+				"type":                      "quality_plan",
 				"display_name":              "质量检查",
-				"description":               "执行 Quality 检查任务",
-				"definition_schema":         map[string]interface{}{"type": "object"},
-				"supports_schedule":         false,
-				"supports_cancel":           false,
-				"supports_inline_execution": false,
-				"create_url":                "/quality/check-tasks?create=1",
-				"edit_url":                  "/quality/check-tasks?task_id=:id",
-				"deprecated":                false,
-			},
-			{
-				"type":                      "data_validation",
-				"display_name":              "数据校验",
 				"description":               "对所选正式物理表执行类型化质量断言",
 				"definition_schema":         map[string]interface{}{"type": "object"},
 				"supports_schedule":         false,
 				"supports_cancel":           false,
 				"supports_inline_execution": false,
-				"create_url":                "/quality/data-validation-tasks?create=1",
-				"edit_url":                  "/quality/data-validation-tasks?task_id=:id",
+				"create_url":                "/quality/plans?create=1",
+				"edit_url":                  "/quality/plans?task_id=:id",
 				"deprecated":                false,
 			},
 		},
 		"x_supported_source_models": []string{"tabular_catalog"},
-		"x_features":                []string{"async", "quality_rules", "issue_generation", "data_validation"},
+		"x_features":                []string{"async", "quality_rules", "issue_generation", "quality_plan"},
 	}
 
 	capabilitiesJSON, err := json.Marshal(capabilities)
@@ -49,7 +37,7 @@ func QualityTaskProviderDeclaration() (*commonModels.TaskProviderDeclaration, er
 
 	return &commonModels.TaskProviderDeclaration{
 		DisplayName:         "数据质量",
-		Description:         "数据质量检查与数据校验任务",
+		Description:         "数据质量检查与质量检查方案",
 		TaskListEndpoint:    "/api/v1/quality/task-provider/tasks",
 		TaskDetailEndpoint:  "/api/v1/quality/task-provider/tasks/{task_type}/{id}",
 		TaskExecuteEndpoint: "/api/v1/quality/task-provider/tasks/{task_type}/{id}/execute",

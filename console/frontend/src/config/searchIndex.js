@@ -27,10 +27,9 @@ export const SEARCH_INDEX = [
   { labelKey: 'console.menus.modeling.logicalTables',module: 'modeling', route: '/modeling/logical-tables',keywords: ['逻辑表', '逻辑模型', 'logical table'] },
   { labelKey: 'console.menus.modeling.starSchema',   module: 'modeling', route: '/modeling/star-schema',  keywords: ['维度建模', '事实表', '维度表', 'dimensional modeling'] },
   // 数据质量
-  { labelKey: 'console.menus.quality.checkTasks',       module: 'quality', route: '/quality/check-tasks',      keywords: ['质量检查', '质量', 'quality check'] },
-  { labelKey: 'console.menus.quality.dataValidationTasks', module: 'quality', route: '/quality/data-validation-tasks', keywords: ['数据校验', '发布门禁', '强类型断言', 'materialization gate'] },
-  { labelKey: 'console.menus.quality.ruleApplications', module: 'quality', route: '/quality/rule-applications',keywords: ['规则应用', '质量规则', 'rule'] },
-  { labelKey: 'console.menus.quality.issues',           module: 'quality', route: '/quality/issues',           keywords: ['质量问题', '问题工单', 'issue'] },
+  { labelKey: 'console.menus.quality.plans', module: 'quality', route: '/quality/plans', permissions: ['quality.plan.read'], keywords: ['质量方案', '质量检查', 'quality plan'] },
+  { labelKey: 'console.menus.quality.rules', module: 'quality', route: '/quality/rules', permissions: ['quality.rule.read'], keywords: ['质量规则', 'quality rule'] },
+  { labelKey: 'console.menus.quality.issues',           module: 'quality', route: '/quality/issues', permissions: ['quality.issue.read'], keywords: ['质量问题', '问题工单', 'issue'] },
   // 数据安全
   { labelKey: 'console.menus.security.classificationGrading', module: 'security', route: '/security/classification-grading', keywords: ['分类分级体系', '安全分类', '安全等级', '分类目录', '保护等级', 'classification', 'grading', 'grade'] },
   { labelKey: 'console.menus.security.sensitiveDataDefinitions', module: 'security', route: '/security/sensitive-data-definitions', keywords: ['敏感数据定义', '敏感数据类型', '识别方式', '检测能力', '默认保护规则', '保护基线', '脱敏', '遮盖', '手机号', '隐私', 'sensitive data', 'detector', 'mask', 'protection baseline', 'protection rule', 'privacy'] },
@@ -56,8 +55,7 @@ export const SEARCH_INDEX = [
   { labelKey: 'console.menus.monitor.orchestrationExecutions', module: 'monitor', route: '/monitor/executions?module=orchestrator&task_type=orchestration', keywords: ['编排执行', '编排执行记录', 'orchestrator execution'] },
   { labelKey: 'console.menus.monitor.metadataScanExecutions', module: 'monitor', route: '/monitor/executions?module=meta&task_type=scan', keywords: ['元数据扫描执行', '扫描执行记录', 'meta scan execution'] },
   { labelKey: 'console.menus.monitor.developExecutions', module: 'monitor', route: '/monitor/executions?module=develop', keywords: ['开发执行', '查询执行', '工作流执行', '脚本执行', 'develop execution'] },
-  { labelKey: 'console.menus.monitor.qualityCheckExecutions', module: 'monitor', route: '/monitor/executions?module=quality&task_type=check', keywords: ['质量检查执行', '质量执行记录', 'quality check execution'] },
-  { labelKey: 'console.menus.monitor.dataValidationExecutions', module: 'monitor', route: '/monitor/executions?module=quality&task_type=data_validation', keywords: ['数据校验执行', '门禁执行记录', 'materialization gate execution'] },
+  { labelKey: 'console.menus.monitor.qualityPlanExecutions', module: 'monitor', route: '/monitor/executions?module=quality&task_type=quality_plan', permissions: ['monitor.execution.read'], keywords: ['质量检查执行', '质量执行记录', '质量门禁', 'quality plan execution'] },
   { labelKey: 'console.menus.monitor.managerExecutions', module: 'monitor', route: '/monitor/executions?module=manager', keywords: ['数据管理执行', '快显执行', '向量化执行', 'manager execution'] },
   { labelKey: 'console.menus.monitor.graphBuildExecutions', module: 'monitor', route: '/monitor/executions?module=graph&task_type=kg_build', keywords: ['图谱构建执行', '知识图谱任务执行', 'graph build execution'] },
   { labelKey: 'console.menus.monitor.modelExecutions', module: 'monitor', route: '/monitor/executions?module=model', keywords: ['数据建模执行', '物化执行', 'model execution'] },

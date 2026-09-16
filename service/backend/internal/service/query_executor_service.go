@@ -97,15 +97,27 @@ func (s *QueryExecutorService) executeDirectQuery(
 	if err != nil {
 		return nil, fmt.Errorf("failed to get engine: %w", err)
 	}
-	baseSQL, err := directSourceSQL(queryService, engine.EngineType)
-	if err != nil {
-		return nil, err
+	var execution *compiledQueryPlan
+	var query plugin.QueryRequest
+	if queryService.ConfigType == "analytical" {
+		execution, query, err = compileAnalyticalQuery(queryService, request, protocol, engine, s.tokenCodec)
+	} else {
+		var baseSQL string
+		baseSQL, err = directSourceSQL(queryService, engine.EngineType)
+		if err != nil {
+			return nil, err
+		}
+		var baseArgs []interface{}
+		var resolvedParameters map[string]interface{}
+		baseSQL, baseArgs, resolvedParameters, err = bindQueryServiceNamedParameters(queryService, engine.EngineType, baseSQL, request.Parameters)
+		if err != nil {
+			return nil, err
+		}
+		execution, err = compileQueryPlan(queryService, request, protocol, engine.EngineType, baseSQL, baseArgs, resolvedParameters, s.tokenCodec)
+		if err == nil {
+			query = plugin.QueryRequest{EngineID: engine.ID, Language: "sql", Query: execution.SQL, Options: plugin.QueryOptions{EngineID: engine.ID, EngineType: engine.EngineType, Limit: execution.Limit + 1, Timeout: 60 * time.Second, ReadOnly: true, Args: execution.Args, Spatial: queryService.HasGeometry()}}
+		}
 	}
-	baseSQL, baseArgs, resolvedParameters, err := bindQueryServiceNamedParameters(queryService, engine.EngineType, baseSQL, request.Parameters)
-	if err != nil {
-		return nil, err
-	}
-	plan, err := compileQueryPlan(queryService, request, protocol, engine.EngineType, baseSQL, baseArgs, resolvedParameters, s.tokenCodec)
 	if err != nil {
 		return nil, err
 	}
@@ -117,13 +129,7 @@ func (s *QueryExecutorService) executeDirectQuery(
 	if !ok {
 		return nil, fmt.Errorf("engine %d does not implement query runtime", engine.ID)
 	}
-	prepared, err := provider.PrepareQuery(ctx, plugin.ConnectionInfo(engine.ConnectionInfo), plugin.QueryRequest{
-		EngineID: engine.ID, Language: "sql", Query: plan.SQL,
-		Options: plugin.QueryOptions{
-			EngineID: engine.ID, EngineType: engine.EngineType, Limit: plan.Limit + 1,
-			Timeout: 60 * time.Second, ReadOnly: true, Args: plan.Args, Spatial: queryService.HasGeometry(),
-		},
-	})
+	prepared, err := provider.PrepareQuery(ctx, plugin.ConnectionInfo(engine.ConnectionInfo), query)
 	if err != nil {
 		return nil, err
 	}
@@ -139,7 +145,7 @@ func (s *QueryExecutorService) executeDirectQuery(
 	if err != nil {
 		return nil, fmt.Errorf("execute query plan: %w", err)
 	}
-	return s.finalizeResult(queryService, plan, result, protect)
+	return s.finalizeResult(queryService, execution, result, protect)
 }
 
 func directSourceSQL(queryService *models.QueryService, engineType string) (string, error) {

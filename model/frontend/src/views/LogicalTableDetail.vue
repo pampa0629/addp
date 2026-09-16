@@ -14,21 +14,15 @@
         <el-tag v-if="isDirty" type="warning" size="small">{{ t('model.common.unsaved') }}</el-tag>
       </div>
       <div v-if="!pageLoading && !pageError" class="header-right">
-        <el-button v-if="table.status === 'approved' && authStore.hasPermission('model.materialization.execute')" :disabled="isDirty" :loading="creatingTarget" @click="createTarget">{{ t('model.materialization.create_target') }}</el-button>
-        <MonitorExecutionsButton module="model" task-type="logical_table_materialization" :source-task-id="tableId" scope="task" />
         <el-button :title="t('model.common.refresh')" :aria-label="t('model.common.refresh')" @click="handleRefresh">
           <el-icon><Refresh /></el-icon>
         </el-button>
-        <el-button v-if="canEdit && detailRouteState.tab === 'definition'" type="primary" @click="handleSave" :loading="saving">{{ t('model.common.save') }}</el-button>
+        <el-button v-if="canEdit && (detailRouteState.tab === 'definition' || detailRouteState.tab === 'physical-target')" type="primary" @click="handleSave" :loading="saving">{{ t('model.common.save') }}</el-button>
         <el-button v-if="table.status === 'draft' && authStore.hasPermission('model.logical_model.update')" type="success" @click="handleApprove">
           {{ t('model.common.approve') }}
         </el-button>
         <el-button v-if="table.status === 'approved' && authStore.hasPermission('model.logical_model.update')"  :loading="reopening" @click="handleReopen">
           {{ t('model.common.reopen') }}
-        </el-button>
-        <el-button v-if="authStore.hasPermission('model.logical_model.read')" type="success" @click="handlePreviewDDL">
-          <el-icon><View /></el-icon>
-          {{ t('model.logical_table.preview_ddl') }}
         </el-button>
       </div>
     </div>
@@ -183,7 +177,6 @@
             <el-table-column :label="t('model.field.constraints')" width="140">
               <template #default="{ row }">
                 <el-tag v-if="row.is_pk" type="warning" size="small">PK</el-tag>
-                <el-tag v-if="row.is_partition" type="success" size="small">{{ t('model.field.is_partition') }}</el-tag>
                 <el-tag v-if="!row.nullable" type="danger" size="small">NOT NULL</el-tag>
               </template>
             </el-table-column>
@@ -202,6 +195,10 @@
         </el-card>
       </el-col>
 
+      <el-col :span="24" class="structural-constraints-section">
+        <LogicalTableConstraints :table-id="tableId" :version="table.version" />
+      </el-col>
+
       <!-- 维度层级（仅维度表） -->
       <el-col v-if="form.table_type === 'dimension'" :span="24" style="margin-top:16px">
         <DimensionHierarchyEditor
@@ -217,82 +214,111 @@
         <MetricImplementationLinks :table-id="tableId" />
       </el-col>
 
-      <!-- 物化配置 -->
-      <el-col :span="24" style="margin-top:16px">
-        <el-card shadow="never">
-          <template #header>
-            <div class="card-header-with-action">
-              <span class="card-title">{{ t('model.materialization.title') }}</span>
-              <div v-if="canClearMaterialization || canDecommissionTarget" class="card-header-actions">
-                <el-button
-                  v-if="canClearMaterialization"
-                  plain
-                  @click="clearMaterializationConfig"
-                >
-                  {{ t('model.materialization.clear_config') }}
-                </el-button>
-                <el-button
-                  v-if="canDecommissionTarget"
-                  type="danger"
-                  plain
-                  @click="openDecommissionDialog"
-                >
-                  {{ t('model.materialization.decommission') }}
-                </el-button>
-              </div>
-            </div>
-          </template>
-          <el-form :model="materializationForm" label-width="110px">
-            <el-row :gutter="16">
-              <el-col :xs="24" :sm="12" :md="8">
-                <el-form-item :label="t('model.materialization.target_schema')">
-                  <ResourceTreePicker
-                    v-if="canEdit"
-                    v-model="targetParentSelection"
-                    api-base-url="/api/v1/meta"
-                    mode="node"
-                    :engine-families="['tabular']"
-                    :selectable-filter="isSchemaSelection"
-                    :initial-locator="materializationForm.target_parent_locator"
-                    :show-selection-summary="false"
-                    :show-count="false"
-                    tree-height="260px"
-                    @select="handleTargetParentSelect"
-                  />
-                  <el-input
-                    v-else
-                    :model-value="formatLocatorDisplayPath(materializationForm.target_parent_locator)"
-                    :placeholder="t('model.materialization.not_configured')"
-                    disabled
-                  />
-                </el-form-item>
-              </el-col>
-              <el-col :xs="24" :sm="12" :md="8">
-                <el-form-item :label="t('model.materialization.target_name')">
-                  <el-input v-model="materializationForm.target_name" :disabled="!canEdit" :placeholder="t('model.materialization.target_name_placeholder')" />
-                </el-form-item>
-              </el-col>
-              <el-col :xs="24" :sm="12" :md="8">
-                <el-form-item :label="t('model.materialization.partition_by')">
-                  <el-select v-model="materializationForm.partition_by" :disabled="!canEdit" :placeholder="t('model.common.optional')" clearable style="width:100%">
-                    <el-option v-for="f in fields" :key="f.id" :label="f.column_name" :value="f.column_name" />
-                  </el-select>
-                </el-form-item>
-              </el-col>
-              <el-col :xs="24" :sm="12" :md="8">
-                <el-form-item :label="t('model.materialization.partition_type')">
-                  <el-select v-model="materializationForm.partition_type" :disabled="!canEdit" placeholder="RANGE" style="width:100%">
-                    <el-option label="RANGE" value="range" />
-                    <el-option label="LIST" value="list" />
-                    <el-option label="HASH" value="hash" />
-                  </el-select>
-                </el-form-item>
-              </el-col>
-            </el-row>
-          </el-form>
-        </el-card>
-      </el-col>
     </el-row>
+    </el-tab-pane>
+    <el-tab-pane name="physical-target" :label="t('model.materialization.title')">
+      <el-card shadow="never">
+        <template #header>
+          <div class="card-header-with-action">
+            <span class="card-title">{{ t('model.materialization.title') }}</span>
+            <div class="card-header-actions">
+              <el-button v-if="canClearMaterialization" plain @click="clearMaterializationConfig">
+                {{ t('model.materialization.clear_config') }}
+              </el-button>
+              <el-button v-if="authStore.hasPermission('model.logical_model.read')" @click="handlePreviewDDL">
+                <el-icon><View /></el-icon>
+                {{ t('model.logical_table.preview_ddl') }}
+              </el-button>
+              <el-button
+                v-if="table.status === 'approved' && authStore.hasPermission('model.materialization.execute')"
+                type="primary"
+                :disabled="isDirty || !hasConfiguredPhysicalTarget"
+                :loading="creatingTarget"
+                @click="createTarget"
+              >
+                {{ t('model.materialization.create_target') }}
+              </el-button>
+              <MonitorExecutionsButton module="model" task-type="logical_table_materialization" :source-task-id="tableId" scope="task" />
+              <el-button v-if="canDecommissionTarget" type="danger" plain @click="openDecommissionDialog">
+                {{ t('model.materialization.decommission') }}
+              </el-button>
+            </div>
+          </div>
+        </template>
+
+        <el-alert
+          class="physical-target-help"
+          type="info"
+          :title="t('model.materialization.help')"
+          :closable="false"
+          show-icon
+        />
+
+        <el-descriptions class="physical-target-summary" :column="2" border>
+          <el-descriptions-item :label="t('model.materialization.config_status')">
+            <el-tag :type="hasConfiguredPhysicalTarget ? 'success' : 'info'">
+              {{ t(hasConfiguredPhysicalTarget ? 'model.materialization.configured' : 'model.materialization.not_configured') }}
+            </el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item :label="t('model.materialization.engine')">
+            <template v-if="physicalTargetEngine">
+              {{ physicalTargetEngine.name }}
+              <span class="engine-type">({{ physicalTargetEngine.engine_type }})</span>
+            </template>
+            <span v-else>{{ hasConfiguredPhysicalTarget ? t('model.materialization.engine_unknown') : '-' }}</span>
+          </el-descriptions-item>
+          <el-descriptions-item :label="t('model.materialization.target_location')">
+            {{ formatLocatorDisplayPath(materializationForm.target_parent_locator) || '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item :label="t('model.materialization.target_name')">
+            {{ materializationForm.target_name || '-' }}
+          </el-descriptions-item>
+        </el-descriptions>
+
+        <el-form :model="materializationForm" label-width="110px">
+          <el-row :gutter="16">
+            <el-col :xs="24" :lg="16">
+              <el-form-item :label="t('model.materialization.target_location')">
+                <ResourceTreePicker
+                  v-if="canEdit"
+                  v-model="targetParentSelection"
+                  api-base-url="/api/v1/meta"
+                  mode="node"
+                  :engine-filter="isSupportedPhysicalTargetEngine"
+                  :selectable-filter="isSchemaSelection"
+                  :initial-locator="materializationForm.target_parent_locator"
+                  :show-selection-summary="true"
+                  :show-count="false"
+                  tree-height="260px"
+                  @select="handleTargetParentSelect"
+                />
+                <el-input
+                  v-else
+                  :model-value="formatLocatorDisplayPath(materializationForm.target_parent_locator)"
+                  :placeholder="t('model.materialization.not_configured')"
+                  disabled
+                />
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :lg="8">
+              <el-form-item :label="t('model.materialization.target_name')">
+                <el-input v-model="materializationForm.target_name" :disabled="!canEdit" :placeholder="t('model.materialization.target_name_placeholder')" />
+              </el-form-item>
+            </el-col>
+          </el-row>
+        </el-form>
+      </el-card>
+    </el-tab-pane>
+    <el-tab-pane name="concept-mappings" :label="t('model.concept_mapping.tab')">
+      <ConceptMappingEditor
+        v-if="detailRouteState.tab === 'concept-mappings'"
+        :key="`${tableId}-${table.version}`"
+        :table="table"
+        :fields="fields"
+        :editable="canEdit"
+        @dirty-change="conceptMappingDirty = $event"
+        @update-version="table.version = $event"
+      />
     </el-tab-pane>
     <el-tab-pane v-if="table.table_type === 'fact' || table.table_type === 'dimension'" name="relations" :label="t(table.table_type === 'fact' ? 'model.table_relation.title' : 'model.table_relation.incoming')">
       <TableRelationEditor v-if="detailRouteState.tab === 'relations'" :key="`${tableId}-${detailRouteState.relationId || ''}`" :table="table" :fields="fields" :editable="canEdit" :relation-id="detailRouteState.relationId" :confirm-discard="confirmDiscardState" @dirty-change="relationDirty = $event" @update-version="table.version = $event" @relation-removed="clearRemovedRelation" />
@@ -373,19 +399,14 @@
           </el-select>
         </el-form-item>
         <el-row :gutter="8">
-          <el-col :span="8">
+          <el-col :span="12">
             <el-form-item :label="t('model.field.is_pk')">
               <el-switch v-model="fieldForm.is_pk" />
             </el-form-item>
           </el-col>
-          <el-col :span="8">
+          <el-col :span="12">
             <el-form-item :label="t('model.field.nullable')">
               <el-switch v-model="fieldForm.nullable" />
-            </el-form-item>
-          </el-col>
-          <el-col :span="8">
-            <el-form-item :label="t('model.field.is_partition')">
-              <el-switch v-model="fieldForm.is_partition" />
             </el-form-item>
           </el-col>
         </el-row>
@@ -407,7 +428,7 @@
     <!-- 指标实现对话框 -->
 
 
-    <!-- DDL 预览对话框 -->
+    <!-- 建表语句预览对话框 -->
     <DDLPreviewDialog v-model="ddlDialogVisible" :ddl="ddlContent" />
 
     <el-dialog
@@ -426,8 +447,8 @@
         <el-descriptions-item :label="t('model.materialization.engine')">
           {{ decommissionTarget.engineName || t('model.materialization.engine_unknown') }}
         </el-descriptions-item>
-        <el-descriptions-item :label="t('model.materialization.target_schema')">
-          {{ decommissionTarget.schemaName }}
+        <el-descriptions-item :label="t('model.materialization.target_location')">
+          {{ decommissionTarget.locationName }}
         </el-descriptions-item>
         <el-descriptions-item :label="t('model.materialization.target_name')">
           {{ decommissionTarget.targetName }}
@@ -468,7 +489,9 @@ import { logicalTableAPI, domainAPI, elementAPI, dwLayerAPI } from '../api/model
 import DDLPreviewDialog from '../components/DDLPreviewDialog.vue'
 import DimensionHierarchyEditor from '../components/DimensionHierarchyEditor.vue'
 import TableRelationEditor from '../components/TableRelationEditor.vue'
+import ConceptMappingEditor from '../components/ConceptMappingEditor.vue'
 import MetricImplementationLinks from '../components/MetricImplementationLinks.vue'
+import LogicalTableConstraints from '../components/LogicalTableConstraints.vue'
 import { useI18n } from 'vue-i18n'
 import { confirmReturnToDraft } from '../utils/lifecycleActions'
 import { navigateModelRoute } from '../utils/moduleNavigation'
@@ -509,12 +532,12 @@ const ddlDialogVisible = ref(false)
 const decommissionDialogVisible = ref(false)
 const decommissionConfirmation = ref('')
 const decommissioning = ref(false)
-const decommissionEngineName = ref('')
 const editingField = ref(null)
 const fieldFormRef = ref(null)
 
 const table = ref({})
 const relationDirty = ref(false)
+const conceptMappingDirty = ref(false)
 const detailRouteState = computed(() => resolveLogicalTableDetailRouteState(route.query, table.value.table_type))
 const changeDetailTab = tab => {
   if (tab === detailRouteState.value.tab) return
@@ -547,15 +570,28 @@ const form = reactive({
   grain_description: '', scd_type: 0, description: ''
 })
 const materializationForm = reactive({
-  target_parent_locator: '', target_name: '', partition_by: '', partition_type: 'range'
+  target_parent_locator: '', target_name: ''
 })
 const targetParentSelection = ref(null)
+const physicalTargetEngines = ref([])
 const fields = ref([])
 const domains = ref([])
 const layers = ref([])
 const elements = ref([])
 const getElementName = id => elements.value.find(element => element.id === id)?.name
 const ddlContent = ref('')
+
+const isSupportedPhysicalTargetEngine = engine =>
+  ['postgresql', 'postgres', 'postgis'].includes(String(engine?.engine_type || '').toLowerCase())
+
+const currentTargetLocator = computed(() => parseLocatorSafe(materializationForm.target_parent_locator))
+const hasConfiguredPhysicalTarget = computed(() => Boolean(
+  String(materializationForm.target_parent_locator || '').trim() &&
+  String(materializationForm.target_name || '').trim()
+))
+const physicalTargetEngine = computed(() => physicalTargetEngines.value.find(
+  engine => Number(engine.id) === Number(currentTargetLocator.value.engineId)
+))
 
 const decommissionTarget = computed(() => {
   const materialization = table.value?.materialization || {}
@@ -566,30 +602,30 @@ const decommissionTarget = computed(() => {
   } catch {
     parsed = {}
   }
-  const schemaName = parsed.path?.[parsed.path.length - 1] || ''
+  const locationName = parsed.path?.join('/') || ''
   const targetName = materialization.target_name || ''
+  const engine = physicalTargetEngines.value.find(item => Number(item.id) === Number(parsed.engineId))
   return {
     locator,
-    schemaName,
+    locationName,
     targetName,
-    engineId: parsed.engineId || 0,
-    engineName: decommissionEngineName.value,
-    confirmation: schemaName && targetName ? `${schemaName}.${targetName}` : ''
+    engineName: engine?.name || '',
+    confirmation: locationName && targetName ? `${locationName}.${targetName}` : ''
   }
 })
 const canDecommissionTarget = computed(() =>
+  table.value.status === 'approved' &&
   authStore.hasPermission('model.materialized_target.delete') &&
   Boolean(decommissionTarget.value.locator && decommissionTarget.value.targetName)
 )
 const canClearMaterialization = computed(() => canEdit.value && Boolean(
   String(materializationForm.target_parent_locator || '').trim() ||
-  String(materializationForm.target_name || '').trim() ||
-  String(materializationForm.partition_by || '').trim()
+  String(materializationForm.target_name || '').trim()
 ))
 
 const fieldForm = reactive({
   name: '', column_name: '', data_type: 'string', length: null,
-  nullable: true, is_pk: false, is_partition: false,
+  nullable: true, is_pk: false,
   default_value: '', element_id: null, description: '',
   field_role: 'regular', sort_order: 0
 })
@@ -606,11 +642,11 @@ const unsavedState = computed(() => ({
   materialization: buildDDLPreviewRequest(materializationForm).materialization
 }))
 const { isDirty, markSaved, confirmDiscardChanges, confirmDiscardState } = useUnsavedChanges({
-  state: unsavedState, t, additionalDirty: computed(() => fieldDirty.value || relationDirty.value)
+  state: unsavedState, t, additionalDirty: computed(() => fieldDirty.value || relationDirty.value || conceptMappingDirty.value)
 })
 onBeforeRouteUpdate((to, from) => {
   if (to.params.id === from.params.id && (to.query.tab !== from.query.tab || to.query.relation_id !== from.query.relation_id)) {
-    return confirmDiscardState(relationDirty.value)
+    return confirmDiscardState(relationDirty.value || conceptMappingDirty.value)
   }
   return true
 })
@@ -664,9 +700,7 @@ const applyTable = resource => {
   const mat = table.value.materialization || {}
   Object.assign(materializationForm, {
     target_parent_locator: mat.target_parent_locator || '',
-    target_name: mat.target_name || '',
-    partition_by: mat.partition_by || '',
-    partition_type: mat.partition_type || 'range',
+    target_name: mat.target_name || ''
   })
   targetParentSelection.value = null
 }
@@ -685,9 +719,7 @@ const clearMaterializationConfig = () => {
   targetParentSelection.value = null
   Object.assign(materializationForm, {
     target_parent_locator: '',
-    target_name: '',
-    partition_by: '',
-    partition_type: 'range',
+    target_name: ''
   })
 }
 
@@ -783,7 +815,7 @@ const handlePreviewDDL = async () => {
   }
 }
 
-const openDecommissionDialog = async () => {
+const openDecommissionDialog = () => {
   if (!canDecommissionTarget.value) {
     ElMessage.error(t('model.common.permission_denied'))
     return
@@ -793,14 +825,7 @@ const openDecommissionDialog = async () => {
     return
   }
   decommissionConfirmation.value = ''
-  decommissionEngineName.value = ''
   decommissionDialogVisible.value = true
-  try {
-    const engines = await listResourceTreeEngines('/api/v1/meta', { engineFamilies: ['tabular'] })
-    decommissionEngineName.value = engines.find(engine => Number(engine.id) === decommissionTarget.value.engineId)?.name || ''
-  } catch (err) {
-    ElMessage.error(getModelErrorMessage(err, t, 'model.materialization.engine_load_failed'))
-  }
 }
 
 const handleDecommission = async () => {
@@ -831,7 +856,6 @@ const openFieldDialog = (field = null) => {
       length: field.length ?? null,
       nullable: field.nullable,
       is_pk: field.is_pk,
-      is_partition: field.is_partition,
       default_value: field.default_value || '',
       element_id: field.element_id ?? null,
       description: field.description || '',
@@ -841,7 +865,7 @@ const openFieldDialog = (field = null) => {
   } else {
     Object.assign(fieldForm, {
       name: '', column_name: '', data_type: 'string', length: null,
-      nullable: true, is_pk: false, is_partition: false,
+      nullable: true, is_pk: false,
       default_value: '', element_id: null, description: '',
       field_role: 'regular', sort_order: 0
     })
@@ -931,14 +955,20 @@ const loadPage = async () => {
     await loadTable()
     if (generation !== loadGeneration) return
     await loadFields()
-    const [domainsResult, elementsResult, layersResult] = await Promise.allSettled([
-      domainAPI.list(), elementAPI.listAll(), dwLayerAPI.list()
+    const [domainsResult, elementsResult, layersResult, enginesResult] = await Promise.allSettled([
+      domainAPI.list(),
+      elementAPI.listAll(),
+      dwLayerAPI.list(),
+      listResourceTreeEngines('/api/v1/meta', {
+        engineFilter: isSupportedPhysicalTargetEngine
+      })
     ])
     if (generation !== loadGeneration) return
     domains.value = domainsResult.status === 'fulfilled' ? domainsResult.value || [] : []
     elements.value = elementsResult.status === 'fulfilled' ? elementsResult.value || [] : []
     layers.value = layersResult.status === 'fulfilled' ? layersResult.value || [] : []
-    if ([domainsResult, elementsResult, layersResult].some(result => result.status === 'rejected')) {
+    physicalTargetEngines.value = enginesResult.status === 'fulfilled' ? enginesResult.value || [] : []
+    if ([domainsResult, elementsResult, layersResult, enginesResult].some(result => result.status === 'rejected')) {
       referenceError.value = t('model.common.reference_data_unavailable')
     }
     markSaved()
@@ -950,6 +980,10 @@ const loadPage = async () => {
 }
 
 watch(() => route.params.id, loadPage, { immediate: true })
+watch(() => detailRouteState.value.tab, tab => {
+  if (tab !== 'relations') relationDirty.value = false
+  if (tab !== 'concept-mappings') conceptMappingDirty.value = false
+})
 watch([() => route.query, () => pageLoading.value], () => {
   if (pageLoading.value || pageError.value || !table.value.table_type) return
   const state = detailRouteState.value
@@ -961,6 +995,8 @@ watch([() => route.query, () => pageLoading.value], () => {
 .logical-table-detail {
   padding: 20px;
 }
+
+.structural-constraints-section { margin-top: 16px; }
 
 .detail-header {
   display: flex;
@@ -1027,6 +1063,19 @@ watch([() => route.query, () => pageLoading.value], () => {
 
 .decommission-target {
   margin: 16px 0;
+}
+
+.physical-target-help {
+  margin-bottom: 16px;
+}
+
+.physical-target-summary {
+  margin-bottom: 20px;
+}
+
+.engine-type {
+  color: var(--addp-text-tertiary);
+  margin-left: 4px;
 }
 
 @media (max-width: 767px) {

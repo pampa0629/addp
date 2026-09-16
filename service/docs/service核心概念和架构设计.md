@@ -940,10 +940,18 @@ Service 模块重构设计的核心改进：
 
 #### 指标来源发布切换
 
-`PUT /query/{id}/metric-source` 是现有 SQL 查询服务切换到确定指标实现修订的唯一命令，使用 `service.definition.update`。请求包含 `metric_source` 与读取服务详情时取得的 `service_version`；这里比较既有查询发布契约的版本指纹，不创建另一套指标版本。Service 在同一事务锁定当前租户的服务并比较发布版本，再原子替换 SQL、参数、输出结构、稳定键和指标绑定；陈旧发布版本返回 409。服务 ID、编码和访问控制不变，旧 SQL 不保留执行分支。Model 提供完整参数及输出声明，Service 不自行定义重叠率公式。切换会改变 Consumer Descriptor 指纹，Workbench 必须重新绑定并发布应用新修订，旧应用发布快照不可原地修改。
+`PUT /query/{id}/metric-source` 是查询服务切换到确定指标实现修订的唯一命令，使用 `service.definition.update`。请求只接受 `metric_source` 与正整数 `version`。QueryService 聚合根持久化非空 BIGINT 版本，创建为 1，存量迁移补齐为 1；普通编辑、启停、删除、刷新快照与重绑均携带同一版本，在租户范围内同一事务锁行、比较版本、写入并递增。不存在或其他租户资源返回 404；陈旧版本返回 409 / `resource_version_conflict`，不得产生副作用。删除和刷新快照使用请求体 `{ "version": 1 }`。管理 DTO 返回最新 `version`，不再提供定义指纹字段。
+
+`service_version` 仍只表示计算消费契约，缺少依赖快照或稳定键时为空，继续供查询、游标与 Consumer Descriptor 使用。重绑保留服务 ID、编码、访问控制与启停状态；定义版本不授予执行权，停用服务不自动启用。详情页提供显式启用／停用操作；未绑定完整指标计划时不可启用，未启用时禁止测试与预览并显示原因。版本冲突保留参数和本地输入，用户主动重新加载后再操作，不自动重试。切换计算来源会改变 Consumer Descriptor 指纹，Workbench 必须重新绑定并发布应用新修订。
 
 
 ### 命名参数固定选项
+
+命名参数可携带 `presentation: {labels, descriptions}`，两项均按 `zh-cn`、`en` 提供文本；名称最多 100 字符，说明最多 500 字符。它只表达展示，不改变参数名、类型或日期计算规则。指标参数由 Model 在发布时冻结，Service 管理 DTO 与 Consumer Descriptor 只读透传，展示内容纳入消费契约指纹。普通 SQL 参数保留发布者填写的 `description`，不得同时声明 `presentation` 与 `description`。
+
+Service 与 Workbench 使用共享参数展示组件，按当前语言显示业务名称和说明；没有展示信息的参数显示其声明名称，不按参数名猜测业务含义。Workbench 自定义的组件标签仍属于应用配置，服务说明来自确定的 Consumer Descriptor。Model 新发布修订应提供完整展示信息；既有修订不追补文案，更新展示须显式发布、重绑。
+
+查询服务详情中的执行引擎展示 System 返回的实例名称、类型和辅助编号；源存储引擎与查询运行时分别展示，不能用 `Engine #ID` 或 `Runtime #ID` 冒充名称。读取失败或不可见时明确提示，不阻止服务详情及查询使用。
 
 命名参数可声明 `options`，每项为 `{value, labels: {"zh-cn": "显示名称", "en": "Display label"}}`。不声明或空集合表示无枚举限制；非空集合至多 100 项，值必须是与参数类型匹配的非空标量且不重复，每种内置语言名称均非空、至多 100 字符，不接受其他语言键。类型化值比较区分数字、布尔与字符串。必填性与默认值继续遵循原有规则，默认值及执行输入必须属于允许值集合。
 

@@ -80,6 +80,7 @@ func main() {
 	entityRepo := repository.NewEntityRepository(db)
 	entityRelationRepo := repository.NewEntityRelationRepository(db)
 	logicalTableRepo := repository.NewLogicalTableRepository(db)
+	conceptMappingRepo := repository.NewConceptMappingRepository(db)
 	dwLayerRepo := repository.NewDWLayerRepository(db)
 	metricImplementationRepo := repository.NewMetricImplementationRepository(db)
 	tableRelationRepo := repository.NewTableRelationRepository(db)
@@ -90,15 +91,20 @@ func main() {
 	// 创建 Services（仅 Model 相关，传入 standardURL 用于验证 element_id）
 	entitySvc := service.NewEntityService(entityRepo, entityRelationRepo)
 	entitySvc.SetStandardClient(standardClient)
+	entitySvc.SetConceptMappingRepository(conceptMappingRepo)
 	entityRelationSvc := service.NewEntityRelationService(entityRelationRepo, entityRepo)
-	logicalTableSvc := service.NewLogicalTableService(logicalTableRepo, entityRepo, dwLayerRepo)
+	entityRelationSvc.SetConceptMappingRepository(conceptMappingRepo)
+	logicalTableSvc := service.NewLogicalTableService(logicalTableRepo, dwLayerRepo)
 	logicalTableSvc.SetStandardClient(standardClient)
+	logicalTableSvc.SetConceptMappingRepository(conceptMappingRepo)
+	conceptMappingSvc := service.NewConceptMappingService(conceptMappingRepo, logicalTableRepo)
 	dwLayerSvc := service.NewDWLayerService(dwLayerRepo)
 	metricImplementationSvc := service.NewMetricImplementationService(metricImplementationRepo, logicalTableRepo)
 	metricImplementationSvc.SetStandardClient(standardClient)
 	metricImplementationSvc.SetSystemClient(systemClient)
+	metricImplementationSvc.SetMetaClient(commonClient.NewMetaClient(cfg.MetaURL, serviceTokenSource))
 	tableRelationSvc := service.NewTableRelationService(tableRelationRepo, logicalTableRepo)
-	tableRelationSvc.SetProfessionalRelationSources(entityRepo, metricImplementationRepo)
+	tableRelationSvc.SetProfessionalRelationSources(entityRepo, conceptMappingRepo, metricImplementationRepo)
 	dimensionHierarchySvc := service.NewDimensionHierarchyService(dimensionHierarchyRepo, logicalTableRepo)
 	standardReferenceGuardSvc := service.NewStandardReferenceGuardService(standardReferenceGuardRepo)
 	taskExecutionRepo := commonExecution.NewTaskExecutionRepository(db)
@@ -119,6 +125,7 @@ func main() {
 		entitySvc,
 		entityRelationSvc,
 		logicalTableSvc,
+		conceptMappingSvc,
 		dwLayerSvc,
 		metricImplementationSvc,
 		tableRelationSvc,

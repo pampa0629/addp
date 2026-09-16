@@ -11,19 +11,20 @@
 - 业务实体（Entity）设计与属性定义
 - 逻辑表（LogicalTable）设计：支持实体表、事实表、维度表三种建模角色
 - 维度建模：事实表与维度表的显式关联关系
+- 概念实现映射：业务实体/属性/关系到逻辑表/字段/维度关联的显式追溯，不创建第二套逻辑表
 - 公共/一致性维度与维度层级：由 Model 独占定义，层级成员关联本模型字段
 - 指标实现：冻结 Standard 指标定义修订并维护粒度、来源、连接、过滤和可执行表达式
 - ER 图 Mermaid 导入导出
-- DDL 预览（物化前的 SQL 预览）
+- 建表语句预览（创建目标物理表前的 SQL 预览）
 - 数仓分层（DW Layer）定义
 
 Model Entity / LogicalTable 是企业 Catalog 的专业资源来源。Model 权威拥有完整对象、属性、字段、Domain / ElementRevision / MetricDefinitionRevision 引用、维度层级、指标实现和建模关系；Catalog 只通过 owner-local 变化源自动建立企业身份，并动态读取当前专业摘要，不保存或编辑这些专业事实的副本。变化捕获、动态解析 API、`model.catalog.read` 权限和软依赖边界以 [Model 概念与数据约束规范](docs/model概念与数据约束规范.md) 为准。
 
 DimensionHierarchy 已整体迁入 Model，`logical_fields.hierarchy_id + hierarchy_level` 以及对 `standard.dimension_hierarchies` 的依赖已经删除。旧 `fact_metric_mappings` 已由 Model-owned MetricImplementation 整体替换，不保留兼容路线。
 
-Model Entity 与 LogicalTable 的专业关系通过当前 User Token 读取 `/:id/relations` 一跳图；它与只供 `addp-catalog` 机器同步使用的变化流、批量摘要解析严格分离。该查询只读 Model 本地事实，不调用 Catalog 或 Standard，不保存 CatalogEntry 反向引用。
+Model Entity 与 LogicalTable 的专业关系由概念实现映射提供，并通过当前 User Token 读取 `/:id/relations` 一跳图；它与只供 `addp-catalog` 机器同步使用的变化流、批量摘要解析严格分离。该查询只读 Model 本地事实，不调用 Catalog 或 Standard，不保存 CatalogEntry 反向引用。旧 `logical_tables.entity_id` 单值指针已删除，不保留兼容字段。
 
-Model 负责已审批逻辑表的正式物理表创建、结构校验与显式退役；Develop 负责计算并写入已存在表，Quality 负责正式表数据校验，Orchestrator 负责依赖、调度和完整流程。建表不计算数据，数据刷新不依赖发布组或暂存批次。
+Model 负责已审批逻辑表的目标物理表创建、结构校验与显式删除；Develop 负责计算并写入已存在表，Quality 负责目标表数据校验，Orchestrator 负责依赖、调度和完整流程。建表不计算数据，数据刷新不依赖发布组或暂存批次。
 
 Model 声明 `logical_table_materialization` TaskProvider；已持久化的 LogicalTable 是任务定义事实源，任务 ID 等于逻辑表 ID，不新增或复制建表配置。仅已审批且配置目标的逻辑表可执行。手动入口和 Orchestrator 入口复用同一执行服务，写入 `common.task_executions`；执行冻结逻辑表版本，运行时必须匹配该版本。成功输出 `execution_id + target_locator`。
 
@@ -126,8 +127,10 @@ model/
 | status | string | `draft` / `approved` |
 | grain_description | text | 粒度声明（仅 fact 表） |
 | scd_type | int | 缓慢变化维类型 0=静态/1=覆盖/2=拉链/3=混合（仅 dimension 表） |
-| materialization | JSONB | 物化配置（关联到真实物理表） |
+| materialization | JSONB | 物理目标配置，仅包含 `target_parent_locator + target_name` |
 | version | int64 | LogicalTable 聚合的资源并发版本，从 1 开始 |
+
+事实表和维度表本身就是 LogicalTable，不要求从 Entity 先生成一套 `table_type=entity` 的中间表。`entity` 角色仅用于业务明确需要的规范化核心逻辑层。
 
 ### `model.logical_fields` — 逻辑表字段
 
@@ -137,7 +140,7 @@ model/
 | element_id | int64? | 引用 `standard.elements`（无 DB FK） |
 | element_revision_id | int64? | LogicalTable 审批时冻结的数据元修订；草稿必须为空 |
 | field_role | string | `regular` / `measure_additive` / `measure_semi` / `measure_non` / `dimension_fk` / `degenerate_dim` |
-| is_pk / is_partition | bool | 主键 / 分区字段 |
+| is_pk | bool | 是否主键 |
 
 ### `model.dimension_hierarchies` / `model.dimension_hierarchy_levels` — 维度层级聚合
 
@@ -152,6 +155,10 @@ model/
 | relation_type | string | `fk`（外键关联）/ `join`（宽泛关联） |
 | tenant_id | int64 | 租户隔离 |
 
+### 概念实现映射
+
+`model.logical_table_entity_mappings`、`model.logical_field_attribute_mappings` 和 `model.table_relation_entity_relation_mappings` 分别表达表、字段和关系如何实现概念模型。三类映射均属于 LogicalTable 聚合，通过同一个完整替换 API 写入并推进父版本；表映射冻结 Entity 版本，关系映射冻结 EntityRelation 版本，审批时拒绝来源草稿或版本漂移。
+
 ### `model.metric_implementations` / `model.metric_implementation_revisions`
 
 指标实现是独立版本主体；稳定身份保存 `fact_table_id`、`metric_definition_id`、名称和 `version`。修订保存 `revision_no`、`metric_definition_revision_id`、类型化 `contract`、依赖快照与 hash，以及 `draft|published|withdrawn` 状态。同一实现最多一个草稿，发布内容不可变；事实表只是来源引用，不拥有实现生命周期。API 与完整契约以正式规范为准。
@@ -163,7 +170,6 @@ model/
 | layer_code | string | Tenant 内唯一的自定义分层编码 |
 | layer_name | string | 分层名称 |
 | naming_rule | text | 命名规范 |
-| quality_sla | JSONB | 质量 SLA 配置 |
 | sort_order | int | 显示顺序 |
 | version | int64 | DWLayer 的资源并发版本，从 1 开始 |
 
@@ -211,10 +217,11 @@ GET    /api/v1/model/logical-tables                          # 列表，支持 t
 POST   /api/v1/model/logical-tables                          # 创建
 GET/PUT/DELETE /api/v1/model/logical-tables/:id              # 详情/更新/删除
 GET/POST/PUT/DELETE /api/v1/model/logical-tables/:id/fields  # 字段 CRUD
-POST   /api/v1/model/logical-tables/:id/preview-ddl          # 预览 DDL
+POST   /api/v1/model/logical-tables/:id/preview-ddl          # 预览建表语句
 GET/POST /metric-implementations                         # 独立指标实现及修订，详见正式规范
 GET/POST/PUT/DELETE .../dimension-relations                   # 事实表关联维度表（含字段映射）
 GET/POST/PUT/DELETE .../dimension-hierarchies             # 维度表聚合内层级及成员
+GET/PUT .../concept-mappings                              # 概念实现映射读取/完整替换
 ```
 
 ## 前端路由
@@ -224,7 +231,7 @@ GET/POST/PUT/DELETE .../dimension-hierarchies             # 维度表聚合内�
 /modeling/entities               # 业务实体列表
 /modeling/entities/:id           # 实体详情（属性、关系、Mermaid 图）
 /modeling/logical-tables         # 逻辑表列表
-/modeling/logical-tables/:id     # 逻辑表详情（字段、维度层级、DDL 预览）
+/modeling/logical-tables/:id     # 逻辑表详情（字段、维度层级、物理目标、建表语句预览）
 /modeling/er-diagram             # 按业务域查看 ER 图；domain_id=all 显式全域
 /modeling/star-schema            # 维度建模（事实表-维度表-指标三维关联）
 ```
@@ -275,7 +282,7 @@ EntityRelation 使用完整 `PUT`：请求包含变更后的 source_entity、tar
 draft ⇄ approved
 ```
 
-只有 `draft` 可修改；审批和退回草稿必须使用显式状态转换。`materialized` 不属于当前正式状态，DDL 预览不改变状态。
+只有 `draft` 可修改；审批和退回草稿必须使用显式状态转换。`materialized` 不属于当前正式状态，建表语句预览不改变状态。
 
 ### `dimension-relations` 查询返回 JOIN 结果
 
@@ -314,6 +321,8 @@ draft ⇄ approved
 
 ## 开发注意事项
 
+质量相关边界：LogicalTable 详情通过只读 `structural_constraints` 汇总主键组合、必填字段和出向外键，唯一事实源仍是字段和表关系。DWLayer 不再保存 `quality_sla`；检查方案、阈值和执行策略属于 Quality。详见 [Model 概念与数据约束规范](docs/model概念与数据约束规范.md#与数据质量的边界)。
+
 1. **新增 API**: `models` → `repository` → `service` → `handler` → `router.go` → `main.go`（注入依赖）
 
 2. **重启服务**:
@@ -345,6 +354,8 @@ draft ⇄ approved
 - 实体和逻辑表详情使用 `/:id`；实体详情默认 `basic` Tab 省略，`attributes`、`relations` 使用唯一 `tab` query。
 - 维度建模业务域使用 `domain_id`（省略表示全部），当前事实表使用 `table_id`，并响应刷新及浏览器前进/后退；无选择时省略该 query。
 - 业务导航统一调用 `frontend/src/utils/moduleNavigation.js`；详情返回明确列表路由。
-- 逻辑表详情提供创建物理表、DDL 预览与退役操作；完整数据流程和记录从 Orchestrator 进入。
+- 逻辑表详情的“物理目标”页签集中提供目标引擎、目标位置与目标表名展示，以及建表语句预览、创建/校验、执行记录和删除目标表操作；完整数据流程从 Orchestrator 进入。
 
 - Model 导航依次为业务实体、实体关系图、数仓分层、逻辑表设计、维度建模。
+
+指标计划所需物理结构由 `META_URL` 指定的 Meta 提供（默认 `http://localhost:8082`）；Model Runtime 使用已有 `meta.catalog.read`，不新增 System 结构查询权限。只有参与计算的字段事实进入冻结包，Meta 扫描时间与无关显示字段不进入计算依赖。

@@ -91,8 +91,8 @@ other = "Authentication is required"
 [service.configuration.version_conflict]
 other = "Service runtime policy was updated by another administrator"
 
-["service.metric.publication_conflict"]
-other = "The service publication changed. Refresh before selecting the metric source again."
+["service.query.version_conflict"]
+other = "The resource has changed. Reload it before trying again."
 
 [service.metric.publication_failed]
 other = "Failed to update the metric publication."

@@ -16,29 +16,39 @@ func TestQualityHumanExecutionRoutesUseMonitorExecutionRead(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	authServer := authtest.NewTenantUserAuthContextServer(t, "7", map[string][]string{
 		"Bearer monitor-read":       {"monitor.execution.read"},
-		"Bearer quality-task-read":  {qualityauthorization.PermissionQualityCheckTaskRead},
+		"Bearer quality-task-read":  {qualityauthorization.PermissionQualityPlanRead},
+		"Bearer rule-read":          {"quality.rule.read"},
+		"Bearer plan-editor-only":   {"quality.plan.update"},
 		"Bearer task-provider-read": {qualityauthorization.PermissionQualityTaskProviderRead},
 	})
 	defer authServer.Close()
 
 	db := newExecutionHandlerTestDB(t)
-	insertExecutionHandlerRow(t, db, 1, 7, "quality-7", commonExecution.ModuleQuality, commonExecution.TaskTypeQualityCheck, commonExecution.ExecutionStatusSuccess)
-	router := SetupRouter(nil, nil, nil, nil, nil, nil, db, authServer.URL, nil, modulelifecycle.NewStandalone("quality"))
+	insertExecutionHandlerRow(t, db, 1, 7, "quality-7", commonExecution.ModuleQuality, commonExecution.TaskTypeQualityPlan, commonExecution.ExecutionStatusSuccess)
+	router := SetupRouter(nil, nil, nil, nil, db, authServer.URL, nil, modulelifecycle.NewStandalone("quality"))
 
 	for _, test := range []struct {
-		name  string
-		path  string
-		token string
-		want  int
+		name   string
+		path   string
+		token  string
+		want   int
+		method string
 	}{
 		{name: "monitor reader can list", path: "/api/v1/quality/executions", token: "monitor-read", want: http.StatusOK},
 		{name: "monitor reader can inspect detail", path: "/api/v1/quality/executions/quality-7", token: "monitor-read", want: http.StatusOK},
 		{name: "quality task reader cannot inspect execution", path: "/api/v1/quality/executions/quality-7", token: "quality-task-read", want: http.StatusForbidden},
 		{name: "machine permission cannot inspect human route", path: "/api/v1/quality/executions/quality-7", token: "task-provider-read", want: http.StatusForbidden},
 		{name: "user cannot call TaskProvider", path: "/api/v1/quality/task-provider/tasks/unsupported/1", token: "task-provider-read", want: http.StatusForbidden},
+		{name: "plan reader cannot access rule library", path: "/api/v1/quality/rules", token: "quality-task-read", want: http.StatusForbidden},
+		{name: "rule reader cannot see plan references without plan read", path: "/api/v1/quality/rules/1/plans", token: "rule-read", want: http.StatusForbidden},
+		{name: "plan edit requires rule read", method: http.MethodPut, path: "/api/v1/quality/plans/1", token: "plan-editor-only", want: http.StatusForbidden},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			request := httptest.NewRequest(http.MethodGet, test.path, nil)
+			method := test.method
+			if method == "" {
+				method = http.MethodGet
+			}
+			request := httptest.NewRequest(method, test.path, nil)
 			request.Header.Set("Authorization", "Bearer "+test.token)
 			response := httptest.NewRecorder()
 			router.ServeHTTP(response, request)
@@ -76,8 +86,8 @@ func TestQualityTaskProviderRoutesRequireOrchestratorRuntimeIdentity(t *testing.
 	defer authServer.Close()
 
 	db := newExecutionHandlerTestDB(t)
-	insertExecutionHandlerRow(t, db, 1, 7, "provider-quality-7", commonExecution.ModuleQuality, commonExecution.TaskTypeQualityCheck, commonExecution.ExecutionStatusSuccess)
-	router := SetupRouter(nil, nil, nil, nil, nil, nil, db, authServer.URL, nil, modulelifecycle.NewStandalone("quality"))
+	insertExecutionHandlerRow(t, db, 1, 7, "provider-quality-7", commonExecution.ModuleQuality, commonExecution.TaskTypeQualityPlan, commonExecution.ExecutionStatusSuccess)
+	router := SetupRouter(nil, nil, nil, nil, db, authServer.URL, nil, modulelifecycle.NewStandalone("quality"))
 
 	for _, test := range []struct {
 		name   string

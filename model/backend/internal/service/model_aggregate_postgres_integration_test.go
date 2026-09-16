@@ -46,7 +46,7 @@ func TestPostgresLogicalTableAggregateRejectsStaleFieldAndTableWrites(t *testing
 	}
 
 	tableRepo := repository.NewLogicalTableRepository(tx)
-	svc := NewLogicalTableService(tableRepo, repository.NewEntityRepository(tx), layerRepo)
+	svc := NewLogicalTableService(tableRepo, layerRepo)
 	table, err := svc.CreateLogicalTable(&models.CreateLogicalTableRequest{
 		Name: "PostgreSQL Orders", Code: "pg_orders", TableType: "entity", Layer: "pg_dwd",
 		Materialization: map[string]interface{}{},
@@ -363,7 +363,7 @@ func TestPostgresLogicalTableDeleteAdvancesEachSurvivingFactOnce(t *testing.T) {
 		t.Fatalf("create delete test table relations: %v", err)
 	}
 
-	svc := NewLogicalTableService(repository.NewLogicalTableRepository(tx), repository.NewEntityRepository(tx), repository.NewDWLayerRepository(tx))
+	svc := NewLogicalTableService(repository.NewLogicalTableRepository(tx), repository.NewDWLayerRepository(tx))
 	err := svc.DeleteLogicalTable(tables[0].ID, tenantID, 1)
 	requireDomainErrorCode(t, err, "resource_version_conflict")
 	assertLogicalTableVersions(t, tx, tenantID, map[int64]int64{
@@ -452,7 +452,7 @@ func TestPostgresDWLayerRejectsStaleWritesBeforeReferenceConflict(t *testing.T) 
 	layerRepo := repository.NewDWLayerRepository(tx)
 	svc := NewDWLayerService(layerRepo)
 	layer, err := svc.CreateDWLayer(&models.CreateDWLayerRequest{
-		LayerCode: "pg_ads", LayerName: "PostgreSQL ADS", QualitySLA: map[string]interface{}{}, SortOrder: 1,
+		LayerCode: "pg_ads", LayerName: "PostgreSQL ADS", SortOrder: 1,
 	}, tenantID)
 	if err != nil {
 		t.Fatalf("create PostgreSQL DW layer: %v", err)
@@ -461,7 +461,7 @@ func TestPostgresDWLayerRejectsStaleWritesBeforeReferenceConflict(t *testing.T) 
 	sortOrder := 2
 	updatedLayer, err := svc.UpdateDWLayer(layer.ID, tenantID, &models.UpdateDWLayerRequest{
 		Version: 1, LayerName: "PostgreSQL Application Layer", Description: "current layer description",
-		QualitySLA: map[string]interface{}{"freshness_hours": 24}, SortOrder: &sortOrder,
+		SortOrder: &sortOrder,
 	})
 	if err != nil {
 		t.Fatalf("update PostgreSQL DW layer: %v", err)
@@ -472,7 +472,7 @@ func TestPostgresDWLayerRejectsStaleWritesBeforeReferenceConflict(t *testing.T) 
 
 	_, err = svc.UpdateDWLayer(layer.ID, tenantID, &models.UpdateDWLayerRequest{
 		Version: 1, LayerName: "Stale Layer Name", Description: "stale layer description",
-		QualitySLA: map[string]interface{}{}, SortOrder: &sortOrder,
+		SortOrder: &sortOrder,
 	})
 	requireDomainErrorCode(t, err, "resource_version_conflict")
 	reloadedLayer, err := layerRepo.GetByID(layer.ID, tenantID)
@@ -485,12 +485,12 @@ func TestPostgresDWLayerRejectsStaleWritesBeforeReferenceConflict(t *testing.T) 
 	}
 
 	_, err = svc.UpdateDWLayer(layer.ID, tenantID+100, &models.UpdateDWLayerRequest{
-		Version: 2, LayerName: "Foreign Tenant Probe", QualitySLA: map[string]interface{}{}, SortOrder: &sortOrder,
+		Version: 2, LayerName: "Foreign Tenant Probe", SortOrder: &sortOrder,
 	})
 	requireDomainErrorCode(t, err, "dw_layer_not_found")
 
 	tableSvc := NewLogicalTableService(
-		repository.NewLogicalTableRepository(tx), repository.NewEntityRepository(tx), layerRepo,
+		repository.NewLogicalTableRepository(tx), layerRepo,
 	)
 	if _, err := tableSvc.CreateLogicalTable(&models.CreateLogicalTableRequest{
 		Name: "PostgreSQL Application Table", Code: "pg_application_table", TableType: "entity",

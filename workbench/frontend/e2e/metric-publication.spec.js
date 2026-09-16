@@ -114,3 +114,19 @@ test('conflicting options block shared inputs and draft persistence', async ({ p
   expect(backend.requests).toHaveLength(0)
   expect(backend.unexpected).toEqual([])
 })
+
+for (const locale of ['zh-cn', 'en']) {
+  test(`frozen parameter captions use ${locale} without overriding application labels`, async ({ page, context }) => {
+    const backend = await installMetricApplicationBackend(context, { rebound: true, locale })
+    backend.descriptors[71].input_contract.named_parameters[0].presentation = {
+      labels: { 'zh-cn': '统计粒度', en: 'Time granularity' },
+      descriptions: { 'zh-cn': '无活动月份补零。', en: 'Months without activity return zero.' }
+    }
+    await page.goto(applicationPath)
+    await page.getByTestId('application-component').first().getByTestId('edit-component-action').click()
+    const editor = page.getByTestId('application-component-editor')
+    await expect(editor.locator('.parameter-caption').first()).toContainText(locale === 'en' ? 'Time granularity' : '统计粒度')
+    await expect(editor.locator('.parameter-caption').first()).toContainText(locale === 'en' ? 'Months without activity return zero.' : '无活动月份补零。')
+    expect(backend.writes).toHaveLength(0)
+  })
+}

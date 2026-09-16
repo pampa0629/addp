@@ -6,28 +6,12 @@ import (
 	"github.com/addp/quality/internal/service"
 )
 
-type qualityRuleApplicationListResponse struct {
-	Data       []service.RuleApplicationListItem `json:"data"`
-	Total      int64                             `json:"total"`
-	Page       int                               `json:"page"`
-	PageSize   int                               `json:"page_size"`
-	TotalPages int                               `json:"total_pages"`
-}
-
 type qualityElementCandidateListResponse struct {
-	Data       []service.RuleApplicationElementCandidate `json:"data"`
-	Total      int64                                     `json:"total"`
-	Page       int                                       `json:"page"`
-	PageSize   int                                       `json:"page_size"`
-	TotalPages int                                       `json:"total_pages"`
-}
-
-type qualityCheckTaskListResponse struct {
-	Data       []models.CheckTask `json:"data"`
-	Total      int64              `json:"total"`
-	Page       int                `json:"page"`
-	PageSize   int                `json:"page_size"`
-	TotalPages int                `json:"total_pages"`
+	Data       []service.PlanElementCandidate `json:"data"`
+	Total      int64                          `json:"total"`
+	Page       int                            `json:"page"`
+	PageSize   int                            `json:"page_size"`
+	TotalPages int                            `json:"total_pages"`
 }
 
 type qualityIssueListResponse struct {
@@ -46,16 +30,22 @@ type qualityExecutionListResponse struct {
 	TotalPages int                             `json:"total_pages"`
 }
 
-type qualityRuleApplicationResponse models.RuleApplication
-type qualityCheckTaskResponse models.CheckTask
-type qualityDataValidationTaskResponse models.DataValidationTask
+type qualityPlanResponse models.QualityPlan
+type qualityRuleResponse models.QualityRule
+type qualityRuleListResponse struct {
+	Data       []models.QualityRule `json:"data"`
+	Total      int64                `json:"total"`
+	Page       int                  `json:"page"`
+	PageSize   int                  `json:"page_size"`
+	TotalPages int                  `json:"total_pages"`
+}
 
-type qualityDataValidationTaskListResponse struct {
-	Data       []models.DataValidationTask `json:"data"`
-	Total      int64                       `json:"total"`
-	Page       int                         `json:"page"`
-	PageSize   int                         `json:"page_size"`
-	TotalPages int                         `json:"total_pages"`
+type qualityPlanListResponse struct {
+	Data       []models.QualityPlan `json:"data"`
+	Total      int64                `json:"total"`
+	Page       int                  `json:"page"`
+	PageSize   int                  `json:"page_size"`
+	TotalPages int                  `json:"total_pages"`
 }
 type qualityIssueResponse models.Issue
 type qualityExecutionResponse commonExecution.TaskExecution

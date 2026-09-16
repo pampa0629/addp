@@ -1,4 +1,4 @@
-import { parameterOptionsAllow, parameterControlType } from '../../../../common-frontend/basic/src/utils/parameterInput.mjs'
+import { parameterLabel, parameterOptionsAllow, parameterControlType } from '../../../../common-frontend/basic/src/utils/parameterInput.mjs'
 import { defaultFieldPresentation } from '../../../../common-frontend/basic/src/utils/fieldPresentation.mjs'
 
 const NUMERIC_TYPES = new Set(['int', 'bigint', 'float', 'double', 'decimal'])
@@ -34,12 +34,14 @@ export function createParameterDraft(field, index = 0) {
   }
 }
 
-export function createNamedParameterDraft(parameter, index = 0) {
+export function createNamedParameterDraft(parameter, index = 0, locale = 'zh-cn') {
   if (!parameter?.name || !parameter?.type) return null
   const controlType = controlTypeFor({ type: parameter.type }, 'eq')
   return {
     key: parameter.name || `parameter_${index + 1}`,
-    label: parameter.description || parameter.name,
+    label: parameter.presentation ? parameterLabel(parameter, locale) : parameter.description || parameter.name,
+    presentation: parameter.presentation,
+    description: parameter.description,
     controlType,
     required: parameter.required === true,
     bindingKind: 'named',
@@ -132,6 +134,8 @@ export function draftFromComponent(component, descriptor) {
         operator: namedBinding ? 'eq' : filterBinding?.operator,
         fieldType: field?.type || 'string',
         options: namedBinding ? field?.options || [] : [],
+        presentation: field?.presentation,
+        description: field?.description,
         value: component.default_parameter_values?.[definition.key] ?? emptyControlValue(definition.control_type),
       }
     }),

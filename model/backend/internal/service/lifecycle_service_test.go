@@ -46,7 +46,7 @@ func setupLifecycleServiceTestDB(t *testing.T) *gorm.DB {
 		`CREATE TABLE model.dw_layers (
 			id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL,
 			layer_code TEXT NOT NULL, layer_name TEXT NOT NULL, description TEXT,
-			naming_rule TEXT, quality_sla TEXT, sort_order INTEGER,
+			naming_rule TEXT, sort_order INTEGER,
 			version INTEGER NOT NULL DEFAULT 1,
 			created_at DATETIME, updated_at DATETIME
 		)`,
@@ -72,7 +72,7 @@ func setupLifecycleServiceTestDB(t *testing.T) *gorm.DB {
 		)`,
 		`CREATE TABLE model.logical_tables (
 			id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL,
-			domain_id INTEGER, entity_id INTEGER, name TEXT NOT NULL, code TEXT NOT NULL,
+			domain_id INTEGER, name TEXT NOT NULL, code TEXT NOT NULL,
 			description TEXT, table_type TEXT NOT NULL, layer TEXT, status TEXT NOT NULL,
 			grain_description TEXT, scd_type INTEGER, materialization TEXT,
 			version INTEGER NOT NULL DEFAULT 1,
@@ -189,7 +189,7 @@ func TestEntityApprovalReportsMissingAggregateRequirements(t *testing.T) {
 func TestLogicalTableApprovalReportsMissingAggregateRequirements(t *testing.T) {
 	db := setupLifecycleServiceTestDB(t)
 	tableRepo := repository.NewLogicalTableRepository(db)
-	svc := NewLogicalTableService(tableRepo, repository.NewEntityRepository(db), repository.NewDWLayerRepository(db))
+	svc := NewLogicalTableService(tableRepo, repository.NewDWLayerRepository(db))
 	table := models.LogicalTable{
 		TenantID: 1, Name: "Customer", Code: "customer", TableType: "entity", Layer: "dwd",
 		Status: "draft", CreatedBy: 1,
@@ -324,7 +324,7 @@ func TestStaleVersionsDoNotMutateIndependentVersionSubjects(t *testing.T) {
 		RelationType: "one_to_one", Name: "changed",
 	})
 	requireDomainErrorCode(t, err, "resource_version_conflict")
-	_, err = NewLogicalTableService(tableRepo, entityRepo, layerRepo).ReopenLogicalTable(table.ID, 1, 2, 1)
+	_, err = NewLogicalTableService(tableRepo, layerRepo).ReopenLogicalTable(table.ID, 1, 2, 1)
 	requireDomainErrorCode(t, err, "resource_version_conflict")
 	zero := 0
 	_, err = NewDWLayerService(layerRepo).UpdateDWLayer(layer.ID, 1, &models.UpdateDWLayerRequest{
@@ -396,13 +396,13 @@ func TestStaleAggregateVersionsDoNotMutateChildResources(t *testing.T) {
 		IsPK: &falseValue, Nullable: &trueValue, SortOrder: &zero,
 	})
 	requireDomainErrorCode(t, err, "resource_version_conflict")
-	_, err = NewLogicalTableService(tableRepo, entityRepo, repository.NewDWLayerRepository(db)).UpdateField(
+	_, err = NewLogicalTableService(tableRepo, repository.NewDWLayerRepository(db)).UpdateField(
 		field.ID,
 		table.ID,
 		1,
 		&models.UpdateLogicalFieldRequest{
 			Version: 1, Name: "Changed", ColumnName: "changed", DataType: "string",
-			Nullable: &trueValue, IsPK: &falseValue, IsPartition: &falseValue,
+			Nullable: &trueValue, IsPK: &falseValue,
 			SortOrder: &zero, FieldRole: "regular",
 		},
 	)
@@ -445,7 +445,6 @@ func TestLogicalTableDeleteRejectsRelationToApprovedTable(t *testing.T) {
 
 	err := NewLogicalTableService(
 		tableRepo,
-		repository.NewEntityRepository(db),
 		repository.NewDWLayerRepository(db),
 	).DeleteLogicalTable(dimension.ID, 1, dimension.Version)
 	requireDomainErrorCode(t, err, "logical_table_relation_state_conflict")
@@ -472,7 +471,6 @@ func TestLogicalTableDeleteAdvancesSurvivingFactVersion(t *testing.T) {
 
 	err := NewLogicalTableService(
 		tableRepo,
-		repository.NewEntityRepository(db),
 		repository.NewDWLayerRepository(db),
 	).DeleteLogicalTable(dimension.ID, 1, dimension.Version)
 	if err != nil {
@@ -511,7 +509,6 @@ func TestLogicalTableDeleteRequiresMaterializationConfigurationRemoval(t *testin
 
 	err := NewLogicalTableService(
 		tableRepo,
-		repository.NewEntityRepository(db),
 		repository.NewDWLayerRepository(db),
 	).DeleteLogicalTable(table.ID, 1, table.Version)
 	requireDomainErrorCode(t, err, "logical_table_materialization_configured")
@@ -719,28 +716,18 @@ func TestEntityWriteInvalidatesExportedMermaidRevision(t *testing.T) {
 	}
 }
 
-func TestLogicalTableRejectsCrossTenantEntityAndUnknownLayerReferences(t *testing.T) {
+func TestLogicalTableRejectsUnknownLayerReferences(t *testing.T) {
 	db := setupLifecycleServiceTestDB(t)
 	tableRepo := repository.NewLogicalTableRepository(db)
-	entityRepo := repository.NewEntityRepository(db)
 	dwLayerRepo := repository.NewDWLayerRepository(db)
-	svc := NewLogicalTableService(tableRepo, entityRepo, dwLayerRepo)
+	svc := NewLogicalTableService(tableRepo, dwLayerRepo)
 
 	layer := models.DWLayer{TenantID: 1, LayerCode: "dwd", LayerName: "DWD"}
-	foreignEntity := models.Entity{TenantID: 2, Name: "Foreign", Code: "foreign", Status: "draft", CreatedBy: 1}
 	if err := db.Create(&layer).Error; err != nil {
 		t.Fatalf("create layer: %v", err)
 	}
-	if err := db.Create(&foreignEntity).Error; err != nil {
-		t.Fatalf("create foreign entity: %v", err)
-	}
 
 	_, err := svc.CreateLogicalTable(&models.CreateLogicalTableRequest{
-		EntityID: &foreignEntity.ID, Name: "Orders", Code: "orders", TableType: "entity", Layer: "dwd",
-	}, 1, 1)
-	requireDomainErrorCode(t, err, "entity_not_found")
-
-	_, err = svc.CreateLogicalTable(&models.CreateLogicalTableRequest{
 		Name: "Orders", Code: "orders", TableType: "entity", Layer: "missing",
 	}, 1, 1)
 	requireDomainErrorCode(t, err, "dw_layer_not_found")
@@ -749,11 +736,6 @@ func TestLogicalTableRejectsCrossTenantEntityAndUnknownLayerReferences(t *testin
 	if err := db.Create(&table).Error; err != nil {
 		t.Fatalf("create logical table: %v", err)
 	}
-	_, err = svc.UpdateLogicalTable(table.ID, 1, 1, &models.UpdateLogicalTableRequest{
-		Version: table.Version, EntityID: &foreignEntity.ID, Name: "Orders", TableType: "entity", Layer: "dwd", SCDType: intPointer(0), Materialization: map[string]interface{}{},
-	})
-	requireDomainErrorCode(t, err, "entity_not_found")
-
 	_, err = svc.UpdateLogicalTable(table.ID, 1, 1, &models.UpdateLogicalTableRequest{
 		Version: table.Version, Name: "Orders", TableType: "entity", Layer: "missing", SCDType: intPointer(0), Materialization: map[string]interface{}{},
 	})
@@ -787,24 +769,24 @@ func TestPutUpdatesClearNullableModelReferences(t *testing.T) {
 		t.Fatalf("create layer: %v", err)
 	}
 	table := models.LogicalTable{
-		TenantID: 1, DomainID: &domainID, EntityID: &entity.ID, Name: "Order Table", Code: "order_table",
+		TenantID: 1, DomainID: &domainID, Name: "Order Table", Code: "order_table",
 		TableType: "entity", Layer: "dwd", Status: "draft", Materialization: models.JSONB{}, CreatedBy: 1,
 	}
 	if err := db.Create(&table).Error; err != nil {
 		t.Fatalf("create logical table: %v", err)
 	}
-	updatedTable, err := NewLogicalTableService(tableRepo, entityRepo, dwLayerRepo).UpdateLogicalTable(table.ID, 1, 1, &models.UpdateLogicalTableRequest{
+	updatedTable, err := NewLogicalTableService(tableRepo, dwLayerRepo).UpdateLogicalTable(table.ID, 1, 1, &models.UpdateLogicalTableRequest{
 		Version: table.Version, Name: "Order Table", TableType: "entity", Layer: "dwd", SCDType: intPointer(0), Materialization: map[string]interface{}{},
 	})
 	if err != nil {
 		t.Fatalf("update logical table: %v", err)
 	}
-	if updatedTable.DomainID != nil || updatedTable.EntityID != nil {
-		t.Fatalf("references = domain:%v entity:%v, want nil", updatedTable.DomainID, updatedTable.EntityID)
+	if updatedTable.DomainID != nil {
+		t.Fatalf("domain reference = %v, want nil", updatedTable.DomainID)
 	}
 }
 
-func TestLogicalTableWritesCanonicalizeUnpartitionedMaterialization(t *testing.T) {
+func TestLogicalTableWritesCanonicalizePhysicalTarget(t *testing.T) {
 	db := setupLifecycleServiceTestDB(t)
 	layer := models.DWLayer{TenantID: 1, LayerCode: "dwd", LayerName: "DWD", Version: 1}
 	if err := db.Create(&layer).Error; err != nil {
@@ -812,24 +794,17 @@ func TestLogicalTableWritesCanonicalizeUnpartitionedMaterialization(t *testing.T
 	}
 	svc := NewLogicalTableService(
 		repository.NewLogicalTableRepository(db),
-		repository.NewEntityRepository(db),
 		repository.NewDWLayerRepository(db),
 	)
 	table, err := svc.CreateLogicalTable(&models.CreateLogicalTableRequest{
 		Name: "Orders", Code: "orders", TableType: "entity", Layer: "dwd",
 		Materialization: map[string]interface{}{
 			"target_parent_locator": " addp://engine/2/path/public?type=schema ",
-			"target_name":           " orders ", "partition_by": "", "partition_type": "range",
+			"target_name":           " orders ",
 		},
 	}, 1, 1)
 	if err != nil {
 		t.Fatalf("create logical table: %v", err)
-	}
-	if _, exists := table.Materialization["partition_by"]; exists {
-		t.Fatalf("created materialization retains partition_by: %#v", table.Materialization)
-	}
-	if _, exists := table.Materialization["partition_type"]; exists {
-		t.Fatalf("created materialization retains partition_type: %#v", table.Materialization)
 	}
 	if table.Materialization["target_name"] != "orders" {
 		t.Fatalf("created materialization target is not normalized: %#v", table.Materialization)
@@ -839,23 +814,17 @@ func TestLogicalTableWritesCanonicalizeUnpartitionedMaterialization(t *testing.T
 		Version: table.Version, Name: table.Name, TableType: table.TableType, Layer: table.Layer,
 		SCDType: intPointer(0), Materialization: map[string]interface{}{
 			"target_parent_locator": "addp://engine/2/path/public?type=schema",
-			"target_name":           "orders", "partition_by": "   ", "partition_type": "list",
+			"target_name":           "orders",
 		},
 	})
 	if err != nil {
 		t.Fatalf("update logical table: %v", err)
 	}
-	if _, exists := updated.Materialization["partition_by"]; exists {
-		t.Fatalf("updated materialization retains partition_by: %#v", updated.Materialization)
-	}
-	if _, exists := updated.Materialization["partition_type"]; exists {
-		t.Fatalf("updated materialization retains partition_type: %#v", updated.Materialization)
-	}
 	reloaded, err := repository.NewLogicalTableRepository(db).GetByID(table.ID, 1)
 	if err != nil {
 		t.Fatalf("reload logical table: %v", err)
 	}
-	if _, exists := reloaded.Materialization["partition_type"]; exists {
+	if reloaded.Materialization["target_name"] != "orders" {
 		t.Fatalf("persisted materialization is not canonical: %#v", reloaded.Materialization)
 	}
 
@@ -864,8 +833,6 @@ func TestLogicalTableWritesCanonicalizeUnpartitionedMaterialization(t *testing.T
 		SCDType: intPointer(0), Materialization: map[string]interface{}{
 			"target_parent_locator": " ",
 			"target_name":           "",
-			"partition_by":          "",
-			"partition_type":        "range",
 		},
 	})
 	if err != nil {
@@ -880,6 +847,29 @@ func TestLogicalTableWritesCanonicalizeUnpartitionedMaterialization(t *testing.T
 	}
 	if len(reloaded.Materialization) != 0 {
 		t.Fatalf("persisted cleared materialization is not canonical: %#v", reloaded.Materialization)
+	}
+}
+
+func TestLogicalTableWriteRejectsPartitionOptions(t *testing.T) {
+	db := setupLifecycleServiceTestDB(t)
+	layer := models.DWLayer{TenantID: 1, LayerCode: "dwd", LayerName: "DWD", Version: 1}
+	if err := db.Create(&layer).Error; err != nil {
+		t.Fatalf("create layer: %v", err)
+	}
+	svc := NewLogicalTableService(
+		repository.NewLogicalTableRepository(db),
+		repository.NewDWLayerRepository(db),
+	)
+	_, err := svc.CreateLogicalTable(&models.CreateLogicalTableRequest{
+		Name: "Orders", Code: "orders", TableType: "entity", Layer: "dwd",
+		Materialization: map[string]interface{}{
+			"target_parent_locator": "addp://engine/2/path/public?type=schema",
+			"target_name":           "orders",
+			"partition_by":          "created_at",
+		},
+	}, 1, 1)
+	if err == nil {
+		t.Fatal("expected unsupported partition option to be rejected")
 	}
 }
 
@@ -935,13 +925,12 @@ func TestAggregateChildrenRejectCrossTenantParentsAndTargets(t *testing.T) {
 
 	logicalTableSvc := NewLogicalTableService(
 		tableRepo,
-		entityRepo,
 		repository.NewDWLayerRepository(db),
 	)
 	_, err = logicalTableSvc.GetFields(foreignFact.ID, 1)
 	requireDomainErrorCode(t, err, "logical_table_not_found")
 	_, err = logicalTableSvc.UpdateField(foreignField.ID, localFact.ID, 1, &models.UpdateLogicalFieldRequest{
-		Version: localFact.Version, Name: "ID", ColumnName: "id", DataType: "bigint", Nullable: boolPointer(true), IsPK: boolPointer(false), IsPartition: boolPointer(false), SortOrder: intPointer(0), FieldRole: "regular",
+		Version: localFact.Version, Name: "ID", ColumnName: "id", DataType: "bigint", Nullable: boolPointer(true), IsPK: boolPointer(false), SortOrder: intPointer(0), FieldRole: "regular",
 	})
 	requireDomainErrorCode(t, err, "logical_field_not_found")
 	_, err = logicalTableSvc.DeleteField(foreignField.ID, localFact.ID, 1, localFact.Version)
@@ -977,7 +966,7 @@ func TestLogicalTableDDLPreviewPreservesApprovedDefinition(t *testing.T) {
 	if err := db.Create(&field).Error; err != nil {
 		t.Fatal(err)
 	}
-	svc := NewLogicalTableService(repository.NewLogicalTableRepository(db), repository.NewEntityRepository(db), repository.NewDWLayerRepository(db))
+	svc := NewLogicalTableService(repository.NewLogicalTableRepository(db), repository.NewDWLayerRepository(db))
 	ddl, err := svc.PreviewDDL(table.ID, 1, map[string]interface{}(table.Materialization))
 	if err != nil || ddl == "" {
 		t.Fatalf("PreviewDDL = %q, %v", ddl, err)

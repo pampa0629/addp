@@ -96,8 +96,9 @@ func consumerCatalogPostgresService(
 	if spatial {
 		spatialPayload["primary_geometry_column"] = "location"
 	}
+	engine := uint(2)
 	return models.QueryService{
-		TenantID: tenantID, ServiceName: serviceName, Title: title, ConfigType: "sql",
+		TenantID: tenantID, ServiceName: serviceName, Title: title, ConfigType: "sql", EngineID: &engine,
 		SqlQuery: "SELECT 1", Status: status, CreatedBy: 1, MaxFeatures: 1000,
 		DataConfig: models.JSONB{
 			models.QueryServiceSourceSnapshotKey: map[string]interface{}{"spatial": spatialPayload},

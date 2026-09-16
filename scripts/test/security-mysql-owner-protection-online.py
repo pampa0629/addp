@@ -669,7 +669,7 @@ def cleanup_service(client: GatewayClient, service_id: int | None) -> None:
         return
     current = client.request("GET", f"/api/v1/service/query/{service_id}", (200, 404))
     if current.status == 200:
-        client.request("DELETE", f"/api/v1/service/query/{service_id}", (200,))
+        client.request("DELETE", f"/api/v1/service/query/{service_id}", (200,), {"version": _object(current.payload, "Query Service")["version"]})
     client.request("GET", f"/api/v1/service/query/{service_id}", (404,))
 
 

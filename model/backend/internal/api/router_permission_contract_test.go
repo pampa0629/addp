@@ -90,7 +90,7 @@ func TestModelRoutesEnforcePermissions(t *testing.T) {
 	authServer := authtest.NewTenantUserAuthContextServer(t, "7", authContexts)
 	defer authServer.Close()
 
-	router := SetupRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, authServer.URL, nil, modulelifecycle.NewStandalone("model"))
+	router := SetupRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, authServer.URL, nil, modulelifecycle.NewStandalone("model"))
 
 	for index, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

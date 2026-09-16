@@ -24,8 +24,8 @@ func TestCatalogSummaryResolvePreservesOrderAndOnlyUsesCurrentSuccessfulResult(t
 	reference := models.CatalogSummaryReference{EngineID: 7, SchemaName: "public", TableName: "orders"}
 	service := NewCatalogSummaryService(catalogSummaryRepositoryFake{facts: map[string]repository.CatalogSummaryFact{
 		qualityCatalogSummaryKey(reference): {
-			Task:       models.CheckTask{ID: 31, EngineID: 7, SchemaName: "public", Table: "orders", LastExecutionID: "execution-1", LastExecutionStatus: commonExecution.ExecutionStatusSuccess, LastRunAt: &observed},
-			Execution:  &commonExecution.TaskExecution{Status: commonExecution.ExecutionStatusSuccess, Metadata: commonModels.JSONMap{"schema_version": "addp.quality.execution-result/v1", "quality_score": 97.5}},
+			Task:       models.QualityPlan{ID: 31, LastExecutionID: "execution-1", LastExecutionStatus: commonExecution.ExecutionStatusSuccess, LastRunAt: &observed},
+			Execution:  &commonExecution.TaskExecution{Status: commonExecution.ExecutionStatusSuccess, Metadata: commonModels.JSONMap{"schema_version": "addp.quality.plan-result/v1", "quality_score": 97.5}},
 			OpenIssues: 2,
 		},
 	}})

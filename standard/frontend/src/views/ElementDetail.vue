@@ -242,9 +242,15 @@
         <el-card shadow="never" class="section">
           <template #header>{{ $t('standard.element.qualityRules') }}</template>
           <el-alert :title="$t('standard.element.compiledRuleHint')" type="info" :closable="false" />
-          <el-checkbox v-model="uniqueEnabled" :disabled="!editable" class="unique-rule">
-            {{ $t('standard.element.ruleUnique') }}
-          </el-checkbox>
+          <el-table v-if="compiledRules.length" :data="compiledRules" class="compiled-rules">
+            <el-table-column :label="$t('standard.element.ruleType')" min-width="130">
+              <template #default="{ row }">{{ ruleTypeLabel(row.type) }}</template>
+            </el-table-column>
+            <el-table-column :label="$t('standard.element.ruleParams')" min-width="200">
+              <template #default="{ row }">{{ JSON.stringify(row.params) }}</template>
+            </el-table-column>
+          </el-table>
+          <el-empty v-else :description="$t(revision.status === 'draft' || revision.status === 'in_review' ? 'standard.element.rulesOnPublish' : 'standard.element.noRules')" :image-size="48" />
         </el-card>
 
         <DocumentPanel
@@ -324,8 +330,8 @@ const domains = ref([])
 const units = ref([])
 const publishedCodeSets = ref([])
 const revision = reactive({})
-const uniqueEnabled = ref(false)
-const uniqueRuleKey = ref('')
+const compiledRules = computed(() => revision.compiled_quality_rules?.rules || [])
+const ruleTypeLabel = type => t(`standard.element.${({ not_null: 'ruleNotNull', unique: 'ruleUnique', format: 'ruleFormat', length: 'ruleLength', value_range: 'ruleValueRange', allowed_values: 'ruleAllowedValues' })[type]}`)
 
 const dateTimeValueFormat = 'YYYY-MM-DDTHH:mm:ssZ'
 const scopeOptions = ['platform', ...EDITABLE_STANDARD_SCOPES]
@@ -361,9 +367,6 @@ function setRevision(value) {
   if (revision.value_domain_kind === 'range') {
     revision.range_constraint ||= { min: null, max: null, min_inclusive: true, max_inclusive: true }
   }
-  const uniqueRule = revision.extra_quality_rules?.rules?.find(rule => rule.type === 'unique')
-  uniqueRuleKey.value = uniqueRule?.rule_key || ''
-  uniqueEnabled.value = Boolean(uniqueRule?.enabled)
 }
 
 async function load() {
@@ -439,15 +442,12 @@ async function saveRevision() {
   savingRevision.value = true
   announcement.value = t('standard.common.saving')
   try {
-    if (uniqueEnabled.value && !uniqueRuleKey.value) uniqueRuleKey.value = crypto.randomUUID()
     const aggregate = await elementAPI.updateRevision(
       element.value.id,
       revision.id,
       buildElementRevisionPayload(
         revision,
-        element.value.version,
-        uniqueRuleKey.value,
-        uniqueEnabled.value
+        element.value.version
       )
     )
     element.value = aggregate
@@ -541,7 +541,7 @@ watch(() => revision.effective_from, () => loadCodeSetOptions())
 .header-left,.actions{gap:10px;flex-wrap:wrap}
 .section{margin-bottom:16px}
 .field-control{width:100%}
-.unique-rule{margin-top:16px}
+.compiled-rules{margin-top:16px}
 .history-row{gap:8px}
 .page-shell :deep(.el-card){background:var(--addp-bg-primary);border-color:var(--addp-border-color)}
 h2{margin:0;font-size:20px}

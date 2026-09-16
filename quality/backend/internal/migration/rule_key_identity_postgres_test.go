@@ -36,6 +36,22 @@ func TestIntegrationPostgresRuleKeyIdentityV2Vector(t *testing.T) {
 		t.Fatalf("begin migration vector transaction: %v", tx.Error)
 	}
 	defer tx.Rollback()
+	// Reconstruct the historical schema only inside this rolled-back test
+	// transaction; the real runner stays at the latest version.
+	if err := tx.Exec("DROP SCHEMA quality CASCADE").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Exec("CREATE SCHEMA quality").Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range catalog.Files[:9] {
+		if file.Version == 6 {
+			continue
+		} // this test applies v6 after seeding its vector
+		if err := tx.Exec(file.Contents).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
 
 	const (
 		tenantID    = int64(9_800_000_001)

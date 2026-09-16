@@ -12,6 +12,7 @@ import (
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
+	commonjson "github.com/addp/common/jsonmap"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	commonmodels "github.com/addp/common/models"
 	commonquery "github.com/addp/common/query"
@@ -29,6 +30,7 @@ type MetricImplementationService struct {
 	tableRepo *repository.LogicalTableRepository
 	standard  *commonClient.StandardClient
 	system    *commonClient.SystemServiceClient
+	meta      *commonClient.MetaClient
 }
 
 func NewMetricImplementationService(repo *repository.MetricImplementationRepository, tables *repository.LogicalTableRepository) *MetricImplementationService {
@@ -40,6 +42,7 @@ func (s *MetricImplementationService) SetStandardClient(client *commonClient.Sta
 func (s *MetricImplementationService) SetSystemClient(client *commonClient.SystemServiceClient) {
 	s.system = client
 }
+func (s *MetricImplementationService) SetMetaClient(client *commonClient.MetaClient) { s.meta = client }
 func (s *MetricImplementationService) List(factID, tenantID int64) ([]models.MetricImplementation, error) {
 	if factID > 0 {
 		if _, err := s.tableRepo.GetByID(factID, tenantID); err != nil {
@@ -130,7 +133,7 @@ func (s *MetricImplementationService) SaveDraft(ctx context.Context, id, tenantI
 	if _, err := s.standard.WithTenantID(uint(tenantID)).GetPublishedMetricDefinitionRevision(ctx, item.MetricDefinitionID, req.MetricDefinitionRevisionID); err != nil {
 		return nil, standardReferenceError(err, "metric_definition_revision_not_found")
 	}
-	engine, err := s.metricEngineDescriptor(ctx, item)
+	metadata, err := s.metricSourceMetadata(ctx, item, req.Contract)
 	if err != nil {
 		return nil, err
 	}
@@ -142,8 +145,11 @@ func (s *MetricImplementationService) SaveDraft(ctx context.Context, id, tenantI
 		if err != nil {
 			return err
 		}
-		_, snapshot, hash, err := resolveMetricPlan(tx, locked, req.Contract, engine)
+		_, snapshot, hash, err := resolveMetricPlan(tx, locked, req.Contract, metadata)
 		if err != nil {
+			return err
+		}
+		if err := validateMetricSnapshotPresentation(snapshot); err != nil {
 			return err
 		}
 		var draft models.MetricImplementationRevision
@@ -193,9 +199,15 @@ func (s *MetricImplementationService) ChangeRevisionState(ctx context.Context, i
 			return nil, standardReferenceError(err, "metric_definition_revision_not_found")
 		}
 	}
-	var engine *commonmodels.EngineRuntimeDescriptor
+	var metadata *metricPlanMetadata
 	if publish {
-		engine, err = s.metricEngineDescriptor(ctx, item)
+		var contract models.MetricContract
+		for _, r := range item.Revisions {
+			if r.ID == revisionID {
+				contract = r.Contract
+			}
+		}
+		metadata, err = s.metricSourceMetadata(ctx, item, contract)
 		if err != nil {
 			return nil, err
 		}
@@ -216,13 +228,17 @@ func (s *MetricImplementationService) ChangeRevisionState(ctx context.Context, i
 			if revision.Status != models.MetricImplementationDraft {
 				return metricConflict()
 			}
-			_, _, hash, err := resolveMetricPlan(tx, locked, revision.Contract, engine)
+			_, snapshot, hash, err := resolveMetricPlan(tx, locked, revision.Contract, metadata)
 			if err != nil {
 				return err
 			}
 			if hash != revision.DependencyHash {
 				return apperrors.Conflict("metric_dependency_changed", i18n.MsgMetricImplementationConflict)
 			}
+			if err := validateMetricSnapshotPresentation(snapshot); err != nil {
+				return err
+			}
+			revision.DependencySnapshot["parameter_presentation"] = snapshot["parameter_presentation"]
 			now := time.Now()
 			revision.Status = models.MetricImplementationPublished
 			revision.PublishedAt = &now
@@ -263,16 +279,14 @@ func (s *MetricImplementationService) Delete(id, tenantID, userID, version int64
 }
 
 type MetricCompiledPlan struct {
-	Parameters                 []commonClient.ModelMetricParameter `json:"parameters"`
-	Fields                     []datatype.FieldInfo                `json:"fields"`
-	StableKey                  []string                            `json:"stable_key"`
-	ImplementationID           int64                               `json:"implementation_id"`
-	RevisionID                 int64                               `json:"revision_id"`
-	MetricDefinitionID         int64                               `json:"metric_definition_id"`
-	MetricDefinitionRevisionID int64                               `json:"metric_definition_revision_id"`
-	DependencyHash             string                              `json:"dependency_hash"`
-	EngineID                   uint                                `json:"engine_id"`
-	SQL                        string                              `json:"sql"`
+	ImplementationID           int64                                        `json:"implementation_id"`
+	RevisionID                 int64                                        `json:"revision_id"`
+	MetricDefinitionID         int64                                        `json:"metric_definition_id"`
+	MetricDefinitionRevisionID int64                                        `json:"metric_definition_revision_id"`
+	DependencyHash             string                                       `json:"dependency_hash"`
+	ExecutionPlan              plugin.AnalyticalPlanPackage                 `json:"execution_plan"`
+	ParameterLabels            map[string][]commonquery.ParameterOption     `json:"parameter_labels"`
+	ParameterPresentation      map[string]commonquery.ParameterPresentation `json:"parameter_presentation,omitempty"`
 }
 
 func (s *MetricImplementationService) PublishedPlan(ctx context.Context, id, revisionID, tenantID int64, input *models.MetricQueryInput) (*MetricCompiledPlan, error) {
@@ -300,7 +314,13 @@ func (s *MetricImplementationService) PublishedPlan(ctx context.Context, id, rev
 	if _, err := s.standard.WithTenantID(uint(tenantID)).GetPublishedMetricDefinitionRevision(ctx, identity.MetricDefinitionID, definitionRevisionID); err != nil {
 		return nil, standardReferenceError(err, "metric_definition_revision_not_found")
 	}
-	engine, err := s.metricEngineDescriptor(ctx, identity)
+	var contract models.MetricContract
+	for _, r := range identity.Revisions {
+		if r.ID == revisionID {
+			contract = r.Contract
+		}
+	}
+	metadata, err := s.metricSourceMetadata(ctx, identity, contract)
 	if err != nil {
 		return nil, err
 	}
@@ -327,23 +347,36 @@ func (s *MetricImplementationService) PublishedPlan(ctx context.Context, id, rev
 				return err
 			}
 		}
-		sql, snapshot, hash, err := resolveMetricPlan(tx, item, revision.Contract, engine)
+		currentPackage, _, hash, err := resolveMetricPlan(tx, item, revision.Contract, metadata)
 		if err != nil {
 			return err
 		}
 		if hash != revision.DependencyHash {
 			return apperrors.Conflict("metric_dependency_changed", i18n.MsgMetricImplementationConflict)
 		}
-		engineID := uint(snapshot["engine_id"].(uint))
-		parameters, fields, stableKey := metricPlanSignature(revision.Contract.Operation)
-		result = &MetricCompiledPlan{Parameters: parameters, Fields: fields, StableKey: stableKey, ImplementationID: id, RevisionID: revisionID, MetricDefinitionID: item.MetricDefinitionID, MetricDefinitionRevisionID: revision.MetricDefinitionRevisionID, DependencyHash: hash, EngineID: engineID, SQL: sql}
+		var frozen plugin.AnalyticalPlanPackage
+		if err := commonjson.DecodeStruct(commonjson.InterfaceMap(revision.DependencySnapshot["execution_plan"]), &frozen); err != nil || frozen.Validate() != nil || frozen.PackageHash != currentPackage.PackageHash {
+			return metricConflict()
+		}
+		var display struct {
+			ParameterLabels       map[string][]commonquery.ParameterOption     `json:"parameter_labels"`
+			ParameterPresentation map[string]commonquery.ParameterPresentation `json:"parameter_presentation"`
+		}
+		raw, err := json.Marshal(revision.DependencySnapshot)
+		if err != nil {
+			return err
+		}
+		if err := json.Unmarshal(raw, &display); err != nil {
+			return err
+		}
+		result = &MetricCompiledPlan{ImplementationID: id, RevisionID: revisionID, MetricDefinitionID: item.MetricDefinitionID, MetricDefinitionRevisionID: revision.MetricDefinitionRevisionID, DependencyHash: hash, ExecutionPlan: frozen, ParameterLabels: display.ParameterLabels, ParameterPresentation: display.ParameterPresentation}
 		return nil
 	})
 	return result, err
 }
 
 // Fetch remote metadata before taking local aggregate locks. The compiler checks
-// the locked sources against this descriptor and includes the dialect in its hash.
+// the locked sources against this descriptor and freezes the native compiler identity in its package.
 func (s *MetricImplementationService) metricEngineDescriptor(ctx context.Context, item *models.MetricImplementation) (*commonmodels.EngineRuntimeDescriptor, error) {
 	table, err := s.tableRepo.GetByID(item.FactTableID, item.TenantID)
 	if err != nil {
@@ -367,7 +400,11 @@ func (s *MetricImplementationService) metricEngineDescriptor(ctx context.Context
 	return engine, nil
 }
 
-func resolveMetricPlan(tx *gorm.DB, item *models.MetricImplementation, contract models.MetricContract, engine *commonmodels.EngineRuntimeDescriptor) (string, models.JSONB, string, error) {
+func resolveMetricPlan(tx *gorm.DB, item *models.MetricImplementation, contract models.MetricContract, metadata *metricPlanMetadata) (plugin.AnalyticalPlanPackage, models.JSONB, string, error) {
+	if metadata == nil || metadata.Engine == nil {
+		return plugin.AnalyticalPlanPackage{}, nil, "", metricConflict()
+	}
+	engine := metadata.Engine
 	bindings := metricPlanBindings{Relations: map[int64]metricPlanRelation{}}
 	var engineID uint
 	tables := map[int64]models.JSONB{}
@@ -387,7 +424,7 @@ func resolveMetricPlan(tx *gorm.DB, item *models.MetricImplementation, contract 
 			return metricPlanSource{}, invalidRequest()
 		}
 		locator, err := resourcetree.ParseURI(uri)
-		if err != nil || len(locator.Path) != 1 || locator.EngineID == 0 {
+		if err != nil || locator.EngineID == 0 {
 			return metricPlanSource{}, invalidRequest()
 		}
 		name, ok := table.Materialization["target_name"].(string)
@@ -402,7 +439,11 @@ func resolveMetricPlan(tx *gorm.DB, item *models.MetricImplementation, contract 
 		if err := tx.Where("table_id = ?", id).Order("id").Find(&fields).Error; err != nil {
 			return metricPlanSource{}, err
 		}
-		source := metricPlanSource{Schema: locator.Path[0], Table: name, Fields: map[int64]models.LogicalField{}}
+		facts, ok := metadata.Tables[id]
+		if !ok || facts.Version != table.Version || facts.Locator != uri || facts.Name != name {
+			return metricPlanSource{}, metricConflict()
+		}
+		source := metricPlanSource{Metadata: facts, Fields: map[int64]models.LogicalField{}}
 		for _, field := range fields {
 			source.Fields[field.ID] = field
 		}
@@ -412,7 +453,7 @@ func resolveMetricPlan(tx *gorm.DB, item *models.MetricImplementation, contract 
 	var err error
 	bindings.Fact, err = load(item.FactTableID)
 	if err != nil {
-		return "", nil, "", err
+		return plugin.AnalyticalPlanPackage{}, nil, "", err
 	}
 	refs := []models.MetricFieldReference{contract.Subject, contract.Distinct, contract.Time}
 	for _, filter := range contract.Filters {
@@ -430,51 +471,41 @@ func resolveMetricPlan(tx *gorm.DB, item *models.MetricImplementation, contract 
 		relationIDs = append(relationIDs, id)
 	}
 	if err := tx.Where("id IN ? AND tenant_id = ? AND source_table = ?", relationIDs, item.TenantID, item.FactTableID).Order("target_table, id").Find(&relations).Error; err != nil {
-		return "", nil, "", err
+		return plugin.AnalyticalPlanPackage{}, nil, "", err
 	}
 	if len(relations) != len(ids) {
-		return "", nil, "", invalidRequest()
+		return plugin.AnalyticalPlanPackage{}, nil, "", invalidRequest()
 	}
 	for _, relation := range relations {
 		target, err := load(relation.TargetTable)
 		if err != nil {
-			return "", nil, "", err
+			return plugin.AnalyticalPlanPackage{}, nil, "", err
 		}
 		bindings.Relations[relation.ID] = metricPlanRelation{SourceField: relation.SourceField, TargetField: relation.TargetField, Target: target}
 		refs = append(refs, models.MetricFieldReference{FieldID: relation.SourceField}, models.MetricFieldReference{FieldID: relation.TargetField, RelationID: relation.ID})
 	}
 	if engine == nil || engine.ID != engineID {
-		return "", nil, "", metricConflict()
+		return plugin.AnalyticalPlanPackage{}, nil, "", metricConflict()
 	}
-	dialect, err := plugin.ResolveAnalyticalSQLDialect(engine.EngineType)
+	compiler, err := plugin.ResolveAnalyticalCompiler(engine.EngineType)
 	if err != nil {
-		return "", nil, "", apperrors.Wrap(apperrors.KindValidation, "analytical_sql_unavailable", i18n.MsgMetricEngineUnsupported, err)
+		return plugin.AnalyticalPlanPackage{}, nil, "", apperrors.Wrap(apperrors.KindValidation, "analytical_unavailable", i18n.MsgMetricEngineUnsupported, err)
 	}
-	enginePlugin, err := plugin.Get(engine.EngineType)
+	instance, err := metricAnalyticalInstance(engine)
 	if err != nil {
-		return "", nil, "", invalidRequest()
+		return plugin.AnalyticalPlanPackage{}, nil, "", err
 	}
-	catalogProvider, ok := enginePlugin.(plugin.EngineCatalogModelProvider)
-	if !ok {
-		return "", nil, "", invalidRequest()
-	}
-	for _, table := range tables {
-		locator, err := resourcetree.ParseURI(table["locator"].(string))
-		if err != nil {
-			return "", nil, "", invalidRequest()
-		}
-		path, err := resourcetree.EngineCatalogPathFromLocator(catalogProvider.EngineCatalogModel(), locator)
-		if err != nil {
-			return "", nil, "", invalidRequest()
-		}
-		segments := plugin.EngineCatalogPathWithoutRoot(path).Segments
-		if len(segments) != 1 || segments[0].Kind != plugin.EngineCatalogKindNamespace {
-			return "", nil, "", invalidRequest()
-		}
-	}
-	query, err := compileMetricSQL(contract, bindings, dialect)
+	logicalPlan, err := buildMetricPlan(contract, bindings)
 	if err != nil {
-		return "", nil, "", err
+		return plugin.AnalyticalPlanPackage{}, nil, "", err
+	}
+	sources, err := bindMetricSources(logicalPlan, bindings)
+	if err != nil {
+		return plugin.AnalyticalPlanPackage{}, nil, "", err
+	}
+	executionPlan, err := plugin.NewAnalyticalPlanPackage(plugin.CompileRequest{Plan: logicalPlan, Sources: sources, Instance: instance}, compiler)
+	if err != nil {
+		return plugin.AnalyticalPlanPackage{}, nil, "", apperrors.Wrap(apperrors.KindValidation, "analytical_unavailable", i18n.MsgMetricEngineUnsupported, err)
 	}
 	dependencies := []models.JSONB{}
 	seen := map[models.MetricFieldReference]bool{}
@@ -494,13 +525,15 @@ func resolveMetricPlan(tx *gorm.DB, item *models.MetricImplementation, contract 
 	for _, relation := range relations {
 		relationSnapshot = append(relationSnapshot, models.JSONB{"id": relation.ID, "source_table": relation.SourceTable, "source_field": relation.SourceField, "target_table": relation.TargetTable, "target_field": relation.TargetField, "relation_type": relation.RelationType})
 	}
-	snapshot := models.JSONB{"engine_id": engineID, "sql_dialect": dialect.Name(), "tables": tables, "fields": dependencies, "relations": relationSnapshot, "contract": contract}
+	snapshot := models.JSONB{"execution_plan": executionPlan, "parameter_labels": metricPlanLabels(contract.Operation), "tables": tables, "fields": dependencies, "relations": relationSnapshot, "contract": contract}
 	raw, err := json.Marshal(snapshot)
 	if err != nil {
-		return "", nil, "", err
+		return plugin.AnalyticalPlanPackage{}, nil, "", err
 	}
 	digest := sha256.Sum256(raw)
-	return query, snapshot, hex.EncodeToString(digest[:]), nil
+	presentation := metricParameterPresentation(contract.Operation, bindings.Fact.Fields[contract.Subject.FieldID])
+	snapshot["parameter_presentation"] = presentation
+	return executionPlan, snapshot, hex.EncodeToString(digest[:]), nil
 }
 
 func metricPlanSignature(operation string) ([]commonClient.ModelMetricParameter, []datatype.FieldInfo, []string) {
@@ -530,4 +563,54 @@ func metricParameterOptions(name string) []commonquery.ParameterOption {
 		result = append(result, commonquery.ParameterOption{Value: value, Labels: map[string]string{"zh-cn": commoni18n.ForLanguage("zh-cn", key), "en": commoni18n.ForLanguage("en", key)}})
 	}
 	return result
+}
+
+// Only drafts/publication validate newly generated display metadata. Reading a
+// published computation must not be invalidated by changes to current display names.
+func validateMetricSnapshotPresentation(snapshot models.JSONB) error {
+	for _, value := range snapshot["parameter_presentation"].(map[string]commonquery.ParameterPresentation) {
+		if err := value.Validate(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func metricParameterPresentation(operation string, subject models.LogicalField) map[string]commonquery.ParameterPresentation {
+	parameters, _, _ := metricPlanSignature(operation)
+	result := map[string]commonquery.ParameterPresentation{}
+	for _, parameter := range parameters {
+		display := commonquery.ParameterPresentation{Labels: map[string]string{}, Descriptions: map[string]string{}}
+		for _, lang := range []string{"zh-cn", "en"} {
+			key := "model.metric.parameter." + parameter.Name
+			display.Labels[lang] = commoni18n.ForLanguage(lang, key+".label")
+			display.Descriptions[lang] = commoni18n.ForLanguage(lang, key+".description")
+		}
+		if parameter.Name == "subject_id" && strings.TrimSpace(subject.Name) != "" {
+			display.Labels["zh-cn"] = subject.Name
+		}
+		result[parameter.Name] = display
+	}
+	return result
+}
+
+func metricPlanLabels(operation string) map[string][]commonquery.ParameterOption {
+	parameters, _, _ := metricPlanSignature(operation)
+	result := map[string][]commonquery.ParameterOption{}
+	for _, p := range parameters {
+		if len(p.Options) > 0 {
+			result[p.Name] = p.Options
+		}
+	}
+	return result
+}
+func metricAnalyticalInstance(engine *commonmodels.EngineRuntimeDescriptor) (plugin.AnalyticalInstance, error) {
+	if engine.Capabilities == nil {
+		return plugin.AnalyticalInstance{}, apperrors.Validation("analytical_unavailable", i18n.MsgMetricEngineUnsupported)
+	}
+	caps, err := plugin.ParseEngineCapabilities(string(*engine.Capabilities))
+	if err != nil || caps.Compute == nil || caps.Compute.Query == nil || caps.Compute.Query.Analytical == nil || !caps.Compute.Query.Analytical.Supported {
+		return plugin.AnalyticalInstance{}, apperrors.Validation("analytical_unavailable", i18n.MsgMetricEngineUnsupported)
+	}
+	return plugin.AnalyticalInstance{EngineID: engine.ID, Capability: *caps.Compute.Query.Analytical}, nil
 }

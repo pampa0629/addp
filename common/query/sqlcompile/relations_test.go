@@ -30,7 +30,7 @@ func TestRelationsRejectUnsupportedAndUnorderedLimit(t *testing.T) {
 	}
 	p.Nodes[0] = plan.Node{ID: "root", Op: "date_buckets", DateBuckets: &plan.DateBuckets{Name: "date", Start: plan.Expr{Op: "literal", Literal: &plan.Literal{Type: datatype.FieldTypeDate, Text: "2026-01-01"}}, End: plan.Expr{Op: "literal", Literal: &plan.Literal{Type: datatype.FieldTypeDate, Text: "2026-02-01"}}, MaxMonths: 2}}
 	p.Output = plan.OutputContract{Fields: []datatype.FieldInfo{{Name: "date", Type: datatype.FieldTypeDate}}, StableKey: []string{"date"}}
-	if _, err := CompileRelations(relationTestRequest(p), expressionTestDialect{}, fixtureResultDialect{}, nil); !errors.Is(err, plugin.ErrAnalyticalUnsupported) {
+	if rendered, err := CompileRelations(relationTestRequest(p), expressionTestDialect{}, fixtureResultDialect{}, nil); err != nil || len(rendered.Evaluations) != 1 || rendered.Evaluations[0].Node != "root" {
 		t.Fatal(err)
 	}
 }

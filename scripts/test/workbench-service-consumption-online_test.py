@@ -159,7 +159,7 @@ class FakeClient:
                 self.services.pop(service_id, None)
                 return response(200)
             exists = service_id in self.services
-            return response(200 if exists else 404, {"id": service_id} if exists else {})
+            return response(200 if exists else 404, {"id": service_id, "version": 1} if exists else {})
         raise AssertionError(f"unexpected request {method} {path} body={body!r}")
 
     @staticmethod

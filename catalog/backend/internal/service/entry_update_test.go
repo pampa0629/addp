@@ -354,7 +354,7 @@ func TestMetaDataItemDetailResolvesQualitySummaryDynamically(t *testing.T) {
 	score := 98.5
 	resolver := &fakeQualitySummaryResolver{result: commonClient.QualityCatalogSummaryResolution{
 		Reference:  commonClient.QualityCatalogSummaryReference{EngineID: 9, SchemaName: "public", TableName: "orders"},
-		Configured: true, CheckTaskID: 31, LastExecutionID: "execution-1", LastExecutionStatus: "success", QualityScore: &score, OpenIssueCount: 2,
+		Configured: true, LastExecutionID: "execution-1", LastExecutionStatus: "success", QualityScore: &score, OpenIssueCount: 2,
 	}}
 	service := NewEntryService(db, &fakeStandardReferenceResolver{}, &fakeSystemReferenceResolver{}).WithQualitySummaryResolver(resolver)
 	result, err := service.Get(context.Background(), 7, EntryAccess{Inventory: true}, entry.ID)

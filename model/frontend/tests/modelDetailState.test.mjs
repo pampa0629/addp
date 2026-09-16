@@ -57,12 +57,15 @@ test('logical table materialization binds a schema locator and target name', asy
   const source = await readFile(new URL('../src/views/LogicalTableDetail.vue', import.meta.url), 'utf8')
   assert.match(source, /mode="node"/)
   assert.match(source, /:selectable-filter="isSchemaSelection"/)
+  assert.match(source, /:engine-filter="isSupportedPhysicalTargetEngine"/)
+  assert.match(source, /name="physical-target"/)
   assert.doesNotMatch(source, /@update:model-value="handleTargetParentSelect"/)
   assert.match(source, /target_parent_locator/)
   assert.match(source, /clearMaterializationConfig/)
   assert.match(source, /model\.materialization\.clear_config/)
   assert.doesNotMatch(source, /materializationForm\.schema_name/)
   assert.doesNotMatch(source, /materializationForm\.table_name/)
+  assert.doesNotMatch(source, /materializationForm\.partition_|model\.materialization\.partition_|is_partition/)
 })
 
 test('materialized target decommission uses the exact persisted target and a dedicated permission', async () => {
@@ -78,10 +81,10 @@ test('materialized target decommission uses the exact persisted target and a ded
 test('PUT payloads preserve complete nullable and zero-valued model state', () => {
   assert.deepEqual(buildLogicalTableUpdateRequest(
     { name: 'Order', domain_id: null, table_type: 'entity', layer: 'dwd' },
-    { entity_id: 7, version: 3 },
-    { target_parent_locator: '', target_name: '', partition_by: '', partition_type: 'range' }
+    { version: 3 },
+    { target_parent_locator: '', target_name: '' }
   ), {
-    name: 'Order', domain_id: null, entity_id: 7, version: 3, table_type: 'entity', layer: 'dwd',
+    name: 'Order', domain_id: null, version: 3, table_type: 'entity', layer: 'dwd',
     materialization: {}
   })
 
@@ -91,14 +94,14 @@ test('PUT payloads preserve complete nullable and zero-valued model state', () =
 
   assert.deepEqual(buildLogicalFieldUpdateRequest({
     name: 'ID', element_id: null, length: null, nullable: false, is_pk: false,
-    is_partition: false, sort_order: 0
+    sort_order: 0
   }, 5), {
     name: 'ID', element_id: null, length: null, nullable: false, is_pk: false,
-    is_partition: false, sort_order: 0, version: 5
+    sort_order: 0, version: 5
   })
 
-  assert.deepEqual(buildDWLayerUpdateRequest({ layer_name: 'DWD', sort_order: 0 }, { quality_sla: null, version: 6 }), {
-    layer_name: 'DWD', sort_order: 0, quality_sla: null, version: 6
+  assert.deepEqual(buildDWLayerUpdateRequest({ layer_name: 'DWD', sort_order: 0 }, { version: 6 }), {
+    layer_name: 'DWD', sort_order: 0, version: 6
   })
 })
 
@@ -135,7 +138,7 @@ test('DDL preview payload normalizes absent materialization without leaking unde
   })
 })
 
-test('materialization payload keeps normalized partition design only when partition field is present', () => {
+test('physical target payload never exposes unsupported partition options', () => {
   assert.deepEqual(buildDDLPreviewRequest({
     target_parent_locator: 'addp://engine/2/path/analytics?type=schema',
     target_name: 'fact_order',
@@ -144,9 +147,7 @@ test('materialization payload keeps normalized partition design only when partit
   }), {
     materialization: {
       target_parent_locator: 'addp://engine/2/path/analytics?type=schema',
-      target_name: 'fact_order',
-      partition_by: 'occurred_at',
-      partition_type: 'range'
+      target_name: 'fact_order'
     }
   })
 })

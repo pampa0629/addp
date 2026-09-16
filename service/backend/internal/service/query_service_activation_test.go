@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -19,6 +20,7 @@ func TestUpdateServiceRejectsInvalidActiveRESTContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := db.Exec(`CREATE TABLE service.query_services (
+        version INTEGER NOT NULL DEFAULT 1,
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		tenant_id INTEGER NOT NULL,
 		service_name TEXT NOT NULL UNIQUE,
@@ -59,7 +61,7 @@ func TestUpdateServiceRejectsInvalidActiveRESTContract(t *testing.T) {
 
 	active := "active"
 	svc := NewQueryServiceService(repository.NewQueryServiceRepository(db), nil, nil, "")
-	if _, err := svc.UpdateService(queryService.ID, &models.UpdateQueryServiceRequest{Status: &active}); !errors.Is(err, ErrInvalidConsumerContract) {
+	if _, err := svc.UpdateService(context.Background(), queryService.ID, 1, &models.UpdateQueryServiceRequest{Version: queryService.Version, Status: &active}); !errors.Is(err, ErrInvalidConsumerContract) {
 		t.Fatalf("UpdateService() error = %v, want invalid consumer contract", err)
 	}
 	var stored models.QueryService

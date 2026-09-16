@@ -2,11 +2,13 @@ package api
 
 import (
 	"encoding/json"
+	"github.com/addp/quality/internal/testsupport"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/taskprovider"
@@ -23,7 +25,7 @@ func TestQualityTaskListResponseUsesStandardItemsShape(t *testing.T) {
 		Items: []taskProviderTaskListItem{{
 			ID:       1,
 			TenantID: 7,
-			TaskType: commonExecution.TaskTypeQualityCheck,
+			TaskType: commonExecution.TaskTypeQualityPlan,
 			Name:     "quality check",
 		}},
 		Total:    1,
@@ -38,7 +40,7 @@ func TestQualityTaskListResponseUsesStandardItemsShape(t *testing.T) {
 }
 
 func TestQualityTaskDetailResponseUsesStandardTaskShape(t *testing.T) {
-	body, err := json.Marshal(qualityTaskListItem(models.CheckTask{
+	body, err := json.Marshal(qualityPlanListItem(models.QualityPlan{
 		ID:       1,
 		TenantID: 7,
 		Name:     "quality check",
@@ -53,9 +55,9 @@ func TestQualityTaskDetailResponseUsesStandardTaskShape(t *testing.T) {
 func TestTaskExecuteRejectsUnknownFields(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.POST("/tasks/:task_type/:id/execute", NewTaskProviderHandler(nil, nil, nil).TaskExecute)
+	router.POST("/tasks/:task_type/:id/execute", NewTaskProviderHandler(nil).TaskExecute)
 
-	req := httptest.NewRequest(http.MethodPost, "/tasks/check/1/execute", strings.NewReader(`{"legacy":true}`))
+	req := httptest.NewRequest(http.MethodPost, "/tasks/quality_plan/1/execute", strings.NewReader(`{"legacy":true}`))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
@@ -71,9 +73,9 @@ func TestTaskExecuteRejectsUnknownFields(t *testing.T) {
 func TestTaskProviderListRejectsUnsupportedTypeAndScopesTenant(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db := newTaskProviderHandlerTestDB(t)
-	createTaskProviderHandlerTask(t, db, models.CheckTask{TenantID: 7, Name: "tenant-7", EngineID: 2, SchemaName: "public", Table: "orders", CreatedBy: 1})
-	createTaskProviderHandlerTask(t, db, models.CheckTask{TenantID: 8, Name: "tenant-8", EngineID: 2, SchemaName: "public", Table: "orders", CreatedBy: 1})
-	handler := NewTaskProviderHandler(service.NewCheckTaskService(repository.NewCheckTaskRepository(db), nil), nil, nil)
+	createTaskProviderHandlerTask(t, db, models.QualityPlan{TenantID: 7, Name: "tenant-7", Code: "orders", Version: 1, TableBindings: []byte("[]"), Rules: []byte("{}"), CreatedBy: 1})
+	createTaskProviderHandlerTask(t, db, models.QualityPlan{TenantID: 8, Name: "tenant-8", Code: "orders", Version: 1, TableBindings: []byte("[]"), Rules: []byte("{}"), CreatedBy: 1})
+	handler := NewTaskProviderHandler(service.NewPlanService(repository.NewPlanRepository(db), time.Minute))
 
 	invalidRouter := gin.New()
 	invalidRouter.GET("/tasks", withIssueHandlerAuth(7, 11), handler.ListTasks)
@@ -86,7 +88,7 @@ func TestTaskProviderListRejectsUnsupportedTypeAndScopesTenant(t *testing.T) {
 	listResponse := httptest.NewRecorder()
 	listRouter := gin.New()
 	listRouter.GET("/tasks", withIssueHandlerAuth(7, 11), handler.ListTasks)
-	listRouter.ServeHTTP(listResponse, httptest.NewRequest(http.MethodGet, "/tasks?task_type=check&page=0&page_size=999", nil))
+	listRouter.ServeHTTP(listResponse, httptest.NewRequest(http.MethodGet, "/tasks?task_type=quality_plan&page=0&page_size=999", nil))
 	if listResponse.Code != http.StatusOK {
 		t.Fatalf("list status = %d, want %d, body=%s", listResponse.Code, http.StatusOK, listResponse.Body.String())
 	}
@@ -94,7 +96,7 @@ func TestTaskProviderListRejectsUnsupportedTypeAndScopesTenant(t *testing.T) {
 	if err := json.Unmarshal(listResponse.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode list response: %v", err)
 	}
-	if body.Total != 1 || len(body.Items) != 1 || body.Items[0].TenantID != 7 || body.Items[0].TaskType != commonExecution.TaskTypeQualityCheck {
+	if body.Total != 1 || len(body.Items) != 1 || body.Items[0].TenantID != 7 || body.Items[0].TaskType != commonExecution.TaskTypeQualityPlan {
 		t.Fatalf("tenant-scoped task list = %#v", body)
 	}
 	if body.Page != 1 || body.PageSize != 100 {
@@ -105,8 +107,8 @@ func TestTaskProviderListRejectsUnsupportedTypeAndScopesTenant(t *testing.T) {
 func TestTaskProviderDetailRejectsInvalidRouteAndCrossTenant(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db := newTaskProviderHandlerTestDB(t)
-	task := createTaskProviderHandlerTask(t, db, models.CheckTask{TenantID: 7, Name: "tenant-7", EngineID: 2, SchemaName: "public", Table: "orders", CreatedBy: 1})
-	handler := NewTaskProviderHandler(service.NewCheckTaskService(repository.NewCheckTaskRepository(db), nil), nil, nil)
+	task := createTaskProviderHandlerTask(t, db, models.QualityPlan{TenantID: 7, Name: "tenant-7", Code: "orders", Version: 1, TableBindings: []byte("[]"), Rules: []byte("{}"), CreatedBy: 1})
+	handler := NewTaskProviderHandler(service.NewPlanService(repository.NewPlanRepository(db), time.Minute))
 
 	invalidTypeRouter := gin.New()
 	invalidTypeRouter.GET("/tasks/:task_type/:id", withIssueHandlerAuth(7, 11), handler.TaskDetail)
@@ -117,7 +119,7 @@ func TestTaskProviderDetailRejectsInvalidRouteAndCrossTenant(t *testing.T) {
 	}
 
 	invalidIDResponse := httptest.NewRecorder()
-	invalidTypeRouter.ServeHTTP(invalidIDResponse, httptest.NewRequest(http.MethodGet, "/tasks/check/not-an-id", nil))
+	invalidTypeRouter.ServeHTTP(invalidIDResponse, httptest.NewRequest(http.MethodGet, "/tasks/quality_plan/not-an-id", nil))
 	if invalidIDResponse.Code != http.StatusBadRequest {
 		t.Fatalf("invalid task id status = %d, want %d, body=%s", invalidIDResponse.Code, http.StatusBadRequest, invalidIDResponse.Body.String())
 	}
@@ -125,7 +127,7 @@ func TestTaskProviderDetailRejectsInvalidRouteAndCrossTenant(t *testing.T) {
 	crossTenantResponse := httptest.NewRecorder()
 	crossTenantRouter := gin.New()
 	crossTenantRouter.GET("/tasks/:task_type/:id", withIssueHandlerAuth(8, 22), handler.TaskDetail)
-	crossTenantRouter.ServeHTTP(crossTenantResponse, httptest.NewRequest(http.MethodGet, "/tasks/check/"+strconv.FormatInt(task.ID, 10), nil))
+	crossTenantRouter.ServeHTTP(crossTenantResponse, httptest.NewRequest(http.MethodGet, "/tasks/quality_plan/"+strconv.FormatInt(task.ID, 10), nil))
 	if crossTenantResponse.Code != http.StatusNotFound {
 		t.Fatalf("cross-tenant status = %d, want %d, body=%s", crossTenantResponse.Code, http.StatusNotFound, crossTenantResponse.Body.String())
 	}
@@ -134,7 +136,7 @@ func TestTaskProviderDetailRejectsInvalidRouteAndCrossTenant(t *testing.T) {
 func TestTaskProviderExecuteRejectsUnsupportedRequestBeforeExecutor(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.POST("/tasks/:task_type/:id/execute", withIssueHandlerAuth(7, 11), NewTaskProviderHandler(nil, nil, nil).TaskExecute)
+	router.POST("/tasks/:task_type/:id/execute", withIssueHandlerAuth(7, 11), NewTaskProviderHandler(nil).TaskExecute)
 
 	cases := []struct {
 		name string
@@ -142,9 +144,9 @@ func TestTaskProviderExecuteRejectsUnsupportedRequestBeforeExecutor(t *testing.T
 		body string
 	}{
 		{name: "invalid type", path: "/tasks/sync/1/execute", body: `{}`},
-		{name: "invalid id", path: "/tasks/check/not-an-id/execute", body: `{}`},
-		{name: "parameters not supported", path: "/tasks/check/1/execute", body: `{"parameters":{"mode":"full"}}`},
-		{name: "invalid trigger", path: "/tasks/check/1/execute", body: `{"trigger_type":"retry"}`},
+		{name: "invalid id", path: "/tasks/quality_plan/not-an-id/execute", body: `{}`},
+		{name: "parameters not supported", path: "/tasks/quality_plan/1/execute", body: `{"parameters":{"mode":"full"}}`},
+		{name: "invalid trigger", path: "/tasks/quality_plan/1/execute", body: `{"trigger_type":"retry"}`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -159,8 +161,8 @@ func TestTaskProviderExecuteRejectsUnsupportedRequestBeforeExecutor(t *testing.T
 	}
 }
 
-func TestDataValidationExecutionContractDeclaresResult(t *testing.T) {
-	contract := dataValidationExecutionContract()
+func TestPlanExecutionContractDeclaresResult(t *testing.T) {
+	contract := planExecutionContract()
 	raw := map[string]interface{}{
 		"input_schema": contract.InputSchema, "input_defaults": contract.InputDefaults,
 		"input_ui_schema": contract.InputUISchema, "output_schema": contract.OutputSchema,
@@ -183,14 +185,12 @@ func newTaskProviderHandlerTestDB(t *testing.T) *gorm.DB {
 	if err := db.Exec("ATTACH DATABASE ':memory:' AS quality").Error; err != nil {
 		t.Fatalf("attach quality schema: %v", err)
 	}
-	if err := db.Exec(`CREATE TABLE quality.check_tasks (
+	if err := db.Exec(`CREATE TABLE quality.plans (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		tenant_id INTEGER NOT NULL,
 		name TEXT NOT NULL,
 		description TEXT,
-		engine_id INTEGER NOT NULL,
-		schema_name TEXT NOT NULL,
-		table_name TEXT NOT NULL,
+		code TEXT NOT NULL, version INTEGER NOT NULL, table_bindings JSON NOT NULL,
 		created_by INTEGER NOT NULL,
 		updated_by INTEGER,
 		created_at DATETIME,
@@ -201,10 +201,11 @@ func newTaskProviderHandlerTestDB(t *testing.T) *gorm.DB {
 	)`).Error; err != nil {
 		t.Fatalf("create check tasks table: %v", err)
 	}
+	testsupport.EnsureRuleTables(t, db)
 	return db
 }
 
-func createTaskProviderHandlerTask(t *testing.T, db *gorm.DB, task models.CheckTask) models.CheckTask {
+func createTaskProviderHandlerTask(t *testing.T, db *gorm.DB, task models.QualityPlan) models.QualityPlan {
 	t.Helper()
 	if err := db.Create(&task).Error; err != nil {
 		t.Fatalf("create check task: %v", err)

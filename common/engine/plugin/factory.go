@@ -82,6 +82,9 @@ func GenerateResolvedCapabilities(ctx context.Context, engine *Engine) (string, 
 			return "", err
 		}
 	}
+	if err := validateComputeCapabilities(enginePlugin, capabilities.Compute); err != nil {
+		return "", err
+	}
 	return MarshalEngineCapabilities(capabilities)
 }
 

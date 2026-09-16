@@ -8,630 +8,6 @@
     "host": "localhost:8182",
     "basePath": "/api/v1/quality",
     "paths": {
-        "/check-tasks": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "CheckTask"
-                ],
-                "summary": "获取检查任务列表 | List check tasks",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "default": 1,
-                        "description": "页码 | Page",
-                        "name": "page",
-                        "in": "query"
-                    },
-                    {
-                        "maximum": 100,
-                        "type": "integer",
-                        "default": 20,
-                        "description": "每页数量 | Page size",
-                        "name": "page_size",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.qualityCheckTaskListResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "quality.check_task.read"
-                ]
-            },
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "创建前校验目标 PostgreSQL Schema 和数据表属于当前租户引擎 | Validate the target PostgreSQL schema and table against the tenant engine before creation",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "CheckTask"
-                ],
-                "summary": "创建检查任务 | Create check task",
-                "parameters": [
-                    {
-                        "description": "任务信息 | Task info",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_quality_internal_service.CreateCheckTaskRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "201": {
-                        "description": "Created",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.qualityCheckTaskResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
-                        }
-                    },
-                    "409": {
-                        "description": "Conflict",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "quality.check_task.create"
-                ]
-            }
-        },
-        "/check-tasks/{id}": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "CheckTask"
-                ],
-                "summary": "获取检查任务详情 | Get check task detail",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "任务ID | Task ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.qualityCheckTaskResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "quality.check_task.read"
-                ]
-            },
-            "put": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "更新前校验目标 PostgreSQL Schema 和数据表属于当前租户引擎 | Validate the target PostgreSQL schema and table against the tenant engine before update",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "CheckTask"
-                ],
-                "summary": "更新检查任务 | Update check task",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "任务ID | Task ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "更新信息 | Update info",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_quality_internal_service.UpdateCheckTaskRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.qualityCheckTaskResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
-                        }
-                    },
-                    "409": {
-                        "description": "Conflict",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "quality.check_task.update"
-                ]
-            },
-            "delete": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "CheckTask"
-                ],
-                "summary": "删除检查任务 | Delete check task",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "任务ID | Task ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.qualityMessageResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
-                        }
-                    },
-                    "409": {
-                        "description": "Conflict",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "quality.check_task.delete"
-                ]
-            }
-        },
-        "/check-tasks/{id}/run": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "CheckTask"
-                ],
-                "summary": "执行检查任务 | Run check task",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "任务ID | Task ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "202": {
-                        "description": "Accepted",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.qualityTaskProviderExecuteResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
-                        }
-                    },
-                    "409": {
-                        "description": "任务已有活动 execution | Task already has an active execution",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "quality.check_task.execute"
-                ]
-            }
-        },
-        "/data-validation-tasks": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "DataValidation"
-                ],
-                "summary": "列出数据校验任务 | List data validation tasks",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "页码 | Page",
-                        "name": "page",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "description": "每页数量 | Page size",
-                        "name": "page_size",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.qualityDataValidationTaskListResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "quality.data_validation.read"
-                ]
-            },
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "DataValidation"
-                ],
-                "summary": "创建数据校验任务 | Create data validation task",
-                "parameters": [
-                    {
-                        "description": "数据校验定义 | Data validation definition",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_quality_internal_service.DataValidationWriteRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "201": {
-                        "description": "Created",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.qualityDataValidationTaskResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
-                        }
-                    },
-                    "409": {
-                        "description": "Conflict",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "quality.data_validation.create"
-                ]
-            }
-        },
-        "/data-validation-tasks/{id}": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "DataValidation"
-                ],
-                "summary": "获取数据校验任务 | Get data validation task",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "任务 ID | Task ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.qualityDataValidationTaskResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "quality.data_validation.read"
-                ]
-            },
-            "put": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "DataValidation"
-                ],
-                "summary": "更新数据校验任务 | Update data validation task",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "任务 ID | Task ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "完整数据校验定义 | Complete data validation definition",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_quality_internal_service.DataValidationWriteRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.qualityDataValidationTaskResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
-                        }
-                    },
-                    "409": {
-                        "description": "Conflict",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "quality.data_validation.update"
-                ]
-            },
-            "delete": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "DataValidation"
-                ],
-                "summary": "删除数据校验任务 | Delete data validation task",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "任务 ID | Task ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "删除版本 | Delete version",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.dataValidationDeleteRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.qualityMessageResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
-                        }
-                    },
-                    "409": {
-                        "description": "Conflict",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "quality.data_validation.delete"
-                ]
-            }
-        },
         "/executions": {
             "get": {
                 "security": [
@@ -940,7 +316,7 @@
                 ]
             }
         },
-        "/rule-applications": {
+        "/plans": {
             "get": {
                 "security": [
                     {
@@ -951,39 +327,18 @@
                     "application/json"
                 ],
                 "tags": [
-                    "RuleApplication"
+                    "Plan"
                 ],
-                "summary": "获取规则应用列表 | List rule applications",
+                "summary": "列出质量检查方案 | List quality plan tasks",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "引擎ID | Engine ID",
-                        "name": "engine_id",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Schema名称 | Schema name",
-                        "name": "schema_name",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "表名 | Table name",
-                        "name": "table_name",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "default": 1,
                         "description": "页码 | Page",
                         "name": "page",
                         "in": "query"
                     },
                     {
-                        "maximum": 100,
                         "type": "integer",
-                        "default": 20,
                         "description": "每页数量 | Page size",
                         "name": "page_size",
                         "in": "query"
@@ -993,13 +348,7 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_api.qualityRuleApplicationListResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
+                            "$ref": "#/definitions/internal_api.qualityPlanListResponse"
                         }
                     },
                     "500": {
@@ -1011,7 +360,7 @@
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
-                    "quality.rule_application.read"
+                    "quality.plan.read"
                 ]
             },
             "post": {
@@ -1027,17 +376,17 @@
                     "application/json"
                 ],
                 "tags": [
-                    "RuleApplication"
+                    "Plan"
                 ],
-                "summary": "创建规则应用 | Create rule application",
+                "summary": "创建质量检查方案 | Create quality plan task",
                 "parameters": [
                     {
-                        "description": "规则应用信息 | Rule application info",
-                        "name": "body",
+                        "description": "质量检查定义 | Quality plan definition",
+                        "name": "request",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_quality_internal_service.CreateRuleApplicationRequest"
+                            "$ref": "#/definitions/github_com_addp_quality_internal_service.PlanWriteRequest"
                         }
                     }
                 ],
@@ -1045,7 +394,116 @@
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/internal_api.qualityRuleApplicationResponse"
+                            "$ref": "#/definitions/internal_api.qualityPlanResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "quality.plan.create",
+                    "quality.rule.read"
+                ]
+            }
+        },
+        "/plans/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Plan"
+                ],
+                "summary": "获取质量检查方案 | Get quality plan task",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "任务 ID | Task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityPlanResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "quality.plan.read"
+                ]
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Plan"
+                ],
+                "summary": "更新质量检查方案 | Update quality plan task",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "任务 ID | Task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "完整质量检查定义 | Complete quality plan definition",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_quality_internal_service.PlanWriteRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityPlanResponse"
                         }
                     },
                     "400": {
@@ -1065,9 +523,69 @@
                         "schema": {
                             "$ref": "#/definitions/internal_api.qualityErrorResponse"
                         }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "quality.plan.update",
+                    "quality.rule.read"
+                ]
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Plan"
+                ],
+                "summary": "删除质量检查方案 | Delete quality plan task",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "任务 ID | Task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
                     },
-                    "500": {
-                        "description": "Internal Server Error",
+                    {
+                        "description": "删除版本 | Delete version",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.planDeleteRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityMessageResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
                         "schema": {
                             "$ref": "#/definitions/internal_api.qualityErrorResponse"
                         }
@@ -1075,11 +593,66 @@
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
-                    "quality.rule_application.create"
+                    "quality.plan.delete"
                 ]
             }
         },
-        "/rule-applications/element-candidates": {
+        "/plans/{id}/run": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "QualityPlan"
+                ],
+                "summary": "执行质量检查方案 | Run quality plan",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "方案 ID | Plan ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityTaskProviderExecuteResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "quality.plan.execute"
+                ]
+            }
+        },
+        "/rules": {
             "get": {
                 "security": [
                     {
@@ -1090,28 +663,131 @@
                     "application/json"
                 ],
                 "tags": [
-                    "RuleApplication"
+                    "QualityRule"
                 ],
-                "summary": "搜索规则应用数据元候选 | Search data element candidates for rule applications",
+                "summary": "列出质量规则 | List quality rules",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "名称、编码或定义关键字 | Name, code, or definition keyword",
+                        "description": "名称或编码 | Name or code",
+                        "name": "search",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "页码 | Page",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量 | Page size",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityRuleListResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "quality.rule.read"
+                ]
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "QualityRule"
+                ],
+                "summary": "创建质量规则 | Create quality rule",
+                "parameters": [
+                    {
+                        "description": "质量规则定义 | Quality rule definition",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_quality_internal_service.RuleWriteRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityRuleResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "quality.rule.create"
+                ]
+            }
+        },
+        "/rules/element-candidates": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "QualityRule"
+                ],
+                "summary": "搜索标准规则来源 | Search standard rule sources",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "搜索词 | Search keyword",
                         "name": "keyword",
                         "in": "query",
                         "required": true
                     },
                     {
                         "type": "integer",
-                        "default": 1,
                         "description": "页码 | Page",
                         "name": "page",
                         "in": "query"
                     },
                     {
-                        "maximum": 100,
                         "type": "integer",
-                        "default": 20,
                         "description": "每页数量 | Page size",
                         "name": "page_size",
                         "in": "query"
@@ -1139,11 +815,11 @@
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
-                    "quality.rule_application.create"
+                    "quality.rule.read"
                 ]
             }
         },
-        "/rule-applications/{id}": {
+        "/rules/{id}": {
             "get": {
                 "security": [
                     {
@@ -1154,13 +830,13 @@
                     "application/json"
                 ],
                 "tags": [
-                    "RuleApplication"
+                    "QualityRule"
                 ],
-                "summary": "获取规则应用详情 | Get rule application detail",
+                "summary": "获取质量规则 | Get quality rule",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "规则应用ID | Rule application ID",
+                        "description": "规则 ID | Rule ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -1170,7 +846,7 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_api.qualityRuleApplicationResponse"
+                            "$ref": "#/definitions/internal_api.qualityRuleResponse"
                         }
                     },
                     "400": {
@@ -1184,17 +860,11 @@
                         "schema": {
                             "$ref": "#/definitions/internal_api.qualityErrorResponse"
                         }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
-                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
-                    "quality.rule_application.read"
+                    "quality.rule.read"
                 ]
             },
             "put": {
@@ -1210,24 +880,24 @@
                     "application/json"
                 ],
                 "tags": [
-                    "RuleApplication"
+                    "QualityRule"
                 ],
-                "summary": "更新规则应用 | Update rule application",
+                "summary": "更新质量规则 | Update quality rule",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "规则应用ID | Rule application ID",
+                        "description": "规则 ID | Rule ID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "更新信息 | Update info",
-                        "name": "body",
+                        "description": "完整质量规则定义 | Complete quality rule definition",
+                        "name": "request",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_quality_internal_service.UpdateRuleApplicationRequest"
+                            "$ref": "#/definitions/github_com_addp_quality_internal_service.RuleWriteRequest"
                         }
                     }
                 ],
@@ -1235,7 +905,7 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_api.qualityRuleApplicationResponse"
+                            "$ref": "#/definitions/internal_api.qualityRuleResponse"
                         }
                     },
                     "400": {
@@ -1255,17 +925,11 @@
                         "schema": {
                             "$ref": "#/definitions/internal_api.qualityErrorResponse"
                         }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
-                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
-                    "quality.rule_application.update"
+                    "quality.rule.update"
                 ]
             },
             "delete": {
@@ -1274,20 +938,32 @@
                         "BearerAuth": []
                     }
                 ],
+                "consumes": [
+                    "application/json"
+                ],
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "RuleApplication"
+                    "QualityRule"
                 ],
-                "summary": "删除规则应用 | Delete rule application",
+                "summary": "删除质量规则 | Delete quality rule",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "规则应用ID | Rule application ID",
+                        "description": "规则 ID | Rule ID",
                         "name": "id",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "description": "删除版本 | Delete version",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ruleDeleteRequest"
+                        }
                     }
                 ],
                 "responses": {
@@ -1295,6 +971,12 @@
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/internal_api.qualityMessageResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
                         }
                     },
                     "404": {
@@ -1308,9 +990,58 @@
                         "schema": {
                             "$ref": "#/definitions/internal_api.qualityErrorResponse"
                         }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "quality.rule.delete"
+                ]
+            }
+        },
+        "/rules/{id}/plans": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "QualityRule"
+                ],
+                "summary": "查询引用规则的方案 | List plans referencing a rule",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "规则 ID | Rule ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
                     },
-                    "500": {
-                        "description": "Internal Server Error",
+                    {
+                        "type": "integer",
+                        "description": "页码 | Page",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量 | Page size",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityPlanListResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/internal_api.qualityErrorResponse"
                         }
@@ -1318,7 +1049,8 @@
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
-                    "quality.rule_application.delete"
+                    "quality.rule.read",
+                    "quality.plan.read"
                 ]
             }
         },
@@ -1449,18 +1181,18 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "按标准 TaskProvider 协议列出 Quality 任务；task_type 支持 check|data_validation。| List Quality tasks through the standard TaskProvider protocol; task_type supports check or data_validation.",
+                "description": "按标准 TaskProvider 协议列出 Quality 任务；task_type 支持 quality_plan。| List Quality tasks through the standard TaskProvider protocol; task_type supports quality_plan.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "CheckTask"
+                    "QualityPlan"
                 ],
                 "summary": "列出 TaskProvider 质量检查任务 | List TaskProvider quality check tasks",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "任务类型：check|data_validation | Task type: check or data_validation",
+                        "description": "任务类型：quality_plan | Task type: quality_plan",
                         "name": "task_type",
                         "in": "query"
                     }
@@ -1498,18 +1230,18 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "按标准 TaskProvider 协议获取 Quality 任务详情；task_type 支持 check|data_validation。| Get Quality task detail through the standard TaskProvider protocol; task_type supports check or data_validation.",
+                "description": "按标准 TaskProvider 协议获取 Quality 任务详情；task_type 支持 quality_plan。| Get Quality task detail through the standard TaskProvider protocol; task_type supports quality_plan.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "CheckTask"
+                    "QualityPlan"
                 ],
                 "summary": "获取 TaskProvider 质量检查任务详情 | Get TaskProvider quality check task detail",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "任务类型：check|data_validation | Task type: check or data_validation",
+                        "description": "任务类型：quality_plan | Task type: quality_plan",
                         "name": "task_type",
                         "in": "path",
                         "required": true
@@ -1563,13 +1295,13 @@
                     "application/json"
                 ],
                 "tags": [
-                    "CheckTask"
+                    "QualityPlan"
                 ],
                 "summary": "执行 TaskProvider 质量检查任务 | Execute TaskProvider quality check task",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "任务类型：check|data_validation | Task type: check or data_validation",
+                        "description": "任务类型：quality_plan | Task type: quality_plan",
                         "name": "task_type",
                         "in": "path",
                         "required": true
@@ -1860,9 +1592,6 @@
         "github_com_addp_quality_internal_models.CatalogSummaryResolution": {
             "type": "object",
             "properties": {
-                "check_task_id": {
-                    "type": "integer"
-                },
                 "configured": {
                     "type": "boolean"
                 },
@@ -1889,107 +1618,35 @@
                 }
             }
         },
-        "github_com_addp_quality_internal_models.CheckTask": {
+        "github_com_addp_quality_internal_models.CheckBindings": {
             "type": "object",
             "properties": {
-                "created_at": {
+                "column": {
                     "type": "string"
                 },
-                "created_by": {
-                    "type": "integer"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "engine_id": {
-                    "description": "目标引擎",
-                    "type": "integer"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "last_execution_id": {
-                    "type": "string"
-                },
-                "last_execution_status": {
-                    "type": "string"
-                },
-                "last_run_at": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "schema_name": {
-                    "type": "string"
-                },
-                "table_name": {
-                    "type": "string"
-                },
-                "tenant_id": {
-                    "type": "integer"
-                },
-                "updated_at": {
-                    "type": "string"
-                },
-                "updated_by": {
-                    "type": "integer"
-                }
-            }
-        },
-        "github_com_addp_quality_internal_models.DataValidationTask": {
-            "type": "object",
-            "properties": {
-                "assertions": {
+                "columns": {
                     "type": "array",
                     "items": {
-                        "type": "integer"
+                        "type": "string"
                     }
                 },
-                "code": {
-                    "type": "string"
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "created_by": {
-                    "type": "integer"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "last_execution_id": {
-                    "type": "string"
-                },
-                "last_execution_status": {
-                    "type": "string"
-                },
-                "last_run_at": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "table_bindings": {
+                "reference_columns": {
                     "type": "array",
                     "items": {
-                        "type": "integer"
+                        "type": "string"
                     }
                 },
-                "tenant_id": {
-                    "type": "integer"
-                },
-                "updated_at": {
+                "reference_table": {
                     "type": "string"
                 },
-                "updated_by": {
-                    "type": "integer"
+                "table": {
+                    "type": "string"
                 },
-                "version": {
-                    "type": "integer"
+                "then_column": {
+                    "type": "string"
+                },
+                "when_column": {
+                    "type": "string"
                 }
             }
         },
@@ -2033,6 +1690,9 @@
                 "pass_rate": {
                     "type": "number"
                 },
+                "plan_id": {
+                    "type": "integer"
+                },
                 "resolution_note": {
                     "type": "string"
                 },
@@ -2040,9 +1700,6 @@
                     "type": "string"
                 },
                 "resolved_by": {
-                    "type": "integer"
-                },
-                "rule_application_id": {
                     "type": "integer"
                 },
                 "rule_key": {
@@ -2075,6 +1732,138 @@
                 }
             }
         },
+        "github_com_addp_quality_internal_models.PlanCheckItem": {
+            "type": "object",
+            "properties": {
+                "bindings": {
+                    "$ref": "#/definitions/github_com_addp_quality_internal_models.CheckBindings"
+                },
+                "disabled": {
+                    "type": "boolean"
+                },
+                "revision_no": {
+                    "type": "integer"
+                },
+                "rule": {
+                    "$ref": "#/definitions/github_com_addp_quality_internal_models.RuleRevision"
+                },
+                "rule_id": {
+                    "type": "integer"
+                },
+                "rule_key": {
+                    "type": "string"
+                },
+                "severity": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_quality_internal_models.QualityPlan": {
+            "type": "object",
+            "properties": {
+                "check_items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_quality_internal_models.PlanCheckItem"
+                    }
+                },
+                "code": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "integer"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "last_execution_id": {
+                    "type": "string"
+                },
+                "last_execution_status": {
+                    "type": "string"
+                },
+                "last_run_at": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "table_bindings": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "integer"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_quality_internal_models.QualityRule": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "integer"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "params": {
+                    "type": "object"
+                },
+                "plan_count": {
+                    "type": "integer"
+                },
+                "revision_no": {
+                    "type": "integer"
+                },
+                "source": {
+                    "$ref": "#/definitions/github_com_addp_quality_internal_models.RuleSource"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "type": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "integer"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
         "github_com_addp_quality_internal_models.ResolveCatalogSummariesRequest": {
             "type": "object",
             "properties": {
@@ -2097,100 +1886,79 @@
                 }
             }
         },
-        "github_com_addp_quality_internal_service.CreateCheckTaskRequest": {
+        "github_com_addp_quality_internal_models.RuleRevision": {
             "type": "object",
-            "required": [
-                "engine_id",
-                "name",
-                "schema_name",
-                "table_name"
-            ],
             "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "integer"
+                },
                 "description": {
                     "type": "string"
                 },
-                "engine_id": {
+                "latest_revision_no": {
                     "type": "integer"
                 },
                 "name": {
                     "type": "string"
                 },
-                "schema_name": {
-                    "type": "string"
+                "params": {
+                    "type": "object"
                 },
-                "table_name": {
+                "revision_no": {
+                    "type": "integer"
+                },
+                "rule_id": {
+                    "type": "integer"
+                },
+                "source": {
+                    "$ref": "#/definitions/github_com_addp_quality_internal_models.RuleSource"
+                },
+                "type": {
                     "type": "string"
                 }
             }
         },
-        "github_com_addp_quality_internal_service.CreateRuleApplicationRequest": {
+        "github_com_addp_quality_internal_models.RuleSource": {
             "type": "object",
-            "required": [
-                "column_name",
-                "element_id",
-                "engine_id",
-                "schema_name",
-                "table_name"
-            ],
             "properties": {
-                "column_name": {
-                    "type": "string"
-                },
                 "element_id": {
                     "type": "integer"
                 },
-                "engine_id": {
+                "element_revision_id": {
                     "type": "integer"
                 },
-                "schema_name": {
-                    "type": "string"
-                },
-                "table_name": {
+                "rule_key": {
                     "type": "string"
                 }
             }
         },
-        "github_com_addp_quality_internal_service.DataValidationTableBinding": {
+        "github_com_addp_quality_internal_service.PlanCheckRequest": {
             "type": "object",
             "properties": {
-                "alias": {
-                    "type": "string"
+                "bindings": {
+                    "$ref": "#/definitions/github_com_addp_quality_internal_models.CheckBindings"
                 },
-                "locator": {
-                    "type": "string"
-                }
-            }
-        },
-        "github_com_addp_quality_internal_service.DataValidationWriteRequest": {
-            "type": "object",
-            "properties": {
-                "assertions": {
-                    "type": "array",
-                    "items": {
-                        "type": "integer"
-                    }
+                "disabled": {
+                    "type": "boolean"
                 },
-                "code": {
-                    "type": "string"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "table_bindings": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/github_com_addp_quality_internal_service.DataValidationTableBinding"
-                    }
-                },
-                "version": {
+                "revision_no": {
                     "type": "integer"
+                },
+                "rule_id": {
+                    "type": "integer"
+                },
+                "rule_key": {
+                    "type": "string"
+                },
+                "severity": {
+                    "type": "string"
                 }
             }
         },
-        "github_com_addp_quality_internal_service.RuleApplicationElementCandidate": {
+        "github_com_addp_quality_internal_service.PlanElementCandidate": {
             "type": "object",
             "properties": {
                 "code": {
@@ -2213,116 +1981,67 @@
                 }
             }
         },
-        "github_com_addp_quality_internal_service.RuleApplicationElementSummary": {
+        "github_com_addp_quality_internal_service.PlanTableBinding": {
+            "type": "object",
+            "properties": {
+                "alias": {
+                    "type": "string"
+                },
+                "locator": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_quality_internal_service.PlanWriteRequest": {
+            "type": "object",
+            "properties": {
+                "check_items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_quality_internal_service.PlanCheckRequest"
+                    }
+                },
+                "code": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "table_bindings": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_quality_internal_service.PlanTableBinding"
+                    }
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_quality_internal_service.RuleWriteRequest": {
             "type": "object",
             "properties": {
                 "code": {
                     "type": "string"
                 },
-                "id": {
-                    "type": "integer"
-                },
-                "name": {
-                    "type": "string"
-                }
-            }
-        },
-        "github_com_addp_quality_internal_service.RuleApplicationListItem": {
-            "type": "object",
-            "properties": {
-                "column_name": {
-                    "type": "string"
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "created_by": {
-                    "type": "integer"
-                },
-                "element": {
-                    "$ref": "#/definitions/github_com_addp_quality_internal_service.RuleApplicationElementSummary"
-                },
-                "element_id": {
-                    "description": "standard.elements.id",
-                    "type": "integer"
-                },
-                "element_revision_id": {
-                    "description": "standard.element_revisions.id",
-                    "type": "integer"
-                },
-                "enabled": {
-                    "type": "boolean"
-                },
-                "engine_id": {
-                    "type": "integer"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "rule_config": {
-                    "description": "质量规则快照",
-                    "type": "array",
-                    "items": {
-                        "type": "integer"
-                    }
-                },
-                "schema_name": {
-                    "type": "string"
-                },
-                "table_name": {
-                    "type": "string"
-                },
-                "tenant_id": {
-                    "type": "integer"
-                },
-                "updated_at": {
-                    "type": "string"
-                },
-                "updated_by": {
-                    "type": "integer"
-                }
-            }
-        },
-        "github_com_addp_quality_internal_service.UpdateCheckTaskRequest": {
-            "type": "object",
-            "required": [
-                "engine_id",
-                "name",
-                "schema_name",
-                "table_name"
-            ],
-            "properties": {
                 "description": {
                     "type": "string"
                 },
-                "engine_id": {
-                    "type": "integer"
-                },
                 "name": {
                     "type": "string"
                 },
-                "schema_name": {
+                "params": {
+                    "type": "object"
+                },
+                "source": {
+                    "$ref": "#/definitions/github_com_addp_quality_internal_models.RuleSource"
+                },
+                "type": {
                     "type": "string"
                 },
-                "table_name": {
-                    "type": "string"
-                }
-            }
-        },
-        "github_com_addp_quality_internal_service.UpdateRuleApplicationRequest": {
-            "type": "object",
-            "required": [
-                "enabled"
-            ],
-            "properties": {
-                "enabled": {
-                    "type": "boolean"
-                }
-            }
-        },
-        "internal_api.dataValidationDeleteRequest": {
-            "type": "object",
-            "properties": {
                 "version": {
                     "type": "integer"
                 }
@@ -2349,151 +2068,9 @@
                 }
             }
         },
-        "internal_api.qualityCheckTaskListResponse": {
+        "internal_api.planDeleteRequest": {
             "type": "object",
             "properties": {
-                "data": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/github_com_addp_quality_internal_models.CheckTask"
-                    }
-                },
-                "page": {
-                    "type": "integer"
-                },
-                "page_size": {
-                    "type": "integer"
-                },
-                "total": {
-                    "type": "integer"
-                },
-                "total_pages": {
-                    "type": "integer"
-                }
-            }
-        },
-        "internal_api.qualityCheckTaskResponse": {
-            "type": "object",
-            "properties": {
-                "created_at": {
-                    "type": "string"
-                },
-                "created_by": {
-                    "type": "integer"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "engine_id": {
-                    "description": "目标引擎",
-                    "type": "integer"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "last_execution_id": {
-                    "type": "string"
-                },
-                "last_execution_status": {
-                    "type": "string"
-                },
-                "last_run_at": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "schema_name": {
-                    "type": "string"
-                },
-                "table_name": {
-                    "type": "string"
-                },
-                "tenant_id": {
-                    "type": "integer"
-                },
-                "updated_at": {
-                    "type": "string"
-                },
-                "updated_by": {
-                    "type": "integer"
-                }
-            }
-        },
-        "internal_api.qualityDataValidationTaskListResponse": {
-            "type": "object",
-            "properties": {
-                "data": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/github_com_addp_quality_internal_models.DataValidationTask"
-                    }
-                },
-                "page": {
-                    "type": "integer"
-                },
-                "page_size": {
-                    "type": "integer"
-                },
-                "total": {
-                    "type": "integer"
-                },
-                "total_pages": {
-                    "type": "integer"
-                }
-            }
-        },
-        "internal_api.qualityDataValidationTaskResponse": {
-            "type": "object",
-            "properties": {
-                "assertions": {
-                    "type": "array",
-                    "items": {
-                        "type": "integer"
-                    }
-                },
-                "code": {
-                    "type": "string"
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "created_by": {
-                    "type": "integer"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "last_execution_id": {
-                    "type": "string"
-                },
-                "last_execution_status": {
-                    "type": "string"
-                },
-                "last_run_at": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "table_bindings": {
-                    "type": "array",
-                    "items": {
-                        "type": "integer"
-                    }
-                },
-                "tenant_id": {
-                    "type": "integer"
-                },
-                "updated_at": {
-                    "type": "string"
-                },
-                "updated_by": {
-                    "type": "integer"
-                },
                 "version": {
                     "type": "integer"
                 }
@@ -2505,7 +2082,7 @@
                 "data": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/github_com_addp_quality_internal_service.RuleApplicationElementCandidate"
+                        "$ref": "#/definitions/github_com_addp_quality_internal_service.PlanElementCandidate"
                     }
                 },
                 "page": {
@@ -2619,6 +2196,9 @@
                 "pass_rate": {
                     "type": "number"
                 },
+                "plan_id": {
+                    "type": "integer"
+                },
                 "resolution_note": {
                     "type": "string"
                 },
@@ -2626,9 +2206,6 @@
                     "type": "string"
                 },
                 "resolved_by": {
-                    "type": "integer"
-                },
-                "rule_application_id": {
                     "type": "integer"
                 },
                 "rule_key": {
@@ -2669,13 +2246,13 @@
                 }
             }
         },
-        "internal_api.qualityRuleApplicationListResponse": {
+        "internal_api.qualityPlanListResponse": {
             "type": "object",
             "properties": {
                 "data": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/github_com_addp_quality_internal_service.RuleApplicationListItem"
+                        "$ref": "#/definitions/github_com_addp_quality_internal_models.QualityPlan"
                     }
                 },
                 "page": {
@@ -2692,10 +2269,16 @@
                 }
             }
         },
-        "internal_api.qualityRuleApplicationResponse": {
+        "internal_api.qualityPlanResponse": {
             "type": "object",
             "properties": {
-                "column_name": {
+                "check_items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_quality_internal_models.PlanCheckItem"
+                    }
+                },
+                "code": {
                     "type": "string"
                 },
                 "created_at": {
@@ -2704,35 +2287,29 @@
                 "created_by": {
                     "type": "integer"
                 },
-                "element_id": {
-                    "description": "standard.elements.id",
-                    "type": "integer"
-                },
-                "element_revision_id": {
-                    "description": "standard.element_revisions.id",
-                    "type": "integer"
-                },
-                "enabled": {
-                    "type": "boolean"
-                },
-                "engine_id": {
-                    "type": "integer"
+                "description": {
+                    "type": "string"
                 },
                 "id": {
                     "type": "integer"
                 },
-                "rule_config": {
-                    "description": "质量规则快照",
+                "last_execution_id": {
+                    "type": "string"
+                },
+                "last_execution_status": {
+                    "type": "string"
+                },
+                "last_run_at": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "table_bindings": {
                     "type": "array",
                     "items": {
                         "type": "integer"
                     }
-                },
-                "schema_name": {
-                    "type": "string"
-                },
-                "table_name": {
-                    "type": "string"
                 },
                 "tenant_id": {
                     "type": "integer"
@@ -2741,6 +2318,82 @@
                     "type": "string"
                 },
                 "updated_by": {
+                    "type": "integer"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api.qualityRuleListResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_quality_internal_models.QualityRule"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "total_pages": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api.qualityRuleResponse": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "integer"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "params": {
+                    "type": "object"
+                },
+                "plan_count": {
+                    "type": "integer"
+                },
+                "revision_no": {
+                    "type": "integer"
+                },
+                "source": {
+                    "$ref": "#/definitions/github_com_addp_quality_internal_models.RuleSource"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "type": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "integer"
+                },
+                "version": {
                     "type": "integer"
                 }
             }
@@ -2775,6 +2428,14 @@
                         "pending"
                     ],
                     "example": "pending"
+                }
+            }
+        },
+        "internal_api.ruleDeleteRequest": {
+            "type": "object",
+            "properties": {
+                "version": {
+                    "type": "integer"
                 }
             }
         },

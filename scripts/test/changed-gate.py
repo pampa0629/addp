@@ -95,6 +95,10 @@ def affected_modules(repository: Path, files: list[str]) -> list[str]:
     }
     roots = {path.split("/", 1)[0] for path in files if "/" in path}
 
+    # The Quality PostgreSQL gate includes Orchestrator's Quality-plan reference migration.
+    if "orchestrator" in roots:
+        affected.add("quality")
+
     for path in files:
         evaluation_match = re.fullmatch(r"evals/([a-z][a-z0-9-]*)-scenarios(?:/.*)?", path)
         if evaluation_match:

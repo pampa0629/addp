@@ -19,6 +19,10 @@ type ExpressionDialect interface {
 	Value(string, datatype.FieldType) (string, error)
 	Literal(plan.Literal) (string, error)
 	Comparable(string, datatype.FieldType) (string, error)
+	// TrimDecimalText receives fixed-scale decimal text, including a decimal
+	// point. ISODateText renders YYYY-MM-DD independently of session settings.
+	TrimDecimalText(string) string
+	ISODateText(string) string
 }
 
 type ExpressionColumn struct{ Relation, Name string }
@@ -117,6 +121,8 @@ func compileExpression(e plan.Expr, scope ExpressionScope, d ExpressionDialect) 
 			return CheckedExpression{}, err
 		}
 		switch e.Op {
+		case "text":
+			return CanonicalText(args[0], d)
 		case "date":
 			return CalendarDate(args[0], d)
 		case "month_start":

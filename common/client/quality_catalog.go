@@ -31,7 +31,6 @@ type QualityCatalogSummaryReference struct {
 type QualityCatalogSummaryResolution struct {
 	Reference           QualityCatalogSummaryReference `json:"reference"`
 	Configured          bool                           `json:"configured"`
-	CheckTaskID         int64                          `json:"check_task_id,omitempty"`
 	LastExecutionID     string                         `json:"last_execution_id,omitempty"`
 	LastExecutionStatus string                         `json:"last_execution_status,omitempty"`
 	QualityScore        *float64                       `json:"quality_score,omitempty"`
@@ -61,7 +60,7 @@ func (c *QualityClient) ResolveCatalogSummaries(ctx context.Context, references 
 		return nil, errors.New("Quality catalog summary resolution returned a result count mismatch")
 	}
 	for index, result := range response.Results {
-		if result.Reference != references[index] || result.OpenIssueCount < 0 || (result.Configured && result.CheckTaskID <= 0) || result.QualityScore != nil && (*result.QualityScore < 0 || *result.QualityScore > 100) {
+		if result.Reference != references[index] || result.OpenIssueCount < 0 || result.QualityScore != nil && (*result.QualityScore < 0 || *result.QualityScore > 100) {
 			return nil, errors.New("Quality catalog summary resolution returned an invalid result")
 		}
 	}

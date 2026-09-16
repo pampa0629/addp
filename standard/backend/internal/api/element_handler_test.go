@@ -55,6 +55,27 @@ func TestListElementsFiltersByCanonicalIDs(t *testing.T) {
 	}
 }
 
+func TestElementDefinitionRejectsEditableQualityRules(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	handler := NewElementHandler(nil)
+	router := gin.New()
+	router.POST("/elements", handler.CreateElement)
+	router.PUT("/elements/:id/revisions/:revision_id", handler.UpdateElementRevision)
+	for _, method := range []string{http.MethodPost, http.MethodPut} {
+		path := "/elements"
+		body := `{"code":"person_id","scope_type":"tenant_common","name":"Person ID","definition":"Identifier","data_type":"string","nullable":false,"value_domain_kind":"unrestricted","change_summary":"Initial","extra_quality_rules":{"schema_version":"addp.quality.rules/v1","rules":[]}}`
+		if method == http.MethodPut {
+			path += "/1/revisions/2"
+			body = `{"version":1,"name":"Person ID","definition":"Identifier","data_type":"string","nullable":false,"value_domain_kind":"unrestricted","change_summary":"Update","extra_quality_rules":{"schema_version":"addp.quality.rules/v1","rules":[]}}`
+		}
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, httptest.NewRequest(method, path, strings.NewReader(body)))
+		if response.Code != http.StatusBadRequest {
+			t.Fatalf("%s: %d %s", method, response.Code, response.Body.String())
+		}
+	}
+}
+
 func withElementHandlerAuth(tenantID uint) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		tenantText := strconv.FormatUint(uint64(tenantID), 10)
@@ -151,7 +172,7 @@ func newElementHandlerTestDB(t *testing.T) *gorm.DB {
 		status TEXT NOT NULL, name TEXT NOT NULL, definition TEXT NOT NULL, data_type TEXT NOT NULL,
 		length INTEGER, precision_num INTEGER, scale INTEGER, nullable BOOLEAN, default_value TEXT, format TEXT,
 		value_domain_kind TEXT NOT NULL, range_constraint TEXT, code_set_revision_id INTEGER, unit_id INTEGER,
-		example_values TEXT, extra_quality_rules TEXT,
+		example_values TEXT,
 		compiled_quality_rules TEXT, change_summary TEXT NOT NULL, effective_from DATETIME, effective_to DATETIME,
 		submitted_by INTEGER, submitted_at DATETIME, published_by INTEGER, published_at DATETIME,
 		created_by INTEGER NOT NULL, updated_by INTEGER, created_at DATETIME, updated_at DATETIME

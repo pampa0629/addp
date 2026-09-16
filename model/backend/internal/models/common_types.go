@@ -40,9 +40,9 @@ type VersionResponse struct {
 	Version int64 `json:"version"`
 }
 
-// MaterializedTargetDecommissionRequest binds a destructive physical action to
-// the current logical-table version and exact configured target.
-type MaterializedTargetDecommissionRequest struct {
+// PhysicalTargetDeleteRequest binds destructive table deletion to the current
+// logical-table version and exact configured target.
+type PhysicalTargetDeleteRequest struct {
 	Version             int64  `json:"version" binding:"required,gt=0" minimum:"1"`
 	TargetParentLocator string `json:"target_parent_locator" binding:"required"`
 	TargetName          string `json:"target_name" binding:"required"`

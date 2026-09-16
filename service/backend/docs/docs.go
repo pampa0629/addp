@@ -1780,8 +1780,7 @@ const docTemplate = `{
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/github_com_addp_service_internal_models.QueryServiceDTO"
                         }
                     },
                     "400": {
@@ -1922,8 +1921,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/github_com_addp_service_internal_models.QueryServiceDTO"
                         }
                     },
                     "404": {
@@ -1979,8 +1977,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/github_com_addp_service_internal_models.QueryServiceDTO"
                         }
                     },
                     "400": {
@@ -2000,6 +1997,15 @@ const docTemplate = `{
                                 "type": "string"
                             }
                         }
+                    },
+                    "409": {
+                        "description": "资源版本冲突 | Resource version conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
@@ -2012,6 +2018,9 @@ const docTemplate = `{
                     {
                         "BearerAuth": []
                     }
+                ],
+                "consumes": [
+                    "application/json"
                 ],
                 "produces": [
                     "application/json"
@@ -2027,6 +2036,15 @@ const docTemplate = `{
                         "name": "id",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "description": "当前资源版本 | Current resource version",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_service_internal_models.QueryServiceVersionRequest"
+                        }
                     }
                 ],
                 "responses": {
@@ -2041,6 +2059,15 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "资源版本冲突 | Resource version conflict",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -2071,7 +2098,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "保留服务身份，比较当前发布版本后原子替换编译契约 | Preserve service identity and atomically replace the compiled contract after checking the current publication version",
+                "description": "保留服务身份，校验资源 version 后原子替换计算契约并递增版本 | Preserve service identity and atomically replace the computation contract after checking and incrementing the resource version",
                 "consumes": [
                     "application/json"
                 ],
@@ -2091,7 +2118,7 @@ const docTemplate = `{
                         "required": true
                     },
                     {
-                        "description": "指标绑定与当前发布版本 | Metric binding and current publication version",
+                        "description": "指标绑定与当前定义并发版本 | Metric binding and current definition concurrency version",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -2158,6 +2185,9 @@ const docTemplate = `{
                     }
                 ],
                 "description": "用 Meta 当前事实替换表模式查询服务已发布快照 | Replace a table-mode query service snapshot with current Meta facts",
+                "consumes": [
+                    "application/json"
+                ],
                 "produces": [
                     "application/json"
                 ],
@@ -2172,6 +2202,15 @@ const docTemplate = `{
                         "name": "id",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "description": "当前资源版本 | Current resource version",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_service_internal_models.QueryServiceVersionRequest"
+                        }
                     }
                 ],
                 "responses": {
@@ -2192,6 +2231,15 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "服务不存在 | Service not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "资源版本冲突 | Resource version conflict",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -4162,6 +4210,9 @@ const docTemplate = `{
                         "$ref": "#/definitions/query.ParameterOption"
                     }
                 },
+                "presentation": {
+                    "$ref": "#/definitions/query.ParameterPresentation"
+                },
                 "required": {
                     "type": "boolean"
                 },
@@ -4480,7 +4531,8 @@ const docTemplate = `{
                     "type": "string",
                     "enum": [
                         "table",
-                        "sql"
+                        "sql",
+                        "analytical"
                     ]
                 },
                 "data_config": {
@@ -4868,6 +4920,9 @@ const docTemplate = `{
                 "dependency_hash": {
                     "type": "string"
                 },
+                "execution_plan": {
+                    "$ref": "#/definitions/plugin.AnalyticalPlanPackage"
+                },
                 "implementation_id": {
                     "type": "integer"
                 },
@@ -4876,6 +4931,21 @@ const docTemplate = `{
                 },
                 "metric_definition_revision_id": {
                     "type": "integer"
+                },
+                "parameter_labels": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/definitions/query.ParameterOption"
+                        }
+                    }
+                },
+                "parameter_presentation": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/query.ParameterPresentation"
+                    }
                 },
                 "revision_id": {
                     "type": "integer"
@@ -5088,6 +5158,9 @@ const docTemplate = `{
                         "$ref": "#/definitions/github_com_addp_service_internal_models.QueryServiceNamedParameter"
                     }
                 },
+                "output_contract": {
+                    "$ref": "#/definitions/github_com_addp_service_internal_models.QueryServiceOutputContract"
+                },
                 "protocols": {
                     "type": "object",
                     "additionalProperties": true
@@ -5113,6 +5186,12 @@ const docTemplate = `{
                     "description": "SQL配置",
                     "type": "string"
                 },
+                "stable_key": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "status": {
                     "description": "状态",
                     "type": "string"
@@ -5128,6 +5207,9 @@ const docTemplate = `{
                 },
                 "updated_at": {
                     "type": "string"
+                },
+                "version": {
+                    "type": "integer"
                 }
             }
         },
@@ -5195,6 +5277,9 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/query.ParameterOption"
                     }
+                },
+                "presentation": {
+                    "$ref": "#/definitions/query.ParameterPresentation"
                 },
                 "required": {
                     "type": "boolean"
@@ -5267,18 +5352,29 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_service_internal_models.QueryServiceVersionRequest": {
+            "type": "object",
+            "required": [
+                "version"
+            ],
+            "properties": {
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
         "github_com_addp_service_internal_models.RebindMetricSourceRequest": {
             "type": "object",
             "required": [
                 "metric_source",
-                "service_version"
+                "version"
             ],
             "properties": {
                 "metric_source": {
                     "$ref": "#/definitions/github_com_addp_service_internal_models.MetricSourceRequest"
                 },
-                "service_version": {
-                    "type": "string"
+                "version": {
+                    "type": "integer"
                 }
             }
         },
@@ -5669,6 +5765,9 @@ const docTemplate = `{
         },
         "github_com_addp_service_internal_models.UpdateQueryServiceRequest": {
             "type": "object",
+            "required": [
+                "version"
+            ],
             "properties": {
                 "data_config": {
                     "description": "数据配置更新",
@@ -5709,6 +5808,9 @@ const docTemplate = `{
                 },
                 "title": {
                     "type": "string"
+                },
+                "version": {
+                    "type": "integer"
                 }
             }
         },
@@ -6129,6 +6231,473 @@ const docTemplate = `{
                 }
             }
         },
+        "plan.Aggregate": {
+            "type": "object",
+            "properties": {
+                "groups": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/plan.Projection"
+                    }
+                },
+                "input": {
+                    "type": "string"
+                },
+                "measures": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/plan.Measure"
+                    }
+                }
+            }
+        },
+        "plan.Assertion": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "violation": {
+                    "type": "string"
+                }
+            }
+        },
+        "plan.ColumnRef": {
+            "type": "object",
+            "properties": {
+                "input": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "plan.ConstantRows": {
+            "type": "object",
+            "properties": {
+                "fields": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/datatype.FieldInfo"
+                    }
+                },
+                "rows": {
+                    "type": "array",
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/definitions/plan.Literal"
+                        }
+                    }
+                }
+            }
+        },
+        "plan.DateBuckets": {
+            "type": "object",
+            "properties": {
+                "end": {
+                    "$ref": "#/definitions/plan.Expr"
+                },
+                "max_months": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "start": {
+                    "$ref": "#/definitions/plan.Expr"
+                }
+            }
+        },
+        "plan.Expr": {
+            "type": "object",
+            "properties": {
+                "args": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/plan.Expr"
+                    }
+                },
+                "column": {
+                    "$ref": "#/definitions/plan.ColumnRef"
+                },
+                "literal": {
+                    "$ref": "#/definitions/plan.Literal"
+                },
+                "op": {
+                    "type": "string"
+                },
+                "parameter": {
+                    "type": "string"
+                }
+            }
+        },
+        "plan.Filter": {
+            "type": "object",
+            "properties": {
+                "input": {
+                    "type": "string"
+                },
+                "predicate": {
+                    "$ref": "#/definitions/plan.Expr"
+                }
+            }
+        },
+        "plan.Join": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string"
+                },
+                "left": {
+                    "type": "string"
+                },
+                "on": {
+                    "$ref": "#/definitions/plan.Expr"
+                },
+                "right": {
+                    "type": "string"
+                }
+            }
+        },
+        "plan.Limit": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "input": {
+                    "type": "string"
+                }
+            }
+        },
+        "plan.Literal": {
+            "type": "object",
+            "properties": {
+                "null": {
+                    "type": "boolean"
+                },
+                "text": {
+                    "type": "string"
+                },
+                "type": {
+                    "$ref": "#/definitions/datatype.FieldType"
+                }
+            }
+        },
+        "plan.Measure": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "op": {
+                    "type": "string"
+                },
+                "value": {
+                    "$ref": "#/definitions/plan.Expr"
+                }
+            }
+        },
+        "plan.Node": {
+            "type": "object",
+            "properties": {
+                "aggregate": {
+                    "$ref": "#/definitions/plan.Aggregate"
+                },
+                "constant_rows": {
+                    "$ref": "#/definitions/plan.ConstantRows"
+                },
+                "date_buckets": {
+                    "$ref": "#/definitions/plan.DateBuckets"
+                },
+                "distinct": {
+                    "$ref": "#/definitions/plan.Unary"
+                },
+                "filter": {
+                    "$ref": "#/definitions/plan.Filter"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "join": {
+                    "$ref": "#/definitions/plan.Join"
+                },
+                "limit": {
+                    "$ref": "#/definitions/plan.Limit"
+                },
+                "op": {
+                    "type": "string"
+                },
+                "project": {
+                    "$ref": "#/definitions/plan.Project"
+                },
+                "scan": {
+                    "$ref": "#/definitions/plan.Scan"
+                },
+                "sort": {
+                    "$ref": "#/definitions/plan.Sort"
+                },
+                "union_all": {
+                    "$ref": "#/definitions/plan.UnionAll"
+                }
+            }
+        },
+        "plan.OutputContract": {
+            "type": "object",
+            "properties": {
+                "fields": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/datatype.FieldInfo"
+                    }
+                },
+                "stable_key": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "plan.Parameter": {
+            "type": "object",
+            "properties": {
+                "allowed": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/plan.Literal"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "required": {
+                    "type": "boolean"
+                },
+                "type": {
+                    "$ref": "#/definitions/datatype.FieldType"
+                }
+            }
+        },
+        "plan.Plan": {
+            "type": "object",
+            "properties": {
+                "assertions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/plan.Assertion"
+                    }
+                },
+                "nodes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/plan.Node"
+                    }
+                },
+                "output": {
+                    "$ref": "#/definitions/plan.OutputContract"
+                },
+                "parameters": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/plan.Parameter"
+                    }
+                },
+                "root": {
+                    "type": "string"
+                },
+                "schema_version": {
+                    "type": "string"
+                },
+                "semantic_profile": {
+                    "type": "string"
+                }
+            }
+        },
+        "plan.Project": {
+            "type": "object",
+            "properties": {
+                "columns": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/plan.Projection"
+                    }
+                },
+                "input": {
+                    "type": "string"
+                }
+            }
+        },
+        "plan.Projection": {
+            "type": "object",
+            "properties": {
+                "expr": {
+                    "$ref": "#/definitions/plan.Expr"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "plan.Scan": {
+            "type": "object",
+            "properties": {
+                "fields": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/datatype.FieldInfo"
+                    }
+                },
+                "source": {
+                    "type": "string"
+                }
+            }
+        },
+        "plan.Sort": {
+            "type": "object",
+            "properties": {
+                "input": {
+                    "type": "string"
+                },
+                "keys": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/plan.SortKey"
+                    }
+                }
+            }
+        },
+        "plan.SortKey": {
+            "type": "object",
+            "properties": {
+                "direction": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "nulls": {
+                    "type": "string"
+                }
+            }
+        },
+        "plan.Unary": {
+            "type": "object",
+            "properties": {
+                "input": {
+                    "type": "string"
+                }
+            }
+        },
+        "plan.UnionAll": {
+            "type": "object",
+            "properties": {
+                "inputs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "plugin.AnalyticalPlanPackage": {
+            "type": "object",
+            "properties": {
+                "compiler": {
+                    "$ref": "#/definitions/plugin.CompilerIdentity"
+                },
+                "engine_id": {
+                    "type": "integer"
+                },
+                "package_hash": {
+                    "type": "string"
+                },
+                "plan": {
+                    "$ref": "#/definitions/plan.Plan"
+                },
+                "schema_version": {
+                    "type": "string"
+                },
+                "sources": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/plugin.SourceBinding"
+                    }
+                }
+            }
+        },
+        "plugin.ColumnBinding": {
+            "type": "object",
+            "properties": {
+                "column": {
+                    "type": "string"
+                },
+                "field": {
+                    "$ref": "#/definitions/datatype.FieldInfo"
+                }
+            }
+        },
+        "plugin.CompilerIdentity": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "plugin.EngineCatalogPath": {
+            "type": "object",
+            "properties": {
+                "engine_id": {
+                    "type": "integer"
+                },
+                "segments": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/plugin.EngineCatalogSegment"
+                    }
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "plugin.EngineCatalogSegment": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "term": {
+                    "type": "string"
+                }
+            }
+        },
+        "plugin.SourceBinding": {
+            "type": "object",
+            "properties": {
+                "columns": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/plugin.ColumnBinding"
+                    }
+                },
+                "path": {
+                    "$ref": "#/definitions/plugin.EngineCatalogPath"
+                },
+                "source": {
+                    "type": "string"
+                }
+            }
+        },
         "query.ParameterOption": {
             "type": "object",
             "properties": {
@@ -6140,6 +6709,23 @@ const docTemplate = `{
                 },
                 "value": {
                     "description": "Value 与参数声明类型一致的标量。| Scalar matching the declared parameter type."
+                }
+            }
+        },
+        "query.ParameterPresentation": {
+            "type": "object",
+            "properties": {
+                "descriptions": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "labels": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
                 }
             }
         }

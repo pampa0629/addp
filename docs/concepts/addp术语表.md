@@ -62,7 +62,7 @@
 | asset category assignment | 资产归类 | Asset 对自身主展示分类的权威归属关系。 | 由 Asset owner 维护，可参考组成 CatalogEntry 的语义，但不得自动复制或继承企业资源目录结构。 |
 | Workbench module | Workbench 模块 | ADDP 面向数据消费者、以已发布 Service 为唯一数据入口的动态查询、可视化和数据应用创作 owner。 | 不直连 Engine、不拥有 SQL、指标、物化或任务编排；Service 不可达只失败依赖该服务的当前请求，不影响 Workbench Ready。 |
 | Service Consumer Descriptor | 服务消费描述 | Service owner 面向消费者发布的、版本化且不包含管理事实的服务输入、输出、分页、格式和执行 operation 契约。 | 稳定协议从 `addp.service_consumer/v1` 开始；不暴露 SQL、Engine 凭据、表名或 Workbench renderer。 |
-| query service named parameter | 查询服务命名参数 | Query Service 发布时声明、执行时由消费者按名称提交并由 Service 强类型校验的标量输入。 | 可通过 `options` 声明类型化允许值及 `zh-cn/en` 名称，由 Service 冻结发布并校验，消费端不得扩大允许值。只用于参数影响固定 SQL 内部计算、且不能表达为输出字段筛选的场景；不是字段名、表名、SQL 片段或 Workbench 私有参数。SQL 使用 `:name`，执行时走引擎原生绑定，禁止字符串替换。 |
+| query service named parameter | 查询服务命名参数 | Query Service 发布时声明、执行时由消费者按名称提交并由 Service 强类型校验的标量输入。 | 可通过 `presentation` 声明参数业务名称与说明，通过 `options` 声明类型化允许值及 `zh-cn/en` 名称，由 Service 冻结发布并校验，消费端不得扩大允许值。用于参数影响固定 SQL 或数据库无关分析计划内部计算、且不能表达为输出字段筛选的场景；不是字段名、表名、SQL 片段或 Workbench 私有参数。SQL 使用 `:name`，执行时走引擎原生绑定，禁止字符串替换。 |
 | ServiceReference | 服务引用 | 消费者对一个已发布 Service 的强类型稳定引用，由 `service_type + service_id` 组成。 | Data Application Component 保存该引用并通过 Service Consumer Catalog 解析，不能保存或猜测执行 URL。 |
 | Data Application Component | 数据应用组件 | Data Application 内直接绑定一个 ServiceReference，并保存经 Consumer Descriptor 校验的查询模板、参数定义、契约指纹和 renderer 配置的内聚实体。 | 不是独立聚合根，不单独发布或共享；不保存查询结果、cursor、Token、SQL 或 Service 管理 DTO。 |
 | Field Presentation | 字段呈现规则 | Data Application Component 对已选服务输出字段声明的最终展示语义，包含标签以及与字段类型匹配的单位、精度、时间格式或表格列宽。 | 位于 renderer 配置并进入 Application Revision；只改变 Table、Chart、Map 的显示，不改变字段名、查询、联动、导出、Service 契约或原始结果。 |
@@ -81,10 +81,10 @@
 | full_name | 逻辑全名 / 语义路径 | data item 在引擎内的稳定逻辑路径。 | 例如 `addp/image/开会.jpg`、`public.users`、`neo4j.graph`。它是定位和指纹的基础，但不是 URI。 |
 | ResourceLocator | 资源定位符 | 平台统一的资源 URI 定位形式。 | 形如 `addp://engine/{engine_id}/path/{resource_path}?type={type}&node_id={node_id}` 或 `...&item_id={item_id}`；`type` 表达 Engine Catalog 术语，`node_id` / `item_id` 表达真实 Meta 身份。 |
 | Return to draft | 退回草稿 | Model Entity / LogicalTable 从 `approved` 转为 `draft` 的显式生命周期操作，并解除冻结的数据元修订引用。 | 允许重新编辑模型；不表示重新加载页面，不改变已发布的物理表。 |
-| logical table materialization target | 逻辑表物化目标 | Model 中描述逻辑表准备落入哪个 Engine Instance 和父命名空间的设计事实。 | 使用 `target_parent_locator + target_name` 表达；Model 根据已审批逻辑表执行受控 DDL、正式表创建与退役。Transfer 负责跨引擎数据同步，Develop 只负责目标引擎内的查询计算，Orchestrator 只编排顺序。 |
-| logical table materialization task | 逻辑表物化任务 | Model 从已审批 LogicalTable 投影出的建表任务，支持人工与编排触发。 | 任务定义复用逻辑表，不复制字段或目标配置；只创建或验证正式表，不计算数据、不自动改表。 |
+| logical table physical target | 逻辑表物理目标 | Model 中描述逻辑表准备落入哪个 Engine Instance、父命名空间和表名的设计事实。 | 使用 `target_parent_locator + target_name` 表达；界面统一显示目标引擎、目标位置和目标表名。Model 根据已审批逻辑表创建或校验目标表，也可显式删除仍由该逻辑表管理的目标表。Transfer 负责跨引擎数据同步，Develop 只负责目标引擎内的查询计算，Orchestrator 只编排顺序。 |
+| logical table table-creation task | 逻辑表建表任务 | Model 从已审批 LogicalTable 投影出的建表任务，支持人工与编排触发；机器任务类型保持 `logical_table_materialization`。 | 任务定义复用逻辑表，不复制字段或目标配置；只创建或校验目标表，不计算数据、不自动改表。 |
 | Data Validation Task | 数据校验任务 | Quality 对显式绑定的同一引擎正式表执行字段、关联和集合断言。 | 读取 ResourceLocator，不依赖 Model；失败可阻止编排下游，不回滚已提交的数据。 |
-| logical table materialized target decommission | 逻辑表物化目标退役 | Model 删除某个 LogicalTable 已登记、已确认且仍由该 LogicalTable 管理的物理目标，使物理产物先于逻辑模型安全退出使用。 | 这是 Model owner 的高风险同步命令，不是可编排任务；请求只提交逻辑表并发版本和精确目标确认，不接受 SQL、动态 Locator 或跨模块引用检查。 |
+| logical table physical target deletion | 逻辑表目标表删除 | Model 删除某个 LogicalTable 已登记、已确认且仍由该 LogicalTable 管理的物理表；逻辑表及其物理目标配置保持不变。 | 这是 Model owner 的高风险同步命令，不是可编排任务；请求只提交逻辑表并发版本和精确目标确认，不接受 SQL、动态 Locator 或跨模块引用检查。 |
 | query parameter | 查询参数 | Develop 查询任务声明的命名输入，统一保存在 `content.query_parameters[]`。 | `type=relation` 表示绑定 ResourceLocator 的数据表参数；`string`、`integer`、`number`、`boolean` 表示类型化值参数。全部参数共享同一命名空间、默认值与单次执行覆盖语义，且名称唯一。 |
 | relation query parameter | 关系查询参数 | 查询参数中代表关系型数据表的 `relation` 类型参数。 | 声明 `compute.query.parameters.types=relation` 的 PostgreSQL 方言引擎 SQL 直接使用未加引号、未限定 schema 的裸参数名引用；当前包括 PostgreSQL 与 openGauss。可保存已有表 ResourceLocator 作为默认绑定，也可由手动执行或 Orchestrator 覆盖。Develop 通过 PostgreSQL AST 把该关系节点编译为方言安全的物理表标识符。它不是表名字符串参数，也不绑定 LogicalTable ID。 |
 | PreparedQuery | 已准备查询 | Engine Provider 从一次 `QueryRequest` 生成的不可变、一次性查询计划，绑定 Engine、语言、参数、目标路径和 Provider 原生解析结果。 | 读取集合解析、安全门禁和真实执行必须绑定同一个 PreparedQuery；门禁后不再接受新的查询文本或参数。 |
@@ -119,6 +119,9 @@
 | code item | 码值项 | 码值集修订中的一个允许值，由机器编码、显示名称和业务定义组成。 | 码值项从属于码值集修订，不具有独立发布生命周期；停用或替代码值通过新修订表达。 |
 | metric definition | 指标定义 | 对指标业务含义、统计口径、单位、责任归属及适用范围形成的可复用语义契约。 | 属于 Standard，用来指导和约束实现；不保存具体表、字段、连接、过滤器或可直接执行的引擎表达式。正式发布的指标定义必须引用不可变修订。 |
 | metric definition dependency | 指标定义依赖 | 指标定义修订之间的业务语义依赖，区分派生指标的基准依赖和复合指标的组成依赖。 | 草稿维护被依赖指标的稳定身份，发布时冻结为确定的已发布指标定义修订；只表达语义组成，不承载字段、连接、过滤或可执行表达式。 |
+| business entity model | 业务实体模型 | 以 Entity、EntityAttribute 和 EntityRelation 描述业务对象、业务事件、关联实体及其概念关系的模型。 | 属于 Model 的概念层；用于统一业务理解、约束事实粒度并形成下游语义追溯，不等同于物理表，也不要求先生成一套 `table_type=entity` 的中间逻辑表。角色如果没有独立身份、属性和生命周期，应表达为关系或属性而不是独立实体。 |
+| concept realization mapping | 概念实现映射 | 声明业务实体模型如何由 LogicalTable、LogicalField 和 TableRelation 实现的显式 Model 内映射。 | 表映射使用 `represents|derives_from`，字段映射使用 `direct|derived`，关系映射记录同向或反向实现；映射只建立语义来源、追溯和一致性约束，不执行数据加工，也不隐式同步上下游结构。事实表和维度表可以直接实现概念实体，不要求另建第二套实体型逻辑表。 |
+| logical table | 逻辑表 | Model 中定义字段、粒度、数仓分层、建模角色及可选物化目标的逻辑数据结构。 | `table_type=entity|fact|dimension` 表示同一 LogicalTable 资源的建模角色；事实表和维度表本身就是逻辑表，维度建模不是第二套表定义。只有业务明确需要独立规范化核心层时才使用 `entity` 角色，并通过加工血缘派生事实/维度表。 |
 | dimensional modeling | 维度建模 | 以事实表的业务粒度为中心，组织维度关联、度量和指标实现的逻辑建模能力。 | 属于 Model；产品页面称“维度建模”，其中“模型关系图”展示显式建模关系，不代表加工血缘。业务域筛选只限定中心事实表，不裁剪其跨域维度关系。 |
 | metric implementation | 指标实现 | 在确定模型上实现某个指标定义的数据库无关计算设计，明确粒度、事实来源、维度、连接、过滤和结构化运算。 | 属于 Model，以独立稳定身份、并发版本和不可变实现修订管理，并冻结所依据的指标定义修订；来源事实表不是生命周期父聚合。逻辑计划由 Model 构建，物理表达由独立引擎编译器生成，不进入指标定义或计算契约。同一指标定义可有不同来源模型的实现；更换数据库不应要求重写计算逻辑。 |
 | directional overlap | 定向重叠率 | 在同一范围内，以主体完整集合为分母、主体与对比对象的交集为分子的比例。 | 单方向产生一个值，零分母为 0；双向展示是同一实现交换角色后的组合查询，必须共享一次数据库快照。 |
@@ -137,7 +140,7 @@
 | effective standard revision | 当前生效标准修订 | 在指定业务时点满足 `effective_from <= as_of < effective_to` 的已发布修订；`effective_to` 为空表示无上界。 | Standard 按时点动态解析，不保存 `current_revision_id` 缓存；未显式传入 `as_of` 时使用服务端当前时间。同一稳定身份在任一时点至多解析出一个修订。 |
 | owning domain | 归属业务域 | 对标准对象承担定义、维护和审批责任的主要业务域。 | 仅 `domain` 范围的标准对象必须指定归属域；归属域不限制其他业务域引用。平台级对象由平台治理，租户公共对象由租户治理。 |
 | standard mapping | 标准映射 | 将实际数据资源的字段或组件与确定的数据元修订建立的可治理语义关联。 | 映射事实由 Catalog 拥有，必须记录目标组件、数据元修订、来源、置信度和审核状态；AI 只产生候选映射，不能直接形成已审核事实。 |
-| standard conformance assessment | 标准符合性评估 | 按确定的标准修订检查实际数据资源，并形成结果、证据、问题及趋势的质量事实。 | 规则应用、执行和结果由 Quality 拥有；Standard 只聚合展示覆盖率和符合性，不复制映射或执行结果。 |
+| standard conformance assessment | 标准符合性评估 | 按确定的标准修订检查实际数据资源，并形成结果、证据、问题及趋势的质量事实。 | 检查方案、执行和结果由 Quality 拥有；Standard 只聚合展示覆盖率和符合性，不复制映射或执行结果。 |
 | data dictionary | 数据字典 | 对实际数据结构及其业务解释形成的查询或导出视图。 | 由 Meta 的物理字段事实、Catalog 的语义关联和 Standard 在查询时点生效的数据元/码值解释组合生成；不是 Standard 内新的持久化主资源。 |
 
 ## 数据安全与隐私保护
@@ -199,6 +202,8 @@
 | lineage facts | 血缘执行事实 | 真实读写 owner 在统一 execution 结果中写入的版本化输入、输出和操作事实。 | 使用 ResourceLocator 和 item fingerprint；Runtime 不构造 ADDP 资源身份。 |
 | lineage collector | 血缘采集器 | Meta 消费 owner execution / publication fact，解析资源身份并写入关系证据和当前投影的单一路径。 | 立即通知与周期漏采 / 重试都调用同一个 `LineageService.CollectExecution`；不反向解析模块私有 metadata。 |
 | published service | 已发布服务版本 | Service 一次通过验证并对外生效的不可变服务发布主体。 | 身份为 `service_id + published_revision`；不是 data item，但可作为血缘图主体。 |
+| query service definition version | 查询服务定义并发版本 | Service 查询服务聚合根的正整数 `version`，用于编辑、启停、删除、刷新快照和指标来源重绑。 | 创建为 1；同一事务校验并递增，跨租户不可探测；不依赖可执行快照，也不是查询契约版本。 |
+| query service contract version | 查询服务计算契约版本 | Service 由有效发布依赖、稳定键与参数契约派生的 `service_version`。 | 用于查询、游标和消费契约；缺少执行契约时为空，不能用作管理端重新绑定的并发标识。 |
 | service dependency | 服务依赖 | 已发布服务读取、发布或暴露某个 data item 的来源事实。 | 在血缘中表现为 `data item --serve--> published service`；`dependency_hash` 只是快照版本摘要，不是具体血缘边。 |
 | reusable development artifact | 可复用开发成果 | Develop 中已持久化、可被重复编辑或稳定引用的 `query` 或 `workflow` DevTask。 | 可作为 `development_artifact` CatalogEntry 的专业来源；不包含 `script` / Notebook、即时查询、execution、运行结果或 ToolApproval。 |
 | field ref | 字段引用 | 绑定到 data item 及其 schema snapshot 的字段级引用。 | 作为字段级血缘预留主体；字段默认不是独立 data item。 |
@@ -262,12 +267,16 @@
 
 | 英文术语 | 中文术语 | 定义 | 备注 |
 |---|---|---|---|
-| quality rule | 质量规则 | Standard 数据元上使用版本化契约定义的、可复用的字段质量约束。 | 规则只描述语义，不绑定物理字段，也不包含自定义 SQL。 |
-| rule key | 规则身份 | Standard 为每条质量规则持有的稳定 UUID，API 字段为 `rule_key`。 | 新规则创建时生成并在编辑时保留；Quality 只能继承该身份，不得按规则应用或物理目标生成第二套身份。 |
-| RuleApplication | 规则应用 | Quality 将一份数据元质量规则快照绑定到确定 Engine Instance、schema、table 和 column 的持久事实。 | Standard 规则变化不静默改写已有快照。 |
-| quality check | 质量检查 | Quality 在一次持久 execution 中对确定表的全部有效规则应用进行完整求值的过程。 | v1 只支持 PostgreSQL；任一规则执行错误时整次 execution 失败。 |
-| quality score | 质量分 | 一次成功质量检查中各规则通过率的算术平均。 | 不按 severity 或行数加权；无有效规则不能产生质量分。 |
-| quality issue | 质量问题 | 某条规则应用中的某条规则当前仍存在未通过事实的可治理状态。 | 稳定身份为 Tenant + RuleApplication + rule key；历史发生记录保留在 execution 结果中。 |
+| quality rule | 质量规则 | 对数据是否满足约束的可执行检查定义；数据元标准规则由 Standard 从修订中的值约束编译。 | 数据元只表达可复用的非空、长度、格式、范围和码值约束；表内唯一性、引用完整性、阈值和检查策略不属于数据元。规则不包含自定义 SQL。 |
+| rule key | 规则身份 | Standard 编译规则及 Quality 方案内规则各自的稳定 UUID，API 字段为 `rule_key`。 | Standard 由数据元 ID 与约束类型确定；Quality 方案内每个检查实例独立生成身份，编辑保持不变，导入另存来源 rule_key。同一标准规则可作用于多个目标。 |
+| logical table structural constraints | 逻辑表结构约束 | Model 从逻辑字段和表关系派生的主键组合、必填字段集合及出向外键关系。 | 是只读投影，不重复保存规则；多字段主键表达组合唯一，不能解释成每个字段分别唯一。检查方案、阈值和阻断策略属于 Quality。 |
+| QualityRule | 质量规则定义 | Quality 中可跨方案复用的强类型约束主资源，不绑定实际引擎、表或字段。 | 保存生成不可变修订 revision_no；version 仅用于并发控制。Standard 来源固定到已发布修订，不反向修改标准。 |
+| quality rule revision | 质量规则修订 | 规则某次保存形成的不可变名称、类型、约束和来源快照。 | 方案固定引用，规则更新不自动改变方案；需要显式升级引用。 |
+| quality plan check item | 方案检查项 | 方案与规则修订的关联，保存实际目标绑定、阻断级别和启停状态。 | 从属于方案版本；稳定 rule_key 识别检查项。同一规则可被多个方案引用，也可在同一方案中检查多个目标。 |
+| QualityPlan | 质量检查方案 | Quality 唯一正式执行聚合，通过检查项选择规则修订并绑定实际数据表。 | 支持手动及编排执行，冻结版本、目标和规则；来源变化不自动改写方案。不依赖 Catalog，不等于企业落标映射。 |
+| quality check | 质量检查 | Quality 在一次持久 execution 中对方案所有启用规则完整求值的过程。 | 首期 PostgreSQL；error 规则失败阻断，warning/info 不阻断；运行异常不得产出部分合格结论。 |
+| quality score | 规则通过率 | 方案通过规则数 / 实际检查规则数 × 100。 | 不等于坏数据去重比例；warning/info 也计入，不代表 error 门禁是否通过。历史结果保持原始契约口径。 |
+| quality issue | 质量问题 | 某个检查方案中的某条规则当前仍存在未通过事实的可治理状态。 | 稳定身份为 Tenant + QualityPlan + rule key；历史发生记录保留在 execution 结果中。 |
 
 ## 任务与执行
 
@@ -284,7 +293,7 @@
 | orchestration schedule | 编排调度 | Orchestrator 编排定义上保存的定时计划。 | 只决定编排 run 何时启动；不继承、不覆盖其中 Step 引用任务的自身调度。 |
 | task type | 任务类型 | owner 模块内稳定的业务执行类型标识。 | 例如 `scan`、`vector_tile_cache_generation`、`embedding`；只有存在持久任务定义并允许编排时才由 TaskProvider capabilities 声明，ad-hoc-only execution type 不因此自动成为 TaskProvider 类型。 |
 | TaskProvider | 任务提供者 | 模块定义中声明的可编排任务能力角色，不是独立注册实体。 | 按模块声明，不按任务类型注册；一个 provider 在 `task_capabilities[]` 中声明多个任务类型能力。Provider ID 复用模块定义 ID，能力声明随模块定义版本变化；运行地址只从当前有效 Backend 模块实例解析。 |
-| execution worker | 执行工作器 | 执行 owner 消费已创建 execution、推进真实运行体并写入 execution 终态的独立后台进程角色。 | Quality `check`、Meta `scan` 和 Transfer bounded `sync` 统一从 PostgreSQL claim `common.task_executions`；Backend 不执行这些 bounded execution。 |
+| execution worker | 执行工作器 | 执行 owner 消费已创建 execution、推进真实运行体并写入 execution 终态的独立后台进程角色。 | Quality `quality_plan`、Meta `scan` 和 Transfer bounded `sync` 统一从 PostgreSQL claim `common.task_executions`；Backend 不执行这些 bounded execution。 |
 | execution supervisor | 执行监督器 | 内嵌于 owner Backend、以固定有界槽位消费已创建 execution 并推进终态的后台组件角色。 | 与独立 execution worker 使用相同的 PostgreSQL claim、execution lease 和 fencing 协议，但不形成独立部署进程；Develop Query、Manager bounded 与 Model logical table materialization 使用此形态。 |
 | owner scheduler | Owner 调度器 | 按任务定义中的 schedule 发现到期任务并创建 execution 的 owner Backend 组件。 | 调度器负责“何时创建 execution”，不等待 Worker、也不执行业务逻辑；Worker 不可用时仍可留下 durable `pending` execution。 |
 | runtime queue | 运行时队列 | execution 从创建到被执行 worker 领取之间的持久领取机制。 | bounded execution 的唯一主路线是 PostgreSQL execution claim；continuous runtime 使用专用 runtime lease。Redis/Asynq 和进程内 channel 不作为 bounded execution 路线。 |
@@ -444,7 +453,7 @@
 | Authentication Assurance Level (AAL) | 认证保证等级 | 当前 User 会话基于已完成认证方式得出的认证可信程度。 | 属于当前 Token Family 的不可变认证事实，不是 Tenant 配置、User 的永久等级或权限大小；当前产品签发 AAL1 和 AAL2，AAL3 仅为协议预留。 |
 | Permission | 权限 | ADDP 产品定义的稳定、最小功能动作。 | Tenant 可以组合 Permission 创建 Role，但不能创造任意 Permission 字符串。 |
 | Role | 角色 | Permission 的命名集合。 | Role 本身不表达业务资源实例；具体作用范围由 Role Assignment 和 owner Resource Grant / Policy 决定。 |
-| Data Architect | 数据架构师 | 负责维护 Tenant 全局数据架构与建模约束的内置业务角色。 | 当前使用 `tenant.data_architect`，只允许 Tenant Scope 和 User Principal，负责业务实体、实体关系、逻辑模型、数仓分层、命名规范与质量 SLA。 |
+| Data Architect | 数据架构师 | 负责维护 Tenant 全局数据架构与建模约束的内置业务角色。 | 当前使用 `tenant.data_architect`，只允许 Tenant Scope 和 User Principal，负责业务实体、实体关系、逻辑模型、数仓分层与命名规范。质量执行策略由 Quality 管理。 |
 | Role Assignment | 角色分配 | 将 Role 赋予 Principal，并声明 Platform、Tenant、Department 或 Project Group Scope 的授权事实。 | 不使用 `user_type` 同时表达身份类别和完整权限。 |
 | Department | 部门 | Tenant 内表达稳定组织归属的层级组织单元。 | 一个 User 可有一个主部门和多个附加部门；父子部门权限默认不继承。 |
 | Project Group | 项目组 | Tenant 内面向跨部门协作的成员集合。 | 严格属于单个 Tenant，第一阶段不嵌套，不改变成员的 Department 归属。 |

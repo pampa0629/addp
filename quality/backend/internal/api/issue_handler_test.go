@@ -41,8 +41,8 @@ func TestIssueListRejectsUnsupportedFilters(t *testing.T) {
 func TestIssueListUsesTenantFromAuthContext(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db := newIssueHandlerTestDB(t)
-	createIssueHandlerIssue(t, db, models.Issue{TenantID: 7, RuleApplicationID: 701, EngineID: 2, Table: "tenant_7"})
-	createIssueHandlerIssue(t, db, models.Issue{TenantID: 8, RuleApplicationID: 801, EngineID: 2, Table: "tenant_8"})
+	createIssueHandlerIssue(t, db, models.Issue{TenantID: 7, PlanID: 701, EngineID: 2, Table: "tenant_7"})
+	createIssueHandlerIssue(t, db, models.Issue{TenantID: 8, PlanID: 801, EngineID: 2, Table: "tenant_8"})
 	handler := NewIssueHandler(service.NewIssueService(repository.NewIssueRepository(db)))
 	router := gin.New()
 	router.GET("/issues", withIssueHandlerAuth(7, 11), handler.List)
@@ -65,9 +65,9 @@ func TestIssueListUsesTenantFromAuthContext(t *testing.T) {
 func TestIssueGetAndUpdateRespectTenantAndStateContract(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db := newIssueHandlerTestDB(t)
-	issue := models.Issue{TenantID: 7, RuleApplicationID: 702, EngineID: 2, Table: "tenant_7"}
+	issue := models.Issue{TenantID: 7, PlanID: 702, EngineID: 2, Table: "tenant_7"}
 	createIssueHandlerIssue(t, db, issue)
-	if err := db.First(&issue, "tenant_id = ? AND rule_application_id = ?", 7, 702).Error; err != nil {
+	if err := db.First(&issue, "tenant_id = ? AND plan_id = ?", 7, 702).Error; err != nil {
 		t.Fatalf("load issue: %v", err)
 	}
 	handler := NewIssueHandler(service.NewIssueService(repository.NewIssueRepository(db)))
@@ -147,7 +147,7 @@ func newIssueHandlerTestDB(t *testing.T) *gorm.DB {
 		tenant_id INTEGER NOT NULL,
 		execution_id TEXT NOT NULL DEFAULT '',
 		last_execution_id TEXT NOT NULL DEFAULT '',
-			rule_application_id INTEGER NOT NULL,
+			plan_id INTEGER NOT NULL,
 			rule_key TEXT NOT NULL,
 		rule_type TEXT NOT NULL DEFAULT 'not_null',
 		severity TEXT NOT NULL DEFAULT 'error',
@@ -167,7 +167,7 @@ func newIssueHandlerTestDB(t *testing.T) *gorm.DB {
 		last_observed_at DATETIME,
 		created_at DATETIME,
 		updated_at DATETIME,
-			UNIQUE (tenant_id, rule_application_id, rule_key)
+			UNIQUE (tenant_id, plan_id, rule_key)
 	)`).Error; err != nil {
 		t.Fatalf("create quality issues table: %v", err)
 	}

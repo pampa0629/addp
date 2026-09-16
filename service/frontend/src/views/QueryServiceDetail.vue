@@ -11,7 +11,7 @@
             :type="service?.config_type === 'table' ? 'success' : 'warning'"
             size="large"
           >
-            {{ service?.config_type === 'table' ? t('service.query.configTypeTable') : t('service.query.configTypeSql') }}
+            {{ service?.config_type === 'table' ? t('service.query.configTypeTable') : service?.config_type === 'analytical' ? t('service.query.configTypeAnalytical') : t('service.query.configTypeSql') }}
           </el-tag>
 
           <!-- 协议标签 -->
@@ -33,10 +33,25 @@
 		>
 		  {{ t('service.query.snapshotCheck') }}
 		</el-button>
+        <el-button
+          v-if="service"
+          :type="service.status === 'active' ? 'warning' : 'primary'"
+          :loading="statusUpdating"
+          :disabled="loading || previewLoading || versionConflict || (service.status !== 'active' && metricBindingRequired)"
+          @click="toggleServiceStatus"
+        >{{ t(service.status === 'active' ? 'service.query.deactivate' : 'service.query.activate') }}</el-button>
         <el-button @click="goToEdit">{{ t('service.common.edit') }}</el-button>
-        <el-button type="danger" @click="handleDelete">{{ t('service.common.delete') }}</el-button>
+        <el-button type="danger" :disabled="versionConflict || statusUpdating" @click="handleDelete">{{ t('service.common.delete') }}</el-button>
       </div>
     </div>
+
+    <el-alert v-if="versionConflict" type="warning" :closable="false" style="margin-bottom: 16px">
+      {{ t('service.query.versionConflict') }}
+      <el-button link type="primary" @click="reloadDefinition">{{ t('service.query.reloadDefinition') }}</el-button>
+    </el-alert>
+    <el-alert v-if="service && service.status !== 'active' && !metricBindingRequired" type="info" :closable="false" style="margin-bottom: 16px">
+      {{ t('service.query.inactiveHint') }}
+    </el-alert>
 
     <!-- 服务信息卡片 -->
     <el-card :header="t('service.query.cardServiceInfo')" style="margin-bottom: 20px">
@@ -49,11 +64,14 @@
         </el-descriptions-item>
         <el-descriptions-item :label="t('service.query.labelConfigType')">
           <el-tag :type="service?.config_type === 'table' ? 'success' : 'warning'">
-            {{ service?.config_type === 'table' ? t('service.query.configTypeTable') : t('service.query.configTypeSql') }}
+            {{ service?.config_type === 'table' ? t('service.query.configTypeTable') : service?.config_type === 'analytical' ? t('service.query.configTypeAnalytical') : t('service.query.configTypeSql') }}
           </el-tag>
         </el-descriptions-item>
-        <el-descriptions-item :label="t('service.query.labelEngine')">
-          {{ service?.runtime_engine_id ? `Runtime #${service.runtime_engine_id}` : `Engine #${service?.engine_id}` }}
+        <el-descriptions-item v-if="service?.engine_id || metricBindingRequired" :label="t('service.query.labelEngine')">
+          {{ metricBindingRequired ? t('service.query.metricBindingRequired') : engineDisplay(service.engine_id) }}
+        </el-descriptions-item>
+        <el-descriptions-item v-if="service?.runtime_engine_id" :label="t('service.query.runtimeEngineLabel')">
+          {{ engineDisplay(service.runtime_engine_id) }}
         </el-descriptions-item>
         <el-descriptions-item :label="t('service.query.labelDescription')" :span="2">
           {{ service?.description || t('service.common.none') }}
@@ -160,17 +178,18 @@
       </div>
 
       <!-- SQL配置模式 -->
-      <div v-else-if="service?.config_type === 'sql'">
-        <el-alert v-if="sourceSnapshot?.metric_source" :title="t('service.query.metricOrigin')" :description="t('service.query.metricOriginDescription')" type="info" :closable="false" />
+      <div v-else-if="['sql', 'analytical'].includes(service?.config_type)">
+        <el-alert v-if="metricBindingRequired" :title="t('service.query.metricBindingRequired')" :description="t('service.query.metricBindingRequiredDescription')" type="warning" :closable="false" />
+        <el-alert v-else-if="sourceSnapshot?.metric_source" :title="t('service.query.metricOrigin')" :description="t('service.query.metricOriginDescription')" type="info" :closable="false" />
         <el-button v-if="sourceSnapshot?.metric_source" link type="primary" @click="openConsoleRoute(`/modeling/metric-implementations/${sourceSnapshot.metric_source.implementation_id}?revision_id=${sourceSnapshot.metric_source.revision_id}`)">{{ t('service.query.metricOriginDetail') }} · #{{ sourceSnapshot.metric_source.revision_id }}</el-button>
-        <el-alert
+        <el-alert v-if="service?.config_type === 'sql'"
           type="info"
           :title="t('service.query.sqlModeTitle')"
           :description="t('service.query.sqlModeDesc')"
           :closable="false"
           style="margin-bottom: 16px"
         />
-        <div class="sql-query-box">
+        <div v-if="service?.config_type === 'sql'" class="sql-query-box">
           <pre><code>{{ service?.sql_query }}</code></pre>
         </div>
 
@@ -179,8 +198,7 @@
           <el-form label-position="top">
             <el-form-item v-for="parameter in service.named_parameters" :key="parameter.name" :required="parameter.required">
               <template #label>
-                <code>:{{ parameter.name }}</code>
-                <span v-if="parameter.description" class="named-parameter-description">{{ parameter.description }}</span>
+                <ParameterCaption :parameter="parameter" />
               </template>
               <ParameterValueInput v-model="previewNamedParameterValues[parameter.name]" :control-type="parameterControlType(parameter.type)" :options="parameter.options || []" />
             </el-form-item>
@@ -239,7 +257,7 @@
         <div class="endpoint-url">
           <el-input :value="restApiEndpoint" readonly />
           <el-button @click="copyEndpoint(restApiEndpoint)">{{ t('service.common.copy') }}</el-button>
-          <el-button @click="testRestAPI">{{ t('service.common.test') }}</el-button>
+          <el-button :disabled="queryUnavailable" @click="testRestAPI">{{ t('service.common.test') }}</el-button>
         </div>
 
         <div style="margin-top: 12px; font-size: 13px; color: var(--addp-text-secondary)">
@@ -325,7 +343,7 @@
           type="primary"
           @click="loadPreviewData"
           :loading="previewLoading"
-          :disabled="!isProtocolEnabled('rest_api')"
+          :disabled="queryUnavailable || !isProtocolEnabled('rest_api')"
         >
           {{ previewData.length > 0 ? t('service.query.refreshData') : t('service.query.loadData') }}
         </el-button>
@@ -352,7 +370,8 @@
 
 <script setup>
 import ParameterValueInput from '../../../../common-frontend/basic/src/components/ParameterValueInput.vue'
-import { parameterControlType } from '../../../../common-frontend/basic/src/utils/parameterInput.mjs'
+import ParameterCaption from '../../../../common-frontend/basic/src/components/ParameterCaption.vue'
+import { parameterLabel, parameterControlType } from '../../../../common-frontend/basic/src/utils/parameterInput.mjs'
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -365,17 +384,34 @@ import { copyToClipboard } from '../utils/serviceHelper'
 import { navigateServiceRoute } from '@/utils/moduleNavigation'
 import { useConsolePageDescriptor, openConsoleRoute } from '@common-ui'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const router = useRouter()
 const route = useRoute()
 
 const service = ref(null)
+const engines = ref([])
+const enginesLoading = ref(true)
+const enginesUnavailable = ref(false)
+const engineDisplay = (id) => {
+  if (enginesLoading.value) return t('service.query.engineLoading')
+  const engine = engines.value.find(item => Number(item.id) === Number(id))
+  if (enginesUnavailable.value || !engine) return t('service.query.engineUnavailable', { id })
+  return `${engine.name} · ${engine.engine_type} (#${engine.id})`
+}
+onMounted(async () => {
+  try { engines.value = await queryServiceAPI.getStorageEngines() }
+  catch { enginesUnavailable.value = true }
+  finally { enginesLoading.value = false }
+})
+
 useConsolePageDescriptor(router, 'service', {
   title: computed(() => t('service.query.recentVisitTitle')),
   subject: computed(() => service.value?.title || service.value?.name || ''),
   ready: computed(() => Boolean(service.value?.title || service.value?.name))
 })
 const loading = ref(false)
+const statusUpdating = ref(false)
+const versionConflict = ref(false)
 const snapshotChecking = ref(false)
 const snapshotRefreshing = ref(false)
 const snapshotDiff = ref(null)
@@ -395,6 +431,8 @@ const previewPagination = ref({
 const serviceId = computed(() => route.params.id)
 
 const sourceSnapshot = computed(() => service.value?.data_config?.source_snapshot || null)
+const metricBindingRequired = computed(() => service.value?.config_type === 'analytical' && !sourceSnapshot.value?.metric_source?.execution_plan?.package_hash)
+const queryUnavailable = computed(() => service.value?.status !== 'active' || metricBindingRequired.value || statusUpdating.value || versionConflict.value)
 const spatialInfo = computed(() => sourceSnapshot.value?.spatial || null)
 const primaryGeometry = computed(() => {
   const columns = spatialInfo.value?.geometry_columns || []
@@ -540,8 +578,40 @@ const loadService = async () => {
   }
 }
 
+const captureVersionConflict = (error) => {
+  if (error.response?.data?.error_code !== 'resource_version_conflict') return false
+  versionConflict.value = true
+  ElMessage.warning(t('service.query.versionConflict'))
+  return true
+}
+
+const reloadDefinition = async () => {
+  const parameters = { ...previewNamedParameterValues }
+  await loadService()
+  for (const parameter of service.value?.named_parameters || []) {
+    if (Object.prototype.hasOwnProperty.call(parameters, parameter.name)) previewNamedParameterValues[parameter.name] = parameters[parameter.name]
+  }
+}
+
+const toggleServiceStatus = async () => {
+  if (!service.value || statusUpdating.value || versionConflict.value || (service.value.status !== 'active' && metricBindingRequired.value)) return
+  statusUpdating.value = true
+  try {
+    const status = service.value.status === 'active' ? 'inactive' : 'active'
+    service.value = await queryServiceAPI.updateService(serviceId.value, { version: service.value.version, status })
+    previewData.value = []
+    previewPagination.value = { ...previewPagination.value, page: 1, hasMore: false, nextCursor: '', cursors: [''] }
+    ElMessage.success(t(status === 'active' ? 'service.query.activated' : 'service.query.deactivated'))
+  } catch (error) {
+    if (!captureVersionConflict(error)) ElMessage.error(t('service.query.statusUpdateFailed') + ': ' + (error.response?.data?.error || error.message))
+  } finally {
+    statusUpdating.value = false
+  }
+}
+
 // 方法：删除服务
 const handleDelete = async () => {
+  if (versionConflict.value || statusUpdating.value) return
   try {
     await ElMessageBox.confirm(
       t('service.query.deleteServiceConfirm'),
@@ -553,10 +623,11 @@ const handleDelete = async () => {
       }
     )
 
-    await queryServiceAPI.deleteService(serviceId.value)
+    await queryServiceAPI.deleteService(serviceId.value, service.value.version)
     ElMessage.success(t('service.query.deleteServiceSuccess'))
     await navigateServiceRoute(router, '/query-services', { history: 'replace' })
   } catch (error) {
+    if (captureVersionConflict(error)) return
     if (error !== 'cancel') {
       ElMessage.error(t('service.query.deleteServiceFailed') + ': ' + (error.message || t('service.common.unknownError')))
     }
@@ -584,6 +655,7 @@ const checkSourceSnapshot = async () => {
 }
 
 const refreshSourceSnapshot = async () => {
+  if (versionConflict.value || statusUpdating.value) return
 	try {
 	  await ElMessageBox.confirm(
 		t('service.query.snapshotRefreshConfirm'),
@@ -591,10 +663,11 @@ const refreshSourceSnapshot = async () => {
 		{ confirmButtonText: t('service.common.confirm'), cancelButtonText: t('service.common.cancel'), type: 'warning' }
 	  )
 	  snapshotRefreshing.value = true
-	  service.value = await queryServiceAPI.refreshSourceSnapshot(serviceId.value)
+	  service.value = await queryServiceAPI.refreshSourceSnapshot(serviceId.value, service.value.version)
 	  snapshotDiff.value = null
 	  ElMessage.success(t('service.query.snapshotRefreshSuccess'))
 	} catch (error) {
+    if (captureVersionConflict(error)) return
 	  if (error !== 'cancel') {
 		ElMessage.error(t('service.query.snapshotRefreshFailed') + ': ' + (error.message || t('service.common.unknownError')))
 	  }
@@ -605,6 +678,10 @@ const refreshSourceSnapshot = async () => {
 
 // 数据预览方法
 const loadPreviewData = async () => {
+  if (queryUnavailable.value) {
+    ElMessage.warning(t(metricBindingRequired.value ? 'service.query.metricBindingRequiredDescription' : 'service.query.inactiveHint'))
+    return
+  }
   if (!service.value?.service_name) {
     ElMessage.warning(t('service.query.serviceNotLoaded'))
     return
@@ -619,7 +696,7 @@ const loadPreviewData = async () => {
 	  parameter.required && (previewNamedParameterValues[parameter.name] === '' || previewNamedParameterValues[parameter.name] === null || previewNamedParameterValues[parameter.name] === undefined)
 	))
 	if (missingParameter) {
-	  ElMessage.warning(t('service.query.previewNamedParameterRequired', { name: missingParameter.name }))
+	  ElMessage.warning(t('service.query.previewNamedParameterRequired', { name: parameterLabel(missingParameter, locale.value) }))
 	  return
 	}
     const request = {
@@ -783,11 +860,7 @@ onMounted(() => {
   max-width: 520px;
 }
 
-.named-parameter-description {
-  margin-left: 8px;
-  color: var(--addp-text-secondary);
-  font-weight: 400;
-}
+
 
 code {
   background-color: var(--addp-bg-secondary);

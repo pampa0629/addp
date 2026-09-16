@@ -56,6 +56,10 @@ const (
 	MsgTablePrimaryKeyRequired          = "model.logical_table.approval_primary_key_required"
 	MsgFieldNotFound                    = "model.logical_table.field_not_found"
 	MsgFieldColumnConflict              = "model.logical_table.field_column_conflict"
+	MsgConceptMappingInvalid            = "model.concept_mapping.invalid"
+	MsgConceptMappingStateConflict      = "model.concept_mapping.state_conflict"
+	MsgConceptMappingDrift              = "model.concept_mapping.drift"
+	MsgConceptMappingInUse              = "model.concept_mapping.in_use"
 	MsgTableRelationTargetNotFound      = "model.table_relation.target_not_found"
 	MsgTableRelationSourceStateConflict = "model.table_relation.source_state_conflict"
 	MsgTableRelationStateConflict       = "model.table_relation.state_conflict"
@@ -68,7 +72,7 @@ const (
 	MsgDimensionHierarchyLevelConflict  = "model.dimension_hierarchy.level_conflict"
 	MsgDimensionHierarchyFieldInUse     = "model.dimension_hierarchy.field_in_use"
 
-	// 逻辑表物化
+	// 逻辑表建表与物理目标
 	MsgMaterializationInvalid        = "model.materialization.invalid"
 	MsgMaterializationConflict       = "model.materialization.conflict"
 	MsgMaterializationNotFound       = "model.materialization.not_found"
@@ -84,6 +88,8 @@ const (
 
 	// 指标实现
 	MsgInvalidMetricImplementationID = "model.metric_implementation.invalid_id"
+	MsgMetricMetadataUnavailable     = "model.metric_implementation.metadata_unavailable"
+	MsgMetricMetadataIncomplete      = "model.metric_implementation.metadata_incomplete"
 	MsgMetricEngineUnavailable       = "model.metric_implementation.engine_unavailable"
 	MsgMetricEngineUnsupported       = "model.metric_implementation.engine_unsupported"
 	MsgMetricImplementationConflict  = "model.metric_implementation.conflict"

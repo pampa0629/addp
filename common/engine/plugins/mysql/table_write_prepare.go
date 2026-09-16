@@ -130,7 +130,9 @@ type mysqlColumnInfo struct {
 	Comment           string
 }
 
-func mysqlTableColumns(ctx context.Context, db *sql.DB, database, table string) ([]mysqlColumnInfo, error) {
+func mysqlTableColumns(ctx context.Context, db interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+}, database, table string) ([]mysqlColumnInfo, error) {
 	rows, err := db.QueryContext(ctx, `
 		SELECT column_name, data_type, column_type, srs_id, numeric_precision, numeric_scale, datetime_precision,
 		       (is_nullable = 'YES') AS is_nullable, (column_key = 'PRI') AS primary_key, COALESCE(column_comment, '')

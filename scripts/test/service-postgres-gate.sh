@@ -19,7 +19,7 @@ case "$SERVICE_POSTGRES_TEST_DSN" in postgres://*/*|postgresql://*/*) ;; *) echo
 case "$database" in *test*|*disposable*) ;; *) echo "SERVICE_POSTGRES_TEST_DSN must identify a disposable test database" >&2; exit 1 ;; esac
 
 cd "$ROOT_DIR/service/backend"
-go test ./internal/protection ./internal/repository ./internal/service -run '^(TestServiceExecuteProtectionAgainstPostgres|TestConsumerCatalogAgainstPostgres|TestCatalogQueryServiceChangeFeedAgainstPostgres|TestQueryServiceConsumerContractMigrationAgainstPostgres|TestMetricSourcePublicationAgainstPostgres)$' -count=1 -v 2>&1 | tee "$WORK_DIR/service.log"
+go test ./internal/protection ./internal/repository ./internal/service -run '^(TestServiceExecuteProtectionAgainstPostgres|TestConsumerCatalogAgainstPostgres|TestCatalogQueryServiceChangeFeedAgainstPostgres|TestQueryServiceConsumerContractMigrationAgainstPostgres|TestMetricSourcePublicationAgainstPostgres|TestAnalyticalPublicationMigrationAgainstPostgres|TestAnalyticalQueryExecutionAgainstPostgres|TestQueryServiceVersionAgainstPostgres)$' -count=1 -v 2>&1 | tee "$WORK_DIR/service.log"
 if grep -q -- '--- SKIP:' "$WORK_DIR/service.log"; then
     echo "Service PostgreSQL gate refuses skipped tests" >&2
     exit 1

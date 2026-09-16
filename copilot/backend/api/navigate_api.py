@@ -45,8 +45,8 @@ ADDP 数据平台模块说明：
 - /modeling/logical-tables - 逻辑表
 - /modeling/er-diagram - ER 图
 - /modeling/star-schema - 星型模型
-- /quality/check-tasks - 质量检查任务
-- /quality/rule-applications - 质量规则应用
+- /quality/rules - 质量规则（定义约束、修订管理和复用）
+- /quality/plans - 质量检查方案（选用规则、绑定数据与执行）
 - /quality/executions - 质量检查执行记录
 - /quality/issues - 质量问题列表
 

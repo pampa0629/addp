@@ -66,7 +66,6 @@ type EntryDetail struct {
 type QualitySummary struct {
 	Status              string     `json:"status"`
 	Configured          bool       `json:"configured"`
-	CheckTaskID         int64      `json:"check_task_id,omitempty"`
 	LastExecutionID     string     `json:"last_execution_id,omitempty"`
 	LastExecutionStatus string     `json:"last_execution_status,omitempty"`
 	QualityScore        *float64   `json:"quality_score,omitempty"`
@@ -610,7 +609,6 @@ func (s *EntryService) resolveQualitySummary(ctx context.Context, tenantID int64
 	}
 	summary.Status = "current"
 	summary.Configured = true
-	summary.CheckTaskID = result.CheckTaskID
 	summary.LastExecutionID = result.LastExecutionID
 	summary.LastExecutionStatus = result.LastExecutionStatus
 	summary.QualityScore = result.QualityScore

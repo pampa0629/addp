@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	commonapi "github.com/addp/common/api"
 	commonrepo "github.com/addp/common/repository"
 	"github.com/addp/service/internal/models"
 	"gorm.io/gorm"
@@ -139,14 +140,18 @@ func (r *QueryServiceRepository) ListByConfigType(tenantID uint, configType stri
 	return services, total, nil
 }
 
-// Update 更新服务
-func (r *QueryServiceRepository) Update(id uint, updates map[string]interface{}) error {
-	return r.db.Model(&models.QueryService{}).Where("id = ?", id).Updates(updates).Error
-}
-
-// Delete 删除服务（物理删除）
-func (r *QueryServiceRepository) Delete(id uint) error {
-	return r.db.Delete(&models.QueryService{}, id).Error
+// Delete compares the tenant-scoped version before any deletion or trigger side effect.
+func (r *QueryServiceRepository) Delete(ctx context.Context, id, tenantID uint, version int64) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var item models.QueryService
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND tenant_id = ?", id, tenantID).First(&item).Error; err != nil {
+			return commonrepo.WrapDBError(err)
+		}
+		if version <= 0 || item.Version != version {
+			return commonapi.ErrConflict
+		}
+		return tx.Delete(&item).Error
+	})
 }
 
 // CheckServiceNameUnique 检查服务名称是否唯一
@@ -190,17 +195,6 @@ func (r *QueryServiceRepository) Search(tenantID uint, keyword string, offset in
 	return services, total, nil
 }
 
-// UpdateStatus 更新服务状态
-func (r *QueryServiceRepository) UpdateStatus(id uint, status string, errorMessage string) error {
-	updates := map[string]interface{}{
-		"status": status,
-	}
-	if errorMessage != "" {
-		updates["error_message"] = errorMessage
-	}
-	return r.db.Model(&models.QueryService{}).Where("id = ?", id).Updates(updates).Error
-}
-
 // GetPublicServices 获取所有公开访问的服务
 func (r *QueryServiceRepository) GetPublicServices() ([]models.QueryService, error) {
 	var services []models.QueryService
@@ -232,17 +226,21 @@ func (r *QueryServiceRepository) ListLineagePublications(ctx context.Context, af
 	return rows, err
 }
 
-// UpdatePublication keeps the published-contract comparison and replacement in one transaction.
-func (r *QueryServiceRepository) UpdatePublication(ctx context.Context, id, tenantID uint, change func(*models.QueryService) error) (*models.QueryService, error) {
+// UpdateVersioned is the single management mutation path for the QueryService aggregate.
+func (r *QueryServiceRepository) UpdateVersioned(ctx context.Context, id, tenantID uint, version int64, change func(*models.QueryService) error) (*models.QueryService, error) {
 	var item models.QueryService
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND tenant_id = ?", id, tenantID).First(&item).Error; err != nil {
 			return commonrepo.WrapDBError(err)
 		}
+		if version <= 0 || item.Version != version {
+			return commonapi.ErrConflict
+		}
 		if err := change(&item); err != nil {
 			return err
 		}
-		return tx.Save(&item).Error
+		item.Version++
+		return tx.Model(&item).Select("*").Updates(&item).Error
 	})
 	return &item, err
 }

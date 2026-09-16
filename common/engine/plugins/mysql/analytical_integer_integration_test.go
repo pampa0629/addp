@@ -1,27 +1,14 @@
 package mysql
 
 import (
-	"context"
 	"database/sql"
 	"fmt"
 	"testing"
 
 	"github.com/addp/common/datatype"
-	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/query/sqlcompile"
 	"github.com/addp/common/query/sqlcompile/conformance"
 )
-
-type integerPreparedProvider struct {
-	*MySQLPlugin
-	compiler conformance.RelationalFixtureCompiler
-}
-
-func (p *integerPreparedProvider) AnalyticalCompiler() plugin.AnalyticalCompiler { return p.compiler }
-func (p *integerPreparedProvider) PrepareQuery(_ context.Context, conn plugin.ConnectionInfo, req plugin.QueryRequest) (plugin.PreparedQuery, error) {
-	provenance := p.queryProvenance()
-	return plugin.PrepareSQLRuntimeQuery(p, conn, req, provenance.ResolveReadSet, provenance.ResolveOutputLineage)
-}
 
 func TestIntegrationMySQLLosslessAnalyticalInteger(t *testing.T) {
 	db, mysql, connInfo, database := openMySQLUpsertIntegration(t)
@@ -58,6 +45,6 @@ func TestIntegrationMySQLLosslessAnalyticalInteger(t *testing.T) {
 		}
 		return &value.Int64, invalid, nil
 	})
-	conformance.PreparedLosslessInteger(t, &integerPreparedProvider{MySQLPlugin: mysql, compiler: conformance.RelationalFixtureCompiler{Expression: analyticalExpressionDialect{}, Result: analyticalResultDialect{}, Scan: analyticalScanDialect{}}}, connInfo)
-	conformance.PreparedConditionals(t, &integerPreparedProvider{MySQLPlugin: mysql, compiler: conformance.RelationalFixtureCompiler{Expression: analyticalExpressionDialect{}, Result: analyticalResultDialect{}, Scan: analyticalScanDialect{}}}, connInfo)
+	conformance.PreparedLosslessInteger(t, mysql, connInfo)
+	conformance.PreparedConditionals(t, mysql, connInfo)
 }

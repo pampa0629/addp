@@ -15,7 +15,6 @@ type ResolveCatalogSummariesRequest struct {
 type CatalogSummaryResolution struct {
 	Reference           CatalogSummaryReference `json:"reference"`
 	Configured          bool                    `json:"configured"`
-	CheckTaskID         int64                   `json:"check_task_id,omitempty"`
 	LastExecutionID     string                  `json:"last_execution_id,omitempty"`
 	LastExecutionStatus string                  `json:"last_execution_status,omitempty"`
 	QualityScore        *float64                `json:"quality_score,omitempty"`

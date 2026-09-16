@@ -2,7 +2,9 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"github.com/addp/common/resourcetree"
 
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/quality/internal/models"
@@ -12,7 +14,7 @@ import (
 type CatalogSummaryRepository struct{ db *gorm.DB }
 
 type CatalogSummaryFact struct {
-	Task       models.CheckTask
+	Task       models.QualityPlan
 	Execution  *commonExecution.TaskExecution
 	OpenIssues int64
 }
@@ -29,9 +31,36 @@ func (r *CatalogSummaryRepository) Resolve(ctx context.Context, tenantID int64, 
 	for _, reference := range references {
 		keys = append(keys, []interface{}{reference.EngineID, reference.SchemaName, reference.TableName})
 	}
-	var tasks []models.CheckTask
-	if err := r.db.WithContext(ctx).Where("tenant_id = ? AND (engine_id, schema_name, table_name) IN ?", tenantID, keys).Find(&tasks).Error; err != nil {
+	var allTasks []models.QualityPlan
+	var tasks []models.QualityPlan
+	taskKeys := map[int64][]string{}
+	requested := map[string]bool{}
+	for _, r := range references {
+		requested[catalogSummaryKey(r.EngineID, r.SchemaName, r.TableName)] = true
+	}
+	if err := r.db.WithContext(ctx).Where("tenant_id = ?", tenantID).Order("last_run_at DESC NULLS LAST, id DESC").Find(&allTasks).Error; err != nil {
 		return nil, err
+	}
+	for _, task := range allTasks {
+		var bindings []struct {
+			Locator string `json:"locator"`
+		}
+		if err := json.Unmarshal(task.TableBindings, &bindings); err != nil {
+			return nil, err
+		}
+		for _, binding := range bindings {
+			locator, err := resourcetree.ParseURI(binding.Locator)
+			if err != nil || len(locator.Path) != 2 {
+				continue
+			}
+			key := catalogSummaryKey(int64(locator.EngineID), locator.Path[0], locator.Path[1])
+			if requested[key] {
+				taskKeys[task.ID] = append(taskKeys[task.ID], key)
+			}
+		}
+		if len(taskKeys[task.ID]) > 0 {
+			tasks = append(tasks, task)
+		}
 	}
 	executionIDs := make([]string, 0, len(tasks))
 	for _, task := range tasks {
@@ -68,13 +97,17 @@ func (r *CatalogSummaryRepository) Resolve(ctx context.Context, tenantID int64, 
 	}
 	result := make(map[string]CatalogSummaryFact, len(tasks))
 	for _, task := range tasks {
-		key := catalogSummaryKey(task.EngineID, task.SchemaName, task.Table)
-		fact := CatalogSummaryFact{Task: task, OpenIssues: issueCounts[key]}
-		if execution, exists := executions[task.LastExecutionID]; exists {
-			copy := execution
-			fact.Execution = &copy
+		for _, key := range taskKeys[task.ID] {
+			if _, exists := result[key]; exists {
+				continue
+			}
+			fact := CatalogSummaryFact{Task: task, OpenIssues: issueCounts[key]}
+			if execution, exists := executions[task.LastExecutionID]; exists {
+				copy := execution
+				fact.Execution = &copy
+			}
+			result[key] = fact
 		}
-		result[key] = fact
 	}
 	return result, nil
 }
@@ -84,7 +117,7 @@ func catalogSummaryKey(engineID int64, schemaName, tableName string) string {
 }
 
 func QualityScoreFromExecution(execution *commonExecution.TaskExecution) *float64 {
-	if execution == nil || execution.Status != commonExecution.ExecutionStatusSuccess || execution.Metadata == nil || execution.Metadata["schema_version"] != "addp.quality.execution-result/v1" {
+	if execution == nil || execution.Metadata == nil || execution.Metadata["schema_version"] != "addp.quality.plan-result/v1" {
 		return nil
 	}
 	value, ok := execution.Metadata["quality_score"]

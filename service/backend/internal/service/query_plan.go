@@ -36,50 +36,41 @@ type compiledQueryPlan struct {
 	ServiceVersion string
 }
 
-func compileQueryPlan(
-	service *models.QueryService,
-	request *models.QueryExecutionRequest,
-	protocol queryProtocol,
-	engineType string,
-	baseSQL string,
-	baseArgs []interface{},
-	parameters map[string]interface{},
-	codec *queryTokenCodec,
-) (*compiledQueryPlan, error) {
+func prepareQueryResult(service *models.QueryService, request *models.QueryExecutionRequest, parameters map[string]interface{}, codec *queryTokenCodec) (*compiledQueryPlan, map[string]datatype.FieldInfo, []interface{}, error) {
 	if service == nil || request == nil || codec == nil {
-		return nil, fmt.Errorf("%w: query service request is incomplete", ErrInvalidStructuredQuery)
+		return nil, nil, nil, fmt.Errorf("%w: query service request is incomplete", ErrInvalidStructuredQuery)
 	}
 	table := service.GetTableInfo()
 	if table == nil || len(table.Fields) == 0 {
-		return nil, fmt.Errorf("%w: published output contract has no fields", ErrInvalidStructuredQuery)
+		return nil, nil, nil, fmt.Errorf("%w: published output contract has no fields", ErrInvalidStructuredQuery)
 	}
 	version := serviceDependencyVersion(service)
 	if version == "" {
-		return nil, fmt.Errorf("%w: published service version is missing", ErrInvalidStructuredQuery)
+		return nil, nil, nil, fmt.Errorf("%w: published service version is missing", ErrInvalidStructuredQuery)
 	}
 	stableKey := service.GetStableKey()
 	if _, err := validateStableKey(stableKey, table); err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrInvalidStructuredQuery, err)
+		return nil, nil, nil, fmt.Errorf("%w: %v", ErrInvalidStructuredQuery, err)
 	}
 
 	fields := make(map[string]datatype.FieldInfo, len(table.Fields))
 	for _, field := range table.Fields {
 		if strings.TrimSpace(field.Name) == "" {
-			return nil, fmt.Errorf("%w: output contract contains an empty field", ErrInvalidStructuredQuery)
+			return nil, nil, nil, fmt.Errorf("%w: output contract contains an empty field", ErrInvalidStructuredQuery)
 		}
 		if _, duplicate := fields[field.Name]; duplicate {
-			return nil, fmt.Errorf("%w: output contract contains duplicate field %s", ErrInvalidStructuredQuery, field.Name)
+			return nil, nil, nil, fmt.Errorf("%w: output contract contains duplicate field %s", ErrInvalidStructuredQuery, field.Name)
 		}
 		fields[field.Name] = field
 	}
 	selected, err := selectedQueryFields(service, request.Select, fields, table.FieldNames())
 	if err != nil {
-		return nil, err
+		return nil, nil, nil, err
 	}
 	if strings.EqualFold(strings.TrimSpace(request.Format), "geojson") {
 		geometryColumn := service.GetGeometryColumn()
 		if geometryColumn == "" {
-			return nil, fmt.Errorf("%w: geojson format requires a primary geometry field", ErrInvalidStructuredQuery)
+			return nil, nil, nil, fmt.Errorf("%w: geojson format requires a primary geometry field", ErrInvalidStructuredQuery)
 		}
 		if !containsQueryField(selected, geometryColumn) {
 			selected = append(selected, geometryColumn)
@@ -87,11 +78,11 @@ func compileQueryPlan(
 	}
 	orderBy, err := effectiveQueryOrder(request.OrderBy, stableKey, fields)
 	if err != nil {
-		return nil, err
+		return nil, nil, nil, err
 	}
 	limit := request.Page.Limit
 	if limit < 0 || limit > 10000 {
-		return nil, fmt.Errorf("%w: page.limit must be between 1 and 10000", ErrInvalidStructuredQuery)
+		return nil, nil, nil, fmt.Errorf("%w: page.limit must be between 1 and 10000", ErrInvalidStructuredQuery)
 	}
 	if limit == 0 {
 		limit = 50
@@ -106,17 +97,37 @@ func compileQueryPlan(
 
 	queryHash, err := structuredQueryHash(parameters, selected, request.Filter, orderBy)
 	if err != nil {
-		return nil, err
+		return nil, nil, nil, err
 	}
 	var cursorValues []interface{}
 	if strings.TrimSpace(request.Page.Cursor) != "" {
 		payload, decodeErr := codec.decodeCursor(request.Page.Cursor)
 		if decodeErr != nil || payload.ServiceID != service.ID || payload.ServiceVersion != version ||
 			payload.QueryHash != queryHash || !reflect.DeepEqual(payload.OrderBy, orderBy) || len(payload.Values) != len(orderBy) {
-			return nil, ErrInvalidQueryCursor
+			return nil, nil, nil, ErrInvalidQueryCursor
 		}
 		cursorValues = payload.Values
 	}
+
+	return &compiledQueryPlan{Limit: limit, SelectedFields: selected, HiddenFields: hiddenOrderFields(selected, orderBy), OrderBy: orderBy, QueryHash: queryHash, ServiceVersion: version}, fields, cursorValues, nil
+}
+
+func compileQueryPlan(
+	service *models.QueryService,
+	request *models.QueryExecutionRequest,
+	protocol queryProtocol,
+	engineType string,
+	baseSQL string,
+	baseArgs []interface{},
+	parameters map[string]interface{},
+	codec *queryTokenCodec,
+) (*compiledQueryPlan, error) {
+	prepared, fields, cursorValues, err := prepareQueryResult(service, request, parameters, codec)
+	if err != nil {
+		return nil, err
+	}
+	selected, orderBy, limit := prepared.SelectedFields, prepared.OrderBy, prepared.Limit
+	queryHash, version := prepared.QueryHash, prepared.ServiceVersion
 
 	dialect, err := queryPlanDialect(engineType)
 	if err != nil {
@@ -594,7 +605,7 @@ func serviceDependencyVersion(service *models.QueryService) string {
 		if snapshot.DependencyHash == "" || len(service.GetStableKey()) == 0 {
 			return ""
 		}
-		parameters, err := json.Marshal(service.NamedParameters)
+		parameters, err := json.Marshal(service.GetNamedParameters())
 		if err != nil {
 			return ""
 		}

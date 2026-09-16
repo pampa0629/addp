@@ -26,3 +26,23 @@ func TestParameterOptionTypesAndIntersection(t *testing.T) {
 		}
 	}
 }
+
+func TestParameterPresentation(t *testing.T) {
+	valid := ParameterPresentation{Labels: map[string]string{"zh-cn": "结束日期", "en": "End date"}, Descriptions: map[string]string{"zh-cn": "不含当天", "en": "Exclusive"}}
+	if err := valid.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	delete(valid.Descriptions, "en")
+	if valid.Validate() == nil {
+		t.Fatal("missing language accepted")
+	}
+	valid.Descriptions["en"] = " "
+	if valid.Validate() == nil {
+		t.Fatal("empty text accepted")
+	}
+	valid.Descriptions["en"] = "Exclusive"
+	valid.Labels["fr"] = "Fin"
+	if valid.Validate() == nil {
+		t.Fatal("undeclared language accepted")
+	}
+}

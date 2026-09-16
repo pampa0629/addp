@@ -135,6 +135,7 @@ func (h *LogicalTableHandler) CreateLogicalTable(c *gin.Context) {
 }
 
 // GetLogicalTable GET /api/v1/model/logical-tables/:id
+// @Description 返回逻辑表及同一快照派生的主键组合、必填字段和出向外键；不是质量执行结果 | Return the logical table and same-snapshot primary key, required fields and outgoing foreign keys, not quality execution results
 // @Summary 获取逻辑表详情 | Get logical table details
 // @Tags Model
 // @Produce json
@@ -208,7 +209,7 @@ func (h *LogicalTableHandler) UpdateLogicalTable(c *gin.Context) {
 
 // DeleteLogicalTable DELETE /api/v1/model/logical-tables/:id
 // @Summary 删除逻辑表 | Delete logical table
-// @Description 仅删除已清空物化配置的草稿逻辑表；历史执行事实保留。 | Delete a draft logical table with cleared physical configuration; preserve execution history.
+// @Description 仅删除已移除物理目标配置的草稿逻辑表；历史执行事实保留。 | Delete a draft logical table after removing its physical-target configuration; preserve execution history.
 // @Tags Model
 // @Produce json
 // @Param id path int true "逻辑表ID | Logical table ID"
@@ -474,16 +475,16 @@ func (h *LogicalTableHandler) DeleteField(c *gin.Context) {
 }
 
 // PreviewDDL POST /api/v1/model/logical-tables/:id/preview-ddl
-// @Summary 预览 DDL | Preview DDL
+// @Summary 预览建表语句 | Preview create statement
 // @Tags Model
 // @Accept json
 // @Produce json
 // @Param id path int true "逻辑表ID | Logical table ID"
-// @Param body body models.PreviewLogicalTableDDLRequest true "当前物化配置 | Current materialization configuration"
-// @Success 200 {object} models.DDLPreviewResponse "DDL 预览 | DDL preview"
+// @Param body body models.PreviewLogicalTableDDLRequest true "当前物理目标配置 | Current physical-target configuration"
+// @Success 200 {object} models.DDLPreviewResponse "建表语句预览 | Create statement preview"
 // @Failure 401 {object} models.ErrorResponse "未认证 | Authentication required"
 // @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
-// @Failure 400 {object} models.ErrorResponse "请求或物化配置无效 | Invalid request or materialization configuration"
+// @Failure 400 {object} models.ErrorResponse "请求或物理目标配置无效 | Invalid request or physical-target configuration"
 // @Failure 404 {object} models.ErrorResponse "逻辑表不存在 | Logical table not found"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["model.logical_model.read"]

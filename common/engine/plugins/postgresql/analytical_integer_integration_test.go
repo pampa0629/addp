@@ -1,25 +1,13 @@
 package postgresql
 
 import (
-	"context"
 	"database/sql"
 	"testing"
 
 	"github.com/addp/common/datatype"
-	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/query/sqlcompile"
 	"github.com/addp/common/query/sqlcompile/conformance"
 )
-
-type integerPreparedProvider struct {
-	*PostgreSQLPlugin
-	compiler conformance.RelationalFixtureCompiler
-}
-
-func (p *integerPreparedProvider) AnalyticalCompiler() plugin.AnalyticalCompiler { return p.compiler }
-func (p *integerPreparedProvider) PrepareQuery(_ context.Context, conn plugin.ConnectionInfo, req plugin.QueryRequest) (plugin.PreparedQuery, error) {
-	return plugin.PrepareSQLRuntimeQuery(p, conn, req, p.resolvePreparedQueryReadSet, p.resolvePreparedQueryOutputLineage)
-}
 
 func TestIntegrationPostgresLosslessAnalyticalInteger(t *testing.T) {
 	db, pg, conn := openPostgresPrepareIntegration(t, false)
@@ -38,6 +26,6 @@ func TestIntegrationPostgresLosslessAnalyticalInteger(t *testing.T) {
 		}
 		return &value.Int64, invalid, err
 	})
-	conformance.PreparedLosslessInteger(t, &integerPreparedProvider{PostgreSQLPlugin: pg, compiler: conformance.RelationalFixtureCompiler{Expression: analyticalExpressionDialect{}, Result: analyticalResultDialect{}, Scan: analyticalScanDialect{}}}, conn)
-	conformance.PreparedConditionals(t, &integerPreparedProvider{PostgreSQLPlugin: pg, compiler: conformance.RelationalFixtureCompiler{Expression: analyticalExpressionDialect{}, Result: analyticalResultDialect{}, Scan: analyticalScanDialect{}}}, conn)
+	conformance.PreparedLosslessInteger(t, pg, conn)
+	conformance.PreparedConditionals(t, pg, conn)
 }

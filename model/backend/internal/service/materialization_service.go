@@ -47,7 +47,7 @@ func (s *MaterializationService) SetExecutionAuthorizationIssuer(issuer *commonC
 func (s *MaterializationService) DecommissionMaterializedTarget(
 	ctx context.Context,
 	logicalTableID, tenantID int64,
-	request models.MaterializedTargetDecommissionRequest,
+	request models.PhysicalTargetDeleteRequest,
 	userAccessToken string,
 ) error {
 	if logicalTableID <= 0 || tenantID <= 0 || request.Version <= 0 || s.authorizationIssuer == nil || s.systemClient == nil {
@@ -118,7 +118,7 @@ func (s *MaterializationService) DecommissionMaterializedTarget(
 func validateMaterializedTargetDecommissionState(
 	tx *gorm.DB,
 	logicalTableID, tenantID int64,
-	request models.MaterializedTargetDecommissionRequest,
+	request models.PhysicalTargetDeleteRequest,
 ) error {
 	var locked models.LogicalTable
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -134,7 +134,7 @@ func validateMaterializedTargetDecommissionState(
 	return nil
 }
 
-func materializedTargetConfirmationMatches(table *models.LogicalTable, request models.MaterializedTargetDecommissionRequest) bool {
+func materializedTargetConfirmationMatches(table *models.LogicalTable, request models.PhysicalTargetDeleteRequest) bool {
 	if table == nil {
 		return false
 	}
@@ -211,9 +211,7 @@ func materializationSchemaFingerprint(table *models.LogicalTable, fields []model
 		DefaultValue string `json:"default_value,omitempty"`
 	}
 	shape := struct {
-		Fields        []fieldShape `json:"fields"`
-		PartitionBy   string       `json:"partition_by,omitempty"`
-		PartitionType string       `json:"partition_type,omitempty"`
+		Fields []fieldShape `json:"fields"`
 	}{Fields: make([]fieldShape, 0, len(fields))}
 	for _, field := range fields {
 		shape.Fields = append(shape.Fields, fieldShape{
@@ -221,8 +219,6 @@ func materializationSchemaFingerprint(table *models.LogicalTable, fields []model
 			Nullable: field.Nullable, PrimaryKey: field.IsPK, DefaultValue: field.DefaultValue,
 		})
 	}
-	shape.PartitionBy, _ = materializationString(table.Materialization, "partition_by")
-	shape.PartitionType, _ = materializationString(table.Materialization, "partition_type")
 	encoded, err := json.Marshal(shape)
 	if err != nil {
 		return "", err
@@ -377,9 +373,6 @@ func (s *MaterializationService) createMaterializedTarget(ctx context.Context, i
 func (s *MaterializationService) ensureMaterializedTable(tx *gorm.DB, table *models.LogicalTable, fields []models.LogicalField, schema, name, fingerprint, operationID string) error {
 	if len(fields) == 0 {
 		return apperrors.Validation("materialization_definition_invalid", modeli18n.MsgMaterializationInvalid)
-	}
-	if partition, _ := materializationString(table.Materialization, "partition_by"); partition != "" {
-		return apperrors.Validation("materialization_partition_unsupported", modeli18n.MsgMaterializationInvalid)
 	}
 	if err := lockMaterializedTarget(tx, schema, name); err != nil {
 		return err

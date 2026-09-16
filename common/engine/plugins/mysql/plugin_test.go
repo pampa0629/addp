@@ -86,10 +86,3 @@ func TestMySQLCapabilitiesDeclareAtomicPartitionedTableChangeApply(t *testing.T)
 		}
 	}
 }
-
-func TestMySQLAnalyticalDialectIsNative(t *testing.T) {
-	dialect, err := plugin.ResolveAnalyticalSQLDialect("mysql")
-	if err != nil || dialect.Name() != "mysql" {
-		t.Fatalf("native dialect: %v %v", dialect, err)
-	}
-}

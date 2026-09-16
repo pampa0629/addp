@@ -12,8 +12,13 @@ import (
 )
 
 type EntityRelationService struct {
-	relationRepo *repository.EntityRelationRepository
-	entityRepo   *repository.EntityRepository
+	relationRepo       *repository.EntityRelationRepository
+	entityRepo         *repository.EntityRepository
+	conceptMappingRepo *repository.ConceptMappingRepository
+}
+
+func (s *EntityRelationService) SetConceptMappingRepository(repo *repository.ConceptMappingRepository) {
+	s.conceptMappingRepo = repo
 }
 
 func lockDraftEntities(tx *gorm.DB, tenantID int64, ids ...int64) (map[int64]*models.Entity, error) {
@@ -138,6 +143,15 @@ func (s *EntityRelationService) Update(id, tenantID int64, req *models.UpdateEnt
 		if err := requireVersion(relation.Version, req.Version); err != nil {
 			return err
 		}
+		if s.conceptMappingRepo != nil {
+			inUse, err := repository.NewConceptMappingRepository(tx).HasApprovedLogicalTableForEntityRelation(id, tenantID)
+			if err != nil {
+				return err
+			}
+			if inUse {
+				return apperrors.Conflict("concept_mapping_in_use", i18n.MsgConceptMappingInUse)
+			}
+		}
 		if _, err := lockDraftEntities(tx, tenantID, relation.SourceEntity, relation.TargetEntity, req.SourceEntity, req.TargetEntity); err != nil {
 			return err
 		}
@@ -172,6 +186,15 @@ func (s *EntityRelationService) Delete(id, tenantID, version int64) error {
 		}
 		if err := requireVersion(relation.Version, version); err != nil {
 			return err
+		}
+		if s.conceptMappingRepo != nil {
+			inUse, err := repository.NewConceptMappingRepository(tx).HasLogicalTableForEntityRelation(id, tenantID)
+			if err != nil {
+				return err
+			}
+			if inUse {
+				return apperrors.Conflict("concept_mapping_in_use", i18n.MsgConceptMappingInUse)
+			}
 		}
 		if _, err := lockDraftEntities(tx, tenantID, relation.SourceEntity, relation.TargetEntity); err != nil {
 			return err

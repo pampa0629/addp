@@ -83,31 +83,31 @@ other = "Mermaid 导入内容与现有实体模型冲突，请根据预览结果
 other = "逻辑表不存在"
 
 [model.materialization.invalid]
-other = "逻辑表物化定义或执行参数无效"
+other = "逻辑表建表定义或执行参数无效"
 
 [model.materialization.conflict]
-other = "逻辑表物化批次状态与当前操作冲突"
+other = "逻辑表建表任务状态与当前操作冲突"
 
 [model.materialization.not_found]
-other = "逻辑表或物化批次不存在"
+other = "逻辑表或建表任务不存在"
 
 [model.materialization.unavailable]
-other = "逻辑表物化授权或目标引擎暂时不可用"
+other = "逻辑表建表授权或目标引擎暂时不可用"
 
 [model.materialized_target.conflict]
-other = "物化目标当前状态不允许退役"
+other = "目标物理表当前状态不允许删除"
 
 [model.materialized_target.forbidden]
 other = "没有目标引擎的 DDL 权限"
 
 [model.materialized_target.unavailable]
-other = "物化目标退役暂时不可用"
+other = "目标物理表删除暂时不可用"
 
 [model.logical_table.invalid_field_id]
 other = "无效的字段ID"
 
 [model.logical_table.ddl_preview_invalid]
-other = "当前配置无法生成 DDL，请检查物化配置和字段定义"
+other = "当前配置无法生成建表语句，请检查物理目标配置和字段定义"
 
 [model.logical_table.code_conflict]
 other = "逻辑表编码已存在"
@@ -116,10 +116,10 @@ other = "逻辑表编码已存在"
 other = "逻辑表当前状态不允许此操作"
 
 [model.logical_table.materialization_configured]
-other = "逻辑表仍保留物化目标配置，请先显式清空配置"
+other = "逻辑表仍保留物理目标配置，请先显式移除配置"
 
 [model.logical_table.materialization_batch_active]
-other = "逻辑表仍有未终结的物化批次，不能删除"
+other = "逻辑表仍有未终结的建表执行，不能删除"
 
 [model.logical_table.approval_fields_required]
 other = "逻辑表至少需要一个字段才能审批"
@@ -132,6 +132,18 @@ other = "逻辑表字段不存在"
 
 [model.logical_table.field_column_conflict]
 other = "逻辑表字段列名已存在"
+
+[model.concept_mapping.invalid]
+other = "概念实现映射引用无效，或实体、属性、关系与逻辑模型归属不一致"
+
+[model.concept_mapping.state_conflict]
+other = "仅草稿逻辑表可修改概念实现映射，且概念来源必须已审批"
+
+[model.concept_mapping.drift]
+other = "概念来源已发生变化，请检查并重新保存概念实现映射后再审批"
+
+[model.concept_mapping.in_use]
+other = "概念资源仍被逻辑表的概念实现映射引用；已审批逻辑表需先退回草稿，再移除或重建映射"
 
 [model.dw_layer.not_found]
 other = "数仓分层不存在"
@@ -201,3 +213,45 @@ other = "无法读取指标来源引擎信息，请稍后重试。"
 
 [model.metric_implementation.engine_unsupported]
 other = "来源引擎尚未提供经验证的分析 SQL 能力。"
+
+[model.metric_implementation.metadata_unavailable]
+other = "无法读取来源元数据，请在 Meta 扫描或刷新来源后重试。"
+
+[model.metric_implementation.metadata_incomplete]
+other = "来源字段结构不完整，请先在 Meta 扫描或刷新来源，再保存指标实现。"
+
+[model.metric.parameter.subject_id.label]
+other = "统计主体"
+
+[model.metric.parameter.subject_id.description]
+other = "填写统计主体的标识。"
+
+[model.metric.parameter.comparison_id.label]
+other = "对比主体"
+
+[model.metric.parameter.comparison_id.description]
+other = "填写用于对比的主体标识。"
+
+[model.metric.parameter.start_date.label]
+other = "开始日期"
+
+[model.metric.parameter.start_date.description]
+other = "包含当天；按指标定义的日期字段筛选。"
+
+[model.metric.parameter.end_date.label]
+other = "结束日期"
+
+[model.metric.parameter.end_date.description]
+other = "不包含当天。例如统计 2026 全年，结束日期填 2027-01-01。"
+
+[model.metric.parameter.grain.label]
+other = "统计粒度"
+
+[model.metric.parameter.grain.description]
+other = "选择汇总整个时间范围，或按月统计；没有符合条件的记录时按月补零。"
+
+[model.metric.parameter.directions.label]
+other = "对比方向"
+
+[model.metric.parameter.directions.description]
+other = "单向按统计主体计算，双向分别计算两个方向。"

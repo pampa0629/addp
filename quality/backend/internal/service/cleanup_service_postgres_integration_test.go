@@ -34,18 +34,11 @@ func TestIntegrationPostgresQualityCleanupUsesExecutionFacts(t *testing.T) {
 	t.Cleanup(func() {
 		_ = db.Where("tenant_id = ?", tenantID).Delete(&commonExecution.TaskExecution{}).Error
 		_ = db.Where("tenant_id = ?", tenantID).Delete(&models.Issue{}).Error
-		_ = db.Where("tenant_id = ?", tenantID).Delete(&models.CheckTask{}).Error
-		_ = db.Where("tenant_id = ?", tenantID).Delete(&models.RuleApplication{}).Error
+		_ = db.Where("tenant_id = ?", tenantID).Delete(&models.QualityPlan{}).Error
 	})
 
-	rule := createQualityCleanupRuleApplication(t, db, tenantID, 12, fmt.Sprintf("cleanup_%d", tenantID))
-	task := createQualityCleanupCheckTask(t, db, tenantID, 12, rule.Table)
-	issue := models.Issue{
-		TenantID: tenantID, ExecutionID: "exec-" + rule.Table, LastExecutionID: "exec-" + rule.Table,
-		RuleApplicationID: rule.ID, RuleKey: "00000000-0000-4000-8000-000000000001", RuleType: "not_null", Severity: "error", ColumnName: rule.ColumnName,
-		Table: rule.Table, SchemaName: rule.SchemaName, EngineID: rule.EngineID,
-		FailedCount: 1, TotalCount: 10, PassRate: 90, Detail: []byte(`{}`), Status: "open",
-	}
+	task := createQualityCleanupPlan(t, db, tenantID, 12, fmt.Sprintf("cleanup_%d", tenantID))
+	issue := models.Issue{TenantID: tenantID, ExecutionID: "exec", LastExecutionID: "exec", PlanID: task.ID, RuleKey: "00000000-0000-4000-8000-000000000001", RuleType: "not_null", Severity: "error", ColumnName: "value", Table: "orders", SchemaName: "public", EngineID: 12, FailedCount: 1, TotalCount: 10, PassRate: 90, Status: "open"}
 	if err := db.Create(&issue).Error; err != nil {
 		t.Fatalf("create issue: %v", err)
 	}
@@ -56,7 +49,7 @@ func TestIntegrationPostgresQualityCleanupUsesExecutionFacts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExecuteCleanup() with active execution error = %v", err)
 	}
-	if len(stats.Errors) != 1 || stats.DisabledRuleApps != 0 {
+	if len(stats.Errors) != 1 {
 		t.Fatalf("active execution cleanup stats = %#v, want one conflict and no updates", stats)
 	}
 
@@ -66,7 +59,7 @@ func TestIntegrationPostgresQualityCleanupUsesExecutionFacts(t *testing.T) {
 		Updates(map[string]interface{}{"status": commonExecution.ExecutionStatusSuccess, "completed_at": completedAt, "updated_at": completedAt}).Error; err != nil {
 		t.Fatalf("complete execution: %v", err)
 	}
-	if err := db.Model(&models.CheckTask{}).Where("id = ? AND tenant_id = ?", task.ID, tenantID).
+	if err := db.Model(&models.QualityPlan{}).Where("id = ? AND tenant_id = ?", task.ID, tenantID).
 		Update("last_execution_status", commonExecution.ExecutionStatusRunning).Error; err != nil {
 		t.Fatalf("write stale task summary: %v", err)
 	}
@@ -75,7 +68,7 @@ func TestIntegrationPostgresQualityCleanupUsesExecutionFacts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExecuteCleanup() after completion error = %v", err)
 	}
-	if len(stats.Errors) != 0 || stats.DisabledRuleApps != 1 || stats.IgnoredIssues != 1 {
+	if len(stats.Errors) != 0 || stats.IgnoredIssues != 1 {
 		t.Fatalf("completed execution cleanup stats = %#v, want committed logical cleanup", stats)
 	}
 }

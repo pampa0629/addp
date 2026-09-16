@@ -191,7 +191,7 @@ func createCandidateStandardIdentity(tx *gorm.DB, tenantID, userID int64, docume
 		if err := tx.Create(&identity).Error; err != nil {
 			return err
 		}
-		revision := models.ElementRevision{ElementID: identity.ID, RevisionNo: 1, Status: models.RevisionStatusDraft, Name: candidate.Name, Definition: candidate.Definition, DataType: requiredCandidateText(candidate.Payload.DataType), Nullable: true, ValueDomainKind: requiredCandidateText(candidate.Payload.ValueDomainKind), UnitID: unitID, CodeSetRevisionID: codeSetRevisionID, ExtraQualityRules: models.JSONB{}, CompiledQualityRules: models.JSONB{}, ChangeSummary: changeSummary, CreatedBy: userID}
+		revision := models.ElementRevision{ElementID: identity.ID, RevisionNo: 1, Status: models.RevisionStatusDraft, Name: candidate.Name, Definition: candidate.Definition, DataType: requiredCandidateText(candidate.Payload.DataType), Nullable: true, ValueDomainKind: requiredCandidateText(candidate.Payload.ValueDomainKind), UnitID: unitID, CodeSetRevisionID: codeSetRevisionID, CompiledQualityRules: models.JSONB{}, ChangeSummary: changeSummary, CreatedBy: userID}
 		if err := tx.Create(&revision).Error; err != nil {
 			return err
 		}

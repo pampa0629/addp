@@ -7,6 +7,7 @@ import (
 	commonAPI "github.com/addp/common/api"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	qualityi18n "github.com/addp/quality/i18n"
+	"github.com/addp/quality/internal/repository"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -18,6 +19,10 @@ func respondQualityServiceError(c *gin.Context, err error, notFoundMessage, oper
 	code := "internal_error"
 	message := commoni18n.T(c, operationMessage)
 	switch {
+	case errors.Is(err, repository.ErrVersionConflict):
+		status, code, message = http.StatusConflict, "resource_version_conflict", commoni18n.T(c, qualityi18n.MsgVersionConflict)
+	case errors.Is(err, repository.ErrRuleReferenced):
+		status, code, message = http.StatusConflict, "quality_rule_referenced", commoni18n.T(c, qualityi18n.MsgRuleReferenced)
 	case errors.Is(err, gorm.ErrRecordNotFound), errors.Is(err, commonAPI.ErrNotFound):
 		status = http.StatusNotFound
 		code = "resource_not_found"

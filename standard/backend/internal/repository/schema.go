@@ -78,6 +78,9 @@ func Migrate(db *gorm.DB) error {
 		if err := migrateStandardRevisionData(tx); err != nil {
 			return err
 		}
+		if err := removeElementExtraQualityRules(tx); err != nil {
+			return err
+		}
 		if err := migrateGlossaryRevisionData(tx); err != nil {
 			return err
 		}
@@ -95,6 +98,23 @@ func Migrate(db *gorm.DB) error {
 		}
 		return applyStandardSchemaStatements(tx)
 	})
+}
+
+func removeElementExtraQualityRules(db *gorm.DB) error {
+	if db.Dialector.Name() != "postgres" {
+		return nil
+	}
+	return db.Exec(`DO $do$ BEGIN
+		IF EXISTS (SELECT 1 FROM information_schema.columns
+			WHERE table_schema='standard' AND table_name='element_revisions' AND column_name='extra_quality_rules') THEN
+			UPDATE standard.elements e SET version=e.version+1
+			FROM standard.element_revisions r
+			WHERE e.draft_revision_id=r.id AND jsonb_array_length(COALESCE(r.extra_quality_rules->'rules', '[]'::jsonb))>0;
+			UPDATE standard.element_revisions SET status='draft', submitted_by=NULL, submitted_at=NULL
+			WHERE status='in_review' AND jsonb_array_length(COALESCE(extra_quality_rules->'rules', '[]'::jsonb))>0;
+			ALTER TABLE standard.element_revisions DROP COLUMN extra_quality_rules;
+		END IF;
+	END $do$`).Error
 }
 
 func prepareGlossaryRevisionMigration(db *gorm.DB) error {
@@ -620,7 +640,7 @@ func migrateStandardRevisionData(db *gorm.DB) error {
 				INSERT INTO standard.element_revisions (
 					element_id, revision_no, status, name, definition, data_type, length, precision_num, scale,
 					nullable, default_value, format, value_domain_kind, range_constraint, code_set_revision_id,
-					unit_id, example_values, extra_quality_rules,
+					unit_id, example_values,
 					compiled_quality_rules, change_summary, created_by, updated_by, created_at, updated_at
 				)
 				SELECT element.id, 1,
@@ -633,7 +653,6 @@ func migrateStandardRevisionData(db *gorm.DB) error {
 						 ELSE 'unrestricted' END,
 					CASE WHEN element.code_set_id IS NULL THEN element.value_range ELSE NULL END,
 					code_set.current_revision_id, element.unit_id, element.example_values,
-					'{"schema_version":"addp.quality.rules/v1","rules":[]}'::jsonb,
 					CASE WHEN element.status = 'approved' THEN COALESCE(element.quality_rules, '{"schema_version":"addp.quality.rules/v1","rules":[]}'::jsonb) ELSE NULL END,
 					'Converted to revision model', element.created_by, element.updated_by, element.created_at, element.updated_at
 				FROM standard.elements AS element

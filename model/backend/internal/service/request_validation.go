@@ -63,7 +63,7 @@ func validateCreateEntityRelationRequest(req *models.CreateEntityRelationRequest
 }
 
 func validateCreateLogicalTableRequest(req *models.CreateLogicalTableRequest) error {
-	if req == nil || !validOptionalID(req.DomainID) || !validOptionalID(req.EntityID) ||
+	if req == nil || !validOptionalID(req.DomainID) ||
 		!validRequiredString(req.Name, 200) || !modelCodePattern.MatchString(req.Code) || utf8.RuneCountInString(req.Code) > 200 ||
 		!validValue(req.TableType, "entity", "fact", "dimension") || !validRequiredString(req.Layer, 20) {
 		return invalidRequest()

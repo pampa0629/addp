@@ -30,16 +30,16 @@ export default {
   },
 
   // 删除查询服务
-  deleteService(id) {
-    return client.delete(`/service/query/${id}`)
+  deleteService(id, version) {
+    return client.delete(`/service/query/${id}`, { data: { version } })
   },
 
   checkSourceSnapshot(id) {
     return client.get(`/service/query/${id}/source-snapshot-diff`)
   },
 
-  refreshSourceSnapshot(id) {
-    return client.post(`/service/query/${id}/refresh-source-snapshot`)
+  refreshSourceSnapshot(id, version) {
+    return client.post(`/service/query/${id}/refresh-source-snapshot`, { version })
   },
 
   // REST 查询端点测试 API

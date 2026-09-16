@@ -26,6 +26,7 @@ type Config struct {
 
 	// Standard 模块配置（用于代理）
 	StandardURL string
+	MetaURL     string
 }
 
 // LoadConfig 加载配置
@@ -45,6 +46,7 @@ func LoadConfig() (*Config, error) {
 		SystemURL:           commonConfig.GetEnv("SYSTEM_URL", "http://localhost:8180"),
 		ServiceClientSecret: os.Getenv("MODEL_SERVICE_CLIENT_SECRET"),
 
+		MetaURL:     commonConfig.GetEnv("META_URL", "http://localhost:8082"),
 		StandardURL: commonConfig.GetEnv("STANDARD_URL", "http://localhost:8110"),
 	}
 

@@ -31,7 +31,7 @@ func TestMaterializationTaskProviderCallerBoundary(t *testing.T) {
 		{"no-permission", serviceAuth.URL, http.StatusForbidden},
 		{"user", userAuth.URL, http.StatusForbidden},
 	} {
-		router := SetupRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, identity.url, nil, modulelifecycle.NewStandalone("model"))
+		router := SetupRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, identity.url, nil, modulelifecycle.NewStandalone("model"))
 		for _, route := range []struct{ method, path string }{
 			{http.MethodGet, "/api/v1/model/task-provider/tasks?page=0"},
 			{http.MethodGet, "/api/v1/model/task-provider/tasks/wrong/1"},

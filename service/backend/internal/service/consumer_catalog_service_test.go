@@ -142,6 +142,7 @@ func TestQueryShapeFingerprintExcludesFilterLiterals(t *testing.T) {
 }
 
 func consumerDescriptorTestService() *models.QueryService {
+	engine := uint(2)
 	srid := 4326
 	dimension := 2
 	snapshot := &models.QueryServiceDependencySnapshot{
@@ -159,7 +160,7 @@ func consumerDescriptorTestService() *models.QueryService {
 	}
 	return &models.QueryService{
 		ID: 42, TenantID: 7, ServiceName: "consumer-test", Title: "Consumer test",
-		Description: "descriptor", ConfigType: "sql", SqlQuery: "SELECT * FROM secret_source",
+		Description: "descriptor", ConfigType: "sql", EngineID: &engine, SqlQuery: "SELECT * FROM secret_source",
 		SchemaName: "private_schema", TargetTable: "secret-source-table",
 		DataConfig: models.JSONB{
 			models.QueryServiceSourceSnapshotKey: queryServiceSnapshotPayload(snapshot),

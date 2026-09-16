@@ -83,31 +83,31 @@ other = "The Mermaid import conflicts with the existing entity model. Revise the
 other = "Logical table not found"
 
 [model.materialization.invalid]
-other = "The logical-table materialization definition or execution parameters are invalid"
+other = "The logical-table creation definition or execution parameters are invalid"
 
 [model.materialization.conflict]
-other = "The materialization batch state conflicts with this operation"
+other = "The table-creation task state conflicts with this operation"
 
 [model.materialization.not_found]
-other = "The logical table or materialization batch was not found"
+other = "The logical table or table-creation task was not found"
 
 [model.materialization.unavailable]
-other = "Materialization authorization or the target engine is temporarily unavailable"
+other = "Table-creation authorization or the target engine is temporarily unavailable"
 
 [model.materialized_target.conflict]
-other = "The materialized target cannot be decommissioned in its current state"
+other = "The physical target table cannot be deleted in its current state"
 
 [model.materialized_target.forbidden]
 other = "DDL access to the target engine is not allowed"
 
 [model.materialized_target.unavailable]
-other = "Materialized target decommission is temporarily unavailable"
+other = "Physical target table deletion is temporarily unavailable"
 
 [model.logical_table.invalid_field_id]
 other = "Invalid field ID"
 
 [model.logical_table.ddl_preview_invalid]
-other = "DDL cannot be generated from the current configuration. Check the materialization settings and field definitions"
+other = "A create statement cannot be generated from the current configuration. Check the physical-target settings and field definitions"
 
 [model.logical_table.code_conflict]
 other = "Logical table code already exists"
@@ -116,10 +116,10 @@ other = "Logical table code already exists"
 other = "The logical table state does not allow this operation"
 
 [model.logical_table.materialization_configured]
-other = "The logical table still has a materialization target configuration; clear it explicitly first"
+other = "The logical table still has a physical-target configuration; remove it explicitly first"
 
 [model.logical_table.materialization_batch_active]
-other = "The logical table still has a non-terminal materialization batch and cannot be deleted"
+other = "The logical table still has a non-terminal table-creation execution and cannot be deleted"
 
 [model.logical_table.approval_fields_required]
 other = "The logical table must have at least one field before approval"
@@ -132,6 +132,18 @@ other = "Logical table field not found"
 
 [model.logical_table.field_column_conflict]
 other = "Logical table field column name already exists"
+
+[model.concept_mapping.invalid]
+other = "A concept realization mapping is invalid or its entity, attribute, relation, and logical model ownership do not align"
+
+[model.concept_mapping.state_conflict]
+other = "Only draft logical tables can change concept realization mappings, and all concept sources must be approved"
+
+[model.concept_mapping.drift]
+other = "A concept source has changed; review and save the concept realization mappings again before approval"
+
+[model.concept_mapping.in_use]
+other = "The concept resource is still referenced by a logical-table realization mapping; reopen approved logical tables before removing or rebuilding the mapping"
 
 [model.dw_layer.not_found]
 other = "DW layer not found"
@@ -201,3 +213,45 @@ other = "Metric source engine metadata is unavailable. Please retry later."
 
 [model.metric_implementation.engine_unsupported]
 other = "The source engine does not provide certified analytical SQL capabilities."
+
+[model.metric_implementation.metadata_unavailable]
+other = "Source metadata is unavailable. Scan or refresh the source in Meta and retry."
+
+[model.metric_implementation.metadata_incomplete]
+other = "Source field metadata is incomplete. Scan or refresh the source in Meta before saving this metric."
+
+[model.metric.parameter.subject_id.label]
+other = "Subject"
+
+[model.metric.parameter.subject_id.description]
+other = "Enter the identifier of the subject to count."
+
+[model.metric.parameter.comparison_id.label]
+other = "Comparison subject"
+
+[model.metric.parameter.comparison_id.description]
+other = "Enter the identifier of the comparison subject."
+
+[model.metric.parameter.start_date.label]
+other = "Start date"
+
+[model.metric.parameter.start_date.description]
+other = "Inclusive; filters by the date field declared by the metric."
+
+[model.metric.parameter.end_date.label]
+other = "End date"
+
+[model.metric.parameter.end_date.description]
+other = "Exclusive. For the full year 2026, enter 2027-01-01."
+
+[model.metric.parameter.grain.label]
+other = "Time granularity"
+
+[model.metric.parameter.grain.description]
+other = "Summarize the full date range or group by month; months without matching records return zero."
+
+[model.metric.parameter.directions.label]
+other = "Comparison directions"
+
+[model.metric.parameter.directions.description]
+other = "Forward uses the subject as the denominator; both calculates each direction separately."

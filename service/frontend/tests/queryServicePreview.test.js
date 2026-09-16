@@ -21,6 +21,7 @@ test('a new preview clears previous rows and cursor metadata even when it fails 
       previewData: { value: [{ subject_id: 'previous-person', value: 224 }] },
       previewLoading: { value: false },
       previewPagination: { value: { page: 1, pageSize: 20, cursors: [''], hasMore: true, nextCursor: 'old-cursor' } },
+      queryUnavailable: { value: false }, metricBindingRequired: { value: false },
       previewNamedParameterValues: {}, defaultFields: { value: null }, spatialInfo: { value: null },
       queryServicePreviewFields: () => [], queryServiceAPI: { testQuery: () => pending },
       ElMessage: { warning() {}, success() {}, error() {} }, t: key => key, console: { error() {} }

@@ -6735,10 +6735,6 @@
                         "type": "string"
                     }
                 },
-                "extra_quality_rules": {
-                    "type": "object",
-                    "additionalProperties": true
-                },
                 "format": {
                     "type": "string"
                 },
@@ -8097,9 +8093,6 @@
                         "type": "string"
                     }
                 },
-                "extra_quality_rules": {
-                    "$ref": "#/definitions/github_com_addp_standard_internal_models.JSONB"
-                },
                 "format": {
                     "type": "string"
                 },
@@ -9410,10 +9403,6 @@
                     "items": {
                         "type": "string"
                     }
-                },
-                "extra_quality_rules": {
-                    "type": "object",
-                    "additionalProperties": true
                 },
                 "format": {
                     "type": "string"

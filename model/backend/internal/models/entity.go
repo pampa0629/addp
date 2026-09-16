@@ -32,7 +32,7 @@ type EntityAttribute struct {
 	ColumnName        string    `gorm:"size:200;not null" json:"column_name"`
 	DataType          string    `gorm:"size:50;not null" json:"data_type"`
 	IsPK              bool      `gorm:"default:false" json:"is_pk"`
-	Nullable          bool      `gorm:"default:true" json:"nullable"`
+	Nullable          bool      `json:"nullable"`
 	Description       string    `gorm:"type:text" json:"description"`
 	SortOrder         int       `gorm:"default:0" json:"sort_order"`
 	CreatedAt         time.Time `json:"created_at"`

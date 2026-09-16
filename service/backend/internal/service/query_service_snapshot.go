@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -185,7 +186,19 @@ func cloneObjectTableMap(input map[string]map[string]string) map[string]map[stri
 }
 
 func queryServiceSnapshotPayload(snapshot *models.QueryServiceDependencySnapshot) map[string]interface{} {
-	return commonJSON.MapFromStruct(snapshot)
+	// JSON serialization preserves empty arrays and exact scalar tokens in the
+	// frozen plan; reflective display projection may normalize these values.
+	raw, err := json.Marshal(snapshot)
+	if err != nil {
+		return nil
+	}
+	var payload map[string]interface{}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	if decoder.Decode(&payload) != nil {
+		return nil
+	}
+	return payload
 }
 
 func canonicalSQL(sql string) string {

@@ -810,8 +810,6 @@ definitions:
     type: object
   github_com_addp_catalog_internal_service.QualitySummary:
     properties:
-      check_task_id:
-        type: integer
       configured:
         type: boolean
       detail_path:

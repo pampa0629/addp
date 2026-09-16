@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-async function installBackend(page) {
+async function installBackend(page, options = {}) {
   const permissions = [
     'model.logical_model.read',
     'standard.metric.read',
@@ -201,15 +201,21 @@ async function installBackend(page) {
             id: 28,
             title: '人员重叠查询',
             service_name: 'person_overlap',
-            config_type: 'sql',
-            service_version: 'publication-28',
+            config_type: 'analytical',
+            status: 'inactive',
+            service_version: '',
+            version: options.missingVersion ? 0 : 1,
           },
         ],
         total: 1,
       });
+    if (path === '/api/v1/service/query/28' && request.method() === 'GET')
+      return send({id: 28, title: '人员重叠查询', service_name: 'person_overlap', config_type: 'analytical', version: 2});
     if (path === '/api/v1/service/query/28/metric-source') {
       writes.push(request.postDataJSON());
-      return send({ id: 28 });
+      if (options.serviceConflict && request.postDataJSON().version === 1)
+        return send({error: 'changed', error_code: 'resource_version_conflict'}, 409);
+      return send({ id: 28, version: request.postDataJSON().version + 1 });
     }
     if (path === '/api/v1/service/query') {
       writes.push(request.postDataJSON());
@@ -348,7 +354,7 @@ test('overlap uses an explicit calculation and replaces a selected service publi
   await page.getByRole('button', { name: '发布查询服务', exact: true }).click();
   await page.getByText('替换现有服务来源', { exact: true }).click();
   await expect(page.getByRole('radio', { name: '替换现有服务来源', exact: true })).toBeChecked();
-  await choose(page, '选择 SQL 查询服务', '人员重叠查询 (person_overlap)');
+  await choose(page, '选择查询服务', '人员重叠查询 (person_overlap)');
   await page
     .getByRole('dialog')
     .getByRole('button', { name: '发布查询服务', exact: true })
@@ -356,6 +362,41 @@ test('overlap uses an explicit calculation and replaces a selected service publi
   await expect(page).toHaveURL(/service\/query-services\/28$/);
   expect(backend.writes.at(-1)).toEqual({
     metric_source: { implementation_id: 1, revision_id: 10 },
-    service_version: 'publication-28',
+    version: 1,
   });
 });
+
+
+test('missing service definition version is explained before attempting rebind', async ({ page }) => {
+  const backend = await installBackend(page, { missingVersion: true });
+  backend.item.revisions.push({ id: 10, revision_no: 2, status: 'published', metric_definition_revision_id: 62,
+    contract: { operation: 'count_distinct', subject: { relation_id: 0, field_id: 31 }, subject_relation_id: 7,
+      distinct: { relation_id: 0, field_id: 32 }, time: { relation_id: 8, field_id: 42 }, filters: [] } });
+  await page.goto('/metric-implementations/1?revision_id=10');
+  await page.getByRole('button', { name: '发布查询服务', exact: true }).click();
+  await page.getByText('替换现有服务来源', { exact: true }).click();
+  await choose(page, '选择查询服务', '人员重叠查询 (person_overlap)');
+  await page.getByRole('dialog').getByRole('button', { name: '发布查询服务', exact: true }).click();
+  await expect(page.getByRole('alert').filter({ hasText: '未获取到服务定义版本' })).toBeVisible();
+  await expect(page.getByRole('dialog')).toBeVisible();
+  expect(backend.writes).toEqual([]);
+});
+
+ test('rebind conflict preserves selection and reloads only on explicit request', async ({ page }) => {
+  const backend = await installBackend(page, { serviceConflict: true });
+  backend.item.revisions.push({ id: 10, revision_no: 2, status: 'published', metric_definition_revision_id: 62,
+    contract: { operation: 'count_distinct', subject: { relation_id: 7, field_id: 31 }, distinct: { relation_id: 0, field_id: 32 }, time: { relation_id: 8, field_id: 42 }, filters: [] } });
+  await page.goto('/metric-implementations/1?revision_id=10');
+  await page.getByRole('button', { name: '发布查询服务', exact: true }).click();
+  await page.getByText('替换现有服务来源', { exact: true }).click();
+  await choose(page, '选择查询服务', '人员重叠查询 (person_overlap)');
+  const dialog = page.getByRole('dialog');
+  await dialog.getByRole('button', { name: '发布查询服务', exact: true }).click();
+  await expect(dialog.getByText('服务已变化，已保留当前选择。请重新加载服务后再发布。')).toBeVisible();
+  await expect(dialog.getByRole('button', { name: '发布查询服务', exact: true })).toBeDisabled();
+  expect(backend.writes).toHaveLength(1);
+  await dialog.getByRole('button', { name: '重新加载服务', exact: true }).click();
+  await dialog.getByRole('button', { name: '发布查询服务', exact: true }).click();
+  await expect(page).toHaveURL(/service\/query-services\/28$/);
+  expect(backend.writes.map(body => body.version)).toEqual([1, 2]);
+ });

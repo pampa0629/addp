@@ -118,14 +118,26 @@ func (s *TableRelationService) GetProfessionalRelations(tenantID, tableID int64,
 		return true
 	}
 
-	if subject.EntityID != nil && s.entityRepo != nil {
-		if entity, entityErr := s.entityRepo.GetByID(*subject.EntityID, tenantID); entityErr == nil {
+	if s.conceptMappingRepo != nil && s.entityRepo != nil {
+		mappings, mappingErr := s.conceptMappingRepo.ListTableMappings(tableID, tenantID)
+		if mappingErr != nil {
+			return nil, mappingErr
+		}
+		for _, mapping := range mappings {
+			entity, entityErr := s.entityRepo.GetByID(mapping.EntityID, tenantID)
+			if entityErr != nil {
+				continue
+			}
 			appendProfessionalNode(&response.Nodes, seen, entityProfessionalNode(entity))
-			appendEdge(models.ProfessionalRelationEdge{
-				ID:           fmt.Sprintf("model:logical_table_entity:%d", subject.ID),
+			if !appendEdge(models.ProfessionalRelationEdge{
+				ID:           fmt.Sprintf("model:logical_table_entity_mapping:%d", mapping.ID),
 				RelationKind: "model.logical_table.entity",
-				Source:       response.Subject, Target: modelProfessionalKey("entity", entity.ID),
-			})
+				Source:       response.Subject,
+				Target:       modelProfessionalKey("entity", entity.ID),
+				Note:         mapping.MappingRole,
+			}) {
+				break
+			}
 		}
 	}
 

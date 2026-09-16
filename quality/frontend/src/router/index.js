@@ -14,26 +14,18 @@ const routes = [
   {
     path: '/',
     component: Layout,
-    redirect: '/check-tasks',
+    redirect: '/plans',
     meta: { requiresAuth: true },
     children: [
       {
-        path: 'rule-applications',
-        name: 'RuleApplicationList',
-        component: () => import('../views/RuleApplicationList.vue'),
-        meta: { requiresAuth: true, title: '规则应用配置', requiredPermissions: ['quality.rule_application.read'] }
+        path: 'rules', name: 'RuleList', component: () => import('../views/RuleList.vue'),
+        meta: { requiresAuth: true, title: '质量规则', requiredPermissions: ['quality.rule.read'] }
       },
       {
-        path: 'check-tasks',
-        name: 'CheckTaskList',
-        component: () => import('../views/CheckTaskList.vue'),
-        meta: { requiresAuth: true, title: '检查任务', requiredPermissions: ['quality.check_task.read'] }
-      },
-      {
-        path: 'data-validation-tasks',
-        name: 'DataValidationTaskList',
-        component: () => import('../views/DataValidationTaskList.vue'),
-        meta: { requiresAuth: true, title: '数据校验任务', requiredPermissions: ['quality.data_validation.read'] }
+        path: 'plans',
+        name: 'PlanList',
+        component: () => import('../views/PlanList.vue'),
+        meta: { requiresAuth: true, title: '质量检查方案', requiredPermissions: ['quality.plan.read'] }
       },
       {
         path: 'executions/:execution_id',

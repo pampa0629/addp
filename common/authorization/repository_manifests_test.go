@@ -13,8 +13,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		t.Fatalf("LoadRepositoryAuthorizationCatalog() error = %v", err)
 	}
 	descriptors := report.Permissions
-	if len(descriptors) != 447 {
-		t.Fatalf("descriptor count = %d, want 447", len(descriptors))
+	if len(descriptors) != 443 {
+		t.Fatalf("descriptor count = %d, want 443", len(descriptors))
 	}
 	for _, descriptor := range descriptors {
 		if descriptor.OwnerModule == "security" && !reflect.DeepEqual(descriptor.AllowedScopeTypes, []string{"tenant"}) {
@@ -102,6 +102,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	})
 	assertRepositoryRolePrincipalTypes(t, roles, "tenant.model_runtime", []string{"service_principal"})
 	assertRepositoryRolePermissions(t, roles, "tenant.model_runtime", []string{
+		"meta.catalog.read",
 		"standard.domain.read",
 		"standard.element.read",
 		"standard.metric.read",
@@ -371,21 +372,17 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"develop.data_read.execute",
 		"meta.lineage.read",
 		"monitor.execution.read",
-		"quality.check_task.create",
-		"quality.check_task.delete",
-		"quality.check_task.execute",
-		"quality.check_task.read",
-		"quality.check_task.update",
-		"quality.data_validation.create",
-		"quality.data_validation.delete",
-		"quality.data_validation.read",
-		"quality.data_validation.update",
 		"quality.issue.read",
 		"quality.issue.update",
-		"quality.rule_application.create",
-		"quality.rule_application.delete",
-		"quality.rule_application.read",
-		"quality.rule_application.update",
+		"quality.plan.create",
+		"quality.plan.delete",
+		"quality.plan.execute",
+		"quality.plan.read",
+		"quality.plan.update",
+		"quality.rule.create",
+		"quality.rule.delete",
+		"quality.rule.read",
+		"quality.rule.update",
 		"standard.code_set.create",
 		"standard.code_set.delete",
 		"standard.code_set.publish",

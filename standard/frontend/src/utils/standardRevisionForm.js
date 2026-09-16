@@ -39,7 +39,7 @@ export function resetIncompatibleElementConstraints(revision, dataType) {
   revision.code_set_revision_id = null
 }
 
-export function buildElementRevisionPayload(revision, version, uniqueRuleKey, uniqueEnabled) {
+export function buildElementRevisionPayload(revision, version) {
   return {
     version,
     name: revision.name,
@@ -56,12 +56,6 @@ export function buildElementRevisionPayload(revision, version, uniqueRuleKey, un
     code_set_revision_id: revision.value_domain_kind === 'enumeration' ? revision.code_set_revision_id : null,
     unit_id: revision.unit_id ?? null,
     example_values: revision.example_values || [],
-    extra_quality_rules: {
-      schema_version: 'addp.quality.rules/v1',
-      rules: uniqueEnabled
-        ? [{ rule_key: uniqueRuleKey, type: 'unique', enabled: true, severity: 'error', message: '', params: {} }]
-        : []
-    },
     change_summary: revision.change_summary,
     effective_from: revision.effective_from || null,
     effective_to: revision.effective_to || null

@@ -35,7 +35,7 @@ func TestCatalogResourceRoutesRequireCatalogServiceAndResolveCurrentOwner(t *tes
 			description TEXT NOT NULL, status TEXT NOT NULL, version INTEGER NOT NULL, created_by INTEGER NOT NULL,
 			updated_by INTEGER, created_at DATETIME, updated_at DATETIME)`,
 		`CREATE TABLE model.logical_tables (
-			id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, domain_id INTEGER, entity_id INTEGER, name TEXT NOT NULL,
+			id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, domain_id INTEGER, name TEXT NOT NULL,
 			code TEXT NOT NULL, description TEXT NOT NULL, table_type TEXT NOT NULL, layer TEXT, status TEXT NOT NULL,
 			grain_description TEXT NOT NULL, scd_type INTEGER NOT NULL, materialization JSON, version INTEGER NOT NULL,
 			created_by INTEGER NOT NULL, updated_by INTEGER, created_at DATETIME, updated_at DATETIME)`,
@@ -64,7 +64,7 @@ func TestCatalogResourceRoutesRequireCatalogServiceAndResolveCurrentOwner(t *tes
 	})
 	defer authServer.Close()
 	catalogService := service.NewCatalogResourceService(repository.NewCatalogResourceRepository(db))
-	router := SetupRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, catalogService, nil, authServer.URL, nil, modulelifecycle.NewStandalone("model"))
+	router := SetupRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, catalogService, nil, authServer.URL, nil, modulelifecycle.NewStandalone("model"))
 
 	changesResponse := performModelCatalogRequest(router, http.MethodGet, "/api/v1/model/catalog-resources/changes", "catalog-token", nil)
 	if changesResponse.Code != http.StatusOK {

@@ -100,7 +100,7 @@ func (r *LogicalTableRepository) Update(table *models.LogicalTable) error {
 	result := r.db.Model(&models.LogicalTable{}).
 		Where("id = ? AND tenant_id = ? AND version = ?", table.ID, table.TenantID, table.Version).
 		Updates(map[string]interface{}{
-			"domain_id": table.DomainID, "entity_id": table.EntityID, "name": table.Name,
+			"domain_id": table.DomainID, "name": table.Name,
 			"description": table.Description, "table_type": table.TableType, "layer": table.Layer,
 			"grain_description": table.GrainDescription, "scd_type": table.SCDType,
 			"materialization": table.Materialization, "updated_by": table.UpdatedBy,

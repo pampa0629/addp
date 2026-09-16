@@ -48,5 +48,5 @@ func TestIntegrationPostgresAnalyticalArithmetic(t *testing.T) {
 			}
 		})
 	}
-	conformance.PreparedArithmetic(t, &integerPreparedProvider{PostgreSQLPlugin: provider, compiler: conformance.RelationalFixtureCompiler{Expression: analyticalExpressionDialect{}, Result: analyticalResultDialect{}, Scan: analyticalScanDialect{}}}, info)
+	conformance.PreparedArithmetic(t, provider, info)
 }

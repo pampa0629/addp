@@ -2,23 +2,10 @@ package plugin
 
 import (
 	"fmt"
-	commonquery "github.com/addp/common/query"
 	"sort"
 	"strings"
 	"sync"
 )
-
-func ResolveAnalyticalSQLDialect(engineType string) (commonquery.AnalyticalDialect, error) {
-	engine, err := Get(engineType)
-	if err != nil {
-		return commonquery.AnalyticalDialect{}, err
-	}
-	provider, ok := engine.(AnalyticalSQLProvider)
-	if !ok {
-		return commonquery.AnalyticalDialect{}, fmt.Errorf("engine %s does not provide analytical SQL expressions", engineType)
-	}
-	return provider.AnalyticalSQLDialect()
-}
 
 // ResolveAnalyticalCompiler uses the single engine registry. Resolving an
 // implementation alone does not certify instance capability or authorize use.

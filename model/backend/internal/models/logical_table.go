@@ -7,16 +7,15 @@ type LogicalTable struct {
 	ID               int64     `gorm:"primaryKey;autoIncrement" json:"id"`
 	TenantID         int64     `gorm:"not null;index" json:"tenant_id"`
 	DomainID         *int64    `gorm:"index" json:"domain_id,omitempty"`
-	EntityID         *int64    `json:"entity_id,omitempty"` // 关联实体（可选）
 	Name             string    `gorm:"size:200;not null" json:"name"`
-	Code             string    `gorm:"size:200;not null" json:"code"` // 英文表名（物化时使用）
+	Code             string    `gorm:"size:200;not null" json:"code"` // 逻辑表稳定编码
 	Description      string    `gorm:"type:text" json:"description"`
 	TableType        string    `gorm:"size:30;not null" json:"table_type"`                // 建模角色：entity/fact/dimension
 	Layer            string    `gorm:"size:20" json:"layer"`                              // 当前 Tenant 中已存在的 DWLayer 编码
 	Status           string    `gorm:"size:20;default:'draft'" json:"status"`             // draft/approved
 	GrainDescription string    `gorm:"type:text" json:"grain_description"`                // 仅 fact 表：粒度声明（如"每行代表一笔支付事务"）
 	SCDType          int       `gorm:"default:0" json:"scd_type"`                         // 仅 dimension 表：缓慢变化维类型 0=静态/1=覆盖/2=拉链/3=混合
-	Materialization  JSONB     `gorm:"type:jsonb;serializer:json" json:"materialization"` // 物化配置
+	Materialization  JSONB     `gorm:"type:jsonb;serializer:json" json:"materialization"` // 物理目标配置
 	Version          int64     `gorm:"not null;default:1" json:"version"`
 	CreatedBy        int64     `gorm:"not null" json:"created_by"`
 	UpdatedBy        *int64    `json:"updated_by,omitempty"`
@@ -38,9 +37,8 @@ type LogicalField struct {
 	ColumnName        string `gorm:"size:200;not null" json:"column_name"` // 物理列名
 	DataType          string `gorm:"size:50;not null" json:"data_type"`    // string/int/bigint/float/decimal/date/datetime/bool/json/text
 	Length            *int   `json:"length,omitempty"`
-	Nullable          bool   `gorm:"default:true" json:"nullable"`
+	Nullable          bool   `json:"nullable"`
 	IsPK              bool   `gorm:"default:false" json:"is_pk"`
-	IsPartition       bool   `gorm:"default:false" json:"is_partition"` // 是否分区字段
 	DefaultValue      string `gorm:"type:text" json:"default_value"`
 	Description       string `gorm:"type:text" json:"description"`
 	SortOrder         int    `gorm:"default:0" json:"sort_order"`
@@ -74,7 +72,6 @@ func (TableRelation) TableName() string {
 // CreateLogicalTableRequest 创建逻辑表请求
 type CreateLogicalTableRequest struct {
 	DomainID         *int64                 `json:"domain_id,omitempty" binding:"omitempty,gt=0" minimum:"1"`
-	EntityID         *int64                 `json:"entity_id,omitempty" binding:"omitempty,gt=0" minimum:"1"`
 	Name             string                 `json:"name" binding:"required,max=200" maxLength:"200"`
 	Code             string                 `json:"code" binding:"required,max=200" maxLength:"200"`
 	Description      string                 `json:"description"`
@@ -89,7 +86,6 @@ type CreateLogicalTableRequest struct {
 type UpdateLogicalTableRequest struct {
 	Version          int64                  `json:"version" binding:"required,gt=0" minimum:"1"`
 	DomainID         *int64                 `json:"domain_id" binding:"omitempty,gt=0" minimum:"1" extensions:"x-nullable"`
-	EntityID         *int64                 `json:"entity_id" binding:"omitempty,gt=0" minimum:"1" extensions:"x-nullable"`
 	Name             string                 `json:"name" binding:"required,max=200" maxLength:"200"`
 	Description      string                 `json:"description"`
 	TableType        string                 `json:"table_type" binding:"required,oneof=entity fact dimension" enums:"entity,fact,dimension"`
@@ -99,7 +95,7 @@ type UpdateLogicalTableRequest struct {
 	Materialization  map[string]interface{} `json:"materialization" binding:"required"`
 }
 
-// PreviewLogicalTableDDLRequest 使用当前页面中的物化配置生成 DDL，不持久化配置。
+// PreviewLogicalTableDDLRequest 使用当前页面中的物理目标配置生成建表语句，不持久化配置。
 type PreviewLogicalTableDDLRequest struct {
 	Materialization map[string]interface{} `json:"materialization" binding:"required"`
 }
@@ -123,7 +119,6 @@ type CreateLogicalFieldRequest struct {
 	Length       *int   `json:"length,omitempty" binding:"omitempty,gt=0" minimum:"1"`
 	Nullable     bool   `json:"nullable"`
 	IsPK         bool   `json:"is_pk"`
-	IsPartition  bool   `json:"is_partition"`
 	DefaultValue string `json:"default_value"`
 	Description  string `json:"description"`
 	SortOrder    int    `json:"sort_order" binding:"gte=0" minimum:"0"`
@@ -140,7 +135,6 @@ type UpdateLogicalFieldRequest struct {
 	Length       *int   `json:"length" binding:"omitempty,gt=0" minimum:"1" extensions:"x-nullable"`
 	Nullable     *bool  `json:"nullable" binding:"required"`
 	IsPK         *bool  `json:"is_pk" binding:"required"`
-	IsPartition  *bool  `json:"is_partition" binding:"required"`
 	DefaultValue string `json:"default_value"`
 	Description  string `json:"description"`
 	SortOrder    *int   `json:"sort_order" binding:"required,gte=0" minimum:"0"`
@@ -176,4 +170,20 @@ type TableRelationDetail struct {
 }
 
 // LogicalTableDetail is the approved or draft logical table definition.
-type LogicalTableDetail struct{ *LogicalTable }
+type LogicalTableDetail struct {
+	*LogicalTable
+	StructuralConstraints LogicalTableStructuralConstraints `json:"structural_constraints"`
+}
+
+// LogicalConstraintField is a reference to a field in the same model snapshot.
+type LogicalConstraintField struct {
+	FieldID    int64  `json:"field_id"`
+	ColumnName string `json:"column_name"`
+}
+
+// LogicalTableStructuralConstraints is derived from model facts, never stored or edited separately.
+type LogicalTableStructuralConstraints struct {
+	PrimaryKey     []LogicalConstraintField `json:"primary_key"`
+	RequiredFields []LogicalConstraintField `json:"required_fields"`
+	ForeignKeys    []TableRelationDetail    `json:"foreign_keys"`
+}

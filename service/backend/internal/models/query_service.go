@@ -9,7 +9,8 @@ import (
 
 // QueryService 查询服务模型
 type QueryService struct {
-	ID uint `gorm:"primarykey" json:"id"`
+	ID      uint  `gorm:"primarykey" json:"id"`
+	Version int64 `gorm:"type:bigint;not null;default:1;check:chk_query_service_version,version > 0" json:"version"`
 
 	// 基本信息
 	TenantID    uint        `gorm:"not null;index:idx_query_services_tenant" json:"tenant_id"`
@@ -19,7 +20,7 @@ type QueryService struct {
 	Keywords    StringArray `gorm:"type:text[]" json:"keywords"`
 
 	// 配置方式（互斥）
-	ConfigType string `gorm:"size:50;not null;check:config_type IN ('table', 'sql');index:idx_query_services_config_type" json:"config_type"`
+	ConfigType string `gorm:"size:50;not null;check:config_type IN ('table', 'sql', 'analytical');index:idx_query_services_config_type" json:"config_type"`
 
 	// 源存储引擎；联邦 SQL 的来源由 SQL 和发布快照表达。
 	EngineID *uint `gorm:"index:idx_query_services_engine" json:"engine_id"`
@@ -81,6 +82,12 @@ func (q *QueryService) UsesFederatedQueryRuntime() bool {
 
 // GetEngineID 安全获取 EngineID（0 表示未设置）
 func (q *QueryService) GetEngineID() uint {
+	if q.ConfigType == "analytical" {
+		if source := q.MetricPlan(); source != nil {
+			return source.ExecutionPlan.EngineID
+		}
+		return 0
+	}
 	if q.EngineID == nil {
 		return 0
 	}
@@ -140,6 +147,12 @@ func (q *QueryService) GetSpatialInfo() *datatype.SpatialInfo {
 
 // GetTableInfo 获取已发布表输出契约。
 func (q *QueryService) GetTableInfo() *datatype.TableInfo {
+	if q.ConfigType == "analytical" {
+		if source := q.MetricPlan(); source != nil {
+			return (&datatype.TableInfo{Fields: source.ExecutionPlan.Plan.Output.Fields}).Clone()
+		}
+		return nil
+	}
 	snapshot := q.SourceSnapshot()
 	if snapshot == nil || snapshot.Table == nil {
 		return nil
@@ -173,6 +186,12 @@ func (q *QueryService) GetSRID() int {
 
 // GetStableKey 获取发布契约中的非空唯一稳定排序键。
 func (q *QueryService) GetStableKey() []string {
+	if q.ConfigType == "analytical" {
+		if source := q.MetricPlan(); source != nil {
+			return append([]string(nil), source.ExecutionPlan.Plan.Output.StableKey...)
+		}
+		return nil
+	}
 	if q == nil || q.DataConfig == nil {
 		return nil
 	}
@@ -274,7 +293,7 @@ type CreateQueryServiceRequest struct {
 	Keywords     []string             `json:"keywords"`
 
 	// 配置方式（table 或 sql）
-	ConfigType string `json:"config_type" binding:"required,oneof=table sql"`
+	ConfigType string `json:"config_type" binding:"required,oneof=table sql analytical"`
 
 	// Source Engine 与 Federated Query Runtime 显式互斥或组合，具体约束由 config_type 决定。
 	EngineID        *uint `json:"engine_id"`
@@ -305,6 +324,7 @@ type CreateQueryServiceRequest struct {
 
 // UpdateQueryServiceRequest 更新查询服务请求
 type UpdateQueryServiceRequest struct {
+	Version     int64    `json:"version" binding:"required,gt=0"`
 	Title       *string  `json:"title,omitempty"`
 	Description *string  `json:"description,omitempty"`
 	Keywords    []string `json:"keywords,omitempty"`
@@ -325,6 +345,7 @@ type UpdateQueryServiceRequest struct {
 
 // QueryServiceDTO 查询服务 DTO
 type QueryServiceDTO struct {
+	Version        int64  `json:"version"`
 	ServiceVersion string `json:"service_version"`
 	ID             uint   `json:"id"`
 
@@ -345,6 +366,8 @@ type QueryServiceDTO struct {
 	// SQL配置
 	SqlQuery        string                       `json:"sql_query,omitempty"`
 	NamedParameters []QueryServiceNamedParameter `json:"named_parameters"`
+	OutputContract  *QueryServiceOutputContract  `json:"output_contract,omitempty"`
+	StableKey       []string                     `json:"stable_key"`
 
 	// 配置
 	DataConfig map[string]interface{} `json:"data_config"`
@@ -365,4 +388,34 @@ type QueryServiceDTO struct {
 	CreatedBy uint      `json:"created_by"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+}
+
+func (q *QueryService) MetricPlan() *MetricSourceSnapshot {
+	if q == nil || q.ConfigType != "analytical" {
+		return nil
+	}
+	snapshot := q.SourceSnapshot()
+	if snapshot == nil {
+		return nil
+	}
+	return snapshot.MetricSource
+}
+func (q *QueryService) GetNamedParameters() []QueryServiceNamedParameter {
+	if q.ConfigType != "analytical" {
+		return append([]QueryServiceNamedParameter(nil), q.NamedParameters...)
+	}
+	source := q.MetricPlan()
+	if source == nil {
+		return nil
+	}
+	var result []QueryServiceNamedParameter
+	for _, p := range source.Parameters() {
+		result = append(result, QueryServiceNamedParameter{Name: p.Name, Type: p.Type, Required: p.Required, Options: p.Options, Presentation: p.Presentation})
+	}
+	return result
+}
+
+// QueryServiceVersionRequest is used by delete and snapshot refresh commands.
+type QueryServiceVersionRequest struct {
+	Version int64 `json:"version" binding:"required,gt=0"`
 }

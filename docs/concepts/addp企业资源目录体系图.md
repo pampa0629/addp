@@ -53,7 +53,7 @@ erDiagram
 - `CatalogEntry` 是企业资源目录稳定身份。它独立于当前物理路径、工作区和资产发布状态。
 - `SourceBinding` 是 CatalogEntry 与专业资源之间的权威绑定及历史。关联只保存在 Catalog。
 - `CatalogComponent` 是字段或内部组件级从属对象，默认不成为顶级企业目录条目。
-- `StandardMapping` 是 CatalogComponent 到确定数据元修订的可审核关系事实，记录来源、置信度、证据、审核状态和并发版本；AI 只能生成候选，审核通过后才可被 Quality 消费。
+- `StandardMapping` 是 CatalogComponent 到确定数据元修订的可审核关系事实，记录来源、置信度、证据、审核状态和并发版本；AI 只能生成候选，审核通过后才进入企业落标覆盖率和数据字典；Quality 方案不是该审核流程的下游必经步骤。
 - 条目级业务语义关联、责任关系、治理状态和推荐继任关系以 CatalogEntry 为锚点；字段级落标关系以 CatalogComponent 为目标，不提升为顶级 CatalogEntry。
 
 Catalog 不提供任意 `CatalogRelation` 或可配置关系类型。当前唯一由 Catalog 拥有的跨条目关系是弃用条目指向一个推荐继任项：它表达“两个不同企业身份之间的治理迁移建议”，不表达数据血缘、专业依赖、同义词或同一身份合并。

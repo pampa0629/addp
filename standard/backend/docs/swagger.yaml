@@ -332,9 +332,6 @@ definitions:
         items:
           type: string
         type: array
-      extra_quality_rules:
-        additionalProperties: true
-        type: object
       format:
         type: string
       length:
@@ -1274,8 +1271,6 @@ definitions:
         items:
           type: string
         type: array
-      extra_quality_rules:
-        $ref: '#/definitions/github_com_addp_standard_internal_models.JSONB'
       format:
         type: string
       id:
@@ -2148,9 +2143,6 @@ definitions:
         items:
           type: string
         type: array
-      extra_quality_rules:
-        additionalProperties: true
-        type: object
       format:
         type: string
       length:

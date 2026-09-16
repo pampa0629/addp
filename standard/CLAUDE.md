@@ -2,9 +2,9 @@
 
 本文件为 Claude Code 在 `standard/` 目录下工作时提供指导。
 
-数据元 `quality_rules` 的结构和校验必须遵守 [ADDP 数据质量规范](../docs/spec/addp数据质量规范.md)。每条规则必须有由 Standard 首次创建时生成且编辑过程中保持不变的 `rule_key`；Standard 只拥有规则定义，不拥有物理字段应用、规则执行、评分或质量问题。
+数据元修订 `compiled_quality_rules` 的结构和校验必须遵守 [ADDP 数据质量规范](../docs/spec/addp数据质量规范.md)。规则仅由值约束编译，`rule_key` 由 Standard 按数据元稳定 ID 与约束类型生成并跨修订保持；Standard 不拥有物理字段应用、规则执行、评分或质量问题。
 
-Standard 定义 Domain、Glossary、Element、MetricDefinition、CodeSet、Unit 和标准来源文档等可复用业务语义，但不拥有这些语义与具体 DataItem、CatalogEntry 或 CatalogComponent 的应用关系。具体字段/组件到标准修订的映射只由 Catalog 保存；规则应用、执行、符合性结果和问题只由 Quality 保存。Standard 不依赖 Meta 或 Catalog，不保存 `catalog_entry_id`、反向资源列表或质量执行事实。安全分类、安全等级、敏感类型和保护基线统一属于 Security，Standard 不保存第二份安全事实。
+Standard 定义 Domain、Glossary、Element、MetricDefinition、CodeSet、Unit 和标准来源文档等可复用业务语义，但不拥有这些语义与具体 DataItem、CatalogEntry 或 CatalogComponent 的应用关系。具体字段/组件到标准修订的映射只由 Catalog 保存；检查方案、规则来源快照、执行结果和问题只由 Quality 保存。Standard 不依赖 Meta 或 Catalog，不保存 `catalog_entry_id`、反向资源列表或质量执行事实。安全分类、安全等级、敏感类型和保护基线统一属于 Security，Standard 不保存第二份安全事实。
 
 Metric 的指标依赖与基准指标关系通过当前 User Token 读取 `GET /metrics/:id/relations` 一跳图；它要求 `standard.metric.read`，只读 Standard 本地事实，不调用 Catalog 或 Model，也不使用 `standard.catalog.read` 机器权限替代用户权限。数据元、Domain、指标分类和单位继续留在 Metric 专业详情中，本阶段不伪造为企业目录节点。
 
@@ -168,8 +168,7 @@ standard/
 | range_constraint | JSONB | 连续值域结构；仅 `range` 使用 |
 | code_set_revision_id | int64? | 枚举值域固定引用；仅 `enumeration` 使用 |
 | unit_id | int64? | 计量单位引用 |
-| extra_quality_rules | JSONB | 不能由标准语义推导的附加质量规则 |
-| compiled_quality_rules | JSONB | 发布时从语义约束和附加规则编译的不可变规则快照 |
+| compiled_quality_rules | JSONB | 发布时仅从数据元值约束编译的不可变规则快照 |
 | change_summary | text | 本次业务变更说明 |
 | effective_from / effective_to | time? | 半开生效区间 `[effective_from, effective_to)`；发布时 `effective_from` 不能为空 |
 | submitted_by/at / published_by/at | mixed | 审核发布审计字段 |
@@ -487,7 +486,11 @@ draft → in_review → published → withdrawn
 
 数据元修订必须在 `unrestricted`、`range`、`enumeration` 中三选一。`range` 只使用结构化 `range_constraint`；`enumeration` 必须绑定具体 `code_set_revision_id`。两者互斥，且绑定的码值集修订必须已经发布、值类型必须与数据元类型相容，码值集修订生效区间必须覆盖数据元修订生效区间。
 
-发布数据元修订时，Standard 从 `nullable`、长度、格式、连续值域和固定码值集修订确定性编译质量规则，再合并不重复的 `extra_quality_rules`。下游 Quality 消费指定时点生效修订的 `compiled_quality_rules` 快照，不允许调用方再维护第二份 `allowed_values`。
+发布数据元修订时，Standard 只从 `nullable`、长度、格式、连续值域和固定码值集修订确定性编译质量规则。`nullable=false` 表示该数据元在所有适用场景中的非空要求；某张表的局部必填要求由 Model 字段表达。唯一性依赖表粒度，不能配置在数据元上；`extra_quality_rules` 列、请求字段和编辑入口删除。下游消费确定修订的 `compiled_quality_rules`，不维护第二份 `allowed_values`。
+
+数据元详情只读展示已发布修订的编译规则。草稿通过语义字段编辑，发布时生成快照；规则身份由数据元 ID 与约束类型确定，参数变化不改变身份。迁移不改写已发布修订的编译快照或 Quality 的历史执行；含旧唯一性规则的已发布修订须通过正常新修订发布替换，新修订不会继承附加规则。
+
+`nullable` 必须原样持久化，ORM 不得用 `default:true` 覆盖显式 `false`。删除附加规则时，受影响的工作修订推进聚合版本，审核中的修订退回草稿并清空提交审计，要求重新确认；已发布快照保持不变。历史错误保存的可空性无法从当前值反推，不自动回填。
 
 ### 数据字典边界
 

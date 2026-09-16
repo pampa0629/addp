@@ -30,7 +30,7 @@ func TestRespondQualityServiceErrorContract(t *testing.T) {
 			gin.SetMode(gin.TestMode)
 			recorder := httptest.NewRecorder()
 			c, _ := gin.CreateTestContext(recorder)
-			respondQualityServiceError(c, tt.err, qualityi18n.MsgCheckTaskNotFound, qualityi18n.MsgInternal)
+			respondQualityServiceError(c, tt.err, qualityi18n.MsgPlanNotFound, qualityi18n.MsgInternal)
 			if recorder.Code != tt.wantStatus {
 				t.Fatalf("status = %d, want %d", recorder.Code, tt.wantStatus)
 			}

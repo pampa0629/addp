@@ -4,11 +4,13 @@ import (
 	"net/http"
 	"strconv"
 
+	commonapi "github.com/addp/common/api"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	modeli18n "github.com/addp/model/i18n"
 	"github.com/addp/model/internal/models"
 	"github.com/addp/model/internal/service"
 	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
 )
 
 type DWLayerHandler struct {
@@ -58,7 +60,7 @@ func (h *DWLayerHandler) ListDWLayers(c *gin.Context) {
 // @Security BearerAuth
 func (h *DWLayerHandler) CreateDWLayer(c *gin.Context) {
 	var req models.CreateDWLayerRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err := commonapi.BindOptionalJSONStrict(c, &req); err != nil || binding.Validator.ValidateStruct(&req) != nil {
 		c.JSON(http.StatusBadRequest, invalidParamsResponse(c))
 		return
 	}
@@ -127,7 +129,7 @@ func (h *DWLayerHandler) UpdateDWLayer(c *gin.Context) {
 	}
 
 	var req models.UpdateDWLayerRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err := commonapi.BindOptionalJSONStrict(c, &req); err != nil || binding.Validator.ValidateStruct(&req) != nil {
 		c.JSON(http.StatusBadRequest, invalidParamsResponse(c))
 		return
 	}

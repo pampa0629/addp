@@ -15,13 +15,11 @@ import (
 
 // TaskProviderHandler 标准 TaskProvider API 处理器。
 type TaskProviderHandler struct {
-	checkTaskSvc *service.CheckTaskService
-	gateTaskSvc  *service.DataValidationService
-	executor     *service.CheckExecutor
+	planSvc *service.PlanService
 }
 
-func NewTaskProviderHandler(checkTaskSvc *service.CheckTaskService, gateTaskSvc *service.DataValidationService, executor *service.CheckExecutor) *TaskProviderHandler {
-	return &TaskProviderHandler{checkTaskSvc: checkTaskSvc, gateTaskSvc: gateTaskSvc, executor: executor}
+func NewTaskProviderHandler(planSvc *service.PlanService) *TaskProviderHandler {
+	return &TaskProviderHandler{planSvc: planSvc}
 }
 
 type taskProviderTaskListItem struct {
@@ -58,10 +56,10 @@ type qualityTaskProviderExecuteResponse struct {
 
 // ListTasks 列出 Quality 检查任务。
 // @Summary 列出 TaskProvider 质量检查任务 | List TaskProvider quality check tasks
-// @Description 按标准 TaskProvider 协议列出 Quality 任务；task_type 支持 check|data_validation。| List Quality tasks through the standard TaskProvider protocol; task_type supports check or data_validation.
-// @Tags CheckTask
+// @Description 按标准 TaskProvider 协议列出 Quality 任务；task_type 支持 quality_plan。| List Quality tasks through the standard TaskProvider protocol; task_type supports quality_plan.
+// @Tags QualityPlan
 // @Produce json
-// @Param task_type query string false "任务类型：check|data_validation | Task type: check or data_validation"
+// @Param task_type query string false "任务类型：quality_plan | Task type: quality_plan"
 // @Success 200 {object} taskProviderTaskListResponse "任务列表 | Task list"
 // @Failure 400 {object} qualityErrorResponse "请求参数错误 | Bad request"
 // @Failure 500 {object} qualityErrorResponse "服务器内部错误 | Internal server error"
@@ -71,7 +69,7 @@ type qualityTaskProviderExecuteResponse struct {
 // @Security BearerAuth
 func (h *TaskProviderHandler) ListTasks(c *gin.Context) {
 	taskType := strings.TrimSpace(c.Query("task_type"))
-	if taskType != "" && taskType != commonExecution.TaskTypeQualityCheck && taskType != commonExecution.TaskTypeDataValidation {
+	if taskType != "" && taskType != commonExecution.TaskTypeQualityPlan {
 		respondInvalidRequest(c, "")
 		return
 	}
@@ -83,26 +81,15 @@ func (h *TaskProviderHandler) ListTasks(c *gin.Context) {
 	tenantID := getTenantID(c)
 	items := make([]taskProviderTaskListItem, 0)
 	var total int64
-	if taskType == "" || taskType == commonExecution.TaskTypeQualityCheck {
-		tasks, count, err := h.checkTaskSvc.List(tenantID, page, pageSize)
+	if (taskType == "" || taskType == commonExecution.TaskTypeQualityPlan) && h.planSvc != nil {
+		tasks, count, err := h.planSvc.List(c.Request.Context(), tenantID, page, pageSize)
 		if err != nil {
 			respondQualityServiceError(c, err, "", qualityi18n.MsgInternal)
 			return
 		}
 		total += count
 		for _, task := range tasks {
-			items = append(items, qualityTaskListItem(task))
-		}
-	}
-	if (taskType == "" || taskType == commonExecution.TaskTypeDataValidation) && h.gateTaskSvc != nil {
-		tasks, count, err := h.gateTaskSvc.List(c.Request.Context(), tenantID, page, pageSize)
-		if err != nil {
-			respondQualityServiceError(c, err, "", qualityi18n.MsgInternal)
-			return
-		}
-		total += count
-		for _, task := range tasks {
-			items = append(items, qualityGateTaskListItem(task))
+			items = append(items, qualityPlanListItem(task))
 		}
 	}
 	c.JSON(http.StatusOK, taskProviderTaskListResponse{
@@ -115,10 +102,10 @@ func (h *TaskProviderHandler) ListTasks(c *gin.Context) {
 
 // TaskDetail 获取 Quality 检查任务详情。
 // @Summary 获取 TaskProvider 质量检查任务详情 | Get TaskProvider quality check task detail
-// @Description 按标准 TaskProvider 协议获取 Quality 任务详情；task_type 支持 check|data_validation。| Get Quality task detail through the standard TaskProvider protocol; task_type supports check or data_validation.
-// @Tags CheckTask
+// @Description 按标准 TaskProvider 协议获取 Quality 任务详情；task_type 支持 quality_plan。| Get Quality task detail through the standard TaskProvider protocol; task_type supports quality_plan.
+// @Tags QualityPlan
 // @Produce json
-// @Param task_type path string true "任务类型：check|data_validation | Task type: check or data_validation"
+// @Param task_type path string true "任务类型：quality_plan | Task type: quality_plan"
 // @Param id path int true "检查任务ID | Check task ID"
 // @Success 200 {object} taskProviderTaskListItem "任务详情 | Task detail"
 // @Failure 400 {object} qualityErrorResponse "请求参数错误 | Bad request"
@@ -129,7 +116,7 @@ func (h *TaskProviderHandler) ListTasks(c *gin.Context) {
 // @Security BearerAuth
 func (h *TaskProviderHandler) TaskDetail(c *gin.Context) {
 	taskType := c.Param("task_type")
-	if taskType != commonExecution.TaskTypeQualityCheck && taskType != commonExecution.TaskTypeDataValidation {
+	if taskType != commonExecution.TaskTypeQualityPlan {
 		respondInvalidRequest(c, "")
 		return
 	}
@@ -140,34 +127,21 @@ func (h *TaskProviderHandler) TaskDetail(c *gin.Context) {
 		return
 	}
 
-	if taskType == commonExecution.TaskTypeDataValidation {
-		if h.gateTaskSvc == nil {
-			respondInvalidRequest(c, "")
-			return
-		}
-		task, err := h.gateTaskSvc.Get(c.Request.Context(), getTenantID(c), taskID)
-		if err != nil {
-			respondQualityServiceError(c, err, qualityi18n.MsgCheckTaskNotFound, qualityi18n.MsgInternal)
-			return
-		}
-		c.JSON(http.StatusOK, qualityGateTaskListItem(*task))
-		return
-	}
-	task, err := h.checkTaskSvc.Get(taskID, getTenantID(c))
+	task, err := h.planSvc.Get(c.Request.Context(), getTenantID(c), taskID)
 	if err != nil {
-		respondQualityServiceError(c, err, qualityi18n.MsgCheckTaskNotFound, qualityi18n.MsgInternal)
+		respondQualityServiceError(c, err, qualityi18n.MsgPlanNotFound, qualityi18n.MsgInternal)
 		return
 	}
-	c.JSON(http.StatusOK, qualityTaskListItem(*task))
+	c.JSON(http.StatusOK, qualityPlanListItem(*task))
 }
 
 // TaskExecute 执行 Quality 检查任务。
 // @Summary 执行 TaskProvider 质量检查任务 | Execute TaskProvider quality check task
 // @Description 仅接受 addp-orchestrator 以父 execution 血缘触发；请求必须提供 source=orchestrator 和 parent_execution_id，parameters 不支持覆盖。| Only accepts addp-orchestrator execution-lineage invocation; source=orchestrator and parent_execution_id are required, and parameters overrides are not supported.
-// @Tags CheckTask
+// @Tags QualityPlan
 // @Accept json
 // @Produce json
-// @Param task_type path string true "任务类型：check|data_validation | Task type: check or data_validation"
+// @Param task_type path string true "任务类型：quality_plan | Task type: quality_plan"
 // @Param id path int true "检查任务ID | Check task ID"
 // @Param request body qualityTaskProviderExecuteRequest true "TaskProvider 执行请求 | TaskProvider execution request"
 // @Success 202 {object} qualityTaskProviderExecuteResponse "执行ID | Execution ID"
@@ -181,7 +155,7 @@ func (h *TaskProviderHandler) TaskDetail(c *gin.Context) {
 // @Security BearerAuth
 func (h *TaskProviderHandler) TaskExecute(c *gin.Context) {
 	taskType := c.Param("task_type")
-	if taskType != commonExecution.TaskTypeQualityCheck && taskType != commonExecution.TaskTypeDataValidation {
+	if taskType != commonExecution.TaskTypeQualityPlan {
 		respondInvalidRequest(c, "")
 		return
 	}
@@ -212,25 +186,9 @@ func (h *TaskProviderHandler) TaskExecute(c *gin.Context) {
 		respondInvalidRequest(c, "")
 		return
 	}
-	source := commonExecution.ModuleOrchestrator
-	parentExecutionID := &parentID
-
-	var executionID string
-	if taskType == commonExecution.TaskTypeDataValidation {
-		if h.gateTaskSvc == nil {
-			respondInvalidRequest(c, "")
-			return
-		}
-		if parentExecutionID == nil {
-			respondInvalidRequest(c, "")
-			return
-		}
-		executionID, err = h.gateTaskSvc.Execute(c.Request.Context(), getTenantID(c), taskID, triggerType, source, *parentExecutionID)
-	} else {
-		executionID, err = h.executor.RunCheckWithContext(c.Request.Context(), taskID, getTenantID(c), getUserID(c), bearerToken(c), triggerType, source, parentExecutionID)
-	}
+	executionID, err := h.planSvc.Execute(c.Request.Context(), getTenantID(c), taskID, triggerType, commonExecution.ModuleOrchestrator, parentID)
 	if err != nil {
-		respondCheckRunError(c, err)
+		respondQualityServiceError(c, err, qualityi18n.MsgPlanNotFound, qualityi18n.MsgInternal)
 		return
 	}
 	c.JSON(http.StatusAccepted, qualityTaskProviderExecuteResponse{
@@ -239,11 +197,11 @@ func (h *TaskProviderHandler) TaskExecute(c *gin.Context) {
 	})
 }
 
-func qualityGateTaskListItem(task models.DataValidationTask) taskProviderTaskListItem {
+func qualityPlanListItem(task models.QualityPlan) taskProviderTaskListItem {
 	item := taskProviderTaskListItem{
-		ID: task.ID, TenantID: task.TenantID, TaskType: commonExecution.TaskTypeDataValidation,
-		Name: task.Name, Description: task.Description, Status: qualityGateTaskStatus(task),
-		ExecutionContract: dataValidationExecutionContract(),
+		ID: task.ID, TenantID: task.TenantID, TaskType: commonExecution.TaskTypeQualityPlan,
+		Name: task.Name, Description: task.Description, Status: qualityPlanStatus(task),
+		ExecutionContract: planExecutionContract(),
 		LastExecutionID:   task.LastExecutionID, LastExecutionStatus: task.LastExecutionStatus,
 	}
 	if task.LastRunAt != nil {
@@ -252,7 +210,7 @@ func qualityGateTaskListItem(task models.DataValidationTask) taskProviderTaskLis
 	return item
 }
 
-func dataValidationExecutionContract() taskprovider.ExecutionContract {
+func planExecutionContract() taskprovider.ExecutionContract {
 	return taskprovider.ExecutionContract{
 		InputSchema: taskprovider.ClosedObjectSchema(), InputDefaults: map[string]interface{}{}, InputUISchema: map[string]interface{}{},
 		OutputSchema: map[string]interface{}{
@@ -261,34 +219,7 @@ func dataValidationExecutionContract() taskprovider.ExecutionContract {
 	}
 }
 
-func qualityGateTaskStatus(task models.DataValidationTask) string {
-	switch task.LastExecutionStatus {
-	case commonExecution.ExecutionStatusPending, commonExecution.ExecutionStatusRunning:
-		return task.LastExecutionStatus
-	default:
-		return "idle"
-	}
-}
-
-func qualityTaskListItem(task models.CheckTask) taskProviderTaskListItem {
-	item := taskProviderTaskListItem{
-		ID:                task.ID,
-		TenantID:          task.TenantID,
-		TaskType:          commonExecution.TaskTypeQualityCheck,
-		Name:              task.Name,
-		Description:       task.Description,
-		Status:            qualityTaskStatus(task),
-		ExecutionContract: taskprovider.EmptyExecutionContract(),
-	}
-	if task.LastRunAt != nil {
-		item.LastRunAt = task.LastRunAt.Format("2006-01-02T15:04:05Z07:00")
-	}
-	item.LastExecutionID = task.LastExecutionID
-	item.LastExecutionStatus = task.LastExecutionStatus
-	return item
-}
-
-func qualityTaskStatus(task models.CheckTask) string {
+func qualityPlanStatus(task models.QualityPlan) string {
 	switch task.LastExecutionStatus {
 	case commonExecution.ExecutionStatusPending, commonExecution.ExecutionStatusRunning:
 		return task.LastExecutionStatus

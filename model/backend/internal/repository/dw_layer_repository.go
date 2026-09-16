@@ -35,7 +35,7 @@ func (r *DWLayerRepository) Update(layer *models.DWLayer) error {
 		Where("id = ? AND tenant_id = ? AND version = ?", layer.ID, layer.TenantID, layer.Version).
 		Updates(map[string]interface{}{
 			"layer_name": layer.LayerName, "description": layer.Description, "naming_rule": layer.NamingRule,
-			"quality_sla": layer.QualitySLA, "sort_order": layer.SortOrder, "version": gorm.Expr("version + 1"),
+			"sort_order": layer.SortOrder, "version": gorm.Expr("version + 1"),
 		})
 	if result.Error != nil {
 		return commonrepo.WrapDBError(result.Error)

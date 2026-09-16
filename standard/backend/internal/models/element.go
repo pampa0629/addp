@@ -80,7 +80,7 @@ type ElementRevision struct {
 	Length               *int             `json:"length,omitempty"`
 	PrecisionNum         *int             `json:"precision_num,omitempty"`
 	Scale                *int             `json:"scale,omitempty"`
-	Nullable             bool             `gorm:"not null;default:true" json:"nullable"`
+	Nullable             bool             `gorm:"not null" json:"nullable"`
 	DefaultValue         string           `gorm:"type:text" json:"default_value"`
 	Format               string           `gorm:"size:200" json:"format"`
 	ValueDomainKind      string           `gorm:"size:20;not null;default:'unrestricted'" json:"value_domain_kind"`
@@ -88,7 +88,6 @@ type ElementRevision struct {
 	CodeSetRevisionID    *int64           `gorm:"index" json:"code_set_revision_id,omitempty"`
 	UnitID               *int64           `gorm:"index" json:"unit_id,omitempty"`
 	ExampleValues        StringArray      `gorm:"type:jsonb;serializer:json" json:"example_values"`
-	ExtraQualityRules    JSONB            `gorm:"type:jsonb;serializer:json" json:"extra_quality_rules"`
 	CompiledQualityRules JSONB            `gorm:"type:jsonb;serializer:json" json:"compiled_quality_rules"`
 	ChangeSummary        string           `gorm:"type:text;not null" json:"change_summary"`
 	EffectiveFrom        *time.Time       `json:"effective_from,omitempty"`
@@ -127,29 +126,28 @@ type PublishedElementReference struct {
 }
 
 type CreateElementRequest struct {
-	ScopeType         string                 `json:"scope_type" binding:"required" enums:"tenant_common,domain"`
-	OwnerDomainID     *int64                 `json:"owner_domain_id,omitempty"`
-	Code              string                 `json:"code" binding:"required"`
-	StewardID         *int64                 `json:"steward_id,omitempty"`
-	Tags              []string               `json:"tags"`
-	Name              string                 `json:"name" binding:"required"`
-	Definition        string                 `json:"definition" binding:"required"`
-	DataType          string                 `json:"data_type" binding:"required"`
-	Length            *int                   `json:"length,omitempty"`
-	PrecisionNum      *int                   `json:"precision_num,omitempty"`
-	Scale             *int                   `json:"scale,omitempty"`
-	Nullable          bool                   `json:"nullable"`
-	DefaultValue      string                 `json:"default_value"`
-	Format            string                 `json:"format"`
-	ValueDomainKind   string                 `json:"value_domain_kind" binding:"required"`
-	RangeConstraint   *RangeConstraint       `json:"range_constraint,omitempty"`
-	CodeSetRevisionID *int64                 `json:"code_set_revision_id,omitempty"`
-	UnitID            *int64                 `json:"unit_id,omitempty"`
-	ExampleValues     []string               `json:"example_values"`
-	ExtraQualityRules map[string]interface{} `json:"extra_quality_rules"`
-	ChangeSummary     string                 `json:"change_summary" binding:"required"`
-	EffectiveFrom     *time.Time             `json:"effective_from,omitempty"`
-	EffectiveTo       *time.Time             `json:"effective_to,omitempty"`
+	ScopeType         string           `json:"scope_type" binding:"required" enums:"tenant_common,domain"`
+	OwnerDomainID     *int64           `json:"owner_domain_id,omitempty"`
+	Code              string           `json:"code" binding:"required"`
+	StewardID         *int64           `json:"steward_id,omitempty"`
+	Tags              []string         `json:"tags"`
+	Name              string           `json:"name" binding:"required"`
+	Definition        string           `json:"definition" binding:"required"`
+	DataType          string           `json:"data_type" binding:"required"`
+	Length            *int             `json:"length,omitempty"`
+	PrecisionNum      *int             `json:"precision_num,omitempty"`
+	Scale             *int             `json:"scale,omitempty"`
+	Nullable          bool             `json:"nullable"`
+	DefaultValue      string           `json:"default_value"`
+	Format            string           `json:"format"`
+	ValueDomainKind   string           `json:"value_domain_kind" binding:"required"`
+	RangeConstraint   *RangeConstraint `json:"range_constraint,omitempty"`
+	CodeSetRevisionID *int64           `json:"code_set_revision_id,omitempty"`
+	UnitID            *int64           `json:"unit_id,omitempty"`
+	ExampleValues     []string         `json:"example_values"`
+	ChangeSummary     string           `json:"change_summary" binding:"required"`
+	EffectiveFrom     *time.Time       `json:"effective_from,omitempty"`
+	EffectiveTo       *time.Time       `json:"effective_to,omitempty"`
 }
 
 type UpdateElementRequest struct {
@@ -166,25 +164,24 @@ type CreateElementRevisionRequest struct {
 }
 
 type UpdateElementRevisionRequest struct {
-	Version           int64                  `json:"version" binding:"required,gt=0" minimum:"1"`
-	Name              string                 `json:"name" binding:"required"`
-	Definition        string                 `json:"definition" binding:"required"`
-	DataType          string                 `json:"data_type" binding:"required"`
-	Length            *int                   `json:"length,omitempty"`
-	PrecisionNum      *int                   `json:"precision_num,omitempty"`
-	Scale             *int                   `json:"scale,omitempty"`
-	Nullable          bool                   `json:"nullable"`
-	DefaultValue      string                 `json:"default_value"`
-	Format            string                 `json:"format"`
-	ValueDomainKind   string                 `json:"value_domain_kind" binding:"required"`
-	RangeConstraint   *RangeConstraint       `json:"range_constraint,omitempty"`
-	CodeSetRevisionID *int64                 `json:"code_set_revision_id,omitempty"`
-	UnitID            *int64                 `json:"unit_id,omitempty"`
-	ExampleValues     []string               `json:"example_values"`
-	ExtraQualityRules map[string]interface{} `json:"extra_quality_rules"`
-	ChangeSummary     string                 `json:"change_summary" binding:"required"`
-	EffectiveFrom     *time.Time             `json:"effective_from,omitempty"`
-	EffectiveTo       *time.Time             `json:"effective_to,omitempty"`
+	Version           int64            `json:"version" binding:"required,gt=0" minimum:"1"`
+	Name              string           `json:"name" binding:"required"`
+	Definition        string           `json:"definition" binding:"required"`
+	DataType          string           `json:"data_type" binding:"required"`
+	Length            *int             `json:"length,omitempty"`
+	PrecisionNum      *int             `json:"precision_num,omitempty"`
+	Scale             *int             `json:"scale,omitempty"`
+	Nullable          bool             `json:"nullable"`
+	DefaultValue      string           `json:"default_value"`
+	Format            string           `json:"format"`
+	ValueDomainKind   string           `json:"value_domain_kind" binding:"required"`
+	RangeConstraint   *RangeConstraint `json:"range_constraint,omitempty"`
+	CodeSetRevisionID *int64           `json:"code_set_revision_id,omitempty"`
+	UnitID            *int64           `json:"unit_id,omitempty"`
+	ExampleValues     []string         `json:"example_values"`
+	ChangeSummary     string           `json:"change_summary" binding:"required"`
+	EffectiveFrom     *time.Time       `json:"effective_from,omitempty"`
+	EffectiveTo       *time.Time       `json:"effective_to,omitempty"`
 }
 
 type RevisionActionRequest struct {

@@ -925,7 +925,7 @@ jobs:
           go-version-file: quality/backend/go.mod
           cache: false
 
-      - name: Run Quality PostgreSQL gate
+      - name: Run Quality PostgreSQL and Orchestrator plan reference gate
         env:
           ADDP_TEST_POSTGRES_HOST: 127.0.0.1
           ADDP_TEST_POSTGRES_PORT: 5432

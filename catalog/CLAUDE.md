@@ -17,7 +17,7 @@ Catalog 是企业资源目录的唯一事实源，负责稳定目录身份、来
 - 跨模块只走公开 API 和 Tenant Service Access Token，不跨 Schema 查询。
 - 除 System 注册和本模块必需基础设施外，任何业务模块不可达都不能阻止进程启动；Meta / Model / Standard / Service / Develop 同步失败只产生滞后并后台重试，各 owner 使用独立 checkpoint。
 - `CatalogEntry` UUID 是企业稳定身份；Meta fingerprint 只是来源身份。
-- `StandardMapping` 是 CatalogComponent 到确定 `Standard.ElementRevision` 的可审核、可追溯关系事实，拥有独立 UUID、并发版本、来源、置信度和审核状态。Quality 只能消费已审核映射，不得创建第二套字段标准关联。
+- `StandardMapping` 是 CatalogComponent 到确定 `Standard.ElementRevision` 的可审核、可追溯关系事实，拥有独立 UUID、并发版本、来源、置信度和审核状态。企业落标关系只归 Catalog；Quality 方案的物理目标与冻结标准来源仅表达检查意图，不构成第二套企业映射，也不以 Catalog 为前置。
 - 当前 `component_element_associations` 只引用 `element_id` 且作为 CatalogEntry 子集合整体替换，是待迁移旧实现；改造后直接替换为 StandardMapping，不保留旧表、旧字段或双轨 API。
 - 不提供 DataItem CatalogEntry 的手工创建和删除 API。
 - Model Entity / LogicalTable 的专业内生 Domain、Element、Metric 和建模关系归 Model，Catalog 不建立可编辑副本。

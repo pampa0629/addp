@@ -48,11 +48,11 @@ func TestValidateMaterializationRejectsArbitrarySQLField(t *testing.T) {
 	}
 }
 
-func TestValidateMaterializationRejectsUnknownPartitionField(t *testing.T) {
-	table := &models.LogicalTable{Code: "fact_order", Materialization: models.JSONB{"partition_by": "missing", "partition_type": "range"}}
+func TestValidateMaterializationRejectsPartitionOptions(t *testing.T) {
+	table := &models.LogicalTable{Code: "fact_order", Materialization: models.JSONB{"partition_by": "order_id", "partition_type": "range"}}
 	fields := []models.LogicalField{{ColumnName: "order_id", DataType: "bigint"}}
 	if err := validateMaterialization(table, fields); err == nil {
-		t.Fatal("expected unknown partition field error")
+		t.Fatal("expected unsupported partition options error")
 	}
 }
 
@@ -111,24 +111,20 @@ func TestPreviewMaterializationDoesNotMutateStoredTable(t *testing.T) {
 	}
 }
 
-func TestNormalizeMaterializationOmitsEmptyPartitionDesign(t *testing.T) {
+func TestNormalizeMaterializationTrimsTargetFieldsWithoutDroppingUnknownKeys(t *testing.T) {
 	input := map[string]interface{}{
 		"target_parent_locator": " addp://engine/2/path/public?type=schema ",
 		"target_name":           " fact_order ",
-		"partition_by":          " ",
-		"partition_type":        "range",
+		"unsupported":           " preserved for validation ",
 	}
 	normalized := normalizeMaterialization(input)
-	if _, exists := normalized["partition_by"]; exists {
-		t.Fatalf("partition_by must be omitted: %#v", normalized)
-	}
-	if _, exists := normalized["partition_type"]; exists {
-		t.Fatalf("partition_type must be omitted: %#v", normalized)
-	}
 	if normalized["target_parent_locator"] != "addp://engine/2/path/public?type=schema" || normalized["target_name"] != "fact_order" {
 		t.Fatalf("target fields were not normalized: %#v", normalized)
 	}
-	if input["partition_by"] != " " {
+	if normalized["unsupported"] != " preserved for validation " {
+		t.Fatalf("unknown key must remain available to validation: %#v", normalized)
+	}
+	if input["target_name"] != " fact_order " {
 		t.Fatalf("input was mutated: %#v", input)
 	}
 }
@@ -137,19 +133,8 @@ func TestNormalizeMaterializationCollapsesEmptyTargetToEmptyObject(t *testing.T)
 	normalized := normalizeMaterialization(map[string]interface{}{
 		"target_parent_locator": "   ",
 		"target_name":           "",
-		"partition_by":          "",
-		"partition_type":        "range",
 	})
 	if len(normalized) != 0 {
 		t.Fatalf("empty materialization must be canonicalized to an empty object: %#v", normalized)
-	}
-}
-
-func TestNormalizeMaterializationKeepsExplicitPartitionDesign(t *testing.T) {
-	normalized := normalizeMaterialization(map[string]interface{}{
-		"partition_by": " occurred_at ", "partition_type": "RANGE",
-	})
-	if normalized["partition_by"] != "occurred_at" || normalized["partition_type"] != "range" {
-		t.Fatalf("partition design = %#v", normalized)
 	}
 }

@@ -117,6 +117,7 @@ func openQueryServiceCreateTestDB(t *testing.T) *gorm.DB {
 		t.Fatal(err)
 	}
 	if err := db.Exec(`CREATE TABLE service.query_services (
+        version INTEGER NOT NULL DEFAULT 1,
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		tenant_id INTEGER NOT NULL,
 		service_name TEXT NOT NULL UNIQUE,

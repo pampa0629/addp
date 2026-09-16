@@ -383,6 +383,7 @@
         "desc": "DW layers, business entities, logical table design"
       },
       "quality": {
+        "rules": "Quality rules",
         "label": "Data Quality",
         "desc": "Rule application, quality checks, execution records"
       },
@@ -486,14 +487,10 @@
       },
       "quality": {
         "label": "Data Quality",
-        "ruleApplications": "Rule Applications",
-        "checkTasks": "Check Tasks",
-        "dataValidationTasks": "Materialization Gates",
         "issues": "Issues",
-        "recentRuleApplications": "Quality Rule Applications",
-        "recentCheckTasks": "Quality Check Tasks",
-        "recentDataValidationTasks": "Materialization Gate Tasks",
-        "recentIssues": "Data Quality Issues"
+        "recentIssues": "Data Quality Issues",
+        "plans": "Quality plans",
+        "recentPlans": "Quality plans"
       },
       "security": {
         "label": "Data Security",
@@ -534,8 +531,7 @@
         "orchestrationExecutions": "Orchestration Executions",
         "metadataScanExecutions": "Metadata Scan Executions",
         "developExecutions": "Data Development Executions",
-        "qualityCheckExecutions": "Quality Check Executions",
-        "dataValidationExecutions": "Materialization Gate Executions",
+        "qualityPlanExecutions": "Quality Plan Executions",
         "managerExecutions": "Data Management Executions",
         "graphBuildExecutions": "Graph Build Executions",
         "modelExecutions": "Data Modeling Executions",

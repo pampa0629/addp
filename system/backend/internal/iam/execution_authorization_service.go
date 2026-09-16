@@ -22,7 +22,7 @@ const (
 	maximumExecutionAuthorizationTTL              = time.Hour
 	developExecutionPermission                    = "develop.task.execute"
 	transferExecutionPermission                   = "transfer.task.execute"
-	qualityExecutionPermission                    = "quality.check_task.execute"
+	qualityExecutionPermission                    = "quality.plan.execute"
 	modelMaterializationExecutionPermission       = "model.materialization.execute"
 	serviceQuerySamplePermission                  = "service.definition.create"
 	serviceDataReadPermission                     = "service.data_read.execute"

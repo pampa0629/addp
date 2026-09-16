@@ -843,11 +843,12 @@ def run_suite(
         if browser_runner is not None:
             browser_evidence = browser_runner(service_id, application_id, original_fingerprint)
         else:
+            current_service = _object(client.request("GET", f"/api/v1/service/query/{service_id}", (200,)).payload, "Query Service")
             client.request(
                 "PUT",
                 f"/api/v1/service/query/{service_id}",
                 (200,),
-                {"data_config": {"default_fields": FIELDS[:-1], "filterable_fields": FILTERABLE_FIELDS}},
+                {"version": current_service["version"], "data_config": {"default_fields": FIELDS[:-1], "filterable_fields": FILTERABLE_FIELDS}},
             )
         changed = _object(client.request("GET", descriptor_path, (200,)).payload, "changed Consumer Descriptor")
         changed_fingerprint = validate_descriptor(changed, service_id)
@@ -923,7 +924,9 @@ def run_suite(
                 cleanup_errors.append(f"Workbench Data Application: {error}")
         for current_service_id in reversed(service_ids):
             try:
-                client.request("DELETE", f"/api/v1/service/query/{current_service_id}", (200, 404))
+                current_service = client.request("GET", f"/api/v1/service/query/{current_service_id}", (200, 404))
+                if current_service.status == 200:
+                    client.request("DELETE", f"/api/v1/service/query/{current_service_id}", (200,), {"version": _object(current_service.payload, "Query Service")["version"]})
                 if client.request("GET", f"/api/v1/service/query/{current_service_id}", (404,)).status == 404:
                     deleted += 1
             except SuiteError as error:

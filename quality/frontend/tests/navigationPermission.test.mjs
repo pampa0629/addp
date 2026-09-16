@@ -4,16 +4,14 @@ import test from 'node:test'
 
 const routerSource = readFileSync(new URL('../src/router/index.js', import.meta.url), 'utf8')
 const layoutSource = readFileSync(new URL('../src/components/Layout.vue', import.meta.url), 'utf8')
-const checkTaskSource = readFileSync(new URL('../src/views/CheckTaskList.vue', import.meta.url), 'utf8')
-const gateTaskSource = readFileSync(new URL('../src/views/DataValidationTaskList.vue', import.meta.url), 'utf8')
+const planSource = readFileSync(new URL('../src/views/PlanList.vue', import.meta.url), 'utf8')
 const issueListSource = readFileSync(new URL('../src/views/IssueList.vue', import.meta.url), 'utf8')
 const issueDetailSource = readFileSync(new URL('../src/views/IssueDetail.vue', import.meta.url), 'utf8')
 
 test('Quality routes declare the matching human read permission', () => {
 	for (const permission of [
-		'quality.rule_application.read',
-		'quality.check_task.read',
-		'quality.data_validation.read',
+		'quality.rule.read',
+		'quality.plan.read',
 		'monitor.execution.read',
 		'quality.issue.read'
 	]) {
@@ -24,9 +22,8 @@ test('Quality routes declare the matching human read permission', () => {
 
 test('standalone Quality navigation hides entries without their human read permission', () => {
 	for (const permission of [
-		'quality.rule_application.read',
-		'quality.check_task.read',
-		'quality.data_validation.read',
+		'quality.rule.read',
+		'quality.plan.read',
 		'quality.issue.read'
 	]) {
 		assert.ok(layoutSource.includes(`v-if="can('${permission}')"`))
@@ -35,8 +32,7 @@ test('standalone Quality navigation hides entries without their human read permi
 })
 
 test('task pages only link to execution detail for users allowed to read executions', () => {
-	assert.match(checkTaskSource, /v-if="canViewExecutions" link type="primary"/)
-	assert.match(gateTaskSource, /v-if="can\('monitor\.execution\.read'\)" link type="primary"/)
+	assert.match(planSource, /v-if="can\('monitor\.execution\.read'\)"\s+link\s+type="primary"/)
 	assert.match(issueListSource, /v-if="canViewExecutions && issueExecutionRoute\(row\.execution_id\)"/)
 	assert.match(issueDetailSource, /v-if="canViewExecutions && issueExecutionRoute\(issue\.execution_id\)"/)
 })

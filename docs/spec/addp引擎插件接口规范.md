@@ -673,10 +673,12 @@ Common 基础契约的具体编码如下：
 统一语义：
 
 - DATE 只表示日历日期，不隐含时区转换；参数范围左闭右开。月份时间桶从覆盖范围的月初生成，结果中的月桶可以早于范围起点，源数据仍严格按输入区间过滤；现有指标最多 120 个相交月份。
+- `date_buckets(start, end, max_months)` 沿用指标范围校验：结束日期必须晚于开始日期，空区间、反向区间或相交月份数超过节点上限均产生求值错误，不能返回空集或截断。`max_months` 必须在 1 至 120 之间；结束日期为月初时不包含该月。日期参数或表达式在节点内求值，错误检查独立于下游过滤／分页。SQL 实现使用有界月份偏移关系；未采用的偏移必须在原生日期运算前屏蔽，不能因生成额外月份而越过 9999 年。
 - `date` 与既有 DATE 常量契约一致：仅接受公历 0001-01-01 至 9999-12-31；文本必须严格为 ASCII `YYYY-MM-DD`，不能自动去空白、补零、截去时间或修正不存在的日期。NULL 传播，格式错误、无效闰日或范围外日期产生求值错误。原生日期 CAST 前须完成格式和日历合法性检查，不能依赖数据库宽松解析或警告。
 - `month_start` 返回同年同月的第一天，保留日历日期语义，不隐含时区转换；输入日期错误不能变成有效月初。`add_months(date, months)` 接受整数月份偏移：尽量保留原日号，目标月不存在该日时取目标月最后一天，不保持“原日期是月末”的身份。负数表示向前移动，零保持原日期；例如 2026-01-31 加 1 月得到 2026-02-28，2026-02-28 加 1 月得到 2026-03-28。每次调用只基于其输入日期，因此连续两次加 1 月不保证等于一次加 2 月。结果必须仍在 0001-01-01 至 9999-12-31；月份范围检查须在原生偏移运算前执行，避免整数或原生日期溢出。普通 NULL 传播，但不能隐藏已求值的子表达式错误。
 - 普通比较遇 NULL 得到 unknown，filter 只保留 true；`is_null` 显式判断 NULL，普通算术传播 NULL。count_rows 统计所有输入行，count_value 只计非 NULL 值；distinct 将相同键中的 NULL 合并，group 将 NULL 键归为同组；去重后再 count_rows 不能被擅自替换为忽略 NULL 的 COUNT(DISTINCT)。当前指标若要求排除 NULL，应由 Model 显式构建过滤／断言。补零必须显式由连接与条件表达式表达。
 - 文本身份和集合成员精确比较，大小写与尾空格有意义；不支持此语义的来源类型或数据库条件应返回不支持，不能静默 lower/trim。sort 必须显式指定每个键的方向和 NULL 位置；文本排序使用同一确定的 UTF-8 二进制顺序，不能依赖实例默认排序规则。
+- `text(value)` 沿用 Plan Literal 的规范化值表示，不承担展示格式化：string 原样保留（包括空文本、大小写和尾空格）；int/bigint 为完整十进制，无正号或多余前导零；decimal 使用普通十进制，去除小数末尾零及多余小数点，零统一为 `0`，不使用科学计数法或千位分隔；bool 为小写 `true` / `false`；DATE 为十位 `YYYY-MM-DD`。NULL 保持 NULL，已有求值错误不能被转换隐藏。数字转换不得经过浮点中转，日期格式不得依赖会话 DateStyle 或时区；展示精度／本地化应由展示层另行处理。
 - `integer` 是无损转换到有符号 64 位整数：int/bigint 保持原值，decimal 只有小数部分全为零且落在 [-9223372036854775808, 9223372036854775807] 内才能转换；NULL 仍为 NULL。`2.0 → 2` 合法，`2.7`、`-2.7` 和越界值必须拒绝。首期不隐含截断或四舍五入，也不新增尚无业务需求的取整模式；未来有损取整必须由业务显式表达，不能由引擎默认 CAST 行为决定。
 - 整数转换的检查发生在原生 CAST 之前。SQL 编译组件返回安全值表达式和独立违例条件；非法值的内部占位 NULL 不能被当成成功结果，编译器必须把违例条件接入同一查询的检查分支，并保留其求值范围。NULL 输入本身不是违例，已有上游违例不得因转换变成 NULL 而消失。不能只检查最终输出值，因为数据库可能已在 CAST 时改变原值。
 - `case(condition, then, else)` 总是求值条件，只有条件为 true 才求值 then；false 或 NULL 求值 else。`coalesce` 从左到右求值，到第一个非 NULL 值停止。求值错误必须按这些范围组合：未选分支的错误不生效，已求值参数的错误不能被后续备选值或外层过滤消除；计算失败的内部占位 NULL 不属于可补值的业务 NULL。编译器只在完整表达式的求值范围内汇总违例，不能把未加分支条件的内部错误独立挂到节点检查上。
@@ -711,6 +713,12 @@ type AnalyticalCompiler interface {
 
 首批原生类型采用明确子集：PG 的 smallint/integer、bigint、boolean、text/character varying、受限 numeric 和 date；MySQL 的有符号整数、tinyint(1) 布尔、varchar/各 text、受限 decimal 和 date。Decimal 的声明整数位不得超过 20、小数位不得超过 18，绑定精度必须与原生声明一致；无精度 numeric、浮点、定长 CHAR、unsigned、binary、timestamp、数组、JSON 和自定义类型暂不支持。tinyint(1) 仅允许 0/1/NULL，不将任意非零数当 true；日期范围与公历合法性、PG numeric NaN 等数据违例通过扫描节点的 EvaluationCheck 拦截，不能被后续过滤或聚合隐藏。MySQL 文本显式转换为 utf8mb4；PG 文本实现以 UTF-8 数据库为认证前提，正式实例能力注册时必须验证该前提。类型检查只证明当前提供的绑定事实符合编译条件，不替代执行前来源漂移核验、权限与数据保护；生产能力仍须独立完成实例认证后才可启用。
 
+原生 `analytical_instance.go` 提供同一连接／事务上的实例条件认证，复用 `query/sqlcompile/instance_probe.go` 的固定只读语义探测；首批限制与错误分类见能力声明规范 4.1.1。该认证原语由原生事务前置校验与 InstanceCapabilitiesResolver 共用；静态模板不声明支持，实例刷新通过认证后才投影 analytical 能力。
+
+分析 SQL 的执行前置校验归原生 `AnalyticalSQLExecutionValidator`，复用既有 SQL PreparedQuery / ExecuteSQLWithConnectionPool，不增加执行入口。CompiledQuery 保存不可变 SourceBindings，执行桥接仅在已校验编译请求中写入私有标记；共享执行层使用显式 READ COMMITTED 只读事务，在执行数据查询前调用原生校验。结构锁持续至事务结束；业务结果与 EvaluationCheck／Assertion 仍在同一条查询的快照内计算。
+
+PG 通过 ACCESS SHARE 锁防止表结构变更，首期只接受无继承／分区、无 RLS 的普通 heap 表；MySQL 通过零行 SELECT 获得事务内 metadata lock，只接受 InnoDB BASE TABLE。按确定顺序锁定全部来源后，认证当前实例并复用原生列目录读取，比对绑定字段名称／路径／类型／NativeType／nullable／精度；绑定字段被删除或改变返回 ErrAnalyticalPlanChanged，不能自动换用新结构。未参与绑定的新增字段不影响计划。视图、外部表及尚未验证的来源结构返回不支持；目录读取和权限错误保留错误。正式编译器与实例能力解析复用该执行边界；Model/Service 仍须整体切换中立计划并删除旧路径。
+
 `AnalyticalInstance` 只向编译请求传递 EngineID 和已经收敛的 `AnalyticalCapability`，不传递连接信息或实例配置自由字典。定义该类型不等于已在 System 的能力响应中启用它；生产能力投影须与编译实现及真实数据库认证一起接入。
 
 `CompilerIdentity` 由实现 ID 和编译实现版本组成，不是运行时 Provider 指针；现有唯一插件注册表通过当前引擎返回接口。Check 不执行数据面查询，区分 `supported=false` 的已知能力限制与校验／内部错误，返回稳定 code、node_id 和可本地化参数，禁止将原生 SQL 或凭据放入诊断。Compile 必须自行再次校验请求，不依赖调用方已调用 Check。
@@ -725,7 +733,7 @@ type AnalyticalCompiler interface {
 - `CompiledQuery.QueryRequest` 只接收声明过的类型化参数和超时，生成绑定编译产物的不可变内部上下文。SQL Prepare 校验模板、语言、目标引擎和编译器身份没有改变，禁止外层 Limit/Offset、Describe、Spatial 和调用方位置参数；值在既有绑定处转换一次。分析查询暂不开放流式消费，避免检查未结束前输出业务行。
 - 既有 SQL PreparedQuery 在 Execute 返回前消费全部检查记录并按逻辑输出类型规范化结果；保留原生 Provider 的完整读取集合。内部控制列上的输出血缘转为无业务输出路径的 derived 依赖，不能移除其源或伪造直接映射。整数保持整数，decimal 保持精确十进制文本，DATE 保持日历日期，拒绝浮点中转、超精度值和违反非空契约的结果。
 
-`common/query/sqlcompile/result.go` 已提供结果根与断言关系的统一组合组件，使用 `ResultDialect` 注入类型化 NULL 和排序语法；`relations.go` 已实现关系 DAG 渲染与求值范围检查，`scan` 通过原生 ScanDialect 接入完整绑定，`date_buckets` 仍明确返回不支持；原生来源认证和完整编译器注册尚未完成。该组件及普通单元测试由 Common `./...` 自动发现，PostgreSQL 真实结果验证纳入既有 `make test-common-postgres` 与 T2 作业。
+`common/query/sqlcompile/result.go` 已提供结果根与断言关系的统一组合组件，使用 `ResultDialect` 注入类型化 NULL 和排序语法；`relations.go` 已实现关系 DAG 渲染与求值范围检查，`scan` 通过原生 ScanDialect 接入完整绑定，`date_buckets` 通过有界月份偏移与独立范围检查生成相交月份；原生来源认证已接入执行事务；PG/MySQL 正式 AnalyticalCompilerProvider 通过共享 RelationalCompiler 组合原生组件，各自维护编译器 Identity，真实门禁直接使用正式 Provider，原 RelationalFixtureCompiler 与测试 Provider 包装已删除。该组件及普通单元测试由 Common `./...` 自动发现，PostgreSQL 真实结果验证纳入既有 `make test-common-postgres` 与 T2 作业。
 
 关系 DAG 编译按依赖顺序生成确定命名的关系，不依赖输入节点数组顺序；共享输入只定义一次。投影与过滤的求值检查覆盖该节点的输入关系，聚合检查覆盖分组前输入，连接条件检查覆盖左右输入的候选配对；后续过滤或限行不能移除这些检查。分支内部的 CASE/COALESCE 仍决定表达式的实际求值范围。检查按实际求值节点定位，不假定某个固定节点名。
 
@@ -753,6 +761,8 @@ Common 的 `NewAnalyticalPlanPackage` 在通用校验和编译器 Check 通过�
 4. ResultRequest 使用既有 cursor/keyset 语义和 `limit + 1`，不恢复 offset/page。cursor 的加密、版本绑定与审计仍由 Service 负责，编译器不解析 token、不见令牌密钥。任何结果操作不被支持时明确拒绝，禁止拉回全量数据在 Service 中排序或分页。
 5. 引擎编译器编译有效计划，公共桥接生成 QueryRequest；一次性 PreparedQuery 冻结原生请求、参数和 Provider 解析结果。执行期完整 ReadSet／OutputLineage 仍由实际 Provider 证明，不能把 SourceBindings 当作已授权读取集合。
 6. 既有授权及数据保护门禁通过后才能 Execute；结果按类型契约规范化后继续走既有保护与协议输出。聚合来源受保护且无法证明允许输出时仍拒绝。
+
+`query/plan.ResultRequest` 仅包含输出字段选择、类型化结果过滤、排序、已解码的 keyset 边界和行数上限。`ApplyResultRequest` 深拷贝原计划，保留原节点和断言，生成独立的结果节点；稳定键自动补入排序及隐藏输出。沿用 Service 的首期约束：排序字段必须为非空标量，cursor 值与完整有效排序逐一对应。过滤支持标量比较、IN、NULL 判断与有界布尔组合；模式匹配及空间运算未纳入当前中立配置，明确拒绝。过滤和 cursor 字面值转换为不与原参数冲突的新增参数，返回独立绑定值，不进入冻结计划包或原生 SQL 模板。
 
 新增分析能力沿现有公开 API 返回错误：非法结构或明确不支持的计划使用 400 与稳定领域码；发布、依赖或编译版本变化使用 409；依赖服务不可用使用 503。其他认证、授权和资源错误沿现有 API 规范，不把“引擎不支持”伪装为空数据成功。数据断言失败使用既有执行失败分类并携带通用断言码，不返回部分指标结果。
 

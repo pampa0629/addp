@@ -131,6 +131,23 @@ func IsAvailableForComputeEntrypoint(resource *models.Engine, entrypoint string)
 	return IsAvailable(resource) && SupportsComputeEntrypoint(resource, entrypoint)
 }
 
+// SupportsAnalytical uses only certified instance facts, never an engine list.
+func SupportsAnalytical(resource *models.Engine) bool {
+	if resource == nil {
+		return false
+	}
+	caps, err := ParseCapabilities(resource.Capabilities)
+	return err == nil && caps != nil && caps.Compute != nil && caps.Compute.Query != nil && caps.Compute.Query.Analytical != nil && caps.Compute.Query.Analytical.Supported
+}
+
+func IsAnalyticalSelectionOption(resource *models.Engine) bool {
+	return IsSelectionOption(resource) && SupportsAnalytical(resource)
+}
+
+func IsAvailableForAnalytical(resource *models.Engine) bool {
+	return IsAvailable(resource) && SupportsAnalytical(resource)
+}
+
 // IsAvailableStorageEngine applies the single business-candidate rule before
 // matching storage capability.
 func IsAvailableStorageEngine(resource *models.Engine) bool {

@@ -68,6 +68,17 @@ class ChangedGateTest(unittest.TestCase):
             MODULE.affected_modules(self.repository, ["common/client/system.go"]),
         )
 
+    def test_orchestrator_changes_include_quality_reference_gate(self) -> None:
+        for name in ("quality", "orchestrator"):
+            path = self.repository / name / "backend" / "go.mod"
+            path.parent.mkdir(parents=True)
+            path.write_text("module example.com/" + name + "\n", encoding="utf-8")
+        subprocess.run(["git", "add", "."], cwd=self.repository, check=True)
+        self.assertEqual(
+            ["orchestrator", "quality"],
+            MODULE.affected_modules(self.repository, ["orchestrator/backend/migrations/005_quality_plan_references.sql"]),
+        )
+
     def test_common_frontend_changes_expand_to_package_and_alias_consumers(self) -> None:
         self.assertEqual(
             ["alias", "sample"],

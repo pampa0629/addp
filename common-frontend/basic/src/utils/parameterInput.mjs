@@ -1,5 +1,13 @@
 const NUMERIC = new Set(['int', 'bigint', 'float', 'double', 'decimal'])
 
+export function parameterLabel(parameter, locale = 'zh-cn') {
+  return parameter?.presentation ? parameter.presentation.labels[locale] : (parameter?.name || '')
+}
+
+export function parameterDescription(parameter, locale = 'zh-cn') {
+  return parameter?.presentation ? parameter.presentation.descriptions[locale] : (parameter?.description || '')
+}
+
 export function parameterControlType(type) {
   if (type === 'bool') return 'select'
   if (type === 'date') return 'date'

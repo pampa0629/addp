@@ -1,428 +1,48 @@
-# Quality 模块 CLAUDE.md
-
-本文件为 Claude Code 在 `quality/` 目录下工作时提供指导。
+# Quality 模块
 
 ## 必读规范
 
-- [ADDP 数据质量规范](../docs/spec/addp数据质量规范.md)：Quality 的规则契约、模块边界、PostgreSQL 方言、执行授权、评分、问题状态机和不支持范围的唯一标准。
-- [ADDP 任务体系规范](../docs/spec/addp任务体系规范.md)：统一 execution、TaskProvider 和持久执行生命周期。
-- 涉及 API、Swagger、认证或前端时，继续遵守仓库根目录 `AGENTS.md` 指向的对应规范。
+- [数据质量规范](../docs/spec/addp数据质量规范.md)：方案、规则、来源冻结、执行和引擎边界的唯一标准。
+- [任务体系规范](../docs/spec/addp任务体系规范.md)：TaskProvider、execution、claim 与 lease。
+- API、Swagger、国际化及授权遵守根目录 AGENTS.md 的对应规范。
 
-`docs/plan/` 中的早期数据治理规划只作背景参考，不得覆盖上述正式规范。
+## 唯一领域主线
 
-## 模块概述
+QualityRule（质量规则）管理目标无关的强类型约束及不可变修订。QualityPlan（质量检查方案）通过检查项引用固定规则修订并绑定物理表；规则与方案多对多，同一方案可将同一规则用于多个目标。检查项独立保存目标、级别和禁用策略。用户手动执行与 Orchestrator 调用都创建冻结 execution，由独立 quality-worker 执行。旧 RuleApplication、CheckTask、DataValidationTask 不再是可配置或可执行实体。
 
-**Quality 模块** 是 ADDP 平台的数据质量管理中心，负责：
+Quality 不依赖企业 Catalog。Standard 的已发布数据元可以导入为冻结规则；来源修订变化不会隐式改写方案。Model 的结构约束可作为人工配置依据，本期尚未提供 Model 自动导入。方案绑定不是企业落标映射，不能推导 Catalog 落标覆盖率。
 
-- 规则应用管理（RuleApplication）：基于 Catalog 已审核的字段/组件标准映射，冻结数据元修订、目标和编译质量规则快照
-- 检查任务管理（CheckTask）：定义和执行确定 PostgreSQL 引擎、Schema、表范围的质量检查任务
-- 数据校验管理（DataValidationTask）：对显式绑定的正式物理表执行强类型断言
-- 质量检查执行：通过持久 worker、安全 SQL 编译和 Execution Authorization 执行规则并计算表级/字段级质量评分
-- 问题工单管理（Issue）：对检查失败的规则自动生成问题工单，支持状态流转（待处理 → 已解决/已忽略）
-- 执行记录查询：读取 `common.task_executions` 查看历史执行记录及详细结果
+首期仅支持 PostgreSQL。plan_contract.go 表达规则语义，plan_service.go 管理方案，plan_executor.go 管理执行生命周期，plan_postgresql.go 集中物理目标验证、SQL 编译与只读可重复读事务。多引擎能力协议待单独讨论，不在业务层继续堆叠方言分支。
 
-**端口**:
-- 后端: `8182`（环境变量 `QUALITY_BACKEND_PORT`）
-- 前端: `5183`（开发环境）/ `8113`（Docker 环境）
+## 代码导航
 
-**数据库 Schema**: `quality`
+- models/plan.go、repository/plan_repo.go：方案版本、执行冻结、租约提交。
+- models/rule.go、repository/rule_repo.go、service/rule_service.go：规则修订、引用保护和约束校验；规则修改不自动升级方案引用。
+- service/plan_sources.go：Standard 来源与修订校验；worker 不回读 Standard。
+- service/plan_issues.go、repository/issue_repo.go：问题按 tenant + plan + rule_key 对账。
+- api/plan_handler.go：/plans CRUD、手动 run；api/rule_handler.go：/rules CRUD、候选数据元和反向引用查询。
+- api/task_provider_handler.go：仅声明 quality_plan。
+- frontend/src/views/RuleList.vue：规则定义与来源；PlanList.vue：选规则、固定修订、绑定目标与执行。约束控件唯一所有者为 RuleConstraintFields.vue，方案页只读展示。ExecutionDetail.vue 展示领域结果；IssueList/IssueDetail 管理问题。
+- authorization/permissions.yaml：quality.rule.* 与 quality.plan.* 分离；方案写入还要求 rule.read，方案运行不要求规则管理权限。
+- cmd/server、cmd/worker：独立控制面和执行进程。
 
-## 已确认的落标边界
+error 规则失败使执行 failed，同时保存完整结果和问题；warning/info 不阻断。运行异常和超时不对账部分问题。终态、最近摘要、问题必须在有效 lease 下原子提交。规则通过率不等于数据行去重合格率。
 
-- Catalog 是实际字段/组件到 Standard 数据元修订映射的唯一 owner；Quality 不允许直接创建第二套 `element_id + 物理字段` 映射。
-- RuleApplication 使用 `standard_mapping_id` 作为稳定关联，并冻结 `standard_mapping_version + element_revision_id + target_snapshot + rule_config`。Catalog 映射变化后必须由用户显式刷新，不得静默跟随。
-- 创建和刷新 RuleApplication 时由 Quality 服务端依次解析 Catalog 映射和 Standard 数据元修订；worker 只消费 Quality 已冻结的 execution 快照，不在执行期回读上游。
-- Quality 拥有规则应用、执行、符合性结果、评分和 Issue；Standard 只可聚合展示，不保存这些事实。
-- 当前 `element_id + engine_id + schema_name + table_name + column_name` 身份和 `element-candidates` API 是待替换旧路线；迁移时直接删除，不保留兼容字段或并行候选入口。
+## 迁移与运行
 
-## 目录结构
+Quality migration 10 一次性合并旧定义和问题身份，删除旧表。旧 check ID 转为 2×ID，data_validation ID 转为 2×ID+1；无检查任务的规则应用也转换为方案。旧执行历史保留在 Monitor，不通过新版 Quality 详情解释旧契约。空规则方案必须补齐规则后执行。
 
-```
-quality/
-├── authorization/
-│   └── permissions.yaml                     # Quality owner Permission Manifest
-├── backend/
-│   ├── cmd/server/main.go                    # Backend 控制面入口
-│   ├── cmd/worker/main.go                    # 独立 Quality execution worker 入口
-│   ├── go.mod                                # github.com/addp/quality
-│   └── internal/
-│       ├── api/
-│       │   ├── router.go                     # 路由配置（/api/v1/quality 前缀）
-│       │   ├── rule_application_handler.go   # 规则应用 CRUD
-│       │   ├── check_task_handler.go         # 检查任务 CRUD + 手动执行
-│       │   ├── data_validation_handler.go # 数据校验任务 CRUD（只能由 Orchestrator 执行）
-│       │   ├── execution_handler.go          # 执行记录查询
-│       │   └── issue_handler.go              # 问题工单查询和状态更新
-│       ├── config/config.go                  # 配置加载（基于 common.BaseConfig）
-│       ├── models/
-│       │   ├── rule_application.go           # 规则应用模型
-│       │   ├── check_task.go                 # 检查任务模型
-│       │   ├── data_validation_task.go  # 数据校验任务模型
-│       │   └── issue.go                      # 问题工单模型
-│       ├── repository/
-│       │   ├── rule_application_repo.go
-│       │   ├── check_task_repo.go
-│       │   ├── data_validation_repo.go
-│       │   └── issue_repo.go
-│       └── service/
-│           ├── rule_engine.go                # 规则加载与应用服务
-│           ├── check_task_service.go         # 检查任务 CRUD 服务
-│           ├── check_executor.go             # 持久 worker、Execution Authorization、评分与 Issue 协调
-│           ├── data_validation_executor.go # 正式物理表强类型断言执行器
-│           ├── sql_generator.go              # 规则→SQL 转换器（6 种规则类型）
-│           └── issue_service.go              # 问题工单服务
-└── frontend/
-    └── src/
-        ├── api/
-        │   ├── client.js                     # API 客户端初始化（Axios）
-        │   ├── auth.js                       # 认证相关
-        │   └── quality.js                    # Quality 模块所有 API 接口
-        ├── store/
-        │   └── auth.js                       # Pinia 认证存储
-        ├── components/
-        │   └── Layout.vue                    # 双模式布局（Console 嵌入/独立访问）
-        └── views/
-            ├── Login.vue
-            ├── RuleApplicationList.vue       # 规则应用配置页
-            ├── CheckTaskList.vue             # 检查任务列表
-            ├── ExecutionDetail.vue           # 执行详情（评分、规则明细）
-            └── IssueList.vue                 # 质量问题工单列表
-```
+System migration 147 合并用户权限，撤销旧权限授予并使相关授权失效。Orchestrator migration 005 只更新自身 steps 中的旧引用。升级前排空旧 Quality 与关联 Orchestrator 活动执行，并在恢复调度前完成三个 owner 的迁移；不得混跑新旧 worker。
 
-## 当前数据库表结构
+Quality migration 11 将内嵌规则逐条提取为独立规则 R1 和检查项，保留原 rule_key、目标、级别、来源；不按名称去重，不改写历史执行，删除旧 plans.rules 列。System migration 148 补齐规则 CRUD 授予并刷新受影响用户授权。规则修订仅追加；被方案引用时禁止删除，升级引用必须显式保存方案。租户物理清理包含规则及修订；引擎清理不删除目标无关规则。
 
-本节记录迁移前实现，用于定位代码。目标 RuleApplication 身份和快照字段以 [ADDP 数据质量规范](../docs/spec/addp数据质量规范.md) 为准。
+后端 8182，前端 5183；服务按 scripts/dev 标准入口启动。本轮实现不等于已在运行环境执行迁移。
 
-所有模型使用 PostgreSQL Schema `quality`（通过 GORM 的 `TableName()` 方法指定）。
+## 测试与 CI
 
-### `quality.rule_applications` — 规则应用（字段-规则映射）
-
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| id | int64 PK | 主键 |
-| tenant_id | int64 | 租户 ID，带索引 |
-| element_id | int64 | 当前旧引用；迁移后替换为 `standard_mapping_id + standard_mapping_version + element_revision_id` |
-| engine_id | int64 | 目标数据库引擎 ID |
-| schema_name | string | 目标 Schema 名 |
-| table_name | string | 目标表名 |
-| column_name | string | 目标字段名 |
-| rule_config | JSONB | 质量规则快照（从数据元获取并存储，避免规则变更影响历史检查） |
-| enabled | bool | 是否启用（默认 true） |
-| created_by / updated_by | int64 | 操作人 |
-
-### `quality.check_tasks` — 检查任务定义
-
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| id | int64 PK | 主键 |
-| tenant_id | int64 | 租户 ID |
-| name / description | string | 任务名称 / 描述 |
-| engine_id | int64 | 目标引擎 ID |
-| schema_name | string | 必填：目标 Schema |
-| table_name | string | 必填：目标表 |
-| last_run_at | timestamp? | 最近执行时间 |
-| last_execution_id | string | 最近一次 `common.task_executions.execution_id` |
-| last_execution_status | string | 最近一次执行状态 |
-| created_by / updated_by | int64 | 操作人 |
-
-### `quality.data_validation_tasks` — 数据校验任务定义
-
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| id / tenant_id / code / version | bigint / string | 租户内稳定身份和乐观锁版本 |
-| table_bindings | JSONB | 同引擎正式表 `alias + locator` 数组 |
-| assertions | JSONB | `addp.quality.data-validation/v1` 强类型断言文档 |
-| last_execution_id / last_execution_status / last_run_at | nullable | 最近 execution 投影 |
-
-### `quality.issues` — 质量问题工单
-
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| id | int64 PK | 主键 |
-| tenant_id | int64 | 租户 ID |
-| execution_id / last_execution_id | string | 首次发现和最近观测到该问题的 execution |
-| rule_application_id | int64 | 关联规则应用 |
-| rule_key | UUID | 规则快照中的稳定规则身份；与 `tenant_id + rule_application_id` 共同构成当前问题唯一身份 |
-| rule_type | string | 数据库存储字段；API JSON 字段名为 `type` |
-| severity / message | string | 规则严重级别和说明 |
-| column_name / table_name / schema_name | string | 问题字段定位 |
-| engine_id | int64 | 所属引擎 |
-| failed_count / total_count | int64 | 失败行数 / 总行数 |
-| pass_rate | float64 | 通过率（0-100） |
-| detail | JSONB | 详情（含错误信息等） |
-| status | string | `open` / `resolved` / `ignored` |
-| resolved_at / resolved_by / resolution_note | nullable | 人工或自动解决事实；人工处理必须提供说明 |
-| last_observed_at | timestamp? | 最近一次规则观测时间 |
-
-> **说明**: 执行记录不在 quality schema，写入 `common.task_executions`，module 标记为 `quality`，执行结果（质量评分、规则明细等）存储在 `metadata` JSONB 字段中。
-
-## API 端点（`/api/v1/quality`）
-
-### 规则应用
-```
-GET    /api/v1/quality/rule-applications          # 列表（支持过滤目标与映射状态）
-GET    /api/v1/quality/rule-applications/standard-mapping-candidates # 创建页已审核标准映射候选
-POST   /api/v1/quality/rule-applications          # 创建（传入 standard_mapping_id + standard_mapping_version）
-GET    /api/v1/quality/rule-applications/:id      # 详情
-PUT    /api/v1/quality/rule-applications/:id      # 显式启停，请求体必须为 {"enabled": true|false}
-POST   /api/v1/quality/rule-applications/:id/refresh # 显式刷新映射版本、目标、数据元修订与规则快照
-DELETE /api/v1/quality/rule-applications/:id      # 删除
-```
-
-规则应用创建页不得由浏览器直连 Catalog 与 Standard 后自行拼接；候选统一通过 Quality API 返回已审核 StandardMapping、目标组件、数据元修订和规则摘要，权限只依赖 `quality.rule_application.create`。旧 `element-candidates` 路由迁移时直接删除。
-
-### 检查任务
-```
-GET    /api/v1/quality/check-tasks                # 列表
-POST   /api/v1/quality/check-tasks                # 创建
-GET    /api/v1/quality/check-tasks/:id            # 详情
-PUT    /api/v1/quality/check-tasks/:id            # 更新
-DELETE /api/v1/quality/check-tasks/:id            # 删除
-POST   /api/v1/quality/check-tasks/:id/run        # 手动触发执行（异步，立即返回 execution_id）
-```
-
-检查任务创建和更新必须通过 System 实时 Catalog 选择并校验 PostgreSQL Schema/表；Quality 只持久化 `engine_id + schema_name + table_name`，不保存 EngineCatalogPath，也不依赖 Meta 扫描状态。
-
-### 数据校验任务
-```
-GET    /api/v1/quality/data-validation-tasks       # 列表
-POST   /api/v1/quality/data-validation-tasks       # 创建数据校验任务
-GET    /api/v1/quality/data-validation-tasks/:id   # 详情
-PUT    /api/v1/quality/data-validation-tasks/:id   # 按 version 乐观锁更新
-DELETE /api/v1/quality/data-validation-tasks/:id   # 删除
-```
-
-Quality `data_validation` 由 Orchestrator 触发，任务保存同一 Engine 中的标准物理表 `table_bindings: [{alias, locator}]` 与强类型断言。Worker 按当前 lease 派生精确 read 授权，在只读、可重复读事务内读取字段并执行断言，不依赖 Model。成功输出 `passed=true`；error 断言失败会阻止后续步骤，不回滚已完成的上游计算。
-
-### TaskProvider 标准入口
-```
-GET    /api/v1/quality/task-provider/tasks                        # 列表，task_type 支持 check|data_validation
-GET    /api/v1/quality/task-provider/tasks/:task_type/:id         # 详情
-POST   /api/v1/quality/task-provider/tasks/:task_type/:id/execute # 执行
-GET    /api/v1/quality/task-provider/executions/:execution_id     # 执行状态
-```
-
-整组 TaskProvider 路由只允许 `addp-orchestrator` Service Client 的固定 Guard 与 `quality.task_provider.read|execute` 保护，不向 User Principal 或 Quality 前端暴露。数据校验没有直接 run API，只允许 Orchestrator 通过 TaskProvider 触发。其成功输出为 `passed=true`，失败会阻止后续步骤。
-
-### 执行记录（只读，读 `common.task_executions`）
-```
-GET    /api/v1/quality/executions                 # 列表（分页）
-GET    /api/v1/quality/executions/:execution_id   # 详情及结果（含质量评分、字段评分、规则明细）
-```
-
-这两个人用接口要求 `monitor.execution.read`，仅投影当前 Tenant 中 `module=quality` 且 `task_type IN (check, data_validation)` 的执行事实；列表接口是 owner 领域投影，不对应 Quality 前端列表页。模块级执行列表统一由 Monitor 展示，`cleanup_executor` 等运维执行不进入 Quality 业务领域详情。
-
-### 问题工单
-```
-GET    /api/v1/quality/issues                     # 列表（支持过滤：status, engine_id）
-GET    /api/v1/quality/issues/:id                 # 详情
-PUT    /api/v1/quality/issues/:id/status          # 更新状态（resolved / ignored，仅对 open 状态有效）
-```
-
-### 健康检查
-```
-GET    /health/live                            # 进程存活检查
-GET    /health/ready                           # 模块就绪检查
-```
-
-### 企业 Catalog 质量摘要
-
-`POST /api/v1/quality/runtime/catalog-summaries/resolve` 只允许 `addp-catalog` Service Client 以 `quality.catalog.read` 批量读取结构化 PostgreSQL 表引用的当前质量摘要。该接口只组合 Quality 已有 CheckTask、最近 execution 和当前 open Issue，不接受 CatalogEntry ID、Meta Item ID、Tenant ID 或自由文本路径，不在 Quality 保存 Catalog 反向引用。
-
-只有最近 execution 为 `success` 且 metadata 符合 `addp.quality.execution-result/v1` 时才返回 `quality_score`；未配置、正在运行、失败或超时都不伪造当前评分。Catalog 不可达不影响 Quality 运行，Quality 不可达也不影响 Catalog Ready。
-
-## 核心执行流程
-
-### 质量检查执行（`check_executor.go`）
-
-```
-触发（POST /run）
-    ↓
-生成 execution_id（UUID）
-    ↓
-在任务定义行锁保护下创建 common.task_executions（status: pending），并冻结启用的 RuleApplication 快照到 execution_config
-    ↓
-签发 Execution Authorization：手动执行使用 User Access Token，编排子执行从 parent execution 派生
-    ↓
-持久 worker 使用 FOR UPDATE SKIP LOCKED 领取已授权的 pending execution：
-    1. 写 running、started_at、attempt 和 worker lease，并在执行期间续租
-    2. 通过 System 的 ExecutionEngineAccess 获取授权后的 PostgreSQL 连接事实
-    3. 严格解析 execution_config 中的版本、超时预算和规则快照
-    4. 通过 SQLGenerator 安全引用标识符、绑定所有规则参数并执行聚合检查
-    5. 计算规则、字段和表级评分；结果写入 execution.metadata
-    6. 以 tenant_id + rule_application_id + rule_key 对 Issue 做幂等 reconcile
-    7. 校验 lease owner 后原子写 execution 终态和 CheckTask 最近执行摘要
-    ↓
-worker 崩溃后由 lease 恢复：未达 max_attempts 返回 pending，达到上限写 failed
-```
-
-### SQL 生成器（`sql_generator.go`）
-
-支持 6 种基础规则类型：
-
-| 规则类型 | `params` | 语义 |
-|----------|----------|------|
-| `not_null` | `{}` | 值不得为 NULL |
-| `unique` | `{}` | 非 NULL 值不得重复 |
-| `format` | `pattern` | 非 NULL 文本匹配 PostgreSQL 正则 |
-| `length` | `min` / `max` 至少一个 | 非 NULL 文本长度位于闭区间 |
-| `value_range` | `min` / `max` 至少一个 | 非 NULL 数值位于闭区间 |
-| `allowed_values` | 非空 `values` | 非 NULL 值属于枚举集合 |
-
-规则文档唯一版本为 `addp.quality.rules/v1`。schema、table、column 只通过 PostgreSQL dialect 引用，正则、边界和枚举值只通过绑定参数进入 SQL；不得拼接自定义 SQL。
-
-### 执行结果 JSON 结构
-
-```json
-{
-  "schema_version": "addp.quality.execution-result/v1",
-  "quality_score": 86.67,
-  "total_rules": 15,
-  "passed_rules": 13,
-  "failed_rules": 2,
-  "field_scores": [
-    { "column": "mobile_phone", "score": 95.5, "rule_count": 4 }
-  ],
-  "rule_details": [
-    {
-      "rule_application_id": 123,
-      "rule_key": "0d6c7c6a-4f0d-4d4f-9e5a-6f8e5c7a1b2c",
-      "type": "format",
-      "severity": "error",
-      "message": "手机号格式不正确",
-      "column": "mobile_phone",
-      "table": "users",
-      "schema": "public",
-      "pass_rate": 95.5,
-      "failed_count": 450,
-      "total_count": 10000,
-      "passed": false
-    }
-  ]
-}
-```
-
-## 前端路由
-
-```
-/quality/rule-applications          # 规则应用配置列表
-/quality/check-tasks                # 检查任务列表（含手动执行入口）
-/quality/executions/:execution_id   # 执行详情（评分卡片、字段评分表、规则明细表）
-/quality/issues                     # 问题工单列表（含状态过滤和处理操作）
-```
-
-## 模块依赖关系
-
-**依赖**:
-- **System 模块**: 认证、PostgreSQL 引擎校验、Execution Authorization 和 ExecutionEngineAccess（`SYSTEM_URL`）
-- **Standard 模块**: 获取数据元的质量规则定义（`STANDARD_URL`）
-- **Common**: 规则契约、`common.task_executions`、查询方言和数据库连接桥
-- **Redis**: 租户/引擎删除时的资源回收事件
-
-**被依赖**:
-- **Monitor 模块**: 通过 `common.task_executions` 中 `module='quality'` 的记录统一监控质量检查执行情况
-
-当前不支持事件触发、定时调度、取消、自定义 SQL、字段检查中的跨字段规则和自动映射；数据校验只支持正式数据质量规范定义的六类强类型断言（`not_null`、`allowed_values`、`unique_key`、`foreign_key`、`predicate_implication`、`row_count`），需要扩展时先修改正式规范。
-
-Quality `data_validation` 由 Orchestrator 触发，任务保存同一 Engine 中的标准物理表 `table_bindings: [{alias, locator}]` 与强类型断言。Worker 按当前 lease 派生精确 read 授权，在只读、可重复读事务内读取字段并执行断言，不依赖 Model。成功输出 `passed=true`；error 断言失败会阻止后续步骤，不回滚已完成的上游计算。
-
-## 配置项
-
-| 环境变量 | 默认值 | 说明 |
-|----------|--------|------|
-| `QUALITY_BACKEND_PORT` | `8182` | 后端服务端口 |
-| `QUALITY_CHECK_TIMEOUT` | `30m` | 整次质量检查超时；触发时冻结到 execution 配置 |
-| `QUALITY_WORKER_CONCURRENCY` | `4` | 单进程并行 execution 槽位数；必须为正整数 |
-| `QUALITY_WORKER_LEASE_DURATION` | `30m` | execution lease 时长 |
-| `QUALITY_WORKER_POLL_INTERVAL` | `500ms` | pending claim 与过期恢复轮询间隔；必须小于 lease |
-| `SYSTEM_URL` | `http://localhost:8180` | System 模块地址 |
-| `STANDARD_URL` | `http://localhost:8110` | Standard 模块地址 |
-| `QUALITY_SERVICE_CLIENT_SECRET` | - | Quality Confidential OAuth Client Secret |
-| `REDIS_HOST` / `REDIS_PORT` | - | Redis 连接配置（用于认证缓存） |
-
-## IAM Permission 所有权
-
-Quality 是以下 Permission 的唯一 owner：
-
-- `quality.rule_application.*`
-- `quality.check_task.*`
-- `quality.issue.*`
-- `quality.data_validation.*`
-- `quality.task_provider.read`
-- `quality.task_provider.execute`
-
-机器可读事实源是 [authorization/permissions.yaml](authorization/permissions.yaml)。该 Manifest 由 `common/authorization` 在构建/发布期统一发现、校验和聚合，Quality 服务启动时不向 System 动态注册 Permission。
-
-Quality 的执行历史是 `common.task_executions` 的跨模块统一投影，首批内置 Role 使用 `monitor.execution.read` 读取该类全局执行事实；Quality 不重复定义同义的 `quality.execution.read`。
-
-## 特殊设计
-
-### 规则配置快照
-
-创建或显式刷新 RuleApplication 时，后端先从 Catalog 解析已审核 StandardMapping，再按其 `element_revision_id` 从 Standard 拉取严格版本化的 `addp.quality.rules/v1` 编译规则文档，只保留启用规则并写入 `rule_config`，同时冻结映射版本和目标快照。触发任务时再次把当前启用 RuleApplication 冻结到 execution 的 `execution_config`；worker 只消费 execution 快照，不回读实时配置。
-
-Quality execution 配置唯一版本为 `addp.quality.execution-config/v1`。任务触发时同时冻结 `QUALITY_CHECK_TIMEOUT` 对应的 `check_timeout_ms`；worker 对授权消费、目标连接和全部规则 SQL 使用同一个截止时间。超时必须取消目标 PostgreSQL 语句并写 `timeout + quality.execution.timeout`，不能写成普通 SQL 失败，也不能生成部分评分或更新 Issue。
-
-独立 `quality-worker` 进程使用 `QUALITY_WORKER_CONCURRENCY` 个有界执行槽位并行领取不同 CheckTask，默认并发数为 4。`quality-backend` 只负责 API、任务定义、授权签发和 execution 创建，不执行检查。所有 Worker 槽位和多实例通过 PostgreSQL claim、attempt 与 `lease_token` 协调；同一 CheckTask 的 active execution 限制保持不变。lease 恢复扫描每个 Worker 进程只运行一份，不随执行槽位数重复。
-
-RuleApplication 只保存 `standard_mapping_id + standard_mapping_version + element_revision_id`、目标快照和规则快照，不复制可编辑的 Catalog 映射或数据元定义。列表 API 使用 Quality 租户服务身份按当前页映射集合批量解析必要展示摘要；这是当前展示投影，不改变已冻结修订和目标。浏览器不直接调用 Catalog 或 Standard 来补全列表，也不保留裸 ID 展示旁路。
-
-规则应用与检查任务前端都读取 `active,disabled` PostgreSQL 用于历史绑定名称回显，表格同时显示引擎名称和 ID；创建或更新表单只允许 `active` 引擎，提交前再次校验生命周期。`deleting` 不进入正常展示或选择。
-
-### 问题工单状态流转
-
-```
-open（待处理）
-    ├─→ resolved（已解决）：数据问题已修复
-    └─→ ignored（已忽略）：已知问题，暂不处理
-```
-
-同一租户、同一 RuleApplication 中的每个 `rule_key` 始终只有一个当前问题。同一应用可包含多条同类型规则，但每条规则拥有独立 Issue；一条规则通过不得关闭另一条规则的问题。规则失败时创建或重开为 `open`，后续检查通过时自动变为 `resolved`。人工只能将 `open` 更新为 `resolved` 或 `ignored`，且必须提交处理说明；终态之间不可互转。
-
-RuleApplication 是当前配置，execution metadata 才是历史事实。存在已冻结该规则应用的 `pending|running` execution 时禁止删除；其余删除必须在同一事务中清理对应 Issue，并保留已完成 execution 历史。
-
-规则应用创建只选择 Catalog 已审核的 StandardMapping。Quality 后端通过 Catalog owner 契约解析目标组件与专业资源定位，并确认其可转换为当前支持的 PostgreSQL Engine/schema/table/column；持久身份是 `tenant_id + standard_mapping_id`，物理坐标只是执行目标快照，不是第二套落标关系。
-
-规则应用启停只影响未来 execution；已有 `pending|running` execution 继续消费冻结快照。手动停用不改变已有 Issue，停止检查不等于问题已解决或已忽略。重新启用前必须重新校验绑定 Engine 仍为当前 Tenant 的 active PostgreSQL Engine，停用不依赖 Engine 可用性。更新请求必须显式提供布尔 `enabled`，repository 只更新启用状态与审计字段，不使用整行 `Save`。
-
-failed execution 必须在 `error_details.code` 写数据质量规范定义的稳定领域错误码；原始数据库、SQL、连接和外部服务错误只写服务日志。前端按错误码本地化展示失败原因，不显示持久化的英文安全摘要或内部错误。
-
-### 异步检查，立即返回
-
-`POST /check-tasks/:id/run` 在创建 pending execution 并成功附加 Execution Authorization 后返回 `execution_id`。持久 worker 随后领取执行；前端通过轮询 `GET /executions/:execution_id` 获取状态和 `metadata` 结果。HTTP 请求不启动业务 goroutine。
-
-### 前端双模式布局
-
-`Layout.vue` 通过 `window.self !== window.top` 判断是否在 Console iframe 中运行：
-- **Console 嵌入模式**：仅渲染内容区域
-- **独立访问模式**：完整 Header + Sidebar + 内容布局
-
-## 开发注意事项
-
-1. **新增功能**: `models` → `repository` → `service` → `handler` → `router.go`
-
-2. **数据库连接**: worker 只能使用 System `ExecutionEngineAccess` 返回的授权引擎事实创建连接，不得直接读取引擎密钥或绕过 Execution Authorization
-
-3. **重启服务**:
-   ```bash
-   bash scripts/dev/restart.sh -quality
-   ```
-   修改 common 后需全量重启：
-   ```bash
-   bash scripts/dev/restart.sh -all
-   ```
-
-4. **前端 API 统一入口**: 所有 API 调用集中在 [frontend/src/api/quality.js](frontend/src/api/quality.js)
-
-5. **规则类型扩展**: 先修改 `docs/spec/addp数据质量规范.md` 和 `common/dataquality`，再同步 Standard 编辑器、Quality SQL 编译器、Swagger 和测试；不得保留旧规则结构兼容分支
-
-6. **执行约束**: v1 仅支持 active PostgreSQL 引擎和手动触发；无规则、非法快照、SQL 错误、授权失败都必须进入 failed，不得以空结果成功
-
-## 前端公开路由
-
-- 模块内 Router 使用 `/rule-applications`、`/check-tasks`、`/data-validation-tasks`、`/executions/:execution_id`、`/issues` 等无模块前缀路径；Console 公开 URL 统一加 `/quality` 前缀。
-- 执行详情唯一使用 `/executions/:execution_id`，参数名与 Task Execution 领域身份一致，不接受 `id` 别名。
-- 规则应用列表使用 `engine_id`、`schema_name`、`table_name`、`page`、`page_size` 恢复筛选和分页，默认值省略。
-- 检查任务和数据校验任务页使用共享 `MonitorExecutionsButton` 按 `module=quality + task_type` 进入 Monitor；Quality 不保留模块级执行列表路由。
-- 业务导航统一调用 `frontend/src/utils/moduleNavigation.js`。
-- 检查任务列表使用 `page`、`page_size` 恢复分页，使用 `create=1` 恢复创建弹窗、使用 `task_id` 恢复编辑弹窗；创建和编辑保留分页上下文，默认列表省略 query，TaskProvider `create_url` / `edit_url` 必须使用同一契约。
+- make test-module MODULE=quality：T0、一致性、Go 与前端标准门禁。
+- make test-quality-postgres：真实 PG 规则、来源/执行/问题闭环、迁移、租约；同时验证 Orchestrator 的方案引用迁移。
+- make test-quality-frontend：路由、页面端到端、构建。
+- System IAM migration 测试由 scripts/test/system-iam-postgres-gate.sh --package migration 自动发现；单测筛选 --test quality-plans。
+- release-and-t2-gates.yml 注册 Quality PG 门禁，changed-gate 将 Orchestrator 变更映射到该门禁。
+- 本地仅用 addp_test 和 addp_iam_test；不为测试创建单次 database。

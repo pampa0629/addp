@@ -23,32 +23,23 @@ export const systemCatalogAPI = {
   })
 }
 
-// 规则应用
-export const ruleApplicationAPI = {
-  list: (params) => client.get('/quality/rule-applications', { params }),
-  listElementCandidates: (params) => client.get('/quality/rule-applications/element-candidates', { params }),
-  get: (id) => client.get(`/quality/rule-applications/${id}`),
-  create: (data) => client.post('/quality/rule-applications', data),
-  update: (id, data) => client.put(`/quality/rule-applications/${id}`, data),
-  delete: (id) => client.delete(`/quality/rule-applications/${id}`)
+export const planAPI = {
+  run: id => client.post(`/quality/plans/${id}/run`),
+  list: (params) => client.get('/quality/plans', { params }),
+  get: (id) => client.get(`/quality/plans/${id}`),
+  create: (data) => client.post('/quality/plans', data),
+  update: (id, data) => client.put(`/quality/plans/${id}`, data),
+  delete: (id, version) => client.delete(`/quality/plans/${id}`, { data: { version } })
 }
 
-// 检查任务
-export const checkTaskAPI = {
-  list: (params) => client.get('/quality/check-tasks', { params }),
-  get: (id) => client.get(`/quality/check-tasks/${id}`),
-  create: (data) => client.post('/quality/check-tasks', data),
-  update: (id, data) => client.put(`/quality/check-tasks/${id}`, data),
-  delete: (id) => client.delete(`/quality/check-tasks/${id}`),
-  run: (id) => client.post(`/quality/check-tasks/${id}/run`)
-}
-
-export const dataValidationAPI = {
-  list: (params) => client.get('/quality/data-validation-tasks', { params }),
-  get: (id) => client.get(`/quality/data-validation-tasks/${id}`),
-  create: (data) => client.post('/quality/data-validation-tasks', data),
-  update: (id, data) => client.put(`/quality/data-validation-tasks/${id}`, data),
-  delete: (id, version) => client.delete(`/quality/data-validation-tasks/${id}`, { data: { version } })
+export const ruleAPI = {
+  list: params => client.get('/quality/rules', { params }),
+  get: id => client.get(`/quality/rules/${id}`),
+  create: data => client.post('/quality/rules', data),
+  update: (id, data) => client.put(`/quality/rules/${id}`, data),
+  delete: (id, version) => client.delete(`/quality/rules/${id}`, { data: { version } }),
+  plans: (id, params) => client.get(`/quality/rules/${id}/plans`, { params }),
+  listElementCandidates: params => client.get('/quality/rules/element-candidates', { params })
 }
 
 // 执行记录

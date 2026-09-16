@@ -9,6 +9,7 @@ const (
 	SemanticProfile = "relational_analytics_v1"
 	MaxNodes        = 512
 	MaxExpressions  = 16384
+	MaxParameters   = 128
 	MaxDepth        = 128
 	MaxBytes        = 1 << 20
 	// MaxLimit is a compilation resource bound; service policies may be stricter.

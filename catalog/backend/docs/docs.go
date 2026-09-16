@@ -3162,9 +3162,6 @@ const docTemplate = `{
         "github_com_addp_catalog_internal_service.QualitySummary": {
             "type": "object",
             "properties": {
-                "check_task_id": {
-                    "type": "integer"
-                },
                 "configured": {
                     "type": "boolean"
                 },

@@ -16,8 +16,8 @@ func TestMaterializedTargetDecommissionRequiresExactVersionAndTarget(t *testing.
 	if err := db.Create(&table).Error; err != nil {
 		t.Fatalf("create logical table: %v", err)
 	}
-	stale := models.MaterializedTargetDecommissionRequest{Version: 3, TargetParentLocator: "addp://engine/2/path/outdoor?type=schema", TargetName: "metric"}
+	stale := models.PhysicalTargetDeleteRequest{Version: 3, TargetParentLocator: "addp://engine/2/path/outdoor?type=schema", TargetName: "metric"}
 	requireDomainErrorCode(t, validateMaterializedTargetDecommissionState(db, table.ID, 1, stale), "resource_version_conflict")
-	mismatch := models.MaterializedTargetDecommissionRequest{Version: 4, TargetParentLocator: "addp://engine/2/path/outdoor?type=schema", TargetName: "other"}
+	mismatch := models.PhysicalTargetDeleteRequest{Version: 4, TargetParentLocator: "addp://engine/2/path/outdoor?type=schema", TargetName: "other"}
 	requireDomainErrorCode(t, validateMaterializedTargetDecommissionState(db, table.ID, 1, mismatch), "materialized_target_confirmation_mismatch")
 }

@@ -25,21 +25,12 @@
       <el-descriptions-item :label="t('quality.execution.status')">
         <el-tag :type="statusType(execution.status)">{{ statusLabel(execution.status) }}</el-tag>
       </el-descriptions-item>
-      <el-descriptions-item v-if="!gateResult" :label="t('quality.execution.qualityScore')">
-        <span v-if="result?.quality_score != null" style="font-size:18px;font-weight:bold">
-          {{ Number(result.quality_score).toFixed(1) }}%
-        </span>
-        <span v-else>-</span>
-      </el-descriptions-item>
-      <el-descriptions-item v-if="!gateResult" :label="t('quality.execution.totalRules')">{{ result?.total_rules ?? '-' }}</el-descriptions-item>
-      <el-descriptions-item v-if="!gateResult" :label="t('quality.execution.passedFailed')">
-        {{ result?.passed_rules ?? '-' }} / {{ result?.failed_rules ?? '-' }}
-      </el-descriptions-item>
-      <el-descriptions-item v-if="gateResult" :label="t('quality.execution.gateResult')">
-        <el-tag :type="gateResult.passed ? 'success' : 'danger'">
-          {{ gateResult.passed ? t('quality.execution.gatePassed') : t('quality.execution.gateBlocked') }}
+      <el-descriptions-item v-if="planResult" :label="t('quality.execution.planResult')">
+        <el-tag :type="planResult.passed ? 'success' : 'danger'">
+          {{ planResult.passed ? t('quality.execution.gatePassed') : t('quality.execution.gateBlocked') }}
         </el-tag>
       </el-descriptions-item>
+      <el-descriptions-item v-if="planResult" :label="t('quality.execution.qualityScore')">{{ planResult.quality_score == null ? '-' : Number(planResult.quality_score).toFixed(1)+'%' }}</el-descriptions-item>
       <el-descriptions-item :label="t('quality.execution.executionTime')">{{ execution.execution_time_ms ? execution.execution_time_ms + ' ms' : '-' }}</el-descriptions-item>
       <el-descriptions-item :label="t('quality.execution.createdAt')">{{ execution.created_at ? new Date(execution.created_at).toLocaleString() : '-' }}</el-descriptions-item>
     </el-descriptions>
@@ -54,42 +45,14 @@
       style="margin-top:20px"
     />
 
-    <template v-if="result?.field_scores?.length">
-      <h3 style="margin-top:24px">{{ t('quality.execution.fieldScores') }}</h3>
-      <el-table :data="result.field_scores" border size="small">
-        <el-table-column prop="column" :label="t('quality.execution.field')" />
-        <el-table-column :label="t('quality.execution.score')" width="120">
-          <template #default="{ row }">{{ Number(row.score).toFixed(1) }}%</template>
-        </el-table-column>
-        <el-table-column prop="rule_count" :label="t('quality.execution.totalRules')" width="100" />
-      </el-table>
-    </template>
-
-    <template v-if="result?.rule_details?.length">
-      <h3 style="margin-top:24px">{{ t('quality.execution.ruleDetails') }}</h3>
-      <el-table :data="result.rule_details" border size="small">
-        <el-table-column prop="type" :label="t('quality.execution.ruleType')" width="120" />
-        <el-table-column prop="rule_key" :label="t('quality.execution.ruleKey')" min-width="260" show-overflow-tooltip />
-        <el-table-column prop="severity" :label="t('quality.execution.severity')" width="100" />
-        <el-table-column prop="column" :label="t('quality.execution.column')" width="150" />
-        <el-table-column prop="table" :label="t('quality.execution.table')" width="150" />
-        <el-table-column :label="t('quality.execution.passRate')" width="100">
-          <template #default="{ row }">{{ row.pass_rate == null ? '-' : Number(row.pass_rate).toFixed(1) }}%</template>
-        </el-table-column>
-        <el-table-column :label="t('quality.execution.result')" width="80">
-          <template #default="{ row }">
-            <el-tag :type="row.passed ? 'success' : 'danger'">{{ row.passed ? t('quality.execution.passed') : t('quality.execution.failed') }}</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="failed_count" :label="t('quality.execution.failedCount')" width="100" />
-        <el-table-column prop="total_count" :label="t('quality.execution.totalCount')" width="100" />
-      </el-table>
-    </template>
-
-    <template v-if="gateResult?.assertions?.length">
-      <h3 style="margin-top:24px">{{ t('quality.execution.gateAssertions') }}</h3>
-      <el-table :data="gateResult.assertions" border size="small">
-        <el-table-column prop="assertion_key" :label="t('quality.execution.assertionKey')" min-width="280" show-overflow-tooltip />
+    <template v-if="planResult?.rules?.length">
+      <h3 style="margin-top:24px">{{ t('quality.execution.planRules') }}</h3>
+      <el-table :data="planResult.rules" border size="small">
+        <el-table-column prop="name" :label="t('quality.execution.ruleName')" min-width="180" />
+        <el-table-column :label="t('quality.rule.revision')" width="110"><template #default="{row}">{{ row.revision_no ? 'R' + row.revision_no : '-' }}</template></el-table-column>
+        <el-table-column prop="table" :label="t('quality.execution.tableAlias')" min-width="120" />
+        <el-table-column :label="t('quality.execution.column')" min-width="150"><template #default="{row}">{{ row.columns?.join(', ') || '-' }}</template></el-table-column>
+        <el-table-column prop="rule_key" :label="t('quality.execution.ruleKey')" min-width="280" show-overflow-tooltip />
         <el-table-column prop="type" :label="t('quality.execution.ruleType')" width="180" />
         <el-table-column prop="severity" :label="t('quality.execution.severity')" width="100" />
         <el-table-column :label="t('quality.execution.result')" width="100">
@@ -97,7 +60,8 @@
             <el-tag :type="row.passed ? 'success' : 'danger'">{{ row.passed ? t('quality.execution.passed') : t('quality.execution.failed') }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="failed_count" :label="t('quality.execution.failedCount')" width="120" />
+        <el-table-column :label="t('quality.execution.failedCount')" width="120"><template #default="{row}">{{ row.type==='row_count' ? '-' : row.failed_count }}</template></el-table-column>
+        <el-table-column prop="total_count" :label="t('quality.execution.totalCount')" width="100" />
         <el-table-column :label="t('quality.execution.observed')" min-width="220">
           <template #default="{ row }"><code>{{ JSON.stringify(row.observed || {}) }}</code></template>
         </el-table-column>
@@ -130,13 +94,9 @@ let pollTimer = null
 let pollStopped = false
 let initialLoad = true
 let loadSequence = 0
-const result = computed(() => {
+const planResult = computed(() => {
   const metadata = execution.value?.metadata
-  return metadata?.schema_version === 'addp.quality.execution-result/v1' ? metadata : null
-})
-const gateResult = computed(() => {
-  const metadata = execution.value?.metadata
-  return metadata?.schema_version === 'addp.quality.data-validation-result/v1' ? metadata : null
+  return metadata?.schema_version === 'addp.quality.plan-result/v1' ? metadata : null
 })
 const failureReason = computed(() => executionFailureLabel(execution.value, t))
 

@@ -7,7 +7,7 @@
         <div class="service-meta">
           <el-tag type="primary" size="large">{{ t('service.published.queryServiceTag') }}</el-tag>
           <el-tag :type="service?.config_type === 'table' ? 'success' : 'warning'" size="small">
-            {{ service?.config_type === 'table' ? t('service.published.tableModeTag') : t('service.published.sqlModeTag') }}
+            {{ service?.config_type === 'table' ? t('service.published.tableModeTag') : service?.config_type === 'analytical' ? t('service.query.configTypeAnalytical') : t('service.published.sqlModeTag') }}
           </el-tag>
         </div>
       </div>
@@ -29,7 +29,7 @@
         </el-descriptions-item>
         <el-descriptions-item :label="t('service.published.colConfigTypeDetail')">
           <el-tag :type="service?.config_type === 'table' ? 'success' : 'warning'">
-            {{ service?.config_type === 'table' ? t('service.published.tableModeTag') : t('service.published.sqlModeTag') }}
+            {{ service?.config_type === 'table' ? t('service.published.tableModeTag') : service?.config_type === 'analytical' ? t('service.query.configTypeAnalytical') : t('service.published.sqlModeTag') }}
           </el-tag>
         </el-descriptions-item>
         <el-descriptions-item :label="t('service.published.colEngineDetail')">

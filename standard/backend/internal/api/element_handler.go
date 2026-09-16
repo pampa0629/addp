@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	commonapi "github.com/addp/common/api"
 	"github.com/addp/common/dataquality"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	sysi18n "github.com/addp/standard/i18n"
@@ -13,6 +14,7 @@ import (
 	"github.com/addp/standard/internal/repository"
 	"github.com/addp/standard/internal/service"
 	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
 )
 
 type ElementHandler struct{ svc *service.ElementService }
@@ -138,7 +140,7 @@ func parseElementIDs(value string) ([]int64, error) {
 // @Security BearerAuth
 func (h *ElementHandler) CreateElement(c *gin.Context) {
 	var req models.CreateElementRequest
-	if !bindJSON(c, &req) {
+	if !bindElementDefinition(c, &req) {
 		return
 	}
 	result, err := h.svc.CreateElement(&req, getTenantID(c), getUserID(c))
@@ -319,7 +321,7 @@ func (h *ElementHandler) UpdateElementRevision(c *gin.Context) {
 		return
 	}
 	var req models.UpdateElementRevisionRequest
-	if !bindJSON(c, &req) {
+	if !bindElementDefinition(c, &req) {
 		return
 	}
 	result, err := h.svc.UpdateRevision(id, revisionID, getTenantID(c), getUserID(c), &req)
@@ -457,6 +459,18 @@ func elementRevisionPath(c *gin.Context) (int64, int64, bool) {
 }
 func bindJSON(c *gin.Context, value interface{}) bool {
 	if err := c.ShouldBindJSON(value); err != nil {
+		respondError(c, http.StatusBadRequest, err)
+		return false
+	}
+	return true
+}
+
+func bindElementDefinition(c *gin.Context, value interface{}) bool {
+	if err := commonapi.BindOptionalJSONStrict(c, value); err != nil {
+		respondError(c, http.StatusBadRequest, err)
+		return false
+	}
+	if err := binding.Validator.ValidateStruct(value); err != nil {
 		respondError(c, http.StatusBadRequest, err)
 		return false
 	}

@@ -29,6 +29,7 @@ func SetupRouter(
 	entitySvc *service.EntityService,
 	entityRelationSvc *service.EntityRelationService,
 	logicalTableSvc *service.LogicalTableService,
+	conceptMappingSvc *service.ConceptMappingService,
 	dwLayerSvc *service.DWLayerService,
 	metricImplementationSvc *service.MetricImplementationService,
 	tableRelationSvc *service.TableRelationService,
@@ -69,6 +70,7 @@ func SetupRouter(
 	entityHandler := NewEntityHandler(entitySvc)
 	entityRelationHandler := NewEntityRelationHandler(entityRelationSvc)
 	logicalTableHandler := NewLogicalTableHandler(logicalTableSvc)
+	conceptMappingHandler := NewConceptMappingHandler(conceptMappingSvc)
 	dwLayerHandler := NewDWLayerHandler(dwLayerSvc)
 	metricImplementationHandler := NewMetricImplementationHandler(metricImplementationSvc)
 	tableRelationHandler := NewTableRelationHandler(tableRelationSvc)
@@ -158,6 +160,8 @@ func SetupRouter(
 			logicalTables.GET("", permission(modelauthorization.PermissionModelLogicalModelRead), logicalTableHandler.ListLogicalTables)
 			logicalTables.POST("", permission(modelauthorization.PermissionModelLogicalModelCreate), logicalTableHandler.CreateLogicalTable)
 			logicalTables.GET("/:id", permission(modelauthorization.PermissionModelLogicalModelRead), logicalTableHandler.GetLogicalTable)
+			logicalTables.GET("/:id/concept-mappings", permission(modelauthorization.PermissionModelLogicalModelRead), conceptMappingHandler.Get)
+			logicalTables.PUT("/:id/concept-mappings", permission(modelauthorization.PermissionModelLogicalModelUpdate), conceptMappingHandler.Replace)
 			logicalTables.GET("/:id/relations", permission(modelauthorization.PermissionModelLogicalModelRead), professionalRelationHandler.GetLogicalTableRelations)
 			logicalTables.PUT("/:id", permission(modelauthorization.PermissionModelLogicalModelUpdate), logicalTableHandler.UpdateLogicalTable)
 			logicalTables.DELETE("/:id", permission(modelauthorization.PermissionModelLogicalModelDelete), logicalTableHandler.DeleteLogicalTable)

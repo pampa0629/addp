@@ -242,6 +242,15 @@ func validateComputeCapabilities(p EnginePlugin, compute *ComputeCapabilities) e
 	if compute == nil {
 		return nil
 	}
+	if err := validateAnalyticalQueryCapability(compute); err != nil {
+		return err
+	}
+	if compute.Query != nil && compute.Query.Analytical != nil && compute.Query.Analytical.Supported {
+		provider, ok := p.(AnalyticalCompilerProvider)
+		if !ok || provider.AnalyticalCompiler() == nil || !provider.AnalyticalCompiler().Identity().valid() {
+			return fmt.Errorf("%s declares analytical support without a valid AnalyticalCompilerProvider", p.Type())
+		}
+	}
 	if compute.Query != nil && compute.Query.Supported {
 		_, nativeQuery := p.(QueryRuntimeProvider)
 		_, federatedQuery := p.(FederatedQueryRuntimeProvider)

@@ -169,7 +169,7 @@ func TestAnalyticalPackageFingerprintAndIsolation(t *testing.T) {
 		t.Fatalf("compiler upgrade silently accepted: %v", err)
 	}
 	instance := analyticalFixture().Instance
-	instance.Capability.Supported = false
+	instance.Capability = plugin.AnalyticalCapability{}
 	if err := frozen.Verify(instance, compiler); !errors.Is(err, plugin.ErrAnalyticalUnsupported) {
 		t.Fatalf("revoked capability accepted: %v", err)
 	}

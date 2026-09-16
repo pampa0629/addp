@@ -1,19 +1,15 @@
 package models
 
+import "github.com/addp/common/client"
+
 type MetricSourceRequest struct {
 	ImplementationID int64 `json:"implementation_id" binding:"required,gt=0"`
 	RevisionID       int64 `json:"revision_id" binding:"required,gt=0"`
 }
-type MetricSourceSnapshot struct {
-	ImplementationID           int64  `json:"implementation_id"`
-	RevisionID                 int64  `json:"revision_id"`
-	MetricDefinitionID         int64  `json:"metric_definition_id"`
-	MetricDefinitionRevisionID int64  `json:"metric_definition_revision_id"`
-	DependencyHash             string `json:"dependency_hash"`
-}
+type MetricSourceSnapshot = client.ModelMetricPlan
 
-// RebindMetricSourceRequest replaces an existing SQL publication atomically.
+// RebindMetricSourceRequest replaces an existing metric publication atomically.
 type RebindMetricSourceRequest struct {
-	MetricSource   *MetricSourceRequest `json:"metric_source" binding:"required"`
-	ServiceVersion string               `json:"service_version" binding:"required"`
+	MetricSource *MetricSourceRequest `json:"metric_source" binding:"required"`
+	Version      int64                `json:"version" binding:"required,gt=0"`
 }

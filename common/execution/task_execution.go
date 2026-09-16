@@ -201,8 +201,7 @@ const (
 	// Graph 模块
 	TaskTypeKGBuild = "kg_build"
 	// Quality 模块
-	TaskTypeQualityCheck   = "check"
-	TaskTypeDataValidation = "data_validation"
+	TaskTypeQualityPlan = "quality_plan"
 	// Model 模块
 	// System 运维
 	TaskTypeCleanup         = "cleanup"

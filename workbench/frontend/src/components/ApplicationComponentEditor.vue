@@ -138,7 +138,7 @@
             <div v-for="(parameter, index) in draft.parameters" :key="index" class="parameter">
               <el-input v-model="parameter.key" :placeholder="t('workbench.parameterKey')" />
               <el-input v-model="parameter.label" :placeholder="t('workbench.parameterLabel')" />
-              <el-input v-if="parameter.bindingKind === 'named'" :model-value="parameter.name" disabled />
+              <ParameterCaption v-if="parameter.bindingKind === 'named'" :parameter="parameter" />
               <el-select v-else v-model="parameter.field" @change="syncParameter(parameter)">
                 <el-option v-for="field in parameterizableFields" :key="field.name" :label="field.comment || field.name" :value="field.name" />
               </el-select>
@@ -178,6 +178,7 @@
 </template>
 
 <script setup>
+import ParameterCaption from '../../../../common-frontend/basic/src/components/ParameterCaption.vue'
 import ParameterValueInput from '../../../../common-frontend/basic/src/components/ParameterValueInput.vue'
 import { computed, onBeforeUnmount, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -191,7 +192,7 @@ import StateRuleEditor from './StateRuleEditor.vue'
 
 const props = defineProps({ modelValue: Boolean, component: { type: Object, default: null } })
 const emit = defineEmits(['update:modelValue', 'save'])
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const numericTypes = new Set(['int', 'bigint', 'float', 'double', 'decimal'])
 const thematicTypes = new Set(['string', 'bool', 'int', 'bigint', 'float', 'double', 'decimal', 'date', 'time', 'timestamp', 'uuid'])
 const mapPalettes = ['primary', 'success', 'warning', 'danger']
@@ -309,7 +310,7 @@ async function selectService(selectedServiceKey = serviceKey.value) {
     if (!descriptorRequests.isCurrent(request, serviceKey.value)) return
     descriptor.value = data
     const namedParameters = (data.input_contract.named_parameters || [])
-      .map((parameter, index) => createNamedParameterDraft(parameter, index))
+      .map((parameter, index) => createNamedParameterDraft(parameter, index, locale.value))
       .filter(Boolean)
     assignDraft({
       ...emptyDraft(),

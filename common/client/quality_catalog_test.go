@@ -13,7 +13,7 @@ func TestQualityClientResolveCatalogSummaries(t *testing.T) {
 			t.Fatalf("request = %s authorization=%s", r.URL.Path, r.Header.Get("Authorization"))
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"results":[{"reference":{"engine_id":7,"schema_name":"public","table_name":"orders"},"configured":true,"check_task_id":31,"last_execution_status":"success","quality_score":97.5,"open_issue_count":2}]}`))
+		_, _ = w.Write([]byte(`{"results":[{"reference":{"engine_id":7,"schema_name":"public","table_name":"orders"},"configured":true,"last_execution_status":"success","quality_score":97.5,"open_issue_count":2}]}`))
 	}))
 	defer server.Close()
 	client := NewQualityClient(server.URL, ServiceTokenProviderFunc(func(context.Context, uint) (string, error) { return "token", nil }), nil).WithTenantID(8)

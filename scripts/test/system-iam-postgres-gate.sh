@@ -18,7 +18,7 @@ while [ "$#" -gt 0 ]; do
             shift 2
             ;;
         *)
-            echo "usage: $0 [--package iam|oauth|api|migration] [--test service-account|tenant-invitation|catalog-reference-candidates|catalog-integrity|standard-collection-removal|invitation-enrollment-removal|execution-audience|duckdb-runtime-catalog|security-module-repair|security-access-request-repair|execution-authorization-lease-boundary|portal-runtime-removal|service-execution-audit|develop-execution-audit|workbench-runtime|workbench-data-application|workbench-catalog-read|workbench-resource-grant|model-catalog-read|standard-catalog-read|service-catalog-read|develop-catalog-read|develop-transfer-execution|quality-catalog-read|model-writer-decoupling|catalog-engine-descriptor-read|catalog-project-group-read|transfer-task-provider]" >&2
+            echo "usage: $0 [--package iam|oauth|api|migration] [--test service-account|tenant-invitation|catalog-reference-candidates|catalog-integrity|standard-collection-removal|invitation-enrollment-removal|execution-audience|duckdb-runtime-catalog|security-module-repair|security-access-request-repair|execution-authorization-lease-boundary|portal-runtime-removal|service-execution-audit|develop-execution-audit|workbench-runtime|workbench-data-application|workbench-catalog-read|workbench-resource-grant|model-catalog-read|standard-catalog-read|service-catalog-read|develop-catalog-read|develop-transfer-execution|quality-catalog-read|quality-plans|model-writer-decoupling|catalog-engine-descriptor-read|catalog-project-group-read|transfer-task-provider]" >&2
             exit 2
             ;;
     esac
@@ -67,6 +67,13 @@ esac
 test_pattern='AgainstPostgres$'
 case "$TEST_FILTER" in
     "") ;;
+    quality-plans)
+        if [ "$PACKAGE_FILTER" != "migration" ]; then
+            echo "quality-plans test requires --package migration" >&2
+            exit 2
+        fi
+        test_pattern='^TestQuality(Plans|Rules)ForwardMigrationAgainstPostgres$'
+        ;;
     service-account)
         if [ "$PACKAGE_FILTER" != "iam" ]; then
             echo "service-account test requires --package iam" >&2

@@ -75,18 +75,13 @@ func main() {
 	executionAuthorizationClient := commonClient.NewSystemExecutionAuthorizationClient(cfg.SystemURL, nil)
 
 	// Repositories
-	ruleAppRepo := repository.NewRuleApplicationRepository(db)
-	checkTaskRepo := repository.NewCheckTaskRepository(db)
-	gateTaskRepo := repository.NewDataValidationRepository(db)
+	planRepo := repository.NewPlanRepository(db)
 	issueRepo := repository.NewIssueRepository(db)
 	catalogSummaryRepo := repository.NewCatalogSummaryRepository(db)
 
 	// Services
-	ruleEngineSvc := service.NewRuleEngineService(standardClient, systemServiceClient, ruleAppRepo)
-	checkTaskSvc := service.NewCheckTaskService(checkTaskRepo, systemServiceClient)
-	gateTaskSvc := service.NewDataValidationService(gateTaskRepo, cfg.CheckTimeout)
-	checkExecutor := service.NewCheckExecutor(systemServiceClient, executionAuthorizationClient, checkTaskRepo, issueRepo, cfg.CheckTimeout, cfg.WorkerConcurrency)
-	checkExecutor.ConfigureDataValidation(gateTaskRepo)
+	planSvc := service.NewPlanService(planRepo, cfg.CheckTimeout).WithClients(systemServiceClient, executionAuthorizationClient)
+	ruleSvc := service.NewRuleService(repository.NewRuleRepository(db), standardClient)
 	issueSvc := service.NewIssueService(issueRepo)
 	catalogSummarySvc := service.NewCatalogSummaryService(catalogSummaryRepo)
 	cleanupService := service.NewCleanupService(db, redisClient, commonExecution.NewTaskExecutionRepository(db))
@@ -97,10 +92,8 @@ func main() {
 
 	lifecycleController := modulelifecycle.NewBusiness("quality", commonClient.ModuleRuntimeRoleBackend)
 	router := api.SetupRouter(
-		ruleEngineSvc,
-		checkTaskSvc,
-		gateTaskSvc,
-		checkExecutor,
+		planSvc,
+		ruleSvc,
 		issueSvc,
 		catalogSummarySvc,
 		db,

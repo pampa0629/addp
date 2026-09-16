@@ -137,3 +137,5 @@ export { default as RelatedOrchestrationsDialog } from './components/RelatedOrch
 export { useUnsavedChangesGuard, useConsoleUnsavedChangesGuard } from './composables/useUnsavedChangesGuard'
 
 export { default as ParameterValueInput } from './components/ParameterValueInput.vue'
+
+export { default as ParameterCaption } from './components/ParameterCaption.vue'
