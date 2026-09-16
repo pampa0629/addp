@@ -31,7 +31,7 @@ func (c resultTestCompiler) Check(r CompileRequest) (SupportReport, error) {
 	return SupportReport{Supported: true}, r.Validate()
 }
 func (c resultTestCompiler) Compile(r CompileRequest) (CompiledQuery, error) {
-	return NewCompiledQuery(r, c.Identity(), "sql", "SELECT :value AS value, 'data' AS __addp_record")
+	return NewCompiledQuery(r, c.Identity(), "sql", "SELECT :value AS value, 'data' AS __addp_record", nil)
 }
 
 type analyticalRuntimeTestProvider struct {
@@ -52,7 +52,7 @@ func (p *analyticalRuntimeTestProvider) ExecuteSQL(ctx context.Context, _ Connec
 
 func TestAnalyticalResultChecksIndependentOfData(t *testing.T) {
 	r := resultCompileRequest()
-	q, err := NewCompiledQuery(r, resultTestCompiler{"1"}.Identity(), "sql", "SELECT 1")
+	q, err := NewCompiledQuery(r, resultTestCompiler{"1"}.Identity(), "sql", "SELECT 1", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -250,7 +250,7 @@ func TestAnalyticalLineageRetainsAssertionDependency(t *testing.T) {
 func TestAnalyticalChecksWithSharedErrorCodeRemainDistinct(t *testing.T) {
 	r := resultCompileRequest()
 	r.Plan.Assertions = append(r.Plan.Assertions, plan.Assertion{Violation: "rows", Code: "invalid_source"})
-	q, err := NewCompiledQuery(r, resultTestCompiler{"1"}.Identity(), "sql", "SELECT 1")
+	q, err := NewCompiledQuery(r, resultTestCompiler{"1"}.Identity(), "sql", "SELECT 1", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -270,5 +270,55 @@ func TestAnalyticalChecksWithSharedErrorCodeRemainDistinct(t *testing.T) {
 	raw.Rows = raw.Rows[1:]
 	if _, err := q.normalizeResult(raw); !errors.Is(err, ErrAnalyticalResultInvalid) {
 		t.Fatalf("missing check accepted: %v", err)
+	}
+}
+
+func TestAnalyticalEvaluationChecksPrecedeValueNormalization(t *testing.T) {
+	r := resultCompileRequest()
+	checks := []EvaluationCheck{{Node: "rows", Code: "integer_not_exact"}}
+	q, err := NewCompiledQuery(r, resultTestCompiler{"1"}.Identity(), "sql", "SELECT 1", checks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checks[0].Code = "changed"
+	layout := q.ResultLayout()
+	layout.Evaluations[0].Code = "changed"
+	if q.ResultLayout().Evaluations[0].Code != "integer_not_exact" {
+		t.Fatal("mutable evaluations")
+	}
+	row := func(marker string) map[string]interface{} {
+		return map[string]interface{}{"value": nil, layout.ControlColumn: marker}
+	}
+	for _, data := range []bool{false, true} {
+		raw := &QueryResult{Columns: []string{"value", layout.ControlColumn}, Rows: []map[string]interface{}{row("ok:1"), row("eval_fail:1"), row("complete")}}
+		if data {
+			raw.Rows = append(raw.Rows, row("data"))
+		}
+		out, err := q.normalizeResult(raw)
+		var fault *AnalyticalEvaluationError
+		if out != nil || !errors.As(err, &fault) || fault.Check.Code != "integer_not_exact" {
+			t.Fatalf("evaluation error lost: %#v %v", out, err)
+		}
+	}
+	for _, markers := range [][]string{{"ok:1", "complete"}, {"ok:1", "eval_ok:1", "eval_ok:1", "complete"}, {"ok:1", "eval_ok:2", "complete"}} {
+		raw := &QueryResult{Columns: []string{"value", layout.ControlColumn}}
+		for _, marker := range markers {
+			raw.Rows = append(raw.Rows, row(marker))
+		}
+		if _, err := q.normalizeResult(raw); !errors.Is(err, ErrAnalyticalResultInvalid) {
+			t.Fatal(err)
+		}
+	}
+	other, err := NewCompiledQuery(r, resultTestCompiler{"1"}.Identity(), "sql", "SELECT 1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if q.Fingerprint() == other.Fingerprint() {
+		t.Fatal("evaluation contract omitted from fingerprint")
+	}
+	for _, checks := range [][]EvaluationCheck{{{Node: "missing", Code: "bad"}}, {{Node: "rows", Code: "bad"}, {Node: "rows", Code: "bad"}}} {
+		if _, err := NewCompiledQuery(r, resultTestCompiler{"1"}.Identity(), "sql", "SELECT 1", checks); !errors.Is(err, ErrAnalyticalInvalid) {
+			t.Fatal(err)
+		}
 	}
 }

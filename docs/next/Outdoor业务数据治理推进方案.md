@@ -1333,3 +1333,100 @@ T0/T1 使用既有 `make test-platform` 与 `make test-go`；Common 新包自动
 当前边界：已经验证结果协议和执行衔接，尚未实现完整原生节点／表达式编译、MySQL 同计划语义认证、实例能力投影或 Model/Service 切换。当前真实数据库测试使用专用 fixture 编译器，不能作为完整指标计算能力的认证，也不能用现有页面行为宣称新路径已交付。
 
 最终验证：`make test-go` 全仓库通过（此前另一组 Meta 改动的编译阻断已不再出现，本轮未改动 Meta）；`make test-common-postgres`、`make test-platform`、`git diff --check` 和 gofmt 检查均通过。没有启动／重启开发服务、启用生产分析能力或改写发布记录。下一步优先实现完整 PG/MySQL 原生节点和表达式编译，并复用本轮结果检查协议做同计划语义对照，随后一次性切换上层与删除旧指标 SQL 路径。
+
+
+### 13.32 无损整数转换与原生求值错误（2026-09-15）
+
+用户明确选择：整数转换只允许无损转换，不默认截断或四舍五入。`integer(2.0)` 得到 2；`integer(2.7)`、`integer(-2.7)` 及超出有符号 64 位范围的数值必须拒绝，NULL 保持 NULL。先同步引擎插件规范，再实现下层；没有引入尚无业务需求的取整参数。
+
+`common/query/sqlcompile/integer.go` 返回 CheckedExpression 的安全值和独立违例条件，先比较范围及整数性，再执行 CAST。截断函数仅用于“原值是否等于其整数部分”的判断，不参与选择输出值。PG 使用明确的 `pg_catalog.trunc(numeric, 0)` 与 bigint CAST；MySQL 使用 TRUNCATE 与 signed CAST。两套实现独立放在引擎目录，没有新增上层数据库名单。PG 双参数入口是 internal 原生函数；没有为 SQL 包装函数放松现有读取集合信任规则。
+
+求值错误由编译产物 EvaluationCheck 绑定到计划节点，纳入编译指纹、确定性排序和完整检查协议；与 owner 的业务 Assertion 分开，不写入冻结 Plan。执行层先检查所有记录，再规范化业务字段，因此不会把非法转换的内部 NULL 占位当成业务 NULL，也不会被后续结果过滤隐藏。检查缺失、重复、未知序号或节点均拒绝。
+
+共享结果组合为每个 UNION 分支显式声明列名，并删除外层 SELECT *；MySQL 血缘检查可以逐列核对，不依赖驱动给表达式自动命名。MySQL 读取分析只新增允许无限定名的原生 TRUNCATE 标量函数，仍拒绝带 schema 的同名函数，计算字段不能伪装成源字段直通。
+
+`query/sqlcompile/conformance` 提供同一批数值用例：整值小数、正负非整数、小数末位非零、NULL、超出 float64 精确范围的整数、64 位上下界及越界值。两个 Provider 的真实数据库测试分别验证原生安全值／错误条件，以及测试计划经 PreparedQuery、读取集合、血缘和 Execute 后的正常输出／空结果行为。测试编译器仅实现固定验证 DAG，不注册生产能力，不代表完整表达式与节点编译器已交付。
+
+门禁与 CI：新增用例同步登记进 scripts/test/common-postgres-gate.sh 和 common-mysql-data-protection-gate.sh 的明确匹配集合，沿用根 Make 与 release-and-t2-gates 的两个 Common 数据库作业。Common 和 conformance 包由 make test-go 自动发现。PG 使用 addp_test；MySQL 使用 scripts/test 中既有临时容器配置与数据库自动清理 helper，测试结束移除本轮启动的容器，不使用业务 MySQL，不接管开发服务。
+
+最终验证：make test-common-postgres 与 make test-common-mysql-data-protection 均通过，每种数据库运行同一组 17 个数值边界用例，并分别验证有结果／过滤为空的 PreparedQuery 行为。make test-go 最终全仓库通过；期间另一组 Meta 测试变更曾导致门禁失败，其修正后重跑通过，本轮未改动 Meta。make test-platform、gofmt 与 git diff --check 通过。临时 MySQL 容器已移除，没有重启或接管开发服务。下一步优先补齐通用表达式编译中的条件求值与四则运算，复用错误检查机制，再接入完整节点编译和上层切换。
+
+
+### 13.33 条件表达式的求值范围（2026-09-15）
+
+在无损整数转换基础上补齐公共 CASE/COALESCE 组合组件。CASE 的条件总是求值，只有 true 选择 then，false/NULL 选择 else；COALESCE 从左向右，到首个非 NULL 值停止。内部失败占位 NULL 不能用于成功补值；必须保留已求值错误，同时屏蔽未选分支的错误。先在引擎插件规范明确这组规则，再落实代码。
+
+CheckedExpression 统一放在 query/sqlcompile/conditional.go，明确 Invalid 必须为非空布尔语义，空字符串表示无错误条件。Case 将条件错误和选中分支错误组合；Coalesce 用线性增长的 CASE 检查先判断参数错误，再判断参数值是否非 NULL，避免重复展开全部前缀条件。输入类型、参数数量和展开后的 SQL 体积均受 Common 预算约束。整数转换复用同一输入检查，没有新增引擎名单或上层数据库判断。
+
+共享 conformance fixture 增加 22 组条件组合，通过同一 PreparedQuery、ReadSet、OutputLineage 和 Execute 路径在 PG/MySQL 对照；每组分别验证保留结果和后续过滤为空。覆盖条件 true/false/NULL、条件自身计算失败、嵌套条件、业务 NULL 补值、首个非 NULL 值停止、内部失败不能被补值隐藏。fixture 只处理固定测试 DAG 与所需表达式，不注册生产能力，不代表完整节点或表达式编译器已交付。
+
+受影响门禁在实施前确定为 make test-go、make test-common-postgres、make test-common-mysql-data-protection 和 make test-platform。条件矩阵从已经登记的 LosslessAnalyticalInteger 集成测试调用，因此既有 scripts/test 精确匹配、根 Make 和 release-and-t2-gates 的 Common PG/MySQL 作业自动覆盖，无新增服务依赖或 CI 路径；Common 包由现有 Go 作业自动发现。API 和前端未变，无 Swagger 或浏览器功能验收变更。
+
+最终验证：make test-go 全仓库通过；make test-common-postgres、make test-common-mysql-data-protection 和 make test-platform 均通过。PG/MySQL 的同一组 22 个条件场景分别验证正常结果和空结果，保留上一轮 17 个整数边界用例；gofmt 与 git diff --check 通过。本轮启动的临时 MySQL 已清理，没有启动、重启或接管开发服务。完整原生节点／表达式编译及 Model/Service 切换尚未交付，下一步优先补齐四则运算的精度、除零和溢出检查，并继续通过同计划真实数据库对照验证。
+
+
+### 13.34 四则运算的精确结果与工作精度（2026-09-15）
+
+按已确认的中立表达式类型规则实现四则运算：两个整数的加减乘返回 bigint，含 decimal 的加减乘及所有除法返回 DECIMAL(38,18)。乘除在每个逻辑表达式节点舍入到 18 位，中点远离零，随后检查结果范围；普通 NULL 传播，但不能隐藏已经求值的子表达式错误。非 NULL 操作数除以零报错。先同步引擎插件规范，再实现公共组件。
+
+query/sqlcompile/arithmetic.go 通过 ArithmeticDialect 使用精确十进制工作区，各原生适配位于 PG/MySQL 自己的目录；没有指标模块的数据库判断或第二条执行路径。整数加减乘在运算前扩宽、检查后窄化，避免 bigint 原生溢出。小数乘法把一个操作数拆为整数部分与小数系数，避免直接产生最多 76 位的乘积；中间值最多 58 位，保留精确余数来决定舍入。除法先排除除零与确定溢出，再生成至少 30 位小数的候选商；用放大后整数的精确余数校正候选值，最终舍入不取决于候选商先前的舍入方向。原生工作精度属于该 SQL 策略，不进入 Plan；其他引擎可以实现自己的认证策略。
+
+MySQL 的原生除法小数位受 div_precision_increment 影响，依据见 [MySQL 8.0 算术规则](https://dev.mysql.com/doc/refman/8.0/en/arithmetic-functions.html)。不能仅使用默认除法加 ROUND(18)，因为中间舍入会影响靠近半值的结果。共享测试通过 math/big 有理数独立计算期望，不以另一个数据库作为标准。特别覆盖小数第 18 位的正负半值、略低于半值、乘法舍入后越界、最大数、极小数、NULL、整数范围、混合类型，以及错误不能被结果过滤／COALESCE／后续 NULL 运算吞掉。
+
+测试 fixture 的整数参数显式生成原生类型转换，解决 PG 参数单独用于 IS NULL 时无法推导类型的问题；参数仍由唯一 PreparedQuery 通路绑定，不改动生产参数执行接口。算术 fixture 使用稳定的 numeric_evaluation_failed 节点检查码，统一报告此表达式的数值求值失败；没有新增上层错误解析或原生 SQL 消费契约。
+
+实施前确定的门禁为 make test-go、make test-common-postgres、make test-common-mysql-data-protection、make test-platform。新 AnalyticalArithmetic 集成测试与既有整数／条件矩阵同属两个 Common 原生门禁，已同步 scripts/test 的明确匹配集合；根 Make 与 release-and-t2-gates 继续调用原入口，Common 包由既有 Go 作业自动发现。MySQL 原生矩阵分别验证 div_precision_increment=0/4/30，并检查无原生警告；PreparedQuery 验证读取集合、血缘、结果类型和空结果下的错误。未新增 API、服务或持久化配置，无 Swagger 与前端运行行为变更。
+
+最终验证：make test-go 全仓库通过，make test-common-postgres、make test-common-mysql-data-protection 与 make test-platform 均通过；56 个四则运算用例在两种引擎对照，MySQL 原生矩阵额外验证三种除法精度配置且无警告。PreparedQuery 对每例分别验证保留结果／过滤为空，并验证 4 组条件和错误传播组合；原整数与条件矩阵保留通过。gofmt 与 git diff --check 通过，本轮临时 MySQL 已移除，未启动或接管开发服务。生产能力、完整原生编译器及 Model/Service 切换仍未交付；下一步优先将已验证组件接入通用表达式编译器，逐步替换仅用于验证的固定 fixture 串联方式。
+
+
+### 13.35 通用表达式编译入口（2026-09-15）
+
+将已验证的标量组件接入 query/sqlcompile/CompileExpression。plan.AnalyzeExpression 与完整 Plan 校验复用同一表达式语义实现和参数声明校验，不另写原生侧的类型规则；独立表达式允许暂时未使用整份计划的其他参数。程序构造输入、作用域、JSON 大小及递归资源均受既有预算限制，编译过程中累计检查子表达式大小，避免到最后才检查已膨胀的 SQL。
+
+ExpressionScope 仅在编译器内部保存逻辑字段、参数声明和逻辑列到原生关系别名／列名的映射；标识符由引擎引用，参数只生成类型化占位符，不接受调用方原生片段。ExpressionDialect 组合既有算术能力，分别提供值类型、常量编码和精确比较。PG/MySQL 的文本常量以 UTF-8 十六进制编码生成，避免受引号、反斜杠和命名参数标记影响；文字比较分别使用明确的 C 排序与 binary 比较，保留大小写和尾空格的差异。
+
+本轮接入列、参数、常量、比较、AND/OR/NOT/IS NULL、CASE/COALESCE、无损整数转换、decimal 转换及四则运算。AND/OR 及比较保留已求值操作数错误；控制条件求值范围仍使用 CASE/COALESCE。合法但尚未实现的 date、month_start、add_months、text 运算明确返回不支持。测试 fixture 删除原先的私有表达式递归和参数渲染逻辑；投影列与过滤参数也调用通用入口。固定节点 DAG 仍属于测试编排，完整关系节点编译、生产能力声明和 Model/Service 切换没有在本轮交付。
+
+实施前确定验证层级：plan/sqlcompile 的单元测试与全仓库 make test-go；原整数、条件、算术对照与新增 31 组叶子／比较／布尔用例，通过 make test-common-postgres 和 make test-common-mysql-data-protection 运行；每组检查保留结果和空结果。新 AnalyticalExpressions 测试名称同步登记进两个 scripts/test 门禁，沿用根 Make 与 release-and-t2-gates 的 Common 作业，无新增依赖或旁路。make test-platform 继续验证路径、模块和 CI/Swagger 一致性；本轮无 HTTP API 或前端变更。
+
+最终验证（2026-09-16）：make test-go 全仓库通过，make test-common-postgres、make test-common-mysql-data-protection、make test-platform 均通过。31 组通用表达式用例在 PG/MySQL 分别验证保留结果／过滤为空，原整数、条件与四则运算矩阵全部保留并改用通用入口；新增 AND/OR/NOT/比较的常量除零错误传播验证通过。gofmt 与 git diff --check 通过。本轮测试容器已由脚本清理，没有重启或接管开发服务。下一步优先补齐日期和月份运算，再推进完整关系节点编译和上层切换。
+
+
+### 13.36 严格日期转换和月初计算（2026-09-16）
+
+沿用既有 DATE 常量的公历 0001-01-01 至 9999-12-31 契约，实现 date 与 month_start。文本仅接受十位 ASCII YYYY-MM-DD；不去空白、不补零、不截去时间，不把无效闰日或不存在的日期自动修正。共享 calendar.go 明确检查年、月、日与公历闰年规则，再在原生 CAST 内部传入安全值，避免无效常量被数据库提前求值。NULL 保持 NULL，已求值错误继续由 EvaluationCheck 在业务结果规范化前拦截。月底跨月策略仍待用户确认，add_months 尚未实现；text 转换、完整关系节点、生产能力注册及 Model/Service 切换也尚未交付。
+
+CalendarDialect 只提供原生日期、字符形状和字段拆分能力，业务规则保留在公共编译组件中；没有上层数据库名单。PG 使用 pg_catalog.substr 的整数参数入口，避免 substring 同参数个数中 SQL 包装重载造成依赖不可证明；month_start 明确转换为无时区 timestamp 后调用 date_trunc。MySQL 使用 SUBSTRING 的逗号参数写法，以适配现有读取分析器对嵌套表达式的语法支持；日期和月初分别使用已防护的 CAST 与 DATE_FORMAT。MySQL 函数检查只增加无限定名的 char_length 和 substring，继续拒绝限定名和窗口调用，没有放松未知函数或读取依赖校验。
+
+实施前确定的门禁为 make test-go、make test-common-postgres、make test-common-mysql-data-protection、make test-platform；AnalyticalCalendar 已同步登记到 scripts/test 两个 Common 数据库门禁，根 Make 与 release-and-t2-gates 使用现有入口自动覆盖。公共 conformance 复用通用表达式测试运行器，增加 50 个日期场景，覆盖范围两端、世纪闰年、格式错误、Unicode 数字、NULL、嵌套月初、CASE/COALESCE 条件范围和参数。每例通过 PreparedQuery 验证正常输出与后续过滤为空；其中 48 个无参数表达式另做原生结果检查，MySQL 同一连接额外检查零警告。失败表达式的内部占位值不属于业务契约，测试核对错误标志并验证执行层不会暴露占位值。没有新增 API、前端页面或 Swagger 变化。
+
+最终验证：make test-go 全仓库通过，make test-common-postgres、make test-common-mysql-data-protection 与 make test-platform 均通过；50 个日期场景在 PG/MySQL 分别验证正常输出与空结果，48 个原生表达式对照通过，MySQL 同连接零警告。gofmt 与 git diff --check 通过。本轮自行启动的标准临时 MySQL 容器已移除，没有启动、重启或接管开发服务。下一步先确认 add_months 的月底语义（推荐保留日号，目标月不足则取月底），再补齐跨月与范围溢出检查；不以数据库默认行为代替业务决策。
+
+
+### 13.37 月份偏移的日号保留语义（2026-09-16）
+
+用户确认采用“尽量保留日号，目标月不存在该日才取月底”，不保持原日期的月末身份。先同步引擎插件规范，再将 add_months 接入通用表达式编译器。2026-01-31 加一个月得到 2026-02-28，后者再加一个月得到 2026-03-28；一次加两个月则得到 2026-03-31。负数月份表示向前移动，零保持原日期，每个调用都基于其实际输入日号。
+
+公共 CalendarAddMonths 校验日期并根据年月计算月份偏移的允许区间。先比较偏移与上下界的差值，再把安全偏移交给原生操作，避免 int64 极值参与月份加法或原生日期运算后才检查溢出。普通 NULL 传播，但日期或月份子表达式已经产生的错误必须保留；原有 EvaluationCheck 继续阻止错误被 COALESCE 或最终空结果隐藏。年月提取复用输入表达式，不在每个边界检查中重复展开完整日期校验，防止简单嵌套放大 SQL 并触及既有查询分析预算；没有扩大预算或跳过读取集合、血缘检查。
+
+CalendarDialect 增加受范围保护的 ShiftMonths 原语，PG 和 MySQL 分别实现无时区 timestamp 加月份 interval、DATE_ADD 的 MONTH 操作；其日号保留与目标月裁剪行为由同一批用例认证。上层计划不包含数据库方言，没有增加引擎名单、执行旁路或生产能力注册。
+
+新增 41 个月份场景并复用既有 AnalyticalCalendar 入口，总计 91 个日期场景。覆盖跨年、世纪闰年、正负偏移、连续调用与一次调用的差别、最小／最大日期、int64 极值、NULL 与错误传播，以及绑定参数。PreparedQuery 对每例验证正常结果和过滤为空；其中 85 个无参数表达式另做原生结果对照，MySQL 同连接检查零警告。单元测试补充类型、nil 方言和 SQL 展开预算拒绝。实施前确定的门禁为 make test-go、make test-common-postgres、make test-common-mysql-data-protection、make test-platform；已有 scripts/test 精确匹配与根 Make、release-and-t2-gates Common 作业自动覆盖，无新增服务依赖、HTTP API 或前端变更。
+
+最终验证：make test-go 全仓库通过，make test-common-postgres、make test-common-mysql-data-protection 与 make test-platform 均通过；PG/MySQL 共用的 91 个日期场景分别验证正常输出／空结果，85 个原生表达式对照通过且 MySQL 零警告。gofmt 与 git diff --check 通过，本轮启动的标准临时 MySQL 已清理，没有启动、重启或接管开发服务。月份偏移语义已落实；下一步优先推进完整关系节点编译，把已验证的表达式组合为完整查询计划，生产能力注册与 Model/Service 单路径切换仍未完成。
+
+
+### 13.38 通用关系 DAG 编译主路径（2026-09-16）
+
+新增 query/sqlcompile/CompileRelations，先复用 plan.Analyze 验证整份计划及输出类型，再按节点 ID 的确定顺序和依赖拓扑生成关系。实现 constant_rows、filter、project、inner/left/cross join、distinct、aggregate count_rows/count_value、union_all、sort、limit 九类节点。共享输入只定义一次，节点数组重排不改变 SQL 或编译指纹。表达式和结果协议继续调用既有共享组件，编译期间累计约束展开体积；未实现的 scan 和 date_buckets 明确拒绝，不生成原生片段或旁路执行。
+
+求值检查按节点覆盖原始求值范围：过滤与投影检查输入行，聚合检查分组前的输入表达式和最终计数范围，连接条件检查左右候选配对。右侧为空时没有连接条件的实际配对，不误报该条件的错误；后续结果过滤、聚合和 limit 不能隐藏已经求值的错误。检查统一使用 expression_evaluation_failed 并绑定实际节点，替换旧测试 fixture 按整数／算术矩阵硬编码的错误码。全部检查与 owner 断言仍在同一条只读查询内，执行层先消费检查，不能返回部分数据。
+
+排序由过滤和限行保留，投影仅在完整保留排序列的直接映射时传播，否则明确拒绝，不能静默丢弃排序；连接、聚合、去重和合并不继承输入顺序。limit 必须有可继承的显式排序，否则返回不支持；稳定分页仍由 owner 提供包含稳定键的排序。最终结果补充输出稳定键排序，不将根节点内部的限行施加到检查记录上。文本分组、去重使用原生精确比较键，随后恢复逻辑文本输出，大小写、尾空格和 NULL 语义不受实例默认排序规则影响。
+
+删除原 ExpressionFixtureCompiler 的固定 seed/converted/filtered SQL 拼接；RelationalFixtureCompiler 只保留测试身份、请求校验、共享渲染调用和 CompiledQuery 包装，没有私有节点或表达式编译。旧整数、条件、算术和日期矩阵全部转到通用 DAG 主路径。新增 18 个关系组合场景，覆盖排序／重命名／过滤／限行、三类连接、按位置合并与重复行、文本及 NULL 去重／分组、空关系计数、unknown 过滤、错误求值范围、独立断言和后续限行不能跳过较晚输入行的错误。每个计划反转节点数组重新编译，比较 SQL 与指纹不变；真实执行复用 PreparedQuery、ReadSet 和 OutputLineage。单元测试覆盖未实现节点、无排序 limit、共享依赖、输入不可变和累计展开预算。
+
+实施前确定的门禁为 make test-go、make test-common-postgres、make test-common-mysql-data-protection 和 make test-platform。AnalyticalRelations 已同步登记到两个 scripts/test 数据库门禁，根 Make 和 release-and-t2-gates 的 Common 作业继续调用原标准入口；没有新增服务依赖或 API／Swagger 变更。物理来源绑定与类型认证、月份桶、完整引擎编译器及能力注册、Model/Service 单路径切换仍未交付。
+
+最终验证：make test-go 全仓库通过，make test-common-postgres、make test-common-mysql-data-protection 与 make test-platform 均通过。PG/MySQL 的 18 个关系组合场景通过；既有整数、条件、算术、通用表达式及 91 个日期场景全部通过通用 DAG 编译执行，节点重排保持 SQL／指纹不变。gofmt 与 git diff --check 通过。MySQL 门禁使用已运行的标准测试实例及自动清理的独立测试 database，本轮未启动、停止或接管该实例及开发服务。下一步优先实现物理表扫描与原生来源／字段类型认证，使通用计划能够读取真实业务表；生产指标路径尚未切换。

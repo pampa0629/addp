@@ -238,6 +238,7 @@ func (b *TreeBuilder) ConvertMetaItemsForEngine(engineType string, items []model
 			Depth:          depth,
 			Path:           item.FullName,
 			ScanStatus:     "completed",
+			ScannedDepth:   item.ScannedDepth,
 			ItemCount:      calculateItemCount(item.ItemType, item.Attributes),
 			TotalSizeBytes: metaItemSizeBytes(item),
 			Attributes:     item.Attributes,
@@ -430,19 +431,21 @@ func (b *TreeBuilder) convertMetaNode(engine *models.Engine, node *models.MetaNo
 
 	// 构建元数据
 	metadata := engineTreeMetadata(engine, node.ID, node.FullName, node.ItemCount, node.ScanStatus, node.LastScanAt)
+	metadata["scanned_depth"] = node.ScannedDepth
 	metadata["has_children"] = node.HasChildren
 	metadata["size_bytes"] = node.TotalSizeBytes
 
 	// 合并自定义属性（保留规范字段，避免被 attributes 覆盖）
 	protectedKeys := map[string]bool{
-		"node_id":      true,
-		"item_id":      true,
-		"is_meta_item": true,
-		"full_name":    true,
-		"item_count":   true,
-		"size_bytes":   true,
-		"scan_status":  true,
-		"scanned_at":   true,
+		"node_id":       true,
+		"item_id":       true,
+		"is_meta_item":  true,
+		"full_name":     true,
+		"item_count":    true,
+		"size_bytes":    true,
+		"scan_status":   true,
+		"scanned_depth": true,
+		"scanned_at":    true,
 	}
 	for k, v := range node.Attributes {
 		if protectedKeys[k] {
@@ -786,8 +789,11 @@ func (b *TreeBuilder) mergeNodeMetadata(node *TreeNode, metaMap map[uint]*models
 				node.Metadata["item_count"] = metaNode.ItemCount
 				node.Metadata["size_bytes"] = metaNode.TotalSizeBytes
 				node.Metadata["scan_status"] = metaNode.ScanStatus
+				node.Metadata["scanned_depth"] = metaNode.ScannedDepth
 				if metaNode.LastScanAt != nil {
 					node.Metadata["scanned_at"] = metaNode.LastScanAt.Format(time.RFC3339)
+				} else {
+					delete(node.Metadata, "scanned_at")
 				}
 			}
 		}

@@ -49,7 +49,7 @@ func (c independentCompiler) Compile(r plugin.CompileRequest) (plugin.CompiledQu
 	if err != nil {
 		return plugin.CompiledQuery{}, err
 	}
-	return plugin.NewCompiledQuery(r, c.Identity(), "test_algebra", "READ "+string(native))
+	return plugin.NewCompiledQuery(r, c.Identity(), "test_algebra", "READ "+string(native), nil)
 }
 
 type independentEngine struct{ plugin.QueryRuntimeProvider }

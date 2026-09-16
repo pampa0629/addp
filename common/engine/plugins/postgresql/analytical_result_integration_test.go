@@ -28,7 +28,7 @@ func (c resultIntegrationCompiler) Compile(r plugin.CompileRequest) (plugin.Comp
 		return plugin.CompiledQuery{}, err
 	}
 	relations := map[plan.NodeID]string{"source": "src", "violations": "bad", "filtered": "filtered", "ordered": "ordered", "limited": "limited"}
-	query, err := sqlcompile.RenderResult(r.Plan, relations, []plan.SortKey{{Name: "value", Direction: "asc", Nulls: "last"}}, analyticalResultDialect{})
+	query, err := sqlcompile.RenderResult(r.Plan, relations, []plan.SortKey{{Name: "value", Direction: "asc", Nulls: "last"}}, analyticalResultDialect{}, nil)
 	if err != nil {
 		return plugin.CompiledQuery{}, err
 	}
@@ -37,7 +37,7 @@ bad AS (SELECT value FROM src WHERE value < 0),
 filtered AS (SELECT value FROM src WHERE value > :minimum),
 ordered AS (SELECT value FROM filtered ORDER BY value ASC NULLS LAST),
 limited AS (SELECT value FROM ordered ORDER BY value ASC NULLS LAST LIMIT 1) ` + query
-	return plugin.NewCompiledQuery(r, c.Identity(), "sql", query)
+	return plugin.NewCompiledQuery(r, c.Identity(), "sql", query, nil)
 }
 
 type analyticalResultIntegrationProvider struct {

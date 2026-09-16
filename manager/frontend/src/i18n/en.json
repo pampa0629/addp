@@ -971,6 +971,13 @@
       "uploadFailed": "Upload failed: {msg}"
     },
     "explorer": {
+      "nodeScan": {
+        "statusLabel": "Latest scope scan status",
+        "depthLabel": "Completed scan depth",
+        "successTimeLabel": "Last successful scan time",
+        "status": { "pending": "Not scanned", "running": "Scanning", "completed": "Succeeded", "failed": "Failed" },
+        "depth": { "none": "Not completed", "basic": "Basic", "deep": "Deep" }
+      },
       "storageEngines": "Storage Engines",
       "engine": "Engine",
       "engineStatus": "Engine Status",

@@ -187,7 +187,7 @@ func TestObjectCatalogParentIsIndependentOfScanScope(t *testing.T) {
 			}
 			var parentID uint
 			for _, scope := range []string{"addp/nested", "addp", ""} {
-				stats := map[uint]*models.MetaNode{}
+				stats := newObjectCatalogScanState()
 				count, _, err := runtime.persistObjectResources(context.Background(), &commonModels.Engine{ID: 9, EngineType: reader.Type()}, 1, 9, bucket, resources, stats, scope == "", models.ScannedDepthBasic, false, scope, nil, "object")
 				if err != nil || count != 1 {
 					t.Fatalf("scope %q: count=%d, err=%v", scope, count, err)
@@ -211,8 +211,8 @@ func TestObjectCatalogParentIsIndependentOfScanScope(t *testing.T) {
 					t.Fatalf("scope %q: prefix storage.path = %q", scope, got)
 				}
 				wantNodes := map[string]int{"addp/nested": 1, "addp": 2, "": 3}[scope]
-				if len(stats) != wantNodes {
-					t.Fatalf("scope %q: aggregate nodes=%d, want %d", scope, len(stats), wantNodes)
+				if len(stats.nodes) != wantNodes {
+					t.Fatalf("scope %q: aggregate nodes=%d, want %d", scope, len(stats.nodes), wantNodes)
 				}
 			}
 		})
@@ -245,7 +245,7 @@ func TestObjectCatalogBasicScanGroupsShapefileRefsWithoutSidecarItems(t *testing
 		9,
 		bucketNode,
 		resources,
-		map[uint]*models.MetaNode{},
+		newObjectCatalogScanState(),
 		true,
 		models.ScannedDepthBasic,
 		true,
@@ -299,7 +299,7 @@ func TestObjectCatalogBasicScanGroupsGeoTIFFRefsWithoutSidecarItems(t *testing.T
 		geotiffObjectResource(9, "addp", "image/srtm_40_01.hdr", 20),
 		geotiffObjectResource(9, "addp", "image/srtm_40_01.tif.aux.xml", 30),
 	}
-	stats := map[uint]*models.MetaNode{}
+	stats := newObjectCatalogScanState()
 	count, _, err := runtime.persistObjectResources(context.Background(),
 		&commonModels.Engine{ID: 9, EngineType: reader.Type()},
 		1,
@@ -320,7 +320,7 @@ func TestObjectCatalogBasicScanGroupsGeoTIFFRefsWithoutSidecarItems(t *testing.T
 	if count != 1 {
 		t.Fatalf("persisted count = %d, want one logical GeoTIFF item", count)
 	}
-	if agg := stats[bucketNode.ID]; agg == nil {
+	if agg := stats.nodes[bucketNode.ID]; agg == nil {
 		t.Fatalf("bucket aggregate = %#v, want one logical GeoTIFF item", agg)
 	}
 
@@ -381,7 +381,7 @@ func TestObjectCatalogDeepScanDetectsRasterMosaicDatasetItem(t *testing.T) {
 		geotiffObjectResource(9, "addp", "mosaics/srtm-test/srtm-test/leaf/srtm_40_01.cog.tif", 4000),
 		geotiffObjectResource(9, "addp", "mosaics/srtm-test/srtm-test/leaf/srtm_46_02.cog.tif", 5000),
 	}
-	stats := map[uint]*models.MetaNode{}
+	stats := newObjectCatalogScanState()
 	count, _, err := runtime.persistObjectResources(context.Background(),
 		&commonModels.Engine{ID: 9, EngineType: reader.Type()},
 		1,
@@ -478,7 +478,7 @@ func TestObjectCatalogDeepScanDetectsGLBModel3DItem(t *testing.T) {
 		9,
 		bucketNode,
 		resources,
-		map[uint]*models.MetaNode{},
+		newObjectCatalogScanState(),
 		true,
 		models.ScannedDepthDeep,
 		true,
@@ -548,7 +548,7 @@ func TestObjectCatalogDeepScanDetects3DTilesModel3DItem(t *testing.T) {
 		9,
 		bucketNode,
 		resources,
-		map[uint]*models.MetaNode{},
+		newObjectCatalogScanState(),
 		true,
 		models.ScannedDepthDeep,
 		true,
@@ -613,7 +613,7 @@ func TestObjectCatalogDeepScanDetectsLASPointCloudItem(t *testing.T) {
 		9,
 		bucketNode,
 		resources,
-		map[uint]*models.MetaNode{},
+		newObjectCatalogScanState(),
 		true,
 		models.ScannedDepthDeep,
 		true,
@@ -822,7 +822,7 @@ func TestObjectCatalogPrefixScanDeletesStalePrefixConflictingWithWholeItem(t *te
 		objectResourceForTest(9, "addp", "mosaics/bigmosaic/bigmosaic/overviews/overview.cog.tif", 10, "tiff"),
 		objectResourceForTest(9, "addp", "mosaics/bigmosaic/bigmosaic/leaf/a.cog.tif", 10, "tiff"),
 	}
-	stats := map[uint]*models.MetaNode{}
+	stats := newObjectCatalogScanState()
 	scanned := map[string]bool{}
 	count, _, err := runtime.persistObjectResources(context.Background(),
 		resource,
@@ -915,7 +915,7 @@ func TestObjectCatalogPrefixScanKeepsWholeItemAtScanRoot(t *testing.T) {
 		objectResourceForTest(9, "addp", "mosaics/srtm-e2e/overviews/overview.cog.tif", 10, "tiff"),
 		objectResourceForTest(9, "addp", "mosaics/srtm-e2e/leaf/a.cog.tif", 10, "tiff"),
 	}
-	stats := map[uint]*models.MetaNode{}
+	stats := newObjectCatalogScanState()
 	count, _, err := runtime.persistObjectResources(context.Background(),
 		resource,
 		1,

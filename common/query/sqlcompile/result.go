@@ -20,13 +20,32 @@ type ResultDialect interface {
 	OrderTerms(qualifiedColumn string, field datatype.FieldInfo, key plan.SortKey) ([]string, error)
 }
 
+// EvaluationRelation binds a compiler-derived check to its native violation
+// CTE. It is not accepted by the logical Plan or by owner HTTP contracts.
+type EvaluationRelation struct {
+	Check    plugin.EvaluationCheck
+	Relation string
+}
+
 // RenderResult appends a result envelope to an already rendered relation DAG.
 // relations maps every node to its compiler-generated CTE identifier. The caller
 // supplies the WITH clause. Limits/filters belong inside the root CTE, so an
 // empty or paginated root cannot remove the independent assertion records.
 // ordering is the order retained by the root relation, including stable keys.
-func RenderResult(p plan.Plan, relations map[plan.NodeID]string, ordering []plan.SortKey, dialect ResultDialect) (string, error) {
-	layout, err := plugin.NewAnalyticalResultLayout(p)
+func RenderResult(p plan.Plan, relations map[plan.NodeID]string, ordering []plan.SortKey, dialect ResultDialect, evaluations []EvaluationRelation) (string, error) {
+	if len(evaluations) > plan.MaxNodes {
+		return "", plugin.ErrAnalyticalInvalid
+	}
+	checks := make([]plugin.EvaluationCheck, len(evaluations))
+	checkRelations := map[plugin.EvaluationCheck]string{}
+	for i, evaluation := range evaluations {
+		if !plan.Symbol(evaluation.Relation) {
+			return "", plugin.ErrAnalyticalInvalid
+		}
+		checks[i] = evaluation.Check
+		checkRelations[evaluation.Check] = evaluation.Relation
+	}
+	layout, err := plugin.NewAnalyticalResultLayout(p, checks)
 	if err != nil {
 		return "", err
 	}
@@ -52,6 +71,9 @@ func RenderResult(p plan.Plan, relations map[plan.NodeID]string, ordering []plan
 		if err != nil {
 			return "", err
 		}
+		// Every UNION branch must expose the same explicit field names. Native
+		// lineage analysis also inspects control branches independently.
+		nulls[i] += " AS " + q(f.Name)
 	}
 	control := q(layout.ControlColumn)
 	parts := []string{"SELECT " + strings.Join(columns, ", ") + ", 'data' AS " + control + " FROM " + q(relations[p.Root])}
@@ -60,8 +82,13 @@ func RenderResult(p plan.Plan, relations map[plan.NodeID]string, ordering []plan
 		parts = append(parts, "SELECT "+strings.Join(nulls, ", ")+", CASE WHEN EXISTS (SELECT 1 FROM "+
 			q(relations[assertion.Violation])+") THEN 'fail:"+index+"' ELSE 'ok:"+index+"' END AS "+control)
 	}
+	for i, check := range layout.Evaluations {
+		index := strconv.Itoa(i + 1)
+		parts = append(parts, "SELECT "+strings.Join(nulls, ", ")+", CASE WHEN EXISTS (SELECT 1 FROM "+
+			q(checkRelations[check])+") THEN 'eval_fail:"+index+"' ELSE 'eval_ok:"+index+"' END AS "+control)
+	}
 	parts = append(parts, "SELECT "+strings.Join(nulls, ", ")+", 'complete' AS "+control)
-	query := "SELECT * FROM (" + strings.Join(parts, " UNION ALL ") + ") AS " + q("__addp_result")
+	query := "SELECT " + strings.Join(columns, ", ") + ", " + control + " FROM (" + strings.Join(parts, " UNION ALL ") + ") AS " + q("__addp_result")
 	terms := []string{q("__addp_result") + "." + control + " ASC"}
 	ordered := map[string]bool{}
 	for _, key := range ordering {

@@ -1099,7 +1099,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
     exit 1
   fi
 
-  echo "  ${GREEN}✓ 所有服务编译完成${NC}"
+  echo -e "  ${GREEN}✓ 所有服务编译完成${NC}"
 else
   echo -e "${YELLOW}Step 3/5: 跳过后端服务启动${NC}"
 fi
@@ -1346,7 +1346,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
     fi
   fi
 
-  echo "  ${GREEN}✓ 所有服务已启动，等待健康检查...${NC}"
+  echo -e "  ${GREEN}✓ 所有服务已启动，等待健康检查...${NC}"
 fi
 
 if [ "$START_MANAGER_BACKEND" = true ] && [ "$EXACT_PROCESS" != true ]; then

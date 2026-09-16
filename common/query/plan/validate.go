@@ -17,25 +17,10 @@ func Analyze(p Plan) (map[NodeID][]datatype.FieldInfo, error) {
 		return nil, fmt.Errorf("unsupported or oversized plan")
 	}
 	v := validator{nodes: map[NodeID]Node{}, schemas: map[NodeID][]datatype.FieldInfo{}, heights: map[NodeID]int{}, visiting: map[NodeID]bool{}, parameters: map[string]Parameter{}, used: map[string]bool{}}
-	for _, p := range p.Parameters {
-		if !Symbol(p.Name) || !supportedType(p.Type) {
-			return nil, fmt.Errorf("invalid parameter")
-		}
-		if _, ok := v.parameters[p.Name]; ok {
-			return nil, fmt.Errorf("duplicate parameter")
-		}
-		seen := map[Literal]bool{}
-		if len(p.Allowed) > 100 {
-			return nil, fmt.Errorf("too many parameter options")
-		}
-		for _, a := range p.Allowed {
-			c, err := a.Canonical()
-			if err != nil || c.Type != p.Type || c.Null || seen[c] {
-				return nil, fmt.Errorf("invalid parameter option")
-			}
-			seen[c] = true
-		}
-		v.parameters[p.Name] = p
+	var err error
+	v.parameters, err = validateParameters(p.Parameters)
+	if err != nil {
+		return nil, err
 	}
 	for _, n := range p.Nodes {
 		if !Symbol(string(n.ID)) {
@@ -331,4 +316,32 @@ func (v *validator) node(n Node, scope map[NodeID][]datatype.FieldInfo) ([]datat
 	default:
 		return bad()
 	}
+}
+
+func validateParameters(parameters []Parameter) (map[string]Parameter, error) {
+	if len(parameters) > 128 {
+		return nil, fmt.Errorf("too many parameters")
+	}
+	v := validator{parameters: map[string]Parameter{}}
+	for _, p := range parameters {
+		if !Symbol(p.Name) || !supportedType(p.Type) {
+			return nil, fmt.Errorf("invalid parameter")
+		}
+		if _, ok := v.parameters[p.Name]; ok {
+			return nil, fmt.Errorf("duplicate parameter")
+		}
+		seen := map[Literal]bool{}
+		if len(p.Allowed) > 100 {
+			return nil, fmt.Errorf("too many parameter options")
+		}
+		for _, a := range p.Allowed {
+			c, err := a.Canonical()
+			if err != nil || c.Type != p.Type || c.Null || seen[c] {
+				return nil, fmt.Errorf("invalid parameter option")
+			}
+			seen[c] = true
+		}
+		v.parameters[p.Name] = p
+	}
+	return v.parameters, nil
 }

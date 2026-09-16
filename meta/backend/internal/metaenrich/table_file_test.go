@@ -383,7 +383,7 @@ func TestEnrichSingleTableFileItemRejectsMalformedJSONRecordCollection(t *testin
 	}
 }
 
-func TestEnrichSingleTableFileItemDetectsFormatFromContent(t *testing.T) {
+func TestEnrichResourceAttributesDetectsTableFormatFromContent(t *testing.T) {
 	content := buildMetaitemParquetRows(t, testMetaitemParquetRow{ID: 1, Name: "Alice"})
 	size := int64(len(content))
 	item := &metaitem.DetectedItem{
@@ -398,24 +398,15 @@ func TestEnrichSingleTableFileItemDetectsFormatFromContent(t *testing.T) {
 		Attributes:   map[string]interface{}{},
 	}
 
-	enriched, ok, err := EnrichSingleTableFileItem(
-		context.Background(),
-		staticContentReader{content: string(content)},
-		nil,
-		1,
-		item,
-		"lake3",
-		size,
-		false,
-		func(path string) plugin.EngineCatalogPath {
+	enriched, _, err := EnrichResourceAttributes(context.Background(), map[string]interface{}{}, ResourceAttributesInput{
+		ContentReader: staticContentReader{content: string(content)}, EngineID: 1,
+		Item: item, PhysicalPath: "lake3", SizeBytes: size,
+		EngineCatalogPathFor: func(path string) plugin.EngineCatalogPath {
 			return plugin.FileItemPath(1, path)
 		},
-	)
+	})
 	if err != nil {
 		t.Fatalf("EnrichSingleTableFileItem() error = %v", err)
-	}
-	if !ok {
-		t.Fatal("expected content-detected parquet file to be enriched")
 	}
 	if enriched.Format != string(format.FormatParquet) {
 		t.Fatalf("Format = %q, want parquet", enriched.Format)

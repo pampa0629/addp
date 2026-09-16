@@ -17,7 +17,7 @@ func (s *ObjectStorageCatalogRuntime) persistObjectCatalogCompositeItems(
 	tenantID, engineID uint,
 	bucketNode *models.MetaNode,
 	items []scanresource.ObjectCompositeItem,
-	scannedNodes map[uint]*models.MetaNode,
+	scanState *objectCatalogScanState,
 	includeBucketScan bool,
 	scanPathPrefix string,
 	scannedFingerprints map[string]bool,
@@ -47,8 +47,10 @@ func (s *ObjectStorageCatalogRuntime) persistObjectCatalogCompositeItems(
 		parentChain, err := s.repo.EnsureObjectCatalogPrefixChain(tenantID, engineID, bucketNode, itemPlan.ParentPath)
 		if err != nil {
 			failures.Add(itemPlan.FullName, err)
+			scanState.fail(itemPlan.FullName, err)
 			continue
 		}
+		scanState.record(parentChain, scanPathPrefix, includeBucketScan)
 
 		parentNode := parentChain[len(parentChain)-1]
 		result, err := scanprocessor.New(s.repo, s.indexer, s.log).WithContainerInspector(s.containerInspector).Process(ctx, scanprocessor.ObjectCompositeInput(
@@ -65,11 +67,11 @@ func (s *ObjectStorageCatalogRuntime) persistObjectCatalogCompositeItems(
 		if err != nil {
 			extractionStats = scanflow.MergeExtractionCounts(extractionStats, result.Extraction)
 			failures.Add(itemPlan.FullName, err)
+			scanState.fail(itemPlan.FullName, err)
 			continue
 		}
 		extractionStats = scanflow.MergeExtractionCounts(extractionStats, result.Extraction)
 		count++
-		recordObjectCatalogScanNodes(scannedNodes, parentChain, scanPathPrefix, includeBucketScan)
 	}
 	return count, extractionStats, failures.Err()
 }

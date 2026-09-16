@@ -59,6 +59,11 @@ func TestMySQLAnalyticalASTRejectsUnprovenEffects(t *testing.T) {
 		`WITH x AS (SELECT id FROM orders FOR UPDATE) SELECT * FROM x`,
 		`WITH unused AS (SELECT load_file('/tmp/private')) SELECT id FROM orders`,
 		`SELECT business.count(id) FROM orders`,
+		`SELECT business.char_length(id) FROM orders`,
+		`SELECT business.substring(id, 1, 4) FROM orders`,
+		`SELECT substring(id, 1, 4) OVER () FROM orders`,
+		`SELECT char_length(id) OVER () FROM orders`,
+		`SELECT business.truncate(total_amount, 0) FROM orders`,
 		`SELECT sleep(1) FROM orders`,
 		`SELECT @x := id FROM orders`,
 		`SELECT id FROM orders INTO OUTFILE '/tmp/private'`,
@@ -70,6 +75,34 @@ func TestMySQLAnalyticalASTRejectsUnprovenEffects(t *testing.T) {
 				t.Fatal("unproven query accepted")
 			}
 		})
+	}
+}
+
+func TestMySQLTruncateIsScalarWithPreservedReadDependency(t *testing.T) {
+	p := testMySQLCompatibleQueryProvenance("MySQL")
+	query := `SELECT TRUNCATE(total_amount, 0) AS amount FROM orders`
+	refs, err := p.inspectReadReferences(query)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(refs) != 1 || refs[0].Name != "orders" {
+		t.Fatalf("lost scalar source: %#v", refs)
+	}
+	statement, err := parseMySQLReadQuery(query)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sources := []plugin.QueryOutputSource{testMySQLCompatibleLineageSource(23, "business", "orders", "total_amount")}
+	lineage, err := p.resolveSelectOutputLineage("business", statement, sources)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, source := range lineage {
+		for _, binding := range source.Bindings {
+			if binding.Transformation == plugin.QueryOutputTransformationDirect {
+				t.Fatal("lossy numeric function claimed direct lineage")
+			}
+		}
 	}
 }
 
@@ -98,5 +131,43 @@ func TestMySQLCTEExpansionIsBounded(t *testing.T) {
 	}
 	if _, err := parseMySQLReadQuery("WITH " + strings.Join(ctes, ",") + " SELECT id FROM x23"); err == nil || !strings.Contains(err.Error(), "budget") {
 		t.Fatalf("unbounded expansion: %v", err)
+	}
+}
+
+func TestMySQLCalendarReadSyntax(t *testing.T) {
+	for _, query := range []string{
+		`SELECT char_length(d) FROM dates`,
+		`SELECT d REGEXP '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' FROM dates`,
+		`SELECT SUBSTRING(d, 1, 4) FROM dates`,
+		`SELECT SUBSTRING(CONVERT(X'323032362d30312d3031' USING utf8mb4), 1, 4) FROM dates`,
+		`SELECT CAST(CASE WHEN char_length(d)=10 THEN SUBSTRING(d FROM 1 FOR 4) ELSE NULL END AS signed) FROM dates`,
+	} {
+		if _, err := parseMySQLReadQuery(query); err != nil {
+			t.Errorf("%s: %v", query, err)
+		}
+	}
+}
+
+func TestMySQLCalendarScalarPreservesSourceWithoutDirectLineage(t *testing.T) {
+	p := testMySQLCompatibleQueryProvenance("MySQL")
+	query := `SELECT char_length(d) AS size, substring(d, 1, 4) AS year FROM dates`
+	refs, err := p.inspectReadReferences(query)
+	if err != nil || len(refs) != 1 || refs[0].Name != "dates" {
+		t.Fatalf("refs=%#v err=%v", refs, err)
+	}
+	statement, err := parseMySQLReadQuery(query)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lineage, err := p.resolveSelectOutputLineage("business", statement, []plugin.QueryOutputSource{testMySQLCompatibleLineageSource(23, "business", "dates", "d")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, source := range lineage {
+		for _, binding := range source.Bindings {
+			if binding.Transformation == plugin.QueryOutputTransformationDirect {
+				t.Fatal("calendar function claimed direct lineage")
+			}
+		}
 	}
 }

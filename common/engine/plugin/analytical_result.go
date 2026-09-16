@@ -15,6 +15,20 @@ import (
 
 var ErrAnalyticalResultInvalid = errors.New("invalid analytical result")
 var ErrAnalyticalAssertion = errors.New("analytical assertion failed")
+var ErrAnalyticalEvaluation = errors.New("analytical evaluation failed")
+
+// EvaluationCheck is compiler-derived, not an owner business assertion.
+type EvaluationCheck struct {
+	Node plan.NodeID
+	Code string
+}
+
+type AnalyticalEvaluationError struct{ Check EvaluationCheck }
+
+func (e *AnalyticalEvaluationError) Error() string {
+	return "analytical evaluation failed: " + e.Check.Code
+}
+func (e *AnalyticalEvaluationError) Unwrap() error { return ErrAnalyticalEvaluation }
 
 // AnalyticalAssertionError contains only a plan-declared code, never source data.
 type AnalyticalAssertionError struct{ Code string }
@@ -29,9 +43,10 @@ func (e *AnalyticalAssertionError) Unwrap() error { return ErrAnalyticalAssertio
 type AnalyticalResultLayout struct {
 	ControlColumn string
 	Assertions    []plan.Assertion
+	Evaluations   []EvaluationCheck
 }
 
-func NewAnalyticalResultLayout(p plan.Plan) (AnalyticalResultLayout, error) {
+func NewAnalyticalResultLayout(p plan.Plan, evaluations []EvaluationCheck) (AnalyticalResultLayout, error) {
 	if err := plan.Validate(p); err != nil {
 		return AnalyticalResultLayout{}, ErrAnalyticalInvalid
 	}
@@ -50,12 +65,34 @@ func NewAnalyticalResultLayout(p plan.Plan) (AnalyticalResultLayout, error) {
 		}
 		return strings.Compare(string(a.Violation), string(b.Violation))
 	})
-	return AnalyticalResultLayout{ControlColumn: name, Assertions: assertions}, nil
+	if len(evaluations) > plan.MaxNodes {
+		return AnalyticalResultLayout{}, ErrAnalyticalInvalid
+	}
+	nodes := map[plan.NodeID]bool{}
+	for _, node := range p.Nodes {
+		nodes[node.ID] = true
+	}
+	seen := map[EvaluationCheck]bool{}
+	for _, check := range evaluations {
+		if !nodes[check.Node] || !plan.Symbol(check.Code) || seen[check] {
+			return AnalyticalResultLayout{}, ErrAnalyticalInvalid
+		}
+		seen[check] = true
+	}
+	evaluations = append([]EvaluationCheck(nil), evaluations...)
+	slices.SortFunc(evaluations, func(a, b EvaluationCheck) int {
+		if d := strings.Compare(string(a.Node), string(b.Node)); d != 0 {
+			return d
+		}
+		return strings.Compare(a.Code, b.Code)
+	})
+	return AnalyticalResultLayout{ControlColumn: name, Assertions: assertions, Evaluations: evaluations}, nil
 }
 
 func (q CompiledQuery) ResultLayout() AnalyticalResultLayout {
 	l := q.layout
 	l.Assertions = append([]plan.Assertion(nil), l.Assertions...)
+	l.Evaluations = append([]EvaluationCheck(nil), l.Evaluations...)
 	return l
 }
 
@@ -146,7 +183,10 @@ func (q CompiledQuery) normalizeResult(raw *QueryResult) (*QueryResult, error) {
 	seen := map[string]bool{}
 	expected := map[string]bool{}
 	for i := range q.layout.Assertions {
-		expected[strconv.Itoa(i+1)] = true
+		expected["assert:"+strconv.Itoa(i+1)] = true
+	}
+	for i := range q.layout.Evaluations {
+		expected["eval:"+strconv.Itoa(i+1)] = true
 	}
 	failed := map[string]bool{}
 	result := &QueryResult{Columns: columns[:len(columns)-1], Rows: make([]map[string]interface{}, 0)}
@@ -164,31 +204,22 @@ func (q CompiledQuery) normalizeResult(raw *QueryResult) (*QueryResult, error) {
 			return nil, ErrAnalyticalResultInvalid
 		}
 		if marker == "data" {
-			out := make(map[string]interface{}, len(q.output.Fields))
-			for _, f := range q.output.Fields {
-				v, err := analyticalValueLiteral(f.Type, row[f.Name])
-				if err != nil || (v.Null && !f.Nullable) {
-					return nil, ErrAnalyticalResultInvalid
-				}
-				out[f.Name], err = analyticalLiteralValue(v)
-				if err != nil {
-					return nil, ErrAnalyticalResultInvalid
-				}
-			}
-			result.Rows = append(result.Rows, out)
 			continue
 		}
 		key := marker
 		if marker != "complete" {
 			prefix, code, found := strings.Cut(marker, ":")
-			if !found || (prefix != "ok" && prefix != "fail") {
+			if !found || (prefix != "ok" && prefix != "fail" && prefix != "eval_ok" && prefix != "eval_fail") {
 				return nil, ErrAnalyticalResultInvalid
 			}
 			key = "assert:" + code
-			if !expected[code] {
+			if strings.HasPrefix(prefix, "eval_") {
+				key = "eval:" + code
+			}
+			if !expected[key] {
 				return nil, ErrAnalyticalResultInvalid
 			}
-			failed[code] = prefix == "fail"
+			failed[key] = prefix == "fail" || prefix == "eval_fail"
 		}
 		if seen[key] {
 			return nil, ErrAnalyticalResultInvalid
@@ -203,15 +234,37 @@ func (q CompiledQuery) normalizeResult(raw *QueryResult) (*QueryResult, error) {
 	if !seen["complete"] {
 		return nil, ErrAnalyticalResultInvalid
 	}
-	for i := range q.layout.Assertions {
-		if !seen["assert:"+strconv.Itoa(i+1)] {
+	for key := range expected {
+		if !seen[key] {
 			return nil, ErrAnalyticalResultInvalid
 		}
 	}
+	for i, check := range q.layout.Evaluations {
+		if failed["eval:"+strconv.Itoa(i+1)] {
+			return nil, &AnalyticalEvaluationError{Check: check}
+		}
+	}
 	for i, a := range q.layout.Assertions {
-		if failed[strconv.Itoa(i+1)] {
+		if failed["assert:"+strconv.Itoa(i+1)] {
 			return nil, &AnalyticalAssertionError{Code: a.Code}
 		}
+	}
+	for _, row := range raw.Rows {
+		if row[q.layout.ControlColumn] != "data" {
+			continue
+		}
+		out := make(map[string]interface{}, len(q.output.Fields))
+		for _, f := range q.output.Fields {
+			v, err := analyticalValueLiteral(f.Type, row[f.Name])
+			if err != nil || (v.Null && !f.Nullable) {
+				return nil, ErrAnalyticalResultInvalid
+			}
+			out[f.Name], err = analyticalLiteralValue(v)
+			if err != nil {
+				return nil, ErrAnalyticalResultInvalid
+			}
+		}
+		result.Rows = append(result.Rows, out)
 	}
 	return result, nil
 }

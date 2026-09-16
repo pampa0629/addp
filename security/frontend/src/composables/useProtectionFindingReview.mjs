@@ -44,8 +44,12 @@ export function useProtectionFindingReview({
     return String(selectedType?.default_security_grade_id || '')
   }
 
-  function focusDialogPrimary() {
+  function prepareDialog() {
+    const preparedFinding = finding.value
     nextTick(() => {
+      if (disposed || !dialog.value || finding.value !== preparedFinding) return
+      // Only a new candidate resets validation; later focus events must preserve it.
+      dialogRef.value?.clearValidate?.()
       dialogRef.value?.focusPrimary?.()
     })
   }
@@ -59,7 +63,7 @@ export function useProtectionFindingReview({
     form.rationale = ''
     context = reviewContext
     dialog.value = true
-    focusDialogPrimary()
+    prepareDialog()
   }
 
   async function open(nextFinding, initialDecision = 'confirm') {

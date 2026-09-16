@@ -231,15 +231,11 @@ func (r *ScanRepository) findNodeBySemanticOrHierarchy(
 
 // ResetNodeState 重置节点状态（开始扫描）
 func (r *ScanRepository) ResetNodeState(node *models.MetaNode, status string) error {
-	now := time.Now()
 	update := map[string]interface{}{
 		"scan_status": status,
 		"scan_error":  "", // 清除错误信息
 	}
 
-	if status == "running" {
-		update["scanned_at"] = now
-	}
 	return r.db.Model(node).Updates(update).Error
 }
 

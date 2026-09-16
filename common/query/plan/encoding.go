@@ -128,7 +128,7 @@ func knownKeys(input any, typed reflect.Type) bool {
 // boundedValue protects programmatic callers as well as JSON callers. It runs
 // before recursion/type inference or encoding, so cyclic Go values cannot hang
 // the validator and oversized strings cannot cause unbounded encoder allocation.
-func boundedValue(p Plan) error {
+func boundedValue(value any) error {
 	budget := MaxBytes * 2
 	var walk func(reflect.Value, int) error
 	walk = func(v reflect.Value, depth int) error {
@@ -137,7 +137,7 @@ func boundedValue(p Plan) error {
 			return fmt.Errorf("plan exceeds resource budget")
 		}
 		switch v.Kind() {
-		case reflect.Pointer:
+		case reflect.Pointer, reflect.Interface:
 			if !v.IsNil() {
 				return walk(v.Elem(), depth+1)
 			}
@@ -156,6 +156,19 @@ func boundedValue(p Plan) error {
 					return err
 				}
 			}
+		case reflect.Map:
+			if v.Len() > MaxBytes/8 {
+				return fmt.Errorf("plan exceeds resource budget")
+			}
+			iter := v.MapRange()
+			for iter.Next() {
+				if err := walk(iter.Key(), depth+1); err != nil {
+					return err
+				}
+				if err := walk(iter.Value(), depth+1); err != nil {
+					return err
+				}
+			}
 		case reflect.String:
 			budget -= v.Len()
 			if budget < 0 {
@@ -164,7 +177,7 @@ func boundedValue(p Plan) error {
 		}
 		return nil
 	}
-	return walk(reflect.ValueOf(p), 0)
+	return walk(reflect.ValueOf(value), 0)
 }
 
 // CanonicalJSON normalizes value encodings and unordered sets on a private copy.

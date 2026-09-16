@@ -971,6 +971,13 @@
       "uploadFailed": "上传失败：{msg}"
     },
     "explorer": {
+      "nodeScan": {
+        "statusLabel": "最近范围扫描状态",
+        "depthLabel": "已完成扫描深度",
+        "successTimeLabel": "最近成功扫描时间",
+        "status": { "pending": "尚未扫描", "running": "正在扫描", "completed": "成功", "failed": "失败" },
+        "depth": { "none": "尚未完成", "basic": "基础", "deep": "深度" }
+      },
       "storageEngines": "存储引擎",
       "engine": "引擎",
       "engineStatus": "引擎状态",

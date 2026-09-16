@@ -32,6 +32,9 @@ func EnrichResourceAttributes(ctx context.Context, attrs models.JSONMap, input R
 	if attrs == nil || item == nil {
 		return item, nil, nil
 	}
+	if err := identifySingleFile(ctx, attrs, input); err != nil {
+		return item, nil, err
+	}
 	if err := RefineRuntimeFormat(ctx, attrs, input.FormatDetector, input.SourceEngine, input.TenantID, item, input.PhysicalPath); err != nil {
 		return item, nil, err
 	}
@@ -96,10 +99,12 @@ func EnrichResourceAttributes(ctx context.Context, attrs models.JSONMap, input R
 	if item.DataType == datatype.Container && canReadContent {
 		reader, err := input.ContentReader.OpenContent(ctx, input.ConnInfo, input.EngineCatalogPathFor(input.PhysicalPath), plugin.ReadOptions{})
 		if err != nil {
-			return item, item.Fields, nil
+			return item, item.Fields, err
 		}
 		defer reader.Close()
-		_ = EnrichContainerChildren(ctx, attrs, item, reader)
+		if err := EnrichContainerChildren(ctx, attrs, item, reader); err != nil {
+			return item, item.Fields, err
+		}
 	}
 
 	return item, item.Fields, nil

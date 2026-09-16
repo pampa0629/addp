@@ -5,12 +5,43 @@ import (
 	"io"
 
 	"github.com/addp/common/dataitem"
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
+	"github.com/addp/meta/internal/metaattr"
 	"github.com/addp/meta/internal/metaitem"
+	"github.com/addp/meta/internal/models"
 )
 
 const singleFileFormatPeekBytes int64 = 8192
+
+// identifySingleFile 在任何类型 provider 被调用前确认单文件身份。
+// 容器插件的表能力属于 child，不能沿用历史快照中误写的父级 table 身份。
+func identifySingleFile(ctx context.Context, attrs models.JSONMap, input ResourceAttributesInput) error {
+	item := input.Item
+	if item.Layout != format.LayoutSingle {
+		return nil
+	}
+	beforeType, beforeFormat := item.DataType, item.Format
+	if IsUnknownFormatName(item.Format) && input.ContentReader != nil && input.EngineCatalogPathFor != nil && input.PhysicalPath != "" {
+		detected, err := DetectSingleFileFormat(ctx, input.ContentReader, input.ConnInfo, input.EngineCatalogPathFor(input.PhysicalPath), input.PhysicalPath)
+		if err != nil {
+			return err
+		}
+		ApplySingleFileFormat(item, detected)
+	}
+	declaredType := dataitem.DefaultDataTypeForFormat(item.Format)
+	if item.DataType == datatype.Unknown || declaredType == datatype.Container {
+		item.DataType = declaredType
+	}
+	if beforeType != item.DataType || beforeFormat != item.Format {
+		metaattr.ClearContentDerivedAttributes(attrs)
+		metaattr.ClearContentDerivedAttributes(item.Attributes)
+		item.Fields = nil
+		metaattr.MergeDataItemAttributes(attrs, metaitem.AttributeInput(item))
+	}
+	return nil
+}
 
 // DetectSingleFileFormat 通过文件内容前缀识别 single 文件的格式。
 func DetectSingleFileFormat(

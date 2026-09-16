@@ -8,6 +8,14 @@ import (
 	"github.com/addp/meta/internal/models"
 )
 
+// ClearContentDerivedAttributes 在内容身份变更后清除失效的派生事实。
+// 身份与存储分区保持不变；类型、格式、访问索引和横切事实由本次增强重建。
+func ClearContentDerivedAttributes(attrs map[string]interface{}) {
+	for _, section := range []string{"type_info", "format_info", "access_index", "capabilities"} {
+		delete(attrs, section)
+	}
+}
+
 // Normalize 保留标准 attributes 分区，并补齐 schema_version。
 func Normalize(attrs models.JSONMap) models.JSONMap {
 	if attrs == nil {

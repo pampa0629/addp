@@ -35,11 +35,11 @@ func resultPlan() plan.Plan {
 
 func TestResultEnvelopePreservesIndependentChecks(t *testing.T) {
 	p := resultPlan()
-	query, err := RenderResult(p, map[plan.NodeID]string{"root": "rows", "bad": "violations"}, []plan.SortKey{{Name: "__addp_record", Direction: "desc", Nulls: "last"}}, fixtureResultDialect{})
+	query, err := RenderResult(p, map[plan.NodeID]string{"root": "rows", "bad": "violations"}, []plan.SortKey{{Name: "__addp_record", Direction: "desc", Nulls: "last"}}, fixtureResultDialect{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, fragment := range []string{"FROM [rows] UNION ALL", "EXISTS (SELECT 1 FROM [violations])", "THEN 'fail:1' ELSE 'ok:1'", "'complete' AS [__addp_record_0]", "[__addp_result].[__addp_record] DESC"} {
+	for _, fragment := range []string{"CAST(NULL AS BIGINT) AS [__addp_record]", "FROM [rows] UNION ALL", "EXISTS (SELECT 1 FROM [violations])", "THEN 'fail:1' ELSE 'ok:1'", "'complete' AS [__addp_record_0]", "[__addp_result].[__addp_record] DESC"} {
 		if !strings.Contains(query, fragment) {
 			t.Fatalf("missing %q: %s", fragment, query)
 		}
@@ -52,15 +52,15 @@ func TestResultEnvelopePreservesIndependentChecks(t *testing.T) {
 func TestResultEnvelopeRejectsUnresolvedOrUnsupportedInputs(t *testing.T) {
 	p := resultPlan()
 	for _, relations := range []map[plan.NodeID]string{{"root": "rows"}, {"root": "same", "bad": "same"}, {"root": "rows", "bad": "bad; DROP TABLE"}} {
-		if _, err := RenderResult(p, relations, nil, fixtureResultDialect{}); !errors.Is(err, plugin.ErrAnalyticalInvalid) {
+		if _, err := RenderResult(p, relations, nil, fixtureResultDialect{}, nil); !errors.Is(err, plugin.ErrAnalyticalInvalid) {
 			t.Fatal(err)
 		}
 	}
 	relations := map[plan.NodeID]string{"root": "rows", "bad": "violations"}
-	if _, err := RenderResult(p, relations, nil, fixtureResultDialect{reject: true}); !errors.Is(err, plugin.ErrAnalyticalUnsupported) {
+	if _, err := RenderResult(p, relations, nil, fixtureResultDialect{reject: true}, nil); !errors.Is(err, plugin.ErrAnalyticalUnsupported) {
 		t.Fatal(err)
 	}
-	if _, err := RenderResult(p, relations, []plan.SortKey{{Name: "missing", Direction: "asc", Nulls: "last"}}, fixtureResultDialect{}); !errors.Is(err, plugin.ErrAnalyticalInvalid) {
+	if _, err := RenderResult(p, relations, []plan.SortKey{{Name: "missing", Direction: "asc", Nulls: "last"}}, fixtureResultDialect{}, nil); !errors.Is(err, plugin.ErrAnalyticalInvalid) {
 		t.Fatal(err)
 	}
 }

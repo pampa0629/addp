@@ -292,7 +292,7 @@ func TestResourceTreePreservesLiteTimeFactsInTreeMetadata(t *testing.T) {
 	bucket := createResourceTreeNode(t, db, models.MetaNode{
 		TenantID: 7, EngineID: 9, ParentNodeID: &root.ID,
 		NodeType: "bucket", Name: "addp", FullName: "addp", Depth: 1,
-		ScannedAt: &scannedAt,
+		ScannedAt: &scannedAt, ScannedDepth: models.ScannedDepthBasic, ScanStatus: "failed",
 	})
 	item := createResourceTreeItem(t, db, models.MetaItem{
 		TenantID: 7, EngineID: 9, NodeID: bucket.ID,
@@ -308,6 +308,9 @@ func TestResourceTreePreservesLiteTimeFactsInTreeMetadata(t *testing.T) {
 	}
 	if got := nodeResult.Metadata["scanned_at"]; got != scannedAt.Format(time.RFC3339) {
 		t.Fatalf("parent scanned_at metadata = %#v, want %s", got, scannedAt.Format(time.RFC3339))
+	}
+	if nodeResult.Metadata["scanned_depth"] != models.ScannedDepthBasic || nodeResult.Metadata["scan_status"] != "failed" {
+		t.Fatalf("scope state and completed depth must remain independent: %#v", nodeResult.Metadata)
 	}
 	if got := nodeResult.Metadata["item_count"]; got != 1 {
 		t.Fatalf("parent item_count metadata = %#v, want 1", got)

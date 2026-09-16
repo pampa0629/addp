@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/addp/common/dataitem"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
@@ -152,22 +151,14 @@ func EnrichSingleTableFileItem(
 	if item == nil || item.Layout != format.LayoutSingle {
 		return item, false, nil
 	}
-	if IsUnknownFormatName(item.Format) {
-		if catalogPath := firstCatalogPathResolver(catalogPathFor); catalogPath != nil {
-			detectedFormat, err := DetectSingleFileFormat(ctx, contentReader, connInfo, catalogPath(filePath), filePath)
-			if err != nil {
-				return item, false, err
-			}
-			ApplySingleFileFormat(item, detectedFormat)
-		}
+	// 文档记录集合可由内容精化为 table；容器的表能力仅供选定 child 使用。
+	if item.DataType != datatype.Table && item.DataType != datatype.Document {
+		return item, false, nil
 	}
 	if !hasSingleTableProvider(item.Format) {
 		return item, false, nil
 	}
-	if item.DataType == datatype.Unknown {
-		item.DataType = dataitem.DefaultDataTypeForFormat(item.Format)
-	}
-	if item.DataType != datatype.Table {
+	if item.DataType == datatype.Document {
 		info, err := ExtractSingleTableFileItemStrict(ctx, contentReader, connInfo, engineID, filePath, fileSize, includeAccessIndex, firstCatalogPathResolver(catalogPathFor))
 		if format.IsProviderNotApplicableError(err) {
 			return item, false, nil

@@ -45,8 +45,9 @@
         <el-descriptions-item :label="t('meta.itemType')">{{ typeLabel }}</el-descriptions-item>
         <el-descriptions-item :label="t('meta.fullName')">{{ fullName }}</el-descriptions-item>
         <el-descriptions-item :label="t('meta.itemCount')">{{ metadataItemCount }}</el-descriptions-item>
-        <el-descriptions-item :label="t('meta.scanStatus')">{{ scanStatusLabel }}</el-descriptions-item>
-        <el-descriptions-item :label="t('meta.scannedAt')">{{ scannedAt }}</el-descriptions-item>
+        <el-descriptions-item :label="t('manager.explorer.nodeScan.statusLabel')">{{ scanSummary.status }}</el-descriptions-item>
+        <el-descriptions-item :label="t('manager.explorer.nodeScan.depthLabel')">{{ scanSummary.depth }}</el-descriptions-item>
+        <el-descriptions-item :label="t('manager.explorer.nodeScan.successTimeLabel')">{{ scanSummary.scannedAt }}</el-descriptions-item>
       </el-descriptions>
 
       <el-divider>{{ t('meta.nodeChildren') }}</el-divider>
@@ -125,6 +126,7 @@ import ImportDialog from '@/components/explorer/ImportDialog.vue'
 import UploadDialog from '@/components/explorer/UploadDialog.vue'
 import { useExplorerStore } from '@/stores/explorer'
 import { isVectorizableRangeNode } from '@/utils/vectorization'
+import { buildNodeScanSummary } from '@/utils/nodeScanSummary'
 
 const { t } = useI18n()
 const store = useExplorerStore()
@@ -191,24 +193,7 @@ const metadataItemCount = computed(() => {
   return props.selectedNode?.metadata?.item_count ?? 0
 })
 
-const scanStatusLabel = computed(() => {
-  const rawStatus = props.selectedNode?.metadata?.scan_status
-  if (!rawStatus) return '-'
-
-  const statusMap = {
-    '未扫描': 'pending',
-    '扫描中': 'running',
-    '已扫描': 'completed',
-    '扫描失败': 'failed'
-  }
-  const status = statusMap[rawStatus] || rawStatus
-
-  const key = `meta.status.${status}`
-  const translated = t(key)
-  return translated === key ? status : translated
-})
-
-const scannedAt = computed(() => props.selectedNode?.metadata?.scanned_at || '-')
+const scanSummary = computed(() => buildNodeScanSummary(props.selectedNode?.metadata, t))
 const selectedEngineId = computed(() => {
   const direct = Number(props.selectedNode?.engineId || props.selectedNode?.engine_id || 0)
   if (direct > 0) {

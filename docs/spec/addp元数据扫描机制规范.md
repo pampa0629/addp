@@ -384,6 +384,8 @@ Deep 扫描可以读取内容，但仍应遵守 provider / reader 边界：
 - 大文件 deep 扫描应由 provider 自己控制成本和阈值，不能无边界全量读取。
 - Meta deep 扫描不得继续识别并持久化容器 children 的下一层 data item。比如 ZIP 中的 Shapefile 组件应作为 ZIP 的直接 entry 写入 children；把这些 entry 临时组合成 Shapefile 预览项属于 Manager 动态预览职责，不写回 Meta。
 
+单文件 deep 增强必须先确认格式与数据类型，再按 data type 分派。`TableInfoProvider` 只证明插件能读取表，不证明父文件是 table；SQLite、GeoPackage、UDBX、Excel 等 descriptor 声明的 container 必须走容器枚举，内部表只能在显式 child 上下文读取。文档类格式可以由其表解析能力确认记录集合并精化为 table；不得将这一规则推广到所有非 table 类型。known-item refresh 同样重新确认容器身份，并清除旧类型的内容派生分区后重建，不能保留历史误判的父级 table fields 或 access index。容器打开或解析失败必须向上返回错误，不得伪装为空容器成功。
+
 `access_index` 纳入 deep 的默认目标。具体格式是否生成、是否因为文件过大而跳过，由对应 provider 决定；跳过不应阻断 deep 扫描完成。
 
 Deep 扫描完成状态不写入 `attributes`。`attributes` 只表达从数据源抽取出的稳定事实，例如字段、children、文档结构、媒体信息、空间能力、正文抽取状态和索引引用；不表达“本次 deep scan 已经补齐完成”这类扫描过程状态。不得新增或继续使用 `metadata_extracted`、`deep_metadata_ready` 等 attributes 标记判断 deep 是否完成。
@@ -399,7 +401,11 @@ Deep 扫描完成状态不写入 `attributes`。`attributes` 只表达从数据�
 
 `scan_status` 继续表达过程状态，例如 `pending`、`running`、`completed`、`failed`。不要把 `basic` / `deep` 混入 `scan_status`，否则“正在扫描”和“已扫深度”两个维度会互相覆盖。
 
-`scanned_at` 表示最近一次扫描完成时间。第一阶段不新增 `basic_scanned_at` / `deep_scanned_at`，避免状态膨胀。
+`scanned_at` 表示最近一次成功扫描完成时间；开始、失败或取消扫描均不得覆盖它。尚无成功扫描时为空。第一阶段不新增 `basic_scanned_at` / `deep_scanned_at`，避免状态膨胀。失败执行的开始、结束时间由 execution 记录，不借用 `scanned_at`。
+
+node 的 `scan_status` 表达最近一次覆盖该 node 范围的扫描过程状态，而非当前数据可用性。范围内任一目标失败，该 node 及本次同样覆盖的祖先范围不得标记成功或提升 `scanned_depth`；未受影响的兄弟范围可独立成功。状态归属必须使用完整目标路径，不能使用执行报告中截断或限量的失败样本。空目录也必须收尾；单 item / `ref_groups` 扫描不改变父目录状态。Manager 分别展示“最近范围扫描状态”“已完成扫描深度”“最近成功扫描时间”，不以局部刷新覆盖父目录历史失败。
+
+一次性迁移清空旧实现中 running / failed node 的歧义 `scanned_at`：这些值记录的是开始时间，无法还原先前成功时间，不得伪装成成功完成时间。保留状态、已完成深度及内容事实；后续成功扫描重新建立可信时间，迁移不得在每次启动时重复清空。
 
 `scanned_depth` 是 Manager、Asset、Search 等上层模块判断 item / node 是否已经完成 basic 或 deep 扫描的唯一标准字段。上层模块不得通过检查 `attributes` 中某个 provider 字段是否存在来推断 deep 扫描是否完成。
 

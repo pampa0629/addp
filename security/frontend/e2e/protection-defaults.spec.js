@@ -931,16 +931,30 @@ test('validates finding review and manual designation fields inline before submi
   const detailDrawer = page.locator('.el-drawer').filter({ hasText: '资源保护详情' })
 
   const findingCard = detailDrawer.locator('.finding-card').filter({ hasText: 'customer.email' })
+  // Submit while the opening animation is pending, then verify that focusing
+  // the form at `opened` cannot erase feedback from this same review session.
+  await page.addStyleTag({ content: `
+    .dialog-fade-enter-active { animation-duration: 3s !important; }
+    .dialog-fade-enter-active .el-overlay-dialog { animation: none !important; }
+  ` })
   await findingCard.getByRole('button', { name: '确认或调整' }).click()
   const reviewDialog = page.getByRole('dialog', { name: '复核敏感字段候选' })
   await expect(reviewDialog.locator('.el-form-item.is-required').filter({ hasText: '复核说明' })).toBeVisible()
   await reviewDialog.getByRole('button', { name: '提交复核' }).click()
+  await expect(reviewDialog.locator('.el-form-item__error')).toHaveText('请完整填写复核说明', { timeout: 1500 })
+  await expect(page.locator('.dialog-fade-enter-active')).toHaveCount(0)
   await expect(reviewDialog.locator('.el-form-item__error')).toHaveText('请完整填写复核说明')
   expect(backend.findingReviewRequests).toHaveLength(0)
 
   await reviewDialog.getByText('调整分类分级', { exact: true }).click()
   await expect(reviewDialog.locator('.el-form-item.is-required').filter({ hasText: '敏感数据类型' })).toBeVisible()
   await expect(reviewDialog.locator('.el-form-item.is-required').filter({ hasText: '安全等级' })).toBeVisible()
+  await reviewDialog.getByRole('button', { name: '取消' }).click()
+  await expect(reviewDialog).toHaveCount(0)
+  await findingCard.getByRole('button', { name: '确认或调整' }).click()
+  await expect(reviewDialog.locator('.el-form-item__error')).toHaveCount(0)
+  await expect(formTextbox(reviewDialog, '复核说明')).toHaveValue('')
+  await expect(formTextbox(reviewDialog, '复核说明')).toBeFocused()
   await reviewDialog.getByRole('button', { name: '取消' }).click()
 
   await detailDrawer.getByRole('button', { name: '指定敏感字段' }).click()

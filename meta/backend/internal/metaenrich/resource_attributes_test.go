@@ -24,7 +24,7 @@ import (
 	"golang.org/x/image/tiff"
 )
 
-func TestEnrichResourceAttributesKeepsContainerSummaryWhenContentOpenFails(t *testing.T) {
+func TestEnrichResourceAttributesReportsContainerContentOpenFailure(t *testing.T) {
 	t.Parallel()
 
 	item := &metaitem.DetectedItem{
@@ -45,8 +45,8 @@ func TestEnrichResourceAttributesKeepsContainerSummaryWhenContentOpenFails(t *te
 			return plugin.FileItemPath(1, path)
 		},
 	})
-	if err != nil {
-		t.Fatalf("EnrichResourceAttributes() error = %v", err)
+	if err == nil {
+		t.Fatal("container content open failure must be reported")
 	}
 
 	container := commonJSON.Section(attrs, "type_info.container")

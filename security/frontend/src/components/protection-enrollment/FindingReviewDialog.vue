@@ -58,5 +58,9 @@ function focusPrimary() {
   formRef.value?.focusRationale?.()
 }
 
-defineExpose({ validate, focusPrimary })
+function clearValidate() {
+  formRef.value?.clearValidate?.()
+}
+
+defineExpose({ validate, clearValidate, focusPrimary })
 </script>

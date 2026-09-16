@@ -421,6 +421,26 @@ item 刷新原先复用了 catalog scan 的入口，把 `item_id` 先转换为 c
 
 真实浏览器验收还发现第三层遗漏：上传后当前目录数量已更新，切换上级仍显示旧数量，整页重载才恢复。这是前端只替换目标节点、未回读祖先事实造成的缓存不一致。`loadNodeChildren(locator, true)` 统一回读 ancestors 并复用定位流程的事实合并，再加载目标子资源；失效链上 children 缓存，保留 sibling、展开与选择状态，不在前端维护计数。回归应包含“上传完成后直接切换上级”，不能只验证当前目录或整页重载后的结果；执行 `make test-manager-frontend`。
 
+### 目录仍显示扫描失败，或失败子目录反而显示已扫描
+
+node 的最近范围扫描状态与当前数据可用性、item 数量不同。单文件刷新成功不会覆盖父范围扫描结果；不能为消除失败提示自动补跑整桶扫描或把父目录置为成功。
+
+2026-09-15 确认了两个写入错误：对象扫描仅按 bucket 汇总失败，却在收尾时把所有 prefix 标为 completed 并提升深度；`ResetNodeState` 在扫描开始时覆盖 `scanned_at`，使失败记录中的时间实际上是开始时间。修复将本次覆盖节点与完整失败路径统一收尾，失败只影响覆盖范围内相关节点，正常兄弟范围独立成功；empty prefix 和枚举失败也必须收尾。执行报告的限量、截断失败样本不能用于状态归属。
+
+Manager 节点详情分别展示最近范围扫描状态、已完成扫描深度、最近成功扫描时间；共享资源树必须传递并保护 `scanned_depth`，不能从数量、属性字段或本地化旧状态猜测。开始和失败不再修改 `scanned_at`。一次性迁移 025 将旧 running / failed 记录中无法还原的时间置空，不修改内容、状态或深度；此后成功扫描建立可信时间。已被旧代码误标成功的目录应通过受影响目录的显式扫描重新建立事实，不根据兄弟或单文件的结果反推历史。
+
+验证：`META_POSTGRES_TEST_DSN=<addp_test连接> make test-module MODULE=meta`、`make test-manager-frontend`、`make test-go`。迁移用例已登记到 `scripts/test/meta-postgres-gate.sh`，由既有 Meta T2 workflow 执行；共享资源树变更由全量 Go 消费方和 platform-ci 的受影响镜像构建门禁验证。部署需一起重启受影响服务，不能仅刷新浏览器。
+
+### SQLite 扫描要求 table option，或 Excel 父文件被识别为 table
+
+2026-09-15 排查确认：SQLite 容器扫描报 `sqlite table preview requires table option`，而 Excel 容器没有报错，却被写成 table。两者来自同一错误分派：统一内容增强入口先尝试表解析，把“格式插件提供 TableInfoProvider”当成“父文件可以转为表”。实际上，容器插件的表能力属于显式选中的内部表或工作表；SQLite 拒绝缺少 table 选项的调用，Excel 则可选取首张工作表，从而掩盖误判。
+
+历史原因：2026-05-28（`061d11187`）为 JSON 文档中的记录集合增加严格表识别，判断条件却扩展为所有非 table 类型；后续抽取统一增强代码（`3f068ff26`）沿用了该条件。容器回归只直接调用 `EnrichContainerChildren`，绕过了出错的统一入口，所以不能证明真实扫描正确。
+
+修复统一在 `EnrichResourceAttributes` 中先确认 single 文件身份，容器按格式声明保持 container，只有 document 允许通过内容进一步识别为 table。已知条目刷新也走此入口：纠正旧 Excel 父类型并清除旧表字段、行数及相关派生索引，保持条目 ID 和逻辑数量不变。容器读取或解析失败必须返回错误，不覆盖已有成功元数据，不得用默认首表或吞错返回空容器来绕过问题。
+
+部署后重启 Meta Backend 与 Worker，只对受影响文件执行条目刷新并核对类型和 children；无需重新扫描整个 bucket，也不要直接修改业务元数据表。验证入口为 `META_POSTGRES_TEST_DSN=<addp_test连接> make test-module MODULE=meta`，已有 Meta Go T1 自动发现统一入口的容器类型矩阵与 known-item 刷新持久化用例。
+
 ### 1. Transfer 写出 Shapefile 后资源树看不到 `.prj`
 
 #### 问题现象

@@ -215,7 +215,8 @@
 | deep scan | 深度扫描 | 补充类型信息、格式信息、访问索引和横切能力的扫描。 | 可以读取内容，但必须遵守 provider / reader 边界和成本控制。 |
 | scan depth | 扫描深度 | 本次扫描要达到的深度。 | 请求字段为 `scan_depth`，只允许 `basic` / `deep`。 |
 | scanned depth | 已扫深度 | 当前 `meta_node` / `meta_item` 已达到的元数据完整度。 | 落库字段为 `scanned_depth`，取值为 `none` / `basic` / `deep`。 |
-| scan status | 扫描状态 | 扫描任务或最近扫描过程的运行状态。 | 表达 `pending`、`running`、`completed`、`failed` 等过程状态，不表达扫描深度。 |
+| scan status | 扫描状态 | 扫描任务或最近扫描过程的运行状态。 | node 表达最近一次覆盖其范围的过程状态，不表达当前数据可用性或扫描深度；局部 item 刷新不覆盖父 node 状态。 |
+| scanned at | 最近成功扫描时间 | 最近一次成功扫描完成时间。 | `scanned_at` 仅在成功完成后更新，开始或失败均保留原值；无成功记录时为空。 |
 | force scan | 强制扫描 | 不管已有元数据和低成本过时判断，重新扫描并覆盖本次深度对应的元数据。 | 请求字段为 `force`。 |
 | exact row count | 精确行数 | 对 data item 当前内容执行精确计数得到的总行数。 | 公共字段固定为 `row_count`；SQL 表通常需要显式 `COUNT(*)`，只允许在 deep scan 或调用方显式请求统计时获取。0 是有效精确值。 |
 | estimated row count | 估算行数 | 引擎 catalog、system table、格式结构元数据或有限分析低成本提供的近似行数。 | 公共字段固定为 `estimated_row_count`；可用于列表提示和低成本变化判断，不得用于分页边界、完整性校验或冒充 `row_count`。 |

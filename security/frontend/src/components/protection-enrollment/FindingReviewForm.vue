@@ -94,14 +94,17 @@ function validate() {
   return formRef.value?.validate() ?? Promise.resolve(false)
 }
 
-function focusRationale() {
+function clearValidate() {
   formRef.value?.clearValidate()
+}
+
+function focusRationale() {
   rationaleInput.value?.focus?.()
 }
 
 onMounted(() => nextTick(focusRationale))
 
-defineExpose({ validate, focusRationale })
+defineExpose({ validate, clearValidate, focusRationale })
 </script>
 
 <style scoped>

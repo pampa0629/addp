@@ -52,7 +52,7 @@ func parseMySQLReadQuery(query string) (sqlparser.Statement, error) {
 				return false, fmt.Errorf("qualified and window functions are unsupported")
 			}
 			switch strings.ToLower(n.Name.String()) {
-			case "count", "coalesce", "date_format", "date_add":
+			case "count", "coalesce", "date_format", "date_add", "truncate", "char_length", "substring":
 			default:
 				return false, fmt.Errorf("unproven function %s", n.Name.String())
 			}

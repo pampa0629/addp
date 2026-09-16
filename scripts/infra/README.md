@@ -106,6 +106,8 @@ ADDP_SYSTEM_POSTGRES_TEST_DSN='postgres://addp:addp_password@localhost:15432/add
   make test-system-iam-postgres
 ```
 
+Common 的 PostgreSQL 和 MySQL Provider 门禁同时运行无损整数转换矩阵：小数非零、正负边界、NULL 和超过浮点精确范围的整数；并通过 PreparedQuery 验证业务结果被过滤为空时仍返回求值错误。MySQL 门禁额外检查原生转换没有警告。同一已登记的整数集成测试还运行 CASE/COALESCE 条件组合矩阵：true/false/NULL、条件自身失败、嵌套与首个非 NULL 值停止；有结果和空结果各验证一次，未选分支不报错，已求值错误不能被后续补值隐藏。 新增 AnalyticalArithmetic 集成测试同步登记到两个 Common 门禁，使用 math/big 有理数独立验证四则运算、舍入、溢出、NULL 与空结果检查；MySQL 在 div_precision_increment=0/4/30 下分别运行原生数值矩阵并拒绝警告。 AnalyticalExpressions 门禁验证通用表达式入口的列／参数／常量、文字精确比较、布尔三值语义及错误传播；旧数值和条件矩阵同样使用该入口，不保留 fixture 私有递归路径。
+
 Common PostgreSQL Engine Provider 与 execution store 门禁使用（包含分析结果检查协议：空结果、过滤、分页不得跳过断言，以及读取集合和输出血缘；此项不代表完整分析编译器已认证）：
 
 ```bash

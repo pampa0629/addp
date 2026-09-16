@@ -111,7 +111,7 @@ type CompiledQuery struct {
 	layout      AnalyticalResultLayout
 }
 
-func NewCompiledQuery(r CompileRequest, identity CompilerIdentity, language, template string) (CompiledQuery, error) {
+func NewCompiledQuery(r CompileRequest, identity CompilerIdentity, language, template string, evaluations []EvaluationCheck) (CompiledQuery, error) {
 	if err := r.Validate(); err != nil {
 		return CompiledQuery{}, err
 	}
@@ -123,14 +123,15 @@ func NewCompiledQuery(r CompileRequest, identity CompilerIdentity, language, tem
 	if err != nil {
 		return CompiledQuery{}, err
 	}
-	data, err := json.Marshal(struct {
-		Package            AnalyticalPlanPackage
-		Language, Template string
-	}{normalized, language, template})
+	layout, err := NewAnalyticalResultLayout(normalized.Plan, evaluations)
 	if err != nil {
 		return CompiledQuery{}, err
 	}
-	layout, err := NewAnalyticalResultLayout(normalized.Plan)
+	data, err := json.Marshal(struct {
+		Package            AnalyticalPlanPackage
+		Language, Template string
+		Evaluations        []EvaluationCheck
+	}{normalized, language, template, layout.Evaluations})
 	if err != nil {
 		return CompiledQuery{}, err
 	}

@@ -26,7 +26,7 @@ function createReview(overrides = {}) {
 }
 
 function allowValidation(review) {
-  review.dialogRef.value = { validate: vi.fn().mockResolvedValue(true), focusPrimary: vi.fn() }
+  review.dialogRef.value = { validate: vi.fn().mockResolvedValue(true), clearValidate: vi.fn(), focusPrimary: vi.fn() }
 }
 
 describe('protection finding review session', () => {
@@ -47,6 +47,7 @@ describe('protection finding review session', () => {
       rationale: ''
     })
     expect(review.dialogRef.value.focusPrimary).toHaveBeenCalled()
+    expect(review.dialogRef.value.clearValidate).toHaveBeenCalledOnce()
 
     review.applyDefaultGrade('5')
     expect(review.form.securityGradeID).toBe('50')
@@ -95,6 +96,35 @@ describe('protection finding review session', () => {
     expect(review.form.securityGradeID).toBe('50')
     expect(dependencies.onContinued).toHaveBeenCalledOnce()
     expect(dependencies.onSaved).not.toHaveBeenCalled()
+    await nextTick()
+    expect(review.dialogRef.value.clearValidate).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not reset validation after invalid submission or refocusing the same candidate', async () => {
+    const { dependencies, review } = createReview()
+    allowValidation(review)
+    review.dialogRef.value.validate.mockResolvedValue(false)
+    await review.open(sourceFinding)
+    await nextTick()
+    review.dialogRef.value.clearValidate.mockClear()
+
+    await expect(review.submit()).resolves.toEqual({ status: 'invalid' })
+    review.dialogRef.value.focusPrimary()
+    await nextTick()
+    expect(review.dialogRef.value.clearValidate).not.toHaveBeenCalled()
+    expect(dependencies.reviewFinding).not.toHaveBeenCalled()
+  })
+
+  it('does not reset a closed review from a pending preparation callback', async () => {
+    const { review } = createReview()
+    allowValidation(review)
+    const opening = review.open(sourceFinding)
+    await Promise.resolve()
+    review.close()
+    await opening
+    await nextTick()
+    expect(review.dialogRef.value.clearValidate).not.toHaveBeenCalled()
+    expect(review.dialogRef.value.focusPrimary).not.toHaveBeenCalled()
   })
 
   it('closes the session when no pending candidate remains', async () => {

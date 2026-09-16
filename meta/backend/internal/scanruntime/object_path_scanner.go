@@ -2,6 +2,7 @@ package scanruntime
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -74,16 +75,14 @@ func scanObjectCatalogPaths(
 	force bool,
 	reporter scanflow.ProgressReporter,
 	itemTerm string,
-) (scanflow.DispatchResult, error) {
+) (result scanflow.DispatchResult, scanErr error) {
 	bucketNodes := make(map[string]*models.MetaNode)
 	processedBuckets := make(map[string]bool)
 	processedPrefixes := make(map[string]map[string]bool)
-	scannedNodes := make(map[uint]*models.MetaNode)
+	scanState := newObjectCatalogScanState()
 	scannedFingerprints := make(map[string]bool)
 
-	result := scanflow.DispatchResult{}
 	failures := &scanflow.FailedTargetCollector{}
-	failedBuckets := make(map[string]bool)
 	total := len(paths)
 	completed := 0
 	isDeepScan := strings.EqualFold(scanDepth, "deep")
@@ -96,8 +95,25 @@ func scanObjectCatalogPaths(
 	if err != nil {
 		return scanflow.DispatchResult{}, err
 	}
+	activePath := ""
+	defer func() {
+		var targetErrors *scanflow.FailedTargetsError
+		if scanErr != nil && activePath != "" && !errors.As(scanErr, &targetErrors) {
+			scanState.fail(activePath, scanErr)
+		}
+		for _, node := range scanState.nodes {
+			status, message := "completed", ""
+			if err := scanState.errorFor(node.FullName); err != nil {
+				status, message = "failed", err.Error()
+			}
+			if err := repo.FinalizeNodeStateWithDepth(node, status, message, scanDepth); err != nil {
+				scanErr = errors.Join(scanErr, err)
+			}
+		}
+	}()
 
 	for _, rawPath := range paths {
+		activePath = rawPath
 		if err := ctx.Err(); err != nil {
 			return result, err
 		}
@@ -126,25 +142,6 @@ func scanObjectCatalogPaths(
 			continue
 		}
 
-		var objects []plugin.EngineCatalogEntry
-		if target.Object != "" {
-			objects, err = readObjectCatalogLeaf(ctx, resource, catalogProvider, bucketName, target.Object)
-		} else {
-			objects, err = listObjectCatalogLeaves(ctx, resource, catalogProvider, bucketName, prefix, isDeepScan)
-		}
-		if err != nil {
-			failures.Add(rawPath, err)
-			failedBuckets[bucketName] = true
-			completed++
-			if reporter != nil {
-				reporter.Message(fmt.Sprintf("对象路径 %s 扫描失败: %v", rawPath, err))
-				reporter.Advance(rawPath, completed, total, map[string]interface{}{"objects": 0})
-			}
-			continue
-		}
-
-		resources := objectCatalogEntriesToStorageResources(objects, bucketName)
-
 		bucketNode, ok := bucketNodes[bucketName]
 		if !ok {
 			attrs := scanresource.ObjectBucketNodeAttributes(bucketName)
@@ -158,11 +155,6 @@ func scanObjectCatalogPaths(
 
 		fullBucket := prefix == "" && target.Object == ""
 		if fullBucket {
-			if !processedBuckets[bucketName] {
-				if err := repo.ResetNodeState(bucketNode, "running"); err != nil {
-					return result, err
-				}
-			}
 			processedBuckets[bucketName] = true
 		} else if target.Object == "" {
 			if processedPrefixes[bucketName] == nil {
@@ -170,11 +162,37 @@ func scanObjectCatalogPaths(
 			}
 			processedPrefixes[bucketName][strings.Trim(prefix, "/")] = true
 		}
+		if target.Object == "" {
+			chain, err := repo.EnsureObjectCatalogPrefixChain(tenantID, engineID, bucketNode, prefix)
+			if err != nil {
+				return result, err
+			}
+			node := chain[len(chain)-1]
+			scanState.record(chain, prefix, fullBucket)
+			if err := repo.ResetNodeState(node, "running"); err != nil {
+				return result, err
+			}
+		}
+
+		var objects []plugin.EngineCatalogEntry
+		if target.Object != "" {
+			objects, err = readObjectCatalogLeaf(ctx, resource, catalogProvider, bucketName, target.Object)
+		} else {
+			objects, err = listObjectCatalogLeaves(ctx, resource, catalogProvider, bucketName, prefix, isDeepScan)
+		}
+		if err != nil {
+			failures.Add(rawPath, err)
+			scanState.fail(rawPath, err)
+			completed++
+			if reporter != nil {
+				reporter.Message(fmt.Sprintf("对象路径 %s 扫描失败: %v", rawPath, err))
+				reporter.Advance(rawPath, completed, total, map[string]interface{}{"objects": 0})
+			}
+			continue
+		}
+		resources := objectCatalogEntriesToStorageResources(objects, bucketName)
 
 		if len(resources) == 0 {
-			if fullBucket {
-				scannedNodes[bucketNode.ID] = bucketNode
-			}
 			completed++
 			if reporter != nil {
 				reporter.Message(fmt.Sprintf("对象路径 %s 未发现新对象", rawPath))
@@ -184,18 +202,22 @@ func scanObjectCatalogPaths(
 		}
 
 		scanPathPrefix := prefix
-		scopeNodes := scannedNodes
+		scopeState := scanState
 		if target.Object != "" {
 			scanPathPrefix = scanresource.ParentObjectPath(target.Object)
 			// 单个对象并未枚举完整父目录，不能更新父目录扫描状态。
-			scopeNodes = nil
+			scopeState = nil
 		}
-		objectCount, pathExtractionStats, err := runtime.persistObjectResources(ctx, resource, tenantID, engineID, bucketNode, resources, scopeNodes, fullBucket, scanDepth, force, scanPathPrefix, scannedFingerprints, itemTerm)
+		objectCount, pathExtractionStats, err := runtime.persistObjectResources(ctx, resource, tenantID, engineID, bucketNode, resources, scopeState, fullBucket, scanDepth, force, scanPathPrefix, scannedFingerprints, itemTerm)
 		result.Items += objectCount
 		result.Extraction = scanflow.MergeExtractionCounts(result.Extraction, pathExtractionStats)
 		if err != nil {
 			failures.Add(rawPath, err)
-			failedBuckets[bucketName] = true
+			// 逐项失败已按完整路径记录；只有无法定位的范围错误才影响整个目标范围。
+			var targetErrors *scanflow.FailedTargetsError
+			if !errors.As(err, &targetErrors) {
+				scanState.fail(rawPath, err)
+			}
 			completed++
 			if reporter != nil {
 				reporter.Advance(rawPath, completed, total, map[string]interface{}{"objects": objectCount})
@@ -210,12 +232,12 @@ func scanObjectCatalogPaths(
 
 	if isDeepScan && len(scannedFingerprints) > 0 {
 		for bucketName := range processedBuckets {
-			if bucketNodes[bucketName] == nil {
+			if bucketNodes[bucketName] == nil || scanState.errorFor(bucketName) != nil {
 				continue
 			}
 			if _, err := repo.SoftDeleteObjectMetaItemsMissingFingerprints(tenantID, engineID, bucketName, scannedFingerprints); err != nil {
 				failures.Add(bucketName, err)
-				failedBuckets[bucketName] = true
+				scanState.fail(bucketName, err)
 				continue
 			}
 		}
@@ -224,47 +246,24 @@ func scanObjectCatalogPaths(
 				continue
 			}
 			for prefix := range prefixes {
-				if prefix == "" {
+				if prefix == "" || scanState.errorFor(bucketName+"/"+prefix) != nil {
 					continue
 				}
 				if _, err := repo.SoftDeleteObjectMetaItemsMissingFingerprintsInPrefix(tenantID, engineID, bucketName, prefix, scannedFingerprints); err != nil {
 					failures.Add(bucketName+"/"+prefix, err)
-					failedBuckets[bucketName] = true
+					scanState.fail(bucketName+"/"+prefix, err)
 					continue
 				}
 			}
 		}
 		if err := repo.HardDeleteInvalidEngineGraph(tenantID, engineID); err != nil {
 			failures.Add(resource.Name, err)
+			for _, node := range scanState.nodes {
+				scanState.fail(node.FullName, err)
+			}
 			if reporter != nil {
 				reporter.Message(fmt.Sprintf("清理对象 catalog 陈旧节点失败: %v", err))
 			}
-		}
-	}
-
-	for bucketName, bucketNode := range bucketNodes {
-		if !processedBuckets[bucketName] {
-			continue
-		}
-		_, ok := scannedNodes[bucketNode.ID]
-		if !ok {
-			continue
-		}
-		if failedBuckets[bucketName] {
-			if err := repo.FinalizeNodeState(bucketNode, "failed", "one or more object scan targets failed"); err != nil {
-				failures.Add(bucketName, err)
-			}
-		} else if err := repo.FinalizeNodeStateWithDepth(bucketNode, "completed", "", scanDepth); err != nil {
-			failures.Add(bucketName, err)
-		}
-	}
-
-	for _, node := range scannedNodes {
-		if node.NodeType == "bucket" {
-			continue
-		}
-		if err := repo.FinalizeNodeStateWithDepth(node, "completed", "", scanDepth); err != nil {
-			failures.Add(node.FullName, err)
 		}
 	}
 

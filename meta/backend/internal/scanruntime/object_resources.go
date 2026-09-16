@@ -22,7 +22,7 @@ func (s *ObjectStorageCatalogRuntime) persistObjectResources(
 	tenantID, engineID uint,
 	bucketNode *models.MetaNode,
 	resources []scanresource.StorageResource,
-	scannedNodes map[uint]*models.MetaNode,
+	scanState *objectCatalogScanState,
 	includeBucketScan bool,
 	scanDepth string,
 	force bool,
@@ -33,6 +33,10 @@ func (s *ObjectStorageCatalogRuntime) persistObjectResources(
 	objects := 0
 	extractionStats := scanflow.ExtractionCounts{}
 	failures := &scanflow.FailedTargetCollector{}
+	addFailure := func(fullPath string, err error) {
+		failures.Add(fullPath, err)
+		scanState.fail(fullPath, err)
+	}
 	connInfo := plugin.ConnectionInfo(resource.ConnectionInfo)
 	enginePlugin, err := plugin.Get(resource.EngineType)
 	if err != nil {
@@ -48,15 +52,15 @@ func (s *ObjectStorageCatalogRuntime) persistObjectResources(
 		if err != nil {
 			return objects, extractionStats, err
 		}
-		recordObjectCatalogScanNodes(scannedNodes, chain, scanPathPrefix, includeBucketScan)
+		scanState.record(chain, scanPathPrefix, includeBucketScan)
 	}
 	var compositeWarnings []scanflow.ObjectCatalogCompositeDetectionError
 	compositeSkipPaths, compositeItems, compositeWarnings := scanflow.DetectObjectCatalogCompositeItems(ctx, readableProvider, connInfo, engineID, resources, strings.EqualFold(scanDepth, "deep"))
 	for _, warning := range compositeWarnings {
 		s.log.Warn("对象 catalog 组合项检测失败", "bucket", warning.Bucket, "prefix", warning.Prefix, "error", warning.Err)
-		failures.Add(strings.Trim(strings.Join([]string{warning.Bucket, warning.Prefix}, "/"), "/"), warning.Err)
+		addFailure(strings.Trim(strings.Join([]string{warning.Bucket, warning.Prefix}, "/"), "/"), warning.Err)
 	}
-	compositeCount, compositeExtractionStats, err := s.persistObjectCatalogCompositeItems(ctx, resource, tenantID, engineID, bucketNode, compositeItems, scannedNodes, includeBucketScan, scanPathPrefix, scannedFingerprints, itemTerm, readableProvider, connInfo, scanDepth)
+	compositeCount, compositeExtractionStats, err := s.persistObjectCatalogCompositeItems(ctx, resource, tenantID, engineID, bucketNode, compositeItems, scanState, includeBucketScan, scanPathPrefix, scannedFingerprints, itemTerm, readableProvider, connInfo, scanDepth)
 	objects += compositeCount
 	extractionStats = scanflow.MergeExtractionCounts(extractionStats, compositeExtractionStats)
 	if err != nil {
@@ -69,7 +73,7 @@ func (s *ObjectStorageCatalogRuntime) persistObjectResources(
 		}
 		if catalogResource.NodeType == "bucket" {
 			if includeBucketScan {
-				scannedNodes[bucketNode.ID] = bucketNode
+				scanState.record([]*models.MetaNode{bucketNode}, "", true)
 			}
 			continue
 		}
@@ -86,11 +90,11 @@ func (s *ObjectStorageCatalogRuntime) persistObjectResources(
 		}
 		parentChain, err := s.repo.EnsureObjectCatalogPrefixChain(tenantID, engineID, bucketNode, parentPath)
 		if err != nil {
-			failures.Add(catalogResource.Path, err)
+			addFailure(catalogResource.FullPath, err)
 			continue
 		}
 		currentParent := parentChain[len(parentChain)-1]
-		recordObjectCatalogScanNodes(scannedNodes, parentChain, scanPathPrefix, includeBucketScan)
+		scanState.record(parentChain, scanPathPrefix, includeBucketScan)
 
 		if catalogResource.NodeType != "object" {
 			continue
@@ -101,7 +105,7 @@ func (s *ObjectStorageCatalogRuntime) persistObjectResources(
 
 		existingItem, itemExists, err := s.repo.FindItemByFingerprintUnscoped(itemPlan.Fingerprint)
 		if err != nil {
-			failures.Add(catalogResource.Path, err)
+			addFailure(catalogResource.FullPath, err)
 			continue
 		}
 		needsUpdate := force || scanchange.ShouldUpdateStorageResource(existingItem, catalogResource) || !itemExists
@@ -158,7 +162,7 @@ func (s *ObjectStorageCatalogRuntime) persistObjectResources(
 		))
 		if err != nil {
 			extractionStats = scanflow.MergeExtractionCounts(extractionStats, result.Extraction)
-			failures.Add(catalogResource.Path, err)
+			addFailure(catalogResource.FullPath, err)
 			continue
 		}
 		extractionStats = scanflow.MergeExtractionCounts(extractionStats, result.Extraction)
@@ -167,7 +171,7 @@ func (s *ObjectStorageCatalogRuntime) persistObjectResources(
 	}
 
 	if includeBucketScan {
-		scannedNodes[bucketNode.ID] = bucketNode
+		scanState.record([]*models.MetaNode{bucketNode}, "", true)
 	}
 	return objects, extractionStats, failures.Err()
 }
