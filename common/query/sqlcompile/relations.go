@@ -24,6 +24,8 @@ type relationBuilder struct {
 	p           plan.Plan
 	expression  ExpressionDialect
 	result      ResultDialect
+	scan        ScanDialect
+	sources     map[plan.SourceID]plugin.SourceBinding
 	schemas     map[plan.NodeID][]datatype.FieldInfo
 	names       map[plan.NodeID]string
 	nodes       map[plan.NodeID]plan.Node
@@ -36,17 +38,31 @@ type relationBuilder struct {
 
 // CompileRelations renders supported relational operators through the shared
 // scalar compiler. It is not an instance/source certification or a registered
-// engine compiler. Scan and date_buckets are explicitly unsupported here until
-// their native source and range compilation is implemented.
-func CompileRelations(p plan.Plan, expression ExpressionDialect, result ResultDialect) (RenderedRelations, error) {
+// engine compiler. Native scans require an explicit ScanDialect; date_buckets
+// remains unsupported until range compilation is implemented.
+func CompileRelations(r plugin.CompileRequest, expression ExpressionDialect, result ResultDialect, scan ScanDialect) (RenderedRelations, error) {
 	if expression == nil || result == nil {
 		return RenderedRelations{}, plugin.ErrAnalyticalInvalid
 	}
+	if err := r.Validate(); err != nil {
+		return RenderedRelations{}, err
+	}
+	p := r.Plan
 	schemas, err := plan.Analyze(p)
 	if err != nil {
 		return RenderedRelations{}, fmt.Errorf("%w: %v", plugin.ErrAnalyticalInvalid, err)
 	}
-	b := &relationBuilder{p: p, expression: expression, result: result, schemas: schemas, names: map[plan.NodeID]string{}, nodes: map[plan.NodeID]plan.Node{}, ordering: map[plan.NodeID][]plan.SortKey{}, done: map[plan.NodeID]bool{}}
+	b := &relationBuilder{p: p, expression: expression, result: result, scan: scan, sources: map[plan.SourceID]plugin.SourceBinding{}, schemas: schemas, names: map[plan.NodeID]string{}, nodes: map[plan.NodeID]plan.Node{}, ordering: map[plan.NodeID][]plan.SortKey{}, done: map[plan.NodeID]bool{}}
+	for _, source := range r.Sources {
+		b.sources[source.Source] = source
+	}
+	if scan != nil {
+		for _, fields := range schemas {
+			if err := scan.ValidateSchema(fields); err != nil {
+				return RenderedRelations{}, err
+			}
+		}
+	}
 	ids := make([]plan.NodeID, 0, len(p.Nodes))
 	for _, n := range p.Nodes {
 		ids = append(ids, n.ID)
@@ -174,6 +190,43 @@ func (b *relationBuilder) visit(id plan.NodeID) error {
 		}
 	}
 	switch n.Op {
+	case "scan":
+		if b.scan == nil {
+			return plugin.ErrAnalyticalUnsupported
+		}
+		source := b.sources[n.Scan.Source]
+		table, err := b.scan.Table(source)
+		if err != nil {
+			return err
+		}
+		alias := b.names[id] + "_source"
+		from := table + " AS " + b.q(alias)
+		bindings := map[string]plugin.ColumnBinding{}
+		for _, column := range source.Columns {
+			bindings[column.Column] = column
+		}
+		var columns []string
+		for _, field := range n.Scan.Fields {
+			x, err := b.scan.Column(bindings[field.Name], alias)
+			if err != nil {
+				return err
+			}
+			if x.Type != field.Type {
+				return plugin.ErrAnalyticalInvalid
+			}
+			if err := validateExpressions(x); err != nil {
+				return err
+			}
+			if err := track(x); err != nil {
+				return err
+			}
+			columns = append(columns, x.SQL+" AS "+b.q(field.Name))
+			if x.Invalid != "" {
+				invalid = append(invalid, "("+x.Invalid+")")
+			}
+		}
+		query = "SELECT " + strings.Join(columns, ", ") + " FROM " + from
+		checkInput(from)
 	case "constant_rows":
 		rows := n.ConstantRows.Rows
 		if len(rows) == 0 {

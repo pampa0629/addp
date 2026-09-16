@@ -18,6 +18,7 @@ import (
 type RelationalFixtureCompiler struct {
 	Expression sqlcompile.ExpressionDialect
 	Result     sqlcompile.ResultDialect
+	Scan       sqlcompile.ScanDialect
 }
 
 func (c RelationalFixtureCompiler) Identity() plugin.CompilerIdentity {
@@ -27,7 +28,7 @@ func (c RelationalFixtureCompiler) Check(r plugin.CompileRequest) (plugin.Suppor
 	if err := r.Validate(); err != nil {
 		return plugin.SupportReport{}, err
 	}
-	_, err := sqlcompile.CompileRelations(r.Plan, c.Expression, c.Result)
+	_, err := sqlcompile.CompileRelations(r, c.Expression, c.Result, c.Scan)
 	if errors.Is(err, plugin.ErrAnalyticalUnsupported) {
 		return plugin.SupportReport{Diagnostics: []plugin.SupportDiagnostic{{Code: "unsupported_relation_plan"}}}, nil
 	}
@@ -37,7 +38,7 @@ func (c RelationalFixtureCompiler) Compile(r plugin.CompileRequest) (plugin.Comp
 	if err := r.Validate(); err != nil {
 		return plugin.CompiledQuery{}, err
 	}
-	rendered, err := sqlcompile.CompileRelations(r.Plan, c.Expression, c.Result)
+	rendered, err := sqlcompile.CompileRelations(r, c.Expression, c.Result, c.Scan)
 	if err != nil {
 		return plugin.CompiledQuery{}, err
 	}

@@ -707,6 +707,10 @@ type AnalyticalCompiler interface {
 
 具体绑定复用 `ColumnBinding{Column, Field datatype.FieldInfo}`：Column 是计划列身份，Field.Path 是来源内部完整列路径且最后一段等于 Field.Name；同时保留 Type、NativeType、Nullable 和必要的长度／精度事实，禁止混入描述、默认表达式和业务身份。Common 检查来源／列完整对应、同引擎、显式 root 和非空路径；目录是否为合法 leaf、原生类型是否兑现语义，仍由当前引擎 Check/Compile 按目录模型验证，不能把通用结构检查当作原生认证。
 
+物理扫描通过编译器内部的 ScanDialect 接入关系 DAG：Common 校验完整 CompileRequest 并按逻辑字段顺序匹配 SourceBinding，原生实现负责引用完整目录路径、验证原生字段类型并产生安全列值与违例条件。SQL 引用仅来自已校验绑定与编译器生成的别名，不接受 owner SQL。所有节点的逻辑列名也须符合当前引擎的标识符长度与名称唯一性限制，不能依赖数据库截断或忽略大小写来消歧。
+
+首批原生类型采用明确子集：PG 的 smallint/integer、bigint、boolean、text/character varying、受限 numeric 和 date；MySQL 的有符号整数、tinyint(1) 布尔、varchar/各 text、受限 decimal 和 date。Decimal 的声明整数位不得超过 20、小数位不得超过 18，绑定精度必须与原生声明一致；无精度 numeric、浮点、定长 CHAR、unsigned、binary、timestamp、数组、JSON 和自定义类型暂不支持。tinyint(1) 仅允许 0/1/NULL，不将任意非零数当 true；日期范围与公历合法性、PG numeric NaN 等数据违例通过扫描节点的 EvaluationCheck 拦截，不能被后续过滤或聚合隐藏。MySQL 文本显式转换为 utf8mb4；PG 文本实现以 UTF-8 数据库为认证前提，正式实例能力注册时必须验证该前提。类型检查只证明当前提供的绑定事实符合编译条件，不替代执行前来源漂移核验、权限与数据保护；生产能力仍须独立完成实例认证后才可启用。
+
 `AnalyticalInstance` 只向编译请求传递 EngineID 和已经收敛的 `AnalyticalCapability`，不传递连接信息或实例配置自由字典。定义该类型不等于已在 System 的能力响应中启用它；生产能力投影须与编译实现及真实数据库认证一起接入。
 
 `CompilerIdentity` 由实现 ID 和编译实现版本组成，不是运行时 Provider 指针；现有唯一插件注册表通过当前引擎返回接口。Check 不执行数据面查询，区分 `supported=false` 的已知能力限制与校验／内部错误，返回稳定 code、node_id 和可本地化参数，禁止将原生 SQL 或凭据放入诊断。Compile 必须自行再次校验请求，不依赖调用方已调用 Check。
@@ -721,7 +725,7 @@ type AnalyticalCompiler interface {
 - `CompiledQuery.QueryRequest` 只接收声明过的类型化参数和超时，生成绑定编译产物的不可变内部上下文。SQL Prepare 校验模板、语言、目标引擎和编译器身份没有改变，禁止外层 Limit/Offset、Describe、Spatial 和调用方位置参数；值在既有绑定处转换一次。分析查询暂不开放流式消费，避免检查未结束前输出业务行。
 - 既有 SQL PreparedQuery 在 Execute 返回前消费全部检查记录并按逻辑输出类型规范化结果；保留原生 Provider 的完整读取集合。内部控制列上的输出血缘转为无业务输出路径的 derived 依赖，不能移除其源或伪造直接映射。整数保持整数，decimal 保持精确十进制文本，DATE 保持日历日期，拒绝浮点中转、超精度值和违反非空契约的结果。
 
-`common/query/sqlcompile/result.go` 已提供结果根与断言关系的统一组合组件，使用 `ResultDialect` 注入类型化 NULL 和排序语法；`relations.go` 已实现九类关系节点的 DAG 渲染与求值范围检查，`scan` 与 `date_buckets` 仍明确返回不支持；原生来源认证和完整编译器注册尚未完成。该组件及普通单元测试由 Common `./...` 自动发现，PostgreSQL 真实结果验证纳入既有 `make test-common-postgres` 与 T2 作业。
+`common/query/sqlcompile/result.go` 已提供结果根与断言关系的统一组合组件，使用 `ResultDialect` 注入类型化 NULL 和排序语法；`relations.go` 已实现关系 DAG 渲染与求值范围检查，`scan` 通过原生 ScanDialect 接入完整绑定，`date_buckets` 仍明确返回不支持；原生来源认证和完整编译器注册尚未完成。该组件及普通单元测试由 Common `./...` 自动发现，PostgreSQL 真实结果验证纳入既有 `make test-common-postgres` 与 T2 作业。
 
 关系 DAG 编译按依赖顺序生成确定命名的关系，不依赖输入节点数组顺序；共享输入只定义一次。投影与过滤的求值检查覆盖该节点的输入关系，聚合检查覆盖分组前输入，连接条件检查覆盖左右输入的候选配对；后续过滤或限行不能移除这些检查。分支内部的 CASE/COALESCE 仍决定表达式的实际求值范围。检查按实际求值节点定位，不假定某个固定节点名。
 

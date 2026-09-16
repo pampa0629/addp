@@ -1430,3 +1430,18 @@ CalendarDialect 增加受范围保护的 ShiftMonths 原语，PG 和 MySQL 分�
 实施前确定的门禁为 make test-go、make test-common-postgres、make test-common-mysql-data-protection 和 make test-platform。AnalyticalRelations 已同步登记到两个 scripts/test 数据库门禁，根 Make 和 release-and-t2-gates 的 Common 作业继续调用原标准入口；没有新增服务依赖或 API／Swagger 变更。物理来源绑定与类型认证、月份桶、完整引擎编译器及能力注册、Model/Service 单路径切换仍未交付。
 
 最终验证：make test-go 全仓库通过，make test-common-postgres、make test-common-mysql-data-protection 与 make test-platform 均通过。PG/MySQL 的 18 个关系组合场景通过；既有整数、条件、算术、通用表达式及 91 个日期场景全部通过通用 DAG 编译执行，节点重排保持 SQL／指纹不变。gofmt 与 git diff --check 通过。MySQL 门禁使用已运行的标准测试实例及自动清理的独立测试 database，本轮未启动、停止或接管该实例及开发服务。下一步优先实现物理表扫描与原生来源／字段类型认证，使通用计划能够读取真实业务表；生产指标路径尚未切换。
+
+
+### 13.39 原生表扫描与字段绑定校验（2026-09-16）
+
+CompileRelations 改为接收完整 CompileRequest，在渲染前统一验证来源数量、逻辑字段映射、同引擎绑定、目录结构和类型事实；删除只接收裸 Plan 的旧签名。新增编译器内部 ScanDialect，分别负责完整目录 leaf 的原生引用、逻辑输出名称限制及物理字段的类型校验／安全值生成。PG/MySQL 的原生实现分别放在各自 analytical_scan.go，Common 不新增引擎名称判断。所有节点的逻辑字段名都经过当前引擎的长度／唯一性检查，避免 PG 截断长名称或 MySQL 忽略大小写导致歧义。绑定字段列表重排不改变输出列顺序、SQL 或编译指纹。
+
+首批类型支持明确受限：PG 有符号整数、boolean、text/varchar、受限 numeric、date；MySQL 有符号整数、tinyint(1) 布尔、varchar/text、受限 decimal、date。声明整数位最多 20、小数位最多 18，decimal 绑定精度必须匹配原生声明。未约束 numeric、unsigned、float、定长 CHAR、binary、timestamp、JSON、数组、自定义类型和嵌套字段路径明确拒绝。MySQL 文本转为 utf8mb4 后参与精确比较，PG 文本以 UTF-8 数据库为实例认证前提。此阶段只校验传入绑定的事实，不等同于已经完成运行时来源漂移核验或实例能力认证；生产能力仍未注册。
+
+扫描节点为 decimal/date/布尔数据域违例生成独立 EvaluationCheck。PG date 在提取年月日前先按中立日期范围保护，避免 infinity 转整数触发原生错误；numeric NaN 不进入正常结果。MySQL tinyint(1) 只接受 0/1/NULL，zero date 按既有严格公历契约拒绝。错误在扫描节点定位，后续过滤为空不能隐藏。原生读取、血缘、权限与数据保护继续走唯一 PreparedQuery 通路，SourceBinding 不充当授权读取集合。
+
+新增真实表测试：从原生字段目录读取 NativeType/precision/scale/nullable，再建立物理列到不同逻辑名称的绑定；使用带原生引号的表名、大于 float64 精确范围的 bigint、20 位整数加 18 位小数、范围边界日期、NULL、布尔、大小写与尾空格文本。验证正常输出、空结果、精确文本过滤、字段绑定重排稳定性，以及完整物理 ReadSet 和输出血缘来源。PG 额外验证 NaN、正无穷日期、BC 日期和年份超限；MySQL 验证非布尔 tinyint 与 zero date。单元类型矩阵和目录契约覆盖不支持类型、错误精度、目录 root/branch/kind、额外层级、系统命名空间、嵌套字段、标识符引用和名称冲突。
+
+实施前确定门禁为 make test-go、make test-common-postgres、make test-common-mysql-data-protection、make test-platform；新增 AnalyticalScan 已登记两个 scripts/test 数据库门禁，根 Make 与 release-and-t2-gates 原 Common 作业自动覆盖。PG 测试仅使用 addp_test 中标准测试 Schema 和自身创建／清理的表；MySQL 使用既有临时容器配置与自动清理测试 database。无新 API、Swagger、前端或开发服务启动变更。月份桶、text 表达式、正式原生编译器与实例能力认证、上层单路径切换仍待完成。
+
+最终验证：make test-go 全仓库通过，make test-common-postgres、make test-common-mysql-data-protection 与 make test-platform 均通过；PG/MySQL 真实表扫描、字段映射、读取集合、血缘和非法值检查全部通过，原有关系／标量矩阵保持通过。gofmt 与 git diff --check 通过。初轮 PG 的带引号表名暴露了旧测试建表 helper 未转义的问题，本测试改用原生引用器显式创建／清理自己的表，没有修改业务代码绕过标识符校验。本轮标准临时 MySQL 已清理，未启动、重启或接管开发服务。下一步优先补齐月份桶，支持按月指标的时间范围展开；实例认证、来源漂移检查与生产路径切换仍未交付。

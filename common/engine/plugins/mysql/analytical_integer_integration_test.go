@@ -58,6 +58,6 @@ func TestIntegrationMySQLLosslessAnalyticalInteger(t *testing.T) {
 		}
 		return &value.Int64, invalid, nil
 	})
-	conformance.PreparedLosslessInteger(t, &integerPreparedProvider{MySQLPlugin: mysql, compiler: conformance.RelationalFixtureCompiler{Expression: analyticalExpressionDialect{}, Result: analyticalResultDialect{}}}, connInfo)
-	conformance.PreparedConditionals(t, &integerPreparedProvider{MySQLPlugin: mysql, compiler: conformance.RelationalFixtureCompiler{Expression: analyticalExpressionDialect{}, Result: analyticalResultDialect{}}}, connInfo)
+	conformance.PreparedLosslessInteger(t, &integerPreparedProvider{MySQLPlugin: mysql, compiler: conformance.RelationalFixtureCompiler{Expression: analyticalExpressionDialect{}, Result: analyticalResultDialect{}, Scan: analyticalScanDialect{}}}, connInfo)
+	conformance.PreparedConditionals(t, &integerPreparedProvider{MySQLPlugin: mysql, compiler: conformance.RelationalFixtureCompiler{Expression: analyticalExpressionDialect{}, Result: analyticalResultDialect{}, Scan: analyticalScanDialect{}}}, connInfo)
 }

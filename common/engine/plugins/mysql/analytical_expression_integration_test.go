@@ -10,7 +10,7 @@ func TestIntegrationMySQLAnalyticalExpressions(t *testing.T) {
 	defer db.Close()
 	defer dropMySQLIntegrationDatabase(db, database)
 	info["database"] = database
-	conformance.PreparedExpressions(t, &integerPreparedProvider{MySQLPlugin: provider, compiler: conformance.RelationalFixtureCompiler{Expression: analyticalExpressionDialect{}, Result: analyticalResultDialect{}}}, info)
+	conformance.PreparedExpressions(t, &integerPreparedProvider{MySQLPlugin: provider, compiler: conformance.RelationalFixtureCompiler{Expression: analyticalExpressionDialect{}, Result: analyticalResultDialect{}, Scan: analyticalScanDialect{}}}, info)
 }
 
 func TestIntegrationMySQLAnalyticalCalendar(t *testing.T) {
@@ -29,7 +29,7 @@ func TestIntegrationMySQLAnalyticalCalendar(t *testing.T) {
 			t.Fatalf("warnings=%d err=%v", warnings, err)
 		}
 	})
-	conformance.PreparedCalendar(t, &integerPreparedProvider{MySQLPlugin: provider, compiler: conformance.RelationalFixtureCompiler{Expression: analyticalExpressionDialect{}, Result: analyticalResultDialect{}}}, info)
+	conformance.PreparedCalendar(t, &integerPreparedProvider{MySQLPlugin: provider, compiler: conformance.RelationalFixtureCompiler{Expression: analyticalExpressionDialect{}, Result: analyticalResultDialect{}, Scan: analyticalScanDialect{}}}, info)
 }
 
 func TestIntegrationMySQLAnalyticalRelations(t *testing.T) {
@@ -37,5 +37,5 @@ func TestIntegrationMySQLAnalyticalRelations(t *testing.T) {
 	defer db.Close()
 	defer dropMySQLIntegrationDatabase(db, database)
 	info["database"] = database
-	conformance.PreparedRelations(t, &integerPreparedProvider{MySQLPlugin: provider, compiler: conformance.RelationalFixtureCompiler{Expression: analyticalExpressionDialect{}, Result: analyticalResultDialect{}}}, info)
+	conformance.PreparedRelations(t, &integerPreparedProvider{MySQLPlugin: provider, compiler: conformance.RelationalFixtureCompiler{Expression: analyticalExpressionDialect{}, Result: analyticalResultDialect{}, Scan: analyticalScanDialect{}}}, info)
 }

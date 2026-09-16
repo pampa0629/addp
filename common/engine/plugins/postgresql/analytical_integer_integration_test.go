@@ -38,6 +38,6 @@ func TestIntegrationPostgresLosslessAnalyticalInteger(t *testing.T) {
 		}
 		return &value.Int64, invalid, err
 	})
-	conformance.PreparedLosslessInteger(t, &integerPreparedProvider{PostgreSQLPlugin: pg, compiler: conformance.RelationalFixtureCompiler{Expression: analyticalExpressionDialect{}, Result: analyticalResultDialect{}}}, conn)
-	conformance.PreparedConditionals(t, &integerPreparedProvider{PostgreSQLPlugin: pg, compiler: conformance.RelationalFixtureCompiler{Expression: analyticalExpressionDialect{}, Result: analyticalResultDialect{}}}, conn)
+	conformance.PreparedLosslessInteger(t, &integerPreparedProvider{PostgreSQLPlugin: pg, compiler: conformance.RelationalFixtureCompiler{Expression: analyticalExpressionDialect{}, Result: analyticalResultDialect{}, Scan: analyticalScanDialect{}}}, conn)
+	conformance.PreparedConditionals(t, &integerPreparedProvider{PostgreSQLPlugin: pg, compiler: conformance.RelationalFixtureCompiler{Expression: analyticalExpressionDialect{}, Result: analyticalResultDialect{}, Scan: analyticalScanDialect{}}}, conn)
 }

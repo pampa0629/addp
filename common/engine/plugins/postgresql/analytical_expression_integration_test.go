@@ -8,7 +8,7 @@ import (
 func TestIntegrationPostgresAnalyticalExpressions(t *testing.T) {
 	db, provider, info := openPostgresPrepareIntegration(t, false)
 	defer db.Close()
-	conformance.PreparedExpressions(t, &integerPreparedProvider{PostgreSQLPlugin: provider, compiler: conformance.RelationalFixtureCompiler{Expression: analyticalExpressionDialect{}, Result: analyticalResultDialect{}}}, info)
+	conformance.PreparedExpressions(t, &integerPreparedProvider{PostgreSQLPlugin: provider, compiler: conformance.RelationalFixtureCompiler{Expression: analyticalExpressionDialect{}, Result: analyticalResultDialect{}, Scan: analyticalScanDialect{}}}, info)
 }
 
 func TestIntegrationPostgresAnalyticalCalendar(t *testing.T) {
@@ -20,11 +20,11 @@ func TestIntegrationPostgresAnalyticalCalendar(t *testing.T) {
 	}
 	defer conn.Close()
 	conformance.NativeCalendar(t, conn, analyticalExpressionDialect{}, nil)
-	conformance.PreparedCalendar(t, &integerPreparedProvider{PostgreSQLPlugin: provider, compiler: conformance.RelationalFixtureCompiler{Expression: analyticalExpressionDialect{}, Result: analyticalResultDialect{}}}, info)
+	conformance.PreparedCalendar(t, &integerPreparedProvider{PostgreSQLPlugin: provider, compiler: conformance.RelationalFixtureCompiler{Expression: analyticalExpressionDialect{}, Result: analyticalResultDialect{}, Scan: analyticalScanDialect{}}}, info)
 }
 
 func TestIntegrationPostgresAnalyticalRelations(t *testing.T) {
 	db, provider, info := openPostgresPrepareIntegration(t, false)
 	defer db.Close()
-	conformance.PreparedRelations(t, &integerPreparedProvider{PostgreSQLPlugin: provider, compiler: conformance.RelationalFixtureCompiler{Expression: analyticalExpressionDialect{}, Result: analyticalResultDialect{}}}, info)
+	conformance.PreparedRelations(t, &integerPreparedProvider{PostgreSQLPlugin: provider, compiler: conformance.RelationalFixtureCompiler{Expression: analyticalExpressionDialect{}, Result: analyticalResultDialect{}, Scan: analyticalScanDialect{}}}, info)
 }

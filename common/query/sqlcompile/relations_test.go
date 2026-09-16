@@ -12,37 +12,37 @@ import (
 
 func TestRelationsRejectUnsupportedAndUnorderedLimit(t *testing.T) {
 	p := resultPlan()
-	if _, err := CompileRelations(p, nil, fixtureResultDialect{}); !errors.Is(err, plugin.ErrAnalyticalInvalid) {
+	if _, err := CompileRelations(relationTestRequest(p), nil, fixtureResultDialect{}, nil); !errors.Is(err, plugin.ErrAnalyticalInvalid) {
 		t.Fatal(err)
 	}
 	p.Assertions = nil
 	p.Nodes = p.Nodes[:1]
 	p.Nodes = append(p.Nodes, plan.Node{ID: "limited", Op: "limit", Limit: &plan.Limit{Input: "root", Count: 1}})
 	p.Root = "limited"
-	if _, err := CompileRelations(p, expressionTestDialect{}, fixtureResultDialect{}); !errors.Is(err, plugin.ErrAnalyticalUnsupported) {
+	if _, err := CompileRelations(relationTestRequest(p), expressionTestDialect{}, fixtureResultDialect{}, nil); !errors.Is(err, plugin.ErrAnalyticalUnsupported) {
 		t.Fatal(err)
 	}
 	p.Nodes = p.Nodes[:1]
 	p.Root = "root"
 	p.Nodes[0] = plan.Node{ID: "root", Op: "scan", Scan: &plan.Scan{Source: "source", Fields: p.Output.Fields}}
-	if _, err := CompileRelations(p, expressionTestDialect{}, fixtureResultDialect{}); !errors.Is(err, plugin.ErrAnalyticalUnsupported) {
+	if _, err := CompileRelations(relationTestRequest(p), expressionTestDialect{}, fixtureResultDialect{}, nil); !errors.Is(err, plugin.ErrAnalyticalInvalid) {
 		t.Fatal(err)
 	}
 	p.Nodes[0] = plan.Node{ID: "root", Op: "date_buckets", DateBuckets: &plan.DateBuckets{Name: "date", Start: plan.Expr{Op: "literal", Literal: &plan.Literal{Type: datatype.FieldTypeDate, Text: "2026-01-01"}}, End: plan.Expr{Op: "literal", Literal: &plan.Literal{Type: datatype.FieldTypeDate, Text: "2026-02-01"}}, MaxMonths: 2}}
 	p.Output = plan.OutputContract{Fields: []datatype.FieldInfo{{Name: "date", Type: datatype.FieldTypeDate}}, StableKey: []string{"date"}}
-	if _, err := CompileRelations(p, expressionTestDialect{}, fixtureResultDialect{}); !errors.Is(err, plugin.ErrAnalyticalUnsupported) {
+	if _, err := CompileRelations(relationTestRequest(p), expressionTestDialect{}, fixtureResultDialect{}, nil); !errors.Is(err, plugin.ErrAnalyticalUnsupported) {
 		t.Fatal(err)
 	}
 }
 
 func TestRelationsDeterministicSharedDAGAndInputOwnership(t *testing.T) {
 	p := resultPlan()
-	first, err := CompileRelations(p, expressionTestDialect{}, fixtureResultDialect{})
+	first, err := CompileRelations(relationTestRequest(p), expressionTestDialect{}, fixtureResultDialect{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	p.Nodes[0], p.Nodes[1] = p.Nodes[1], p.Nodes[0]
-	second, err := CompileRelations(p, expressionTestDialect{}, fixtureResultDialect{})
+	second, err := CompileRelations(relationTestRequest(p), expressionTestDialect{}, fixtureResultDialect{}, nil)
 	if err != nil || first.SQL != second.SQL {
 		t.Fatalf("non-deterministic SQL: %v", err)
 	}
@@ -51,7 +51,7 @@ func TestRelationsDeterministicSharedDAGAndInputOwnership(t *testing.T) {
 	}
 	p.Assertions = []plan.Assertion{{Violation: "root", Code: "check_root"}}
 	p.Nodes = p.Nodes[1:]
-	shared, err := CompileRelations(p, expressionTestDialect{}, fixtureResultDialect{})
+	shared, err := CompileRelations(relationTestRequest(p), expressionTestDialect{}, fixtureResultDialect{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +73,7 @@ func TestRelationsBoundCumulativeExpressionExpansion(t *testing.T) {
 		{ID: "seed", Op: "constant_rows", ConstantRows: &plan.ConstantRows{Fields: []datatype.FieldInfo{f}}},
 		{ID: "out", Op: "project", Project: &plan.Project{Input: "seed", Columns: []plan.Projection{{Name: "key", Expr: literal}, {Name: "b", Expr: literal}, {Name: "c", Expr: literal}}}},
 	}}
-	if _, err := CompileRelations(p, largeLiteralDialect{}, fixtureResultDialect{}); !errors.Is(err, plugin.ErrAnalyticalInvalid) {
+	if _, err := CompileRelations(relationTestRequest(p), largeLiteralDialect{}, fixtureResultDialect{}, nil); !errors.Is(err, plugin.ErrAnalyticalInvalid) {
 		t.Fatal(err)
 	}
 }
@@ -85,7 +85,11 @@ func TestRelationsRejectProjectionThatDropsOrdering(t *testing.T) {
 	key := p.Output.Fields[0].Name
 	p.Nodes = append(p.Nodes, plan.Node{ID: "sorted", Op: "sort", Sort: &plan.Sort{Input: "root", Keys: []plan.SortKey{{Name: key, Direction: "asc", Nulls: "last"}}}}, plan.Node{ID: "projected", Op: "project", Project: &plan.Project{Input: "sorted", Columns: []plan.Projection{{Name: key, Expr: plan.Expr{Op: "literal", Literal: &plan.Literal{Type: datatype.FieldTypeBigInt, Text: "1"}}}}}})
 	p.Root = "projected"
-	if _, err := CompileRelations(p, expressionTestDialect{}, fixtureResultDialect{}); !errors.Is(err, plugin.ErrAnalyticalUnsupported) {
+	if _, err := CompileRelations(relationTestRequest(p), expressionTestDialect{}, fixtureResultDialect{}, nil); !errors.Is(err, plugin.ErrAnalyticalUnsupported) {
 		t.Fatal(err)
 	}
+}
+
+func relationTestRequest(p plan.Plan) plugin.CompileRequest {
+	return plugin.CompileRequest{Plan: p, Instance: plugin.AnalyticalInstance{EngineID: 1, Capability: plugin.AnalyticalCapability{Supported: true, PlanVersions: []string{plan.SchemaVersion}, SemanticProfiles: []string{plan.SemanticProfile}}}}
 }
