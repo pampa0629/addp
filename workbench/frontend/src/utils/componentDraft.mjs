@@ -141,6 +141,7 @@ export function draftFromComponent(component, descriptor) {
     }),
     rendererType: component.renderer_type,
     chartType: config.chart_type || 'bar',
+    totalAsValue: config.total_as_value === true,
     dimension: config.dimension || '',
     measures: [...(config.measures || [])],
     valueItems: (config.items || []).map(valueItemDraft),
@@ -182,7 +183,7 @@ export function buildRendererConfig(draft) {
   const withPresentations = (config) => presentations.length > 0
     ? { ...config, field_presentations: presentations }
     : config
-  if (draft.rendererType === 'chart') return withPresentations({ chart_type: draft.chartType, dimension: draft.dimension, measures: [...draft.measures] })
+  if (draft.rendererType === 'chart') return withPresentations({ chart_type: draft.chartType, ...(draft.totalAsValue ? { total_as_value: true } : {}), dimension: draft.dimension, measures: [...draft.measures] })
   if (draft.rendererType === 'map') return withPresentations({
     geometry_field: draft.geometryField,
     label_field: draft.mapLabelField,

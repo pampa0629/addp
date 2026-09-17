@@ -11,6 +11,11 @@ import (
 
 const AuthorizationCoverageReportSchemaVersion = "addp.authorization_coverage_report/v1"
 
+// A permission owner may currently be a library whose public admission API is
+// hosted by another owner. This is an explicit registration, not a fallback
+// for missing Swagger. A future owner HTTP entrypoint must remove the binding.
+var permissionOwnerAPIHosts = map[string]string{"ontology": "system"}
+
 var validAuthorizationModes = map[string]struct{}{
 	"authenticated":   {},
 	"delegated_tool":  {},
@@ -147,7 +152,19 @@ func MarshalAuthorizationCoverageReport(report AuthorizationCoverageReport) ([]b
 }
 
 func inspectOwnerOpenAPI(root, owner string, permissions map[string]PermissionDescriptor) (OpenAPICoverageSource, map[string]struct{}, []AuthorizationCoverageIssue) {
-	relativePath := filepath.ToSlash(filepath.Join(owner, "backend", "docs", "swagger.json"))
+	apiOwner := owner
+	if host, hosted := permissionOwnerAPIHosts[owner]; hosted {
+		apiOwner = host
+		for _, entrypoint := range []string{"backend/cmd/server/main.go", "backend/docs/swagger.json"} {
+			if _, err := os.Stat(filepath.Join(root, owner, entrypoint)); err == nil || !os.IsNotExist(err) {
+				return OpenAPICoverageSource{OwnerModule: owner, Status: "invalid"}, nil, []AuthorizationCoverageIssue{{
+					Code: "owner_api_host_conflict", SourceType: "openapi", OwnerModule: owner, SourcePath: filepath.ToSlash(filepath.Join(owner, entrypoint)),
+					Detail: "permission owner with its own HTTP API must remove the hosted API registration",
+				}}
+			}
+		}
+	}
+	relativePath := filepath.ToSlash(filepath.Join(apiOwner, "backend", "docs", "swagger.json"))
 	if _, python := pythonPermissionOwners[owner]; python {
 		relativePath = filepath.ToSlash(filepath.Join(owner, "backend", "openapi.json"))
 	}

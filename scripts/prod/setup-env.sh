@@ -53,6 +53,7 @@ SERVICE_SECRET_KEYS=(
   MANAGER_SERVICE_CLIENT_SECRET
   META_SERVICE_CLIENT_SECRET
   MODEL_SERVICE_CLIENT_SECRET
+  ONTOLOGY_SERVICE_CLIENT_SECRET
   MODEL3D_WORKFLOW_SERVICE_CLIENT_SECRET
   MONITOR_SERVICE_CLIENT_SECRET
   ORCHESTRATOR_SERVICE_CLIENT_SECRET
@@ -77,7 +78,7 @@ require_secret() {
   value="$(env_value "$key")"
   case "$value" in
     ""|*change-in-production*|*replace-with-*|*WILL_BE_GENERATED*|dev-internal-key*|\
-    addp_password|addp_redis|minioadmin|your-master-key-change-in-production|\
+    addp_password|addp_redis|addp_falkordb|minioadmin|your-master-key-change-in-production|\
     addp_kafka_admin|addp_kafka_connect|addp_kafka_transfer)
       echo -e "${RED}错误: ${key} 未配置有效的生产 Secret${NC}"
       return 1
@@ -104,11 +105,16 @@ validate_production_env() {
 
   local key value previous
   for key in \
-    POSTGRES_PASSWORD REDIS_PASSWORD MINIO_ROOT_PASSWORD MEILISEARCH_MASTER_KEY \
+    POSTGRES_PASSWORD REDIS_PASSWORD INFRA_FALKORDB_PASSWORD MINIO_ROOT_PASSWORD MEILISEARCH_MASTER_KEY \
     INFRA_KAFKA_ADMIN_PASSWORD INFRA_KAFKA_CONNECT_PASSWORD \
     INFRA_KAFKA_TRANSFER_PASSWORD; do
     require_secret "$key" || return 1
   done
+
+  if [ "$(env_value INFRA_FALKORDB_PASSWORD)" = "$(env_value REDIS_PASSWORD)" ]; then
+    echo -e "${RED}错误: FalkorDB 与 Redis 密码不得复用${NC}"
+    return 1
+  fi
 
   for key in ENCRYPTION_KEY OAUTH_USER_CODE_PEPPER IAM_MFA_ENCRYPTION_KEY; do
     require_secret "$key" || return 1
@@ -141,7 +147,7 @@ replace_env() {
 }
 
 if [ -f "$ENV_FILE" ]; then
-  validate_production_env
+  validate_production_env || exit 1
   chmod 600 "$ENV_FILE"
   echo -e "${GREEN}✓ 已有 .env 通过生产配置校验，未修改任何 Secret${NC}"
   exit 0
@@ -170,6 +176,7 @@ chmod 600 "$ENV_FILE"
 replace_env ENV production
 replace_env POSTGRES_PASSWORD "$(gen_password)"
 replace_env REDIS_PASSWORD "$(gen_password)"
+replace_env INFRA_FALKORDB_PASSWORD "$(gen_password)"
 replace_env MINIO_ROOT_PASSWORD "$(gen_password)"
 replace_env MEILISEARCH_MASTER_KEY "$(gen_secret)"
 replace_env ENCRYPTION_KEY "$(gen_b64_key)"
@@ -183,7 +190,7 @@ for key in "${SERVICE_SECRET_KEYS[@]}"; do
   replace_env "$key" "$(gen_secret)"
 done
 
-validate_production_env
+validate_production_env || exit 1
 
 echo -e "${GREEN}✓ .env 已生成，密钥已自动随机化${NC}"
 echo -e "${YELLOW}所有 Secret 仅保存在 .env，未输出到终端。${NC}"

@@ -1,0 +1,41 @@
+# Shared database contract, included in deployment packages and Ontology T2.
+services:
+  falkordb:
+    image: falkordb/falkordb:v4.20.6@sha256:217bc520be076ce9e85b0ba426b2379ccbaebd17f2fe6e174288bd1b36d486bb
+    # Bypass the bundled Browser; only the database process is started.
+    entrypoint: ["redis-server"]
+    command:
+      - --loadmodule
+      - /var/lib/falkordb/bin/falkordb.so
+      - TIMEOUT_MAX
+      - "2000"
+      - TIMEOUT_DEFAULT
+      - "2000"
+      - THREAD_COUNT
+      - "2"
+      - OMP_THREAD_COUNT
+      - "1"
+      - QUERY_MEM_CAPACITY
+      - "67108864"
+      - MAX_QUEUED_QUERIES
+      - "16"
+      - --requirepass
+      - ${INFRA_FALKORDB_PASSWORD:?INFRA_FALKORDB_PASSWORD is required}
+      - --dir
+      - /data
+      - --save
+      - "60 1"
+      - --appendonly
+      - "no"
+      - --maxmemory-policy
+      - noeviction
+    environment:
+      REDISCLI_AUTH: ${INFRA_FALKORDB_PASSWORD:?INFRA_FALKORDB_PASSWORD is required}
+    mem_limit: 512m
+    cpus: 2
+    healthcheck:
+      test: ["CMD-SHELL", "test \"$$(redis-cli --raw ping)\" = PONG && redis-cli --raw GRAPH.CONFIG GET TIMEOUT_MAX | grep -qx 2000"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s

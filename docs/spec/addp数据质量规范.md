@@ -29,7 +29,13 @@ QualityRule（质量规则）是可复用的独立主资源；QualityPlan（质�
 
 执行时将检查项及固定修订解析为唯一内部规则文档 addp.quality.plan-rules/v1，保存完整 type、name、source、severity、params 及 rule_id/revision_no 证据。该文档不是方案写入 API。rule_key 是检查项的小写 UUID，编辑绑定或升级修订保持身份，新增检查项生成新身份。severity 为 error/warning/info；失败的 error 规则阻断方案通过，warning/info 保留失败明细和问题但不阻断。规则必须显式列入方案，不在执行时自动吸收其他配置。
 
-规则类型包括 not_null、allowed_values、format、length、value_range、unique_key、foreign_key、predicate_implication、row_count。参数严格按类型解析，拒绝未知字段、非法范围和未绑定的表别名。unique_key 用 columns 数组表达单列或组合键，不把组合键展开成多个单列唯一检查。外键使用等长 columns/reference_columns 数组和 reference_table 别名。
+规则类型包括 not_null、allowed_values、format、length、value_range、unique_key、foreign_key、predicate_implication、row_count、relational_assertion。参数严格按类型解析，拒绝未知字段、非法范围和未绑定的表别名。unique_key 用 columns 数组表达单列或组合键，不把组合键展开成多个单列唯一检查。外键使用等长 columns/reference_columns 数组和 reference_table 别名。
+
+`relational_assertion`（跨表断言）逐行检查主表与参照集合之间的完整性、一致性和计数对账。规则参数仅保存 `assertion` 表达式，字段使用逻辑符号而非物理列名；检查项通过 `bindings.fields` 映射主表字段，通过 `bindings.relations[角色].{table,fields}` 映射参照表别名及字段。同一参照表可承担多个角色；全部参照资源进入执行目标快照、授权及问题作用域。绑定必须与表达式所需符号完全匹配，拒绝遗漏或多余字段。
+
+表达式仅支持 `field`、文本／布尔／空值 `value`、十进制常量 `number`、`today`、`and/or/not`、`eq/ne/lt/lte/gt/gte`、`is_null/not_null`、`exists/count/count_distinct`。子表达式用 `args`；集合运算指定 `relation` 和可选 `where`，`count_distinct` 另指定逻辑 `field`。字段默认指主表，显式 `relation` 只能引用当前或外层集合角色，不允许未声明的自由引用或角色遮蔽。最多 128 个节点、12 层、8 个参照角色；不接受 SQL、函数名、类型转换或任意运算符。相等为 NULL 安全比较；其他比较的未知结果不算通过；计数忽略 NULL 的去重键，空集合计零。`today` 取执行事务的数据库日期。`number.value` 使用十进制字符串（最多 30 位整数、18 位小数，不使用指数），例如 `{"op":"number","value":"2"}`，避免浏览器及执行快照浮点转换改变约束；`value` 不接受 JSON 数字。根表达式必须为布尔断言，按主表原始记录计数，参照集合重复行不能放大分母。物理字段类型不相容属于编译/执行异常，不产出质量合格结论。
+
+例如规则参数 `{"assertion":{"op":"eq","args":[{"op":"field","field":"actual"},{"op":"count_distinct","relation":"detail","field":"item","where":{"op":"eq","args":[{"op":"field","field":"key"},{"op":"field","relation":"detail","field":"key"}]}}]}}` 表达“当前记录的 actual 等于同 key 明细中 item 去重数”。Quality 前端提供结构化表达式编辑及符号绑定，不增加自由 SQL 路线。PG 适配器使用关联子查询、共享标识符引用与绑定参数；沿用方案只读事务及超时，不自行创建被检查表索引。
 
 非空独立表达。值范围、格式、长度、枚举和唯一性检查跳过 NULL；外键按 MATCH SIMPLE 跳过含 NULL 的引用键；需要强制完整的键应同时配置 not_null。空表上的逐行规则不发现失败行，不代表数据已经到达；业务要求有数据时显式配置 row_count。
 
@@ -79,6 +85,8 @@ quality_score 表示本次启用规则通过率（通过规则数 / 已检查规
 
 当前问题按 tenant_id + plan_id + target_key + rule_key 唯一。target_key 表示本次完整目标集合（包括外键参照表），地区间不可相互解决问题。失败创建或重开，之后同一作用域通过自动解决；停用或删除规则不代表修复。新增迁移只从最后观测执行中可解析的目标快照回填历史问题作用域；没有证据时保留空身份并显示未记录，不从当前方案伪造历史，不进入新的自动对账。方案删除清理其当前问题，已完成 execution 保持不变。人工处理仍需说明。
 
+问题中的 `column_name` 是主表目标列的展示摘要，组合键和跨表断言可涉及多列，存储使用 TEXT，不受单列名称的 200 字符限制；完整列数组仍以执行结果为准，不截断证据。Quality migration 15 将此列扩展为 TEXT，启动 SchemaVersion 为 3；由 Backend 迁移成功后启动对应 Worker，不改写历史执行。
+
 ### 质量概览
 
 Quality 提供 `/overview` 聚合查询与同名页面：当前按方案和目标集合显示最近执行、最近完整质量结论与时间；无执行、运行中、执行异常和质量不通过分别表达。窗口趋势按 UTC 日聚合完整检查的通过规则数/实际检查规则数，不平均各方案百分比，不把异常计零分，不把多规则失败行数相加为坏数据数。业务域按当前方案筛选当前状态，历史趋势按执行归属快照筛选。问题按当前状态统计；历史无作用域执行明确计为未记录，不制造地区归属。概览权限要求 plan.read、issue.read、monitor.execution.read 全部具备。不计算无可靠分母的全平台覆盖率。
@@ -102,5 +110,7 @@ Quality 提供 `/overview` 聚合查询与同名页面：当前按方案和目�
 方案内嵌规则逐条迁为独立规则 R1 和检查项，不按名称或约束自动去重；保留原检查项 rule_key、目标、级别和 Standard 来源，原执行快照不改写。删除 plans.rules 持久字段和方案页内约束编辑路线，不保留双写。迁移前排空 Quality 活动执行。
 
 验证至少覆盖严格规则契约、租户隔离、并发版本、规则跨方案复用及同方案多目标、固定修订不漂移、显式升级、引用删除保护、来源冻结、手动与编排授权、真实 PG 的全部规则与空值/空表/组合键口径、过期租约写入拒绝、超时、质量失败阻断、问题闭环、旧任务迁移、前端创建编辑执行、Swagger、权限清单、Console/Monitor 导航及 TaskProvider 唯一入口。
+
+跨表断言复用现有标准入口：`make test-quality-backend` 覆盖表达式边界、作用域、绑定精确匹配、标识符引用及数值精度；`make test-quality-postgres` 在 `addp_test` 中覆盖存在性、嵌套参照、重复行、NULL、空表和聚合对账，清理自建测试 Schema；`make test-quality-frontend` 覆盖结构化编辑、延迟目标绑定、修订升级及双语词条。测试文件自动纳入现有 Quality T1、`release-and-t2-gates.yml` 的 Quality PG 任务和 `quality-frontend-smoke.yml`，无新增服务、数据库或独立执行入口。
 
 标准入口：make test-module MODULE=quality、make test-quality-postgres、make test-quality-frontend；受影响的共享、权限、编排和前端消费者同时纳入 make test-changed。本地 PG 只使用 addp_test，IAM 只使用 addp_iam_test。

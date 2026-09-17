@@ -523,6 +523,7 @@
           "resource_grant": "资源授权",
           "restore_request": "恢复申请",
           "review": "图谱审核",
+          "revision": "本体修订",
           "role": "角色",
           "run": "运行任务",
           "runtime": "运行时",
@@ -653,6 +654,7 @@
         "develop": "数据开发",
         "service": "数据服务",
         "monitor": "执行监控",
+        "ontology": "领域本体",
         "standard": "数据标准",
         "model": "数据建模",
         "quality": "数据质量",
@@ -1644,6 +1646,10 @@
       "monitor_runtime": {
         "name": "运行监控运行时",
         "description": "供 Monitor 读取元数据扫描任务并写入租户审计事件。"
+      },
+      "ontology_runtime": {
+        "name": "本体投影运行时",
+        "description": "供 Ontology 消费精确的内部任务执行授权，不授予业务引擎访问权限。"
       },
       "pointcloud_runtime": {
         "name": "点云派生运行时",

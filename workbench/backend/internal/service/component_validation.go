@@ -298,6 +298,24 @@ func validateRenderer(rendererType string, raw json.RawMessage, descriptor *mode
 		if err := validateFieldPresentations(config.FieldPresentations, append([]string{config.Dimension}, config.Measures...), fields, false, descriptor); err != nil {
 			return err
 		}
+		if config.TotalAsValue {
+			periodDimension := false
+			precisions := make(map[string]bool)
+			for _, presentation := range config.FieldPresentations {
+				if presentation.Field == config.Dimension && presentation.TemporalFormat == "period" && presentation.Period != nil {
+					periodDimension = true
+				}
+				precisions[presentation.Field] = presentation.Precision != nil
+			}
+			if !periodDimension || len(config.Measures) > 4 {
+				return fmt.Errorf("%w: total value requires a period dimension and 1-4 measures", ErrInvalidComponentConfiguration)
+			}
+			for _, measure := range config.Measures {
+				if !precisions[measure] {
+					return fmt.Errorf("%w: total value requires explicit measure precision", ErrInvalidComponentConfiguration)
+				}
+			}
+		}
 	case models.RendererTypeMap:
 		var config models.MapRendererConfig
 		if err := decodeStrict(raw, &config); err != nil || descriptor.OutputContract.Spatial == nil || config.GeometryField != descriptor.OutputContract.Spatial.PrimaryGeometryField {
@@ -347,6 +365,11 @@ func validateRenderer(rendererType string, raw json.RawMessage, descriptor *mode
 		}
 		if config.Style != nil && config.Style.Field != "" {
 			presentationFields = append(presentationFields, config.Style.Field)
+		}
+		for _, presentation := range config.FieldPresentations {
+			if presentation.TemporalFormat == "period" {
+				return fmt.Errorf("%w: period presentation requires table or chart", ErrInvalidComponentConfiguration)
+			}
 		}
 		if err := validateFieldPresentations(config.FieldPresentations, presentationFields, fields, false, descriptor); err != nil {
 			return err
@@ -500,7 +523,9 @@ func validPeriodPresentation(period *models.PeriodPresentation, descriptor *mode
 	values := map[string]bool{}
 	for _, option := range grain.Options {
 		value, ok := option.Value.(string)
-		if !ok { return false }
+		if !ok {
+			return false
+		}
 		values[value] = true
 	}
 	return values["total"] && values["month"]

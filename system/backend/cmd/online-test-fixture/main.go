@@ -45,6 +45,27 @@ var consumerPermissions = []string{
 	"transfer.task.read",
 }
 
+var metricPermissions = []string{
+	"meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read",
+	"standard.metric.create", "standard.metric.read", "standard.metric.update", "standard.metric.publish",
+	"model.dw_layer.create", "model.logical_model.create", "model.logical_model.read", "model.logical_model.update",
+	"model.metric_implementation.create", "model.metric_implementation.read", "model.metric_implementation.update",
+	"model.metric_implementation.publish", "model.metric_implementation.offline",
+	"service.definition.create", "service.definition.read", "service.definition.update", "service.definition.delete",
+	"service.data_read.execute", "system.execution_authorization.create",
+}
+
+func suitePermissions(suite string) ([]string, error) {
+	switch suite {
+	case "opengauss-consumer-flow", "kingbase-consumer-flow":
+		return consumerPermissions, nil
+	case "metric-service-revision-lifecycle":
+		return metricPermissions, nil
+	default:
+		return nil, errors.New("unsupported Online identity fixture suite")
+	}
+}
+
 func main() {
 	if err := run(os.Args[1:], os.Environ()); err != nil {
 		fmt.Fprintf(os.Stderr, "External Online identity fixture failed: %v\n", err)
@@ -55,12 +76,17 @@ func main() {
 func run(args []string, environment []string) error {
 	flags := flag.NewFlagSet("online-test-fixture", flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
+	suite := flags.String("suite", "", "registered Online suite")
 	output := flags.String("output", "", "absolute path for the generated shell environment")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
 	if flags.NArg() != 0 || strings.TrimSpace(*output) == "" {
-		return errors.New("usage: online-test-fixture --output <absolute-path>")
+		return errors.New("usage: online-test-fixture --suite <suite> --output <absolute-path>")
+	}
+	permissions, err := suitePermissions(*suite)
+	if err != nil {
+		return err
 	}
 	if err := validateExternalEnvironment(environment, *output); err != nil {
 		return err
@@ -159,9 +185,9 @@ func run(args []string, environment []string) error {
 		return fmt.Errorf("establish consumer membership: %w", err)
 	}
 	role, err := roleService.CreateRole(ctx, iam.CreateTenantRoleInput{
-		TenantID: tenant.ID, RoleKey: "online.relational_consumer",
-		Name: "Online relational consumer", Description: "Ephemeral external T4 minimum permissions",
-		ScopeTypes: []string{"tenant"}, PermissionKeys: consumerPermissions,
+		TenantID: tenant.ID, RoleKey: "online." + strings.ReplaceAll(*suite, "-", "_"),
+		Name: "Online suite consumer", Description: "Ephemeral external T4 minimum permissions",
+		ScopeTypes: []string{"tenant"}, PermissionKeys: permissions,
 		ActorPrincipalID: administrator.PrincipalID,
 		Audit:            audit("external-online-consumer-role"),
 	})

@@ -56,7 +56,7 @@ function component(id, rebound) {
   }
 }
 
-export async function installMetricApplicationBackend(context, { rebound = false, locale = 'zh-cn', deferDescriptors = false } = {}) {
+export async function installMetricApplicationBackend(context, { rebound = false, locale = 'zh-cn', deferDescriptors = false, configure = () => {} } = {}) {
   const components = [component(71, rebound), component(72, rebound)]
   let draft = {
     id: applicationID, name: '指标应用回归', description: 'Isolated browser contract fixture', version: 4,
@@ -72,9 +72,10 @@ export async function installMetricApplicationBackend(context, { rebound = false
       page: { title: '指标应用回归', display_mode: 'desktop', refresh_interval_seconds: 0, visible_sections: ['title', 'parameters', 'query_actions'], placements: components.map((c, i) => ({ component_id: c.id, x: i * 6, y: 0, width: 6, height: 6 })) },
     },
   }
+  const descriptors = { 71: descriptor(71, rebound), 72: descriptor(72, rebound) }
+  configure(draft, descriptors)
   let published = { id: draft.id, name: draft.name, description: draft.description, revision_number: 1, snapshot: copy(draft.snapshot) }
   const originalPublished = copy(published)
-  const descriptors = { 71: descriptor(71, rebound), 72: descriptor(72, rebound) }
   const requests = [], writes = [], unexpected = []
   const pending = new Map()
   await context.addInitScript(lang => localStorage.setItem('addp-lang', lang), locale)
@@ -90,6 +91,12 @@ export async function installMetricApplicationBackend(context, { rebound = false
       const id = Number(match[1])
       if (deferDescriptors) await new Promise(resolve => pending.set(id, resolve))
       return send(descriptors[id])
+    }
+    if (path === '/api/v1/workbench/data_applications' && method === 'POST') {
+      const body = request.postDataJSON()
+      writes.push({ action: 'create', body: copy(body) })
+      draft = { ...copy(body), id: applicationID, version: 1, publication_status: 'unpublished', has_unpublished_changes: false }
+      return send(draft, 201)
     }
     const base = `/api/v1/workbench/data_applications/${applicationID}`
     if (path === base && method === 'GET') return send(draft)

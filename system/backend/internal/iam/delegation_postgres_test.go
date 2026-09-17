@@ -98,7 +98,7 @@ func TestDelegationServiceAgainstPostgres(t *testing.T) {
 		Audit:             audit,
 	})
 	if err != nil {
-		t.Fatalf("issue first-party delegation: %v", err)
+		t.Fatalf("issue first-party delegation: %#v", err)
 	}
 	if !strings.HasPrefix(issued.AccessToken, "addp_dat_") || issued.TokenType != "Bearer" ||
 		issued.Audience != "develop" || len(issued.Scopes) != 1 || issued.Scopes[0] != "workflow.run" {

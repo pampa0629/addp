@@ -812,8 +812,12 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             )
 
     def test_requires_opengauss_hosted_owner_and_identity_contracts(self) -> None:
+        shared = self.repository / "scripts/utils/hosted-online.sh"
+        shared.parent.mkdir(parents=True, exist_ok=True)
+        shared.write_text("# shared test lifecycle\n", encoding="utf-8")
         hosted = self.repository / "scripts/test/online-hosted-opengauss-gate.sh"
         hosted.write_text(
+            'source "$ROOT_DIR/scripts/utils/hosted-online.sh"\n'
             "# ADDP_ONLINE_SUITES=opengauss-consumer-flow\n"
             "# ADDP_ONLINE_RUNNER=github-hosted-linux-x86_64\n"
             "GITHUB_ACTIONS RUNNER_OS Linux x86_64 POSTGRES_DB=addp_online\n"
@@ -878,7 +882,9 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         identity.write_text(
             'engineProvisionerRoleKey = "tenant.infrastructure_administrator"\n'
             'repository.GetActiveBuiltinRoleByKey(ctx, engineProvisionerRoleKey)\n'
-            'RoleKey: "online.relational_consumer"\n'
+            'RoleKey: "online." + strings.ReplaceAll(*suite, "-", "_")\n'
+            'permissions, err := suitePermissions(*suite)\n'
+            'PermissionKeys: permissions\n'
             '"ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN"\n',
             encoding="utf-8",
         )

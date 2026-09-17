@@ -1,5 +1,23 @@
 import { initialApplicationParameterValue } from './dataApplicationParameters.mjs'
 import { buildComponentQuery } from './dataApplicationRuntime.mjs'
+import { assertApplicationOptionValues } from './applicationParameterOptions.mjs'
+
+export function captureApplicationInitialValues(snapshot, descriptors, values) {
+  const result = {}
+  for (const parameter of snapshot.parameters) {
+    if (!Object.prototype.hasOwnProperty.call(values, parameter.key) || values[parameter.key] === undefined) throw new Error('incomplete-preview-values')
+    const value = values[parameter.key]
+    if (parameter.required && (value === null || value === '' || (Array.isArray(value) && value.length === 0))) throw new Error('missing-required-preview-value')
+    // Values may come from Vue reactive controls, including array-valued filters.
+    result[parameter.key] = JSON.parse(JSON.stringify(value))
+  }
+  assertApplicationOptionValues(snapshot, descriptors, result)
+  for (const component of snapshot.components) {
+    if (!descriptors[component.id] || descriptors[component.id].contract_fingerprint !== component.contract_fingerprint) throw new Error('preview-contract-unavailable')
+    buildComponentQuery(snapshot, component, result)
+  }
+  return result
+}
 
 const APPLICATION_PARAMETER_PRESET_KEY_PATTERN = /^[a-z][a-z0-9-]{0,63}$/
 

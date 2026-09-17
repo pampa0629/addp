@@ -131,7 +131,7 @@ Grant 或 Resource Ticket 独立判断。
 
 SQL、Workflow、Jupyter 以及 Service 查询服务发布前的样例验收等用户计算入口，必须先在当前 User AuthContext 下完成两层判断：一是入口自身的功能 Permission，二是本次执行涉及资源与 `read | write | ddl | external_effect` 效果的 owner 决策。Service 样例验收使用 `service.definition.create + service.data_read.execute`，普通 SQL 的 Execution Authorization audience 为 `service`，联邦 SQL 的 audience 为 `duckdb`。已发布查询服务由 Service 根据不可变服务定义、数据源依赖快照、公开/私有访问策略和当前请求上下文作出 owner 决策。两类入口通过后都由 System 创建绑定唯一 execution 的 Execution Authorization。
 
-Execution Authorization 的来源固定为互斥的 `user` 或 `service_definition`。用户来源包含当前 Principal、Tenant Membership 和 `authorization_version`；其中由 Notebook Session 派生的用户来源还必须保存 `source_notebook_session_authorization_id`，不能退化为不受 Session 和 Token Family 生命周期约束的普通用户来源。服务定义来源包含 owner module、definition ID、definition version/hash 和签发 Service Principal。两者都必须包含 owner audience、execution ID、逐 Source Engine 保存的 Engine Access Scope、签发时间和到期时间。每个 scope 由唯一 `engine_id` 和该引擎允许的非空效果集合组成；禁止以独立 `engine_ids` 与 `effects` 集合表达授权，因为两者笛卡尔积会扩大权限。查询服务定义的 version/hash 必须覆盖发布时冻结的 Source Engine ID，Service 不得在请求期按当前 Engine 名称重新绑定数据源。服务定义来源第一阶段只允许 `addp-service` 为本 Tenant 的已发布查询服务签发逐引擎 `read` scope，System 不接受客户端自报其他 owner、效果或 audience。
+Execution Authorization 的来源固定为互斥的 `user` 或 `service_definition`。用户来源包含当前 Principal、Tenant Membership 和 `authorization_version`；其中由 Notebook Session 派生的用户来源还必须保存 `source_notebook_session_authorization_id`，不能退化为不受 Session 和 Token Family 生命周期约束的普通用户来源。服务定义来源包含 owner module、definition ID、definition version/hash 和签发 Service Principal。两者都必须包含 owner audience、execution ID、不可变操作范围、签发时间和到期时间；业务引擎任务逐 Source Engine 保存 Engine Access Scope。每个 scope 由唯一 `engine_id` 和该引擎允许的非空效果集合组成；禁止以独立 `engine_ids` 与 `effects` 集合表达授权，因为两者笛卡尔积会扩大权限。查询服务定义的 version/hash 必须覆盖发布时冻结的 Source Engine ID，Service 不得在请求期按当前 Engine 名称重新绑定数据源。服务定义来源第一阶段只允许 `addp-service` 为本 Tenant 的已发布查询服务签发逐引擎 `read` scope，System 不接受客户端自报其他 owner、效果或 audience。
 
 匹配 audience 的 Runtime Service Principal 使用自身 Service Access Token 消费 Execution Authorization。System 必须同时校验 Service Principal/OAuth Client 与 audience 匹配、Tenant Context 相同、Execution Authorization 未过期或撤销、来源仍有效，并且当前 Engine 的 scope 包含本次所需效果。不得用其他 Engine scope 的效果满足当前 Engine。用户来源继续校验 Principal/Membership/授权版本；服务定义来源校验 owner Service Principal、definition version/hash 和未撤销状态。需要在调用 Runtime 前解析脱敏端点的 owner Runtime Role，可以同时获得 `system.engine_descriptor.read` 与 `system.execution_authorization.execute`；它仍不得获得通用 `system.engine.read`、Tenant 数据 Permission 或用户 Role。
 
@@ -140,6 +140,12 @@ DuckDB 是平台共享的联邦查询 Runtime；`addp-duckdb` 在租户上下文
 交互式执行以当前 User 为授权主体；异步执行把创建 execution 时的 User、Tenant Membership 和授权版本写为不可变执行来源事实。定时执行绑定任务授权主体：该主体只能由同 Tenant 的当前 User AuthContext 在创建、更新或显式重新授权任务时写入，并必须绑定当前任务定义；任务定义或授权版本发生变化后不得继续沿用旧主体。每次执行开始前必须重新校验 Membership、Role、资源规则和授权版本；显式平台自动任务才使用 Service Principal 自身 Runtime Role。任何路径都不得持久化或代传原始 User Access Token。
 
 跨模块异步调用时，owner Runtime Service Principal 只能为与自身 audience 匹配的子 execution 请求 Execution Authorization。System 必须验证父 execution、子 execution、Tenant、User、Membership、授权版本和 `parent_execution_id` 来源链完全一致，并重新计算当前 Role Permission；调用方提交的主体字段不能单独成为授权事实。静态资源边界只允许子 execution 处于 `pending` 时签发，每个 `audience + execution_id` 只有一份不可变授权；必须在 claim 后解析的动态资源边界，请求必须同时提交正数 `attempt` 和规范 UUID `lease_token`，System 只在数据库中的子 execution 处于 `running`、attempt/token 精确匹配且 `lease_expires_at > NOW()` 时签发。该授权不可变绑定当前 attempt 和 lease token，每个 `audience + execution_id + attempt` 只有一份；消费引擎访问时 System 必须再次校验它仍是当前未过期租约。新 attempt 必须签发新授权，旧 attempt 授权保留审计但不再可消费；两种状态不得使用兼容或降级路径互换。Orchestrator Service Principal 只负责调用 TaskProvider 和传递父 execution 身份，不获得数据效果 Permission，也不能任意指定或替换任务授权主体。
+
+### 5.2.1 内部任务执行授权
+
+内部任务的 Execution Authorization 使用与 Engine Access Scope 互斥的 `internal_task` 范围，空 `accesses` 本身不构成授权。首期只允许当前 Tenant User 为 `audience=ontology` 签发 `task_type=semantic_projection`，必须固定 `resource_id`、十进制字符串 `revision`、SHA-256 `digest` 和 UUID `generation`。System 复核 `ontology.revision.publish` 与既有 pending execution 的 Tenant、actor、任务类型和配置；不读取 Ontology 业务表。内部任务不得由 Notebook、服务定义或 Orchestrator 派生路径签发。
+
+消费方限定为 `addp-ontology` Tenant Runtime；每次消费必须携带精确 execution、attempt、lease_token 和同一 internal_task，System 复核完整授权引用、当前 running 租约、授权期限及用户当前授权版本与 Permission。Ontology 继续负责资源授权、撤回、摘要及激活基线；System 的成功响应不是投影 ready 凭证。内部任务授权不能消费 engine-accesses，也不返回 Infra 凭据。
 
 ### 5.3 Notebook 会话授权
 

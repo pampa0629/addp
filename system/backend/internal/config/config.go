@@ -128,6 +128,7 @@ func Load() *Config {
 			"addp-inference":    getEnv("INFERENCE_SERVICE_CLIENT_SECRET", ""),
 			"addp-meta":         getEnv("META_SERVICE_CLIENT_SECRET", ""),
 			"addp-model":        getEnv("MODEL_SERVICE_CLIENT_SECRET", ""),
+			"addp-ontology":     getEnv("ONTOLOGY_SERVICE_CLIENT_SECRET", ""),
 			"addp-model3d":      getEnv("MODEL3D_WORKFLOW_SERVICE_CLIENT_SECRET", ""),
 			"addp-monitor":      getEnv("MONITOR_SERVICE_CLIENT_SECRET", ""),
 			"addp-orchestrator": getEnv("ORCHESTRATOR_SERVICE_CLIENT_SECRET", ""),

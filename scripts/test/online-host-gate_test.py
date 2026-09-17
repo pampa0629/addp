@@ -195,6 +195,9 @@ class OnlineHostGateTest(unittest.TestCase):
                 CONSOLE_URL=http://127.0.0.1:5170
                 STANDARD_URL=http://127.0.0.1:8110
                 MODEL_URL=http://127.0.0.1:8181
+                QUALITY_URL=http://127.0.0.1:8182
+                ORCHESTRATOR_URL=http://127.0.0.1:8084
+                ADDP_ONLINE_QUALITY_FIXTURES_JSON='[{"logical_table_id":10,"locator":"addp://engine/2/path/test/a?type=table","row_count":2},{"logical_table_id":11,"locator":"addp://engine/2/path/test/b?type=table","row_count":3}]'
                 META_URL=http://127.0.0.1:8082
                 SECURITY_URL=http://127.0.0.1:8194
                 DEVELOP_URL=http://127.0.0.1:8084
@@ -340,11 +343,39 @@ class OnlineHostGateTest(unittest.TestCase):
             (self.artifacts / "module-lifecycle-system-recovered.json").is_file()
         )
 
+    def test_metric_lifecycle_has_no_self_hosted_route(self) -> None:
+        result = self._run("metric-service-revision-lifecycle", "--check-only")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("no dedicated deployment profile", result.stderr)
+        self.assertFalse(self.command_log.exists())
+
     def test_maps_standard_model_suite_to_model_deployment(self) -> None:
         result = self._run("standard-model-reference-deletion")
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("start:-model", self.command_log.read_text(encoding="utf-8"))
+
+    def test_maps_quality_suite_to_full_deployment_and_stops_application(self) -> None:
+        result = self._run("quality-dynamic-binding")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            self.command_log.read_text(encoding="utf-8").splitlines(),
+            ["stop", "infra-up", "start:-all",
+             "make:test-online:ONLINE_SUITE=quality-dynamic-binding", "stop"],
+        )
+
+    def test_quality_fixture_is_required_before_lifecycle_action(self) -> None:
+        self.env_file.write_text(
+            "\n".join(line for line in self.env_file.read_text(encoding="utf-8").splitlines()
+                      if not line.startswith("ADDP_ONLINE_QUALITY_FIXTURES_JSON=")) + "\n",
+            encoding="utf-8",
+        )
+        result = self._run("quality-dynamic-binding")
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("requires ADDP_ONLINE_QUALITY_FIXTURES_JSON", result.stderr)
+        self.assertFalse(self.command_log.exists())
 
     def test_runs_consumer_engine_fixture_and_verifies_process_stability(self) -> None:
         result = self._run("consumer-engine-recovery")

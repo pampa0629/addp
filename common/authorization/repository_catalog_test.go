@@ -19,18 +19,18 @@ func TestRepositoryAuthorizationCatalogReportIsDeterministic(t *testing.T) {
 	if report.SchemaVersion != AuthorizationCatalogReportSchemaVersion {
 		t.Fatalf("schema version = %q", report.SchemaVersion)
 	}
-	if len(report.PermissionManifests) != 19 {
-		t.Fatalf("manifest count = %d, want 19", len(report.PermissionManifests))
+	if len(report.PermissionManifests) != 20 {
+		t.Fatalf("manifest count = %d, want 20", len(report.PermissionManifests))
 	}
 	owners := make([]string, 0, len(report.PermissionManifests))
 	for _, manifest := range report.PermissionManifests {
 		owners = append(owners, manifest.OwnerModule)
 	}
-	wantOwners := []string{"agent", "asset", "catalog", "copilot", "develop", "graph", "inference", "manager", "meta", "model", "monitor", "orchestrator", "quality", "security", "service", "standard", "system", "transfer", "workbench"}
+	wantOwners := []string{"agent", "asset", "catalog", "copilot", "develop", "graph", "inference", "manager", "meta", "model", "monitor", "ontology", "orchestrator", "quality", "security", "service", "standard", "system", "transfer", "workbench"}
 	if !reflect.DeepEqual(owners, wantOwners) {
 		t.Fatalf("manifest owners = %v, want %v", owners, wantOwners)
 	}
-	if report.BuiltinRoleManifest.ManifestVersion != 100 ||
+	if report.BuiltinRoleManifest.ManifestVersion != 101 ||
 		report.BuiltinRoleManifest.Path != "system/authorization/builtin_roles.yaml" {
 		t.Fatalf("builtin role manifest reference = %#v", report.BuiltinRoleManifest)
 	}

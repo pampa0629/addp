@@ -26,10 +26,10 @@ Options:
 
 说明：
   默认停止并删除容器、网络，但保留数据卷。
-  使用 -v 或 --volumes 会同时删除数据卷（PostgreSQL、Redis、MinIO、Meilisearch、Kafka 的所有数据将丢失）。
+  使用 -v 或 --volumes 会同时删除数据卷（PostgreSQL、Redis、FalkorDB、MinIO、Meilisearch、Kafka 的所有数据将丢失）。
 
 职责范围：
-  仅停止 addp-* 容器（包括 addp-postgres、addp-redis、addp-minio、addp-meilisearch、addp-redpanda、addp-redpanda-init、addp-kafka-connect）
+  仅停止 addp-* 容器（包括 addp-postgres、addp-redis、addp-falkordb、addp-minio、addp-meilisearch、addp-redpanda、addp-redpanda-init、addp-kafka-connect）
   不影响 business-* 容器
 EOF
 }

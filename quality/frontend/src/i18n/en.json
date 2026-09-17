@@ -1,5 +1,16 @@
 {
   "quality": {
+    "assertion": {
+      "hint": "Define conditions using logical field symbols; bind physical tables and columns in the plan. Unknown comparisons fail, and counts use the reference set.",
+      "bindingHint": "Map logical symbols to physical columns. Reference tables share the execution snapshot and authorization boundary.",
+      "operator": "Assertion operator", "relation": "Reference role", "root": "Current primary row", "symbol": "Logical field symbol",
+      "valueType": "Value type", "value": "Literal value", "value_string": "Text", "value_number": "Number", "value_boolean": "Boolean", "value_null": "Null",
+      "add": "Add condition", "remove": "Remove condition", "filter": "Filter reference set",
+      "op_field": "Field", "op_value": "Text / boolean / null", "op_number": "Decimal literal", "op_today": "Execution date",
+      "op_and": "All conditions", "op_or": "Any condition", "op_not": "Negate",
+      "op_eq": "Equal (null-safe)", "op_ne": "Not equal (null-safe)", "op_lt": "Less than", "op_lte": "Less than or equal", "op_gt": "Greater than", "op_gte": "Greater than or equal",
+      "op_is_null": "Is null", "op_not_null": "Is not null", "op_exists": "Reference exists", "op_count": "Reference row count", "op_count_distinct": "Reference distinct count"
+    },
     "targets": {
       "missing": "Select an execution table for these aliases: {aliases}",
       "selectDefault": "Select default table",
@@ -127,6 +138,7 @@
       "type_foreign_key": "Foreign Key",
       "type_predicate_implication": "Predicate Implication",
       "type_row_count": "Row Count",
+      "type_relational_assertion": "Relational Assertion",
       "operator_eq": "Equals",
       "operator_not_eq": "Not Equal",
       "operator_is_null": "Is Null",

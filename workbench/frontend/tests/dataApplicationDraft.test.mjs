@@ -281,3 +281,26 @@ test('does not remove a component from the next application when confirmation se
   assert.equal(await removal, false)
   assert.deepEqual(state.components, ['component-a', 'component-b'])
 })
+
+test('preview captures only detached parameter values and rejects unavailable contracts and incomplete values', async () => {
+  const { captureApplicationInitialValues } = await import('../src/utils/dataApplicationDraft.mjs')
+  const snapshot = {
+    parameters: [{ key: 'person', required: true }, { key: 'tags' }, { key: 'enabled', required: true }, { key: 'count', required: true }],
+    components: [{ id: 'c', contract_fingerprint: 'v1', query_template: { select: [], parameter_filters: [], named_parameter_bindings: [] } }],
+    parameter_bindings: ['person', 'tags', 'enabled', 'count'].map(key => ({ component_id: 'c', component_parameter_key: key, application_parameter_key: key })),
+  }
+  snapshot.components[0].query_template.named_parameter_bindings = snapshot.parameters.filter(p => p.key !== 'tags').map(p => ({ name: p.key, parameter_key: p.key }))
+  snapshot.components[0].query_template.parameter_filters = [{ parameter_key: 'tags', field: 'tag', operator: 'in' }]
+  const descriptors = { c: { contract_fingerprint: 'v1', input_contract: { fields: [{ name: 'tag', type: 'string' }], named_parameters: [{ name: 'person', type: 'string' }, { name: 'enabled', type: 'bool' }, { name: 'count', type: 'int' }] } } }
+  const values = { person: 'person-c', tags: ['a', 'b'], enabled: false, count: 0, cursor: 'do-not-copy' }
+  const captured = captureApplicationInitialValues(snapshot, descriptors, values)
+  assert.deepEqual(captured, { person: 'person-c', tags: ['a', 'b'], enabled: false, count: 0 })
+  captured.tags.push('c')
+  assert.deepEqual(values.tags, ['a', 'b'])
+  assert.throws(() => captureApplicationInitialValues(snapshot, {}, values), /descriptor-unavailable/)
+  assert.throws(() => captureApplicationInitialValues(snapshot, { c: { ...descriptors.c, contract_fingerprint: 'v2' } }, values), /descriptor-unavailable/)
+  assert.throws(() => captureApplicationInitialValues(snapshot, descriptors, { ...values, person: '' }), /missing-required/)
+  assert.throws(() => captureApplicationInitialValues(snapshot, descriptors, { ...values, person: undefined }), /incomplete/)
+  descriptors.c.input_contract.named_parameters[0].options = [{ value: 'person-a', labels: { en: 'A', 'zh-cn': '甲' } }]
+  assert.throws(() => captureApplicationInitialValues(snapshot, descriptors, values), /invalid-value/)
+})

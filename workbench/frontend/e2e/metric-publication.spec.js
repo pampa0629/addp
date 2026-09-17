@@ -180,6 +180,7 @@ test('rebound services require explicit component saves and a new immutable appl
   await page.getByRole('button', { name: '保存草稿', exact: true }).click()
   await expect(page.getByText('参数值不符合关联组件的服务契约，请检查参数及选项。', { exact: true })).toBeVisible()
   expect(backend.writes).toHaveLength(0)
+  await page.getByRole('button', { name: '完成设置', exact: true }).click()
   for (let i = 0; i < 2; i++) {
     await page.getByTestId('application-component').nth(i).getByTestId('edit-component-action').click()
     const editor = page.getByTestId('application-component-editor')
@@ -261,7 +262,9 @@ test('conflicting options block shared inputs and draft persistence', async ({ p
   backend.descriptors[71].input_contract.named_parameters[0].options = [{ value: 'total', labels: { 'zh-cn': '全期', en: 'Total' } }]
   backend.descriptors[72].input_contract.named_parameters[0].options = [{ value: 'month', labels: { 'zh-cn': '按月', en: 'Monthly' } }]
   await page.goto(applicationPath)
+  await page.getByRole('button', { name: '筛选条件', exact: true }).click()
   await expect(page.getByText('参数契约不可用或存在冲突：双方重叠率, 活动次数', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '完成设置', exact: true }).click()
   await page.getByRole('button', { name: '保存草稿', exact: true }).click()
   expect(backend.writes).toHaveLength(0)
   await page.goto(runtimePath)
@@ -281,6 +284,7 @@ for (const locale of ['zh-cn', 'en']) {
     await page.goto(applicationPath)
     await page.getByTestId('application-component').first().getByTestId('edit-component-action').click()
     const editor = page.getByTestId('application-component-editor')
+    await editor.getByRole('tab', { name: locale === 'en' ? '3. Set query inputs' : '3. 设置查询条件' }).click()
     await expect(editor.locator('.parameter-caption').first()).toContainText(locale === 'en' ? 'Time granularity' : '统计粒度')
     await expect(editor.locator('.parameter-caption').first()).toContainText(locale === 'en' ? 'Months without activity return zero.' : '无活动月份补零。')
     expect(backend.writes).toHaveLength(0)
@@ -376,3 +380,76 @@ test('optional text contains filters reset pagination and clearing restores an u
   expect(requests.at(-1).page.cursor || '').toBe('')
   expect(backend.unexpected).toEqual([])
 })
+
+for (const locale of ['zh-cn', 'en']) {
+  test(`table and chart show an explicit reporting period from the completed query (${locale})`, async ({ page, context }) => {
+    const backend = await installMetricApplicationBackend(context, { rebound: true, locale })
+    const published = backend.published
+    for (const [name, label, value] of [['range_start', 'Start', '2026-01-01'], ['range_end', 'End', '2027-01-01']]) {
+      published.snapshot.parameters.push({ key: name, label, control_type: 'date', required: true, default_value: value })
+      for (const component of published.snapshot.components) {
+        backend.descriptors[component.service_ref.service_id].input_contract.named_parameters.push({ name, type: 'date', required: true })
+        component.parameter_definitions.push({ key: name, label, control_type: 'date', required: true })
+        component.query_template.named_parameter_bindings.push({ parameter_key: name, name })
+        published.snapshot.parameter_bindings.push({ application_parameter_key: name, component_id: component.id, component_parameter_key: name })
+      }
+    }
+    for (const component of published.snapshot.components) {
+      Object.assign(component.renderer_config.field_presentations.find(p => p.field === 'bucket'), {
+        temporal_format: 'period', period: { grain_parameter: 'grain', start_parameter: 'range_start', end_parameter: 'range_end' },
+      })
+    }
+    published.snapshot.components.find(component => component.renderer_type === 'chart').renderer_config.total_as_value = true
+    await context.route(`**/data_applications/${published.id}/runtime`, route => route.fulfill({ json: published }))
+    await context.addInitScript(() => {
+      const original = CanvasRenderingContext2D.prototype.fillText
+      const clear = CanvasRenderingContext2D.prototype.clearRect
+      CanvasRenderingContext2D.prototype.clearRect = function (...args) { this.canvas.__periodTexts = []; return clear.apply(this, args) }
+      CanvasRenderingContext2D.prototype.fillText = function (text, ...args) { (this.canvas.__periodTexts ||= []).push(String(text)); return original.call(this, text, ...args) }
+    })
+    await page.goto(runtimePath)
+    const total = locale === 'en' ? 'Selected period total' : '所选期间合计'
+    const month = locale === 'en' ? 'January 2026' : '2026年1月'
+    const canvas = page.locator('.chart-renderer canvas')
+    await expect(rows(page).first()).toContainText(total)
+    await expect(page.getByTestId('period-summary')).toHaveCount(2)
+    await expect(page.getByTestId('period-summary').first()).toContainText(locale === 'en' ? '(exclusive)' : '（不含）')
+    await expect(canvas).toHaveCount(0)
+    await expect(page.locator('.scalar-value-renderer .value-number')).toHaveText('12.000000')
+    await choose(page, parameter(page, '统计粒度'), locale === 'en' ? 'Monthly' : '按月')
+    await expect(page.getByTestId('period-summary')).toHaveCount(0)
+    await expect(page.locator('.scalar-value-renderer')).toHaveCount(0)
+    await page.getByTestId('query-all-action').click()
+    await expect(rows(page).first()).toContainText(month)
+    await expect.poll(() => canvas.evaluate(el => el.__periodTexts || [])).toContain(month)
+    expect(backend.requests.at(-1).body.parameters.range_start).toBe('2026-01-01')
+    expect(backend.requests.at(-1).body.order_by).toContainEqual({ field: 'bucket', direction: 'asc' })
+    await choose(page, parameter(page, '统计粒度'), locale === 'en' ? 'Total' : '全期')
+    let totalRows = [{ bucket: '2026-01-01', value: 0 }]
+    let hasMore = false
+    await context.route('**/api/query/metric_72/query', route => route.fulfill({ json: { data: totalRows, page: { has_more: hasMore } } }))
+    await page.getByTestId('query-all-action').click()
+    await expect(page.locator('.value-number')).toHaveText('0.000000')
+    await expect(canvas).toHaveCount(0)
+    for (const [data, partial] of [[[], false], [[{value:1},{value:2}], false], [[{value:null}], false], [[{value:3}], true]]) {
+      totalRows = data
+      hasMore = partial
+      await page.getByTestId('query-all-action').click()
+      await expect(page.getByTestId('runtime-component').nth(1).getByRole('alert')).toBeVisible()
+      await expect(page.locator('.scalar-value-renderer')).toHaveCount(0)
+      await expect(canvas).toHaveCount(0)
+    }
+    // A total card selects the original service row, never its formatted date label.
+    const chartComponent = published.snapshot.components.find(component => component.renderer_type === 'chart')
+    published.snapshot.selection_bindings = [{ source_component_id: chartComponent.id, assignments: [{ source_field: 'bucket', application_parameter_key: 'range_start' }] }]
+    totalRows = [{ bucket: '2026-02-01', value: 0 }]
+    hasMore = false
+    await page.reload()
+    const card = page.locator('.scalar-value-renderer [role="button"]')
+    await expect(card).toBeVisible()
+    await card.press('Enter')
+    await expect(parameter(page, 'Start').getByRole('combobox')).toHaveValue('2026-02-01')
+    expect(backend.writes).toHaveLength(0)
+    expect(backend.unexpected).toEqual([])
+  })
+}

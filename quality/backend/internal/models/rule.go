@@ -16,7 +16,7 @@ type RuleSource struct {
 type RuleContent struct {
 	Name        string          `json:"name"`
 	Description string          `json:"description"`
-	Type        string          `json:"type"`
+	Type        string          `json:"type" enums:"not_null,allowed_values,format,length,value_range,unique_key,foreign_key,predicate_implication,row_count,relational_assertion"`
 	Params      json.RawMessage `gorm:"type:jsonb" json:"params" swaggertype:"object"`
 	Source      *RuleSource     `gorm:"serializer:json;type:jsonb" json:"source,omitempty"`
 }
@@ -51,13 +51,15 @@ type RuleRevision struct {
 func (RuleRevision) TableName() string { return "quality.rule_revisions" }
 
 type CheckBindings struct {
-	Table            string   `json:"table"`
-	Column           string   `json:"column,omitempty"`
-	Columns          []string `json:"columns,omitempty"`
-	ReferenceTable   string   `json:"reference_table,omitempty"`
-	ReferenceColumns []string `json:"reference_columns,omitempty"`
-	WhenColumn       string   `json:"when_column,omitempty"`
-	ThenColumn       string   `json:"then_column,omitempty"`
+	Table            string                     `json:"table"`
+	Column           string                     `json:"column,omitempty"`
+	Columns          []string                   `json:"columns,omitempty"`
+	ReferenceTable   string                     `json:"reference_table,omitempty"`
+	ReferenceColumns []string                   `json:"reference_columns,omitempty"`
+	WhenColumn       string                     `json:"when_column,omitempty"`
+	ThenColumn       string                     `json:"then_column,omitempty"`
+	Fields           map[string]string          `json:"fields,omitempty"`
+	Relations        map[string]RelationBinding `json:"relations,omitempty"`
 }
 
 type PlanCheckItem struct {
@@ -99,6 +101,12 @@ func ResolveRuleParams(kind string, raw json.RawMessage, binding CheckBindings) 
 		allowed["when_column"] = true
 		allowed["then_column"] = true
 	case "row_count":
+	case "relational_assertion":
+		if _, _, err := ParseAssertionConstraint(raw); err != nil {
+			return nil, err
+		}
+		allowed["fields"] = true
+		allowed["relations"] = true
 	default:
 		return nil, fmt.Errorf("unsupported rule type")
 	}

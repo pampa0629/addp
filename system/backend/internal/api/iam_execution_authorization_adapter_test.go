@@ -15,10 +15,18 @@ import (
 )
 
 type fakeExecutionAuthorizationService struct {
+	internalInput              iam.AuthorizeInternalTaskInput
 	issueInput                 iam.IssueExecutionAuthorizationInput
 	issueFromExecution         iam.IssueExecutionAuthorizationFromExecutionInput
 	issueFromServiceDefinition iam.IssueExecutionAuthorizationFromServiceDefinitionInput
 	consumeInput               iam.AuthorizeExecutionEngineAccessInput
+}
+
+func (s *fakeExecutionAuthorizationService) AuthorizeInternalTask(_ context.Context, input iam.AuthorizeInternalTaskInput) (*iam.AuthorizedInternalTask, error) {
+	s.internalInput = input
+	return &iam.AuthorizedInternalTask{AuthorizationID: input.AuthorizationID, ExecutionID: input.ExecutionID,
+		TenantID: input.TenantID, Audience: "ontology", InternalTask: input.InternalTask, Attempt: input.Attempt,
+		ExpiresAt: time.Now().Add(time.Minute)}, nil
 }
 
 func (service *fakeExecutionAuthorizationService) IssueFromServiceDefinition(

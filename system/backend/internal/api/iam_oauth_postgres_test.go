@@ -45,7 +45,9 @@ func TestIAMOAuthClientCredentialsAuthContextAgainstPostgres(t *testing.T) {
 	if err := db.Exec(`DROP SCHEMA IF EXISTS system CASCADE`).Error; err != nil {
 		t.Fatalf("reset IAM OAuth client credentials test schema: %v", err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	// Provision, unchanged-secret validation and rotation each process every
+	// built-in BCrypt secret. Allow the complete batch under the race detector.
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 	if err := migration.NewRunner(dsn).Run(ctx); err != nil {
 		t.Fatalf("apply IAM migrations: %v", err)
@@ -477,6 +479,7 @@ func testBuiltinServiceClientSecrets(prefix string) map[string]string {
 		"addp-catalog":      prefix + "-catalog-0123456789abcdef0123456789abcdef",
 		"addp-workbench":    prefix + "-workbench-0123456789abcdef0123456789abcdef",
 		"addp-copilot":      prefix + "-copilot-0123456789abcdef0123456789abcdef",
+		"addp-ontology":     prefix + "-ontology-0123456789abcdef0123456789abcdef",
 		"addp-develop":      prefix + "-develop-0123456789abcdef0123456789abcdef",
 		"addp-document":     prefix + "-document-0123456789abcdef0123456789abcdef",
 		"addp-duckdb":       prefix + "-duckdb-0123456789abcdef0123456789abcdef",

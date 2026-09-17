@@ -9,15 +9,17 @@ import (
 	"strings"
 	"time"
 
+	"github.com/addp/common/execution"
 	"github.com/addp/common/models"
 	"github.com/google/uuid"
 )
 
 type IssueExecutionAuthorizationRequest struct {
-	Audience    string                       `json:"audience"`
-	ExecutionID string                       `json:"execution_id"`
-	Accesses    []ExecutionEngineAccessScope `json:"accesses"`
-	ExpiresIn   int64                        `json:"expires_in"`
+	InternalTask *execution.InternalTaskScope `json:"internal_task,omitempty"`
+	Audience     string                       `json:"audience"`
+	ExecutionID  string                       `json:"execution_id"`
+	Accesses     []ExecutionEngineAccessScope `json:"accesses"`
+	ExpiresIn    int64                        `json:"expires_in"`
 }
 
 type ExecutionEngineAccessScope struct {
@@ -44,6 +46,7 @@ type IssueExecutionAuthorizationFromServiceDefinitionRequest struct {
 }
 
 type IssuedExecutionAuthorization struct {
+	InternalTask               *execution.InternalTaskScope `json:"internal_task,omitempty"`
 	ID                         string                       `json:"id"`
 	ExecutionID                string                       `json:"execution_id"`
 	Audience                   string                       `json:"audience"`
@@ -301,7 +304,7 @@ func validateIssuedExecutionAuthorization(
 ) error {
 	if response == nil || response.Audience != request.Audience || response.ExecutionID != request.ExecutionID ||
 		!response.ExpiresAt.After(time.Now().UTC()) ||
-		!sameExecutionEngineAccessScopes(response.Accesses, request.Accesses) {
+		!sameExecutionAuthorizationBoundary(response, request) {
 		return errors.New("System execution authorization returned an invalid response")
 	}
 	for _, value := range []string{
@@ -316,6 +319,15 @@ func validateIssuedExecutionAuthorization(
 		return errors.New("System execution authorization returned an invalid execution ID")
 	}
 	return nil
+}
+
+func sameExecutionAuthorizationBoundary(response *IssuedExecutionAuthorization, request IssueExecutionAuthorizationRequest) bool {
+	if request.InternalTask == nil {
+		return response.InternalTask == nil && sameExecutionEngineAccessScopes(response.Accesses, request.Accesses)
+	}
+	return request.InternalTask.Validate(request.Audience) == nil && response.InternalTask != nil &&
+		*response.InternalTask == *request.InternalTask && len(request.Accesses) == 0 && len(response.Accesses) == 0 &&
+		response.SourceType == "user" && response.SourceDefinitionID == nil && response.SourceDefinitionVersion == nil
 }
 
 func parseCanonicalPositiveID(value string) (int64, error) {

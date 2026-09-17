@@ -13,6 +13,19 @@ const presentations = [
   { field: 'created_at', label: '创建时间', temporal_format: 'datetime' },
 ]
 
+test('period display distinguishes a month from the whole range without changing the date', () => {
+  const raw = '2024-01-01'
+  const presentation = { temporal_format: 'period', period_context: { grain: 'month' } }
+  assert.equal(formatFieldPresentationValue(raw, presentation, 'zh-CN'), '2024年1月')
+  assert.equal(formatFieldPresentationValue(raw, presentation, 'en'), 'January 2024')
+  presentation.period_context = { grain: 'total', total_label: 'Selected period total' }
+  assert.equal(formatFieldPresentationValue(raw, presentation, 'en'), 'Selected period total')
+  assert.equal(formatFieldPresentationValue(null, presentation), '—')
+  assert.equal(formatFieldPresentationValue(raw, { temporal_format: 'period' }), '—')
+  assert.equal(formatFieldPresentationValue('2024-01-01', { temporal_format: 'month' }, 'zh-CN'), '2024年1月')
+  assert.equal(raw, '2024-01-01')
+})
+
 test('resolves one field presentation without changing the field identity', () => {
   assert.deepEqual(fieldPresentationFor('amount', presentations), presentations[0])
   assert.equal(fieldPresentationFor('missing', presentations), null)

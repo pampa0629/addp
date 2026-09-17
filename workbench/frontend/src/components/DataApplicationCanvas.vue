@@ -1,8 +1,8 @@
 <template>
-  <div ref="runtimeElement" class="runtime" :class="{ 'runtime--wallboard': isWallboard, 'runtime--embedded': embedded }" v-loading="loading" data-testid="data-application-canvas">
+  <div ref="runtimeElement" class="runtime" :class="{ 'runtime--wallboard': isWallboard, 'runtime--embedded': embedded, 'runtime--editing': editable }" v-loading="loading" data-testid="data-application-canvas">
     <header class="runtime-header" :class="{ 'runtime-header--compact': !showTitle }">
       <div v-if="showTitle"><h1>{{ application.snapshot.page.title }}</h1><p>{{ application.description }}</p></div>
-      <div class="runtime-actions">
+      <div v-if="!editable" class="runtime-actions">
         <span>{{ statusLabel }}</span>
         <span v-if="refreshDelayMilliseconds">{{ t('workbench.automaticRefreshActive', { interval: refreshIntervalLabel }) }}</span>
         <el-button :disabled="!fullscreenSupported" @click="toggleFullscreen">{{ isFullscreen ? t('workbench.exitFullscreen') : t('workbench.enterFullscreen') }}</el-button>
@@ -10,7 +10,7 @@
       </div>
     </header>
 
-    <el-card v-if="showParameters && application.snapshot.parameters?.length" class="parameters-card">
+    <el-card v-if="!editable && showParameters && application.snapshot.parameters?.length" class="parameters-card">
       <template #header>
         <div class="parameter-card-header">
           <strong>{{ t('workbench.queryParameters') }}</strong>
@@ -42,11 +42,17 @@
       />
     </el-card>
 
-    <main v-if="application.snapshot.page" class="runtime-grid" :style="runtimeGridStyle(application.snapshot.page)">
-      <el-card v-for="placement in application.snapshot.page.placements" :key="placement.component_id" :ref="element => setComponentElement(placement.component_id, element)" tabindex="-1" :aria-label="component(placement.component_id)?.title" class="runtime-component" data-testid="runtime-component" :data-component-id="placement.component_id" :style="runtimeLayoutStyle(placement)">
+    <div v-if="editable" class="editor-preview-status">
+      <span>{{ previewNeedsRefresh ? t('workbench.studio.previewStale') : t('workbench.studio.previewDefaults') }}</span>
+      <span v-if="application.snapshot.parameters.length">{{ t('workbench.studio.filterCount', { count: application.snapshot.parameters.length }) }}</span>
+    </div>
+
+    <main v-if="application.snapshot.page" class="runtime-grid" :style="editable ? {} : runtimeGridStyle(application.snapshot.page)">
+      <el-card v-for="placement in application.snapshot.page.placements" :key="placement.component_id" :ref="element => setComponentElement(placement.component_id, element)" :tabindex="editable ? 0 : -1" :role="editable ? 'button' : undefined" :aria-pressed="editable ? selectedComponentId === placement.component_id : undefined" @click.capture="selectForEditing($event, placement.component_id)" @keydown.enter.self="selectForEditing($event, placement.component_id)" @keydown.space.self="selectForEditing($event, placement.component_id)" @dragover="allowDrop" @drop="dropComponent($event, placement.component_id)" :aria-label="component(placement.component_id)?.title" class="runtime-component" :class="{ 'runtime-component--selected': editable && selectedComponentId === placement.component_id }" data-testid="runtime-component" :data-component-id="placement.component_id" :style="runtimeLayoutStyle(placement)">
         <template #header>
           <div class="component-header">
-            <strong>{{ component(placement.component_id)?.title }}</strong>
+            <div class="component-title"><button v-if="editable" class="drag-handle" draggable="true" :aria-label="t('workbench.studio.dragComponent')" @dragstart="dragComponent($event, placement.component_id)" @dragend="draggingComponentID = ''">⠿</button><strong>{{ component(placement.component_id)?.title }}</strong></div>
+            <el-button v-if="editable" data-testid="canvas-edit-component" link type="primary" @click.stop="emit('edit-component', component(placement.component_id))">{{ t('workbench.editComponent') }}</el-button>
             <div v-if="showQueryActions" class="component-header-actions">
               <el-button link :loading="state(placement.component_id).exporting" :disabled="state(placement.component_id).querying || !canExecuteComponentQuery(state(placement.component_id))" @click="exportComponent(placement.component_id)">{{ t('workbench.export') }}</el-button>
               <el-button link type="primary" :loading="state(placement.component_id).querying" :disabled="state(placement.component_id).exporting || !canExecuteComponentQuery(state(placement.component_id))" @click="queryComponent(placement.component_id)">{{ t('workbench.query') }}</el-button>
@@ -58,6 +64,7 @@
         <ApplicationParameterFields
           v-if="showParameters && parameterPlacement.componentParameters[placement.component_id]?.length"
           class="component-parameters"
+          :inert="editable || undefined"
           data-testid="component-parameters"
           :parameters="parameterPlacement.componentParameters[placement.component_id]"
           :values="parameterValues"
@@ -78,6 +85,7 @@
         <template v-else>
           <el-alert v-if="state(placement.component_id).query_error" data-testid="query-error-alert" type="error" :closable="false" :title="state(placement.component_id).query_error" />
           <WorkbenchRendererHost
+            :inert="editable || undefined"
             :rows="state(placement.component_id).rows"
             :renderer-type="component(placement.component_id).renderer_type"
             :config="component(placement.component_id).renderer_config"
@@ -100,8 +108,10 @@
 </template>
 
 <script setup>
+import { applicationQueryContext } from '../utils/applicationEditorLayout.mjs'
+import { captureApplicationInitialValues } from '../utils/dataApplicationDraft.mjs'
 import { applicationParameterOptions, assertApplicationOptionValues } from '../utils/applicationParameterOptions.mjs'
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { createLatestRequestCoordinator } from '@common-ui'
@@ -114,11 +124,36 @@ import WorkbenchRendererHost from './WorkbenchRendererHost.vue'
 
 const props = defineProps({
   application: { type: Object, required: true },
+  editable: { type: Boolean, default: false },
+  selectedComponentId: { type: String, default: '' },
   mode: { type: String, default: 'published', validator: (value) => ['published', 'draft-preview'].includes(value) },
   embedded: { type: Boolean, default: false },
   initialPresetKey: { type: String, default: '' },
 })
 
+const emit = defineEmits(['select-component', 'edit-component', 'move-component'])
+const previewNeedsRefresh = ref(false)
+const draggingComponentID = ref('')
+const editorPreviewRequests = createLatestRequestCoordinator()
+const descriptorLoadRequests = createLatestRequestCoordinator()
+function selectForEditing(event, id) {
+  if (!props.editable || event.target.closest('[data-testid="canvas-edit-component"], .drag-handle')) return
+  event.preventDefault()
+  event.stopPropagation()
+  emit('select-component', id)
+}
+function dragComponent(event, id) {
+  draggingComponentID.value = id
+  event.dataTransfer.effectAllowed = 'move'
+  event.dataTransfer.setData('text/plain', id)
+}
+function allowDrop(event) { if (props.editable && draggingComponentID.value) event.preventDefault() }
+function dropComponent(event, beforeID) {
+  if (!props.editable || !draggingComponentID.value) return
+  event.preventDefault()
+  emit('move-component', { componentID: draggingComponentID.value, beforeID })
+  draggingComponentID.value = ''
+}
 const { t } = useI18n()
 const application = computed(() => props.application)
 const loading = ref(false)
@@ -145,13 +180,13 @@ const selectionGuidance = computed(() => (application.value.snapshot.selection_b
   parameters: (binding.assignments || []).map(assignment => application.value.snapshot.parameters.find(parameter => parameter.key === assignment.application_parameter_key)).filter(Boolean),
 })).filter(item => item.source && item.parameters.length))
 const queryAllRequests = createLatestRequestCoordinator()
-const isWallboard = computed(() => application.value.snapshot.page?.display_mode === 'wallboard')
+const isWallboard = computed(() => !props.editable && application.value.snapshot.page?.display_mode === 'wallboard')
 const showTitle = computed(() => runtimeSectionVisible(application.value.snapshot.page, 'title'))
 const showParameters = computed(() => runtimeSectionVisible(application.value.snapshot.page, 'parameters'))
-const showQueryActions = computed(() => runtimeSectionVisible(application.value.snapshot.page, 'query_actions'))
+const showQueryActions = computed(() => !props.editable && runtimeSectionVisible(application.value.snapshot.page, 'query_actions'))
 const parameterPresets = computed(() => application.value.snapshot.parameter_presets || [])
 const canQueryAll = computed(() => canAttemptApplicationQuery(application.value.snapshot.components, componentStates))
-const refreshDelayMilliseconds = computed(() => applicationRefreshDelayMilliseconds(application.value.snapshot.page))
+const refreshDelayMilliseconds = computed(() => props.editable ? 0 : applicationRefreshDelayMilliseconds(application.value.snapshot.page))
 const statusLabel = computed(() => props.mode === 'draft-preview' ? t('workbench.draftPreviewBadge') : t('workbench.revisionLabel', { revision: application.value.revision_number }))
 const refreshIntervalLabel = computed(() => {
   switch (application.value.snapshot.page?.refresh_interval_seconds) {
@@ -244,11 +279,12 @@ async function copyPresetLink() {
 }
 
 async function loadDescriptors() {
+  const request = descriptorLoadRequests.begin('descriptors')
   loading.value = true
   try {
     await Promise.all(application.value.snapshot.components.map(loadDescriptor))
   } finally {
-    loading.value = false
+    if (descriptorLoadRequests.isCurrent(request, 'descriptors')) loading.value = false
   }
 }
 
@@ -310,6 +346,7 @@ async function queryComponent(componentID, cursor = '', cursorIndex = 0, cursors
 }
 
 async function applySelection(componentID, selection) {
+  if (props.editable) return
   const current = componentStates[componentID]
   if (!current?.descriptor) return
   try {
@@ -426,13 +463,46 @@ async function toggleFullscreen() {
   }
 }
 
+function invalidatePreview() {
+  queryAllRequests.invalidate()
+  queryingAll.value = false
+  for (const [id, current] of Object.entries(componentStates)) {
+    current.descriptorRequests?.invalidate()
+    current.requests?.invalidate()
+    delete componentStates[id]
+  }
+  for (const key of Object.keys(parameterValues)) delete parameterValues[key]
+  Object.assign(parameterValues, defaultApplicationParameterValues(application.value.snapshot))
+}
+watch(() => props.editable ? applicationQueryContext(application.value.snapshot) : '', async () => {
+  if (!props.editable || !runtimeMounted) return
+  editorPreviewRequests.invalidate()
+  previewNeedsRefresh.value = true
+  invalidatePreview()
+  await loadDescriptors()
+})
+async function refreshEditorPreview() {
+  previewNeedsRefresh.value = false
+  await queryAll()
+}
+function captureInitialValues() {
+  if (props.mode !== 'draft-preview' || props.editable) throw new Error('not-interactive-preview')
+  return captureApplicationInitialValues(application.value.snapshot, runtimeDescriptors(), parameterValues)
+}
+defineExpose({ refresh: refreshEditorPreview, focusComponent: focusSelectionSource, captureInitialValues })
+
 onMounted(async () => {
   runtimeMounted = true
   fullscreenSupported.value = Boolean(document.fullscreenEnabled && runtimeElement.value?.requestFullscreen)
   document.addEventListener('fullscreenchange', syncFullscreenState)
   document.addEventListener('visibilitychange', handleVisibilityChange)
+  const previewRequest = editorPreviewRequests.begin('editor-preview')
   await loadDescriptors()
-  if (props.mode === 'published') {
+  if (!runtimeMounted || !editorPreviewRequests.isCurrent(previewRequest, 'editor-preview')) return
+  if (props.editable) {
+    if (canRunPublishedApplicationInitialQuery(application.value.snapshot, componentStates, parameterValues, true)) await queryAll()
+    else previewNeedsRefresh.value = true
+  } else if (props.mode === 'published') {
     if (canRunPublishedApplicationInitialQuery(application.value.snapshot, componentStates, parameterValues, !selectedPresetKey.value)) await queryAll()
     scheduleAutomaticRefresh()
   } else {
@@ -441,6 +511,8 @@ onMounted(async () => {
 })
 onBeforeUnmount(() => {
   runtimeMounted = false
+  editorPreviewRequests.invalidate()
+  descriptorLoadRequests.invalidate()
   clearAutomaticRefreshTimer()
   queryAllRequests.invalidate()
   Object.values(componentStates).forEach((current) => {
@@ -479,9 +551,9 @@ onBeforeUnmount(() => {
 .runtime-component:deep(.geojson-result-renderer) { height: 100% !important; min-height: 0; }
 .component-header { gap: 12px; }
 .component-pagination { flex: 0 0 auto; display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-top: 12px; color: var(--addp-text-secondary); }
-.runtime--embedded { height: calc(100vh - 72px); min-height: 0; overflow: auto; }
+.runtime--embedded { height: 100%; min-height: 0; overflow: auto; }
 .runtime--wallboard { height: 100vh; min-height: 0; overflow: hidden; display: flex; flex-direction: column; padding: 16px; }
-.runtime--embedded.runtime--wallboard { height: calc(100vh - 72px); }
+.runtime--embedded.runtime--wallboard { height: 100%; }
 .runtime--wallboard .runtime-header, .runtime--wallboard .parameters-card { flex: 0 0 auto; margin-bottom: 12px; }
 .runtime--wallboard .runtime-grid { flex: 1; min-height: 0; grid-auto-rows: minmax(0, 1fr); }
 @media (max-width: 900px) {
@@ -495,4 +567,19 @@ onBeforeUnmount(() => {
   .runtime--wallboard .runtime-grid { display: grid; }
   .runtime--wallboard .runtime-component { min-height: 0; }
 }
+.runtime--editing { min-height: 480px; padding: 20px; }
+.runtime--editing .runtime-header h1 { font-size: 22px; }
+.runtime--editing .runtime-header p { font-size: 13px; }
+.runtime--editing .runtime-grid { display: grid; grid-auto-rows: 52px; }
+.runtime--editing .runtime-component { cursor: pointer; min-height: 0; border: 2px solid transparent; }
+.runtime--editing .runtime-component:hover { border-color: var(--el-color-primary-light-5); }
+.runtime--editing .runtime-component--selected { border-color: var(--el-color-primary); }
+.runtime--editing .runtime-component :deep(.el-card__header) { padding: 12px; }
+.runtime--editing .runtime-component :deep(.el-card__body) { padding: 12px; }
+.runtime--editing [inert] { pointer-events: none; }
+.component-title { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.component-title strong { overflow-wrap: anywhere; }
+.drag-handle { cursor: grab; font-size: 22px; color: var(--addp-text-secondary); background: none; border: 0; padding: 0 4px; }
+.editor-preview-status { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; color: var(--addp-text-secondary); font-size: 12px; }
+@media(max-width:760px) { .runtime--editing .runtime-grid { display: flex; }.runtime--editing .runtime-component { min-height: 320px; } }
 </style>

@@ -10,6 +10,7 @@
 |---------|------|------|
 | addp-postgres | PostgreSQL 15 + PostGIS | ADDP 系统元数据 |
 | addp-redis | Redis 7 | 缓存、事件和分布式锁 |
+| addp-falkordb | FalkorDB 4.20.6（固定 digest） | Ontology 可重建语义关系投影 |
 | addp-minio | MinIO | 系统文件存储 |
 | addp-meilisearch | Meilisearch | 全文搜索 |
 | addp-redpanda | Redpanda v24.3.18 | 唯一内部 Kafka API CDC 总线 |
@@ -88,6 +89,8 @@ bash scripts/test/certify-infra-kafka-ha.sh
 
 本地共享 `addp-postgres` 禁止创建清单之外的测试 database；所有非 IAM 测试复用 `addp_test`，System IAM、Fosite、API 与 Migration 测试复用 `addp_iam_test`。本地测试必须调用根 `Makefile` 或 `scripts/test/` 的标准门禁，由门禁重建并清理自己拥有的 Schema 或测试事实；禁止为了单次验证直接执行 `createdb`、`CREATE DATABASE`、`dropdb` 或 `DROP DATABASE`。如果现有门禁不能提供所需隔离，应先修正门禁的重置和清理能力，不能用新增 database 绕过问题。
 
+System IAM 标准门禁在首次重置 Schema 前获取宿主机级文件锁 `/tmp/addp-system-iam-postgres-gate.lock`，覆盖完整运行及其子进程，跨 checkout 和 `--package` 选择互斥。另一轮仍在运行时立即失败，不开始数据库操作；进程退出后由操作系统释放锁，锁文件保持原位，不能通过删除锁文件解除占用。该边界同样用于独占 CI Runner；分包验证也必须串行运行。
+
 需要一次验证全部已登记基础设施集成门禁时，先显式配置各 owner 门禁要求的安全连接变量，再运行 `make test-integration`。该入口严格串行调用 PostgreSQL 和 MongoDB 模块级门禁，避免 `addp_test` 或 `addp_iam_test` 被并发重置；PostgreSQL 门禁不会创建新 database，也不会连接 `addp` 开发业务库。Manager MongoDB 门禁读取 `Outdoor/Persons`；目标为空时只创建一条确定性夹具，并在退出时恢复原状态。
 
 Manager 统一派生任务表、语义唯一约束、资源绑定与资源回收生命周期使用 `addp_test` 验证：
@@ -101,7 +104,11 @@ GitHub Actions 使用每个 Job 独占、随 Job 销毁的 PostgreSQL 15 Service
 
 Ontology 修订/发布门禁使用 `ONTOLOGY_POSTGRES_TEST_DSN` 连接本地 `addp_test`，标准入口为 `make test-ontology-postgres`，并已纳入 `make test-module MODULE=ontology`、串行 `test-integration` 和辅助 macOS 巡检。门禁仅接管此前不存在的 ontology schema，用随机 Run ID 标记所有权；退出时核对标记并删除本轮执行记录和 schema，验证零残留，不删除或重建 common。CI 对应独占 `addp_ontology_test`，不访问开发库。具体语义范围见 [Ontology 模块说明](../../ontology/CLAUDE.md)。
 
-Ontology 图适配由 `make test-ontology-falkor` 使用固定 digest 的 FalkorDB 4.20.6 独占 Compose Project 验证。门禁自行生成密码、动态回环端口与 Run ID，不接受个人数据库地址，不读取 `.env`，退出时删除并核验自有容器/卷/网络。它与 PG 门禁均被标准模块门禁自动发现及串行集成聚合；目前不是常驻 Infra 服务，不复用 `addp-redis`。
+Ontology 的 FalkorDB 已纳入 `docker-compose.infra.yml`，使用独立 `falkordb_data` 卷、RDB 快照与 `INFRA_FALKORDB_PASSWORD`。已有开发环境须在根 `.env` 补充独立密码，再通过标准 `up.sh` 启动；生产 `setup-env.sh` 为新环境生成随机 Secret，对已有环境只校验不轮换。仅开放 `127.0.0.1:16479`，不开放 Browser、不复用 `addp-redis`、不注册为业务 Engine。该单机部署不等于生产 HA/TLS 已认证，也不代表 Ontology 发布运行时已接通。
+
+正式部署与 `make test-ontology-falkor` 共用 `scripts/infra/falkordb.yml` 的固定镜像、非零超时、资源限制和带认证图健康检查。T2 使用独占 Compose Project、随机密码、动态回环端口及可销毁卷，验证保存快照并重建容器后的图恢复；不接受个人数据库地址、不读取 `.env`，退出时删除并核验自有容器/卷/网络。PG 与 FalkorDB 门禁均被标准模块门禁自动发现及串行集成聚合；CI 继续由已有 `ontology-falkor` Job 执行同一入口。
+
+门禁通过 `ADDP_T2_INPUT_FILES` 声明共享服务定义、根 Compose、环境模板及相关生命周期脚本，供本地与 CI 共用的影响计算选择 Ontology。静态测试验证正式/T2 配置一致、独立回环端口、密码必填、生产密码拒绝和退出清理。
 
 本地 IAM 发布门禁使用：
 

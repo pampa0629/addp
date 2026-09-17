@@ -1,5 +1,5 @@
 # ADDP 基础设施层配置
-# Infrastructure Layer: PostgreSQL, Redis, MinIO, Meilisearch, Kafka, Kafka Connect
+# Infrastructure Layer: PostgreSQL, Redis, FalkorDB, MinIO, Meilisearch, Kafka, Kafka Connect
 #
 # 使用方法:
 #   启动: docker compose -f docker-compose.infra.yml up -d
@@ -65,6 +65,19 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  falkordb:
+    extends:
+      file: scripts/infra/falkordb.yml
+      service: falkordb
+    container_name: addp-falkordb
+    volumes:
+      - falkordb_data:/data
+    ports:
+      - "127.0.0.1:16479:6379"
+    networks:
+      - addp-network
+    restart: unless-stopped
 
   minio:
     image: minio/minio:latest
@@ -263,6 +276,7 @@ networks:
 volumes:
   postgres_data:
   redis_data:
+  falkordb_data:
   minio_data:
   meilisearch_data:
   redpanda_data:

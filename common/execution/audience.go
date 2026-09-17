@@ -9,4 +9,5 @@ const (
 	AudienceTransfer = "transfer"
 	AudienceService  = "service"
 	AudienceDuckDB   = "duckdb"
+	AudienceOntology = "ontology"
 )

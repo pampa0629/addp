@@ -37,6 +37,8 @@ class OnlineHostedOpenGaussGateTest(unittest.TestCase):
             SCRIPT.parents[1] / "infra/Dockerfile.postgres",
             self.repository / "scripts/infra/Dockerfile.postgres",
         )
+        (self.repository / "scripts/utils").mkdir(parents=True)
+        shutil.copy2(SCRIPT.parents[1] / "utils/hosted-online.sh", self.repository / "scripts/utils/hosted-online.sh")
         self._executable(
             "uname",
             """

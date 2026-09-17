@@ -163,6 +163,12 @@ System IAM 安全策略是 `platform_only` 的 System-owned 平台安全配置�
 
 模块通过 System 获取 AuthContext、Engine Instance 和其他 System-owned 业务事实，不通过 System 获取本模块进程数据库密码、加密密钥或普通运行配置。业务数据源连接信息继续以 System `engines` 强类型资源为事实源；这不等于 System 是所有配置的事实源。
 
+### Ontology FalkorDB 部署配置
+
+FalkorDB 是 Ontology 私有 Infra，不进入 System Engine 注册，也不复用 Infra Redis。根 `.env` 的 `INFRA_FALKORDB_PASSWORD` 是独立 Secret，必须非空；生产初始化生成随机值，禁止使用模板开发密码或复用 Redis 密码。宿主开发连接固定为 `127.0.0.1:16479`，容器通过 `falkordb:6379` 连接；不开放 Browser。
+
+`scripts/infra/falkordb.yml` 是正式 Compose 与 disposable T2 共用的服务定义，随现有 Infra 打包路径发布，固定镜像 digest、非零查询预算、线程/查询内存/队列上限和容器资源限制。`/data` 使用独立 `falkordb_data` 卷，采用 RDB 快照；PG 仍是恢复权威，RDB 不能替代发布摘要校验与重建。此单机配置只用于本地开发/受控同机网络，未声明生产 TLS、HA 或灾备认证。
+
 ### Standard 文档文件部署配置
 
 Standard 文档文件由 Standard owner 写入 ADDP infra MinIO 的 `standard` bucket。以下参数在服务启动前生效，属于部署级资源保护配置：
@@ -491,6 +497,7 @@ MANAGER_EXECUTION_CLAIM_INTERVAL=1s
 MANAGER_EXECUTION_IDLE_MAX_INTERVAL=5s
 META_SERVICE_CLIENT_SECRET=
 MODEL_SERVICE_CLIENT_SECRET=
+ONTOLOGY_SERVICE_CLIENT_SECRET=
 MONITOR_SERVICE_CLIENT_SECRET=
 ORCHESTRATOR_SERVICE_CLIENT_SECRET=
 PORTAL_SERVICE_CLIENT_SECRET=

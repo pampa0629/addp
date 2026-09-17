@@ -1,6 +1,7 @@
 <template>
   <div class="scalar-value-renderer">
-    <article v-for="item in displayItems" :key="item.field" class="value-card" :class="item.state ? `state--${item.state.tone}` : ''" :aria-label="item.label">
+    <article v-for="item in displayItems" :key="item.field" class="value-card" :class="item.state ? `state--${item.state.tone}` : ''" :aria-label="item.label" :role="selectable ? 'button' : undefined" :tabindex="selectable ? 0 : undefined"
+      @click="selectResult" @keydown.enter.prevent="selectResult" @keydown.space.prevent="selectResult">
       <div class="value-heading">
         <div class="value-label">{{ item.label }}</div>
         <span v-if="item.state" class="state-indicator">{{ item.state.label }}</span>
@@ -20,11 +21,16 @@ import { formatScalarValue } from '../utils/scalarValueResult.mjs'
 import { presentFieldValue } from '../utils/fieldPresentation.mjs'
 
 const props = defineProps({
+  selectable: { type: Boolean, default: false },
   rows: { type: Array, default: () => [] },
   config: { type: Object, required: true },
   fields: { type: Array, default: () => [] },
 })
 
+const emit = defineEmits(['result-select'])
+function selectResult() {
+  if (props.selectable && props.rows.length === 1) emit('result-select', { row_index: 0 })
+}
 const { locale } = useI18n()
 const fieldFacts = computed(() => Object.fromEntries(props.fields.map((field) => [field.name, field])))
 const displayItems = computed(() => (props.config.items || []).map((item) => {
@@ -53,6 +59,9 @@ const displayItems = computed(() => (props.config.items || []).map((item) => {
   border: 1px solid var(--addp-border-color);
   border-radius: 8px;
 }
+
+.value-card[role="button"] { cursor: pointer; }
+.value-card[role="button"]:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: 2px; }
 
 .value-card.state--info { border-color: var(--el-color-info); }
 .value-card.state--success { border-color: var(--el-color-success); }

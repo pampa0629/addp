@@ -2,7 +2,7 @@
   <div class="renderer-host" data-testid="renderer-host">
     <p v-for="summary in periodDisplay.summaries" :key="summary" class="period-summary" data-testid="period-summary">{{ summary }}</p>
     <el-empty
-      v-if="rendererType === 'value' && !resultReady"
+      v-if="(rendererType === 'value' || config.total_as_value) && !resultReady"
       :description="t('workbench.noData')"
     />
     <TabularResultRenderer
@@ -19,6 +19,14 @@
       type="warning"
       :closable="false"
       :title="t(`workbench.rendererErrors.${invalidReason}`)"
+    />
+    <ScalarValueRenderer
+      v-else-if="totalValueConfig"
+      :rows="rows"
+      :config="totalValueConfig"
+      :fields="descriptor?.output_contract?.fields || []"
+      selectable
+      @result-select="emit('result-select', $event)"
     />
     <ChartRenderer
       v-else-if="rendererType === 'chart'"
@@ -51,8 +59,7 @@
 <script setup>
 import { computed, defineAsyncComponent, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { resolvePeriodPresentation } from '../utils/periodPresentation.mjs'
-import { useI18n } from 'vue-i18n'
+import { resolvePeriodPresentation, periodValueConfig } from '../utils/periodPresentation.mjs'
 import { ScalarValueRenderer, TabularResultRenderer } from '@common-ui'
 import { validateScalarValueResult } from '@common-ui/utils/scalarValueResult.mjs'
 import { validateChartResult } from '@common-ui-chart/chartResult.mjs'
@@ -77,9 +84,10 @@ const props = defineProps({
 const emit = defineEmits(['result-select'])
 const { t, locale } = useI18n()
 const periodDisplay = computed(() => resolvePeriodPresentation(props.config, props.resultReady ? props.queryParameters : null, locale.value, t))
-const { t } = useI18n()
+const totalValueConfig = computed(() => props.rendererType === 'chart' ? periodValueConfig(periodDisplay.value.config) : null)
 const emittedReason = ref('')
 const validationReason = computed(() => {
+  if (totalValueConfig.value) return validateScalarValueResult(props.rows, totalValueConfig.value, Boolean(props.page?.has_more)).reason
   if (props.rendererType === 'chart') {
     return validateChartResult(props.rows, props.config, Boolean(props.page?.has_more)).reason
   }

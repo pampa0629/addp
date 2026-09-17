@@ -162,7 +162,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "逐一重新校验 Component 的 Service 契约，并使用当前权威指纹归一化完整应用草稿 | Revalidate every Component Service contract and normalize the complete application draft with authoritative current fingerprints\nrenderer_config.field_presentations 可配置 value_labels：最多 32 个 string 或 bool 原值到显示名称的映射，不改变查询和原始结果 | renderer_config.field_presentations accepts value_labels: up to 32 typed string or bool value-label pairs for display only, without changing queries or original results",
+                "description": "逐一重新校验 Component 的 Service 契约，并使用当前权威指纹归一化完整应用草稿 | Revalidate every Component Service contract and normalize the complete application draft with authoritative current fingerprints\nrenderer_config.field_presentations 可配置 value_labels：最多 32 个 string 或 bool 原值到显示名称的映射，不改变查询和原始结果 | renderer_config.field_presentations accepts value_labels: up to 32 typed string or bool value-label pairs for display only, without changing queries or original results\nChart 的 total_as_value=true 要求期间维度、1–4 个显式精度度量，全期显示唯一完整行的数字卡片，按月仍显示图表 | Chart total_as_value=true requires a period dimension and 1–4 explicitly precise measures; full-period results use single-complete-row value cards, monthly results remain charts\nTable/Chart 的 date 字段支持 temporal_format=period，period 中的 grain_parameter/start_parameter/end_parameter 显式引用必填命名参数，类型依次为 total/month 枚举 string、date、date；只改变显示 | Table/Chart date fields accept temporal_format=period with explicit period grain_parameter/start_parameter/end_parameter references to required named parameters of types total/month enum string, date and date; presentation only",
                 "consumes": [
                     "application/json"
                 ],
@@ -296,7 +296,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "允许增删改 Component；使用正整数 version 乐观并发，并逐一重新校验所有 Service 契约 | Allow adding, removing, and editing Components; use positive version optimistic concurrency and revalidate every Service contract\n字段 value_labels 随草稿及发布修订保存；拒绝重复原值、类型不符和空标签 | Field value_labels are saved with drafts and published revisions; duplicate values, type mismatches and empty labels are rejected",
+                "description": "允许增删改 Component；使用正整数 version 乐观并发，并逐一重新校验所有 Service 契约 | Allow adding, removing, and editing Components; use positive version optimistic concurrency and revalidate every Service contract\n字段 value_labels 随草稿及发布修订保存；拒绝重复原值、类型不符和空标签 | Field value_labels are saved with drafts and published revisions; duplicate values, type mismatches and empty labels are rejected\nChart 的 total_as_value 同步保存并校验期间维度、1–4 个度量与显式精度 | Chart total_as_value persists and validates its period dimension, 1–4 measures, and explicit precision\n统计期间展示绑定随草稿和发布修订保存；拒绝不存在、类型不匹配或开始结束相同的参数绑定 | Period presentation bindings persist in drafts and revisions; unknown, mismatched or identical start/end parameter bindings are rejected",
                 "consumes": [
                     "application/json"
                 ],

@@ -96,7 +96,27 @@ func definitionBinding(kind string) models.CheckBindings {
 	return b
 }
 func resolvedDefinition(content models.RuleContent) (PlanRule, error) {
-	params, err := models.ResolveRuleParams(content.Type, content.Params, definitionBinding(content.Type))
+	binding := definitionBinding(content.Type)
+	if content.Type == "relational_assertion" {
+		_, inputs, err := models.ParseAssertionConstraint(content.Params)
+		if err != nil {
+			return PlanRule{}, err
+		}
+		binding.Fields = map[string]string{}
+		binding.Relations = map[string]models.RelationBinding{}
+		for role, symbols := range inputs {
+			fields := map[string]string{}
+			for symbol := range symbols {
+				fields[symbol] = symbol
+			}
+			if role == "" {
+				binding.Fields = fields
+			} else {
+				binding.Relations[role] = models.RelationBinding{Table: "reference", Fields: fields}
+			}
+		}
+	}
+	params, err := models.ResolveRuleParams(content.Type, content.Params, binding)
 	return PlanRule{RuleKey: "00000000-0000-4000-8000-000000000001", Type: content.Type, Params: params, Name: content.Name, Source: content.Source, Severity: "error"}, err
 }
 func (s *RuleService) validate(ctx context.Context, tenantID int64, request *RuleWriteRequest, previous *models.QualityRule) error {

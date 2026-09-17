@@ -6,6 +6,7 @@
 
 - PostgreSQL: `15432`
 - Redis: `16379`
+- FalkorDB: `16479`（仅绑定 `127.0.0.1`；Ontology 私有 Infra，不注册为业务 Engine）
 - MinIO API: `19000`
 - MinIO Console: `19001`
 - Meilisearch: `17700`
@@ -153,6 +154,7 @@ make ports-validate
 | Document Workflow Engine   | 8105     | 8105        | 文档转换工作流引擎         |
 | PostgreSQL (System)   | 15432    | 15432       | ADDP 系统元数据            |
 | Redis                 | 16379    | 16379       | 缓存、事件和分布式锁       |
+| FalkorDB              | 16479    | 6379        | Ontology Infra，仅绑定回环，不注册为业务 Engine |
 | MinIO System API      | 19000    | 19000       | 系统文件存储               |
 | MinIO System Console  | 19001    | 19001       | 系统 MinIO Web UI          |
 | Meilisearch           | 17700    | 17700       | 全文检索引擎               |

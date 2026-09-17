@@ -21,3 +21,13 @@ export function resolvePeriodPresentation(config, parameters, locale, t) {
   })
   return { config: { ...config, field_presentations: fieldPresentations }, summaries: [...summaries] }
 }
+
+// Only explicit display intent and the completed query may switch renderers.
+export function periodValueConfig(config) {
+  const dimension = config.field_presentations?.find(item => item.field === config.dimension)
+  if (config.total_as_value !== true || dimension?.temporal_format !== 'period' || dimension.period_context?.grain !== 'total') return null
+  return { items: (config.measures || []).map(field => {
+    const presentation = config.field_presentations?.find(item => item.field === field) || {}
+    return { field, label: presentation.label, unit: presentation.unit, precision: presentation.precision, state_rules: presentation.state_rules }
+  }) }
+}

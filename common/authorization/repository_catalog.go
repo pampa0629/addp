@@ -22,6 +22,7 @@ var stablePermissionOwnerModules = []string{
 	"meta",
 	"model",
 	"monitor",
+	"ontology",
 	"orchestrator",
 	"quality",
 	"security",

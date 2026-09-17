@@ -124,11 +124,13 @@ test('data application components own service selection, rendering, parameters, 
   assert.match(editor, /executeDescriptorOperation\(operation, requestBody\)/)
   assert.match(editor, /:result-ready="queryCompleted"/)
   assert.match(canvas, /:result-ready="state\(placement\.component_id\)\.query_completed"/)
-  assert.match(rendererHost, /rendererType === 'value' && !resultReady/)
+  assert.match(rendererHost, /rendererType === 'value' \|\| config\.total_as_value/)
   assert.match(editor, /fieldPresentations/)
   assert.match(draft, /export function buildRendererConfig/)
   assert.match(draft, /export function synchronizeFieldPresentations/)
-  assert.match(rendererHost, /:presentations="config\.field_presentations \|\| \[\]"/)
+  assert.match(rendererHost, /:presentations="periodDisplay\.config\.field_presentations \|\| \[\]"/)
+  assert.match(rendererHost, /resolvePeriodPresentation/)
+  assert.match(canvas, /current\.result_parameters = structuredClone\(requestBody\.parameters \|\| \{\}\)/)
 })
 
 test('state presentation stays a controlled renderer configuration without raw colors or expressions', () => {

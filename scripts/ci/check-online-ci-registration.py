@@ -813,6 +813,9 @@ def validate_opengauss_consumer_flow_profile(
     hosted = (repository / "scripts/test/online-hosted-opengauss-gate.sh").read_text(
         encoding="utf-8"
     )
+    if 'source "$ROOT_DIR/scripts/utils/hosted-online.sh"' not in hosted:
+        raise RegistrationError("opengauss profile must use the shared Hosted lifecycle")
+    hosted += (repository / "scripts/utils/hosted-online.sh").read_text(encoding="utf-8")
     for fragment in (
         "# ADDP_ONLINE_SUITES=opengauss-consumer-flow",
         "GITHUB_ACTIONS",
@@ -926,7 +929,9 @@ def validate_opengauss_consumer_flow_profile(
     for fragment in (
         'engineProvisionerRoleKey = "tenant.infrastructure_administrator"',
         "repository.GetActiveBuiltinRoleByKey(ctx, engineProvisionerRoleKey)",
-        'RoleKey: "online.relational_consumer"',
+        'RoleKey: "online." + strings.ReplaceAll(*suite, "-", "_")',
+        "permissions, err := suitePermissions(*suite)",
+        "PermissionKeys: permissions",
         '"ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN"',
     ):
         if fragment not in identity_fixture:

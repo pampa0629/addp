@@ -24,7 +24,7 @@ compose() {
 
 echo -e "${BLUE}========================================${NC}"
 echo -e "${BLUE}ADDP Infrastructure Up${NC}"
-echo -e "${BLUE}(PostgreSQL/Redis/MinIO/Meilisearch/Redpanda/Kafka Connect)${NC}"
+echo -e "${BLUE}(PostgreSQL/Redis/FalkorDB/MinIO/Meilisearch/Redpanda/Kafka Connect)${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo ""
 
@@ -33,6 +33,15 @@ if [ -f ./.env ]; then
   # shellcheck disable=SC1091
   source ./.env || true
   set +a
+fi
+
+if [ -z "${INFRA_FALKORDB_PASSWORD:-}" ]; then
+  echo -e "${RED}✗ 请在根 .env 设置独立的 INFRA_FALKORDB_PASSWORD${NC}"
+  exit 1
+fi
+if [ "${INFRA_FALKORDB_PASSWORD}" = "${REDIS_PASSWORD:-}" ]; then
+  echo -e "${RED}✗ FalkorDB 与 Redis 密码不得复用${NC}"
+  exit 1
 fi
 
 # Detect CPU architecture and select the single supported PostgreSQL image path.
@@ -105,6 +114,7 @@ echo -e "${YELLOW}▶ 端口占用检查（固定端口，不自动改）${NC}"
 # default desired ports
 PG_PORT=15432
 REDIS_PORT=16379
+FALKORDB_PORT=16479
 MINIO_API_PORT=19000
 MINIO_CONSOLE_PORT=19001
 MEILISEARCH_PORT=17700
@@ -153,6 +163,18 @@ if [ "$(check_port "$REDIS_PORT")" = "busy" ]; then
   fi
 else
   echo -e "  ${GREEN}✓ Redis 端口 ${REDIS_PORT} 可用${NC}"
+  ALL_SERVICES_RUNNING=false
+fi
+
+# FalkorDB（固定回环 16479；不自动选择端口）
+if [ "$(check_port "$FALKORDB_PORT")" = "busy" ]; then
+  if port_used_by_container "$FALKORDB_PORT" "addp-falkordb"; then
+    echo -e "  ${GREEN}✓ FalkorDB 端口 ${FALKORDB_PORT} 已由 addp-falkordb 使用${NC}"
+  else
+    echo -e "  ${RED}✗ FalkorDB 端口 ${FALKORDB_PORT} 被其他进程占用${NC}"
+    exit 1
+  fi
+else
   ALL_SERVICES_RUNNING=false
 fi
 
@@ -212,23 +234,15 @@ if [ "$BUILD_REPOSITORY_POSTGRES_IMAGE" = "true" ] &&
 fi
 
 # Images to check
-IMAGES=(
-  "$POSTGRES_IMAGE"
-  "redis:7-alpine"
-  "minio/minio:latest"
-  "getmeili/meilisearch:v1.7"
-  "${REDPANDA_IMAGE:-docker.redpanda.com/redpandadata/redpanda:v24.3.18}"
-  "${KAFKA_CONNECT_IMAGE:-quay.io/debezium/connect:3.6.0.Final}"
-)
-
-for image in "${IMAGES[@]}"; do
+COMPOSE_IMAGES=$(compose config --images)
+while IFS= read -r image; do
   if ! docker image inspect "$image" >/dev/null 2>&1; then
     echo -e "  ${BLUE}拉取镜像: $image${NC}"
     docker pull "$image"
   else
     echo -e "  ${GREEN}✓ $image 已存在${NC}"
   fi
-done
+done <<< "$COMPOSE_IMAGES"
 
 echo ""
 echo -e "${YELLOW}▶ 检查服务运行状态...${NC}"
@@ -236,10 +250,10 @@ echo -e "${YELLOW}▶ 检查服务运行状态...${NC}"
 # Check if services are already running
 RUNNING_SERVICES=$(compose ps --status running --format "{{.Service}}" 2>/dev/null || true)
 
-if echo "$RUNNING_SERVICES" | grep -qE "postgres|redis|minio|meilisearch|redpanda|kafka-connect"; then
+if echo "$RUNNING_SERVICES" | grep -qE "postgres|redis|falkordb|minio|meilisearch|redpanda|kafka-connect"; then
   echo -e "  ${GREEN}检测到部分服务已在运行${NC}"
   echo "  运行中的服务:"
-  for svc in postgres redis minio meilisearch redpanda kafka-connect; do
+  for svc in postgres redis falkordb minio meilisearch redpanda kafka-connect; do
     if echo "$RUNNING_SERVICES" | grep -q "^${svc}$"; then
       echo -e "    ${GREEN}✓ $svc${NC}"
     fi
@@ -295,6 +309,18 @@ for i in $(seq 1 ${max_wait}); do
     echo "请检查: docker compose -f docker-compose.infra.yml logs -f redis"; \
     exit 1; \
   fi
+done
+
+# FalkorDB: healthcheck verifies authentication and the graph module budget.
+printf "%s" "- FalkorDB   "
+for i in $(seq 1 ${max_wait}); do
+  health=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}' addp-falkordb 2>/dev/null || true)
+  if [ "$health" = "healthy" ]; then
+    echo -e "${GREEN}✓${NC}"
+    break
+  fi
+  sleep 1; printf "%s" "."
+  if [ "$i" -eq "$max_wait" ]; then echo -e "\n${RED}✗ FalkorDB 等待超时${NC}"; exit 1; fi
 done
 
 # MinIO
@@ -391,6 +417,7 @@ echo ""
 echo "访问地址与默认凭据："
 echo "  - PostgreSQL:  localhost:15432  user=addp  password=addp_password  db=addp"
 echo "  - Redis:       localhost:16379  password=addp_redis"
+echo "  - FalkorDB:    127.0.0.1:16479  Ontology 私有 Infra（凭据不输出）"
 echo "  - MinIO API:   http://localhost:19000  user=${MINIO_ROOT_USER:-minioadmin}  password=${MINIO_ROOT_PASSWORD:-minioadmin}"
 echo "  - MinIO Console:http://localhost:19001"
 echo "  - Meilisearch: http://localhost:17700  master_key=${MEILISEARCH_MASTER_KEY:-未设置}"

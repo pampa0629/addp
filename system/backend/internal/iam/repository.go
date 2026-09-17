@@ -410,7 +410,7 @@ func (r *Repository) CreateExecutionAuthorization(
 	authorization *ExecutionAuthorization,
 	accesses []ExecutionAuthorizationEngineAccess,
 ) error {
-	if authorization == nil || len(accesses) == 0 {
+	if authorization == nil || (authorization.InternalTask == nil) == (len(accesses) == 0) {
 		return fmt.Errorf("%w: execution authorization is required", commonapi.ErrBadRequest)
 	}
 	err := r.db.WithContext(ctx).Transaction(func(db *gorm.DB) error {
@@ -427,8 +427,10 @@ func (r *Repository) CreateExecutionAuthorization(
 		for index := range accesses {
 			accesses[index].AuthorizationID = authorization.ID
 		}
-		if createErr := db.Create(&accesses).Error; createErr != nil {
-			return createErr
+		if len(accesses) > 0 {
+			if createErr := db.Create(&accesses).Error; createErr != nil {
+				return createErr
+			}
 		}
 		sealedAt := authorization.CreatedAt
 		result := db.Model(&ExecutionAuthorization{}).

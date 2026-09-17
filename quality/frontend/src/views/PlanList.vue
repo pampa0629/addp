@@ -423,6 +423,7 @@
                 </el-form-item>
               </template>
             </div>
+            <AssertionBindings v-if="item.rule.type === 'relational_assertion'" :assertion="item.rule.params.assertion" :bindings="item.bindings" :tables="bindings" :fields-for-alias="fieldsForAlias" />
           </el-card>
         </template>
         <el-alert
@@ -481,6 +482,8 @@ import {
   serializeCheckItems,
 } from "../utils/planContract";
 import RuleConstraintFields from "../components/RuleConstraintFields.vue";
+import AssertionBindings from '../components/AssertionBindings.vue';
+import { assertionBindings, validAssertionBindings } from '../utils/assertion';
 import {
   buildPlanRouteQuery,
   resolvePlanRouteState,
@@ -546,6 +549,8 @@ const upgradeRule = (item) => {
   if (!latest) return;
   if (item.rule.type !== latest.type)
     item.bindings = createCheckItem(latest, item.bindings.table).bindings;
+  else if (latest.type === 'relational_assertion')
+    Object.assign(item.bindings, assertionBindings(latest.params.assertion, item.bindings));
   item.revision_no = latest.revision_no;
   item.rule = {
     ...latest,
@@ -897,6 +902,7 @@ const assertValid = () => {
     const b = item.bindings,
       type = item.rule.type;
     if (!aliases.includes(b.table)) return t("quality.plan.ruleInvalid");
+    if (type === 'relational_assertion' && !validAssertionBindings(item.rule.params.assertion, b, aliases)) return t('quality.plan.ruleInvalid');
     if (
       [
         "not_null",

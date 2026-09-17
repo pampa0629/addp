@@ -50,9 +50,11 @@ var executionAudienceClients = map[string]string{
 	commonExecution.AudienceTransfer: "addp-transfer",
 	commonExecution.AudienceDuckDB:   "addp-duckdb",
 	commonExecution.AudienceService:  "addp-service",
+	commonExecution.AudienceOntology: "addp-ontology",
 }
 
 type IssueExecutionAuthorizationInput struct {
+	InternalTask      *commonExecution.InternalTaskScope
 	SourceAccessToken string
 	Audience          string
 	ExecutionID       uuid.UUID
@@ -88,6 +90,7 @@ type IssueExecutionAuthorizationFromServiceDefinitionInput struct {
 }
 
 type IssuedExecutionAuthorization struct {
+	InternalTask               *commonExecution.InternalTaskScope
 	ID                         int64
 	ExecutionID                uuid.UUID
 	Audience                   string
@@ -146,9 +149,7 @@ func (s *ExecutionAuthorizationService) Issue(
 	if s == nil || s.repository == nil {
 		return nil, fmt.Errorf("%w: execution authorization service is required", commonapi.ErrBadRequest)
 	}
-	audience, accesses, effects, ttl, err := normalizeExecutionAuthorizationRequest(
-		input.Audience, input.ExecutionID, input.Accesses, input.ExpiresIn,
-	)
+	audience, accesses, effects, ttl, err := normalizeUserExecutionAuthorizationRequest(input)
 	if err != nil {
 		return nil, err
 	}
@@ -201,6 +202,7 @@ func (s *ExecutionAuthorizationService) Issue(
 		now := lockedSnapshot.DatabaseTime.UTC()
 		expiresAt := now.Add(ttl)
 		authorization := &ExecutionAuthorization{
+			InternalTask:     cloneInternalTaskScope(input.InternalTask),
 			ActorPrincipalID: principal.ID, TenantID: *lockedSnapshot.TenantID,
 			TenantMembershipID:         *lockedSnapshot.TenantMembershipID,
 			IssuedAuthorizationVersion: principal.AuthorizationVersion,
@@ -225,7 +227,8 @@ func (s *ExecutionAuthorizationService) Issue(
 			Result: AuditResultSucceeded, RiskLevel: executionAuthorizationRisk(effects), ModuleName: "system",
 			EntityType: "execution_authorization", EntityID: strconv.FormatInt(authorization.ID, 10),
 			Details: map[string]any{
-				"audience": audience, "execution_id": input.ExecutionID.String(),
+				"internal_task": cloneInternalTaskScope(input.InternalTask),
+				"audience":      audience, "execution_id": input.ExecutionID.String(),
 				"accesses":              executionAuthorizationAccessAudit(accesses),
 				"expires_at":            expiresAt.Format(time.RFC3339Nano),
 				"authorization_version": strconv.FormatInt(principal.AuthorizationVersion, 10),
@@ -235,7 +238,8 @@ func (s *ExecutionAuthorizationService) Issue(
 		}
 
 		issued = &IssuedExecutionAuthorization{
-			ID: authorization.ID, ExecutionID: authorization.ExecutionID, Audience: audience,
+			InternalTask: cloneInternalTaskScope(input.InternalTask),
+			ID:           authorization.ID, ExecutionID: authorization.ExecutionID, Audience: audience,
 			Accesses:  cloneExecutionEngineAccessScopes(accesses),
 			ExpiresAt: expiresAt, ActorPrincipalID: principal.ID, TenantID: *lockedSnapshot.TenantID,
 			TenantMembershipID:         *lockedSnapshot.TenantMembershipID,
@@ -675,7 +679,7 @@ func normalizeExecutionAuthorizationRequest(
 	expiresIn time.Duration,
 ) (string, []ExecutionEngineAccessScope, []string, time.Duration, error) {
 	audience = strings.TrimSpace(audience)
-	if executionID == uuid.Nil || audience == "" || executionAudienceClients[audience] == "" {
+	if executionID == uuid.Nil || audience == "" || audience == commonExecution.AudienceOntology || executionAudienceClients[audience] == "" {
 		return "", nil, nil, 0, fmt.Errorf("%w: unsupported execution authorization audience", commonapi.ErrBadRequest)
 	}
 	if expiresIn == 0 {
@@ -832,6 +836,9 @@ func containsAllExecutionPermissions(
 	}
 
 	switch audience {
+	case commonExecution.AudienceOntology:
+		_, allowed := available["ontology.revision.publish"]
+		return len(effects) == 0 && allowed
 	case commonExecution.AudienceQuality:
 		return containsQualityReadBoundary()
 	case commonExecution.AudienceDevelop:

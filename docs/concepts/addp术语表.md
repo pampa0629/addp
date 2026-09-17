@@ -276,6 +276,7 @@
 | logical table structural constraints | 逻辑表结构约束 | Model 从逻辑字段和表关系派生的主键组合、必填字段集合及出向外键关系。 | 是只读投影，不重复保存规则；多字段主键表达组合唯一，不能解释成每个字段分别唯一。检查方案、阈值和阻断策略属于 Quality。 |
 | QualityRule | 质量规则定义 | Quality 中可跨方案复用的强类型约束主资源，不绑定实际引擎、表或字段。 | 保存生成不可变修订 revision_no；version 仅用于并发控制。Standard 来源固定到已发布修订，不反向修改标准。 |
 | quality rule revision | 质量规则修订 | 规则某次保存形成的不可变名称、类型、约束和来源快照。 | 方案固定引用，规则更新不自动改变方案；需要显式升级引用。 |
+| relational assertion | 跨表断言 | 对主表每条记录与显式参照集合之间的存在性、字段一致性或计数关系进行检查的有界质量约束。 | 规则保存逻辑字段符号，方案检查项绑定实际表与列；不是 SQL 脚本或通用计算任务，参照表纳入同一次质量执行快照和授权。 |
 | quality stable code | 质量规则编码 / 质量方案编码 | QualityRule 或 QualityPlan 在租户内唯一且创建后不可变的机器标识 code。 | 用户界面分别称为规则编码、方案编码，不称为代码；与显示名称、数据库 ID、修订号和并发 version 区分。 |
 | quality plan check item | 方案检查项 | 方案与规则修订的关联，保存实际目标绑定、阻断级别和启停状态。 | 从属于方案版本；稳定 rule_key 识别检查项。同一规则可被多个方案引用，也可在同一方案中检查多个目标。 |
 | QualityPlan | 质量检查方案 | Quality 唯一正式执行聚合，通过检查项选择规则修订并声明表别名和可选默认数据表。 | 执行时补齐实际目标，支持手动及编排执行，冻结版本、目标和规则；来源变化不自动改写方案。不依赖 Catalog，不等于企业落标映射。 |
@@ -388,8 +389,9 @@
 | Workflow Access Plan | 工作流访问计划 | Develop、Manager 等调用方把已解析的存储资源转换为 Workflow Runtime 可执行读写计划的内部契约。 | 当前版本为 `addp.workflow.access-plan/v1`；只在执行期携带 `mounted_path` 或 `object_store` 访问参数，不作为用户任务定义、资源身份或长期事实源。 |
 | Execution Effect | 执行效果 | 一次计算对数据或外部系统可能产生的效果分类。 | 固定为 `read`、`write`、`ddl`、`external_effect`；工作流按全部算子的最高效果收窄授权，不能由客户端自报后直接信任。 |
 | Engine Access Scope | 引擎访问范围 | Execution Authorization 中一个 Source Engine 与其允许 Execution Effect 集合组成的最小授权单元。 | 授权必须逐引擎保存和校验，不得把独立的 Engine ID 集合与 Effect 集合做笛卡尔积；例如跨引擎传输应分别表达源 `read` 和目标 `write`。 |
+| Internal Task Scope | 内部任务范围 | Execution Authorization 中绑定 owner 内部任务类型、资源修订、摘要与 generation 的不可变操作范围。 | 与 Engine Access Scope 互斥；不授予业务 Engine 访问权。首个消费者为 Ontology 语义投影，使用 Infra FalkorDB，不注册业务 Engine。 |
 | Execution Audience | 执行受众 | Execution Authorization 中标识唯一逻辑消费模块或 Runtime 的稳定协议标识。 | 使用不带 `addp-` 前缀的模块或 Runtime 标识，例如 `model`、`quality`、`develop`、`transfer`、`service`、`duckdb`；不是 OAuth Client ID、Service Principal 名称、进程名或前端包名。规范映射见 `docs/spec/addp登录认证的统一要求.md`。 |
-| Execution Authorization | 执行授权 | System 基于当前 User AuthContext 或已发布服务定义来源，绑定唯一 execution、Tenant、owner audience、Source Engine、允许效果、来源版本和有效期的短期授权事实。 | 两种来源互斥；Notebook 派生的用户来源还绑定其 Notebook Session Authorization，并继承 Session 与 Token Family 生命周期。服务定义来源只允许 owner Service Principal 为自己的已发布定义签发只读授权。它不是 Role、OAuth Scope 或第二种 Tenant Membership，只允许匹配 audience 的 Runtime Service Principal 消费。 |
+| Execution Authorization | 执行授权 | System 基于当前 User AuthContext 或已发布服务定义来源，绑定唯一 execution、Tenant、owner audience、不可变操作范围、来源版本和有效期的短期授权事实。 | 逐引擎 Engine Access Scope 与 Internal Task Scope 互斥。两种来源互斥；Notebook 派生的用户来源还绑定其 Notebook Session Authorization，并继承 Session 与 Token Family 生命周期。服务定义来源只允许 owner Service Principal 为自己的已发布定义签发只读引擎授权。它不是 Role、OAuth Scope 或第二种 Tenant Membership，只允许匹配 audience 的 Runtime Service Principal 消费。 |
 | Task Authorization Subject | 任务授权主体 | 持久任务定义为定时或延迟执行绑定的 User、Tenant Membership 和授权版本事实。 | 只能由同 Tenant 的当前 User AuthContext 在创建、更新或显式重新授权任务时写入；不保存 Access Token。任务定义变化或授权版本变化后必须重新授权，执行开始时仍需重新校验 Membership、Role、资源规则和授权版本。 |
 | Managed Compute Session | 受控计算会话 | Develop 按 Execution Authorization 创建并管理的 SQL、Workflow 或 Jupyter 执行会话。 | Runtime 只获得本次执行所需的短期访问能力；Jupyter 不再直接获得长期 Engine 凭据或共享 Lab 的无限制数据访问。 |
 | Notebook Interactive Session | Notebook 交互会话 | Develop 为一个 Tenant、User、Notebook Task 和 Script Engine 临时创建的隔离 JupyterLab 会话。 | 由已鉴权 API 创建，浏览器只访问 Develop 同源代理；会话关闭、过期或 Develop 重启后失效，Runtime 在清理前把 Notebook 保存回 owner 路径。它不是共享 Lab，也不是任务执行记录。 |

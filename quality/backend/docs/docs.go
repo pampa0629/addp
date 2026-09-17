@@ -838,6 +838,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "规则约束不绑定物理目标；跨表断言使用有界逻辑表达式，参照角色与字段在方案检查项中绑定。 | Constraints are target-independent; relational assertions use bounded logical expressions with roles and fields bound by plan check items.",
                 "consumes": [
                     "application/json"
                 ],
@@ -999,6 +1000,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "内容修改生成不可变修订，方案须显式升级引用；不接受 SQL 约束。 | Content changes create immutable revisions; plans upgrade references explicitly. SQL constraints are not accepted.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1896,6 +1898,12 @@ const docTemplate = `{
                         "type": "string"
                     }
                 },
+                "fields": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
                 "reference_columns": {
                     "type": "array",
                     "items": {
@@ -1904,6 +1912,12 @@ const docTemplate = `{
                 },
                 "reference_table": {
                     "type": "string"
+                },
+                "relations": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/github_com_addp_quality_internal_models.RelationBinding"
+                    }
                 },
                 "table": {
                     "type": "string"
@@ -2207,7 +2221,19 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "type": {
-                    "type": "string"
+                    "type": "string",
+                    "enum": [
+                        "not_null",
+                        "allowed_values",
+                        "format",
+                        "length",
+                        "value_range",
+                        "unique_key",
+                        "foreign_key",
+                        "predicate_implication",
+                        "row_count",
+                        "relational_assertion"
+                    ]
                 },
                 "updated_at": {
                     "type": "string"
@@ -2273,6 +2299,20 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_quality_internal_models.RelationBinding": {
+            "type": "object",
+            "properties": {
+                "fields": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "table": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_quality_internal_models.ResolveCatalogSummariesRequest": {
             "type": "object",
             "properties": {
@@ -2326,7 +2366,19 @@ const docTemplate = `{
                     "$ref": "#/definitions/github_com_addp_quality_internal_models.RuleSource"
                 },
                 "type": {
-                    "type": "string"
+                    "type": "string",
+                    "enum": [
+                        "not_null",
+                        "allowed_values",
+                        "format",
+                        "length",
+                        "value_range",
+                        "unique_key",
+                        "foreign_key",
+                        "predicate_implication",
+                        "row_count",
+                        "relational_assertion"
+                    ]
                 }
             }
         },
@@ -2455,7 +2507,19 @@ const docTemplate = `{
                     "$ref": "#/definitions/github_com_addp_quality_internal_models.RuleSource"
                 },
                 "type": {
-                    "type": "string"
+                    "type": "string",
+                    "enum": [
+                        "not_null",
+                        "allowed_values",
+                        "format",
+                        "length",
+                        "value_range",
+                        "unique_key",
+                        "foreign_key",
+                        "predicate_implication",
+                        "row_count",
+                        "relational_assertion"
+                    ]
                 },
                 "version": {
                     "type": "integer"
@@ -2815,7 +2879,19 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "type": {
-                    "type": "string"
+                    "type": "string",
+                    "enum": [
+                        "not_null",
+                        "allowed_values",
+                        "format",
+                        "length",
+                        "value_range",
+                        "unique_key",
+                        "foreign_key",
+                        "predicate_implication",
+                        "row_count",
+                        "relational_assertion"
+                    ]
                 },
                 "updated_at": {
                     "type": "string"

@@ -3996,7 +3996,7 @@ func assertExecutionAuthorizationConstraints(t *testing.T, db *sql.DB) {
 	`).Scan(&triggerCount); err != nil {
 		t.Fatalf("count execution authorization triggers: %v", err)
 	}
-	if permissionCount != 8 || rolePermissionCount != 20 || triggerCount != 3 || audienceConstraintCount != 1 || attemptBoundaryCount != 2 {
+	if permissionCount != 8 || rolePermissionCount != 20 || triggerCount != 4 || audienceConstraintCount != 1 || attemptBoundaryCount != 2 {
 		t.Fatalf("execution authorization catalog permissions=%d role_permissions=%d triggers=%d audience_constraints=%d attempt_columns=%d", permissionCount, rolePermissionCount, triggerCount, audienceConstraintCount, attemptBoundaryCount)
 	}
 }
@@ -4310,7 +4310,7 @@ func assertServicePrincipalRuntimeConstraints(t *testing.T, db *sql.DB) {
 		transferTenantPermissions != "audit.tenant_event.create,meta.catalog.read,meta.inspect.execute,meta.scan_task.execute,security.protection_projection.read,security.protection_projection.update,system.engine_descriptor.read,system.engine.read,system.execution_authorization.execute" ||
 		developTenantPermissions != "audit.tenant_event.create,meta.catalog.read,meta.lineage.create,meta.scan_task.execute,security.protection_projection.read,security.protection_projection.update,system.engine_descriptor.read,system.execution_authorization.execute,system.notebook_session_authorization.execute,transfer.execution.create,transfer.execution.read" ||
 		copilotTenantPermissions != "develop.task.read,inference.runtime.execute,system.engine_descriptor.read" ||
-		qualityTenantPermissions != "meta.catalog.read,standard.element.read,system.engine.read,system.execution_authorization.execute" ||
+		qualityTenantPermissions != "meta.catalog.read,standard.domain.read,standard.element.read,system.engine.read,system.execution_authorization.execute" ||
 		catalogPlatformPermissions != "platform.tenant.read,system.runtime_registry.update" ||
 		metaPlatformPermissions != "system.runtime_registry.update" ||
 		developPlatformPermissions != "platform.tenant.read,system.runtime_registry.update" ||
@@ -5378,8 +5378,8 @@ func assertIAMCatalogSeed(t *testing.T, db *sql.DB) {
 	if err := db.QueryRow(`SELECT count(DISTINCT owner_module), count(*) FILTER (WHERE owner_module = 'system') FROM system.permissions`).Scan(&ownerCount, &systemPermissionCount); err != nil {
 		t.Fatalf("read seeded Permission owners: %v", err)
 	}
-	if ownerCount != 19 || systemPermissionCount != 136 {
-		t.Fatalf("seeded Permission owners = %d and System Permissions = %d, want 19 and 136", ownerCount, systemPermissionCount)
+	if ownerCount != 20 || systemPermissionCount != 136 {
+		t.Fatalf("seeded Permission owners = %d and System Permissions = %d, want 20 and 136", ownerCount, systemPermissionCount)
 	}
 
 	var obsoletePermissionCount, apiConsumerPermissionCount int

@@ -33,7 +33,7 @@ func TestFixtureAuthorizationContractMatchesPublishedCatalog(t *testing.T) {
 	for _, permission := range catalog.Permissions {
 		permissions[permission.Key] = permission
 	}
-	for _, key := range consumerPermissions {
+	for _, key := range append(append([]string{}, consumerPermissions...), metricPermissions...) {
 		permission, exists := permissions[key]
 		if !exists {
 			t.Fatalf("consumer permission %q is not published", key)
@@ -122,5 +122,31 @@ func TestWriteEnvironmentFileUsesOwnerOnlyPermissionsAndShellQuoting(t *testing.
 	}
 	if strings.Contains(string(content), "password") {
 		t.Fatalf("fixture environment leaked a password field: %s", content)
+	}
+}
+
+func TestSuitePermissionsAreExplicitAndSeparate(t *testing.T) {
+	if _, err := suitePermissions(""); err == nil {
+		t.Fatal("missing suite accepted")
+	}
+	if _, err := suitePermissions("unknown"); err == nil {
+		t.Fatal("unknown suite accepted")
+	}
+	metric, err := suitePermissions("metric-service-revision-lifecycle")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{"model.metric_implementation.offline", "service.definition.update", "standard.metric.publish"} {
+		if !contains(metric, required) {
+			t.Fatalf("metric role missing %s", required)
+		}
+		if contains(consumerPermissions, required) {
+			t.Fatalf("relational role gained %s", required)
+		}
+	}
+	for _, key := range metric {
+		if strings.HasPrefix(key, "system.engine.") || key == "model.metric_implementation.delete" {
+			t.Fatalf("metric role has unnecessary destructive/control-plane permission %s", key)
+		}
 	}
 }

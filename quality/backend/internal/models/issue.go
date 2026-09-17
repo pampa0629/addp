@@ -18,7 +18,7 @@ type Issue struct {
 	RuleType        string          `gorm:"size:100;not null" json:"type"`
 	Severity        string          `gorm:"size:20;not null;default:'error'" json:"severity"`
 	Message         string          `gorm:"type:text" json:"message"`
-	ColumnName      string          `gorm:"size:200;not null" json:"column_name"`
+	ColumnName      string          `gorm:"type:text;not null" json:"column_name"`
 	Table           string          `gorm:"size:200;not null;column:table_name" json:"table_name"`
 	SchemaName      string          `gorm:"size:200" json:"schema_name"`
 	EngineID        int64           `gorm:"not null" json:"engine_id"`

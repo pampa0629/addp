@@ -2,7 +2,7 @@
 
 更新日期：2026-09-17。
 
-状态：独立 Ontology 的原生语义内核、PG 修订/发布内部服务及 FalkorDB 投影适配已落地，范围与标准验证入口见 [模块说明](../../ontology/CLAUDE.md)；发布执行器、激活、HTTP 服务、Tool 和常驻 Infra 图服务尚未交付。当前不调整 Graph，待 Ontology 有初步成果后另行讨论其职责迁移。本文的目标设计不代表功能均已实现。
+状态：独立 Ontology 的原生语义内核、PG 修订/发布内部服务、FalkorDB 投影适配和单机 Infra 部署定义、System 内部任务授权与发布准入已落地，范围与标准验证入口见 [模块说明](../../ontology/CLAUDE.md)；发布执行器、激活、HTTP 服务和 Tool 尚未交付。当前不调整 Graph，待 Ontology 有初步成果后另行讨论其职责迁移。本文的目标设计不代表功能均已实现。
 
 ## 1. 目标与范围
 
@@ -161,6 +161,14 @@ PG 保存 Ontology 身份、工作修订、不可变发布内容、依赖捕获�
 
 ## 6. Agent 如何消费
 
+### 发布运行时前置：内部执行授权（准入已实现，执行器待接入）
+
+语义投影只读写 Ontology 的 Infra 存储，不访问用户业务 Engine。后续复用 System Execution Authorization 的签发、有效期、主体版本复核和审计，以及 Common 的 execution/lease/fencing；不新增 Token、登录方式或第二套 Worker。内部任务必须有明确且不可变的执行与操作范围，不能把空 Engine 列表解释为任意授权，也不能把 Infra FalkorDB 伪装成业务 Engine。
+
+System 负责当前 User、Tenant Membership、授权版本、功能 Permission 及唯一 Runtime 消费身份；Ontology 负责本体资源权限、修订/摘要、发布/撤回和激活基线。签发成功并原子附加完整授权引用后才允许领取，构建前与激活前均复核；业务数据访问仍使用原有逐 Engine Access Scope。实施时必须同步 System 数据库不可变约束、API/Swagger、Common 客户端、权限登记和真实 IAM PostgreSQL 门禁；完整投影运行时仍须验证构建前与激活前的授权消费，不能用 Infra 或准入测试代替。
+
+当前已增加互斥的 `internal_task` 范围、System 151/152 向前迁移、现有签发 API 的内部任务分支、精确租约消费 API、Common 客户端和 Ontology `AdmitProjection`。范围固定为 task_type/resource_id/revision/digest/generation，System 只核对 common execution 与 IAM，Ontology 核对自有修订及撤回。失败不自动重签或复用已关闭 execution；未附加授权不能领取。用户发布权限通过自定义角色显式授予，不自动扩大既有用户角色。正式 HTTP 发布入口、图执行器、构建前/激活前消费以及 PG 激活指针仍待实现。
+
 ### 6.1 不改变 Tool 架构
 
 语义能力仍走现有主路径：Agent Runtime → Tool Adapter → ToolExecutor → Python SDK → Gateway / Ontology 正式 API。Graph Tool 不是一种替代 HTTP 的通信协议，也不是向模型公开数据库连接。
@@ -220,7 +228,7 @@ Agent 取消仍遵守现有规范：取消 Runtime 不自动取消已有 owner e
 
 ## 8. 技术选型与实施准入
 
-临时原型曾验证 Go 1.24.2、CEL-Go `v0.32.0`、FalkorDB Go 客户端 `v2.1.0` 和 FalkorDB `v4.20.6` ARM64 的有限场景。正式代码采用已锁定 CEL-Go 和基于 go-redis 的唯一 FalkorDB 薄适配，不引入原型 SDK。适配及定义图构建/校验由独占 T2 验证；尚无正式 Infra 常驻部署、发布执行器或激活入口。
+临时原型曾验证 Go 1.24.2、CEL-Go `v0.32.0`、FalkorDB Go 客户端 `v2.1.0` 和 FalkorDB `v4.20.6` ARM64 的有限场景。正式代码采用已锁定 CEL-Go 和基于 go-redis 的唯一 FalkorDB 薄适配，不引入原型 SDK。适配及定义图构建/校验由独占 T2 验证；单机 Infra 与 T2 共用固定版本服务定义，发布执行器与激活入口尚未实现。
 
 正式实施必须满足：
 
@@ -266,7 +274,7 @@ Agent 取消仍遵守现有规范：取消 Runtime 不自动取消已有 owner e
 
 ## 10. 实施切片与门禁
 
-1a 语义内核、1b PG 修订/发布内部服务和 1c-1 FalkorDB 投影适配已实施，代码位于 `ontology/backend/internal/`。当前有原生定义校验、快照恢复、PG 状态生命周期、原子 pending execution 及独立图构建/校验；尚未将 pending execution 接入图适配，不存在自动构建或激活旁路。仍不是可启动的 HTTP 服务，不提前登记空路由、权限或端口。owner schema 已登记，表结构由 owner 版本化迁移管理；未在开发库执行迁移。来源引用、关系实例推导、常驻 FalkorDB Infra、授权准入、激活与正式 Agent 消费仍未实现。
+1a 语义内核、1b PG 修订/发布内部服务和 1c-1 FalkorDB 投影适配已实施，代码位于 `ontology/backend/internal/`。当前有原生定义校验、快照恢复、PG 状态生命周期、原子 pending execution 及独立图构建/校验；尚未将 pending execution 接入图适配，不存在自动构建或激活旁路。仍不是可启动的 HTTP 服务，不提前登记空路由或模块端口；本轮已登记由 System 签发 API 实际消费的发布权限及最小 Runtime 角色。owner schema 已登记，表结构由 owner 版本化迁移管理；未在开发库执行迁移。FalkorDB 单机 Infra 配置已登记，独占 T2 复用同一定义并验证容器重建后的快照恢复。System 内部任务授权、Common 消费客户端和 Ontology 发布准入已实现；来源引用、关系实例推导、图执行器、激活与正式 Agent 消费仍未实现。
 
 内核输入属于假设性试算，不验证业务 owner 证据或 IAM；调用方传入的租户/修订身份匹配检查不等于授权。接口上线前仍必须满足第 6 节的可信事实与授权要求。
 
@@ -277,6 +285,7 @@ Agent 取消仍遵守现有规范：取消 Runtime 不自动取消已有 owner e
 | 1a. 语义内核（当前） | 原生定义、继承/关系声明校验、不可变快照与摘要、受限 CEL、四态事实与解释、依赖规约和模块文档 | `make test-module MODULE=ontology`：T0 一致性和自动发现；T1 类型/未知/继承/不可变性/规则预算/取消；现有 CI Go 测试自动发现 |
 | 1b. PG 修订与发布（当前） | owner 迁移、乐观锁、审核/冻结/撤回、原子 pending execution、审计；标准 PG 门禁和 CI 登记 | T0 登记；T1 快照恢复与状态输入；T2 迁移、并发冲突、原子回滚、租户隔离、冻结保护与撤回 |
 | 1c-1. 图适配准入 | go-redis 唯一适配、请求取消/服务端有界终止、原生定义投影构建与全量核验、独占 FalkorDB T2 和 CI 登记 | T0 自动发现与退出安全；T1 参数/身份/取消；T2 投影、读写超时/回滚、连接回收和并发 |
+| 1c-Infra. 单机部署 | 正式/T2 共用定义、独立凭据与卷、回环端口、图健康检查、部署脚本与影响登记 | T0 配置一致、Secret 拒绝与门禁清理；T2 容器重建后的图快照恢复；不宣称生产 HA/TLS 认证 |
 | 1c-2. 发布运行时 | 授权准入、lease/fencing、构建恢复/激活/重建；实际服务、Infra、权限和 CI 登记 | T0 登记一致性；T2 发布恢复、重建、引用撤回与取消；正式入口按 T4 验证 |
 | 2. 建模入口及 Graph 边界确认 | Ontology 初步成果验收后讨论编辑界面、来源引用及 Graph 是否/如何切换；不预先改造 Graph | 按确认范围交付 owner 唯一性、迁移及消费者回归门禁 |
 | 3. 真实数据与 Agent | Catalog 类型化本体映射/Model 来源解析、可信事实交接、owner API/SDK/Tool/Skill/评测同步 | T1 委托、错误与输出上限；T2 跨版本绑定；T4 正式用户授权与 Outdoor 对话闭环 |

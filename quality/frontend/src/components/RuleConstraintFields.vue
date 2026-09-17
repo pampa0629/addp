@@ -1,5 +1,9 @@
 <template>
   <div class="constraint-fields">
+    <div v-if="type === 'relational_assertion'" class="assertion-field">
+      <el-alert :title="t('quality.assertion.hint')" type="info" :closable="false" />
+      <AssertionEditor v-model="params.assertion" :disabled="disabled" />
+    </div>
     <el-form-item
       v-if="type === 'allowed_values'"
       :label="t('quality.plan.allowedValues')"
@@ -128,6 +132,7 @@
 <script setup>
 import { useI18n } from "vue-i18n";
 import { PLAN_OPERATORS } from "../utils/planContract";
+import AssertionEditor from './AssertionEditor.vue';
 defineProps({
   type: { type: String, required: true },
   params: { type: Object, required: true },
@@ -137,6 +142,7 @@ defineProps({
 const { t } = useI18n();
 </script>
 <style scoped>
+.assertion-field { grid-column: 1 / -1; }
 .constraint-fields {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));

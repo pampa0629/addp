@@ -27,6 +27,7 @@ Workbench 是面向数据消费者、以已发布 Service 为唯一数据入口�
 - Application Refresh Policy 只允许 wallboard 使用关闭、30 秒、60 秒、300 秒四档浏览器前台刷新；页面不可见时暂停，当前查询未完成时跳过本轮，不能创建 Task、Schedule、Execution 或后台刷新旁路。
 - Application Presentation Sections 只允许 wallboard 从 `title | parameters | query_actions` 中隐藏运行页区块；修订与刷新状态、全屏入口、Component 标题和错误提示始终显示。隐藏查询操作必须启用自动刷新，隐藏参数区必须保证全部必填参数有可执行默认值。
 - 保存前整页预览只消费编辑器当前内存 Snapshot 的归一化副本，并与已发布运行页复用唯一应用运行画布；不得新增预览路由、Backend API、临时持久对象、查询代理或第二套查询状态，关闭预览即销毁全部运行会话状态。
+- 预览中的“设为应用初始值”是唯一显式回写动作，只复制经过 Descriptor、必填和可选值验证的 Application Parameter 原始值到当前草稿 default_value；普通关闭不回写，保存草稿才持久化，不修改场景预设或发布修订。既有 `dataApplicationDraft.test.mjs` 与 `application-studio.spec.js` 覆盖取消隔离、选择原始 ID、保存重载、无效值和契约未就绪；使用现有 Workbench 前端 T1/T3 与完整模块门禁，无新增依赖或 CI 入口。
 - 服务契约变化后，组件编辑器提供显式“按当前契约重新配置”入口，复用既有 Service 选择与 Descriptor 加载逻辑重建字段和参数；确认组件后仍须保存、检查应用参数映射并发布新修订，不能自动改写历史快照。
 - 创建、更新和发布 Data Application 时使用当前 User Bearer 重新校验每个 Component 的 Descriptor；运行端由浏览器使用当前 User Bearer 调用 Service，全链路不保存 Token。
 - 列表、管理详情和删除只读取 Workbench 自身事实，不因 Service 不可达而失败。
@@ -35,6 +36,12 @@ Workbench 是面向数据消费者、以已发布 Service 为唯一数据入口�
 - Workbench 不是 TaskProvider；在线查看、筛选和刷新不进入 Orchestrator。
 
 ## 前端验证
+
+创作端主屏为唯一运行画布的编辑呈现与组件属性侧栏，组件点击只选中、拖动手柄和前移/后移编译为同一 placement 排序，宽高与单/双列排版统一重排避免重叠。查询上下文变化使旧结果和在途请求失效；标题、格式和布局变化复用当前结果。空应用按展示类型进入同一组件编辑器的“数据、展示、条件”步骤。筛选、联动、场景与页面设置收纳于按需面板；未保存离页保护复用共享 `useUnsavedChangesGuard`。`applicationEditorLayout.test.mjs` 与 `application-studio.spec.js` 覆盖排版、新建草稿、中英文、编辑保存、查询失效、预览隔离和窄屏离页保护，现有 `make test-workbench-frontend` 与 Platform CI 自动发现；完整验收使用 `make test-module MODULE=workbench`。不引入新依赖、API、快照字段或创作路由。
+
+筛选卡片直接展示绑定组件，组件归组映射复用 `applicationParameterOptions` 校验类型、选项及默认/场景值，并阻止移除既有联动的最后一个目标。联动表单在用户显式选择来源、字段、条件后才写入草稿；取消不写入，同一字段可以赋值给不同条件，目标条件不得重复。`applicationParameterBinding.test.mjs` 与 `application-studio.spec.js` 同时覆盖共享筛选、取消/编辑联动、原始人员 ID 驱动多个图表、预览隔离和窄屏，仍使用上述标准门禁自动发现。
+
+新增组件的条件表单可显式选择已有应用筛选，使用其初始值试查。复用候选和提交时校验复用 `applicationParameterOptions` 的同一绑定规则，考虑新组件多个输入的共同选项约束；取消不改应用，应用后只写既有 Parameter Binding，不新增重复条件。`applicationParameterBinding.test.mjs` 和 `application-studio.spec.js` 覆盖类型/选项冲突、显式选择、试查原始值、中英文、保存重开及取消，沿用已有前端和完整模块门禁自动发现。
 
 Table/Chart 的 date 字段可显式配置 `temporal_format=period` 和 `period`（`grain_parameter/start_parameter/end_parameter`），引用当前 Service Descriptor 的必填命名参数：粒度为 string 且选项为 `total/month`，起止为 date。结果展示只使用成功查询当时的参数快照；按月显示年月，全期显示“所选期间合计”，Renderer Host 同时显示开始日期包含、结束日期不包含的完整范围。不得根据 `bucket` 等字段名推断语义；原始行、排序、选择与导出不变。共享组件只接受已解析的展示上下文，不读取 Service DTO。既有共享前端、Workbench T1、浏览器及模块门禁覆盖此契约，无新增依赖或 CI 入口。
 
@@ -55,3 +62,5 @@ Playwright 自动管理独立的 `127.0.0.1:4190` Vite 测试服务，使用独�
 `frontend/e2e/runtime-fullscreen.spec.js` 通过真实 Fullscreen API 和鼠标滚轮验证已发布 desktop 应用在宽屏、窄屏下的全屏滚动、下方组件可达和退出后整页滚动恢复，并验证 wallboard 全屏仍将组件约束在视口内；由同一前端标准入口与 CI 矩阵自动发现。
 
 指标浏览器回归还验证服务返回的双向主体名称、空昵称、目录当前页缺少主体，以及目录旧昵称不能覆盖指标服务当前昵称；选择联动只提交稳定人员标识。Online suite 复用商务 MySQL 夹具验证持久化草稿的值名称、维度文本、CSV 原值和选择联动原值，只使用可清理的未发布应用；报告缺少任一证据即失败，不把本地 HTTP fixture 通过记为真实 T4 通过。
+
+Chart 的 `total_as_value` 显式开启全期数字卡片，要求期间维度及 1–4 个显式精度度量；Host 仅适配现有共享 ScalarValueRenderer，按月仍走 ChartRenderer。唯一完整行校验与原始行选择事件不得被绕过。覆盖 Go 配置校验、前端配置往返、共享选择契约及中英文全期/月度切换、零值、空/多行/部分结果；使用现有 `make test-common-frontend` 与 `make test-module MODULE=workbench`、Swagger 生成及覆盖门禁，无新增入口或 CI 依赖。

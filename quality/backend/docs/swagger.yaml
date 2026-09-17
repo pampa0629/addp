@@ -221,12 +221,20 @@ definitions:
         items:
           type: string
         type: array
+      fields:
+        additionalProperties:
+          type: string
+        type: object
       reference_columns:
         items:
           type: string
         type: array
       reference_table:
         type: string
+      relations:
+        additionalProperties:
+          $ref: '#/definitions/github_com_addp_quality_internal_models.RelationBinding'
+        type: object
       table:
         type: string
       then_column:
@@ -427,6 +435,17 @@ definitions:
       tenant_id:
         type: integer
       type:
+        enum:
+        - not_null
+        - allowed_values
+        - format
+        - length
+        - value_range
+        - unique_key
+        - foreign_key
+        - predicate_implication
+        - row_count
+        - relational_assertion
         type: string
       updated_at:
         type: string
@@ -470,6 +489,15 @@ definitions:
       total_rules:
         type: integer
     type: object
+  github_com_addp_quality_internal_models.RelationBinding:
+    properties:
+      fields:
+        additionalProperties:
+          type: string
+        type: object
+      table:
+        type: string
+    type: object
   github_com_addp_quality_internal_models.ResolveCatalogSummariesRequest:
     properties:
       references:
@@ -505,6 +533,17 @@ definitions:
       source:
         $ref: '#/definitions/github_com_addp_quality_internal_models.RuleSource'
       type:
+        enum:
+        - not_null
+        - allowed_values
+        - format
+        - length
+        - value_range
+        - unique_key
+        - foreign_key
+        - predicate_implication
+        - row_count
+        - relational_assertion
         type: string
     type: object
   github_com_addp_quality_internal_models.RuleSource:
@@ -589,6 +628,17 @@ definitions:
       source:
         $ref: '#/definitions/github_com_addp_quality_internal_models.RuleSource'
       type:
+        enum:
+        - not_null
+        - allowed_values
+        - format
+        - length
+        - value_range
+        - unique_key
+        - foreign_key
+        - predicate_implication
+        - row_count
+        - relational_assertion
         type: string
       version:
         type: integer
@@ -827,6 +877,17 @@ definitions:
       tenant_id:
         type: integer
       type:
+        enum:
+        - not_null
+        - allowed_values
+        - format
+        - length
+        - value_range
+        - unique_key
+        - foreign_key
+        - predicate_implication
+        - row_count
+        - relational_assertion
         type: string
       updated_at:
         type: string
@@ -1568,6 +1629,9 @@ paths:
     post:
       consumes:
       - application/json
+      description: 规则约束不绑定物理目标；跨表断言使用有界逻辑表达式，参照角色与字段在方案检查项中绑定。 | Constraints are target-independent;
+        relational assertions use bounded logical expressions with roles and fields
+        bound by plan check items.
       parameters:
       - description: 质量规则定义 | Quality rule definition
         in: body
@@ -1674,6 +1738,8 @@ paths:
     put:
       consumes:
       - application/json
+      description: 内容修改生成不可变修订，方案须显式升级引用；不接受 SQL 约束。 | Content changes create immutable
+        revisions; plans upgrade references explicitly. SQL constraints are not accepted.
       parameters:
       - description: 规则 ID | Rule ID
         in: path

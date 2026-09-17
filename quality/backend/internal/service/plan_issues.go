@@ -6,6 +6,7 @@ import (
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
 	"github.com/addp/quality/internal/models"
+	"sort"
 	"strings"
 )
 
@@ -16,9 +17,10 @@ type ruleTargetInfo struct {
 
 func ruleTarget(rule PlanRule) ruleTargetInfo {
 	var value struct {
-		Table   string   `json:"table"`
-		Column  string   `json:"column"`
-		Columns []string `json:"columns"`
+		Table   string            `json:"table"`
+		Column  string            `json:"column"`
+		Columns []string          `json:"columns"`
+		Fields  map[string]string `json:"fields"`
 		When    struct {
 			Column string `json:"column"`
 		} `json:"when"`
@@ -35,6 +37,16 @@ func ruleTarget(rule PlanRule) ruleTargetInfo {
 		if value.Then.Column != value.When.Column {
 			value.Columns = append(value.Columns, value.Then.Column)
 		}
+	}
+	if rule.Type == "relational_assertion" {
+		seen := map[string]bool{}
+		for _, column := range value.Fields {
+			if !seen[column] {
+				value.Columns = append(value.Columns, column)
+				seen[column] = true
+			}
+		}
+		sort.Strings(value.Columns)
 	}
 	return ruleTargetInfo{Table: value.Table, Columns: value.Columns}
 }

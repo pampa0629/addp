@@ -1,4 +1,39 @@
 import { intersectParameterOptions, parameterOptionsAllow, validParameterOptions } from '../../../../common-frontend/basic/src/utils/parameterInput.mjs'
+import { compatibleSelectionParameters, selectionSourceFields } from './dataApplicationSelection.mjs'
+
+export function newComponentParameterContext(snapshot, descriptors, component, descriptor, reusedParameters = {}) {
+  return {
+    snapshot: { ...snapshot, components: [...snapshot.components, component], parameter_bindings: [
+      ...snapshot.parameter_bindings,
+      ...component.parameter_definitions.map(parameter => ({ component_id: component.id, component_parameter_key: parameter.key, application_parameter_key: reusedParameters[parameter.key] || '' })),
+    ] },
+    descriptors: { ...descriptors, [component.id]: descriptor },
+  }
+}
+
+// Evaluate an explicit editor mapping against the same domains used at runtime.
+// Do not silently strand a selection target or change a saved default/preset.
+export function canBindApplicationParameter(snapshot, descriptors, binding, parameter) {
+  const component = snapshot.components.find(c => c.id === binding.component_id)
+  const definition = component?.parameter_definitions?.find(p => p.key === binding.component_parameter_key)
+  if (definition?.control_type !== parameter.control_type) return false
+  const next = { ...snapshot, parameter_bindings: snapshot.parameter_bindings.map(b =>
+    b.component_id === binding.component_id && b.component_parameter_key === binding.component_parameter_key
+      ? { ...b, application_parameter_key: parameter.key } : b) }
+  try {
+    assertApplicationOptionValues(next, descriptors, { [parameter.key]: parameter.default_value })
+    for (const preset of next.parameter_presets || []) assertApplicationOptionValues(next, descriptors, preset.parameter_values, [parameter.key])
+    for (const selection of next.selection_bindings || []) {
+      const fields = selectionSourceFields(next, selection.source_component_id, descriptors[selection.source_component_id])
+      for (const assignment of selection.assignments) {
+        if (![binding.application_parameter_key, parameter.key].includes(assignment.application_parameter_key)) continue
+        if (!compatibleSelectionParameters(next, descriptors, fields.find(f => f.name === assignment.source_field))
+          .some(p => p.key === assignment.application_parameter_key)) return false
+      }
+    }
+    return true
+  } catch { return false }
+}
 
 export function applicationParameterOptions(snapshot, descriptors, key) {
   let options = [], type = ''

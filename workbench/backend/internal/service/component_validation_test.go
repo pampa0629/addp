@@ -298,3 +298,97 @@ func TestValidateStatePresentationRuleBoundaries(t *testing.T) {
 		})
 	}
 }
+
+func TestPeriodPresentationRequiresExplicitTypedServiceParameters(t *testing.T) {
+	descriptor := testDescriptor(false)
+	descriptor.InputContract.NamedParameters = []models.ConsumerNamedParameter{
+		{Name: "g", Type: datatype.FieldTypeString, Required: true, Options: []commonquery.ParameterOption{{Value: "total"}, {Value: "month"}}},
+		{Name: "s", Type: datatype.FieldTypeDate, Required: true},
+		{Name: "e", Type: datatype.FieldTypeDate, Required: true},
+	}
+	fields := map[string]models.ConsumerOutputField{"arbitrary_date": {Name: "arbitrary_date", Type: datatype.FieldTypeDate}}
+	binding := models.PeriodPresentation{GrainParameter: "g", StartParameter: "s", EndParameter: "e"}
+	presentation := models.FieldPresentation{Field: "arbitrary_date", Label: "Period", TemporalFormat: "period", Period: &binding}
+	validate := func() error {
+		return validateFieldPresentations([]models.FieldPresentation{presentation}, []string{"arbitrary_date"}, fields, true, descriptor)
+	}
+	if err := validate(); err != nil {
+		t.Fatal(err)
+	}
+	for _, change := range []func(){
+		func() { presentation.Period = nil },
+		func() { binding.GrainParameter = "missing" },
+		func() { binding.StartParameter = "missing" },
+		func() { binding.EndParameter = "s" },
+		func() { presentation.TemporalFormat = "date" },
+		func() { descriptor.InputContract.NamedParameters[0].Options[1].Value = "day" },
+		func() { descriptor.InputContract.NamedParameters[1].Required = false },
+		func() { descriptor.InputContract.NamedParameters[1].Type = datatype.FieldTypeTimestamp },
+		func() {
+			fields["arbitrary_date"] = models.ConsumerOutputField{Name: "arbitrary_date", Type: datatype.FieldTypeString}
+		},
+	} {
+		binding = models.PeriodPresentation{GrainParameter: "g", StartParameter: "s", EndParameter: "e"}
+		presentation.Period = &binding
+		presentation.TemporalFormat = "period"
+		descriptor.InputContract.NamedParameters[0].Options[1].Value = "month"
+		descriptor.InputContract.NamedParameters[1].Required = true
+		descriptor.InputContract.NamedParameters[1].Type = datatype.FieldTypeDate
+		fields["arbitrary_date"] = models.ConsumerOutputField{Name: "arbitrary_date", Type: datatype.FieldTypeDate}
+		change()
+		if err := validate(); err == nil {
+			t.Fatal("invalid period binding accepted")
+		}
+	}
+}
+
+func TestTotalValueChartRequiresPeriodAndExplicitPrecisions(t *testing.T) {
+	descriptor := testDescriptor(false)
+	descriptor.InputContract.NamedParameters = []models.ConsumerNamedParameter{
+		{Name: "g", Type: datatype.FieldTypeString, Required: true, Options: []commonquery.ParameterOption{{Value: "total"}, {Value: "month"}}},
+		{Name: "s", Type: datatype.FieldTypeDate, Required: true},
+		{Name: "e", Type: datatype.FieldTypeDate, Required: true},
+	}
+	fields := map[string]models.ConsumerOutputField{"d": {Name: "d", Type: datatype.FieldTypeDate}, "v": {Name: "v", Type: datatype.FieldTypeInt}}
+	selected := map[string]struct{}{"d": {}, "v": {}}
+	precision := 0
+	base := models.ChartRendererConfig{ChartType: "bar", Dimension: "d", Measures: []string{"v"}, TotalAsValue: true, FieldPresentations: []models.FieldPresentation{
+		{Field: "d", Label: "Period", TemporalFormat: "period", Period: &models.PeriodPresentation{GrainParameter: "g", StartParameter: "s", EndParameter: "e"}},
+		{Field: "v", Label: "Count", Precision: &precision},
+	}}
+	for _, tc := range []struct {
+		name   string
+		change func(*models.ChartRendererConfig)
+		valid  bool
+	}{
+		{"valid", func(c *models.ChartRendererConfig) {}, true},
+		{"no period", func(c *models.ChartRendererConfig) {
+			c.FieldPresentations[0].TemporalFormat = "date"
+			c.FieldPresentations[0].Period = nil
+		}, false},
+		{"no precision", func(c *models.ChartRendererConfig) { c.FieldPresentations[1].Precision = nil }, false},
+		{"five measures", func(c *models.ChartRendererConfig) {
+			for _, f := range []string{"a", "b", "c", "e"} {
+				fields[f] = models.ConsumerOutputField{Name: f, Type: datatype.FieldTypeInt}
+				selected[f] = struct{}{}
+				c.Measures = append(c.Measures, f)
+				c.FieldPresentations = append(c.FieldPresentations, models.FieldPresentation{Field: f, Label: f, Precision: &precision})
+			}
+		}, false},
+		{"ordinary chart", func(c *models.ChartRendererConfig) { c.TotalAsValue = false; c.FieldPresentations = nil }, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			config := base
+			config.FieldPresentations = append([]models.FieldPresentation{}, base.FieldPresentations...)
+			tc.change(&config)
+			raw, err := json.Marshal(config)
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = validateRenderer(models.RendererTypeChart, raw, descriptor, fields, selected, nil)
+			if (err == nil) != tc.valid {
+				t.Fatalf("valid=%v: %v", tc.valid, err)
+			}
+		})
+	}
+}

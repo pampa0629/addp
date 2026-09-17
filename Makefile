@@ -307,6 +307,10 @@ test-manager-mongodb-security: ## 使用 MongoDB Outdoor/Persons 运行 Manager 
 test-system-iam-postgres: ## 使用一次性 PostgreSQL 数据库运行 System IAM 发布门禁
 	@bash scripts/test/system-iam-postgres-gate.sh
 
+.PHONY: test-system-iam-runner
+test-system-iam-runner: ## 验证 System IAM PostgreSQL 门禁跨进程互斥
+	@python3 -m unittest scripts/test/system-iam-postgres-gate_test.py
+
 test-asset-postgres: ## 使用一次性 PostgreSQL 数据库运行 Asset 授权履约迁移门禁
 	@bash scripts/test/asset-postgres-gate.sh
 
@@ -343,8 +347,13 @@ test-standard-postgres: ## 使用测试 PostgreSQL 数据库运行 Standard 约�
 test-ontology-postgres: ## 验证 Ontology 修订、发布事务、并发与撤回
 	@bash scripts/test/ontology-postgres-gate.sh
 
+.PHONY: test-ontology-infra-config
+test-ontology-infra-config: ## 验证 FalkorDB 部署、独立 Secret、持久化契约与门禁清理
+	@bash -n scripts/infra/up.sh scripts/infra/down.sh scripts/infra/status.sh scripts/prod/setup-env.sh scripts/prod/wait-infra.sh scripts/test/ontology-falkor-gate.sh
+	@python3 scripts/test/ontology-falkor-gate_test.py
+
 .PHONY: test-ontology-falkor
-test-ontology-falkor: ## 验证独占 FalkorDB 投影、取消、超时和清理
+test-ontology-falkor: test-ontology-infra-config ## 验证独占 FalkorDB 投影、取消、超时和清理
 	@bash scripts/test/ontology-falkor-gate.sh
 
 test-transfer-postgres: ## 使用普通 PostgreSQL 测试库运行 Transfer schema、受保护导出与非空间目标覆盖门禁（无需 PostGIS）
@@ -367,7 +376,8 @@ test-online: ## 运行指定 Online suite（必须设置 ONLINE_SUITE 和 ADDP_O
 	@python3 scripts/test/online-gate.py --repository "$(CURDIR)" --suite "$(ONLINE_SUITE)"
 
 test-online-runner: ## 运行 Online 分发器和预检器的确定性测试
-	@python3 -m unittest scripts/test/online-gate_test.py scripts/test/online-preflight_test.py scripts/test/online-host-gate_test.py scripts/test/online-hosted-opengauss-gate_test.py scripts/test/online-owner-managed-kingbase-gate_test.py scripts/test/online-engine-registration_test.py scripts/test/online-engine-fixture_test.py scripts/test/online-workbench-mysql-fixture_test.py scripts/test/online-oceanbase-consumer-fixture_test.py scripts/test/online-tidb-consumer-fixture_test.py scripts/test/online-opengauss-consumer-fixture_test.py scripts/test/online-kingbase-consumer-fixture_test.py scripts/test/online-transfer-insert-only-fixture_test.py scripts/test/online-transfer-relational-sql-etl-fixture_test.py scripts/test/online-manager-minio-fixture_test.py scripts/test/online-security-transfer-fixture_test.py scripts/test/consumer-engine-recovery-online_test.py scripts/test/consumer-process-stability-online_test.py scripts/test/module-registry-recovery-online_test.py scripts/test/relational-consumer-flow-online_test.py scripts/test/transfer-insert-only-mysql-online_test.py scripts/test/transfer-relational-sql-etl-online_test.py scripts/test/standard-model-reference-deletion-online_test.py scripts/test/enterprise-catalog-publishing-online_test.py scripts/test/workbench-service-consumption-online_test.py scripts/test/manager-internal-artifact-lineage-online_test.py scripts/test/manager-hybrid-search-online_test.py scripts/test/security-transfer-protection-online_test.py scripts/test/security-plaintext-access-online_test.py scripts/test/security-mysql-owner-protection-online_test.py scripts/ci/check-online-ci-registration_test.py
+	@python3 -m unittest scripts/test/quality-dynamic-binding-online_test.py
+	@python3 -m unittest scripts/test/online-gate_test.py scripts/test/online-preflight_test.py scripts/test/online-host-gate_test.py scripts/test/online-hosted-opengauss-gate_test.py scripts/test/online-hosted-metric-gate_test.py scripts/test/online-owner-managed-kingbase-gate_test.py scripts/test/online-engine-registration_test.py scripts/test/online-engine-fixture_test.py scripts/test/online-workbench-mysql-fixture_test.py scripts/test/online-oceanbase-consumer-fixture_test.py scripts/test/online-tidb-consumer-fixture_test.py scripts/test/online-opengauss-consumer-fixture_test.py scripts/test/online-kingbase-consumer-fixture_test.py scripts/test/online-transfer-insert-only-fixture_test.py scripts/test/online-transfer-relational-sql-etl-fixture_test.py scripts/test/online-manager-minio-fixture_test.py scripts/test/online-security-transfer-fixture_test.py scripts/test/consumer-engine-recovery-online_test.py scripts/test/consumer-process-stability-online_test.py scripts/test/module-registry-recovery-online_test.py scripts/test/relational-consumer-flow-online_test.py scripts/test/transfer-insert-only-mysql-online_test.py scripts/test/transfer-relational-sql-etl-online_test.py scripts/test/metric-service-revision-lifecycle-online_test.py scripts/test/standard-model-reference-deletion-online_test.py scripts/test/enterprise-catalog-publishing-online_test.py scripts/test/workbench-service-consumption-online_test.py scripts/test/manager-internal-artifact-lineage-online_test.py scripts/test/manager-hybrid-search-online_test.py scripts/test/security-transfer-protection-online_test.py scripts/test/security-plaintext-access-online_test.py scripts/test/security-mysql-owner-protection-online_test.py scripts/ci/check-online-ci-registration_test.py
 	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
 
 test-release: ## 运行指定 T5 发布套件；用法：make test-release RELEASE_SUITE=common-python-cli
@@ -401,8 +411,9 @@ test-platform: ## 运行无外部服务依赖的平台一致性门禁
 	@$(MAKE) test-local-ci-runner
 	@$(MAKE) test-node-dependencies
 	@$(MAKE) test-infra-postgresql-init
+	@$(MAKE) test-system-iam-runner
 	@python3 scripts/test/ontology-postgres-gate_test.py
-	@python3 scripts/test/ontology-falkor-gate_test.py
+	@$(MAKE) test-ontology-infra-config
 	@$(MAKE) test-go-dependency-policy
 	@python3 scripts/ci/check-build-registration_test.py
 	@python3 scripts/ci/select-image-services_test.py

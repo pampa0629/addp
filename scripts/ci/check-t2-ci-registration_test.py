@@ -378,6 +378,27 @@ class T2CIRegistrationTest(unittest.TestCase):
 
         self.assertEqual([], MODULE.validate_registration(self.repository))
 
+    def test_resolves_owned_compose_image_extends_without_weakening_pin(self) -> None:
+        self._add_owned_service_gate("pingcap/tidb:v8.5.8@sha256:" + "d" * 64)
+        compose = self.repository / "scripts/test/docker-compose.tidb-t2.yml"
+        base = self.repository / "scripts/test/base.yml"
+        base.write_text("services:\n  database:\n    image: example/db:v1@sha256:" + "a" * 64 + "\n")
+        original = compose.read_text()
+        child = original.replace("    image: pingcap/tidb:v8.5.8@sha256:" + "d" * 64,
+                                 "    extends:\n      file: base.yml\n      service: database")
+        compose.write_text(child)
+        self.assertEqual([], MODULE.validate_registration(self.repository))
+        compose.write_text(child + "    image: example/db:latest\n")
+        self.assertTrue(any("pin an explicit tag" in error for error in MODULE.validate_registration(self.repository)))
+        compose.write_text(child)
+        for content in (
+            "services:\n  database:\n    extends:\n      file: base.yml\n      service: database\n",
+            "services:\n  database:\n    extends:\n      file: ../../../../outside.yml\n      service: database\n",
+            "services:\n  other:\n    image: example/db:latest\n",
+        ):
+            base.write_text(content)
+            self.assertTrue(any("Compose extends" in error for error in MODULE.validate_registration(self.repository)))
+
     def test_accepts_owner_managed_gate(self) -> None:
         self._add_owner_managed_gate()
 

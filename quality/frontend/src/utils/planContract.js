@@ -1,3 +1,4 @@
+import { defaultAssertion, assertionBindings } from './assertion.js';
 export const PLAN_TYPES = [
   "not_null",
   "allowed_values",
@@ -8,6 +9,7 @@ export const PLAN_TYPES = [
   "foreign_key",
   "predicate_implication",
   "row_count",
+  "relational_assertion",
 ];
 export const PLAN_OPERATORS = [
   "eq",
@@ -36,6 +38,7 @@ export const createCheckItem = (
 ) => {
   const type = rule.type;
   const bindings = { table };
+  if (type === 'relational_assertion') Object.assign(bindings, assertionBindings(rule.params.assertion));
   if (
     ["not_null", "allowed_values", "format", "length", "value_range"].includes(
       type,
@@ -71,6 +74,7 @@ export const serializeCheckItems = (items) =>
     bindings: JSON.parse(JSON.stringify(item.bindings)),
   }));
 export const defaultConstraint = (type) => {
+  if (type === 'relational_assertion') return { assertion: defaultAssertion() };
   if (["format", "length", "value_range"].includes(type))
     return {
       constraint:

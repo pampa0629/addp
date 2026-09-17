@@ -523,6 +523,7 @@
           "resource_grant": "Resource Grant",
           "restore_request": "Restore Request",
           "review": "Graph Review",
+          "revision": "Ontology Revision",
           "role": "Role",
           "run": "Run",
           "runtime": "Runtime",
@@ -653,6 +654,7 @@
         "develop": "Data Development",
         "service": "Data Services",
         "monitor": "Execution Monitoring",
+        "ontology": "Domain Ontology",
         "standard": "Data Standards",
         "model": "Data Modeling",
         "quality": "Data Quality",
@@ -1644,6 +1646,10 @@
       "monitor_runtime": {
         "name": "Runtime Monitoring Runtime",
         "description": "Lets Monitor read metadata scan tasks and write tenant audit events."
+      },
+      "ontology_runtime": {
+        "name": "Ontology Projection Runtime",
+        "description": "Lets Ontology consume exact internal task execution authorization without business engine access."
       },
       "pointcloud_runtime": {
         "name": "Point Cloud Derivation Runtime",

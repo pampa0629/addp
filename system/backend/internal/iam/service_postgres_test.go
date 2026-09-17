@@ -40,7 +40,9 @@ func TestIAMServicesAgainstPostgres(t *testing.T) {
 	}
 
 	repository := NewRepository(db)
-	currentTime := time.Now().UTC().Truncate(time.Microsecond)
+	// Keep the service clock behind PostgreSQL's wall clock so fixture timestamps
+	// cannot accidentally rely on database defaults or test execution speed.
+	currentTime := time.Now().UTC().Add(-time.Hour).Truncate(time.Microsecond)
 	now := func() time.Time { return currentTime }
 	identityService := NewIdentityService(repository, now)
 	membershipService := NewTenantMembershipService(repository, now)
@@ -235,17 +237,19 @@ func createIAMServiceTokenFamily(
 	now time.Time,
 ) int64 {
 	t.Helper()
+	// Lifecycle services use the fixture clock. Token creation must use it too,
+	// otherwise slow password hashing can make database defaults later than revocation.
 	var familyID int64
 	err := db.Raw(`
 		INSERT INTO system.refresh_token_families
 		    (principal_id, context_type, tenant_membership_id, issued_authorization_version,
 		     client_id, auth_type, audiences, scopes, authentication_methods, assurance_level,
-		     authenticated_at, expires_at)
+		     authenticated_at, expires_at, created_at)
 		VALUES
 		    (?, 'tenant', ?, ?, 'addp-web', 'first_party', ARRAY['addp.api'], ARRAY[]::text[],
-		     ARRAY['password'], 'aal1', ?, ?)
+		     ARRAY['password'], 'aal1', ?, ?, ?)
 		RETURNING id
-	`, membership.PrincipalID, membership.ID, authorizationVersion, now.Add(-time.Minute), now.Add(time.Hour)).Scan(&familyID).Error
+	`, membership.PrincipalID, membership.ID, authorizationVersion, now.Add(-time.Minute), now.Add(time.Hour), now).Scan(&familyID).Error
 	if err != nil {
 		t.Fatalf("create token family: %v", err)
 	}
@@ -256,28 +260,28 @@ func createIAMServiceTokenFamily(
 	ticketHash := strings.Repeat(string(nextHexByte(hashStart, 3)), 64)
 	var accessTokenID int64
 	if err := db.Raw(`
-		INSERT INTO system.access_tokens (token_hash, family_id, expires_at)
-		VALUES (?, ?, ?) RETURNING id
-	`, accessHash, familyID, now.Add(15*time.Minute)).Scan(&accessTokenID).Error; err != nil {
+		INSERT INTO system.access_tokens (token_hash, family_id, expires_at, created_at)
+		VALUES (?, ?, ?, ?) RETURNING id
+	`, accessHash, familyID, now.Add(15*time.Minute), now).Scan(&accessTokenID).Error; err != nil {
 		t.Fatalf("create access token: %v", err)
 	}
 	if err := db.Exec(`
-		INSERT INTO system.refresh_tokens (token_hash, family_id, issued_access_token_id, expires_at)
-		VALUES (?, ?, ?, ?)
-	`, refreshHash, familyID, accessTokenID, now.Add(59*time.Minute)).Error; err != nil {
+		INSERT INTO system.refresh_tokens (token_hash, family_id, issued_access_token_id, expires_at, created_at)
+		VALUES (?, ?, ?, ?, ?)
+	`, refreshHash, familyID, accessTokenID, now.Add(59*time.Minute), now).Error; err != nil {
 		t.Fatalf("create refresh token: %v", err)
 	}
 	if err := db.Exec(`
 		INSERT INTO system.delegated_access_tokens
-		    (token_hash, source_access_token_id, audience, scopes, agent_run_id, tool_call_id, expires_at)
-		VALUES (?, ?, 'develop', ARRAY['workflow.run'], ?, ?, ?)
-	`, delegatedHash, accessTokenID, "run-"+accessHash[:4], "call-"+accessHash[:4], now.Add(2*time.Minute)).Error; err != nil {
+		    (token_hash, source_access_token_id, audience, scopes, agent_run_id, tool_call_id, expires_at, created_at)
+		VALUES (?, ?, 'develop', ARRAY['workflow.run'], ?, ?, ?, ?)
+	`, delegatedHash, accessTokenID, "run-"+accessHash[:4], "call-"+accessHash[:4], now.Add(2*time.Minute), now).Error; err != nil {
 		t.Fatalf("create delegated access token: %v", err)
 	}
 	if err := db.Exec(`
-		INSERT INTO system.resource_access_tickets (token_hash, family_id, owner, expires_at)
-		VALUES (?, ?, 'manager', ?)
-	`, ticketHash, familyID, now.Add(15*time.Minute)).Error; err != nil {
+		INSERT INTO system.resource_access_tickets (token_hash, family_id, owner, expires_at, created_at)
+		VALUES (?, ?, 'manager', ?, ?)
+	`, ticketHash, familyID, now.Add(15*time.Minute), now).Error; err != nil {
 		t.Fatalf("create resource access ticket: %v", err)
 	}
 	return familyID

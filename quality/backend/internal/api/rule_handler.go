@@ -52,6 +52,7 @@ func (h *RuleHandler) List(c *gin.Context) {
 }
 
 // @Summary 创建质量规则 | Create quality rule
+// @Description 规则约束不绑定物理目标；跨表断言使用有界逻辑表达式，参照角色与字段在方案检查项中绑定。 | Constraints are target-independent; relational assertions use bounded logical expressions with roles and fields bound by plan check items.
 // @Tags QualityRule
 // @Accept json
 // @Produce json
@@ -103,6 +104,7 @@ func (h *RuleHandler) Get(c *gin.Context) {
 }
 
 // @Summary 更新质量规则 | Update quality rule
+// @Description 内容修改生成不可变修订，方案须显式升级引用；不接受 SQL 约束。 | Content changes create immutable revisions; plans upgrade references explicitly. SQL constraints are not accepted.
 // @Tags QualityRule
 // @Accept json
 // @Produce json

@@ -179,6 +179,34 @@ def service_has_required_nofile_limit(service_block: str) -> bool:
     )
 
 
+def compose_image_is_pinned(repository: Path, path: Path, service: str,
+                            seen: frozenset = frozenset()) -> bool:
+    """Resolve only the image through explicit local Compose extends mappings.
+
+    Do not execute Compose, expand environment variables, or accept external paths.
+    A child image replaces the parent image; an unpinned override must fail.
+    """
+    path = path.resolve()
+    identity = (path, service)
+    if not path.is_relative_to(repository.resolve()) or not path.is_file():
+        raise RegistrationError("Compose extends must reference an existing repository file")
+    if identity in seen or len(seen) >= 16:
+        raise RegistrationError("Compose extends cycle or excessive depth")
+    block = compose_service_block(path.read_text(encoding="utf-8"), service)
+    if block is None:
+        raise RegistrationError(f"Compose extends service {service} is missing")
+    if re.search(r"(?m)^    image:", block):
+        return service_image_is_pinned(block)
+    extension = re.search(r"(?m)^    extends:\s*\n((?:^      [^\n]*\n?)+)", block)
+    if not extension:
+        return False
+    fields = dict(re.findall(r"(?m)^      (file|service): ([a-zA-Z0-9_./-]+)\s*$", extension.group(1)))
+    if set(fields) != {"file", "service"} or Path(fields["file"]).is_absolute():
+        raise RegistrationError("Compose extends requires explicit local file and service")
+    return compose_image_is_pinned(repository, path.parent / fields["file"],
+                                   fields["service"], seen | {identity})
+
+
 def make_recipe(makefile: str, target: str) -> str | None:
     match = re.search(
         rf"(?ms)^{re.escape(target)}\s*:[^\n]*\n(?P<recipe>(?:\t[^\n]*\n?)*)",
@@ -361,9 +389,14 @@ def validate_registration(repository: Path) -> list[str]:
             compose = compose_file.read_text(encoding="utf-8")
             for service in services:
                 service_block = compose_service_block(compose, service)
+                try:
+                    pinned = compose_image_is_pinned(repository, compose_file, service) if service_block else False
+                except RegistrationError as error:
+                    errors.append(f"{script}: {error}")
+                    continue
                 if service_block is None:
                     errors.append(f"{script}: declared {service} is missing from {compose_path}")
-                elif not service_image_is_pinned(service_block):
+                elif not pinned:
                     errors.append(
                         f"{script}: {service} image must pin an explicit tag and digest in {compose_path}"
                     )

@@ -169,6 +169,7 @@ func TestPostgresRevisionLifecycle(t *testing.T) {
 	s := NewRevisionService(repository.NewRevisionRepository(db))
 	ctx := context.Background()
 	actor := testActor(101)
+	t.Run("projection_admission", func(t *testing.T) { testProjectionAdmission(t, db, s, actor) })
 	newID := func() string { return "it_" + strings.ReplaceAll(uuid.NewString(), "-", "") }
 	transition := func(t *testing.T, r *models.Revision, action string) *models.Revision {
 		t.Helper()

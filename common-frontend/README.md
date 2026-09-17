@@ -299,7 +299,7 @@ import {
 
 - `basic/src/components/TabularResultRenderer.vue`：表格预览与有界结果的唯一基础表格实现，按显式列配置展示标量和结构化值；
 - `basic/src/components/DataPagination.vue`：预览场景的唯一受控分页组件，只表达分页状态和变化事件，不决定客户端切片或服务端加载；
-- `basic/src/components/ScalarValueRenderer.vue`：显示服务已返回的唯一行数值结果，不在浏览器求和、计数或猜测口径；
+- `basic/src/components/ScalarValueRenderer.vue`：显示服务已返回的唯一行数值结果，不在浏览器求和、计数或猜测口径；显式启用 `selectable` 时，鼠标点击或回车／空格返回 `result-select: { row_index: 0 }`，不改写原始值；
 - `chart/src/ChartRenderer.vue`：展示 `bar | line | pie`，只使用服务已返回的明细值，不在浏览器聚合；
 - `map/src/components/GeoJSONResultRenderer.vue`：只读取 Consumer Descriptor 明确声明的 geometry 字段和 CRS，并可使用显式 label、tooltip 与 `uniform | categorical | continuous` 受控主题样式；不猜测业务字段，不接受原始颜色或任意样式 DSL。
 

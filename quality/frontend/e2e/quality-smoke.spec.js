@@ -600,6 +600,50 @@ test('overview fetch failure is not displayed as zero quality', async ({ page })
   await expect(page.locator('.el-table')).toHaveCount(0);
 });
 
+test('creates a structured relational count assertion without physical targets', async ({ page }) => {
+  const state = await installMockBackend(page);
+  await page.goto('/rules?create=1');
+  const editor = page.getByRole('dialog', { name: '新建质量规则', exact: true });
+  await editor.getByRole('textbox').nth(0).fill('metric_count_assertion');
+  await editor.getByRole('textbox').nth(1).fill('明细去重数对账');
+  await editor.locator('.el-form-item').filter({ hasText: '规则类型' }).locator('.el-select').click();
+  await page.getByRole('option', { name: '跨表断言', exact: true }).click();
+  await editor.locator('[data-assertion-op="field"]').getByRole('textbox', { name: '逻辑字段符号' }).fill('actual');
+  await editor.locator('[data-assertion-op="value"] > .assertion-head > .el-select').first().click();
+  await page.getByRole('option', { name: '参照字段去重数', exact: true }).click();
+  const count = editor.locator('[data-assertion-op="count_distinct"]');
+  await count.getByRole('textbox', { name: '参照角色' }).fill('detail');
+  await count.getByRole('textbox', { name: '逻辑字段符号' }).fill('item');
+  await editor.getByRole('button', { name: '保存', exact: true }).click();
+  await expect.poll(() => state.ruleWrites.length).toBe(1);
+  expect(state.ruleWrites[0].params).toEqual({ assertion: { op: 'eq', args: [{ op: 'field', field: 'actual' }, { op: 'count_distinct', relation: 'detail', field: 'item' }] } });
+  expect(state.ruleWrites[0].type).toBe('relational_assertion');
+});
+
+test('binds relational symbols to deferred primary and reference tables', async ({ page }, testInfo) => {
+  const state = await installMockBackend(page);
+  const assertion = { op: 'eq', args: [{ op: 'field', field: 'actual' }, { op: 'count_distinct', relation: 'detail', field: 'item' }] };
+  const item = state.plans[0].check_items[0];
+  item.rule = { ...item.rule, type: 'relational_assertion', params: { assertion } };
+  item.bindings = { table: 'summary', fields: { actual: '' }, relations: { detail: { table: '', fields: { item: '' } } } };
+  state.plans[0].table_bindings = [{ alias: 'summary' }, { alias: 'facts' }];
+  await page.goto('/plans?task_id=12');
+  const editor = page.getByRole('dialog', { name: '编辑质量检查方案' });
+  const binding = editor.locator('.assertion-bindings');
+  await binding.getByLabel('actual', { exact: true }).fill('metric_value');
+  await binding.getByLabel('actual', { exact: true }).press('Enter');
+  await binding.locator('.el-form-item').filter({ hasText: '引用表' }).locator('.el-select').click();
+  await page.getByRole('option', { name: 'facts', exact: true }).click();
+  await binding.getByLabel('item', { exact: true }).fill('activity_id');
+  await binding.getByLabel('item', { exact: true }).press('Enter');
+  await page.screenshot({ path: testInfo.outputPath('relational-bindings.png'), fullPage: true });
+  await editor.getByRole('button', { name: '保存', exact: true }).click();
+  await expect.poll(() => state.writes.length).toBe(1);
+  expect(state.writes[0].check_items[0].bindings).toEqual({ table: 'summary', fields: { actual: 'metric_value' }, relations: { detail: { table: 'facts', fields: { item: 'activity_id' } } } });
+  expect(state.writes[0].check_items[0]).not.toHaveProperty('params');
+  expect(state.unexpected).toEqual([]);
+});
+
 async function installMockBackend(page, options = {}) {
   const state = {
     refreshRequests: 0,

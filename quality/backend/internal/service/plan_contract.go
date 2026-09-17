@@ -152,6 +152,12 @@ func validatePlanRule(rule PlanRule, aliases map[string]struct{}) error {
 		return nil
 	}
 	switch rule.Type {
+	case "relational_assertion":
+		var params planAssertionParams
+		if err := decodeStrictJSON(rule.Params, &params); err != nil {
+			return err
+		}
+		return params.validate(aliases)
 	case "format", "length", "value_range":
 		var params planValueParams
 		if err := decodeStrictJSON(rule.Params, &params); err != nil || requireTable(params.Table) != nil || requireColumns([]string{params.Column}) != nil {

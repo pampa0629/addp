@@ -140,6 +140,16 @@ func compilePlanRule(rule PlanRule, aliases map[string]validationReadItem) (plan
 	}
 	compiled := planCompiledRule{Rule: rule}
 	switch rule.Type {
+	case "relational_assertion":
+		var params planAssertionParams
+		if err := decodeStrictJSON(rule.Params, &params); err != nil {
+			return compiled, err
+		}
+		var err error
+		compiled.SQL, compiled.Args, err = compileAssertion(params, tableSQL, columnSQL)
+		if err != nil {
+			return compiled, err
+		}
 	case "format", "length", "value_range":
 		var params planValueParams
 		if err := decodeStrictJSON(rule.Params, &params); err != nil {

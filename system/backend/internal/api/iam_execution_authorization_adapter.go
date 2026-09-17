@@ -10,6 +10,7 @@ import (
 	"time"
 
 	commonapi "github.com/addp/common/api"
+	"github.com/addp/common/execution"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	sysi18n "github.com/addp/system/i18n"
 	"github.com/addp/system/internal/iam"
@@ -21,10 +22,11 @@ import (
 )
 
 type IAMIssueExecutionAuthorizationRequest struct {
-	Audience    string                          `json:"audience"`
-	ExecutionID string                          `json:"execution_id"`
-	Accesses    []IAMExecutionEngineAccessScope `json:"accesses"`
-	ExpiresIn   int64                           `json:"expires_in"`
+	InternalTask *execution.InternalTaskScope    `json:"internal_task,omitempty"`
+	Audience     string                          `json:"audience"`
+	ExecutionID  string                          `json:"execution_id"`
+	Accesses     []IAMExecutionEngineAccessScope `json:"accesses"`
+	ExpiresIn    int64                           `json:"expires_in"`
 }
 
 type IAMExecutionEngineAccessScope struct {
@@ -51,6 +53,7 @@ type IAMIssueExecutionAuthorizationFromServiceDefinitionRequest struct {
 }
 
 type IAMExecutionAuthorizationResponse struct {
+	InternalTask               *execution.InternalTaskScope    `json:"internal_task,omitempty"`
 	ID                         string                          `json:"id"`
 	ExecutionID                string                          `json:"execution_id"`
 	Audience                   string                          `json:"audience"`
@@ -82,6 +85,7 @@ type IAMExecutionEngineAccessResponse struct {
 }
 
 type iamExecutionAuthorizationService interface {
+	AuthorizeInternalTask(context.Context, iam.AuthorizeInternalTaskInput) (*iam.AuthorizedInternalTask, error)
 	Issue(context.Context, iam.IssueExecutionAuthorizationInput) (*iam.IssuedExecutionAuthorization, error)
 	IssueFromExecution(context.Context, iam.IssueExecutionAuthorizationFromExecutionInput) (*iam.IssuedExecutionAuthorization, error)
 	IssueFromServiceDefinition(context.Context, iam.IssueExecutionAuthorizationFromServiceDefinitionInput) (*iam.IssuedExecutionAuthorization, error)
@@ -173,7 +177,7 @@ func NewIAMExecutionAuthorizationHandler(
 
 // Issue godoc
 // @Summary      签发执行授权 | Issue execution authorization
-// @Description  从当前 Tenant User Access Token 派生绑定唯一执行、引擎和效果的短期授权；效果权限在请求体解析后动态校验 | Derive a short-lived authorization bound to one execution, its engines, and effects from the current tenant user access token; effect permissions are checked after parsing the request
+// @Description  从当前 Tenant User Access Token 派生绑定唯一执行的短期授权；逐引擎范围与内部任务范围互斥，按范围动态复核功能权限 | Derive a short-lived authorization for one execution; per-engine scopes and internal task scope are mutually exclusive and dynamically require their functional permissions
 // @Tags         认证 | Authentication
 // @Accept       json
 // @Produce      json
@@ -186,7 +190,7 @@ func NewIAMExecutionAuthorizationHandler(
 // @Failure      409 {object} IAMErrorResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["system.execution_authorization.create"]
-// @x-addp-conditional-permissions ["develop.task.execute","develop.data_read.execute","develop.data_write.execute","develop.data_ddl.execute","develop.data_external_effect.execute","model.materialization.execute","quality.plan.execute","service.definition.create","service.data_read.execute"]
+// @x-addp-conditional-permissions ["develop.task.execute","develop.data_read.execute","develop.data_write.execute","develop.data_ddl.execute","develop.data_external_effect.execute","model.materialization.execute","quality.plan.execute","service.definition.create","service.data_read.execute","ontology.revision.publish"]
 // @Router       /auth/execution-authorizations [post]
 func (h *IAMExecutionAuthorizationHandler) Issue(c *gin.Context) {
 	var request IAMIssueExecutionAuthorizationRequest
@@ -207,6 +211,7 @@ func (h *IAMExecutionAuthorizationHandler) Issue(c *gin.Context) {
 	status := http.StatusCreated
 	audit := iamAuditMetadataWithStatus(c, status)
 	issued, err := h.service.Issue(c.Request.Context(), iam.IssueExecutionAuthorizationInput{
+		InternalTask:      request.InternalTask,
 		SourceAccessToken: sourceAccessToken,
 		Audience:          request.Audience,
 		ExecutionID:       executionID,
@@ -444,7 +449,8 @@ func mapIssuedExecutionAuthorization(
 		})
 	}
 	response := IAMExecutionAuthorizationResponse{
-		ID: strconv.FormatInt(issued.ID, 10), ExecutionID: issued.ExecutionID.String(),
+		InternalTask: issued.InternalTask,
+		ID:           strconv.FormatInt(issued.ID, 10), ExecutionID: issued.ExecutionID.String(),
 		Audience: issued.Audience, Accesses: accesses,
 		ExpiresAt: issued.ExpiresAt.UTC(), ActorPrincipalID: strconv.FormatInt(issued.ActorPrincipalID, 10),
 		TenantID:                   strconv.FormatInt(issued.TenantID, 10),

@@ -424,7 +424,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "从当前 Tenant User Access Token 派生绑定唯一执行、引擎和效果的短期授权；效果权限在请求体解析后动态校验 | Derive a short-lived authorization bound to one execution, its engines, and effects from the current tenant user access token; effect permissions are checked after parsing the request",
+                "description": "从当前 Tenant User Access Token 派生绑定唯一执行的短期授权；逐引擎范围与内部任务范围互斥，按范围动态复核功能权限 | Derive a short-lived authorization for one execution; per-engine scopes and internal task scope are mutually exclusive and dynamically require their functional permissions",
                 "consumes": [
                     "application/json"
                 ],
@@ -488,7 +488,8 @@ const docTemplate = `{
                     "model.materialization.execute",
                     "quality.plan.execute",
                     "service.definition.create",
-                    "service.data_read.execute"
+                    "service.data_read.execute",
+                    "ontology.revision.publish"
                 ],
                 "x-addp-required-permissions": [
                     "system.execution_authorization.create"
@@ -1841,6 +1842,74 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.execution_authorization.execute"
+                ]
+            }
+        },
+        "/execution-authorizations/{id}/internal-task-accesses": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅 addp-ontology Tenant Runtime 可复核当前用户授权与精确运行租约，不返回引擎或 Infra 凭据 | Only the addp-ontology tenant runtime may recheck current user authorization and the exact running lease; no engine or Infra credentials are returned",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Runtime 执行授权 | Runtime Execution Authorization"
+                ],
+                "summary": "消费内部任务执行授权 | Consume internal task execution authorization",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "执行授权 ID | Execution authorization ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "内部任务与租约边界 | Internal task and lease boundary",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMInternalTaskAccessRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMInternalTaskAccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
                         "schema": {
                             "$ref": "#/definitions/internal_api.IAMErrorResponse"
                         }
@@ -9914,6 +9983,26 @@ const docTemplate = `{
                 }
             }
         },
+        "execution.InternalTaskScope": {
+            "type": "object",
+            "properties": {
+                "digest": {
+                    "type": "string"
+                },
+                "generation": {
+                    "type": "string"
+                },
+                "resource_id": {
+                    "type": "string"
+                },
+                "revision": {
+                    "type": "string"
+                },
+                "task_type": {
+                    "type": "string"
+                }
+            }
+        },
         "fosite.RFC6749ErrorJson": {
             "type": "object",
             "properties": {
@@ -12256,6 +12345,9 @@ const docTemplate = `{
                 "id": {
                     "type": "string"
                 },
+                "internal_task": {
+                    "$ref": "#/definitions/execution.InternalTaskScope"
+                },
                 "issued_authorization_version": {
                     "type": "string"
                 },
@@ -12340,6 +12432,49 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "initial_administrator_principal_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMInternalTaskAccessRequest": {
+            "type": "object",
+            "properties": {
+                "attempt": {
+                    "type": "integer"
+                },
+                "execution_id": {
+                    "type": "string"
+                },
+                "internal_task": {
+                    "$ref": "#/definitions/execution.InternalTaskScope"
+                },
+                "lease_token": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.IAMInternalTaskAccessResponse": {
+            "type": "object",
+            "properties": {
+                "attempt": {
+                    "type": "integer"
+                },
+                "audience": {
+                    "type": "string"
+                },
+                "authorization_id": {
+                    "type": "string"
+                },
+                "execution_id": {
+                    "type": "string"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "internal_task": {
+                    "$ref": "#/definitions/execution.InternalTaskScope"
+                },
+                "tenant_id": {
                     "type": "string"
                 }
             }
@@ -12455,6 +12590,9 @@ const docTemplate = `{
                 },
                 "expires_in": {
                     "type": "integer"
+                },
+                "internal_task": {
+                    "$ref": "#/definitions/execution.InternalTaskScope"
                 }
             }
         },

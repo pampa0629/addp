@@ -161,8 +161,28 @@ SUITES: Mapping[str, Suite] = {
             ("transfer", "TRANSFER_URL"),
         ),
     ),
+    "metric-service-revision-lifecycle": Suite(
+        command=(sys.executable, "-m", "scripts.test.metric-service-revision-lifecycle-online"),
+        services=(
+            ("gateway", "GATEWAY_URL"),
+            ("system", "SYSTEM_URL"),
+            ("standard", "STANDARD_URL"),
+            ("model", "MODEL_URL"),
+            ("meta", "META_URL"),
+            ("security", "SECURITY_URL"),
+            ("service", "SERVICE_URL"),
+        ),
+    ),
+    "quality-dynamic-binding": Suite(
+        command=(sys.executable, "-m", "scripts.test.quality-dynamic-binding-online"),
+        services=(
+            ("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL"),
+            ("model", "MODEL_URL"), ("meta", "META_URL"),
+            ("quality", "QUALITY_URL"), ("orchestrator", "ORCHESTRATOR_URL"),
+        ),
+    ),
     "standard-model-reference-deletion": Suite(
-        command=(sys.executable, "scripts/test/standard-model-reference-deletion-online.py"),
+        command=(sys.executable, "-m", "scripts.test.standard-model-reference-deletion-online"),
         services=(
             ("gateway", "GATEWAY_URL"),
             ("system", "SYSTEM_URL"),

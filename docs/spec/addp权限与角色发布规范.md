@@ -39,6 +39,8 @@ Permission 回答“Principal 是否允许使用一类产品能力”，Role 是
 
 System 不维护第二份手写业务 Permission 总表。业务模块也不得在启动时动态注册 Permission，或在 Handler 中发明 Manifest 不存在的 Key。
 
+Permission owner 不必已拥有 HTTP 服务。当前 Ontology 只有语义内核和发布准入库，其 `ontology.revision.publish` 由 System 执行授权接口实际消费；覆盖登记明确指向 System 的真实 OpenAPI，不生成占位 Ontology Swagger，也不豁免未引用权限检查。Ontology 建立自有 HTTP 服务时必须同步把 API 覆盖归回自身，不能同时保留托管登记。
+
 文档中的 Role 和 Permission 例子只解释规则，不是精确目录。精确目录必须读取上述 Manifest，避免文档快照与发布产物漂移。
 
 ## 三、Permission Manifest

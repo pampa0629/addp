@@ -18,7 +18,7 @@ while [ "$#" -gt 0 ]; do
             shift 2
             ;;
         *)
-            echo "usage: $0 [--package iam|oauth|api|migration] [--test service-account|tenant-invitation|catalog-reference-candidates|catalog-integrity|standard-collection-removal|invitation-enrollment-removal|execution-audience|duckdb-runtime-catalog|security-module-repair|security-access-request-repair|execution-authorization-lease-boundary|portal-runtime-removal|service-execution-audit|develop-execution-audit|workbench-runtime|workbench-data-application|workbench-catalog-read|workbench-resource-grant|model-catalog-read|standard-catalog-read|service-catalog-read|develop-catalog-read|develop-transfer-execution|quality-catalog-read|quality-plans|model-writer-decoupling|catalog-engine-descriptor-read|catalog-project-group-read|transfer-task-provider]" >&2
+            echo "usage: $0 [--package iam|oauth|api|migration] [--test service-account|tenant-invitation|catalog-reference-candidates|catalog-integrity|standard-collection-removal|invitation-enrollment-removal|execution-audience|duckdb-runtime-catalog|security-module-repair|security-access-request-repair|execution-authorization-lease-boundary|internal-task-authorization|portal-runtime-removal|service-execution-audit|develop-execution-audit|workbench-runtime|workbench-data-application|workbench-catalog-read|workbench-resource-grant|model-catalog-read|standard-catalog-read|service-catalog-read|develop-catalog-read|develop-transfer-execution|quality-catalog-read|quality-plans|model-writer-decoupling|catalog-engine-descriptor-read|catalog-project-group-read|transfer-task-provider]" >&2
             exit 2
             ;;
     esac
@@ -36,6 +36,20 @@ if [ -z "${ADDP_SYSTEM_POSTGRES_TEST_DSN:-}" ]; then
     echo "ADDP_SYSTEM_POSTGRES_TEST_DSN must reference a disposable PostgreSQL 15+ database" >&2
     exit 1
 fi
+
+# All checkouts share the same local IAM test database. Keep the open file
+# description alive in this shell and its children until the entire gate exits.
+# Never unlink the file: another process could otherwise lock a new inode.
+exec 9>>/tmp/addp-system-iam-postgres-gate.lock
+python3 - <<'PY'
+import fcntl
+import sys
+
+try:
+    fcntl.flock(9, fcntl.LOCK_EX | fcntl.LOCK_NB)
+except BlockingIOError:
+    sys.exit("System IAM PostgreSQL gate is already running; run gates serially")
+PY
 
 cd "$ROOT_DIR/system/backend"
 
@@ -67,6 +81,13 @@ esac
 test_pattern='AgainstPostgres$'
 case "$TEST_FILTER" in
     "") ;;
+    internal-task-authorization)
+        if [ "$PACKAGE_FILTER" != "iam" ]; then
+            echo "internal-task-authorization test requires --package iam" >&2
+            exit 2
+        fi
+        test_pattern='^Test(InternalTaskAuthorization|ExecutionAuthorizationService)AgainstPostgres$'
+        ;;
     quality-plans)
         if [ "$PACKAGE_FILTER" != "migration" ]; then
             echo "quality-plans test requires --package migration" >&2

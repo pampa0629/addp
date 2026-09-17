@@ -1,5 +1,16 @@
 {
   "quality": {
+    "assertion": {
+      "hint": "使用逻辑字段符号定义条件；实际表和字段在方案中绑定。未知比较结果不算通过，计数按参照集合计算。",
+      "bindingHint": "将规则中的逻辑字段映射到实际列。参照表与主表共同纳入执行快照和授权。",
+      "operator": "断言运算", "relation": "参照角色", "root": "主表当前记录", "symbol": "逻辑字段符号",
+      "valueType": "值类型", "value": "常量值", "value_string": "文本", "value_number": "数值", "value_boolean": "布尔", "value_null": "空值",
+      "add": "添加条件", "remove": "删除条件", "filter": "限定参照集合",
+      "op_field": "字段", "op_value": "文本／布尔／空值", "op_number": "数值常量", "op_today": "执行日期",
+      "op_and": "全部满足", "op_or": "任一满足", "op_not": "取反",
+      "op_eq": "等于（含空值）", "op_ne": "不等于（含空值）", "op_lt": "小于", "op_lte": "小于等于", "op_gt": "大于", "op_gte": "大于等于",
+      "op_is_null": "为空", "op_not_null": "不为空", "op_exists": "存在参照记录", "op_count": "参照记录数", "op_count_distinct": "参照字段去重数"
+    },
     "targets": {
       "missing": "请为以下表别名选择本次执行的数据表：{aliases}",
       "selectDefault": "选择默认表",
@@ -127,6 +138,7 @@
       "type_foreign_key": "外键完整性",
       "type_predicate_implication": "谓词蕴含",
       "type_row_count": "行数",
+      "type_relational_assertion": "跨表断言",
       "operator_eq": "等于",
       "operator_not_eq": "不等于",
       "operator_is_null": "为空",

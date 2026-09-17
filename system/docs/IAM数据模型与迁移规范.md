@@ -132,6 +132,12 @@ Role、Assignment、Membership、组织关系或 Principal 状态变化时，数
 
 Refresh 采用轮换和重用检测。并发 Refresh、logout、context switch、MFA 转换按统一 Principal 和 Family 锁顺序竞争；发现已消费旧 Refresh Token 时撤销整个 Family，但正常并发失败不能误报为重用攻击。
 
+### 6.2a Internal Task Execution Authorization
+
+`execution_authorizations.internal_task` 为与逐引擎子表互斥的 JSONB 范围。151 号迁移要求 ontology/user 来源、精确内部字段与规范类型、当前 pending common execution 的租户/发布主体/任务配置；签发后边界不可修改。内部授权不能插入 engine access，必须沿原 seal/撤销/有效期机制消费。152 号迁移登记 `ontology.revision.publish`、最小 `tenant.ontology_runtime` 和 `addp-ontology` Client；凭据仍由既有 provisioner 配置，不在 SQL 存 Secret，不给用户角色隐式加权。
+
+消费时使用 Principal → Membership/Tenant → Authorization → execution 的锁顺序，检查当前 running lease、完整授权引用、当前功能权限和唯一服务身份。返回期限不超过授权、租约及相关 Membership 到期时间；租约等待后使用数据库墙钟再次检查，不能把事务开始时间当作当前有效时间。System 不读取 Ontology owner 表，也不返回 Infra 连接信息。
+
 ### 6.3 Notebook Session Authorization
 
 `notebook_session_authorizations` 保存由当前 Tenant User Access Token 派生、绑定唯一 Notebook Session 和 Task 的短期授权事实。它不是 Token，不保存 Token Hash、Engine 列表或连接信息，也不新增 AuthContext 类型；身份边界通过 User Principal、Tenant Membership、Token Family 和签发时 `authorization_version` 固定。它只允许实时 Catalog 发现，以及为每次 Notebook 只读查询/扫描派生独立 Execution Authorization。派生记录必须通过 `execution_authorizations.source_notebook_session_authorization_id` 保存唯一来源，并继承 Session 的身份、有效期和撤销边界。

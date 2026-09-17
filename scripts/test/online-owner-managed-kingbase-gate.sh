@@ -190,7 +190,7 @@ for start_target in -manager -develop -service; do
   run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$start_target"
 done
 
-run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --output "$1"' _ "$IDENTITY_ENV"
+run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite kingbase-consumer-flow --output "$1"' _ "$IDENTITY_ENV"
 # shellcheck disable=SC1090
 source "$IDENTITY_ENV"
 run_logged python3 scripts/test/online-engine-registration.py \

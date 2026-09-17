@@ -65,6 +65,16 @@ Workbench 由同一 owner 承担创作和运行职责，但两个页面职责使
 
 创作端只维护 Data Application：选择服务后直接配置 Component 的字段、参数和 renderer，再完成布局、共享参数、选择联动和发布。Console 外层 URL 是 iframe 模式的公开路由事实源，模块内使用同一 canonical path，并通过 `common-frontend` Console navigation bridge 同步；前端仍按模块规范支持 standalone 开发和验证，但正式入口不形成第二个认证 origin。
 
+创作界面以应用画布和选中组件的属性为主入口。画布复用唯一 `DataApplicationCanvas` 与 renderer；编辑时点击只选择组件，查询条件和选择联动通过显式整页试用验证。标题、说明、位置和尺寸直接修改同一草稿；布局以组件顺序、占宽和高度重新排布，避免重叠，不要求填写 X/Y。筛选默认值、参数映射、选择联动、场景预设与页面设置按需打开，保存和发布仍是显式动作。
+
+筛选设置以条件卡片展示名称、初始值和受影响组件，映射按组件归组；共享条件只允许 Descriptor 类型、可选值及已有选择联动一致的组合，不按名称自动合并。选择联动先在局部表单显式选择来源组件、结果字段及目标条件，再应用到同一草稿；应用前展示由参数绑定推导的刷新范围，取消不修改草稿。字段显示别名同时保留字段名供辨认，传递的仍是原始值。
+
+整页预览提供显式“设为应用初始值”动作：将当前全部 Application Parameter 的原始值经完整性、必填项、Descriptor 与可选值检查后复制回草稿 default_value，并返回编辑页；保存草稿才持久化。普通关闭预览仍丢弃试用状态。该动作不回写场景预设、结果行、分页、地图视角或已发布 Revision，也不增加参数查询或持久化接口。
+
+空应用从选择首个展示类型开始，组件配置按“数据来源、展示、查询条件”逐步完成；字段事实与必要输入来自 Service Consumer Descriptor，用户显式选择业务字段和默认值，不依据名称自动推断共享参数或联动。空间探索入口继续复用现有空草稿向导。两类入口都生成同一 Component 与 Snapshot，不新增 Template、持久化创作模式、Backend API 或第二套运行查询。编辑画布首次按可执行默认值加载数据；修改查询配置后清除旧结果，用户显式刷新，纯展示及布局修改不重复查询。
+
+新增 Component 的查询条件可显式复用已有 Application Parameter，默认仍创建独立条件。复用选择仅驻留组件编辑表单，试查使用所选应用条件的初始值；应用组件配置时统一写入既有 Parameter Binding，不生成重复条件，不改写已有默认值或场景。候选条件按加入该组件后的完整绑定关系复用类型、选项与选择联动校验，不能只比较标签。修改来源服务或字段/操作符后清除相应复用选择，取消表单不改动应用。已有组件继续通过应用筛选设置修改共享关系。
+
 已发布 Data Application 的运行端不嵌入 Console iframe，不显示 Console 管理导航，供 Portal 打开、全屏运行和后续 wallboard 使用。稳定 URL `/data-apps/:application_id` 由 Workbench 解析当前有效发布 Revision；同一页面不存在另一条 `/workbench/...` 运行 URL。
 
 两个界面仍属于同一个 `workbench` 模块，复用同一 Backend、领域模型、renderer 和 Browser AuthSession，不新增 `data-app` 模块、数据库 schema、Service Principal 或独立认证体系。运行端使用当前 User Bearer 调用 Workbench 和 Service，不使用 API Key。
@@ -924,6 +934,8 @@ Data Application Component 中的 `renderer_type` 是 `renderer_config` 的可�
 - Pie 的度量值必须是有限且非负的数值，不对负数、`null` 或非数值做隐式绝对值、归零或过滤；
 - Chart 不执行求和、分组、透视、补点、客户端排序或“其他”合并，服务结果必须已具有目标粒度；
 - Chart 最多接收 500 行完整结果，Pie 最多 20 项。`page.has_more=true` 或超过上限时不渲染部分图表，要求用户缩小筛选或使用上游聚合服务。
+
+Chart 可显式启用 `total_as_value: true`：维度必须已配置 `temporal_format=period` 与有效的参数绑定，度量限制为 1–4 个且每个度量显式声明显示精度。Renderer Host 根据成功查询参数中的全期／按月粒度，在现有共享 ScalarValueRenderer 与 ChartRenderer 之间选择呈现；未启用时保持图表。全期必须是完整唯一行，空结果、多行、部分结果或无效数值不得取首行、求和或补零。数字卡片沿用度量名称、单位、精度和状态规则，并发出原始行的选择事件；CSV 和查询主路径不变。日期范围说明仍使用成功查询参数快照。该选项不增加 Service 能力、数据源、独立组件或渲染器类型。
 
 ### 8.4 Map Renderer Config
 

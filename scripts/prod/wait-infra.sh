@@ -41,6 +41,18 @@ until docker compose -f docker-compose.infra.yml exec -T redis redis-cli -a "${R
 done
 echo "✓ Redis 已就绪"
 
+echo "等待 FalkorDB 就绪..."
+counter=0
+until [ "$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}' addp-falkordb 2>/dev/null)" = "healthy" ]; do
+  sleep 2
+  counter=$((counter + 2))
+  if [ $counter -ge $timeout ]; then
+    echo "错误: FalkorDB 启动超时或图健康检查失败"
+    exit 1
+  fi
+done
+echo "✓ FalkorDB 已就绪"
+
 echo "等待 MinIO 就绪..."
 counter=0
 until curl -f "http://localhost:${MINIO_API_PORT}/minio/health/live" > /dev/null 2>&1; do

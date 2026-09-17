@@ -4,9 +4,9 @@ Ontology 管理租户领域本体的形式化语义，不接管 Standard、Model
 
 ## 当前交付范围
 
-`backend/internal/semantic` 是正式 Go 语义内核；`internal/service`、`internal/repository` 已增加原生定义的 PG 修订生命周期。尚无 HTTP 服务、页面、FalkorDB 服务或 Agent Tool，不登记占位服务，不影响 Graph 的当前功能。
+`backend/internal/semantic` 是正式 Go 语义内核；`internal/service`、`internal/repository` 已增加原生定义的 PG 修订生命周期。FalkorDB 已纳入 Infra Compose，尚无 Ontology HTTP 服务、页面或 Agent Tool，不登记占位业务服务，不影响 Graph 的当前功能。
 
-`internal/falkor` 已增加唯一的 go-redis 薄适配及确定性图投影构建/全量校验；当前只由独占 T2 驱动，尚未接入发布执行器、IAM 准入或 PG 激活指针，不能把适配测试通过当作生产运行时已上线。
+`internal/falkor` 已增加唯一的 go-redis 薄适配及确定性图投影构建/全量校验；当前只由独占 T2 驱动。System 内部任务授权与 Ontology 发布准入已实现，尚未连接图执行器或 PG 激活指针，不能把适配测试通过当作生产运行时已上线。
 
 - 自有类、属性、继承和关系声明的严格校验；拒绝环、悬空引用、继承属性歧义及不一致逆关系。
 - 确定修订的不可变内存快照；规范化 JSON 和 SHA-256 摘要包含租户、本体、修订、内核契约与编译器版本。它不是数据库发布成功的凭证。
@@ -24,18 +24,22 @@ Ontology 管理租户领域本体的形式化语义，不接管 Standard、Model
 - `semantic.Restore` 严格核对规范化内容、摘要、内核契约和编译器版本；读取异常快照失败关闭，不隐式升级历史定义。
 - 发布在同一事务内冻结修订、写审计、创建 `common.task_executions` 的 pending 构建意图，绑定修订、摘要和 generation；审计失败时全部回滚。数据库触发器保护审核/发布内容和追加式审计。
 - 撤回与 pending 构建意图取消同事务；不伪装取消已运行工作。未实现激活/ready、图重建或图执行器，也不把 published 当作可运行。
-- Actor 只承载调用方已核实的租户/主体/成员/授权版本。当前无真实 IAM 准入，pending execution 没有 Execution Authorization，未来领取必须要求授权。不得把内部服务直接暴露为未鉴权 API。
+- Actor 只承载调用方已核实的租户/主体/成员/授权版本。发布先创建无授权的 pending 意图，唯一准入方法 `AdmitProjection` 用当前请求的 User Token 调用 System，核对原发布主体及全部范围后原子附加授权；领取必须要求授权。签发或附加失败只关闭仍未授权的 pending 意图，撤回优先于迟到授权。不保存或交给 Worker 用户 Token，不得把内部服务直接暴露为未鉴权 API。
 - `repository.Migrate` 使用 `common/schema.Migrate` 协调 `migrations/001_revisions.sql`，重复同版本不执行；新迁移只能向前增加，不改已发布 SQL。生产 Ontology 只用 `schema.Require` 检查 common，不创建共享执行表。
 
 ## 代码与测试
 
 ### FalkorDB 适配边界
 
+- `scripts/infra/falkordb.yml` 是 Infra Compose 与 T2 共用的数据库定义。常驻服务使用独立密码与卷，仅开放回环 `16479`；T2 使用随机密码/端口及退出必删的独占卷，并覆盖图快照在容器重建后的恢复。启动就绪不等于本体投影 ready；发布运行时仍待实现。
+
 - 每条命令使用独占连接、无自动重试、RESP2 标量结果；取消关闭本请求连接并拒绝迟到结果，不承诺服务端立即硬中止。最多 4 条本地在途命令，满额立即拒绝。
 - 查询必须携带 1–2000 ms 服务端预算，且不超过调用方剩余 deadline。服务端必须同时启用非零 `TIMEOUT_MAX/TIMEOUT_DEFAULT`；写超时回滚可能额外耗时。取消/网络错误后的写入结果不确定，禁止原地自动重放。
 - `Plan` 只从已校验的不可变快照和 owner generation 派生物理 graph key。图内只保存类型、属性、关系、规则的成员身份/名称及结构引用；CEL、规则依据与业务事实不复制。传递/逆关系实例推理未实现。
 - `Build` 原子保留空 generation，拒绝覆盖已有图；分阶段写入后由 `Verify` 比较摘要、完整成员/边集合及总数。失败可能留下部分图，不能据此激活；清理必须由后续 PG owner 核实引用与 lease 后协调，不在取消路径直接删除仍可能写入的图。
 - 适配不是授权器。未来执行器必须在构建前核实授权和租约，在输出/激活前再次核实取消、撤回、授权、lease/fencing 和激活基线。当前不提供任意 Cypher API，也没有从 PG 发布自动触发图写入的旁路。
+
+System 的 `ontology` 内部执行授权固定绑定 semantic_projection、修订、摘要与 generation；`addp-ontology` 只有 `system.execution_authorization.execute` Runtime Permission。消费接口必须验证当前 running attempt/token 和 User 授权版本，不能消费引擎连接。`ontology.revision.publish` 通过 Tenant 自定义角色显式分配，并同时需要 `system.execution_authorization.create`；未向既有用户角色自动加权。System 启动需要独立 `ONTOLOGY_SERVICE_CLIENT_SECRET`。本阶段尚无实际图执行器、激活指针或用户 HTTP 服务。
 
 ### 标准门禁
 

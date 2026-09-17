@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # ADDP_T2_OWNED_SERVICES=falkordb
 # ADDP_T2_COMPOSE_FILE=scripts/test/docker-compose.ontology-falkor-t2.yml
+# ADDP_T2_INPUT_FILES=docker-compose.infra.yml .env.example scripts/infra/falkordb.yml scripts/infra/up.sh scripts/infra/status.sh scripts/infra/down.sh scripts/prod/setup-env.sh scripts/prod/wait-infra.sh
 # Own the complete lifecycle of a disposable FalkorDB, never a developer endpoint.
 set -euo pipefail
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
@@ -9,6 +10,7 @@ RUN_ID=$(python3 -c 'import uuid; print(uuid.uuid4().hex)')
 COMPOSE_PROJECT="addp-ontology-falkor-t2-$RUN_ID"
 COMPOSE_FILE="$ROOT_DIR/scripts/test/docker-compose.ontology-falkor-t2.yml"
 export ONTOLOGY_FALKOR_TEST_PASSWORD="$RUN_ID"
+export INFRA_FALKORDB_PASSWORD="$RUN_ID"
 compose() { docker compose --env-file /dev/null -p "$COMPOSE_PROJECT" -f "$COMPOSE_FILE" "$@"; }
 cleanup() {
     local result=$?
@@ -32,7 +34,17 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
-compose up -d falkordb
+compose up -d --wait --wait-timeout 60 falkordb
+# Exercise the same persistence contract as Infra, with an owned disposable volume.
+compose exec -T falkordb redis-cli --raw GRAPH.QUERY infra_persistence_probe \
+  'CREATE (:Probe {value: "ontology-infra-recovered"})' timeout 2000 > "$WORK_DIR/probe.log"
+compose exec -T falkordb redis-cli --raw SAVE | grep -qx OK
+compose up -d --force-recreate --wait --wait-timeout 60 falkordb
+compose exec -T falkordb redis-cli --raw GRAPH.RO_QUERY infra_persistence_probe \
+  'MATCH (p:Probe) RETURN p.value' timeout 2000 | grep -qx ontology-infra-recovered
+compose exec -T falkordb env -u REDISCLI_AUTH redis-cli --raw PING | grep -q NOAUTH
+compose exec -T falkordb redis-cli --raw GRAPH.DELETE infra_persistence_probe > "$WORK_DIR/probe-cleanup.log"
+echo "FalkorDB persistence and authentication probe passed"
 export ONTOLOGY_FALKOR_TEST_ADDRESS
 ONTOLOGY_FALKOR_TEST_ADDRESS=$(compose port falkordb 6379)
 case "$ONTOLOGY_FALKOR_TEST_ADDRESS" in

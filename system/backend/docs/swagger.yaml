@@ -406,6 +406,19 @@ definitions:
       updated_at:
         type: string
     type: object
+  execution.InternalTaskScope:
+    properties:
+      digest:
+        type: string
+      generation:
+        type: string
+      resource_id:
+        type: string
+      revision:
+        type: string
+      task_type:
+        type: string
+    type: object
   fosite.RFC6749ErrorJson:
     properties:
       error:
@@ -1995,6 +2008,8 @@ definitions:
         type: string
       id:
         type: string
+      internal_task:
+        $ref: '#/definitions/execution.InternalTaskScope'
       issued_authorization_version:
         type: string
       source_definition_id:
@@ -2050,6 +2065,34 @@ definitions:
   internal_api.IAMInitializeTenantRequest:
     properties:
       initial_administrator_principal_id:
+        type: string
+    type: object
+  internal_api.IAMInternalTaskAccessRequest:
+    properties:
+      attempt:
+        type: integer
+      execution_id:
+        type: string
+      internal_task:
+        $ref: '#/definitions/execution.InternalTaskScope'
+      lease_token:
+        type: string
+    type: object
+  internal_api.IAMInternalTaskAccessResponse:
+    properties:
+      attempt:
+        type: integer
+      audience:
+        type: string
+      authorization_id:
+        type: string
+      execution_id:
+        type: string
+      expires_at:
+        type: string
+      internal_task:
+        $ref: '#/definitions/execution.InternalTaskScope'
+      tenant_id:
         type: string
     type: object
   internal_api.IAMInvitationAcceptanceRequest:
@@ -2125,6 +2168,8 @@ definitions:
         type: string
       expires_in:
         type: integer
+      internal_task:
+        $ref: '#/definitions/execution.InternalTaskScope'
     type: object
   internal_api.IAMIssueNotebookSessionAuthorizationRequest:
     properties:
@@ -3972,10 +4017,10 @@ paths:
     post:
       consumes:
       - application/json
-      description: 从当前 Tenant User Access Token 派生绑定唯一执行、引擎和效果的短期授权；效果权限在请求体解析后动态校验
-        | Derive a short-lived authorization bound to one execution, its engines,
-        and effects from the current tenant user access token; effect permissions
-        are checked after parsing the request
+      description: 从当前 Tenant User Access Token 派生绑定唯一执行的短期授权；逐引擎范围与内部任务范围互斥，按范围动态复核功能权限
+        | Derive a short-lived authorization for one execution; per-engine scopes
+        and internal task scope are mutually exclusive and dynamically require their
+        functional permissions
       parameters:
       - description: 执行授权边界 | Execution authorization boundary
         in: body
@@ -4022,6 +4067,7 @@ paths:
       - quality.plan.execute
       - service.definition.create
       - service.data_read.execute
+      - ontology.revision.publish
       x-addp-required-permissions:
       - system.execution_authorization.create
   /auth/mfa:
@@ -4924,6 +4970,52 @@ paths:
       security:
       - BearerAuth: []
       summary: 消费执行授权并获取引擎访问 | Consume execution authorization for engine access
+      tags:
+      - Runtime 执行授权 | Runtime Execution Authorization
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.execution_authorization.execute
+  /execution-authorizations/{id}/internal-task-accesses:
+    post:
+      consumes:
+      - application/json
+      description: 仅 addp-ontology Tenant Runtime 可复核当前用户授权与精确运行租约，不返回引擎或 Infra 凭据
+        | Only the addp-ontology tenant runtime may recheck current user authorization
+        and the exact running lease; no engine or Infra credentials are returned
+      parameters:
+      - description: 执行授权 ID | Execution authorization ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 内部任务与租约边界 | Internal task and lease boundary
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMInternalTaskAccessRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.IAMInternalTaskAccessResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 消费内部任务执行授权 | Consume internal task execution authorization
       tags:
       - Runtime 执行授权 | Runtime Execution Authorization
       x-addp-auth-mode: permission

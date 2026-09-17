@@ -163,6 +163,14 @@ func TestIAMManagementServicesAgainstPostgres(t *testing.T) {
 	target := createGovernedManagementUser(t, ctx, identityService, "audit-target", "platform.audit_administrator", platformAudit, db)
 	requester := createGovernedManagementUser(t, ctx, identityService, "security-requester", "platform.security_administrator", platformAudit, db)
 	reviewer := createGovernedManagementUser(t, ctx, identityService, "system-reviewer", "platform.system_administrator", platformAudit, db)
+	// These fixtures use PostgreSQL now() for assignment validity. Password
+	// hashing (especially under -race) can outlive the earlier simulated clock.
+	// Align the injected service clock with the just-committed DB facts instead
+	// of treating an already active platform assignment as scheduled.
+	currentTime, err = repository.CurrentDatabaseTime(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
 	requesterAudit := platformAudit
 	requesterType := PrincipalTypeUser
 	requesterAudit.PrincipalID = &requester.PrincipalID

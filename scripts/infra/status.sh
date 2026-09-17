@@ -29,7 +29,7 @@ if ! docker compose version >/dev/null 2>&1; then
 fi
 
 echo -e "${YELLOW}▶ 容器状态（docker compose ps）${NC}"
-docker compose -f docker-compose.infra.yml ps postgres redis minio meilisearch redpanda redpanda-init kafka-connect || true
+docker compose -f docker-compose.infra.yml ps postgres redis falkordb minio meilisearch redpanda redpanda-init kafka-connect || true
 
 echo ""
 echo -e "${YELLOW}▶ 健康检查${NC}"
@@ -58,6 +58,15 @@ fi
 # Redis
 printf "%s" "- Redis (localhost:${REDIS_PORT}):       "
 if docker compose -f docker-compose.infra.yml exec -T redis redis-cli -a "${REDIS_PASSWORD:-addp_redis}" ping 2>/dev/null | grep -q PONG; then
+  echo -e "${GREEN}Healthy${NC}"
+else
+  echo -e "${RED}Unhealthy${NC}"
+fi
+
+# FalkorDB
+printf "%s" "- FalkorDB (127.0.0.1:16479):          "
+FALKORDB_HEALTH=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}' addp-falkordb 2>/dev/null || true)
+if [ "$FALKORDB_HEALTH" = "healthy" ]; then
   echo -e "${GREEN}Healthy${NC}"
 else
   echo -e "${RED}Unhealthy${NC}"

@@ -15,9 +15,11 @@ on:
           - kingbase-consumer-flow
           - manager-internal-artifact-lineage
           - manager-hybrid-search
+          - metric-service-revision-lifecycle
           - module-registry-recovery
           - oceanbase-consumer-flow
           - opengauss-consumer-flow
+          - quality-dynamic-binding
           - security-plaintext-access
           - security-mysql-owner-protection
           - security-transfer-protection
@@ -33,7 +35,7 @@ permissions:
 jobs:
   online-t4:
     name: Online T4 (${{ inputs.suite }})
-    if: github.event_name == 'workflow_dispatch' && inputs.suite != 'opengauss-consumer-flow' && inputs.suite != 'kingbase-consumer-flow'
+    if: github.event_name == 'workflow_dispatch' && inputs.suite != 'opengauss-consumer-flow' && inputs.suite != 'kingbase-consumer-flow' && inputs.suite != 'metric-service-revision-lifecycle'
     concurrency:
       group: online-t4-${{ inputs.suite }}
       cancel-in-progress: false
@@ -82,6 +84,70 @@ jobs:
           gate: Online T4 (${{ inputs.suite }})
           status: ${{ job.status }}
           details-file: ${{ runner.temp }}/addp-online-${{ github.run_id }}/summary.txt
+
+  metric-hosted-t4:
+    name: Online T4 (metric-service-revision-lifecycle, Linux x86_64)
+    if: github.event_name == 'workflow_dispatch' && inputs.suite == 'metric-service-revision-lifecycle'
+    concurrency:
+      group: online-t4-metric-service-revision-lifecycle
+      cancel-in-progress: false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      ADDP_ONLINE_HOST: "1"
+      ADDP_ONLINE_HOSTED: "1"
+      ONLINE_SUITE_INPUT: metric-service-revision-lifecycle
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: system/backend/go.mod
+          cache: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: '**/package-lock.json'
+
+      - name: Validate Hosted metric readiness
+        env:
+          ADDP_ONLINE_ARTIFACT_DIR: ${{ runner.temp }}/addp-online-${{ github.run_id }}
+          ADDP_ONLINE_SECRET_DIR: ${{ runner.temp }}/addp-online-secret-${{ github.run_id }}
+        run: bash scripts/test/online-hosted-metric-gate.sh --check-only
+
+      - name: Run Hosted metric Online gate
+        env:
+          ADDP_ONLINE_ARTIFACT_DIR: ${{ runner.temp }}/addp-online-${{ github.run_id }}
+          ADDP_ONLINE_SECRET_DIR: ${{ runner.temp }}/addp-online-secret-${{ github.run_id }}
+        run: bash scripts/test/online-hosted-metric-gate.sh
+
+      - name: Upload Hosted metric evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: online-t4-metric-service-revision-lifecycle-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/addp-online-${{ github.run_id }}/
+            logs/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Summarize Hosted metric T4 gate
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: Online T4 (metric-service-revision-lifecycle, Linux x86_64)
+          status: ${{ job.status }}
+          details-file: ${{ runner.temp }}/addp-online-${{ github.run_id }}/summary.txt
+
 
   opengauss-hosted-t4:
     name: Online T4 (opengauss-consumer-flow, Linux x86_64)

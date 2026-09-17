@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"time"
 
+	commonExecution "github.com/addp/common/execution"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 )
@@ -622,24 +623,25 @@ func (DelegatedAccessToken) TableName() string { return "system.delegated_access
 // ExecutionAuthorization records a short-lived authorization boundary for one
 // execution. It is an auditable database fact, not a bearer credential.
 type ExecutionAuthorization struct {
-	ID                                   int64      `gorm:"primaryKey;autoIncrement"`
-	ActorPrincipalID                     int64      `gorm:"column:actor_principal_id;not null"`
-	TenantID                             int64      `gorm:"column:tenant_id;not null"`
-	TenantMembershipID                   int64      `gorm:"column:tenant_membership_id;not null"`
-	IssuedAuthorizationVersion           int64      `gorm:"column:issued_authorization_version;not null"`
-	SourceType                           string     `gorm:"column:source_type;not null"`
-	SourceDefinitionID                   *int64     `gorm:"column:source_definition_id"`
-	SourceDefinitionVersion              *string    `gorm:"column:source_definition_version"`
-	SourceNotebookSessionAuthorizationID *uuid.UUID `gorm:"column:source_notebook_session_authorization_id;type:uuid"`
-	SourceExecutionAttempt               *int       `gorm:"column:source_execution_attempt"`
-	SourceExecutionLeaseToken            *uuid.UUID `gorm:"column:source_execution_lease_token;type:uuid"`
-	ExecutionID                          uuid.UUID  `gorm:"column:execution_id;type:uuid;not null"`
-	Audience                             string     `gorm:"column:audience;not null"`
-	ExpiresAt                            time.Time  `gorm:"column:expires_at;not null"`
-	SealedAt                             *time.Time `gorm:"column:sealed_at"`
-	RevokedAt                            *time.Time `gorm:"column:revoked_at"`
-	RevokedReason                        *string    `gorm:"column:revoked_reason"`
-	CreatedAt                            time.Time  `gorm:"column:created_at;autoCreateTime"`
+	InternalTask                         *commonExecution.InternalTaskScope `gorm:"column:internal_task;type:jsonb;serializer:json"`
+	ID                                   int64                              `gorm:"primaryKey;autoIncrement"`
+	ActorPrincipalID                     int64                              `gorm:"column:actor_principal_id;not null"`
+	TenantID                             int64                              `gorm:"column:tenant_id;not null"`
+	TenantMembershipID                   int64                              `gorm:"column:tenant_membership_id;not null"`
+	IssuedAuthorizationVersion           int64                              `gorm:"column:issued_authorization_version;not null"`
+	SourceType                           string                             `gorm:"column:source_type;not null"`
+	SourceDefinitionID                   *int64                             `gorm:"column:source_definition_id"`
+	SourceDefinitionVersion              *string                            `gorm:"column:source_definition_version"`
+	SourceNotebookSessionAuthorizationID *uuid.UUID                         `gorm:"column:source_notebook_session_authorization_id;type:uuid"`
+	SourceExecutionAttempt               *int                               `gorm:"column:source_execution_attempt"`
+	SourceExecutionLeaseToken            *uuid.UUID                         `gorm:"column:source_execution_lease_token;type:uuid"`
+	ExecutionID                          uuid.UUID                          `gorm:"column:execution_id;type:uuid;not null"`
+	Audience                             string                             `gorm:"column:audience;not null"`
+	ExpiresAt                            time.Time                          `gorm:"column:expires_at;not null"`
+	SealedAt                             *time.Time                         `gorm:"column:sealed_at"`
+	RevokedAt                            *time.Time                         `gorm:"column:revoked_at"`
+	RevokedReason                        *string                            `gorm:"column:revoked_reason"`
+	CreatedAt                            time.Time                          `gorm:"column:created_at;autoCreateTime"`
 }
 
 type ExecutionAuthorizationEngineAccess struct {

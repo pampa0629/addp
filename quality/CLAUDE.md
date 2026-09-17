@@ -46,10 +46,14 @@ Quality migration 14 增加问题目标范围，使用最后观测执行的完�
 
 ## 测试与 CI
 
+跨表断言 `relational_assertion` 的逻辑表达式由 `models/assertion.go` 校验，实际目标映射属于检查项，PG 编译集中在 `service/plan_assertion.go`。`number` 常量使用十进制字符串，避免浏览器及执行快照损失精度。结构化编辑由 `AssertionEditor.vue` 拥有，`AssertionBindings.vue` 只编辑物理映射；不增加自由 SQL 入口。Quality migration 15 扩展问题目标列摘要为 TEXT，SchemaVersion 升为 3；Backend/Worker 需同步更新。下列现有 T1/T2/T3 入口自动发现新增测试。
+
 - make test-module MODULE=quality：T0、一致性、Go 与前端标准门禁。
 - make test-quality-backend：同一后端单元/契约测试集的独立入口，可在无关 T0 失败时定位本模块；Platform CI 的 Go 自动发现及模块门禁已覆盖该测试集。
 - make test-quality-postgres：真实 PG 规则、来源/执行/问题闭环、迁移、租约、域引用屏障及仅修改归属不产生内容修订；同时验证 Orchestrator 的方案引用迁移。
 - make test-quality-frontend：路由、页面端到端、构建。
+- make test-online ONLINE_SUITE=quality-dynamic-binding：专用 T4 环境的 Model → Quality 上游表绑定、失败阻断、工单去重及跨目标隔离验收。两个永久 Model/PG 夹具的配置及清理边界见 scripts/README.md；不得复用个人管理员会话。只登记手工 CI，首次真实通过前不加入夜间调度。
+- make test-online-runner：上述 T4 脚本的确定性反例、宿主部署 profile 和 CI 登记检查；不能代替真实在线验收。
 - System IAM migration 测试由 scripts/test/system-iam-postgres-gate.sh --package migration 自动发现；单测筛选 --test quality-plans（含规则、方案及 Standard/Quality 域引用服务身份授权刷新）。
 - release-and-t2-gates.yml 注册 Quality PG 门禁，changed-gate 将 Orchestrator 变更映射到该门禁。
 - 本地仅用 addp_test 和 addp_iam_test；不为测试创建单次 database。

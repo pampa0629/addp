@@ -13,26 +13,26 @@
       <el-alert v-if="contractChanged" data-testid="contract-changed-alert" type="warning" :closable="false" :title="t('workbench.contractChanged')" />
       <el-button v-if="contractChanged" :disabled="loading" @click="selectService()">{{ t('workbench.reconfigureContract') }}</el-button>
       <p v-if="contractChanged">{{ t('workbench.reconfigureContractHint') }}</p>
+      <el-tabs v-model="activeStep" class="component-steps">
+        <el-tab-pane v-for="(step, index) in ['data', 'display', 'conditions']" :key="step" :name="step" :disabled="step !== 'data' && !descriptor" :label="`${index + 1}. ${t(`workbench.studio.steps.${step}`)}`" />
+      </el-tabs>
       <div class="editor-grid">
         <el-form label-position="top" class="configuration-form">
+          <div v-show="activeStep === 'data'" class="configuration-section">
           <el-form-item :label="t('workbench.service')">
             <el-select v-model="serviceKey" filterable class="full" @change="selectService">
               <el-option v-for="item in services" :key="keyOf(item.ref)" :label="item.title" :value="keyOf(item.ref)" />
             </el-select>
           </el-form-item>
+            <p class="configuration-hint">{{ t('workbench.studio.serviceHint') }}</p>
+            <el-alert v-if="!loading && services.length === 0" type="info" :closable="false" :title="t('workbench.studio.noServices')" />
+            <el-alert v-if="descriptor && draft.rendererType === 'map' && !descriptor.output_contract.spatial" type="warning" :closable="false" :title="t('workbench.studio.mapServiceRequired')" />
+          </div>
           <template v-if="descriptor">
-            <el-form-item :label="t('workbench.componentTitle')"><el-input v-model="draft.name" maxlength="200" /></el-form-item>
-            <el-form-item :label="t('workbench.description')"><el-input v-model="draft.description" type="textarea" maxlength="2000" /></el-form-item>
-            <el-form-item :label="t('workbench.columns')">
-              <el-checkbox-group v-model="draft.columns" @change="syncRendererFields">
-                <el-checkbox v-for="field in selectableFields" :key="field.name" :value="field.name">
-                  {{ outputField(field.name)?.comment || field.name }}
-                </el-checkbox>
-              </el-checkbox-group>
-            </el-form-item>
-            <el-form-item :label="t('workbench.pageLimit')">
-              <el-input-number v-model="draft.pageLimit" :min="1" :max="descriptor.input_contract.page.max_limit" @change="resetResult" />
-            </el-form-item>
+            <div v-show="activeStep === 'display'" class="configuration-section">
+
+            <el-form-item v-if="!component" :label="t('workbench.componentTitle')"><el-input v-model="draft.name" maxlength="200" /></el-form-item>
+            <el-form-item v-if="!component" :label="t('workbench.description')"><el-input v-model="draft.description" type="textarea" maxlength="2000" /></el-form-item>
             <el-form-item :label="t('workbench.renderer')">
               <el-select v-model="draft.rendererType" class="full" @change="initializeRenderer">
                 <el-option value="table" :label="t('workbench.renderers.table')" />
@@ -75,6 +75,8 @@
                   <el-option v-for="field in numericOutputFields" :key="field.name" :value="field.name" :label="field.comment || field.name" />
                 </el-select>
               </el-form-item>
+              <el-checkbox v-model="draft.totalAsValue">{{ t('workbench.totalAsValue') }}</el-checkbox>
+              <p v-if="draft.totalAsValue" class="help-text">{{ t('workbench.totalAsValueHint') }}</p>
             </template>
             <template v-else-if="draft.rendererType === 'map'">
               <el-form-item :label="t('workbench.geometryField')"><el-input :model-value="draft.geometryField" disabled /></el-form-item>
@@ -109,6 +111,17 @@
                 <el-form-item :label="t('workbench.mapLegendTitle')"><el-input v-model="draft.mapLegendTitle" maxlength="100" /></el-form-item>
               </template>
             </template>
+            <el-form-item :label="t('workbench.columns')">
+              <el-checkbox-group v-model="draft.columns" @change="syncRendererFields">
+                <el-checkbox v-for="field in selectableFields" :key="field.name" :value="field.name">
+                  {{ draft.fieldPresentations.find(item => item.field === field.name)?.label || outputField(field.name)?.comment || field.name }}
+                </el-checkbox>
+              </el-checkbox-group>
+            </el-form-item>
+            <el-form-item :label="t('workbench.pageLimit')">
+              <el-input-number v-model="draft.pageLimit" :min="1" :max="descriptor.input_contract.page.max_limit" @change="resetResult" />
+            </el-form-item>
+              <details class="presentation-details" :open="Boolean(component)"><summary>{{ t('workbench.studio.fieldFormatting') }}</summary>
             <template v-if="draft.rendererType !== 'value' && draft.fieldPresentations.length > 0">
               <div class="section-header field-presentation-header">
                 <strong>{{ t('workbench.fieldPresentations') }}</strong>
@@ -134,6 +147,10 @@
                 <ValueLabelEditor v-if="['string', 'bool'].includes(item.fieldType)" :model-value="item.valueLabels || []" :field-type="item.fieldType" @update:model-value="item.valueLabels = $event; resetResult()" />
               </div>
             </template>
+              </details>
+            </div>
+            <div v-show="activeStep === 'conditions'" class="configuration-section">
+              <p class="configuration-hint">{{ t(component ? 'workbench.studio.existingConditionsHint' : 'workbench.studio.conditionsHint') }}</p>
             <div class="section-header">
               <strong>{{ t('workbench.parameters') }}</strong>
               <div class="parameter-actions">
@@ -141,9 +158,9 @@
                 <el-button link type="primary" :disabled="parameterizableFields.length === 0" @click="addParameter">{{ t('workbench.addParameter') }}</el-button>
               </div>
             </div>
+            <p v-if="!component && snapshot.parameters.length && draft.parameters.length" class="reuse-hint">{{ t('workbench.studio.reuseFilterHint') }}</p>
             <div v-for="(parameter, index) in draft.parameters" :key="index" class="parameter">
-              <el-input v-model="parameter.key" :placeholder="t('workbench.parameterKey')" />
-              <el-input v-model="parameter.label" :placeholder="t('workbench.parameterLabel')" />
+              <label class="parameter-name">{{ parameter.label }}<span v-if="parameter.required"> *</span></label>
               <ParameterCaption v-if="parameter.bindingKind === 'named'" :parameter="parameter" />
               <el-select v-else v-model="parameter.field" @change="syncParameter(parameter)">
                 <el-option v-for="field in parameterizableFields" :key="field.name" :label="field.comment || field.name" :value="field.name" />
@@ -154,8 +171,17 @@
               <el-select v-else v-model="parameter.operator" @change="syncParameterControl(parameter)">
                 <el-option v-for="operator in operatorsFor(parameter.field)" :key="operator" :label="operator" :value="operator" />
               </el-select>
-              <ParameterValueInput v-model="parameter.value" :control-type="parameter.controlType" :options="parameter.options || []" @update:model-value="resetResult" />
-              <el-button link type="danger" :disabled="parameter.bindingKind === 'named'" @click="removeParameter(index)">{{ t('workbench.delete') }}</el-button>
+              <div v-if="!component && snapshot.parameters.length" class="parameter-reuse" data-testid="parameter-reuse">
+                <label>{{ t('workbench.studio.filterSource') }}</label>
+                <el-select :model-value="parameter.applicationParameterKey || ''" :empty-values="[null, undefined]" :fit-input-width="true" :aria-label="t('workbench.studio.filterSource')" class="full" @update:model-value="chooseExistingParameter(parameter, $event)">
+                  <el-option value="" :label="t('workbench.studio.independentFilter')" />
+                  <el-option v-for="option in reuseOptions(parameter)" :key="option.parameter.key" :value="option.parameter.key" :label="reuseLabel(option.parameter)" :title="reuseLabel(option.parameter)" :disabled="!option.compatible" />
+                </el-select>
+                <span v-if="parameter.applicationParameterKey" class="reuse-hint">{{ t('workbench.studio.reusedFilterHint') }}</span>
+              </div>
+              <ParameterValueInput v-model="parameter.value" :control-type="parameter.controlType" :options="parameter.options || []" :disabled="Boolean(parameter.applicationParameterKey)" @update:model-value="resetResult" />
+              <details class="parameter-details"><summary>{{ t('workbench.studio.parameterSettings') }}</summary><el-input v-model="parameter.label" :placeholder="t('workbench.parameterLabel')" /><el-input v-model="parameter.key" :placeholder="t('workbench.parameterKey')" /><el-button link type="danger" :disabled="parameter.bindingKind === 'named'" @click="removeParameter(index)">{{ t('workbench.delete') }}</el-button></details>
+            </div>
             </div>
           </template>
         </el-form>
@@ -167,7 +193,8 @@
               <el-button data-testid="component-query-action" type="primary" :disabled="!canQuery || exporting" :loading="querying" @click="preview">{{ t('workbench.query') }}</el-button>
             </div>
           </div>
-          <WorkbenchRendererHost :rows="resultRows" :renderer-type="draft.rendererType" :config="rendererConfig" :descriptor="descriptor" :page="pageResult" :result-ready="queryCompleted" :query-parameters="resultParameters" />
+          <div v-if="!queryCompleted && !querying" class="preview-placeholder"><p>{{ t('workbench.studio.componentPreviewHint') }}</p><el-button v-if="descriptor && !requiredParameterValuesPresent(draft.parameters)" link type="primary" @click="activeStep = 'conditions'">{{ t('workbench.studio.fillConditions') }}</el-button></div>
+          <WorkbenchRendererHost v-else :rows="resultRows" :renderer-type="draft.rendererType" :config="rendererConfig" :descriptor="descriptor" :page="pageResult" :result-ready="queryCompleted" :query-parameters="resultParameters" />
           <div v-if="draft.rendererType === 'table' && (cursorIndex > 0 || pageResult.has_more)" class="cursor-actions">
             <el-button :disabled="cursorIndex === 0 || querying" @click="previousPage">{{ t('workbench.previousPage') }}</el-button>
             <span>{{ t('workbench.pageNumber', { page: cursorIndex + 1 }) }}</span>
@@ -177,8 +204,11 @@
       </div>
     </div>
     <template #footer>
+      <span v-if="descriptor && !validDraft" class="configuration-error">{{ t('workbench.studio.incompleteComponent') }}</span>
       <el-button @click="emit('update:modelValue', false)">{{ t('workbench.cancel') }}</el-button>
-      <el-button type="primary" :disabled="!validDraft" @click="submit">{{ t('workbench.confirmComponent') }}</el-button>
+      <el-button v-if="!component && activeStep !== 'data'" @click="previousStep">{{ t('workbench.studio.previousStep') }}</el-button>
+      <el-button v-if="!component && activeStep !== 'conditions'" type="primary" :disabled="!descriptor" @click="nextStep">{{ t('workbench.studio.nextStep') }}</el-button>
+      <el-button v-else type="primary" :disabled="!validDraft" @click="submit">{{ t('workbench.confirmComponent') }}</el-button>
     </template>
   </el-dialog>
 </template>
@@ -197,13 +227,19 @@ import WorkbenchRendererHost from './WorkbenchRendererHost.vue'
 import StateRuleEditor from './StateRuleEditor.vue'
 import ValueLabelEditor from './ValueLabelEditor.vue'
 import { valueLabelsValid } from '@common-ui/utils/fieldPresentation.mjs'
+import { canBindApplicationParameter, newComponentParameterContext } from '../utils/applicationParameterOptions.mjs'
+import { initialApplicationParameterValue } from '../utils/dataApplicationParameters.mjs'
+import { affectedSelectionComponentIDs } from '../utils/dataApplicationSelection.mjs'
 
-const props = defineProps({ modelValue: Boolean, component: { type: Object, default: null } })
+const props = defineProps({ modelValue: Boolean, initialRenderer: { type: String, default: 'table' }, component: { type: Object, default: null }, snapshot: { type: Object, required: true }, descriptors: { type: Object, required: true } })
 const emit = defineEmits(['update:modelValue', 'save'])
 const { t, locale } = useI18n()
 const numericTypes = new Set(['int', 'bigint', 'float', 'double', 'decimal'])
 const thematicTypes = new Set(['string', 'bool', 'int', 'bigint', 'float', 'double', 'decimal', 'date', 'time', 'timestamp', 'uuid'])
 const mapPalettes = ['primary', 'success', 'warning', 'danger']
+const activeStep = ref('data')
+function nextStep() { activeStep.value = activeStep.value === 'data' ? 'display' : 'conditions' }
+function previousStep() { activeStep.value = activeStep.value === 'conditions' ? 'display' : 'data' }
 const services = ref([])
 const descriptor = ref(null)
 const serviceKey = ref('')
@@ -217,6 +253,25 @@ const pageResult = ref({ has_more: false, next_cursor: '' })
 const cursors = ref([''])
 const cursorIndex = ref(0)
 const draft = reactive(emptyDraft())
+const componentID = ref('')
+const reusedParameters = computed(() => Object.fromEntries(draft.parameters.filter(p => p.applicationParameterKey).map(p => [p.key, p.applicationParameterKey])))
+const reuseContext = computed(() => descriptor.value && !props.component ? newComponentParameterContext(props.snapshot, props.descriptors, buildComponentConfiguration(descriptor.value, draft, componentID.value), descriptor.value, reusedParameters.value) : null)
+function reuseOptions(parameter) {
+  if (!reuseContext.value) return []
+  const { snapshot, descriptors } = reuseContext.value
+  const binding = snapshot.parameter_bindings.find(b => b.component_id === componentID.value && b.component_parameter_key === parameter.key)
+  return props.snapshot.parameters.map(candidate => ({ parameter: candidate, compatible: Boolean(binding && canBindApplicationParameter(snapshot, descriptors, binding, candidate)) }))
+}
+function reuseLabel(parameter) {
+  const ids = affectedSelectionComponentIDs(props.snapshot, [{ application_parameter_key: parameter.key }])
+  return `${parameter.label} · ${ids.map(id => props.snapshot.components.find(c => c.id === id)?.title || id).join(t('workbench.listSeparator')) || t('workbench.none')}`
+}
+function chooseExistingParameter(parameter, key) {
+  parameter.applicationParameterKey = key
+  const existing = props.snapshot.parameters.find(p => p.key === key)
+  parameter.value = existing ? initialApplicationParameterValue(JSON.parse(JSON.stringify(existing))) : emptyControlValue(parameter.controlType)
+  resetResult()
+}
 const descriptorRequests = createLatestRequestCoordinator()
 const operationRequests = createLatestRequestCoordinator()
 
@@ -236,6 +291,7 @@ const rendererConfig = computed(() => buildRendererConfig(draft))
 const contractChanged = computed(() => Boolean(props.component?.contract_fingerprint && descriptor.value && props.component.contract_fingerprint !== descriptor.value.contract_fingerprint))
 const validDraft = computed(() => {
   if (!descriptor.value || !draft.name.trim() || draft.columns.length === 0) return false
+  if (!props.component && draft.parameters.some(p => p.applicationParameterKey && !reuseOptions(p).some(option => option.parameter.key === p.applicationParameterKey && option.compatible))) return false
   const parameterKeys = new Set()
   const descriptorNamedParameters = new Map((descriptor.value.input_contract.named_parameters || []).map((parameter) => [parameter.name, parameter]))
   if (draft.parameters.some((parameter) => {
@@ -250,6 +306,7 @@ const validDraft = computed(() => {
     return draft.pageLimit === 1 && fields.length > 0 && fields.length <= 4 && new Set(fields).size === fields.length && draft.valueItems.every((item) => item.field && String(item.label || '').trim() && Number.isInteger(item.precision) && item.precision >= 0 && item.precision <= 8 && stateRulesValid(item.stateRules, outputField(item.field)?.type))
   }
   if (!fieldPresentationsValid()) return false
+  if (draft.rendererType === 'chart' && draft.totalAsValue && (draft.measures.length > 4 || !draft.fieldPresentations.some(item => item.field === draft.dimension && item.temporalFormat === 'period'))) return false
   if (draft.rendererType === 'chart') return Boolean(draft.dimension && draft.measures.length > 0 && (draft.chartType !== 'pie' || draft.measures.length === 1))
   if (draft.rendererType === 'map') return Boolean(draft.geometryField && (draft.mapStyleMode === 'uniform' || draft.mapColorField))
   return true
@@ -265,7 +322,7 @@ function componentContextKey(component = props.component) {
 
 function emptyDraft() {
   return {
-    name: '', description: '', columns: [], pageLimit: 50, parameters: [], rendererType: 'table', chartType: 'bar', dimension: '', measures: [], valueItems: [], fieldPresentations: [],
+    name: '', description: '', columns: [], pageLimit: 50, parameters: [], rendererType: 'table', chartType: 'bar', totalAsValue: false, dimension: '', measures: [], valueItems: [], fieldPresentations: [],
     geometryField: '', mapLabelField: '', tooltipFields: [], mapStyleMode: 'uniform', mapColorField: '', mapPalette: 'primary', mapLegendTitle: '',
   }
 }
@@ -275,6 +332,8 @@ function assignDraft(value) {
 }
 
 async function initialize() {
+  componentID.value = props.component?.id || crypto.randomUUID()
+  activeStep.value = props.component ? 'display' : 'data'
   const sourceComponent = props.component
   const targetContext = componentContextKey(sourceComponent)
   const request = descriptorRequests.begin(targetContext)
@@ -323,6 +382,7 @@ async function selectService(selectedServiceKey = serviceKey.value) {
       .filter(Boolean)
     assignDraft({
       ...emptyDraft(),
+      rendererType: props.component ? 'table' : props.initialRenderer,
       name: data.title,
       description: data.description || '',
       columns: [...(data.input_contract.default_selection || [])],
@@ -498,6 +558,7 @@ function syncParameterControl(parameter) {
   const field = filterableFields.value.find((candidate) => candidate.name === parameter.field)
   parameter.controlType = controlTypeFor(field, parameter.operator)
   parameter.value = emptyControlValue(parameter.controlType)
+  parameter.applicationParameterKey = ''
   resetResult()
 }
 
@@ -602,11 +663,27 @@ onBeforeUnmount(invalidateEditorRequests)
 
 function submit() {
   if (!validDraft.value) return
-  emit('save', buildComponentConfiguration(descriptor.value, draft, props.component?.id || crypto.randomUUID()))
+  emit('save', buildComponentConfiguration(descriptor.value, draft, componentID.value), reusedParameters.value, descriptor.value)
   emit('update:modelValue', false)
 }
 </script>
 
 <style scoped>
 .component-editor,.configuration-form,.preview-panel{display:flex;flex-direction:column;gap:16px}.editor-grid{display:grid;grid-template-columns:minmax(360px,5fr) minmax(480px,7fr);gap:16px}.full{width:100%}.preview-panel{min-height:520px;padding:16px;background:var(--addp-bg-primary);border:1px solid var(--addp-border-color);border-radius:8px}.preview-header,.section-header,.parameter-actions,.cursor-actions{display:flex;align-items:center;justify-content:space-between;gap:8px}.parameter-actions span,.field-presentation-header span{font-size:12px;color:var(--addp-text-secondary)}.parameter{display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr auto;gap:8px;align-items:center;padding:12px;border:1px solid var(--addp-border-color);border-radius:8px}.value-item{display:grid;grid-template-columns:minmax(140px,1fr) minmax(120px,1fr) minmax(80px,.7fr) 110px auto;gap:8px;align-items:center;padding:10px;border:1px solid var(--addp-border-color);border-radius:8px}.value-state-rules{grid-column:1/-1}.field-presentation{display:flex;flex-direction:column;gap:8px;padding:10px;border:1px solid var(--addp-border-color);border-radius:8px}.field-presentation-fields{display:grid;grid-template-columns:minmax(120px,1fr) minmax(120px,1fr) repeat(3,minmax(90px,.7fr));gap:8px;align-items:center;width:100%}.cursor-actions{justify-content:center}@media(max-width:1000px){.editor-grid{grid-template-columns:1fr}.parameter,.value-item,.field-presentation-fields{grid-template-columns:1fr 1fr}.preview-panel{min-height:360px}}
+
+.configuration-section { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.configuration-hint, .preview-placeholder { color: var(--addp-text-secondary); font-size: 13px; line-height: 1.7; }
+.preview-placeholder { margin: auto; text-align: center; max-width: 320px; }
+.component-steps :deep(.el-tabs__header) { margin-bottom: 0; }
+.configuration-form { min-width: 0; max-height: 62vh; overflow: auto; padding-right: 8px; }
+.preview-panel { min-height: 360px; height: 58vh; position: sticky; top: 0; overflow: auto; }
+.presentation-details > summary, .parameter-details > summary { cursor: pointer; color: var(--el-color-primary); margin: 8px 0 12px; }
+.parameter { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+.parameter-name { font-size: 14px; font-weight: 600; }.parameter-name span { color: var(--el-color-danger); }
+.parameter-details .el-input { margin-bottom: 8px; }
+.parameter-reuse { display: flex; flex-direction: column; gap: 8px; }.parameter-reuse label, .reuse-hint { font-size: 12px; color: var(--addp-text-secondary); line-height: 1.6; }
+.field-presentation-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.value-item { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media(max-width:1000px) { .configuration-form { max-height: none; }.preview-panel { position: static; height: 360px; } }
+.configuration-error { display: block; margin-bottom: 12px; color: var(--el-color-warning); text-align: left; font-size: 13px; }
 </style>
