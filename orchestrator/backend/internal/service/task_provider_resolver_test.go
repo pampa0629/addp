@@ -12,8 +12,71 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/taskprovider"
 	"github.com/addp/orchestrator/internal/models"
 )
+
+func TestValidateStepParametersUsesDefaultsWithoutMutatingOverrides(t *testing.T) {
+	contract := &taskprovider.ExecutionContract{
+		InputSchema: map[string]interface{}{
+			"type": "object", "additionalProperties": false,
+			"properties": map[string]interface{}{"version": map[string]interface{}{"type": "integer", "minimum": 1}},
+			"required":   []interface{}{"version"},
+		},
+		InputDefaults: map[string]interface{}{"version": 3},
+	}
+	for _, allowTemplates := range []bool{true, false} {
+		for _, tc := range []struct {
+			name       string
+			parameters map[string]interface{}
+			wantError  bool
+		}{
+			{"owner default", nil, false},
+			{"explicit version", map[string]interface{}{"version": 4}, false},
+			{"explicit zero", map[string]interface{}{"version": 0}, true},
+			{"explicit null", map[string]interface{}{"version": nil}, true},
+			{"wrong type", map[string]interface{}{"version": "3"}, true},
+			{"unknown field", map[string]interface{}{"other": 3}, true},
+			{"upstream reference", map[string]interface{}{"version": "{{source.outputs.version}}"}, !allowTemplates},
+		} {
+			t.Run(fmt.Sprintf("%s/templates=%t", tc.name, allowTemplates), func(t *testing.T) {
+				before := fmt.Sprintf("%#v", tc.parameters)
+				err := validateStepParametersByExecutionContract(models.Step{Parameters: tc.parameters}, contract, allowTemplates)
+				if (err != nil) != tc.wantError {
+					t.Fatalf("error = %v, want error %t", err, tc.wantError)
+				}
+				if fmt.Sprintf("%#v", tc.parameters) != before || contract.InputDefaults["version"] != 3 {
+					t.Fatal("validation mutated inputs")
+				}
+			})
+		}
+	}
+	contract.InputDefaults = nil
+	if err := validateStepParametersByExecutionContract(models.Step{}, contract, true); err == nil {
+		t.Fatal("missing required input without a default must fail")
+	}
+}
+
+func TestValidateStepParametersDoesNotRepairExplicitObjectWithDefaults(t *testing.T) {
+	contract := &taskprovider.ExecutionContract{
+		InputSchema: map[string]interface{}{
+			"type": "object", "additionalProperties": false,
+			"properties": map[string]interface{}{"resource": map[string]interface{}{
+				"type": "object", "properties": map[string]interface{}{"locator": map[string]interface{}{"type": "string"}},
+				"required": []interface{}{"locator"}, "additionalProperties": false,
+			}},
+			"required": []interface{}{"resource"},
+		},
+		InputDefaults: map[string]interface{}{"resource": map[string]interface{}{"locator": "saved-table"}},
+	}
+	if err := validateStepParametersByExecutionContract(models.Step{}, contract, false); err != nil {
+		t.Fatal(err)
+	}
+	step := models.Step{Parameters: map[string]interface{}{"resource": map[string]interface{}{}}}
+	if err := validateStepParametersByExecutionContract(step, contract, false); err == nil {
+		t.Fatal("explicit incomplete resource must fail")
+	}
+}
 
 func TestValidateStepTaskReferencesUsesConcreteTaskExecutionContract(t *testing.T) {
 	registry := taskProviderResolverForTest(t, map[uint]string{
@@ -25,6 +88,19 @@ func TestValidateStepTaskReferencesUsesConcreteTaskExecutionContract(t *testing.
 	}})
 	if err != nil {
 		t.Fatalf("ValidateStepTaskReferences() error = %v", err)
+	}
+}
+
+func TestValidateStepTaskReferencesAcceptsRequiredOwnerDefault(t *testing.T) {
+	registry := taskProviderResolverForTest(t, map[uint]string{
+		1: `{"input_schema":{"type":"object","properties":{"version":{"type":"integer","minimum":1}},"required":["version"],"additionalProperties":false},"input_defaults":{"version":3},"input_ui_schema":{},"output_schema":{"type":"object","additionalProperties":false}}`,
+	})
+	steps := models.Steps{{ID: "model", Name: "Model", Provider: "develop", TaskType: "workflow", TaskID: 1}}
+	if err := registry.ValidateStepTaskReferences(context.Background(), 7, steps); err != nil {
+		t.Fatalf("owner default must satisfy required input: %v", err)
+	}
+	if steps[0].Parameters != nil {
+		t.Fatal("validation must not freeze current owner defaults into the orchestration")
 	}
 }
 

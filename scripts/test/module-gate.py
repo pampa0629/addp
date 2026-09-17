@@ -34,6 +34,9 @@ GO_T1_EXCLUDED_ENVIRONMENT = (
 T2_SERVICES_PATTERN = re.compile(
     r"(?m)^# ADDP_T2_SERVICES=(?P<services>[a-z0-9_-]+(?:,[a-z0-9_-]+)*)\s*$"
 )
+T2_OWNED_SERVICES_PATTERN = re.compile(
+    r"(?m)^# ADDP_T2_OWNED_SERVICES=(?P<services>[a-z0-9_-]+(?:,[a-z0-9_-]+)*)\s*$"
+)
 T2_REQUIRED_ENVIRONMENT_PATTERN = re.compile(
     r"(?m)^# ADDP_T2_REQUIRED_ENV=(?P<requirements>"
     r"[A-Z][A-Z0-9_]*(?:\|[A-Z][A-Z0-9_]*)*"
@@ -190,7 +193,10 @@ def plan_module(repository: Path, module: str, include_platform: bool = True) ->
             raise ModuleGateError(f"Makefile target {python_target} is missing")
         steps.append(Step(f"{module} Python T1", ("make", python_target), repository))
 
-    integration_scripts = hosted_t2_scripts(repository)
+    integration_scripts = sorted(set(hosted_t2_scripts(repository)) | {
+        path for path in repository_files(repository, "scripts/test/*-gate.sh")
+        if T2_OWNED_SERVICES_PATTERN.search((repository / path).read_text(encoding="utf-8"))
+    })
     registered_targets: set[str] = set()
     for path in integration_scripts:
         name = Path(path).name.removesuffix("-gate.sh")

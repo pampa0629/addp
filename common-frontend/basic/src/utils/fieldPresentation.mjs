@@ -30,6 +30,13 @@ export function formatFieldPresentationValue(value, presentation = null, locale 
   if (value === null || value === undefined) return nullText
   if (!presentation) return basicDisplayValue(value)
 
+  if (presentation.temporal_format === 'period') {
+    const context = presentation.period_context
+    if (context?.grain === 'total') return context.total_label || nullText
+    if (context?.grain === 'month') return formatTemporalValue(value, 'month', locale) || nullText
+    return nullText
+  }
+
   const valueLabel = (presentation.value_labels || []).find((item) => item.value === value)
   if (valueLabel && String(valueLabel.label || '').trim()) return String(valueLabel.label).trim()
 
@@ -118,7 +125,9 @@ function basicDisplayValue(value) {
 function formatTemporalValue(value, format, locale) {
   const date = temporalDate(value, format)
   if (!date) return ''
-  const options = format === 'date'
+  const options = format === 'month'
+    ? { year: 'numeric', month: 'long' }
+    : format === 'date'
     ? { year: 'numeric', month: '2-digit', day: '2-digit' }
     : format === 'time'
       ? { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }
@@ -135,7 +144,7 @@ function temporalDate(value, format) {
   const raw = String(value)
   const source = format === 'time' && /^\d{2}:\d{2}/.test(raw)
     ? `1970-01-01T${raw}`
-    : format === 'date' && /^\d{4}-\d{2}-\d{2}$/.test(raw)
+    : ['date', 'month'].includes(format) && /^\d{4}-\d{2}-\d{2}$/.test(raw)
       ? `${raw}T00:00:00`
       : raw
   const parsed = new Date(source)

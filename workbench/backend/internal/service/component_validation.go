@@ -264,7 +264,7 @@ func validateRenderer(rendererType string, raw json.RawMessage, descriptor *mode
 				return fmt.Errorf("%w: table column is not selected", ErrInvalidComponentConfiguration)
 			}
 		}
-		if err := validateFieldPresentations(config.FieldPresentations, config.Columns, fields, true); err != nil {
+		if err := validateFieldPresentations(config.FieldPresentations, config.Columns, fields, true, descriptor); err != nil {
 			return err
 		}
 	case models.RendererTypeChart:
@@ -295,7 +295,7 @@ func validateRenderer(rendererType string, raw json.RawMessage, descriptor *mode
 		if config.ChartType == "line" && !orderContainsField(orderBy, config.Dimension) {
 			return fmt.Errorf("%w: line chart dimension must be ordered", ErrInvalidComponentConfiguration)
 		}
-		if err := validateFieldPresentations(config.FieldPresentations, append([]string{config.Dimension}, config.Measures...), fields, false); err != nil {
+		if err := validateFieldPresentations(config.FieldPresentations, append([]string{config.Dimension}, config.Measures...), fields, false, descriptor); err != nil {
 			return err
 		}
 	case models.RendererTypeMap:
@@ -348,7 +348,7 @@ func validateRenderer(rendererType string, raw json.RawMessage, descriptor *mode
 		if config.Style != nil && config.Style.Field != "" {
 			presentationFields = append(presentationFields, config.Style.Field)
 		}
-		if err := validateFieldPresentations(config.FieldPresentations, presentationFields, fields, false); err != nil {
+		if err := validateFieldPresentations(config.FieldPresentations, presentationFields, fields, false, descriptor); err != nil {
 			return err
 		}
 	case models.RendererTypeValue:
@@ -379,7 +379,7 @@ func validateRenderer(rendererType string, raw json.RawMessage, descriptor *mode
 	return nil
 }
 
-func validateFieldPresentations(presentations []models.FieldPresentation, allowed []string, fields map[string]models.ConsumerOutputField, allowWidth bool) error {
+func validateFieldPresentations(presentations []models.FieldPresentation, allowed []string, fields map[string]models.ConsumerOutputField, allowWidth bool, descriptor *models.ConsumerDescriptor) error {
 	allowedFields := make(map[string]struct{}, len(allowed))
 	for _, field := range allowed {
 		if field != "" {
@@ -403,6 +403,13 @@ func validateFieldPresentations(presentations []models.FieldPresentation, allowe
 		}
 		if !validTemporalPresentation(field.Type, presentation.TemporalFormat) {
 			return fmt.Errorf("%w: invalid field presentation temporal format", ErrInvalidComponentConfiguration)
+		}
+		if presentation.TemporalFormat == "period" {
+			if !validPeriodPresentation(presentation.Period, descriptor) {
+				return fmt.Errorf("%w: invalid period presentation parameters", ErrInvalidComponentConfiguration)
+			}
+		} else if presentation.Period != nil {
+			return fmt.Errorf("%w: period binding requires period format", ErrInvalidComponentConfiguration)
 		}
 		if presentation.Width != nil && (!allowWidth || *presentation.Width < 80 || *presentation.Width > 600) {
 			return fmt.Errorf("%w: invalid field presentation width", ErrInvalidComponentConfiguration)
@@ -478,13 +485,34 @@ func validateStatePresentationRules(rules []models.StatePresentationRule, fieldT
 	return nil
 }
 
+func validPeriodPresentation(period *models.PeriodPresentation, descriptor *models.ConsumerDescriptor) bool {
+	if period == nil || descriptor == nil || period.StartParameter == period.EndParameter {
+		return false
+	}
+	parameters := map[string]models.ConsumerNamedParameter{}
+	for _, parameter := range descriptor.InputContract.NamedParameters {
+		parameters[parameter.Name] = parameter
+	}
+	grain, start, end := parameters[period.GrainParameter], parameters[period.StartParameter], parameters[period.EndParameter]
+	if !grain.Required || grain.Type != datatype.FieldTypeString || !start.Required || !end.Required || start.Type != datatype.FieldTypeDate || end.Type != datatype.FieldTypeDate || len(grain.Options) != 2 {
+		return false
+	}
+	values := map[string]bool{}
+	for _, option := range grain.Options {
+		value, ok := option.Value.(string)
+		if !ok { return false }
+		values[value] = true
+	}
+	return values["total"] && values["month"]
+}
+
 func validTemporalPresentation(fieldType datatype.FieldType, format string) bool {
 	if format == "" {
 		return true
 	}
 	switch fieldType {
 	case datatype.FieldTypeDate:
-		return format == "date"
+		return format == "date" || format == "month" || format == "period"
 	case datatype.FieldTypeTime:
 		return format == "time"
 	case datatype.FieldTypeTimestamp:

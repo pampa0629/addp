@@ -1,5 +1,26 @@
 import { expect, test } from '@playwright/test'
 
+test('resource picker and module 401s share one parent refresh in an iframe', async ({ page }) => {
+  const requests = []
+  await page.route('**/e2e/resource-api/**', async route => {
+    const token = await route.request().headerValue('authorization')
+    requests.push({ path: new URL(route.request().url()).pathname, token })
+    const fresh = token === 'Bearer resource-fresh-token'
+    await route.fulfill({ status: fresh ? 200 : 401, contentType: 'application/json',
+      body: JSON.stringify(fresh ? { data: [] } : { error: 'expired' }) })
+  })
+  await page.goto('/e2e/fixtures/auth-fixture.html?role=resource-parent')
+  const embedded = page.frameLocator('iframe[title="embedded-auth-client"]')
+  await expect(embedded.getByTestId('status')).toHaveText('resources-loaded')
+  await expect(embedded.getByTestId('token')).toHaveText('resource-fresh-token')
+  await expect(page.getByTestId('request-count')).toHaveText('1')
+  expect(requests).toHaveLength(8)
+  for (const path of new Set(requests.map(request => request.path))) {
+    expect(requests.filter(request => request.path === path).map(request => request.token))
+      .toEqual(['Bearer resource-expired-token', 'Bearer resource-fresh-token'])
+  }
+})
+
 test('embedded client retries until the delayed Console coordinator is ready', async ({ page }) => {
   await page.goto('/e2e/fixtures/auth-fixture.html?role=parent')
 

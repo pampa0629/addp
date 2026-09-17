@@ -92,6 +92,9 @@ func (h *QueryServiceHandler) CreateService(c *gin.Context) {
 // @Param page query int false "页码 | Page" default(1)
 // @Param limit query int false "每页数量 | Limit" default(20)
 // @Param search query string false "搜索词 | Search"
+// @Param metric_implementation_id query int false "指标实现 ID，须与修订 ID 同时提供 | Metric implementation ID, paired with revision ID" minimum(1)
+// @Param metric_revision_id query int false "精确修订 ID，须与实现 ID 同时提供 | Exact revision ID, paired with implementation ID" minimum(1)
+// @Failure 400 {object} map[string]string
 // @Success 200 {object} map[string]interface{}
 // @Failure 500 {object} map[string]string
 // @x-addp-auth-mode "permission"
@@ -122,20 +125,12 @@ func (h *QueryServiceHandler) ListServices(c *gin.Context) {
 
 	offset := (page - 1) * limit
 
-	// 搜索参数
-	search := c.Query("search")
-
-	var results []models.QueryServiceDTO
-	var total int64
-	var err error
-
-	if search != "" {
-		// 如果有搜索词，使用 SearchServices
-		results, total, err = h.svc.SearchServices(tenantID, search, offset, limit)
-	} else {
-		// 否则使用 ListServices
-		results, total, err = h.svc.ListServices(tenantID, offset, limit)
+	metricSource, err := queryServiceMetricFilter(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, servicei18n.MsgInvalidQueryRequest), "error_code": "invalid_query_request"})
+		return
 	}
+	results, total, err := h.svc.ListServices(tenantID, offset, limit, models.QueryServiceListFilter{Search: c.Query("search"), MetricSource: metricSource})
 
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to list services: " + err.Error()})
@@ -149,6 +144,39 @@ func (h *QueryServiceHandler) ListServices(c *gin.Context) {
 		"limit": limit,
 		"pages": (total + int64(limit) - 1) / int64(limit),
 	})
+}
+
+func queryServiceMetricFilter(c *gin.Context) (*models.MetricSourceRequest, error) {
+	values := c.Request.URL.Query()
+	implementation, hasImplementation := values["metric_implementation_id"]
+	revision, hasRevision := values["metric_revision_id"]
+	if !hasImplementation && !hasRevision {
+		return nil, nil
+	}
+	if len(implementation) != 1 || len(revision) != 1 {
+		return nil, errors.New("invalid metric reference")
+	}
+	parseID := func(raw string) (int64, error) {
+		for _, ch := range raw {
+			if ch < '0' || ch > '9' {
+				return 0, errors.New("invalid metric reference")
+			}
+		}
+		id, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || id <= 0 {
+			return 0, errors.New("invalid metric reference")
+		}
+		return id, nil
+	}
+	implementationID, err := parseID(implementation[0])
+	if err != nil {
+		return nil, err
+	}
+	revisionID, err := parseID(revision[0])
+	if err != nil {
+		return nil, err
+	}
+	return &models.MetricSourceRequest{ImplementationID: implementationID, RevisionID: revisionID}, nil
 }
 
 // GetService 获取服务详情

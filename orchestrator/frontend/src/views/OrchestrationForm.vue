@@ -434,7 +434,10 @@ async function persistForm() {
     savedPositions.value = savedPositionSignature
     if (!isEdit.value) await navigateOrchestratorRoute(router, orchestrationListLocation(route.query), { history: 'replace' })
   } catch (error) {
-    ElMessage.error(isEdit.value ? t('orchestrator.orchestrationForm.updateFailed') : t('orchestrator.orchestrationForm.createFailed'))
+    const detail = error.response?.data?.error
+    ElMessage.error(typeof detail === 'string' && detail.trim()
+      ? detail
+      : t(isEdit.value ? 'orchestrator.orchestrationForm.updateFailed' : 'orchestrator.orchestrationForm.createFailed'))
   } finally {
     saving.value = false
   }

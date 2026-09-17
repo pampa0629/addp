@@ -13,3 +13,9 @@ type RebindMetricSourceRequest struct {
 	MetricSource *MetricSourceRequest `json:"metric_source" binding:"required"`
 	Version      int64                `json:"version" binding:"required,gt=0"`
 }
+
+// QueryServiceListFilter contains management-list filters; MetricSource is an exact owner reference.
+type QueryServiceListFilter struct {
+	Search       string
+	MetricSource *MetricSourceRequest
+}

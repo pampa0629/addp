@@ -95,6 +95,14 @@ def affected_modules(repository: Path, files: list[str]) -> list[str]:
     }
     roots = {path.split("/", 1)[0] for path in files if "/" in path}
 
+    # Owned disposable service definitions are gate inputs, regardless of their
+    # filename. Resolve their owner from the gate declaration, not a DB list.
+    for script in MODULE_GATE.repository_files(repository, "scripts/test/*-gate.sh"):
+        content = (repository / script).read_text(encoding="utf-8")
+        compose = re.search(r"(?m)^# ADDP_T2_COMPOSE_FILE=(\S+)\s*$", content)
+        if compose and compose.group(1) in files:
+            affected.add(Path(script).name.split("-", 1)[0])
+
     # Agent loads platform Skill bodies, references, and runtime configuration from skills/.
     if "skills" in roots:
         affected.add("agent")

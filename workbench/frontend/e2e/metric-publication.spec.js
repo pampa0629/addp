@@ -91,13 +91,16 @@ test(`selection guidance and service names preserve raw IDs (${locale})`, async 
   await source.getByRole('button', { name: locale === 'en' ? 'Next' : '下一页', exact: true }).click()
   await expect.poll(() => directoryBodies.at(-1).page.cursor).toBe('directory-next')
   await nickname.fill('目录')
+  await nickname.dispatchEvent('keydown', { key: 'Enter', isComposing: true })
+  await nickname.dispatchEvent('keydown', { key: 'Enter', keyCode: 229 })
+  await nickname.dispatchEvent('keydown', { key: 'Enter', repeat: true })
   expect(directoryRequests).toBe(2)
-  await source.getByRole('button', { name: locale === 'en' ? 'Query' : '查询', exact: true }).click()
+  await nickname.press('Enter')
   await expect.poll(() => directoryBodies.at(-1).filter).toEqual({ field: 'nickname', op: 'contains', value: '目录' })
   expect(directoryBodies.at(-1).page.cursor).toBe('')
   expect(metricRequests).toHaveLength(requestCount)
   await nickname.fill('')
-  await source.getByRole('button', { name: locale === 'en' ? 'Query' : '查询', exact: true }).click()
+  await nickname.press('Enter')
   await expect.poll(() => directoryBodies.at(-1).filter).toBeNull()
   expect(directoryRequests).toBe(4)
   await page.getByTestId('runtime-component').nth(1).getByRole('row', { name: 'person-c 目录旧昵称' }).click()
@@ -110,7 +113,7 @@ test(`selection guidance and service names preserve raw IDs (${locale})`, async 
   expect(metricRequests.at(-1).parameters).toEqual({ grain: 'total', directions: 'both', subject_id: 'person-c', comparison_id: 'person-b' })
   expect(directoryRequests).toBe(4)
   await parameter(page, '人员 A').getByRole('textbox').fill('person-a')
-  await page.getByTestId('query-all-action').click()
+  await parameter(page, '人员 A').getByRole('textbox').press('Enter')
   await expect(rows(page).first()).toContainText('不在目录当前页的人员 A')
   expect(metricRequests.at(-1).parameters.subject_id).toBe('person-a')
   await expect(source.getByTestId('selection-hint')).toBeVisible()
@@ -284,13 +287,14 @@ for (const locale of ['zh-cn', 'en']) {
   })
 }
 
-test('shared chart repaints platform theme text and gives zero counts distinct integer ticks', async ({ page, context }) => {
+for (const count of [0, 89]) {
+test(`shared chart paints count labels and theme text for count ${count}`, async ({ page, context }) => {
   const backend = await installMetricApplicationBackend(context, { rebound: true })
   const published = backend.published
-  published.snapshot.components[1].renderer_config.field_presentations.find(p => p.field === 'value').precision = 0
+  Object.assign(published.snapshot.components[1].renderer_config.field_presentations.find(p => p.field === 'value'), { precision: 0, unit: '次' })
   await context.route(`**/data_applications/${published.id}/runtime`, route => route.fulfill({ json: published }))
   await context.route('**/api/query/metric_72/query', route => route.fulfill({ json: {
-    data: [{ bucket: '2026-01-01', value: 0 }, { bucket: '2026-02-01', value: 0 }],
+    data: [{ bucket: '2026-01-01', value: count }, { bucket: '2026-02-01', value: 0 }],
     page: { has_more: false, next_cursor: '' },
   } }))
   // Inspect actual canvas text, including colors and tick labels, rather than only options.
@@ -309,20 +313,24 @@ test('shared chart repaints platform theme text and gives zero counts distinct i
   await page.goto(runtimePath)
   const canvas = page.locator('.chart-renderer canvas')
   await expect(canvas).toBeVisible()
-  await expect.poll(() => canvas.evaluate(element => (element.__paintedText || []).filter(item => /^\d+$/.test(item.text)).map(item => item.text))).toEqual(['0', '1'])
+  if (count === 0) {
+    await expect.poll(() => canvas.evaluate(element => (element.__paintedText || []).filter(item => /^\d+$/.test(item.text)).map(item => item.text))).toEqual(['0', '1'])
+  }
+  await expect.poll(() => canvas.evaluate(element => (element.__paintedText || []).filter(item => /^\d+ 次$/.test(item.text)).map(item => item.text).sort())).toEqual([`${count} 次`, '0 次'].sort())
   const requestCount = backend.requests.length
   for (const theme of ['', 'dark', 'dark blue', 'dark purple']) {
     await page.locator('html').evaluate((element, value) => { element.className = value }, theme)
-    await expect.poll(() => canvas.evaluate(element => {
+    await expect.poll(() => canvas.evaluate((element, count) => {
       const style = getComputedStyle(element)
       const records = element.__paintedText || []
       const matches = (text, variable) => records.some(item => item.text === text && item.color.toLowerCase() === style.getPropertyValue(variable).trim().toLowerCase())
-      return matches('0', '--addp-text-secondary') && matches('1', '--addp-text-secondary') && matches('次数', '--addp-text-primary')
-    })).toBe(true)
+      return matches('0', '--addp-text-secondary') && matches(`${count} 次`, '--addp-text-primary') && matches('0 次', '--addp-text-primary') && matches('次数', '--addp-text-primary')
+    }, count)).toBe(true)
   }
   expect(backend.requests).toHaveLength(requestCount)
   expect(backend.unexpected).toEqual([])
 })
+}
 
 test('optional text contains filters reset pagination and clearing restores an unfiltered request', async ({ page, context }) => {
   const backend = await installMetricApplicationBackend(context, { rebound: true })

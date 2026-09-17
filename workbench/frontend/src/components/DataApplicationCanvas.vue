@@ -35,8 +35,10 @@
         :values="parameterValues"
         :domains="parameterDomains"
         :selection-sources="parameterSources"
+        :submit-enabled="showQueryActions && canQueryAll && !queryingAll"
         @update-value="updateParameterValue"
         @focus-source="focusSelectionSource"
+        @submit="queryAll"
       />
     </el-card>
 
@@ -61,8 +63,10 @@
           :values="parameterValues"
           :domains="parameterDomains"
           :selection-sources="parameterSources"
+          :submit-enabled="showQueryActions && !state(placement.component_id).querying && !state(placement.component_id).exporting && canExecuteComponentQuery(state(placement.component_id))"
           @update-value="updateParameterValue"
           @focus-source="focusSelectionSource"
+          @submit="queryComponent(placement.component_id)"
         />
         <el-alert
           v-if="componentBlockingError(state(placement.component_id))"
@@ -80,6 +84,7 @@
             :descriptor="state(placement.component_id).descriptor"
             :page="state(placement.component_id).page"
             :result-ready="state(placement.component_id).query_completed"
+            :query-parameters="state(placement.component_id).result_parameters"
             :preserve-view="state(placement.component_id).preserve_map_view"
             @result-select="applySelection(placement.component_id, $event)"
           />
@@ -287,9 +292,11 @@ async function queryComponent(componentID, cursor = '', cursorIndex = 0, cursors
   try {
     assertComponentOptions(item)
     const operation = current.descriptor.operations.find((candidate) => candidate.key === 'query')
-    const { data } = await executeDescriptorOperation(operation, buildComponentQuery(application.value.snapshot, item, parameterValues, cursor))
+    const requestBody = buildComponentQuery(application.value.snapshot, item, parameterValues, cursor)
+    const { data } = await executeDescriptorOperation(operation, requestBody)
     if (!current.requests.isCurrent(request, componentID)) return
     current.rows = data.data || []
+    current.result_parameters = structuredClone(requestBody.parameters || {})
     current.page = data.page || { has_more: false, next_cursor: '' }
     current.query_completed = true
     current.cursors = cursors
@@ -447,6 +454,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .runtime { min-height: 100vh; padding: 24px; background: var(--addp-bg-secondary); box-sizing: border-box; }
+.runtime:fullscreen:not(.runtime--wallboard) { overflow: auto; }
 .runtime-header, .runtime-actions, .component-header, .component-header-actions, .parameter-card-header, .parameter-preset-actions { display: flex; align-items: center; }
 .runtime-header, .component-header { justify-content: space-between; }
 .parameter-card-header { justify-content: space-between; gap: 16px; }

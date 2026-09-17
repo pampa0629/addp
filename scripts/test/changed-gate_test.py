@@ -68,6 +68,12 @@ class ChangedGateTest(unittest.TestCase):
             MODULE.affected_modules(self.repository, ["common/client/system.go"]),
         )
 
+    def test_owned_compose_change_selects_declared_gate_owner(self) -> None:
+        path = self.repository / "scripts/test/sample-graph-gate.sh"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("# ADDP_T2_OWNED_SERVICES=graph\n# ADDP_T2_COMPOSE_FILE=scripts/test/isolated.yml\n")
+        self.assertEqual(["sample"], MODULE.affected_modules(self.repository, ["scripts/test/isolated.yml"]))
+
     def test_orchestrator_changes_include_quality_reference_gate(self) -> None:
         for name in ("quality", "orchestrator"):
             path = self.repository / name / "backend" / "go.mod"

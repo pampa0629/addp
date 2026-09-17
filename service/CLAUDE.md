@@ -48,7 +48,7 @@ Service 是 `service.definition.*`、`service.external_registration.*` 和 `serv
 - Portal 不通过旧资产来源引用读取 Service 端点；服务消费入口由后续 Service Catalog owner 接入和 Asset 授权结果统一表达。
 - 服务消费目录：`GET /consumer/services` 以 `service.data_read.execute` 返回当前用户可执行服务摘要，`GET /consumer/services/:service_type/:service_id` 返回 `addp.service_consumer/v1` Consumer Descriptor；`GET /consumer/api-consumer-services` 以 `service.definition.read` 向 API Consumer 管理员返回同一 owner 过滤后的可授权摘要，但不授予数据执行权。所有目录都不得投影 SQL、Engine、schema、table 或管理 DTO。
 - 企业目录来源：`GET /catalog-resources/changes` 返回 QueryService 最小摘要变化；`POST /runtime/catalog-references/resolve` 动态返回当前最小摘要。两个路由只接受 `addp-catalog` 和 `service.catalog.read`，不得返回 SQL、协议、输出契约或 Consumer Descriptor。
-- 查询服务管理：`POST/GET /query`、`GET/PUT/DELETE /query/:id`；公开执行端点：`POST /api/query/:serviceName/query`。
+- 查询服务管理：`POST/GET /query`、`GET/PUT/DELETE /query/:id`；公开执行端点：`POST /api/query/:serviceName/query`。 列表可同时传入正整数 `metric_implementation_id` 与 `metric_revision_id`，仅返回当前租户内绑定该确切修订的 analytical 服务（包括停用服务）；两项必须同时提供，不完整、重复或非法值返回 400。筛选与 search、分页共同作用，total 为筛选后总数。
 - 图查询服务管理：`POST/GET /graph`、`GET/PUT/DELETE /graph/:id`；公开执行端点：`POST /api/gquery/:serviceName`。
 - 注册服务管理：`POST/GET /registered`、`GET/PUT/DELETE /registered/:id`、`POST /registered/:id/refresh`、`POST /registered/:id/health`；公开代理：`ANY /api/service/registered/proxy/:id/*path`。
 - 瓦片服务管理：`POST/GET /tile`、`GET /tile/search`、`GET /tile/by-name/:serviceName`、`GET/PUT/DELETE /tile/:id`、`/tile-layers/:serviceId`。

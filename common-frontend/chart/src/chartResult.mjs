@@ -94,6 +94,14 @@ export function buildChartOption(rows, config, locale = 'zh-CN', options = {}) {
         name: fieldPresentationLabel(measure, presentations),
         type: config.chart_type,
         ...selection,
+        ...(config.chart_type === 'bar' ? {
+          label: {
+            show: true,
+            position: 'top',
+            ...textStyle,
+            formatter: ({ value }) => formatFieldPresentationValue(value, presentation, locale),
+          },
+        } : {}),
         data: rows.map((row) => Number(row?.[measure])),
         tooltip: { valueFormatter: (value) => formatFieldPresentationValueWithState(value, presentation, locale) },
       }

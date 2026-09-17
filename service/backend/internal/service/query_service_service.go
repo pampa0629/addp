@@ -732,25 +732,10 @@ func (s *QueryServiceService) GetServiceModelByNameOnly(serviceName string) (*mo
 }
 
 // ListServices 列出租户下的所有查询服务
-func (s *QueryServiceService) ListServices(tenantID uint, offset int, limit int) ([]models.QueryServiceDTO, int64, error) {
-	services, total, err := s.repo.List(tenantID, offset, limit)
+func (s *QueryServiceService) ListServices(tenantID uint, offset int, limit int, filter models.QueryServiceListFilter) ([]models.QueryServiceDTO, int64, error) {
+	services, total, err := s.repo.List(tenantID, offset, limit, filter)
 	if err != nil {
 		return nil, 0, fmt.Errorf("list services failed: %w", err)
-	}
-
-	dtos := make([]models.QueryServiceDTO, len(services))
-	for i, svc := range services {
-		dtos[i] = *s.convertToDTO(&svc)
-	}
-
-	return dtos, total, nil
-}
-
-// SearchServices 搜索服务
-func (s *QueryServiceService) SearchServices(tenantID uint, keyword string, offset int, limit int) ([]models.QueryServiceDTO, int64, error) {
-	services, total, err := s.repo.Search(tenantID, keyword, offset, limit)
-	if err != nil {
-		return nil, 0, fmt.Errorf("search services failed: %w", err)
 	}
 
 	dtos := make([]models.QueryServiceDTO, len(services))

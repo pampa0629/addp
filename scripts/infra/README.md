@@ -99,6 +99,10 @@ MANAGER_POSTGRES_TEST_DSN='postgres://addp:addp_password@127.0.0.1:15432/addp_te
 
 GitHub Actions 使用每个 Job 独占、随 Job 销毁的 PostgreSQL 15 Service，不连接本地开发环境 Infra；workflow 可以为 Job 创建专用测试 database，但必须由 workflow 声明并由隔离实例生命周期回收。
 
+Ontology 修订/发布门禁使用 `ONTOLOGY_POSTGRES_TEST_DSN` 连接本地 `addp_test`，标准入口为 `make test-ontology-postgres`，并已纳入 `make test-module MODULE=ontology`、串行 `test-integration` 和辅助 macOS 巡检。门禁仅接管此前不存在的 ontology schema，用随机 Run ID 标记所有权；退出时核对标记并删除本轮执行记录和 schema，验证零残留，不删除或重建 common。CI 对应独占 `addp_ontology_test`，不访问开发库。具体语义范围见 [Ontology 模块说明](../../ontology/CLAUDE.md)。
+
+Ontology 图适配由 `make test-ontology-falkor` 使用固定 digest 的 FalkorDB 4.20.6 独占 Compose Project 验证。门禁自行生成密码、动态回环端口与 Run ID，不接受个人数据库地址，不读取 `.env`，退出时删除并核验自有容器/卷/网络。它与 PG 门禁均被标准模块门禁自动发现及串行集成聚合；目前不是常驻 Infra 服务，不复用 `addp-redis`。
+
 本地 IAM 发布门禁使用：
 
 ```bash

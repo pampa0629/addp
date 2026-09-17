@@ -93,6 +93,8 @@ export const client = createAPIClient(useAuthStore, {
 
 SSE、流式上传等 Fetch 场景使用 `createAuthenticatedFetch()`。两者都会在请求时读取当前运行时 Token，并统一处理一次 401 刷新重试。
 
+共享资源树 API 在内部通过 `getBoundAuthStore()` 读取当前页面已绑定的 Store，并复用 `createAPIClient()`；业务页面不传 Token、不新建刷新会话。正常路由守卫的 `initializeSession()` 已完成绑定，独立挂载共享组件的宿主也必须先完成会话初始化。未绑定 Store 时请求明确失败。共享客户端与模块客户端的并发 401 按 Store 合并刷新，iframe 仍经父 Console 获取更新后的 Token。
+
 可控 Fetch、SSE 或第三方加载器允许设置请求 Header 时，只能通过运行时 Token Provider 获取当前 Token，并写入 `Authorization` Header：
 
 ```javascript
@@ -127,8 +129,10 @@ const coordinator = createIframeAuthCoordinator({
 涉及认证改动时至少执行：
 
 ```bash
-cd agent/frontend
-npm test -- --run tests/authSession.test.js tests/authRefresh.test.js tests/portalConfig.test.js
+make test-common-frontend
+make test-console-frontend
+make test-quality-frontend
+make test-agent-frontend
 ```
 
 同时扫描运行时代码，确保没有重新引入 `localStorage.token`、query Token 或 Console iframe Token URL。

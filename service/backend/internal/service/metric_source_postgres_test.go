@@ -100,7 +100,7 @@ func testMetricSourcePublicationAgainstPostgres(t *testing.T, migrated bool) {
 	svc := NewQueryServiceService(repo, commonclient.NewSystemClient(owner.URL, tokens), nil, "")
 	modelOwner := commonclient.NewModelClient(owner.URL, tokens, owner.Client())
 	svc.SetModelClient(modelOwner)
-	list, _, err := svc.ListServices(7, 0, 100)
+	list, _, err := svc.ListServices(7, 0, 100, models.QueryServiceListFilter{})
 	if err != nil || len(list) != 1 || list[0].Version != originalVersion {
 		t.Fatalf("management list lost concurrency version: %v", err)
 	}
@@ -116,7 +116,7 @@ func testMetricSourcePublicationAgainstPostgres(t *testing.T, migrated bool) {
 	if _, err := svc.RebindMetricSource(context.Background(), item.ID, 7, req); !errors.Is(err, commonapi.ErrConflict) {
 		t.Fatalf("concurrent definition edit accepted: %v", err)
 	}
-	list, _, err = svc.ListServices(7, 0, 100)
+	list, _, err = svc.ListServices(7, 0, 100, models.QueryServiceListFilter{})
 	if err != nil || len(list) != 1 {
 		t.Fatalf("reload management definition: %v", err)
 	}

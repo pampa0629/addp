@@ -205,6 +205,8 @@ const uri = buildLocator({
 
 `ResourceTreePicker` 不负责业务 DTO 组装、空间能力检测、字段加载或新资源创建。调用方应在收到 locator 后按业务需要调用 capability API，并保存必要执行快照。
 
+资源树请求统一复用 `createAPIClient()` 和宿主已绑定的 AuthStore，支持 401 刷新与单次重试；正常模块路由守卫负责先初始化会话。选择器不创建独立 AuthSession，iframe 内不直接刷新 Cookie。
+
 稳定约束：
 
 - `mode="item"` 选择已有 data item，`mode="node"` 选择已有资源节点，`mode="any"` 仅用于确有混合选择语义的场景。
@@ -291,6 +293,8 @@ import {
 
 ### 数据服务结果渲染器
 
+时间字段支持 `month` 年月格式；`period` 格式只消费宿主显式解析的 `period_context`（`grain=total|month`、已本地化的 `total_label`）。全期显示该标签，按月使用当前语言年月格式，未取得上下文时显示空值占位。共享 renderer 不解析应用参数或猜测业务字段；宿主保留查询成功时的参数快照并负责范围说明。
+
 已发布数据服务的消费结果使用三组共享 primitive，业务模块只负责根据自身配置分派 renderer：
 
 - `basic/src/components/TabularResultRenderer.vue`：表格预览与有界结果的唯一基础表格实现，按显式列配置展示标量和结构化值；
@@ -300,6 +304,8 @@ import {
 - `map/src/components/GeoJSONResultRenderer.vue`：只读取 Consumer Descriptor 明确声明的 geometry 字段和 CRS，并可使用显式 label、tooltip 与 `uniform | categorical | continuous` 受控主题样式；不猜测业务字段，不接受原始颜色或任意样式 DSL。
 
 Chart 的坐标轴、图例、饼图标签和 tooltip 使用当前 ADDP 主题变量，主题变化后重绘 Canvas。单度量轴设置了显示精度 `precision=p` 时，最小刻度间隔为 `10^-p`；因此精度 0 的全零结果不会把小数刻度重复显示成整数。该约束只影响坐标轴，不舍入或修改服务返回的 series 数据；未指定精度及多度量轴仍使用自动刻度。
+
+柱形图默认在柱形上方常显数值标签（包括零值），沿用字段呈现的单位、精度和当前语言数字格式，文字使用主题正文色；零值标签显示在基线上方，避免与横轴日期重叠。标签不追加状态文案，状态仍只在 tooltip 中显示，不改变原始数据或选择事件。
 
 Value、Chart 和 Map 只接受单次查询得到的完整有界结果；`has_more=true` 时必须拒绝渲染，Value 还必须恰好一行，Chart 和 Map 还必须遵守各自结果上限。Workbench 等消费模块应在自己的 Renderer Host 中按需加载这些组件，不得复制 renderer，也不得把 Service、Outdoor 或其他 owner 的 DTO 写入共享层。
 

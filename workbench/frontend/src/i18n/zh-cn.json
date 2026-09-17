@@ -48,13 +48,25 @@
     "incompleteDataApplicationPreview": "请填写应用名称和页面标题，并至少配置一个数据服务组件",
     "pageTitle": "页面标题",
     "displayMode": "展示模式",
-    "displayModes": { "desktop": "桌面", "wallboard": "大屏" },
+    "displayModes": {
+      "desktop": "桌面",
+      "wallboard": "大屏"
+    },
     "refreshPolicy": "自动刷新",
-    "refreshIntervals": { "off": "关闭", "seconds30": "30 秒", "minute1": "1 分钟", "minutes5": "5 分钟" },
+    "refreshIntervals": {
+      "off": "关闭",
+      "seconds30": "30 秒",
+      "minute1": "1 分钟",
+      "minutes5": "5 分钟"
+    },
     "automaticRefreshActive": "自动刷新：{interval}",
     "presentationSections": "运行页显示内容",
     "presentationSectionsHint": "修订状态、刷新状态、全屏入口、组件标题和错误提示始终显示",
-    "presentationSectionOptions": { "title": "页面标题与说明", "parameters": "查询参数", "queryActions": "查询与分页操作" },
+    "presentationSectionOptions": {
+      "title": "页面标题与说明",
+      "parameters": "查询参数",
+      "queryActions": "查询与分页操作"
+    },
     "queryActionsRequireRefresh": "隐藏查询操作前必须启用自动刷新",
     "parametersRequireDefaults": "隐藏参数区前必须为全部必填参数配置有效默认值",
     "applicationParameters": "应用参数",
@@ -125,7 +137,12 @@
       "apply": "生成应用组件",
       "applied": "已生成四个通用组件和联动配置，请检查后保存草稿",
       "emptyOnly": "空间探索向导只能用于尚未添加组件的应用草稿",
-      "componentTitles": { "value": "概览指标", "chart": "分布分析", "map": "空间分布", "table": "明细数据" }
+      "componentTitles": {
+        "value": "概览指标",
+        "chart": "分布分析",
+        "map": "空间分布",
+        "table": "明细数据"
+      }
     },
     "width": "宽度",
     "height": "高度",
@@ -141,7 +158,11 @@
     "fullscreenFailed": "浏览器无法切换全屏",
     "runtimeContractChanged": "服务消费契约已变化，当前应用配置停止查询",
     "requiredParameterMissing": "请填写所有必填应用参数",
-    "statuses": { "unpublished": "未发布", "published": "已发布", "offline": "已下线" },
+    "statuses": {
+      "unpublished": "未发布",
+      "published": "已发布",
+      "offline": "已下线"
+    },
     "name": "名称",
     "description": "说明",
     "service": "数据服务",
@@ -182,8 +203,15 @@
     "reconfigureContractHint": "重新选择当前服务的字段和参数；确认组件后，请检查应用参数映射，再保存并发布新修订。",
     "contractChanged": "服务消费契约已变化，查询已阻断；请检查字段和配置后显式保存新版本",
     "chartType": "图表类型",
-    "chartTypes": { "bar": "柱状图", "line": "折线图", "pie": "饼图" },
-    "booleanValues": { "true": "是", "false": "否" },
+    "chartTypes": {
+      "bar": "柱状图",
+      "line": "折线图",
+      "pie": "饼图"
+    },
+    "booleanValues": {
+      "true": "是",
+      "false": "否"
+    },
     "dimension": "维度字段",
     "measures": "度量字段",
     "valueItems": "单值展示项",
@@ -196,10 +224,19 @@
     "mapLabelField": "要素名称字段（可选）",
     "tooltipFields": "提示字段",
     "mapStyleMode": "地图样式",
-    "mapStyleModes": { "uniform": "统一样式", "categorical": "分类设色", "continuous": "连续数值设色" },
+    "mapStyleModes": {
+      "uniform": "统一样式",
+      "categorical": "分类设色",
+      "continuous": "连续数值设色"
+    },
     "mapColorField": "设色字段",
     "mapPalette": "主题色板",
-    "mapPalettes": { "primary": "主色", "success": "绿色", "warning": "橙色", "danger": "红色" },
+    "mapPalettes": {
+      "primary": "主色",
+      "success": "绿色",
+      "warning": "橙色",
+      "danger": "红色"
+    },
     "mapLegendTitle": "图例标题",
     "fieldPresentations": "字段呈现规则",
     "fieldPresentationsHint": "只改变最终展示，不改变查询字段",
@@ -220,12 +257,34 @@
     "stateOperand": "比较值",
     "stateLabel": "状态标签",
     "stateTone": "语义色",
-    "stateOperators": { "eq": "等于", "lt": "小于", "lte": "小于等于", "gt": "大于", "gte": "大于等于" },
-    "stateTones": { "info": "信息", "success": "正常", "warning": "注意", "danger": "危险" },
+    "stateOperators": {
+      "eq": "等于",
+      "lt": "小于",
+      "lte": "小于等于",
+      "gt": "大于",
+      "gte": "大于等于"
+    },
+    "stateTones": {
+      "info": "信息",
+      "success": "正常",
+      "warning": "注意",
+      "danger": "危险"
+    },
     "moveStateRuleUp": "上移状态规则",
     "moveStateRuleDown": "下移状态规则",
-    "temporalFormats": { "date": "日期", "time": "时间", "datetime": "日期时间" },
-    "renderers": { "table": "表格", "chart": "图表", "map": "地图", "value": "数值卡片" },
+    "temporalFormats": {
+      "date": "日期",
+      "time": "时间",
+      "datetime": "日期时间",
+      "month": "年月",
+      "period": "统计期间（随查询粒度）"
+    },
+    "renderers": {
+      "table": "表格",
+      "chart": "图表",
+      "map": "地图",
+      "value": "数值卡片"
+    },
     "rendererErrors": {
       "partial_result": "图表和地图不能把分页中的局部结果当作完整结果，请缩小筛选范围",
       "result_limit": "结果数量超过当前展示方式的上限，请缩小筛选范围",
@@ -238,7 +297,13 @@
       "unknown_crs": "服务未声明可识别的坐标参考系，地图展示已阻断",
       "unsupported_crs": "当前客户端不支持服务声明的坐标参考系，地图展示已阻断"
     },
-    "login": { "title": "登录工作台", "username": "用户名", "password": "密码", "submit": "登录", "failed": "登录失败" },
+    "login": {
+      "title": "登录工作台",
+      "username": "用户名",
+      "password": "密码",
+      "submit": "登录",
+      "failed": "登录失败"
+    },
     "parameterOptionsUnavailable": "参数契约不可用或存在冲突：{components}",
     "parameterOptionsInvalid": "参数值不符合关联组件的服务契约，请检查参数及选项。",
     "controlTypes": {
@@ -250,6 +315,13 @@
       "select": "单选",
       "multiselect": "多选",
       "bbox": "空间范围"
+    },
+    "periodTotal": "所选期间合计",
+    "periodRange": "统计期间：{start}（含）至 {end}（不含）",
+    "periodParameters": {
+      "grain": "统计粒度参数",
+      "start": "开始日期参数",
+      "end": "结束日期参数"
     }
   }
 }

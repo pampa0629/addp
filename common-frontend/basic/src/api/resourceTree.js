@@ -1,20 +1,11 @@
-import axios from 'axios'
-import { getAccessToken } from '../auth/authSession.js'
+import { createAPIClient, getBoundAuthStore } from '../composables/useAuth.js'
 import { getEngineFamily } from '../utils/engineDisplay.js'
 
-const createAuthenticatedAxios = () => {
-  const instance = axios.create()
-  instance.interceptors.request.use((config) => {
-    const token = getAccessToken()
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`
-    }
-    return config
-  })
-  return instance
-}
-
-const http = createAuthenticatedAxios()
+const http = createAPIClient(getBoundAuthStore, {
+  moduleName: 'ResourceTree',
+  baseURL: '',
+  extractData: false
+})
 
 const unwrap = (response) => response?.data?.data || response?.data
 

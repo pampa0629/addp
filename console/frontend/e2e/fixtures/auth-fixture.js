@@ -5,7 +5,8 @@ import {
   createIframeAuthCoordinator,
   setRuntimeAccessToken
 } from '@common-ui/auth/authSession.js'
-import { createAuthStore } from '@common-ui/composables/useAuth.js'
+import { createAPIClient, createAuthStore } from '@common-ui/composables/useAuth.js'
+import { listResourceTreeEngines, getResourceTree, getResourceTreeAncestors } from '@common-ui/api/resourceTree.js'
 
 const role = new URL(window.location.href).searchParams.get('role') || 'health'
 const status = document.querySelector('[data-testid="status"]')
@@ -54,6 +55,47 @@ if (role === 'parent') {
     showResult('authenticated', token)
   } catch (error) {
     showResult('failed', '', error.message)
+  }
+} else if (role === 'resource-parent') {
+  let refreshCount = 0
+  let token = 'resource-expired-token'
+  window.__authCoordinator = createIframeAuthCoordinator({
+    allowedOrigins: [window.location.origin],
+    getToken: () => token,
+    getExpiresAt: () => Date.now() + 300_000,
+    refreshToken: async () => {
+      document.querySelector('[data-testid="request-count"]').textContent = String(++refreshCount)
+      await new Promise(resolve => setTimeout(resolve, 100))
+      token = 'resource-fresh-token'
+      return token
+    },
+    logout: async () => {}
+  })
+  const iframe = document.createElement('iframe')
+  iframe.src = './auth-fixture.html?role=resource-embedded'
+  iframe.title = 'embedded-auth-client'
+  document.querySelector('#frame-host').appendChild(iframe)
+  showResult('coordinator-ready')
+} else if (role === 'resource-embedded') {
+  setActivePinia(createPinia())
+  const useAuthStore = defineStore('resource-embedded', createAuthStore('resource-embedded', {
+    refresh: async () => { throw new Error('embedded_refresh_must_use_parent') },
+    getUser: async () => ({ id: 1 }),
+    getAuthContext: async () => ({ authorization: { role_assignments: [] } })
+  }, { persistUser: false }))
+  const store = useAuthStore()
+  try {
+    await store.initializeSession()
+    const client = createAPIClient(useAuthStore, { moduleName: 'EmbeddedFixture', baseURL: '' })
+    await Promise.all([
+      listResourceTreeEngines('/e2e/resource-api'),
+      getResourceTree('/e2e/resource-api', 2),
+      getResourceTreeAncestors('/e2e/resource-api', 2, 'resource-locator'),
+      client.get('/e2e/resource-api/module-request')
+    ])
+    showResult('resources-loaded', store.token)
+  } catch (error) {
+    showResult('failed', store.token || '', error.message)
   }
 } else if (role === 'peer' || role === 'recovery') {
   clearRuntimeAccessToken()

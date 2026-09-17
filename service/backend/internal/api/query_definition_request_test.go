@@ -78,3 +78,29 @@ func TestQueryManagementConflictResponse(t *testing.T) {
 		}
 	}
 }
+
+func TestQueryServiceMetricReferenceFilter(t *testing.T) {
+	for _, tc := range []struct {
+		query string
+		valid bool
+	}{
+		{"", true}, {"metric_implementation_id=1&metric_revision_id=6", true},
+		{"metric_implementation_id=1", false}, {"metric_revision_id=6", false},
+		{"metric_implementation_id=&metric_revision_id=6", false},
+		{"metric_implementation_id=0&metric_revision_id=6", false},
+		{"metric_implementation_id=1&metric_revision_id=-1", false},
+		{"metric_implementation_id=1&metric_revision_id=1.5", false},
+		{"metric_implementation_id=1&metric_revision_id=99999999999999999999", false},
+		{"metric_implementation_id=1&metric_revision_id=6&metric_revision_id=7", false},
+	} {
+		c, _ := gin.CreateTestContext(httptest.NewRecorder())
+		c.Request = httptest.NewRequest(http.MethodGet, "/query?"+tc.query, nil)
+		filter, err := queryServiceMetricFilter(c)
+		if (err == nil) != tc.valid {
+			t.Fatalf("%s: %v", tc.query, err)
+		}
+		if tc.valid && tc.query != "" && (filter.ImplementationID != 1 || filter.RevisionID != 6) {
+			t.Fatalf("wrong reference: %#v", filter)
+		}
+	}
+}

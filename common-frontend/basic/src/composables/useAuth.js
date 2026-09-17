@@ -7,6 +7,15 @@ import {
   subscribeAccessToken
 } from '../auth/authSession'
 
+let boundAuthStore = null
+const pendingTokenRefreshes = new WeakMap()
+
+// Shared API clients use the same page-owned session as the route guard.
+export function getBoundAuthStore() {
+  if (!boundAuthStore) throw new Error('auth_store_not_bound')
+  return boundAuthStore
+}
+
 function resolveAuthStore(authStoreOrGetter) {
   return typeof authStoreOrGetter === 'function'
     ? authStoreOrGetter()
@@ -90,6 +99,7 @@ function createAuthStoreConfig(storeName, authAPI, options = {}) {
   let observedToken = null
 
   function bindStore(store) {
+    boundAuthStore = store
     if (boundStore === store) return
     unsubscribe?.()
     boundStore = store
@@ -395,15 +405,16 @@ function createAuthStoreConfig(storeName, authAPI, options = {}) {
 }
 
 function createTokenRefresher(authStoreOrGetter) {
-  let localRefreshPromise = null
   return async () => {
-    if (localRefreshPromise) return localRefreshPromise
     const authStore = resolveAuthStore(authStoreOrGetter)
-    localRefreshPromise = authStore.refreshAccessToken({ force: true })
+    if (pendingTokenRefreshes.has(authStore)) return pendingTokenRefreshes.get(authStore)
+    const pending = Promise.resolve()
+      .then(() => authStore.refreshAccessToken({ force: true }))
       .finally(() => {
-        localRefreshPromise = null
+        pendingTokenRefreshes.delete(authStore)
       })
-    return localRefreshPromise
+    pendingTokenRefreshes.set(authStore, pending)
+    return pending
   }
 }
 

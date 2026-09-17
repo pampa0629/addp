@@ -36,6 +36,8 @@ Workbench 是面向数据消费者、以已发布 Service 为唯一数据入口�
 
 ## 前端验证
 
+Table/Chart 的 date 字段可显式配置 `temporal_format=period` 和 `period`（`grain_parameter/start_parameter/end_parameter`），引用当前 Service Descriptor 的必填命名参数：粒度为 string 且选项为 `total/month`，起止为 date。结果展示只使用成功查询当时的参数快照；按月显示年月，全期显示“所选期间合计”，Renderer Host 同时显示开始日期包含、结束日期不包含的完整范围。不得根据 `bucket` 等字段名推断语义；原始行、排序、选择与导出不变。共享组件只接受已解析的展示上下文，不读取 Service DTO。既有共享前端、Workbench T1、浏览器及模块门禁覆盖此契约，无新增依赖或 CI 入口。
+
 统一执行 `make test-workbench-frontend`，依次运行 Node 确定性测试、Playwright 浏览器回归和产品构建。首次运行前如缺少浏览器，执行 `npm --prefix workbench/frontend exec -- playwright install chromium`；CI 的 Workbench 前端矩阵负责安装 Chromium。
 
 `frontend/e2e/metric-publication.spec.js` 使用真实 Vue 页面和内存 HTTP fixture，覆盖契约变化后显式重配组件、保存与发布不可变修订、运行参数选择、异步 Descriptor 就绪、中英文显示及共享参数冲突。Model 的 `metric-workspace.spec.js` 负责服务来源重绑交互；Workbench 回归从重绑后的 Consumer Descriptor 边界开始，不跨模块读取 Model 内部事实。同一浏览器门禁还覆盖 50 行结果在受限卡片中的内部滚动和分页按钮可点击，以及可选 `contains` 输入的字面值提交、翻页后变更筛选重置游标及清空恢复查询；Common 的 PostgreSQL/MySQL `AnalyticalText` 既有 T2 门禁负责真实子串语义，Service T1 负责能力投影和参数绑定。这些测试不等同于真实后端与数据库的在线联调。
@@ -46,6 +48,10 @@ Workbench 是面向数据消费者、以已发布 Service 为唯一数据入口�
 
 修改参数控件的委托链路时还须执行 `make test-common-frontend`：共享 `parameterInput.test.mjs` 同时约束 Service、Workbench 创作端和运行端的输入所有权。画布通过 `ApplicationParameterFields` 组合共享输入控件，所有权断言必须跟随真实消费位置更新；不能只通过 Workbench 自身前端门禁便视为该类重构验证完成。该共享测试已纳入 platform T0，完整模块门禁会自动执行。
 
+自由文本回车由 `ApplicationParameterFields` 发出提交意图，画布按所在区域复用单组件或全页查询；输入法确认候选、重复键及下拉选项确认不得触发。`metric-publication.spec.js` 覆盖中英文回车查询、局部筛选清空、游标重置和原始 ID 联动，测试仍走同一前端标准入口与既有 CI 矩阵。
+
 Playwright 自动管理独立的 `127.0.0.1:4190` Vite 测试服务，使用独立缓存并关闭 Gateway 代理，不接管已有开发服务。失败截图和 trace 写入系统临时目录 `addp-workbench-playwright-results`，CI 失败时上传对应 artifact。真实后端联调仍使用既有 `make test-online ONLINE_SUITE=workbench-service-consumption`，并满足该入口声明的环境条件。
+
+`frontend/e2e/runtime-fullscreen.spec.js` 通过真实 Fullscreen API 和鼠标滚轮验证已发布 desktop 应用在宽屏、窄屏下的全屏滚动、下方组件可达和退出后整页滚动恢复，并验证 wallboard 全屏仍将组件约束在视口内；由同一前端标准入口与 CI 矩阵自动发现。
 
 指标浏览器回归还验证服务返回的双向主体名称、空昵称、目录当前页缺少主体，以及目录旧昵称不能覆盖指标服务当前昵称；选择联动只提交稳定人员标识。Online suite 复用商务 MySQL 夹具验证持久化草稿的值名称、维度文本、CSV 原值和选择联动原值，只使用可清理的未发布应用；报告缺少任一证据即失败，不把本地 HTTP fixture 通过记为真实 T4 通过。

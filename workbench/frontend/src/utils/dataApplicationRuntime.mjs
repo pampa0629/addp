@@ -76,6 +76,7 @@ export function invalidateApplicationParameterResults(snapshot, componentStates,
     current.exporting = false
     current.query_error = ''
     current.query_completed = false
+    current.result_parameters = null
     current.rows = []
     current.page = { has_more: false, next_cursor: '' }
     current.cursors = ['']

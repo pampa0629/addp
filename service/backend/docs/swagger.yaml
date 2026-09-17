@@ -3267,6 +3267,18 @@ paths:
         in: query
         name: search
         type: string
+      - description: 指标实现 ID，须与修订 ID 同时提供 | Metric implementation ID, paired with
+          revision ID
+        in: query
+        minimum: 1
+        name: metric_implementation_id
+        type: integer
+      - description: 精确修订 ID，须与实现 ID 同时提供 | Exact revision ID, paired with implementation
+          ID
+        in: query
+        minimum: 1
+        name: metric_revision_id
+        type: integer
       produces:
       - application/json
       responses:
@@ -3274,6 +3286,12 @@ paths:
           description: OK
           schema:
             additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
             type: object
         "500":
           description: Internal Server Error

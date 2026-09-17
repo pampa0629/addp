@@ -12,6 +12,12 @@ const vueFilesUnder = relativeDirectory => readdirSync(resolve(repositoryRoot, r
   .filter(entry => entry.isFile() && entry.name.endsWith('.vue'))
   .map(entry => resolve(entry.parentPath, entry.name))
 
+test('resource tree transport reuses the bound session and the single shared API client', () => {
+  const api = source('common-frontend/basic/src/api/resourceTree.js')
+  assert.match(api, /createAPIClient\(getBoundAuthStore,/)
+  assert.doesNotMatch(api, /axios\.create|interceptors\.|getAccessToken|createBrowserAuthSession/)
+})
+
 test('ResourceTreePicker is the single form-level resource tree implementation', () => {
   const picker = source('common-frontend/basic/src/components/ResourceTreePicker.vue')
 

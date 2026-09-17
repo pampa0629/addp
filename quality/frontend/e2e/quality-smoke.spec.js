@@ -150,6 +150,37 @@ test("creates with physical picker and starts a plan, preventing duplicate submi
   await expect(page).toHaveURL(new RegExp("/executions/" + executionID));
   expect(state.unexpected).toEqual([]);
 });
+test('resource selection recovers from an expired token without leaving the unsaved plan', async ({ page }) => {
+  const state = await installMockBackend(page);
+  await page.goto('/plans?create=1');
+  const editor = page.getByRole('dialog', { name: '新建质量检查方案' });
+  await editor.getByRole('textbox').nth(0).fill('unsaved_plan');
+  await editor.getByRole('textbox').nth(1).fill('保留未保存方案');
+  const refreshesBefore = state.refreshRequests;
+  const attempts = [];
+  await page.route('**/api/v1/meta/engines', async route => {
+    attempts.push(await route.request().headerValue('authorization'));
+    if (attempts.length === 1) return fulfillJSON(route, { error: 'expired' }, 401);
+    return route.fallback();
+  });
+  await editor.getByRole('button', { name: '添加数据表', exact: true }).click();
+  await editor.locator('.resource-tree-picker .el-select').click();
+  const engine = page.getByRole('option', { name: '业务 PostgreSQL' });
+  await expect(engine).toBeVisible();
+  expect(attempts.slice(0, 2)).toEqual([`Bearer quality-e2e-token-${refreshesBefore}`, `Bearer quality-e2e-token-${refreshesBefore + 1}`]);
+  await engine.click();
+  const picker = editor.locator('.resource-tree-picker');
+  await picker.getByRole('treeitem', { name: 'public', exact: true }).locator('.el-tree-node__expand-icon').first().click();
+  await picker.getByRole('treeitem', { name: 'customers', exact: true }).click();
+  await expect(editor.locator('.binding-table').getByRole('textbox')).toHaveValue('customers');
+  await expect(editor.getByRole('textbox').nth(0)).toHaveValue('unsaved_plan');
+  expect(state.refreshRequests).toBe(refreshesBefore + 1);
+  // Opening the dropdown refreshes its list after mount; subsequent requests must use the replacement token.
+  expect(attempts.slice(1).every(token => token === `Bearer quality-e2e-token-${refreshesBefore + 1}`)).toBe(true);
+  expect(state.writes).toEqual([]);
+  expect(state.unexpected).toEqual([]);
+});
+
 test('deferred input can be saved and supplied only for one execution', async ({ page }) => {
   const state = await installMockBackend(page);
   state.plans[0].table_bindings[0].locator = '';
@@ -571,6 +602,7 @@ test('overview fetch failure is not displayed as zero quality', async ({ page })
 
 async function installMockBackend(page, options = {}) {
   const state = {
+    refreshRequests: 0,
     plans: [structuredClone(plan)],
     writes: [],
     ruleWrites: [],
@@ -614,7 +646,7 @@ async function installMockBackend(page, options = {}) {
     }
     if (path === "/api/v1/system/refresh")
       return fulfillJSON(route, {
-        access_token: "quality-e2e-token",
+        access_token: `quality-e2e-token-${++state.refreshRequests}`,
         expires_in: 3600,
       });
     if (path === "/api/v1/system/users/me")

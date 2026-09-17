@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"strconv"
 	"strings"
 
 	commonapi "github.com/addp/common/api"
@@ -107,16 +108,22 @@ func (r *QueryServiceRepository) GetByNameAndTenant(serviceName string, tenantID
 }
 
 // List 列出租户下的所有查询服务
-func (r *QueryServiceRepository) List(tenantID uint, offset int, limit int) ([]models.QueryService, int64, error) {
+func (r *QueryServiceRepository) List(tenantID uint, offset int, limit int, filter models.QueryServiceListFilter) ([]models.QueryService, int64, error) {
 	var services []models.QueryService
 	var total int64
 
 	query := r.db.Where("tenant_id = ?", tenantID)
+	if filter.Search != "" {
+		query = query.Where("(title ILIKE ? OR service_name ILIKE ?)", "%"+filter.Search+"%", "%"+filter.Search+"%")
+	}
+	if source := filter.MetricSource; source != nil {
+		query = query.Where("config_type = ? AND data_config #>> '{source_snapshot,metric_source,implementation_id}' = ? AND data_config #>> '{source_snapshot,metric_source,revision_id}' = ?", "analytical", strconv.FormatInt(source.ImplementationID, 10), strconv.FormatInt(source.RevisionID, 10))
+	}
 	if err := query.Model(&models.QueryService{}).Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 
-	if err := query.Offset(offset).Limit(limit).Order("created_at DESC").Find(&services).Error; err != nil {
+	if err := query.Offset(offset).Limit(limit).Order("created_at DESC, id DESC").Find(&services).Error; err != nil {
 		return nil, 0, err
 	}
 
@@ -176,23 +183,6 @@ func (r *QueryServiceRepository) GetServicesByEngine(engineID uint) ([]models.Qu
 		return nil, err
 	}
 	return services, nil
-}
-
-// Search 搜索服务（按标题或服务名称）
-func (r *QueryServiceRepository) Search(tenantID uint, keyword string, offset int, limit int) ([]models.QueryService, int64, error) {
-	var services []models.QueryService
-	var total int64
-
-	query := r.db.Where("tenant_id = ? AND (title ILIKE ? OR service_name ILIKE ?)", tenantID, "%"+keyword+"%", "%"+keyword+"%")
-	if err := query.Model(&models.QueryService{}).Count(&total).Error; err != nil {
-		return nil, 0, err
-	}
-
-	if err := query.Offset(offset).Limit(limit).Order("created_at DESC").Find(&services).Error; err != nil {
-		return nil, 0, err
-	}
-
-	return services, total, nil
 }
 
 // GetPublicServices 获取所有公开访问的服务

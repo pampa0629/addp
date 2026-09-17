@@ -400,7 +400,17 @@ func validateStepParametersByExecutionContract(step models.Step, contract *taskp
 	if contract == nil {
 		return fmt.Errorf("execution_contract is required")
 	}
-	return taskprovider.ValidateExecutionParameters(contract.InputSchema, step.Parameters, taskprovider.ParameterValidationOptions{
+	// Validate effective top-level inputs without persisting defaults into the
+	// step or forwarding them as overrides. Explicit objects remain atomic: an
+	// incomplete resource must not be repaired with a saved resource's fields.
+	parameters := make(map[string]interface{}, len(contract.InputDefaults)+len(step.Parameters))
+	for name, value := range contract.InputDefaults {
+		parameters[name] = value
+	}
+	for name, value := range step.Parameters {
+		parameters[name] = value
+	}
+	return taskprovider.ValidateExecutionParameters(contract.InputSchema, parameters, taskprovider.ParameterValidationOptions{
 		AllowTemplateStrings: allowTemplateStrings,
 	})
 }

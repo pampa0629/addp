@@ -95,7 +95,7 @@
             {{ service?.public_access ? t('service.common.yes') : t('service.common.no') }}
           </el-tag>
         </el-descriptions-item>
-        <el-descriptions-item :label="t('service.query.labelStatus')">
+        <el-descriptions-item :label="t(service?.config_type === 'analytical' ? 'service.query.serviceActivationStatus' : 'service.query.labelStatus')">
           <el-tag :type="getStatusType(service?.status)" size="small">
             {{ getStatusText(service?.status) }}
           </el-tag>
@@ -182,6 +182,14 @@
         <el-alert v-if="metricBindingRequired" :title="t('service.query.metricBindingRequired')" :description="t('service.query.metricBindingRequiredDescription')" type="warning" :closable="false" />
         <el-alert v-else-if="sourceSnapshot?.metric_source" :title="t('service.query.metricOrigin')" :description="t('service.query.metricOriginDescription')" type="info" :closable="false" />
         <el-button v-if="sourceSnapshot?.metric_source" link type="primary" @click="openConsoleRoute(`/modeling/metric-implementations/${sourceSnapshot.metric_source.implementation_id}?revision_id=${sourceSnapshot.metric_source.revision_id}`)">{{ t('service.query.metricOriginDetail') }} · {{ metricRevisionLabel }}</el-button>
+        <section v-if="service?.config_type === 'analytical' && sourceSnapshot?.metric_source" class="metric-revision-status" :aria-label="t('service.query.metricRevisionStatus')" aria-live="polite">
+          <div class="metric-revision-status-header">
+            <strong>{{ t('service.query.metricRevisionStatus') }}</strong>
+            <el-tag :type="metricRevisionStatusType">{{ t(`service.query.metricRevisionStatus_${metricRevisionState}`) }}</el-tag>
+            <el-button v-if="auth.hasPermission('model.metric_implementation.read')" :loading="metricRevisionLoading" @click="metricRevisionRefresh++">{{ t('service.query.refreshMetricRevision') }}</el-button>
+          </div>
+          <el-alert :title="t(`service.query.metricRevisionHint_${metricRevisionState}`)" :type="metricRevisionStatusType" :closable="false" />
+        </section>
         <el-alert v-if="service?.config_type === 'sql'"
           type="info"
           :title="t('service.query.sqlModeTitle')"
@@ -439,6 +447,9 @@ const auth = useAuthStore()
 const modelMetricAPI = createModelMetricAPI(client)
 const metricRevisionNo = ref(null)
 const metricRevisionLoading = ref(false)
+const metricRevisionState = ref('unavailable')
+const metricRevisionRefresh = ref(0)
+const metricRevisionStatusType = computed(() => ['withdrawn', 'draft', 'missing', 'unavailable', 'forbidden'].includes(metricRevisionState.value) ? 'warning' : 'info')
 const metricRevisionLabel = computed(() => {
   const id = sourceSnapshot.value?.metric_source?.revision_id
   if (metricRevisionLoading.value) return t('service.query.metricRevisionLoading', { id })
@@ -446,21 +457,25 @@ const metricRevisionLabel = computed(() => {
   return t('service.query.metricRevisionUnavailable', { id })
 })
 watch(
-  [() => sourceSnapshot.value?.metric_source, () => auth.hasPermission('model.metric_implementation.read')],
-  async ([source, canRead], _previous, onCleanup) => {
+  [() => sourceSnapshot.value?.metric_source, () => auth.hasPermission('model.metric_implementation.read'), metricRevisionRefresh, () => service.value?.config_type],
+  async ([source, canRead, _refresh, configType], _previous, onCleanup) => {
     let cancelled = false
     onCleanup(() => { cancelled = true })
     metricRevisionNo.value = null
     metricRevisionLoading.value = false
-    if (!source || !canRead) return
+    metricRevisionState.value = 'unavailable'
+    if (!source || configType !== 'analytical') return
+    if (!canRead) { metricRevisionState.value = 'forbidden'; return }
     metricRevisionLoading.value = true
+    metricRevisionState.value = 'loading'
     try {
       const implementation = await modelMetricAPI.get(source.implementation_id)
       if (cancelled) return
       const revision = implementation.revisions?.find(item => item.id === source.revision_id)
+      metricRevisionState.value = !revision ? 'missing' : ['draft', 'published', 'withdrawn'].includes(revision.status) ? revision.status : 'unavailable'
       if (Number.isInteger(revision?.revision_no) && revision.revision_no > 0) metricRevisionNo.value = revision.revision_no
-    } catch {
-      // Supplemental display metadata must not block service details or queries.
+    } catch (error) {
+      if (!cancelled) metricRevisionState.value = error.response?.status === 403 ? 'forbidden' : error.response?.status === 404 ? 'missing' : 'unavailable'
     } finally {
       if (!cancelled) metricRevisionLoading.value = false
     }
@@ -819,6 +834,9 @@ onMounted(() => {
   gap: 12px;
   flex: 1;
 }
+
+.metric-revision-status { margin: 16px 0; }
+.metric-revision-status-header { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
 
 .header-left h2 {
   margin: 0;

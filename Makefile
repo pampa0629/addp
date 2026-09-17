@@ -250,6 +250,8 @@ test-integration: ## 严格串行运行所有本地可执行的 disposable 基�
 	@$(MAKE) test-security-postgres
 	@$(MAKE) test-service-postgres
 	@$(MAKE) test-standard-postgres
+	@$(MAKE) test-ontology-postgres
+	@$(MAKE) test-ontology-falkor
 	@$(MAKE) test-transfer-postgres
 	@$(MAKE) test-workbench-postgres
 
@@ -337,6 +339,14 @@ test-service-postgres: ## 使用一次性 PostgreSQL 数据库运行 Service 数
 test-standard-postgres: ## 使用测试 PostgreSQL 数据库运行 Standard 约束、旧能力清理和引用门禁
 	@bash scripts/test/standard-postgres-gate.sh
 
+.PHONY: test-ontology-postgres
+test-ontology-postgres: ## 验证 Ontology 修订、发布事务、并发与撤回
+	@bash scripts/test/ontology-postgres-gate.sh
+
+.PHONY: test-ontology-falkor
+test-ontology-falkor: ## 验证独占 FalkorDB 投影、取消、超时和清理
+	@bash scripts/test/ontology-falkor-gate.sh
+
 test-transfer-postgres: ## 使用普通 PostgreSQL 测试库运行 Transfer schema、受保护导出与非空间目标覆盖门禁（无需 PostGIS）
 	@bash scripts/test/transfer-postgres-gate.sh
 
@@ -391,6 +401,8 @@ test-platform: ## 运行无外部服务依赖的平台一致性门禁
 	@$(MAKE) test-local-ci-runner
 	@$(MAKE) test-node-dependencies
 	@$(MAKE) test-infra-postgresql-init
+	@python3 scripts/test/ontology-postgres-gate_test.py
+	@python3 scripts/test/ontology-falkor-gate_test.py
 	@$(MAKE) test-go-dependency-policy
 	@python3 scripts/ci/check-build-registration_test.py
 	@python3 scripts/ci/select-image-services_test.py

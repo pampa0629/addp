@@ -98,6 +98,11 @@
           :type="revision.status === 'published' ? 'success' : 'info'"
           >{{ t(`model.metric_workspace.${revision.status}`) }}</el-tag
         >
+        <MetricRevisionServices
+          v-if="revision && !editingNew"
+          :implementation-id="item.id" :revision="revision"
+          :can-read="auth.hasPermission('service.definition.read')"
+        />
         <el-button v-if="!editable && can('update')" @click="startDraft">{{
           t('model.metric_workspace.new_draft')
         }}</el-button>
@@ -260,13 +265,13 @@
           type="primary"
           :disabled="isDirty"
           :loading="busy"
-          @click="changeState(true)"
+          @click="publishRevision"
           >{{ t('model.metric_workspace.publish') }}</el-button
         >
         <el-button
-          v-if="revision.status === 'published' && can('offline')"
+          v-if="revision.status === 'published' && !editingNew && can('offline')"
           :loading="busy"
-          @click="changeState(false)"
+          @click="withdrawDialog = true"
           >{{ t('model.metric_workspace.withdraw') }}</el-button
         >
         <el-button
@@ -282,6 +287,27 @@
         >
       </el-card>
     </template>
+    <el-dialog
+      v-model="withdrawDialog"
+      class="addp-dialog"
+      :title="t('model.metric_workspace.withdraw_title', { revision: revision?.revision_no })"
+      width="min(560px, calc(100vw - 32px))"
+      :close-on-click-modal="!busy"
+      :close-on-press-escape="!busy"
+      :show-close="!busy"
+    >
+      <p aria-live="polite">
+        {{ withdrawLoading ? t('model.metric_workspace.withdraw_loading') :
+          withdrawCount !== null ? t('model.metric_workspace.withdraw_count', { count: withdrawCount }) :
+          t(`model.metric_workspace.${withdrawError}`) }}
+      </p>
+      <el-alert :title="t('model.metric_workspace.withdraw_effect')" type="warning" :closable="false" />
+      <template #footer>
+        <el-button v-if="auth.hasPermission('service.definition.read')" :loading="withdrawLoading" :disabled="busy" @click="withdrawRefresh++">{{ t('model.metric_workspace.refresh_services') }}</el-button>
+        <el-button :disabled="busy" @click="withdrawDialog = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="danger" :loading="busy" :disabled="withdrawLoading || !can('offline')" @click="withdrawRevision">{{ t('model.metric_workspace.confirm_withdraw') }}</el-button>
+      </template>
+    </el-dialog>
     <el-dialog
       class="addp-dialog"
       v-model="serviceDialog"
@@ -368,6 +394,7 @@ import { navigateModelRoute } from '../utils/moduleNavigation';
 import { useUnsavedChanges } from '../composables/useUnsavedChanges';
 import { getModelErrorMessage } from '../utils/apiError';
 import MetricSourceSummary from '../components/MetricSourceSummary.vue';
+import MetricRevisionServices from '../components/MetricRevisionServices.vue';
 const router = useRouter(),
   route = useRoute(),
   auth = useAuthStore(),
@@ -637,16 +664,54 @@ const save = () =>
     setRevision(item.value.revisions.find((v) => v.status === 'draft').id);
     ElMessage.success(t('model.metric_workspace.saved'));
   });
-const changeState = (publish) =>
+const publishRevision = () =>
   action(async () => {
     const id = revision.value.id;
-    item.value = await (publish ? api.publish : api.withdraw)(
+    item.value = await api.publish(
       item.value.id,
       id,
       item.value.version,
     );
     setRevision(id);
   });
+const withdrawDialog = ref(false), withdrawLoading = ref(false),
+  withdrawCount = ref(null), withdrawError = ref('withdraw_unavailable'), withdrawRefresh = ref(0);
+watch(() => [item.value?.id, item.value?.version, revision.value?.id, editingNew.value], () => {
+  withdrawDialog.value = false;
+}, { flush: 'sync' });
+watch([withdrawDialog, withdrawRefresh, () => auth.hasPermission('service.definition.read')], async (_values, _previous, onCleanup) => {
+  let cancelled = false;
+  onCleanup(() => { cancelled = true; });
+  withdrawCount.value = null;
+  withdrawLoading.value = false;
+  withdrawError.value = 'withdraw_unavailable';
+  if (!withdrawDialog.value) return;
+  if (!auth.hasPermission('service.definition.read')) {
+    withdrawError.value = 'withdraw_forbidden';
+    return;
+  }
+  withdrawLoading.value = true;
+  try {
+    const result = await metricServiceAPI.references(item.value.id, revision.value.id, 1, 1);
+    if (!cancelled) withdrawCount.value = result.total;
+  } catch (err) {
+    if (!cancelled) withdrawError.value = err.response?.status === 403 ? 'withdraw_forbidden' : 'withdraw_unavailable';
+  } finally {
+    if (!cancelled) withdrawLoading.value = false;
+  }
+});
+const withdrawRevision = () => {
+  if (!withdrawDialog.value || withdrawLoading.value || busy.value || !can('offline') || revision.value?.status !== 'published' || editingNew.value) return;
+  const id = revision.value.id, implementationID = item.value.id, version = item.value.version, request = generation;
+  return action(async () => {
+    const updated = await api.withdraw(implementationID, id, version);
+    // A navigation during the request must not replace another implementation's state.
+    if (request !== generation || item.value?.id !== implementationID || revision.value?.id !== id) return;
+    withdrawDialog.value = false;
+    item.value = updated;
+    setRevision(id);
+  });
+};
 const remove = () =>
   action(async () => {
     await api.delete(item.value.id, item.value.version);

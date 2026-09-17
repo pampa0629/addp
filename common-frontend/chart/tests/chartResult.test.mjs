@@ -50,7 +50,27 @@ test('adds a controlled state label to chart tooltips without recoloring series 
 
   assert.deepEqual(option.series[0].data, [125])
   assert.equal(option.series[0].tooltip.valueFormatter(125), '125 元 · 高额')
+  assert.equal(option.series[0].label.formatter({ value: 125 }), '125 元')
   assert.equal(option.series[0].itemStyle, undefined)
+})
+
+test('bar labels show zero and signed values with field units and locale precision', () => {
+  const rows = [{ period: 'A', count: 89, amount: -1234.5 }, { period: 'B', count: 0, amount: 0 }]
+  const config = {
+    chart_type: 'bar', dimension: 'period', measures: ['count', 'amount'],
+    field_presentations: [{ field: 'count', unit: '次', precision: 0 }, { field: 'amount', unit: 'EUR', precision: 2 }],
+  }
+  const option = buildChartOption(rows, config, 'de-DE', { textColor: 'theme-text' })
+  for (const series of option.series) {
+    assert.equal(series.label.show, true)
+    assert.equal(series.label.position, 'top')
+    assert.equal(series.label.color, 'theme-text')
+  }
+  assert.equal(option.series[0].label.formatter({ value: 89 }), '89 次')
+  assert.equal(option.series[0].label.formatter({ value: 0 }), '0 次')
+  assert.equal(option.series[1].label.formatter({ value: -1234.5 }), '-1.234,50 EUR')
+  assert.deepEqual(option.series[1].data, [-1234.5, 0])
+  assert.equal(buildChartOption(rows, { ...config, chart_type: 'line' }).series[0].label, undefined)
 })
 
 test('enables one theme-controlled selected item without changing numeric series data', () => {

@@ -90,27 +90,32 @@ function revisionHarness(get, canRead = true) {
   const scope = effectScope()
   const snapshot = ref({ metric_source: { implementation_id: 1, revision_id: 6 } })
   const permission = ref(canRead)
+  const service = ref({ config_type: 'analytical', status: 'active', version: 3 })
   const i18n = createI18n({ legacy: false, locale: 'zh-cn', messages: revisionMessages })
-  const state = scope.run(() => vm.runInNewContext(`${revisionSource}; ({ metricRevisionLabel, metricRevisionNo, metricRevisionLoading })`, {
-    ref, computed, watch, sourceSnapshot: snapshot,
+  const state = scope.run(() => vm.runInNewContext(`${revisionSource}; ({ metricRevisionLabel, metricRevisionNo, metricRevisionLoading, metricRevisionState, metricRevisionRefresh, metricRevisionStatusType })`, {
+    ref, computed, watch, sourceSnapshot: snapshot, service,
     useAuthStore: () => ({ hasPermission: () => permission.value }),
     createModelMetricAPI: () => ({ get }), client: {}, t: (key, params) => i18n.global.t(key, { ...params })
   }))
-  return { state, snapshot, permission, i18n, stop: () => scope.stop() }
+  return { state, snapshot, permission, service, i18n, stop: () => scope.stop() }
 }
 const settleRevision = () => new Promise(resolve => setImmediate(resolve))
 
 test('bound revision display resolves ID 6 to R2, never the newest revision, in both languages', async () => {
   const h = revisionHarness(async id => {
     assert.equal(id, 1)
-    return { revisions: [{ id: 9, revision_no: 3 }, { id: 6, revision_no: 2 }] }
+    return { revisions: [{ id: 9, revision_no: 3, status: 'published' }, { id: 6, revision_no: 2, status: 'withdrawn' }] }
   })
   try {
     assert.equal(h.state.metricRevisionLabel.value, '正在读取修订号（修订 ID：6）')
     await settleRevision()
     assert.equal(h.state.metricRevisionLabel.value, 'R2（修订 ID：6）')
+    assert.equal(h.state.metricRevisionState.value, 'withdrawn')
+    assert.equal(h.state.metricRevisionStatusType.value, 'warning')
+    assert.match(h.i18n.global.t('service.query.metricRevisionHint_withdrawn'), /新查询也会被拒绝/)
     h.i18n.global.locale.value = 'en'
     assert.equal(h.state.metricRevisionLabel.value, 'R2 (revision ID: 6)')
+    assert.match(h.i18n.global.t('service.query.metricRevisionHint_withdrawn'), /New queries will be rejected/)
   } finally { h.stop() }
 })
 
@@ -147,5 +152,137 @@ test('switching source or losing permission discards late revision responses', a
     pending[2]({ revisions: [{ id: 8, revision_no: 4 }] })
     await settleRevision()
     assert.equal(h.state.metricRevisionNo.value, null)
+  } finally { h.stop() }
+})
+
+test('revision status distinguishes permission, missing revision and unavailable Model responses', async () => {
+  const cases = [
+    [() => assert.fail('must not request without permission'), false, 'forbidden'],
+    [async () => { throw { response: { status: 403 } } }, true, 'forbidden'],
+    [async () => { throw { response: { status: 404 } } }, true, 'missing'],
+    [async () => ({ revisions: [{ id: 9, revision_no: 3, status: 'published' }] }), true, 'missing'],
+    [async () => { throw { response: { status: 503 } } }, true, 'unavailable'],
+    [async () => { throw new Error('offline') }, true, 'unavailable'],
+    [async () => ({ revisions: [{ id: 6, revision_no: 2, status: 'unexpected' }] }), true, 'unavailable']
+  ]
+  for (const [get, permission, expected] of cases) {
+    const h = revisionHarness(get, permission)
+    try {
+      await settleRevision()
+      assert.equal(h.state.metricRevisionState.value, expected)
+      assert.equal(h.state.metricRevisionLoading.value, false)
+      assert.equal(h.service.value.status, 'active', 'supplemental read must not change service state')
+      for (const lang of ['zh-cn', 'en']) {
+        const messages = revisionMessages[lang].service.query
+        assert.ok(messages[`metricRevisionStatus_${expected}`])
+        assert.ok(messages[`metricRevisionHint_${expected}`])
+      }
+    } finally { h.stop() }
+  }
+})
+
+test('refresh reads withdrawal without changing the binding, service or entered parameters', async () => {
+  let status = 'published', calls = 0
+  const h = revisionHarness(async () => { calls++; return { revisions: [{ id: 6, revision_no: 2, status }] } })
+  try {
+    h.service.value.parameters = { subject_id: 'user-entered', grain: 'month' }
+    await settleRevision()
+    assert.equal(h.state.metricRevisionState.value, 'published')
+    assert.equal(h.state.metricRevisionStatusType.value, 'info')
+    const before = JSON.stringify({ service: h.service.value, snapshot: h.snapshot.value })
+    status = 'withdrawn'
+    h.state.metricRevisionRefresh.value++
+    assert.equal(h.state.metricRevisionState.value, 'loading')
+    assert.equal(h.state.metricRevisionNo.value, null)
+    await settleRevision()
+    assert.equal(calls, 2)
+    assert.equal(h.state.metricRevisionState.value, 'withdrawn')
+    assert.equal(JSON.stringify({ service: h.service.value, snapshot: h.snapshot.value }), before)
+    status = 'draft'
+    h.state.metricRevisionRefresh.value++
+    await settleRevision()
+    assert.equal(h.state.metricRevisionState.value, 'draft')
+    assert.equal(h.state.metricRevisionStatusType.value, 'warning')
+    assert.match(source, /@click="metricRevisionRefresh\+\+"/)
+    assert.match(source, /metricRevisionHint_\$\{metricRevisionState\}/)
+  } finally { h.stop() }
+})
+
+test('refresh errors discard the old published state and can be explicitly retried', async () => {
+  let fail = false
+  const h = revisionHarness(async () => {
+    if (fail) throw new Error('unavailable')
+    return { revisions: [{ id: 6, revision_no: 2, status: 'published' }] }
+  })
+  try {
+    await settleRevision()
+    assert.equal(h.state.metricRevisionState.value, 'published')
+    fail = true
+    h.state.metricRevisionRefresh.value++
+    await settleRevision()
+    assert.equal(h.state.metricRevisionState.value, 'unavailable')
+    assert.equal(h.state.metricRevisionNo.value, null)
+    fail = false
+    h.state.metricRevisionRefresh.value++
+    await settleRevision()
+    assert.equal(h.state.metricRevisionState.value, 'published')
+  } finally { h.stop() }
+})
+
+test('permission changes clear status, ignore stale reads and reload when restored', async () => {
+  const pending = []
+  const h = revisionHarness(() => new Promise(resolve => pending.push(resolve)))
+  try {
+    h.permission.value = false
+    assert.equal(h.state.metricRevisionState.value, 'forbidden')
+    pending[0]({ revisions: [{ id: 6, revision_no: 2, status: 'published' }] })
+    await settleRevision()
+    assert.equal(h.state.metricRevisionState.value, 'forbidden')
+    assert.equal(h.state.metricRevisionNo.value, null)
+    h.permission.value = true
+    pending[1]({ revisions: [{ id: 6, revision_no: 2, status: 'withdrawn' }] })
+    await settleRevision()
+    assert.equal(h.state.metricRevisionState.value, 'withdrawn')
+  } finally { h.stop() }
+})
+
+test('a stale failure after rebind cannot overwrite the current revision state', async () => {
+  const pending = []
+  const h = revisionHarness(() => new Promise((resolve, reject) => pending.push({ resolve, reject })))
+  try {
+    h.snapshot.value = { metric_source: { implementation_id: 2, revision_id: 8 } }
+    pending[1].resolve({ revisions: [{ id: 8, revision_no: 4, status: 'published' }] })
+    await settleRevision()
+    pending[0].reject({ response: { status: 404 } })
+    await settleRevision()
+    assert.equal(h.state.metricRevisionState.value, 'published')
+    assert.equal(h.state.metricRevisionLabel.value, 'R4（修订 ID：8）')
+    h.state.metricRevisionRefresh.value++
+    h.stop()
+    pending[2].resolve({ revisions: [{ id: 8, revision_no: 4, status: 'withdrawn' }] })
+    await settleRevision()
+    assert.equal(h.state.metricRevisionState.value, 'loading', 'unmounted state must not accept late results')
+  } finally { h.stop() }
+})
+
+test('ordinary table and SQL configurations do not request Model even with an old source reference', async () => {
+  let calls = 0
+  const h = revisionHarness(async () => { calls++; return { revisions: [] } }, false)
+  try {
+    h.service.value.config_type = 'table'
+    h.permission.value = true
+    h.state.metricRevisionRefresh.value++
+    await settleRevision()
+    h.service.value.config_type = 'sql'
+    h.state.metricRevisionRefresh.value++
+    await settleRevision()
+    assert.equal(calls, 0)
+    h.service.value.config_type = 'analytical'
+    h.snapshot.value = null
+    await settleRevision()
+    const before = calls
+    h.state.metricRevisionRefresh.value++
+    await settleRevision()
+    assert.equal(calls, before, 'unbound metrics have no Model read to perform')
   } finally { h.stop() }
 })

@@ -125,6 +125,11 @@
                   </el-select>
                   <el-input-number v-if="draft.rendererType === 'table'" v-model="item.width" :min="80" :max="600" :controls="false" :placeholder="t('workbench.presentationWidth')" />
                 </div>
+                <div v-if="item.temporalFormat === 'period'" class="field-presentation-fields">
+                  <el-select v-for="kind in ['grain', 'start', 'end']" :key="kind" v-model="item.period[`${kind}_parameter`]" :aria-label="t(`workbench.periodParameters.${kind}`)" :placeholder="t(`workbench.periodParameters.${kind}`)" @change="resetResult">
+                    <el-option v-for="parameter in periodParameterCandidates(kind)" :key="parameter.name" :value="parameter.name" :label="parameter.description || parameter.name" />
+                  </el-select>
+                </div>
                 <StateRuleEditor :model-value="item.stateRules || []" :field-type="item.fieldType" @update:model-value="updateStateRules(item, $event)" />
                 <ValueLabelEditor v-if="['string', 'bool'].includes(item.fieldType)" :model-value="item.valueLabels || []" :field-type="item.fieldType" @update:model-value="item.valueLabels = $event; resetResult()" />
               </div>
@@ -162,7 +167,7 @@
               <el-button data-testid="component-query-action" type="primary" :disabled="!canQuery || exporting" :loading="querying" @click="preview">{{ t('workbench.query') }}</el-button>
             </div>
           </div>
-          <WorkbenchRendererHost :rows="resultRows" :renderer-type="draft.rendererType" :config="rendererConfig" :descriptor="descriptor" :page="pageResult" :result-ready="queryCompleted" />
+          <WorkbenchRendererHost :rows="resultRows" :renderer-type="draft.rendererType" :config="rendererConfig" :descriptor="descriptor" :page="pageResult" :result-ready="queryCompleted" :query-parameters="resultParameters" />
           <div v-if="draft.rendererType === 'table' && (cursorIndex > 0 || pageResult.has_more)" class="cursor-actions">
             <el-button :disabled="cursorIndex === 0 || querying" @click="previousPage">{{ t('workbench.previousPage') }}</el-button>
             <span>{{ t('workbench.pageNumber', { page: cursorIndex + 1 }) }}</span>
@@ -207,6 +212,7 @@ const querying = ref(false)
 const exporting = ref(false)
 const queryCompleted = ref(false)
 const resultRows = ref([])
+const resultParameters = ref(null)
 const pageResult = ref({ has_more: false, next_cursor: '' })
 const cursors = ref([''])
 const cursorIndex = ref(0)
@@ -377,9 +383,18 @@ function presentationIsTemporal(item) {
 }
 
 function temporalFormats(item) {
-  if (item.fieldType === 'date') return ['date']
+  if (item.fieldType === 'date') return ['date', 'month', ...(['table', 'chart'].includes(draft.rendererType) ? ['period'] : [])]
   if (item.fieldType === 'time') return ['time']
   return ['date', 'datetime']
+}
+
+function periodParameterCandidates(kind) {
+  return (descriptor.value?.input_contract?.named_parameters || []).filter(parameter => {
+    if (!parameter.required) return false
+    if (kind !== 'grain') return parameter.type === 'date'
+    const values = (parameter.options || []).map(option => option.value)
+    return parameter.type === 'string' && values.length === 2 && values.includes('total') && values.includes('month')
+  })
 }
 
 function fieldPresentationsValid() {
@@ -390,6 +405,7 @@ function fieldPresentationsValid() {
     if (!String(item.label || '').trim() || String(item.label).length > 100 || String(item.unit || '').length > 30) return false
     if (presentationIsNumeric(item) && (!Number.isInteger(item.precision) || item.precision < 0 || item.precision > 8)) return false
     if (presentationIsTemporal(item) && !temporalFormats(item).includes(item.temporalFormat)) return false
+    if (item.temporalFormat === 'period' && (!['grain', 'start', 'end'].every(kind => periodParameterCandidates(kind).some(parameter => parameter.name === item.period?.[`${kind}_parameter`])) || item.period.start_parameter === item.period.end_parameter)) return false
     if (draft.rendererType === 'table' && item.width !== null && item.width !== undefined && (!Number.isInteger(item.width) || item.width < 80 || item.width > 600)) return false
     if (!stateRulesValid(item.stateRules, item.fieldType)) return false
     if (!valueLabelsValid(item.valueLabels, item.fieldType)) return false
@@ -502,6 +518,7 @@ async function executeAtCursor(cursor, nextCursorIndex = cursorIndex.value, next
     const { data } = await executeDescriptorOperation(operation, requestBody)
     if (!operationRequests.isCurrent(request, serviceKey.value)) return
     resultRows.value = data.data || []
+    resultParameters.value = structuredClone(requestBody.parameters || {})
     pageResult.value = data.page || { has_more: false, next_cursor: '' }
     cursorIndex.value = nextCursorIndex
     cursors.value = nextCursors
@@ -566,6 +583,7 @@ function resetResult() {
   querying.value = false
   exporting.value = false
   queryCompleted.value = false
+  resultParameters.value = null
   resultRows.value = []
   pageResult.value = { has_more: false, next_cursor: '' }
   cursors.value = ['']

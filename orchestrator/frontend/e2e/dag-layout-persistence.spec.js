@@ -1261,6 +1261,27 @@ test('editor refinements: a new orchestration requests its name on first save', 
   await expect(page).toHaveURL(/\/orchestrations$/)
 })
 
+test('rejected creation shows the owner validation error and retains the draft', async ({ page }) => {
+  await installMockBackend(page, createLayoutFixture(), createPortBindingTaskLibrary())
+  await page.route('**/api/v1/orchestrator/orchestrations', async route => {
+    if (route.request().method() === 'POST') {
+      await route.fulfill({ status: 400, json: { error: '上游输出类型与质量方案输入不匹配' } })
+    } else await route.fallback()
+  })
+  await page.goto('/orchestrations/new')
+  await page.getByPlaceholder('搜索任务').fill('Source task')
+  await page.locator('.task-node').filter({ hasText: 'Source task' }).getByRole('button', { name: '添加到画布' }).click()
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: '保存编排信息', exact: true })
+  await dialog.getByPlaceholder('请输入编排名称').fill('保留失败草稿')
+  await dialog.getByRole('button', { name: '确认保存', exact: true }).click()
+  await expect(page.locator('.el-message').filter({ hasText: '上游输出类型与质量方案输入不匹配' })).toBeVisible()
+  await expect(page).toHaveURL(/\/orchestrations\/new$/)
+  await expect(page.locator('.unsaved-status')).toBeVisible()
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(dialog.getByPlaceholder('请输入编排名称')).toHaveValue('保留失败草稿')
+})
+
 test('unsaved changes: moving a node protects cancellation, saving releases it', async ({ page }) => {
   const fixture = createLayoutFixture()
   await installMockBackend(page, fixture)
@@ -1308,7 +1329,7 @@ test('unsaved changes: viewport changes are clean and failed saves keep protecti
     else await route.fallback()
   })
   await page.getByRole('button', { name: '保存', exact: true }).click()
-  await expect(page.locator('.el-message').filter({ hasText: '更新失败' })).toBeVisible()
+  await expect(page.locator('.el-message').filter({ hasText: 'test failure' })).toBeVisible()
   await page.locator('.header-actions').getByRole('button', { name: '取消', exact: true }).click()
   const warning = page.getByRole('dialog', { name: '有未保存的修改', exact: true })
   await warning.getByRole('button', { name: '放弃修改并离开' }).click()

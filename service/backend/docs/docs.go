@@ -1724,6 +1724,20 @@ const docTemplate = `{
                         "description": "搜索词 | Search",
                         "name": "search",
                         "in": "query"
+                    },
+                    {
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "指标实现 ID，须与修订 ID 同时提供 | Metric implementation ID, paired with revision ID",
+                        "name": "metric_implementation_id",
+                        "in": "query"
+                    },
+                    {
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "精确修订 ID，须与实现 ID 同时提供 | Exact revision ID, paired with implementation ID",
+                        "name": "metric_revision_id",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -1732,6 +1746,15 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
                         }
                     },
                     "500": {

@@ -84,6 +84,7 @@
 #### 模块特定依赖
 
 - **有限分类规则** (Ontology): `cel.dev/cel-go@v0.32.0`；仅允许经过内核 AST 白名单检查的布尔/字符串规则，不开放完整 CEL 函数集。
+- **语义图投影适配** (Ontology): 复用上述 go-redis 版本直接发送固定 FalkorDB 命令，不引入 falkordb-go SDK 或多驱动回退；FalkorDB 4.20.6 首先用于独占 disposable T2，尚不表示正式 Infra 服务已上线。
 - **CORS 中间件** (Meta): `github.com/gin-contrib/cors@v1.5.0`
 - **Hive 客户端** (Develop): `github.com/beltran/gohive@v1.8.1`
 - **SQLite 驱动** (Manager): `gorm.io/driver/sqlite@v1.6.0`

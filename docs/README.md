@@ -70,7 +70,7 @@
 - [Manager 前端浏览器回归测试专题](next/Manager前端浏览器回归测试专题.md)
 - [ADDP 企业资源目录与 Catalog 模块专题](next/ADDP企业资源目录能力专题.md)
 - [ADDP Engine Catalog 命名收敛与迁移专题](next/ADDP引擎目录命名收敛专题.md)
-- [Ontology 最小设计契约（语义内核已落地，发布与投影待实施）](next/ADDP%20Ontology最小设计契约.md)
+- [Ontology 最小设计契约（语义内核、PG 修订与图投影适配已落地，发布运行时待实施）](next/ADDP%20Ontology最小设计契约.md)
 - [规划文档](plan/)
 - [跟进文档](next/)
 - [技能文档](skills/)

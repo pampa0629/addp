@@ -6,9 +6,9 @@ async function installBackend(page, options = {}) {
     ...(options.engineRead === false ? [] : ['meta.catalog.read']),
     'standard.metric.read',
     'service.definition.create',
-    'service.definition.read',
+    ...(options.serviceRead === false ? [] : ['service.definition.read']),
     'service.definition.update',
-    ...['read', 'create', 'update', 'publish', 'offline', 'delete'].map(
+    ...['read', 'create', 'update', 'publish', 'offline', 'delete'].filter(action => action !== 'offline' || options.offline !== false).map(
       (action) => `model.metric_implementation.${action}`,
     ),
   ];
@@ -93,7 +93,10 @@ async function installBackend(page, options = {}) {
   };
   const writes = [];
   const engineReads = [];
+  const referenceReads = [];
+  const withdrawals = [];
   let conflict = false;
+  let refreshCount = 0;
   await page.addInitScript(lang => localStorage.setItem('addp-lang', lang), options.lang || 'zh-cn');
   await page.route('**/api/v1/**', async (route) => {
     const request = route.request(),
@@ -105,7 +108,7 @@ async function installBackend(page, options = {}) {
         body: JSON.stringify(data),
       });
     if (path === '/api/v1/system/refresh')
-      return send({ access_token: 'model-e2e-token', expires_in: 3600 });
+      return send({ access_token: `model-e2e-token-${++refreshCount}`, expires_in: 3600 });
     if (path === '/api/v1/system/users/me')
       return send({ id: 1, username: 'metric-author' });
     if (path === '/api/v1/system/auth/context')
@@ -204,6 +207,27 @@ async function installBackend(page, options = {}) {
       item.version++;
       return send(item);
     }
+    const withdrawMatch = path.match(/metric-implementations\/1\/revisions\/(\d+)\/withdraw$/);
+    if (withdrawMatch) {
+      const body = request.postDataJSON();
+      writes.push(body);
+      withdrawals.push({ revisionID: Number(withdrawMatch[1]), ...body });
+      expect(body.version).toBe(item.version);
+      if (options.withdrawConflict) return send({error:'版本冲突',error_code:'resource_version_conflict'},409);
+      item.revisions.find(r => r.id === Number(withdrawMatch[1])).status = 'withdrawn';
+      item.version++;
+      return send(item);
+    }
+    if (path === '/api/v1/service/query' && request.method() === 'GET' && new URL(request.url()).searchParams.has('metric_revision_id')) {
+      const query = Object.fromEntries(new URL(request.url()).searchParams);
+      referenceReads.push(query);
+      if (options.beforeReference) await options.beforeReference();
+      if (options.referenceExpired) { options.referenceExpired = false; return send({error:'expired'},401); }
+      if (options.referenceFailure) return send({ error: 'unavailable' }, options.referenceFailure);
+      const all = query.metric_revision_id === '10' ? Array.from({length:options.referenceCount ?? 21}, (_, index) => ({ id:100+index, title:`Bound service ${index}`, service_name:`bound_${index}`, status:index===0?'inactive':'active' })) : [];
+      const start = (Number(query.page)-1)*Number(query.limit);
+      return send({data:all.slice(start,start+Number(query.limit)),total:all.length});
+    }
     if (path === '/api/v1/service/query' && request.method() === 'GET')
       return send({
         data: [
@@ -236,6 +260,8 @@ async function installBackend(page, options = {}) {
   return {
     writes,
     engineReads,
+    referenceReads,
+    withdrawals,
     get item() {
       return item;
     },
@@ -545,3 +571,205 @@ for (const lang of ['zh-cn', 'en']) {
     expect(backend.writes).toEqual([]);
   });
 }
+
+for (const lang of ['zh-cn', 'en']) {
+  test(`revision service references are lazy, paginated and revision-specific (${lang})`, async ({page}) => {
+    await page.setViewportSize({width:720,height:900});
+    const backend = await installBackend(page, {lang});
+    backend.item.revisions.push(publishedRevision(), publishedRevision(11,2));
+    await page.goto('/metric-implementations/1?revision_id=10');
+    const label = lang === 'en' ? 'Services referencing this revision' : '引用此修订的服务';
+    await expect(page.getByRole('button',{name:label,exact:true})).toBeVisible();
+    expect(backend.referenceReads).toHaveLength(0);
+    await page.getByRole('button',{name:label,exact:true}).click();
+    const dialog=page.getByRole('dialog');
+    await expect(dialog.getByRole('button',{name:'Bound service 0',exact:true})).toBeVisible();
+    await expect(dialog.getByText(lang==='en'?'Inactive':'已停用',{exact:true})).toBeVisible();
+    expect(backend.referenceReads[0]).toEqual({metric_implementation_id:'1',metric_revision_id:'10',page:'1',limit:'20'});
+    await dialog.getByRole('button',{name:lang==='en'?'Go to next page':'下一页'}).click();
+    await expect(dialog.getByRole('button',{name:'Bound service 20',exact:true})).toBeVisible();
+    await dialog.getByRole('button',{name:lang==='en'?'Close this dialog':'关闭此对话框'}).click();
+    await page.goto('/metric-implementations/1?revision_id=11');
+    await page.getByRole('button',{name:label,exact:true}).click();
+    await expect(page.getByRole('dialog').getByText(lang==='en'?'No services reference this revision':'暂无服务引用此修订')).toBeVisible();
+    expect(backend.referenceReads.at(-1).metric_revision_id).toBe('11');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+    expect(backend.writes).toHaveLength(0);
+  });
+}
+test('reference query errors remain distinct from empty results and can be retried', async ({page}) => {
+  const options={referenceFailure:503};
+  const backend=await installBackend(page,options);
+  backend.item.revisions.push(publishedRevision());
+  await page.goto('/metric-implementations/1?revision_id=10');
+  await page.getByRole('button',{name:'引用此修订的服务',exact:true}).click();
+  const dialog=page.getByRole('dialog');
+  await expect(dialog.getByText('暂时无法查询引用服务，请刷新重试')).toBeVisible();
+  await expect(dialog.getByText('暂无服务引用此修订')).toHaveCount(0);
+  options.referenceFailure=403;
+  await dialog.getByRole('button',{name:'刷新',exact:true}).click();
+  await expect(dialog.getByText('没有读取服务定义的权限')).toBeVisible();
+  options.referenceFailure=0;
+  await dialog.getByRole('button',{name:'刷新',exact:true}).click();
+  await expect(dialog.getByRole('button',{name:'Bound service 0',exact:true})).toBeVisible();
+  await page.context().route('**/service/query-services/100', route => route.fulfill({contentType:'text/html',body:'<p>Referenced service</p>'}));
+  await dialog.getByRole('button',{name:'Bound service 0',exact:true}).click();
+  await expect(page).toHaveURL(/service\/query-services\/100$/);
+  expect(backend.writes).toHaveLength(0);
+});
+test('no Service read permission means no reference entry or request', async ({page}) => {
+  const backend=await installBackend(page,{serviceRead:false});
+  backend.item.revisions.push(publishedRevision());
+  await page.goto('/metric-implementations/1?revision_id=10');
+  await expect(page.getByRole('heading',{name:'当前主领队活动次数'})).toBeVisible();
+  await expect(page.getByRole('button',{name:'引用此修订的服务',exact:true})).toHaveCount(0);
+  expect(backend.referenceReads).toHaveLength(0);
+});
+
+test('refresh after rebind reduces pages without falsely reporting no references', async ({page}) => {
+  const options={referenceCount:21};
+  const backend=await installBackend(page,options);
+  backend.item.revisions.push(publishedRevision());
+  await page.goto('/metric-implementations/1?revision_id=10');
+  await page.getByRole('button',{name:'引用此修订的服务',exact:true}).click();
+  const dialog=page.getByRole('dialog');
+  await expect(dialog.getByRole('button',{name:'Bound service 0',exact:true})).toBeVisible();
+  await dialog.getByRole('button',{name:'下一页',exact:true}).click();
+  await expect(dialog.getByRole('button',{name:'Bound service 20',exact:true})).toBeVisible();
+  options.referenceCount=1;
+  await dialog.getByRole('button',{name:'刷新',exact:true}).click();
+  await expect(dialog.getByRole('button',{name:'Bound service 0',exact:true})).toBeVisible();
+  await expect(dialog.getByText('暂无服务引用此修订')).toHaveCount(0);
+  expect(backend.referenceReads.at(-1).page).toBe('1');
+});
+
+test('reference dialog survives token renewal and authorization reload', async ({page}) => {
+  const backend=await installBackend(page,{referenceExpired:true});
+  backend.item.revisions.push(publishedRevision());
+  await page.goto('/metric-implementations/1?revision_id=10');
+  await page.getByRole('button',{name:'引用此修订的服务',exact:true}).click();
+  const dialog=page.getByRole('dialog');
+  await expect(dialog.getByRole('button',{name:'Bound service 0',exact:true})).toBeVisible();
+  expect(backend.referenceReads.length).toBeGreaterThan(1);
+  await expect(dialog.getByText('没有读取服务定义的权限')).toHaveCount(0);
+  expect(backend.writes).toHaveLength(0);
+});
+
+for (const lang of ['zh-cn', 'en']) {
+  test(`withdrawal confirms the total for the exact revision and supports cancel (${lang})`, async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    const options = { lang, referenceCount: 21 };
+    const backend = await installBackend(page, options);
+    backend.item.revisions.push(publishedRevision(11, 2), publishedRevision());
+    backend.item.version = 7;
+    await page.goto('/metric-implementations/1?revision_id=10');
+    const entry = page.getByRole('button', { name: lang === 'en' ? 'Withdraw revision' : '撤回修订', exact: true });
+    await entry.click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toContainText(lang === 'en' ? '21 services reference this revision' : '21 个服务引用此修订');
+    await expect(dialog).toContainText(lang === 'en' ? 'including inactive services' : '含已停用服务');
+    await expect(dialog).toContainText(lang === 'en' ? 'will reject new queries' : '将拒绝新的查询');
+    expect(backend.referenceReads.at(-1)).toEqual({ metric_implementation_id: '1', metric_revision_id: '10', page: '1', limit: '1' });
+    expect(backend.writes).toHaveLength(0);
+    await dialog.getByRole('button', { name: lang === 'en' ? 'Cancel' : '取消', exact: true }).click();
+    await expect(dialog).not.toBeVisible();
+    expect(backend.writes).toHaveLength(0);
+    options.referenceCount = 0;
+    await entry.click();
+    await expect(dialog).toContainText(lang === 'en' ? '0 services reference' : '0 个服务引用');
+    options.referenceCount = 2;
+    await dialog.getByRole('button', { name: lang === 'en' ? 'Refresh' : '刷新', exact: true }).click();
+    await expect(dialog).toContainText(lang === 'en' ? '2 services reference' : '2 个服务引用');
+    const box = await dialog.boundingBox();
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(390);
+    await dialog.getByRole('button', { name: lang === 'en' ? 'Confirm withdrawal' : '确认撤回', exact: true }).click();
+    await expect(dialog).not.toBeVisible();
+    expect(backend.withdrawals).toEqual([{ revisionID: 10, version: 7 }]);
+    expect(backend.item.revisions.find(r => r.id === 11).status).toBe('published');
+    expect(backend.item.revisions.find(r => r.id === 10).status).toBe('withdrawn');
+  });
+}
+
+test('withdrawal reports failed and forbidden counts as unknown, and refresh recovers', async ({ page }) => {
+  const options = { referenceFailure: 503 };
+  const backend = await installBackend(page, options);
+  backend.item.revisions.push(publishedRevision());
+  await page.goto('/metric-implementations/1?revision_id=10');
+  await page.getByRole('button', { name: '撤回修订', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toContainText('暂时无法确认引用服务数量');
+  await expect(dialog).not.toContainText('0 个服务');
+  options.referenceFailure = 403;
+  await dialog.getByRole('button', { name: '刷新', exact: true }).click();
+  await expect(dialog).toContainText('没有读取服务定义的权限，无法确认引用服务数量');
+  options.referenceFailure = 0;
+  await dialog.getByRole('button', { name: '刷新', exact: true }).click();
+  await expect(dialog).toContainText('21 个服务引用');
+  expect(backend.writes).toHaveLength(0);
+});
+
+test('withdraw permission is independent of service read permission', async ({ page }) => {
+  const backend = await installBackend(page, { serviceRead: false });
+  backend.item.revisions.push(publishedRevision());
+  await page.goto('/metric-implementations/1?revision_id=10');
+  await page.getByRole('button', { name: '撤回修订', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toContainText('没有读取服务定义的权限，无法确认引用服务数量');
+  expect(backend.referenceReads).toHaveLength(0);
+  await dialog.getByRole('button', { name: '确认撤回', exact: true }).click();
+  await expect(dialog).not.toBeVisible();
+  expect(backend.withdrawals).toEqual([{ revisionID: 10, version: 1 }]);
+});
+
+test('users without offline permission cannot open a withdrawal confirmation', async ({ page }) => {
+  const backend = await installBackend(page, { offline: false });
+  backend.item.revisions.push(publishedRevision());
+  await page.goto('/metric-implementations/1?revision_id=10');
+  await expect(page.getByRole('heading', { name: '当前主领队活动次数' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '撤回修订', exact: true })).toHaveCount(0);
+  expect(backend.referenceReads).toHaveLength(0);
+  expect(backend.writes).toHaveLength(0);
+});
+
+test('withdrawal waits for the count, ignores cancelled responses and survives token renewal', async ({ page }) => {
+  let release;
+  const held = new Promise(resolve => { release = resolve; });
+  const options = { beforeReference: () => held };
+  const backend = await installBackend(page, options);
+  backend.item.revisions.push(publishedRevision());
+  await page.goto('/metric-implementations/1?revision_id=10');
+  const entry = page.getByRole('button', { name: '撤回修订', exact: true });
+  await entry.click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toContainText('正在查询引用服务数量');
+  await expect(dialog.getByRole('button', { name: '确认撤回', exact: true })).toBeDisabled();
+  await expect.poll(() => backend.referenceReads.length).toBe(1);
+  await dialog.getByRole('button', { name: '取消', exact: true }).click();
+  options.beforeReference = null;
+  options.referenceCount = 2;
+  options.referenceExpired = true;
+  await entry.click();
+  await expect(dialog).toContainText('2 个服务引用');
+  options.referenceCount = 99;
+  const late = page.waitForResponse(response => response.url().includes('/service/query?') && response.status() === 200);
+  release();
+  await late;
+  await expect(dialog).toContainText('2 个服务引用');
+  await expect(dialog).not.toContainText('99 个服务');
+  expect(backend.writes).toHaveLength(0);
+});
+
+test('withdrawal conflicts keep confirmation open and never retry the write automatically', async ({ page }) => {
+  const backend = await installBackend(page, { withdrawConflict: true });
+  backend.item.revisions.push(publishedRevision());
+  await page.goto('/metric-implementations/1?revision_id=10');
+  await page.getByRole('button', { name: '撤回修订', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toContainText('21 个服务引用');
+  await dialog.getByRole('button', { name: '确认撤回', exact: true }).click();
+  await expect(page.getByText(/资源已被其他用户修改/)).toBeVisible();
+  await expect(dialog).toBeVisible();
+  expect(backend.withdrawals).toEqual([{ revisionID: 10, version: 1 }]);
+  expect(backend.item.revisions[0].status).toBe('published');
+});

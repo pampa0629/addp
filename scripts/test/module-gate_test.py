@@ -93,6 +93,15 @@ class ModuleGateTest(unittest.TestCase):
 
         run.assert_not_called()
 
+    def test_discovers_owner_managed_disposable_services_without_hosted_registration(self) -> None:
+        path = self.repository / "scripts/test/sample-falkor-gate.sh"
+        path.write_text("# ADDP_T2_OWNED_SERVICES=falkordb\n", encoding="utf-8")
+        makefile = self.repository / "Makefile"
+        makefile.write_text(makefile.read_text() + "test-sample-falkor:\n\t@true\n")
+        self.assertNotIn(str(path.relative_to(self.repository)), MODULE.hosted_t2_scripts(self.repository))
+        commands = [step.command for step in MODULE.plan_module(self.repository, "sample")]
+        self.assertEqual(commands.count(("make", "test-sample-falkor")), 1)
+
     def test_runs_after_required_t2_environment_is_present(self) -> None:
         steps = MODULE.plan_module(self.repository, "sample")
 

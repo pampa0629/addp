@@ -48,13 +48,25 @@
     "incompleteDataApplicationPreview": "Enter an application name and page title, and configure at least one data service component",
     "pageTitle": "Page title",
     "displayMode": "Display mode",
-    "displayModes": { "desktop": "Desktop", "wallboard": "Wallboard" },
+    "displayModes": {
+      "desktop": "Desktop",
+      "wallboard": "Wallboard"
+    },
     "refreshPolicy": "Automatic refresh",
-    "refreshIntervals": { "off": "Off", "seconds30": "30 seconds", "minute1": "1 minute", "minutes5": "5 minutes" },
+    "refreshIntervals": {
+      "off": "Off",
+      "seconds30": "30 seconds",
+      "minute1": "1 minute",
+      "minutes5": "5 minutes"
+    },
     "automaticRefreshActive": "Automatic refresh: {interval}",
     "presentationSections": "Runtime content",
     "presentationSectionsHint": "Revision and refresh status, fullscreen, component titles, and errors always remain visible",
-    "presentationSectionOptions": { "title": "Page title and description", "parameters": "Query parameters", "queryActions": "Query and pagination actions" },
+    "presentationSectionOptions": {
+      "title": "Page title and description",
+      "parameters": "Query parameters",
+      "queryActions": "Query and pagination actions"
+    },
     "queryActionsRequireRefresh": "Enable automatic refresh before hiding query actions",
     "parametersRequireDefaults": "Set valid defaults for every required parameter before hiding the parameter section",
     "applicationParameters": "Application parameters",
@@ -125,7 +137,12 @@
       "apply": "Generate application components",
       "applied": "Four generic components and their linkage were generated. Review them before saving the draft",
       "emptyOnly": "The spatial exploration wizard is only available before components are added",
-      "componentTitles": { "value": "Summary metrics", "chart": "Distribution analysis", "map": "Spatial distribution", "table": "Detail data" }
+      "componentTitles": {
+        "value": "Summary metrics",
+        "chart": "Distribution analysis",
+        "map": "Spatial distribution",
+        "table": "Detail data"
+      }
     },
     "width": "Width",
     "height": "Height",
@@ -141,7 +158,11 @@
     "fullscreenFailed": "The browser could not switch fullscreen mode",
     "runtimeContractChanged": "The Service consumer contract changed, so this application configuration cannot query",
     "requiredParameterMissing": "Complete all required application parameters",
-    "statuses": { "unpublished": "Unpublished", "published": "Published", "offline": "Offline" },
+    "statuses": {
+      "unpublished": "Unpublished",
+      "published": "Published",
+      "offline": "Offline"
+    },
     "name": "Name",
     "description": "Description",
     "service": "Data service",
@@ -182,8 +203,15 @@
     "reconfigureContractHint": "Rebuild fields and parameters from the current service. After confirming the component, review application parameter bindings, save, and publish a new revision.",
     "contractChanged": "The service consumer contract changed. Querying is blocked until you review and explicitly save a new version",
     "chartType": "Chart type",
-    "chartTypes": { "bar": "Bar", "line": "Line", "pie": "Pie" },
-    "booleanValues": { "true": "True", "false": "False" },
+    "chartTypes": {
+      "bar": "Bar",
+      "line": "Line",
+      "pie": "Pie"
+    },
+    "booleanValues": {
+      "true": "True",
+      "false": "False"
+    },
     "dimension": "Dimension field",
     "measures": "Measure fields",
     "valueItems": "Scalar value items",
@@ -196,10 +224,19 @@
     "mapLabelField": "Feature label field (optional)",
     "tooltipFields": "Tooltip fields",
     "mapStyleMode": "Map style",
-    "mapStyleModes": { "uniform": "Uniform", "categorical": "Categorical colors", "continuous": "Continuous colors" },
+    "mapStyleModes": {
+      "uniform": "Uniform",
+      "categorical": "Categorical colors",
+      "continuous": "Continuous colors"
+    },
     "mapColorField": "Color field",
     "mapPalette": "Theme palette",
-    "mapPalettes": { "primary": "Primary", "success": "Green", "warning": "Orange", "danger": "Red" },
+    "mapPalettes": {
+      "primary": "Primary",
+      "success": "Green",
+      "warning": "Orange",
+      "danger": "Red"
+    },
     "mapLegendTitle": "Legend title",
     "fieldPresentations": "Field presentation",
     "fieldPresentationsHint": "Changes final display only, not query fields",
@@ -220,12 +257,34 @@
     "stateOperand": "Operand",
     "stateLabel": "State label",
     "stateTone": "Semantic tone",
-    "stateOperators": { "eq": "Equals", "lt": "Less than", "lte": "Less than or equal", "gt": "Greater than", "gte": "Greater than or equal" },
-    "stateTones": { "info": "Info", "success": "Success", "warning": "Warning", "danger": "Danger" },
+    "stateOperators": {
+      "eq": "Equals",
+      "lt": "Less than",
+      "lte": "Less than or equal",
+      "gt": "Greater than",
+      "gte": "Greater than or equal"
+    },
+    "stateTones": {
+      "info": "Info",
+      "success": "Success",
+      "warning": "Warning",
+      "danger": "Danger"
+    },
     "moveStateRuleUp": "Move state rule up",
     "moveStateRuleDown": "Move state rule down",
-    "temporalFormats": { "date": "Date", "time": "Time", "datetime": "Date and time" },
-    "renderers": { "table": "Table", "chart": "Chart", "map": "Map", "value": "Value cards" },
+    "temporalFormats": {
+      "date": "Date",
+      "time": "Time",
+      "datetime": "Date and time",
+      "month": "Month and year",
+      "period": "Reporting period (query granularity)"
+    },
+    "renderers": {
+      "table": "Table",
+      "chart": "Chart",
+      "map": "Map",
+      "value": "Value cards"
+    },
     "rendererErrors": {
       "partial_result": "Charts and maps cannot present a paged partial result as complete; narrow the filters",
       "result_limit": "The result exceeds this renderer's limit; narrow the filters",
@@ -238,7 +297,13 @@
       "unknown_crs": "The service does not declare a recognized CRS, so map rendering is blocked",
       "unsupported_crs": "The declared CRS is unsupported by this client, so map rendering is blocked"
     },
-    "login": { "title": "Sign in to Workbench", "username": "Username", "password": "Password", "submit": "Sign in", "failed": "Sign-in failed" },
+    "login": {
+      "title": "Sign in to Workbench",
+      "username": "Username",
+      "password": "Password",
+      "submit": "Sign in",
+      "failed": "Sign-in failed"
+    },
     "parameterOptionsUnavailable": "Parameter contract unavailable or conflicting: {components}",
     "parameterOptionsInvalid": "Parameter values do not satisfy the bound service contracts. Check parameters and options.",
     "controlTypes": {
@@ -250,6 +315,13 @@
       "select": "Select",
       "multiselect": "Multiselect",
       "bbox": "Bounding box"
+    },
+    "periodTotal": "Selected period total",
+    "periodRange": "Reporting period: {start} (inclusive) to {end} (exclusive)",
+    "periodParameters": {
+      "grain": "Time granularity parameter",
+      "start": "Start date parameter",
+      "end": "End date parameter"
     }
   }
 }

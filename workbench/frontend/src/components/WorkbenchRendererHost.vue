@@ -1,5 +1,6 @@
 <template>
   <div class="renderer-host" data-testid="renderer-host">
+    <p v-for="summary in periodDisplay.summaries" :key="summary" class="period-summary" data-testid="period-summary">{{ summary }}</p>
     <el-empty
       v-if="rendererType === 'value' && !resultReady"
       :description="t('workbench.noData')"
@@ -9,7 +10,7 @@
       :rows="rows"
       :columns="config.columns || []"
       :fields="descriptor?.output_contract?.fields || []"
-      :presentations="config.field_presentations || []"
+      :presentations="periodDisplay.config.field_presentations || []"
       height="100%"
       @result-select="emit('result-select', $event)"
     />
@@ -22,7 +23,7 @@
     <ChartRenderer
       v-else-if="rendererType === 'chart'"
       :rows="rows"
-      :config="config"
+      :config="periodDisplay.config"
       :has-more="Boolean(page?.has_more)"
       @invalid="invalidReason = $event"
       @result-select="emit('result-select', $event)"
@@ -50,6 +51,8 @@
 <script setup>
 import { computed, defineAsyncComponent, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { resolvePeriodPresentation } from '../utils/periodPresentation.mjs'
+import { useI18n } from 'vue-i18n'
 import { ScalarValueRenderer, TabularResultRenderer } from '@common-ui'
 import { validateScalarValueResult } from '@common-ui/utils/scalarValueResult.mjs'
 import { validateChartResult } from '@common-ui-chart/chartResult.mjs'
@@ -62,6 +65,7 @@ const GeoJSONResultRenderer = defineAsyncComponent(async () => {
 })
 
 const props = defineProps({
+  queryParameters: { type: Object, default: null },
   rows: { type: Array, default: () => [] },
   rendererType: { type: String, required: true },
   config: { type: Object, required: true },
@@ -71,6 +75,8 @@ const props = defineProps({
   preserveView: { type: Boolean, default: false }
 })
 const emit = defineEmits(['result-select'])
+const { t, locale } = useI18n()
+const periodDisplay = computed(() => resolvePeriodPresentation(props.config, props.resultReady ? props.queryParameters : null, locale.value, t))
 const { t } = useI18n()
 const emittedReason = ref('')
 const validationReason = computed(() => {
@@ -94,6 +100,7 @@ watch(() => [props.rows, props.config, props.page], () => { emittedReason.value 
 </script>
 
 <style scoped>
+.period-summary { flex: none; margin: 0 0 12px; color: var(--addp-text-secondary); }
 .renderer-host {
   display: flex;
   flex-direction: column;

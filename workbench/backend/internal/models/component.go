@@ -95,9 +95,17 @@ type FieldPresentation struct {
 	Unit           string                  `json:"unit,omitempty"`
 	Precision      *int                    `json:"precision,omitempty"`
 	TemporalFormat string                  `json:"temporal_format,omitempty"`
+	Period         *PeriodPresentation     `json:"period,omitempty"`
 	Width          *int                    `json:"width,omitempty"`
 	StateRules     []StatePresentationRule `json:"state_rules,omitempty"`
 	ValueLabels    []FieldValueLabel       `json:"value_labels,omitempty"`
+}
+
+// PeriodPresentation explicitly binds display semantics to Service named parameters.
+type PeriodPresentation struct {
+	GrainParameter string `json:"grain_parameter"`
+	StartParameter string `json:"start_parameter"`
+	EndParameter   string `json:"end_parameter"`
 }
 
 // FieldValueLabel changes presentation only; its typed value remains the query identity.

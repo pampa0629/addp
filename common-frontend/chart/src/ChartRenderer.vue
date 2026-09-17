@@ -87,5 +87,5 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.chart-renderer { width: 100%; min-height: 420px; }
+.chart-renderer { flex: 1; width: 100%; min-height: 420px; }
 </style>

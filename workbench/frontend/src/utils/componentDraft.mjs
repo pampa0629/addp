@@ -168,6 +168,7 @@ export function synchronizeFieldPresentations(draft, fields = []) {
     const current = existing.get(name)
     return {
       ...defaults,
+      period: { grain_parameter: '', start_parameter: '', end_parameter: '' },
       ...(current || {}),
       field: name,
       fieldType: field.type,
@@ -255,6 +256,7 @@ function serializeFieldPresentations(draft) {
       if (Number.isInteger(item.precision)) result.precision = item.precision
     }
     if (['date', 'time', 'timestamp'].includes(item.fieldType) && item.temporalFormat) result.temporal_format = item.temporalFormat
+    if (item.temporalFormat === 'period') result.period = { ...item.period }
     if (draft.rendererType === 'table' && Number.isInteger(item.width)) result.width = item.width
     const stateRules = serializeStateRules(item.stateRules)
     if (stateRules.length > 0) result.state_rules = stateRules
@@ -294,6 +296,7 @@ function presentationDraft(item, fields) {
     unit: item.unit || '',
     precision: Object.prototype.hasOwnProperty.call(item, 'precision') ? item.precision : defaults.precision,
     temporalFormat: item.temporal_format || '',
+    period: { grain_parameter: '', start_parameter: '', end_parameter: '', ...item.period },
     width: Object.prototype.hasOwnProperty.call(item, 'width') ? item.width : null,
     valueLabels: (item.value_labels || []).map((entry) => ({ ...entry })),
     stateRules: (item.state_rules || []).map((rule) => ({ ...rule })),

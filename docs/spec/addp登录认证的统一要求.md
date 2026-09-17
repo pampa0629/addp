@@ -368,6 +368,8 @@ Refresh Cookie。Console 必须把 Access Token 交给共享 Browser AuthSession
 - 统一运行时 Token Provider：预览、地图、下载等特殊调用读取当前内存 Token。
 - 原生资源 URL 直接使用无凭据 URL，由浏览器自动携带 Owner Path 限定的 HttpOnly Resource Access Ticket Cookie。
 
+资源树等共享 JSON API 也必须复用 `createAPIClient()`，不能只附加内存 Token 而遗漏刷新与重试。共享客户端从当前 JavaScript 运行时已绑定的 AuthStore 取得会话；绑定由既有 `initializeSession()` / `bindAuthSession()` 完成，未绑定时明确拒绝请求，不创建另一份 AuthSession。Console 与模块 iframe 各自绑定本页面的 Store，iframe 刷新仍交给父 Console。同一个 Store 下的并发 Axios / Fetch 401 共用刷新 Promise，每个原请求最多重放一次。
+
 交互式 Notebook 等需要原生多方法 HTTP 与 WebSocket 协议的短期工具会话，不得扩大 Browser Resource Access Ticket 的只读语义。唯一允许的主线为：浏览器先以 Access Token 调用 owner 的会话创建 API；owner 完成 Permission、Tenant、User、资源归属和 Runtime 能力校验后，签发只绑定单个会话路径的 Browser Session Capability Cookie。该 Cookie 必须是 opaque、HttpOnly、SameSite=Strict、短 TTL，服务端只保存 Hash；不得进入 URL、前端存储或日志。owner 代理必须在每个 HTTP 请求和 WebSocket 握手时重新校验会话状态，并在关闭、过期、Context 切换、登出或 owner 重启后 fail-closed。它不能访问 owner 的其他 API，也不能作为 Access Token、Refresh Token 或 Browser Resource Access Ticket 的兼容替代。
 
 Notebook Kernel 需要发现当前可查询 Engine、实时 Engine Catalog 或读取数据时，只允许由 Develop 在创建同一 Notebook Interactive Session 时签发独立的 Notebook Kernel Capability Token，并通过标准 Script Runtime 会话请求注入隔离 Kernel process。该 Token 必须是 opaque、短 TTL，只绑定一个 Session、Tenant、User 和 Task，Develop 只保存 Hash；它只能调用该 Session 的脱敏 Engine Runtime Descriptor、Engine Catalog 与受控只读数据代理接口，响应不得包含 `connection_info`。Token 不得进入 Notebook 内容、浏览器、公开会话响应、URL 或日志，不得作为 User Access Token、Service Access Token、Execution Authorization、Notebook Session Authorization 或 Browser Session Capability Cookie 的兼容替代；会话关闭、过期或 Develop 重启后必须 fail-closed。创建会话时必须同时校验 Notebook 更新权限和 `system.engine.read`。

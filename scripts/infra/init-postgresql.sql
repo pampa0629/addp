@@ -73,6 +73,9 @@ CREATE SCHEMA IF NOT EXISTS agent;
 -- Graph 模块 (知识图谱本体建模、图谱管理、图谱探索)
 CREATE SCHEMA IF NOT EXISTS graph;
 
+-- Ontology 模块（领域本体原生定义、修订、发布与审计）
+CREATE SCHEMA IF NOT EXISTS ontology;
+
 -- ==================== 创建更新时间戳触发器函数 ====================
 -- 此函数用于自动更新 updated_at 字段
 -- 各模块的 AutoMigrate 可能会创建表，但不会创建触发器
@@ -101,6 +104,7 @@ COMMENT ON SCHEMA catalog IS 'Catalog 模块：企业资源目录、稳定身份
 COMMENT ON SCHEMA workbench IS 'Workbench 模块：数据服务消费视图与后续数据应用';
 COMMENT ON SCHEMA agent IS 'Agent 模块：智能体会话、消息与技能调用';
 COMMENT ON SCHEMA graph IS 'Graph 模块：知识图谱本体建模、图谱管理、图谱探索';
+COMMENT ON SCHEMA ontology IS 'Ontology 模块：领域本体定义、修订、发布与审计；表由 owner 版本化迁移管理';
 
 COMMENT ON FUNCTION update_updated_at_column() IS '触发器函数：自动更新 updated_at 时间戳';
 
