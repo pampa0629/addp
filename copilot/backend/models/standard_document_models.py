@@ -85,7 +85,6 @@ class StandardDocumentCandidatePayload(BaseModel):
         "datetime",
         "bool",
         "json",
-        "text",
     ] | None = None
     value_domain_kind: Literal["unrestricted", "range", "enumeration"] | None = None
     code_set_code: str | None = Field(

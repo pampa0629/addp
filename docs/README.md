@@ -70,6 +70,7 @@
 - [Manager 前端浏览器回归测试专题](next/Manager前端浏览器回归测试专题.md)
 - [ADDP 企业资源目录与 Catalog 模块专题](next/ADDP企业资源目录能力专题.md)
 - [ADDP Engine Catalog 命名收敛与迁移专题](next/ADDP引擎目录命名收敛专题.md)
+- [Ontology 最小设计契约（语义内核已落地，发布与投影待实施）](next/ADDP%20Ontology最小设计契约.md)
 - [规划文档](plan/)
 - [跟进文档](next/)
 - [技能文档](skills/)
@@ -88,6 +89,7 @@
 8. [Agent 模块说明](../agent/CLAUDE.md)、[common-python 模块说明](../common-python/CLAUDE.md)与 [common-frontend 说明](../common-frontend/README.md)：查看当前实现。
 9. [ADDP 智能体能力开放体系专题](next/ADDP智能体能力开放体系专题.md)：查看架构决策、阶段实施历史和延期条件。
 10. [铁路占耕地面积计算 AI 自动化实验](plan/铁路占耕地面积计算-AI自动化实验.md)：查看 `workflow-analysis` 的业务实验背景。
+11. [Ontology 最小设计契约](next/ADDP%20Ontology最小设计契约.md)：查看 Tenant 领域本体、PG 权威定义、FalkorDB 投影与 Agent 语义消费的目标边界及实施准入条件。
 
 AI 模型接入、在线厂商账号、内网模型服务、模型档案、场景绑定或推理密钥管理，应先阅读 [ADDP AI 推理接口规范](spec/addp%20AI推理接口规范.md)。Agent 与 Copilot 只消费统一推理数据面，不拥有 Provider 或 API Key。
 

@@ -63,6 +63,32 @@ func textCases() []expressionExample {
 		expressionExample{name: "coalesce skips text failure", expr: op("coalesce", validText, badText), want: want("fallback")},
 		expressionExample{name: "nested text", expr: op("text", op("text", lit(datatype.FieldTypeDecimal, "2.700"))), want: want("2.7")},
 	)
+
+	for _, tc := range []struct{ name, haystack, needle, want string }{
+		{"Chinese", "户外苏玮伦😀", "苏玮", "true"},
+		{"case", "Outdoor", "outdoor", "false"},
+		{"accent", "café", "cafe", "false"},
+		{"no normalization", "é", "é", "false"},
+		{"wildcard literal", "a%b_c", "%b_", "true"},
+		{"percent not wildcard", "abc", "%", "false"},
+		{"underscore not wildcard", "abc", "_", "false"},
+		{"space significant", "abc", "c ", "false"},
+		{"empty needle", "abc", "", "true"},
+		{"empty both", "", "", "true"},
+		{"empty haystack", "", "a", "false"},
+		{"backslash quote", "a\\'b", "\\'", "true"},
+	} {
+		v := plan.Literal{Type: datatype.FieldTypeString, Text: tc.needle}
+		cases = append(cases,
+			expressionExample{name: "contains/" + tc.name, expr: op("text", op("contains", lit(datatype.FieldTypeString, tc.haystack), lit(datatype.FieldTypeString, tc.needle))), want: want(tc.want)},
+			expressionExample{name: "contains parameter/" + tc.name, expr: op("text", op("contains", lit(datatype.FieldTypeString, tc.haystack), plan.Expr{Op: "parameter", Parameter: "value_parameter"})), parameter: &v, want: want(tc.want)},
+		)
+	}
+	nullText := plan.Expr{Op: "literal", Literal: &plan.Literal{Type: datatype.FieldTypeString, Null: true}}
+	cases = append(cases,
+		expressionExample{name: "contains NULL input", expr: op("text", op("contains", nullText, lit(datatype.FieldTypeString, "")))},
+		expressionExample{name: "contains NULL needle", expr: op("text", op("contains", lit(datatype.FieldTypeString, "a"), nullText))},
+	)
 	return cases
 }
 

@@ -9,6 +9,12 @@
         >{{ t("quality.rule.create") }}</el-button
       >
     </div>
+    <el-form inline>
+      <el-form-item :label="t('quality.domain.owner')">
+        <DomainOwnershipSelect v-model="ownerDomainID" filter :can-read="can('standard.domain.read')"
+          style="width: 280px" @loaded="domains = $event" @update:model-value="changeDomain" />
+      </el-form-item>
+    </el-form>
     <el-alert
       v-if="loadError"
       :title="loadError"
@@ -16,6 +22,9 @@
       :closable="false"
     />
     <el-table v-loading="loading" :data="rows" border>
+      <el-table-column :label="t('quality.domain.owner')" min-width="180">
+        <template #default="{ row }">{{ domainOwnershipLabel(row.owner_domain_id, t, domains) }}</template>
+      </el-table-column>
       <el-table-column
         prop="name"
         :label="t('quality.plan.name')"
@@ -23,7 +32,7 @@
       />
       <el-table-column
         prop="code"
-        :label="t('quality.plan.code')"
+        :label="t('quality.rule.code')"
         min-width="220"
       />
       <el-table-column :label="t('quality.rule.type')" min-width="130"
@@ -36,6 +45,9 @@
           >R{{ row.revision_no }}</template
         ></el-table-column
       >
+      <el-table-column :label="t('quality.rule.source')" min-width="120">
+        <template #default="{ row }">{{ t(row.source ? 'quality.rule.standardSource' : 'quality.rule.manualSource') }}</template>
+      </el-table-column>
       <el-table-column :label="t('quality.rule.plans')" width="130"
         ><template #default="{ row }"
           ><el-button
@@ -91,7 +103,7 @@
         label-position="top"
       >
         <div class="form-grid">
-          <el-form-item :label="t('quality.plan.code')" prop="code"
+          <el-form-item :label="t('quality.rule.code')" prop="code"
             ><el-input
               v-model="form.code"
               :disabled="!!editingID"
@@ -104,19 +116,18 @@
         <el-form-item :label="t('quality.plan.description')"
           ><el-input v-model="form.description" type="textarea"
         /></el-form-item>
+        <el-form-item :label="t('quality.domain.owner')">
+          <DomainOwnershipSelect v-if="visible" v-model="form.owner_domain_id" :can-read="can('standard.domain.read')" />
+        </el-form-item>
         <div class="source-bar">
-          <el-button @click="sourceVisible = true">{{
+          <el-button @click="openSource">{{
             t("quality.plan.importStandard")
           }}</el-button>
-          <el-tag v-if="form.source">{{
-            t("quality.plan.standardRevision", {
-              id: form.source.element_revision_id,
-            })
-          }}</el-tag>
           <el-button v-if="form.source" link @click="form.source = null">{{
             t("quality.plan.detachSource")
           }}</el-button>
         </div>
+        <RuleSourceDetails v-if="visible" :source="form.source" :can-read="can('standard.element.read')" @loaded="sourceDetail = $event" />
         <el-form-item :label="t('quality.rule.type')"
           ><el-select
             v-model="form.type"
@@ -132,6 +143,7 @@
           :type="form.type"
           :params="form.params"
           :disabled="!!form.source"
+          :value-labels="sourceDetail?.code_set_revision?.items || []"
         />
         <el-alert
           v-if="conflict"
@@ -165,17 +177,28 @@
             v-model="sourceID"
             filterable
             remote
+            remote-show-suffix
+            clearable
+            :placeholder="t('quality.rule.browseElements')"
+            :no-data-text="sourceError ? t('quality.rule.candidatesFailed') : t(sourceKeyword ? 'quality.rule.noMatches' : 'quality.rule.noCandidates')"
             :remote-method="searchElements"
             :loading="sourceLoading"
-            @change="sourceKey = null"
+            @change="selectSource"
             ><el-option
-              v-for="e in candidates"
+              v-for="e in candidateOptions"
               :key="e.id"
               :value="e.id"
-              :label="e.name + ' · R' + e.revision_no" /></el-select
+              :label="e.name + ' · ' + e.code + ' · R' + e.revision_no" /></el-select
         ></el-form-item>
+        <el-alert v-if="sourceError" :title="t('quality.rule.candidatesFailed')" type="error" :closable="false" />
+        <el-button v-if="sourceError" link @click="loadElements(sourcePage)">{{ t('quality.rule.retry') }}</el-button>
+        <p v-if="!sourceLoading && !sourceError && !candidates.length" role="status">{{ t(sourceKeyword ? 'quality.rule.noMatches' : 'quality.rule.noCandidates') }}</p>
+        <el-pagination :current-page="sourcePage" :page-size="30" :total="sourceTotal" layout="total, prev, pager, next" :disabled="sourceLoading" @current-change="loadElements" />
+        <p>{{ t('quality.rule.importableHint') }}</p>
+        <RuleSourceDetails v-if="sourceVisible && candidateSource" :source="candidateSource" :can-read="can('standard.element.read')" preview @loaded="candidateDetail = $event" />
+        <el-alert v-if="selectedSource && !sourceRules.length" :title="t(emptySourceReason)" type="warning" :closable="false" />
         <el-form-item :label="t('quality.rule.type')"
-          ><el-select v-model="sourceKey"
+          ><el-select v-model="sourceKey" :disabled="!sourceRules.length"
             ><el-option
               v-for="r in sourceRules"
               :key="r.rule_key"
@@ -254,6 +277,11 @@ import {
   resolveRuleRouteState,
 } from "../utils/ruleRouteState";
 import RuleConstraintFields from "../components/RuleConstraintFields.vue";
+import RuleSourceDetails from "../components/RuleSourceDetails.vue";
+import DomainOwnershipSelect from "../components/DomainOwnershipSelect.vue";
+import { domainOwnershipLabel } from '../utils/domainOwnership';
+const ownerDomainID = ref(null), domains = ref([]);
+const changeDomain = () => { page.value = 1; return navigate(); };
 const { t } = useI18n(),
   route = useRoute(),
   router = useRouter(),
@@ -273,6 +301,7 @@ const visible = ref(false),
   formRef = ref(null);
 const blank = () => ({
   code: "",
+  owner_domain_id: null,
   name: "",
   description: "",
   type: "not_null",
@@ -283,10 +312,10 @@ const blank = () => ({
 const form = reactive(blank());
 const validation = computed(() => ({
   code: [
-    { required: true, message: t("quality.plan.codeRequired") },
+    { required: true, message: t("quality.rule.codeRequired") },
     { pattern: /^[a-z][a-z0-9_]*$/, message: t("quality.plan.codeFormat") },
   ],
-  name: [{ required: true, message: t("quality.plan.nameRequired") }],
+  name: [{ required: true, message: t("quality.rule.nameRequired") }],
 }));
 let listSeq = 0,
   editorSeq = 0,
@@ -306,6 +335,7 @@ const navigate = (mode = "list", ruleID = null, history = "push") =>
         ruleID,
         page: page.value,
         pageSize: pageSize.value,
+        ownerDomainID: ownerDomainID.value,
       }),
     },
     { history },
@@ -318,6 +348,7 @@ const load = async () => {
     const result = await ruleAPI.list({
       page: page.value,
       page_size: pageSize.value,
+      ...(ownerDomainID.value != null ? { owner_domain_id: ownerDomainID.value } : {}),
     });
     if (seq !== listSeq || disposed) return;
     rows.value = result.data;
@@ -333,6 +364,8 @@ const restore = async (state) => {
   sourceSeq++;
   sourceLoading.value = false;
   candidates.value = [];
+  selectedSource.value = null;
+  sourceDetail.value = null;
   sourceID.value = null;
   sourceKey.value = null;
   if (state.mode === "list") {
@@ -359,6 +392,7 @@ const restore = async (state) => {
     if (seq !== editorSeq || disposed) return;
     editingID.value = rule.id;
     Object.assign(form, rule, {
+      owner_domain_id: rule.owner_domain_id ?? null,
       params: editableConstraint(rule.type, rule.params),
       source: rule.source || null,
     });
@@ -399,6 +433,7 @@ const save = async () => {
       code: form.code.trim(),
       name: form.name.trim(),
       description: form.description.trim(),
+      owner_domain_id: form.owner_domain_id ?? null,
       type: form.type,
       params: serializeConstraint(form.type, form.params),
       ...(form.source ? { source: form.source } : {}),
@@ -408,7 +443,7 @@ const save = async () => {
     else await ruleAPI.create(payload);
     visible.value = false;
     await load();
-    ElMessage.success(t("quality.plan.updateSuccess"));
+    ElMessage.success(t("quality.rule.saveSuccess"));
   } catch (error) {
     conflict.value =
       error.response?.data?.error_code === "resource_version_conflict";
@@ -454,37 +489,66 @@ const sourceVisible = ref(false),
   sourceKey = ref(null),
   candidates = ref([]),
   sourceLoading = ref(false);
+const sourceDetail = ref(null), selectedSource = ref(null), sourcePage = ref(1), sourceTotal = ref(0), sourceKeyword = ref(''), sourceError = ref(false);
+const candidateDetail = ref(null);
+const candidateSource = computed(() => selectedSource.value ? { element_id: selectedSource.value.id, element_revision_id: selectedSource.value.revision_id } : null);
+const emptySourceReason = computed(() => {
+  const detail = candidateDetail.value;
+  if (!detail) return 'quality.rule.noImportableRules';
+  const hasConstraints = detail.nullable === false || detail.length != null || Boolean(detail.format?.trim()) || ['range', 'enumeration'].includes(detail.value_domain_kind);
+  return hasConstraints ? 'quality.rule.missingCompiledRules' : 'quality.rule.noValueConstraints';
+});
+const candidateOptions = computed(() => selectedSource.value && !candidates.value.some(e => e.id === selectedSource.value.id) ? [selectedSource.value, ...candidates.value] : candidates.value);
 const sourceRules = computed(
   () =>
-    candidates.value
-      .find((e) => e.id === sourceID.value)
-      ?.quality_rules.rules.filter((r) => r.enabled) || [],
+    selectedSource.value?.quality_rules.rules.filter((r) => r.enabled) || [],
 );
-const searchElements = async (keyword) => {
+const selectSource = (id) => {
+  candidateDetail.value = null;
+  selectedSource.value = candidateOptions.value.find(e => e.id === id) || null;
+  sourceKey.value = null;
+};
+const openSource = () => {
+  candidateDetail.value = null;
+  sourceVisible.value = true;
+  sourceID.value = null;
+  selectedSource.value = null;
+  sourceKey.value = null;
+  sourceKeyword.value = '';
+  loadElements(1);
+};
+const searchElements = (keyword) => {
+  const normalized = keyword.trim();
+  // Element Plus calls the remote method again when reopening the dropdown.
+  // An unchanged query must not reset the page selected by the user.
+  if (normalized === sourceKeyword.value) return;
+  sourceKeyword.value = normalized;
+  return loadElements(1);
+};
+const loadElements = async (requestedPage) => {
   const seq = ++sourceSeq;
   candidates.value = [];
-  sourceID.value = null;
-  sourceKey.value = null;
-  if (!keyword.trim()) {
-    sourceLoading.value = false;
-    return;
-  }
+  sourcePage.value = requestedPage;
+  sourceError.value = false;
   sourceLoading.value = true;
   try {
     const result = await ruleAPI.listElementCandidates({
-      keyword,
-      page: 1,
+      keyword: sourceKeyword.value,
+      page: requestedPage,
       page_size: 30,
     });
-    if (seq === sourceSeq && !disposed) candidates.value = result.data;
+    if (seq === sourceSeq && !disposed) {
+      candidates.value = result.data;
+      sourceTotal.value = result.total;
+    }
   } catch (error) {
-    if (seq === sourceSeq) ElMessage.error(message(error));
+    if (seq === sourceSeq && !disposed) sourceError.value = true;
   } finally {
     if (seq === sourceSeq) sourceLoading.value = false;
   }
 };
 const importSource = () => {
-  const e = candidates.value.find((e) => e.id === sourceID.value),
+  const e = selectedSource.value,
     r = sourceRules.value.find((r) => r.rule_key === sourceKey.value);
   if (!e || !r) return;
   form.name ||= e.name;
@@ -552,6 +616,7 @@ watch(
     }
     page.value = state.page;
     pageSize.value = state.pageSize;
+    ownerDomainID.value = state.ownerDomainID;
     await load();
     if (seq !== routeSeq || disposed) return;
     await restore(state);

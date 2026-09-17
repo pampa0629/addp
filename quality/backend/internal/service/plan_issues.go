@@ -62,7 +62,10 @@ func planIssueObservations(planID int64, config commonModels.JSONMap, result *Pl
 		} else if rule.TotalCount > 0 {
 			rate = 100 * float64(rule.TotalCount-rule.FailedCount) / float64(rule.TotalCount)
 		}
-		observations = append(observations, models.IssueObservation{PlanID: planID, RuleKey: rule.RuleKey, RuleType: rule.Type, Severity: rule.Severity, Message: rule.Name, ColumnName: strings.Join(rule.Columns, ", "), Table: locator.Path[1], SchemaName: locator.Path[0], EngineID: int64(locator.EngineID), FailedCount: rule.FailedCount, TotalCount: rule.TotalCount, PassRate: rate, Passed: rule.Passed})
+		observations = append(observations, models.IssueObservation{PlanID: planID, OwnerDomainID: snapshot.OwnerDomainID, RuleKey: rule.RuleKey, RuleType: rule.Type, Severity: rule.Severity, Message: rule.Name, ColumnName: strings.Join(rule.Columns, ", "), Table: locator.Path[1], SchemaName: locator.Path[0], EngineID: int64(locator.EngineID), FailedCount: rule.FailedCount, TotalCount: rule.TotalCount, PassRate: rate, Passed: rule.Passed})
+	}
+	for i := range observations {
+		observations[i].TargetKey = snapshot.TargetKey
 	}
 	return observations, nil
 }

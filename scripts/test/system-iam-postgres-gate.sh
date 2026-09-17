@@ -72,7 +72,7 @@ case "$TEST_FILTER" in
             echo "quality-plans test requires --package migration" >&2
             exit 2
         fi
-        test_pattern='^TestQuality(Plans|Rules)ForwardMigrationAgainstPostgres$'
+        test_pattern='^TestQuality(Plans|Rules|StandardReference)ForwardMigrationAgainstPostgres$'
         ;;
     service-account)
         if [ "$PACKAGE_FILTER" != "iam" ]; then

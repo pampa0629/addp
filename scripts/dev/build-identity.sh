@@ -17,11 +17,18 @@ addp_source_fingerprint() {
   project_root_logical=$(cd "$PROJECT_ROOT" && pwd -L)
   project_root_physical=$(cd "$PROJECT_ROOT" && pwd -P)
 
+  # 同一源码在不同工具链、架构或编译选项下产生不同产物。
+  local go_list_command="${ADDP_GO_LIST_COMMAND:-go}"
+  local build_context
+  build_context=$(cd "$source_dir" && "$go_list_command" env -json \
+    GOVERSION GOOS GOARCH GOAMD64 GOARM GOARM64 GO386 GOMIPS GOMIPS64 \
+    GOPPC64 GORISCV64 GOWASM CGO_ENABLED CC CXX CGO_CFLAGS CGO_CPPFLAGS \
+    CGO_CXXFLAGS CGO_FFLAGS CGO_LDFLAGS GOEXPERIMENT GOFLAGS) || return 1
+
   local file_list raw_file_list
   file_list=$(mktemp "${TMPDIR:-/tmp}/addp-build-files.XXXXXX")
   raw_file_list=$(mktemp "${TMPDIR:-/tmp}/addp-build-inputs.XXXXXX")
 
-  local go_list_command="${ADDP_GO_LIST_COMMAND:-go}"
   local list_template='{{ $dir := .Dir }}{{ range .GoFiles }}{{ printf "%s/%s\n" $dir . }}{{ end }}{{ range .CgoFiles }}{{ printf "%s/%s\n" $dir . }}{{ end }}{{ range .CFiles }}{{ printf "%s/%s\n" $dir . }}{{ end }}{{ range .CXXFiles }}{{ printf "%s/%s\n" $dir . }}{{ end }}{{ range .MFiles }}{{ printf "%s/%s\n" $dir . }}{{ end }}{{ range .HFiles }}{{ printf "%s/%s\n" $dir . }}{{ end }}{{ range .FFiles }}{{ printf "%s/%s\n" $dir . }}{{ end }}{{ range .SFiles }}{{ printf "%s/%s\n" $dir . }}{{ end }}{{ range .SwigFiles }}{{ printf "%s/%s\n" $dir . }}{{ end }}{{ range .SwigCXXFiles }}{{ printf "%s/%s\n" $dir . }}{{ end }}{{ range .SysoFiles }}{{ printf "%s/%s\n" $dir . }}{{ end }}{{ range .EmbedFiles }}{{ printf "%s/%s\n" $dir . }}{{ end }}{{ with .Module }}{{ .GoMod }}{{ "\n" }}{{ end }}'
 
   if ! (cd "$source_dir" && "$go_list_command" list -deps -f "$list_template" "$@") > "$raw_file_list"; then
@@ -66,6 +73,11 @@ addp_source_fingerprint() {
     fingerprint=$(cd "$project_root_physical" && tr '\n' '\0' < "$file_list" | xargs -0 sha256sum | addp_hash_files | awk '{print $1}')
   fi
   rm -f "$file_list" "$raw_file_list" "$module_sum_list"
+  fingerprint=$({
+    printf '%s\n' 'addp-go-inputs-v2' "$build_context"
+    printf '%s\0' "$@"
+    printf '\n%s\n' "$fingerprint"
+  } | addp_hash_files | awk '{print $1}')
   printf 'sha256:%s\n' "$fingerprint"
 }
 
@@ -90,7 +102,9 @@ addp_go_build_is_current() {
   [ "$current_fingerprint" = "$recorded_fingerprint" ]
 }
 
-addp_wait_for_parallel_builds() {
+addp_wait_for_parallel_tasks() {
+  local phase="$1"
+  shift
   local failed=0
   local pid exit_code
 
@@ -100,7 +114,7 @@ addp_wait_for_parallel_builds() {
     else
       exit_code=$?
     fi
-    echo "  ✗ 并行构建任务失败 (PID: ${pid}, 退出码: ${exit_code})" >&2
+    echo "  ✗ 并行${phase}任务失败 (PID: ${pid}, 退出码: ${exit_code})" >&2
     failed=1
   done
 

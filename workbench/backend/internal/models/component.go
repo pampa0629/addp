@@ -97,6 +97,13 @@ type FieldPresentation struct {
 	TemporalFormat string                  `json:"temporal_format,omitempty"`
 	Width          *int                    `json:"width,omitempty"`
 	StateRules     []StatePresentationRule `json:"state_rules,omitempty"`
+	ValueLabels    []FieldValueLabel       `json:"value_labels,omitempty"`
+}
+
+// FieldValueLabel changes presentation only; its typed value remains the query identity.
+type FieldValueLabel struct {
+	Value json.RawMessage `json:"value" swaggertype:"object"`
+	Label string          `json:"label"`
 }
 
 type StatePresentationRule struct {

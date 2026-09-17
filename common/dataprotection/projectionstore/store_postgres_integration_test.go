@@ -28,12 +28,21 @@ func TestProjectionStoreSchemaContractAgainstPostgres(t *testing.T) {
 		schema := "projection_store_" + owner + "_it"
 		dropProjectionStoreTestSchema(t, db, schema)
 		t.Cleanup(func() { dropProjectionStoreTestSchema(t, db, schema) })
-		store, err := New(db, schema, owner, nil)
+		store, err := Migrate(db, schema, owner, nil)
 		if err != nil {
 			t.Fatalf("initialize %s projection store: %v", owner, err)
 		}
 		assertCurrentMigrations(t, db, store)
-		if _, err := New(db, schema, owner, nil); err != nil {
+		if err := db.Transaction(func(tx *gorm.DB) error {
+			if err := tx.Exec("SET TRANSACTION READ ONLY").Error; err != nil {
+				return err
+			}
+			_, err := Open(tx, schema, owner, nil)
+			return err
+		}); err != nil {
+			t.Fatalf("Worker read-only Open: %v", err)
+		}
+		if _, err := Migrate(db, schema, owner, nil); err != nil {
 			t.Fatalf("reopen %s projection store: %v", owner, err)
 		}
 	}
@@ -65,7 +74,7 @@ func TestProjectionStoreSchemaContractAgainstPostgres(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatalf("persist legacy projection: %v", err)
 	}
-	if _, err := New(db, legacySchema, "legacy_owner", nil); err != nil {
+	if _, err := Migrate(db, legacySchema, "legacy_owner", nil); err != nil {
 		t.Fatalf("adopt legacy projection store: %v", err)
 	}
 	assertCurrentMigrations(t, db, legacyStore)
@@ -88,13 +97,13 @@ func TestProjectionStoreSchemaContractAgainstPostgres(t *testing.T) {
 	driftSchema := "projection_store_drift_it"
 	dropProjectionStoreTestSchema(t, db, driftSchema)
 	t.Cleanup(func() { dropProjectionStoreTestSchema(t, db, driftSchema) })
-	if _, err := New(db, driftSchema, "drift_owner", nil); err != nil {
+	if _, err := Migrate(db, driftSchema, "drift_owner", nil); err != nil {
 		t.Fatalf("initialize drift projection store: %v", err)
 	}
 	if err := db.Exec("ALTER TABLE " + driftSchema + ".protection_projection_entries ADD COLUMN owner_private_value TEXT").Error; err != nil {
 		t.Fatalf("introduce test schema drift: %v", err)
 	}
-	if _, err := New(db, driftSchema, "drift_owner", nil); err == nil || !strings.Contains(err.Error(), "schema drift") {
+	if _, err := Migrate(db, driftSchema, "drift_owner", nil); err == nil || !strings.Contains(err.Error(), "schema drift") {
 		t.Fatalf("drifted projection store error = %v", err)
 	}
 }
@@ -161,7 +170,7 @@ func TestProjectionStoreMigrationIsSerializedAgainstPostgres(t *testing.T) {
 		go func() {
 			defer wait.Done()
 			<-start
-			_, err := New(db, schema, "concurrent_owner", nil)
+			_, err := Migrate(db, schema, "concurrent_owner", nil)
 			errorsByProcess <- err
 		}()
 	}

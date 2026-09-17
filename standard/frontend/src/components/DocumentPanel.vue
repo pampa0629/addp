@@ -67,9 +67,7 @@
         <el-form-item :label="$t('standard.documentPanel.descriptionLabel')">
           <el-input v-model="uploadForm.description" type="textarea" :rows="2" :placeholder="$t('standard.document.descriptionLabel')" />
         </el-form-item>
-        <el-form-item :label="$t('standard.revision.changeSummary')" required>
-          <el-input v-model="uploadForm.change_summary" />
-        </el-form-item>
+
         <el-form-item v-if="canUploadFile" :label="$t('standard.documentPanel.fileLabel')">
           <el-upload
             ref="uploadRef"
@@ -88,7 +86,7 @@
       </el-form>
       <template #footer>
         <el-button @click="showUploadDialog = false">{{ $t('standard.common.cancel') }}</el-button>
-        <el-button type="primary" @click="submitUpload" :loading="uploading" :disabled="!uploadForm.name || !uploadForm.code || !uploadForm.change_summary">
+        <el-button type="primary" @click="submitUpload" :loading="uploading" :disabled="!uploadForm.name || !uploadForm.code">
           {{ selectedFile ? $t('standard.documentPanel.uploadAndLink') : $t('standard.documentPanel.metadataOnly') }}
         </el-button>
       </template>
@@ -185,8 +183,7 @@ const uploadForm = ref({
   doc_type: 'reference',
   source_org: '',
   version_label: '',
-  description: '',
-  change_summary: ''
+  description: ''
 })
 
 // 关联已有文档
@@ -249,7 +246,7 @@ const openUploadDialog = () => {
 }
 
 const resetUploadForm = () => {
-  uploadForm.value = { code: '', scope_type: 'tenant_common', owner_domain_id: null, name: '', doc_type: 'reference', source_org: '', version_label: '', description: '', change_summary: '' }
+  uploadForm.value = { code: '', scope_type: 'tenant_common', owner_domain_id: null, name: '', doc_type: 'reference', source_org: '', version_label: '', description: '' }
   selectedFile.value = null
   uploadRef.value?.clearFiles()
 }
@@ -266,7 +263,7 @@ const onFileChange = (file) => {
 
 const submitUpload = async () => {
   if (uploading.value) return
-  if (!uploadForm.value.name || !uploadForm.value.code || !uploadForm.value.change_summary) {
+  if (!uploadForm.value.name || !uploadForm.value.code) {
     ElMessage.warning(t('standard.documentPanel.nameRequired'))
     return
   }

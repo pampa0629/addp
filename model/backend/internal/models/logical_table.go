@@ -35,7 +35,7 @@ type LogicalField struct {
 	ElementRevisionID *int64 `json:"element_revision_id,omitempty"`        // 聚合审批时冻结的数据元修订
 	Name              string `gorm:"size:200;not null" json:"name"`        // 字段显示名
 	ColumnName        string `gorm:"size:200;not null" json:"column_name"` // 物理列名
-	DataType          string `gorm:"size:50;not null" json:"data_type"`    // string/int/bigint/float/decimal/date/datetime/bool/json/text
+	DataType          string `gorm:"size:50;not null" json:"data_type"`    // string/int/bigint/float/decimal/date/datetime/bool/json
 	Length            *int   `json:"length,omitempty"`
 	Nullable          bool   `json:"nullable"`
 	IsPK              bool   `gorm:"default:false" json:"is_pk"`
@@ -115,7 +115,7 @@ type CreateLogicalFieldRequest struct {
 	ElementID    *int64 `json:"element_id,omitempty" binding:"omitempty,gt=0" minimum:"1"`
 	Name         string `json:"name" binding:"required,max=200" maxLength:"200"`
 	ColumnName   string `json:"column_name" binding:"required,max=200" maxLength:"200"`
-	DataType     string `json:"data_type" binding:"required,oneof=string int bigint float decimal date datetime bool json text geometry" enums:"string,int,bigint,float,decimal,date,datetime,bool,json,text,geometry"`
+	DataType     string `json:"data_type" binding:"required,oneof=string int bigint float decimal date datetime bool json geometry" enums:"string,int,bigint,float,decimal,date,datetime,bool,json,geometry"`
 	Length       *int   `json:"length,omitempty" binding:"omitempty,gt=0" minimum:"1"`
 	Nullable     bool   `json:"nullable"`
 	IsPK         bool   `json:"is_pk"`
@@ -131,7 +131,7 @@ type UpdateLogicalFieldRequest struct {
 	ElementID    *int64 `json:"element_id" binding:"omitempty,gt=0" minimum:"1" extensions:"x-nullable"`
 	Name         string `json:"name" binding:"required,max=200" maxLength:"200"`
 	ColumnName   string `json:"column_name" binding:"required,max=200" maxLength:"200"`
-	DataType     string `json:"data_type" binding:"required,oneof=string int bigint float decimal date datetime bool json text geometry" enums:"string,int,bigint,float,decimal,date,datetime,bool,json,text,geometry"`
+	DataType     string `json:"data_type" binding:"required,oneof=string int bigint float decimal date datetime bool json geometry" enums:"string,int,bigint,float,decimal,date,datetime,bool,json,geometry"`
 	Length       *int   `json:"length" binding:"omitempty,gt=0" minimum:"1" extensions:"x-nullable"`
 	Nullable     *bool  `json:"nullable" binding:"required"`
 	IsPK         *bool  `json:"is_pk" binding:"required"`

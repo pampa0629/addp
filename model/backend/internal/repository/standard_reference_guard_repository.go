@@ -3,17 +3,15 @@ package repository
 import (
 	"errors"
 	"sort"
-	"time"
 
 	commonrepo "github.com/addp/common/repository"
 	"github.com/addp/model/internal/models"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 var (
 	ErrStandardReferenceFrozen        = errors.New("standard reference is frozen")
-	ErrStandardReferenceGuardTerminal = errors.New("standard reference guard is terminal")
+	ErrStandardReferenceGuardTerminal = commonrepo.ErrReferenceGuardTerminal
 )
 
 type StandardReferenceGuardRepository struct {
@@ -67,19 +65,11 @@ func LockStandardReferences(db *gorm.DB, tenantID int64, references ...models.St
 }
 
 func lockStandardReferenceGuard(db *gorm.DB, tenantID int64, resourceType string, resourceID int64) (*models.StandardReferenceGuard, error) {
-	guard := &models.StandardReferenceGuard{
-		TenantID: tenantID, ResourceType: resourceType, ResourceID: resourceID,
-		State: models.StandardReferenceGuardOpen,
+	guard, err := commonrepo.LockReferenceGuard(db, "model.standard_reference_guards", tenantID, resourceType, resourceID)
+	if err != nil {
+		return nil, err
 	}
-	if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(guard).Error; err != nil {
-		return nil, commonrepo.WrapDBError(err)
-	}
-	if err := db.Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where("tenant_id = ? AND resource_type = ? AND resource_id = ?", tenantID, resourceType, resourceID).
-		First(guard).Error; err != nil {
-		return nil, commonrepo.WrapDBError(err)
-	}
-	return guard, nil
+	return &models.StandardReferenceGuard{ID: guard.ID, TenantID: guard.TenantID, ResourceType: guard.ResourceType, ResourceID: guard.ResourceID, State: guard.State, CreatedAt: guard.CreatedAt, UpdatedAt: guard.UpdatedAt}, nil
 }
 
 func (r *StandardReferenceGuardRepository) SetState(tenantID int64, resourceType string, resourceID int64, desiredState string) (*models.StandardReferenceGuardResponse, error) {
@@ -88,32 +78,12 @@ func (r *StandardReferenceGuardRepository) SetState(tenantID int64, resourceType
 		Summary: []models.StandardReferenceImpactSummary{}, Sample: []models.StandardReferenceImpact{},
 	}
 	err := r.db.Transaction(func(tx *gorm.DB) error {
-		guard, err := lockStandardReferenceGuard(tx, tenantID, resourceType, resourceID)
+		guard, err := commonrepo.LockReferenceGuard(tx, "model.standard_reference_guards", tenantID, resourceType, resourceID)
 		if err != nil {
 			return err
 		}
-		switch desiredState {
-		case models.StandardReferenceGuardOpen:
-			if guard.State == models.StandardReferenceGuardDeleted {
-				return ErrStandardReferenceGuardTerminal
-			}
-		case models.StandardReferenceGuardFrozen:
-			if guard.State == models.StandardReferenceGuardDeleted {
-				return ErrStandardReferenceGuardTerminal
-			}
-		case models.StandardReferenceGuardDeleted:
-			if guard.State != models.StandardReferenceGuardFrozen && guard.State != models.StandardReferenceGuardDeleted {
-				return ErrStandardReferenceGuardTerminal
-			}
-		default:
-			return gorm.ErrInvalidValue
-		}
-		if guard.State != desiredState {
-			if err := tx.Model(&models.StandardReferenceGuard{}).Where("id = ?", guard.ID).
-				Updates(map[string]interface{}{"state": desiredState, "updated_at": time.Now()}).Error; err != nil {
-				return commonrepo.WrapDBError(err)
-			}
-			guard.State = desiredState
+		if err := commonrepo.SetReferenceGuardState(tx, "model.standard_reference_guards", guard, desiredState); err != nil {
+			return err
 		}
 		response.State = guard.State
 		if desiredState == models.StandardReferenceGuardFrozen {

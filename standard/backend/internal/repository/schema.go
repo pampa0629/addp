@@ -96,6 +96,9 @@ func Migrate(db *gorm.DB) error {
 		if err := migrateStandardCatalogMetricChanges(tx); err != nil {
 			return err
 		}
+		if err := simplifyStandardDefinitions(tx); err != nil {
+			return err
+		}
 		return applyStandardSchemaStatements(tx)
 	})
 }
@@ -203,7 +206,6 @@ func prepareDocumentRevisionMigration(db *gorm.DB) error {
 			ALTER TABLE standard.documents ADD COLUMN IF NOT EXISTS owner_domain_id BIGINT;
 			ALTER TABLE standard.documents ADD COLUMN IF NOT EXISTS scope_type VARCHAR(20);
 			ALTER TABLE standard.documents ADD COLUMN IF NOT EXISTS code VARCHAR(100);
-			ALTER TABLE standard.documents ADD COLUMN IF NOT EXISTS steward_id BIGINT;
 			ALTER TABLE standard.documents ADD COLUMN IF NOT EXISTS tags JSONB;
 			ALTER TABLE standard.documents ADD COLUMN IF NOT EXISTS draft_revision_id BIGINT;
 			ALTER TABLE standard.documents ADD COLUMN IF NOT EXISTS lifecycle_state VARCHAR(16) NOT NULL DEFAULT 'active';
@@ -524,7 +526,6 @@ func prepareStandardSchemaMigration(db *gorm.DB) error {
 				ALTER TABLE standard.code_sets ADD COLUMN IF NOT EXISTS owner_domain_id BIGINT;
 				ALTER TABLE standard.code_sets ADD COLUMN IF NOT EXISTS scope_type VARCHAR(20);
 				ALTER TABLE standard.code_sets ADD COLUMN IF NOT EXISTS origin VARCHAR(20) NOT NULL DEFAULT 'tenant';
-				ALTER TABLE standard.code_sets ADD COLUMN IF NOT EXISTS steward_id BIGINT;
 				ALTER TABLE standard.code_sets ADD COLUMN IF NOT EXISTS tags JSONB;
 				ALTER TABLE standard.code_sets ADD COLUMN IF NOT EXISTS current_revision_id BIGINT;
 				ALTER TABLE standard.code_sets ADD COLUMN IF NOT EXISTS draft_revision_id BIGINT;
@@ -1177,4 +1178,22 @@ func removeRetiredCollectionTables(tx *gorm.DB) error {
 		}
 	}
 	return nil
+}
+
+// simplifyStandardDefinitions removes retired identity fields and normalizes the
+// logical text vocabulary without changing revision IDs or business constraints.
+func simplifyStandardDefinitions(db *gorm.DB) error {
+	if db.Dialector.Name() != "postgres" {
+		return nil
+	}
+	return db.Exec(`
+ ALTER TABLE standard.elements DROP COLUMN IF EXISTS steward_id;
+ ALTER TABLE standard.glossaries DROP COLUMN IF EXISTS steward_id;
+ ALTER TABLE standard.code_sets DROP COLUMN IF EXISTS steward_id;
+ ALTER TABLE standard.metric_definitions DROP COLUMN IF EXISTS steward_id;
+ ALTER TABLE standard.documents DROP COLUMN IF EXISTS steward_id;
+ UPDATE standard.elements SET version=version+1
+ WHERE id IN (SELECT element_id FROM standard.element_revisions WHERE data_type='text');
+ UPDATE standard.element_revisions SET data_type='string' WHERE data_type='text';
+ `).Error
 }

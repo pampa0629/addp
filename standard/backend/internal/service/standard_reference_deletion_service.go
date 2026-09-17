@@ -21,14 +21,14 @@ const (
 	standardReferenceDeletionReconcileInterval = time.Minute
 )
 
-var ErrModelReferenceGuardUnavailable = errors.New("model reference guard unavailable")
+var ErrModelReferenceGuardUnavailable = errors.New("standard reference guard unavailable")
 
 type StandardResourceReferencedError struct {
 	Impact *commonclient.StandardReferenceGuardResponse
 }
 
 func (e *StandardResourceReferencedError) Error() string {
-	return "standard resource is referenced by model"
+	return "standard resource is still referenced"
 }
 
 func (e *StandardResourceReferencedError) Unwrap() error { return commonapi.ErrConflict }
@@ -48,6 +48,7 @@ const (
 type StandardReferenceDeletionService struct {
 	db           *gorm.DB
 	model        *commonclient.ModelClient
+	quality      *commonclient.QualityClient
 	operations   *repository.StandardReferenceDeletionRepository
 	localDeletes map[string]StandardReferenceLocalDelete
 	log          *slog.Logger
@@ -55,10 +56,11 @@ type StandardReferenceDeletionService struct {
 	stopOnce     sync.Once
 }
 
-func NewStandardReferenceDeletionService(db *gorm.DB, modelClient *commonclient.ModelClient) *StandardReferenceDeletionService {
+func NewStandardReferenceDeletionService(db *gorm.DB, modelClient *commonclient.ModelClient, qualityClient *commonclient.QualityClient) *StandardReferenceDeletionService {
 	return &StandardReferenceDeletionService{
 		db:           db,
 		model:        modelClient,
+		quality:      qualityClient,
 		operations:   repository.NewStandardReferenceDeletionRepository(db),
 		localDeletes: make(map[string]StandardReferenceLocalDelete),
 		log:          commonlogger.With("component", "standard_reference_deletion"),
@@ -156,7 +158,15 @@ func (s *StandardReferenceDeletionService) process(
 	deleteLocal StandardReferenceLocalDelete,
 	existedAtEnsure bool,
 ) error {
+	if resourceType == "domain" && s.quality == nil {
+		return fmt.Errorf("%w: quality reference guard is not configured", ErrModelReferenceGuardUnavailable)
+	}
 	client := s.model.WithTenantID(uint(tenantID))
+	qualityClient := s.quality
+	if qualityClient != nil {
+		qualityClient = qualityClient.WithTenantID(uint(tenantID))
+	}
+	qualityGuardEnabled := resourceType == "domain" && qualityClient != nil
 	var outcome = standardReferenceDeletionCompleted
 	var impact *commonclient.StandardReferenceGuardResponse
 	var localDeleteErr error
@@ -176,18 +186,26 @@ func (s *StandardReferenceDeletionService) process(
 			return err
 		}
 		if !exists {
+			resourceNotFound := false
 			if _, err := client.SetStandardReferenceGuard(ctx, resourceType, resourceID, commonclient.StandardReferenceGuardDeleted); err != nil {
-				if status, ok := commonclient.TenantAPIStatusCode(err); ok && status == 409 {
-					if err := s.operations.DeleteOperation(tx, operation.ID); err != nil {
-						return err
-					}
-					outcome = standardReferenceDeletionNotFound
-					return nil
+				if status, ok := commonclient.TenantAPIStatusCode(err); !ok || status != 409 {
+					return fmt.Errorf("%w: finalize missing standard resource guard: %v", ErrModelReferenceGuardUnavailable, err)
 				}
-				return fmt.Errorf("%w: finalize missing standard resource guard: %v", ErrModelReferenceGuardUnavailable, err)
+				resourceNotFound = true
+			}
+			if qualityGuardEnabled {
+				if _, err := qualityClient.SetStandardReferenceGuard(ctx, resourceType, resourceID, commonclient.StandardReferenceGuardDeleted); err != nil {
+					if status, ok := commonclient.TenantAPIStatusCode(err); !ok || status != 409 {
+						return fmt.Errorf("%w: finalize quality reference guard: %v", ErrModelReferenceGuardUnavailable, err)
+					}
+					resourceNotFound = true
+				}
 			}
 			if err := s.operations.DeleteOperation(tx, operation.ID); err != nil {
 				return err
+			}
+			if resourceNotFound {
+				outcome = standardReferenceDeletionNotFound
 			}
 			return nil
 		}
@@ -205,7 +223,24 @@ func (s *StandardReferenceDeletionService) process(
 		if err != nil {
 			return fmt.Errorf("%w: freeze model reference guard: %v", ErrModelReferenceGuardUnavailable, err)
 		}
+		// Freeze every consumer before deciding whether to reject deletion. A prior
+		// attempt may have frozen Quality even when its response was lost.
+		if qualityGuardEnabled {
+			qualityImpact, err := qualityClient.SetStandardReferenceGuard(ctx, resourceType, resourceID, commonclient.StandardReferenceGuardFrozen)
+			if err != nil {
+				return fmt.Errorf("%w: freeze quality reference guard: %v", ErrModelReferenceGuardUnavailable, err)
+			}
+			impact.ReferenceCount += qualityImpact.ReferenceCount
+			impact.Summary = append(impact.Summary, qualityImpact.Summary...)
+			impact.Sample = append(impact.Sample, qualityImpact.Sample...)
+			impact.SampleTruncated = impact.SampleTruncated || qualityImpact.SampleTruncated
+		}
 		if impact.ReferenceCount > 0 {
+			if qualityGuardEnabled {
+				if _, err := qualityClient.SetStandardReferenceGuard(ctx, resourceType, resourceID, commonclient.StandardReferenceGuardOpen); err != nil {
+					return fmt.Errorf("%w: release quality reference guard: %v", ErrModelReferenceGuardUnavailable, err)
+				}
+			}
 			if _, err := client.SetStandardReferenceGuard(ctx, resourceType, resourceID, commonclient.StandardReferenceGuardOpen); err != nil {
 				return fmt.Errorf("%w: release model reference guard: %v", ErrModelReferenceGuardUnavailable, err)
 			}
@@ -223,6 +258,11 @@ func (s *StandardReferenceDeletionService) process(
 			return deleteLocal(deleteTx, resourceID, tenantID)
 		}); err != nil {
 			localDeleteErr = err
+			if qualityGuardEnabled {
+				if _, restoreErr := qualityClient.SetStandardReferenceGuard(ctx, resourceType, resourceID, commonclient.StandardReferenceGuardOpen); restoreErr != nil {
+					return fmt.Errorf("%w: delete standard resource: %v; restore quality guard: %v", ErrModelReferenceGuardUnavailable, err, restoreErr)
+				}
+			}
 			if _, restoreErr := client.SetStandardReferenceGuard(ctx, resourceType, resourceID, commonclient.StandardReferenceGuardOpen); restoreErr != nil {
 				return fmt.Errorf("%w: delete standard resource: %v; restore guard: %v", ErrModelReferenceGuardUnavailable, err, restoreErr)
 			}

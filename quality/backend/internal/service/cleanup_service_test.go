@@ -276,6 +276,7 @@ func newQualityCleanupTestDB(t *testing.T) *gorm.DB {
 		`CREATE TABLE quality.plans (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			tenant_id INTEGER NOT NULL,
+			owner_domain_id INTEGER,
 			name TEXT NOT NULL,
 			description TEXT,
 			code TEXT NOT NULL, version INTEGER NOT NULL, table_bindings JSON NOT NULL,
@@ -290,9 +291,11 @@ func newQualityCleanupTestDB(t *testing.T) *gorm.DB {
 		`CREATE TABLE quality.issues (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			tenant_id INTEGER NOT NULL,
+			owner_domain_id INTEGER,
 			execution_id TEXT NOT NULL,
 			last_execution_id TEXT NOT NULL DEFAULT '',
 				plan_id INTEGER NOT NULL,
+			target_key TEXT,
 				rule_key TEXT NOT NULL,
 			rule_type TEXT NOT NULL,
 			severity TEXT NOT NULL DEFAULT 'error',

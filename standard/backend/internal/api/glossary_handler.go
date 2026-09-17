@@ -115,10 +115,10 @@ func (h *GlossaryHandler) ListGlossaries(c *gin.Context) {
 // @Security BearerAuth
 func (h *GlossaryHandler) CreateGlossary(c *gin.Context) {
 	var req models.CreateGlossaryRequest
-	if !bindJSON(c, &req) {
+	if !bindStandardDefinition(c, &req) {
 		return
 	}
-	result, err := h.svc.CreateGlossary(&req, getTenantID(c), getUserID(c), commoni18n.T(c, sysi18n.MsgGlossaryInitialCreation))
+	result, err := h.svc.CreateGlossary(&req, getTenantID(c), getUserID(c), commoni18n.T(c, sysi18n.MsgRevisionInitialCreation))
 	if err != nil {
 		respondError(c, http.StatusBadRequest, err)
 		return
@@ -172,7 +172,7 @@ func (h *GlossaryHandler) UpdateGlossary(c *gin.Context) {
 		return
 	}
 	var req models.UpdateGlossaryRequest
-	if !bindJSON(c, &req) {
+	if !bindStandardDefinition(c, &req) {
 		return
 	}
 	result, err := h.svc.UpdateGlossary(id, getTenantID(c), getUserID(c), &req)

@@ -137,3 +137,17 @@ func TestResultRequestKeepsOwnerParametersAndEnforcesSharedBudget(t *testing.T) 
 		t.Fatal("cursor bypassed shared parameter budget")
 	}
 }
+
+func TestResultContainsBindsLiteralAndPreservesSource(t *testing.T) {
+	p := fixture()
+	before, _ := plan.CanonicalJSON(p)
+	r, err := plan.ApplyResultRequest(p, plan.ResultRequest{Limit: 2, Filter: &plan.ResultFilter{Field: "id", Op: "contains", Values: []plan.Literal{{Type: datatype.FieldTypeString, Text: "literal%_"}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, _ := plan.CanonicalJSON(p)
+	encoded, _ := plan.CanonicalJSON(r.Plan)
+	if string(before) != string(after) || strings.Contains(string(encoded), "literal%_") || len(r.Values) != 1 {
+		t.Fatal("source mutated or literal embedded")
+	}
+}

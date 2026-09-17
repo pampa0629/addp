@@ -18,13 +18,14 @@ const (
 )
 
 type EntryFacetOption struct {
-	ID            string `json:"id"`
-	Name          string `json:"name"`
-	Code          string `json:"code,omitempty"`
-	Status        string `json:"status,omitempty"`
-	EngineType    string `json:"engine_type,omitempty"`
-	Referenceable bool   `json:"referenceable"`
-	Count         int64  `json:"count"`
+	DomainPath    []string `json:"domain_path,omitempty"`
+	ID            string   `json:"id"`
+	Name          string   `json:"name"`
+	Code          string   `json:"code,omitempty"`
+	Status        string   `json:"status,omitempty"`
+	EngineType    string   `json:"engine_type,omitempty"`
+	Referenceable bool     `json:"referenceable"`
+	Count         int64    `json:"count"`
 }
 
 type EntryReferenceFacet struct {
@@ -297,7 +298,7 @@ func (s *EntryService) resolveDomainFacet(ctx context.Context, tenantID int64, c
 		}
 		options = append(options, EntryFacetOption{
 			ID: strconv.FormatInt(result.ID, 10), Name: result.Name, Code: result.Code,
-			Status: result.Status, Referenceable: result.Referenceable, Count: counts[result.ID],
+			Status: result.Status, Referenceable: result.Referenceable, Count: counts[result.ID], DomainPath: result.DomainPath,
 		})
 	}
 	return resolvedFacet(options)
@@ -384,6 +385,10 @@ func unavailableFacet() EntryReferenceFacet {
 func resolvedFacet(options []EntryFacetOption) EntryReferenceFacet {
 	sort.Slice(options, func(i, j int) bool {
 		left, right := strings.ToLower(options[i].Name), strings.ToLower(options[j].Name)
+		if len(options[i].DomainPath) > 0 && len(options[j].DomainPath) > 0 {
+			left = strings.ToLower(strings.Join(options[i].DomainPath, "\x00"))
+			right = strings.ToLower(strings.Join(options[j].DomainPath, "\x00"))
+		}
 		if left == right {
 			return options[i].ID < options[j].ID
 		}

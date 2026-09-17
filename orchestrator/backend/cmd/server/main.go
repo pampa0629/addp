@@ -9,9 +9,10 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/addp/common/schema"
+
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
-	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/modulelifecycle"
 	_ "github.com/addp/orchestrator/i18n"
 	"github.com/addp/orchestrator/internal/api"
@@ -55,7 +56,7 @@ func main() {
 		log.Fatalf("数据库连接失败: %v", err)
 	}
 
-	if err := commonExecution.EnsureStore(db); err != nil {
+	if err := schema.Require(db, "common", schema.CommonVersion); err != nil {
 		log.Fatalf("统一执行记录存储初始化失败: %v", err)
 	}
 

@@ -8,6 +8,7 @@ import (
 
 	commonAPI "github.com/addp/common/api"
 	qualityi18n "github.com/addp/quality/i18n"
+	"github.com/addp/quality/internal/models"
 	"github.com/addp/quality/internal/service"
 	"github.com/gin-gonic/gin"
 )
@@ -28,16 +29,23 @@ type planDeleteRequest struct {
 // @Tags Plan
 // @Produce json
 // @Param page query int false "页码 | Page"
+// @Param owner_domain_id query int false "归属业务域（省略全部，0 为租户公共，正整数为指定域） | Owner domain (omit for all, 0 for tenant-public, positive ID for one domain)" minimum(0)
 // @Param page_size query int false "每页数量 | Page size"
 // @Success 200 {object} qualityPlanListResponse
+// @Failure 400 {object} qualityErrorResponse
 // @Failure 500 {object} qualityErrorResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["quality.plan.read"]
 // @Router /plans [get]
 // @Security BearerAuth
 func (h *PlanHandler) List(c *gin.Context) {
+	ownerDomainID, filterErr := ownerDomainFilter(c)
+	if filterErr != nil {
+		respondInvalidRequest(c, "")
+		return
+	}
 	page, pageSize := pageParams(c.Query("page"), c.Query("page_size"))
-	items, total, err := h.service.List(c.Request.Context(), getTenantID(c), page, pageSize)
+	items, total, err := h.service.List(c.Request.Context(), getTenantID(c), ownerDomainID, page, pageSize)
 	if err != nil {
 		respondQualityServiceError(c, err, "", qualityi18n.MsgInternal)
 		return
@@ -68,7 +76,7 @@ func (h *PlanHandler) Create(c *gin.Context) {
 		respondQualityServiceError(c, err, "", qualityi18n.MsgInternal)
 		return
 	}
-	c.JSON(http.StatusCreated, result)
+	c.JSON(http.StatusCreated, qualityPlanResponse{QualityPlan: *result, ExecutionContract: planExecutionContract(*result)})
 }
 
 // @Summary 获取质量检查方案 | Get quality plan task
@@ -93,7 +101,7 @@ func (h *PlanHandler) Get(c *gin.Context) {
 		respondQualityServiceError(c, err, "", qualityi18n.MsgInternal)
 		return
 	}
-	c.JSON(http.StatusOK, result)
+	c.JSON(http.StatusOK, qualityPlanResponse{QualityPlan: *result, ExecutionContract: planExecutionContract(*result)})
 }
 
 // @Summary 更新质量检查方案 | Update quality plan task
@@ -126,7 +134,7 @@ func (h *PlanHandler) Update(c *gin.Context) {
 		respondQualityServiceError(c, err, "", qualityi18n.MsgInternal)
 		return
 	}
-	c.JSON(http.StatusOK, result)
+	c.JSON(http.StatusOK, qualityPlanResponse{QualityPlan: *result, ExecutionContract: planExecutionContract(*result)})
 }
 
 // @Summary 删除质量检查方案 | Delete quality plan task
@@ -163,8 +171,10 @@ func (h *PlanHandler) Delete(c *gin.Context) {
 
 // @Summary 执行质量检查方案 | Run quality plan
 // @Tags QualityPlan
+// @Accept json
 // @Produce json
 // @Param id path int true "方案 ID | Plan ID"
+// @Param request body models.PlanRunRequest false "按别名指定执行目标，省略时使用默认表 | Targets by alias; omitted aliases use defaults"
 // @Success 202 {object} qualityTaskProviderExecuteResponse
 // @Failure 400 {object} qualityErrorResponse
 // @Failure 404 {object} qualityErrorResponse
@@ -179,13 +189,13 @@ func (h *PlanHandler) Run(c *gin.Context) {
 		respondInvalidRequest(c, "")
 		return
 	}
-	var request struct{}
+	var request models.PlanRunRequest
 	if err := commonAPI.BindOptionalJSONStrict(c, &request); err != nil {
 		respondInvalidRequest(c, "")
 		return
 	}
 	token := strings.TrimSpace(strings.TrimPrefix(c.GetHeader("Authorization"), "Bearer "))
-	executionID, err := h.service.Run(c.Request.Context(), getTenantID(c), id, getUserID(c), token)
+	executionID, err := h.service.Run(c.Request.Context(), getTenantID(c), id, getUserID(c), token, request)
 	if err != nil {
 		respondQualityServiceError(c, err, qualityi18n.MsgPlanNotFound, qualityi18n.MsgInternal)
 		return

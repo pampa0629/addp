@@ -10,6 +10,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/addp/common/schema"
+
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
 	"github.com/addp/common/events"
@@ -47,13 +49,13 @@ func main() {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
 
-	if err := commonExecution.EnsureStore(db); err != nil {
+	if err := schema.Require(db, "common", schema.CommonVersion); err != nil {
 		log.Fatalf("Failed to ensure execution store: %v", err)
 	}
 
 	migrationContext, cancelMigration := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancelMigration()
-	if err := migration.NewRunner(db).Run(migrationContext); err != nil {
+	if err := schema.Migrate(db.WithContext(migrationContext), "quality", migration.SchemaVersion, func(tx *gorm.DB) error { return migration.NewRunner(tx).Run(migrationContext) }); err != nil {
 		log.Fatalf("Failed to migrate Quality database: %v", err)
 	}
 
@@ -81,9 +83,11 @@ func main() {
 
 	// Services
 	planSvc := service.NewPlanService(planRepo, cfg.CheckTimeout).WithClients(systemServiceClient, executionAuthorizationClient)
+	planSvc.WithStandardClient(standardClient)
 	ruleSvc := service.NewRuleService(repository.NewRuleRepository(db), standardClient)
 	issueSvc := service.NewIssueService(issueRepo)
 	catalogSummarySvc := service.NewCatalogSummaryService(catalogSummaryRepo)
+	standardReferenceGuardSvc := service.NewStandardReferenceGuardService(repository.NewStandardReferenceGuardRepository(db))
 	cleanupService := service.NewCleanupService(db, redisClient, commonExecution.NewTaskExecutionRepository(db))
 	if err := cleanupService.Start(runtimeContext); err != nil {
 		log.Printf("Quality 资源回收服务启动失败: %v", err)
@@ -100,6 +104,7 @@ func main() {
 		cfg.SystemURL,
 		redisClient,
 		lifecycleController,
+		standardReferenceGuardSvc,
 	)
 
 	addr := ":" + cfg.Port

@@ -68,10 +68,10 @@ func TestIntegrationPostgresPlanCopiesParentAuthorizationLineage(t *testing.T) {
 		TaskType: commonExecution.TaskTypeQualityPlan, Source: commonExecution.ModuleOrchestrator,
 		ParentExecutionID: &parentExecutionID, ExecutionBoundary: commonExecution.ExecutionBoundaryBounded,
 		Status: commonExecution.ExecutionStatusPending, TriggerType: commonExecution.TriggerTypeManual,
-		MaxAttempts: 3, ExecutionConfig: commonModels.JSONMap{"schema_version": "addp.quality.plan-execution-config/v1"},
+		MaxAttempts: 3, ExecutionConfig: commonModels.JSONMap{"schema_version": "addp.quality.plan-execution-config/v2"},
 		CreatedAt: now, UpdatedAt: now,
 	}
-	if _, err := NewPlanRepository(db).CreateExecution(context.Background(), task.ID, tenantID, child); err != nil {
+	if _, err := NewPlanRepository(db).CreateExecution(context.Background(), task.ID, tenantID, child, models.PlanRunRequest{}); err != nil {
 		t.Fatalf("create quality plan execution: %v", err)
 	}
 

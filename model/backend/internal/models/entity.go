@@ -83,7 +83,7 @@ type CreateEntityAttributeRequest struct {
 	ElementID   *int64 `json:"element_id,omitempty" binding:"omitempty,gt=0" minimum:"1"`
 	Name        string `json:"name" binding:"required,max=200" maxLength:"200"`
 	ColumnName  string `json:"column_name" binding:"required,max=200" maxLength:"200"`
-	DataType    string `json:"data_type" binding:"required,oneof=string int bigint float decimal date datetime bool json text geometry" enums:"string,int,bigint,float,decimal,date,datetime,bool,json,text,geometry"`
+	DataType    string `json:"data_type" binding:"required,oneof=string int bigint float decimal date datetime bool json geometry" enums:"string,int,bigint,float,decimal,date,datetime,bool,json,geometry"`
 	IsPK        bool   `json:"is_pk"`
 	Nullable    bool   `json:"nullable"`
 	Description string `json:"description"`
@@ -96,7 +96,7 @@ type UpdateEntityAttributeRequest struct {
 	ElementID   *int64 `json:"element_id" binding:"omitempty,gt=0" minimum:"1" extensions:"x-nullable"`
 	Name        string `json:"name" binding:"required,max=200" maxLength:"200"`
 	ColumnName  string `json:"column_name" binding:"required,max=200" maxLength:"200"`
-	DataType    string `json:"data_type" binding:"required,oneof=string int bigint float decimal date datetime bool json text geometry" enums:"string,int,bigint,float,decimal,date,datetime,bool,json,text,geometry"`
+	DataType    string `json:"data_type" binding:"required,oneof=string int bigint float decimal date datetime bool json geometry" enums:"string,int,bigint,float,decimal,date,datetime,bool,json,geometry"`
 	IsPK        *bool  `json:"is_pk" binding:"required"`
 	Nullable    *bool  `json:"nullable" binding:"required"`
 	Description string `json:"description"`

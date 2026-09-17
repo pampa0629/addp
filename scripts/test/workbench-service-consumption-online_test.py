@@ -283,6 +283,28 @@ class FakeAPIConsumerClient:
 
 
 class WorkbenchServiceConsumptionOnlineTest(unittest.TestCase):
+    def test_application_labels_keep_service_fields_and_selection_identity(self) -> None:
+        snapshot = SUITE.data_application_payload(23, "run-labels")["snapshot"]
+        table, chart = snapshot["components"]
+        self.assertEqual(table["query_template"]["select"], SUITE.FIELDS)
+        presentations = {item["field"]: item for item in table["renderer_config"]["field_presentations"]}
+        self.assertEqual(presentations["city"], {"field": "city", "label": "Customer city"})
+        self.assertEqual(presentations["status"]["value_labels"], [
+            {"value": "delivered", "label": "Delivered order"},
+            {"value": "processing", "label": "Processing order"},
+        ])
+        self.assertEqual(snapshot["selection_bindings"], [{
+            "source_component_id": table["id"],
+            "assignments": [{"source_field": "status", "application_parameter_key": "selected_status"}],
+        }])
+        self.assertEqual(chart["query_template"]["parameter_filters"][-1], {
+            "parameter_key": "selected_status", "field": "status", "operator": "eq",
+        })
+        self.assertEqual(snapshot["parameter_bindings"][-1], {
+            "application_parameter_key": "selected_status", "component_id": chart["id"],
+            "component_parameter_key": "selected_status",
+        })
+
     def test_accepts_mysql_cursor_export_application_and_contract_change(self) -> None:
         client = FakeClient()
         admin = FakeAdminClient()
@@ -406,6 +428,10 @@ class WorkbenchServiceConsumptionOnlineTest(unittest.TestCase):
             "chart_rendered": True,
             "map_available": False,
             "contract_change_blocked": True,
+            "value_labels_rendered": True,
+            "service_dimension_rendered": True,
+            "export_preserved_raw_values": True,
+            "selection_preserved_raw_values": True,
         }
 
         self.assertEqual(
@@ -419,15 +445,20 @@ class WorkbenchServiceConsumptionOnlineTest(unittest.TestCase):
             report,
         )
 
-        report["chart_rendered"] = False
-        with self.assertRaisesRegex(SUITE.SuiteError, "chart_rendered"):
-            SUITE.validate_browser_report(
-                report,
-                "run-1",
-                "42",
-                23,
-                "10000000-0000-0000-0000-000000000001",
-            )
+        for key in ("chart_rendered", "value_labels_rendered", "service_dimension_rendered",
+                    "export_preserved_raw_values", "selection_preserved_raw_values"):
+            for value in (False, None):
+                with self.subTest(key=key, value=value):
+                    incomplete = dict(report)
+                    if value is None:
+                        incomplete.pop(key)
+                    else:
+                        incomplete[key] = value
+                    with self.assertRaisesRegex(SUITE.SuiteError, key):
+                        SUITE.validate_browser_report(
+                            incomplete, "run-1", "42", 23,
+                            "10000000-0000-0000-0000-000000000001",
+                        )
 
 
 if __name__ == "__main__":

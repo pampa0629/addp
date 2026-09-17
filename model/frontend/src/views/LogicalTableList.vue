@@ -12,9 +12,7 @@
           </el-input>
         </el-col>
         <el-col :xs="24" :sm="12" :md="4">
-          <el-select v-model="searchForm.domain_id" :placeholder="t('model.logical_table.domain_placeholder')" clearable @change="handleSearch" style="width:100%">
-            <el-option v-for="d in domains" :key="d.id" :label="d.name" :value="d.id" />
-          </el-select>
+          <BusinessDomainSelect v-model="searchForm.domain_id" :placeholder="t('model.logical_table.domain_placeholder')" clearable @change="handleSearch" style="width:100%" :options="domains" />
         </el-col>
         <el-col :xs="24" :sm="12" :md="4">
           <el-select v-model="searchForm.layer" :placeholder="t('model.logical_table.layer_placeholder')" clearable @change="handleSearch" style="width:100%">
@@ -122,9 +120,7 @@
           <el-input v-model="createForm.code" maxlength="200" :placeholder="t('model.logical_table.code_placeholder')" />
         </el-form-item>
         <el-form-item :label="t('model.entity.domain')">
-          <el-select v-model="createForm.domain_id" :placeholder="t('model.logical_table.domain_select_placeholder')" clearable style="width:100%">
-            <el-option v-for="d in domains" :key="d.id" :label="d.name" :value="d.id" />
-          </el-select>
+          <BusinessDomainSelect v-model="createForm.domain_id" :placeholder="t('model.logical_table.domain_select_placeholder')" clearable style="width:100%" :options="domains" />
         </el-form-item>
         <el-form-item :label="t('model.logical_table.table_type')" prop="table_type">
           <el-select v-model="createForm.table_type" style="width:100%">
@@ -163,6 +159,7 @@
 </template>
 
 <script setup>
+import { BusinessDomainSelect, buildBusinessDomainOptions } from '@common-ui'
 import { ref, reactive, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -352,7 +349,7 @@ const reload = async () => {
     return
   }
   const [domainResult, layerResult] = await Promise.allSettled([domainAPI.list(), dwLayerAPI.list()])
-  if (domainResult.status === 'fulfilled') domains.value = domainResult.value || []
+  if (domainResult.status === 'fulfilled') domains.value = buildBusinessDomainOptions(domainResult.value || [])
   else domains.value = []
   if (layerResult.status === 'fulfilled') layers.value = layerResult.value || []
   else layers.value = []

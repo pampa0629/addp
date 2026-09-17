@@ -162,7 +162,7 @@ func TestTaskProviderExecuteRejectsUnsupportedRequestBeforeExecutor(t *testing.T
 }
 
 func TestPlanExecutionContractDeclaresResult(t *testing.T) {
-	contract := planExecutionContract()
+	contract := planExecutionContract(models.QualityPlan{TableBindings: []byte(`[{"alias":"orders","locator":""}]`)})
 	raw := map[string]interface{}{
 		"input_schema": contract.InputSchema, "input_defaults": contract.InputDefaults,
 		"input_ui_schema": contract.InputUISchema, "output_schema": contract.OutputSchema,
@@ -173,6 +173,17 @@ func TestPlanExecutionContractDeclaresResult(t *testing.T) {
 	properties := contract.OutputSchema["properties"].(map[string]interface{})
 	if len(properties) != 1 || properties["passed"] == nil {
 		t.Fatalf("output schema = %#v", contract.OutputSchema)
+	}
+	if err := taskprovider.ValidateExecutionParameters(contract.InputSchema, map[string]interface{}{}, taskprovider.ParameterValidationOptions{}); err == nil {
+		t.Fatal("missing runtime targets accepted")
+	}
+	parameters := map[string]interface{}{"table_bindings": map[string]interface{}{"orders": "addp://engine/12/path/east/orders?type=table"}}
+	if err := taskprovider.ValidateExecutionParameters(contract.InputSchema, parameters, taskprovider.ParameterValidationOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	parameters["table_bindings"].(map[string]interface{})["unknown"] = "addp://engine/12/path/east/people?type=table"
+	if err := taskprovider.ValidateExecutionParameters(contract.InputSchema, parameters, taskprovider.ParameterValidationOptions{}); err == nil {
+		t.Fatal("unknown runtime alias accepted")
 	}
 }
 
@@ -188,6 +199,7 @@ func newTaskProviderHandlerTestDB(t *testing.T) *gorm.DB {
 	if err := db.Exec(`CREATE TABLE quality.plans (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		tenant_id INTEGER NOT NULL,
+		owner_domain_id INTEGER,
 		name TEXT NOT NULL,
 		description TEXT,
 		code TEXT NOT NULL, version INTEGER NOT NULL, table_bindings JSON NOT NULL,

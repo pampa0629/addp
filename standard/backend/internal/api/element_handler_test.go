@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -10,6 +11,7 @@ import (
 
 	commonauth "github.com/addp/common/authorization"
 	commonAuthMiddleware "github.com/addp/common/middleware/auth"
+	commoni18n "github.com/addp/common/middleware/i18n"
 	"github.com/addp/standard/internal/models"
 	"github.com/addp/standard/internal/repository"
 	"github.com/addp/standard/internal/service"
@@ -63,7 +65,7 @@ func TestElementDefinitionRejectsEditableQualityRules(t *testing.T) {
 	router.PUT("/elements/:id/revisions/:revision_id", handler.UpdateElementRevision)
 	for _, method := range []string{http.MethodPost, http.MethodPut} {
 		path := "/elements"
-		body := `{"code":"person_id","scope_type":"tenant_common","name":"Person ID","definition":"Identifier","data_type":"string","nullable":false,"value_domain_kind":"unrestricted","change_summary":"Initial","extra_quality_rules":{"schema_version":"addp.quality.rules/v1","rules":[]}}`
+		body := `{"code":"person_id","scope_type":"tenant_common","name":"Person ID","definition":"Identifier","data_type":"string","nullable":false,"value_domain_kind":"unrestricted","extra_quality_rules":{"schema_version":"addp.quality.rules/v1","rules":[]}}`
 		if method == http.MethodPut {
 			path += "/1/revisions/2"
 			body = `{"version":1,"name":"Person ID","definition":"Identifier","data_type":"string","nullable":false,"value_domain_kind":"unrestricted","change_summary":"Update","extra_quality_rules":{"schema_version":"addp.quality.rules/v1","rules":[]}}`
@@ -155,7 +157,6 @@ func newElementHandlerTestDB(t *testing.T) *gorm.DB {
 		scope_type TEXT NOT NULL,
 		owner_domain_id INTEGER,
 		code TEXT NOT NULL,
-		steward_id INTEGER,
 		tags BLOB,
 		draft_revision_id INTEGER,
 		created_by INTEGER NOT NULL,
@@ -180,4 +181,64 @@ func newElementHandlerTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("create element revisions: %v", err)
 	}
 	return db
+}
+
+func TestCreateElementGeneratesInitialSummary(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, tc := range []struct{ language, summary string }{{"zh-CN", "初始创建"}, {"en-US", "Initial creation"}} {
+		t.Run(tc.language, func(t *testing.T) {
+			db := newElementHandlerTestDB(t)
+			handler := NewElementHandler(service.NewElementService(repository.NewElementRepository(db), nil, repository.NewTenantReferenceRepository(db), nil))
+			router := gin.New()
+			router.Use(commoni18n.I18nMiddleware())
+			router.POST("/elements", withElementHandlerAuth(7), handler.CreateElement)
+			request := httptest.NewRequest(http.MethodPost, "/elements", strings.NewReader(`{"scope_type":"tenant_common","code":"customer","name":"Customer","definition":"Customer identifier","data_type":"string","nullable":false,"value_domain_kind":"unrestricted"}`))
+			request.Header.Set("Content-Type", "application/json")
+			request.Header.Set("Accept-Language", tc.language)
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, request)
+			if response.Code != http.StatusCreated {
+				t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+			}
+			var aggregate models.ElementAggregate
+			if err := json.Unmarshal(response.Body.Bytes(), &aggregate); err != nil {
+				t.Fatal(err)
+			}
+			if aggregate.DraftRevision == nil || aggregate.DraftRevision.RevisionNo != 1 || aggregate.DraftRevision.ChangeSummary != tc.summary {
+				t.Fatalf("initial revision = %#v", aggregate.DraftRevision)
+			}
+			var stored models.ElementRevision
+			if err := db.First(&stored, aggregate.DraftRevision.ID).Error; err != nil {
+				t.Fatal(err)
+			}
+			if stored.ChangeSummary != tc.summary {
+				t.Fatalf("stored summary = %q, want %q", stored.ChangeSummary, tc.summary)
+			}
+		})
+	}
+}
+
+func TestElementSummaryRequestBoundaries(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	handler := NewElementHandler(nil)
+	router := gin.New()
+	router.POST("/elements", handler.CreateElement)
+	router.POST("/elements/:id/revisions", handler.CreateElementRevision)
+	router.PUT("/elements/:id/revisions/:revision_id", handler.UpdateElementRevision)
+	for _, tc := range []struct{ name, method, path, body string }{
+		{"creation rejects client summary", http.MethodPost, "/elements", `{"scope_type":"tenant_common","code":"customer_id","name":"Customer ID","definition":"Identifier","data_type":"string","value_domain_kind":"unrestricted","change_summary":"Client supplied"}`},
+		{"new revision requires summary", http.MethodPost, "/elements/1/revisions", `{"version":1}`},
+		{"new revision rejects empty summary", http.MethodPost, "/elements/1/revisions", `{"version":1,"change_summary":""}`},
+		{"revision update requires summary", http.MethodPut, "/elements/1/revisions/2", `{"version":1,"name":"Customer ID","definition":"Identifier","data_type":"string","value_domain_kind":"unrestricted"}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			response := httptest.NewRecorder()
+			request := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
+			request.Header.Set("Content-Type", "application/json")
+			router.ServeHTTP(response, request)
+			if response.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+			}
+		})
+	}
 }

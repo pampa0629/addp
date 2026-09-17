@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 	"strings"
 
@@ -43,10 +44,10 @@ type taskProviderTaskListResponse struct {
 }
 
 type qualityTaskProviderExecuteRequest struct {
-	TriggerType       string                 `json:"trigger_type"`
-	Source            string                 `json:"source"`
-	ParentExecutionID string                 `json:"parent_execution_id"`
-	Parameters        map[string]interface{} `json:"parameters"`
+	TriggerType       string                `json:"trigger_type"`
+	Source            string                `json:"source"`
+	ParentExecutionID string                `json:"parent_execution_id"`
+	Parameters        models.PlanRunRequest `json:"parameters"`
 }
 
 type qualityTaskProviderExecuteResponse struct {
@@ -82,7 +83,7 @@ func (h *TaskProviderHandler) ListTasks(c *gin.Context) {
 	items := make([]taskProviderTaskListItem, 0)
 	var total int64
 	if (taskType == "" || taskType == commonExecution.TaskTypeQualityPlan) && h.planSvc != nil {
-		tasks, count, err := h.planSvc.List(c.Request.Context(), tenantID, page, pageSize)
+		tasks, count, err := h.planSvc.List(c.Request.Context(), tenantID, nil, page, pageSize)
 		if err != nil {
 			respondQualityServiceError(c, err, "", qualityi18n.MsgInternal)
 			return
@@ -137,7 +138,7 @@ func (h *TaskProviderHandler) TaskDetail(c *gin.Context) {
 
 // TaskExecute 执行 Quality 检查任务。
 // @Summary 执行 TaskProvider 质量检查任务 | Execute TaskProvider quality check task
-// @Description 仅接受 addp-orchestrator 以父 execution 血缘触发；请求必须提供 source=orchestrator 和 parent_execution_id，parameters 不支持覆盖。| Only accepts addp-orchestrator execution-lineage invocation; source=orchestrator and parent_execution_id are required, and parameters overrides are not supported.
+// @Description 仅接受编排父执行血缘；parameters.table_bindings 按别名指定实际数据表，不覆盖规则。| Requires orchestrator parent lineage; parameters.table_bindings supplies actual tables by alias without overriding rules.
 // @Tags QualityPlan
 // @Accept json
 // @Produce json
@@ -171,10 +172,6 @@ func (h *TaskProviderHandler) TaskExecute(c *gin.Context) {
 		respondInvalidRequest(c, err.Error())
 		return
 	}
-	if len(req.Parameters) > 0 {
-		respondInvalidRequest(c, "")
-		return
-	}
 
 	triggerType, err := commonExecution.NormalizeTriggerType(req.TriggerType)
 	if err != nil {
@@ -186,7 +183,7 @@ func (h *TaskProviderHandler) TaskExecute(c *gin.Context) {
 		respondInvalidRequest(c, "")
 		return
 	}
-	executionID, err := h.planSvc.Execute(c.Request.Context(), getTenantID(c), taskID, triggerType, commonExecution.ModuleOrchestrator, parentID)
+	executionID, err := h.planSvc.Execute(c.Request.Context(), getTenantID(c), taskID, triggerType, commonExecution.ModuleOrchestrator, parentID, req.Parameters)
 	if err != nil {
 		respondQualityServiceError(c, err, qualityi18n.MsgPlanNotFound, qualityi18n.MsgInternal)
 		return
@@ -201,7 +198,7 @@ func qualityPlanListItem(task models.QualityPlan) taskProviderTaskListItem {
 	item := taskProviderTaskListItem{
 		ID: task.ID, TenantID: task.TenantID, TaskType: commonExecution.TaskTypeQualityPlan,
 		Name: task.Name, Description: task.Description, Status: qualityPlanStatus(task),
-		ExecutionContract: planExecutionContract(),
+		ExecutionContract: planExecutionContract(task),
 		LastExecutionID:   task.LastExecutionID, LastExecutionStatus: task.LastExecutionStatus,
 	}
 	if task.LastRunAt != nil {
@@ -210,9 +207,32 @@ func qualityPlanListItem(task models.QualityPlan) taskProviderTaskListItem {
 	return item
 }
 
-func planExecutionContract() taskprovider.ExecutionContract {
+func planExecutionContract(task models.QualityPlan) taskprovider.ExecutionContract {
+	var bindings []models.PlanTableBinding
+	_ = json.Unmarshal(task.TableBindings, &bindings)
+	properties, defaults, fields := map[string]interface{}{}, map[string]interface{}{}, map[string]interface{}{}
+	for _, b := range bindings {
+		properties[b.Alias] = map[string]interface{}{"type": "string", "format": "resource-locator", "minLength": float64(1)}
+		fields[b.Alias] = map[string]interface{}{"control": "resource_tree_picker", "display_name": b.Alias, "engine_families": []string{"tabular"}, "selectable_node_types": []string{"table"}}
+		if b.Locator != "" {
+			defaults[b.Alias] = b.Locator
+		}
+	}
+	required := make([]interface{}, 0, len(bindings))
+	for _, b := range bindings {
+		if b.Locator == "" {
+			required = append(required, b.Alias)
+		}
+	}
+	targetSchema := taskprovider.ClosedObjectSchema()
+	targetSchema["properties"], targetSchema["required"] = properties, required
+	inputSchema := taskprovider.ClosedObjectSchema()
+	inputSchema["properties"] = map[string]interface{}{"table_bindings": targetSchema}
+	if len(required) > 0 {
+		inputSchema["required"] = []interface{}{"table_bindings"}
+	}
 	return taskprovider.ExecutionContract{
-		InputSchema: taskprovider.ClosedObjectSchema(), InputDefaults: map[string]interface{}{}, InputUISchema: map[string]interface{}{},
+		InputSchema: inputSchema, InputDefaults: map[string]interface{}{"table_bindings": defaults}, InputUISchema: map[string]interface{}{"table_bindings": map[string]interface{}{"control": "group", "fields": fields}},
 		OutputSchema: map[string]interface{}{
 			"type": "object", "properties": map[string]interface{}{"passed": map[string]interface{}{"type": "boolean"}}, "required": []interface{}{"passed"}, "additionalProperties": false,
 		},

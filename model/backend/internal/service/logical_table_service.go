@@ -749,8 +749,6 @@ func (s *LogicalTableService) mapDataTypeToPostgreSQL(dataType string, length *i
 		return "BOOLEAN"
 	case "json":
 		return "JSONB"
-	case "text":
-		return "TEXT"
 	case "geometry":
 		return "GEOMETRY"
 	default:

@@ -69,7 +69,7 @@ const routes = [
         path: 'metrics',
         name: 'MetricList',
         component: () => import('../views/MetricList.vue'),
-        meta: { requiresAuth: true, title: '指标管理' }
+        meta: { requiresAuth: true, title: '指标定义' }
       },
       {
         path: 'metrics/:id',

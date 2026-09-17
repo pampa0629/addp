@@ -1,5 +1,16 @@
 import client from './client'
 
+export const overviewAPI = { get: params => client.get('/quality/overview', { params }) }
+
+// Read-only provenance via the current user's Standard permission, never a write payload.
+export const standardSourceAPI = {
+  getRevision: (elementID, revisionID) => client.get(`/standard/elements/${elementID}/revisions/${revisionID}`)
+}
+
+export const standardDomainAPI = {
+  list: () => client.get('/standard/domains')
+}
+
 // 跨模块: 引擎列表（System 模块）
 export const systemEngineAPI = {
   list: (params) => client.get('/system/engines', { params })
@@ -24,7 +35,7 @@ export const systemCatalogAPI = {
 }
 
 export const planAPI = {
-  run: id => client.post(`/quality/plans/${id}/run`),
+  run: (id, parameters) => client.post(`/quality/plans/${id}/run`, parameters),
   list: (params) => client.get('/quality/plans', { params }),
   get: (id) => client.get(`/quality/plans/${id}`),
   create: (data) => client.post('/quality/plans', data),

@@ -602,9 +602,9 @@ paths:
     post:
       consumes:
       - application/json
-      description: 逐一重新校验 Component 的 Service 契约，并使用当前权威指纹归一化完整应用草稿 | Revalidate every
-        Component Service contract and normalize the complete application draft with
-        authoritative current fingerprints
+      description: |-
+        逐一重新校验 Component 的 Service 契约，并使用当前权威指纹归一化完整应用草稿 | Revalidate every Component Service contract and normalize the complete application draft with authoritative current fingerprints
+        renderer_config.field_presentations 可配置 value_labels：最多 32 个 string 或 bool 原值到显示名称的映射，不改变查询和原始结果 | renderer_config.field_presentations accepts value_labels: up to 32 typed string or bool value-label pairs for display only, without changing queries or original results
       parameters:
       - description: 数据应用名称和完整草稿 | Data application name and complete draft
         in: body
@@ -754,9 +754,9 @@ paths:
     put:
       consumes:
       - application/json
-      description: 允许增删改 Component；使用正整数 version 乐观并发，并逐一重新校验所有 Service 契约 | Allow
-        adding, removing, and editing Components; use positive version optimistic
-        concurrency and revalidate every Service contract
+      description: |-
+        允许增删改 Component；使用正整数 version 乐观并发，并逐一重新校验所有 Service 契约 | Allow adding, removing, and editing Components; use positive version optimistic concurrency and revalidate every Service contract
+        字段 value_labels 随草稿及发布修订保存；拒绝重复原值、类型不符和空标签 | Field value_labels are saved with drafts and published revisions; duplicate values, type mismatches and empty labels are rejected
       parameters:
       - description: Data Application UUID
         in: path

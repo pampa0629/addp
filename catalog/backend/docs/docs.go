@@ -654,7 +654,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Catalog 计算当前调用方可见条目中的引用集，Standard / System 动态解析显示信息；分面解析不影响目录列表和 Ready | Catalog computes references from entries visible to the caller while Standard and System dynamically resolve display facts; facet resolution does not affect entry listing or readiness",
+                "description": "Catalog 计算当前调用方可见条目中的引用集，Standard / System 动态解析显示信息；业务域包含 domain_path，分面解析不影响目录列表和 Ready | Catalog computes references from entries visible to the caller while Standard and System dynamically resolve display facts; domain facets include domain_path and facet resolution does not affect entry listing or readiness",
                 "produces": [
                     "application/json"
                 ],
@@ -1820,7 +1820,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Catalog 使用运行身份动态查询 Standard 或 System 当前可引用对象；不复制 owner 完整列表，owner 不可达只影响本次请求 | Catalog dynamically queries currently referenceable Standard or System objects using its runtime identity; owner lists are not copied, and owner unavailability affects only this request",
+                "description": "Catalog 使用运行身份动态查询 Standard 或 System 当前可引用对象；不复制 owner 完整列表，owner 不可达只影响本次请求，业务域候选包含 domain_path | Catalog dynamically queries currently referenceable Standard or System objects using its runtime identity; owner lists are not copied, and owner unavailability affects only this request; domain candidates include domain_path",
                 "produces": [
                     "application/json"
                 ],
@@ -2817,6 +2817,12 @@ const docTemplate = `{
                 "count": {
                     "type": "integer"
                 },
+                "domain_path": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "engine_type": {
                     "type": "string"
                 },
@@ -3193,6 +3199,12 @@ const docTemplate = `{
             "properties": {
                 "code": {
                     "type": "string"
+                },
+                "domain_path": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "id": {
                     "type": "string"

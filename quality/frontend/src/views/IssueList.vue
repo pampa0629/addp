@@ -5,6 +5,10 @@
     </div>
 
     <el-form :inline="true" style="margin-bottom:16px">
+      <el-form-item :label="t('quality.domain.owner')">
+        <DomainOwnershipSelect v-model="filter.owner_domain_id" filter :can-read="authStore.hasPermission('standard.domain.read')"
+          style="width: 280px" @loaded="domains = $event" @update:model-value="applyFilters" />
+      </el-form-item>
       <el-form-item :label="t('quality.issue.statusFilter')">
         <el-select v-model="filter.status" clearable :placeholder="t('quality.issue.allStatus')" @change="applyFilters" style="width:120px">
           <el-option :label="t('quality.issue.open')" value="open" />
@@ -27,6 +31,9 @@
 
     <el-alert v-if="loadError" :title="loadError" type="error" show-icon :closable="false" class="load-error" />
     <el-table :data="list" v-loading="loading" :empty-text="emptyText" border>
+      <el-table-column :label="t('quality.domain.owner')" min-width="180">
+        <template #default="{ row }">{{ domainOwnershipLabel(row.owner_domain_id, t, domains) }}</template>
+      </el-table-column>
       <el-table-column prop="id" :label="t('quality.issue.id')" width="80" />
       <el-table-column prop="type" :label="t('quality.issue.ruleType')" width="120" />
       <el-table-column prop="table_name" :label="t('quality.issue.tableName')" width="160" />
@@ -120,6 +127,9 @@ import { navigateQualityRoute } from '../utils/moduleNavigation'
 import { issueDetailRoute, issueExecutionRoute } from '../utils/issueNavigation'
 import { buildIssueListRouteQuery, resolveIssueListRouteState } from '../utils/issueListRouteState'
 import { useAuthStore } from '../store/auth'
+import DomainOwnershipSelect from '../components/DomainOwnershipSelect.vue'
+import { domainOwnershipLabel } from '../utils/domainOwnership'
+const domains = ref([])
 
 const { t } = useI18n()
 const route = useRoute()
@@ -130,13 +140,13 @@ const canViewExecutions = computed(() => authStore.hasPermission('monitor.execut
 const list = ref([])
 const loading = ref(false)
 const loadError = ref('')
-const filter = ref({ status: '', engine_id: null })
+const filter = ref({ status: '', engine_id: null, owner_domain_id: null })
 const pagination = ref({ page: 1, page_size: 20, total: 0 })
 const engines = ref([])
 const updatingIssueIds = ref(new Set())
 let routeReady = false
 let listRequestSequence = 0
-const hasFilters = computed(() => Boolean(filter.value.status || filter.value.engine_id))
+const hasFilters = computed(() => Boolean(filter.value.status || filter.value.engine_id || filter.value.owner_domain_id != null))
 const emptyText = computed(() => t(hasFilters.value
   ? 'quality.issue.filteredEmpty'
   : 'quality.issue.empty'))
@@ -156,6 +166,7 @@ const fetchList = async () => {
     const params = { page: pagination.value.page, page_size: pagination.value.page_size }
     if (filter.value.status) params.status = filter.value.status
     if (filter.value.engine_id) params.engine_id = filter.value.engine_id
+    if (filter.value.owner_domain_id != null) params.owner_domain_id = filter.value.owner_domain_id
     const res = await issueAPI.list(params)
     if (requestSequence !== listRequestSequence) return
     list.value = res?.data || []
@@ -181,6 +192,7 @@ const fetchList = async () => {
 const buildRouteQuery = () => buildIssueListRouteQuery({
   status: filter.value.status,
   engineID: filter.value.engine_id,
+  ownerDomainID: filter.value.owner_domain_id,
   page: pagination.value.page,
   pageSize: pagination.value.page_size
 })
@@ -242,6 +254,7 @@ const applyRouteState = (query) => {
   const state = resolveIssueListRouteState(query)
   filter.value.status = state.status
   filter.value.engine_id = state.engineID
+  filter.value.owner_domain_id = state.ownerDomainID
   pagination.value.page = state.page
   pagination.value.page_size = state.pageSize
   return state

@@ -366,14 +366,14 @@ func TestStandardClientListsReferenceCandidates(t *testing.T) {
 			t.Fatalf("unexpected Standard request: %s %s", r.Method, r.URL.String())
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"data":[{"object_type":"domain","id":7,"name":"Sales","code":"sales","status":"active"}],"total":21,"page":2,"page_size":20,"total_pages":2}`))
+		_, _ = w.Write([]byte(`{"data":[{"object_type":"domain","id":7,"name":"Sales","code":"sales","status":"active","domain_path":["Commerce","Sales"]}],"total":21,"page":2,"page_size":20,"total_pages":2}`))
 	}))
 	defer server.Close()
 	client := NewStandardClient(server.URL, ServiceTokenProviderFunc(func(context.Context, uint) (string, error) {
 		return "tenant-token", nil
 	}), server.Client()).WithTenantID(7)
 	result, err := client.ListReferenceCandidates(context.Background(), "domain", " sales ", 2, 20)
-	if err != nil || result.Total != 21 || len(result.Data) != 1 || result.Data[0].Code != "sales" {
+	if err != nil || result.Total != 21 || len(result.Data) != 1 || result.Data[0].Code != "sales" || len(result.Data[0].DomainPath) != 2 || result.Data[0].DomainPath[0] != "Commerce" {
 		t.Fatalf("result = %#v, err=%v", result, err)
 	}
 }

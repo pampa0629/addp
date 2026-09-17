@@ -111,6 +111,7 @@ func newPlanServiceTestDB(t *testing.T) *gorm.DB {
 	if err := db.Exec(`CREATE TABLE quality.plans (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		tenant_id INTEGER NOT NULL,
+		owner_domain_id INTEGER,
 		name TEXT NOT NULL,
 		description TEXT,
 		code TEXT NOT NULL, version INTEGER NOT NULL, table_bindings JSON NOT NULL,

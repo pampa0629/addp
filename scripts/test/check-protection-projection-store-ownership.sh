@@ -53,7 +53,7 @@ if [ ${#violations[@]} -gt 0 ]; then
         echo "  $file" >&2
     done
     echo >&2
-    echo "Use projectionstore.New with the Owner schema instead of defining private tables or migrations." >&2
+    echo "Use Backend-owned projectionstore.Migrate and read-only projectionstore.Open with the Owner schema." >&2
     exit 1
 fi
 

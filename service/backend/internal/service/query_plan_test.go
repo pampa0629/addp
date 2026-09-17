@@ -451,3 +451,38 @@ func testPublishedQueryService() *models.QueryService {
 		},
 	}
 }
+
+func TestContainsQueryBindsLiteralAndCursor(t *testing.T) {
+	s := testPublishedQueryService()
+	codec := newQueryTokenCodec([]byte("0123456789abcdef0123456789abcdef"))
+	for _, engine := range []string{"postgresql", "mysql"} {
+		req := &models.QueryExecutionRequest{Filter: &models.QueryFilter{Field: "name", Op: "contains", Value: "苏%_\\'"}, Page: models.QueryPageRequest{Limit: 2}}
+		compiled, err := compileQueryPlan(s, req, queryProtocolREST, engine, "SELECT id, name, score FROM items", nil, nil, codec)
+		if err != nil {
+			t.Fatal(engine, err)
+		}
+		if strings.Contains(compiled.SQL, "苏") || !reflect.DeepEqual(compiled.Args, []interface{}{"苏%_\\'"}) {
+			t.Fatalf("%s %#v", compiled.SQL, compiled.Args)
+		}
+		cursor, err := codec.encodeCursor(queryCursorPayload{ServiceID: s.ID, ServiceVersion: compiled.ServiceVersion, QueryHash: compiled.QueryHash, OrderBy: compiled.OrderBy, Values: []interface{}{int64(7)}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Page.Cursor = cursor
+		if _, err = compileQueryPlan(s, req, queryProtocolREST, engine, "SELECT id, name, score FROM items", nil, nil, codec); err != nil {
+			t.Fatal(err)
+		}
+		req.Filter.Value = "changed"
+		if _, err = compileQueryPlan(s, req, queryProtocolREST, engine, "SELECT id, name, score FROM items", nil, nil, codec); !errors.Is(err, ErrInvalidQueryCursor) {
+			t.Fatal(err)
+		}
+	}
+	for _, f := range []*models.QueryFilter{{Field: "score", Op: "contains", Value: "1"}, {Field: "name", Op: "contains", Value: 12}, {Field: "name", Op: "contains"}} {
+		if _, err := compileQueryPlan(s, &models.QueryExecutionRequest{Filter: f}, queryProtocolREST, "postgresql", "SELECT id, name, score FROM items", nil, nil, codec); !errors.Is(err, ErrInvalidStructuredQuery) {
+			t.Fatal(err)
+		}
+	}
+	if textPredicateDialect("oracle") != nil || textPredicateDialect("unknown") != nil {
+		t.Fatal("unsupported provider advertised")
+	}
+}

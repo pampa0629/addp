@@ -4,8 +4,9 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/addp/common/schema"
+
 	commonConfig "github.com/addp/common/config"
-	commonExecution "github.com/addp/common/execution"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -49,7 +50,7 @@ func getEnv(key, defaultValue string) string {
 }
 
 func AutoMigrateNonIAM(db *gorm.DB) error {
-	if err := commonExecution.EnsureStore(db); err != nil {
+	if err := schema.InitializeCommon(db); err != nil {
 		return err
 	}
 	return nil

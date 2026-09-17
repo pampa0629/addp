@@ -177,7 +177,7 @@ func analyticalResultFilter(filter *models.QueryFilter, service *models.QuerySer
 			out.Op = "not_null"
 		}
 		return out, nil
-	case "eq", "ne", "lt", "lte", "gt", "gte":
+	case "eq", "ne", "lt", "lte", "gt", "gte", "contains":
 		if !filterComparisonAllowed(field.Type, op) {
 			return nil, ErrInvalidStructuredQuery
 		}

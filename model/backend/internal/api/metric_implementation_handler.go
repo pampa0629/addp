@@ -119,6 +119,7 @@ func (h *MetricImplementationHandler) Create(c *gin.Context) {
 
 // @Summary 保存指标实现草稿 | Save metric implementation draft
 // @Description 保存数据库无关的结构化计算契约；来源结构来自 Meta，执行引擎必须声明分析计算能力。 | Saves a database-independent computation contract using Meta source facts and a certified analytical engine.
+// @Description 可选 subject_label 必须引用主体维度的 string 字段，向结果追加当前主体及比较方名称，保留原始标识与计算值。 | Optional subject_label references a string field in the subject dimension and adds current subject and comparison labels while preserving identities and metric values.
 // @Tags Model
 // @Produce json
 // @Accept json

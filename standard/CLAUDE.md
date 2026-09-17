@@ -4,6 +4,8 @@
 
 数据元修订 `compiled_quality_rules` 的结构和校验必须遵守 [ADDP 数据质量规范](../docs/spec/addp数据质量规范.md)。规则仅由值约束编译，`rule_key` 由 Standard 按数据元稳定 ID 与约束类型生成并跨修订保持；Standard 不拥有物理字段应用、规则执行、评分或质量问题。
 
+数据元精确修订 GET 返回 ElementRevisionDetail：在原修订内容上提供稳定 element_code 和按 code_set_revision_id 解析的码值集完整只读快照。历史已撤回码值集仍按确定 ID 展示，不改用当前生效修订；权限仍为 standard.element.read，跨租户及不匹配的数据元/修订拒绝。Quality 管理界面可读取该投影追溯来源，worker 不依赖它。
+
 Standard 定义 Domain、Glossary、Element、MetricDefinition、CodeSet、Unit 和标准来源文档等可复用业务语义，但不拥有这些语义与具体 DataItem、CatalogEntry 或 CatalogComponent 的应用关系。具体字段/组件到标准修订的映射只由 Catalog 保存；检查方案、规则来源快照、执行结果和问题只由 Quality 保存。Standard 不依赖 Meta 或 Catalog，不保存 `catalog_entry_id`、反向资源列表或质量执行事实。安全分类、安全等级、敏感类型和保护基线统一属于 Security，Standard 不保存第二份安全事实。
 
 Metric 的指标依赖与基准指标关系通过当前 User Token 读取 `GET /metrics/:id/relations` 一跳图；它要求 `standard.metric.read`，只读 Standard 本地事实，不调用 Catalog 或 Model，也不使用 `standard.catalog.read` 机器权限替代用户权限。数据元、Domain、指标分类和单位继续留在 Metric 专业详情中，本阶段不伪造为企业目录节点。
@@ -35,7 +37,7 @@ Metric 的指标依赖与基准指标关系通过当前 User Token 读取 `GET /
 - 业务域只表达业务语义与治理责任，不表达可见范围、审核容器或目录分类。标准对象独立维护修订和发布流程，不再建立标准成员清单的独立治理容器。
 - 业务域、业务术语、数据元、码值集、指标定义、标准文档和标准分类的稳定编码统一使用小写 `snake_case`，在对应 Tenant 和类型内唯一且创建后不可变；创建入口不自动转换非法编码。归属域和适用范围可以独立调整，所以业务域编码不是正式标准编码的强制前缀；该前缀只约束 Copilot 新候选。
 - 上述稳定身份和分类的创建 API 必须在 Repository 写入前校验编码；不合规时统一返回 HTTP 400、`error_code=invalid_standard_code`。候选正式化同样先校验历史候选编码，禁止绕过公开创建约束。
-- 手工新建业务术语不提交 `change_summary`，后端按请求语言生成并保存“初始创建 / Initial creation”作为 R1 的说明；新建表单不展示该字段，后续修订仍必填变更说明。候选正式化继续保留其来源与处置说明。
+- 手工新建业务术语、数据元、码值集、指标定义和标准文档（含新建并关联文档）不提交 `change_summary`，后端按请求语言生成并保存“初始创建 / Initial creation”作为 R1 的说明；新建表单不展示该字段，后续修订仍必填变更说明。候选正式化继续保留其来源与处置说明。
 - 发布型标准采用“稳定身份 + 不可变修订”；统一状态为 `draft → in_review → published → withdrawn`，按半开生效区间动态解析当前修订。
 - 标准对象显式保存 `scope_type=platform|tenant_common|domain`；仅 `domain` 必须指定 `owner_domain_id`。码值集不得再以“租户自定义”为由强制归属业务域。
 - 范围模型只保留 `scope_type + owner_domain_id`；启动迁移遇到历史 `domain_id` 时必须一次性回填归属和范围并删除旧列，即使新旧列曾同时存在，也不得保留双轨字段。
@@ -102,6 +104,9 @@ standard/
 
 ### `standard.domains` — 业务域（树形）
 
+业务域树与引用候选复用同一层级构建，按 `sort_order, id` 排列同级节点；引用解析和分页候选的 `domain_path` 是根到当前域的名称数组。候选在父域优先顺序上搜索和分页，完整路径不受分页边界影响。路径不持久化，损坏的父子关系不得静默提升为根节点。
+
+
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | parent_id | int64? | 父节点（支持多层级） |
@@ -116,7 +121,6 @@ standard/
 | code | string | Tenant 内唯一且不可变的术语编码 |
 | scope_type | string | `platform` / `tenant_common` / `domain`；租户公开写接口只允许后两者 |
 | owner_domain_id | int64? | 归属业务域；仅 `scope_type=domain` 时必填 |
-| steward_id | int64? | 数据责任人 |
 | tags | StringArray | 标签 |
 | draft_revision_id | int64? | 当前唯一草稿或审核中修订指针 |
 | version | int64 | 稳定身份乐观锁版本，不是业务版次 |
@@ -148,7 +152,6 @@ standard/
 | code | string | Tenant 内唯一且不可变的标准编码 |
 | scope_type | string | `platform` / `tenant_common` / `domain`；租户公开写接口只允许后两者 |
 | owner_domain_id | int64? | 归属业务域；仅 `scope_type=domain` 时必填 |
-| steward_id | int64? | 数据责任人 |
 | tags | StringArray | 标签 |
 | draft_revision_id | int64? | 当前唯一可编辑草稿 |
 | version | int64 | 资源并发版本，不是业务版次 |
@@ -161,7 +164,7 @@ standard/
 | element_id / revision_no | int64 | 数据元身份 / 业务修订号 |
 | status | string | `draft` / `in_review` / `published` / `withdrawn` |
 | name / definition | string/text | 本修订的标准名称与定义 |
-| data_type | string | `string` / `int` / `bigint` / `float` / `decimal` / `date` / `datetime` / `bool` / `json` / `text` |
+| data_type | string | `string` / `int` / `bigint` / `float` / `decimal` / `date` / `datetime` / `bool` / `json` |
 | length / precision_num / scale | int? | 与数据类型相容的表示约束 |
 | nullable / default_value / format | bool/string | 可空、默认值和格式约束 |
 | value_domain_kind | string | `unrestricted` / `range` / `enumeration` |
@@ -181,7 +184,6 @@ standard/
 | scope_type | string | `platform` / `tenant_common` / `domain`；Tenant 来源只能为后两者 |
 | owner_domain_id | int64? | 归属业务域；仅 `scope_type=domain` 时必填 |
 | origin | string | `platform` / `tenant`，只能由服务端决定 |
-| steward_id | int64? | 数据责任人 |
 | draft_revision_id | int64? | 当前唯一草稿 |
 | version | int64 | 资源并发版本 |
 
@@ -234,7 +236,7 @@ standard/
 
 ### `standard.metric_definitions` / `standard.metric_definition_revisions` — 指标定义
 
-指标定义使用“稳定身份 + 不可变修订”模型。稳定身份保存 `code`、`scope_type`、`owner_domain_id`、分类、责任人、标签和并发 `version`；修订保存 `metric_type`、名称、业务定义、统计口径、非引擎可执行的语义公式、单位、生效区间与统一发布状态。
+指标定义使用“稳定身份 + 不可变修订”模型。稳定身份保存 `code`、`scope_type`、`owner_domain_id`、分类、标签和并发 `version`；修订保存 `metric_type`、名称、业务定义、统计口径、非引擎可执行的语义公式、单位、生效区间与统一发布状态。
 
 `standard.metric_definition_revision_dependencies` 保存修订级语义依赖。草稿依赖 `dependency_definition_id`，发布时必须解析并冻结 `dependency_revision_id`；`atomic` 不允许依赖，`derived` 必须且只能有一个 `base`，`composite` 必须至少有一个 `component`。该表不保存模型表、字段、连接、过滤或可执行表达式。
 
@@ -245,7 +247,7 @@ standard/
 | `metric_definitions.category_id` | int64? | 所属指标分类 |
 | `metric_definitions.scope_type / owner_domain_id` | string / int64? | 适用范围与归属业务域 |
 | `metric_definitions.code` | string | 稳定英文标识 |
-| `metric_definitions.steward_id / tags` | int64? / StringArray | 责任人与标签 |
+| `metric_definitions.tags` | StringArray | 标签 |
 | `metric_definitions.draft_revision_id / version` | int64? / int64 | 工作修订指针与聚合并发版本 |
 | `metric_definition_revisions.metric_type` | string | `atomic` / `derived` / `composite` |
 | `metric_definition_revisions.name / definition / statistical_caliber` | string / text | 名称、业务定义与统计口径 |
@@ -291,7 +293,7 @@ standard/
 - Copilot 仅返回 `glossary`、`element`、`code_set`、`metric` 候选及证据坐标；Standard 验证证据属于输入修订后持久化。
 - `domain` 范围文档提炼时，Standard 必须按 `owner_domain_id` 读取当前租户权威业务域编码并作为 `code_namespace` 传给 Copilot；业务域编码必须符合小写 `snake_case`，新候选的 `code` 以及枚举引用的 `code_set_code` 必须属于 `<code_namespace>_` 前缀。`tenant_common` 与 `platform` 文档不附加领域前缀。这是候选生成约束，不是正式标准稳定编码的业务域前缀约束。Standard 不自动转换不合规业务域编码，也不从文档名称猜测命名空间。
 - Standard 同时从该文档稳定身份的全部历史提炼中构造最多 200 条 `known_candidates`，每条只包含 `candidate_type + code + name + definition`。仅编码符合当前命名空间的历史候选可以进入提示，按类型与编码去重，并依次优先选择已正式化、已保留、待裁决、已驳回候选中的最近出现内容；该读取使用轻量身份投影，不加载证据原文或完整候选载荷。Copilot 对同一概念必须优先复用已知编码。该列表只是生成约束上下文，不是新的持久化事实，也不得用于模型相似度合并。Copilot 在返回前校验命名空间，Standard 在持久化边界再次校验；任一候选越界时整批拒绝，禁止静默丢弃越界项。
-- Copilot 与 Standard 共用唯一候选数据类型词汇。数据元候选的 `data_type` 只允许 `string|int|bigint|float|decimal|date|datetime|bool|json|text`，码值集候选只允许 `string|int|bigint`，术语和指标候选必须为 `null`；`identifier` 属于业务语义，`numeric`、`date_or_datetime` 等模糊上位提示不是合法标准数据类型。数据元候选的 `value_domain_kind` 只允许 `unrestricted|range|enumeration`，其他候选必须为 `null`。枚举数据元候选必须通过 `code_set_code` 引用同一提炼批次中唯一的码值集候选；非枚举数据元以及其他候选不得携带该字段。候选引用只使用稳定编码，正式数据元修订仍由 Standard 按生效时点选择并冻结具体 `code_set_revision_id`。Copilot 输出 Schema 先约束，Standard 在持久化前再次校验字段适用性和批次内引用闭包；历史提炼批次保持不可变，契约修正后通过新提炼批次表达新结果。
+- Copilot 与 Standard 共用唯一候选数据类型词汇。数据元候选的 `data_type` 只允许 `string|int|bigint|float|decimal|date|datetime|bool|json`，码值集候选只允许 `string|int|bigint`，术语和指标候选必须为 `null`；`identifier` 属于业务语义，`numeric`、`date_or_datetime` 等模糊上位提示不是合法标准数据类型。数据元候选的 `value_domain_kind` 只允许 `unrestricted|range|enumeration`，其他候选必须为 `null`。枚举数据元候选必须通过 `code_set_code` 引用同一提炼批次中唯一的码值集候选；非枚举数据元以及其他候选不得携带该字段。候选引用只使用稳定编码，正式数据元修订仍由 Standard 按生效时点选择并冻结具体 `code_set_revision_id`。Copilot 输出 Schema 先约束，Standard 在持久化前再次校验字段适用性和批次内引用闭包；历史提炼批次保持不可变，契约修正后通过新提炼批次表达新结果。
 - 候选状态固定为 `pending`、`retained`、`rejected`；处置使用候选自己的并发 `version`，`retained` 不会自动创建或发布正式标准。单项处置只适用于当前文档、候选类型与稳定编码下恰好一个语义变体的候选族，并且请求候选必须是该语义变体按统一确定性规则选出的当前代表；历史非代表出现记录返回 409 `candidate_representative_stale`。一旦存在两个及以上语义变体，单项接口必须返回 409 `candidate_family_decision_required`，只能通过候选族胜出裁决完成处置，禁止绕过理由审计或留下同族互相矛盾的状态。
 - 文档候选治理页面只消费跨提炼批次的候选聚合视图，不再逐批平铺原始候选。聚合项以 `candidate_type + code + normalized(name, definition, payload)` 的 SHA-256 指纹确定；字符串折叠空白，维度去重排序，码值项按编码、名称、定义排序。同类型、同编码但规范化内容不同的候选必须分组展示，禁止用模型相似度自动合并。
 - 聚合视图不持久化，也不是新的聚合根。每个聚合项返回一个代表候选和按时间倒序排列的全部出现记录；出现记录保留候选 ID、提炼批次、文档修订、状态、版本、证据和正式化事实。存在正式化事实时聚合状态为 `formalized`；否则由最近一次已人工裁决的同义候选决定 `retained|rejected`；从未裁决时为 `pending`。人工动作只作用于代表候选，不批量回写其他原始候选。
@@ -323,7 +325,7 @@ GET/PUT/DELETE /api/v1/standard/domains/:id
 ### 业务术语
 ```
 GET/POST /api/v1/standard/glossaries                 # 创建稳定身份时同时创建首个草稿
-GET/PUT/DELETE /api/v1/standard/glossaries/:id       # PUT 只更新适用范围、归属域、责任人和标签
+GET/PUT/DELETE /api/v1/standard/glossaries/:id       # PUT 只更新适用范围、归属域和标签
 GET/POST /api/v1/standard/glossaries/:id/revisions
 GET/PUT /api/v1/standard/glossaries/:id/revisions/:revision_id
 POST /api/v1/standard/glossaries/:id/revisions/:revision_id/submit
@@ -336,7 +338,7 @@ GET/PUT /api/v1/standard/glossaries/:id/elements      # 关联数据元稳定身
 ### 数据元
 ```
 GET/POST /api/v1/standard/elements             # 创建稳定身份时同时创建首个草稿
-GET/PUT/DELETE /api/v1/standard/elements/:id   # PUT 只更新归属域、责任人和标签
+GET/PUT/DELETE /api/v1/standard/elements/:id   # PUT 只更新归属域和标签
 GET/POST /api/v1/standard/elements/:id/revisions
 GET/PUT /api/v1/standard/elements/:id/revisions/:revision_id
 POST /api/v1/standard/elements/:id/revisions/:revision_id/submit
@@ -348,7 +350,7 @@ GET /api/v1/standard/elements/:id/quality-rules # 只返回当前发布修订的
 ### 码值集
 ```
 GET/POST /api/v1/standard/code-sets
-GET/PUT/DELETE /api/v1/standard/code-sets/:id   # PUT 只更新归属域和责任人
+GET/PUT/DELETE /api/v1/standard/code-sets/:id   # PUT 只更新归属域和标签
 GET/POST /api/v1/standard/code-sets/:id/revisions
 GET/PUT /api/v1/standard/code-sets/:id/revisions/:revision_id
 POST /api/v1/standard/code-sets/:id/revisions/:revision_id/submit
@@ -426,6 +428,7 @@ GET/PUT /api/v1/standard/documents/:id/mappings # 多维关联（数据元/术�
 **依赖**:
 - **System 模块**: 统一身份认证、模块注册与心跳（`SYSTEM_URL`）
 - **Model 模块**: 删除业务域、数据元和指标定义前冻结 Model 标准引用删除屏障并执行权威影响扫描（`MODEL_URL`）；维度层级是 Model 本地聚合
+- **Quality 模块**: 删除业务域时还须冻结 Quality 的规则/方案归属引用屏障（`QUALITY_URL`，本地默认 `http://localhost:8182`）；任一消费者不可用时保留协调记录等待补偿，不跳过引用检查。Quality 使用自身服务身份校验归属域，worker 不调用域服务。
 - **Copilot 模块**: Standard 使用当前 Tenant 的 `addp-standard` Service Access Token 调用候选提炼端点（`COPILOT_URL`）；Copilot 不回写 Standard 数据库
 - **MinIO**: 标准文档文件存储（bucket: `standard`）
 
@@ -500,6 +503,10 @@ Standard 通过唯一 `POST /api/v1/standard/runtime/element-revisions/resolve` 
 
 ### 文档关联的多维设计
 
+文档关联与术语的数据元映射指向同租户、`lifecycle_state=active` 的数据元稳定身份，允许尚未发布的草稿；不得把身份存在性误用为“当前已发布修订存在性”。下游运行时解析和正式修订引用仍必须按各自发布契约校验。
+
+数据元和指标的单位选择复用 Standard `UnitSelect`，以 Element Plus 树形选择器按计量单位自带的度量类别组织。默认收拢分类，已选单位所在分类自动展开；分类只负责展开和收拢，只有单位叶节点可以选中。搜索支持分类名、单位名称和符号，并自动展开匹配结果；清空选择保存为 `null`。交互测试纳入已有 `make test-standard-frontend` 与平台 CI 的 Standard 前端门禁。
+
 同一篇文档可同时关联：
 - 多个数据元（`document_element_mappings`）
 - 多个术语（`document_glossary_mappings`）
@@ -542,3 +549,9 @@ Standard 当前使用单一启动迁移入口 `repository.Migrate`：在同一�
 - 术语、数据元、码集和指标详情使用 `/:id` 表达对象身份；详情返回使用明确列表路由，不依赖 `router.back()`。
 - 创建成功进入详情使用 `replace`，列表进入详情和跨标准对象导航使用 `push`。
 - 业务导航统一调用 `frontend/src/utils/moduleNavigation.js`。
+
+文本类型统一使用 `string`，界面显示“文本”，可选最大长度与格式约束；数据元类型选择统一采用“类型名称＋例如”两行选项，选中后显示取值范围或精度说明，使用同一个 `ElementDataTypeSelect` 组件覆盖新建和详情；不要求用户选择数据库存储类型。迁移将已有数据元修订的 `text` 类型编码原位规范化为 `string`，保留修订身份、状态和业务约束；这是类型词汇调整，不创建业务修订，受影响数据元的聚合版本推进一次。历史文档提炼批次保持不可变，旧类型候选须重新提炼后正式化。Standard 的五类标准稳定身份整体移除 `steward_id`，保留归属域、标签及审计操作人。
+
+文本类型与责任人收敛的验证复用 `make test-standard-frontend`、Standard Go 测试和 `make test-standard-postgres`；PostgreSQL 门禁覆盖字段删除、类型规范化、约束与历史快照保持及迁移幂等性。Model 对应使用 `make test-model-frontend`、Model Go 测试和 `make test-model-postgres`，Copilot 使用 `make test-copilot`。上述入口已登记到现有 CI 模块门禁。
+
+Standard 浏览器门禁使用独立的 Vite 依赖缓存，测试模式关闭 HMR，避免测试端口 4181 占用或连接开发端口 5181。日常开发模式继续保留热更新；验证沿用 `make test-standard-frontend`。

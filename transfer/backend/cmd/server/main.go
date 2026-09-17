@@ -22,6 +22,7 @@ import (
 	"github.com/addp/common/logger"
 	"github.com/addp/common/modulelifecycle"
 	commonRepo "github.com/addp/common/repository"
+	"github.com/addp/common/schema"
 	"github.com/addp/transfer/internal/api"
 	transferauthorization "github.com/addp/transfer/internal/authorization"
 	"github.com/addp/transfer/internal/capture"
@@ -105,7 +106,7 @@ func main() {
 	if err := continuousPolicyService.Apply(context.Background(), cfg); err != nil {
 		log.Fatalf("Failed to load continuous policy: %v", err)
 	}
-	protectionStore, err := projectionstore.New(db, cfg.DBSchema, "transfer", nil)
+	protectionStore, err := projectionstore.Open(db, cfg.DBSchema, "transfer", nil)
 	if err != nil {
 		log.Fatalf("初始化 Transfer 保护投影存储失败: %v", err)
 	}
@@ -304,18 +305,28 @@ func connectDatabase(cfg *config.Config) (*gorm.DB, error) {
 
 	// Connect first so the one-way capture schema split can run before AutoMigrate
 	// attempts to enforce the new non-null source_type column.
-	db, err := commonRepo.InitDatabase(dbConfig)
+	db, err := commonRepo.OpenDatabase(dbConfig)
 	if err != nil {
 		return nil, err
 	}
-	if err := transferRepo.MigrateCaptureProviderResources(db); err != nil {
+	if err := schema.Require(db, "common", schema.CommonVersion); err != nil {
 		return nil, err
 	}
-	if err := transferRepo.MigrateExecutionLogs(db); err != nil {
+	if err := schema.Migrate(db, "transfer", transferRepo.SchemaVersion, func(tx *gorm.DB) error {
+		if err := transferRepo.MigrateCaptureProviderResources(tx); err != nil {
+			return err
+		}
+		if err := transferRepo.MigrateExecutionLogs(tx); err != nil {
+			return err
+		}
+		if err := tx.AutoMigrate(transferSchemaModels()...); err != nil {
+			return fmt.Errorf("auto-migrate transfer models: %w", err)
+		}
+
+		_, err := projectionstore.Migrate(tx, cfg.DBSchema, "transfer", nil)
+		return err
+	}); err != nil {
 		return nil, err
-	}
-	if err := db.AutoMigrate(transferSchemaModels()...); err != nil {
-		return nil, fmt.Errorf("auto-migrate transfer models: %w", err)
 	}
 
 	return db, nil

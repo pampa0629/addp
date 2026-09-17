@@ -28,7 +28,8 @@ export default defineConfig({
   server: {
     port: 5181,
     strictPort: true,
-    hmr: {
+    // E2E uses port 4181 and must not bind to or reload from the live server.
+    hmr: process.env.ADDP_E2E === '1' ? false : {
       protocol: 'ws',
       host: 'localhost',
       port: 5181,

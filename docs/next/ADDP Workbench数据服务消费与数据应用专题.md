@@ -416,6 +416,10 @@ Renderer 结果选择 -> Selection Binding -> Application Parameter
 
 手工输入 Application Parameter 仍按现有“查询全部”主路径提交，不因首期选择联动改成逐键自动查询。用户选择结果后可以直接在现有参数控件中查看、修改或清空最终值，不建立第二份不可见的 interaction state。
 
+运行画布根据既有 Selection Binding，在参数旁提供定位源组件的“从…选择”入口，在源组件显示选择操作与目标参数提示；成功赋值只提示参数已更新，不把下游查询成功作为同一个结论。Component 已有的 description 在运行与整页预览中一致显示。入口只在同页滚动并聚焦源组件，不改 URL、不执行额外查询、不增加快照字段，也不从目录当前页推断或缓存人员昵称。参数原始值继续可见、可编辑，名称仍由各 Service 输出。
+
+选择源组件的专用筛选就近呈现：某个 Application Parameter 的全部 Parameter Binding 仅指向一个选择源 Component，且它不是任何 Selection Binding 的赋值目标时，控件放入该源组件、位于结果上方；其他参数保留在顶部。位置只从显式绑定派生，不依据参数名称、字段名称、服务或业务领域猜测用途，不新增持久化配置。两个位置复用唯一参数字段组件、同一参数值和契约校验；输入仍不自动查询，可通过组件既有“查询”或顶部“查询全部组件”提交，重查重置游标。`parameters` 显示开关同时控制顶部和组件内控件；恢复默认值与预设仍覆盖完整参数集合，草稿整页预览与发布运行共用此规则。
+
 #### 5.4.3 保存与校验
 
 `selection_bindings` 属于 Data Application 草稿和不可变 Application Revision 快照，不单独建表，不增加运行 API，也不保存用户实际选择值或查询结果。该字段是 `addp.workbench_data_application/v1` 当前契约的附加集合：缺失时由同一规范化主路径收敛为空数组，既有不可变 Revision 保持原文和原行为；Backend 不增加 v1/v2 双运行分支。
@@ -736,9 +740,11 @@ Query Service 当前结构化执行请求已经支持：
 - `order_by`；
 - cursor `page`；
 - `json | csv | geojson`；
-- `eq | ne | lt | lte | gt | gte | in | is_null | is_not_null | bbox_intersects`。
+- `eq | ne | lt | lte | gt | gte | in | contains | is_null | is_not_null | bbox_intersects`。
 
 Workbench 根据 Consumer Descriptor 中的字段类型、允许操作符和空间能力生成输入框、枚举、多选、范围、日期和地图框选控件。Workbench 只编译结构化请求，不拼接 SQL。
+
+`contains` 仅对 string 字段且执行引擎实现文本筛选 Provider 时声明，按字面子串区分大小写，通配符字符无特殊含义。人员选择表可分别绑定可选昵称输入；留空不筛选，变更条件重置游标，服务端筛选覆盖全部结果而非当前页。Workbench 只按 Descriptor 配置、校验和发送操作符。
 
 ### 7.2 服务级命名参数
 
@@ -2163,6 +2169,20 @@ Workbench 的正式运行入口必须比 Manager 数据预览和 Service 服务�
 - `temporal_format`：只允许 `date | time | datetime`，且必须与 `date | time | timestamp` 输出类型匹配；
 - `width`：只允许 Table 使用，范围为 `80..600` CSS px。
 
+`value_labels` 为有限值配置显示名称，每项只包含类型化 `value` 与 `label`，最多 32 项。本阶段支持 `string | bool` 字段；字符串精确区分大小写和空白，最长 1000 字符，允许空字符串；标签去除首尾空白后必填，最长 100 字符。禁止重复值、null、跨类型匹配、表达式和动态请求。未命中时按原值展示，null 仍显示缺失标记。映射只替换显示文本，状态规则仍对原始值求值；共享格式化器统一用于表格、图表维度/提示和地图标签/弹窗，不改变查询、导出或选择事件。创作界面和 Backend 同时按 Descriptor 校验，配置随不可变 Application Revision 保存。
+
+人员昵称等可变化的维度属性不属于静态 `value_labels`。关联由服务侧基于显式键关系完成，输出同时保留稳定标识和显示名称；Workbench 仅通过 Consumer SDK 读取 Descriptor 与结果并选择展示字段。不得从当前目录组件的分页结果拼接名称，也不得直连 Model 或数据库。关联键唯一性、未匹配行保留和属性时点应由服务关联契约明确，不能让名称关联改变指标粒度或放大计算值。
+
+此扩展沿用 `make test-common-frontend`、`make test-workbench-frontend` 和 Workbench Backend Go 门禁；真实持久化由既有 `make test-workbench-postgres` 验证。共享目录与 Workbench 已由现有 CI 路径注册覆盖，不新增测试入口或外部依赖。
+
+在线自动化沿用 `workbench-service-consumption` 的隔离商务 MySQL 夹具：临时应用草稿保存状态值名称映射，真实浏览器验证保存回显、服务输出的维度文本、映射显示、CSV 保留原值，以及表格选择将原始状态值传给关联图表。该 suite 不重复发布不可删除的应用修订，不使用 Outdoor 业务身份或当前开发服务；不可变发布由 Workbench 确定性浏览器门禁和 PostgreSQL owner 门禁覆盖，指标名称关联由 Model 的 PostgreSQL/MySQL 金样覆盖。Python 证据校验必须拒绝缺少这些浏览器断言的报告，现有 `make test-online-runner` 和 Online T4 workflow 继续负责注册与编排。
+
+2026-09-17 自动化补充验证：`make test-workbench-frontend` 通过 94 项确定性测试、10 项浏览器测试与产品构建；新增浏览器用例覆盖目录页缺少主体、目录旧昵称与服务当前昵称不同、空昵称、双向名称互换和原始标识联动。`make test-online-runner` 通过 211 项测试及 CI 注册检查，Online 浏览器脚本语法检查通过；现有 `online-t4-gates.yml` 的 `workbench-service-consumption` 选项与标准入口已覆盖本轮文件，无新增服务、身份权限或测试入口。真实 T4 尚未执行：当前会话未配置专用 Runner 环境、测试 Tenant/身份与 MySQL Engine，标准入口在 `ADDP_ONLINE_TEST must be exactly 1` 预检处拒绝运行，未启动或接管开发服务。具备专用环境后须执行现有 Online workflow 并取得真实浏览器报告，不能将上述本地结果当作在线通过。
+
+2026-09-17 本地验证：共享前端 102 项、Workbench 94 项确定性测试和 9 项浏览器用例、Workbench Backend `go test ./...` 以及标准 PostgreSQL owner 门禁均通过。浏览器用例覆盖映射编辑、重复值阻断、保存回显、发布和运行。
+
+同日用户重启后，真实浏览器完成正式发布闭环：Model 重叠率实现 `2@R3`（实现修订 ID `8`）显式选择人员维度的 `person_nickname` 作为主体显示名称，Service `28` 经现有发布入口重新绑定该修订；既有 Outdoor 应用 `18c7223c-b5c0-4c25-ba28-648e85f44537` 显式更新组件消费契约，选择 `subject_label / comparison_label` 显示“主体人员 / 比较人员”，配置 `forward / reverse` 的值名称为 `A → B / B → A`，保存并发布不可变 Revision `11`。正式运行页自动查询显示“攀爬 / daydayup”，两个方向仍分别为活动数 `286 / 193`、共同 `32`、重叠率 `0.111888 / 0.165803`。点击目录中的“晚风”作为人员 A 后，昵称按方向正确互换，活动数变为 `1 / 193`、共同 `1`、重叠率 `1.000000 / 0.005181`；随后恢复默认参数。窄窗口目视验收发现人员列在右侧，因此进一步将双方昵称、方向和重叠率移到前列，保存发布 Revision `12`；正式运行页确认昵称直接可见，计算结果不变。显示名称来自指标服务结果，没有从目录当前页补全；稳定标识继续承担参数和关联键职责。此证据完成真实浏览器验收，不替代专用 runner 的 `workbench-service-consumption` T4 门禁。
+
 Table 的 `columns`、Chart 的 `dimension / measures`、Map 的 `label_field / tooltip_fields / style.field` 仍是字段身份与查询事实源。字段呈现规则只格式化 renderer 展示，不修改 rows，不改变选择联动、参数绑定或导出数据，不把标签当作字段名回传 Service。Value renderer 的 `items` 已以字段、标签、单位和精度表达同一职责，继续作为它的唯一配置，不再叠加第二份 `field_presentations`。
 
 Backend 对重复字段、renderer 未使用字段、不匹配类型的格式、越界精度或列宽严格失败关闭。Frontend 不接受任意 formatter 名、函数或格式化代码；Table、Chart 和 Map 必须共享 `common-frontend` 内唯一的标签解析和标量格式化实现，Workbench 只负责根据 Descriptor 创作、保存并传入配置。未显式配置的字段使用 Descriptor `comment || name` 和原始值作为唯一默认行为，不引入域、服务 ID、业务字段名或 Outdoor 特例。
@@ -2205,7 +2225,7 @@ Backend 必须按当前冻结 Descriptor 对规则数量、操作符、operand �
 
 ### 14.47 Data Application 运行布局与选择反馈（2026-09-09）
 
-最终应用的 Component placement 既是位置约束也是可用展示区域。Chart、Map、Table 等可伸展 renderer 必须填满卡片标题和固定操作区之外的剩余高度，不能继续使用固定 `420px` 形成大块无意义留白；移动端退化为纵向流式布局时仍保留受控最小高度。该行为只改变运行画布布局，不修改 Snapshot placement、查询契约或 renderer 数据语义。
+最终应用的 Component placement 既是位置约束也是可用展示区域。Chart、Map、Table 等可伸展 renderer 必须填满卡片标题和固定操作区之外的剩余高度，不能继续使用固定 `420px` 形成大块无意义留白；移动端退化为纵向流式布局时仍保留受控最小高度。该行为只改变运行画布布局，不修改 Snapshot placement、查询契约或 renderer 数据语义。 表格渲染宿主必须把剩余高度传递到共享表格的内部滚动区，分页区不参与压缩；大量结果行不得溢出覆盖分页按钮或截获其点击。
 
 Map popup 必须在当前地图 viewport 内完整可见。点击靠近任一边界的要素时，由共享 Map renderer 使用受控边距自动平移地图，使 popup 完整进入视口；popup 自身保留最大高度和内部滚动，不能溢出后由 Workbench 页面裁切。自动平移只服务信息可见性，不改变数据查询、要素选择或持久视图状态。
 

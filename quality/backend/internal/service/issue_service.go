@@ -14,8 +14,8 @@ func NewIssueService(issueRepo *repository.IssueRepository) *IssueService {
 	return &IssueService{issueRepo: issueRepo}
 }
 
-func (s *IssueService) List(tenantID int64, status string, engineID int64, page, pageSize int) ([]models.Issue, int64, error) {
-	return s.issueRepo.List(tenantID, status, engineID, page, pageSize)
+func (s *IssueService) List(tenantID int64, status string, engineID int64, ownerDomainID *int64, page, pageSize int) ([]models.Issue, int64, error) {
+	return s.issueRepo.List(tenantID, status, engineID, ownerDomainID, page, pageSize)
 }
 
 func (s *IssueService) Get(id, tenantID int64) (*models.Issue, error) {

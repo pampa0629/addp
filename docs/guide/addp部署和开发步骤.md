@@ -225,3 +225,7 @@ bash scripts/prod/start.sh
       - `health-check.sh` - 健康监控
       - `swarm/` - Docker Swarm 高可用部署
     - 完整脚本文档参阅 [`scripts/README.md`](scripts/README.md)
+
+### Backend 与 Worker 启动顺序
+
+System Backend 先完成公共 schema 初始化。各模块 Backend 并行迁移自身 schema 并达到 `/health/ready` 后，各自的 Worker 才启动；不同模块不互相等待。Compose 使用对应 Backend 的 `service_healthy` 条件，开发脚本使用按模块的并发等待任务。Worker 初始化不执行平台 schema DDL，独立启动时必须通过模块及公共 schema 版本校验。结构升级前先停止相关 Worker 领取任务并结束在途任务，禁止旧 Worker 与新 schema 混跑。

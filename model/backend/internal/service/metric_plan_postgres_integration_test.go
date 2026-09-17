@@ -20,10 +20,36 @@ func metricGoldenContract() (models.MetricContract, metricPlanBindings) {
 		return models.LogicalField{ID: id, ColumnName: name, DataType: typ, IsPK: pk, Nullable: false}
 	}
 	bindings := metricPlanBindings{Fact: metricPlanSource{Metadata: metricTableMetadata{Name: "metric_golden_facts"}, Fields: map[int64]models.LogicalField{1: field(1, "person_id", "string", false), 2: field(2, "event_id", "string", false), 3: field(3, "leader", "bool", false)}}, Relations: map[int64]metricPlanRelation{
-		10: {SourceField: 1, TargetField: 4, Target: metricPlanSource{Metadata: metricTableMetadata{Name: "metric_golden_people"}, Fields: map[int64]models.LogicalField{4: field(4, "person_id", "string", true)}}},
+		10: {SourceField: 1, TargetField: 4, Target: metricPlanSource{Metadata: metricTableMetadata{Name: "metric_golden_people"}, Fields: map[int64]models.LogicalField{4: field(4, "person_id", "string", true), 7: {ID: 7, ColumnName: "nickname", DataType: "string", Nullable: true}}}},
 		11: {SourceField: 2, TargetField: 5, Target: metricPlanSource{Metadata: metricTableMetadata{Name: "metric_golden_events"}, Fields: map[int64]models.LogicalField{5: field(5, "event_id", "string", true), 6: field(6, "event_date", "date", false)}}},
 	}}
 	return models.MetricContract{Operation: "count_distinct", Subject: models.MetricFieldReference{FieldID: 1}, SubjectRelationID: 10, Distinct: models.MetricFieldReference{FieldID: 2}, Time: models.MetricFieldReference{FieldID: 6, RelationID: 11}, Filters: []models.MetricBooleanFilter{{Field: models.MetricFieldReference{FieldID: 3}, Value: true}}}, bindings
+}
+
+func TestMetricSubjectLabelRequiresExplicitIdentityDimensionString(t *testing.T) {
+	for _, ref := range []models.MetricFieldReference{{FieldID: 1}, {FieldID: 6, RelationID: 11}, {FieldID: 999, RelationID: 10}, {FieldID: 7, RelationID: 10}} {
+		contract, bindings := metricGoldenContract()
+		contract.SubjectLabel = &ref
+		p, err := buildMetricPlan(contract, bindings)
+		if ref.FieldID != 7 {
+			if err == nil {
+				t.Fatalf("invalid label reference accepted: %+v", ref)
+			}
+			continue
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(p.Output.Fields) != 4 || p.Output.Fields[3].Name != "subject_label" || !p.Output.Fields[3].Nullable {
+			t.Fatalf("output=%+v", p.Output)
+		}
+		field := bindings.Relations[10].Target.Fields[7]
+		field.DataType = "int"
+		bindings.Relations[10].Target.Fields[7] = field
+		if _, err := buildMetricPlan(contract, bindings); err == nil {
+			t.Fatal("numeric label accepted")
+		}
+	}
 }
 
 func TestMetricCompilerRejectsAmbiguousDimensionsAndUnknownFields(t *testing.T) {

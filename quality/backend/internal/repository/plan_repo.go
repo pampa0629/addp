@@ -25,19 +25,20 @@ func NewPlanRepository(db *gorm.DB) *PlanRepository {
 	return &PlanRepository{db: db}
 }
 
-func (r *PlanRepository) List(ctx context.Context, tenantID int64, page, pageSize int) ([]models.QualityPlan, int64, error) {
+func (r *PlanRepository) List(ctx context.Context, tenantID int64, ownerDomainID *int64, page, pageSize int) ([]models.QualityPlan, int64, error) {
 	var items []models.QualityPlan
 	var total int64
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var err error
-		items, total, err = NewPlanRepository(tx).list(ctx, tenantID, page, pageSize)
+		items, total, err = NewPlanRepository(tx).list(ctx, tenantID, ownerDomainID, page, pageSize)
 		return err
 	}, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
 	return items, total, commonRepository.WrapDBError(err)
 }
-func (r *PlanRepository) list(ctx context.Context, tenantID int64, page, pageSize int) ([]models.QualityPlan, int64, error) {
+func (r *PlanRepository) list(ctx context.Context, tenantID int64, ownerDomainID *int64, page, pageSize int) ([]models.QualityPlan, int64, error) {
 	page, pageSize = normalizePage(page, pageSize)
 	query := r.db.WithContext(ctx).Where("tenant_id = ?", tenantID)
+	query = filterOwnerDomain(query, ownerDomainID)
 	var total int64
 	if err := query.Model(&models.QualityPlan{}).Count(&total).Error; err != nil {
 		return nil, 0, commonRepository.WrapDBError(err)
@@ -70,6 +71,9 @@ func (r *PlanRepository) Get(ctx context.Context, tenantID, id int64) (*models.Q
 
 func (r *PlanRepository) Create(ctx context.Context, task *models.QualityPlan) error {
 	return commonRepository.WrapDBError(r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := lockOwnedDomain(tx, task.TenantID, task.OwnerDomainID); err != nil {
+			return err
+		}
 		if err := tx.Create(task).Error; err != nil {
 			return err
 		}
@@ -93,8 +97,12 @@ func (r *PlanRepository) Replace(ctx context.Context, task *models.QualityPlan, 
 		if active > 0 {
 			return fmt.Errorf("%w: quality plan has an active execution", commonAPI.ErrConflict)
 		}
+		if err := lockOwnedDomain(tx, task.TenantID, task.OwnerDomainID); err != nil {
+			return err
+		}
+		domainChanged := ownerDomainChanged(current.OwnerDomainID, task.OwnerDomainID)
 		result := tx.Model(&current).Where("version = ?", expectedVersion).Updates(map[string]interface{}{
-			"name": task.Name, "description": task.Description,
+			"name": task.Name, "description": task.Description, "owner_domain_id": task.OwnerDomainID,
 			"table_bindings": task.TableBindings,
 			"version":        expectedVersion + 1, "updated_by": task.UpdatedBy, "updated_at": task.UpdatedAt,
 		})
@@ -104,8 +112,22 @@ func (r *PlanRepository) Replace(ctx context.Context, task *models.QualityPlan, 
 		if result.RowsAffected != 1 {
 			return ErrVersionConflict
 		}
+		// Current issues follow the plan; execution snapshots remain immutable.
+		if domainChanged {
+			if err := tx.Model(&models.Issue{}).Where("tenant_id = ? AND plan_id = ?", task.TenantID, task.ID).
+				UpdateColumn("owner_domain_id", task.OwnerDomainID).Error; err != nil {
+				return err
+			}
+		}
 		return replacePlanItems(tx, task)
 	}))
+}
+
+func ownerDomainChanged(before, after *int64) bool {
+	if before == nil || after == nil {
+		return before != after
+	}
+	return *before != *after
 }
 
 func (r *PlanRepository) Delete(ctx context.Context, tenantID, id, version int64) error {
@@ -144,7 +166,7 @@ func planActiveExecutionCount(tx *gorm.DB, taskID, tenantID int64) (int64, error
 	return count, err
 }
 
-func (r *PlanRepository) CreateExecution(ctx context.Context, taskID, tenantID int64, execution *commonExecution.TaskExecution) (*models.QualityPlan, error) {
+func (r *PlanRepository) CreateExecution(ctx context.Context, taskID, tenantID int64, execution *commonExecution.TaskExecution, request models.PlanRunRequest) (*models.QualityPlan, error) {
 	var task models.QualityPlan
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if execution.ParentExecutionID != nil {
@@ -165,7 +187,12 @@ func (r *PlanRepository) CreateExecution(ctx context.Context, taskID, tenantID i
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("tenant_id = ? AND id = ?", tenantID, taskID).First(&task).Error; err != nil {
 			return err
 		}
-		active, err := planActiveExecutionCount(tx, taskID, tenantID)
+		bindings, targetKey, err := models.ResolvePlanTargets(task.TableBindings, request)
+		if err != nil {
+			return fmt.Errorf("%w: %v", commonAPI.ErrBadRequest, err)
+		}
+		var active int64
+		err = tx.Model(&commonExecution.TaskExecution{}).Where("tenant_id = ? AND module = ? AND task_type = ? AND source_task_id = ? AND status IN ? AND execution_config->>'target_key' = ?", tenantID, commonExecution.ModuleQuality, commonExecution.TaskTypeQualityPlan, strconv.FormatInt(taskID, 10), []string{commonExecution.ExecutionStatusPending, commonExecution.ExecutionStatusRunning}, targetKey).Count(&active).Error
 		if err != nil {
 			return err
 		}
@@ -181,7 +208,13 @@ func (r *PlanRepository) CreateExecution(ctx context.Context, taskID, tenantID i
 			return fmt.Errorf("execution config is required")
 		}
 		execution.ExecutionConfig["task_version"] = task.Version
-		execution.ExecutionConfig["table_bindings"] = json.RawMessage(task.TableBindings)
+		execution.ExecutionConfig["owner_domain_id"] = task.OwnerDomainID
+		bindingsJSON, err := json.Marshal(bindings)
+		if err != nil {
+			return err
+		}
+		execution.ExecutionConfig["table_bindings"] = json.RawMessage(bindingsJSON)
+		execution.ExecutionConfig["target_key"] = targetKey
 		execution.ExecutionConfig["rules"] = json.RawMessage(task.Rules)
 		if err := tx.Create(execution).Error; err != nil {
 			return err
@@ -224,9 +257,7 @@ func (r *PlanRepository) ClaimPendingExecution(ctx context.Context, workerID str
 		if result.Error != nil {
 			return result.Error
 		}
-		if result.RowsAffected != 1 {
-			return fmt.Errorf("%w: quality plan summary changed", commonAPI.ErrConflict)
-		}
+		// Another target scope may already be the plan's latest attempt.
 		return nil
 	})
 	if err != nil || execution == nil {
@@ -271,9 +302,7 @@ func (r *PlanRepository) CompleteExecutionWithLease(ctx context.Context, taskID,
 		if result.Error != nil {
 			return result.Error
 		}
-		if result.RowsAffected != 1 {
-			return fmt.Errorf("%w: quality plan is not running", commonAPI.ErrConflict)
-		}
+		// Lease fencing, not this latest-attempt projection, determines completion.
 		return nil
 	})
 }

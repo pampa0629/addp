@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/addp/common/dataprotection"
+	"github.com/addp/common/schema"
 	"github.com/addp/security/internal/models"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -30,6 +31,15 @@ func TestSecurityMigrateAgainstPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := Migrate(tx); err != nil {
+		t.Fatal(err)
+	}
+	if err := schema.Migrate(tx, "security", SchemaVersion, Migrate); err != nil {
+		t.Fatal(err)
+	}
+	if err := schema.Require(tx, "security", SchemaVersion); err != nil {
+		t.Fatal(err)
+	}
+	if err := schema.Migrate(tx, "security", SchemaVersion, func(*gorm.DB) error { t.Error("same version reapplied"); return nil }); err != nil {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC().Truncate(time.Second)

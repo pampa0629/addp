@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 const executionID = "bb1a324d-53a3-4f02-b666-d51385d258c8";
 const ruleKey = "bfed8f3b-e3b4-8a8e-8140-860d0b0585ea";
-const locator = "addp://engine/2/path/public/customers?type=table&node_id=23";
+const locator = "addp://engine/2/path/public/customers?type=table&item_id=23";
 const rule = {
   id: 7,
   code: "required",
@@ -110,6 +110,7 @@ test("creates with physical picker and starts a plan, preventing duplicate submi
   const dialog = page.getByRole("dialog", { name: "新建质量检查方案" });
   await dialog.getByRole("textbox").nth(0).fill("outdoor_check");
   await dialog.getByRole("textbox").nth(1).fill("户外数据质量检查");
+  await dialog.getByRole("button", { name: "添加数据表", exact: true }).click();
   await dialog.locator(".resource-tree-picker .el-select").click();
   await page.getByRole("option", { name: "业务 PostgreSQL" }).click();
   const tree = dialog.locator(".resource-tree-picker");
@@ -144,10 +145,61 @@ test("creates with physical picker and starts a plan, preventing duplicate submi
     .getByRole("row", { name: /户外数据质量检查/ })
     .getByRole("button", { name: "执行", exact: true })
     .click();
+  await page.getByRole('dialog', { name: '执行质量检查方案', exact: true }).getByRole('button', { name: '执行', exact: true }).click();
   await expect.poll(() => state.runs).toEqual([13]);
   await expect(page).toHaveURL(new RegExp("/executions/" + executionID));
   expect(state.unexpected).toEqual([]);
 });
+test('deferred input can be saved and supplied only for one execution', async ({ page }) => {
+  const state = await installMockBackend(page);
+  state.plans[0].table_bindings[0].locator = '';
+  await page.goto('/plans?task_id=12');
+  const editor = page.getByRole('dialog', { name: '编辑质量检查方案' });
+  await expect(editor.getByText('执行时必填', { exact: true })).toBeVisible();
+  await expect(editor.locator('.resource-tree-picker')).toHaveCount(0);
+  await editor.getByRole('button', { name: '保存', exact: true }).click();
+  await expect.poll(() => state.writes.length).toBe(1);
+  expect(state.writes[0].table_bindings).toEqual([{ alias: 'customers', locator: '' }]);
+  await page.getByRole('button', { name: '执行', exact: true }).click();
+  const runner = page.getByRole('dialog', { name: '执行质量检查方案', exact: true });
+  await runner.getByRole('button', { name: '执行', exact: true }).click();
+  await expect(page.getByText('请为以下表别名选择本次执行的数据表：customers', { exact: true })).toBeVisible();
+  expect(state.runRequests).toEqual([]);
+  await runner.getByText('执行时指定', { exact: true }).click();
+  await runner.getByRole('button', { name: '选择资源', exact: true }).click();
+  const picker = page.locator('.el-dialog').filter({ has: page.locator('.resource-tree-picker') });
+  await picker.locator('.resource-tree-picker .el-select').click();
+  await page.getByRole('option', { name: '业务 PostgreSQL' }).click();
+  await picker.getByRole('treeitem', { name: 'public', exact: true }).locator('.el-tree-node__expand-icon').first().click();
+  await picker.getByRole('treeitem', { name: 'customers', exact: true }).click();
+  await picker.getByRole('button', { name: '确定', exact: true }).click();
+  await runner.getByRole('button', { name: '执行', exact: true }).click();
+  await expect.poll(() => state.runRequests.length).toBe(1);
+  expect(state.runRequests[0]).toEqual({ table_bindings: { customers: locator } });
+  expect(state.plans[0].table_bindings[0].locator).toBe('');
+});
+
+test('creates a target-independent plan using an alias and required field name', async ({ page }) => {
+  const state = await installMockBackend(page);
+  await page.goto('/plans?create=1');
+  const editor = page.getByRole('dialog', { name: '新建质量检查方案', exact: true });
+  await editor.getByRole('textbox').nth(0).fill('region_orders');
+  await editor.getByRole('textbox').nth(1).fill('各地区订单检查');
+  await editor.getByRole('button', { name: '添加执行时输入', exact: true }).click();
+  await editor.locator('.binding-table').getByRole('textbox').fill('orders');
+  await editor.locator('.rules-heading .el-select').click();
+  await page.getByRole('option', { name: '客户标识非空 · R1' }).click();
+  await editor.getByRole('button', { name: '添加检查项', exact: true }).click();
+  const column = editor.locator('.rule-card .rule-grid .el-select').nth(1).getByRole('combobox');
+  await column.fill('order_id');
+  await page.getByRole('option', { name: 'order_id', exact: true }).click();
+  await editor.getByRole('button', { name: '保存', exact: true }).click();
+  await expect.poll(() => state.writes.length).toBe(1);
+  expect(state.writes[0].table_bindings).toEqual([{ alias: 'orders', locator: '' }]);
+  expect(state.writes[0].check_items[0].bindings).toEqual({ table: 'orders', column: 'order_id' });
+  expect(state.unexpected).toEqual([]);
+});
+
 test("keeps edits on version conflict", async ({ page }) => {
   const state = await installMockBackend(page, {
     writeError: "方案版本已变化，请重新加载",
@@ -181,13 +233,13 @@ test("imports a frozen Standard constraint in the independent rule library", asy
     exact: true,
   });
   await source.locator(".el-select").nth(0).getByRole("combobox").fill("标识");
-  await page.getByRole("option", { name: "客户标识 · R3" }).click();
+  await page.getByRole("option", { name: "客户标识 · customer_id · R3" }).click();
   await source.locator(".el-select").nth(1).click();
   await page.getByRole("option", { name: "长度", exact: true }).click();
   await source
     .getByRole("button", { name: "从数据元导入", exact: true })
     .click();
-  await expect(dialog.getByText("标准修订 #31", { exact: true })).toBeVisible();
+  await expect(dialog.getByText("数据元 #3 · 修订 ID #31", { exact: true })).toBeVisible();
   await expect(source).toBeHidden();
   await page.screenshot({
     path: testInfo.outputPath("rule-editor.png"),
@@ -195,6 +247,7 @@ test("imports a frozen Standard constraint in the independent rule library", asy
   });
   await dialog.getByRole("button", { name: "保存", exact: true }).click();
   await expect.poll(() => state.ruleWrites.length).toBe(1);
+  await expect(page.getByText("质量规则已保存", { exact: true })).toBeVisible();
   expect(state.ruleWrites[0]).toMatchObject({
     type: "length",
     source: { element_id: 3, element_revision_id: 31, rule_key: ruleKey },
@@ -202,6 +255,122 @@ test("imports a frozen Standard constraint in the independent rule library", asy
   });
   expect(state.writes).toEqual([]);
 });
+test("browses sources without typing, paginates and preserves selection", async ({ page }) => {
+  const state = await installMockBackend(page, { pagedCandidates: true });
+  await page.goto('/rules?create=1');
+  const editor = page.getByRole('dialog', { name:'新建质量规则', exact:true });
+  await expect(editor.getByText('规则编码', {exact:true})).toBeVisible();
+  await editor.getByRole('button', {name:'从数据元导入',exact:true}).click();
+  const source = page.getByRole('dialog',{name:'从数据元导入',exact:true});
+  await expect.poll(() => state.candidateRequests.length).toBe(1);
+  expect(state.candidateRequests[0]).toMatchObject({ keyword:'',page:'1',page_size:'30' });
+  await source.locator('.el-select').nth(0).click();
+  await page.getByRole('option',{name:'客户标识 · customer_id · R3'}).click();
+  await source.locator('.el-select').nth(1).click();
+  await page.getByRole('option',{name:'长度',exact:true}).click();
+  await source.getByRole('button',{name:'下一页',exact:true}).click();
+  await expect.poll(() => state.candidateRequests.at(-1).page).toBe('2');
+  await source.locator('.el-select').nth(0).click();
+  await expect(page.getByRole('option',{name:'第二页数据元 · second_page · R1'})).toBeVisible();
+  await source.getByRole('combobox').nth(0).press('Escape');
+  await source.getByRole('button',{name:'从数据元导入',exact:true}).click();
+  await expect(editor.getByText('数据元 #3 · 修订 ID #31',{exact:true})).toBeVisible();
+  expect(state.ruleWrites).toEqual([]);
+});
+
+for (const scenario of [
+  { name: 'missing compiled constraints', detail: { nullable:true, length:11, format:'', value_domain_kind:'unrestricted' }, message:'配置了值约束，但缺少可导入规则' },
+  { name: 'unconstrained source', detail: { nullable:true, length:null, format:'', value_domain_kind:'unrestricted' }, message:'未配置非空、长度、格式、范围或枚举约束' },
+  { name: 'unavailable source', sourceFailure:true, message:'此已发布修订没有可导入规则' },
+  { name: 'unreadable source', noStandardPermission:true, message:'此已发布修订没有可导入规则' },
+]) {
+  test(`allows inspecting ${scenario.name} without importing or guessing constraints`, async ({ page }) => {
+    const state = await installMockBackend(page, { emptyRules:true, sourceDetail:scenario.detail, sourceFailure:scenario.sourceFailure, noStandardPermission:scenario.noStandardPermission });
+    await page.goto('/rules?create=1');
+    await page.getByRole('button',{name:'从数据元导入',exact:true}).click();
+    const source = page.getByRole('dialog',{name:'从数据元导入',exact:true});
+    await source.locator('.el-select').nth(0).click();
+    const option = page.getByRole('option',{name:'客户标识 · customer_id · R3'});
+    await expect(option).toBeEnabled();
+    await option.click();
+    await expect(source.getByText('来源预览',{exact:true})).toBeVisible();
+    await expect(source.getByRole('alert').filter({hasText:scenario.message})).toBeVisible();
+    await expect(source.getByRole('button',{name:'从数据元导入',exact:true})).toBeDisabled();
+    if (scenario.sourceFailure || scenario.noStandardPermission) {
+      await expect(source.getByText(scenario.sourceFailure ? /来源详情加载失败/ : /无权读取标准来源详情/)).toBeVisible();
+      await expect(source.getByText(/未配置非空、长度、格式、范围或枚举约束/)).toHaveCount(0);
+    }
+    if (scenario.noStandardPermission) expect(state.sourceRequests).toEqual([]);
+    expect(state.ruleWrites).toEqual([]);
+  });
+}
+
+test("source failures are not empty results and can be retried", async ({ page }) => {
+  const options = { candidateFailure:true };
+  const state = await installMockBackend(page,options);
+  await page.goto('/rules?create=1');
+  await page.getByRole('button',{name:'从数据元导入',exact:true}).click();
+  const source=page.getByRole('dialog',{name:'从数据元导入',exact:true});
+  await expect(source.getByRole('alert')).toContainText('数据元加载失败');
+  options.candidateFailure=false;
+  await source.getByRole('button',{name:'重试',exact:true}).click();
+  await expect.poll(() => state.candidateRequests.length).toBe(2);
+  await expect(source.getByRole('alert')).toHaveCount(0);
+});
+
+const sourcedRule = { type:'allowed_values',params:{values:['signup','leader']},source:{element_id:3,element_revision_id:31,rule_key:ruleKey} };
+test("distinguishes an empty published list from an unmatched search", async ({page}) => {
+  await installMockBackend(page,{emptyCandidates:true});
+  await page.goto('/rules?create=1');
+  await page.getByRole('button',{name:'从数据元导入',exact:true}).click();
+  const source=page.getByRole('dialog',{name:'从数据元导入',exact:true});
+  await expect(source.getByRole('status')).toHaveText('暂无已发布数据元');
+  await source.getByRole('combobox').nth(0).fill('missing');
+  await expect(source.getByRole('status')).toHaveText('没有匹配的数据元');
+  await expect(source.getByRole('button',{name:'从数据元导入',exact:true})).toBeDisabled();
+  await expect(source.getByRole('alert')).toHaveCount(0);
+});
+
+test("shows exact Standard provenance and value meanings without rewriting a rule", async ({page},testInfo) => {
+  const state = await installMockBackend(page,{rule:sourcedRule});
+  await page.goto('/rules?rule_id=7');
+  const editor=page.getByRole('dialog',{name:'编辑质量规则',exact:true});
+  await expect(editor.getByText('来源数据元：成员状态 · member_status · R3',{exact:true})).toBeVisible();
+  await expect(editor.getByText('来源码值集：成员状态码值 · member_status_codes · R2',{exact:true})).toBeVisible();
+  await expect(editor.getByText('signup · 报名',{exact:true})).toBeVisible();
+  await editor.getByRole('button',{name:'查看来源详情',exact:true}).click();
+  await expect(editor.getByRole('cell',{name:'活动负责人',exact:true})).toBeVisible();
+  await page.screenshot({path:testInfo.outputPath('rule-source-details.png'),fullPage:true});
+  expect(state.sourceRequests).toEqual(['/api/v1/standard/elements/3/revisions/31']);
+  expect(state.ruleWrites).toEqual([]);
+  await editor.getByRole('button',{name:'取消',exact:true}).click();
+});
+
+test("missing Standard permission keeps pinned provenance without fetching", async ({page}) => {
+  const state=await installMockBackend(page,{rule:sourcedRule,noStandardPermission:true});
+  await page.goto('/rules?rule_id=7');
+  const editor=page.getByRole('dialog',{name:'编辑质量规则',exact:true});
+  await expect(editor.getByText(/无权读取标准来源详情/)).toBeVisible();
+  await expect(editor.getByText('标准导入',{exact:true})).toBeVisible();
+  expect(state.sourceRequests).toEqual([]);
+  expect(state.ruleWrites).toEqual([]);
+});
+
+test("source lookup failure retains constraints and detaching removes source labels", async ({page}) => {
+  const options={rule:sourcedRule,sourceFailure:true};
+  const state=await installMockBackend(page,options);
+  await page.goto('/rules?rule_id=7');
+  const editor=page.getByRole('dialog',{name:'编辑质量规则',exact:true});
+  await expect(editor.getByRole('alert')).toContainText('来源详情加载失败');
+  options.sourceFailure=false;
+  await editor.getByRole('button',{name:'重试',exact:true}).click();
+  await expect(editor.getByText('signup · 报名',{exact:true})).toBeVisible();
+  await editor.getByRole('button',{name:'转为手工规则',exact:true}).click();
+  await expect(editor.getByText('手工定义',{exact:true})).toBeVisible();
+  await expect(editor.getByText('signup · 报名',{exact:true})).toHaveCount(0);
+  expect(state.ruleWrites).toEqual([]);
+});
+
 test("upgrades a pinned rule only by explicit action in the plan editor", async ({
   page,
 }, testInfo) => {
@@ -312,12 +481,106 @@ test("keeps an issue open when its status update is rejected", async ({
   await expect(page.getByRole("button", { name: "标记解决" })).toBeVisible();
 });
 
+for (const noPermission of [false, true]) {
+  test(`domain ${noPermission ? 'permission denial' : 'load failure'} preserves rule ownership`, async ({ page }) => {
+    const state = await installMockBackend(page, { rule: { owner_domain_id: 42 }, noDomainPermission: noPermission, domainFailure: !noPermission });
+    await page.goto('/rules?rule_id=7');
+    const dialog = page.getByRole('dialog', { name: '编辑质量规则' });
+    await expect(dialog.getByText(noPermission ? '无业务域查看权限，保留原有归属。' : '业务域加载失败，保留原有归属；重试成功后可修改。')).toBeVisible();
+    await expect(dialog.locator('.domain-ownership-select .el-select__wrapper')).toHaveClass(/is-disabled/);
+    await dialog.getByRole('button', { name: '保存', exact: true }).click();
+    await expect.poll(() => state.ruleWrites.length).toBe(1);
+    expect(state.ruleWrites[0].owner_domain_id).toBe(42);
+    expect(state.domainRequests.length).toBe(noPermission ? 0 : 2);
+  });
+}
+
+test('rule domain can be selected and explicitly cleared', async ({ page }) => {
+  const state = await installMockBackend(page);
+  await page.goto('/rules?rule_id=7');
+  const dialog = page.getByRole('dialog', { name: '编辑质量规则' });
+  const selector = dialog.locator('.domain-ownership-select .el-select');
+  await selector.click();
+  await page.getByRole('option', { name: '户外 · outdoor' }).click();
+  await dialog.getByRole('button', { name: '保存', exact: true }).click();
+  await expect.poll(() => state.ruleWrites.length).toBe(1);
+  expect(state.ruleWrites[0].owner_domain_id).toBe(42);
+  await page.getByRole('button', { name: '编辑', exact: true }).click();
+  await expect(selector).toContainText('不指定业务域');
+  await dialog.getByRole('button', { name: '保存', exact: true }).click();
+  await expect.poll(() => state.ruleWrites.length).toBe(2);
+  expect(state.ruleWrites[1].owner_domain_id).toBeNull();
+});
+
+for (const path of ['/rules', '/plans', '/issues']) {
+  test(`${path} filters public and exact domains and restores on refresh`, async ({ page }) => {
+    const state = await installMockBackend(page);
+    await page.goto(path);
+    const selector = page.locator('.domain-ownership-select').first();
+    await selector.locator('.el-select__wrapper').click();
+    await page.getByRole('option', { name: '不指定业务域（租户公共）', exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`${path}\\?owner_domain_id=0$`));
+    await expect.poll(() => state.listRequests.at(-1)?.query.owner_domain_id).toBe('0');
+    await selector.locator('.el-select__wrapper').click();
+    await page.getByRole('option', { name: /户外/ }).click();
+    await expect.poll(() => state.listRequests.at(-1)?.query.owner_domain_id).toBe('42');
+    await page.reload();
+    await expect(selector).toContainText('户外');
+    await expect.poll(() => state.listRequests.at(-1)?.query.owner_domain_id).toBe('42');
+    expect(state.unexpected).toEqual([]);
+  });
+}
+
+for (const [config, label] of [[undefined, '未记录'], [{ owner_domain_id: null }, '不指定业务域（租户公共）'], [{ owner_domain_id: 42 }, '业务域 #42']]) {
+  test(`execution domain snapshot displays ${label}`, async ({ page }) => {
+    await installMockBackend(page, { execution: { execution_config: config } });
+    await page.goto(`/executions/${executionID}`);
+    await expect(page.getByText('执行时归属业务域（快照）', { exact: true })).toBeVisible();
+    await expect(page.getByText('执行时归属业务域（快照）', { exact: true }).locator('xpath=following-sibling::td[1]')).toHaveText(label);
+  });
+}
+
+test('overview separates last attempt from observation and restores domain and window filters', async ({ page }) => {
+  const state = await installMockBackend(page);
+  await page.goto('/overview?owner_domain_id=42&days=7');
+  await expect(page.getByRole('heading', { name: '质量概览', exact: true })).toBeVisible();
+  await expect.poll(() => state.overviewRequests.at(-1)).toEqual({ owner_domain_id: '42', days: '7', page: '1', page_size: '20' });
+  const observed = page.getByRole('row').filter({ hasText: '客户质量检查' });
+  await expect(observed.getByRole('button', { name: '失败', exact: true })).toBeVisible();
+  await expect(observed.getByRole('button', { name: '50.0% (1/2)', exact: true })).toBeVisible();
+  await expect(observed.getByText('来自较早的方案版本', { exact: true })).toBeVisible();
+  await expect(page.getByText('尚无完整检查结果', { exact: true })).toBeVisible();
+  await page.reload();
+  await expect(page.getByText('尚无完整检查结果', { exact: true })).toBeVisible();
+  expect(state.overviewRequests.at(-1)).toMatchObject({ owner_domain_id: '42', days: '7' });
+  await page.locator('.window-select').click();
+  await page.getByRole('option', { name: '近 90 天', exact: true }).click();
+  await expect.poll(() => state.overviewRequests.at(-1)?.days).toBe('90');
+  await observed.getByRole('button', { name: '50.0% (1/2)', exact: true }).click();
+  await expect(page).toHaveURL(new RegExp('/executions/' + executionID));
+  expect(state.unexpected).toEqual([]);
+});
+
+test('overview fetch failure is not displayed as zero quality', async ({ page }) => {
+  await installMockBackend(page, { overviewFailure: true });
+  await page.goto('/overview');
+  await expect(page.getByText('统计服务暂时不可用', { exact: true })).toBeVisible();
+  await expect(page.locator('.el-statistic')).toHaveCount(0);
+  await expect(page.locator('.el-table')).toHaveCount(0);
+});
+
 async function installMockBackend(page, options = {}) {
   const state = {
     plans: [structuredClone(plan)],
     writes: [],
     ruleWrites: [],
+    candidateRequests: [],
+    sourceRequests: [],
+    domainRequests: [],
+    listRequests: [],
     runs: [],
+    runRequests: [],
+    overviewRequests: [],
     unexpected: [],
     issueStatusRequests: [],
     issues: [
@@ -346,6 +609,9 @@ async function installMockBackend(page, options = {}) {
     const req = route.request(),
       url = new URL(req.url()),
       path = url.pathname;
+    if (req.method() === 'GET' && ['/api/v1/quality/rules', '/api/v1/quality/plans', '/api/v1/quality/issues'].includes(path)) {
+      state.listRequests.push({ path, query: Object.fromEntries(url.searchParams) });
+    }
     if (path === "/api/v1/system/refresh")
       return fulfillJSON(route, {
         access_token: "quality-e2e-token",
@@ -371,11 +637,32 @@ async function installMockBackend(page, options = {}) {
                 "monitor.execution.read",
                 "system.engine.read",
                 "meta.catalog.read",
+                ...(options.noStandardPermission ? [] : ["standard.element.read"]),
+                ...(options.noDomainPermission ? [] : ["standard.domain.read"]),
               ],
             },
           ],
         },
       });
+    if (path === "/api/v1/standard/domains") {
+      state.domainRequests.push(path);
+      return options.domainFailure
+        ? fulfillJSON(route, { error: "unavailable" }, 503)
+        : fulfillJSON(route, [{ id: 42, name: "户外", code: "outdoor" }]);
+    }
+    if (path === '/api/v1/quality/overview') {
+      state.overviewRequests.push(Object.fromEntries(url.searchParams));
+      if (options.overviewFailure) return fulfillJSON(route, { error: '统计服务暂时不可用' }, 503);
+      return fulfillJSON(route, {
+        plan_count: 2, never_run_plans: 1, open_issues: 3, unscoped_issues: 1, unscoped_executions: 2,
+        total: 2, page: 1, page_size: 20, total_pages: 1,
+        data: [
+          { plan_id: 12, plan_name: plan.name, plan_version: 2, owner_domain_id: 42, target_key: 'a'.repeat(64), table_bindings: plan.table_bindings, execution_id: executionID, status: 'failed', observed_execution_id: executionID, observed_version: 1, observed_at: '2026-09-17T08:00:00Z', passed_rules: 1, total_rules: 2, pass_rate: 50 },
+          { plan_id: 13, plan_name: '尚未执行的方案', plan_version: 1, owner_domain_id: null, target_key: null, observed_execution_id: null, pass_rate: null },
+        ],
+        trend: [{ day: '2026-09-17', executions: 2, runtime_errors: 1, passed_rules: 1, total_rules: 2, pass_rate: 50 }],
+      });
+    }
     const engines = [
       {
         id: 2,
@@ -395,7 +682,7 @@ async function installMockBackend(page, options = {}) {
       locator,
       children: [],
       has_children: false,
-      metadata: { node_id: 23 },
+      metadata: { item_id: 23 },
     };
     const schema = {
       id: "schema-22",
@@ -444,7 +731,16 @@ async function installMockBackend(page, options = {}) {
           ],
         },
       });
-    if (path === "/api/v1/quality/rules/element-candidates")
+    if (path === "/api/v1/standard/elements/3/revisions/31") {
+      state.sourceRequests.push(path);
+      if (options.sourceFailure) return fulfillJSON(route, { error: "unavailable" }, 503);
+      return fulfillJSON(route, { id:31, element_id:3, element_code:"member_status", name:"成员状态", revision_no:3, definition:"历史成员关系状态", code_set_revision: { code:"member_status_codes", name:"成员状态码值", revision_no:2, revision_id:"21", code_set_id:"2", description:"历史允许状态", items:[{ code:"signup",label:"报名",definition:"已报名" },{code:"leader",label:"领队",definition:"活动负责人"}] }, ...options.sourceDetail });
+    }
+    if (path === "/api/v1/quality/rules/element-candidates") {
+      state.candidateRequests.push(Object.fromEntries(url.searchParams));
+      if (options.candidateFailure) return fulfillJSON(route, { error:"unavailable" },503);
+      if (options.emptyCandidates) return fulfillJSON(route,{data:[],total:0});
+      if (options.pagedCandidates && url.searchParams.get('page') === '2') return fulfillJSON(route,{data:[{id:4,revision_id:41,revision_no:1,name:'第二页数据元',code:'second_page',quality_rules:{schema_version:'addp.quality.rules/v1',rules:[]}}],total:31});
       return fulfillJSON(route, {
         data: [
           {
@@ -452,9 +748,10 @@ async function installMockBackend(page, options = {}) {
             revision_id: 31,
             revision_no: 3,
             name: "客户标识",
+            code: "customer_id",
             quality_rules: {
               schema_version: "addp.quality.rules/v1",
-              rules: [
+              rules: options.emptyRules ? [] : [
                 {
                   rule_key: ruleKey,
                   type: "length",
@@ -466,8 +763,9 @@ async function installMockBackend(page, options = {}) {
             },
           },
         ],
-        total: 1,
+        total: options.pagedCandidates ? 31 : 1,
       });
+    }
     if (path.startsWith("/api/v1/quality/rules")) {
       if (["POST", "PUT"].includes(req.method())) {
         const body = req.postDataJSON();
@@ -492,7 +790,7 @@ async function installMockBackend(page, options = {}) {
           data: state.plans,
           total: state.plans.length,
         });
-      const latest = { ...rule, revision_no: options.latestRevision || 1 };
+      const latest = { ...rule, ...options.rule, revision_no: options.latestRevision || 1 };
       return fulfillJSON(
         route,
         path.endsWith("/7") ? latest : { data: [latest], total: 1 },
@@ -501,6 +799,7 @@ async function installMockBackend(page, options = {}) {
     if (path.startsWith("/api/v1/quality/plans")) {
       if (path.endsWith("/run")) {
         state.runs.push(Number(path.split("/").at(-2)));
+        state.runRequests.push(req.postDataJSON());
         return fulfillJSON(route, { execution_id: executionID });
       }
       if (["PUT", "POST"].includes(req.method())) {
@@ -524,15 +823,11 @@ async function installMockBackend(page, options = {}) {
         else state.plans[0] = saved;
         return fulfillJSON(route, saved, req.method() === "POST" ? 201 : 200);
       }
-      return fulfillJSON(
-        route,
-        path.endsWith("/12")
-          ? state.plans[0]
-          : { data: state.plans, total: state.plans.length },
-      );
+      const detail = state.plans.find(plan => path.endsWith(`/${plan.id}`));
+      return fulfillJSON(route, detail ? { ...detail, execution_contract: mockPlanContract(detail) } : { data: state.plans, total: state.plans.length });
     }
     if (path === "/api/v1/quality/executions/" + executionID)
-      return fulfillJSON(route, execution);
+      return fulfillJSON(route, { ...execution, ...options.execution });
     if (req.method() === "PUT" && path === "/api/v1/quality/issues/17/status") {
       const body = req.postDataJSON();
       state.issueStatusRequests.push({
@@ -561,4 +856,20 @@ async function fulfillJSON(route, body, status = 200) {
     contentType: "application/json",
     body: JSON.stringify(body),
   });
+}
+
+function mockPlanContract(plan) {
+  const properties = {}, defaults = {}, fields = {}, required = [];
+  for (const binding of plan.table_bindings) {
+    properties[binding.alias] = { type: 'string', format: 'resource-locator', minLength: 1 };
+    fields[binding.alias] = { control: 'resource_tree_picker', selectable_node_types: ['table'], engine_families: ['tabular'] };
+    if (binding.locator) defaults[binding.alias] = binding.locator;
+    else required.push(binding.alias);
+  }
+  return {
+    input_schema: { type: 'object', properties: { table_bindings: { type: 'object', properties, required, additionalProperties: false } }, additionalProperties: false },
+    input_defaults: { table_bindings: defaults },
+    input_ui_schema: { table_bindings: { control: 'group', fields } },
+    output_schema: { type: 'object', properties: { passed: { type: 'boolean' } }, additionalProperties: false },
+  };
 }

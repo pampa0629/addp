@@ -167,7 +167,7 @@ func (r *DocumentRepository) List(tenantID int64, opts ListDocumentOptions) ([]m
 func (r *DocumentRepository) UpdateIdentity(document *models.Document, expectedVersion int64) error {
 	if err := updateVersioned(r.db, document, document.ID, document.TenantID, expectedVersion, map[string]interface{}{
 		"scope_type": document.ScopeType, "owner_domain_id": document.OwnerDomainID, "doc_type": document.DocType,
-		"source_org": document.SourceOrg, "steward_id": document.StewardID, "tags": document.Tags, "updated_by": document.UpdatedBy,
+		"source_org": document.SourceOrg, "tags": document.Tags, "updated_by": document.UpdatedBy,
 	}); err != nil {
 		return err
 	}

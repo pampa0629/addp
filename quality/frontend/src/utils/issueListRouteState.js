@@ -1,3 +1,5 @@
+import { normalizeDomainFilter } from './domainOwnership.js'
+
 const DEFAULT_PAGE_SIZE = 20
 const ALLOWED_PAGE_SIZES = new Set([20, 50, 100])
 const ALLOWED_STATUSES = new Set(['open', 'resolved', 'ignored'])
@@ -22,8 +24,9 @@ function queriesEqual(left, right) {
   ))
 }
 
-export function buildIssueListRouteQuery({ status, engineID, page, pageSize }) {
+export function buildIssueListRouteQuery({ status, engineID, ownerDomainID, page, pageSize }) {
   const query = {}
+  if (ownerDomainID != null) query.owner_domain_id = String(ownerDomainID)
   if (ALLOWED_STATUSES.has(status)) query.status = status
   if (engineID) query.engine_id = String(engineID)
   if (page > 1) query.page = String(page)
@@ -38,11 +41,13 @@ export function resolveIssueListRouteState(routeQuery = {}) {
   const page = positiveInteger(routeQuery.page, 1)
   const requestedPageSize = positiveInteger(routeQuery.page_size, DEFAULT_PAGE_SIZE)
   const pageSize = ALLOWED_PAGE_SIZES.has(requestedPageSize) ? requestedPageSize : DEFAULT_PAGE_SIZE
-  const query = buildIssueListRouteQuery({ status, engineID, page, pageSize })
+  const ownerDomainID = normalizeDomainFilter(routeQuery.owner_domain_id)
+  const query = buildIssueListRouteQuery({ status, engineID, ownerDomainID, page, pageSize })
 
   return {
     status,
     engineID,
+    ownerDomainID,
     page,
     pageSize,
     query,

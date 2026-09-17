@@ -87,7 +87,7 @@ func TestIntegrationPostgresQualityCheckPersistsRuleIdentity(t *testing.T) {
 	defer cancelWorker()
 	executor.StartWorker(workerCtx, func() bool { return true })
 
-	executionID, err := planSvc.Run(context.Background(), tenantID, task.ID, userID, "addp_at_quality_user")
+	executionID, err := planSvc.Run(context.Background(), tenantID, task.ID, userID, "addp_at_quality_user", models.PlanRunRequest{})
 	if err != nil {
 		t.Fatalf("run quality check: %v", err)
 	}
@@ -128,6 +128,36 @@ func TestIntegrationPostgresQualityCheckPersistsRuleIdentity(t *testing.T) {
 		t.Fatalf("issue = %#v, want open issue linked to execution", issue)
 	}
 
+	// Reuse the same plan for another region without changing defaults. A passing
+	// region must not resolve the first region's open issue.
+	if err := db.Exec("CREATE TABLE " + quotedSchema + `."region_ok" ("value" TEXT); INSERT INTO ` + quotedSchema + `."region_ok" VALUES ('ok')`).Error; err != nil {
+		t.Fatal(err)
+	}
+	otherID, err := planSvc.Run(context.Background(), tenantID, task.ID, userID, "addp_at_quality_user", models.PlanRunRequest{TableBindings: map[string]string{"target": fmt.Sprintf("addp://engine/%d/path/%s/region_ok?type=table", engineID, schemaName)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	other := waitForQualityExecution(t, db, tenantID, otherID, 10*time.Second)
+	if other.Status != "success" || other.ExecutionConfig["target_key"] == execution.ExecutionConfig["target_key"] {
+		t.Fatalf("region execution=%+v", other)
+	}
+	if err := db.First(&issue, issue.ID).Error; err != nil || issue.Status != "open" {
+		t.Fatalf("another region closed issue: %+v %v", issue, err)
+	}
+	if err := db.Exec("CREATE TABLE " + quotedSchema + `."wrong_shape" ("other_column" TEXT)`).Error; err != nil {
+		t.Fatal(err)
+	}
+	invalidID, err := planSvc.Run(context.Background(), tenantID, task.ID, userID, "addp_at_quality_user", models.PlanRunRequest{TableBindings: map[string]string{"target": fmt.Sprintf("addp://engine/%d/path/%s/wrong_shape?type=table", engineID, schemaName)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	invalid := waitForQualityExecution(t, db, tenantID, invalidID, 10*time.Second)
+	if invalid.Status != "failed" || invalid.ErrorDetails["code"] != planCompileFailedCode {
+		t.Fatalf("wrong shape=%+v", invalid)
+	}
+	if err := db.First(&issue, issue.ID).Error; err != nil || issue.LastExecutionID != executionID {
+		t.Fatal("invalid schema reconciled prior issue")
+	}
 	executor.StopWorker()
 	engineAccessDelayMilliseconds.Store(100)
 	planSvc.checkTimeout = 20 * time.Millisecond
@@ -138,7 +168,7 @@ func TestIntegrationPostgresQualityCheckPersistsRuleIdentity(t *testing.T) {
 		cancelTimeoutWorker()
 		timeoutExecutor.StopWorker()
 	}()
-	timeoutExecutionID, err := planSvc.Run(context.Background(), tenantID, task.ID, userID, "addp_at_quality_user")
+	timeoutExecutionID, err := planSvc.Run(context.Background(), tenantID, task.ID, userID, "addp_at_quality_user", models.PlanRunRequest{})
 	if err != nil {
 		t.Fatalf("run timeout quality check: %v", err)
 	}
@@ -186,7 +216,7 @@ func TestIntegrationPostgresQualityCheckPersistsRuleIdentity(t *testing.T) {
 	defer finalExecutor.StopWorker()
 	runAndWait := func() *commonExecution.TaskExecution {
 		t.Helper()
-		id, err := planSvc.Run(context.Background(), tenantID, task.ID, userID, "addp_at_quality_user")
+		id, err := planSvc.Run(context.Background(), tenantID, task.ID, userID, "addp_at_quality_user", models.PlanRunRequest{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -294,7 +324,11 @@ func TestIntegrationPostgresQualityWorkerHonorsConcurrencyLimit(t *testing.T) {
 
 	executionIDs := make([]string, 0, len(tasks))
 	for _, task := range tasks {
-		executionID, runErr := planSvc.Run(context.Background(), tenantID, task.ID, userID, "addp_at_quality_user")
+		var targets []PlanTableBinding
+		if err := json.Unmarshal(task.TableBindings, &targets); err != nil {
+			t.Fatal(err)
+		}
+		executionID, runErr := planSvc.Run(context.Background(), tenantID, tasks[0].ID, userID, "addp_at_quality_user", models.PlanRunRequest{TableBindings: map[string]string{"target": targets[0].Locator}})
 		if runErr != nil {
 			t.Fatalf("run quality check %d: %v", task.ID, runErr)
 		}

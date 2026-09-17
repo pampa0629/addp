@@ -9,9 +9,7 @@
       <el-row :gutter="12">
         <el-col :span="8"><el-input v-model="filters.keyword" :placeholder="$t('standard.glossary.searchPlaceholder')" clearable :prefix-icon="Search" @change="handleFilterChange" /></el-col>
         <el-col :span="6">
-          <el-select v-model="filters.owner_domain_id" :placeholder="$t('standard.common.selectDomain')" clearable @change="handleFilterChange">
-            <el-option v-for="domain in domainList" :key="domain.id" :label="domain.name" :value="domain.id" />
-          </el-select>
+          <BusinessDomainSelect v-model="filters.owner_domain_id" :placeholder="$t('standard.common.selectDomain')" clearable @change="handleFilterChange" :options="domainList" />
         </el-col>
         <el-col :span="6">
           <el-select v-model="filters.status" :placeholder="$t('standard.common.selectStatus')" clearable @change="handleFilterChange">
@@ -58,7 +56,7 @@
           </el-select>
         </el-form-item>
         <el-form-item v-if="form.scope_type === 'domain'" :label="$t('standard.glossary.domainLabel')" prop="owner_domain_id">
-          <el-select v-model="form.owner_domain_id" filterable style="width:100%"><el-option v-for="d in domainList" :key="d.id" :label="d.name" :value="d.id" /></el-select>
+          <BusinessDomainSelect v-model="form.owner_domain_id" style="width:100%" :options="domainList" />
         </el-form-item>
         <el-form-item :label="$t('standard.glossary.nameLabel')" prop="name"><el-input v-model="form.name" /></el-form-item>
         <el-form-item :label="$t('standard.glossary.aliasLabel')"><el-select v-model="form.alias" multiple filterable allow-create default-first-option style="width:100%" /></el-form-item>
@@ -74,6 +72,7 @@
 </template>
 
 <script setup>
+import { BusinessDomainSelect, buildBusinessDomainOptions } from '@common-ui'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Plus, Search } from '@element-plus/icons-vue'
@@ -105,14 +104,13 @@ const displayRevision = row => row.draft_revision || row.current_revision
 const statusType = status => ({ draft: 'info', in_review: 'warning', published: 'success', withdrawn: 'danger' }[status] || 'info')
 const statusLabel = status => status ? t(`standard.revision.status.${status}`) : '-'
 const scopeLabel = scope => scope ? t(`standard.common.scopeValue.${scope}`) : '-'
-const flattenDomains = nodes => nodes.flatMap(node => [node, ...flattenDomains(node.children || [])])
 const getDomainName = id => domainList.value.find(item => item.id === id)?.name
 const buildFilterQuery = () => buildGlossaryFilterQuery(filters)
 const syncFilterRoute = () => navigateStandardRoute(router, { path: '/glossaries', query: buildFilterQuery() }, { history: 'replace' })
 const onScopeChange = value => { if (value !== 'domain') form.value.owner_domain_id = null }
 const goToDetail = row => navigateStandardRoute(router, { path: `/glossaries/${row.id}`, query: buildFilterQuery() })
 
-async function loadDomains() { try { domainList.value = flattenDomains(await domainAPI.list() || []) } catch { domainList.value = [] } }
+async function loadDomains() { try { domainList.value = buildBusinessDomainOptions(await domainAPI.list() || []) } catch { domainList.value = [] } }
 async function loadGlossaries() {
   const params = { page: filters.page, page_size: filters.page_size, keyword: filters.keyword || undefined, owner_domain_id: filters.owner_domain_id || undefined, status: filters.status || undefined }
   const key = JSON.stringify(params), request = listRequests.begin(key); loading.value = true

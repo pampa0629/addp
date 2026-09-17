@@ -71,3 +71,41 @@ test('rejects incomplete or invalid pie data', () => {
   assert.equal(validateChartResult([{ city: 'A', amount: -1 }], config).reason, 'invalid_measure')
   assert.equal(validateChartResult(Array.from({ length: 21 }, (_, index) => ({ city: index, amount: 1 })), config).reason, 'result_limit')
 })
+
+test('axis spacing respects explicit precision without rounding the series', () => {
+  for (const precision of [0, 2, 6]) {
+    const config = {
+      chart_type: 'bar', dimension: 'period', measures: ['value'],
+      field_presentations: [{ field: 'value', precision }],
+    }
+    for (const values of [[0, 0], [0.001, 0.002], [-2, -1], [1, 2]]) {
+      const option = buildChartOption(values.map(value => ({ period: 'A', value })), config)
+      assert.equal(option.yAxis.minInterval, 10 ** -precision)
+      assert.deepEqual(option.series[0].data, values)
+    }
+  }
+  const config = { chart_type: 'line', dimension: 'period', measures: ['a', 'b'], field_presentations: [{ field: 'a', precision: 0 }] }
+  assert.equal(buildChartOption([], config).yAxis.minInterval, undefined)
+  assert.equal(buildChartOption([], { ...config, measures: ['b'] }).yAxis.minInterval, undefined)
+})
+
+test('theme colors reach all chart text and tooltip surfaces', () => {
+  const theme = { textColor: 'primary-text', secondaryTextColor: 'secondary-text', borderColor: 'border', splitLineColor: 'grid', backgroundColor: 'surface' }
+  for (const chart_type of ['bar', 'line', 'pie']) {
+    const option = buildChartOption([{ city: 'A', amount: 1 }], { chart_type, dimension: 'city', measures: ['amount'] }, 'zh-CN', theme)
+    assert.equal(option.textStyle.color, theme.textColor)
+    assert.equal(option.legend.textStyle.color, theme.textColor)
+    assert.equal(option.tooltip.textStyle.color, theme.textColor)
+    assert.equal(option.tooltip.backgroundColor, theme.backgroundColor)
+    assert.equal(option.tooltip.borderColor, theme.borderColor)
+    if (chart_type === 'pie') assert.equal(option.series[0].label.color, theme.textColor)
+    else {
+      for (const axis of [option.xAxis, option.yAxis]) {
+        assert.equal(axis.axisLabel.color, theme.secondaryTextColor)
+        assert.equal(axis.nameTextStyle.color, theme.secondaryTextColor)
+      }
+      assert.equal(option.yAxis.splitLine.lineStyle.color, theme.splitLineColor)
+      assert.equal(option.yAxis.nameTextStyle.align, 'left')
+    }
+  }
+})

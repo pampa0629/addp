@@ -3,6 +3,7 @@ import { test, expect } from '@playwright/test';
 async function installBackend(page, options = {}) {
   const permissions = [
     'model.logical_model.read',
+    ...(options.engineRead === false ? [] : ['meta.catalog.read']),
     'standard.metric.read',
     'service.definition.create',
     'service.definition.read',
@@ -72,6 +73,7 @@ async function installBackend(page, options = {}) {
       },
     ],
     5: [
+      { id: 52, name: '昵称', column_name: 'nickname', data_type: 'string' },
       {
         id: 51,
         name: '人员标识',
@@ -90,8 +92,9 @@ async function installBackend(page, options = {}) {
     revisions: [],
   };
   const writes = [];
+  const engineReads = [];
   let conflict = false;
-  await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'));
+  await page.addInitScript(lang => localStorage.setItem('addp-lang', lang), options.lang || 'zh-cn');
   await page.route('**/api/v1/**', async (route) => {
     const request = route.request(),
       path = new URL(request.url()).pathname;
@@ -110,6 +113,12 @@ async function installBackend(page, options = {}) {
         context: { type: 'tenant' },
         authorization: { role_assignments: [{ permissions }] },
       });
+    if (path === '/api/v1/meta/engines') {
+      engineReads.push(path);
+      return options.engineFailure
+        ? send({ error: 'Engine names unavailable' }, 503)
+        : send([{ id: 2, name: 'Business PostgreSQL', engine_type: 'postgresql' }, { id: 8, name: 'Archive PostgreSQL', engine_type: 'postgresql' }]);
+    }
     if (path === '/api/v1/standard/metrics')
       return send({
         data: [
@@ -183,6 +192,7 @@ async function installBackend(page, options = {}) {
           revision_no: item.revisions.length + 1,
           status: 'draft',
         });
+      item.revisions.find(r => r.status === 'draft').dependency_snapshot = sourceSnapshot();
       item.version++;
       return send(item);
     }
@@ -225,6 +235,7 @@ async function installBackend(page, options = {}) {
   });
   return {
     writes,
+    engineReads,
     get item() {
       return item;
     },
@@ -232,6 +243,21 @@ async function installBackend(page, options = {}) {
     setConflict() {
       conflict = true;
     },
+  };
+}
+function sourceSnapshot(engineId = 2, namespace = 'outdoor') {
+  return {
+    execution_plan: { engine_id: engineId },
+    tables: Object.fromEntries([[3, 'dwd_outdoor_participation'], [4, 'dim_outdoor_activity'], [5, 'dim_outdoor_person']]
+      .map(([id, name]) => [id, { id, name, locator: `addp://engine/${engineId}/path/${namespace}?type=schema&node_id=373` }])),
+  };
+}
+function publishedRevision(id = 10, revisionNo = 1, engineId = 2, namespace = 'outdoor') {
+  return {
+    id, revision_no: revisionNo, status: 'published', metric_definition_revision_id: 62,
+    contract: { operation: 'count_distinct', subject: { relation_id: 0, field_id: 31 }, subject_relation_id: 7,
+      distinct: { relation_id: 0, field_id: 32 }, time: { relation_id: 8, field_id: 42 }, filters: [] },
+    dependency_snapshot: sourceSnapshot(engineId, namespace),
   };
 }
 async function choose(page, label, option) {
@@ -253,9 +279,11 @@ test('metric draft publishes independently and Service binds the requested immut
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto('/metric-implementations/1');
+  await expect(page.locator('.source-summary')).toContainText('保存并校验草稿后显示引擎和物理表来源。');
   await choose(page, '选择定义修订', '当前主领队活动次数 · R2');
   await choose(page, '主体字段', '活动参与事实 · 人员标识 (person_id)');
   await choose(page, '主体维度关系', '人员维度');
+  await choose(page, '主体显示名称字段（可选）', '人员维度 · 昵称 (nickname)');
   await choose(page, '去重字段', '活动参与事实 · 活动标识 (activity_id)');
   await choose(page, '日期字段', '活动维度 · 活动日期 (activity_date)');
   await page.getByRole('button', { name: '增加条件', exact: true }).click();
@@ -272,12 +300,15 @@ test('metric draft publishes independently and Service binds the requested immut
   await expect(
     page.getByRole('button', { name: '发布修订', exact: true }),
   ).toBeEnabled();
+  await expect(page.locator('.source-summary')).toContainText('outdoor.dwd_outdoor_participation');
+  await expect(page.locator('.source-summary')).toContainText('已保存来源 · R1');
   await page.getByRole('button', { name: '发布修订', exact: true }).click();
   await expect(
     page.getByRole('button', { name: '编辑新修订', exact: true }),
   ).toBeVisible();
   expect(backend.tables[0].version).toBe(17);
   await page.getByRole('button', { name: '编辑新修订', exact: true }).click();
+  await expect(page.locator('.source-summary')).toContainText('配置尚未保存');
   await page
     .getByRole('button', { name: '保存并校验草稿', exact: true })
     .click();
@@ -293,6 +324,12 @@ test('metric draft publishes independently and Service binds the requested immut
     }),
   );
   await page.getByRole('button', { name: '发布查询服务', exact: true }).click();
+  const summary = page.getByRole('dialog').locator('.source-summary');
+  await expect(summary).toContainText('当前主领队活动次数');
+  await expect(summary).toContainText('已保存来源 · R1');
+  await expect(summary).toContainText('Business PostgreSQL · #2');
+  await expect(summary).toContainText('outdoor.dwd_outdoor_participation');
+  await expect(summary.getByRole('button')).toHaveCount(0);
   await page
     .getByRole('dialog')
     .getByRole('button', { name: '发布查询服务', exact: true })
@@ -304,6 +341,7 @@ test('metric draft publishes independently and Service binds the requested immut
   });
   expect(backend.writes.at(-1)).not.toHaveProperty('sql_query');
   expect(backend.item.revisions[1].contract.filters[0].value).toBe(true);
+  expect(backend.item.revisions[1].contract.subject_label).toEqual({ relation_id: 7, field_id: 52 });
   expect(errors).toEqual([]);
 });
 
@@ -355,6 +393,11 @@ test('overlap uses an explicit calculation and replaces a selected service publi
   await page.getByText('替换现有服务来源', { exact: true }).click();
   await expect(page.getByRole('radio', { name: '替换现有服务来源', exact: true })).toBeChecked();
   await choose(page, '选择查询服务', '人员重叠查询 (person_overlap)');
+  const summary = page.getByRole('dialog').locator('.source-summary');
+  await expect(summary).toContainText('已保存来源 · R1');
+  await expect(summary).toContainText('outdoor.dwd_outdoor_participation');
+  await expect(summary).toContainText('outdoor.dim_outdoor_activity');
+  await expect(summary).toContainText('outdoor.dim_outdoor_person');
   await page
     .getByRole('dialog')
     .getByRole('button', { name: '发布查询服务', exact: true })
@@ -400,3 +443,105 @@ test('missing service definition version is explained before attempting rebind',
   await expect(page).toHaveURL(/service\/query-services\/28$/);
   expect(backend.writes.map(body => body.version)).toEqual([1, 2]);
  });
+
+
+test('source summary follows the selected frozen revision rather than current table bindings', async ({ page }) => {
+  const backend = await installBackend(page);
+  backend.item.revisions.push(publishedRevision(), publishedRevision(11, 2, 8, 'archive'));
+  backend.tables[0].materialization = { target_parent_locator: 'addp://engine/99/path/changed?type=schema&node_id=4', target_name: 'changed_table' };
+  await page.goto('/metric-implementations/1?revision_id=10');
+  const summary = page.locator('.source-summary');
+  await expect(summary).toContainText('Business PostgreSQL · #2');
+  await expect(summary).toContainText('outdoor.dwd_outdoor_participation');
+  await expect(summary).toContainText('outdoor.dim_outdoor_activity');
+  await expect(summary).toContainText('outdoor.dim_outdoor_person');
+  await expect(summary).not.toContainText('changed_table');
+  await expect(summary.locator('.el-table__body tbody tr')).toHaveCount(3);
+  await page.locator('.el-card').first().locator('.el-select__wrapper').click();
+  await page.getByRole('option', { name: 'R2 · 已发布', exact: true }).click();
+  await expect(summary).toContainText('已保存来源 · R2');
+  await expect(summary).toContainText('Archive PostgreSQL · #8');
+  await expect(summary).toContainText('archive.dwd_outdoor_participation');
+  await expect(summary).not.toContainText('outdoor.dwd_outdoor_participation');
+  expect(backend.writes).toEqual([]);
+  await summary.getByRole('button', { name: '活动参与事实', exact: true }).click();
+  await expect(page).toHaveURL(/logical-tables\/3\?tab=physical-target$/);
+});
+
+for (const mode of ['no permission', 'directory unavailable']) {
+  test(`source bindings remain visible with ${mode}`, async ({ page }) => {
+    const backend = await installBackend(page, { engineRead: mode !== 'no permission', engineFailure: true });
+    backend.item.revisions.push(publishedRevision());
+    await page.goto('/metric-implementations/1');
+    const summary = page.locator('.source-summary');
+    await expect(summary).toContainText('引擎 #2');
+    await expect(summary).toContainText('outdoor.dwd_outdoor_participation');
+    await expect(page.getByRole('button', { name: '发布查询服务', exact: true })).toBeEnabled();
+    if (mode === 'no permission') expect(backend.engineReads).toEqual([]);
+    else await expect(summary).toContainText('引擎名称暂不可用');
+    expect(backend.writes).toEqual([]);
+  });
+}
+
+test('a missing snapshot never substitutes the current logical table target', async ({ page }) => {
+  const backend = await installBackend(page);
+  const revision = publishedRevision();
+  delete revision.dependency_snapshot;
+  backend.item.revisions.push(revision);
+  backend.tables[0].materialization = { target_parent_locator: 'addp://engine/99/path/changed?type=schema&node_id=4', target_name: 'changed_table' };
+  await page.goto('/metric-implementations/1');
+  const summary = page.locator('.source-summary');
+  await expect(summary).toContainText('此修订缺少可展示的来源快照');
+  await expect(summary).not.toContainText('changed_table');
+  await expect(summary.locator('.el-table')).toHaveCount(0);
+});
+
+test('source summary uses English labels and fits a narrow page', async ({ page }) => {
+  await page.setViewportSize({ width: 720, height: 900 });
+  const backend = await installBackend(page, { lang: 'en' });
+  backend.item.revisions.push(publishedRevision());
+  await page.goto('/metric-implementations/1');
+  const summary = page.locator('.source-summary');
+  await expect(summary).toContainText('Data sources');
+  await expect(summary).toContainText('Saved sources · R1');
+  await expect(summary).toContainText('Execution engine');
+  await expect(summary).toContainText('Physical table');
+  await expect(summary).toContainText('Business PostgreSQL · #2');
+  expect(await summary.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+});
+
+
+for (const lang of ['zh-cn', 'en']) {
+  test(`publication summary follows the selected revision in ${lang} at narrow width`, async ({ page }) => {
+    await page.setViewportSize({ width: 720, height: 900 });
+    const backend = await installBackend(page, { lang });
+    backend.item.revisions.push(publishedRevision(11, 2, 8, 'archive'), publishedRevision());
+    const english = lang === 'en';
+    const publish = english ? 'Publish query service' : '发布查询服务';
+    await page.goto('/metric-implementations/1?revision_id=10');
+    await page.getByRole('button', { name: publish, exact: true }).click();
+    const dialog = page.getByRole('dialog');
+    const summary = dialog.locator('.source-summary');
+    await expect(summary).toContainText(english ? 'Saved sources · R1' : '已保存来源 · R1');
+    await expect(summary).toContainText('Business PostgreSQL · #2');
+    await expect(summary).not.toContainText('archive.');
+    await expect(summary).toContainText(english ? 'Physical table' : '物理表');
+    await expect(summary.getByRole('button')).toHaveCount(0);
+    expect(await dialog.evaluate(el => {
+      const rect = el.getBoundingClientRect();
+      return rect.left >= 0 && rect.right <= window.innerWidth && el.scrollWidth <= el.clientWidth;
+    })).toBe(true);
+    await dialog.locator('.el-dialog__headerbtn').click();
+    await page.locator('.el-card').first().locator('.el-select__wrapper').click();
+    await page.getByRole('option', { name: english ? 'R2 · Published' : 'R2 · 已发布', exact: true }).click();
+    await page.getByRole('button', { name: publish, exact: true }).click();
+    await expect(summary).toContainText(english ? 'Saved sources · R2' : '已保存来源 · R2');
+    await expect(summary).toContainText('Archive PostgreSQL · #8');
+    await expect(summary).toContainText('archive.dwd_outdoor_participation');
+    await expect(summary).not.toContainText('outdoor.');
+    const screenshotPath = test.info().outputPath('publication-source-summary.png');
+    await dialog.screenshot({ path: screenshotPath });
+    await test.info().attach('publication-source-summary', { path: screenshotPath, contentType: 'image/png' });
+    expect(backend.writes).toEqual([]);
+  });
+}

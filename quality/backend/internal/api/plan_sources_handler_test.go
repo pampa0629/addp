@@ -14,10 +14,15 @@ import (
 func TestPlanElementCandidatesUseTenantServiceProjection(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	standardServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/v1/standard/elements" || r.URL.Query().Get("keyword") != "gender" {
+		keyword := r.URL.Query().Get("keyword")
+		if r.URL.Path != "/api/v1/standard/elements" || (keyword != "gender" && keyword != "") {
 			t.Fatalf("unexpected Standard request: %s", r.URL.String())
 		}
-		if r.URL.Query().Get("page") != "1" || r.URL.Query().Get("page_size") != "100" {
+		pageSize := "100"
+		if keyword == "" {
+			pageSize = "20"
+		}
+		if r.URL.Query().Get("page") != "1" || r.URL.Query().Get("page_size") != pageSize || r.URL.Query().Get("status") != "published" {
 			t.Fatalf("unexpected pagination: %s", r.URL.RawQuery)
 		}
 		if r.Header.Get("Authorization") != "Bearer tenant-token" {
@@ -52,7 +57,14 @@ func TestPlanElementCandidatesUseTenantServiceProjection(t *testing.T) {
 
 	emptyResponse := httptest.NewRecorder()
 	router.ServeHTTP(emptyResponse, httptest.NewRequest(http.MethodGet, "/rules/element-candidates", nil))
-	if emptyResponse.Code != http.StatusBadRequest {
-		t.Fatalf("empty keyword status = %d, want %d, body=%s", emptyResponse.Code, http.StatusBadRequest, emptyResponse.Body.String())
+	if emptyResponse.Code != http.StatusOK {
+		t.Fatalf("browse status = %d, want %d, body=%s", emptyResponse.Code, http.StatusOK, emptyResponse.Body.String())
+	}
+	var browseBody qualityElementCandidateListResponse
+	if err := json.Unmarshal(emptyResponse.Body.Bytes(), &browseBody); err != nil {
+		t.Fatalf("decode browse response: %v", err)
+	}
+	if browseBody.Total != 1 || browseBody.Page != 1 || browseBody.PageSize != 20 || len(browseBody.Data) != 1 || browseBody.Data[0].ID != 12 {
+		t.Fatalf("browse response = %#v", browseBody)
 	}
 }

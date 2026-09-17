@@ -183,7 +183,6 @@ def test_extraction_response_schema_is_strict_and_requires_complete_payload_shap
                     "datetime",
                     "bool",
                     "json",
-                    "text",
                 ],
             },
             {"type": "null"},
@@ -358,6 +357,7 @@ def test_extraction_response_requires_enumeration_reference_to_same_batch_code_s
     ("candidate_type", "data_type"),
     [
         ("element", "date_or_datetime"),
+        ("element", "text"),
         ("code_set", "decimal"),
         ("metric", "integer"),
         ("glossary", "string"),
@@ -423,7 +423,7 @@ def test_extraction_prompt_separates_data_type_value_domain_and_business_semanti
     asyncio.run(StandardDocumentExtractionChain(llm).extract(request))
 
     prompt = llm.messages[1].content
-    assert "data_type 只允许 string、int、bigint、float、decimal、date、datetime、bool、json、text" in prompt
+    assert "data_type 只允许 string、int、bigint、float、decimal、date、datetime、bool、json" in prompt
     assert "码值集的 data_type 只允许 string、int、bigint" in prompt
     assert "业务术语和指标的 data_type 必须为 null" in prompt
     assert "date_or_datetime 等上位类型" in prompt

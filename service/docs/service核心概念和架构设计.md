@@ -940,6 +940,14 @@ Service 模块重构设计的核心改进：
 
 #### 指标来源发布切换
 
+查询服务创建页提供物理表、SQL、已发布指标实现三种来源。仅进入指标来源选择页时，共享前端 Model Client SDK 才携带当前用户 Bearer 身份调用现有 Model 指标实现读取 API；只展示已发布修订，必须显式选择实现和修订，不默认选择最新版本。Model 不可用、无读取权限或列表为空时显示对应状态和重试入口；其他来源不发起 Model 请求，也不受其结果影响。退出选择页后的迟到响应不得覆盖后续选择。
+
+提交仍只走 `POST /query` 的 `config_type=analytical + metric_source {implementation_id, revision_id}`。前端列表只辅助选择；Service 通过已有 Go Model Client SDK 在创建时重新校验精确修订、依赖与计划，禁止提交引擎、SQL 或参数／输出覆盖。Service 不增加 Model 启动探测、数据库访问或模块内部导入，不新增指标发布代理接口。此入口与 Model 工作区发布使用同一创建链路。
+
+此入口的验证使用 `make test-common-frontend test-service-frontend test-model-frontend`：覆盖 SDK 路由、已发布修订投影、权限／不可用状态、过期响应隔离、精确修订提交及普通来源独立创建。新增测试由现有 Node 测试 glob 和前端 CI 注册自动纳入，无新增服务或数据库测试依赖。
+
+指标服务详情和编辑页的输出格式说明读取已保存的协议配置；编辑标题、描述等普通信息时不提交只读协议配置，避免把已有 JSON/CSV 服务意外收窄为新建表单的 JSON 默认值。此行为由 Service 前端提交回归测试覆盖。
+
 `PUT /query/{id}/metric-source` 是查询服务切换到确定指标实现修订的唯一命令，使用 `service.definition.update`。请求只接受 `metric_source` 与正整数 `version`。QueryService 聚合根持久化非空 BIGINT 版本，创建为 1，存量迁移补齐为 1；普通编辑、启停、删除、刷新快照与重绑均携带同一版本，在租户范围内同一事务锁行、比较版本、写入并递增。不存在或其他租户资源返回 404；陈旧版本返回 409 / `resource_version_conflict`，不得产生副作用。删除和刷新快照使用请求体 `{ "version": 1 }`。管理 DTO 返回最新 `version`，不再提供定义指纹字段。
 
 `service_version` 仍只表示计算消费契约，缺少依赖快照或稳定键时为空，继续供查询、游标与 Consumer Descriptor 使用。重绑保留服务 ID、编码、访问控制与启停状态；定义版本不授予执行权，停用服务不自动启用。详情页提供显式启用／停用操作；未绑定完整指标计划时不可启用，未启用时禁止测试与预览并显示原因。版本冲突保留参数和本地输入，用户主动重新加载后再操作，不自动重试。切换计算来源会改变 Consumer Descriptor 指纹，Workbench 必须重新绑定并发布应用新修订。

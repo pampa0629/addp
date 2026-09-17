@@ -40,6 +40,8 @@ func ProbeInstanceSemantics(ctx context.Context, session InstanceProbeSession, d
 		{"analytical_date_upper_bound", eq(op("text", lit(datatype.FieldTypeDate, "9999-12-31")), lit(datatype.FieldTypeString, "9999-12-31"))},
 		{"analytical_text_case", op("ne", lit(datatype.FieldTypeString, "A"), lit(datatype.FieldTypeString, "a"))},
 		{"analytical_text_trailing_space", op("ne", lit(datatype.FieldTypeString, "a"), lit(datatype.FieldTypeString, "a "))},
+		{"analytical_text_contains", eq(op("contains", lit(datatype.FieldTypeString, "中文A%_"), lit(datatype.FieldTypeString, "A%_")), lit(datatype.FieldTypeBool, "true"))},
+		{"analytical_text_contains_case", eq(op("contains", lit(datatype.FieldTypeString, "A"), lit(datatype.FieldTypeString, "a")), lit(datatype.FieldTypeBool, "false"))},
 		{"analytical_text_encoding", op("ne", lit(datatype.FieldTypeString, "中文😀"), lit(datatype.FieldTypeString, "中文😁"))},
 		{"analytical_null_semantics", op("is_null", op("text", plan.Expr{Op: "literal", Literal: &plan.Literal{Type: datatype.FieldTypeBool, Null: true}}))},
 	}

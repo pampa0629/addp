@@ -373,6 +373,18 @@ type SQLDialectProvider interface {
 	SQLDialect() string
 }
 
+// TextPredicateDialect renders trusted compiler expressions, never user SQL.
+// Contains is a case-sensitive literal substring predicate with SQL NULL semantics.
+type TextPredicateDialect interface {
+	Contains(valueSQL, substringSQL string) string
+}
+
+// TextPredicateSQLProvider is optional. A nil dialect means unsupported.
+type TextPredicateSQLProvider interface {
+	EnginePlugin
+	TextPredicateDialect() TextPredicateDialect
+}
+
 type SQLQueryRuntimeProvider interface {
 	QueryRuntimeProvider
 	SQLDialectProvider

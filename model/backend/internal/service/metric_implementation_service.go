@@ -456,6 +456,9 @@ func resolveMetricPlan(tx *gorm.DB, item *models.MetricImplementation, contract 
 		return plugin.AnalyticalPlanPackage{}, nil, "", err
 	}
 	refs := []models.MetricFieldReference{contract.Subject, contract.Distinct, contract.Time}
+	if contract.SubjectLabel != nil {
+		refs = append(refs, *contract.SubjectLabel)
+	}
 	for _, filter := range contract.Filters {
 		refs = append(refs, filter.Field)
 	}

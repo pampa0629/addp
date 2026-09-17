@@ -8,7 +8,7 @@
 
 ## 唯一领域主线
 
-QualityRule（质量规则）管理目标无关的强类型约束及不可变修订。QualityPlan（质量检查方案）通过检查项引用固定规则修订并绑定物理表；规则与方案多对多，同一方案可将同一规则用于多个目标。检查项独立保存目标、级别和禁用策略。用户手动执行与 Orchestrator 调用都创建冻结 execution，由独立 quality-worker 执行。旧 RuleApplication、CheckTask、DataValidationTask 不再是可配置或可执行实体。
+QualityRule（质量规则）管理目标无关的强类型约束及不可变修订。QualityPlan（质量检查方案）通过检查项引用固定规则修订，声明表别名与可选默认物理表；执行参数 `table_bindings` 按别名提供实际表，省略的别名使用默认值，未知或空值拒绝。规则与方案多对多，同一方案可跨地区复用。检查项独立保存字段、级别和禁用策略。用户手动执行与 Orchestrator 调用都创建冻结 execution，由独立 quality-worker 执行。旧 RuleApplication、CheckTask、DataValidationTask 不再是可配置或可执行实体。
 
 Quality 不依赖企业 Catalog。Standard 的已发布数据元可以导入为冻结规则；来源修订变化不会隐式改写方案。Model 的结构约束可作为人工配置依据，本期尚未提供 Model 自动导入。方案绑定不是企业落标映射，不能推导 Catalog 落标覆盖率。
 
@@ -19,10 +19,14 @@ Quality 不依赖企业 Catalog。Standard 的已发布数据元可以导入为�
 - models/plan.go、repository/plan_repo.go：方案版本、执行冻结、租约提交。
 - models/rule.go、repository/rule_repo.go、service/rule_service.go：规则修订、引用保护和约束校验；规则修改不自动升级方案引用。
 - service/plan_sources.go：Standard 来源与修订校验；worker 不回读 Standard。
-- service/plan_issues.go、repository/issue_repo.go：问题按 tenant + plan + rule_key 对账。
+- models/plan_targets.go：定义与执行目标校验、默认值解析、规范物理身份散列；解析在方案行锁内完成。
+- service/plan_issues.go、repository/issue_repo.go：问题按 tenant + plan + target_key + rule_key 对账。
+- repository/overview_repo.go、api/overview_handler.go、frontend/src/views/Overview.vue：当前目标质量和按 UTC 执行创建日统计的历史规则通过率；异常不覆盖完整质量结论，旧版本结果显式标注。
 - api/plan_handler.go：/plans CRUD、手动 run；api/rule_handler.go：/rules CRUD、候选数据元和反向引用查询。
 - api/task_provider_handler.go：仅声明 quality_plan。
 - frontend/src/views/RuleList.vue：规则定义与来源；PlanList.vue：选规则、固定修订、绑定目标与执行。约束控件唯一所有者为 RuleConstraintFields.vue，方案页只读展示。ExecutionDetail.vue 展示领域结果；IssueList/IssueDetail 管理问题。
+- RuleList 的数据元导入支持空关键词分页浏览和名称/编码搜索，保留已选来源；RuleSourceDetails 通过当前用户读取 Standard 精确修订详情，展示数据元、码值集修订及码项含义。无 Standard 读取权限或查询失败时仍保留冻结来源身份和约束，不影响执行。手工规则不推断来源。
+- 无可导入规则的数据元仍可选中预览来源，但不能确认导入；根据精确修订区分未配置值约束与缺少编译规则，读取失败时不猜测原因。历史发布修订缺少编译规则时，应在 Standard 创建并审核发布新修订，不改写历史快照、不在 Quality 重新推导约束。
 - authorization/permissions.yaml：quality.rule.* 与 quality.plan.* 分离；方案写入还要求 rule.read，方案运行不要求规则管理权限。
 - cmd/server、cmd/worker：独立控制面和执行进程。
 
@@ -38,11 +42,18 @@ Quality migration 11 将内嵌规则逐条提取为独立规则 R1 和检查项�
 
 后端 8182，前端 5183；服务按 scripts/dev 标准入口启动。本轮实现不等于已在运行环境执行迁移。
 
+Quality migration 14 增加问题目标范围，使用最后观测执行的完整有效绑定回填；缺失证据保持 NULL，不用当前方案推断。启动 SchemaVersion 升为 2，执行快照升为 v2。更新前排空 Quality 活动执行并同步重启 Backend/Worker，禁止混跑新旧 worker。不同目标可并发，同一目标范围串行；方案编辑和删除仍要求所有目标执行结束。
+
 ## 测试与 CI
 
 - make test-module MODULE=quality：T0、一致性、Go 与前端标准门禁。
-- make test-quality-postgres：真实 PG 规则、来源/执行/问题闭环、迁移、租约；同时验证 Orchestrator 的方案引用迁移。
+- make test-quality-backend：同一后端单元/契约测试集的独立入口，可在无关 T0 失败时定位本模块；Platform CI 的 Go 自动发现及模块门禁已覆盖该测试集。
+- make test-quality-postgres：真实 PG 规则、来源/执行/问题闭环、迁移、租约、域引用屏障及仅修改归属不产生内容修订；同时验证 Orchestrator 的方案引用迁移。
 - make test-quality-frontend：路由、页面端到端、构建。
-- System IAM migration 测试由 scripts/test/system-iam-postgres-gate.sh --package migration 自动发现；单测筛选 --test quality-plans。
+- System IAM migration 测试由 scripts/test/system-iam-postgres-gate.sh --package migration 自动发现；单测筛选 --test quality-plans（含规则、方案及 Standard/Quality 域引用服务身份授权刷新）。
 - release-and-t2-gates.yml 注册 Quality PG 门禁，changed-gate 将 Orchestrator 变更映射到该门禁。
 - 本地仅用 addp_test 和 addp_iam_test；不为测试创建单次 database。
+
+## 数据库启动所有权
+
+本模块 schema 迁移仅由 Backend 执行，Worker 只读校验成功提交的 schema 版本。Backend 多实例通过模块级数据库锁协调；开发脚本及 Compose 在所属 Backend 就绪后启动 Worker。结构或初始化迁移变化须递增模块 `SchemaVersion`，共享规则见 `docs/spec/addp开发服务生命周期与构建身份规范.md`。

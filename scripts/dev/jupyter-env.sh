@@ -151,9 +151,9 @@ ensure_jupyter_python_env() {
   fi
 
   echo "同步 Jupyter Python 依赖：$install_reason"
-  if ! "$python_bin" -m pip install --upgrade pip ||
-     ! "$python_bin" -m pip install -r "$engine_dir/requirements.txt" ||
-     ! "$python_bin" -m pip install -e "$project_root/common-python" ||
+  if ! addp_with_python_dependency_lock "$project_root" "$python_bin" -m pip install --upgrade pip ||
+     ! addp_with_python_dependency_lock "$project_root" "$python_bin" -m pip install -r "$engine_dir/requirements.txt" ||
+     ! addp_with_python_dependency_lock "$project_root" "$python_bin" -m pip install -e "$project_root/common-python" ||
      ! "$python_bin" -m pip check ||
      ! jupyter_runtime_imports_available "$python_bin" ||
      ! install_jupyter_labextension "$engine_dir" "$venv_dir"; then

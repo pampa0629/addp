@@ -383,7 +383,6 @@
         "desc": "DW layers, business entities, logical table design"
       },
       "quality": {
-        "rules": "Quality rules",
         "label": "Data Quality",
         "desc": "Rule application, quality checks, execution records"
       },
@@ -472,8 +471,8 @@
         "elements": "Data Elements",
         "codeSets": "Code Sets",
         "units": "Units of Measure",
-        "metrics": "Metrics",
-        "recentMetrics": "Data Metric Management",
+        "metrics": "Metric Definitions",
+        "recentMetrics": "Metric Definitions",
         "documents": "Standard Documents"
       },
       "modeling": {
@@ -488,9 +487,11 @@
       "quality": {
         "label": "Data Quality",
         "issues": "Issues",
+        "rules": "Quality rules",
         "recentIssues": "Data Quality Issues",
         "plans": "Quality plans",
-        "recentPlans": "Quality plans"
+        "recentPlans": "Quality plans",
+        "overview": "Quality overview"
       },
       "security": {
         "label": "Data Security",

@@ -13,7 +13,7 @@ import (
 )
 
 func TestPrepareQueryProtectionKeepsUnmanagedTenantOffReadSetPath(t *testing.T) {
-	store, err := New(openProjectionStoreDB(t), "manager", "manager", nil)
+	store, err := Migrate(openProjectionStoreDB(t), "manager", "manager", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -32,7 +32,7 @@ func TestPrepareQueryProtectionKeepsUnmanagedTenantOffReadSetPath(t *testing.T) 
 
 func TestPrepareQueryProtectionDeniesEnrollingManagedReadSet(t *testing.T) {
 	db := openProjectionStoreDB(t)
-	store, err := New(db, "manager", "manager", nil)
+	store, err := Migrate(db, "manager", "manager", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +59,7 @@ func TestPrepareQueryProtectionDeniesEnrollingManagedReadSet(t *testing.T) {
 }
 
 func TestRequireCatalogPathUnmanagedUsesExactDataItemIdentity(t *testing.T) {
-	store, err := New(openProjectionStoreDB(t), "develop", "develop", nil)
+	store, err := Migrate(openProjectionStoreDB(t), "develop", "develop", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +89,7 @@ func TestRequireCatalogPathUnmanagedUsesExactDataItemIdentity(t *testing.T) {
 }
 
 func TestPrepareTableProtectionMasksManagedNativeRows(t *testing.T) {
-	store, err := New(openProjectionStoreDB(t), "transfer", "transfer", nil)
+	store, err := Migrate(openProjectionStoreDB(t), "transfer", "transfer", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,7 +121,7 @@ func TestPrepareTableProtectionMasksManagedNativeRows(t *testing.T) {
 }
 
 func TestPrepareTableProtectionDoesNotValidateUnmanagedPathFields(t *testing.T) {
-	store, err := New(openProjectionStoreDB(t), "transfer", "transfer", nil)
+	store, err := Migrate(openProjectionStoreDB(t), "transfer", "transfer", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -18,6 +18,7 @@ type MetricContract struct {
 	Operation         string                `json:"operation" binding:"required,oneof=count_distinct directional_overlap"`
 	Subject           MetricFieldReference  `json:"subject"`
 	SubjectRelationID int64                 `json:"subject_relation_id" binding:"required,gt=0"`
+	SubjectLabel      *MetricFieldReference `json:"subject_label,omitempty"`
 	Distinct          MetricFieldReference  `json:"distinct"`
 	Time              MetricFieldReference  `json:"time"`
 	Filters           []MetricBooleanFilter `json:"filters"`

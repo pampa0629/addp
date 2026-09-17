@@ -16,7 +16,6 @@ type CodeSet struct {
 	OwnerDomainID   *int64      `gorm:"index" json:"owner_domain_id,omitempty"`
 	Code            string      `gorm:"size:100;not null;uniqueIndex:uq_standard_code_sets_tenant_code" json:"code"`
 	Origin          string      `gorm:"size:20;not null;default:'tenant'" json:"origin"`
-	StewardID       *int64      `json:"steward_id,omitempty"`
 	Tags            StringArray `gorm:"type:jsonb;serializer:json" json:"tags"`
 	DraftRevisionID *int64      `gorm:"index" json:"draft_revision_id,omitempty"`
 	CreatedBy       int64       `gorm:"not null" json:"created_by"`
@@ -78,12 +77,10 @@ type CreateCodeSetRequest struct {
 	ScopeType     string     `json:"scope_type" binding:"required" enums:"tenant_common,domain"`
 	OwnerDomainID *int64     `json:"owner_domain_id,omitempty"`
 	Code          string     `json:"code" binding:"required"`
-	StewardID     *int64     `json:"steward_id,omitempty"`
 	Tags          []string   `json:"tags"`
 	Name          string     `json:"name" binding:"required"`
 	Description   string     `json:"description" binding:"required"`
 	ValueType     string     `json:"value_type" binding:"required"`
-	ChangeSummary string     `json:"change_summary" binding:"required"`
 	EffectiveFrom *time.Time `json:"effective_from,omitempty"`
 	EffectiveTo   *time.Time `json:"effective_to,omitempty"`
 }
@@ -92,7 +89,6 @@ type UpdateCodeSetRequest struct {
 	Version       int64    `json:"version" binding:"required,gt=0" minimum:"1"`
 	ScopeType     string   `json:"scope_type" binding:"required" enums:"tenant_common,domain"`
 	OwnerDomainID *int64   `json:"owner_domain_id,omitempty"`
-	StewardID     *int64   `json:"steward_id,omitempty"`
 	Tags          []string `json:"tags"`
 }
 

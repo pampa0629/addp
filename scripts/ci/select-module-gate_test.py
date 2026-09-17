@@ -25,8 +25,9 @@ class SelectModuleGateTest(unittest.TestCase):
         subprocess.run(["git", "init", "-q"], cwd=self.repository, check=True)
         files = {
             "sample/backend/go.mod": "module example.com/sample\n",
+            "agent/backend/requirements.txt": "PyYAML\n",
             "other/frontend/package.json": '{"scripts":{"build":"vite build"}}\n',
-            "Makefile": "test-sample:\n\t@true\ntest-other-frontend:\n\t@true\n",
+            "Makefile": "test-sample:\n\t@true\ntest-other-frontend:\n\t@true\ntest-agent-eval:\n\t@true\n",
         }
         source_scripts = Path(__file__).parents[1] / "test"
         for script_name in ("changed-gate.py", "module-gate.py"):
@@ -85,6 +86,22 @@ class SelectModuleGateTest(unittest.TestCase):
         environment = self.commit(".github/workflows/platform-ci.yml")
         self.assertTrue(MODULE.select_module(self.repository, "sample", environment)[0])
         self.assertTrue(MODULE.select_module(self.repository, "other", environment)[0])
+
+    def test_skill_change_selects_agent_for_pull_request_and_push(self) -> None:
+        environment = self.commit("skills/workflow-analysis/SKILL.md")
+        for event in ("pull_request", "push"):
+            with self.subTest(event=event):
+                event_environment = {
+                    **environment,
+                    "ADDP_CI_EVENT": event,
+                    "ADDP_CI_BEFORE": self.base,
+                }
+                self.assertTrue(
+                    MODULE.select_module(self.repository, "agent", event_environment)[0]
+                )
+                self.assertFalse(
+                    MODULE.select_module(self.repository, "other", event_environment)[0]
+                )
 
     def test_manual_event_and_force_select_without_diff(self) -> None:
         self.assertEqual(

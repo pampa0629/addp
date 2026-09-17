@@ -21,7 +21,7 @@
             <el-form-item :label="$t('standard.common.scopeLabel')">
               <el-select v-model="identity.scope_type" style="width:100%" @change="onScopeChange"><el-option :label="$t('standard.common.scopeValue.tenant_common')" value="tenant_common" /><el-option :label="$t('standard.common.scopeValue.domain')" value="domain" /></el-select>
             </el-form-item>
-            <el-form-item v-if="identity.scope_type === 'domain'" :label="$t('standard.glossary.domainLabel')"><el-select v-model="identity.owner_domain_id" filterable style="width:100%"><el-option v-for="domain in domains" :key="domain.id" :label="domain.name" :value="domain.id" /></el-select></el-form-item>
+            <el-form-item v-if="identity.scope_type === 'domain'" :label="$t('standard.glossary.domainLabel')"><BusinessDomainSelect v-model="identity.owner_domain_id" style="width:100%" :options="domains" /></el-form-item>
             <el-form-item :label="$t('standard.common.tags')"><el-select v-model="identity.tags" multiple filterable allow-create default-first-option style="width:100%" /></el-form-item>
           </el-form>
         </el-card>
@@ -71,6 +71,7 @@
 </template>
 
 <script setup>
+import { BusinessDomainSelect, buildBusinessDomainOptions } from '@common-ui'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft } from '@element-plus/icons-vue'
@@ -90,7 +91,7 @@ const { canUpdate, canPublish } = useStandardPermissions('glossary')
 const route = useRoute(), router = useRouter()
 const loading = ref(false), saving = ref(false), glossary = ref({}), history = ref([]), revision = reactive({}), domains = ref([])
 const mappedElements = ref([]), elementDialog = ref(false), selectedElementIDs = ref([]), searchedElements = ref([]), elementSearchLoading = ref(false)
-const identity = reactive({ scope_type: 'tenant_common', owner_domain_id: null, steward_id: null, tags: [] })
+const identity = reactive({ scope_type: 'tenant_common', owner_domain_id: null, tags: [] })
 const editable = computed(() => canUpdate.value && revision.status === 'draft' && glossary.value.draft_revision_id === revision.id)
 const reviewing = computed(() => revision.status === 'in_review' && glossary.value.draft_revision_id === revision.id)
 const title = computed(() => revision.name || glossary.value.code || t('standard.glossary.detailTitle'))
@@ -98,7 +99,6 @@ useConsolePageDescriptor(router, 'standard', { title: computed(() => t('standard
 const statusType = status => ({ draft: 'info', in_review: 'warning', published: 'success', withdrawn: 'danger' }[status] || 'info')
 const statusLabel = status => status ? t(`standard.revision.status.${status}`) : '-'
 const formatTime = value => formatStandardDateTime(value, locale.value)
-const flattenDomains = nodes => nodes.flatMap(node => [node, ...flattenDomains(node.children || [])])
 const elementName = item => item.draft_revision?.name || item.current_revision?.name || item.name || item.code
 const editableState = computed(() => ({ identity: { ...identity, tags: [...identity.tags] }, revision: { ...revision, alias: [...(revision.alias || [])], related_ids: [...(revision.related_ids || [])] } }))
 const { isDirty, markSaved } = useUnsavedChanges({ state: editableState, t })
@@ -111,7 +111,7 @@ async function load() {
   try {
     const [aggregate, revisions, elements] = await Promise.all([glossaryAPI.get(route.params.id), glossaryAPI.listRevisions(route.params.id), glossaryAPI.getElements(route.params.id)])
     glossary.value = aggregate; history.value = revisions || []; mappedElements.value = elements || []
-    Object.assign(identity, { scope_type: aggregate.scope_type, owner_domain_id: aggregate.owner_domain_id || null, steward_id: aggregate.steward_id || null, tags: aggregate.tags || [] })
+    Object.assign(identity, { scope_type: aggregate.scope_type, owner_domain_id: aggregate.owner_domain_id || null, tags: aggregate.tags || [] })
     setRevision(aggregate.draft_revision || aggregate.current_revision || history.value[0])
     markSaved()
   } catch (error) { ElMessage.error(getStandardErrorMessage(error, t, 'standard.common.loadFailed')); goBack() }
@@ -142,7 +142,7 @@ async function searchElements(keyword='') { elementSearchLoading.value = true; t
 function openElementDialog() { selectedElementIDs.value = mappedElements.value.map(item => item.id); elementDialog.value = true; searchElements() }
 async function saveElements() { try { const aggregate = await glossaryAPI.updateElements(glossary.value.id, { version: glossary.value.version, element_ids: selectedElementIDs.value }); glossary.value = aggregate; elementDialog.value = false; await load(); ElMessage.success(t('standard.common.saveSuccess')) } catch (error) { ElMessage.error(getStandardErrorMessage(error, t)) } }
 watch(() => route.params.id, load, { immediate: true })
-onMounted(async () => { try { domains.value = flattenDomains(await domainAPI.list() || []) } catch { domains.value = [] } })
+onMounted(async () => { try { domains.value = buildBusinessDomainOptions(await domainAPI.list() || []) } catch { domains.value = [] } })
 </script>
 
 <style scoped>

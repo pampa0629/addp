@@ -67,12 +67,24 @@
               </div>
             </el-radio>
           </div>
+          <div class="config-card-wrapper" :class="{ selected: form.config_type === 'analytical' }" @click="form.config_type = 'analytical'">
+            <el-radio value="analytical" class="config-radio">
+              <div class="config-content">
+                <h3><el-icon><Grid /></el-icon> {{ t('service.query.metricModeTitle') }}</h3>
+                <p class="description">{{ t('service.query.metricModeDescription') }}</p>
+                <el-tag size="small">{{ t('service.query.configTypeAnalytical') }}</el-tag>
+              </div>
+            </el-radio>
+          </div>
         </el-radio-group>
       </el-card>
     </div>
 
     <!-- Step 1: 配置数据源 -->
     <div v-if="!isEdit && currentStep === 1">
+      <el-card v-if="form.config_type === 'analytical'" :header="t('service.query.metricModeTitle')">
+        <PublishedMetricSourcePicker v-model="metricSource" />
+      </el-card>
       <!-- Table 模式 -->
       <div v-if="form.config_type === 'table'">
         <el-card>
@@ -298,13 +310,14 @@
         <el-card :header="t('service.query.basicInfoTitle')" style="margin-bottom: 20px">
           <el-form-item :label="t('service.query.configTypeLabel')" v-if="!isEdit">
             <el-tag :type="form.config_type === 'table' ? 'success' : 'warning'" size="large">
-              {{ form.config_type === 'table' ? t('service.query.configTypeTable') : t('service.query.configTypeSql') }}
+              {{ form.config_type === 'table' ? t('service.query.configTypeTable') : form.config_type === 'analytical' ? t('service.query.configTypeAnalytical') : t('service.query.configTypeSql') }}
             </el-tag>
             <span style="margin-left: 12px; color: var(--addp-text-tertiary); font-size: 13px">
               {{ t('service.query.configTypeNote') }}
             </span>
           </el-form-item>
 
+          <el-alert v-if="form.config_type === 'analytical'" :title="t('service.query.metricSourceHint')" type="info" :closable="false" style="margin-bottom: 16px" />
           <el-form-item :label="t('service.query.serviceNameLabel')" prop="service_name" required>
             <el-input
               v-model="form.service_name"
@@ -359,7 +372,7 @@
 
         <!-- 协议配置 -->
         <el-card :header="t('service.query.protocolConfigTitle')" style="margin-bottom: 20px">
-          <el-alert type="info" :closable="false" style="margin-bottom: 16px">
+          <el-alert v-if="form.config_type !== 'analytical'" type="info" :closable="false" style="margin-bottom: 16px">
             {{ t('service.query.protocolAlert') }}
           </el-alert>
 
@@ -368,11 +381,11 @@
               {{ t('service.query.restApiCheckbox') }}
             </el-checkbox>
             <div class="help-text">
-              {{ t('service.query.restApiHelp') }}
+              {{ form.config_type === 'analytical' ? t('service.query.metricRestApiHelp', { formats: metricRestFormats.join('/') }) : t('service.query.restApiHelp') }}
             </div>
           </el-form-item>
 
-          <el-form-item :label="t('service.query.ogcFeaturesLabel')">
+          <el-form-item v-if="form.config_type !== 'analytical'" :label="t('service.query.ogcFeaturesLabel')">
             <el-checkbox v-model="enableOgcFeatures" :disabled="!hasGeometryField">
               {{ t('service.query.ogcFeaturesCheckbox') }}
             </el-checkbox>
@@ -430,6 +443,7 @@
 </template>
 
 <script setup>
+import PublishedMetricSourcePicker from '../components/PublishedMetricSourcePicker.vue'
 import ParameterValueInput from '../../../../common-frontend/basic/src/components/ParameterValueInput.vue'
 import { parameterControlType, parameterOptionsAllow, validParameterOptions } from '../../../../common-frontend/basic/src/utils/parameterInput.mjs'
 import { ref, reactive, computed, onMounted, nextTick } from 'vue'
@@ -530,11 +544,13 @@ const sqlNamedParameterTypes = ['string', 'bool', 'int', 'bigint', 'float', 'dou
 const numericSQLNamedParameterTypes = new Set(['int', 'bigint', 'float', 'double', 'decimal'])
 
 // 字段配置输入
+const metricSource = ref(null)
 const defaultFieldsInput = ref('')
 const filterableFieldsInput = ref('')
 
 // 协议启用状态
 const enableRestApi = ref(true) // REST API 默认启用，不可禁用
+const metricRestFormats = ref(['json'])
 const enableOgcFeatures = ref(false)
 
 // 关键词输入
@@ -559,6 +575,7 @@ const rules = computed(() => ({
 
 // 计算属性：是否检测到空间字段
 const hasGeometryField = computed(() => {
+  if (form.config_type === 'analytical') return false
   if (form.config_type === 'table') {
     return spatialMetadata.value?.hasGeometry === true
   } else {
@@ -596,6 +613,7 @@ const canProceed = computed(() => {
   if (currentStep.value === 0) {
     return !!form.config_type
   } else if (currentStep.value === 1) {
+    if (form.config_type === 'analytical') return !!metricSource.value
     if (form.config_type === 'table') {
       return !!form.locator && (!tableUsesRuntime.value || (!!form.runtime_engine_id && selectedRuntimeAvailable.value))
     } else {
@@ -913,7 +931,11 @@ const parseFieldInput = value => String(value || '').split(',').map(field => fie
 
 // 方法：提交表单
 const handleSubmit = async () => {
-  if (versionConflict.value) return
+  if (versionConflict.value || submitting.value) return
+  if (!isEdit.value && form.config_type === 'analytical' && !metricSource.value) {
+    ElMessage.warning(t('service.query.metricSourceRequired'))
+    return
+  }
   submitting.value = true
   try {
     // 构建请求数据
@@ -977,8 +999,12 @@ const handleSubmit = async () => {
 		if (Object.keys(dataConfig).length > 0) requestData.data_config = dataConfig
     }
 
+    if (!isEdit.value && form.config_type === 'analytical') {
+      requestData.metric_source = { ...metricSource.value }
+    }
+
     // 协议配置
-    requestData.protocols = {
+    requestData.protocols = form.config_type === 'analytical' ? { rest_api: { enabled: true, formats: ['json'] } } : {
       rest_api: { enabled: true },
       ogc_features: { enabled: enableOgcFeatures.value }
     }
@@ -992,14 +1018,16 @@ const handleSubmit = async () => {
         keywords: requestData.keywords,
         public_access: requestData.public_access,
         max_features: requestData.max_features,
-        protocols: requestData.protocols,
+        ...(form.config_type !== 'analytical' ? { protocols: requestData.protocols } : {}),
         ...(requestData.data_config ? { data_config: requestData.data_config } : {})
       })
       form.version = updated.version
       ElMessage.success(t('service.query.updateSuccess'))
     } else {
-      await queryServiceAPI.createService(requestData)
+      const created = await queryServiceAPI.createService(requestData)
       ElMessage.success(t('service.query.createSuccess'))
+      await navigateServiceRoute(router, `/query-services/${created.id}`, { history: 'replace' })
+      return
     }
 
     await navigateServiceRoute(router, '/query-services', { history: 'replace' })
@@ -1095,6 +1123,7 @@ onMounted(async () => {
 	  }
 
       // 协议配置
+      metricRestFormats.value = service.protocols?.rest_api?.formats || []
       if (service.protocols?.ogc_features?.enabled) {
         enableOgcFeatures.value = true
       }
@@ -1167,12 +1196,15 @@ onMounted(async () => {
 .config-radio-group {
   display: flex;
   flex-direction: row;
+  flex-wrap: wrap;
+  align-items: stretch;
   gap: 20px;
   width: 100%;
 }
 
 .config-card-wrapper {
-  flex: 1;
+  flex: 1 1 240px;
+  min-width: 0;
   border: 2px solid var(--addp-border-color);
   border-radius: 8px;
   padding: 20px;

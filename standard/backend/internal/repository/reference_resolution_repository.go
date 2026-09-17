@@ -87,20 +87,12 @@ func (r *ReferenceResolutionRepository) ResolveElementsByCodes(ctx context.Conte
 	return result, wrapDBError(err)
 }
 
-func (r *ReferenceResolutionRepository) ListDomainCandidates(ctx context.Context, tenantID int64, search string, page, pageSize int) ([]models.Domain, int64, error) {
-	query := r.db.WithContext(ctx).Model(&models.Domain{}).
-		Where("tenant_id = ? AND lifecycle_state = ?", tenantID, "active")
-	if search = strings.TrimSpace(search); search != "" {
-		pattern := "%" + search + "%"
-		query = query.Where("name ILIKE ? OR code ILIKE ?", pattern, pattern)
-	}
-	var total int64
-	if err := query.Count(&total).Error; err != nil {
-		return nil, 0, wrapDBError(err)
-	}
+// ListDomains returns the tenant hierarchy for ordered candidates and exact paths.
+func (r *ReferenceResolutionRepository) ListDomains(ctx context.Context, tenantID int64) ([]models.Domain, error) {
 	items := make([]models.Domain, 0)
-	err := query.Order("LOWER(name) ASC, id ASC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&items).Error
-	return items, total, wrapDBError(err)
+	err := r.db.WithContext(ctx).Where("tenant_id = ?", tenantID).
+		Order("sort_order ASC, id ASC").Find(&items).Error
+	return items, wrapDBError(err)
 }
 
 func (r *ReferenceResolutionRepository) ListGlossaryCandidates(ctx context.Context, tenantID int64, search string, page, pageSize int) ([]models.PublishedGlossaryReference, int64, error) {

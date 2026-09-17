@@ -4,15 +4,14 @@
       <span class="view-title">{{ t('model.star_schema.title') }}</span>
       <div class="domain-filter">
         <span id="model-domain-label">{{ t('model.star_schema.domain') }}</span>
-        <el-select
+        <BusinessDomainSelect
           :model-value="selectedDomainId || ''"
           aria-labelledby="model-domain-label"
-          filterable
           @change="changeDomain"
+          :options="domains"
         >
           <el-option :label="t('model.star_schema.all_domains')" value="" />
-          <el-option v-for="domain in domains" :key="domain.id" :label="domain.name" :value="domain.id" />
-        </el-select>
+        </BusinessDomainSelect>
       </div>
     </div>
 
@@ -166,6 +165,7 @@
 </template>
 
 <script setup>
+import { BusinessDomainSelect, buildBusinessDomainOptions } from '@common-ui'
 import { ref, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -450,7 +450,7 @@ const reload = async () => {
   await syncSelectedTableFromRoute(true)
   if (loadError.value) return
   const [domainResult, metricResult] = await Promise.allSettled([domainAPI.list(), standardMetricAPI.listAll()])
-  domains.value = domainResult.status === 'fulfilled' ? domainResult.value : []
+  domains.value = domainResult.status === 'fulfilled' ? buildBusinessDomainOptions(domainResult.value || []) : []
   allMetrics.value = metricResult.status === 'fulfilled' ? metricResult.value : []
   if (domainResult.status === 'rejected' || metricResult.status === 'rejected') {
     referenceError.value = t('model.common.reference_data_unavailable')

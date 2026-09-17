@@ -17,3 +17,25 @@ export function defaultApplicationParameterValues(snapshot) {
     initialApplicationParameterValue(parameter),
   ]))
 }
+
+export function applicationParameterPlacement(snapshot) {
+  const selectionSources = new Set((snapshot.selection_bindings || []).map(binding => binding.source_component_id))
+  const selectionTargets = new Set((snapshot.selection_bindings || []).flatMap(binding => binding.assignments.map(assignment => assignment.application_parameter_key)))
+  const consumers = new Map()
+  for (const binding of snapshot.parameter_bindings || []) {
+    if (!consumers.has(binding.application_parameter_key)) consumers.set(binding.application_parameter_key, new Set())
+    consumers.get(binding.application_parameter_key).add(binding.component_id)
+  }
+  const pageParameters = []
+  const componentParameters = {}
+  for (const parameter of snapshot.parameters || []) {
+    const targets = consumers.get(parameter.key)
+    const componentID = targets?.size === 1 ? [...targets][0] : null
+    if (componentID && selectionSources.has(componentID) && !selectionTargets.has(parameter.key)) {
+      ;(componentParameters[componentID] ||= []).push(parameter)
+    } else {
+      pageParameters.push(parameter)
+    }
+  }
+  return { pageParameters, componentParameters }
+}

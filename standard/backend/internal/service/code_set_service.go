@@ -21,7 +21,7 @@ func NewCodeSetService(repo *repository.CodeSetRepository, refs *repository.Tena
 	return &CodeSetService{repo: repo, refs: refs}
 }
 
-func (s *CodeSetService) CreateCodeSet(tenantID, userID int64, req *models.CreateCodeSetRequest) (*models.CodeSetAggregate, error) {
+func (s *CodeSetService) CreateCodeSet(tenantID, userID int64, req *models.CreateCodeSetRequest, initialSummary string) (*models.CodeSetAggregate, error) {
 	scopeType, err := validateTenantStandardScope(s.refs, tenantID, req.ScopeType, req.OwnerDomainID)
 	if err != nil {
 		return nil, err
@@ -30,7 +30,7 @@ func (s *CodeSetService) CreateCodeSet(tenantID, userID int64, req *models.Creat
 	if err != nil {
 		return nil, err
 	}
-	if err := validateCodeSetRevision(req.Name, req.Description, req.ValueType, req.ChangeSummary, req.EffectiveFrom, req.EffectiveTo); err != nil {
+	if err := validateCodeSetRevision(req.Name, req.Description, req.ValueType, initialSummary, req.EffectiveFrom, req.EffectiveTo); err != nil {
 		return nil, err
 	}
 	exists, err := s.repo.ExistsByCode(tenantID, code, 0)
@@ -40,8 +40,8 @@ func (s *CodeSetService) CreateCodeSet(tenantID, userID int64, req *models.Creat
 	if exists {
 		return nil, commonapi.ErrConflict
 	}
-	identity := &models.CodeSet{TenantID: tenantID, ScopeType: scopeType, OwnerDomainID: req.OwnerDomainID, Code: code, Origin: models.CodeSetOriginTenant, StewardID: req.StewardID, Tags: req.Tags, CreatedBy: userID, LifecycleState: "active"}
-	revision := &models.CodeSetRevision{Name: strings.TrimSpace(req.Name), Description: strings.TrimSpace(req.Description), ValueType: req.ValueType, ChangeSummary: strings.TrimSpace(req.ChangeSummary), EffectiveFrom: req.EffectiveFrom, EffectiveTo: req.EffectiveTo, CreatedBy: userID}
+	identity := &models.CodeSet{TenantID: tenantID, ScopeType: scopeType, OwnerDomainID: req.OwnerDomainID, Code: code, Origin: models.CodeSetOriginTenant, Tags: req.Tags, CreatedBy: userID, LifecycleState: "active"}
+	revision := &models.CodeSetRevision{Name: strings.TrimSpace(req.Name), Description: strings.TrimSpace(req.Description), ValueType: req.ValueType, ChangeSummary: strings.TrimSpace(initialSummary), EffectiveFrom: req.EffectiveFrom, EffectiveTo: req.EffectiveTo, CreatedBy: userID}
 	if err := s.repo.Create(identity, revision); err != nil {
 		return nil, err
 	}
@@ -72,7 +72,7 @@ func (s *CodeSetService) UpdateCodeSet(id, tenantID, userID int64, req *models.U
 	if err != nil {
 		return nil, err
 	}
-	identity.ScopeType, identity.OwnerDomainID, identity.StewardID, identity.Tags, identity.UpdatedBy = scopeType, req.OwnerDomainID, req.StewardID, req.Tags, &userID
+	identity.ScopeType, identity.OwnerDomainID, identity.Tags, identity.UpdatedBy = scopeType, req.OwnerDomainID, req.Tags, &userID
 	if err := s.repo.UpdateIdentity(identity, req.Version); err != nil {
 		return nil, err
 	}

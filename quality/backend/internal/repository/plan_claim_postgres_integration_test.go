@@ -41,7 +41,7 @@ func TestIntegrationPostgresQualityConcurrentPendingClaim(t *testing.T) {
 	repo := NewPlanRepository(db)
 	createdAt := time.Now().UTC()
 	execution := newQualityRepositoryTestExecution(fmt.Sprintf("quality-pg-%d", tenantID), int(tenantID), createdAt)
-	if _, err := repo.CreateExecution(context.Background(), task.ID, tenantID, execution); err != nil {
+	if _, err := repo.CreateExecution(context.Background(), task.ID, tenantID, execution, models.PlanRunRequest{}); err != nil {
 		t.Fatalf("create pending execution: %v", err)
 	}
 	if err := repo.AttachPendingAuthorization(context.Background(), tenantID, execution.ExecutionID, map[string]interface{}{
@@ -119,7 +119,7 @@ func TestIntegrationPostgresIssueConcurrentFirstObservation(t *testing.T) {
 		_ = db.Where("tenant_id = ?", tenantID).Delete(&models.QualityPlan{}).Error
 	})
 
-	observation := models.IssueObservation{
+	observation := models.IssueObservation{TargetKey: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 		PlanID: application.ID, RuleKey: "00000000-0000-4000-8000-000000000001", RuleType: "not_null", Severity: "error", Message: "required",
 		ColumnName: "id", Table: "orders", SchemaName: "public",
 		EngineID: 12, FailedCount: 1, TotalCount: 10, PassRate: 90,

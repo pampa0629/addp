@@ -161,6 +161,13 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
+                        "minimum": 0,
+                        "type": "integer",
+                        "description": "归属业务域（省略全部，0 为租户公共，正整数为指定域） | Owner domain (omit for all, 0 for tenant-public, positive ID for one domain)",
+                        "name": "owner_domain_id",
+                        "in": "query"
+                    },
+                    {
                         "maximum": 100,
                         "type": "integer",
                         "default": 20,
@@ -323,6 +330,82 @@ const docTemplate = `{
                 ]
             }
         },
+        "/overview": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "当前方案按实际目标范围统计；历史按执行快照和 UTC 日期统计，规则通过率按检查项加权。| Current plans grouped by actual target scope; history uses execution snapshots and UTC days, weighted by checks.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "QualityOverview"
+                ],
+                "summary": "质量概览 | Quality overview",
+                "parameters": [
+                    {
+                        "minimum": 0,
+                        "type": "integer",
+                        "description": "归属域，0 为租户公共 | Owner domain; 0 means tenant-public",
+                        "name": "owner_domain_id",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            7,
+                            30,
+                            90
+                        ],
+                        "type": "integer",
+                        "default": 30,
+                        "description": "历史天数 | History days",
+                        "name": "days",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "页码 | Page",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量 | Page size",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_quality_internal_models.QualityOverview"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "quality.plan.read",
+                    "quality.issue.read",
+                    "monitor.execution.read"
+                ]
+            }
+        },
         "/plans": {
             "get": {
                 "security": [
@@ -345,6 +428,13 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
+                        "minimum": 0,
+                        "type": "integer",
+                        "description": "归属业务域（省略全部，0 为租户公共，正整数为指定域） | Owner domain (omit for all, 0 for tenant-public, positive ID for one domain)",
+                        "name": "owner_domain_id",
+                        "in": "query"
+                    },
+                    {
                         "type": "integer",
                         "description": "每页数量 | Page size",
                         "name": "page_size",
@@ -356,6 +446,12 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/internal_api.qualityPlanListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
                         }
                     },
                     "500": {
@@ -611,6 +707,9 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "consumes": [
+                    "application/json"
+                ],
                 "produces": [
                     "application/json"
                 ],
@@ -625,6 +724,14 @@ const docTemplate = `{
                         "name": "id",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "description": "按别名指定执行目标，省略时使用默认表 | Targets by alias; omitted aliases use defaults",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_quality_internal_models.PlanRunRequest"
+                        }
                     }
                 ],
                 "responses": {
@@ -687,6 +794,13 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
+                        "minimum": 0,
+                        "type": "integer",
+                        "description": "归属业务域（省略全部，0 为租户公共，正整数为指定域） | Owner domain (omit for all, 0 for tenant-public, positive ID for one domain)",
+                        "name": "owner_domain_id",
+                        "in": "query"
+                    },
+                    {
                         "type": "integer",
                         "description": "每页数量 | Page size",
                         "name": "page_size",
@@ -698,6 +812,12 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/internal_api.qualityRuleListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
                         }
                     },
                     "500": {
@@ -778,14 +898,13 @@ const docTemplate = `{
                 "tags": [
                     "QualityRule"
                 ],
-                "summary": "搜索标准规则来源 | Search standard rule sources",
+                "summary": "浏览或搜索标准规则来源 | Browse or search standard rule sources",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "搜索词 | Search keyword",
+                        "description": "名称或编码；省略时分页浏览 | Name or code; omit to browse pages",
                         "name": "keyword",
-                        "in": "query",
-                        "required": true
+                        "in": "query"
                     },
                     {
                         "type": "integer",
@@ -1132,6 +1251,86 @@ const docTemplate = `{
                 ]
             }
         },
+        "/standard-reference-guards/{resource_type}/{resource_id}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "StandardReference"
+                ],
+                "summary": "设置 Quality 标准引用屏障 | Set Quality Standard reference guard",
+                "parameters": [
+                    {
+                        "enum": [
+                            "domain"
+                        ],
+                        "type": "string",
+                        "description": "标准资源类型 | Standard resource type",
+                        "name": "resource_type",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "标准资源 ID | Standard resource ID",
+                        "name": "resource_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "屏障状态 | Guard state",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/client.StandardReferenceGuardResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "quality.standard_reference.update"
+                ]
+            }
+        },
         "/task-provider/executions/{execution_id}": {
             "get": {
                 "security": [
@@ -1294,7 +1493,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "仅接受 addp-orchestrator 以父 execution 血缘触发；请求必须提供 source=orchestrator 和 parent_execution_id，parameters 不支持覆盖。| Only accepts addp-orchestrator execution-lineage invocation; source=orchestrator and parent_execution_id are required, and parameters overrides are not supported.",
+                "description": "仅接受编排父执行血缘；parameters.table_bindings 按别名指定实际数据表，不覆盖规则。| Requires orchestrator parent lineage; parameters.table_bindings supplies actual tables by alias without overriding rules.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1370,6 +1569,66 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "client.StandardReferenceGuardResponse": {
+            "type": "object",
+            "properties": {
+                "reference_count": {
+                    "type": "integer"
+                },
+                "resource_id": {
+                    "type": "integer"
+                },
+                "resource_type": {
+                    "type": "string"
+                },
+                "sample": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/client.StandardReferenceImpact"
+                    }
+                },
+                "sample_truncated": {
+                    "type": "boolean"
+                },
+                "state": {
+                    "type": "string"
+                },
+                "summary": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/client.StandardReferenceImpactSummary"
+                    }
+                }
+            }
+        },
+        "client.StandardReferenceImpact": {
+            "type": "object",
+            "properties": {
+                "field": {
+                    "type": "string"
+                },
+                "owner_id": {
+                    "type": "integer"
+                },
+                "owner_type": {
+                    "type": "string"
+                }
+            }
+        },
+        "client.StandardReferenceImpactSummary": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "field": {
+                    "type": "string"
+                },
+                "owner_type": {
+                    "type": "string"
+                }
+            }
+        },
         "dataquality.Document": {
             "type": "object",
             "properties": {
@@ -1694,6 +1953,9 @@ const docTemplate = `{
                 "message": {
                     "type": "string"
                 },
+                "owner_domain_id": {
+                    "type": "integer"
+                },
                 "pass_rate": {
                     "type": "number"
                 },
@@ -1723,6 +1985,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "table_name": {
+                    "type": "string"
+                },
+                "target_key": {
                     "type": "string"
                 },
                 "tenant_id": {
@@ -1765,6 +2030,84 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_quality_internal_models.PlanRunRequest": {
+            "type": "object",
+            "properties": {
+                "table_bindings": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "github_com_addp_quality_internal_models.QualityDailySummary": {
+            "type": "object",
+            "properties": {
+                "day": {
+                    "type": "string"
+                },
+                "executions": {
+                    "type": "integer"
+                },
+                "pass_rate": {
+                    "type": "number"
+                },
+                "passed_rules": {
+                    "type": "integer"
+                },
+                "runtime_errors": {
+                    "type": "integer"
+                },
+                "total_rules": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_quality_internal_models.QualityOverview": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_quality_internal_models.QualityScopeSummary"
+                    }
+                },
+                "never_run_plans": {
+                    "type": "integer"
+                },
+                "open_issues": {
+                    "type": "integer"
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "plan_count": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "total_pages": {
+                    "type": "integer"
+                },
+                "trend": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_quality_internal_models.QualityDailySummary"
+                    }
+                },
+                "unscoped_executions": {
+                    "type": "integer"
+                },
+                "unscoped_issues": {
+                    "type": "integer"
+                }
+            }
+        },
         "github_com_addp_quality_internal_models.QualityPlan": {
             "type": "object",
             "properties": {
@@ -1800,6 +2143,9 @@ const docTemplate = `{
                 },
                 "name": {
                     "type": "string"
+                },
+                "owner_domain_id": {
+                    "type": "integer"
                 },
                 "table_bindings": {
                     "type": "array",
@@ -1842,6 +2188,9 @@ const docTemplate = `{
                 "name": {
                     "type": "string"
                 },
+                "owner_domain_id": {
+                    "type": "integer"
+                },
                 "params": {
                     "type": "object"
                 },
@@ -1867,6 +2216,59 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_quality_internal_models.QualityScopeSummary": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "execution_id": {
+                    "type": "string"
+                },
+                "observed_at": {
+                    "type": "string"
+                },
+                "observed_execution_id": {
+                    "type": "string"
+                },
+                "observed_version": {
+                    "type": "integer"
+                },
+                "owner_domain_id": {
+                    "type": "integer"
+                },
+                "pass_rate": {
+                    "type": "number"
+                },
+                "passed_rules": {
+                    "type": "integer"
+                },
+                "plan_id": {
+                    "type": "integer"
+                },
+                "plan_name": {
+                    "type": "string"
+                },
+                "plan_version": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "table_bindings": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "target_key": {
+                    "type": "string"
+                },
+                "total_rules": {
                     "type": "integer"
                 }
             }
@@ -2017,6 +2419,9 @@ const docTemplate = `{
                 "name": {
                     "type": "string"
                 },
+                "owner_domain_id": {
+                    "type": "integer"
+                },
                 "table_bindings": {
                     "type": "array",
                     "items": {
@@ -2039,6 +2444,9 @@ const docTemplate = `{
                 },
                 "name": {
                     "type": "string"
+                },
+                "owner_domain_id": {
+                    "type": "integer"
                 },
                 "params": {
                     "type": "object"
@@ -2200,6 +2608,9 @@ const docTemplate = `{
                 "message": {
                     "type": "string"
                 },
+                "owner_domain_id": {
+                    "type": "integer"
+                },
                 "pass_rate": {
                     "type": "number"
                 },
@@ -2229,6 +2640,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "table_name": {
+                    "type": "string"
+                },
+                "target_key": {
                     "type": "string"
                 },
                 "tenant_id": {
@@ -2297,6 +2711,9 @@ const docTemplate = `{
                 "description": {
                     "type": "string"
                 },
+                "execution_contract": {
+                    "$ref": "#/definitions/taskprovider.ExecutionContract"
+                },
                 "id": {
                     "type": "integer"
                 },
@@ -2311,6 +2728,9 @@ const docTemplate = `{
                 },
                 "name": {
                     "type": "string"
+                },
+                "owner_domain_id": {
+                    "type": "integer"
                 },
                 "table_bindings": {
                     "type": "array",
@@ -2376,6 +2796,9 @@ const docTemplate = `{
                 "name": {
                     "type": "string"
                 },
+                "owner_domain_id": {
+                    "type": "integer"
+                },
                 "params": {
                     "type": "object"
                 },
@@ -2409,8 +2832,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "parameters": {
-                    "type": "object",
-                    "additionalProperties": true
+                    "$ref": "#/definitions/github_com_addp_quality_internal_models.PlanRunRequest"
                 },
                 "parent_execution_id": {
                     "type": "string"

@@ -92,3 +92,7 @@ Standard 的旧分类分级 ID 和数据不迁移、不映射，也不提供兼�
 - `docs/spec/addp数据安全与隐私保护实现规范.md`
 - `docs/spec/addp-API设计规范.md`
 - `docs/spec/addp-Swagger集成指南.md`
+
+## 数据库启动所有权
+
+本模块 schema 迁移仅由 Backend 执行，Worker 只读校验成功提交的 schema 版本。Backend 多实例通过模块级数据库锁协调；开发脚本及 Compose 在所属 Backend 就绪后启动 Worker。结构或初始化迁移变化须递增模块 `SchemaVersion`，共享规则见 `docs/spec/addp开发服务生命周期与构建身份规范.md`。

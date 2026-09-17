@@ -5,6 +5,20 @@ export function fieldPresentationFor(field, presentations = []) {
   return (Array.isArray(presentations) ? presentations : []).find((item) => item?.field === field) || null
 }
 
+export function valueLabelsValid(labels = [], fieldType = '') {
+  if (!Array.isArray(labels) || labels.length > 32) return false
+  if (!labels.length) return true
+  if (!['string', 'bool'].includes(fieldType)) return false
+  const seen = new Set()
+  return labels.every((item) => {
+    if (!item || typeof item.label !== 'string' || !item.label.trim() || [...item.label].length > 100) return false
+    if (fieldType === 'string' ? typeof item.value !== 'string' || [...item.value].length > 1000 : typeof item.value !== 'boolean') return false
+    if (seen.has(item.value)) return false
+    seen.add(item.value)
+    return true
+  })
+}
+
 export function fieldPresentationLabel(field, presentations = [], fields = []) {
   const configured = fieldPresentationFor(field, presentations)?.label
   if (String(configured || '').trim()) return String(configured).trim()
@@ -15,6 +29,9 @@ export function fieldPresentationLabel(field, presentations = [], fields = []) {
 export function formatFieldPresentationValue(value, presentation = null, locale = 'zh-CN', nullText = '—') {
   if (value === null || value === undefined) return nullText
   if (!presentation) return basicDisplayValue(value)
+
+  const valueLabel = (presentation.value_labels || []).find((item) => item.value === value)
+  if (valueLabel && String(valueLabel.label || '').trim()) return String(valueLabel.label).trim()
 
   let formatted
   if (Number.isInteger(presentation.precision)) {
@@ -57,6 +74,7 @@ export function defaultFieldPresentation(field) {
     temporalFormat: type === 'date' ? 'date' : type === 'time' ? 'time' : type === 'timestamp' ? 'datetime' : '',
     width: null,
     stateRules: [],
+    valueLabels: [],
   }
 }
 

@@ -58,20 +58,7 @@
               </el-col>
               <el-col v-if="requiresOwnerDomain(element.scope_type)" :xs="24" :sm="12">
                 <el-form-item :label="$t('standard.common.ownerDomainLabel')" required>
-                  <el-select v-model="element.owner_domain_id" class="field-control">
-                    <el-option v-for="domain in domains" :key="domain.id" :label="domain.name" :value="domain.id" />
-                  </el-select>
-                </el-form-item>
-              </el-col>
-              <el-col :xs="24" :sm="12">
-                <el-form-item :label="$t('standard.common.stewardId')">
-                  <el-input-number
-                    v-model="element.steward_id"
-                    :min="1"
-                    :controls="false"
-                    :placeholder="$t('standard.common.stewardIdPlaceholder')"
-                    class="field-control"
-                  />
+                  <BusinessDomainSelect v-model="element.owner_domain_id" class="field-control" :options="domains" />
                 </el-form-item>
               </el-col>
               <el-col :xs="24" :sm="12">
@@ -102,14 +89,13 @@
               </el-col>
               <el-col :xs="24" :sm="12">
                 <el-form-item :label="$t('standard.element.dataTypeLabel')">
-                  <el-select v-model="revision.data_type" class="field-control" @change="handleDataTypeChange">
-                    <el-option v-for="type in ELEMENT_DATA_TYPES" :key="type" :label="type" :value="type" />
-                  </el-select>
+                  <ElementDataTypeSelect v-model="revision.data_type" @change="handleDataTypeChange" />
                 </el-form-item>
               </el-col>
               <el-col v-if="supportsLength(revision.data_type)" :xs="24" :sm="12">
                 <el-form-item :label="$t('standard.element.lengthLabel')">
-                  <el-input-number v-model="revision.length" :min="1" class="field-control" />
+                  <el-input-number v-model="revision.length" :min="1" :placeholder="$t('standard.element.lengthHint')" class="field-control" />
+                  <div class="field-hint">{{ $t('standard.element.lengthHint') }}</div>
                 </el-form-item>
               </el-col>
               <template v-if="revision.data_type === 'decimal'">
@@ -136,11 +122,11 @@
               </el-col>
               <el-col :xs="24" :sm="12">
                 <el-form-item :label="$t('standard.element.unitLabel')">
-                  <el-select v-model="revision.unit_id" clearable filterable class="field-control">
-                    <el-option v-for="unit in units" :key="unit.id" :label="`${unit.name} (${unit.symbol})`" :value="unit.id" />
-                  </el-select>
+                  <UnitSelect v-model="revision.unit_id" :units="units" />
                 </el-form-item>
               </el-col>
+            </el-row>
+            <el-row :gutter="16" class="effective-interval">
               <el-col :xs="24" :sm="12">
                 <el-form-item :label="$t('standard.revision.effectiveFrom')">
                   <el-date-picker
@@ -166,7 +152,7 @@
               <el-input v-model="revision.definition" type="textarea" :rows="3" />
             </el-form-item>
             <el-form-item v-if="supportsFormat(revision.data_type)" :label="$t('standard.element.formatLabel')">
-              <el-input v-model="revision.format" />
+              <el-input v-model="revision.format" :placeholder="$t(revision.data_type === 'string' ? 'standard.element.textFormatHint' : 'standard.element.dateFormatHint')" />
             </el-form-item>
             <el-form-item :label="$t('standard.element.defaultValueLabel')">
               <el-input v-model="revision.default_value" />
@@ -174,6 +160,8 @@
             <el-form-item :label="$t('standard.element.exampleValuesLabel')">
               <el-select
                 v-model="revision.example_values"
+                :placeholder="$t('standard.element.exampleValuesPlaceholder')"
+                :no-data-text="$t('standard.element.exampleValuesPlaceholder')"
                 multiple
                 filterable
                 allow-create
@@ -292,6 +280,9 @@
 </template>
 
 <script setup>
+import { BusinessDomainSelect, buildBusinessDomainOptions } from '@common-ui'
+import ElementDataTypeSelect from '../components/ElementDataTypeSelect.vue'
+import UnitSelect from '../components/UnitSelect.vue'
 import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -305,7 +296,6 @@ import { useStandardPermissions } from '../composables/useStandardPermissions'
 import { getStandardErrorMessage, isCanceledInteraction } from '../utils/apiError'
 import { formatStandardDateTime } from '../utils/dateTime'
 import {
-  ELEMENT_DATA_TYPES,
   buildElementRevisionPayload,
   isCodeSetCompatible,
   isNumericDataType,
@@ -348,7 +338,6 @@ useConsolePageDescriptor(router, 'standard', {
   ready: computed(() => Boolean(element.value.id))
 })
 
-const flatten = nodes => nodes.flatMap(node => [node, ...flatten(node.children || [])])
 const statusLabel = status => status ? t(`standard.revision.status.${status}`) : '-'
 const statusType = status => ({
   draft: 'info',
@@ -393,7 +382,7 @@ async function loadOptions() {
     domainAPI.list(),
     unitAPI.list({ page_size: 500 })
   ])
-  domains.value = domainResult.status === 'fulfilled' ? flatten(domainResult.value || []) : []
+  domains.value = domainResult.status === 'fulfilled' ? buildBusinessDomainOptions(domainResult.value || []) : []
   units.value = unitResult.status === 'fulfilled' ? unitResult.value || [] : []
   await loadCodeSetOptions()
 }
@@ -420,7 +409,6 @@ async function saveIdentity() {
     element.value = await elementAPI.update(element.value.id, {
       version: element.value.version,
       ...buildStandardOwnership(element.value.scope_type, element.value.owner_domain_id),
-      steward_id: element.value.steward_id ?? null,
       tags: element.value.tags || []
     })
     element.value.tags ||= []
@@ -534,6 +522,7 @@ watch(() => revision.effective_from, () => loadCodeSetOptions())
 </script>
 
 <style scoped>
+.field-hint { color: var(--addp-text-secondary); font-size: 12px; line-height: 1.5; margin-top: 4px; }
 .page-shell{min-height:100%;padding:20px;background:var(--addp-bg-secondary);color:var(--addp-text-primary)}
 .page-header,.header-left,.actions,.card-header,.history-row{display:flex;align-items:center}
 .page-header,.card-header,.history-row{justify-content:space-between}

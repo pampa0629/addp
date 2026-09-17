@@ -12,8 +12,9 @@ type QueryExecutionRequest struct {
 
 // QueryFilter 使用叶子谓词或 and/or/not 中的一种表达过滤条件。
 type QueryFilter struct {
-	Field string        `json:"field,omitempty"`
-	Op    string        `json:"op,omitempty" enums:"eq,ne,lt,lte,gt,gte,in,is_null,is_not_null,bbox_intersects"`
+	Field string `json:"field,omitempty"`
+	// Op 为已声明的筛选操作；contains 按字面子串区分大小写，无通配符。 | Declared filter operator; contains is a case-sensitive literal substring match without wildcards.
+	Op    string        `json:"op,omitempty" enums:"eq,ne,lt,lte,gt,gte,in,contains,is_null,is_not_null,bbox_intersects"`
 	Value interface{}   `json:"value,omitempty" swaggertype:"object"`
 	And   []QueryFilter `json:"and,omitempty"`
 	Or    []QueryFilter `json:"or,omitempty"`

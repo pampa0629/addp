@@ -12,9 +12,7 @@
           </el-input>
         </el-col>
         <el-col :xs="24" :sm="12" :md="5">
-          <el-select v-model="searchForm.domain_id" :placeholder="t('model.entity.domain')" clearable @change="handleSearch" style="width:100%">
-            <el-option v-for="d in domains" :key="d.id" :label="d.name" :value="d.id" />
-          </el-select>
+          <BusinessDomainSelect v-model="searchForm.domain_id" :placeholder="t('model.entity.domain')" clearable @change="handleSearch" style="width:100%" :options="domains" />
         </el-col>
         <el-col :xs="24" :sm="12" :md="4">
           <el-select v-model="searchForm.status" :placeholder="t('model.entity.status')" clearable @change="handleSearch" style="width:100%">
@@ -111,9 +109,7 @@
           <el-input v-model="createForm.code" maxlength="100" :placeholder="t('model.entity.code_placeholder')" />
         </el-form-item>
         <el-form-item :label="t('model.entity.domain')">
-          <el-select v-model="createForm.domain_id" :placeholder="t('model.entity.domain_placeholder')" clearable style="width:100%">
-            <el-option v-for="d in domains" :key="d.id" :label="d.name" :value="d.id" />
-          </el-select>
+          <BusinessDomainSelect v-model="createForm.domain_id" :placeholder="t('model.entity.domain_placeholder')" clearable style="width:100%" :options="domains" />
         </el-form-item>
         <el-form-item :label="t('model.entity.description')">
           <el-input v-model="createForm.description" type="textarea" :rows="2" />
@@ -128,6 +124,7 @@
 </template>
 
 <script setup>
+import { BusinessDomainSelect, buildBusinessDomainOptions } from '@common-ui'
 import { buildERDiagramRouteQuery } from '../utils/routeState'
 
 import { ref, reactive, onMounted, watch } from 'vue'
@@ -226,7 +223,7 @@ const loadEntities = async () => {
 const loadDomains = async () => {
   try {
     const res = await domainAPI.list()
-    domains.value = res || []
+    domains.value = buildBusinessDomainOptions(res || [])
   } catch (err) {
     domains.value = []
     referenceError.value = t('model.common.reference_data_unavailable')

@@ -34,7 +34,7 @@ func (b *runnerAcknowledgementBarrier) ReadyToAcknowledge(_ context.Context, _ i
 }
 
 func TestRunnerDoesNotAcknowledgeUntilPostCommitBarrierSucceeds(t *testing.T) {
-	store, err := New(openProjectionStoreDB(t), "manager", "manager", nil)
+	store, err := Migrate(openProjectionStoreDB(t), "manager", "manager", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

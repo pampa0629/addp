@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -10,7 +11,8 @@ import {
 
 describe('Standard revision form mapping', () => {
   it('matches backend code set value-type compatibility', () => {
-    expect(isCodeSetCompatible('text', 'string')).toBe(true)
+    expect(isCodeSetCompatible('string', 'string')).toBe(true)
+    expect(isCodeSetCompatible('text', 'string')).toBe(false)
     expect(isCodeSetCompatible('int', 'bigint')).toBe(true)
     expect(isCodeSetCompatible('bigint', 'int')).toBe(false)
     expect(isCodeSetCompatible('decimal', 'string')).toBe(false)
@@ -87,5 +89,31 @@ describe('Standard revision form mapping', () => {
       { id: 2, status: 'active' },
       { id: 3, status: 'active' }
     ], 2)).toEqual([{ id: 3, status: 'active' }])
+  })
+})
+
+describe('measurement unit selector ownership', () => {
+  it('uses one grouped selector in every Standard unit field', () => {
+    for (const name of ['ElementDetail', 'MetricList', 'MetricDetail']) {
+      const source = readFileSync(new URL(`../src/views/${name}.vue`, import.meta.url), 'utf8')
+      expect(source).toContain('<UnitSelect')
+      expect(source).not.toContain('v-for="unit in units"')
+    }
+  })
+})
+
+
+describe('Standard definition presentation ownership', () => {
+  it('uses one type selector and removes the unused steward field from every standard form', () => {
+    for (const view of ['ElementList', 'ElementDetail']) {
+      const source = readFileSync(new URL(`../src/views/${view}.vue`, import.meta.url), 'utf8')
+      expect(source).toContain('<ElementDataTypeSelect')
+      expect(source).not.toContain('v-for="type in')
+    }
+    for (const view of ['ElementList', 'ElementDetail', 'GlossaryDetail', 'CodeSetDetail', 'MetricList', 'MetricDetail', 'DocumentDetail']) {
+      const source = readFileSync(new URL(`../src/views/${view}.vue`, import.meta.url), 'utf8')
+      expect(source).not.toContain('steward_id')
+      expect(source).not.toContain('stewardId')
+    }
   })
 })

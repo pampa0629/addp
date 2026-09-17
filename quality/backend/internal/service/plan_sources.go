@@ -96,9 +96,6 @@ func standardRuleParams(rule dataquality.Rule, target json.RawMessage) (map[stri
 
 func (s *RuleService) ListElementCandidates(ctx context.Context, tenantID int64, keyword string, page, pageSize int) ([]PlanElementCandidate, int64, error) {
 	keyword = strings.TrimSpace(keyword)
-	if keyword == "" {
-		return nil, 0, fmt.Errorf("%w: keyword is required", commonAPI.ErrBadRequest)
-	}
 	if s.standardClient == nil {
 		return nil, 0, fmt.Errorf("standard client unavailable")
 	}

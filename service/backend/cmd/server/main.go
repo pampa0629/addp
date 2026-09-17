@@ -102,7 +102,7 @@ func main() {
 	systemClient := commonClient.NewSystemClient(cfg.SystemServiceURL, tokenSource)
 	metaClient := commonClient.NewMetaClient(cfg.MetaServiceURL, tokenSource)
 	securityClient := commonClient.NewSecurityClient(cfg.SecurityServiceURL, tokenSource, nil)
-	protectionStore, err := projectionstore.New(db, cfg.DBSchema, "service", nil)
+	protectionStore, err := projectionstore.Migrate(db, cfg.DBSchema, "service", nil)
 	if err != nil {
 		logger.L().Error("Service 保护投影存储初始化失败", "error", err)
 		os.Exit(1)
@@ -178,7 +178,7 @@ func main() {
 	dataServiceHandler := api.NewDataServiceHandler(queryService)
 	resourceCapabilityHandler := api.NewResourceCapabilityHandler(systemClient, metaClient)
 	resourceCapabilityHandler.SetQuerySampleService(querySampleService)
-	consumerCatalogService := serviceInternal.NewConsumerCatalogService(queryServiceRepo)
+	consumerCatalogService := serviceInternal.NewConsumerCatalogService(queryServiceRepo, systemClient)
 	migratedConsumerContracts, err := consumerCatalogService.MigrateInvalidQueryServiceContracts()
 	if err != nil {
 		logger.L().Error("Query Service 消费契约迁移失败", "error", err)

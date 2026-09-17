@@ -25,7 +25,6 @@ type Document struct {
 	Code            string      `gorm:"size:100;not null;uniqueIndex:uq_standard_documents_tenant_code" json:"code"`
 	DocType         string      `gorm:"column:doc_type;size:50;not null;default:'reference'" json:"doc_type" enums:"national,industry,internal,reference"`
 	SourceOrg       string      `gorm:"size:200" json:"source_org"`
-	StewardID       *int64      `json:"steward_id,omitempty"`
 	Tags            StringArray `gorm:"type:jsonb;serializer:json" json:"tags"`
 	DraftRevisionID *int64      `gorm:"index" json:"draft_revision_id,omitempty"`
 	CreatedBy       int64       `gorm:"not null" json:"created_by"`
@@ -224,7 +223,7 @@ func (DocumentCandidateFormalization) TableName() string {
 
 // DocumentExtractionCandidatePayload 是 Standard 与 Copilot 共用的强类型候选补充契约。
 type DocumentExtractionCandidatePayload struct {
-	DataType           *string                                  `json:"data_type,omitempty" enums:"string,int,bigint,float,decimal,date,datetime,bool,json,text"`
+	DataType           *string                                  `json:"data_type,omitempty" enums:"string,int,bigint,float,decimal,date,datetime,bool,json"`
 	ValueDomainKind    *string                                  `json:"value_domain_kind,omitempty" enums:"unrestricted,range,enumeration"`
 	CodeSetCode        *string                                  `json:"code_set_code,omitempty"`
 	Unit               *string                                  `json:"unit,omitempty"`
@@ -341,13 +340,11 @@ type CreateDocumentRequest struct {
 	Code          string     `json:"code" binding:"required"`
 	DocType       string     `json:"doc_type" binding:"required" enums:"national,industry,internal,reference"`
 	SourceOrg     string     `json:"source_org"`
-	StewardID     *int64     `json:"steward_id,omitempty"`
 	Tags          []string   `json:"tags"`
 	Name          string     `json:"name" binding:"required"`
 	VersionLabel  string     `json:"version_label"`
 	PublishDate   *time.Time `json:"publish_date,omitempty"`
 	Description   string     `json:"description"`
-	ChangeSummary string     `json:"change_summary" binding:"required"`
 	EffectiveFrom *time.Time `json:"effective_from,omitempty"`
 	EffectiveTo   *time.Time `json:"effective_to,omitempty"`
 }
@@ -358,7 +355,6 @@ type UpdateDocumentRequest struct {
 	OwnerDomainID *int64   `json:"owner_domain_id,omitempty"`
 	DocType       string   `json:"doc_type" binding:"required" enums:"national,industry,internal,reference"`
 	SourceOrg     string   `json:"source_org"`
-	StewardID     *int64   `json:"steward_id,omitempty"`
 	Tags          []string `json:"tags"`
 }
 

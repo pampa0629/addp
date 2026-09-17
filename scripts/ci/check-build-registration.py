@@ -504,6 +504,13 @@ def validate_registration(repository: Path) -> list[str]:
     if "scripts/ci/update-cli-version_test.py" not in makefile:
         errors.append("Makefile test-platform must run the CLI version updater tests")
 
+    lifecycle_recipe = make_recipe(makefile, "test-dev-lifecycle") or ""
+    if "bash scripts/test/dev-lifecycle-and-build.sh" not in lifecycle_recipe:
+        errors.append("Makefile test-dev-lifecycle must run the dev lifecycle tests")
+    platform_recipe = make_recipe(makefile, "test-platform") or ""
+    if "$(MAKE) test-dev-lifecycle" not in platform_recipe:
+        errors.append("Makefile test-platform must run test-dev-lifecycle")
+
     release_check_recipe = make_recipe(makefile, "check-cli-release")
     if release_check_recipe is None:
         errors.append("Makefile target check-cli-release is missing")

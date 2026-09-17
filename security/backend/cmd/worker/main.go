@@ -3,9 +3,16 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
 	commonclient "github.com/addp/common/client"
 	commonexecution "github.com/addp/common/execution"
 	"github.com/addp/common/modulelifecycle"
+	"github.com/addp/common/schema"
 	"github.com/addp/security/internal/config"
 	"github.com/addp/security/internal/repository"
 	"github.com/addp/security/internal/service"
@@ -13,11 +20,6 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	"log"
-	"os"
-	"os/signal"
-	"syscall"
-	"time"
 )
 
 func main() {
@@ -32,10 +34,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("Security worker database connection failed: %v", err)
 	}
-	if err := repository.Migrate(db); err != nil {
+	if err := schema.Require(db, "security", repository.SchemaVersion); err != nil {
 		log.Fatalf("Security worker schema migration failed: %v", err)
 	}
-	if err := commonexecution.EnsureStore(db); err != nil {
+	if err := schema.Require(db, "common", schema.CommonVersion); err != nil {
 		log.Fatalf("Security worker execution store migration failed: %v", err)
 	}
 	metaClient := commonclient.NewMetaClient(cfg.MetaURL, tokens)

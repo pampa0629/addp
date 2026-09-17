@@ -20,7 +20,7 @@ func (failingProjectionChangeBarrier) ApplyProjectionChanges(context.Context, *g
 
 func TestStoreGateIsSingleLocalMissForUnmanagedAndFailClosedForEnrolling(t *testing.T) {
 	db := openProjectionStoreDB(t)
-	store, err := New(db, "manager", "manager", nil)
+	store, err := Migrate(db, "manager", "manager", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +46,7 @@ func TestStoreGateIsSingleLocalMissForUnmanagedAndFailClosedForEnrolling(t *test
 
 func TestStorePersistsCursorAndRequiresExplicitRelease(t *testing.T) {
 	db := openProjectionStoreDB(t)
-	store, err := New(db, "manager", "manager", nil)
+	store, err := Migrate(db, "manager", "manager", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +59,7 @@ func TestStorePersistsCursorAndRequiresExplicitRelease(t *testing.T) {
 	}, time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
-	reloaded, err := New(db, "manager", "manager", nil)
+	reloaded, err := Migrate(db, "manager", "manager", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +84,7 @@ func TestStorePersistsCursorAndRequiresExplicitRelease(t *testing.T) {
 
 func TestStoreGateAnyKeepsAllUnmanagedOnLocalFastPath(t *testing.T) {
 	db := openProjectionStoreDB(t)
-	store, err := New(db, "manager", "manager", nil)
+	store, err := Migrate(db, "manager", "manager", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +116,7 @@ func TestStoreGateAnyKeepsAllUnmanagedOnLocalFastPath(t *testing.T) {
 
 func TestStoreChangeBarrierFailureRollsBackProjectionAndCursor(t *testing.T) {
 	db := openProjectionStoreDB(t)
-	store, err := New(db, "manager", "manager", failingProjectionChangeBarrier{})
+	store, err := Migrate(db, "manager", "manager", failingProjectionChangeBarrier{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,7 +142,7 @@ func TestStoreChangeBarrierFailureRollsBackProjectionAndCursor(t *testing.T) {
 
 func TestStoreManagedTargetsReturnsInstalledResourcesInStableOrder(t *testing.T) {
 	db := openProjectionStoreDB(t)
-	store, err := New(db, "manager", "manager", nil)
+	store, err := Migrate(db, "manager", "manager", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,11 +175,11 @@ func TestStoreManagedTargetsReturnsInstalledResourcesInStableOrder(t *testing.T)
 
 func TestStoreRequireUnmanagedRefreshesAnotherProcessCheckpointBeforeGate(t *testing.T) {
 	db := openProjectionStoreDB(t)
-	writer, err := New(db, "manager", "manager", nil)
+	writer, err := Migrate(db, "manager", "manager", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	reader, err := New(db, "manager", "manager", nil)
+	reader, err := Migrate(db, "manager", "manager", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -208,14 +208,14 @@ func TestStoreRequireUnmanagedRefreshesAnotherProcessCheckpointBeforeGate(t *tes
 
 func TestNewRejectsInvalidConsumerOwnerIdentifier(t *testing.T) {
 	db := openProjectionStoreDB(t)
-	if _, err := New(db, "manager", "manager-owner", nil); err == nil {
+	if _, err := Migrate(db, "manager", "manager-owner", nil); err == nil {
 		t.Fatal("invalid consumer owner identifier was accepted")
 	}
 }
 
 func TestStoreRecordsAndRejectsUnknownMigration(t *testing.T) {
 	db := openProjectionStoreDB(t)
-	store, err := New(db, "manager", "manager", nil)
+	store, err := Migrate(db, "manager", "manager", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -229,14 +229,14 @@ func TestStoreRecordsAndRejectsUnknownMigration(t *testing.T) {
 	if err := db.Exec("INSERT INTO "+store.migrationsTable+" (version) VALUES (?)", "999_unknown").Error; err != nil {
 		t.Fatal(err)
 	}
-	if _, err := New(db, "manager", "manager", nil); err == nil {
+	if _, err := Migrate(db, "manager", "manager", nil); err == nil {
 		t.Fatal("unknown migration version was accepted")
 	}
 }
 
 func TestStoreMigratesPersistedProjectionSchemaAndStructuredMaskToV2(t *testing.T) {
 	db := openProjectionStoreDB(t)
-	store, err := New(db, "manager", "manager", nil)
+	store, err := Migrate(db, "manager", "manager", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -284,7 +284,7 @@ func TestStoreMigratesPersistedProjectionSchemaAndStructuredMaskToV2(t *testing.
 		t.Fatal(err)
 	}
 
-	migratedStore, err := New(db, "manager", "manager", nil)
+	migratedStore, err := Migrate(db, "manager", "manager", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -303,7 +303,7 @@ func TestStoreMigratesPersistedProjectionSchemaAndStructuredMaskToV2(t *testing.
 
 func TestStoreResealsProjectionWhenOnlyPersistedSchemaChanges(t *testing.T) {
 	db := openProjectionStoreDB(t)
-	store, err := New(db, "manager", "manager", nil)
+	store, err := Migrate(db, "manager", "manager", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -347,7 +347,7 @@ func TestStoreResealsProjectionWhenOnlyPersistedSchemaChanges(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	migratedStore, err := New(db, "manager", "manager", nil)
+	migratedStore, err := Migrate(db, "manager", "manager", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -410,4 +410,30 @@ func enrollingProjection(t *testing.T, owner string, target dataprotection.Resou
 		t.Fatal(err)
 	}
 	return projection
+}
+
+func TestOpenDoesNotMigrateMissingProjectionStore(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("ATTACH DATABASE ':memory:' AS manager").Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Open(db, "manager", "manager", nil); err == nil {
+		t.Fatal("Open initialized a missing store")
+	}
+	store, err := newStore(db, "manager", "manager", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if db.Migrator().HasTable(store.migrationsTable) {
+		t.Fatal("Open created migration table")
+	}
+	if _, err := Migrate(db, "manager", "manager", nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Open(db, "manager", "manager", nil); err != nil {
+		t.Fatal(err)
+	}
 }

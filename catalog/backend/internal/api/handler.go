@@ -628,7 +628,7 @@ func (h *Handler) GetGovernanceCoverage(c *gin.Context) {
 
 // ListEntryFacets 列出当前目录视图中实际出现的人类可读引用分面。
 // @Summary 列出企业目录引用分面 | List enterprise catalog reference facets
-// @Description Catalog 计算当前调用方可见条目中的引用集，Standard / System 动态解析显示信息；分面解析不影响目录列表和 Ready | Catalog computes references from entries visible to the caller while Standard and System dynamically resolve display facts; facet resolution does not affect entry listing or readiness
+// @Description Catalog 计算当前调用方可见条目中的引用集，Standard / System 动态解析显示信息；业务域包含 domain_path，分面解析不影响目录列表和 Ready | Catalog computes references from entries visible to the caller while Standard and System dynamically resolve display facts; domain facets include domain_path and facet resolution does not affect entry listing or readiness
 // @Tags Catalog
 // @Produce json
 // @Param view query string false "目录视图，默认 governance | Catalog view, governance by default" Enums(governance,inventory)
@@ -667,7 +667,7 @@ func (h *Handler) ListEntryFacets(c *gin.Context) {
 
 // ListReferenceCandidates 按名称分页查询可建立关联的 owner 候选。
 // @Summary 查询企业目录引用候选 | List enterprise catalog reference candidates
-// @Description Catalog 使用运行身份动态查询 Standard 或 System 当前可引用对象；不复制 owner 完整列表，owner 不可达只影响本次请求 | Catalog dynamically queries currently referenceable Standard or System objects using its runtime identity; owner lists are not copied, and owner unavailability affects only this request
+// @Description Catalog 使用运行身份动态查询 Standard 或 System 当前可引用对象；不复制 owner 完整列表，owner 不可达只影响本次请求，业务域候选包含 domain_path | Catalog dynamically queries currently referenceable Standard or System objects using its runtime identity; owner lists are not copied, and owner unavailability affects only this request; domain candidates include domain_path
 // @Tags Catalog
 // @Produce json
 // @Param reference_type query string true "引用类型 | Reference type" Enums(domain,glossary,element,department,user)

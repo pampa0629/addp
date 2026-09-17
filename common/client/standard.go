@@ -155,17 +155,18 @@ type StandardCodeReference struct {
 }
 
 type StandardReferenceResolution struct {
-	ObjectType     string `json:"object_type"`
-	ID             int64  `json:"id"`
-	Found          bool   `json:"found"`
-	Referenceable  bool   `json:"referenceable"`
-	Name           string `json:"name,omitempty"`
-	Code           string `json:"code,omitempty"`
-	Status         string `json:"status,omitempty"`
-	LifecycleState string `json:"lifecycle_state,omitempty"`
-	Version        int64  `json:"version,omitempty"`
-	RevisionID     int64  `json:"revision_id,omitempty"`
-	RevisionNo     int64  `json:"revision_no,omitempty"`
+	DomainPath     []string `json:"domain_path,omitempty"`
+	ObjectType     string   `json:"object_type"`
+	ID             int64    `json:"id"`
+	Found          bool     `json:"found"`
+	Referenceable  bool     `json:"referenceable"`
+	Name           string   `json:"name,omitempty"`
+	Code           string   `json:"code,omitempty"`
+	Status         string   `json:"status,omitempty"`
+	LifecycleState string   `json:"lifecycle_state,omitempty"`
+	Version        int64    `json:"version,omitempty"`
+	RevisionID     int64    `json:"revision_id,omitempty"`
+	RevisionNo     int64    `json:"revision_no,omitempty"`
 }
 
 type standardReferenceResolutionRequest struct {
@@ -215,13 +216,14 @@ func (c *StandardClient) ResolveReferencesByCode(
 }
 
 type StandardReferenceCandidate struct {
-	ObjectType string `json:"object_type"`
-	ID         int64  `json:"id"`
-	Name       string `json:"name"`
-	Code       string `json:"code,omitempty"`
-	Status     string `json:"status"`
-	RevisionID int64  `json:"revision_id,omitempty"`
-	RevisionNo int64  `json:"revision_no,omitempty"`
+	DomainPath []string `json:"domain_path,omitempty"`
+	ObjectType string   `json:"object_type"`
+	ID         int64    `json:"id"`
+	Name       string   `json:"name"`
+	Code       string   `json:"code,omitempty"`
+	Status     string   `json:"status"`
+	RevisionID int64    `json:"revision_id,omitempty"`
+	RevisionNo int64    `json:"revision_no,omitempty"`
 }
 
 type StandardReferenceCandidateList struct {

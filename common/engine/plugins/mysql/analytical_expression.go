@@ -10,6 +10,7 @@ import (
 
 // Native scalar rendering only; full compiler capability remains unregistered.
 type analyticalExpressionDialect struct {
+	textPredicateDialect
 	analyticalArithmeticDialect
 	analyticalResultDialect
 	analyticalCalendarDialect

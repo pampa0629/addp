@@ -620,6 +620,12 @@ TiDB 8.5.8 的 MySQL 协议层会拒绝驱动为 `ReadOnly=true` 生成的事务
 
 `SQLQueryRuntimeProvider.ExecuteSQL()` 是 SQL 执行 helper 和 SQL dialect 适配层，当前仍可保留给 SQL 引擎和 batch read 适配使用；新增非 SQL 查询语言不得仿照它继续新增按数据库类别拆分的 provider。旧 `DocumentQueryRuntimeProvider` 已删除，不得恢复。
 
+### SQL 文本筛选
+
+可选 `TextPredicateSQLProvider.TextPredicateDialect()` 提供引擎拥有的 `TextPredicateDialect.Contains(valueSQL, substringSQL)`。输入只能是编译器产生的可信列表达式和绑定参数占位符，不接受用户 SQL；返回 nil 表示未实现。普通 SQL/table 结构化筛选与分析编译器复用各引擎唯一实现，上层不得按引擎名称分支。首期只有原生 PostgreSQL、MySQL 实现，协议复用插件不自动继承。
+
+`contains` 只接受两个 string，按字面子串区分大小写和重音，不折叠空白、不做 Unicode 归一化；`%`、`_`、反斜线无通配符含义。任一输入 NULL 则结果 NULL；空子串匹配任意非 NULL 文本。Workbench 可选输入留空时不产生筛选条件。Service 通过现有 System Client SDK 动态解析执行引擎，只在 Provider 可用时声明 Consumer Descriptor 的 `contains`；SDK 失败必须报错，不沿用旧结论。能力变化纳入既有消费契约指纹。
+
 ### 数据库无关分析计算契约
 
 > 状态：2026-09-15 目标设计已确认；Common 中立计划、开放编译接口、冻结包、内部结果协议和 SQL PreparedQuery 桥接已实现；PG 结果分支已通过真实数据库测试，生产执行链替换尚未完成。目前只有测试编译器使用新接口，PG/MySQL 完整原生编译、实例能力投影和 Model/Service 切换仍待交付。当前生产路径的 `AnalyticalSQLProvider` 与封闭 `AnalyticalDialect` 属于待删除的阶段实现，不能据此声明“新增引擎无需修改上层”已经兑现。
@@ -671,6 +677,8 @@ Common 基础契约的具体编码如下：
 首期节点集合为 `scan`、`filter`、`project`、`join`（inner/left/cross）、`distinct`、`aggregate`、`union_all`、`constant_rows`、`date_buckets`、`sort`、`limit`。聚合只需 count；求交、分母和补零由这些操作组合，不能设计指标专用节点。条件表达式包含明确的日期转换、月桶、整数／decimal 转换和精确文本比较语义。未知操作、重复节点、悬空引用、环、超预算计划和不成立的类型推导均拒绝。
 
 统一语义：
+
+- string 表达式 `contains(value, substring)` 与上述 SQL 文本筛选共用语义，返回可空 bool；ResultRequest 通过同一表达式包裹原计划根节点。
 
 - DATE 只表示日历日期，不隐含时区转换；参数范围左闭右开。月份时间桶从覆盖范围的月初生成，结果中的月桶可以早于范围起点，源数据仍严格按输入区间过滤；现有指标最多 120 个相交月份。
 - `date_buckets(start, end, max_months)` 沿用指标范围校验：结束日期必须晚于开始日期，空区间、反向区间或相交月份数超过节点上限均产生求值错误，不能返回空集或截断。`max_months` 必须在 1 至 120 之间；结束日期为月初时不包含该月。日期参数或表达式在节点内求值，错误检查独立于下游过滤／分页。SQL 实现使用有界月份偏移关系；未采用的偏移必须在原生日期运算前屏蔽，不能因生成额外月份而越过 9999 年。

@@ -179,7 +179,7 @@ func serviceProjectionStore(t *testing.T) *projectionstore.Store {
 	if err := db.Exec("ATTACH DATABASE ':memory:' AS service").Error; err != nil {
 		t.Fatal(err)
 	}
-	store, err := projectionstore.New(db, "service", "service", nil)
+	store, err := projectionstore.Migrate(db, "service", "service", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

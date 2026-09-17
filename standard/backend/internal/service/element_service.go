@@ -28,7 +28,7 @@ func NewElementService(repo *repository.ElementRepository, codeSets *repository.
 	return &ElementService{repo: repo, codeSets: codeSets, refs: refs, deletion: deletion}
 }
 
-func (s *ElementService) CreateElement(req *models.CreateElementRequest, tenantID, userID int64) (*models.ElementAggregate, error) {
+func (s *ElementService) CreateElement(req *models.CreateElementRequest, tenantID, userID int64, initialSummary string) (*models.ElementAggregate, error) {
 	scopeType, err := validateTenantStandardScope(s.refs, tenantID, req.ScopeType, req.OwnerDomainID)
 	if err != nil {
 		return nil, err
@@ -37,7 +37,7 @@ func (s *ElementService) CreateElement(req *models.CreateElementRequest, tenantI
 	if err != nil {
 		return nil, err
 	}
-	revision, err := s.revisionFromCreate(req, tenantID, userID)
+	revision, err := s.revisionFromCreate(req, tenantID, userID, initialSummary)
 	if err != nil {
 		return nil, err
 	}
@@ -48,7 +48,7 @@ func (s *ElementService) CreateElement(req *models.CreateElementRequest, tenantI
 	if exists {
 		return nil, commonapi.ErrConflict
 	}
-	element := &models.Element{TenantID: tenantID, ScopeType: scopeType, OwnerDomainID: req.OwnerDomainID, Code: code, StewardID: req.StewardID, Tags: req.Tags, CreatedBy: userID, LifecycleState: "active"}
+	element := &models.Element{TenantID: tenantID, ScopeType: scopeType, OwnerDomainID: req.OwnerDomainID, Code: code, Tags: req.Tags, CreatedBy: userID, LifecycleState: "active"}
 	if err := s.repo.Create(element, revision); err != nil {
 		return nil, err
 	}
@@ -76,7 +76,7 @@ func (s *ElementService) UpdateElement(id, tenantID, userID int64, req *models.U
 	if err != nil {
 		return nil, err
 	}
-	element.ScopeType, element.OwnerDomainID, element.StewardID, element.Tags, element.UpdatedBy = scopeType, req.OwnerDomainID, req.StewardID, req.Tags, &userID
+	element.ScopeType, element.OwnerDomainID, element.Tags, element.UpdatedBy = scopeType, req.OwnerDomainID, req.Tags, &userID
 	if err := s.repo.UpdateIdentity(element, req.Version); err != nil {
 		return nil, err
 	}
@@ -86,8 +86,36 @@ func (s *ElementService) UpdateElement(id, tenantID, userID int64, req *models.U
 func (s *ElementService) ListRevisions(id, tenantID int64) ([]models.ElementRevision, error) {
 	return s.repo.ListRevisions(id, tenantID)
 }
-func (s *ElementService) GetRevision(id, revisionID, tenantID int64) (*models.ElementRevision, error) {
-	return s.repo.GetRevision(id, revisionID, tenantID)
+
+// ElementRevisionDetail resolves only the exact referenced revisions, including
+// withdrawn historical code sets. This read projection never changes constraints.
+type ElementRevisionDetail struct {
+	models.ElementRevision
+	ElementCode     string                   `json:"element_code"`
+	CodeSetRevision *CodeSetRevisionSnapshot `json:"code_set_revision,omitempty"`
+}
+
+func (s *ElementService) GetRevision(ctx context.Context, id, revisionID, tenantID int64) (*ElementRevisionDetail, error) {
+	element, err := s.repo.GetByID(id, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	revision, err := s.repo.GetRevision(id, revisionID, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	result := &ElementRevisionDetail{ElementRevision: *revision, ElementCode: element.Code}
+	if revision.CodeSetRevisionID != nil {
+		records, err := s.codeSets.ResolveRevisionSnapshots(ctx, tenantID, []int64{*revision.CodeSetRevisionID})
+		if err != nil {
+			return nil, err
+		}
+		if len(records) != 1 {
+			return nil, fmt.Errorf("element revision references unavailable code set revision")
+		}
+		result.CodeSetRevision = codeSetSnapshot(records[0])
+	}
+	return result, nil
 }
 
 func (s *ElementService) CreateRevision(id, tenantID, userID int64, req *models.CreateElementRevisionRequest) (*models.ElementAggregate, error) {
@@ -183,13 +211,13 @@ func (s *ElementService) GetPublishedQualityRulesAt(id, tenantID int64, asOf tim
 	return revision, &document, nil
 }
 
-func (s *ElementService) revisionFromCreate(req *models.CreateElementRequest, tenantID, userID int64) (*models.ElementRevision, error) {
+func (s *ElementService) revisionFromCreate(req *models.CreateElementRequest, tenantID, userID int64, initialSummary string) (*models.ElementRevision, error) {
 	revision := &models.ElementRevision{
 		Name: strings.TrimSpace(req.Name), Definition: strings.TrimSpace(req.Definition), DataType: strings.TrimSpace(req.DataType), Length: req.Length,
 		PrecisionNum: req.PrecisionNum, Scale: req.Scale, Nullable: req.Nullable, DefaultValue: req.DefaultValue, Format: req.Format,
 		ValueDomainKind: req.ValueDomainKind, RangeConstraint: req.RangeConstraint, CodeSetRevisionID: req.CodeSetRevisionID,
 		UnitID: req.UnitID, ExampleValues: req.ExampleValues,
-		ChangeSummary: strings.TrimSpace(req.ChangeSummary), EffectiveFrom: req.EffectiveFrom, EffectiveTo: req.EffectiveTo, CreatedBy: userID,
+		ChangeSummary: strings.TrimSpace(initialSummary), EffectiveFrom: req.EffectiveFrom, EffectiveTo: req.EffectiveTo, CreatedBy: userID,
 	}
 	if err := s.validateRevision(revision, tenantID); err != nil {
 		return nil, err
@@ -216,12 +244,12 @@ func (s *ElementService) validateRevision(revision *models.ElementRevision, tena
 		return ErrInvalidStandardRevision
 	}
 	dataType := strings.TrimSpace(revision.DataType)
-	validType := map[string]bool{"string": true, "int": true, "bigint": true, "float": true, "decimal": true, "date": true, "datetime": true, "bool": true, "json": true, "text": true}
+	validType := map[string]bool{"string": true, "int": true, "bigint": true, "float": true, "decimal": true, "date": true, "datetime": true, "bool": true, "json": true}
 	if !validType[dataType] {
 		return fmt.Errorf("%w: unsupported data_type %q", ErrInvalidStandardRevision, dataType)
 	}
-	if revision.Length != nil && (*revision.Length <= 0 || (dataType != "string" && dataType != "text")) {
-		return fmt.Errorf("%w: length is only valid for string or text", ErrInvalidStandardRevision)
+	if revision.Length != nil && (*revision.Length <= 0 || dataType != "string") {
+		return fmt.Errorf("%w: length is only valid for string", ErrInvalidStandardRevision)
 	}
 	if revision.PrecisionNum != nil && (*revision.PrecisionNum <= 0 || dataType != "decimal") {
 		return fmt.Errorf("%w: precision_num is only valid for decimal", ErrInvalidStandardRevision)
@@ -232,7 +260,7 @@ func (s *ElementService) validateRevision(revision *models.ElementRevision, tena
 	if revision.PrecisionNum != nil && revision.Scale != nil && *revision.Scale > *revision.PrecisionNum {
 		return fmt.Errorf("%w: scale must not exceed precision_num", ErrInvalidStandardRevision)
 	}
-	if revision.Format != "" && dataType != "string" && dataType != "text" && dataType != "date" && dataType != "datetime" {
+	if revision.Format != "" && dataType != "string" && dataType != "date" && dataType != "datetime" {
 		return fmt.Errorf("%w: format is incompatible with data_type", ErrInvalidStandardRevision)
 	}
 	if revision.EffectiveFrom != nil && revision.EffectiveTo != nil && !revision.EffectiveFrom.Before(*revision.EffectiveTo) {
@@ -324,7 +352,7 @@ func stableRuleKey(elementID int64, kind string) string {
 
 func compatibleValueTypes(elementType, codeSetType string) bool {
 	if codeSetType == "string" {
-		return elementType == "string" || elementType == "text"
+		return elementType == "string"
 	}
 	if codeSetType == "int" {
 		return elementType == "int"

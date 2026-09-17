@@ -83,6 +83,7 @@
 
 #### 模块特定依赖
 
+- **有限分类规则** (Ontology): `cel.dev/cel-go@v0.32.0`；仅允许经过内核 AST 白名单检查的布尔/字符串规则，不开放完整 CEL 函数集。
 - **CORS 中间件** (Meta): `github.com/gin-contrib/cors@v1.5.0`
 - **Hive 客户端** (Develop): `github.com/beltran/gohive@v1.8.1`
 - **SQLite 驱动** (Manager): `gorm.io/driver/sqlite@v1.6.0`

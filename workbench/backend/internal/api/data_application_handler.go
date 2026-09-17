@@ -48,6 +48,7 @@ func (h *Handler) ListDataApplications(c *gin.Context) {
 // CreateDataApplication 从完整组件快照创建数据应用。
 // @Summary 创建数据应用 | Create a data application
 // @Description 逐一重新校验 Component 的 Service 契约，并使用当前权威指纹归一化完整应用草稿 | Revalidate every Component Service contract and normalize the complete application draft with authoritative current fingerprints
+// @Description renderer_config.field_presentations 可配置 value_labels：最多 32 个 string 或 bool 原值到显示名称的映射，不改变查询和原始结果 | renderer_config.field_presentations accepts value_labels: up to 32 typed string or bool value-label pairs for display only, without changing queries or original results
 // @Tags Workbench Data Applications
 // @Accept json
 // @Produce json
@@ -102,6 +103,7 @@ func (h *Handler) GetDataApplication(c *gin.Context) {
 // UpdateDataApplication 完整替换数据应用草稿。
 // @Summary 更新数据应用草稿 | Update a data application draft
 // @Description 允许增删改 Component；使用正整数 version 乐观并发，并逐一重新校验所有 Service 契约 | Allow adding, removing, and editing Components; use positive version optimistic concurrency and revalidate every Service contract
+// @Description 字段 value_labels 随草稿及发布修订保存；拒绝重复原值、类型不符和空标签 | Field value_labels are saved with drafts and published revisions; duplicate values, type mismatches and empty labels are rejected
 // @Tags Workbench Data Applications
 // @Accept json
 // @Produce json

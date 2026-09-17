@@ -197,3 +197,5 @@ ResourceTree 是树展示组件；ResourceTreePicker 是表单级资源选择封
 - **Console Frontend**: 使用 `basic` (通用 UI 元素)
 
 **另请参阅**: [common-frontend/README.md](../../common-frontend/README.md), [common-frontend/docs/ARCHITECTURE.md](../../common-frontend/docs/ARCHITECTURE.md)
+
+共享执行记录和后台心跳的 schema 初始化由 System Backend 独占调用，领域模型及迁移实现仍归 `common/execution`、`common/runtimehealth`。其他 Backend 和 Worker 通过 `common/schema.Require` 只读校验版本；业务 schema 版本由各模块独立声明。数据库连接本身不得隐式触发 Worker 迁移。

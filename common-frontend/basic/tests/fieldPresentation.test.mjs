@@ -5,6 +5,7 @@ import {
   fieldPresentationLabel,
   formatFieldPresentationValue,
   presentFieldValue,
+  valueLabelsValid,
 } from '../src/utils/fieldPresentation.mjs'
 
 const presentations = [
@@ -17,6 +18,30 @@ test('resolves one field presentation without changing the field identity', () =
   assert.equal(fieldPresentationFor('missing', presentations), null)
   assert.equal(fieldPresentationLabel('amount', presentations, [{ name: 'amount', comment: '原始注释' }]), '订单金额')
   assert.equal(fieldPresentationLabel('status', [], [{ name: 'status', comment: '状态' }]), '状态')
+})
+
+test('value labels are exact typed display values and states still use the original value', () => {
+  const presentation = {
+    value_labels: [{ value: 'forward', label: 'A → B' }, { value: false, label: 'Disabled' }, { value: '', label: 'Empty' }],
+    state_rules: [{ operator: 'eq', operand: 'forward', label: 'Selected', tone: 'info' }],
+  }
+  assert.deepEqual(presentFieldValue('forward', presentation), { text: 'A → B', state: { label: 'Selected', tone: 'info' } })
+  for (const value of ['Forward', ' forward', 'missing', 'false']) assert.equal(formatFieldPresentationValue(value, presentation), value)
+  assert.equal(formatFieldPresentationValue(false, presentation), 'Disabled')
+  assert.equal(formatFieldPresentationValue('', presentation), 'Empty')
+  assert.equal(formatFieldPresentationValue(null, presentation), '—')
+})
+
+test('value label validation rejects duplicates, unsupported types and unbounded mappings', () => {
+  const label = (value, text = 'Name') => ({ value, label: text })
+  assert.equal(valueLabelsValid([label(''), label('a'), label(' a'), label('A')], 'string'), true)
+  assert.equal(valueLabelsValid([label(true), label(false)], 'bool'), true)
+  for (const [labels, type] of [
+    [[label('a'), label('a')], 'string'], [[label(false), label(false)], 'bool'],
+    [[label(null)], 'string'], [[label('true')], 'bool'], [[label(1)], 'int'],
+    [[label('a', ' ')], 'string'], [[label('a', 'x'.repeat(101))], 'string'],
+    [[label('x'.repeat(1001))], 'string'], [Array.from({ length: 33 }, (_, i) => label(String(i))), 'string'],
+  ]) assert.equal(valueLabelsValid(labels, type), false)
 })
 
 test('formats numeric and temporal values through the same controlled contract', () => {

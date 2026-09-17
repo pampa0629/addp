@@ -23,6 +23,7 @@ const { locale } = useI18n()
 const element = ref(null)
 let chart = null
 let resizeObserver = null
+let themeObserver = null
 
 function hasRenderableSize(target) {
   if (!target) return false
@@ -45,11 +46,26 @@ async function render() {
       if (selection) emit('result-select', selection)
     })
   }
-  const selectionColor = getComputedStyle(element.value).getPropertyValue('--el-color-warning').trim()
-  chart.setOption(buildChartOption(props.rows, props.config, locale.value, { selectionColor }), true)
+  chart.setOption(buildChartOption(props.rows, props.config, locale.value, chartTheme()), true)
+}
+
+function chartTheme() {
+  const style = getComputedStyle(element.value)
+  const color = (name) => style.getPropertyValue(name).trim()
+  return {
+    selectionColor: color('--el-color-warning'),
+    textColor: color('--addp-text-primary'),
+    secondaryTextColor: color('--addp-text-secondary'),
+    backgroundColor: color('--addp-bg-primary'),
+    borderColor: color('--addp-border-color'),
+    splitLineColor: color('--addp-border-color-light'),
+  }
 }
 
 onMounted(() => {
+  // Canvas does not inherit CSS changes; refresh options when the platform theme changes.
+  themeObserver = new MutationObserver(render)
+  themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'style'] })
   resizeObserver = new ResizeObserver(() => {
     if (!hasRenderableSize(element.value)) return
     if (!chart) {
@@ -63,6 +79,7 @@ onMounted(() => {
 })
 watch(() => [props.rows, props.config, props.hasMore, locale.value], render, { deep: true })
 onBeforeUnmount(() => {
+  themeObserver?.disconnect()
   resizeObserver?.disconnect()
   chart?.dispose()
   chart = null

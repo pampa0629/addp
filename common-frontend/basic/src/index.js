@@ -3,6 +3,8 @@
 // 如需预览组件，请从 '@common-ui/previews' 导入。
 
 // Basic UI Components (no map dependencies)
+export { default as BusinessDomainSelect } from './components/BusinessDomainSelect.vue'
+export { buildBusinessDomainOptions, businessDomainReferenceOptions } from './utils/businessDomainOptions.mjs'
 export { default as StorageEngineForm } from './components/StorageEngineForm.vue'
 export { default as ResourceTree } from './components/ResourceTree.vue'
 export { default as ResourceTreePicker } from './components/ResourceTreePicker.vue'
@@ -139,3 +141,5 @@ export { useUnsavedChangesGuard, useConsoleUnsavedChangesGuard } from './composa
 export { default as ParameterValueInput } from './components/ParameterValueInput.vue'
 
 export { default as ParameterCaption } from './components/ParameterCaption.vue'
+
+export { createModelMetricAPI, publishedMetricSources } from './api/modelMetrics.js'

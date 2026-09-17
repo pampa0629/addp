@@ -18,6 +18,10 @@ const routes = [
     meta: { requiresAuth: true },
     children: [
       {
+        path: 'overview', name: 'QualityOverview', component: () => import('../views/Overview.vue'),
+        meta: { requiresAuth: true, title: '质量概览', requiredPermissions: ['quality.plan.read', 'quality.issue.read', 'monitor.execution.read'] }
+      },
+      {
         path: 'rules', name: 'RuleList', component: () => import('../views/RuleList.vue'),
         meta: { requiresAuth: true, title: '质量规则', requiredPermissions: ['quality.rule.read'] }
       },

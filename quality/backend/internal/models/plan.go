@@ -9,6 +9,7 @@ type QualityPlan struct {
 	ID                  int64           `gorm:"primaryKey" json:"id"`
 	TenantID            int64           `gorm:"not null;uniqueIndex:uq_quality_plan_code" json:"tenant_id"`
 	Code                string          `gorm:"size:100;not null;uniqueIndex:uq_quality_plan_code" json:"code"`
+	OwnerDomainID       *int64          `gorm:"index" json:"owner_domain_id,omitempty"`
 	Name                string          `gorm:"size:200;not null" json:"name"`
 	Description         string          `gorm:"type:text;not null;default:''" json:"description"`
 	Version             int64           `gorm:"not null;default:1" json:"version"`

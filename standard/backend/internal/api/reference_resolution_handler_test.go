@@ -71,8 +71,8 @@ func (*referenceResolutionAPITestRepository) ResolveGlossariesByCodes(context.Co
 func (*referenceResolutionAPITestRepository) ResolveElementsByCodes(context.Context, int64, []string) ([]models.PublishedElementReference, error) {
 	return []models.PublishedElementReference{{ID: 3, Code: "customer_id", Name: "Customer ID", LifecycleState: "active", Status: models.RevisionStatusPublished, Version: 1, RevisionID: 30, RevisionNo: 1}}, nil
 }
-func (*referenceResolutionAPITestRepository) ListDomainCandidates(context.Context, int64, string, int, int) ([]models.Domain, int64, error) {
-	return nil, 0, nil
+func (*referenceResolutionAPITestRepository) ListDomains(context.Context, int64) ([]models.Domain, error) {
+	return []models.Domain{{ID: 1, Code: "sales", Name: "Sales", LifecycleState: "active", Version: 1}}, nil
 }
 func (*referenceResolutionAPITestRepository) ListGlossaryCandidates(context.Context, int64, string, int, int) ([]models.PublishedGlossaryReference, int64, error) {
 	return nil, 0, nil

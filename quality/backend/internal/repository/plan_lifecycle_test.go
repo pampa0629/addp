@@ -24,7 +24,7 @@ func TestPlanExecutionLifecycleIsAtomic(t *testing.T) {
 	createdAt := time.Now().UTC()
 	exec := newQualityRepositoryTestExecution("quality-atomic-1", 7, createdAt)
 
-	claimed, err := repo.CreateExecution(context.Background(), task.ID, task.TenantID, exec)
+	claimed, err := repo.CreateExecution(context.Background(), task.ID, task.TenantID, exec, models.PlanRunRequest{})
 	if err != nil {
 		t.Fatalf("ClaimExecution: %v", err)
 	}
@@ -43,7 +43,7 @@ func TestPlanExecutionLifecycleIsAtomic(t *testing.T) {
 	}
 
 	duplicate := newQualityRepositoryTestExecution("quality-atomic-duplicate", 7, createdAt)
-	if _, err := repo.CreateExecution(context.Background(), task.ID, task.TenantID, duplicate); !errors.Is(err, commonAPI.ErrConflict) {
+	if _, err := repo.CreateExecution(context.Background(), task.ID, task.TenantID, duplicate, models.PlanRunRequest{}); !errors.Is(err, commonAPI.ErrConflict) {
 		t.Fatalf("duplicate ClaimExecution error = %v, want conflict", err)
 	}
 
@@ -94,7 +94,7 @@ func TestPlanStartRollsBackWhenOwnerSummaryCannotAdvance(t *testing.T) {
 	task := createPlanRepositoryTestTask(t, db, 8)
 	createdAt := time.Date(2026, 7, 16, 9, 0, 0, 0, time.UTC)
 	exec := newQualityRepositoryTestExecution("quality-start-rollback", 8, createdAt)
-	if _, err := repo.CreateExecution(context.Background(), task.ID, task.TenantID, exec); err != nil {
+	if _, err := repo.CreateExecution(context.Background(), task.ID, task.TenantID, exec, models.PlanRunRequest{}); err != nil {
 		t.Fatalf("ClaimExecution: %v", err)
 	}
 	if err := db.Delete(&models.QualityPlan{}, task.ID).Error; err != nil {
@@ -120,7 +120,7 @@ func TestClaimPendingExecutionRequiresAuthorizationAndLeaseOwner(t *testing.T) {
 	task := createPlanRepositoryTestTask(t, db, 9)
 	createdAt := time.Now().UTC()
 	exec := newQualityRepositoryTestExecution("quality-worker-claim", 9, createdAt)
-	if _, err := repo.CreateExecution(context.Background(), task.ID, task.TenantID, exec); err != nil {
+	if _, err := repo.CreateExecution(context.Background(), task.ID, task.TenantID, exec, models.PlanRunRequest{}); err != nil {
 		t.Fatalf("ClaimExecution: %v", err)
 	}
 
@@ -197,7 +197,7 @@ func TestRecoverExpiredExecutionRetriesThenFailsAtAttemptLimit(t *testing.T) {
 	createdAt := time.Date(2026, 7, 16, 11, 0, 0, 0, time.UTC)
 	exec := newQualityRepositoryTestExecution("quality-worker-recovery", 10, createdAt)
 	exec.MaxAttempts = 2
-	if _, err := repo.CreateExecution(context.Background(), task.ID, task.TenantID, exec); err != nil {
+	if _, err := repo.CreateExecution(context.Background(), task.ID, task.TenantID, exec, models.PlanRunRequest{}); err != nil {
 		t.Fatalf("ClaimExecution: %v", err)
 	}
 	if err := repo.AttachPendingAuthorization(context.Background(), task.TenantID, exec.ExecutionID, map[string]interface{}{
@@ -267,6 +267,7 @@ func newPlanRepositoryTestDB(t *testing.T) *gorm.DB {
 	if err := db.Exec(`CREATE TABLE quality.plans (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		tenant_id INTEGER NOT NULL,
+		owner_domain_id INTEGER,
 		code TEXT NOT NULL,
 		name TEXT NOT NULL,
 		description TEXT NOT NULL,
@@ -306,7 +307,7 @@ func newQualityRepositoryTestExecution(executionID string, tenantID int, created
 		Status:            commonExecution.ExecutionStatusPending, TriggerType: commonExecution.TriggerTypeManual,
 		CreatedAt: createdAt, UpdatedAt: createdAt,
 		ExecutionConfig: commonModels.JSONMap{
-			"schema_version":   "addp.quality.plan-execution-config/v1",
+			"schema_version":   "addp.quality.plan-execution-config/v2",
 			"check_timeout_ms": int64((30 * time.Minute).Milliseconds()),
 		},
 	}

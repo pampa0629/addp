@@ -8,6 +8,7 @@ import (
 	_ "github.com/addp/quality/docs"
 	qualityauthorization "github.com/addp/quality/internal/authorization"
 	"github.com/addp/quality/internal/service"
+	"github.com/addp/quality/internal/repository"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 	swaggerFiles "github.com/swaggo/files"
@@ -32,6 +33,7 @@ func SetupRouter(
 	systemURL string,
 	redisClient *redis.Client,
 	lifecycle *modulelifecycle.Controller,
+	standardReferenceGuardSvc *service.StandardReferenceGuardService,
 ) *gin.Engine {
 	router := gin.Default()
 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
@@ -51,11 +53,13 @@ func SetupRouter(
 	router.Use(commoni18n.I18nMiddleware())
 
 	planHandler := NewPlanHandler(planSvc)
+	overviewHandler := NewOverviewHandler(service.NewOverviewService(repository.NewOverviewRepository(db)))
 	ruleHandler := NewRuleHandler(ruleSvc)
 	taskProviderHandler := NewTaskProviderHandler(planSvc)
 	executionHandler := NewExecutionHandler(commonExecution.NewTaskExecutionRepository(db))
 	issueHandler := NewIssueHandler(issueSvc)
 	catalogSummaryHandler := NewCatalogSummaryHandler(catalogSummarySvc)
+	standardReferenceGuardHandler := NewStandardReferenceGuardHandler(standardReferenceGuardSvc)
 
 	api := router.Group("/api/v1/quality")
 	api.Use(
@@ -67,6 +71,10 @@ func SetupRouter(
 	}
 
 	{
+		api.GET("/overview", permission(qualityauthorization.PermissionQualityPlanRead, qualityauthorization.PermissionQualityIssueRead, "monitor.execution.read"), overviewHandler.Get)
+		guard := api.Group("/standard-reference-guards")
+		guard.Use(commonAuth.MustNewServiceClientGuard("addp-standard"))
+		guard.PUT("/:resource_type/:resource_id", permission(qualityauthorization.PermissionQualityStandardReferenceUpdate), standardReferenceGuardHandler.SetState)
 		catalogSummary := api.Group("/runtime/catalog-summaries")
 		catalogSummary.Use(commonAuth.MustNewServiceClientGuard("addp-catalog"))
 		catalogSummary.POST("/resolve", permission(qualityauthorization.PermissionQualityCatalogRead), catalogSummaryHandler.Resolve)

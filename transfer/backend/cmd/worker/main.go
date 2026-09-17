@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"syscall"
 
+	"github.com/addp/common/schema"
+
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
 	"github.com/addp/common/dataprotection/projectionstore"
@@ -38,7 +40,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("数据库连接失败: %v", err)
 	}
-	if err := commonRuntimeHealth.EnsureStore(db); err != nil {
+	if err := schema.Require(db, "transfer", repository.SchemaVersion); err != nil {
+		log.Fatalf("Worker schema is not ready: %v", err)
+	}
+	if err := schema.Require(db, "common", schema.CommonVersion); err != nil {
 		log.Fatalf("初始化后台运行实例心跳失败: %v", err)
 	}
 	taskRepo := repository.NewTaskRepository(db)
@@ -55,7 +60,7 @@ func main() {
 	metaClient := commonClient.NewMetaClient(cfg.MetaServiceURL, tokenSource)
 	systemRuntimeClient := commonClient.NewSystemServiceClient(cfg.SystemServiceURL, tokenSource, nil)
 	systemClient := commonClient.NewSystemClient(cfg.SystemServiceURL, tokenSource)
-	protectionStore, err := projectionstore.New(db, cfg.DBSchema, "transfer", nil)
+	protectionStore, err := projectionstore.Open(db, cfg.DBSchema, "transfer", nil)
 	if err != nil {
 		log.Fatalf("初始化 Transfer 保护投影存储失败: %v", err)
 	}
@@ -108,7 +113,7 @@ func main() {
 }
 
 func connectDatabase(cfg *config.Config) (*gorm.DB, error) {
-	db, err := commonRepo.InitDatabase(commonRepo.DatabaseConfig{
+	db, err := commonRepo.OpenDatabase(commonRepo.DatabaseConfig{
 		Host: cfg.DBHost, Port: cfg.DBPort, User: cfg.DBUser, Password: cfg.DBPassword,
 		DBName: cfg.DBName, Schema: cfg.DBSchema, SSLMode: "disable",
 	})

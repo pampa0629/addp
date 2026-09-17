@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -67,7 +69,137 @@ func newStandardReferenceDeletionTestService(
 		}),
 		server.Client(),
 	)
-	return NewStandardReferenceDeletionService(db, client), server
+	return NewStandardReferenceDeletionService(db, client, newDeletionQualityClient(t, nil)), server
+}
+
+func newDeletionQualityClient(t *testing.T, handler http.HandlerFunc) *commonclient.QualityClient {
+	t.Helper()
+	if handler == nil {
+		handler = func(w http.ResponseWriter, r *http.Request) {
+			var request struct {
+				State string `json:"state"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				t.Error(err)
+				return
+			}
+			id, err := strconv.ParseInt(strings.TrimPrefix(r.URL.Path, "/api/v1/quality/standard-reference-guards/domain/"), 10, 64)
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(commonclient.StandardReferenceGuardResponse{ResourceType: "domain", ResourceID: id, State: request.State, Summary: []commonclient.StandardReferenceImpactSummary{}, Sample: []commonclient.StandardReferenceImpact{}})
+		}
+	}
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+	return commonclient.NewQualityClient(server.URL, commonclient.ServiceTokenProviderFunc(func(context.Context, uint) (string, error) { return "standard-runtime-token", nil }), server.Client())
+}
+
+func TestStandardReferenceDeletionQualityUnavailableRetryReleasesBothConsumers(t *testing.T) {
+	db := setupStandardReferenceDeletionTestDB(t)
+	modelCount := int64(0)
+	modelStates, qualityStates := []string{}, []string{}
+	svc, server := newStandardReferenceDeletionTestService(t, db, func(w http.ResponseWriter, r *http.Request) {
+		state := readGuardState(t, r)
+		modelStates = append(modelStates, state)
+		writeGuardResponse(t, w, state, modelCount)
+	})
+	defer server.Close()
+	fail := true
+	svc.quality = newDeletionQualityClient(t, func(w http.ResponseWriter, r *http.Request) {
+		var request struct {
+			State string `json:"state"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Error(err)
+			return
+		}
+		qualityStates = append(qualityStates, request.State)
+		if fail {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		writeGuardResponse(t, w, request.State, 1)
+	})
+	deleteLocal := func(*gorm.DB, int64, int64) error {
+		t.Error("referenced/unavailable domain must not be deleted")
+		return nil
+	}
+	if err := svc.Delete(context.Background(), 7, "domain", 42, deleteLocal); !errors.Is(err, ErrModelReferenceGuardUnavailable) {
+		t.Fatalf("first delete: %v", err)
+	}
+	if referenceDeletionCount(t, db) != 1 {
+		t.Fatal("lost retry operation")
+	}
+	fail, modelCount = false, 2
+	var referenced *StandardResourceReferencedError
+	if err := svc.Delete(context.Background(), 7, "domain", 42, deleteLocal); !errors.As(err, &referenced) || referenced.Impact.ReferenceCount != 3 {
+		t.Fatalf("retry: %v", err)
+	}
+	for _, states := range [][]string{modelStates, qualityStates} {
+		if !reflect.DeepEqual(states, []string{"frozen", "frozen", "open"}) {
+			t.Fatalf("states: %v", states)
+		}
+	}
+	if referenceDeletionCount(t, db) != 0 {
+		t.Fatal("retry operation not removed")
+	}
+}
+
+func TestStandardReferenceDeletionRequiresQualityForDomain(t *testing.T) {
+	db := setupStandardReferenceDeletionTestDB(t)
+	svc, server := newStandardReferenceDeletionTestService(t, db, func(w http.ResponseWriter, r *http.Request) { t.Error("unexpected Model request") })
+	defer server.Close()
+	svc.quality = nil
+	if err := svc.Delete(context.Background(), 7, "domain", 42, nil); !errors.Is(err, ErrModelReferenceGuardUnavailable) {
+		t.Fatalf("delete: %v", err)
+	}
+	_, count := domainLifecycleState(t, db)
+	if count != 1 {
+		t.Fatal("domain was removed without Quality guard")
+	}
+}
+
+func TestStandardReferenceDeletionRetriesQualityFinalization(t *testing.T) {
+	db := setupStandardReferenceDeletionTestDB(t)
+	svc, server := newStandardReferenceDeletionTestService(t, db, func(w http.ResponseWriter, r *http.Request) { writeGuardResponse(t, w, readGuardState(t, r), 0) })
+	defer server.Close()
+	fail := true
+	svc.quality = newDeletionQualityClient(t, func(w http.ResponseWriter, r *http.Request) {
+		var request struct {
+			State string `json:"state"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Error(err)
+			return
+		}
+		if fail && request.State == "deleted" {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		writeGuardResponse(t, w, request.State, 0)
+	})
+	deleteCalls := 0
+	deleteLocal := func(tx *gorm.DB, id, tenant int64) error {
+		deleteCalls++
+		return tx.Exec("DELETE FROM standard.domains WHERE id = ? AND tenant_id = ?", id, tenant).Error
+	}
+	if err := svc.Delete(context.Background(), 7, "domain", 42, deleteLocal); !errors.Is(err, ErrModelReferenceGuardUnavailable) {
+		t.Fatalf("first delete: %v", err)
+	}
+	_, count := domainLifecycleState(t, db)
+	if count != 0 || referenceDeletionCount(t, db) != 1 {
+		t.Fatal("local delete or durable finalize state lost")
+	}
+	fail = false
+	if err := svc.Delete(context.Background(), 7, "domain", 42, deleteLocal); err != nil {
+		t.Fatalf("retry finalize: %v", err)
+	}
+	if deleteCalls != 1 || referenceDeletionCount(t, db) != 0 {
+		t.Fatal("retry repeated local deletion or left an operation")
+	}
 }
 
 func readGuardState(t *testing.T, r *http.Request) string {

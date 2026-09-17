@@ -32,3 +32,19 @@ func TestStandardSourceConstraintsAndRevision(t *testing.T) {
 		t.Fatalf("stale source accepted: %v", err)
 	}
 }
+
+func TestElementCandidatesAllowBrowsingAndForwardPagination(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/standard/elements" || r.URL.Query().Get("keyword") != "" || r.URL.Query().Get("page") != "2" || r.URL.Query().Get("page_size") != "30" || r.URL.Query().Get("status") != "published" {
+			t.Errorf("unexpected candidate request: %s", r.URL)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"id":3,"code":"member_status","current_revision":{"id":31,"revision_no":3,"status":"published","name":"Member status","compiled_quality_rules":{"schema_version":"addp.quality.rules/v1","rules":[]}}}],"total":31}`))
+	}))
+	defer server.Close()
+	svc := NewRuleService(nil, commonClient.NewStandardClient(server.URL, qualityCatalogTokenSource("service-token"), server.Client()))
+	items, total, err := svc.ListElementCandidates(context.Background(), 7, "  ", 2, 30)
+	if err != nil || total != 31 || len(items) != 1 || items[0].RevisionID != 31 {
+		t.Fatalf("browse = %#v, %d, %v", items, total, err)
+	}
+}

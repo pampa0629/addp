@@ -94,8 +94,6 @@ definitions:
         - tenant_common
         - domain
         type: string
-      steward_id:
-        type: integer
       tags:
         items:
           type: string
@@ -198,8 +196,6 @@ definitions:
     type: object
   github_com_addp_standard_internal_models.CreateCodeSetRequest:
     properties:
-      change_summary:
-        type: string
       code:
         type: string
       description:
@@ -217,8 +213,6 @@ definitions:
         - tenant_common
         - domain
         type: string
-      steward_id:
-        type: integer
       tags:
         items:
           type: string
@@ -226,7 +220,6 @@ definitions:
       value_type:
         type: string
     required:
-    - change_summary
     - code
     - description
     - name
@@ -254,8 +247,6 @@ definitions:
     type: object
   github_com_addp_standard_internal_models.CreateDocumentRequest:
     properties:
-      change_summary:
-        type: string
       code:
         type: string
       description:
@@ -284,8 +275,6 @@ definitions:
         type: string
       source_org:
         type: string
-      steward_id:
-        type: integer
       tags:
         items:
           type: string
@@ -293,7 +282,6 @@ definitions:
       version_label:
         type: string
     required:
-    - change_summary
     - code
     - doc_type
     - name
@@ -312,13 +300,21 @@ definitions:
     type: object
   github_com_addp_standard_internal_models.CreateElementRequest:
     properties:
-      change_summary:
-        type: string
       code:
         type: string
       code_set_revision_id:
         type: integer
       data_type:
+        enum:
+        - string
+        - int
+        - bigint
+        - float
+        - decimal
+        - date
+        - datetime
+        - bool
+        - json
         type: string
       default_value:
         type: string
@@ -353,8 +349,6 @@ definitions:
         - tenant_common
         - domain
         type: string
-      steward_id:
-        type: integer
       tags:
         items:
           type: string
@@ -364,7 +358,6 @@ definitions:
       value_domain_kind:
         type: string
     required:
-    - change_summary
     - code
     - data_type
     - definition
@@ -414,8 +407,6 @@ definitions:
         - tenant_common
         - domain
         type: string
-      steward_id:
-        type: integer
       tags:
         items:
           type: string
@@ -439,8 +430,6 @@ definitions:
     type: object
   github_com_addp_standard_internal_models.CreateLinkedDocumentRequest:
     properties:
-      change_summary:
-        type: string
       code:
         type: string
       description:
@@ -469,8 +458,6 @@ definitions:
         type: string
       source_org:
         type: string
-      steward_id:
-        type: integer
       tags:
         items:
           type: string
@@ -480,7 +467,6 @@ definitions:
       version_label:
         type: string
     required:
-    - change_summary
     - code
     - doc_type
     - name
@@ -521,8 +507,6 @@ definitions:
     properties:
       category_id:
         type: integer
-      change_summary:
-        type: string
       code:
         type: string
       definition:
@@ -554,8 +538,6 @@ definitions:
         type: string
       statistical_caliber:
         type: string
-      steward_id:
-        type: integer
       tags:
         items:
           type: string
@@ -563,7 +545,6 @@ definitions:
       unit_id:
         type: integer
     required:
-    - change_summary
     - code
     - definition
     - metric_type
@@ -636,8 +617,6 @@ definitions:
         type: string
       source_org:
         type: string
-      steward_id:
-        type: integer
       tags:
         items:
           type: string
@@ -1053,7 +1032,6 @@ definitions:
         - datetime
         - bool
         - json
-        - text
         type: string
       dimensions:
         items:
@@ -1228,8 +1206,6 @@ definitions:
         - tenant_common
         - domain
         type: string
-      steward_id:
-        type: integer
       tags:
         items:
           type: string
@@ -1353,8 +1329,6 @@ definitions:
         - tenant_common
         - domain
         type: string
-      steward_id:
-        type: integer
       tags:
         items:
           type: string
@@ -1513,8 +1487,6 @@ definitions:
         - tenant_common
         - domain
         type: string
-      steward_id:
-        type: integer
       tags:
         items:
           type: string
@@ -1977,8 +1949,6 @@ definitions:
         - tenant_common
         - domain
         type: string
-      steward_id:
-        type: integer
       tags:
         items:
           type: string
@@ -2046,8 +2016,6 @@ definitions:
         type: string
       source_org:
         type: string
-      steward_id:
-        type: integer
       tags:
         items:
           type: string
@@ -2110,8 +2078,6 @@ definitions:
         - tenant_common
         - domain
         type: string
-      steward_id:
-        type: integer
       tags:
         items:
           type: string
@@ -2130,6 +2096,16 @@ definitions:
       code_set_revision_id:
         type: integer
       data_type:
+        enum:
+        - string
+        - int
+        - bigint
+        - float
+        - decimal
+        - date
+        - datetime
+        - bool
+        - json
         type: string
       default_value:
         type: string
@@ -2193,8 +2169,6 @@ definitions:
         - tenant_common
         - domain
         type: string
-      steward_id:
-        type: integer
       tags:
         items:
           type: string
@@ -2280,8 +2254,6 @@ definitions:
         - tenant_common
         - domain
         type: string
-      steward_id:
-        type: integer
       tags:
         items:
           type: string
@@ -2457,6 +2429,75 @@ definitions:
       version:
         type: integer
     type: object
+  github_com_addp_standard_internal_service.ElementRevisionDetail:
+    properties:
+      change_summary:
+        type: string
+      code_set_revision:
+        $ref: '#/definitions/github_com_addp_standard_internal_service.CodeSetRevisionSnapshot'
+      code_set_revision_id:
+        type: integer
+      compiled_quality_rules:
+        $ref: '#/definitions/github_com_addp_standard_internal_models.JSONB'
+      created_at:
+        type: string
+      created_by:
+        type: integer
+      data_type:
+        type: string
+      default_value:
+        type: string
+      definition:
+        type: string
+      effective_from:
+        type: string
+      effective_to:
+        type: string
+      element_code:
+        type: string
+      element_id:
+        type: integer
+      example_values:
+        items:
+          type: string
+        type: array
+      format:
+        type: string
+      id:
+        type: integer
+      length:
+        type: integer
+      name:
+        type: string
+      nullable:
+        type: boolean
+      precision_num:
+        type: integer
+      published_at:
+        type: string
+      published_by:
+        type: integer
+      range_constraint:
+        $ref: '#/definitions/github_com_addp_standard_internal_models.RangeConstraint'
+      revision_no:
+        type: integer
+      scale:
+        type: integer
+      status:
+        type: string
+      submitted_at:
+        type: string
+      submitted_by:
+        type: integer
+      unit_id:
+        type: integer
+      updated_at:
+        type: string
+      updated_by:
+        type: integer
+      value_domain_kind:
+        type: string
+    type: object
   github_com_addp_standard_internal_service.ElementRevisionResolution:
     properties:
       element_id:
@@ -2532,6 +2573,11 @@ definitions:
     properties:
       code:
         type: string
+      domain_path:
+        description: 业务域完整名称路径 / Full domain name path.
+        items:
+          type: string
+        type: array
       id:
         type: integer
       name:
@@ -2564,6 +2610,11 @@ definitions:
     properties:
       code:
         type: string
+      domain_path:
+        description: 业务域完整名称路径 / Full domain name path.
+        items:
+          type: string
+        type: array
       found:
         type: boolean
       id:
@@ -2763,6 +2814,8 @@ paths:
     post:
       consumes:
       - application/json
+      description: 首个草稿说明由后端按请求语言记录为“初始创建”，请求不包含 change_summary。 | The server records
+        a localized Initial creation summary; the request does not include change_summary.
       parameters:
       - description: 码值集和首个草稿 | Code set and initial draft
         in: body
@@ -3298,6 +3351,9 @@ paths:
       x-addp-required-permissions:
       - standard.document.read
     post:
+      description: 首次创建说明由服务端按请求语言生成，请求不包含 change_summary。 | Initial creation summary
+        is generated by the server in the request language; change_summary is not
+        accepted.
       parameters:
       - description: 文档身份和首个草稿修订 | Document identity and initial draft revision
         in: body
@@ -4378,6 +4434,10 @@ paths:
     post:
       consumes:
       - application/json
+      description: 首个草稿的变更说明由后端按请求语言自动记录为“初始创建”，请求不包含 change_summary；后续修订仍必填。 | The
+        server records a localized Initial creation summary for the first draft. The
+        request does not include change_summary; subsequent revisions still require
+        it.
       parameters:
       - description: 数据元和首个草稿 | Data element and initial draft
         in: body
@@ -4518,6 +4578,9 @@ paths:
       - standard.element.read
       - standard.document.read
     post:
+      description: 首次创建说明由服务端按请求语言生成，请求不包含 change_summary。 | Initial creation summary
+        is generated by the server in the request language; change_summary is not
+        accepted.
       parameters:
       - description: 文档信息及当前数据元版本 | Document with current element version
         in: body
@@ -4730,13 +4793,27 @@ paths:
       - standard.element.update
   /elements/{id}/revisions/{revision_id}:
     get:
+      description: 返回指定修订及其固定码值集修订和码项；历史修订不追随当前版本 | Returns the exact revision and
+        its pinned code-set revision and items; historical revisions never track the
+        current version
+      parameters:
+      - description: 数据元 ID | Element ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 精确修订 ID | Exact revision ID
+        in: path
+        name: revision_id
+        required: true
+        type: integer
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_addp_standard_internal_models.ElementRevision'
+            $ref: '#/definitions/github_com_addp_standard_internal_service.ElementRevisionDetail'
       security:
       - BearerAuth: []
       summary: 获取数据元修订 | Get data element revision
@@ -5085,6 +5162,9 @@ paths:
       - standard.glossary.read
       - standard.document.read
     post:
+      description: 首次创建说明由服务端按请求语言生成，请求不包含 change_summary。 | Initial creation summary
+        is generated by the server in the request language; change_summary is not
+        accepted.
       parameters:
       - description: 文档信息及当前术语版本 | Document with current glossary version
         in: body
@@ -5795,6 +5875,9 @@ paths:
     post:
       consumes:
       - application/json
+      description: 首次创建说明由服务端按请求语言生成，请求不包含 change_summary。 | Initial creation summary
+        is generated by the server in the request language; change_summary is not
+        accepted.
       parameters:
       - description: 指标定义与首个草稿 | Metric definition and initial draft
         in: body
@@ -5934,6 +6017,9 @@ paths:
       - standard.metric.read
       - standard.document.read
     post:
+      description: 首次创建说明由服务端按请求语言生成，请求不包含 change_summary。 | Initial creation summary
+        is generated by the server in the request language; change_summary is not
+        accepted.
       parameters:
       - description: 文档信息及当前指标版本 | Document with current metric version
         in: body
@@ -6308,9 +6394,10 @@ paths:
   /references/candidates:
     get:
       description: 仅 addp-catalog Tenant Service Principal 可按名称或编码分页查询当前可引用的 Domain、Glossary
-        或 Element；只返回最小显示摘要 | Only the addp-catalog tenant service principal may search
-        currently referenceable domains, glossaries, or elements by name or code;
-        only minimal display summaries are returned
+        或 Element；只返回最小显示摘要，业务域包含 domain_path 并支持路径搜索 | Only the addp-catalog tenant
+        service principal may search currently referenceable domains, glossaries,
+        or elements by name or code; only minimal display summaries are returned,
+        including domain_path and path search for domains
       parameters:
       - description: 引用类型 | Reference type
         enum:

@@ -191,6 +191,10 @@ describe('Console navigation bridge', () => {
 
 
   it('shows Quality navigation only for matching human permissions', () => {
+	for (const [locale,label] of [['zh-cn','质量规则'],['en','Quality rules']]) {
+		const messages=JSON.parse(readFileSync(new URL(`../src/i18n/${locale}.json`,import.meta.url),'utf8'))
+		expect(messages.console.menus.quality.rules).toBe(label)
+	}
 	const configSource = readFileSync(new URL('../src/config/portalConfig.js', import.meta.url), 'utf8')
 	expect(configSource).toContain("index: '/quality/rules', icon: List, label: 'console.menus.quality.rules', permissions: ['quality.rule.read']")
 	expect(searchIndex('质量规则', key => key, []).map(item => item.route)).not.toContain('/quality/rules')

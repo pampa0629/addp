@@ -28,10 +28,10 @@ func runMetricGolden(t *testing.T, provider metricGoldenProvider, conn plugin.Co
 		return strings.ReplaceAll(query, "SCHEMA", dialect.QuoteIdentifier(database))
 	}
 	for _, statement := range []string{
-		`CREATE TABLE SCHEMA.metric_golden_people(person_id varchar(200))`,
+		`CREATE TABLE SCHEMA.metric_golden_people(person_id varchar(200),nickname varchar(200))`,
 		`CREATE TABLE SCHEMA.metric_golden_events(event_id varchar(200),event_date date)`,
 		`CREATE TABLE SCHEMA.metric_golden_facts(person_id varchar(200),event_id varchar(200),leader bool)`,
-		`INSERT INTO SCHEMA.metric_golden_people VALUES ('A'),('B'),('C'),('a'),('A '),('quoted''person')`,
+		`INSERT INTO SCHEMA.metric_golden_people VALUES ('A','Alpha'),('B','Beta'),('C',NULL),('a','Lowercase'),('A ','Spaced'),('quoted''person','Quoted')`,
 		`INSERT INTO SCHEMA.metric_golden_events VALUES ('e1','2026-01-01'),('e2','2026-01-02'),('e3','2026-01-03'),('e4','2026-02-01'),('e5','2026-03-01'),('e6','2026-01-06'),('old','2025-12-31'),('new','2027-01-01')`,
 		`INSERT INTO SCHEMA.metric_golden_facts VALUES ('A','e1',true),('A','e1',true),('A','e2',true),('A','e6',true),('A','e4',true),('A','e5',false),('B','e1',false),('B','e3',true),('B','e4',false),('A','old',true),('A','new',true)`,
 	} {
@@ -40,6 +40,8 @@ func runMetricGolden(t *testing.T, provider metricGoldenProvider, conn plugin.Co
 		}
 	}
 	contract, bindings := metricGoldenContract()
+	contract.SubjectLabel = &models.MetricFieldReference{FieldID: 7, RelationID: 10}
+	labels := map[string]interface{}{"A": "Alpha", "B": "Beta", "C": nil, "a": "Lowercase", "A ": "Spaced", "quoted'person": "Quoted"}
 	query := func(t *testing.T, operation, subject, comparison, grain, directions, start, end string) (*plugin.QueryResult, error) {
 		t.Helper()
 		c := contract
@@ -101,6 +103,14 @@ func runMetricGolden(t *testing.T, provider metricGoldenProvider, conn plugin.Co
 				t.Fatalf("rows=%v want=%v", result.Rows, c.want)
 			}
 			for i, row := range result.Rows {
+				if actual, exists := row["subject_label"]; !exists || actual != labels[fmt.Sprint(row["subject_id"])] {
+					t.Fatalf("subject name must follow result identity: %v", row)
+				}
+				if c.op == "directional_overlap" {
+					if actual, exists := row["comparison_label"]; !exists || actual != labels[fmt.Sprint(row["comparison_id"])] {
+						t.Fatalf("comparison name must follow result identity: %v", row)
+					}
+				}
 				value, err := strconv.ParseFloat(fmt.Sprint(row["value"]), 64)
 				if err != nil || math.Abs(value-c.want[i]) > 1e-12 {
 					t.Fatalf("row=%v want=%v err=%v", row, c.want[i], err)
@@ -115,7 +125,7 @@ func runMetricGolden(t *testing.T, provider metricGoldenProvider, conn plugin.Co
 			{"null-date", `UPDATE SCHEMA.metric_golden_events SET event_date=NULL WHERE event_id='e1'`, `UPDATE SCHEMA.metric_golden_events SET event_date='2026-01-01' WHERE event_id='e1'`},
 			{"invalid-outside-range", `UPDATE SCHEMA.metric_golden_events SET event_date=NULL WHERE event_id='old'`, `UPDATE SCHEMA.metric_golden_events SET event_date='2025-12-31' WHERE event_id='old'`},
 			{"null-member", `UPDATE SCHEMA.metric_golden_facts SET event_id=NULL WHERE event_id='e1'`, `UPDATE SCHEMA.metric_golden_facts SET event_id='e1' WHERE event_id IS NULL`},
-			{"duplicate-person", `INSERT INTO SCHEMA.metric_golden_people VALUES ('A')`, `DELETE FROM SCHEMA.metric_golden_people WHERE person_id='A'; INSERT INTO SCHEMA.metric_golden_people VALUES ('A')`},
+			{"duplicate-person", `INSERT INTO SCHEMA.metric_golden_people VALUES ('A','Another name')`, `DELETE FROM SCHEMA.metric_golden_people WHERE person_id='A'; INSERT INTO SCHEMA.metric_golden_people VALUES ('A','Alpha')`},
 		} {
 			t.Run(operation+"/"+mutation.name, func(t *testing.T) {
 				if _, err := db.Exec(qualify(mutation.apply)); err != nil {

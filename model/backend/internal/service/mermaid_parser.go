@@ -18,7 +18,7 @@ const mermaidDocumentFormat = "addp.model.er/v2"
 
 var mermaidDataTypes = map[string]struct{}{
 	"string": {}, "int": {}, "bigint": {}, "float": {}, "decimal": {},
-	"date": {}, "datetime": {}, "bool": {}, "json": {}, "text": {}, "geometry": {},
+	"date": {}, "datetime": {}, "bool": {}, "json": {}, "geometry": {},
 }
 
 // MermaidERParser Mermaid ER图解析器

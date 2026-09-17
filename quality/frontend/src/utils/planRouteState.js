@@ -1,3 +1,5 @@
+import { normalizeDomainFilter } from './domainOwnership.js'
+
 const DEFAULT_PAGE_SIZE = 20
 const ALLOWED_PAGE_SIZES = new Set([20, 50, 100])
 
@@ -18,8 +20,9 @@ const queriesEqual = (left, right) => {
   return Object.keys(left).length === keys.length && keys.every(key => !Array.isArray(left[key]) && String(left[key]) === right[key])
 }
 
-export const buildPlanRouteQuery = ({ mode, taskID, page, pageSize }) => {
+export const buildPlanRouteQuery = ({ mode, taskID, ownerDomainID, page, pageSize }) => {
   const query = {}
+  if (ownerDomainID != null) query.owner_domain_id = String(ownerDomainID)
   if (mode === 'edit' && taskID) query.task_id = String(taskID)
   else if (mode === 'create') query.create = '1'
   if (page > 1) query.page = String(page)
@@ -34,6 +37,7 @@ export const resolvePlanRouteState = (routeQuery = {}) => {
   const page = positiveInteger(routeQuery.page, 1)
   const requestedPageSize = positiveInteger(routeQuery.page_size, DEFAULT_PAGE_SIZE)
   const pageSize = ALLOWED_PAGE_SIZES.has(requestedPageSize) ? requestedPageSize : DEFAULT_PAGE_SIZE
-  const query = buildPlanRouteQuery({ mode, taskID, page, pageSize })
-  return { mode, taskID, page, pageSize, query, changed: !queriesEqual(routeQuery, query) }
+  const ownerDomainID = normalizeDomainFilter(routeQuery.owner_domain_id)
+  const query = buildPlanRouteQuery({ mode, taskID, ownerDomainID, page, pageSize })
+  return { mode, taskID, ownerDomainID, page, pageSize, query, changed: !queriesEqual(routeQuery, query) }
 }

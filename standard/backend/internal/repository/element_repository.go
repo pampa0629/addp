@@ -130,7 +130,7 @@ func (r *ElementRepository) List(tenantID int64, opts ListElementOptions) ([]mod
 
 func (r *ElementRepository) UpdateIdentity(element *models.Element, expectedVersion int64) error {
 	if err := updateVersioned(r.db, element, element.ID, element.TenantID, expectedVersion, map[string]interface{}{
-		"scope_type": element.ScopeType, "owner_domain_id": element.OwnerDomainID, "steward_id": element.StewardID, "tags": element.Tags, "updated_by": element.UpdatedBy,
+		"scope_type": element.ScopeType, "owner_domain_id": element.OwnerDomainID, "tags": element.Tags, "updated_by": element.UpdatedBy,
 	}); err != nil {
 		return err
 	}

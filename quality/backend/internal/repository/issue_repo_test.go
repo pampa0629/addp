@@ -15,7 +15,7 @@ import (
 func TestIssueReconcileIsIdempotentAndReopensResolvedIssues(t *testing.T) {
 	db := newIssueRepositoryTestDB(t)
 	repo := NewIssueRepository(db)
-	failed := models.IssueObservation{
+	failed := models.IssueObservation{TargetKey: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 		PlanID: 12, RuleKey: "00000000-0000-4000-8000-000000000001", RuleType: "not_null", Severity: "error", Message: "required",
 		ColumnName: "email", Table: "users", SchemaName: "public", EngineID: 3,
 		FailedCount: 2, TotalCount: 10, PassRate: 80,
@@ -85,8 +85,8 @@ func TestIssueReconcileKeepsRulesInOneApplicationIndependent(t *testing.T) {
 	repo := NewIssueRepository(db)
 	firstSeen := time.Date(2026, 8, 14, 10, 0, 0, 0, time.UTC)
 	observations := []models.IssueObservation{
-		{PlanID: 12, RuleKey: "00000000-0000-4000-8000-000000000001", RuleType: "format", Severity: "error", ColumnName: "email", Table: "users", SchemaName: "public", EngineID: 3, FailedCount: 2, TotalCount: 10, PassRate: 80},
-		{PlanID: 12, RuleKey: "00000000-0000-4000-8000-000000000002", RuleType: "format", Severity: "warning", ColumnName: "email", Table: "users", SchemaName: "public", EngineID: 3, FailedCount: 1, TotalCount: 10, PassRate: 90},
+		{TargetKey: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", PlanID: 12, RuleKey: "00000000-0000-4000-8000-000000000001", RuleType: "format", Severity: "error", ColumnName: "email", Table: "users", SchemaName: "public", EngineID: 3, FailedCount: 2, TotalCount: 10, PassRate: 80},
+		{TargetKey: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", PlanID: 12, RuleKey: "00000000-0000-4000-8000-000000000002", RuleType: "format", Severity: "warning", ColumnName: "email", Table: "users", SchemaName: "public", EngineID: 3, FailedCount: 1, TotalCount: 10, PassRate: 90},
 	}
 	if err := repo.Reconcile(context.Background(), 7, "execution-1", observations, firstSeen); err != nil {
 		t.Fatalf("first Reconcile: %v", err)
@@ -148,9 +148,11 @@ func newIssueRepositoryTestDB(t *testing.T) *gorm.DB {
 	if err := db.Exec(`CREATE TABLE quality.issues (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		tenant_id INTEGER NOT NULL,
+		owner_domain_id INTEGER,
 		execution_id TEXT NOT NULL,
 		last_execution_id TEXT NOT NULL,
 			plan_id INTEGER NOT NULL,
+			target_key TEXT,
 			rule_key TEXT NOT NULL,
 		rule_type TEXT NOT NULL,
 		severity TEXT NOT NULL DEFAULT 'error',
@@ -170,7 +172,7 @@ func newIssueRepositoryTestDB(t *testing.T) *gorm.DB {
 		last_observed_at DATETIME,
 		created_at DATETIME,
 		updated_at DATETIME,
-			UNIQUE (tenant_id, plan_id, rule_key)
+			UNIQUE (tenant_id, plan_id, target_key, rule_key)
 	)`).Error; err != nil {
 		t.Fatalf("create quality issues table: %v", err)
 	}

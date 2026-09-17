@@ -44,8 +44,6 @@
       "type": "Type",
       "tags": "Tags",
       "tagsPlaceholder": "Press Enter to add tags",
-      "stewardId": "Steward User ID",
-      "stewardIdPlaceholder": "Enter the data steward user ID",
       "selectDomain": "Select Domain",
       "scopeLabel": "Scope",
       "selectScope": "Select scope",
@@ -64,7 +62,8 @@
       "unsavedConfirm": "Your changes have not been saved and will be lost if you leave. Leave this page?",
       "leave": "Leave",
       "continueEditing": "Continue editing",
-      "saveBeforeAction": "Save the current changes before changing status"
+      "saveBeforeAction": "Save the current changes before changing status",
+      "uncategorized": "Uncategorized"
     },
     "revision": {
       "number": "Revision",
@@ -101,7 +100,7 @@
       "elements": "Data Elements",
       "codeSets": "Code Sets",
       "units": "Units of Measure",
-      "metrics": "Metrics",
+      "metrics": "Metric Definitions",
       "documents": "Standard Documents",
       "dwLayers": "DW Layers",
       "entities": "Business Entities",
@@ -178,6 +177,58 @@
       "namePlaceholder": "e.g. Mobile Phone",
       "codeLabel": "Code",
       "codePlaceholder": "e.g. mobile_phone (lowercase snake_case)",
+      "dataTypes": {
+        "string": {
+          "label": "Text",
+          "example": "Names, phone numbers, descriptions",
+          "hint": "Use for text and identifiers. Store phone numbers and identity numbers as text to preserve leading zeros."
+        },
+        "int": {
+          "label": "Integer",
+          "example": "Counts, ages",
+          "hint": "Range: -2,147,483,648 to 2,147,483,647 (about ±2.1 billion). Choose Large integer for values outside this range."
+        },
+        "bigint": {
+          "label": "Large integer",
+          "example": "Very large quantities, accumulated counts",
+          "hint": "Range: approximately ±9.22 × 10¹⁸. Like Integer, it represents whole numbers exactly, with a larger range."
+        },
+        "float": {
+          "label": "Approximate decimal",
+          "example": "Temperature, measurements",
+          "hint": "May introduce small calculation errors. Use for measurements that allow error; choose Exact decimal for amounts and prices."
+        },
+        "decimal": {
+          "label": "Exact decimal",
+          "example": "Amounts, prices",
+          "hint": "Uses decimal precision to represent values such as 0.1 and 19.99 exactly. Suitable for amounts and prices; operations such as division may still require rounding."
+        },
+        "date": {
+          "label": "Date",
+          "example": "2026-09-17",
+          "hint": "Records the year, month and day, without a time of day."
+        },
+        "datetime": {
+          "label": "Date and time",
+          "example": "2026-09-17 09:30:00",
+          "hint": "Records both the date and time of day."
+        },
+        "bool": {
+          "label": "Yes / No",
+          "example": "True / false",
+          "hint": "Represents only yes or no. Use a code set if you also need states such as pending."
+        },
+        "json": {
+          "label": "Structured data",
+          "example": "Objects or arrays",
+          "hint": "Use for structured content containing multiple properties or lists."
+        }
+      },
+      "dataTypeExample": "Examples: {example}",
+      "lengthHint": "Optional; leave empty for no maximum character count",
+      "textFormatHint": "Optional regular expression, e.g. ^[0-9]+$",
+      "formatLabel": "Format Constraint",
+      "dateFormatHint": "Optional regular expression for date text",
       "dataTypeLabel": "Data Type",
       "dataTypeString": "String (string)",
       "dataTypeInt": "Integer (int)",
@@ -185,7 +236,7 @@
       "dataTypeDate": "DateTime (date)",
       "dataTypeBool": "Boolean (bool)",
       "dataTypeJson": "JSON (json)",
-      "lengthLabel": "Length",
+      "lengthLabel": "Maximum length",
       "precisionLabel": "Precision",
       "scaleLabel": "Scale",
       "nullableLabel": "Nullable",
@@ -194,7 +245,7 @@
       "codeSetLabel": "Code Set",
       "defaultValueLabel": "Default Value",
       "exampleValuesLabel": "Example Values",
-      "exampleValuesPlaceholder": "Press Enter to add",
+      "exampleValuesPlaceholder": "Type an example value and press Enter",
       "qualityRules": "Standard Constraint Rules",
       "compiledRuleHint": "Rules are generated on publication from this revision's not-null, length, format, range, and code-set constraints. Table uniqueness is defined in the logical model.",
       "rulesOnPublish": "This revision's rule snapshot will appear after publication",
@@ -309,7 +360,7 @@
     },
     "metric": {
       "recentVisitTitle": "Data Metric",
-      "title": "Metric Management",
+      "title": "Metric Definitions",
       "create": "New Metric",
       "createTitle": "New Metric",
       "detailTitle": "Metric Detail",

@@ -22,6 +22,11 @@
     </el-result>
 
     <el-descriptions v-else-if="execution" :column="2" border style="margin-top:20px">
+      <el-descriptions-item :label="t('quality.domain.snapshotOwner')" :span="2">{{ executionDomainLabel(execution.execution_config, t) }}</el-descriptions-item>
+      <el-descriptions-item :label="t('quality.targets.scope')" :span="2">{{ execution.execution_config?.target_key || t('quality.domain.unrecorded') }}</el-descriptions-item>
+      <el-descriptions-item :label="t('quality.targets.actual')" :span="2">
+        <div v-for="binding in execution.execution_config?.table_bindings || []" :key="binding.alias">{{ binding.alias }}: {{ binding.locator }}</div>
+      </el-descriptions-item>
       <el-descriptions-item :label="t('quality.execution.status')">
         <el-tag :type="statusType(execution.status)">{{ statusLabel(execution.status) }}</el-tag>
       </el-descriptions-item>
@@ -78,6 +83,7 @@ import { MonitorExecutionsButton, useConsolePageDescriptor } from '@common-ui'
 import { executionAPI } from '../api/quality'
 import { useI18n } from 'vue-i18n'
 import { executionFailureLabel } from '../utils/executionFailure'
+import { executionDomainLabel } from '../utils/domainOwnership'
 
 const { t } = useI18n()
 const route = useRoute()

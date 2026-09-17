@@ -410,6 +410,44 @@ func validateFieldPresentations(presentations []models.FieldPresentation, allowe
 		if err := validateStatePresentationRules(presentation.StateRules, field.Type); err != nil {
 			return err
 		}
+		if err := validateFieldValueLabels(presentation.ValueLabels, field.Type); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateFieldValueLabels(labels []models.FieldValueLabel, fieldType datatype.FieldType) error {
+	if len(labels) == 0 {
+		return nil
+	}
+	if len(labels) > 32 || (fieldType != datatype.FieldTypeString && fieldType != datatype.FieldTypeBool) {
+		return fmt.Errorf("%w: invalid value label field type or count", ErrInvalidComponentConfiguration)
+	}
+	seen := make(map[interface{}]bool, len(labels))
+	for _, item := range labels {
+		if strings.TrimSpace(item.Label) == "" || len([]rune(item.Label)) > 100 {
+			return fmt.Errorf("%w: invalid value label", ErrInvalidComponentConfiguration)
+		}
+		var value interface{}
+		if err := json.Unmarshal(item.Value, &value); err != nil {
+			return fmt.Errorf("%w: invalid value label value", ErrInvalidComponentConfiguration)
+		}
+		switch fieldType {
+		case datatype.FieldTypeString:
+			text, ok := value.(string)
+			if !ok || len([]rune(text)) > 1000 {
+				return fmt.Errorf("%w: value label requires a string", ErrInvalidComponentConfiguration)
+			}
+		case datatype.FieldTypeBool:
+			if _, ok := value.(bool); !ok {
+				return fmt.Errorf("%w: value label requires a boolean", ErrInvalidComponentConfiguration)
+			}
+		}
+		if seen[value] {
+			return fmt.Errorf("%w: duplicate value label", ErrInvalidComponentConfiguration)
+		}
+		seen[value] = true
 	}
 	return nil
 }

@@ -9,6 +9,8 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/addp/common/schema"
+
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
 	"github.com/addp/common/events"
@@ -46,7 +48,7 @@ func main() {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
 
-	if err := commonExecution.EnsureStore(db); err != nil {
+	if err := schema.Require(db, "common", schema.CommonVersion); err != nil {
 		log.Fatalf("Failed to ensure execution store: %v", err)
 	}
 
@@ -72,6 +74,7 @@ func main() {
 	}
 	systemClient := commonClient.NewSystemServiceClient(cfg.SystemURL, serviceTokenSource, nil)
 	modelClient := commonClient.NewModelClient(cfg.ModelURL, serviceTokenSource, nil)
+	qualityClient := commonClient.NewQualityClient(cfg.QualityURL, serviceTokenSource, nil)
 
 	// 创建 Repositories
 	domainRepo := repository.NewDomainRepository(db)
@@ -86,7 +89,7 @@ func main() {
 	tenantReferenceRepo := repository.NewTenantReferenceRepository(db)
 	referenceResolutionRepo := repository.NewReferenceResolutionRepository(db)
 	catalogResourceRepo := repository.NewCatalogResourceRepository(db)
-	standardReferenceDeletionSvc := service.NewStandardReferenceDeletionService(db, modelClient)
+	standardReferenceDeletionSvc := service.NewStandardReferenceDeletionService(db, modelClient, qualityClient)
 	standardReferenceDeletionSvc.RegisterLocalDelete("domain", func(tx *gorm.DB, resourceID, tenantID int64) error {
 		return domainRepo.DeleteTx(tx, resourceID, tenantID)
 	})

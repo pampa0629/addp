@@ -383,7 +383,6 @@
         "desc": "数仓分层、业务实体、逻辑表设计"
       },
       "quality": {
-        "rules": "质量规则",
         "label": "数据质量",
         "desc": "规则应用、质量检查、执行记录"
       },
@@ -472,8 +471,8 @@
         "elements": "数据元管理",
         "codeSets": "码值集管理",
         "units": "计量单位",
-        "metrics": "指标管理",
-        "recentMetrics": "数据指标管理",
+        "metrics": "指标定义",
+        "recentMetrics": "指标定义",
         "documents": "标准文档"
       },
       "modeling": {
@@ -488,9 +487,11 @@
       "quality": {
         "label": "数据质量",
         "issues": "问题工单",
+        "rules": "质量规则",
         "recentIssues": "质量问题工单",
         "plans": "质量检查方案",
-        "recentPlans": "质量检查方案"
+        "recentPlans": "质量检查方案",
+        "overview": "质量概览"
       },
       "security": {
         "label": "数据安全",

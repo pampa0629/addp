@@ -44,8 +44,6 @@
       "type": "类型",
       "tags": "标签",
       "tagsPlaceholder": "输入后回车添加标签",
-      "stewardId": "责任人用户 ID",
-      "stewardIdPlaceholder": "输入数据责任人的用户 ID",
       "selectDomain": "选择业务域",
       "scopeLabel": "适用范围",
       "selectScope": "选择适用范围",
@@ -64,7 +62,8 @@
       "unsavedConfirm": "当前修改尚未保存，离开后将丢失。确定离开吗？",
       "leave": "离开",
       "continueEditing": "继续编辑",
-      "saveBeforeAction": "请先保存当前修改，再执行状态操作"
+      "saveBeforeAction": "请先保存当前修改，再执行状态操作",
+      "uncategorized": "未分类"
     },
     "revision": {
       "number": "修订号",
@@ -101,7 +100,7 @@
       "elements": "数据元管理",
       "codeSets": "码值集管理",
       "units": "计量单位",
-      "metrics": "指标管理",
+      "metrics": "指标定义",
       "documents": "标准文档",
       "dwLayers": "数仓分层",
       "entities": "业务实体",
@@ -176,6 +175,57 @@
       "namePlaceholder": "如：手机号码",
       "codeLabel": "英文编码",
       "codePlaceholder": "如：mobile_phone（小写 snake_case）",
+      "dataTypes": {
+        "string": {
+          "label": "文本",
+          "example": "名称、电话号码、说明",
+          "hint": "用于文字和标识；电话号码、身份证号等请选择文本，可保留前导零。"
+        },
+        "int": {
+          "label": "整数",
+          "example": "数量、年龄",
+          "hint": "取值范围：-2,147,483,648～2,147,483,647（约正负21亿）；超出此范围请选择大整数。"
+        },
+        "bigint": {
+          "label": "大整数",
+          "example": "超大数量、累计次数",
+          "hint": "取值范围约为正负9.22×10¹⁸；与整数相比，范围更大，同样精确表示整数。"
+        },
+        "float": {
+          "label": "近似小数",
+          "example": "温度、测量值",
+          "hint": "可能产生微小计算误差，适合允许误差的测量值；金额、单价请选择精确小数。"
+        },
+        "decimal": {
+          "label": "精确小数",
+          "example": "金额、单价",
+          "hint": "按十进制精度表示，可准确保存0.1、19.99等数值；适合金额、单价，除法等运算仍可能需要舍入。"
+        },
+        "date": {
+          "label": "日期",
+          "example": "2026-09-17",
+          "hint": "只记录年月日，不包含时分秒。"
+        },
+        "datetime": {
+          "label": "日期时间",
+          "example": "2026-09-17 09:30:00",
+          "hint": "同时记录日期和具体时间。"
+        },
+        "bool": {
+          "label": "是否",
+          "example": "是 / 否",
+          "hint": "只表示是或否；如果还有待确认等状态，请使用码值集。"
+        },
+        "json": {
+          "label": "结构化数据",
+          "example": "对象或数组",
+          "hint": "用于包含多个属性或列表的结构化内容。"
+        }
+      },
+      "dataTypeExample": "例如：{example}",
+      "lengthHint": "可选；留空表示不限制最大字符数",
+      "textFormatHint": "可选；使用正则表达式，例如 ^[0-9]+$",
+      "dateFormatHint": "可选；用正则表达式约束日期文本",
       "dataTypeLabel": "数据类型",
       "dataTypeString": "字符串 (string)",
       "dataTypeInt": "整数 (int)",
@@ -183,7 +233,7 @@
       "dataTypeDate": "日期时间 (date)",
       "dataTypeBool": "布尔 (bool)",
       "dataTypeJson": "JSON (json)",
-      "lengthLabel": "长度",
+      "lengthLabel": "最大长度",
       "precisionLabel": "精度",
       "scaleLabel": "标度",
       "nullableLabel": "允许为空",
@@ -194,7 +244,7 @@
       "codeSetLabel": "关联码值集",
       "defaultValueLabel": "默认值",
       "exampleValuesLabel": "示例值",
-      "exampleValuesPlaceholder": "输入后回车添加",
+      "exampleValuesPlaceholder": "输入示例值，按回车添加",
       "qualityRules": "标准约束规则",
       "compiledRuleHint": "规则在发布时根据本修订的非空、长度、格式、范围和码值约束生成。表内唯一性在逻辑模型中定义。",
       "rulesOnPublish": "发布后显示本修订的规则快照",
@@ -309,7 +359,7 @@
     },
     "metric": {
       "recentVisitTitle": "数据指标",
-      "title": "指标管理",
+      "title": "指标定义",
       "create": "新增指标",
       "createTitle": "新增指标",
       "detailTitle": "指标详情",

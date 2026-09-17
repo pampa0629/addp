@@ -362,6 +362,7 @@ func TestBuildDocumentExtractionRejectsInvalidCandidateDataType(t *testing.T) {
 		candidateType string
 		dataType      string
 	}{
+		{name: "retired text type", candidateType: "element", dataType: "text"},
 		{name: "noncanonical element type", candidateType: "element", dataType: "date_or_datetime"},
 		{name: "unsupported code set type", candidateType: "code_set", dataType: "decimal"},
 		{name: "metric cannot own type", candidateType: "metric", dataType: "integer"},
@@ -650,7 +651,7 @@ func openDocumentServiceTestDB(t *testing.T) *gorm.DB {
 	}
 	statements := []string{
 		`CREATE TABLE standard.domains (id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, name TEXT NOT NULL, code TEXT NOT NULL)`,
-		`CREATE TABLE standard.documents (id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, scope_type TEXT NOT NULL, owner_domain_id INTEGER, code TEXT NOT NULL, doc_type TEXT NOT NULL, source_org TEXT, steward_id INTEGER, tags TEXT, draft_revision_id INTEGER, created_by INTEGER NOT NULL, updated_by INTEGER, created_at DATETIME, updated_at DATETIME, version INTEGER NOT NULL DEFAULT 1, lifecycle_state TEXT NOT NULL)`,
+		`CREATE TABLE standard.documents (id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, scope_type TEXT NOT NULL, owner_domain_id INTEGER, code TEXT NOT NULL, doc_type TEXT NOT NULL, source_org TEXT, tags TEXT, draft_revision_id INTEGER, created_by INTEGER NOT NULL, updated_by INTEGER, created_at DATETIME, updated_at DATETIME, version INTEGER NOT NULL DEFAULT 1, lifecycle_state TEXT NOT NULL)`,
 		`CREATE UNIQUE INDEX standard.uq_test_documents_tenant_code ON documents (tenant_id, code)`,
 		`CREATE TABLE standard.document_revisions (id INTEGER PRIMARY KEY AUTOINCREMENT, document_id INTEGER NOT NULL, revision_no INTEGER NOT NULL, status TEXT NOT NULL, name TEXT NOT NULL, version_label TEXT, publish_date DATETIME, description TEXT, file_key TEXT, file_name TEXT, file_size INTEGER, media_type TEXT, content_sha256 TEXT, change_summary TEXT NOT NULL, effective_from DATETIME, effective_to DATETIME, submitted_by INTEGER, submitted_at DATETIME, published_by INTEGER, published_at DATETIME, created_by INTEGER NOT NULL, updated_by INTEGER, created_at DATETIME, updated_at DATETIME)`,
 		`CREATE TABLE standard.document_extractions (id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, document_revision_id INTEGER NOT NULL, status TEXT NOT NULL, requested_by INTEGER NOT NULL, created_at DATETIME)`,

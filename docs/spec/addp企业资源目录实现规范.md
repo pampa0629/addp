@@ -565,15 +565,17 @@ Model `business_entity|logical_model` 与 Standard `metric` 的主业务域由�
 
 `GET /entries/facets` 接受同样的 `view`，以及可选 `primary_domain_id`、`accountable_department_id`、`entry_type` 上下文参数，并与 `/entries` 共用 Tenant、目录可见性和盘点权限过滤。响应是即时聚合的导航读模型，不是目录树事实：主业务域统计始终覆盖当前视图；责任部门统计受已选业务域约束；资源类型统计受已选业务域和责任部门约束；来源引擎统计受三项选择共同约束。Catalog 从权威库计算当前可见结果中实际出现的稳定 ID 及数量，再使用 `addp-catalog` Tenant Service Token 向 Standard / System 精确批量解析显示名、编码、类型和状态。它不返回 owner 未在当前可见 CatalogEntry 中被引用的对象，不授予额外 owner 管理权限，也不持久化 owner 完整列表。任一 owner 解析失败时，该分面返回 `unavailable` 状态，其他分面仍正常返回；不把动态解析变成 Catalog 启动或 Ready 依赖。
 
+主业务域分面通过 Standard 精确解析取得 `domain_path`，只用作当前响应的层级展示，不落库。父域没有可见条目时不为补树而增加可选分面，子域仍保留完整路径。业务域候选、导航与归属编辑统一复用共享 `BusinessDomainSelect`，每层缩进 16px，搜索或缺少父选项时显示完整路径，选中框显示名称。
+
 前端以可键盘操作的名称与数量选项呈现 Domain、Department 和 Entry Type 导航；Domain 或 Department 数量过多时在各自区域内部滚动，不把全量 DataItem 改造成节点树。Engine Instance 继续使用可搜索选择器。所有稳定 ID 只用于提交和恢复 URL；裸 ID 输入框与列表中的裸 Engine ID 列都不是正式交互路径。
 
 “待归类”只在资源盘点视图的 Domain 导航中作为治理动作出现，并复用 5.12 节 `primary_domain=missing` 的动态缺口口径，不伪造计数、不创建特殊 Domain，也不增加另一条列表 API。普通 Domain、Department 或 Entry Type 导航选择必须清除既有治理缺口状态，保证同一 URL 只有一种列表语义。
 
 责任部门导航在资源盘点视图提供“待分配部门”虚拟治理入口，唯一映射到 `coverage_dimension=accountable_department&coverage_state=missing`。它不是 System Department，不进入 Department 分面候选，也不使用复合责任完整度代替部门缺失。进入时保留已选 primary Domain，清除名称搜索、责任部门和下游 Entry Type，使治理人员可以处置某业务域内尚未分配组织责任的条目；缺口视图继续沿用 4.3 节的导航隐藏与退出规则。
 
-`GET /reference-candidates` 是 Catalog 编目交互的唯一跨 owner 候选入口，使用 `catalog.entry.update` Permission。请求固定包含 `reference_type=domain|glossary|element|department|user`，可选 `search`，并使用 `page`、`page_size` 分页；`page_size` 最大 50。响应使用标准分页结构，候选 `id` 使用字符串，显示字段只包含 `name`、可选 `code` 和 owner 当前 `status`。该接口只返回当前 Tenant 中允许建立新关联的对象，不返回完整专业 DTO。
+`GET /reference-candidates` 是 Catalog 编目交互的唯一跨 owner 候选入口，使用 `catalog.entry.update` Permission。请求固定包含 `reference_type=domain|glossary|element|department|user`，可选 `search`，并使用 `page`、`page_size` 分页；`page_size` 最大 50。响应使用标准分页结构，候选 `id` 使用字符串，显示字段包含 `name`、可选 `code` 和 owner 当前 `status`；业务域候选额外返回 `domain_path`（从根到当前域的名称数组）。该接口只返回当前 Tenant 中允许建立新关联的对象，不返回完整专业 DTO。
 
-候选事实仍由 owner 动态提供：Catalog 使用 `addp-catalog` Tenant Service Token 分别调用 Standard `GET /api/v1/standard/references/candidates` 和 System `GET /api/v1/system/runtime/catalog-references/candidates`。两个 owner 路由均按名称或编码搜索、稳定排序和分页，只允许 `addp-catalog`，并复用建立关联时已经要求的 owner read Permission。Catalog 不保存候选列表、不建立 owner 全表投影，也不把候选响应写入搜索索引；owner 不可达只使当前候选请求返回 `503 catalog_reference_validation_unavailable`，不影响 Catalog 启动、Ready、列表和已保存关联展示。
+候选事实仍由 owner 动态提供：Catalog 使用 `addp-catalog` Tenant Service Token 分别调用 Standard `GET /api/v1/standard/references/candidates` 和 System `GET /api/v1/system/runtime/catalog-references/candidates`。两个 owner 路由均按名称或编码搜索、稳定排序和分页；业务域还支持名称路径搜索，在父域优先的层级顺序上过滤和分页，分页边界不截断 `domain_path`，只允许 `addp-catalog`，并复用建立关联时已经要求的 owner read Permission。Catalog 不保存候选列表、不建立 owner 全表投影，也不把候选响应写入搜索索引；owner 不可达只使当前候选请求返回 `503 catalog_reference_validation_unavailable`，不影响 Catalog 启动、Ready、列表和已保存关联展示。
 
 推荐继任项与治理任务条目筛选属于 Catalog 自有对象选择，复用 `/entries` 的权限感知名称搜索，不另建候选事实源。编辑器加载既有关联时可以使用聚合中已保存的 `observed_snapshot` 作为“最近确认的显示摘要”，但不得把裸 ID 当作名称回退，也不得在动态候选失败时恢复手工 ID 输入。技术来源详情中的 fingerprint、Meta Item ID 等只可出现在明确的技术溯源区域，不能成为业务编目主交互。
 

@@ -83,6 +83,7 @@ func (h *CodeSetHandler) ListCodeSets(c *gin.Context) {
 }
 
 // CreateCodeSet godoc
+// @Description 首个草稿说明由后端按请求语言记录为“初始创建”，请求不包含 change_summary。 | The server records a localized Initial creation summary; the request does not include change_summary.
 // @Summary 创建码值集及首个草稿修订 | Create code set with initial draft revision
 // @Tags Standard
 // @Accept json
@@ -96,10 +97,10 @@ func (h *CodeSetHandler) ListCodeSets(c *gin.Context) {
 // @Security BearerAuth
 func (h *CodeSetHandler) CreateCodeSet(c *gin.Context) {
 	var req models.CreateCodeSetRequest
-	if !bindJSON(c, &req) {
+	if !bindStandardDefinition(c, &req) {
 		return
 	}
-	result, err := h.svc.CreateCodeSet(getTenantID(c), getUserID(c), &req)
+	result, err := h.svc.CreateCodeSet(getTenantID(c), getUserID(c), &req, commoni18n.T(c, sysi18n.MsgRevisionInitialCreation))
 	if err != nil {
 		respondError(c, http.StatusBadRequest, err)
 		return
@@ -153,7 +154,7 @@ func (h *CodeSetHandler) UpdateCodeSet(c *gin.Context) {
 		return
 	}
 	var req models.UpdateCodeSetRequest
-	if !bindJSON(c, &req) {
+	if !bindStandardDefinition(c, &req) {
 		return
 	}
 	result, err := h.svc.UpdateCodeSet(id, getTenantID(c), getUserID(c), &req)

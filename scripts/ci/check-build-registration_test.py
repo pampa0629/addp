@@ -51,6 +51,7 @@ class BuildRegistrationTest(unittest.TestCase):
         self._write("scripts/ci/check-release-eligibility.py", "print('eligible')\n")
         self._write("scripts/ci/update-cli-version.py", "print('updated')\n")
         self._write("scripts/ci/update-cli-version_test.py", "print('tested')\n")
+        self._write("scripts/test/dev-lifecycle-and-build.sh", "#!/bin/bash\n")
         self._write(
             "docker-compose.yml",
             "services:\n  sample:\n"
@@ -63,7 +64,9 @@ class BuildRegistrationTest(unittest.TestCase):
             "select-image-services:\n\t@python3 scripts/ci/select-image-services.py\n\n"
             "prepare-cli-release:\n\t@python3 scripts/ci/update-cli-version.py\n\n"
             "check-cli-release:\n\t@python3 scripts/ci/check-release-eligibility.py --pre-tag\n\n"
-            "test-platform:\n\t@python3 scripts/ci/update-cli-version_test.py\n\n"
+            "test-platform:\n\t@python3 scripts/ci/update-cli-version_test.py\n"
+            "\t@$(MAKE) test-dev-lifecycle\n\n"
+            "test-dev-lifecycle:\n\t@bash scripts/test/dev-lifecycle-and-build.sh\n\n"
             "test-go:\n\t@echo $${ADDP_CI_SUMMARY_FILE:-}; GOWORK=off go mod tidy -diff\n",
         )
         self._write(
@@ -172,8 +175,8 @@ class BuildRegistrationTest(unittest.TestCase):
         makefile = self.repository / "Makefile"
         makefile.write_text(
             makefile.read_text(encoding="utf-8").replace(
-                "test-platform:\n\t@python3 scripts/ci/update-cli-version_test.py\n\n",
-                "test-platform:\n\t@true\n\n",
+                "\t@python3 scripts/ci/update-cli-version_test.py\n",
+                "",
             ),
             encoding="utf-8",
         )
@@ -181,6 +184,19 @@ class BuildRegistrationTest(unittest.TestCase):
             "Makefile test-platform must run the CLI version updater tests",
             MODULE.validate_registration(self.repository),
         )
+
+    def test_rejects_missing_lifecycle_gate_registration(self) -> None:
+        makefile = self.repository / "Makefile"
+        original = makefile.read_text(encoding="utf-8")
+        for removed, expected in (
+            ("\t@$(MAKE) test-dev-lifecycle\n",
+             "Makefile test-platform must run test-dev-lifecycle"),
+            ("\t@bash scripts/test/dev-lifecycle-and-build.sh\n",
+             "Makefile test-dev-lifecycle must run the dev lifecycle tests"),
+        ):
+            with self.subTest(removed=removed):
+                makefile.write_text(original.replace(removed, ""), encoding="utf-8")
+                self.assertIn(expected, MODULE.validate_registration(self.repository))
 
     def test_rejects_shallow_product_checkout(self) -> None:
         workflow = self.repository / ".github/workflows/platform-ci.yml"

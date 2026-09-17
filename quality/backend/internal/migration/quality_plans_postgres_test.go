@@ -147,6 +147,34 @@ func TestIntegrationPostgresQualityPlanMigration(t *testing.T) {
 			if err := tx.Raw(`SELECT count(*) FROM information_schema.columns WHERE table_schema='quality' AND table_name='plans' AND column_name='rules'`).Scan(&count).Error; err != nil || count != 0 {
 				t.Fatalf("old embedded column remains: %d %v", count, err)
 			}
+			exec(catalog.Files[11].Contents)
+			exec(`UPDATE quality.plans SET owner_domain_id=42 WHERE tenant_id=7 AND id=8`)
+			var before models.Issue
+			if err := tx.Select("id, owner_domain_id, updated_at, last_execution_id").First(&before).Error; err != nil {
+				t.Fatal(err)
+			}
+			// The forward-only calibration must be idempotent and preserve audit facts.
+			exec(catalog.Files[12].Contents)
+			exec(catalog.Files[12].Contents)
+			var after models.Issue
+			if err := tx.Select("id, owner_domain_id, updated_at, last_execution_id").First(&after).Error; err != nil {
+				t.Fatal(err)
+			}
+			if after.OwnerDomainID == nil || *after.OwnerDomainID != 42 || !after.UpdatedAt.Equal(before.UpdatedAt) || after.LastExecutionID != before.LastExecutionID {
+				t.Fatalf("issue ownership calibration lost audit facts: %+v", after)
+			}
+			if err := tx.Where("execution_id=?", historyID).First(&history).Error; err != nil {
+				t.Fatal(err)
+			}
+			if _, recorded := history.ExecutionConfig["owner_domain_id"]; recorded {
+				t.Fatal("historical ownership was fabricated")
+			}
+			exec(`UPDATE quality.plans SET owner_domain_id=NULL WHERE tenant_id=7 AND id=8`)
+			exec(catalog.Files[12].Contents)
+			after = models.Issue{}
+			if err := tx.Select("id, owner_domain_id, updated_at, last_execution_id").First(&after).Error; err != nil || after.OwnerDomainID != nil {
+				t.Fatalf("public calibration: %+v %v", after, err)
+			}
 		})
 	}
 }

@@ -13,6 +13,10 @@ dsn_without_query=${SECURITY_POSTGRES_TEST_DSN%%\?*}
 database=${dsn_without_query##*/}
 case "$database" in addp_test|*disposable*) ;; *) echo "SECURITY_POSTGRES_TEST_DSN must use addp_test or an isolated disposable database" >&2; exit 1 ;; esac
 
+# Shared startup ownership/locking is part of the existing PostgreSQL gate.
+(cd "$ROOT_DIR/common" && SCHEMA_POSTGRES_TEST_DSN="$SECURITY_POSTGRES_TEST_DSN" go test ./schema -run '^TestPostgresStartupSchemaOwnership$' -count=1 -v) 2>&1 | tee "$WORK_DIR/startup-schema.log"
+if grep -q -- '--- SKIP:' "$WORK_DIR/startup-schema.log"; then exit 1; fi
+
 cd "$ROOT_DIR/security/backend"
 go test ./internal/repository -run '^TestSecurityMigrateAgainstPostgres$' -count=1 -v 2>&1 | tee "$WORK_DIR/repository.log"
 if grep -q -- '--- SKIP:' "$WORK_DIR/repository.log"; then

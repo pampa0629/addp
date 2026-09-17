@@ -70,27 +70,8 @@ func (s *DomainService) ListDomainsAsTree(tenantID int64) ([]*DomainTree, error)
 		return nil, err
 	}
 
-	// 转为树形结构
-	nodeMap := make(map[int64]*DomainTree)
-	for i := range domains {
-		nodeMap[domains[i].ID] = &DomainTree{Domain: domains[i]}
-	}
-
-	var roots []*DomainTree
-	for _, node := range nodeMap {
-		if node.ParentID == nil {
-			roots = append(roots, node)
-		} else {
-			if parent, ok := nodeMap[*node.ParentID]; ok {
-				parent.Children = append(parent.Children, node)
-			} else {
-				// 父节点不在当前租户，作为根节点处理
-				roots = append(roots, node)
-			}
-		}
-	}
-
-	return roots, nil
+	tree, _, err := buildDomainHierarchy(domains)
+	return tree, err
 }
 
 func (s *DomainService) UpdateDomain(id, tenantID, userID int64, req *models.UpdateDomainRequest) (*models.Domain, error) {

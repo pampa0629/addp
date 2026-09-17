@@ -7,9 +7,36 @@ import (
 	"time"
 
 	"github.com/addp/catalog/internal/models"
+	commonClient "github.com/addp/common/client"
 	commonModels "github.com/addp/common/models"
 	"github.com/google/uuid"
 )
+
+type hierarchyFacetResolver struct{}
+
+func (hierarchyFacetResolver) ResolveStandardReferences(_ context.Context, _ int64, references []commonClient.StandardReference) ([]commonClient.StandardReferenceResolution, error) {
+	results := make([]commonClient.StandardReferenceResolution, 0, len(references))
+	for _, ref := range references {
+		results = append(results, commonClient.StandardReferenceResolution{ObjectType: "domain", ID: ref.ID, Found: true, Referenceable: true, Name: "VIP", DomainPath: []string{"Customer", "VIP"}})
+	}
+	return results, nil
+}
+
+func TestDomainFacetPreservesPathWithoutAddingUnreferencedParents(t *testing.T) {
+	svc := NewEntryService(nil, hierarchyFacetResolver{}, nil)
+	facet := svc.resolveDomainFacet(context.Background(), 7, map[int64]int64{42: 3})
+	if facet.Status != FacetStatusCurrent || len(facet.Options) != 1 || facet.Options[0].ID != "42" || len(facet.Options[0].DomainPath) != 2 || facet.Options[0].Count != 3 {
+		t.Fatalf("facet=%#v", facet)
+	}
+	ordered := resolvedFacet([]EntryFacetOption{
+		{ID: "3", Name: "VIP", DomainPath: []string{"Customer", "VIP"}},
+		{ID: "2", Name: "Outdoor", DomainPath: []string{"Outdoor"}},
+		{ID: "1", Name: "Customer", DomainPath: []string{"Customer"}},
+	})
+	if ordered.Options[0].ID != "1" || ordered.Options[1].ID != "3" || ordered.Options[2].ID != "2" {
+		t.Fatalf("order=%#v", ordered.Options)
+	}
+}
 
 func TestEntryListSeparatesDefaultGovernanceAndExplicitInventoryViews(t *testing.T) {
 	db := openCatalogServiceTestDB(t)

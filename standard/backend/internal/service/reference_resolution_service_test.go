@@ -107,8 +107,8 @@ type fakeReferenceResolutionRepository struct {
 	elementCodes     []string
 }
 
-func (r *fakeReferenceResolutionRepository) ListDomainCandidates(context.Context, int64, string, int, int) ([]models.Domain, int64, error) {
-	return r.domains, int64(len(r.domains)), nil
+func (r *fakeReferenceResolutionRepository) ListDomains(context.Context, int64) ([]models.Domain, error) {
+	return append(append([]models.Domain(nil), r.domains...), r.domainsByCode...), nil
 }
 
 func (r *fakeReferenceResolutionRepository) ListGlossaryCandidates(context.Context, int64, string, int, int) ([]models.PublishedGlossaryReference, int64, error) {

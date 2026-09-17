@@ -311,6 +311,8 @@ evals/agent-scenarios/
 6. reference 和 script 只在需要时加载。
 7. 至少有一个正向评测和一个关键反模式评测。
 
+根目录 `skills/` 的正文、reference 和运行时配置变更由共享影响矩阵映射到 Agent；本地 `make test-changed` 与 CI 的 Agent 模块选择器消费同一映射，运行现有 `make test-agent-eval` 离线门禁。映射及 CI 选择行为由 `make test-platform` 验证。仅修改 `AGENTS.md` 或本文等说明文档不触发 Agent Runtime 门禁。本机个人 Skills 不属于仓库 CI 的检查范围，修改后需单独验证。
+
 ## 十二、相关文档
 
 - `docs/concepts/addp术语表.md`

@@ -115,7 +115,7 @@ func (r *CodeSetRepository) List(tenantID int64, opts ListCodeSetOptions) ([]mod
 
 func (r *CodeSetRepository) UpdateIdentity(codeSet *models.CodeSet, expectedVersion int64) error {
 	if err := updateVersioned(r.db, codeSet, codeSet.ID, codeSet.TenantID, expectedVersion, map[string]interface{}{
-		"scope_type": codeSet.ScopeType, "owner_domain_id": codeSet.OwnerDomainID, "steward_id": codeSet.StewardID, "tags": codeSet.Tags, "updated_by": codeSet.UpdatedBy,
+		"scope_type": codeSet.ScopeType, "owner_domain_id": codeSet.OwnerDomainID, "tags": codeSet.Tags, "updated_by": codeSet.UpdatedBy,
 	}); err != nil {
 		return err
 	}

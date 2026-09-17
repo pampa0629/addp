@@ -22,9 +22,10 @@ func NewIssueRepository(db *gorm.DB) *IssueRepository {
 	return &IssueRepository{db: db}
 }
 
-func (r *IssueRepository) List(tenantID int64, status string, engineID int64, page, pageSize int) ([]models.Issue, int64, error) {
+func (r *IssueRepository) List(tenantID int64, status string, engineID int64, ownerDomainID *int64, page, pageSize int) ([]models.Issue, int64, error) {
 	var items []models.Issue
 	q := r.db.Where("tenant_id = ?", tenantID)
+	q = filterOwnerDomain(q, ownerDomainID)
 	if status != "" {
 		q = q.Where("status = ?", status)
 	}
@@ -82,17 +83,20 @@ func (r *IssueRepository) BatchCreate(items []models.Issue) error {
 }
 
 // Reconcile applies one complete execution observation to the current issue
-// projection. It is idempotent on tenant + plan_id + rule_key.
+// projection. Identity includes the complete actual target scope.
 func (r *IssueRepository) Reconcile(ctx context.Context, tenantID int64, executionID string, observations []models.IssueObservation, observedAt time.Time) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		for _, observation := range observations {
+			if len(observation.TargetKey) != 64 {
+				return fmt.Errorf("issue observation requires a target scope")
+			}
 			if observation.Passed {
 				if err := tx.Model(&models.Issue{}).
-					Where("tenant_id = ? AND plan_id = ? AND rule_key = ? AND status = ?", tenantID, observation.PlanID, observation.RuleKey, "open").
+					Where("tenant_id = ? AND plan_id = ? AND target_key = ? AND rule_key = ? AND status = ?", tenantID, observation.PlanID, observation.TargetKey, observation.RuleKey, "open").
 					Updates(map[string]interface{}{
 						"status": "resolved", "resolved_at": observedAt, "last_execution_id": executionID,
 						"last_observed_at": observedAt, "failed_count": observation.FailedCount, "total_count": observation.TotalCount,
-						"pass_rate": observation.PassRate,
+						"pass_rate": observation.PassRate, "owner_domain_id": observation.OwnerDomainID,
 					}).Error; err != nil {
 					return err
 				}
@@ -103,15 +107,17 @@ func (r *IssueRepository) Reconcile(ctx context.Context, tenantID int64, executi
 			if err != nil {
 				return err
 			}
-			issue := models.Issue{TenantID: tenantID, ExecutionID: executionID, LastExecutionID: executionID, PlanID: observation.PlanID, RuleKey: observation.RuleKey, RuleType: observation.RuleType, Severity: observation.Severity, Message: observation.Message, ColumnName: observation.ColumnName, Table: observation.Table, SchemaName: observation.SchemaName, EngineID: observation.EngineID, FailedCount: observation.FailedCount, TotalCount: observation.TotalCount, PassRate: observation.PassRate, Detail: detail, Status: "open", LastObservedAt: &observedAt}
+			issue := models.Issue{TenantID: tenantID, ExecutionID: executionID, LastExecutionID: executionID, PlanID: observation.PlanID, OwnerDomainID: observation.OwnerDomainID, RuleKey: observation.RuleKey, RuleType: observation.RuleType, Severity: observation.Severity, Message: observation.Message, ColumnName: observation.ColumnName, Table: observation.Table, SchemaName: observation.SchemaName, EngineID: observation.EngineID, FailedCount: observation.FailedCount, TotalCount: observation.TotalCount, PassRate: observation.PassRate, Detail: detail, Status: "open", LastObservedAt: &observedAt}
+			issue.TargetKey = &observation.TargetKey
 			if err := tx.Clauses(clause.OnConflict{
-				Columns: []clause.Column{{Name: "tenant_id"}, {Name: "plan_id"}, {Name: "rule_key"}},
+				Columns: []clause.Column{{Name: "tenant_id"}, {Name: "plan_id"}, {Name: "target_key"}, {Name: "rule_key"}},
 				DoUpdates: clause.Assignments(map[string]interface{}{
 					"last_execution_id": executionID, "rule_type": observation.RuleType,
 					"severity": observation.Severity, "message": observation.Message, "column_name": observation.ColumnName,
 					"table_name": observation.Table, "schema_name": observation.SchemaName, "engine_id": observation.EngineID,
 					"failed_count": observation.FailedCount, "total_count": observation.TotalCount, "pass_rate": observation.PassRate,
 					"detail": detail, "status": "open", "resolved_at": nil, "resolved_by": nil, "resolution_note": "",
+					"owner_domain_id":  observation.OwnerDomainID,
 					"last_observed_at": observedAt, "updated_at": observedAt,
 				}),
 			}).Create(&issue).Error; err != nil {

@@ -95,6 +95,10 @@ def affected_modules(repository: Path, files: list[str]) -> list[str]:
     }
     roots = {path.split("/", 1)[0] for path in files if "/" in path}
 
+    # Agent loads platform Skill bodies, references, and runtime configuration from skills/.
+    if "skills" in roots:
+        affected.add("agent")
+
     # The Quality PostgreSQL gate includes Orchestrator's Quality-plan reference migration.
     if "orchestrator" in roots:
         affected.add("quality")

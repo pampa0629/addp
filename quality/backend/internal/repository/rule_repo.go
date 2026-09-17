@@ -1,14 +1,17 @@
 package repository
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	commonAPI "github.com/addp/common/api"
 	commonRepository "github.com/addp/common/repository"
 	"github.com/addp/quality/internal/models"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"reflect"
 	"sort"
 	"time"
 )
@@ -19,9 +22,10 @@ var ErrVersionConflict = fmt.Errorf("%w: resource version changed", commonAPI.Er
 
 func NewRuleRepository(db *gorm.DB) *RuleRepository { return &RuleRepository{db: db} }
 
-func (r *RuleRepository) List(ctx context.Context, tenantID int64, search string, page, size int) ([]models.QualityRule, int64, error) {
+func (r *RuleRepository) List(ctx context.Context, tenantID int64, search string, ownerDomainID *int64, page, size int) ([]models.QualityRule, int64, error) {
 	page, size = normalizePage(page, size)
 	q := r.db.WithContext(ctx).Model(&models.QualityRule{}).Where("tenant_id=?", tenantID)
+	q = filterOwnerDomain(q, ownerDomainID)
 	if search != "" {
 		q = q.Where("LOWER(name) LIKE LOWER(?) OR LOWER(code) LIKE LOWER(?)", "%"+search+"%", "%"+search+"%")
 	}
@@ -55,6 +59,9 @@ func saveRuleRevision(tx *gorm.DB, rule *models.QualityRule) error {
 }
 func (r *RuleRepository) Create(ctx context.Context, rule *models.QualityRule) error {
 	return commonRepository.WrapDBError(r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := lockOwnedDomain(tx, rule.TenantID, rule.OwnerDomainID); err != nil {
+			return err
+		}
 		rule.Version = 1
 		rule.RevisionNo = 1
 		if err := tx.Create(rule).Error; err != nil {
@@ -75,20 +82,59 @@ func (r *RuleRepository) Replace(ctx context.Context, rule *models.QualityRule, 
 		if current.Code != rule.Code {
 			return fmt.Errorf("%w: rule code is immutable", commonAPI.ErrBadRequest)
 		}
+		if err := lockOwnedDomain(tx, rule.TenantID, rule.OwnerDomainID); err != nil {
+			return err
+		}
+		contentChanged, err := ruleContentChanged(current.RuleContent, rule.RuleContent)
+		if err != nil {
+			return err
+		}
 		current.RuleContent = rule.RuleContent
+		current.OwnerDomainID = rule.OwnerDomainID
 		current.Version++
-		current.RevisionNo++
+		if contentChanged {
+			current.RevisionNo++
+		}
 		current.UpdatedAt = time.Now().UTC()
 		current.UpdatedBy = rule.UpdatedBy
 		if err := tx.Save(&current).Error; err != nil {
 			return err
 		}
-		if err := saveRuleRevision(tx, &current); err != nil {
-			return err
+		if contentChanged {
+			if err := saveRuleRevision(tx, &current); err != nil {
+				return err
+			}
 		}
 		*rule = current
 		return nil
 	}))
+}
+
+func ruleContentChanged(before, after models.RuleContent) (bool, error) {
+	var values [2]interface{}
+	for index, raw := range []json.RawMessage{before.Params, after.Params} {
+		decoder := json.NewDecoder(bytes.NewReader(raw))
+		decoder.UseNumber()
+		if err := decoder.Decode(&values[index]); err != nil {
+			return false, err
+		}
+	}
+	before.Params, after.Params = nil, nil
+	return !reflect.DeepEqual(before, after) || !reflect.DeepEqual(values[0], values[1]), nil
+}
+
+func lockOwnedDomain(tx *gorm.DB, tenantID int64, domainID *int64) error {
+	if domainID == nil {
+		return nil
+	}
+	guard, err := commonRepository.LockReferenceGuard(tx, "quality.standard_reference_guards", tenantID, "domain", *domainID)
+	if err != nil {
+		return err
+	}
+	if guard.State != models.StandardReferenceGuardOpen {
+		return fmt.Errorf("%w: standard domain is not writable", commonAPI.ErrConflict)
+	}
+	return nil
 }
 func (r *RuleRepository) Delete(ctx context.Context, tenantID, id, version int64) error {
 	return commonRepository.WrapDBError(r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {

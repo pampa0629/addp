@@ -215,6 +215,49 @@ func TestRejectsTableOnlyWidthInChartAndMapFieldPresentations(t *testing.T) {
 	}
 }
 
+func TestValidateFieldValueLabels(t *testing.T) {
+	label := func(raw string) models.FieldValueLabel {
+		return models.FieldValueLabel{Value: json.RawMessage(raw), Label: "Name"}
+	}
+	for _, tc := range []struct {
+		name      string
+		fieldType datatype.FieldType
+		labels    []models.FieldValueLabel
+		valid     bool
+	}{
+		{"exact strings", datatype.FieldTypeString, []models.FieldValueLabel{label(`"a"`), label(`"A"`), label(`" a"`), label(`""`)}, true},
+		{"booleans", datatype.FieldTypeBool, []models.FieldValueLabel{label(`true`), label(`false`)}, true},
+		{"escaped duplicate", datatype.FieldTypeString, []models.FieldValueLabel{label(`"a"`), label(`"\u0061"`)}, false},
+		{"boolean duplicate", datatype.FieldTypeBool, []models.FieldValueLabel{label(`true`), label(`true`)}, false},
+		{"null", datatype.FieldTypeString, []models.FieldValueLabel{label(`null`)}, false},
+		{"structured", datatype.FieldTypeString, []models.FieldValueLabel{label(`{}`)}, false},
+		{"wrong type", datatype.FieldTypeBool, []models.FieldValueLabel{label(`"true"`)}, false},
+		{"numeric field", datatype.FieldTypeInt, []models.FieldValueLabel{label(`1`)}, false},
+		{"blank label", datatype.FieldTypeString, []models.FieldValueLabel{{Value: json.RawMessage(`"a"`), Label: " "}}, false},
+		{"too many", datatype.FieldTypeString, make([]models.FieldValueLabel, 33), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := validateFieldValueLabels(tc.labels, tc.fieldType); (err == nil) != tc.valid {
+				t.Fatalf("valid=%v, err=%v", tc.valid, err)
+			}
+		})
+	}
+	descriptor := testDescriptor(false)
+	component := models.ComponentConfiguration{
+		Name: "Orders", ServiceRef: &models.ServiceReference{ServiceType: "query", ServiceID: 23},
+		QueryTemplate:  models.ComponentQueryTemplate{Select: []string{"id"}, PageLimit: 50, Format: "json"},
+		RendererType:   models.RendererTypeTable,
+		RendererConfig: json.RawMessage(`{"columns":["id"],"field_presentations":[{"field":"id","label":"Order","value_labels":[{"value":"a","label":"Alpha"}]}]}`),
+	}
+	if err := validateComponentConfiguration(component, descriptor); err != nil {
+		t.Fatal(err)
+	}
+	component.RendererConfig = json.RawMessage(`{"columns":["id"],"field_presentations":[{"field":"id","label":"Order","value_labels":[{"value":1,"label":"Alpha"}]}]}`)
+	if err := validateComponentConfiguration(component, descriptor); err == nil {
+		t.Fatal("typed labels must be validated through renderer configuration")
+	}
+}
+
 func TestValidateStatePresentationRuleBoundaries(t *testing.T) {
 	validNumeric := []models.StatePresentationRule{
 		{Operator: "lt", Operand: json.RawMessage(`60`), Label: "Low", Tone: "danger"},

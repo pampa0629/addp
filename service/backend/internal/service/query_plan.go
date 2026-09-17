@@ -361,6 +361,17 @@ func compileFilterNode(filter *models.QueryFilter, service *models.QueryService,
 		operators := map[string]string{"eq": "=", "ne": "<>", "lt": "<", "lte": "<=", "gt": ">", "gte": ">="}
 		*args = append(*args, value)
 		return "(" + column + " " + operators[op] + " " + dialect.Placeholder(len(*args)) + ")", nil
+	case "contains":
+		value, ok := filter.Value.(string)
+		if !ok || !filterComparisonAllowed(field.Type, op) {
+			return "", ErrInvalidStructuredQuery
+		}
+		renderer := textPredicateDialect(engineType)
+		if renderer == nil {
+			return "", fmt.Errorf("%w: text contains is unsupported", ErrInvalidStructuredQuery)
+		}
+		*args = append(*args, value)
+		return renderer.Contains(column, dialect.Placeholder(len(*args))), nil
 	case "in":
 		values, ok := interfaceSlice(filter.Value)
 		if !ok || len(values) == 0 || len(values) > 1000 {
@@ -391,6 +402,9 @@ func compileFilterNode(filter *models.QueryFilter, service *models.QueryService,
 }
 
 func filterComparisonAllowed(fieldType datatype.FieldType, operator string) bool {
+	if operator == "contains" {
+		return fieldType == datatype.FieldTypeString
+	}
 	if !isStableOrderFieldType(fieldType) {
 		return false
 	}
@@ -659,4 +673,17 @@ func normalizeCursorValue(value interface{}, fieldType datatype.FieldType) (inte
 		return number.Float64()
 	}
 	return number.String(), nil
+}
+
+// The registered engine owns native syntax; Service only consumes the capability.
+func textPredicateDialect(engineType string) plugin.TextPredicateDialect {
+	registered, err := plugin.Get(engineType)
+	if err != nil {
+		return nil
+	}
+	provider, ok := registered.(plugin.TextPredicateSQLProvider)
+	if !ok {
+		return nil
+	}
+	return provider.TextPredicateDialect()
 }

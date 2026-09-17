@@ -20,11 +20,12 @@ const (
 )
 
 type ReferenceCandidate struct {
-	ReferenceType string `json:"reference_type" enums:"domain,glossary,element,department,user"`
-	ID            string `json:"id"`
-	Name          string `json:"name"`
-	Code          string `json:"code,omitempty"`
-	Status        string `json:"status"`
+	DomainPath    []string `json:"domain_path,omitempty"`
+	ReferenceType string   `json:"reference_type" enums:"domain,glossary,element,department,user"`
+	ID            string   `json:"id"`
+	Name          string   `json:"name"`
+	Code          string   `json:"code,omitempty"`
+	Status        string   `json:"status"`
 }
 
 type ReferenceCandidateList struct {
@@ -59,7 +60,7 @@ func (r *standardClientCandidateResolver) ListReferenceCandidates(
 	for _, item := range response.Data {
 		result.Data = append(result.Data, ReferenceCandidate{
 			ReferenceType: item.ObjectType, ID: strconv.FormatInt(item.ID, 10),
-			Name: item.Name, Code: item.Code, Status: item.Status,
+			Name: item.Name, Code: item.Code, Status: item.Status, DomainPath: item.DomainPath,
 		})
 	}
 	return result, nil

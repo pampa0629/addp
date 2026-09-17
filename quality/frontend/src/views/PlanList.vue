@@ -22,6 +22,12 @@
       </div>
     </div>
 
+    <el-form inline>
+      <el-form-item :label="t('quality.domain.owner')">
+        <DomainOwnershipSelect :model-value="ownerDomainID" filter :can-read="can('standard.domain.read')"
+          style="width: 280px" @loaded="domains = $event" @update:model-value="changeDomain" />
+      </el-form-item>
+    </el-form>
     <el-alert
       v-if="loadError"
       :title="loadError"
@@ -42,6 +48,9 @@
       border
       :empty-text="t('quality.plan.empty')"
     >
+      <el-table-column :label="t('quality.domain.owner')" min-width="180">
+        <template #default="{ row }">{{ domainOwnershipLabel(row.owner_domain_id, t, domains) }}</template>
+      </el-table-column>
       <el-table-column
         prop="name"
         :label="t('quality.plan.name')"
@@ -82,10 +91,10 @@
         <template #default="{ row }">
           <el-button
             v-if="can('quality.plan.execute')"
-            :disabled="isActive(row) || runningID === row.id"
+            :disabled="runningID !== null"
             link
             type="primary"
-            @click="runPlan(row)"
+            @click="openRun(row)"
             >{{ t("quality.plan.run") }}</el-button
           >
           <el-button
@@ -154,10 +163,20 @@
         <el-form-item :label="t('quality.plan.description')">
           <el-input v-model="form.description" type="textarea" :rows="2" />
         </el-form-item>
-        <el-form-item :label="t('quality.plan.addTable')">
+        <el-form-item :label="t('quality.domain.owner')">
+          <DomainOwnershipSelect v-model="form.owner_domain_id" :can-read="can('standard.domain.read')" />
+        </el-form-item>
+        <el-alert :title="t('quality.targets.definitionHelp')" type="info" :closable="false" />
+        <div class="section-heading">
+          <el-button @click="bindingToEdit = null; tablePickerVisible = !tablePickerVisible">{{ t('quality.plan.addTable') }}</el-button>
+          <el-button @click="addDeferredTable">{{ t('quality.targets.addInput') }}</el-button>
+        </div>
+        <el-form-item v-if="tablePickerVisible" :label="t('quality.plan.addTable')">
           <ResourceTreePicker
             api-base-url="/api/v1/meta"
-            mode="any"
+            mode="item"
+            :key="bindingToEdit?.alias || 'new'"
+            :initial-locator="bindingToEdit?.locator || ''"
             :engine-families="['tabular']"
             :engine-filter="(engine) => engine.engine_type === 'postgresql'"
             :selectable-filter="(node) => node?.type === 'table'"
@@ -177,9 +196,14 @@
               :label="t('quality.plan.logicalTable')"
               min-width="260"
             >
-              <template #default="{ row }">{{
-                formatLocatorDisplayPath(row.locator)
-              }}</template>
+              <template #default="{ row }">
+                <template v-if="row.locator">
+                  <span>{{ t('quality.targets.engine', { id: parseLocator(row.locator).engineId }) }} · {{ formatLocatorDisplayPath(row.locator) }}</span>
+                  <el-button link @click="row.locator = ''">{{ t('quality.targets.defer') }}</el-button>
+                </template>
+                <el-tag v-else type="info">{{ t('quality.targets.requiredAtRun') }}</el-tag>
+                <el-button link @click="bindingToEdit = row; tablePickerVisible = true">{{ t('quality.targets.selectDefault') }}</el-button>
+              </template>
             </el-table-column>
             <el-table-column :label="t('quality.plan.alias')" min-width="220">
               <template #default="{ row }"
@@ -332,7 +356,7 @@
                 "
                 :label="t('quality.plan.column')"
               >
-                <el-select v-model="item.bindings.column" filterable>
+                <el-select v-model="item.bindings.column" filterable :allow-create="!aliasBinding(item.bindings.table)?.locator" default-first-option>
                   <el-option
                     v-for="field in fieldsForAlias(item.bindings.table)"
                     :key="field.column_name"
@@ -345,7 +369,7 @@
                 v-if="['unique_key', 'foreign_key'].includes(item.rule.type)"
                 :label="t('quality.plan.columns')"
               >
-                <el-select v-model="item.bindings.columns" multiple filterable>
+                <el-select v-model="item.bindings.columns" multiple filterable :allow-create="!aliasBinding(item.bindings.table)?.locator" default-first-option>
                   <el-option
                     v-for="field in fieldsForAlias(item.bindings.table)"
                     :key="field.column_name"
@@ -369,6 +393,8 @@
                 <el-form-item :label="t('quality.plan.referenceColumns')">
                   <el-select
                     v-model="item.bindings.reference_columns"
+                    :allow-create="!aliasBinding(item.bindings.reference_table)?.locator"
+                    default-first-option
                     multiple
                     filterable
                     ><el-option
@@ -387,7 +413,7 @@
                   :key="key"
                   :label="t(`quality.plan.${key}Condition`)"
                 >
-                  <el-select v-model="item.bindings[key + '_column']" filterable
+                  <el-select v-model="item.bindings[key + '_column']" filterable :allow-create="!aliasBinding(item.bindings.table)?.locator" default-first-option
                     ><el-option
                       v-for="field in fieldsForAlias(item.bindings.table)"
                       :key="field.column_name"
@@ -418,11 +444,22 @@
         }}</el-button>
       </template>
     </el-dialog>
+    <el-dialog v-model="runVisible" class="addp-dialog" :title="t('quality.targets.runTitle')" width="min(800px, calc(100vw - 24px))" :close-on-click-modal="false" :show-close="!runningID" :close-on-press-escape="!runningID" @opened="runForm?.focus()">
+      <template v-if="runTask">
+        <p>{{ runTask.name }}</p>
+        <el-alert :title="t('quality.targets.runHelp')" type="info" :closable="false" />
+        <ExecutionParameterForm ref="runForm" v-model="runParameters" :contract="runContract" :disabled="Boolean(runningID)" />
+      </template>
+      <template #footer>
+        <el-button :disabled="Boolean(runningID)" @click="runVisible = false">{{ t('quality.plan.cancel') }}</el-button>
+        <el-button type="primary" :loading="Boolean(runningID)" :disabled="!runTask" @click="runPlan">{{ t('quality.plan.run') }}</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { onBeforeUnmount, reactive, ref, watch } from "vue";
+import { computed, onBeforeUnmount, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { Plus } from "@element-plus/icons-vue";
@@ -430,6 +467,7 @@ import { useI18n } from "vue-i18n";
 import {
   MonitorExecutionsButton,
   ResourceTreePicker,
+  ExecutionParameterForm,
   parseLocator,
   formatLocatorDisplayPath,
 } from "@common-ui";
@@ -447,6 +485,13 @@ import {
   buildPlanRouteQuery,
   resolvePlanRouteState,
 } from "../utils/planRouteState";
+import DomainOwnershipSelect from "../components/DomainOwnershipSelect.vue";
+import { domainOwnershipLabel } from '../utils/domainOwnership';
+const ownerDomainID = ref(null), domains = ref([]);
+const changeDomain = (value) => navigateQualityRoute(router, {
+  path: route.path,
+  query: buildPlanRouteQuery({ mode: 'list', page: 1, pageSize: pagination.pageSize, ownerDomainID: value }),
+});
 
 const { t } = useI18n();
 const route = useRoute();
@@ -509,11 +554,32 @@ const upgradeRule = (item) => {
   };
   delete item.availableRevision;
 };
-const runPlan = async (task) => {
-  if (runningID.value === task.id || isActive(task)) return;
+const runVisible = ref(false), runTask = ref(null), runParameters = ref({}), runForm = ref(null);
+const openRun = async (task) => {
+  try {
+    const detail = await planAPI.get(task.id);
+    if (disposed) return;
+    runTask.value = detail;
+    const required = Object.fromEntries(detail.table_bindings.filter(binding => !binding.locator).map(binding => [binding.alias, '']));
+    runParameters.value = Object.keys(required).length ? { table_bindings: required } : {};
+    runVisible.value = true;
+  } catch (error) { ElMessage.error(error.response?.data?.error || t('quality.plan.loadFailed')); }
+};
+const runContract = computed(() => {
+  const contract = runTask.value?.execution_contract;
+  if (!contract) return {};
+  return { ...contract, input_ui_schema: { ...contract.input_ui_schema, table_bindings: { ...contract.input_ui_schema.table_bindings, title: t('quality.targets.actual') } } };
+});
+const runPlan = async () => {
+  const task = runTask.value;
+  if (!task || runningID.value !== null) return;
+  const overrides = runParameters.value.table_bindings || {};
+  const missing = task.table_bindings.filter(binding => !(Object.hasOwn(overrides, binding.alias) ? overrides[binding.alias] : binding.locator));
+  if (missing.length) return ElMessage.error(t('quality.targets.missing', { aliases: missing.map(binding => binding.alias).join(', ') }));
   runningID.value = task.id;
   try {
-    const result = await planAPI.run(task.id);
+    const result = await planAPI.run(task.id, runParameters.value);
+    runVisible.value = false;
     ElMessage.success(t("quality.plan.runSuccess"));
     await loadTasks();
     if (can("monitor.execution.read")) openExecution(result.execution_id);
@@ -526,6 +592,13 @@ const runPlan = async (task) => {
 
 const fieldsByTableID = ref(new Map());
 const bindings = ref([]);
+const tablePickerVisible = ref(false);
+const bindingToEdit = ref(null);
+const addDeferredTable = () => {
+  let i = bindings.value.length + 1;
+  while (bindings.value.some(b => b.alias === `input_${i}`)) i++;
+  bindings.value.push({ alias: `input_${i}`, locator: '' });
+};
 const rules = ref([]);
 const loading = ref(false);
 const loadError = ref("");
@@ -535,7 +608,7 @@ const conflict = ref(false);
 const editingID = ref(null);
 const formRef = ref(null);
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 });
-const form = reactive({ code: "", name: "", description: "", version: 0 });
+const form = reactive({ code: "", name: "", description: "", owner_domain_id: null, version: 0 });
 
 let routeReady = false;
 let listSequence = 0;
@@ -606,10 +679,12 @@ const resetForm = () => {
   selectedRule.value = null;
   ruleCandidates.value = [];
   candidateSequence++;
-  Object.assign(form, { code: "", name: "", description: "", version: 0 });
+  Object.assign(form, { code: "", name: "", description: "", owner_domain_id: null, version: 0 });
   bindings.value = [];
   rules.value = [];
   fieldsByTableID.value = new Map();
+  tablePickerVisible.value = false;
+  bindingToEdit.value = null;
 };
 
 const syncRoute = (mode = "list", taskID = null, history = "replace") =>
@@ -622,6 +697,7 @@ const syncRoute = (mode = "list", taskID = null, history = "replace") =>
         taskID,
         page: pagination.page,
         pageSize: pagination.pageSize,
+        ownerDomainID: ownerDomainID.value,
       }),
     },
     { history },
@@ -636,6 +712,7 @@ const loadTasks = async () => {
     const response = await planAPI.list({
       page: pagination.page,
       page_size: pagination.pageSize,
+      ...(ownerDomainID.value != null ? { owner_domain_id: ownerDomainID.value } : {}),
     });
     if (sequence !== listSequence) return;
     tasks.value = response?.data || [];
@@ -664,6 +741,7 @@ const loadTasks = async () => {
 };
 
 const loadFields = async (locatorText) => {
+  if (!locatorText) return;
   const locator = parseLocator(locatorText);
   const roots = await systemCatalogAPI.listChildren(locator.engineId);
   const root = roots.nodes.find(
@@ -695,16 +773,21 @@ const loadFields = async (locatorText) => {
 };
 const addTable = async (selection) => {
   const locator = selection?.identity?.locator;
-  if (!locator || bindings.value.some((binding) => binding.locator === locator))
+  if (!locator || bindingToEdit.value?.locator === locator || bindings.value.some((binding) => binding !== bindingToEdit.value && binding.locator === locator))
     return;
   const parsed = parseLocator(locator);
   if (
-    bindings.value.length &&
-    parseLocator(bindings.value[0].locator).engineId !== parsed.engineId
+    bindings.value.some(b => b !== bindingToEdit.value && b.locator && parseLocator(b.locator).engineId !== parsed.engineId)
   )
     return ElMessage.error(t("quality.plan.sameEngine"));
   try {
     await loadFields(locator);
+    if (bindingToEdit.value) {
+      bindingToEdit.value.locator = locator;
+      bindingToEdit.value = null;
+      tablePickerVisible.value = false;
+      return;
+    }
     bindings.value.push({
       locator,
       alias: bindingAlias(parsed.path.at(-1), bindings.value.length + 1),
@@ -765,6 +848,7 @@ const restoreDialog = async (state) => {
       code: task.code,
       name: task.name,
       description: task.description || "",
+      owner_domain_id: task.owner_domain_id || null,
       version: task.version,
     });
     const existingBindings = parseJSON(task.table_bindings) || [];
@@ -859,6 +943,7 @@ const submit = async () => {
       code: form.code.trim(),
       name: form.name.trim(),
       description: form.description.trim(),
+      owner_domain_id: form.owner_domain_id ?? null,
       table_bindings: bindings.value.map((binding) => ({
         alias: binding.alias.trim(),
         locator: binding.locator,
@@ -923,9 +1008,10 @@ watch(
       return;
     }
     const listChanged =
-      pagination.page !== state.page || pagination.pageSize !== state.pageSize;
+      pagination.page !== state.page || pagination.pageSize !== state.pageSize || ownerDomainID.value !== state.ownerDomainID;
     pagination.page = state.page;
     pagination.pageSize = state.pageSize;
+    ownerDomainID.value = state.ownerDomainID;
     if (listChanged || !routeReady) await loadTasks();
     await restoreDialog(state);
     routeReady = true;

@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import vm from 'node:vm'
 import test from 'node:test'
+import { ref, computed, watch, effectScope } from 'vue'
+import { createI18n } from 'vue-i18n'
 
 const source = await readFile(new URL('../src/views/QueryServiceDetail.vue', import.meta.url), 'utf8')
 const actions = source.slice(source.indexOf('const captureVersionConflict ='), source.indexOf('// 方法：删除服务'))
@@ -80,4 +82,70 @@ test('engine display uses live names and distinguishes loading and unavailable m
   state.enginesLoading.value = false
   state.enginesUnavailable.value = true
   assert.equal(display(2), 'service.query.engineUnavailable:2')
+})
+
+const revisionSource = source.slice(source.indexOf('const auth = useAuthStore()'), source.indexOf('const metricBindingRequired ='))
+const revisionMessages = Object.fromEntries(await Promise.all(['zh-cn', 'en'].map(async locale => [locale, JSON.parse(await readFile(new URL(`../src/i18n/${locale}.json`, import.meta.url), 'utf8'))])))
+function revisionHarness(get, canRead = true) {
+  const scope = effectScope()
+  const snapshot = ref({ metric_source: { implementation_id: 1, revision_id: 6 } })
+  const permission = ref(canRead)
+  const i18n = createI18n({ legacy: false, locale: 'zh-cn', messages: revisionMessages })
+  const state = scope.run(() => vm.runInNewContext(`${revisionSource}; ({ metricRevisionLabel, metricRevisionNo, metricRevisionLoading })`, {
+    ref, computed, watch, sourceSnapshot: snapshot,
+    useAuthStore: () => ({ hasPermission: () => permission.value }),
+    createModelMetricAPI: () => ({ get }), client: {}, t: (key, params) => i18n.global.t(key, { ...params })
+  }))
+  return { state, snapshot, permission, i18n, stop: () => scope.stop() }
+}
+const settleRevision = () => new Promise(resolve => setImmediate(resolve))
+
+test('bound revision display resolves ID 6 to R2, never the newest revision, in both languages', async () => {
+  const h = revisionHarness(async id => {
+    assert.equal(id, 1)
+    return { revisions: [{ id: 9, revision_no: 3 }, { id: 6, revision_no: 2 }] }
+  })
+  try {
+    assert.equal(h.state.metricRevisionLabel.value, '正在读取修订号（修订 ID：6）')
+    await settleRevision()
+    assert.equal(h.state.metricRevisionLabel.value, 'R2（修订 ID：6）')
+    h.i18n.global.locale.value = 'en'
+    assert.equal(h.state.metricRevisionLabel.value, 'R2 (revision ID: 6)')
+  } finally { h.stop() }
+})
+
+test('missing permission, missing revision and API failure never invent a revision number', async () => {
+  const cases = [
+    [() => assert.fail('must not request Model without read permission'), false],
+    [async () => ({ revisions: [{ id: 9, revision_no: 3 }] }), true],
+    [async () => { throw new Error('unavailable') }, true]
+  ]
+  for (const [get, permission] of cases) {
+    const h = revisionHarness(get, permission)
+    try {
+      await settleRevision()
+      assert.equal(h.state.metricRevisionLabel.value, '修订号不可用（修订 ID：6）')
+      assert.equal(h.state.metricRevisionLoading.value, false)
+    } finally { h.stop() }
+  }
+})
+
+test('switching source or losing permission discards late revision responses', async () => {
+  const pending = []
+  const h = revisionHarness(() => new Promise(resolve => pending.push(resolve)))
+  try {
+    h.snapshot.value = { metric_source: { implementation_id: 2, revision_id: 8 } }
+    pending[1]({ revisions: [{ id: 8, revision_no: 4 }] })
+    await settleRevision()
+    pending[0]({ revisions: [{ id: 6, revision_no: 2 }] })
+    await settleRevision()
+    assert.equal(h.state.metricRevisionLabel.value, 'R4（修订 ID：8）')
+    h.permission.value = false
+    assert.equal(h.state.metricRevisionLabel.value, '修订号不可用（修订 ID：8）')
+    h.permission.value = true
+    h.stop()
+    pending[2]({ revisions: [{ id: 8, revision_no: 4 }] })
+    await settleRevision()
+    assert.equal(h.state.metricRevisionNo.value, null)
+  } finally { h.stop() }
 })

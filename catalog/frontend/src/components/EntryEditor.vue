@@ -63,16 +63,14 @@
           :title="form.ownerPrimaryDomainId ? t('catalog.edit.ownerPrimaryDomain', { module: ownerModuleName }) : t('catalog.edit.ownerPrimaryDomainMissing', { module: ownerModuleName })"
         />
         <div v-for="(domain, index) in form.domains" :key="`domain-${index}`" class="edit-row domain-row">
-          <el-select
+          <BusinessDomainSelect :options="businessDomainReferenceOptions(candidateState.domain.options)" show-code
             v-model="domain.id"
             filterable remote reserve-keyword
             :loading="candidateState.domain.loading"
             :remote-method="search => searchCandidates('domain', search)"
             :placeholder="t('catalog.edit.domainPlaceholder')"
             @visible-change="visible => visible && searchCandidates('domain', '')"
-          >
-            <el-option v-for="option in candidateState.domain.options" :key="option.id" :label="candidateLabel(option)" :value="option.id" />
-          </el-select>
+          />
           <el-select v-model="domain.role" :disabled="form.ownerManagedSemantics">
             <el-option :label="t('catalog.edit.primary')" value="primary" />
             <el-option :label="t('catalog.edit.secondary')" value="secondary" />
@@ -176,6 +174,7 @@
 </template>
 
 <script setup>
+import { BusinessDomainSelect, businessDomainReferenceOptions } from '@common-ui'
 import { computed, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
@@ -266,8 +265,8 @@ async function searchCandidates(type, search = '') {
     if (version !== state.version) return
     const selected = new Set(selectedCandidateIDs(type))
     const preserved = state.options.filter(item => selected.has(item.id))
-    const options = new Map(preserved.map(item => [item.id, item]))
-    for (const item of response.data || []) options.set(String(item.id), { ...item, id: String(item.id) })
+    const options = new Map((response.data || []).map(item => [String(item.id), { ...item, id: String(item.id) }]))
+    for (const item of preserved) if (!options.has(item.id)) options.set(item.id, item)
     state.options = [...options.values()]
   } catch (error) {
     if (version === state.version) ElMessage.error(error?.response?.data?.error || t('catalog.edit.candidateSearchFailed'))

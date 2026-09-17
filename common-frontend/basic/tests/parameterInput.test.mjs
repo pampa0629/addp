@@ -19,11 +19,15 @@ test('finite options preserve typed values and reject malformed domains', () => 
 test('service and application input rendering has one shared owner', () => {
   const root = new URL('../../../', import.meta.url)
   assert.equal(existsSync(new URL('workbench/frontend/src/components/ApplicationParameterValueInput.vue', root)), false)
-  for (const path of ['service/frontend/src/views/QueryServiceDetail.vue', 'service/frontend/src/views/QueryServiceForm.vue', 'workbench/frontend/src/components/ApplicationComponentEditor.vue', 'workbench/frontend/src/components/SpatialExplorationWizard.vue', 'workbench/frontend/src/components/DataApplicationCanvas.vue', 'workbench/frontend/src/views/DataApplicationEditor.vue']) {
+  for (const path of ['service/frontend/src/views/QueryServiceDetail.vue', 'service/frontend/src/views/QueryServiceForm.vue', 'workbench/frontend/src/components/ApplicationComponentEditor.vue', 'workbench/frontend/src/components/SpatialExplorationWizard.vue', 'workbench/frontend/src/components/ApplicationParameterFields.vue', 'workbench/frontend/src/views/DataApplicationEditor.vue']) {
     const source = readFileSync(new URL(path, root), 'utf8')
     assert.match(source, /common-frontend\/basic\/src\/components\/ParameterValueInput.vue/)
     assert.doesNotMatch(source, /<el-(?:input-number|date-picker|select)\s+v-(?:else-)?if="parameter\.(?:controlType|type)/)
   }
+  const canvas = readFileSync(new URL('workbench/frontend/src/components/DataApplicationCanvas.vue', root), 'utf8')
+  assert.match(canvas, /import ApplicationParameterFields from ['"]\.\/ApplicationParameterFields\.vue['"]/)
+  assert.equal((canvas.match(/<ApplicationParameterFields\b/g) || []).length, 2)
+  assert.doesNotMatch(canvas, /<ParameterValueInput\b|class="parameter-field"/)
   const input = readFileSync(new URL('../src/components/ParameterValueInput.vue', import.meta.url), 'utf8')
   assert.match(input, /option\.labels\[locale\]/)
   assert.match(input, /:value="option.value"/)

@@ -14,8 +14,25 @@ func TestEmbeddedMigrationCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadCatalog() error = %v", err)
 	}
-	if catalog.LatestVersion != 148 {
-		t.Fatalf("LatestVersion = %d, want 148", catalog.LatestVersion)
+	if catalog.LatestVersion != 150 {
+		t.Fatalf("LatestVersion = %d, want 150", catalog.LatestVersion)
+	}
+}
+
+func TestQualityStandardReferenceMigrationInvalidatesBothRuntimeIdentities(t *testing.T) {
+	assertPublishedQualityReferenceMigration(t)
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000150_iam_quality_domain_runtime.up.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, affected, ok := strings.Cut(string(data), "CREATE TEMP TABLE quality_standard_reference_affected_principals")
+	if !ok {
+		t.Fatal("missing affected principals")
+	}
+	for _, fragment := range []string{"tenant.standard_runtime", "quality.standard_reference.update", "tenant.quality_runtime", "standard.domain.read", "authorization_version + 1", "authorization_catalog_changed"} {
+		if !strings.Contains(affected, fragment) {
+			t.Fatalf("missing invalidation of %s", fragment)
+		}
 	}
 }
 

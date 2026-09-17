@@ -57,6 +57,40 @@ func TestElementRevisionResolutionRejectsInvalidBatch(t *testing.T) {
 	}
 }
 
+func TestElementRevisionDetailKeepsHistoricalSourceAndTenantBoundary(t *testing.T) {
+	db := openElementResolutionTestDB(t)
+	for _, statement := range []string{
+		`INSERT INTO standard.elements (id,tenant_id,scope_type,code,lifecycle_state) VALUES (10,7,'tenant_common','member_status','active'), (20,8,'tenant_common','foreign','active')`,
+		`INSERT INTO standard.element_revisions (id,element_id,revision_no,status,name,definition,data_type,nullable,value_domain_kind,code_set_revision_id) VALUES (101,10,1,'withdrawn','Historical status','Historical definition','string',0,'enumeration',501), (102,10,2,'published','New status','New definition','string',0,'enumeration',502), (201,20,1,'published','Foreign','Foreign','string',1,'unrestricted',NULL)`,
+		`INSERT INTO standard.code_sets (id,tenant_id,scope_type,origin,code,lifecycle_state) VALUES (50,7,'tenant_common','tenant','status_codes','active')`,
+		`INSERT INTO standard.code_set_revisions (id,code_set_id,revision_no,status,name,description,value_type) VALUES (501,50,1,'withdrawn','Historical codes','Old codes','string'), (502,50,2,'published','New codes','New codes','string')`,
+		`INSERT INTO standard.code_set_revision_items (id,code_set_revision_id,code,label,sort_order,status) VALUES (1,501,'signup','报名',1,'active'), (2,502,'new','New',1,'active')`,
+	} {
+		if err := db.Exec(statement).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	svc := NewElementService(repository.NewElementRepository(db), repository.NewCodeSetRepository(db), nil, nil)
+	detail, err := svc.GetRevision(context.Background(), 10, 101, 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if detail.ID != 101 || detail.ElementCode != "member_status" || detail.Name != "Historical status" || detail.CodeSetRevision == nil || detail.CodeSetRevision.RevisionID != 501 || detail.CodeSetRevision.Items[0].Label != "报名" {
+		t.Fatalf("wrong exact source: %#v", detail)
+	}
+	for _, ids := range [][3]int64{{10, 101, 8}, {20, 201, 7}, {10, 201, 7}, {999, 101, 7}} {
+		if _, err := svc.GetRevision(context.Background(), ids[0], ids[1], ids[2]); err == nil {
+			t.Fatalf("accepted invalid source %v", ids)
+		}
+	}
+	if err := db.Exec(`UPDATE standard.code_sets SET tenant_id=8 WHERE id=50`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.GetRevision(context.Background(), 10, 101, 7); err == nil {
+		t.Fatal("cross-tenant code set accepted")
+	}
+}
+
 func openElementResolutionTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})

@@ -2,7 +2,6 @@ package repository
 
 import (
 	"errors"
-	"time"
 
 	"github.com/addp/standard/internal/models"
 	"gorm.io/gorm"
@@ -49,7 +48,7 @@ func (r *TenantReferenceRepository) RequireMetrics(tenantID int64, ids []int64) 
 }
 
 func (r *TenantReferenceRepository) RequireElement(tenantID, id int64) error {
-	return r.requirePublishedElement(tenantID, id)
+	return r.requireActiveOne(&models.Element{}, tenantID, &id)
 }
 
 func (r *TenantReferenceRepository) RequireGlossary(tenantID, id int64) error {
@@ -57,37 +56,7 @@ func (r *TenantReferenceRepository) RequireGlossary(tenantID, id int64) error {
 }
 
 func (r *TenantReferenceRepository) RequireElements(tenantID int64, ids []int64) error {
-	uniqueIDs := uniqueInt64s(ids)
-	if len(uniqueIDs) == 0 {
-		return nil
-	}
-	asOf := time.Now().UTC()
-	var count int64
-	if err := r.db.Table("standard.elements AS e").
-		Joins("JOIN standard.element_revisions er ON er.element_id = e.id AND er.status = ? AND er.effective_from <= ? AND (er.effective_to IS NULL OR er.effective_to > ?)", models.RevisionStatusPublished, asOf, asOf).
-		Where("e.tenant_id = ? AND e.lifecycle_state = ? AND e.id IN ?", tenantID, "active", uniqueIDs).
-		Distinct("e.id").Count(&count).Error; err != nil {
-		return err
-	}
-	if count != int64(len(uniqueIDs)) {
-		return ErrInvalidTenantReference
-	}
-	return nil
-}
-
-func (r *TenantReferenceRepository) requirePublishedElement(tenantID, id int64) error {
-	asOf := time.Now().UTC()
-	var count int64
-	if err := r.db.Table("standard.elements AS e").
-		Joins("JOIN standard.element_revisions er ON er.element_id = e.id AND er.status = ? AND er.effective_from <= ? AND (er.effective_to IS NULL OR er.effective_to > ?)", models.RevisionStatusPublished, asOf, asOf).
-		Where("e.id = ? AND e.tenant_id = ? AND e.lifecycle_state = ?", id, tenantID, "active").
-		Distinct("e.id").Count(&count).Error; err != nil {
-		return err
-	}
-	if count != 1 {
-		return ErrInvalidTenantReference
-	}
-	return nil
+	return r.requireActiveMany(&models.Element{}, tenantID, ids)
 }
 
 func (r *TenantReferenceRepository) RequireGlossaries(tenantID int64, ids []int64) error {

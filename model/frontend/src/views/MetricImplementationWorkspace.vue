@@ -114,6 +114,13 @@
           ></el-popconfirm
         >
       </el-card>
+      <MetricSourceSummary
+        :implementation="item" :revision="revision" :tables="tables"
+        :engines="sourceEngines" :engine-error="sourceEngineError"
+        :pending="editingNew || isDirty"
+        :can-navigate="auth.hasPermission('model.logical_model.read')"
+        @open-table="id => navigateModelRoute(router, { path: `/logical-tables/${id}`, query: { tab: 'physical-target' } })"
+      />
       <el-card shadow="never">
         <el-alert
           v-if="!editable"
@@ -167,7 +174,7 @@
             <el-form-item
               :label="t('model.metric_workspace.subject_relation')"
               required
-              ><el-select v-model="form.subject_relation_id"
+              ><el-select v-model="form.subject_relation_id" @change="form.subject_label = ''"
                 ><el-option
                   v-for="relation in relations.filter(
                     (v) => v.source_field === form.subject_field_id,
@@ -179,6 +186,14 @@
                     tables.find((v) => v.id === relation.target_table)?.name
                   " /></el-select
             ></el-form-item>
+            <el-form-item :label="t('model.metric_workspace.subject_label')">
+              <el-select v-model="form.subject_label" clearable>
+                <el-option
+                  v-for="field in choices.filter(v => v.relation_id === form.subject_relation_id && v.data_type === 'string')"
+                  :key="field.key" :value="field.key" :label="field.label"
+                />
+              </el-select>
+            </el-form-item>
             <el-form-item :label="t('model.metric_workspace.distinct')" required
               ><el-select v-model="form.distinct"
                 ><el-option
@@ -271,8 +286,16 @@
       class="addp-dialog"
       v-model="serviceDialog"
       :title="t('model.metric_workspace.service')"
-      width="min(520px, calc(100vw - 32px))"
-      ><el-form label-position="top">
+      width="min(760px, calc(100vw - 32px))"
+      >
+      <MetricSourceSummary
+        v-if="serviceDialog && item && revision"
+        class="publication-source"
+        :implementation="item" :revision="revision" :tables="tables"
+        :engines="sourceEngines" :engine-error="sourceEngineError"
+        show-implementation
+      />
+      <el-form label-position="top">
         <el-form-item :label="t('model.metric_workspace.service_target')">
           <el-radio-group v-model="serviceMode">
             <el-radio
@@ -333,7 +356,7 @@ import { computed, reactive, ref, watch } from 'vue';
 import { useRouter, useRoute, onBeforeRouteUpdate } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { ElMessage } from 'element-plus';
-import { openConsoleRoute } from '@common-ui';
+import { openConsoleRoute, listResourceTreeEngines } from '@common-ui';
 import {
   logicalTableAPI,
   standardMetricAPI,
@@ -344,6 +367,7 @@ import { useAuthStore } from '../store/auth';
 import { navigateModelRoute } from '../utils/moduleNavigation';
 import { useUnsavedChanges } from '../composables/useUnsavedChanges';
 import { getModelErrorMessage } from '../utils/apiError';
+import MetricSourceSummary from '../components/MetricSourceSummary.vue';
 const router = useRouter(),
   route = useRoute(),
   auth = useAuthStore(),
@@ -355,6 +379,7 @@ const items = ref([]),
   definitionRevisions = ref([]),
   relations = ref([]),
   choices = ref([]);
+const sourceEngines = ref([]), sourceEngineError = ref(false);
 const loading = ref(false),
   busy = ref(false),
   error = ref(''),
@@ -373,6 +398,7 @@ const blank = () => ({
   metric_definition_revision_id: null,
   subject_field_id: null,
   subject_relation_id: null,
+  subject_label: '',
   distinct: '',
   time: '',
   filters: [],
@@ -420,6 +446,7 @@ function setRevision(id) {
       operation: c.operation,
       subject_field_id: c.subject.field_id,
       subject_relation_id: c.subject_relation_id,
+      subject_label: c.subject_label ? refKey(c.subject_label) : '',
       distinct: refKey(c.distinct),
       time: refKey(c.time),
       filters: c.filters.map((v) => ({
@@ -458,6 +485,8 @@ async function load() {
   loading.value = true;
   error.value = '';
   item.value = null;
+  sourceEngines.value = [];
+  sourceEngineError.value = false;
   if (!can('read')) {
     error.value = t('model.metric_workspace.unavailable');
     loading.value = false;
@@ -505,6 +534,7 @@ async function load() {
     );
     if (request !== generation) return;
     item.value = current;
+    void loadSourceEngines(request);
     relations.value = links;
     definitionRevisions.value = revisions.filter(
       (v) => v.status === 'published',
@@ -546,6 +576,15 @@ async function load() {
     if (request === generation) loading.value = false;
   }
 }
+async function loadSourceEngines(request) {
+  if (!auth.hasPermission('meta.catalog.read')) return;
+  try {
+    const engines = await listResourceTreeEngines('/api/v1/meta');
+    if (request === generation) sourceEngines.value = engines;
+  } catch {
+    if (request === generation) sourceEngineError.value = true;
+  }
+}
 async function action(fn) {
   busy.value = true;
   try {
@@ -582,6 +621,7 @@ const save = () =>
       operation: form.operation,
       subject: { relation_id: 0, field_id: form.subject_field_id },
       subject_relation_id: form.subject_relation_id,
+      ...(form.subject_label ? { subject_label: fieldRef(form.subject_label) } : {}),
       distinct: fieldRef(form.distinct),
       time: fieldRef(form.time),
       filters: form.filters.map((v) => ({
@@ -738,6 +778,9 @@ watch(
 }
 .workspace-header h2 {
   margin: 0;
+}
+.publication-source {
+  margin-bottom: 20px;
 }
 .field-grid {
   display: grid;

@@ -1,4 +1,5 @@
 // Model 模块 API（仅包含 Model 模块自己的功能）
+import { createModelMetricAPI } from '../../../../common-frontend/basic/src/api/modelMetrics.js'
 import client, { refreshAuthorizationOnForbidden } from './client'
 import { createAPIClient } from '@common-ui'
 import { useAuthStore } from '../store/auth'
@@ -274,8 +275,7 @@ export const standardMetricAPI = {
 }
 
 export const metricImplementationAPI = {
- list: params => client.get('/model/metric-implementations', { params }),
- get: id => client.get(`/model/metric-implementations/${id}`),
+ ...createModelMetricAPI(client),
  create: data => client.post('/model/metric-implementations', data),
  saveDraft: (id, data) => client.put(`/model/metric-implementations/${id}/draft`, data),
  publish: (id, revision, version) => client.post(`/model/metric-implementations/${id}/revisions/${revision}/publish`, { version }),

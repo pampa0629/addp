@@ -3,14 +3,53 @@ package api
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/addp/common/authorization/authtest"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/modulelifecycle"
 	qualityauthorization "github.com/addp/quality/internal/authorization"
+	"github.com/addp/quality/internal/repository"
+	"github.com/addp/quality/internal/service"
 	"github.com/gin-gonic/gin"
 )
+
+func TestQualityStandardReferenceGuardPermissionAndTerminalContract(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	authServer := authtest.NewTenantServiceAuthContextServer(t, "7", map[string]authtest.TenantServiceIdentity{
+		"Bearer standard":         {ClientID: "addp-standard", Permissions: []string{"quality.standard_reference.update"}},
+		"Bearer wrong-client":     {ClientID: "addp-model", Permissions: []string{"quality.standard_reference.update"}},
+		"Bearer wrong-permission": {ClientID: "addp-standard", Permissions: []string{"quality.rule.update"}},
+	})
+	defer authServer.Close()
+	db := newExecutionHandlerTestDB(t)
+	for _, query := range []string{
+		`ATTACH DATABASE ':memory:' AS quality`,
+		`CREATE TABLE quality.standard_reference_guards (id INTEGER PRIMARY KEY, tenant_id INTEGER, resource_type TEXT, resource_id INTEGER, state TEXT, created_at DATETIME, updated_at DATETIME, UNIQUE(tenant_id,resource_type,resource_id))`,
+		`INSERT INTO quality.standard_reference_guards (tenant_id,resource_type,resource_id,state) VALUES (7,'domain',42,'deleted')`,
+	} {
+		if err := db.Exec(query).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	router := SetupRouter(nil, nil, nil, nil, db, authServer.URL, nil, modulelifecycle.NewStandalone("quality"), service.NewStandardReferenceGuardService(repository.NewStandardReferenceGuardRepository(db)))
+	for _, tc := range []struct {
+		token, state string
+		want         int
+	}{
+		{"standard", "deleted", 200}, {"standard", "open", 409}, {"standard", "invalid", 400}, {"wrong-client", "deleted", 403}, {"wrong-permission", "deleted", 403},
+	} {
+		req := httptest.NewRequest(http.MethodPut, "/api/v1/quality/standard-reference-guards/domain/42", strings.NewReader(`{"state":"`+tc.state+`"}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+tc.token)
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, req)
+		if response.Code != tc.want {
+			t.Fatalf("%s %s: %d %s", tc.token, tc.state, response.Code, response.Body.String())
+		}
+	}
+}
 
 func TestQualityHumanExecutionRoutesUseMonitorExecutionRead(t *testing.T) {
 	gin.SetMode(gin.TestMode)
@@ -25,7 +64,7 @@ func TestQualityHumanExecutionRoutesUseMonitorExecutionRead(t *testing.T) {
 
 	db := newExecutionHandlerTestDB(t)
 	insertExecutionHandlerRow(t, db, 1, 7, "quality-7", commonExecution.ModuleQuality, commonExecution.TaskTypeQualityPlan, commonExecution.ExecutionStatusSuccess)
-	router := SetupRouter(nil, nil, nil, nil, db, authServer.URL, nil, modulelifecycle.NewStandalone("quality"))
+	router := SetupRouter(nil, nil, nil, nil, db, authServer.URL, nil, modulelifecycle.NewStandalone("quality"), nil)
 
 	for _, test := range []struct {
 		name   string
@@ -35,6 +74,8 @@ func TestQualityHumanExecutionRoutesUseMonitorExecutionRead(t *testing.T) {
 		method string
 	}{
 		{name: "monitor reader can list", path: "/api/v1/quality/executions", token: "monitor-read", want: http.StatusOK},
+		{name: "overview requires more than monitor read", path: "/api/v1/quality/overview", token: "monitor-read", want: http.StatusForbidden},
+		{name: "overview requires more than plan read", path: "/api/v1/quality/overview", token: "quality-task-read", want: http.StatusForbidden},
 		{name: "monitor reader can inspect detail", path: "/api/v1/quality/executions/quality-7", token: "monitor-read", want: http.StatusOK},
 		{name: "quality task reader cannot inspect execution", path: "/api/v1/quality/executions/quality-7", token: "quality-task-read", want: http.StatusForbidden},
 		{name: "machine permission cannot inspect human route", path: "/api/v1/quality/executions/quality-7", token: "task-provider-read", want: http.StatusForbidden},
@@ -87,7 +128,7 @@ func TestQualityTaskProviderRoutesRequireOrchestratorRuntimeIdentity(t *testing.
 
 	db := newExecutionHandlerTestDB(t)
 	insertExecutionHandlerRow(t, db, 1, 7, "provider-quality-7", commonExecution.ModuleQuality, commonExecution.TaskTypeQualityPlan, commonExecution.ExecutionStatusSuccess)
-	router := SetupRouter(nil, nil, nil, nil, db, authServer.URL, nil, modulelifecycle.NewStandalone("quality"))
+	router := SetupRouter(nil, nil, nil, nil, db, authServer.URL, nil, modulelifecycle.NewStandalone("quality"), nil)
 
 	for _, test := range []struct {
 		name   string

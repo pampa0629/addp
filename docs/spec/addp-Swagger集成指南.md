@@ -29,6 +29,14 @@ bash scripts/swagger/check-route-coverage.sh all
 
 `scripts/dev/restart.sh -<module>` 和 `scripts/dev/restart.sh -all` 会参与 Swagger 生成和覆盖校验，但不能替代开发者补注解。生成失败默认中断重启；覆盖校验在历史欠账清理阶段可降级为告警，详见脚本输出。
 
+## 开发期增量生成
+
+`gen-swagger.sh` 对 Go 模块使用内容指纹复用已成功生成的文档，缓存保存在不提交的 `.dev-state/swagger/`。指纹覆盖整个当前 Go workspace 的本地模块及本地 replace 源码、模块依赖声明和锁文件、`.swaggo`、Go 环境、swag 可执行文件及生成脚本。共享输入只计算一次；任一本地 Go 源码变化会保守地使所选 Go 模块重新生成，不依赖文件时间戳或 Git 状态。第三方模块仍以 Go 版本及校验和锁定，不支持直接修改 Go 模块下载缓存。
+
+复用还必须逐一校验 `docs.go`、`swagger.json`、`swagger.yaml` 的内容摘要；缓存缺失、损坏或产物缺失、被修改均重新生成。并发生成命令通过工作区文件锁串行进入，锁内各模块仍并行执行。生成失败或生成期间输入变化不能留下有效的新缓存；输入变化会使本次命令失败，需重新执行。删除 `.dev-state/swagger/manifest.json` 可要求下一次重新生成。
+
+FastAPI 继续实时导出 OpenAPI，避免遗漏运行环境对动态 schema 的影响。增量复用不跳过路由覆盖校验，也不改变发布检查的覆盖门禁。干净 CI 工作区没有本地缓存，首次始终重新生成。
+
 ## 依赖版本
 
 所有模块统一使用以下版本（已在 `docs/spec/addp技术栈规约.md` 中记录）：

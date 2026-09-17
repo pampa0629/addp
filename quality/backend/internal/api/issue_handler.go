@@ -24,6 +24,7 @@ func NewIssueHandler(svc *service.IssueService) *IssueHandler {
 // @Param status query string false "状态 | Status" Enums(open,resolved,ignored)
 // @Param engine_id query int false "引擎ID | Engine ID"
 // @Param page query int false "页码 | Page" default(1)
+// @Param owner_domain_id query int false "归属业务域（省略全部，0 为租户公共，正整数为指定域） | Owner domain (omit for all, 0 for tenant-public, positive ID for one domain)" minimum(0)
 // @Param page_size query int false "每页数量 | Page size" default(20) maximum(100)
 // @Success 200 {object} qualityIssueListResponse
 // @Failure 400 {object} qualityErrorResponse
@@ -33,6 +34,11 @@ func NewIssueHandler(svc *service.IssueService) *IssueHandler {
 // @Router /issues [get]
 // @Security BearerAuth
 func (h *IssueHandler) List(c *gin.Context) {
+	ownerDomainID, filterErr := ownerDomainFilter(c)
+	if filterErr != nil {
+		respondInvalidRequest(c, "")
+		return
+	}
 	tenantID := getTenantID(c)
 	status := c.Query("status")
 	if status != "" && status != "open" && status != "resolved" && status != "ignored" {
@@ -46,7 +52,7 @@ func (h *IssueHandler) List(c *gin.Context) {
 	}
 
 	page, pageSize := pageParams(c.Query("page"), c.Query("page_size"))
-	items, total, err := h.svc.List(tenantID, status, engineID, page, pageSize)
+	items, total, err := h.svc.List(tenantID, status, engineID, ownerDomainID, page, pageSize)
 	if err != nil {
 		respondQualityServiceError(c, err, "", qualityi18n.MsgInternal)
 		return

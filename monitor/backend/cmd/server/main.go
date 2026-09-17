@@ -10,6 +10,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/addp/common/schema"
+
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
 	commonconfiguration "github.com/addp/common/configuration"
@@ -66,11 +68,8 @@ func main() {
 	}
 
 	// 确保统一执行记录表存在
-	if err := commonExecution.EnsureStore(db); err != nil {
+	if err := schema.Require(db, "common", schema.CommonVersion); err != nil {
 		log.Fatalf("Failed to ensure execution store: %v", err)
-	}
-	if err := commonRuntimeHealth.EnsureStore(db); err != nil {
-		log.Fatalf("Failed to ensure background runtime health store: %v", err)
 	}
 	if err := service.EnsureMonitorStore(db); err != nil {
 		log.Fatalf("Failed to ensure monitor store: %v", err)

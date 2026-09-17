@@ -47,3 +47,36 @@ func TestTenantReferenceRepositoryRejectsCrossTenantReferences(t *testing.T) {
 	}
 
 }
+
+func TestElementIdentityReferencesAcceptDraftAndRejectForeignOrDeleting(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, statement := range []string{
+		"ATTACH DATABASE ':memory:' AS standard",
+		"CREATE TABLE standard.elements (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, lifecycle_state TEXT NOT NULL)",
+		"CREATE TABLE standard.element_revisions (id INTEGER PRIMARY KEY, element_id INTEGER, status TEXT, effective_from DATETIME, effective_to DATETIME)",
+		"INSERT INTO standard.elements VALUES (1,10,'active'), (2,20,'active'), (3,10,'deleting')",
+		"INSERT INTO standard.element_revisions (id,element_id,status) VALUES (11,1,'draft')",
+	} {
+		if err := db.Exec(statement).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	refs := NewTenantReferenceRepository(db)
+	if err := refs.RequireElement(10, 1); err != nil {
+		t.Fatalf("draft identity: %v", err)
+	}
+	if err := refs.RequireElements(10, []int64{1, 1}); err != nil {
+		t.Fatalf("draft identity batch: %v", err)
+	}
+	for _, id := range []int64{2, 3, 4} {
+		if err := refs.RequireElement(10, id); err != ErrInvalidTenantReference {
+			t.Fatalf("id %d: %v", id, err)
+		}
+		if err := refs.RequireElements(10, []int64{1, id}); err != ErrInvalidTenantReference {
+			t.Fatalf("batch id %d: %v", id, err)
+		}
+	}
+}

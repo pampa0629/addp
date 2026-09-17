@@ -98,6 +98,27 @@ class ChangedGateTest(unittest.TestCase):
             MODULE.affected_modules(self.repository, ["common-python/addp_common/client.py"]),
         )
 
+    def test_platform_skill_changes_select_agent_gate(self) -> None:
+        for path in (
+            "skills/workflow-analysis/SKILL.md",
+            "skills/workflow-analysis/references/workflow-contract.md",
+            "skills/workflow-analysis/agents/addp.yaml",
+        ):
+            with self.subTest(path=path):
+                self.assertEqual(
+                    ["agent"], MODULE.affected_modules(self.repository, [path])
+                )
+                commands = [step.command for step in MODULE.plan_changed(self.repository, [path])]
+                self.assertIn(("make", "test-agent-eval"), commands)
+
+    def test_instruction_docs_do_not_select_agent_runtime(self) -> None:
+        self.assertEqual(
+            [],
+            MODULE.affected_modules(
+                self.repository, ["AGENTS.md", "docs/skills/addp-Skill规范.md"]
+            ),
+        )
+
     def test_evaluation_scenarios_and_gate_scripts_map_to_owner(self) -> None:
         self.assertEqual(
             ["agent"],

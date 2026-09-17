@@ -81,9 +81,7 @@
               </el-col>
               <el-col :xs="24" :sm="12" :md="8">
                 <el-form-item :label="t('model.entity.domain')">
-                  <el-select v-model="form.domain_id" :disabled="!canEdit" clearable style="width:100%">
-                    <el-option v-for="d in domains" :key="d.id" :label="d.name" :value="d.id" />
-                  </el-select>
+                  <BusinessDomainSelect v-model="form.domain_id" :disabled="!canEdit" clearable style="width:100%" :options="domains" />
                 </el-form-item>
               </el-col>
               <el-col :xs="24" :sm="12" :md="8">
@@ -354,7 +352,6 @@
                 <el-option label="datetime" value="datetime" />
                 <el-option label="bool" value="bool" />
                 <el-option label="json" value="json" />
-                <el-option label="text" value="text" />
                 <el-option label="geometry" value="geometry" />
               </el-select>
             </el-form-item>
@@ -480,6 +477,7 @@
 </template>
 
 <script setup>
+import { BusinessDomainSelect, buildBusinessDomainOptions } from '@common-ui'
 import { ref, reactive, computed, watch } from 'vue'
 import { useRoute, useRouter, onBeforeRouteUpdate } from 'vue-router'
 import { MonitorExecutionsButton, ResourceTreePicker, listResourceTreeEngines, parseLocator, parseLocatorSafe, isLocatorEqual, formatLocatorDisplayPath, useConsolePageDescriptor } from '@common-ui'
@@ -964,7 +962,7 @@ const loadPage = async () => {
       })
     ])
     if (generation !== loadGeneration) return
-    domains.value = domainsResult.status === 'fulfilled' ? domainsResult.value || [] : []
+    domains.value = domainsResult.status === 'fulfilled' ? buildBusinessDomainOptions(domainsResult.value || []) : []
     elements.value = elementsResult.status === 'fulfilled' ? elementsResult.value || [] : []
     layers.value = layersResult.status === 'fulfilled' ? layersResult.value || [] : []
     physicalTargetEngines.value = enginesResult.status === 'fulfilled' ? enginesResult.value || [] : []

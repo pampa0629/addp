@@ -87,9 +87,9 @@ func TestPostgresReferenceCandidatesFilterAndPaginateOwnerFacts(t *testing.T) {
 	})
 
 	repository := NewReferenceResolutionRepository(db)
-	domains, total, err := repository.ListDomainCandidates(context.Background(), tenantID, "sales", 1, 20)
-	if err != nil || total != 1 || len(domains) != 1 || domains[0].Name != "Sales" {
-		t.Fatalf("domains=%#v total=%d err=%v", domains, total, err)
+	domains, err := repository.ListDomains(context.Background(), tenantID)
+	if err != nil || len(domains) != 2 || domains[0].Name != "Sales" || domains[1].LifecycleState != "deleting" {
+		t.Fatalf("domains=%#v err=%v", domains, err)
 	}
 	glossaries, total, err := repository.ListGlossaryCandidates(context.Background(), tenantID, "customer", 1, 20)
 	if err != nil || total != 1 || len(glossaries) != 1 || glossaries[0].Status != models.RevisionStatusPublished || glossaries[0].RevisionID == 0 {

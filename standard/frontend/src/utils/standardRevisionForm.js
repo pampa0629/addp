@@ -1,6 +1,5 @@
 export const ELEMENT_DATA_TYPES = [
   'string',
-  'text',
   'int',
   'bigint',
   'float',
@@ -12,15 +11,15 @@ export const ELEMENT_DATA_TYPES = [
 ]
 
 const NUMERIC_DATA_TYPES = new Set(['int', 'bigint', 'float', 'decimal'])
-const LENGTH_DATA_TYPES = new Set(['string', 'text'])
-const FORMAT_DATA_TYPES = new Set(['string', 'text', 'date', 'datetime'])
+const LENGTH_DATA_TYPES = new Set(['string'])
+const FORMAT_DATA_TYPES = new Set(['string', 'date', 'datetime'])
 
 export const isNumericDataType = dataType => NUMERIC_DATA_TYPES.has(dataType)
 export const supportsLength = dataType => LENGTH_DATA_TYPES.has(dataType)
 export const supportsFormat = dataType => FORMAT_DATA_TYPES.has(dataType)
 
 export function isCodeSetCompatible(elementDataType, codeSetValueType) {
-  if (codeSetValueType === 'string') return elementDataType === 'string' || elementDataType === 'text'
+  if (codeSetValueType === 'string') return elementDataType === 'string'
   if (codeSetValueType === 'int') return elementDataType === 'int'
   return codeSetValueType === 'bigint' && (elementDataType === 'bigint' || elementDataType === 'int')
 }

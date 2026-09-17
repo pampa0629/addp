@@ -59,20 +59,7 @@
               </el-col>
               <el-col v-if="requiresOwnerDomain(codeSet.scope_type)" :xs="24" :sm="12">
                 <el-form-item :label="$t('standard.common.ownerDomainLabel')" required>
-                  <el-select v-model="codeSet.owner_domain_id" class="field-control">
-                    <el-option v-for="domain in domains" :key="domain.id" :label="domain.name" :value="domain.id" />
-                  </el-select>
-                </el-form-item>
-              </el-col>
-              <el-col :xs="24" :sm="12">
-                <el-form-item :label="$t('standard.common.stewardId')">
-                  <el-input-number
-                    v-model="codeSet.steward_id"
-                    :min="1"
-                    :controls="false"
-                    :placeholder="$t('standard.common.stewardIdPlaceholder')"
-                    class="field-control"
-                  />
+                  <BusinessDomainSelect v-model="codeSet.owner_domain_id" class="field-control" :options="domains" />
                 </el-form-item>
               </el-col>
               <el-col :xs="24" :sm="12">
@@ -242,6 +229,7 @@
 </template>
 
 <script setup>
+import { BusinessDomainSelect, buildBusinessDomainOptions } from '@common-ui'
 import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -305,7 +293,6 @@ useConsolePageDescriptor(router, 'standard', {
   ready: computed(() => Boolean(codeSet.value.id))
 })
 
-const flatten = nodes => nodes.flatMap(node => [node, ...flatten(node.children || [])])
 const statusLabel = status => status ? t(`standard.revision.status.${status}`) : '-'
 const statusType = status => ({
   draft: 'info',
@@ -343,7 +330,7 @@ async function load() {
 
 async function loadDomains() {
   try {
-    domains.value = flatten(await domainAPI.list() || [])
+    domains.value = buildBusinessDomainOptions(await domainAPI.list() || [])
   } catch {
     domains.value = []
   }
@@ -360,7 +347,6 @@ async function saveIdentity() {
     codeSet.value = await codeSetAPI.update(codeSet.value.id, {
       version: codeSet.value.version,
       ...buildStandardOwnership(codeSet.value.scope_type, codeSet.value.owner_domain_id),
-      steward_id: codeSet.value.steward_id ?? null,
       tags: codeSet.value.tags || []
     })
     codeSet.value.tags ||= []

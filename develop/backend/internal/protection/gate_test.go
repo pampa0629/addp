@@ -191,7 +191,7 @@ func developProjectionStore(t *testing.T) *projectionstore.Store {
 	if err := db.Exec("ATTACH DATABASE ':memory:' AS develop").Error; err != nil {
 		t.Fatal(err)
 	}
-	store, err := projectionstore.New(db, "develop", "develop", nil)
+	store, err := projectionstore.Migrate(db, "develop", "develop", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

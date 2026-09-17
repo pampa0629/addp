@@ -218,5 +218,5 @@ other = "指标依赖不能形成环路"
 other = "指标仍被派生指标或指标依赖引用，无法删除"
 
 
-[standard.glossary.initial_creation]
+[standard.revision.initial_creation]
 other = "初始创建"

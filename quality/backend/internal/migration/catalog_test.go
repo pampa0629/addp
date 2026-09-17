@@ -11,8 +11,8 @@ func TestEmbeddedCatalogContainsQualityQueryIndexes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadCatalog: %v", err)
 	}
-	if catalog.LatestVersion != 11 {
-		t.Fatalf("latest migration version = %d, want 11", catalog.LatestVersion)
+	if catalog.LatestVersion != 14 {
+		t.Fatalf("latest migration version = %d, want 14", catalog.LatestVersion)
 	}
 	queryIndexes := catalog.Files[2]
 	if queryIndexes.Name != "000003_quality_query_indexes.up.sql" {
@@ -83,6 +83,19 @@ func TestEmbeddedCatalogContainsQualityQueryIndexes(t *testing.T) {
 	for _, required := range []string{"TRUNCATE TABLE quality.rule_applications CASCADE", "ADD COLUMN element_revision_id BIGINT NOT NULL", "element_revision_id > 0"} {
 		if !strings.Contains(revisionBinding.Contents, required) {
 			t.Fatalf("element revision binding migration missing %q", required)
+		}
+	}
+	domainOwnership := catalog.Files[11]
+	if domainOwnership.Name != "000012_quality_domain_ownership.up.sql" {
+		t.Fatalf("domain ownership migration = %q", domainOwnership.Name)
+	}
+	for _, required := range []string{
+		"ADD COLUMN owner_domain_id BIGINT NULL",
+		"quality.standard_reference_guards",
+		"ck_quality_standard_reference_guard_resource_type",
+	} {
+		if !strings.Contains(domainOwnership.Contents, required) {
+			t.Fatalf("domain ownership migration missing %q", required)
 		}
 	}
 }

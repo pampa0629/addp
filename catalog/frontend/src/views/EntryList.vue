@@ -73,7 +73,7 @@
       </template>
       <nav class="navigation-grid" :aria-label="t('catalog.entries.navigation.title')">
         <el-form-item :label="t('catalog.entries.navigation.primaryDomain')">
-          <el-select
+          <BusinessDomainSelect :options="businessDomainReferenceOptions(domainOptions)"
             :model-value="filters.primary_domain_id"
             data-testid="catalog-domain-navigation"
             clearable
@@ -86,8 +86,8 @@
               value="__unclassified__"
               :label="`${t('catalog.entries.navigation.unclassifiedDomain')} · ${t('catalog.entries.navigation.governanceGap')}`"
             />
-            <el-option v-for="option in domainOptions" :key="option.id" :value="String(option.id)" :label="facetOptionLabel(option)" />
-          </el-select>
+            <template #suffix="{ option }"><span class="domain-count"> ({{ option.count || 0 }})</span></template>
+          </BusinessDomainSelect>
         </el-form-item>
         <el-form-item :label="t('catalog.entries.navigation.accountableDepartment')">
           <el-select
@@ -265,7 +265,22 @@
           :title="t('catalog.entries.batchGovernance.unsupportedOwnerManaged', { count: unsupportedBatchEntries.length })"
         />
         <el-form-item :label="batchTargetLabel" class="batch-target-field">
-          <el-select
+          <BusinessDomainSelect
+            v-if="batchForm.operation === BATCH_GOVERNANCE_ASSIGN_PRIMARY_DOMAIN"
+            :options="businessDomainReferenceOptions(batchCandidateOptions)" show-code
+            v-model="batchForm.reference_id"
+            data-testid="catalog-batch-governance-target"
+            filterable
+            remote
+            reserve-keyword
+            :disabled="!batchForm.operation"
+            :loading="batchCandidateLoading"
+            :remote-method="searchBatchCandidates"
+            :placeholder="t('catalog.entries.batchGovernance.targetPlaceholder')"
+            style="width: 100%"
+            @visible-change="visible => visible && searchBatchCandidates('')"
+          />
+          <el-select v-else
             v-model="batchForm.reference_id"
             data-testid="catalog-batch-governance-target"
             filterable
@@ -304,7 +319,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { Refresh, Search, WarningFilled } from '@element-plus/icons-vue'
-import { navigateConsoleModuleRoute } from '@common-ui'
+import { BusinessDomainSelect, businessDomainReferenceOptions, navigateConsoleModuleRoute } from '@common-ui'
 import { batchGovernance, listEntries, listEntryFacets, listReferenceCandidates } from '../api/catalog'
 import { useAuthStore } from '../store/auth'
 import { catalogStatusLabel } from '../utils/catalogStatusLabel'
@@ -631,10 +646,9 @@ async function searchBatchCandidates(search = '') {
       page_size: 50
     })
     if (version !== batchCandidateRequestVersion) return
-    const options = new Map()
     const selected = batchCandidateOptions.value.find(option => String(option.id) === String(batchForm.reference_id))
-    if (selected) options.set(String(selected.id), selected)
-    for (const option of response.data || []) options.set(String(option.id), { ...option, id: String(option.id) })
+    const options = new Map((response.data || []).map(option => [String(option.id), { ...option, id: String(option.id) }]))
+    if (selected && !options.has(String(selected.id))) options.set(String(selected.id), selected)
     batchCandidateOptions.value = [...options.values()]
   } catch (error) {
     if (version === batchCandidateRequestVersion) {
@@ -696,6 +710,7 @@ watch(() => route.query, async query => {
 </script>
 
 <style scoped>
+.domain-count { margin-inline-start: 4px; white-space: nowrap; }
 .page-container { padding: 20px; }
 .page-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 16px; }
 .page-header h1 { margin: 0; color: var(--addp-text-primary); font-size: 24px; }

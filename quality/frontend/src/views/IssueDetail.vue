@@ -25,12 +25,14 @@
       <section class="detail-section">
         <h3>{{ t('quality.issue.problemFacts') }}</h3>
         <el-descriptions :column="2" border>
+          <el-descriptions-item :label="t('quality.domain.owner')">{{ domainOwnershipLabel(issue.owner_domain_id, t) }}</el-descriptions-item>
           <el-descriptions-item :label="t('quality.issue.ruleType')">{{ issue.type || '-' }}</el-descriptions-item>
           <el-descriptions-item :label="t('quality.issue.severity')">
             <el-tag :type="severityTagType(issue.severity)">{{ issue.severity || '-' }}</el-tag>
           </el-descriptions-item>
           <el-descriptions-item :label="t('quality.issue.engineId')">{{ issue.engine_id ?? '-' }}</el-descriptions-item>
           <el-descriptions-item :label="t('quality.issue.planId')">{{ issue.plan_id ?? '-' }}</el-descriptions-item>
+          <el-descriptions-item :label="t('quality.targets.scope')" :span="2">{{ issue.target_key || t('quality.domain.unrecorded') }}</el-descriptions-item>
           <el-descriptions-item :label="t('quality.issue.ruleKey')" :span="2">{{ issue.rule_key || '-' }}</el-descriptions-item>
           <el-descriptions-item :label="t('quality.issue.schema')">{{ issue.schema_name || '-' }}</el-descriptions-item>
           <el-descriptions-item :label="t('quality.issue.tableName')">{{ issue.table_name || '-' }}</el-descriptions-item>
@@ -87,6 +89,7 @@ import { navigateQualityRoute } from '../utils/moduleNavigation'
 import { issueExecutionRoute } from '../utils/issueNavigation'
 import { resolveIssueListRouteState } from '../utils/issueListRouteState'
 import { useAuthStore } from '../store/auth'
+import { domainOwnershipLabel } from '../utils/domainOwnership'
 
 const { t } = useI18n()
 const route = useRoute()

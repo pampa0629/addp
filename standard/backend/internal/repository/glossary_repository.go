@@ -135,7 +135,7 @@ func (r *GlossaryRepository) List(tenantID int64, opts ListGlossaryOptions) ([]m
 func (r *GlossaryRepository) UpdateIdentity(glossary *models.Glossary, expectedVersion int64) error {
 	if err := updateVersioned(r.db, glossary, glossary.ID, glossary.TenantID, expectedVersion, map[string]interface{}{
 		"scope_type": glossary.ScopeType, "owner_domain_id": glossary.OwnerDomainID,
-		"steward_id": glossary.StewardID, "tags": glossary.Tags, "updated_by": glossary.UpdatedBy,
+		"tags": glossary.Tags, "updated_by": glossary.UpdatedBy,
 	}); err != nil {
 		return err
 	}

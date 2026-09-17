@@ -15,7 +15,8 @@ import (
 func EnsureRuleTables(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	for _, q := range []string{
-		`CREATE TABLE quality.rules (id INTEGER PRIMARY KEY AUTOINCREMENT,tenant_id INTEGER NOT NULL,code TEXT NOT NULL,version INTEGER NOT NULL,revision_no INTEGER NOT NULL,name TEXT NOT NULL,description TEXT,type TEXT NOT NULL,params JSON NOT NULL,source JSON,created_by INTEGER,updated_by INTEGER,created_at DATETIME,updated_at DATETIME,UNIQUE(tenant_id,code))`,
+		`CREATE TABLE quality.standard_reference_guards (id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, resource_type TEXT NOT NULL, resource_id INTEGER NOT NULL, state TEXT NOT NULL DEFAULT 'open', created_at DATETIME, updated_at DATETIME, UNIQUE(tenant_id,resource_type,resource_id))`,
+		`CREATE TABLE quality.rules (id INTEGER PRIMARY KEY AUTOINCREMENT,tenant_id INTEGER NOT NULL,owner_domain_id INTEGER,code TEXT NOT NULL,version INTEGER NOT NULL,revision_no INTEGER NOT NULL,name TEXT NOT NULL,description TEXT,type TEXT NOT NULL,params JSON NOT NULL,source JSON,created_by INTEGER,updated_by INTEGER,created_at DATETIME,updated_at DATETIME,UNIQUE(tenant_id,code))`,
 		`CREATE TABLE quality.rule_revisions (tenant_id INTEGER NOT NULL,rule_id INTEGER NOT NULL,revision_no INTEGER NOT NULL,name TEXT,description TEXT,type TEXT,params JSON,source JSON,created_at DATETIME,created_by INTEGER,PRIMARY KEY(tenant_id,rule_id,revision_no))`,
 		`CREATE TABLE quality.plan_check_items (tenant_id INTEGER NOT NULL,plan_id INTEGER NOT NULL,rule_key TEXT NOT NULL,position INTEGER,rule_id INTEGER NOT NULL,revision_no INTEGER NOT NULL,bindings JSON,severity TEXT,disabled BOOLEAN,PRIMARY KEY(tenant_id,plan_id,rule_key),UNIQUE(tenant_id,plan_id,position))`,
 	} {

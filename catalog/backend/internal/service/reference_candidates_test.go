@@ -3,13 +3,33 @@ package service
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
+	"reflect"
 	"testing"
+
+	commonClient "github.com/addp/common/client"
 )
 
 type fakeReferenceCandidateResolver struct {
 	result        *ReferenceCandidateList
 	err           error
 	referenceType string
+}
+
+func TestDomainCandidateAdapterPreservesPathAcrossPages(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"object_type":"domain","id":7,"name":"VIP","code":"vip","status":"active","domain_path":["Customer","VIP"]}],"total":2,"page":2,"page_size":1,"total_pages":2}`))
+	}))
+	defer server.Close()
+	client := commonClient.NewStandardClient(server.URL, commonClient.ServiceTokenProviderFunc(func(context.Context, uint) (string, error) {
+		return "test-token", nil
+	}), server.Client())
+	result, err := NewStandardClientCandidateResolver(client).ListReferenceCandidates(context.Background(), 7, "domain", "", 2, 1)
+	if err != nil || len(result.Data) != 1 || result.Data[0].ID != "7" || !reflect.DeepEqual(result.Data[0].DomainPath, []string{"Customer", "VIP"}) {
+		t.Fatalf("result=%#v err=%v", result, err)
+	}
 }
 
 func (r *fakeReferenceCandidateResolver) ListReferenceCandidates(

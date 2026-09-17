@@ -320,6 +320,11 @@ test-develop-postgres: ## 使用测试 PostgreSQL 数据库运行 Develop schema
 test-model-postgres: ## 使用一次性 PostgreSQL 数据库运行 Model 物化与事务集成门禁
 	@bash scripts/test/model-postgres-gate.sh
 
+.PHONY: test-quality-backend
+test-quality-backend: ## 运行 Quality 后端单元与契约测试（不依赖平台 T0）
+	@cd quality/backend && go test ./...
+	@cd orchestrator/backend && go test ./internal/service -run 'TestQualityPlanReceivesResolvedUpstreamTargets' -count=1
+
 test-quality-postgres: ## 使用测试 PostgreSQL 运行 Quality 及 Orchestrator 方案引用集成门禁
 	@bash scripts/test/quality-postgres-gate.sh
 
@@ -366,14 +371,27 @@ test-release-runner: ## 运行 T5 分发器和 CI 登记检查的确定性测试
 	@python3 -m unittest scripts/test/release-gate_test.py scripts/test/opengauss-official-media-release-gate_test.py scripts/test/kingbase-official-media-release-gate_test.py scripts/test/dameng-official-media-release-gate_test.py scripts/test/workflow-security-gate_test.py scripts/ci/check-release-ci-registration_test.py
 	@python3 scripts/ci/check-release-ci-registration.py --repository "$(CURDIR)"
 
+.PHONY: test-dev-lifecycle
+test-dev-lifecycle: ## 验证 Swagger 增量、增量重启、批量端口检查、构建指纹、Runtime 并发与安装锁
+	@bash -n scripts/dev/restart.sh scripts/dev/start.sh scripts/dev/stop.sh scripts/dev/lifecycle-lock.sh scripts/dev/build-identity.sh scripts/dev/jupyter-env.sh scripts/swagger/gen-swagger.sh scripts/test/dev-lifecycle-and-build.sh
+	@bash scripts/test/dev-lifecycle-and-build.sh
+	@cd common && go test ./schema ./repository ./dataprotection/projectionstore
+	@for module in security meta quality transfer; do (cd $$module/backend && go test -tags sqlite_load_extension ./cmd/... -run '^$$') || exit 1; done
+
+.PHONY: test-go-dependency-policy
+test-go-dependency-policy: ## 验证 Go 依赖规约检查器并核对当前版本
+	@python3 scripts/test/check-deps-version_test.py
+	@bash scripts/utils/check-deps-version.sh
+
 test-platform: ## 运行无外部服务依赖的平台一致性门禁
+	@$(MAKE) test-dev-lifecycle
 	@$(MAKE) test-business-config
 	@$(MAKE) test-common-frontend
 	@$(MAKE) test-book
 	@$(MAKE) test-local-ci-runner
 	@$(MAKE) test-node-dependencies
 	@$(MAKE) test-infra-postgresql-init
-	@bash scripts/utils/check-deps-version.sh
+	@$(MAKE) test-go-dependency-policy
 	@python3 scripts/ci/check-build-registration_test.py
 	@python3 scripts/ci/select-image-services_test.py
 	@python3 scripts/ci/check-build-registration.py --repository "$(CURDIR)"

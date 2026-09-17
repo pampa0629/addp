@@ -94,6 +94,11 @@ func (v *validator) expr(e Expr, scope map[NodeID][]datatype.FieldInfo, depth in
 		return true
 	}
 	switch e.Op {
+	case "contains":
+		if len(args) != 2 || !same() || args[0].Type != datatype.FieldTypeString {
+			return bad()
+		}
+		return field("", datatype.FieldTypeBool, nullable), nil
 	case "eq", "ne", "lt", "le", "gt", "ge":
 		if len(args) != 2 || !same() {
 			return bad()

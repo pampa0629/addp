@@ -238,7 +238,7 @@ func (b *resultBuilder) filter(f ResultFilter, depth int) (Expr, error) {
 			e = resultOp("not", e)
 		}
 		return e, nil
-	case "eq", "ne", "lt", "le", "gt", "ge", "in":
+	case "eq", "ne", "lt", "le", "gt", "ge", "in", "contains":
 		if len(f.Values) == 0 || (f.Op != "in" && len(f.Values) != 1) || len(f.Values) > MaxParameters {
 			return Expr{}, fmt.Errorf("invalid result comparison arity")
 		}

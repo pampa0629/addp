@@ -55,11 +55,11 @@ func TestPublicCreateEntryPointsRejectInvalidStableCodes(t *testing.T) {
 			return err
 		}},
 		{name: "element", call: func() error {
-			_, err := NewElementService(nil, nil, refs, nil).CreateElement(&models.CreateElementRequest{ScopeType: models.StandardScopeTenantCommon, Code: invalid}, 7, 9)
+			_, err := NewElementService(nil, nil, refs, nil).CreateElement(&models.CreateElementRequest{ScopeType: models.StandardScopeTenantCommon, Code: invalid}, 7, 9, "初始创建")
 			return err
 		}},
 		{name: "code set", call: func() error {
-			_, err := NewCodeSetService(nil, refs).CreateCodeSet(7, 9, &models.CreateCodeSetRequest{ScopeType: models.StandardScopeTenantCommon, Code: invalid})
+			_, err := NewCodeSetService(nil, refs).CreateCodeSet(7, 9, &models.CreateCodeSetRequest{ScopeType: models.StandardScopeTenantCommon, Code: invalid}, "Initial creation")
 			return err
 		}},
 		{name: "metric category", call: func() error {
@@ -67,11 +67,11 @@ func TestPublicCreateEntryPointsRejectInvalidStableCodes(t *testing.T) {
 			return err
 		}},
 		{name: "metric", call: func() error {
-			_, err := NewMetricService(nil, nil, refs, nil).CreateMetric(&models.CreateMetricRequest{ScopeType: models.StandardScopeTenantCommon, Code: invalid}, 7, 9)
+			_, err := NewMetricService(nil, nil, refs, nil).CreateMetric(&models.CreateMetricRequest{ScopeType: models.StandardScopeTenantCommon, Code: invalid}, 7, 9, "Initial creation")
 			return err
 		}},
 		{name: "document", call: func() error {
-			_, err := (&DocumentService{refs: refs}).CreateDocument(&models.CreateDocumentRequest{ScopeType: models.StandardScopeTenantCommon, Code: invalid}, 7, 9)
+			_, err := (&DocumentService{refs: refs}).CreateDocument(&models.CreateDocumentRequest{ScopeType: models.StandardScopeTenantCommon, Code: invalid}, 7, 9, "Initial creation")
 			return err
 		}},
 		{name: "measurement category", call: func() error {

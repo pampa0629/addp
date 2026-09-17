@@ -12,6 +12,8 @@ type Issue struct {
 	ExecutionID     string          `gorm:"size:255;not null;index" json:"execution_id"` // common.task_executions.execution_id
 	LastExecutionID string          `gorm:"size:255;not null;index" json:"last_execution_id"`
 	PlanID          int64           `gorm:"not null;uniqueIndex:uq_quality_issue_rule" json:"plan_id"`
+	TargetKey       *string         `gorm:"size:64;uniqueIndex:uq_quality_issue_rule" json:"target_key"`
+	OwnerDomainID   *int64          `gorm:"index" json:"owner_domain_id,omitempty"`
 	RuleKey         string          `gorm:"type:uuid;not null;uniqueIndex:uq_quality_issue_rule" json:"rule_key"`
 	RuleType        string          `gorm:"size:100;not null" json:"type"`
 	Severity        string          `gorm:"size:20;not null;default:'error'" json:"severity"`
@@ -36,17 +38,19 @@ type Issue struct {
 func (Issue) TableName() string { return "quality.issues" }
 
 type IssueObservation struct {
-	PlanID      int64
-	RuleKey     string
-	RuleType    string
-	Severity    string
-	Message     string
-	ColumnName  string
-	Table       string
-	SchemaName  string
-	EngineID    int64
-	FailedCount int64
-	TotalCount  int64
-	PassRate    float64
-	Passed      bool
+	TargetKey     string
+	PlanID        int64
+	OwnerDomainID *int64
+	RuleKey       string
+	RuleType      string
+	Severity      string
+	Message       string
+	ColumnName    string
+	Table         string
+	SchemaName    string
+	EngineID      int64
+	FailedCount   int64
+	TotalCount    int64
+	PassRate      float64
+	Passed        bool
 }

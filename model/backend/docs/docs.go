@@ -4427,7 +4427,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "保存数据库无关的结构化计算契约；来源结构来自 Meta，执行引擎必须声明分析计算能力。 | Saves a database-independent computation contract using Meta source facts and a certified analytical engine.",
+                "description": "保存数据库无关的结构化计算契约；来源结构来自 Meta，执行引擎必须声明分析计算能力。 | Saves a database-independent computation contract using Meta source facts and a certified analytical engine.\n可选 subject_label 必须引用主体维度的 string 字段，向结果追加当前主体及比较方名称，保留原始标识与计算值。 | Optional subject_label references a string field in the subject dimension and adds current subject and comparison labels while preserving identities and metric values.",
                 "consumes": [
                     "application/json"
                 ],
@@ -5527,7 +5527,6 @@ const docTemplate = `{
                         "datetime",
                         "bool",
                         "json",
-                        "text",
                         "geometry"
                     ]
                 },
@@ -5640,7 +5639,6 @@ const docTemplate = `{
                         "datetime",
                         "bool",
                         "json",
-                        "text",
                         "geometry"
                     ]
                 },
@@ -6163,7 +6161,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "data_type": {
-                    "description": "string/int/bigint/float/decimal/date/datetime/bool/json/text",
+                    "description": "string/int/bigint/float/decimal/date/datetime/bool/json",
                     "type": "string"
                 },
                 "default_value": {
@@ -6588,6 +6586,9 @@ const docTemplate = `{
                     ]
                 },
                 "subject": {
+                    "$ref": "#/definitions/github_com_addp_model_internal_models.MetricFieldReference"
+                },
+                "subject_label": {
                     "$ref": "#/definitions/github_com_addp_model_internal_models.MetricFieldReference"
                 },
                 "subject_relation_id": {
@@ -7398,7 +7399,6 @@ const docTemplate = `{
                         "datetime",
                         "bool",
                         "json",
-                        "text",
                         "geometry"
                     ]
                 },
@@ -7522,7 +7522,6 @@ const docTemplate = `{
                         "datetime",
                         "bool",
                         "json",
-                        "text",
                         "geometry"
                     ]
                 },

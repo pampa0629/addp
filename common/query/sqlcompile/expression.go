@@ -13,6 +13,7 @@ import (
 // API. Value adds a native type to a trusted expression/parameter; Literal
 // safely renders canonical data; Comparable supplies exact comparison keys.
 type ExpressionDialect interface {
+	plugin.TextPredicateDialect
 	ArithmeticDialect
 	CalendarDialect
 	QuoteIdentifier(string) string
@@ -147,6 +148,9 @@ func compileExpression(e plan.Expr, scope ExpressionScope, d ExpressionDialect) 
 			} else {
 				result.SQL = "(" + args[0].SQL + ") IS NULL"
 			}
+		case "contains":
+			result.Type = datatype.FieldTypeBool
+			result.SQL = d.Contains(args[0].SQL, args[1].SQL)
 		case "and", "or":
 			result.Type = datatype.FieldTypeBool
 			result.SQL = "(" + args[0].SQL + ") " + strings.ToUpper(e.Op) + " (" + args[1].SQL + ")"

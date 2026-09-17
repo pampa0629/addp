@@ -29,6 +29,7 @@ type ReferenceResolutionRequest struct {
 }
 
 type ReferenceResolution struct {
+	DomainPath     []string      `json:"domain_path,omitempty"` // 业务域完整名称路径 / Full domain name path.
 	ObjectType     ReferenceType `json:"object_type"`
 	ID             int64         `json:"id"`
 	Found          bool          `json:"found"`
@@ -43,6 +44,7 @@ type ReferenceResolution struct {
 }
 
 type ReferenceCandidate struct {
+	DomainPath []string      `json:"domain_path,omitempty"` // 业务域完整名称路径 / Full domain name path.
 	ObjectType ReferenceType `json:"object_type"`
 	ID         int64         `json:"id"`
 	Name       string        `json:"name"`
@@ -67,7 +69,7 @@ type ReferenceResolutionRepository interface {
 	ResolveDomainsByCodes(ctx context.Context, tenantID int64, codes []string) ([]models.Domain, error)
 	ResolveGlossariesByCodes(ctx context.Context, tenantID int64, codes []string) ([]models.PublishedGlossaryReference, error)
 	ResolveElementsByCodes(ctx context.Context, tenantID int64, codes []string) ([]models.PublishedElementReference, error)
-	ListDomainCandidates(ctx context.Context, tenantID int64, search string, page, pageSize int) ([]models.Domain, int64, error)
+	ListDomains(ctx context.Context, tenantID int64) ([]models.Domain, error)
 	ListGlossaryCandidates(ctx context.Context, tenantID int64, search string, page, pageSize int) ([]models.PublishedGlossaryReference, int64, error)
 	ListElementCandidates(ctx context.Context, tenantID int64, search string, page, pageSize int) ([]models.PublishedElementReference, int64, error)
 }
@@ -134,12 +136,24 @@ func (s *ReferenceResolutionService) Resolve(
 		return nil, err
 	}
 
+	domainPaths := map[int64][]string{}
+	if len(domains)+len(domainsByCode) > 0 {
+		allDomains, err := s.repository.ListDomains(ctx, tenantID)
+		if err != nil {
+			return nil, err
+		}
+		_, domainPaths, err = buildDomainHierarchy(allDomains)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	resolved := make(map[string]ReferenceResolution, len(domains)+len(glossaries)+len(elements))
 	for _, domain := range domains {
 		resolved[referenceResolutionKey(ReferenceTypeDomain, domain.ID)] = ReferenceResolution{
 			ObjectType: ReferenceTypeDomain, ID: domain.ID, Found: true,
 			Referenceable: domain.LifecycleState == "active", Name: domain.Name, Code: domain.Code,
-			Status: domain.LifecycleState, LifecycleState: domain.LifecycleState, Version: domain.Version,
+			Status: domain.LifecycleState, LifecycleState: domain.LifecycleState, Version: domain.Version, DomainPath: domainPaths[domain.ID],
 		}
 	}
 	for _, glossary := range glossaries {
@@ -163,7 +177,7 @@ func (s *ReferenceResolutionService) Resolve(
 		resolved[referenceCodeResolutionKey(ReferenceTypeDomain, domain.Code)] = ReferenceResolution{
 			ObjectType: ReferenceTypeDomain, ID: domain.ID, Found: true,
 			Referenceable: domain.LifecycleState == "active", Name: domain.Name, Code: domain.Code,
-			Status: domain.LifecycleState, LifecycleState: domain.LifecycleState, Version: domain.Version,
+			Status: domain.LifecycleState, LifecycleState: domain.LifecycleState, Version: domain.Version, DomainPath: domainPaths[domain.ID],
 		}
 	}
 	for _, glossary := range glossariesByCode {
@@ -221,13 +235,31 @@ func (s *ReferenceResolutionService) ListCandidates(
 	result := &ReferenceCandidateList{Data: []ReferenceCandidate{}, Page: page, PageSize: pageSize}
 	switch objectType {
 	case ReferenceTypeDomain:
-		items, total, err := s.repository.ListDomainCandidates(ctx, tenantID, search, page, pageSize)
+		domains, err := s.repository.ListDomains(ctx, tenantID)
 		if err != nil {
 			return nil, err
 		}
-		result.Total = total
-		for _, item := range items {
-			result.Data = append(result.Data, ReferenceCandidate{ObjectType: objectType, ID: item.ID, Name: item.Name, Code: item.Code, Status: item.LifecycleState})
+		tree, paths, err := buildDomainHierarchy(domains)
+		if err != nil {
+			return nil, err
+		}
+		keyword := strings.ToLower(search)
+		candidates := []ReferenceCandidate{}
+		var visit func([]*DomainTree)
+		visit = func(nodes []*DomainTree) {
+			for _, node := range nodes {
+				path := paths[node.ID]
+				if node.LifecycleState == "active" && (keyword == "" || strings.Contains(strings.ToLower(strings.Join(path, " / ")+" / "+node.Code), keyword)) {
+					candidates = append(candidates, ReferenceCandidate{ObjectType: objectType, ID: node.ID, Name: node.Name, Code: node.Code, Status: node.LifecycleState, DomainPath: path})
+				}
+				visit(node.Children)
+			}
+		}
+		visit(tree)
+		result.Total = int64(len(candidates))
+		if page <= (len(candidates)+pageSize-1)/pageSize {
+			start := (page - 1) * pageSize
+			result.Data = candidates[start:min(start+pageSize, len(candidates))]
 		}
 	case ReferenceTypeGlossary:
 		items, total, err := s.repository.ListGlossaryCandidates(ctx, tenantID, search, page, pageSize)

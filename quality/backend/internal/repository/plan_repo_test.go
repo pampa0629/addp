@@ -47,9 +47,9 @@ func TestPlanExecutionClaimsBeforeDynamicAuthorization(t *testing.T) {
 		ParentExecutionID: &parent, ExecutionBoundary: commonExecution.ExecutionBoundaryBounded,
 		Status: commonExecution.ExecutionStatusPending, TriggerType: commonExecution.TriggerTypeManual,
 		MaxAttempts: 3, CreatedAt: now, UpdatedAt: now,
-		ExecutionConfig: commonModels.JSONMap{"schema_version": "addp.quality.plan-execution-config/v1"},
+		ExecutionConfig: commonModels.JSONMap{"schema_version": "addp.quality.plan-execution-config/v2"},
 	}
-	if _, err := repo.CreateExecution(context.Background(), task.ID, task.TenantID, execution); err != nil {
+	if _, err := repo.CreateExecution(context.Background(), task.ID, task.TenantID, execution, models.PlanRunRequest{}); err != nil {
 		t.Fatal(err)
 	}
 	var storedExecution commonExecution.TaskExecution
@@ -124,7 +124,7 @@ func TestPlanCompletionFencesIssuesAndRollsBackTogether(t *testing.T) {
 	now := time.Now().UTC()
 	ctx := context.Background()
 	execution := newQualityRepositoryTestExecution("issue-fence", 7, now)
-	if _, err := repo.CreateExecution(ctx, task.ID, 7, execution); err != nil {
+	if _, err := repo.CreateExecution(ctx, task.ID, 7, execution, models.PlanRunRequest{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := repo.AttachPendingAuthorization(ctx, 7, execution.ExecutionID, map[string]interface{}{"execution_authorization_id": int64(1)}); err != nil {
@@ -138,7 +138,7 @@ func TestPlanCompletionFencesIssuesAndRollsBackTogether(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	observation := models.IssueObservation{PlanID: task.ID, RuleKey: "00000000-0000-4000-8000-000000000001", RuleType: "not_null", Severity: "error", Table: "customers", SchemaName: "public", ColumnName: "id", EngineID: 1, FailedCount: 1, TotalCount: 2, PassRate: 50}
+	observation := models.IssueObservation{TargetKey: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",PlanID: task.ID, RuleKey: "00000000-0000-4000-8000-000000000001", RuleType: "not_null", Severity: "error", Table: "customers", SchemaName: "public", ColumnName: "id", EngineID: 1, FailedCount: 1, TotalCount: 2, PassRate: 50}
 	stale := lease
 	stale.Token = "other-worker"
 	if err := repo.CompleteExecutionWithLease(ctx, task.ID, 7, stale, "failed", nil, now, observation); err == nil {
@@ -150,7 +150,7 @@ func TestPlanCompletionFencesIssuesAndRollsBackTogether(t *testing.T) {
 		t.Fatal("stale worker wrote issue")
 	}
 	// Owner-summary failure happens after issue reconciliation. Both writes must roll back.
-	if err := db.Model(&task).Update("last_execution_id", "other").Error; err != nil {
+	if err := db.Exec(`CREATE TRIGGER quality.fail_summary BEFORE UPDATE ON plans BEGIN SELECT RAISE(FAIL, 'summary write failed'); END`).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := repo.CompleteExecutionWithLease(ctx, task.ID, 7, lease, "failed", nil, now, observation); err == nil {
@@ -167,7 +167,7 @@ func TestPlanCompletionFencesIssuesAndRollsBackTogether(t *testing.T) {
 	if stored.Status != "running" {
 		t.Fatalf("status=%s", stored.Status)
 	}
-	if err := db.Model(&task).Update("last_execution_id", execution.ExecutionID).Error; err != nil {
+	if err := db.Exec(`DROP TRIGGER quality.fail_summary`).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := repo.CompleteExecutionWithLease(ctx, task.ID, 7, lease, "failed", nil, now, observation); err != nil {

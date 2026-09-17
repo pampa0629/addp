@@ -58,8 +58,8 @@ func TestElementCreationPreservesExplicitNotNull(t *testing.T) {
 	svc := NewElementService(repository.NewElementRepository(db), nil, repository.NewTenantReferenceRepository(db), nil)
 	result, err := svc.CreateElement(&models.CreateElementRequest{
 		Code: "person_id", ScopeType: models.StandardScopeTenantCommon, Name: "Person ID", Definition: "Person identifier",
-		DataType: "string", Nullable: false, ValueDomainKind: models.ValueDomainUnrestricted, ChangeSummary: "Initial definition",
-	}, 7, 1)
+		DataType: "string", Nullable: false, ValueDomainKind: models.ValueDomainUnrestricted,
+	}, 7, 1, "Initial creation")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,5 +128,20 @@ func TestCompileElementEnumerationUsesExactPublishedCodeSet(t *testing.T) {
 	}
 	if _, err := svc.compileQualityRules(1, revision, 8); err == nil {
 		t.Fatal("accepted code set from another tenant")
+	}
+}
+
+func TestTextDefinitionUsesStringWithOptionalLength(t *testing.T) {
+	db := setupStandardCleanupTestDB(t)
+	svc := NewElementService(repository.NewElementRepository(db), nil, repository.NewTenantReferenceRepository(db), nil)
+	for _, dataType := range []string{"string", "text"} {
+		req := &models.CreateElementRequest{Code: "phone_" + dataType, ScopeType: models.StandardScopeTenantCommon, Name: "Phone", Definition: "Phone number", DataType: dataType, Nullable: true, ValueDomainKind: models.ValueDomainUnrestricted}
+		_, err := svc.CreateElement(req, 7, 1, "Initial creation")
+		if dataType == "string" && err != nil {
+			t.Fatal(err)
+		}
+		if dataType == "text" && err == nil {
+			t.Fatal("retired text type accepted")
+		}
 	}
 }

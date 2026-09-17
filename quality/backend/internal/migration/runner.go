@@ -73,6 +73,11 @@ func (r *Runner) Run(ctx context.Context) error {
 					return fmt.Errorf("migrate quality plans: %w", err)
 				}
 			}
+			if file.Version == 14 {
+				if err := backfillIssueTargetScopes(tx); err != nil {
+					return fmt.Errorf("backfill issue target scopes: %w", err)
+				}
+			}
 			if err := tx.Table("quality.schema_migrations").Create(&appliedMigration{
 				Version: file.Version, Filename: file.Name, SHA256: file.SHA256,
 			}).Error; err != nil {

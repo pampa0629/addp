@@ -27,6 +27,13 @@ const menus = {
 }
 
 describe('Console navigation access filtering', () => {
+  it('requires every permission when an entry declares all mode', () => {
+    const entry = { permissions: ['quality.plan.read', 'quality.issue.read', 'monitor.execution.read'], permissionMode: 'all' }
+    for (const missing of entry.permissions) {
+      expect(matchesNavigationAccess(entry, 'tenant', entry.permissions.filter(p => p !== missing))).toBe(false)
+    }
+    expect(matchesNavigationAccess(entry, 'tenant', entry.permissions)).toBe(true)
+  })
   it('matches access rules by both AuthContext type and any granted permission', () => {
     const entry = menus.system.items[0].children[0]
     expect(matchesNavigationAccess(entry, 'platform', ['iam.user.read'])).toBe(true)

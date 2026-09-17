@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -8,7 +9,9 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/addp/common/client"
 	"github.com/addp/common/datatype"
+	commonmodels "github.com/addp/common/models"
 	"github.com/addp/service/internal/models"
 	"github.com/addp/service/internal/repository"
 )
@@ -23,26 +26,36 @@ type consumerQueryServiceRepository interface {
 	MigrateInvalidQueryServiceConsumerContracts(validate func(*models.QueryService) error) (int64, error)
 }
 
-type ConsumerCatalogService struct {
-	repo consumerQueryServiceRepository
+type consumerEngineClient interface {
+	GetEngineForTenant(context.Context, uint, uint) (*commonmodels.Engine, error)
 }
 
-func NewConsumerCatalogService(repo *repository.QueryServiceRepository) *ConsumerCatalogService {
-	return &ConsumerCatalogService{repo: repo}
+type ConsumerCatalogService struct {
+	systemClient consumerEngineClient
+	repo         consumerQueryServiceRepository
+}
+
+func NewConsumerCatalogService(repo *repository.QueryServiceRepository, systemClient *client.SystemClient) *ConsumerCatalogService {
+	return &ConsumerCatalogService{repo: repo, systemClient: systemClient}
 }
 
 func (s *ConsumerCatalogService) MigrateInvalidQueryServiceContracts() (int64, error) {
 	return s.repo.MigrateInvalidQueryServiceConsumerContracts(ValidateQueryConsumerContract)
 }
 
-func (s *ConsumerCatalogService) ListQueryServices(filter models.ConsumerServiceListFilter) ([]models.ConsumerServiceSummary, int64, error) {
+func (s *ConsumerCatalogService) ListQueryServices(ctx context.Context, filter models.ConsumerServiceListFilter) ([]models.ConsumerServiceSummary, int64, error) {
 	services, total, err := s.repo.ListConsumerServices(filter)
 	if err != nil {
 		return nil, 0, fmt.Errorf("list consumer services: %w", err)
 	}
 	result := make([]models.ConsumerServiceSummary, len(services))
+	engines := map[uint]bool{}
 	for index := range services {
-		descriptor, err := BuildQueryConsumerDescriptor(&services[index])
+		supported, err := s.supportsContains(ctx, &services[index], engines)
+		if err != nil {
+			return nil, 0, err
+		}
+		descriptor, err := BuildQueryConsumerDescriptor(&services[index], supported)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -55,15 +68,19 @@ func (s *ConsumerCatalogService) ListQueryServices(filter models.ConsumerService
 	return result, total, nil
 }
 
-func (s *ConsumerCatalogService) GetQueryService(tenantID, serviceID uint) (*models.ConsumerDescriptor, error) {
+func (s *ConsumerCatalogService) GetQueryService(ctx context.Context, tenantID, serviceID uint) (*models.ConsumerDescriptor, error) {
 	service, err := s.repo.GetConsumerServiceByID(tenantID, serviceID)
 	if err != nil {
 		return nil, err
 	}
-	return BuildQueryConsumerDescriptor(service)
+	supported, err := s.supportsContains(ctx, service, map[uint]bool{})
+	if err != nil {
+		return nil, err
+	}
+	return BuildQueryConsumerDescriptor(service, supported)
 }
 
-func BuildQueryConsumerDescriptor(service *models.QueryService) (*models.ConsumerDescriptor, error) {
+func BuildQueryConsumerDescriptor(service *models.QueryService, supportsContains bool) (*models.ConsumerDescriptor, error) {
 	if service == nil || service.ID == 0 {
 		return nil, fmt.Errorf("%w: query service is not consumable", ErrInvalidConsumerContract)
 	}
@@ -88,7 +105,7 @@ func BuildQueryConsumerDescriptor(service *models.QueryService) (*models.Consume
 		inputFields[index] = models.ConsumerQueryField{
 			Name: field.Name, Type: field.Type, ElementType: field.ElementType, Nullable: field.Nullable,
 			Selectable: true, Filterable: canFilter,
-			Operators: consumerFieldOperators(field, canFilter, service.GetGeometryColumn()),
+			Operators: consumerFieldOperators(field, canFilter, service.GetGeometryColumn(), supportsContains),
 			Sortable:  !field.Nullable && isStableOrderFieldType(field.Type),
 		}
 		outputFields[index] = models.ConsumerOutputField{
@@ -220,7 +237,7 @@ func consumerContractFingerprint(
 	return "sha256:" + hex.EncodeToString(digest[:]), nil
 }
 
-func consumerFieldOperators(field datatype.FieldInfo, filterable bool, geometryField string) []string {
+func consumerFieldOperators(field datatype.FieldInfo, filterable bool, geometryField string, supportsContains bool) []string {
 	if !filterable {
 		return []string{}
 	}
@@ -236,6 +253,9 @@ func consumerFieldOperators(field datatype.FieldInfo, filterable bool, geometryF
 	operators := []string{"eq", "ne", "in", "is_null", "is_not_null"}
 	if field.Type != datatype.FieldTypeBool {
 		operators = append(operators, "lt", "lte", "gt", "gte")
+	}
+	if supportsContains && field.Type == datatype.FieldTypeString {
+		operators = append(operators, "contains")
 	}
 	return operators
 }
@@ -328,4 +348,24 @@ func cloneInt(value *int) *int {
 	}
 	cloned := *value
 	return &cloned
+}
+
+func (s *ConsumerCatalogService) supportsContains(ctx context.Context, service *models.QueryService, cache map[uint]bool) (bool, error) {
+	engineID := service.GetEngineID()
+	if service.UsesFederatedQueryRuntime() {
+		engineID = *service.RuntimeEngineID
+	}
+	if supported, ok := cache[engineID]; ok {
+		return supported, nil
+	}
+	engine, err := s.systemClient.GetEngineForTenant(ctx, service.TenantID, engineID)
+	if err != nil {
+		return false, fmt.Errorf("resolve consumer query engine: %w", err)
+	}
+	if engine == nil {
+		return false, fmt.Errorf("missing consumer query engine")
+	}
+	supported := textPredicateDialect(engine.EngineType) != nil
+	cache[engineID] = supported
+	return supported, nil
 }

@@ -27,16 +27,23 @@ type ruleDeleteRequest struct {
 // @Produce json
 // @Param search query string false "名称或编码 | Name or code"
 // @Param page query int false "页码 | Page"
+// @Param owner_domain_id query int false "归属业务域（省略全部，0 为租户公共，正整数为指定域） | Owner domain (omit for all, 0 for tenant-public, positive ID for one domain)" minimum(0)
 // @Param page_size query int false "每页数量 | Page size"
 // @Success 200 {object} qualityRuleListResponse
+// @Failure 400 {object} qualityErrorResponse
 // @Failure 500 {object} qualityErrorResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["quality.rule.read"]
 // @Router /rules [get]
 // @Security BearerAuth
 func (h *RuleHandler) List(c *gin.Context) {
+	ownerDomainID, filterErr := ownerDomainFilter(c)
+	if filterErr != nil {
+		respondInvalidRequest(c, "")
+		return
+	}
 	page, pageSize := pageParams(c.Query("page"), c.Query("page_size"))
-	items, total, err := h.service.List(c.Request.Context(), getTenantID(c), c.Query("search"), page, pageSize)
+	items, total, err := h.service.List(c.Request.Context(), getTenantID(c), c.Query("search"), ownerDomainID, page, pageSize)
 	if err != nil {
 		respondQualityServiceError(c, err, qualityi18n.MsgRuleNotFound, qualityi18n.MsgInternal)
 		return
@@ -160,10 +167,10 @@ func (h *RuleHandler) Delete(c *gin.Context) {
 	c.JSON(http.StatusOK, qualityMessageResponse{Message: commoni18n.T(c, qualityi18n.MsgDeleted)})
 }
 
-// @Summary 搜索标准规则来源 | Search standard rule sources
+// @Summary 浏览或搜索标准规则来源 | Browse or search standard rule sources
 // @Tags QualityRule
 // @Produce json
-// @Param keyword query string true "搜索词 | Search keyword"
+// @Param keyword query string false "名称或编码；省略时分页浏览 | Name or code; omit to browse pages"
 // @Param page query int false "页码 | Page"
 // @Param page_size query int false "每页数量 | Page size"
 // @Success 200 {object} qualityElementCandidateListResponse

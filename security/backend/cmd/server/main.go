@@ -8,9 +8,10 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/addp/common/schema"
+
 	commonclient "github.com/addp/common/client"
 	commonconfig "github.com/addp/common/config"
-	commonexecution "github.com/addp/common/execution"
 	"github.com/addp/common/modulelifecycle"
 	_ "github.com/addp/security/i18n"
 	"github.com/addp/security/internal/api"
@@ -36,10 +37,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("Security database connection failed: %v", err)
 	}
-	if err := repository.Migrate(db); err != nil {
+	if err := schema.Migrate(db, "security", repository.SchemaVersion, repository.Migrate); err != nil {
 		log.Fatalf("Security database migration failed: %v", err)
 	}
-	if err := commonexecution.EnsureStore(db); err != nil {
+	if err := schema.Require(db, "common", schema.CommonVersion); err != nil {
 		log.Fatalf("Security execution store migration failed: %v", err)
 	}
 	tokenSource, err := commonclient.NewOAuthServiceTokenSource(cfg.SystemURL, "addp-security", cfg.ServiceClientSecret, nil)

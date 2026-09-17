@@ -150,7 +150,7 @@ func transferProjectionStore(t *testing.T) *projectionstore.Store {
 	if err := db.Exec("ATTACH DATABASE ':memory:' AS transfer").Error; err != nil {
 		t.Fatal(err)
 	}
-	store, err := projectionstore.New(db, "transfer", "transfer", nil)
+	store, err := projectionstore.Migrate(db, "transfer", "transfer", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

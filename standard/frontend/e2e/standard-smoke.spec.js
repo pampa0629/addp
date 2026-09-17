@@ -234,7 +234,7 @@ const listPages = [
   ['/elements', '数据元管理'],
   ['/code-sets', '新建码值集'],
   ['/units', '计量单位管理'],
-  ['/metrics', '指标管理'],
+  ['/metrics', '指标定义'],
   ['/documents', '全局文档库']
 ]
 
@@ -244,7 +244,7 @@ const visualPages = [
   ['/elements', '数据元管理', 'elements'],
   ['/code-sets', '新建码值集', 'code-sets'],
   ['/units', '计量单位管理', 'units'],
-  ['/metrics', '指标管理', 'metrics'],
+  ['/metrics', '指标定义', 'metrics'],
   ['/documents', '全局文档库', 'documents']
 ]
 
@@ -322,6 +322,40 @@ test.describe('Standard theme visual baselines', () => {
   }
 })
 
+for (const path of ['/glossaries', '/elements', '/code-sets', '/metrics', '/documents']) {
+  test(`business domain hierarchy, search and selection on ${path}`, async ({ page }) => {
+    await installMockBackend(page)
+    await page.route('**/api/v1/standard/domains', route => fulfillJSON(route, [
+      { id: 2, name: '户外域', code: 'outdoor' },
+      { id: 1, name: '客户域', code: 'customer', children: [
+        { id: 3, name: 'VIP', code: 'customer_vip', children: [
+          { id: 4, name: '国内', code: 'domestic' }
+        ] }
+      ] }
+    ]))
+    await page.goto(path)
+    const selector = page.locator('.el-select').filter({ has: page.locator('.el-select__placeholder', { hasText: '选择业务域' }) }).first()
+    await selector.locator('.el-select__wrapper').click()
+    const rows = page.locator('.el-select-dropdown:visible .business-domain-option')
+    await expect(rows).toHaveCount(4)
+    await expect(rows.nth(0)).toHaveText('户外域')
+    await expect(rows.nth(1)).toHaveText('客户域')
+    await expect(rows.nth(2)).toHaveCSS('padding-inline-start', '16px')
+    await expect(rows.nth(3)).toHaveCSS('padding-inline-start', '32px')
+    if (path === '/elements') await page.screenshot({ path: test.info().outputPath('business-domain-hierarchy.png'), animations: 'disabled' })
+    await selector.getByRole('combobox').fill('DOMESTIC')
+    await expect(rows).toHaveCount(1)
+    await expect(rows.first()).toHaveText('客户域 / VIP / 国内')
+    await rows.first().click()
+    const selected = page.locator('.el-select[title="客户域 / VIP / 国内"]').first()
+    await expect(selected.locator('.el-select__selected-item').filter({ hasText: '国内' })).toHaveText('国内')
+    await selected.locator('.el-select__wrapper').click()
+    await expect(rows).toHaveCount(4)
+    await page.getByRole('option', { name: '客户域', exact: true }).click()
+    await expect(page.locator('.el-select[title="客户域"]').first()).toBeVisible()
+  })
+}
+
 test('inherits the selected domain when creating a glossary and preserves filters through detail', async ({ page }) => {
   await installMockBackend(page)
   await page.goto('/glossaries?owner_domain_id=2&status=draft')
@@ -396,6 +430,159 @@ test('keeps the latest glossary filter result when an older request returns late
 
   await expect(page.getByText('新筛选结果', { exact: true })).toBeVisible()
   await expect(page.getByText('旧筛选结果', { exact: true })).toHaveCount(0)
+})
+
+test('expands, collapses and searches measurement units and keeps the effective interval together', async ({ page }) => {
+  await installMockBackend(page, { elements: [{ id: 41, code: 'phone', name: '电话', data_type: 'string', status: 'draft' }] })
+  await page.route('**/api/v1/standard/units*', route => fulfillJSON(route, [
+    { id: 1, name: '米', symbol: 'm', category_id: 10, category: { name: '长度', sort_order: 1 } },
+    { id: 2, name: '克', symbol: 'g', category_id: 20, category: { name: '质量', sort_order: 2 } }
+  ]))
+  await page.goto('/elements/41')
+  await expect(page.getByText('责任人用户 ID', { exact: true })).toHaveCount(0)
+  await expect(page.getByText('可选；留空表示不限制最大字符数', { exact: true })).toBeVisible()
+  const units = page.getByRole('combobox', { name: '计量单位', exact: true })
+  await page.locator('.unit-select .el-select__wrapper').click()
+  await expect(page.getByText('长度', { exact: true }).last()).toBeVisible()
+  await expect(page.getByText('质量', { exact: true })).toBeVisible()
+  const lengthCategory = page.locator('.el-tree-node').filter({ has: page.getByRole('option', { name: '长度', exact: true }) }).first()
+  await expect(lengthCategory).toHaveAttribute('aria-expanded', 'false')
+  await expect(page.getByRole('option', { name: '米 (m)', exact: true })).not.toBeVisible()
+  await page.getByRole('option', { name: '长度', exact: true }).click()
+  await expect(lengthCategory).toHaveAttribute('aria-expanded', 'true')
+  await expect(page.getByRole('option', { name: '米 (m)', exact: true })).toBeVisible()
+  await expect(page.locator('.unit-select .el-select__selected-item').filter({ hasText: '长度' })).toHaveCount(0)
+  await page.getByRole('option', { name: '长度', exact: true }).click()
+  await expect(lengthCategory).toHaveAttribute('aria-expanded', 'false')
+  await expect(page.getByRole('option', { name: '米 (m)', exact: true })).not.toBeVisible()
+  await units.fill('质量')
+  await expect(page.getByRole('option', { name: '克 (g)', exact: true })).toBeVisible()
+  await expect(page.getByRole('option', { name: '米 (m)', exact: true })).not.toBeVisible()
+  await units.fill('不存在的单位')
+  await expect(page.getByRole('option', { name: '克 (g)', exact: true })).not.toBeVisible()
+  await units.fill('G')
+  await page.getByRole('option', { name: '克 (g)', exact: true }).click()
+  await expect(units).toHaveValue('')
+  await expect(page.locator('.el-select.unit-select')).toContainText('克 (g)')
+  await page.locator('.unit-select .el-select__wrapper').click()
+  await expect(page.getByRole('option', { name: '克 (g)', exact: true })).toBeVisible()
+  await units.press('Escape')
+  await page.locator('.el-select.unit-select').hover()
+  await page.locator('.unit-select .el-select__clear').click()
+  await expect(page.locator('.el-select.unit-select')).not.toContainText('克 (g)')
+  const interval = page.locator('.effective-interval')
+  const tops = await interval.locator('.el-form-item').evaluateAll(items => items.map(item => Math.round(item.getBoundingClientRect().top)))
+  expect(tops).toHaveLength(2)
+  expect(tops[0]).toBe(tops[1])
+  await expect(page.locator('#app').getByText('输入示例值，按回车添加', { exact: true })).toBeVisible()
+  const examples = page.getByRole('combobox', { name: '示例值', exact: true })
+  await examples.fill('010-12345678')
+  await examples.press('Enter')
+  await expect(page.locator('.el-tag').filter({ hasText: '010-12345678' })).toBeVisible()
+})
+
+test('opens the saved measurement unit category and clears its reference', async ({ page }) => {
+  await installMockBackend(page, { theme: 'dark', elements: [{ id: 41, code: 'weight', name: '重量', data_type: 'float', status: 'draft', unit_id: 2 }] })
+  await page.route('**/api/v1/standard/units*', route => fulfillJSON(route, [
+    { id: 1, name: '米', symbol: 'm', category_id: 10, category: { name: '长度', sort_order: 1 } },
+    { id: 2, name: '克', symbol: 'g', category_id: 20, category: { name: '质量', sort_order: 2 } }
+  ]))
+  await page.goto('/elements/41')
+  const selector = page.locator('.el-select.unit-select')
+  await expect(selector).toContainText('克 (g)')
+  await selector.locator('.el-select__wrapper').click()
+  await expect(page.getByRole('option', { name: '克 (g)', exact: true })).toBeVisible()
+  await expect(page.getByRole('option', { name: '米 (m)', exact: true })).not.toBeVisible()
+  await selector.getByRole('combobox').press('Escape')
+  await selector.hover()
+  await selector.locator('.el-select__clear').click()
+  const savedRequest = page.waitForRequest(request => request.method() === 'PUT' && request.url().endsWith('/elements/41/revisions/411'))
+  await page.locator('.page-header').getByRole('button', { name: '保存', exact: true }).click()
+  expect((await savedRequest).postDataJSON().unit_id).toBeNull()
+})
+
+for (const language of ['zh-cn', 'en']) {
+  test(`explains type choices with two-line options and contextual guidance in ${language}`, async ({ page }) => {
+    await installMockBackend(page, { language, elements: [{ id: 41, code: 'phone', name: 'Phone', data_type: 'string', status: 'draft' }] })
+    await page.goto('/elements/41')
+    const selector = page.locator('.data-type-field')
+    const hint = selector.getByRole('status')
+    await expect(hint).toContainText(language === 'zh-cn' ? '保留前导零' : 'preserve leading zeros')
+    const choices = language === 'zh-cn'
+      ? [['整数', '-2,147,483,648'], ['大整数', '9.22×10¹⁸'], ['近似小数', '微小计算误差'], ['精确小数', '除法等运算仍可能需要舍入']]
+      : [['Integer', '-2,147,483,648'], ['Large integer', '9.22 × 10¹⁸'], ['Approximate decimal', 'small calculation errors'], ['Exact decimal', 'division may still require rounding']]
+    for (const [label, guidance] of choices) {
+      await selector.locator('.el-select__wrapper').click()
+      const option = page.getByRole('option').filter({ has: page.locator('.data-type-name').getByText(label, { exact: true }) })
+      await expect(option.locator('.data-type-example')).toContainText(language === 'zh-cn' ? '例如：' : 'Examples:')
+      const layout = await option.evaluate(node => ({
+        nameBottom: node.querySelector('.data-type-name').getBoundingClientRect().bottom,
+        exampleTop: node.querySelector('.data-type-example').getBoundingClientRect().top,
+        fits: node.scrollWidth <= node.clientWidth
+      }))
+      expect(layout.exampleTop).toBeGreaterThanOrEqual(layout.nameBottom)
+      expect(layout.fits).toBe(true)
+      await option.click()
+      await expect(hint).toContainText(guidance)
+      expect(await hint.evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true)
+    }
+  })
+}
+
+for (const kind of ['code-set', 'metric']) {
+  test(`creates a ${kind} without a change summary`, async ({ page }) => {
+    await installMockBackend(page, { metrics: [{ id: 51, code: 'customer_count', name: '客户数', type: 'atomic', status: 'draft' }] })
+    const path = kind === 'code-set' ? '/code-sets' : '/metrics'
+    let payload
+    await page.route(`**/api/v1/standard${path}`, async route => {
+      if (route.request().method() !== 'POST') return route.fallback()
+      payload = route.request().postDataJSON()
+      return fulfillJSON(route, { id: kind === 'code-set' ? 31 : 51, version: 1 }, 201)
+    })
+    await page.goto(path)
+    await page.getByRole('button', { name: kind === 'code-set' ? '新建码值集' : '新增指标', exact: true }).click()
+    const dialog = page.getByRole('dialog')
+    await expect(dialog.getByRole('textbox', { name: '变更说明' })).toHaveCount(0)
+    await dialog.getByRole('textbox', { name: /编码/ }).fill(kind === 'code-set' ? 'customer_status' : 'customer_count')
+    await dialog.getByRole('textbox', { name: /名称/ }).fill('客户标准')
+    if (kind === 'code-set') {
+      await dialog.getByRole('textbox', { name: /描述/ }).fill('客户状态')
+    } else {
+      await dialog.getByRole('textbox', { name: /业务口径/ }).fill('客户数量')
+      await dialog.getByRole('textbox', { name: /统计口径/ }).fill('按客户计数')
+    }
+    await dialog.getByRole('button', { name: '确定', exact: true }).click()
+    await expect(dialog).not.toBeVisible()
+    expect(payload).toBeDefined()
+    expect(payload).not.toHaveProperty('change_summary')
+  })
+}
+
+test('creates a data element without asking for a change summary', async ({ page }) => {
+  await installMockBackend(page)
+  let payload
+  await page.route('**/api/v1/standard/elements', async route => {
+    if (route.request().method() !== 'POST') return route.fallback()
+    payload = route.request().postDataJSON()
+    return fulfillJSON(route, { id: 41, code: payload.code, version: 1 }, 201)
+  })
+  await page.goto('/elements')
+  await page.getByRole('button', { name: '新建数据元' }).click()
+  const dialog = page.getByRole('dialog', { name: '新建数据元' })
+  await dialog.locator('.el-form-item').filter({ hasText: '数据类型' }).locator('.el-select__wrapper').click()
+  await expect(page.getByRole('option', { name: '文本 例如：名称、电话号码、说明', exact: true })).toBeVisible()
+  await expect(page.getByRole('option', { name: 'text', exact: true })).toHaveCount(0)
+  await page.getByRole('option', { name: '文本 例如：名称、电话号码、说明', exact: true }).click()
+  await dialog.getByRole('spinbutton', { name: '最大长度', exact: true }).fill('32')
+  await expect(dialog.getByRole('textbox', { name: '变更说明' })).toHaveCount(0)
+  await dialog.getByRole('textbox', { name: '英文编码' }).fill('customer_id')
+  await dialog.getByRole('textbox', { name: '中文名称' }).fill('客户标识')
+  await dialog.getByRole('textbox', { name: '业务含义' }).fill('客户的唯一标识')
+  await dialog.getByRole('button', { name: '确定', exact: true }).click()
+  await expect(dialog).not.toBeVisible()
+  await expect(page).toHaveURL(/\/elements\/41$/)
+  expect(payload).toMatchObject({ code: 'customer_id', name: '客户标识', definition: '客户的唯一标识', data_type: 'string', length: 32 })
+  expect(payload).not.toHaveProperty('change_summary')
 })
 
 test('submits a new glossary only once when the confirm action fires twice', async ({ page }) => {
@@ -811,7 +998,7 @@ test('keeps the created document identity when an initial file upload returns fi
   const dialog = page.getByRole('dialog', { name: '录入标准文档' })
   await dialog.getByRole('textbox', { name: '编码' }).fill('outdoor_governance_plan')
   await dialog.getByRole('textbox', { name: '文档名称' }).fill('Outdoor 治理方案')
-  await dialog.getByRole('textbox', { name: '变更说明' }).fill('初始修订')
+  await expect(dialog.getByRole('textbox', { name: '变更说明' })).toHaveCount(0)
   await dialog.locator('input[type="file"]').setInputFiles({
     name: 'outdoor-governance.md',
     mimeType: 'text/markdown',
@@ -850,7 +1037,7 @@ test('shows the backend upload error when attaching a file to a standard item', 
   const uploadDialog = page.getByRole('dialog', { name: '上传并关联文档' })
   await uploadDialog.getByRole('textbox', { name: '编码' }).fill('participant_standard')
   await uploadDialog.getByRole('textbox', { name: '文档名称' }).fill('参与人数标准')
-  await uploadDialog.getByRole('textbox', { name: '变更说明' }).fill('初始修订')
+  await expect(uploadDialog.getByRole('textbox', { name: '变更说明' })).toHaveCount(0)
   await uploadDialog.locator('input[type="file"]').setInputFiles({
     name: 'participant-standard.pdf',
     mimeType: 'application/pdf',
@@ -1050,7 +1237,6 @@ async function installMockBackend(page, options = {}) {
       scope_type: item.domain_id ? 'domain' : 'tenant_common',
       owner_domain_id: item.domain_id || null,
       category_id: item.category_id || null,
-      steward_id: null,
       tags: item.tags || [],
       lifecycle_state: 'active',
       version: item.version || 1,
@@ -1067,6 +1253,7 @@ async function installMockBackend(page, options = {}) {
       name: item.name,
       definition: item.definition || `${item.name}定义`,
       data_type: item.data_type,
+      unit_id: item.unit_id ?? null,
       nullable: true,
       value_domain_kind: 'unrestricted',
       example_values: [],
@@ -1115,10 +1302,10 @@ async function installMockBackend(page, options = {}) {
   }
   const permissions = options.permissions ?? allStandardPermissions
   const authContextPermissionsByToken = options.authContextPermissionsByToken || {}
-  await page.addInitScript(({ theme }) => {
-    localStorage.setItem('addp-lang', 'zh-cn')
+  await page.addInitScript(({ theme, language }) => {
+    localStorage.setItem('addp-lang', language || 'zh-cn')
     localStorage.setItem('theme-mode', theme || 'light')
-  }, { theme: options.theme })
+  }, { theme: options.theme, language: options.language })
   await page.route('**/api/v1/**', async route => {
     const request = route.request()
     const url = new URL(request.url())
@@ -1206,6 +1393,7 @@ async function installMockBackend(page, options = {}) {
     if (request.method() === 'POST' && path === '/api/v1/standard/metrics/51/documents') {
       actionRequests.push(path)
       const body = request.postDataJSON()
+      expect(body).not.toHaveProperty('change_summary')
       const document = createDocumentFixture({
         id: 72,
         code: body.code,
@@ -1221,7 +1409,7 @@ async function installMockBackend(page, options = {}) {
           file_size: 0,
           media_type: '',
           content_sha256: '',
-          change_summary: body.change_summary
+          change_summary: '初始创建'
         }
       })
       documents.push(document)
@@ -1232,6 +1420,7 @@ async function installMockBackend(page, options = {}) {
     if (request.method() === 'POST' && path === '/api/v1/standard/documents') {
       actionRequests.push(path)
       const body = request.postDataJSON()
+      expect(body).not.toHaveProperty('change_summary')
       const document = createDocumentFixture({
         id: 72,
         code: body.code,
@@ -1247,7 +1436,7 @@ async function installMockBackend(page, options = {}) {
           file_size: 0,
           media_type: '',
           content_sha256: '',
-          change_summary: body.change_summary
+          change_summary: '初始创建'
         }
       })
       documents.push(document)

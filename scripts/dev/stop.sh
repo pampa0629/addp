@@ -55,6 +55,28 @@ stop_workspace_launchd_jobs() {
   fi
 }
 
+# 一次查询全部目标 TCP 监听端口；客户端连接不属于残留服务。
+stop_port_listeners() {
+  local ports="8180,8081,8082,8083,8084,8185,8086,8087,8089,8097,8098,8099,8100,8101,8102,8103,8104,8105,8110,8181,8182,8183,8184,8186,8190,8191,8192,8193,8291,5170,5173,5174,5175,5176,5177,5178,5179,5180,5181,5182,5183,5184,5185,5186,5187,5188,5189,5190"
+  local listener_pids pid proc_cmd
+  listener_pids=$(lsof -nP -a -iTCP:"$ports" -sTCP:LISTEN -Fp 2>/dev/null |
+    sed -n 's/^p\([0-9][0-9]*\)$/\1/p' | sort -u)
+
+  for pid in $listener_pids; do
+    # 每个 PID 独立核验，不能把同一端口上的多个进程合并判断。
+    proc_cmd=$(ps -p "$pid" -o command= 2>/dev/null) || continue
+    [ -n "$proc_cmd" ] || continue
+    if echo "$proc_cmd" | grep -qE "(addp-|go run|vite|api_server\.py|manager/raster-mosaic-runtime.*app\.py|uvicorn|jupyter.*lab|agent/backend/main\.py|copilot/backend/main\.py)"; then
+      echo "  发现 ADDP 端口监听进程 (PID: $pid)，强制清理..."
+      echo "    进程: $(echo "$proc_cmd" | cut -c1-80)"
+      kill -9 "$pid" 2>/dev/null || true
+    else
+      echo -e "${YELLOW}  ⚠️  ADDP 服务端口被非 ADDP 进程监听 (PID: $pid)，跳过清理${NC}"
+      echo "    进程: $(echo "$proc_cmd" | cut -c1-80)"
+    fi
+  done
+}
+
 # ============================================================
 # 并发停止函数
 # ============================================================
@@ -179,26 +201,9 @@ stop_services_concurrent() {
   docker rm -f geopython-workflow-engine >/dev/null 2>&1 || true
   docker rm -f supermap-workflow-engine >/dev/null 2>&1 || true
 
-  # Phase 6: 按端口清理残留进程（处理手动启动的进程）
+  # Phase 6: 批量检查监听端口并清理残留进程（处理手动启动的进程）
   echo -e "${YELLOW}检查端口占用...${NC}"
-  for port in 8180 8081 8082 8083 8084 8185 8086 8087 8089 8097 8098 8099 8100 8101 8102 8103 8104 8105 8110 8181 8182 8183 8184 8186 8190 8191 8192 8193 8291 5170 5173 5174 5175 5176 5177 5178 5179 5180 5181 5182 5183 5184 5185 5186 5187 5188 5189 5190; do
-    pid=$(lsof -ti :$port 2>/dev/null || true)
-    if [ -n "$pid" ]; then
-      # 获取进程的命令行信息
-      proc_cmd=$(ps -p $pid -o command= 2>/dev/null || echo "")
-
-      # 检查是否是 ADDP 相关进程（Go 二进制、vite、python workflow/copilot/agent、jupyter）
-      if echo "$proc_cmd" | grep -qE "(addp-|go run|vite|api_server\.py|manager/raster-mosaic-runtime.*app\.py|uvicorn|jupyter.*lab|agent/backend/main\.py|copilot/backend/main\.py)"; then
-        echo "  发现端口 $port 被 ADDP 进程占用 (PID: $pid)，强制清理..."
-        echo "    进程: $(echo "$proc_cmd" | cut -c1-80)"
-        kill -9 $pid 2>/dev/null || true
-      else
-        echo -e "${YELLOW}  ⚠️  端口 $port 被非 ADDP 进程占用 (PID: $pid)，跳过清理${NC}"
-        echo "    进程: $(echo "$proc_cmd" | cut -c1-80)"
-        echo "    如需使用此端口，请手动关闭该进程或修改 ADDP 端口配置"
-      fi
-    fi
-  done
+  stop_port_listeners
 
   # Phase 7: 等待端口释放（避免 restart 时端口冲突）
   echo -e "${YELLOW}等待端口释放...${NC}"

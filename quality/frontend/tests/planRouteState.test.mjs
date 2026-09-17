@@ -13,6 +13,7 @@ test('plan route state restores canonical create and edit modes', () => {
   assert.deepEqual(resolvePlanRouteState({ create: '1' }), {
     mode: 'create',
     taskID: '',
+    ownerDomainID: null,
     page: 1,
     pageSize: 20,
     query: { create: '1' },
@@ -21,6 +22,7 @@ test('plan route state restores canonical create and edit modes', () => {
   assert.deepEqual(resolvePlanRouteState({ task_id: '007' }), {
     mode: 'edit',
     taskID: '7',
+    ownerDomainID: null,
     page: 1,
     pageSize: 20,
     query: { task_id: '7' },
@@ -32,6 +34,7 @@ test('plan route state gives a valid task identity precedence over create', () =
   assert.deepEqual(resolvePlanRouteState({ create: '1', task_id: '9' }), {
     mode: 'edit',
     taskID: '9',
+    ownerDomainID: null,
     page: 1,
     pageSize: 20,
     query: { task_id: '9' },
@@ -43,6 +46,7 @@ test('plan route state removes unknown and invalid query values', () => {
   assert.deepEqual(resolvePlanRouteState({ create: 'true', task_id: '-1', old: 'value' }), {
     mode: 'list',
     taskID: '',
+    ownerDomainID: null,
     page: 1,
     pageSize: 20,
     query: {},
@@ -55,6 +59,7 @@ test('plan route state restores pagination in list and dialog modes', () => {
     mode: 'list',
     taskID: '',
     page: 3,
+    ownerDomainID: null,
     pageSize: 50,
     query: { page: '3', page_size: '50' },
     changed: false

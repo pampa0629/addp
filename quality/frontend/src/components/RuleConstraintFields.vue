@@ -5,6 +5,7 @@
       :label="t('quality.plan.allowedValues')"
     >
       <el-select
+        :key="JSON.stringify(valueLabels)"
         v-model="params.values"
         :disabled="disabled"
         multiple
@@ -12,7 +13,9 @@
         allow-create
         default-first-option
         :placeholder="t('quality.plan.allowedValuesPlaceholder')"
-      />
+      >
+        <el-option v-for="item in valueLabels" :key="item.code" :value="item.code" :label="item.label ? `${item.code} · ${item.label}` : item.code" />
+      </el-select>
     </el-form-item>
     <template v-if="['format', 'length', 'value_range'].includes(type)">
       <el-form-item v-if="type === 'format'" :label="t('quality.plan.pattern')"
@@ -129,6 +132,7 @@ defineProps({
   type: { type: String, required: true },
   params: { type: Object, required: true },
   disabled: Boolean,
+  valueLabels: { type: Array, default: () => [] },
 });
 const { t } = useI18n();
 </script>

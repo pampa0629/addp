@@ -10,6 +10,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/addp/common/schema"
+
 	_ "github.com/addp/asset/docs"
 	_ "github.com/addp/asset/i18n"
 	"github.com/addp/asset/internal/api"
@@ -48,7 +50,7 @@ func main() {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
 
-	if err := commonExecution.EnsureStore(db); err != nil {
+	if err := schema.Require(db, "common", schema.CommonVersion); err != nil {
 		log.Fatalf("Failed to ensure execution store: %v", err)
 	}
 	if err := repository.Migrate(db); err != nil {

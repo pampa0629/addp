@@ -128,6 +128,7 @@ func parseElementIDs(value string) ([]int64, error) {
 
 // CreateElement godoc
 // @Summary 创建数据元及首个草稿修订 | Create data element with initial draft revision
+// @Description 首个草稿的变更说明由后端按请求语言自动记录为“初始创建”，请求不包含 change_summary；后续修订仍必填。 | The server records a localized Initial creation summary for the first draft. The request does not include change_summary; subsequent revisions still require it.
 // @Tags Standard
 // @Accept json
 // @Produce json
@@ -140,10 +141,10 @@ func parseElementIDs(value string) ([]int64, error) {
 // @Security BearerAuth
 func (h *ElementHandler) CreateElement(c *gin.Context) {
 	var req models.CreateElementRequest
-	if !bindElementDefinition(c, &req) {
+	if !bindStandardDefinition(c, &req) {
 		return
 	}
-	result, err := h.svc.CreateElement(&req, getTenantID(c), getUserID(c))
+	result, err := h.svc.CreateElement(&req, getTenantID(c), getUserID(c), commoni18n.T(c, sysi18n.MsgRevisionInitialCreation))
 	if err != nil {
 		respondError(c, http.StatusBadRequest, err)
 		return
@@ -197,7 +198,7 @@ func (h *ElementHandler) UpdateElement(c *gin.Context) {
 		return
 	}
 	var req models.UpdateElementRequest
-	if !bindJSON(c, &req) {
+	if !bindStandardDefinition(c, &req) {
 		return
 	}
 	result, err := h.svc.UpdateElement(id, getTenantID(c), getUserID(c), &req)
@@ -283,9 +284,12 @@ func (h *ElementHandler) CreateElementRevision(c *gin.Context) {
 
 // GetElementRevision godoc
 // @Summary 获取数据元修订 | Get data element revision
+// @Description 返回指定修订及其固定码值集修订和码项；历史修订不追随当前版本 | Returns the exact revision and its pinned code-set revision and items; historical revisions never track the current version
 // @Tags Standard
 // @Produce json
-// @Success 200 {object} models.ElementRevision
+// @Param id path int true "数据元 ID | Element ID"
+// @Param revision_id path int true "精确修订 ID | Exact revision ID"
+// @Success 200 {object} service.ElementRevisionDetail
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.element.read"]
 // @Router /elements/{id}/revisions/{revision_id} [get]
@@ -295,7 +299,7 @@ func (h *ElementHandler) GetElementRevision(c *gin.Context) {
 	if !ok {
 		return
 	}
-	result, err := h.svc.GetRevision(id, revisionID, getTenantID(c))
+	result, err := h.svc.GetRevision(c.Request.Context(), id, revisionID, getTenantID(c))
 	if err != nil {
 		respondError(c, http.StatusNotFound, err)
 		return
@@ -321,7 +325,7 @@ func (h *ElementHandler) UpdateElementRevision(c *gin.Context) {
 		return
 	}
 	var req models.UpdateElementRevisionRequest
-	if !bindElementDefinition(c, &req) {
+	if !bindStandardDefinition(c, &req) {
 		return
 	}
 	result, err := h.svc.UpdateRevision(id, revisionID, getTenantID(c), getUserID(c), &req)
@@ -465,7 +469,7 @@ func bindJSON(c *gin.Context, value interface{}) bool {
 	return true
 }
 
-func bindElementDefinition(c *gin.Context, value interface{}) bool {
+func bindStandardDefinition(c *gin.Context, value interface{}) bool {
 	if err := commonapi.BindOptionalJSONStrict(c, value); err != nil {
 		respondError(c, http.StatusBadRequest, err)
 		return false

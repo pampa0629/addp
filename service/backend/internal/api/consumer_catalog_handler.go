@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strconv"
@@ -17,8 +18,8 @@ import (
 )
 
 type consumerCatalog interface {
-	ListQueryServices(filter models.ConsumerServiceListFilter) ([]models.ConsumerServiceSummary, int64, error)
-	GetQueryService(tenantID, serviceID uint) (*models.ConsumerDescriptor, error)
+	ListQueryServices(ctx context.Context, filter models.ConsumerServiceListFilter) ([]models.ConsumerServiceSummary, int64, error)
+	GetQueryService(ctx context.Context, tenantID, serviceID uint) (*models.ConsumerDescriptor, error)
 }
 
 type ConsumerCatalogHandler struct {
@@ -77,7 +78,7 @@ func (h *ConsumerCatalogHandler) ListServices(c *gin.Context) {
 		return
 	}
 	tenantID := authmiddleware.GetTenantID(c)
-	items, total, err := h.catalog.ListQueryServices(models.ConsumerServiceListFilter{
+	items, total, err := h.catalog.ListQueryServices(c.Request.Context(), models.ConsumerServiceListFilter{
 		TenantID: tenantID, Search: search, OutputKind: outputKind,
 		Offset: (page - 1) * pageSize, Limit: pageSize,
 	})
@@ -145,7 +146,7 @@ func (h *ConsumerCatalogHandler) GetService(c *gin.Context) {
 		writeConsumerError(c, http.StatusNotFound, servicei18n.MsgServiceNotFound, "consumer_service_not_found")
 		return
 	}
-	descriptor, err := h.catalog.GetQueryService(authmiddleware.GetTenantID(c), uint(serviceID))
+	descriptor, err := h.catalog.GetQueryService(c.Request.Context(), authmiddleware.GetTenantID(c), uint(serviceID))
 	if err != nil {
 		if errors.Is(err, commonapi.ErrNotFound) {
 			writeConsumerError(c, http.StatusNotFound, servicei18n.MsgServiceNotFound, "consumer_service_not_found")

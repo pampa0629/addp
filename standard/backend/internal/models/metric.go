@@ -51,7 +51,6 @@ type MetricDefinition struct {
 	ScopeType       string      `gorm:"size:20;not null;default:'tenant_common';index" json:"scope_type" enums:"platform,tenant_common,domain"`
 	OwnerDomainID   *int64      `gorm:"index" json:"owner_domain_id,omitempty"`
 	Code            string      `gorm:"size:100;not null;uniqueIndex:uq_standard_metric_definitions_tenant_code" json:"code"`
-	StewardID       *int64      `json:"steward_id,omitempty"`
 	Tags            StringArray `gorm:"type:jsonb;serializer:json" json:"tags"`
 	DraftRevisionID *int64      `gorm:"index" json:"draft_revision_id,omitempty"`
 	CreatedBy       int64       `gorm:"not null" json:"created_by"`
@@ -139,7 +138,6 @@ type CreateMetricRequest struct {
 	ScopeType          string                            `json:"scope_type" binding:"required" enums:"tenant_common,domain"`
 	OwnerDomainID      *int64                            `json:"owner_domain_id,omitempty"`
 	Code               string                            `json:"code" binding:"required"`
-	StewardID          *int64                            `json:"steward_id,omitempty"`
 	Tags               []string                          `json:"tags"`
 	MetricType         string                            `json:"metric_type" binding:"required" enums:"atomic,derived,composite"`
 	Name               string                            `json:"name" binding:"required"`
@@ -148,7 +146,6 @@ type CreateMetricRequest struct {
 	SemanticFormula    string                            `json:"semantic_formula"`
 	UnitID             *int64                            `json:"unit_id,omitempty"`
 	Dependencies       []MetricDefinitionDependencyInput `json:"dependencies"`
-	ChangeSummary      string                            `json:"change_summary" binding:"required"`
 	EffectiveFrom      *time.Time                        `json:"effective_from,omitempty"`
 	EffectiveTo        *time.Time                        `json:"effective_to,omitempty"`
 }
@@ -158,7 +155,6 @@ type UpdateMetricRequest struct {
 	CategoryID    *int64   `json:"category_id,omitempty"`
 	ScopeType     string   `json:"scope_type" binding:"required" enums:"tenant_common,domain"`
 	OwnerDomainID *int64   `json:"owner_domain_id,omitempty"`
-	StewardID     *int64   `json:"steward_id,omitempty"`
 	Tags          []string `json:"tags"`
 }
 

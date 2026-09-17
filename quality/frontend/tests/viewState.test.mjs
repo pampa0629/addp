@@ -2,6 +2,17 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
+test('both ownership editors use one permission-aware selector and explicit null clearing', () => {
+  for (const view of ['RuleList', 'PlanList']) {
+    const source = readView(view)
+    assert.match(source, /<DomainOwnershipSelect/)
+    assert.match(source, /can\('standard.domain.read'\)/)
+    assert.match(source, /owner_domain_id: form.owner_domain_id \?\? null/)
+    assert.doesNotMatch(source, /loadDomains|onMounted/)
+  }
+  assert.match(readView('RuleList'), /owner_domain_id: rule.owner_domain_id \?\? null/)
+})
+
 const readView = (name) => readFileSync(
   new URL(`../src/views/${name}.vue`, import.meta.url),
   'utf8'
@@ -9,6 +20,11 @@ const readView = (name) => readFileSync(
 
 
 const planSource=readView('PlanList')
+test('rule save feedback names the rule rather than the plan', () => {
+  const source=readView('RuleList')
+  assert.match(source, /t\(['"]quality\.rule\.saveSuccess['"]\)/)
+  assert.doesNotMatch(source, /t\(['"]quality\.plan\.updateSuccess['"]\)/)
+})
 const executionDetailSource=readView('ExecutionDetail')
 const executionFailureSource=readFileSync(new URL('../src/utils/executionFailure.js',import.meta.url),'utf8')
 test('plans own bindings and pinned references; rule library owns Standard import',()=>{

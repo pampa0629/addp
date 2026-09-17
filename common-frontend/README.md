@@ -299,9 +299,13 @@ import {
 - `chart/src/ChartRenderer.vue`：展示 `bar | line | pie`，只使用服务已返回的明细值，不在浏览器聚合；
 - `map/src/components/GeoJSONResultRenderer.vue`：只读取 Consumer Descriptor 明确声明的 geometry 字段和 CRS，并可使用显式 label、tooltip 与 `uniform | categorical | continuous` 受控主题样式；不猜测业务字段，不接受原始颜色或任意样式 DSL。
 
+Chart 的坐标轴、图例、饼图标签和 tooltip 使用当前 ADDP 主题变量，主题变化后重绘 Canvas。单度量轴设置了显示精度 `precision=p` 时，最小刻度间隔为 `10^-p`；因此精度 0 的全零结果不会把小数刻度重复显示成整数。该约束只影响坐标轴，不舍入或修改服务返回的 series 数据；未指定精度及多度量轴仍使用自动刻度。
+
 Value、Chart 和 Map 只接受单次查询得到的完整有界结果；`has_more=true` 时必须拒绝渲染，Value 还必须恰好一行，Chart 和 Map 还必须遵守各自结果上限。Workbench 等消费模块应在自己的 Renderer Host 中按需加载这些组件，不得复制 renderer，也不得把 Service、Outdoor 或其他 owner 的 DTO 写入共享层。
 
 字段显示名、单位、精度、时间格式和受控状态呈现统一由 `basic/src/utils/fieldPresentation.mjs` 解析。状态规则只允许精确匹配或数值比较，按声明顺序首条命中，并输出 `info | success | warning | danger` 语义状态；不接受表达式、函数或原始颜色。Table 与 Value 直接显示状态标签，Chart 只在 tooltip 中追加标签，Map 只在 popup 中显示标签，不能借此覆盖 Chart series 或 Map thematic style 的既有视觉编码。所有 renderer 都必须保留原始 rows 与 `row_index`。
+
+同一格式化器支持字段呈现中的 `value_labels`，将显式声明的 string/bool 原值映射为显示名称；最多 32 项，精确匹配且不可重复，null 和未匹配值保留原有呈现。状态判断、查询、选择事件和导出继续使用原值。Workbench 只编排映射配置，不在 renderer 内猜测业务码，也不使用分页目录结果补全动态名称。
 
 三组结果 renderer 在用户选择当前结果时统一发出 `result-select`，payload 只包含 `{ row_index }`。`row_index` 始终指向宿主传入的原始 `rows`，renderer 不携带字段值、参数名、目标组件或查询片段；宿主负责根据自己的声明式配置解释选择。数据更新、resize 和重绘不得发出该事件。
 
@@ -730,3 +734,13 @@ MIT
 `ParameterValueInput` 是类型化服务参数输入的唯一控件，接受 `modelValue`、`controlType`、`options` 和 `disabled`。有限选项优先按契约呈现，名称按当前语言取 `labels`，只提交 `value`。Service 与 Workbench 负责各自的显式绑定和契约校验，不重复实现控件分支。
 
 `ParameterCaption` 与 `parameterLabel/parameterDescription` 是参数名称及说明的唯一展示实现，读取 owner 提供的 `presentation.labels/descriptions`，跟随当前语言，不按参数名推断业务语义。Workbench 的应用自定义标签独立保存，服务说明从消费契约读取。
+
+`createModelMetricAPI(client)` 是 Model 指标实现读取的共享 SDK，复用当前用户认证 client，仅在调用 list/get 时发送请求。Service 的指标来源选择与 Model 自身列表共用此 SDK，不导入 Model 前端内部实现。`publishedMetricSources` 投影已发布修订摘要，不推断可执行状态；最终发布由 Service 后端 Model Client 重新校验。
+
+### 业务域选择
+
+`BusinessDomainSelect` 是业务域下拉选择的唯一展示组件，接收 `options` 和 `v-model`，透传 Element Plus Select 的禁用、加载、清空和事件。`buildBusinessDomainOptions(tree)` 按树的原始顺序生成 `{ id, name, code, depth, path }` 选项，`path` 是从根到当前节点的名称数组。模块保留数据读取与权限控制，不再各自展开树或渲染业务域选项。
+
+默认全部展开，每层缩进 16px；搜索按名称路径与编码匹配并展示完整路径，选中框仅显示名称，悬停显示路径。`show-code` 仅在候选行显示编码；默认插槽用于“全部”等非业务域选项。远程分页入口使用 `businessDomainReferenceOptions(items)` 将 owner 返回的 `domain_path` 转换为展示选项，通过 `remote`、`remote-method` 使用 owner 的搜索，仍由同一组件展示层级与路径；分页缺少父选项时显示完整路径。
+
+测试由 `make test-common-frontend` 自动发现，消费模块浏览器回归由原有前端门禁负责，CI 无需新建任务。

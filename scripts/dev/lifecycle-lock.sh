@@ -1,6 +1,24 @@
 #!/bin/bash
 # lifecycle-lock.sh - ADDP 开发服务工作区生命周期互斥锁
 
+# Python editable 安装会改写共享源码目录的元数据；仅安装命令需要串行。
+# exec 保持同一 PID，文件描述符随安装进程退出而关闭，失败也不会遗留占用。
+addp_with_python_dependency_lock() {
+  local project_root="$1"
+  shift
+  mkdir -p "${project_root}/.dev-state"
+  python3 - "${project_root}/.dev-state/python-dependencies.lock" "$@" <<'PY'
+import fcntl
+import os
+import sys
+
+with open(sys.argv[1], "a") as lock:
+    fcntl.flock(lock, fcntl.LOCK_EX)
+    os.set_inheritable(lock.fileno(), True)
+    os.execvp(sys.argv[2], sys.argv[2:])
+PY
+}
+
 addp_process_is_descendant_of() {
   local process_pid="$1"
   local ancestor_pid="$2"

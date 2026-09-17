@@ -145,9 +145,11 @@ func newIssueHandlerTestDB(t *testing.T) *gorm.DB {
 	if err := db.Exec(`CREATE TABLE quality.issues (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		tenant_id INTEGER NOT NULL,
+		owner_domain_id INTEGER,
 		execution_id TEXT NOT NULL DEFAULT '',
 		last_execution_id TEXT NOT NULL DEFAULT '',
 			plan_id INTEGER NOT NULL,
+			target_key TEXT,
 			rule_key TEXT NOT NULL,
 		rule_type TEXT NOT NULL DEFAULT 'not_null',
 		severity TEXT NOT NULL DEFAULT 'error',
@@ -167,7 +169,7 @@ func newIssueHandlerTestDB(t *testing.T) *gorm.DB {
 		last_observed_at DATETIME,
 		created_at DATETIME,
 		updated_at DATETIME,
-			UNIQUE (tenant_id, plan_id, rule_key)
+			UNIQUE (tenant_id, plan_id, target_key, rule_key)
 	)`).Error; err != nil {
 		t.Fatalf("create quality issues table: %v", err)
 	}

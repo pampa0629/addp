@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createLatestRequestCoordinator } from '../../../common-frontend/basic/src/utils/latestRequest.js'
-import { defaultApplicationParameterValues } from '../src/utils/dataApplicationParameters.mjs'
+import { applicationParameterPlacement, defaultApplicationParameterValues } from '../src/utils/dataApplicationParameters.mjs'
 import { applicationParameterPreset, applicationRefreshDelayMilliseconds, buildComponentQuery, buildSelectionUpdate, canAttemptApplicationQuery, canExecuteComponentQuery, canHideApplicationParameters, canRunApplicationRefresh, canRunPublishedApplicationInitialQuery, commitLatestComponentDescriptorState, commitLatestDataApplicationLoad, componentBlockingError, componentIDsForApplicationParameters, initialApplicationParameterValues, invalidateApplicationParameterResults, isDataApplicationRuntimeAccessDenied, runtimeGridStyle, runtimeLayoutStyle, runtimeSectionVisible } from '../src/utils/dataApplicationRuntime.mjs'
 import { downloadCurrentBoundedExport } from '../src/utils/boundedExport.mjs'
 import { resolveLoginRedirect } from '../../../common-frontend/basic/src/utils/loginRedirect.mjs'
@@ -36,6 +36,27 @@ const snapshot = {
   }],
   parameter_presets: [{ key: 'high-value', name: 'High value', parameter_values: { minimum_amount: 100, missing_rows: true } }],
 }
+
+test('only exclusive selection-source filters move beside their component', () => {
+  const input = {
+    parameters: ['shared', 'a_filter', 'b_filter', 'selected', 'metric_only', 'unbound'].map(key => ({ key })),
+    parameter_bindings: [
+      ['shared', 'a'], ['shared', 'b'], ['a_filter', 'a'], ['a_filter', 'a'],
+      ['b_filter', 'b'], ['selected', 'a'], ['metric_only', 'metric'],
+    ].map(([application_parameter_key, component_id]) => ({ application_parameter_key, component_id })),
+    selection_bindings: ['a', 'b'].map(source_component_id => ({
+      source_component_id, assignments: [{ source_field: 'id', application_parameter_key: 'selected' }],
+    })),
+  }
+  const before = structuredClone(input)
+  assert.deepEqual(applicationParameterPlacement(input), {
+    pageParameters: ['shared', 'selected', 'metric_only', 'unbound'].map(key => ({ key })),
+    componentParameters: { a: [{ key: 'a_filter' }], b: [{ key: 'b_filter' }] },
+  })
+  assert.deepEqual(input, before)
+  input.selection_bindings = []
+  assert.deepEqual(applicationParameterPlacement(input), { pageParameters: input.parameters, componentParameters: {} })
+})
 
 test('returns to the exact data application scenario after login and rejects external redirects', () => {
   assert.equal(

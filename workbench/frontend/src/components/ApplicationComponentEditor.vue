@@ -126,6 +126,7 @@
                   <el-input-number v-if="draft.rendererType === 'table'" v-model="item.width" :min="80" :max="600" :controls="false" :placeholder="t('workbench.presentationWidth')" />
                 </div>
                 <StateRuleEditor :model-value="item.stateRules || []" :field-type="item.fieldType" @update:model-value="updateStateRules(item, $event)" />
+                <ValueLabelEditor v-if="['string', 'bool'].includes(item.fieldType)" :model-value="item.valueLabels || []" :field-type="item.fieldType" @update:model-value="item.valueLabels = $event; resetResult()" />
               </div>
             </template>
             <div class="section-header">
@@ -189,6 +190,8 @@ import { buildComponentConfiguration, buildQueryRequest, buildRendererConfig, co
 import { boundedExportHasMore, descriptorSupportsExport, downloadBoundedExport, exportFormatForRenderer } from '../utils/boundedExport.mjs'
 import WorkbenchRendererHost from './WorkbenchRendererHost.vue'
 import StateRuleEditor from './StateRuleEditor.vue'
+import ValueLabelEditor from './ValueLabelEditor.vue'
+import { valueLabelsValid } from '@common-ui/utils/fieldPresentation.mjs'
 
 const props = defineProps({ modelValue: Boolean, component: { type: Object, default: null } })
 const emit = defineEmits(['update:modelValue', 'save'])
@@ -389,6 +392,7 @@ function fieldPresentationsValid() {
     if (presentationIsTemporal(item) && !temporalFormats(item).includes(item.temporalFormat)) return false
     if (draft.rendererType === 'table' && item.width !== null && item.width !== undefined && (!Number.isInteger(item.width) || item.width < 80 || item.width > 600)) return false
     if (!stateRulesValid(item.stateRules, item.fieldType)) return false
+    if (!valueLabelsValid(item.valueLabels, item.fieldType)) return false
     return true
   })
 }

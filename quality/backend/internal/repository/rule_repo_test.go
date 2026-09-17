@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	commonAPI "github.com/addp/common/api"
 	commonExecution "github.com/addp/common/execution"
 	qualityMigration "github.com/addp/quality/internal/migration"
 	"github.com/addp/quality/internal/models"
@@ -38,6 +39,72 @@ func TestIntegrationPostgresReusableRuleRevisionIsolation(t *testing.T) {
 	}
 	defer tx.Rollback()
 	testReusableRuleRevisionIsolation(t, tx)
+	testDomainReferenceGuard(t, tx)
+	testDomainOwnershipListsAndCurrentIssues(t, tx)
+}
+
+func TestDomainReferenceGuard(t *testing.T) {
+	testDomainReferenceGuard(t, newPlanRepositoryTestDB(t))
+}
+
+func testDomainReferenceGuard(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	ctx := context.Background()
+	domainID := int64(543)
+	rr, pr, guards := NewRuleRepository(db), NewPlanRepository(db), NewStandardReferenceGuardRepository(db)
+	rule := models.QualityRule{TenantID: 7882, Code: "domain_guard", OwnerDomainID: &domainID, RuleContent: models.RuleContent{Name: "guard", Type: "not_null", Params: json.RawMessage(`{}`)}}
+	if err := rr.Create(ctx, &rule); err != nil {
+		t.Fatal(err)
+	}
+	{
+		loaded, err := rr.Get(ctx, rule.TenantID, rule.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		loaded.OwnerDomainID = nil
+		if err := rr.Replace(ctx, loaded, loaded.Version); err != nil {
+			t.Fatal(err)
+		}
+		if loaded.Version != 2 || loaded.RevisionNo != 1 {
+			t.Fatalf("domain-only update created revision: %+v", loaded)
+		}
+		loaded.OwnerDomainID = &domainID
+		if err := rr.Replace(ctx, loaded, loaded.Version); err != nil {
+			t.Fatal(err)
+		}
+		rule = *loaded
+	}
+	plan := &models.QualityPlan{TenantID: rule.TenantID, Code: "domain_guard_plan", Name: "guard", OwnerDomainID: &domainID, TableBindings: json.RawMessage(`[]`)}
+	if err := pr.Create(ctx, plan); err != nil {
+		t.Fatal(err)
+	}
+	impact, err := guards.SetState(rule.TenantID, domainID, "frozen")
+	if err != nil || impact.ReferenceCount != 2 || !impact.SampleTruncated {
+		t.Fatalf("impact=%+v err=%v", impact, err)
+	}
+	blockedRule := rule
+	blockedRule.ID, blockedRule.Code = 0, "domain_guard_blocked"
+	if err := rr.Create(ctx, &blockedRule); !errors.Is(err, commonAPI.ErrConflict) {
+		t.Fatalf("frozen rule create: %v", err)
+	}
+	blockedPlan := *plan
+	blockedPlan.ID, blockedPlan.Code = 0, "domain_guard_plan_blocked"
+	if err := pr.Create(ctx, &blockedPlan); !errors.Is(err, commonAPI.ErrConflict) {
+		t.Fatalf("frozen plan create: %v", err)
+	}
+	other, err := guards.SetState(rule.TenantID+1, domainID, "frozen")
+	if err != nil || other.ReferenceCount != 0 {
+		t.Fatalf("tenant isolation: %+v %v", other, err)
+	}
+	if _, err := guards.SetState(rule.TenantID, domainID, "open"); err != nil {
+		t.Fatal(err)
+	}
+	if err := rr.Create(ctx, &blockedRule); err != nil {
+		t.Fatalf("reopened rule create: %v", err)
+	}
+	if err := pr.Create(ctx, &blockedPlan); err != nil {
+		t.Fatalf("reopened plan create: %v", err)
+	}
 }
 func testReusableRuleRevisionIsolation(t *testing.T, db *gorm.DB) {
 	t.Helper()
@@ -113,7 +180,7 @@ func testReusableRuleRevisionIsolation(t *testing.T, db *gorm.DB) {
 		t.Fatal("cross-tenant reference accepted")
 	}
 	execution := newQualityRepositoryTestExecution(uuid.NewString(), int(rule.TenantID), time.Now().UTC())
-	if _, err := pr.CreateExecution(ctx, a.ID, a.TenantID, execution); err != nil {
+	if _, err := pr.CreateExecution(ctx, a.ID, a.TenantID, execution, models.PlanRunRequest{}); err != nil {
 		t.Fatal(err)
 	}
 	before, _ := json.Marshal(execution.ExecutionConfig)

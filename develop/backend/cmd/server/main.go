@@ -88,7 +88,7 @@ func main() {
 	}
 	systemServiceClient := commonClient.NewSystemServiceClient(cfg.SystemServiceURL, serviceTokenSource, nil)
 	securityClient := commonClient.NewSecurityClient(cfg.SecurityServiceURL, serviceTokenSource, nil)
-	protectionStore, err := projectionstore.New(db, cfg.DBSchema, "develop", nil)
+	protectionStore, err := projectionstore.Migrate(db, cfg.DBSchema, "develop", nil)
 	if err != nil {
 		log.Fatalf("Develop 保护投影存储初始化失败: %v", err)
 	}

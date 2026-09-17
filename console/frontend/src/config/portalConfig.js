@@ -12,8 +12,8 @@ import { splitConsoleRoute } from '../utils/consoleNavigation'
 // label 值为 i18n key，渲染时通过 t(group.label) 翻译
 
 export const MODULE_GROUPS = [
-  { key: 'data-prepare', label: 'console.groups.dataPrepare', icon: Coin,         modules: ['transfer', 'meta', 'manager'] },
-  { key: 'data-govern',  label: 'console.groups.dataGovern',  icon: Reading,      modules: ['standard', 'modeling', 'quality', 'security'] },
+  { key: 'data-prepare', label: 'console.groups.dataPrepare', icon: Coin,         modules: ['transfer', 'meta', 'security', 'manager'] },
+  { key: 'data-govern',  label: 'console.groups.dataGovern',  icon: Reading,      modules: ['standard', 'modeling', 'quality'] },
   { key: 'dev-monitor',  label: 'console.groups.devMonitor',  icon: Tools,        modules: ['develop', 'service', 'workbench', 'orchestrator', 'monitor'] },
   { key: 'asset',        label: 'console.groups.asset',       icon: Folder,       modules: ['catalog', 'asset'] },
   { key: 'portal',       label: 'console.groups.portal',      icon: Shop,         modules: [], isPortal: true },
@@ -29,11 +29,11 @@ export const MODULE_GROUPS = [
 export const ALL_HOME_CARDS = [
   { module: 'transfer',     label: 'console.modules.transfer.label',     icon: Upload,       cssVar: '--addp-module-transfer',     desc: 'console.modules.transfer.desc' },
   { module: 'meta',         label: 'console.modules.meta.label',         icon: Box,          cssVar: '--addp-module-meta',          desc: 'console.modules.meta.desc' },
+  { module: 'security',     label: 'console.modules.security.label',     icon: Lock,         cssVar: '--addp-module-security',      desc: 'console.modules.security.desc' },
   { module: 'manager',      label: 'console.modules.manager.label',      icon: DataAnalysis, cssVar: '--addp-module-manager',       desc: 'console.modules.manager.desc' },
   { module: 'standard',     label: 'console.modules.standard.label',     icon: Reading,      cssVar: '--addp-module-standard',      desc: 'console.modules.standard.desc' },
   { module: 'modeling',     label: 'console.modules.modeling.label',     icon: Grid,         cssVar: '--addp-module-modeling',      desc: 'console.modules.modeling.desc' },
   { module: 'quality',      label: 'console.modules.quality.label',      icon: CircleCheck,  cssVar: '--addp-module-quality',       desc: 'console.modules.quality.desc' },
-  { module: 'security',     label: 'console.modules.security.label',     icon: Lock,         cssVar: '--addp-module-security',      desc: 'console.modules.security.desc' },
   { module: 'develop',      label: 'console.modules.develop.label',      icon: Edit,         cssVar: '--addp-module-develop',       desc: 'console.modules.develop.desc' },
   { module: 'service',      label: 'console.modules.service.label',      icon: Link,         cssVar: '--addp-module-service',       desc: 'console.modules.service.desc' },
   { module: 'workbench',    label: 'console.modules.workbench.label',    icon: DataBoard,    cssVar: '--addp-module-workbench',     desc: 'console.modules.workbench.desc' },
@@ -242,6 +242,7 @@ export const SIDEBAR_MENUS = {
   quality: {
     label: 'console.menus.quality.label', icon: CircleCheck,
     items: [
+      { index: '/quality/overview', icon: CircleCheck, label: 'console.menus.quality.overview', permissionMode: 'all', permissions: ['quality.plan.read', 'quality.issue.read', 'monitor.execution.read'] },
       { index: '/quality/rules', icon: List, label: 'console.menus.quality.rules', permissions: ['quality.rule.read'] },
       { index: '/quality/plans', icon: List, label: 'console.menus.quality.plans', recentLabel: 'console.menus.quality.recentPlans', permissions: ['quality.plan.read'] },
       { index: '/quality/issues',            icon: Warning, label: 'console.menus.quality.issues', recentLabel: 'console.menus.quality.recentIssues', permissions: ['quality.issue.read'] },

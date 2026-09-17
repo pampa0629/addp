@@ -19,7 +19,7 @@
           <el-form label-width="120px" :disabled="!canUpdate">
             <el-form-item :label="$t('standard.common.code')"><el-input :model-value="document.code" disabled /></el-form-item>
             <el-form-item :label="$t('standard.common.scopeLabel')"><el-select v-model="identity.scope_type" style="width:100%" @change="onScopeChange"><el-option :label="$t('standard.common.scopeValue.tenant_common')" value="tenant_common" /><el-option :label="$t('standard.common.scopeValue.domain')" value="domain" /></el-select></el-form-item>
-            <el-form-item v-if="identity.scope_type === 'domain'" :label="$t('standard.document.domainLabel')"><el-select v-model="identity.owner_domain_id" filterable style="width:100%"><el-option v-for="domain in domains" :key="domain.id" :label="domain.name" :value="domain.id" /></el-select></el-form-item>
+            <el-form-item v-if="identity.scope_type === 'domain'" :label="$t('standard.document.domainLabel')"><BusinessDomainSelect v-model="identity.owner_domain_id" style="width:100%" :options="domains" /></el-form-item>
             <el-form-item :label="$t('standard.document.typeLabel')"><el-select v-model="identity.doc_type" style="width:100%"><el-option v-for="type in documentTypes" :key="type" :label="$t(`standard.document.${type}`)" :value="type" /></el-select></el-form-item>
             <el-form-item :label="$t('standard.document.sourceLabel')"><el-input v-model="identity.source_org" /></el-form-item>
             <el-form-item :label="$t('standard.common.tags')"><el-select v-model="identity.tags" multiple filterable allow-create default-first-option style="width:100%" /></el-form-item>
@@ -173,6 +173,7 @@
 </template>
 
 <script setup>
+import { BusinessDomainSelect, buildBusinessDomainOptions } from '@common-ui'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ArrowLeft, InfoFilled, Search } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -194,7 +195,7 @@ const { canUpdate, canPublish, canCreateExtraction } = useStandardPermissions('d
 const loading = ref(false), candidateLoading = ref(false), saving = ref(false), uploading = ref(false), extracting = ref(false), formalizing = ref(false), formalizationDialog = ref(false), formalizationCandidate = ref(null), decidingCandidateFamily = ref('')
 const candidateDecisionHistoryDialog = ref(false), candidateDecisionHistoryLoading = ref(false), candidateDecisionHistoryFamily = ref(null)
 const document = ref({}), history = ref([]), domains = ref([]), mappings = ref({ elements: [], glossaries: [], metrics: [] })
-const revision = reactive({}), identity = reactive({ scope_type: 'tenant_common', owner_domain_id: null, doc_type: 'reference', source_org: '', steward_id: null, tags: [] })
+const revision = reactive({}), identity = reactive({ scope_type: 'tenant_common', owner_domain_id: null, doc_type: 'reference', source_org: '', tags: [] })
 const formalizationForm = reactive({ change_summary: '', metric_type: '' })
 const candidateQuery = reactive({ keyword: '', state: '', candidate_type: '', comparison_result: '', page: 1, page_size: 20 })
 const candidateFamilyResponse = reactive({ data: [], total: 0, variant_total: 0, page: 1, page_size: 20, total_pages: 1, variant_status_counts: { pending: 0, retained: 0, rejected: 0, formalized: 0 }, family_comparison_counts: { all: 0, new: 0, exact: 0, content_conflict: 0, scope_conflict: 0 } })
@@ -252,7 +253,6 @@ const comparisonValueText = (value, field) => {
 const formatTime = value => formatStandardDateTime(value, locale.value)
 const formatFileSize = bytes => !bytes ? '0 B' : bytes < 1024 ? `${bytes} B` : bytes < 1048576 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / 1048576).toFixed(1)} MB`
 const shortHash = value => value ? `${value.slice(0, 10)}…` : '-'
-const flattenDomains = nodes => nodes.flatMap(node => [node, ...flattenDomains(node.children || [])])
 const setRevision = value => { Object.keys(revision).forEach(key => delete revision[key]); Object.assign(revision, JSON.parse(JSON.stringify(value || {}))) }
 const revisionNo = id => history.value.find(item => item.id === id)?.revision_no || '-'
 const onScopeChange = scope => { if (scope !== 'domain') identity.owner_domain_id = null }
@@ -263,7 +263,7 @@ async function load() {
   try {
     const [aggregate, revisions, candidateRows, mappingRows] = await Promise.all([documentAPI.get(route.params.id), documentAPI.listRevisions(route.params.id), documentAPI.listCandidateFamilies(route.params.id, candidateQuery), documentAPI.getMappings(route.params.id)])
     document.value = aggregate; history.value = revisions || []; applyCandidateFamilyResponse(candidateRows); mappings.value = mappingRows || { elements: [], glossaries: [], metrics: [] }
-    Object.assign(identity, { scope_type: aggregate.scope_type, owner_domain_id: aggregate.owner_domain_id || null, doc_type: aggregate.doc_type, source_org: aggregate.source_org || '', steward_id: aggregate.steward_id || null, tags: aggregate.tags || [] })
+    Object.assign(identity, { scope_type: aggregate.scope_type, owner_domain_id: aggregate.owner_domain_id || null, doc_type: aggregate.doc_type, source_org: aggregate.source_org || '', tags: aggregate.tags || [] })
     setRevision(aggregate.draft_revision || aggregate.current_revision || history.value[0])
   } catch (error) { ElMessage.error(getStandardErrorMessage(error, t, 'standard.common.loadFailed')); goBack() }
   finally { loading.value = false }
@@ -393,7 +393,7 @@ function openFormalizedStandard(candidate) {
   if (basePath && candidate.formalization?.standard_id) navigateStandardRoute(router, { path: `${basePath}/${candidate.formalization.standard_id}` })
 }
 watch(() => route.params.id, load, { immediate: true })
-onMounted(async () => { try { domains.value = flattenDomains(await domainAPI.list() || []) } catch { domains.value = [] } })
+onMounted(async () => { try { domains.value = buildBusinessDomainOptions(await domainAPI.list() || []) } catch { domains.value = [] } })
 </script>
 
 <style scoped>

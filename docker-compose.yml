@@ -181,7 +181,7 @@ services:
     environment:
       - SERVICE_HOST=meta-backend
       - PORT=8082
-      - DB_SCHEMA=metadata
+      - DB_SCHEMA=meta
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
       - POSTGRES_USER=${POSTGRES_USER:-addp}
@@ -229,7 +229,7 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-meta-worker:${IMAGE_TAG:-latest}
     # Note: No container_name for Swarm compatibility (allows multiple replicas)
     environment:
-      - DB_SCHEMA=metadata
+      - DB_SCHEMA=meta
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
       - POSTGRES_USER=${POSTGRES_USER:-addp}
@@ -249,6 +249,8 @@ services:
     networks:
       - addp-network
     depends_on:
+      meta-backend:
+        condition: service_healthy
       system-backend:
         condition: service_healthy
     restart: unless-stopped
@@ -451,6 +453,8 @@ services:
     networks:
       - addp-network
     depends_on:
+      transfer-backend:
+        condition: service_healthy
       system-backend:
         condition: service_healthy
     restart: unless-stopped
@@ -977,6 +981,8 @@ services:
     networks:
       - addp-network
     depends_on:
+      quality-backend:
+        condition: service_healthy
       system-backend:
         condition: service_healthy
     restart: unless-stopped
@@ -1036,6 +1042,8 @@ services:
     networks:
       - addp-network
     depends_on:
+      security-backend:
+        condition: service_healthy
       system-backend:
         condition: service_healthy
     restart: unless-stopped

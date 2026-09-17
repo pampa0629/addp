@@ -258,6 +258,8 @@ function serializeFieldPresentations(draft) {
     if (draft.rendererType === 'table' && Number.isInteger(item.width)) result.width = item.width
     const stateRules = serializeStateRules(item.stateRules)
     if (stateRules.length > 0) result.state_rules = stateRules
+    const valueLabels = (item.valueLabels || []).map(({ value, label }) => ({ value, label: String(label || '').trim() }))
+    if (valueLabels.length > 0) result.value_labels = valueLabels
     return result
   })
 }
@@ -293,6 +295,7 @@ function presentationDraft(item, fields) {
     precision: Object.prototype.hasOwnProperty.call(item, 'precision') ? item.precision : defaults.precision,
     temporalFormat: item.temporal_format || '',
     width: Object.prototype.hasOwnProperty.call(item, 'width') ? item.width : null,
+    valueLabels: (item.value_labels || []).map((entry) => ({ ...entry })),
     stateRules: (item.state_rules || []).map((rule) => ({ ...rule })),
   }
 }

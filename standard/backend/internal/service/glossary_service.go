@@ -48,7 +48,7 @@ func (s *GlossaryService) CreateGlossary(req *models.CreateGlossaryRequest, tena
 	}
 	glossary := &models.Glossary{
 		TenantID: tenantID, ScopeType: scopeType, OwnerDomainID: req.OwnerDomainID, Code: code,
-		StewardID: req.StewardID, Tags: req.Tags, CreatedBy: userID, LifecycleState: "active",
+		Tags: req.Tags, CreatedBy: userID, LifecycleState: "active",
 	}
 	if err := s.repo.Create(glossary, revision); err != nil {
 		return nil, err
@@ -82,7 +82,7 @@ func (s *GlossaryService) UpdateGlossary(id, tenantID, userID int64, req *models
 	if err != nil {
 		return nil, err
 	}
-	glossary.ScopeType, glossary.OwnerDomainID, glossary.StewardID, glossary.Tags, glossary.UpdatedBy = scopeType, req.OwnerDomainID, req.StewardID, req.Tags, &userID
+	glossary.ScopeType, glossary.OwnerDomainID, glossary.Tags, glossary.UpdatedBy = scopeType, req.OwnerDomainID, req.Tags, &userID
 	if err := s.repo.UpdateIdentity(glossary, req.Version); err != nil {
 		return nil, err
 	}

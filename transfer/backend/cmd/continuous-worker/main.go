@@ -10,6 +10,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/addp/common/schema"
+
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
 	"github.com/addp/common/dataprotection/projectionstore"
@@ -22,7 +24,6 @@ import (
 	"github.com/addp/transfer/internal/config"
 	"github.com/addp/transfer/internal/continuous"
 	"github.com/addp/transfer/internal/deadletter"
-	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/planner"
 	transferprotection "github.com/addp/transfer/internal/protection"
 	"github.com/addp/transfer/internal/repository"
@@ -39,7 +40,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("continuous worker 连接 Infra PostgreSQL 失败: %v", err)
 	}
-	if err := commonRuntimeHealth.EnsureStore(db); err != nil {
+	if err := schema.Require(db, "transfer", repository.SchemaVersion); err != nil {
+		log.Fatalf("Worker schema is not ready: %v", err)
+	}
+	if err := schema.Require(db, "common", schema.CommonVersion); err != nil {
 		log.Fatalf("初始化后台运行实例心跳失败: %v", err)
 	}
 	continuousPolicyService := service.NewContinuousPolicyService(repository.NewContinuousPolicyRepository(db))
@@ -110,7 +114,7 @@ func main() {
 	metaClient := commonClient.NewMetaClient(cfg.MetaServiceURL, tokenSource)
 	systemClient := commonClient.NewSystemClient(cfg.SystemServiceURL, tokenSource)
 	systemRuntimeClient := commonClient.NewSystemServiceClient(cfg.SystemServiceURL, tokenSource, nil)
-	protectionStore, err := projectionstore.New(db, cfg.DBSchema, "transfer", nil)
+	protectionStore, err := projectionstore.Open(db, cfg.DBSchema, "transfer", nil)
 	if err != nil {
 		log.Fatalf("初始化 Transfer 保护投影存储失败: %v", err)
 	}
@@ -184,14 +188,11 @@ func main() {
 }
 
 func connectDatabase(cfg *config.Config) (*gorm.DB, error) {
-	db, err := commonRepo.InitDatabase(commonRepo.DatabaseConfig{
+	db, err := commonRepo.OpenDatabase(commonRepo.DatabaseConfig{
 		Host: cfg.DBHost, Port: cfg.DBPort, User: cfg.DBUser, Password: cfg.DBPassword,
 		DBName: cfg.DBName, Schema: cfg.DBSchema, SSLMode: "disable",
 	})
 	if err != nil {
-		return nil, err
-	}
-	if err := db.AutoMigrate(&models.ContinuousPolicy{}); err != nil {
 		return nil, err
 	}
 	return db, nil

@@ -5039,6 +5039,7 @@ const docTemplate = `{
                     "$ref": "#/definitions/github_com_addp_service_internal_models.QueryFilter"
                 },
                 "op": {
+                    "description": "Op 为已声明的筛选操作；contains 按字面子串区分大小写，无通配符。 | Declared filter operator; contains is a case-sensitive literal substring match without wildcards.",
                     "type": "string",
                     "enum": [
                         "eq",
@@ -5048,6 +5049,7 @@ const docTemplate = `{
                         "gt",
                         "gte",
                         "in",
+                        "contains",
                         "is_null",
                         "is_not_null",
                         "bbox_intersects"

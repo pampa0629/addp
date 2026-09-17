@@ -133,6 +133,7 @@ SKIP_MODTIDY=1 bash scripts/dev/start.sh
 **安全性**:
 - launchd 作业必须同时满足 `com.addp.codex.*` 标签和当前仓库绝对路径才会被卸载
 - PID 文件用于精确停止正常启动的服务，进程名和端口检查用于清理 ADDP 残留进程
+- 端口清理只执行一次批量 `lsof` 查询，限定目标 TCP 端口和 `LISTEN` 状态；按 PID 去重后逐个核验身份，不把浏览器等客户端连接当作监听服务，也不终止非 ADDP 监听进程
 - launchd 作业卸载失败时返回非零状态，`restart.sh` 会中断，不会带着残留进程继续启动
 
 ### restart.sh
@@ -141,6 +142,11 @@ SKIP_MODTIDY=1 bash scripts/dev/start.sh
 
 - 无参数、`-all` 或指定 Go 模块时：保持原有全局重启语义，先 `stop.sh` 再 `start.sh`。
 - 只指定扩展服务参数时：只重启对应扩展服务，不停止整套 ADDP 环境。
+- `-all`、无参数和指定 Go 模块参数保留已有二进制及 Go 包缓存。Swagger 同步后，统一比较完整构建指纹：源码、共享依赖、嵌入资源、Go 版本、平台或构建参数变化才重新编译。服务进程仍全部按所选范围重启，未变化产物保留构建身份，新进程具有新的启动时间。
+- Swagger 对未变化的 Go 工作区输入和完整产物复用文档，输入或产物变化时重新生成；FastAPI 实时导出。需要生成的模块批量并行执行，并输出耗时，路由覆盖校验仍执行。所有生成任务结束后才进入编译，因为 `docs.go` 本身参与 Go 编译，不能与同一模块的生成任务同时执行。
+- Go 后端就绪后，所选 Runtime、Copilot 和 Agent 的准备、启动与健康等待并行执行；全部任务成功后再启动 Gateway 和前端，并输出各任务及整体耗时。Python 依赖安装单独加锁，避免同时写入共享 `common-python` 元数据，已安装环境的检查和启动仍可并行。
+- Go 后端和前端在各自启动阶段各查询一次 TCP LISTEN 快照，命中占用后实时复核；单项启动实时查询。端口冲突和扫描失败会中断启动，新进程退出不能被其他监听者的 HTTP 成功响应掩盖。
+- 重启编排和缓存保留通过 `make test-dev-lifecycle` 验证，并纳入 `make test-platform` / Platform CI。
 
 **实现**:
 ```bash
@@ -368,3 +374,5 @@ bash scripts/dev/start.sh
 - [scripts/infra/README.md](../infra/README.md) - 基础设施脚本文档
 - [CLAUDE.md](../../CLAUDE.md) - 项目整体架构
 - [docs/STARTUP_ORDER.md](../../docs/STARTUP_ORDER.md) - 服务启动顺序详解
+
+Backend 独占所属模块迁移；Worker 初始化不执行平台 schema DDL。全量启动按模块等待 `/health/ready` 后启动该模块 Worker，各模块仍并行。公共执行与心跳表由 System Backend 初始化，单独 Worker 只读检查 schema 版本。数据库结构变化须同步递增 owner 的 `SchemaVersion`。

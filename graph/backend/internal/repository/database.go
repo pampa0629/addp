@@ -4,7 +4,8 @@ import (
 	"fmt"
 	"log"
 
-	commonExecution "github.com/addp/common/execution"
+	"github.com/addp/common/schema"
+
 	"github.com/addp/graph/internal/config"
 	"github.com/addp/graph/internal/models"
 	"gorm.io/driver/postgres"
@@ -25,7 +26,7 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 		return nil, fmt.Errorf("failed to create schema: %w", err)
 	}
 
-	if err := commonExecution.EnsureStore(db); err != nil {
+	if err := schema.Require(db, "common", schema.CommonVersion); err != nil {
 		return nil, fmt.Errorf("failed to ensure execution store: %w", err)
 	}
 

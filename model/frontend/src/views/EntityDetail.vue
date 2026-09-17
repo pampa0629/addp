@@ -70,9 +70,7 @@
             </el-col>
             <el-col :xs="24" :md="12">
               <el-form-item :label="t('model.entity.domain')">
-                <el-select v-model="form.domain_id" :disabled="!canEditEntity" clearable style="width:100%">
-                  <el-option v-for="d in domains" :key="d.id" :label="d.name" :value="d.id" />
-                </el-select>
+                <BusinessDomainSelect v-model="form.domain_id" :disabled="!canEditEntity" clearable style="width:100%" :options="domains" />
               </el-form-item>
             </el-col>
             <el-col :span="24">
@@ -335,6 +333,7 @@
 </template>
 
 <script setup>
+import { BusinessDomainSelect, buildBusinessDomainOptions } from '@common-ui'
 import { ref, reactive, onMounted, onBeforeUnmount, nextTick, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useConsolePageDescriptor } from '@common-ui'
@@ -410,7 +409,7 @@ const allEntities = ref([])
 const localMermaidCode = ref('erDiagram\n  ENTITY {\n  }\n')
 let stopThemeObserver = null
 
-const attributeDataTypes = ['string', 'int', 'bigint', 'float', 'decimal', 'date', 'datetime', 'bool', 'json', 'text', 'geometry']
+const attributeDataTypes = ['string', 'int', 'bigint', 'float', 'decimal', 'date', 'datetime', 'bool', 'json', 'geometry']
 const attrForm = reactive({ name: '', column_name: '', data_type: 'string', element_id: null, is_pk: false, nullable: true, description: '', sort_order: 0 })
 const attrRules = {
   name: [{ required: true, message: t('model.attribute.name_required'), trigger: 'blur' }],
@@ -902,7 +901,7 @@ const loadPage = async () => {
       domainAPI.list(), elementAPI.listAll(), entityAPI.listAll()
     ])
     if (generation !== loadGeneration) return
-    domains.value = domainsResult.status === 'fulfilled' ? domainsResult.value || [] : []
+    domains.value = domainsResult.status === 'fulfilled' ? buildBusinessDomainOptions(domainsResult.value || []) : []
     elements.value = elementsResult.status === 'fulfilled' ? elementsResult.value || [] : []
     allEntities.value = entitiesResult.status === 'fulfilled' ? entitiesResult.value || [] : []
     if ([domainsResult, elementsResult, entitiesResult].some(result => result.status === 'rejected')) {

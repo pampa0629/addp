@@ -38,6 +38,7 @@
               <el-icon><CircleCheck /></el-icon>
               <span>{{ t('quality.layout.qualityManagement') }}</span>
             </template>
+            <el-menu-item v-if="can('quality.plan.read') && can('quality.issue.read') && can('monitor.execution.read')" index="/overview"><el-icon><CircleCheck /></el-icon><span>{{ t('quality.overview.title') }}</span></el-menu-item>
             <el-menu-item v-if="can('quality.rule.read')" index="/rules"><el-icon><List /></el-icon><span>{{ t('quality.rule.title') }}</span></el-menu-item>
             <el-menu-item v-if="can('quality.plan.read')" index="/plans">
               <el-icon><Lock /></el-icon>

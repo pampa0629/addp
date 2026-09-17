@@ -82,6 +82,20 @@ const contract = {
   }
 }
 
+test('Quality table aliases are independent resource inputs with stable upstream bindings', () => {
+  const contract = {
+    input_schema: { type: 'object', properties: { table_bindings: { type: 'object', properties: { people: { type: 'string', format: 'resource-locator' }, members: { type: 'string', format: 'resource-locator' } } } } },
+    input_defaults: { table_bindings: { people: 'addp://engine/2/path/east/people?type=table' } },
+    input_ui_schema: { table_bindings: { control: 'group', fields: { people: { control: 'resource_tree_picker' }, members: { control: 'resource_tree_picker' } } } },
+  }
+  const inputs = executionInputPorts(contract)
+  assert.equal(inputs.length, 2)
+  const members = inputs.find(input => input.name === 'table_bindings.members')
+  assert.equal(members.resource, true)
+  assert.deepEqual(members.bindingPath, ['table_bindings', 'members'])
+  assert.deepEqual(setParameterBinding({}, members, '{{materialize.outputs.target.locator}}'), { table_bindings: { members: '{{materialize.outputs.target.locator}}' } })
+})
+
 test('execution ports use logical resource fields and stable outputs', () => {
   const inputs = executionInputPorts(contract)
   assert.deepEqual(inputs.map(port => [port.name, port.label, port.type]), [

@@ -21,7 +21,7 @@ func TestNamedParameterOptionsAreEnforcedAndFingerprintFrozen(t *testing.T) {
 			t.Fatalf("bad value accepted: %v", bad)
 		}
 	}
-	before, err := BuildQueryConsumerDescriptor(service)
+	before, err := BuildQueryConsumerDescriptor(service, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,7 +37,7 @@ func TestNamedParameterOptionsAreEnforcedAndFingerprintFrozen(t *testing.T) {
 	if QueryServiceVersion(service) == version {
 		t.Fatal("parameter options did not change publication version")
 	}
-	after, err := BuildQueryConsumerDescriptor(service)
+	after, err := BuildQueryConsumerDescriptor(service, false)
 	if err != nil {
 		t.Fatal(err)
 	}

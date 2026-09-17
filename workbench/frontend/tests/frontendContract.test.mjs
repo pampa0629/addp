@@ -157,6 +157,15 @@ test('runtime fills placements and keeps selection feedback transient', () => {
   assert.doesNotMatch(canvas, /selected_row_index|selectedRowIndex/)
 })
 
+test('page and component parameters share one binding-aware field renderer', () => {
+  const canvas = readSource('../src/components/DataApplicationCanvas.vue')
+  const fields = readSource('../src/components/ApplicationParameterFields.vue')
+  assert.equal((canvas.match(/<ApplicationParameterFields\b/g) || []).length, 2)
+  assert.doesNotMatch(canvas, /<ParameterValueInput\b|class="parameter-field"/)
+  assert.equal((fields.match(/<ParameterValueInput\b/g) || []).length, 1)
+  assert.match(canvas, /v-if="showParameters && parameterPlacement\.componentParameters/)
+})
+
 test('component editor ignores async results from an obsolete service context', () => {
   const editor = readSource('../src/components/ApplicationComponentEditor.vue')
 
@@ -236,7 +245,8 @@ test('application parameter changes invalidate only their bound component reques
   const runtime = readSource('../src/utils/dataApplicationRuntime.mjs')
   const boundedExport = readSource('../src/utils/boundedExport.mjs')
 
-  assert.match(canvas, /@update:model-value="updateParameterValue\(parameter\.key, \$event\)"/)
+  assert.match(canvas, /@update-value="updateParameterValue"/)
+  assert.match(readSource('../src/components/ApplicationParameterFields.vue'), /@update:model-value="emit\('update-value', parameter\.key, \$event\)"/)
   assert.match(runtime, /componentIDsForApplicationParameters/)
   assert.match(runtime, /current\.requests\.invalidate\(\)/)
   assert.match(canvas, /queryAllRequests\.invalidate\(\)/)

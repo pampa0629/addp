@@ -36,6 +36,12 @@ func buildMetricPlan(contract models.MetricContract, bindings metricPlanBindings
 	if !require(contract.Subject, "string") || !require(contract.Time, "date") {
 		return plan.Plan{}, invalidRequest()
 	}
+	if contract.SubjectLabel != nil {
+		if contract.SubjectLabel.RelationID != contract.SubjectRelationID || !require(*contract.SubjectLabel, "string") {
+			return plan.Plan{}, invalidRequest()
+		}
+		refs = append(refs, *contract.SubjectLabel)
+	}
 	seenFilters := map[models.MetricFieldReference]bool{}
 	for _, f := range contract.Filters {
 		if seenFilters[f.Field] {
@@ -214,6 +220,29 @@ func buildMetricPlan(contract models.MetricContract, bindings metricPlanBindings
 		sharedCount := metricOp("coalesce", metricCol(stats, "shared_count"), metricInt("0"))
 		value := metricOp("case", metricOp("eq", denom, metricInt("0")), metricLiteral(datatype.FieldTypeDecimal, "0"), metricOp("divide", sharedCount, denom))
 		b.p.Root = b.project(stats, []plan.Projection{{Name: "subject_id", Expr: metricOp("case", forward, metricParam("subject_id"), metricParam("comparison_id"))}, {Name: "bucket", Expr: metricCol(stats, "bucket")}, {Name: "value", Expr: value}, {Name: "comparison_id", Expr: metricOp("case", forward, metricParam("comparison_id"), metricParam("subject_id"))}, {Name: "direction", Expr: metricCol(stats, "direction")}, {Name: "subject_count", Expr: denom}, {Name: "comparison_count", Expr: other}, {Name: "shared_count", Expr: sharedCount}})
+	}
+	if contract.SubjectLabel != nil {
+		// Enrich only the computed rows, preserving metric grain and stable keys.
+		roles := []string{"subject"}
+		if overlap {
+			roles = append(roles, "comparison")
+		}
+		for _, role := range roles {
+			labelName := role + "_label"
+			lookup := b.project(persons, []plan.Projection{
+				{Name: "label_identity", Expr: b.ref(persons, identityRef)},
+				{Name: labelName, Expr: b.ref(persons, *contract.SubjectLabel)},
+			})
+			root := b.p.Root
+			joined := b.join(root, lookup, "left", metricOp("eq", metricCol(root, role+"_id"), metricCol(lookup, "label_identity")))
+			projection := make([]plan.Projection, 0, len(b.p.Output.Fields)+1)
+			for _, field := range b.p.Output.Fields {
+				projection = append(projection, plan.Projection{Name: field.Name, Expr: metricCol(joined, field.Name)})
+			}
+			projection = append(projection, plan.Projection{Name: labelName, Expr: metricCol(joined, labelName)})
+			b.p.Root = b.project(joined, projection)
+			b.p.Output.Fields = append(b.p.Output.Fields, datatype.FieldInfo{Name: labelName, Type: datatype.FieldTypeString, Nullable: true})
+		}
 	}
 	if err := plan.Validate(b.p); err != nil {
 		return plan.Plan{}, fmt.Errorf("build metric plan: %w", err)

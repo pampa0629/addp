@@ -19,7 +19,7 @@ export const SEARCH_INDEX = [
   { labelKey: 'console.menus.standard.elements',     module: 'standard', route: '/standard/elements',     keywords: ['数据元', '元素', 'element', 'standard'] },
   { labelKey: 'console.menus.standard.codeSets',     module: 'standard', route: '/standard/code-sets',    keywords: ['码值', '码值集', 'code', 'codeset'] },
   { labelKey: 'console.menus.modeling.metricImplementations', module: 'modeling', route: '/modeling/metric-implementations', keywords: ['指标实现', 'metric implementation'] },
-  { labelKey: 'console.menus.standard.metrics',      module: 'standard', route: '/standard/metrics',      keywords: ['指标', '指标管理', 'metric', 'kpi'] },
+  { labelKey: 'console.menus.standard.metrics',      module: 'standard', route: '/standard/metrics',      keywords: ['指标', '指标定义', 'metric', 'kpi'] },
   { labelKey: 'console.menus.standard.documents',    module: 'standard', route: '/standard/documents',    keywords: ['标准文档', '文档', 'document'] },
   // 数据建模
   { labelKey: 'console.menus.modeling.dwLayers',     module: 'modeling', route: '/modeling/dw-layers',    keywords: ['数仓分层', '分层', 'data warehouse', 'layer'] },
@@ -27,6 +27,7 @@ export const SEARCH_INDEX = [
   { labelKey: 'console.menus.modeling.logicalTables',module: 'modeling', route: '/modeling/logical-tables',keywords: ['逻辑表', '逻辑模型', 'logical table'] },
   { labelKey: 'console.menus.modeling.starSchema',   module: 'modeling', route: '/modeling/star-schema',  keywords: ['维度建模', '事实表', '维度表', 'dimensional modeling'] },
   // 数据质量
+  { labelKey: 'console.menus.quality.overview', module: 'quality', route: '/quality/overview', permissionMode: 'all', permissions: ['quality.plan.read', 'quality.issue.read', 'monitor.execution.read'], keywords: ['质量统计', '质量概览', 'quality overview'] },
   { labelKey: 'console.menus.quality.plans', module: 'quality', route: '/quality/plans', permissions: ['quality.plan.read'], keywords: ['质量方案', '质量检查', 'quality plan'] },
   { labelKey: 'console.menus.quality.rules', module: 'quality', route: '/quality/rules', permissions: ['quality.rule.read'], keywords: ['质量规则', 'quality rule'] },
   { labelKey: 'console.menus.quality.issues',           module: 'quality', route: '/quality/issues', permissions: ['quality.issue.read'], keywords: ['质量问题', '问题工单', 'issue'] },

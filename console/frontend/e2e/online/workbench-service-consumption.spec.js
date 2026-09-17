@@ -1,5 +1,5 @@
 import { expect, request, test } from '@playwright/test'
-import { writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 const requiredNames = [
@@ -58,7 +58,7 @@ async function login(page, username, password, redirect) {
   return browserAccessToken
 }
 
-test('Data Application authoring renders MySQL table and chart then blocks a changed contract', async ({ page }) => {
+test('MySQL application preserves raw values through labels, export and selection then blocks contract drift', async ({ page }) => {
   const env = environment()
   const serviceID = Number(env.ADDP_ONLINE_WORKBENCH_SERVICE_ID)
   if (!Number.isInteger(serviceID) || serviceID <= 0) throw new Error('Workbench service ID must be positive')
@@ -110,7 +110,28 @@ test('Data Application authoring renders MySQL table and chart then blocks a cha
     const tableRows = componentEditor.getByTestId('renderer-host').locator('.el-table__body-wrapper tbody tr')
     await expect(tableRows).toHaveCount(2)
     await expect(tableRows.first()).toContainText('ORD-20260420-001')
+    await expect(tableRows.first()).toContainText('上海')
+    await expect(tableRows.first()).toContainText('Delivered order')
+    await expect(tableRows.nth(1)).toContainText('北京')
+    await expect(tableRows.nth(1)).toContainText('Processing order')
+
+    // Load the complete bounded result before export; a truncated export must
+    // never be mistaken for a successful raw-value assertion.
+    await componentEditor.getByRole('spinbutton', { name: /^(单页数量|Page size)$/ }).fill('10')
+    await componentEditor.getByTestId('component-query-action').click()
+    await expect(tableRows).toHaveCount(3)
+    const downloadPromise = page.waitForEvent('download')
+    await componentEditor.getByRole('button', { name: /^(导出当前有界结果|Export bounded result)$/ }).click()
+    const downloaded = await downloadPromise
+    expect(await downloaded.failure()).toBeNull()
+    const csv = readFileSync(await downloaded.path(), 'utf8')
+    expect(csv).toContain('delivered')
+    expect(csv).toContain('processing')
+    expect(csv).toContain('上海')
+    expect(csv).not.toContain('Delivered order')
+    expect(csv).not.toContain('Processing order')
     await frame.locator('.el-dialog__headerbtn').click()
+    await expect(componentEditor).not.toBeVisible()
 
     await applicationComponents.nth(1).getByTestId('edit-component-action').click()
     await expect(componentEditor).toBeVisible()
@@ -118,10 +139,43 @@ test('Data Application authoring renders MySQL table and chart then blocks a cha
     await expect(componentEditor.getByTestId('renderer-host').locator('.chart-renderer canvas')).toBeVisible()
     await expect(componentEditor.getByTestId('renderer-host').locator('.map-container')).toHaveCount(0)
     await frame.locator('.el-dialog__headerbtn').click()
+    await expect(componentEditor).not.toBeVisible()
 
+    // Preview uses the production canvas without creating an immutable
+    // Application Revision that the cleanup API cannot delete.
+    await frame.getByTestId('draft-preview-action').click()
+    const canvas = frame.getByTestId('data-application-canvas')
+    for (let index = 0; index < 2; index++) {
+      await expect(canvas.getByTestId('runtime-component').nth(index).getByRole('button', { name: /^(查询|Query)$/ })).toBeEnabled()
+    }
+    await canvas.getByTestId('query-all-action').click()
+    const sourceRows = canvas.getByTestId('runtime-component').first().locator('.el-table__body-wrapper tbody tr')
+    await expect(sourceRows).toHaveCount(2)
+    await expect(sourceRows.first()).toContainText('Delivered order')
+    const selectedChartResponse = page.waitForResponse(response => {
+      if (new URL(response.url()).pathname !== '/api/query/commerce-order-analysis/query') return false
+      const body = response.request().postDataJSON()
+      return body?.select?.includes('total_amount') && !body.select.includes('status') &&
+        JSON.stringify(body.filter).includes('"op":"eq"')
+    })
+    await sourceRows.first().click()
+    const linkedResponse = await selectedChartResponse
+    const linkedRequest = linkedResponse.request().postDataJSON()
+    expect(linkedRequest.filter).toEqual({ and: [
+      { field: 'status', op: 'in', value: ['delivered', 'processing'] },
+      { field: 'status', op: 'eq', value: 'delivered' }
+    ] })
+    const linkedRows = (await json(linkedResponse, 'selection query')).data
+    expect(linkedRows.map(row => row.city)).toEqual(['上海', '成都'])
+    await expect(canvas.getByRole('textbox', { name: 'Selected status', exact: true })).toHaveValue('delivered')
+    await expect(canvas.getByTestId('runtime-component').nth(1).locator('.chart-renderer canvas')).toBeVisible()
+    await frame.locator('.draft-preview-dialog .el-dialog__headerbtn').click()
+    await expect(canvas).not.toBeVisible()
+
+    const currentService = await json(await api.get(`/api/v1/service/query/${serviceID}`), 'read Query Service version')
     await json(
       await api.put(`/api/v1/service/query/${serviceID}`, {
-        data: { data_config: { default_fields: fields.slice(0, -1), filterable_fields: filterableFields } }
+        data: { version: currentService.version, data_config: { default_fields: fields.slice(0, -1), filterable_fields: filterableFields } }
       }),
       'change Query Service public contract'
     )
@@ -149,7 +203,11 @@ test('Data Application authoring renders MySQL table and chart then blocks a cha
       table_rows: 2,
       chart_rendered: true,
       map_available: false,
-      contract_change_blocked: true
+      contract_change_blocked: true,
+      value_labels_rendered: true,
+      service_dimension_rendered: true,
+      export_preserved_raw_values: true,
+      selection_preserved_raw_values: true
     }
     writeFileSync(
       resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'workbench-service-consumption-browser.json'),

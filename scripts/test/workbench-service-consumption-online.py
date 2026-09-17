@@ -511,6 +511,26 @@ def component(
 def data_application_payload(service_id: int, run_id: str) -> dict[str, object]:
     table_id = "5d1ca794-1263-42c7-a974-ea3df352ae40"
     chart_id = "5f6e0ce8-547b-4da5-a44f-87b95b278986"
+    table = component(service_id, table_id, "Orders", "table", FIELDS, {
+        "columns": FIELDS,
+        "field_presentations": [
+            {"field": "city", "label": "Customer city"},
+            {"field": "status", "label": "Order status", "value_labels": [
+                {"value": "delivered", "label": "Delivered order"},
+                {"value": "processing", "label": "Processing order"},
+            ]},
+        ],
+    })
+    chart = component(
+        service_id, chart_id, "Order amounts", "chart", ["city", "total_amount"],
+        {"chart_type": "bar", "dimension": "city", "measures": ["total_amount"]},
+    )
+    chart["parameter_definitions"].append(
+        {"key": "selected_status", "label": "Selected status", "control_type": "text", "required": False}
+    )
+    chart["query_template"]["parameter_filters"].append(
+        {"parameter_key": "selected_status", "field": "status", "operator": "eq"}
+    )
     return {
         "name": f"Commerce order analysis {run_id}",
         "description": "ADDP Online Workbench MySQL acceptance data application",
@@ -527,25 +547,20 @@ def data_application_payload(service_id: int, run_id: str) -> dict[str, object]:
                     {"component_id": chart_id, "x": 0, "y": 7, "width": 12, "height": 7},
                 ],
             },
-            "components": [
-                component(service_id, table_id, "Orders", "table", FIELDS, {"columns": FIELDS}),
-                component(
-                    service_id,
-                    chart_id,
-                    "Order amounts",
-                    "chart",
-                    ["city", "total_amount"],
-                    {"chart_type": "bar", "dimension": "city", "measures": ["total_amount"]},
-                ),
-            ],
+            "components": [table, chart],
             "parameters": [
                 {"key": "statuses", "label": "Statuses", "control_type": "multiselect", "required": False, "default_value": ["delivered", "processing"]},
+                {"key": "selected_status", "label": "Selected status", "control_type": "text", "required": False},
             ],
             "parameter_bindings": [
                 {"application_parameter_key": "statuses", "component_id": table_id, "component_parameter_key": "statuses"},
                 {"application_parameter_key": "statuses", "component_id": chart_id, "component_parameter_key": "statuses"},
+                {"application_parameter_key": "selected_status", "component_id": chart_id, "component_parameter_key": "selected_status"},
             ],
-            "selection_bindings": [],
+            "selection_bindings": [{
+                "source_component_id": table_id,
+                "assignments": [{"source_field": "status", "application_parameter_key": "selected_status"}],
+            }],
         },
     }
 
@@ -964,6 +979,10 @@ def validate_browser_report(
         "chart_rendered": True,
         "map_available": False,
         "contract_change_blocked": True,
+        "value_labels_rendered": True,
+        "service_dimension_rendered": True,
+        "export_preserved_raw_values": True,
+        "selection_preserved_raw_values": True,
     }
     mismatches = [key for key, value in expected.items() if payload.get(key) != value]
     if mismatches:

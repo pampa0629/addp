@@ -28,8 +28,10 @@ const (
 )
 
 type planExecutionConfig struct {
+	TargetKey         string             `json:"target_key"`
 	SchemaVersion     string             `json:"schema_version"`
 	TaskVersion       int64              `json:"task_version"`
+	OwnerDomainID     *int64             `json:"owner_domain_id,omitempty"`
 	TableBindings     []PlanTableBinding `json:"table_bindings"`
 	Rules             PlanRuleDocument   `json:"rules"`
 	ParentExecutionID string             `json:"parent_execution_id"`
@@ -105,6 +107,10 @@ func decodePlanExecutionConfig(config commonModels.JSONMap) (*planExecutionConfi
 	}
 	if snapshot.SchemaVersion != planExecutionConfigVersion || snapshot.TaskVersion <= 0 || (snapshot.CheckTimeoutMS <= 0 || snapshot.CheckTimeoutMS > int64(time.Duration(1<<63-1)/time.Millisecond)) {
 		return nil, fmt.Errorf("quality plan execution config is invalid")
+	}
+	key, err := models.PlanTargetKey(snapshot.TableBindings)
+	if err != nil || snapshot.TargetKey != key {
+		return nil, fmt.Errorf("quality plan target scope is invalid")
 	}
 	rulesRaw, _ := json.Marshal(snapshot.Rules)
 	if _, err := validatePlanContract(snapshot.TableBindings, rulesRaw); err != nil {

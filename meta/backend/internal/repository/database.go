@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/addp/common/schema"
+
 	"github.com/addp/common/logger"
 	commonRepo "github.com/addp/common/repository"
 	"github.com/addp/meta/internal/config"
@@ -16,8 +18,8 @@ var DB *gorm.DB
 
 // InitDatabase 初始化数据库连接
 func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
-	if err := PrepareSchema(cfg); err != nil {
-		return nil, err
+	if cfg.DBSchema != "meta" {
+		return nil, fmt.Errorf("meta module schema must be meta")
 	}
 
 	// Use common repository InitDatabase
@@ -31,13 +33,19 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 		SSLMode:  "disable",
 	}
 
-	// Initialize database with auto-migration
-	db, err := commonRepo.InitDatabase(dbConfig,
-		&models.MetaNode{}, // 元数据节点（schema/prefix）
-		&models.MetaItem{}, // 元数据条目（table/object）
-		&models.ScanTask{}, // 扫描任务定义
-	)
+	db, err := commonRepo.OpenDatabase(dbConfig)
 	if err != nil {
+		return nil, err
+	}
+	if err := schema.Require(db, "common", schema.CommonVersion); err != nil {
+		return nil, err
+	}
+	if err := schema.Migrate(db, "meta", SchemaVersion, func(tx *gorm.DB) error {
+		if err := tx.AutoMigrate(&models.MetaNode{}, &models.MetaItem{}, &models.ScanTask{}); err != nil {
+			return err
+		}
+		return applySQLMigrations(tx)
+	}); err != nil {
 		return nil, err
 	}
 
@@ -58,17 +66,6 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 		IgnoreRecordNotFoundError: true,
 	})
 	db.Logger = dbLogger
-
-	if err := applySQLMigrations(db); err != nil {
-		return nil, err
-	}
-
-	// 运行数据库约束迁移（用于新部署）
-	// 注意：这些约束 GORM AutoMigrate 无法创建，需要手动执行 SQL
-	if err := applyDatabaseConstraints(db); err != nil {
-		logger.L().Warn("数据库约束应用失败（可能已存在）", "error", err)
-		// 不返回错误，因为约束可能已存在
-	}
 
 	DB = db
 	logger.L().Info("数据库连接成功", "host", cfg.DBHost, "schema", cfg.DBSchema)

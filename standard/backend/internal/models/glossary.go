@@ -64,7 +64,6 @@ type Glossary struct {
 	ScopeType       string      `gorm:"size:20;not null;default:'tenant_common';index" json:"scope_type" enums:"platform,tenant_common,domain"`
 	OwnerDomainID   *int64      `gorm:"index" json:"owner_domain_id,omitempty"`
 	Code            string      `gorm:"size:100;not null;uniqueIndex:uq_standard_glossaries_tenant_code" json:"code"`
-	StewardID       *int64      `json:"steward_id,omitempty"`
 	Tags            StringArray `gorm:"type:jsonb;serializer:json" json:"tags"`
 	DraftRevisionID *int64      `gorm:"index" json:"draft_revision_id,omitempty"`
 	CreatedBy       int64       `gorm:"not null" json:"created_by"`
@@ -143,7 +142,6 @@ type CreateGlossaryRequest struct {
 	ScopeType     string     `json:"scope_type" binding:"required" enums:"tenant_common,domain"`
 	OwnerDomainID *int64     `json:"owner_domain_id,omitempty"`
 	Code          string     `json:"code" binding:"required"`
-	StewardID     *int64     `json:"steward_id,omitempty"`
 	Tags          []string   `json:"tags"`
 	Name          string     `json:"name" binding:"required"`
 	Alias         []string   `json:"alias"`
@@ -160,7 +158,6 @@ type UpdateGlossaryRequest struct {
 	Version       int64    `json:"version" binding:"required,gt=0" minimum:"1"`
 	ScopeType     string   `json:"scope_type" binding:"required" enums:"tenant_common,domain"`
 	OwnerDomainID *int64   `json:"owner_domain_id,omitempty"`
-	StewardID     *int64   `json:"steward_id,omitempty"`
 	Tags          []string `json:"tags"`
 }
 

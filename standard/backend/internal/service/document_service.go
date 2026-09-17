@@ -127,8 +127,8 @@ func (s *DocumentService) GetDocumentAt(id, tenantID int64, asOf time.Time) (*mo
 	return s.repo.GetAggregateAt(id, tenantID, asOf)
 }
 
-func (s *DocumentService) CreateDocument(req *models.CreateDocumentRequest, tenantID, userID int64) (*models.DocumentAggregate, error) {
-	document, revision, err := s.newDocument(req, tenantID, userID)
+func (s *DocumentService) CreateDocument(req *models.CreateDocumentRequest, tenantID, userID int64, initialSummary string) (*models.DocumentAggregate, error) {
+	document, revision, err := s.newDocument(req, tenantID, userID, initialSummary)
 	if err != nil {
 		return nil, err
 	}
@@ -138,7 +138,7 @@ func (s *DocumentService) CreateDocument(req *models.CreateDocumentRequest, tena
 	return s.repo.GetAggregate(document.ID, tenantID)
 }
 
-func (s *DocumentService) newDocument(req *models.CreateDocumentRequest, tenantID, userID int64) (*models.Document, *models.DocumentRevision, error) {
+func (s *DocumentService) newDocument(req *models.CreateDocumentRequest, tenantID, userID int64, initialSummary string) (*models.Document, *models.DocumentRevision, error) {
 	scopeType, err := validateTenantStandardScope(s.refs, tenantID, req.ScopeType, req.OwnerDomainID)
 	if err != nil {
 		return nil, nil, err
@@ -158,11 +158,11 @@ func (s *DocumentService) newDocument(req *models.CreateDocumentRequest, tenantI
 	if !validDocumentType(docType) {
 		return nil, nil, ErrInvalidStandardRevision
 	}
-	revision := &models.DocumentRevision{Name: strings.TrimSpace(req.Name), VersionLabel: strings.TrimSpace(req.VersionLabel), PublishDate: req.PublishDate, Description: req.Description, ChangeSummary: strings.TrimSpace(req.ChangeSummary), EffectiveFrom: req.EffectiveFrom, EffectiveTo: req.EffectiveTo, CreatedBy: userID}
+	revision := &models.DocumentRevision{Name: strings.TrimSpace(req.Name), VersionLabel: strings.TrimSpace(req.VersionLabel), PublishDate: req.PublishDate, Description: req.Description, ChangeSummary: strings.TrimSpace(initialSummary), EffectiveFrom: req.EffectiveFrom, EffectiveTo: req.EffectiveTo, CreatedBy: userID}
 	if err := validateDocumentRevision(revision, false); err != nil {
 		return nil, nil, err
 	}
-	document := &models.Document{TenantID: tenantID, ScopeType: scopeType, OwnerDomainID: req.OwnerDomainID, Code: code, DocType: docType, SourceOrg: strings.TrimSpace(req.SourceOrg), StewardID: req.StewardID, Tags: req.Tags, CreatedBy: userID, LifecycleState: "active"}
+	document := &models.Document{TenantID: tenantID, ScopeType: scopeType, OwnerDomainID: req.OwnerDomainID, Code: code, DocType: docType, SourceOrg: strings.TrimSpace(req.SourceOrg), Tags: req.Tags, CreatedBy: userID, LifecycleState: "active"}
 	return document, revision, nil
 }
 
@@ -179,7 +179,7 @@ func (s *DocumentService) UpdateDocument(id, tenantID, userID int64, req *models
 		return nil, err
 	}
 	document.ScopeType, document.OwnerDomainID, document.DocType, document.SourceOrg = scopeType, req.OwnerDomainID, req.DocType, strings.TrimSpace(req.SourceOrg)
-	document.StewardID, document.Tags, document.UpdatedBy = req.StewardID, req.Tags, &userID
+	document.Tags, document.UpdatedBy = req.Tags, &userID
 	if err := s.repo.UpdateIdentity(document, req.Version); err != nil {
 		return nil, err
 	}
@@ -753,7 +753,7 @@ func validCopilotCandidateDataType(candidateType string, value *string) bool {
 	switch candidateType {
 	case "element":
 		switch dataType {
-		case "string", "int", "bigint", "float", "decimal", "date", "datetime", "bool", "json", "text":
+		case "string", "int", "bigint", "float", "decimal", "date", "datetime", "bool", "json":
 			return true
 		}
 	case "code_set":
@@ -1254,8 +1254,8 @@ func (s *DocumentService) ListByMetric(tenantID, metricID int64) ([]models.Docum
 	return s.repo.ListByMetricID(tenantID, metricID)
 }
 
-func (s *DocumentService) createAndLink(req *models.CreateLinkedDocumentRequest, tenantID, userID int64, mapping interface{}, parent interface{}, parentID int64) (*models.LinkedDocumentMutationResponse, error) {
-	document, revision, err := s.newDocument(&req.CreateDocumentRequest, tenantID, userID)
+func (s *DocumentService) createAndLink(req *models.CreateLinkedDocumentRequest, tenantID, userID int64, mapping interface{}, parent interface{}, parentID int64, initialSummary string) (*models.LinkedDocumentMutationResponse, error) {
+	document, revision, err := s.newDocument(&req.CreateDocumentRequest, tenantID, userID, initialSummary)
 	if err != nil {
 		return nil, err
 	}
@@ -1268,23 +1268,23 @@ func (s *DocumentService) createAndLink(req *models.CreateLinkedDocumentRequest,
 	}
 	return &models.LinkedDocumentMutationResponse{Document: aggregate, Version: req.Version + 1}, nil
 }
-func (s *DocumentService) CreateAndLinkElement(req *models.CreateLinkedDocumentRequest, tenantID, userID, elementID int64) (*models.LinkedDocumentMutationResponse, error) {
+func (s *DocumentService) CreateAndLinkElement(req *models.CreateLinkedDocumentRequest, tenantID, userID, elementID int64, initialSummary string) (*models.LinkedDocumentMutationResponse, error) {
 	if err := s.refs.RequireElement(tenantID, elementID); err != nil {
 		return nil, err
 	}
-	return s.createAndLink(req, tenantID, userID, &models.DocumentElementMapping{ElementID: elementID}, &models.Element{}, elementID)
+	return s.createAndLink(req, tenantID, userID, &models.DocumentElementMapping{ElementID: elementID}, &models.Element{}, elementID, initialSummary)
 }
-func (s *DocumentService) CreateAndLinkGlossary(req *models.CreateLinkedDocumentRequest, tenantID, userID, glossaryID int64) (*models.LinkedDocumentMutationResponse, error) {
+func (s *DocumentService) CreateAndLinkGlossary(req *models.CreateLinkedDocumentRequest, tenantID, userID, glossaryID int64, initialSummary string) (*models.LinkedDocumentMutationResponse, error) {
 	if err := s.refs.RequireGlossary(tenantID, glossaryID); err != nil {
 		return nil, err
 	}
-	return s.createAndLink(req, tenantID, userID, &models.DocumentGlossaryMapping{GlossaryID: glossaryID}, &models.Glossary{}, glossaryID)
+	return s.createAndLink(req, tenantID, userID, &models.DocumentGlossaryMapping{GlossaryID: glossaryID}, &models.Glossary{}, glossaryID, initialSummary)
 }
-func (s *DocumentService) CreateAndLinkMetric(req *models.CreateLinkedDocumentRequest, tenantID, userID, metricID int64) (*models.LinkedDocumentMutationResponse, error) {
+func (s *DocumentService) CreateAndLinkMetric(req *models.CreateLinkedDocumentRequest, tenantID, userID, metricID int64, initialSummary string) (*models.LinkedDocumentMutationResponse, error) {
 	if err := s.refs.RequireMetric(tenantID, &metricID); err != nil {
 		return nil, err
 	}
-	return s.createAndLink(req, tenantID, userID, &models.DocumentMetricMapping{MetricID: metricID}, &models.MetricDefinition{}, metricID)
+	return s.createAndLink(req, tenantID, userID, &models.DocumentMetricMapping{MetricID: metricID}, &models.MetricDefinition{}, metricID, initialSummary)
 }
 
 func (s *DocumentService) LinkDocToElement(docID, tenantID, elementID, version int64) error {

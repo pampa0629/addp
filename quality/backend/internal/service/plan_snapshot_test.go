@@ -6,6 +6,7 @@ import (
 	"errors"
 	commonAPI "github.com/addp/common/api"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/quality/internal/models"
 	"testing"
 	"time"
 )
@@ -15,7 +16,7 @@ func TestPlanExecutionRejectsInvalidOrigins(t *testing.T) {
 	for _, origin := range []struct{ source, parent, trigger string }{
 		{"quality", "", "manual"}, {"orchestrator", "", "manual"}, {"orchestrator", "not-uuid", "manual"}, {"other", "", "manual"}, {"orchestrator", "00000000-0000-4000-8000-000000000001", "retry"},
 	} {
-		if _, err := svc.Execute(context.Background(), 7, 1, origin.trigger, origin.source, origin.parent); !errors.Is(err, commonAPI.ErrBadRequest) {
+		if _, err := svc.Execute(context.Background(), 7, 1, origin.trigger, origin.source, origin.parent, models.PlanRunRequest{}); !errors.Is(err, commonAPI.ErrBadRequest) {
 			t.Fatalf("origin %#v: %v", origin, err)
 		}
 	}
@@ -25,6 +26,7 @@ func TestPlanExecutionSnapshotRequiresVersionAndPositiveBudget(t *testing.T) {
 	config := commonModels.JSONMap{"schema_version": planExecutionConfigVersion, "task_version": 1, "check_timeout_ms": 45000,
 		"table_bindings": []PlanTableBinding{{Alias: "orders", Locator: "addp://engine/12/path/public/orders?type=table"}},
 		"rules":          json.RawMessage(`{"schema_version":"addp.quality.plan-rules/v1","rules":[{"rule_key":"00000000-0000-4000-8000-000000000001","type":"not_null","severity":"error","params":{"table":"orders","column":"id"}}]}`)}
+	config["target_key"], _ = models.PlanTargetKey(config["table_bindings"].([]PlanTableBinding))
 	got, err := decodePlanExecutionConfig(config)
 	if err != nil || got.CheckTimeoutMS != 45000 {
 		t.Fatalf("%#v %v", got, err)

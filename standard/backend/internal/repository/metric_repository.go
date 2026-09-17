@@ -181,7 +181,7 @@ func (r *MetricRepository) GetByIDs(ids []int64, tenantID int64) ([]models.Metri
 func (r *MetricRepository) UpdateIdentity(item *models.MetricDefinition, expectedVersion int64) error {
 	if err := updateVersioned(r.db, item, item.ID, item.TenantID, expectedVersion, map[string]interface{}{
 		"category_id": item.CategoryID, "scope_type": item.ScopeType, "owner_domain_id": item.OwnerDomainID,
-		"steward_id": item.StewardID, "tags": item.Tags, "updated_by": item.UpdatedBy,
+		"tags": item.Tags, "updated_by": item.UpdatedBy,
 	}); err != nil {
 		return err
 	}

@@ -7,6 +7,9 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/addp/common/schema"
+	"github.com/addp/quality/internal/migration"
+
 	commonClient "github.com/addp/common/client"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/modulelifecycle"
@@ -27,11 +30,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
-	if err := commonExecution.EnsureStore(db); err != nil {
-		log.Fatalf("Failed to ensure execution store: %v", err)
+	if err := schema.Require(db, "quality", migration.SchemaVersion); err != nil {
+		log.Fatalf("Worker schema is not ready: %v", err)
 	}
-	if err := commonRuntimeHealth.EnsureStore(db); err != nil {
-		log.Fatalf("Failed to ensure background runtime health store: %v", err)
+	if err := schema.Require(db, "common", schema.CommonVersion); err != nil {
+		log.Fatalf("Failed to ensure execution store: %v", err)
 	}
 	serviceTokenSource, err := commonClient.NewOAuthServiceTokenSource(cfg.SystemURL, "addp-quality", cfg.ServiceClientSecret, nil)
 	if err != nil {

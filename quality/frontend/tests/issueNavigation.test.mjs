@@ -26,6 +26,7 @@ test('issue list route state restores filters and pagination', () => {
   assert.deepEqual(resolveIssueListRouteState({ status: 'ignored', engine_id: '2', page: '3', page_size: '50' }), {
     status: 'ignored',
     engineID: 2,
+    ownerDomainID: null,
     page: 3,
     pageSize: 50,
     query: { status: 'ignored', engine_id: '2', page: '3', page_size: '50' },

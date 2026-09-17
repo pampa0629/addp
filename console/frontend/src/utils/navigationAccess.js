@@ -2,19 +2,20 @@ function matchesContext(expected, actual) {
   return !expected || expected === 'any' || expected === actual
 }
 
-function matchesPermissions(required, granted) {
-  return !required?.length || required.some(permission => granted.has(permission))
+function matchesPermissions(required, granted, mode) {
+  if (!required?.length) return true
+  return mode === 'all' ? required.every(permission => granted.has(permission)) : required.some(permission => granted.has(permission))
 }
 
 export function matchesNavigationAccess(entry, contextType, grantedPermissions = []) {
   const granted = grantedPermissions instanceof Set ? grantedPermissions : new Set(grantedPermissions)
   if (entry.access?.length) {
     return entry.access.some(rule =>
-      matchesContext(rule.context, contextType) && matchesPermissions(rule.permissions, granted)
+      matchesContext(rule.context, contextType) && matchesPermissions(rule.permissions, granted, rule.permissionMode)
     )
   }
   if (entry.contexts?.length && !entry.contexts.includes(contextType)) return false
-  return matchesPermissions(entry.permissions, granted)
+  return matchesPermissions(entry.permissions, granted, entry.permissionMode)
 }
 
 function filterMenuItem(item, contextType, granted) {

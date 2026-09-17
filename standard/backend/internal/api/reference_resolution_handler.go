@@ -71,7 +71,7 @@ func (h *ReferenceResolutionHandler) Resolve(c *gin.Context) {
 
 // ListCandidates 查询 Catalog 可建立新关联的 Standard 候选。
 // @Summary 查询 Catalog 的 Standard 引用候选 | List Standard reference candidates for Catalog
-// @Description 仅 addp-catalog Tenant Service Principal 可按名称或编码分页查询当前可引用的 Domain、Glossary 或 Element；只返回最小显示摘要 | Only the addp-catalog tenant service principal may search currently referenceable domains, glossaries, or elements by name or code; only minimal display summaries are returned
+// @Description 仅 addp-catalog Tenant Service Principal 可按名称或编码分页查询当前可引用的 Domain、Glossary 或 Element；只返回最小显示摘要，业务域包含 domain_path 并支持路径搜索 | Only the addp-catalog tenant service principal may search currently referenceable domains, glossaries, or elements by name or code; only minimal display summaries are returned, including domain_path and path search for domains
 // @Tags CatalogReferences
 // @Produce json
 // @Param object_type query string true "引用类型 | Reference type" Enums(domain,glossary,element)

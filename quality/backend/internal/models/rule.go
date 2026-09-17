@@ -22,17 +22,18 @@ type RuleContent struct {
 }
 
 type QualityRule struct {
-	ID          int64  `gorm:"primaryKey" json:"id"`
-	TenantID    int64  `json:"tenant_id"`
-	Code        string `json:"code"`
-	Version     int64  `json:"version"`
-	RevisionNo  int64  `json:"revision_no"`
-	RuleContent `gorm:"embedded"`
-	CreatedBy   int64     `json:"created_by"`
-	UpdatedBy   int64     `json:"updated_by"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
-	PlanCount   int64     `gorm:"-" json:"plan_count"`
+	ID            int64  `gorm:"primaryKey" json:"id"`
+	TenantID      int64  `json:"tenant_id"`
+	Code          string `json:"code"`
+	OwnerDomainID *int64 `gorm:"index" json:"owner_domain_id,omitempty"`
+	Version       int64  `json:"version"`
+	RevisionNo    int64  `json:"revision_no"`
+	RuleContent   `gorm:"embedded"`
+	CreatedBy     int64     `json:"created_by"`
+	UpdatedBy     int64     `json:"updated_by"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
+	PlanCount     int64     `gorm:"-" json:"plan_count"`
 }
 
 func (QualityRule) TableName() string { return "quality.rules" }

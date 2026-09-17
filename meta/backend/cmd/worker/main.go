@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"syscall"
 
+	"github.com/addp/common/schema"
+
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
 	_ "github.com/addp/common/engine/plugins/builtin/general"
@@ -36,7 +38,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("数据库连接失败: %v", err)
 	}
-	if err := commonRuntimeHealth.EnsureStore(db); err != nil {
+	if err := schema.Require(db, "meta", metaRepo.SchemaVersion); err != nil {
+		log.Fatalf("Worker schema is not ready: %v", err)
+	}
+	if err := schema.Require(db, "common", schema.CommonVersion); err != nil {
 		log.Fatalf("初始化后台运行实例心跳失败: %v", err)
 	}
 	tokenSource, err := commonClient.NewOAuthServiceTokenSource(cfg.SystemServiceURL, "addp-meta", cfg.ServiceClientSecret, nil)
@@ -96,10 +101,7 @@ func main() {
 }
 
 func connectDatabase(cfg *config.Config) (*gorm.DB, error) {
-	if err := metaRepo.PrepareSchema(cfg); err != nil {
-		return nil, err
-	}
-	db, err := commonRepo.InitDatabase(commonRepo.DatabaseConfig{
+	db, err := commonRepo.OpenDatabase(commonRepo.DatabaseConfig{
 		Host: cfg.DBHost, Port: cfg.DBPort, User: cfg.DBUser, Password: cfg.DBPassword,
 		DBName: cfg.DBName, Schema: cfg.DBSchema, SSLMode: "disable",
 	})

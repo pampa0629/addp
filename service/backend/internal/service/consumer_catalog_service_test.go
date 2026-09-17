@@ -1,8 +1,10 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	commonmodels "github.com/addp/common/models"
 	"strings"
 	"testing"
 	"time"
@@ -17,7 +19,7 @@ func TestBuildQueryConsumerDescriptorProjectsOnlyPublicContract(t *testing.T) {
 		Name: "threshold", Type: datatype.FieldTypeDouble, Required: false, Default: 0.5, Description: "Minimum score",
 	}}
 	service.SqlQuery = "SELECT * FROM secret_source WHERE value >= :threshold"
-	descriptor, err := BuildQueryConsumerDescriptor(service)
+	descriptor, err := BuildQueryConsumerDescriptor(service, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +70,7 @@ func TestValidateQueryConsumerContractRejectsIncompleteActiveService(t *testing.
 
 func TestConsumerContractFingerprintChangesOnlyWithPublicContract(t *testing.T) {
 	service := consumerDescriptorTestService()
-	initial, err := BuildQueryConsumerDescriptor(service)
+	initial, err := BuildQueryConsumerDescriptor(service, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +82,7 @@ func TestConsumerContractFingerprintChangesOnlyWithPublicContract(t *testing.T) 
 	snapshot.DependencyHash = "content-refresh-only"
 	snapshot.CapturedAt = snapshot.CapturedAt.Add(time.Hour)
 	service.DataConfig[models.QueryServiceSourceSnapshotKey] = queryServiceSnapshotPayload(snapshot)
-	refreshed, err := BuildQueryConsumerDescriptor(service)
+	refreshed, err := BuildQueryConsumerDescriptor(service, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +92,7 @@ func TestConsumerContractFingerprintChangesOnlyWithPublicContract(t *testing.T) 
 
 	snapshot.Table.Fields[1].Type = datatype.FieldTypeDouble
 	service.DataConfig[models.QueryServiceSourceSnapshotKey] = queryServiceSnapshotPayload(snapshot)
-	changed, err := BuildQueryConsumerDescriptor(service)
+	changed, err := BuildQueryConsumerDescriptor(service, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,4 +183,79 @@ func containsConsumerValue(values []string, expected string) bool {
 		}
 	}
 	return false
+}
+
+func TestConsumerContainsContractRequiresTextAndProvider(t *testing.T) {
+	s := consumerDescriptorTestService()
+	snapshot := s.SourceSnapshot()
+	snapshot.Table.Fields = append(snapshot.Table.Fields, datatype.FieldInfo{Name: "nickname", Type: datatype.FieldTypeString})
+	s.DataConfig[models.QueryServiceSourceSnapshotKey] = queryServiceSnapshotPayload(snapshot)
+	s.DataConfig["filterable_fields"] = []interface{}{"value", "location", "nickname"}
+	before, err := BuildQueryConsumerDescriptor(s, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, err := BuildQueryConsumerDescriptor(s, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, f := range after.InputContract.Fields {
+		has := containsConsumerValue(f.Operators, "contains")
+		if has != (f.Filterable && f.Type == datatype.FieldTypeString) {
+			t.Fatalf("invalid contains capability: %#v", f)
+		}
+		found = found || has
+	}
+	if !found || before.ContractFingerprint == after.ContractFingerprint {
+		t.Fatal("capability change not fingerprinted")
+	}
+}
+
+type containsEngineStub struct {
+	calls              int
+	tenantID, engineID uint
+	engineType         string
+	err                error
+}
+
+func (s *containsEngineStub) GetEngineForTenant(ctx context.Context, tenantID, engineID uint) (*commonmodels.Engine, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	s.calls++
+	s.tenantID = tenantID
+	s.engineID = engineID
+	return &commonmodels.Engine{EngineType: s.engineType}, s.err
+}
+func TestConsumerContainsResolvesTenantEngineAndFailsClosed(t *testing.T) {
+	source := consumerDescriptorTestService()
+	source.TenantID = 7
+	id := uint(2)
+	source.EngineID = &id
+	client := &containsEngineStub{engineType: "postgresql"}
+	catalog := &ConsumerCatalogService{systemClient: client}
+	cache := map[uint]bool{}
+	for range 2 {
+		if supported, err := catalog.supportsContains(t.Context(), source, cache); err != nil || !supported {
+			t.Fatal(supported, err)
+		}
+	}
+	if client.calls != 1 || client.tenantID != 7 || client.engineID != 2 {
+		t.Fatal(client)
+	}
+	client.err = errors.New("unavailable")
+	if supported, err := catalog.supportsContains(t.Context(), source, map[uint]bool{}); err == nil || supported {
+		t.Fatal("used stale capability")
+	}
+	client.err = nil
+	client.engineType = "oracle"
+	if supported, err := catalog.supportsContains(t.Context(), source, map[uint]bool{}); err != nil || supported {
+		t.Fatal(supported, err)
+	}
+	runtimeID := uint(9)
+	source.RuntimeEngineID = &runtimeID
+	if _, err := catalog.supportsContains(t.Context(), source, map[uint]bool{}); err != nil || client.engineID != 9 {
+		t.Fatal("wrong execution engine", err)
+	}
 }

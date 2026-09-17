@@ -77,6 +77,7 @@ func testMetricRevisionLifecycle(t *testing.T, engineType string) {
 	}
 	contract.Subject.FieldID = fields[1]
 	contract.SubjectRelationID = rels[10]
+	contract.SubjectLabel = &models.MetricFieldReference{FieldID: fields[7], RelationID: rels[10]}
 	contract.Distinct.FieldID = fields[2]
 	contract.Time.FieldID = fields[6]
 	contract.Time.RelationID = rels[11]
@@ -218,6 +219,15 @@ func testMetricRevisionLifecycle(t *testing.T, engineType string) {
 		t.Fatal("changed physical column accepted")
 	}
 	if err := tx.Model(&models.LogicalField{}).Where("id = ?", fields[6]).Update("column_name", "event_date").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Model(&models.LogicalField{}).Where("id = ?", fields[7]).Update("column_name", "changed_nickname").Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.PublishedPlan(ctx, item.ID, draftID, tenant, nil); err == nil {
+		t.Fatal("changed display-name dependency accepted")
+	}
+	if err := tx.Model(&models.LogicalField{}).Where("id = ?", fields[7]).Update("column_name", "nickname").Error; err != nil {
 		t.Fatal(err)
 	}
 	item, err = svc.ChangeRevisionState(ctx, item.ID, draftID, tenant, 1, item.Version, false)

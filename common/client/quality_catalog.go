@@ -22,6 +22,21 @@ func (c *QualityClient) WithTenantID(tenantID uint) *QualityClient {
 	return &QualityClient{tenantHTTPClient: c.tenantHTTPClient.withTenantID(tenantID)}
 }
 
+// SetStandardReferenceGuard is called by Standard's tenant runtime while a
+// standard domain is being deleted. Quality returns the impact of its current
+// ownership references; the guard itself remains local to Quality.
+func (c *QualityClient) SetStandardReferenceGuard(ctx context.Context, resourceType string, resourceID int64, state string) (*StandardReferenceGuardResponse, error) {
+	var response StandardReferenceGuardResponse
+	path := fmt.Sprintf("/api/v1/quality/standard-reference-guards/%s/%d", resourceType, resourceID)
+	if err := c.doJSON(ctx, http.MethodPut, path, map[string]string{"state": state}, &response); err != nil {
+		return nil, err
+	}
+	if err := validateStandardReferenceGuardResponse(&response, resourceType, resourceID, state); err != nil {
+		return nil, err
+	}
+	return &response, nil
+}
+
 type QualityCatalogSummaryReference struct {
 	EngineID   int64  `json:"engine_id"`
 	SchemaName string `json:"schema_name"`

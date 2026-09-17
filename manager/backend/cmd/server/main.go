@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	commonExecution "github.com/addp/common/execution"
 	"log"
 	"net"
 	"os"
@@ -11,6 +10,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	commonExecution "github.com/addp/common/execution"
 
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
@@ -194,7 +195,7 @@ func main() {
 	}
 	defer searchService.Close()
 	managerProjectionBarrier := service.NewManagerProjectionBarrier(dataProfileRepo, dataProfileExecutionRepo, searchService)
-	protectionStore, err := projectionstore.New(db, cfg.DBSchema, "manager", managerProjectionBarrier)
+	protectionStore, err := projectionstore.Migrate(db, cfg.DBSchema, "manager", managerProjectionBarrier)
 	if err != nil {
 		logger.L().Error("保护投影本地存储初始化失败", "error", err)
 		os.Exit(1)

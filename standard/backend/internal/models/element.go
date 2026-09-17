@@ -48,7 +48,6 @@ type Element struct {
 	ScopeType       string      `gorm:"size:20;not null;default:'tenant_common';index" json:"scope_type" enums:"platform,tenant_common,domain"`
 	OwnerDomainID   *int64      `gorm:"index" json:"owner_domain_id,omitempty"`
 	Code            string      `gorm:"size:100;not null;uniqueIndex:uq_standard_elements_tenant_code" json:"code"`
-	StewardID       *int64      `json:"steward_id,omitempty"`
 	Tags            StringArray `gorm:"type:jsonb;serializer:json" json:"tags"`
 	DraftRevisionID *int64      `gorm:"index" json:"draft_revision_id,omitempty"`
 	CreatedBy       int64       `gorm:"not null" json:"created_by"`
@@ -129,11 +128,10 @@ type CreateElementRequest struct {
 	ScopeType         string           `json:"scope_type" binding:"required" enums:"tenant_common,domain"`
 	OwnerDomainID     *int64           `json:"owner_domain_id,omitempty"`
 	Code              string           `json:"code" binding:"required"`
-	StewardID         *int64           `json:"steward_id,omitempty"`
 	Tags              []string         `json:"tags"`
 	Name              string           `json:"name" binding:"required"`
 	Definition        string           `json:"definition" binding:"required"`
-	DataType          string           `json:"data_type" binding:"required"`
+	DataType          string           `json:"data_type" binding:"required" enums:"string,int,bigint,float,decimal,date,datetime,bool,json"`
 	Length            *int             `json:"length,omitempty"`
 	PrecisionNum      *int             `json:"precision_num,omitempty"`
 	Scale             *int             `json:"scale,omitempty"`
@@ -145,7 +143,6 @@ type CreateElementRequest struct {
 	CodeSetRevisionID *int64           `json:"code_set_revision_id,omitempty"`
 	UnitID            *int64           `json:"unit_id,omitempty"`
 	ExampleValues     []string         `json:"example_values"`
-	ChangeSummary     string           `json:"change_summary" binding:"required"`
 	EffectiveFrom     *time.Time       `json:"effective_from,omitempty"`
 	EffectiveTo       *time.Time       `json:"effective_to,omitempty"`
 }
@@ -154,7 +151,6 @@ type UpdateElementRequest struct {
 	Version       int64    `json:"version" binding:"required,gt=0" minimum:"1"`
 	ScopeType     string   `json:"scope_type" binding:"required" enums:"tenant_common,domain"`
 	OwnerDomainID *int64   `json:"owner_domain_id,omitempty"`
-	StewardID     *int64   `json:"steward_id,omitempty"`
 	Tags          []string `json:"tags"`
 }
 
@@ -167,7 +163,7 @@ type UpdateElementRevisionRequest struct {
 	Version           int64            `json:"version" binding:"required,gt=0" minimum:"1"`
 	Name              string           `json:"name" binding:"required"`
 	Definition        string           `json:"definition" binding:"required"`
-	DataType          string           `json:"data_type" binding:"required"`
+	DataType          string           `json:"data_type" binding:"required" enums:"string,int,bigint,float,decimal,date,datetime,bool,json"`
 	Length            *int             `json:"length,omitempty"`
 	PrecisionNum      *int             `json:"precision_num,omitempty"`
 	Scale             *int             `json:"scale,omitempty"`

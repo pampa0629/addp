@@ -6,27 +6,27 @@ show_usage() {
   echo "用法: $0 [-all] [-system] [-manager] [-meta] [-transfer] [-orchestrator] [-develop] [-service] [-monitor] [-gateway] [-model] [-quality] [-security] [-asset] [-catalog] [-workbench] [-portal] [-inference] [-geopython-workflow] [-math-workflow] [-model3d-workflow] [-pointcloud-workflow] [-document-workflow] [-supermap-workflow] [-copilot] [-agent] [-spark-workflow] [-jupyter] [-duckdb]"
   echo ""
   echo "选项:"
-  echo "  无参数        只重启服务,自动检测 common 模块变化并增量编译受影响的模块"
-  echo "  -all         强制重新编译所有 Go 模块，按构建输入变化增量构建容器运行时"
-  echo "  -system      强制重新编译 System 模块"
-  echo "  -manager     强制重新编译 Manager 模块"
-  echo "  -meta        强制重新编译 Meta 模块"
-  echo "  -transfer    强制重新编译 Transfer 模块"
-  echo "  -orchestrator 强制重新编译 Orchestrator 模块"
-  echo "  -develop     强制重新编译 Develop 模块"
-  echo "  -service     强制重新编译 Service 模块"
-  echo "  -monitor     强制重新编译 Monitor 模块"
-  echo "  -gateway     强制重新编译 Gateway 模块"
-  echo "  -standard    强制重新编译 Standard 模块"
-  echo "  -model       强制重新编译 Model 模块"
-  echo "  -quality     强制重新编译 Quality 模块"
-  echo "  -security    强制重新编译 Security 模块"
-  echo "  -asset       强制重新编译 Asset 模块"
-  echo "  -catalog     强制重新编译 Catalog 模块"
-  echo "  -workbench   强制重新编译 Workbench 模块"
-  echo "  -portal      强制重新编译 Portal 模块"
-  echo "  -graph       强制重新编译 Graph 模块"
-  echo "  -inference   强制重新编译 Inference 模块"
+  echo "  无参数        等同 -all，同步文档并按完整构建指纹增量编译"
+  echo "  -all         重启所有模块，按构建输入变化增量编译 Go 和容器运行时"
+  echo "  -system      重启并按需编译 System 模块"
+  echo "  -manager     重启并按需编译 Manager 模块"
+  echo "  -meta        重启并按需编译 Meta 模块"
+  echo "  -transfer    重启并按需编译 Transfer 模块"
+  echo "  -orchestrator 重启并按需编译 Orchestrator 模块"
+  echo "  -develop     重启并按需编译 Develop 模块"
+  echo "  -service     重启并按需编译 Service 模块"
+  echo "  -monitor     重启并按需编译 Monitor 模块"
+  echo "  -gateway     重启并按需编译 Gateway 模块"
+  echo "  -standard    重启并按需编译 Standard 模块"
+  echo "  -model       重启并按需编译 Model 模块"
+  echo "  -quality     重启并按需编译 Quality 模块"
+  echo "  -security    重启并按需编译 Security 模块"
+  echo "  -asset       重启并按需编译 Asset 模块"
+  echo "  -catalog     重启并按需编译 Catalog 模块"
+  echo "  -workbench   重启并按需编译 Workbench 模块"
+  echo "  -portal      重启并按需编译 Portal 模块"
+  echo "  -graph       重启并按需编译 Graph 模块"
+  echo "  -inference   重启并按需编译 Inference 模块"
   echo "  -geopython-workflow   重启 GeoPython Workflow (Python 服务)"
   echo "  -math-workflow     重启 Math Workflow Engine (Python 服务)"
   echo "  -model3d-workflow  重启 Model3D Workflow Engine (Python 服务)"
@@ -37,12 +37,12 @@ show_usage() {
   echo "  -agent       重启 Agent Backend (Python 服务)"
   echo "  -spark-workflow 重启 Spark 工作流 Engine (Python 服务)"
   echo "  -jupyter     重启 Jupyter Engine (Python 服务)"
-  echo "  -duckdb      重新编译并重启 DuckDB Federated Query Runtime"
+  echo "  -duckdb      按需编译并重启 DuckDB Federated Query Runtime"
   echo ""
-  echo "智能检测说明:"
-  echo "  - 无参数时会自动检测 common 模块是否有变化"
-  echo "  - 如果检测到 common 变化,会自动重新编译所有依赖的 Go 模块"
-  echo "  - 指定 Go 模块参数时,不执行智能检测,直接按参数编译"
+  echo "增量构建说明:"
+  echo "  - 所有 Go 服务统一校验源码、共享依赖、工具链和编译参数"
+  echo "  - 构建输入未变化时复用产物，变化或产物缺失时重新编译"
+  echo "  - 无参数与 -all 均重新生成全部 Swagger，再校验构建指纹"
   echo "  - 只指定 Python/扩展服务参数时,仅重启对应服务,不停止整套环境"
   echo ""
   echo "注意:"
@@ -50,10 +50,10 @@ show_usage() {
   echo "  - 只有 Go 后端模块支持选择性编译"
   echo ""
   echo "示例:"
-  echo "  $0                    # 智能检测 + 重启 (推荐)"
-  echo "  $0 -system -meta      # 重启并重新编译 system 和 meta"
+  echo "  $0                    # 同步文档 + 增量编译 + 重启"
+  echo "  $0 -system -meta      # 重启并按需编译 system 和 meta"
   echo "  $0 -geopython-workflow         # 仅重启 GeoPython Workflow"
-  echo "  $0 -all               # 重启并重新编译所有模块 (完整)"
+  echo "  $0 -all               # 重启并按需编译所有模块 (完整)"
   exit 1
 }
 
@@ -97,7 +97,7 @@ generate_service_urls() {
 
 generate_service_urls
 
-SWAGGER_MODULES=(system manager meta transfer orchestrator develop service monitor standard model quality security catalog workbench portal graph inference)
+SWAGGER_MODULES=(system manager meta transfer orchestrator develop service monitor standard model quality security asset catalog workbench portal graph inference)
 
 is_swagger_module() {
   local module="$1"
@@ -105,8 +105,10 @@ is_swagger_module() {
 }
 
 run_swagger_generate() {
-  local target="$1"
-  if bash "${SCRIPT_DIR}/../swagger/gen-swagger.sh" "$target"; then
+  local target="$*"
+  local started=$SECONDS
+  if bash "${SCRIPT_DIR}/../swagger/gen-swagger.sh" "$@"; then
+    echo "⏱ Swagger 生成耗时: $((SECONDS - started)) 秒"
     return 0
   fi
 
@@ -121,13 +123,13 @@ run_swagger_generate() {
 }
 
 run_swagger_coverage_check() {
-  local target="$1"
-  SWAGGER_COVERAGE_WARN_ONLY=1 bash "${SCRIPT_DIR}/../swagger/check-route-coverage.sh" "$target"
+  SWAGGER_COVERAGE_WARN_ONLY=1 bash "${SCRIPT_DIR}/../swagger/check-route-coverage.sh" "$@"
 }
 
 # 解析参数
-FORCE_BUILD_ALL=false
-FORCE_BUILD_MODULES=()
+RESTART_ALL=false
+RESTART_MODULES=()
+[ $# -eq 0 ] && RESTART_ALL=true
 
 for arg in "$@"; do
   case $arg in
@@ -135,11 +137,11 @@ for arg in "$@"; do
       show_usage
       ;;
     -all)
-      FORCE_BUILD_ALL=true
+      RESTART_ALL=true
       ;;
     -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-monitor|-gateway|-standard|-model|-quality|-security|-asset|-catalog|-workbench|-portal|-graph|-inference|-geopython-workflow|-math-workflow|-model3d-workflow|-pointcloud-workflow|-document-workflow|-supermap-workflow|-copilot|-agent|-spark-workflow|-jupyter|-duckdb)
       module="${arg#-}"  # 移除前导的 -
-      FORCE_BUILD_MODULES+=("$module")
+      RESTART_MODULES+=("$module")
       ;;
     *)
       echo "❌ 未知参数: $arg"
@@ -147,30 +149,6 @@ for arg in "$@"; do
       ;;
   esac
 done
-
-# ============================================================
-# 智能检测 Common 依赖
-# ============================================================
-
-# 检查是否有 Go 模块参数（排除 Python 服务参数）
-has_go_module_params() {
-    for module in "${FORCE_BUILD_MODULES[@]}"; do
-        # Python 服务列表
-        if [[ "$module" != "geopython-workflow" &&
-              "$module" != "math-workflow" &&
-              "$module" != "model3d-workflow" &&
-              "$module" != "pointcloud-workflow" &&
-              "$module" != "document-workflow" &&
-              "$module" != "supermap-workflow" &&
-              "$module" != "copilot" &&
-              "$module" != "agent" &&
-              "$module" != "spark-workflow" &&
-              "$module" != "jupyter" ]]; then
-            return 0  # 有 Go 模块参数
-        fi
-    done
-    return 1  # 只有 Python 服务参数或无参数
-}
 
 is_python_service_module() {
     case "$1" in
@@ -184,10 +162,10 @@ is_python_service_module() {
 }
 
 only_python_service_params() {
-    if [ "$FORCE_BUILD_ALL" = true ] || [ ${#FORCE_BUILD_MODULES[@]} -eq 0 ]; then
+    if [ "$RESTART_ALL" = true ] || [ ${#RESTART_MODULES[@]} -eq 0 ]; then
         return 1
     fi
-    for module in "${FORCE_BUILD_MODULES[@]}"; do
+    for module in "${RESTART_MODULES[@]}"; do
         if ! is_python_service_module "$module"; then
             return 1
         fi
@@ -196,9 +174,9 @@ only_python_service_params() {
 }
 
 only_duckdb_param() {
-    [ "$FORCE_BUILD_ALL" = false ] &&
-      [ ${#FORCE_BUILD_MODULES[@]} -eq 1 ] &&
-      [ "${FORCE_BUILD_MODULES[0]}" = "duckdb" ]
+    [ "$RESTART_ALL" = false ] &&
+      [ ${#RESTART_MODULES[@]} -eq 1 ] &&
+      [ "${RESTART_MODULES[0]}" = "duckdb" ]
 }
 
 stop_pidfile_process() {
@@ -772,9 +750,9 @@ restart_agent_service() {
 }
 
 restart_scoped_python_services() {
-    echo "🐍 局部重启 Python/扩展服务: ${FORCE_BUILD_MODULES[*]}"
+    echo "🐍 局部重启 Python/扩展服务: ${RESTART_MODULES[*]}"
     mkdir -p logs .dev-pids
-    for module in "${FORCE_BUILD_MODULES[@]}"; do
+    for module in "${RESTART_MODULES[@]}"; do
         case "$module" in
             geopython-workflow)
                 restart_geopython_workflow_service
@@ -820,49 +798,10 @@ if only_duckdb_param; then
     echo "局部重启 DuckDB Federated Query Runtime"
     stop_pidfile_process ".dev-pids/duckdb.pid" "DuckDB Runtime"
     stop_matching_port_process "${DUCKDB_RUNTIME_PORT:-8104}" "DuckDB Runtime" "addp-duckdb"
-    rm -f .dev-bins/addp-duckdb
     exec env SKIP_MODTIDY=1 "${SCRIPT_DIR}/start.sh" -duckdb
 fi
 
-# 在用户未指定 Go 模块编译选项时，自动检测 common 变化
-if [ "$FORCE_BUILD_ALL" = false ] && ! has_go_module_params; then
-    echo "🔍 检测 common 模块依赖..."
-
-    # 加载检测函数
-    source "${SCRIPT_DIR}/../utils/detect-common.sh"
-
-    # 执行智能检测
-    AFFECTED_MODULES=$(detect_common_affected_modules)
-
-    if [ -n "$AFFECTED_MODULES" ]; then
-        echo "📦 检测到 common 模块已更新，以下模块需要重新编译:"
-        echo "   ${AFFECTED_MODULES}"
-        echo ""
-
-        # 自动标记受影响的模块需要重新编译
-        for module in $AFFECTED_MODULES; do
-            FORCE_BUILD_MODULES+=("$module")
-        done
-
-        echo "✅ 已自动标记 ${#FORCE_BUILD_MODULES[@]} 个模块需要重新编译"
-    else
-        echo "✅ common 模块无变化，使用增量编译"
-    fi
-    echo ""
-fi
-
-# ============================================================
-# 显示编译计划
-# ============================================================
-
-# 显示编译计划
-if [ "$FORCE_BUILD_ALL" = true ]; then
-  echo "📦 编译计划: 重新编译所有模块"
-elif [ ${#FORCE_BUILD_MODULES[@]} -gt 0 ]; then
-  echo "📦 编译计划: 重新编译 ${FORCE_BUILD_MODULES[*]}"
-else
-  echo "📦 编译计划: 仅重启服务,按需增量编译"
-fi
+echo "📦 构建计划: 同步 Swagger，按完整构建指纹复用或编译产物"
 echo ""
 
 # 1. 先强制杀死 Python 服务（避免端口残留导致 stop.sh 误判为非 ADDP 进程）
@@ -889,192 +828,31 @@ fi
 echo ""
 echo "✅ 已停止现有服务"
 
-# 3. 强制重新编译(如果需要)
-if [ "$FORCE_BUILD_ALL" = true ]; then
-  echo ""
-  echo "🔨 强制重新编译所有模块..."
-
-  # Touch 所有 .go 文件
-  find . -type f -name "*.go" -path "*/backend/*" -exec touch {} \; 2>/dev/null || true
-  find . -type f -name "*.go" -path "*/common/*" -exec touch {} \; 2>/dev/null || true
-  find . -type f -name "*.go" -path "*/gateway/*" -exec touch {} \; 2>/dev/null || true
-
-  # 删除所有二进制
-  rm -rf .dev-bins 2>/dev/null || true
-
-  # 清理构建缓存
-  go clean -cache 2>/dev/null || true
-
-  # 重新生成并校验所有模块的 Swagger 文档
+# 3. Swagger 是 Go 构建输入，先生成，再由 start.sh 统一校验产物指纹。
+if [ "$RESTART_ALL" = true ]; then
   echo "📄 重新生成所有模块 Swagger 文档..."
   run_swagger_generate all
   echo "🔎 校验所有模块 Swagger 路由覆盖..."
   run_swagger_coverage_check all || true
-
-  echo "✅ 已标记所有模块需要重新编译"
-
-elif [ ${#FORCE_BUILD_MODULES[@]} -gt 0 ]; then
-  echo ""
-  echo "🔨 强制重新编译指定模块..."
-
-  for module in "${FORCE_BUILD_MODULES[@]}"; do
-    echo "  处理 $module 模块..."
-
-    # 生成并校验 Swagger 文档（所有 Go 后端模块，跳过 Python 服务和 gateway）
-    if is_swagger_module "$module"; then
-      run_swagger_generate "$module"
-      run_swagger_coverage_check "$module" || true
-    fi
-
-    # Touch 指定模块的源文件
-    if [ "$module" = "gateway" ]; then
-      find gateway -type f -name "*.go" -exec touch {} \; 2>/dev/null || true
-    elif [ "$module" = "copilot" ]; then
-      # Copilot 是 Python 服务，不需要编译，只需清理虚拟环境
-      echo "  标记 Copilot Backend 需要重启（无需编译）"
-    elif [ "$module" = "agent" ]; then
-      # Agent 是 Python 服务，不需要编译
-      echo "  标记 Agent Backend 需要重启（无需编译）"
-    elif [ "$module" = "geopython-workflow" ]; then
-      # GeoPython Workflow 是 Python 服务，不需要编译
-      echo "  标记 GeoPython Workflow 需要重启（无需编译）"
-    elif [ "$module" = "math-workflow" ]; then
-      # Math Workflow Engine 是 Python 服务，不需要编译
-      echo "  标记 Math Workflow Engine 需要重启（无需编译）"
-    elif [ "$module" = "model3d-workflow" ]; then
-      # Model3D Workflow Engine 是 Python 服务，不需要编译
-      echo "  标记 Model3D Workflow Engine 需要重启（无需编译）"
-    elif [ "$module" = "pointcloud-workflow" ]; then
-      # PointCloud Workflow Engine 是 Docker runtime，不需要 Go 编译
-      echo "  标记 PointCloud Workflow Engine 需要重启（无需 Go 编译）"
-    elif [ "$module" = "supermap-workflow" ]; then
-      # SuperMap Workflow Engine 是 Docker runtime，不需要 Go 编译
-      echo "  标记 SuperMap Workflow Engine 需要重启（无需 Go 编译）"
-    elif [ "$module" = "spark-workflow" ]; then
-      # Spark 工作流 Engine 是 Python 服务，不需要编译
-      echo "  标记 Spark 工作流 Engine 需要重启（无需编译）"
-    elif [ "$module" = "jupyter" ]; then
-      # Jupyter Engine 是 Python 服务，不需要编译
-      echo "  标记 Jupyter Engine 需要重启（无需编译）"
-    elif [ "$module" = "duckdb" ]; then
-      find engines/duckdb -type f -name "*.go" -exec touch {} \; 2>/dev/null || true
-    elif [ "$module" = "standard" ]; then
-      find "${module}/backend" -type f -name "*.go" -exec touch {} \; 2>/dev/null || true
-    elif [ "$module" = "model" ]; then
-      find "${module}/backend" -type f -name "*.go" -exec touch {} \; 2>/dev/null || true
-    elif [ "$module" = "quality" ]; then
-      find "${module}/backend" -type f -name "*.go" -exec touch {} \; 2>/dev/null || true
-    else
-      find "${module}/backend" -type f -name "*.go" -exec touch {} \; 2>/dev/null || true
-    fi
-
-    # 删除指定模块的二进制
-    if [ "$module" = "gateway" ]; then
-      rm -f .dev-bins/addp-gateway 2>/dev/null || true
-    elif [ "$module" = "copilot" ]; then
-      # Python 服务无二进制文件
-      :
-    elif [ "$module" = "agent" ]; then
-      # Python 服务无二进制文件
-      :
-    elif [ "$module" = "geopython-workflow" ]; then
-      # Python 服务无二进制文件
-      :
-    elif [ "$module" = "math-workflow" ]; then
-      # Python 服务无二进制文件
-      :
-    elif [ "$module" = "model3d-workflow" ]; then
-      # Python 服务无二进制文件
-      :
-    elif [ "$module" = "pointcloud-workflow" ]; then
-      # Docker runtime 无 Go 二进制文件
-      :
-    elif [ "$module" = "supermap-workflow" ]; then
-      # Docker runtime 无 Go 二进制文件
-      :
-    elif [ "$module" = "spark-workflow" ]; then
-      # Python 服务无二进制文件
-      :
-    elif [ "$module" = "jupyter" ]; then
-      # Python 服务无二进制文件
-      :
-    elif [ "$module" = "duckdb" ]; then
-      rm -f .dev-bins/addp-duckdb .dev-bins/addp-duckdb-prepare 2>/dev/null || true
-    elif [ "$module" = "standard" ]; then
-      rm -f .dev-bins/addp-standard 2>/dev/null || true
-    elif [ "$module" = "model" ]; then
-      rm -f .dev-bins/addp-model 2>/dev/null || true
-    elif [ "$module" = "quality" ]; then
-      rm -f .dev-bins/addp-quality 2>/dev/null || true
-    elif [ "$module" = "develop" ]; then
-      rm -f .dev-bins/addp-develop 2>/dev/null || true
-    elif [ "$module" = "manager" ]; then
-      rm -f .dev-bins/addp-manager 2>/dev/null || true
-    else
-      rm -f .dev-bins/addp-${module} 2>/dev/null || true
-      if [ "$module" = "transfer" ]; then
-        rm -f .dev-bins/addp-transfer-bounded-worker 2>/dev/null || true
-        rm -f .dev-bins/addp-transfer-continuous-worker 2>/dev/null || true
-      else
-        rm -f .dev-bins/addp-${module}-worker 2>/dev/null || true
-      fi
-    fi
-
-    # 清理指定模块的构建缓存
-    if [ "$module" = "gateway" ]; then
-      (cd gateway && go clean -cache 2>/dev/null) || true
-    elif [ "$module" = "copilot" ]; then
-      # Python 服务无需清理 Go 缓存
-      :
-    elif [ "$module" = "agent" ]; then
-      # Python 服务无需清理 Go 缓存
-      :
-    elif [ "$module" = "geopython-workflow" ]; then
-      # Python 服务无需清理 Go 缓存
-      :
-    elif [ "$module" = "math-workflow" ]; then
-      # Python 服务无需清理 Go 缓存
-      :
-    elif [ "$module" = "model3d-workflow" ]; then
-      # Python 服务无需清理 Go 缓存
-      :
-    elif [ "$module" = "pointcloud-workflow" ]; then
-      # Docker runtime 无需清理 Go 缓存
-      :
-    elif [ "$module" = "supermap-workflow" ]; then
-      # Docker runtime 无需清理 Go 缓存
-      :
-    elif [ "$module" = "spark-workflow" ]; then
-      # Python 服务无需清理 Go 缓存
-      :
-    elif [ "$module" = "jupyter" ]; then
-      # Python 服务无需清理 Go 缓存
-      :
-    elif [ "$module" = "duckdb" ]; then
-      (cd engines/duckdb && go clean -cache 2>/dev/null) || true
-    elif [ "$module" = "standard" ]; then
-      (cd "${module}/backend" && go clean -cache 2>/dev/null) || true
-    elif [ "$module" = "model" ]; then
-      (cd "${module}/backend" && go clean -cache 2>/dev/null) || true
-    elif [ "$module" = "quality" ]; then
-      (cd "${module}/backend" && go clean -cache 2>/dev/null) || true
-    else
-      (cd "${module}/backend" && go clean -cache 2>/dev/null) || true
+elif [ ${#RESTART_MODULES[@]} -gt 0 ]; then
+  SWAGGER_TARGETS=()
+  for module in "${RESTART_MODULES[@]}"; do
+    if is_swagger_module "$module" && [[ " ${SWAGGER_TARGETS[*]} " != *" $module "* ]]; then
+      SWAGGER_TARGETS+=("$module")
     fi
   done
-
-  # 总是 touch common 模块(因为其他模块可能依赖它)
-  find common -type f -name "*.go" -exec touch {} \; 2>/dev/null || true
-
-  echo "✅ 已标记 ${FORCE_BUILD_MODULES[*]} 需要重新编译"
+  if [ ${#SWAGGER_TARGETS[@]} -gt 0 ]; then
+    run_swagger_generate "${SWAGGER_TARGETS[@]}"
+    run_swagger_coverage_check "${SWAGGER_TARGETS[@]}" || true
+  fi
 fi
-
+echo "✅ 保留已有产物，启动时校验构建指纹并按需编译"
 echo ""
 
 # 4. 启动服务
 # restart 时跳过 go mod tidy（模块依赖在重启间不会改变，避免网络调用拖慢速度）
 START_ARGS=()
-if [ "$FORCE_BUILD_ALL" = false ] && [ ${#ORIGINAL_ARGS[@]} -eq 1 ]; then
+if [ "$RESTART_ALL" = false ] && [ ${#ORIGINAL_ARGS[@]} -eq 1 ]; then
   START_ARGS=("${ORIGINAL_ARGS[0]}")
 fi
 exec env SKIP_MODTIDY=1 "${SCRIPT_DIR}/start.sh" "${START_ARGS[@]}"

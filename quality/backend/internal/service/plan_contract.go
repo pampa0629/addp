@@ -9,22 +9,19 @@ import (
 	"strings"
 
 	"github.com/addp/common/dataquality"
-	"github.com/addp/common/resourcetree"
+	"github.com/addp/quality/internal/models"
 	"github.com/google/uuid"
 )
 
 const (
 	planSchemaVersion          = "addp.quality.plan-rules/v1"
-	planExecutionConfigVersion = "addp.quality.plan-execution-config/v1"
+	planExecutionConfigVersion = "addp.quality.plan-execution-config/v2"
 	planResultVersion          = "addp.quality.plan-result/v1"
 )
 
 var planNamePattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 
-type PlanTableBinding struct {
-	Alias   string `json:"alias"`
-	Locator string `json:"locator"`
-}
+type PlanTableBinding = models.PlanTableBinding
 
 type PlanRuleDocument struct {
 	SchemaVersion string     `json:"schema_version"`
@@ -86,34 +83,12 @@ type planRowCountParams struct {
 }
 
 func validatePlanContract(bindings []PlanTableBinding, raw json.RawMessage) (*PlanRuleDocument, error) {
-	if len(bindings) == 0 || len(bindings) > 100 {
-		return nil, fmt.Errorf("table_bindings must contain between 1 and 100 items")
+	if err := models.ValidateTableBindings(bindings, false); err != nil {
+		return nil, err
 	}
 	aliases := make(map[string]struct{}, len(bindings))
-	targets := make(map[string]struct{}, len(bindings))
-	var engineID uint
 	for _, binding := range bindings {
-		if !planNamePattern.MatchString(binding.Alias) {
-			return nil, fmt.Errorf("table binding is invalid")
-		}
-		if _, exists := aliases[binding.Alias]; exists {
-			return nil, fmt.Errorf("table binding alias is duplicated")
-		}
-		locator, err := resourcetree.ParseURI(binding.Locator)
-		if err != nil || locator.EngineID == 0 || locator.Type != resourcetree.TypeTable || locator.ToURI() != binding.Locator {
-			return nil, fmt.Errorf("table locator is invalid")
-		}
-		if engineID != 0 && engineID != locator.EngineID {
-			return nil, fmt.Errorf("table bindings must use one engine")
-		}
-		engineID = locator.EngineID
-		identityBytes, _ := json.Marshal(locator.Path)
-		identity := string(identityBytes)
-		if _, exists := targets[identity]; exists {
-			return nil, fmt.Errorf("physical table binding is duplicated")
-		}
 		aliases[binding.Alias] = struct{}{}
-		targets[identity] = struct{}{}
 	}
 
 	var document PlanRuleDocument

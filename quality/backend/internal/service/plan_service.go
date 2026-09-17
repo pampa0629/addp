@@ -23,12 +23,14 @@ type PlanService struct {
 	systemClient           *commonClient.SystemServiceClient
 	ruleRepo               *repository.RuleRepository
 	executionAuthorization *commonClient.SystemExecutionAuthorizationClient
+	standardClient         *commonClient.StandardClient
 
 	checkTimeout time.Duration
 }
 
 type PlanWriteRequest struct {
 	Code          string             `json:"code"`
+	OwnerDomainID *int64             `json:"owner_domain_id,omitempty"`
 	Name          string             `json:"name"`
 	Description   string             `json:"description"`
 	Version       int64              `json:"version"`
@@ -58,8 +60,13 @@ func (s *PlanService) WithClients(system *commonClient.SystemServiceClient, auth
 	return s
 }
 
-func (s *PlanService) List(ctx context.Context, tenantID int64, page, pageSize int) ([]models.QualityPlan, int64, error) {
-	return s.repo.List(ctx, tenantID, page, pageSize)
+func (s *PlanService) WithStandardClient(standard *commonClient.StandardClient) *PlanService {
+	s.standardClient = standard
+	return s
+}
+
+func (s *PlanService) List(ctx context.Context, tenantID int64, ownerDomainID *int64, page, pageSize int) ([]models.QualityPlan, int64, error) {
+	return s.repo.List(ctx, tenantID, ownerDomainID, page, pageSize)
 }
 
 func (s *PlanService) Get(ctx context.Context, tenantID, id int64) (*models.QualityPlan, error) {
@@ -76,7 +83,7 @@ func (s *PlanService) Create(ctx context.Context, tenantID, userID int64, reques
 	}
 	now := time.Now().UTC()
 	task := &models.QualityPlan{
-		TenantID: tenantID, Code: strings.TrimSpace(request.Code), Name: strings.TrimSpace(request.Name), Description: strings.TrimSpace(request.Description),
+		TenantID: tenantID, Code: strings.TrimSpace(request.Code), Name: strings.TrimSpace(request.Name), Description: strings.TrimSpace(request.Description), OwnerDomainID: request.OwnerDomainID,
 		Version:       1,
 		TableBindings: bindingsJSON, CheckItems: items,
 		CreatedBy: userID, UpdatedBy: userID, CreatedAt: now, UpdatedAt: now,
@@ -106,7 +113,7 @@ func (s *PlanService) Update(ctx context.Context, tenantID, userID, id int64, re
 		return nil, err
 	}
 	task := &models.QualityPlan{
-		ID: id, TenantID: tenantID, Code: current.Code, Name: strings.TrimSpace(request.Name), Description: strings.TrimSpace(request.Description),
+		ID: id, TenantID: tenantID, Code: current.Code, Name: strings.TrimSpace(request.Name), Description: strings.TrimSpace(request.Description), OwnerDomainID: request.OwnerDomainID,
 		TableBindings: bindingsJSON, CheckItems: items, UpdatedBy: userID, UpdatedAt: time.Now().UTC(),
 	}
 	if err := s.repo.Replace(ctx, task, request.Version); err != nil {
@@ -126,6 +133,9 @@ func (s *PlanService) validateWrite(ctx context.Context, tenantID int64, request
 	code, name := strings.TrimSpace(request.Code), strings.TrimSpace(request.Name)
 	if tenantID <= 0 || !planNamePattern.MatchString(code) || len(code) > 100 || name == "" || len(name) > 200 {
 		return nil, nil, fmt.Errorf("%w: quality plan definition is invalid", commonAPI.ErrBadRequest)
+	}
+	if err := validateOwnedDomain(ctx, s.standardClient, tenantID, request.OwnerDomainID); err != nil {
+		return nil, nil, err
 	}
 	if current == nil && request.Version != 0 {
 		return nil, nil, fmt.Errorf("%w: version is not accepted when creating a quality plan", commonAPI.ErrBadRequest)
@@ -151,8 +161,16 @@ func (s *PlanService) validateWrite(ctx context.Context, tenantID int64, request
 	if err != nil {
 		return nil, nil, fmt.Errorf("%w: %v", commonAPI.ErrBadRequest, err)
 	}
-	if err := s.validatePostgreSQLTargets(ctx, tenantID, request.TableBindings, document); err != nil {
-		return nil, nil, err
+	complete := true
+	for _, binding := range request.TableBindings {
+		if binding.Locator == "" {
+			complete = false
+		}
+	}
+	if complete {
+		if err := s.validatePostgreSQLTargets(ctx, tenantID, request.TableBindings, document); err != nil {
+			return nil, nil, err
+		}
 	}
 	bindingsJSON, err := json.Marshal(request.TableBindings)
 	if err != nil {
@@ -161,15 +179,15 @@ func (s *PlanService) validateWrite(ctx context.Context, tenantID int64, request
 	return bindingsJSON, items, nil
 }
 
-func (s *PlanService) Execute(ctx context.Context, tenantID, taskID int64, triggerType, source, parentExecutionID string) (string, error) {
-	return s.execute(ctx, tenantID, taskID, triggerType, source, parentExecutionID, "", 0)
+func (s *PlanService) Execute(ctx context.Context, tenantID, taskID int64, triggerType, source, parentExecutionID string, request models.PlanRunRequest) (string, error) {
+	return s.execute(ctx, tenantID, taskID, triggerType, source, parentExecutionID, "", 0, request)
 }
 
-func (s *PlanService) Run(ctx context.Context, tenantID, taskID, userID int64, token string) (string, error) {
-	return s.execute(ctx, tenantID, taskID, commonExecution.TriggerTypeManual, commonExecution.ModuleQuality, "", token, userID)
+func (s *PlanService) Run(ctx context.Context, tenantID, taskID, userID int64, token string, request models.PlanRunRequest) (string, error) {
+	return s.execute(ctx, tenantID, taskID, commonExecution.TriggerTypeManual, commonExecution.ModuleQuality, "", token, userID, request)
 }
 
-func (s *PlanService) execute(ctx context.Context, tenantID, taskID int64, triggerType, source, parentID, token string, userID int64) (string, error) {
+func (s *PlanService) execute(ctx context.Context, tenantID, taskID int64, triggerType, source, parentID, token string, userID int64, request models.PlanRunRequest) (string, error) {
 	triggerType, err := commonExecution.NormalizeTriggerType(triggerType)
 	if err != nil || (triggerType != commonExecution.TriggerTypeManual && triggerType != commonExecution.TriggerTypeScheduled) {
 		return "", fmt.Errorf("%w: invalid trigger type", commonAPI.ErrBadRequest)
@@ -192,13 +210,13 @@ func (s *PlanService) execute(ctx context.Context, tenantID, taskID int64, trigg
 		id := int(userID)
 		execution.TriggeredBy = &id
 	}
-	task, err := s.repo.CreateExecution(ctx, taskID, tenantID, execution)
+	_, err = s.repo.CreateExecution(ctx, taskID, tenantID, execution, request)
 	if err != nil {
 		return "", err
 	}
 	if parent == nil {
 		var bindings []PlanTableBinding
-		if err = json.Unmarshal(task.TableBindings, &bindings); err == nil && len(bindings) > 0 {
+		if err = json.Unmarshal(execution.ExecutionConfig["table_bindings"].(json.RawMessage), &bindings); err == nil && len(bindings) > 0 {
 			locator, parseErr := resourcetree.ParseURI(bindings[0].Locator)
 			err = parseErr
 			if err == nil {

@@ -218,5 +218,5 @@ other = "Metric dependencies cannot form a cycle"
 other = "The metric is still referenced by a derived metric or dependency and cannot be deleted"
 
 
-[standard.glossary.initial_creation]
+[standard.revision.initial_creation]
 other = "Initial creation"

@@ -4,6 +4,8 @@
 
 Console 是 ADDP 的统一前端入口，负责登录、全局导航、主题/语言切换、模块健康和 Swagger 文档入口，并通过 iframe 集成各业务模块前端。
 
+导航项的 `permissions` 默认表达任一权限；需要组合授权的入口显式声明 `permissionMode: 'all'`。菜单和搜索均通过 `matchesNavigationAccess` 解释，不在页面重复过滤。Quality 概览需要方案、工单及执行读取权限全部具备。
+
 ## 技术栈与端口
 
 - 前端：Vue 3 + Vue Router + Pinia + Element Plus。
@@ -27,6 +29,7 @@ console/frontend/
 ## 开发规则
 
 - 新增前端模块入口时，优先更新 `console/frontend/src/config/portalConfig.js`，并同步健康检查或 Swagger 代理配置。
+- “数据准备”分组及首页卡片按 Transfer、Meta、Security、Manager 排列；“数据治理”分组包含 Standard、Model、Quality。分组只表达产品导航，Security 继续独立拥有数据保护控制面，纳管仍由用户显式发起。
 - Console 只做入口聚合，不承载业务模块的核心业务逻辑。
 - 前端样式遵守 `common-frontend/docs/addp前端风格设计规范.md`，不要硬编码 ADDP 主题色。
 - 各模块仍应支持独立运行，Console iframe 集成不能破坏 standalone 模式。

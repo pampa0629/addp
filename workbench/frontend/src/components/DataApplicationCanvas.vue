@@ -29,16 +29,19 @@
           </div>
         </div>
       </template>
-      <div class="parameter-grid">
-        <label v-for="parameter in application.snapshot.parameters" :key="parameter.key" class="parameter-field">
-          <span>{{ parameter.label }}<em v-if="parameter.required">*</em></span>
-          <ParameterValueInput :model-value="parameterValues[parameter.key]" :control-type="parameter.control_type" :options="parameterDomain(parameter.key).options" :disabled="!parameterDomain(parameter.key).ready" @update:model-value="updateParameterValue(parameter.key, $event)" /><span v-if="!parameterDomain(parameter.key).ready">{{ t('workbench.parameterOptionsUnavailable', { components: parameterDomain(parameter.key).components.join(', ') }) }}</span>
-        </label>
-      </div>
+      <ApplicationParameterFields
+        v-if="parameterPlacement.pageParameters.length"
+        :parameters="parameterPlacement.pageParameters"
+        :values="parameterValues"
+        :domains="parameterDomains"
+        :selection-sources="parameterSources"
+        @update-value="updateParameterValue"
+        @focus-source="focusSelectionSource"
+      />
     </el-card>
 
     <main v-if="application.snapshot.page" class="runtime-grid" :style="runtimeGridStyle(application.snapshot.page)">
-      <el-card v-for="placement in application.snapshot.page.placements" :key="placement.component_id" class="runtime-component" data-testid="runtime-component" :data-component-id="placement.component_id" :style="runtimeLayoutStyle(placement)">
+      <el-card v-for="placement in application.snapshot.page.placements" :key="placement.component_id" :ref="element => setComponentElement(placement.component_id, element)" tabindex="-1" :aria-label="component(placement.component_id)?.title" class="runtime-component" data-testid="runtime-component" :data-component-id="placement.component_id" :style="runtimeLayoutStyle(placement)">
         <template #header>
           <div class="component-header">
             <strong>{{ component(placement.component_id)?.title }}</strong>
@@ -48,6 +51,19 @@
             </div>
           </div>
         </template>
+        <p v-if="component(placement.component_id)?.description" class="component-description" data-testid="component-description">{{ component(placement.component_id).description }}</p>
+        <p v-if="selectionParameterLabels(placement.component_id).length" class="selection-hint" data-testid="selection-hint">{{ t(`workbench.selectionInstructions.${component(placement.component_id).renderer_type}`, { parameters: selectionParameterLabels(placement.component_id).join(', ') }) }}</p>
+        <ApplicationParameterFields
+          v-if="showParameters && parameterPlacement.componentParameters[placement.component_id]?.length"
+          class="component-parameters"
+          data-testid="component-parameters"
+          :parameters="parameterPlacement.componentParameters[placement.component_id]"
+          :values="parameterValues"
+          :domains="parameterDomains"
+          :selection-sources="parameterSources"
+          @update-value="updateParameterValue"
+          @focus-source="focusSelectionSource"
+        />
         <el-alert
           v-if="componentBlockingError(state(placement.component_id))"
           :data-testid="state(placement.component_id).contract_error ? 'contract-changed-alert' : 'descriptor-load-error-alert'"
@@ -85,10 +101,10 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { createLatestRequestCoordinator } from '@common-ui'
 import { executeDescriptorOperation, getConsumerDescriptor } from '../api/services'
-import { defaultApplicationParameterValues } from '../utils/dataApplicationParameters.mjs'
+import { applicationParameterPlacement, defaultApplicationParameterValues } from '../utils/dataApplicationParameters.mjs'
 import { applicationParameterPreset, applicationRefreshDelayMilliseconds, buildComponentQuery, buildSelectionUpdate, canAttemptApplicationQuery, canExecuteComponentQuery, canRunApplicationRefresh, canRunPublishedApplicationInitialQuery, commitLatestComponentDescriptorState, componentBlockingError, initialApplicationParameterValues, invalidateApplicationParameterResults, runtimeGridStyle, runtimeLayoutStyle, runtimeSectionVisible } from '../utils/dataApplicationRuntime.mjs'
 import { descriptorSupportsExport, downloadCurrentBoundedExport, exportFormatForRenderer } from '../utils/boundedExport.mjs'
-import ParameterValueInput from '../../../../common-frontend/basic/src/components/ParameterValueInput.vue'
+import ApplicationParameterFields from './ApplicationParameterFields.vue'
 import WorkbenchRendererHost from './WorkbenchRendererHost.vue'
 
 const props = defineProps({
@@ -108,6 +124,21 @@ const fullscreenSupported = ref(false)
 const selectedPresetKey = ref(applicationParameterPreset(props.application.snapshot, props.initialPresetKey)?.key || '')
 const parameterValues = reactive(initialApplicationParameterValues(props.application.snapshot, selectedPresetKey.value))
 const componentStates = reactive({})
+const componentElements = new Map()
+const parameterPlacement = computed(() => applicationParameterPlacement(application.value.snapshot))
+const parameterDomains = computed(() => {
+  const snapshot = application.value.snapshot
+  const descriptors = runtimeDescriptors()
+  return Object.fromEntries(snapshot.parameters.map(parameter => [parameter.key, applicationParameterOptions(snapshot, descriptors, parameter.key)]))
+})
+const parameterSources = computed(() => Object.fromEntries(application.value.snapshot.parameters.map(parameter => [
+  parameter.key,
+  selectionGuidance.value.filter(item => item.parameters.some(target => target.key === parameter.key)).map(item => item.source),
+])))
+const selectionGuidance = computed(() => (application.value.snapshot.selection_bindings || []).map(binding => ({
+  source: component(binding.source_component_id),
+  parameters: (binding.assignments || []).map(assignment => application.value.snapshot.parameters.find(parameter => parameter.key === assignment.application_parameter_key)).filter(Boolean),
+})).filter(item => item.source && item.parameters.length))
 const queryAllRequests = createLatestRequestCoordinator()
 const isWallboard = computed(() => application.value.snapshot.page?.display_mode === 'wallboard')
 const showTitle = computed(() => runtimeSectionVisible(application.value.snapshot.page, 'title'))
@@ -132,6 +163,21 @@ function component(id) {
   return application.value.snapshot.components.find((item) => item.id === id)
 }
 
+function selectionParameterLabels(id) {
+  return selectionGuidance.value.find(item => item.source.id === id)?.parameters.map(parameter => parameter.label) || []
+}
+
+function setComponentElement(id, element) {
+  if (element) componentElements.set(id, element.$el)
+  else componentElements.delete(id)
+}
+
+function focusSelectionSource(id) {
+  const element = componentElements.get(id)
+  element?.scrollIntoView({ block: 'center', behavior: 'instant' })
+  element?.focus({ preventScroll: true })
+}
+
 function state(id) {
   return componentStates[id] || { rows: [], page: {}, descriptor: null, descriptor_error: '', contract_error: '', query_error: '', querying: false, exporting: false, query_completed: false, preserve_map_view: false, cursors: [''], cursor_index: 0 }
 }
@@ -143,7 +189,6 @@ function createComponentState() {
 function runtimeDescriptors() {
   return Object.fromEntries(Object.entries(componentStates).map(([id, state]) => [id, state.contract_error || state.descriptor_error ? null : state.descriptor]))
 }
-function parameterDomain(key) { return applicationParameterOptions(application.value.snapshot, runtimeDescriptors(), key) }
 function assertComponentOptions(item) {
  const keys = application.value.snapshot.parameter_bindings.filter((b) => b.component_id === item.id).map((b) => b.application_parameter_key)
  assertApplicationOptionValues(application.value.snapshot, runtimeDescriptors(), parameterValues, keys)
@@ -264,6 +309,7 @@ async function applySelection(componentID, selection) {
     const update = buildSelectionUpdate(application.value.snapshot, componentID, current.descriptor, current.rows, selection)
     if (!update) return
     if (!updateParameterValues(update.parameter_values)) return
+    ElMessage.success(t('workbench.selectionParametersUpdated', { parameters: selectionParameterLabels(componentID).join(', ') }))
     await Promise.all(update.component_ids.map((targetID) => queryComponent(targetID, '', 0, [''], {
       preserveMapView: component(targetID)?.renderer_type === 'map',
     })))
@@ -413,9 +459,9 @@ onBeforeUnmount(() => {
 .runtime-actions, .component-header-actions { gap: 12px; }
 .runtime-actions { color: var(--addp-text-secondary); flex-wrap: wrap; }
 .parameters-card { margin-bottom: 16px; }
-.parameter-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
-.parameter-field { display: flex; flex-direction: column; gap: 8px; color: var(--addp-text-primary); }
-.parameter-field em { color: var(--el-color-danger); font-style: normal; }
+.component-parameters { flex: 0 0 auto; margin-bottom: 12px; }
+.component-description, .selection-hint { flex: 0 0 auto; margin: 0 0 10px; color: var(--addp-text-secondary); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; white-space: pre-wrap; }
+.runtime-component:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: 2px; }
 .runtime-grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); grid-auto-rows: 64px; gap: 12px; }
 .runtime-component { min-width: 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
 .runtime-component:deep(.el-card__body) { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; }
@@ -424,7 +470,7 @@ onBeforeUnmount(() => {
 .runtime-component:deep(.map-container),
 .runtime-component:deep(.geojson-result-renderer) { height: 100% !important; min-height: 0; }
 .component-header { gap: 12px; }
-.component-pagination { display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-top: 12px; color: var(--addp-text-secondary); }
+.component-pagination { flex: 0 0 auto; display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-top: 12px; color: var(--addp-text-secondary); }
 .runtime--embedded { height: calc(100vh - 72px); min-height: 0; overflow: auto; }
 .runtime--wallboard { height: 100vh; min-height: 0; overflow: hidden; display: flex; flex-direction: column; padding: 16px; }
 .runtime--embedded.runtime--wallboard { height: calc(100vh - 72px); }

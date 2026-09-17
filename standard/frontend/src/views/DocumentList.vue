@@ -9,7 +9,7 @@
       <el-row :gutter="12">
         <el-col :span="7"><el-input v-model="filters.keyword" :prefix-icon="Search" :placeholder="$t('standard.document.searchPlaceholder')" clearable @change="handleFilterChange" /></el-col>
         <el-col :span="5"><el-select v-model="filters.doc_type" :placeholder="$t('standard.document.filterTypePlaceholder')" clearable @change="handleFilterChange"><el-option v-for="type in documentTypes" :key="type" :label="docTypeLabel(type)" :value="type" /></el-select></el-col>
-        <el-col :span="6"><el-select v-model="filters.owner_domain_id" :placeholder="$t('standard.common.selectDomain')" clearable @change="handleFilterChange"><el-option v-for="domain in domains" :key="domain.id" :label="domain.name" :value="domain.id" /></el-select></el-col>
+        <el-col :span="6"><BusinessDomainSelect v-model="filters.owner_domain_id" :placeholder="$t('standard.common.selectDomain')" clearable @change="handleFilterChange" :options="domains" /></el-col>
         <el-col :span="6"><el-select v-model="filters.status" :placeholder="$t('standard.common.selectStatus')" clearable @change="handleFilterChange"><el-option v-for="status in revisionStatuses" :key="status" :label="statusLabel(status)" :value="status" /></el-select></el-col>
       </el-row>
     </el-card>
@@ -32,13 +32,13 @@
       <el-form ref="formRef" :model="form" :rules="rules" label-width="120px">
         <el-form-item :label="$t('standard.common.code')" prop="code"><el-input v-model="form.code" :placeholder="$t('standard.common.codePlaceholder')" /></el-form-item>
         <el-form-item :label="$t('standard.common.scopeLabel')" prop="scope_type"><el-select v-model="form.scope_type" style="width:100%" @change="onScopeChange"><el-option :label="$t('standard.common.scopeValue.tenant_common')" value="tenant_common" /><el-option :label="$t('standard.common.scopeValue.domain')" value="domain" /></el-select></el-form-item>
-        <el-form-item v-if="form.scope_type === 'domain'" :label="$t('standard.document.domainLabel')" prop="owner_domain_id"><el-select v-model="form.owner_domain_id" filterable style="width:100%"><el-option v-for="domain in domains" :key="domain.id" :label="domain.name" :value="domain.id" /></el-select></el-form-item>
+        <el-form-item v-if="form.scope_type === 'domain'" :label="$t('standard.document.domainLabel')" prop="owner_domain_id"><BusinessDomainSelect v-model="form.owner_domain_id" style="width:100%" :options="domains" /></el-form-item>
         <el-form-item :label="$t('standard.document.nameLabel')" prop="name"><el-input v-model="form.name" /></el-form-item>
         <el-form-item :label="$t('standard.document.typeLabel')" prop="doc_type"><el-select v-model="form.doc_type" style="width:100%"><el-option v-for="type in documentTypes" :key="type" :label="docTypeLabel(type)" :value="type" /></el-select></el-form-item>
         <el-form-item :label="$t('standard.document.sourceLabel')"><el-input v-model="form.source_org" /></el-form-item>
         <el-form-item :label="$t('standard.document.versionLabel')"><el-input v-model="form.version_label" /></el-form-item>
         <el-form-item :label="$t('standard.document.descriptionLabel')"><el-input v-model="form.description" type="textarea" :rows="3" /></el-form-item>
-        <el-form-item :label="$t('standard.revision.changeSummary')" prop="change_summary"><el-input v-model="form.change_summary" /></el-form-item>
+
         <el-form-item :label="$t('standard.revision.effectiveFrom')"><el-date-picker v-model="form.effective_from" type="datetime" value-format="YYYY-MM-DDTHH:mm:ssZ" style="width:100%" /></el-form-item>
         <el-form-item :label="$t('standard.document.fileLabel')"><el-upload ref="uploadRef" :auto-upload="false" :limit="1" :on-change="file => selectedFile = file.raw" :on-remove="() => selectedFile = null" accept=".md,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt"><el-button>{{ $t('standard.document.fileSelectBtn') }}</el-button><template #tip><div class="upload-tip">{{ $t('standard.document.extractionMarkdownTip') }}</div></template></el-upload></el-form-item>
       </el-form>
@@ -48,6 +48,7 @@
 </template>
 
 <script setup>
+import { BusinessDomainSelect, buildBusinessDomainOptions } from '@common-ui'
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { Plus, Search } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -73,16 +74,14 @@ const listRequests = createLatestRequestCoordinator()
 const documentTypes = ['national', 'industry', 'internal', 'reference']
 const revisionStatuses = ['draft', 'in_review', 'published', 'withdrawn']
 const filters = reactive({ keyword: '', doc_type: '', owner_domain_id: null, status: '', page: 1, page_size: 20 })
-const emptyForm = () => ({ code: '', scope_type: 'tenant_common', owner_domain_id: null, name: '', doc_type: 'reference', source_org: '', version_label: '', description: '', change_summary: '', effective_from: null, tags: [] })
+const emptyForm = () => ({ code: '', scope_type: 'tenant_common', owner_domain_id: null, name: '', doc_type: 'reference', source_org: '', version_label: '', description: '', effective_from: null, tags: [] })
 const form = ref(emptyForm())
 const rules = computed(() => ({
   code: buildStandardCodeRules(t, 'standard.document.codeRequired'),
   name: [{ required: true, message: t('standard.document.nameRequired'), trigger: 'blur' }],
   doc_type: [{ required: true, message: t('standard.document.typeRequired'), trigger: 'change' }],
-  change_summary: [{ required: true, message: t('standard.revision.changeSummaryRequired'), trigger: 'blur' }],
   owner_domain_id: [{ required: form.value.scope_type === 'domain', message: t('standard.common.selectDomain'), trigger: 'change' }]
 }))
-const flattenDomains = nodes => nodes.flatMap(node => [node, ...flattenDomains(node.children || [])])
 const displayRevision = row => row.draft_revision || row.current_revision
 const docTypeLabel = type => t(`standard.document.${type}`)
 const docTypeTagType = getDocumentTypeTagType
@@ -90,7 +89,7 @@ const statusLabel = status => status ? t(`standard.revision.status.${status}`) :
 const statusType = status => ({ draft: 'info', in_review: 'warning', published: 'success', withdrawn: 'danger' }[status] || 'info')
 const scopeLabel = scope => scope ? t(`standard.common.scopeValue.${scope}`) : '-'
 const domainName = id => domains.value.find(item => item.id === id)?.name
-const filterQuery = () => Object.fromEntries(Object.entries(filters).filter(([, value]) => value !== '' && value !== null && value !== 1 && value !== 20).map(([key, value]) => [key, String(value)]))
+const filterQuery = () => Object.fromEntries(Object.entries(filters).filter(([key, value]) => value !== '' && value !== null && !(key === 'page' && value === 1) && !(key === 'page_size' && value === 20)).map(([key, value]) => [key, String(value)]))
 
 async function loadDocuments() {
   const params = { ...filters, keyword: filters.keyword || undefined, doc_type: filters.doc_type || undefined, owner_domain_id: filters.owner_domain_id || undefined, status: filters.status || undefined }
@@ -125,7 +124,7 @@ onMounted(async () => {
   narrowMediaQuery = window.matchMedia('(max-width: 768px)')
   syncNarrowViewport(narrowMediaQuery)
   narrowMediaQuery.addEventListener('change', syncNarrowViewport)
-  try { domains.value = flattenDomains(await domainAPI.list() || []) } catch { domains.value = [] }
+  try { domains.value = buildBusinessDomainOptions(await domainAPI.list() || []) } catch { domains.value = [] }
 })
 onBeforeUnmount(() => narrowMediaQuery?.removeEventListener('change', syncNarrowViewport))
 </script>

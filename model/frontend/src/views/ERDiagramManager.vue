@@ -5,16 +5,16 @@
         <div class="card-header">
           <div class="header-left">
             <h2>{{ t('model.er_diagram.title') }}</h2>
-            <el-select
+            <BusinessDomainSelect
               v-model="selectedDomainId"
               class="domain-filter"
               :placeholder="t('model.er_diagram.domain_filter')"
               clearable
               @change="handleDomainChange"
+              :options="domains"
             >
               <el-option :label="t('model.er_diagram.all_domains')" value="all" />
-              <el-option v-for="domain in domains" :key="domain.id" :label="domain.name" :value="domain.id" />
-            </el-select>
+            </BusinessDomainSelect>
             <el-checkbox v-if="selectedDomainId && selectedDomainId !== 'all'" v-model="includeRelated" @change="handleDomainChange">{{ t('model.er_diagram.include_related') }}</el-checkbox>
           </div>
           <div class="toolbar">
@@ -173,6 +173,7 @@ erDiagram
 </template>
 
 <script setup>
+import { BusinessDomainSelect, buildBusinessDomainOptions } from '@common-ui'
 import { ref, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -239,7 +240,7 @@ const syncRoute = () => navigateModelRoute(router, {
 
 const loadDomains = async () => {
   try {
-    domains.value = await domainAPI.list() || []
+    domains.value = buildBusinessDomainOptions(await domainAPI.list() || [])
   } catch (err) {
     domains.value = []
     referenceError.value = t('model.common.reference_data_unavailable')

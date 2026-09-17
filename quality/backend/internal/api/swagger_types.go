@@ -2,6 +2,7 @@ package api
 
 import (
 	commonExecution "github.com/addp/common/execution"
+	"github.com/addp/common/taskprovider"
 	"github.com/addp/quality/internal/models"
 	"github.com/addp/quality/internal/service"
 )
@@ -30,7 +31,10 @@ type qualityExecutionListResponse struct {
 	TotalPages int                             `json:"total_pages"`
 }
 
-type qualityPlanResponse models.QualityPlan
+type qualityPlanResponse struct {
+	models.QualityPlan
+	ExecutionContract taskprovider.ExecutionContract `json:"execution_contract"`
+}
 type qualityRuleResponse models.QualityRule
 type qualityRuleListResponse struct {
 	Data       []models.QualityRule `json:"data"`

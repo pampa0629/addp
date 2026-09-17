@@ -1577,8 +1577,7 @@
                   "date",
                   "datetime",
                   "bool",
-                  "json",
-                  "text"
+                  "json"
                 ],
                 "type": "string"
               },

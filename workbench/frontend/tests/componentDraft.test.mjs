@@ -1,12 +1,25 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { buildComponentConfiguration, buildQueryRequest, buildRendererConfig, createNamedParameterDraft, createParameterDraft, hasParameterValue, requiredParameterValuesPresent, synchronizeFieldPresentations } from '../src/utils/componentDraft.mjs'
+import { buildComponentConfiguration, buildQueryRequest, buildRendererConfig, createNamedParameterDraft, createParameterDraft, draftFromComponent, hasParameterValue, requiredParameterValuesPresent, synchronizeFieldPresentations } from '../src/utils/componentDraft.mjs'
 
 const descriptor = {
   ref: { service_type: 'query', service_id: 9 },
   contract_fingerprint: `sha256:${'a'.repeat(64)}`,
   input_contract: { order: { stable_key: ['id'] } },
 }
+
+test('value labels round trip through the sole renderer compiler without altering query values', () => {
+  const source = { ...descriptor, output_contract: { fields: [{ name: 'direction', type: 'string' }] } }
+  const component = {
+    title: 'Direction', renderer_type: 'table', query_template: { select: ['direction'], page_limit: 20 },
+    renderer_config: { columns: ['direction'], field_presentations: [{ field: 'direction', label: 'Direction', value_labels: [{ value: 'forward', label: 'A → B' }] }] },
+  }
+  const draft = draftFromComponent(component, source)
+  assert.deepEqual(buildRendererConfig(draft), component.renderer_config)
+  assert.deepEqual(buildQueryRequest(source, draft).select, ['direction'])
+  draft.fieldPresentations[0].valueLabels[0].label = 'Changed'
+  assert.equal(component.renderer_config.field_presentations[0].value_labels[0].label, 'A → B')
+})
 
 test('compiles a reusable application component without service or domain field assumptions', () => {
   const draft = {
@@ -165,4 +178,16 @@ test('keeps required parameters without component defaults saveable but not prev
 
   named.value = 'person-1'
   assert.equal(requiredParameterValuesPresent(draft.parameters), true)
+})
+
+test('text contains follows descriptor and binds a literal without wildcard rewriting', () => {
+  const filter = createParameterDraft({ name: 'nickname', type: 'string', operators: ['contains'] })
+  assert.equal(filter.controlType, 'text')
+  filter.value = "苏%_\\'"
+  const draft = { columns: ['id'], pageLimit: 50, parameters: [filter] }
+  const request = buildQueryRequest(descriptor, draft)
+  assert.deepEqual(request.filter, { field: 'nickname', op: 'contains', value: "苏%_\\'" })
+  filter.value = ''
+  assert.equal(buildQueryRequest(descriptor, draft).filter, null)
+  assert.equal(createParameterDraft({ name: 'nickname', type: 'string', operators: [] }), null)
 })

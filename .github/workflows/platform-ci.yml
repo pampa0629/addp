@@ -60,6 +60,7 @@ jobs:
           fi
 
       - name: Run platform consistency gate
+        # Includes Backend-owned schema startup, Worker ordering, Swagger cache invalidation and lifecycle concurrency tests.
         run: make test-platform
 
       - name: Summarize platform consistency gate

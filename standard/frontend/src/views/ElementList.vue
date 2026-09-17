@@ -4,14 +4,14 @@
     <el-card shadow="never" class="filter-card"><el-row :gutter="12">
       <el-col :span="7"><el-input v-model="filters.keyword" :prefix-icon="Search" clearable :placeholder="$t('standard.element.searchPlaceholder')" @change="search" /></el-col>
       <el-col :span="5"><el-select v-model="filters.scope_type" clearable :placeholder="$t('standard.common.selectScope')" style="width:100%" @change="search"><el-option v-for="scope in scopeOptions" :key="scope" :label="scopeLabel(scope)" :value="scope" /></el-select></el-col>
-      <el-col :span="6"><el-select v-model="filters.owner_domain_id" clearable :placeholder="$t('standard.common.selectDomain')" style="width:100%" @change="search"><el-option v-for="d in domains" :key="d.id" :label="d.name" :value="d.id" /></el-select></el-col>
+      <el-col :span="6"><BusinessDomainSelect v-model="filters.owner_domain_id" clearable :placeholder="$t('standard.common.selectDomain')" style="width:100%" @change="search" :options="domains" /></el-col>
       <el-col :span="5"><el-select v-model="filters.status" clearable :placeholder="$t('standard.common.selectStatus')" style="width:100%" @change="search"><el-option v-for="s in statuses" :key="s" :label="statusLabel(s)" :value="s" /></el-select></el-col>
     </el-row></el-card>
     <el-card shadow="never" class="table-card">
       <el-table :data="elements" v-loading="loading" stripe>
         <el-table-column :label="$t('standard.element.nameLabel')" min-width="180"><template #default="{ row }"><el-link type="primary" @click="goDetail(row.id)">{{ workingRevision(row)?.name || '-' }}</el-link></template></el-table-column>
         <el-table-column :label="$t('standard.element.codeLabel')" prop="code" width="170" />
-        <el-table-column :label="$t('standard.element.dataTypeLabel')" width="110"><template #default="{ row }"><el-tag size="small" type="info">{{ workingRevision(row)?.data_type || '-' }}</el-tag></template></el-table-column>
+        <el-table-column :label="$t('standard.element.dataTypeLabel')" width="110"><template #default="{ row }"><el-tag size="small" type="info">{{ workingRevision(row)?.data_type ? t(`standard.element.dataTypes.${workingRevision(row).data_type}.label`) : '-' }}</el-tag></template></el-table-column>
         <el-table-column :label="$t('standard.common.scopeLabel')" width="120"><template #default="{ row }"><el-tag size="small" type="info">{{ scopeLabel(row.scope_type) }}</el-tag></template></el-table-column>
         <el-table-column :label="$t('standard.common.ownerDomainLabel')" width="140"><template #default="{ row }">{{ domainName(row.owner_domain_id) }}</template></el-table-column>
         <el-table-column :label="$t('standard.revision.number')" width="90"><template #default="{ row }">{{ workingRevision(row) ? `R${workingRevision(row).revision_no}` : '-' }}</template></el-table-column>
@@ -25,11 +25,11 @@
         <el-form-item :label="$t('standard.element.codeLabel')" prop="code"><el-input v-model="form.code" :placeholder="$t('standard.common.codePlaceholder')" /></el-form-item>
         <el-form-item :label="$t('standard.element.nameLabel')" prop="name"><el-input v-model="form.name" /></el-form-item>
         <el-form-item :label="$t('standard.element.definitionLabel')" prop="definition"><el-input v-model="form.definition" type="textarea" :rows="3" /></el-form-item>
-        <el-form-item :label="$t('standard.element.dataTypeLabel')" prop="data_type"><el-select v-model="form.data_type" style="width:100%"><el-option v-for="type in dataTypes" :key="type" :label="type" :value="type" /></el-select></el-form-item>
+        <el-form-item :label="$t('standard.element.dataTypeLabel')" prop="data_type"><ElementDataTypeSelect v-model="form.data_type" @change="form.length = null" /></el-form-item>
+        <el-form-item v-if="form.data_type === 'string'" :label="$t('standard.element.lengthLabel')"><el-input-number v-model="form.length" :min="1" :placeholder="$t('standard.element.lengthHint')" style="width:100%" /><div class="field-hint">{{ $t('standard.element.lengthHint') }}</div></el-form-item>
         <el-form-item :label="$t('standard.element.nullableLabel')"><el-switch v-model="form.nullable" /></el-form-item>
         <el-form-item :label="$t('standard.common.scopeLabel')" prop="scope_type"><el-select v-model="form.scope_type" style="width:100%"><el-option v-for="scope in editableScopes" :key="scope" :label="scopeLabel(scope)" :value="scope" /></el-select></el-form-item>
-        <el-form-item v-if="requiresOwnerDomain(form.scope_type)" :label="$t('standard.common.ownerDomainLabel')" prop="owner_domain_id"><el-select v-model="form.owner_domain_id" style="width:100%"><el-option v-for="d in domains" :key="d.id" :label="d.name" :value="d.id" /></el-select></el-form-item>
-        <el-form-item :label="$t('standard.revision.changeSummary')" prop="change_summary"><el-input v-model="form.change_summary" type="textarea" :rows="2" /></el-form-item>
+        <el-form-item v-if="requiresOwnerDomain(form.scope_type)" :label="$t('standard.common.ownerDomainLabel')" prop="owner_domain_id"><BusinessDomainSelect v-model="form.owner_domain_id" style="width:100%" :options="domains" /></el-form-item>
       </el-form>
       <template #footer><el-button @click="dialog=false">{{ $t('standard.common.cancel') }}</el-button><el-button type="primary" :loading="submitting" @click="create">{{ $t('standard.common.confirm') }}</el-button></template>
     </el-dialog>
@@ -37,6 +37,8 @@
 </template>
 
 <script setup>
+import { BusinessDomainSelect, buildBusinessDomainOptions } from '@common-ui'
+import ElementDataTypeSelect from '../components/ElementDataTypeSelect.vue'
 import { onMounted, reactive, ref, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -57,18 +59,16 @@ const elements = ref([]), domains = ref([]), total = ref(0)
 const statuses = ['draft', 'in_review', 'published', 'withdrawn']
 const scopeOptions = ['platform', 'tenant_common', 'domain']
 const editableScopes = EDITABLE_STANDARD_SCOPES
-const dataTypes = ['string', 'text', 'int', 'bigint', 'float', 'decimal', 'date', 'datetime', 'bool', 'json']
 const filters = reactive({ keyword: '', scope_type: '', owner_domain_id: null, status: '', page: 1, page_size: 20 })
-const emptyForm = () => ({ code: '', name: '', definition: '', data_type: 'string', nullable: true, scope_type: 'tenant_common', owner_domain_id: null, value_domain_kind: 'unrestricted', change_summary: '' })
+const emptyForm = () => ({ code: '', name: '', definition: '', data_type: 'string', length: null, nullable: true, scope_type: 'tenant_common', owner_domain_id: null, value_domain_kind: 'unrestricted' })
 const form = reactive(emptyForm())
-const rules = computed(() => ({ code: buildStandardCodeRules(t, 'standard.element.codeRequired'), name: [{ required: true, message: t('standard.element.nameRequired') }], definition: [{ required: true, message: t('standard.element.definitionRequired') }], data_type: [{ required: true, message: t('standard.element.dataTypeRequired') }], scope_type: [{ required: true, message: t('standard.common.selectScope') }], owner_domain_id: requiresOwnerDomain(form.scope_type) ? [{ required: true, message: t('standard.common.ownerDomainRequired') }] : [], change_summary: [{ required: true, message: t('standard.revision.changeSummaryRequired') }] }))
+const rules = computed(() => ({ code: buildStandardCodeRules(t, 'standard.element.codeRequired'), name: [{ required: true, message: t('standard.element.nameRequired') }], definition: [{ required: true, message: t('standard.element.definitionRequired') }], data_type: [{ required: true, message: t('standard.element.dataTypeRequired') }], scope_type: [{ required: true, message: t('standard.common.selectScope') }], owner_domain_id: requiresOwnerDomain(form.scope_type) ? [{ required: true, message: t('standard.common.ownerDomainRequired') }] : [] }))
 const workingRevision = row => row.draft_revision || row.current_revision
 const statusLabel = s => s ? t(`standard.revision.status.${s}`) : '-'
 const statusType = s => ({ draft: 'info', in_review: 'warning', published: 'success', withdrawn: 'danger' }[s] || 'info')
 const scopeLabel = scope => scope ? t(standardScopeLabelKey(scope)) : '-'
 const domainName = id => domains.value.find(d => d.id === id)?.name || '-'
-const flatten = nodes => nodes.flatMap(node => [node, ...flatten(node.children || [])])
-const loadDomains = async () => { try { domains.value = flatten(await domainAPI.list() || []) } catch { domains.value = [] } }
+const loadDomains = async () => { try { domains.value = buildBusinessDomainOptions(await domainAPI.list() || []) } catch { domains.value = [] } }
 const load = async () => { loading.value = true; try { const params = Object.fromEntries(Object.entries(filters).filter(([,v]) => v !== '' && v != null)); const res = await elementAPI.list(params); elements.value = res.data || []; total.value = res.total || 0 } catch (e) { ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.loadFailed')) } finally { loading.value = false } }
 const search = () => { filters.page = 1; load() }
 const openCreate = () => { Object.assign(form, emptyForm()); dialog.value = true }
@@ -80,5 +80,6 @@ onMounted(() => { loadDomains(); load() })
 </script>
 
 <style scoped>
+.field-hint { color: var(--addp-text-secondary); font-size: 12px; line-height: 1.5; margin-top: 4px; }
 .page-shell{min-height:100%;padding:20px;background:var(--addp-bg-secondary);color:var(--addp-text-primary)}.page-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}.filter-card{margin-bottom:12px}.table-card :deep(.el-card__body){padding-top:8px}.table-actions{display:inline-flex;align-items:center;gap:8px;min-width:max-content;white-space:nowrap}.table-actions :deep(.el-button){margin-left:0;white-space:nowrap}.pagination{display:flex;justify-content:flex-end;margin-top:16px}.page-shell :deep(.el-card){background:var(--addp-bg-primary);border-color:var(--addp-border-color)}
 </style>

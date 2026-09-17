@@ -81,7 +81,7 @@ type Store struct {
 	localCursors    map[int64]string
 }
 
-func New(db *gorm.DB, schema, consumerOwner string, changeBarrier ProjectionChangeBarrier) (*Store, error) {
+func newStore(db *gorm.DB, schema, consumerOwner string, changeBarrier ProjectionChangeBarrier) (*Store, error) {
 	schema = strings.TrimSpace(schema)
 	consumerOwner = strings.TrimSpace(consumerOwner)
 	if db == nil || !schemaNamePattern.MatchString(schema) || !schemaNamePattern.MatchString(consumerOwner) {
@@ -96,8 +96,43 @@ func New(db *gorm.DB, schema, consumerOwner string, changeBarrier ProjectionChan
 		byResource:      make(map[resourceKey][]dataprotection.Projection),
 		localCursors:    make(map[int64]string),
 	}
+	return store, nil
+}
+
+// Migrate is called explicitly by the owner Backend or database test fixture.
+func Migrate(db *gorm.DB, schema, consumerOwner string, changeBarrier ProjectionChangeBarrier) (*Store, error) {
+	store, err := newStore(db, schema, consumerOwner, changeBarrier)
+	if err != nil {
+		return nil, err
+	}
 	if err := store.ensureSchema(); err != nil {
 		return nil, err
+	}
+	return Open(db, schema, consumerOwner, changeBarrier)
+}
+
+// Open only validates and reads existing tables; it never migrates a Worker database.
+func Open(db *gorm.DB, schema, consumerOwner string, changeBarrier ProjectionChangeBarrier) (*Store, error) {
+	store, err := newStore(db, schema, consumerOwner, changeBarrier)
+	if err != nil {
+		return nil, err
+	}
+	applied, err := store.appliedMigrations(db)
+	if err != nil {
+		return nil, err
+	}
+	if len(applied) != len(storeMigrations) {
+		return nil, fmt.Errorf("projection store migrations are not current")
+	}
+	for _, migration := range storeMigrations {
+		if _, ok := applied[migration.version]; !ok {
+			return nil, fmt.Errorf("projection store migration missing: %s", migration.version)
+		}
+	}
+	if db.Dialector.Name() == "postgres" {
+		if err := store.verifyPostgresSchema(db); err != nil {
+			return nil, err
+		}
 	}
 	if err := store.reload(context.Background()); err != nil {
 		return nil, err

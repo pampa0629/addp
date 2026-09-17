@@ -133,7 +133,7 @@ func TestDirectResourceUpdatesRejectStaleVersion(t *testing.T) {
 func TestElementIdentityUpdateRejectsStaleVersion(t *testing.T) {
 	db := openVersionedTestDB(t,
 		`CREATE TABLE standard.elements (
-			id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, scope_type TEXT NOT NULL, owner_domain_id INTEGER, code TEXT, steward_id INTEGER,
+			id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, scope_type TEXT NOT NULL, owner_domain_id INTEGER, code TEXT,
 			tags TEXT, draft_revision_id INTEGER, updated_by INTEGER,
 			updated_at DATETIME, version INTEGER NOT NULL DEFAULT 1
 		)`,

@@ -62,10 +62,11 @@
 | asset category assignment | 资产归类 | Asset 对自身主展示分类的权威归属关系。 | 由 Asset owner 维护，可参考组成 CatalogEntry 的语义，但不得自动复制或继承企业资源目录结构。 |
 | Workbench module | Workbench 模块 | ADDP 面向数据消费者、以已发布 Service 为唯一数据入口的动态查询、可视化和数据应用创作 owner。 | 不直连 Engine、不拥有 SQL、指标、物化或任务编排；Service 不可达只失败依赖该服务的当前请求，不影响 Workbench Ready。 |
 | Service Consumer Descriptor | 服务消费描述 | Service owner 面向消费者发布的、版本化且不包含管理事实的服务输入、输出、分页、格式和执行 operation 契约。 | 稳定协议从 `addp.service_consumer/v1` 开始；不暴露 SQL、Engine 凭据、表名或 Workbench renderer。 |
+| text contains | 文本包含 | 判断文本是否包含指定字面子串的 string 筛选操作，机器名 `contains`。 | 区分大小写和重音，不进行 Unicode 归一化；通配符字符按字面匹配。由 Service 声明消费能力，引擎实现具体执行，不等于 SQL LIKE 或全文检索。 |
 | query service named parameter | 查询服务命名参数 | Query Service 发布时声明、执行时由消费者按名称提交并由 Service 强类型校验的标量输入。 | 可通过 `presentation` 声明参数业务名称与说明，通过 `options` 声明类型化允许值及 `zh-cn/en` 名称，由 Service 冻结发布并校验，消费端不得扩大允许值。用于参数影响固定 SQL 或数据库无关分析计划内部计算、且不能表达为输出字段筛选的场景；不是字段名、表名、SQL 片段或 Workbench 私有参数。SQL 使用 `:name`，执行时走引擎原生绑定，禁止字符串替换。 |
 | ServiceReference | 服务引用 | 消费者对一个已发布 Service 的强类型稳定引用，由 `service_type + service_id` 组成。 | Data Application Component 保存该引用并通过 Service Consumer Catalog 解析，不能保存或猜测执行 URL。 |
 | Data Application Component | 数据应用组件 | Data Application 内直接绑定一个 ServiceReference，并保存经 Consumer Descriptor 校验的查询模板、参数定义、契约指纹和 renderer 配置的内聚实体。 | 不是独立聚合根，不单独发布或共享；不保存查询结果、cursor、Token、SQL 或 Service 管理 DTO。 |
-| Field Presentation | 字段呈现规则 | Data Application Component 对已选服务输出字段声明的最终展示语义，包含标签以及与字段类型匹配的单位、精度、时间格式或表格列宽。 | 位于 renderer 配置并进入 Application Revision；只改变 Table、Chart、Map 的显示，不改变字段名、查询、联动、导出、Service 契约或原始结果。 |
+| Field Presentation | 字段呈现规则 | Data Application Component 对已选服务输出字段声明的最终展示语义，包含标签、有限值的显示名称以及与字段类型匹配的单位、精度、时间格式或表格列宽。 | 位于 renderer 配置并进入 Application Revision；只改变 Table、Chart、Map 的显示，不改变字段名、查询、联动、导出、Service 契约或原始结果。值名称映射不能代替服务端维度关联。 |
 | Data Application | 数据应用 | Workbench 中直接配置一个或多个 Data Application Component，并拥有草稿、页面布局、参数绑定、组件联动、发布、下线和稳定运行入口的聚合根。 | 不等同于 System Application；不依赖中间视图资源，不保存查询结果、凭据或 Service URL。 |
 | Application Revision | 应用发布修订 | Data Application 每次发布产生的不可变运行快照，包含当次名称、说明、Component、页面布局、应用展示模式、参数绑定和选择绑定。 | 使用独立 `revision_number` 表达业务发布版次，不复用聚合根并发字段 `version`；CatalogEntry 标识 Data Application，不标识单个 Revision。 |
 | Application Parameter Preset | 应用参数预设 | Data Application 创作者为一组完整 Application Parameter 值定义的稳定命名场景，随 Application Revision 一起发布。 | 选择预设只原子替换当前浏览器会话参数并复用既有 Parameter Binding 与查询主路径；不是查询模板、个人收藏或独立聚合根，不保存查询结果。运行链接只可引用预设 `key`，不得携带任意原始参数值。 |
@@ -102,16 +103,19 @@
 
 ## 数据标准
 
+发布型标准对象（业务术语、数据元、码值集、指标定义、标准文档）的手工首次创建不提交 `change_summary`，由后端按请求语言保存“初始创建 / Initial creation”；后续修订仍须填写变更说明。新建并关联文档遵守同一规则；候选正式化保留其来源和处置说明。
+
 | 英文术语 | 中文术语 | 定义 | 备注 |
 |---|---|---|---|
 | business domain | 业务域 | 对业务能力、业务语义和治理责任进行稳定划分的组织边界。 | 业务域是跨 Standard、Model、Catalog、Quality 等模块复用的治理维度；它不是权限/审批容器、目录分类或可见范围。对象可由一个业务域负责，同时被其他业务域复用。 |
 | standard scope | 标准适用范围 | 描述标准对象在哪个治理范围内成立，固定为 `platform`、`tenant_common` 或 `domain`。 | `domain` 范围必须指定 `owner_domain_id`；`platform` 和 `tenant_common` 不强制归属业务域。适用范围回答“在哪里成立”，归属域回答“谁负责”，二者不可混用。 |
 | standard stable code | 标准稳定编码 | 在一个 Tenant 和确定标准类型内唯一、创建后不可变的机器标识。 | 业务域、业务术语、数据元、码值集、指标定义、标准文档及标准分类的公开创建入口统一接受小写 `snake_case`；不自动转换用户输入。业务域和适用范围可独立调整，因此归属域编码前缀不是正式标准稳定编码的强制组成部分；业务域前缀只是 Copilot 新候选的生成约束。 |
 | standard category | 标准分类 | 为标准对象提供树形浏览、筛选和导航的分类节点。 | 分类仅用于信息架构，可以按对象类型设置不同分类树；不得用分类代替业务域、权限或审核状态。 |
-| business glossary | 业务术语 | 对企业业务概念建立规范名称、别名和定义的受治理语义标准。 | 业务术语是 Standard 的稳定身份；适用范围、归属域和责任人位于稳定身份，业务定义位于不可变的业务术语修订。它不是数据字典中的物理字段说明。 |
+| standard text type | 标准文本类型 | 数据元及模型属性、逻辑字段统一使用 `string` 表达文本，通过可选最大长度和格式约束描述业务要求。 | 不另设 `text` 逻辑类型；数据库 `TEXT`、`VARCHAR` 等物理类型由 Model 与引擎映射。Standard 不设置独立责任人字段，操作人由审计记录表达，企业目录责任仍由 Catalog 管理。 |
+| business glossary | 业务术语 | 对企业业务概念建立规范名称、别名和定义的受治理语义标准。 | 业务术语是 Standard 的稳定身份；适用范围、归属域和标签位于稳定身份，业务定义位于不可变的业务术语修订。它不是数据字典中的物理字段说明。 |
 | business glossary revision | 业务术语修订 | 业务术语一次可审核、可发布的完整定义快照。 | 状态固定为 `draft`、`in_review`、`published`、`withdrawn`；正式引用必须能够定位具体修订，当前生效版本按生效区间动态解析。手工新建术语的 R1 由后端生成“初始创建”说明，不要求用户填写；后续修订必填变更说明。 |
 | data element | 数据元 | 对一个可复用业务数据概念的标准化定义，统一其名称、定义、表示方式、值域和责任归属。 | 数据元是 Standard 的稳定身份；业务含义和表示约束保存在不可变的数据元修订中。它不是数据库中的具体字段，也不承载安全分类分级。 |
-| data element revision | 数据元修订 | 数据元一次可审核、可发布的完整业务定义快照。 | API 与数据库使用 `revision_no` 表达业务版次；`published` 修订的业务定义不可修改，后续变更必须创建新修订。不得复用资源并发字段 `version`。 |
+| data element revision | 数据元修订 | 数据元一次可审核、可发布的完整业务定义快照。 | API 与数据库使用 `revision_no` 表达业务版次；`published` 修订的业务定义不可修改，后续变更必须创建新修订。不得复用资源并发字段 `version`。手工新建数据元的 R1 由后端按请求语言生成“初始创建 / Initial creation”说明，创建请求不包含 `change_summary`；后续修订仍必填变更说明。 |
 | value domain | 值域 | 数据元允许取值的语义和表示约束。 | ADDP 当前只实现 `unrestricted`、`range`、`enumeration` 三类；一个数据元修订只能选择一种。暂不建立通用 ValueDomain 主资源。 |
 | range value domain | 连续值域 | 通过结构化最小值、最大值及边界是否包含等规则描述的值域。 | 保存于数据元修订；与枚举码值集互斥。格式、长度等表示约束不作为第二套值域事实。 |
 | code set | 码值集 | 一组可复用、受治理的枚举允许值标准。 | 码值集是 Standard 的稳定身份；具体定义和码项保存在码值集修订中。其适用范围可以是平台、租户公共或业务域，不以“租户自定义”推导为必须归属业务域。 |
@@ -272,11 +276,14 @@
 | logical table structural constraints | 逻辑表结构约束 | Model 从逻辑字段和表关系派生的主键组合、必填字段集合及出向外键关系。 | 是只读投影，不重复保存规则；多字段主键表达组合唯一，不能解释成每个字段分别唯一。检查方案、阈值和阻断策略属于 Quality。 |
 | QualityRule | 质量规则定义 | Quality 中可跨方案复用的强类型约束主资源，不绑定实际引擎、表或字段。 | 保存生成不可变修订 revision_no；version 仅用于并发控制。Standard 来源固定到已发布修订，不反向修改标准。 |
 | quality rule revision | 质量规则修订 | 规则某次保存形成的不可变名称、类型、约束和来源快照。 | 方案固定引用，规则更新不自动改变方案；需要显式升级引用。 |
+| quality stable code | 质量规则编码 / 质量方案编码 | QualityRule 或 QualityPlan 在租户内唯一且创建后不可变的机器标识 code。 | 用户界面分别称为规则编码、方案编码，不称为代码；与显示名称、数据库 ID、修订号和并发 version 区分。 |
 | quality plan check item | 方案检查项 | 方案与规则修订的关联，保存实际目标绑定、阻断级别和启停状态。 | 从属于方案版本；稳定 rule_key 识别检查项。同一规则可被多个方案引用，也可在同一方案中检查多个目标。 |
-| QualityPlan | 质量检查方案 | Quality 唯一正式执行聚合，通过检查项选择规则修订并绑定实际数据表。 | 支持手动及编排执行，冻结版本、目标和规则；来源变化不自动改写方案。不依赖 Catalog，不等于企业落标映射。 |
+| QualityPlan | 质量检查方案 | Quality 唯一正式执行聚合，通过检查项选择规则修订并声明表别名和可选默认数据表。 | 执行时补齐实际目标，支持手动及编排执行，冻结版本、目标和规则；来源变化不自动改写方案。不依赖 Catalog，不等于企业落标映射。 |
+| quality target binding | 质量目标绑定 | 将方案声明的表别名解析为本次执行的实际 ResourceLocator。 | 可来自方案默认值、手动执行指定或 Orchestrator 上游稳定输出；只作用于本次执行，缺失目标拒绝运行。 |
+| quality target scope | 质量目标作用域 | 一个方案一次检查使用的完整、规范化目标集合。 | target_key 由服务端计算，包含别名和物理资源身份，不含 Meta 提示 ID；用于隔离地区工单、并发执行及当前质量统计。 |
 | quality check | 质量检查 | Quality 在一次持久 execution 中对方案所有启用规则完整求值的过程。 | 首期 PostgreSQL；error 规则失败阻断，warning/info 不阻断；运行异常不得产出部分合格结论。 |
 | quality score | 规则通过率 | 方案通过规则数 / 实际检查规则数 × 100。 | 不等于坏数据去重比例；warning/info 也计入，不代表 error 门禁是否通过。历史结果保持原始契约口径。 |
-| quality issue | 质量问题 | 某个检查方案中的某条规则当前仍存在未通过事实的可治理状态。 | 稳定身份为 Tenant + QualityPlan + rule key；历史发生记录保留在 execution 结果中。 |
+| quality issue | 质量问题 | 某个检查方案在实际目标范围中的某条规则当前仍存在未通过事实的可治理状态。 | 稳定身份为 Tenant + QualityPlan + target key + rule key；历史发生记录保留在 execution 结果中。 |
 
 ## 任务与执行
 
@@ -517,7 +524,7 @@
 | cleanup result | 资源回收结果 | 资源回收执行方写回的模块级资源回收结果。 | 包含通用摘要和模块私有统计。 |
 | engine deletion impact assessment | 引擎删除影响评估 | Engine 删除前由 System 协调、各 owner 模块自治执行的无副作用 scan。 | 报告 `rebindable`、`will_disable`、`will_delete`、`running`、`external_artifact` 等影响；System 不读取业务模块私有表。 |
 | impact digest | 影响摘要指纹 | owner 模块根据稳定资源 ID 和处理分类计算的确定性摘要。 | 用于比较只读预评估与 `deleting` 后权威复扫，摘要变化时必须重新确认。 |
-| standard reference deletion guard | 标准引用删除屏障 | Model 为某个 Tenant 下的 Standard 资源引用键维护的本地串行化状态，用于协调 Standard 硬删除与 Model 新引用写入。 | 状态统一为 `open`、`frozen`、`deleted`；它是 Model 对 Standard 生命周期的安全投影，不复制 Standard 资源，也不替代 Standard 的事实所有权。 |
+| standard reference deletion guard | 标准引用删除屏障 | Standard 引用方（Model、Quality）为某个 Tenant 下的标准资源引用键维护的本地串行化状态，用于协调 Standard 硬删除与新引用写入。 | 状态统一为 `open`、`frozen`、`deleted`；Standard 协调全部相关引用方，各方只扫描本模块事实，屏障不是标准资源副本。 |
 | owner module | 归属模块 | 某个事实、产物、任务定义或物理资源生命周期归属的模块。 | cleanup 责任跟随 owner module，不跟随触发事件来源。 |
 | physical artifact | 物理产物 | 可删除的实际存储资源。 | 例如对象存储 key、PG 派生对象、向量行、缓存 key。 |
 | lifecycle event | 生命周期事件 | 表示 engine、tenant、item 或配置发生生命周期变化的中性事件。 | 各模块独立消费并处理自身 owner 范围内资源。 |
@@ -565,6 +572,19 @@
 |---|---|---|---|
 | ontology entity type | 本体实体类型 | Graph 模块中对一类实体的概念定义，包含属性、约束、继承关系和图引擎执行映射。 | 不等同于 Neo4j label；具体执行映射由 `NodeLabels` 表达。 |
 | node display property | 节点展示字段 | 本体实体类型指定的字符串属性，用作图谱节点标题、搜索结果标题和图分析节点名称。 | 可引用本类型或继承属性，并自动纳入该实体类型的全文搜索索引。 |
+
+## 领域本体（目标设计）
+
+以下为 Ontology 模块的目标术语，尚不代表运行时已实现；当前 Graph 本体职责在完成单路径切换前保持不变。边界、发布和迁移约束见 [Ontology 最小设计契约](../next/ADDP%20Ontology最小设计契约.md)。
+
+| 英文术语 | 中文术语 | 定义 | 备注 |
+|---|---|---|---|
+| domain ontology | 领域本体 | Tenant 对领域类、属性、关系特征和分类条件形成的显式语义体系。 | 目标由 Ontology 管理自有事实并引用 Standard、Model 权威定义；不要求 RDF/OWL，不复制业务数据。 |
+| ontology class | 本体类 | 本体中可被属性、关系和分类规则引用的类型概念。 | 基础定义只能为本体自有或来自明确 owner 的引用；地点实例“北京”不是本体类。 |
+| ontology revision | 本体修订 | 同一本体成员集合、来源依赖和规则环境的确定版本；发布后内容不可变。 | 不等于资源并发 version；published 不代表图投影已经 ready 或已激活。 |
+| semantic projection | 语义投影 | 从本体确定修订构建、用于关系查询的可重建派生数据。 | 目标存于 Infra FalkorDB；无独立编辑权，修订与构建 generation 必须可追溯。 |
+| classification rule | 分类规则 | 根据显式业务条件及有界事实判断对象是否满足某类定义的确定性规则。 | 不满足分类不等于数据质量不合格；未知、否定和执行错误分别表达。 |
+| semantic context | 语义上下文 | 一次消费固定的本体修订、投影批次、相关定义与数据映射版本集合。 | 不等于业务数据快照，不授予数据访问权，也不能替代取数范围和完整性证据。 |
 
 ## 命名约定
 

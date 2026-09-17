@@ -634,50 +634,80 @@ echo ""
 # 服务运行状态检查函数
 # ============================================================
 
-# 检查服务是否已在运行
-# 参数: $1=服务名称 $2=端口号（可选，不传则只检查PID）
-# 返回: 0=未运行(可以启动), 1=已运行(跳过启动)
+# 批量阶段共用监听快照，单项启动复用同一个查询函数实时检查。
+scan_start_listeners() (
+  set -o pipefail
+  local port="${1:-}" raw status=0 selector="-iTCP"
+  [ -z "$port" ] || selector="-iTCP:$port"
+  raw=$(lsof -nP -a "$selector" -sTCP:LISTEN -Fpn 2>&1) || status=$?
+  if [ "$status" -ne 0 ] && { [ "$status" -ne 1 ] || [ -n "$raw" ]; }; then
+    echo "✗ 无法查询监听端口: $raw" >&2
+    return 1
+  fi
+  # -nP 保留数字端口；最后一个冒号同时覆盖 IPv4、IPv6 和通配监听地址。
+  printf '%s\n' "$raw" | awk '
+    /^p[0-9]+$/ { pid=substr($0,2); next }
+    /^f/ { next }
+    /^n/ {
+      port=$0; sub(/^.*:/,"",port)
+      if (pid != "" && port ~ /^[0-9]+$/) { print port, pid; next }
+    }
+    NF { invalid=1 }
+    END { if (invalid) exit 1 }
+  ' | LC_ALL=C sort -u || {
+    echo "✗ 无法解析监听端口查询结果" >&2
+    return 1
+  }
+)
+
+begin_start_listener_batch() {
+  START_LISTENER_SNAPSHOT=$(scan_start_listeners) || return 1
+  START_LISTENER_BATCH=true
+}
+
+end_start_listener_batch() {
+  START_LISTENER_BATCH=false
+  START_LISTENER_SNAPSHOT=""
+}
+
+require_started_process() {
+  local name="$1" pid="$2"
+  if [ -z "$pid" ] || ! kill -0 "$pid" 2>/dev/null; then
+    echo "✗ ${name} 启动进程已退出 (PID: ${pid:-missing})，不能报告就绪" >&2
+    return 1
+  fi
+}
+
+# 返回 0 可以启动，1 受管进程已运行；冲突或检查失败直接中断当前启动任务。
 check_service_running() {
-    local service_name=$1
-    local port=$2
-    local pidfile=".dev-pids/${service_name}.pid"
-
-    # 检查 PID 文件
-    if [ -f "$pidfile" ]; then
-        local pid=$(cat "$pidfile" 2>/dev/null)
-        if [ -n "$pid" ] && ps -p "$pid" > /dev/null 2>&1; then
-            echo -e "${YELLOW}⚠️  ${service_name} 已在运行 (PID: $pid)，跳过启动${NC}"
-            return 1
-        fi
+  local service_name="$1" port="${2:-}"
+  local pidfile=".dev-pids/${service_name}.pid" pid listeners proc_cmd
+  if [ -f "$pidfile" ]; then
+    pid=$(cat "$pidfile" 2>/dev/null)
+    if [ -n "$pid" ] && ps -p "$pid" > /dev/null 2>&1; then
+      echo -e "${YELLOW}⚠️  ${service_name} 已在运行 (PID: $pid)，跳过启动${NC}"
+      return 1
     fi
+  fi
+  [ -n "$port" ] || return 0
 
-    # 检查端口占用（如果提供了端口参数）
-    # 注意：必须加 -sTCP:LISTEN，只检查真正监听该端口的进程
-    # 不加此标志会匹配所有 TCP 连接（包括浏览器等作为客户端的临时出站连接），导致误报
-    if [ -n "$port" ]; then
-        if lsof -ti :$port -sTCP:LISTEN > /dev/null 2>&1; then
-            local occupying_pid=$(lsof -ti :$port -sTCP:LISTEN)
-            local proc_cmd=$(ps -p $occupying_pid -o command= 2>/dev/null || echo "")
-
-            # 检查是否是 ADDP 相关进程
-            if echo "$proc_cmd" | grep -qE "(addp-|go run|vite|api_server\.py|uvicorn|jupyter.*lab|agent/backend/main\.py|copilot/backend/main\.py)"; then
-                echo -e "${RED}✗ 端口 $port 已被 ADDP 进程占用 (PID: $occupying_pid)${NC}"
-                echo -e "${YELLOW}  进程: $(echo "$proc_cmd" | cut -c1-80)${NC}"
-                echo -e "${RED}✗ 无法启动 ${service_name}，可能是旧进程未清理${NC}"
-                echo -e "${YELLOW}提示: 运行 'bash scripts/dev/stop.sh' 停止所有服务${NC}"
-            else
-                echo -e "${RED}✗ 端口 $port 已被非 ADDP 进程占用 (PID: $occupying_pid)${NC}"
-                echo -e "${YELLOW}  进程: $(echo "$proc_cmd" | cut -c1-80)${NC}"
-                echo -e "${RED}✗ 无法启动 ${service_name}${NC}"
-                echo -e "${YELLOW}解决方案:${NC}"
-                echo -e "${YELLOW}  选项 A: 关闭占用端口的进程 (kill $occupying_pid)${NC}"
-                echo -e "${YELLOW}  选项 B: 修改 .env 中的端口配置并重新启动${NC}"
-            fi
-            return 1
-        fi
-    fi
-
-    return 0
+  if [ "${START_LISTENER_BATCH:-false}" = true ]; then
+    listeners=$(printf '%s\n' "$START_LISTENER_SNAPSHOT" | awk -v port="$port" '$1 == port { print $2 }')
+    [ -n "$listeners" ] || return 0
+  fi
+  # 单项检查或快照命中均实时核实，避免已退出的监听者产生假冲突。
+  listeners=$(scan_start_listeners "$port") || exit 1
+  listeners=$(printf '%s\n' "$listeners" | awk -v port="$port" '$1 == port { print $2 }')
+  [ -n "$listeners" ] || return 0
+  for pid in $listeners; do
+    proc_cmd=$(ps -p "$pid" -o command= 2>/dev/null || true)
+    [ -n "$proc_cmd" ] || continue
+    echo "✗ ${service_name} 端口 ${port} 已被未受管进程占用 (PID: ${pid})" >&2
+    echo "  进程: ${proc_cmd:0:120}" >&2
+    echo "  请停止占用进程或调整端口配置后重试" >&2
+    exit 1
+  done
+  return 0
 }
 
 # ============================================================
@@ -1094,7 +1124,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   fi
 
   # 等待所有编译完成；任何一个构建失败都禁止进入服务启动阶段。
-  if ! addp_wait_for_parallel_builds "${BUILD_PIDS[@]}"; then
+  if ! addp_wait_for_parallel_tasks "构建" "${BUILD_PIDS[@]}"; then
     echo -e "${RED}✗ 一个或多个后端服务编译失败，已终止启动${NC}"
     exit 1
   fi
@@ -1107,8 +1137,49 @@ fi
 # ============================================================
 # Phase 2: 并行启动所有 Backend 服务
 # ============================================================
+# 一个模块的 Worker 只等待自己的 Backend；不同模块的等待任务并行。
+start_module_workers() (
+  local module="$1" backend_pid="$2" port="$3"
+  shift 3
+  local attempt=0 worker pid
+  while true; do
+    require_started_process "$module" "$backend_pid" || return 1
+    if curl -fsS --max-time 2 "http://localhost:${port}/health/ready" >/dev/null 2>&1; then
+      require_started_process "$module" "$backend_pid" || return 1
+      break
+    fi
+    attempt=$((attempt + 1))
+    if [ "$attempt" -ge 30 ]; then
+      echo "✗ ${module} Backend 未就绪，不启动对应 Worker" >&2
+      return 1
+    fi
+    sleep 1
+  done
+  for worker in "$@"; do
+    if check_service_running "$worker" ""; then
+      ".dev-bins/addp-${worker}" > "logs/${worker}.log" 2>&1 &
+      pid=$!
+      echo "$pid" > ".dev-pids/${worker}.pid"
+      echo "  ✓ ${worker} 已启动，所属 Backend 已就绪 (PID: $pid)"
+    fi
+  done
+)
+
+require_started_backends() {
+  local started_backend name pid
+  if [ "${#BACKEND_STARTS[@]}" -gt 0 ]; then
+    for started_backend in "${BACKEND_STARTS[@]}"; do
+      IFS=':' read -r name pid <<< "$started_backend"
+      require_started_process "$name" "$pid" || return 1
+    done
+  fi
+}
+
+BACKEND_STARTS=()
+WORKER_START_PIDS=()
 if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ "$START_TRANSFER_BACKEND" = true ] || [ "$START_ORCHESTRATOR_BACKEND" = true ] || [ "$START_DEVELOP_BACKEND" = true ] || [ "$START_SERVICE_BACKEND" = true ] || [ "$START_QUALITY_BACKEND" = true ] || [ "$START_SECURITY_BACKEND" = true ] || [ "$START_STANDARD_BACKEND" = true ] || [ "$START_MONITOR_BACKEND" = true ] || [ "$START_MODEL_BACKEND" = true ] || [ "$START_ASSET_BACKEND" = true ] || [ "$START_CATALOG_BACKEND" = true ] || [ "$START_PORTAL_BACKEND" = true ] || [ "$START_GRAPH_BACKEND" = true ] || [ "$START_INFERENCE_BACKEND" = true ]; then
   echo "  [2/3] 并行启动 Backends..."
+  begin_start_listener_batch
 
   # 启动 Manager Backend（带检查）
   if [ "$START_MANAGER_BACKEND" = true ]; then
@@ -1116,6 +1187,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
       .dev-bins/addp-manager > logs/manager-backend.log 2> logs/manager-backend-stderr.log &
       MANAGER_PID=$!
       echo $MANAGER_PID > .dev-pids/manager.pid
+      BACKEND_STARTS+=("manager:$MANAGER_PID")
     else
       MANAGER_PID=$(cat .dev-pids/manager.pid 2>/dev/null)
     fi
@@ -1127,6 +1199,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
       .dev-bins/addp-meta > logs/meta-backend.log 2> logs/meta-backend-stderr.log &
       META_PID=$!
       echo $META_PID > .dev-pids/meta.pid
+      BACKEND_STARTS+=("meta:$META_PID")
     else
       META_PID=$(cat .dev-pids/meta.pid 2>/dev/null)
     fi
@@ -1138,6 +1211,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
       .dev-bins/addp-transfer > logs/transfer-backend.log 2> logs/transfer-backend-stderr.log &
       TRANSFER_PID=$!
       echo $TRANSFER_PID > .dev-pids/transfer.pid
+      BACKEND_STARTS+=("transfer:$TRANSFER_PID")
     else
       TRANSFER_PID=$(cat .dev-pids/transfer.pid 2>/dev/null)
     fi
@@ -1149,6 +1223,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
       .dev-bins/addp-orchestrator > logs/orchestrator-backend.log 2> logs/orchestrator-backend-stderr.log &
       ORCHESTRATOR_PID=$!
       echo $ORCHESTRATOR_PID > .dev-pids/orchestrator.pid
+      BACKEND_STARTS+=("orchestrator:$ORCHESTRATOR_PID")
     else
       ORCHESTRATOR_PID=$(cat .dev-pids/orchestrator.pid 2>/dev/null)
     fi
@@ -1160,6 +1235,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
       .dev-bins/addp-develop > logs/develop-backend.log 2> logs/develop-backend-stderr.log &
       DEVELOP_PID=$!
       echo $DEVELOP_PID > .dev-pids/develop.pid
+      BACKEND_STARTS+=("develop:$DEVELOP_PID")
     else
       DEVELOP_PID=$(cat .dev-pids/develop.pid 2>/dev/null)
     fi
@@ -1171,6 +1247,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
       .dev-bins/addp-service > logs/service-backend.log 2> logs/service-backend-stderr.log &
       SERVICE_PID=$!
       echo $SERVICE_PID > .dev-pids/service.pid
+      BACKEND_STARTS+=("service:$SERVICE_PID")
     else
       SERVICE_PID=$(cat .dev-pids/service.pid 2>/dev/null)
     fi
@@ -1182,6 +1259,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
       .dev-bins/addp-monitor > logs/monitor-backend.log 2> logs/monitor-backend-stderr.log &
       MONITOR_PID=$!
       echo $MONITOR_PID > .dev-pids/monitor.pid
+      BACKEND_STARTS+=("monitor:$MONITOR_PID")
     else
       MONITOR_PID=$(cat .dev-pids/monitor.pid 2>/dev/null)
     fi
@@ -1193,6 +1271,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
       .dev-bins/addp-standard > logs/standard-backend.log 2> logs/standard-backend-stderr.log &
       STANDARD_PID=$!
       echo $STANDARD_PID > .dev-pids/standard.pid
+      BACKEND_STARTS+=("standard:$STANDARD_PID")
     else
       STANDARD_PID=$(cat .dev-pids/standard.pid 2>/dev/null)
     fi
@@ -1204,6 +1283,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
       .dev-bins/addp-model > logs/model-backend.log 2> logs/model-backend-stderr.log &
       MODEL_PID=$!
       echo $MODEL_PID > .dev-pids/model.pid
+      BACKEND_STARTS+=("model:$MODEL_PID")
     else
       MODEL_PID=$(cat .dev-pids/model.pid 2>/dev/null)
     fi
@@ -1215,6 +1295,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
       .dev-bins/addp-quality > logs/quality-backend.log 2> logs/quality-backend-stderr.log &
       QUALITY_PID=$!
       echo $QUALITY_PID > .dev-pids/quality.pid
+      BACKEND_STARTS+=("quality:$QUALITY_PID")
     else
       QUALITY_PID=$(cat .dev-pids/quality.pid 2>/dev/null)
     fi
@@ -1225,6 +1306,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
       .dev-bins/addp-security > logs/security-backend.log 2> logs/security-backend-stderr.log &
       SECURITY_PID=$!
       echo $SECURITY_PID > .dev-pids/security.pid
+      BACKEND_STARTS+=("security:$SECURITY_PID")
     else
       SECURITY_PID=$(cat .dev-pids/security.pid 2>/dev/null)
     fi
@@ -1236,6 +1318,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
       .dev-bins/addp-asset > logs/asset-backend.log 2> logs/asset-backend-stderr.log &
       ASSET_PID=$!
       echo $ASSET_PID > .dev-pids/asset.pid
+      BACKEND_STARTS+=("asset:$ASSET_PID")
     else
       ASSET_PID=$(cat .dev-pids/asset.pid 2>/dev/null)
     fi
@@ -1247,6 +1330,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
       .dev-bins/addp-catalog > logs/catalog-backend.log 2> logs/catalog-backend-stderr.log &
       CATALOG_PID=$!
       echo $CATALOG_PID > .dev-pids/catalog.pid
+      BACKEND_STARTS+=("catalog:$CATALOG_PID")
     else
       CATALOG_PID=$(cat .dev-pids/catalog.pid 2>/dev/null)
     fi
@@ -1258,6 +1342,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
       .dev-bins/addp-workbench > logs/workbench-backend.log 2> logs/workbench-backend-stderr.log &
       WORKBENCH_PID=$!
       echo $WORKBENCH_PID > .dev-pids/workbench.pid
+      BACKEND_STARTS+=("workbench:$WORKBENCH_PID")
     else
       WORKBENCH_PID=$(cat .dev-pids/workbench.pid 2>/dev/null)
     fi
@@ -1269,6 +1354,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
       .dev-bins/addp-portal > logs/portal-backend.log 2> logs/portal-backend-stderr.log &
       PORTAL_PID=$!
       echo $PORTAL_PID > .dev-pids/portal.pid
+      BACKEND_STARTS+=("portal:$PORTAL_PID")
     else
       PORTAL_PID=$(cat .dev-pids/portal.pid 2>/dev/null)
     fi
@@ -1280,6 +1366,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
       .dev-bins/addp-graph > logs/graph-backend.log 2> logs/graph-backend-stderr.log &
       GRAPH_PID=$!
       echo $GRAPH_PID > .dev-pids/graph.pid
+      BACKEND_STARTS+=("graph:$GRAPH_PID")
     else
       GRAPH_PID=$(cat .dev-pids/graph.pid 2>/dev/null)
     fi
@@ -1290,62 +1377,34 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
       .dev-bins/addp-inference > logs/inference-backend.log 2> logs/inference-backend-stderr.log &
       INFERENCE_PID=$!
       echo $INFERENCE_PID > .dev-pids/inference.pid
+      BACKEND_STARTS+=("inference:$INFERENCE_PID")
     else
       INFERENCE_PID=$(cat .dev-pids/inference.pid 2>/dev/null)
     fi
   fi
 
-  # 并行启动 Workers
+  # 每个模块独立等待自己的 Backend，就绪后启动该模块 Worker。
   if [ "$START_META_WORKER" = true ]; then
-    if check_service_running "meta-worker" ""; then
-      .dev-bins/addp-meta-worker > logs/meta-worker.log 2>&1 &
-      META_WORKER_PID=$!
-      echo $META_WORKER_PID > .dev-pids/meta-worker.pid
-    else
-      META_WORKER_PID=$(cat .dev-pids/meta-worker.pid 2>/dev/null)
-    fi
+    start_module_workers meta "$META_PID" "$META_BACKEND_PORT" meta-worker &
+    WORKER_START_PIDS+=($!)
   fi
-
   if [ "$START_QUALITY_WORKER" = true ]; then
-    if check_service_running "quality-worker" ""; then
-      .dev-bins/addp-quality-worker > logs/quality-worker.log 2>&1 &
-      QUALITY_WORKER_PID=$!
-      echo $QUALITY_WORKER_PID > .dev-pids/quality-worker.pid
-    else
-      QUALITY_WORKER_PID=$(cat .dev-pids/quality-worker.pid 2>/dev/null)
-    fi
+    start_module_workers quality "$QUALITY_PID" "$QUALITY_BACKEND_PORT" quality-worker &
+    WORKER_START_PIDS+=($!)
   fi
-
   if [ "$START_SECURITY_WORKER" = true ]; then
-    if check_service_running "security-worker" ""; then
-      .dev-bins/addp-security-worker > logs/security-worker.log 2>&1 &
-      SECURITY_WORKER_PID=$!
-      echo $SECURITY_WORKER_PID > .dev-pids/security-worker.pid
-    else
-      SECURITY_WORKER_PID=$(cat .dev-pids/security-worker.pid 2>/dev/null)
-    fi
+    start_module_workers security "$SECURITY_PID" "$SECURITY_BACKEND_PORT" security-worker &
+    WORKER_START_PIDS+=($!)
+  fi
+  TRANSFER_WORKERS=()
+  [ "$START_TRANSFER_BOUNDED_WORKER" != true ] || TRANSFER_WORKERS+=(transfer-bounded-worker)
+  [ "$START_TRANSFER_CONTINUOUS_WORKER" != true ] || TRANSFER_WORKERS+=(transfer-continuous-worker)
+  if [ "${#TRANSFER_WORKERS[@]}" -gt 0 ]; then
+    start_module_workers transfer "$TRANSFER_PID" "$TRANSFER_BACKEND_PORT" "${TRANSFER_WORKERS[@]}" &
+    WORKER_START_PIDS+=($!)
   fi
 
-  if [ "$START_TRANSFER_BOUNDED_WORKER" = true ]; then
-    if check_service_running "transfer-bounded-worker" ""; then
-      .dev-bins/addp-transfer-bounded-worker > logs/transfer-bounded-worker.log 2>&1 &
-      TRANSFER_BOUNDED_WORKER_PID=$!
-      echo $TRANSFER_BOUNDED_WORKER_PID > .dev-pids/transfer-bounded-worker.pid
-    else
-      TRANSFER_BOUNDED_WORKER_PID=$(cat .dev-pids/transfer-bounded-worker.pid 2>/dev/null)
-    fi
-  fi
-
-  if [ "$START_TRANSFER_CONTINUOUS_WORKER" = true ]; then
-    if check_service_running "transfer-continuous-worker" ""; then
-      .dev-bins/addp-transfer-continuous-worker > logs/transfer-continuous-worker.log 2>&1 &
-      TRANSFER_CONTINUOUS_WORKER_PID=$!
-      echo $TRANSFER_CONTINUOUS_WORKER_PID > .dev-pids/transfer-continuous-worker.pid
-    else
-      TRANSFER_CONTINUOUS_WORKER_PID=$(cat .dev-pids/transfer-continuous-worker.pid 2>/dev/null)
-    fi
-  fi
-
+  end_start_listener_batch
   echo -e "  ${GREEN}✓ 所有服务已启动，等待健康检查...${NC}"
 fi
 
@@ -1604,8 +1663,17 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   fi
 
   echo ""
-  echo -e "${GREEN}✓ 后端服务和选定 Worker 全部就绪${NC}"
 fi
+# 等待所有模块的 Worker 启动任务；父进程从正式 PID 文件回收身份。
+addp_wait_for_parallel_tasks "Worker 启动" "${WORKER_START_PIDS[@]}" || exit 1
+for worker_spec in "meta-worker|$START_META_WORKER|META_WORKER_PID" "quality-worker|$START_QUALITY_WORKER|QUALITY_WORKER_PID" "security-worker|$START_SECURITY_WORKER|SECURITY_WORKER_PID" "transfer-bounded-worker|$START_TRANSFER_BOUNDED_WORKER|TRANSFER_BOUNDED_WORKER_PID" "transfer-continuous-worker|$START_TRANSFER_CONTINUOUS_WORKER|TRANSFER_CONTINUOUS_WORKER_PID"; do
+  IFS='|' read -r worker_name worker_selected worker_pid_var <<< "$worker_spec"
+  if [ "$worker_selected" = true ]; then
+    worker_pid=$(cat ".dev-pids/${worker_name}.pid")
+    printf -v "$worker_pid_var" '%s' "$worker_pid"
+    BACKEND_STARTS+=("$worker_name:$worker_pid")
+  fi
+done
 echo "  Manager Backend:    PID $MANAGER_PID (http://localhost:${MANAGER_BACKEND_PORT})"
 echo "  Meta Backend:       PID $META_PID (http://localhost:${META_BACKEND_PORT})"
 echo "  Transfer Backend:   PID $TRANSFER_PID (http://localhost:${TRANSFER_BACKEND_PORT})"
@@ -1619,9 +1687,14 @@ echo "  Transfer Bounded Worker: PID $TRANSFER_BOUNDED_WORKER_PID"
 echo "  Transfer Continuous Worker: PID $TRANSFER_CONTINUOUS_WORKER_PID"
 echo ""
 
-# DuckDB Runtime 必须在 System 和 Meta 就绪后启动。扩展只在启动准备阶段
-# 下载并校验，请求处理阶段仅允许从本地目录 LOAD。
-if [ "$START_DUCKDB" = true ]; then
+# 快照后端口仍可能被其他进程抢占；HTTP 成功不能掩盖新进程退出。
+if [ "${#BACKEND_STARTS[@]}" -gt 0 ]; then
+  require_started_backends || exit 1
+  echo -e "${GREEN}✓ 后端服务和选定 Worker 全部就绪${NC}"
+fi
+
+# DuckDB 等 Runtime 保留现有 Go 后端就绪前置条件。
+start_runtime_duckdb() (
   echo -e "${YELLOW}Step 3.5/5: 准备并启动 DuckDB Federated Query Runtime${NC}"
   if curl -fsS "http://localhost:${DUCKDB_RUNTIME_PORT}/health" > /dev/null 2>&1; then
     DUCKDB_LISTENER_PID=$(lsof -ti :"${DUCKDB_RUNTIME_PORT}" -sTCP:LISTEN 2>/dev/null | head -1)
@@ -1672,12 +1745,9 @@ if [ "$START_DUCKDB" = true ]; then
   echo ""
   echo -e "${GREEN}✓ DuckDB Runtime 就绪 (PID: ${DUCKDB_PID}, 端口: ${DUCKDB_RUNTIME_PORT})${NC}"
   echo ""
-fi
+)
 
-# ============================================================
-# Step 4: Start GeoPython Workflow (Docker runtime)
-# ============================================================
-if [ "$START_PYTHON_WORKFLOW" = true ]; then
+start_runtime_geopython() (
   echo -e "${YELLOW}Step 4/5: 启动 GeoPython Workflow...${NC}"
 
 geopython_workflow_source_fingerprint() {
@@ -1794,16 +1864,9 @@ else
   echo -e "${GREEN}✓ GeoPython Workflow 已在运行 (Runtime: $GEOPYTHON_WORKFLOW_PID)${NC}"
 fi
   echo ""
-else
-  echo -e "${YELLOW}Step 4/5: 跳过 GeoPython Workflow${NC}"
-  echo ""
-fi
+)
 
-# ============================================================
-# Step 4.2: Start Math Workflow Engine (Python service)
-# ============================================================
-
-if [ "$START_MATH_WORKFLOW" = true ]; then
+start_runtime_math() (
   echo -e "${BLUE}Step 4.2/5: 启动 Math Workflow Engine${NC}"
 
 # 检查并创建虚拟环境（幂等）
@@ -1843,9 +1906,9 @@ if [ "$NEED_INSTALL" = true ]; then
     fi
 
     # 升级 pip 并安装依赖
-    $PIP_CMD --upgrade pip
-    $PIP_CMD -r requirements.txt
-    $PIP_CMD -e ../../common-python
+    addp_with_python_dependency_lock "$ROOT_DIR" $PIP_CMD --upgrade pip
+    addp_with_python_dependency_lock "$ROOT_DIR" $PIP_CMD -r requirements.txt
+    addp_with_python_dependency_lock "$ROOT_DIR" $PIP_CMD -e ../../common-python
 
     if [ $? -eq 0 ]; then
         echo -e "${GREEN}✓ Python 依赖安装完成${NC}"
@@ -1875,7 +1938,7 @@ if check_service_running "math-workflow-engine" "$MATH_WORKFLOW_PORT"; then
   echo -n "  等待服务就绪"
   MAX_WAIT=60
   WAIT_COUNT=0
-  while ! curl -s http://localhost:${MATH_WORKFLOW_PORT}/health > /dev/null 2>&1; do
+  while ! curl -fsS --max-time 2 http://localhost:${MATH_WORKFLOW_PORT}/health > /dev/null 2>&1; do
     sleep 1
     echo -n "."
     WAIT_COUNT=$((WAIT_COUNT + 1))
@@ -1894,16 +1957,9 @@ else
   echo -e "${GREEN}✓ Math Workflow Engine 已在运行 (PID: $MATH_WORKFLOW_PID)${NC}"
 fi
   echo ""
-else
-  echo -e "${YELLOW}Step 4.2/5: 跳过 Math Workflow Engine${NC}"
-  echo ""
-fi
+)
 
-# ============================================================
-# Step 4.3: Start Model3D Workflow Engine (Python service)
-# ============================================================
-
-if [ "$START_MODEL3D_WORKFLOW" = true ]; then
+start_runtime_model3d() (
   echo -e "${BLUE}Step 4.3/5: 启动 Model3D Workflow Engine${NC}"
 
 NEED_INSTALL=false
@@ -1936,9 +1992,9 @@ if [ "$NEED_INSTALL" = true ]; then
         fi
     fi
 
-    $PIP_CMD --upgrade pip
-    $PIP_CMD -r requirements.txt
-    $PIP_CMD -e ../../common-python
+    addp_with_python_dependency_lock "$ROOT_DIR" $PIP_CMD --upgrade pip
+    addp_with_python_dependency_lock "$ROOT_DIR" $PIP_CMD -r requirements.txt
+    addp_with_python_dependency_lock "$ROOT_DIR" $PIP_CMD -e ../../common-python
 
     if [ $? -eq 0 ]; then
         echo -e "${GREEN}✓ Python 依赖安装完成${NC}"
@@ -1968,7 +2024,7 @@ start_model3d_workflow_engine_process() {
   echo -n "  等待服务就绪"
   MAX_WAIT=60
   WAIT_COUNT=0
-  while ! curl -s http://localhost:${MODEL3D_WORKFLOW_PORT}/health > /dev/null 2>&1; do
+  while ! curl -fsS --max-time 2 http://localhost:${MODEL3D_WORKFLOW_PORT}/health > /dev/null 2>&1; do
     sleep 1
     echo -n "."
     WAIT_COUNT=$((WAIT_COUNT + 1))
@@ -2006,16 +2062,9 @@ else
   echo -e "${GREEN}✓ Model3D Workflow Engine 已在运行 (PID: $MODEL3D_WORKFLOW_PID)${NC}"
 fi
   echo ""
-else
-  echo -e "${YELLOW}Step 4.3/5: 跳过 Model3D Workflow Engine${NC}"
-  echo ""
-fi
+)
 
-# ============================================================
-# Step 4.4: Start PointCloud Workflow Engine (Docker runtime)
-# ============================================================
-
-if [ "$START_POINTCLOUD_WORKFLOW" = true ]; then
+start_runtime_pointcloud() (
   echo -e "${BLUE}Step 4.4/5: 启动 PointCloud Workflow Engine${NC}"
 
 pointcloud_workflow_source_fingerprint() {
@@ -2163,16 +2212,9 @@ else
   fi
 fi
   echo ""
-else
-  echo -e "${YELLOW}Step 4.4/5: 跳过 PointCloud Workflow Engine${NC}"
-  echo ""
-fi
+)
 
-# ============================================================
-# Step 4.44: Start Document Workflow Engine (Docker runtime)
-# ============================================================
-
-if [ "$START_DOCUMENT_WORKFLOW" = true ]; then
+start_runtime_document() (
   echo -e "${BLUE}Step 4.44/5: 启动 Document Workflow Engine${NC}"
 
 document_workflow_source_fingerprint() {
@@ -2283,16 +2325,9 @@ else
   start_document_workflow_engine_process
 fi
   echo ""
-else
-  echo -e "${YELLOW}Step 4.44/5: 跳过 Document Workflow Engine${NC}"
-  echo ""
-fi
+)
 
-# ============================================================
-# Step 4.45: Start SuperMap Workflow Engine (Docker runtime)
-# ============================================================
-
-if [ "$START_SUPERMAP_WORKFLOW" = true ]; then
+start_runtime_supermap() (
   echo -e "${BLUE}Step 4.45/5: 启动 SuperMap Workflow Engine${NC}"
 
 start_supermap_workflow_engine_process() {
@@ -2323,15 +2358,9 @@ else
   exit 1
 fi
   echo ""
-else
-  echo -e "${YELLOW}Step 4.45/5: 跳过 SuperMap Workflow Engine${NC}"
-  echo ""
-fi
+)
 
-# ============================================================
-# Step 4.5: Start Spark 工作流引擎 (Python service)
-# ============================================================
-if [ "$START_SPARK_WORKFLOW" = true ]; then
+start_runtime_spark() (
   echo -e "${YELLOW}Step 4.5/5: 启动 Spark 工作流引擎...${NC}"
 
   # 检查 Python 3 是否安装
@@ -2399,9 +2428,9 @@ if [ "$NEED_INSTALL" = true ]; then
     fi
 
     # 升级 pip 并安装依赖
-    $PIP_CMD --upgrade pip
-    $PIP_CMD -r requirements.txt
-    $PIP_CMD -e ../../common-python
+    addp_with_python_dependency_lock "$ROOT_DIR" $PIP_CMD --upgrade pip
+    addp_with_python_dependency_lock "$ROOT_DIR" $PIP_CMD -r requirements.txt
+    addp_with_python_dependency_lock "$ROOT_DIR" $PIP_CMD -e ../../common-python
 
     # 检查安装是否成功
     if [ $? -eq 0 ]; then
@@ -2458,21 +2487,15 @@ else
   echo -e "${GREEN}✓ Spark 工作流引擎 已在运行 (PID: $SPARK_WORKFLOW_PID)${NC}"
 fi
   echo ""
-else
-  echo -e "${YELLOW}Step 4.5/5: 跳过 Spark 工作流引擎${NC}"
-  echo ""
-fi
+)
 
-# ============================================================
-# Step 4.6: Start Jupyter Engine (Python service)
-# ============================================================
-if [ "$START_JUPYTER" = true ]; then
+start_runtime_jupyter() (
   echo -e "${YELLOW}Step 4.6/5: 启动 Jupyter Engine...${NC}"
 
   ensure_jupyter_python_env "$ROOT_DIR"
 
 # 启动 Jupyter Engine
-if check_service_running "jupyter-engine" "$JUPYTER_API_PORT"; then
+if check_service_running "jupyter-api-server" "$JUPYTER_API_PORT"; then
   echo "启动 Jupyter Notebook Runtime..."
   cd engines/jupyter
 
@@ -2515,15 +2538,9 @@ else
   echo -e "  - API Server (PID: $API_SERVER_PID)"
 fi
   echo ""
-else
-  echo -e "${YELLOW}Step 4.6/5: 跳过 Jupyter Engine${NC}"
-  echo ""
-fi
+)
 
-# ============================================================
-# Step 5: Start Copilot Backend (Python/FastAPI service)
-# ============================================================
-if [ "$START_COPILOT_BACKEND" = true ]; then
+start_runtime_copilot() (
   echo -e "${YELLOW}Step 5/6: 启动 Copilot Backend...${NC}"
 
   # 检查并创建虚拟环境（幂等）
@@ -2564,8 +2581,8 @@ if [ "$NEED_INSTALL" = true ]; then
     fi
 
     # 升级 pip 并安装依赖
-    $PIP_CMD --upgrade pip
-    $PIP_CMD -r requirements.txt
+    addp_with_python_dependency_lock "$ROOT_DIR" $PIP_CMD --upgrade pip
+    addp_with_python_dependency_lock "$ROOT_DIR" $PIP_CMD -r requirements.txt
 
     if [ $? -eq 0 ]; then
         echo -e "${GREEN}✓ Copilot Python 依赖安装完成${NC}"
@@ -2618,15 +2635,9 @@ else
   echo -e "${GREEN}✓ Copilot Backend 已在运行 (PID: $COPILOT_PID)${NC}"
 fi
   echo ""
-else
-  echo -e "${YELLOW}Step 5/6: 跳过 Copilot Backend${NC}"
-  echo ""
-fi
+)
 
-# ============================================================
-# Step 5b: Start Agent Backend (Python/FastAPI service)
-# ============================================================
-if [ "$START_AGENT_BACKEND" = true ]; then
+start_runtime_agent() (
   echo -e "${YELLOW}Step 5b: 启动 Agent Backend...${NC}"
 
   NEED_INSTALL=false
@@ -2658,8 +2669,8 @@ if [ "$START_AGENT_BACKEND" = true ]; then
         PIP_CMD="$PIP_CMD --trusted-host $PIP_TRUSTED_HOST"
       fi
     fi
-    $PIP_CMD --upgrade pip
-    $PIP_CMD -r requirements.txt
+    addp_with_python_dependency_lock "$ROOT_DIR" $PIP_CMD --upgrade pip
+    addp_with_python_dependency_lock "$ROOT_DIR" $PIP_CMD -r requirements.txt
     if [ $? -eq 0 ]; then
       echo -e "${GREEN}✓ Agent Python 依赖安装完成${NC}"
     else
@@ -2704,10 +2715,57 @@ if [ "$START_AGENT_BACKEND" = true ]; then
     echo -e "${GREEN}✓ Agent Backend 已在运行 (PID: $AGENT_PID)${NC}"
   fi
   echo ""
-else
-  echo -e "${YELLOW}Step 5b: 跳过 Agent Backend${NC}"
-  echo ""
-fi
+)
+
+# Runtime 启动阶段：Go 后端就绪后并行执行，完成后才进入 Gateway/前端。
+start_selected_runtimes() {
+  local tasks=(
+    "duckdb|START_DUCKDB|DUCKDB_PID|duckdb"
+    "geopython|START_PYTHON_WORKFLOW|GEOPYTHON_WORKFLOW_PID|geopython-workflow-engine"
+    "math|START_MATH_WORKFLOW|MATH_WORKFLOW_PID|math-workflow-engine"
+    "model3d|START_MODEL3D_WORKFLOW|MODEL3D_WORKFLOW_PID|model3d-workflow-engine"
+    "pointcloud|START_POINTCLOUD_WORKFLOW|POINTCLOUD_WORKFLOW_PID|pointcloud-workflow-engine"
+    "document|START_DOCUMENT_WORKFLOW|DOCUMENT_WORKFLOW_PID|document-workflow-engine"
+    "supermap|START_SUPERMAP_WORKFLOW|SUPERMAP_WORKFLOW_PID|supermap-workflow-engine"
+    "spark|START_SPARK_WORKFLOW|SPARK_WORKFLOW_PID|spark-workflow-engine"
+    "jupyter|START_JUPYTER|API_SERVER_PID|jupyter-api-server"
+    "copilot|START_COPILOT_BACKEND|COPILOT_PID|copilot-backend"
+    "agent|START_AGENT_BACKEND|AGENT_PID|agent-backend"
+  )
+  local task name flag pidvar pidfile
+  local task_pids=()
+  local started=$SECONDS
+
+  echo "并行启动 Runtime/Python 服务..."
+  for task in "${tasks[@]}"; do
+    IFS='|' read -r name flag pidvar pidfile <<< "$task"
+    if [ "${!flag}" != true ]; then
+      printf -v "$pidvar" '%s' ''
+      continue
+    fi
+    (
+      task_started=$SECONDS
+      "start_runtime_${name}"
+      echo "✓ Runtime/Python ${name} 完成 ($((SECONDS - task_started))s)"
+    ) &
+    task_pids+=("$!")
+  done
+
+  if [ "${#task_pids[@]}" -gt 0 ] &&
+     ! addp_wait_for_parallel_tasks "Runtime/Python 启动" "${task_pids[@]}"; then
+    echo "✗ Runtime/Python 启动失败，停止后续 Gateway/前端启动" >&2
+    return 1
+  fi
+  for task in "${tasks[@]}"; do
+    IFS='|' read -r name flag pidvar pidfile <<< "$task"
+    [ "${!flag}" = true ] || continue
+    # PID 文件也是 stop.sh 的事实来源；未由脚本管理的复用服务可能没有 PID 文件。
+    printf -v "$pidvar" '%s' "$(cat "${ROOT_DIR}/.dev-pids/${pidfile}.pid" 2>/dev/null || true)"
+  done
+  echo "✓ Runtime/Python 全部就绪 ($((SECONDS - started))s)"
+}
+
+start_selected_runtimes
 
 # 6. 启动 Gateway
 if [ "$START_GATEWAY" = true ]; then
@@ -2888,6 +2946,7 @@ if [ "$START_CONSOLE" = true ] || [ "$START_SYSTEM_FRONTEND" = true ] || [ "$STA
   fi
 
   echo "并发启动所有前端..."
+  begin_start_listener_batch
 
   # 存储 PIDs（使用临时文件）
   FRONTEND_PID_FILE="/tmp/addp-frontend-pids-$$"
@@ -2902,7 +2961,7 @@ for config in "${FRONTEND_CONFIGS[@]}"; do
     (
       ensure_node_modules "$dir"
       cd "$dir"
-      npm run dev -- --host 0.0.0.0 --port "$port" > "../../logs/${name}-frontend.log" 2>&1
+      npm run dev -- --host 0.0.0.0 --port "$port" --strictPort > "../../logs/${name}-frontend.log" 2>&1
     ) &
 
     pid=$!
@@ -2916,6 +2975,7 @@ for config in "${FRONTEND_CONFIGS[@]}"; do
     fi
   fi
 done
+  end_start_listener_batch
 
 echo ""
 echo "并发等待所有前端就绪..."
@@ -2927,8 +2987,11 @@ for config in "${FRONTEND_CONFIGS[@]}"; do
   IFS=':' read -r name port dir <<< "$config"
 
   (
+    pid=$(grep "^${name}:" "$FRONTEND_PID_FILE" | cut -d: -f2)
+    require_started_process "$name" "$pid"
     WAIT_COUNT=0
     until curl -fsS "http://localhost:${port}" > /dev/null 2>&1; do
+      require_started_process "$name" "$pid"
       sleep 1
       WAIT_COUNT=$((WAIT_COUNT + 1))
       if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
@@ -2937,8 +3000,7 @@ for config in "${FRONTEND_CONFIGS[@]}"; do
         exit 1
       fi
     done
-    # 从临时文件中查找 PID
-    pid=$(grep "^${name}:" "$FRONTEND_PID_FILE" | cut -d: -f2)
+    require_started_process "$name" "$pid"
     echo -e "${GREEN}✓ ${name} Frontend 就绪 (PID: ${pid}, Port: ${port})${NC}"
   ) &
   HEALTH_CHECK_PIDS+=($!)
@@ -2971,6 +3033,7 @@ rm -f "$FRONTEND_PID_FILE"
 
 echo ""
 echo -e "${GREEN}========================================${NC}"
+require_started_backends || exit 1
 echo -e "${GREEN}✓ ADDP 开发环境启动完成！${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
@@ -3030,7 +3093,7 @@ echo "  PointCloud Workflow Engine: $POINTCLOUD_WORKFLOW_PID"
 echo "  Document Workflow Engine:   $DOCUMENT_WORKFLOW_PID"
 echo "  SuperMap Workflow Engine:  $SUPERMAP_WORKFLOW_PID"
 echo "  Spark 工作流引擎:  $SPARK_WORKFLOW_PID"
-echo "  Jupyter Engine:       $JUPYTER_PID"
+echo "  Jupyter Engine:       $API_SERVER_PID"
 echo "  Copilot Backend:      $COPILOT_PID"
 echo "  Monitor Backend:      $MONITOR_PID"
 echo "  Standard Backend:     $STANDARD_PID"
@@ -3087,7 +3150,8 @@ else
   echo -e "${YELLOW}Step 8/8: 跳过前端服务启动${NC}"
   echo ""
   echo -e "${GREEN}========================================${NC}"
-  echo -e "${GREEN}✓ ADDP 开发环境启动完成！${NC}"
+  require_started_backends || exit 1
+echo -e "${GREEN}✓ ADDP 开发环境启动完成！${NC}"
   echo -e "${GREEN}========================================${NC}"
   echo ""
   echo "停止所有服务: make dev-stop 或 ./scripts/dev/stop.sh"

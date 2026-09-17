@@ -475,7 +475,7 @@ DuckDB Runtime 第一阶段声明 `runtime_api="addp.query-runtime/v1"`、`sourc
 
 首批实例认证限定为现有真实门禁覆盖的 PostgreSQL 15 与原生 MySQL 8.0（用户确认）。版本判断分别位于原生插件，不新增中心引擎或版本名单；其他版本与兼容产品须由其独立实现和对应门禁扩展，不能仅凭协议兼容通过。
 
-原生认证在调用方提供的同一连接／事务中只读获取事实，再通过共享编译器生成固定、无业务来源的语义探测。PG 要求服务器与客户端 UTF8；MySQL 要求连接、客户端及结果字符集均为 utf8mb4，并拒绝 READ-UNCOMMITTED。探测核验精确整数／decimal、日期范围与月份偏移、NULL、文本大小写和尾空格。已知条件不满足返回 supported=false 与稳定诊断码；连接、权限、取消、超时等探测错误返回 error，不能降格为成功或缓存旧结论。探测默认最长 5 秒并尊重更短的调用方 deadline。
+原生认证在调用方提供的同一连接／事务中只读获取事实，再通过共享编译器生成固定、无业务来源的语义探测。PG 要求服务器与客户端 UTF8；MySQL 要求连接、客户端及结果字符集均为 utf8mb4，并拒绝 READ-UNCOMMITTED。探测核验精确整数／decimal、日期范围与月份偏移、NULL、文本大小写、尾空格和字面子串包含。已知条件不满足返回 supported=false 与稳定诊断码；连接、权限、取消、超时等探测错误返回 error，不能降格为成功或缓存旧结论。探测默认最长 5 秒并尊重更短的调用方 deadline。
 
 认证原语返回 SupportReport，不能直接发布 AnalyticalCapability 或替代完整 CI 语义矩阵。正式注册时复用 InstanceCapabilitiesResolver；执行前还须在现有 PreparedQuery 的同一受控事务内复核实例条件与来源事实，并保证可靠隔离。MySQL 逐表事务语义属于来源复核范围，不能从默认存储引擎推断所有来源表。认证不得在启动／readiness 中运行，不写入或修改会话配置。
 

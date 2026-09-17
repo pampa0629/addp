@@ -71,7 +71,12 @@ while IFS= read -r ref; do
     dependency_inconsistent=0
 
     while IFS= read -r mod; do
-        actual=$(awk -v dep="$dep" '$1 == dep { print $2; exit }' "$mod")
+        actual=$(awk -v dep="$dep" '
+            $1 == "require" && $2 == dep { print $3; exit }
+            $1 == "require" && $2 == "(" { in_require = 1; next }
+            $1 == ")" { in_require = 0; next }
+            in_require && $1 == dep { print $2; exit }
+        ' "$mod")
         if [ -z "$actual" ]; then
             continue
         fi
@@ -79,7 +84,7 @@ while IFS= read -r ref; do
         dependency_declarations=$((dependency_declarations + 1))
         CHECKED_DECLARATIONS=$((CHECKED_DECLARATIONS + 1))
         if [ "$actual" != "$expected" ]; then
-            echo "  ❌ $dep: 规约 $expected，$mod 声明 $actual"
+            echo "  ❌ $dep: 规约 ${expected}，$mod 声明 $actual"
             dependency_inconsistent=1
             INCONSISTENT=1
         fi

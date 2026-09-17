@@ -85,3 +85,21 @@ func TestCompileExpressionRejectsInvalidAndUnsupported(t *testing.T) {
 func (expressionTestDialect) ShiftMonths(date, months string) string {
 	return "SHIFT_MONTHS(" + date + "," + months + ")"
 }
+
+func (expressionTestDialect) Contains(value, substring string) string {
+	return "SUBSTRING_MATCH(" + value + "," + substring + ")"
+}
+
+func TestContainsUsesNativeStrategyAndRejectsNonText(t *testing.T) {
+	p := plan.Expr{Op: "parameter", Parameter: "p"}
+	scope := ExpressionScope{Parameters: []plan.Parameter{{Name: "p", Type: datatype.FieldTypeString}}}
+	e := plan.Expr{Op: "contains", Args: []plan.Expr{p, p}}
+	result, err := CompileExpression(e, scope, expressionTestDialect{})
+	if err != nil || result.SQL != "SUBSTRING_MATCH(TYPED(:p,string),TYPED(:p,string))" || result.Type != datatype.FieldTypeBool {
+		t.Fatalf("%#v %v", result, err)
+	}
+	scope.Parameters[0].Type = datatype.FieldTypeInt
+	if _, err := CompileExpression(e, scope, expressionTestDialect{}); !errors.Is(err, plugin.ErrAnalyticalInvalid) {
+		t.Fatal(err)
+	}
+}

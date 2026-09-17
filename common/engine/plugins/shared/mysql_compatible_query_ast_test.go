@@ -61,6 +61,9 @@ func TestMySQLAnalyticalASTRejectsUnprovenEffects(t *testing.T) {
 		`SELECT business.count(id) FROM orders`,
 		`SELECT business.char_length(id) FROM orders`,
 		`SELECT business.substring(id, 1, 4) FROM orders`,
+		`SELECT business.locate('a', id) FROM orders`,
+		`SELECT locate('a', id) OVER () FROM orders`,
+		`SELECT locate(load_file('/tmp/private'), id) FROM orders`,
 		`SELECT substring(id, 1, 4) OVER () FROM orders`,
 		`SELECT char_length(id) OVER () FROM orders`,
 		`SELECT business.truncate(total_amount, 0) FROM orders`,
@@ -170,4 +173,22 @@ func TestMySQLCalendarScalarPreservesSourceWithoutDirectLineage(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestMySQLContainsPreservesReadClosureAndDirectProjection(t *testing.T) {
+	p := testMySQLCompatibleQueryProvenance("MySQL")
+	query := `SELECT id, LOCATE(CAST('a%_' AS binary), CAST(nickname AS binary)) > 0 AS matched FROM persons WHERE LOCATE(CAST('a' AS binary), CAST(nickname AS binary)) > 0`
+	refs, err := p.inspectReadReferences(query)
+	if err != nil || len(refs) != 1 || refs[0].Name != "persons" {
+		t.Fatalf("%#v %v", refs, err)
+	}
+	statement, err := parseMySQLReadQuery(query)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lineage, err := p.resolveSelectOutputLineage("business", statement, []plugin.QueryOutputSource{testMySQLCompatibleLineageSource(23, "business", "persons", "id", "nickname")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertMySQLCompatibleLineageBindings(t, lineage, "persons", map[string]string{"id": "id"})
 }

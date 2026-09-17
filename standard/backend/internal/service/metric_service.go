@@ -92,7 +92,7 @@ func (s *MetricService) GetMetricAt(id, tenantID int64, asOf time.Time) (*models
 	return s.metricRepo.GetAggregateAt(id, tenantID, asOf)
 }
 
-func (s *MetricService) CreateMetric(req *models.CreateMetricRequest, tenantID, userID int64) (*models.MetricDefinitionAggregate, error) {
+func (s *MetricService) CreateMetric(req *models.CreateMetricRequest, tenantID, userID int64, initialSummary string) (*models.MetricDefinitionAggregate, error) {
 	scopeType, err := validateTenantStandardScope(s.refs, tenantID, req.ScopeType, req.OwnerDomainID)
 	if err != nil {
 		return nil, err
@@ -111,11 +111,11 @@ func (s *MetricService) CreateMetric(req *models.CreateMetricRequest, tenantID, 
 	if exists {
 		return nil, commonapi.ErrConflict
 	}
-	revision, dependencies, err := s.revisionFromCreate(req, tenantID, userID)
+	revision, dependencies, err := s.revisionFromCreate(req, tenantID, userID, initialSummary)
 	if err != nil {
 		return nil, err
 	}
-	identity := &models.MetricDefinition{TenantID: tenantID, CategoryID: req.CategoryID, ScopeType: scopeType, OwnerDomainID: req.OwnerDomainID, Code: code, StewardID: req.StewardID, Tags: req.Tags, CreatedBy: userID, LifecycleState: "active"}
+	identity := &models.MetricDefinition{TenantID: tenantID, CategoryID: req.CategoryID, ScopeType: scopeType, OwnerDomainID: req.OwnerDomainID, Code: code, Tags: req.Tags, CreatedBy: userID, LifecycleState: "active"}
 	if err := s.metricRepo.Create(identity, revision, dependencies); err != nil {
 		return nil, mapMetricRevisionError(err)
 	}
@@ -134,7 +134,7 @@ func (s *MetricService) UpdateMetric(id, tenantID, userID int64, req *models.Upd
 	if err != nil {
 		return nil, err
 	}
-	identity.CategoryID, identity.ScopeType, identity.OwnerDomainID, identity.StewardID, identity.Tags, identity.UpdatedBy = req.CategoryID, scopeType, req.OwnerDomainID, req.StewardID, req.Tags, &userID
+	identity.CategoryID, identity.ScopeType, identity.OwnerDomainID, identity.Tags, identity.UpdatedBy = req.CategoryID, scopeType, req.OwnerDomainID, req.Tags, &userID
 	if err := s.metricRepo.UpdateIdentity(identity, req.Version); err != nil {
 		return nil, err
 	}
@@ -232,8 +232,8 @@ func (s *MetricService) DeleteMetric(ctx context.Context, id, tenantID int64) er
 	})
 }
 
-func (s *MetricService) revisionFromCreate(req *models.CreateMetricRequest, tenantID, userID int64) (*models.MetricDefinitionRevision, []models.MetricDefinitionRevisionDependency, error) {
-	revision := &models.MetricDefinitionRevision{MetricType: strings.TrimSpace(req.MetricType), Name: strings.TrimSpace(req.Name), Definition: strings.TrimSpace(req.Definition), StatisticalCaliber: strings.TrimSpace(req.StatisticalCaliber), SemanticFormula: strings.TrimSpace(req.SemanticFormula), UnitID: req.UnitID, ChangeSummary: strings.TrimSpace(req.ChangeSummary), EffectiveFrom: req.EffectiveFrom, EffectiveTo: req.EffectiveTo, CreatedBy: userID}
+func (s *MetricService) revisionFromCreate(req *models.CreateMetricRequest, tenantID, userID int64, initialSummary string) (*models.MetricDefinitionRevision, []models.MetricDefinitionRevisionDependency, error) {
+	revision := &models.MetricDefinitionRevision{MetricType: strings.TrimSpace(req.MetricType), Name: strings.TrimSpace(req.Name), Definition: strings.TrimSpace(req.Definition), StatisticalCaliber: strings.TrimSpace(req.StatisticalCaliber), SemanticFormula: strings.TrimSpace(req.SemanticFormula), UnitID: req.UnitID, ChangeSummary: strings.TrimSpace(initialSummary), EffectiveFrom: req.EffectiveFrom, EffectiveTo: req.EffectiveTo, CreatedBy: userID}
 	dependencies := metricDependencies(req.Dependencies)
 	if err := s.validateRevision(revision, dependencies, tenantID); err != nil {
 		return nil, nil, err

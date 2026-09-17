@@ -233,6 +233,7 @@ Console 公开路由与 System standalone 路由使用同一模块内 path 和 q
 
 - 只增加新的 `NNNNNN_name.up.sql`，不修改已发布 migration；
 - 已执行 migration 的版本号、文件名和内容摘要必须保持不变；概念收敛或方案重做也必须使用新版本向前迁移；
+- Quality 域引用权限的已执行 `000149` 保持原始摘要；后续域读取授权与服务身份刷新使用 `000150`。回归测试须从原始 149 已执行状态升级，校验历史摘要保持不变及重复启动幂等，不能只验证空库迁移。
 - Permission/Role Catalog 变化由聚合器生成确定性输入，再进入新的向前 migration；
 - 破坏性模型切换不保留旧字段、双写、双读或兼容 query；
 - 需要保留的外部数据必须另行批准离线导入方案，不进入 System Runtime；

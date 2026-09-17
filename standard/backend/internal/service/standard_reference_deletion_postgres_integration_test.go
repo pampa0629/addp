@@ -105,7 +105,7 @@ func TestPostgresStandardReferenceDeletionSerializesConcurrentDeletes(t *testing
 	client := commonclient.NewModelClient(server.URL, commonclient.ServiceTokenProviderFunc(func(context.Context, uint) (string, error) {
 		return "standard-runtime-token", nil
 	}), server.Client())
-	svc := NewStandardReferenceDeletionService(db, client)
+	svc := NewStandardReferenceDeletionService(db, client, newDeletionQualityClient(t, nil))
 	domainRepo := repository.NewDomainRepository(db)
 	var deleteCalls atomic.Int32
 	deleteLocal := func(tx *gorm.DB, resourceID, resourceTenantID int64) error {
@@ -184,7 +184,7 @@ func TestPostgresStandardReferenceDeletionRestoresAfterForeignKeyFailure(t *test
 	client := commonclient.NewModelClient(server.URL, commonclient.ServiceTokenProviderFunc(func(context.Context, uint) (string, error) {
 		return "standard-runtime-token", nil
 	}), server.Client())
-	svc := NewStandardReferenceDeletionService(db, client)
+	svc := NewStandardReferenceDeletionService(db, client, newDeletionQualityClient(t, nil))
 	domainRepo := repository.NewDomainRepository(db)
 	err := svc.Delete(context.Background(), tenantID, "domain", parent.ID, domainRepo.DeleteTx)
 	if err == nil {

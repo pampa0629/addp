@@ -181,7 +181,7 @@
       <div v-else-if="['sql', 'analytical'].includes(service?.config_type)">
         <el-alert v-if="metricBindingRequired" :title="t('service.query.metricBindingRequired')" :description="t('service.query.metricBindingRequiredDescription')" type="warning" :closable="false" />
         <el-alert v-else-if="sourceSnapshot?.metric_source" :title="t('service.query.metricOrigin')" :description="t('service.query.metricOriginDescription')" type="info" :closable="false" />
-        <el-button v-if="sourceSnapshot?.metric_source" link type="primary" @click="openConsoleRoute(`/modeling/metric-implementations/${sourceSnapshot.metric_source.implementation_id}?revision_id=${sourceSnapshot.metric_source.revision_id}`)">{{ t('service.query.metricOriginDetail') }} · #{{ sourceSnapshot.metric_source.revision_id }}</el-button>
+        <el-button v-if="sourceSnapshot?.metric_source" link type="primary" @click="openConsoleRoute(`/modeling/metric-implementations/${sourceSnapshot.metric_source.implementation_id}?revision_id=${sourceSnapshot.metric_source.revision_id}`)">{{ t('service.query.metricOriginDetail') }} · {{ metricRevisionLabel }}</el-button>
         <el-alert v-if="service?.config_type === 'sql'"
           type="info"
           :title="t('service.query.sqlModeTitle')"
@@ -268,7 +268,7 @@
             <li><code>filter</code>：{{ t('service.query.paramFilter') }}</li>
             <li><code>order_by</code>：{{ t('service.query.paramOrderBy') }}</li>
             <li><code>page.limit</code> {{ t('service.query.paramAnd') }} <code>page.cursor</code>：{{ t('service.query.paramPage') }}</li>
-            <li><code>format</code>：{{ t('service.query.paramFormat') }}</li>
+            <li><code>format</code>：{{ t('service.query.paramFormat', { formats: (service?.protocols?.rest_api?.formats || []).join('/') }) }}</li>
           </ul>
         </div>
       </div>
@@ -372,13 +372,16 @@
 import ParameterValueInput from '../../../../common-frontend/basic/src/components/ParameterValueInput.vue'
 import ParameterCaption from '../../../../common-frontend/basic/src/components/ParameterCaption.vue'
 import { parameterLabel, parameterControlType } from '../../../../common-frontend/basic/src/utils/parameterInput.mjs'
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Link } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import { TablePreview } from '@common-ui-map'
 import queryServiceAPI from '@/api/queryService'
+import { createModelMetricAPI } from '../../../../common-frontend/basic/src/api/modelMetrics.js'
+import client from '../api/client'
+import { useAuthStore } from '../store/auth'
 import { buildQueryServicePreview, queryServicePreviewFields } from '@/utils/queryServicePreview'
 import { copyToClipboard } from '../utils/serviceHelper'
 import { navigateServiceRoute } from '@/utils/moduleNavigation'
@@ -431,6 +434,39 @@ const previewPagination = ref({
 const serviceId = computed(() => route.params.id)
 
 const sourceSnapshot = computed(() => service.value?.data_config?.source_snapshot || null)
+// Revision numbers are Model-owned; resolve only the exact bound revision ID.
+const auth = useAuthStore()
+const modelMetricAPI = createModelMetricAPI(client)
+const metricRevisionNo = ref(null)
+const metricRevisionLoading = ref(false)
+const metricRevisionLabel = computed(() => {
+  const id = sourceSnapshot.value?.metric_source?.revision_id
+  if (metricRevisionLoading.value) return t('service.query.metricRevisionLoading', { id })
+  if (metricRevisionNo.value !== null) return t('service.query.metricBoundRevision', { revision: metricRevisionNo.value, id })
+  return t('service.query.metricRevisionUnavailable', { id })
+})
+watch(
+  [() => sourceSnapshot.value?.metric_source, () => auth.hasPermission('model.metric_implementation.read')],
+  async ([source, canRead], _previous, onCleanup) => {
+    let cancelled = false
+    onCleanup(() => { cancelled = true })
+    metricRevisionNo.value = null
+    metricRevisionLoading.value = false
+    if (!source || !canRead) return
+    metricRevisionLoading.value = true
+    try {
+      const implementation = await modelMetricAPI.get(source.implementation_id)
+      if (cancelled) return
+      const revision = implementation.revisions?.find(item => item.id === source.revision_id)
+      if (Number.isInteger(revision?.revision_no) && revision.revision_no > 0) metricRevisionNo.value = revision.revision_no
+    } catch {
+      // Supplemental display metadata must not block service details or queries.
+    } finally {
+      if (!cancelled) metricRevisionLoading.value = false
+    }
+  },
+  { immediate: true, flush: 'sync' }
+)
 const metricBindingRequired = computed(() => service.value?.config_type === 'analytical' && !sourceSnapshot.value?.metric_source?.execution_plan?.package_hash)
 const queryUnavailable = computed(() => service.value?.status !== 'active' || metricBindingRequired.value || statusUpdating.value || versionConflict.value)
 const spatialInfo = computed(() => sourceSnapshot.value?.spatial || null)

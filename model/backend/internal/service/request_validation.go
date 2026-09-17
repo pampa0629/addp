@@ -104,6 +104,6 @@ func validListStatus(status string) bool {
 	return status == "" || validValue(status, "draft", "approved")
 }
 
-var modelDataTypes = []string{"string", "int", "bigint", "float", "decimal", "date", "datetime", "bool", "json", "text", "geometry"}
+var modelDataTypes = []string{"string", "int", "bigint", "float", "decimal", "date", "datetime", "bool", "json", "geometry"}
 
 var modelFieldRoles = []string{"regular", "measure_additive", "measure_semi", "measure_non", "dimension_fk", "degenerate_dim"}

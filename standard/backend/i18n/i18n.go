@@ -31,6 +31,7 @@ const (
 	MsgInvalidResourceReference              = "standard.common.invalid_resource_reference"
 	MsgInvalidStandardCode                   = "standard.common.invalid_standard_code"
 	MsgInvalidStandardScope                  = "standard.scope.invalid"
+	MsgRevisionInitialCreation               = "standard.revision.initial_creation"
 	MsgInvalidStandardRevision               = "standard.revision.invalid"
 	MsgInvalidRevisionTransition             = "standard.revision.invalid_transition"
 	MsgEffectiveIntervalConflict             = "standard.revision.effective_interval_conflict"
@@ -79,7 +80,6 @@ const (
 
 // Glossary
 const (
-	MsgGlossaryInitialCreation    = "standard.glossary.initial_creation"
 	MsgGlossaryNotFound           = "standard.glossary.not_found"
 	MsgGlossaryPublicationHistory = "standard.glossary.publication_history"
 )
