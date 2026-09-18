@@ -83,6 +83,11 @@ func fixtureMarker() string {
 
 func postgresFixture(t *testing.T) *gorm.DB {
 	t.Helper()
+	return postgresFixtureMigration(t, repository.Migrate)
+}
+
+func postgresFixtureMigration(t *testing.T, migrate func(*gorm.DB) error) *gorm.DB {
+	t.Helper()
 	db := openTestDatabase(t)
 	var exists bool
 	if err := db.Raw("SELECT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname='ontology')").Scan(&exists).Error; err != nil || exists {
@@ -104,7 +109,7 @@ func postgresFixture(t *testing.T) *gorm.DB {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { cleanupFixture(t, db) })
-	if err := repository.Migrate(db); err != nil {
+	if err := migrate(db); err != nil {
 		t.Fatal(err)
 	}
 	return db
@@ -139,6 +144,19 @@ func cleanupFixture(t *testing.T, db *gorm.DB) {
 			t.Error(err)
 			return
 		}
+		var hasProjections bool
+		if err := cleanup.Raw("SELECT to_regclass('ontology.projections') IS NOT NULL").Scan(&hasProjections).Error; err != nil {
+			t.Error(err)
+			return
+		}
+		if hasProjections {
+			var projectionIDs []string
+			if err := cleanup.Model(&models.Projection{}).Pluck("execution_id::text", &projectionIDs).Error; err != nil {
+				t.Error(err)
+				return
+			}
+			ids = append(ids, projectionIDs...)
+		}
 		if len(ids) > 0 {
 			if err := cleanup.Where("module = ? AND execution_id IN ?", models.Module, ids).Delete(&execution.TaskExecution{}).Error; err != nil {
 				t.Error(err)
@@ -169,7 +187,56 @@ func TestPostgresRevisionLifecycle(t *testing.T) {
 	s := NewRevisionService(repository.NewRevisionRepository(db))
 	ctx := context.Background()
 	actor := testActor(101)
+	t.Run("projection_runtime", func(t *testing.T) { testProjectionRuntime(t, db, s, actor) })
+	t.Run("projection_rebuild", func(t *testing.T) { testProjectionRebuild(t, db, s, actor) })
 	t.Run("projection_admission", func(t *testing.T) { testProjectionAdmission(t, db, s, actor) })
+	t.Run("management_reads_are_tenant_scoped", func(t *testing.T) {
+		def := testDefinition("management_reads")
+		r, err := s.CreateDraft(ctx, actor, def)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.LatestProjection(ctx, actor, def.Scope); !errors.Is(err, repository.ErrNotFound) {
+			t.Fatal("draft has projection", err)
+		}
+		r, err = s.Transition(ctx, actor, def.Scope, r.Version, "submit")
+		if err != nil {
+			t.Fatal(err)
+		}
+		r, err = s.Transition(ctx, actor, def.Scope, r.Version, "publish")
+		if err != nil {
+			t.Fatal(err)
+		}
+		head, err := s.Head(ctx, actor, def.Scope.OntologyID)
+		if err != nil || head.LastRevision != 1 || head.ActivationVersion != 1 || head.ActiveRevision != nil {
+			t.Fatalf("head %+v %v", head, err)
+		}
+		p, err := s.Projection(ctx, actor, def.Scope.OntologyID, *r.Generation)
+		if err != nil || p.Status != "pending" || p.ExecutionID != *r.BuildExecutionID {
+			t.Fatalf("projection %+v %v", p, err)
+		}
+		latest, err := s.LatestProjection(ctx, actor, def.Scope)
+		if err != nil || latest.Generation != p.Generation {
+			t.Fatalf("latest %+v %v", latest, err)
+		}
+		otherScope := def.Scope
+		otherScope.TenantID = 102
+		if _, err := s.LatestProjection(ctx, testActor(102), otherScope); !errors.Is(err, repository.ErrNotFound) {
+			t.Fatal("cross-tenant latest visible", err)
+		}
+		if _, err := s.Head(ctx, testActor(102), def.Scope.OntologyID); !errors.Is(err, repository.ErrNotFound) {
+			t.Fatal("cross-tenant head visible", err)
+		}
+		if _, err := s.Projection(ctx, testActor(102), def.Scope.OntologyID, *r.Generation); !errors.Is(err, repository.ErrNotFound) {
+			t.Fatal("cross-tenant projection visible", err)
+		}
+		if _, err := s.Projection(ctx, actor, "other", *r.Generation); !errors.Is(err, repository.ErrNotFound) {
+			t.Fatal("cross-ontology projection visible", err)
+		}
+		if _, err := s.Projection(ctx, actor, def.Scope.OntologyID, "invalid"); !errors.Is(err, repository.ErrInvalid) {
+			t.Fatal("invalid generation accepted", err)
+		}
+	})
 	newID := func() string { return "it_" + strings.ReplaceAll(uuid.NewString(), "-", "") }
 	transition := func(t *testing.T, r *models.Revision, action string) *models.Revision {
 		t.Helper()
@@ -205,7 +272,7 @@ func TestPostgresRevisionLifecycle(t *testing.T) {
 		}
 		tx := db.Begin()
 		defer tx.Rollback()
-		if err := tx.Exec("UPDATE ontology.startup_schema_revision SET version=2").Error; err != nil {
+		if err := tx.Exec("UPDATE ontology.startup_schema_revision SET version=?", repository.SchemaVersion+1).Error; err != nil {
 			t.Fatal(err)
 		}
 		if err := repository.Migrate(tx); err == nil {

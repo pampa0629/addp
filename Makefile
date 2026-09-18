@@ -353,7 +353,7 @@ test-ontology-infra-config: ## 验证 FalkorDB 部署、独立 Secret、持久�
 	@python3 scripts/test/ontology-falkor-gate_test.py
 
 .PHONY: test-ontology-falkor
-test-ontology-falkor: test-ontology-infra-config ## 验证独占 FalkorDB 投影、取消、超时和清理
+test-ontology-falkor: test-ontology-infra-config ## 验证独占 FalkorDB 适配及 PG 投影执行/激活/清理
 	@bash scripts/test/ontology-falkor-gate.sh
 
 test-transfer-postgres: ## 使用普通 PostgreSQL 测试库运行 Transfer schema、受保护导出与非空间目标覆盖门禁（无需 PostGIS）

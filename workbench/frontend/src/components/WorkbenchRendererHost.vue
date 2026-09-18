@@ -1,5 +1,8 @@
 <template>
   <div class="renderer-host" data-testid="renderer-host">
+    <p v-if="resultName" class="result-name" data-testid="result-name">
+      <span>{{ resultNameLabel }}</span><strong>{{ resultName.status === 'ready' ? resultName.value : t(resultName.status === 'missing' ? 'workbench.resultNameMissing' : 'workbench.resultNameAmbiguous') }}</strong>
+    </p>
     <p v-for="summary in periodDisplay.summaries" :key="summary" class="period-summary" data-testid="period-summary">{{ summary }}</p>
     <el-empty
       v-if="(rendererType === 'value' || config.total_as_value) && !resultReady"
@@ -60,6 +63,7 @@
 import { computed, defineAsyncComponent, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { resolvePeriodPresentation, periodValueConfig } from '../utils/periodPresentation.mjs'
+import { chartResultName } from '../utils/chartResultName.mjs'
 import { ScalarValueRenderer, TabularResultRenderer } from '@common-ui'
 import { validateScalarValueResult } from '@common-ui/utils/scalarValueResult.mjs'
 import { validateChartResult } from '@common-ui-chart/chartResult.mjs'
@@ -81,10 +85,13 @@ const props = defineProps({
   resultReady: { type: Boolean, default: true },
   preserveView: { type: Boolean, default: false }
 })
-const emit = defineEmits(['result-select'])
+const emit = defineEmits(['result-select', 'total-value-change'])
 const { t, locale } = useI18n()
 const periodDisplay = computed(() => resolvePeriodPresentation(props.config, props.resultReady ? props.queryParameters : null, locale.value, t))
 const totalValueConfig = computed(() => props.rendererType === 'chart' ? periodValueConfig(periodDisplay.value.config) : null)
+const resultName = computed(() => props.rendererType === 'chart' ? chartResultName(props.rows, props.config.result_name_field, props.resultReady, Boolean(props.page?.has_more)) : null)
+const resultNameLabel = computed(() => props.config.field_presentations?.find(item => item.field === props.config.result_name_field)?.label || props.descriptor?.output_contract?.fields?.find(item => item.name === props.config.result_name_field)?.comment || props.config.result_name_field)
+watch(() => Boolean(totalValueConfig.value), value => emit('total-value-change', value), { immediate: true })
 const emittedReason = ref('')
 const validationReason = computed(() => {
   if (totalValueConfig.value) return validateScalarValueResult(props.rows, totalValueConfig.value, Boolean(props.page?.has_more)).reason
@@ -108,6 +115,7 @@ watch(() => [props.rows, props.config, props.page], () => { emittedReason.value 
 </script>
 
 <style scoped>
+.result-name { display: flex; flex-wrap: wrap; gap: 8px; flex: none; margin: 0 0 12px; color: var(--addp-text-primary); overflow-wrap: anywhere; }
 .period-summary { flex: none; margin: 0 0 12px; color: var(--addp-text-secondary); }
 .renderer-host {
   display: flex;

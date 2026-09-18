@@ -81,6 +81,13 @@ esac
 test_pattern='AgainstPostgres$'
 case "$TEST_FILTER" in
     "") ;;
+    ontology-backend)
+        if [ "$PACKAGE_FILTER" != "migration" ]; then
+            echo "ontology-backend test requires --package migration" >&2
+            exit 2
+        fi
+        test_pattern='^TestOntology(Runtime|Backend)ForwardMigrationAgainstPostgres$'
+        ;;
     internal-task-authorization)
         if [ "$PACKAGE_FILTER" != "iam" ]; then
             echo "internal-task-authorization test requires --package iam" >&2

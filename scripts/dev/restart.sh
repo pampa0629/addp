@@ -3,7 +3,7 @@ set -e
 
 # 使用说明
 show_usage() {
-  echo "用法: $0 [-all] [-system] [-manager] [-meta] [-transfer] [-orchestrator] [-develop] [-service] [-monitor] [-gateway] [-model] [-quality] [-security] [-asset] [-catalog] [-workbench] [-portal] [-inference] [-geopython-workflow] [-math-workflow] [-model3d-workflow] [-pointcloud-workflow] [-document-workflow] [-supermap-workflow] [-copilot] [-agent] [-spark-workflow] [-jupyter] [-duckdb]"
+  echo "用法: $0 [-all] [-system] [-manager] [-meta] [-transfer] [-orchestrator] [-develop] [-service] [-monitor] [-gateway] [-model] [-quality] [-security] [-asset] [-catalog] [-ontology] [-workbench] [-portal] [-inference] [-geopython-workflow] [-math-workflow] [-model3d-workflow] [-pointcloud-workflow] [-document-workflow] [-supermap-workflow] [-copilot] [-agent] [-spark-workflow] [-jupyter] [-duckdb]"
   echo ""
   echo "选项:"
   echo "  无参数        等同 -all，同步文档并按完整构建指纹增量编译"
@@ -23,6 +23,7 @@ show_usage() {
   echo "  -security    重启并按需编译 Security 模块"
   echo "  -asset       重启并按需编译 Asset 模块"
   echo "  -catalog     重启并按需编译 Catalog 模块"
+  echo "  -ontology    重启并按需编译 Ontology Backend"
   echo "  -workbench   重启并按需编译 Workbench 模块"
   echo "  -portal      重启并按需编译 Portal 模块"
   echo "  -graph       重启并按需编译 Graph 模块"
@@ -83,7 +84,7 @@ export SUPERMAP_WORKFLOW_PORT="${SUPERMAP_WORKFLOW_PORT:-8103}"
 
 # 自动生成服务 URL（与 start.sh 保持一致）
 generate_service_urls() {
-    local services=(system manager meta transfer orchestrator develop service copilot monitor standard model quality security asset catalog workbench portal agent inference)
+    local services=(system manager meta transfer orchestrator develop service copilot monitor standard model quality security asset ontology catalog workbench portal agent inference)
     for svc in "${services[@]}"; do
         local port_var="$(echo ${svc} | tr '[:lower:]' '[:upper:]')_BACKEND_PORT"
         local url_var="$(echo ${svc} | tr '[:lower:]' '[:upper:]')_SERVICE_URL"
@@ -97,7 +98,7 @@ generate_service_urls() {
 
 generate_service_urls
 
-SWAGGER_MODULES=(system manager meta transfer orchestrator develop service monitor standard model quality security asset catalog workbench portal graph inference)
+SWAGGER_MODULES=(system manager meta transfer orchestrator develop service monitor standard model quality security asset ontology catalog workbench portal graph inference)
 
 is_swagger_module() {
   local module="$1"
@@ -139,7 +140,7 @@ for arg in "$@"; do
     -all)
       RESTART_ALL=true
       ;;
-    -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-monitor|-gateway|-standard|-model|-quality|-security|-asset|-catalog|-workbench|-portal|-graph|-inference|-geopython-workflow|-math-workflow|-model3d-workflow|-pointcloud-workflow|-document-workflow|-supermap-workflow|-copilot|-agent|-spark-workflow|-jupyter|-duckdb)
+    -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-monitor|-gateway|-standard|-model|-quality|-security|-asset|-ontology|-catalog|-workbench|-portal|-graph|-inference|-geopython-workflow|-math-workflow|-model3d-workflow|-pointcloud-workflow|-document-workflow|-supermap-workflow|-copilot|-agent|-spark-workflow|-jupyter|-duckdb)
       module="${arg#-}"  # 移除前导的 -
       RESTART_MODULES+=("$module")
       ;;

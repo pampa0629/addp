@@ -64,7 +64,7 @@ func testProjectionAdmission(t *testing.T, db *gorm.DB, s *RevisionService, acto
 			}
 			return valid(req), nil
 		})
-		if err := s.AdmitProjection(ctx, actor, scope, r.Version, "addp_at_test", issuer); err != nil {
+		if err := s.AdmitProjection(ctx, actor, scope, r.Version, *r.Generation, "addp_at_test", issuer); err != nil {
 			t.Fatal(err)
 		}
 		job := load(r)
@@ -79,7 +79,7 @@ func testProjectionAdmission(t *testing.T, db *gorm.DB, s *RevisionService, acto
 		}); err != nil || lease == nil || lease.ExecutionID != *r.BuildExecutionID {
 			t.Fatalf("claim %v %v", lease, err)
 		}
-		if err := s.AdmitProjection(ctx, actor, scope, r.Version, "addp_at_test", issuer); !errors.Is(err, repository.ErrConflict) {
+		if err := s.AdmitProjection(ctx, actor, scope, r.Version, *r.Generation, "addp_at_test", issuer); !errors.Is(err, repository.ErrConflict) {
 			t.Fatalf("repeat admission %v", err)
 		}
 	})
@@ -98,7 +98,7 @@ func testProjectionAdmission(t *testing.T, db *gorm.DB, s *RevisionService, acto
 				mutate(a)
 				return a, nil
 			})
-			if err := s.AdmitProjection(ctx, actor, scope, r.Version, "addp_at_test", issuer); err == nil {
+			if err := s.AdmitProjection(ctx, actor, scope, r.Version, *r.Generation, "addp_at_test", issuer); err == nil {
 				t.Fatal("mismatched grant accepted")
 			}
 			if job := load(r); job.Status != "failed" || job.ExecutionAuthorizationID != nil {
@@ -114,7 +114,7 @@ func testProjectionAdmission(t *testing.T, db *gorm.DB, s *RevisionService, acto
 			}
 			return valid(req), nil
 		})
-		if err := s.AdmitProjection(ctx, actor, scope, r.Version, "addp_at_test", issuer); !errors.Is(err, repository.ErrConflict) {
+		if err := s.AdmitProjection(ctx, actor, scope, r.Version, *r.Generation, "addp_at_test", issuer); !errors.Is(err, repository.ErrConflict) {
 			t.Fatalf("late grant: %v", err)
 		}
 		if job := load(r); job.Status != "cancelled" || job.ExecutionAuthorizationID != nil {
@@ -129,7 +129,7 @@ func testProjectionAdmission(t *testing.T, db *gorm.DB, s *RevisionService, acto
 			cancel()
 			return nil, context.Canceled
 		})
-		if err := s.AdmitProjection(cancelCtx, actor, scope, r.Version, "addp_at_test", issuer); !errors.Is(err, context.Canceled) {
+		if err := s.AdmitProjection(cancelCtx, actor, scope, r.Version, *r.Generation, "addp_at_test", issuer); !errors.Is(err, context.Canceled) {
 			t.Fatal(err)
 		}
 		if job := load(r); job.Status != "failed" || job.ExecutionAuthorizationID != nil {
@@ -144,7 +144,7 @@ func testProjectionAdmission(t *testing.T, db *gorm.DB, s *RevisionService, acto
 			t.Fatal("issuer called for wrong actor")
 			return nil, nil
 		})
-		if err := s.AdmitProjection(ctx, other, scope, r.Version, "addp_at_test", issuer); !errors.Is(err, repository.ErrConflict) {
+		if err := s.AdmitProjection(ctx, other, scope, r.Version, *r.Generation, "addp_at_test", issuer); !errors.Is(err, repository.ErrConflict) {
 			t.Fatal(err)
 		}
 		if job := load(r); job.Status != "pending" || job.ExecutionAuthorizationID != nil {

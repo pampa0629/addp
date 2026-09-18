@@ -9,6 +9,116 @@ async function choose(page, field, label) {
 }
 const rows = page => page.getByTestId('runtime-component').first().locator('.el-table__body-wrapper tbody tr')
 
+test('monthly metric queries update dates, zero buckets and names together, then restore published defaults', async ({ page, context }) => {
+  const backend = await installMetricApplicationBackend(context, { rebound: true, configure(draft, descriptors) {
+    for (const [key, label, type, value] of [
+      ['subject_id', '人员', 'string', 'person-a'],
+      ['range_start', '开始', 'date', '2026-01-01'],
+      ['range_end', '结束', 'date', '2027-01-01'],
+    ]) {
+      const definition = { key, label, control_type: type === 'date' ? 'date' : 'text', required: true }
+      draft.snapshot.parameters.push({ ...definition, default_value: value })
+      for (const component of draft.snapshot.components) {
+        descriptors[component.service_ref.service_id].input_contract.named_parameters.push({ name: key, type, required: true })
+        component.parameter_definitions.push(definition)
+        component.query_template.named_parameter_bindings.push({ parameter_key: key, name: key })
+        draft.snapshot.parameter_bindings.push({ component_id: component.id, component_parameter_key: key, application_parameter_key: key })
+      }
+    }
+    for (const component of draft.snapshot.components) {
+      Object.assign(component.renderer_config.field_presentations.find(p => p.field === 'bucket'), {
+        temporal_format: 'period', period: { grain_parameter: 'grain', start_parameter: 'range_start', end_parameter: 'range_end' },
+      })
+    }
+    const chart = draft.snapshot.components[1]
+    Object.assign(chart.renderer_config, { total_as_value: true, result_name_field: 'subject_label' })
+    Object.assign(chart.renderer_config.field_presentations.find(p => p.field === 'value'), { precision: 0, unit: '次' })
+    chart.query_template.select.push('subject_label')
+    descriptors[72].output_contract.fields.push({ name: 'subject_label', type: 'string' })
+    descriptors[72].input_contract.fields.push({ name: 'subject_label', type: 'string', selectable: true })
+  } })
+  // Fixed Service responses exercise consumer rendering and parameter propagation.
+  // Real aggregation, half-open date bounds and division belong to Model's PostgreSQL tests.
+  const requests = []
+  await context.route(/\/api\/query\/metric_(71|72)\/query$/, route => {
+    const id = Number(route.request().url().match(/metric_(\d+)/)[1])
+    const body = route.request().postDataJSON()
+    requests.push({ id, body })
+    const monthly = body.parameters.grain === 'month'
+    const subject_label = body.parameters.subject_id === 'person-a' ? '初始人员' : '切换后人员'
+    const data = id === 72
+      ? (monthly ? [
+        { bucket: '2026-06-01', value: 5 }, { bucket: '2026-07-01', value: 0 }, { bucket: '2026-08-01', value: 3 },
+      ] : [{ bucket: '2026-01-01', value: 8 }]).map(row => ({ ...row, subject_label }))
+      : (monthly ? [
+        { bucket: '2026-06-01', direction: 'forward', value: 0.4 },
+        { bucket: '2026-06-01', direction: 'reverse', value: 2 / 3 },
+        { bucket: '2026-07-01', direction: 'forward', value: 0 },
+        { bucket: '2026-07-01', direction: 'reverse', value: 0 },
+        { bucket: '2026-08-01', direction: 'forward', value: 0 },
+        { bucket: '2026-08-01', direction: 'reverse', value: 0 },
+      ] : [
+        { bucket: '2026-01-01', direction: 'forward', value: 0.25 },
+        { bucket: '2026-01-01', direction: 'reverse', value: 0.5 },
+      ])
+    return route.fulfill({ json: { data, page: { has_more: false, next_cursor: '' } } })
+  })
+  await context.addInitScript(() => {
+    const fillText = CanvasRenderingContext2D.prototype.fillText
+    const clearRect = CanvasRenderingContext2D.prototype.clearRect
+    CanvasRenderingContext2D.prototype.clearRect = function (...args) { this.canvas.__metricText = []; return clearRect.apply(this, args) }
+    CanvasRenderingContext2D.prototype.fillText = function (text, ...args) { (this.canvas.__metricText ||= []).push(String(text)); return fillText.call(this, text, ...args) }
+  })
+  await page.goto(runtimePath)
+  await expect(page.locator('.value-number')).toHaveText('8')
+  await expect(page.getByTestId('result-name')).toContainText('初始人员')
+
+  await parameter(page, '人员').getByRole('textbox').fill('person-c')
+  for (const [label, value] of [['开始', '2026-06-01'], ['结束', '2026-09-01']]) {
+    await parameter(page, label).getByRole('combobox').fill(value)
+    await parameter(page, label).getByRole('combobox').press('Enter')
+  }
+  await choose(page, parameter(page, '统计粒度'), '按月')
+  await expect(page.getByTestId('result-name')).toHaveCount(0)
+  await expect(page.locator('.value-number')).toHaveCount(0)
+  await page.getByTestId('query-all-action').click()
+  await expect(rows(page)).toHaveCount(6)
+  await expect(rows(page).filter({ hasText: '2026年6月' }).filter({ hasText: 'forward' })).toContainText('0.400000')
+  await expect(rows(page).filter({ hasText: '2026年6月' }).filter({ hasText: 'reverse' })).toContainText('0.666667')
+  await expect(rows(page).filter({ hasText: '2026年7月' }).filter({ hasText: '0.000000' })).toHaveCount(2)
+  await expect(page.getByTestId('result-name')).toContainText('切换后人员')
+  const canvas = page.locator('.chart-renderer canvas')
+  await expect.poll(() => canvas.evaluate(el => el.__metricText || [])).toEqual(expect.arrayContaining([
+    '2026年6月', '2026年7月', '2026年8月', '5 次', '0 次', '3 次',
+  ]))
+  for (const id of [71, 72]) {
+    expect(requests.filter(request => request.id === id).at(-1).body.parameters).toEqual({
+      grain: 'month', subject_id: 'person-c', range_start: '2026-06-01', range_end: '2026-09-01',
+      ...(id === 71 ? { directions: 'both' } : {}),
+    })
+  }
+  await expect(page.getByTestId('period-summary')).toHaveCount(2)
+  for (const summary of await page.getByTestId('period-summary').all()) {
+    await expect(summary).toHaveText('统计期间：2026/06/01（含）至 2026/09/01（不含）')
+  }
+
+  await page.getByRole('button', { name: '恢复默认参数', exact: true }).click()
+  await expect(page.locator('.value-number')).toHaveText('8')
+  await expect(canvas).toHaveCount(0)
+  await expect(page.getByTestId('result-name')).toContainText('初始人员')
+  await expect(rows(page)).toHaveCount(2)
+  await expect(rows(page).first()).toContainText('所选期间合计')
+  for (const id of [71, 72]) {
+    expect(requests.filter(request => request.id === id).at(-1).body.parameters).toEqual({
+      grain: 'total', subject_id: 'person-a', range_start: '2026-01-01', range_end: '2027-01-01',
+      ...(id === 71 ? { directions: 'both' } : {}),
+    })
+  }
+  expect(backend.published).toEqual(backend.originalPublished)
+  expect(backend.writes).toEqual([])
+  expect(backend.unexpected).toEqual([])
+})
+
 for (const locale of ['zh-cn', 'en']) {
 test(`selection guidance and service names preserve raw IDs (${locale})`, async ({ page, context }) => {
   const backend = await installMetricApplicationBackend(context, { rebound: true, locale })
@@ -400,6 +510,13 @@ for (const locale of ['zh-cn', 'en']) {
       })
     }
     published.snapshot.components.find(component => component.renderer_type === 'chart').renderer_config.total_as_value = true
+    const namedChart = published.snapshot.components.find(component => component.renderer_type === 'chart')
+    namedChart.renderer_config.result_name_field = 'current_name'
+    namedChart.renderer_config.field_presentations.push({ field: 'current_name', label: 'Person' })
+    namedChart.query_template.select.push('current_name')
+    backend.descriptors[72].output_contract.fields.push({ name: 'current_name', type: 'string' })
+    backend.descriptors[72].input_contract.fields.push({ name: 'current_name', type: 'string', selectable: true })
+    await context.route('**/api/query/metric_72/query', route => route.fulfill({ json: { data: [{ bucket: '2026-01-01', value: 12, current_name: 'Current name' }], page: { has_more: false } } }))
     await context.route(`**/data_applications/${published.id}/runtime`, route => route.fulfill({ json: published }))
     await context.addInitScript(() => {
       const original = CanvasRenderingContext2D.prototype.fillText
@@ -416,12 +533,29 @@ for (const locale of ['zh-cn', 'en']) {
     await expect(page.getByTestId('period-summary').first()).toContainText(locale === 'en' ? '(exclusive)' : '（不含）')
     await expect(canvas).toHaveCount(0)
     await expect(page.locator('.scalar-value-renderer .value-number')).toHaveText('12.000000')
+    await expect(page.getByTestId('result-name')).toContainText('Current name')
+    const metricCard = page.getByTestId('runtime-component').nth(1)
+    // A table beside a total card still owns the original fixed-height row.
+    expect((await metricCard.boundingBox()).height).toBe(444)
+    await expect(metricCard).not.toHaveClass(/runtime-component--content/)
+    published.snapshot.page.placements[1].y = 6
+    published.snapshot.page.placements[1].x = 0
+    published.snapshot.page.placements[1].width = 12
+    await page.reload()
+    await expect(metricCard).toHaveClass(/runtime-component--content/)
+    expect((await metricCard.boundingBox()).height).toBeLessThan(350)
+    const tableBounds = await page.getByTestId('runtime-component').first().boundingBox()
+    expect((await metricCard.boundingBox()).y).toBeCloseTo(tableBounds.y + tableBounds.height + 12, 0)
     await choose(page, parameter(page, '统计粒度'), locale === 'en' ? 'Monthly' : '按月')
     await expect(page.getByTestId('period-summary')).toHaveCount(0)
     await expect(page.locator('.scalar-value-renderer')).toHaveCount(0)
+    await expect(page.getByTestId('result-name')).toHaveCount(0)
+    await expect(metricCard).not.toHaveClass(/runtime-component--content/)
+    expect((await metricCard.boundingBox()).height).toBe(444)
     await page.getByTestId('query-all-action').click()
     await expect(rows(page).first()).toContainText(month)
     await expect.poll(() => canvas.evaluate(el => el.__periodTexts || [])).toContain(month)
+    await expect(page.getByTestId('result-name')).toContainText('Current name')
     expect(backend.requests.at(-1).body.parameters.range_start).toBe('2026-01-01')
     expect(backend.requests.at(-1).body.order_by).toContainEqual({ field: 'bucket', direction: 'asc' })
     await choose(page, parameter(page, '统计粒度'), locale === 'en' ? 'Total' : '全期')
@@ -431,6 +565,13 @@ for (const locale of ['zh-cn', 'en']) {
     await page.getByTestId('query-all-action').click()
     await expect(page.locator('.value-number')).toHaveText('0.000000')
     await expect(canvas).toHaveCount(0)
+    await expect(page.getByTestId('result-name')).toContainText(locale === 'en' ? 'Name not provided' : '未提供名称')
+    totalRows = [{ bucket: '2026-01-01', value: 0, current_name: 'Another person' }]
+    await page.getByTestId('query-all-action').click()
+    await expect(page.getByTestId('result-name')).toContainText('Another person')
+    totalRows = [{ value: 1, current_name: 'One' }, { value: 2, current_name: 'Two' }]
+    await page.getByTestId('query-all-action').click()
+    await expect(page.getByTestId('result-name')).toContainText(locale === 'en' ? 'Cannot determine a single name' : '无法确定单一名称')
     for (const [data, partial] of [[[], false], [[{value:1},{value:2}], false], [[{value:null}], false], [[{value:3}], true]]) {
       totalRows = data
       hasMore = partial
@@ -449,7 +590,57 @@ for (const locale of ['zh-cn', 'en']) {
     await expect(card).toBeVisible()
     await card.press('Enter')
     await expect(parameter(page, 'Start').getByRole('combobox')).toHaveValue('2026-02-01')
+    // Content height includes long labels/descriptions and wrapped multiple values.
+    chartComponent.description = '活动次数与当前选择的统计期间。 '.repeat(16)
+    chartComponent.renderer_config.measures = ['value', 'second_value', 'third_value', 'fourth_value']
+    chartComponent.renderer_config.field_presentations.push(...['second_value', 'third_value', 'fourth_value'].map(field => ({ field, label: field, precision: 0 })))
+    totalRows = [{ bucket: '2026-02-01', value: 0, second_value: 1, third_value: 2, fourth_value: 3 }]
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.reload()
+    await expect(metricCard.locator('.value-number')).toHaveCount(4)
+    await expect(metricCard).toHaveClass(/runtime-component--content/)
+    const overflow = await metricCard.evaluate(el => {
+      const body = el.querySelector('.el-card__body')
+      const bounds = el.getBoundingClientRect()
+      const last = el.querySelector('.value-card:last-child').getBoundingClientRect()
+      return { vertical: body.scrollHeight - body.clientHeight, horizontal: el.scrollWidth - el.clientWidth, bottom: last.bottom - bounds.bottom }
+    })
+    expect(overflow.vertical).toBeLessThanOrEqual(1)
+    expect(overflow.horizontal).toBeLessThanOrEqual(1)
+    expect(overflow.bottom).toBeLessThan(0)
+    await page.setViewportSize({ width: 1280, height: 900 })
+    published.snapshot.page.display_mode = 'wallboard'
+    await page.reload()
+    await expect(metricCard.locator('.value-number')).toHaveCount(4)
+    await expect(metricCard).not.toHaveClass(/runtime-component--content/)
     expect(backend.writes).toHaveLength(0)
+    expect(backend.unexpected).toEqual([])
+  })
+}
+
+for (const locale of ['zh-cn', 'en']) {
+  test(`explicit result name field is selected, saved and restored (${locale})`, async ({ page, context }) => {
+    const backend = await installMetricApplicationBackend(context, { rebound: true, locale, configure(draft, descriptors) {
+      descriptors[72].output_contract.fields.push({ name: 'current_name', type: 'string', comment: 'Person' })
+      descriptors[72].input_contract.fields.push({ name: 'current_name', type: 'string', selectable: true })
+    } })
+    await page.goto(applicationPath)
+    await page.getByTestId('application-component').nth(1).getByTestId('edit-component-action').click()
+    const editor = page.getByTestId('application-component-editor')
+    const label = locale === 'en' ? 'Result name field (optional)' : '结果名称字段（可选）'
+    await choose(page, editor.locator('.el-form-item').filter({ has: page.getByText(label, { exact: true }) }), 'Person')
+    await page.getByRole('dialog').getByRole('button', { name: locale === 'en' ? 'Apply component configuration' : '应用组件配置', exact: true }).click()
+    await expect(editor).not.toBeVisible()
+    await page.getByRole('button', { name: locale === 'en' ? 'Save draft' : '保存草稿', exact: true }).click()
+    await expect.poll(() => backend.writes.length).toBe(1)
+    const saved = backend.draft.snapshot.components[1]
+    expect(saved.renderer_config.result_name_field).toBe('current_name')
+    expect(saved.query_template.select).toContain('current_name')
+    expect(saved.renderer_config.field_presentations).toContainEqual({ field: 'current_name', label: 'Person' })
+    expect(backend.published).toEqual(backend.originalPublished)
+    await page.reload()
+    await page.getByTestId('application-component').nth(1).getByTestId('edit-component-action').click()
+    await expect(editor.locator('.el-form-item').filter({ has: page.getByText(label, { exact: true }) })).toContainText('Person')
     expect(backend.unexpected).toEqual([])
   })
 }

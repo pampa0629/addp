@@ -229,6 +229,7 @@ SERVICES=(
     "security-worker:security/backend"
     "asset-backend:asset/backend"
     "catalog-backend:catalog/backend"
+    "ontology-backend:ontology/backend"
     "workbench-backend:workbench/backend"
     "portal-backend:portal/backend"
     "graph-backend:graph/backend"

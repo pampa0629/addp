@@ -999,6 +999,36 @@ services:
       - quality-backend
     restart: unless-stopped
 
+  ontology-backend:
+    image: ${REGISTRY:-localhost:5001}/addp-ontology-backend:${IMAGE_TAG:-latest}
+    container_name: ontology-backend
+    environment:
+      - SERVICE_HOST=ontology-backend
+      - ONTOLOGY_BACKEND_PORT=8195
+      - SYSTEM_URL=http://system-backend:8180
+      - ONTOLOGY_SERVICE_CLIENT_SECRET=${ONTOLOGY_SERVICE_CLIENT_SECRET}
+      - INFRA_FALKORDB_ADDRESS=falkordb:6379
+      - INFRA_FALKORDB_PASSWORD=${INFRA_FALKORDB_PASSWORD}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=${POSTGRES_USER:-addp}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB:-addp}
+    ports:
+      - "8195:8195"
+    networks:
+      - addp-network
+    depends_on:
+      system-backend:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8195; echo -e \"GET /health/ready HTTP/1.0\\r\\n\\r\\n\" >&3; head -n 1 <&3 | grep -q \" 200 \"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+
   security-backend:
     image: ${REGISTRY:-localhost:5001}/addp-security-backend:${IMAGE_TAG:-latest}
     container_name: security-backend

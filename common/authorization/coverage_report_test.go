@@ -6,24 +6,20 @@ import (
 	"testing"
 )
 
-func TestLibraryPermissionOwnerUsesRealHostAndCannotHideMissingAPI(t *testing.T) {
+func TestOntologyRequiresItsOwnOpenAPI(t *testing.T) {
 	root := t.TempDir()
+	writeCoverageFixture(t, root, "system/backend/docs/swagger.json", `{"paths":{}}`)
 	source, _, issues := inspectOwnerOpenAPI(root, "ontology", nil)
-	if source.Path != "system/backend/docs/swagger.json" || len(issues) != 1 || issues[0].Code != "missing_openapi_document" {
-		t.Fatalf("missing host: %+v %+v", source, issues)
+	if source.Path != "ontology/backend/docs/swagger.json" || len(issues) != 1 || issues[0].Code != "missing_openapi_document" {
+		t.Fatalf("missing owner: %+v %+v", source, issues)
 	}
-	writeCoverageFixture(t, root, "system/backend/docs/swagger.json", `{"paths":{"/auth/execution-authorizations":{"post":{"x-addp-auth-mode":"permission","x-addp-required-permissions":["ontology.revision.publish"]}}}}`)
+	writeCoverageFixture(t, root, "ontology/backend/docs/swagger.json", `{"paths":{"/ontologies/{ontology_id}/revisions/{revision}/publish":{"post":{"x-addp-auth-mode":"permission","x-addp-required-permissions":["ontology.revision.publish"]}}}}`)
 	_, referenced, issues := inspectOwnerOpenAPI(root, "ontology", map[string]PermissionDescriptor{"ontology.revision.publish": {Key: "ontology.revision.publish", OwnerModule: "ontology", Status: "active"}})
 	if len(issues) != 0 {
 		t.Fatal(issues)
 	}
 	if _, ok := referenced["ontology.revision.publish"]; !ok {
-		t.Fatal("host reference missing")
-	}
-	writeCoverageFixture(t, root, "ontology/backend/cmd/server/main.go", "package main")
-	_, _, issues = inspectOwnerOpenAPI(root, "ontology", nil)
-	if len(issues) != 1 || issues[0].Code != "owner_api_host_conflict" {
-		t.Fatal("owner API was hidden")
+		t.Fatal("owner reference missing")
 	}
 	_, _, issues = inspectOwnerOpenAPI(root, "manager", nil)
 	if len(issues) != 1 || issues[0].Code != "missing_openapi_document" {

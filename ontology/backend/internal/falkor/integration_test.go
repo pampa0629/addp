@@ -46,6 +46,10 @@ func TestFalkorIntegration(t *testing.T) {
 		}
 	}
 	observer := redis.NewClient(&redis.Options{Addr: address, Password: password, Protocol: 2, DisableIdentity: true, MaxRetries: -1, ReadTimeout: 3 * time.Second})
+	if err := c.Health(ctx); err != nil {
+		value, probeErr := observer.Do(ctx, "GRAPH.CONFIG", "GET", "TIMEOUT_MAX").Result()
+		t.Fatalf("graph readiness contract: %v; timeout configuration=%#v probe=%v", err, value, probeErr)
+	}
 	t.Cleanup(func() { _ = observer.Close() })
 	for _, key := range []string{"TIMEOUT_MAX", "TIMEOUT_DEFAULT"} {
 		value, err := observer.Do(ctx, "GRAPH.CONFIG", "GET", key).Result()

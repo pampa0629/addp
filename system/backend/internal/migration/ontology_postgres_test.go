@@ -70,3 +70,56 @@ func TestOntologyRuntimeForwardMigrationAgainstPostgres(t *testing.T) {
 			memberships, assignments, clients, userGrants, permissions)
 	}
 }
+
+func TestOntologyBackendForwardMigrationAgainstPostgres(t *testing.T) {
+	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
+	if dsn == "" {
+		t.Skip("ADDP_SYSTEM_POSTGRES_TEST_DSN is required")
+	}
+	testsupport.RequireDisposablePostgresDSN(t, dsn)
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`DROP SCHEMA IF EXISTS system CASCADE; DROP SCHEMA IF EXISTS common CASCADE`); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	before, after := migrationFilesBeforeAndThrough(t, "000153_iam_ontology_backend.up.sql")
+	if err := (&Runner{DSN: dsn, FS: before, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var version int64
+	if err := db.QueryRow(`SELECT authorization_version FROM system.principals WHERE id=(SELECT id FROM system.service_principals WHERE name='addp-ontology')`).Scan(&version); err != nil {
+		t.Fatal(err)
+	}
+	runner := &Runner{DSN: dsn, FS: after, Root: DefaultMigrationsRoot}
+	for range 2 {
+		if err := runner.Run(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var assignments, permissions, userGrants int
+	var current int64
+	if err := db.QueryRow(`SELECT count(*) FROM system.role_assignments a JOIN system.roles r ON r.id=a.role_id JOIN system.service_principals s ON s.id=a.principal_id WHERE s.name='addp-ontology' AND r.role_key='platform.ontology_runtime' AND a.scope_type='platform' AND a.tenant_id IS NULL AND a.status='active'`).Scan(&assignments); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`SELECT count(*) FROM system.permissions WHERE permission_key IN ('ontology.revision.read','ontology.revision.update') AND tenant_customizable AND NOT delegable AND allowed_scope_types=ARRAY['tenant']::text[]`).Scan(&permissions); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`SELECT count(*) FROM system.role_permissions rp JOIN system.permissions p ON p.id=rp.permission_id WHERE p.owner_module='ontology'`).Scan(&userGrants); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`SELECT authorization_version FROM system.principals WHERE id=(SELECT id FROM system.service_principals WHERE name='addp-ontology')`).Scan(&current); err != nil {
+		t.Fatal(err)
+	}
+	var keys string
+	if err := db.QueryRow(`SELECT string_agg(p.permission_key,',' ORDER BY p.permission_key) FROM system.role_permissions rp JOIN system.roles r ON r.id=rp.role_id JOIN system.permissions p ON p.id=rp.permission_id WHERE r.role_key='platform.ontology_runtime'`).Scan(&keys); err != nil {
+		t.Fatal(err)
+	}
+	if assignments != 1 || permissions != 2 || userGrants != 0 || current != version+1 || keys != "system.runtime_registry.update" {
+		t.Fatalf("assignments=%d permissions=%d implicit=%d version=%d/%d keys=%s", assignments, permissions, userGrants, current, version, keys)
+	}
+}

@@ -4,6 +4,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/addp/ontology/internal/models"
 	"github.com/addp/ontology/internal/repository"
@@ -18,6 +19,10 @@ func NewRevisionService(repo *repository.RevisionRepository) *RevisionService {
 	return &RevisionService{repo: repo}
 }
 
+func (s *RevisionService) RebuildProjection(ctx context.Context, actor models.Actor, scope semantic.Scope, version uint64, failedGeneration string, expectedActivationVersion uint64) (*models.Projection, error) {
+	return s.repo.RebuildProjection(ctx, actor, scope, version, failedGeneration, expectedActivationVersion)
+}
+
 func (s *RevisionService) CreateDraft(ctx context.Context, actor models.Actor, definition semantic.Definition) (*models.Revision, error) {
 	if err := repository.ValidateActor(actor, definition.Scope); err != nil {
 		return nil, err
@@ -27,7 +32,7 @@ func (s *RevisionService) CreateDraft(ctx context.Context, actor models.Actor, d
 	}
 	snapshot, err := semantic.Freeze(definition)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %v", repository.ErrInvalid, err)
 	}
 	return s.repo.Create(ctx, actor, snapshot)
 }
@@ -41,7 +46,7 @@ func (s *RevisionService) SaveDraft(ctx context.Context, actor models.Actor, ver
 	}
 	snapshot, err := semantic.Freeze(definition)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %v", repository.ErrInvalid, err)
 	}
 	return s.repo.Change(ctx, actor, definition.Scope, version, "save", snapshot)
 }

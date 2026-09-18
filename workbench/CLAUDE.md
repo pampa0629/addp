@@ -39,11 +39,17 @@ Workbench 是面向数据消费者、以已发布 Service 为唯一数据入口�
 
 创作端主屏为唯一运行画布的编辑呈现与组件属性侧栏，组件点击只选中、拖动手柄和前移/后移编译为同一 placement 排序，宽高与单/双列排版统一重排避免重叠。查询上下文变化使旧结果和在途请求失效；标题、格式和布局变化复用当前结果。空应用按展示类型进入同一组件编辑器的“数据、展示、条件”步骤。筛选、联动、场景与页面设置收纳于按需面板；未保存离页保护复用共享 `useUnsavedChangesGuard`。`applicationEditorLayout.test.mjs` 与 `application-studio.spec.js` 覆盖排版、新建草稿、中英文、编辑保存、查询失效、预览隔离和窄屏离页保护，现有 `make test-workbench-frontend` 与 Platform CI 自动发现；完整验收使用 `make test-module MODULE=workbench`。不引入新依赖、API、快照字段或创作路由。
 
-筛选卡片直接展示绑定组件，组件归组映射复用 `applicationParameterOptions` 校验类型、选项及默认/场景值，并阻止移除既有联动的最后一个目标。联动表单在用户显式选择来源、字段、条件后才写入草稿；取消不写入，同一字段可以赋值给不同条件，目标条件不得重复。`applicationParameterBinding.test.mjs` 与 `application-studio.spec.js` 同时覆盖共享筛选、取消/编辑联动、原始人员 ID 驱动多个图表、预览隔离和窄屏，仍使用上述标准门禁自动发现。
+筛选卡片直接展示绑定组件，并可进入同一点击联动表单预填当前目标条件；来源和原始值字段仍由用户显式选择，取消不写入。组件归组映射复用 `applicationParameterOptions` 校验类型、选项及默认/场景值，并阻止移除既有联动的最后一个目标。联动表单在用户显式选择来源、字段、条件后才写入草稿；取消不写入，同一字段可以赋值给不同条件，目标条件不得重复。`applicationParameterBinding.test.mjs` 与 `application-studio.spec.js` 同时覆盖共享筛选、取消/编辑联动、原始人员 ID 驱动多个图表、预览隔离和窄屏，仍使用上述标准门禁自动发现。
 
 新增组件的条件表单可显式选择已有应用筛选，使用其初始值试查。复用候选和提交时校验复用 `applicationParameterOptions` 的同一绑定规则，考虑新组件多个输入的共同选项约束；取消不改应用，应用后只写既有 Parameter Binding，不新增重复条件。`applicationParameterBinding.test.mjs` 和 `application-studio.spec.js` 覆盖类型/选项冲突、显式选择、试查原始值、中英文、保存重开及取消，沿用已有前端和完整模块门禁自动发现。
 
+复制组件沿用同一编辑器、新增保存与布局重排路径，直接在条件步骤调整绑定；新增或复制组件选择独立条件时，直接显示筛选名称输入，避免同名条件混淆；使用新组件 ID，保留原宽高，放在原组件后，不复制选择源联动。`application-studio.spec.js` 覆盖中英文人员条件切换、试查、取消、保存重开、原组件隔离与连续复制；`componentDraft.test.mjs` 验证固定查询条件和排序在编辑、复制及试查中保持一致。仍由现有 Workbench 前端 T1/T3 与完整模块门禁覆盖，无新增 API、依赖或 CI 注册。
+
+新组件选择服务后可显式采用基于 Descriptor 字段事实的明细表、类别柱图、时间折线图或空间分布起点，候选显示所用字段；点击后写入同一表单并复用真实试查，必要条件不全时进入条件步骤。`componentDraft.test.mjs` 覆盖可选输出字段、默认顺序、稳定时间字段、显式 geometry 及禁止按名称推断；`application-studio.spec.js` 覆盖中英文创建保存、参数未齐不查询、默认值试查、服务切换清空结果、取消与窄屏。沿用现有前端与完整模块门禁，不新增 CI 入口或依赖。
+
 Table/Chart 的 date 字段可显式配置 `temporal_format=period` 和 `period`（`grain_parameter/start_parameter/end_parameter`），引用当前 Service Descriptor 的必填命名参数：粒度为 string 且选项为 `total/month`，起止为 date。结果展示只使用成功查询当时的参数快照；按月显示年月，全期显示“所选期间合计”，Renderer Host 同时显示开始日期包含、结束日期不包含的完整范围。不得根据 `bucket` 等字段名推断语义；原始行、排序、选择与导出不变。共享组件只接受已解析的展示上下文，不读取 Service DTO。既有共享前端、Workbench T1、浏览器及模块门禁覆盖此契约，无新增依赖或 CI 入口。
+
+`metric-publication.spec.js` 的组合回归覆盖人员、日期与粒度变更后的请求参数、月份与零值绘制、服务返回昵称、双向比率精度，以及恢复默认参数且不改写发布快照。浏览器使用固定 Service 响应，不重算指标；真实按月聚合、日期边界和零分母计算继续由 Model PostgreSQL 门禁负责。测试沿用 `make test-workbench-frontend`、`make test-module MODULE=workbench` 与 Platform CI 的现有自动发现。
 
 统一执行 `make test-workbench-frontend`，依次运行 Node 确定性测试、Playwright 浏览器回归和产品构建。首次运行前如缺少浏览器，执行 `npm --prefix workbench/frontend exec -- playwright install chromium`；CI 的 Workbench 前端矩阵负责安装 Chromium。
 
@@ -64,3 +70,7 @@ Playwright 自动管理独立的 `127.0.0.1:4190` Vite 测试服务，使用独�
 指标浏览器回归还验证服务返回的双向主体名称、空昵称、目录当前页缺少主体，以及目录旧昵称不能覆盖指标服务当前昵称；选择联动只提交稳定人员标识。Online suite 复用商务 MySQL 夹具验证持久化草稿的值名称、维度文本、CSV 原值和选择联动原值，只使用可清理的未发布应用；报告缺少任一证据即失败，不把本地 HTTP fixture 通过记为真实 T4 通过。
 
 Chart 的 `total_as_value` 显式开启全期数字卡片，要求期间维度及 1–4 个显式精度度量；Host 仅适配现有共享 ScalarValueRenderer，按月仍走 ChartRenderer。唯一完整行校验与原始行选择事件不得被绕过。覆盖 Go 配置校验、前端配置往返、共享选择契约及中英文全期/月度切换、零值、空/多行/部分结果；使用现有 `make test-common-frontend` 与 `make test-module MODULE=workbench`、Swagger 生成及覆盖门禁，无新增入口或 CI 依赖。
+
+全期数字卡片在桌面运行与整页预览中仅对独立同高横排收紧：Host 通知实际呈现模式，Canvas 将该排投影为内容自适应行并移动后续行，原 placement 不变。混合图表/表格或跨排组件保留固定网格，编辑画布和大屏不压缩。Node 布局测试覆盖空隙、跨排、还原和快照不变；中英文浏览器回归覆盖全期/月度高度切换、混排、窄屏长说明和四项数值不裁切、大屏隔离。前端变更使用 `make test-workbench-frontend`（T1/T3/构建），由现有 Platform CI Workbench 矩阵自动覆盖，无新增依赖或测试入口。
+
+Chart 的可选 `result_name_field` 显式选择已查询的 string 输出字段，Host 用完整成功结果中的一致名称展示查询对象，标签复用字段呈现配置。空名称和不一致/不完整结果明确提示，未查询或结果失效时不显示名称；不得从目录当前页、其他组件或参数名补全。Model 主体显示名称与 Service 冻结发布包均复用现有契约，Workbench 只经 Consumer SDK 消费。Go 校验、前端配置往返、中英文保存重载、全期/月度切换和缺失/歧义边界由现有 `make test-module MODULE=workbench`（T0/T1/T2/T3）、`make test-workbench-frontend`、Swagger 生成及覆盖入口验证，无新增 CI 注册或外部依赖。

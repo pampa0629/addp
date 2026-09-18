@@ -2,7 +2,7 @@
 
 更新日期：2026-09-17。
 
-状态：独立 Ontology 的原生语义内核、PG 修订/发布内部服务、FalkorDB 投影适配和单机 Infra 部署定义、System 内部任务授权与发布准入已落地，范围与标准验证入口见 [模块说明](../../ontology/CLAUDE.md)；发布执行器、激活、HTTP 服务和 Tool 尚未交付。当前不调整 Graph，待 Ontology 有初步成果后另行讨论其职责迁移。本文的目标设计不代表功能均已实现。
+状态：独立 Ontology 的原生语义内核、PG 修订/发布内部服务、FalkorDB 投影适配和单机 Infra 部署定义、System 内部任务授权、发布准入、投影执行/激活及失败批次显式重建组件已落地，范围与标准验证入口见 [模块说明](../../ontology/CLAUDE.md)；尚未装配常驻 Backend，HTTP 服务和 Tool 尚未交付。当前不调整 Graph，待 Ontology 有初步成果后另行讨论其职责迁移。本文的目标设计不代表功能均已实现。
 
 ## 1. 目标与范围
 
@@ -147,27 +147,48 @@ PG 保存 Ontology 身份、工作修订、不可变发布内容、依赖捕获�
 
 ### 5.4 PG 修订阶段的实施边界
 
-本阶段实现原生定义的 PG 修订，不启动 HTTP 服务或图执行器：
+PG 修订切片实现原生定义管理；其上的首次投影执行见 5.5，尚不启动 HTTP 服务：
 
-- `ontology.ontologies` 只协调同一本体的修订序号；每次创建必须为上次序号加一，且不能存在另一份 draft / in_review。调用方明确提交目标修订号，冲突不自动重试。
+- `ontology.ontologies` 协调同一本体的修订序号和激活指针；每次创建必须为上次序号加一，且不能存在另一份 draft / in_review。调用方明确提交目标修订号，冲突不自动重试。
 - `ontology.revisions` 保存唯一的规范化定义包、摘要、状态和乐观锁 version。编辑、提交审核、退回、发布、撤回都要求精确 version；已发布内容不能修改，只能创建下一修订。
 - `ontology.revision_events` 保存每次变更的主体、状态、版本及定义摘要，与业务写入同事务提交；数据库拒绝改写发布内容和既有审计。
-- 发布原子创建 `common.task_executions` 的 `ontology / semantic_projection` bounded execution，绑定确定修订、摘要和初始 generation。只保存已认证调用方的 actor 事实，不伪造 System Execution Authorization；未获得后续授权准入的 execution 不得领取。当前没有执行器，也不提供任意后台执行入口。
-- 撤回取消尚未领取的初始构建意图，保留审计。已在运行的执行不能仅靠数据库改状态冒充取消；未来执行器必须在输出/激活前复核撤回。当前没有 active 指针、ready 状态、图重建或图查询接口，不能把 pending 当作可用。
+- 发布原子创建 `common.task_executions` 的 `ontology / semantic_projection` bounded execution，绑定确定修订、摘要和初始 generation。只保存已认证调用方的 actor 事实，不伪造 System Execution Authorization；未获得后续授权准入的 execution 不得领取，不提供任意后台执行入口。
+- 撤回取消尚未领取的构建意图，清空指向当前修订的激活指针并保留审计。已在运行的执行不能仅靠数据库改状态冒充取消；执行器在激活前复核撤回。当前没有图查询接口，不能把 pending 当作可用；失败投影重建见 5.6。
 - 内部服务的 Actor 参数只承载调用方已核实的主体/租户/授权版本，不是鉴权器。正式 API 及 execution 授权链路未交付前，不开放用户入口。
 - 迁移由 `common/schema.Migrate` 协调 owner 版本化 SQL；仅只读要求已初始化的 common schema，不由 Ontology 初始化共享表。T2 夹具通过 common 的正式初始化能力准备共享执行存储。
 
-后续图构建、激活、重建和授权续接仍按 5.2、5.3 实施；PG 阶段的通过不代表这些链路已验证。
+首次图构建、激活按 5.5 实施；失败批次的新 generation 重建按 5.6 实施；更广泛的 ready 投影维护及历史清理仍按 5.2、5.3 另行实施。
+
+### 5.5 首次投影执行与激活切片
+
+本切片连接已授权的首次发布意图、Common 租约、FalkorDB 构建与 PG 激活，不启动 HTTP 服务，不加入重建、历史图清理或 Agent 消费入口。
+
+- 发布事务创建 owner 投影记录，保存 generation、execution、摘要以及当时的 `activation_version` 基线。本体头只保存一个 active revision/generation；每次切换或撤回当前版本均递增 activation_version，避免空指针的 ABA 冲突。
+- 有界 Supervisor 只在调用方明确报告 Ready 时领取；复用 Common claim/lease/终态原语。锁顺序统一为本体头、修订、投影、execution；claim 只锁 execution，提交后再进入 owner 事务，禁止倒置。
+- 执行前恢复并核对冻结快照，消费 System 内部任务授权；只允许 pending 投影进入 building 一次。完成完整图校验后再次消费授权，提交事务复核授权响应期限、当前 lease、撤回状态和激活基线，原子保存 ready、激活指针、owner 审计及 execution success。
+- 网络调用不在持有 PG 行锁时执行，避免 System 租约复核与 owner 终态事务互相等待。授权响应只是本次即时复核结果，不缓存为永久许可。
+- 本切片不自动重放图写入。失败、取消、授权失效和过期租约都收敛为失败投影；保留原激活指针，部分图不删除、不激活。需要新 generation 的显式重建另行实现，不能重置当前 execution 或沿用旧授权来重试。
+- owner 激活审计独立于定义修订审计，记录准确 generation、attempt 和发布主体，不复制用户 Token。撤回当前修订同步清空指针，不回退旧版本。
+
+### 5.6 失败投影的显式重建
+
+- 只重建仍为 published 修订的 failed 投影，且旧 execution 已终结并释放租约。请求必须携带修订 version、失败 generation 和明确确认的 activation_version；过期基线或重复重建冲突，不隐式重试。
+- 同一失败 generation 只能产生一个后继；同一修订至多有一个 pending/building 投影。后继再失败时须明确选择该后继重建，不允许从历史祖先分叉。ready 投影的主动替换不属于本切片。
+- 新投影、新 execution 和重建请求审计同事务保存，保留 predecessor generation；不改写冻结定义、原 execution、旧授权或旧图。修订记录上的 generation/build_execution_id 只证明首次发布时的构建身份，不是“当前投影”指针；后续准入和执行一律以 owner 投影记录为准。
+- 首次构建和重建共用唯一准入与执行路径。准入显式指定 generation，以本次请求的 User Token 为新的 execution 签发授权；主体是本次已获发布权限的请求人，不借用原发布者身份。当前 Actor 必须与新 execution 中冻结的请求主体一致。
+- 重建再次恢复同一冻结快照并校验摘要，不读取最新来源定义。只有新图完整校验、授权复核及激活基线检查均通过才切换；失败继续保留原激活版本。
+- 撤回检查该修订的全部投影，原子取消尚未领取的重建，并阻断已领取投影激活；旧 generation 的迟到授权、终态回写不能影响新 generation。
+- 仍不提供 HTTP/Agent 入口，不执行历史图清理。沿已有 Ontology T1、PG T2 和真实 PG/FalkorDB 联动 T2 验证，无新增外部依赖或 CI Job。
 
 ## 6. Agent 如何消费
 
-### 发布运行时前置：内部执行授权（准入已实现，执行器待接入）
+### 发布运行时前置：内部执行授权（准入和首次执行已接入）
 
 语义投影只读写 Ontology 的 Infra 存储，不访问用户业务 Engine。后续复用 System Execution Authorization 的签发、有效期、主体版本复核和审计，以及 Common 的 execution/lease/fencing；不新增 Token、登录方式或第二套 Worker。内部任务必须有明确且不可变的执行与操作范围，不能把空 Engine 列表解释为任意授权，也不能把 Infra FalkorDB 伪装成业务 Engine。
 
 System 负责当前 User、Tenant Membership、授权版本、功能 Permission 及唯一 Runtime 消费身份；Ontology 负责本体资源权限、修订/摘要、发布/撤回和激活基线。签发成功并原子附加完整授权引用后才允许领取，构建前与激活前均复核；业务数据访问仍使用原有逐 Engine Access Scope。实施时必须同步 System 数据库不可变约束、API/Swagger、Common 客户端、权限登记和真实 IAM PostgreSQL 门禁；完整投影运行时仍须验证构建前与激活前的授权消费，不能用 Infra 或准入测试代替。
 
-当前已增加互斥的 `internal_task` 范围、System 151/152 向前迁移、现有签发 API 的内部任务分支、精确租约消费 API、Common 客户端和 Ontology `AdmitProjection`。范围固定为 task_type/resource_id/revision/digest/generation，System 只核对 common execution 与 IAM，Ontology 核对自有修订及撤回。失败不自动重签或复用已关闭 execution；未附加授权不能领取。用户发布权限通过自定义角色显式授予，不自动扩大既有用户角色。正式 HTTP 发布入口、图执行器、构建前/激活前消费以及 PG 激活指针仍待实现。
+当前已增加互斥的 `internal_task` 范围、System 151/152 向前迁移、现有签发 API 的内部任务分支、精确租约消费 API、Common 客户端和 Ontology `AdmitProjection`。范围固定为 task_type/resource_id/revision/digest/generation，System 只核对 common execution 与 IAM，Ontology 核对自有修订及撤回。失败不自动重签或复用已关闭 execution；未附加授权不能领取。用户发布权限通过自定义角色显式授予，不自动扩大既有用户角色。首次执行器已接入构建前/激活前消费与 PG 激活指针；正式 HTTP 发布入口与常驻服务装配仍待实现。
 
 ### 6.1 不改变 Tool 架构
 
@@ -228,7 +249,7 @@ Agent 取消仍遵守现有规范：取消 Runtime 不自动取消已有 owner e
 
 ## 8. 技术选型与实施准入
 
-临时原型曾验证 Go 1.24.2、CEL-Go `v0.32.0`、FalkorDB Go 客户端 `v2.1.0` 和 FalkorDB `v4.20.6` ARM64 的有限场景。正式代码采用已锁定 CEL-Go 和基于 go-redis 的唯一 FalkorDB 薄适配，不引入原型 SDK。适配及定义图构建/校验由独占 T2 验证；单机 Infra 与 T2 共用固定版本服务定义，发布执行器与激活入口尚未实现。
+临时原型曾验证 Go 1.24.2、CEL-Go `v0.32.0`、FalkorDB Go 客户端 `v2.1.0` 和 FalkorDB `v4.20.6` ARM64 的有限场景。正式代码采用已锁定 CEL-Go 和基于 go-redis 的唯一 FalkorDB 薄适配，不引入原型 SDK。适配及定义图构建/校验由独占 T2 验证；单机 Infra 与 T2 共用固定版本服务定义，首次执行/激活组件已接入 PG/FalkorDB 联动 T2，尚无用户入口。
 
 正式实施必须满足：
 
@@ -274,7 +295,7 @@ Agent 取消仍遵守现有规范：取消 Runtime 不自动取消已有 owner e
 
 ## 10. 实施切片与门禁
 
-1a 语义内核、1b PG 修订/发布内部服务和 1c-1 FalkorDB 投影适配已实施，代码位于 `ontology/backend/internal/`。当前有原生定义校验、快照恢复、PG 状态生命周期、原子 pending execution 及独立图构建/校验；尚未将 pending execution 接入图适配，不存在自动构建或激活旁路。仍不是可启动的 HTTP 服务，不提前登记空路由或模块端口；本轮已登记由 System 签发 API 实际消费的发布权限及最小 Runtime 角色。owner schema 已登记，表结构由 owner 版本化迁移管理；未在开发库执行迁移。FalkorDB 单机 Infra 配置已登记，独占 T2 复用同一定义并验证容器重建后的快照恢复。System 内部任务授权、Common 消费客户端和 Ontology 发布准入已实现；来源引用、关系实例推导、图执行器、激活与正式 Agent 消费仍未实现。
+1a 语义内核、1b PG 修订/发布、1c-1 FalkorDB 投影适配及 1c-2 的首次执行/失败重建、Backend 管理入口已实施。首次发布和重建共用新 execution 的授权准入、Common 租约、确定性图构建、全量校验和 PG 原子激活，不存在绕过准入的构建旁路。常驻 Backend 位于 `ontology/backend/cmd/server`，管理路由位于 `internal/api`；端口、构建、部署、权限与开发生命周期同步登记。owner schema 由向前迁移管理；本轮未在个人开发库执行迁移或重启服务。FalkorDB 单机 Infra 与独占 T2 共用定义。真实 System/Gateway 的 T4、来源引用、关系实例推导、历史图清理与正式 Agent 消费仍未完成。
 
 内核输入属于假设性试算，不验证业务 owner 证据或 IAM；调用方传入的租户/修订身份匹配检查不等于授权。接口上线前仍必须满足第 6 节的可信事实与授权要求。
 
@@ -297,6 +318,24 @@ Agent 取消仍遵守现有规范：取消 Runtime 不自动取消已有 owner e
 本地共享 PostgreSQL 测试只允许 `addp_test` 与 `addp_iam_test`，通过标准入口隔离 owner schema，不创建一次性命名 database。FalkorDB 使用独占、固定镜像的 disposable 服务，失败和中断都清理并核验残留，不使用个人开发数据。
 
 Agent 评测沿现有 `evals/agent-scenarios/` 和 `make test-agent-eval` 扩展；正式在线验证走已登记 T4，不新建第二套评测框架。用同一模型、同一数据快照与同一授权比较“Skill + Tool”与“增加领域语义”两组，至少覆盖正确率、无依据断言、澄清、版本依据和权限拒绝；不只看回答是否流畅。
+
+### 10.1 Backend 管理入口
+
+Backend 使用 Go/Gin，端口 8195，唯一 API 前缀 `/api/v1/ontology`，不改 Graph。仅接受当前 Tenant 的 User Access Token；主体、成员、租户和授权版本从 System AuthContext 取得，禁止请求体自报。第一版不开放 Delegated Token、Service Token 或任意 Cypher。
+
+`ontology.revision.read` 读取本体头、确定修订与确定 generation；`ontology.revision.update` 创建/保存草稿、提交审核、退回；`ontology.revision.publish` 发布/撤回，发布和失败重建同时要求 `system.execution_authorization.create`。Permission 均为 Tenant scope，自定义角色显式分配，不扩张既有用户角色。`platform.ontology_runtime` 仅用于自身模块注册，Tenant Runtime 权限保持不变。
+
+- `GET /ontologies/{ontology_id}`：返回 last_revision、activation_version、active_revision/generation，不把 published 当作 active。
+- `POST /ontologies/{ontology_id}/revisions`、`GET/PUT /ontologies/{ontology_id}/revisions/{revision}`：请求只提交原生定义成员，Scope 由路径、修订号和认证事实组成；保存携带精确 version。
+- 修订下 `POST /submit`、`/return`、`/publish`、`/withdraw`：精确 version，不接受内容；`POST /rebuild` 另带 failed_generation 和 activation_version。
+- `GET /ontologies/{ontology_id}/projections/{generation}`：仅返回当前 Tenant/本体的投影身份、状态、前驱和激活基线，不暴露授权、lease token 或图物理 key。
+- `GET /ontologies/{ontology_id}/revisions/{revision}/projection`：按重建前驱链读取该修订最新一次投影（不是 active 指针），便于发布/重建响应丢失后找回任务身份；没有投影返回 404。按无后继节点确定，不按客户端时间猜测或回退首次 generation。
+
+发布/重建先提交 PG 意图，再在同一请求栈内签发并附加授权，成功返回 202（仅表示已准入，不表示 active）。准入失败返回 502 和稳定 `projection_admission_failed`，同时返回已提交的 revision/version/generation/execution_id；调用方必须按身份重新查询，不得盲重试发布。原修订不会因准入失败解冻，后续遵循显式失败重建。请求/进程中断产生的未准入 pending 不被领取，当前不自动补签或重放，可撤回修订；无授权 pending 的自动超时收敛不在本切片范围。
+
+Backend 使用统一 Lifecycle，绑定监听后异步注册；Ready 同时要求 PG、带非零查询上限的 FalkorDB 和 System 注册有效。Supervisor 只在 Ready 时领取；退出停止领取、取消并等待在途执行，限时关闭 HTTP，再等待注销。部署仅使用独立 `ONTOLOGY_SERVICE_CLIENT_SECRET`、`INFRA_FALKORDB_PASSWORD` 与部署地址，不注册 Business Engine。
+
+最小门禁为 T0 权限/Swagger/构建与生命周期登记、T1 正式路由鉴权与严格 DTO、T2 PG/FalkorDB 原有状态机及读取隔离。真实 System/Gateway 跨进程体验另需 T4，不以进程内认证夹具冒充已上线。
 
 ## 11. 相关事实源
 

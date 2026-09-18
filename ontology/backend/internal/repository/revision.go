@@ -4,11 +4,8 @@ import (
 	"context"
 	"errors"
 	"math"
-	"strconv"
 	"time"
 
-	"github.com/addp/common/execution"
-	commonmodels "github.com/addp/common/models"
 	"github.com/addp/ontology/internal/models"
 	"github.com/addp/ontology/internal/semantic"
 	"github.com/google/uuid"
@@ -150,7 +147,8 @@ func (r *RevisionRepository) Change(ctx context.Context, actor models.Actor, sco
 	}
 	var record models.Revision
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if _, err := lockOntology(tx, scope); err != nil {
+		head, err := lockOntology(tx, scope)
+		if err != nil {
 			return err
 		}
 		if err := scoped(tx.Clauses(clause.Locking{Strength: "UPDATE"}), scope).First(&record).Error; err != nil {
@@ -170,24 +168,16 @@ func (r *RevisionRepository) Change(ctx context.Context, actor models.Actor, sco
 		}
 		if action == "publish" {
 			executionID, generation := uuid.NewString(), uuid.NewString()
-			item := &execution.TaskExecution{ExecutionID: executionID, TenantID: int(scope.TenantID), Module: models.Module,
-				TaskType: models.ProjectionTaskType, Source: models.Module, Status: execution.ExecutionStatusPending,
-				TriggerType: execution.TriggerTypeManual, ExecutionBoundary: execution.ExecutionBoundaryBounded, MaxAttempts: 3,
-				ActorPrincipalID: &actor.PrincipalID, ActorTenantMembershipID: &actor.MembershipID, IssuedAuthorizationVersion: &actor.AuthorizationVersion,
-				ExecutionConfig: commonmodels.JSONMap{"ontology_id": scope.OntologyID, "revision": strconv.FormatUint(scope.Revision, 10), "digest": record.Digest, "generation": generation},
-				Metadata:        commonmodels.JSONMap{}, ErrorDetails: commonmodels.JSONMap{}, CreatedAt: now, UpdatedAt: now}
-			if err := execution.NewTaskExecutionRepository(tx).Create(ctx, item); err != nil {
-				return err
-			}
 			fields["build_execution_id"], fields["generation"], fields["published_at"] = executionID, generation, now
 			record.BuildExecutionID, record.Generation, record.PublishedAt = &executionID, &generation, &now
 		}
 		if action == "withdraw" {
-			// Cancellation of a pending intent is atomic with withdrawal. A
-			// running worker must itself observe withdrawal before activation.
-			if err := tx.Model(&execution.TaskExecution{}).
-				Where("execution_id = ? AND tenant_id = ? AND module = ? AND task_type = ? AND status = ?", record.BuildExecutionID, scope.TenantID, models.Module, models.ProjectionTaskType, execution.ExecutionStatusPending).
-				Updates(map[string]any{"status": execution.ExecutionStatusCancelled, "completed_at": now, "updated_at": now}).Error; err != nil {
+			if head.ActiveRevision != nil && *head.ActiveRevision == scope.Revision {
+				if err := tx.Model(head).Updates(map[string]any{"active_revision": nil, "active_generation": nil, "activation_version": head.ActivationVersion + 1}).Error; err != nil {
+					return err
+				}
+			}
+			if err := cancelPendingProjections(tx, actor, &record); err != nil {
 				return err
 			}
 		}
@@ -199,6 +189,12 @@ func (r *RevisionRepository) Change(ctx context.Context, actor models.Actor, sco
 			return ErrConflict
 		}
 		record.Version, record.Status, record.UpdatedAt = version+1, to, now
+		if action == "publish" {
+			if err := insertProjection(ctx, tx, actor, &models.Projection{TenantID: scope.TenantID, OntologyID: scope.OntologyID, Revision: scope.Revision,
+				Generation: *record.Generation, ExecutionID: *record.BuildExecutionID, Digest: record.Digest, BaselineVersion: head.ActivationVersion, Status: "pending", CreatedAt: now, UpdatedAt: now}); err != nil {
+				return err
+			}
+		}
 		return addEvent(tx, actor, &record, action, from)
 	})
 	if err != nil {

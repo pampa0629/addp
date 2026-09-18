@@ -26,7 +26,7 @@ cd "$ROOT_DIR/ontology/backend"
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
-go test ./internal/service -run '^TestPostgresRevisionLifecycle$' -count=1 -timeout=120s -v 2>&1 | tee "$WORK_DIR/tests.log"
+go test ./internal/service -run '^TestPostgres(RevisionLifecycle|MigrationUpgrade)$' -count=1 -timeout=120s -v 2>&1 | tee "$WORK_DIR/tests.log"
 if grep -q -- '--- SKIP:' "$WORK_DIR/tests.log"; then
     echo "Ontology PostgreSQL gate refuses skipped integration tests" >&2
     exit 1

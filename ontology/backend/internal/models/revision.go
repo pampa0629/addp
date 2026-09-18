@@ -11,7 +11,7 @@ const (
 	ProjectionTaskType = "semantic_projection"
 )
 
-// Actor is supplied by the future authenticated owner boundary, not by an LLM
+// Actor is supplied by the authenticated owner boundary, not by an LLM
 // or untrusted request body. These facts do not confer permissions themselves.
 type Actor struct {
 	TenantID             uint64
@@ -21,21 +21,26 @@ type Actor struct {
 }
 
 type Ontology struct {
-	TenantID     uint64 `gorm:"primaryKey"`
-	OntologyID   string `gorm:"primaryKey"`
-	LastRevision uint64
+	TenantID          uint64 `gorm:"primaryKey"`
+	OntologyID        string `gorm:"primaryKey"`
+	LastRevision      uint64
+	ActivationVersion uint64 `gorm:"default:1"`
+	ActiveRevision    *uint64
+	ActiveGeneration  *string
 }
 
 func (Ontology) TableName() string { return "ontology.ontologies" }
 
 type Revision struct {
-	TenantID         uint64 `gorm:"primaryKey"`
-	OntologyID       string `gorm:"primaryKey"`
-	Revision         uint64 `gorm:"primaryKey"`
-	Version          uint64
-	Status           string
-	Payload          string
-	Digest           string
+	TenantID   uint64 `gorm:"primaryKey"`
+	OntologyID string `gorm:"primaryKey"`
+	Revision   uint64 `gorm:"primaryKey"`
+	Version    uint64
+	Status     string
+	Payload    string
+	Digest     string
+	// Immutable first-publication provenance, never the active/current build.
+	// All execution and admission resolve an exact models.Projection instead.
 	BuildExecutionID *string
 	Generation       *string
 	PublishedAt      *time.Time

@@ -18,6 +18,7 @@ echo -e "${BLUE}=== ADDP Go Modules Tidy (并发模式) ===${NC}\n"
 GO_MODULES=(
     "common"
 	"catalog/backend"
+	"ontology/backend"
 	"workbench/backend"
     "system/backend"
     "manager/backend"

@@ -1,6 +1,6 @@
 schema_version: addp.permission_manifest/v1
 owner_module: ontology
-manifest_version: 1
+manifest_version: 2
 permissions:
   - key: ontology.revision.publish
     allowed_scope_types: [tenant]
@@ -10,3 +10,19 @@ permissions:
     status: active
     name_i18n_key: permissions.ontology.revision.publish.name
     description_i18n_key: permissions.ontology.revision.publish.description
+  - key: ontology.revision.read
+    allowed_scope_types: [tenant]
+    risk_level: low
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.ontology.revision.read.name
+    description_i18n_key: permissions.ontology.revision.read.description
+  - key: ontology.revision.update
+    allowed_scope_types: [tenant]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.ontology.revision.update.name
+    description_i18n_key: permissions.ontology.revision.update.description

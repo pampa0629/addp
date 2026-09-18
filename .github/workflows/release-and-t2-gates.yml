@@ -1132,6 +1132,20 @@ jobs:
     if: needs.selection.outputs.ontology == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:15@sha256:74e110c41804365e3915fcc09d5e7a1eff50161aaa94d5da0e58e0cd75ae509c
+        env:
+          POSTGRES_USER: addp_ci
+          POSTGRES_PASSWORD: addp_ci_password
+          POSTGRES_DB: addp_ontology_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U addp_ci -d addp_ontology_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -1143,6 +1157,8 @@ jobs:
           go-version-file: ontology/backend/go.mod
           cache: false
       - name: Run Ontology FalkorDB gate
+        env:
+          ONTOLOGY_POSTGRES_TEST_DSN: postgres://addp_ci:addp_ci_password@127.0.0.1:5432/addp_ontology_test?sslmode=disable
         run: make test-ontology-falkor
       - name: Summarize Ontology FalkorDB gate
         if: always()

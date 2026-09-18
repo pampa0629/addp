@@ -2,7 +2,7 @@
   <el-dialog
     :model-value="modelValue"
     class="addp-dialog component-dialog"
-    :title="component ? t('workbench.editComponent') : t('workbench.addComponent')"
+    :title="duplicate ? t('workbench.studio.duplicateComponent') : component ? t('workbench.editComponent') : t('workbench.addComponent')"
     width="min(1180px, calc(100vw - 24px))"
     destroy-on-close
     @open="initialize"
@@ -27,6 +27,15 @@
             <p class="configuration-hint">{{ t('workbench.studio.serviceHint') }}</p>
             <el-alert v-if="!loading && services.length === 0" type="info" :closable="false" :title="t('workbench.studio.noServices')" />
             <el-alert v-if="descriptor && draft.rendererType === 'map' && !descriptor.output_contract.spatial" type="warning" :closable="false" :title="t('workbench.studio.mapServiceRequired')" />
+            <section v-if="!component && displaySuggestions.length" class="display-suggestions" data-testid="display-suggestions">
+              <strong>{{ t('workbench.studio.suggestionsTitle') }}</strong>
+              <p class="reuse-hint">{{ t('workbench.studio.suggestionsHint') }}</p>
+              <button v-for="suggestion in displaySuggestions" :key="suggestion.key" type="button" class="display-suggestion" :data-testid="`suggestion-${suggestion.key}`" @click="applyDisplaySuggestion(suggestion)">
+                <strong>{{ t(`workbench.studio.suggestions.${suggestion.key}`) }}</strong>
+                <span>{{ suggestionFields(suggestion) }}</span>
+                <span class="suggestion-action">{{ t('workbench.studio.trySuggestion') }} →</span>
+              </button>
+            </section>
           </div>
           <template v-if="descriptor">
             <div v-show="activeStep === 'display'" class="configuration-section">
@@ -73,6 +82,11 @@
               <el-form-item :label="t('workbench.measures')">
                 <el-select v-model="draft.measures" class="full" multiple filterable :multiple-limit="draft.chartType === 'pie' ? 1 : 5" @change="syncRendererFields">
                   <el-option v-for="field in numericOutputFields" :key="field.name" :value="field.name" :label="field.comment || field.name" />
+                </el-select>
+              </el-form-item>
+              <el-form-item :label="t('workbench.resultNameField')">
+                <el-select v-model="draft.resultNameField" class="full" clearable filterable @change="syncRendererFields">
+                  <el-option v-for="field in outputFields.filter(field => field.type === 'string' && selectableFields.some(input => input.name === field.name))" :key="field.name" :value="field.name" :label="field.comment || field.name" />
                 </el-select>
               </el-form-item>
               <el-checkbox v-model="draft.totalAsValue">{{ t('workbench.totalAsValue') }}</el-checkbox>
@@ -150,7 +164,11 @@
               </details>
             </div>
             <div v-show="activeStep === 'conditions'" class="configuration-section">
-              <p class="configuration-hint">{{ t(component ? 'workbench.studio.existingConditionsHint' : 'workbench.studio.conditionsHint') }}</p>
+              <template v-if="duplicate">
+                <el-form-item :label="t('workbench.componentTitle')"><el-input v-model="draft.name" maxlength="200" /></el-form-item>
+                <p class="reuse-hint">{{ t('workbench.studio.duplicateHint') }}</p>
+              </template>
+              <p v-else class="configuration-hint">{{ t(isNewComponent ? 'workbench.studio.conditionsHint' : 'workbench.studio.existingConditionsHint') }}</p>
             <div class="section-header">
               <strong>{{ t('workbench.parameters') }}</strong>
               <div class="parameter-actions">
@@ -171,16 +189,21 @@
               <el-select v-else v-model="parameter.operator" @change="syncParameterControl(parameter)">
                 <el-option v-for="operator in operatorsFor(parameter.field)" :key="operator" :label="operator" :value="operator" />
               </el-select>
-              <div v-if="!component && snapshot.parameters.length" class="parameter-reuse" data-testid="parameter-reuse">
+              <div v-if="isNewComponent && snapshot.parameters.length" class="parameter-reuse" data-testid="parameter-reuse">
                 <label>{{ t('workbench.studio.filterSource') }}</label>
                 <el-select :model-value="parameter.applicationParameterKey || ''" :empty-values="[null, undefined]" :fit-input-width="true" :aria-label="t('workbench.studio.filterSource')" class="full" @update:model-value="chooseExistingParameter(parameter, $event)">
                   <el-option value="" :label="t('workbench.studio.independentFilter')" />
                   <el-option v-for="option in reuseOptions(parameter)" :key="option.parameter.key" :value="option.parameter.key" :label="reuseLabel(option.parameter)" :title="reuseLabel(option.parameter)" :disabled="!option.compatible" />
                 </el-select>
                 <span v-if="parameter.applicationParameterKey" class="reuse-hint">{{ t('workbench.studio.reusedFilterHint') }}</span>
+                <label v-else class="independent-filter-name">
+                  {{ t('workbench.studio.filterName') }}
+                  <el-input v-model="parameter.label" :aria-label="t('workbench.studio.filterName')" />
+                </label>
               </div>
-              <ParameterValueInput v-model="parameter.value" :control-type="parameter.controlType" :options="parameter.options || []" :disabled="Boolean(parameter.applicationParameterKey)" @update:model-value="resetResult" />
-              <details class="parameter-details"><summary>{{ t('workbench.studio.parameterSettings') }}</summary><el-input v-model="parameter.label" :placeholder="t('workbench.parameterLabel')" /><el-input v-model="parameter.key" :placeholder="t('workbench.parameterKey')" /><el-button link type="danger" :disabled="parameter.bindingKind === 'named'" @click="removeParameter(index)">{{ t('workbench.delete') }}</el-button></details>
+              <span v-if="isNewComponent && snapshot.parameters.length && !parameter.applicationParameterKey" class="reuse-hint">{{ t('workbench.studio.initialValue') }}</span>
+              <ParameterValueInput v-model="parameter.value" :aria-label="t('workbench.studio.initialValue')" :control-type="parameter.controlType" :options="parameter.options || []" :disabled="Boolean(parameter.applicationParameterKey)" @update:model-value="resetResult" />
+              <details class="parameter-details"><summary>{{ t('workbench.studio.parameterSettings') }}</summary><el-input v-if="!(isNewComponent && snapshot.parameters.length && !parameter.applicationParameterKey)" v-model="parameter.label" :placeholder="t('workbench.parameterLabel')" /><el-input v-model="parameter.key" :placeholder="t('workbench.parameterKey')" /><el-button link type="danger" :disabled="parameter.bindingKind === 'named'" @click="removeParameter(index)">{{ t('workbench.delete') }}</el-button></details>
             </div>
             </div>
           </template>
@@ -221,7 +244,7 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { createLatestRequestCoordinator } from '@common-ui'
 import { executeDescriptorOperation, getConsumerDescriptor, listConsumerServices } from '../api/services'
-import { buildComponentConfiguration, buildQueryRequest, buildRendererConfig, controlTypeFor, createNamedParameterDraft, createParameterDraft, draftFromComponent, emptyControlValue, requiredParameterValuesPresent, synchronizeFieldPresentations } from '../utils/componentDraft.mjs'
+import { buildComponentConfiguration, buildQueryRequest, buildRendererConfig, componentDisplaySuggestions, controlTypeFor, createNamedParameterDraft, createParameterDraft, draftFromComponent, emptyControlValue, requiredParameterValuesPresent, synchronizeFieldPresentations } from '../utils/componentDraft.mjs'
 import { boundedExportHasMore, descriptorSupportsExport, downloadBoundedExport, exportFormatForRenderer } from '../utils/boundedExport.mjs'
 import WorkbenchRendererHost from './WorkbenchRendererHost.vue'
 import StateRuleEditor from './StateRuleEditor.vue'
@@ -231,7 +254,7 @@ import { canBindApplicationParameter, newComponentParameterContext } from '../ut
 import { initialApplicationParameterValue } from '../utils/dataApplicationParameters.mjs'
 import { affectedSelectionComponentIDs } from '../utils/dataApplicationSelection.mjs'
 
-const props = defineProps({ modelValue: Boolean, initialRenderer: { type: String, default: 'table' }, component: { type: Object, default: null }, snapshot: { type: Object, required: true }, descriptors: { type: Object, required: true } })
+const props = defineProps({ modelValue: Boolean, duplicate: Boolean, initialRenderer: { type: String, default: 'table' }, component: { type: Object, default: null }, snapshot: { type: Object, required: true }, descriptors: { type: Object, required: true } })
 const emit = defineEmits(['update:modelValue', 'save'])
 const { t, locale } = useI18n()
 const numericTypes = new Set(['int', 'bigint', 'float', 'double', 'decimal'])
@@ -254,8 +277,10 @@ const cursors = ref([''])
 const cursorIndex = ref(0)
 const draft = reactive(emptyDraft())
 const componentID = ref('')
+const configurationFingerprint = ref('')
+const isNewComponent = computed(() => !props.component || props.duplicate)
 const reusedParameters = computed(() => Object.fromEntries(draft.parameters.filter(p => p.applicationParameterKey).map(p => [p.key, p.applicationParameterKey])))
-const reuseContext = computed(() => descriptor.value && !props.component ? newComponentParameterContext(props.snapshot, props.descriptors, buildComponentConfiguration(descriptor.value, draft, componentID.value), descriptor.value, reusedParameters.value) : null)
+const reuseContext = computed(() => descriptor.value && isNewComponent.value ? newComponentParameterContext(props.snapshot, props.descriptors, buildComponentConfiguration(descriptor.value, draft, componentID.value), descriptor.value, reusedParameters.value) : null)
 function reuseOptions(parameter) {
   if (!reuseContext.value) return []
   const { snapshot, descriptors } = reuseContext.value
@@ -279,6 +304,26 @@ const selectableFields = computed(() => (descriptor.value?.input_contract?.field
 const filterableFields = computed(() => (descriptor.value?.input_contract?.fields || []).filter((field) => field.filterable))
 const parameterizableFields = computed(() => filterableFields.value.filter((field) => Array.isArray(field.operators) && field.operators.some(Boolean)))
 const outputFields = computed(() => descriptor.value?.output_contract?.fields || [])
+const displaySuggestions = computed(() => componentDisplaySuggestions(descriptor.value).sort((a, b) => Number(a.rendererType !== props.initialRenderer) - Number(b.rendererType !== props.initialRenderer)))
+function suggestionFields(suggestion) {
+  const labels = suggestion.columns.slice(0, 3).map(name => {
+    const field = outputFields.value.find(candidate => candidate.name === name)
+    return field?.comment ? `${field.comment} (${name})` : name
+  })
+  const fields = labels.join(suggestion.rendererType === 'chart' ? ' → ' : t('workbench.listSeparator'))
+  return suggestion.columns.length > 3 ? t('workbench.studio.suggestionMoreFields', { fields, count: suggestion.columns.length }) : fields
+}
+async function applyDisplaySuggestion(suggestion) {
+  Object.assign(draft, {
+    rendererType: suggestion.rendererType, chartType: suggestion.chartType || 'bar',
+    columns: [...suggestion.columns], dimension: suggestion.dimension || '', measures: [...(suggestion.measures || [])],
+    geometryField: suggestion.geometryField || '', mapLabelField: '', tooltipFields: [], mapStyleMode: 'uniform', mapColorField: '', mapPalette: 'primary', mapLegendTitle: '',
+    fieldPresentations: [], totalAsValue: false, resultNameField: '', valueItems: [], pageLimit: descriptor.value.input_contract.page.default_limit,
+  })
+  syncRendererFields()
+  activeStep.value = requiredParameterValuesPresent(draft.parameters) ? 'display' : 'conditions'
+  if (canQuery.value) await preview()
+}
 const numericOutputFields = computed(() => outputFields.value.filter((field) => numericTypes.has(field.type)))
 const thematicOutputFields = computed(() => outputFields.value.filter((field) => thematicTypes.has(field.type)))
 const mapStyleFields = computed(() => draft.mapStyleMode === 'continuous' ? numericOutputFields.value : thematicOutputFields.value)
@@ -288,10 +333,11 @@ const dimensionFields = computed(() => {
   return outputFields.value.filter((field) => stableKeys.has(field.name))
 })
 const rendererConfig = computed(() => buildRendererConfig(draft))
-const contractChanged = computed(() => Boolean(props.component?.contract_fingerprint && descriptor.value && props.component.contract_fingerprint !== descriptor.value.contract_fingerprint))
+const contractChanged = computed(() => Boolean(configurationFingerprint.value && descriptor.value && configurationFingerprint.value !== descriptor.value.contract_fingerprint))
 const validDraft = computed(() => {
   if (!descriptor.value || !draft.name.trim() || draft.columns.length === 0) return false
-  if (!props.component && draft.parameters.some(p => p.applicationParameterKey && !reuseOptions(p).some(option => option.parameter.key === p.applicationParameterKey && option.compatible))) return false
+  if (props.duplicate && contractChanged.value) return false
+  if (isNewComponent.value && draft.parameters.some(p => p.applicationParameterKey && !reuseOptions(p).some(option => option.parameter.key === p.applicationParameterKey && option.compatible))) return false
   const parameterKeys = new Set()
   const descriptorNamedParameters = new Map((descriptor.value.input_contract.named_parameters || []).map((parameter) => [parameter.name, parameter]))
   if (draft.parameters.some((parameter) => {
@@ -306,6 +352,7 @@ const validDraft = computed(() => {
     return draft.pageLimit === 1 && fields.length > 0 && fields.length <= 4 && new Set(fields).size === fields.length && draft.valueItems.every((item) => item.field && String(item.label || '').trim() && Number.isInteger(item.precision) && item.precision >= 0 && item.precision <= 8 && stateRulesValid(item.stateRules, outputField(item.field)?.type))
   }
   if (!fieldPresentationsValid()) return false
+  if (draft.rendererType === 'chart' && draft.resultNameField && (!draft.columns.includes(draft.resultNameField) || !outputFields.value.some(field => field.name === draft.resultNameField && field.type === 'string'))) return false
   if (draft.rendererType === 'chart' && draft.totalAsValue && (draft.measures.length > 4 || !draft.fieldPresentations.some(item => item.field === draft.dimension && item.temporalFormat === 'period'))) return false
   if (draft.rendererType === 'chart') return Boolean(draft.dimension && draft.measures.length > 0 && (draft.chartType !== 'pie' || draft.measures.length === 1))
   if (draft.rendererType === 'map') return Boolean(draft.geometryField && (draft.mapStyleMode === 'uniform' || draft.mapColorField))
@@ -322,7 +369,7 @@ function componentContextKey(component = props.component) {
 
 function emptyDraft() {
   return {
-    name: '', description: '', columns: [], pageLimit: 50, parameters: [], rendererType: 'table', chartType: 'bar', totalAsValue: false, dimension: '', measures: [], valueItems: [], fieldPresentations: [],
+    name: '', description: '', columns: [], fixedFilter: null, orderBy: null, pageLimit: 50, parameters: [], rendererType: 'table', chartType: 'bar', totalAsValue: false, resultNameField: '', dimension: '', measures: [], valueItems: [], fieldPresentations: [],
     geometryField: '', mapLabelField: '', tooltipFields: [], mapStyleMode: 'uniform', mapColorField: '', mapPalette: 'primary', mapLegendTitle: '',
   }
 }
@@ -332,8 +379,9 @@ function assignDraft(value) {
 }
 
 async function initialize() {
-  componentID.value = props.component?.id || crypto.randomUUID()
-  activeStep.value = props.component ? 'display' : 'data'
+  componentID.value = isNewComponent.value ? crypto.randomUUID() : props.component.id
+  configurationFingerprint.value = props.component?.contract_fingerprint || ''
+  activeStep.value = props.duplicate ? 'conditions' : props.component ? 'display' : 'data'
   const sourceComponent = props.component
   const targetContext = componentContextKey(sourceComponent)
   const request = descriptorRequests.begin(targetContext)
@@ -353,6 +401,13 @@ async function initialize() {
       if (!descriptorRequests.isCurrent(request, componentContextKey())) return
       descriptor.value = currentDescriptor
       assignDraft(draftFromComponent(sourceComponent, currentDescriptor))
+      if (props.duplicate) {
+        draft.name = t('workbench.studio.duplicateTitle', { title: sourceComponent.title }).slice(0, 200)
+        for (const parameter of draft.parameters) {
+          const binding = props.snapshot.parameter_bindings.find(b => b.component_id === sourceComponent.id && b.component_parameter_key === parameter.key)
+          if (binding) chooseExistingParameter(parameter, binding.application_parameter_key)
+        }
+      }
     }
   } catch (error) {
     if (!descriptorRequests.isCurrent(request, componentContextKey())) return
@@ -377,6 +432,7 @@ async function selectService(selectedServiceKey = serviceKey.value) {
     const { data } = await getConsumerDescriptor(summary.ref)
     if (!descriptorRequests.isCurrent(request, serviceKey.value)) return
     descriptor.value = data
+    configurationFingerprint.value = data.contract_fingerprint
     const namedParameters = (data.input_contract.named_parameters || [])
       .map((parameter, index) => createNamedParameterDraft(parameter, index, locale.value))
       .filter(Boolean)
@@ -423,7 +479,7 @@ function syncChartType() {
 
 function syncRendererFields() {
   const required = draft.rendererType === 'chart'
-    ? [draft.dimension, ...draft.measures]
+    ? [draft.dimension, ...draft.measures, draft.resultNameField]
     : draft.rendererType === 'map'
       ? [draft.geometryField, draft.mapLabelField, draft.mapStyleMode === 'uniform' ? '' : draft.mapColorField, ...draft.tooltipFields]
       : draft.rendererType === 'value'
@@ -686,4 +742,10 @@ function submit() {
 .value-item { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 @media(max-width:1000px) { .configuration-form { max-height: none; }.preview-panel { position: static; height: 360px; } }
 .configuration-error { display: block; margin-bottom: 12px; color: var(--el-color-warning); text-align: left; font-size: 13px; }
+.display-suggestions { display: grid; gap: 10px; }
+.display-suggestions > p { margin: 0; }
+.display-suggestion { display: grid; gap: 8px; width: 100%; padding: 14px; text-align: left; font: inherit; color: var(--addp-text-primary); background: var(--addp-bg-primary); border: 1px solid var(--addp-border-color); border-radius: 8px; cursor: pointer; }
+.display-suggestion:hover, .display-suggestion:focus-visible { border-color: var(--el-color-primary); background: var(--el-color-primary-light-9); }
+.display-suggestion span { font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; color: var(--addp-text-secondary); }
+.display-suggestion .suggestion-action { color: var(--el-color-primary); }
 </style>

@@ -1,5 +1,8 @@
 {
   "workbench": {
+    "resultNameField": "结果名称字段（可选）",
+    "resultNameMissing": "未提供名称",
+    "resultNameAmbiguous": "无法确定单一名称",
     "totalAsValue": "全期显示数值卡片",
     "totalAsValueHint": "将维度的时间格式设为“统计期间”，最多选择 4 个度量；按月仍显示图表。",
     "title": "工作台",
@@ -408,6 +411,7 @@
       "rawValueHint": "传递字段的原始值。例如，人员编号用来查询，昵称用来展示。",
       "tryInteraction": "完成设置后，点击「预览应用」试用联动。",
       "noInteractionSource": "暂无可新增的来源：需要表格、图表或地图中的字段与筛选条件类型一致。已配置的来源可直接编辑联动。",
+      "chooseFromComponent": "通过点击组件选择此条件",
       "filterName": "筛选名称",
       "previewDefaultsHint": "选好人员和筛选条件后，可将当前全部条件设为初始值。关闭预览不会带回修改。",
       "applyPreviewDefaults": "设为应用初始值",
@@ -417,7 +421,20 @@
       "independentFilter": "新建独立条件",
       "reuseFilterHint": "可复用应用里的条件；类型、可选值或已有联动不兼容的选项不可选。",
       "reusedFilterHint": "试查使用该条件的初始值。添加后，这个组件会随该条件一起更新。",
-      "reuseUnavailable": "所选共享条件已不可用，请重新检查筛选条件。"
+      "reuseUnavailable": "所选共享条件已不可用，请重新检查筛选条件。",
+      "duplicateComponent": "复制组件",
+      "duplicateTitle": "{title}（副本）",
+      "duplicateHint": "已沿用原组件的样式和筛选条件。切换需要对比的条件后即可添加；点击联动请在添加后单独设置。",
+      "suggestionsTitle": "选一个展示起点",
+      "suggestionsHint": "已按可用字段准备好配置，可继续调整。若有必填条件，先填好再查看真实结果。",
+      "trySuggestion": "使用此方案试查",
+      "suggestionMoreFields": "{fields} 等 {count} 个字段",
+      "suggestions": {
+        "table": "明细表",
+        "bar": "类别对比",
+        "line": "时间趋势",
+        "map": "空间分布"
+      }
     }
   }
 }

@@ -55,6 +55,7 @@ graph TB
         Catalog[Catalog Backend<br/>企业资源目录<br/>:8192]
         Workbench[Workbench Backend<br/>服务消费工作台<br/>:8193]
         Security[Security Backend<br/>数据安全<br/>:8194]
+        Ontology[Ontology Backend<br/>租户领域语义<br/>:8195]
         Transfer[Transfer Backend<br/>数据传输<br/>:8083]
         Orchestrator[Orchestrator Backend<br/>任务编排<br/>:8084]
         Develop[Develop Backend<br/>数据开发<br/>:8185]
@@ -91,6 +92,7 @@ graph TB
     subgraph "基础设施层"
         PostgreSQL[(PostgreSQL<br/>系统数据库<br/>:15432)]
         Redis[(Redis<br/>缓存/事件<br/>:16379)]
+        FalkorDB[(FalkorDB<br/>Ontology 私有投影<br/>:16479)]
         MinIO[(MinIO<br/>对象存储<br/>:19000)]
         Meilisearch[(Meilisearch<br/>全文搜索<br/>:17700)]
         InfraKafka[(Infra Kafka<br/>KRaft<br/>:19092)]
@@ -121,6 +123,11 @@ graph TB
     Gateway --> Catalog
     Gateway --> Workbench
     Gateway --> Security
+    Gateway --> Ontology
+    Ontology --> PostgreSQL
+    Ontology --> FalkorDB
+    Ontology --> Common
+    Ontology --> System
     Gateway --> Transfer
     Gateway --> Orchestrator
     Gateway --> Develop

@@ -1,5 +1,8 @@
 {
   "workbench": {
+    "resultNameField": "Result name field (optional)",
+    "resultNameMissing": "Name not provided",
+    "resultNameAmbiguous": "Cannot determine a single name",
     "totalAsValue": "Show value cards for the full period",
     "totalAsValueHint": "Set the dimension time format to Reporting period and select up to 4 measures. Monthly results remain charts.",
     "title": "Workbench",
@@ -408,6 +411,7 @@
       "rawValueHint": "Pass the original field value. For example, use a person’s ID for queries and their nickname for display.",
       "tryInteraction": "Finish setup, then choose “Preview application” to try the interaction.",
       "noInteractionSource": "No additional source is available. A table, chart or map field must match a filter’s type. Existing sources can be edited above.",
+      "chooseFromComponent": "Choose this filter by clicking a component",
       "filterName": "Filter name",
       "previewDefaultsHint": "Choose people and filters, then use all current filter values as initial values. Closing the preview discards changes.",
       "applyPreviewDefaults": "Use as initial values",
@@ -417,7 +421,20 @@
       "independentFilter": "Create an independent filter",
       "reuseFilterHint": "Reuse an application filter. Incompatible types, options or existing interactions are disabled.",
       "reusedFilterHint": "The test query uses this filter’s initial value. Once added, this component will update with that filter.",
-      "reuseUnavailable": "The selected shared filter is no longer available. Check the filter settings."
+      "reuseUnavailable": "The selected shared filter is no longer available. Check the filter settings.",
+      "duplicateComponent": "Duplicate component",
+      "duplicateTitle": "{title} (copy)",
+      "duplicateHint": "The copy keeps the original display and filters. Switch the filter you want to compare, then add it. Configure any click interactions after adding.",
+      "suggestionsTitle": "Choose a starting display",
+      "suggestionsHint": "These setups use the available fields and remain editable. Complete any required inputs to see real results.",
+      "trySuggestion": "Try this setup",
+      "suggestionMoreFields": "{fields} and more ({count} fields)",
+      "suggestions": {
+        "table": "Detail table",
+        "bar": "Category comparison",
+        "line": "Time trend",
+        "map": "Spatial distribution"
+      }
     }
   }
 }

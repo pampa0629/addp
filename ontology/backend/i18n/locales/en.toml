@@ -1,0 +1,10 @@
+[ontology.invalid]
+other = "Invalid ontology request or definition"
+[ontology.conflict]
+other = "Ontology version or state conflict; reload before proceeding"
+[ontology.not_found]
+other = "Ontology record not found"
+[ontology.failed]
+other = "Ontology operation failed"
+[ontology.admission_failed]
+other = "Projection intent was saved but admission failed; query its returned identity instead of repeating publication"

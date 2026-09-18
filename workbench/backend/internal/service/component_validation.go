@@ -295,7 +295,16 @@ func validateRenderer(rendererType string, raw json.RawMessage, descriptor *mode
 		if config.ChartType == "line" && !orderContainsField(orderBy, config.Dimension) {
 			return fmt.Errorf("%w: line chart dimension must be ordered", ErrInvalidComponentConfiguration)
 		}
-		if err := validateFieldPresentations(config.FieldPresentations, append([]string{config.Dimension}, config.Measures...), fields, false, descriptor); err != nil {
+		renderFields := append([]string{config.Dimension}, config.Measures...)
+		if config.ResultNameField != "" {
+			field, exists := fields[config.ResultNameField]
+			_, selected := selectedFields[config.ResultNameField]
+			if !exists || !selected || field.Type != datatype.FieldTypeString {
+				return fmt.Errorf("%w: result name requires a selected string output field", ErrInvalidComponentConfiguration)
+			}
+			renderFields = append(renderFields, config.ResultNameField)
+		}
+		if err := validateFieldPresentations(config.FieldPresentations, renderFields, fields, false, descriptor); err != nil {
 			return err
 		}
 		if config.TotalAsValue {

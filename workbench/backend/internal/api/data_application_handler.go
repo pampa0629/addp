@@ -50,6 +50,7 @@ func (h *Handler) ListDataApplications(c *gin.Context) {
 // @Description 逐一重新校验 Component 的 Service 契约，并使用当前权威指纹归一化完整应用草稿 | Revalidate every Component Service contract and normalize the complete application draft with authoritative current fingerprints
 // @Description renderer_config.field_presentations 可配置 value_labels：最多 32 个 string 或 bool 原值到显示名称的映射，不改变查询和原始结果 | renderer_config.field_presentations accepts value_labels: up to 32 typed string or bool value-label pairs for display only, without changing queries or original results
 // @Description Chart 的 total_as_value=true 要求期间维度、1–4 个显式精度度量，全期显示唯一完整行的数字卡片，按月仍显示图表 | Chart total_as_value=true requires a period dimension and 1–4 explicitly precise measures; full-period results use single-complete-row value cards, monthly results remain charts
+// @Description Chart 可选 result_name_field 必须是已选中的 string 输出字段，完整结果名称一致时用于显示当前查询对象名称 | Optional Chart result_name_field must be a selected string output field; a consistent name across complete results identifies the queried subject
 // @Description Table/Chart 的 date 字段支持 temporal_format=period，period 中的 grain_parameter/start_parameter/end_parameter 显式引用必填命名参数，类型依次为 total/month 枚举 string、date、date；只改变显示 | Table/Chart date fields accept temporal_format=period with explicit period grain_parameter/start_parameter/end_parameter references to required named parameters of types total/month enum string, date and date; presentation only
 // @Tags Workbench Data Applications
 // @Accept json

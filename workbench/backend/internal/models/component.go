@@ -75,6 +75,7 @@ type TableRendererConfig struct {
 }
 
 type ChartRendererConfig struct {
+	ResultNameField    string              `json:"result_name_field,omitempty"`
 	TotalAsValue       bool                `json:"total_as_value,omitempty"`
 	ChartType          string              `json:"chart_type"`
 	Dimension          string              `json:"dimension"`

@@ -4,6 +4,7 @@ import { createLatestRequestCoordinator } from '../../../common-frontend/basic/s
 import { applicationParameterPlacement, defaultApplicationParameterValues } from '../src/utils/dataApplicationParameters.mjs'
 import { applicationParameterPreset, applicationRefreshDelayMilliseconds, buildComponentQuery, buildSelectionUpdate, canAttemptApplicationQuery, canExecuteComponentQuery, canHideApplicationParameters, canRunApplicationRefresh, canRunPublishedApplicationInitialQuery, commitLatestComponentDescriptorState, commitLatestDataApplicationLoad, componentBlockingError, componentIDsForApplicationParameters, initialApplicationParameterValues, invalidateApplicationParameterResults, isDataApplicationRuntimeAccessDenied, runtimeGridStyle, runtimeLayoutStyle, runtimeSectionVisible } from '../src/utils/dataApplicationRuntime.mjs'
 import { downloadCurrentBoundedExport } from '../src/utils/boundedExport.mjs'
+import { runtimeContentLayout } from '../src/utils/dataApplicationRuntime.mjs'
 import { resolveLoginRedirect } from '../../../common-frontend/basic/src/utils/loginRedirect.mjs'
 
 const component = {
@@ -494,4 +495,36 @@ test('uses explicit runtime sections and only hides required parameters with exe
   assert.equal(canHideApplicationParameters(nullOperatorDefault), false)
   nullOperatorDefault.parameters[1].default_value = true
   assert.equal(canHideApplicationParameters(nullOperatorDefault), true)
+})
+
+
+test('content rows collapse together, shift later rows and retain saved placements and intentional gaps', () => {
+  const place = (id, x, y, height = 6) => ({ component_id: id, x, y, width: 6, height })
+  const page = { display_mode: 'desktop', placements: [place('table', 0, 0), place('a', 0, 8), place('b', 6, 8), place('c', 0, 14), place('d', 6, 14), place('chart', 0, 21)] }
+  const before = structuredClone(page)
+  const result = runtimeContentLayout(page, ['a', 'b', 'c', 'd'])
+  assert.deepEqual(result.placements.map(({ y, height }) => [y, height]), [[0, 6], [8, 1], [8, 1], [9, 1], [9, 1], [11, 6]])
+  assert.equal(result.gridStyle.gridTemplateRows, 'repeat(8, var(--runtime-row-height)) auto auto repeat(7, var(--runtime-row-height))')
+  assert.deepEqual(result.contentIDs, ['a', 'b', 'c', 'd'])
+  assert.deepEqual(page, before)
+  assert.deepEqual(runtimeContentLayout(page).placements, before.placements)
+  assert.deepEqual(runtimeContentLayout(page).gridStyle, {})
+})
+
+test('a fixed or spanning neighbour prevents content rows from squeezing it', () => {
+  const page = { display_mode: 'desktop', placements: [
+    { component_id: 'a', x: 0, y: 0, width: 6, height: 6 },
+    { component_id: 'b', x: 6, y: 0, width: 6, height: 6 },
+  ] }
+  assert.deepEqual(runtimeContentLayout(page, ['a']).contentIDs, [])
+  page.placements.push({ component_id: 'c', x: 0, y: 6, width: 6, height: 6 })
+  page.placements[1].height = 12
+  assert.deepEqual(runtimeContentLayout(page, ['a', 'b', 'c']).placements, page.placements)
+  assert.deepEqual(runtimeContentLayout(page, ['a', 'b', 'c']).contentIDs, [])
+})
+
+test('wallboards always retain their explicit grid, including full-period values', () => {
+  const page = { display_mode: 'wallboard', placements: [{ component_id: 'a', x: 0, y: 0, width: 12, height: 6 }] }
+  assert.deepEqual(runtimeContentLayout(page, ['a']), { placements: page.placements, contentIDs: [], gridStyle: { gridTemplateRows: 'repeat(6, minmax(0, 1fr))' } })
+  assert.deepEqual(runtimeContentLayout({ placements: [] }, ['unknown']), { placements: [], contentIDs: [], gridStyle: {} })
 })

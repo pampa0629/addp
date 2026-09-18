@@ -1,0 +1,1364 @@
+{
+    "swagger": "2.0",
+    "info": {
+        "description": "租户本体修订与投影管理 | Tenant ontology revision and projection management",
+        "title": "ADDP Ontology API",
+        "contact": {},
+        "version": "1.0"
+    },
+    "host": "localhost:8195",
+    "basePath": "/api/v1/ontology",
+    "paths": {
+        "/ontologies/{ontology_id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Ontology"
+                ],
+                "summary": "读取本体激活指针 | Get ontology activation head",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "本体标识 | Ontology identifier",
+                        "name": "ontology_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "成功 | Success",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.HeadResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "ontology.revision.read"
+                ]
+            }
+        },
+        "/ontologies/{ontology_id}/projections/{generation}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Ontology"
+                ],
+                "summary": "读取投影状态 | Get projection status",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "本体标识 | Ontology identifier",
+                        "name": "ontology_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "投影标识 | Projection generation",
+                        "name": "generation",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "成功 | Success",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ProjectionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "ontology.revision.read"
+                ]
+            }
+        },
+        "/ontologies/{ontology_id}/revisions": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Ontology"
+                ],
+                "summary": "创建本体草稿 | Create ontology draft",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "本体标识 | Ontology identifier",
+                        "name": "ontology_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "请求 | Request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.CreateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "成功 | Success",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.RevisionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "ontology.revision.update"
+                ]
+            }
+        },
+        "/ontologies/{ontology_id}/revisions/{revision}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Ontology"
+                ],
+                "summary": "读取修订 | Get revision",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "本体标识 | Ontology identifier",
+                        "name": "ontology_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "修订号 | Revision number",
+                        "name": "revision",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "成功 | Success",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.RevisionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "ontology.revision.read"
+                ]
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Ontology"
+                ],
+                "summary": "保存草稿 | Save draft",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "本体标识 | Ontology identifier",
+                        "name": "ontology_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "修订号 | Revision number",
+                        "name": "revision",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "请求 | Request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.SaveRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "成功 | Success",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.RevisionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "ontology.revision.update"
+                ]
+            }
+        },
+        "/ontologies/{ontology_id}/revisions/{revision}/projection": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "最新投影不等于当前激活版本 | The latest projection is not necessarily active",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Ontology"
+                ],
+                "summary": "读取修订最新投影 | Get latest revision projection",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "本体标识 | Ontology identifier",
+                        "name": "ontology_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "修订号 | Revision number",
+                        "name": "revision",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "成功 | Success",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ProjectionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求无效 | Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Unauthenticated",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "禁止访问 | Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "投影不存在 | Projection not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "操作失败 | Operation failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "服务未就绪 | Module not ready",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "ontology.revision.read"
+                ]
+            }
+        },
+        "/ontologies/{ontology_id}/revisions/{revision}/publish": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Ontology"
+                ],
+                "summary": "发布并准入投影 | Publish and admit projection",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "本体标识 | Ontology identifier",
+                        "name": "ontology_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "修订号 | Revision number",
+                        "name": "revision",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "请求 | Request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.VersionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "成功 | Success",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.AcceptedResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "502": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "ontology.revision.publish",
+                    "system.execution_authorization.create"
+                ]
+            }
+        },
+        "/ontologies/{ontology_id}/revisions/{revision}/rebuild": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Ontology"
+                ],
+                "summary": "重建失败投影 | Rebuild failed projection",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "本体标识 | Ontology identifier",
+                        "name": "ontology_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "修订号 | Revision number",
+                        "name": "revision",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "请求 | Request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.RebuildRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "成功 | Success",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.AcceptedResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "502": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "ontology.revision.publish",
+                    "system.execution_authorization.create"
+                ]
+            }
+        },
+        "/ontologies/{ontology_id}/revisions/{revision}/return": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Ontology"
+                ],
+                "summary": "退回草稿 | Return to draft",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "本体标识 | Ontology identifier",
+                        "name": "ontology_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "修订号 | Revision number",
+                        "name": "revision",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "请求 | Request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.VersionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "成功 | Success",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.RevisionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "ontology.revision.update"
+                ]
+            }
+        },
+        "/ontologies/{ontology_id}/revisions/{revision}/submit": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Ontology"
+                ],
+                "summary": "提交审核 | Submit for review",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "本体标识 | Ontology identifier",
+                        "name": "ontology_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "修订号 | Revision number",
+                        "name": "revision",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "请求 | Request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.VersionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "成功 | Success",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.RevisionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "ontology.revision.update"
+                ]
+            }
+        },
+        "/ontologies/{ontology_id}/revisions/{revision}/withdraw": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Ontology"
+                ],
+                "summary": "撤回修订 | Withdraw revision",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "本体标识 | Ontology identifier",
+                        "name": "ontology_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "修订号 | Revision number",
+                        "name": "revision",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "请求 | Request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.VersionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "成功 | Success",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.RevisionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "ontology.revision.publish"
+                ]
+            }
+        }
+    },
+    "definitions": {
+        "github_com_addp_ontology_internal_semantic.AbsencePolicy": {
+            "type": "string",
+            "enum": [
+                "unknown",
+                "false"
+            ],
+            "x-enum-varnames": [
+                "AbsenceUnknown",
+                "AbsenceFalse"
+            ]
+        },
+        "github_com_addp_ontology_internal_semantic.Class": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "parents": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "github_com_addp_ontology_internal_semantic.Input": {
+            "type": "object",
+            "properties": {
+                "on_absent": {
+                    "$ref": "#/definitions/github_com_addp_ontology_internal_semantic.AbsencePolicy"
+                },
+                "property_id": {
+                    "type": "string"
+                },
+                "variable": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_ontology_internal_semantic.Kind": {
+            "type": "string",
+            "enum": [
+                "bool",
+                "string"
+            ],
+            "x-enum-varnames": [
+                "Boolean",
+                "String"
+            ]
+        },
+        "github_com_addp_ontology_internal_semantic.Property": {
+            "type": "object",
+            "properties": {
+                "class_id": {
+                    "type": "string"
+                },
+                "enum": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "id": {
+                    "type": "string"
+                },
+                "key": {
+                    "type": "string"
+                },
+                "kind": {
+                    "$ref": "#/definitions/github_com_addp_ontology_internal_semantic.Kind"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_ontology_internal_semantic.Relation": {
+            "type": "object",
+            "properties": {
+                "from": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "inverse_id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "to": {
+                    "type": "string"
+                },
+                "transitive": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "github_com_addp_ontology_internal_semantic.Rule": {
+            "type": "object",
+            "properties": {
+                "basis": {
+                    "type": "string"
+                },
+                "class_id": {
+                    "type": "string"
+                },
+                "expression": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "inputs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_ontology_internal_semantic.Input"
+                    }
+                }
+            }
+        },
+        "internal_api.AcceptedResponse": {
+            "type": "object",
+            "properties": {
+                "execution_id": {
+                    "type": "string"
+                },
+                "generation": {
+                    "type": "string"
+                },
+                "ontology_id": {
+                    "type": "string"
+                },
+                "revision": {
+                    "type": "integer"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api.CreateRequest": {
+            "type": "object",
+            "properties": {
+                "definition": {
+                    "$ref": "#/definitions/internal_api.DefinitionInput"
+                },
+                "revision": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api.DefinitionInput": {
+            "type": "object",
+            "properties": {
+                "classes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_ontology_internal_semantic.Class"
+                    }
+                },
+                "properties": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_ontology_internal_semantic.Property"
+                    }
+                },
+                "relations": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_ontology_internal_semantic.Relation"
+                    }
+                },
+                "rules": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_ontology_internal_semantic.Rule"
+                    }
+                }
+            }
+        },
+        "internal_api.ErrorResponse": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                },
+                "error_code": {
+                    "type": "string"
+                },
+                "intent": {
+                    "$ref": "#/definitions/internal_api.AcceptedResponse"
+                }
+            }
+        },
+        "internal_api.HeadResponse": {
+            "type": "object",
+            "properties": {
+                "activation_version": {
+                    "type": "integer"
+                },
+                "active_generation": {
+                    "type": "string"
+                },
+                "active_revision": {
+                    "type": "integer"
+                },
+                "last_revision": {
+                    "type": "integer"
+                },
+                "ontology_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.ProjectionResponse": {
+            "type": "object",
+            "properties": {
+                "baseline_version": {
+                    "type": "integer"
+                },
+                "digest": {
+                    "type": "string"
+                },
+                "execution_id": {
+                    "type": "string"
+                },
+                "generation": {
+                    "type": "string"
+                },
+                "ontology_id": {
+                    "type": "string"
+                },
+                "predecessor_generation": {
+                    "type": "string"
+                },
+                "revision": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.RebuildRequest": {
+            "type": "object",
+            "properties": {
+                "activation_version": {
+                    "type": "integer"
+                },
+                "failed_generation": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api.RevisionResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "digest": {
+                    "type": "string"
+                },
+                "initial_execution_id": {
+                    "type": "string"
+                },
+                "initial_generation": {
+                    "type": "string"
+                },
+                "ontology_id": {
+                    "type": "string"
+                },
+                "published_at": {
+                    "type": "string"
+                },
+                "revision": {
+                    "type": "integer"
+                },
+                "snapshot": {
+                    "type": "object"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api.SaveRequest": {
+            "type": "object",
+            "properties": {
+                "definition": {
+                    "$ref": "#/definitions/internal_api.DefinitionInput"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api.VersionRequest": {
+            "type": "object",
+            "properties": {
+                "version": {
+                    "type": "integer"
+                }
+            }
+        }
+    },
+    "securityDefinitions": {
+        "BearerAuth": {
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header"
+        }
+    }
+}

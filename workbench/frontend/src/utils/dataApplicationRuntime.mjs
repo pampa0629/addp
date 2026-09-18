@@ -184,6 +184,44 @@ export function runtimeGridStyle(page) {
   return { gridTemplateRows: `repeat(${rowCount}, minmax(0, 1fr))` }
 }
 
+// Collapse only independent rows of content-sized cards. A spanning or fixed-height
+// neighbour keeps its original tracks; persisted placements are never rewritten.
+export function runtimeContentLayout(page, contentIDs = []) {
+  const placements = page?.placements || []
+  const original = { placements, gridStyle: runtimeGridStyle(page), contentIDs: [] }
+  if (page?.display_mode === 'wallboard' || !contentIDs.length) return original
+  const content = new Set(contentIDs)
+  const bands = []
+  for (const item of placements) {
+    if (!content.has(item.component_id) || bands.some(band => band.y === item.y)) continue
+    const end = item.y + item.height
+    const neighbours = placements.filter(other => other.y < end && other.y + other.height > item.y)
+    if (neighbours.every(other => content.has(other.component_id) && other.y === item.y && other.y + other.height === end)) {
+      bands.push({ y: item.y, end, ids: neighbours.map(other => other.component_id) })
+    }
+  }
+  if (!bands.length) return original
+  bands.sort((a, b) => a.y - b.y)
+  const tracks = []
+  let cursor = 0
+  const fixedTracks = count => { if (count > 0) tracks.push(`repeat(${count}, var(--runtime-row-height))`) }
+  for (const band of bands) {
+    fixedTracks(band.y - cursor)
+    tracks.push('auto')
+    cursor = band.end
+  }
+  fixedTracks(Math.max(...placements.map(item => item.y + item.height)) - cursor)
+  return {
+    placements: placements.map(item => ({
+      ...item,
+      y: item.y - bands.filter(band => band.end <= item.y).reduce((sum, band) => sum + band.end - band.y - 1, 0),
+      height: bands.some(band => band.ids.includes(item.component_id)) ? 1 : item.height,
+    })),
+    gridStyle: { gridTemplateRows: tracks.join(' ') },
+    contentIDs: bands.flatMap(band => band.ids),
+  }
+}
+
 export function applicationRefreshDelayMilliseconds(page) {
   const interval = page?.refresh_interval_seconds
   if (page?.display_mode !== 'wallboard' || ![30, 60, 300].includes(interval)) return 0

@@ -41,6 +41,10 @@ exit 0
 ''',
             "go": '''#!/bin/bash
 echo "go $*" >> "$TEST_INVOCATIONS"
+case "$*" in
+    *TestPostgresGateCleanup*) exit "${TEST_PG_CLEANUP_EXIT:-0}" ;;
+    *TestPostgresProjectionRuntime*) exit "${TEST_RUNTIME_EXIT:-0}" ;;
+esac
 [ "$ONTOLOGY_FALKOR_TEST_ADDRESS" = '127.0.0.1:23456' ] || exit 2
 [ "${#ONTOLOGY_FALKOR_TEST_PASSWORD}" = 32 ] || exit 2
 [ "$INFRA_FALKORDB_PASSWORD" = "$ONTOLOGY_FALKOR_TEST_PASSWORD" ] || exit 2
@@ -58,6 +62,7 @@ exit "${TEST_MAIN_EXIT:-0}"
         self.command = ["bash", str(target)]
         self.env = dict(os.environ, PATH=str(fake_bin) + os.pathsep + os.environ["PATH"],
                         TEST_INVOCATIONS=str(self.log),
+                        ONTOLOGY_POSTGRES_TEST_DSN="postgres://fixture@127.0.0.1/addp_test",
                         ONTOLOGY_FALKOR_TEST_ADDRESS="production:6379",
                         INFRA_FALKORDB_PASSWORD="inherited-infra-not-allowed",
                         ONTOLOGY_FALKOR_TEST_PASSWORD="inherited-not-allowed")
@@ -67,6 +72,7 @@ exit "${TEST_MAIN_EXIT:-0}"
                                ({"TEST_MODE": "skip"}, False), ({"TEST_START_EXIT": "1"}, False),
                                ({"TEST_RECREATE_EXIT": "1"}, False), ({"TEST_SAVE_RESULT": "ERR"}, False),
                                ({"TEST_CLEANUP_EXIT": "1"}, False), ({"TEST_RESIDUAL": "1"}, False),
+                               ({"TEST_RUNTIME_EXIT": "1"}, False), ({"TEST_PG_CLEANUP_EXIT": "1"}, False),
                                ({"TEST_PORT": "0.0.0.0:6379"}, False)):
             with self.subTest(extra=extra):
                 result = subprocess.run(self.command, env=dict(self.env, **extra), capture_output=True, text=True, timeout=10)
@@ -75,7 +81,16 @@ exit "${TEST_MAIN_EXIT:-0}"
                 self.assertIn("down --volumes --remove-orphans", log)
                 self.assertIn("--env-file /dev/null", log)
                 self.assertNotIn("production", log)
+                if success:
+                    self.assertIn("TestPostgresProjectionRuntime", log)
+                    self.assertIn("TestPostgresGateCleanup", log)
                 self.log.unlink()
+
+    def test_postgres_preflight_before_docker(self):
+        result = subprocess.run(self.command, env=dict(self.env, ONTOLOGY_POSTGRES_TEST_DSN=""),
+                                capture_output=True, text=True, timeout=10)
+        self.assertNotEqual(0, result.returncode)
+        self.assertFalse(self.log.exists())
 
     def test_term_cleans_owned_project_and_is_not_success(self):
         process = subprocess.Popen(self.command, env=dict(self.env, TEST_MODE="pause"),
@@ -96,6 +111,23 @@ exit "${TEST_MAIN_EXIT:-0}"
 
 
 class InfraContractTest(unittest.TestCase):
+    def test_backend_runtime_and_build_registration(self):
+        service = self.render("docker-compose.yml")["services"]["ontology-backend"]
+        self.assertEqual("falkordb:6379", service["environment"]["INFRA_FALKORDB_ADDRESS"])
+        self.assertEqual("contract-test-only", service["environment"]["INFRA_FALKORDB_PASSWORD"])
+        self.assertEqual("8195", service["environment"]["ONTOLOGY_BACKEND_PORT"])
+        self.assertEqual({"system-backend"}, set(service["depends_on"]))
+        for path in ("scripts/build/compile.sh", "scripts/build/build-images.sh"):
+            self.assertIn('"ontology-backend:ontology/backend"', (REPOSITORY / path).read_text())
+        start = (REPOSITORY / "scripts/dev/start.sh").read_text()
+        self.assertIn("-ontology|", start)
+        self.assertIn('build_service "ontology" "ontology/backend"', start)
+        self.assertIn('check_service_running "ontology" "$ONTOLOGY_BACKEND_PORT"', start)
+        self.assertIn('${ONTOLOGY_BACKEND_PORT}/health/ready', start)
+        self.assertIn('START_ONTOLOGY_BACKEND=true', start)
+        self.assertNotIn('START_ONTOLOGY_FRONTEND', start)
+        self.assertIn('-ontology|', (REPOSITORY / "scripts/dev/restart.sh").read_text())
+
     def render(self, path, password="contract-test-only"):
         result = subprocess.run(
             ["docker", "compose", "--env-file", str(REPOSITORY / ".env.example"),

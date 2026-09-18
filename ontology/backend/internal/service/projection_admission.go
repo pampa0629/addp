@@ -20,11 +20,11 @@ type ExecutionAuthorizationIssuer interface {
 
 // AdmitProjection is the only admission path for a frozen publication intent.
 // The current request's User Token is never retained or passed to a worker.
-func (s *RevisionService) AdmitProjection(ctx context.Context, actor models.Actor, scope semantic.Scope, version uint64, userToken string, issuer ExecutionAuthorizationIssuer) error {
+func (s *RevisionService) AdmitProjection(ctx context.Context, actor models.Actor, scope semantic.Scope, version uint64, generation string, userToken string, issuer ExecutionAuthorizationIssuer) error {
 	if issuer == nil || !strings.HasPrefix(userToken, "addp_at_") || len(userToken) == len("addp_at_") {
 		return repository.ErrInvalid
 	}
-	record, err := s.repo.ProjectionIntent(ctx, actor, scope, version)
+	record, err := s.repo.ProjectionIntent(ctx, actor, scope, version, generation)
 	if err != nil {
 		return err
 	}
@@ -32,12 +32,12 @@ func (s *RevisionService) AdmitProjection(ctx context.Context, actor models.Acto
 		return err
 	}
 	boundary := execution.InternalTaskScope{TaskType: models.ProjectionTaskType, ResourceID: scope.OntologyID,
-		Revision: strconv.FormatUint(scope.Revision, 10), Digest: record.Digest, Generation: *record.Generation}
+		Revision: strconv.FormatUint(scope.Revision, 10), Digest: record.Digest, Generation: record.Generation}
 	issued, err := issuer.Issue(ctx, userToken, client.IssueExecutionAuthorizationRequest{
-		Audience: execution.AudienceOntology, ExecutionID: *record.BuildExecutionID, InternalTask: &boundary,
+		Audience: execution.AudienceOntology, ExecutionID: record.ExecutionID, InternalTask: &boundary,
 	})
 	if err == nil {
-		err = s.repo.AttachProjectionAuthorization(ctx, actor, scope, version, issued)
+		err = s.repo.AttachProjectionAuthorization(ctx, actor, scope, version, generation, issued)
 	}
 	if err == nil {
 		return nil

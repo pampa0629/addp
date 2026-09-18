@@ -13,8 +13,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		t.Fatalf("LoadRepositoryAuthorizationCatalog() error = %v", err)
 	}
 	descriptors := report.Permissions
-	if len(descriptors) != 445 {
-		t.Fatalf("descriptor count = %d, want 445", len(descriptors))
+	if len(descriptors) != 447 {
+		t.Fatalf("descriptor count = %d, want 447", len(descriptors))
 	}
 	for _, descriptor := range descriptors {
 		if descriptor.OwnerModule == "security" && !reflect.DeepEqual(descriptor.AllowedScopeTypes, []string{"tenant"}) {
@@ -26,8 +26,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	}
 
 	roles := report.Roles
-	if len(roles) != 68 {
-		t.Fatalf("role count = %d, want 68", len(roles))
+	if len(roles) != 69 {
+		t.Fatalf("role count = %d, want 69", len(roles))
 	}
 	if roles[0].Key != "platform.agent_runtime" || roles[len(roles)-1].Key != "tenant.transfer_runtime" {
 		t.Fatalf("role boundary keys = %q, %q", roles[0].Key, roles[len(roles)-1].Key)
@@ -38,6 +38,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	assertRepositoryRolePermissions(t, roles, "platform.duckdb_runtime", []string{"system.runtime_registry.update"})
 	assertRepositoryRolePermissions(t, roles, "tenant.duckdb_runtime", []string{"system.execution_authorization.execute"})
 	assertRepositoryRolePermissions(t, roles, "tenant.ontology_runtime", []string{"system.execution_authorization.execute"})
+	assertRepositoryRolePermissions(t, roles, "platform.ontology_runtime", []string{"system.runtime_registry.update"})
+	assertRepositoryRolePrincipalTypes(t, roles, "platform.ontology_runtime", []string{"service_principal"})
 	assertRepositoryRolePrincipalTypes(t, roles, "tenant.ontology_runtime", []string{"service_principal"})
 	assertRepositoryRolePrincipalTypes(t, roles, "tenant.duckdb_runtime", []string{"service_principal"})
 	assertRepositoryRolePermissions(t, roles, "tenant.agent_runtime", []string{"inference.runtime.execute", "system.engine_descriptor.read"})

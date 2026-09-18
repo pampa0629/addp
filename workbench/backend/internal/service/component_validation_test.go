@@ -392,3 +392,35 @@ func TestTotalValueChartRequiresPeriodAndExplicitPrecisions(t *testing.T) {
 		})
 	}
 }
+
+func TestChartResultNameRequiresSelectedStringOutput(t *testing.T) {
+	descriptor := testDescriptor(false)
+	fields := map[string]models.ConsumerOutputField{"d": {Name: "d", Type: datatype.FieldTypeDate}, "v": {Name: "v", Type: datatype.FieldTypeInt}, "name": {Name: "name", Type: datatype.FieldTypeString}}
+	for _, tc := range []struct {
+		name       string
+		field      string
+		selectName bool
+		valid      bool
+	}{
+		{"explicit name", "name", true, true}, {"absent", "", false, true}, {"unknown", "missing", true, false}, {"numeric", "v", true, false}, {"not selected", "name", false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			selected := map[string]struct{}{"d": {}, "v": {}}
+			if tc.selectName {
+				selected["name"] = struct{}{}
+			}
+			config := models.ChartRendererConfig{ChartType: "bar", Dimension: "d", Measures: []string{"v"}, ResultNameField: tc.field}
+			if tc.field != "" {
+				config.FieldPresentations = []models.FieldPresentation{{Field: tc.field, Label: "Person"}}
+			}
+			raw, err := json.Marshal(config)
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = validateRenderer(models.RendererTypeChart, raw, descriptor, fields, selected, nil)
+			if (err == nil) != tc.valid {
+				t.Fatalf("valid=%v: %v", tc.valid, err)
+			}
+		})
+	}
+}

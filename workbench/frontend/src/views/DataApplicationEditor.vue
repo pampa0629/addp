@@ -60,6 +60,7 @@
             <el-form-item :label="t('workbench.studio.order')"><el-button :disabled="selectedIndex === 0" @click="moveComponent({ componentID: selectedComponent.id, direction: -1 })">{{ t('workbench.studio.moveUp') }}</el-button><el-button :disabled="selectedIndex === orderedComponents.length - 1" @click="moveComponent({ componentID: selectedComponent.id, direction: 1 })">{{ t('workbench.studio.moveDown') }}</el-button></el-form-item>
           </el-form>
           <el-button class="full inspector-configure" type="primary" plain @click="openEditComponent(selectedComponent)">{{ t('workbench.studio.configureDisplay') }}</el-button>
+          <el-button class="full inspector-configure" @click="openEditComponent(selectedComponent, true)">{{ t('workbench.studio.duplicateComponent') }}</el-button>
           <el-button text type="danger" @click="removeComponent(selectedComponent)">{{ t('workbench.studio.removeComponent') }}</el-button>
         </div>
         <div class="inspector-section"><strong>{{ t('workbench.studio.arrange') }}</strong><div class="layout-presets"><el-button size="small" @click="arrangeLayout(1)">{{ t('workbench.studio.oneColumn') }}</el-button><el-button size="small" @click="arrangeLayout(2)">{{ t('workbench.studio.twoColumns') }}</el-button></div></div>
@@ -119,6 +120,7 @@
             <div class="filter-required"><span>{{ t('workbench.required') }}</span><el-switch v-model="parameter.required" :aria-label="t('workbench.required')" /></div>
           </el-form>
           <div class="filter-impact"><span>{{ t('workbench.studio.usedBy') }}</span><el-tag v-for="title in parameterComponentNames(parameter.key)" :key="title" size="small" type="info">{{ title }}</el-tag><span v-if="!parameterComponentNames(parameter.key).length">{{ t('workbench.studio.unusedFilter') }}</span></div>
+          <el-button link type="primary" :disabled="!parameterDomain(parameter.key).ready || !availableSelectionSourceComponents().length" @click="configureParameterSelection(parameter.key)">{{ t('workbench.studio.chooseFromComponent') }}</el-button>
           <p v-if="parameterComponentNames(parameter.key).length && !parameterDomain(parameter.key).ready" class="configuration-warning">{{ t('workbench.parameterOptionsUnavailable', { components: parameterDomain(parameter.key).components.join(', ') }) }}</p>
         </article>
       </div>
@@ -169,7 +171,7 @@
           <p class="impact-summary">{{ t('workbench.studio.refreshes', { components: selectionAffectedComponentNames(binding) || t('workbench.none') }) }}</p>
         </article>
       </div>
-      <el-button v-if="!selectionDraft" type="primary" plain :disabled="!availableSelectionSourceComponents().length" @click="addSelectionBinding">{{ t('workbench.addSelectionBinding') }}</el-button>
+      <el-button v-if="!selectionDraft" type="primary" plain :disabled="!availableSelectionSourceComponents().length" @click="addSelectionBinding()">{{ t('workbench.addSelectionBinding') }}</el-button>
       <p v-if="!selectionDraft && !availableSelectionSourceComponents().length" class="muted">{{ t('workbench.studio.noInteractionSource') }}</p>
       <article v-if="selectionDraft" class="interaction-builder" data-testid="interaction-builder">
         <el-form label-position="top">
@@ -180,7 +182,7 @@
           </el-form-item>
           <div v-for="(assignment, index) in selectionDraft.assignments" :key="index" class="assignment-row" data-testid="interaction-assignment">
             <el-form-item :label="t('workbench.studio.chooseField')" data-testid="interaction-field"><el-select v-model="assignment.source_field" class="full" :disabled="!selectionDraft.source_component_id" :placeholder="t('workbench.sourceField')" @change="selectionFieldChanged(selectionDraft, assignment)"><el-option v-for="field in sourceFields(selectionDraft.source_component_id)" :key="field.name" :label="selectionFieldLabel(selectionDraft.source_component_id, field.name)" :value="field.name" /></el-select></el-form-item>
-            <el-form-item :label="t('workbench.studio.chooseTarget')" data-testid="interaction-target"><el-select v-model="assignment.application_parameter_key" class="full" :disabled="!assignment.source_field" :placeholder="t('workbench.applicationParameter')"><el-option v-for="parameter in selectionParameterOptions(selectionDraft, assignment)" :key="parameter.key" :label="parameterOptionLabel(parameter)" :value="parameter.key" /></el-select></el-form-item>
+            <el-form-item :label="t('workbench.studio.chooseTarget')" data-testid="interaction-target"><el-select v-model="assignment.application_parameter_key" class="full" :disabled="!assignment.source_field" :placeholder="t('workbench.applicationParameter')"><el-option v-if="!assignment.source_field && assignment.application_parameter_key" :value="assignment.application_parameter_key" :label="parameterLabel(assignment.application_parameter_key)" disabled /><el-option v-for="parameter in selectionParameterOptions(selectionDraft, assignment)" :key="parameter.key" :label="parameterOptionLabel(parameter)" :value="parameter.key" /></el-select></el-form-item>
             <el-button text type="danger" :disabled="selectionDraft.assignments.length === 1" @click="selectionDraft.assignments.splice(index, 1)">{{ t('workbench.delete') }}</el-button>
           </div>
         </el-form>
@@ -196,7 +198,7 @@
       </div>
       <template #footer><el-button type="primary" :disabled="Boolean(selectionDraft)" @click="settingsPanel = ''">{{ t('workbench.studio.done') }}</el-button></template>
     </el-drawer>
-    <ApplicationComponentEditor v-model="componentEditorVisible" :component="editingComponent" :initial-renderer="initialRenderer" :snapshot="application.snapshot" :descriptors="descriptorByComponent" @save="saveComponent" />
+    <ApplicationComponentEditor v-model="componentEditorVisible" :component="editingComponent" :duplicate="duplicatingComponent" :initial-renderer="initialRenderer" :snapshot="application.snapshot" :descriptors="descriptorByComponent" @save="saveComponent" />
     <SpatialExplorationWizard v-model="spatialWizardVisible" @apply="applySpatialExploration" />
     <DataApplicationDeliveryDialog :key="deliveryDialogContext" ref="deliveryDialog" />
     <el-dialog v-model="draftPreviewVisible" class="draft-preview-dialog" fullscreen destroy-on-close :title="t('workbench.draftPreviewTitle')">
@@ -256,6 +258,7 @@ const draftPreviewApplication = ref(null)
 const draftPreviewCanvas = ref(null)
 const deliveryDialog = ref(null)
 const editingComponent = ref(null)
+const duplicatingComponent = ref(false)
 const application = reactive(emptyApplication())
 const descriptorByComponent = reactive({})
 const orderedComponents = computed(() => orderedPlacements(application.snapshot.page.placements).map(p => application.snapshot.components.find(c => c.id === p.component_id)).filter(Boolean))
@@ -431,7 +434,7 @@ function validateParameterPresets() {
 
 const selectionDraft = ref(null)
 const selectionEditingSource = ref('')
-watch(settingsPanel, () => { selectionDraft.value = null })
+watch(settingsPanel, panel => { if (panel !== 'interactions') selectionDraft.value = null })
 
 function sourceFields(componentID) {
   const descriptor = descriptorByComponent[componentID]
@@ -467,10 +470,13 @@ const selectionDraftValid = computed(() => {
     && binding.assignments.length && binding.assignments.every(assignment => selectionParameterOptions(binding, assignment).some(p => p.key === assignment.application_parameter_key)))
 })
 
-function addSelectionBinding() {
+function configureParameterSelection(key) {
+  settingsPanel.value = 'interactions'
+  addSelectionBinding(key)
+}
+function addSelectionBinding(targetKey = '') {
   selectionEditingSource.value = ''
-  selectionDraft.value = { source_component_id: '', assignments: [] }
-  addSelectionAssignment()
+  selectionDraft.value = { source_component_id: '', assignments: [{ source_field: '', application_parameter_key: targetKey }] }
 }
 function editSelectionBinding(index) {
   selectionDraft.value = structuredClone(toRaw(application.snapshot.selection_bindings[index]))
@@ -485,7 +491,9 @@ function applySelectionBinding() {
   selectionDraft.value = null
 }
 function removeSelectionBinding(index) { application.snapshot.selection_bindings.splice(index, 1) }
-function selectionSourceChanged() { selectionDraft.value.assignments = []; addSelectionAssignment() }
+function selectionSourceChanged() {
+  selectionDraft.value.assignments = selectionDraft.value.assignments.map(assignment => ({ source_field: '', application_parameter_key: assignment.application_parameter_key }))
+}
 function addSelectionAssignment() { selectionDraft.value.assignments.push({ source_field: '', application_parameter_key: '' }) }
 function selectionFieldChanged(binding, assignment) {
   if (!selectionParameterOptions(binding, assignment).some(p => p.key === assignment.application_parameter_key)) assignment.application_parameter_key = ''
@@ -653,6 +661,7 @@ function openDelivery() {
 }
 
 function openAddComponent(renderer = 'table') {
+  duplicatingComponent.value = false
   initialRenderer.value = renderer
   editingComponent.value = null
   componentEditorVisible.value = true
@@ -679,7 +688,8 @@ function sameServiceReference(left, right) {
   return left?.service_type === right?.service_type && left?.service_id === right?.service_id
 }
 
-function openEditComponent(component) {
+function openEditComponent(component, duplicate = false) {
+  duplicatingComponent.value = duplicate
   editingComponent.value = structuredClone(toRaw(component))
   componentEditorVisible.value = true
 }
@@ -704,6 +714,15 @@ function saveComponent(nextComponent, reusedParameters, descriptor) {
     application.snapshot.components.push(nextComponent)
     const nextY = application.snapshot.page.placements.reduce((bottom, item) => Math.max(bottom, item.y + item.height), 0)
     application.snapshot.page.placements.push({ component_id: nextComponent.id, x: 0, y: nextY, width: 12, height: 6 })
+    if (duplicatingComponent.value) {
+      const source = application.snapshot.page.placements.find(p => p.component_id === editingComponent.value.id)
+      if (source) {
+        const placements = orderedPlacements(application.snapshot.page.placements).filter(p => p.component_id !== nextComponent.id)
+        placements.splice(placements.findIndex(p => p.component_id === source.component_id) + 1, 0, { ...source, component_id: nextComponent.id })
+        // arrangePlacements sorts first; give the intended order distinct temporary rows.
+        application.snapshot.page.placements = arrangePlacements(placements.map((p, y) => ({ ...p, x: 0, y })))
+      }
+    }
   }
   const definitions = new Map((nextComponent.parameter_definitions || []).map((item) => [item.key, item]))
   application.snapshot.parameter_bindings = application.snapshot.parameter_bindings.filter((binding) => binding.component_id !== nextComponent.id || definitions.has(binding.component_parameter_key))
@@ -786,7 +805,7 @@ watch(() => [route.name, route.params.id], ([routeName, applicationID]) => load(
 .outline-select span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .size-options { display: flex; gap: 4px; }.size-options .el-button + .el-button { margin-left: 0; }
 .layout-presets { margin-top: 12px; display: flex; gap: 8px; }.layout-presets .el-button + .el-button { margin-left: 0; }
-.inspector-configure { margin-bottom: 10px; }
+.inspector-configure { margin-left: 0; margin-bottom: 10px; }
 .settings-content { display: flex; flex-direction: column; gap: 20px; }
 .draft-preview-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-right: 24px; flex-wrap: wrap; }
 .draft-preview-heading h2 { margin: 0; }.draft-preview-heading p { margin: 6px 0 0; color: var(--addp-text-secondary); font-size: 13px; line-height: 1.6; }

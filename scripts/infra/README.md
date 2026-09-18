@@ -106,7 +106,7 @@ Ontology 修订/发布门禁使用 `ONTOLOGY_POSTGRES_TEST_DSN` 连接本地 `ad
 
 Ontology 的 FalkorDB 已纳入 `docker-compose.infra.yml`，使用独立 `falkordb_data` 卷、RDB 快照与 `INFRA_FALKORDB_PASSWORD`。已有开发环境须在根 `.env` 补充独立密码，再通过标准 `up.sh` 启动；生产 `setup-env.sh` 为新环境生成随机 Secret，对已有环境只校验不轮换。仅开放 `127.0.0.1:16479`，不开放 Browser、不复用 `addp-redis`、不注册为业务 Engine。该单机部署不等于生产 HA/TLS 已认证，也不代表 Ontology 发布运行时已接通。
 
-正式部署与 `make test-ontology-falkor` 共用 `scripts/infra/falkordb.yml` 的固定镜像、非零超时、资源限制和带认证图健康检查。T2 使用独占 Compose Project、随机密码、动态回环端口及可销毁卷，验证保存快照并重建容器后的图恢复；不接受个人数据库地址、不读取 `.env`，退出时删除并核验自有容器/卷/网络。PG 与 FalkorDB 门禁均被标准模块门禁自动发现及串行集成聚合；CI 继续由已有 `ontology-falkor` Job 执行同一入口。
+正式部署与 `make test-ontology-falkor` 共用 `scripts/infra/falkordb.yml` 的固定镜像、非零超时、资源限制和带认证图健康检查。T2 使用独占 Compose Project、随机密码、动态回环端口及可销毁卷，验证保存快照并重建容器后的图恢复；不接受个人图数据库地址、不读取 `.env`，退出时删除并核验自有容器/卷/网络。该入口还要求 `ONTOLOGY_POSTGRES_TEST_DSN`，复用上述 PG owner 夹具验证首次投影执行、激活与失败保留旧版本，并清理本轮 schema/执行记录。PG 与 FalkorDB 门禁均被标准模块门禁自动发现及串行集成聚合；已有 `ontology-falkor` CI Job 同时提供独占 PostgreSQL Service，执行同一入口。
 
 门禁通过 `ADDP_T2_INPUT_FILES` 声明共享服务定义、根 Compose、环境模板及相关生命周期脚本，供本地与 CI 共用的影响计算选择 Ontology。静态测试验证正式/T2 配置一致、独立回环端口、密码必填、生产密码拒绝和退出清理。
 

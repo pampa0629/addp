@@ -47,8 +47,8 @@
       <span v-if="application.snapshot.parameters.length">{{ t('workbench.studio.filterCount', { count: application.snapshot.parameters.length }) }}</span>
     </div>
 
-    <main v-if="application.snapshot.page" class="runtime-grid" :style="editable ? {} : runtimeGridStyle(application.snapshot.page)">
-      <el-card v-for="placement in application.snapshot.page.placements" :key="placement.component_id" :ref="element => setComponentElement(placement.component_id, element)" :tabindex="editable ? 0 : -1" :role="editable ? 'button' : undefined" :aria-pressed="editable ? selectedComponentId === placement.component_id : undefined" @click.capture="selectForEditing($event, placement.component_id)" @keydown.enter.self="selectForEditing($event, placement.component_id)" @keydown.space.self="selectForEditing($event, placement.component_id)" @dragover="allowDrop" @drop="dropComponent($event, placement.component_id)" :aria-label="component(placement.component_id)?.title" class="runtime-component" :class="{ 'runtime-component--selected': editable && selectedComponentId === placement.component_id }" data-testid="runtime-component" :data-component-id="placement.component_id" :style="runtimeLayoutStyle(placement)">
+    <main v-if="application.snapshot.page" class="runtime-grid" :style="runtimeLayout.gridStyle">
+      <el-card v-for="placement in runtimeLayout.placements" :key="placement.component_id" :ref="element => setComponentElement(placement.component_id, element)" :tabindex="editable ? 0 : -1" :role="editable ? 'button' : undefined" :aria-pressed="editable ? selectedComponentId === placement.component_id : undefined" @click.capture="selectForEditing($event, placement.component_id)" @keydown.enter.self="selectForEditing($event, placement.component_id)" @keydown.space.self="selectForEditing($event, placement.component_id)" @dragover="allowDrop" @drop="dropComponent($event, placement.component_id)" :aria-label="component(placement.component_id)?.title" class="runtime-component" :class="{ 'runtime-component--selected': editable && selectedComponentId === placement.component_id, 'runtime-component--content': runtimeLayout.contentIDs.includes(placement.component_id) }" data-testid="runtime-component" :data-component-id="placement.component_id" :style="runtimeLayoutStyle(placement)">
         <template #header>
           <div class="component-header">
             <div class="component-title"><button v-if="editable" class="drag-handle" draggable="true" :aria-label="t('workbench.studio.dragComponent')" @dragstart="dragComponent($event, placement.component_id)" @dragend="draggingComponentID = ''">⠿</button><strong>{{ component(placement.component_id)?.title }}</strong></div>
@@ -95,6 +95,7 @@
             :query-parameters="state(placement.component_id).result_parameters"
             :preserve-view="state(placement.component_id).preserve_map_view"
             @result-select="applySelection(placement.component_id, $event)"
+            @total-value-change="totalValueComponents[placement.component_id] = $event"
           />
         </template>
         <div v-if="showQueryActions && component(placement.component_id)?.renderer_type === 'table'" class="component-pagination">
@@ -117,7 +118,7 @@ import { ElMessage } from 'element-plus'
 import { createLatestRequestCoordinator } from '@common-ui'
 import { executeDescriptorOperation, getConsumerDescriptor } from '../api/services'
 import { applicationParameterPlacement, defaultApplicationParameterValues } from '../utils/dataApplicationParameters.mjs'
-import { applicationParameterPreset, applicationRefreshDelayMilliseconds, buildComponentQuery, buildSelectionUpdate, canAttemptApplicationQuery, canExecuteComponentQuery, canRunApplicationRefresh, canRunPublishedApplicationInitialQuery, commitLatestComponentDescriptorState, componentBlockingError, initialApplicationParameterValues, invalidateApplicationParameterResults, runtimeGridStyle, runtimeLayoutStyle, runtimeSectionVisible } from '../utils/dataApplicationRuntime.mjs'
+import { applicationParameterPreset, applicationRefreshDelayMilliseconds, buildComponentQuery, buildSelectionUpdate, canAttemptApplicationQuery, canExecuteComponentQuery, canRunApplicationRefresh, canRunPublishedApplicationInitialQuery, commitLatestComponentDescriptorState, componentBlockingError, initialApplicationParameterValues, invalidateApplicationParameterResults, runtimeContentLayout, runtimeLayoutStyle, runtimeSectionVisible } from '../utils/dataApplicationRuntime.mjs'
 import { descriptorSupportsExport, downloadCurrentBoundedExport, exportFormatForRenderer } from '../utils/boundedExport.mjs'
 import ApplicationParameterFields from './ApplicationParameterFields.vue'
 import WorkbenchRendererHost from './WorkbenchRendererHost.vue'
@@ -164,6 +165,13 @@ const fullscreenSupported = ref(false)
 const selectedPresetKey = ref(applicationParameterPreset(props.application.snapshot, props.initialPresetKey)?.key || '')
 const parameterValues = reactive(initialApplicationParameterValues(props.application.snapshot, selectedPresetKey.value))
 const componentStates = reactive({})
+const totalValueComponents = reactive({})
+const runtimeLayout = computed(() => {
+  const page = application.value.snapshot.page
+  if (props.editable) return { placements: page?.placements || [], gridStyle: {}, contentIDs: [] }
+  const contentIDs = Object.keys(totalValueComponents).filter(id => totalValueComponents[id] && state(id).query_completed && !componentBlockingError(state(id)))
+  return runtimeContentLayout(page, contentIDs)
+})
 const componentElements = new Map()
 const parameterPlacement = computed(() => applicationParameterPlacement(application.value.snapshot))
 const parameterDomains = computed(() => {
@@ -542,7 +550,7 @@ onBeforeUnmount(() => {
 .component-parameters { flex: 0 0 auto; margin-bottom: 12px; }
 .component-description, .selection-hint { flex: 0 0 auto; margin: 0 0 10px; color: var(--addp-text-secondary); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; white-space: pre-wrap; }
 .runtime-component:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: 2px; }
-.runtime-grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); grid-auto-rows: 64px; gap: 12px; }
+.runtime-grid { --runtime-row-height: 64px; display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); grid-auto-rows: var(--runtime-row-height); gap: 12px; }
 .runtime-component { min-width: 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
 .runtime-component:deep(.el-card__body) { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; }
 .runtime-component:deep([data-testid="renderer-host"]) { flex: 1; min-height: 0; height: 100%; }
@@ -567,6 +575,10 @@ onBeforeUnmount(() => {
   .runtime--wallboard .runtime-grid { display: grid; }
   .runtime--wallboard .runtime-component { min-height: 0; }
 }
+/* Content rows must contribute their natural height, including wrapped labels. */
+.runtime-component--content { min-height: auto; }
+.runtime-component--content:deep(.el-card__body) { flex: none; overflow: visible; }
+.runtime-component--content:deep([data-testid="renderer-host"]) { flex: none; height: auto; }
 .runtime--editing { min-height: 480px; padding: 20px; }
 .runtime--editing .runtime-header h1 { font-size: 22px; }
 .runtime--editing .runtime-header p { font-size: 13px; }

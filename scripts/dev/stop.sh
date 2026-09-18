@@ -57,7 +57,7 @@ stop_workspace_launchd_jobs() {
 
 # 一次查询全部目标 TCP 监听端口；客户端连接不属于残留服务。
 stop_port_listeners() {
-  local ports="8180,8081,8082,8083,8084,8185,8086,8087,8089,8097,8098,8099,8100,8101,8102,8103,8104,8105,8110,8181,8182,8183,8184,8186,8190,8191,8192,8193,8291,5170,5173,5174,5175,5176,5177,5178,5179,5180,5181,5182,5183,5184,5185,5186,5187,5188,5189,5190"
+  local ports="8180,8081,8082,8083,8084,8185,8086,8087,8089,8097,8098,8099,8100,8101,8102,8103,8104,8105,8110,8181,8182,8183,8184,8186,8190,8191,8192,8193,8195,8291,5170,5173,5174,5175,5176,5177,5178,5179,5180,5181,5182,5183,5184,5185,5186,5187,5188,5189,5190"
   local listener_pids pid proc_cmd
   listener_pids=$(lsof -nP -a -iTCP:"$ports" -sTCP:LISTEN -Fp 2>/dev/null |
     sed -n 's/^p\([0-9][0-9]*\)$/\1/p' | sort -u)
@@ -178,6 +178,7 @@ stop_services_concurrent() {
   pkill -9 -f "addp-security" 2>/dev/null || true
   pkill -9 -f "addp-asset" 2>/dev/null || true
   pkill -9 -f "addp-catalog" 2>/dev/null || true
+  pkill -9 -f "addp-ontology" 2>/dev/null || true
   pkill -9 -f "addp-workbench" 2>/dev/null || true
   pkill -9 -f "addp-portal" 2>/dev/null || true
   pkill -9 -f "addp-graph" 2>/dev/null || true

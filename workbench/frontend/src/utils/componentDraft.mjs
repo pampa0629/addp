@@ -4,6 +4,29 @@ import { defaultFieldPresentation } from '../../../../common-frontend/basic/src/
 const NUMERIC_TYPES = new Set(['int', 'bigint', 'float', 'double', 'decimal'])
 const UNARY_OPERATORS = new Set(['is_null', 'is_not_null'])
 
+// Suggestions only select fields; the existing component compiler owns the output.
+export function componentDisplaySuggestions(descriptor) {
+  if (!descriptor) return []
+  const selectable = new Set((descriptor.input_contract.fields || []).filter(field => field.selectable).map(field => field.name))
+  const outputs = (descriptor.output_contract.fields || []).filter(field => selectable.has(field.name))
+  const defaults = descriptor.input_contract.default_selection || []
+  const fields = [...defaults.map(name => outputs.find(field => field.name === name)).filter(Boolean), ...outputs.filter(field => !defaults.includes(field.name))]
+  if (!fields.length) return []
+  const columns = defaults.filter(name => outputs.some(field => field.name === name))
+  const suggestions = [{ key: 'table', rendererType: 'table', columns: columns.length ? columns : fields.map(field => field.name) }]
+  const measure = fields.find(field => NUMERIC_TYPES.has(field.type))
+  const dimension = fields.find(field => ['string', 'uuid', 'bool'].includes(field.type))
+  const temporal = fields.find(field => ['date', 'time', 'timestamp'].includes(field.type) && descriptor.input_contract.order?.stable_key?.includes(field.name))
+  for (const [key, field] of [['bar', dimension], ['line', temporal]]) {
+    if (measure && field) suggestions.push({ key, rendererType: 'chart', chartType: key, dimension: field.name, measures: [measure.name], columns: [field.name, measure.name] })
+  }
+  const geometry = descriptor.output_contract.spatial?.primary_geometry_field
+  if (geometry && fields.some(field => field.name === geometry && field.type === 'geometry')) {
+    suggestions.push({ key: 'map', rendererType: 'map', geometryField: geometry, columns: [geometry] })
+  }
+  return suggestions
+}
+
 export function hasParameterValue(parameter) {
   if (UNARY_OPERATORS.has(parameter.operator)) return parameter.value === true
   if (parameter.operator === 'in') return Array.isArray(parameter.value) && parameter.value.length > 0
@@ -56,6 +79,7 @@ export function createNamedParameterDraft(parameter, index = 0, locale = 'zh-cn'
 export function buildQueryRequest(descriptor, draft, cursor = '', format = 'json') {
   if (draft.parameters.some((parameter) => hasParameterValue(parameter) && !parameterOptionsAllow(parameter.options, parameter.value))) throw new Error('parameter-options: invalid-value')
   const predicates = draft.parameters.filter((parameter) => parameter.bindingKind !== 'named' && hasParameterValue(parameter)).map(buildPredicate)
+  if (draft.fixedFilter) predicates.unshift(JSON.parse(JSON.stringify(draft.fixedFilter)))
   const parameters = Object.fromEntries(
     draft.parameters
       .filter((parameter) => parameter.bindingKind === 'named' && hasParameterValue(parameter))
@@ -65,7 +89,7 @@ export function buildQueryRequest(descriptor, draft, cursor = '', format = 'json
     parameters,
     select: [...draft.columns],
     filter: predicates.length === 0 ? null : predicates.length === 1 ? predicates[0] : { and: predicates },
-    order_by: stableOrder(descriptor),
+    order_by: draft.orderBy?.map(item => ({ ...item })) || stableOrder(descriptor),
     page: { limit: draft.pageLimit, cursor },
     format,
   }
@@ -89,7 +113,7 @@ export function buildComponentConfiguration(descriptor, draft, id) {
     })),
     query_template: {
       select: [...draft.columns],
-      fixed_filter: null,
+      fixed_filter: draft.fixedFilter ? JSON.parse(JSON.stringify(draft.fixedFilter)) : null,
       parameter_filters: draft.parameters.filter((parameter) => parameter.bindingKind !== 'named').map((parameter) => ({
         parameter_key: parameter.key,
         field: parameter.field,
@@ -99,7 +123,7 @@ export function buildComponentConfiguration(descriptor, draft, id) {
         parameter_key: parameter.key,
         name: parameter.name,
       })),
-      order_by: stableOrder(descriptor),
+      order_by: draft.orderBy?.map(item => ({ ...item })) || stableOrder(descriptor),
       page_limit: draft.pageLimit,
       format: 'json',
     },
@@ -115,6 +139,8 @@ export function draftFromComponent(component, descriptor) {
     name: component.title,
     description: component.description || '',
     columns: [...(component.query_template?.select || [])],
+    fixedFilter: component.query_template.fixed_filter || null,
+    orderBy: component.query_template.order_by?.map(item => ({ ...item })) || null,
     pageLimit: component.query_template?.page_limit || descriptor.input_contract.page.default_limit,
     parameters: (component.parameter_definitions || []).map((definition) => {
       const namedBinding = (component.query_template?.named_parameter_bindings || []).find((item) => item.parameter_key === definition.key)
@@ -142,6 +168,7 @@ export function draftFromComponent(component, descriptor) {
     rendererType: component.renderer_type,
     chartType: config.chart_type || 'bar',
     totalAsValue: config.total_as_value === true,
+    resultNameField: config.result_name_field || '',
     dimension: config.dimension || '',
     measures: [...(config.measures || [])],
     valueItems: (config.items || []).map(valueItemDraft),
@@ -183,7 +210,7 @@ export function buildRendererConfig(draft) {
   const withPresentations = (config) => presentations.length > 0
     ? { ...config, field_presentations: presentations }
     : config
-  if (draft.rendererType === 'chart') return withPresentations({ chart_type: draft.chartType, ...(draft.totalAsValue ? { total_as_value: true } : {}), dimension: draft.dimension, measures: [...draft.measures] })
+  if (draft.rendererType === 'chart') return withPresentations({ chart_type: draft.chartType, ...(draft.resultNameField ? { result_name_field: draft.resultNameField } : {}), ...(draft.totalAsValue ? { total_as_value: true } : {}), dimension: draft.dimension, measures: [...draft.measures] })
   if (draft.rendererType === 'map') return withPresentations({
     geometry_field: draft.geometryField,
     label_field: draft.mapLabelField,
@@ -239,7 +266,7 @@ function stableOrder(descriptor) {
 
 function rendererFieldNames(draft) {
   const source = draft.rendererType === 'chart'
-    ? [draft.dimension, ...(draft.measures || [])]
+    ? [draft.dimension, ...(draft.measures || []), draft.resultNameField]
     : draft.rendererType === 'map'
       ? [draft.mapLabelField, ...(draft.tooltipFields || []), draft.mapStyleMode === 'uniform' ? '' : draft.mapColorField]
       : draft.rendererType === 'table'

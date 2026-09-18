@@ -24,7 +24,7 @@ func BindOptionalJSONStrict(c *gin.Context, dst interface{}) error {
 		}
 		return fmt.Errorf("invalid JSON body: %w", err)
 	}
-	if err := decoder.Decode(&struct{}{}); err != nil && !errors.Is(err, io.EOF) {
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
 		return fmt.Errorf("invalid JSON body: multiple JSON values")
 	}
 	return nil

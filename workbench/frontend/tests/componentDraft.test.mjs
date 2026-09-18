@@ -1,12 +1,32 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { buildComponentConfiguration, buildQueryRequest, buildRendererConfig, createNamedParameterDraft, createParameterDraft, draftFromComponent, hasParameterValue, requiredParameterValuesPresent, synchronizeFieldPresentations } from '../src/utils/componentDraft.mjs'
+import { buildComponentConfiguration, buildQueryRequest, buildRendererConfig, componentDisplaySuggestions, createNamedParameterDraft, createParameterDraft, draftFromComponent, hasParameterValue, requiredParameterValuesPresent, synchronizeFieldPresentations } from '../src/utils/componentDraft.mjs'
 
 const descriptor = {
   ref: { service_type: 'query', service_id: 9 },
   contract_fingerprint: `sha256:${'a'.repeat(64)}`,
   input_contract: { order: { stable_key: ['id'] } },
 }
+
+test('editing or duplicating preserves fixed predicates and explicit ordering in trial and saved queries', () => {
+  const source = { ...descriptor, output_contract: { fields: [{ name: 'id', type: 'string' }] } }
+  const component = {
+    title: 'Filtered', description: '', renderer_type: 'table',
+    query_template: { select: ['id'], page_limit: 20, fixed_filter: { field: 'id', op: 'neq', value: 'excluded' }, order_by: [{ field: 'id', direction: 'desc' }] },
+    renderer_config: { columns: ['id'] },
+  }
+  const draft = draftFromComponent(component, source)
+  const request = buildQueryRequest(source, draft)
+  const saved = buildComponentConfiguration(source, draft, 'copy')
+  assert.deepEqual(request.filter, component.query_template.fixed_filter)
+  assert.deepEqual(saved.query_template.fixed_filter, request.filter)
+  assert.deepEqual(request.order_by, component.query_template.order_by)
+  assert.deepEqual(saved.query_template.order_by, request.order_by)
+  saved.query_template.fixed_filter.value = 'changed'
+  saved.query_template.order_by[0].direction = 'asc'
+  assert.equal(component.query_template.fixed_filter.value, 'excluded')
+  assert.equal(component.query_template.order_by[0].direction, 'desc')
+})
 
 test('value labels round trip through the sole renderer compiler without altering query values', () => {
   const source = { ...descriptor, output_contract: { fields: [{ name: 'direction', type: 'string' }] } }
@@ -190,4 +210,41 @@ test('text contains follows descriptor and binds a literal without wildcard rewr
   filter.value = ''
   assert.equal(buildQueryRequest(descriptor, draft).filter, null)
   assert.equal(createParameterDraft({ name: 'nickname', type: 'string', operators: [] }), null)
+})
+
+
+test('display suggestions use selectable output facts, default order, stable time and explicit geometry', () => {
+  const fields = [
+    { name: 'opaque_count', type: 'int' }, { name: 'category_x', type: 'string' },
+    { name: 'when_x', type: 'date' }, { name: 'amount_x', type: 'decimal' },
+    { name: 'shape_x', type: 'geometry' }, { name: 'private_x', type: 'string' },
+  ]
+  const source = {
+    input_contract: { fields: fields.map(f => ({ ...f, selectable: f.name !== 'private_x' })), default_selection: ['amount_x', 'category_x', 'when_x'], order: { stable_key: ['when_x'] } },
+    output_contract: { fields, spatial: { primary_geometry_field: 'shape_x' } },
+  }
+  const before = structuredClone(source)
+  const suggestions = componentDisplaySuggestions(source)
+  assert.deepEqual(suggestions.map(s => s.key), ['table', 'bar', 'line', 'map'])
+  assert.deepEqual(suggestions.find(s => s.key === 'bar').columns, ['category_x', 'amount_x'])
+  assert.deepEqual(suggestions.find(s => s.key === 'line').columns, ['when_x', 'amount_x'])
+  assert.deepEqual(suggestions.find(s => s.key === 'map').columns, ['shape_x'])
+  assert.deepEqual(suggestions[0].columns, source.input_contract.default_selection)
+  assert.deepEqual(source, before)
+  suggestions[0].columns.push('changed')
+  assert.deepEqual(source, before)
+})
+
+test('display suggestions never infer aggregation, time roles from names or undeclared geometry', () => {
+  const fields = [{ name: 'date', type: 'int' }, { name: 'total', type: 'double' }, { name: 'geom', type: 'string' }]
+  const source = { input_contract: { fields: fields.map(f => ({ ...f, selectable: true })), order: { stable_key: ['date'] } }, output_contract: { fields } }
+  assert.deepEqual(componentDisplaySuggestions(source).map(s => s.key), ['table', 'bar'])
+  source.output_contract.fields = fields.slice(0, 2)
+  assert.deepEqual(componentDisplaySuggestions(source).map(s => s.key), ['table'])
+  source.output_contract.fields = [{ name: 'date', type: 'date' }, { name: 'total', type: 'double' }]
+  source.input_contract.order.stable_key = ['total']
+  assert.deepEqual(componentDisplaySuggestions(source).map(s => s.key), ['table'])
+  source.input_contract.fields = []
+  assert.deepEqual(componentDisplaySuggestions(source), [])
+  assert.deepEqual(componentDisplaySuggestions(null), [])
 })

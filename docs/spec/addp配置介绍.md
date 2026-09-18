@@ -165,6 +165,8 @@ System IAM 安全策略是 `platform_only` 的 System-owned 平台安全配置�
 
 ### Ontology FalkorDB 部署配置
 
+Ontology Backend 使用 `ONTOLOGY_BACKEND_PORT=8195`、`SYSTEM_URL` 和既有独立 `ONTOLOGY_SERVICE_CLIENT_SECRET`。`INFRA_FALKORDB_ADDRESS` 在宿主开发默认为 `127.0.0.1:16479`，容器部署显式覆盖为 `falkordb:6379`；密码只读取 `INFRA_FALKORDB_PASSWORD`。这些配置在启动前生效，不接受用户 API 修改。
+
 FalkorDB 是 Ontology 私有 Infra，不进入 System Engine 注册，也不复用 Infra Redis。根 `.env` 的 `INFRA_FALKORDB_PASSWORD` 是独立 Secret，必须非空；生产初始化生成随机值，禁止使用模板开发密码或复用 Redis 密码。宿主开发连接固定为 `127.0.0.1:16479`，容器通过 `falkordb:6379` 连接；不开放 Browser。
 
 `scripts/infra/falkordb.yml` 是正式 Compose 与 disposable T2 共用的服务定义，随现有 Infra 打包路径发布，固定镜像 digest、非零查询预算、线程/查询内存/队列上限和容器资源限制。`/data` 使用独立 `falkordb_data` 卷，采用 RDB 快照；PG 仍是恢复权威，RDB 不能替代发布摘要校验与重建。此单机配置只用于本地开发/受控同机网络，未声明生产 TLS、HA 或灾备认证。

@@ -133,7 +133,7 @@ test('dragging reorders layout and selecting a result never runs an interaction 
   expect(backend.unexpected).toEqual([])
 })
 
-async function personnelApplication(context, { locale = 'zh-cn', withSelection = false } = {}) {
+async function personnelApplication(context, { locale = 'zh-cn', withSelection = false, comparisonPerson = 'person-a' } = {}) {
   const backend = await installMetricApplicationBackend(context, { rebound: true, locale, configure(draft, descriptors) {
     const [metric, directory] = draft.snapshot.components
     descriptors[71].input_contract.named_parameters = [{ name: 'person_id', type: 'string', required: true }]
@@ -154,7 +154,7 @@ async function personnelApplication(context, { locale = 'zh-cn', withSelection =
     const other = structuredClone(metric)
     other.id = 'component-73'; other.title = '活动次数对比'
     draft.snapshot.components.push(other)
-    draft.snapshot.parameters = ['person_a', 'person_b'].map((key, i) => ({ key, label: i ? '对比人员' : '人员', control_type: 'text', required: true, default_value: 'person-a' }))
+    draft.snapshot.parameters = ['person_a', 'person_b'].map((key, i) => ({ key, label: i ? '对比人员' : '人员', control_type: 'text', required: true, default_value: i ? comparisonPerson : 'person-a' }))
     draft.snapshot.parameter_bindings = [metric, other].map((c, i) => ({ component_id: c.id, component_parameter_key: 'person', application_parameter_key: i ? 'person_b' : 'person_a' }))
     draft.snapshot.page.placements = draft.snapshot.components.map((c, i) => ({ component_id: c.id, x: 0, y: i * 6, width: 12, height: 6 }))
     if (withSelection) draft.snapshot.selection_bindings = [{ source_component_id: directory.id, assignments: draft.snapshot.parameters.map(p => ({ source_field: 'person_id', application_parameter_key: p.key })) }]
@@ -215,6 +215,30 @@ test('explicit personnel interaction can be cancelled, applied, edited and tried
   expect(backend.published).toEqual(backend.originalPublished)
   expect(backend.unexpected).toEqual([])
 })
+
+for (const locale of ['zh-cn', 'en']) {
+test(`filter opens the existing interaction builder with its target selected (${locale})`, async ({ page, context }) => {
+  const { backend } = await personnelApplication(context, { locale })
+  await page.goto(applicationPath)
+  await page.getByRole('button', { name: locale === 'en' ? 'Filters' : '筛选条件', exact: true }).click()
+  await page.getByTestId('filter-card').last().getByRole('button', { name: locale === 'en' ? 'Choose this filter by clicking a component' : '通过点击组件选择此条件', exact: true }).click()
+  const builder = page.getByTestId('interaction-builder')
+  const apply = builder.getByRole('button', { name: locale === 'en' ? 'Apply interaction' : '应用联动', exact: true })
+  await expect(apply).toBeDisabled()
+  await expect(builder.getByTestId('interaction-target')).toContainText('对比人员')
+  await choose(page, builder.getByTestId('interaction-source'), '选择人员')
+  await choose(page, builder.getByTestId('interaction-field'), '人员编号 (person_id)')
+  await expect(builder.getByTestId('interaction-target')).toContainText('对比人员 · 活动次数对比')
+  await expect(apply).toBeEnabled()
+  // A nullable nickname cannot fill a required ID filter; field changes must clear it.
+  await choose(page, builder.getByTestId('interaction-field'), '昵称 (nickname)')
+  await expect(apply).toBeDisabled()
+  await builder.getByRole('button', { name: locale === 'en' ? 'Cancel' : '取消', exact: true }).click()
+  await expect(page.getByTestId('interaction-card')).toHaveCount(0)
+  expect(backend.writes).toEqual([])
+  expect(backend.unexpected).toEqual([])
+})
+}
 
 test('sharing a filter shows its scope and keeps both metric queries on the same original value', async ({ page, context }) => {
   const { backend, queries } = await personnelApplication(context)
@@ -338,3 +362,200 @@ test(`new component explicitly reuses an existing filter for its test query and 
   expect(backend.unexpected).toEqual([])
 })
 }
+
+
+for (const locale of ['zh-cn', 'en']) {
+test(`duplicate a chart and switch its person filter without changing the source (${locale})`, async ({ page, context }) => {
+  const { backend, queries } = await personnelApplication(context, { locale, withSelection: true, comparisonPerson: 'person-b' })
+  const original = backend.draft.snapshot
+  await page.goto(applicationPath)
+  const inspector = page.getByTestId('component-inspector')
+  await inspector.getByRole('button', { name: locale === 'en' ? 'Half' : '半宽', exact: true }).click()
+  const duplicate = inspector.getByRole('button', { name: locale === 'en' ? 'Duplicate component' : '复制组件', exact: true })
+  await duplicate.click()
+  const editor = page.getByTestId('application-component-editor')
+  await expect(editor.getByRole('tab', { name: locale === 'en' ? '3. Set query inputs' : '3. 设置查询条件' })).toHaveAttribute('aria-selected', 'true')
+  const reuse = editor.getByTestId('parameter-reuse')
+  await expect(reuse).toContainText('人员 · 参加活动次数')
+  await expect(editor.locator('.parameter').getByRole('textbox').first()).toHaveValue('person-a')
+  await choose(page, reuse, '对比人员 · 活动次数对比')
+  await page.getByRole('dialog').getByRole('button', { name: locale === 'en' ? 'Cancel' : '取消', exact: true }).click()
+  await expect(page.getByTestId('runtime-component')).toHaveCount(3)
+  expect(backend.writes).toHaveLength(0)
+  await duplicate.click()
+  await expect(reuse).toContainText('人员 · 参加活动次数')
+  await choose(page, reuse, '对比人员 · 活动次数对比')
+  await editor.getByRole('textbox', { name: locale === 'en' ? 'Component title' : '组件标题', exact: true }).filter({ visible: true }).fill('人员 B 活动次数')
+  await editor.getByTestId('component-query-action').click()
+  await expect.poll(() => queries.at(-1)?.parameters.person_id).toBe('person-b')
+  if (locale === 'en') await page.setViewportSize({ width: 680, height: 900 })
+  expect(await page.getByRole('dialog').evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBe(true)
+  await page.screenshot({ path: test.info().outputPath('duplicate-component.png') })
+  await page.getByRole('dialog').getByRole('button', { name: locale === 'en' ? 'Apply component configuration' : '应用组件配置', exact: true }).click()
+  await expect(page.getByTestId('runtime-component')).toHaveCount(4)
+  await page.getByRole('button', { name: locale === 'en' ? 'Save draft' : '保存草稿', exact: true }).click()
+  await expect.poll(() => backend.writes.length).toBe(1)
+  const snapshot = backend.draft.snapshot
+  const copied = snapshot.components.at(-1)
+  expect(copied.id).not.toBe(original.components[0].id)
+  expect(copied.title).toBe('人员 B 活动次数')
+  expect(copied.renderer_type).toBe('chart')
+  expect(copied.renderer_config).toMatchObject(original.components[0].renderer_config)
+  expect(copied.query_template).toEqual(original.components[0].query_template)
+  expect(snapshot.components.slice(0, 3)).toEqual(original.components)
+  expect(snapshot.parameters).toEqual(original.parameters)
+  expect(snapshot.parameter_presets).toEqual(original.parameter_presets)
+  expect(snapshot.selection_bindings).toEqual(original.selection_bindings)
+  expect(snapshot.parameter_bindings.at(-1)).toEqual({ component_id: copied.id, component_parameter_key: 'person', application_parameter_key: 'person_b' })
+  expect(snapshot.page.placements.slice(0, 2)).toEqual([
+    { component_id: 'component-71', x: 0, y: 0, width: 6, height: 6 },
+    { component_id: copied.id, x: 6, y: 0, width: 6, height: 6 },
+  ])
+  expect(backend.published).toEqual(backend.originalPublished)
+  await page.reload()
+  await expect(page.getByTestId('application-component').nth(1)).toContainText('人员 B 活动次数')
+  expect(backend.unexpected).toEqual([])
+})
+}
+
+for (const locale of ['zh-cn', 'en']) {
+test(`independent copied filter exposes its name and persists separately (${locale})`, async ({ page, context }) => {
+  const { backend, queries } = await personnelApplication(context, { locale })
+  const original = backend.draft.snapshot
+  await page.goto(applicationPath)
+  await page.getByTestId('component-inspector').getByRole('button', { name: locale === 'en' ? 'Duplicate component' : '复制组件', exact: true }).click()
+  const editor = page.getByTestId('application-component-editor')
+  const name = editor.getByRole('textbox', { name: locale === 'en' ? 'Filter name' : '筛选名称', exact: true })
+  await expect(name).toHaveCount(0)
+  await choose(page, editor.getByTestId('parameter-reuse'), locale === 'en' ? 'Create an independent filter' : '新建独立条件')
+  await expect(name).toBeVisible()
+  await name.fill('人员 C')
+  await editor.getByRole('textbox', { name: locale === 'en' ? 'Value on opening' : '打开应用时的值', exact: true }).fill('person-c')
+  await editor.getByTestId('component-query-action').click()
+  await expect.poll(() => queries.at(-1)?.parameters.person_id).toBe('person-c')
+  await page.getByRole('dialog').getByRole('button', { name: locale === 'en' ? 'Apply component configuration' : '应用组件配置', exact: true }).click()
+  await page.getByRole('button', { name: locale === 'en' ? 'Save draft' : '保存草稿', exact: true }).click()
+  await expect.poll(() => backend.writes.length).toBe(1)
+  const snapshot = backend.draft.snapshot
+  expect(snapshot.parameters.slice(0, 2)).toEqual(original.parameters)
+  expect(snapshot.parameters.at(-1)).toMatchObject({ label: '人员 C', default_value: 'person-c' })
+  expect(snapshot.parameter_bindings.at(-1).application_parameter_key).toBe(snapshot.parameters.at(-1).key)
+  expect(snapshot.components.slice(0, 3)).toEqual(original.components)
+  expect(backend.published).toEqual(backend.originalPublished)
+  await page.reload()
+  await page.getByRole('button', { name: locale === 'en' ? 'Filters' : '筛选条件', exact: true }).click()
+  await expect(page.getByRole('textbox', { name: locale === 'en' ? 'Filter name' : '筛选名称', exact: true }).last()).toHaveValue('人员 C')
+  expect(backend.unexpected).toEqual([])
+})
+}
+
+test('duplicating a selection source adds no click interaction and creates a fresh identity each time', async ({ page, context }) => {
+  const { backend } = await personnelApplication(context, { withSelection: true })
+  await page.goto(applicationPath)
+  await page.getByTestId('application-component').filter({ hasText: '选择人员' }).locator('.outline-select').click()
+  const inspector = page.getByTestId('component-inspector')
+  const duplicate = inspector.getByRole('button', { name: '复制组件', exact: true })
+  for (let i = 0; i < 2; i++) {
+    await duplicate.click()
+    await expect(page.getByTestId('application-component-editor').getByTestId('parameter-reuse')).toHaveCount(0)
+    await page.getByRole('dialog').getByRole('button', { name: '应用组件配置', exact: true }).click()
+    await expect(page.getByTestId('runtime-component')).toHaveCount(4 + i)
+  }
+  await page.getByRole('button', { name: '保存草稿', exact: true }).click()
+  await expect.poll(() => backend.writes.length).toBe(1)
+  const snapshot = backend.draft.snapshot
+  expect(new Set(snapshot.components.map(c => c.id)).size).toBe(5)
+  expect(snapshot.selection_bindings).toEqual(backend.originalPublished.snapshot.selection_bindings)
+  expect(snapshot.parameters).toEqual(backend.originalPublished.snapshot.parameters)
+  expect(backend.unexpected).toEqual([])
+})
+
+test('copying a stale contract requires explicit reconfiguration before trial or apply', async ({ page, context }) => {
+  const backend = await installMetricApplicationBackend(context)
+  backend.rebindServices()
+  await page.goto(applicationPath)
+  await page.getByTestId('component-inspector').getByRole('button', { name: '复制组件', exact: true }).click()
+  const editor = page.getByTestId('application-component-editor')
+  await expect(editor.getByTestId('contract-changed-alert')).toBeVisible()
+  await expect(editor.getByTestId('component-query-action')).toBeDisabled()
+  const apply = page.getByRole('dialog').getByRole('button', { name: '应用组件配置', exact: true })
+  await expect(apply).toBeDisabled()
+  await editor.getByRole('button', { name: '按当前服务契约重新配置', exact: true }).click()
+  await expect(editor.getByTestId('contract-changed-alert')).toHaveCount(0)
+  for (const reuse of await editor.getByTestId('parameter-reuse').all()) await expect(reuse).toContainText('新建独立条件')
+  const parameters = editor.locator('.parameter')
+  await choose(page, parameters.nth(0).locator('.el-select').last(), '全期')
+  await choose(page, parameters.nth(1).locator('.el-select').last(), '双向')
+  await editor.getByTestId('component-query-action').click()
+  await expect(editor.locator('tbody tr')).toHaveCount(2)
+  await expect(apply).toBeEnabled()
+  await page.getByRole('dialog').getByRole('button', { name: '取消', exact: true }).click()
+  await expect(page.getByTestId('runtime-component')).toHaveCount(2)
+  expect(backend.writes).toHaveLength(0)
+  expect(backend.unexpected).toEqual([])
+})
+
+
+for (const locale of ['zh-cn', 'en']) {
+test(`new application uses an explicit field suggestion and queries only after required inputs (${locale})`, async ({ page, context }) => {
+  const backend = await installMetricApplicationBackend(context, { rebound: true, locale })
+  await page.goto('/workbench/applications/new')
+  await page.getByTestId('start-table').click()
+  const editor = page.getByTestId('application-component-editor')
+  await choose(page, editor.locator('.el-form-item').filter({ hasText: locale === 'en' ? 'Data service' : '数据服务' }), '定向重叠率服务')
+  await expect(editor.getByTestId('suggestion-line')).toContainText('bucket → value')
+  await expect(editor.getByTestId('suggestion-bar')).toContainText('direction → value')
+  await expect(editor.getByTestId('suggestion-map')).toHaveCount(0)
+  expect(backend.requests).toHaveLength(0)
+  await editor.getByTestId('suggestion-line').click()
+  await expect(editor.getByRole('tab', { name: locale === 'en' ? '3. Set query inputs' : '3. 设置查询条件' })).toHaveAttribute('aria-selected', 'true')
+  expect(backend.requests).toHaveLength(0)
+  const parameters = editor.locator('.parameter')
+  await choose(page, parameters.nth(0), locale === 'en' ? 'Total' : '全期')
+  await choose(page, parameters.nth(1), locale === 'en' ? 'Both directions' : '双向')
+  await editor.getByTestId('component-query-action').click()
+  await expect(editor.locator('canvas')).toBeVisible()
+  expect(backend.requests.at(-1).body.select).toEqual(['bucket', 'value'])
+  expect(backend.requests.at(-1).body.parameters).toEqual({ grain: 'total', directions: 'both' })
+  await page.getByRole('dialog').getByRole('button', { name: locale === 'en' ? 'Apply component configuration' : '应用组件配置', exact: true }).click()
+  await page.getByRole('button', { name: locale === 'en' ? 'Create draft' : '创建草稿', exact: true }).click()
+  await expect.poll(() => backend.writes.length).toBe(1)
+  const component = backend.draft.snapshot.components[0]
+  expect(component.renderer_type).toBe('chart')
+  expect(component.renderer_config).toMatchObject({ chart_type: 'line', dimension: 'bucket', measures: ['value'] })
+  expect(JSON.stringify(component)).not.toContain('suggestion')
+  await expect(page).toHaveURL(new RegExp(applicationPath + '$'))
+  await page.reload()
+  await expect(page.getByTestId('runtime-component').locator('canvas')).toBeVisible()
+  expect(backend.unexpected).toEqual([])
+})
+}
+
+test('choosing a display queries valid service defaults and switching services clears the result', async ({ page, context }) => {
+  const backend = await installMetricApplicationBackend(context, { rebound: true, configure(_draft, descriptors) {
+    descriptors[72].input_contract.named_parameters[0].default = 'total'
+  } })
+  await page.setViewportSize({ width: 680, height: 900 })
+  await page.goto('/workbench/applications/new')
+  await page.getByTestId('start-value').click()
+  const editor = page.getByTestId('application-component-editor')
+  const service = editor.locator('.el-form-item').filter({ hasText: '数据服务' })
+  await choose(page, service, '计数服务')
+  expect(backend.requests).toHaveLength(0)
+  await expect(editor.getByTestId('suggestion-bar')).toHaveCount(0)
+  expect(await page.getByRole('dialog').evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBe(true)
+  await page.screenshot({ path: test.info().outputPath('display-suggestions.png') })
+  await editor.getByTestId('suggestion-line').click()
+  await expect(editor.locator('canvas')).toBeVisible()
+  expect(backend.requests).toHaveLength(1)
+  expect(backend.requests[0].body.page.limit).toBe(50)
+  await editor.getByRole('tab', { name: '1. 选择数据' }).click()
+  await choose(page, service, '定向重叠率服务')
+  await expect(editor.locator('canvas')).toHaveCount(0)
+  await expect(editor.getByTestId('suggestion-bar')).toBeVisible()
+  expect(backend.requests).toHaveLength(1)
+  await page.getByRole('dialog').getByRole('button', { name: '取消', exact: true }).click()
+  await expect(page.getByTestId('application-start')).toBeVisible()
+  expect(backend.writes).toHaveLength(0)
+  expect(backend.unexpected).toEqual([])
+})

@@ -60,6 +60,8 @@ DAMENG_PORT=5236
 
 ## Reserved Policy（保留规则）
 
+Ontology Backend 使用 `8195`（开发/容器一致），无独立前端端口；经 Gateway `/api/v1/ontology` 访问。
+
 - **System MinIO 使用 19000/19001**，Business 侧不得占用这两个端口。
 - **Business MinIO 使用 9002/9003**，System 侧不得占用这两个端口。
 - System PostgreSQL 使用 15432；Business PostgreSQL 使用 5433。

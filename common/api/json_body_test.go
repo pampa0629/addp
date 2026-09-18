@@ -45,6 +45,19 @@ func TestBindOptionalJSONStrictRejectsInvalidJSON(t *testing.T) {
 	}
 }
 
+func TestBindOptionalJSONStrictRejectsEveryTrailingValue(t *testing.T) {
+	for _, suffix := range []string{`{}`, `null`, `[]`, `1`, `"text"`, `true`, `{"unknown":1}`} {
+		var req strictJSONRequestForTest
+		if err := commonapi.BindOptionalJSONStrict(testContextWithBody(`{"name":"ok"} `+suffix), &req); err == nil {
+			t.Fatalf("accepted trailing JSON: %s", suffix)
+		}
+	}
+	var req strictJSONRequestForTest
+	if err := commonapi.BindOptionalJSONStrict(testContextWithBody("{\"name\":\"ok\"} \n\t"), &req); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func testContextWithBody(body string) *gin.Context {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()

@@ -163,7 +163,7 @@ export_images() {
         "system-backend" "manager-backend" "meta-backend"
         "transfer-backend" "orchestrator-backend" "develop-backend"
         "service-backend" "monitor-backend" "standard-backend" "copilot-backend"
-        "agent-backend" "model-backend" "quality-backend" "security-backend" "asset-backend" "catalog-backend" "workbench-backend" "portal-backend" "graph-backend" "inference-backend"
+        "agent-backend" "model-backend" "quality-backend" "security-backend" "asset-backend" "catalog-backend" "workbench-backend" "portal-backend" "graph-backend" "inference-backend" "ontology-backend"
         "gateway"
         # Worker services
         "meta-worker" "quality-worker" "security-worker" "transfer-bounded-worker" "transfer-continuous-worker"

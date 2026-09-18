@@ -1,0 +1,10 @@
+[ontology.invalid]
+other = "本体请求或定义无效"
+[ontology.conflict]
+other = "本体版本或状态冲突，请重新读取后操作"
+[ontology.not_found]
+other = "本体记录不存在"
+[ontology.failed]
+other = "本体操作失败"
+[ontology.admission_failed]
+other = "投影意图已保存，但执行准入失败；请按返回的身份查询状态，不要重复发布"

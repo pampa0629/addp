@@ -25,6 +25,7 @@ show_usage() {
   echo "  -security     启动 Security 模块 (公共依赖: System Backend + Gateway + Console)"
   echo "  -asset        启动 Asset 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
   echo "  -catalog      启动 Catalog 模块 (依赖: System Backend + Gateway + Console；Meta 为后台同步软依赖)"
+  echo "  -ontology     启动 Ontology Backend (依赖: System Backend + Gateway + Console + Infra FalkorDB)"
   echo "  -workbench    启动 Workbench 模块 (依赖: System Backend + Service Backend + Gateway + Console)"
   echo "  -portal       启动 Portal 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console + Asset)"
   echo "  -graph        启动 Graph 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
@@ -94,6 +95,7 @@ export WORKBENCH_BACKEND_PORT="${WORKBENCH_BACKEND_PORT:-8193}"
 export WORKBENCH_FE_PORT="${WORKBENCH_FE_PORT:-5190}"
 export SECURITY_BACKEND_PORT="${SECURITY_BACKEND_PORT:-8194}"
 export SECURITY_FE_PORT="${SECURITY_FE_PORT:-5191}"
+export ONTOLOGY_BACKEND_PORT="${ONTOLOGY_BACKEND_PORT:-8195}"
 
 ensure_model3d_node_dependencies() {
   local dir="engines/model3d-workflow"
@@ -115,7 +117,7 @@ ensure_model3d_node_dependencies() {
 
 # 自动生成服务 URL（基于 SERVICE_HOST + XXX_BACKEND_PORT）
 generate_service_urls() {
-    local services=(system manager meta transfer orchestrator develop service copilot monitor standard model quality security asset catalog workbench portal agent graph inference)
+    local services=(system manager meta transfer orchestrator develop service copilot monitor standard model quality security asset ontology catalog workbench portal agent graph inference)
     for svc in "${services[@]}"; do
         local port_var="$(echo ${svc} | tr '[:lower:]' '[:upper:]')_BACKEND_PORT"
         local url_var="$(echo ${svc} | tr '[:lower:]' '[:upper:]')_URL"
@@ -257,7 +259,7 @@ for arg in "$@"; do
       START_ALL=true
       EXPLICIT_ALL=true
       ;;
-    -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-monitor|-copilot|-agent|-inference|-standard|-model|-quality|-security|-asset|-catalog|-workbench|-portal|-graph|-geopython-workflow|-math-workflow|-model3d-workflow|-pointcloud-workflow|-document-workflow|-supermap-workflow|-spark-workflow|-jupyter|-duckdb|-gateway|-console)
+    -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-monitor|-copilot|-agent|-inference|-standard|-model|-quality|-security|-asset|-ontology|-catalog|-workbench|-portal|-graph|-geopython-workflow|-math-workflow|-model3d-workflow|-pointcloud-workflow|-document-workflow|-supermap-workflow|-spark-workflow|-jupyter|-duckdb|-gateway|-console)
       SELECTED_MODULE="${arg#-}"
       SELECTED_MODULE_COUNT=$((SELECTED_MODULE_COUNT + 1))
       START_ALL=false
@@ -340,6 +342,7 @@ START_SECURITY_WORKER=false
 START_ASSET_BACKEND=false
 START_ASSET_FRONTEND=false
 START_CATALOG_BACKEND=false
+START_ONTOLOGY_BACKEND=false
 START_CATALOG_FRONTEND=false
 START_WORKBENCH_BACKEND=false
 START_WORKBENCH_FRONTEND=false
@@ -407,6 +410,7 @@ if [ "$START_ALL" = true ]; then
   START_ASSET_BACKEND=true
   START_ASSET_FRONTEND=true
   START_CATALOG_BACKEND=true
+  START_ONTOLOGY_BACKEND=true
   START_CATALOG_FRONTEND=true
   START_WORKBENCH_BACKEND=true
   START_WORKBENCH_FRONTEND=true
@@ -513,6 +517,9 @@ else
       START_ASSET_BACKEND=true
       START_ASSET_FRONTEND=true
       ;;
+    ontology)
+      START_ONTOLOGY_BACKEND=true
+      ;;
     catalog)
       START_CATALOG_BACKEND=true
       START_CATALOG_FRONTEND=true
@@ -576,6 +583,7 @@ else
       START_SECURITY_WORKER=true
       START_CATALOG_BACKEND=true
       START_GATEWAY=true
+      START_ONTOLOGY_BACKEND=true
       ;;
     console)
       START_SYSTEM_FRONTEND=true
@@ -608,6 +616,7 @@ else
       START_CATALOG_BACKEND=true
       START_CATALOG_FRONTEND=true
       START_GATEWAY=true
+      START_ONTOLOGY_BACKEND=true
       START_CONSOLE=true
       ;;
     esac
@@ -615,7 +624,7 @@ else
     # 单模块开发也统一保留 ADDP 基础服务和 Console 入口。
     # 各模块前端和 Console 的 /api 代理都经由 Gateway；资源、任务和审计等通用能力依赖 System/Meta。
     enable_single_module_common_dependencies
-    if [ "$SELECTED_MODULE" = "catalog" ]; then
+    if [ "$SELECTED_MODULE" = "catalog" ] || [ "$SELECTED_MODULE" = "ontology" ]; then
       START_META_BACKEND=false
       START_META_WORKER=false
     fi
@@ -996,7 +1005,7 @@ fi
 
 # 3. 并行启动所有后端服务 + Workers (System 已就绪)
 # 跳过检查：如果没有任何后端模块需要启动
-if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ "$START_TRANSFER_BACKEND" = true ] || [ "$START_ORCHESTRATOR_BACKEND" = true ] || [ "$START_DEVELOP_BACKEND" = true ] || [ "$START_SERVICE_BACKEND" = true ] || [ "$START_QUALITY_BACKEND" = true ] || [ "$START_SECURITY_BACKEND" = true ] || [ "$START_STANDARD_BACKEND" = true ] || [ "$START_MONITOR_BACKEND" = true ] || [ "$START_MODEL_BACKEND" = true ] || [ "$START_ASSET_BACKEND" = true ] || [ "$START_CATALOG_BACKEND" = true ] || [ "$START_PORTAL_BACKEND" = true ] || [ "$START_GRAPH_BACKEND" = true ] || [ "$START_INFERENCE_BACKEND" = true ] || [ "$START_DUCKDB" = true ]; then
+if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ "$START_TRANSFER_BACKEND" = true ] || [ "$START_ORCHESTRATOR_BACKEND" = true ] || [ "$START_DEVELOP_BACKEND" = true ] || [ "$START_SERVICE_BACKEND" = true ] || [ "$START_QUALITY_BACKEND" = true ] || [ "$START_SECURITY_BACKEND" = true ] || [ "$START_STANDARD_BACKEND" = true ] || [ "$START_MONITOR_BACKEND" = true ] || [ "$START_MODEL_BACKEND" = true ] || [ "$START_ASSET_BACKEND" = true ] || [ "$START_ONTOLOGY_BACKEND" = true ] || [ "$START_CATALOG_BACKEND" = true ] || [ "$START_PORTAL_BACKEND" = true ] || [ "$START_GRAPH_BACKEND" = true ] || [ "$START_INFERENCE_BACKEND" = true ] || [ "$START_DUCKDB" = true ]; then
   echo -e "${YELLOW}Step 3/5: 并行启动后端服务和选定 Worker${NC}"
 
   # ============================================================
@@ -1074,6 +1083,11 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
 
   if [ "$START_CATALOG_BACKEND" = true ]; then
     build_service "catalog" "catalog/backend" &
+    BUILD_PIDS+=($!)
+  fi
+
+  if [ "$START_ONTOLOGY_BACKEND" = true ]; then
+    build_service "ontology" "ontology/backend" &
     BUILD_PIDS+=($!)
   fi
 
@@ -1177,7 +1191,7 @@ require_started_backends() {
 
 BACKEND_STARTS=()
 WORKER_START_PIDS=()
-if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ "$START_TRANSFER_BACKEND" = true ] || [ "$START_ORCHESTRATOR_BACKEND" = true ] || [ "$START_DEVELOP_BACKEND" = true ] || [ "$START_SERVICE_BACKEND" = true ] || [ "$START_QUALITY_BACKEND" = true ] || [ "$START_SECURITY_BACKEND" = true ] || [ "$START_STANDARD_BACKEND" = true ] || [ "$START_MONITOR_BACKEND" = true ] || [ "$START_MODEL_BACKEND" = true ] || [ "$START_ASSET_BACKEND" = true ] || [ "$START_CATALOG_BACKEND" = true ] || [ "$START_PORTAL_BACKEND" = true ] || [ "$START_GRAPH_BACKEND" = true ] || [ "$START_INFERENCE_BACKEND" = true ]; then
+if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ "$START_TRANSFER_BACKEND" = true ] || [ "$START_ORCHESTRATOR_BACKEND" = true ] || [ "$START_DEVELOP_BACKEND" = true ] || [ "$START_SERVICE_BACKEND" = true ] || [ "$START_QUALITY_BACKEND" = true ] || [ "$START_SECURITY_BACKEND" = true ] || [ "$START_STANDARD_BACKEND" = true ] || [ "$START_MONITOR_BACKEND" = true ] || [ "$START_MODEL_BACKEND" = true ] || [ "$START_ASSET_BACKEND" = true ] || [ "$START_ONTOLOGY_BACKEND" = true ] || [ "$START_CATALOG_BACKEND" = true ] || [ "$START_PORTAL_BACKEND" = true ] || [ "$START_GRAPH_BACKEND" = true ] || [ "$START_INFERENCE_BACKEND" = true ]; then
   echo "  [2/3] 并行启动 Backends..."
   begin_start_listener_batch
 
@@ -1336,6 +1350,18 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
     fi
   fi
 
+  # 启动 Ontology Backend；只消费私有 Infra 和 System 授权。
+  if [ "$START_ONTOLOGY_BACKEND" = true ]; then
+    if check_service_running "ontology" "$ONTOLOGY_BACKEND_PORT"; then
+      .dev-bins/addp-ontology > logs/ontology-backend.log 2> logs/ontology-backend-stderr.log &
+      ONTOLOGY_PID=$!
+      echo $ONTOLOGY_PID > .dev-pids/ontology.pid
+      BACKEND_STARTS+=("ontology:$ONTOLOGY_PID")
+    else
+      ONTOLOGY_PID=$(cat .dev-pids/ontology.pid 2>/dev/null)
+    fi
+  fi
+
   # 启动 Workbench Backend；Service 可暂时离线，不影响 Workbench Ready。
   if [ "$START_WORKBENCH_BACKEND" = true ]; then
     if check_service_running "workbench" "$WORKBENCH_BACKEND_PORT"; then
@@ -1476,7 +1502,7 @@ fi
 # ============================================================
 # Phase 3: 并行等待所有 Backends 健康检查
 # ============================================================
-if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ "$START_TRANSFER_BACKEND" = true ] || [ "$START_ORCHESTRATOR_BACKEND" = true ] || [ "$START_DEVELOP_BACKEND" = true ] || [ "$START_SERVICE_BACKEND" = true ] || [ "$START_STANDARD_BACKEND" = true ] || [ "$START_MONITOR_BACKEND" = true ] || [ "$START_MODEL_BACKEND" = true ] || [ "$START_ASSET_BACKEND" = true ] || [ "$START_CATALOG_BACKEND" = true ] || [ "$START_PORTAL_BACKEND" = true ] || [ "$START_GRAPH_BACKEND" = true ] || [ "$START_INFERENCE_BACKEND" = true ]; then
+if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ "$START_TRANSFER_BACKEND" = true ] || [ "$START_ORCHESTRATOR_BACKEND" = true ] || [ "$START_DEVELOP_BACKEND" = true ] || [ "$START_SERVICE_BACKEND" = true ] || [ "$START_STANDARD_BACKEND" = true ] || [ "$START_MONITOR_BACKEND" = true ] || [ "$START_MODEL_BACKEND" = true ] || [ "$START_ASSET_BACKEND" = true ] || [ "$START_ONTOLOGY_BACKEND" = true ] || [ "$START_CATALOG_BACKEND" = true ] || [ "$START_PORTAL_BACKEND" = true ] || [ "$START_GRAPH_BACKEND" = true ] || [ "$START_INFERENCE_BACKEND" = true ]; then
   echo "  [3/3] 并行健康检查..."
 
   HEALTH_CHECK_PIDS=()
@@ -1651,6 +1677,21 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   fi
 
   # 等待所有并发的 health check 完成；任何目标失败都必须使启动失败。
+  if [ "$START_ONTOLOGY_BACKEND" = true ]; then
+    (
+      WAIT_COUNT=0
+      until curl --max-time 5 -f "http://localhost:${ONTOLOGY_BACKEND_PORT}/health/ready" > /dev/null 2>&1; do
+        sleep 1
+        WAIT_COUNT=$((WAIT_COUNT + 1))
+        if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
+          echo "Ontology Backend 启动超时；查看 logs/ontology-backend-stderr.log" >&2
+          exit 1
+        fi
+      done
+    ) &
+    HEALTH_CHECK_PIDS+=($!)
+  fi
+
   HEALTH_CHECK_FAILED=false
   for pid in "${HEALTH_CHECK_PIDS[@]}"; do
     if ! wait "$pid"; then
