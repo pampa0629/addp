@@ -62,6 +62,7 @@ export default defineConfig({
       '/module-health/inference':   { target: 'http://localhost:8191', rewrite: () => '/health/ready', changeOrigin: true },
       '/module-health/catalog':     { target: 'http://localhost:8192', rewrite: () => '/health/ready', changeOrigin: true },
       '/module-health/workbench':   { target: 'http://localhost:8193', rewrite: () => '/health/ready', changeOrigin: true },
+      '/module-health/ontology':    { target: 'http://localhost:8195', rewrite: () => '/health/ready', changeOrigin: true },
       // Swagger spec 代理（避免 swagger-viewer.html 跨域 fetch）
       '/swagger-spec/system':       { target: 'http://localhost:8180', rewrite: () => '/swagger/doc.json', changeOrigin: true },
       '/swagger-spec/manager':      { target: 'http://localhost:8081', rewrite: () => '/swagger/doc.json', changeOrigin: true },
@@ -81,6 +82,7 @@ export default defineConfig({
       '/swagger-spec/inference':    { target: 'http://localhost:8191', rewrite: () => '/swagger/doc.json', changeOrigin: true },
       '/swagger-spec/catalog':      { target: 'http://localhost:8192', rewrite: () => '/swagger/doc.json', changeOrigin: true },
       '/swagger-spec/workbench':    { target: 'http://localhost:8193', rewrite: () => '/swagger/doc.json', changeOrigin: true },
+      '/swagger-spec/ontology':     { target: 'http://localhost:8195', rewrite: () => '/swagger/doc.json', changeOrigin: true },
     }
   },
   build: {

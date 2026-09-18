@@ -545,6 +545,12 @@ test-transfer-frontend: ## 运行 Transfer 前端确定性测试与构建
 	@cd transfer/frontend && npm test
 	@cd transfer/frontend && npm run build
 
+.PHONY: test-ontology-frontend
+test-ontology-frontend: ## 运行 Ontology 前端状态契约、浏览器交互与构建
+	@cd ontology/frontend && npm test
+	@cd ontology/frontend && npm run test:e2e
+	@cd ontology/frontend && npm run build
+
 test-workbench-frontend: ## 运行 Workbench 前端确定性测试与构建
 	@cd workbench/frontend && npm test
 	@cd workbench/frontend && npm run test:e2e
@@ -612,7 +618,7 @@ test: test-platform test-go test-common-python test-agent-eval test-copilot \
 	test-graph-frontend test-inference-frontend test-manager-frontend test-meta-frontend \
 	test-model-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend \
 	test-quality-frontend test-security-frontend test-service-frontend test-standard-frontend test-system-frontend \
-	test-transfer-frontend test-workbench-frontend ## 运行全部无外部服务的确定性测试与构建门禁
+	test-transfer-frontend test-workbench-frontend test-ontology-frontend ## 运行全部无外部服务的确定性测试与构建门禁
 	@echo "$(GREEN)全部确定性测试与构建门禁完成$(NC)"
 
 init-minio: ## 初始化 MinIO buckets（包括 PMTiles 快显缓存等）

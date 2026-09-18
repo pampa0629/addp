@@ -140,6 +140,7 @@ const docTemplate = `{
                         "enum": [
                             "open",
                             "resolved",
+                            "accepted",
                             "ignored"
                         ],
                         "type": "string",
@@ -283,7 +284,7 @@ const docTemplate = `{
                         "required": true
                     },
                     {
-                        "description": "状态信息（必须包含处理说明） | Status and required note",
+                        "description": "版本、处理状态和说明；接受需要完整记录证据 | Version, status and note; acceptance requires complete record evidence",
                         "name": "body",
                         "in": "body",
                         "required": true,
@@ -296,7 +297,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_api.qualityMessageResponse"
+                            "$ref": "#/definitions/internal_api.qualityIssueResponse"
                         }
                     },
                     "400": {
@@ -1933,6 +1934,9 @@ const docTemplate = `{
         "github_com_addp_quality_internal_models.Issue": {
             "type": "object",
             "properties": {
+                "accepted_count": {
+                    "type": "integer"
+                },
                 "column_name": {
                     "type": "string"
                 },
@@ -1948,12 +1952,21 @@ const docTemplate = `{
                 "engine_id": {
                     "type": "integer"
                 },
+                "evidence_reason": {
+                    "type": "string"
+                },
                 "execution_id": {
                     "description": "common.task_executions.execution_id",
                     "type": "string"
                 },
                 "failed_count": {
                     "type": "integer"
+                },
+                "history": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_quality_internal_models.IssueAction"
+                    }
                 },
                 "id": {
                     "type": "integer"
@@ -1972,6 +1985,9 @@ const docTemplate = `{
                 },
                 "pass_rate": {
                     "type": "number"
+                },
+                "pending_count": {
+                    "type": "integer"
                 },
                 "plan_id": {
                     "type": "integer"
@@ -1995,7 +2011,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "status": {
-                    "description": "open/resolved/ignored",
+                    "description": "open/resolved/accepted; ignored for history and cleanup",
                     "type": "string"
                 },
                 "table_name": {
@@ -2015,6 +2031,41 @@ const docTemplate = `{
                 },
                 "updated_at": {
                     "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_quality_internal_models.IssueAction": {
+            "type": "object",
+            "properties": {
+                "accepted_count": {
+                    "type": "integer"
+                },
+                "action": {
+                    "type": "string"
+                },
+                "actor_id": {
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "execution_id": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "issue_id": {
+                    "type": "integer"
+                },
+                "note": {
+                    "type": "string"
+                },
+                "plan_id": {
+                    "type": "integer"
                 }
             }
         },
@@ -2081,6 +2132,9 @@ const docTemplate = `{
         "github_com_addp_quality_internal_models.QualityOverview": {
             "type": "object",
             "properties": {
+                "accepted_issues": {
+                    "type": "integer"
+                },
                 "data": {
                     "type": "array",
                     "items": {
@@ -2450,6 +2504,12 @@ const docTemplate = `{
                 },
                 "locator": {
                     "type": "string"
+                },
+                "record_key": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },
@@ -2530,7 +2590,8 @@ const docTemplate = `{
             "type": "object",
             "required": [
                 "note",
-                "status"
+                "status",
+                "version"
             ],
             "properties": {
                 "note": {
@@ -2541,9 +2602,14 @@ const docTemplate = `{
                     "type": "string",
                     "enum": [
                         "resolved",
-                        "ignored"
+                        "accepted"
                     ],
-                    "example": "resolved"
+                    "example": "accepted"
+                },
+                "version": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "example": 1
                 }
             }
         },
@@ -2638,6 +2704,9 @@ const docTemplate = `{
         "internal_api.qualityIssueResponse": {
             "type": "object",
             "properties": {
+                "accepted_count": {
+                    "type": "integer"
+                },
                 "column_name": {
                     "type": "string"
                 },
@@ -2653,12 +2722,21 @@ const docTemplate = `{
                 "engine_id": {
                     "type": "integer"
                 },
+                "evidence_reason": {
+                    "type": "string"
+                },
                 "execution_id": {
                     "description": "common.task_executions.execution_id",
                     "type": "string"
                 },
                 "failed_count": {
                     "type": "integer"
+                },
+                "history": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_quality_internal_models.IssueAction"
+                    }
                 },
                 "id": {
                     "type": "integer"
@@ -2677,6 +2755,9 @@ const docTemplate = `{
                 },
                 "pass_rate": {
                     "type": "number"
+                },
+                "pending_count": {
+                    "type": "integer"
                 },
                 "plan_id": {
                     "type": "integer"
@@ -2700,7 +2781,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "status": {
-                    "description": "open/resolved/ignored",
+                    "description": "open/resolved/accepted; ignored for history and cleanup",
                     "type": "string"
                 },
                 "table_name": {
@@ -2720,6 +2801,9 @@ const docTemplate = `{
                 },
                 "updated_at": {
                     "type": "string"
+                },
+                "version": {
+                    "type": "integer"
                 }
             }
         },

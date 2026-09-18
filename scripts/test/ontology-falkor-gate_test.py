@@ -179,7 +179,12 @@ class InfraContractTest(unittest.TestCase):
         self.assertIn('check_service_running "ontology" "$ONTOLOGY_BACKEND_PORT"', start)
         self.assertIn('${ONTOLOGY_BACKEND_PORT}/health/ready', start)
         self.assertIn('START_ONTOLOGY_BACKEND=true', start)
-        self.assertNotIn('START_ONTOLOGY_FRONTEND', start)
+        self.assertIn('START_ONTOLOGY_FRONTEND=false', start)
+        self.assertIn('START_ONTOLOGY_FRONTEND=true', start)
+        self.assertIn('FRONTEND_CONFIGS+=("ontology:${ONTOLOGY_FE_PORT}:ontology/frontend")', start)
+        frontend = self.render("docker-compose.yml")["services"]["ontology-frontend"]
+        self.assertEqual("8123", frontend["ports"][0]["published"])
+        self.assertEqual({"ontology-backend"}, set(frontend["depends_on"]))
         self.assertIn('-ontology|', (REPOSITORY / "scripts/dev/restart.sh").read_text())
 
     def render(self, path, password="contract-test-only"):

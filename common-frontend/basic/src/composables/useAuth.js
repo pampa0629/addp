@@ -26,11 +26,14 @@ function isAuthenticationFailure(error) {
   return error?.response?.status === 401 || error?.status === 401
 }
 
-export function buildLoginRedirectURL(location = globalThis.location) {
+export function buildLoginRedirectURL(location = globalThis.location, baseURL = import.meta.env?.BASE_URL || '/') {
+  const base = `/${baseURL.split('/').filter(Boolean).join('/')}`.replace(/\/$/, '')
+  const loginPath = `${base}/login`
   const pathname = location?.pathname || '/'
-  if (pathname === '/login') return null
-  const redirect = `${pathname}${location?.search || ''}${location?.hash || ''}`
-  return `/login?redirect=${encodeURIComponent(redirect)}`
+  if (pathname === loginPath) return null
+  const routePath = base && pathname.startsWith(`${base}/`) ? pathname.slice(base.length) : pathname
+  const redirect = `${routePath}${location?.search || ''}${location?.hash || ''}`
+  return `${loginPath}?redirect=${encodeURIComponent(redirect)}`
 }
 
 function redirectToLogin() {

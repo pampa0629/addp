@@ -18,7 +18,7 @@
     <el-alert v-if="error" type="error" :title="error" :closable="false" />
     <template v-else-if="summary">
       <div class="metrics">
-        <el-card v-for="key in ['plan_count', 'never_run_plans', 'open_issues']" :key="key" shadow="never">
+        <el-card v-for="key in ['plan_count', 'never_run_plans', 'open_issues', 'accepted_issues']" :key="key" shadow="never">
           <el-statistic :title="t(`quality.overview.${key}`)" :value="summary[key]" />
         </el-card>
       </div>
@@ -113,7 +113,7 @@ onBeforeUnmount(() => { sequence++ })
 <style scoped>
 .overview { padding: 24px; background: var(--addp-bg-primary); color: var(--addp-text-primary); }
 .page-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-.metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin: 16px 0; }
+.metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin: 16px 0; }
 .window-select { width: 160px; }
 .el-pagination { margin-top: 16px; justify-content: flex-end; }
 p { color: var(--addp-text-secondary); }

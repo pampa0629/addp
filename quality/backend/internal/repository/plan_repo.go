@@ -115,7 +115,7 @@ func (r *PlanRepository) Replace(ctx context.Context, task *models.QualityPlan, 
 		// Current issues follow the plan; execution snapshots remain immutable.
 		if domainChanged {
 			if err := tx.Model(&models.Issue{}).Where("tenant_id = ? AND plan_id = ?", task.TenantID, task.ID).
-				UpdateColumn("owner_domain_id", task.OwnerDomainID).Error; err != nil {
+				UpdateColumns(map[string]interface{}{"owner_domain_id": task.OwnerDomainID, "version": gorm.Expr("version + 1")}).Error; err != nil {
 				return err
 			}
 		}

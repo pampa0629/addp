@@ -39,18 +39,19 @@ type planExecutionConfig struct {
 }
 
 type PlanRuleResult struct {
-	RuleKey     string                 `json:"rule_key"`
-	RuleID      int64                  `json:"rule_id,omitempty"`
-	RevisionNo  int64                  `json:"revision_no,omitempty"`
-	Type        string                 `json:"type"`
-	Severity    string                 `json:"severity"`
-	Passed      bool                   `json:"passed"`
-	Name        string                 `json:"name,omitempty"`
-	TotalCount  int64                  `json:"total_count"`
-	Table       string                 `json:"table"`
-	Columns     []string               `json:"columns"`
-	FailedCount int64                  `json:"failed_count"`
-	Observed    map[string]interface{} `json:"observed"`
+	Evidence    *models.FailureEvidence `json:"-"`
+	RuleKey     string                  `json:"rule_key"`
+	RuleID      int64                   `json:"rule_id,omitempty"`
+	RevisionNo  int64                   `json:"revision_no,omitempty"`
+	Type        string                  `json:"type"`
+	Severity    string                  `json:"severity"`
+	Passed      bool                    `json:"passed"`
+	Name        string                  `json:"name,omitempty"`
+	TotalCount  int64                   `json:"total_count"`
+	Table       string                  `json:"table"`
+	Columns     []string                `json:"columns"`
+	FailedCount int64                   `json:"failed_count"`
+	Observed    map[string]interface{}  `json:"observed"`
 }
 
 type PlanResult struct {

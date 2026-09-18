@@ -25,6 +25,7 @@ func TestSwaggerContainsConcreteNativeDefinition(t *testing.T) {
 		".Class":           {"id", "name", "parents"},
 		".Rule":            {"id", "class_id", "expression", "basis", "inputs"},
 		".RebuildRequest":  {"version", "failed_generation", "activation_version"},
+		".RevisionSummary": {"ontology_id", "revision", "version", "status", "digest", "initial_generation", "initial_execution_id"},
 	} {
 		found := false
 		for name, definition := range document.Definitions {

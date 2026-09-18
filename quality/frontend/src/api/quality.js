@@ -62,5 +62,5 @@ export const executionAPI = {
 export const issueAPI = {
   list: (params) => client.get('/quality/issues', { params }),
   get: (id) => client.get(`/quality/issues/${id}`),
-  updateStatus: (id, status, note) => client.put(`/quality/issues/${id}/status`, { status, note })
+  updateStatus: (id, version, status, note) => client.put(`/quality/issues/${id}/status`, { version, status, note })
 }

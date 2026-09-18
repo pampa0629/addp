@@ -7,7 +7,7 @@ export function resolveConsoleOrigin(location, override = '') {
   if (!location?.origin) return ''
   const { protocol, hostname, port } = location
   const numericPort = Number.parseInt(port, 10)
-  if (String(numericPort) === port && numericPort >= 5173 && numericPort <= 5190) {
+  if (String(numericPort) === port && numericPort >= 5173 && numericPort <= 5192) {
     return `${protocol}//${hostname}:5170`
   }
   return location.origin

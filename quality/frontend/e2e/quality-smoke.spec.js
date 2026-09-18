@@ -190,7 +190,7 @@ test('deferred input can be saved and supplied only for one execution', async ({
   await expect(editor.locator('.resource-tree-picker')).toHaveCount(0);
   await editor.getByRole('button', { name: '保存', exact: true }).click();
   await expect.poll(() => state.writes.length).toBe(1);
-  expect(state.writes[0].table_bindings).toEqual([{ alias: 'customers', locator: '' }]);
+  expect(state.writes[0].table_bindings).toEqual([{ alias: 'customers', locator: '', record_key: [] }]);
   await page.getByRole('button', { name: '执行', exact: true }).click();
   const runner = page.getByRole('dialog', { name: '执行质量检查方案', exact: true });
   await runner.getByRole('button', { name: '执行', exact: true }).click();
@@ -226,7 +226,7 @@ test('creates a target-independent plan using an alias and required field name',
   await page.getByRole('option', { name: 'order_id', exact: true }).click();
   await editor.getByRole('button', { name: '保存', exact: true }).click();
   await expect.poll(() => state.writes.length).toBe(1);
-  expect(state.writes[0].table_bindings).toEqual([{ alias: 'orders', locator: '' }]);
+  expect(state.writes[0].table_bindings).toEqual([{ alias: 'orders', locator: '', record_key: [] }]);
   expect(state.writes[0].check_items[0].bindings).toEqual({ table: 'orders', column: 'order_id' });
   expect(state.unexpected).toEqual([]);
 });
@@ -455,13 +455,14 @@ test("requires and persists a note when resolving an issue", async ({
   await page.goto("/issues");
 
   await page.getByRole("button", { name: "标记解决" }).click();
-  const prompt = page.getByRole("dialog", { name: "填写处理说明" });
+  const prompt = page.getByRole("dialog", { name: "标记解决" });
   await prompt.getByRole("textbox").fill("已修复手机号格式校验");
   await prompt.getByRole("button", { name: "确定" }).click();
 
   await expect.poll(() => backend.issueStatusRequests.length).toBe(1);
   expect(backend.issueStatusRequests[0]).toEqual({
     id: 17,
+    version: 1,
     status: "resolved",
     note: "已修复手机号格式校验",
   });
@@ -469,25 +470,27 @@ test("requires and persists a note when resolving an issue", async ({
   await expect(page.getByRole("button", { name: "标记解决" })).toHaveCount(0);
 });
 
-test("requires and persists a note when ignoring an issue", async ({
+test("accepts exact observed failures with version and note", async ({
   page,
 }) => {
   const backend = await installMockBackend(page, { issueStatus: "open" });
   await page.goto("/issues");
 
-  await page.getByRole("button", { name: "忽略" }).click();
-  const prompt = page.getByRole("dialog", { name: "填写处理说明" });
-  await prompt.getByRole("textbox").fill("业务确认该异常可忽略");
+  await page.getByRole("button", { name: "接受当前历史异常" }).click();
+  const prompt = page.getByRole("dialog", { name: "接受当前历史异常" });
+  await expect(prompt.getByRole('button', { name: '确定' })).toBeDisabled();
+  await prompt.getByRole("textbox").fill("接受已确认的历史记录");
   await prompt.getByRole("button", { name: "确定" }).click();
 
   await expect.poll(() => backend.issueStatusRequests.length).toBe(1);
   expect(backend.issueStatusRequests[0]).toEqual({
     id: 17,
-    status: "ignored",
-    note: "业务确认该异常可忽略",
+    version: 1,
+    status: "accepted",
+    note: "接受已确认的历史记录",
   });
-  await expect(page.getByText("已忽略", { exact: true }).first()).toBeVisible();
-  await expect(page.getByRole("button", { name: "忽略" })).toHaveCount(0);
+  await expect(page.getByText("已接受异常", { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "接受当前历史异常" })).toHaveCount(0);
 });
 
 test("keeps an issue open when its status update is rejected", async ({
@@ -500,7 +503,7 @@ test("keeps an issue open when its status update is rejected", async ({
   await page.goto("/issues");
 
   await page.getByRole("button", { name: "标记解决" }).click();
-  const prompt = page.getByRole("dialog", { name: "填写处理说明" });
+  const prompt = page.getByRole("dialog", { name: "标记解决" });
   await prompt.getByRole("textbox").fill("尝试解决");
   await prompt.getByRole("button", { name: "确定" }).click();
 
@@ -510,6 +513,47 @@ test("keeps an issue open when its status update is rejected", async ({
   ).toBeVisible();
   await expect(page.getByText("待处理", { exact: true }).first()).toBeVisible();
   await expect(page.getByRole("button", { name: "标记解决" })).toBeVisible();
+  await expect(prompt.getByRole('textbox')).toHaveValue('尝试解决');
+  await expect(prompt.getByRole('button', { name: '确定' })).toBeDisabled();
+  backend.issues[0].version = 2;
+  await prompt.getByRole('button', { name: '加载最新观测（保留说明）' }).click();
+  await expect(prompt.getByRole('textbox')).toHaveValue('尝试解决');
+  await expect(prompt.getByRole('button', { name: '确定' })).toBeEnabled();
+});
+
+test('stable record key is saved for a deferred physical target', async ({ page }) => {
+  const state = await installMockBackend(page);
+  state.plans[0].table_bindings[0].locator = '';
+  await page.goto('/plans?task_id=12');
+  const editor = page.getByRole('dialog', { name: '编辑质量检查方案' });
+  const keys = editor.getByRole('combobox', { name: '稳定记录键（可选）' });
+  await keys.fill('customer_id');
+  await keys.press('Enter');
+  await keys.press('Escape');
+  await editor.getByRole('button', { name: '保存', exact: true }).click();
+  await expect.poll(() => state.writes.length).toBe(1);
+  expect(state.writes[0].table_bindings[0].record_key).toEqual(['customer_id']);
+  await page.getByRole('button', { name: '编辑', exact: true }).click();
+  await expect(editor.locator('.binding-table')).toContainText('customer_id');
+});
+
+test('unavailable evidence disables acceptance and explains why in issue detail', async ({ page }) => {
+  const state = await installMockBackend(page, { evidenceReason: 'key_not_configured' });
+  await page.goto('/issues');
+  await expect(page.getByRole('button', { name: '接受当前历史异常' })).toBeDisabled();
+  await page.getByRole('button', { name: '详情', exact: true }).click();
+  await expect(page.getByText('未配置稳定记录键，不能接受具体历史异常。')).toBeVisible();
+  await expect(page.getByRole('button', { name: '接受当前历史异常' })).toBeDisabled();
+  expect(state.issueStatusRequests).toEqual([]);
+});
+
+test('a reopened issue still displays its historical acceptance note', async ({ page }) => {
+  const state = await installMockBackend(page);
+  state.issues[0].history = [{ id: 1, action: 'accepted', actor_id: 42, accepted_count: 77, created_at: '2026-09-18T01:00:00Z', note: '源系统历史缺失，不再追溯身份' }];
+  await page.goto('/issues/17');
+  await expect(page.getByText('源系统历史缺失，不再追溯身份')).toBeVisible();
+  await expect(page.getByText('待处理', { exact: true })).toBeVisible();
+  await expect(page.getByText('已接受异常', { exact: true })).toBeVisible();
 });
 
 for (const noPermission of [false, true]) {
@@ -662,6 +706,10 @@ async function installMockBackend(page, options = {}) {
     issues: [
       {
         id: 17,
+        version: 1,
+        evidence_reason: options.evidenceReason || '',
+        accepted_count: 0,
+        pending_count: 4,
         type: "format",
         rule_key: ruleKey,
         plan_id: 12,
@@ -894,6 +942,12 @@ async function installMockBackend(page, options = {}) {
           ...body,
           id: req.method() === "POST" ? 13 : 12,
           version: 3,
+          // GET detail returns resolved immutable rule revisions, not the
+          // write DTO (which deliberately contains references only).
+          check_items: body.check_items.map(item => {
+            const previous = state.plans.flatMap(p => p.check_items).find(old => old.rule_id === item.rule_id && old.revision_no === item.revision_no && old.rule);
+            return { ...item, rule: previous?.rule || { ...rule, ...options.rule, rule_id: item.rule_id, revision_no: item.revision_no, latest_revision_no: options.latestRevision || item.revision_no } };
+          }),
         };
         if (req.method() === "POST") state.plans.push(saved);
         else state.plans[0] = saved;
@@ -908,14 +962,19 @@ async function installMockBackend(page, options = {}) {
       const body = req.postDataJSON();
       state.issueStatusRequests.push({
         id: 17,
+        version: body.version,
         status: body.status,
         note: body.note,
       });
       if (options.issueStatusError)
         return fulfillJSON(route, { error: options.issueStatusError }, 409);
       state.issues[0].status = body.status;
+      state.issues[0].version++;
+      state.issues[0].pending_count = 0;
+      state.issues[0].accepted_count = body.status === 'accepted' ? 4 : 0;
       return fulfillJSON(route, state.issues[0]);
     }
+    if (req.method() === 'GET' && path === '/api/v1/quality/issues/17') return fulfillJSON(route, state.issues[0]);
     if (path === "/api/v1/quality/issues") {
       const status = url.searchParams.get("status"),
         data = state.issues.filter((i) => !status || i.status === status);

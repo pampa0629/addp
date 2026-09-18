@@ -222,7 +222,11 @@ func (s *CleanupService) ExecuteCleanup(ctx context.Context, tenantID uint, clea
 		}
 		mergeQualityCleanupStats(stats, &applied)
 	case events.CleanupModePhysical:
-		applied, err := s.deleteCandidates(ctx, candidates)
+		auditTenant, _ := qualityCleanupContextInt64(cleanupContext, "tenant_id")
+		if auditTenant != int64(tenantID) {
+			auditTenant = 0
+		}
+		applied, err := s.deleteCandidates(ctx, candidates, auditTenant)
 		if err != nil {
 			stats.Errors = append(stats.Errors, err.Error())
 			return stats, nil
@@ -369,12 +373,15 @@ func (s *CleanupService) disableCandidates(ctx context.Context, candidates quali
 				continue
 			}
 			now := time.Now().UTC()
-			result := tx.Model(&models.Issue{}).Where("id=? AND tenant_id=? AND status='open'", item.ID, item.TenantID).Updates(map[string]interface{}{"status": "ignored", "resolved_at": now, "resolved_by": nil, "resolution_note": "", "updated_at": now})
+			result := tx.Model(&models.Issue{}).Where("id=? AND tenant_id=? AND status='open' AND version=?", item.ID, item.TenantID, item.Version).Updates(map[string]interface{}{"version": gorm.Expr("version + 1"), "status": "ignored", "resolved_at": now, "resolved_by": nil, "resolution_note": "", "updated_at": now, "accepted_keys": nil, "accepted_count": 0, "pending_count": 0})
 			if result.Error != nil {
 				return result.Error
 			}
 			if result.RowsAffected != 1 {
 				return fmt.Errorf("issue changed during cleanup")
+			}
+			if err := tx.Create(&models.IssueAction{TenantID: item.TenantID, IssueID: item.ID, PlanID: item.PlanID, ExecutionID: item.LastExecutionID, Action: "ignored", CreatedAt: now}).Error; err != nil {
+				return err
 			}
 			applied.IgnoredIssues++
 		}
@@ -432,12 +439,17 @@ func mergeQualityCleanupStats(target, applied *QualityCleanupStats) {
 	target.DeletedRules += applied.DeletedRules
 }
 
-func (s *CleanupService) deleteCandidates(ctx context.Context, candidates qualityCleanupCandidates) (QualityCleanupStats, error) {
+func (s *CleanupService) deleteCandidates(ctx context.Context, candidates qualityCleanupCandidates, tenantID int64) (QualityCleanupStats, error) {
 	var applied QualityCleanupStats
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		candidates.sortByID()
 		if err := lockQualityCleanupTasks(tx, candidates.plans); err != nil {
 			return err
+		}
+		if tenantID > 0 {
+			if err := tx.Where("tenant_id=?", tenantID).Delete(&models.IssueAction{}).Error; err != nil {
+				return err
+			}
 		}
 		for _, item := range candidates.issues {
 			result := tx.Where("id=? AND tenant_id=?", item.ID, item.TenantID).Delete(&models.Issue{})

@@ -60,4 +60,6 @@ Quality migration 14 增加问题目标范围，使用最后观测执行的完�
 
 ## 数据库启动所有权
 
+Quality migration 16 增加记录级历史异常接受和永久处理审计，SchemaVersion 为 4。表绑定可声明稳定 `record_key`；完整观测保留失败摘要，工单处理携带 version。accepted 不改变规则结论、分数或 error 阻断；新增与恢复后复发的记录重新待处理。具体语义以数据质量规范为准。`make test-quality-postgres` 在测试前后清理测试库中 Quality Schema 和 Quality 执行事实，拒绝开发数据库，避免用修改迁移校验和的方式复验未发布迁移；已有 Quality T2 CI 入口自动覆盖该生命周期。
+
 本模块 schema 迁移仅由 Backend 执行，Worker 只读校验成功提交的 schema 版本。Backend 多实例通过模块级数据库锁协调；开发脚本及 Compose 在所属 Backend 就绪后启动 Worker。结构或初始化迁移变化须递增模块 `SchemaVersion`，共享规则见 `docs/spec/addp开发服务生命周期与构建身份规范.md`。

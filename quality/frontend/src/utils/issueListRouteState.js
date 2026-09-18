@@ -2,7 +2,7 @@ import { normalizeDomainFilter } from './domainOwnership.js'
 
 const DEFAULT_PAGE_SIZE = 20
 const ALLOWED_PAGE_SIZES = new Set([20, 50, 100])
-const ALLOWED_STATUSES = new Set(['open', 'resolved', 'ignored'])
+const ALLOWED_STATUSES = new Set(['open', 'resolved', 'accepted', 'ignored'])
 
 function queryValue(value) {
   const firstValue = Array.isArray(value) ? value[0] : value

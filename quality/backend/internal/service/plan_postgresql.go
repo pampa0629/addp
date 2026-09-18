@@ -40,7 +40,10 @@ type planCompiledRule struct {
 	SQL      string
 	Args     []interface{}
 	RowCount *planRowCountParams
+	Rows     planRowQuery
 }
+
+type planRowQuery struct{ From, Failure, Qualifier string }
 
 type planCounts struct {
 	TotalCount  int64 `gorm:"column:total_count"`
@@ -56,7 +59,11 @@ func runPlan(ctx context.Context, targetDB *gorm.DB, config *planExecutionConfig
 	if err != nil {
 		return nil, failExecution(planCompileFailedCode, err)
 	}
-	_ = aliases
+	bindings := map[string]PlanTableBinding{}
+	for _, binding := range config.TableBindings {
+		bindings[binding.Alias] = binding
+	}
+	keyValidity := map[string]string{}
 	result := &PlanResult{Rules: make([]PlanRuleResult, 0, len(compiled)), Passed: true}
 	for _, item := range compiled {
 		var counts planCounts
@@ -75,7 +82,11 @@ func runPlan(ctx context.Context, targetDB *gorm.DB, config *planExecutionConfig
 				counts.FailedCount = 1
 			}
 		}
-		result.Rules = append(result.Rules, PlanRuleResult{RuleKey: item.Rule.RuleKey, RuleID: item.Rule.RuleID, RevisionNo: item.Rule.RevisionNo, Name: item.Rule.Name, TotalCount: counts.TotalCount, Table: ruleTarget(item.Rule).Table, Columns: ruleTarget(item.Rule).Columns, Type: item.Rule.Type, Severity: item.Rule.Severity, Passed: passed, FailedCount: counts.FailedCount, Observed: observed})
+		evidence, err := collectFailureEvidence(ctx, targetDB, item, bindings[ruleTarget(item.Rule).Table], aliases, counts, keyValidity)
+		if err != nil {
+			return nil, failExecution(planSQLFailedCode, err)
+		}
+		result.Rules = append(result.Rules, PlanRuleResult{Evidence: evidence, RuleKey: item.Rule.RuleKey, RuleID: item.Rule.RuleID, RevisionNo: item.Rule.RevisionNo, Name: item.Rule.Name, TotalCount: counts.TotalCount, Table: ruleTarget(item.Rule).Table, Columns: ruleTarget(item.Rule).Columns, Type: item.Rule.Type, Severity: item.Rule.Severity, Passed: passed, FailedCount: counts.FailedCount, Observed: observed})
 		if !passed && item.Rule.Severity == "error" {
 			result.Passed = false
 		}
@@ -97,6 +108,18 @@ func compilePlan(config *planExecutionConfig, readContext *validationReadContext
 			return nil, nil, fmt.Errorf("physical table context order changed")
 		}
 		aliases[binding.Alias] = item
+		for _, key := range binding.RecordKey {
+			found := false
+			for _, col := range item.Columns {
+				if col.Name == key {
+					found = true
+					break
+				}
+			}
+			if !found {
+				return nil, nil, fmt.Errorf("record key field %q is missing", key)
+			}
+		}
 	}
 	compiled := make([]planCompiledRule, 0, len(config.Rules.Rules))
 	for _, rule := range config.Rules.Rules {
@@ -146,7 +169,7 @@ func compilePlanRule(rule PlanRule, aliases map[string]validationReadItem) (plan
 			return compiled, err
 		}
 		var err error
-		compiled.SQL, compiled.Args, err = compileAssertion(params, tableSQL, columnSQL)
+		compiled.Rows, compiled.Args, err = compileAssertion(params, tableSQL, columnSQL)
 		if err != nil {
 			return compiled, err
 		}
@@ -155,20 +178,20 @@ func compilePlanRule(rule PlanRule, aliases map[string]validationReadItem) (plan
 		if err := decodeStrictJSON(rule.Params, &params); err != nil {
 			return compiled, err
 		}
-		_, columns, err := tableSQL(params.Table)
+		table, columns, err := tableSQL(params.Table)
 		if err != nil {
 			return compiled, err
 		}
-		if _, err = columnSQL(columns, params.Column); err != nil {
-			return compiled, err
-		}
-		locator, _ := resourcetree.ParseURI(aliases[params.Table].Locator)
-		scalar, err := NewSQLGenerator().GenerateCheckSQL(locator.Path[0], locator.Path[1], params.Column, dataquality.Rule{RuleKey: rule.RuleKey, Type: rule.Type, Enabled: true, Severity: rule.Severity, Params: params.Constraint})
+		column, err := columnSQL(columns, params.Column)
 		if err != nil {
 			return compiled, err
 		}
-		compiled.SQL = scalar.SQL
-		compiled.Args = scalar.Args
+		failure, args, err := NewSQLGenerator().failureCondition(column, dataquality.Rule{RuleKey: rule.RuleKey, Type: rule.Type, Enabled: true, Severity: rule.Severity, Params: params.Constraint})
+		if err != nil {
+			return compiled, err
+		}
+		compiled.Rows = planRowQuery{From: table, Failure: failure}
+		compiled.Args = args
 	case "not_null":
 		var params planNotNullParams
 		if err := decodeStrictJSON(rule.Params, &params); err != nil {
@@ -182,7 +205,7 @@ func compilePlanRule(rule PlanRule, aliases map[string]validationReadItem) (plan
 		if err != nil {
 			return compiled, err
 		}
-		compiled.SQL = fmt.Sprintf("SELECT COUNT(*) AS total_count, COUNT(*) FILTER (WHERE %s IS NULL) AS failed_count FROM %s", column, table)
+		compiled.Rows = planRowQuery{From: table, Failure: column + " IS NULL"}
 	case "allowed_values":
 		var params planAllowedValuesParams
 		if err := decodeStrictJSON(rule.Params, &params); err != nil {
@@ -202,7 +225,7 @@ func compilePlanRule(rule PlanRule, aliases map[string]validationReadItem) (plan
 			placeholders[index] = "$" + strconv.Itoa(index+1)
 			compiled.Args[index] = value
 		}
-		compiled.SQL = fmt.Sprintf("SELECT COUNT(*) AS total_count, COUNT(*) FILTER (WHERE %s IS NOT NULL AND %s::text NOT IN (%s)) AS failed_count FROM %s", column, column, strings.Join(placeholders, ", "), table)
+		compiled.Rows = planRowQuery{From: table, Failure: fmt.Sprintf("%s IS NOT NULL AND %s::text NOT IN (%s)", column, column, strings.Join(placeholders, ", "))}
 	case "unique_key":
 		var params planUniqueKeyParams
 		if err := decodeStrictJSON(rule.Params, &params); err != nil {
@@ -224,6 +247,7 @@ func compilePlanRule(rule PlanRule, aliases map[string]validationReadItem) (plan
 			nonNull[i] = name + " IS NOT NULL"
 		}
 		compiled.SQL = fmt.Sprintf("SELECT (SELECT COUNT(*) FROM %s) AS total_count, (SELECT COALESCE(SUM(duplicate_count),0) FROM (SELECT COUNT(*) AS duplicate_count FROM %s WHERE %s GROUP BY %s HAVING COUNT(*) > 1) AS duplicate_groups) AS failed_count", table, table, strings.Join(nonNull, " AND "), strings.Join(quoted, ", "))
+		compiled.Rows = planRowQuery{From: table, Failure: fmt.Sprintf("(%s) IN (SELECT %s FROM %s WHERE %s GROUP BY %s HAVING COUNT(*) > 1)", strings.Join(quoted, ", "), strings.Join(quoted, ", "), table, strings.Join(nonNull, " AND "), strings.Join(quoted, ", "))}
 	case "foreign_key":
 		var params planForeignKeyParams
 		if err := decodeStrictJSON(rule.Params, &params); err != nil {
@@ -250,7 +274,7 @@ func compilePlanRule(rule PlanRule, aliases map[string]validationReadItem) (plan
 			eligible[i] = "child." + childColumn + " IS NOT NULL"
 			matches[i] = "parent." + parentColumn + " = child." + childColumn
 		}
-		compiled.SQL = fmt.Sprintf("SELECT COUNT(*) AS total_count, COUNT(*) FILTER (WHERE %s AND NOT EXISTS (SELECT 1 FROM %s AS parent WHERE %s)) AS failed_count FROM %s AS child", strings.Join(eligible, " AND "), parent, strings.Join(matches, " AND "), child)
+		compiled.Rows = planRowQuery{From: child + " AS child", Qualifier: "child.", Failure: fmt.Sprintf("%s AND NOT EXISTS (SELECT 1 FROM %s AS parent WHERE %s)", strings.Join(eligible, " AND "), parent, strings.Join(matches, " AND "))}
 	case "predicate_implication":
 		var params planPredicateImplicationParams
 		if err := decodeStrictJSON(rule.Params, &params); err != nil {
@@ -268,7 +292,7 @@ func compilePlanRule(rule PlanRule, aliases map[string]validationReadItem) (plan
 		if err != nil {
 			return compiled, err
 		}
-		compiled.SQL = fmt.Sprintf("SELECT COUNT(*) AS total_count, COUNT(*) FILTER (WHERE (%s) IS TRUE AND NOT ((%s) IS TRUE)) AS failed_count FROM %s", whenSQL, thenSQL, table)
+		compiled.Rows = planRowQuery{From: table, Failure: fmt.Sprintf("(%s) IS TRUE AND NOT ((%s) IS TRUE)", whenSQL, thenSQL)}
 		compiled.Args = append(whenArgs, thenArgs...)
 	case "row_count":
 		var params planRowCountParams
@@ -283,6 +307,9 @@ func compilePlanRule(rule PlanRule, aliases map[string]validationReadItem) (plan
 		compiled.RowCount = &params
 	default:
 		return compiled, fmt.Errorf("unsupported rule type")
+	}
+	if compiled.SQL == "" {
+		compiled.SQL = fmt.Sprintf("SELECT COUNT(*) AS total_count, COUNT(*) FILTER (WHERE %s) AS failed_count FROM %s", compiled.Rows.Failure, compiled.Rows.From)
 	}
 	return compiled, nil
 }

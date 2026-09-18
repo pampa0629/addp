@@ -16,11 +16,13 @@
     <template v-else-if="issue">
       <div class="detail-toolbar">
         <el-tag :type="statusTagType(issue.status)">{{ statusLabel(issue.status) }}</el-tag>
-        <div v-if="issue.status === 'open'" class="detail-actions">
-          <el-button type="success" :loading="updating" :disabled="updating" @click="changeStatus('resolved')">{{ t('quality.issue.markResolved') }}</el-button>
-          <el-button :disabled="updating" @click="changeStatus('ignored')">{{ t('quality.issue.ignore') }}</el-button>
+        <div v-if="issue.status === 'open' && authStore.hasPermission('quality.issue.update')" class="detail-actions">
+          <el-button type="success" @click="changeStatus('resolved')">{{ t('quality.issue.markResolved') }}</el-button>
+          <el-button :disabled="issue.evidence_reason !== ''" @click="changeStatus('accepted')">{{ t('quality.issue.acceptCurrent') }}</el-button>
         </div>
       </div>
+      <el-alert :title="t('quality.issue.acceptanceHelp')" type="info" :closable="false" />
+      <el-alert v-if="issue.evidence_reason" :title="t(`quality.issue.evidenceReasons.${issue.evidence_reason}`)" type="warning" :closable="false" />
 
       <section class="detail-section">
         <h3>{{ t('quality.issue.problemFacts') }}</h3>
@@ -40,6 +42,8 @@
           <el-descriptions-item :label="t('quality.issue.passRate')">{{ formatPassRate(issue.pass_rate) }}</el-descriptions-item>
           <el-descriptions-item :label="t('quality.issue.failedCount')">{{ issue.type === 'row_count' ? '-' : issue.failed_count ?? '-' }}</el-descriptions-item>
           <el-descriptions-item :label="t('quality.issue.totalCount')">{{ issue.total_count ?? '-' }}</el-descriptions-item>
+          <el-descriptions-item :label="t('quality.issue.acceptedCount')">{{ issue.type === 'row_count' ? '-' : issue.accepted_count ?? 0 }}</el-descriptions-item>
+          <el-descriptions-item :label="t('quality.issue.pendingCount')">{{ issue.type === 'row_count' ? '-' : issue.pending_count ?? 0 }}</el-descriptions-item>
           <el-descriptions-item :label="t('quality.issue.message')" :span="2">{{ issue.message || '-' }}</el-descriptions-item>
         </el-descriptions>
       </section>
@@ -74,7 +78,18 @@
           <el-descriptions-item :label="t('quality.issue.resolutionNote')" :span="2">{{ issue.resolution_note || '-' }}</el-descriptions-item>
         </el-descriptions>
       </section>
+      <section class="detail-section">
+        <h3>{{ t('quality.issue.history') }}</h3>
+        <el-table :data="issue.history || []" border>
+          <el-table-column :label="t('quality.issue.status')"><template #default="{ row }">{{ statusLabel(row.action) }}</template></el-table-column>
+          <el-table-column :label="t('quality.issue.resolvedAt')"><template #default="{ row }">{{ formatDateTime(row.created_at) }}</template></el-table-column>
+          <el-table-column :label="t('quality.issue.resolvedBy')"><template #default="{ row }">{{ row.actor_id ?? t('quality.issue.automaticResolution') }}</template></el-table-column>
+          <el-table-column prop="accepted_count" :label="t('quality.issue.acceptedCount')" />
+          <el-table-column prop="note" :label="t('quality.issue.resolutionNote')" />
+        </el-table>
+      </section>
     </template>
+    <IssueStatusDialog v-model="statusDialog" :issue="issue" :status="nextStatus" @updated="issue = $event" />
   </div>
 </template>
 
@@ -83,7 +98,7 @@ import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { useConsolePageDescriptor } from '@common-ui'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import IssueStatusDialog from '../components/IssueStatusDialog.vue'
 import { issueAPI } from '../api/quality'
 import { navigateQualityRoute } from '../utils/moduleNavigation'
 import { issueExecutionRoute } from '../utils/issueNavigation'
@@ -104,7 +119,8 @@ useConsolePageDescriptor(router, 'quality', {
 })
 const loading = ref(false)
 const loadError = ref('')
-const updating = ref(false)
+const statusDialog = ref(false)
+const nextStatus = ref('')
 let loadSequence = 0
 
 const detailTitle = computed(() => `${t('quality.issue.detailTitle')} - ${issue.value?.id || route.params.id || ''}`)
@@ -112,11 +128,12 @@ const resolutionSource = computed(() => issue.value?.resolved_by != null
   ? t('quality.issue.manualResolution')
   : t('quality.issue.automaticResolution'))
 
-const statusTagType = (status) => ({ open: 'danger', resolved: 'success', ignored: 'info' }[status] || 'info')
+const statusTagType = (status) => ({ open: 'danger', resolved: 'success', accepted: 'warning', ignored: 'info' }[status] || 'info')
 const severityTagType = (severity) => ({ error: 'danger', warning: 'warning', info: 'info' }[severity] || 'info')
 const statusLabel = (status) => ({
   open: t('quality.issue.open'),
   resolved: t('quality.issue.resolved'),
+  accepted: t('quality.issue.accepted'),
   ignored: t('quality.issue.ignored')
 }[status] || status)
 const formatPassRate = (value) => value == null ? '-' : `${Number(value).toFixed(1)}%`
@@ -157,26 +174,9 @@ const loadIssue = async () => {
   }
 }
 
-const changeStatus = async (status) => {
-  if (updating.value) return
-  updating.value = true
-  try {
-    const { value: note } = await ElMessageBox.prompt(t('quality.issue.notePrompt'), t('quality.issue.noteTitle'), {
-      inputPattern: /\S+/,
-      inputErrorMessage: t('quality.issue.noteRequired'),
-      confirmButtonText: t('quality.issue.confirm'),
-      cancelButtonText: t('quality.issue.cancel'),
-      customClass: 'addp-message-box'
-    })
-    await issueAPI.updateStatus(issue.value.id, status, note)
-    ElMessage.success(t('quality.issue.updateSuccess'))
-    await loadIssue()
-  } catch (error) {
-    if (error === 'cancel' || error === 'close') return
-    ElMessage.error(error.response?.data?.error || t('quality.issue.updateFailed'))
-  } finally {
-    updating.value = false
-  }
+const changeStatus = (status) => {
+  nextStatus.value = status
+  statusDialog.value = true
 }
 
 watch(() => route.fullPath, loadIssue, { immediate: true })

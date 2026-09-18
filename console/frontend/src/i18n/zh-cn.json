@@ -155,6 +155,7 @@
         "catalog": "Catalog - 企业资源目录",
         "service": "Service - 数据服务",
         "workbench": "Workbench - 数据服务消费工作台",
+        "ontology": "Ontology - 领域本体",
         "standard": "Standard - 数据标准",
         "system": "System - 系统模块",
         "transfer": "Transfer - 数据传输"
@@ -358,6 +359,7 @@
       }
     },
     "modules": {
+      "ontology": { "label": "领域本体", "desc": "类型、关系、规则与修订发布" },
       "portal": {
         "label": "数据门户",
         "desc": "数据消费者门户，搜索与申请数据资产"
@@ -436,6 +438,7 @@
       }
     },
     "menus": {
+      "ontology": { "label": "领域本体", "list": "领域本体建模" },
       "transfer": {
         "label": "数据传输",
         "tasks": "传输任务"

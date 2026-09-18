@@ -3,9 +3,11 @@ package repository
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	commonAPI "github.com/addp/common/api"
 	commonRepository "github.com/addp/common/repository"
@@ -47,6 +49,9 @@ func (r *IssueRepository) Get(id, tenantID int64) (*models.Issue, error) {
 	if err != nil {
 		return nil, commonRepository.WrapDBError(err)
 	}
+	if err := r.db.Where("tenant_id = ? AND issue_id = ?", tenantID, id).Order("id ASC").Find(&item.History).Error; err != nil {
+		return nil, commonRepository.WrapDBError(err)
+	}
 	return &item, nil
 }
 
@@ -54,25 +59,45 @@ func (r *IssueRepository) Create(item *models.Issue) error {
 	return commonRepository.WrapDBError(r.db.Create(item).Error)
 }
 
-func (r *IssueRepository) UpdateStatus(ctx context.Context, id, tenantID, userID int64, status, note string) error {
+func (r *IssueRepository) UpdateStatus(ctx context.Context, id, tenantID, userID, version int64, status, note string) (*models.Issue, error) {
 	note = strings.TrimSpace(note)
-	if status != "resolved" && status != "ignored" {
-		return fmt.Errorf("%w: issue status must be resolved or ignored", commonAPI.ErrBadRequest)
+	if status != "resolved" && status != "accepted" {
+		return nil, fmt.Errorf("%w: issue status must be resolved or accepted", commonAPI.ErrBadRequest)
 	}
-	if note == "" {
-		return fmt.Errorf("%w: issue resolution note is required", commonAPI.ErrBadRequest)
+	if note == "" || utf8.RuneCountInString(note) > 4000 || version < 1 {
+		return nil, fmt.Errorf("%w: positive version and bounded note required", commonAPI.ErrBadRequest)
 	}
-	return commonRepository.WrapDBError(r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var issue models.Issue
+	var issue models.Issue
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND tenant_id = ?", id, tenantID).First(&issue).Error; err != nil {
 			return err
+		}
+		if issue.Version != version {
+			return ErrVersionConflict
 		}
 		if issue.Status != "open" {
 			return fmt.Errorf("%w: issue %d is already %s", commonAPI.ErrConflict, id, issue.Status)
 		}
+		var accepted json.RawMessage
+		acceptedCount := int64(0)
+		if status == "accepted" {
+			var evidence models.FailureEvidence
+			if err := json.Unmarshal(issue.Evidence, &evidence); err != nil || !completeEvidence(&evidence, issue.FailedCount) || issue.FailedCount == 0 || issue.TargetKey == nil || issue.RuleType == "row_count" {
+				return fmt.Errorf("%w: complete record evidence required", commonAPI.ErrConflict)
+			}
+			accepted, _ = json.Marshal(evidence.Keys)
+			acceptedCount = issue.FailedCount
+		}
 		now := time.Now().UTC()
-		return tx.Model(&issue).Updates(map[string]interface{}{"status": status, "resolved_at": now, "resolved_by": userID, "resolution_note": note}).Error
-	}))
+		if err := tx.Create(&models.IssueAction{TenantID: tenantID, IssueID: issue.ID, PlanID: issue.PlanID, ExecutionID: issue.LastExecutionID, Action: status, ActorID: &userID, Note: note, AcceptedCount: acceptedCount, Evidence: issue.Evidence, CreatedAt: now}).Error; err != nil {
+			return err
+		}
+		return tx.Model(&issue).Updates(map[string]interface{}{"version": gorm.Expr("version + 1"), "status": status, "resolved_at": now, "resolved_by": userID, "resolution_note": note, "accepted_keys": accepted, "accepted_count": acceptedCount, "pending_count": 0}).Error
+	})
+	if err != nil {
+		return nil, commonRepository.WrapDBError(err)
+	}
+	return r.Get(id, tenantID)
 }
 
 func (r *IssueRepository) BatchCreate(items []models.Issue) error {
@@ -90,40 +115,115 @@ func (r *IssueRepository) Reconcile(ctx context.Context, tenantID int64, executi
 			if len(observation.TargetKey) != 64 {
 				return fmt.Errorf("issue observation requires a target scope")
 			}
-			if observation.Passed {
-				if err := tx.Model(&models.Issue{}).
-					Where("tenant_id = ? AND plan_id = ? AND target_key = ? AND rule_key = ? AND status = ?", tenantID, observation.PlanID, observation.TargetKey, observation.RuleKey, "open").
-					Updates(map[string]interface{}{
-						"status": "resolved", "resolved_at": observedAt, "last_execution_id": executionID,
-						"last_observed_at": observedAt, "failed_count": observation.FailedCount, "total_count": observation.TotalCount,
-						"pass_rate": observation.PassRate, "owner_domain_id": observation.OwnerDomainID,
-					}).Error; err != nil {
-					return err
-				}
-				continue
-			}
-
-			detail, err := json.Marshal(map[string]interface{}{"severity": observation.Severity, "message": observation.Message})
-			if err != nil {
+			var issue models.Issue
+			err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("tenant_id=? AND plan_id=? AND target_key=? AND rule_key=?", tenantID, observation.PlanID, observation.TargetKey, observation.RuleKey).First(&issue).Error
+			if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 				return err
 			}
-			issue := models.Issue{TenantID: tenantID, ExecutionID: executionID, LastExecutionID: executionID, PlanID: observation.PlanID, OwnerDomainID: observation.OwnerDomainID, RuleKey: observation.RuleKey, RuleType: observation.RuleType, Severity: observation.Severity, Message: observation.Message, ColumnName: observation.ColumnName, Table: observation.Table, SchemaName: observation.SchemaName, EngineID: observation.EngineID, FailedCount: observation.FailedCount, TotalCount: observation.TotalCount, PassRate: observation.PassRate, Detail: detail, Status: "open", LastObservedAt: &observedAt}
-			issue.TargetKey = &observation.TargetKey
-			if err := tx.Clauses(clause.OnConflict{
-				Columns: []clause.Column{{Name: "tenant_id"}, {Name: "plan_id"}, {Name: "target_key"}, {Name: "rule_key"}},
-				DoUpdates: clause.Assignments(map[string]interface{}{
-					"last_execution_id": executionID, "rule_type": observation.RuleType,
-					"severity": observation.Severity, "message": observation.Message, "column_name": observation.ColumnName,
-					"table_name": observation.Table, "schema_name": observation.SchemaName, "engine_id": observation.EngineID,
-					"failed_count": observation.FailedCount, "total_count": observation.TotalCount, "pass_rate": observation.PassRate,
-					"detail": detail, "status": "open", "resolved_at": nil, "resolved_by": nil, "resolution_note": "",
-					"owner_domain_id":  observation.OwnerDomainID,
-					"last_observed_at": observedAt, "updated_at": observedAt,
-				}),
-			}).Create(&issue).Error; err != nil {
+			created := errors.Is(err, gorm.ErrRecordNotFound)
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				if observation.Passed {
+					continue
+				}
+				issue = models.Issue{TenantID: tenantID, Version: 1, ExecutionID: executionID, LastExecutionID: executionID, PlanID: observation.PlanID, TargetKey: &observation.TargetKey, RuleKey: observation.RuleKey, RuleType: observation.RuleType, Status: "open"}
+				insert := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "tenant_id"}, {Name: "plan_id"}, {Name: "target_key"}, {Name: "rule_key"}}, DoNothing: true}).Create(&issue)
+				if insert.Error != nil {
+					return insert.Error
+				}
+				if insert.RowsAffected == 0 {
+					issue = models.Issue{}
+					if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("tenant_id=? AND plan_id=? AND target_key=? AND rule_key=?", tenantID, observation.PlanID, observation.TargetKey, observation.RuleKey).First(&issue).Error; err != nil {
+						return err
+					}
+					created = false
+					if issue.LastExecutionID == executionID {
+						continue
+					}
+				}
+			} else if issue.LastExecutionID == executionID {
+				continue
+			}
+			accepted := retainedAcceptance(issue, observation)
+			status := "open"
+			pending := observation.FailedCount - int64(len(accepted))
+			if observation.Passed {
+				status, pending = "resolved", 0
+			} else if pending == 0 && observation.FailedCount > 0 {
+				status = "accepted"
+			}
+			if observation.RuleType == "row_count" {
+				pending = 0
+			}
+			detail, _ := json.Marshal(map[string]interface{}{"severity": observation.Severity, "message": observation.Message})
+			evidence, _ := json.Marshal(observation.Evidence)
+			acceptedJSON, _ := json.Marshal(accepted)
+			reason := "not_observed"
+			if observation.Evidence != nil {
+				reason = observation.Evidence.Reason
+			}
+			updates := map[string]interface{}{
+				"version": gorm.Expr("version + 1"), "evidence": evidence, "evidence_reason": reason,
+				"accepted_keys": acceptedJSON, "accepted_count": len(accepted), "pending_count": pending,
+				"last_execution_id": executionID, "rule_type": observation.RuleType,
+				"severity": observation.Severity, "message": observation.Message, "column_name": observation.ColumnName,
+				"table_name": observation.Table, "schema_name": observation.SchemaName, "engine_id": observation.EngineID,
+				"failed_count": observation.FailedCount, "total_count": observation.TotalCount, "pass_rate": observation.PassRate,
+				"detail": detail, "status": status,
+				"owner_domain_id":  observation.OwnerDomainID,
+				"last_observed_at": observedAt, "updated_at": observedAt,
+			}
+			if created {
+				updates["version"] = 1
+			}
+			if status != issue.Status {
+				updates["resolved_at"], updates["resolved_by"], updates["resolution_note"] = nil, nil, ""
+				if status == "resolved" || status == "accepted" {
+					updates["resolved_at"] = observedAt
+				}
+				if err := tx.Create(&models.IssueAction{TenantID: tenantID, IssueID: issue.ID, PlanID: issue.PlanID, ExecutionID: executionID, Action: status, AcceptedCount: int64(len(accepted)), CreatedAt: observedAt}).Error; err != nil {
+					return err
+				}
+			}
+			if err := tx.Model(&issue).Updates(updates).Error; err != nil {
 				return err
 			}
 		}
 		return nil
 	})
+}
+
+func completeEvidence(e *models.FailureEvidence, count int64) bool {
+	if e == nil || e.Reason != "" || len(e.Scope) != 64 || int64(len(e.Keys)) != count || len(e.Keys) > models.MaxFailureKeys {
+		return false
+	}
+	seen := map[string]bool{}
+	for _, key := range e.Keys {
+		if len(key) != 64 || seen[key] {
+			return false
+		}
+		seen[key] = true
+	}
+	return true
+}
+
+func retainedAcceptance(issue models.Issue, observation models.IssueObservation) []string {
+	accepted := []string{}
+	if observation.Passed || !completeEvidence(observation.Evidence, observation.FailedCount) {
+		return accepted
+	}
+	var previous models.FailureEvidence
+	var keys []string
+	if json.Unmarshal(issue.Evidence, &previous) != nil || previous.Scope != observation.Evidence.Scope || json.Unmarshal(issue.AcceptedKeys, &keys) != nil {
+		return accepted
+	}
+	current := map[string]bool{}
+	for _, key := range observation.Evidence.Keys {
+		current[key] = true
+	}
+	for _, key := range keys {
+		if current[key] {
+			accepted = append(accepted, key)
+		}
+	}
+	return accepted
 }

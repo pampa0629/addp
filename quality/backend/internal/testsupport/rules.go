@@ -26,6 +26,25 @@ func EnsureRuleTables(t *testing.T, db *gorm.DB) {
 	}
 }
 
+// EnsureIssueAcceptance extends hand-written SQLite issue fixtures to the
+// current schema. PostgreSQL tests always use the real owner migrations.
+func EnsureIssueAcceptance(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	for _, sql := range []string{
+		`ALTER TABLE quality.issues ADD COLUMN version INTEGER NOT NULL DEFAULT 1`,
+		`ALTER TABLE quality.issues ADD COLUMN evidence JSON`,
+		`ALTER TABLE quality.issues ADD COLUMN accepted_keys JSON`,
+		`ALTER TABLE quality.issues ADD COLUMN evidence_reason TEXT NOT NULL DEFAULT 'not_observed'`,
+		`ALTER TABLE quality.issues ADD COLUMN accepted_count INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE quality.issues ADD COLUMN pending_count INTEGER NOT NULL DEFAULT 0`,
+		`CREATE TABLE quality.issue_actions (id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, issue_id INTEGER NOT NULL, plan_id INTEGER NOT NULL, execution_id TEXT NOT NULL, action TEXT NOT NULL, actor_id INTEGER, note TEXT NOT NULL, accepted_count INTEGER NOT NULL DEFAULT 0, evidence JSON, created_at DATETIME NOT NULL)`,
+	} {
+		if err := db.Exec(sql).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 // SeedPlanRules accepts execution-rule fixtures, splits their constraints and
 // targets, and persists real independent rule revisions. No production API
 // accepts this fixture shape.

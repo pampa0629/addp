@@ -46,13 +46,13 @@ func (p planAssertionParams) validate(aliases map[string]struct{}) error {
 
 // compileAssertion only emits operators from the validated finite vocabulary.
 // Physical identifiers use the same quoting and catalog checks as other rules.
-func compileAssertion(p planAssertionParams, tableSQL func(string) (string, map[string]struct{}, error), columnSQL func(map[string]struct{}, string) (string, error)) (string, []interface{}, error) {
+func compileAssertion(p planAssertionParams, tableSQL func(string) (string, map[string]struct{}, error), columnSQL func(map[string]struct{}, string) (string, error)) (planRowQuery, []interface{}, error) {
 	aliases := map[string]struct{}{p.Table: {}}
 	for _, b := range p.Relations {
 		aliases[b.Table] = struct{}{}
 	}
 	if err := p.validate(aliases); err != nil {
-		return "", nil, err
+		return planRowQuery{}, nil, err
 	}
 	bindings := map[string]models.RelationBinding{"": {Table: p.Table, Fields: p.Fields}}
 	for role, binding := range p.Relations {
@@ -63,13 +63,13 @@ func compileAssertion(p planAssertionParams, tableSQL func(string) (string, map[
 	for role, binding := range bindings {
 		table, available, err := tableSQL(binding.Table)
 		if err != nil {
-			return "", nil, err
+			return planRowQuery{}, nil, err
 		}
 		tables[role], columns[role] = table, map[string]string{}
 		for symbol, column := range binding.Fields {
 			quoted, err := columnSQL(available, column)
 			if err != nil {
-				return "", nil, err
+				return planRowQuery{}, nil, err
 			}
 			columns[role][symbol] = quoted
 		}
@@ -145,5 +145,5 @@ func compileAssertion(p planAssertionParams, tableSQL func(string) (string, map[
 		}
 	}
 	assertion := emit(p.Assertion, map[string]string{"": "q0"})
-	return "SELECT COUNT(*) AS total_count, COUNT(*) FILTER (WHERE (" + assertion + ") IS NOT TRUE) AS failed_count FROM " + tables[""] + " AS q0", args, nil
+	return planRowQuery{From: tables[""] + " AS q0", Failure: "(" + assertion + ") IS NOT TRUE", Qualifier: "q0."}, args, nil
 }

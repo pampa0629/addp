@@ -118,7 +118,7 @@ ALL_SERVICES=(
     "system-frontend" "manager-frontend" "meta-frontend"
     "transfer-frontend" "orchestrator-frontend" "develop-frontend"
     "service-frontend" "monitor-frontend" "standard-frontend"
-    "agent-frontend" "model-frontend" "quality-frontend" "security-frontend" "catalog-frontend" "workbench-frontend" "asset-frontend" "portal-frontend" "graph-frontend" "inference-frontend"
+    "agent-frontend" "model-frontend" "quality-frontend" "security-frontend" "catalog-frontend" "workbench-frontend" "asset-frontend" "portal-frontend" "graph-frontend" "inference-frontend" "ontology-frontend"
     "console" "nginx"
     "postgres"
 )

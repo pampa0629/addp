@@ -11,8 +11,8 @@ func TestEmbeddedCatalogContainsQualityQueryIndexes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadCatalog: %v", err)
 	}
-	if catalog.LatestVersion != 15 {
-		t.Fatalf("latest migration version = %d, want 15", catalog.LatestVersion)
+	if catalog.LatestVersion != 16 {
+		t.Fatalf("latest migration version = %d, want 16", catalog.LatestVersion)
 	}
 	if !strings.Contains(catalog.Files[14].Contents, "ALTER COLUMN column_name TYPE TEXT") {
 		t.Fatal("multi-column issue evidence must not be truncated")

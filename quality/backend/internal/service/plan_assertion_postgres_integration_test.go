@@ -49,6 +49,7 @@ func TestIntegrationPostgresRelationalAssertions(t *testing.T) {
 	for _, name := range []string{"people", "details", "activities"} {
 		bindings = append(bindings, PlanTableBinding{Alias: name, Locator: fmt.Sprintf("addp://engine/1/path/%s/%s?type=table", schema, name)})
 	}
+	bindings[0].RecordKey = []string{"person_id"}
 	cases := []struct {
 		name, params  string
 		total, failed int64
@@ -90,6 +91,9 @@ func TestIntegrationPostgresRelationalAssertions(t *testing.T) {
 			}
 			if !result.Passed || result.Rules[0].TotalCount != tc.total || result.Rules[0].FailedCount != tc.failed {
 				t.Fatalf("result=%#v rules=%#v", result, result.Rules)
+			}
+			if result.Rules[0].Evidence.Reason != "" || int64(len(result.Rules[0].Evidence.Keys)) != tc.failed {
+				t.Fatalf("assertion evidence=%+v", result.Rules[0].Evidence)
 			}
 			if tc.failed > 0 {
 				config.Rules.Rules[0].Severity = "error"

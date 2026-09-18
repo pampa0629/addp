@@ -78,6 +78,7 @@ func planIssueObservations(planID int64, config commonModels.JSONMap, result *Pl
 	}
 	for i := range observations {
 		observations[i].TargetKey = snapshot.TargetKey
+		observations[i].Evidence = result.Rules[i].Evidence
 	}
 	return observations, nil
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/addp/quality/internal/models"
 	"github.com/addp/quality/internal/repository"
 	"github.com/addp/quality/internal/service"
+	"github.com/addp/quality/internal/testsupport"
 	"github.com/gin-gonic/gin"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -84,7 +85,7 @@ func TestIssueGetAndUpdateRespectTenantAndStateContract(t *testing.T) {
 	updateRouter := gin.New()
 	updateRouter.PUT("/issues/:id/status", withIssueHandlerAuth(7, 42), handler.UpdateStatus)
 	path := "/issues/" + strconv.FormatInt(issue.ID, 10) + "/status"
-	blankRequest := httptest.NewRequest(http.MethodPut, path, strings.NewReader(`{"status":"resolved","note":"  "}`))
+	blankRequest := httptest.NewRequest(http.MethodPut, path, strings.NewReader(`{"version":1,"status":"resolved","note":"  "}`))
 	blankRequest.Header.Set("Content-Type", "application/json")
 	blankResponse := httptest.NewRecorder()
 	updateRouter.ServeHTTP(blankResponse, blankRequest)
@@ -92,7 +93,7 @@ func TestIssueGetAndUpdateRespectTenantAndStateContract(t *testing.T) {
 		t.Fatalf("blank note status = %d, want %d, body=%s", blankResponse.Code, http.StatusBadRequest, blankResponse.Body.String())
 	}
 
-	validRequest := httptest.NewRequest(http.MethodPut, path, strings.NewReader(`{"status":"resolved","note":"已修复源数据"}`))
+	validRequest := httptest.NewRequest(http.MethodPut, path, strings.NewReader(`{"version":1,"status":"resolved","note":"已修复源数据"}`))
 	validRequest.Header.Set("Content-Type", "application/json")
 	validResponse := httptest.NewRecorder()
 	updateRouter.ServeHTTP(validResponse, validRequest)
@@ -100,7 +101,7 @@ func TestIssueGetAndUpdateRespectTenantAndStateContract(t *testing.T) {
 		t.Fatalf("valid update status = %d, want %d, body=%s", validResponse.Code, http.StatusOK, validResponse.Body.String())
 	}
 
-	conflictRequest := httptest.NewRequest(http.MethodPut, path, strings.NewReader(`{"status":"ignored","note":"再次处理"}`))
+	conflictRequest := httptest.NewRequest(http.MethodPut, path, strings.NewReader(`{"version":1,"status":"accepted","note":"再次处理"}`))
 	conflictRequest.Header.Set("Content-Type", "application/json")
 	conflictResponse := httptest.NewRecorder()
 	updateRouter.ServeHTTP(conflictResponse, conflictRequest)
@@ -173,6 +174,7 @@ func newIssueHandlerTestDB(t *testing.T) *gorm.DB {
 	)`).Error; err != nil {
 		t.Fatalf("create quality issues table: %v", err)
 	}
+	testsupport.EnsureIssueAcceptance(t, db)
 	return db
 }
 

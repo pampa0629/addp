@@ -131,6 +131,11 @@ const viewer = (specUrl) => `/swagger-viewer.html?url=${encodeURIComponent(specU
 
 const modules = computed(() => [
   {
+    name: 'ontology', label: t('console.apiDocs.modules.ontology'), port: 8195,
+    swaggerUrl: isDev ? viewer('/swagger-spec/ontology') : viewer('/ontology/swagger/doc.json'),
+    healthUrl: isDev ? '/module-health/ontology' : null,
+  },
+  {
     name: 'agent',
     label: t('console.apiDocs.modules.agent'),
     port: ':8190',

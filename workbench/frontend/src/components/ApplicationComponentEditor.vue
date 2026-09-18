@@ -2,7 +2,7 @@
   <el-dialog
     :model-value="modelValue"
     class="addp-dialog component-dialog"
-    :title="duplicate ? t('workbench.studio.duplicateComponent') : component ? t('workbench.editComponent') : t('workbench.addComponent')"
+    :title="selectionTarget ? t('workbench.selectionWizard.title') : duplicate ? t('workbench.studio.duplicateComponent') : component ? t('workbench.editComponent') : t('workbench.addComponent')"
     width="min(1180px, calc(100vw - 24px))"
     destroy-on-close
     @open="initialize"
@@ -27,7 +27,7 @@
             <p class="configuration-hint">{{ t('workbench.studio.serviceHint') }}</p>
             <el-alert v-if="!loading && services.length === 0" type="info" :closable="false" :title="t('workbench.studio.noServices')" />
             <el-alert v-if="descriptor && draft.rendererType === 'map' && !descriptor.output_contract.spatial" type="warning" :closable="false" :title="t('workbench.studio.mapServiceRequired')" />
-            <section v-if="!component && displaySuggestions.length" class="display-suggestions" data-testid="display-suggestions">
+            <section v-if="!component && !selectionTarget && displaySuggestions.length" class="display-suggestions" data-testid="display-suggestions">
               <strong>{{ t('workbench.studio.suggestionsTitle') }}</strong>
               <p class="reuse-hint">{{ t('workbench.studio.suggestionsHint') }}</p>
               <button v-for="suggestion in displaySuggestions" :key="suggestion.key" type="button" class="display-suggestion" :data-testid="`suggestion-${suggestion.key}`" @click="applyDisplaySuggestion(suggestion)">
@@ -42,6 +42,16 @@
 
             <el-form-item v-if="!component" :label="t('workbench.componentTitle')"><el-input v-model="draft.name" maxlength="200" /></el-form-item>
             <el-form-item v-if="!component" :label="t('workbench.description')"><el-input v-model="draft.description" type="textarea" maxlength="2000" /></el-form-item>
+            <section v-if="selectionTarget" data-testid="selection-list-fields">
+              <p class="configuration-hint">{{ t('workbench.selectionWizard.target', { label: selectionTarget.label }) }}</p>
+              <el-form-item v-for="kind in ['search', 'label', 'value']" :key="kind" :label="t(`workbench.selectionWizard.${kind}Field`)" :data-testid="`selection-list-${kind}`">
+                <el-select v-model="selectionFields[kind]" class="full" @change="configureSelectionList">
+                  <el-option v-for="field in selectionListFields[kind]" :key="field.name" :value="field.name" :label="field.comment ? `${field.comment} (${field.name})` : field.name" />
+                </el-select>
+              </el-form-item>
+              <p v-if="!selectionListFields.search.length || !selectionListFields.value.length" class="configuration-warning">{{ t('workbench.selectionWizard.unsupported') }}</p>
+            </section>
+            <template v-else>
             <el-form-item :label="t('workbench.renderer')">
               <el-select v-model="draft.rendererType" class="full" @change="initializeRenderer">
                 <el-option value="table" :label="t('workbench.renderers.table')" />
@@ -132,6 +142,7 @@
                 </el-checkbox>
               </el-checkbox-group>
             </el-form-item>
+            </template>
             <el-form-item :label="t('workbench.pageLimit')">
               <el-input-number v-model="draft.pageLimit" :min="1" :max="descriptor.input_contract.page.max_limit" @change="resetResult" />
             </el-form-item>
@@ -169,41 +180,44 @@
                 <p class="reuse-hint">{{ t('workbench.studio.duplicateHint') }}</p>
               </template>
               <p v-else class="configuration-hint">{{ t(isNewComponent ? 'workbench.studio.conditionsHint' : 'workbench.studio.existingConditionsHint') }}</p>
+              <p v-if="!component && !selectionTarget && !snapshot.components.length && draft.parameters.some(parameter => parameter.required)" class="configuration-hint">{{ t('workbench.creationGuide.missingIdentity') }}</p>
             <div class="section-header">
               <strong>{{ t('workbench.parameters') }}</strong>
               <div class="parameter-actions">
                 <span v-if="parameterizableFields.length === 0 && draft.parameters.length === 0">{{ t('workbench.noParameters') }}</span>
-                <el-button link type="primary" :disabled="parameterizableFields.length === 0" @click="addParameter">{{ t('workbench.addParameter') }}</el-button>
+                <el-button link type="primary" :disabled="parameterizableFields.length === 0" v-if="!selectionTarget" @click="addParameter">{{ t('workbench.addParameter') }}</el-button>
               </div>
             </div>
-            <p v-if="!component && snapshot.parameters.length && draft.parameters.length" class="reuse-hint">{{ t('workbench.studio.reuseFilterHint') }}</p>
+            <p v-if="!selectionTarget && !component && snapshot.parameters.length && draft.parameters.length" class="reuse-hint">{{ t('workbench.studio.reuseFilterHint') }}</p>
             <div v-for="(parameter, index) in draft.parameters" :key="index" class="parameter">
               <label class="parameter-name">{{ parameter.label }}<span v-if="parameter.required"> *</span></label>
               <ParameterCaption v-if="parameter.bindingKind === 'named'" :parameter="parameter" />
-              <el-select v-else v-model="parameter.field" @change="syncParameter(parameter)">
+              <el-select v-else-if="!selectionTarget" v-model="parameter.field" @change="syncParameter(parameter)">
                 <el-option v-for="field in parameterizableFields" :key="field.name" :label="field.comment || field.name" :value="field.name" />
               </el-select>
               <el-tag v-if="parameter.bindingKind === 'named'" type="warning">
                 {{ parameter.required ? t('workbench.requiredServiceParameter') : t('workbench.optionalServiceParameter') }}
               </el-tag>
-              <el-select v-else v-model="parameter.operator" @change="syncParameterControl(parameter)">
+              <el-select v-else-if="!selectionTarget" v-model="parameter.operator" @change="syncParameterControl(parameter)">
                 <el-option v-for="operator in operatorsFor(parameter.field)" :key="operator" :label="operator" :value="operator" />
               </el-select>
               <div v-if="isNewComponent && snapshot.parameters.length" class="parameter-reuse" data-testid="parameter-reuse">
+                <template v-if="!selectionTarget || parameter.bindingKind === 'named'">
                 <label>{{ t('workbench.studio.filterSource') }}</label>
                 <el-select :model-value="parameter.applicationParameterKey || ''" :empty-values="[null, undefined]" :fit-input-width="true" :aria-label="t('workbench.studio.filterSource')" class="full" @update:model-value="chooseExistingParameter(parameter, $event)">
                   <el-option value="" :label="t('workbench.studio.independentFilter')" />
                   <el-option v-for="option in reuseOptions(parameter)" :key="option.parameter.key" :value="option.parameter.key" :label="reuseLabel(option.parameter)" :title="reuseLabel(option.parameter)" :disabled="!option.compatible" />
                 </el-select>
                 <span v-if="parameter.applicationParameterKey" class="reuse-hint">{{ t('workbench.studio.reusedFilterHint') }}</span>
-                <label v-else class="independent-filter-name">
+                </template>
+                <label v-if="!parameter.applicationParameterKey" class="independent-filter-name">
                   {{ t('workbench.studio.filterName') }}
                   <el-input v-model="parameter.label" :aria-label="t('workbench.studio.filterName')" />
                 </label>
               </div>
               <span v-if="isNewComponent && snapshot.parameters.length && !parameter.applicationParameterKey" class="reuse-hint">{{ t('workbench.studio.initialValue') }}</span>
               <ParameterValueInput v-model="parameter.value" :aria-label="t('workbench.studio.initialValue')" :control-type="parameter.controlType" :options="parameter.options || []" :disabled="Boolean(parameter.applicationParameterKey)" @update:model-value="resetResult" />
-              <details class="parameter-details"><summary>{{ t('workbench.studio.parameterSettings') }}</summary><el-input v-if="!(isNewComponent && snapshot.parameters.length && !parameter.applicationParameterKey)" v-model="parameter.label" :placeholder="t('workbench.parameterLabel')" /><el-input v-model="parameter.key" :placeholder="t('workbench.parameterKey')" /><el-button link type="danger" :disabled="parameter.bindingKind === 'named'" @click="removeParameter(index)">{{ t('workbench.delete') }}</el-button></details>
+              <details v-if="!selectionTarget || parameter.bindingKind === 'named'" class="parameter-details"><summary>{{ t('workbench.studio.parameterSettings') }}</summary><el-input v-if="!(isNewComponent && snapshot.parameters.length && !parameter.applicationParameterKey)" v-model="parameter.label" :placeholder="t('workbench.parameterLabel')" /><el-input v-model="parameter.key" :placeholder="t('workbench.parameterKey')" /><el-button link type="danger" :disabled="parameter.bindingKind === 'named'" @click="removeParameter(index)">{{ t('workbench.delete') }}</el-button></details>
             </div>
             </div>
           </template>
@@ -244,7 +258,7 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { createLatestRequestCoordinator } from '@common-ui'
 import { executeDescriptorOperation, getConsumerDescriptor, listConsumerServices } from '../api/services'
-import { buildComponentConfiguration, buildQueryRequest, buildRendererConfig, componentDisplaySuggestions, controlTypeFor, createNamedParameterDraft, createParameterDraft, draftFromComponent, emptyControlValue, requiredParameterValuesPresent, synchronizeFieldPresentations } from '../utils/componentDraft.mjs'
+import { configureSelectionListDraft, buildComponentConfiguration, buildQueryRequest, buildRendererConfig, componentDisplaySuggestions, controlTypeFor, createNamedParameterDraft, createParameterDraft, draftFromComponent, emptyControlValue, requiredParameterValuesPresent, synchronizeFieldPresentations } from '../utils/componentDraft.mjs'
 import { boundedExportHasMore, descriptorSupportsExport, downloadBoundedExport, exportFormatForRenderer } from '../utils/boundedExport.mjs'
 import WorkbenchRendererHost from './WorkbenchRendererHost.vue'
 import StateRuleEditor from './StateRuleEditor.vue'
@@ -252,9 +266,9 @@ import ValueLabelEditor from './ValueLabelEditor.vue'
 import { valueLabelsValid } from '@common-ui/utils/fieldPresentation.mjs'
 import { canBindApplicationParameter, newComponentParameterContext } from '../utils/applicationParameterOptions.mjs'
 import { initialApplicationParameterValue } from '../utils/dataApplicationParameters.mjs'
-import { affectedSelectionComponentIDs } from '../utils/dataApplicationSelection.mjs'
+import { compatibleSelectionParameters, affectedSelectionComponentIDs } from '../utils/dataApplicationSelection.mjs'
 
-const props = defineProps({ modelValue: Boolean, duplicate: Boolean, initialRenderer: { type: String, default: 'table' }, component: { type: Object, default: null }, snapshot: { type: Object, required: true }, descriptors: { type: Object, required: true } })
+const props = defineProps({ modelValue: Boolean, selectionTarget: { type: Object, default: null }, duplicate: Boolean, initialRenderer: { type: String, default: 'table' }, component: { type: Object, default: null }, snapshot: { type: Object, required: true }, descriptors: { type: Object, required: true } })
 const emit = defineEmits(['update:modelValue', 'save'])
 const { t, locale } = useI18n()
 const numericTypes = new Set(['int', 'bigint', 'float', 'double', 'decimal'])
@@ -279,6 +293,22 @@ const draft = reactive(emptyDraft())
 const componentID = ref('')
 const configurationFingerprint = ref('')
 const isNewComponent = computed(() => !props.component || props.duplicate)
+const selectionFields = reactive({ search: '', label: '', value: '' })
+const selectionListFields = computed(() => {
+  const fields = (descriptor.value?.output_contract.fields || []).filter(field => descriptor.value.input_contract.fields.some(input => input.name === field.name && input.selectable))
+  return {
+    search: (descriptor.value?.input_contract.fields || []).filter(field => field.type === 'string' && field.filterable && field.operators?.includes('contains')),
+    label: fields.filter(field => ['string', 'uuid', 'bool', 'int', 'bigint', 'float', 'double', 'decimal', 'date', 'time', 'timestamp'].includes(field.type)),
+    value: fields.filter(field => compatibleSelectionParameters(props.snapshot, props.descriptors, field).some(parameter => parameter.key === props.selectionTarget?.key)),
+  }
+})
+function configureSelectionList() {
+  configureSelectionListDraft(draft, descriptor.value, {
+    searchField: selectionFields.search, labelField: selectionFields.label, valueField: selectionFields.value,
+    searchLabel: t('workbench.selectionWizard.searchLabel', { label: props.selectionTarget.label }),
+  })
+  resetResult()
+}
 const reusedParameters = computed(() => Object.fromEntries(draft.parameters.filter(p => p.applicationParameterKey).map(p => [p.key, p.applicationParameterKey])))
 const reuseContext = computed(() => descriptor.value && isNewComponent.value ? newComponentParameterContext(props.snapshot, props.descriptors, buildComponentConfiguration(descriptor.value, draft, componentID.value), descriptor.value, reusedParameters.value) : null)
 function reuseOptions(parameter) {
@@ -336,6 +366,8 @@ const rendererConfig = computed(() => buildRendererConfig(draft))
 const contractChanged = computed(() => Boolean(configurationFingerprint.value && descriptor.value && configurationFingerprint.value !== descriptor.value.contract_fingerprint))
 const validDraft = computed(() => {
   if (!descriptor.value || !draft.name.trim() || draft.columns.length === 0) return false
+  if (props.selectionTarget && (!['search', 'label', 'value'].every(kind => selectionListFields.value[kind].some(field => field.name === selectionFields[kind]))
+    || !draft.parameters.some(parameter => parameter.bindingKind !== 'named' && parameter.field === selectionFields.search && parameter.operator === 'contains' && !parameter.applicationParameterKey))) return false
   if (props.duplicate && contractChanged.value) return false
   if (isNewComponent.value && draft.parameters.some(p => p.applicationParameterKey && !reuseOptions(p).some(option => option.parameter.key === p.applicationParameterKey && option.compatible))) return false
   const parameterKeys = new Set()
@@ -390,6 +422,7 @@ async function initialize() {
   exporting.value = false
   serviceKey.value = sourceComponent ? keyOf(sourceComponent.service_ref) : ''
   descriptor.value = null
+  Object.assign(selectionFields, { search: '', label: '', value: '' })
   assignDraft(emptyDraft())
   resetResult()
   try {
@@ -426,6 +459,7 @@ async function selectService(selectedServiceKey = serviceKey.value) {
   querying.value = false
   exporting.value = false
   descriptor.value = null
+  Object.assign(selectionFields, { search: '', label: '', value: '' })
   assignDraft(emptyDraft())
   resetResult()
   try {
@@ -446,6 +480,11 @@ async function selectService(selectedServiceKey = serviceKey.value) {
       parameters: namedParameters,
     })
     initializeRenderer()
+    if (props.selectionTarget) {
+      draft.name = t('workbench.selectionWizard.componentName', { label: props.selectionTarget.label }).slice(0, 200)
+      draft.description = ''
+      configureSelectionList()
+    }
   } catch (error) {
     if (!descriptorRequests.isCurrent(request, serviceKey.value)) return
     descriptor.value = null
@@ -719,7 +758,7 @@ onBeforeUnmount(invalidateEditorRequests)
 
 function submit() {
   if (!validDraft.value) return
-  emit('save', buildComponentConfiguration(descriptor.value, draft, componentID.value), reusedParameters.value, descriptor.value)
+  emit('save', buildComponentConfiguration(descriptor.value, draft, componentID.value), reusedParameters.value, descriptor.value, props.selectionTarget ? { source_field: selectionFields.value, application_parameter_key: props.selectionTarget.key } : null)
   emit('update:modelValue', false)
 }
 </script>

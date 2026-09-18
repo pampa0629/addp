@@ -55,6 +55,11 @@ type HeadResponse struct {
 	ActiveRevision    *uint64 `json:"active_revision"`
 	ActiveGeneration  *string `json:"active_generation"`
 }
+
+func headResponse(r *models.Ontology) HeadResponse {
+	return HeadResponse{r.OntologyID, r.LastRevision, r.ActivationVersion, r.ActiveRevision, r.ActiveGeneration}
+}
+
 type RevisionResponse struct {
 	OntologyID         string          `json:"ontology_id"`
 	Revision           uint64          `json:"revision"`

@@ -13,7 +13,7 @@ import { splitConsoleRoute } from '../utils/consoleNavigation'
 
 export const MODULE_GROUPS = [
   { key: 'data-prepare', label: 'console.groups.dataPrepare', icon: Coin,         modules: ['transfer', 'meta', 'security', 'manager'] },
-  { key: 'data-govern',  label: 'console.groups.dataGovern',  icon: Reading,      modules: ['standard', 'modeling', 'quality'] },
+  { key: 'data-govern',  label: 'console.groups.dataGovern',  icon: Reading,      modules: ['standard', 'modeling', 'quality', 'ontology'] },
   { key: 'dev-monitor',  label: 'console.groups.devMonitor',  icon: Tools,        modules: ['develop', 'service', 'workbench', 'orchestrator', 'monitor'] },
   { key: 'asset',        label: 'console.groups.asset',       icon: Folder,       modules: ['catalog', 'asset'] },
   { key: 'portal',       label: 'console.groups.portal',      icon: Shop,         modules: [], isPortal: true },
@@ -27,6 +27,7 @@ export const MODULE_GROUPS = [
 // label/desc 值为 i18n key，渲染时通过 t(card.label) / t(card.desc) 翻译
 
 export const ALL_HOME_CARDS = [
+  { module: 'ontology', label: 'console.modules.ontology.label', icon: Connection, cssVar: '--el-color-primary', desc: 'console.modules.ontology.desc', contexts: ['tenant'], permissions: ['ontology.revision.read'] },
   { module: 'transfer',     label: 'console.modules.transfer.label',     icon: Upload,       cssVar: '--addp-module-transfer',     desc: 'console.modules.transfer.desc' },
   { module: 'meta',         label: 'console.modules.meta.label',         icon: Box,          cssVar: '--addp-module-meta',          desc: 'console.modules.meta.desc' },
   { module: 'security',     label: 'console.modules.security.label',     icon: Lock,         cssVar: '--addp-module-security',      desc: 'console.modules.security.desc' },
@@ -57,6 +58,7 @@ function _url(devPort, prodPath) {
 }
 
 export const MODULE_URLS = {
+  ontology: _dev ? `${_protocol}//${_host}:5192/ontology` : _url(5192, 'ontology'),
   system:       _url(5173, 'system'),
   manager:      _url(5174, 'manager'),
   meta:         _url(5175, 'meta'),
@@ -84,6 +86,7 @@ export const PORTAL_URL = window.location.origin
 // '' 键表示无 page 时的默认路由。
 
 export const PAGE_MAPS = {
+  ontology: { '': 'ontologies' },
   manager: {
     'data-explorer': 'data-explorer',
     'data-retrieval': 'data-retrieval',
@@ -164,6 +167,7 @@ export const PAGE_MAPS = {
 // ─── 模块默认路由（navigateToModule 使用）───────────────────────────────────
 
 export const DEFAULT_ROUTES = {
+  ontology: '/ontology/ontologies',
   system:       '/system/iam/security',
   manager:      '/manager/data-explorer',
   meta:         '/meta/scan',
@@ -189,6 +193,10 @@ export const DEFAULT_ROUTES = {
 
 // ─── 侧边栏菜单配置（label 值为 i18n key，渲染时通过 t(label) 翻译）─────────
 export const SIDEBAR_MENUS = {
+  ontology: {
+    label: 'console.menus.ontology.label', icon: Connection,
+    items: [{ index: '/ontology/ontologies', icon: Connection, label: 'console.menus.ontology.list', contexts: ['tenant'], permissions: ['ontology.revision.read'] }],
+  },
   transfer: {
     label: 'console.menus.transfer.label', icon: Upload,
     items: [

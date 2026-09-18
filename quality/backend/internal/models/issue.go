@@ -8,6 +8,13 @@ import (
 // Issue 质量问题工单
 type Issue struct {
 	ID              int64           `gorm:"primaryKey" json:"id"`
+	Version         int64           `gorm:"not null;default:1" json:"version"`
+	Evidence        json.RawMessage `gorm:"type:jsonb" json:"-"`
+	AcceptedKeys    json.RawMessage `gorm:"type:jsonb" json:"-"`
+	EvidenceReason  string          `gorm:"not null;default:''" json:"evidence_reason"`
+	AcceptedCount   int64           `gorm:"not null;default:0" json:"accepted_count"`
+	PendingCount    int64           `gorm:"not null;default:0" json:"pending_count"`
+	History         []IssueAction   `gorm:"-" json:"history,omitempty"`
 	TenantID        int64           `gorm:"not null;index;uniqueIndex:uq_quality_issue_rule" json:"tenant_id"`
 	ExecutionID     string          `gorm:"size:255;not null;index" json:"execution_id"` // common.task_executions.execution_id
 	LastExecutionID string          `gorm:"size:255;not null;index" json:"last_execution_id"`
@@ -26,7 +33,7 @@ type Issue struct {
 	TotalCount      int64           `gorm:"not null" json:"total_count"`
 	PassRate        float64         `gorm:"not null" json:"pass_rate"`
 	Detail          json.RawMessage `gorm:"type:jsonb" json:"detail,omitempty"`
-	Status          string          `gorm:"size:50;not null;default:'open'" json:"status"` // open/resolved/ignored
+	Status          string          `gorm:"size:50;not null;default:'open'" json:"status"` // open/resolved/accepted; ignored for history and cleanup
 	ResolvedAt      *time.Time      `json:"resolved_at,omitempty"`
 	ResolvedBy      *int64          `json:"resolved_by,omitempty"`
 	ResolutionNote  string          `gorm:"type:text" json:"resolution_note,omitempty"`
@@ -38,6 +45,7 @@ type Issue struct {
 func (Issue) TableName() string { return "quality.issues" }
 
 type IssueObservation struct {
+	Evidence      *FailureEvidence
 	TargetKey     string
 	PlanID        int64
 	OwnerDomainID *int64
@@ -54,3 +62,28 @@ type IssueObservation struct {
 	PassRate      float64
 	Passed        bool
 }
+
+// FailureEvidence is owner-internal: never expose record hashes as row data.
+type FailureEvidence struct {
+	Scope  string   `json:"scope"`
+	Keys   []string `json:"keys"`
+	Reason string   `json:"reason"`
+}
+
+const MaxFailureKeys = 10000
+
+type IssueAction struct {
+	ID            int64           `gorm:"primaryKey" json:"id"`
+	TenantID      int64           `json:"-"`
+	IssueID       int64           `json:"issue_id"`
+	PlanID        int64           `json:"plan_id"`
+	ExecutionID   string          `json:"execution_id"`
+	Action        string          `json:"action"`
+	ActorID       *int64          `json:"actor_id,omitempty"`
+	Note          string          `json:"note"`
+	AcceptedCount int64           `json:"accepted_count"`
+	Evidence      json.RawMessage `gorm:"type:jsonb" json:"-"`
+	CreatedAt     time.Time       `json:"created_at"`
+}
+
+func (IssueAction) TableName() string { return "quality.issue_actions" }

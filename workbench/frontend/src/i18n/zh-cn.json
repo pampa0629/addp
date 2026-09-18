@@ -328,6 +328,25 @@
       "start": "开始日期参数",
       "end": "结束日期参数"
     },
+    "creationGuide": {
+      "title": "第一个结果已配置，接着设置如何选值",
+      "hint": "需要按名称查找人员或其他对象？选一个条件，为它创建搜索列表；也可以直接预览。",
+      "target": "哪个条件需要通过列表选择？",
+      "configured": "已配置 {count} 个搜索选值入口。",
+      "preview": "预览并设置初始值",
+      "previewHint": "试选完成后，点击“设为应用初始值”，再创建草稿。",
+      "missingIdentity": "还不知道人员或对象的标识？可以先应用组件配置，下一步创建搜索列表，再点选对象。"
+    },
+    "selectionWizard": {
+      "title": "创建搜索列表",
+      "target": "点选结果后，设置「{label}」并刷新相关组件。",
+      "searchField": "用哪个字段搜索？",
+      "labelField": "列表显示哪个字段？",
+      "valueField": "选中后传入哪个字段？",
+      "unsupported": "当前字段或目标条件不支持此配置。需要可搜索的文本字段，以及与目标条件类型、必填要求一致的取值字段。",
+      "searchLabel": "搜索{label}",
+      "componentName": "搜索并选择{label}"
+    },
     "studio": {
       "back": "返回列表",
       "unsaved": "有未保存的修改",
@@ -341,7 +360,7 @@
       "componentCount": "{count} 个组件",
       "startEyebrow": "创建你的数据应用",
       "startTitle": "先选一种展示，做出第一个组件",
-      "startHint": "从已发布的数据服务开始，选字段、填查询条件，再组合成你想要的页面。之后随时可以调整。",
+      "startHint": "先选择数据和展示，再按需要添加搜索选值入口，最后预览并创建应用。之后随时可以调整。",
       "starters": {
         "table": "浏览明细，查找和比较记录",
         "chart": "用柱状图、折线图或饼图展示结果",

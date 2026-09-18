@@ -138,7 +138,7 @@ import {
   MODULE_GROUPS, ALL_HOME_CARDS, SIDEBAR_MENUS, DEFAULT_ROUTES,
   MODULE_URLS, PORTAL_URL, buildModuleUrl,
 } from '../config/portalConfig'
-import { filterSidebarMenus } from '../utils/navigationAccess'
+import { filterSidebarMenus, matchesNavigationAccess } from '../utils/navigationAccess'
 import PortalHeader from '../components/portal/PortalHeader.vue'
 import PortalSidebar from '../components/portal/PortalSidebar.vue'
 import PortalHome from '../components/portal/PortalHome.vue'
@@ -199,8 +199,9 @@ const activeGroupModules = computed(() =>
 )
 
 const homeCards = computed(() => {
-  if (!activeGroup.value) return ALL_HOME_CARDS
-  return ALL_HOME_CARDS.filter(c => activeGroupModules.value.includes(c.module))
+  const accessible = ALL_HOME_CARDS.filter(card => matchesNavigationAccess(card, authStore.contextType, authStore.permissions))
+  if (!activeGroup.value) return accessible
+  return accessible.filter(c => activeGroupModules.value.includes(c.module))
 })
 
 const visibleSidebarMenus = computed(() => filterSidebarMenus(

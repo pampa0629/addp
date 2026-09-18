@@ -35,8 +35,24 @@
       <ol class="creation-steps"><li>{{ t('workbench.studio.steps.data') }}</li><li>{{ t('workbench.studio.steps.display') }}</li><li>{{ t('workbench.studio.steps.conditions') }}</li><li>{{ t('workbench.studio.steps.deliver') }}</li></ol>
     </section>
 
-    <div v-else class="studio-workspace">
+        <section v-if="isCreate && application.snapshot.components.length" class="creation-guide" data-testid="application-creation-guide">
+          <strong>{{ t('workbench.creationGuide.title') }}</strong>
+          <p>{{ t('workbench.creationGuide.hint') }}</p>
+          <p v-if="application.snapshot.selection_bindings.length" class="muted">{{ t('workbench.creationGuide.configured', { count: application.snapshot.selection_bindings.length }) }}</p>
+          <el-form v-if="creationSelectionTargets.length" label-position="top" @submit.prevent>
+            <el-form-item :label="t('workbench.creationGuide.target')">
+              <el-select v-model="creationTargetKey" class="full" :placeholder="t('workbench.applicationParameter')">
+                <el-option v-for="parameter in creationSelectionTargets" :key="parameter.key" :value="parameter.key" :label="parameterOptionLabel(parameter)" />
+              </el-select>
+            </el-form-item>
+            <el-button type="primary" :disabled="!creationTargetKey" @click="openCreationSelectionList">{{ t('workbench.selectionWizard.title') }}</el-button>
+          </el-form>
+          <div class="actions"><el-button @click="openDraftPreview">{{ t('workbench.creationGuide.preview') }}</el-button><span class="muted">{{ t('workbench.creationGuide.previewHint') }}</span></div>
+        </section>
+
+    <div v-if="application.snapshot.components.length" class="studio-workspace">
       <section class="studio-stage">
+
         <div class="stage-toolbar"><span>{{ t('workbench.studio.canvasHint') }}</span><el-button size="small" @click="editorCanvas?.refresh()">{{ t('workbench.studio.refreshPreview') }}</el-button></div>
         <DataApplicationCanvas v-if="!loading" :key="deliveryDialogContext" ref="editorCanvas" :application="application" mode="draft-preview" editable :selected-component-id="selectedComponentID" @select-component="selectedComponentID = $event" @edit-component="openEditComponent" @move-component="moveComponent" />
       </section>
@@ -120,6 +136,7 @@
             <div class="filter-required"><span>{{ t('workbench.required') }}</span><el-switch v-model="parameter.required" :aria-label="t('workbench.required')" /></div>
           </el-form>
           <div class="filter-impact"><span>{{ t('workbench.studio.usedBy') }}</span><el-tag v-for="title in parameterComponentNames(parameter.key)" :key="title" size="small" type="info">{{ title }}</el-tag><span v-if="!parameterComponentNames(parameter.key).length">{{ t('workbench.studio.unusedFilter') }}</span></div>
+          <el-button link type="primary" :disabled="!parameterDomain(parameter.key).ready" @click="openSelectionList(parameter)">{{ t('workbench.selectionWizard.title') }}</el-button>
           <el-button link type="primary" :disabled="!parameterDomain(parameter.key).ready || !availableSelectionSourceComponents().length" @click="configureParameterSelection(parameter.key)">{{ t('workbench.studio.chooseFromComponent') }}</el-button>
           <p v-if="parameterComponentNames(parameter.key).length && !parameterDomain(parameter.key).ready" class="configuration-warning">{{ t('workbench.parameterOptionsUnavailable', { components: parameterDomain(parameter.key).components.join(', ') }) }}</p>
         </article>
@@ -198,7 +215,7 @@
       </div>
       <template #footer><el-button type="primary" :disabled="Boolean(selectionDraft)" @click="settingsPanel = ''">{{ t('workbench.studio.done') }}</el-button></template>
     </el-drawer>
-    <ApplicationComponentEditor v-model="componentEditorVisible" :component="editingComponent" :duplicate="duplicatingComponent" :initial-renderer="initialRenderer" :snapshot="application.snapshot" :descriptors="descriptorByComponent" @save="saveComponent" />
+    <ApplicationComponentEditor v-model="componentEditorVisible" :component="editingComponent" :duplicate="duplicatingComponent" :initial-renderer="initialRenderer" :selection-target="selectionListTarget" :snapshot="application.snapshot" :descriptors="descriptorByComponent" @save="saveComponent" />
     <SpatialExplorationWizard v-model="spatialWizardVisible" @apply="applySpatialExploration" />
     <DataApplicationDeliveryDialog :key="deliveryDialogContext" ref="deliveryDialog" />
     <el-dialog v-model="draftPreviewVisible" class="draft-preview-dialog" fullscreen destroy-on-close :title="t('workbench.draftPreviewTitle')">
@@ -226,7 +243,7 @@ import { createDataApplication, getDataApplication, offlineDataApplication, publ
 import { getConsumerDescriptor } from '../api/services'
 import { applicationParameterPresetsValid, buildDataApplicationPreview, commitLatestDataApplicationRequest, confirmDataApplicationAction, createApplicationParameterPreset, dataApplicationEditorMutationContext, dataApplicationEditorRouteContext, normalizedApplicationSnapshot, synchronizeApplicationParameterPresets } from '../utils/dataApplicationDraft.mjs'
 import { APPLICATION_PRESENTATION_SECTIONS, canHideApplicationParameters } from '../utils/dataApplicationRuntime.mjs'
-import { affectedSelectionComponentIDs, compatibleSelectionParameters as compatibleSelectionParameterList, selectionSourceFields } from '../utils/dataApplicationSelection.mjs'
+import { selectionParameterType, affectedSelectionComponentIDs, compatibleSelectionParameters as compatibleSelectionParameterList, selectionSourceFields } from '../utils/dataApplicationSelection.mjs'
 import { navigateWorkbenchRoute } from '../utils/moduleNavigation'
 import ApplicationComponentEditor from '../components/ApplicationComponentEditor.vue'
 import ParameterValueInput from '../../../../common-frontend/basic/src/components/ParameterValueInput.vue'
@@ -239,6 +256,8 @@ const settingsPanel = ref('')
 const settingsVisible = computed({ get: () => Boolean(settingsPanel.value), set: value => { if (!value) settingsPanel.value = '' } })
 const selectedComponentID = ref('')
 const initialRenderer = ref('table')
+const selectionListTarget = ref(null)
+const creationTargetKey = ref('')
 const editorCanvas = ref(null)
 const { t } = useI18n()
 const route = useRoute()
@@ -359,6 +378,25 @@ function commitEditorMutation(request, action, commit) {
 
 const bindingGroups = computed(() => orderedComponents.value.map(component => ({ component, rows: bindingRows.value.filter(row => row.binding.component_id === component.id) })).filter(group => group.rows.length))
 function componentTitle(id) { return application.snapshot.components.find(c => c.id === id)?.title || id }
+const creationSelectionTargets = computed(() => {
+  const snapshot = application.snapshot
+  const sources = new Set(snapshot.selection_bindings.map(binding => binding.source_component_id))
+  const assigned = new Set(snapshot.selection_bindings.flatMap(binding => binding.assignments.map(assignment => assignment.application_parameter_key)))
+  return snapshot.parameters.filter(parameter => {
+    const domain = parameterDomain(parameter.key)
+    return !assigned.has(parameter.key) && domain.ready && !domain.options.length
+      && selectionParameterType(snapshot, descriptorByComponent, parameter.key)
+      && snapshot.parameter_bindings.some(binding => binding.application_parameter_key === parameter.key && !sources.has(binding.component_id))
+  })
+})
+watch(creationSelectionTargets, targets => {
+  if (!targets.some(parameter => parameter.key === creationTargetKey.value)) creationTargetKey.value = ''
+})
+function openCreationSelectionList() {
+  const parameter = creationSelectionTargets.value.find(parameter => parameter.key === creationTargetKey.value)
+  if (parameter) openSelectionList(parameter)
+}
+
 function parameterLabel(key) { return application.snapshot.parameters.find(p => p.key === key)?.label || key }
 function parameterComponentNames(key) {
   return affectedSelectionComponentIDs(application.snapshot, [{ application_parameter_key: key }]).map(componentTitle)
@@ -660,7 +698,14 @@ function openDelivery() {
   return deliveryDialog.value?.open(application.id, application.current_revision_number)
 }
 
+function openSelectionList(parameter) {
+  settingsPanel.value = ''
+  openAddComponent('table')
+  selectionListTarget.value = { key: parameter.key, label: parameter.label }
+}
+
 function openAddComponent(renderer = 'table') {
+  selectionListTarget.value = null
   duplicatingComponent.value = false
   initialRenderer.value = renderer
   editingComponent.value = null
@@ -689,6 +734,7 @@ function sameServiceReference(left, right) {
 }
 
 function openEditComponent(component, duplicate = false) {
+  selectionListTarget.value = null
   duplicatingComponent.value = duplicate
   editingComponent.value = structuredClone(toRaw(component))
   componentEditorVisible.value = true
@@ -698,7 +744,14 @@ function applicationParameterKey(componentID, parameterKey) {
   return `component_${componentID.replaceAll('-', '').slice(0, 12)}.${parameterKey}`
 }
 
-function saveComponent(nextComponent, reusedParameters, descriptor) {
+function saveComponent(nextComponent, reusedParameters, descriptor, selectionAssignment = null) {
+  if (selectionAssignment) {
+    const candidate = { ...application.snapshot, components: [...application.snapshot.components, nextComponent] }
+    const field = selectionSourceFields(candidate, nextComponent.id, descriptor).find(field => field.name === selectionAssignment.source_field)
+    if (application.snapshot.components.some(component => component.id === nextComponent.id)
+      || !parameterDomain(selectionAssignment.application_parameter_key).ready
+      || !compatibleSelectionParameterList(application.snapshot, descriptorByComponent, field).some(parameter => parameter.key === selectionAssignment.application_parameter_key)) return ElMessage.warning(t('workbench.selectionWizard.unsupported'))
+  }
   const index = application.snapshot.components.findIndex((item) => item.id === nextComponent.id)
   if (index < 0) {
     const context = newComponentParameterContext(application.snapshot, descriptorByComponent, nextComponent, descriptor, reusedParameters)
@@ -740,6 +793,18 @@ function saveComponent(nextComponent, reusedParameters, descriptor) {
         required: definition.required,
         ...(Object.prototype.hasOwnProperty.call(nextComponent.default_parameter_values || {}, definition.key) ? { default_value: nextComponent.default_parameter_values[definition.key] } : {}),
       })
+    }
+  }
+  if (selectionAssignment) {
+    application.snapshot.selection_bindings.push({ source_component_id: nextComponent.id, assignments: [{ ...selectionAssignment }] })
+    if (isCreate.value) {
+      const targets = new Set(affectedSelectionComponentIDs(application.snapshot, [selectionAssignment]))
+      const placements = orderedPlacements(application.snapshot.page.placements)
+      const source = placements.find(placement => placement.component_id === nextComponent.id)
+      const rest = placements.filter(placement => placement !== source)
+      const targetIndex = rest.findIndex(placement => targets.has(placement.component_id))
+      rest.splice(targetIndex < 0 ? rest.length : targetIndex, 0, source)
+      application.snapshot.page.placements = arrangePlacements(rest.map((placement, y) => ({ ...placement, x: 0, y })))
     }
   }
   pruneUnusedApplicationParameters()
@@ -784,6 +849,9 @@ watch(() => [route.name, route.params.id], ([routeName, applicationID]) => load(
 </script>
 
 <style scoped>
+.creation-guide { display: flex; flex-direction: column; gap: 12px; padding: 18px; border: 1px solid var(--addp-border-color); border-radius: 10px; background: var(--addp-bg-secondary); }
+.creation-guide p { margin: 0; line-height: 1.6; }
+.creation-guide .actions { flex-wrap: wrap; }
 .page{display:flex;flex-direction:column;gap:16px}.page-header,.actions,.card-header,.layout-actions,.component-heading,.component-actions,.selection-binding-heading,.selection-binding-actions,.parameter-preset-heading{display:flex;align-items:center}.page-header,.card-header,.component-heading,.selection-binding-heading{justify-content:space-between}.actions,.layout-actions,.component-actions,.selection-binding-actions{gap:8px;flex-wrap:wrap}.page-header h2{margin:0;color:var(--addp-text-primary)}.page-header p,.card-header span,.component-heading span,.component-heading small,.selection-binding-actions span,.presentation-sections>span{color:var(--addp-text-secondary)}.page-header p{margin:6px 0 0}.card-header>div:first-child{display:flex;flex-direction:column;gap:4px}.card-header span,.selection-binding-actions span,.presentation-sections>span{font-size:12px}.full{width:100%}.presentation-sections{display:flex;flex-direction:column;gap:6px}.components,.selection-bindings,.parameter-presets{display:flex;flex-direction:column;gap:12px}.component-card,.selection-binding-card,.parameter-preset-card{padding:16px;border:1px solid var(--addp-border-color);border-radius:8px}.component-heading,.selection-binding-heading,.parameter-preset-heading{margin-bottom:12px}.component-heading>div:first-child{display:flex;gap:12px;align-items:center}.parameter-preset-heading{gap:12px}.parameter-preset-heading>.el-input:first-child{flex:2}.parameter-preset-heading>.el-input:nth-child(2){flex:1}.parameter-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}.parameter-field{display:flex;flex-direction:column;gap:6px;color:var(--addp-text-primary)}.parameter-field em{color:var(--el-color-danger);font-style:normal}.selection-binding-heading>.el-select{width:min(320px,100%)}:deep(.draft-preview-dialog .el-dialog__body){padding:0;overflow:hidden}@media(max-width:900px){.component-heading,.selection-binding-heading,.parameter-preset-heading{align-items:stretch;flex-direction:column}.component-actions,.selection-binding-actions{justify-content:space-between}}
 
 .editor-topbar { position: sticky; top: 0; z-index: 10; padding: 12px 0; background: var(--addp-bg-primary); gap: 16px; }

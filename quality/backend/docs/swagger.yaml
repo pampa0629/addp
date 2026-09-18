@@ -244,6 +244,8 @@ definitions:
     type: object
   github_com_addp_quality_internal_models.Issue:
     properties:
+      accepted_count:
+        type: integer
       column_name:
         type: string
       created_at:
@@ -254,11 +256,17 @@ definitions:
         type: array
       engine_id:
         type: integer
+      evidence_reason:
+        type: string
       execution_id:
         description: common.task_executions.execution_id
         type: string
       failed_count:
         type: integer
+      history:
+        items:
+          $ref: '#/definitions/github_com_addp_quality_internal_models.IssueAction'
+        type: array
       id:
         type: integer
       last_execution_id:
@@ -271,6 +279,8 @@ definitions:
         type: integer
       pass_rate:
         type: number
+      pending_count:
+        type: integer
       plan_id:
         type: integer
       resolution_note:
@@ -286,7 +296,7 @@ definitions:
       severity:
         type: string
       status:
-        description: open/resolved/ignored
+        description: open/resolved/accepted; ignored for history and cleanup
         type: string
       table_name:
         type: string
@@ -300,6 +310,29 @@ definitions:
         type: string
       updated_at:
         type: string
+      version:
+        type: integer
+    type: object
+  github_com_addp_quality_internal_models.IssueAction:
+    properties:
+      accepted_count:
+        type: integer
+      action:
+        type: string
+      actor_id:
+        type: integer
+      created_at:
+        type: string
+      execution_id:
+        type: string
+      id:
+        type: integer
+      issue_id:
+        type: integer
+      note:
+        type: string
+      plan_id:
+        type: integer
     type: object
   github_com_addp_quality_internal_models.PlanCheckItem:
     properties:
@@ -342,6 +375,8 @@ definitions:
     type: object
   github_com_addp_quality_internal_models.QualityOverview:
     properties:
+      accepted_issues:
+        type: integer
       data:
         items:
           $ref: '#/definitions/github_com_addp_quality_internal_models.QualityScopeSummary'
@@ -591,6 +626,10 @@ definitions:
         type: string
       locator:
         type: string
+      record_key:
+        items:
+          type: string
+        type: array
     type: object
   github_com_addp_quality_internal_service.PlanWriteRequest:
     properties:
@@ -651,12 +690,17 @@ definitions:
       status:
         enum:
         - resolved
-        - ignored
-        example: resolved
+        - accepted
+        example: accepted
         type: string
+      version:
+        example: 1
+        minimum: 1
+        type: integer
     required:
     - note
     - status
+    - version
     type: object
   internal_api.planDeleteRequest:
     properties:
@@ -717,6 +761,8 @@ definitions:
     type: object
   internal_api.qualityIssueResponse:
     properties:
+      accepted_count:
+        type: integer
       column_name:
         type: string
       created_at:
@@ -727,11 +773,17 @@ definitions:
         type: array
       engine_id:
         type: integer
+      evidence_reason:
+        type: string
       execution_id:
         description: common.task_executions.execution_id
         type: string
       failed_count:
         type: integer
+      history:
+        items:
+          $ref: '#/definitions/github_com_addp_quality_internal_models.IssueAction'
+        type: array
       id:
         type: integer
       last_execution_id:
@@ -744,6 +796,8 @@ definitions:
         type: integer
       pass_rate:
         type: number
+      pending_count:
+        type: integer
       plan_id:
         type: integer
       resolution_note:
@@ -759,7 +813,7 @@ definitions:
       severity:
         type: string
       status:
-        description: open/resolved/ignored
+        description: open/resolved/accepted; ignored for history and cleanup
         type: string
       table_name:
         type: string
@@ -773,6 +827,8 @@ definitions:
         type: string
       updated_at:
         type: string
+      version:
+        type: integer
     type: object
   internal_api.qualityMessageResponse:
     properties:
@@ -1167,6 +1223,7 @@ paths:
         enum:
         - open
         - resolved
+        - accepted
         - ignored
         in: query
         name: status
@@ -1260,7 +1317,8 @@ paths:
         name: id
         required: true
         type: integer
-      - description: 状态信息（必须包含处理说明） | Status and required note
+      - description: 版本、处理状态和说明；接受需要完整记录证据 | Version, status and note; acceptance
+          requires complete record evidence
         in: body
         name: body
         required: true
@@ -1272,7 +1330,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_api.qualityMessageResponse'
+            $ref: '#/definitions/internal_api.qualityIssueResponse'
         "400":
           description: Bad Request
           schema:

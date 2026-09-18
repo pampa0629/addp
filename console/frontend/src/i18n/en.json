@@ -155,6 +155,7 @@
         "catalog": "Catalog - Enterprise Catalog",
         "service": "Service - Data Services",
         "workbench": "Workbench - Data Service Consumption",
+        "ontology": "Ontology - Domain Ontologies",
         "standard": "Standard - Data Standards",
         "system": "System - System Module",
         "transfer": "Transfer - Data Transfer"
@@ -358,6 +359,7 @@
       }
     },
     "modules": {
+      "ontology": { "label": "Domain ontology", "desc": "Classes, relations, rules and revision publication" },
       "portal": {
         "label": "Data Portal",
         "desc": "Consumer portal for searching and requesting data assets"
@@ -436,6 +438,7 @@
       }
     },
     "menus": {
+      "ontology": { "label": "Domain ontology", "list": "Domain ontology modeling" },
       "transfer": {
         "label": "Data Transfer",
         "tasks": "Transfer Tasks"

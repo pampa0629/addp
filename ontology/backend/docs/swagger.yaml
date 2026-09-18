@@ -1,5 +1,40 @@
 basePath: /api/v1/ontology
 definitions:
+  api.PaginatedResponse:
+    properties:
+      data: {}
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+  github_com_addp_ontology_internal_models.RevisionSummary:
+    properties:
+      created_at:
+        type: string
+      digest:
+        type: string
+      initial_execution_id:
+        type: string
+      initial_generation:
+        type: string
+      ontology_id:
+        type: string
+      published_at:
+        type: string
+      revision:
+        type: integer
+      status:
+        type: string
+      updated_at:
+        type: string
+      version:
+        type: integer
+    type: object
   github_com_addp_ontology_internal_semantic.AbsencePolicy:
     enum:
     - unknown
@@ -216,6 +251,67 @@ info:
   title: ADDP Ontology API
   version: "1.0"
 paths:
+  /ontologies:
+    get:
+      description: 固定按 ontology_id 升序，仅接受 page/page_size；重复、未知参数或 OFFSET 超过 2147483647
+        时拒绝 | Ordered by ontology_id ascending; only page/page_size are accepted;
+        duplicate or unknown parameters and OFFSET above 2147483647 are rejected
+      parameters:
+      - default: 1
+        description: 规范正整数页码 | Canonical positive page number
+        in: query
+        minimum: 1
+        name: page
+        type: integer
+      - default: 20
+        description: 每页数量 | Page size
+        in: query
+        maximum: 100
+        minimum: 1
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 本体头列表，空页为数组 | Ontology heads; empty pages are arrays
+          schema:
+            allOf:
+            - $ref: '#/definitions/api.PaginatedResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/internal_api.HeadResponse'
+                  type: array
+              type: object
+        "400":
+          description: 请求无效 | Invalid request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "401":
+          description: 未认证 | Unauthenticated
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "403":
+          description: 禁止访问 | Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "500":
+          description: 操作失败 | Operation failed
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "503":
+          description: 服务未就绪 | Module not ready
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 分页浏览本体 | List ontology heads
+      tags:
+      - Ontology
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - ontology.revision.read
   /ontologies/{ontology_id}:
     get:
       parameters:
@@ -324,6 +420,76 @@ paths:
       x-addp-required-permissions:
       - ontology.revision.read
   /ontologies/{ontology_id}/revisions:
+    get:
+      description: 固定按 revision 降序；不返回定义，published 不表示 active。仅接受 page/page_size，重复、未知参数或
+        OFFSET 超过 2147483647 时拒绝 | Ordered by revision descending; definitions are
+        excluded and published does not mean active. Only page/page_size are accepted;
+        duplicate or unknown parameters and OFFSET above 2147483647 are rejected
+      parameters:
+      - description: 本体标识 | Ontology identifier
+        in: path
+        name: ontology_id
+        required: true
+        type: string
+      - default: 1
+        description: 规范正整数页码 | Canonical positive page number
+        in: query
+        minimum: 1
+        name: page
+        type: integer
+      - default: 20
+        description: 每页数量 | Page size
+        in: query
+        maximum: 100
+        minimum: 1
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 修订摘要，空页为数组 | Revision summaries; empty pages are arrays
+          schema:
+            allOf:
+            - $ref: '#/definitions/api.PaginatedResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/github_com_addp_ontology_internal_models.RevisionSummary'
+                  type: array
+              type: object
+        "400":
+          description: 请求无效 | Invalid request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "401":
+          description: 未认证 | Unauthenticated
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "403":
+          description: 禁止访问 | Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "404":
+          description: 本体不存在 | Ontology not found
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "500":
+          description: 操作失败 | Operation failed
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "503":
+          description: 服务未就绪 | Module not ready
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 分页浏览修订历史 | List revision history
+      tags:
+      - Ontology
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - ontology.revision.read
     post:
       consumes:
       - application/json

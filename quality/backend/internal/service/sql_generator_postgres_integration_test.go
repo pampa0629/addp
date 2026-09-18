@@ -51,7 +51,7 @@ func TestIntegrationPostgresPlanRules(t *testing.T) {
 	if err := db.Exec("CREATE TABLE " + quotedSchema + `.persons (person_id TEXT PRIMARY KEY)`).Error; err != nil {
 		t.Fatalf("create persons: %v", err)
 	}
-	if err := db.Exec("CREATE TABLE " + quotedSchema + `.participations (person_id TEXT, activity_id TEXT, member_status TEXT, is_actual BOOLEAN, is_signup BOOLEAN)`).Error; err != nil {
+	if err := db.Exec("CREATE TABLE " + quotedSchema + `.participations (id BIGSERIAL PRIMARY KEY, person_id TEXT, activity_id TEXT, member_status TEXT, is_actual BOOLEAN, is_signup BOOLEAN)`).Error; err != nil {
 		t.Fatalf("create participations: %v", err)
 	}
 	if err := db.Exec("INSERT INTO " + quotedSchema + `.persons(person_id) VALUES ('p1'), ('p2')`).Error; err != nil {
@@ -92,6 +92,29 @@ func TestIntegrationPostgresPlanRules(t *testing.T) {
 		}
 		if rule.RowCount != nil && !planRowCountPassed(counts.TotalCount, *rule.RowCount) {
 			t.Fatalf("row_count unexpectedly failed: %#v", counts)
+		}
+	}
+	config.TableBindings[1].RecordKey = []string{"id"}
+	result, runErr := runPlan(context.Background(), db, config)
+	if result == nil || executionFailureCode(runErr) != planRuleFailedCode || result.Passed {
+		t.Fatalf("acceptance evidence changed raw blocking: %v", runErr)
+	}
+	for i, rule := range result.Rules {
+		if i == 5 {
+			if rule.Evidence.Reason != "aggregate_rule" {
+				t.Fatal("aggregate accepted")
+			}
+			continue
+		}
+		if rule.Evidence.Reason != "" || int64(len(rule.Evidence.Keys)) != wantFailed[i] {
+			t.Fatalf("incomplete %s evidence: %+v", rule.Type, rule.Evidence)
+		}
+	}
+	for _, key := range []string{"person_id", "is_actual"} {
+		config.TableBindings[1].RecordKey = []string{key}
+		result, _ = runPlan(context.Background(), db, config)
+		if result == nil || result.Rules[0].Evidence.Reason != "key_not_unique_or_null" {
+			t.Fatalf("invalid key accepted: %s", key)
 		}
 	}
 }

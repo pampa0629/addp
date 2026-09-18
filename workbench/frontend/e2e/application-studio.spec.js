@@ -62,6 +62,7 @@ test(`new application goes from a service through query inputs to a saved draft 
   await page.getByRole('dialog').getByRole('button', { name: locale === 'en' ? 'Apply component configuration' : '应用组件配置', exact: true }).click()
   await expect(page.getByTestId('application-start')).toHaveCount(0)
   await expect(page.getByTestId('runtime-component')).toHaveCount(1)
+  await expect(page.getByTestId('application-creation-guide').getByRole('combobox')).toHaveCount(0)
   await page.getByTestId('draft-preview-action').click()
   const preview = page.getByRole('dialog')
   await choose(page, preview.locator('.parameter-field').first(), locale === 'en' ? 'Monthly' : '按月')
@@ -144,7 +145,7 @@ async function personnelApplication(context, { locale = 'zh-cn', withSelection =
     metric.renderer_type = 'chart'
     metric.renderer_config = { chart_type: 'bar', dimension: 'bucket', measures: ['value'] }
     const fields = [{ name: 'person_id', type: 'string', nullable: false }, { name: 'nickname', type: 'string', nullable: true }]
-    descriptors[72].input_contract = { fields: fields.map(f => ({ ...f, selectable: true })), page: { default_limit: 50, max_limit: 100 }, order: { stable_key: ['person_id'] } }
+    descriptors[72].input_contract = { fields: fields.map(f => ({ ...f, selectable: true, filterable: f.name === 'nickname', operators: f.name === 'nickname' ? ['eq', 'contains'] : [] })), page: { default_limit: 50, max_limit: 100 }, order: { stable_key: ['person_id'] } }
     descriptors[72].output_contract.fields = fields
     directory.title = '选择人员'
     directory.renderer_type = 'table'
@@ -165,8 +166,12 @@ async function personnelApplication(context, { locale = 'zh-cn', withSelection =
     queries.push(route.request().postDataJSON())
     return route.fulfill({ json: { data: [{ bucket: '2026-01-01', value: 3 }], page: { has_more: false, next_cursor: '' } } })
   })
-  await context.route('**/api/query/metric_72/query', route => route.fulfill({ json: { data: [{ person_id: 'person-c', nickname: '阿青' }], page: { has_more: false, next_cursor: '' } } }))
-  return { backend, queries }
+  const directoryQueries = []
+  await context.route('**/api/query/metric_72/query', route => {
+    directoryQueries.push(route.request().postDataJSON())
+    return route.fulfill({ json: { data: [{ person_id: 'person-c', nickname: '阿青' }], page: { has_more: false, next_cursor: '' } } })
+  })
+  return { backend, queries, directoryQueries }
 }
 
 test('explicit personnel interaction can be cancelled, applied, edited and tried without publishing', async ({ page, context }) => {
@@ -559,3 +564,128 @@ test('choosing a display queries valid service defaults and switching services c
   expect(backend.writes).toHaveLength(0)
   expect(backend.unexpected).toEqual([])
 })
+
+
+for (const locale of ['zh-cn', 'en']) {
+test(`search-list wizard creates search and ID selection together (${locale})`, async ({ page, context }) => {
+  const { backend, queries, directoryQueries } = await personnelApplication(context, { locale })
+  const original = backend.draft.snapshot
+  await page.goto(applicationPath)
+  await page.getByRole('button', { name: locale === 'en' ? 'Filters' : '筛选条件', exact: true }).click()
+  await page.getByTestId('filter-card').last().getByRole('button', { name: locale === 'en' ? 'Create a search list' : '创建搜索列表', exact: true }).click()
+  const editor = page.getByTestId('application-component-editor')
+  await choose(page, editor.locator('.el-form-item').filter({ hasText: locale === 'en' ? 'Data service' : '数据服务' }), '计数服务')
+  await expect(editor.getByTestId('display-suggestions')).toHaveCount(0)
+  await page.getByRole('dialog').getByRole('button', { name: locale === 'en' ? 'Next step' : '下一步', exact: true }).click()
+  await choose(page, editor.getByTestId('selection-list-search'), 'nickname')
+  await choose(page, editor.getByTestId('selection-list-label'), 'nickname')
+  await choose(page, editor.getByTestId('selection-list-value'), 'person_id')
+  await page.getByRole('dialog').getByRole('button', { name: locale === 'en' ? 'Next step' : '下一步', exact: true }).click()
+  await editor.getByRole('textbox', { name: locale === 'en' ? 'Value on opening' : '打开应用时的值', exact: true }).fill('阿')
+  await editor.getByTestId('component-query-action').click()
+  await expect.poll(() => directoryQueries.at(-1)?.filter).toEqual({ field: 'nickname', op: 'contains', value: '阿' })
+  await page.setViewportSize({ width: 680, height: 900 })
+  expect(await page.getByRole('dialog').evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBe(true)
+  await page.getByRole('dialog').getByRole('button', { name: locale === 'en' ? 'Apply component configuration' : '应用组件配置', exact: true }).click()
+  await page.getByRole('button', { name: locale === 'en' ? 'Save draft' : '保存草稿', exact: true }).click()
+  await expect.poll(() => backend.writes.length).toBe(1)
+  const snapshot = backend.draft.snapshot
+  const source = snapshot.components.at(-1)
+  expect(snapshot.components.slice(0, 3)).toEqual(original.components)
+  expect(snapshot.parameters.slice(0, 2)).toEqual(original.parameters)
+  expect(snapshot.selection_bindings).toEqual([{ source_component_id: source.id, assignments: [{ source_field: 'person_id', application_parameter_key: 'person_b' }] }])
+  expect(source.query_template.parameter_filters).toEqual([{ parameter_key: source.parameter_definitions[0].key, field: 'nickname', operator: 'contains' }])
+  expect(source.query_template.select).toEqual(['nickname', 'person_id'])
+  await page.reload()
+  await page.getByTestId('draft-preview-action').click()
+  const preview = page.getByRole('dialog')
+  await preview.getByTestId('query-all-action').click()
+  await preview.getByTestId('runtime-component').last().getByRole('row').filter({ hasText: '阿青' }).click()
+  await expect.poll(() => queries.filter(q => q.parameters.person_id === 'person-c').length).toBe(1)
+  expect(backend.published).toEqual(backend.originalPublished)
+  expect(backend.unexpected).toEqual([])
+})
+}
+
+test('search-list wizard clears fields on service change and cancellation leaves no partial component', async ({ page, context }) => {
+  const { backend } = await personnelApplication(context)
+  await page.goto(applicationPath)
+  await page.getByRole('button', { name: '筛选条件', exact: true }).click()
+  await page.getByTestId('filter-card').first().getByRole('button', { name: '创建搜索列表', exact: true }).click()
+  const editor = page.getByTestId('application-component-editor')
+  const service = editor.locator('.el-form-item').filter({ hasText: '数据服务' })
+  await choose(page, service, '计数服务')
+  await page.getByRole('dialog').getByRole('button', { name: '下一步', exact: true }).click()
+  await choose(page, editor.getByTestId('selection-list-search'), 'nickname')
+  await choose(page, editor.getByTestId('selection-list-label'), 'nickname')
+  await choose(page, editor.getByTestId('selection-list-value'), 'person_id')
+  await editor.getByTestId('component-query-action').click()
+  await expect(editor.locator('tbody tr')).toHaveCount(1)
+  await editor.getByRole('tab', { name: '1. 选择数据', exact: true }).click()
+  await choose(page, service, '定向重叠率服务')
+  await expect(editor.locator('tbody tr')).toHaveCount(0)
+  await editor.getByRole('tab', { name: '2. 配置展示', exact: true }).click()
+  await expect(editor.getByTestId('selection-list-fields')).not.toContainText('nickname')
+  await expect(editor.getByTestId('component-query-action')).toBeDisabled()
+  await page.getByRole('dialog').getByRole('button', { name: '取消', exact: true }).click()
+  await expect(page.getByTestId('runtime-component')).toHaveCount(3)
+  await page.getByRole('button', { name: '点击联动', exact: true }).click()
+  await expect(page.getByTestId('interaction-card')).toHaveCount(0)
+  expect(backend.writes).toEqual([])
+  expect(backend.unexpected).toEqual([])
+})
+
+for (const locale of ['zh-cn', 'en']) {
+test(`new application continues from first chart through search selection to initial values (${locale})`, async ({ page, context }) => {
+  const { backend, queries } = await personnelApplication(context, { locale })
+  const isEnglish = locale === 'en'
+  await page.goto('/workbench/applications/new')
+  await page.getByTestId('start-chart').click()
+  const editor = page.getByTestId('application-component-editor')
+  const dialog = page.getByRole('dialog')
+  const service = editor.locator('.el-form-item').filter({ hasText: isEnglish ? 'Data service' : '数据服务' })
+  await choose(page, service, '定向重叠率服务')
+  await editor.getByTestId('suggestion-line').click()
+  await expect(editor.getByTestId('component-query-action')).toBeDisabled()
+  await dialog.getByRole('button', { name: isEnglish ? 'Apply component configuration' : '应用组件配置', exact: true }).click()
+  const guide = page.getByTestId('application-creation-guide')
+  await expect(guide).toBeVisible()
+  await choose(page, guide.locator('.el-form-item'), 'person_id · 定向重叠率服务')
+  await guide.getByRole('button', { name: isEnglish ? 'Create a search list' : '创建搜索列表', exact: true }).click()
+  await dialog.getByRole('button', { name: isEnglish ? 'Cancel' : '取消', exact: true }).click()
+  await expect(page.getByTestId('runtime-component')).toHaveCount(1)
+  await guide.getByRole('button', { name: isEnglish ? 'Create a search list' : '创建搜索列表', exact: true }).click()
+  await choose(page, service, '计数服务')
+  await dialog.getByRole('button', { name: isEnglish ? 'Next step' : '下一步', exact: true }).click()
+  await choose(page, editor.getByTestId('selection-list-search'), 'nickname')
+  await choose(page, editor.getByTestId('selection-list-label'), 'nickname')
+  await choose(page, editor.getByTestId('selection-list-value'), 'person_id')
+  await dialog.getByRole('button', { name: isEnglish ? 'Next step' : '下一步', exact: true }).click()
+  await dialog.getByRole('button', { name: isEnglish ? 'Apply component configuration' : '应用组件配置', exact: true }).click()
+  await expect(guide.getByRole('combobox')).toHaveCount(0)
+  await expect(guide).toContainText(isEnglish ? '1 search selectors configured.' : '已配置 1 个搜索选值入口。')
+  await page.setViewportSize({ width: 680, height: 900 })
+  expect(await guide.evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBe(true)
+  await guide.getByRole('button', { name: isEnglish ? 'Preview and set initial values' : '预览并设置初始值', exact: true }).click()
+  const source = dialog.getByTestId('runtime-component').first()
+  await expect(source).toContainText(isEnglish ? 'Search and select person_id' : '搜索并选择person_id')
+  await source.getByRole('button', { name: isEnglish ? 'Query' : '查询', exact: true }).click()
+  await source.getByRole('row').filter({ hasText: '阿青' }).click()
+  await expect.poll(() => queries.at(-1)?.parameters.person_id).toBe('person-c')
+  await dialog.getByTestId('apply-preview-defaults').click()
+  await page.getByRole('button', { name: isEnglish ? 'Create draft' : '创建草稿', exact: true }).click()
+  await expect.poll(() => backend.writes.length).toBe(1)
+  expect(backend.writes[0].action).toBe('create')
+  const snapshot = backend.draft.snapshot
+  expect(snapshot.components).toHaveLength(2)
+  const targetKey = snapshot.selection_bindings[0].assignments[0].application_parameter_key
+  expect(snapshot.parameters.find(parameter => parameter.key === targetKey).default_value).toBe('person-c')
+  expect(snapshot.page.placements[0].component_id).toBe(snapshot.selection_bindings[0].source_component_id)
+  expect(backend.published).toEqual(backend.originalPublished)
+  await expect(page).toHaveURL(new RegExp(applicationPath + '$'))
+  await page.reload()
+  await expect(page.getByTestId('application-creation-guide')).toHaveCount(0)
+  await expect(page.getByTestId('runtime-component')).toHaveCount(2)
+  expect(backend.unexpected).toEqual([])
+})
+}

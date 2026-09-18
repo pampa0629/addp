@@ -22,6 +22,6 @@ func (s *IssueService) Get(id, tenantID int64) (*models.Issue, error) {
 	return s.issueRepo.Get(id, tenantID)
 }
 
-func (s *IssueService) UpdateStatus(ctx context.Context, id, tenantID, userID int64, status, note string) error {
-	return s.issueRepo.UpdateStatus(ctx, id, tenantID, userID, status, note)
+func (s *IssueService) UpdateStatus(ctx context.Context, id, tenantID, userID, version int64, status, note string) (*models.Issue, error) {
+	return s.issueRepo.UpdateStatus(ctx, id, tenantID, userID, version, status, note)
 }

@@ -999,6 +999,17 @@ services:
       - quality-backend
     restart: unless-stopped
 
+  ontology-frontend:
+    image: ${REGISTRY:-localhost:5001}/addp-ontology-frontend:${IMAGE_TAG:-latest}
+    container_name: ontology-frontend
+    ports:
+      - "8123:80"
+    networks:
+      - addp-network
+    depends_on:
+      - ontology-backend
+    restart: unless-stopped
+
   ontology-backend:
     image: ${REGISTRY:-localhost:5001}/addp-ontology-backend:${IMAGE_TAG:-latest}
     container_name: ontology-backend
@@ -1638,6 +1649,7 @@ services:
       - graph-frontend
       - inference-frontend
       - workbench-frontend
+      - ontology-frontend
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://127.0.0.1/health"]

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { buildComponentConfiguration, buildQueryRequest, buildRendererConfig, componentDisplaySuggestions, createNamedParameterDraft, createParameterDraft, draftFromComponent, hasParameterValue, requiredParameterValuesPresent, synchronizeFieldPresentations } from '../src/utils/componentDraft.mjs'
+import { configureSelectionListDraft, buildComponentConfiguration, buildQueryRequest, buildRendererConfig, componentDisplaySuggestions, createNamedParameterDraft, createParameterDraft, draftFromComponent, hasParameterValue, requiredParameterValuesPresent, synchronizeFieldPresentations } from '../src/utils/componentDraft.mjs'
 
 const descriptor = {
   ref: { service_type: 'query', service_id: 9 },
@@ -247,4 +247,26 @@ test('display suggestions never infer aggregation, time roles from names or unde
   source.input_contract.fields = []
   assert.deepEqual(componentDisplaySuggestions(source), [])
   assert.deepEqual(componentDisplaySuggestions(null), [])
+})
+
+
+test('search-list composition preserves named inputs and compiles literal contains through the existing query path', () => {
+  const fields = [{ name: 'code', type: 'string', selectable: true }, { name: 'caption', type: 'string', selectable: true, filterable: true, operators: ['eq', 'contains'] }]
+  const source = { ...descriptor, input_contract: { ...descriptor.input_contract, fields }, output_contract: { fields } }
+  const named = { key: 'parameter_2', name: 'scope', label: 'Scope', bindingKind: 'named', fieldType: 'string', required: true, value: 'current' }
+  const draft = { name: 'Selection', description: '', pageLimit: 10, parameters: [named], fieldPresentations: [] }
+  configureSelectionListDraft(draft, source, { searchField: 'caption', labelField: 'caption', valueField: 'code', searchLabel: 'Find' })
+  assert.equal(draft.parameters[0], named)
+  assert.equal(new Set(draft.parameters.map(p => p.key)).size, 2)
+  draft.parameters[1].value = 'A_%'
+  const query = buildQueryRequest(source, draft)
+  assert.deepEqual(query.parameters, { scope: 'current' })
+  assert.deepEqual(query.filter, { field: 'caption', op: 'contains', value: 'A_%' })
+  const component = buildComponentConfiguration(source, draft, 'picker')
+  assert.deepEqual(component.query_template.select, ['caption', 'code'])
+  assert.deepEqual(component.renderer_config.columns, ['caption', 'code'])
+  assert.equal(component.query_template.parameter_filters[0].operator, 'contains')
+  configureSelectionListDraft(draft, source, { searchField: '', labelField: 'code', valueField: 'code', searchLabel: 'Find' })
+  assert.deepEqual(draft.columns, ['code'])
+  assert.deepEqual(draft.parameters, [named])
 })

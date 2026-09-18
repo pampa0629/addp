@@ -26,9 +26,15 @@ type RevisionRepository struct{ db *gorm.DB }
 func NewRevisionRepository(db *gorm.DB) *RevisionRepository { return &RevisionRepository{db: db} }
 
 func ValidateActor(actor models.Actor, scope semantic.Scope) error {
-	if actor.TenantID == 0 || actor.TenantID > math.MaxInt64 || actor.TenantID != scope.TenantID ||
-		actor.PrincipalID <= 0 || actor.MembershipID <= 0 || actor.AuthorizationVersion <= 0 ||
+	if validateActorIdentity(actor) != nil || actor.TenantID != scope.TenantID ||
 		scope.Revision == 0 || scope.Revision >= math.MaxInt64 || scope.OntologyID == "" || len(scope.OntologyID) > 64 {
+		return ErrInvalid
+	}
+	return nil
+}
+
+func validateActorIdentity(actor models.Actor) error {
+	if actor.TenantID == 0 || actor.TenantID > math.MaxInt64 || actor.PrincipalID <= 0 || actor.MembershipID <= 0 || actor.AuthorizationVersion <= 0 {
 		return ErrInvalid
 	}
 	return nil

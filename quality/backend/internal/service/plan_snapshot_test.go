@@ -24,12 +24,15 @@ func TestPlanExecutionRejectsInvalidOrigins(t *testing.T) {
 
 func TestPlanExecutionSnapshotRequiresVersionAndPositiveBudget(t *testing.T) {
 	config := commonModels.JSONMap{"schema_version": planExecutionConfigVersion, "task_version": 1, "check_timeout_ms": 45000,
-		"table_bindings": []PlanTableBinding{{Alias: "orders", Locator: "addp://engine/12/path/public/orders?type=table"}},
+		"table_bindings": []PlanTableBinding{{Alias: "orders", Locator: "addp://engine/12/path/public/orders?type=table", RecordKey: []string{"order_id"}}},
 		"rules":          json.RawMessage(`{"schema_version":"addp.quality.plan-rules/v1","rules":[{"rule_key":"00000000-0000-4000-8000-000000000001","type":"not_null","severity":"error","params":{"table":"orders","column":"id"}}]}`)}
 	config["target_key"], _ = models.PlanTargetKey(config["table_bindings"].([]PlanTableBinding))
 	got, err := decodePlanExecutionConfig(config)
 	if err != nil || got.CheckTimeoutMS != 45000 {
 		t.Fatalf("%#v %v", got, err)
+	}
+	if len(got.TableBindings[0].RecordKey) != 1 || got.TableBindings[0].RecordKey[0] != "order_id" {
+		t.Fatal("record key lost at snapshot boundary")
 	}
 	for key, value := range map[string]interface{}{"schema_version": "old", "task_version": 0, "check_timeout_ms": 0, "unknown": true} {
 		copy := commonModels.JSONMap{}

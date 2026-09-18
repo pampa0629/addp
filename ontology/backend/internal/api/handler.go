@@ -21,6 +21,8 @@ import (
 )
 
 type RevisionCommands interface {
+	ListOntologies(context.Context, models.Actor, models.ListPage) ([]models.Ontology, int64, error)
+	ListRevisions(context.Context, models.Actor, string, models.ListPage) ([]models.RevisionSummary, int64, error)
 	CreateDraft(context.Context, models.Actor, semantic.Definition) (*models.Revision, error)
 	SaveDraft(context.Context, models.Actor, uint64, semantic.Definition) (*models.Revision, error)
 	Get(context.Context, models.Actor, semantic.Scope) (*models.Revision, error)

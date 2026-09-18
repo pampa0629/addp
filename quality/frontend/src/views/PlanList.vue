@@ -220,6 +220,13 @@
                 ></template
               ></el-table-column
             >
+            <el-table-column :label="t('quality.issue.recordKey')" min-width="260">
+              <template #default="{ row }">
+                <el-select v-model="row.record_key" :aria-label="t('quality.issue.recordKey')" multiple filterable :allow-create="!row.locator" default-first-option :multiple-limit="8" :placeholder="t('quality.issue.recordKeyHelp')">
+                  <el-option v-for="field in fieldsForAlias(row.alias)" :key="field.column_name" :label="field.column_name" :value="field.column_name" />
+                </el-select>
+              </template>
+            </el-table-column>
             <el-table-column :label="t('quality.plan.columns')" min-width="300">
               <template #default="{ row }">{{
                 fieldsForAlias(row.alias)
@@ -953,6 +960,7 @@ const submit = async () => {
       table_bindings: bindings.value.map((binding) => ({
         alias: binding.alias.trim(),
         locator: binding.locator,
+        record_key: binding.record_key || [],
       })),
       check_items: serializeCheckItems(rules.value),
       ...(editingID.value ? { version: form.version } : {}),

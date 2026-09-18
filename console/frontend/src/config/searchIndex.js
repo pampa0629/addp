@@ -13,6 +13,7 @@ export const SEARCH_INDEX = [
   { labelKey: 'console.menus.manager.quickViewTasks', module: 'manager', route: '/manager/tasks/quick-view', keywords: ['数据任务', '快显任务', '瓦片缓存', '物化视图', 'COG', 'GLB', '3D Tiles', 'KSplat', 'COPC', 'quick view'] },
   { labelKey: 'console.menus.manager.spatialDataTasks', module: 'manager', route: '/manager/tasks/spatial', keywords: ['数据任务', '空间数据任务', '矢量瓦片集', '栅格 Mosaic', 'spatial data tasks'] },
   { labelKey: 'console.menus.manager.embeddingTasks', module: 'manager', route: '/manager/tasks/embedding', keywords: ['数据任务', '向量化任务', '向量化', '向量', 'vector', 'embedding'] },
+  { labelKey: 'console.menus.ontology.list', module: 'ontology', route: '/ontology/ontologies', contexts: ['tenant'], permissions: ['ontology.revision.read'], keywords: ['领域本体', '语义', '修订', 'ontology', 'semantic'] },
   // 数据标准
   { labelKey: 'console.menus.standard.domains',      module: 'standard', route: '/standard/domains',      keywords: ['业务域', '业务领域', 'domain'] },
   { labelKey: 'console.menus.standard.glossaries',   module: 'standard', route: '/standard/glossaries',   keywords: ['业务术语', '术语', 'glossary', 'term'] },

@@ -4,7 +4,7 @@ Ontology 管理租户领域本体的形式化语义，不接管 Standard、Model
 
 ## 当前交付范围
 
-`backend/internal/semantic` 是正式 Go 语义内核；`internal/service`、`internal/repository` 管理原生定义的 PG 修订生命周期。`cmd/server` 已装配统一 Lifecycle、管理 HTTP API 和投影 Supervisor；FalkorDB 是私有 Infra。尚无页面或 Agent Tool，不影响 Graph 的当前功能。本轮没有重启个人开发服务，不把 T1/T2 当作已完成真实身份的 T4 上线验收。
+`backend/internal/semantic` 是正式 Go 语义内核；`internal/service`、`internal/repository` 管理原生定义的 PG 修订生命周期。`cmd/server` 已装配统一 Lifecycle、管理 HTTP API 和投影 Supervisor；FalkorDB 是私有 Infra。`frontend` 提供 Console 原生定义建模与修订管理页面，尚无 Agent Tool，不影响 Graph 的当前功能。没有重启个人开发服务，不把 T1/T2/T3 当作已完成真实身份的 T4 上线验收。
 
 `internal/falkor` 提供唯一的 go-redis 薄适配及确定性图投影构建/全量校验；投影执行器连接首次发布/失败重建准入、Common 租约、构建前/激活前 System 授权消费和 PG 激活指针。Backend 绑定 HTTP 后异步注册，Ready 同时验证 PG、FalkorDB 非零查询预算及 System 注册，只有 Ready 才领取；退出等待在途执行与注销。
 
@@ -53,11 +53,16 @@ System 的 `ontology` 内部执行授权固定绑定 semantic_projection、修�
 - 发布/重建成功为 202，仅代表已准入。准入失败为 502 `projection_admission_failed`，响应 `intent` 保留已提交 revision/version/generation/execution_id，不能盲重发发布。重新读取确认后显式重建 failed generation；进程中断留下的未准入 pending 不自动补签，可撤回修订。
 - `revision.initial_generation/initial_execution_id` 是首次发布身份；当前激活事实只从本体头读取，具体投影从 generation 读取。不回显执行授权、租约 token、图 key 或底层错误。
 - 修订下 `GET /projection` 沿重建前驱链读取最新尝试，响应丢失时可找回身份；它不表示 active，没有投影返回 404，不依赖墙钟排序。
-- `INFRA_FALKORDB_ADDRESS` 宿主默认 `127.0.0.1:16479`，容器为 `falkordb:6379`；只读取独立 `INFRA_FALKORDB_PASSWORD`。构建、Compose、`start.sh -ontology`、`restart.sh -ontology` 已登记，无前端占位入口。
+- 管理浏览使用 `GET /ontologies` 与 `GET /ontologies/{ontology_id}/revisions`，分别固定按本体 ID 升序和修订号降序。仅接受 page/page_size（默认 1/20，最多 100），拒绝重复、未知、非规范参数及 OFFSET 溢出；沿用 Tenant User 的 `ontology.revision.read`。同一只读 PG 快照内计数和取页，列表只给本体头/修订摘要，不加载定义 payload，不把 published 当作 active。详情仍由确定修订接口提供。T1 覆盖分页与路由拒绝，T2 的 `TestPostgresRevisionLifecycle/management_lists` 覆盖租户隔离、顺序、空页、首次发布身份和取消；现有模块/CI 入口直接覆盖，无新增数据库、迁移或 Job。
+- `INFRA_FALKORDB_ADDRESS` 宿主默认 `127.0.0.1:16479`，容器为 `falkordb:6379`；只读取独立 `INFRA_FALKORDB_PASSWORD`。构建、Compose、`start.sh -ontology`、`restart.sh -ontology` 已登记；前端开发端口 `5192`、Docker `8123:80`，Console 数据治理组入口 `/ontology/ontologies`。
 - 若本机已有忽略提交的 `go.work`，使用 `go work use ./ontology/backend` 纳入模块后再生成 Swagger/开发构建；T1 同时校验生成文档中的原生定义字段，拒绝只保留路由但请求类型变成空对象的假覆盖。
 - System 向前迁移 `000153` 登记 read/update 与 Platform Runtime，既有角色绑定触发器推进授权版本；不修改已发布迁移。Ontology owner 仍使用 schema v3。
 
 ### 标准门禁
+
+前端复用共享认证、主题、国际化、导航和离页保护；类型/属性/关系/规则编辑同一原生 definition，服务端独占校验与 CEL 编译。页面提供列表、修订历史、创建/保存/审核/发布/撤回及失败投影重建。精确 version 冲突或结果不确定时锁定后续写入且不覆盖编辑，显式重新加载后才解除；发布受理与当前 active 指针分开显示。原生成员移除只修改本地草稿，不级联删除引用，保存时由后端拒绝悬空引用。
+
+`make test-ontology-frontend` 执行 T1 状态/请求契约、T3 独占 `4192` 的 Playwright 受控 API 场景以及生产构建，不调用个人 Gateway。CI 的 Platform frontend matrix 已登记同一入口并安装 Chromium；模块门禁自动发现新前端。独立登录复用 AuthLoginFlow，支持 MFA 和上下文选择；平台上下文不提供建模权限。
 
 后端模块：`github.com/addp/ontology`，Go 1.24.2。规则上限是版本化内核契约的一部分，不通过用户选项关闭；修改上限或表达式语义须升级契约版本。
 
@@ -91,7 +96,7 @@ Outdoor 示例仅在测试夹具中；北京是示例背景，不从活动名称
 
 ### 正式 Online 验收入口
 
-`ontology-revision-lifecycle` 已登记为仅手工触发的 GitHub Hosted T4 suite；入口为隔离部署中的 `make test-online ONLINE_SUITE=ontology-revision-lifecycle`，生命周期由 `scripts/test/online-hosted-ontology-gate.sh` 复用统一 Hosted owner 管理。当前仍未取得真实 T4 通过证据，脚本单测和本地开发服务 Ready 不能替代它。
+`ontology-revision-lifecycle` 已登记为仅手工触发的 GitHub Hosted T4 suite；入口为隔离部署中的 `make test-online ONLINE_SUITE=ontology-revision-lifecycle`，生命周期由 `scripts/test/online-hosted-ontology-gate.sh` 复用统一 Hosted owner 管理。[2026-09-18 首跑](https://github.com/pampa0629/addp/actions/runs/35304960321) 在公共 Infra 拉取 `minio/minio:latest` 时被拒绝，未进入本体业务断言；退出证据为 `cleanup=passed`、`infra_cleanup=zero_residuals`。该项按用户决定暂缓，仍未取得真实 T4 通过证据，脚本单测和本地开发服务 Ready 不能替代它，也不阻断独立的建模入口开发。
 
 场景复用 `internal/semantic/testdata/beijing_outdoor_online.json` 的北京 Outdoor 合成本体；语义内核 T1 同时验证此定义可编译，并区分明确北京、明确其他与未知地点。Hosted helper 只给 User 分配本体 read/update/publish 与执行授权派生四项权限，不创建 Engine Provisioner 或业务 Engine。所有本体操作通过 Gateway，核对两次发布的不可变快照、generation/execution、ready 与 active 指针、旧版本冲突、最新尝试发现，以及撤回第二修订不自动回退第一修订。
 

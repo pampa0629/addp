@@ -13,6 +13,7 @@
         <el-select v-model="filter.status" clearable :placeholder="t('quality.issue.allStatus')" @change="applyFilters" style="width:120px">
           <el-option :label="t('quality.issue.open')" value="open" />
           <el-option :label="t('quality.issue.resolved')" value="resolved" />
+          <el-option :label="t('quality.issue.accepted')" value="accepted" />
           <el-option :label="t('quality.issue.ignored')" value="ignored" />
         </el-select>
       </el-form-item>
@@ -44,6 +45,8 @@
       <el-table-column :label="t('quality.issue.failedCount')" width="100">
         <template #default="{ row }">{{ row.type === 'row_count' ? '-' : row.failed_count }}</template>
       </el-table-column>
+      <el-table-column :label="t('quality.issue.acceptedCount')" width="100"><template #default="{ row }">{{ row.type === 'row_count' ? '-' : row.accepted_count }}</template></el-table-column>
+      <el-table-column :label="t('quality.issue.pendingCount')" width="100"><template #default="{ row }">{{ row.type === 'row_count' ? '-' : row.pending_count }}</template></el-table-column>
       <el-table-column :label="t('quality.issue.relatedExecutions')" min-width="320">
         <template #default="{ row }">
           <div class="execution-links">
@@ -88,22 +91,21 @@
         <template #default="{ row }">
           <el-button size="small" @click="openIssue(row.id)">{{ t('quality.issue.detail') }}</el-button>
           <el-button
-            v-if="row.status === 'open'"
+            v-if="row.status === 'open' && authStore.hasPermission('quality.issue.update')"
             size="small"
             type="success"
-            :loading="updatingIssueIds.has(row.id)"
-            :disabled="updatingIssueIds.has(row.id)"
-            @click="changeStatus(row.id, 'resolved')"
+            @click="changeStatus(row, 'resolved')"
           >{{ t('quality.issue.markResolved') }}</el-button>
           <el-button
-            v-if="row.status === 'open'"
+            v-if="row.status === 'open' && authStore.hasPermission('quality.issue.update')"
             size="small"
-            :disabled="updatingIssueIds.has(row.id)"
-            @click="changeStatus(row.id, 'ignored')"
-          >{{ t('quality.issue.ignore') }}</el-button>
+            :disabled="row.evidence_reason !== ''"
+            @click="changeStatus(row, 'accepted')"
+          >{{ t('quality.issue.acceptCurrent') }}</el-button>
         </template>
       </el-table-column>
     </el-table>
+    <IssueStatusDialog v-model="statusDialog" :issue="selectedIssue" :status="nextStatus" @updated="fetchList" />
     <el-pagination
       v-model:current-page="pagination.page"
       v-model:page-size="pagination.page_size"
@@ -119,7 +121,8 @@
 
 <script setup>
 import { computed, ref, onMounted, watch } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
+import IssueStatusDialog from '../components/IssueStatusDialog.vue'
 import { issueAPI, systemEngineAPI } from '../api/quality'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
@@ -143,7 +146,9 @@ const loadError = ref('')
 const filter = ref({ status: '', engine_id: null, owner_domain_id: null })
 const pagination = ref({ page: 1, page_size: 20, total: 0 })
 const engines = ref([])
-const updatingIssueIds = ref(new Set())
+const statusDialog = ref(false)
+const selectedIssue = ref(null)
+const nextStatus = ref('')
 let routeReady = false
 let listRequestSequence = 0
 const hasFilters = computed(() => Boolean(filter.value.status || filter.value.engine_id || filter.value.owner_domain_id != null))
@@ -151,10 +156,11 @@ const emptyText = computed(() => t(hasFilters.value
   ? 'quality.issue.filteredEmpty'
   : 'quality.issue.empty'))
 
-const statusTagType = (s) => ({ open: 'danger', resolved: 'success', ignored: 'info' }[s] || 'info')
+const statusTagType = (s) => ({ open: 'danger', resolved: 'success', accepted: 'warning', ignored: 'info' }[s] || 'info')
 const statusLabel = (s) => ({
   open: t('quality.issue.open'),
   resolved: t('quality.issue.resolved'),
+  accepted: t('quality.issue.accepted'),
   ignored: t('quality.issue.ignored')
 }[s] || s)
 
@@ -228,26 +234,10 @@ const openIssue = (issueId) => {
   if (location) navigateQualityRoute(router, location)
 }
 
-const changeStatus = async (id, status) => {
-  if (updatingIssueIds.value.has(id)) return
-  updatingIssueIds.value.add(id)
-  try {
-    const { value: note } = await ElMessageBox.prompt(t('quality.issue.notePrompt'), t('quality.issue.noteTitle'), {
-      inputPattern: /\S+/,
-      inputErrorMessage: t('quality.issue.noteRequired'),
-      confirmButtonText: t('quality.issue.confirm'),
-      cancelButtonText: t('quality.issue.cancel'),
-      customClass: 'addp-message-box'
-    })
-    await issueAPI.updateStatus(id, status, note)
-    ElMessage.success(t('quality.issue.updateSuccess'))
-    await fetchList()
-  } catch (e) {
-    if (e === 'cancel' || e === 'close') return
-    ElMessage.error(e.response?.data?.error || t('quality.issue.updateFailed'))
-  } finally {
-    updatingIssueIds.value.delete(id)
-  }
+const changeStatus = (row, status) => {
+  selectedIssue.value = row
+  nextStatus.value = status
+  statusDialog.value = true
 }
 
 const applyRouteState = (query) => {

@@ -9,6 +9,7 @@ type QualityOverview struct {
 	PlanCount          int64                 `json:"plan_count"`
 	NeverRunPlans      int64                 `json:"never_run_plans"`
 	OpenIssues         int64                 `json:"open_issues"`
+	AcceptedIssues     int64                 `json:"accepted_issues"`
 	UnscopedIssues     int64                 `json:"unscoped_issues"`
 	UnscopedExecutions int64                 `json:"unscoped_executions"`
 	Data               []QualityScopeSummary `gorm:"-" json:"data"`

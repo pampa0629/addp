@@ -70,8 +70,13 @@ test('issue list and detail expose first and last observed executions', () => {
   assert.match(detailSource, /openExecution\(issue\.last_execution_id\)/)
 })
 
-test('issue detail reloads after manual status changes and shows audit facts', () => {
-  assert.match(detailSource, /await issueAPI\.updateStatus\(issue\.value\.id, status, note\)[\s\S]*?await loadIssue\(\)/)
+test('issue list and detail share one versioned action dialog and keep audit facts', () => {
+  const dialogSource = readFileSync(new URL('../src/components/IssueStatusDialog.vue', import.meta.url), 'utf8')
+  assert.match(detailSource, /<IssueStatusDialog[^>]*@updated="issue = \$event"/)
+  assert.match(listSource, /<IssueStatusDialog[^>]*@updated="fetchList"/)
+  assert.doesNotMatch(listSource + detailSource, /ElMessageBox\.prompt|issueAPI\.updateStatus/)
+  assert.match(dialogSource, /issueAPI\.updateStatus\(current\.value\.id, current\.value\.version/)
+  assert.match(detailSource, /issue\.history/)
   assert.match(detailSource, /issue\.value\?\.resolved_by != null/)
   assert.match(detailSource, /quality\.issue\.manualResolution/)
   assert.match(detailSource, /quality\.issue\.automaticResolution/)

@@ -11,6 +11,7 @@ import (
 	commonAPI "github.com/addp/common/api"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/quality/internal/models"
+	"github.com/addp/quality/internal/testsupport"
 	"gorm.io/gorm"
 )
 
@@ -94,6 +95,7 @@ func newPlanDeletionRepositoryTestDB(t *testing.T) *gorm.DB {
 	)`).Error; err != nil {
 		t.Fatalf("create quality issues test table: %v", err)
 	}
+	testsupport.EnsureIssueAcceptance(t, db)
 	return db
 }
 

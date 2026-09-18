@@ -323,6 +323,7 @@ func newQualityCleanupTestDB(t *testing.T) *gorm.DB {
 		}
 	}
 	testsupport.EnsureRuleTables(t, db)
+	testsupport.EnsureIssueAcceptance(t, db)
 	return db
 }
 

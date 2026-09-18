@@ -25,7 +25,7 @@ show_usage() {
   echo "  -security     启动 Security 模块 (公共依赖: System Backend + Gateway + Console)"
   echo "  -asset        启动 Asset 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
   echo "  -catalog      启动 Catalog 模块 (依赖: System Backend + Gateway + Console；Meta 为后台同步软依赖)"
-  echo "  -ontology     启动 Ontology Backend (依赖: System Backend + Gateway + Console + Infra FalkorDB)"
+  echo "  -ontology     启动 Ontology 模块 (依赖: System Backend + Gateway + Console + Infra FalkorDB)"
   echo "  -workbench    启动 Workbench 模块 (依赖: System Backend + Service Backend + Gateway + Console)"
   echo "  -portal       启动 Portal 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console + Asset)"
   echo "  -graph        启动 Graph 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
@@ -96,6 +96,7 @@ export WORKBENCH_FE_PORT="${WORKBENCH_FE_PORT:-5190}"
 export SECURITY_BACKEND_PORT="${SECURITY_BACKEND_PORT:-8194}"
 export SECURITY_FE_PORT="${SECURITY_FE_PORT:-5191}"
 export ONTOLOGY_BACKEND_PORT="${ONTOLOGY_BACKEND_PORT:-8195}"
+export ONTOLOGY_FE_PORT="${ONTOLOGY_FE_PORT:-5192}"
 
 ensure_model3d_node_dependencies() {
   local dir="engines/model3d-workflow"
@@ -343,6 +344,7 @@ START_ASSET_BACKEND=false
 START_ASSET_FRONTEND=false
 START_CATALOG_BACKEND=false
 START_ONTOLOGY_BACKEND=false
+START_ONTOLOGY_FRONTEND=false
 START_CATALOG_FRONTEND=false
 START_WORKBENCH_BACKEND=false
 START_WORKBENCH_FRONTEND=false
@@ -411,6 +413,7 @@ if [ "$START_ALL" = true ]; then
   START_ASSET_FRONTEND=true
   START_CATALOG_BACKEND=true
   START_ONTOLOGY_BACKEND=true
+  START_ONTOLOGY_FRONTEND=true
   START_CATALOG_FRONTEND=true
   START_WORKBENCH_BACKEND=true
   START_WORKBENCH_FRONTEND=true
@@ -519,6 +522,7 @@ else
       ;;
     ontology)
       START_ONTOLOGY_BACKEND=true
+      START_ONTOLOGY_FRONTEND=true
       ;;
     catalog)
       START_CATALOG_BACKEND=true
@@ -618,6 +622,7 @@ else
       START_GATEWAY=true
       START_ONTOLOGY_BACKEND=true
       START_CONSOLE=true
+      START_ONTOLOGY_FRONTEND=true
       ;;
     esac
 
@@ -2902,12 +2907,16 @@ ensure_node_modules() {
 # 并发启动所有前端服务（Bash 3.2 兼容）
 # ============================================================
 # 检查是否有任何前端需要启动
-if [ "$START_CONSOLE" = true ] || [ "$START_SYSTEM_FRONTEND" = true ] || [ "$START_MANAGER_FRONTEND" = true ] || [ "$START_META_FRONTEND" = true ] || [ "$START_TRANSFER_FRONTEND" = true ] || [ "$START_ORCHESTRATOR_FRONTEND" = true ] || [ "$START_DEVELOP_FRONTEND" = true ] || [ "$START_SERVICE_FRONTEND" = true ] || [ "$START_MONITOR_FRONTEND" = true ] || [ "$START_STANDARD_FRONTEND" = true ] || [ "$START_MODEL_FRONTEND" = true ] || [ "$START_QUALITY_FRONTEND" = true ] || [ "$START_SECURITY_FRONTEND" = true ] || [ "$START_CATALOG_FRONTEND" = true ] || [ "$START_ASSET_FRONTEND" = true ] || [ "$START_PORTAL_FRONTEND" = true ] || [ "$START_AGENT_FRONTEND" = true ] || [ "$START_GRAPH_FRONTEND" = true ]; then
+if [ "$START_ONTOLOGY_FRONTEND" = true ] || [ "$START_CONSOLE" = true ] || [ "$START_SYSTEM_FRONTEND" = true ] || [ "$START_MANAGER_FRONTEND" = true ] || [ "$START_META_FRONTEND" = true ] || [ "$START_TRANSFER_FRONTEND" = true ] || [ "$START_ORCHESTRATOR_FRONTEND" = true ] || [ "$START_DEVELOP_FRONTEND" = true ] || [ "$START_SERVICE_FRONTEND" = true ] || [ "$START_MONITOR_FRONTEND" = true ] || [ "$START_STANDARD_FRONTEND" = true ] || [ "$START_MODEL_FRONTEND" = true ] || [ "$START_QUALITY_FRONTEND" = true ] || [ "$START_SECURITY_FRONTEND" = true ] || [ "$START_CATALOG_FRONTEND" = true ] || [ "$START_ASSET_FRONTEND" = true ] || [ "$START_PORTAL_FRONTEND" = true ] || [ "$START_AGENT_FRONTEND" = true ] || [ "$START_GRAPH_FRONTEND" = true ]; then
   echo -e "${YELLOW}Step 8/8: 并发启动前端服务${NC}"
 
   # 动态构建前端配置（格式：名称:端口:目录）
   # 使用普通数组而非关联数组（兼容 Bash 3.2）
   FRONTEND_CONFIGS=()
+
+  if [ "$START_ONTOLOGY_FRONTEND" = true ]; then
+    FRONTEND_CONFIGS+=("ontology:${ONTOLOGY_FE_PORT}:ontology/frontend")
+  fi
 
   if [ "$START_CONSOLE" = true ]; then
     FRONTEND_CONFIGS+=("console:${CONSOLE_FE_PORT}:console/frontend")

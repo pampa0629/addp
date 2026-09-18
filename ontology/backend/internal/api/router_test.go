@@ -31,6 +31,7 @@ type fakeCommands struct {
 	token        string
 	generation   string
 	calls        int
+	page         models.ListPage
 }
 
 const generation = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"

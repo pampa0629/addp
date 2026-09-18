@@ -8,6 +8,7 @@ import (
 
 	commonAPI "github.com/addp/common/api"
 	"github.com/addp/quality/internal/models"
+	"github.com/addp/quality/internal/testsupport"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -115,10 +116,10 @@ func TestIssueUpdateStatusRequiresNoteAndOpenState(t *testing.T) {
 	if err := repo.Create(&issue); err != nil {
 		t.Fatalf("create issue: %v", err)
 	}
-	if err := repo.UpdateStatus(context.Background(), issue.ID, issue.TenantID, 99, "resolved", "  "); !errors.Is(err, commonAPI.ErrBadRequest) {
+	if _, err := repo.UpdateStatus(context.Background(), issue.ID, issue.TenantID, 99, issue.Version, "resolved", "  "); !errors.Is(err, commonAPI.ErrBadRequest) {
 		t.Fatalf("blank note error = %v, want bad request", err)
 	}
-	if err := repo.UpdateStatus(context.Background(), issue.ID, issue.TenantID, 99, "resolved", "fixed source data"); err != nil {
+	if _, err := repo.UpdateStatus(context.Background(), issue.ID, issue.TenantID, 99, issue.Version, "resolved", "fixed source data"); err != nil {
 		t.Fatalf("resolve issue: %v", err)
 	}
 	issue = models.Issue{}
@@ -128,10 +129,10 @@ func TestIssueUpdateStatusRequiresNoteAndOpenState(t *testing.T) {
 	if issue.ResolvedAt == nil || issue.ResolvedBy == nil || *issue.ResolvedBy != 99 || issue.ResolutionNote != "fixed source data" {
 		t.Fatalf("manual resolution audit = %#v", issue)
 	}
-	if err := repo.UpdateStatus(context.Background(), issue.ID, issue.TenantID, 99, "ignored", "second transition"); !errors.Is(err, commonAPI.ErrConflict) {
+	if _, err := repo.UpdateStatus(context.Background(), issue.ID, issue.TenantID, 99, issue.Version, "accepted", "second transition"); !errors.Is(err, commonAPI.ErrConflict) {
 		t.Fatalf("second transition error = %v, want conflict", err)
 	}
-	if err := repo.UpdateStatus(context.Background(), issue.ID, issue.TenantID, 99, "invalid", "note"); !errors.Is(err, commonAPI.ErrBadRequest) {
+	if _, err := repo.UpdateStatus(context.Background(), issue.ID, issue.TenantID, 99, issue.Version, "invalid", "note"); !errors.Is(err, commonAPI.ErrBadRequest) {
 		t.Fatalf("invalid status error = %v, want bad request", err)
 	}
 }
@@ -176,5 +177,6 @@ func newIssueRepositoryTestDB(t *testing.T) *gorm.DB {
 	)`).Error; err != nil {
 		t.Fatalf("create quality issues table: %v", err)
 	}
+	testsupport.EnsureIssueAcceptance(t, db)
 	return db
 }

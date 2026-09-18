@@ -14,8 +14,9 @@ import (
 
 // PlanTableBinding names a required input and its optional default resource.
 type PlanTableBinding struct {
-	Alias   string `json:"alias"`
-	Locator string `json:"locator"`
+	Alias     string   `json:"alias"`
+	Locator   string   `json:"locator"`
+	RecordKey []string `json:"record_key,omitempty"`
 }
 
 type PlanRunRequest struct {
@@ -32,6 +33,16 @@ func ValidateTableBindings(bindings []PlanTableBinding, requireTargets bool) err
 	aliases, targets := map[string]bool{}, map[string]bool{}
 	var engineID uint
 	for _, b := range bindings {
+		if len(b.RecordKey) > 8 {
+			return fmt.Errorf("record_key may contain at most 8 fields")
+		}
+		keys := map[string]bool{}
+		for _, key := range b.RecordKey {
+			if key == "" || len(key) > 200 || strings.TrimSpace(key) != key || keys[key] {
+				return fmt.Errorf("invalid or duplicate record_key field")
+			}
+			keys[key] = true
+		}
 		if !targetAliasPattern.MatchString(b.Alias) || aliases[b.Alias] {
 			return fmt.Errorf("invalid or duplicate table alias %q", b.Alias)
 		}

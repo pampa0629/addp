@@ -328,6 +328,25 @@
       "start": "Start date parameter",
       "end": "End date parameter"
     },
+    "creationGuide": {
+      "title": "Your first result is configured. Set up value selection next",
+      "hint": "Need to find people or other records by name? Choose a filter and create a search list, or go straight to preview.",
+      "target": "Which filter needs a search list?",
+      "configured": "{count} search selectors configured.",
+      "preview": "Preview and set initial values",
+      "previewHint": "After choosing values, use “Use as initial values”, then create the draft.",
+      "missingIdentity": "Do not know the person or record ID yet? Apply this component, create a search list next, then select a record."
+    },
+    "selectionWizard": {
+      "title": "Create a search list",
+      "target": "Selecting a result sets “{label}” and refreshes related components.",
+      "searchField": "Which field should be searched?",
+      "labelField": "Which field should the list display?",
+      "valueField": "Which field supplies the selected value?",
+      "unsupported": "This configuration is unavailable. Choose a searchable text field and a value field compatible with the target type and required constraint.",
+      "searchLabel": "Search {label}",
+      "componentName": "Search and select {label}"
+    },
     "studio": {
       "back": "Back to list",
       "unsaved": "Unsaved changes",
@@ -341,7 +360,7 @@
       "componentCount": "{count} components",
       "startEyebrow": "Create your data application",
       "startTitle": "Start with one component",
-      "startHint": "Choose a published data service, select fields and query inputs, then compose your page. You can adjust it at any time.",
+      "startHint": "Choose data and a display, add a search selector if needed, then preview and create your application. You can adjust it anytime.",
       "starters": {
         "table": "Browse, find and compare records",
         "chart": "Present results with bars, lines or slices",

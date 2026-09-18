@@ -56,6 +56,7 @@ func (r *OverviewRepository) Get(ctx context.Context, tenantID int64, domainID *
 		}
 		var issueCounts struct {
 			OpenIssues     int64
+			AcceptedIssues int64
 			UnscopedIssues int64
 		}
 		args := map[string]interface{}{"tenant": tenantID, "domain": domain, "limit": pageSize, "offset": (page - 1) * pageSize}
@@ -65,11 +66,12 @@ func (r *OverviewRepository) Get(ctx context.Context, tenantID int64, domainID *
 			return err
 		}
 		result.PlanCount, result.NeverRunPlans = planCounts.PlanCount, planCounts.NeverRunPlans
-		if err := tx.Raw(`SELECT count(*) FILTER (WHERE status='open') AS open_issues, count(*) FILTER (WHERE target_key IS NULL) AS unscoped_issues
+		if err := tx.Raw(`SELECT count(*) FILTER (WHERE status='open') AS open_issues, count(*) FILTER (WHERE status='accepted') AS accepted_issues, count(*) FILTER (WHERE target_key IS NULL) AS unscoped_issues
 		 FROM quality.issues WHERE tenant_id=@tenant AND (@domain < 0 OR COALESCE(owner_domain_id,0)=@domain)`, args).Scan(&issueCounts).Error; err != nil {
 			return err
 		}
 		result.OpenIssues, result.UnscopedIssues = issueCounts.OpenIssues, issueCounts.UnscopedIssues
+		result.AcceptedIssues = issueCounts.AcceptedIssues
 		if err := tx.Raw(overviewScopeCTE+`SELECT count(*) FROM scopes`, args).Scan(&result.Total).Error; err != nil {
 			return err
 		}

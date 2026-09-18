@@ -65,7 +65,7 @@ func (h *Handler) Head(c *gin.Context) {
 		fail(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, HeadResponse{r.OntologyID, r.LastRevision, r.ActivationVersion, r.ActiveRevision, r.ActiveGeneration})
+	c.JSON(http.StatusOK, headResponse(r))
 }
 
 // Create handles the owner command.

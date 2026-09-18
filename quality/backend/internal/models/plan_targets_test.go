@@ -2,6 +2,7 @@ package models
 
 import (
 	"encoding/json"
+	"reflect"
 	"testing"
 )
 
@@ -45,5 +46,18 @@ func TestPlanTargetsResolveAndCanonicalScope(t *testing.T) {
 	}
 	if string(defaults) != `[{"alias":"a","locator":"addp://engine/12/path/east/orders?type=table"},{"alias":"b","locator":""}]` {
 		t.Fatal("default definitions mutated")
+	}
+}
+
+func TestRecordKeysAreExplicitValidatedAndFrozenAcrossTargetOverrides(t *testing.T) {
+	raw := json.RawMessage(`[{"alias":"members","locator":"","record_key":["activity_id","member_index"]}]`)
+	resolved, _, err := ResolvePlanTargets(raw, PlanRunRequest{TableBindings: map[string]string{"members": "addp://engine/1/path/outdoor/members?type=table"}})
+	if err != nil || !reflect.DeepEqual(resolved[0].RecordKey, []string{"activity_id", "member_index"}) {
+		t.Fatalf("lost record key: %+v %v", resolved, err)
+	}
+	for _, keys := range [][]string{{""}, {"a", "a"}, {" padded"}, {"a", "b", "c", "d", "e", "f", "g", "h", "i"}} {
+		if err := ValidateTableBindings([]PlanTableBinding{{Alias: "a", RecordKey: keys}}, false); err == nil {
+			t.Fatalf("invalid record key accepted: %+v", keys)
+		}
 	}
 }

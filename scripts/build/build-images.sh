@@ -1013,6 +1013,7 @@ main() {
         "standard-frontend:standard/frontend"
         "catalog-frontend:catalog/frontend"
         "workbench-frontend:workbench/frontend"
+        "ontology-frontend:ontology/frontend"
         "agent-frontend:agent/frontend"
         "model-frontend:model/frontend"
         "quality-frontend:quality/frontend"

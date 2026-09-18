@@ -23,7 +23,7 @@ show_usage() {
   echo "  -security    重启并按需编译 Security 模块"
   echo "  -asset       重启并按需编译 Asset 模块"
   echo "  -catalog     重启并按需编译 Catalog 模块"
-  echo "  -ontology    重启并按需编译 Ontology Backend"
+  echo "  -ontology    重启并按需编译 Ontology 模块"
   echo "  -workbench   重启并按需编译 Workbench 模块"
   echo "  -portal      重启并按需编译 Portal 模块"
   echo "  -graph       重启并按需编译 Graph 模块"

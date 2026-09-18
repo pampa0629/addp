@@ -4,6 +4,23 @@ import { defaultFieldPresentation } from '../../../../common-frontend/basic/src/
 const NUMERIC_TYPES = new Set(['int', 'bigint', 'float', 'double', 'decimal'])
 const UNARY_OPERATORS = new Set(['is_null', 'is_not_null'])
 
+export function configureSelectionListDraft(draft, descriptor, { searchField, labelField, valueField, searchLabel }) {
+  draft.rendererType = 'table'
+  draft.columns = [...new Set([labelField, valueField].filter(Boolean))]
+  draft.parameters = draft.parameters.filter(parameter => parameter.bindingKind === 'named')
+  const field = descriptor.input_contract.fields.find(field => field.name === searchField && field.type === 'string' && field.filterable && field.operators?.includes('contains'))
+  if (field) {
+    const parameter = createParameterDraft(field, draft.parameters.length)
+    const keys = new Set(draft.parameters.map(parameter => parameter.key))
+    let index = draft.parameters.length + 1
+    while (keys.has(parameter.key)) parameter.key = `parameter_${++index}`
+    parameter.operator = 'contains'
+    parameter.label = searchLabel
+    draft.parameters.push(parameter)
+  }
+  draft.fieldPresentations = synchronizeFieldPresentations(draft, descriptor.output_contract.fields)
+}
+
 // Suggestions only select fields; the existing component compiler owns the output.
 export function componentDisplaySuggestions(descriptor) {
   if (!descriptor) return []

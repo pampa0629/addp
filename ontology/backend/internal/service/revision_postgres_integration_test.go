@@ -187,6 +187,7 @@ func TestPostgresRevisionLifecycle(t *testing.T) {
 	s := NewRevisionService(repository.NewRevisionRepository(db))
 	ctx := context.Background()
 	actor := testActor(101)
+	t.Run("management_lists", func(t *testing.T) { testManagementLists(t, s) })
 	t.Run("projection_runtime", func(t *testing.T) { testProjectionRuntime(t, db, s, actor) })
 	t.Run("projection_rebuild", func(t *testing.T) { testProjectionRebuild(t, db, s, actor) })
 	t.Run("projection_admission", func(t *testing.T) { testProjectionAdmission(t, db, s, actor) })

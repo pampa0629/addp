@@ -6,9 +6,19 @@ set -euo pipefail
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/addp-quality-postgres.XXXXXX")
+reset_started=0
+
+reset_quality_schema() {
+    (cd "$ROOT_DIR/quality/backend" && ADDP_QUALITY_GATE_RESET=1 go test ./internal/migration -run '^TestQualityGateResetSchema$' -count=1)
+}
 
 cleanup() {
+    local status=$?
+    if [[ "$reset_started" == "1" ]]; then
+        reset_quality_schema || status=1
+    fi
     rm -rf "$WORK_DIR"
+    exit "$status"
 }
 trap cleanup EXIT
 
@@ -39,6 +49,8 @@ run_without_skips() {
 }
 
 cd "$ROOT_DIR/quality/backend"
+reset_started=1
+reset_quality_schema
 for package in ./internal/migration ./internal/repository ./internal/service; do
     run_without_skips "$package"
 done

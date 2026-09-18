@@ -55,6 +55,7 @@ type qualityIssueResponse models.Issue
 type qualityExecutionResponse commonExecution.TaskExecution
 
 type issueStatusRequest struct {
-	Status string `json:"status" binding:"required" enums:"resolved,ignored" example:"resolved"`
-	Note   string `json:"note" binding:"required" example:"已修复源数据"`
+	Version int64  `json:"version" binding:"required,min=1" example:"1"`
+	Status  string `json:"status" binding:"required,oneof=resolved accepted" enums:"resolved,accepted" example:"accepted"`
+	Note    string `json:"note" binding:"required" example:"已修复源数据"`
 }

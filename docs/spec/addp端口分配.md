@@ -60,7 +60,7 @@ DAMENG_PORT=5236
 
 ## Reserved Policy（保留规则）
 
-Ontology Backend 使用 `8195`（开发/容器一致），无独立前端端口；经 Gateway `/api/v1/ontology` 访问。
+Ontology Backend 使用 `8195`（开发/容器一致），经 Gateway `/api/v1/ontology` 访问。Ontology Frontend 开发端口为 `5192`，Docker 映射 `8123:80`；Console 入口 `/ontology/ontologies`。确定性浏览器测试独占回环 `4192`，不复用开发服务。
 
 - **System MinIO 使用 19000/19001**，Business 侧不得占用这两个端口。
 - **Business MinIO 使用 9002/9003**，System 侧不得占用这两个端口。
@@ -145,6 +145,8 @@ make ports-validate
 | **Workbench Frontend** | **5190** | **8121**   | **Workbench 创作端 UI** |
 | **Security Backend** | **8194** | **8194**    | **数据安全分类分级、敏感发现、资源评估、保护策略和投影** |
 | **Security Frontend** | **5191** | **8122**   | **数据安全与隐私保护 UI** |
+| **Ontology Backend** | **8195** | **8195** | **原生领域本体、修订与投影运行时** |
+| **Ontology Frontend** | **5192** | **8123** | **领域本体建模与修订管理 UI** |
 | Math Workflow Engine  | 8089     | 8089        | 数学计算工作流参考实现（自动启动服务、手动注册） |
 | Jupyter API Server    | 8097     | 8097        | Jupyter 执行引擎 API       |
 | Spark Workflow Engine | 8098     | 8098        | Spark 分布式工作流引擎     |
@@ -225,6 +227,7 @@ make ports-validate
   - **5189: Catalog**
   - **5190: Workbench**
   - **5191: Security**
+  - **5192: Ontology**
 
 ### 前端 Docker 端口规则
 - **核心模块**：809x 系列（8090-8096）
@@ -249,6 +252,7 @@ make ports-validate
   - **8120: Catalog**
   - **8121: Workbench**
   - **8122: Security**
+  - **8123: Ontology**
 
 ## Standard 和 Model 模块配置要求
 
