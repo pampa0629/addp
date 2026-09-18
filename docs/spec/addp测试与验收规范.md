@@ -125,6 +125,10 @@ T4 只在隔离的 ADDP 测试部署执行，并按运行条件选择唯一部�
 
 ### 5.2 开关、身份与拓扑预检
 
+本体修订投影 T4 `ontology-revision-lifecycle` 使用 GitHub Hosted `ubuntu-24.04` 临时部署，从零启动 System、Gateway、Ontology 与 Infra FalkorDB。System owner helper 创建非默认 Tenant 和仅含 `ontology.revision.read/update/publish`、`system.execution_authorization.create` 的 User，不创建业务 Engine 或 Engine Provisioner。北京 Outdoor 只作为合成本体定义，通过 Gateway 验证草稿、审核、发布准入、最新投影发现、异步激活、旧 version 拒绝、第二修订替换与撤回不回退。202 不作为激活成功证据，必须读取确定 generation 的 ready 状态和本体 active 指针。该 suite 没有业务实例读取或推理 API 断言，不宣称 Agent 能力验收。
+
+Ontology 修订、审计与历史图在验收期间保留，不增加测试删除接口或 SQL 清理旁路；所有退出路径由 Hosted 生命周期销毁当次 Infra（含 PG/FalkorDB 数据卷）和凭据，并核验容器、网络、卷零残留。业务报告将历史标为待部署销毁，只有生命周期清理成功才可报告整体通过。首次真实通过前仅登记手工 `workflow_dispatch`。
+
 每次 T4 运行至少满足：
 
 - `ADDP_ONLINE_TEST=1`。

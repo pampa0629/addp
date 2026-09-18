@@ -33,7 +33,7 @@ func TestFixtureAuthorizationContractMatchesPublishedCatalog(t *testing.T) {
 	for _, permission := range catalog.Permissions {
 		permissions[permission.Key] = permission
 	}
-	for _, key := range append(append([]string{}, consumerPermissions...), metricPermissions...) {
+	for _, key := range append(append(append([]string{}, consumerPermissions...), metricPermissions...), ontologyPermissions...) {
 		permission, exists := permissions[key]
 		if !exists {
 			t.Fatalf("consumer permission %q is not published", key)
@@ -126,6 +126,20 @@ func TestWriteEnvironmentFileUsesOwnerOnlyPermissionsAndShellQuoting(t *testing.
 }
 
 func TestSuitePermissionsAreExplicitAndSeparate(t *testing.T) {
+	ontology, err := suitePermissions("ontology-revision-lifecycle")
+	if err != nil || len(ontology) != 4 || needsEngineProvisioner("ontology-revision-lifecycle") {
+		t.Fatalf("ontology requires exactly four permissions and no Engine provisioner: %v, %v", ontology, err)
+	}
+	for _, key := range []string{"ontology.revision.read", "ontology.revision.update", "ontology.revision.publish", "system.execution_authorization.create"} {
+		if !contains(ontology, key) {
+			t.Fatalf("missing ontology permission %s", key)
+		}
+	}
+	for _, suite := range []string{"opengauss-consumer-flow", "kingbase-consumer-flow", "metric-service-revision-lifecycle"} {
+		if !needsEngineProvisioner(suite) {
+			t.Fatalf("Engine suite %s lost its provisioner", suite)
+		}
+	}
 	if _, err := suitePermissions(""); err == nil {
 		t.Fatal("missing suite accepted")
 	}
@@ -148,5 +162,21 @@ func TestSuitePermissionsAreExplicitAndSeparate(t *testing.T) {
 		if strings.HasPrefix(key, "system.engine.") || key == "model.metric_implementation.delete" {
 			t.Fatalf("metric role has unnecessary destructive/control-plane permission %s", key)
 		}
+	}
+}
+
+func TestOntologyEnvironmentDoesNotExportAnEngineCredential(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "ontology.env")
+	if err := writeEnvironmentFile(path, map[string]string{
+		"ADDP_ONLINE_TEST_TENANT_ID": "42", "ADDP_ONLINE_TEST_USER_ACCESS_TOKEN": "addp_at_fixture",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "ENGINE") {
+		t.Fatal("Ontology exported an unnecessary Engine credential")
 	}
 }

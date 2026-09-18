@@ -88,3 +88,11 @@ FalkorDB T2 固定 4.20.6 多架构镜像 digest，每轮独立 Compose Project�
 新增 CEL 依赖同时由 T0 的 `make test-go-dependency-policy` 检查；该入口覆盖单行/块状 `require`、错误版本拒绝和注释/排除声明不误识别，不能靠固定 go.mod 排版才能识别依赖。
 
 Outdoor 示例仅在测试夹具中；北京是示例背景，不从活动名称猜测行政区。核心代码不得硬编码业务状态、集合名、字段路径或地名。
+
+### 正式 Online 验收入口
+
+`ontology-revision-lifecycle` 已登记为仅手工触发的 GitHub Hosted T4 suite；入口为隔离部署中的 `make test-online ONLINE_SUITE=ontology-revision-lifecycle`，生命周期由 `scripts/test/online-hosted-ontology-gate.sh` 复用统一 Hosted owner 管理。当前仍未取得真实 T4 通过证据，脚本单测和本地开发服务 Ready 不能替代它。
+
+场景复用 `internal/semantic/testdata/beijing_outdoor_online.json` 的北京 Outdoor 合成本体；语义内核 T1 同时验证此定义可编译，并区分明确北京、明确其他与未知地点。Hosted helper 只给 User 分配本体 read/update/publish 与执行授权派生四项权限，不创建 Engine Provisioner 或业务 Engine。所有本体操作通过 Gateway，核对两次发布的不可变快照、generation/execution、ready 与 active 指针、旧版本冲突、最新尝试发现，以及撤回第二修订不自动回退第一修订。
+
+没有业务实例查询或分类 API 的验收。修订、审计和图历史在场景中保留，退出时停止当次应用、销毁整个独占 Infra 及数据卷和临时凭据；生命周期另查容器/网络/卷零残留。发现旧 Infra 容器或卷时必须在启动前拒绝，不能误用或删除既有环境。确定性脚本验证由 `make test-online-runner` 纳入 T0，实际执行由 `.github/workflows/online-t4-gates.yml` 的 `ontology-hosted-t4` Job 完成。

@@ -45,6 +45,10 @@ class Suite:
 # Only executable owner-maintained Online suites belong here. Do not register
 # placeholders: an entry means the suite is ready for real Online acceptance.
 SUITES: Mapping[str, Suite] = {
+    "ontology-revision-lifecycle": Suite(
+        command=(sys.executable, "-m", "scripts.test.ontology-revision-lifecycle-online"),
+        services=(("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL"), ("ontology", "ONTOLOGY_URL")),
+    ),
     "consumer-engine-recovery": Suite(
         command=(sys.executable, "scripts/test/consumer-engine-recovery-online.py"),
         services=(

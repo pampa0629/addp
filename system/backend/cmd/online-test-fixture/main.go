@@ -55,15 +55,26 @@ var metricPermissions = []string{
 	"service.data_read.execute", "system.execution_authorization.create",
 }
 
+var ontologyPermissions = []string{
+	"ontology.revision.read", "ontology.revision.update", "ontology.revision.publish",
+	"system.execution_authorization.create",
+}
+
 func suitePermissions(suite string) ([]string, error) {
 	switch suite {
 	case "opengauss-consumer-flow", "kingbase-consumer-flow":
 		return consumerPermissions, nil
 	case "metric-service-revision-lifecycle":
 		return metricPermissions, nil
+	case "ontology-revision-lifecycle":
+		return ontologyPermissions, nil
 	default:
 		return nil, errors.New("unsupported Online identity fixture suite")
 	}
+}
+
+func needsEngineProvisioner(suite string) bool {
+	return suite == "opengauss-consumer-flow" || suite == "kingbase-consumer-flow" || suite == "metric-service-revision-lifecycle"
 }
 
 func main() {
@@ -203,43 +214,45 @@ func run(args []string, environment []string) error {
 		return fmt.Errorf("assign consumer role: %w", err)
 	}
 
-	provisioner, err := createUser(ctx, identity, "external-online-engine-provisioner")
-	if err != nil {
-		return err
-	}
-	provisionerMembership, err := membershipService.EstablishMembership(ctx, iam.EstablishTenantMembershipInput{
-		TenantID: tenant.ID, PrincipalID: provisioner.PrincipalID,
-		SourceType:           iam.TenantMembershipSourceManual,
-		CreatedByPrincipalID: &administrator.PrincipalID,
-		Audit:                audit("external-online-engine-provisioner-membership"),
-	})
-	if err != nil {
-		return fmt.Errorf("establish engine provisioner membership: %w", err)
-	}
-	provisionerRole, err := repository.GetActiveBuiltinRoleByKey(ctx, engineProvisionerRoleKey)
-	if err != nil {
-		return fmt.Errorf("resolve engine provisioner role: %w", err)
-	}
-	if _, err := roleService.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{
-		TenantID: tenant.ID, MembershipID: provisionerMembership.Membership.ID,
-		RoleIDs: []int64{provisionerRole.ID}, ScopeType: "tenant", Reason: "External T4 Engine registration",
-		ActorPrincipalID: administrator.PrincipalID,
-		Audit:            audit("external-online-engine-provisioner-assignment"),
-	}); err != nil {
-		return fmt.Errorf("assign engine provisioner role: %w", err)
-	}
-	provisionerSession, err := issueSession(ctx, selectionService, provisioner.PrincipalID, "external-online-engine-provisioner-session")
-	if err != nil {
-		return err
-	}
 	consumerSession, err := issueSession(ctx, selectionService, consumer.PrincipalID, "external-online-consumer-session")
 	if err != nil {
 		return err
 	}
 	values := map[string]string{
-		"ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN": provisionerSession.AccessToken,
-		"ADDP_ONLINE_TEST_TENANT_ID":              fmt.Sprintf("%d", tenant.ID),
-		"ADDP_ONLINE_TEST_USER_ACCESS_TOKEN":      consumerSession.AccessToken,
+		"ADDP_ONLINE_TEST_TENANT_ID":         fmt.Sprintf("%d", tenant.ID),
+		"ADDP_ONLINE_TEST_USER_ACCESS_TOKEN": consumerSession.AccessToken,
+	}
+	if needsEngineProvisioner(*suite) {
+		provisioner, err := createUser(ctx, identity, "external-online-engine-provisioner")
+		if err != nil {
+			return err
+		}
+		provisionerMembership, err := membershipService.EstablishMembership(ctx, iam.EstablishTenantMembershipInput{
+			TenantID: tenant.ID, PrincipalID: provisioner.PrincipalID,
+			SourceType:           iam.TenantMembershipSourceManual,
+			CreatedByPrincipalID: &administrator.PrincipalID,
+			Audit:                audit("external-online-engine-provisioner-membership"),
+		})
+		if err != nil {
+			return fmt.Errorf("establish engine provisioner membership: %w", err)
+		}
+		provisionerRole, err := repository.GetActiveBuiltinRoleByKey(ctx, engineProvisionerRoleKey)
+		if err != nil {
+			return fmt.Errorf("resolve engine provisioner role: %w", err)
+		}
+		if _, err := roleService.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{
+			TenantID: tenant.ID, MembershipID: provisionerMembership.Membership.ID,
+			RoleIDs: []int64{provisionerRole.ID}, ScopeType: "tenant", Reason: "External T4 Engine registration",
+			ActorPrincipalID: administrator.PrincipalID,
+			Audit:            audit("external-online-engine-provisioner-assignment"),
+		}); err != nil {
+			return fmt.Errorf("assign engine provisioner role: %w", err)
+		}
+		provisionerSession, err := issueSession(ctx, selectionService, provisioner.PrincipalID, "external-online-engine-provisioner-session")
+		if err != nil {
+			return err
+		}
+		values["ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN"] = provisionerSession.AccessToken
 	}
 	if err := writeEnvironmentFile(*output, values); err != nil {
 		return err
@@ -327,7 +340,11 @@ func writeEnvironmentFile(path string, values map[string]string) error {
 		"ADDP_ONLINE_TEST_TENANT_ID",
 		"ADDP_ONLINE_TEST_USER_ACCESS_TOKEN",
 	} {
-		value := strings.ReplaceAll(values[key], "'", "'\"'\"'")
+		raw, exists := values[key]
+		if !exists {
+			continue
+		}
+		value := strings.ReplaceAll(raw, "'", "'\"'\"'")
 		if _, err := fmt.Fprintf(file, "export %s='%s'\n", key, value); err != nil {
 			file.Close()
 			return fmt.Errorf("write fixture environment: %w", err)

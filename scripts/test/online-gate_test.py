@@ -82,6 +82,7 @@ class OnlineGateTest(unittest.TestCase):
                 "manager-internal-artifact-lineage",
                 "manager-hybrid-search",
                 "metric-service-revision-lifecycle",
+                "ontology-revision-lifecycle",
                 "module-registry-recovery",
                 "oceanbase-consumer-flow",
                 "opengauss-consumer-flow",

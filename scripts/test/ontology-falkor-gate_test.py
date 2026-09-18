@@ -110,6 +110,60 @@ exit "${TEST_MAIN_EXIT:-0}"
         self.assertIn("down --volumes --remove-orphans", self.log.read_text())
 
 
+class DevInfraStartupTest(unittest.TestCase):
+    """Execute the actual startup decision with fake port probes and Infra owner."""
+
+    def run_check(self, missing=(), up_exit=0):
+        source = (REPOSITORY / "scripts/dev/start.sh").read_text()
+        block = source.split("# 1. 启动基础设施\n", 1)[1].split("# 2. 启动 System Backend\n", 1)[0]
+        harness = '''set -eu
+YELLOW='' GREEN='' RED='' NC=''
+ROOT_DIR=/fixture
+nc() {
+  local port="${@: -1}"
+  echo "probe:$port" >&2
+  case ",${TEST_MISSING_PORTS}," in
+    *",$port,"*) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+bash() {
+  [ "$#" = 1 ] && [ "$1" = /fixture/scripts/infra/up.sh ] || return 99
+  echo infra-up
+  return "$TEST_UP_EXIT"
+}
+'''
+        return subprocess.run(
+            ["bash"], input=harness + block, capture_output=True, text=True, timeout=5,
+            env=dict(os.environ, TEST_MISSING_PORTS=",".join(map(str, missing)), TEST_UP_EXIT=str(up_exit),
+                     POSTGRES_PORT="15432", REDIS_PORT="16379", MINIO_API_PORT="19000", MEILISEARCH_PORT="17700"),
+        )
+
+    def test_existing_infra_without_falkordb_invokes_owner_startup(self):
+        result = self.run_check(missing=(16479,))
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertIn("FalkorDB 未就绪", result.stdout)
+        self.assertEqual(1, result.stdout.splitlines().count("infra-up"))
+        self.assertNotIn("跳过启动", result.stdout)
+
+    def test_all_ports_available_skip_and_any_missing_port_starts_infra(self):
+        result = self.run_check()
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertIn("跳过启动", result.stdout)
+        self.assertNotIn("infra-up", result.stdout)
+        for port in (15432, 16379, 16479, 19000, 17700):
+            with self.subTest(port=port):
+                result = self.run_check(missing=(port,))
+                self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+                self.assertEqual(1, result.stdout.splitlines().count("infra-up"))
+
+    def test_missing_falkordb_start_failure_stops_before_backends(self):
+        result = self.run_check(missing=(16479,), up_exit=1)
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("基础设施启动失败", result.stdout)
+        self.assertNotIn("基础设施启动完成", result.stdout)
+
+
 class InfraContractTest(unittest.TestCase):
     def test_backend_runtime_and_build_registration(self):
         service = self.render("docker-compose.yml")["services"]["ontology-backend"]

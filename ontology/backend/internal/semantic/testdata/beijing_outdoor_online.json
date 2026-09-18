@@ -1,0 +1,18 @@
+{
+  "classes": [
+    {"id": "activity", "name": "北京户外活动观察", "parents": []},
+    {"id": "attendance", "name": "含成员状态的活动观察", "parents": ["activity"]},
+    {"id": "place", "name": "活动地点", "parents": []}
+  ],
+  "properties": [
+    {"id": "city", "class_id": "activity", "key": "city", "name": "城市", "kind": "string", "enum": ["其他", "北京市"]},
+    {"id": "member_status", "class_id": "attendance", "key": "member_status", "name": "成员状态", "kind": "string", "enum": ["报名中", "替补中", "浏览中", "领队"]}
+  ],
+  "relations": [
+    {"id": "located_at", "name": "活动地点", "from": "activity", "to": "place", "transitive": false}
+  ],
+  "rules": [
+    {"id": "beijing_activity", "class_id": "activity", "expression": "city == '北京市'", "basis": "北京 Outdoor 合成夹具，不从名称推测地点", "inputs": [{"variable": "city", "property_id": "city", "on_absent": "unknown"}]},
+    {"id": "registered", "class_id": "attendance", "expression": "status in ['报名中', '领队', '替补中']", "basis": "合成报名口径，未读取的成员状态仍为未知", "inputs": [{"variable": "status", "property_id": "member_status", "on_absent": "unknown"}]}
+  ]
+}

@@ -40,6 +40,7 @@ require_external_path() {
   fail "this lifecycle only owns $ONLINE_SUITE"
 [ ! -e "$ROOT_DIR/.env" ] || fail "Hosted Online forbids a repository root .env"
 [ -z "$(git -C "$ROOT_DIR" status --porcelain)" ] || fail "Hosted Online requires a clean checkout"
+[ -z "${COMPOSE_PROJECT_NAME:-}" ] || fail "Hosted Online uses the Infra Compose project name without overrides"
 
 for variable in ADDP_ONLINE_ARTIFACT_DIR ADDP_ONLINE_SECRET_DIR; do
   [ -n "${!variable:-}" ] || fail "$variable is required"
@@ -75,11 +76,25 @@ docker compose version >/dev/null 2>&1 || fail "docker compose is required"
 [ -f "$ROOT_DIR/scripts/infra/Dockerfile.postgres" ] ||
   fail "missing repository Infra PostgreSQL Dockerfile"
 
-for container in addp-postgres addp-redis addp-minio addp-meilisearch addp-redpanda "${HOSTED_FIXTURE_CONTAINERS[@]}"; do
+for container in addp-postgres addp-redis addp-falkordb addp-minio addp-meilisearch addp-redpanda addp-redpanda-init addp-kafka-connect "${HOSTED_FIXTURE_CONTAINERS[@]:-}"; do
+  [ -n "$container" ] || continue
   if docker container inspect "$container" >/dev/null 2>&1; then
     fail "refusing to reuse existing container: $container"
   fi
 done
+
+# A fresh container set is insufficient: a retained PG/graph volume would reuse
+# another run's identities and history, then be deleted by our exit trap.
+verify_empty_infra() {
+  local remaining kind
+  remaining=$(docker ps -aq --filter label=com.docker.compose.project=addp-infra) || return 1
+  [ -z "$remaining" ] || return 1
+  for kind in network volume; do
+    remaining=$(docker "$kind" ls -q --filter label=com.docker.compose.project=addp-infra) || return 1
+    [ -z "$remaining" ] || return 1
+  done
+}
+verify_empty_infra || fail "refusing existing or unverifiable addp-infra containers, networks or volumes"
 for fixture_image in "${HOSTED_FIXTURE_IMAGES[@]:-}"; do
   [ -n "$fixture_image" ] || continue
   if docker image inspect "$fixture_image" >/dev/null 2>&1; then
@@ -128,6 +143,7 @@ run_daemon_launcher_logged() {
 finish() {
   local status=$?
   local cleanup=passed
+  local infra_cleanup=not_started
   trap - EXIT INT TERM
   set +e
   if [ "$application_owned" -eq 1 ]; then
@@ -138,6 +154,12 @@ finish() {
   fi
   if [ "$infra_owned" -eq 1 ]; then
     run_logged bash scripts/infra/down.sh --volumes --force || cleanup=failed
+    if verify_empty_infra; then
+      infra_cleanup=zero_residuals
+    else
+      infra_cleanup=failed
+      cleanup=failed
+    fi
   fi
   case "$ADDP_ONLINE_SECRET_DIR" in
     "${RUNNER_TEMP:-/tmp}"/addp-online-secret-*) rm -rf "$ADDP_ONLINE_SECRET_DIR" ;;
@@ -159,6 +181,7 @@ finish() {
     printf 'database=addp_online\n'
     printf 'result=%s\n' "$result"
     printf 'cleanup=%s\n' "$cleanup"
+    printf 'infra_cleanup=%s\n' "$infra_cleanup"
   } > "$SUMMARY"
   exit "$status"
 }

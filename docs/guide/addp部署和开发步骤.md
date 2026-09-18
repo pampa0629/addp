@@ -10,7 +10,7 @@
 
 ### 第一步: 启动基础设施 (必须首先执行)
 
-**重要**: 必须先启动基础设施服务 (PostgreSQL、Redis、MinIO、Meilisearch)。
+**重要**: 必须先启动基础设施服务 (PostgreSQL、Redis、FalkorDB、MinIO、Meilisearch 等)。FalkorDB 是 Ontology 的私有 Infra，已有环境须在根 `.env` 配置独立的 `INFRA_FALKORDB_PASSWORD`。
 
 ```bash
 # 从项目根目录
@@ -18,7 +18,7 @@ bash scripts/infra/up.sh
 ```
 
 此脚本自动完成:
-- 启动 PostgreSQL (addp-postgres)、Redis (addp-redis)、MinIO (addp-minio)、Meilisearch (addp-meilisearch) 容器
+- 启动 PostgreSQL (addp-postgres)、Redis (addp-redis)、FalkorDB (addp-falkordb)、MinIO (addp-minio)、Meilisearch (addp-meilisearch) 等容器
 - 初始化所有模块的 PostgreSQL schemas
 - 初始化 MinIO buckets 和 Redis 配置
 - 配置 Meilisearch 索引
@@ -40,6 +40,8 @@ bash scripts/dev/start.sh
 开发环境的 `start.sh`、`restart.sh`、`stop.sh` 和 `keepalive.sh` 使用工作区级生命周期锁。同一工作区已有启动、停止或重启操作执行时，新的生命周期操作会立即失败并显示当前操作信息，不能并行修改 `.dev-pids`、`.dev-bins` 或运行进程。详细契约见 [开发服务生命周期与构建身份规范](../spec/addp开发服务生命周期与构建身份规范.md)。
 
 开发生命周期安装 Node 依赖时以 `package-lock.json` 为不可变构建输入，并统一执行 `npm ci`；缺少锁文件时直接失败，锁文件生成只属于显式的依赖维护流程。因此本地启动和 Hosted Online 门禁不会在安装依赖时改写已跟踪的锁文件或污染构建身份。
+
+启动脚本的 Infra 快速检查包含 FalkorDB 固定端口 `16479`；旧环境只有原来的四项服务运行时，不会跳过 Infra 启动，而会交给 `scripts/infra/up.sh` 补齐。端口可达仅决定是否需要启动 Infra，不能代替 Backend 的 `/health/ready`：Ontology 仍须验证 PostgreSQL、FalkorDB 图能力及 System 注册全部就绪。
 
 自动启动以下内容:
 1. 基础设施 (如未运行)

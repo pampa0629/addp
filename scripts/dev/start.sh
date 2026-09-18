@@ -922,18 +922,21 @@ fi
 echo ""
 
 # 1. 启动基础设施
-echo -e "${YELLOW}Step 1/7: 启动基础设施（PostgreSQL, Redis, MinIO, Meilisearch）${NC}"
+echo -e "${YELLOW}Step 1/7: 启动基础设施（PostgreSQL, Redis, FalkorDB, MinIO, Meilisearch）${NC}"
 echo ""
 
 # 检查基础设施是否已运行 - 通过端口检查，不依赖 Docker CLI
 # （docker inspect / docker compose ps 在某些 Docker Desktop 环境下会挂起）
 INFRA_RUNNING=false
 RUNNING_COUNT=0
-for svc_port in \
-  "PostgreSQL:${POSTGRES_PORT:-15432}" \
-  "Redis:${REDIS_PORT:-16379}" \
-  "MinIO:${MINIO_API_PORT:-19000}" \
-  "Meilisearch:${MEILISEARCH_PORT:-17700}"; do
+INFRA_PORT_CHECKS=(
+  "PostgreSQL:${POSTGRES_PORT:-15432}"
+  "Redis:${REDIS_PORT:-16379}"
+  "FalkorDB:16479"
+  "MinIO:${MINIO_API_PORT:-19000}"
+  "Meilisearch:${MEILISEARCH_PORT:-17700}"
+)
+for svc_port in "${INFRA_PORT_CHECKS[@]}"; do
   svc="${svc_port%%:*}"
   port="${svc_port##*:}"
   if nc -z -w1 localhost "$port" 2>/dev/null; then
@@ -943,7 +946,7 @@ for svc_port in \
     echo -e "  ${YELLOW}○ $svc 未就绪${NC}"
   fi
 done
-if [ "$RUNNING_COUNT" -eq 4 ]; then
+if [ "$RUNNING_COUNT" -eq "${#INFRA_PORT_CHECKS[@]}" ]; then
   INFRA_RUNNING=true
   echo -e "${GREEN}✓ 基础设施已在运行,跳过启动${NC}"
   echo -e "${YELLOW}  (如需重启基础设施,请运行: bash scripts/infra/down.sh && bash scripts/infra/up.sh)${NC}"
