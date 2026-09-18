@@ -15,6 +15,7 @@ type MetricBooleanFilter struct {
 // MetricContract is the typed executable metric contract. Business names
 // and physical identifiers are resolved by Model, never supplied as SQL.
 type MetricContract struct {
+	IncludeDetails    bool                  `json:"include_details,omitempty"`
 	Operation         string                `json:"operation" binding:"required,oneof=count_distinct directional_overlap"`
 	Subject           MetricFieldReference  `json:"subject"`
 	SubjectRelationID int64                 `json:"subject_relation_id" binding:"required,gt=0"`
@@ -34,5 +35,6 @@ type MetricQueryInput struct {
 }
 
 type MetricPlanRequest struct {
-	Input *MetricQueryInput `json:"input"`
+	ResultKind string            `json:"result_kind,omitempty" binding:"omitempty,oneof=details"`
+	Input      *MetricQueryInput `json:"input"`
 }

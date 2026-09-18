@@ -18,7 +18,7 @@ test('published choices keep every exact published revision and exclude drafts a
     { id: 6, revision_no: 2, status: 'published' },
     { id: 5, revision_no: 1, status: 'withdrawn' },
   ] }, { id: 4, name: 'Unpublished', revisions: [] }]
-  assert.deepEqual(publishedMetricSources(items), [{ id: 3, name: 'Metric', revisions: [{ id: 7, revision_no: 3 }, { id: 6, revision_no: 2 }] }])
+  assert.deepEqual(publishedMetricSources(items), [{ id: 3, name: 'Metric', revisions: [{ id: 7, revision_no: 3, supports_details: false }, { id: 6, revision_no: 2, supports_details: false }] }])
   assert.equal(items[0].revisions.length, 4)
   assert.throws(() => publishedMetricSources({ data: items }))
 })

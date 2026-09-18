@@ -273,6 +273,7 @@ func (h *MetricImplementationHandler) Delete(c *gin.Context) {
 // @Accept json
 // @Param body body models.MetricPlanRequest true "计划参数 | Plan parameters"
 // @Summary 读取已发布指标计算计划 | Read published metric computation plan
+// @Description result_kind=details 读取同修订去重明细；省略读取汇总。 | result_kind=details selects distinct members of the same revision; omission selects summary.
 // @Tags Model
 // @Produce json
 // @Param id path int true "指标实现 ID | Metric implementation ID"
@@ -302,7 +303,7 @@ func (h *MetricImplementationHandler) Plan(c *gin.Context) {
 		c.JSON(400, invalidParamsResponse(c))
 		return
 	}
-	result, err := h.svc.PublishedPlan(c.Request.Context(), id, revisionID, getTenantID(c), req.Input)
+	result, err := h.svc.PublishedPlan(c.Request.Context(), id, revisionID, getTenantID(c), req.Input, req.ResultKind)
 	if err != nil {
 		writeServiceError(c, err)
 		return

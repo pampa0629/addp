@@ -33,6 +33,17 @@ class PlatformSkillToolTests(unittest.TestCase):
         registry = _load_skill_registry()
         self.assertEqual(registry["notebook-generation"].tools, ["notebook.draft.generate"])
 
+    def test_ontology_skill_exposes_only_definition_tools(self):
+        registry = _load_skill_registry()
+        skill = registry["ontology-exploration"]
+        self.assertEqual(skill.tools, ["ontology.classes.list", "ontology.class.context"])
+        self.assertEqual(skill.required_skills, [])
+        self.assertEqual(skill.max_iterations, 6)
+        self.assertIn("native_definition", skill.load_body(registry))
+        tools = create_agent_tools("token", "run-ontology")
+        context = next(tool for tool in tools if stable_tool_name(tool) == "ontology.class.context")
+        self.assertEqual(set(context.tool_call_schema.model_json_schema()["required"]), {"ontology_id", "class_id", "revision", "generation", "activation_version"})
+
     def test_langchain_adapter_uses_runtime_safe_names_and_manifest_schemas(self):
         tools = create_agent_tools("token", "run-1")
         stable_names = [stable_tool_name(tool) for tool in tools]

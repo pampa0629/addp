@@ -11,6 +11,13 @@ import (
 // buildMetricPlan expresses only Model's metric semantics. Physical bindings and
 // the selected native compiler are resolved separately by the publication owner.
 func buildMetricPlan(contract models.MetricContract, bindings metricPlanBindings) (plan.Plan, error) {
+	return buildMetricResultPlan(contract, bindings, false)
+}
+
+func buildMetricResultPlan(contract models.MetricContract, bindings metricPlanBindings, details bool) (plan.Plan, error) {
+	if (contract.IncludeDetails && contract.Operation != "count_distinct") || (details && !contract.IncludeDetails) {
+		return plan.Plan{}, invalidRequest()
+	}
 	b := metricPlanBuilder{p: plan.Plan{SchemaVersion: plan.SchemaVersion, SemanticProfile: plan.SemanticProfile}, columns: map[models.MetricFieldReference]string{}, scans: map[int64]plan.NodeID{}}
 	overlap := contract.Operation == "directional_overlap"
 	if (!overlap && contract.Operation != "count_distinct") || (overlap && len(contract.Filters) != 0) || contract.Subject.RelationID != 0 {
@@ -181,45 +188,67 @@ func buildMetricPlan(contract models.MetricContract, bindings metricPlanBindings
 	bucket := metricOp("case", metricOp("eq", metricParam("grain"), metricText("month")), metricOp("month_start", b.ref(data, contract.Time)), metricParam("start_date"))
 	members := b.project(data, []plan.Projection{{Name: "person", Expr: b.ref(data, contract.Subject)}, {Name: "member_bucket", Expr: bucket}, {Name: "member", Expr: b.ref(data, contract.Distinct)}})
 	members = b.add(plan.Node{Op: "distinct", Distinct: &plan.Unary{Input: members}})
-	months := b.add(plan.Node{Op: "date_buckets", DateBuckets: &plan.DateBuckets{Start: metricParam("start_date"), End: metricParam("end_date"), Name: "bucket", MaxMonths: 120}})
-	monthly := b.filter(months, metricOp("eq", metricParam("grain"), metricText("month")))
-	unit := b.add(plan.Node{Op: "constant_rows", ConstantRows: &plan.ConstantRows{Fields: []datatype.FieldInfo{{Name: "unit", Type: datatype.FieldTypeBool}}, Rows: [][]plan.Literal{{{Type: datatype.FieldTypeBool, Text: "true"}}}}})
-	total := b.filter(unit, metricOp("eq", metricParam("grain"), metricText("total")))
-	total = b.project(total, []plan.Projection{{Name: "bucket", Expr: metricParam("start_date")}})
-	buckets := b.add(plan.Node{Op: "union_all", UnionAll: &plan.UnionAll{Inputs: []plan.NodeID{monthly, total}}})
-	if !overlap {
-		counted := b.aggregate(members, []plan.Projection{{Name: "count_bucket", Expr: metricCol(members, "member_bucket")}}, []plan.Measure{{Name: "metric_count", Op: "count_rows"}})
-		stats := b.join(buckets, counted, "left", metricOp("eq", metricCol(buckets, "bucket"), metricCol(counted, "count_bucket")))
-		stats = b.join(stats, persons, "cross", plan.Expr{})
-		b.p.Root = b.project(stats, []plan.Projection{{Name: "subject_id", Expr: metricParam("subject_id")}, {Name: "bucket", Expr: metricCol(stats, "bucket")}, {Name: "value", Expr: metricOp("coalesce", metricCol(stats, "metric_count"), metricInt("0"))}})
-	} else {
-		a := b.filter(members, metricOp("eq", metricCol(members, "person"), metricParam("subject_id")))
-		z := b.filter(members, metricOp("eq", metricCol(members, "person"), metricParam("comparison_id")))
-		ac := b.aggregate(a, []plan.Projection{{Name: "a_bucket", Expr: metricCol(a, "member_bucket")}}, []plan.Measure{{Name: "a_count", Op: "count_rows"}})
-		zc := b.aggregate(z, []plan.Projection{{Name: "z_bucket", Expr: metricCol(z, "member_bucket")}}, []plan.Measure{{Name: "z_count", Op: "count_rows"}})
-		zr := b.project(z, []plan.Projection{{Name: "z_member", Expr: metricCol(z, "member")}, {Name: "z_member_bucket", Expr: metricCol(z, "member_bucket")}})
-		shared := b.join(a, zr, "inner", metricOp("and", metricOp("eq", metricCol(a, "member"), metricCol(zr, "z_member")), metricOp("eq", metricCol(a, "member_bucket"), metricCol(zr, "z_member_bucket"))))
-		shared = b.aggregate(shared, []plan.Projection{{Name: "shared_bucket", Expr: metricCol(shared, "member_bucket")}}, []plan.Measure{{Name: "shared_count", Op: "count_rows"}})
-		stats := b.join(buckets, ac, "left", metricOp("eq", metricCol(buckets, "bucket"), metricCol(ac, "a_bucket")))
-		stats = b.join(stats, zc, "left", metricOp("eq", metricCol(stats, "bucket"), metricCol(zc, "z_bucket")))
-		stats = b.join(stats, shared, "left", metricOp("eq", metricCol(stats, "bucket"), metricCol(shared, "shared_bucket")))
-		// Existence checks use unique projected rows, so identities cannot multiply stats.
-		for _, name := range []string{"subject_id", "comparison_id"} {
-			exists := b.filter(identityScan, metricOp("eq", b.ref(identityScan, identityRef), metricParam(name)))
-			exists = b.project(exists, []plan.Projection{{Name: "exists_" + name, Expr: metricParam(name)}})
-			stats = b.join(stats, exists, "cross", plan.Expr{})
+	if details {
+		// Details are exactly the members counted by the summary. No second
+		// grouping or enrichment may widen this grain.
+		rows := b.project(members, []plan.Projection{
+			{Name: "subject_id", Expr: metricCol(members, "person")},
+			{Name: "bucket", Expr: metricCol(members, "member_bucket")},
+			{Name: "member", Expr: metricCol(members, "member")},
+		})
+		var memberType datatype.FieldInfo
+		for _, field := range fields[contract.Distinct.RelationID] {
+			if field.Name == b.columns[contract.Distinct] {
+				memberType = field
+			}
 		}
-		roles := b.add(plan.Node{Op: "constant_rows", ConstantRows: &plan.ConstantRows{Fields: []datatype.FieldInfo{{Name: "direction", Type: datatype.FieldTypeString}}, Rows: [][]plan.Literal{{{Type: datatype.FieldTypeString, Text: "forward"}}, {{Type: datatype.FieldTypeString, Text: "reverse"}}}}})
-		roles = b.filter(roles, metricOp("or", metricOp("eq", metricCol(roles, "direction"), metricText("forward")), metricOp("eq", metricParam("directions"), metricText("both"))))
-		stats = b.join(stats, roles, "cross", plan.Expr{})
-		forward := metricOp("eq", metricCol(stats, "direction"), metricText("forward"))
-		aCount := metricOp("coalesce", metricCol(stats, "a_count"), metricInt("0"))
-		zCount := metricOp("coalesce", metricCol(stats, "z_count"), metricInt("0"))
-		denom := metricOp("case", forward, aCount, zCount)
-		other := metricOp("case", forward, zCount, aCount)
-		sharedCount := metricOp("coalesce", metricCol(stats, "shared_count"), metricInt("0"))
-		value := metricOp("case", metricOp("eq", denom, metricInt("0")), metricLiteral(datatype.FieldTypeDecimal, "0"), metricOp("divide", sharedCount, denom))
-		b.p.Root = b.project(stats, []plan.Projection{{Name: "subject_id", Expr: metricOp("case", forward, metricParam("subject_id"), metricParam("comparison_id"))}, {Name: "bucket", Expr: metricCol(stats, "bucket")}, {Name: "value", Expr: value}, {Name: "comparison_id", Expr: metricOp("case", forward, metricParam("comparison_id"), metricParam("subject_id"))}, {Name: "direction", Expr: metricCol(stats, "direction")}, {Name: "subject_count", Expr: denom}, {Name: "comparison_count", Expr: other}, {Name: "shared_count", Expr: sharedCount}})
+		memberType.Name, memberType.Nullable = "member", false
+		b.p.Output = plan.OutputContract{Fields: []datatype.FieldInfo{
+			{Name: "subject_id", Type: datatype.FieldTypeString},
+			{Name: "bucket", Type: datatype.FieldTypeDate}, memberType,
+		}, StableKey: []string{"subject_id", "bucket", "member"}}
+		b.p.Root = rows
+	} else {
+		months := b.add(plan.Node{Op: "date_buckets", DateBuckets: &plan.DateBuckets{Start: metricParam("start_date"), End: metricParam("end_date"), Name: "bucket", MaxMonths: 120}})
+		monthly := b.filter(months, metricOp("eq", metricParam("grain"), metricText("month")))
+		unit := b.add(plan.Node{Op: "constant_rows", ConstantRows: &plan.ConstantRows{Fields: []datatype.FieldInfo{{Name: "unit", Type: datatype.FieldTypeBool}}, Rows: [][]plan.Literal{{{Type: datatype.FieldTypeBool, Text: "true"}}}}})
+		total := b.filter(unit, metricOp("eq", metricParam("grain"), metricText("total")))
+		total = b.project(total, []plan.Projection{{Name: "bucket", Expr: metricParam("start_date")}})
+		buckets := b.add(plan.Node{Op: "union_all", UnionAll: &plan.UnionAll{Inputs: []plan.NodeID{monthly, total}}})
+		if !overlap {
+			counted := b.aggregate(members, []plan.Projection{{Name: "count_bucket", Expr: metricCol(members, "member_bucket")}}, []plan.Measure{{Name: "metric_count", Op: "count_rows"}})
+			stats := b.join(buckets, counted, "left", metricOp("eq", metricCol(buckets, "bucket"), metricCol(counted, "count_bucket")))
+			stats = b.join(stats, persons, "cross", plan.Expr{})
+			b.p.Root = b.project(stats, []plan.Projection{{Name: "subject_id", Expr: metricParam("subject_id")}, {Name: "bucket", Expr: metricCol(stats, "bucket")}, {Name: "value", Expr: metricOp("coalesce", metricCol(stats, "metric_count"), metricInt("0"))}})
+		} else {
+			a := b.filter(members, metricOp("eq", metricCol(members, "person"), metricParam("subject_id")))
+			z := b.filter(members, metricOp("eq", metricCol(members, "person"), metricParam("comparison_id")))
+			ac := b.aggregate(a, []plan.Projection{{Name: "a_bucket", Expr: metricCol(a, "member_bucket")}}, []plan.Measure{{Name: "a_count", Op: "count_rows"}})
+			zc := b.aggregate(z, []plan.Projection{{Name: "z_bucket", Expr: metricCol(z, "member_bucket")}}, []plan.Measure{{Name: "z_count", Op: "count_rows"}})
+			zr := b.project(z, []plan.Projection{{Name: "z_member", Expr: metricCol(z, "member")}, {Name: "z_member_bucket", Expr: metricCol(z, "member_bucket")}})
+			shared := b.join(a, zr, "inner", metricOp("and", metricOp("eq", metricCol(a, "member"), metricCol(zr, "z_member")), metricOp("eq", metricCol(a, "member_bucket"), metricCol(zr, "z_member_bucket"))))
+			shared = b.aggregate(shared, []plan.Projection{{Name: "shared_bucket", Expr: metricCol(shared, "member_bucket")}}, []plan.Measure{{Name: "shared_count", Op: "count_rows"}})
+			stats := b.join(buckets, ac, "left", metricOp("eq", metricCol(buckets, "bucket"), metricCol(ac, "a_bucket")))
+			stats = b.join(stats, zc, "left", metricOp("eq", metricCol(stats, "bucket"), metricCol(zc, "z_bucket")))
+			stats = b.join(stats, shared, "left", metricOp("eq", metricCol(stats, "bucket"), metricCol(shared, "shared_bucket")))
+			// Existence checks use unique projected rows, so identities cannot multiply stats.
+			for _, name := range []string{"subject_id", "comparison_id"} {
+				exists := b.filter(identityScan, metricOp("eq", b.ref(identityScan, identityRef), metricParam(name)))
+				exists = b.project(exists, []plan.Projection{{Name: "exists_" + name, Expr: metricParam(name)}})
+				stats = b.join(stats, exists, "cross", plan.Expr{})
+			}
+			roles := b.add(plan.Node{Op: "constant_rows", ConstantRows: &plan.ConstantRows{Fields: []datatype.FieldInfo{{Name: "direction", Type: datatype.FieldTypeString}}, Rows: [][]plan.Literal{{{Type: datatype.FieldTypeString, Text: "forward"}}, {{Type: datatype.FieldTypeString, Text: "reverse"}}}}})
+			roles = b.filter(roles, metricOp("or", metricOp("eq", metricCol(roles, "direction"), metricText("forward")), metricOp("eq", metricParam("directions"), metricText("both"))))
+			stats = b.join(stats, roles, "cross", plan.Expr{})
+			forward := metricOp("eq", metricCol(stats, "direction"), metricText("forward"))
+			aCount := metricOp("coalesce", metricCol(stats, "a_count"), metricInt("0"))
+			zCount := metricOp("coalesce", metricCol(stats, "z_count"), metricInt("0"))
+			denom := metricOp("case", forward, aCount, zCount)
+			other := metricOp("case", forward, zCount, aCount)
+			sharedCount := metricOp("coalesce", metricCol(stats, "shared_count"), metricInt("0"))
+			value := metricOp("case", metricOp("eq", denom, metricInt("0")), metricLiteral(datatype.FieldTypeDecimal, "0"), metricOp("divide", sharedCount, denom))
+			b.p.Root = b.project(stats, []plan.Projection{{Name: "subject_id", Expr: metricOp("case", forward, metricParam("subject_id"), metricParam("comparison_id"))}, {Name: "bucket", Expr: metricCol(stats, "bucket")}, {Name: "value", Expr: value}, {Name: "comparison_id", Expr: metricOp("case", forward, metricParam("comparison_id"), metricParam("subject_id"))}, {Name: "direction", Expr: metricCol(stats, "direction")}, {Name: "subject_count", Expr: denom}, {Name: "comparison_count", Expr: other}, {Name: "shared_count", Expr: sharedCount}})
+		}
 	}
 	if contract.SubjectLabel != nil {
 		// Enrich only the computed rows, preserving metric grain and stable keys.

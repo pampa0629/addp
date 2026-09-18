@@ -1,0 +1,6 @@
+schema: addp.skill-runtime/v1
+required_skills: []
+required_tools:
+  - ontology.classes.list
+  - ontology.class.context
+max_iterations: 6

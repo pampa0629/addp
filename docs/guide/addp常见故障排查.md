@@ -1135,6 +1135,28 @@ System 中 `pointcloud_workflow` 应为 `online`，且连接信息应指向宿�
 
 ---
 
+## Document 镜像下载 Debian 依赖失败，阻断全量启动
+
+`restart.sh -all` 在 Runtime 并行启动阶段报 `apt-get` 退出码 `100` 时，先查看 Docker 构建日志：
+
+```bash
+docker buildx history logs <构建记录 ID>
+```
+
+若 `deb.debian.org` 的 HTTP 索引或依赖包请求出现 `502 Bad Gateway`、`Connection failed`，失败发生在构建网络链路，尚未进入 Document 服务启动。索引下载失败后还可能出现 `repository ... is not signed`，不能据此关闭签名校验。
+
+本地曾在 Docker Desktop 配置 HTTP/HTTPS 代理的环境中复现：相同基础镜像的构建过程下载同一 Noto 字体包时，HTTP 超时，官方 HTTPS 请求成功。Document Dockerfile 因此统一使用 Debian 官方 HTTPS 源，保留原有 `Signed-By` 和 TLS 校验；索引更新与依赖安装均设置最多 5 次重试，索引更新使用 `APT::Update::Error-Mode=any`，避免部分索引失败却继续安装。重试耗尽仍必须阻止启动，不能跳过 Document 或忽略构建失败。
+
+修复后通过标准入口验证：
+
+```bash
+make test-document-workflow
+make build-images IMAGE_BUILD_ARGS="--verify --services document-workflow-engine"
+bash scripts/dev/restart.sh -all
+```
+
+Codex 等托管命令环境使用 `bash scripts/dev/keepalive.sh restart -all` 并保持会话存活。若 HTTPS 仍失败，继续检查 Docker Desktop 的实际代理、代理监听端口和构建容器到软件源的连通性，不应关闭证书或包签名校验。
+
 ## Python 镜像首次构建耗时过长
 
 ### 现象

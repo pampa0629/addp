@@ -36,6 +36,18 @@ var toolAuthorizations = map[string]commonauth.ToolAuthorization{
 		RequiredScopes:      []string{"notebook.draft.generate"},
 		RequiredPermissions: []string{"copilot.notebook.execute"},
 	},
+	"ontology.class.context": {
+		Name:                "ontology.class.context",
+		Owner:               "ontology",
+		RequiredScopes:      []string{"ontology.class.context"},
+		RequiredPermissions: []string{"ontology.semantic.read"},
+	},
+	"ontology.classes.list": {
+		Name:                "ontology.classes.list",
+		Owner:               "ontology",
+		RequiredScopes:      []string{"ontology.classes.list"},
+		RequiredPermissions: []string{"ontology.semantic.read"},
+	},
 	"query.draft.generate": {
 		Name:                "query.draft.generate",
 		Owner:               "copilot",

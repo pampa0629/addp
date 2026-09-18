@@ -142,6 +142,7 @@ func testMetricRevisionLifecycle(t *testing.T, engineType string) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	contract.IncludeDetails = true
 	req := &models.SaveMetricImplementationRevisionRequest{Version: item.Version, MetricDefinitionRevisionID: 19, Contract: contract}
 	nativeEngineType := engineType
 	engineType = "duckdb"
@@ -168,12 +169,22 @@ func testMetricRevisionLifecycle(t *testing.T, engineType string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	plan, err := svc.PublishedPlan(ctx, item.ID, draftID, tenant, nil)
+	plan, err := svc.PublishedPlan(ctx, item.ID, draftID, tenant, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.PublishedPlan(ctx, item.ID, draftID, tenant+1, nil); err == nil {
+	if _, err := svc.PublishedPlan(ctx, item.ID, draftID, tenant+1, nil, ""); err == nil {
 		t.Fatal("cross-tenant plan accepted")
+	}
+	details, err := svc.PublishedPlan(ctx, item.ID, draftID, tenant, nil, "details")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if details.ResultKind != "details" || details.DependencyHash != plan.DependencyHash || details.ExecutionPlan.PackageHash == plan.ExecutionPlan.PackageHash || len(details.ExecutionPlan.Plan.Output.StableKey) != 3 {
+		t.Fatalf("invalid detail publication: %+v", details)
+	}
+	if _, err := svc.PublishedPlan(ctx, item.ID, draftID, tenant, nil, "unknown"); err == nil {
+		t.Fatal("unknown result kind accepted")
 	}
 	if len(plan.ParameterPresentation) != 4 || plan.ParameterPresentation["end_date"].Labels["zh-cn"] != "结束日期" {
 		t.Fatalf("missing frozen presentation: %#v", plan.ParameterPresentation)
@@ -185,7 +196,7 @@ func testMetricRevisionLifecycle(t *testing.T, engineType string) {
 	if err := tx.Model(&models.LogicalField{}).Where("id = ?", fields[6]).Updates(map[string]interface{}{"name": "renamed label", "description": "new help"}).Error; err != nil {
 		t.Fatal(err)
 	}
-	after, err := svc.PublishedPlan(ctx, item.ID, draftID, tenant, nil)
+	after, err := svc.PublishedPlan(ctx, item.ID, draftID, tenant, nil, "")
 	if err != nil || after.DependencyHash != plan.DependencyHash || !reflect.DeepEqual(after.ParameterPresentation, plan.ParameterPresentation) {
 		t.Fatalf("display change invalidated plan: %v", err)
 	}
@@ -198,7 +209,7 @@ func testMetricRevisionLifecycle(t *testing.T, engineType string) {
 	if len(item.Revisions) != 2 || item.Revisions[0].RevisionNo != 2 || !item.Revisions[1].Contract.Filters[0].Value {
 		t.Fatalf("published content mutated: %#v", item.Revisions)
 	}
-	after, err = svc.PublishedPlan(ctx, item.ID, draftID, tenant, nil)
+	after, err = svc.PublishedPlan(ctx, item.ID, draftID, tenant, nil, "")
 	if err != nil || after.ExecutionPlan.PackageHash != plan.ExecutionPlan.PackageHash {
 		t.Fatalf("draft changed publication: %v", err)
 	}
@@ -215,7 +226,7 @@ func testMetricRevisionLifecycle(t *testing.T, engineType string) {
 	if err := tx.Model(&models.LogicalField{}).Where("id = ?", fields[6]).Update("column_name", "changed_date").Error; err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.PublishedPlan(ctx, item.ID, draftID, tenant, nil); err == nil {
+	if _, err := svc.PublishedPlan(ctx, item.ID, draftID, tenant, nil, ""); err == nil {
 		t.Fatal("changed physical column accepted")
 	}
 	if err := tx.Model(&models.LogicalField{}).Where("id = ?", fields[6]).Update("column_name", "event_date").Error; err != nil {
@@ -224,7 +235,7 @@ func testMetricRevisionLifecycle(t *testing.T, engineType string) {
 	if err := tx.Model(&models.LogicalField{}).Where("id = ?", fields[7]).Update("column_name", "changed_nickname").Error; err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.PublishedPlan(ctx, item.ID, draftID, tenant, nil); err == nil {
+	if _, err := svc.PublishedPlan(ctx, item.ID, draftID, tenant, nil, ""); err == nil {
 		t.Fatal("changed display-name dependency accepted")
 	}
 	if err := tx.Model(&models.LogicalField{}).Where("id = ?", fields[7]).Update("column_name", "nickname").Error; err != nil {
@@ -234,7 +245,7 @@ func testMetricRevisionLifecycle(t *testing.T, engineType string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.PublishedPlan(ctx, item.ID, draftID, tenant, nil); err == nil {
+	if _, err := svc.PublishedPlan(ctx, item.ID, draftID, tenant, nil, ""); err == nil {
 		t.Fatal("withdrawn revision executed")
 	}
 }

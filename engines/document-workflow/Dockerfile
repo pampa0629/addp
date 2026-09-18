@@ -11,8 +11,10 @@ ENV XDG_CONFIG_HOME=/work/document/config
 
 WORKDIR /app
 
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends \
+# Use HTTPS through build proxies and retry transient repository failures.
+RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list.d/debian.sources \
+  && apt-get -o Acquire::Retries=5 -o APT::Update::Error-Mode=any update \
+  && apt-get -o Acquire::Retries=5 install -y --no-install-recommends \
     ca-certificates \
     curl \
     fonts-noto-cjk \

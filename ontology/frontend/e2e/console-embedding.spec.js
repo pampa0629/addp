@@ -6,7 +6,10 @@ test('real ontology iframe synchronizes public URL without reload and protects C
   context
 }) => {
   const state = await installBackend(context)
-  await page.goto(`/ontology/e2e/host.html#${root}`)
+  await page.goto('/ontology/e2e/host.html#/other')
+  await page.getByRole('menuitem', { name: '领域本体', exact: true }).click()
+  await page.getByRole('menuitem', { name: '领域本体建模', exact: true }).click()
+  await expect(page).toHaveURL(new RegExp(`#${root}$`))
   const frame = page.frameLocator('iframe')
   await frame
     .getByRole('button', { name: 'beijing_outdoor', exact: true })
@@ -33,4 +36,12 @@ test('real ontology iframe synchronizes public URL without reload and protects C
   await expect(page).toHaveURL(new RegExp(`#${editor}\\?tab=properties$`))
   await expect(frame.getByTestId('properties-member')).toHaveCount(1)
   expect(state.unexpected).toEqual([])
+})
+
+test('Console never renders an empty ontology group without read permission', async ({ page, context }) => {
+  await installBackend(context, { permissions: [] })
+  await page.goto('/ontology/e2e/host.html?access=none#/other')
+  await expect(page.getByRole('button', { name: 'Other module' })).toBeVisible()
+  await expect(page.getByRole('menuitem', { name: '领域本体', exact: true })).toHaveCount(0)
+  await expect(page.locator('iframe')).toHaveCount(0)
 })

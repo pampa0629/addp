@@ -121,10 +121,13 @@ const visibleColumns = computed(() => normalizeTabularColumns({
   rows: props.rows,
   presentations: props.presentations
 }))
+const columnsByKey = computed(() => new Map(visibleColumns.value.map(column => [column.key, column])))
 
 const cellValue = (row, column) => tabularCellValue(row, column)
-const formatCell = (value, column) => formatResultCell(value, props.nullText, column?.presentation, locale.value)
-const presentCell = (value, column) => presentResultCell(value, props.nullText, column?.presentation, locale.value)
+// Element Plus retains cell slots between column updates. Resolve presentation
+// by stable field key so formatting edits also invalidate the rendered cells.
+const formatCell = (value, column) => formatResultCell(value, props.nullText, columnsByKey.value.get(column?.key)?.presentation, locale.value)
+const presentCell = (value, column) => presentResultCell(value, props.nullText, columnsByKey.value.get(column?.key)?.presentation, locale.value)
 const cellTitle = (value, column) => {
   const presented = presentCell(value, column)
   return presented.state ? `${presented.text} · ${presented.state.label}` : presented.text

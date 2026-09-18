@@ -10,6 +10,7 @@ from .meta import MetaClient
 from .develop import DevelopClient
 from .manager import ManagerClient
 from .graph import GraphClient
+from .ontology import OntologyClient
 from .copilot import CopilotClient
 from .inference import (
     ChatResponse,
@@ -57,6 +58,7 @@ __all__ = [
     "DevelopClient",
     "ManagerClient",
     "GraphClient",
+    "OntologyClient",
     "CopilotClient",
     "OAuthServiceTokenSource",
     "SyncOAuthServiceTokenSource",

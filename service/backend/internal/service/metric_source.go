@@ -41,7 +41,7 @@ func (s *QueryServiceService) resolveMetricSource(ctx context.Context, req *mode
 		return nil, fmt.Errorf("%w: metric source cannot override frozen configuration", ErrInvalidStructuredQuery)
 	}
 	source := req.MetricSource
-	frozen, err := s.modelClient.WithTenantID(tenantID).GetMetricPlan(ctx, source.ImplementationID, source.RevisionID, nil)
+	frozen, err := s.modelClient.WithTenantID(tenantID).GetMetricPlan(ctx, source.ImplementationID, source.RevisionID, nil, source.ResultKind)
 	if err != nil {
 		return nil, err
 	}
@@ -102,7 +102,7 @@ func (s *QueryExecutorService) validateMetricSource(ctx context.Context, service
 		}
 	}
 
-	current, err := s.modelClient.WithTenantID(service.TenantID).GetMetricPlan(ctx, source.ImplementationID, source.RevisionID, input)
+	current, err := s.modelClient.WithTenantID(service.TenantID).GetMetricPlan(ctx, source.ImplementationID, source.RevisionID, input, source.ResultKind)
 	if err != nil {
 		return err
 	}

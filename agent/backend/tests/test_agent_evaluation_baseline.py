@@ -374,9 +374,29 @@ class AgentEvaluationBaselineTests(unittest.IsolatedAsyncioTestCase):
             allowed_tools=["workflow.run"],
         )
 
-    async def _run_factory(self, *, agent_run_id, tools, responses, allowed_tools):
+    async def test_ontology_definition_read_only_scenario(self):
+        scenario = load_scenario(SCENARIOS_ROOT / "ontology-definition")
+        binding = {"ontology_id": "beijing_outdoor", "revision": 1, "generation": "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee", "activation_version": 1, "digest": "a" * 64, "knowledge_kind": "native_definition"}
+        class_definition = {"id": "activity", "name": "北京活动", "parents": []}
+        arguments = {key: binding[key] for key in ("ontology_id", "revision", "generation", "activation_version")}
+        events = await self._run_factory(
+            skill_name="ontology-exploration",
+            agent_run_id="run-ontology",
+            tools=[_Tool("ontology.classes.list", {**binding, "classes": [class_definition]}), _Tool("ontology.class.context", {**binding, "class": class_definition, "ancestors": [], "properties": [], "relations": [], "rules": []})],
+            responses=[_Response(tool_calls=[_tool_call("ontology.classes.list", {"ontology_id": "beijing_outdoor"})]), _Response(tool_calls=[_tool_call("ontology.class.context", {**arguments, "class_id": "activity"}, call_id="call-2")]), _Response(content="这是原生定义，不是业务事实验证。")],
+            allowed_tools=["ontology.classes.list", "ontology.class.context"],
+        )
+        phase = phase_from_events("query", "run-ontology", "completed", events, owner_effects={"approvals_created": 0, "executions_created": 0}, persisted_state={})
+        trace = {"skill": "ontology-exploration", "phases": [phase]}
+        evaluate_trace(scenario, trace)
+        # A definition query must not acquire write/approval side effects.
+        phase["owner_effects"]["executions_created"] = 1
+        with self.assertRaises(EvaluationFailure):
+            evaluate_trace(scenario, trace)
+
+    async def _run_factory(self, *, agent_run_id, tools, responses, allowed_tools, skill_name="workflow-analysis"):
         context = {
-            "skill_name": "workflow-analysis",
+            "skill_name": skill_name,
             "user_request": "评测请求",
             "context_summary": "",
             "user_id": 1,

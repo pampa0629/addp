@@ -122,4 +122,20 @@ func TestOntologyBackendForwardMigrationAgainstPostgres(t *testing.T) {
 	if assignments != 1 || permissions != 2 || userGrants != 0 || current != version+1 || keys != "system.runtime_registry.update" {
 		t.Fatalf("assignments=%d permissions=%d implicit=%d version=%d/%d keys=%s", assignments, permissions, userGrants, current, version, keys)
 	}
+	_, semanticMigrations := migrationFilesBeforeAndThrough(t, "000154_iam_ontology_semantic_read.up.sql")
+	runner.FS = semanticMigrations
+	for range 2 {
+		if err := runner.Run(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := db.QueryRow(`SELECT count(*) FROM system.permissions WHERE permission_key='ontology.semantic.read' AND tenant_customizable AND delegable AND allowed_scope_types=ARRAY['tenant']::text[]`).Scan(&permissions); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`SELECT count(*) FROM system.role_permissions rp JOIN system.permissions p ON p.id=rp.permission_id WHERE p.owner_module='ontology'`).Scan(&userGrants); err != nil {
+		t.Fatal(err)
+	}
+	if permissions != 1 || userGrants != 0 {
+		t.Fatalf("semantic permission=%d implicit grants=%d", permissions, userGrants)
+	}
 }

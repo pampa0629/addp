@@ -19,7 +19,7 @@
       :collapse="isCollapsed"
     >
       <template v-for="module in activeGroupModules" :key="module">
-        <template v-if="sidebarMenus[module]">
+        <template v-if="sidebarMenus[module] && (sidebarMenus[module].flat || sidebarMenus[module].items?.length)">
           <!-- 平铺菜单项（如 agent） -->
           <el-menu-item
             v-if="sidebarMenus[module].flat"

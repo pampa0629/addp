@@ -29,7 +29,8 @@ console/frontend/
 ## 开发规则
 
 - 新增前端模块入口时，优先更新 `console/frontend/src/config/portalConfig.js`，并同步健康检查或 Swagger 代理配置。
-- “数据准备”分组及首页卡片按 Transfer、Meta、Security、Manager 排列；“数据治理”分组包含 Standard、Model、Quality。分组只表达产品导航，Security 继续独立拥有数据保护控制面，纳管仍由用户显式发起。
+- “数据准备”分组及首页卡片按 Transfer、Meta、Security、Manager 排列；“数据治理”分组包含 Standard、Model、Quality、Ontology。分组只表达产品导航，Security 继续独立拥有数据保护控制面，纳管仍由用户显式发起。
+- Ontology 的具体入口为“领域本体 → 领域本体建模”（`/ontology/ontologies`），仅当前 Tenant 且具有 `ontology.revision.read` 时显示；权限过滤后没有可见子项的模块不渲染空父菜单，不自动扩张角色权限。
 - Console 只做入口聚合，不承载业务模块的核心业务逻辑。
 - 前端样式遵守 `common-frontend/docs/addp前端风格设计规范.md`，不要硬编码 ADDP 主题色。
 - 各模块仍应支持独立运行，Console iframe 集成不能破坏 standalone 模式。

@@ -20,12 +20,14 @@ func TestSwaggerContainsConcreteNativeDefinition(t *testing.T) {
 		t.Fatal(err)
 	}
 	for suffix, fields := range map[string][]string{
-		".CreateRequest":   {"revision", "definition"},
-		".DefinitionInput": {"classes", "properties", "relations", "rules"},
-		".Class":           {"id", "name", "parents"},
-		".Rule":            {"id", "class_id", "expression", "basis", "inputs"},
-		".RebuildRequest":  {"version", "failed_generation", "activation_version"},
-		".RevisionSummary": {"ontology_id", "revision", "version", "status", "digest", "initial_generation", "initial_execution_id"},
+		".CreateRequest":          {"revision", "definition"},
+		".DefinitionInput":        {"classes", "properties", "relations", "rules"},
+		".Class":                  {"id", "name", "parents"},
+		".Rule":                   {"id", "class_id", "expression", "basis", "inputs"},
+		".RebuildRequest":         {"version", "failed_generation", "activation_version"},
+		".RevisionSummary":        {"ontology_id", "revision", "version", "status", "digest", "initial_generation", "initial_execution_id"},
+		".ClassDirectoryResponse": {"ontology_id", "revision", "generation", "activation_version", "digest", "knowledge_kind", "classes"},
+		".ClassContextResponse":   {"ontology_id", "revision", "generation", "activation_version", "digest", "knowledge_kind", "class", "ancestors", "properties", "relations", "rules"},
 	} {
 		found := false
 		for name, definition := range document.Definitions {

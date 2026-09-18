@@ -4,7 +4,7 @@ from typing import Any, Awaitable, Callable
 import httpx
 from jsonschema import Draft202012Validator
 
-from addp_common.client import CopilotClient, DevelopClient, ManagerClient, MetaClient, SystemClient
+from addp_common.client import CopilotClient, DevelopClient, ManagerClient, MetaClient, OntologyClient, SystemClient
 
 from .manifest import ToolDefinition, get_tool
 
@@ -47,6 +47,8 @@ class ToolExecutor:
             "workflow.validate": self._workflow_validate,
             "workflow.run": self._workflow_run,
             "execution.get": self._execution_get,
+            "ontology.classes.list": self._ontology_classes_list,
+            "ontology.class.context": self._ontology_class_context,
         }
 
     async def call(
@@ -101,8 +103,14 @@ class ToolExecutor:
             error_code = "owner_api_error"
             error_message = f"{definition.owner} API 返回 HTTP {exc.response.status_code}"
             try:
-                error_body = exc.response.json().get("error")
-                if isinstance(error_body, dict):
+                body = exc.response.json()
+                error_body = body.get("error") if isinstance(body, dict) else None
+                if definition.owner == "ontology" and isinstance(error_body, str):
+                    candidate_code = str(body.get("error_code") or "")
+                    if candidate_code in definition.errors:
+                        error_code = candidate_code
+                        error_message = error_body
+                elif isinstance(error_body, dict):
                     candidate_code = str(error_body.get("code") or "")
                     if candidate_code in definition.errors:
                         error_code = candidate_code
@@ -157,6 +165,14 @@ class ToolExecutor:
 
     def _client(self, client_type, delegated_token: str):
         return client_type(base_url=self.base_url, user_token=delegated_token)
+
+    async def _ontology_classes_list(self, arguments: dict[str, Any], delegated_token: str) -> Any:
+        async with self._client(OntologyClient, delegated_token) as client:
+            return await client.list_classes(arguments["ontology_id"])
+
+    async def _ontology_class_context(self, arguments: dict[str, Any], delegated_token: str) -> Any:
+        async with self._client(OntologyClient, delegated_token) as client:
+            return await client.class_context(**arguments)
 
     async def _engine_list(self, arguments: dict[str, Any], delegated_token: str) -> Any:
         async with self._client(SystemClient, delegated_token) as client:

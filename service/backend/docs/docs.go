@@ -4932,6 +4932,12 @@ const docTemplate = `{
                 "implementation_id": {
                     "type": "integer"
                 },
+                "result_kind": {
+                    "type": "string",
+                    "enum": [
+                        "details"
+                    ]
+                },
                 "revision_id": {
                     "type": "integer"
                 }
@@ -4969,6 +4975,9 @@ const docTemplate = `{
                     "additionalProperties": {
                         "$ref": "#/definitions/query.ParameterPresentation"
                     }
+                },
+                "result_kind": {
+                    "type": "string"
                 },
                 "revision_id": {
                     "type": "integer"

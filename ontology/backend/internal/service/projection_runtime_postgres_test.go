@@ -125,11 +125,45 @@ func testProjectionRuntime(t *testing.T, db *gorm.DB, s *RevisionService, actor 
 	t.Run("activate_and_withdraw", func(t *testing.T) {
 		d := definition()
 		r := publishRuntimeFixture(t, s, actor, d)
+		if _, err := s.ListClasses(ctx, actor, d.Scope.OntologyID); !errors.Is(err, repository.ErrNotActive) {
+			t.Fatalf("pending projection exposed: %v", err)
+		}
 		l := claim(r)
 		if err := executor(testProjectionGraph{}, auth).Execute(ctx, l); err != nil {
 			t.Fatal(err)
 		}
 		assertState(r, "ready", execution.ExecutionStatusSuccess, &r.Revision)
+		directory, err := s.ListClasses(ctx, actor, d.Scope.OntologyID)
+		if err != nil || directory.Revision != r.Revision || directory.Generation != *r.Generation || directory.Digest != r.Digest || directory.KnowledgeKind != "native_definition" || len(directory.Classes) != 1 {
+			t.Fatalf("directory=%+v error=%v", directory, err)
+		}
+		semanticContext, err := s.ClassContext(ctx, actor, d.Scope.OntologyID, "activity", directory.Revision, directory.Generation, directory.ActivationVersion)
+		if err != nil || len(semanticContext.Rules) != 1 || semanticContext.Rules[0].Basis == "" {
+			t.Fatalf("context=%+v error=%v", semanticContext, err)
+		}
+		if _, err := s.ClassContext(ctx, actor, d.Scope.OntologyID, "activity", directory.Revision, directory.Generation, directory.ActivationVersion+1); !errors.Is(err, ErrActivationChanged) {
+			t.Fatal(err)
+		}
+		if _, err := s.ClassContext(ctx, actor, d.Scope.OntologyID, "missing", directory.Revision, directory.Generation, directory.ActivationVersion); !errors.Is(err, repository.ErrNotFound) {
+			t.Fatal(err)
+		}
+		if _, err := s.ListClasses(ctx, testActor(actor.TenantID+1), d.Scope.OntologyID); !errors.Is(err, repository.ErrNotFound) {
+			t.Fatalf("cross tenant: %v", err)
+		}
+		if _, err := s.ListClasses(ctx, actor, "missing"); !errors.Is(err, repository.ErrNotFound) {
+			t.Fatal(err)
+		}
+		draft := d
+		draft.Scope.Revision++
+		draft.Classes = []semantic.Class{{ID: "draft_only", Name: "草稿"}}
+		draft.Properties, draft.Rules = nil, nil
+		if _, err := s.CreateDraft(ctx, actor, draft); err != nil {
+			t.Fatal(err)
+		}
+		stillActive, err := s.ListClasses(ctx, actor, d.Scope.OntologyID)
+		if err != nil || stillActive.Revision != directory.Revision || stillActive.Classes[0].ID != "activity" {
+			t.Fatalf("draft leaked: %+v %v", stillActive, err)
+		}
 		for _, statement := range []string{
 			"UPDATE ontology.projections SET status='failed' WHERE generation=?",
 			"UPDATE ontology.projections SET baseline_version=baseline_version+1 WHERE generation=?",
@@ -144,6 +178,9 @@ func testProjectionRuntime(t *testing.T, db *gorm.DB, s *RevisionService, actor 
 			t.Fatal(err)
 		}
 		assertState(r, "ready", execution.ExecutionStatusSuccess, nil)
+		if _, err := s.ListClasses(ctx, actor, d.Scope.OntologyID); !errors.Is(err, repository.ErrNotActive) {
+			t.Fatalf("withdrawn definition exposed: %v", err)
+		}
 		var events int64
 		db.Model(&models.ProjectionEvent{}).Where("generation=?", r.Generation).Count(&events)
 		if events != 2 {

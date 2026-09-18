@@ -264,6 +264,7 @@ def run_offline_checks() -> list[dict[str, Any]]:
                 "unittest",
                 "-q",
                 "agent.backend.tests.test_agent_evaluation_baseline",
+                "agent.backend.tests.test_platform_skill_tools",
                 "agent.backend.tests.test_agent_evaluation_gate",
                 "agent.backend.tests.test_agent_evaluation_comparison",
                 "agent.backend.tests.test_agent_online_runner",

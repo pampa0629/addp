@@ -25,8 +25,11 @@ func SetupRouter(systemURL string, lifecycle *modulelifecycle.Controller, revisi
 	lifecycle.RegisterHealthRoutes(router)
 	router.Use(lifecycle.RequireReady())
 	api := router.Group("/api/v1/ontology")
-	api.Use(commonauth.MustNewMiddleware(commonauth.MiddlewareConfig{SystemURL: systemURL}), commonauth.MustNewContextGuard("tenant"), userBoundary)
+	api.Use(commonauth.MustNewMiddleware(commonauth.MiddlewareConfig{SystemURL: systemURL}), commonauth.MustNewContextGuard("tenant"))
 	h := &Handler{revisions: revisions, issuer: issuer}
+	api.GET("/ontologies/:ontology_id/semantic/classes", semanticBoundary("ontology.classes.list"), tenantPermissions(permissions.PermissionOntologySemanticRead), h.ListClasses)
+	api.GET("/ontologies/:ontology_id/semantic/classes/:class_id", semanticBoundary("ontology.class.context"), tenantPermissions(permissions.PermissionOntologySemanticRead), h.ClassContext)
+	api.Use(userBoundary)
 	api.GET("/ontologies", commonauth.MustNewPermissionGuard(permissions.PermissionOntologyRevisionRead), tenantPermissions(permissions.PermissionOntologyRevisionRead), h.ListOntologies)
 	api.GET("/ontologies/:ontology_id/revisions", commonauth.MustNewPermissionGuard(permissions.PermissionOntologyRevisionRead), tenantPermissions(permissions.PermissionOntologyRevisionRead), h.ListRevisions)
 	api.GET("/ontologies/:ontology_id", commonauth.MustNewPermissionGuard(permissions.PermissionOntologyRevisionRead), tenantPermissions(permissions.PermissionOntologyRevisionRead), h.Head)
@@ -41,6 +44,30 @@ func SetupRouter(systemURL string, lifecycle *modulelifecycle.Controller, revisi
 	api.GET("/ontologies/:ontology_id/projections/:generation", commonauth.MustNewPermissionGuard(permissions.PermissionOntologyRevisionRead), tenantPermissions(permissions.PermissionOntologyRevisionRead), h.Projection)
 	api.GET("/ontologies/:ontology_id/revisions/:revision/projection", commonauth.MustNewPermissionGuard(permissions.PermissionOntologyRevisionRead), tenantPermissions(permissions.PermissionOntologyRevisionRead), h.LatestProjection)
 	return router
+}
+
+func semanticBoundary(tool string) gin.HandlerFunc {
+	guard, err := commonauth.NewDelegatedRouteGuard(commonauth.DelegatedRouteGuardConfig{
+		Audience: "ontology", RequiredScopes: []string{tool}, RequiredPermissions: []string{permissions.PermissionOntologySemanticRead},
+	})
+	if err != nil {
+		panic(err)
+	}
+	return func(c *gin.Context) {
+		a, ok := commonauth.AuthContextFromGin(c)
+		if ok && a.Token.Type == "delegated_access_token" {
+			if a.Context.TenantMembershipID == nil {
+				c.AbortWithStatusJSON(http.StatusForbidden, ErrorResponse{Error: commoni18n.T(c, commoni18n.MsgForbidden), ErrorCode: "permission_denied"})
+				return
+			}
+			ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+			defer cancel()
+			c.Request = c.Request.WithContext(ctx)
+			guard(c)
+			return
+		}
+		userBoundary(c)
+	}
 }
 
 func userBoundary(c *gin.Context) {

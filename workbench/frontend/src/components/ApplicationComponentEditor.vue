@@ -146,33 +146,54 @@
             <el-form-item :label="t('workbench.pageLimit')">
               <el-input-number v-model="draft.pageLimit" :min="1" :max="descriptor.input_contract.page.max_limit" @change="resetResult" />
             </el-form-item>
-              <details class="presentation-details" :open="Boolean(component)"><summary>{{ t('workbench.studio.fieldFormatting') }}</summary>
-            <template v-if="draft.rendererType !== 'value' && draft.fieldPresentations.length > 0">
-              <div class="section-header field-presentation-header">
-                <strong>{{ t('workbench.fieldPresentations') }}</strong>
-                <span>{{ t('workbench.fieldPresentationsHint') }}</span>
+            <section v-if="draft.rendererType !== 'value' && draft.fieldPresentations.length > 0" class="field-formatting" data-testid="field-formatting">
+              <div class="field-presentation-header">
+                <strong>{{ t('workbench.studio.fieldFormatting') }}</strong>
+                <p>{{ t('workbench.studio.fieldFormattingHint') }}</p>
               </div>
-              <div v-for="item in draft.fieldPresentations" :key="item.field" class="field-presentation">
+              <div v-for="item in draft.fieldPresentations" :key="item.field" class="field-presentation" :data-field="item.field">
+                <div class="field-presentation-heading">
+                  <span>{{ t('workbench.presentationField') }} <code>{{ item.field }}</code></span>
+                  <el-button link type="primary" @click="restoreFieldFormat(item)">{{ t('workbench.studio.restoreFieldFormat') }}</el-button>
+                </div>
                 <div class="field-presentation-fields">
-                  <el-input :model-value="item.field" disabled :placeholder="t('workbench.presentationField')" />
-                  <el-input v-model="item.label" maxlength="100" :placeholder="t('workbench.presentationLabel')" />
-                  <el-input v-if="presentationIsNumeric(item)" v-model="item.unit" maxlength="30" :placeholder="t('workbench.presentationUnit')" />
-                  <el-input-number v-if="presentationIsNumeric(item)" v-model="item.precision" :min="0" :max="8" :controls="false" :placeholder="t('workbench.presentationPrecision')" />
-                  <el-select v-if="presentationIsTemporal(item)" v-model="item.temporalFormat" :placeholder="t('workbench.presentationTemporalFormat')">
-                    <el-option v-for="format in temporalFormats(item)" :key="format" :value="format" :label="t(`workbench.temporalFormats.${format}`)" />
-                  </el-select>
-                  <el-input-number v-if="draft.rendererType === 'table'" v-model="item.width" :min="80" :max="600" :controls="false" :placeholder="t('workbench.presentationWidth')" />
+                  <label class="field-label-input">
+                    <span>{{ t('workbench.presentationLabel') }}</span>
+                    <el-input v-model="item.label" maxlength="100" :aria-label="t('workbench.presentationLabel')" :placeholder="t('workbench.presentationLabel')" />
+                  </label>
+                  <label v-if="presentationIsNumeric(item)">
+                    <span>{{ t('workbench.presentationUnit') }}</span>
+                    <el-input v-model="item.unit" maxlength="30" :aria-label="t('workbench.presentationUnit')" :placeholder="t('workbench.presentationUnit')" />
+                  </label>
+                  <label v-if="presentationIsNumeric(item)">
+                    <span>{{ t('workbench.presentationPrecision') }}</span>
+                    <el-input-number v-model="item.precision" :min="0" :max="8" :controls="false" :aria-label="t('workbench.presentationPrecision')" :placeholder="t('workbench.presentationPrecision')" />
+                  </label>
+                  <label v-if="presentationIsTemporal(item)">
+                    <span>{{ t('workbench.presentationTemporalFormat') }}</span>
+                    <el-select v-model="item.temporalFormat" :aria-label="t('workbench.presentationTemporalFormat')" :placeholder="t('workbench.presentationTemporalFormat')">
+                      <el-option v-for="format in temporalFormats(item)" :key="format" :value="format" :label="t(`workbench.temporalFormats.${format}`)" />
+                    </el-select>
+                  </label>
                 </div>
                 <div v-if="item.temporalFormat === 'period'" class="field-presentation-fields">
                   <el-select v-for="kind in ['grain', 'start', 'end']" :key="kind" v-model="item.period[`${kind}_parameter`]" :aria-label="t(`workbench.periodParameters.${kind}`)" :placeholder="t(`workbench.periodParameters.${kind}`)" @change="resetResult">
                     <el-option v-for="parameter in periodParameterCandidates(kind)" :key="parameter.name" :value="parameter.name" :label="parameter.description || parameter.name" />
                   </el-select>
                 </div>
-                <StateRuleEditor :model-value="item.stateRules || []" :field-type="item.fieldType" @update:model-value="updateStateRules(item, $event)" />
-                <ValueLabelEditor v-if="['string', 'bool'].includes(item.fieldType)" :model-value="item.valueLabels || []" :field-type="item.fieldType" @update:model-value="item.valueLabels = $event; resetResult()" />
+                <details class="presentation-details" :open="Boolean(item.stateRules?.length || item.valueLabels?.length || item.width)">
+                  <summary>{{ t('workbench.studio.advancedFieldFormatting') }}</summary>
+                  <div class="field-presentation-advanced">
+                    <label v-if="draft.rendererType === 'table'" class="field-width-input">
+                      <span>{{ t('workbench.presentationWidth') }}</span>
+                      <el-input-number v-model="item.width" :min="80" :max="600" :controls="false" :aria-label="t('workbench.presentationWidth')" :placeholder="t('workbench.studio.autoColumnWidth')" />
+                    </label>
+                    <StateRuleEditor :model-value="item.stateRules || []" :field-type="item.fieldType" @update:model-value="updateStateRules(item, $event)" />
+                    <ValueLabelEditor v-if="['string', 'bool'].includes(item.fieldType)" :model-value="item.valueLabels || []" :field-type="item.fieldType" @update:model-value="item.valueLabels = $event" />
+                  </div>
+                </details>
               </div>
-            </template>
-              </details>
+            </section>
             </div>
             <div v-show="activeStep === 'conditions'" class="configuration-section">
               <template v-if="duplicate">
@@ -216,7 +237,8 @@
                 </label>
               </div>
               <span v-if="isNewComponent && snapshot.parameters.length && !parameter.applicationParameterKey" class="reuse-hint">{{ t('workbench.studio.initialValue') }}</span>
-              <ParameterValueInput v-model="parameter.value" :aria-label="t('workbench.studio.initialValue')" :control-type="parameter.controlType" :options="parameter.options || []" :disabled="Boolean(parameter.applicationParameterKey)" @update:model-value="resetResult" />
+              <span v-if="!isNewComponent" class="reuse-hint">{{ t('workbench.studio.trialValue') }}</span>
+              <ParameterValueInput v-model="parameter.value" :aria-label="t(isNewComponent ? 'workbench.studio.initialValue' : 'workbench.studio.trialValue')" :control-type="parameter.controlType" :options="parameter.options || []" :disabled="Boolean(parameter.applicationParameterKey)" @update:model-value="resetResult" />
               <details v-if="!selectionTarget || parameter.bindingKind === 'named'" class="parameter-details"><summary>{{ t('workbench.studio.parameterSettings') }}</summary><el-input v-if="!(isNewComponent && snapshot.parameters.length && !parameter.applicationParameterKey)" v-model="parameter.label" :placeholder="t('workbench.parameterLabel')" /><el-input v-model="parameter.key" :placeholder="t('workbench.parameterKey')" /><el-button link type="danger" :disabled="parameter.bindingKind === 'named'" @click="removeParameter(index)">{{ t('workbench.delete') }}</el-button></details>
             </div>
             </div>
@@ -258,12 +280,12 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { createLatestRequestCoordinator } from '@common-ui'
 import { executeDescriptorOperation, getConsumerDescriptor, listConsumerServices } from '../api/services'
-import { configureSelectionListDraft, buildComponentConfiguration, buildQueryRequest, buildRendererConfig, componentDisplaySuggestions, controlTypeFor, createNamedParameterDraft, createParameterDraft, draftFromComponent, emptyControlValue, requiredParameterValuesPresent, synchronizeFieldPresentations } from '../utils/componentDraft.mjs'
+import { applyApplicationParameterDefaults, configureSelectionListDraft, buildComponentConfiguration, buildQueryRequest, buildRendererConfig, componentDisplaySuggestions, controlTypeFor, createNamedParameterDraft, createParameterDraft, draftFromComponent, emptyControlValue, requiredParameterValuesPresent, synchronizeFieldPresentations } from '../utils/componentDraft.mjs'
 import { boundedExportHasMore, descriptorSupportsExport, downloadBoundedExport, exportFormatForRenderer } from '../utils/boundedExport.mjs'
 import WorkbenchRendererHost from './WorkbenchRendererHost.vue'
 import StateRuleEditor from './StateRuleEditor.vue'
 import ValueLabelEditor from './ValueLabelEditor.vue'
-import { valueLabelsValid } from '@common-ui/utils/fieldPresentation.mjs'
+import { defaultFieldPresentation, valueLabelsValid } from '@common-ui/utils/fieldPresentation.mjs'
 import { canBindApplicationParameter, newComponentParameterContext } from '../utils/applicationParameterOptions.mjs'
 import { initialApplicationParameterValue } from '../utils/dataApplicationParameters.mjs'
 import { compatibleSelectionParameters, affectedSelectionComponentIDs } from '../utils/dataApplicationSelection.mjs'
@@ -434,6 +456,7 @@ async function initialize() {
       if (!descriptorRequests.isCurrent(request, componentContextKey())) return
       descriptor.value = currentDescriptor
       assignDraft(draftFromComponent(sourceComponent, currentDescriptor))
+      if (!props.duplicate) applyApplicationParameterDefaults(draft, props.snapshot, sourceComponent.id)
       if (props.duplicate) {
         draft.name = t('workbench.studio.duplicateTitle', { title: sourceComponent.title }).slice(0, 200)
         for (const parameter of draft.parameters) {
@@ -531,6 +554,11 @@ function syncRendererFields() {
 
 function presentationIsNumeric(item) {
   return numericTypes.has(item.fieldType)
+}
+
+function restoreFieldFormat(item) {
+  const { label, unit, precision, temporalFormat } = defaultFieldPresentation(outputField(item.field))
+  Object.assign(item, { label, unit, precision, temporalFormat, period: { grain_parameter: '', start_parameter: '', end_parameter: '' } })
 }
 
 function presentationIsTemporal(item) {
@@ -758,7 +786,7 @@ onBeforeUnmount(invalidateEditorRequests)
 
 function submit() {
   if (!validDraft.value) return
-  emit('save', buildComponentConfiguration(descriptor.value, draft, componentID.value), reusedParameters.value, descriptor.value, props.selectionTarget ? { source_field: selectionFields.value, application_parameter_key: props.selectionTarget.key } : null)
+  emit('save', buildComponentConfiguration(descriptor.value, draft, componentID.value, isNewComponent.value ? null : props.component), reusedParameters.value, descriptor.value, props.selectionTarget ? { source_field: selectionFields.value, application_parameter_key: props.selectionTarget.key } : null)
   emit('update:modelValue', false)
 }
 </script>
@@ -778,6 +806,15 @@ function submit() {
 .parameter-details .el-input { margin-bottom: 8px; }
 .parameter-reuse { display: flex; flex-direction: column; gap: 8px; }.parameter-reuse label, .reuse-hint { font-size: 12px; color: var(--addp-text-secondary); line-height: 1.6; }
 .field-presentation-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.field-formatting, .field-presentation-advanced { display: flex; flex-direction: column; gap: 12px; }
+.field-presentation-header p { margin: 6px 0 0; font-size: 12px; line-height: 1.6; color: var(--addp-text-secondary); }
+.field-presentation-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.field-presentation-heading > span { min-width: 0; font-size: 12px; color: var(--addp-text-secondary); overflow-wrap: anywhere; }
+.field-presentation-fields label, .field-width-input { display: flex; flex-direction: column; gap: 6px; min-width: 0; font-size: 12px; color: var(--addp-text-secondary); }
+.field-presentation-fields .field-label-input { grid-column: 1 / -1; }
+.field-presentation-fields :deep(.el-input-number) { width: 100%; }
+.field-presentation .presentation-details > summary { margin-bottom: 0; }
+.field-presentation .presentation-details[open] > summary { margin-bottom: 12px; }
 .value-item { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 @media(max-width:1000px) { .configuration-form { max-height: none; }.preview-panel { position: static; height: 360px; } }
 .configuration-error { display: block; margin-bottom: 12px; color: var(--el-color-warning); text-align: left; font-size: 13px; }

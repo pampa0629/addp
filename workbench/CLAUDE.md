@@ -47,9 +47,13 @@ Workbench 是面向数据消费者、以已发布 Service 为唯一数据入口�
 
 新增组件的条件表单可显式选择已有应用筛选，使用其初始值试查。复用候选和提交时校验复用 `applicationParameterOptions` 的同一绑定规则，考虑新组件多个输入的共同选项约束；取消不改应用，应用后只写既有 Parameter Binding，不新增重复条件。`applicationParameterBinding.test.mjs` 和 `application-studio.spec.js` 覆盖类型/选项冲突、显式选择、试查原始值、中英文、保存重开及取消，沿用已有前端和完整模块门禁自动发现。
 
+已有组件打开编辑器时，试查值按 Parameter Binding 从当前应用草稿的 Application Parameter 初始值复制，包含未保存的筛选修改；应用条件为空时仍保持为空，不回退到组件历史值。试查值可临时修改，取消或应用展示配置均不改应用参数、预设和发布修订；原有参数绑定未变时保留组件原有 default_parameter_values，避免仅编辑格式就改变查询上下文。新增参数或改变参数键、服务引用、字段、操作符等查询绑定时仍由同一组件编译器生成默认值。`componentDraft.test.mjs` 与中英文 `application-studio.spec.js` 覆盖值来源、空值/零/false/数组隔离、试查请求、保存重开和选项校验，沿用 `make test-module MODULE=workbench` 及已有 CI，不新增 API、快照字段或标准入口。
+
 复制组件沿用同一编辑器、新增保存与布局重排路径，直接在条件步骤调整绑定；新增或复制组件选择独立条件时，直接显示筛选名称输入，避免同名条件混淆；使用新组件 ID，保留原宽高，放在原组件后，不复制选择源联动。`application-studio.spec.js` 覆盖中英文人员条件切换、试查、取消、保存重开、原组件隔离与连续复制；`componentDraft.test.mjs` 验证固定查询条件和排序在编辑、复制及试查中保持一致。仍由现有 Workbench 前端 T1/T3 与完整模块门禁覆盖，无新增 API、依赖或 CI 注册。
 
 新组件选择服务后可显式采用基于 Descriptor 字段事实的明细表、类别柱图、时间折线图或空间分布起点，候选显示所用字段；点击后写入同一表单并复用真实试查，必要条件不全时进入条件步骤。`componentDraft.test.mjs` 覆盖可选输出字段、默认顺序、稳定时间字段、显式 geometry 及禁止按名称推断；`application-studio.spec.js` 覆盖中英文创建保存、参数未齐不查询、默认值试查、服务切换清空结果、取消与窄屏。沿用现有前端与完整模块门禁，不新增 CI 入口或依赖。
+
+组件展示步骤直接提供字段名称、单位、小数位与日期格式；列宽、状态规则和值名称映射按字段收纳，已配置的高级设置自动展开。显式恢复名称与格式复用共享 `defaultFieldPresentation` 的字段注释及类型默认值，保留列宽、状态规则、值名称映射和查询原值；不按字段名推断业务含义或单位。纯呈现修改复用当前试查结果，共享 `TabularResultRenderer` 按稳定字段键读取当前呈现配置，避免单元格插槽持有旧配置。中英文浏览器回归覆盖新建默认值、编辑即时预览、取消隔离、恢复默认、保存重载与窄屏；共享层运行 `make test-common-frontend`，模块沿用 `make test-module MODULE=workbench` 与既有 Workbench 前端 T1/T3、构建和 Platform CI 登记，不新增 API、配置字段或门禁入口。
 
 Table/Chart 的 date 字段可显式配置 `temporal_format=period` 和 `period`（`grain_parameter/start_parameter/end_parameter`），引用当前 Service Descriptor 的必填命名参数：粒度为 string 且选项为 `total/month`，起止为 date。结果展示只使用成功查询当时的参数快照；按月显示年月，全期显示“所选期间合计”，Renderer Host 同时显示开始日期包含、结束日期不包含的完整范围。不得根据 `bucket` 等字段名推断语义；原始行、排序、选择与导出不变。共享组件只接受已解析的展示上下文，不读取 Service DTO。既有共享前端、Workbench T1、浏览器及模块门禁覆盖此契约，无新增依赖或 CI 入口。
 

@@ -13,6 +13,6 @@ export function publishedMetricSources(implementations) {
     id: item.id,
     name: item.name,
     revisions: (item.revisions || []).filter(revision => revision.status === 'published')
-      .map(revision => ({ id: revision.id, revision_no: revision.revision_no })),
+      .map(revision => ({ id: revision.id, revision_no: revision.revision_no, supports_details: revision.contract?.include_details === true })),
   })).filter(item => item.revisions.length > 0)
 }

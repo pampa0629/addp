@@ -182,6 +182,7 @@
         <el-alert v-if="metricBindingRequired" :title="t('service.query.metricBindingRequired')" :description="t('service.query.metricBindingRequiredDescription')" type="warning" :closable="false" />
         <el-alert v-else-if="sourceSnapshot?.metric_source" :title="t('service.query.metricOrigin')" :description="t('service.query.metricOriginDescription')" type="info" :closable="false" />
         <el-button v-if="sourceSnapshot?.metric_source" link type="primary" @click="openConsoleRoute(`/modeling/metric-implementations/${sourceSnapshot.metric_source.implementation_id}?revision_id=${sourceSnapshot.metric_source.revision_id}`)">{{ t('service.query.metricOriginDetail') }} · {{ metricRevisionLabel }}</el-button>
+        <el-tag v-if="sourceSnapshot?.metric_source">{{ t(sourceSnapshot.metric_source.result_kind === 'details' ? 'service.query.metricDetails' : 'service.query.metricSummary') }}</el-tag>
         <section v-if="service?.config_type === 'analytical' && sourceSnapshot?.metric_source" class="metric-revision-status" :aria-label="t('service.query.metricRevisionStatus')" aria-live="polite">
           <div class="metric-revision-status-header">
             <strong>{{ t('service.query.metricRevisionStatus') }}</strong>

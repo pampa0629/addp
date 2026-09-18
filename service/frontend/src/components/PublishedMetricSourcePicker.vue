@@ -13,6 +13,12 @@
           <el-option v-for="revision in selectedImplementation?.revisions || []" :key="revision.id" :label="`R${revision.revision_no} (#${revision.id})`" :value="revision.id" />
         </el-select>
       </el-form-item>
+      <el-form-item :label="t('service.query.metricResultKind')">
+        <el-select v-model="resultKind" :disabled="!selectedReference" @change="selectRevision">
+          <el-option value="" :label="t('service.query.metricSummary')" />
+          <el-option v-if="selectedRevision?.supports_details" value="details" :label="t('service.query.metricDetails')" />
+        </el-select>
+      </el-form-item>
     </el-form>
     <el-empty v-if="!loading && !errorKey && !sources.length" :description="t('service.query.metricSourcesEmpty')" />
     <div class="metric-source-actions">
@@ -38,17 +44,23 @@ const loading = ref(false)
 const errorKey = ref('')
 const implementationId = ref(null)
 const revisionId = ref(null)
+const resultKind = ref('')
+const selectedRevision = computed(() => selectedImplementation.value?.revisions.find(item => item.id === revisionId.value))
 let request = 0
 const selectedImplementation = computed(() => sources.value.find(item => item.id === implementationId.value))
 const selectedReference = computed(() => {
   const revision = selectedImplementation.value?.revisions.find(item => item.id === revisionId.value)
-  return revision ? { implementation_id: implementationId.value, revision_id: revision.id } : null
+  return revision ? { implementation_id: implementationId.value, revision_id: revision.id, ...(resultKind.value ? { result_kind: resultKind.value } : {}) } : null
 })
 const selectImplementation = () => {
   revisionId.value = null
+  resultKind.value = ''
   emit('update:modelValue', null)
 }
-const selectRevision = () => emit('update:modelValue', selectedReference.value)
+const selectRevision = () => {
+  if (!selectedRevision.value?.supports_details) resultKind.value = ''
+  emit('update:modelValue', selectedReference.value)
+}
 const openRevision = () => {
   if (selectedReference.value) openConsoleRoute(`/modeling/metric-implementations/${implementationId.value}?revision_id=${revisionId.value}`)
 }
@@ -60,6 +72,7 @@ const loadSources = async () => {
   sources.value = []
   implementationId.value = null
   revisionId.value = null
+  resultKind.value = ''
   emit('update:modelValue', null)
   try {
     const items = publishedMetricSources(await api.list())
@@ -67,9 +80,11 @@ const loadSources = async () => {
     sources.value = items
     implementationId.value = previous?.implementation_id || null
     revisionId.value = previous?.revision_id || null
+    resultKind.value = previous?.result_kind || ''
     if (!selectedReference.value) {
       implementationId.value = null
       revisionId.value = null
+  resultKind.value = ''
     }
     selectRevision()
   } catch (error) {

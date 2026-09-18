@@ -3,8 +3,9 @@ package models
 import "github.com/addp/common/client"
 
 type MetricSourceRequest struct {
-	ImplementationID int64 `json:"implementation_id" binding:"required,gt=0"`
-	RevisionID       int64 `json:"revision_id" binding:"required,gt=0"`
+	ResultKind       string `json:"result_kind,omitempty" binding:"omitempty,oneof=details"`
+	ImplementationID int64  `json:"implementation_id" binding:"required,gt=0"`
+	RevisionID       int64  `json:"revision_id" binding:"required,gt=0"`
 }
 type MetricSourceSnapshot = client.ModelMetricPlan
 

@@ -23,6 +23,7 @@ type ModelMetricParameter struct {
 
 // ModelMetricPlan carries a Model-owned frozen artifact and its publication identity.
 type ModelMetricPlan struct {
+	ResultKind                 string                                       `json:"result_kind,omitempty"`
 	ImplementationID           int64                                        `json:"implementation_id"`
 	RevisionID                 int64                                        `json:"revision_id"`
 	MetricDefinitionID         int64                                        `json:"metric_definition_id"`
@@ -56,7 +57,7 @@ func (p ModelMetricPlan) Parameters() []ModelMetricParameter {
 	return result
 }
 func (p ModelMetricPlan) Validate() error {
-	if p.ImplementationID <= 0 || p.RevisionID <= 0 || p.MetricDefinitionID <= 0 || p.MetricDefinitionRevisionID <= 0 || len(p.DependencyHash) != 64 || p.ExecutionPlan.EngineID == 0 || p.ExecutionPlan.SchemaVersion != plugin.AnalyticalPlanSchemaVersion || len(p.ExecutionPlan.PackageHash) != 64 {
+	if (p.ResultKind != "" && p.ResultKind != "details") || p.ImplementationID <= 0 || p.RevisionID <= 0 || p.MetricDefinitionID <= 0 || p.MetricDefinitionRevisionID <= 0 || len(p.DependencyHash) != 64 || p.ExecutionPlan.EngineID == 0 || p.ExecutionPlan.SchemaVersion != plugin.AnalyticalPlanSchemaVersion || len(p.ExecutionPlan.PackageHash) != 64 {
 		return errors.New("Model returned an invalid metric plan")
 	}
 	if err := p.ExecutionPlan.Validate(); err != nil {
@@ -102,17 +103,17 @@ func (p ModelMetricPlan) Validate() error {
 	return nil
 }
 
-func (c *ModelClient) GetMetricPlan(ctx context.Context, id, revisionID int64, input map[string]interface{}) (*ModelMetricPlan, error) {
+func (c *ModelClient) GetMetricPlan(ctx context.Context, id, revisionID int64, input map[string]interface{}, resultKind string) (*ModelMetricPlan, error) {
 	if c == nil || c.tenantID == nil || *c.tenantID == 0 || id <= 0 || revisionID <= 0 {
 		return nil, errors.New("metric plan requires tenant and revision identity")
 	}
 	var plan ModelMetricPlan
-	request := map[string]any{"input": input}
+	request := map[string]any{"input": input, "result_kind": resultKind}
 	path := fmt.Sprintf("/api/v1/model/metric-implementations/%d/revisions/%d/plan", id, revisionID)
 	if err := c.doJSON(ctx, http.MethodPost, path, request, &plan); err != nil {
 		return nil, err
 	}
-	if plan.ImplementationID != id || plan.RevisionID != revisionID {
+	if plan.ImplementationID != id || plan.RevisionID != revisionID || plan.ResultKind != resultKind {
 		return nil, errors.New("Model returned a different metric revision")
 	}
 	if err := plan.Validate(); err != nil {

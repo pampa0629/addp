@@ -212,6 +212,12 @@ Skill 指导何时调用这些能力，现有业务 Tool 继续承担数据读�
 
 ### 6.2 语义上下文与事实来源
 
+首个只读消费切片固定两个 Tool：`ontology.classes.list` 枚举用户明确指定本体在读取时已激活的类；`ontology.class.context` 使用前者返回的 revision、generation、activation_version 和明确 class_id 读取该类上下文。不跨本体猜测身份，不从名称推断业务实例。正式路径为 `GET /ontologies/{ontology_id}/semantic/classes` 与 `GET /ontologies/{ontology_id}/semantic/classes/{class_id}`，后者三个版本 query 必填；未知或重复 query 拒绝。
+
+两个入口只接受 Tenant User 或精确对应 Tool 的 Delegated Token，使用独立且可委托的 `ontology.semantic.read`，不沿用管理修订权限。管理路由仍拒绝委托令牌；不自动给已有角色增加权限。查询在同一 PG 只读快照中核对 head、published 修订与 ready 投影的身份/摘要，再从权威原生定义构造有界结果；不把 PG 定义读取描述成 FalkorDB 实例查询。输出固定本体、修订、generation、activation_version、digest 与 `knowledge_kind=native_definition`。未激活返回 409，固定版本已变化返回 409，跨 Tenant/不存在统一 404；读取时的绑定不保证后续调用仍激活。
+
+类上下文包含该类、完整祖先、可用属性、以该类为显式端点的关系和直接绑定该类的规则；规则不隐式继承，关系不是实例边，不执行 CEL。无来源映射与业务事实时不宣称已验证真实数据。类目录最多 64 项，目录和上下文紧凑 JSON 最大 128 KiB，超限明确失败而非截断。SDK、Manifest、精确委托、Skill 与离线评测同次接入；真实身份 Online 验收仍单独报告。
+
 一次语义上下文至少固定：Ontology 身份及修订、投影 generation、相关定义摘要、原 owner 依赖修订/版本，以及本次采用的数据映射修订/版本。映射由对应 owner 在运行时解析并固定，不反向修改 Ontology 发布包。
 
 语义上下文不等于业务数据快照。业务取数另行记录 owner、结果引用（如有）、采集时点、查询范围、字段覆盖与分页完整性；源数据变化时不能只靠相同本体修订宣称结果可重放。
@@ -257,7 +263,7 @@ Agent 取消仍遵守现有规范：取消 Runtime 不自动取消已有 owner e
 
 ## 8. 技术选型与实施准入
 
-临时原型曾验证 Go 1.24.2、CEL-Go `v0.32.0`、FalkorDB Go 客户端 `v2.1.0` 和 FalkorDB `v4.20.6` ARM64 的有限场景。正式代码采用已锁定 CEL-Go 和基于 go-redis 的唯一 FalkorDB 薄适配，不引入原型 SDK。适配及定义图构建/校验由独占 T2 验证；单机 Infra 与 T2 共用固定版本服务定义，首次执行/激活组件已接入 PG/FalkorDB 联动 T2。当前已有 10.1 的管理 HTTP 入口和 Console 建模页面，尚无 Agent Tool。
+临时原型曾验证 Go 1.24.2、CEL-Go `v0.32.0`、FalkorDB Go 客户端 `v2.1.0` 和 FalkorDB `v4.20.6` ARM64 的有限场景。正式代码采用已锁定 CEL-Go 和基于 go-redis 的唯一 FalkorDB 薄适配，不引入原型 SDK。适配及定义图构建/校验由独占 T2 验证；单机 Infra 与 T2 共用固定版本服务定义，首次执行/激活组件已接入 PG/FalkorDB 联动 T2。当前已有 10.1 的管理 HTTP 入口、Console 建模页面，以及 6.2 的两个原生定义只读 Agent Tool。
 
 正式实施必须满足：
 
@@ -303,7 +309,7 @@ Agent 取消仍遵守现有规范：取消 Runtime 不自动取消已有 owner e
 
 ## 10. 实施切片与门禁
 
-1a 语义内核、1b PG 修订/发布、1c-1 FalkorDB 投影适配及 1c-2 的首次执行/失败重建、Backend 管理入口已实施。首次发布和重建共用新 execution 的授权准入、Common 租约、确定性图构建、全量校验和 PG 原子激活，不存在绕过准入的构建旁路。常驻 Backend 位于 `ontology/backend/cmd/server`，管理路由位于 `internal/api`；端口、构建、部署、权限与开发生命周期同步登记。owner schema 由向前迁移管理；本轮未在个人开发库执行迁移或重启服务。FalkorDB 单机 Infra 与独占 T2 共用定义。真实 System/Gateway 的 T4、来源引用、关系实例推导、历史图清理与正式 Agent 消费仍未完成。
+1a 语义内核、1b PG 修订/发布、1c-1 FalkorDB 投影适配及 1c-2 的首次执行/失败重建、Backend 管理入口已实施。首次发布和重建共用新 execution 的授权准入、Common 租约、确定性图构建、全量校验和 PG 原子激活，不存在绕过准入的构建旁路。常驻 Backend 位于 `ontology/backend/cmd/server`，管理路由位于 `internal/api`；端口、构建、部署、权限与开发生命周期同步登记。owner schema 由向前迁移管理；本轮未在个人开发库执行迁移或重启服务。FalkorDB 单机 Infra 与独占 T2 共用定义。原生定义的只读 Agent API/SDK/Tool/Skill 和离线评测已接入；真实 System/Gateway 的 T4、来源引用、关系实例推导、历史图清理及真实数据证据消费仍未完成。
 
 内核输入属于假设性试算，不验证业务 owner 证据或 IAM；调用方传入的租户/修订身份匹配检查不等于授权。接口上线前仍必须满足第 6 节的可信事实与授权要求。
 
@@ -329,7 +335,7 @@ Agent 评测沿现有 `evals/agent-scenarios/` 和 `make test-agent-eval` 扩展
 
 ### 10.1 Backend 管理入口
 
-Backend 使用 Go/Gin，端口 8195，唯一 API 前缀 `/api/v1/ontology`，不改 Graph。仅接受当前 Tenant 的 User Access Token；主体、成员、租户和授权版本从 System AuthContext 取得，禁止请求体自报。第一版不开放 Delegated Token、Service Token 或任意 Cypher。
+Backend 使用 Go/Gin，端口 8195，唯一 API 前缀 `/api/v1/ontology`，不改 Graph。管理路由仅接受当前 Tenant 的 User Access Token；主体、成员、租户和授权版本从 System AuthContext 取得，禁止请求体自报。只有 6.2 的两个只读定义入口允许精确 Tool 的 Delegated Token；不开放 Service Token 或任意 Cypher。
 
 `ontology.revision.read` 读取本体头、确定修订与确定 generation；`ontology.revision.update` 创建/保存草稿、提交审核、退回；`ontology.revision.publish` 发布/撤回，发布和失败重建同时要求 `system.execution_authorization.create`。Permission 均为 Tenant scope，自定义角色显式分配，不扩张既有用户角色。`platform.ontology_runtime` 仅用于自身模块注册，Tenant Runtime 权限保持不变。
 

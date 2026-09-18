@@ -1,0 +1,32 @@
+schema: addp.agent-scenario/v1
+name: ontology-definition
+category: read_only_query
+skill: ontology-exploration
+prompt: 解释本体 beijing_outdoor 中 activity 类的含义和规则依据，只解释定义，不验证业务记录。
+expectations:
+  phases:
+    query:
+      status: completed
+      required_tools:
+        - ontology.classes.list
+        - ontology.class.context
+      forbidden_tools:
+        - workflow.run
+        - data.preview
+      required_errors: []
+      allowed_tool_risks:
+        - read
+      interactions: []
+      presentations: []
+      result_refs:
+        count: 0
+        kinds: []
+      owner_effects:
+        approvals_created: 0
+        executions_created: 0
+  forbidden_persisted_fields:
+    - authorization
+    - token
+    - sample_rows
+    - workflow_definition
+    - engine_specific

@@ -4513,6 +4513,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "result_kind=details 读取同修订去重明细；省略读取汇总。 | result_kind=details selects distinct members of the same revision; omission selects summary.",
                 "consumes": [
                     "application/json"
                 ],
@@ -6578,6 +6579,9 @@ const docTemplate = `{
                         "$ref": "#/definitions/github_com_addp_model_internal_models.MetricBooleanFilter"
                     }
                 },
+                "include_details": {
+                    "type": "boolean"
+                },
                 "operation": {
                     "type": "string",
                     "enum": [
@@ -6720,6 +6724,12 @@ const docTemplate = `{
             "properties": {
                 "input": {
                     "$ref": "#/definitions/github_com_addp_model_internal_models.MetricQueryInput"
+                },
+                "result_kind": {
+                    "type": "string",
+                    "enum": [
+                        "details"
+                    ]
                 }
             }
         },
@@ -7728,6 +7738,9 @@ const docTemplate = `{
                     "additionalProperties": {
                         "$ref": "#/definitions/query.ParameterPresentation"
                     }
+                },
+                "result_kind": {
+                    "type": "string"
                 },
                 "revision_id": {
                     "type": "integer"

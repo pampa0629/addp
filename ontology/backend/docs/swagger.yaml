@@ -131,6 +131,58 @@ definitions:
       version:
         type: integer
     type: object
+  internal_api.ClassContextResponse:
+    properties:
+      activation_version:
+        type: integer
+      ancestors:
+        items:
+          $ref: '#/definitions/github_com_addp_ontology_internal_semantic.Class'
+        type: array
+      class:
+        $ref: '#/definitions/github_com_addp_ontology_internal_semantic.Class'
+      digest:
+        type: string
+      generation:
+        type: string
+      knowledge_kind:
+        type: string
+      ontology_id:
+        type: string
+      properties:
+        items:
+          $ref: '#/definitions/github_com_addp_ontology_internal_semantic.Property'
+        type: array
+      relations:
+        items:
+          $ref: '#/definitions/github_com_addp_ontology_internal_semantic.Relation'
+        type: array
+      revision:
+        type: integer
+      rules:
+        items:
+          $ref: '#/definitions/github_com_addp_ontology_internal_semantic.Rule'
+        type: array
+    type: object
+  internal_api.ClassDirectoryResponse:
+    properties:
+      activation_version:
+        type: integer
+      classes:
+        items:
+          $ref: '#/definitions/github_com_addp_ontology_internal_semantic.Class'
+        type: array
+      digest:
+        type: string
+      generation:
+        type: string
+      knowledge_kind:
+        type: string
+      ontology_id:
+        type: string
+      revision:
+        type: integer
+    type: object
   internal_api.CreateRequest:
     properties:
       definition:
@@ -1050,6 +1102,142 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - ontology.revision.publish
+  /ontologies/{ontology_id}/semantic/classes:
+    get:
+      description: 只读定义，不返回草稿或业务实例。ontology_id 必须由用户明确指定。 | Definitions only, no drafts
+        or business instances. The user must identify ontology_id.
+      parameters:
+      - description: 本体标识 | Ontology identifier
+        in: path
+        name: ontology_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 类与读取时激活版本 | Classes and activation binding at read time
+          schema:
+            $ref: '#/definitions/internal_api.ClassDirectoryResponse'
+        "400":
+          description: 无效请求 | Invalid request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "401":
+          description: 未认证 | Unauthenticated
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "403":
+          description: 禁止访问 | Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "404":
+          description: 不存在 | Not found
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "409":
+          description: 未激活 | Not active
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "413":
+          description: 结果过大 | Result too large
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "500":
+          description: 读取失败 | Read failed
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "503":
+          description: 尚未就绪 | Not ready
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 列出激活本体的类 | List classes of the active ontology
+      tags:
+      - Ontology
+      x-addp-auth-mode: delegated_tool
+      x-addp-required-permissions:
+      - ontology.semantic.read
+  /ontologies/{ontology_id}/semantic/classes/{class_id}:
+    get:
+      description: revision、generation、activation_version 必须来自类目录；变化时返回 409，不回退旧版本。只解释原生定义，不执行规则或验证业务数据。
+        | Use the class directory binding; changed activation returns 409, without
+        historical fallback. Native definitions only; no rule execution or business-data
+        verification.
+      parameters:
+      - description: 本体标识 | Ontology identifier
+        in: path
+        name: ontology_id
+        required: true
+        type: string
+      - description: 类标识 | Class identifier
+        in: path
+        name: class_id
+        required: true
+        type: string
+      - description: 目录返回的修订 | Revision returned by directory
+        in: query
+        name: revision
+        required: true
+        type: integer
+      - description: 目录返回的投影 | Generation returned by directory
+        in: query
+        name: generation
+        required: true
+        type: string
+      - description: 目录返回的激活版本 | Activation version returned by directory
+        in: query
+        name: activation_version
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 确定类上下文 | Pinned class context
+          schema:
+            $ref: '#/definitions/internal_api.ClassContextResponse'
+        "400":
+          description: 无效请求 | Invalid request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "401":
+          description: 未认证 | Unauthenticated
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "403":
+          description: 禁止访问 | Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "404":
+          description: 不存在 | Not found
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "409":
+          description: 未激活或版本变化 | Inactive or activation changed
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "413":
+          description: 结果过大 | Result too large
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "500":
+          description: 读取失败 | Read failed
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "503":
+          description: 尚未就绪 | Not ready
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 获取确定类的语义上下文 | Get a pinned class context
+      tags:
+      - Ontology
+      x-addp-auth-mode: delegated_tool
+      x-addp-required-permissions:
+      - ontology.semantic.read
 securityDefinitions:
   BearerAuth:
     in: header

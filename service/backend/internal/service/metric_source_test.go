@@ -21,17 +21,26 @@ import (
 
 func TestMetricServiceBindingIsExactAndCannotOverrideCompiledFormula(t *testing.T) {
 	for _, engineType := range []string{"postgresql", "mysql", "metric_test_extension"} {
-		t.Run(engineType, func(t *testing.T) { testMetricServiceBinding(t, engineType) })
+		for _, kind := range []string{"", "details"} {
+			t.Run(engineType+"/"+kind, func(t *testing.T) { testMetricServiceBinding(t, engineType, kind) })
+		}
 	}
 }
-func testMetricServiceBinding(t *testing.T, engineType string) {
+func testMetricServiceBinding(t *testing.T, engineType, kind string) {
 	ctx := context.Background()
 	plan, engine := metricServiceFixture(t, engineType)
+	plan.ResultKind = kind
 	withdrawn := false
 	calls := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if strings.Contains(r.URL.Path, "/plan") {
+			var request struct {
+				ResultKind string `json:"result_kind"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil || request.ResultKind != kind {
+				t.Errorf("wrong result selection: %+v %v", request, err)
+			}
 			calls++
 			if r.Method != "POST" || !strings.HasSuffix(r.URL.Path, "/3/revisions/7/plan") {
 				t.Errorf("unexpected plan route %s", r.URL.Path)
@@ -55,7 +64,7 @@ func testMetricServiceBinding(t *testing.T, engineType string) {
 	owner := commonclient.NewModelClient(server.URL, tokens, server.Client())
 	svc := NewQueryServiceService(nil, commonclient.NewSystemClient(server.URL, tokens), nil, "")
 	svc.SetModelClient(owner)
-	req := &models.CreateQueryServiceRequest{ConfigType: "analytical", MetricSource: &models.MetricSourceRequest{ImplementationID: 3, RevisionID: 7}}
+	req := &models.CreateQueryServiceRequest{ConfigType: "analytical", MetricSource: &models.MetricSourceRequest{ImplementationID: 3, RevisionID: 7, ResultKind: kind}}
 	binding, err := svc.resolveMetricSource(ctx, req, 7)
 	if err != nil {
 		t.Fatal(err)
@@ -72,6 +81,11 @@ func testMetricServiceBinding(t *testing.T, engineType string) {
 	if err := executor.validateMetricSource(ctx, service, input); err != nil {
 		t.Fatal(err)
 	}
+	plan.ResultKind = "different"
+	if err := executor.validateMetricSource(ctx, service, input); err == nil {
+		t.Fatal("Model changed result kind without rebind")
+	}
+	plan.ResultKind = kind
 	plan.ParameterLabels["grain"][0].Labels["en"] = "Changed"
 	if err := executor.validateMetricSource(ctx, service, input); err == nil {
 		t.Fatal("changed enum labels executed without rebind")

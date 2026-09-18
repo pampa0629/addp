@@ -1,5 +1,6 @@
 import { parameterLabel, parameterOptionsAllow, parameterControlType } from '../../../../common-frontend/basic/src/utils/parameterInput.mjs'
 import { defaultFieldPresentation } from '../../../../common-frontend/basic/src/utils/fieldPresentation.mjs'
+import { initialApplicationParameterValue } from './dataApplicationParameters.mjs'
 
 const NUMERIC_TYPES = new Set(['int', 'bigint', 'float', 'double', 'decimal'])
 const UNARY_OPERATORS = new Set(['is_null', 'is_not_null'])
@@ -112,9 +113,30 @@ export function buildQueryRequest(descriptor, draft, cursor = '', format = 'json
   }
 }
 
-export function buildComponentConfiguration(descriptor, draft, id) {
+export function applyApplicationParameterDefaults(draft, snapshot, componentID) {
+  const bindings = new Map((snapshot.parameter_bindings || []).filter(binding => binding.component_id === componentID).map(binding => [binding.component_parameter_key, binding.application_parameter_key]))
+  const parameters = new Map((snapshot.parameters || []).map(parameter => [parameter.key, parameter]))
+  for (const parameter of draft.parameters) {
+    if (!bindings.has(parameter.key)) continue
+    const source = parameters.get(bindings.get(parameter.key))
+    parameter.value = source ? initialApplicationParameterValue(JSON.parse(JSON.stringify(source))) : emptyControlValue(parameter.controlType)
+  }
+}
+
+export function buildComponentConfiguration(descriptor, draft, id, originalComponent = null) {
+  const sameService = originalComponent?.service_ref?.service_type === descriptor.ref.service_type
+    && originalComponent?.service_ref?.service_id === descriptor.ref.service_id
+    && originalComponent?.contract_fingerprint === descriptor.contract_fingerprint
+  const parameterDefaults = draft.parameters.map(parameter => {
+    if (!sameService) return parameter
+    const binding = parameter.bindingKind === 'named'
+      ? originalComponent.query_template.named_parameter_bindings?.find(binding => binding.parameter_key === parameter.key && binding.name === parameter.name)
+      : originalComponent.query_template.parameter_filters?.find(binding => binding.parameter_key === parameter.key && binding.field === parameter.field && binding.operator === parameter.operator)
+    if (!binding) return parameter
+    return { ...parameter, value: originalComponent.default_parameter_values?.[parameter.key] ?? emptyControlValue(parameter.controlType) }
+  })
   const defaults = Object.fromEntries(
-    draft.parameters.filter(hasParameterValue).map((parameter) => [parameter.key, normalizeParameterValue(parameter)]),
+    parameterDefaults.filter(hasParameterValue).map((parameter) => [parameter.key, normalizeParameterValue(parameter)]),
   )
   return {
     id,

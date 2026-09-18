@@ -1234,6 +1234,206 @@ const docTemplate = `{
                     "ontology.revision.publish"
                 ]
             }
+        },
+        "/ontologies/{ontology_id}/semantic/classes": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "只读定义，不返回草稿或业务实例。ontology_id 必须由用户明确指定。 | Definitions only, no drafts or business instances. The user must identify ontology_id.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Ontology"
+                ],
+                "summary": "列出激活本体的类 | List classes of the active ontology",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "本体标识 | Ontology identifier",
+                        "name": "ontology_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "类与读取时激活版本 | Classes and activation binding at read time",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ClassDirectoryResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "无效请求 | Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Unauthenticated",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "禁止访问 | Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "不存在 | Not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "未激活 | Not active",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "413": {
+                        "description": "结果过大 | Result too large",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "读取失败 | Read failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "尚未就绪 | Not ready",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "delegated_tool",
+                "x-addp-required-permissions": [
+                    "ontology.semantic.read"
+                ]
+            }
+        },
+        "/ontologies/{ontology_id}/semantic/classes/{class_id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "revision、generation、activation_version 必须来自类目录；变化时返回 409，不回退旧版本。只解释原生定义，不执行规则或验证业务数据。 | Use the class directory binding; changed activation returns 409, without historical fallback. Native definitions only; no rule execution or business-data verification.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Ontology"
+                ],
+                "summary": "获取确定类的语义上下文 | Get a pinned class context",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "本体标识 | Ontology identifier",
+                        "name": "ontology_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "类标识 | Class identifier",
+                        "name": "class_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "目录返回的修订 | Revision returned by directory",
+                        "name": "revision",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "目录返回的投影 | Generation returned by directory",
+                        "name": "generation",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "目录返回的激活版本 | Activation version returned by directory",
+                        "name": "activation_version",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "确定类上下文 | Pinned class context",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ClassContextResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "无效请求 | Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Unauthenticated",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "禁止访问 | Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "不存在 | Not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "未激活或版本变化 | Inactive or activation changed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "413": {
+                        "description": "结果过大 | Result too large",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "读取失败 | Read failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "尚未就绪 | Not ready",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "delegated_tool",
+                "x-addp-required-permissions": [
+                    "ontology.semantic.read"
+                ]
+            }
         }
     },
     "definitions": {
@@ -1431,6 +1631,85 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api.ClassContextResponse": {
+            "type": "object",
+            "properties": {
+                "activation_version": {
+                    "type": "integer"
+                },
+                "ancestors": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_ontology_internal_semantic.Class"
+                    }
+                },
+                "class": {
+                    "$ref": "#/definitions/github_com_addp_ontology_internal_semantic.Class"
+                },
+                "digest": {
+                    "type": "string"
+                },
+                "generation": {
+                    "type": "string"
+                },
+                "knowledge_kind": {
+                    "type": "string"
+                },
+                "ontology_id": {
+                    "type": "string"
+                },
+                "properties": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_ontology_internal_semantic.Property"
+                    }
+                },
+                "relations": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_ontology_internal_semantic.Relation"
+                    }
+                },
+                "revision": {
+                    "type": "integer"
+                },
+                "rules": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_ontology_internal_semantic.Rule"
+                    }
+                }
+            }
+        },
+        "internal_api.ClassDirectoryResponse": {
+            "type": "object",
+            "properties": {
+                "activation_version": {
+                    "type": "integer"
+                },
+                "classes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_ontology_internal_semantic.Class"
+                    }
+                },
+                "digest": {
+                    "type": "string"
+                },
+                "generation": {
+                    "type": "string"
+                },
+                "knowledge_kind": {
+                    "type": "string"
+                },
+                "ontology_id": {
+                    "type": "string"
+                },
+                "revision": {
                     "type": "integer"
                 }
             }

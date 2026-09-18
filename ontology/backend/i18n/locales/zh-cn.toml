@@ -1,5 +1,11 @@
 [ontology.invalid]
 other = "本体请求或定义无效"
+[ontology.not_active]
+other = "本体尚未激活，不能用于语义查询"
+[ontology.activation_changed]
+other = "本体激活版本已变化，请重新读取类目录并确认"
+[ontology.result_too_large]
+other = "语义上下文超过输出上限，未返回截断结果"
 [ontology.conflict]
 other = "本体版本或状态冲突，请重新读取后操作"
 [ontology.not_found]

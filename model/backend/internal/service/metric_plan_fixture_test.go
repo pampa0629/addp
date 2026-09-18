@@ -118,6 +118,60 @@ func runMetricGolden(t *testing.T, provider metricGoldenProvider, conn plugin.Co
 			}
 		})
 	}
+	// Both engines execute the same detail plan and compare complete member
+	// sets to the published count, including partial months and excluded rows.
+	for _, tc := range []struct {
+		subject, grain, start, end string
+		want                       int
+	}{
+		{"A", "total", "2026-01-01", "2027-01-01", 4},
+		{"A", "month", "2026-01-01", "2026-04-01", 4},
+		{"A", "month", "2026-01-02", "2026-02-01", 2},
+		{"A", "total", "2026-01-01", "2026-01-02", 1},
+		{"C", "total", "2026-01-01", "2027-01-01", 0},
+		{"missing", "total", "2026-01-01", "2027-01-01", 0},
+	} {
+		t.Run("details/"+tc.subject+"/"+tc.grain+"/"+tc.start+"/"+tc.end, func(t *testing.T) {
+			c := contract
+			c.IncludeDetails = true
+			params := map[string]interface{}{"subject_id": tc.subject, "grain": tc.grain, "start_date": tc.start, "end_date": tc.end}
+			req, err := metricGoldenResultRequest(t, provider, conn, database, c, bindings, params, true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			prepared, err := provider.PrepareQuery(context.Background(), conn, req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			rows, err := prepared.Execute(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(rows.Rows) != tc.want {
+				t.Fatalf("detail rows=%v want=%d", rows.Rows, tc.want)
+			}
+			seen := map[string]bool{}
+			for _, row := range rows.Rows {
+				key := fmt.Sprint(row["bucket"], "/", row["member"])
+				if seen[key] || row["subject_id"] != tc.subject || row["subject_label"] != labels[tc.subject] {
+					t.Fatalf("invalid detail grain: %v", row)
+				}
+				seen[key] = true
+			}
+			summary, err := query(t, "count_distinct", tc.subject, "", tc.grain, "", tc.start, tc.end)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var count int
+			for _, row := range summary.Rows {
+				n, _ := strconv.Atoi(fmt.Sprint(row["value"]))
+				count += n
+			}
+			if count != len(rows.Rows) {
+				t.Fatalf("summary=%d details=%d", count, len(rows.Rows))
+			}
+		})
+	}
 	for _, operation := range []string{"count_distinct", "directional_overlap"} {
 		for _, mutation := range []struct{ name, apply, restore string }{
 			{"duplicate-dimension", `INSERT INTO SCHEMA.metric_golden_events VALUES ('e1','2026-01-01')`, `DELETE FROM SCHEMA.metric_golden_events WHERE event_id='e1'; INSERT INTO SCHEMA.metric_golden_events VALUES ('e1','2026-01-01')`},
@@ -151,7 +205,12 @@ func runMetricGolden(t *testing.T, provider metricGoldenProvider, conn plugin.Co
 
 func metricGoldenRequest(t *testing.T, provider metricGoldenProvider, conn plugin.ConnectionInfo, namespace string, contract models.MetricContract, bindings metricPlanBindings, parameters map[string]interface{}) (plugin.QueryRequest, error) {
 	t.Helper()
-	p, err := buildMetricPlan(contract, bindings)
+	return metricGoldenResultRequest(t, provider, conn, namespace, contract, bindings, parameters, false)
+}
+
+func metricGoldenResultRequest(t *testing.T, provider metricGoldenProvider, conn plugin.ConnectionInfo, namespace string, contract models.MetricContract, bindings metricPlanBindings, parameters map[string]interface{}, details bool) (plugin.QueryRequest, error) {
+	t.Helper()
+	p, err := buildMetricResultPlan(contract, bindings, details)
 	if err != nil {
 		return plugin.QueryRequest{}, err
 	}

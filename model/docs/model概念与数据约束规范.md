@@ -268,3 +268,13 @@ PostgreSQL 建表语句预览只接受结构化物理目标配置。物理目标
 
 
 指标编译计划的命名参数通过 `options` 声明有限允许值及完整 `zh-cn/en` 名称。内置名称取自 Model 国际化资源；允许值同时用于 Model 输入校验，不能在编译签名和校验中分别维护。Service 原样冻结，不把编译器元数据变成第二套指标定义。
+
+#### 指标明细结果（2026-09-18）
+
+`MetricContract.include_details` 显式开启去重计数的明细发布能力，只允许 `count_distinct`。Model 的同一构建主路径复用主体、维度质量断言、时间与固定过滤，分别冻结汇总计划和明细计划；`detail_execution_plan` 进入同一依赖快照及 hash。明细一行是 `subject_id + bucket + member`，同一对象在该期间出现多次时仅一行；首期仅返回主体、期间和去重对象，不拼接未声明的活动名称或日期字段；名称沿用主体维度。明细不补零，稳定键包含全部三个粒度字段。
+
+既有 plan 请求增加可选 `result_kind=details`；省略表示汇总。返回仍是唯一 `execution_plan`，同时声明所选 `result_kind`。未开启明细、重叠率或非法种类明确拒绝。两种结果共同校验同一修订、依赖和冻结包，不能执行时动态猜测或改写汇总计划。
+
+Service 的指标来源引用同样允许 `result_kind=details`，一个 Query Service 固定消费一个结果种类，复用既有创建／重绑、Consumer Descriptor、PreparedQuery、权限、保护及游标分页。Workbench 用独立明细 Table Component 和已有 Selection Binding，把点击行的主体与 bucket 映射到明细参数；日期与粒度复用同页查询条件，bucket 作为结果等值筛选，不把月初当作用户开始日期。这样月度明细保留原日期区间交集。名称和日期展示不参与去重。汇总和明细是两次查询，只有底层数据未变化且权限允许完整明细时才对账；不声称跨请求一致性快照。
+
+验证：既有 Model PostgreSQL/MySQL T2 金样覆盖重复、零值、期间边界及汇总明细对账；Service T1/T2 覆盖种类冻结、依赖拒绝、明细权限及游标；Model/Service 前端标准门禁覆盖显式选择。Workbench 使用既有选择绑定及运行页在线验收，不新增查询代理或引擎分支。全部入口已由根 Makefile 和 CI 模块自动发现登记，无新依赖。

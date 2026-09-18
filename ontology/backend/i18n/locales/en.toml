@@ -1,5 +1,11 @@
 [ontology.invalid]
 other = "Invalid ontology request or definition"
+[ontology.not_active]
+other = "Ontology is not active for semantic queries"
+[ontology.activation_changed]
+other = "Ontology activation changed; reload and confirm the class directory"
+[ontology.result_too_large]
+other = "Semantic context exceeds the output limit; no truncated result was returned"
 [ontology.conflict]
 other = "Ontology version or state conflict; reload before proceeding"
 [ontology.not_found]

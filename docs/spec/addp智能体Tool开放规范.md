@@ -102,8 +102,14 @@ Manifest 不保存第二套 HTTP 路径事实。ToolExecutor 通过 Python SDK �
 | `workflow.validate` | Develop | `develop.task.execute` | read | none | none | 128 KiB |
 | `workflow.run` | Develop | `develop.task.execute` | write | owner_policy | execution | 64 KiB |
 | `execution.get` | Develop | `develop.task.read` | read | none | execution | 128 KiB |
+| `ontology.classes.list` | Ontology | `ontology.semantic.read` | read | none | none | 128 KiB |
+| `ontology.class.context` | Ontology | `ontology.semantic.read` | read | none | none | 128 KiB |
 
 这是当前完整集合。未出现在 Manifest 中的 API 不能被 Adapter 自行包装为 ADDP Tool。
+
+本体读取沿用 API 规范的 `{error, error_code}` owner 错误体；ToolExecutor 按该 owner 契约转换为统一 ToolExecutionError，只有 Manifest 声明的错误码和对应公开消息可以透传。不能要求 owner HTTP API 返回 Runtime 私有的嵌套错误结构。
+
+`ontology.classes.list` 要求用户明确指定 ontology_id，只枚举已激活原生定义的类并返回版本绑定。`ontology.class.context` 必须携带前者返回的 revision、generation、activation_version；只返回确定类、完整祖先、继承属性、直接端点关系及直接绑定规则。两者标记 `knowledge_kind=native_definition`，不认证实例事实、不执行规则、不读取业务数据，不产生 ResultRef。激活变化时返回 `ontology_activation_changed`，调用方需重新读取并确认，不能回退旧快照。管理修订权限仍不可委托，独立的 `ontology.semantic.read` 由租户显式授权。
 
 ## 四、执行语义
 

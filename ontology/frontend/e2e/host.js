@@ -9,6 +9,11 @@ import { createIframeAuthCoordinator } from '@common-ui/auth/authSession'
 import { useConsoleUnsavedChangesGuard } from '@common-ui/composables/useUnsavedChangesGuard'
 import { registerConsoleBridgeHandler } from '@common-ui/utils/consoleBridge'
 import { CONSOLE_NAVIGATION_CHANNEL } from '@common-ui/utils/taskOwnerUrl'
+import PortalSidebar from '../../../console/frontend/src/components/portal/PortalSidebar.vue'
+import { SIDEBAR_MENUS } from '../../../console/frontend/src/config/portalConfig'
+import { filterSidebarMenus } from '../../../console/frontend/src/utils/navigationAccess'
+import zh from '../../../console/frontend/src/i18n/zh-cn.json'
+import en from '../../../console/frontend/src/i18n/en.json'
 
 createIframeAuthCoordinator({
   allowedOrigins: [location.origin],
@@ -55,10 +60,17 @@ const Host = {
       },
       { acknowledgePending: true }
     )
-    return { src, key, route, guard, leave: () => router.push('/other') }
+    const permissions = new URL(location.href).searchParams.get('access') === 'none' ? [] : ['ontology.revision.read']
+    const menus = filterSidebarMenus(SIDEBAR_MENUS, 'tenant', permissions)
+    return { src, key, route, guard, menus, navigate: (path) => router.push(path), leave: () => router.push('/other') }
   },
   render() {
     return h('div', [
+      h(PortalSidebar, {
+        activeGroupModules: ['ontology'], activeGroupKey: 'data-govern',
+        sidebarMenus: this.menus, activeMenu: this.route,
+        onMenuSelect: this.navigate
+      }),
       h('button', { onClick: this.leave }, 'Other module'),
       h('output', this.route),
       this.src
@@ -73,5 +85,5 @@ const Host = {
     ])
   }
 }
-const { i18n } = createAddpI18n({ listenToConsole: false })
+const { i18n } = createAddpI18n({ listenToConsole: false, moduleMessages: { 'zh-cn': zh, en } })
 createApp(Host).use(i18n).use(router).use(ElementPlus).mount('#host')

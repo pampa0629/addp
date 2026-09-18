@@ -4,7 +4,11 @@ Ontology 管理租户领域本体的形式化语义，不接管 Standard、Model
 
 ## 当前交付范围
 
-`backend/internal/semantic` 是正式 Go 语义内核；`internal/service`、`internal/repository` 管理原生定义的 PG 修订生命周期。`cmd/server` 已装配统一 Lifecycle、管理 HTTP API 和投影 Supervisor；FalkorDB 是私有 Infra。`frontend` 提供 Console 原生定义建模与修订管理页面，尚无 Agent Tool，不影响 Graph 的当前功能。没有重启个人开发服务，不把 T1/T2/T3 当作已完成真实身份的 T4 上线验收。
+`backend/internal/semantic` 是正式 Go 语义内核；`internal/service`、`internal/repository` 管理原生定义的 PG 修订生命周期。`cmd/server` 已装配统一 Lifecycle、管理 HTTP API 和投影 Supervisor；FalkorDB 是私有 Infra。`frontend` 提供 Console 原生定义建模与修订管理页面；两个只读 Agent Tool 提供激活定义消费，不影响 Graph 的当前功能。没有重启个人开发服务，不把 T1/T2/T3 当作已完成真实身份的 T4 上线验收。
+
+只读消费使用 `GET /ontologies/{ontology_id}/semantic/classes` 和 `GET /ontologies/{ontology_id}/semantic/classes/{class_id}`。后者必须绑定目录返回的 revision、generation、activation_version，激活变化返回 409；仅从同一 PG 只读快照核对过的 published/ready 定义读取，不读取草稿或实例。返回 `knowledge_kind=native_definition`，结果超过 128 KiB 直接拒绝，不截断。独立的 Tenant `ontology.semantic.read` 可委托给精确 Tool scope，管理权限仍不可委托。迁移 154 只登记权限，不给既有角色扩权。根目录 `skills/ontology-exploration` 组合目录和上下文工具，要求身份澄清、版本一致和定义/事实区分。
+
+新增消费链路沿用 `make test-module MODULE=ontology` 的 T1/T2、`make test-agent-eval`（含 Common Python）、`make test-copilot` 与 System IAM `--package migration --test ontology-backend` 标准门禁。Skill/eval/SDK 路径由现有共享影响矩阵和 CI 自动发现；无新增外部依赖或 CI Job。在线真实身份验收仍未完成。
 
 `internal/falkor` 提供唯一的 go-redis 薄适配及确定性图投影构建/全量校验；投影执行器连接首次发布/失败重建准入、Common 租约、构建前/激活前 System 授权消费和 PG 激活指针。Backend 绑定 HTTP 后异步注册，Ready 同时验证 PG、FalkorDB 非零查询预算及 System 注册，只有 Ready 才领取；退出等待在途执行与注销。
 

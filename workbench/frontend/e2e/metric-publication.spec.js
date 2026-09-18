@@ -241,6 +241,7 @@ test('typed value labels persist, reject duplicates and display without changing
   await page.getByTestId('application-component').first().getByTestId('edit-component-action').click()
   const editor = page.getByTestId('application-component-editor')
   const labels = editor.getByTestId('value-label-editor')
+  await editor.locator('[data-field="direction"] summary').click()
   await labels.getByRole('button', { name: '添加值名称', exact: true }).click()
   await labels.getByRole('textbox', { name: '原值', exact: true }).fill('forward')
   await labels.getByRole('textbox', { name: '显示名称', exact: true }).fill('A → B')

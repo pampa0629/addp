@@ -191,6 +191,9 @@
                     tables.find((v) => v.id === relation.target_table)?.name
                   " /></el-select
             ></el-form-item>
+            <el-form-item v-if="form.operation === 'count_distinct'">
+              <el-checkbox v-model="form.include_details">{{ t('model.metric_workspace.include_details') }}</el-checkbox>
+            </el-form-item>
             <el-form-item :label="t('model.metric_workspace.subject_label')">
               <el-select v-model="form.subject_label" clearable>
                 <el-option
@@ -322,6 +325,12 @@
         show-implementation
       />
       <el-form label-position="top">
+        <el-form-item :label="t('model.metric_workspace.result_kind')">
+          <el-select v-model="serviceResultKind">
+            <el-option value="" :label="t('model.metric_workspace.summary_result')" />
+            <el-option v-if="revision?.contract.include_details" value="details" :label="t('model.metric_workspace.detail_result')" />
+          </el-select>
+        </el-form-item>
         <el-form-item :label="t('model.metric_workspace.service_target')">
           <el-radio-group v-model="serviceMode">
             <el-radio
@@ -414,6 +423,7 @@ const loading = ref(false),
   editingNew = ref(false),
   serviceDialog = ref(false),
   serviceName = ref('');
+const serviceResultKind = ref('');
 const identity = reactive({
   fact_table_id: null,
   metric_definition_id: null,
@@ -426,6 +436,7 @@ const blank = () => ({
   subject_field_id: null,
   subject_relation_id: null,
   subject_label: '',
+  include_details: false,
   distinct: '',
   time: '',
   filters: [],
@@ -471,6 +482,7 @@ function setRevision(id) {
     Object.assign(form, {
       metric_definition_revision_id: r.metric_definition_revision_id,
       operation: c.operation,
+      include_details: Boolean(c.include_details),
       subject_field_id: c.subject.field_id,
       subject_relation_id: c.subject_relation_id,
       subject_label: c.subject_label ? refKey(c.subject_label) : '',
@@ -645,6 +657,7 @@ const save = () =>
     )
       throw Error(t('model.metric_workspace.required'));
     const contract = {
+      ...(form.include_details ? { include_details: true } : {}),
       operation: form.operation,
       subject: { relation_id: 0, field_id: form.subject_field_id },
       subject_relation_id: form.subject_relation_id,
@@ -751,6 +764,7 @@ const openServiceDialog = () =>
       : 'rebind';
     existingServiceID.value = null;
     serviceVersionConflict.value = false;
+    serviceResultKind.value = '';
     serviceDialog.value = true;
     if (
       auth.hasPermission('service.definition.update') &&
@@ -759,7 +773,7 @@ const openServiceDialog = () =>
       await searchServices();
   });
 const operationChanged = () => {
-  if (form.operation === 'directional_overlap') form.filters = [];
+  if (form.operation === 'directional_overlap') { form.filters = []; form.include_details = false; }
 };
 const reloadServiceTarget = () => action(async () => {
   const target = await metricServiceAPI.get(existingServiceID.value);
@@ -772,6 +786,7 @@ const publishService = () =>
     const metric_source = {
       implementation_id: item.value.id,
       revision_id: revision.value.id,
+      ...(serviceResultKind.value ? { result_kind: serviceResultKind.value } : {}),
     };
     let service;
     if (serviceMode.value === 'rebind') {
@@ -801,7 +816,7 @@ const publishService = () =>
         throw Error(t('model.metric_workspace.required'));
       service = await metricServiceAPI.create({
         service_name: serviceName.value.trim(),
-        title: item.value.name,
+        title: serviceResultKind.value ? `${item.value.name} · ${t('model.metric_workspace.detail_result')}` : item.value.name,
         config_type: 'analytical',
         metric_source,
         public_access: false,

@@ -24,6 +24,8 @@ def test_manifest_has_unique_stage_two_tools():
         "workflow.validate",
         "workflow.run",
         "execution.get",
+        "ontology.classes.list",
+        "ontology.class.context",
     ]
     assert get_tool("workflow.run").risk == "write"
     for tool in manifest.tools:
@@ -45,6 +47,8 @@ def test_manifest_has_unique_stage_two_tools():
         "workflow.validate": ["develop.task.execute"],
         "workflow.run": ["develop.task.execute"],
         "execution.get": ["develop.task.read"],
+        "ontology.classes.list": ["ontology.semantic.read"],
+        "ontology.class.context": ["ontology.semantic.read"],
     }
     for tool in manifest.tools:
         assert tool.auth.required_permissions == expected_permissions[tool.name]

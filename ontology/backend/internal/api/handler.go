@@ -21,6 +21,8 @@ import (
 )
 
 type RevisionCommands interface {
+	ListClasses(context.Context, models.Actor, string) (*service.ClassDirectory, error)
+	ClassContext(context.Context, models.Actor, string, string, uint64, string, uint64) (*service.SemanticContext, error)
 	ListOntologies(context.Context, models.Actor, models.ListPage) ([]models.Ontology, int64, error)
 	ListRevisions(context.Context, models.Actor, string, models.ListPage) ([]models.RevisionSummary, int64, error)
 	CreateDraft(context.Context, models.Actor, semantic.Definition) (*models.Revision, error)
@@ -86,6 +88,12 @@ func bind(c *gin.Context, request any) bool {
 func fail(c *gin.Context, err error) {
 	status, code, key := http.StatusInternalServerError, "ontology_operation_failed", modulei18n.Failed
 	switch {
+	case errors.Is(err, repository.ErrNotActive):
+		status, code, key = http.StatusConflict, "ontology_not_active", modulei18n.NotActive
+	case errors.Is(err, service.ErrActivationChanged):
+		status, code, key = http.StatusConflict, "ontology_activation_changed", modulei18n.ActivationChanged
+	case errors.Is(err, service.ErrResultTooLarge):
+		status, code, key = http.StatusRequestEntityTooLarge, "result_too_large", modulei18n.ResultTooLarge
 	case errors.Is(err, repository.ErrInvalid):
 		status, code, key = http.StatusBadRequest, "invalid_ontology_request", modulei18n.Invalid
 	case errors.Is(err, repository.ErrConflict):

@@ -44,7 +44,9 @@ test('canvas selection, title, layout and formatting edit one draft without chan
 
 for (const locale of ['zh-cn', 'en']) {
 test(`new application goes from a service through query inputs to a saved draft (${locale})`, async ({ page, context }) => {
-  const backend = await installMetricApplicationBackend(context, { rebound: true, locale })
+  const backend = await installMetricApplicationBackend(context, { rebound: true, locale, configure(draft, descriptors) {
+    descriptors[71].output_contract.fields.find(f => f.name === 'value').comment = '重叠比例'
+  } })
   await page.goto('/workbench/applications/new')
   await expect(page.getByTestId('application-start')).toBeVisible()
   await expect(page.getByTestId('component-inspector')).toHaveCount(0)
@@ -53,6 +55,11 @@ test(`new application goes from a service through query inputs to a saved draft 
   await choose(page, editor.locator('.el-form-item').filter({ hasText: locale === 'en' ? 'Data service' : '数据服务' }), '定向重叠率服务')
   await page.getByRole('dialog').getByRole('button', { name: locale === 'en' ? 'Next step' : '下一步', exact: true }).click()
   await expect(editor.getByRole('tab', { name: locale === 'en' ? '2. Configure display' : '2. 配置展示' })).toHaveAttribute('aria-selected', 'true')
+  const formats = editor.getByTestId('field-formatting')
+  await expect(formats.locator('[data-field="value"]').getByRole('textbox', { name: locale === 'en' ? 'Display label' : '展示名称', exact: true })).toHaveValue('重叠比例')
+  await expect(formats.locator('[data-field="value"]').getByRole('spinbutton')).toHaveValue('0')
+  await expect(formats.locator('[data-field="bucket"]').getByRole('combobox')).toBeVisible()
+  await expect(formats.locator('details[open]')).toHaveCount(0)
   await page.getByRole('dialog').getByRole('button', { name: locale === 'en' ? 'Next step' : '下一步', exact: true }).click()
   const parameters = editor.locator('.parameter')
   await choose(page, parameters.nth(0), locale === 'en' ? 'Total' : '全期')
@@ -74,6 +81,89 @@ test(`new application goes from a service through query inputs to a saved draft 
   expect(backend.writes[0].action).toBe('create')
   expect(backend.draft.snapshot.parameters.map(p => p.default_value)).toEqual(['month', 'both'])
   await expect(page).toHaveURL(new RegExp(applicationPath + '$'))
+  expect(backend.unexpected).toEqual([])
+})
+}
+
+for (const locale of ['zh-cn', 'en']) {
+test(`field labels and formats preview immediately, restore defaults and survive save (${locale})`, async ({ page, context }) => {
+  const english = locale === 'en'
+  const backend = await installMetricApplicationBackend(context, { rebound: true, locale, configure(draft, descriptors) {
+    draft.snapshot.components[0].default_parameter_values = { grain: 'total', directions: 'both' }
+    descriptors[71].output_contract.fields.find(f => f.name === 'value').comment = '重叠比例'
+    Object.assign(draft.snapshot.components[0].renderer_config.field_presentations.find(p => p.field === 'value'), {
+      width: 180, unit: '原单位', state_rules: [{ operator: 'gt', operand: 0, label: '有交集', tone: 'success' }],
+    })
+    draft.snapshot.components[0].renderer_config.field_presentations.find(p => p.field === 'direction').value_labels = [{ value: 'forward', label: '正向' }]
+  } })
+  await page.goto(applicationPath)
+  const cards = page.getByTestId('runtime-component')
+  await expect(cards.first().locator('tbody tr')).toHaveCount(2)
+  const original = backend.draft
+  const openEditor = () => page.getByTestId('component-inspector').getByRole('button', { name: english ? 'Fields and display settings' : '字段与展示设置', exact: true }).click()
+  await openEditor()
+  const editor = page.getByTestId('application-component-editor')
+  const formats = editor.getByTestId('field-formatting')
+  const value = formats.locator('[data-field="value"]')
+  const label = value.getByRole('textbox', { name: english ? 'Display label' : '展示名称', exact: true })
+  const precision = value.getByPlaceholder(english ? 'Decimal places' : '小数位', { exact: true })
+  const unit = value.getByRole('textbox', { name: english ? 'Unit (optional)' : '单位（可选）', exact: true })
+  const restore = value.getByRole('button', { name: english ? 'Restore default label and format' : '恢复默认名称与格式', exact: true })
+  await expect(value.locator('details')).toHaveAttribute('open', '')
+  await label.fill('未应用名称')
+  await restore.click()
+  await expect(label).toHaveValue('重叠比例')
+  await expect(precision).toHaveValue('0')
+  await expect(unit).toHaveValue('')
+  await page.getByRole('dialog').getByRole('button', { name: english ? 'Cancel' : '取消', exact: true }).click()
+  expect(backend.draft).toEqual(original)
+  await expect(cards.first().locator('thead')).toContainText('重叠率')
+
+  await openEditor()
+  await expect(label).toHaveValue('重叠率')
+  await editor.getByTestId('component-query-action').click()
+  await expect(editor.locator('tbody tr')).toHaveCount(2)
+  const requests = backend.requests.length
+  await restore.click()
+  await label.fill('活动重叠比例')
+  await unit.fill('倍')
+  await precision.fill('2')
+  await precision.press('Tab')
+  await expect(editor.locator('thead')).toContainText('活动重叠比例')
+  await expect(editor.locator('tbody tr').first()).toContainText('0.25 倍')
+  await expect(editor.locator('tbody tr').first()).toContainText('有交集')
+  const bucket = formats.locator('[data-field="bucket"]')
+  await choose(page, bucket, english ? 'Month and year' : '年月')
+  await expect(editor.locator('tbody tr').first()).toContainText(english ? 'January 2026' : '2026年1月')
+  const direction = formats.locator('[data-field="direction"]')
+  await direction.getByRole('button', { name: english ? 'Restore default label and format' : '恢复默认名称与格式', exact: true }).click()
+  const valueLabel = direction.getByTestId('value-label-editor').getByRole('textbox', { name: english ? 'Display label' : '显示名称', exact: true })
+  await expect(valueLabel).toHaveValue('正向')
+  await valueLabel.fill('主体到比较对象')
+  await expect(editor.locator('tbody tr').first()).toContainText('主体到比较对象')
+  expect(backend.requests).toHaveLength(requests)
+
+  await page.setViewportSize({ width: 680, height: 900 })
+  expect(await formats.evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true)
+  await page.getByRole('dialog').getByRole('button', { name: english ? 'Apply component configuration' : '应用组件配置', exact: true }).click()
+  await expect(cards.first().locator('tbody tr').first()).toContainText('0.25 倍')
+  expect(backend.requests).toHaveLength(requests)
+  await page.getByRole('button', { name: english ? 'Save draft' : '保存草稿', exact: true }).click()
+  await expect.poll(() => backend.writes.length).toBe(1)
+  const saved = backend.draft.snapshot.components[0]
+  expect(saved.query_template).toEqual(original.snapshot.components[0].query_template)
+  expect(saved.renderer_config.field_presentations.find(p => p.field === 'direction').value_labels).toEqual([{ value: 'forward', label: '主体到比较对象' }])
+  expect(saved.renderer_config.field_presentations.find(p => p.field === 'value')).toEqual({
+    field: 'value', label: '活动重叠比例', unit: '倍', precision: 2, width: 180,
+    state_rules: [{ operator: 'gt', operand: 0, label: '有交集', tone: 'success' }],
+  })
+  expect(backend.published).toEqual(backend.originalPublished)
+  await page.reload()
+  await expect(cards.first().locator('thead')).toContainText('活动重叠比例')
+  await expect(cards.first().locator('tbody tr').first()).toContainText('0.25 倍')
+  await openEditor()
+  await expect(label).toHaveValue('活动重叠比例')
+  await expect(precision).toHaveValue('2')
   expect(backend.unexpected).toEqual([])
 })
 }
@@ -172,6 +262,73 @@ async function personnelApplication(context, { locale = 'zh-cn', withSelection =
     return route.fulfill({ json: { data: [{ person_id: 'person-c', nickname: '阿青' }], page: { has_more: false, next_cursor: '' } } })
   })
   return { backend, queries, directoryQueries }
+}
+
+for (const locale of ['zh-cn', 'en']) {
+test(`existing component trials use current application defaults without saving trial overrides (${locale})`, async ({ page, context }) => {
+  const en = locale === 'en'
+  const { backend, queries } = await personnelApplication(context, { locale, comparisonPerson: 'person-b' })
+  const original = backend.draft.snapshot
+  await page.goto(applicationPath)
+  const openEditor = () => page.getByTestId('component-inspector').getByRole('button', { name: en ? 'Fields and display settings' : '字段与展示设置', exact: true }).click()
+  await openEditor()
+  const editor = page.getByTestId('application-component-editor')
+  const query = editor.getByTestId('component-query-action')
+  await expect(query).toBeEnabled()
+  await query.click()
+  await expect.poll(() => queries.at(-1)?.parameters.person_id).toBe('person-a')
+  await editor.getByRole('tab', { name: en ? '3. Set query inputs' : '3. 设置查询条件' }).click()
+  const value = editor.getByRole('textbox', { name: en ? 'Test value' : '试查值', exact: true })
+  await expect(value).toHaveValue('person-a')
+  await value.fill('person-c')
+  await query.click()
+  await expect.poll(() => queries.at(-1)?.parameters.person_id).toBe('person-c')
+  await page.getByRole('dialog').getByRole('button', { name: en ? 'Cancel' : '取消', exact: true }).click()
+  await expect(editor).not.toBeVisible()
+  expect(backend.draft.snapshot).toEqual(original)
+  await openEditor()
+  await editor.getByRole('tab', { name: en ? '3. Set query inputs' : '3. 设置查询条件' }).click()
+  await expect(value).toHaveValue('person-a')
+  await value.fill('person-c')
+  await editor.getByRole('tab', { name: en ? '2. Configure display' : '2. 配置展示' }).click()
+  await editor.locator('[data-field="value"]').getByRole('textbox', { name: en ? 'Display label' : '展示名称', exact: true }).fill('参加次数')
+  const requestCount = queries.length
+  await page.getByRole('dialog').getByRole('button', { name: en ? 'Apply component configuration' : '应用组件配置', exact: true }).click()
+  await expect(editor).not.toBeVisible()
+  await page.getByRole('button', { name: en ? 'Save draft' : '保存草稿', exact: true }).click()
+  await expect.poll(() => backend.writes.length).toBe(1)
+  const saved = backend.draft.snapshot
+  expect(saved.parameters).toEqual(original.parameters)
+  expect(saved.parameter_presets).toEqual(original.parameter_presets)
+  expect(saved.components[0].default_parameter_values).toEqual(original.components[0].default_parameter_values)
+  expect(saved.components[0].query_template).toEqual(original.components[0].query_template)
+  expect(queries).toHaveLength(requestCount)
+
+  // Unsaved filter edits are the next trial's source of truth.
+  await page.getByRole('button', { name: en ? 'Filters' : '筛选条件', exact: true }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByTestId('filter-card').first().getByRole('textbox').nth(1).fill('person-c')
+  await dialog.getByRole('button', { name: en ? 'Done' : '完成设置', exact: true }).click()
+  await expect(dialog).toHaveCount(0)
+  await openEditor()
+  await editor.getByRole('tab', { name: en ? '3. Set query inputs' : '3. 设置查询条件' }).click()
+  await expect(value).toHaveValue('person-c')
+  await query.click()
+  await expect.poll(() => queries.at(-1)?.parameters.person_id).toBe('person-c')
+  await value.fill('')
+  await expect(query).toBeDisabled()
+  await dialog.getByRole('button', { name: en ? 'Cancel' : '取消', exact: true }).click()
+  await expect(editor).not.toBeVisible()
+  await page.getByRole('button', { name: en ? 'Save draft' : '保存草稿', exact: true }).click()
+  await expect.poll(() => backend.writes.length).toBe(2)
+  await page.reload()
+  await openEditor()
+  await editor.getByRole('tab', { name: en ? '3. Set query inputs' : '3. 设置查询条件' }).click()
+  await expect(value).toHaveValue('person-c')
+  expect(backend.draft.snapshot.parameters.map(p => p.default_value)).toEqual(['person-c', 'person-b'])
+  expect(backend.published).toEqual(backend.originalPublished)
+  expect(backend.unexpected).toEqual([])
+})
 }
 
 test('explicit personnel interaction can be cancelled, applied, edited and tried without publishing', async ({ page, context }) => {

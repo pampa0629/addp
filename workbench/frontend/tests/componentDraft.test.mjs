@@ -1,12 +1,63 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { configureSelectionListDraft, buildComponentConfiguration, buildQueryRequest, buildRendererConfig, componentDisplaySuggestions, createNamedParameterDraft, createParameterDraft, draftFromComponent, hasParameterValue, requiredParameterValuesPresent, synchronizeFieldPresentations } from '../src/utils/componentDraft.mjs'
+import { applyApplicationParameterDefaults, configureSelectionListDraft, buildComponentConfiguration, buildQueryRequest, buildRendererConfig, componentDisplaySuggestions, createNamedParameterDraft, createParameterDraft, draftFromComponent, hasParameterValue, requiredParameterValuesPresent, synchronizeFieldPresentations } from '../src/utils/componentDraft.mjs'
 
 const descriptor = {
   ref: { service_type: 'query', service_id: 9 },
   contract_fingerprint: `sha256:${'a'.repeat(64)}`,
   input_contract: { order: { stable_key: ['id'] } },
 }
+
+test('existing trial values follow application bindings without persisting temporary values or falling back from empty defaults', () => {
+  const source = { ...descriptor, input_contract: {
+    fields: [{ name: 'tags', type: 'string', operators: ['in'] }],
+    named_parameters: [{ name: 'threshold', type: 'int', required: true }, { name: 'enabled', type: 'bool', required: true }],
+    page: { default_limit: 20 }, order: { stable_key: ['id'] },
+  }, output_contract: { fields: [{ name: 'id', type: 'string' }] } }
+  const originalDraft = { name: 'Source', description: '', columns: ['id'], pageLimit: 20, rendererType: 'table', parameters: [
+    { key: 'number', label: 'Count', bindingKind: 'named', name: 'threshold', fieldType: 'int', controlType: 'number', operator: 'eq', required: true, value: 88 },
+    { key: 'flag', label: 'Enabled', bindingKind: 'named', name: 'enabled', fieldType: 'bool', controlType: 'select', operator: 'eq', required: true, value: true },
+    { key: 'tags', label: 'Tags', bindingKind: 'filter', field: 'tags', fieldType: 'string', controlType: 'multiselect', operator: 'in', required: false, value: ['history'] },
+  ] }
+  const component = buildComponentConfiguration(source, originalDraft, 'target')
+  const snapshot = { parameters: [
+    { key: 'shared-number', control_type: 'number', default_value: 0 },
+    { key: 'shared-flag', control_type: 'select', default_value: false },
+    { key: 'shared-tags', control_type: 'multiselect', default_value: ['current'] },
+  ], parameter_bindings: [
+    { component_id: 'unrelated', component_parameter_key: 'number', application_parameter_key: 'shared-flag' },
+    ...['number', 'flag', 'tags'].map(key => ({ component_id: 'target', component_parameter_key: key, application_parameter_key: `shared-${key}` })),
+  ] }
+  const draft = draftFromComponent(component, source)
+  applyApplicationParameterDefaults(draft, snapshot, component.id)
+  assert.deepEqual(draft.parameters.map(p => p.value), [0, false, ['current']])
+  assert.deepEqual(buildQueryRequest(source, draft).parameters, { threshold: 0, enabled: false })
+  assert.deepEqual(buildQueryRequest(source, draft).filter, { field: 'tags', op: 'in', value: ['current'] })
+  draft.parameters[1].options = [{ value: true, labels: { 'zh-cn': '启用', en: 'Enabled' } }]
+  assert.equal(requiredParameterValuesPresent(draft.parameters), false)
+  assert.throws(() => buildQueryRequest(source, draft), /invalid-value/)
+  draft.parameters[1].options = []
+  draft.parameters[0].value = 12
+  draft.parameters[2].value.push('trial')
+  assert.deepEqual(snapshot.parameters.map(p => p.default_value), [0, false, ['current']])
+  assert.deepEqual(buildComponentConfiguration(source, draft, component.id, component).default_parameter_values, component.default_parameter_values)
+  assert.deepEqual(buildComponentConfiguration(source, draft, 'new').default_parameter_values, { number: 12, flag: false, tags: ['current', 'trial'] })
+
+  delete snapshot.parameters[0].default_value
+  snapshot.parameters[2].default_value = []
+  applyApplicationParameterDefaults(draft, snapshot, component.id)
+  assert.deepEqual(draft.parameters.map(p => p.value), [null, false, []])
+  assert.equal(requiredParameterValuesPresent(draft.parameters), false)
+  assert.equal(buildQueryRequest(source, draft).filter, null)
+
+  draft.parameters[0].key = 'renamed'
+  draft.parameters[0].value = 7
+  draft.parameters[2].operator = 'eq'
+  draft.parameters[2].value = 'changed'
+  assert.deepEqual(buildComponentConfiguration(source, draft, component.id, component).default_parameter_values, { renamed: 7, flag: true, tags: 'changed' })
+  const differentSource = { ...source, ref: { ...source.ref, service_id: 10 } }
+  assert.equal(buildComponentConfiguration(differentSource, draft, component.id, component).default_parameter_values.flag, false)
+})
 
 test('editing or duplicating preserves fixed predicates and explicit ordering in trial and saved queries', () => {
   const source = { ...descriptor, output_contract: { fields: [{ name: 'id', type: 'string' }] } }

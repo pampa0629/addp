@@ -916,6 +916,10 @@ definitions:
     properties:
       implementation_id:
         type: integer
+      result_kind:
+        enum:
+        - details
+        type: string
       revision_id:
         type: integer
     required:
@@ -944,6 +948,8 @@ definitions:
         additionalProperties:
           $ref: '#/definitions/query.ParameterPresentation'
         type: object
+      result_kind:
+        type: string
       revision_id:
         type: integer
     type: object

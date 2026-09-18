@@ -140,3 +140,17 @@ test('missing metric choice blocks only metric creation; ordinary sources need n
   const root = parse(formSource).descriptor.template.content
   assert.match(root, /v-if="!isEdit && currentStep === 1"[\s\S]*v-if="form.config_type === 'analytical'"[^>]*>\s*<PublishedMetricSourcePicker/)
 })
+
+test('detail result selection is explicit and cleared for a revision without details', async () => {
+  const items = [{ id: 3, name: 'Count', revisions: [
+    { id: 4, revision_no: 2, status: 'published', contract: { include_details: true } },
+    { id: 6, revision_no: 4, status: 'published', contract: {} }
+  ] }]
+  const h = harness(async () => items, { implementation_id: 3, revision_id: 4, result_kind: 'details' })
+  await h.mounted()
+  assert.deepEqual(h.props.modelValue, { implementation_id: 3, revision_id: 4, result_kind: 'details' })
+  h.state.revisionId.value = 6
+  h.state.selectRevision()
+  assert.deepEqual(h.props.modelValue, { implementation_id: 3, revision_id: 6 })
+  assert.equal(h.state.resultKind.value, '')
+})

@@ -64,6 +64,7 @@ Service 是 `service.definition.*`、`service.external_registration.*` 和 `serv
 - 表、固定 SQL 和联邦 SQL 只表达查询服务的来源与执行绑定。REST Query、OGC API Features 和 WFS 必须共用唯一结构化查询内核；协议层不得拼接 SQL。发布契约必须包含非空唯一稳定排序键；业务数据查询统一使用 cursor/keyset 分页、读取 `limit + 1` 行判断下一页，默认不执行 `COUNT(*)`，不得保留 `page/offset`、原始 `filter/orderBy` 或兼容双轨。
 - SQL 模式 Query Service 可以声明强类型标量命名参数，SQL 只用 `:name` 引用；参数定义、SQL 引用和执行请求必须完全一致，并通过 `common` 查询运行层绑定，禁止字符串替换。表模式继续使用输出字段结构化筛选，不接受命名参数；Service 不接受关系、字段名、表名或 SQL 片段参数。
 - 指标来源计划采用数据库无关契约，规范见 [引擎插件接口规范](../docs/spec/addp引擎插件接口规范.md#数据库无关分析计算契约) 和 [Model 约束](../model/docs/model概念与数据约束规范.md#数据库无关计划与修订)。冻结 SQL 路径已删除。参数选项的多语言标签由 Model 的 `parameter_labels` 冻结，值域以 Plan 参数声明为准，Service 校验两者一致。
+- 指标来源引用可显式选择 `result_kind=details`，只接受 Model 同修订声明的去重明细计划，省略为汇总。每个服务固定一种结果；消费字段、保护血缘、游标和依赖 hash 全部由选定的冻结包导出，Workbench 不重算或直接访问 Model。
 - 指标来源使用显式 `config_type=analytical`，这是来源表达，不是新的执行通道；首期只能由 `metric_source.implementation_id/revision_id` 解析受信任 Model 发布包，客户端不得直接提交 Plan。不得与 sql/table 来源字段、runtime_engine_id 或调用方参数／输出覆盖并存。既有 SQL/table 查询来源继续各自规范，最终共用 PreparedQuery 授权与执行边界。
 - Service 冻结确定修订的 owner 引用、dependency_hash 和唯一 AnalyticalPlanPackage；命名参数、输出字段和稳定键作为该包的只读投影供 DTO、校验与 Consumer Descriptor 使用，不能另存可编辑副本。不把指标包拷贝到 SqlQuery，不要求原生 language 必须为 sql。
 - 旧指标 SQL 发布记录迁移为停用的 analytical 来源，清除 SQL、重复引擎、参数、输出及稳定键副本，仅保留 owner 修订引用用于显式重新绑定；禁止自动生成或批准新修订。历史 Model 修订缺少计划包时须重新发布。

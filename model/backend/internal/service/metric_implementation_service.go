@@ -279,6 +279,7 @@ func (s *MetricImplementationService) Delete(id, tenantID, userID, version int64
 }
 
 type MetricCompiledPlan struct {
+	ResultKind                 string                                       `json:"result_kind,omitempty"`
 	ImplementationID           int64                                        `json:"implementation_id"`
 	RevisionID                 int64                                        `json:"revision_id"`
 	MetricDefinitionID         int64                                        `json:"metric_definition_id"`
@@ -289,7 +290,10 @@ type MetricCompiledPlan struct {
 	ParameterPresentation      map[string]commonquery.ParameterPresentation `json:"parameter_presentation,omitempty"`
 }
 
-func (s *MetricImplementationService) PublishedPlan(ctx context.Context, id, revisionID, tenantID int64, input *models.MetricQueryInput) (*MetricCompiledPlan, error) {
+func (s *MetricImplementationService) PublishedPlan(ctx context.Context, id, revisionID, tenantID int64, input *models.MetricQueryInput, resultKind string) (*MetricCompiledPlan, error) {
+	if resultKind != "" && resultKind != "details" {
+		return nil, invalidRequest()
+	}
 	if input != nil {
 		if err := validateMetricQueryInput(*input); err != nil {
 			return nil, err
@@ -347,15 +351,27 @@ func (s *MetricImplementationService) PublishedPlan(ctx context.Context, id, rev
 				return err
 			}
 		}
-		currentPackage, _, hash, err := resolveMetricPlan(tx, item, revision.Contract, metadata)
+		currentPackage, currentSnapshot, hash, err := resolveMetricPlan(tx, item, revision.Contract, metadata)
 		if err != nil {
 			return err
 		}
 		if hash != revision.DependencyHash {
 			return apperrors.Conflict("metric_dependency_changed", i18n.MsgMetricImplementationConflict)
 		}
+		packageKey := "execution_plan"
+		if resultKind == "details" {
+			if !revision.Contract.IncludeDetails {
+				return invalidRequest()
+			}
+			packageKey = "detail_execution_plan"
+			var ok bool
+			currentPackage, ok = currentSnapshot[packageKey].(plugin.AnalyticalPlanPackage)
+			if !ok {
+				return metricConflict()
+			}
+		}
 		var frozen plugin.AnalyticalPlanPackage
-		if err := commonjson.DecodeStruct(commonjson.InterfaceMap(revision.DependencySnapshot["execution_plan"]), &frozen); err != nil || frozen.Validate() != nil || frozen.PackageHash != currentPackage.PackageHash {
+		if err := commonjson.DecodeStruct(commonjson.InterfaceMap(revision.DependencySnapshot[packageKey]), &frozen); err != nil || frozen.Validate() != nil || frozen.PackageHash != currentPackage.PackageHash {
 			return metricConflict()
 		}
 		var display struct {
@@ -369,7 +385,7 @@ func (s *MetricImplementationService) PublishedPlan(ctx context.Context, id, rev
 		if err := json.Unmarshal(raw, &display); err != nil {
 			return err
 		}
-		result = &MetricCompiledPlan{ImplementationID: id, RevisionID: revisionID, MetricDefinitionID: item.MetricDefinitionID, MetricDefinitionRevisionID: revision.MetricDefinitionRevisionID, DependencyHash: hash, ExecutionPlan: frozen, ParameterLabels: display.ParameterLabels, ParameterPresentation: display.ParameterPresentation}
+		result = &MetricCompiledPlan{ResultKind: resultKind, ImplementationID: id, RevisionID: revisionID, MetricDefinitionID: item.MetricDefinitionID, MetricDefinitionRevisionID: revision.MetricDefinitionRevisionID, DependencyHash: hash, ExecutionPlan: frozen, ParameterLabels: display.ParameterLabels, ParameterPresentation: display.ParameterPresentation}
 		return nil
 	})
 	return result, err
@@ -529,6 +545,21 @@ func resolveMetricPlan(tx *gorm.DB, item *models.MetricImplementation, contract 
 		relationSnapshot = append(relationSnapshot, models.JSONB{"id": relation.ID, "source_table": relation.SourceTable, "source_field": relation.SourceField, "target_table": relation.TargetTable, "target_field": relation.TargetField, "relation_type": relation.RelationType})
 	}
 	snapshot := models.JSONB{"execution_plan": executionPlan, "parameter_labels": metricPlanLabels(contract.Operation), "tables": tables, "fields": dependencies, "relations": relationSnapshot, "contract": contract}
+	if contract.IncludeDetails {
+		detailPlan, err := buildMetricResultPlan(contract, bindings, true)
+		if err != nil {
+			return plugin.AnalyticalPlanPackage{}, nil, "", err
+		}
+		detailSources, err := bindMetricSources(detailPlan, bindings)
+		if err != nil {
+			return plugin.AnalyticalPlanPackage{}, nil, "", err
+		}
+		details, err := plugin.NewAnalyticalPlanPackage(plugin.CompileRequest{Plan: detailPlan, Sources: detailSources, Instance: instance}, compiler)
+		if err != nil {
+			return plugin.AnalyticalPlanPackage{}, nil, "", err
+		}
+		snapshot["detail_execution_plan"] = details
+	}
 	raw, err := json.Marshal(snapshot)
 	if err != nil {
 		return plugin.AnalyticalPlanPackage{}, nil, "", err
