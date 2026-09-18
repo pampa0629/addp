@@ -98,6 +98,16 @@ class ChangedGateTest(unittest.TestCase):
             MODULE.affected_modules(self.repository, ["common-frontend/basic/index.js"]),
         )
 
+    def test_service_frontend_changes_include_console_query_editor_gate(self) -> None:
+        for name in ("console", "service"):
+            path = self.repository / name / "frontend" / "package.json"
+            path.parent.mkdir(parents=True)
+            path.write_text("{}\n", encoding="utf-8")
+        subprocess.run(["git", "add", "."], cwd=self.repository, check=True)
+        for path in ("service/frontend/src/views/QueryServiceForm.vue", "service/frontend/e2e/query-form.js", "service/frontend/package-lock.json"):
+            self.assertEqual(["console", "service"], MODULE.affected_modules(self.repository, [path]))
+        self.assertEqual(["service"], MODULE.affected_modules(self.repository, ["service/backend/internal/service/query.go"]))
+
     def test_consumer_scan_skips_tracked_files_deleted_from_worktree(self) -> None:
         (self.repository / "sample/frontend/package.json").unlink()
         self.assertEqual(

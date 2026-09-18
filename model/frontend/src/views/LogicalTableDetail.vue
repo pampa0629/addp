@@ -112,8 +112,8 @@
                   />
                 </el-form-item>
               </el-col>
-              <!-- 维度表专属：SCD 类型 -->
-              <el-col v-if="form.table_type === 'dimension'" :xs="24" :sm="12" :md="8">
+              <!-- 维度表专属：历史保留声明 -->
+              <el-col v-if="form.table_type === 'dimension'" :xs="24" :md="16">
                 <el-form-item :label="t('model.logical_table.scd_type')">
                   <el-select v-model="form.scd_type" :disabled="!canEdit" style="width:100%">
                     <el-option :label="t('model.logical_table.scd_0')" :value="0" />
@@ -121,6 +121,7 @@
                     <el-option :label="t('model.logical_table.scd_2')" :value="2" />
                     <el-option :label="t('model.logical_table.scd_3')" :value="3" />
                   </el-select>
+                  <span class="text-muted">{{ t('model.logical_table.scd_help') }}</span>
                 </el-form-item>
               </el-col>
               <el-col :span="24">

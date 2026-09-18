@@ -54,3 +54,5 @@ cd console/frontend && npm run build
 - `docs/guide/addp部署和开发步骤.md`
 
 Console 通过共享 `useConsoleUnsavedChangesGuard` 拦截活动 iframe 有未保存修改时的菜单、跨模块及历史导航。模块内部已完成确认的同步导航不重复确认；桥接返回取消结果。`make test-console-frontend` 包含确定性测试、离页与认证浏览器回归及构建，Platform CI 同步安装 Chromium。
+
+查询服务离页回归在现有 Console 宿主夹具中加载真实 `QueryServiceForm.vue` 和 Service API 客户端，HTTP 响应由 Playwright 拦截，不依赖或写入开发数据库。该入口需要 Console 与 Service 两个前端的锁定依赖；测试自动启动 4170/4180 两个 Vite 服务，通过仅 E2E 启用的代理加载 iframe，覆盖 SQL/参数保留、内部及宿主导航、历史、刷新和保存失败/成功，以及已有服务编辑的版本冲突、确认重载、同组件身份切换和旧响应隔离。Service 前端变更经共享改动矩阵触发 Console 门禁，CI 同步安装 Service 依赖。

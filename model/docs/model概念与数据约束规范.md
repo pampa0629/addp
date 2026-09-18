@@ -66,6 +66,12 @@ Permission Guard 只判断候选能力，Repository 和 Service 仍必须对每�
 - DWLayer 是 Tenant 可配置事实。LogicalTable 必须引用已存在的 DWLayer，前端不得维护固定分层枚举作为第二事实源。
 - Model 内部引用由数据库外键、唯一约束和 CHECK 约束保证；跨 Standard Schema 的引用先由 Standard HTTP API 验证，再在 Model 写事务中锁定对应的标准引用删除屏障。后台调用、Mermaid 导入和普通 API 写入必须使用同一屏障路径。
 
+### 维度历史策略与字段角色
+
+`scd_type` 是维度历史策略的设计声明：0 保留原值，1 覆盖当前值、不保留历史，2 通过新增行保留历史，3 通过额外属性列保留有限历史。它不自动生成历史字段、DDL 或加工逻辑，实际维护由 Develop 任务实现；类型 3 不称为混合策略。覆盖刷新当前人员、活动属性的 Outdoor 维度应声明为类型 1。
+
+`field_role` 表达字段的建模用途，不替代关联端点。`dimension_fk` 表示用于维度关联的字段；具体关联到哪张表、哪一列仍由 TableRelation 唯一拥有，查询与结构约束不能仅凭角色推断关联。调整角色不隐式创建、删除或改写 TableRelation，维度关联与字段角色由设计者明确配置。SCD 和字段角色均不生成计算规则；现有指标依赖按实际参与计算的表、字段、关系与物理绑定校验，不因这些说明性声明单独变化而要求重发修订。
+
 ### 与数据质量的边界
 
 Model 拥有结构约束，Standard 拥有可复用值约束，Quality 拥有检查方案、阈值、执行和问题治理。DWLayer 只定义分层与命名规范，删除无执行语义的 `quality_sla` 列及请求字段，不在 Model 预置另一套质量策略。

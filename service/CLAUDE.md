@@ -118,6 +118,7 @@ curl http://localhost:8086/health/ready
 - 外部服务注册仅使用 `/services`、`/services/create`、`/services/:id`、`/services/:id/edit`，由 `RegisteredServiceList/Form/Detail.vue` 与唯一 `api/registeredService.js` 实现；Console 菜单和服务目录共用这些路径，不保留 `/registered-services` 别名或另一套注册页面。列表参数沿后端契约使用 `page`、`limit`、`search`。
 - 注册表单通过共享 `useUnsavedChangesGuard` 保护普通字段、关键词和认证输入；加载成功与保存成功后更新内存基线，保存失败保留修改状态。保存期间禁用表单输入；切换编辑对象时重建草稿并忽略过期加载结果，不保存浏览器草稿副本。
 - 查询服务表单复用同一离页保护，覆盖 SQL、命名参数及选项、稳定排序键、空间字段、数据源、协议和服务信息；步骤与候选搜索不计入修改。加载已有定义后建立基线，保存成功只确认本次提交的草稿，失败或版本冲突保留输入。加载与提交期间禁止编辑；切换服务身份后忽略旧加载、保存和元数据检测结果。
+- 真实查询表单的 iframe 离页回归由 `make test-console-frontend` 执行，复用 `frontend/e2e/query-form.html` 夹具和正式页面/API 客户端；只拦截 HTTP 响应，不写业务数据库；覆盖创建草稿、已有服务版本冲突与重载、同组件身份切换和旧响应隔离。Service 前端变更会通过共享改动矩阵扩散到 Console 门禁。
 - 业务导航统一调用 `frontend/src/utils/moduleNavigation.js`。
 
 查询服务血缘通过现有 Meta 发布接口同步人类可读的 `Title`（`service_name`）及 `UpdatedAt`（`service_updated_at`）。Service 启动后及每分钟按主键分页重放 owner 发布事实，补齐名称并重试失败投递；非 active 状态同步空依赖。Meta 关闭旧版本当前投影，保留历史观察，并拒绝过期通知。不得借用仅面向 Catalog 的 resolver 权限。此契约由 Service T1、Meta T1 和 Meta PostgreSQL lifecycle migration 门禁验证。
