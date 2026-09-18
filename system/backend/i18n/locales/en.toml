@@ -245,3 +245,6 @@ other = "The OAuth client was changed by another user. Refresh and try again"
 
 [system.iam.service_account_version_conflict]
 other = "The service account was changed by another user. Refresh and try again"
+
+[system.iam.role_key_invalid]
+other = "Role key must use namespace.name (e.g. custom.ontology_manager); each segment must start with a lowercase letter and contain only lowercase letters, digits, and underscores."

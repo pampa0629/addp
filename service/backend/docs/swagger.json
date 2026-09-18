@@ -467,6 +467,7 @@
                         "BearerAuth": []
                     }
                 ],
+                "description": "指标服务的筛选字段从冻结计划输出投影，筛选只作用于计算结果。| Analytical service filter fields are projected from frozen plan outputs; filters apply only to computed results.",
                 "produces": [
                     "application/json"
                 ],
@@ -2104,6 +2105,101 @@
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "service.definition.delete"
+                ]
+            }
+        },
+        "/query/{id}/execution-query": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "按当前请求及绑定修订编译只读查询文本和参数，不执行数据库查询；停用服务也可查看 | Compile query text and parameters for the current request and bound revision without database execution; inactive services may also be inspected",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "QueryService"
+                ],
+                "summary": "查看指标执行查询 | Preview metric execution query",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "服务 ID | Service ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "当前测试条件 | Current test request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_service_internal_models.QueryExecutionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_service_internal_models.ExecutionQueryPreview"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "service.definition.read"
                 ]
             }
         },
@@ -4827,6 +4923,58 @@
                     }
                 },
                 "total_count": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_service_internal_models.ExecutionQueryParameter": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                },
+                "value": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_service_internal_models.ExecutionQueryPreview": {
+            "type": "object",
+            "properties": {
+                "engine_id": {
+                    "type": "integer"
+                },
+                "engine_name": {
+                    "type": "string"
+                },
+                "engine_type": {
+                    "type": "string"
+                },
+                "implementation_id": {
+                    "type": "integer"
+                },
+                "language": {
+                    "type": "string"
+                },
+                "parameters": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_service_internal_models.ExecutionQueryParameter"
+                    }
+                },
+                "query": {
+                    "type": "string"
+                },
+                "result_kind": {
+                    "type": "string"
+                },
+                "revision_id": {
+                    "type": "integer"
+                },
+                "version": {
                     "type": "integer"
                 }
             }

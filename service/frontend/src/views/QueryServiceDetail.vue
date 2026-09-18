@@ -214,6 +214,27 @@
           </el-form>
         </div>
 
+        <el-collapse v-if="service?.config_type === 'analytical' && auth.hasPermission('service.definition.read')" class="execution-query">
+          <el-collapse-item :title="t('service.query.executionQueryTitle')" name="query">
+            <p>{{ t('service.query.executionQueryHint') }}</p>
+            <el-button :loading="executionQueryLoading" :disabled="metricBindingRequired" @click="loadExecutionQuery">{{ t('service.query.executionQueryGenerate') }}</el-button>
+            <el-alert v-if="executionQueryError" :title="executionQueryError" type="error" :closable="false" />
+            <template v-if="executionQuery">
+              <p>{{ executionQuery.engine_name }} · {{ executionQuery.engine_type }} (#{{ executionQuery.engine_id }}) · {{ executionQuery.language }}</p>
+              <p>{{ t('service.query.executionQueryRevision', { implementation: executionQuery.implementation_id, revision: executionQuery.revision_id, version: executionQuery.version }) }}</p>
+              <el-tag>{{ t(executionQuery.result_kind === 'details' ? 'service.query.metricDetails' : 'service.query.metricSummary') }}</el-tag>
+              <div class="sql-query-box"><pre><code>{{ executionQuery.query }}</code></pre></div>
+              <el-table :data="executionQuery.parameters" :empty-text="t('service.query.executionQueryNoParameters')">
+                <el-table-column prop="name" :label="t('service.query.executionQueryParameter')" min-width="180" />
+                <el-table-column prop="type" :label="t('service.query.executionQueryType')" min-width="100" />
+                <el-table-column :label="t('service.query.executionQueryValue')" min-width="200">
+                  <template #default="{ row }"><code>{{ row.value === null ? 'NULL' : JSON.stringify(row.value) }}</code></template>
+                </el-table-column>
+              </el-table>
+            </template>
+          </el-collapse-item>
+        </el-collapse>
+
         <!-- 空间字段信息（SQL模式） -->
         <div v-if="hasGeometry" style="margin-top: 16px">
           <el-divider content-position="left">{{ t('service.query.dividerGeometry') }}</el-divider>
@@ -391,7 +412,7 @@ import queryServiceAPI from '@/api/queryService'
 import { createModelMetricAPI } from '../../../../common-frontend/basic/src/api/modelMetrics.js'
 import client from '../api/client'
 import { useAuthStore } from '../store/auth'
-import { buildQueryServicePreview, queryServicePreviewFields } from '@/utils/queryServicePreview'
+import { buildQueryServicePreview, buildQueryServicePreviewRequest } from '@/utils/queryServicePreview'
 import { copyToClipboard } from '../utils/serviceHelper'
 import { navigateServiceRoute } from '@/utils/moduleNavigation'
 import { useConsolePageDescriptor, openConsoleRoute } from '@common-ui'
@@ -728,6 +749,47 @@ const refreshSourceSnapshot = async () => {
 	}
 }
 
+// A single request builder keeps query inspection aligned with data testing.
+const buildPreviewRequest = () => buildQueryServicePreviewRequest({
+  parameters: service.value?.named_parameters || [], values: previewNamedParameterValues,
+  pagination: previewPagination.value, defaultFields: defaultFields.value, spatial: spatialInfo.value
+})
+const executionQuery = ref(null)
+const executionQueryLoading = ref(false)
+const executionQueryError = ref('')
+let executionQuerySequence = 0
+const clearExecutionQuery = () => {
+  executionQuerySequence++
+  executionQuery.value = null
+  executionQueryError.value = ''
+  executionQueryLoading.value = false
+}
+watch(() => JSON.stringify([serviceId.value, service.value, buildPreviewRequest()]), clearExecutionQuery, { flush: 'sync' })
+const loadExecutionQuery = async () => {
+  clearExecutionQuery()
+  const sequence = executionQuerySequence
+  const missing = (service.value?.named_parameters || []).find(parameter => parameter.required &&
+    (previewNamedParameterValues[parameter.name] === '' || previewNamedParameterValues[parameter.name] == null))
+  if (missing) {
+    executionQueryError.value = t('service.query.previewNamedParameterRequired', { name: parameterLabel(missing, locale.value) })
+    return
+  }
+  executionQueryLoading.value = true
+  try {
+    const result = await queryServiceAPI.previewExecutionQuery(serviceId.value, buildPreviewRequest())
+    if (sequence !== executionQuerySequence) return
+    if (result.version !== service.value.version) {
+      executionQueryError.value = t('service.query.versionConflict')
+      return
+    }
+    executionQuery.value = result
+  } catch (error) {
+    if (sequence === executionQuerySequence) executionQueryError.value = error.response?.data?.error || t('service.query.executionQueryFailed')
+  } finally {
+    if (sequence === executionQuerySequence) executionQueryLoading.value = false
+  }
+}
+
 // 数据预览方法
 const loadPreviewData = async () => {
   if (queryUnavailable.value) {
@@ -751,22 +813,7 @@ const loadPreviewData = async () => {
 	  ElMessage.warning(t('service.query.previewNamedParameterRequired', { name: parameterLabel(missingParameter, locale.value) }))
 	  return
 	}
-    const request = {
-	  parameters: Object.fromEntries((service.value.named_parameters || [])
-		.filter(parameter => previewNamedParameterValues[parameter.name] !== '' && previewNamedParameterValues[parameter.name] !== null && previewNamedParameterValues[parameter.name] !== undefined)
-		.map(parameter => [parameter.name, previewNamedParameterValues[parameter.name]])),
-      page: {
-        limit: previewPagination.value.pageSize,
-        cursor: previewPagination.value.cursors[previewPagination.value.page - 1] || ''
-      },
-      format: 'json'
-    }
-    const fields = queryServicePreviewFields({
-      configType: service.value.config_type,
-      defaultFields: defaultFields.value,
-	  spatial: spatialInfo.value
-    })
-    if (fields.length > 0) request.select = fields
+    const request = buildPreviewRequest()
 
     const response = await queryServiceAPI.testQuery(service.value.service_name, request)
 
@@ -915,6 +962,19 @@ onMounted(() => {
   max-width: 520px;
 }
 
+.execution-query .sql-query-box {
+  max-height: 420px;
+  overflow: auto;
+  margin: 12px 0;
+}
+
+.execution-query code {
+  color: var(--addp-text-primary);
+}
+
+.execution-query :deep(.el-alert) {
+  margin-top: 12px;
+}
 
 
 code {

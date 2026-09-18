@@ -86,6 +86,7 @@ function submission(type, fail = false) {
     form: { config_type: type, service_name: 'count', title: 'Count', engine_id: 2, runtime_engine_id: 9, schema_name: 'public', table_name: 'fact', locator: 'test-locator', sql_query: 'SELECT count(*) AS value FROM fact' },
     metricSource: { value: { implementation_id: 3, revision_id: 4 } },
     versionConflict: { value: false }, submitting: { value: false }, isEdit: { value: false },
+    loading: { value: false }, editorVersion: 0, captureDraft: () => '', markSaved() {},
     tableUsesRuntime: { value: false }, defaultFieldsInput: { value: '' }, filterableFieldsInput: { value: '' },
     parseFieldInput: () => [], sqlNamedParameters: { value: [] }, sqlStableKey: { value: ['value'] },
     buildSQLOutputContract: () => ({ fields: [{ name: 'value' }] }), enableOgcFeatures: { value: true },

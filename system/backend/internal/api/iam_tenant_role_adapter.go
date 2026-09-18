@@ -190,12 +190,14 @@ func mapIAMTenantAssignablePermission(permission iam.TenantAssignablePermission)
 
 // CreateRole godoc
 // @Summary      创建租户自定义角色 | Create tenant custom role
+// @Description  role_key 须为命名空间.名称，两段均以小写英文字母开头，仅含小写英文字母、数字和下划线，例如 custom.ontology_manager；首尾空白会被移除，格式无效返回 400 role_key_invalid。 | role_key must use namespace.name; each segment starts with a lowercase letter and contains only lowercase letters, digits, and underscores, e.g. custom.ontology_manager. Surrounding whitespace is trimmed; invalid format returns 400 role_key_invalid.
 // @Tags         租户角色 | Tenant Roles
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
 // @Param        request body IAMTenantRoleRequest true "角色定义 | Role definition"
 // @Success      201 {object} IAMTenantRoleResponse
+// @Failure      400 {object} IAMErrorResponse "请求参数无效；标识格式错误码为 role_key_invalid | Invalid request; invalid key format uses role_key_invalid"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["iam.tenant_role.create"]
 // @Router       /tenant/roles [post]

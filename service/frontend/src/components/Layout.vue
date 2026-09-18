@@ -37,23 +37,8 @@
           class="sidebar-menu"
         >
           <el-menu-item index="/query-services">
-            <el-icon><Search /></el-icon>
+            <el-icon><Upload /></el-icon>
             <span>{{ t('service.nav.queryService') }}</span>
-          </el-menu-item>
-
-          <el-menu-item index="/registered-services">
-            <el-icon><Link /></el-icon>
-            <span>{{ t('service.nav.registeredService') }}</span>
-          </el-menu-item>
-
-          <el-menu-item index="/published-services">
-            <el-icon><Share /></el-icon>
-            <span>{{ t('service.nav.publishedService') }}</span>
-          </el-menu-item>
-
-          <el-menu-item index="/catalog">
-            <el-icon><FolderOpened /></el-icon>
-            <span>{{ t('service.nav.catalog') }}</span>
           </el-menu-item>
 
           <el-menu-item index="/tile">
@@ -64,6 +49,16 @@
           <el-menu-item index="/graph-services">
             <el-icon><Share /></el-icon>
             <span>{{ t('service.nav.graphService') }}</span>
+          </el-menu-item>
+
+          <el-menu-item index="/services">
+            <el-icon><Connection /></el-icon>
+            <span>{{ t('service.nav.registeredService') }}</span>
+          </el-menu-item>
+
+          <el-menu-item index="/catalog">
+            <el-icon><FolderOpened /></el-icon>
+            <span>{{ t('service.nav.catalog') }}</span>
           </el-menu-item>
         </el-menu>
       </el-aside>
@@ -76,7 +71,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '../store/auth'
 import { useI18n } from 'vue-i18n'
@@ -84,8 +79,8 @@ import {
   User,
   ArrowDown,
   SwitchButton,
-  Search,
-  Link,
+  Upload,
+  Connection,
   Share,
   FolderOpened,
   Grid
@@ -96,23 +91,10 @@ const { t } = useI18n()
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
-const isInIframe = ref(false)
-
-onMounted(() => {
-  isInIframe.value = window.self !== window.top
-})
+const isInIframe = window.self !== window.top
 
 // 子页面（详情、表单）激活父级菜单项
-const activeMenu = computed(() => {
-  const path = route.path
-  if (path.startsWith('/query-services')) return '/query-services'
-  if (path.startsWith('/registered-services')) return '/registered-services'
-  if (path.startsWith('/published-services')) return '/published-services'
-  if (path.startsWith('/tile')) return '/tile'
-  if (path.startsWith('/graph-services')) return '/graph-services'
-  if (path.startsWith('/services')) return '/registered-services' // legacy routes
-  return path
-})
+const activeMenu = computed(() => `/${route.path.split('/')[1]}`)
 
 const handleCommand = (command) => {
   if (command === 'logout') {

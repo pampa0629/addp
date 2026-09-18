@@ -1,6 +1,6 @@
 <template>
-  <div ref="runtimeElement" class="runtime" :class="{ 'runtime--wallboard': isWallboard, 'runtime--embedded': embedded, 'runtime--editing': editable }" v-loading="loading" data-testid="data-application-canvas">
-    <header class="runtime-header" :class="{ 'runtime-header--compact': !showTitle }">
+  <div ref="runtimeElement" class="runtime" :class="{ 'runtime--wallboard': isWallboard, 'runtime--embedded': embedded, 'runtime--editing': editable, 'runtime--selecting': Boolean(selectionSourceId) }" v-loading="loading" data-testid="data-application-canvas">
+    <header v-if="!selectionSourceId" class="runtime-header" :class="{ 'runtime-header--compact': !showTitle }">
       <div v-if="showTitle"><h1>{{ application.snapshot.page.title }}</h1><p>{{ application.description }}</p></div>
       <div v-if="!editable" class="runtime-actions">
         <span>{{ statusLabel }}</span>
@@ -10,11 +10,11 @@
       </div>
     </header>
 
-    <el-card v-if="!editable && showParameters && application.snapshot.parameters?.length" class="parameters-card">
+    <el-card v-if="!editable && showParameters && (selectionSourceId ? parameterPlacement.pageParameters.length : application.snapshot.parameters?.length)" class="parameters-card">
       <template #header>
         <div class="parameter-card-header">
           <strong>{{ t('workbench.queryParameters') }}</strong>
-          <div class="parameter-preset-actions">
+          <div v-if="!selectionSourceId" class="parameter-preset-actions">
             <el-select
               v-if="parameterPresets.length"
               v-model="selectedPresetKey"
@@ -29,7 +29,7 @@
           </div>
         </div>
       </template>
-      <ApplicationParameterFields
+      <ApplicationParameterFields :refresh-key="nameRevision" :snapshot="application.snapshot" :descriptors="runtimeDescriptors()"
         v-if="parameterPlacement.pageParameters.length"
         :parameters="parameterPlacement.pageParameters"
         :values="parameterValues"
@@ -48,20 +48,20 @@
     </div>
 
     <main v-if="application.snapshot.page" class="runtime-grid" :style="runtimeLayout.gridStyle">
-      <el-card v-for="placement in runtimeLayout.placements" :key="placement.component_id" :ref="element => setComponentElement(placement.component_id, element)" :tabindex="editable ? 0 : -1" :role="editable ? 'button' : undefined" :aria-pressed="editable ? selectedComponentId === placement.component_id : undefined" @click.capture="selectForEditing($event, placement.component_id)" @keydown.enter.self="selectForEditing($event, placement.component_id)" @keydown.space.self="selectForEditing($event, placement.component_id)" @dragover="allowDrop" @drop="dropComponent($event, placement.component_id)" :aria-label="component(placement.component_id)?.title" class="runtime-component" :class="{ 'runtime-component--selected': editable && selectedComponentId === placement.component_id, 'runtime-component--content': runtimeLayout.contentIDs.includes(placement.component_id) }" data-testid="runtime-component" :data-component-id="placement.component_id" :style="runtimeLayoutStyle(placement)">
+      <el-card v-for="placement in visiblePlacements" :key="placement.component_id" :ref="element => setComponentElement(placement.component_id, element)" :tabindex="editable ? 0 : -1" :role="editable ? 'button' : undefined" :aria-pressed="editable ? selectedComponentId === placement.component_id : undefined" @click.capture="selectForEditing($event, placement.component_id)" @keydown.enter.self="selectForEditing($event, placement.component_id)" @keydown.space.self="selectForEditing($event, placement.component_id)" @dragover="allowDrop" @drop="dropComponent($event, placement.component_id)" :aria-label="component(placement.component_id)?.title" class="runtime-component" :class="{ 'runtime-component--selected': editable && selectedComponentId === placement.component_id, 'runtime-component--content': runtimeLayout.contentIDs.includes(placement.component_id) }" data-testid="runtime-component" :data-component-id="placement.component_id" :style="runtimeLayoutStyle(placement)">
         <template #header>
           <div class="component-header">
             <div class="component-title"><button v-if="editable" class="drag-handle" draggable="true" :aria-label="t('workbench.studio.dragComponent')" @dragstart="dragComponent($event, placement.component_id)" @dragend="draggingComponentID = ''">⠿</button><strong>{{ component(placement.component_id)?.title }}</strong></div>
             <el-button v-if="editable" data-testid="canvas-edit-component" link type="primary" @click.stop="emit('edit-component', component(placement.component_id))">{{ t('workbench.editComponent') }}</el-button>
             <div v-if="showQueryActions" class="component-header-actions">
-              <el-button link :loading="state(placement.component_id).exporting" :disabled="state(placement.component_id).querying || !canExecuteComponentQuery(state(placement.component_id))" @click="exportComponent(placement.component_id)">{{ t('workbench.export') }}</el-button>
+              <el-button v-if="!selectionSourceId" link :loading="state(placement.component_id).exporting" :disabled="state(placement.component_id).querying || !canExecuteComponentQuery(state(placement.component_id))" @click="exportComponent(placement.component_id)">{{ t('workbench.export') }}</el-button>
               <el-button link type="primary" :loading="state(placement.component_id).querying" :disabled="state(placement.component_id).exporting || !canExecuteComponentQuery(state(placement.component_id))" @click="queryComponent(placement.component_id)">{{ t('workbench.query') }}</el-button>
             </div>
           </div>
         </template>
         <p v-if="component(placement.component_id)?.description" class="component-description" data-testid="component-description">{{ component(placement.component_id).description }}</p>
-        <p v-if="selectionParameterLabels(placement.component_id).length" class="selection-hint" data-testid="selection-hint">{{ t(`workbench.selectionInstructions.${component(placement.component_id).renderer_type}`, { parameters: selectionParameterLabels(placement.component_id).join(', ') }) }}</p>
-        <ApplicationParameterFields
+        <p v-if="selectionParameterLabels(placement.component_id).length" class="selection-hint" data-testid="selection-hint">{{ selectionSourceId ? t('workbench.selectionValue.pickHint') : t(`workbench.selectionInstructions.${component(placement.component_id).renderer_type}`, { parameters: selectionParameterLabels(placement.component_id).join(', ') }) }}</p>
+        <ApplicationParameterFields :refresh-key="nameRevision" :snapshot="application.snapshot" :descriptors="runtimeDescriptors()"
           v-if="showParameters && parameterPlacement.componentParameters[placement.component_id]?.length"
           class="component-parameters"
           :inert="editable || undefined"
@@ -109,6 +109,7 @@
 </template>
 
 <script setup>
+import { applicationParameterSelectionSources } from '../utils/dataApplicationSelection.mjs'
 import { applicationQueryContext } from '../utils/applicationEditorLayout.mjs'
 import { captureApplicationInitialValues } from '../utils/dataApplicationDraft.mjs'
 import { applicationParameterOptions, assertApplicationOptionValues } from '../utils/applicationParameterOptions.mjs'
@@ -125,6 +126,7 @@ import WorkbenchRendererHost from './WorkbenchRendererHost.vue'
 
 const props = defineProps({
   application: { type: Object, required: true },
+  selectionSourceId: { type: String, default: '' },
   editable: { type: Boolean, default: false },
   selectedComponentId: { type: String, default: '' },
   mode: { type: String, default: 'published', validator: (value) => ['published', 'draft-preview'].includes(value) },
@@ -132,7 +134,7 @@ const props = defineProps({
   initialPresetKey: { type: String, default: '' },
 })
 
-const emit = defineEmits(['select-component', 'edit-component', 'move-component'])
+const emit = defineEmits(['select-component', 'edit-component', 'move-component', 'selection'])
 const previewNeedsRefresh = ref(false)
 const draggingComponentID = ref('')
 const editorPreviewRequests = createLatestRequestCoordinator()
@@ -163,17 +165,26 @@ const runtimeElement = ref(null)
 const isFullscreen = ref(false)
 const fullscreenSupported = ref(false)
 const selectedPresetKey = ref(applicationParameterPreset(props.application.snapshot, props.initialPresetKey)?.key || '')
+const nameRevision = ref(0)
 const parameterValues = reactive(initialApplicationParameterValues(props.application.snapshot, selectedPresetKey.value))
 const componentStates = reactive({})
 const totalValueComponents = reactive({})
 const runtimeLayout = computed(() => {
-  const page = application.value.snapshot.page
+  const page = props.selectionSourceId ? { ...application.value.snapshot.page, display_mode: 'desktop' } : application.value.snapshot.page
   if (props.editable) return { placements: page?.placements || [], gridStyle: {}, contentIDs: [] }
   const contentIDs = Object.keys(totalValueComponents).filter(id => totalValueComponents[id] && state(id).query_completed && !componentBlockingError(state(id)))
   return runtimeContentLayout(page, contentIDs)
 })
 const componentElements = new Map()
-const parameterPlacement = computed(() => applicationParameterPlacement(application.value.snapshot))
+const visiblePlacements = computed(() => props.selectionSourceId
+  ? runtimeLayout.value.placements.filter(p => p.component_id === props.selectionSourceId).map(p => ({ ...p, x: 0, y: 0, width: 12, height: 1 }))
+  : runtimeLayout.value.placements)
+const parameterPlacement = computed(() => {
+  const placement = applicationParameterPlacement(application.value.snapshot)
+  if (!props.selectionSourceId) return placement
+  const keys = new Set(application.value.snapshot.parameter_bindings.filter(b => b.component_id === props.selectionSourceId).map(b => b.application_parameter_key))
+  return { ...placement, pageParameters: placement.pageParameters.filter(p => keys.has(p.key)) }
+})
 const parameterDomains = computed(() => {
   const snapshot = application.value.snapshot
   const descriptors = runtimeDescriptors()
@@ -181,20 +192,20 @@ const parameterDomains = computed(() => {
 })
 const parameterSources = computed(() => Object.fromEntries(application.value.snapshot.parameters.map(parameter => [
   parameter.key,
-  selectionGuidance.value.filter(item => item.parameters.some(target => target.key === parameter.key)).map(item => item.source),
+  applicationParameterSelectionSources(application.value.snapshot, parameter.key),
 ])))
 const selectionGuidance = computed(() => (application.value.snapshot.selection_bindings || []).map(binding => ({
   source: component(binding.source_component_id),
   parameters: (binding.assignments || []).map(assignment => application.value.snapshot.parameters.find(parameter => parameter.key === assignment.application_parameter_key)).filter(Boolean),
 })).filter(item => item.source && item.parameters.length))
 const queryAllRequests = createLatestRequestCoordinator()
-const isWallboard = computed(() => !props.editable && application.value.snapshot.page?.display_mode === 'wallboard')
+const isWallboard = computed(() => !props.editable && !props.selectionSourceId && application.value.snapshot.page?.display_mode === 'wallboard')
 const showTitle = computed(() => runtimeSectionVisible(application.value.snapshot.page, 'title'))
-const showParameters = computed(() => runtimeSectionVisible(application.value.snapshot.page, 'parameters'))
-const showQueryActions = computed(() => !props.editable && runtimeSectionVisible(application.value.snapshot.page, 'query_actions'))
+const showParameters = computed(() => Boolean(props.selectionSourceId) || runtimeSectionVisible(application.value.snapshot.page, 'parameters'))
+const showQueryActions = computed(() => !props.editable && (Boolean(props.selectionSourceId) || runtimeSectionVisible(application.value.snapshot.page, 'query_actions')))
 const parameterPresets = computed(() => application.value.snapshot.parameter_presets || [])
 const canQueryAll = computed(() => canAttemptApplicationQuery(application.value.snapshot.components, componentStates))
-const refreshDelayMilliseconds = computed(() => props.editable ? 0 : applicationRefreshDelayMilliseconds(application.value.snapshot.page))
+const refreshDelayMilliseconds = computed(() => props.editable || props.selectionSourceId ? 0 : applicationRefreshDelayMilliseconds(application.value.snapshot.page))
 const statusLabel = computed(() => props.mode === 'draft-preview' ? t('workbench.draftPreviewBadge') : t('workbench.revisionLabel', { revision: application.value.revision_number }))
 const refreshIntervalLabel = computed(() => {
   switch (application.value.snapshot.page?.refresh_interval_seconds) {
@@ -261,6 +272,7 @@ function updateParameterValue(parameterKey, value) {
 }
 
 async function applyParameterPreset(presetKey) {
+  nameRevision.value += 1
   const preset = applicationParameterPreset(application.value.snapshot, presetKey)
   if (!preset) return
   if (!updateParameterValues(initialApplicationParameterValues(application.value.snapshot, preset.key), preset.key)) return
@@ -268,6 +280,7 @@ async function applyParameterPreset(presetKey) {
 }
 
 async function resetParameters() {
+  nameRevision.value += 1
   updateParameterValues(defaultApplicationParameterValues(application.value.snapshot))
   await queryAll()
 }
@@ -360,7 +373,13 @@ async function applySelection(componentID, selection) {
   try {
     const update = buildSelectionUpdate(application.value.snapshot, componentID, current.descriptor, current.rows, selection)
     if (!update) return
+    if (props.selectionSourceId) {
+      assertApplicationOptionValues(application.value.snapshot, runtimeDescriptors(), update.parameter_values)
+      emit('selection', update.parameter_values)
+      return
+    }
     if (!updateParameterValues(update.parameter_values)) return
+    nameRevision.value += 1
     ElMessage.success(t('workbench.selectionParametersUpdated', { parameters: selectionParameterLabels(componentID).join(', ') }))
     await Promise.all(update.component_ids.map((targetID) => queryComponent(targetID, '', 0, [''], {
       preserveMapView: component(targetID)?.renderer_type === 'map',
@@ -416,13 +435,14 @@ async function exportComponent(componentID) {
 }
 
 async function queryAll() {
+  const items = application.value.snapshot.components.filter(item => !props.selectionSourceId || item.id === props.selectionSourceId)
   const request = queryAllRequests.begin('query-all')
   queryingAll.value = true
   try {
-    await Promise.all(application.value.snapshot.components.map(async (item) => {
+    await Promise.all(items.map(async (item) => {
       if (!componentStates[item.id]?.descriptor && !componentStates[item.id]?.contract_error) await loadDescriptor(item)
     }))
-    await Promise.all(application.value.snapshot.components.map(async (item) => {
+    await Promise.all(items.map(async (item) => {
       if (!queryAllRequests.isCurrent(request, 'query-all')) return
       if (canExecuteComponentQuery(componentStates[item.id])) await queryComponent(item.id)
     }))
@@ -507,7 +527,9 @@ onMounted(async () => {
   const previewRequest = editorPreviewRequests.begin('editor-preview')
   await loadDescriptors()
   if (!runtimeMounted || !editorPreviewRequests.isCurrent(previewRequest, 'editor-preview')) return
-  if (props.editable) {
+  if (props.selectionSourceId) {
+    await queryComponent(props.selectionSourceId)
+  } else if (props.editable) {
     if (canRunPublishedApplicationInitialQuery(application.value.snapshot, componentStates, parameterValues, true)) await queryAll()
     else previewNeedsRefresh.value = true
   } else if (props.mode === 'published') {
@@ -594,4 +616,7 @@ onBeforeUnmount(() => {
 .drag-handle { cursor: grab; font-size: 22px; color: var(--addp-text-secondary); background: none; border: 0; padding: 0 4px; }
 .editor-preview-status { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; color: var(--addp-text-secondary); font-size: 12px; }
 @media(max-width:760px) { .runtime--editing .runtime-grid { display: flex; }.runtime--editing .runtime-component { min-height: 320px; } }
+.runtime--selecting { height: auto; padding: 0; }
+.runtime--selecting .runtime-grid { display: flex; flex-direction: column; }
+.runtime--selecting .runtime-component { height: clamp(360px, 60vh, 640px); }
 </style>

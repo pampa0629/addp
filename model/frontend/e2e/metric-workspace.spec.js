@@ -298,7 +298,8 @@ async function choose(page, label, option) {
     .click();
 }
 
-test('metric draft publishes independently and Service binds the requested immutable revision', async ({
+for (const resultKind of ['', 'details']) {
+test(`metric draft publishes independently and Service binds ${resultKind || 'summary'} of the requested immutable revision`, async ({
   page,
 }) => {
   const backend = await installBackend(page);
@@ -310,6 +311,10 @@ test('metric draft publishes independently and Service binds the requested immut
   await choose(page, '主体字段', '活动参与事实 · 人员标识 (person_id)');
   await choose(page, '主体维度关系', '人员维度');
   await choose(page, '主体显示名称字段（可选）', '人员维度 · 昵称 (nickname)');
+  if (resultKind) {
+    await page.getByText('允许发布去重明细', { exact: true }).click();
+    await expect(page.getByRole('checkbox', { name: '允许发布去重明细' })).toBeChecked();
+  }
   await choose(page, '去重字段', '活动参与事实 · 活动标识 (activity_id)');
   await choose(page, '日期字段', '活动维度 · 活动日期 (activity_date)');
   await page.getByRole('button', { name: '增加条件', exact: true }).click();
@@ -356,6 +361,7 @@ test('metric draft publishes independently and Service binds the requested immut
   await expect(summary).toContainText('Business PostgreSQL · #2');
   await expect(summary).toContainText('outdoor.dwd_outdoor_participation');
   await expect(summary.getByRole('button')).toHaveCount(0);
+  if (resultKind) await choose(page, '查询结果', '指标明细');
   await page
     .getByRole('dialog')
     .getByRole('button', { name: '发布查询服务', exact: true })
@@ -364,12 +370,16 @@ test('metric draft publishes independently and Service binds the requested immut
   expect(backend.writes.at(-1).metric_source).toEqual({
     implementation_id: 1,
     revision_id: 10,
+    ...(resultKind ? { result_kind: resultKind } : {}),
   });
+  expect(Boolean(backend.item.revisions[0].contract.include_details)).toBe(Boolean(resultKind));
   expect(backend.writes.at(-1)).not.toHaveProperty('sql_query');
   expect(backend.item.revisions[1].contract.filters[0].value).toBe(true);
   expect(backend.item.revisions[1].contract.subject_label).toEqual({ relation_id: 7, field_id: 52 });
   expect(errors).toEqual([]);
 });
+
+}
 
 test('creating a metric identity uses the approved fact without a fact version', async ({
   page,

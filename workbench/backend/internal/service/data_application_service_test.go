@@ -433,6 +433,7 @@ func TestDataApplicationServiceValidatesSelectionBindings(t *testing.T) {
 			SourceField: "status", ApplicationParameterKey: "component_1.status",
 		}},
 	}}
+	valid.Parameters[0].DisplaySource = &models.ApplicationParameterDisplaySource{SourceComponentID: componentID, LabelField: "status"}
 	if err := applications.validateSnapshot(context.Background(), DescriptorRequest{}, valid); err != nil {
 		t.Fatalf("valid selection binding error = %v", err)
 	}
@@ -449,6 +450,10 @@ func TestDataApplicationServiceValidatesSelectionBindings(t *testing.T) {
 	runtime, err := applications.Runtime(7, 11, created.ID)
 	if err != nil || published.CurrentRevisionNumber == nil || len(runtime.Snapshot.SelectionBindings) != 1 {
 		t.Fatalf("Runtime() selection binding = %#v, %v", runtime, err)
+	}
+
+	if runtime.Snapshot.Parameters[0].DisplaySource == nil || runtime.Snapshot.Parameters[0].DisplaySource.LabelField != "status" {
+		t.Fatal("published name source missing")
 	}
 
 	tests := []struct {

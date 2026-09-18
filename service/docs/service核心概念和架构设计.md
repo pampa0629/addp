@@ -117,6 +117,8 @@ Service 模块将服务分为三大类：
 
 ### 2.4 注册服务 (Registered Service)
 
+前端唯一入口以 Console 为准：`/service/services`，模块内对应 `/services`。创建、详情、编辑分别使用 `/services/create`、`/services/:id`、`/services/:id/edit`，统一由 `RegisteredServiceList/Form/Detail.vue` 实现。管理请求通过唯一 `api/registeredService.js` 调用 `/api/v1/service/registered`；名称和端点字段为 `service_name`、`endpoint_url`，列表使用 `page`、`limit`、`search`。服务目录进入相同详情页，不保留重复页面、API 客户端或路由别名。
+
 #### 定位
 集成外部第三方服务，提供统一的访问入口。
 
@@ -484,13 +486,14 @@ DELETE /api/service/tile/:id/layers/:layerId             → 删除图层
 DELETE /api/service/tile/:id/layers/:layerId/cache       → 清理图层缓存
 
 # 注册服务管理
-POST   /api/service/registry                             → 注册外部服务
-GET    /api/service/registry                             → 列出注册服务
-GET    /api/service/registry/:id                         → 获取注册服务详情
-PUT    /api/service/registry/:id                         → 更新注册服务
-DELETE /api/service/registry/:id                         → 删除注册服务
-POST   /api/service/registry/:id/refresh                 → 刷新服务元数据
-GET    /api/service/proxy/:id/*path                      → 代理转发
+POST   /api/v1/service/registered                             → 注册外部服务
+GET    /api/v1/service/registered                             → 列出注册服务
+GET    /api/v1/service/registered/:id                         → 获取注册服务详情
+PUT    /api/v1/service/registered/:id                         → 更新注册服务
+DELETE /api/v1/service/registered/:id                         → 删除注册服务
+POST   /api/v1/service/registered/:id/refresh                 → 刷新服务元数据
+POST   /api/v1/service/registered/:id/health            → 健康检查
+ANY    /api/service/registered/proxy/:id/*path            → 代理转发
 ```
 
 ### 4.2 查询服务 API 示例
@@ -736,6 +739,16 @@ GET /ogc/tiles/beijing_map/road/12/3421/1532
 - 让 OGC bbox、Feature ID 和 REST 过滤共享同一类型化谓词
 - 查询默认读取 `limit + 1` 行判断下一页，不执行精确 `COUNT(*)`
 
+### 指标服务的执行查询预览
+
+管理接口 `POST /api/v1/service/query/:id/execution-query` 接受既有 `QueryExecutionRequest`，要求当前租户的 `service.definition.read`，仅用于 analytical 来源。通过租户与 ID 读取服务，动态调用 Model Client SDK 验证绑定修订与依赖，再复用实际执行的中立结果计划包装与引擎编译路径；当前参数、结果筛选、排序、选择和游标均参与编译。返回语言、带占位符的查询文本、按计划声明顺序排列的类型化参数（值以规范文本或 null 表达，避免浏览器数字精度损失）、引擎名称/类型/ID、服务版本和指标实现/修订/结果种类。
+
+预览不调用 PrepareQuery、Execute 或数据库 EXPLAIN，不执行业务数据查询，不证明运行权限、数据质量断言或真实查询已经通过；停用服务允许查看，来源缺失、撤回、依赖漂移和非法请求仍拒绝。响应仅投影上述字段，不含引擎连接配置，使用 Cache-Control: no-store。不在公开查询端点、Consumer Descriptor 或 Workbench 暴露原生查询，不保存生成 SQL 副本，也不允许编辑后执行。
+
+详情页以“查看执行查询”折叠区按当前测试条件显式生成，参数变化或服务重载立即清除旧结果。数据测试与查询预览复用请求构造逻辑。校验纳入现有 `make test-go`（Service T1：多编译器一致性、参数化、非法请求、租户隔离）、`make test-service-frontend`（确定性测试及构建）、Swagger 生成和路由覆盖以及 `make test-module MODULE=service`；已有 Go/Service 前端 CI 自动发现入口覆盖新增文件，无新增依赖或测试入口。
+
+2026-09-18 实施验证：`make test-go`、`make test-service-frontend`（87 项测试及构建）、`make test-service-postgres`、Service Swagger 生成和 61 个公开路由覆盖校验、配置允许测试库后的 `make test-module MODULE=service` 均通过。Service 标准重启后的浏览器验收已通过：查询服务 35 在人员 A、2026 全年按月条件下展示 PostgreSQL 查询文本、实现 3 / 修订 15 / 服务版本 7，以及 subject_id、start_date、end_date、grain 四个类型化绑定参数。改为人员 B 后旧查询立即清除，重新生成正确显示 B 参数；随后恢复 A 并保留展开结果。预览未触发数据测试，必填校验及长 SQL 区域内滚动已验证。
+
 ### 6.2 空间字段自动检测
 
 **决策**：Table 模式完全自动检测，REST API + OGC Features 协议共存，自动启用
@@ -816,7 +829,7 @@ internal/models/            → 数据模型
 src/api/                    → API 客户端
     queryService.js         → 查询服务 API
     tileService.js          → 瓦片服务 API
-    registryService.js      → 注册服务 API
+    registeredService.js      → 注册服务 API
 
 src/views/                  → 页面组件
     QueryServiceForm.vue    → 查询服务创建向导
@@ -825,9 +838,9 @@ src/views/                  → 页面组件
     TileServiceForm.vue     → 地图服务创建向导
     TileServiceList.vue     → 地图服务列表
     TileServiceDetail.vue   → 地图服务详情
-    RegistryServiceForm.vue → 注册服务表单
-    RegistryServiceList.vue → 注册服务列表
-    RegistryServiceDetail.vue → 注册服务详情
+    RegisteredServiceForm.vue → 注册服务表单
+    RegisteredServiceList.vue → 注册服务列表
+    RegisteredServiceDetail.vue → 注册服务详情
 
 src/router/index.js         → 路由配置
 ```
@@ -887,7 +900,7 @@ src/router/index.js         → 路由配置
 - Handlers: `query_handler.go`, `tile_handler.go`, `tile_endpoint_handler.go`, `registry_handler.go`
 
 **前端核心文件**：
-- API: `queryService.js`, `tileService.js`, `registryService.js`
+- API: `queryService.js`, `tileService.js`, `registeredService.js`
 - Views: `QueryService*.vue`, `TileService*.vue`, `RegistryService*.vue`
 
 ### 9.2 协议与格式对照

@@ -424,3 +424,56 @@ func TestChartResultNameRequiresSelectedStringOutput(t *testing.T) {
 		})
 	}
 }
+
+func TestParameterDisplaySourcesValidateExplicitLookupContract(t *testing.T) {
+	makeFixture := func() ([]models.DataApplicationParameter, []models.DataApplicationSelectionBinding, map[string]models.DataApplicationComponent, map[string]*models.ConsumerDescriptor) {
+		parameters := []models.DataApplicationParameter{{Key: "person", DisplaySource: &models.ApplicationParameterDisplaySource{SourceComponentID: "directory", LabelField: "name"}}}
+		bindings := []models.DataApplicationSelectionBinding{{SourceComponentID: "directory", Assignments: []models.DataApplicationSelectionAssignment{{SourceField: "key", ApplicationParameterKey: "person"}}}}
+		components := map[string]models.DataApplicationComponent{"directory": {ID: "directory", ContractFingerprint: "current", QueryTemplate: models.ComponentQueryTemplate{Select: []string{"key", "name"}}}}
+		descriptors := map[string]*models.ConsumerDescriptor{"directory": {ContractFingerprint: "current", InputContract: models.StructuredQueryInputContract{Fields: []models.ConsumerQueryField{
+			{Name: "key", Type: datatype.FieldTypeString, Selectable: true, Filterable: true, Operators: []string{"eq"}},
+			{Name: "name", Type: datatype.FieldTypeString, Selectable: true},
+		}}, OutputContract: models.TabularOutputContract{Fields: []models.ConsumerOutputField{{Name: "key", Type: datatype.FieldTypeString}, {Name: "name", Type: datatype.FieldTypeString}}}}}
+		return parameters, bindings, components, descriptors
+	}
+	p, b, c, d := makeFixture()
+	if err := validateParameterDisplaySources(p, b, c, d); err != nil {
+		t.Fatal(err)
+	}
+	for _, scenario := range []string{"missing-source", "missing-binding", "unselected-label", "non-string", "not-selectable", "no-eq", "stale-contract", "duplicate-assignment"} {
+		t.Run(scenario, func(t *testing.T) {
+			p, b, c, d := makeFixture()
+			switch scenario {
+			case "missing-source":
+				p[0].DisplaySource.SourceComponentID = "missing"
+			case "missing-binding":
+				b = nil
+			case "unselected-label":
+				component := c["directory"]
+				component.QueryTemplate.Select = []string{"key"}
+				c["directory"] = component
+			case "non-string":
+				d["directory"].OutputContract.Fields[1].Type = datatype.FieldTypeInt
+			case "not-selectable":
+				d["directory"].InputContract.Fields[1].Selectable = false
+			case "no-eq":
+				d["directory"].InputContract.Fields[0].Operators = []string{"contains"}
+			case "stale-contract":
+				d["directory"].ContractFingerprint = "changed"
+			case "duplicate-assignment":
+				b[0].Assignments = append(b[0].Assignments, b[0].Assignments[0])
+			}
+			if err := validateParameterDisplaySources(p, b, c, d); err == nil {
+				t.Fatal("invalid display source accepted")
+			}
+		})
+	}
+	encoded, err := json.Marshal(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded []models.DataApplicationParameter
+	if err := json.Unmarshal(encoded, &decoded); err != nil || decoded[0].DisplaySource.LabelField != "name" {
+		t.Fatalf("display source did not roundtrip: %v", err)
+	}
+}

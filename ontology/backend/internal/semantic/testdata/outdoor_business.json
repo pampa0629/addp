@@ -1,0 +1,42 @@
+{
+  "classes": [
+    {"id": "activity", "name": "户外活动", "parents": []},
+    {"id": "person", "name": "户外参与者", "parents": []},
+    {"id": "activity_membership", "name": "活动成员关系", "parents": []}
+  ],
+  "properties": [
+    {"id": "activity_status", "class_id": "activity", "key": "status", "name": "活动存储状态", "kind": "string", "enum": []},
+    {"id": "activity_date_present", "class_id": "activity", "key": "date_present", "name": "已确认存在非空活动日期", "kind": "bool", "enum": []},
+    {"id": "member_status", "class_id": "activity_membership", "key": "member_status", "name": "活动成员状态", "kind": "string", "enum": ["报名中", "领队", "领队组", "替补中", "占坑中", "浏览中"]}
+  ],
+  "relations": [
+    {"id": "membership_activity", "name": "成员关系所属活动", "from": "activity_membership", "to": "activity", "transitive": false},
+    {"id": "membership_person", "name": "成员关系对应人员", "from": "activity_membership", "to": "person", "transitive": false}
+  ],
+  "rules": [
+    {
+      "id": "valid_activity",
+      "class_id": "activity",
+      "expression": "date_present && status != '拟定中' && status != '已取消'",
+      "basis": "依据《Outdoor领域理解》3.4：统计有效活动须排除草稿、取消和无日期活动，其他存储状态（含报名截止、已结束）不另行排除。date_present 只表示已完整观察并确认存在非空活动日期；缺失、null、空字符串表示无日期，未读取为未知，错误类型为无效。它不是物理字段绑定，不能从标题猜测。北京是业务背景，不代表已核实活动行政区。本规则不取数、不证明实例事实。",
+      "inputs": [
+        {"variable": "status", "property_id": "activity_status", "on_absent": "unknown"},
+        {"variable": "date_present", "property_id": "activity_date_present", "on_absent": "false"}
+      ]
+    },
+    {
+      "id": "registered",
+      "class_id": "activity_membership",
+      "expression": "status in ['报名中', '领队', '领队组', '替补中', '占坑中']",
+      "basis": "依据《Outdoor领域理解》3.3、7.2：仅对活动主体 Outdoors.members[] 的成员状态分类，五种状态计入报名，浏览中不计入。统计须另外确认 membership_activity 所指活动满足 valid_activity；本规则不自动遍历关系或筛选活动。人员侧摘要不能替代活动主体，addMembers[]、aaMembers[] 不自动纳入。状态缺失或未读为未知；无字段映射、真实记录和完整性证据时不得声称已报名或给出人数。",
+      "inputs": [{"variable": "status", "property_id": "member_status", "on_absent": "unknown"}]
+    },
+    {
+      "id": "participated",
+      "class_id": "activity_membership",
+      "expression": "status in ['报名中', '领队', '领队组']",
+      "basis": "依据《Outdoor领域理解》3.3、7.3：报名中、领队、领队组计入实际参加；替补中、占坑中、浏览中不计入。仅限活动主体 Outdoors.members[]；统计须另外确认关联活动满足 valid_activity。本规则不自动关联取数，不合并 addMembers[] 或 aaMembers[]。实际参加是已确认的业务统计口径，不证明签到或实际到场；缺失或未读状态仍为未知，不能仅凭本体计算人数。",
+      "inputs": [{"variable": "status", "property_id": "member_status", "on_absent": "unknown"}]
+    }
+  ]
+}

@@ -7,6 +7,7 @@
 
     <div v-if="loading" class="loading">{{ $t('service.common.loading') }}</div>
     <form v-else @submit.prevent="handleSubmit" class="form-container">
+      <fieldset :disabled="submitting" class="form-fields">
       <!-- 基本信息 -->
       <div class="form-section">
         <h3>{{ $t('service.registered.sectionBasicInfo') }}</h3>
@@ -208,43 +209,68 @@
           {{ submitting ? $t('service.registered.saving') : (isEdit ? $t('service.registered.saveChanges') : $t('service.registered.createService')) }}
         </button>
       </div>
+      </fieldset>
     </form>
   </div>
 </template>
 
 <script>
+import { reactive, ref, toRefs } from 'vue'
+import { useRouter } from 'vue-router'
+import { useUnsavedChangesGuard } from '@common-ui'
+import { ElMessage } from 'element-plus'
 import registeredServiceAPI from '@/api/registeredService'
 import { navigateServiceRoute } from '@/utils/moduleNavigation'
 
+const createDraft = () => ({
+  form: {
+    service_name: '',
+    title: '',
+    description: '',
+    keywords: [],
+    service_type: '',
+    endpoint_url: '',
+    health_check_url: '',
+    auth_type: 'none',
+    auth_config: {},
+    auto_refresh_metadata: true
+  },
+  authConfig: {
+    username: '',
+    password: '',
+    token: '',
+    key: '',
+    name: '',
+    location: 'header'
+  },
+  keywordsInput: ''
+})
+
 export default {
   name: 'RegisteredServiceForm',
+  setup() {
+    const draft = reactive(createDraft())
+    const captureDraft = () => JSON.stringify(draft)
+    const savedDraft = ref(captureDraft())
+    const markSaved = (snapshot = captureDraft()) => { savedDraft.value = snapshot }
+    const resetDraft = () => {
+      Object.assign(draft, createDraft())
+      markSaved()
+    }
+    useUnsavedChangesGuard({
+      router: useRouter(),
+      isDirty: () => captureDraft() !== savedDraft.value,
+      shouldConfirmUpdate: (to, from) => to.name !== from.name || to.params.id !== from.params.id
+    })
+    return { ...toRefs(draft), captureDraft, markSaved, resetDraft }
+  },
   data() {
     return {
       isEdit: false,
       serviceId: null,
       loading: false,
       submitting: false,
-      form: {
-        service_name: '',
-        title: '',
-        description: '',
-        keywords: [],
-        service_type: '',
-        endpoint_url: '',
-        health_check_url: '',
-        auth_type: 'none',
-        auth_config: {},
-        auto_refresh_metadata: true
-      },
-      authConfig: {
-        username: '',
-        password: '',
-        token: '',
-        key: '',
-        name: '',
-        location: 'header'
-      },
-      keywordsInput: ''
+      loadVersion: 0
     }
   },
   computed: {
@@ -253,19 +279,27 @@ export default {
       return ogcTypes.includes(this.form.service_type)
     }
   },
-  mounted() {
-    const id = this.$route.params.id
-    if (id && this.$route.path.includes('/edit')) {
-      this.isEdit = true
-      this.serviceId = parseInt(id)
-      this.loadService()
+  watch: {
+    '$route.path': {
+      immediate: true,
+      handler() {
+        this.loadVersion++
+        this.resetDraft()
+        this.loading = false
+        const id = this.$route.params.id
+        this.isEdit = Boolean(id && this.$route.path.endsWith('/edit'))
+        this.serviceId = this.isEdit ? Number(id) : null
+        if (this.isEdit) return this.loadService()
+      }
     }
   },
   methods: {
     async loadService() {
+      const version = ++this.loadVersion
       this.loading = true
       try {
         const response = await registeredServiceAPI.getService(this.serviceId)
+        if (version !== this.loadVersion) return
         const service = response
 
         this.form = {
@@ -282,19 +316,23 @@ export default {
         }
 
         this.keywordsInput = (service.keywords || []).join(', ')
+        this.markSaved()
 
         // 注意：不从服务器加载实际的认证凭据（安全考虑）
         // 如果需要更新认证信息，用户需要重新输入
       } catch (error) {
-        alert(this.$t('service.registered.loadFailed') + ': ' + (error.message || this.$t('service.common.unknownError')))
+        if (version !== this.loadVersion) return
+        ElMessage.error(this.$t('service.registered.loadFailed') + ': ' + (error.message || this.$t('service.common.unknownError')))
         console.error('Failed to load service:', error)
         this.goBack()
       } finally {
-        this.loading = false
+        if (version === this.loadVersion) this.loading = false
       }
     },
 
     async handleSubmit() {
+      if (this.submitting) return
+      const submittedDraft = this.captureDraft()
       this.submitting = true
       try {
         // 处理关键词
@@ -339,16 +377,18 @@ export default {
             health_check_url: data.health_check_url || null
           }
           await registeredServiceAPI.updateService(this.serviceId, updateData)
-          alert(this.$t('service.registered.updateSuccess'))
+          this.markSaved(submittedDraft)
+          ElMessage.success(this.$t('service.registered.updateSuccess'))
+          await navigateServiceRoute(this.$router, `/services/${this.serviceId}`, { history: 'replace' })
         } else {
           // 创建模式
-          await registeredServiceAPI.createService(data)
-          alert(this.$t('service.registered.createSuccess'))
+          const created = await registeredServiceAPI.createService(data)
+          this.markSaved(submittedDraft)
+          ElMessage.success(this.$t('service.registered.createSuccess'))
+          await navigateServiceRoute(this.$router, `/services/${created.id}`, { history: 'replace' })
         }
-
-        this.goBack()
       } catch (error) {
-        alert(this.$t('service.registered.saveFailed') + ': ' + (error.message || this.$t('service.common.unknownError')))
+        ElMessage.error(this.$t('service.registered.saveFailed') + ': ' + (error.message || this.$t('service.common.unknownError')))
         console.error('Failed to save service:', error)
       } finally {
         this.submitting = false
@@ -356,7 +396,7 @@ export default {
     },
 
     goBack() {
-      navigateServiceRoute(this.$router, '/registered-services', { history: 'replace' })
+      return navigateServiceRoute(this.$router, '/services', { history: 'replace' })
     }
   }
 }
@@ -382,9 +422,10 @@ export default {
 }
 
 .btn-back {
+  color: var(--addp-text-primary);
   padding: 8px 16px;
-  background-color: #f8f9fa;
-  border: 1px solid #dee2e6;
+  background-color: var(--addp-bg-secondary);
+  border: 1px solid var(--addp-border-color);
   border-radius: 4px;
   cursor: pointer;
   font-size: 14px;
@@ -392,7 +433,7 @@ export default {
 }
 
 .btn-back:hover {
-  background-color: #e9ecef;
+  background-color: var(--addp-bg-secondary);
 }
 
 .loading {
@@ -402,16 +443,23 @@ export default {
 }
 
 .form-container {
-  background-color: white;
+  background-color: var(--addp-bg-primary);
   border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--el-box-shadow-light);
   padding: 30px;
+}
+
+.form-fields {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
 }
 
 .form-section {
   margin-bottom: 30px;
   padding-bottom: 30px;
-  border-bottom: 1px solid #e9ecef;
+  border-bottom: 1px solid var(--addp-border-color);
 }
 
 .form-section:last-of-type {
@@ -422,7 +470,7 @@ export default {
 
 .form-section h3 {
   margin: 0 0 20px 0;
-  color: #495057;
+  color: var(--addp-text-primary);
   font-size: 18px;
   font-weight: 600;
 }
@@ -435,13 +483,13 @@ export default {
   display: block;
   margin-bottom: 8px;
   font-weight: 500;
-  color: #495057;
+  color: var(--addp-text-primary);
   font-size: 14px;
 }
 
 .form-group label.required::after {
   content: ' *';
-  color: #dc3545;
+  color: var(--el-color-danger);
 }
 
 .form-group input[type="text"],
@@ -449,9 +497,11 @@ export default {
 .form-group input[type="password"],
 .form-group select,
 .form-group textarea {
+  color: var(--addp-text-primary);
+  background-color: var(--addp-bg-primary);
   width: 100%;
   padding: 10px 12px;
-  border: 1px solid #ced4da;
+  border: 1px solid var(--addp-border-color);
   border-radius: 4px;
   font-size: 14px;
   font-family: inherit;
@@ -462,13 +512,13 @@ export default {
 .form-group select:focus,
 .form-group textarea:focus {
   outline: none;
-  border-color: #007bff;
-  box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+  border-color: var(--el-color-primary);
+  box-shadow: 0 0 0 0.2rem var(--el-color-primary-light-8);
 }
 
 .form-group input:disabled,
 .form-group select:disabled {
-  background-color: #e9ecef;
+  background-color: var(--addp-bg-secondary);
   cursor: not-allowed;
 }
 
@@ -480,7 +530,7 @@ export default {
 .help-text {
   margin-top: 6px;
   font-size: 12px;
-  color: #6c757d;
+  color: var(--addp-text-secondary);
 }
 
 .checkbox-label {
@@ -496,7 +546,7 @@ export default {
 }
 
 .auth-config {
-  background-color: #f8f9fa;
+  background-color: var(--addp-bg-secondary);
   padding: 20px;
   border-radius: 4px;
   margin-top: 15px;
@@ -508,10 +558,12 @@ export default {
   justify-content: flex-end;
   margin-top: 30px;
   padding-top: 20px;
-  border-top: 1px solid #e9ecef;
+  border-top: 1px solid var(--addp-border-color);
 }
 
 .btn {
+  color: var(--addp-text-primary);
+  background-color: var(--addp-bg-secondary);
   padding: 10px 24px;
   border: none;
   border-radius: 4px;
@@ -527,20 +579,20 @@ export default {
 }
 
 .btn-primary {
-  background-color: #007bff;
-  color: white;
+  background-color: var(--el-color-primary);
+  color: var(--el-color-white);
 }
 
 .btn-primary:hover:not(:disabled) {
-  background-color: #0056b3;
+  background-color: var(--el-color-primary-dark-2);
 }
 
 .btn-secondary {
-  background-color: #6c757d;
-  color: white;
+  background-color: var(--el-color-info);
+  color: var(--el-color-white);
 }
 
 .btn-secondary:hover {
-  background-color: #545b62;
+  background-color: var(--el-color-info-dark-2);
 }
 </style>

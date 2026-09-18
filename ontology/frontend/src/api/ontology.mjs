@@ -3,6 +3,25 @@ export function createOntologyAPI(client) {
   const head = (id) => `/ontologies/${encodeURIComponent(id)}`
   const revision = (id, number) => `${head(id)}/revisions/${number}`
   return {
+    classes: (id) => client.get(`${head(id)}/semantic/classes`).then(payload),
+    classContext: (id, classID, binding) =>
+      client
+        .get(`${head(id)}/semantic/classes/${encodeURIComponent(classID)}`, {
+          params: {
+            revision: binding.revision,
+            generation: binding.generation,
+            activation_version: binding.activation_version
+          }
+        })
+        .then(payload),
+    trial: (id, ruleID, body, signal) =>
+      client
+        .post(
+          `${head(id)}/semantic/rules/${encodeURIComponent(ruleID)}/trial`,
+          body,
+          { signal }
+        )
+        .then(payload),
     list: (page) =>
       client
         .get('/ontologies', { params: { page, page_size: 20 } })

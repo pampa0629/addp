@@ -1,5 +1,56 @@
 {
   "ontology": {
+    "trial": {
+      "title": "Ontology rule trial",
+      "notice": "Evaluate manual hypotheses only. No business data is read and no registration, attendance or count is verified.",
+      "activationVersion": "Activation version",
+      "digest": "Definition digest",
+      "rule": "Trial rule",
+      "noRules": "No rules are directly bound to this class",
+      "inputState": "Input state",
+      "value": "Hypothetical value",
+      "run": "Run trial",
+      "running": "Evaluating",
+      "result": "Trial result",
+      "hypothetical": "Hypothetical evaluation: the conclusion applies only to these inputs, not verified business facts.",
+      "unresolved": "Unresolved inputs",
+      "changed": "Activation or access changed. Reload before trying again.",
+      "noAccess": "A tenant session and ontology semantic read permission are required.",
+      "states": {
+        "known": "Known value",
+        "absent": "Confirmed absent",
+        "unknown": "Unknown (not read)",
+        "invalid": "Invalid (unusable evidence)"
+      },
+      "outcomes": {
+        "matched": "Matched",
+        "not_matched": "Not matched",
+        "unknown": "Unknown",
+        "error": "Evaluation error"
+      },
+      "treatments": {
+        "value": "Evaluated as a known value",
+        "explicit_absence_false": "Confirmed absence treated as false by the rule",
+        "unresolved": "Kept unknown without a default"
+      },
+      "codes": {
+        "predicate_true": "The condition holds.",
+        "predicate_false": "The condition does not hold.",
+        "insufficient_evidence": "Inputs are insufficient to determine a conclusion.",
+        "invalid_fact_value": "The known value violates the property type, enumeration or size limit.",
+        "invalid_fact_state": "An invalid input prevents classification.",
+        "contradictory_fact": "Input state and value contradict each other.",
+        "activation_error": "Unable to construct rule inputs.",
+        "evaluation_error": "Rule evaluation failed.",
+        "cost_limit": "Rule runtime cost exceeded.",
+        "non_boolean_result": "The rule did not produce a boolean result.",
+        "canceled": "The trial was canceled.",
+        "scope_mismatch": "Trial identity differs from the definition.",
+        "unknown_rule": "Rule not found.",
+        "input_limit": "Too many inputs.",
+        "unexpected_input": "An input was not declared by this rule."
+      }
+    },
     "logout": "Log out",
     "title": "Domain ontology",
     "list": "Ontologies",

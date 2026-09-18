@@ -63,7 +63,7 @@ Table/Chart 的 date 字段可显式配置 `temporal_format=period` 和 `period`
 
 `frontend/e2e/metric-publication.spec.js` 使用真实 Vue 页面和内存 HTTP fixture，覆盖契约变化后显式重配组件、保存与发布不可变修订、运行参数选择、异步 Descriptor 就绪、中英文显示及共享参数冲突。Model 的 `metric-workspace.spec.js` 负责服务来源重绑交互；Workbench 回归从重绑后的 Consumer Descriptor 边界开始，不跨模块读取 Model 内部事实。同一浏览器门禁还覆盖 50 行结果在受限卡片中的内部滚动和分页按钮可点击，以及可选 `contains` 输入的字面值提交、翻页后变更筛选重置游标及清空恢复查询；Common 的 PostgreSQL/MySQL `AnalyticalText` 既有 T2 门禁负责真实子串语义，Service T1 负责能力投影和参数绑定。这些测试不等同于真实后端与数据库的在线联调。
 
-运行参数旁的源组件定位入口、Table/Chart/Map 选择提示与参数更新反馈均由既有 Selection Binding 派生，Component 说明直接来自已有 description；不增加参数名称查询或快照字段。上述浏览器门禁同时验证中英文提示、窄屏定位及焦点、定位不查询、选择仍提交原始 ID，以及手动改值仍走既有查询主路径。仍由根 `test-workbench-frontend` 和 `platform-ci.yml` 的 Workbench 前端矩阵覆盖，无新增测试入口或依赖。
+运行参数旁的源组件定位入口、Table/Chart/Map 选择提示与参数更新反馈均由既有 Selection Binding 派生，Component 说明直接来自已有 description；普通定位入口不触发名称查询；配置 display_source 的名称回显遵循下述独立契约。上述浏览器门禁同时验证中英文提示、窄屏定位及焦点、定位不查询、选择仍提交原始 ID，以及重置条件仍走既有查询主路径。仍由根 `test-workbench-frontend` 和 `platform-ci.yml` 的 Workbench 前端矩阵覆盖，无新增测试入口或依赖。
 
 仅被一个选择源组件消费、且不作为选择赋值目标的应用参数就近放在该组件结果上方；其他参数保留顶部。两处由 `ApplicationParameterFields` 唯一组合共享 `ParameterValueInput`，不复制输入与契约禁用逻辑。位置由绑定推导、参数状态唯一；`parameters` 可见性、默认值、预设、请求失效与游标重置共同生效。既有确定性和浏览器入口覆盖位置归属、唯一控件所有权、局部筛选提交、翻页后重查与清空、原值选择以及隐藏参数区。
 
@@ -82,3 +82,11 @@ Chart 的 `total_as_value` 显式开启全期数字卡片，要求期间维度�
 全期数字卡片在桌面运行与整页预览中仅对独立同高横排收紧：Host 通知实际呈现模式，Canvas 将该排投影为内容自适应行并移动后续行，原 placement 不变。混合图表/表格或跨排组件保留固定网格，编辑画布和大屏不压缩。Node 布局测试覆盖空隙、跨排、还原和快照不变；中英文浏览器回归覆盖全期/月度高度切换、混排、窄屏长说明和四项数值不裁切、大屏隔离。前端变更使用 `make test-workbench-frontend`（T1/T3/构建），由现有 Platform CI Workbench 矩阵自动覆盖，无新增依赖或测试入口。
 
 Chart 的可选 `result_name_field` 显式选择已查询的 string 输出字段，Host 用完整成功结果中的一致名称展示查询对象，标签复用字段呈现配置。空名称和不一致/不完整结果明确提示，未查询或结果失效时不显示名称；不得从目录当前页、其他组件或参数名补全。Model 主体显示名称与 Service 冻结发布包均复用现有契约，Workbench 只经 Consumer SDK 消费。Go 校验、前端配置往返、中英文保存重载、全期/月度切换和缺失/歧义边界由现有 `make test-module MODULE=workbench`（T0/T1/T2/T3）、`make test-workbench-frontend`、Swagger 生成及覆盖入口验证，无新增 CI 注册或外部依赖。
+
+已配置 Selection Binding 的条件不再显示手填原始值输入框；运行态通过源组件定位选择，组件试查、应用默认值和场景预设通过同一个 ApplicationSelectionDialog 选择。弹窗复用 DataApplicationCanvas 的 Descriptor、查询、结果渲染、分页、值校验与 buildSelectionUpdate，只展示并查询对应源组件，停用自动刷新；点选只回填当前编辑条件，取消丢弃弹窗状态，试查不改变应用默认值、预设或组件历史默认值。来源统一由 applicationParameterSelectionSources 派生，不按名称猜测 ID，不增加 API、快照字段或第二套查询路径。没有 Selection Binding 的普通参数仍复用共享 ParameterValueInput。中英文 T3 覆盖无手填框、选择与取消、默认值与预设隔离、窄屏和原始查询值；门禁沿用 make test-module MODULE=workbench，无新增 CI 入口。
+
+Application Parameter 可显式配置 `display_source: {source_component_id, label_field}`。取值字段从该源组件到当前参数的唯一 Selection Binding 推导，不重复保存。名称字段必须为已选、可选择的 string 输出；取值字段必须已选且契约允许 eq 过滤，源契约指纹必须匹配。Backend 在保存和发布时拒绝悬空来源、缺失绑定及不合法字段；移除选择来源时一并清除其显示来源配置。没有该配置时只显示选择状态，不猜测名称。
+
+最新名称由 ApplicationSelectionValue 复用统一名称解析器，经原 Descriptor query operation 查询；请求复用 buildComponentQuery，保留固定过滤、排序及当前命名参数，移除列表动态搜索过滤和游标，按原始值 eq 筛选并最多取两行。只接受完整结果中恰好一行、原始取值严格匹配且名称为非空 string 的响应；未找到、多行或未完成、空名称、失败分别显示明确状态。不读目录当前页或其他组件结果，不缓存旧昵称，不保存查询结果。当前 ID、名称来源、契约或命名参数变化立即使旧名称及在途请求失效；组件卸载后不提交响应。运行、预览、试查、初始值和预设使用同一控件及解析路径。名称查询只负责参数回显，不覆盖指标服务的 result_name_field。
+
+搜索列表向导复用用户显式选择的名称字段；仅当该取值字段支持 eq 且名称字段是 string 时，为尚未配置名称来源的目标条件生成 display_source。已有条件可在筛选设置中选择一个既有选择源及名称字段。该变更不新增实体、API 路由、服务依赖或 CI 注册；同步 Swagger，沿用 make test-module MODULE=workbench 覆盖 T0/T1/T2/T3、构建，并运行 Swagger 生成与路由覆盖校验。

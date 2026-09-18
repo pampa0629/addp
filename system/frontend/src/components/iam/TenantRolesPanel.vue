@@ -86,7 +86,10 @@
 
     <el-dialog v-model="dialogVisible" class="addp-dialog" :title="editing ? t('system.iam.roles.edit') : t('system.iam.roles.create')" width="min(980px, calc(100vw - 24px))">
       <el-form ref="formRef" :model="form" :rules="rules" label-position="top">
-        <el-form-item v-if="!editing" :label="t('system.iam.roles.key')" prop="roleKey"><el-input v-model="form.roleKey" /></el-form-item>
+        <el-form-item v-if="!editing" :label="t('system.iam.roles.key')" prop="roleKey">
+          <el-input v-model="form.roleKey" :placeholder="t('system.iam.roles.keyPlaceholder')" aria-describedby="tenant-role-key-hint" />
+          <div id="tenant-role-key-hint" class="iam-role-key-hint">{{ t('system.iam.roles.keyHint') }}</div>
+        </el-form-item>
         <el-form-item :label="t('system.iam.common.name')" prop="name"><el-input v-model="form.name" /></el-form-item>
         <el-form-item :label="t('system.iam.common.description')"><el-input v-model="form.description" type="textarea" :rows="2" /></el-form-item>
         <el-form-item :label="t('system.iam.roles.scopes')" prop="scopeTypes">
@@ -242,7 +245,7 @@ import { Delete, Edit, Plus, Refresh, Search, View } from '@element-plus/icons-v
 import { useI18n } from 'vue-i18n'
 import { iamAPI } from '../../api/iam'
 import { useAuthStore } from '../../store/auth'
-import { resolveRoleDescription, resolveRoleName } from '../../utils/iamRoles'
+import { isValidTenantRoleKey, resolveRoleDescription, resolveRoleName } from '../../utils/iamRoles'
 import {
   buildPermissionGroups,
   groupPermissionsByNamespace,
@@ -312,7 +315,15 @@ const permissionDetailGroups = computed(() => groupPermissionsByNamespace(
   resources: groupPermissionsByResource(group.permissions)
 })))
 const rules = computed(() => ({
-  roleKey: [{ required: !editing.value, message: t('system.iam.validation.required'), trigger: 'blur' }],
+  roleKey: [
+    { required: !editing.value, message: t('system.iam.validation.required'), trigger: 'blur' },
+    {
+      validator: (_rule, value, callback) => editing.value || isValidTenantRoleKey(value)
+        ? callback()
+        : callback(new Error(t('system.iam.roles.keyInvalid'))),
+      trigger: ['blur', 'change']
+    }
+  ],
   name: [{ required: true, message: t('system.iam.validation.required'), trigger: 'blur' }],
   scopeTypes: [{ type: 'array', required: true, min: 1, message: t('system.iam.validation.required'), trigger: 'change' }],
   permissionKeys: [
@@ -414,9 +425,9 @@ function openEdit(row) {
   dialogVisible.value = true
 }
 async function submit() {
-  await formRef.value?.validate()
+  if (!await formRef.value?.validate().catch(() => false)) return
   submitting.value = true
-  const payload = { role_key: form.roleKey, name: form.name, description: form.description, scope_types: form.scopeTypes, permission_keys: form.permissionKeys }
+  const payload = { role_key: form.roleKey.trim(), name: form.name, description: form.description, scope_types: form.scopeTypes, permission_keys: form.permissionKeys }
   try {
     if (editing.value) await iamAPI.tenantRoles.update(editing.value.id, payload)
     else await iamAPI.tenantRoles.create(payload)
@@ -461,6 +472,7 @@ onMounted(load)
 .iam-permission-summary span { max-width: 190px; overflow: hidden; color: var(--addp-text-secondary); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .iam-role-selection-detail { color: var(--addp-text-secondary); font-size: 12px; white-space: nowrap; }
 .iam-role-immutable-hint { color: var(--addp-text-secondary); font-size: 12px; }
+.iam-role-key-hint { color: var(--addp-text-secondary); font-size: 12px; line-height: 1.5; margin-top: 6px; }
 .iam-permission-picker { width: 100%; overflow: hidden; border: 1px solid var(--addp-border-color); border-radius: 8px; }
 .iam-permission-picker__toolbar { display: flex; align-items: center; gap: 12px; padding: 12px; border-bottom: 1px solid var(--addp-border-color); }
 .iam-permission-picker__toolbar .el-input { flex: 1; }

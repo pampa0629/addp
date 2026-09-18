@@ -953,6 +953,21 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_workbench_internal_models.ApplicationParameterDisplaySource": {
+            "type": "object",
+            "required": [
+                "label_field",
+                "source_component_id"
+            ],
+            "properties": {
+                "label_field": {
+                    "type": "string"
+                },
+                "source_component_id": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_workbench_internal_models.AssetResourceGrantRequest": {
             "type": "object",
             "required": [
@@ -1352,6 +1367,9 @@ const docTemplate = `{
                 },
                 "default_value": {
                     "type": "object"
+                },
+                "display_source": {
+                    "$ref": "#/definitions/github_com_addp_workbench_internal_models.ApplicationParameterDisplaySource"
                 },
                 "key": {
                     "type": "string"

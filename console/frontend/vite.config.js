@@ -25,6 +25,9 @@ export default defineConfig({
       clientPort: 5170
     },
     proxy: {
+      ...(IS_E2E ? {
+        '/e2e/service-fixture': { target: 'http://127.0.0.1:4180', changeOrigin: true }
+      } : {}),
       '/data-apps': {
         target: 'http://localhost:5190',
         changeOrigin: true,

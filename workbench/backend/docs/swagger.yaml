@@ -12,6 +12,16 @@ definitions:
       total_pages:
         type: integer
     type: object
+  github_com_addp_workbench_internal_models.ApplicationParameterDisplaySource:
+    properties:
+      label_field:
+        type: string
+      source_component_id:
+        type: string
+    required:
+    - label_field
+    - source_component_id
+    type: object
   github_com_addp_workbench_internal_models.AssetResourceGrantRequest:
     properties:
       expires_at:
@@ -281,6 +291,8 @@ definitions:
         type: string
       default_value:
         type: object
+      display_source:
+        $ref: '#/definitions/github_com_addp_workbench_internal_models.ApplicationParameterDisplaySource'
       key:
         type: string
       label:

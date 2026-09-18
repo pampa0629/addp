@@ -11,6 +11,7 @@ var localeFS embed.FS
 
 // Service 模块消息 key 常量
 const (
+	MsgExecutionQueryFailed        = "service.err.execution_query_failed"
 	MsgInvalidParameterOptions     = "service.err.invalid_parameter_options"
 	MsgMetricPublicationFailed     = "service.metric.publication_failed"
 	MsgQueryVersionConflict        = "service.query.version_conflict"

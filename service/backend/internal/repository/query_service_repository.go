@@ -70,6 +70,14 @@ func NewQueryServiceRepository(db *gorm.DB) *QueryServiceRepository {
 	return &QueryServiceRepository{db}
 }
 
+func (r *QueryServiceRepository) GetByIDAndTenant(id, tenantID uint) (*models.QueryService, error) {
+	var item models.QueryService
+	if err := r.db.Where("id = ? AND tenant_id = ?", id, tenantID).First(&item).Error; err != nil {
+		return nil, commonrepo.WrapDBError(err)
+	}
+	return &item, nil
+}
+
 // Create 创建查询服务
 func (r *QueryServiceRepository) Create(service *models.QueryService) error {
 	return r.db.Create(service).Error

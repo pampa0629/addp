@@ -51,6 +51,22 @@ export async function installBackend(context, options = {}) {
     }
   }
   const state = {
+    refreshCount: 0,
+    authHold: null,
+    authFailure: false,
+    authContext: {
+      principal: { type: 'user', id: '7' },
+      context: {
+        type: options.contextType || 'tenant',
+        tenant_id: '7',
+        tenant_membership_id: '70'
+      },
+      authorization: {
+        role_assignments: [
+          { permissions: options.permissions || allPermissions }
+        ]
+      }
+    },
     writes: [],
     unexpected: [],
     failWrite: null,
@@ -93,20 +109,16 @@ export async function installBackend(context, options = {}) {
         return state.sessionExpired
           ? send({ error: 'expired' }, 401)
           : send({
-              access_token: 'ontology-isolated-token',
+              access_token: `ontology-isolated-token-${++state.refreshCount}`,
               expires_in: 3600
             })
       if (path === '/api/v1/system/users/me')
         return send({ id: 7, username: 'ontology-fixture' })
-      if (path === '/api/v1/system/auth/context')
-        return send({
-          context: { type: options.contextType || 'tenant', tenant_id: 7 },
-          authorization: {
-            role_assignments: [
-              { permissions: options.permissions || allPermissions }
-            ]
-          }
-        })
+      if (path === '/api/v1/system/auth/context') {
+        if (state.authHold) await state.authHold
+        if (state.authFailure) return send({ error: 'unavailable' }, 503)
+        return send(state.authContext)
+      }
       state.headers.push(req.headers()['accept-language'])
       const base = '/api/v1/ontology/ontologies',
         own = `${base}/beijing_outdoor`

@@ -46,6 +46,41 @@ func mustValid(t *testing.T, p plan.Plan) {
 	}
 }
 
+func TestFilterNonNullInference(t *testing.T) {
+	nonNull := op("not", op("is_null", column("source", "value")))
+	for _, tt := range []struct {
+		name      string
+		predicate plan.Expr
+		nullable  bool
+	}{
+		{"explicit", nonNull, false},
+		{"conjunction", op("and", nonNull, op("eq", column("source", "id"), lit(datatype.FieldTypeString, "x"))), false},
+		{"disjunction", op("or", nonNull, op("eq", column("source", "id"), lit(datatype.FieldTypeString, "x"))), true},
+		{"null check", op("is_null", column("source", "value")), true},
+		{"expression", op("not", op("is_null", op("coalesce", column("source", "value"), lit(datatype.FieldTypeDecimal, "0")))), true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			p := copyPlan(fixture())
+			p.Nodes = append(p.Nodes, plan.Node{ID: "filtered", Op: "filter", Filter: &plan.Filter{Input: "source", Predicate: tt.predicate}})
+			p.Root = "filtered"
+			p.Output.Fields[1].Nullable = tt.nullable
+			if !tt.nullable {
+				p.Output.StableKey = []string{"id", "value"}
+			}
+			schemas, err := plan.Analyze(p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !schemas["source"][1].Nullable || !p.Nodes[0].Scan.Fields[1].Nullable {
+				t.Fatal("filter changed source nullability")
+			}
+			if got := schemas["filtered"][1]; got.Nullable != tt.nullable || got.Precision != 38 || got.Scale != 18 {
+				t.Fatalf("unexpected filtered field: %+v", got)
+			}
+		})
+	}
+}
+
 func TestRejectInvalidPlans(t *testing.T) {
 	cases := map[string]func(*plan.Plan){
 		"unknown schema":           func(p *plan.Plan) { p.SchemaVersion = "future" },

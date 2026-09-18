@@ -14,9 +14,23 @@ import (
 	"github.com/addp/service/internal/models"
 )
 
+type analyticalCompiledRequest struct {
+	result     *compiledQueryPlan
+	query      plugin.QueryRequest
+	parameters []models.ExecutionQueryParameter
+}
+
 func compileAnalyticalQuery(service *models.QueryService, request *models.QueryExecutionRequest, protocol queryProtocol, engine *commonmodels.Engine, codec *queryTokenCodec) (*compiledQueryPlan, plugin.QueryRequest, error) {
-	fail := func(err error) (*compiledQueryPlan, plugin.QueryRequest, error) {
-		return nil, plugin.QueryRequest{}, fmt.Errorf("%w: %v", ErrInvalidStructuredQuery, err)
+	compiled, err := compileAnalyticalRequest(service, request, protocol, engine, codec)
+	if err != nil {
+		return nil, plugin.QueryRequest{}, err
+	}
+	return compiled.result, compiled.query, nil
+}
+
+func compileAnalyticalRequest(service *models.QueryService, request *models.QueryExecutionRequest, protocol queryProtocol, engine *commonmodels.Engine, codec *queryTokenCodec) (*analyticalCompiledRequest, error) {
+	fail := func(err error) (*analyticalCompiledRequest, error) {
+		return nil, fmt.Errorf("%w: %v", ErrInvalidStructuredQuery, err)
 	}
 	if err := validateAnalyticalPublication(service); err != nil {
 		return fail(err)
@@ -79,7 +93,20 @@ func compileAnalyticalQuery(service *models.QueryService, request *models.QueryE
 		return fail(err)
 	}
 	result.SelectedFields, result.HiddenFields = extended.SelectedFields, extended.HiddenFields
-	return result, query, nil
+	parameters := make([]models.ExecutionQueryParameter, 0, len(extended.Plan.Parameters))
+	for _, parameter := range extended.Plan.Parameters {
+		literal, err := values[parameter.Name].Canonical()
+		if err != nil {
+			return fail(err)
+		}
+		item := models.ExecutionQueryParameter{Name: parameter.Name, Type: string(parameter.Type)}
+		if !literal.Null {
+			text := literal.Text
+			item.Value = &text
+		}
+		parameters = append(parameters, item)
+	}
+	return &analyticalCompiledRequest{result: result, query: query, parameters: parameters}, nil
 }
 
 // Preserve exact decimal/integer tokens. A floating-point value cannot establish

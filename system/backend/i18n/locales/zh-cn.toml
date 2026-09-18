@@ -245,3 +245,6 @@ other = "OAuth 客户端已被其他用户修改，请刷新后重试"
 
 [system.iam.service_account_version_conflict]
 other = "服务账号已被其他用户修改，请刷新后重试"
+
+[system.iam.role_key_invalid]
+other = "角色标识须为“命名空间.名称”（例如 custom.ontology_manager）；两段均以小写英文字母开头，仅允许小写英文字母、数字和下划线。"

@@ -852,6 +852,40 @@ definitions:
       total_count:
         type: integer
     type: object
+  github_com_addp_service_internal_models.ExecutionQueryParameter:
+    properties:
+      name:
+        type: string
+      type:
+        type: string
+      value:
+        type: string
+    type: object
+  github_com_addp_service_internal_models.ExecutionQueryPreview:
+    properties:
+      engine_id:
+        type: integer
+      engine_name:
+        type: string
+      engine_type:
+        type: string
+      implementation_id:
+        type: integer
+      language:
+        type: string
+      parameters:
+        items:
+          $ref: '#/definitions/github_com_addp_service_internal_models.ExecutionQueryParameter'
+        type: array
+      query:
+        type: string
+      result_kind:
+        type: string
+      revision_id:
+        type: integer
+      version:
+        type: integer
+    type: object
   github_com_addp_service_internal_models.GraphQueryExecuteRequest:
     properties:
       page:
@@ -2448,6 +2482,8 @@ paths:
       - service.data_read.execute
   /consumer/services/{service_type}/{service_id}:
     get:
+      description: 指标服务的筛选字段从冻结计划输出投影，筛选只作用于计算结果。| Analytical service filter fields
+        are projected from frozen plan outputs; filters apply only to computed results.
       parameters:
       - description: 服务类型 | Service type
         enum:
@@ -3533,6 +3569,70 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - service.definition.update
+  /query/{id}/execution-query:
+    post:
+      consumes:
+      - application/json
+      description: 按当前请求及绑定修订编译只读查询文本和参数，不执行数据库查询；停用服务也可查看 | Compile query text and
+        parameters for the current request and bound revision without database execution;
+        inactive services may also be inspected
+      parameters:
+      - description: 服务 ID | Service ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 当前测试条件 | Current test request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_service_internal_models.QueryExecutionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_service_internal_models.ExecutionQueryPreview'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 查看指标执行查询 | Preview metric execution query
+      tags:
+      - QueryService
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - service.definition.read
   /query/{id}/metric-source:
     put:
       consumes:

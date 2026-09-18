@@ -8797,6 +8797,7 @@
                         "BearerAuth": []
                     }
                 ],
+                "description": "role_key 须为命名空间.名称，两段均以小写英文字母开头，仅含小写英文字母、数字和下划线，例如 custom.ontology_manager；首尾空白会被移除，格式无效返回 400 role_key_invalid。 | role_key must use namespace.name; each segment starts with a lowercase letter and contains only lowercase letters, digits, and underscores, e.g. custom.ontology_manager. Surrounding whitespace is trimmed; invalid format returns 400 role_key_invalid.",
                 "consumes": [
                     "application/json"
                 ],
@@ -8823,6 +8824,12 @@
                         "description": "Created",
                         "schema": {
                             "$ref": "#/definitions/internal_api.IAMTenantRoleResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数无效；标识格式错误码为 role_key_invalid | Invalid request; invalid key format uses role_key_invalid",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
                         }
                     }
                 },

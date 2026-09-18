@@ -9,6 +9,8 @@ import { openConsoleRoute, CONSOLE_NAVIGATION_CHANNEL } from '@common-ui/utils/t
 import { registerConsoleBridgeHandler } from '@common-ui/utils/consoleBridge'
 
 const child = new URL(location.href).searchParams.has('child')
+const queryService = new URL(location.href).searchParams.get('editor') === 'query-service'
+const editorRoute = queryService ? '/service/query-services/create' : '/orchestrator'
 const Editor = {
   render() { return h('div', [
     h('input', { 'aria-label': 'Draft', value: this.draft, onInput: event => { this.draft = event.target.value } }),
@@ -33,7 +35,7 @@ const router = createRouter({ history: createWebHashHistory(), routes: child ? [
 ] })
 const Host = {
   render() { return h('div', [
-    h('button', { onClick: () => this.go('/orchestrator') }, 'Open editor'),
+    h('button', { onClick: () => this.go(editorRoute) }, 'Open editor'),
     h('button', { onClick: () => this.go('/other') }, 'Other page'),
     h('button', { onClick: () => this.go('/third') }, 'Third page'),
     h('p', { id: 'public-route' }, this.route),
@@ -51,7 +53,9 @@ const Host = {
       if (synchronized === fullPath) return
       guard.reset()
       frameKey.value++
-      src.value = fullPath.startsWith('/orchestrator') ? './leave-guard.html?child#/' : ''
+      src.value = queryService
+        ? (fullPath.startsWith('/service/') ? `/e2e/service-fixture/e2e/query-form.html#${fullPath.slice('/service'.length)}` : '')
+        : (fullPath.startsWith('/orchestrator') ? './leave-guard.html?child#/' : '')
     }, { immediate: true })
     const stop = registerConsoleBridgeHandler(CONSOLE_NAVIGATION_CHANNEL, async (payload, message, event) => {
       if (event.source !== document.querySelector('iframe')?.contentWindow) throw new Error('inactive source')

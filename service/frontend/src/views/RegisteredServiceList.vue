@@ -68,7 +68,7 @@
               <button @click="goToEdit(service.id)" class="btn btn-sm btn-warning">{{ $t('service.common.edit') }}</button>
               <button @click="refreshMetadata(service.id)" class="btn btn-sm btn-primary">{{ $t('service.common.refresh') }}</button>
               <button @click="healthCheck(service.id)" class="btn btn-sm btn-success">{{ $t('service.common.check') }}</button>
-              <button @click="confirmDelete(service.id)" class="btn btn-sm btn-danger">{{ $t('service.common.delete') }}</button>
+              <button @click="confirmDelete(service.id)" :disabled="deleting" class="btn btn-sm btn-danger">{{ $t('service.common.delete') }}</button>
             </td>
           </tr>
         </tbody>
@@ -97,6 +97,7 @@
 </template>
 
 <script>
+import { ElMessage, ElMessageBox } from 'element-plus'
 import registeredServiceAPI from '@/api/registeredService'
 import { navigateServiceRoute } from '@/utils/moduleNavigation'
 
@@ -109,6 +110,7 @@ export default {
       page: 1,
       limit: 20,
       total: 0,
+      deleting: false,
       loading: false,
       error: null
     }
@@ -140,7 +142,7 @@ export default {
       } catch (error) {
         this.error = this.$t('service.registered.loadFailed') + ': ' + (error.message || this.$t('service.common.unknownError'))
         console.error('Failed to load registered services:', error)
-        alert(this.error)
+        ElMessage.error(this.error)
       } finally {
         this.loading = false
       }
@@ -152,27 +154,39 @@ export default {
     },
 
     async confirmDelete(id) {
-      if (!confirm(this.$t('service.registered.deleteConfirm'))) {
-        return
-      }
-
+      if (this.deleting) return
+      this.deleting = true
       try {
+        await ElMessageBox.confirm(
+          this.$t('service.registered.deleteConfirm'),
+          this.$t('service.common.deleteConfirmTitle'),
+          {
+            type: 'warning', customClass: 'addp-message-box',
+            confirmButtonText: this.$t('service.common.delete'),
+            cancelButtonText: this.$t('service.common.cancel'),
+            confirmButtonClass: 'el-button--danger',
+            autofocus: false, distinguishCancelAndClose: true
+          }
+        )
         await registeredServiceAPI.deleteService(id)
-        alert(this.$t('service.registered.deleteSuccess'))
-        this.loadServices()
+        ElMessage.success(this.$t('service.registered.deleteSuccess'))
+        await this.loadServices()
       } catch (error) {
-        alert(this.$t('service.registered.deleteFailed') + ': ' + (error.message || this.$t('service.common.unknownError')))
+        if (error === 'cancel' || error === 'close') return
+        ElMessage.error(this.$t('service.registered.deleteFailed') + ': ' + (error.message || this.$t('service.common.unknownError')))
         console.error('Failed to delete registered service:', error)
+      } finally {
+        this.deleting = false
       }
     },
 
     async refreshMetadata(id) {
       try {
         await registeredServiceAPI.refreshMetadata(id, { force: false })
-        alert(this.$t('service.registered.refreshSuccess'))
-        this.loadServices()
+        ElMessage.success(this.$t('service.registered.refreshSuccess'))
+        await this.loadServices()
       } catch (error) {
-        alert(this.$t('service.registered.refreshFailed') + ': ' + (error.message || this.$t('service.common.unknownError')))
+        ElMessage.error(this.$t('service.registered.refreshFailed') + ': ' + (error.message || this.$t('service.common.unknownError')))
         console.error('Failed to refresh metadata:', error)
       }
     },
@@ -181,10 +195,15 @@ export default {
       try {
         const response = await registeredServiceAPI.healthCheck(id)
         const result = response
-        alert(this.$t('service.registered.healthCheckResult', { status: result.status, message: result.message, time: result.response_time }))
-        this.loadServices()
+        ElMessage({
+          message: this.$t('service.registered.healthCheckResult', { status: result.status, message: result.message, time: result.response_time }),
+          type: result.status === 'healthy' ? 'success' : 'warning',
+          showClose: true,
+          duration: 6000
+        })
+        await this.loadServices()
       } catch (error) {
-        alert(this.$t('service.registered.healthCheckFailed') + ': ' + (error.message || this.$t('service.common.unknownError')))
+        ElMessage.error(this.$t('service.registered.healthCheckFailed') + ': ' + (error.message || this.$t('service.common.unknownError')))
         console.error('Failed to perform health check:', error)
       }
     },
@@ -243,15 +262,15 @@ export default {
     },
 
     goToCreate() {
-      navigateServiceRoute(this.$router, '/registered-services/create')
+      navigateServiceRoute(this.$router, '/services/create')
     },
 
     goToDetail(id) {
-      navigateServiceRoute(this.$router, `/registered-services/${id}`)
+      navigateServiceRoute(this.$router, `/services/${id}`)
     },
 
     goToEdit(id) {
-      navigateServiceRoute(this.$router, `/registered-services/${id}/edit`)
+      navigateServiceRoute(this.$router, `/services/${id}/edit`)
     },
 
     previousPage() {
@@ -282,6 +301,7 @@ h1 {
 }
 
 .toolbar {
+  flex-wrap: wrap;
   display: flex;
   gap: 10px;
   margin-bottom: 20px;
@@ -289,20 +309,26 @@ h1 {
 }
 
 .search-bar {
+  min-width: 0;
   flex: 1;
   display: flex;
   gap: 10px;
 }
 
 .search-bar input {
+  min-width: 0;
+  color: var(--addp-text-primary);
+  background-color: var(--addp-bg-primary);
   flex: 1;
   padding: 8px 12px;
-  border: 1px solid #ddd;
+  border: 1px solid var(--addp-border-color);
   border-radius: 4px;
   font-size: 14px;
 }
 
 .btn {
+  color: var(--addp-text-primary);
+  background-color: var(--addp-bg-secondary);
   padding: 8px 16px;
   border: none;
   border-radius: 4px;
@@ -312,48 +338,48 @@ h1 {
 }
 
 .btn-primary {
-  background-color: #007bff;
-  color: white;
+  background-color: var(--el-color-primary);
+  color: var(--el-color-white);
 }
 
 .btn-primary:hover {
-  background-color: #0056b3;
+  background-color: var(--el-color-primary-dark-2);
 }
 
 .btn-success {
-  background-color: #28a745;
-  color: white;
+  background-color: var(--el-color-success);
+  color: var(--el-color-white);
 }
 
 .btn-success:hover {
-  background-color: #218838;
+  background-color: var(--el-color-success-dark-2);
 }
 
 .btn-warning {
-  background-color: #ffc107;
-  color: var(--addp-text-primary);
+  background-color: var(--el-color-warning);
+  color: var(--el-color-white);
 }
 
 .btn-warning:hover {
-  background-color: #e0a800;
+  background-color: var(--el-color-warning-dark-2);
 }
 
 .btn-danger {
-  background-color: #dc3545;
-  color: white;
+  background-color: var(--el-color-danger);
+  color: var(--el-color-white);
 }
 
 .btn-danger:hover {
-  background-color: #c82333;
+  background-color: var(--el-color-danger-dark-2);
 }
 
 .btn-info {
-  background-color: #17a2b8;
-  color: white;
+  background-color: var(--el-color-info);
+  color: var(--el-color-white);
 }
 
 .btn-info:hover {
-  background-color: #138496;
+  background-color: var(--el-color-info-dark-2);
 }
 
 .btn-sm {
@@ -367,6 +393,7 @@ h1 {
 }
 
 .services-container {
+  overflow-x: auto;
   margin: 20px 0;
 }
 
@@ -389,33 +416,33 @@ h1 {
 .services-table {
   width: 100%;
   border-collapse: collapse;
-  background-color: white;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  background-color: var(--addp-bg-primary);
+  box-shadow: var(--el-box-shadow-light);
 }
 
 .services-table th {
-  background-color: #f8f9fa;
+  background-color: var(--addp-bg-secondary);
   padding: 12px;
   text-align: left;
   font-weight: 500;
-  border-bottom: 2px solid #dee2e6;
+  border-bottom: 2px solid var(--addp-border-color);
   font-size: 14px;
 }
 
 .services-table td {
   padding: 12px;
-  border-bottom: 1px solid #dee2e6;
+  border-bottom: 1px solid var(--addp-border-color);
   font-size: 14px;
 }
 
 .services-table tbody tr:hover {
-  background-color: #f8f9fa;
+  background-color: var(--addp-bg-secondary);
 }
 
 .endpoint-url {
   font-family: 'Courier New', monospace;
   font-size: 13px;
-  color: #495057;
+  color: var(--addp-text-primary);
   max-width: 250px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -431,28 +458,28 @@ h1 {
 }
 
 .badge-info {
-  background-color: #d1ecf1;
-  color: #0c5460;
+  background-color: var(--el-color-info-light-9);
+  color: var(--el-color-info);
 }
 
 .badge-success {
-  background-color: #d4edda;
-  color: #155724;
+  background-color: var(--el-color-success-light-9);
+  color: var(--el-color-success);
 }
 
 .badge-warning {
-  background-color: #fff3cd;
-  color: #856404;
+  background-color: var(--el-color-warning-light-9);
+  color: var(--el-color-warning);
 }
 
 .badge-danger {
-  background-color: #f8d7da;
-  color: #721c24;
+  background-color: var(--el-color-danger-light-9);
+  color: var(--el-color-danger);
 }
 
 .badge-secondary {
-  background-color: #e2e3e5;
-  color: #383d41;
+  background-color: var(--el-color-info-light-9);
+  color: var(--el-color-info);
 }
 
 .actions {
@@ -468,7 +495,7 @@ h1 {
   gap: 15px;
   margin-top: 20px;
   padding: 15px;
-  background-color: #f8f9fa;
+  background-color: var(--addp-bg-secondary);
   border-radius: 4px;
 }
 

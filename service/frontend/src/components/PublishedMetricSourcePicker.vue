@@ -84,7 +84,7 @@ const loadSources = async () => {
     if (!selectedReference.value) {
       implementationId.value = null
       revisionId.value = null
-  resultKind.value = ''
+      resultKind.value = ''
     }
     selectRevision()
   } catch (error) {

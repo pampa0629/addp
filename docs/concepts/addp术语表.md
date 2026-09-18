@@ -70,6 +70,7 @@
 | Data Application | 数据应用 | Workbench 中直接配置一个或多个 Data Application Component，并拥有草稿、页面布局、参数绑定、组件联动、发布、下线和稳定运行入口的聚合根。 | 不等同于 System Application；不依赖中间视图资源，不保存查询结果、凭据或 Service URL。 |
 | Application Revision | 应用发布修订 | Data Application 每次发布产生的不可变运行快照，包含当次名称、说明、Component、页面布局、应用展示模式、参数绑定和选择绑定。 | 使用独立 `revision_number` 表达业务发布版次，不复用聚合根并发字段 `version`；CatalogEntry 标识 Data Application，不标识单个 Revision。 |
 | Application Parameter Preset | 应用参数预设 | Data Application 创作者为一组完整 Application Parameter 值定义的稳定命名场景，随 Application Revision 一起发布。 | 选择预设只原子替换当前浏览器会话参数并复用既有 Parameter Binding 与查询主路径；不是查询模板、个人收藏或独立聚合根，不保存查询结果。运行链接只可引用预设 `key`，不得携带任意原始参数值。 |
+| Application Parameter Display Source | 应用参数名称来源 | Application Parameter 上可选的 `display_source` 配置，以 `source_component_id` 和 `label_field` 声明原始值对应的最新显示名称来源。 | 取值字段唯一复用该源组件到当前参数的 Selection Binding；只通过同一 Service 的公开查询操作按原始值精确查名，不持久化名称、结果或另一份查询模板，不替代指标结果自身的名称。 |
 | Selection Binding | 选择绑定 | Data Application Revision 中把一个源 Component 当前结果的显式标量字段原子写入 Application Parameter 的声明式配置。 | 目标 Component 只由既有 Parameter Binding 推导；不保存选择值、任意表达式、URL、ServiceReference 或查询片段，首期只用于同页组件联动和受控下钻。 |
 | Application Display Mode | 应用展示模式 | Data Application 页面在交互分析或大屏展示场景中的运行呈现方式。 | 当前稳定值为 `desktop`、`wallboard`；只改变同一页面布局行为，不改变 Component、Service 查询或授权。全屏是浏览器会话状态，不属于发布快照。 |
 | Application Refresh Policy | 应用刷新策略 | Data Application 页面声明的浏览器前台数据刷新间隔。 | 当前仅 `wallboard` 可启用，固定档位为关闭、30 秒、60 秒、300 秒；页面不可见时暂停，查询进行中时不叠加请求。它不创建 Task、Schedule、Execution 或后台计算。 |

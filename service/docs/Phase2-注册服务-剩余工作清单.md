@@ -347,7 +347,7 @@ func (h *RegisteredServiceHandler) ProxyService(c *gin.Context) {
 #### 2. 前端页面功能测试 ⭐⭐⭐
 
 **测试清单**:
-- [ ] 访问列表页面：http://localhost:5180/registered-services
+- [ ] 访问列表页面：http://localhost:5180/services
 - [ ] 创建新服务（各种服务类型：WMS、WFS、WMTS、OGC API、XYZ、REST）
 - [ ] 测试认证配置（Basic、Bearer、API Key）
 - [ ] 编辑服务（验证不可修改字段是否正确禁用）

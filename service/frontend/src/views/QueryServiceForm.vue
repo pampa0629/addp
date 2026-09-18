@@ -1,5 +1,5 @@
 <template>
-  <div class="query-service-form" v-loading="loading">
+  <div class="query-service-form" v-loading="loading" :inert="submitting || loading" :aria-busy="submitting || loading">
     <div class="page-header">
       <el-button @click="goBack" :icon="ArrowLeft" circle />
       <h2>{{ isEdit ? t('service.query.formEditTitle') : t('service.query.formCreateTitle') }}</h2>
@@ -446,7 +446,7 @@
 import PublishedMetricSourcePicker from '../components/PublishedMetricSourcePicker.vue'
 import ParameterValueInput from '../../../../common-frontend/basic/src/components/ParameterValueInput.vue'
 import { parameterControlType, parameterOptionsAllow, validParameterOptions } from '../../../../common-frontend/basic/src/utils/parameterInput.mjs'
-import { ref, reactive, computed, onMounted, nextTick } from 'vue'
+import { ref, reactive, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Grid, Document, Search } from '@element-plus/icons-vue'
@@ -459,7 +459,8 @@ import {
   engineSelectionState,
   isEngineSelectable,
   locatorPathFromSelection,
-  withTransientRetry
+  withTransientRetry,
+  useUnsavedChangesGuard
 } from '@common-ui'
 import {
   isQueryableTableEngine,
@@ -488,6 +489,8 @@ const loadingEngines = ref(false)
 const sampleRequests = createLatestRequestCoordinator()
 const outputContractRequests = createLatestRequestCoordinator()
 const tablePickerRef = ref(null)
+const tableMetadataRequests = createLatestRequestCoordinator()
+let editorVersion = 0
 
 const isEdit = computed(() => !!route.params.id)
 
@@ -498,10 +501,11 @@ const reloadDefinition = async () => {
     await ElMessageBox.confirm(t('service.query.reloadDiscardConfirm'), t('service.query.reloadDefinition'), {
       confirmButtonText: t('service.common.confirm'), cancelButtonText: t('service.common.cancel'), type: 'warning'
     })
+    markSaved()
     window.location.reload()
   } catch { /* Keep unsaved input when reload is cancelled. */ }
 }
-const form = reactive({
+const createForm = () => ({
   version: null,
   config_type: 'table',
   engine_id: null,
@@ -509,6 +513,7 @@ const form = reactive({
   execution_engine_id: null,
   schema_name: '',
   table_name: '',
+  locator: '',
   sql_query: '',
   service_name: '',
   title: '',
@@ -517,6 +522,8 @@ const form = reactive({
   public_access: true, // 默认公开访问
   max_features: 1000
 })
+
+const form = reactive(createForm())
 
 // 存储引擎列表（SQL 模式下使用）
 const engines = ref([])
@@ -557,6 +564,54 @@ const enableOgcFeatures = ref(false)
 const inputVisible = ref(false)
 const inputValue = ref('')
 const inputRef = ref(null)
+
+// 基线只包含编辑内容，步骤、候选列表、过滤词和服务端版本不属于草稿。
+const captureDraft = () => {
+  const { version, ...fields } = form
+  return JSON.stringify({
+    form: fields,
+    sqlNamedParameters: sqlNamedParameters.value,
+    sqlStableKey: sqlStableKey.value,
+    sqlHasGeometry: sqlHasGeometry.value,
+    sqlGeometryColumn: sqlGeometryColumn.value,
+    sqlSrid: sqlSrid.value,
+    sqlGeometryType: sqlGeometryType.value,
+    defaultFields: defaultFieldsInput.value,
+    filterableFields: filterableFieldsInput.value,
+    metricSource: metricSource.value,
+    enableOgcFeatures: enableOgcFeatures.value,
+    keywordInput: inputValue.value
+  })
+}
+const savedDraft = ref(captureDraft())
+const markSaved = (snapshot = captureDraft()) => { savedDraft.value = snapshot }
+useUnsavedChangesGuard({
+  router,
+  isDirty: () => captureDraft() !== savedDraft.value,
+  shouldConfirmUpdate: (to, from) => to.name !== from.name || to.params.id !== from.params.id
+})
+
+const resetDraft = () => {
+  Object.assign(form, createForm())
+  resetSQLOutputContract()
+  sampleRequests.invalidate()
+  tableMetadataRequests.invalidate()
+  loadingSampleQuery.value = false
+  submitting.value = false
+  versionConflict.value = false
+  currentStep.value = 0
+  tableUsesRuntime.value = false
+  spatialMetadata.value = null
+  sqlNamedParameters.value = []
+  metricSource.value = null
+  defaultFieldsInput.value = ''
+  filterableFieldsInput.value = ''
+  enableOgcFeatures.value = false
+  metricRestFormats.value = ['json']
+  inputValue.value = ''
+  inputVisible.value = false
+  markSaved()
+}
 
 // 表单验证规则
 const rules = computed(() => ({
@@ -812,7 +867,7 @@ const handleEngineDropdownVisible = visible => {
 
 // 方法：处理表选择（ResourceTreePicker 回调）
 const handleTableSelection = async (selection) => {
-  console.log('[QueryServiceForm] Table selection:', selection)
+  tableMetadataRequests.invalidate()
 
   if (!selection) {
     // 清空选择
@@ -840,10 +895,13 @@ const handleTableSelection = async (selection) => {
     form.runtime_engine_id = null
   }
 
+  const request = tableMetadataRequests.begin(form.locator)
   const geometry = await detectTableMetadata('/api/v1/meta', {
     locator: form.locator,
     item_id: selection.identity?.item_id
   })
+
+  if (!tableMetadataRequests.isCurrent(request, form.locator)) return
 
   // 如果检测到几何列，自动启用 OGC Features
   if (geometry.has_geometry) {
@@ -931,11 +989,13 @@ const parseFieldInput = value => String(value || '').split(',').map(field => fie
 
 // 方法：提交表单
 const handleSubmit = async () => {
-  if (versionConflict.value || submitting.value) return
+  if (versionConflict.value || submitting.value || loading.value) return
   if (!isEdit.value && form.config_type === 'analytical' && !metricSource.value) {
     ElMessage.warning(t('service.query.metricSourceRequired'))
     return
   }
+  const version = editorVersion
+  const submittedDraft = captureDraft()
   submitting.value = true
   try {
     // 构建请求数据
@@ -1021,10 +1081,14 @@ const handleSubmit = async () => {
         ...(form.config_type !== 'analytical' ? { protocols: requestData.protocols } : {}),
         ...(requestData.data_config ? { data_config: requestData.data_config } : {})
       })
+      if (version !== editorVersion) return
       form.version = updated.version
+      markSaved(submittedDraft)
       ElMessage.success(t('service.query.updateSuccess'))
     } else {
       const created = await queryServiceAPI.createService(requestData)
+      if (version !== editorVersion) return
+      markSaved(submittedDraft)
       ElMessage.success(t('service.query.createSuccess'))
       await navigateServiceRoute(router, `/query-services/${created.id}`, { history: 'replace' })
       return
@@ -1032,6 +1096,7 @@ const handleSubmit = async () => {
 
     await navigateServiceRoute(router, '/query-services', { history: 'replace' })
   } catch (error) {
+    if (version !== editorVersion) return
     if (error.response?.data?.error_code === 'resource_version_conflict') {
       versionConflict.value = true
       ElMessage.warning(t('service.query.versionConflict'))
@@ -1040,26 +1105,32 @@ const handleSubmit = async () => {
     ElMessage.error(t('service.query.submitFailed') + ': ' + (error.response?.data?.error || error.message || t('service.common.unknownError')))
     console.error('Failed to submit:', error)
   } finally {
-    submitting.value = false
+    if (version === editorVersion) submitting.value = false
   }
 }
 
 // 方法：返回列表
 const goBack = () => {
-  navigateServiceRoute(router, '/query-services', { history: 'replace' })
+  return navigateServiceRoute(router, '/query-services', { history: 'replace' })
 }
 
-// 生命周期：加载编辑数据
+// 引擎发现不修改草稿基线，避免把加载期间的用户输入标记为已保存。
 onMounted(async () => {
   // 加载存储引擎列表（SQL 模式下使用）
   await loadStorageEngines()
   await tablePickerRef.value?.loadEngines()
+})
 
+// 同组件切换服务身份时重建草稿；过期响应不得覆盖当前对象。
+watch(() => `${route.name}:${route.params.id || ''}`, async () => {
+  const version = ++editorVersion
+  resetDraft()
+  loading.value = false
   if (isEdit.value) {
     loading.value = true
     try {
       const service = await queryServiceAPI.getService(route.params.id)
-      console.log('[QueryServiceForm] 编辑模式：加载服务数据', service)
+      if (version !== editorVersion) return
 
       // 填充表单（编辑模式只能修改服务信息，不能修改数据源）
       Object.assign(form, {
@@ -1124,15 +1195,22 @@ onMounted(async () => {
 
       // 协议配置
       metricRestFormats.value = service.protocols?.rest_api?.formats || []
-      if (service.protocols?.ogc_features?.enabled) {
-        enableOgcFeatures.value = true
-      }
+      enableOgcFeatures.value = Boolean(service.protocols?.ogc_features?.enabled)
+      markSaved()
     } catch (error) {
+      if (version !== editorVersion) return
       ElMessage.error('加载服务失败: ' + (error.message || '未知错误'))
     } finally {
-      loading.value = false
+      if (version === editorVersion) loading.value = false
     }
   }
+}, { immediate: true })
+
+onBeforeUnmount(() => {
+  editorVersion++
+  sampleRequests.invalidate()
+  outputContractRequests.invalidate()
+  tableMetadataRequests.invalidate()
 })
 </script>
 

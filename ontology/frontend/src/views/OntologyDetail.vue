@@ -5,6 +5,13 @@
         {{ t('ontology.backList') }}
       </el-button>
       <h2>{{ route.params.ontology_id }}</h2>
+      <el-button
+        v-if="auth.hasPermission('ontology.semantic.read')"
+        :disabled="!head?.active_revision || busy || loading"
+        @click="go(`/ontologies/${head.ontology_id}/trial`)"
+      >
+        {{ t('ontology.trial.title') }}
+      </el-button>
       <el-button :loading="loading" :disabled="busy" @click="load">
         {{ t('ontology.refresh') }}
       </el-button>

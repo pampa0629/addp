@@ -99,3 +99,6 @@ other = "指标来源发布更新失败。"
 
 [service.err.invalid_parameter_options]
 other = "参数选项或取值无效，请检查允许值、默认值及中英文名称。"
+
+[service.err.execution_query_failed]
+other = "无法生成执行查询，请检查指标修订、依赖和引擎状态。"

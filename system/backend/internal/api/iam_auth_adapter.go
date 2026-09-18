@@ -563,6 +563,11 @@ func respondIAMError(c *gin.Context, err error) {
 	messageID := sysi18n.MsgInternalError
 	var errorCode *string
 	switch {
+	case errors.Is(err, iam.ErrTenantRoleKeyInvalid):
+		status = http.StatusBadRequest
+		messageID = sysi18n.MsgRoleKeyInvalid
+		code := "role_key_invalid"
+		errorCode = &code
 	case errors.Is(err, iam.ErrOAuthClientVersionConflict):
 		status = http.StatusConflict
 		messageID = sysi18n.MsgOAuthClientVersionConflict

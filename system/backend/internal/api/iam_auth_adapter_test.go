@@ -58,6 +58,34 @@ func TestIAMAuthHandlerContract(t *testing.T) {
 		assertIAMSessionCookies(t, recorder.Result().Cookies(), true, 30*24*60*60, 600)
 	})
 
+	t.Run("invalid role key is localized with a stable domain error", func(t *testing.T) {
+		for language, message := range map[string]string{
+			"zh-cn": "角色标识须为“命名空间.名称”（例如 custom.ontology_manager）；两段均以小写英文字母开头，仅允许小写英文字母、数字和下划线。",
+			"en":    "Role key must use namespace.name (e.g. custom.ontology_manager); each segment must start with a lowercase letter and contain only lowercase letters, digits, and underscores.",
+		} {
+			t.Run(language, func(t *testing.T) {
+				router := gin.New()
+				router.Use(i18nmiddleware.I18nMiddleware())
+				router.POST("/invalid-role", func(c *gin.Context) {
+					_, err := iam.NewTenantRoleService(nil, time.Now).CreateRole(c.Request.Context(), iam.CreateTenantRoleInput{
+						TenantID: 1, ActorPrincipalID: 4, RoleKey: "ontology_manager", Name: "Role",
+						ScopeTypes: []string{"tenant"}, PermissionKeys: []string{"ontology.revision.read"},
+					})
+					respondIAMError(c, err)
+				})
+				request := httptest.NewRequest(http.MethodPost, "/invalid-role", nil)
+				request.Header.Set("Accept-Language", language)
+				recorder := httptest.NewRecorder()
+				router.ServeHTTP(recorder, request)
+				var response IAMErrorResponse
+				decodeIAMResponse(t, recorder, &response)
+				if recorder.Code != http.StatusBadRequest || response.ErrorCode == nil || *response.ErrorCode != "role_key_invalid" || response.Error != message {
+					t.Fatalf("invalid role key status=%d response=%#v", recorder.Code, response)
+				}
+			})
+		}
+	})
+
 	t.Run("role assignment conflict uses a stable domain error", func(t *testing.T) {
 		router := gin.New()
 		router.Use(i18nmiddleware.I18nMiddleware())

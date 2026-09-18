@@ -276,7 +276,7 @@ const handleServiceClick = (service) => {
   } else if (service._source === 'query') {
     navigateServiceRoute(router, `/query-services/${service.id}`)
   } else if (service._source === 'registered') {
-    navigateServiceRoute(router, `/registered-services/${service.id}`)
+    navigateServiceRoute(router, `/services/${service.id}`)
   } else if (service._source === 'tile') {
     navigateServiceRoute(router, `/tile/${service.id}`)
   } else if (service._source === 'graph') {
@@ -285,7 +285,7 @@ const handleServiceClick = (service) => {
 }
 
 const openQueryServices = () => navigateServiceRoute(router, '/query-services')
-const openRegisteredServices = () => navigateServiceRoute(router, '/registered-services')
+const openRegisteredServices = () => navigateServiceRoute(router, '/services')
 
 async function handleTabChange(tab) {
   const routeState = resolveRouteState({ tab })

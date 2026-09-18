@@ -211,7 +211,7 @@ test('tenant administrator manages a custom role with localized bulk permission 
 
   await page.getByRole('button', { name: '创建自定义角色', exact: true }).click()
   let dialog = page.getByRole('dialog', { name: '创建自定义角色' })
-  await dialog.getByRole('textbox').nth(0).fill('tenant.e2e_researcher')
+  await dialog.getByRole('textbox').nth(0).fill('ontology_manager')
   await dialog.getByRole('textbox').nth(1).fill('E2E 研究员')
   await dialog.getByRole('textbox').nth(2).fill('端到端测试角色')
 
@@ -227,6 +227,12 @@ test('tenant administrator manages a custom role with localized bulk permission 
   await expect(dialog.getByText('有 1 项已选权限不支持当前允许范围', { exact: true })).toBeVisible()
   await dialog.getByRole('button', { name: '移除不兼容权限', exact: true }).click()
   await expect(dialog.getByText('已选择 1 项权限', { exact: true })).toBeVisible()
+  await dialog.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(dialog.locator('.el-form-item__error').filter({ hasText: '角色标识' })).toContainText('命名空间.名称')
+  await expect(dialog).toBeVisible()
+  expect(mutations).toEqual([])
+  await expect(dialog.getByText('例如 custom.ontology_manager；两段均以小写英文字母开头，仅允许小写英文字母、数字和下划线。', { exact: true })).toBeVisible()
+  await dialog.getByRole('textbox').nth(0).fill('  tenant.e2e_researcher  ')
   await dialog.getByRole('button', { name: '保存', exact: true }).click()
 
   let row = page.getByRole('row').filter({ hasText: 'E2E 研究员' })

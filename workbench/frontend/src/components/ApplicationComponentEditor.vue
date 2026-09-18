@@ -212,8 +212,8 @@
             <p v-if="!selectionTarget && !component && snapshot.parameters.length && draft.parameters.length" class="reuse-hint">{{ t('workbench.studio.reuseFilterHint') }}</p>
             <div v-for="(parameter, index) in draft.parameters" :key="index" class="parameter">
               <label class="parameter-name">{{ parameter.label }}<span v-if="parameter.required"> *</span></label>
-              <ParameterCaption v-if="parameter.bindingKind === 'named'" :parameter="parameter" />
-              <el-select v-else-if="!selectionTarget" v-model="parameter.field" @change="syncParameter(parameter)">
+              <ParameterCaption v-if="parameter.bindingKind === 'named' && !trialSelectionSources(parameter).length" :parameter="parameter" />
+              <el-select v-else-if="parameter.bindingKind !== 'named' && !selectionTarget" v-model="parameter.field" @change="syncParameter(parameter)">
                 <el-option v-for="field in parameterizableFields" :key="field.name" :label="field.comment || field.name" :value="field.name" />
               </el-select>
               <el-tag v-if="parameter.bindingKind === 'named'" type="warning">
@@ -238,7 +238,8 @@
               </div>
               <span v-if="isNewComponent && snapshot.parameters.length && !parameter.applicationParameterKey" class="reuse-hint">{{ t('workbench.studio.initialValue') }}</span>
               <span v-if="!isNewComponent" class="reuse-hint">{{ t('workbench.studio.trialValue') }}</span>
-              <ParameterValueInput v-model="parameter.value" :aria-label="t(isNewComponent ? 'workbench.studio.initialValue' : 'workbench.studio.trialValue')" :control-type="parameter.controlType" :options="parameter.options || []" :disabled="Boolean(parameter.applicationParameterKey)" @update:model-value="resetResult" />
+              <ApplicationSelectionValue :refresh-key="nameRevision" :snapshot="snapshot" :descriptors="descriptors" :parameter-key="trialApplicationKey(parameter)" :parameter-values="trialParameterValues" v-if="trialSelectionSources(parameter).length" :value="parameter.value" :sources="trialSelectionSources(parameter)" :required="parameter.required" @choose="openTrialSelection(parameter, $event)" @clear="parameter.value = null; resetResult()" />
+              <ParameterValueInput v-else v-model="parameter.value" :aria-label="t(isNewComponent ? 'workbench.studio.initialValue' : 'workbench.studio.trialValue')" :control-type="parameter.controlType" :options="parameter.options || []" :disabled="Boolean(parameter.applicationParameterKey)" @update:model-value="resetResult" />
               <details v-if="!selectionTarget || parameter.bindingKind === 'named'" class="parameter-details"><summary>{{ t('workbench.studio.parameterSettings') }}</summary><el-input v-if="!(isNewComponent && snapshot.parameters.length && !parameter.applicationParameterKey)" v-model="parameter.label" :placeholder="t('workbench.parameterLabel')" /><el-input v-model="parameter.key" :placeholder="t('workbench.parameterKey')" /><el-button link type="danger" :disabled="parameter.bindingKind === 'named'" @click="removeParameter(index)">{{ t('workbench.delete') }}</el-button></details>
             </div>
             </div>
@@ -269,10 +270,14 @@
       <el-button v-if="!component && activeStep !== 'conditions'" type="primary" :disabled="!descriptor" @click="nextStep">{{ t('workbench.studio.nextStep') }}</el-button>
       <el-button v-else type="primary" :disabled="!validDraft" @click="submit">{{ t('workbench.confirmComponent') }}</el-button>
     </template>
+    <ApplicationSelectionDialog :context="selectionContext" @close="selectionContext = null" @select="applyTrialSelection" />
   </el-dialog>
 </template>
 
 <script setup>
+import ApplicationSelectionValue from './ApplicationSelectionValue.vue'
+import ApplicationSelectionDialog from './ApplicationSelectionDialog.vue'
+import { buildDataApplicationPreview } from '../utils/dataApplicationDraft.mjs'
 import ParameterCaption from '../../../../common-frontend/basic/src/components/ParameterCaption.vue'
 import ParameterValueInput from '../../../../common-frontend/basic/src/components/ParameterValueInput.vue'
 import { computed, onBeforeUnmount, reactive, ref } from 'vue'
@@ -288,10 +293,32 @@ import ValueLabelEditor from './ValueLabelEditor.vue'
 import { defaultFieldPresentation, valueLabelsValid } from '@common-ui/utils/fieldPresentation.mjs'
 import { canBindApplicationParameter, newComponentParameterContext } from '../utils/applicationParameterOptions.mjs'
 import { initialApplicationParameterValue } from '../utils/dataApplicationParameters.mjs'
-import { compatibleSelectionParameters, affectedSelectionComponentIDs } from '../utils/dataApplicationSelection.mjs'
+import { applicationParameterSelectionSources, compatibleSelectionParameters, affectedSelectionComponentIDs } from '../utils/dataApplicationSelection.mjs'
 
 const props = defineProps({ modelValue: Boolean, selectionTarget: { type: Object, default: null }, duplicate: Boolean, initialRenderer: { type: String, default: 'table' }, component: { type: Object, default: null }, snapshot: { type: Object, required: true }, descriptors: { type: Object, required: true } })
 const emit = defineEmits(['update:modelValue', 'save'])
+const trialParameterValues = computed(() => {
+  const values = Object.fromEntries(props.snapshot.parameters.map(p => [p.key, p.default_value]))
+  for (const parameter of draft.parameters) {
+    const key = trialApplicationKey(parameter)
+    if (key) values[key] = parameter.value
+  }
+  return values
+})
+const nameRevision = ref(0)
+const selectionContext = ref(null)
+function trialApplicationKey(parameter) {
+  return parameter.applicationParameterKey || (!isNewComponent.value && props.snapshot.parameter_bindings.find(b => b.component_id === props.component.id && b.component_parameter_key === parameter.key)?.application_parameter_key) || ''
+}
+function trialSelectionSources(parameter) { return applicationParameterSelectionSources(props.snapshot, trialApplicationKey(parameter)) }
+function openTrialSelection(parameter, sourceID) {
+  selectionContext.value = { parameterKey: trialApplicationKey(parameter), label: parameter.label, sourceID, parameter, application: buildDataApplicationPreview({ name: '', description: '', snapshot: props.snapshot }) }
+}
+function applyTrialSelection(value) {
+  nameRevision.value += 1
+  selectionContext.value.parameter.value = value
+  resetResult()
+}
 const { t, locale } = useI18n()
 const numericTypes = new Set(['int', 'bigint', 'float', 'double', 'decimal'])
 const thematicTypes = new Set(['string', 'bool', 'int', 'bigint', 'float', 'double', 'decimal', 'date', 'time', 'timestamp', 'uuid'])
@@ -775,6 +802,7 @@ function resetResult() {
 }
 
 function invalidateEditorRequests() {
+  selectionContext.value = null
   descriptorRequests.invalidate()
   operationRequests.invalidate()
   loading.value = false
@@ -786,7 +814,7 @@ onBeforeUnmount(invalidateEditorRequests)
 
 function submit() {
   if (!validDraft.value) return
-  emit('save', buildComponentConfiguration(descriptor.value, draft, componentID.value, isNewComponent.value ? null : props.component), reusedParameters.value, descriptor.value, props.selectionTarget ? { source_field: selectionFields.value, application_parameter_key: props.selectionTarget.key } : null)
+  emit('save', buildComponentConfiguration(descriptor.value, draft, componentID.value, isNewComponent.value ? null : props.component), reusedParameters.value, descriptor.value, props.selectionTarget ? { source_field: selectionFields.value, application_parameter_key: props.selectionTarget.key } : null, props.selectionTarget ? selectionFields.label : '')
   emit('update:modelValue', false)
 }
 </script>

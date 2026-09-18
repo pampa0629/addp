@@ -2,7 +2,7 @@
 
 更新日期：2026-09-18。
 
-状态：独立 Ontology 的原生语义内核、PG 修订/发布服务、FalkorDB 投影适配和单机 Infra、System 内部任务授权、投影执行/激活及失败批次显式重建、常驻 Backend、管理 HTTP 入口与 Console 建模页面已实现，范围与标准验证入口见 [模块说明](../../ontology/CLAUDE.md)。Agent Tool 尚未交付。真实 T4 首跑被公共 Infra 的 MinIO 镜像拉取失败阻塞，未进入本体断言；该验收暂缓，不算通过。当前不调整 Graph，后续另行讨论其职责迁移。本文的目标设计不代表功能均已实现。
+状态：独立 Ontology 的原生语义内核、PG 修订/发布服务、FalkorDB 投影适配和单机 Infra、System 内部任务授权、投影执行/激活及失败批次显式重建、常驻 Backend、管理 HTTP 入口与 Console 建模页面已实现，范围与标准验证入口见 [模块说明](../../ontology/CLAUDE.md)。两个原生定义只读 Agent Tool 已交付，并于 2026-09-18 完成本地真实用户的建模、发布激活和 Agent 读取联调；这不是业务实例查询验收，也不替代隔离部署的正式 T4。真实 T4 首跑被公共 Infra 的 MinIO 镜像拉取失败阻塞，未进入本体断言；该验收暂缓，不算通过。当前不调整 Graph，后续另行讨论其职责迁移。本文的目标设计不代表功能均已实现。
 
 ## 1. 目标与范围
 
@@ -228,6 +228,18 @@ Ontology 委托令牌的 audience 不能被直接转发给 Manager、Develop 或
 
 ### 6.3 解释输出
 
+#### 当前规则试算切片
+
+Console 在本体详情提供 `/ontologies/:ontology_id/trial` 页面，使用现有类目录与类上下文选择规则，不读取草稿、历史修订或业务数据。`POST /ontologies/{ontology_id}/semantic/rules/{rule_id}/trial` 仅接受 Tenant User 和 `ontology.semantic.read`；这是无持久化、无业务效果的定义消费，不扩展已有 Delegated Tool 的 scope，也不新增后台任务。
+
+请求体固定为类目录返回的 `revision`、`generation`、`activation_version` 与按规则变量名索引的 `inputs`。每项包含 `state=known|absent|unknown|invalid`；非 known 的 `value` 必须省略或为 null。输入最多 16 项，请求最多 96 KiB；不接受表达式、租户、来源凭证或任意 query。未提交变量按 unknown 处理；未知变量返回 400，未知规则返回 404。已知值类型或枚举错误、显式 invalid 输入属于试算结果 error，不当作“不匹配”。
+
+服务端复用唯一 CEL 内核，执行前后核对同一 published/ready 激活绑定；未激活或版本变化返回 409，不回退历史版本。HTTP 200 只表示试算得到结果，响应包含激活绑定、摘要及 `decision.mode=hypothetical`、规则依据、四态结果、输入状态和未决变量，不回显原始值，不持久化输入或输出。页面修改输入、规则、本体或重新加载时清除旧结果；冲突后保留输入但禁止继续试算，显式重新加载建立新基线。试算不是可信业务事实，也不是人数统计或质量检测。
+
+该切片复用现有 Ontology T0/T1、PG T2 与前端 T3 标准入口；Swagger、请求边界、租户/用户权限、撤回/版本变化、四态输出及页面迟到响应隔离同次验证。不新增运行依赖、数据库、CI Job 或 Agent Tool；正式隔离 T4 仍单独报告。
+
+令牌轮换后的 AuthContext 重取不是本体或规则切换。重取期间隐藏定义和输入、取消在途试算并清除结果；只有同一 User、Tenant 和 Tenant Membership 经权威上下文重新确认且仍有语义读取权限时，才恢复同一路由下的内存输入，不自动重新提交试算。换主体、换租户/成员身份、退出、权限撤销或重取失败均清空旧数据；仍由试算接口验证原激活绑定，409 锁定不会被普通令牌刷新解除。输入不写入浏览器持久存储。
+
 解释是可核对的规则与事实，不是模型隐藏推理。最小内容包括：
 
 - 本体修订、规则身份及定义摘要；
@@ -278,6 +290,12 @@ Agent 取消仍遵守现有规范：取消 Runtime 不自动取消已有 owner e
 
 ## 9. Outdoor 首个验收切片
 
+### 本地原生定义演示与真实业务的区别
+
+2026-09-18 在个人开发环境通过正式页面创建并激活 `beijing_outdoor_demo` 修订 1；Agent 对话 76 的成功运行依次调用 `ontology.classes.list`、`ontology.class.context`，读取同一激活版本并解释继承属性、`registered` 条件和未知输入。该联调未读取业务数据库，未验证真实报名人数；当日 `make test-agent-eval` 离线门禁通过，不替代正式 T4。
+
+演示定义来自合成夹具：`attendance` 表示“含成员状态的活动观察”，继承 `activity` 仅用于演示内核继承能力；它不能直接作为真实活动成员关系的业务模型。演示 `registered` 的三状态集合也不是下文真实 Outdoor 的完整报名口径。后续真实字段映射必须先明确活动、人员与成员关系的业务粒度，并采用已确认的业务口径；不得把合成定义直接绑定生产来源、猜测城市字段，或将演示结果描述成真实数据结论。
+
 ### 9.1 业务口径
 
 以[Outdoor 领域理解](Outdoor领域理解.md)为依据：统计有效活动排除草稿、取消和无日期活动；报名与实际参加按已确认的成员状态分别计算。实际参加是现行业务统计定义，不额外声称存在签到证据。
@@ -296,6 +314,20 @@ Agent 取消仍遵守现有规范：取消 Runtime 不自动取消已有 owner e
 
 业务数据以北京为主要背景，但本次统计未加地域过滤。“怀柔区位于北京”仅用明确标注的可丢弃夹具验证关系查询；北京、怀柔区是地点实例，不是两个本体类。真实活动行政归属要有可信地点映射，不能从数据集背景或标题猜测。
 
+### 9.1.1 正式业务定义切片（不接 Catalog）
+
+本轮按用户确认先忽略 Catalog，仅建设正式业务定义及其确定性规则用例；不实现字段映射、业务取数、聚合或可信事实交接。第 2 节的映射所有权保持不变，不在 Ontology 增加临时映射表。合成演示 `beijing_outdoor_demo` 保留；正式业务定义使用独立身份 `outdoor_business`，不把两者当作可互换版本，也不自动给 Tenant 创建本体。
+
+- `activity`（户外活动）、`person`（户外参与者）、`activity_membership`（活动成员关系）是三个独立类，无相互继承。成员关系作为带状态的关联对象，通过 `membership_activity` 指向活动、`membership_person` 指向人员；声明仅约束类型端点，不证明已有实例关联、基数或唯一性。
+- 活动具有字符串 `activity_status` 和布尔 `activity_date_present`。后者表达已经确认存在非空活动日期的观察，不是新增业务库字段；未来读取 owner 必须验证日期事实后构造，不能由 LLM、标题或字段名猜测。已知缺失、null 或空字符串对应“无日期”；未读取仍为 unknown，混合类型等无效事实不得当作 false。
+- `valid_activity` 只绑定活动：有日期，且状态不是“拟定中”“已取消”。不把历史状态“报名截止”或“已结束”排除；活动状态不设置封闭枚举，以遵守已确认的“草稿/取消/其他”口径。
+- 成员关系具有枚举 `member_status`：报名中、领队、领队组、替补中、占坑中、浏览中。`registered` 与 `participated` 只对该成员状态分类，分别采用第 9.1 节引用的五状态和三状态口径。缺失/未读状态为 unknown；未知码值或错误类型为 error，不静默转为 false。
+- 成员规则不隐式遍历关系、不自动执行活动规则。统计消费必须另外证明关联活动满足 `valid_activity`，限定 `members[]` 范围并明确身份、去重与完整性；定义解释和假设性试算不能称为已核实报名、实际到场或统计人数。当前不扩展至 `addMembers[]`、`aaMembers[]`、签到证据或行政区判断。
+
+正式定义用例位于 `ontology/backend/internal/semantic/testdata/outdoor_business.json`，语义内核 T1 检查类/关系粒度、完整状态矩阵、缺失与未知、无效输入及假设性解释。现有 Ontology Go 模块/CI 自动发现覆盖，无新增门禁或运行依赖；仍沿 `make test-module MODULE=ontology` 执行，不把定义用例当作真实数据闭环。
+
+2026-09-18 已在个人开发环境通过正式页面完成 `outdoor_business` 修订 1 的创建、提交及发布，当前激活版本为 revision 1 / activation_version 2，generation 为 `34e81c3f-5e75-4451-9d48-70725a0e957c`。保存定义与测试夹具核对一致。Agent 会话 77 通过 `ontology.classes.list` 和两次 `ontology.class.context` 读取 `activity`、`activity_membership` 的同一激活版本，准确解释上述状态集合和证据边界；未调用业务查询工具。Ontology 模块门禁及 Agent 离线门禁通过。本记录是本地真实用户联调，不构成隔离 T4 或真实人数统计验收，也不代表其他 Tenant 已自动获得该本体。
+
 ### 9.2 验收问题
 
 1. 为什么某条活动被纳入或排除统计有效活动？返回规则、状态与日期依据。
@@ -311,7 +343,7 @@ Agent 取消仍遵守现有规范：取消 Runtime 不自动取消已有 owner e
 
 1a 语义内核、1b PG 修订/发布、1c-1 FalkorDB 投影适配及 1c-2 的首次执行/失败重建、Backend 管理入口已实施。首次发布和重建共用新 execution 的授权准入、Common 租约、确定性图构建、全量校验和 PG 原子激活，不存在绕过准入的构建旁路。常驻 Backend 位于 `ontology/backend/cmd/server`，管理路由位于 `internal/api`；端口、构建、部署、权限与开发生命周期同步登记。owner schema 由向前迁移管理；本轮未在个人开发库执行迁移或重启服务。FalkorDB 单机 Infra 与独占 T2 共用定义。原生定义的只读 Agent API/SDK/Tool/Skill 和离线评测已接入；真实 System/Gateway 的 T4、来源引用、关系实例推导、历史图清理及真实数据证据消费仍未完成。
 
-内核输入属于假设性试算，不验证业务 owner 证据或 IAM；调用方传入的租户/修订身份匹配检查不等于授权。接口上线前仍必须满足第 6 节的可信事实与授权要求。
+内核输入属于假设性试算，不验证业务 owner 证据或 IAM；调用方传入的租户/修订身份匹配检查不等于授权。第 6.3 节的用户试算接口由 Ontology owner 统一鉴权，只接受手工假设，不认证业务事实。真实业务事实求值接口上线前仍必须满足第 6 节的可信事实交接与授权要求。
 
 后续按以下依赖顺序实施，但不能把同一切片所需的 CI/测试登记留到以后：
 

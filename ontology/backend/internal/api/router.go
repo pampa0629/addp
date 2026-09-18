@@ -30,6 +30,7 @@ func SetupRouter(systemURL string, lifecycle *modulelifecycle.Controller, revisi
 	api.GET("/ontologies/:ontology_id/semantic/classes", semanticBoundary("ontology.classes.list"), tenantPermissions(permissions.PermissionOntologySemanticRead), h.ListClasses)
 	api.GET("/ontologies/:ontology_id/semantic/classes/:class_id", semanticBoundary("ontology.class.context"), tenantPermissions(permissions.PermissionOntologySemanticRead), h.ClassContext)
 	api.Use(userBoundary)
+	api.POST("/ontologies/:ontology_id/semantic/rules/:rule_id/trial", commonauth.MustNewPermissionGuard(permissions.PermissionOntologySemanticRead), tenantPermissions(permissions.PermissionOntologySemanticRead), h.Trial)
 	api.GET("/ontologies", commonauth.MustNewPermissionGuard(permissions.PermissionOntologyRevisionRead), tenantPermissions(permissions.PermissionOntologyRevisionRead), h.ListOntologies)
 	api.GET("/ontologies/:ontology_id/revisions", commonauth.MustNewPermissionGuard(permissions.PermissionOntologyRevisionRead), tenantPermissions(permissions.PermissionOntologyRevisionRead), h.ListRevisions)
 	api.GET("/ontologies/:ontology_id", commonauth.MustNewPermissionGuard(permissions.PermissionOntologyRevisionRead), tenantPermissions(permissions.PermissionOntologyRevisionRead), h.Head)

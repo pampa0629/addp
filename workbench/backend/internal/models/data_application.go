@@ -98,12 +98,19 @@ type DataApplicationComponent struct {
 	RendererConfig         json.RawMessage                `json:"renderer_config" binding:"required" swaggertype:"object"`
 }
 
+// ApplicationParameterDisplaySource declares a live label source / 声明参数实时名称来源。
+type ApplicationParameterDisplaySource struct {
+	SourceComponentID string `json:"source_component_id" binding:"required"`
+	LabelField        string `json:"label_field" binding:"required"`
+}
+
 type DataApplicationParameter struct {
-	Key          string          `json:"key" binding:"required"`
-	Label        string          `json:"label" binding:"required"`
-	ControlType  string          `json:"control_type" binding:"required"`
-	Required     bool            `json:"required"`
-	DefaultValue json.RawMessage `json:"default_value,omitempty" swaggertype:"object"`
+	DisplaySource *ApplicationParameterDisplaySource `json:"display_source,omitempty"`
+	Key           string                             `json:"key" binding:"required"`
+	Label         string                             `json:"label" binding:"required"`
+	ControlType   string                             `json:"control_type" binding:"required"`
+	Required      bool                               `json:"required"`
+	DefaultValue  json.RawMessage                    `json:"default_value,omitempty" swaggertype:"object"`
 }
 
 type DataApplicationParameterPreset struct {

@@ -21,6 +21,7 @@ export default defineConfig({
     include: ['@amap/amap-jsapi-loader', 'ol', 'proj4']
   },
   server: {
+    hmr: process.env.ADDP_E2E === '1' ? false : undefined,
     port: 5180,
     strictPort: true,
     host: '0.0.0.0',

@@ -224,7 +224,7 @@ test('dragging reorders layout and selecting a result never runs an interaction 
   expect(backend.unexpected).toEqual([])
 })
 
-async function personnelApplication(context, { locale = 'zh-cn', withSelection = false, comparisonPerson = 'person-a' } = {}) {
+async function personnelApplication(context, { locale = 'zh-cn', withSelection = false, comparisonPerson = 'person-a', lookupEnabled = false } = {}) {
   const backend = await installMetricApplicationBackend(context, { rebound: true, locale, configure(draft, descriptors) {
     const [metric, directory] = draft.snapshot.components
     descriptors[71].input_contract.named_parameters = [{ name: 'person_id', type: 'string', required: true }]
@@ -235,7 +235,7 @@ async function personnelApplication(context, { locale = 'zh-cn', withSelection =
     metric.renderer_type = 'chart'
     metric.renderer_config = { chart_type: 'bar', dimension: 'bucket', measures: ['value'] }
     const fields = [{ name: 'person_id', type: 'string', nullable: false }, { name: 'nickname', type: 'string', nullable: true }]
-    descriptors[72].input_contract = { fields: fields.map(f => ({ ...f, selectable: true, filterable: f.name === 'nickname', operators: f.name === 'nickname' ? ['eq', 'contains'] : [] })), page: { default_limit: 50, max_limit: 100 }, order: { stable_key: ['person_id'] } }
+    descriptors[72].input_contract = { fields: fields.map(f => ({ ...f, selectable: true, filterable: f.name === 'nickname' || lookupEnabled, operators: f.name === 'nickname' ? ['eq', 'contains'] : lookupEnabled ? ['eq'] : [] })), page: { default_limit: 50, max_limit: 100 }, order: { stable_key: ['person_id'] } }
     descriptors[72].output_contract.fields = fields
     directory.title = '选择人员'
     directory.renderer_type = 'table'
@@ -442,7 +442,9 @@ test(`preview explicitly copies selected person IDs into initial values and pres
   // Ordinary close still discards interactive changes.
   await preview.getByRole('button', { name: locale === 'en' ? 'Close this dialog' : '关闭此对话框', exact: true }).click()
   await page.getByTestId('draft-preview-action').click()
-  await expect(preview.locator('.parameters-card').getByRole('textbox').first()).toHaveValue('person-a')
+  await expect(preview.locator('.parameters-card').getByRole('textbox')).toHaveCount(0)
+  await preview.getByTestId('query-all-action').click()
+  await expect.poll(() => queries.at(-1)?.parameters.person_id).toBe('person-a')
   await preview.getByTestId('query-all-action').click()
   await preview.getByTestId('runtime-component').nth(1).getByRole('row', { name: '阿青', exact: true }).click()
   await preview.getByTestId('apply-preview-defaults').click()
@@ -455,13 +457,15 @@ test(`preview explicitly copies selected person IDs into initial values and pres
   expect(backend.published).toEqual(backend.originalPublished)
   await page.reload()
   await page.getByTestId('draft-preview-action').click()
-  await expect(preview.locator('.parameters-card').getByRole('textbox').first()).toHaveValue('person-c')
+  await expect(preview.locator('.parameters-card').getByRole('textbox')).toHaveCount(0)
+  await preview.getByTestId('query-all-action').click()
+  await expect.poll(() => queries.at(-1)?.parameters.person_id).toBe('person-c')
   expect(backend.unexpected).toEqual([])
 })
 }
 
 test('preview refuses incomplete initial values without mutating the draft', async ({ page, context }) => {
-  const { backend } = await personnelApplication(context, { withSelection: true })
+  const { backend } = await personnelApplication(context)
   await page.goto(applicationPath)
   await page.getByTestId('draft-preview-action').click()
   const preview = page.getByRole('dialog')
@@ -539,7 +543,9 @@ test(`duplicate a chart and switch its person filter without changing the source
   await expect(editor.getByRole('tab', { name: locale === 'en' ? '3. Set query inputs' : '3. 设置查询条件' })).toHaveAttribute('aria-selected', 'true')
   const reuse = editor.getByTestId('parameter-reuse')
   await expect(reuse).toContainText('人员 · 参加活动次数')
-  await expect(editor.locator('.parameter').getByRole('textbox').first()).toHaveValue('person-a')
+  await expect(editor.locator('.parameter').getByRole('textbox')).toHaveCount(0)
+  await editor.getByTestId('component-query-action').click()
+  await expect.poll(() => queries.at(-1)?.parameters.person_id).toBe('person-a')
   await choose(page, reuse, '对比人员 · 活动次数对比')
   await page.getByRole('dialog').getByRole('button', { name: locale === 'en' ? 'Cancel' : '取消', exact: true }).click()
   await expect(page.getByTestId('runtime-component')).toHaveCount(3)
@@ -843,6 +849,133 @@ test(`new application continues from first chart through search selection to ini
   await page.reload()
   await expect(page.getByTestId('application-creation-guide')).toHaveCount(0)
   await expect(page.getByTestId('runtime-component')).toHaveCount(2)
+  expect(backend.unexpected).toEqual([])
+})
+}
+
+for (const locale of ['zh-cn', 'en']) {
+test(`bound values use a result picker for trials, defaults and presets without manual identifiers (${locale})`, async ({ page, context }) => {
+  const en = locale === 'en'
+  const { backend, queries } = await personnelApplication(context, { locale, withSelection: true, comparisonPerson: 'person-b' })
+  await page.goto(applicationPath)
+  const openEditor = () => page.getByTestId('component-inspector').getByRole('button', { name: en ? 'Fields and display settings' : '字段与展示设置', exact: true }).click()
+  await openEditor()
+  const editor = page.getByTestId('application-component-editor')
+  await editor.getByRole('tab', { name: en ? '3. Set query inputs' : '3. 设置查询条件' }).click()
+  await expect(editor.getByRole('textbox', { name: en ? 'Test value' : '试查值', exact: true })).toHaveCount(0)
+  const picker = () => page.getByRole('dialog', { name: en ? 'Select 人员' : '选择人员', exact: true })
+  const query = editor.getByTestId('component-query-action')
+  await editor.getByTestId('selection-value').getByRole('button').click()
+  await expect(picker().getByRole('row', { name: '阿青', exact: true })).toBeVisible()
+  const count = queries.length
+  await picker().getByRole('button', { name: en ? 'Cancel' : '取消', exact: true }).click()
+  await expect(picker()).toHaveCount(0)
+  await query.click()
+  await expect.poll(() => queries.at(-1)?.parameters.person_id).toBe('person-a')
+  expect(queries).toHaveLength(count + 1)
+  await editor.getByTestId('selection-value').getByRole('button').click()
+  await picker().getByRole('row', { name: '阿青', exact: true }).click()
+  await expect(picker()).toHaveCount(0)
+  await query.click()
+  await expect.poll(() => queries.at(-1)?.parameters.person_id).toBe('person-c')
+  await page.getByRole('dialog').getByRole('button', { name: en ? 'Apply component configuration' : '应用组件配置', exact: true }).click()
+  await expect(editor).not.toBeVisible()
+  await page.getByRole('button', { name: en ? 'Save draft' : '保存草稿', exact: true }).click()
+  await expect.poll(() => backend.writes.length).toBe(1)
+  expect(backend.draft.snapshot.parameters.map(p => p.default_value)).toEqual(['person-a', 'person-b'])
+  expect(backend.draft.snapshot.components[0].default_parameter_values).toEqual({})
+
+  await page.getByRole('button', { name: en ? 'Filters' : '筛选条件', exact: true }).click()
+  const filter = page.getByTestId('filter-card').first()
+  await expect(filter.getByRole('textbox')).toHaveCount(1) // Only the editable label remains.
+  await filter.getByTestId('selection-value').getByRole('button').click()
+  await page.setViewportSize({ width: 560, height: 800 })
+  await expect(picker().getByTestId('runtime-component')).toHaveCount(1)
+  expect(await picker().evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBe(true)
+  await picker().getByRole('row', { name: '阿青', exact: true }).click()
+  await expect(picker()).toHaveCount(0)
+  await page.getByRole('dialog').getByRole('button', { name: en ? 'Done' : '完成设置', exact: true }).click()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await page.getByRole('button', { name: en ? 'Save draft' : '保存草稿', exact: true }).click()
+  await expect.poll(() => backend.writes.length).toBe(2)
+  expect(backend.draft.snapshot.parameters.map(p => p.default_value)).toEqual(['person-c', 'person-b'])
+  expect(backend.draft.snapshot.parameter_presets[0].parameter_values).toEqual({ person_a: 'person-a', person_b: 'person-a' })
+
+  await page.getByRole('button', { name: en ? 'Scenarios' : '场景预设', exact: true }).click()
+  const preset = page.locator('.parameter-preset-card')
+  await expect(preset.getByRole('textbox')).toHaveCount(2) // Scenario name and key only.
+  await preset.getByTestId('selection-value').first().getByRole('button').click()
+  await picker().getByRole('row', { name: '阿青', exact: true }).click()
+  await expect(picker()).toHaveCount(0)
+  await page.getByRole('dialog').getByRole('button', { name: en ? 'Done' : '完成设置', exact: true }).click()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await page.getByRole('button', { name: en ? 'Save draft' : '保存草稿', exact: true }).click()
+  await expect.poll(() => backend.writes.length).toBe(3)
+  expect(backend.draft.snapshot.parameter_presets[0].parameter_values).toEqual({ person_a: 'person-c', person_b: 'person-a' })
+  expect(backend.draft.snapshot.parameters.map(p => p.default_value)).toEqual(['person-c', 'person-b'])
+  expect(backend.published).toEqual(backend.originalPublished)
+  expect(backend.unexpected).toEqual([])
+})
+}
+
+for (const locale of ['zh-cn', 'en']) {
+test(`explicit live names survive reload, isolate trial and preset values, and never come from the current directory page (${locale})`, async ({ page, context }) => {
+  const en = locale === 'en'
+  const { backend, queries } = await personnelApplication(context, { locale, withSelection: true, lookupEnabled: true, comparisonPerson: 'person-b' })
+  const names = { 'person-a': '最新甲', 'person-b': '最新乙', 'person-c': '最新阿青' }
+  const lookups = []
+  await context.route('**/api/query/metric_72/query', route => {
+    const body = route.request().postDataJSON()
+    if (body.filter?.field === 'person_id' && body.filter.op === 'eq') {
+      lookups.push(body)
+      return route.fulfill({ json: { data: [{ person_id: body.filter.value, nickname: names[body.filter.value] }], page: { has_more: false } } })
+    }
+    return route.fulfill({ json: { data: [{ person_id: 'person-c', nickname: '目录旧昵称' }], page: { has_more: false } } })
+  })
+  await page.goto(applicationPath)
+  await page.getByRole('button', { name: en ? 'Filters' : '筛选条件', exact: true }).click()
+  const filter = page.getByTestId('filter-card').first()
+  await choose(page, filter.getByTestId('display-source'), '选择人员')
+  await choose(page, filter.getByTestId('display-label-field'), '昵称 (nickname)')
+  await expect(filter.getByRole('status')).toHaveText('最新甲')
+  expect(lookups.at(-1).page).toEqual({ limit: 2, cursor: '' })
+  await page.getByRole('dialog').getByRole('button', { name: en ? 'Done' : '完成设置', exact: true }).click()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await page.getByRole('button', { name: en ? 'Save draft' : '保存草稿', exact: true }).click()
+  await expect.poll(() => backend.writes.length).toBe(1)
+  expect(backend.draft.snapshot.parameters[0].display_source).toEqual({ source_component_id: 'component-72', label_field: 'nickname' })
+  expect(JSON.stringify(backend.draft.snapshot)).not.toContain('最新甲')
+  names['person-a'] = '改名后的甲'
+  await page.reload()
+  await page.getByRole('button', { name: en ? 'Fields and display settings' : '字段与展示设置', exact: true }).click()
+  const editor = page.getByTestId('application-component-editor')
+  await editor.getByRole('tab', { name: en ? '3. Set query inputs' : '3. 设置查询条件', exact: true }).click()
+  await expect(editor.getByRole('status')).toHaveText('改名后的甲')
+  await editor.getByTestId('selection-value').getByRole('button').click()
+  const picker = page.getByRole('dialog', { name: en ? 'Select 人员' : '选择人员', exact: true })
+  await picker.getByRole('row', { name: '目录旧昵称', exact: true }).click()
+  await expect(picker).toHaveCount(0)
+  await expect(editor.getByRole('status')).toHaveText('最新阿青')
+  await editor.getByTestId('component-query-action').click()
+  await expect.poll(() => queries.at(-1)?.parameters.person_id).toBe('person-c')
+  await page.getByRole('dialog').getByRole('button', { name: en ? 'Cancel' : '取消', exact: true }).click()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await page.getByTestId('draft-preview-action').click()
+  const preview = page.getByRole('dialog')
+  await expect(preview.getByRole('status').first()).toHaveText('改名后的甲')
+  await preview.getByTestId('query-all-action').click()
+  await preview.getByRole('row', { name: '目录旧昵称', exact: true }).click()
+  await expect(preview.getByRole('status').first()).toHaveText('最新阿青')
+  await choose(page, preview.getByTestId('parameter-preset-select'), '原始人员')
+  await expect(preview.getByRole('status').first()).toHaveText('改名后的甲')
+  await expect.poll(() => queries.at(-1)?.parameters.person_id).toBe('person-a')
+  await preview.getByRole('button', { name: en ? 'Close this dialog' : '关闭此对话框', exact: true }).click()
+  await expect(preview).toHaveCount(0)
+  await page.getByRole('button', { name: en ? 'Scenarios' : '场景预设', exact: true }).click()
+  await expect(page.locator('.parameter-preset-card').getByRole('status').first()).toHaveText('改名后的甲')
+  expect(backend.draft.snapshot.parameters.map(p => p.default_value)).toEqual(['person-a', 'person-b'])
+  expect(backend.draft.snapshot.parameter_presets[0].parameter_values).toEqual({ person_a: 'person-a', person_b: 'person-a' })
+  expect(backend.published).toEqual(backend.originalPublished)
   expect(backend.unexpected).toEqual([])
 })
 }

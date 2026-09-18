@@ -16,12 +16,29 @@ func TestAnalyticalResultRequestsUseFrozenPackage(t *testing.T) {
 			frozen, engine := metricServiceFixture(t, engineType)
 			snapshot := &models.QueryServiceDependencySnapshot{CapturedAt: time.Now(), MetricSource: &frozen}
 			snapshot.DependencyHash = queryServiceDependencyHash(snapshot)
-			service := &models.QueryService{ID: 71, TenantID: 7, ConfigType: "analytical", MaxFeatures: 5, DataConfig: models.JSONB{"filterable_fields": []interface{}{"value"}, models.QueryServiceSourceSnapshotKey: queryServiceSnapshotPayload(snapshot)}}
+			service := &models.QueryService{ID: 71, TenantID: 7, ConfigType: "analytical", MaxFeatures: 5, Status: "active", Protocols: models.JSONB{"rest_api": map[string]interface{}{"enabled": true, "formats": []interface{}{"json", "csv"}}}, DataConfig: models.JSONB{models.QueryServiceSourceSnapshotKey: queryServiceSnapshotPayload(snapshot)}}
 			if err := validateAnalyticalPublication(service); err != nil {
 				t.Fatal(err)
 			}
+			descriptor, err := BuildQueryConsumerDescriptor(service, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, field := range descriptor.InputContract.Fields {
+				if !field.Filterable || !containsConsumerValue(field.Operators, "eq") || containsConsumerValue(field.Operators, "contains") {
+					t.Fatalf("published result filter contract is missing or exceeds neutral operators: %+v", field)
+				}
+			}
+			if filterFieldAllowed(service, queryProtocolREST, "unpublished_source_field", "eq") {
+				t.Fatal("source field exposed as result filter")
+			}
+			service.DataConfig["filterable_fields"] = []interface{}{"value"}
+			if validateAnalyticalPublication(service) == nil {
+				t.Fatal("duplicate filter field contract accepted")
+			}
+			delete(service.DataConfig, "filterable_fields")
 			codec := newQueryTokenCodec([]byte(strings.Repeat("k", 32)))
-			request := &models.QueryExecutionRequest{Parameters: map[string]interface{}{"subject_id": "A' secret value", "start_date": "2026-01-01", "end_date": "2027-01-01", "grain": "total"}, Select: []string{"value"}, Page: models.QueryPageRequest{Limit: 1}, Filter: &models.QueryFilter{Field: "value", Op: "gte", Value: json.Number("1")}}
+			request := &models.QueryExecutionRequest{Parameters: map[string]interface{}{"subject_id": "A' secret value", "start_date": "2026-01-01", "end_date": "2027-01-01", "grain": "total"}, Select: []string{"value"}, Page: models.QueryPageRequest{Limit: 1}, Filter: &models.QueryFilter{And: []models.QueryFilter{{Field: "value", Op: "gte", Value: json.Number("1")}, {Field: "bucket", Op: "eq", Value: "2026-01-01"}}}}
 			prepared, query, err := compileAnalyticalQuery(service, request, queryProtocolREST, engine.AsEngine(), codec)
 			if err != nil {
 				t.Fatal(err)

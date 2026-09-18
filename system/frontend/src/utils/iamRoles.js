@@ -1,5 +1,9 @@
 export const TENANT_ADMINISTRATOR_ROLE_KEY = 'tenant.administrator'
 
+export function isValidTenantRoleKey(value) {
+  return typeof value === 'string' && /^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$/.test(value.trim())
+}
+
 const TENANT_SCOPE_I18N_KEYS = Object.freeze({
   tenant: 'system.iam.roles.scope.tenant',
   department: 'system.iam.roles.scope.department',

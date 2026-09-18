@@ -20,6 +20,9 @@ func TestSwaggerContainsConcreteNativeDefinition(t *testing.T) {
 		t.Fatal(err)
 	}
 	for suffix, fields := range map[string][]string{
+		".TrialRequest":           {"revision", "generation", "activation_version", "inputs"},
+		".TrialInput":             {"state", "value"},
+		".TrialResponse":          {"ontology_id", "revision", "generation", "activation_version", "digest", "decision"},
 		".CreateRequest":          {"revision", "definition"},
 		".DefinitionInput":        {"classes", "properties", "relations", "rules"},
 		".Class":                  {"id", "name", "parents"},

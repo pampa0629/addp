@@ -467,6 +467,11 @@ jobs:
         with:
           frontend-directory: ${{ matrix.module }}/frontend
 
+      - name: Install Service dependencies for Console query-form integration
+        if: steps.selection.outputs.run == 'true' && matrix.module == 'console'
+        working-directory: service/frontend
+        run: npm ci
+
       - name: Install Chromium for ${{ matrix.name }} Playwright tests
         if: steps.selection.outputs.run == 'true' && matrix.playwright == true
         working-directory: ${{ matrix.module }}/frontend

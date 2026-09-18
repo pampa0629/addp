@@ -71,6 +71,8 @@ Service 是 `service.definition.*`、`service.external_registration.*` 和 `serv
 - 已有服务切换指标来源继续只走 `PUT /query/:id/metric-source`：携带精确实现修订和 正整数 version（查询服务聚合根版本，不依赖可执行快照），在行锁事务内核对后原子替换来源与消费契约；保留服务身份、访问设置和当前版本规则，清除旧来源专用字段。旧冻结 SQL 不能与新包并行执行，消费方仍须显式应用新契约。
 - 每次指标查询先向 Model 验证指定修订与依赖，再校验当前引擎能力、本地 CompilerIdentity、请求参数和服务消费版本；撤回、漂移或实现版本不匹配即拒绝，不选最新版。MODEL_URL 与现有 Tenant Service Token 路径保留。
 - 指标的结果筛选、选择、排序及 keyset 分页由 Service 校验后形成中立 ResultRequest，Common 包装计划根节点再交给引擎编译；结果筛选不能改变原指标分母，分页不能裁剪原计划断言。参数值（包括结果过滤及 keyset 值）继续单次绑定；cursor 加密、limit+1、保护门禁及输出格式仍沿既有契约。不得进入旧指标 SQL 包装或拉回全量数据后在 Service 中补算。
+- analytical 来源的可筛选字段唯一来自冻结计划的输出字段，Consumer Descriptor 与执行校验共用此投影，操作符沿用中立结果筛选支持的类型规则；不保存 `filterable_fields` 副本、不将来源表字段开放给消费端。该投影适用于汇总和明细，消费者契约指纹变化后应用需显式更新绑定。验证纳入现有 Service Go T1、PostgreSQL T2 及模块门禁。
+- 指标服务管理端可通过 `POST /query/:id/execution-query` 只读预览当前请求的生成查询和类型化参数；租户隔离与 `service.definition.read` 权限必需，复用实际编译路径并校验 Model 依赖，不执行 PrepareQuery/Execute，不返回连接配置或保存 SQL 副本。详见 Service 核心架构文档。
 - 指标执行经既有 QueryRuntimeProvider.PrepareQuery、完整 ReadSet/OutputLineage 和 Service 数据保护门禁。编译期 SourceBindings 不是权限证明；受保护聚合来源不能证明允许输出时仍拒绝。新发布计划包和 Consumer Descriptor 必须同步验证，Workbench 不解析引擎、计划或原生查询。
 - Query Service 普通查询与单次有界导出使用同一 operation；可选 `X-ADDP-Query-Intent: query | export` 只表达审计用途，不改变授权与上限。CSV 和 GeoJSON 都必须返回 `X-ADDP-Has-More`、`X-ADDP-Next-Cursor` 和 `X-ADDP-Service-Version`，审计不得记录筛选字面值、cursor、原始 Body、SQL 或返回数据。
 - 已发布 QueryService 的 REST Query 与 OGC API Features 通过同一 PreparedQuery 执行 `service_execute` 保护；命中纳管资源后必须使用完整 ReadSet、OutputLineage 和 Security 下发的 Service 独立规则在服务端格式化前保护结果。分页 cursor 与 feature ID 使用 AEAD 不透明令牌，不能暴露稳定键或排序值。联邦、图、旧 Data API、查询样例和瓦片在独立动作执行器完成前继续资源级拒绝，不复用 `service_execute`。
@@ -108,9 +110,14 @@ curl http://localhost:8086/health/ready
 
 ## 前端公开路由
 
-- 模块内 Router 使用 `/query-services`、`/registered-services`、`/published-services`、`/tile`、`/graph-services` 等无模块前缀路径；Console 公开 URL 统一加 `/service` 前缀。
+- `App.vue` 只渲染路由，`Layout.vue` 是模块布局唯一所有者；独立访问只显示一套导航，菜单名称、顺序、图标和目标以 Console 数据服务菜单为准（查询服务、瓦片服务、图查询服务、服务注册、服务目录）。iframe 模式从首次渲染起只显示业务内容。
+
+- 模块内 Router 使用 `/query-services`、`/services`、`/published-services`、`/tile`、`/graph-services` 等无模块前缀路径；Console 公开 URL 统一加 `/service` 前缀。
 - 资源身份和创建、编辑、详情、测试职责使用 path 表达；创建成功后用 `replace` 进入详情，其余列表到详情使用 `push`。
 - 服务目录默认 `all` Tab 省略，其他稳定类型使用唯一 `tab` query。
+- 外部服务注册仅使用 `/services`、`/services/create`、`/services/:id`、`/services/:id/edit`，由 `RegisteredServiceList/Form/Detail.vue` 与唯一 `api/registeredService.js` 实现；Console 菜单和服务目录共用这些路径，不保留 `/registered-services` 别名或另一套注册页面。列表参数沿后端契约使用 `page`、`limit`、`search`。
+- 注册表单通过共享 `useUnsavedChangesGuard` 保护普通字段、关键词和认证输入；加载成功与保存成功后更新内存基线，保存失败保留修改状态。保存期间禁用表单输入；切换编辑对象时重建草稿并忽略过期加载结果，不保存浏览器草稿副本。
+- 查询服务表单复用同一离页保护，覆盖 SQL、命名参数及选项、稳定排序键、空间字段、数据源、协议和服务信息；步骤与候选搜索不计入修改。加载已有定义后建立基线，保存成功只确认本次提交的草稿，失败或版本冲突保留输入。加载与提交期间禁止编辑；切换服务身份后忽略旧加载、保存和元数据检测结果。
 - 业务导航统一调用 `frontend/src/utils/moduleNavigation.js`。
 
 查询服务血缘通过现有 Meta 发布接口同步人类可读的 `Title`（`service_name`）及 `UpdatedAt`（`service_updated_at`）。Service 启动后及每分钟按主键分页重放 owner 发布事实，补齐名称并重试失败投递；非 active 状态同步空依赖。Meta 关闭旧版本当前投影，保留历史观察，并拒绝过期通知。不得借用仅面向 Catalog 的 resolver 权限。此契约由 Service T1、Meta T1 和 Meta PostgreSQL lifecycle migration 门禁验证。

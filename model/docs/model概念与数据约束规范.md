@@ -277,4 +277,4 @@ PostgreSQL 建表语句预览只接受结构化物理目标配置。物理目标
 
 Service 的指标来源引用同样允许 `result_kind=details`，一个 Query Service 固定消费一个结果种类，复用既有创建／重绑、Consumer Descriptor、PreparedQuery、权限、保护及游标分页。Workbench 用独立明细 Table Component 和已有 Selection Binding，把点击行的主体与 bucket 映射到明细参数；日期与粒度复用同页查询条件，bucket 作为结果等值筛选，不把月初当作用户开始日期。这样月度明细保留原日期区间交集。名称和日期展示不参与去重。汇总和明细是两次查询，只有底层数据未变化且权限允许完整明细时才对账；不声称跨请求一致性快照。
 
-验证：既有 Model PostgreSQL/MySQL T2 金样覆盖重复、零值、期间边界及汇总明细对账；Service T1/T2 覆盖种类冻结、依赖拒绝、明细权限及游标；Model/Service 前端标准门禁覆盖显式选择。Workbench 使用既有选择绑定及运行页在线验收，不新增查询代理或引擎分支。全部入口已由根 Makefile 和 CI 模块自动发现登记，无新依赖。
+验证：既有 Model PostgreSQL/MySQL T2 金样覆盖重复、零值、期间边界、月份过滤、稳定键分页及汇总明细对账，并验证分页不能隐藏质量断言。Service T1 覆盖 Client SDK 的结果种类冻结及依赖拒绝，既有 T2 继续验证共用查询执行、权限与游标路径；Model/Service 前端标准门禁覆盖显式选择。Common 单元门禁覆盖非空过滤的类型收窄与来源类型不变，真实 Provider 门禁验证执行语义。Workbench 使用既有选择绑定及运行页在线验收，不新增查询代理或引擎分支。全部入口已由根 Makefile 和 CI 模块自动发现登记，无新依赖。

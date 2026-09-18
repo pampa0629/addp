@@ -46,3 +46,17 @@ export function queryServicePreviewFields({ configType, defaultFields, spatial }
   if (geometryColumn) fields.push(geometryColumn)
   return [...new Set(fields)]
 }
+
+// Both data testing and execution-query inspection use this exact request.
+export function buildQueryServicePreviewRequest({ parameters = [], values = {}, pagination, defaultFields, spatial } = {}) {
+  const request = {
+    parameters: Object.fromEntries(parameters
+      .filter(parameter => values[parameter.name] !== '' && values[parameter.name] !== null && values[parameter.name] !== undefined)
+      .map(parameter => [parameter.name, values[parameter.name]])),
+    page: { limit: pagination.pageSize, cursor: pagination.cursors[pagination.page - 1] || '' },
+    format: 'json'
+  }
+  const fields = queryServicePreviewFields({ defaultFields, spatial })
+  if (fields.length) request.select = fields
+  return request
+}

@@ -457,6 +457,24 @@
         "line": "Time trend",
         "map": "Spatial distribution"
       }
+    },
+    "selectionValue": {
+      "selected": "Selected · choose from the list to change",
+      "empty": "Not selected",
+      "clear": "Clear selection",
+      "title": "Select {parameter}",
+      "pickHint": "Select a result to use it for this condition.",
+      "loading": "Loading name…",
+      "missing": "Selected item not found",
+      "ambiguous": "Cannot determine a unique name",
+      "unnamed": "No name provided",
+      "failed": "Could not load name",
+      "unavailable": "Name source unavailable; check configuration",
+      "source": "Name source",
+      "field": "Display name field",
+      "configure": "Choose a name source (optional)",
+      "retry": "Retry",
+      "invalid": "Choose a valid source and name field for label display."
     }
   }
 }

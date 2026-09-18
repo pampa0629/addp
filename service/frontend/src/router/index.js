@@ -51,27 +51,27 @@ const routes = [
         meta: { requiresAuth: true, title: '查询服务详情' }
       },
 
-      // === 注册服务路由（新架构） ===
+      // === 外部服务注册路由 ===
       {
-        path: 'registered-services',
+        path: 'services',
         name: 'RegisteredServiceList',
         component: () => import('../views/RegisteredServiceList.vue'),
         meta: { requiresAuth: true, title: '注册服务' }
       },
       {
-        path: 'registered-services/create',
+        path: 'services/create',
         name: 'RegisteredServiceCreate',
         component: () => import('../views/RegisteredServiceForm.vue'),
         meta: { requiresAuth: true, title: '注册外部服务' }
       },
       {
-        path: 'registered-services/:id/edit',
+        path: 'services/:id/edit',
         name: 'RegisteredServiceEdit',
         component: () => import('../views/RegisteredServiceForm.vue'),
         meta: { requiresAuth: true, title: '编辑注册服务' }
       },
       {
-        path: 'registered-services/:id',
+        path: 'services/:id',
         name: 'RegisteredServiceDetail',
         component: () => import('../views/RegisteredServiceDetail.vue'),
         meta: { requiresAuth: true, title: '注册服务详情' }
@@ -107,32 +107,6 @@ const routes = [
         name: 'PublishedServiceTest',
         component: () => import('../views/PublishedServiceTest.vue'),
         meta: { requiresAuth: true, title: '服务测试' }
-      },
-
-      // === 服务注册路由（保持不变） ===
-      {
-        path: 'services',
-        name: 'ServiceManagement',
-        component: () => import('../views/ServiceManagement.vue'),
-        meta: { requiresAuth: true, title: '服务注册' }
-      },
-      {
-        path: 'services/create',
-        name: 'ServiceCreate',
-        component: () => import('../views/ServiceForm.vue'),
-        meta: { requiresAuth: true, title: '创建服务' }
-      },
-      {
-        path: 'services/:id/edit',
-        name: 'ServiceEdit',
-        component: () => import('../views/ServiceForm.vue'),
-        meta: { requiresAuth: true, title: '编辑服务' }
-      },
-      {
-        path: 'services/:id',
-        name: 'ServiceDetail',
-        component: () => import('../views/ServiceDetail.vue'),
-        meta: { requiresAuth: true, title: '服务详情' }
       },
 
       // === 服务目录路由（保持不变） ===
@@ -214,8 +188,8 @@ router.beforeEach(createAuthGuard(useAuthStore, {
 
 const DEFAULT_TITLE = '数据服务'
 
-router.afterEach((to) => {
-  if (typeof document === 'undefined') {
+router.afterEach((to, _from, failure) => {
+  if (failure || typeof document === 'undefined') {
     return
   }
   const pageTitle = typeof to.meta?.title === 'string' ? to.meta.title : DEFAULT_TITLE

@@ -5,7 +5,7 @@ import vm from 'node:vm'
 
 import {
   buildQueryServicePreview,
-  queryServicePreviewFields
+  queryServicePreviewFields, buildQueryServicePreviewRequest
 } from '../src/utils/queryServicePreview.js'
 
 test('a new preview clears previous rows and cursor metadata even when it fails or returns no array', async () => {
@@ -23,7 +23,7 @@ test('a new preview clears previous rows and cursor metadata even when it fails 
       previewPagination: { value: { page: 1, pageSize: 20, cursors: [''], hasMore: true, nextCursor: 'old-cursor' } },
       queryUnavailable: { value: false }, metricBindingRequired: { value: false },
       previewNamedParameterValues: {}, defaultFields: { value: null }, spatialInfo: { value: null },
-      queryServicePreviewFields: () => [], queryServiceAPI: { testQuery: () => pending },
+      buildPreviewRequest: () => ({ parameters: {}, page: { limit: 20, cursor: '' }, format: 'json' }), queryServiceAPI: { testQuery: () => pending },
       ElMessage: { warning() {}, success() {}, error() {} }, t: key => key, console: { error() {} }
     }
     const context = vm.createContext(state)
@@ -136,4 +136,35 @@ test('forwards an arbitrary CRS definition from the published snapshot', () => {
   assert.equal(result.source_crs, 'EPSG:32650')
   assert.deepEqual(result.source_crs_definition, definition)
   assert.equal(result.transform_status, 'not_transformed')
+})
+
+
+test('inspection and data preview preserve typed values, field selection and the current page cursor', () => {
+  const request = buildQueryServicePreviewRequest({ parameters: [{name:'person'}, {name:'zero'}, {name:'flag'}, {name:'empty'}],
+    values: {person:'9007199254740993', zero:0, flag:false, empty:'', extra:'excluded'},
+    pagination:{page:2, pageSize:50, cursors:['','opaque']}, defaultFields:['value','value'] })
+  assert.deepEqual(request, {parameters:{person:'9007199254740993',zero:0,flag:false}, page:{limit:50,cursor:'opaque'},format:'json',select:['value']})
+})
+
+test('query inspection clears old results and discards in-flight responses after conditions change', async () => {
+  const source = await readFile(new URL('../src/views/QueryServiceDetail.vue', import.meta.url), 'utf8')
+  const method = source.slice(source.indexOf('const executionQuery = ref'), source.indexOf('// 数据预览方法'))
+  let invalidate, resolve
+  const state = { ref: value => ({value}), watch: (_getter, callback) => { invalidate = callback },
+    serviceId:{value:35}, service:{value:{version:9,named_parameters:[]}}, previewNamedParameterValues:{},
+    buildPreviewRequest: () => ({parameters:{subject_id:'A'}}),
+    queryServiceAPI:{previewExecutionQuery: () => new Promise(done => {resolve=done})}, t:key=>key }
+  const api = vm.runInNewContext(`${method}; ({loadExecutionQuery, executionQuery, executionQueryLoading, executionQueryError})`,state)
+  const pending = api.loadExecutionQuery()
+  assert.equal(api.executionQueryLoading.value,true)
+  invalidate()
+  resolve({version:9,query:'stale'})
+  await pending
+  assert.equal(api.executionQuery.value,null)
+  assert.equal(api.executionQueryLoading.value,false)
+  const second = api.loadExecutionQuery()
+  resolve({version:10,query:'new definition'})
+  await second
+  assert.equal(api.executionQuery.value,null)
+  assert.equal(api.executionQueryError.value,'service.query.versionConflict')
 })

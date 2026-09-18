@@ -19,6 +19,10 @@ export default {
     return client.get(`/service/query/${id}`)
   },
 
+  previewExecutionQuery(id, request) {
+    return client.post(`/service/query/${id}/execution-query`, request)
+  },
+
   // 创建查询服务
   createService(data) {
     return client.post('/service/query', data)

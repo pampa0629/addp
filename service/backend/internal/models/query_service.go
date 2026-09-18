@@ -233,6 +233,16 @@ func (q *QueryService) GetDefaultFields() []string {
 
 // GetFilterableFields 获取可过滤字段
 func (q *QueryService) GetFilterableFields() []string {
+	if q.ConfigType == "analytical" {
+		if source := q.MetricPlan(); source != nil {
+			fields := make([]string, 0, len(source.ExecutionPlan.Plan.Output.Fields))
+			for _, field := range source.ExecutionPlan.Plan.Output.Fields {
+				fields = append(fields, field.Name)
+			}
+			return fields
+		}
+		return nil
+	}
 	if q.DataConfig == nil {
 		return nil
 	}

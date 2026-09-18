@@ -21,6 +21,7 @@ import (
 )
 
 type RevisionCommands interface {
+	Trial(context.Context, models.Actor, string, string, uint64, string, uint64, map[string]semantic.Fact) (*service.TrialResult, error)
 	ListClasses(context.Context, models.Actor, string) (*service.ClassDirectory, error)
 	ClassContext(context.Context, models.Actor, string, string, uint64, string, uint64) (*service.SemanticContext, error)
 	ListOntologies(context.Context, models.Actor, models.ListPage) ([]models.Ontology, int64, error)

@@ -32,6 +32,7 @@ const (
 	MsgTOTPEnrollmentRequired                        = "system.auth.totp_enrollment_required"
 	MsgMFAResetNotAvailable                          = "system.auth.mfa_reset_not_available"
 	MsgInvalidMFAVerification                        = "system.auth.invalid_mfa_verification"
+	MsgRoleKeyInvalid                                = "system.iam.role_key_invalid"
 	MsgRoleAssignmentAlreadyExists                   = "system.iam.role_assignment_already_exists"
 	MsgRoleAssignmentPrincipalTypeNotAllowed         = "system.iam.role_assignment_principal_type_not_allowed"
 	MsgRoleAssignmentScopeNotFound                   = "system.iam.role_assignment_scope_not_found"

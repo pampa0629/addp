@@ -20,6 +20,8 @@ const maxTenantRoleAssignmentBatchSize = 50
 
 var tenantCustomRoleKeyPattern = regexp.MustCompile(`^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$`)
 
+var ErrTenantRoleKeyInvalid = fmt.Errorf("%w: invalid tenant role key format", commonapi.ErrBadRequest)
+
 var ErrTenantRoleAssignmentAlreadyExists = fmt.Errorf(
 	"%w: tenant role assignment already exists in the requested scope",
 	commonapi.ErrConflict,
@@ -506,8 +508,11 @@ func (s *TenantRoleService) validateTenant(tenantID int64) error {
 
 func validateTenantRoleDefinition(roleKey, name string, scopeTypes, permissionKeys []string) (string, string, []string, []string, error) {
 	roleKey, name = strings.TrimSpace(roleKey), strings.TrimSpace(name)
-	if !tenantCustomRoleKeyPattern.MatchString(roleKey) || name == "" {
-		return "", "", nil, nil, fmt.Errorf("%w: valid role key and name are required", commonapi.ErrBadRequest)
+	if !tenantCustomRoleKeyPattern.MatchString(roleKey) {
+		return "", "", nil, nil, ErrTenantRoleKeyInvalid
+	}
+	if name == "" {
+		return "", "", nil, nil, fmt.Errorf("%w: role name is required", commonapi.ErrBadRequest)
 	}
 	scopes := uniqueSorted(scopeTypes)
 	permissions := uniqueSorted(permissionKeys)

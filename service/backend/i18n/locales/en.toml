@@ -99,3 +99,6 @@ other = "Failed to update the metric publication."
 
 [service.err.invalid_parameter_options]
 other = "Invalid parameter options or value. Check allowed values, defaults, and Chinese and English labels."
+
+[service.err.execution_query_failed]
+other = "Unable to compile the query. Check the metric revision, dependencies and engine status."

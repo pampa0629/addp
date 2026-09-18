@@ -191,8 +191,13 @@ func buildMetricResultPlan(contract models.MetricContract, bindings metricPlanBi
 	if details {
 		// Details are exactly the members counted by the summary. No second
 		// grouping or enrichment may widen this grain.
+		// Independent source assertions reject invalid values before returning
+		// results; these predicates prove the pagination keys are non-null.
+		members = b.filter(members, metricOp("and",
+			metricOp("not", metricOp("is_null", metricCol(members, "member_bucket"))),
+			metricOp("not", metricOp("is_null", metricCol(members, "member")))))
 		rows := b.project(members, []plan.Projection{
-			{Name: "subject_id", Expr: metricCol(members, "person")},
+			{Name: "subject_id", Expr: metricParam("subject_id")},
 			{Name: "bucket", Expr: metricCol(members, "member_bucket")},
 			{Name: "member", Expr: metricCol(members, "member")},
 		})

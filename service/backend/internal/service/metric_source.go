@@ -71,6 +71,9 @@ func validateAnalyticalPublication(service *models.QueryService) error {
 	if _, exists := service.DataConfig["stable_key"]; exists {
 		return ErrInvalidStructuredQuery
 	}
+	if _, exists := service.DataConfig["filterable_fields"]; exists {
+		return ErrInvalidStructuredQuery
+	}
 	if snapshot.DependencyHash == "" || snapshot.DependencyHash != queryServiceDependencyHash(snapshot) {
 		return ErrInvalidStructuredQuery
 	}

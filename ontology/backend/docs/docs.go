@@ -1434,6 +1434,111 @@ const docTemplate = `{
                     "ontology.semantic.read"
                 ]
             }
+        },
+        "/ontologies/{ontology_id}/semantic/rules/{rule_id}/trial": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅限用户手工假设输入，不读取或认证业务事实，不持久化结果。最多 16 项输入、96 KiB 请求；版本变化返回 409。 | User hypotheses only, no business facts or persistence. At most 16 inputs and 96 KiB; changed activation returns 409.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Ontology"
+                ],
+                "summary": "试算激活本体规则 | Try an active ontology rule",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "本体标识 | Ontology identifier",
+                        "name": "ontology_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "规则标识 | Rule identifier",
+                        "name": "rule_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "激活绑定与假设输入；非 known 的 value 必须省略或为 null | Activation binding and hypotheses; non-known value must be omitted or null",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.TrialRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "假设性四态结果，不表示业务验证成功 | Hypothetical four-state result, not business verification",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.TrialResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "无效请求 | Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Unauthenticated",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "禁止访问 | Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "本体或规则不存在 | Ontology or rule not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "未激活或版本变化 | Inactive or activation changed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "413": {
+                        "description": "结果过大 | Result too large",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "试算失败 | Trial failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "尚未就绪 | Not ready",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "ontology.semantic.read"
+                ]
+            }
         }
     },
     "definitions": {
@@ -1518,6 +1623,79 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_ontology_internal_semantic.Decision": {
+            "type": "object",
+            "properties": {
+                "basis": {
+                    "type": "string"
+                },
+                "code": {
+                    "type": "string"
+                },
+                "digest": {
+                    "type": "string"
+                },
+                "expression": {
+                    "type": "string"
+                },
+                "inputs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_ontology_internal_semantic.Evidence"
+                    }
+                },
+                "mode": {
+                    "type": "string"
+                },
+                "outcome": {
+                    "$ref": "#/definitions/github_com_addp_ontology_internal_semantic.Outcome"
+                },
+                "rule_id": {
+                    "type": "string"
+                },
+                "scope": {
+                    "$ref": "#/definitions/github_com_addp_ontology_internal_semantic.Scope"
+                },
+                "unresolved": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "github_com_addp_ontology_internal_semantic.Evidence": {
+            "type": "object",
+            "properties": {
+                "property_id": {
+                    "type": "string"
+                },
+                "state": {
+                    "$ref": "#/definitions/github_com_addp_ontology_internal_semantic.FactState"
+                },
+                "treatment": {
+                    "type": "string"
+                },
+                "variable": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_ontology_internal_semantic.FactState": {
+            "type": "string",
+            "enum": [
+                "known",
+                "absent",
+                "unknown",
+                "invalid"
+            ],
+            "x-enum-varnames": [
+                "Known",
+                "Absent",
+                "Unknown",
+                "Invalid"
+            ]
+        },
         "github_com_addp_ontology_internal_semantic.Input": {
             "type": "object",
             "properties": {
@@ -1541,6 +1719,21 @@ const docTemplate = `{
             "x-enum-varnames": [
                 "Boolean",
                 "String"
+            ]
+        },
+        "github_com_addp_ontology_internal_semantic.Outcome": {
+            "type": "string",
+            "enum": [
+                "matched",
+                "not_matched",
+                "unknown",
+                "error"
+            ],
+            "x-enum-varnames": [
+                "Matched",
+                "NotMatched",
+                "Undetermined",
+                "Failed"
             ]
         },
         "github_com_addp_ontology_internal_semantic.Property": {
@@ -1612,6 +1805,20 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/github_com_addp_ontology_internal_semantic.Input"
                     }
+                }
+            }
+        },
+        "github_com_addp_ontology_internal_semantic.Scope": {
+            "type": "object",
+            "properties": {
+                "ontology_id": {
+                    "type": "string"
+                },
+                "revision": {
+                    "type": "integer"
+                },
+                "tenant_id": {
+                    "type": "integer"
                 }
             }
         },
@@ -1876,6 +2083,80 @@ const docTemplate = `{
                     "$ref": "#/definitions/internal_api.DefinitionInput"
                 },
                 "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api.TrialInput": {
+            "type": "object",
+            "required": [
+                "state"
+            ],
+            "properties": {
+                "state": {
+                    "enum": [
+                        "known",
+                        "absent",
+                        "unknown",
+                        "invalid"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_addp_ontology_internal_semantic.FactState"
+                        }
+                    ]
+                },
+                "value": {}
+            }
+        },
+        "internal_api.TrialRequest": {
+            "type": "object",
+            "required": [
+                "activation_version",
+                "generation",
+                "inputs",
+                "revision"
+            ],
+            "properties": {
+                "activation_version": {
+                    "type": "integer"
+                },
+                "generation": {
+                    "type": "string"
+                },
+                "inputs": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/internal_api.TrialInput"
+                    }
+                },
+                "revision": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api.TrialResponse": {
+            "type": "object",
+            "properties": {
+                "activation_version": {
+                    "type": "integer"
+                },
+                "decision": {
+                    "$ref": "#/definitions/github_com_addp_ontology_internal_semantic.Decision"
+                },
+                "digest": {
+                    "type": "string"
+                },
+                "generation": {
+                    "type": "string"
+                },
+                "knowledge_kind": {
+                    "type": "string"
+                },
+                "ontology_id": {
+                    "type": "string"
+                },
+                "revision": {
                     "type": "integer"
                 }
             }

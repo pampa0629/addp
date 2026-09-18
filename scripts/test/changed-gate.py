@@ -114,6 +114,10 @@ def affected_modules(repository: Path, files: list[str]) -> list[str]:
     if "orchestrator" in roots:
         affected.add("quality")
 
+    # Console's iframe browser gate mounts the real Service query editor.
+    if any(path.startswith("service/frontend/") for path in files):
+        affected.add("console")
+
     for path in files:
         evaluation_match = re.fullmatch(r"evals/([a-z][a-z0-9-]*)-scenarios(?:/.*)?", path)
         if evaluation_match:

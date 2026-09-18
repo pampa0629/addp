@@ -8,11 +8,6 @@ export default {
     return client.get('/service/registered', { params })
   },
 
-  // 搜索注册服务
-  searchServices(params) {
-    return client.get('/service/registered', { params })
-  },
-
   // 获取注册服务详情
   getService(id) {
     return client.get(`/service/registered/${id}`)
@@ -41,10 +36,5 @@ export default {
   // 执行健康检查
   healthCheck(id) {
     return client.post(`/service/registered/${id}/health`)
-  },
-
-  // 代理转发到外部服务
-  proxyService(id, path, params) {
-    return client.get(`/service/proxy/${id}/${path}`, { params })
   }
 }

@@ -11,6 +11,6 @@ test('query service publishing sends typed named parameters to output detection 
 
 test('query service detail submits named parameter values through the existing query request', async () => {
   const source = await readFile(new URL('../src/views/QueryServiceDetail.vue', import.meta.url), 'utf8')
-  assert.match(source, /request\s*=\s*\{\s*parameters:/s)
+  assert.match(source, /const request = buildPreviewRequest\(\)/)
   assert.match(source, /previewNamedParameterRequired/)
 })

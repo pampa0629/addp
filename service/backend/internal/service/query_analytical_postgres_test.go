@@ -83,6 +83,16 @@ func TestAnalyticalQueryExecutionAgainstPostgres(t *testing.T) {
 	if !gate.entered || !gate.protected || len(result.Data) != 1 || len(result.Data[0]) != 1 || result.Data[0]["value"] != int64(1) {
 		t.Fatalf("execution skipped protection or leaked hidden fields: %#v", result)
 	}
+	request.Filter = &models.QueryFilter{Field: "bucket", Op: "eq", Value: "2026-01-01"}
+	filtered, err := executor.ExecuteQuery(context.Background(), service, request)
+	if err != nil || len(filtered.Data) != 1 || filtered.Data[0]["value"] != int64(1) {
+		t.Fatalf("published period filter failed: %+v %v", filtered, err)
+	}
+	request.Filter.Value = "2026-02-01"
+	filtered, err = executor.ExecuteQuery(context.Background(), service, request)
+	if err != nil || len(filtered.Data) != 0 {
+		t.Fatalf("period filter did not restrict result: %+v %v", filtered, err)
+	}
 	gate.deny = true
 	gate.protected = false
 	if _, err = executor.ExecuteQuery(context.Background(), service, request); err == nil || gate.protected {

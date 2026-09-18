@@ -1,5 +1,56 @@
 {
   "ontology": {
+    "trial": {
+      "title": "本体规则试算",
+      "notice": "仅对手工假设输入求值，不读取业务数据，也不证明真实报名、到场或人数。",
+      "activationVersion": "激活版本",
+      "digest": "定义摘要",
+      "rule": "试算规则",
+      "noRules": "该类型没有直接绑定的规则",
+      "inputState": "输入状态",
+      "value": "假设值",
+      "run": "开始试算",
+      "running": "正在试算",
+      "result": "试算结果",
+      "hypothetical": "假设性试算：结论仅适用于本次输入，不是已核实业务事实。",
+      "unresolved": "尚未确定的输入",
+      "changed": "版本或访问状态已变化，请重新加载后再试算。",
+      "noAccess": "需要租户会话及本体语义读取权限。",
+      "states": {
+        "known": "已知值",
+        "absent": "已确认缺失",
+        "unknown": "未知（未读取）",
+        "invalid": "无效（证据不可用）"
+      },
+      "outcomes": {
+        "matched": "匹配",
+        "not_matched": "不匹配",
+        "unknown": "未知",
+        "error": "试算错误"
+      },
+      "treatments": {
+        "value": "按已知值求值",
+        "explicit_absence_false": "按规则将已确认缺失视为 false",
+        "unresolved": "保留未知，不补默认值"
+      },
+      "codes": {
+        "predicate_true": "条件成立。",
+        "predicate_false": "条件不成立。",
+        "insufficient_evidence": "现有输入不足以确定结论。",
+        "invalid_fact_value": "已知值不符合属性类型、枚举或大小限制。",
+        "invalid_fact_state": "存在无效输入，无法完成分类。",
+        "contradictory_fact": "输入状态与值矛盾。",
+        "activation_error": "无法构造规则输入。",
+        "evaluation_error": "规则求值失败。",
+        "cost_limit": "规则超过运行成本限制。",
+        "non_boolean_result": "规则未产生布尔结果。",
+        "canceled": "试算已取消。",
+        "scope_mismatch": "试算身份与定义不一致。",
+        "unknown_rule": "规则不存在。",
+        "input_limit": "输入数量超限。",
+        "unexpected_input": "包含规则未声明的输入。"
+      }
+    },
     "logout": "退出登录",
     "title": "领域本体",
     "list": "本体列表",

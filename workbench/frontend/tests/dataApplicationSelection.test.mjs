@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   affectedSelectionComponentIDs,
+  applicationParameterSelectionSources,
   compatibleSelectionParameters,
   selectionParameterType,
   selectionSourceFields,
@@ -58,4 +59,15 @@ test('accepts a service named parameter as an exact scalar selection target', ()
     named_parameters: [{ name: 'person_id_b', type: 'string', required: true }],
   }
   assert.equal(selectionParameterType(namedSnapshot, namedDescriptors, 'selected_city'), 'string')
+})
+
+test('selection input sources use explicit bindings and discard missing components without guessing identifiers', () => {
+  const source = { id: 'source', title: 'Directory' }
+  const snapshot = { components: [source], selection_bindings: [
+    { source_component_id: 'source', assignments: [{ application_parameter_key: 'subject' }] },
+    { source_component_id: 'removed', assignments: [{ application_parameter_key: 'subject' }] },
+  ] }
+  assert.deepEqual(applicationParameterSelectionSources(snapshot, 'subject'), [source])
+  assert.deepEqual(applicationParameterSelectionSources(snapshot, 'person_id'), [])
+  assert.deepEqual(applicationParameterSelectionSources({}, 'subject'), [])
 })

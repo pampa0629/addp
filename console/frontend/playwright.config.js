@@ -15,10 +15,15 @@ export default defineConfig({
     screenshot: 'only-on-failure',
     viewport: { width: 1280, height: 800 }
   },
-  webServer: {
+  webServer: [{
     command: 'ADDP_E2E=1 npm run dev -- --host 127.0.0.1 --port 4170 --strictPort',
     url: 'http://127.0.0.1:4170/e2e/fixtures/auth-fixture.html?role=health',
     reuseExistingServer: false,
     timeout: 30_000
-  }
+  }, {
+    command: 'ADDP_E2E=1 npm --prefix ../../service/frontend run dev -- --host 127.0.0.1 --port 4180 --strictPort --base /e2e/service-fixture/',
+    url: 'http://127.0.0.1:4180/e2e/service-fixture/e2e/query-form.html',
+    reuseExistingServer: false,
+    timeout: 30_000
+  }]
 })

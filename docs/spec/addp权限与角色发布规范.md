@@ -116,6 +116,8 @@ Role 只组合现有 Permission，不产生新 Permission，也不表达资源�
 
 Tenant 自定义 Role：
 
+角色标识 `role_key` 使用两段式 `<namespace>.<name>`，精确格式为 `^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$`；每段以小写英文字母开头，后续只允许小写英文字母、数字和下划线。创建时去除首尾空白，例如 `custom.ontology_manager`；`custom` 是示例命名空间，不是强制前缀。前端必须展示格式说明并在提交前校验；后端独立校验，不合规则返回 HTTP 400、稳定错误码 `role_key_invalid` 和对应语言的明确格式提示，不暴露内部错误详情。
+
 1. 只能选择 `allowed_role_types` 包含 `tenant_custom` 的 active Permission；
 2. 不能创建任意 Permission 字符串；
 3. 不能包含平台管理、平台 Runtime 或 owner 内部 Grant Permission；

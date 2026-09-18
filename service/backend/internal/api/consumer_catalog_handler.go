@@ -117,6 +117,7 @@ func (h *ConsumerCatalogHandler) ListAPIConsumerGrantableServices(c *gin.Context
 
 // GetService godoc
 // @Summary 获取服务消费描述 | Get service consumer descriptor
+// @Description 指标服务的筛选字段从冻结计划输出投影，筛选只作用于计算结果。| Analytical service filter fields are projected from frozen plan outputs; filters apply only to computed results.
 // @Tags ServiceConsumer
 // @Produce json
 // @Param service_type path string true "服务类型 | Service type" Enums(query,graph,tile,registered)

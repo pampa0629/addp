@@ -32,6 +32,7 @@ type fakeCommands struct {
 	generation   string
 	calls        int
 	page         models.ListPage
+	trialFacts   map[string]semantic.Fact
 }
 
 const generation = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"

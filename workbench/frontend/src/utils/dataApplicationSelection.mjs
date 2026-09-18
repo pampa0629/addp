@@ -63,3 +63,11 @@ export function affectedSelectionComponentIDs(snapshot, assignments) {
       .map((binding) => binding.component_id)
   )]
 }
+
+// Selection controls derive exclusively from explicit bindings, never field names.
+export function applicationParameterSelectionSources(snapshot, parameterKey) {
+  const sourceIDs = new Set((snapshot?.selection_bindings || [])
+    .filter(binding => binding.assignments.some(assignment => assignment.application_parameter_key === parameterKey))
+    .map(binding => binding.source_component_id))
+  return (snapshot?.components || []).filter(component => sourceIDs.has(component.id))
+}

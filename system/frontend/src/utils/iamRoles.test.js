@@ -5,6 +5,7 @@ import {
   formatOrganizationOptionLabel,
   formatTenantAssignmentScope,
   hasTenantRole,
+  isValidTenantRoleKey,
   needsTenantRoleSetup,
   partitionTenantRoleOptions,
   resolveRoleDescription,
@@ -21,6 +22,15 @@ const t = (key) => messages[key]
 const te = (key) => Object.hasOwn(messages, key)
 
 describe('IAM tenant role presentation', () => {
+  it('validates two lowercase role key segments and trims surrounding whitespace', () => {
+    for (const key of ['custom.ontology_manager', 'tenant.reader', 'a.b', 'custom_2.role_3']) {
+      expect(isValidTenantRoleKey(` \t${key}\n`), key).toBe(true)
+    }
+    for (const key of ['', 'ontology_manager', 'Custom.manager', 'custom.Manager', '1custom.manager', 'custom.1manager', 'custom.role-name', 'custom..manager', 'custom.role.extra', 'custom.本体', 'custom.role\nextra', 'custom .manager', null]) {
+      expect(isValidTenantRoleKey(key), String(key)).toBe(false)
+    }
+  })
+
   it('resolves built-in role translations and keeps custom role names', () => {
     const builtIn = {
       role_key: 'tenant.administrator',

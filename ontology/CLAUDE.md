@@ -4,11 +4,11 @@ Ontology 管理租户领域本体的形式化语义，不接管 Standard、Model
 
 ## 当前交付范围
 
-`backend/internal/semantic` 是正式 Go 语义内核；`internal/service`、`internal/repository` 管理原生定义的 PG 修订生命周期。`cmd/server` 已装配统一 Lifecycle、管理 HTTP API 和投影 Supervisor；FalkorDB 是私有 Infra。`frontend` 提供 Console 原生定义建模与修订管理页面；两个只读 Agent Tool 提供激活定义消费，不影响 Graph 的当前功能。没有重启个人开发服务，不把 T1/T2/T3 当作已完成真实身份的 T4 上线验收。
+`backend/internal/semantic` 是正式 Go 语义内核；`internal/service`、`internal/repository` 管理原生定义的 PG 修订生命周期。`cmd/server` 已装配统一 Lifecycle、管理 HTTP API 和投影 Supervisor；FalkorDB 是私有 Infra。`frontend` 提供 Console 原生定义建模与修订管理页面；两个只读 Agent Tool 提供激活定义消费，不影响 Graph 的当前功能。2026-09-18 已在用户启动的个人开发环境完成真实用户的建模、发布激活和 Agent 定义读取联调；不把本地手工联调或 T1/T2/T3 当作正式隔离 T4 上线验收。
 
 只读消费使用 `GET /ontologies/{ontology_id}/semantic/classes` 和 `GET /ontologies/{ontology_id}/semantic/classes/{class_id}`。后者必须绑定目录返回的 revision、generation、activation_version，激活变化返回 409；仅从同一 PG 只读快照核对过的 published/ready 定义读取，不读取草稿或实例。返回 `knowledge_kind=native_definition`，结果超过 128 KiB 直接拒绝，不截断。独立的 Tenant `ontology.semantic.read` 可委托给精确 Tool scope，管理权限仍不可委托。迁移 154 只登记权限，不给既有角色扩权。根目录 `skills/ontology-exploration` 组合目录和上下文工具，要求身份澄清、版本一致和定义/事实区分。
 
-新增消费链路沿用 `make test-module MODULE=ontology` 的 T1/T2、`make test-agent-eval`（含 Common Python）、`make test-copilot` 与 System IAM `--package migration --test ontology-backend` 标准门禁。Skill/eval/SDK 路径由现有共享影响矩阵和 CI 自动发现；无新增外部依赖或 CI Job。在线真实身份验收仍未完成。
+新增消费链路沿用 `make test-module MODULE=ontology` 的 T1/T2、`make test-agent-eval`（含 Common Python）、`make test-copilot` 与 System IAM `--package migration --test ontology-backend` 标准门禁。Skill/eval/SDK 路径由现有共享影响矩阵和 CI 自动发现；无新增外部依赖或 CI Job。本地真实身份联调已通过，正式 T4 仍未通过。
 
 `internal/falkor` 提供唯一的 go-redis 薄适配及确定性图投影构建/全量校验；投影执行器连接首次发布/失败重建准入、Common 租约、构建前/激活前 System 授权消费和 PG 激活指针。Backend 绑定 HTTP 后异步注册，Ready 同时验证 PG、FalkorDB 非零查询预算及 System 注册，只有 Ready 才领取；退出等待在途执行与注销。
 
@@ -17,9 +17,13 @@ Ontology 管理租户领域本体的形式化语义，不接管 Standard、Model
 - 受限 CEL 分类：布尔/字符串、等值、逻辑运算、字符串字面量有限集合成员判断；禁止宏、算术、动态类型、时间、正则和任意函数。
 - 有限枚举同时校验输入值和直接比较/集合条件中的字面量，拼错的码值不能发布为永远不匹配的规则。未知状态应传 `unknown`，不将不认识的已知码值自动视为未知或 false。
 - 已知、已确认缺失、未知、无效四种输入；输出 matched、not_matched、unknown、error。只有输入声明明确允许的布尔属性，才将已确认缺失映射为 false；未读取不适用该策略。
-- 解释保留规则、输入状态与缺口，但仅为 `hypothetical` 试算，不认证业务事实。原始事实值不回显。内部错误不是 HTTP 错误格式，未来 API owner 须翻译及授权过滤。
+- 解释保留规则、输入状态与缺口，但仅为 `hypothetical` 试算，不认证业务事实。原始事实值不回显。内部错误不是 HTTP 错误格式，由试算 API owner 翻译及授权过滤。
+
+Console `/ontology/ontologies/:ontology_id/trial` 提供当前激活规则试算，复用唯一 CEL 内核与共享参数输入组件。`POST /ontologies/{ontology_id}/semantic/rules/{rule_id}/trial` 仅允许 Tenant User 的 `ontology.semantic.read`，不对 Agent/Delegated 开放。手工输入四态及已知值，必须绑定 revision/generation/activation_version；执行前后检查 active，版本变化返回 409。输入最多 16 项、请求 96 KiB；不读取业务库、不持久化、不回显原始值。编辑输入会取消在途请求并清除结果，冲突保留输入且要求重新加载。现有 Ontology T1/T2/T3 自动发现覆盖 DTO/权限拒绝、四态求值、租户/版本隔离、撤回拒绝、页面与迟到响应；无新增依赖或 CI Job，未将此切片宣称为真实业务事实求值或正式 T4 验收。
 
 关系声明目前只校验，不执行传递/逆关系的实例推理。仅支持原生定义；未来来源引用须遵守 owner 快照契约，不能加可编辑来源副本。
+
+试算页不再把令牌轮换时短暂的 AuthContext 空值当作重载定义：重取期间隐藏内容、取消在途试算并清除结果，同一 User/Tenant/Membership 且语义读取权限仍有效时保留内存输入；身份变化、退出、失权或重取失败则清空。继续使用共享认证实现，页面不解析 Token、不保存凭据、不自动重发试算，也不解除已有版本冲突锁。T3 使用真实共享 Auth Store 与受控轮换令牌夹具验证刷新保留、身份隔离、失权/失败清空和迟到响应；沿现有前端与模块 CI 自动发现执行。
 
 ## PG 修订与发布
 
@@ -96,7 +100,11 @@ FalkorDB T2 固定 4.20.6 多架构镜像 digest，每轮独立 Compose Project�
 
 新增 CEL 依赖同时由 T0 的 `make test-go-dependency-policy` 检查；该入口覆盖单行/块状 `require`、错误版本拒绝和注释/排除声明不误识别，不能靠固定 go.mod 排版才能识别依赖。
 
-Outdoor 示例仅在测试夹具中；北京是示例背景，不从活动名称猜测行政区。核心代码不得硬编码业务状态、集合名、字段路径或地名。
+Outdoor 合成示例用于测试夹具及用户显式创建的本地演示本体，不自动供应到其他 Tenant。北京是示例背景，不从活动名称猜测行政区。核心代码不得硬编码业务状态、集合名、字段路径或地名。`beijing_outdoor_demo` 修订 1 已在个人开发环境激活，Agent 会话 76 已验证两个定义 Tool 的真实调用；其中继承关系及简化报名集合是演示内容，不是可直接绑定真实 Outdoor 数据的业务模型，详见最小设计契约第 9 节。
+
+正式业务定义 `internal/semantic/testdata/outdoor_business.json` 按已确认的 Outdoor 口径区分活动、人员和活动成员关系，无相互继承；三个规则分别表达统计有效活动、成员报名状态和成员实际参加状态。`business_fixture_test.go` 验证完整状态矩阵、上下文隔离、缺失/未知和错误输入；沿现有 `make test-module MODULE=ontology` 及 CI Go 自动发现执行，无新增运行依赖。本轮按用户确认不接 Catalog、字段映射或业务取数，不向业务定义包注入映射，也不自动将该文件发布到 Tenant。日期存在性是有明确完整性要求的输入观察；成员分类不隐式关联活动或构成统计人数。正式业务定义与合成演示用途不同，不能相互作为运行时回退。
+
+2026-09-18 已由真实用户页面创建、提交并发布个人开发环境 Tenant 1 的 `outdoor_business` 修订 1，投影已激活；持久化定义与上述测试夹具逐项核对一致（忽略规范化数组顺序）。Agent 会话 77 的运行 `6877c35e-1d9a-4ce1-a194-85b71394c47d` 完成目录及两个类上下文的三次只读 Tool 调用，正确区分报名/参加口径、成员关系与活动粒度、日期缺失与未知，以及定义与真实业务证据。`make test-agent-eval` 通过；此记录仅为本地真实用户联调，不替代下述正式隔离 T4。
 
 ### 正式 Online 验收入口
 

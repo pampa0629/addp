@@ -131,8 +131,19 @@
           <el-form label-position="top">
             <el-form-item :label="t('workbench.studio.filterName')"><el-input v-model="parameter.label" /></el-form-item>
             <el-form-item :label="t('workbench.studio.initialValue')">
-              <ParameterValueInput v-model="parameter.default_value" :control-type="parameter.control_type" :options="parameterDomain(parameter.key).options" :disabled="!parameterDomain(parameter.key).ready" />
+              <ApplicationSelectionValue :refresh-key="nameRevision" :snapshot="application.snapshot" :descriptors="descriptorByComponent" :parameter-key="parameter.key" :parameter-values="defaultParameterValues" v-if="parameterSources(parameter.key).length" :value="parameter.default_value" :sources="parameterSources(parameter.key)" :required="parameter.required" :disabled="!parameterDomain(parameter.key).ready" @choose="openValueSelection(parameter, $event, null)" @clear="parameter.default_value = null" />
+              <ParameterValueInput v-else v-model="parameter.default_value" :control-type="parameter.control_type" :options="parameterDomain(parameter.key).options" :disabled="!parameterDomain(parameter.key).ready" />
             </el-form-item>
+            <template v-if="parameterSources(parameter.key).length">
+              <el-form-item :label="t('workbench.selectionValue.source')" data-testid="display-source">
+                <el-select :model-value="parameter.display_source?.source_component_id || ''" clearable class="full" :placeholder="t('workbench.selectionValue.configure')" @update:model-value="chooseDisplaySource(parameter, $event)">
+                  <el-option v-for="source in parameterSources(parameter.key)" :key="source.id" :value="source.id" :label="source.title" :disabled="!displayFields(parameter, source.id).length" />
+                </el-select>
+              </el-form-item>
+              <el-form-item v-if="parameter.display_source" :label="t('workbench.selectionValue.field')" data-testid="display-label-field">
+                <el-select v-model="parameter.display_source.label_field" class="full"><el-option v-for="field in displayFields(parameter, parameter.display_source.source_component_id)" :key="field.name" :value="field.name" :label="selectionFieldLabel(parameter.display_source.source_component_id, field.name)" /></el-select>
+              </el-form-item>
+            </template>
             <div class="filter-required"><span>{{ t('workbench.required') }}</span><el-switch v-model="parameter.required" :aria-label="t('workbench.required')" /></div>
           </el-form>
           <div class="filter-impact"><span>{{ t('workbench.studio.usedBy') }}</span><el-tag v-for="title in parameterComponentNames(parameter.key)" :key="title" size="small" type="info">{{ title }}</el-tag><span v-if="!parameterComponentNames(parameter.key).length">{{ t('workbench.studio.unusedFilter') }}</span></div>
@@ -169,10 +180,11 @@
             <el-button link type="danger" @click="removeParameterPreset(presetIndex)">{{ t('workbench.delete') }}</el-button>
           </div>
           <div class="parameter-grid">
-            <label v-for="parameter in application.snapshot.parameters" :key="parameter.key" class="parameter-field">
+            <component :is="parameterSources(parameter.key).length ? 'div' : 'label'" v-for="parameter in application.snapshot.parameters" :key="parameter.key" class="parameter-field">
               <span>{{ parameter.label }}<em v-if="parameter.required">*</em></span>
-              <ParameterValueInput v-model="preset.parameter_values[parameter.key]" :control-type="parameter.control_type" :options="parameterDomain(parameter.key).options" :disabled="!parameterDomain(parameter.key).ready" />
-            </label>
+              <ApplicationSelectionValue :refresh-key="nameRevision" :snapshot="application.snapshot" :descriptors="descriptorByComponent" :parameter-key="parameter.key" :parameter-values="preset.parameter_values" v-if="parameterSources(parameter.key).length" :value="preset.parameter_values[parameter.key]" :sources="parameterSources(parameter.key)" :required="parameter.required" :disabled="!parameterDomain(parameter.key).ready" @choose="openValueSelection(parameter, $event, preset)" @clear="preset.parameter_values[parameter.key] = null" />
+              <ParameterValueInput v-else v-model="preset.parameter_values[parameter.key]" :control-type="parameter.control_type" :options="parameterDomain(parameter.key).options" :disabled="!parameterDomain(parameter.key).ready" />
+            </component>
           </div>
         </div>
       </div>
@@ -227,10 +239,12 @@
       </template>
       <DataApplicationCanvas v-if="draftPreviewApplication" ref="draftPreviewCanvas" :application="draftPreviewApplication" mode="draft-preview" embedded />
     </el-dialog>
+    <ApplicationSelectionDialog :context="selectionContext" @close="selectionContext = null" @select="applyChosenValue" />
   </div>
 </template>
 
 <script setup>
+import { parameterDisplayFields, assertParameterDisplaySources } from '../utils/applicationParameterDisplay.mjs'
 import { Grid, Histogram, Odometer, Location, Edit } from '@element-plus/icons-vue'
 import { arrangePlacements, orderedPlacements } from '../utils/applicationEditorLayout.mjs'
 import { applicationParameterOptions, assertApplicationOptionValues, canBindApplicationParameter, newComponentParameterContext } from '../utils/applicationParameterOptions.mjs'
@@ -243,15 +257,40 @@ import { createDataApplication, getDataApplication, offlineDataApplication, publ
 import { getConsumerDescriptor } from '../api/services'
 import { applicationParameterPresetsValid, buildDataApplicationPreview, commitLatestDataApplicationRequest, confirmDataApplicationAction, createApplicationParameterPreset, dataApplicationEditorMutationContext, dataApplicationEditorRouteContext, normalizedApplicationSnapshot, synchronizeApplicationParameterPresets } from '../utils/dataApplicationDraft.mjs'
 import { APPLICATION_PRESENTATION_SECTIONS, canHideApplicationParameters } from '../utils/dataApplicationRuntime.mjs'
-import { selectionParameterType, affectedSelectionComponentIDs, compatibleSelectionParameters as compatibleSelectionParameterList, selectionSourceFields } from '../utils/dataApplicationSelection.mjs'
+import { applicationParameterSelectionSources, selectionParameterType, affectedSelectionComponentIDs, compatibleSelectionParameters as compatibleSelectionParameterList, selectionSourceFields } from '../utils/dataApplicationSelection.mjs'
 import { navigateWorkbenchRoute } from '../utils/moduleNavigation'
 import ApplicationComponentEditor from '../components/ApplicationComponentEditor.vue'
+import ApplicationSelectionValue from '../components/ApplicationSelectionValue.vue'
+import ApplicationSelectionDialog from '../components/ApplicationSelectionDialog.vue'
 import ParameterValueInput from '../../../../common-frontend/basic/src/components/ParameterValueInput.vue'
 import DataApplicationCanvas from '../components/DataApplicationCanvas.vue'
 import DataApplicationDeliveryDialog from '../components/DataApplicationDeliveryDialog.vue'
 import SpatialExplorationWizard from '../components/SpatialExplorationWizard.vue'
 
 const rendererIcons = { table: Grid, chart: Histogram, value: Odometer, map: Location }
+const defaultParameterValues = computed(() => Object.fromEntries(application.snapshot.parameters.map(p => [p.key, p.default_value])))
+const displayFields = (parameter, sourceID) => parameterDisplayFields(application.snapshot, descriptorByComponent, parameter.key, sourceID)
+function chooseDisplaySource(parameter, sourceID) {
+  if (!sourceID) delete parameter.display_source
+  else parameter.display_source = { source_component_id: sourceID, label_field: '' }
+}
+function cleanDisplaySources() {
+  for (const parameter of application.snapshot.parameters) {
+    if (parameter.display_source && !parameterSources(parameter.key).some(c => c.id === parameter.display_source.source_component_id)) delete parameter.display_source
+  }
+}
+const nameRevision = ref(0)
+const selectionContext = ref(null)
+const parameterSources = key => applicationParameterSelectionSources(application.snapshot, key)
+function openValueSelection(parameter, sourceID, preset) {
+  selectionContext.value = { parameterKey: parameter.key, label: parameter.label, sourceID, preset, application: buildDataApplicationPreview(application) }
+}
+function applyChosenValue(value) {
+  nameRevision.value += 1
+  const context = selectionContext.value
+  if (context.preset) context.preset.parameter_values[context.parameterKey] = value
+  else application.snapshot.parameters.find(p => p.key === context.parameterKey).default_value = value
+}
 const settingsPanel = ref('')
 const settingsVisible = computed({ get: () => Boolean(settingsPanel.value), set: value => { if (!value) settingsPanel.value = '' } })
 const selectedComponentID = ref('')
@@ -345,6 +384,7 @@ function resetEditorRouteContext() {
   componentEditorVisible.value = false
   spatialWizardVisible.value = false
   draftPreviewVisible.value = false
+  selectionContext.value = null
   settingsPanel.value = ''
   selectedComponentID.value = ''
   draftPreviewApplication.value = null
@@ -526,9 +566,10 @@ function applySelectionBinding() {
   const index = application.snapshot.selection_bindings.findIndex(b => b.source_component_id === selectionEditingSource.value)
   if (index < 0) application.snapshot.selection_bindings.push(binding)
   else application.snapshot.selection_bindings.splice(index, 1, binding)
+  cleanDisplaySources()
   selectionDraft.value = null
 }
-function removeSelectionBinding(index) { application.snapshot.selection_bindings.splice(index, 1) }
+function removeSelectionBinding(index) { application.snapshot.selection_bindings.splice(index, 1); cleanDisplaySources() }
 function selectionSourceChanged() {
   selectionDraft.value.assignments = selectionDraft.value.assignments.map(assignment => ({ source_field: '', application_parameter_key: assignment.application_parameter_key }))
 }
@@ -615,10 +656,11 @@ function parameterDomain(key) { return applicationParameterOptions(application.s
 function validateParameterOptions() {
  try {
   const snapshot = normalizedSnapshot()
+  assertParameterDisplaySources(snapshot, descriptorByComponent)
   assertApplicationOptionValues(snapshot, descriptorByComponent, Object.fromEntries(snapshot.parameters.map((p) => [p.key, p.default_value])))
   for (const preset of snapshot.parameter_presets || []) assertApplicationOptionValues(snapshot, descriptorByComponent, preset.parameter_values)
   return true
- } catch { settingsPanel.value = 'filters'; ElMessage.error(t('workbench.parameterOptionsInvalid')); return false }
+ } catch (error) { settingsPanel.value = 'filters'; ElMessage.error(t(error.message === 'invalid-display-source' ? 'workbench.selectionValue.invalid' : 'workbench.parameterOptionsInvalid')); return false }
 }
 async function save() {
   if (!validateParameterOptions()) return
@@ -744,7 +786,7 @@ function applicationParameterKey(componentID, parameterKey) {
   return `component_${componentID.replaceAll('-', '').slice(0, 12)}.${parameterKey}`
 }
 
-function saveComponent(nextComponent, reusedParameters, descriptor, selectionAssignment = null) {
+function saveComponent(nextComponent, reusedParameters, descriptor, selectionAssignment = null, displayLabelField = '') {
   if (selectionAssignment) {
     const candidate = { ...application.snapshot, components: [...application.snapshot.components, nextComponent] }
     const field = selectionSourceFields(candidate, nextComponent.id, descriptor).find(field => field.name === selectionAssignment.source_field)
@@ -797,6 +839,10 @@ function saveComponent(nextComponent, reusedParameters, descriptor, selectionAss
   }
   if (selectionAssignment) {
     application.snapshot.selection_bindings.push({ source_component_id: nextComponent.id, assignments: [{ ...selectionAssignment }] })
+    const parameter = application.snapshot.parameters.find(p => p.key === selectionAssignment.application_parameter_key)
+    if (!parameter.display_source && displayLabelField && parameterDisplayFields(application.snapshot, { ...descriptorByComponent, [nextComponent.id]: descriptor }, parameter.key, nextComponent.id).some(f => f.name === displayLabelField)) {
+      parameter.display_source = { source_component_id: nextComponent.id, label_field: displayLabelField }
+    }
     if (isCreate.value) {
       const targets = new Set(affectedSelectionComponentIDs(application.snapshot, [selectionAssignment]))
       const placements = orderedPlacements(application.snapshot.page.placements)
@@ -841,6 +887,7 @@ function pruneUnusedApplicationParameters() {
   application.snapshot.selection_bindings = application.snapshot.selection_bindings
     .map((binding) => ({ ...binding, assignments: binding.assignments.filter((assignment) => used.has(assignment.application_parameter_key)) }))
     .filter((binding) => binding.assignments.length > 0)
+  cleanDisplaySources()
   synchronizeApplicationParameterPresets(application.snapshot)
 }
 

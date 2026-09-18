@@ -125,6 +125,9 @@ func testProjectionRuntime(t *testing.T, db *gorm.DB, s *RevisionService, actor 
 	t.Run("activate_and_withdraw", func(t *testing.T) {
 		d := definition()
 		r := publishRuntimeFixture(t, s, actor, d)
+		if _, err := s.Trial(ctx, actor, d.Scope.OntologyID, "valid_date", 1, *r.Generation, 1, nil); !errors.Is(err, repository.ErrNotActive) {
+			t.Fatalf("pending trial exposed: %v", err)
+		}
 		if _, err := s.ListClasses(ctx, actor, d.Scope.OntologyID); !errors.Is(err, repository.ErrNotActive) {
 			t.Fatalf("pending projection exposed: %v", err)
 		}
@@ -141,6 +144,7 @@ func testProjectionRuntime(t *testing.T, db *gorm.DB, s *RevisionService, actor 
 		if err != nil || len(semanticContext.Rules) != 1 || semanticContext.Rules[0].Basis == "" {
 			t.Fatalf("context=%+v error=%v", semanticContext, err)
 		}
+		testActiveTrial(t, s, actor, directory)
 		if _, err := s.ClassContext(ctx, actor, d.Scope.OntologyID, "activity", directory.Revision, directory.Generation, directory.ActivationVersion+1); !errors.Is(err, ErrActivationChanged) {
 			t.Fatal(err)
 		}
@@ -180,6 +184,9 @@ func testProjectionRuntime(t *testing.T, db *gorm.DB, s *RevisionService, actor 
 		assertState(r, "ready", execution.ExecutionStatusSuccess, nil)
 		if _, err := s.ListClasses(ctx, actor, d.Scope.OntologyID); !errors.Is(err, repository.ErrNotActive) {
 			t.Fatalf("withdrawn definition exposed: %v", err)
+		}
+		if _, err := s.Trial(ctx, actor, d.Scope.OntologyID, "valid_date", directory.Revision, directory.Generation, directory.ActivationVersion, nil); !errors.Is(err, repository.ErrNotActive) {
+			t.Fatalf("withdrawn trial exposed: %v", err)
 		}
 		var events int64
 		db.Model(&models.ProjectionEvent{}).Where("generation=?", r.Generation).Count(&events)

@@ -264,7 +264,10 @@ func (s *DataApplicationService) validateSnapshot(ctx context.Context, request D
 	if err := validateApplicationPresentationSections(snapshot.Page, snapshot.Parameters, snapshot.ParameterBindings, components); err != nil {
 		return err
 	}
-	return validateSelectionBindings(snapshot.SelectionBindings, snapshot.Parameters, snapshot.ParameterBindings, components, descriptors)
+	if err := validateSelectionBindings(snapshot.SelectionBindings, snapshot.Parameters, snapshot.ParameterBindings, components, descriptors); err != nil {
+		return err
+	}
+	return validateParameterDisplaySources(snapshot.Parameters, snapshot.SelectionBindings, components, descriptors)
 }
 
 func validateApplicationParameterPresets(presets []models.DataApplicationParameterPreset, parameters []models.DataApplicationParameter, bindings []models.DataApplicationParameterBinding, components map[string]models.DataApplicationComponent, componentParameters map[string]map[string]models.ComponentParameterDefinition, descriptors map[string]*models.ConsumerDescriptor) error {
@@ -859,6 +862,68 @@ func validateRawParameterTarget(raw json.RawMessage, target componentParameterTa
 	}
 	if !commonquery.ParameterOptionAllows(target.Options, value) {
 		return fmt.Errorf("value is outside parameter options")
+	}
+	return nil
+}
+
+// Name lookups derive their identity field from the one declared selection binding.
+func validateParameterDisplaySources(parameters []models.DataApplicationParameter, bindings []models.DataApplicationSelectionBinding, components map[string]models.DataApplicationComponent, descriptors map[string]*models.ConsumerDescriptor) error {
+	for _, parameter := range parameters {
+		display := parameter.DisplaySource
+		if display == nil {
+			continue
+		}
+		component, exists := components[display.SourceComponentID]
+		descriptor := descriptors[display.SourceComponentID]
+		if !exists || descriptor == nil || descriptor.ContractFingerprint != component.ContractFingerprint || display.LabelField == "" {
+			return ErrInvalidDataApplication
+		}
+		valueField := ""
+		for _, binding := range bindings {
+			if binding.SourceComponentID != display.SourceComponentID {
+				continue
+			}
+			for _, assignment := range binding.Assignments {
+				if assignment.ApplicationParameterKey == parameter.Key {
+					if valueField != "" {
+						return ErrInvalidDataApplication
+					}
+					valueField = assignment.SourceField
+				}
+			}
+		}
+		if valueField == "" {
+			return ErrInvalidDataApplication
+		}
+		selected := map[string]bool{}
+		for _, field := range component.QueryTemplate.Select {
+			selected[field] = true
+		}
+		if !selected[valueField] || !selected[display.LabelField] {
+			return ErrInvalidDataApplication
+		}
+		valueOK, labelOK := false, false
+		for _, field := range descriptor.InputContract.Fields {
+			if field.Name == valueField && field.Selectable && field.Filterable {
+				for _, operator := range field.Operators {
+					if operator == "eq" {
+						valueOK = true
+					}
+				}
+			}
+			if field.Name == display.LabelField && field.Selectable && field.Type == datatype.FieldTypeString {
+				labelOK = true
+			}
+		}
+		outputOK := false
+		for _, field := range descriptor.OutputContract.Fields {
+			if field.Name == display.LabelField && field.Type == datatype.FieldTypeString {
+				outputOK = true
+			}
+		}
+		if !valueOK || !labelOK || !outputOK {
+			return ErrInvalidDataApplication
+		}
 	}
 	return nil
 }

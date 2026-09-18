@@ -54,6 +54,56 @@ definitions:
           type: string
         type: array
     type: object
+  github_com_addp_ontology_internal_semantic.Decision:
+    properties:
+      basis:
+        type: string
+      code:
+        type: string
+      digest:
+        type: string
+      expression:
+        type: string
+      inputs:
+        items:
+          $ref: '#/definitions/github_com_addp_ontology_internal_semantic.Evidence'
+        type: array
+      mode:
+        type: string
+      outcome:
+        $ref: '#/definitions/github_com_addp_ontology_internal_semantic.Outcome'
+      rule_id:
+        type: string
+      scope:
+        $ref: '#/definitions/github_com_addp_ontology_internal_semantic.Scope'
+      unresolved:
+        items:
+          type: string
+        type: array
+    type: object
+  github_com_addp_ontology_internal_semantic.Evidence:
+    properties:
+      property_id:
+        type: string
+      state:
+        $ref: '#/definitions/github_com_addp_ontology_internal_semantic.FactState'
+      treatment:
+        type: string
+      variable:
+        type: string
+    type: object
+  github_com_addp_ontology_internal_semantic.FactState:
+    enum:
+    - known
+    - absent
+    - unknown
+    - invalid
+    type: string
+    x-enum-varnames:
+    - Known
+    - Absent
+    - Unknown
+    - Invalid
   github_com_addp_ontology_internal_semantic.Input:
     properties:
       on_absent:
@@ -71,6 +121,18 @@ definitions:
     x-enum-varnames:
     - Boolean
     - String
+  github_com_addp_ontology_internal_semantic.Outcome:
+    enum:
+    - matched
+    - not_matched
+    - unknown
+    - error
+    type: string
+    x-enum-varnames:
+    - Matched
+    - NotMatched
+    - Undetermined
+    - Failed
   github_com_addp_ontology_internal_semantic.Property:
     properties:
       class_id:
@@ -117,6 +179,15 @@ definitions:
         items:
           $ref: '#/definitions/github_com_addp_ontology_internal_semantic.Input'
         type: array
+    type: object
+  github_com_addp_ontology_internal_semantic.Scope:
+    properties:
+      ontology_id:
+        type: string
+      revision:
+        type: integer
+      tenant_id:
+        type: integer
     type: object
   internal_api.AcceptedResponse:
     properties:
@@ -289,6 +360,55 @@ definitions:
       definition:
         $ref: '#/definitions/internal_api.DefinitionInput'
       version:
+        type: integer
+    type: object
+  internal_api.TrialInput:
+    properties:
+      state:
+        allOf:
+        - $ref: '#/definitions/github_com_addp_ontology_internal_semantic.FactState'
+        enum:
+        - known
+        - absent
+        - unknown
+        - invalid
+      value: {}
+    required:
+    - state
+    type: object
+  internal_api.TrialRequest:
+    properties:
+      activation_version:
+        type: integer
+      generation:
+        type: string
+      inputs:
+        additionalProperties:
+          $ref: '#/definitions/internal_api.TrialInput'
+        type: object
+      revision:
+        type: integer
+    required:
+    - activation_version
+    - generation
+    - inputs
+    - revision
+    type: object
+  internal_api.TrialResponse:
+    properties:
+      activation_version:
+        type: integer
+      decision:
+        $ref: '#/definitions/github_com_addp_ontology_internal_semantic.Decision'
+      digest:
+        type: string
+      generation:
+        type: string
+      knowledge_kind:
+        type: string
+      ontology_id:
+        type: string
+      revision:
         type: integer
     type: object
   internal_api.VersionRequest:
@@ -1236,6 +1356,79 @@ paths:
       tags:
       - Ontology
       x-addp-auth-mode: delegated_tool
+      x-addp-required-permissions:
+      - ontology.semantic.read
+  /ontologies/{ontology_id}/semantic/rules/{rule_id}/trial:
+    post:
+      consumes:
+      - application/json
+      description: 仅限用户手工假设输入，不读取或认证业务事实，不持久化结果。最多 16 项输入、96 KiB 请求；版本变化返回 409。 |
+        User hypotheses only, no business facts or persistence. At most 16 inputs
+        and 96 KiB; changed activation returns 409.
+      parameters:
+      - description: 本体标识 | Ontology identifier
+        in: path
+        name: ontology_id
+        required: true
+        type: string
+      - description: 规则标识 | Rule identifier
+        in: path
+        name: rule_id
+        required: true
+        type: string
+      - description: 激活绑定与假设输入；非 known 的 value 必须省略或为 null | Activation binding and
+          hypotheses; non-known value must be omitted or null
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.TrialRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 假设性四态结果，不表示业务验证成功 | Hypothetical four-state result, not business
+            verification
+          schema:
+            $ref: '#/definitions/internal_api.TrialResponse'
+        "400":
+          description: 无效请求 | Invalid request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "401":
+          description: 未认证 | Unauthenticated
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "403":
+          description: 禁止访问 | Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "404":
+          description: 本体或规则不存在 | Ontology or rule not found
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "409":
+          description: 未激活或版本变化 | Inactive or activation changed
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "413":
+          description: 结果过大 | Result too large
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "500":
+          description: 试算失败 | Trial failed
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "503":
+          description: 尚未就绪 | Not ready
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 试算激活本体规则 | Try an active ontology rule
+      tags:
+      - Ontology
+      x-addp-auth-mode: permission
       x-addp-required-permissions:
       - ontology.semantic.read
 securityDefinitions:

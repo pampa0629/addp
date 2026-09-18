@@ -150,6 +150,30 @@ func (v *validator) visit(id NodeID, depth int) ([]datatype.FieldInfo, error) {
 	v.heights[id] = height
 	return f, nil
 }
+
+// Only explicit non-null conjuncts narrow the filter output; the input schema
+// and other consumers retain their original nullability.
+func refineFilterNullability(e Expr, input NodeID, fields []datatype.FieldInfo) {
+	if e.Op == "and" {
+		for _, arg := range e.Args {
+			refineFilterNullability(arg, input, fields)
+		}
+		return
+	}
+	if e.Op != "not" || len(e.Args) != 1 || e.Args[0].Op != "is_null" || len(e.Args[0].Args) != 1 {
+		return
+	}
+	column := e.Args[0].Args[0]
+	if column.Op != "column" || column.Column == nil || column.Column.Input != input {
+		return
+	}
+	for i := range fields {
+		if fields[i].Name == column.Column.Name {
+			fields[i].Nullable = false
+		}
+	}
+}
+
 func (v *validator) projections(p []Projection, scope map[NodeID][]datatype.FieldInfo) ([]datatype.FieldInfo, error) {
 	fields := make([]datatype.FieldInfo, 0, len(p))
 	for _, c := range p {
@@ -175,7 +199,9 @@ func (v *validator) node(n Node, scope map[NodeID][]datatype.FieldInfo) ([]datat
 		if err != nil || f.Type != datatype.FieldTypeBool {
 			return bad()
 		}
-		return scope[n.Filter.Input], nil
+		fields := append([]datatype.FieldInfo(nil), scope[n.Filter.Input]...)
+		refineFilterNullability(n.Filter.Predicate, n.Filter.Input, fields)
+		return fields, nil
 	case "project":
 		return v.projections(n.Project.Columns, scope)
 	case "join":

@@ -172,6 +172,38 @@ func runMetricGolden(t *testing.T, provider metricGoldenProvider, conn plugin.Co
 			}
 		})
 	}
+	t.Run("details/month-filter-and-keyset", func(t *testing.T) {
+		c := contract
+		c.IncludeDetails = true
+		params := map[string]interface{}{"subject_id": "A", "grain": "month", "start_date": "2026-01-02", "end_date": "2026-03-01"}
+		request := plan.ResultRequest{Limit: 1, Filter: &plan.ResultFilter{Op: "eq", Field: "bucket", Values: []plan.Literal{{Type: datatype.FieldTypeDate, Text: "2026-01-01"}}}}
+		var members []string
+		for page := 0; page < 3; page++ {
+			req, err := metricGoldenResultRequest(t, provider, conn, database, c, bindings, params, true, request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			prepared, err := provider.PrepareQuery(context.Background(), conn, req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, err := prepared.Execute(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(result.Rows) == 0 {
+				break
+			}
+			row := result.Rows[0]
+			members = append(members, fmt.Sprint(row["member"]))
+			// Stable order defaults to subject_id, bucket, member. Consume one
+			// row and keep the provider's extra row only as a has-more signal.
+			request.After = []plan.Literal{{Type: datatype.FieldTypeString, Text: "A"}, {Type: datatype.FieldTypeDate, Text: "2026-01-01"}, {Type: datatype.FieldTypeString, Text: fmt.Sprint(row["member"])}}
+		}
+		if strings.Join(members, ",") != "e2,e6" {
+			t.Fatalf("filtered/paged members=%v", members)
+		}
+	})
 	for _, operation := range []string{"count_distinct", "directional_overlap"} {
 		for _, mutation := range []struct{ name, apply, restore string }{
 			{"duplicate-dimension", `INSERT INTO SCHEMA.metric_golden_events VALUES ('e1','2026-01-01')`, `DELETE FROM SCHEMA.metric_golden_events WHERE event_id='e1'; INSERT INTO SCHEMA.metric_golden_events VALUES ('e1','2026-01-01')`},
@@ -197,6 +229,23 @@ func runMetricGolden(t *testing.T, provider metricGoldenProvider, conn plugin.Co
 				if !errors.As(err, &assertion) {
 					t.Fatalf("expected independent quality assertion, got %v", err)
 				}
+				if operation == "count_distinct" {
+					c := contract
+					c.IncludeDetails = true
+					params := map[string]interface{}{"subject_id": "A", "grain": "month", "start_date": "2026-01-01", "end_date": "2027-01-01"}
+					req, err := metricGoldenResultRequest(t, provider, conn, database, c, bindings, params, true, plan.ResultRequest{Limit: 1})
+					if err != nil {
+						t.Fatal(err)
+					}
+					prepared, err := provider.PrepareQuery(context.Background(), conn, req)
+					if err != nil {
+						t.Fatal(err)
+					}
+					_, err = prepared.Execute(context.Background())
+					if !errors.As(err, &assertion) {
+						t.Fatalf("detail pagination hid quality assertion: %v", err)
+					}
+				}
 			})
 		}
 	}
@@ -208,7 +257,7 @@ func metricGoldenRequest(t *testing.T, provider metricGoldenProvider, conn plugi
 	return metricGoldenResultRequest(t, provider, conn, namespace, contract, bindings, parameters, false)
 }
 
-func metricGoldenResultRequest(t *testing.T, provider metricGoldenProvider, conn plugin.ConnectionInfo, namespace string, contract models.MetricContract, bindings metricPlanBindings, parameters map[string]interface{}, details bool) (plugin.QueryRequest, error) {
+func metricGoldenResultRequest(t *testing.T, provider metricGoldenProvider, conn plugin.ConnectionInfo, namespace string, contract models.MetricContract, bindings metricPlanBindings, parameters map[string]interface{}, details bool, resultRequests ...plan.ResultRequest) (plugin.QueryRequest, error) {
 	t.Helper()
 	p, err := buildMetricResultPlan(contract, bindings, details)
 	if err != nil {
@@ -218,7 +267,11 @@ func metricGoldenResultRequest(t *testing.T, provider metricGoldenProvider, conn
 	if contract.Operation == "directional_overlap" {
 		order = append(order, plan.SortKey{Name: "direction", Direction: "asc"})
 	}
-	result, err := plan.ApplyResultRequest(p, plan.ResultRequest{Limit: 240, OrderBy: order})
+	resultRequest := plan.ResultRequest{Limit: 240, OrderBy: order}
+	if len(resultRequests) > 0 {
+		resultRequest = resultRequests[0]
+	}
+	result, err := plan.ApplyResultRequest(p, resultRequest)
 	if err != nil {
 		return plugin.QueryRequest{}, err
 	}

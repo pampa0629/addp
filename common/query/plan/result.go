@@ -197,6 +197,14 @@ func (b *resultBuilder) parameter(field string, value Literal) (Expr, error) {
 }
 
 func (b *resultBuilder) addFilter(predicate Expr) {
+	fields := make([]datatype.FieldInfo, 0, len(b.fields))
+	for _, field := range b.fields {
+		fields = append(fields, field)
+	}
+	refineFilterNullability(predicate, b.p.Root, fields)
+	for _, field := range fields {
+		b.fields[field.Name] = field
+	}
 	id := NodeID(b.name())
 	b.p.Nodes = append(b.p.Nodes, Node{ID: id, Op: "filter", Filter: &Filter{Input: b.p.Root, Predicate: predicate}})
 	b.p.Root = id

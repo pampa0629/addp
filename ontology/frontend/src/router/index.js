@@ -26,6 +26,10 @@ const router = createRouter({
           component: () => import('../views/RevisionEditor.vue')
         },
         {
+          path: 'ontologies/:ontology_id/trial',
+          component: () => import('../views/RuleTrial.vue')
+        },
+        {
           path: 'ontologies/:ontology_id',
           component: () => import('../views/OntologyDetail.vue')
         },

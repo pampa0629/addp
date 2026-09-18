@@ -457,6 +457,24 @@
         "line": "时间趋势",
         "map": "空间分布"
       }
+    },
+    "selectionValue": {
+      "selected": "已选择，可从列表更换",
+      "empty": "尚未选择",
+      "clear": "清除选择",
+      "title": "选择{parameter}",
+      "pickHint": "点击一条结果完成选择。",
+      "loading": "正在读取名称…",
+      "missing": "未找到已选对象",
+      "ambiguous": "无法确定唯一名称",
+      "unnamed": "该对象未提供名称",
+      "failed": "名称读取失败",
+      "unavailable": "名称来源不可用，请检查配置",
+      "source": "名称来源",
+      "field": "显示名称字段",
+      "configure": "选择名称来源（可选）",
+      "retry": "重试",
+      "invalid": "请为名称回显选择有效的来源和名称字段。"
     }
   }
 }
