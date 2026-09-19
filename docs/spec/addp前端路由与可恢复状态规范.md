@@ -99,6 +99,7 @@ Develop TaskProvider 的 canonical 前端路由为：
 | Meta | 扫描引擎与扫描任务入口 | `engine_id`、`task_id`；二者并存时任务所属引擎为事实源 |
 | System | IAM 分类页面、页内对象与审计筛选 | path `/iam/organization\|accounts\|roles\|application-access\|security`、`tab`、`event_name`、`result`、`risk_level`、`module_name`、`principal_id`、`principal_type`、`entity_type`、`entity_id`、`page` |
 | Standard | 标准文档详情 | path `/documents/:id`；列表筛选 query 原样保留 |
+| Standard | 数据元确定修订 | path `/elements/:id`、`revision_id`；显式指定后必须精确读取，失败不切换其他修订 |
 | Portal | 搜索、资产分类分页与资产详情 | `keyword`、`type_id`、`page`、path `/portal/categories/:id`、`/portal/assets/:id` |
 | Agent | 当前会话 | path `/sessions/:session_id`，Console 公开 URL 为 `/agent/sessions/:session_id` |
 

@@ -7,9 +7,15 @@ import { useUnsavedChangesGuard, useConsoleUnsavedChangesGuard } from '@common-u
 import { navigateConsoleModuleRoute } from '@common-ui/utils/moduleRouteNavigation'
 import { openConsoleRoute, CONSOLE_NAVIGATION_CHANNEL } from '@common-ui/utils/taskOwnerUrl'
 import { registerConsoleBridgeHandler } from '@common-ui/utils/consoleBridge'
+import PortalSidebar from '../../src/components/portal/PortalSidebar.vue'
+import PortalIframe from '../../src/components/portal/PortalIframe.vue'
+import { SIDEBAR_MENUS } from '../../src/config/portalConfig'
+import zh from '../../src/i18n/zh-cn.json'
+import en from '../../src/i18n/en.json'
 
 const child = new URL(location.href).searchParams.has('child')
 const queryService = new URL(location.href).searchParams.get('editor') === 'query-service'
+const serviceNavigation = new URL(location.href).searchParams.get('editor') === 'service-navigation'
 const editorRoute = queryService ? '/service/query-services/create' : '/orchestrator'
 const Editor = {
   render() { return h('div', [
@@ -34,7 +40,19 @@ const router = createRouter({ history: createWebHashHistory(), routes: child ? [
   { path: '/:pathMatch(.*)*', component: { render: () => h('span') } }
 ] })
 const Host = {
-  render() { return h('div', [
+  mounted() {
+    if (serviceNavigation) this.$refs.serviceSidebar.openModule('service', ['service'])
+  },
+  render() {
+    if (serviceNavigation) return h('div', { style: { display: 'flex', height: '100vh' } }, [
+      h(PortalSidebar, {
+        ref: 'serviceSidebar', activeGroupModules: ['service'], activeGroupKey: 'dev-monitor',
+        activeMenu: this.route.split('?')[0].split('/').slice(0, 3).join('/'),
+        sidebarMenus: SIDEBAR_MENUS, onMenuSelect: this.go
+      }),
+      h(PortalIframe, { iframeUrl: this.src, iframeKey: this.frameKey, onLoad: () => this.guard.requestState() })
+    ])
+    return h('div', [
     h('button', { onClick: () => this.go(editorRoute) }, 'Open editor'),
     h('button', { onClick: () => this.go('/other') }, 'Other page'),
     h('button', { onClick: () => this.go('/third') }, 'Third page'),
@@ -53,8 +71,8 @@ const Host = {
       if (synchronized === fullPath) return
       guard.reset()
       frameKey.value++
-      src.value = queryService
-        ? (fullPath.startsWith('/service/') ? `/e2e/service-fixture/e2e/query-form.html#${fullPath.slice('/service'.length)}` : '')
+      src.value = queryService || serviceNavigation
+        ? (fullPath.startsWith('/service/') ? `/e2e/service-fixture/e2e/${serviceNavigation ? 'navigation' : 'query-form'}.html#${fullPath.slice('/service'.length)}` : '')
         : (fullPath.startsWith('/orchestrator') ? './leave-guard.html?child#/' : '')
     }, { immediate: true })
     const stop = registerConsoleBridgeHandler(CONSOLE_NAVIGATION_CHANNEL, async (payload, message, event) => {
@@ -69,5 +87,5 @@ const Host = {
     return { src, frameKey, route, guard, go: path => router.push(path) }
   }
 }
-const { i18n } = createAddpI18n({ listenToConsole: false })
+const { i18n } = createAddpI18n({ moduleMessages: { 'zh-cn': zh, en }, listenToConsole: false })
 createApp(child ? { render: () => h(RouterView) } : Host).use(router).use(i18n).use(ElementPlus).mount('#app')

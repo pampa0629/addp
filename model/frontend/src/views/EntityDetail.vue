@@ -98,10 +98,8 @@
           <el-table-column :label="t('model.attribute.data_type')" prop="data_type" width="110" />
           <el-table-column :label="t('model.attribute.element')" min-width="190">
             <template #default="{ row }">
-              <span>{{ getElementName(row.element_id) || '-' }}</span>
-              <el-tag v-if="row.element_revision_id" type="info" size="small" class="revision-tag">
-                {{ t('model.attribute.element_revision') }} #{{ row.element_revision_id }}
-              </el-tag>
+              <span>{{ getElementName(row) }}</span>
+              <FrozenElementLink :binding="row" :label="t('model.attribute.element_revision')" />
             </template>
           </el-table-column>
           <el-table-column :label="t('model.attribute.is_pk')" width="80">
@@ -236,10 +234,11 @@
             style="width:100%"
           >
             <el-option
-              v-for="e in elements"
+              v-for="e in elementOptions"
               :key="e.id"
-              :label="`${e.name} (${e.code})`"
+              :label="e.label"
               :value="e.id"
+              :disabled="e.disabled"
             />
           </el-select>
         </el-form-item>
@@ -349,8 +348,9 @@ import { navigateModelRoute } from '../utils/moduleNavigation'
 import { resolveEntityListRouteState } from '../utils/routeState'
 import { initializeMermaidTheme, observeThemeChange } from '../utils/mermaidTheme'
 import { getModelErrorMessage } from '../utils/apiError'
-import { buildEntityAttributeUpdateRequest, canPerformDraftAction, isEditableDraft, resolvePositiveRouteId } from '../utils/modelDetailState'
+import { buildEntityAttributeUpdateRequest, buildModelElementOptions, getModelElementName, loadModelElementReferences, canPerformDraftAction, isEditableDraft, resolvePositiveRouteId } from '../utils/modelDetailState'
 import { useUnsavedChanges } from '../composables/useUnsavedChanges'
+import FrozenElementLink from '../components/FrozenElementLink.vue'
 
 const { t } = useI18n()
 const authStore = useAuthStore()
@@ -405,6 +405,8 @@ const attributes = ref([])
 const relations = ref([])
 const domains = ref([])
 const elements = ref([])
+const elementRevisions = ref(new Map())
+const elementOptions = computed(() => buildModelElementOptions(elements.value, attrForm.element_id))
 const allEntities = ref([])
 const localMermaidCode = ref('erDiagram\n  ENTITY {\n  }\n')
 let stopThemeObserver = null
@@ -444,7 +446,9 @@ const canModifyRelation = (relation, permission) => {
   return otherEntity?.status === 'draft'
 }
 
-const getElementName = (id) => elements.value.find(e => e.id === id)?.name
+const getElementName = row => row.element_id
+  ? getModelElementName(row, elements.value, elementRevisions.value) || t('model.common.element_unavailable')
+  : '-'
 const getEntityName = (id) => allEntities.value.find(e => e.id === id)?.name || `Entity#${id}`
 
 const getRelationTypeTag = (type) => {
@@ -554,9 +558,8 @@ const handleApprove = async () => {
     return
   }
   try {
-    const updated = await entityAPI.approve(entityId.value, entity.value.version)
-    applyEntity(updated)
-    markSaved()
+    await entityAPI.approve(entityId.value, entity.value.version)
+    await loadPage()
     ElMessage.success(t('model.entity.approve_success'))
   } catch (err) {
     ElMessage.error(getModelErrorMessage(err, t, 'model.entity.approve_failed'))
@@ -570,9 +573,8 @@ const handleReopen = async () => {
   }
   try {
     await confirmReturnToDraft(t)
-    const updated = await entityAPI.reopen(entityId.value, entity.value.version)
-    applyEntity(updated)
-    markSaved()
+    await entityAPI.reopen(entityId.value, entity.value.version)
+    await loadPage()
     ElMessage.success(t('model.common.reopen_success'))
   } catch (err) {
     if (err === 'cancel' || err === 'close') return
@@ -886,6 +888,8 @@ const loadPage = async () => {
   editingRelation.value = null
   entity.value = {}
   attributes.value = []
+  elements.value = []
+  elementRevisions.value = new Map()
   relations.value = []
   if (!entityId.value) {
     pageLoading.value = false
@@ -898,13 +902,14 @@ const loadPage = async () => {
     await loadAttributes()
     if (generation !== loadGeneration) return
     const [domainsResult, elementsResult, entitiesResult] = await Promise.allSettled([
-      domainAPI.list(), elementAPI.listAll(), entityAPI.listAll()
+      domainAPI.list(), loadModelElementReferences(elementAPI, attributes.value), entityAPI.listAll()
     ])
     if (generation !== loadGeneration) return
     domains.value = domainsResult.status === 'fulfilled' ? buildBusinessDomainOptions(domainsResult.value || []) : []
-    elements.value = elementsResult.status === 'fulfilled' ? elementsResult.value || [] : []
+    elements.value = elementsResult.status === 'fulfilled' ? elementsResult.value.elements : []
+    elementRevisions.value = elementsResult.status === 'fulfilled' ? elementsResult.value.revisions : new Map()
     allEntities.value = entitiesResult.status === 'fulfilled' ? entitiesResult.value || [] : []
-    if ([domainsResult, elementsResult, entitiesResult].some(result => result.status === 'rejected')) {
+    if ([domainsResult, elementsResult, entitiesResult].some(result => result.status === 'rejected') || elementsResult.value?.unavailable) {
       referenceError.value = t('model.common.reference_data_unavailable')
     }
     routeDataReady = true

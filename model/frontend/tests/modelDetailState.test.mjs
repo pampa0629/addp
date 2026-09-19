@@ -2,6 +2,10 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import {
+  applyModelElementToField,
+  buildModelElementOptions,
+  getModelElementName,
+  loadModelElementReferences,
   buildDDLPreviewRequest,
   buildDWLayerUpdateRequest,
   buildEntityAttributeUpdateRequest,
@@ -12,6 +16,70 @@ import {
   resolvePositiveRouteId,
   snapshotUnsavedState
 } from '../src/utils/modelDetailState.js'
+
+const standardElements = [{
+  id: 51, code: 'person_id', lifecycle_state: 'active',
+  current_revision: { id: 5103, name: '当前名称', status: 'published', data_type: 'string' },
+  draft_revision: { id: 5104, name: '未发布名称', status: 'draft', data_type: 'int' }
+}]
+
+test('model element choices only use active current publications, never working drafts or flat fields', () => {
+  const elements = [...standardElements,
+    { id: 52, code: 'draft_only', lifecycle_state: 'active', draft_revision: { name: '草稿名称' } },
+    { id: 53, code: 'deleting', lifecycle_state: 'deleting', current_revision: standardElements[0].current_revision },
+    { id: 54, code: 'legacy', lifecycle_state: 'active', name: '旧名称', data_type: 'int' }
+  ]
+  assert.deepEqual(buildModelElementOptions(elements), [{ id: 51, label: '当前名称 (person_id)', disabled: false }])
+  assert.deepEqual(buildModelElementOptions(elements, 52)[1], { id: 52, label: 'draft_only', disabled: true })
+})
+
+test('selecting an element fills revision fields and clears the previous length when absent', () => {
+  const form = { name: '旧字段', data_type: 'int', length: 32, nullable: false }
+  applyModelElementToField(form, standardElements, 51)
+  assert.deepEqual(form, { name: '当前名称', data_type: 'string', length: null, nullable: false })
+  applyModelElementToField(form, standardElements, null)
+  assert.equal(form.name, '当前名称')
+  applyModelElementToField(form, [{ ...standardElements[0], current_revision: { ...standardElements[0].current_revision, length: 64 } }], 51)
+  assert.equal(form.length, 64)
+})
+
+test('frozen reference names never follow the current or draft revision', async () => {
+  const calls = []
+  const binding = { element_id: 51, element_revision_id: 5102 }
+  const references = await loadModelElementReferences({
+    listAll: async () => standardElements,
+    getRevision: async (id, revision) => {
+      calls.push([id, revision])
+      return { id: revision, element_id: id, name: '冻结名称', status: 'withdrawn' }
+    }
+  }, [binding, binding, { element_id: 51 }])
+  assert.deepEqual(calls, [[51, 5102]])
+  assert.equal(references.unavailable, false)
+  assert.equal(getModelElementName(binding, references.elements, references.revisions), '冻结名称')
+  assert.equal(getModelElementName({ element_id: 51 }, references.elements, references.revisions), '当前名称')
+})
+
+test('one failed frozen reference preserves other names and does not substitute the current revision', async () => {
+  const references = await loadModelElementReferences({
+    listAll: async () => standardElements,
+    getRevision: async (id, revision) => {
+      if (revision === 5102) throw new Error('forbidden')
+      return { name: '另一个冻结名称' }
+    }
+  }, [{ element_id: 51, element_revision_id: 5102 }, { element_id: 52, element_revision_id: 5201 }])
+  assert.equal(references.unavailable, true)
+  assert.equal(getModelElementName({ element_id: 51, element_revision_id: 5102 }, references.elements, references.revisions), undefined)
+  assert.equal(getModelElementName({ element_id: 52, element_revision_id: 5201 }, references.elements, references.revisions), '另一个冻结名称')
+})
+
+test('frozen names remain readable when the current element catalog fails', async () => {
+  const references = await loadModelElementReferences({
+    listAll: async () => { throw new Error('unavailable') },
+    getRevision: async () => ({ name: '冻结名称' })
+  }, [{ element_id: 51, element_revision_id: 5102 }])
+  assert.equal(references.unavailable, true)
+  assert.equal(getModelElementName({ element_id: 51, element_revision_id: 5102 }, references.elements, references.revisions), '冻结名称')
+})
 
 test('detail route IDs must be positive integers', () => {
   assert.equal(resolvePositiveRouteId('2'), 2)

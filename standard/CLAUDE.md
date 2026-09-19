@@ -549,6 +549,7 @@ Standard 当前使用单一启动迁移入口 `repository.Migrate`：在同一�
 - 术语、数据元、码集和指标详情使用 `/:id` 表达对象身份；详情返回使用明确列表路由，不依赖 `router.back()`。
 - 创建成功进入详情使用 `replace`，列表进入详情和跨标准对象导航使用 `push`。
 - 业务导航统一调用 `frontend/src/utils/moduleNavigation.js`。
+- 数据元详情以 `revision_id` 唯一 query 定位确定修订；省略时选择草稿、当前生效修订、最新历史修订中的首个。显式修订通过精确 GET 读取，失败显示错误且不替换为默认修订。历史选择以 replace 同步 URL，刷新与同组件 query 切换恢复同一修订。跨模块入口共用 `common-frontend` 的 `buildStandardElementRevisionRoute`，owner 内导航共用其 location builder；权限仍由 `standard.element.read` 控制。
 
 文本类型统一使用 `string`，界面显示“文本”，可选最大长度与格式约束；数据元类型选择统一采用“类型名称＋例如”两行选项，选中后显示取值范围或精度说明，使用同一个 `ElementDataTypeSelect` 组件覆盖新建和详情；不要求用户选择数据库存储类型。迁移将已有数据元修订的 `text` 类型编码原位规范化为 `string`，保留修订身份、状态和业务约束；这是类型词汇调整，不创建业务修订，受影响数据元的聚合版本推进一次。历史文档提炼批次保持不可变，旧类型候选须重新提炼后正式化。Standard 的五类标准稳定身份整体移除 `steward_id`，保留归属域、标签及审计操作人。
 

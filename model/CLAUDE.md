@@ -336,6 +336,10 @@ draft ⇄ approved
 
 4. **前端 API 统一入口**: Model API 调用集中在 [frontend/src/api/model.js](frontend/src/api/model.js)；Standard API 使用 Standard 的唯一公开路径。
 
+   实体属性与逻辑字段的数据元选择只消费 Standard `current_revision`；冻结名称通过 `elements/:id/revisions/:revision_id` 读取，不能取 `draft_revision`、旧顶层字段或用当前名称替代历史名称。两个页面共用 `modelDetailState.js` 的引用加载与展示逻辑。实体审批／退回草稿后重载属性和修订引用。对应选择、不可用、历史修订及生命周期交互由既有 `make test-model-frontend` 覆盖。
+
+   冻结修订链接由 `FrozenElementLink` 统一组合共享 Standard route builder 与 Console 导航；无 `standard.element.read` 时禁用，不在 Model 增加标准详情。跨模块地址与无权限浏览器回归由既有前端门禁覆盖。
+
 5. **后端测试**:
 
    ```bash

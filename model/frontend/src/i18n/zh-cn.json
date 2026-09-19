@@ -55,6 +55,7 @@
       "optional": "可选",
       "permission_denied": "当前账号没有访问权限，请联系租户管理员分配对应角色或权限后重试。",
       "reference_data_unavailable": "部分标准引用数据暂不可用，相关筛选或关联选择可能受限，请联系管理员检查数据标准服务状态和对应只读权限。",
+      "element_unavailable": "数据元名称暂不可用",
       "retry": "重试",
       "refresh": "刷新",
       "resource_version_conflict": "资源已被其他用户修改，当前未保存内容已保留。请确认后手动刷新，再重新提交。",

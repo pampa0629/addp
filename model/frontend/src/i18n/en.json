@@ -55,6 +55,7 @@
       "optional": "Optional",
       "permission_denied": "This account does not have access. Ask the tenant administrator to assign the required role or permission, then try again.",
       "reference_data_unavailable": "Some reference data is unavailable. Related filters or association selectors may be limited; ask an administrator to check the Data Standard service and required read permissions.",
+      "element_unavailable": "Data element name unavailable",
       "retry": "Retry",
       "refresh": "Refresh",
       "resource_version_conflict": "This resource was changed by another user. Your unsaved work is preserved. Refresh manually when ready, then submit again.",

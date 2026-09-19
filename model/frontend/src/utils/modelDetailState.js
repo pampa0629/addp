@@ -10,6 +10,53 @@ export const canPerformDraftAction = (status, hasActionPermission) =>
 
 export const snapshotUnsavedState = state => JSON.stringify(state ?? null)
 
+const elementRevisionKey = binding => `${binding.element_id}/${binding.element_revision_id}`
+
+export const loadModelElementReferences = async (api, bindings) => {
+  const frozenBindings = [...new Map(bindings
+    .filter(binding => binding.element_id && binding.element_revision_id)
+    .map(binding => [elementRevisionKey(binding), binding])).values()]
+  const [elementsResult, ...revisionResults] = await Promise.allSettled([
+    api.listAll(),
+    ...frozenBindings.map(binding => api.getRevision(binding.element_id, binding.element_revision_id))
+  ])
+  const revisions = new Map()
+  revisionResults.forEach((result, index) => {
+    if (result.status === 'fulfilled') revisions.set(elementRevisionKey(frozenBindings[index]), result.value)
+  })
+  return {
+    elements: elementsResult.status === 'fulfilled' ? elementsResult.value : [],
+    revisions,
+    unavailable: [elementsResult, ...revisionResults].some(result => result.status === 'rejected')
+  }
+}
+
+export const buildModelElementOptions = (elements, selectedId) => elements.flatMap(element => {
+  const revision = element.current_revision
+  const selectable = element.lifecycle_state === 'active' && revision?.status === 'published'
+  if (!selectable && element.id !== selectedId) return []
+  return [{
+    id: element.id,
+    label: revision ? `${revision.name} (${element.code})` : element.code,
+    disabled: !selectable
+  }]
+})
+
+export const getModelElementName = (binding, elements, revisions) => {
+  if (binding.element_revision_id) return revisions.get(elementRevisionKey(binding))?.name
+  const element = elements.find(item => item.id === binding.element_id)
+  return element?.current_revision?.name || element?.code
+}
+
+export const applyModelElementToField = (form, elements, elementId) => {
+  const element = elements.find(item => item.id === elementId)
+  const revision = element?.current_revision
+  if (element?.lifecycle_state !== 'active' || revision?.status !== 'published') return
+  form.name = revision.name
+  form.data_type = revision.data_type
+  form.length = revision.length ?? null
+}
+
 const buildMaterializationRequest = materialization => {
   const targetParentLocator = String(materialization?.target_parent_locator || '').trim()
   const targetName = String(materialization?.target_name || '').trim()

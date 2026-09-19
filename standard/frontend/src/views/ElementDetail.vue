@@ -9,7 +9,7 @@
           R{{ revision.revision_no }} · {{ statusLabel(revision.status) }}
         </el-tag>
       </div>
-      <div class="actions">
+      <div v-if="!loadError && element.id" class="actions">
         <el-button v-if="editable" type="primary" :loading="savingRevision" @click="saveRevision">
           {{ $t('standard.common.save') }}
         </el-button>
@@ -25,7 +25,8 @@
       </div>
     </div>
 
-    <el-row :gutter="16">
+    <el-alert v-if="loadError" :title="loadError" type="error" :closable="false" />
+    <el-row v-else :gutter="16">
       <el-col :xs="24" :lg="16">
         <el-card shadow="never" class="section">
           <template #header>
@@ -288,7 +289,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft } from '@element-plus/icons-vue'
-import { StatusAnnouncer, useConsolePageDescriptor } from '@common-ui'
+import { StatusAnnouncer, useConsolePageDescriptor, buildStandardElementRevisionLocation } from '@common-ui'
 import { codeSetAPI, domainAPI, elementAPI, unitAPI } from '../api/standard'
 import DocumentPanel from '../components/DocumentPanel.vue'
 import { navigateStandardRoute } from '@/utils/moduleNavigation'
@@ -311,6 +312,8 @@ const { t, locale } = useI18n()
 const { canUpdate, canPublish } = useStandardPermissions('element')
 
 const loading = ref(false)
+const loadError = ref('')
+let loadSequence = 0
 const savingIdentity = ref(false)
 const savingRevision = ref(false)
 const announcement = ref('')
@@ -359,21 +362,30 @@ function setRevision(value) {
 }
 
 async function load() {
+  const sequence = ++loadSequence
+  const elementId = route.params.id
+  const requestedRevision = route.query.revision_id
   loading.value = true
+  loadError.value = ''
+  element.value = {}
+  revisions.value = []
+  setRevision(null)
   try {
-    const [aggregate, history] = await Promise.all([
-      elementAPI.get(route.params.id),
-      elementAPI.listRevisions(route.params.id)
+    if (requestedRevision !== undefined) buildStandardElementRevisionLocation(elementId, requestedRevision)
+    const [aggregate, history, exactRevision] = await Promise.all([
+      elementAPI.get(elementId),
+      elementAPI.listRevisions(elementId),
+      requestedRevision === undefined ? null : elementAPI.getRevision(elementId, requestedRevision)
     ])
+    if (sequence !== loadSequence) return
     element.value = aggregate
     element.value.tags ||= []
     revisions.value = history || []
-    setRevision(aggregate.draft_revision || aggregate.current_revision || history?.[0])
+    setRevision(requestedRevision === undefined ? (aggregate.draft_revision || aggregate.current_revision || history?.[0]) : exactRevision)
   } catch (error) {
-    ElMessage.error(getStandardErrorMessage(error, t, 'standard.common.loadFailed'))
-    goBack()
+    if (sequence === loadSequence) loadError.value = getStandardErrorMessage(error, t, 'standard.common.loadFailed')
   } finally {
-    loading.value = false
+    if (sequence === loadSequence) loading.value = false
   }
 }
 
@@ -504,16 +516,17 @@ async function newDraft() {
       version: element.value.version,
       change_summary: value.trim()
     })
-    await load()
+    await selectRevision(element.value.draft_revision)
   } catch (error) {
     if (!isCanceledInteraction(error)) ElMessage.error(getStandardErrorMessage(error, t))
   }
 }
 
-const selectRevision = item => setRevision(item)
+const selectRevision = item => navigateStandardRoute(router,
+  buildStandardElementRevisionLocation(element.value.id, item.id), { history: 'replace' })
 const goBack = () => navigateStandardRoute(router, '/elements', { history: 'replace' })
 
-watch(() => route.params.id, () => {
+watch(() => [route.params.id, route.query.revision_id], () => {
   load()
   loadOptions()
 }, { immediate: true })

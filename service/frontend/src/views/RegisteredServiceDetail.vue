@@ -30,45 +30,47 @@
       <div class="card">
         <h3>{{ $t('service.registered.sectionBasicInfo') }}</h3>
         <table class="detail-table">
-          <tr>
-            <td class="label">{{ $t('service.registered.serviceNameLabel') }}</td>
-            <td><code>{{ service.service_name }}</code></td>
-          </tr>
-          <tr>
-            <td class="label">{{ $t('service.registered.titleLabel') }}</td>
-            <td>{{ service.title }}</td>
-          </tr>
-          <tr>
-            <td class="label">{{ $t('service.registered.descriptionLabel') }}</td>
-            <td>{{ service.description || '-' }}</td>
-          </tr>
-          <tr>
-            <td class="label">{{ $t('service.registered.keywordsLabel') }}</td>
-            <td>
-              <span v-if="service.keywords && service.keywords.length > 0">
-                <span v-for="kw in service.keywords" :key="kw" class="badge badge-info">
-                  {{ kw }}
+          <tbody>
+            <tr>
+              <td class="label">{{ $t('service.registered.serviceNameLabel') }}</td>
+              <td><code>{{ service.service_name }}</code></td>
+            </tr>
+            <tr>
+              <td class="label">{{ $t('service.registered.titleLabel') }}</td>
+              <td>{{ service.title }}</td>
+            </tr>
+            <tr>
+              <td class="label">{{ $t('service.registered.descriptionLabel') }}</td>
+              <td>{{ service.description || '-' }}</td>
+            </tr>
+            <tr>
+              <td class="label">{{ $t('service.registered.keywordsLabel') }}</td>
+              <td>
+                <span v-if="service.keywords && service.keywords.length > 0">
+                  <span v-for="kw in service.keywords" :key="kw" class="badge badge-info">
+                    {{ kw }}
+                  </span>
                 </span>
-              </span>
-              <span v-else>-</span>
-            </td>
-          </tr>
-          <tr>
-            <td class="label">{{ $t('service.registered.serviceTypeLabel') }}</td>
-            <td>
-              <span class="badge badge-primary">
-                {{ serviceTypeText(service.service_type) }}
-              </span>
-            </td>
-          </tr>
-          <tr>
-            <td class="label">{{ $t('service.registered.colCreatedAt') }}</td>
-            <td>{{ formatDate(service.created_at) }}</td>
-          </tr>
-          <tr>
-            <td class="label">{{ $t('service.registered.updatedAt') }}</td>
-            <td>{{ formatDate(service.updated_at) }}</td>
-          </tr>
+                <span v-else>-</span>
+              </td>
+            </tr>
+            <tr>
+              <td class="label">{{ $t('service.registered.serviceTypeLabel') }}</td>
+              <td>
+                <span class="badge badge-primary">
+                  {{ serviceTypeText(service.service_type) }}
+                </span>
+              </td>
+            </tr>
+            <tr>
+              <td class="label">{{ $t('service.registered.colCreatedAt') }}</td>
+              <td>{{ formatDate(service.created_at) }}</td>
+            </tr>
+            <tr>
+              <td class="label">{{ $t('service.registered.updatedAt') }}</td>
+              <td>{{ formatDate(service.updated_at) }}</td>
+            </tr>
+          </tbody>
         </table>
       </div>
 
@@ -76,33 +78,35 @@
       <div class="card">
         <h3>{{ $t('service.registered.colEndpoint') }}</h3>
         <table class="detail-table">
-          <tr>
-            <td class="label">{{ $t('service.registered.originalEndpoint') }}</td>
-            <td>
-              <div class="endpoint-box">
-                <code>{{ service.endpoint_url }}</code>
-                <button @click="copyToClipboard(service.endpoint_url)" class="btn btn-sm btn-secondary">
-                  {{ $t('service.common.copy') }}
-                </button>
-              </div>
-            </td>
-          </tr>
-          <tr v-if="service.endpoints?.proxy">
-            <td class="label">{{ $t('service.registered.proxyEndpoint') }}</td>
-            <td>
-              <div class="endpoint-box">
-                <code>{{ service.endpoints.proxy }}</code>
-                <button @click="copyToClipboard(service.endpoints.proxy)" class="btn btn-sm btn-secondary">
-                  {{ $t('service.common.copy') }}
-                </button>
-              </div>
-              <div class="help-text">{{ $t('service.registered.proxyHelp') }}</div>
-            </td>
-          </tr>
-          <tr v-if="service.health_check_url">
-            <td class="label">{{ $t('service.registered.healthCheckUrlLabel') }}</td>
-            <td><code>{{ service.health_check_url }}</code></td>
-          </tr>
+          <tbody>
+            <tr>
+              <td class="label">{{ $t('service.registered.originalEndpoint') }}</td>
+              <td>
+                <div class="endpoint-box">
+                  <code>{{ service.endpoint_url }}</code>
+                  <button @click="copyToClipboard(service.endpoint_url)" class="btn btn-sm btn-secondary">
+                    {{ $t('service.common.copy') }}
+                  </button>
+                </div>
+              </td>
+            </tr>
+            <tr v-if="service.endpoints?.proxy">
+              <td class="label">{{ $t('service.registered.proxyEndpoint') }}</td>
+              <td>
+                <div class="endpoint-box">
+                  <code>{{ service.endpoints.proxy }}</code>
+                  <button @click="copyToClipboard(service.endpoints.proxy)" class="btn btn-sm btn-secondary">
+                    {{ $t('service.common.copy') }}
+                  </button>
+                </div>
+                <div class="help-text">{{ $t('service.registered.proxyHelp') }}</div>
+              </td>
+            </tr>
+            <tr v-if="service.health_check_url">
+              <td class="label">{{ $t('service.registered.healthCheckUrlLabel') }}</td>
+              <td><code>{{ service.health_check_url }}</code></td>
+            </tr>
+          </tbody>
         </table>
       </div>
 
@@ -110,21 +114,23 @@
       <div class="card">
         <h3>{{ $t('service.registered.sectionAuthConfig') }}</h3>
         <table class="detail-table">
-          <tr>
-            <td class="label">{{ $t('service.registered.authTypeLabel') }}</td>
-            <td>
-              <span class="badge badge-secondary">
-                {{ authTypeText(service.auth_type) }}
-              </span>
-            </td>
-          </tr>
-          <tr>
-            <td class="label">{{ $t('service.registered.authCredentials') }}</td>
-            <td>
-              <span v-if="service.has_auth_config" class="badge badge-success">{{ $t('service.registered.configured') }}</span>
-              <span v-else class="badge badge-secondary">{{ $t('service.common.notConfigured') }}</span>
-            </td>
-          </tr>
+          <tbody>
+            <tr>
+              <td class="label">{{ $t('service.registered.authTypeLabel') }}</td>
+              <td>
+                <span class="badge badge-secondary">
+                  {{ authTypeText(service.auth_type) }}
+                </span>
+              </td>
+            </tr>
+            <tr>
+              <td class="label">{{ $t('service.registered.authCredentials') }}</td>
+              <td>
+                <span v-if="service.has_auth_config" class="badge badge-success">{{ $t('service.registered.configured') }}</span>
+                <span v-else class="badge badge-secondary">{{ $t('service.common.notConfigured') }}</span>
+              </td>
+            </tr>
+          </tbody>
         </table>
       </div>
 
@@ -132,22 +138,24 @@
       <div class="card">
         <h3>{{ $t('service.registered.healthStatusTitle') }}</h3>
         <table class="detail-table">
-          <tr>
-            <td class="label">{{ $t('service.registered.currentStatus') }}</td>
-            <td>
-              <span class="badge" :class="statusClass(service.status)">
-                {{ statusText(service.status) }}
-              </span>
-            </td>
-          </tr>
-          <tr v-if="service.error_message">
-            <td class="label">{{ $t('service.registered.errorMessage') }}</td>
-            <td class="error-message">{{ service.error_message }}</td>
-          </tr>
-          <tr>
-            <td class="label">{{ $t('service.registered.colLastChecked') }}</td>
-            <td>{{ formatDate(service.last_checked_at) }}</td>
-          </tr>
+          <tbody>
+            <tr>
+              <td class="label">{{ $t('service.registered.currentStatus') }}</td>
+              <td>
+                <span class="badge" :class="statusClass(service.status)">
+                  {{ statusText(service.status) }}
+                </span>
+              </td>
+            </tr>
+            <tr v-if="service.error_message">
+              <td class="label">{{ $t('service.registered.errorMessage') }}</td>
+              <td class="error-message">{{ service.error_message }}</td>
+            </tr>
+            <tr>
+              <td class="label">{{ $t('service.registered.colLastChecked') }}</td>
+              <td>{{ formatDate(service.last_checked_at) }}</td>
+            </tr>
+          </tbody>
         </table>
       </div>
 

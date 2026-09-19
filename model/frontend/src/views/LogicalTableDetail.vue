@@ -167,10 +167,8 @@
             </el-table-column>
             <el-table-column :label="t('model.field.element')" min-width="190">
               <template #default="{ row }">
-                <span>{{ getElementName(row.element_id) || '-' }}</span>
-                <el-tag v-if="row.element_revision_id" type="info" size="small" class="revision-tag">
-                  {{ t('model.field.element_revision') }} #{{ row.element_revision_id }}
-                </el-tag>
+                <span>{{ getElementName(row) }}</span>
+                <FrozenElementLink :binding="row" :label="t('model.field.element_revision')" />
               </template>
             </el-table-column>
             <el-table-column :label="t('model.field.constraints')" width="140">
@@ -389,10 +387,11 @@
             @change="handleElementChange"
           >
             <el-option
-              v-for="e in elements"
+              v-for="e in elementOptions"
               :key="e.id"
-              :label="`${e.name} (${e.code})`"
+              :label="e.label"
               :value="e.id"
+              :disabled="e.disabled"
             />
           </el-select>
         </el-form-item>
@@ -491,6 +490,7 @@ import TableRelationEditor from '../components/TableRelationEditor.vue'
 import ConceptMappingEditor from '../components/ConceptMappingEditor.vue'
 import MetricImplementationLinks from '../components/MetricImplementationLinks.vue'
 import LogicalTableConstraints from '../components/LogicalTableConstraints.vue'
+import FrozenElementLink from '../components/FrozenElementLink.vue'
 import { useI18n } from 'vue-i18n'
 import { confirmReturnToDraft } from '../utils/lifecycleActions'
 import { navigateModelRoute } from '../utils/moduleNavigation'
@@ -498,6 +498,10 @@ import { useAuthStore } from '../store/auth'
 import { resolveLogicalTableListRouteState, resolveLogicalTableDetailRouteState } from '../utils/routeState'
 import { getModelErrorMessage } from '../utils/apiError'
 import {
+  applyModelElementToField,
+  buildModelElementOptions,
+  getModelElementName,
+  loadModelElementReferences,
   buildDDLPreviewRequest,
   buildLogicalFieldUpdateRequest,
   buildLogicalTableUpdateRequest,
@@ -577,7 +581,11 @@ const fields = ref([])
 const domains = ref([])
 const layers = ref([])
 const elements = ref([])
-const getElementName = id => elements.value.find(element => element.id === id)?.name
+const elementRevisions = ref(new Map())
+const elementOptions = computed(() => buildModelElementOptions(elements.value, fieldForm.element_id))
+const getElementName = row => row.element_id
+  ? getModelElementName(row, elements.value, elementRevisions.value) || t('model.common.element_unavailable')
+  : '-'
 const ddlContent = ref('')
 
 const isSupportedPhysicalTargetEngine = engine =>
@@ -874,13 +882,7 @@ const openFieldDialog = (field = null) => {
 }
 
 const handleElementChange = (elementId) => {
-  if (!elementId) return
-  const el = elements.value.find(e => e.id === elementId)
-  if (el) {
-    fieldForm.name = el.name
-    fieldForm.data_type = el.data_type
-    if (el.length) fieldForm.length = el.length
-  }
+  applyModelElementToField(fieldForm, elements.value, elementId)
 }
 
 const handleFieldSubmit = async () => {
@@ -945,6 +947,8 @@ const loadPage = async () => {
   editingField.value = null
   table.value = {}
   fields.value = []
+  elements.value = []
+  elementRevisions.value = new Map()
   if (!tableId.value) {
     pageLoading.value = false
     pageError.value = t('model.common.invalid_detail_id')
@@ -956,7 +960,7 @@ const loadPage = async () => {
     await loadFields()
     const [domainsResult, elementsResult, layersResult, enginesResult] = await Promise.allSettled([
       domainAPI.list(),
-      elementAPI.listAll(),
+      loadModelElementReferences(elementAPI, fields.value),
       dwLayerAPI.list(),
       listResourceTreeEngines('/api/v1/meta', {
         engineFilter: isSupportedPhysicalTargetEngine
@@ -964,10 +968,11 @@ const loadPage = async () => {
     ])
     if (generation !== loadGeneration) return
     domains.value = domainsResult.status === 'fulfilled' ? buildBusinessDomainOptions(domainsResult.value || []) : []
-    elements.value = elementsResult.status === 'fulfilled' ? elementsResult.value || [] : []
+    elements.value = elementsResult.status === 'fulfilled' ? elementsResult.value.elements : []
+    elementRevisions.value = elementsResult.status === 'fulfilled' ? elementsResult.value.revisions : new Map()
     layers.value = layersResult.status === 'fulfilled' ? layersResult.value || [] : []
     physicalTargetEngines.value = enginesResult.status === 'fulfilled' ? enginesResult.value || [] : []
-    if ([domainsResult, elementsResult, layersResult, enginesResult].some(result => result.status === 'rejected')) {
+    if ([domainsResult, elementsResult, layersResult, enginesResult].some(result => result.status === 'rejected') || elementsResult.value?.unavailable) {
       referenceError.value = t('model.common.reference_data_unavailable')
     }
     markSaved()

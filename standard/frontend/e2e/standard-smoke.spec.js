@@ -737,6 +737,50 @@ test('shows compiled standard constraints without a uniqueness editor', async ({
   await expect(rules.getByRole('checkbox')).toHaveCount(0)
 })
 
+test('exact historical element revision survives reload and history selection updates the URL', async ({ page }) => {
+  await installMockBackend(page, {
+    elements: [{ id: 41, code: 'person_id', name: '当前人员标识', data_type: 'string', status: 'approved' }],
+    elementHistory: [{ id: 410, element_id: 41, revision_no: 1, name: '冻结的人员标识', data_type: 'string', status: 'withdrawn', definition: '审批时定义' }]
+  })
+  await page.goto('/elements/41?revision_id=410')
+  await expect(page.getByRole('heading', { name: '冻结的人员标识', exact: true })).toBeVisible()
+  await expect(page.getByRole('textbox', { name: '中文名称', exact: true })).toBeDisabled()
+  await page.reload()
+  await expect(page.getByRole('heading', { name: '冻结的人员标识', exact: true })).toBeVisible()
+  await page.getByText('R1 · 当前人员标识', { exact: true }).click()
+  await expect(page).toHaveURL(/revision_id=411$/)
+  await expect(page.getByRole('heading', { name: '当前人员标识', exact: true })).toBeVisible()
+  await page.getByText('R1 · 冻结的人员标识', { exact: true }).click()
+  await expect(page).toHaveURL(/revision_id=410$/)
+  await expect(page.getByRole('heading', { name: '冻结的人员标识', exact: true })).toBeVisible()
+})
+
+test('creating a draft while viewing a frozen revision opens the new draft identity', async ({ page }) => {
+  await installMockBackend(page, {
+    elements: [{ id: 41, code: 'person_id', name: '当前人员标识', data_type: 'string', status: 'approved' }]
+  })
+  await page.goto('/elements/41?revision_id=411')
+  await page.getByRole('button', { name: '创建新草稿', exact: true }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByRole('textbox').fill('修订数据元说明')
+  await dialog.getByRole('button', { name: '确定', exact: true }).click()
+  await expect(page).toHaveURL(/\/elements\/41\?revision_id=412$/)
+  await expect(page.getByRole('textbox', { name: '中文名称', exact: true })).toBeEditable()
+})
+
+for (const [revision, forbidden, error] of [['999', false, '数据元修订不存在'], ['410', true, '无权读取此数据元修订'], ['invalid', false, '加载失败']]) {
+  test(`exact element revision fails closed: ${revision}, forbidden=${forbidden}`, async ({ page }) => {
+    await installMockBackend(page, {
+      elements: [{ id: 41, code: 'person_id', name: '不能替代历史的当前名称', data_type: 'string', status: 'approved' }],
+      forbidElementRevision: forbidden
+    })
+    await page.goto(`/elements/41?revision_id=${revision}`)
+    await expect(page.getByRole('alert')).toContainText(error)
+    await expect(page.getByRole('heading', { name: '不能替代历史的当前名称' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: '新建修订', exact: true })).toHaveCount(0)
+  })
+}
+
 test('submits and publishes a draft data element revision', async ({ page }) => {
   const backend = await installMockBackend(page, {
     elements: [{
@@ -1556,8 +1600,19 @@ async function installMockBackend(page, options = {}) {
     if (path === '/api/v1/standard/elements/41') return fulfillJSON(route, elementAggregates.find(item => item.id === 41) || {})
     if (path === '/api/v1/standard/elements/41/revisions') {
       const element = elementAggregates.find(item => item.id === 41)
+      if (request.method() === 'POST') {
+        element.draft_revision = { ...element.current_revision, id: 412, revision_no: 2, status: 'draft', change_summary: request.postDataJSON().change_summary }
+        element.draft_revision_id = 412
+        element.version += 1
+        return fulfillJSON(route, element)
+      }
       const revision = element?.draft_revision || element?.current_revision
-      return fulfillJSON(route, revision ? [revision] : [])
+      return fulfillJSON(route, [...(options.elementHistory || []), ...(revision ? [revision] : [])])
+    }
+    if (request.method() === 'GET' && /^\/api\/v1\/standard\/elements\/41\/revisions\/\d+$/.test(path)) {
+      const element = elementAggregates.find(item => item.id === 41)
+      const revision = [...(options.elementHistory || []), element?.draft_revision, element?.current_revision].find(item => item?.id === Number(path.split('/').at(-1)))
+      return route.fulfill({ status: options.forbidElementRevision ? 403 : revision ? 200 : 404, contentType: 'application/json', body: JSON.stringify(options.forbidElementRevision ? { error: '无权读取此数据元修订' } : revision || { error: '数据元修订不存在' }) })
     }
     if (path === '/api/v1/standard/elements/41/documents') return fulfillJSON(route, [])
     if (path === '/api/v1/standard/code-sets') {

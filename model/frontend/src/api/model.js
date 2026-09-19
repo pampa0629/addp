@@ -45,6 +45,9 @@ export const elementAPI = {
   },
   listAll(params) {
     return listAll(standardClient, '/standard/elements', params)
+  },
+  getRevision(elementId, revisionId) {
+    return standardClient.get(`/standard/elements/${elementId}/revisions/${revisionId}`)
   }
 }
 

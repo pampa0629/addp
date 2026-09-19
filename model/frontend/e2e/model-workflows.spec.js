@@ -623,9 +623,98 @@ async function installDimensionalModelBackend(page) {
   return requests
 }
 
+const REVISIONED_ELEMENTS = [{
+  id: 51, code: 'person_id', lifecycle_state: 'active',
+  current_revision: { id: 5103, name: '当前人员标识', status: 'published', data_type: 'string' },
+  draft_revision: { id: 5104, name: '尚未发布的人员标识', status: 'draft', data_type: 'int' }
+}, {
+  id: 52, code: 'draft_only', lifecycle_state: 'active',
+  draft_revision: { id: 5201, name: '仅草稿数据元', status: 'draft', data_type: 'int' }
+}]
+
+test('logical field element selection uses the current published revision and clears stale length', async ({ page }) => {
+  await installMockBackend(page, {
+    draftTable: true, lifecycle: true, elements: REVISIONED_ELEMENTS,
+    permissions: [...DEFAULT_PERMISSIONS, 'model.logical_model.update', 'model.logical_model.create']
+  })
+  await page.goto('/logical-tables/2')
+  await expect(page.getByRole('cell', { name: '当前人员标识', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '添加字段', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: '添加字段' })
+  await dialog.getByRole('spinbutton').fill('32')
+  const elementSelect = dialog.locator('.el-select').filter({ has: page.getByRole('combobox', { name: '关联数据元', exact: true }) })
+  await elementSelect.click()
+  await expect(page.getByRole('option', { name: '当前人员标识 (person_id)', exact: true })).toBeVisible()
+  await expect(page.getByRole('option').filter({ hasText: /undefined|尚未发布|仅草稿/ })).toHaveCount(0)
+  await page.getByRole('option', { name: '当前人员标识 (person_id)', exact: true }).click()
+  await expect(dialog.getByRole('textbox', { name: '字段显示名', exact: false })).toHaveValue('当前人员标识')
+  await expect(dialog.locator('.el-select').filter({ has: page.getByRole('combobox', { name: '数据类型', exact: false }) })).toContainText('string')
+  await expect(dialog.getByRole('spinbutton')).toHaveValue('')
+})
+
+for (const kind of ['logical-table', 'entity']) {
+  test(`${kind} displays the exact frozen element name even after withdrawal and replacement`, async ({ page }) => {
+    await installMockBackend(page, {
+      lifecycle: true, elements: REVISIONED_ELEMENTS,
+      attributes: [{ id: 71, name: '人员编号', column_name: 'person_id', data_type: 'string', element_id: 51, element_revision_id: 5102 }],
+      approvedEntity: true
+    })
+    await page.goto(kind === 'logical-table' ? '/logical-tables/2' : '/entities/7?tab=attributes')
+    await expect(page.getByRole('cell').filter({ hasText: '审批时的数据元名称' })).toBeVisible()
+    await expect(page.getByRole('cell').filter({ hasText: '当前人员标识' })).toHaveCount(0)
+    await expect(page.getByText('冻结修订 #5102', { exact: true })).toBeVisible()
+  })
+}
+
+for (const kind of ['logical-table', 'entity']) {
+  test(`${kind} opens its frozen standard revision through Console`, async ({ page }) => {
+    await installMockBackend(page, {
+      lifecycle: true, elements: REVISIONED_ELEMENTS, approvedEntity: true,
+      attributes: [{ id: 71, name: '人员编号', column_name: 'person_id', data_type: 'string', element_id: 51, element_revision_id: 5102 }],
+      permissions: [...DEFAULT_PERMISSIONS, 'standard.element.read']
+    })
+    await page.route('**/standard/elements/51?revision_id=5102', route => route.fulfill({ contentType: 'text/html', body: '<h1>Frozen revision destination</h1>' }))
+    await page.goto(kind === 'logical-table' ? '/logical-tables/2' : '/entities/7?tab=attributes')
+    await page.getByRole('button', { name: '冻结修订 #5102', exact: true }).click()
+    await expect(page).toHaveURL(/\/standard\/elements\/51\?revision_id=5102$/)
+  })
+}
+
+test('frozen standard navigation is disabled without element read permission', async ({ page }) => {
+  await installMockBackend(page, { lifecycle: true, elements: REVISIONED_ELEMENTS })
+  await page.goto('/logical-tables/2')
+  await expect(page.getByRole('button', { name: '冻结修订 #5102', exact: true })).toBeDisabled()
+})
+
+test('failed frozen element lookup is explicit and never displays the current name', async ({ page }) => {
+  await installMockBackend(page, { lifecycle: true, elements: REVISIONED_ELEMENTS, forbidElementRevision: true })
+  await page.goto('/logical-tables/2')
+  await expect(page.getByRole('cell').filter({ hasText: '数据元名称暂不可用' })).toBeVisible()
+  await expect(page.getByRole('cell').filter({ hasText: '当前人员标识' })).toHaveCount(0)
+  await expect(page.getByRole('alert').filter({ hasText: '部分标准引用数据暂不可用' })).toBeVisible()
+})
+
+test('entity approval and reopening reload attribute revision names immediately', async ({ page }) => {
+  await installMockBackend(page, {
+    elements: REVISIONED_ELEMENTS, entityElementLifecycle: true,
+    permissions: [...DEFAULT_PERMISSIONS, 'model.entity.approve', 'model.entity.update']
+  })
+  await page.goto('/entities/7?tab=attributes')
+  await expect(page.getByRole('cell', { name: '当前人员标识', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '审批通过', exact: true }).click()
+  await expect(page.getByRole('cell').filter({ hasText: '审批时的数据元名称' })).toBeVisible()
+  await expect(page.getByText('冻结修订 #5102', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '退回草稿', exact: true }).click()
+  await page.getByRole('dialog', { name: '退回草稿', exact: true }).getByRole('button', { name: '退回草稿', exact: true }).click()
+  await expect(page.getByRole('cell', { name: '当前人员标识', exact: true })).toBeVisible()
+  await expect(page.getByText('冻结修订 #5102', { exact: true })).toHaveCount(0)
+  await expect(page.getByText('未保存', { exact: true })).toHaveCount(0)
+})
+
 async function installMockBackend(target, options = {}) {
   let entityListRequests = 0
   let entity = structuredClone(ENTITIES[0])
+  if (options.approvedEntity) entity.status = 'approved'
   let logicalTable = structuredClone(LOGICAL_TABLE)
   let conceptMappings = structuredClone(OUTDOOR_CONCEPT_MAPPINGS)
   let reopenRequests = 0
@@ -695,7 +784,11 @@ async function installMockBackend(target, options = {}) {
     }
     if (path === '/api/v1/model/logical-tables') return fulfillJSON(route, { data: [logicalTable], total: 1 })
     if (path === '/api/v1/standard/domains') return fulfillJSON(route, DOMAINS)
-    if (path === '/api/v1/standard/elements') return fulfillJSON(route, { data: [], total: 0 })
+    if (path === '/api/v1/standard/elements') return fulfillJSON(route, { data: options.elements || [], total: options.elements?.length || 0 })
+    if (path === '/api/v1/standard/elements/51/revisions/5102') {
+      if (options.forbidElementRevision) return fulfillJSON(route, { error: '无权读取修订', error_code: 'permission_denied' }, 403)
+      return fulfillJSON(route, { id: 5102, element_id: 51, name: '审批时的数据元名称', data_type: 'string', status: 'withdrawn' })
+    }
     if (path === '/api/v1/model/entities/export-mermaid') {
       mermaidExports.push(Object.fromEntries(url.searchParams))
       return fulfillJSON(route, { markdown: MERMAID_SNAPSHOT, scope: url.searchParams.has('domain_id') ? 'domain' : 'all', domain_code: url.searchParams.has('domain_id') ? 'outdoor' : undefined })
@@ -742,7 +835,15 @@ async function installMockBackend(target, options = {}) {
     if (path === '/api/v1/model/entities/70/attributes' && options.conceptMappings) {
       return fulfillJSON(route, [{ id: 701, entity_id: 70, name: '参与人编号', column_name: 'person_id', data_type: 'string' }])
     }
-    if (path === '/api/v1/model/entities/7/attributes') return fulfillJSON(route, [])
+    if (path === '/api/v1/model/entities/7/approve' || path === '/api/v1/model/entities/7/reopen') {
+      entity.status = path.endsWith('/approve') ? 'approved' : 'draft'
+      entity.version += 1
+      return fulfillJSON(route, entity)
+    }
+    if (path === '/api/v1/model/entities/7/attributes') return fulfillJSON(route, options.entityElementLifecycle ? [{
+      id: 71, name: '人员编号', column_name: 'person_id', data_type: 'string', element_id: 51,
+      element_revision_id: entity.status === 'approved' ? 5102 : null
+    }] : options.attributes || [])
     if (path === '/api/v1/model/entities/7' && request.method() === 'GET') {
       return fulfillJSON(route, entity)
     }

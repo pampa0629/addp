@@ -121,6 +121,8 @@ await syncConsoleRoute('/manager/data-explorer?locator=...', { history: 'replace
 
 ### Console 页面描述与最近访问
 
+数据元冻结引用使用 `buildStandardElementRevisionRoute(elementId, revisionId)` 构造唯一公开地址，再调用 `openConsoleRoute()`。Standard 页内历史选择使用同一契约的 `buildStandardElementRevisionLocation()`；两个 ID 必须为正整数，禁止跳到默认当前修订替代历史引用。
+
 Console 只自动记录侧边栏中的固定菜单路由。固定菜单的短标签若依赖侧边栏模块上下文，Console 配置必须另设全局语境下可独立识别的 `recentLabel`。详情、工作台、任务和执行等动态页面必须由业务模块在对象加载完成后通过 `useConsolePageDescriptor()` 提供页面语义；Console 不解析业务路由，也不跨模块查询对象名称。
 
 ```js

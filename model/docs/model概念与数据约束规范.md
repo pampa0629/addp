@@ -88,7 +88,11 @@ EntityAttribute 与 LogicalField 在草稿阶段只维护长期引用 `element_i
 
 审批后的 DDL、目标物理表、质量规则和历史展示必须以被冻结的 `element_revision_id` 为语义事实，不得动态跟随 Standard 后续生效修订。退回草稿聚合时，Model 在同一事务中把聚合转回 `draft` 并清空所属属性或字段的 `element_revision_id`；再次审批重新按新的统一审批时点解析。`element_revision_id` 是审批快照，不接受前端写入，也不建立绕过聚合审批的单独更新接口。
 
+前端数据元候选使用 Standard 聚合响应的 `current_revision`，只允许选择 `lifecycle_state=active` 且存在当前已发布修订的数据元，不消费 `draft_revision` 或旧顶层名称、类型字段。逻辑字段选择数据元时从当前修订带入名称、类型和长度，未定义长度时清空原长度。已审批实体属性与逻辑字段按 `element_id + element_revision_id` 调用 Standard 精确修订 GET 展示冻结名称；相同引用在一次页面加载内去重。读取失败明确提示，不用当前修订替代历史修订，也不改写 Model 引用。
+
 引入冻结字段时，历史已审批聚合如果含有 `element_id`，不能仅凭当前 Standard 状态反推当初审批时使用的精确修订。迁移必须将这类聚合转回 `draft` 并推进版本，由用户在确认后显式重新审批；禁止用迁移时的当前修订伪造历史快照。
+
+冻结修订的查看入口通过共享 Console 导航进入 Standard 数据元详情的 `revision_id` 确定修订，不在 Model 复制标准详情或维护第二份修订。入口要求 `standard.element.read`；查看不改变模型状态或冻结引用。
 
 ### Standard 引用删除屏障
 
