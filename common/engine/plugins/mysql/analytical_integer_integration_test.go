@@ -3,6 +3,7 @@ package mysql
 import (
 	"database/sql"
 	"fmt"
+	"github.com/addp/common/engine/plugins/shared/analytical"
 	"testing"
 
 	"github.com/addp/common/datatype"
@@ -20,7 +21,7 @@ func TestIntegrationMySQLLosslessAnalyticalInteger(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer conn.Close()
-	expr, err := sqlcompile.LosslessInteger(sqlcompile.CheckedExpression{SQL: "v", Type: datatype.FieldTypeDecimal}, analyticalIntegerDialect{})
+	expr, err := sqlcompile.LosslessInteger(sqlcompile.CheckedExpression{SQL: "v", Type: datatype.FieldTypeDecimal}, analytical.MySQLCompatibleExpressionDialect{})
 	if err != nil {
 		t.Fatal(err)
 	}

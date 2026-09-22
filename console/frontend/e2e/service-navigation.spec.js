@@ -113,3 +113,55 @@ test('standalone Service renders exactly the five Console entries and supports b
   await expect(page.getByRole('menubar')).toHaveCount(1)
   await expect(page.getByRole('menuitem', { name: '服务目录', exact: true })).toHaveClass(/is-active/)
 })
+
+const secondRegistered = { ...registered, id: 50, service_name: 'second_registered', title: 'Second registered service' }
+
+async function switchStandaloneDetail(page, id) {
+  await page.evaluate(id => { window.location.hash = `/services/${id}` }, id)
+  await expect(page).toHaveURL(`${standaloneURL}#/services/${id}`)
+}
+
+test('reused registered detail switches identity and restores it through back and forward', async ({ page }) => {
+  await page.route('**/api/v1/service/registered/50', route => route.fulfill({ json: secondRegistered }))
+  await page.goto(`${standaloneURL}#/services/49`)
+  const detail = page.locator('.registered-service-detail')
+  await expect(detail.getByRole('heading', { name: registered.title, exact: true })).toBeVisible()
+  await detail.evaluate(element => element.dataset.reusedDetail = 'original')
+  await switchStandaloneDetail(page, 50)
+  await expect(detail.getByRole('heading', { name: secondRegistered.title, exact: true })).toBeVisible()
+  await expect(detail).toHaveAttribute('data-reused-detail', 'original')
+  await page.goBack()
+  await expect(page).toHaveURL(`${standaloneURL}#/services/49`)
+  await expect(detail.getByRole('heading', { name: registered.title, exact: true })).toBeVisible()
+  await page.goForward()
+  await expect(page).toHaveURL(`${standaloneURL}#/services/50`)
+  await expect(detail.getByRole('heading', { name: secondRegistered.title, exact: true })).toBeVisible()
+  await expect(detail).toHaveAttribute('data-reused-detail', 'original')
+})
+
+for (const outcome of ['success', 'failure']) {
+  test(`registered detail discards a previous identity's late ${outcome} while the next identity loads`, async ({ page }) => {
+    let oldRequest, nextRequest
+    await page.route('**/api/v1/service/registered/49', route => { oldRequest = route })
+    await page.route('**/api/v1/service/registered/50', route => { nextRequest = route })
+    await page.goto(`${standaloneURL}#/services/49`)
+    await expect.poll(() => Boolean(oldRequest)).toBe(true)
+    await switchStandaloneDetail(page, 50)
+    await expect.poll(() => Boolean(nextRequest)).toBe(true)
+    const oldFinished = page.waitForEvent('requestfinished', request => new URL(request.url()).pathname.endsWith('/registered/49'))
+    await oldRequest.fulfill(outcome === 'success'
+      ? { json: registered }
+      : { status: 500, json: { error: 'Old identity failed' } })
+    await oldFinished
+    const detail = page.locator('.registered-service-detail')
+    await expect(detail.locator('.loading')).toBeVisible()
+    for (const label of ['刷新元数据', '健康检查', '编辑', '删除']) {
+      await expect(detail.getByRole('button', { name: label, exact: true })).toBeDisabled()
+    }
+    await nextRequest.fulfill({ json: secondRegistered })
+    await expect(detail.getByRole('heading', { name: secondRegistered.title, exact: true })).toBeVisible()
+    await expect(page).toHaveURL(`${standaloneURL}#/services/50`)
+    await expect(page.locator('.el-message--error')).toHaveCount(0)
+    await expect(detail.getByRole('button', { name: '删除', exact: true })).toBeEnabled()
+  })
+}

@@ -2,6 +2,7 @@ package repository
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -11,6 +12,113 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
+
+func TestPostgresGlossaryMappingsPreserveIdentityLifecycle(t *testing.T) {
+	dsn := os.Getenv("STANDARD_POSTGRES_TEST_DSN")
+	if dsn == "" {
+		t.Skip("STANDARD_POSTGRES_TEST_DSN is not set")
+	}
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := Migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	tx := db.Begin()
+	if tx.Error != nil {
+		t.Fatal(tx.Error)
+	}
+	defer tx.Rollback()
+	tenantID := time.Now().UnixNano()
+	glossary := models.Glossary{TenantID: tenantID, ScopeType: "tenant_common", Code: "mapping_test", CreatedBy: 1, Version: 1, LifecycleState: "active"}
+	if err := tx.Create(&glossary).Error; err != nil {
+		t.Fatal(err)
+	}
+	past, future, expired := time.Now().Add(-2*time.Hour), time.Now().Add(2*time.Hour), time.Now().Add(-time.Hour)
+	ids := []int64{}
+	for i, tc := range []struct {
+		status   string
+		from, to *time.Time
+	}{
+		{"draft", nil, nil}, {"in_review", nil, nil}, {"withdrawn", &past, nil},
+		{"published", &future, nil}, {"published", &past, &expired}, {"published", &past, nil},
+	} {
+		element := models.Element{TenantID: tenantID, ScopeType: "tenant_common", Code: fmt.Sprintf("mapping_%d", i), CreatedBy: 1, Version: 1, LifecycleState: "active"}
+		if err := tx.Create(&element).Error; err != nil {
+			t.Fatal(err)
+		}
+		revision := models.ElementRevision{ElementID: element.ID, RevisionNo: 1, Name: element.Code, Definition: "mapping test", DataType: "string", ValueDomainKind: "unrestricted", Status: tc.status, EffectiveFrom: tc.from, EffectiveTo: tc.to, ChangeSummary: "initial", CreatedBy: 1}
+		if err := tx.Create(&revision).Error; err != nil {
+			t.Fatal(err)
+		}
+		if i == 5 {
+			next := revision
+			next.ID, next.RevisionNo, next.Status, next.Name = 0, 2, "draft", "future draft must not replace effective name"
+			next.EffectiveFrom, next.EffectiveTo = nil, nil
+			if err := tx.Create(&next).Error; err != nil {
+				t.Fatal(err)
+			}
+		}
+		ids = append(ids, element.ID)
+	}
+	repo := NewGlossaryRepository(tx)
+	if err := repo.UpdateElements(glossary.ID, tenantID, 1, 1, ids); err != nil {
+		t.Fatal(err)
+	}
+	items, err := repo.GetMappedElements(glossary.ID, tenantID)
+	if err != nil || len(items) != len(ids) {
+		t.Fatalf("mapped=%+v err=%v", items, err)
+	}
+	for i, item := range items {
+		if item.ID != ids[i] || item.Name != fmt.Sprintf("mapping_%d", i) || item.IsEffective != (i == 5) || item.RevisionNo == nil || *item.RevisionNo != 1 {
+			t.Fatalf("mapping %d = %+v", i, item)
+		}
+	}
+	// Lifecycle changes do not change mapping membership or make a historical revision current.
+	if err := tx.Model(&models.ElementRevision{}).Where("element_id = ? AND revision_no = 1", ids[5]).Update("status", "withdrawn").Error; err != nil {
+		t.Fatal(err)
+	}
+	items, err = repo.GetMappedElements(glossary.ID, tenantID)
+	if err != nil || len(items) != len(ids) || items[5].IsEffective || items[5].RevisionNo == nil || *items[5].RevisionNo != 2 {
+		t.Fatalf("after withdrawal=%+v err=%v", items, err)
+	}
+	retained := make([]int64, len(items))
+	for i, item := range items {
+		retained[i] = item.ID
+	}
+	if err := repo.UpdateElements(glossary.ID, tenantID, 1, 2, retained); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.UpdateElements(glossary.ID, tenantID, 1, 2, nil); !errors.Is(err, ErrVersionConflict) {
+		t.Fatalf("stale update=%v", err)
+	}
+	if items, err := repo.GetMappedElements(glossary.ID, tenantID); err != nil || len(items) != len(ids) {
+		t.Fatalf("round trip lost identities: %+v %v", items, err)
+	}
+	if items, err := repo.GetMappedElements(glossary.ID, tenantID+1); err != nil || len(items) != 0 {
+		t.Fatalf("cross tenant read: %+v %v", items, err)
+	}
+	// Even an identity without a revision must not vanish from the editable set.
+	bare := models.Element{TenantID: tenantID, ScopeType: "tenant_common", Code: "mapping_bare", CreatedBy: 1, Version: 1, LifecycleState: "active"}
+	if err := tx.Create(&bare).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Create(&models.GlossaryElementMapping{GlossaryID: glossary.ID, ElementID: bare.ID}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Model(&bare).Update("lifecycle_state", "deleting").Error; err != nil {
+		t.Fatal(err)
+	}
+	items, err = repo.GetMappedElements(glossary.ID, tenantID)
+	if err != nil || len(items) != len(ids)+1 {
+		t.Fatalf("bare identity: %+v %v", items, err)
+	}
+	last := items[len(items)-1]
+	if last.Name != bare.Code || last.RevisionID != nil || last.RevisionNo != nil || last.Status != "" || last.IsEffective || last.LifecycleState != "deleting" {
+		t.Fatalf("bare projection=%+v", last)
+	}
+}
 
 func TestMigrateAgainstPostgres(t *testing.T) {
 	dsn := os.Getenv("STANDARD_POSTGRES_TEST_DSN")

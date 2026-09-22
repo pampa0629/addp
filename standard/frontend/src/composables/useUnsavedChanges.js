@@ -1,53 +1,29 @@
-import { computed, onBeforeUnmount, onMounted, ref, toValue } from 'vue'
-import { onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router'
-import { ElMessageBox } from 'element-plus'
+import { computed, ref, toValue } from 'vue'
+import { useRouter } from 'vue-router'
+import { useUnsavedChangesGuard } from '@common-ui'
 
 export const snapshotUnsavedState = (state) => JSON.stringify(state ?? null)
 
-export function useUnsavedChanges({ state, t }) {
-  const savedSnapshot = ref('')
+export function useUnsavedChanges({ state }) {
+  const savedSnapshots = ref({})
   const ready = ref(false)
-  const currentSnapshot = computed(() => snapshotUnsavedState(toValue(state)))
-  const isDirty = computed(() => ready.value && savedSnapshot.value !== currentSnapshot.value)
+  const currentSnapshots = computed(() => Object.fromEntries(
+    Object.entries(toValue(state)).map(([key, value]) => [key, snapshotUnsavedState(value)])
+  ))
+  const isDirty = computed(() => ready.value && Object.keys(currentSnapshots.value)
+    .some(key => savedSnapshots.value[key] !== currentSnapshots.value[key]))
 
-  const markSaved = () => {
-    savedSnapshot.value = currentSnapshot.value
+  const markSaved = (section) => {
+    savedSnapshots.value = section
+      ? { ...savedSnapshots.value, [section]: currentSnapshots.value[section] }
+      : { ...currentSnapshots.value }
     ready.value = true
   }
 
-  const confirmUnsavedRouteChange = async () => {
-    if (!isDirty.value) return true
-    try {
-      await ElMessageBox.confirm(
-        t('standard.common.unsavedConfirm'),
-        t('standard.common.unsavedTitle'),
-        {
-          type: 'warning',
-          customClass: 'addp-message-box',
-          confirmButtonText: t('standard.common.leave'),
-          cancelButtonText: t('standard.common.continueEditing')
-        }
-      )
-      return true
-    } catch {
-      return false
-    }
-  }
-
-  const handleBeforeUnload = (event) => {
-    if (!isDirty.value) return
-    event.preventDefault()
-    event.returnValue = ''
-  }
-
-  onBeforeRouteLeave(confirmUnsavedRouteChange)
-  onBeforeRouteUpdate((to, from) => {
-    if (String(to.params.id || '') === String(from.params.id || '')) return true
-    return confirmUnsavedRouteChange()
+  useUnsavedChangesGuard({
+    router: useRouter(),
+    isDirty: () => isDirty.value
   })
-
-  onMounted(() => window.addEventListener('beforeunload', handleBeforeUnload))
-  onBeforeUnmount(() => window.removeEventListener('beforeunload', handleBeforeUnload))
 
   return { isDirty, markSaved }
 }

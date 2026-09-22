@@ -286,12 +286,16 @@ export default {
         this.loadVersion++
         this.resetDraft()
         this.loading = false
+        this.submitting = false
         const id = this.$route.params.id
         this.isEdit = Boolean(id && this.$route.path.endsWith('/edit'))
         this.serviceId = this.isEdit ? Number(id) : null
         if (this.isEdit) return this.loadService()
       }
     }
+  },
+  beforeUnmount() {
+    this.loadVersion++
   },
   methods: {
     async loadService() {
@@ -331,7 +335,12 @@ export default {
     },
 
     async handleSubmit() {
-      if (this.submitting) return
+      if (this.loading || this.submitting) return
+      const version = this.loadVersion
+      const path = this.$route.path
+      const serviceId = this.serviceId
+      const isEdit = this.isEdit
+      const isCurrent = () => version === this.loadVersion && path === this.$route.path
       const submittedDraft = this.captureDraft()
       this.submitting = true
       try {
@@ -366,7 +375,7 @@ export default {
           auth_config: authConfig
         }
 
-        if (this.isEdit) {
+        if (isEdit) {
           // 编辑模式：只更新允许修改的字段
           const updateData = {
             title: data.title,
@@ -376,22 +385,25 @@ export default {
             auth_config: Object.keys(authConfig).length > 0 ? authConfig : null,
             health_check_url: data.health_check_url || null
           }
-          await registeredServiceAPI.updateService(this.serviceId, updateData)
+          await registeredServiceAPI.updateService(serviceId, updateData)
+          if (!isCurrent()) return
           this.markSaved(submittedDraft)
           ElMessage.success(this.$t('service.registered.updateSuccess'))
-          await navigateServiceRoute(this.$router, `/services/${this.serviceId}`, { history: 'replace' })
+          await navigateServiceRoute(this.$router, `/services/${serviceId}`, { history: 'replace' })
         } else {
           // 创建模式
           const created = await registeredServiceAPI.createService(data)
+          if (!isCurrent()) return
           this.markSaved(submittedDraft)
           ElMessage.success(this.$t('service.registered.createSuccess'))
           await navigateServiceRoute(this.$router, `/services/${created.id}`, { history: 'replace' })
         }
       } catch (error) {
+        if (!isCurrent()) return
         ElMessage.error(this.$t('service.registered.saveFailed') + ': ' + (error.message || this.$t('service.common.unknownError')))
         console.error('Failed to save service:', error)
       } finally {
-        this.submitting = false
+        if (isCurrent()) this.submitting = false
       }
     },
 

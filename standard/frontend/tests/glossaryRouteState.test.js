@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildGlossaryFilterQuery,
+  buildGlossaryRevisionLocation,
   createGlossaryForm,
   isGlossaryDeletable,
   parsePositiveInteger,
@@ -8,6 +9,16 @@ import {
 } from '../src/utils/glossaryRouteState'
 
 describe('glossary route state', () => {
+  it('修订定位保留列表筛选并只覆盖 canonical revision_id', () => {
+    expect(buildGlossaryRevisionLocation(21, 210, { owner_domain_id: '2', revision_id: '211' }))
+      .toEqual({ path: '/glossaries/21', query: { owner_domain_id: '2', revision_id: '210' } })
+  })
+
+  it.each([null, '', '0', '-1', '1.2', ['211'], '0211'])('拒绝无效修订身份 %s', value => {
+    expect(() => buildGlossaryRevisionLocation(21, value)).toThrow()
+    expect(() => buildGlossaryRevisionLocation(value, 211)).toThrow()
+  })
+
   it('从 URL 恢复有效筛选条件', () => {
     expect(resolveGlossaryFilters({
       keyword: '客户',

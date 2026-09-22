@@ -3,6 +3,7 @@ package mysql
 import (
 	"context"
 	"fmt"
+	"github.com/addp/common/engine/plugins/shared/analytical"
 	"regexp"
 	"time"
 
@@ -71,5 +72,5 @@ func certifyAnalyticalInstance(ctx context.Context, session sqlcompile.InstanceP
 	if report := checkAnalyticalInstanceFacts(facts); !report.Supported {
 		return report, nil
 	}
-	return sqlcompile.ProbeInstanceSemantics(ctx, session, analyticalExpressionDialect{})
+	return sqlcompile.ProbeInstanceSemantics(ctx, session, analytical.MySQLCompatibleExpressionDialect{})
 }

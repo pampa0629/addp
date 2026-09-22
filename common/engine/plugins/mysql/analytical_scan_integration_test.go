@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"github.com/addp/common/engine/plugins/shared/analytical"
 	"testing"
 	"time"
 
@@ -18,7 +19,7 @@ func TestIntegrationMySQLAnalyticalScan(t *testing.T) {
 	defer dropMySQLIntegrationDatabase(db, database)
 	info["database"] = database
 	table := "scan_`quoted"
-	d := analyticalExpressionDialect{}
+	d := analytical.MySQLCompatibleExpressionDialect{}
 	q := d.QuoteIdentifier(database) + "." + d.QuoteIdentifier(table)
 	if _, err := db.ExecContext(t.Context(), "CREATE TABLE "+q+" (row_id bigint NOT NULL PRIMARY KEY, small_value int NOT NULL, label_value varchar(80), numeric_value decimal(38,18), flag_value tinyint(1), day_value date) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci"); err != nil {
 		t.Fatal(err)

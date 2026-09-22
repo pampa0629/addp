@@ -328,20 +328,29 @@ func (r *GlossaryRepository) ExistsByCode(code string, tenantID int64) (bool, er
 	return count > 0, err
 }
 
-func (r *GlossaryRepository) GetMappedElements(glossaryID, tenantID int64) ([]models.PublishedElementReference, error) {
-	var elements []models.PublishedElementReference
+func (r *GlossaryRepository) GetMappedElements(glossaryID, tenantID int64) ([]models.GlossaryElementReference, error) {
+	elements := make([]models.GlossaryElementReference, 0)
 	asOf := time.Now().UTC()
 	err := r.db.Raw(`
-		SELECT e.id, e.tenant_id, e.scope_type, e.owner_domain_id, e.code, e.lifecycle_state, e.version,
-			er.id AS revision_id, er.revision_no, er.name, er.status
+		SELECT e.id, e.code, e.lifecycle_state,
+			er.id AS revision_id, er.revision_no, COALESCE(er.name, e.code) AS name,
+			COALESCE(er.status, '') AS status,
+			COALESCE(er.status = 'published' AND er.effective_from <= ?
+				AND (er.effective_to IS NULL OR er.effective_to > ?), FALSE) AS is_effective
 		FROM standard.elements e
 		INNER JOIN standard.glossary_element_mappings gem ON gem.element_id = e.id
-		INNER JOIN standard.element_revisions er ON er.element_id = e.id
-			AND er.status = 'published'
-			AND er.effective_from <= ?
-			AND (er.effective_to IS NULL OR er.effective_to > ?)
-		WHERE gem.glossary_id = ? AND e.tenant_id = ? AND e.lifecycle_state = 'active'
-	`, asOf, asOf, glossaryID, tenantID).Scan(&elements).Error
+		INNER JOIN standard.glossaries g ON g.id = gem.glossary_id AND g.tenant_id = e.tenant_id
+		LEFT JOIN standard.element_revisions er ON er.id = (
+			SELECT candidate.id FROM standard.element_revisions candidate
+			WHERE candidate.element_id = e.id
+			ORDER BY CASE WHEN candidate.status = 'published' AND candidate.effective_from <= ?
+				AND (candidate.effective_to IS NULL OR candidate.effective_to > ?) THEN 0 ELSE 1 END,
+				candidate.revision_no DESC
+			LIMIT 1
+		)
+		WHERE gem.glossary_id = ? AND e.tenant_id = ?
+		ORDER BY e.id
+	`, asOf, asOf, asOf, asOf, glossaryID, tenantID).Scan(&elements).Error
 	return elements, err
 }
 

@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"github.com/addp/common/engine/plugins/shared/analytical"
 	"github.com/addp/common/query/sqlcompile/conformance"
 	"testing"
 )
@@ -23,7 +24,7 @@ func TestIntegrationMySQLAnalyticalCalendar(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer conn.Close()
-	conformance.NativeCalendar(t, conn, analyticalExpressionDialect{}, func(t *testing.T) {
+	conformance.NativeCalendar(t, conn, analytical.MySQLCompatibleExpressionDialect{}, func(t *testing.T) {
 		var warnings int
 		if err := conn.QueryRowContext(t.Context(), "SHOW COUNT(*) WARNINGS").Scan(&warnings); err != nil || warnings != 0 {
 			t.Fatalf("warnings=%d err=%v", warnings, err)
@@ -62,7 +63,7 @@ func TestIntegrationMySQLAnalyticalText(t *testing.T) {
 	if _, err = conn.ExecContext(t.Context(), "SET lc_time_names = 'de_DE'"); err != nil {
 		t.Fatal(err)
 	}
-	conformance.NativeText(t, conn, analyticalExpressionDialect{}, func(t *testing.T) {
+	conformance.NativeText(t, conn, analytical.MySQLCompatibleExpressionDialect{}, func(t *testing.T) {
 		var warnings int
 		if err := conn.QueryRowContext(t.Context(), "SHOW COUNT(*) WARNINGS").Scan(&warnings); err != nil || warnings != 0 {
 			t.Fatalf("warnings=%d err=%v", warnings, err)

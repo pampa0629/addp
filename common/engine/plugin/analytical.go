@@ -85,6 +85,10 @@ type ColumnBinding struct {
 type SupportDiagnostic struct {
 	Code   string      `json:"code"`
 	NodeID plan.NodeID `json:"node_id,omitempty"`
+	// Operation identifies the plan operation whose support was rejected. It
+	// is optional because some diagnostics describe the complete request or
+	// the result envelope rather than one node.
+	Operation string `json:"operation,omitempty"`
 }
 type SupportReport struct {
 	Supported   bool                `json:"supported"`
@@ -214,7 +218,7 @@ func checkAnalyticalRequest(r CompileRequest, c AnalyticalCompiler) error {
 		nodes[n.ID] = true
 	}
 	for _, d := range report.Diagnostics {
-		if !plan.Symbol(d.Code) || (d.NodeID != "" && !nodes[d.NodeID]) {
+		if !plan.Symbol(d.Code) || (d.NodeID != "" && !nodes[d.NodeID]) || (d.Operation != "" && !plan.Symbol(d.Operation)) {
 			return ErrAnalyticalInvalid
 		}
 	}

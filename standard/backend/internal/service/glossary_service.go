@@ -194,7 +194,7 @@ func (s *GlossaryService) DeleteGlossary(id, tenantID int64) error {
 	return nil
 }
 
-func (s *GlossaryService) GetMappedElements(glossaryID, tenantID int64) ([]models.PublishedElementReference, error) {
+func (s *GlossaryService) GetMappedElements(glossaryID, tenantID int64) ([]models.GlossaryElementReference, error) {
 	if _, err := s.repo.GetByID(glossaryID, tenantID); err != nil {
 		return nil, err
 	}

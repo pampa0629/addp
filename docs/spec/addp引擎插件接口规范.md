@@ -628,17 +628,39 @@ TiDB 8.5.8 的 MySQL 协议层会拒绝驱动为 `ReadOnly=true` 生成的事务
 
 ### 数据库无关分析计算契约
 
-> 状态：2026-09-15 目标设计已确认；Common 中立计划、开放编译接口、冻结包、内部结果协议和 SQL PreparedQuery 桥接已实现；PG 结果分支已通过真实数据库测试，生产执行链替换尚未完成。目前只有测试编译器使用新接口，PG/MySQL 完整原生编译、实例能力投影和 Model/Service 切换仍待交付。当前生产路径的 `AnalyticalSQLProvider` 与封闭 `AnalyticalDialect` 属于待删除的阶段实现，不能据此声明“新增引擎无需修改上层”已经兑现。
+> 状态：2026-09-22 目标设计已确认；Common 中立计划、开放编译接口、冻结包、内部结果协议和 SQL PreparedQuery 桥接已实现。PostgreSQL、MySQL 与 TiDB 已提供正式的 `AnalyticalCompilerProvider`，其中 MySQL/TiDB 的兼容 SQL 编译组件由 `common/engine/plugins/shared/analytical` 共享；Model 生成数据库无关计划包，Service 在预览和执行时按当前引擎编译为 `QueryRequest`，并继续复用既有 PreparedQuery、授权和数据保护链路。PG/MySQL/TiDB 已有共享编译一致性测试和真实数据库门禁。后续工作重点是把扩展影响矩阵、支持性诊断和新增 Provider 的一致性门禁固化；当前不再保留 `AnalyticalSQLProvider`、封闭 `AnalyticalDialect` 或 Model/Service SQL 拼接路径。
 
 #### 所有权与依赖
 
-分析计算采用唯一链路：owner 构建逻辑计划 → 通用校验与能力判断 → 当前引擎编译器 → QueryRequest → 既有 PreparedQuery → 授权和数据保护 → Execute。首批验证 PostgreSQL、MySQL 8；新增数据库应只增加或扩展对应引擎实现、注册和测试，不修改已有 Model 指标逻辑、Service 指标执行逻辑或前端引擎名单。
+分析计算采用唯一链路：owner 构建逻辑计划 → 通用校验与能力判断 → 当前引擎编译器 → QueryRequest → 既有 PreparedQuery → 授权和数据保护 → Execute。首批验证 PostgreSQL、MySQL 8、TiDB v8.5；新增数据库应只增加或扩展对应引擎实现、注册和测试，不修改已有 Model 指标逻辑、Service 指标执行逻辑或前端引擎名单。
 
 - `common/query/plan` 定义中立计算结构，只依赖通用数据类型和纯值契约，不依赖 `engine/plugin`、`resourcetree`、owner、数据库驱动或 HTTP client。
 - `common/engine/plugin` 定义编译请求、物理来源绑定及公开接口，可以依赖 `query/plan`；计划内不包含 `EngineCatalogPath`，以避免包循环。
-- 各 `common/engine/plugins/<engine>` 拥有引擎实现。`common/query/sqlcompile` 只承载显式共享的 SQL 编译组件，不导入具体引擎，不维护引擎名称分支。
+- 各 `common/engine/plugins/<engine>` 拥有引擎实现。`common/query/sqlcompile` 只承载显式共享的 SQL 编译组件，不导入具体引擎，不维护引擎名称分支。MySQL 与 TiDB 的共同 SQL 方言和执行前校验流程由 `common/engine/plugins/shared/analytical` 唯一实现；各 Provider 注入目录模型、系统库规则、实例认证和字段事实加载器，不互相导入 Provider 包。TiDB 必须独立认证版本、会话与语义，不能因协议兼容自动继承分析能力。
 - Model 拥有指标定义修订的引用、业务计算契约、关系解析和逻辑计划构建。Common 和引擎实现不接受指标 ID、`count_distinct`／`directional_overlap` 业务操作名或 Outdoor 专用字段。
 - Service 拥有发布服务、消费权限、结构化请求校验、cursor 和结果输出；排序、筛选、分页转为通用结果请求，不对指标原生查询做字符串包装。Workbench 仍只消费 Service 契约。
+
+#### 指标能力扩展影响矩阵
+
+新增指标能力必须先判断它属于业务组合、统一语义还是引擎事实，按下表确定修改范围。不能因为新增一个业务指标就让每个引擎重新实现完整指标逻辑，也不能把某个数据库的函数名直接提升为计划语义。
+
+| 变化类型 | 首要修改位置 | 现有引擎是否通常需要修改 | 约束 |
+| --- | --- | --- | --- |
+| 由现有 `scan/filter/project/join/distinct/aggregate/date_buckets` 组合出的新指标 | Model 指标契约和逻辑计划构建 | 否 | 只增加业务语义，不增加数据库原语 |
+| 计划已有节点的新组合或新结果请求 | Model、`common/query/plan` 的组合校验 | 否 | 结果请求必须继续保持数据库无关 |
+| 新的统一表达式或计划节点 | `common/query/plan`、`common/query/sqlcompile`、Model | 仅在方言确实不同且无法复用已有原语时 | 先定义跨引擎语义、NULL/错误/精度规则和共享一致性用例 |
+| 只有部分引擎能够兑现的原生能力 | 引擎独立方言与实例能力检查 | 只修改支持该能力的引擎 | 使用独立可选能力或明确拒绝，不能静默降级为近似语义 |
+| 新增 SQL 引擎 | 新引擎 Provider、目录/类型映射、实例认证和 Provider 门禁 | 不修改 Model/Service 指标逻辑 | 必须消费既有计划和编译契约 |
+
+基础编译器接口应保持小而稳定。新增能力不得仅为方便某个指标而扩大所有 Provider 的必选方言接口；能够由已有原语表达的能力应在共享编译器中降解，确实需要新原生事实时再增加独立的可选方言能力和对应 `SupportReport` 诊断。引擎不支持某个计划时必须在 Check/Compile 阶段明确拒绝，不能生成看似可执行但语义不同的 SQL。
+
+新增计划节点或表达式时，必须同时补充：
+
+1. `common/query/plan` 的结构、类型和求值语义；
+2. `common/query/sqlcompile` 的共享编译逻辑；
+3. 至少一组跨引擎语义一致性用例，覆盖 NULL、错误传播、精度和边界日期等受影响语义；
+4. 每个已认证 Provider 的 `Check`/`Compile` 门禁，不能以单个引擎通过代替通用契约；
+5. 不支持该能力的 Provider 的稳定拒绝诊断。
 
 ```mermaid
 flowchart LR
@@ -730,7 +752,7 @@ PG 通过 ACCESS SHARE 锁防止表结构变更，首期只接受无继承／分
 
 `AnalyticalInstance` 只向编译请求传递 EngineID 和已经收敛的 `AnalyticalCapability`，不传递连接信息或实例配置自由字典。定义该类型不等于已在 System 的能力响应中启用它；生产能力投影须与编译实现及真实数据库认证一起接入。
 
-`CompilerIdentity` 由实现 ID 和编译实现版本组成，不是运行时 Provider 指针；现有唯一插件注册表通过当前引擎返回接口。Check 不执行数据面查询，区分 `supported=false` 的已知能力限制与校验／内部错误，返回稳定 code、node_id 和可本地化参数，禁止将原生 SQL 或凭据放入诊断。Compile 必须自行再次校验请求，不依赖调用方已调用 Check。
+`CompilerIdentity` 由实现 ID 和编译实现版本组成，不是运行时 Provider 指针；现有唯一插件注册表通过当前引擎返回接口。Check 不执行数据面查询，区分 `supported=false` 的已知能力限制与校验／内部错误，返回稳定 code、可选的 node_id、可选的 operation 和可本地化参数，禁止将原生 SQL 或凭据放入诊断。Compile 必须自行再次校验请求，不依赖调用方已调用 Check。关系型共享编译器至少在能够确定时返回 `unsupported_plan_node` 及被拒绝节点的操作名；无法归因到单个节点时才返回请求级诊断。
 
 `CompiledQuery` 由通用执行层消费，包含可转换为既有 QueryRequest 的原生语言与查询模板、预期输出契约、编译器身份和确定性指纹。它是运行时派生物，不替代 Model 业务定义、不授予执行权限、不接受调用方改写。编译器是无连接、无请求值、确定性的实现；类型和错误规范化由实际 Query Provider 按预期输出契约完成。不得为分析查询新建第二个 Execute 接口或绕开 PreparedQuery 状态机。
 
@@ -835,7 +857,7 @@ type InferenceRuntimeProvider interface {
 | MySQL | 通用 tabular 组合 + `BoundedWatermarkReadProvider` + `TableUpsertProvider` + `PartitionedTableChangeApplyProvider` |
 | OceanBase（MySQL 模式） | 非空间通用 tabular 组合 + `BoundedWatermarkReadProvider` + `TableUpsertProvider` |
 | openGauss | 非空间通用 tabular 组合 + `QueryReadSessionProvider` + `BoundedWatermarkReadProvider` + `TableUpsertProvider` |
-| TiDB | 非空间通用 tabular 组合 + `BoundedWatermarkReadProvider` + `TableUpsertProvider` |
+| TiDB | 非空间通用 tabular 组合 + `AnalyticalCompilerProvider` + `AnalyticalSQLExecutionValidator` + `BoundedWatermarkReadProvider` + `TableUpsertProvider` |
 | Oracle | 通用 tabular 组合 + `SpatialFeatureReadProvider` + `PartitionedTableChangeApplyProvider`；普通 Store 不声明 CDC |
 | Doris / ClickHouse | 非空间通用 tabular 组合；不声明 `BoundedWatermarkReadProvider`、`TableUpsertProvider` 或 CDC |
 | Spark SQL | `EnginePlugin` + `EngineCatalogModelProvider` + `EngineCatalogProvider` + `EngineCatalogFactsProvider` + `SQLQueryRuntimeProvider` + `ConnectionPoolPlugin` |

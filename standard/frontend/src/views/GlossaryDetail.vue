@@ -2,9 +2,9 @@
   <div class="glossary-detail" v-loading="loading">
     <div class="page-header">
       <div class="header-left"><el-button :icon="ArrowLeft" @click="goBack">{{ $t('standard.common.back') }}</el-button><h2>{{ title }}</h2><el-tag :type="statusType(revision.status)">{{ statusLabel(revision.status) }}</el-tag><el-tag v-if="isDirty" type="warning">{{ $t('standard.common.unsaved') }}</el-tag></div>
-      <div class="header-right">
+      <div v-if="!loadError && glossary.id" class="header-right">
         <el-button v-if="!glossary.draft_revision && canUpdate" @click="newDraft">{{ $t('standard.glossary.createRevision') }}</el-button>
-        <el-button v-if="editable" type="primary" :loading="saving" @click="saveAll">{{ $t('standard.common.save') }}</el-button>
+        <el-button v-if="editable" type="primary" :loading="savingRevision" :disabled="savingIdentity || savingElements" @click="saveRevision">{{ $t('standard.common.save') }}</el-button>
         <el-button v-if="editable" type="warning" @click="runRevisionAction('submit')">{{ $t('standard.revision.submit') }}</el-button>
         <el-button v-if="reviewing && canPublish" @click="runRevisionAction('return')">{{ $t('standard.revision.return') }}</el-button>
         <el-button v-if="reviewing && canPublish" type="success" @click="runRevisionAction('publish')">{{ $t('standard.revision.publish') }}</el-button>
@@ -12,11 +12,12 @@
       </div>
     </div>
 
-    <el-row :gutter="20">
+    <el-alert v-if="loadError" :title="loadError" type="error" :closable="false" />
+    <el-row v-else :gutter="20">
       <el-col :span="16">
         <el-card class="section-card">
-          <template #header><h3>{{ $t('standard.glossary.identityInfo') }}</h3></template>
-          <el-form label-width="120px" :disabled="!canUpdate">
+          <template #header><div class="card-header"><h3>{{ $t('standard.glossary.identityInfo') }}</h3><el-button v-if="canUpdate && glossary.id" type="primary" size="small" :loading="savingIdentity" :disabled="savingRevision || savingElements" @click="saveIdentity">{{ $t('standard.common.save') }}</el-button></div></template>
+          <el-form label-width="120px" :disabled="!canUpdate || saving">
             <el-form-item :label="$t('standard.common.code')"><el-input :model-value="glossary.code" disabled /></el-form-item>
             <el-form-item :label="$t('standard.common.scopeLabel')">
               <el-select v-model="identity.scope_type" style="width:100%" @change="onScopeChange"><el-option :label="$t('standard.common.scopeValue.tenant_common')" value="tenant_common" /><el-option :label="$t('standard.common.scopeValue.domain')" value="domain" /></el-select>
@@ -28,7 +29,7 @@
 
         <el-card class="section-card">
           <template #header><div class="card-header"><h3>{{ $t('standard.glossary.revisionInfo') }}</h3><span v-if="revision.revision_no">R{{ revision.revision_no }}</span></div></template>
-          <el-form label-width="120px" :disabled="!editable">
+          <el-form label-width="120px" :disabled="!editable || saving">
             <el-form-item :label="$t('standard.glossary.nameLabel')"><el-input v-model="revision.name" /></el-form-item>
             <el-form-item :label="$t('standard.glossary.aliasLabel')"><el-select v-model="revision.alias" multiple filterable allow-create default-first-option style="width:100%" /></el-form-item>
             <el-form-item :label="$t('standard.glossary.definitionLabel')"><el-input v-model="revision.definition" type="textarea" :rows="4" /></el-form-item>
@@ -41,9 +42,21 @@
         </el-card>
 
         <el-card class="section-card">
-          <template #header><div class="card-header"><h3>{{ $t('standard.glossary.relatedElements') }}</h3><el-button v-if="canUpdate" size="small" @click="openElementDialog">{{ $t('standard.glossary.manageElements') }}</el-button></div></template>
-          <el-empty v-if="mappedElements.length === 0" :description="$t('standard.glossary.noElements')" />
-          <el-table v-else :data="mappedElements" size="small"><el-table-column prop="name" :label="$t('standard.common.name')" /><el-table-column prop="code" :label="$t('standard.common.code')" /><el-table-column prop="revision_no" label="Revision" width="100" /></el-table>
+          <template #header><div class="card-header"><h3>{{ $t('standard.glossary.relatedElements') }}</h3><el-button v-if="canUpdate" size="small" :disabled="saving || elementsLoading || Boolean(elementsError)" @click="openElementDialog">{{ $t('standard.glossary.manageElements') }}</el-button></div></template>
+          <div v-if="elementsError">
+            <el-alert :title="$t('standard.glossary.mappingRefreshFailed')" :description="elementsError" type="error" :closable="false" />
+            <el-button :loading="elementsLoading" @click="refreshMappedElements()">{{ $t('common.refresh') }}</el-button>
+          </div>
+          <el-empty v-else-if="mappedElements.length === 0" v-loading="elementsLoading" :description="$t('standard.glossary.noElements')" />
+          <el-table v-else v-loading="elementsLoading" :data="mappedElements" size="small">
+            <el-table-column prop="name" :label="$t('standard.common.name')" min-width="140">
+              <template #default="{ row }">{{ row.name }} <el-tag v-if="row.lifecycle_state !== 'active'" type="warning" size="small">{{ $t('standard.glossary.identityUnavailable') }}</el-tag></template>
+            </el-table-column>
+            <el-table-column prop="code" :label="$t('standard.common.code')" min-width="140" />
+            <el-table-column :label="$t('standard.glossary.displayRevision')" width="120"><template #default="{ row }">{{ row.revision_no ? `R${row.revision_no}` : '-' }}</template></el-table-column>
+            <el-table-column :label="$t('standard.common.status')" min-width="120"><template #default="{ row }">{{ statusLabel(row.status) }}</template></el-table-column>
+            <el-table-column :label="$t('standard.glossary.effectiveness')" min-width="160"><template #default="{ row }"><el-tag :type="row.is_effective ? 'success' : 'info'" size="small">{{ $t(row.is_effective ? 'standard.glossary.effective' : 'standard.glossary.noEffectiveRevision') }}</el-tag></template></el-table-column>
+          </el-table>
         </el-card>
 
         <DocumentPanel v-if="glossary.id" entity-type="glossary" :entity-id="glossary.id" v-model:entity-version="glossary.version" />
@@ -61,18 +74,18 @@
       </el-col>
     </el-row>
 
-    <el-dialog v-model="elementDialog" :title="$t('standard.glossary.manageElements')" width="620px">
-      <el-select v-model="selectedElementIDs" multiple filterable remote :remote-method="searchElements" :loading="elementSearchLoading" style="width:100%">
-        <el-option v-for="item in searchedElements" :key="item.id" :label="`${elementName(item)} (${item.code})`" :value="item.id" />
+    <el-dialog v-model="elementDialog" :title="$t('standard.glossary.manageElements')" width="620px" :show-close="!savingElements" :close-on-click-modal="!savingElements" :close-on-press-escape="!savingElements">
+      <el-select v-model="selectedElementIDs" multiple filterable remote :remote-method="searchElements" :loading="elementSearchLoading" :disabled="saving" style="width:100%" @change="retainSelectedElements">
+        <el-option v-for="item in elementOptions" :key="item.id" :label="`${elementName(item)} (${item.code})`" :value="item.id" />
       </el-select>
-      <template #footer><el-button @click="elementDialog=false">{{ $t('standard.common.cancel') }}</el-button><el-button type="primary" @click="saveElements">{{ $t('standard.common.confirm') }}</el-button></template>
+      <template #footer><el-button :disabled="savingElements" @click="elementDialog=false">{{ $t('standard.common.cancel') }}</el-button><el-button type="primary" :loading="savingElements" :disabled="savingIdentity || savingRevision" @click="saveElements">{{ $t('standard.common.confirm') }}</el-button></template>
     </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { BusinessDomainSelect, buildBusinessDomainOptions } from '@common-ui'
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { BusinessDomainSelect, buildBusinessDomainOptions, createLatestRequestCoordinator } from '@common-ui'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -85,13 +98,25 @@ import { getStandardErrorMessage, isCanceledInteraction } from '../utils/apiErro
 import { formatStandardDateTime } from '../utils/dateTime'
 import { useStandardPermissions } from '../composables/useStandardPermissions'
 import { useUnsavedChanges } from '../composables/useUnsavedChanges'
+import { buildGlossaryRevisionLocation } from '../utils/glossaryRouteState'
 
 const { t, locale } = useI18n()
 const { canUpdate, canPublish } = useStandardPermissions('glossary')
 const route = useRoute(), router = useRouter()
-const loading = ref(false), saving = ref(false), glossary = ref({}), history = ref([]), revision = reactive({}), domains = ref([])
+const loading = ref(false), glossary = ref({}), history = ref([]), revision = reactive({}), domains = ref([])
+const savingIdentity = ref(false), savingRevision = ref(false)
+const savingElements = ref(false)
+const saving = computed(() => savingIdentity.value || savingRevision.value || savingElements.value)
 const mappedElements = ref([]), elementDialog = ref(false), selectedElementIDs = ref([]), searchedElements = ref([]), elementSearchLoading = ref(false)
+const selectedElements = ref([])
+const elementOptions = computed(() => [...new Map([...selectedElements.value, ...searchedElements.value].map(item => [item.id, item])).values()])
+const elementsLoading = ref(false), elementsError = ref('')
+const elementListRequests = createLatestRequestCoordinator()
+const elementSearchRequests = createLatestRequestCoordinator()
 const identity = reactive({ scope_type: 'tenant_common', owner_domain_id: null, tags: [] })
+const loadError = ref('')
+const detailRequests = createLatestRequestCoordinator()
+const detailTarget = computed(() => JSON.stringify([route.params.id, route.query.revision_id]))
 const editable = computed(() => canUpdate.value && revision.status === 'draft' && glossary.value.draft_revision_id === revision.id)
 const reviewing = computed(() => revision.status === 'in_review' && glossary.value.draft_revision_id === revision.id)
 const title = computed(() => revision.name || glossary.value.code || t('standard.glossary.detailTitle'))
@@ -101,47 +126,169 @@ const statusLabel = status => status ? t(`standard.revision.status.${status}`) :
 const formatTime = value => formatStandardDateTime(value, locale.value)
 const elementName = item => item.draft_revision?.name || item.current_revision?.name || item.name || item.code
 const editableState = computed(() => ({ identity: { ...identity, tags: [...identity.tags] }, revision: { ...revision, alias: [...(revision.alias || [])], related_ids: [...(revision.related_ids || [])] } }))
-const { isDirty, markSaved } = useUnsavedChanges({ state: editableState, t })
+const { isDirty, markSaved } = useUnsavedChanges({ state: editableState })
 const setRevision = value => { Object.keys(revision).forEach(key => delete revision[key]); Object.assign(revision, JSON.parse(JSON.stringify(value || {}))); revision.alias ||= []; revision.related_ids ||= [] }
-const goBack = () => navigateStandardRoute(router, { path: '/glossaries', query: route.query }, { history: 'replace' })
+const goBack = () => {
+  const { revision_id, ...query } = route.query
+  return navigateStandardRoute(router, { path: '/glossaries', query }, { history: 'replace' })
+}
 const onScopeChange = value => { if (value !== 'domain') identity.owner_domain_id = null }
 
 async function load() {
+  const request = detailRequests.begin(detailTarget.value)
+  const glossaryID = route.params.id
+  const requestedRevision = route.query.revision_id
   loading.value = true
+  loadError.value = ''
+  elementListRequests.invalidate()
+  elementSearchRequests.invalidate()
+  elementDialog.value = false
+  elementsLoading.value = false
+  elementsError.value = ''
+  glossary.value = {}; history.value = []; mappedElements.value = []
+  setRevision(null)
+  markSaved()
   try {
-    const [aggregate, revisions, elements] = await Promise.all([glossaryAPI.get(route.params.id), glossaryAPI.listRevisions(route.params.id), glossaryAPI.getElements(route.params.id)])
+    if (requestedRevision !== undefined) buildGlossaryRevisionLocation(glossaryID, requestedRevision)
+    const [aggregate, revisions, elements] = await Promise.all([glossaryAPI.get(glossaryID), glossaryAPI.listRevisions(glossaryID), glossaryAPI.getElements(glossaryID)])
+    if (!detailRequests.isCurrent(request, detailTarget.value)) return
+    const selectedID = requestedRevision ?? (aggregate.draft_revision || aggregate.current_revision || revisions?.[0])?.id
+    const selectedRevision = selectedID ? await glossaryAPI.getRevision(glossaryID, selectedID) : null
+    if (!detailRequests.isCurrent(request, detailTarget.value)) return
     glossary.value = aggregate; history.value = revisions || []; mappedElements.value = elements || []
     Object.assign(identity, { scope_type: aggregate.scope_type, owner_domain_id: aggregate.owner_domain_id || null, tags: aggregate.tags || [] })
-    setRevision(aggregate.draft_revision || aggregate.current_revision || history.value[0])
+    setRevision(selectedRevision)
     markSaved()
-  } catch (error) { ElMessage.error(getStandardErrorMessage(error, t, 'standard.common.loadFailed')); goBack() }
-  finally { loading.value = false }
+  } catch (error) {
+    if (detailRequests.isCurrent(request, detailTarget.value)) loadError.value = getStandardErrorMessage(error, t, 'standard.common.loadFailed')
+  } finally { if (detailRequests.isCurrent(request, detailTarget.value)) loading.value = false }
 }
-async function saveAll() {
-  if (!revision.name?.trim() || !revision.definition?.trim() || !revision.change_summary?.trim()) { ElMessage.warning(t('standard.glossary.revisionRequired')); return }
+async function saveIdentity() {
+  if (saving.value || !canUpdate.value || !glossary.value.id) return
   if (identity.scope_type === 'domain' && !identity.owner_domain_id) { ElMessage.warning(t('standard.common.selectDomain')); return }
-  saving.value = true
+  savingIdentity.value = true
+  const request = detailRequests.begin(detailTarget.value)
   try {
-    let aggregate = await glossaryAPI.update(glossary.value.id, { ...identity, version: glossary.value.version })
-    aggregate = await glossaryAPI.updateRevision(glossary.value.id, revision.id, { ...revision, version: aggregate.version })
-    glossary.value = aggregate; ElMessage.success(t('standard.common.saveSuccess')); await load(); markSaved()
-  } catch (error) { ElMessage.error(getStandardErrorMessage(error, t, 'standard.common.saveFailed')) }
-  finally { saving.value = false }
+    const aggregate = await glossaryAPI.update(glossary.value.id, { ...editableState.value.identity, version: glossary.value.version })
+    if (!detailRequests.isCurrent(request, detailTarget.value)) return
+    glossary.value = aggregate
+    Object.assign(identity, { scope_type: aggregate.scope_type, owner_domain_id: aggregate.owner_domain_id || null, tags: aggregate.tags || [] })
+    markSaved('identity')
+    ElMessage.success(t('standard.common.saveSuccess'))
+  } catch (error) {
+    if (detailRequests.isCurrent(request, detailTarget.value)) ElMessage.error(getStandardErrorMessage(error, t, 'standard.common.saveFailed'))
+  } finally { savingIdentity.value = false }
+}
+async function saveRevision() {
+  if (saving.value || !editable.value) return
+  if (!revision.name?.trim() || !revision.definition?.trim() || !revision.change_summary?.trim()) { ElMessage.warning(t('standard.glossary.revisionRequired')); return }
+  savingRevision.value = true
+  const request = detailRequests.begin(detailTarget.value)
+  const glossaryID = glossary.value.id
+  const revisionID = revision.id
+  const revisionPayload = JSON.parse(JSON.stringify(revision))
+  try {
+    const aggregate = await glossaryAPI.updateRevision(glossaryID, revisionID, { ...revisionPayload, version: glossary.value.version })
+    if (!detailRequests.isCurrent(request, detailTarget.value)) return
+    glossary.value = aggregate; setRevision(aggregate.draft_revision); markSaved('revision')
+    history.value = history.value.map(item => item.id === revisionID ? aggregate.draft_revision : item)
+    ElMessage.success(t('standard.common.saveSuccess'))
+  } catch (error) {
+    if (detailRequests.isCurrent(request, detailTarget.value)) ElMessage.error(getStandardErrorMessage(error, t, 'standard.common.saveFailed'))
+  }
+  finally { savingRevision.value = false }
 }
 async function newDraft() {
-  try { const { value } = await ElMessageBox.prompt(t('standard.revision.changeSummary'), t('standard.glossary.createRevision'), { inputValidator: value => Boolean(value?.trim()) }); await glossaryAPI.createRevision(glossary.value.id, { version: glossary.value.version, change_summary: value.trim() }); await load() }
+  if (isDirty.value || saving.value) { ElMessage.warning(t('standard.common.saveBeforeAction')); return }
+  const target = detailTarget.value
+  try {
+    const { value } = await ElMessageBox.prompt(t('standard.revision.changeSummary'), t('standard.glossary.createRevision'), { inputValidator: value => Boolean(value?.trim()) })
+    if (target !== detailTarget.value) return
+    const aggregate = await glossaryAPI.createRevision(glossary.value.id, { version: glossary.value.version, change_summary: value.trim() })
+    if (target !== detailTarget.value) return
+    await selectRevision(aggregate.draft_revision)
+  }
   catch (error) { if (!isCanceledInteraction(error)) ElMessage.error(getStandardErrorMessage(error, t)) }
 }
 async function runRevisionAction(action) {
-  if (isDirty.value) { ElMessage.warning(t('standard.common.saveBeforeAction')); return }
+  if (isDirty.value || saving.value) { ElMessage.warning(t('standard.common.saveBeforeAction')); return }
   try { await ElMessageBox.confirm(t(`standard.revision.confirm.${action}`), t('standard.common.hint'), { type: 'warning' }); await glossaryAPI[`${action}Revision`](glossary.value.id, revision.id, glossary.value.version); await load() }
   catch (error) { if (!isCanceledInteraction(error)) ElMessage.error(getStandardErrorMessage(error, t)) }
 }
-function selectRevision(row) { setRevision(row) }
-async function searchElements(keyword='') { elementSearchLoading.value = true; try { const result = await elementAPI.list({ keyword, page_size: 50 }); searchedElements.value = result.data || [] } catch { searchedElements.value = [] } finally { elementSearchLoading.value = false } }
-function openElementDialog() { selectedElementIDs.value = mappedElements.value.map(item => item.id); elementDialog.value = true; searchElements() }
-async function saveElements() { try { const aggregate = await glossaryAPI.updateElements(glossary.value.id, { version: glossary.value.version, element_ids: selectedElementIDs.value }); glossary.value = aggregate; elementDialog.value = false; await load(); ElMessage.success(t('standard.common.saveSuccess')) } catch (error) { ElMessage.error(getStandardErrorMessage(error, t)) } }
-watch(() => route.params.id, load, { immediate: true })
+function selectRevision(row) {
+  if (row.id === revision.id) return
+  return navigateStandardRoute(router, buildGlossaryRevisionLocation(glossary.value.id, row.id, route.query), { history: 'replace' })
+}
+async function searchElements(keyword='') {
+  const request = elementSearchRequests.begin(detailTarget.value)
+  elementSearchLoading.value = true
+  try {
+    const result = await elementAPI.list({ keyword, page_size: 50 })
+    if (elementSearchRequests.isCurrent(request, detailTarget.value)) replaceSearchedElements(result.data || [])
+  } catch {
+    if (elementSearchRequests.isCurrent(request, detailTarget.value)) replaceSearchedElements([])
+  } finally {
+    if (elementSearchRequests.isCurrent(request, detailTarget.value)) elementSearchLoading.value = false
+  }
+}
+function retainSelectedElements() {
+  const selectedIDs = new Set(selectedElementIDs.value)
+  selectedElements.value = elementOptions.value.filter(item => selectedIDs.has(item.id))
+}
+function replaceSearchedElements(elements) {
+  retainSelectedElements()
+  searchedElements.value = elements
+}
+function openElementDialog() {
+  if (saving.value || elementsLoading.value || elementsError.value || !canUpdate.value) return
+  selectedElementIDs.value = mappedElements.value.map(item => item.id)
+  selectedElements.value = [...mappedElements.value]
+  searchedElements.value = []
+  elementDialog.value = true
+  searchElements()
+}
+async function refreshMappedElements() {
+  if (elementsLoading.value || !glossary.value.id) return
+  const request = elementListRequests.begin(detailTarget.value)
+  elementsLoading.value = true
+  try {
+    const elements = await glossaryAPI.getElements(glossary.value.id)
+    if (!elementListRequests.isCurrent(request, detailTarget.value)) return
+    mappedElements.value = elements || []
+    elementsError.value = ''
+  } catch (error) {
+    if (elementListRequests.isCurrent(request, detailTarget.value)) elementsError.value = getStandardErrorMessage(error, t, 'standard.common.loadFailed')
+  } finally {
+    if (elementListRequests.isCurrent(request, detailTarget.value)) elementsLoading.value = false
+  }
+}
+async function saveElements() {
+  if (saving.value || !canUpdate.value || !elementDialog.value) return
+  savingElements.value = true
+  const request = detailRequests.begin(detailTarget.value)
+  try {
+    const aggregate = await glossaryAPI.updateElements(glossary.value.id, { version: glossary.value.version, element_ids: [...selectedElementIDs.value] })
+    if (!detailRequests.isCurrent(request, detailTarget.value)) return
+    glossary.value.version = aggregate.version
+    elementDialog.value = false
+    ElMessage.success(t('standard.common.saveSuccess'))
+    await refreshMappedElements()
+  } catch (error) {
+    if (detailRequests.isCurrent(request, detailTarget.value)) ElMessage.error(getStandardErrorMessage(error, t, 'standard.common.saveFailed'))
+  } finally { savingElements.value = false }
+}
+watch(elementDialog, open => {
+  if (!open) {
+    elementSearchRequests.invalidate()
+    elementSearchLoading.value = false
+  }
+})
+watch(() => [route.params.id, route.query.revision_id], load, { immediate: true })
+onBeforeUnmount(() => {
+  detailRequests.invalidate()
+  elementListRequests.invalidate()
+  elementSearchRequests.invalidate()
+})
 onMounted(async () => { try { domains.value = buildBusinessDomainOptions(await domainAPI.list() || []) } catch { domains.value = [] } })
 </script>
 

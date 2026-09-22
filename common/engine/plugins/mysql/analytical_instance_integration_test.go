@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"github.com/addp/common/engine/plugins/shared/analytical"
 	"testing"
 	"time"
 
@@ -11,7 +12,9 @@ import (
 	"github.com/addp/common/query/sqlcompile"
 )
 
-type incorrectInstanceDateDialect struct{ analyticalExpressionDialect }
+type incorrectInstanceDateDialect struct {
+	analytical.MySQLCompatibleExpressionDialect
+}
 
 func (incorrectInstanceDateDialect) ISODateText(string) string { return "'incorrect'" }
 

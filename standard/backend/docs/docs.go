@@ -3959,6 +3959,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "完整返回关联身份，展示修订与当前生效标记独立；不因修订状态隐藏关联 | Return all associated identities with display revision and independent effectiveness; revision status never hides associations",
                 "produces": [
                     "application/json"
                 ],
@@ -3972,7 +3973,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/github_com_addp_standard_internal_models.PublishedElementReference"
+                                "$ref": "#/definitions/github_com_addp_standard_internal_models.GlossaryElementReference"
                             }
                         }
                     }
@@ -8228,6 +8229,41 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_standard_internal_models.GlossaryElementReference": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "is_effective": {
+                    "type": "boolean"
+                },
+                "lifecycle_state": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "revision_id": {
+                    "type": "integer"
+                },
+                "revision_no": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "draft",
+                        "in_review",
+                        "published",
+                        "withdrawn"
+                    ]
+                }
+            }
+        },
         "github_com_addp_standard_internal_models.GlossaryRevision": {
             "type": "object",
             "properties": {
@@ -8873,49 +8909,6 @@ const docTemplate = `{
                     "$ref": "#/definitions/github_com_addp_standard_internal_models.JSONB"
                 },
                 "revision_no": {
-                    "type": "integer"
-                }
-            }
-        },
-        "github_com_addp_standard_internal_models.PublishedElementReference": {
-            "type": "object",
-            "properties": {
-                "code": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "lifecycle_state": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "owner_domain_id": {
-                    "type": "integer"
-                },
-                "revision_id": {
-                    "type": "integer"
-                },
-                "revision_no": {
-                    "type": "integer"
-                },
-                "scope_type": {
-                    "type": "string",
-                    "enum": [
-                        "platform",
-                        "tenant_common",
-                        "domain"
-                    ]
-                },
-                "status": {
-                    "type": "string"
-                },
-                "tenant_id": {
-                    "type": "integer"
-                },
-                "version": {
                     "type": "integer"
                 }
             }

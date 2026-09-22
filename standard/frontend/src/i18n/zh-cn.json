@@ -58,10 +58,6 @@
       "domainOptional": "选择业务域（可选）",
       "remove": "移除",
       "unsaved": "未保存",
-      "unsavedTitle": "未保存的修改",
-      "unsavedConfirm": "当前修改尚未保存，离开后将丢失。确定离开吗？",
-      "leave": "离开",
-      "continueEditing": "继续编辑",
       "saveBeforeAction": "请先保存当前修改，再执行状态操作",
       "uncategorized": "未分类"
     },
@@ -128,6 +124,11 @@
       "loadFailed": "加载业务域失败"
     },
     "glossary": {
+      "displayRevision": "展示修订",
+      "effectiveness": "当前生效情况",
+      "effective": "当前生效",
+      "noEffectiveRevision": "无当前生效修订",
+      "identityUnavailable": "身份不可用",
       "recentVisitTitle": "业务术语",
       "title": "业务术语词典",
       "create": "新建术语",
@@ -157,6 +158,7 @@
       "confirmDeprecate": "确认废弃术语「{name}」？",
       "relatedElements": "关联的数据元",
       "manageElements": "管理关联数据元",
+      "mappingRefreshFailed": "关联已保存，但列表加载失败。请刷新关联列表。",
       "addElement": "添加数据元",
       "noElements": "暂未关联数据元",
       "basicInfo": "基本信息",
@@ -242,6 +244,7 @@
       "definitionRequired": "请输入业务含义",
       "formatLabel": "格式约束",
       "codeSetLabel": "关联码值集",
+      "codeSetSnapshotUnavailable": "无法读取该修订绑定的码值集版本",
       "defaultValueLabel": "默认值",
       "exampleValuesLabel": "示例值",
       "exampleValuesPlaceholder": "输入示例值，按回车添加",

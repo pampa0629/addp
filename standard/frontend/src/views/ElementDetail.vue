@@ -8,6 +8,7 @@
         <el-tag v-if="revision.status" :type="statusType(revision.status)">
           R{{ revision.revision_no }} · {{ statusLabel(revision.status) }}
         </el-tag>
+        <el-tag v-if="isDirty" type="warning">{{ $t('standard.common.unsaved') }}</el-tag>
       </div>
       <div v-if="!loadError && element.id" class="actions">
         <el-button v-if="editable" type="primary" :loading="savingRevision" @click="saveRevision">
@@ -43,7 +44,7 @@
               </el-button>
             </div>
           </template>
-          <el-form :model="element" label-width="130px" :disabled="!identityEditable">
+          <el-form :model="element" label-width="130px" :disabled="!identityEditable || savingIdentity || savingRevision">
             <el-row :gutter="16">
               <el-col :xs="24" :sm="12">
                 <el-form-item :label="$t('standard.element.codeLabel')">
@@ -81,7 +82,7 @@
 
         <el-card shadow="never" class="section">
           <template #header>{{ $t('standard.element.basicInfo') }}</template>
-          <el-form :model="revision" label-width="130px" :disabled="!editable">
+          <el-form :model="revision" label-width="130px" :disabled="!editable || savingIdentity || savingRevision">
             <el-row :gutter="16">
               <el-col :xs="24" :sm="12">
                 <el-form-item :label="$t('standard.element.nameLabel')">
@@ -178,7 +179,7 @@
 
         <el-card shadow="never" class="section">
           <template #header>{{ $t('standard.element.valueDomain') }}</template>
-          <el-form :model="revision" label-width="130px" :disabled="!editable">
+          <el-form :model="revision" label-width="130px" :disabled="!editable || savingIdentity || savingRevision">
             <el-form-item :label="$t('standard.element.valueDomainKind')">
               <el-radio-group v-model="revision.value_domain_kind" @change="resetValueDomain">
                 <el-radio-button value="unrestricted">{{ $t('standard.element.unrestricted') }}</el-radio-button>
@@ -216,7 +217,13 @@
               v-if="revision.value_domain_kind === 'enumeration'"
               :label="$t('standard.element.codeSetLabel')"
             >
-              <el-select v-model="revision.code_set_revision_id" filterable class="field-control">
+              <el-select v-if="editable" v-model="revision.code_set_revision_id" filterable class="field-control">
+                <el-option
+                  v-if="boundCodeSet && !boundCodeSetSelectable"
+                  :label="boundCodeSetLabel"
+                  :value="revision.code_set_revision_id"
+                  disabled
+                />
                 <el-option
                   v-for="codeSet in compatibleCodeSets"
                   :key="codeSet.current_revision.id"
@@ -224,6 +231,10 @@
                   :value="codeSet.current_revision.id"
                 />
               </el-select>
+              <span v-else>{{ boundCodeSetLabel || '—' }}</span>
+              <el-tag v-if="boundCodeSet" :type="statusType(boundCodeSet.status)" size="small">
+                {{ statusLabel(boundCodeSet.status) }}
+              </el-tag>
             </el-form-item>
           </el-form>
         </el-card>
@@ -284,16 +295,17 @@
 import { BusinessDomainSelect, buildBusinessDomainOptions } from '@common-ui'
 import ElementDataTypeSelect from '../components/ElementDataTypeSelect.vue'
 import UnitSelect from '../components/UnitSelect.vue'
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft } from '@element-plus/icons-vue'
-import { StatusAnnouncer, useConsolePageDescriptor, buildStandardElementRevisionLocation } from '@common-ui'
+import { StatusAnnouncer, useConsolePageDescriptor, buildStandardElementRevisionLocation, createLatestRequestCoordinator } from '@common-ui'
 import { codeSetAPI, domainAPI, elementAPI, unitAPI } from '../api/standard'
 import DocumentPanel from '../components/DocumentPanel.vue'
 import { navigateStandardRoute } from '@/utils/moduleNavigation'
 import { useStandardPermissions } from '../composables/useStandardPermissions'
+import { useUnsavedChanges } from '../composables/useUnsavedChanges'
 import { getStandardErrorMessage, isCanceledInteraction } from '../utils/apiError'
 import { formatStandardDateTime } from '../utils/dateTime'
 import {
@@ -313,7 +325,8 @@ const { canUpdate, canPublish } = useStandardPermissions('element')
 
 const loading = ref(false)
 const loadError = ref('')
-let loadSequence = 0
+const detailRequests = createLatestRequestCoordinator()
+const detailTarget = computed(() => JSON.stringify([route.params.id, route.query.revision_id]))
 const savingIdentity = ref(false)
 const savingRevision = ref(false)
 const announcement = ref('')
@@ -322,6 +335,7 @@ const revisions = ref([])
 const domains = ref([])
 const units = ref([])
 const publishedCodeSets = ref([])
+const codeSetRequests = createLatestRequestCoordinator()
 const revision = reactive({})
 const compiledRules = computed(() => revision.compiled_quality_rules?.rules || [])
 const ruleTypeLabel = type => t(`standard.element.${({ not_null: 'ruleNotNull', unique: 'ruleUnique', format: 'ruleFormat', length: 'ruleLength', value_range: 'ruleValueRange', allowed_values: 'ruleAllowedValues' })[type]}`)
@@ -330,10 +344,23 @@ const dateTimeValueFormat = 'YYYY-MM-DDTHH:mm:ssZ'
 const scopeOptions = ['platform', ...EDITABLE_STANDARD_SCOPES]
 const identityEditable = computed(() => canUpdate.value && Boolean(element.value.id) && element.value.scope_type !== 'platform' && element.value.lifecycle_state !== 'deleting')
 const editable = computed(() => canUpdate.value && revision.status === 'draft' && element.value.draft_revision_id === revision.id)
+const codeSetTarget = computed(() => JSON.stringify([editable.value, revision.effective_from]))
 const reviewing = computed(() => revision.status === 'in_review' && element.value.draft_revision_id === revision.id)
 const compatibleCodeSets = computed(() => publishedCodeSets.value.filter(codeSet => (
   isCodeSetCompatible(revision.data_type, codeSet.current_revision?.value_type)
 )))
+const boundCodeSet = computed(() => revision.code_set_revision_id &&
+  String(revision.code_set_revision?.revision_id) === String(revision.code_set_revision_id)
+  ? revision.code_set_revision : null)
+const boundCodeSetLabel = computed(() => boundCodeSet.value
+  ? `${boundCodeSet.value.name} (${boundCodeSet.value.code}) · R${boundCodeSet.value.revision_no}` : '')
+const boundCodeSetSelectable = computed(() => compatibleCodeSets.value.some(codeSet =>
+  String(codeSet.current_revision.id) === String(revision.code_set_revision_id)))
+const editableState = computed(() => ({
+  identity: { ...buildStandardOwnership(element.value.scope_type, element.value.owner_domain_id), tags: element.value.tags || [] },
+  revision: buildElementRevisionPayload(revision, 0)
+}))
+const { isDirty, markSaved } = useUnsavedChanges({ state: editableState })
 
 useConsolePageDescriptor(router, 'standard', {
   title: computed(() => t('standard.element.recentVisitTitle')),
@@ -362,7 +389,7 @@ function setRevision(value) {
 }
 
 async function load() {
-  const sequence = ++loadSequence
+  const request = detailRequests.begin(detailTarget.value)
   const elementId = route.params.id
   const requestedRevision = route.query.revision_id
   loading.value = true
@@ -370,22 +397,31 @@ async function load() {
   element.value = {}
   revisions.value = []
   setRevision(null)
+  markSaved()
   try {
     if (requestedRevision !== undefined) buildStandardElementRevisionLocation(elementId, requestedRevision)
-    const [aggregate, history, exactRevision] = await Promise.all([
+    const [aggregate, history] = await Promise.all([
       elementAPI.get(elementId),
-      elementAPI.listRevisions(elementId),
-      requestedRevision === undefined ? null : elementAPI.getRevision(elementId, requestedRevision)
+      elementAPI.listRevisions(elementId)
     ])
-    if (sequence !== loadSequence) return
+    if (!detailRequests.isCurrent(request, detailTarget.value)) return
+    const selectedId = requestedRevision ?? (aggregate.draft_revision || aggregate.current_revision || history?.[0])?.id
+    const exactRevision = selectedId ? await elementAPI.getRevision(elementId, selectedId) : null
+    if (!detailRequests.isCurrent(request, detailTarget.value)) return
+    if (exactRevision?.code_set_revision_id &&
+      String(exactRevision.code_set_revision?.revision_id) !== String(exactRevision.code_set_revision_id)) {
+      loadError.value = t('standard.element.codeSetSnapshotUnavailable')
+      return
+    }
     element.value = aggregate
     element.value.tags ||= []
     revisions.value = history || []
-    setRevision(requestedRevision === undefined ? (aggregate.draft_revision || aggregate.current_revision || history?.[0]) : exactRevision)
+    setRevision(exactRevision)
+    markSaved()
   } catch (error) {
-    if (sequence === loadSequence) loadError.value = getStandardErrorMessage(error, t, 'standard.common.loadFailed')
+    if (detailRequests.isCurrent(request, detailTarget.value)) loadError.value = getStandardErrorMessage(error, t, 'standard.common.loadFailed')
   } finally {
-    if (sequence === loadSequence) loading.value = false
+    if (detailRequests.isCurrent(request, detailTarget.value)) loading.value = false
   }
 }
 
@@ -396,37 +432,45 @@ async function loadOptions() {
   ])
   domains.value = domainResult.status === 'fulfilled' ? buildBusinessDomainOptions(domainResult.value || []) : []
   units.value = unitResult.status === 'fulfilled' ? unitResult.value || [] : []
-  await loadCodeSetOptions()
 }
 
 async function loadCodeSetOptions() {
+  const request = codeSetRequests.begin(codeSetTarget.value)
+  publishedCodeSets.value = []
+  if (!editable.value) return
   const params = { status: 'published', page_size: 500 }
   if (revision.effective_from) params.as_of = revision.effective_from
   try {
     const result = await codeSetAPI.list(params)
-    publishedCodeSets.value = (result.data || []).filter(item => item.current_revision)
+    if (codeSetRequests.isCurrent(request, codeSetTarget.value)) publishedCodeSets.value = (result.data || []).filter(item => item.current_revision)
   } catch {
-    publishedCodeSets.value = []
+    if (codeSetRequests.isCurrent(request, codeSetTarget.value)) publishedCodeSets.value = []
   }
 }
 
 async function saveIdentity() {
+  if (savingIdentity.value || savingRevision.value) return
   if (requiresOwnerDomain(element.value.scope_type) && !element.value.owner_domain_id) {
     ElMessage.error(t('standard.common.ownerDomainRequired'))
     return
   }
   savingIdentity.value = true
+  const request = detailRequests.begin(detailTarget.value)
   announcement.value = t('standard.common.saving')
   try {
-    element.value = await elementAPI.update(element.value.id, {
+    const aggregate = await elementAPI.update(element.value.id, {
       version: element.value.version,
       ...buildStandardOwnership(element.value.scope_type, element.value.owner_domain_id),
       tags: element.value.tags || []
     })
+    if (!detailRequests.isCurrent(request, detailTarget.value)) return
+    element.value = aggregate
     element.value.tags ||= []
+    markSaved('identity')
     announcement.value = t('standard.common.saveSuccess')
     ElMessage.success(announcement.value)
   } catch (error) {
+    if (!detailRequests.isCurrent(request, detailTarget.value)) return
     announcement.value = t('standard.common.saveFailed')
     ElMessage.error(getStandardErrorMessage(error, t, 'standard.common.saveFailed'))
   } finally {
@@ -439,7 +483,9 @@ watch(() => element.value.scope_type, scope => {
 })
 
 async function saveRevision() {
+  if (savingIdentity.value || savingRevision.value) return
   savingRevision.value = true
+  const request = detailRequests.begin(detailTarget.value)
   announcement.value = t('standard.common.saving')
   try {
     const aggregate = await elementAPI.updateRevision(
@@ -450,12 +496,15 @@ async function saveRevision() {
         element.value.version
       )
     )
-    element.value = aggregate
-    setRevision(aggregate.draft_revision)
+    if (!detailRequests.isCurrent(request, detailTarget.value)) return
+    // The identity form has its own save action; retain any unsaved ownership edits.
+    element.value = { ...aggregate, ...editableState.value.identity }
+    Object.assign(revision, aggregate.draft_revision)
+    markSaved('revision')
     announcement.value = t('standard.common.saveSuccess')
     ElMessage.success(announcement.value)
-    await load()
   } catch (error) {
+    if (!detailRequests.isCurrent(request, detailTarget.value)) return
     announcement.value = t('standard.common.saveFailed')
     ElMessage.error(getStandardErrorMessage(error, t, 'standard.common.saveFailed'))
   } finally {
@@ -475,6 +524,10 @@ function resetValueDomain(kind) {
 }
 
 async function act(action) {
+  if (isDirty.value || savingIdentity.value || savingRevision.value) {
+    ElMessage.warning(t('standard.common.saveBeforeAction'))
+    return
+  }
   try {
     await ElMessageBox.confirm(
       t(`standard.revision.confirm.${action}`),
@@ -500,6 +553,10 @@ async function act(action) {
 }
 
 async function newDraft() {
+  if (isDirty.value || savingIdentity.value || savingRevision.value) {
+    ElMessage.warning(t('standard.common.saveBeforeAction'))
+    return
+  }
   try {
     const { value } = await ElMessageBox.prompt(
       t('standard.revision.changeSummary'),
@@ -531,7 +588,11 @@ watch(() => [route.params.id, route.query.revision_id], () => {
   loadOptions()
 }, { immediate: true })
 
-watch(() => revision.effective_from, () => loadCodeSetOptions())
+watch(() => [editable.value, revision.effective_from], () => loadCodeSetOptions())
+onBeforeUnmount(() => {
+  detailRequests.invalidate()
+  codeSetRequests.invalidate()
+})
 </script>
 
 <style scoped>

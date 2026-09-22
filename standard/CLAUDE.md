@@ -6,6 +6,8 @@
 
 数据元精确修订 GET 返回 ElementRevisionDetail：在原修订内容上提供稳定 element_code 和按 code_set_revision_id 解析的码值集完整只读快照。历史已撤回码值集仍按确定 ID 展示，不改用当前生效修订；权限仍为 standard.element.read，跨租户及不匹配的数据元/修订拒绝。Quality 管理界面可读取该投影追溯来源，worker 不依赖它。
 
+数据元详情无论默认打开还是通过 `revision_id` 定位，均读取选中修订的精确详情。关联码值集的名称、编码、版次和状态来自该修订快照，不以可选候选反推历史引用；绑定快照缺失或身份不匹配时明确报错。只读状态不请求码值集候选，查看历史不额外要求 `standard.code_set.read`；可编辑草稿仍按类型与生效时间提供已发布候选，已绑定但不再可选的修订仅保留显示，不允许重新选入。选择其他候选后不显示旧快照的状态。
+
 Standard 定义 Domain、Glossary、Element、MetricDefinition、CodeSet、Unit 和标准来源文档等可复用业务语义，但不拥有这些语义与具体 DataItem、CatalogEntry 或 CatalogComponent 的应用关系。具体字段/组件到标准修订的映射只由 Catalog 保存；检查方案、规则来源快照、执行结果和问题只由 Quality 保存。Standard 不依赖 Meta 或 Catalog，不保存 `catalog_entry_id`、反向资源列表或质量执行事实。安全分类、安全等级、敏感类型和保护基线统一属于 Security，Standard 不保存第二份安全事实。
 
 Metric 的指标依赖与基准指标关系通过当前 User Token 读取 `GET /metrics/:id/relations` 一跳图；它要求 `standard.metric.read`，只读 Standard 本地事实，不调用 Catalog 或 Model，也不使用 `standard.catalog.read` 机器权限替代用户权限。数据元、Domain、指标分类和单位继续留在 Metric 专业详情中，本阶段不伪造为企业目录节点。
@@ -140,6 +142,8 @@ standard/
 | effective_from / effective_to | timestamp? | 半开生效区间 `[from,to)` |
 
 ### `standard.glossary_element_mappings` — 术语与数据元映射
+
+关联绑定稳定身份，不绑定展示修订。`GET /glossaries/:id/elements` 返回完整关联列表 `GlossaryElementReference[]`，不分页、不按发布状态、生效区间或身份生命周期隐藏既有关系；同租户隔离仍在查询中校验。名称、版次和修订状态取当前生效修订，无当前生效修订时取最高版次；无修订时名称为稳定编码、修订字段为空。`is_effective` 独立表达所展示修订是否当前生效，不与 `status=published` 混同，也不代表身份生命周期。PUT 继续只接受同租户 active 身份，使用术语聚合版本整体替换；失效身份必须显式解除，不能靠 GET 隐藏。删除旧 `PublishedElementReference` 消费路径，但跨模块已发布标准解析仍使用原有发布投影，不放宽其规则。
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
@@ -545,10 +549,16 @@ Standard 当前使用单一启动迁移入口 `repository.Migrate`：在同一�
 
 ## 前端公开路由
 
+数据元与术语编辑页的离页确认、浏览器卸载提醒和 Console 修改状态同步统一消费 `common-frontend` 的 `useUnsavedChangesGuard`。Standard 的 `useUnsavedChanges` 仅维护命名保存分区的基线；两类对象的治理信息与修订内容分别确认保存，保存其中一部分不得覆盖另一部分的输入或解除其保护。同身份的 `revision_id` 切换同样受保护，取消时 URL 和输入保持；状态动作前要求先保存修改。保存失败保留输入与基线，不新增自动保存或本地存储草稿。
+
 - 模块内 Router 使用 `/domains`、`/glossaries`、`/elements`、`/code-sets`、`/metrics` 等无模块前缀路径；Console 公开 URL 统一加 `/standard` 前缀。
 - 术语、数据元、码集和指标详情使用 `/:id` 表达对象身份；详情返回使用明确列表路由，不依赖 `router.back()`。
 - 创建成功进入详情使用 `replace`，列表进入详情和跨标准对象导航使用 `push`。
 - 业务导航统一调用 `frontend/src/utils/moduleNavigation.js`。
+- 术语关联数据元保存仅提交关联身份集合；成功更新聚合版本并只重读关联列表，不调用整页加载、不覆盖治理或修订输入，也不重置其保存基线。关联写入与两种表单保存互斥；写入失败保留弹窗选择，写入成功但列表读取失败时明确提示已保存并提供只读刷新，不重发 PUT。切换详情关闭关联弹窗，过期保存、列表或候选搜索响应不得覆盖新页面。
+- 术语关联选择器以已有映射初始化已选项名称与编码，不依赖其出现在当前 50 条候选中；搜索替换结果或失败时保留已选项的展示信息。候选仅合并当前已选项与最新搜索结果，按数据元身份去重，不累计未选中的历史结果；取消后重新打开从已保存映射恢复，不保留取消的选择。名称仅用于显示，保存仍只提交身份集合，不增加逐项读取或新接口。
+- 术语详情同样以 `revision_id` 定位确定修订；省略时依次选择草稿、当前生效、最新历史修订。历史选择通过模块导航 replace，同一修订重复点击不替换本地输入；切换前使用共享未保存确认，取消时 URL 与表单均不变。精确读取失败显示错误，不回退其他修订；加载成功才建立新保存基线，过期响应不得覆盖新选择。详情保留术语列表筛选，返回列表移除 `revision_id`。新建草稿成功后进入该草稿 URL。
+- 术语治理信息和修订内容独立保存，删除组合保存路径。治理卡片的保存仅更新适用范围、归属域和标签，不依赖当前修订是否为草稿；顶部保存仅更新可编辑草稿。两者分别校验、调用已有 API 并更新对应分区基线，不提交或覆盖另一分区输入。任一保存成功都推进聚合版本；失败保留输入和保护。保存开始时固定对象、修订和内容，离开页面不取消已提交操作；迟到响应不覆盖新选择。两种保存互斥，保存期间禁用表单及另一保存入口，成功后原位更新而不重载其他编辑状态。
 - 数据元详情以 `revision_id` 唯一 query 定位确定修订；省略时选择草稿、当前生效修订、最新历史修订中的首个。显式修订通过精确 GET 读取，失败显示错误且不替换为默认修订。历史选择以 replace 同步 URL，刷新与同组件 query 切换恢复同一修订。跨模块入口共用 `common-frontend` 的 `buildStandardElementRevisionRoute`，owner 内导航共用其 location builder；权限仍由 `standard.element.read` 控制。
 
 文本类型统一使用 `string`，界面显示“文本”，可选最大长度与格式约束；数据元类型选择统一采用“类型名称＋例如”两行选项，选中后显示取值范围或精度说明，使用同一个 `ElementDataTypeSelect` 组件覆盖新建和详情；不要求用户选择数据库存储类型。迁移将已有数据元修订的 `text` 类型编码原位规范化为 `string`，保留修订身份、状态和业务约束；这是类型词汇调整，不创建业务修订，受影响数据元的聚合版本推进一次。历史文档提炼批次保持不可变，旧类型候选须重新提炼后正式化。Standard 的五类标准稳定身份整体移除 `steward_id`，保留归属域、标签及审计操作人。

@@ -58,10 +58,6 @@
       "domainOptional": "Select Domain (optional)",
       "remove": "Remove",
       "unsaved": "Unsaved",
-      "unsavedTitle": "Unsaved changes",
-      "unsavedConfirm": "Your changes have not been saved and will be lost if you leave. Leave this page?",
-      "leave": "Leave",
-      "continueEditing": "Continue editing",
       "saveBeforeAction": "Save the current changes before changing status",
       "uncategorized": "Uncategorized"
     },
@@ -128,6 +124,11 @@
       "loadFailed": "Failed to load domains"
     },
     "glossary": {
+      "displayRevision": "Display Revision",
+      "effectiveness": "Current Effectiveness",
+      "effective": "Currently Effective",
+      "noEffectiveRevision": "No Effective Revision",
+      "identityUnavailable": "Identity Unavailable",
       "recentVisitTitle": "Business Term",
       "title": "Business Glossary",
       "create": "New Term",
@@ -159,6 +160,7 @@
       "confirmDeprecate": "Confirm deprecate term \"{name}\"?",
       "relatedElements": "Related Data Elements",
       "manageElements": "Manage Data Elements",
+      "mappingRefreshFailed": "Links were saved, but the list could not be loaded. Refresh the linked elements.",
       "addElement": "Add Data Element",
       "noElements": "No related data elements",
       "basicInfo": "Basic Info",
@@ -243,6 +245,7 @@
       "unitLabel": "Unit",
       "definitionLabel": "Definition",
       "codeSetLabel": "Code Set",
+      "codeSetSnapshotUnavailable": "The code set version bound to this revision could not be loaded",
       "defaultValueLabel": "Default Value",
       "exampleValuesLabel": "Example Values",
       "exampleValuesPlaceholder": "Type an example value and press Enter",

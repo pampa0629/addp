@@ -1,5 +1,14 @@
 const validStatuses = new Set(['draft', 'in_review', 'published', 'withdrawn'])
 
+export const buildGlossaryRevisionLocation = (glossaryID, revisionID, query = {}) => {
+  for (const id of [glossaryID, revisionID]) {
+    if (!['string', 'number'].includes(typeof id) || !/^[1-9]\d*$/.test(String(id))) {
+      throw new Error('A positive glossary or revision ID is required')
+    }
+  }
+  return { path: `/glossaries/${glossaryID}`, query: { ...query, revision_id: String(revisionID) } }
+}
+
 export const parsePositiveInteger = (value, fallback) => {
   const parsed = Number(value)
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback

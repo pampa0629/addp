@@ -116,10 +116,12 @@ curl http://localhost:8086/health/ready
 - 资源身份和创建、编辑、详情、测试职责使用 path 表达；创建成功后用 `replace` 进入详情，其余列表到详情使用 `push`。
 - 服务目录默认 `all` Tab 省略，其他稳定类型使用唯一 `tab` query。
 - 外部服务注册仅使用 `/services`、`/services/create`、`/services/:id`、`/services/:id/edit`，由 `RegisteredServiceList/Form/Detail.vue` 与唯一 `api/registeredService.js` 实现；Console 菜单和服务目录共用这些路径，不保留 `/registered-services` 别名或另一套注册页面。列表参数沿后端契约使用 `page`、`limit`、`search`。
-- 注册表单通过共享 `useUnsavedChangesGuard` 保护普通字段、关键词和认证输入；加载成功与保存成功后更新内存基线，保存失败保留修改状态。保存期间禁用表单输入；切换编辑对象时重建草稿并忽略过期加载结果，不保存浏览器草稿副本。
+- 注册详情随路由服务 ID 变化重新加载并清空旧内容；过期加载响应和旧身份的操作结果不得更新当前详情、通知或导航。确认框等待期间切换身份后不得发送旧操作请求。
+- 注册表单通过共享 `useUnsavedChangesGuard` 保护普通字段、关键词和认证输入；加载成功与保存成功后更新内存基线，保存失败保留修改状态。保存期间禁用表单输入；切换编辑对象时重建草稿并清除旧提交状态；身份切换或组件卸载后忽略旧加载、保存的成功与失败结果，旧保存不得更新基线、通知、导航或解锁新提交。不保存浏览器草稿副本。
 - 查询服务表单复用同一离页保护，覆盖 SQL、命名参数及选项、稳定排序键、空间字段、数据源、协议和服务信息；步骤与候选搜索不计入修改。加载已有定义后建立基线，保存成功只确认本次提交的草稿，失败或版本冲突保留输入。加载与提交期间禁止编辑；切换服务身份后忽略旧加载、保存和元数据检测结果。
 - 真实查询表单的 iframe 离页回归由 `make test-console-frontend` 执行，复用 `frontend/e2e/query-form.html` 夹具和正式页面/API 客户端；只拦截 HTTP 响应，不写业务数据库；覆盖创建草稿、已有服务版本冲突与重载、同组件身份切换和旧响应隔离。Service 前端变更会通过共享改动矩阵扩散到 Console 门禁。
 - `frontend/e2e/navigation.html` 复用正式 App、Layout 和路由表，由 Console 浏览器门禁验证嵌入及独立访问的五个菜单入口、目录内部跳转、刷新和历史恢复；API 响应由测试拦截。
+- 注册表单的真实 iframe 离页回归由 Console 的 `registered-service-unsaved.spec.js` 执行，复用上述正式页面夹具，覆盖字段/关键词/认证草稿、内部及宿主导航、历史、刷新、创建与更新的失败保留和成功清除。HTTP 写请求全部模拟，不写业务数据库。
 - 业务导航统一调用 `frontend/src/utils/moduleNavigation.js`。
 
 查询服务血缘通过现有 Meta 发布接口同步人类可读的 `Title`（`service_name`）及 `UpdatedAt`（`service_updated_at`）。Service 启动后及每分钟按主键分页重放 owner 发布事实，补齐名称并重试失败投递；非 active 状态同步空依赖。Meta 关闭旧版本当前投影，保留历史观察，并拒绝过期通知。不得借用仅面向 Catalog 的 resolver 权限。此契约由 Service T1、Meta T1 和 Meta PostgreSQL lifecycle migration 门禁验证。

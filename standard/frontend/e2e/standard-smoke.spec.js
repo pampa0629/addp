@@ -391,14 +391,14 @@ test('protects unsaved glossary changes when leaving the detail page', async ({ 
   await expect(page.getByText('未保存', { exact: true })).toBeVisible()
 
   await page.getByRole('button', { name: /返回/ }).click()
-  const confirm = page.getByRole('dialog', { name: '未保存的修改' })
+  const confirm = page.getByRole('dialog', { name: '有未保存的修改' })
   await expect(confirm).toBeVisible()
   await confirm.getByRole('button', { name: '继续编辑' }).click()
   await expect(page).toHaveURL(/\/glossaries\/21\?owner_domain_id=2&status=draft$/)
   await expect(nameInput).toHaveValue('尚未保存的领队')
 
   await page.getByRole('button', { name: /返回/ }).click()
-  await page.getByRole('dialog', { name: '未保存的修改' }).getByRole('button', { name: '离开' }).click()
+  await page.getByRole('dialog', { name: '有未保存的修改' }).getByRole('button', { name: '放弃修改并离开' }).click()
   await expect(page).toHaveURL(/\/glossaries\?owner_domain_id=2&status=draft$/)
 })
 
@@ -408,11 +408,559 @@ test('keeps local glossary edits when a stale version is rejected', async ({ pag
 
   const nameInput = page.getByRole('textbox', { name: '术语名称' })
   await nameInput.fill('本地尚未保存的领队')
-  await page.getByRole('button', { name: '保存' }).click()
+  const tags = page.getByRole('combobox', { name: '标签', exact: true })
+  await tags.fill('尚未保存的治理标签')
+  await tags.press('Enter')
+  await page.locator('.section-card').filter({ has: page.getByRole('heading', { name: '稳定身份与治理归属' }) }).getByRole('button', { name: '保存', exact: true }).click()
 
   await expect(page.getByText('资源已被其他用户修改，请刷新后重试')).toBeVisible()
   await expect(nameInput).toHaveValue('本地尚未保存的领队')
+  await expect(page.getByText('尚未保存的治理标签', { exact: true })).toBeVisible()
+  await nameInput.fill('领队')
   await expect(page.getByText('未保存', { exact: true })).toBeVisible()
+  expect(await page.evaluate(() => window.dispatchEvent(new Event('beforeunload', { cancelable: true })))).toBe(false)
+})
+
+test('protects glossary history switching and restores the exact revision without dirtying the form', async ({ page }) => {
+  await installMockBackend(page, { glossaryHistory: true })
+  await page.goto('/glossaries/21?owner_domain_id=2&status=draft')
+  const name = page.getByRole('textbox', { name: '术语名称' })
+  const history = page.locator('.section-card').filter({ has: page.getByRole('heading', { name: '修订历史' }) })
+  await name.fill('尚未保存的领队')
+  await history.getByRole('row').filter({ hasText: '草稿' }).click()
+  await expect(name).toHaveValue('尚未保存的领队')
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await history.getByRole('row').filter({ hasText: '已发布' }).click()
+  const confirm = page.getByRole('dialog', { name: '有未保存的修改' })
+  await confirm.getByRole('button', { name: '继续编辑' }).click()
+  await expect(page).toHaveURL(/\/glossaries\/21\?owner_domain_id=2&status=draft$/)
+  await expect(name).toHaveValue('尚未保存的领队')
+  await history.getByRole('row').filter({ hasText: '已发布' }).click()
+  await confirm.getByRole('button', { name: '放弃修改并离开' }).click()
+  await expect(page).toHaveURL(/owner_domain_id=2&status=draft&revision_id=210$/)
+  await expect(name).toHaveValue('历史领队')
+  await expect(name).toBeDisabled()
+  await expect(page.getByText('未保存', { exact: true })).toHaveCount(0)
+  await page.reload()
+  await expect(name).toHaveValue('历史领队')
+  await history.getByRole('row').filter({ hasText: '草稿' }).click()
+  await expect(page).toHaveURL(/revision_id=211$/)
+  await expect(name).toHaveValue('领队')
+  await expect(name).toBeEditable()
+  await expect(page.getByText('未保存', { exact: true })).toHaveCount(0)
+  await page.getByRole('button', { name: /返回/ }).click()
+  await expect(page).toHaveURL(/\/glossaries\?owner_domain_id=2&status=draft$/)
+})
+
+for (const revisionQuery of ['revision_id=999', 'revision_id=210', 'revision_id=0', 'revision_id=', 'revision_id=211&revision_id=210']) {
+  test(`fails closed for unavailable or invalid glossary revision ${revisionQuery}`, async ({ page }) => {
+    await installMockBackend(page, { glossaryHistory: true, glossaryRevisionDenied: true })
+    await page.goto(`/glossaries/21?${revisionQuery}`)
+    await expect(page.getByRole('alert')).toBeVisible()
+    await expect(page).toHaveURL(new RegExp(`${revisionQuery}$`))
+    await expect(page.getByRole('textbox', { name: '术语名称' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: '保存', exact: true })).toHaveCount(0)
+  })
+}
+
+test('opens a newly created glossary draft from a pinned published revision', async ({ page }) => {
+  await installMockBackend(page, { glossaryPublicationHistory: true })
+  await page.goto('/glossaries/21?owner_domain_id=2&revision_id=211')
+  await page.getByRole('button', { name: '创建新修订' }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByRole('textbox').fill('修订领队定义')
+  await dialog.getByRole('button', { name: '确定', exact: true }).click()
+  await expect(page).toHaveURL(/owner_domain_id=2&revision_id=212$/)
+  await expect(page.getByRole('textbox', { name: '术语名称' })).toBeEditable()
+  await expect(page.getByText('未保存', { exact: true })).toHaveCount(0)
+})
+
+for (const delayedPart of ['identity', 'revision']) {
+test(`keeps a switched glossary history page when an earlier ${delayedPart} save completes`, async ({ page }) => {
+  await installMockBackend(page, { glossaryHistory: true })
+  let releaseSave
+  const pendingSave = new Promise(resolve => { releaseSave = resolve })
+  const delayedPath = delayedPart === 'identity' ? '/glossaries/21' : '/glossaries/21/revisions/211'
+  await page.route(`**/standard${delayedPath}`, async route => {
+    if (route.request().method() !== 'PUT') return route.fallback()
+    await pendingSave
+    await route.fallback()
+  })
+  await page.goto('/glossaries/21?revision_id=211')
+  const name = page.getByRole('textbox', { name: '术语名称' })
+  await name.fill('保存中的领队')
+  const saveStarted = page.waitForRequest(request => request.method() === 'PUT' && request.url().endsWith(delayedPath))
+  const saveButton = delayedPart === 'identity'
+    ? page.locator('.section-card').filter({ has: page.getByRole('heading', { name: '稳定身份与治理归属' }) }).getByRole('button', { name: '保存', exact: true })
+    : page.locator('.page-header').getByRole('button', { name: '保存', exact: true })
+  await saveButton.click()
+  await saveStarted
+  await expect(name).toBeDisabled()
+  const otherSaveButton = delayedPart === 'identity'
+    ? page.locator('.page-header').getByRole('button', { name: '保存', exact: true })
+    : page.locator('.section-card').filter({ has: page.getByRole('heading', { name: '稳定身份与治理归属' }) }).getByRole('button', { name: '保存', exact: true })
+  await expect(otherSaveButton).toBeDisabled()
+  await page.getByRole('row').filter({ hasText: '已发布' }).click()
+  await page.getByRole('dialog', { name: '有未保存的修改' }).getByRole('button', { name: '放弃修改并离开' }).click()
+  await expect(name).toHaveValue('历史领队')
+  const saveFinished = page.waitForResponse(response => response.request().method() === 'PUT' && response.url().endsWith(delayedPath))
+  releaseSave()
+  const saved = await saveFinished
+  if (delayedPart === 'revision') expect(saved.request().postDataJSON().name).toBe('保存中的领队')
+  else expect(saved.request().postDataJSON()).not.toHaveProperty('name')
+  await expect(page).toHaveURL(/revision_id=210$/)
+  await expect(name).toHaveValue('历史领队')
+  await expect(page.getByText('未保存', { exact: true })).toHaveCount(0)
+})
+}
+
+test('keeps failed glossary revision edits after independently saving ownership', async ({ page }) => {
+  await installMockBackend(page)
+  let revisionSaveFailed = false
+  const identityVersions = []
+  await page.route('**/standard/glossaries/21', async route => {
+    if (route.request().method() === 'PUT') identityVersions.push(route.request().postDataJSON().version)
+    return route.fallback()
+  })
+  await page.route('**/standard/glossaries/21/revisions/211', async route => {
+    if (route.request().method() !== 'PUT' || revisionSaveFailed) return route.fallback()
+    revisionSaveFailed = true
+    return fulfillJSON(route, { error: '修订保存失败' }, 409)
+  })
+  await page.goto('/glossaries/21?revision_id=211')
+  const name = page.getByRole('textbox', { name: '术语名称' })
+  await name.fill('修订后的领队')
+  const identitySave = page.locator('.section-card').filter({ has: page.getByRole('heading', { name: '稳定身份与治理归属' }) }).getByRole('button', { name: '保存', exact: true })
+  const revisionSave = page.locator('.page-header').getByRole('button', { name: '保存', exact: true })
+  await identitySave.click()
+  await expect(revisionSave).toBeEnabled()
+  await revisionSave.click()
+  await expect(page.getByText('修订保存失败', { exact: true })).toBeVisible()
+  await expect(name).toHaveValue('修订后的领队')
+  await expect(page.getByText('未保存', { exact: true })).toBeVisible()
+  await revisionSave.click()
+  expect(identityVersions).toEqual([1])
+  await expect(page.getByText('未保存', { exact: true })).toHaveCount(0)
+  await page.getByRole('button', { name: /返回/ }).click()
+  await expect(page).toHaveURL(/\/glossaries$/)
+})
+
+for (const firstSection of ['identity', 'revision']) {
+  test(`glossary saves ${firstSection} independently and preserves the other dirty section`, async ({ page }) => {
+    await installMockBackend(page)
+    const writes = []
+    page.on('request', request => {
+      if (request.method() === 'PUT' && request.url().includes('/glossaries/21')) writes.push({ path: new URL(request.url()).pathname, body: request.postDataJSON() })
+    })
+    await page.goto('/glossaries/21?revision_id=211')
+    const name = page.getByRole('textbox', { name: '术语名称' })
+    await name.fill('更新后的领队')
+    const tags = page.getByRole('combobox', { name: '标签', exact: true })
+    await tags.fill('治理标签')
+    await tags.press('Enter')
+    const buttons = {
+      identity: page.locator('.section-card').filter({ has: page.getByRole('heading', { name: '稳定身份与治理归属' }) }).getByRole('button', { name: '保存', exact: true }),
+      revision: page.locator('.page-header').getByRole('button', { name: '保存', exact: true })
+    }
+    await buttons[firstSection].click()
+    await expect(name).toBeEnabled()
+    expect(writes).toHaveLength(1)
+    await expect(name).toHaveValue('更新后的领队')
+    await expect(page.getByText('治理标签', { exact: true })).toBeVisible()
+    await expect(page.getByText('未保存', { exact: true })).toBeVisible()
+    await page.getByRole('button', { name: /返回/ }).click()
+    await page.getByRole('dialog', { name: '有未保存的修改' }).getByRole('button', { name: '继续编辑' }).click()
+    await buttons[firstSection === 'identity' ? 'revision' : 'identity'].click()
+    await expect(page.getByText('未保存', { exact: true })).toHaveCount(0)
+    expect(writes).toHaveLength(2)
+    expect(writes.map(write => write.body.version)).toEqual([1, 2])
+    const identityWrite = writes.find(write => write.path.endsWith('/21')).body
+    const revisionWrite = writes.find(write => write.path.endsWith('/211')).body
+    expect(Object.keys(identityWrite).sort()).toEqual(['owner_domain_id', 'scope_type', 'tags', 'version'])
+    expect(identityWrite.tags).toEqual(['治理标签'])
+    expect(revisionWrite.name).toBe('更新后的领队')
+    expect(revisionWrite).not.toHaveProperty('tags')
+    await page.reload()
+    await expect(name).toHaveValue('更新后的领队')
+    await expect(page.getByText('治理标签', { exact: true })).toBeVisible()
+  })
+}
+
+for (const language of ['zh-cn', 'en']) {
+  test(`published glossary ownership is independently editable in ${language}`, async ({ page }) => {
+    await installMockBackend(page, { glossaryPublicationHistory: true, language })
+    if (language === 'en') await page.setViewportSize({ width: 760, height: 1000 })
+    const writes = []
+    page.on('request', request => { if (request.method() === 'PUT') writes.push(request) })
+    await page.goto('/glossaries/21?revision_id=211')
+    const en = language === 'en'
+    const name = page.getByRole('textbox', { name: en ? 'Term Name' : '术语名称', exact: true })
+    await expect(name).toBeDisabled()
+    const save = page.getByRole('button', { name: en ? 'Save' : '保存', exact: true })
+    await expect(save).toHaveCount(1)
+    const tags = page.getByRole('combobox', { name: en ? 'Tags' : '标签', exact: true })
+    await tags.fill('ownership-only')
+    await tags.press('Enter')
+    await save.click()
+    await expect(page.getByText(en ? 'Unsaved' : '未保存', { exact: true })).toHaveCount(0)
+    expect(writes).toHaveLength(1)
+    expect(writes[0].url()).toMatch(/\/glossaries\/21$/)
+    await expect(page).toHaveURL(/revision_id=211$/)
+    await expect(name).toHaveValue('领队')
+    await page.reload()
+    await expect(page.getByText('ownership-only', { exact: true })).toBeVisible()
+    await expect(name).toBeDisabled()
+  })
+}
+
+test('glossary ownership save does not validate an unfinished draft and revision save does not validate ownership edits', async ({ page }) => {
+  await installMockBackend(page)
+  await page.goto('/glossaries/21')
+  const name = page.getByRole('textbox', { name: '术语名称' })
+  await name.fill('')
+  const identitySave = page.locator('.section-card').filter({ has: page.getByRole('heading', { name: '稳定身份与治理归属' }) }).getByRole('button', { name: '保存', exact: true })
+  await identitySave.click()
+  await expect(page.getByText('保存成功', { exact: true })).toBeVisible()
+  await expect(name).toHaveValue('')
+  await expect(page.getByText('未保存', { exact: true })).toBeVisible()
+  await name.fill('领队')
+  const scope = page.locator('.el-form-item').filter({ has: page.getByText('适用范围', { exact: true }) }).locator('.el-select')
+  await scope.click()
+  await page.getByRole('option', { name: '租户公共', exact: true }).click()
+  await scope.click()
+  await page.getByRole('option', { name: '业务域专属', exact: true }).click()
+  await page.locator('.page-header').getByRole('button', { name: '保存', exact: true }).click()
+  await expect(name).toBeEnabled()
+  await expect(page.getByText('未保存', { exact: true })).toBeVisible()
+  await identitySave.click()
+  await expect(page.getByText('选择业务域', { exact: true })).toBeVisible()
+})
+
+const mappingFixtureElements = [{ id: 41, code: 'person_id', name: '人员标识', data_type: 'string', status: 'draft' }]
+
+async function selectGlossaryElement(page, language = 'zh-cn') {
+  const en = language === 'en'
+  await page.getByRole('button', { name: en ? 'Manage Data Elements' : '管理关联数据元', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: en ? 'Manage Data Elements' : '管理关联数据元', exact: true })
+  await dialog.locator('.el-select').click()
+  await page.getByRole('option', { name: '人员标识 (person_id)', exact: true }).click()
+  await dialog.getByRole('heading').click()
+  return dialog
+}
+
+test('glossary mapping save preserves both dirty forms and updates only the mapping list', async ({ page }) => {
+  await installMockBackend(page, { elements: mappingFixtureElements })
+  const reads = [], writes = []
+  page.on('request', request => {
+    if (!request.url().includes('/standard/glossaries/21')) return
+    if (request.method() === 'GET') reads.push(new URL(request.url()).pathname)
+    if (request.method() === 'PUT') writes.push({ path: new URL(request.url()).pathname, body: request.postDataJSON() })
+  })
+  await page.goto('/glossaries/21?revision_id=211')
+  const name = page.getByRole('textbox', { name: '术语名称' })
+  await name.fill('未保存的领队说明')
+  const tags = page.getByRole('combobox', { name: '标签', exact: true })
+  await tags.fill('未保存的标签')
+  await tags.press('Enter')
+  const dialog = await selectGlossaryElement(page)
+  await dialog.getByRole('button', { name: '确定', exact: true }).click()
+  await expect(dialog).not.toBeVisible()
+  await expect(page.getByRole('row').filter({ hasText: 'person_id' })).toBeVisible()
+  await expect(name).toHaveValue('未保存的领队说明')
+  await expect(page.getByText('未保存的标签', { exact: true })).toBeVisible()
+  await expect(page.getByText('未保存', { exact: true })).toBeVisible()
+  expect(reads.filter(path => path.endsWith('/21'))).toHaveLength(1)
+  expect(reads.filter(path => path.endsWith('/revisions/211'))).toHaveLength(1)
+  expect(reads.filter(path => path.endsWith('/elements'))).toHaveLength(2)
+  expect(writes).toEqual([{ path: '/api/v1/standard/glossaries/21/elements', body: { version: 1, element_ids: [41] } }])
+  await page.locator('.section-card').filter({ has: page.getByRole('heading', { name: '稳定身份与治理归属' }) }).getByRole('button', { name: '保存', exact: true }).click()
+  await expect(name).toBeEnabled()
+  await expect(page.getByText('未保存', { exact: true })).toBeVisible()
+  await page.locator('.page-header').getByRole('button', { name: '保存', exact: true }).click()
+  await expect(page.getByText('未保存', { exact: true })).toHaveCount(0)
+  expect(writes.map(write => write.body.version)).toEqual([1, 2, 3])
+})
+
+test('failed glossary mapping save retains the selection and retries with the unchanged version', async ({ page }) => {
+  await installMockBackend(page, { elements: mappingFixtureElements })
+  const writes = []
+  await page.route('**/glossaries/21/elements', async route => {
+    if (route.request().method() !== 'PUT') return route.fallback()
+    writes.push(route.request().postDataJSON())
+    if (writes.length === 1) return fulfillJSON(route, { error: '关联保存失败' }, 409)
+    return route.fallback()
+  })
+  await page.goto('/glossaries/21')
+  const name = page.getByRole('textbox', { name: '术语名称' })
+  await name.fill('仍需保存的定义')
+  const dialog = await selectGlossaryElement(page)
+  await dialog.getByRole('button', { name: '确定', exact: true }).click()
+  await expect(page.getByText('关联保存失败', { exact: true })).toBeVisible()
+  await expect(dialog).toBeVisible()
+  await expect(dialog.locator('.el-tag')).toContainText('人员标识')
+  await expect(name).toHaveValue('仍需保存的定义')
+  await expect(page.getByText('未保存', { exact: true })).toBeVisible()
+  await dialog.getByRole('button', { name: '确定', exact: true }).click()
+  await expect(dialog).not.toBeVisible()
+  await expect(page.getByRole('row').filter({ hasText: 'person_id' })).toBeVisible()
+  expect(writes).toEqual([{ version: 1, element_ids: [41] }, { version: 1, element_ids: [41] }])
+})
+
+test('glossary mapping submission is single flight and cancel sends no write', async ({ page }) => {
+  await installMockBackend(page, { elements: mappingFixtureElements })
+  const writes = []
+  let releaseSave
+  const pending = new Promise(resolve => { releaseSave = resolve })
+  await page.route('**/glossaries/21/elements', async route => {
+    if (route.request().method() !== 'PUT') return route.fallback()
+    writes.push(route.request().postDataJSON())
+    await pending
+    return route.fallback()
+  })
+  await page.goto('/glossaries/21')
+  let dialog = await selectGlossaryElement(page)
+  await dialog.getByRole('button', { name: '取消', exact: true }).click()
+  expect(writes).toHaveLength(0)
+  dialog = await selectGlossaryElement(page)
+  await dialog.getByRole('button', { name: '确定', exact: true }).evaluate(button => { button.click(); button.click() })
+  await expect.poll(() => writes.length).toBe(1)
+  await expect(dialog.locator('.el-select__wrapper')).toHaveClass(/is-disabled/)
+  await expect(dialog.getByRole('combobox')).toHaveCount(0)
+  await expect(dialog.getByRole('button', { name: '取消', exact: true })).toBeDisabled()
+  await expect(page.locator('.page-header').getByRole('button', { name: '保存', exact: true })).toBeDisabled()
+  releaseSave()
+  await expect(dialog).not.toBeVisible()
+  await expect(page.getByRole('row').filter({ hasText: 'person_id' })).toBeVisible()
+  expect(writes).toHaveLength(1)
+})
+
+for (const language of ['zh-cn', 'en']) {
+  test(`saved glossary mapping has read-only recovery after list failure in ${language}`, async ({ page }) => {
+    await installMockBackend(page, { elements: mappingFixtureElements, language })
+    let reads = 0, writes = 0
+    await page.route('**/glossaries/21/elements', async route => {
+      if (route.request().method() === 'PUT') writes += 1
+      else if (++reads === 2) return fulfillJSON(route, { error: 'mapping list unavailable' }, 503)
+      return route.fallback()
+    })
+    await page.goto('/glossaries/21')
+    const en = language === 'en'
+    const name = page.getByRole('textbox', { name: en ? 'Term Name' : '术语名称', exact: true })
+    await name.fill('unsaved term')
+    const dialog = await selectGlossaryElement(page, language)
+    await dialog.getByRole('button', { name: en ? 'Confirm' : '确定', exact: true }).click()
+    await expect(dialog).not.toBeVisible()
+    await expect(page.locator('.glossary-detail').getByRole('alert')).toContainText(en ? 'Links were saved' : '关联已保存')
+    await expect(name).toHaveValue('unsaved term')
+    await expect(page.getByText(en ? 'Unsaved' : '未保存', { exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: en ? 'Manage Data Elements' : '管理关联数据元', exact: true })).toBeDisabled()
+    await page.getByRole('button', { name: en ? 'Refresh' : '刷新', exact: true }).click()
+    await expect(page.getByRole('row').filter({ hasText: 'person_id' })).toBeVisible()
+    await expect(page.locator('.glossary-detail').getByRole('alert')).toHaveCount(0)
+    expect(writes).toBe(1)
+    expect(reads).toBe(3)
+    await expect(name).toHaveValue('unsaved term')
+  })
+}
+
+test('late mapping refresh does not overwrite a newly selected glossary revision', async ({ page }) => {
+  await installMockBackend(page, { elements: mappingFixtureElements, glossaryHistory: true })
+  let reads = 0, releaseRead
+  const pending = new Promise(resolve => { releaseRead = resolve })
+  await page.route('**/glossaries/21/elements', async route => {
+    if (route.request().method() === 'GET' && ++reads === 2) {
+      await pending
+      return fulfillJSON(route, { error: 'stale mapping failure' }, 503)
+    }
+    return route.fallback()
+  })
+  await page.goto('/glossaries/21?revision_id=211')
+  const dialog = await selectGlossaryElement(page)
+  await dialog.getByRole('button', { name: '确定', exact: true }).click()
+  await expect(dialog).not.toBeVisible()
+  await expect.poll(() => reads).toBe(2)
+  await page.getByRole('row').filter({ hasText: '已发布' }).click()
+  const name = page.getByRole('textbox', { name: '术语名称' })
+  await expect(name).toHaveValue('历史领队')
+  const response = page.waitForResponse(res => res.url().endsWith('/glossaries/21/elements') && res.status() === 503)
+  releaseRead()
+  await response
+  await expect(page).toHaveURL(/revision_id=210$/)
+  await expect(page.getByRole('alert')).toHaveCount(0)
+  await expect(page.getByRole('row').filter({ hasText: 'person_id' })).toBeVisible()
+  await expect(name).toHaveValue('历史领队')
+})
+
+test('leaving glossary detail ignores a late mapping write response', async ({ page }) => {
+  await installMockBackend(page, { elements: mappingFixtureElements })
+  let releaseSave
+  const pending = new Promise(resolve => { releaseSave = resolve })
+  await page.route('**/glossaries/21/elements', async route => {
+    if (route.request().method() !== 'PUT') return route.fallback()
+    await pending
+    return route.fallback()
+  })
+  await page.goto('/glossaries')
+  await page.getByRole('row').filter({ hasText: 'leader' }).getByRole('button', { name: '详情', exact: true }).click()
+  const dialog = await selectGlossaryElement(page)
+  const started = page.waitForRequest(request => request.method() === 'PUT' && request.url().endsWith('/glossaries/21/elements'))
+  await dialog.getByRole('button', { name: '确定', exact: true }).click()
+  await started
+  await page.goBack()
+  await expect(page).toHaveURL(/\/glossaries$/)
+  const finished = page.waitForResponse(response => response.request().method() === 'PUT' && response.url().endsWith('/glossaries/21/elements'))
+  releaseSave()
+  await finished
+  await expect(page.getByRole('heading', { name: '业务术语词典' })).toBeVisible()
+  await expect(page.getByText('保存成功', { exact: true })).toHaveCount(0)
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+})
+
+for (const language of ['zh-cn', 'en']) {
+  test(`glossary mappings distinguish effectiveness and preserve every identity in ${language}`, async ({ page }) => {
+    const mappings = [
+      { id: 41, code: 'draft_person', name: '草稿人员', status: 'draft', is_effective: false },
+      { id: 42, code: 'future_activity', name: '待生效活动', status: 'published', is_effective: false },
+      { id: 43, code: 'withdrawn_leader', name: '已撤回领队', status: 'withdrawn', is_effective: false },
+      { id: 44, code: 'effective_member', name: '生效成员', status: 'published', is_effective: true }
+    ].map(item => ({ ...item, revision_id: item.id * 10 + 1, revision_no: 1, lifecycle_state: 'active' }))
+    await installMockBackend(page, { language, elements: mappings.map(item => ({ ...item, data_type: 'string' })), glossaryElementIDs: mappings.map(item => item.id) })
+    await page.route('**/glossaries/21/elements', route => route.request().method() === 'GET' ? fulfillJSON(route, mappings) : route.fallback())
+    await page.goto('/glossaries/21')
+    const en = language === 'en'
+    const card = page.locator('.section-card').filter({ has: page.getByRole('heading', { name: en ? 'Related Data Elements' : '关联的数据元', exact: true }) })
+    await expect(card.getByText(en ? 'No Effective Revision' : '无当前生效修订', { exact: true })).toHaveCount(3)
+    const futureRow = card.getByRole('row').filter({ hasText: 'future_activity' })
+    await expect(futureRow).toContainText(en ? 'Published' : '已发布')
+    await expect(futureRow).toContainText(en ? 'No Effective Revision' : '无当前生效修订')
+    await expect(card.getByRole('row').filter({ hasText: 'effective_member' })).toContainText(en ? 'Currently Effective' : '当前生效')
+    await page.getByRole('button', { name: en ? 'Manage Data Elements' : '管理关联数据元', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: en ? 'Manage Data Elements' : '管理关联数据元', exact: true })
+    await expect(dialog.locator('.el-tag')).toHaveCount(4)
+    const saved = page.waitForRequest(request => request.method() === 'PUT' && request.url().endsWith('/glossaries/21/elements'))
+    await dialog.getByRole('button', { name: en ? 'Confirm' : '确定', exact: true }).click()
+    expect((await saved).postDataJSON()).toEqual({ version: 1, element_ids: [41, 42, 43, 44] })
+    await expect(dialog).not.toBeVisible()
+    await page.reload()
+    await expect(card.getByRole('row').filter({ hasText: 'draft_person' })).toBeVisible()
+    await expect(card.getByRole('row').filter({ hasText: 'withdrawn_leader' })).toBeVisible()
+  })
+}
+
+test('glossary mapping labels survive an absent first candidate page without detail reads', async ({ page }) => {
+  await installMockBackend(page, { elements: mappingFixtureElements, glossaryElementIDs: [41] })
+  let releaseSearch
+  const pending = new Promise(resolve => { releaseSearch = resolve })
+  const elementReads = []
+  page.on('request', request => {
+    if (request.method() === 'GET' && request.url().includes('/standard/elements')) elementReads.push(new URL(request.url()).pathname)
+  })
+  await page.route('**/standard/elements?**', async route => {
+    await pending
+    return fulfillJSON(route, { data: [], total: 0 })
+  })
+  await page.goto('/glossaries/21')
+  await page.getByRole('button', { name: '管理关联数据元', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: '管理关联数据元', exact: true })
+  await expect(dialog.locator('.el-tag')).toHaveText(['人员标识 (person_id)'])
+  const response = page.waitForResponse(response => response.url().includes('/standard/elements?'))
+  releaseSearch()
+  await response
+  await dialog.locator('.el-select').click()
+  await expect(page.getByRole('option', { name: '人员标识 (person_id)', exact: true })).toBeVisible()
+  await expect(dialog.locator('.el-tag')).toHaveText(['人员标识 (person_id)'])
+  await dialog.getByRole('heading').click()
+  const save = page.waitForRequest(request => request.method() === 'PUT' && request.url().endsWith('/glossaries/21/elements'))
+  await dialog.getByRole('button', { name: '确定', exact: true }).click()
+  expect((await save).postDataJSON()).toEqual({ version: 1, element_ids: [41] })
+  await expect(dialog).not.toBeVisible()
+  expect(elementReads.length).toBeGreaterThan(0)
+  expect([...new Set(elementReads)]).toEqual(['/api/v1/standard/elements'])
+})
+
+test('glossary selector retains selected labels but not unselected historical candidates', async ({ page }) => {
+  const extraElements = [
+    { id: 42, code: 'activity_id', name: '活动标识', data_type: 'string', status: 'draft' },
+    { id: 43, code: 'unused', name: '未选候选', data_type: 'string', status: 'draft' }
+  ]
+  await installMockBackend(page, { elements: [...mappingFixtureElements, ...extraElements], glossaryElementIDs: [41] })
+  await page.route('**/standard/elements?**', route => {
+    const keyword = new URL(route.request().url()).searchParams.get('keyword')
+    if (!keyword) return route.fallback()
+    if (keyword === '失败') return fulfillJSON(route, { error: '候选查询失败' }, 503)
+    return fulfillJSON(route, { data: [], total: 0 })
+  })
+  await page.goto('/glossaries/21')
+  await page.getByRole('button', { name: '管理关联数据元', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: '管理关联数据元', exact: true })
+  await dialog.locator('.el-select').click()
+  await expect(page.getByRole('option', { name: '人员标识 (person_id)', exact: true })).toHaveCount(1)
+  await page.getByRole('option', { name: '活动标识 (activity_id)', exact: true }).click()
+  for (const keyword of ['无结果', '失败']) {
+    const response = page.waitForResponse(response => response.url().includes('/standard/elements?') && new URL(response.url()).searchParams.get('keyword') === keyword)
+    await dialog.getByRole('combobox').fill(keyword)
+    await response
+    await expect(page.getByRole('option', { name: '未选候选 (unused)', exact: true })).toHaveCount(0)
+    await expect(dialog.locator('.el-tag')).toHaveText(['人员标识 (person_id)', '活动标识 (activity_id)'])
+    await expect(page.getByRole('option', { name: '活动标识 (activity_id)', exact: true })).toHaveCount(1)
+  }
+  await dialog.getByRole('heading').click()
+  const save = page.waitForRequest(request => request.method() === 'PUT' && request.url().endsWith('/glossaries/21/elements'))
+  await dialog.getByRole('button', { name: '确定', exact: true }).click()
+  expect((await save).postDataJSON()).toEqual({ version: 1, element_ids: [41, 42] })
+  await expect(dialog).not.toBeVisible()
+})
+
+test('glossary selector removes deselected pinned options and restores saved mappings after cancel', async ({ page }) => {
+  await installMockBackend(page, { elements: mappingFixtureElements, glossaryElementIDs: [41] })
+  await page.route('**/standard/elements?**', route => fulfillJSON(route, { data: [], total: 0 }))
+  const writes = []
+  page.on('request', request => {
+    if (request.method() === 'PUT') writes.push(request.postDataJSON())
+  })
+  await page.goto('/glossaries/21')
+  const manage = page.getByRole('button', { name: '管理关联数据元', exact: true })
+  await manage.click()
+  const dialog = page.getByRole('dialog', { name: '管理关联数据元', exact: true })
+  await dialog.locator('.el-select').click()
+  await page.getByRole('option', { name: '人员标识 (person_id)', exact: true }).click()
+  await expect(dialog.locator('.el-tag')).toHaveCount(0)
+  await expect(page.getByRole('option', { name: '人员标识 (person_id)', exact: true })).toHaveCount(0)
+  await dialog.getByRole('heading').click()
+  await dialog.getByRole('button', { name: '取消', exact: true }).click()
+  await expect(dialog).not.toBeVisible()
+  expect(writes).toEqual([])
+  await manage.click()
+  await expect(dialog.locator('.el-tag')).toHaveText(['人员标识 (person_id)'])
+  await dialog.locator('.el-tag__close').click()
+  await expect(dialog.locator('.el-tag')).toHaveCount(0)
+  await dialog.getByRole('button', { name: '确定', exact: true }).click()
+  await expect(dialog).not.toBeVisible()
+  expect(writes).toEqual([{ version: 1, element_ids: [] }])
+  await expect(page.getByRole('row').filter({ hasText: 'person_id' })).toHaveCount(0)
+})
+
+test('glossary element search keeps the newest candidate response', async ({ page }) => {
+  await installMockBackend(page, { elements: mappingFixtureElements })
+  let releaseSearch
+  const pending = new Promise(resolve => { releaseSearch = resolve })
+  await page.route('**/standard/elements?**', async route => {
+    if (new URL(route.request().url()).searchParams.get('keyword')) return route.fallback()
+    await pending
+    return fulfillJSON(route, { data: [{ id: 42, code: 'old', name: '过期候选' }], total: 1 })
+  })
+  await page.goto('/glossaries/21')
+  await page.getByRole('button', { name: '管理关联数据元', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: '管理关联数据元', exact: true })
+  await dialog.getByRole('combobox').fill('人员')
+  await expect(page.getByRole('option', { name: '人员标识 (person_id)', exact: true })).toBeVisible()
+  const oldResponse = page.waitForResponse(response => response.url().includes('/standard/elements?') && !new URL(response.url()).searchParams.get('keyword'))
+  releaseSearch()
+  await oldResponse
+  await expect(page.getByRole('option', { name: '过期候选 (old)', exact: true })).toHaveCount(0)
+  await page.getByRole('option', { name: '人员标识 (person_id)', exact: true }).click()
+  await dialog.getByRole('heading').click()
+  await dialog.getByRole('button', { name: '取消', exact: true }).click()
 })
 
 test('keeps the latest glossary filter result when an older request returns later', async ({ page }) => {
@@ -767,6 +1315,198 @@ test('creating a draft while viewing a frozen revision opens the new draft ident
   await expect(page).toHaveURL(/\/elements\/41\?revision_id=412$/)
   await expect(page.getByRole('textbox', { name: '中文名称', exact: true })).toBeEditable()
 })
+
+for (const destination of ['list', 'history']) {
+  test(`unsaved element edits protect ${destination} navigation and keep the URL on cancel`, async ({ page }) => {
+    await installMockBackend(page, {
+      elements: [{ id: 41, code: 'person_id', name: '人员标识', data_type: 'string', status: 'draft' }],
+      elementHistory: [{ id: 410, element_id: 41, revision_no: 1, name: '历史人员标识', data_type: 'string', status: 'published' }]
+    })
+    await page.goto('/elements/41?revision_id=411')
+    const name = page.getByRole('textbox', { name: '中文名称', exact: true })
+    await name.fill('尚未保存的名称')
+    const navigate = () => destination === 'list'
+      ? page.getByRole('button', { name: '返回', exact: true }).click()
+      : page.getByText('R1 · 历史人员标识', { exact: true }).click()
+    await navigate()
+    const dialog = page.getByRole('dialog', { name: '有未保存的修改' })
+    await dialog.getByRole('button', { name: '继续编辑' }).click()
+    await expect(page).toHaveURL(/\/elements\/41\?revision_id=411$/)
+    await expect(name).toHaveValue('尚未保存的名称')
+    await navigate()
+    await dialog.getByRole('button', { name: '放弃修改并离开' }).click()
+    await expect(page).toHaveURL(destination === 'list' ? /\/elements$/ : /revision_id=410$/)
+    await expect(page.getByText('未保存', { exact: true })).toHaveCount(0)
+  })
+}
+
+for (const firstSection of ['identity', 'revision']) {
+  test(`element saving ${firstSection} first preserves the other unsaved section`, async ({ page }) => {
+    await installMockBackend(page, { elements: [{ id: 41, code: 'person_id', name: '人员标识', data_type: 'string', status: 'draft' }] })
+    await page.goto('/elements/41')
+    const name = page.getByRole('textbox', { name: '中文名称', exact: true })
+    await name.fill('更新后的名称')
+    const tags = page.getByRole('combobox', { name: '标签', exact: true })
+    await tags.fill('新标签')
+    await tags.press('Enter')
+    const buttons = {
+      revision: page.locator('.page-header').getByRole('button', { name: '保存', exact: true }),
+      identity: page.locator('.el-card').filter({ has: page.getByText('治理信息', { exact: true }) }).getByRole('button', { name: '保存', exact: true })
+    }
+    await buttons[firstSection].click()
+    await expect(name).toBeEnabled()
+    await expect(name).toHaveValue('更新后的名称')
+    await expect(page.getByText('新标签', { exact: true })).toBeVisible()
+    await expect(page.getByText('未保存', { exact: true })).toBeVisible()
+    await buttons[firstSection === 'identity' ? 'revision' : 'identity'].click()
+    await expect(page.getByText('未保存', { exact: true })).toHaveCount(0)
+    expect(await page.evaluate(() => window.dispatchEvent(new Event('beforeunload', { cancelable: true })))).toBe(true)
+    await page.getByRole('button', { name: '返回', exact: true }).click()
+    await expect(page).toHaveURL(/\/elements$/)
+  })
+}
+
+test('failed element save retains unload protection and blocks revision actions until saved', async ({ page }) => {
+  const backend = await installMockBackend(page, {
+    elementVersionConflict: true,
+    elements: [{ id: 41, code: 'person_id', name: '人员标识', data_type: 'string', status: 'draft' }]
+  })
+  await page.goto('/elements/41')
+  const name = page.getByRole('textbox', { name: '中文名称', exact: true })
+  await name.fill('本地尚未保存')
+  await page.locator('.page-header').getByRole('button', { name: '保存', exact: true }).click()
+  await expect(page.getByText('资源已被其他用户修改，请刷新后重试')).toBeVisible()
+  await expect(name).toHaveValue('本地尚未保存')
+  expect(await page.evaluate(() => window.dispatchEvent(new Event('beforeunload', { cancelable: true })))).toBe(false)
+  await page.getByRole('button', { name: '提交审核', exact: true }).click()
+  await expect(page.getByText('请先保存当前修改，再执行状态操作')).toBeVisible()
+  expect(backend.getActionRequests()).toEqual([])
+  await page.getByRole('button', { name: '返回', exact: true }).click()
+  await expect(page.getByRole('dialog', { name: '有未保存的修改' })).toBeVisible()
+})
+
+test('a late element save response cannot overwrite a different selected revision', async ({ page }) => {
+  let releaseSave
+  const pendingSave = new Promise(resolve => { releaseSave = resolve })
+  await installMockBackend(page, {
+    pendingElementSave: pendingSave,
+    elements: [{ id: 41, code: 'person_id', name: '人员标识', data_type: 'string', status: 'draft' }],
+    elementHistory: [{ id: 410, element_id: 41, revision_no: 1, name: '历史人员标识', data_type: 'string', status: 'published' }]
+  })
+  await page.goto('/elements/41?revision_id=411')
+  await page.getByRole('textbox', { name: '中文名称', exact: true }).fill('待保存的修订名称')
+  const request = page.waitForRequest(req => req.method() === 'PUT')
+  await page.locator('.page-header').getByRole('button', { name: '保存', exact: true }).click()
+  await request
+  await page.getByText('R1 · 历史人员标识', { exact: true }).click()
+  await page.getByRole('dialog', { name: '有未保存的修改' }).getByRole('button', { name: '放弃修改并离开' }).click()
+  await expect(page.getByRole('heading', { name: '历史人员标识', exact: true })).toBeVisible()
+  const response = page.waitForResponse(res => res.request().method() === 'PUT')
+  releaseSave()
+  await response
+  await expect(page.getByRole('textbox', { name: '中文名称', exact: true })).toHaveValue('历史人员标识')
+  await expect(page).toHaveURL(/revision_id=410$/)
+  await expect(page.getByText('未保存', { exact: true })).toHaveCount(0)
+})
+
+test('element iframe publishes only dirty state and clears it after saving', async ({ page }) => {
+  await installMockBackend(page, { elements: [{ id: 41, code: 'person_id', name: '人员标识', data_type: 'string', status: 'draft' }] })
+  await page.route('**/unsaved-host', route => route.fulfill({
+    contentType: 'text/html',
+    body: `<output id="state"></output><script type="module">
+      import { createIframeAuthCoordinator } from ${JSON.stringify(`/@fs${new URL('../../../common-frontend/basic/src/auth/authSession.js', import.meta.url).pathname}`)}
+      createIframeAuthCoordinator({
+        allowedOrigins: [location.origin],
+        getToken: () => 'standard-e2e-token',
+        getExpiresAt: () => Date.now() + 3600000,
+        refreshToken: async () => {}, logout: async () => {}
+      })
+      window.addEventListener('message', event => {
+        if (event.data?.type === 'addp:unsaved-changes') document.querySelector('#state').textContent = JSON.stringify(event.data)
+      })
+    </script><iframe src="/elements/41" title="Standard editor" style="width:850px;height:1000px"></iframe>`
+  }))
+  await page.goto('/unsaved-host')
+  const frame = page.frameLocator('iframe')
+  await frame.getByRole('textbox', { name: '中文名称', exact: true }).fill('不得向父窗口发送的草稿')
+  await expect(page.locator('#state')).toContainText('"dirty":true')
+  const message = JSON.parse(await page.locator('#state').textContent())
+  expect(Object.keys(message).sort()).toEqual(['active', 'dirty', 'id', 'type'])
+  await frame.locator('.page-header').getByRole('button', { name: '保存', exact: true }).click()
+  await expect(page.locator('#state')).toContainText('"dirty":false')
+})
+
+for (const suffix of ['', '?revision_id=411']) {
+  test(`enum binding displays its withdrawn snapshot without code set permission: ${suffix || 'default'}`, async ({ page }) => {
+    const codeSetRequests = []
+    page.on('request', request => {
+      if (request.url().includes('/standard/code-sets')) codeSetRequests.push(request.url())
+    })
+    await installMockBackend(page, {
+      permissions: ['standard.element.read'],
+      elements: [{ id: 41, code: 'gender', name: '历史性别', data_type: 'string', status: 'approved', value_domain_kind: 'enumeration', code_set_revision_id: 310 }],
+      elementCodeSetSnapshots: { 310: { revision_id: '310', code_set_id: '31', name: '历史性别码表', code: 'gender', revision_no: 1, status: 'withdrawn' } }
+    })
+    await page.goto(`/elements/41${suffix}`)
+    const binding = page.locator('.el-form-item').filter({ has: page.getByText('关联码值集', { exact: true }) })
+    await expect(binding).toContainText('历史性别码表 (gender) · R1')
+    await expect(binding).toContainText('已撤回')
+    await expect(binding.getByRole('combobox')).toHaveCount(0)
+    await page.reload()
+    await expect(binding).toContainText('历史性别码表 (gender) · R1')
+    expect(codeSetRequests).toEqual([])
+  })
+}
+
+test('draft preserves an unavailable binding label but only offers published candidates for a new selection', async ({ page }) => {
+  await installMockBackend(page, {
+    elements: [{ id: 41, code: 'gender', name: '性别', data_type: 'string', status: 'draft', value_domain_kind: 'enumeration', code_set_revision_id: 310 }],
+    elementCodeSetSnapshots: { 310: { revision_id: '310', code_set_id: '31', name: '历史性别码表', code: 'gender', revision_no: 1, status: 'withdrawn' } }
+  })
+  await page.goto('/elements/41')
+  const binding = page.locator('.el-form-item').filter({ has: page.getByText('关联码值集', { exact: true }) })
+  await expect(binding).toContainText('历史性别码表 (gender) · R1')
+  await binding.locator('.el-select__wrapper').click()
+  await expect(page.getByRole('option', { name: '历史性别码表 (gender) · R1', exact: true })).toBeDisabled()
+  await page.getByRole('option', { name: '性别 (gender) · R1', exact: true }).click()
+  await expect(binding).not.toContainText('历史性别码表')
+  await expect(binding).not.toContainText('已撤回')
+})
+
+test('switching enum history renders each bound version, including English status labels', async ({ page }) => {
+  await installMockBackend(page, {
+    language: 'en',
+    elements: [{ id: 41, code: 'gender', name: 'Current gender', data_type: 'string', status: 'approved', value_domain_kind: 'enumeration', code_set_revision_id: 311 }],
+    elementHistory: [{ id: 410, element_id: 41, revision_no: 1, name: 'Historical gender', data_type: 'string', status: 'withdrawn', value_domain_kind: 'enumeration', code_set_revision_id: 310 }],
+    elementCodeSetSnapshots: {
+      310: { revision_id: '310', code_set_id: '31', name: 'Historical codes', code: 'gender', revision_no: 1, status: 'withdrawn' },
+      311: { revision_id: '311', code_set_id: '31', name: 'Current codes', code: 'gender', revision_no: 2, status: 'published' }
+    }
+  })
+  await page.goto('/elements/41?revision_id=410')
+  const binding = page.locator('.el-form-item').filter({ has: page.getByText('Code Set', { exact: true }) })
+  await expect(binding).toContainText('Historical codes (gender) · R1')
+  await expect(binding).toContainText('Withdrawn')
+  await page.getByText('R1 · Current gender', { exact: true }).click()
+  await expect(binding).toContainText('Current codes (gender) · R2')
+  await expect(binding).not.toContainText('Historical codes')
+  await page.getByText('R1 · Historical gender', { exact: true }).click()
+  await expect(binding).toContainText('Historical codes (gender) · R1')
+  await expect(binding).not.toContainText('Current codes')
+})
+
+for (const snapshot of [null, { revision_id: '999', name: '错误码值集' }]) {
+  test(`enum revision rejects a missing or mismatched bound snapshot: ${snapshot?.revision_id || 'missing'}`, async ({ page }) => {
+    await installMockBackend(page, {
+      elements: [{ id: 41, code: 'gender', name: '性别', data_type: 'string', status: 'approved', value_domain_kind: 'enumeration', code_set_revision_id: 310 }],
+      elementCodeSetSnapshots: { 310: snapshot }
+    })
+    await page.goto('/elements/41')
+    await expect(page.getByRole('alert')).toContainText('无法读取该修订绑定的码值集版本')
+    await expect(page.getByText('错误码值集', { exact: true })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: '创建新草稿', exact: true })).toHaveCount(0)
+  })
+}
 
 for (const [revision, forbidden, error] of [['999', false, '数据元修订不存在'], ['410', true, '无权读取此数据元修订'], ['invalid', false, '加载失败']]) {
   test(`exact element revision fails closed: ${revision}, forbidden=${forbidden}`, async ({ page }) => {
@@ -1246,6 +1986,7 @@ async function installMockBackend(page, options = {}) {
   const documents = (options.documents || []).map(item => ({ ...item }))
   const elements = (options.elements || []).map(item => ({ ...item }))
   const glossaryFixtures = structuredClone(glossaries)
+  let glossaryElementIDs = [...(options.glossaryElementIDs || [])]
   const documentCandidateFamilyResponse = structuredClone(options.documentCandidateFamilies || createCandidateFamilyResponse([]))
   if (options.glossaryPublicationHistory) {
     const published = { ...glossaryFixtures[0].draft_revision, status: 'published' }
@@ -1256,6 +1997,8 @@ async function installMockBackend(page, options = {}) {
       has_publication_history: true
     })
   }
+  const glossaryHistory = options.glossaryHistory ? [{ ...glossaryFixtures[0].draft_revision, id: 210, name: '历史领队', status: 'published' }] : []
+  if (options.glossaryHistory) glossaryFixtures[0].draft_revision.revision_no = 2
   const metrics = (options.metrics || []).map(item => {
     if (item.current_revision || item.draft_revision) return structuredClone(item)
     const revision = {
@@ -1299,7 +2042,8 @@ async function installMockBackend(page, options = {}) {
       data_type: item.data_type,
       unit_id: item.unit_id ?? null,
       nullable: true,
-      value_domain_kind: 'unrestricted',
+      value_domain_kind: item.value_domain_kind || 'unrestricted',
+      code_set_revision_id: item.code_set_revision_id ?? null,
       example_values: [],
       compiled_quality_rules: item.compiled_quality_rules || null,
       change_summary: '初始修订',
@@ -1592,12 +2336,65 @@ async function installMockBackend(page, options = {}) {
       const data = domainID ? glossaryFixtures.filter(item => item.owner_domain_id === domainID) : glossaryFixtures
       return fulfillJSON(route, { data, total: data.length })
     }
-    if (path === '/api/v1/standard/glossaries/21') return fulfillJSON(route, glossaryFixtures[0])
-    if (path === '/api/v1/standard/glossaries/21/revisions') return fulfillJSON(route, [glossaryFixtures[0].draft_revision || glossaryFixtures[0].current_revision])
-    if (path === '/api/v1/standard/glossaries/21/elements') return fulfillJSON(route, [])
+    if (path === '/api/v1/standard/glossaries/21') {
+      if (request.method() === 'PUT') Object.assign(glossaryFixtures[0], request.postDataJSON(), { version: glossaryFixtures[0].version + 1 })
+      return fulfillJSON(route, glossaryFixtures[0])
+    }
+    if (path === '/api/v1/standard/glossaries/21/revisions') {
+      if (request.method() === 'POST') {
+        const aggregate = glossaryFixtures[0]
+        aggregate.draft_revision = { ...aggregate.current_revision, ...request.postDataJSON(), id: 212, revision_no: 2, status: 'draft' }
+        aggregate.draft_revision_id = 212
+        aggregate.version += 1
+        return fulfillJSON(route, aggregate, 201)
+      }
+      return fulfillJSON(route, [glossaryFixtures[0].draft_revision, glossaryFixtures[0].current_revision, ...glossaryHistory].filter(Boolean))
+    }
+    const glossaryRevisionMatch = path.match(/^\/api\/v1\/standard\/glossaries\/21\/revisions\/(\d+)$/)
+    if (glossaryRevisionMatch) {
+      const aggregate = glossaryFixtures[0]
+      const revision = [aggregate.draft_revision, aggregate.current_revision, ...glossaryHistory].find(item => item?.id === Number(glossaryRevisionMatch[1]))
+      if (!revision) return fulfillJSON(route, { error: '修订不存在' }, 404)
+      if (revision.id === 210 && options.glossaryRevisionDenied) return fulfillJSON(route, { error: '无权读取修订' }, 403)
+      if (request.method() === 'PUT') {
+        Object.assign(revision, request.postDataJSON())
+        aggregate.version += 1
+        return fulfillJSON(route, aggregate)
+      }
+      return fulfillJSON(route, revision)
+    }
+    if (path === '/api/v1/standard/glossaries/21/elements') {
+      if (request.method() === 'PUT') {
+        const body = request.postDataJSON()
+        if (body.version !== glossaryFixtures[0].version) return fulfillJSON(route, { error: '资源版本冲突' }, 409)
+        glossaryElementIDs = body.element_ids
+        glossaryFixtures[0].version += 1
+        return fulfillJSON(route, glossaryFixtures[0])
+      }
+      return fulfillJSON(route, elementAggregates.filter(item => glossaryElementIDs.includes(item.id)).map(item => {
+        const revision = item.current_revision || item.draft_revision
+        return { id: item.id, code: item.code, lifecycle_state: item.lifecycle_state, name: revision.name, revision_id: revision.id, revision_no: revision.revision_no, status: revision.status, is_effective: revision.status === 'published' }
+      }))
+    }
     if (path === '/api/v1/standard/glossaries/21/documents') return fulfillJSON(route, [])
     if (path === '/api/v1/standard/elements') return fulfillJSON(route, { data: elementAggregates, total: elementAggregates.length })
-    if (path === '/api/v1/standard/elements/41') return fulfillJSON(route, elementAggregates.find(item => item.id === 41) || {})
+    if (path === '/api/v1/standard/elements/41') {
+      const element = elementAggregates.find(item => item.id === 41)
+      if (request.method() === 'PUT') {
+        if (options.elementVersionConflict) return fulfillJSON(route, { error: '资源已被其他用户修改，请刷新后重试' }, 409)
+        Object.assign(element, request.postDataJSON(), { version: element.version + 1 })
+      }
+      return fulfillJSON(route, element || {})
+    }
+    if (request.method() === 'PUT' && path === '/api/v1/standard/elements/41/revisions/411') {
+      if (options.pendingElementSave) await options.pendingElementSave
+      if (options.elementVersionConflict) return fulfillJSON(route, { error: '资源已被其他用户修改，请刷新后重试' }, 409)
+      const element = elementAggregates.find(item => item.id === 41)
+      const { version, ...payload } = request.postDataJSON()
+      Object.assign(element.draft_revision, payload)
+      element.version += 1
+      return fulfillJSON(route, element)
+    }
     if (path === '/api/v1/standard/elements/41/revisions') {
       const element = elementAggregates.find(item => item.id === 41)
       if (request.method() === 'POST') {
@@ -1612,7 +2409,8 @@ async function installMockBackend(page, options = {}) {
     if (request.method() === 'GET' && /^\/api\/v1\/standard\/elements\/41\/revisions\/\d+$/.test(path)) {
       const element = elementAggregates.find(item => item.id === 41)
       const revision = [...(options.elementHistory || []), element?.draft_revision, element?.current_revision].find(item => item?.id === Number(path.split('/').at(-1)))
-      return route.fulfill({ status: options.forbidElementRevision ? 403 : revision ? 200 : 404, contentType: 'application/json', body: JSON.stringify(options.forbidElementRevision ? { error: '无权读取此数据元修订' } : revision || { error: '数据元修订不存在' }) })
+      const detail = revision ? { ...revision, code_set_revision: options.elementCodeSetSnapshots?.[revision.code_set_revision_id] } : null
+      return route.fulfill({ status: options.forbidElementRevision ? 403 : revision ? 200 : 404, contentType: 'application/json', body: JSON.stringify(options.forbidElementRevision ? { error: '无权读取此数据元修订' } : detail || { error: '数据元修订不存在' }) })
     }
     if (path === '/api/v1/standard/elements/41/documents') return fulfillJSON(route, [])
     if (path === '/api/v1/standard/code-sets') {

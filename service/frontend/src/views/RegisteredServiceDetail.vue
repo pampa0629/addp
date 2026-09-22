@@ -10,14 +10,14 @@
         </span>
       </div>
       <div class="header-right">
-        <button @click="refreshMetadata" class="btn btn-primary" :disabled="loading || refreshing">
+        <button @click="refreshMetadata" class="btn btn-primary" :disabled="!service || loading || refreshing">
           {{ refreshing ? $t('service.registered.refreshing') : $t('service.registered.refreshMetadata') }}
         </button>
-        <button @click="healthCheck" class="btn btn-success" :disabled="loading || checking">
+        <button @click="healthCheck" class="btn btn-success" :disabled="!service || loading || checking">
           {{ checking ? $t('service.registered.checking') : $t('service.registered.healthCheck') }}
         </button>
-        <button @click="goToEdit" class="btn btn-warning" :disabled="loading">{{ $t('service.common.edit') }}</button>
-        <button @click="handleDelete" class="btn btn-danger" :disabled="loading || deleting">{{ $t('service.common.delete') }}</button>
+        <button @click="goToEdit" class="btn btn-warning" :disabled="!service || loading">{{ $t('service.common.edit') }}</button>
+        <button @click="handleDelete" class="btn btn-danger" :disabled="!service || loading || deleting">{{ $t('service.common.delete') }}</button>
       </div>
     </div>
 
@@ -214,6 +214,17 @@ import { publishConsolePageDescriptor } from '@common-ui'
 export default {
   name: 'RegisteredServiceDetail',
   watch: {
+    '$route.params.id': {
+      immediate: true,
+      handler() {
+        this.detailEpoch++
+        this.service = null
+        this.deleting = false
+        this.refreshing = false
+        this.checking = false
+        return this.loadService()
+      }
+    },
     '$i18n.locale'() {
       this.publishPageDescriptor()
     }
@@ -221,16 +232,22 @@ export default {
   data() {
     return {
       service: null,
+      detailEpoch: 0,
+      loadSequence: 0,
       deleting: false,
       loading: false,
       refreshing: false,
       checking: false
     }
   },
-  mounted() {
-    this.loadService()
+  beforeUnmount() {
+    this.detailEpoch++
+    this.loadSequence++
   },
   methods: {
+    isCurrentService(id, epoch) {
+      return this.detailEpoch === epoch && String(this.$route.params.id) === String(id)
+    },
     publishPageDescriptor() {
       if (!this.service) return
       publishConsolePageDescriptor(this.$router, 'service', {
@@ -239,23 +256,32 @@ export default {
       }).catch(() => {})
     },
     async loadService() {
+      const id = this.$route.params.id
+      const epoch = this.detailEpoch
+      const sequence = ++this.loadSequence
+      const isCurrent = () => this.isCurrentService(id, epoch) && sequence === this.loadSequence
       this.loading = true
       try {
-        const id = this.$route.params.id
         const response = await registeredServiceAPI.getService(id)
+        if (!isCurrent()) return
         this.service = response
         this.publishPageDescriptor()
       } catch (error) {
+        if (!isCurrent()) return
         ElMessage.error(this.$t('service.registered.loadFailed2') + ': ' + (error.message || this.$t('service.common.unknownError')))
         console.error('Failed to load service:', error)
         this.goBack()
       } finally {
-        this.loading = false
+        if (isCurrent()) this.loading = false
       }
     },
 
     async refreshMetadata() {
-      if (this.refreshing) return
+      if (!this.service || this.loading || this.refreshing) return
+      const id = this.service.id
+      const epoch = this.detailEpoch
+      const isCurrent = () => this.isCurrentService(id, epoch)
+      if (!isCurrent()) return
       this.refreshing = true
       try {
         await ElMessageBox.confirm(
@@ -268,22 +294,31 @@ export default {
             distinguishCancelAndClose: true
           }
         )
-        await registeredServiceAPI.refreshMetadata(this.service.id, { force: true })
+        if (!isCurrent()) return
+        await registeredServiceAPI.refreshMetadata(id, { force: true })
+        if (!isCurrent()) return
         ElMessage.success(this.$t('service.registered.refreshSuccess'))
         await this.loadService()
       } catch (error) {
+        if (!isCurrent()) return
         if (error === 'cancel' || error === 'close') return
         ElMessage.error(this.$t('service.registered.refreshFailed') + ': ' + (error.message || this.$t('service.common.unknownError')))
         console.error('Failed to refresh metadata:', error)
       } finally {
-        this.refreshing = false
+        if (isCurrent()) this.refreshing = false
       }
     },
 
     async healthCheck() {
+      if (!this.service || this.loading || this.checking) return
+      const id = this.service.id
+      const epoch = this.detailEpoch
+      const isCurrent = () => this.isCurrentService(id, epoch)
+      if (!isCurrent()) return
       this.checking = true
       try {
-        const response = await registeredServiceAPI.healthCheck(this.service.id)
+        const response = await registeredServiceAPI.healthCheck(id)
+        if (!isCurrent()) return
         const result = response
         ElMessage({
           message: this.$t('service.registered.healthCheckResult', { status: result.status, message: result.message, time: result.response_time }),
@@ -294,15 +329,20 @@ export default {
         // 重新加载服务以更新健康状态
         await this.loadService()
       } catch (error) {
+        if (!isCurrent()) return
         ElMessage.error(this.$t('service.registered.healthCheckFailed') + ': ' + (error.message || this.$t('service.common.unknownError')))
         console.error('Failed to perform health check:', error)
       } finally {
-        this.checking = false
+        if (isCurrent()) this.checking = false
       }
     },
 
     async handleDelete() {
-      if (this.deleting) return
+      if (!this.service || this.loading || this.deleting) return
+      const id = this.service.id
+      const epoch = this.detailEpoch
+      const isCurrent = () => this.isCurrentService(id, epoch)
+      if (!isCurrent()) return
       this.deleting = true
       try {
         await ElMessageBox.confirm(
@@ -316,15 +356,18 @@ export default {
             autofocus: false, distinguishCancelAndClose: true
           }
         )
-        await registeredServiceAPI.deleteService(this.service.id)
+        if (!isCurrent()) return
+        await registeredServiceAPI.deleteService(id)
+        if (!isCurrent()) return
         ElMessage.success(this.$t('service.registered.deleteSuccess'))
         await this.goBack()
       } catch (error) {
+        if (!isCurrent()) return
         if (error === 'cancel' || error === 'close') return
         ElMessage.error(this.$t('service.registered.deleteFailed') + ': ' + (error.message || this.$t('service.common.unknownError')))
         console.error('Failed to delete service:', error)
       } finally {
-        this.deleting = false
+        if (isCurrent()) this.deleting = false
       }
     },
 
@@ -387,6 +430,7 @@ export default {
     },
 
     goToEdit() {
+      if (!this.service || this.loading || !this.isCurrentService(this.service.id, this.detailEpoch)) return
       navigateServiceRoute(this.$router, `/services/${this.service.id}/edit`)
     }
   }

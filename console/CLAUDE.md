@@ -58,3 +58,5 @@ Console 通过共享 `useConsoleUnsavedChangesGuard` 拦截活动 iframe 有未�
 查询服务离页回归在现有 Console 宿主夹具中加载真实 `QueryServiceForm.vue` 和 Service API 客户端，HTTP 响应由 Playwright 拦截，不依赖或写入开发数据库。该入口需要 Console 与 Service 两个前端的锁定依赖；测试自动启动 4170/4180 两个 Vite 服务，通过仅 E2E 启用的代理加载 iframe，覆盖 SQL/参数保留、内部及宿主导航、历史、刷新和保存失败/成功，以及已有服务编辑的版本冲突、确认重载、同组件身份切换和旧响应隔离。Service 前端变更经共享改动矩阵触发 Console 门禁，CI 同步安装 Service 依赖。
 
 数据服务导航浏览器回归复用正式 `PortalSidebar`、`PortalIframe`、菜单配置及 Service 的 `App`、`Layout` 和路由表。`service-navigation.spec.js` 在同一门禁中覆盖五个入口的唯一导航、刷新、前进/后退、目录两个管理按钮的 iframe 保留与单历史项、注册卡片详情返回，以及独立访问菜单一致性；夹具仅用 hash history 隔离 URL，认证由现有认证浏览器门禁单独验证。
+
+`registered-service-unsaved.spec.js` 复用同一正式导航夹具，覆盖注册表单的内部返回、Console 菜单、历史与刷新保护，普通字段、关键词及三类认证输入的保留，以及创建/更新失败后继续编辑、提交期间禁用输入、成功后的保护清除，以及确认离开后迟到的创建/更新成功和失败响应不干扰新草稿；所有写请求均由 Playwright 模拟，不写业务数据库。

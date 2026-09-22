@@ -9,10 +9,10 @@
 |------------|---------|---------|
 | `postgresql` | PostgreSQL | EngineCatalogProvider + EngineCatalogFactsProvider + SQLQueryRuntimeProvider |
 | `oracle` | Oracle Database | EngineCatalogProvider + EngineCatalogFactsProvider + SQLQueryRuntimeProvider + TableReadSessionProvider |
-| `mysql` | MySQL | EngineCatalogProvider + EngineCatalogFactsProvider + SQLQueryRuntimeProvider |
+| `mysql` | MySQL | EngineCatalogProvider + EngineCatalogFactsProvider + SQLQueryRuntimeProvider + AnalyticalCompilerProvider + AnalyticalSQLExecutionValidator |
 | `oceanbase` | OceanBase（MySQL 模式） | EngineCatalogProvider + EngineCatalogFactsProvider + SQLQueryRuntimeProvider + BoundedWatermarkReadProvider + TableUpsertProvider |
 | `opengauss` | openGauss（PG 兼容模式） | EngineCatalogProvider + EngineCatalogFactsProvider + SQLQueryRuntimeProvider + TableReadSessionProvider + BoundedWatermarkReadProvider + TableUpsertProvider |
-| `tidb` | TiDB | EngineCatalogProvider + EngineCatalogFactsProvider + SQLQueryRuntimeProvider + BoundedWatermarkReadProvider + TableUpsertProvider |
+| `tidb` | TiDB | EngineCatalogProvider + EngineCatalogFactsProvider + SQLQueryRuntimeProvider + AnalyticalCompilerProvider + AnalyticalSQLExecutionValidator + BoundedWatermarkReadProvider + TableUpsertProvider |
 | `doris` | Apache Doris | EngineCatalogProvider + EngineCatalogFactsProvider + SQLQueryRuntimeProvider |
 | `clickhouse` | ClickHouse | EngineCatalogProvider + EngineCatalogFactsProvider + SQLQueryRuntimeProvider |
 | `mongodb` | MongoDB | EngineCatalogProvider + EngineCatalogFactsProvider + QueryRuntimeProvider |

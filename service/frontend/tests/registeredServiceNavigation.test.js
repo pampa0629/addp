@@ -17,11 +17,11 @@ function component(name, api = {}, confirm = async () => {}) {
   const message = options => messages.push(options)
   for (const type of ['success', 'error', 'warning', 'info']) message[type] = text => messages.push({ type, message: text })
   let leaveGuard
-  const definition = new Function('registeredServiceAPI', 'navigateServiceRoute', 'ElMessage', 'ElMessageBox', 'alert', 'reactive', 'ref', 'toRefs', 'useRouter', 'useUnsavedChangesGuard', code)(
+  const definition = new Function('registeredServiceAPI', 'navigateServiceRoute', 'ElMessage', 'ElMessageBox', 'alert', 'reactive', 'ref', 'toRefs', 'useRouter', 'useUnsavedChangesGuard', 'publishConsolePageDescriptor', code)(
     api, (_router, path, options) => { navigationDirtyStates.push(leaveGuard?.isDirty()); navigations.push({ path, options }) }, message,
     { confirm: (...args) => { confirmations.push(args); return confirm(...args) } },
-    () => assert.fail('native alert must not be used'), reactive, ref, toRefs, () => ({}), options => { leaveGuard = options })
-  const state = reactive({ ...definition.data(), ...definition.setup?.(), $router: {}, $route: { path: '/services/create', params: {} }, $t: key => key })
+    () => assert.fail('native alert must not be used'), reactive, ref, toRefs, () => ({}), options => { leaveGuard = options }, async () => {})
+  const state = reactive({ ...definition.data(), ...definition.setup?.(), $router: {}, $route: name === 'RegisteredServiceDetail' ? { path: '/services/42', params: { id: '42' } } : { path: '/services/create', params: {} }, $t: key => key })
   for (const [name, method] of Object.entries(definition.methods)) state[name] = method.bind(state)
   return { state, navigations, messages, confirmations, leaveGuard, definition, navigationDirtyStates }
 }
@@ -301,3 +301,152 @@ test('switching editor identity reloads the target and ignores late responses fr
   assert.equal(state.authConfig.token, '')
   assert.equal(leaveGuard.isDirty(), false)
 })
+
+for (const outcome of ['success', 'failure']) {
+  test(`detail identity switch ignores a late ${outcome}, including A to B to A`, async () => {
+    let resolveOld, rejectOld
+    const { state, definition, messages, navigations } = component('RegisteredServiceDetail', {
+      getService: () => new Promise((resolve, reject) => { resolveOld = resolve; rejectOld = reject })
+    })
+    const switchIdentity = definition.watch['$route.params.id'].handler.bind(state)
+    const old = switchIdentity()
+    const oldResolve = resolveOld
+    const oldReject = rejectOld
+    const finishOld = outcome === 'success' ? () => oldResolve({ id: 42, title: 'Old A' }) : () => oldReject(new Error('Old failure'))
+    state.$route.params.id = '43'
+    const next = switchIdentity()
+    resolveOld({ id: 43, title: 'B' })
+    await next
+    state.$route.params.id = '42'
+    const current = switchIdentity()
+    assert.equal(state.service, null)
+    assert.equal(state.loading, true)
+    finishOld()
+    await old
+    assert.equal(state.service, null)
+    assert.equal(state.loading, true)
+    resolveOld({ id: 42, title: 'New A' })
+    await current
+    assert.equal(state.service.title, 'New A')
+    assert.equal(state.loading, false)
+    assert.deepEqual(messages, [])
+    assert.deepEqual(navigations, [])
+  })
+}
+
+test('detail overlapping reloads keep the newest response and ignore results after unmount', async () => {
+  const pending = []
+  const { state, definition, messages, navigations } = component('RegisteredServiceDetail', {
+    getService: () => new Promise(resolve => pending.push(resolve))
+  })
+  const first = state.loadService()
+  const second = state.loadService()
+  pending[1]({ id: 42, title: 'Latest' })
+  await second
+  pending[0]({ id: 42, title: 'Old' })
+  await first
+  assert.equal(state.service.title, 'Latest')
+  const third = state.loadService()
+  definition.beforeUnmount.call(state)
+  pending[2]({ id: 42, title: 'Unmounted' })
+  await third
+  assert.equal(state.service.title, 'Latest')
+  assert.deepEqual(messages, [])
+  assert.deepEqual(navigations, [])
+})
+
+for (const action of ['handleDelete', 'refreshMetadata']) {
+  test(`${action}: changing identity during confirmation sends no mutation`, async () => {
+    let approve
+    const { state, definition, messages, navigations } = component('RegisteredServiceDetail', {
+      getService: async id => ({ id, title: 'B' }),
+      deleteService: () => assert.fail('stale delete'),
+      refreshMetadata: () => assert.fail('stale refresh')
+    }, () => new Promise(resolve => { approve = resolve }))
+    state.service = { id: 42 }
+    const pending = state[action]()
+    state.$route.params.id = '43'
+    await definition.watch['$route.params.id'].handler.call(state)
+    approve()
+    await pending
+    assert.equal(state.service.id, '43')
+    assert.deepEqual(messages, [])
+    assert.deepEqual(navigations, [])
+  })
+}
+
+for (const [action, api, flag] of [['handleDelete', 'deleteService', 'deleting'], ['refreshMetadata', 'refreshMetadata', 'refreshing'], ['healthCheck', 'healthCheck', 'checking']]) {
+  for (const outcome of ['success', 'failure']) {
+    test(`${action}: late ${outcome} does not notify, reload, navigate or unlock a new identity`, async () => {
+      let finish
+      let started
+      const requestStarted = new Promise(resolve => { started = resolve })
+      let loads = 0
+      const { state, definition, messages, navigations } = component('RegisteredServiceDetail', {
+        getService: async id => { loads++; return { id, title: 'B' } },
+        [api]: id => new Promise((resolve, reject) => {
+          assert.equal(id, 42)
+          finish = () => outcome === 'success' ? resolve({ status: 'healthy' }) : reject(new Error('Old failure'))
+          started()
+        })
+      })
+      state.service = { id: 42 }
+      const old = state[action]()
+      await requestStarted
+      state.$route.params.id = '43'
+      await definition.watch['$route.params.id'].handler.call(state)
+      state[flag] = true
+      finish()
+      await old
+      assert.equal(state.service.id, '43')
+      assert.equal(state[flag], true)
+      assert.equal(loads, 1)
+      assert.deepEqual(messages, [])
+      assert.deepEqual(navigations, [])
+    })
+  }
+}
+
+for (const edit of [false, true]) {
+  for (const outcome of ['success', 'failure']) {
+    for (const transition of ['switch', 'unmount']) {
+      test(`registration ${edit ? 'update' : 'create'} late ${outcome} after ${transition} leaves the new draft and navigation untouched`, async () => {
+        let finish
+        const save = () => new Promise((resolve, reject) => {
+          finish = () => outcome === 'success' ? resolve({ id: 42 }) : reject(new Error('Old save failed'))
+        })
+        const { state, definition, leaveGuard, messages, navigations } = component('RegisteredServiceForm', {
+          createService: save, updateService: save,
+          getService: async id => ({ id, service_name: 'new_service', title: 'Loaded target', service_type: 'rest', endpoint_url: 'https://example.invalid/new' })
+        })
+        state.isEdit = edit
+        state.serviceId = edit ? 42 : null
+        state.$route = { path: edit ? '/services/42/edit' : '/services/create', params: edit ? { id: '42' } : {} }
+        state.form.title = 'Submitted draft'
+        const pending = state.handleSubmit()
+        assert.equal(state.submitting, true)
+        if (transition === 'switch') {
+          state.$route = { path: '/services/43/edit', params: { id: '43' } }
+          await definition.watch['$route.path'].handler.call(state)
+          assert.equal(state.submitting, false, 'the new editor must be available')
+        } else {
+          definition.beforeUnmount?.call(state)
+        }
+        state.form.title = 'New unsaved draft'
+        state.markSaved()
+        assert.equal(leaveGuard.isDirty(), false)
+        state.form.title = 'Newer unsaved draft'
+        state.submitting = true
+        finish()
+        await pending
+        assert.equal(state.form.title, 'Newer unsaved draft')
+        assert.equal(leaveGuard.isDirty(), true)
+        state.form.title = 'New unsaved draft'
+        assert.equal(leaveGuard.isDirty(), false, 'the previous save must not replace the baseline')
+        assert.equal(state.submitting, true, 'an old completion must not unlock a new submission')
+        assert.deepEqual(messages, [])
+        assert.deepEqual(navigations, [])
+      })
+    }
+  }
+}

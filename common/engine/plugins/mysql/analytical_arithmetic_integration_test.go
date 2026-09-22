@@ -3,6 +3,7 @@ package mysql
 import (
 	"database/sql"
 	"fmt"
+	"github.com/addp/common/engine/plugins/shared/analytical"
 	"github.com/addp/common/query/sqlcompile"
 	"github.com/addp/common/query/sqlcompile/conformance"
 	"testing"
@@ -19,7 +20,7 @@ func TestIntegrationMySQLAnalyticalArithmetic(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer conn.Close()
-	dialect := analyticalArithmeticDialect{}
+	dialect := analytical.MySQLCompatibleExpressionDialect{}
 	for _, precision := range []int{0, 4, 30} {
 		if _, err := conn.ExecContext(t.Context(), fmt.Sprintf("SET SESSION div_precision_increment = %d", precision)); err != nil {
 			t.Fatal(err)

@@ -83,12 +83,12 @@ flowchart LR
 | --- | --- | --- |
 | 活动标识 | `Outdoors._id` | 活动稳定身份，集合运算和去重必须使用它 |
 | 创建账号 | `Outdoors._openid` | 创建活动时使用的外部账号，转让领队后仍保持不变 |
-| 初始发起人 | 创建时的 `Outdoors._openid` 对应人员 | 创建活动时默认担任领队；不能用转让后的 `members[0]` 反推历史初始发起人 |
-| 当前主领队 | `Outdoors.leader`，并由 `members[0]` 维护当前成员位置 | 领队可以转让；转让后新领队进入 `members[0]`，原领队变为领队组并可退出 |
+| 初始发起人 | 创建时的 `Outdoors._openid` 对应人员 | 仅作为历史背景，本阶段不用于当前领队、参与事实或指标计算 |
+| 当前主领队 | 优先取非空 `Outdoors.leader.personid`，缺失时取原始 `members[0].personid` | 领队可以转让；`members[0]` 必须对应 ODS 的 `member_index=0`，不能先过滤成员状态后取第一条；两者都缺失时保持未知并告警 |
 | 领队组 | `members[].entryInfo.status = 领队组` | 主领队指定的协助开展活动人员 |
 | 活动成员 | `Outdoors.members[]` | 报名人员、领队、领队组及其他报名状态的成员 |
 
-需要区分两个时间语义：`Outdoors._openid` 表示创建账号，`leader`/当前 `members[0]` 表示当前主领队。对于“某人负责的活动”这类当前业务查询，以当前主领队为准；不能仅用创建账号推断当前主领队。活动创建者与主领队不一致时，业务展示和统计按主领队处理。
+当前业务只需确定当前主领队：优先使用非空 `Outdoors.leader.personid`，缺失时使用原始 `members[0].personid`；`Outdoors._openid` 只保留为创建账号背景，不参与当前领队推断。对于“某人负责的活动”这类查询，按上述当前主领队结果处理；活动创建者与主领队不一致时，业务展示和统计按当前主领队处理。
 
 ### 3.2 活动标题与强度
 
@@ -186,7 +186,7 @@ flowchart LR
 | 业务关系 | 主要物理表达 | 事实来源 | 可信度 |
 | --- | --- | --- | --- |
 | 初始发起活动 | 创建时的 `Outdoors._openid` 对应人员 | `Outdoors` | 高 |
-| 当前主领队 | `Outdoors.leader`，并由当前 `members[0]` 位置辅助表达 | `Outdoors` | 高 |
+| 当前主领队 | 非空 `Outdoors.leader.personid` 优先，缺失时取原始 `members[0].personid` | `Outdoors` | 高 |
 | 活动创建账号 | `Outdoors._openid` | `Outdoors` | 高，但不是当前主领队 |
 | 报名活动 | `Outdoors.members[]`；`Persons.entriedOutdoors[]` | 活动主体为事实源，人员数组只作索引 | 高 |
 | 实际参加活动 | 成员状态为 `报名中`、`领队`、`领队组` | `Outdoors.members[]` | 高 |

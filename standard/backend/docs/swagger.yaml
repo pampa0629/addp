@@ -1342,6 +1342,30 @@ definitions:
       version:
         type: integer
     type: object
+  github_com_addp_standard_internal_models.GlossaryElementReference:
+    properties:
+      code:
+        type: string
+      id:
+        type: integer
+      is_effective:
+        type: boolean
+      lifecycle_state:
+        type: string
+      name:
+        type: string
+      revision_id:
+        type: integer
+      revision_no:
+        type: integer
+      status:
+        enum:
+        - draft
+        - in_review
+        - published
+        - withdrawn
+        type: string
+    type: object
   github_com_addp_standard_internal_models.GlossaryRevision:
     properties:
       alias:
@@ -1770,35 +1794,6 @@ definitions:
       quality_rules:
         $ref: '#/definitions/github_com_addp_standard_internal_models.JSONB'
       revision_no:
-        type: integer
-    type: object
-  github_com_addp_standard_internal_models.PublishedElementReference:
-    properties:
-      code:
-        type: string
-      id:
-        type: integer
-      lifecycle_state:
-        type: string
-      name:
-        type: string
-      owner_domain_id:
-        type: integer
-      revision_id:
-        type: integer
-      revision_no:
-        type: integer
-      scope_type:
-        enum:
-        - platform
-        - tenant_common
-        - domain
-        type: string
-      status:
-        type: string
-      tenant_id:
-        type: integer
-      version:
         type: integer
     type: object
   github_com_addp_standard_internal_models.PublishedMetricDefinitionReference:
@@ -5303,6 +5298,9 @@ paths:
       - standard.document.update
   /glossaries/{id}/elements:
     get:
+      description: 完整返回关联身份，展示修订与当前生效标记独立；不因修订状态隐藏关联 | Return all associated identities
+        with display revision and independent effectiveness; revision status never
+        hides associations
       produces:
       - application/json
       responses:
@@ -5310,7 +5308,7 @@ paths:
           description: OK
           schema:
             items:
-              $ref: '#/definitions/github_com_addp_standard_internal_models.PublishedElementReference'
+              $ref: '#/definitions/github_com_addp_standard_internal_models.GlossaryElementReference'
             type: array
       security:
       - BearerAuth: []

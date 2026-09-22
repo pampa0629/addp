@@ -112,6 +112,18 @@ type GlossaryAggregate struct {
 	HasPublicationHistory bool              `json:"has_publication_history"`
 }
 
+// GlossaryElementReference 是完整关联管理投影；展示修订不是关联绑定。
+type GlossaryElementReference struct {
+	ID             int64  `json:"id"`
+	Code           string `json:"code"`
+	LifecycleState string `json:"lifecycle_state"`
+	Name           string `json:"name"`
+	RevisionID     *int64 `json:"revision_id"`
+	RevisionNo     *int64 `json:"revision_no"`
+	Status         string `json:"status" enums:"draft,in_review,published,withdrawn"`
+	IsEffective    bool   `json:"is_effective"`
+}
+
 // PublishedGlossaryReference 是跨模块解析当前生效业务术语时使用的只读投影。
 type PublishedGlossaryReference struct {
 	ID             int64  `json:"id"`

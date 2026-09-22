@@ -1,6 +1,7 @@
 package sqlcompile
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -149,7 +150,15 @@ func (b *relationBuilder) ordered(id plan.NodeID, keys []plan.SortKey) (string, 
 	}
 	return " ORDER BY " + strings.Join(terms, ", "), nil
 }
-func (b *relationBuilder) visit(id plan.NodeID) error {
+func (b *relationBuilder) visit(id plan.NodeID) (err error) {
+	defer func() {
+		if err != nil && errors.Is(err, plugin.ErrAnalyticalUnsupported) {
+			var unsupported *unsupportedPlanError
+			if !errors.As(err, &unsupported) {
+				err = &unsupportedPlanError{NodeID: id, Operation: b.nodes[id].Op}
+			}
+		}
+	}()
 	if b.done[id] {
 		return nil
 	}

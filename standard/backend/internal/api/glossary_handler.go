@@ -369,9 +369,10 @@ func (h *GlossaryHandler) WithdrawGlossaryRevision(c *gin.Context) {
 
 // GetElementMappings godoc
 // @Summary 获取术语关联的数据元 | Get element mappings of glossary
+// @Description 完整返回关联身份，展示修订与当前生效标记独立；不因修订状态隐藏关联 | Return all associated identities with display revision and independent effectiveness; revision status never hides associations
 // @Tags Standard
 // @Produce json
-// @Success 200 {array} models.PublishedElementReference
+// @Success 200 {array} models.GlossaryElementReference
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.glossary.read","standard.element.read"]
 // @Router /glossaries/{id}/elements [get]
