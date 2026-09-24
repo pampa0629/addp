@@ -70,7 +70,7 @@ Secret、内部连接信息及明确限制 Tenant 读取的安全策略不在此
 
 约束如下：
 
-1. 模块 Service Principal 只能发布与自身 owner 一致的入口，重复发布按稳定 entry id 幂等更新。
+1. 模块 Service Principal 只能发布与自身 owner 一致的入口，重复发布按稳定 entry id 幂等更新。入口引用的读写 Permission 必须在 System Permission 目录中存在、处于 `active` 且其 `owner_module` 等于入口 owner；Permission Key 的首段是资源命名空间，不能代替 `owner_module` 判断归属。
 2. 声明不得携带配置键、默认值、当前值、Secret 或模块私有表结构。
 3. System 只校验和登记通用契约，不能解释配置字段、代替 owner 校验或成为其他模块配置的 fallback。
 4. Console 按当前 AuthContext、Permission 和模块状态聚合入口；具体页面可以由 owner 模块前端提供，也可以由 Console 在 `/configuration/{owner}/...` 下提供跨 owner 的组合视图，但配置 API、字段校验和配置事实始终属于 owner 模块。

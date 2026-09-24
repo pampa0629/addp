@@ -95,7 +95,7 @@ func (s *MaterializationService) DecommissionMaterializedTarget(
 			return materializedTargetAuthorizationError(err)
 		}
 		engineType := strings.ToLower(strings.TrimSpace(access.Engine.EngineType))
-		if engineType != "postgres" && engineType != "postgresql" && engineType != "postgis" {
+		if !isPostgreSQLMaterializationEngine(engineType) {
 			return apperrors.Conflict("materialized_target_engine_unsupported", modeli18n.MsgMaterializedTargetConflict)
 		}
 		pool, err := materializationPool(access.Engine)
@@ -192,6 +192,9 @@ func (s *MaterializationService) loadApprovedDefinition(
 	}
 	locator, err := resourcetree.ParseURI(locatorText)
 	if err != nil || locator.EngineID == 0 || locator.Type != resourcetree.TypeSchema || len(locator.Path) == 0 {
+		return nil, nil, nil, "", "", apperrors.Validation("materialization_target_invalid", modeli18n.MsgMaterializationInvalid)
+	}
+	if !identifierPattern.MatchString(locator.Path[0]) || !identifierPattern.MatchString(targetName) {
 		return nil, nil, nil, "", "", apperrors.Validation("materialization_target_invalid", modeli18n.MsgMaterializationInvalid)
 	}
 	fingerprint, err := materializationSchemaFingerprint(table, fields)
@@ -353,7 +356,7 @@ func (s *MaterializationService) createMaterializedTarget(ctx context.Context, i
 		if err != nil {
 			return materializedTargetAuthorizationError(err)
 		}
-		if access.Engine == nil || (access.Engine.EngineType != "postgresql" && access.Engine.EngineType != "postgres" && access.Engine.EngineType != "postgis") {
+		if access.Engine == nil || !isPostgreSQLMaterializationEngine(access.Engine.EngineType) {
 			return apperrors.Conflict("materialized_target_engine_unsupported", modeli18n.MsgMaterializedTargetConflict)
 		}
 		pool, err := materializationPool(access.Engine)

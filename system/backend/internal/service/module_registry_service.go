@@ -55,6 +55,24 @@ func (s *ModuleRegistryService) Register(req *models.ModuleRegistrationRequest) 
 	if err := commonconfiguration.ValidateManagementDeclaration(req.ModuleName, req.ConfigurationManagement); err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalidModuleRegistration, err)
 	}
+	if req.ConfigurationManagement != nil {
+		keys := make(map[string]struct{}, len(req.ConfigurationManagement.Entries)*2)
+		for _, entry := range req.ConfigurationManagement.Entries {
+			keys[entry.ReadPermission] = struct{}{}
+			keys[entry.UpdatePermission] = struct{}{}
+		}
+		permissionKeys := make([]string, 0, len(keys))
+		for key := range keys {
+			permissionKeys = append(permissionKeys, key)
+		}
+		owned, err := s.repo.AreActivePermissionsOwnedBy(req.ModuleName, permissionKeys)
+		if err != nil {
+			return fmt.Errorf("validate configuration management permissions: %w", err)
+		}
+		if !owned {
+			return fmt.Errorf("%w: configuration management permissions must be active and owned by %q", ErrInvalidModuleRegistration, req.ModuleName)
+		}
+	}
 	if req.Role != models.ModuleRuntimeRoleBackend && req.TaskProvider != nil {
 		return fmt.Errorf("%w: only backend instances may publish task_provider", ErrInvalidModuleRegistration)
 	}

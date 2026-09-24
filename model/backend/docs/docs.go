@@ -1996,6 +1996,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "物理目标父定位符须匹配目标引擎 Engine Catalog 的表级父命名空间；配置目标不代表支持该引擎建表。 | The physical target parent must match the target engine's table-parent namespace in Engine Catalog; configuring a target does not imply Model DDL support for that engine.",
                 "consumes": [
                     "application/json"
                 ],
@@ -2055,7 +2056,7 @@ const docTemplate = `{
                         }
                     },
                     "503": {
-                        "description": "数据标准服务不可用 | Data Standard service unavailable",
+                        "description": "数据标准或引擎描述服务不可用 | Data Standard or engine descriptor service unavailable",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
@@ -2134,6 +2135,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "物理目标父定位符须匹配目标引擎 Engine Catalog 的表级父命名空间。 | The physical target parent must match the target engine's table-parent namespace in Engine Catalog.",
                 "consumes": [
                     "application/json"
                 ],
@@ -2200,7 +2202,7 @@ const docTemplate = `{
                         }
                     },
                     "503": {
-                        "description": "数据标准服务不可用 | Data Standard service unavailable",
+                        "description": "数据标准或引擎描述服务不可用 | Data Standard or engine descriptor service unavailable",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
@@ -3905,6 +3907,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "当前仅支持 PostgreSQL/PostGIS 物理目标；未指定目标时返回未限定 schema 的 PostgreSQL 设计语句。 | Only PostgreSQL/PostGIS physical targets are supported; without a target, return an unqualified PostgreSQL design statement.",
                 "consumes": [
                     "application/json"
                 ],
@@ -3960,6 +3963,12 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "逻辑表不存在 | Logical table not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "引擎描述服务不可用 | Engine descriptor service unavailable",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }

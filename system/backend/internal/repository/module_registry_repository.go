@@ -22,6 +22,19 @@ func NewModuleRegistryRepository(db *gorm.DB) *ModuleRegistryRepository {
 	return &ModuleRegistryRepository{db: db}
 }
 
+func (r *ModuleRegistryRepository) AreActivePermissionsOwnedBy(owner string, keys []string) (bool, error) {
+	if len(keys) == 0 {
+		return true, nil
+	}
+	var count int64
+	if err := r.db.Table("permissions").
+		Where("owner_module = ? AND status = ? AND permission_key IN ?", owner, "active", keys).
+		Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count == int64(len(keys)), nil
+}
+
 func marshalRegistryJSON(value interface{}) (datatypes.JSON, error) {
 	if value == nil {
 		return nil, nil

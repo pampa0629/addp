@@ -222,12 +222,12 @@
               <el-button v-if="canClearMaterialization" plain @click="clearMaterializationConfig">
                 {{ t('model.materialization.clear_config') }}
               </el-button>
-              <el-button v-if="authStore.hasPermission('model.logical_model.read')" @click="handlePreviewDDL">
+              <el-button v-if="authStore.hasPermission('model.logical_model.read') && (!hasConfiguredPhysicalTarget || canExecuteMaterialization)" @click="handlePreviewDDL">
                 <el-icon><View /></el-icon>
                 {{ t('model.logical_table.preview_ddl') }}
               </el-button>
               <el-button
-                v-if="table.status === 'approved' && authStore.hasPermission('model.materialization.execute')"
+                v-if="table.status === 'approved' && authStore.hasPermission('model.materialization.execute') && canExecuteMaterialization"
                 type="primary"
                 :disabled="isDirty || !hasConfiguredPhysicalTarget"
                 :loading="creatingTarget"
@@ -282,7 +282,7 @@
                   api-base-url="/api/v1/meta"
                   mode="node"
                   :engine-filter="isSupportedPhysicalTargetEngine"
-                  :selectable-filter="isSchemaSelection"
+                  :selectable-filter="isTargetNamespaceSelection"
                   :initial-locator="materializationForm.target_parent_locator"
                   :show-selection-summary="true"
                   :show-count="false"
@@ -589,7 +589,13 @@ const getElementName = row => row.element_id
 const ddlContent = ref('')
 
 const isSupportedPhysicalTargetEngine = engine =>
+  engine?.engine_family === 'tabular' &&
+  engine?.engine_catalog_leaf_term === 'table' &&
+  ['schema', 'database'].includes(engine?.catalog_top_term)
+
+const isPostgreSQLTargetEngine = engine =>
   ['postgresql', 'postgres', 'postgis'].includes(String(engine?.engine_type || '').toLowerCase())
+const isPostgreSQLDDLIdentifier = value => /^[a-z][a-z0-9_]*$/.test(String(value || ''))
 
 const currentTargetLocator = computed(() => parseLocatorSafe(materializationForm.target_parent_locator))
 const hasConfiguredPhysicalTarget = computed(() => Boolean(
@@ -599,6 +605,11 @@ const hasConfiguredPhysicalTarget = computed(() => Boolean(
 const physicalTargetEngine = computed(() => physicalTargetEngines.value.find(
   engine => Number(engine.id) === Number(currentTargetLocator.value.engineId)
 ))
+const canExecuteMaterialization = computed(() =>
+  isPostgreSQLTargetEngine(physicalTargetEngine.value) && currentTargetLocator.value.type === 'schema' &&
+  isPostgreSQLDDLIdentifier(currentTargetLocator.value.path?.[0]) &&
+  isPostgreSQLDDLIdentifier(materializationForm.target_name)
+)
 
 const decommissionTarget = computed(() => {
   const materialization = table.value?.materialization || {}
@@ -623,6 +634,7 @@ const decommissionTarget = computed(() => {
 const canDecommissionTarget = computed(() =>
   table.value.status === 'approved' &&
   authStore.hasPermission('model.materialized_target.delete') &&
+  canExecuteMaterialization.value &&
   Boolean(decommissionTarget.value.locator && decommissionTarget.value.targetName)
 )
 const canClearMaterialization = computed(() => canEdit.value && Boolean(
@@ -712,12 +724,15 @@ const applyTable = resource => {
   targetParentSelection.value = null
 }
 
-const isSchemaSelection = (node, { locator }) => node?.type === 'schema' && locator.type === 'schema' && !locator.itemId
+const isTargetNamespaceSelection = (node, { engine, locator }) => {
+  return isSupportedPhysicalTargetEngine(engine) && Number(engine.id) === Number(locator.engineId) && node?.type === engine.catalog_top_term &&
+    locator.type === engine.catalog_top_term && locator.path?.length === 1 && !locator.itemId
+}
 
 const handleTargetParentSelect = selection => {
   if (!canEdit.value || !selection?.identity?.locator) return
   const next = parseLocatorSafe(selection.identity.locator)
-  if (next.type !== 'schema' || next.itemId) return
+  if (!isTargetNamespaceSelection(selection.raw?.node, { engine: selection.raw?.engine, locator: next })) return
   const current = parseLocatorSafe(materializationForm.target_parent_locator)
   if (!isLocatorEqual(current, next)) materializationForm.target_parent_locator = selection.identity.locator
 }

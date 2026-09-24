@@ -345,7 +345,7 @@
     },
     "materialization": {
       "title": "Physical Target",
-      "help": "The physical target identifies the engine, location, and table name for this logical table. Create/verify manages table structure only and does not write business data. It creates a missing table or verifies ownership and structure of an existing table.",
+      "help": "Choose the table's schema or database from the engine catalog. This target can bind an existing table for metrics. Table creation, DDL preview, and deletion currently support PostgreSQL/PostGIS targets with valid DDL identifiers only; creation does not write business data.",
       "config_status": "Configuration Status",
       "configured": "Configured",
       "target_location": "Target Location",

@@ -83,7 +83,7 @@
 | full_name | 逻辑全名 / 语义路径 | data item 在引擎内的稳定逻辑路径。 | 例如 `addp/image/开会.jpg`、`public.users`、`neo4j.graph`。它是定位和指纹的基础，但不是 URI。 |
 | ResourceLocator | 资源定位符 | 平台统一的资源 URI 定位形式。 | 形如 `addp://engine/{engine_id}/path/{resource_path}?type={type}&node_id={node_id}` 或 `...&item_id={item_id}`；`type` 表达 Engine Catalog 术语，`node_id` / `item_id` 表达真实 Meta 身份。 |
 | Return to draft | 退回草稿 | Model Entity / LogicalTable 从 `approved` 转为 `draft` 的显式生命周期操作，并解除冻结的数据元修订引用。 | 允许重新编辑模型；不表示重新加载页面，不改变已发布的物理表。 |
-| logical table physical target | 逻辑表物理目标 | Model 中描述逻辑表准备落入哪个 Engine Instance、父命名空间和表名的设计事实。 | 使用 `target_parent_locator + target_name` 表达；界面统一显示目标引擎、目标位置和目标表名。Model 根据已审批逻辑表创建或校验目标表，也可显式删除仍由该逻辑表管理的目标表。Transfer 负责跨引擎数据同步，Develop 只负责目标引擎内的查询计算，Orchestrator 只编排顺序。 |
+| logical table physical target | 逻辑表物理目标 | Model 中描述逻辑表准备落入哪个 Engine Instance、父命名空间和表名的设计事实。 | 使用 `target_parent_locator + target_name` 表达；父命名空间按该 Engine Catalog 首层业务分支声明，可为 PostgreSQL 的 schema 或 TiDB/MySQL 的 database。界面统一显示目标引擎、目标位置和目标表名。配置目标不代表该引擎已支持 Model 建表、预览或退役；这些操作仍按已实现能力执行。Transfer 负责跨引擎数据同步，Develop 只负责目标引擎内的查询计算，Orchestrator 只编排顺序。 |
 | logical table table-creation task | 逻辑表建表任务 | Model 从已审批 LogicalTable 投影出的建表任务，支持人工与编排触发；机器任务类型保持 `logical_table_materialization`。 | 任务定义复用逻辑表，不复制字段或目标配置；只创建或校验目标表，不计算数据、不自动改表。 |
 | Data Validation Task | 数据校验任务 | Quality 对显式绑定的同一引擎正式表执行字段、关联和集合断言。 | 读取 ResourceLocator，不依赖 Model；失败可阻止编排下游，不回滚已提交的数据。 |
 | logical table physical target deletion | 逻辑表目标表删除 | Model 删除某个 LogicalTable 已登记、已确认且仍由该 LogicalTable 管理的物理表；逻辑表及其物理目标配置保持不变。 | 这是 Model owner 的高风险同步命令，不是可编排任务；请求只提交逻辑表并发版本和精确目标确认，不接受 SQL、动态 Locator 或跨模块引用检查。 |

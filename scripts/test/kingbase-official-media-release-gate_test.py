@@ -1,6 +1,7 @@
 import hashlib
 import os
 import subprocess
+import tarfile
 import tempfile
 import textwrap
 import unittest
@@ -82,6 +83,7 @@ class KingbaseOfficialMediaReleaseGateTest(unittest.TestCase):
         work_dir = self.root / "stage"
         bin_dir = self.root / "bin"
         trace = self.root / "docker.log"
+        archive_path = self.root / "docker.tar"
         work_dir.mkdir()
         bin_dir.mkdir()
         docker = bin_dir / "docker"
@@ -89,7 +91,8 @@ class KingbaseOfficialMediaReleaseGateTest(unittest.TestCase):
             textwrap.dedent(
                 """
                 #!/usr/bin/env bash
-                printf '%s\n' "$*" > "$ADDP_TEST_DOCKER_TRACE"
+                printf '%s\n' "$*" >> "$ADDP_TEST_DOCKER_TRACE"
+                cat > "$ADDP_TEST_DOCKER_ARCHIVE"
                 """
             ).lstrip(),
             encoding="utf-8",
@@ -100,6 +103,7 @@ class KingbaseOfficialMediaReleaseGateTest(unittest.TestCase):
             {
                 "PATH": f"{bin_dir}:{environment['PATH']}",
                 "ADDP_TEST_DOCKER_TRACE": str(trace),
+                "ADDP_TEST_DOCKER_ARCHIVE": str(archive_path),
             }
         )
 
@@ -119,7 +123,12 @@ class KingbaseOfficialMediaReleaseGateTest(unittest.TestCase):
         )
 
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("cp", trace.read_text(encoding="utf-8"))
+        calls = trace.read_text(encoding="utf-8").splitlines()
+        self.assertEqual(calls, ["cp -a - sample:/home/kingbase/install/kingbase/bin"])
+        with tarfile.open(archive_path) as archive:
+            license_info = archive.getmember("license.dat")
+            self.assertEqual((license_info.uid, license_info.gid, license_info.mode), (1000, 1000, 0o600))
+            self.assertEqual(archive.extractfile(license_info).read(), self.license.read_bytes())
         self.assertEqual(list(work_dir.iterdir()), [])
 
 

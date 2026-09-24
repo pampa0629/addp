@@ -76,9 +76,6 @@ func ValidateManagementDeclaration(owner string, declaration *ManagementDeclarat
 		if err := commonauth.ValidatePermissionKey(entry.UpdatePermission); err != nil {
 			return fmt.Errorf("configuration management entry %q update_permission: %w", entry.ID, err)
 		}
-		if !strings.HasPrefix(entry.ReadPermission, owner+".") || !strings.HasPrefix(entry.UpdatePermission, owner+".") {
-			return fmt.Errorf("configuration management entry %q permissions must be owned by %q", entry.ID, owner)
-		}
 	}
 	sort.Slice(declaration.Entries, func(i, j int) bool { return declaration.Entries[i].ID < declaration.Entries[j].ID })
 	return nil

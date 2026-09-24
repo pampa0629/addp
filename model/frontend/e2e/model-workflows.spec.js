@@ -770,7 +770,10 @@ async function installMockBackend(target, options = {}) {
     }
     const schema = { id: 'schema-22', label: 'public', type: 'schema', locator: 'addp://engine/2/path/public?type=schema&node_id=22', children: [], metadata: { node_id: 22, engine_id: 2 } }
     const root = { id: 'engine-2', label: '业务库', type: 'database', locator: 'addp://engine/2/path/?type=database&node_id=21', children: [schema], metadata: { node_id: 21, engine_id: 2 } }
-    if (path === '/api/v1/meta/engines') return fulfillJSON(route, [{ id: 2, name: '业务库', engine_type: 'postgresql', status: 'online' }])
+    if (path === '/api/v1/meta/engines') return fulfillJSON(route, [{
+      id: 2, name: '业务库', engine_type: 'postgresql', engine_family: 'tabular',
+      catalog_top_term: 'schema', engine_catalog_leaf_term: 'table', status: 'online'
+    }])
     if (path === '/api/v1/meta/resource-tree/2') return fulfillJSON(route, root)
     if (path === '/api/v1/meta/resource-tree/2/ancestors') return fulfillJSON(route, { ancestors: options.missingTarget ? [] : [root, schema] })
     if (path === '/api/v1/meta/resource-tree/2/node') return fulfillJSON(route, schema)

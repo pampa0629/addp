@@ -529,6 +529,18 @@ test_dev_port_resolution() {
   ' || fail "development port resolution did not propagate or preserve the selected port"
 }
 
+test_dev_owned_listener_matches_recorded_pid() {
+  local workspace="${TEST_ROOT}/dev-owned-listener"
+  mkdir -p "$workspace/.dev-pids"
+  ROOT_DIR="$workspace" PORT_SCRIPT="$PORT_SCRIPT" bash -c '
+    set -e
+    source "$PORT_SCRIPT"
+    printf "%s\n" "$$" > "$ROOT_DIR/.dev-pids/system.pid"
+    lsof() { printf "%s\n" "$$"; }
+    addp_dev_owned_listener system 8180
+  ' || fail "development port ownership did not match the recorded listener PID"
+}
+
 test_runtime_host_port_advertisement() {
   python3 - "$ROOT_DIR" <<'PY'
 from pathlib import Path
@@ -960,6 +972,7 @@ test_parallel_runtime_startup
 test_python_dependency_install_lock
 test_stop_batches_listening_ports
 test_dev_port_resolution
+test_dev_owned_listener_matches_recorded_pid
 test_runtime_host_port_advertisement
 test_restart_preserves_cache_and_batches_swagger
 test_lifecycle_lock_rejects_concurrent_owner

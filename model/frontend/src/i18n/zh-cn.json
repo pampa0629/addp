@@ -345,7 +345,7 @@
     },
     "materialization": {
       "title": "物理目标",
-      "help": "物理目标说明逻辑表将落到哪个引擎、位置和表名。创建/校验只处理表结构，不写入业务数据；目标不存在时创建，已存在时校验归属和结构。",
+      "help": "物理目标按引擎目录选择表所在的 schema 或 database，可供指标绑定已有表。当前仅标识符符合建表规则的 PostgreSQL/PostGIS 目标支持建表、DDL 预览和删除；建表不写入业务数据。",
       "config_status": "配置状态",
       "configured": "已配置",
       "target_location": "目标位置",

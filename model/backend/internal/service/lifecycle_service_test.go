@@ -796,6 +796,7 @@ func TestLogicalTableWritesCanonicalizePhysicalTarget(t *testing.T) {
 		repository.NewLogicalTableRepository(db),
 		repository.NewDWLayerRepository(db),
 	)
+	svc.SetSystemClient(testPhysicalTargetSystemClient(t, "postgresql"))
 	table, err := svc.CreateLogicalTable(&models.CreateLogicalTableRequest{
 		Name: "Orders", Code: "orders", TableType: "entity", Layer: "dwd",
 		Materialization: map[string]interface{}{
@@ -847,6 +848,31 @@ func TestLogicalTableWritesCanonicalizePhysicalTarget(t *testing.T) {
 	}
 	if len(reloaded.Materialization) != 0 {
 		t.Fatalf("persisted cleared materialization is not canonical: %#v", reloaded.Materialization)
+	}
+}
+
+func TestLogicalTableCreatesTiDBDatabaseTargetForMetricSource(t *testing.T) {
+	db := setupLifecycleServiceTestDB(t)
+	if err := db.Create(&models.DWLayer{TenantID: 1, LayerCode: "dwd", LayerName: "DWD", Version: 1}).Error; err != nil {
+		t.Fatal(err)
+	}
+	svc := NewLogicalTableService(repository.NewLogicalTableRepository(db), repository.NewDWLayerRepository(db))
+	svc.SetSystemClient(testPhysicalTargetSystemClient(t, "tidb"))
+	table, err := svc.CreateLogicalTable(&models.CreateLogicalTableRequest{
+		Name: "Orders", Code: "orders", TableType: "entity", Layer: "dwd",
+		Materialization: map[string]interface{}{
+			"target_parent_locator": "addp://engine/2/path/metric_fixture?type=database",
+			"target_name":           "orders",
+		},
+	}, 1, 1)
+	if err != nil || table == nil {
+		t.Fatalf("create TiDB-backed logical table: %#v, %v", table, err)
+	}
+	if err := db.Create(&models.LogicalField{TableID: table.ID, Name: "ID", ColumnName: "id", DataType: "bigint", IsPK: true, FieldRole: "regular"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.PreviewDDL(table.ID, 1, map[string]interface{}(table.Materialization)); err == nil {
+		t.Fatal("PostgreSQL DDL preview accepted TiDB target")
 	}
 }
 
@@ -967,6 +993,7 @@ func TestLogicalTableDDLPreviewPreservesApprovedDefinition(t *testing.T) {
 		t.Fatal(err)
 	}
 	svc := NewLogicalTableService(repository.NewLogicalTableRepository(db), repository.NewDWLayerRepository(db))
+	svc.SetSystemClient(testPhysicalTargetSystemClient(t, "postgresql"))
 	ddl, err := svc.PreviewDDL(table.ID, 1, map[string]interface{}(table.Materialization))
 	if err != nil || ddl == "" {
 		t.Fatalf("PreviewDDL = %q, %v", ddl, err)

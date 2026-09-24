@@ -61,7 +61,7 @@ addp_business_check_oceanbase_ip() {
 }
 
 addp_business_ensure_network() {
-  local network saved subnet owner probe state expected_ip="${1:-}"
+  local network saved subnet owner probe state temporary expected_ip="${1:-}"
   network=$(addp_business_network_name)
   state=$(addp_business_network_state)
   saved=$(addp_business_saved_network_subnet)
@@ -116,14 +116,18 @@ addp_business_ensure_network() {
   fi
   if [ ! -f "$state" ]; then
     mkdir -p "${PROJECT_ROOT}/.business-state"
-    printf 'BUSINESS_NETWORK_SUBNET=%s\n' "$subnet" > "$state"
+    temporary=$(mktemp "${state}.XXXXXX") || return 1
+    printf 'BUSINESS_NETWORK_SUBNET=%s\n' "$subnet" > "$temporary"
+    mv "$temporary" "$state"
   fi
-  cat > "$(addp_business_network_override)" <<'EOF'
+  temporary=$(mktemp "$(addp_business_network_override).XXXXXX") || return 1
+  cat > "$temporary" <<'EOF'
 networks:
   business-network:
     name: business_business-network
     external: true
 EOF
+  mv "$temporary" "$(addp_business_network_override)"
 }
 
 addp_business_port_specs() {

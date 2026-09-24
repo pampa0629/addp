@@ -197,7 +197,21 @@ kingbase_install_license_into_created_container() {
     staged_license=$(mktemp "$work_dir/license.XXXXXX")
     cp "$license_file" "$staged_license"
     chmod 0644 "$staged_license"
-    docker cp "$staged_license" "$container_name:$KINGBASE_HOME/bin/license.dat" || copy_status=$?
+    python3 - "$staged_license" <<'PY' | docker cp -a - "$container_name:$KINGBASE_HOME/bin" || copy_status=$?
+import sys
+import tarfile
+
+source = sys.argv[1]
+with open(source, "rb") as license_file:
+    license_info = tarfile.TarInfo("license.dat")
+    license_info.size = license_file.seek(0, 2)
+    license_file.seek(0)
+    license_info.uid = license_info.gid = 1000  # Pinned official image's kingbase user.
+    license_info.uname = license_info.gname = "kingbase"
+    license_info.mode = 0o600
+    with tarfile.open(fileobj=sys.stdout.buffer, mode="w|") as archive:
+        archive.addfile(license_info, license_file)
+PY
     chmod 0600 "$staged_license"
     rm -f "$staged_license"
     return "$copy_status"

@@ -121,11 +121,14 @@ test('metric editing has one independent owner and tables only navigate to it', 
   assert.doesNotMatch(api, /logical-tables\/\$\{tableId\}\/metric-implementations/)
 })
 
-test('logical table materialization binds a schema locator and target name', async () => {
+test('logical table physical target follows the engine catalog namespace', async () => {
   const source = await readFile(new URL('../src/views/LogicalTableDetail.vue', import.meta.url), 'utf8')
   assert.match(source, /mode="node"/)
-  assert.match(source, /:selectable-filter="isSchemaSelection"/)
+  assert.match(source, /:selectable-filter="isTargetNamespaceSelection"/)
   assert.match(source, /:engine-filter="isSupportedPhysicalTargetEngine"/)
+  assert.match(source, /engine\?\.engine_catalog_leaf_term === 'table'/)
+  assert.match(source, /node\?\.type === engine\.catalog_top_term/)
+  assert.match(source, /canExecuteMaterialization/)
   assert.match(source, /name="physical-target"/)
   assert.doesNotMatch(source, /@update:model-value="handleTargetParentSelect"/)
   assert.match(source, /target_parent_locator/)

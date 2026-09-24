@@ -66,7 +66,8 @@ addp_dev_saved_port() {
 }
 
 addp_dev_owned_listener() {
-  local name="$1" port="$2" pidfile="${ROOT_DIR}/.dev-pids/${name}.pid" owner listener
+  local name="$1" port="$2" pidfile owner listener
+  pidfile="${ROOT_DIR}/.dev-pids/${name}.pid"
   case "$name" in
     geopython-workflow|pointcloud-workflow|document-workflow|supermap-workflow)
       local container="${name}-engine" labels mapping

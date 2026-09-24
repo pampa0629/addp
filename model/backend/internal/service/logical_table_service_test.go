@@ -1,11 +1,29 @@
 package service
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
+	commonClient "github.com/addp/common/client"
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/model/internal/models"
 )
+
+func testPhysicalTargetSystemClient(t *testing.T, engineType string) *commonClient.SystemServiceClient {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/system/runtime/engine-descriptors/2" {
+			http.NotFound(w, r)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(commonModels.EngineRuntimeDescriptor{ID: 2, EngineType: engineType})
+	}))
+	t.Cleanup(server.Close)
+	return commonClient.NewSystemServiceClient(server.URL, materializationTestTokens{}, server.Client())
+}
 
 func TestGeneratePostgreSQLDDLQuotesIdentifiers(t *testing.T) {
 	service := &LogicalTableService{}
@@ -66,14 +84,52 @@ func TestValidateMaterializationRejectsLegacyTargetFields(t *testing.T) {
 	}
 }
 
-func TestValidateMaterializationRejectsNonSchemaTargetParent(t *testing.T) {
+func TestValidateMaterializationRejectsNonNamespaceTargetParent(t *testing.T) {
 	table := &models.LogicalTable{Code: "fact_order", Materialization: models.JSONB{
 		"target_parent_locator": "addp://engine/2/path/analytics/orders?type=table",
 		"target_name":           "fact_order",
 	}}
 	fields := []models.LogicalField{{ColumnName: "order_id", DataType: "bigint"}}
 	if err := validateMaterialization(table, fields); err == nil {
-		t.Fatal("expected non-schema target parent error")
+		t.Fatal("expected non-namespace target parent error")
+	}
+}
+
+func TestValidateMaterializationAcceptsDatabaseNamespaceAndRejectsNestedParent(t *testing.T) {
+	table := &models.LogicalTable{Code: "fact_order", Materialization: models.JSONB{
+		"target_parent_locator": "addp://engine/2/path/metric_fixture?type=database",
+		"target_name":           "fact_order",
+	}}
+	if err := validateMaterialization(table, nil); err != nil {
+		t.Fatalf("database namespace rejected: %v", err)
+	}
+	table.Materialization["target_parent_locator"] = "addp://engine/2/path/metric_fixture/nested?type=database"
+	if err := validateMaterialization(table, nil); err == nil {
+		t.Fatal("nested namespace accepted")
+	}
+}
+
+func TestPhysicalTargetCatalogMatchesEngine(t *testing.T) {
+	for _, tc := range []struct {
+		engineType, parentType, namespace, tableName string
+		valid                                        bool
+	}{
+		{"postgresql", "schema", "metric_fixture", "fact_order", true},
+		{"postgresql", "schema", "SalesSchema", "OrderDetail", true},
+		{"postgresql", "database", "metric_fixture", "fact_order", false},
+		{"tidb", "database", "metric_fixture", "fact_order", true},
+		{"tidb", "database", "SalesDB", "OrderDetail", true},
+		{"tidb", "schema", "metric_fixture", "fact_order", false},
+		{"mysql", "database", "metric_fixture", "fact_order", true},
+	} {
+		t.Run(tc.engineType+"/"+tc.parentType+"/"+tc.namespace, func(t *testing.T) {
+			svc := &LogicalTableService{system: testPhysicalTargetSystemClient(t, tc.engineType)}
+			config := models.JSONB{"target_parent_locator": "addp://engine/2/path/" + tc.namespace + "?type=" + tc.parentType, "target_name": tc.tableName}
+			err := svc.validateMaterializationCatalog(1, config)
+			if (err == nil) != tc.valid {
+				t.Fatalf("validate catalog = %v, want valid %v", err, tc.valid)
+			}
+		})
 	}
 }
 

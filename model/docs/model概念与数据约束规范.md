@@ -185,7 +185,7 @@ Model 将名称字段及关联纳入既有依赖快照与数据库无关计划�
 
 闭合 `AnalyticalDialect`、Model SQL 拼接与 sql_dialect 依赖已删除；旧发布包不兼容读取。部署前应盘点受影响实现／服务／应用并安排正式新修订切换，不在迁移 SQL 中伪造发布审批或把旧 SQL 自动改写为新计划。
 
-首期仍限定同一引擎内的表格计算；指标业务语义、参数及结果保持前文所述。PG/MySQL 的物理表绑定入口和建表、退役能力另行跟踪。本轮计算契约既不授权 Model 跨模块管理数据，也不自动扩展物化 DDL；MySQL 测试夹具的 SourceBinding 不代表页面来源配置链路已经交付。
+首期仍限定同一引擎内的表格计算；指标业务语义、参数及结果保持前文所述。逻辑表物理目标按 Engine Catalog 父命名空间绑定，页面可选择 PostgreSQL 的 schema 或 MySQL/TiDB 的 database；指标计算从该绑定取得已扫描物理表，不授权 Model 跨模块管理数据。建表、DDL 预览和退役能力仍单独受 Model 已实现的 PostgreSQL 路径约束，不能从物理绑定或引擎通用建表能力推断已支持其他数据库的 Model DDL。
 
 `/metric-implementations` 是唯一管理资源：GET 列表（可用 `fact_table_id` 筛选）、POST 创建；`/{id}` GET/DELETE；`/{id}/draft` PUT；`/{id}/revisions/{revision_id}/publish|withdraw` POST；`/{id}/revisions/{revision_id}/plan` POST（请求体可携带类型化 `input`） 读取确定发布修订。写入已有资源携带实现 `version`，不保留逻辑表嵌套写路由。使用 `model.metric_implementation.read/create/update/delete/publish/offline` 精确权限。
 
@@ -242,7 +242,7 @@ Mermaid 可逆子集必须通过 ADDP 元数据注释完整保存所有可编辑
 
 Cleanup 是内部强制生命周期写入，不从外部请求接收 `version`。它仍必须锁定受影响资源，推进被修改资源的 `version`，并在涉及实体模型集合时推进 Tenant `revision`；physical cleanup 必须在单个事务中完成锁定、删除和修订推进。
 
-PostgreSQL 建表语句预览只接受结构化物理目标配置。物理目标统一使用 `target_parent_locator + target_name`：父定位符必须是标准 ResourceLocator 且指向目标引擎中的父命名空间，目标名称是准备创建或校验的物理表名。当前可执行实现只支持 PostgreSQL/PostGIS 引擎的 `schema` 父节点，但用户界面统一称为“目标位置”，不得把 PostgreSQL 专属术语当作平台级概念。配置不再接受脱离 Engine Instance 身份的 `schema_name/table_name`，也不构造尚不存在资源的伪 `target_locator`。父定位符与目标名称必须同时为空或同时存在；为空时预览仅按逻辑表编码生成无父位置限定的设计语句。位置、表和字段标识符必须统一校验与引用。
+物理目标统一使用 `target_parent_locator + target_name`：父定位符必须是标准 ResourceLocator，指向目标引擎 Engine Catalog 声明的表级 leaf 的直接父业务命名空间；PostgreSQL/PostGIS 为 `schema`，MySQL/TiDB 为 `database`。目标名称是物理表名。物理命名空间和表名按目标引擎的 Engine Catalog 路径校验，不套用逻辑表编码和字段名的小写标识符规则；当前 PostgreSQL 建表路径仍使用自己的较严格标识符规则。配置可供指标来源绑定使用，不意味着 Model 已能在该引擎执行 DDL。当前建表语句预览、建表和退役仅支持 PostgreSQL/PostGIS；其他引擎的物理目标可以保存，但这些 DDL 操作必须明确拒绝或在界面不可用。用户界面统一称为“目标位置”，不得把 PostgreSQL 专属术语当作平台级概念。配置不再接受脱离 Engine Instance 身份的 `schema_name/table_name`，也不构造尚不存在资源的伪 `target_locator`。父定位符与目标名称必须同时为空或同时存在；为空时预览仅按逻辑表编码生成无父位置限定的 PostgreSQL 设计语句。
 
 物理目标配置只允许 `target_parent_locator` 与 `target_name`，不接受 `partition_by`、`partition_type` 或任意 SQL 扩展字段。当前建表能力不支持受控分区表，前后端不得展示或保存不可执行的分区设计；将来只有在引擎能力契约、建表执行和结构校验同时支持后，才能新增单一正式路径。
 

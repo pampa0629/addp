@@ -29,6 +29,11 @@ func TestValidateManagementDeclaration(t *testing.T) {
 	if err := ValidateManagementDeclaration("manager", declaration); err != nil {
 		t.Fatalf("ValidateManagementDeclaration() nested Console route error = %v", err)
 	}
+	declaration.Entries[0].ReadPermission = "iam.security_policy.read"
+	declaration.Entries[0].UpdatePermission = "iam.security_policy.update"
+	if err := ValidateManagementDeclaration("manager", declaration); err != nil {
+		t.Fatalf("permission key namespace is not its ownership: %v", err)
+	}
 }
 
 func TestEntryVisibleInContext(t *testing.T) {

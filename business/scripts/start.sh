@@ -631,7 +631,7 @@ if [ "$ENABLE_OCEANBASE" = true ]; then
             exit 1
         fi
     fi
-    echo -e "${GREEN}✓ OceanBase CE 配置已同步${NC}"
+    echo -e "${GREEN}✓ OceanBase CE 地址已校验并启动${NC}"
 fi
 
 if [ "$ENABLE_TIDB" = true ]; then

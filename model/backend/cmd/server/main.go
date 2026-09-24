@@ -98,6 +98,7 @@ func main() {
 	entityRelationSvc.SetConceptMappingRepository(conceptMappingRepo)
 	logicalTableSvc := service.NewLogicalTableService(logicalTableRepo, dwLayerRepo)
 	logicalTableSvc.SetStandardClient(standardClient)
+	logicalTableSvc.SetSystemClient(systemClient)
 	logicalTableSvc.SetConceptMappingRepository(conceptMappingRepo)
 	conceptMappingSvc := service.NewConceptMappingService(conceptMappingRepo, logicalTableRepo)
 	dwLayerSvc := service.NewDWLayerService(dwLayerRepo)

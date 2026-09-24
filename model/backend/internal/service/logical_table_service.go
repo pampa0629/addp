@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/resourcetree"
 	"github.com/addp/model/i18n"
 	"github.com/addp/model/internal/apperrors"
@@ -23,10 +24,24 @@ type LogicalTableService struct {
 	dwLayerRepo        *repository.DWLayerRepository
 	conceptMappingRepo *repository.ConceptMappingRepository
 	standard           *commonClient.StandardClient
+	system             *commonClient.SystemServiceClient
 }
 
 func (s *LogicalTableService) SetStandardClient(client *commonClient.StandardClient) {
 	s.standard = client
+}
+
+func (s *LogicalTableService) SetSystemClient(client *commonClient.SystemServiceClient) {
+	s.system = client
+}
+
+func isPostgreSQLMaterializationEngine(engineType string) bool {
+	switch strings.ToLower(strings.TrimSpace(engineType)) {
+	case "postgresql", "postgres", "postgis":
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *LogicalTableService) validateReferences(tenantID int64, domainID, elementID *int64) error {
@@ -99,6 +114,9 @@ func (s *LogicalTableService) CreateLogicalTable(req *models.CreateLogicalTableR
 	}
 	if err := validateMaterialization(table, nil); err != nil {
 		return nil, apperrors.Wrap(apperrors.KindValidation, "materialization_invalid", i18n.MsgValidationFailed, err)
+	}
+	if err := s.validateMaterializationCatalog(tenantID, table.Materialization); err != nil {
+		return nil, err
 	}
 	if err := validateLogicalTableShape(req.TableType, req.SCDType, req.GrainDescription); err != nil {
 		return nil, err
@@ -185,6 +203,9 @@ func (s *LogicalTableService) UpdateLogicalTable(id, tenantID, userID int64, req
 		return nil, apperrors.Validation("logical_table_layer_required", i18n.MsgValidationFailed)
 	}
 	if err := validateLogicalTableShape(req.TableType, *req.SCDType, req.GrainDescription); err != nil {
+		return nil, err
+	}
+	if err := s.validateMaterializationCatalog(tenantID, normalizeMaterialization(req.Materialization)); err != nil {
 		return nil, err
 	}
 	var table *models.LogicalTable
@@ -614,6 +635,32 @@ func (s *LogicalTableService) PreviewDDL(tableID, tenantID int64, materializatio
 	if err := validateMaterialization(previewTable, fields); err != nil {
 		return "", apperrors.Wrap(apperrors.KindValidation, "ddl_preview_invalid", i18n.MsgDDLPreviewInvalid, err)
 	}
+	if targetURI, ok := materializationString(previewTable.Materialization, "target_parent_locator"); ok && targetURI != "" {
+		locator, _ := resourcetree.ParseURI(targetURI)
+		if s.system == nil {
+			return "", apperrors.Unavailable("engine_descriptor_unavailable", i18n.MsgMetricEngineUnavailable)
+		}
+		engine, err := s.system.WithTenantID(uint(tenantID)).GetEngineRuntimeDescriptor(context.Background(), locator.EngineID)
+		if err != nil {
+			return "", apperrors.Wrap(apperrors.KindUnavailable, "engine_descriptor_unavailable", i18n.MsgMetricEngineUnavailable, err)
+		}
+		name, _ := materializationString(previewTable.Materialization, "target_name")
+		if engine == nil || engine.ID != locator.EngineID || !isPostgreSQLMaterializationEngine(engine.EngineType) || locator.Type != resourcetree.TypeSchema ||
+			!identifierPattern.MatchString(locator.Path[0]) || !identifierPattern.MatchString(name) {
+			return "", apperrors.Validation("ddl_preview_invalid", i18n.MsgDDLPreviewInvalid)
+		}
+		provider, err := plugin.Get(engine.EngineType)
+		if err != nil {
+			return "", apperrors.Validation("ddl_preview_invalid", i18n.MsgDDLPreviewInvalid)
+		}
+		catalog, ok := provider.(plugin.EngineCatalogModelProvider)
+		if !ok {
+			return "", apperrors.Validation("ddl_preview_invalid", i18n.MsgDDLPreviewInvalid)
+		}
+		if _, err := resourcetree.EngineCatalogPathFromLocator(catalog.EngineCatalogModel(), locator); err != nil {
+			return "", apperrors.Validation("ddl_preview_invalid", i18n.MsgDDLPreviewInvalid)
+		}
+	}
 
 	return s.generatePostgreSQLDDL(previewTable, fields), nil
 }
@@ -802,14 +849,14 @@ func validateMaterialization(table *models.LogicalTable, fields []models.Logical
 		if err != nil {
 			return fmt.Errorf("物化目标父定位符无效: %w", err)
 		}
-		if locator.EngineID == 0 || locator.Type != resourcetree.TypeSchema || len(locator.Path) == 0 {
-			return fmt.Errorf("物化目标父定位符必须指向具体引擎的 schema")
+		if locator.EngineID == 0 || len(locator.Path) != 1 || (locator.Type != resourcetree.TypeSchema && locator.Type != resourcetree.TypeDatabase) || locator.ItemID != nil {
+			return fmt.Errorf("物理目标父定位符必须指向具体引擎的表级父命名空间")
 		}
-		if !identifierPattern.MatchString(locator.Path[len(locator.Path)-1]) {
-			return fmt.Errorf("物化目标 schema 不是合法标识符")
+		if !validPhysicalTargetName(locator.Path[0]) {
+			return fmt.Errorf("物理目标父命名空间名称无效")
 		}
-		if !identifierPattern.MatchString(targetName) {
-			return fmt.Errorf("物理目标配置 target_name 不是合法标识符")
+		if !validPhysicalTargetName(targetName) {
+			return fmt.Errorf("物理目标配置 target_name 无效")
 		}
 	}
 	for _, field := range fields {
@@ -819,6 +866,53 @@ func validateMaterialization(table *models.LogicalTable, fields []models.Logical
 		if field.DataType == "" || (&LogicalTableService{}).mapDataTypeToPostgreSQL(field.DataType, field.Length) == "" {
 			return fmt.Errorf("不支持的字段类型: %s", field.DataType)
 		}
+	}
+	return nil
+}
+
+func validPhysicalTargetName(name string) bool {
+	return name != "" && len(name) <= 1024 && utf8.ValidString(name) && !strings.ContainsRune(name, 0)
+}
+
+func (s *LogicalTableService) validateMaterializationCatalog(tenantID int64, config models.JSONB) error {
+	uri, ok := materializationString(config, "target_parent_locator")
+	if !ok || uri == "" {
+		return nil
+	}
+	locator, err := resourcetree.ParseURI(uri)
+	if err != nil || locator.EngineID == 0 {
+		return apperrors.Validation("materialization_invalid", i18n.MsgValidationFailed)
+	}
+	if s.system == nil {
+		return apperrors.Unavailable("engine_descriptor_unavailable", i18n.MsgMetricEngineUnavailable)
+	}
+	engine, err := s.system.WithTenantID(uint(tenantID)).GetEngineRuntimeDescriptor(context.Background(), locator.EngineID)
+	if err != nil {
+		return apperrors.Wrap(apperrors.KindUnavailable, "engine_descriptor_unavailable", i18n.MsgMetricEngineUnavailable, err)
+	}
+	if engine == nil || engine.ID != locator.EngineID {
+		return apperrors.Validation("materialization_invalid", i18n.MsgValidationFailed)
+	}
+	provider, err := plugin.Get(engine.EngineType)
+	if err != nil {
+		return apperrors.Validation("materialization_invalid", i18n.MsgValidationFailed)
+	}
+	catalog, ok := provider.(plugin.EngineCatalogModelProvider)
+	if !ok || plugin.EngineCatalogLeafTerm(catalog.EngineCatalogModel()) != plugin.EngineCatalogTermTable {
+		return apperrors.Validation("materialization_invalid", i18n.MsgValidationFailed)
+	}
+	branch, ok := plugin.EngineCatalogFirstBusinessBranch(catalog.EngineCatalogModel())
+	if !ok || branch.Term != string(locator.Type) {
+		return apperrors.Validation("materialization_invalid", i18n.MsgValidationFailed)
+	}
+	leaf := *locator
+	name, _ := materializationString(config, "target_name")
+	leaf.Path = append(append([]string(nil), locator.Path...), name)
+	leaf.Type = resourcetree.TypeTable
+	leaf.NodeID = nil
+	leaf.ItemID = nil
+	if _, err := resourcetree.EngineCatalogPathFromLocator(catalog.EngineCatalogModel(), &leaf); err != nil {
+		return apperrors.Validation("materialization_invalid", i18n.MsgValidationFailed)
 	}
 	return nil
 }
