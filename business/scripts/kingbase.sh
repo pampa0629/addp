@@ -5,6 +5,9 @@ set -euo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 ROOT_DIR=$(cd "$SCRIPT_DIR/../.." && pwd -P)
+PROJECT_ROOT="$ROOT_DIR/business"
+# shellcheck source=ports.sh
+source "$SCRIPT_DIR/ports.sh"
 # shellcheck source=../../scripts/lib/kingbase-official-media.sh
 source "$ROOT_DIR/scripts/lib/kingbase-official-media.sh"
 
@@ -24,7 +27,14 @@ fail() {
 }
 
 compose() {
-    docker compose --project-name "$COMPOSE_PROJECT" --env-file /dev/null --file "$COMPOSE_FILE" --profile kingbase "$@"
+    local override
+    override=$(addp_business_network_override)
+    if [ -f "$override" ]; then
+        docker compose --project-name "$COMPOSE_PROJECT" --env-file /dev/null \
+            --file "$COMPOSE_FILE" --file "$override" --profile kingbase "$@"
+    else
+        docker compose --project-name "$COMPOSE_PROJECT" --env-file /dev/null --file "$COMPOSE_FILE" --profile kingbase "$@"
+    fi
 }
 
 action=${1:-}
@@ -84,6 +94,7 @@ case "$action" in
         [ -n "$DATABASE_PASSWORD" ] || fail "KINGBASE_PASSWORD is required"
         kingbase_validate_license_input "$ROOT_DIR"
         kingbase_ensure_official_image
+        addp_business_ensure_network || fail 'Business Docker network is unavailable'
         export KINGBASE_USER="$DATABASE_USER"
         export KINGBASE_PASSWORD="$DATABASE_PASSWORD"
         export KINGBASE_PORT="$HOST_PORT"

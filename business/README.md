@@ -98,6 +98,10 @@ bash scripts/start.sh -postgres -minio -clickhouse
 
 本地启动 PostgreSQL、MySQL、MinIO 时，脚本会检查首选宿主机端口；首次冲突时自动选择空闲端口，并把成功启动的实际映射写入忽略版本控制的 `.business-state/ports.env`。后续重启沿用该端口，避免已登记的 Engine Instance 身份漂移；固定端口再次被占用时启动会明确失败。容器内部端口保持不变。本机开发注册引擎时使用 `127.0.0.1:实际宿主机端口`，同一 Docker 网络中的服务使用 `business-*` 服务名与固定内部端口。
 
+Business bridge 网络由标准启动脚本创建并保留，网段记录在 `.business-state/network.env`。OceanBase 单节点的旧数据依赖首次部署时的容器内网 IP；标准启动脚本只读其 OBD 配置，并在重建容器前恢复同一地址。地址冲突或网段丢失时会拒绝启动，不迁移或重建旧数据；其他引擎仍使用服务名，不依赖容器 IP。
+
+OceanBase 的 `observer/run` 使用 tmpfs 保存 PID 与 socket；它们不进入持久数据卷，容器重建不会误用上次进程的 PID。
+
 `-nfs` 使用 macOS 系统 NFS。已有正确导出且服务正在运行时可直接复用；首次配置仍需使用 `sudo bash scripts/start.sh -nfs`。
 
 ## 目录结构

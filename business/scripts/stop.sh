@@ -19,6 +19,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$PROJECT_ROOT"
 
+# 本地 Business 网络由启动脚本管理；停止服务时保留 OceanBase 的旧网段。
+source "$SCRIPT_DIR/ports.sh"
+if [ -f "$(addp_business_network_override)" ]; then
+    addp_business_use_network_override
+fi
+
 for arg in "$@"; do
     if [ "$arg" = "-kingbase" ]; then
         [ "$#" -eq 1 ] || { echo "-kingbase 必须独立使用" >&2; exit 1; }

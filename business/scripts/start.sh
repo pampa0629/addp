@@ -414,6 +414,32 @@ for port in $PORTS_TO_CHECK; do
 done
 echo ""
 
+# OceanBase 的单节点数据记录了容器内网地址；先核对旧地址，再启动任何 Business 容器。
+OCEANBASE_PERSISTED_IP=''
+if [ "$ENABLE_OCEANBASE" = true ]; then
+    OCEANBASE_PERSISTED_IP=$(addp_business_oceanbase_persisted_ip) || exit 1
+    if [ -n "$OCEANBASE_PERSISTED_IP" ] &&
+       { [[ "$OCEANBASE_PERSISTED_IP" == *$'\n'* ]] ||
+         ! python3 -c 'import ipaddress, sys; ipaddress.IPv4Address(sys.argv[1])' "$OCEANBASE_PERSISTED_IP" >/dev/null 2>&1; }; then
+        echo '✗ OceanBase OBD 集群配置必须包含唯一的 IPv4 地址' >&2
+        exit 1
+    fi
+fi
+
+for service_flag in ENABLE_PG ENABLE_ORACLE ENABLE_SUPERMAP_PG ENABLE_MINIO ENABLE_CLICKHOUSE \
+                    ENABLE_MONGODB ENABLE_DORIS ENABLE_SPARK ENABLE_NEO4J ENABLE_MYSQL \
+                    ENABLE_OCEANBASE ENABLE_TIDB ENABLE_OPENGAUSS ENABLE_REDPANDA; do
+    if [ "${!service_flag}" = true ]; then
+        addp_business_ensure_network "$OCEANBASE_PERSISTED_IP" || exit 1
+        addp_business_use_network_override || exit 1
+        break
+    fi
+done
+
+if [ -n "$OCEANBASE_PERSISTED_IP" ]; then
+    addp_business_check_oceanbase_ip "$OCEANBASE_PERSISTED_IP" || exit 1
+fi
+
 # 5. 启动服务（幂等）
 echo -e "${YELLOW}🚀 启动服务...${NC}"
 
@@ -568,7 +594,43 @@ fi
 
 # OceanBase CE
 if [ "$ENABLE_OCEANBASE" = true ]; then
-    docker compose up -d oceanbase
+    if [ -z "$OCEANBASE_PERSISTED_IP" ]; then
+        docker compose up -d oceanbase
+    else
+        oceanbase_running=false
+        if docker container inspect business-oceanbase >/dev/null 2>&1; then
+            addp_business_verify_container oceanbase business-oceanbase || exit 1
+            if [ "$(docker inspect business-oceanbase --format '{{.State.Running}}')" = true ]; then
+                oceanbase_running=true
+                running_ip=$(docker inspect business-oceanbase --format '{{(index .NetworkSettings.Networks "business_business-network").IPAddress}}')
+                if [ "$running_ip" != "$OCEANBASE_PERSISTED_IP" ]; then
+                    echo "✗ 正在运行的 OceanBase 地址 $running_ip 与旧数据地址 $OCEANBASE_PERSISTED_IP 不一致" >&2
+                    exit 1
+                fi
+            fi
+        fi
+        if [ "$oceanbase_running" != true ]; then
+            docker compose create oceanbase
+        fi
+        assigned_ip=$(docker inspect business-oceanbase --format '{{with (index .NetworkSettings.Networks "business_business-network").IPAMConfig}}{{.IPv4Address}}{{end}}')
+        if [ "$assigned_ip" != "$OCEANBASE_PERSISTED_IP" ]; then
+            if [ "$oceanbase_running" = true ]; then
+                docker stop business-oceanbase >/dev/null
+            fi
+            docker network disconnect business_business-network business-oceanbase
+            docker network connect --ip "$OCEANBASE_PERSISTED_IP" \
+                --alias oceanbase --alias business-oceanbase \
+                business_business-network business-oceanbase
+        fi
+        if [ "$oceanbase_running" != true ] || [ "$assigned_ip" != "$OCEANBASE_PERSISTED_IP" ]; then
+            docker compose start oceanbase
+        fi
+        current_ip=$(docker inspect business-oceanbase --format '{{(index .NetworkSettings.Networks "business_business-network").IPAddress}}')
+        if [ "$current_ip" != "$OCEANBASE_PERSISTED_IP" ]; then
+            echo "✗ OceanBase 容器获得 $current_ip，而旧集群要求 $OCEANBASE_PERSISTED_IP" >&2
+            exit 1
+        fi
+    fi
     echo -e "${GREEN}✓ OceanBase CE 配置已同步${NC}"
 fi
 
@@ -833,6 +895,36 @@ if [ "$ENABLE_OCEANBASE" = true ]; then
     if [ "$OCEANBASE_READY" != true ]; then
         echo -e "${RED}✗ OceanBase CE 未在 360 秒内完成初始化${NC}"
         exit 1
+    fi
+    if [ -z "$OCEANBASE_PERSISTED_IP" ]; then
+        initialized_ip=$(addp_business_oceanbase_persisted_ip) || exit 1
+        current_ip=$(docker inspect business-oceanbase --format '{{(index .NetworkSettings.Networks "business_business-network").IPAddress}}')
+        if [ "$initialized_ip" != "$current_ip" ]; then
+            echo "✗ OceanBase 首次初始化地址 $initialized_ip 与实际地址 $current_ip 不一致" >&2
+            exit 1
+        fi
+        docker stop business-oceanbase >/dev/null
+        docker network disconnect business_business-network business-oceanbase
+        docker network connect --ip "$initialized_ip" \
+            --alias oceanbase --alias business-oceanbase \
+            business_business-network business-oceanbase
+        docker start business-oceanbase >/dev/null
+        for i in {1..180}; do
+            if docker exec business-oceanbase obclient \
+                -h127.0.0.1 -P2881 \
+                -u"root@${OCEANBASE_TENANT_NAME:-test}" \
+                --password="${OCEANBASE_PASSWORD:-business_oceanbase_password}" \
+                -D"${OCEANBASE_DATABASE:-business}" \
+                -e 'SELECT COUNT(*) FROM addp_engine_probe' >/dev/null 2>&1; then
+                echo -e "${GREEN}✓ OceanBase CE 首次部署地址 $initialized_ip 已固定${NC}"
+                break
+            fi
+            if [ "$i" -eq 180 ]; then
+                echo -e "${RED}✗ OceanBase CE 固定内网地址后未恢复就绪${NC}"
+                exit 1
+            fi
+            sleep 2
+        done
     fi
 fi
 

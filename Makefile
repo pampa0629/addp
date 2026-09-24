@@ -158,6 +158,7 @@ test-business-config: ## 校验 Business Compose 和服务管理脚本（不启�
 	@docker compose --env-file business/.env.example -f business/docker-compose.yml config --quiet
 	@docker compose --env-file business/.env.example -f business/docker-compose.yml config --services | grep -Fxq oceanbase
 	@docker compose --env-file business/.env.example -f business/docker-compose.yml config --images | grep -Fxq oceanbase/oceanbase-ce:4.4.2-lts
+	@docker compose --env-file business/.env.example -f business/docker-compose.yml config --format json | python3 -c 'import json, sys; assert json.load(sys.stdin)["services"]["oceanbase"]["tmpfs"] == ["/root/ob/observer/run:mode=0755"]'
 	@docker compose --env-file business/.env.example -f business/docker-compose.yml config --services | grep -Fxq tidb-pd
 	@docker compose --env-file business/.env.example -f business/docker-compose.yml config --services | grep -Fxq tidb-tikv
 	@docker compose --env-file business/.env.example -f business/docker-compose.yml config --services | grep -Fxq tidb

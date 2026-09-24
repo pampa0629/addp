@@ -407,6 +407,8 @@ OCEANBASE_PORT=2881
 
 本地容器是单机测试形态，不表达生产集群拓扑。System 注册时使用 `engine_type=oceanbase`、容器网络地址 `business-oceanbase:2881`、账号 `root@test` 和配置的 database/password；不得改登记为 MySQL Engine。
 
+OceanBase 的容器内网 IP 属于其持久化单节点集群身份。Business 启动时从 OBD 配置读取已部署地址，在显式网段的 `business_business-network` 上恢复该地址；网段保存在忽略版本控制的 `business/.business-state/network.env`。标准停止与重启保留网络，地址冲突或网段无法恢复时拒绝启动，不以新 IP 初始化旧数据。宿主机连接仍使用回环地址和 `OCEANBASE_PORT`，不登记笔记本的局域网 IP。
+
 Business TiDB 固定使用 PingCAP 官方 8.5.8 `pd`、`tikv`、`tidb` 三组件镜像及 OCI digest，Compose 不提供镜像覆盖入口；同一镜像契约同时用于 Linux x86_64 GitHub Hosted 与 macOS Docker Desktop。TiKV 容器固定声明 `nofile` soft/hard limit 为 `1000000`，满足官方对进程文件描述符上限的要求，Business 与 disposable T2 不得分叉配置。启动不读取 License 文件、不执行激活，也不得替换为 Enterprise 或第三方重打包镜像。
 
 ```bash

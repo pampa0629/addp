@@ -275,6 +275,8 @@ services:
       - oceanbase_data:/root/ob
       - oceanbase_obd_data:/root/.obd/cluster
       - ./oceanbase/init.sql:/root/boot/init.d/01-addp-business.sql:ro
+    tmpfs:
+      - /root/ob/observer/run:mode=0755
     networks:
       - business-network
     healthcheck:
@@ -617,5 +619,4 @@ volumes:
   redpanda_data:
     driver: local
 networks:
-  business-network:
-    driver: bridge
+  business-network: {}

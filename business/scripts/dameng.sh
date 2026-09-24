@@ -5,6 +5,9 @@ set -euo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 ROOT_DIR=$(cd "$SCRIPT_DIR/../.." && pwd -P)
+PROJECT_ROOT="$ROOT_DIR/business"
+# shellcheck source=ports.sh
+source "$SCRIPT_DIR/ports.sh"
 # shellcheck source=../../scripts/lib/dameng-official-media.sh
 source "$ROOT_DIR/scripts/lib/dameng-official-media.sh"
 
@@ -20,7 +23,14 @@ fail() {
 }
 
 compose() {
-    docker compose --project-name "$COMPOSE_PROJECT" --env-file /dev/null --file "$COMPOSE_FILE" --profile dameng "$@"
+    local override
+    override=$(addp_business_network_override)
+    if [ -f "$override" ]; then
+        docker compose --project-name "$COMPOSE_PROJECT" --env-file /dev/null \
+            --file "$COMPOSE_FILE" --file "$override" --profile dameng "$@"
+    else
+        docker compose --project-name "$COMPOSE_PROJECT" --env-file /dev/null --file "$COMPOSE_FILE" --profile dameng "$@"
+    fi
 }
 
 action=${1:-}
@@ -106,6 +116,7 @@ validate_container_ownership
 case "$action" in
     start)
         dameng_ensure_official_image "$ROOT_DIR"
+        addp_business_ensure_network || fail 'Business Docker network is unavailable'
         export DAMENG_PORT="$HOST_PORT"
         if ! container_running; then
             if container_exists; then

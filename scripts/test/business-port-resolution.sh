@@ -9,6 +9,10 @@ trap 'rm -rf "$PROJECT_ROOT"' EXIT
 MOCK_RUNNING=0
 MOCK_FOREIGN=0
 MOCK_BUSY='9002 9003'
+MOCK_NETWORK_EXISTS=0
+MOCK_NETWORK_SUBNET=172.19.0.0/16
+MOCK_NETWORK_IP_OWNER=''
+MOCK_NETWORK_CREATED_SUBNET=''
 
 docker() {
   local container format='' service
@@ -40,6 +44,33 @@ docker() {
         business-mysql:3306/tcp) echo 0.0.0.0:3306 ;;
         business-minio:9000/tcp) echo 0.0.0.0:19002 ;;
         business-minio:9001/tcp) echo 0.0.0.0:19003 ;;
+        *) return 1 ;;
+      esac
+      ;;
+    network)
+      case "$2" in
+        inspect)
+          [ "$MOCK_NETWORK_EXISTS" = 1 ] || return 1
+          case "${5:-}" in
+            *'.Labels'*) echo '<no value>|business' ;;
+            *'.IPAM.Config'*) echo "$MOCK_NETWORK_SUBNET" ;;
+            *'.Containers'*)
+              [ -z "$MOCK_NETWORK_IP_OWNER" ] || echo "$MOCK_NETWORK_IP_OWNER|172.19.0.6/16"
+              ;;
+          esac
+          ;;
+        create)
+          local item previous=''
+          for item in "$@"; do
+            if [ "$previous" = --subnet ]; then
+              MOCK_NETWORK_SUBNET="$item"
+              MOCK_NETWORK_CREATED_SUBNET="$item"
+              break
+            fi
+            previous="$item"
+          done
+          MOCK_NETWORK_EXISTS=1
+          ;;
         *) return 1 ;;
       esac
       ;;
@@ -104,5 +135,34 @@ MYSQL_PORT=3306
 MOCK_BUSY='3306 13306'
 addp_business_resolve_ports mysql >/dev/null
 [ "$MYSQL_PORT" = 13307 ]
+
+if addp_business_ensure_network 172.19.0.6 >/dev/null 2>&1; then
+  echo 'old OceanBase cluster accepted a missing network and missing subnet record' >&2
+  exit 1
+fi
+
+MOCK_NETWORK_EXISTS=1
+addp_business_ensure_network 172.19.0.6
+grep -Fxq 'BUSINESS_NETWORK_SUBNET=172.19.0.0/16' "$(addp_business_network_state)"
+grep -Fxq '    external: true' "$(addp_business_network_override)"
+addp_business_use_network_override
+[ "$COMPOSE_FILE" = "$PROJECT_ROOT/docker-compose.yml:$PROJECT_ROOT/.business-state/docker-compose.network.yml" ]
+
+MOCK_NETWORK_EXISTS=0
+addp_business_ensure_network 172.19.0.6
+[ "$MOCK_NETWORK_EXISTS" = 1 ]
+[ "$MOCK_NETWORK_CREATED_SUBNET" = 172.19.0.0/16 ]
+
+MOCK_NETWORK_IP_OWNER=business-tidb-tikv
+if addp_business_check_oceanbase_ip 172.19.0.6 >/dev/null 2>&1; then
+  echo 'OceanBase accepted an IP address held by TiKV' >&2
+  exit 1
+fi
+MOCK_NETWORK_IP_OWNER=business-oceanbase
+addp_business_check_oceanbase_ip 172.19.0.6
+if addp_business_ensure_network 172.20.0.6 >/dev/null 2>&1; then
+  echo 'OceanBase accepted an IP address outside the saved subnet' >&2
+  exit 1
+fi
 
 echo 'ADDP Business port resolution OK'

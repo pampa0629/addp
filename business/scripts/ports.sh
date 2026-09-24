@@ -1,5 +1,130 @@
 #!/usr/bin/env bash
-# Business 本地宿主机端口解析。首次选空闲端口；成功启动后固定实际映射。
+# Business 本地地址解析。首次选择空闲宿主机端口和 Docker 网段；成功后固定实际映射。
+
+addp_business_network_name() {
+  printf 'business_business-network\n'
+}
+
+addp_business_network_state() {
+  printf '%s/.business-state/network.env\n' "$PROJECT_ROOT"
+}
+
+addp_business_network_override() {
+  printf '%s/.business-state/docker-compose.network.yml\n' "$PROJECT_ROOT"
+}
+
+addp_business_use_network_override() {
+  local override
+  override=$(addp_business_network_override)
+  [ -f "$override" ] || { echo "✗ Business 网络配置不存在: $override" >&2; return 1; }
+  COMPOSE_FILE="$PROJECT_ROOT/docker-compose.yml:$override"
+  export COMPOSE_FILE
+}
+
+addp_business_saved_network_subnet() {
+  local state
+  state=$(addp_business_network_state)
+  [ -f "$state" ] || return 0
+  sed -n 's/^BUSINESS_NETWORK_SUBNET=//p' "$state" | head -n 1
+}
+
+addp_business_valid_subnet() {
+  python3 -c 'import ipaddress, sys; ipaddress.IPv4Network(sys.argv[1], strict=True)' "$1" >/dev/null 2>&1
+}
+
+addp_business_ip_in_subnet() {
+  python3 -c 'import ipaddress, sys; assert ipaddress.IPv4Address(sys.argv[1]) in ipaddress.IPv4Network(sys.argv[2])' "$1" "$2" >/dev/null 2>&1
+}
+
+addp_business_oceanbase_persisted_ip() {
+  docker volume inspect business_oceanbase_obd_data >/dev/null 2>&1 || return 0
+  docker run --rm --network none --read-only \
+    -v business_oceanbase_obd_data:/obd:ro \
+    --entrypoint /bin/sh "${OCEANBASE_IMAGE:-oceanbase/oceanbase-ce:4.4.2-lts}" \
+    -c 'if [ -f /obd/obcluster/config.yaml ]; then sed -n "/^  servers:/,/^  global:/s/^  - //p" /obd/obcluster/config.yaml; fi'
+}
+
+addp_business_network_ip_owner() {
+  local network
+  network=$(addp_business_network_name)
+  docker network inspect "$network" --format '{{range .Containers}}{{.Name}}|{{.IPv4Address}}{{println}}{{end}}' |
+    awk -F '[|/]' -v target="$1" '$2 == target { print $1 }'
+}
+
+addp_business_check_oceanbase_ip() {
+  local ip="$1" owner
+  owner=$(addp_business_network_ip_owner "$ip") || return 1
+  if [ -n "$owner" ] && [ "$owner" != business-oceanbase ]; then
+    echo "✗ OceanBase 旧地址 $ip 已被 $owner 占用" >&2
+    return 1
+  fi
+}
+
+addp_business_ensure_network() {
+  local network saved subnet owner probe state expected_ip="${1:-}"
+  network=$(addp_business_network_name)
+  state=$(addp_business_network_state)
+  saved=$(addp_business_saved_network_subnet)
+  if [ -f "$state" ] && [ -z "$saved" ]; then
+    echo "✗ Business 网段记录为空: $state" >&2
+    return 1
+  fi
+  if [ -n "$saved" ] && ! addp_business_valid_subnet "$saved"; then
+    echo "✗ Business 已保存的 Docker 网段无效: $saved" >&2
+    return 1
+  fi
+
+  if docker network inspect "$network" >/dev/null 2>&1; then
+    owner=$(docker network inspect "$network" --format '{{index .Labels "com.addp.owner"}}|{{index .Labels "com.docker.compose.project"}}')
+    case "$owner" in
+      business\|*|*\|business) ;;
+      *) echo "✗ $network 不属于本工作区的 Business 网络" >&2; return 1 ;;
+    esac
+  else
+    if [ -z "$saved" ]; then
+      if [ -z "$expected_ip" ]; then
+        expected_ip=$(addp_business_oceanbase_persisted_ip) || return 1
+      fi
+      if [ -n "$expected_ip" ]; then
+        echo '✗ OceanBase 旧集群仍在，但 Business 网段记录已丢失；拒绝以新网段启动旧数据' >&2
+        return 1
+      fi
+      probe="${network}-probe-$$"
+      docker network create --driver bridge "$probe" >/dev/null || return 1
+      subnet=$(docker network inspect "$probe" --format '{{(index .IPAM.Config 0).Subnet}}')
+      docker network rm "$probe" >/dev/null || return 1
+      addp_business_valid_subnet "$subnet" || { echo "✗ Docker 未分配有效的 Business 网段: $subnet" >&2; return 1; }
+    else
+      subnet="$saved"
+    fi
+    docker network create --driver bridge --subnet "$subnet" \
+      --label com.addp.owner=business "$network" >/dev/null || {
+      echo "✗ 无法恢复 Business Docker 网段 $subnet；请检查与其他 Docker 网络的冲突" >&2
+      return 1
+    }
+  fi
+
+  subnet=$(docker network inspect "$network" --format '{{(index .IPAM.Config 0).Subnet}}')
+  addp_business_valid_subnet "$subnet" || { echo "✗ Business Docker 网段无效: $subnet" >&2; return 1; }
+  if [ -n "$saved" ] && [ "$saved" != "$subnet" ]; then
+    echo "✗ Business Docker 网段 $subnet 与已保存的 $saved 不一致" >&2
+    return 1
+  fi
+  if [ -n "$expected_ip" ] && ! addp_business_ip_in_subnet "$expected_ip" "$subnet"; then
+    echo "✗ OceanBase 旧地址 $expected_ip 不在 Business 网段 $subnet 中" >&2
+    return 1
+  fi
+  if [ ! -f "$state" ]; then
+    mkdir -p "${PROJECT_ROOT}/.business-state"
+    printf 'BUSINESS_NETWORK_SUBNET=%s\n' "$subnet" > "$state"
+  fi
+  cat > "$(addp_business_network_override)" <<'EOF'
+networks:
+  business-network:
+    name: business_business-network
+    external: true
+EOF
+}
 
 addp_business_port_specs() {
   cat <<'EOF'

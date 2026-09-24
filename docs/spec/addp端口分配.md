@@ -50,6 +50,10 @@ PostgreSQL、Redis、FalkorDB、MinIO、Meilisearch、Infra Kafka 和 Kafka Conn
 
 本机开发进程连接 Business Engine 时应登记 `127.0.0.1` 和该服务的实际宿主机端口；同一 Docker 网络内的 ADDP 进程应登记 `business-*` 服务名和固定内部端口。同一实际 Business Engine 搬迁到新宿主机端口时，有权限的用户在 System 引擎编辑页确认后更新地址，保留原 `engine_id` 和引用；不同实际引擎仍须创建新实例并显式迁移绑定。
 
+Business 本地网络由启动脚本创建为显式网段的 Docker bridge，并保留为外部网络 `business_business-network`；普通服务继续通过 Docker 服务名互访，不登记容器 IP。OceanBase 单节点会把自身内网 IP 写入持久化集群数据，因此启动脚本从只读的 OBD 集群配置读取既有 IP，在容器启动前把该 IP 重新分配给 OceanBase；首次部署成功后也固定其实际 IP。网段记录在忽略版本控制的 `business/.business-state/network.env`。若旧网段不可恢复、地址不在网段内或已被其他容器占用，启动必须在接触 OceanBase 数据前失败，不重新初始化旧库，也不改写 System 的 `engine_id`。笔记本局域网 IP 变化不影响本机回环地址与 Docker 服务名。
+
+OceanBase 的数据卷只保存持久数据与集群配置；`/root/ob/observer/run` 由容器 tmpfs 承载 PID 和 Unix socket 等运行时文件，容器重建时清空，避免旧 PID 阻止 Observer 启动。
+
 ```bash
 BUSINESS_POSTGRES_PORT=5433
 SUPERMAP_POSTGRESQL_PORT=5434
