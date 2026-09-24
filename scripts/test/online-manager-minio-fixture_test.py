@@ -16,6 +16,7 @@ class OnlineManagerMinIOFixtureTest(unittest.TestCase):
         self.business = self.root / "business"
         self.bin = self.root / "bin"
         self.state = self.root / "running"
+        self.image = self.root / "image-built"
         self.log = self.root / "docker.log"
         (self.business / "scripts").mkdir(parents=True)
         (self.business / "nfs/data/点云").mkdir(parents=True)
@@ -39,9 +40,13 @@ printf '%s|%s|%s|%s\n' "$*" "$MINIO_API_PORT" "$MINIO_ROOT_USER" "$MINIO_ROOT_PA
 case "$1" in
   compose)
     case " $* " in
+      *" build minio "*) touch "$ADDP_TEST_IMAGE_STATE" ;;
       *" up -d minio "*) touch "$ADDP_TEST_CONTAINER_STATE" ;;
       *" rm -sf minio "*) rm -f "$ADDP_TEST_CONTAINER_STATE" ;;
     esac
+    ;;
+  image)
+    [ -f "$ADDP_TEST_IMAGE_STATE" ] || exit 1
     ;;
   inspect)
     [ -f "$ADDP_TEST_CONTAINER_STATE" ] || exit 1
@@ -70,6 +75,7 @@ esac
                 "ADDP_ONLINE_MANAGER_MINIO_PPTX_OBJECT": "document/addp_online_preview_fixture.pptx",
                 "ADDP_ONLINE_MANAGER_MINIO_HYBRID_SEARCH_IMAGE_OBJECT": "hybrid-search/purple-gaming-light-gun.jpg",
                 "ADDP_TEST_CONTAINER_STATE": str(self.state),
+                "ADDP_TEST_IMAGE_STATE": str(self.image),
                 "ADDP_TEST_DOCKER_LOG": str(self.log),
                 "MINIO_API_PORT": "9002",
                 "MINIO_ROOT_USER": "personal",
@@ -107,10 +113,12 @@ esac
         commands = self.log.read_text(encoding="utf-8")
         self.assertIn("--env-file /dev/null", commands)
         self.assertIn("up -d minio", commands)
-        self.assertIn("minio/mc:latest mb --ignore-existing fixture/addp-online", commands)
-        self.assertIn("minio/mc:latest cp --quiet /fixture/source.las fixture/addp-online/pointcloud/pdal_las12_format0.las", commands)
-        self.assertIn("minio/mc:latest cp --quiet /fixture/source.pptx fixture/addp-online/document/addp_online_preview_fixture.pptx", commands)
-        self.assertIn("minio/mc:latest cp --quiet /fixture/source.jpg fixture/addp-online/hybrid-search/purple-gaming-light-gun.jpg", commands)
+        self.assertIn("build minio", commands)
+        self.assertIn("--entrypoint mc --network business_default", commands)
+        self.assertIn("addp-minio:RELEASE.2025-10-15T17-29-55Z mb --ignore-existing fixture/addp-online", commands)
+        self.assertIn("addp-minio:RELEASE.2025-10-15T17-29-55Z cp --quiet /fixture/source.las fixture/addp-online/pointcloud/pdal_las12_format0.las", commands)
+        self.assertIn("addp-minio:RELEASE.2025-10-15T17-29-55Z cp --quiet /fixture/source.pptx fixture/addp-online/document/addp_online_preview_fixture.pptx", commands)
+        self.assertIn("addp-minio:RELEASE.2025-10-15T17-29-55Z cp --quiet /fixture/source.jpg fixture/addp-online/hybrid-search/purple-gaming-light-gun.jpg", commands)
         self.assertIn("|59002|online-manager|manager-secret-1234", commands)
         self.assertNotIn("|9002|personal|personal-secret", commands)
         self.assertFalse((self.business / ".env").exists())

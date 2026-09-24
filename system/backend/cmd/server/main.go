@@ -129,27 +129,7 @@ func main() {
 
 		// System 模块注册自己
 		instanceID := uuid.NewString()
-		registrationReq := &models.ModuleRegistrationRequest{
-			ModuleName:     "system",
-			InstanceID:     instanceID,
-			Role:           models.ModuleRuntimeRoleBackend,
-			ModuleURL:      serviceURL,
-			RoutePrefix:    "/system",
-			HealthCheckURL: serviceURL + "/health/ready",
-			Metadata: map[string]interface{}{
-				"module": "system",
-			},
-			ConfigurationManagement: &commonconfiguration.ManagementDeclaration{
-				SchemaVersion: commonconfiguration.ManagementSchemaVersion,
-				Entries: []commonconfiguration.ManagementEntry{{
-					ID: "system.iam_security_policy", OwnerModule: "system",
-					ScopeTypes:       []string{commonconfiguration.ScopePlatformOnly},
-					FrontendRoute:    "/system/iam/security?tab=security-policy",
-					ReadPermission:   systemauthorization.PermissionIamSecurityPolicyRead,
-					UpdatePermission: systemauthorization.PermissionIamSecurityPolicyUpdate,
-				}},
-			},
-		}
+		registrationReq := newSystemRegistrationRequest(serviceURL, instanceID)
 
 		if err := moduleRegistryService.Register(registrationReq); err != nil {
 			logger.L().Error("System 模块注册失败", "error", err)
@@ -219,4 +199,28 @@ func main() {
 	}
 
 	logger.L().Info("System 服务器已关闭")
+}
+
+func newSystemRegistrationRequest(serviceURL, instanceID string) *models.ModuleRegistrationRequest {
+	return &models.ModuleRegistrationRequest{
+		ModuleName:     "system",
+		InstanceID:     instanceID,
+		Role:           models.ModuleRuntimeRoleBackend,
+		ModuleURL:      serviceURL,
+		RoutePrefix:    "/system",
+		HealthCheckURL: serviceURL + "/health/ready",
+		Metadata: map[string]interface{}{
+			"module": "system",
+		},
+		ConfigurationManagement: &commonconfiguration.ManagementDeclaration{
+			SchemaVersion: commonconfiguration.ManagementSchemaVersion,
+			Entries: []commonconfiguration.ManagementEntry{{
+				ID: "system.iam_security_policy", OwnerModule: "system",
+				ScopeTypes:       []string{commonconfiguration.ScopePlatformOnly},
+				FrontendRoute:    "/system/iam/security",
+				ReadPermission:   systemauthorization.PermissionIamSecurityPolicyRead,
+				UpdatePermission: systemauthorization.PermissionIamSecurityPolicyUpdate,
+			}},
+		},
+	}
 }

@@ -127,8 +127,13 @@ fi
 COMPOSE_IMAGES=$(compose config --images)
 while IFS= read -r image; do
   if ! docker image inspect "$image" >/dev/null 2>&1; then
-    echo -e "  ${BLUE}拉取镜像: $image${NC}"
-    docker pull "$image"
+    if [ "$image" = "addp-minio:RELEASE.2025-10-15T17-29-55Z" ]; then
+      echo -e "  ${BLUE}从固定 MinIO 源码构建镜像: $image${NC}"
+      compose build minio
+    else
+      echo -e "  ${BLUE}拉取镜像: $image${NC}"
+      docker pull "$image"
+    fi
   else
     echo -e "  ${GREEN}✓ $image 已存在${NC}"
   fi

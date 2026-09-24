@@ -17,6 +17,8 @@
 | addp-redpanda-init | Redpanda `rpk` 一次性任务 | SCRAM 用户、Connect internal topics 和 ACL 幂等初始化 |
 | addp-kafka-connect | Debezium Connect 3.6.0.Final | 数据库日志捕获运行时 |
 
+Infra MinIO 镜像由 `scripts/infra/Dockerfile.minio` 从固定的 MinIO Server 和 `mc` 官方源码修订构建；首次执行 `scripts/infra/up.sh` 时会构建，后续复用本地镜像。此构建不依赖已撤下的公开 MinIO 容器镜像或预编译二进制。
+
 Infra Kafka 固定使用 Redpanda，不提供 Apache Kafka/Redpanda 运行时选择。broker service/container/DNS 分别固定为 `redpanda`、`addp-redpanda` 和 `redpanda:29092`；`addp-redpanda-init` 使用同一 Redpanda 镜像内置的 `rpk`，不是第二个 broker 或数据面。
 
 ### 不管理的容器（business-*）

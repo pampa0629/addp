@@ -24,6 +24,7 @@ func TestListConfigurationManagementEntriesFiltersContextPermissionAndModuleStat
 	if err := db.AutoMigrate(&models.ModuleDefinition{}, &models.ModuleRuntimeInstance{}, &models.ModuleRegistryState{}); err != nil {
 		t.Fatal(err)
 	}
+	seedManagementPermissions(t, db, "manager", "meta", "transfer", "quality")
 	if err := db.Create(&models.ModuleRegistryState{ID: 1, Revision: 1}).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -111,6 +112,7 @@ func TestModuleRegistrySeparatesDefinitionFromRuntimeInstanceLease(t *testing.T)
 	if err := db.AutoMigrate(&models.ModuleDefinition{}, &models.ModuleRuntimeInstance{}, &models.ModuleRegistryState{}); err != nil {
 		t.Fatal(err)
 	}
+	seedManagementPermissions(t, db, "manager")
 	if err := db.Create(&models.ModuleRegistryState{ID: 1, Revision: 1}).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -382,6 +384,7 @@ func TestModuleDefinitionAdminUpdateUsesVersionAndKeepsRegistrationIdempotent(t 
 	if err := db.AutoMigrate(&models.ModuleDefinition{}, &models.ModuleRuntimeInstance{}, &models.ModuleRegistryState{}); err != nil {
 		t.Fatal(err)
 	}
+	seedManagementPermissions(t, db, "manager")
 	if err := db.Create(&models.ModuleRegistryState{ID: 1, Revision: 1}).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -463,5 +466,60 @@ func configurationRegistration(owner, scopeType string) models.ModuleRegistratio
 				UpdatePermission: owner + ".configuration.update",
 			}},
 		},
+	}
+}
+
+func seedManagementPermissions(t *testing.T, db *gorm.DB, owners ...string) {
+	t.Helper()
+	if err := db.Exec(`CREATE TABLE permissions (permission_key text PRIMARY KEY, owner_module text NOT NULL, status text NOT NULL)`).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, owner := range owners {
+		for _, action := range []string{"read", "update"} {
+			if err := db.Exec(`INSERT INTO permissions (permission_key, owner_module, status) VALUES (?, ?, 'active')`,
+				owner+".configuration."+action, owner).Error; err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+}
+
+func TestModuleRegistrationChecksPermissionCatalogOwnership(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+strings.NewReplacer("/", "_").Replace(t.Name())+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&models.ModuleDefinition{}, &models.ModuleRuntimeInstance{}, &models.ModuleRegistryState{}); err != nil {
+		t.Fatal(err)
+	}
+	seedManagementPermissions(t, db, "manager")
+	for _, action := range []string{"read", "update"} {
+		if err := db.Exec(`INSERT INTO permissions (permission_key, owner_module, status) VALUES (?, 'system', 'active')`,
+			"iam.security_policy."+action).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := db.Create(&models.ModuleRegistryState{ID: 1, Revision: 1}).Error; err != nil {
+		t.Fatal(err)
+	}
+	registry := NewModuleRegistryService(repository.NewModuleRegistryRepository(db))
+	request := models.ModuleRegistrationRequest{
+		ModuleName: "system", InstanceID: "system-test", Role: models.ModuleRuntimeRoleBackend,
+		ModuleURL: "http://localhost:8180", RoutePrefix: "/system",
+		ConfigurationManagement: &commonconfiguration.ManagementDeclaration{
+			SchemaVersion: commonconfiguration.ManagementSchemaVersion,
+			Entries: []commonconfiguration.ManagementEntry{{
+				ID: "system.iam_security_policy", OwnerModule: "system",
+				ScopeTypes: []string{commonconfiguration.ScopePlatformOnly}, FrontendRoute: "/system/iam/security",
+				ReadPermission: "iam.security_policy.read", UpdatePermission: "iam.security_policy.update",
+			}},
+		},
+	}
+	if err := registry.Register(&request); err != nil {
+		t.Fatalf("System permission namespace differs from owner but catalog authorizes it: %v", err)
+	}
+	request.ConfigurationManagement.Entries[0].UpdatePermission = "manager.configuration.update"
+	if err := registry.Register(&request); !errors.Is(err, ErrInvalidModuleRegistration) {
+		t.Fatalf("cross-owner permission error = %v, want invalid registration", err)
 	}
 }

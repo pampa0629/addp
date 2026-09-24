@@ -97,6 +97,7 @@ AUXILIARY_DOCKERFILES = {
     "engines/model3d-workflow/docker/runtime/Dockerfile": "model3d runtime build",
     "engines/supermap-workflow/Dockerfile.base": "SuperMap SDK base image build",
     "scripts/infra/Dockerfile.postgres": "infra PostgreSQL image build",
+    "scripts/infra/Dockerfile.minio": "infra MinIO image build",
 }
 
 

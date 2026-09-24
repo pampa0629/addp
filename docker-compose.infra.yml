@@ -80,7 +80,10 @@ services:
     restart: unless-stopped
 
   minio:
-    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+    image: addp-minio:RELEASE.2025-10-15T17-29-55Z
+    build:
+      context: scripts/infra
+      dockerfile: Dockerfile.minio
     container_name: addp-minio
     command: server /data --console-address ":9001"
     environment:

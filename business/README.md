@@ -423,7 +423,7 @@ docker exec -i business-postgres psql -U business business < backup.sql
 ## 技术细节
 
 - **PostgreSQL**: 15.x + PostGIS 3.4.x
-- **MinIO**: latest
+- **MinIO**: `RELEASE.2025-10-15T17-29-55Z`（由 `scripts/infra/Dockerfile.minio` 从固定官方源码修订构建，包含 `mc`）
 - **ClickHouse**: 23.8
 - **MongoDB**: 7.0
 - **OceanBase CE**: 4.4.2 LTS (MySQL mode)

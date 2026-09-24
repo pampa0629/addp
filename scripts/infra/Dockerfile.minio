@@ -1,0 +1,29 @@
+FROM golang:1.24-alpine@sha256:8bee1901f1e530bfb4a7850aa7a479d17ae3a18beb6e09064ed54cfd245b7191 AS build
+
+RUN apk add --no-cache git
+
+WORKDIR /src
+RUN mkdir -p /out
+
+RUN git clone --depth 1 --branch RELEASE.2025-10-15T17-29-55Z https://github.com/minio/minio.git minio && \
+    test "$(git -C minio rev-parse HEAD)" = 9e49d5e7a648f00e26f2246f4dc28e6b07f8c84a && \
+    cd minio && \
+    CGO_ENABLED=0 go build -tags kqueue -trimpath -ldflags "$(MINIO_RELEASE=RELEASE go run buildscripts/gen-ldflags.go)" -o /out/minio .
+
+RUN git clone --depth 1 --branch RELEASE.2025-08-13T08-35-41Z https://github.com/minio/mc.git mc && \
+    test "$(git -C mc rev-parse HEAD)" = 7394ce0dd2a80935aded936b09fa12cbb3cb8096 && \
+    cd mc && \
+    CGO_ENABLED=0 go build -tags kqueue -trimpath -ldflags "$(MC_RELEASE=RELEASE go run buildscripts/gen-ldflags.go)" -o /out/mc .
+
+FROM alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc
+
+RUN apk add --no-cache ca-certificates curl
+COPY --from=build /out/minio /usr/local/bin/minio
+COPY --from=build /out/mc /usr/local/bin/mc
+COPY --from=build /src/minio/LICENSE /licenses/minio-LICENSE
+COPY --from=build /src/mc/LICENSE /licenses/mc-LICENSE
+
+ENV MC_CONFIG_DIR=/tmp/.mc
+VOLUME ["/data"]
+EXPOSE 9000 9001
+ENTRYPOINT ["/usr/local/bin/minio"]

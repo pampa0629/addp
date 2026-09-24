@@ -9,7 +9,7 @@ REPOSITORY_DIR=$(cd "${BUSINESS_DIR}/.." && pwd -P)
 POINTCLOUD_FIXTURE_SOURCE="${REPOSITORY_DIR}/business/nfs/data/点云/pdal_las12_format0.las"
 PPTX_FIXTURE_SOURCE="${REPOSITORY_DIR}/business/fixtures/manager/addp_online_preview_fixture.pptx"
 HYBRID_SEARCH_IMAGE_FIXTURE_SOURCE="${REPOSITORY_DIR}/business/nfs/data/3d/stl/Print Light Gun/images/Autocop_4X3.jpg"
-MC_IMAGE=${ADDP_ONLINE_MANAGER_MC_IMAGE:-minio/mc:latest}
+MC_IMAGE=addp-minio:RELEASE.2025-10-15T17-29-55Z
 
 fail() {
   echo "Online Manager MinIO fixture failed: $*" >&2
@@ -113,6 +113,7 @@ mc() {
   network=$(minio_network)
   [ -n "$network" ] || fail "business-minio has no Docker network"
   docker_fixture run --rm \
+    --entrypoint mc \
     --network "$network" \
     -e "MC_HOST_fixture=http://${ADDP_ONLINE_MANAGER_MINIO_ACCESS_KEY}:${ADDP_ONLINE_MANAGER_MINIO_SECRET_KEY}@business-minio:9000" \
     "$MC_IMAGE" "$@"
@@ -123,6 +124,7 @@ seed_fixture() {
   local network
   network=$(minio_network)
   docker_fixture run --rm \
+    --entrypoint mc \
     --network "$network" \
     -e "MC_HOST_fixture=http://${ADDP_ONLINE_MANAGER_MINIO_ACCESS_KEY}:${ADDP_ONLINE_MANAGER_MINIO_SECRET_KEY}@business-minio:9000" \
     -v "$POINTCLOUD_FIXTURE_SOURCE:/fixture/source.las:ro" \
@@ -130,6 +132,7 @@ seed_fixture() {
     "$MC_IMAGE" cp --quiet /fixture/source.las \
     "fixture/$ADDP_ONLINE_MANAGER_MINIO_BUCKET/$ADDP_ONLINE_MANAGER_MINIO_POINTCLOUD_OBJECT"
   docker_fixture run --rm \
+    --entrypoint mc \
     --network "$network" \
     -e "MC_HOST_fixture=http://${ADDP_ONLINE_MANAGER_MINIO_ACCESS_KEY}:${ADDP_ONLINE_MANAGER_MINIO_SECRET_KEY}@business-minio:9000" \
     -v "$POINTCLOUD_FIXTURE_SOURCE:/fixture/source.las:ro" \
@@ -137,6 +140,7 @@ seed_fixture() {
     "$MC_IMAGE" cp --quiet /fixture/source.pptx \
     "fixture/$ADDP_ONLINE_MANAGER_MINIO_BUCKET/$ADDP_ONLINE_MANAGER_MINIO_PPTX_OBJECT"
   docker_fixture run --rm \
+    --entrypoint mc \
     --network "$network" \
     -e "MC_HOST_fixture=http://${ADDP_ONLINE_MANAGER_MINIO_ACCESS_KEY}:${ADDP_ONLINE_MANAGER_MINIO_SECRET_KEY}@business-minio:9000" \
     -v "$HYBRID_SEARCH_IMAGE_FIXTURE_SOURCE:/fixture/source.jpg:ro" \
@@ -151,6 +155,9 @@ validate_container_ownership
 
 case "$action" in
   start)
+    if ! docker_fixture image inspect "$MC_IMAGE" >/dev/null 2>&1; then
+      compose build minio
+    fi
     compose up -d minio
     for _ in $(seq 1 60); do
       if container_running && curl -fsS "http://127.0.0.1:${ADDP_ONLINE_MANAGER_MINIO_PORT}/minio/health/live" >/dev/null 2>&1; then

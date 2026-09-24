@@ -478,6 +478,9 @@ if [ "$ENABLE_MINIO" = true ]; then
     if docker ps --filter "name=business-minio" --format '{{.Status}}' | grep -q "Up"; then
         echo -e "${GREEN}✓ MinIO 已运行，跳过启动${NC}"
     else
+        if ! docker image inspect addp-minio:RELEASE.2025-10-15T17-29-55Z >/dev/null 2>&1; then
+            docker compose build minio
+        fi
         docker compose up -d minio
         echo -e "${GREEN}✓ MinIO 已启动${NC}"
     fi
