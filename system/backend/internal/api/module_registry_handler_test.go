@@ -144,6 +144,45 @@ func TestUpdateModulePlatformUsesOptimisticVersion(t *testing.T) {
 	}
 }
 
+func TestUpdateModulePlatformRejectsSystem(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db, err := gorm.Open(sqlite.Open("file:"+strings.NewReplacer("/", "_").Replace(t.Name())+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&models.ModuleDefinition{}, &models.ModuleRuntimeInstance{}, &models.ModuleRegistryState{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&models.ModuleRegistryState{ID: 1, Revision: 1}).Error; err != nil {
+		t.Fatal(err)
+	}
+	registry := service.NewModuleRegistryService(repository.NewModuleRegistryRepository(db))
+	if err := registry.Register(&models.ModuleRegistrationRequest{
+		ModuleName: "system", InstanceID: "system-backend-1", Role: models.ModuleRuntimeRoleBackend,
+		ModuleURL: "http://system:8180", RoutePrefix: "/system",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	router := gin.New()
+	router.Use(commoni18n.I18nMiddleware())
+	router.PUT("/platform/modules/:module_name", NewModuleRegistryHandler(registry).UpdateModulePlatform)
+	for _, enabled := range []bool{false, true} {
+		payload := `{"enabled":false,"version":1}`
+		if enabled {
+			payload = `{"enabled":true,"version":1}`
+		}
+		response := performModuleRegistryRequest(router, http.MethodPut, "/platform/modules/system", payload)
+		assertModuleRegistryErrorCode(t, response, http.StatusConflict, "system_module_immutable")
+	}
+	var definition models.ModuleDefinition
+	if err := db.Where("module_name = ?", "system").First(&definition).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !definition.Enabled || definition.Version != 1 {
+		t.Fatalf("system definition enabled=%t version=%d, want true version 1", definition.Enabled, definition.Version)
+	}
+}
+
 func TestListModuleRuntimeInstancesPlatformUsesPaginatedContract(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db, err := gorm.Open(sqlite.Open("file:"+strings.NewReplacer("/", "_").Replace(t.Name())+"?mode=memory&cache=shared"), &gorm.Config{})

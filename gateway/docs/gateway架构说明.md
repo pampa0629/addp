@@ -45,7 +45,7 @@ Service 的二次验证和精确 Grant 检查是最终授权点，因此绕过 G
 
 ## 5. 模块发现
 
-System 是模块注册表权威。Gateway 使用自身 Platform Service Access Token读取快照和 revision watch，只代理 `enabled + backend + up + lease valid` 的实例。同一模块的多个有效 Backend 参与请求级轮询，失败请求不做隐式重放。
+System 是模块注册表权威。Gateway 使用自身 Platform Service Access Token 读取快照和 revision watch，只代理满足 `enabled + backend + up + lease valid` 的业务模块实例。同一业务模块的多个有效 Backend 参与请求级轮询，失败请求不做隐式重放。System 是引导控制面，其自注册实例供观测和配置入口声明；Gateway 通过部署提供的 `SYSTEM_URL` 访问 System，System 的 `enabled` 固定为 true。
 
 ## 6. 数据库
 

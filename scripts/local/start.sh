@@ -14,7 +14,7 @@
 #   - Waits for health checks before proceeding
 # =============================================================================
 
-set -e
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
@@ -106,30 +106,6 @@ check_images() {
     echo -e "${GREEN}✓ All required images found${NC}"
 }
 
-# Wait for service to be healthy
-wait_for_health() {
-    local url=$1
-    local service_name=$2
-    local timeout=${3:-120}
-    local elapsed=0
-
-    echo -e "${YELLOW}⏳ Waiting for ${service_name} to be healthy...${NC}"
-
-    while [ $elapsed -lt $timeout ]; do
-        if curl -sf "$url" > /dev/null 2>&1; then
-            echo -e "${GREEN}✓ ${service_name} is healthy${NC}"
-            return 0
-        fi
-        sleep 2
-        elapsed=$((elapsed + 2))
-    done
-
-    echo -e "${RED}⚠️  ${service_name} health check timeout (${timeout}s)${NC}"
-    echo -e "${YELLOW}Note: Service may still be starting. Check logs with:${NC}"
-    echo "  docker compose -f docker-compose.yml logs ${service_name}"
-    return 1
-}
-
 # =============================================================================
 # Main Deployment
 # =============================================================================
@@ -167,98 +143,25 @@ else
     exit 1
 fi
 
-# Step 4: Start application layer
+# Step 4: Start application layer and wait for container health.
 echo ""
 echo -e "${BLUE}========================================${NC}"
 echo -e "${BLUE}🚀 Starting Application Layer${NC}"
 echo -e "${BLUE}========================================${NC}"
+docker compose -f docker-compose.yml up -d --wait --wait-timeout 180 --remove-orphans
 
-echo -e "${YELLOW}▶️  Starting application services...${NC}"
-docker compose -f docker-compose.yml up -d --remove-orphans
+published_port="$(docker compose -f docker-compose.yml port nginx 80 | sed 's/.*://')"
+public_origin="${ADDP_PUBLIC_ORIGIN:-$(sed -n 's/^ADDP_PUBLIC_ORIGIN=//p' .env | tail -n 1)}"
+if [ -z "$public_origin" ]; then
+    public_origin="http://localhost:${published_port}"
+fi
 
-echo -e "${CYAN}Application services:${NC}"
+echo -e "${GREEN}✓ ADDP 容器服务已就绪${NC}"
+echo -e "统一入口: ${public_origin}"
+echo ""
 docker compose -f docker-compose.yml ps
-
-# Wait for key services to be healthy
 echo ""
-echo -e "${YELLOW}⏳ Waiting for key services to be healthy...${NC}"
-
-# Wait for System Backend (critical)
-if docker compose -f docker-compose.yml ps system-backend | grep -q "Up"; then
-    wait_for_health "http://localhost:8180/health/ready" "System Backend" 120
-fi
-
-# Wait for Gateway
-if docker compose -f docker-compose.yml ps gateway | grep -q "Up"; then
-    wait_for_health "http://localhost:8000/health/ready" "Gateway" 60
-fi
-
-# Wait for Nginx
-if docker compose -f docker-compose.yml ps nginx | grep -q "Up"; then
-    wait_for_health "http://localhost:80/health" "Nginx" 30
-fi
-
-# Wait for GeoPython Workflow
-if docker compose -f docker-compose.yml ps geopython-workflow-engine | grep -q "Up"; then
-    wait_for_health "http://localhost:8099/health" "GeoPython Workflow" 60
-fi
-
-# Wait for Model3D Workflow Engine
-if docker compose -f docker-compose.yml ps model3d-workflow-engine | grep -q "Up"; then
-    wait_for_health "http://localhost:8101/health" "Model3D Workflow Engine" 60
-fi
-
-# Wait for PointCloud Workflow Engine
-if docker compose -f docker-compose.yml ps pointcloud-workflow-engine | grep -q "Up"; then
-    wait_for_health "http://localhost:8102/health" "PointCloud Workflow Engine" 60
-fi
-
-# Wait for Document Workflow Engine
-if docker compose -f docker-compose.yml ps document-workflow-engine | grep -q "Up"; then
-    wait_for_health "http://localhost:8105/health" "Document Workflow Engine" 90
-fi
-
-# Wait for SuperMap Workflow Engine
-if docker compose -f docker-compose.yml ps supermap-workflow-engine | grep -q "Up"; then
-    wait_for_health "http://localhost:8103/health" "SuperMap Workflow Engine" 90
-fi
-
-# =============================================================================
-# Summary
-# =============================================================================
-
-echo ""
-echo -e "${BLUE}========================================${NC}"
-echo -e "${BLUE}✅ ADDP Services Started${NC}"
-echo -e "${BLUE}========================================${NC}"
-echo ""
-
-echo -e "${GREEN}Access URLs:${NC}"
-echo -e "  ${CYAN}Console (Recommended):${NC} http://localhost:80"
-echo -e "  ${CYAN}Gateway:${NC}              http://localhost:8000"
-echo -e "  ${CYAN}System Backend:${NC}       http://localhost:8180"
-echo ""
-
-echo -e "${GREEN}Infrastructure:${NC}"
-echo -e "  ${CYAN}PostgreSQL:${NC}           localhost:5433"
-echo -e "  ${CYAN}Redis:${NC}                localhost:6379"
-echo -e "  ${CYAN}MinIO Console:${NC}        http://localhost:9001"
-echo -e "  ${CYAN}Meilisearch:${NC}          http://localhost:7700"
-echo ""
-
-echo -e "${GREEN}Engines:${NC}"
-echo -e "  ${CYAN}GeoPython Workflow:${NC}     http://localhost:8099"
-echo -e "  ${CYAN}Model3D Workflow Engine:${NC}    http://localhost:8101"
-echo -e "  ${CYAN}PointCloud Workflow Engine:${NC} http://localhost:8102"
-echo ""
-
 echo -e "${GREEN}Management Commands:${NC}"
-echo -e "  ${CYAN}Status:${NC}   bash scripts/local/status.sh"
-echo -e "  ${CYAN}Stop:${NC}     bash scripts/local/stop.sh"
-echo -e "  ${CYAN}Restart:${NC}  bash scripts/local/restart.sh"
-echo -e "  ${CYAN}Logs:${NC}     docker compose -f docker-compose.yml logs -f [service]"
-echo ""
-
-echo -e "${YELLOW}Note:${NC} Some services may take additional time to fully initialize."
-echo -e "      Use 'status.sh' to check detailed service status."
-echo ""
+echo "  bash scripts/local/status.sh"
+echo "  bash scripts/local/stop.sh"
+echo "  docker compose -f docker-compose.yml logs -f [service]"

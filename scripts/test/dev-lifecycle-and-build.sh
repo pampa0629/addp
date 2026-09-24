@@ -562,6 +562,60 @@ print('PASS: container Runtime host ports reach System registration')
 PY
 }
 
+test_compose_public_port_policy() {
+  bash -n "$ROOT_DIR/scripts/local/start.sh" "$ROOT_DIR/scripts/local/status.sh" \
+    "$ROOT_DIR/scripts/prod/start.sh" "$ROOT_DIR/scripts/prod/health-check.sh" \
+    "$ROOT_DIR/scripts/prod/deploy.sh" || fail "Compose lifecycle shell syntax is invalid"
+  python3 - "$ROOT_DIR" <<'PY'
+from pathlib import Path
+import re
+import sys
+
+root = Path(sys.argv[1])
+compose = (root / 'docker-compose.yml').read_text()
+published = []
+for block in re.split(r'(?=^  [a-z0-9-]+:\n)', compose, flags=re.M):
+    service = re.match(r'^  ([a-z0-9-]+):\n', block)
+    if service and re.search(r'(?m)^    ports:\s*$', block):
+        published.append(service.group(1))
+assert published == ['nginx'], published
+for variable in ('PUBLIC_API_URL', 'CONSOLE_URL', 'MONITOR_CONSOLE_BASE_URL'):
+    assert f'{variable}=${{ADDP_PUBLIC_ORIGIN:-http://localhost:${{NGINX_PORT:-80}}}}' in compose, variable
+print('PASS: Compose publishes only Nginx and derives one public origin')
+PY
+}
+
+test_prod_compose_init_health() {
+  python3 - "$ROOT_DIR" <<'PY'
+from pathlib import Path
+import re
+import subprocess
+import sys
+
+source = (Path(sys.argv[1]) / 'scripts/prod/health-check.sh').read_text()
+function = re.search(r'^check_service\(\) \{.*?^\}', source, re.M | re.S)
+assert function, 'production Compose health checker is missing'
+harness = function.group() + '''
+docker() {
+  if [ "$1" = compose ]; then printf '%s\\n' fixture-container; return; fi
+  if [ "$3" = '{{.State.ExitCode}}' ]; then printf '%s\\n' "$fixture_exit_code"; return; fi
+  printf '%s\\n' exited
+}
+failed=0
+fixture_exit_code=0
+check_service docker-compose.infra.yml redpanda-init
+[ "$failed" -eq 0 ] || exit 1
+failed=0
+fixture_exit_code=1
+check_service docker-compose.infra.yml redpanda-init
+[ "$failed" -eq 1 ] || exit 1
+'''
+result = subprocess.run(['bash'], input=harness, text=True, capture_output=True)
+assert result.returncode == 0, (result.stdout, result.stderr)
+print('PASS: completed Infra initializer succeeds only with exit code zero')
+PY
+}
+
 test_parallel_runtime_startup() {
   python3 - "$ROOT_DIR" "$TEST_ROOT" <<'PY'
 import os
@@ -974,6 +1028,8 @@ test_stop_batches_listening_ports
 test_dev_port_resolution
 test_dev_owned_listener_matches_recorded_pid
 test_runtime_host_port_advertisement
+test_compose_public_port_policy
+test_prod_compose_init_health
 test_restart_preserves_cache_and_batches_swagger
 test_lifecycle_lock_rejects_concurrent_owner
 test_lifecycle_lock_allows_descendant_inheritance

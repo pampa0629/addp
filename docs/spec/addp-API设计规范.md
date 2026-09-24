@@ -541,6 +541,7 @@ RESTful是指导原则，不是教条。优秀的API设计应该在RESTful原则
 - `checks[].name`、`status`、`error_code` 是机器可读稳定值，不国际化；健康端点不返回用户展示文案、凭据、DSN、下游响应正文或堆栈。
 - 业务 Backend Ready 必须同时满足自身必需 Infra 就绪且 `registration_state=registered`；任一心跳失败被观测后立即返回 `503`，重注册成功后恢复 `200`。
 - System 的 Ready 不依赖自注册；Gateway Ready 要求至少成功应用一次 System 完整模块路由快照。
+- System 自注册的模块定义用于运行观测和配置入口声明，`enabled` 固定为 true。`PUT /api/v1/system/platform/modules/{module_name}` 只允许修改业务模块的启用意图；对 System 的更新返回 `409 system_module_immutable`。Gateway 通过部署引导地址访问 System，不根据 System 的自注册租约切换引导地址。
 - 健康端点不属于业务 API，不使用通用 `{error, error_code}` 错误体；HTTP `503` 与上述固定就绪结构已构成唯一契约。
 - 旧 `GET /health` 必须与所有调用方一次性切换后删除，不保留别名、重定向或兼容响应。
 

@@ -29,69 +29,11 @@ cd /path/to/addp
 
 ### 启动流程
 
-脚本按以下顺序自动启动所有服务：
+1. 启动基础设施并等待其就绪。
+2. 启动 System Backend，使用 Docker Compose 容器健康检查等待就绪。
+3. 启动应用 Compose 中全部服务，并等待有健康检查的容器变为 healthy、其他容器进入 running。
 
-```
-[1/5] 基础设施层
-   ↓
-   - PostgreSQL (5432)
-   - Redis (6379)
-   - MinIO (9000-9001)
-   - Meilisearch (7700)
-   ↓
-   等待基础设施就绪（调用 wait-infra.sh）
-
-[2/5] System Backend
-   ↓
-   - System Backend (8180)
-   ↓
-   等待 System Backend 健康检查通过
-
-[3/5] 业务后端服务
-   ↓
-   - Manager Backend (8081) + Worker
-   - Meta Backend (8082) + Worker
-   - Transfer Backend (8083) + Worker
-   - Orchestrator Backend (8084)
-   - Develop Backend (8185)
-   - Gateway (8000)
-
-[4/5] 后端健康检查
-   ↓
-   等待所有后端服务健康（最多 90 秒）
-
-[5/5] 前端服务
-   ↓
-   - Console Frontend (5170)
-   - System Frontend (8090)
-   - Manager Frontend (8091)
-   - Meta Frontend (8092)
-   - Transfer Frontend (8093)
-   - Orchestrator Frontend (8094)
-   - Develop Frontend (8095)
-   - Nginx Gateway (80)
-```
-
-### 健康检查机制
-
-- **System Backend**: 检查 `http://localhost:8180/health/ready`（最多等待 60 秒）
-- **ADDP Backend**: 检查各自的 `/health/ready` 端点（每个服务最多等待 30 秒）；Engine Runtime 继续使用其协议定义的 `/health`
-- **超时处理**: 任何服务启动超时会输出日志并退出
-
-### 访问地址
-
-启动成功后，可通过以下地址访问：
-
-- **✨ 推荐访问**: http://localhost （Nginx 统一入口）
-- **Console 独立访问**: http://localhost:5170
-- **API Gateway**: http://localhost:8000
-- **各模块独立访问**:
-  - System: http://localhost:8090
-  - Manager: http://localhost:8091
-  - Meta: http://localhost:8092
-  - Transfer: http://localhost:8093
-  - Orchestrator: http://localhost:8094
-  - Develop: http://localhost:8095
+容器内部端口固定，应用 Compose 仅将 Nginx 的 `NGINX_PORT` 发布到宿主机。启动脚本报告统一访问地址；`ADDP_PUBLIC_ORIGIN` 留空时为 `http://localhost:<NGINX_PORT>`。域名、HTTPS 或上级反向代理部署须填写用户实际访问的 `ADDP_PUBLIC_ORIGIN`。
 
 ### 示例
 
@@ -171,78 +113,7 @@ docker volume prune -f
 
 ## health-check.sh
 
-**用途**: 检查所有 ADDP 服务的健康状态
-
-### 使用方法
-
-```bash
-# 检查所有服务健康状态
-./scripts/prod/health-check.sh
-
-# 持续监控（每 5 秒检查一次）
-watch -n 5 ./scripts/prod/health-check.sh
-
-# 仅检查后端服务
-./scripts/prod/health-check.sh --backend-only
-```
-
-### 检查内容
-
-- ✅ PostgreSQL 连接（端口 5432）
-- ✅ Redis 连接（端口 6379）
-- ✅ MinIO API（端口 9000）
-- ✅ System Backend 就绪端点（`/health/ready`）
-- ✅ Manager Backend 健康端点
-- ✅ Meta Backend 健康端点
-- ✅ Transfer Backend 健康端点
-- ✅ Orchestrator Backend 健康端点
-- ✅ Develop Backend 健康端点
-- ✅ Gateway 健康端点
-
-### 输出格式
-
-```
-========================================
-ADDP 服务健康检查
-========================================
-
-基础设施:
-  ✓ PostgreSQL (5432)
-  ✓ Redis (6379)
-  ✓ MinIO (9000)
-  ✓ Meilisearch (7700)
-
-后端服务:
-  ✓ System Backend (8180)
-  ✓ Manager Backend (8081)
-  ✓ Meta Backend (8082)
-  ✓ Transfer Backend (8083)
-  ✓ Orchestrator Backend (8084)
-  ✓ Develop Backend (8185)
-  ✓ Gateway (8000)
-
-前端服务:
-  ✓ Console Frontend (5170)
-  ✓ Nginx Gateway (80)
-
-所有服务运行正常！
-```
-
-### 示例
-
-```bash
-# 场景 1: 部署后验证
-./scripts/prod/start.sh
-./scripts/prod/health-check.sh
-
-# 场景 2: 定期监控
-watch -n 30 ./scripts/prod/health-check.sh
-
-# 场景 3: 故障排查
-if ! ./scripts/prod/health-check.sh; then
-  docker-compose -f docker-compose.yml logs --tail=100
-fi
-```
+`./scripts/prod/health-check.sh` 检查基础设施和应用 Compose 中全部容器的运行或健康状态，并通过实际发布的 Nginx 端口请求 `/health`。任一容器未就绪或统一入口不可达时返回非零状态；不依赖模块在宿主机发布固定端口。
 
 ---
 
@@ -370,8 +241,8 @@ vi .env  # 修改密码、密钥等
 # 5. 验证部署
 ./scripts/prod/health-check.sh
 
-# 6. 访问系统
-curl http://localhost:80
+# 6. 访问系统（使用 .env 中的 ADDP_PUBLIC_ORIGIN；默认 NGINX_PORT=80）
+curl http://localhost:80/health
 ```
 
 ### 更新部署

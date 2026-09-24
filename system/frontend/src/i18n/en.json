@@ -28,6 +28,7 @@
       "enabledSuccess": "Module enabled",
       "disabledSuccess": "Module disabled",
       "enabledAria": "Toggle enabled state for module {name}",
+      "systemAlwaysEnabled": "Always enabled",
       "columns": {
         "id": "Record ID",
         "name": "Module",

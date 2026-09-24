@@ -139,6 +139,9 @@ other = "The module runtime instance does not exist; register it first"
 [system.module.version_conflict]
 other = "The module definition was changed by another operation; refresh and try again"
 
+[system.module.system_immutable]
+other = "System is the bootstrap control plane; its enabled state cannot be changed"
+
 [system.engine.address_conflict]
 other = "Another engine is already registered at this connection address"
 

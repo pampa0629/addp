@@ -55,105 +55,25 @@ fi
 echo ""
 
 # =============================================================================
-# Service URLs
+# Service URL
 # =============================================================================
 
-echo -e "${CYAN}=== Service URLs ===${NC}"
+echo -e "${CYAN}=== Unified Entry ===${NC}"
 echo ""
-
-# Check if key services are running
-SYSTEM_RUNNING=$(docker compose -f docker-compose.yml ps system-backend --format json 2>/dev/null | grep -c '"State":"running"' || echo "0")
-GATEWAY_RUNNING=$(docker compose -f docker-compose.yml ps gateway --format json 2>/dev/null | grep -c '"State":"running"' || echo "0")
-NGINX_RUNNING=$(docker compose -f docker-compose.yml ps nginx --format json 2>/dev/null | grep -c '"State":"running"' || echo "0")
-POSTGRES_RUNNING=$(docker compose -f docker-compose.infra.yml ps postgres --format json 2>/dev/null | grep -c '"State":"running"' || echo "0")
-
-if [ "$NGINX_RUNNING" -gt 0 ]; then
-    echo -e "  ${GREEN}✓${NC} Console (Recommended):  http://localhost:80"
+nginx_id="$(docker compose -f docker-compose.yml ps --status running -q nginx 2>/dev/null)"
+if [ -n "$nginx_id" ]; then
+    published_port="$(docker compose -f docker-compose.yml port nginx 80 | sed 's/.*://')"
+    public_origin="${ADDP_PUBLIC_ORIGIN:-}"
+    if [ -z "$public_origin" ] && [ -f .env ]; then
+        public_origin="$(sed -n 's/^ADDP_PUBLIC_ORIGIN=//p' .env | tail -n 1)"
+    fi
+    if [ -z "$public_origin" ]; then
+        public_origin="http://localhost:${published_port}"
+    fi
+    echo -e "  ${GREEN}✓${NC} ${public_origin}"
 else
-    echo -e "  ${RED}✗${NC} Console:               http://localhost:80 ${YELLOW}(not running)${NC}"
+    echo -e "  ${RED}✗${NC} Nginx 未运行"
 fi
-
-if [ "$GATEWAY_RUNNING" -gt 0 ]; then
-    echo -e "  ${GREEN}✓${NC} Gateway:               http://localhost:8000"
-else
-    echo -e "  ${RED}✗${NC} Gateway:               http://localhost:8000 ${YELLOW}(not running)${NC}"
-fi
-
-if [ "$SYSTEM_RUNNING" -gt 0 ]; then
-    echo -e "  ${GREEN}✓${NC} System Backend:        http://localhost:8180"
-else
-    echo -e "  ${RED}✗${NC} System Backend:        http://localhost:8180 ${YELLOW}(not running)${NC}"
-fi
-
-GEOPYTHON_WORKFLOW_RUNNING=$(docker compose -f docker-compose.yml ps geopython-workflow-engine --format json 2>/dev/null | grep -c '"State":"running"' || echo "0")
-MODEL3D_WORKFLOW_RUNNING=$(docker compose -f docker-compose.yml ps model3d-workflow-engine --format json 2>/dev/null | grep -c '"State":"running"' || echo "0")
-POINTCLOUD_WORKFLOW_RUNNING=$(docker compose -f docker-compose.yml ps pointcloud-workflow-engine --format json 2>/dev/null | grep -c '"State":"running"' || echo "0")
-DOCUMENT_WORKFLOW_RUNNING=$(docker compose -f docker-compose.yml ps document-workflow-engine --format json 2>/dev/null | grep -c '"State":"running"' || echo "0")
-SUPERMAP_WORKFLOW_RUNNING=$(docker compose -f docker-compose.yml ps supermap-workflow-engine --format json 2>/dev/null | grep -c '"State":"running"' || echo "0")
-
-echo ""
-echo -e "${CYAN}Engines:${NC}"
-
-if [ "$GEOPYTHON_WORKFLOW_RUNNING" -gt 0 ]; then
-    echo -e "  ${GREEN}✓${NC} GeoPython Workflow:      http://localhost:8099"
-else
-    echo -e "  ${RED}✗${NC} GeoPython Workflow:      http://localhost:8099 ${YELLOW}(not running)${NC}"
-fi
-
-if [ "$MODEL3D_WORKFLOW_RUNNING" -gt 0 ]; then
-    echo -e "  ${GREEN}✓${NC} Model3D Workflow Engine:     http://localhost:8101"
-else
-    echo -e "  ${RED}✗${NC} Model3D Workflow Engine:     http://localhost:8101 ${YELLOW}(not running)${NC}"
-fi
-
-if [ "$POINTCLOUD_WORKFLOW_RUNNING" -gt 0 ]; then
-    echo -e "  ${GREEN}✓${NC} PointCloud Workflow Engine:  http://localhost:8102"
-else
-    echo -e "  ${RED}✗${NC} PointCloud Workflow Engine:  http://localhost:8102 ${YELLOW}(not running)${NC}"
-fi
-
-if [ "$DOCUMENT_WORKFLOW_RUNNING" -gt 0 ]; then
-    echo -e "  ${GREEN}✓${NC} Document Workflow Engine:    http://localhost:8105"
-else
-    echo -e "  ${RED}✗${NC} Document Workflow Engine:    http://localhost:8105 ${YELLOW}(not running)${NC}"
-fi
-
-if [ "$SUPERMAP_WORKFLOW_RUNNING" -gt 0 ]; then
-    echo -e "  ${GREEN}✓${NC} SuperMap Workflow Engine:    http://localhost:8103"
-else
-    echo -e "  ${RED}✗${NC} SuperMap Workflow Engine:    http://localhost:8103 ${YELLOW}(not running)${NC}"
-fi
-
-echo ""
-echo -e "${CYAN}Infrastructure:${NC}"
-
-if [ "$POSTGRES_RUNNING" -gt 0 ]; then
-    echo -e "  ${GREEN}✓${NC} PostgreSQL:            localhost:5433"
-else
-    echo -e "  ${RED}✗${NC} PostgreSQL:            localhost:5433 ${YELLOW}(not running)${NC}"
-fi
-
-REDIS_RUNNING=$(docker compose -f docker-compose.infra.yml ps redis --format json 2>/dev/null | grep -c '"State":"running"' || echo "0")
-if [ "$REDIS_RUNNING" -gt 0 ]; then
-    echo -e "  ${GREEN}✓${NC} Redis:                 localhost:6379"
-else
-    echo -e "  ${RED}✗${NC} Redis:                 localhost:6379 ${YELLOW}(not running)${NC}"
-fi
-
-MINIO_RUNNING=$(docker compose -f docker-compose.infra.yml ps minio --format json 2>/dev/null | grep -c '"State":"running"' || echo "0")
-if [ "$MINIO_RUNNING" -gt 0 ]; then
-    echo -e "  ${GREEN}✓${NC} MinIO Console:         http://localhost:9001"
-else
-    echo -e "  ${RED}✗${NC} MinIO Console:         http://localhost:9001 ${YELLOW}(not running)${NC}"
-fi
-
-MEILISEARCH_RUNNING=$(docker compose -f docker-compose.infra.yml ps meilisearch --format json 2>/dev/null | grep -c '"State":"running"' || echo "0")
-if [ "$MEILISEARCH_RUNNING" -gt 0 ]; then
-    echo -e "  ${GREEN}✓${NC} Meilisearch:           http://localhost:7700"
-else
-    echo -e "  ${RED}✗${NC} Meilisearch:           http://localhost:7700 ${YELLOW}(not running)${NC}"
-fi
-
 echo ""
 
 # =============================================================================

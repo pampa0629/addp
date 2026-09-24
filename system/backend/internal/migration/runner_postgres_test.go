@@ -16,6 +16,64 @@ import (
 	"github.com/addp/system/internal/testsupport"
 )
 
+func TestSystemModuleAlwaysEnabledForwardMigrationAgainstPostgres(t *testing.T) {
+	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
+	if dsn == "" {
+		t.Skip("set ADDP_SYSTEM_POSTGRES_TEST_DSN to a disposable PostgreSQL database")
+	}
+	testsupport.RequireDisposablePostgresDSN(t, dsn)
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`DROP SCHEMA IF EXISTS system CASCADE; DROP SCHEMA IF EXISTS common CASCADE`); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	before, after := migrationFilesBeforeAndThrough(t, "000156_system_module_always_enabled.up.sql")
+	if err := (&Runner{DSN: dsn, FS: before, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`
+		INSERT INTO system.module_definitions (module_name, route_prefix, enabled, version)
+		VALUES ('system', '/system', false, 3), ('manager', '/manager', false, 1)
+	`); err != nil {
+		t.Fatal(err)
+	}
+	runner := &Runner{DSN: dsn, FS: after, Root: DefaultMigrationsRoot}
+	if err := runner.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var enabled bool
+	var version int64
+	if err := db.QueryRow(`SELECT enabled, version FROM system.module_definitions WHERE module_name = 'system'`).Scan(&enabled, &version); err != nil {
+		t.Fatal(err)
+	}
+	if !enabled || version != 4 {
+		t.Fatalf("system enabled=%t version=%d, want true version 4", enabled, version)
+	}
+	if _, err := db.Exec(`UPDATE system.module_definitions SET enabled = false WHERE module_name = 'system'`); err == nil {
+		t.Fatal("System enabled constraint allowed false")
+	}
+	if err := db.QueryRow(`SELECT enabled FROM system.module_definitions WHERE module_name = 'manager'`).Scan(&enabled); err != nil {
+		t.Fatal(err)
+	}
+	if enabled {
+		t.Fatal("Manager disabled state was changed")
+	}
+	if err := runner.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`SELECT version FROM system.module_definitions WHERE module_name = 'system'`).Scan(&version); err != nil {
+		t.Fatal(err)
+	}
+	if version != 4 {
+		t.Fatalf("rerun changed System version to %d", version)
+	}
+}
+
 func TestModelMetaCatalogReadForwardMigrationAgainstPostgres(t *testing.T) {
 	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
 	if dsn == "" {

@@ -311,7 +311,7 @@ func (h *ModuleRegistryHandler) ListModuleRuntimeInstancesPlatform(c *gin.Contex
 
 // UpdateModulePlatform godoc
 // @Summary      更新平台模块启用状态 | Update platform module enabled state
-// @Description  只更新管理员 enabled 意图；运行实例健康仍由注册、心跳和租约决定 | Updates only the administrator enabled intent; runtime instance health remains determined by registration, heartbeat, and lease
+// @Description  只更新业务模块的管理员 enabled 意图；System 是始终启用的引导控制面，更新返回 409 system_module_immutable | Updates only business module enabled intent; System is an always-enabled bootstrap control plane and updates return 409 system_module_immutable
 // @Tags         平台模块管理 | Platform Module Management
 // @Accept       json
 // @Produce      json
@@ -336,6 +336,11 @@ func (h *ModuleRegistryHandler) UpdateModulePlatform(c *gin.Context) {
 	}
 	module, err := h.service.UpdateModuleDefinition(c.Param("module_name"), &req)
 	switch {
+	case errors.Is(err, service.ErrSystemModuleImmutable):
+		c.JSON(http.StatusConflict, gin.H{
+			"error": commoni18n.T(c, sysi18n.MsgSystemModuleImmutable), "error_code": "system_module_immutable",
+		})
+		return
 	case errors.Is(err, service.ErrModuleDefinitionVersionConflict):
 		c.JSON(http.StatusConflict, gin.H{
 			"error": commoni18n.T(c, sysi18n.MsgModuleVersionConflict), "error_code": "resource_version_conflict",

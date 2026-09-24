@@ -89,16 +89,7 @@ Console 是**用户界面层的聚合器**，不包含业务逻辑：
 
 ## 生产部署
 
-生产环境中，Console 会被部署到 Gateway 的 8000 端口：
-
-```yaml
-console-frontend:
-  build: ./console/frontend
-  ports:
-    - "8000:80"
-```
-
-用户访问 http://yourdomain.com 即可看到统一门户。
+容器部署中，Console 与各模块前端在 Docker 网络内监听固定端口，由 Nginx 统一入口按路径转发。浏览器访问 `ADDP_PUBLIC_ORIGIN`（未设置时为 `http://localhost:<NGINX_PORT>`），Console 以当前 origin 加载模块 iframe，Gateway 仅负责 `/api/` 后端路由。模块前端仍可单独部署以支持 standalone 模式。
 
 ## 技术栈
 

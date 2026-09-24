@@ -28,6 +28,7 @@
       "enabledSuccess": "模块已启用",
       "disabledSuccess": "模块已禁用",
       "enabledAria": "切换模块 {name} 的启用状态",
+      "systemAlwaysEnabled": "始终启用",
       "columns": {
         "id": "记录 ID",
         "name": "模块名",

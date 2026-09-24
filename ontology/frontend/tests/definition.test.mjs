@@ -135,11 +135,12 @@ test('translations have matching leaves and lifecycle/build/CI registration exis
     read(`${root}/.github/workflows/platform-ci.yml`),
     /module: ontology\s+name: Ontology\s+target: test-ontology-frontend\s+playwright: true/
   )
-  assert.match(
-    read(`${root}/docker-compose.yml`),
-    /ontology-frontend:[\s\S]+8123:80/
-  )
+  const compose = read(`${root}/docker-compose.yml`)
+  const frontend = compose.split(/^  ontology-frontend:\n/m)[1]?.split(/^  [a-z0-9-]+:\n/m)[0]
+  assert.ok(frontend)
+  assert.doesNotMatch(frontend, /^    ports:/m)
+  assert.match(read(`${root}/nginx/nginx.conf`), /ontology-frontend:80/)
   const portal = read(`${root}/console/frontend/src/config/portalConfig.js`)
   assert.match(portal, /ontology\.revision\.read/)
-  assert.match(portal, /5192\/ontology/)
+  assert.match(portal, /ontology:\s+_url\('ontology', 5192, 'ontology', '\/ontology'\)/)
 })

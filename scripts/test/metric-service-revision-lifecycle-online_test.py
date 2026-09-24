@@ -34,6 +34,7 @@ class FixtureGateway:
         self.serial += 1
         identity = {"id": self.serial, "tenant_id": 42, "version": 1}
         if path.endswith("/dw-layers"):
+            assert len(body["layer_code"]) <= 20
             return Response(201, identity)
         if path == "/api/v1/standard/metrics":
             assert body["effective_from"] == "2020-01-01T00:00:00Z"

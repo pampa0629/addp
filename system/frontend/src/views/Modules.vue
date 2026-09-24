@@ -140,7 +140,11 @@
         </el-table-column>
         <el-table-column :label="t('system.module.columns.enabled')" width="130" align="center">
           <template #default="{ row }">
+            <el-tag v-if="row.module_name === 'system'" type="info" :title="t('system.module.systemAlwaysEnabled')">
+              {{ t('system.module.systemAlwaysEnabled') }}
+            </el-tag>
             <el-switch
+              v-else
               :model-value="row.enabled"
               :loading="isUpdating(row.module_name)"
               :disabled="!canUpdate || isUpdating(row.module_name)"
@@ -430,7 +434,7 @@ async function changeHistoryPageSize() {
 }
 
 async function updateEnabled(module, enabled) {
-  if (!canUpdate.value || isUpdating(module.module_name)) return
+  if (module.module_name === 'system' || !canUpdate.value || isUpdating(module.module_name)) return
   setUpdating(module.module_name, true)
   conflictMessage.value = ''
   try {

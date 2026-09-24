@@ -37,7 +37,7 @@ def prepare(client, engine_id, tenant_id, engine_type, report, checkpoint):
         API.assert_tenant(result, tenant_id, path)
         return result
 
-    layer = "metric_online_" + engine_type
+    layer = "metric_online"
     create("/api/v1/model/dw-layers", {"layer_code": layer, "layer_name": "Metric Online " + engine_type})
     metric_path = "/api/v1/standard/metrics"
     definition = create(metric_path, {

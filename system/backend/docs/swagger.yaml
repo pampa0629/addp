@@ -5931,9 +5931,9 @@ paths:
     put:
       consumes:
       - application/json
-      description: 只更新管理员 enabled 意图；运行实例健康仍由注册、心跳和租约决定 | Updates only the administrator
-        enabled intent; runtime instance health remains determined by registration,
-        heartbeat, and lease
+      description: 只更新业务模块的管理员 enabled 意图；System 是始终启用的引导控制面，更新返回 409 system_module_immutable
+        | Updates only business module enabled intent; System is an always-enabled
+        bootstrap control plane and updates return 409 system_module_immutable
       parameters:
       - description: 模块名 | Module name
         in: path

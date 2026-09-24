@@ -19,9 +19,11 @@ PostgreSQL、Redis、FalkorDB、MinIO、Meilisearch、Infra Kafka 和 Kafka Conn
 
 自动选端口只适用于本地基础设施宿主机映射。生产部署与 `addp-online` 专用 Runner 按其显式环境配置运行。Docker 最终绑定仍可能遇到检查后的并发抢占；启动失败时报告实际冲突，不连接占用该端口的其他服务。
 
+根 `docker-compose.yml` 的容器部署只向宿主机发布 Nginx 统一入口 `${NGINX_PORT:-80}:80`；Console、模块 Frontend、Gateway、Backend 和内置 Workflow Runtime 仅在应用 Docker 网络中使用稳定服务名和固定容器端口。Nginx 按路径转发前端与 `/api/`，Gateway 从 System 的 Backend 实例注册事实发现业务路由；Frontend 端口不注册到 System。宿主机入口端口由部署配置明确指定，冲突时启动失败，不在生产环境自动漂移。容器部署的对外 origin 由 `ADDP_PUBLIC_ORIGIN` 指定；未设置时按 `http://localhost:${NGINX_PORT:-80}` 构造，System 的 `PUBLIC_API_URL`、`CONSOLE_URL` 和 Monitor 的告警链接均使用此 origin。经域名、TLS 或上级反向代理发布时必须显式指定用户实际访问的 origin。模块 standalone 模式仍可单独部署，但不通过根 Compose 再发布一组固定的宿主机端口。
+
 本地开发的 Gateway、各模块 Backend/Frontend 与工作流 Runtime 同样以本表开发端口为首选值。`scripts/dev/start.sh` 在 Infra 就绪后统一检查监听者；首选端口被其他服务占用时选取空闲端口，将最终端口注入模块进程、Gateway URL、Console 代理、iframe 地址、CORS 来源及 Vite HMR。运行中的本工作区服务沿用原端口；解析结果保存在忽略版本控制的 `.dev-state/ports.env`，仅作为本地运行状态，不改写根 `.env`。显式 `addp-online` Runner 仍使用配置端口并在冲突时失败。端口检查与监听之间仍可能出现并发抢占，实际绑定失败必须明确报错。
 
-容器化工作流 Runtime 仍在内部固定端口监听，其向 System 自注册的连接端口必须是宿主机映射端口；开发启动通过 `RUNTIME_PUBLIC_PORT` 向 GeoPython、PointCloud、Document Runtime 传递该端口。SuperMap Runtime 不自注册，需要按启动输出中的实际端口登记。
+容器化工作流 Runtime 仍在内部固定端口监听。开发模式的独立 Runtime 向 System 自注册时使用实际宿主机映射端口，开发启动通过 `RUNTIME_PUBLIC_PORT` 向 GeoPython、PointCloud、Document Runtime 传递该端口；根 Compose 部署则使用 Docker 服务名和固定容器端口。SuperMap Runtime 不自注册，需要按相应部署模式的实际可达地址登记。
 
 `13306` 和 `12881` 由 `scripts/test/docker-compose.local-macos-ci.yml` 中的固定 digest MySQL 8 与 OceanBase CE 4.4.2 LTS 使用，不属于 System 或 Business 长期基础设施。两个服务都无数据卷，只绑定 `127.0.0.1`，在本地巡检的确定性门禁和编译开始前完成健康检查，并在巡检的统一退出清理中删除。
 
@@ -74,7 +76,7 @@ DAMENG_PORT=5236
 
 ## Reserved Policy（保留规则）
 
-Ontology Backend 使用 `8195`（开发/容器一致），经 Gateway `/api/v1/ontology` 访问。Ontology Frontend 开发端口为 `5192`，Docker 映射 `8123:80`；Console 入口 `/ontology/ontologies`。确定性浏览器测试独占回环 `4192`，不复用开发服务。
+Ontology Backend 使用 `8195`（开发/容器内部一致），经 Gateway `/api/v1/ontology` 访问。Ontology Frontend 开发首选端口为 `5192`，根 Compose 内部监听 `80`，经 Nginx `/ontology/` 访问，不单独发布宿主机端口；Console 入口 `/ontology/ontologies`。确定性浏览器测试独占回环 `4192`，不复用开发服务。
 
 - **System MinIO 首选 19000/19001**，Business 侧不得主动配置为这两个首选端口。
 - **Business MinIO 首选 9002/9003**，System 侧不得占用这两个首选端口。
@@ -112,53 +114,54 @@ make ports-validate
 
 **ADDP 系统服务**:
 
+开发端口是首选值，实际端口由开发启动脚本解析；容器内端口供 Docker 网络使用。根 Compose 仅发布 Nginx 的宿主机端口，基础设施宿主机映射由 `docker-compose.infra.yml` 单独管理。
 
-| 服务                  | 开发端口 | Docker 端口 | 说明                       |
+| 服务                  | 开发首选端口 | 容器内端口 | 说明                       |
 | --------------------- | -------- | ----------- | -------------------------- |
 | **Nginx Gateway**     | **80**   | **80**      | **统一入口 (推荐)**        |
-| **Console Frontend**   | **5170** | **5170**    | **Console UI (通过 Nginx)** |
+| **Console Frontend**   | **5170** | 80 | **经 Nginx 路径访问** |
 | Gateway               | 8000     | 8000        | API Gateway (后端路由)     |
 | System Backend        | 8180     | 8180        | 认证、用户、日志 (统一使用8180避免端口冲突) |
-| System Frontend       | 5173     | 8090        | 独立访问                   |
+| System Frontend       | 5173     | 80 | 经 Nginx 路径访问                   |
 | Manager Backend       | 8081     | 8081        | 数据源、文件               |
-| Manager Frontend      | 5174     | 8091        | 独立访问                   |
+| Manager Frontend      | 5174     | 80 | 经 Nginx 路径访问                   |
 | Meta Backend          | 8082     | 8082        | 元数据、血缘               |
-| Meta Frontend         | 5175     | 8092        | 独立访问                   |
+| Meta Frontend         | 5175     | 80 | 经 Nginx 路径访问                   |
 | Transfer Backend      | 8083     | 8083        | 数据同步任务               |
-| Transfer Frontend     | 5176     | 8093        | 独立访问                   |
+| Transfer Frontend     | 5176     | 80 | 经 Nginx 路径访问                   |
 | Orchestrator Backend  | 8084     | 8084        | 工作流编排                 |
-| Orchestrator Frontend | 5177     | 8094        | 独立访问                   |
+| Orchestrator Frontend | 5177     | 80 | 经 Nginx 路径访问                   |
 | Develop Backend       | 8185     | 8185        | 开发工具                   |
-| Develop Frontend      | 5178     | 8095        | 独立访问                   |
+| Develop Frontend      | 5178     | 80 | 经 Nginx 路径访问                   |
 | Service Backend       | 8086     | 8086        | 数据服务、OGC 标准服务     |
-| Service Frontend      | 5180     | 8096        | 独立访问                   |
+| Service Frontend      | 5180     | 80 | 经 Nginx 路径访问                   |
 | Monitor Backend       | 8100     | 8100        | 执行监控、统计分析         |
-| Monitor Frontend      | 5179     | 5179        | 监控仪表盘                 |
+| Monitor Frontend      | 5179     | 80 | 监控仪表盘                 |
 | **Standard Backend**  | **8110** | **8110**    | **数据标准管理（业务域、术语、数据元、码值集）** |
-| **Standard Frontend** | **5181** | **8112**    | **标准管理 UI**            |
+| **Standard Frontend** | **5181** | 80 | **标准管理 UI**            |
 | **Model Backend**     | **8181** | **8181**    | **数据建模（业务实体、逻辑表、数仓分层）** |
-| **Model Frontend**    | **5182** | **8111**    | **建模 UI**                |
+| **Model Frontend**    | **5182** | 80 | **建模 UI**                |
 | **Quality Backend**   | **8182** | **8182**    | **数据质量检查、评分（质量规则执行层）** |
-| **Quality Frontend**  | **5183** | **8113**    | **质量管理 UI**            |
+| **Quality Frontend**  | **5183** | 80 | **质量管理 UI**            |
 | **Asset Backend**     | **8183** | **8183**    | **数据资产管理（编目、申请、授权）** |
-| **Asset Frontend**    | **5184** | **8114**    | **资产管理 UI**            |
+| **Asset Frontend**    | **5184** | 80 | **资产管理 UI**            |
 | **Portal Backend**    | **8184** | **8184**    | **数据消费者门户 BFF**      |
-| **Portal Frontend**   | **5185** | **8115**    | **数据门户 UI**            |
+| **Portal Frontend**   | **5185** | 80 | **数据门户 UI**            |
 | Copilot Backend       | 8087     | 8087        | AI 助手 (查询/工作流/Notebook 生成) |
 | **Agent Backend**     | **8190** | **8190**    | **Agent AI 对话助手后端**  |
-| **Agent Frontend**    | **5186** | **8117**    | **Agent 对话界面 UI**      |
+| **Agent Frontend**    | **5186** | 80 | **Agent 对话界面 UI**      |
 | **Graph Backend**     | **8186** | **8186**    | **知识图谱本体建模、图谱管理** |
-| **Graph Frontend**    | **5187** | **8118**    | **知识图谱 UI**            |
+| **Graph Frontend**    | **5187** | 80 | **知识图谱 UI**            |
 | **Inference Backend** | **8191** | **8191**    | **统一 AI 推理控制面与数据面** |
-| **Inference Frontend** | **5188** | **8119**   | **Provider、模型和 Profile 管理 UI** |
+| **Inference Frontend** | **5188** | 80 | **Provider、模型和 Profile 管理 UI** |
 | **Catalog Backend**   | **8192** | **8192**    | **企业资源目录身份、业务语义关联、责任和搜索** |
-| **Catalog Frontend**  | **5189** | **8120**    | **企业资源目录管理 UI** |
+| **Catalog Frontend**  | **5189** | 80 | **企业资源目录管理 UI** |
 | **Workbench Backend** | **8193** | **8193**    | **已发布服务消费、动态查询和数据应用创作** |
-| **Workbench Frontend** | **5190** | **8121**   | **Workbench 创作端 UI** |
+| **Workbench Frontend** | **5190** | 80 | **Workbench 创作端 UI** |
 | **Security Backend** | **8194** | **8194**    | **数据安全分类分级、敏感发现、资源评估、保护策略和投影** |
-| **Security Frontend** | **5191** | **8122**   | **数据安全与隐私保护 UI** |
+| **Security Frontend** | **5191** | 80 | **数据安全与隐私保护 UI** |
 | **Ontology Backend** | **8195** | **8195** | **原生领域本体、修订与投影运行时** |
-| **Ontology Frontend** | **5192** | **8123** | **领域本体建模与修订管理 UI** |
+| **Ontology Frontend** | **5192** | 80 | **领域本体建模与修订管理 UI** |
 | Math Workflow Engine  | 8089     | 8089        | 数学计算工作流参考实现（自动启动服务、手动注册） |
 | Jupyter API Server    | 8097     | 8097        | Jupyter 执行引擎 API       |
 | Spark Workflow Engine | 8098     | 8098        | Spark 分布式工作流引擎     |
@@ -168,12 +171,12 @@ make ports-validate
 | SuperMap Workflow Engine   | 8103     | 8103        | 超图 iObjects C++ 空间计算工作流引擎 |
 | DuckDB Query Runtime       | 8104     | 8104        | 联邦只读查询计算引擎       |
 | Document Workflow Engine   | 8105     | 8105        | 文档转换工作流引擎         |
-| PostgreSQL (System)   | 15432    | 15432       | ADDP 系统元数据            |
-| Redis                 | 16379    | 16379       | 缓存、事件和分布式锁       |
+| PostgreSQL (System)   | 15432    | 5432 | ADDP 系统元数据            |
+| Redis                 | 16379    | 6379 | 缓存、事件和分布式锁       |
 | FalkorDB              | 16479    | 6379        | Ontology Infra，仅绑定回环，不注册为业务 Engine |
-| MinIO System API      | 19000    | 19000       | 系统文件存储               |
-| MinIO System Console  | 19001    | 19001       | 系统 MinIO Web UI          |
-| Meilisearch           | 17700    | 17700       | 全文检索引擎               |
+| MinIO System API      | 19000    | 9000 | 系统文件存储               |
+| MinIO System Console  | 19001    | 9001 | 系统 MinIO Web UI          |
+| Meilisearch           | 17700    | 7700 | 全文检索引擎               |
 | Infra Kafka           | 19092    | 9092        | 内部 CDC 总线；不注册为 System Engine |
 | Kafka Connect REST    | 18083    | 8083        | Transfer capture supervisor 内部控制面，不经 Gateway 暴露 |
 | Business Kafka        | 29092    | 9092        | 业务 Topic；以 `engine_type=kafka` 注册为 System Engine |

@@ -139,6 +139,9 @@ other = "模块运行实例不存在，请先重新注册"
 [system.module.version_conflict]
 other = "模块定义已被其他操作修改，请刷新后重试"
 
+[system.module.system_immutable]
+other = "System 是引导控制面，不能修改其启用状态"
+
 [system.engine.address_conflict]
 other = "连接地址已被其他引擎登记"
 

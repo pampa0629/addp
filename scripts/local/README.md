@@ -70,9 +70,7 @@ localhost:5001/addp-nginx                latest
 bash scripts/local/start.sh
 
 # 访问服务
-# - Console (推荐): http://localhost:80
-# - Gateway:        http://localhost:8000
-# - System Backend: http://localhost:8180
+# - Console、模块页面和 API: ADDP_PUBLIC_ORIGIN（默认 http://localhost:NGINX_PORT）
 ```
 
 ### 脚本说明
@@ -95,10 +93,10 @@ bash scripts/local/start.sh
    - 数据库/MinIO/Meilisearch 初始化
    - 健康检查等待
 4. ✓ 启动应用层 (所有后端、前端、Worker、Gateway、Nginx)
-5. ✓ 等待关键服务健康检查通过
+5. ✓ 等待 Compose 容器健康检查通过
 6. ✓ 显示访问地址和管理命令
 
-**幂等性**: 可重复执行,已运行的容器会被跳过,使用 `docker compose up -d --remove-orphans` 确保服务存在且运行，并清理已从单一部署路线删除的旧服务容器。
+**幂等性**: 可重复执行，使用 `docker compose up -d --wait --remove-orphans` 确保服务存在且就绪，并清理已删除的旧服务容器。
 
 **镜像检查**: 如果发现缺少镜像,会提示:
 ```
@@ -140,33 +138,9 @@ bash scripts/local/status.sh
 ```
 
 **输出内容**:
-- 基础设施层容器状态 (postgres, redis, minio, meilisearch)
-- 应用层容器状态 (所有后端、前端、Worker)
-- 服务 URL 及可用性 (✓ 运行中 / ✗ 未运行)
-- 资源使用情况 (CPU、内存,Top 5)
-- 管理命令提示
-
-**示例输出**:
-```
-=== Service URLs ===
-
-  ✓ Console (Recommended):  http://localhost:80
-  ✓ Gateway:               http://localhost:8000
-  ✓ System Backend:        http://localhost:8180
-
-Infrastructure:
-  ✓ PostgreSQL:            localhost:5433
-  ✓ Redis:                 localhost:6379
-  ✓ MinIO Console:         http://localhost:9001
-  ✓ Meilisearch:           http://localhost:7700
-
-=== Resource Usage (Top 5 by Memory) ===
-
-NAME                 CPU %     MEM USAGE / LIMIT
-postgres             0.12%     85.5MiB / 7.77GiB
-system-backend       0.03%     45.2MiB / 7.77GiB
-...
-```
+- 基础设施层与应用层容器状态、健康状态及实际端口映射
+- Nginx 统一入口 URL（由实际映射与 `ADDP_PUBLIC_ORIGIN` 得到）
+- 资源使用情况与管理命令
 
 #### 4. restart.sh - 重启服务
 
@@ -197,32 +171,7 @@ meilisearch   (port 7700)  - Meilisearch 全文搜索
 
 ### 应用层 (docker-compose.yml)
 
-```
-后端服务:
-  system-backend       (port 8180)
-  manager-backend      (port 8081)
-  meta-backend         (port 8082)
-  transfer-backend     (port 8083)
-  orchestrator-backend (port 8084)
-  develop-backend      (port 8185)
-  gateway              (port 8000)
-
-Worker 服务:
-  meta-worker
-  quality-worker
-  transfer-bounded-worker
-  transfer-continuous-worker
-
-前端服务:
-  system-frontend      (port 8090)
-  manager-frontend     (port 8091)
-  meta-frontend        (port 8092)
-  transfer-frontend    (port 8093)
-  orchestrator-frontend (port 8094)
-  develop-frontend     (port 8095)
-  console               (port 5170)
-  nginx                (port 80) - 统一入口
-```
+Console、各模块 Frontend、Backend、Gateway 和内置 Workflow Runtime 使用 Docker 网络内的服务名与固定容器端口。应用层只将 Nginx 的 `NGINX_PORT` 发布到宿主机，浏览器通过这个统一入口访问模块页面和 `/api/`。
 
 ### 镜像来源
 

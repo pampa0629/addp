@@ -18,6 +18,7 @@ import (
 
 var ErrInvalidModuleRegistration = errors.New("invalid module registration")
 var ErrModuleDefinitionVersionConflict = errors.New("module definition version conflict")
+var ErrSystemModuleImmutable = errors.New("system module enabled state is immutable")
 var ErrInvalidModuleRuntimeInstanceQuery = errors.New("invalid module runtime instance query")
 
 type ModuleRegistryService struct {
@@ -146,6 +147,9 @@ func (s *ModuleRegistryService) UpdateModuleDefinition(moduleName string, req *m
 	moduleName = strings.TrimSpace(moduleName)
 	if moduleName == "" || req == nil || req.Enabled == nil || req.Version < 1 {
 		return nil, fmt.Errorf("%w: enabled and positive version are required", ErrInvalidModuleRegistration)
+	}
+	if moduleName == "system" {
+		return nil, ErrSystemModuleImmutable
 	}
 	definition, _, err := s.repo.UpdateEnabled(moduleName, *req.Enabled, req.Version)
 	if errors.Is(err, repository.ErrModuleDefinitionVersionConflict) {

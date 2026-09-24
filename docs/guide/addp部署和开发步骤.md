@@ -184,20 +184,7 @@ bash scripts/prod/start.sh
 4. **启动前端服务** (所有模块前端 + Console + Nginx)
 5. **健康检查** (验证所有服务就绪)
 
-**访问地址** (部署完成后):
-
-- **✨ Console 控制台 (推荐)**: http://localhost:80
-  - 统一登录,一键访问所有模块
-  - 通过 Nginx 反向代理,提供最佳用户体验
-- **Console 独立访问** (开发调试): http://localhost:5170
-- **API Gateway**: http://localhost:8000
-- **独立模块访问** (如需单独访问):
-  - System: http://localhost:8090
-  - Manager: http://localhost:8091
-  - Meta: http://localhost:8092
-  - Transfer: http://localhost:8093
-  - Orchestrator: http://localhost:8094
-  - Develop: http://localhost:8095
+**访问地址** (部署完成后): `ADDP_PUBLIC_ORIGIN`；未设置时为 `http://localhost:<NGINX_PORT>`，默认 `http://localhost:80`。Console、模块前端和 `/api/` 均由这个 Nginx 入口转发；容器内使用稳定服务名和端口，应用模块不发布其他宿主机端口。域名、HTTPS 或上级反向代理部署时在根 `.env` 配置实际的 `ADDP_PUBLIC_ORIGIN`。
 
   ### 构建和部署
   - [`Makefile`](Makefile) - 项目范围的编排命令

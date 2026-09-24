@@ -15,7 +15,7 @@
 # 环境变量配置（可选，支持不同部署场景）:
 #   Compose project 固定为 addp-app，所有内置计算引擎统一归入该应用项目
 #   NGINX_PORT           - Nginx 统一网关端口（默认: 80）
-#   CONSOLE_PORT         - Console 工作台独立访问端口（默认: 5170）
+#   ADDP_PUBLIC_ORIGIN    - 浏览器与外部客户端访问的统一入口 origin（默认: http://localhost:${NGINX_PORT:-80}）
 #   REGISTRY             - 镜像仓库地址（默认: localhost:5001）
 #   IMAGE_TAG            - 镜像标签（默认: latest）
 #
@@ -38,8 +38,8 @@ services:
       - OAUTH_USER_CODE_PEPPER=${OAUTH_USER_CODE_PEPPER:-}
       - OAUTH_PREVIOUS_USER_CODE_PEPPER=${OAUTH_PREVIOUS_USER_CODE_PEPPER:-}
       - IAM_MFA_ENCRYPTION_KEY=${IAM_MFA_ENCRYPTION_KEY:-}
-      - PUBLIC_API_URL=${PUBLIC_API_URL:-http://localhost:8000}
-      - CONSOLE_URL=${CONSOLE_URL:-http://localhost:5170}
+      - PUBLIC_API_URL=${ADDP_PUBLIC_ORIGIN:-http://localhost:${NGINX_PORT:-80}}
+      - CONSOLE_URL=${ADDP_PUBLIC_ORIGIN:-http://localhost:${NGINX_PORT:-80}}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
       - TRUSTED_PROXIES=${TRUSTED_PROXIES:-127.0.0.1,::1}
       - AGENT_SERVICE_CLIENT_SECRET=${AGENT_SERVICE_CLIENT_SECRET}
@@ -90,8 +90,6 @@ services:
       - ORCHESTRATOR_URL=http://orchestrator-backend:8084
       - DEVELOP_URL=http://develop-backend:8185
       - GIN_MODE=release
-    ports:
-      - "8180:8180"
     networks:
       - addp-network
     restart: unless-stopped
@@ -105,8 +103,6 @@ services:
   system-frontend:
     image: ${REGISTRY:-localhost:5001}/addp-system-frontend:${IMAGE_TAG:-latest}
     container_name: system-frontend
-    ports:
-      - "8090:80"
     networks:
       - addp-network
     depends_on:
@@ -148,8 +144,6 @@ services:
       - MANAGER_EXECUTION_HEARTBEAT_INTERVAL=${MANAGER_EXECUTION_HEARTBEAT_INTERVAL:-30s}
       - MANAGER_EXECUTION_CLAIM_INTERVAL=${MANAGER_EXECUTION_CLAIM_INTERVAL:-1s}
       - GIN_MODE=release
-    ports:
-      - "8081:8081"
     networks:
       - addp-network
     depends_on:
@@ -166,8 +160,6 @@ services:
   manager-frontend:
     image: ${REGISTRY:-localhost:5001}/addp-manager-frontend:${IMAGE_TAG:-latest}
     container_name: manager-frontend
-    ports:
-      - "8091:80"
     networks:
       - addp-network
     depends_on:
@@ -200,8 +192,6 @@ services:
       - SYSTEM_URL=http://system-backend:8180
       - META_SERVICE_CLIENT_SECRET=${META_SERVICE_CLIENT_SECRET}
       - GIN_MODE=release
-    ports:
-      - "8082:8082"
     networks:
       - addp-network
     depends_on:
@@ -218,8 +208,6 @@ services:
   meta-frontend:
     image: ${REGISTRY:-localhost:5001}/addp-meta-frontend:${IMAGE_TAG:-latest}
     container_name: meta-frontend
-    ports:
-      - "8092:80"
     networks:
       - addp-network
     depends_on:
@@ -371,8 +359,6 @@ services:
       - TRANSFER_DLQ_RECONCILE_TIMEOUT=${TRANSFER_DLQ_RECONCILE_TIMEOUT:-10s}
       - TRANSFER_DLQ_RECONCILE_FETCH_MAX_BYTES=${TRANSFER_DLQ_RECONCILE_FETCH_MAX_BYTES:-10485760}
       - GIN_MODE=release
-    ports:
-      - "8083:8083"
     networks:
       - addp-network
     depends_on:
@@ -389,8 +375,6 @@ services:
   transfer-frontend:
     image: ${REGISTRY:-localhost:5001}/addp-transfer-frontend:${IMAGE_TAG:-latest}
     container_name: transfer-frontend
-    ports:
-      - "8093:80"
     networks:
       - addp-network
     depends_on:
@@ -509,8 +493,6 @@ services:
       - SYSTEM_URL=http://system-backend:8180
       - ORCHESTRATOR_SERVICE_CLIENT_SECRET=${ORCHESTRATOR_SERVICE_CLIENT_SECRET}
       - GIN_MODE=release
-    ports:
-      - "8084:8084"
     networks:
       - addp-network
     depends_on:
@@ -527,8 +509,6 @@ services:
   orchestrator-frontend:
     image: ${REGISTRY:-localhost:5001}/addp-orchestrator-frontend:${IMAGE_TAG:-latest}
     container_name: orchestrator-frontend
-    ports:
-      - "8094:80"
     networks:
       - addp-network
     depends_on:
@@ -562,8 +542,6 @@ services:
       - DEVELOP_QUERY_HEARTBEAT_SECONDS=${DEVELOP_QUERY_HEARTBEAT_SECONDS:-30}
       - DEVELOP_QUERY_CLAIM_INTERVAL_SECONDS=${DEVELOP_QUERY_CLAIM_INTERVAL_SECONDS:-1}
       - GIN_MODE=release
-    ports:
-      - "8185:8185"
     networks:
       - addp-network
     depends_on:
@@ -580,8 +558,6 @@ services:
   develop-frontend:
     image: ${REGISTRY:-localhost:5001}/addp-develop-frontend:${IMAGE_TAG:-latest}
     container_name: develop-frontend
-    ports:
-      - "8095:80"
     networks:
       - addp-network
     depends_on:
@@ -618,8 +594,6 @@ services:
       - DB_SCHEMA=service
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
       - GIN_MODE=release
-    ports:
-      - "8086:8086"
     networks:
       - addp-network
     depends_on:
@@ -636,8 +610,6 @@ services:
   service-frontend:
     image: ${REGISTRY:-localhost:5001}/addp-service-frontend:${IMAGE_TAG:-latest}
     container_name: service-frontend
-    ports:
-      - "8096:80"
     networks:
       - addp-network
     depends_on:
@@ -653,7 +625,7 @@ services:
       - SERVICE_HOST=monitor-backend
       - MONITOR_BACKEND_PORT=8100
       - MONITOR_WEBHOOK_ALLOW_PRIVATE_NETWORKS=${MONITOR_WEBHOOK_ALLOW_PRIVATE_NETWORKS:-false}
-      - MONITOR_CONSOLE_BASE_URL=${MONITOR_CONSOLE_BASE_URL:-http://localhost:5170}
+      - MONITOR_CONSOLE_BASE_URL=${ADDP_PUBLIC_ORIGIN:-http://localhost:${NGINX_PORT:-80}}
       - SYSTEM_URL=http://system-backend:8180
       - MONITOR_SERVICE_CLIENT_SECRET=${MONITOR_SERVICE_CLIENT_SECRET}
       - POSTGRES_HOST=postgres
@@ -666,8 +638,6 @@ services:
       - REDIS_PASSWORD=${REDIS_PASSWORD:-addp_redis}
       - REDIS_DB=0
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
-    ports:
-      - "8100:8100"
     networks:
       - addp-network
     depends_on:
@@ -684,8 +654,6 @@ services:
   monitor-frontend:
     image: ${REGISTRY:-localhost:5001}/addp-monitor-frontend:${IMAGE_TAG:-latest}
     container_name: monitor-frontend
-    ports:
-      - "8116:80"
     networks:
       - addp-network
     depends_on:
@@ -719,8 +687,6 @@ services:
       - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
       - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-minioadmin}
       - MINIO_USE_SSL=false
-    ports:
-      - "8110:8110"
     networks:
       - addp-network
     depends_on:
@@ -737,8 +703,6 @@ services:
   standard-frontend:
     image: ${REGISTRY:-localhost:5001}/addp-standard-frontend:${IMAGE_TAG:-latest}
     container_name: standard-frontend
-    ports:
-      - "8112:80"
     networks:
       - addp-network
     depends_on:
@@ -773,8 +737,6 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB:-addp}
       - GIN_MODE=release
-    ports:
-      - "8192:8192"
     networks:
       - addp-network
     depends_on:
@@ -791,8 +753,6 @@ services:
   catalog-frontend:
     image: ${REGISTRY:-localhost:5001}/addp-catalog-frontend:${IMAGE_TAG:-latest}
     container_name: catalog-frontend
-    ports:
-      - "8120:80"
     networks:
       - addp-network
     depends_on:
@@ -816,8 +776,6 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB:-addp}
       - GIN_MODE=release
-    ports:
-      - "8193:8193"
     networks:
       - addp-network
     depends_on:
@@ -834,8 +792,6 @@ services:
   workbench-frontend:
     image: ${REGISTRY:-localhost:5001}/addp-workbench-frontend:${IMAGE_TAG:-latest}
     container_name: workbench-frontend
-    ports:
-      - "8121:80"
     networks:
       - addp-network
     depends_on:
@@ -865,8 +821,6 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB:-addp}
       - DB_SCHEMA=copilot
-    ports:
-      - "8087:8087"
     networks:
       - addp-network
     depends_on:
@@ -902,8 +856,6 @@ services:
       - REDIS_PASSWORD=${REDIS_PASSWORD:-addp_redis}
       - REDIS_DB=0
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
-    ports:
-      - "8181:8181"
     networks:
       - addp-network
     depends_on:
@@ -920,8 +872,6 @@ services:
   model-frontend:
     image: ${REGISTRY:-localhost:5001}/addp-model-frontend:${IMAGE_TAG:-latest}
     container_name: model-frontend
-    ports:
-      - "8111:80"
     networks:
       - addp-network
     depends_on:
@@ -950,8 +900,6 @@ services:
       - REDIS_PASSWORD=${REDIS_PASSWORD:-addp_redis}
       - REDIS_DB=0
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
-    ports:
-      - "8182:8182"
     networks:
       - addp-network
     depends_on:
@@ -991,8 +939,6 @@ services:
   quality-frontend:
     image: ${REGISTRY:-localhost:5001}/addp-quality-frontend:${IMAGE_TAG:-latest}
     container_name: quality-frontend
-    ports:
-      - "8113:80"
     networks:
       - addp-network
     depends_on:
@@ -1002,8 +948,6 @@ services:
   ontology-frontend:
     image: ${REGISTRY:-localhost:5001}/addp-ontology-frontend:${IMAGE_TAG:-latest}
     container_name: ontology-frontend
-    ports:
-      - "8123:80"
     networks:
       - addp-network
     depends_on:
@@ -1025,8 +969,6 @@ services:
       - POSTGRES_USER=${POSTGRES_USER:-addp}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB:-addp}
-    ports:
-      - "8195:8195"
     networks:
       - addp-network
     depends_on:
@@ -1053,8 +995,6 @@ services:
       - POSTGRES_USER=${POSTGRES_USER:-addp}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB:-addp}
-    ports:
-      - "8194:8194"
     networks:
       - addp-network
     depends_on:
@@ -1093,8 +1033,6 @@ services:
   security-frontend:
     image: ${REGISTRY:-localhost:5001}/addp-security-frontend:${IMAGE_TAG:-latest}
     container_name: security-frontend
-    ports:
-      - "8122:80"
     networks:
       - addp-network
     depends_on:
@@ -1125,8 +1063,6 @@ services:
       - REDIS_PASSWORD=${REDIS_PASSWORD:-addp_redis}
       - REDIS_DB=0
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
-    ports:
-      - "8183:8183"
     networks:
       - addp-network
     depends_on:
@@ -1143,8 +1079,6 @@ services:
   asset-frontend:
     image: ${REGISTRY:-localhost:5001}/addp-asset-frontend:${IMAGE_TAG:-latest}
     container_name: asset-frontend
-    ports:
-      - "8114:80"
     networks:
       - addp-network
     depends_on:
@@ -1165,8 +1099,6 @@ services:
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD:-addp_redis}
       - REDIS_DB=0
-    ports:
-      - "8184:8184"
     networks:
       - addp-network
     depends_on:
@@ -1183,8 +1115,6 @@ services:
   portal-frontend:
     image: ${REGISTRY:-localhost:5001}/addp-portal-frontend:${IMAGE_TAG:-latest}
     container_name: portal-frontend
-    ports:
-      - "8115:80"
     networks:
       - addp-network
     depends_on:
@@ -1213,8 +1143,6 @@ services:
       - MINIO_ENDPOINT=minio:9000
       - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
       - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-minioadmin}
-    ports:
-      - "8186:8186"
     networks:
       - addp-network
     depends_on:
@@ -1246,8 +1174,6 @@ services:
       - POSTGRES_DB=${POSTGRES_DB:-addp}
       - DB_SCHEMA=inference
       - GIN_MODE=release
-    ports:
-      - "8191:8191"
     networks:
       - addp-network
     restart: unless-stopped
@@ -1261,8 +1187,6 @@ services:
   inference-frontend:
     image: ${REGISTRY:-localhost:5001}/addp-inference-frontend:${IMAGE_TAG:-latest}
     container_name: inference-frontend
-    ports:
-      - "8119:80"
     networks:
       - addp-network
     depends_on:
@@ -1272,8 +1196,6 @@ services:
   graph-frontend:
     image: ${REGISTRY:-localhost:5001}/addp-graph-frontend:${IMAGE_TAG:-latest}
     container_name: graph-frontend
-    ports:
-      - "8118:80"
     networks:
       - addp-network
     depends_on:
@@ -1309,8 +1231,6 @@ services:
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD:-addp_redis}
       - REDIS_DB=0
-    ports:
-      - "8190:8190"
     networks:
       - addp-network
     depends_on:
@@ -1327,8 +1247,6 @@ services:
   agent-frontend:
     image: ${REGISTRY:-localhost:5001}/addp-agent-frontend:${IMAGE_TAG:-latest}
     container_name: agent-frontend
-    ports:
-      - "8117:80"
     networks:
       - addp-network
     depends_on:
@@ -1392,8 +1310,6 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB:-addp}
       - DB_SCHEMA=develop
-    ports:
-      - "8099:8099"
     volumes:
       - ./logs:/app/logs
     networks:
@@ -1423,8 +1339,6 @@ services:
       - GDAL_DATA=/opt/addp/model3d-workflow/bin/gdal
       - PROJ_DATA=/opt/addp/model3d-workflow/bin/proj
       - OSG_LIBRARY_PATH=/opt/addp/model3d-workflow/bin/osgPlugins-3.6.5
-    ports:
-      - "8101:8101"
     volumes:
       - ./logs:/app/logs
       - ${MODEL3D_DATA_HOST_PATH:-./business/nfs/data}:${MODEL3D_DATA_CONTAINER_PATH:-/Users/pampa/code/addp/business/nfs/data}:ro
@@ -1455,8 +1369,6 @@ services:
       - POINTCLOUD_WORK_DIR=/work/pointcloud
       - CPL_TMPDIR=/work/pointcloud
       - RUNTIME_HOST=pointcloud-workflow-engine
-    ports:
-      - "8102:8102"
     volumes:
       - ./logs:/app/logs
       - ${POINTCLOUD_WORK_HOST_PATH:-./data/pointcloud-work}:/work/pointcloud
@@ -1490,8 +1402,6 @@ services:
       - DOCUMENT_CONVERSION_TIMEOUT_SECONDS=${DOCUMENT_CONVERSION_TIMEOUT_SECONDS:-600}
       - DOCUMENT_OBJECT_STORE_LOOPBACK_HOST=${DOCUMENT_OBJECT_STORE_LOOPBACK_HOST:-host.docker.internal}
       - RUNTIME_HOST=document-workflow-engine
-    ports:
-      - "8105:8105"
     read_only: true
     tmpfs:
       - /tmp:rw,nosuid,nodev,size=67108864
@@ -1529,8 +1439,6 @@ services:
       - PORT=8103
       - SYSTEM_URL=http://system-backend:8180
       - LOG_LEVEL=${LOG_LEVEL:-info}
-    ports:
-      - "8103:8103"
     volumes:
       - ./logs:/app/logs
       - ${SUPERMAP_OUTPUT_HOST_PATH:-/tmp/supermap-out}:/tmp/supermap-out
@@ -1565,8 +1473,6 @@ services:
       - POSTGRES_DB=${POSTGRES_DB:-addp}
       - DB_SCHEMA=develop
       - SPARK_MODE=local
-    ports:
-      - "8098:8098"
     volumes:
       - ./logs:/app/logs
     networks:
@@ -1604,8 +1510,6 @@ services:
       - GRAPH_URL=http://graph-backend:8186
       - GATEWAY_SERVICE_CLIENT_SECRET=${GATEWAY_SERVICE_CLIENT_SECRET}
       - GIN_MODE=release
-    ports:
-      - "8000:8000"
     networks:
       - addp-network
     depends_on:
@@ -1624,8 +1528,6 @@ services:
   console:
     image: ${REGISTRY:-localhost:5001}/addp-console:${IMAGE_TAG:-latest}
     container_name: console
-    ports:
-      - "${CONSOLE_PORT:-5170}:80"  # Console 可独立访问（开发调试用）
     networks:
       - addp-network
     depends_on:

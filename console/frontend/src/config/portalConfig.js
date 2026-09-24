@@ -58,7 +58,7 @@ const _devPorts = parseDevPorts(import.meta.env.VITE_ADDP_FRONTEND_PORTS)
 function _url(module, devPort, prodPath, devPath = '') {
   return _dev
     ? `${_protocol}//${_host}:${_devPorts[module] || devPort}${devPath}`
-    : `${_protocol}//${_host}/${prodPath}`
+    : `${window.location.origin}/${prodPath}`
 }
 
 export const MODULE_URLS = {

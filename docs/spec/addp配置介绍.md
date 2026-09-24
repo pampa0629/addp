@@ -319,8 +319,7 @@ MONITOR_WEBHOOK_RETRY_MAX_BACKOFF=5m
 # 只在本地联调或明确受管内网部署中开启。
 MONITOR_WEBHOOK_ALLOW_PRIVATE_NETWORKS=false
 
-# Webhook payload 内告警详情链接使用的 Console 外部地址。
-MONITOR_CONSOLE_BASE_URL=http://localhost:5170
+# 本地开发的 Monitor 链接由 scripts/dev/ports.sh 注入 Console 实际端口；容器部署从 ADDP_PUBLIC_ORIGIN 注入统一入口。
 
 # 邮件投递策略和 SMTP Relay 已迁移到 Monitor 配置管理页。
 # 凭据只通过专用凭据接口写入 Monitor-owned 加密字段。
@@ -475,9 +474,11 @@ OAUTH_USER_CODE_PEPPER=
 IAM_MFA_ENCRYPTION_KEY=
 # Base64 编码的 32 字节平台数据加密密钥；不是 Token 签名密钥。
 ENCRYPTION_KEY=
-# 浏览器、CLI 和外部客户端可访问的 Gateway 公共 API 根地址；OAuth 响应不得使用模块间 SYSTEM_URL。
-PUBLIC_API_URL=http://localhost:8000
-CONSOLE_URL=http://localhost:5170
+# 容器部署统一入口端口；应用模块不向宿主机发布各自端口。
+NGINX_PORT=80
+# 浏览器、CLI、OAuth 响应和 Monitor 告警链接使用的公开 origin。
+# 留空时从 NGINX_PORT 得到 http://localhost:<port>；域名、HTTPS 或上级反向代理需显式配置。
+ADDP_PUBLIC_ORIGIN=
 # Develop 自身的模块间可达地址；Notebook Runtime 使用它回调会话限定的只读能力接口。
 DEVELOP_URL=http://localhost:8185
 # DuckDB Runtime 请求期只加载此目录中的扩展，扩展由开发启动或镜像构建阶段预先准备。
@@ -585,7 +586,7 @@ BUSINESS_MINIO_SECRET_KEY=minioadmin
 详见 [addp端口分配.md](addp端口分配.md)。
 
 **推荐访问**:
-- **生产环境**: http://localhost:80 (通过 Nginx 访问 Console 控制台)
+- **容器部署**: `ADDP_PUBLIC_ORIGIN`，未设置时为 `http://localhost:<NGINX_PORT>`（默认 `http://localhost:80`）
 - **开发环境**: http://localhost:5170 (Console 独立访问) 或各模块独立端口
 
 **业务库设置**:

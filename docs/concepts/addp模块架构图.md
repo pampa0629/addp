@@ -658,9 +658,9 @@ graph TB
 
 **1. 持久模块定义**:
 - `module_definitions` 保存稳定 `module_name`、路由前缀、管理员启用状态和配置管理入口声明；模块进程离线不会删除该定义。
-- `enabled` 是管理员意图，与实例心跳健康独立。禁用模块时所有实例即使仍有心跳也不得进入 Gateway 路由或 Console 动态入口。
+- 业务模块的 `enabled` 是管理员意图，与实例心跳健康独立。禁用业务模块时所有实例即使仍有心跳也不得进入 Gateway 路由或 Console 动态入口。System 是引导控制面，其 `enabled` 固定为 true，不接受管理员禁用；自注册实例只供运行观测和配置入口声明，Gateway 通过部署提供的 `SYSTEM_URL` 访问 System。
 - 模块首次注册创建定义；后续注册按 `module_name` 幂等更新允许由 owner 发布的声明，不改变定义 ID。
-- 模块定义是可变持久化主资源，使用正整数 `version` 进行乐观并发控制。平台系统管理员只能通过 `/api/v1/system/platform/modules` 读取定义和实例投影，并通过带 `version` 的更新请求修改 `enabled`；路由前缀和配置入口声明仍由 owner 注册发布，不提供管理员手工编辑路径。
+- 模块定义是可变持久化主资源，使用正整数 `version` 进行乐观并发控制。平台系统管理员通过 `/api/v1/system/platform/modules` 读取定义和实例投影，只能通过带 `version` 的更新请求修改业务模块的 `enabled`；System 的 `enabled` 不可修改。路由前缀和配置入口声明仍由 owner 注册发布，不提供管理员手工编辑路径。
 - 相同 owner 声明的重复注册保持幂等且不递增 `version`；路由前缀或配置入口声明实际变化时，System 原子更新声明并递增 `version`，同时保持管理员 `enabled` 不变。
 
 **2. 临时运行实例租约**:
@@ -682,7 +682,7 @@ graph TB
 - Runtime 模块注册、心跳和注销失败必须返回 `{error, error_code}`；稳定错误码使用 `module_registration_invalid`、`module_runtime_instance_not_found`、`module_registry_unauthorized`、`module_registry_forbidden`、`module_registration_failed`、`module_heartbeat_failed` 和 `module_deregistration_failed`。Go 与 Python 公共客户端都必须保留 `method`、`path`、`status_code`、`error_code`、`error_message` 和受限长度的 `response_body`；后台生命周期日志还必须包含 `operation`、`module`、`instance_id` 和 `role`，不得只输出无结构的异常文本。Token Endpoint 的成功响应含凭据，诊断只能记录稳定错误码、可重试性、响应体字节数、Content-Type 和不含值的字段校验原因，禁止记录原始响应体或任何 Token 值。
 
 **管理面边界**:
-- `platform.module.read` 允许平台系统管理员查看模块定义及其 Backend、Worker、Scheduler 实例投影；`platform.module.update` 只允许修改模块定义的 `enabled` 管理意图。
+- `platform.module.read` 允许平台系统管理员查看模块定义及其 Backend、Worker、Scheduler 实例投影；`platform.module.update` 只允许修改业务模块定义的 `enabled` 管理意图。System 行只展示固定启用状态，不提供开关；更新接口拒绝对 System 的写入。
 - 管理界面不得创建模块定义、删除运行实例、手工修改 `status` 或延长租约。定义由 owner 首次注册产生，实例健康只能由注册、心跳和租约到期推进。
 - 管理界面按固定周期重新读取 System 当前投影；进程稍后启动并重新注册后，无需重启 System 或前端即可显示为可用。
 - `GET /api/v1/system/platform/modules` 和模块详情只返回有界的当前运行投影：保留全部租约有效的实例；某个角色当前没有有效租约时，仅保留该角色最近一次离线观测，用于区分“从未注册该角色”和“该角色当前离线”。不得在模块主列表中携带全部历史实例。
