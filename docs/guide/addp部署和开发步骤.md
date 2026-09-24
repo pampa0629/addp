@@ -104,7 +104,7 @@ make build-images IMAGE_BUILD_ARGS="--services pointcloud-workflow-engine --forc
 bash scripts/build/package.sh
 ```
 
-`make build` 与 `make build-images` 是平台唯一标准构建入口，分别薄调用 `scripts/build/compile.sh` 与 `scripts/build/build-images.sh`。新增正式服务、Worker、前端或 Compose 镜像时，必须在同一次变更中补齐对应构建登记；`make test-platform` 会自动校验完整性。
+`make build` 与 `make build-images` 是平台唯一标准构建入口，分别薄调用 `scripts/build/compile.sh` 与 `scripts/build/build-images.sh`。`make build BUILD_ARGS="--arch amd64 --services system-backend,gateway"` 可精确构建指定服务；Go 产物按实际依赖指纹判断缓存并写入构建身份，供 Online 预检核对。新增正式服务、Worker、前端或 Compose 镜像时，必须在同一次变更中补齐对应构建登记；`make test-platform` 会自动校验完整性。
 
 代码交付前默认使用统一影响分析入口，不要等推送后的 CI 通知才补测试或构建适配：
 
@@ -184,7 +184,7 @@ bash scripts/prod/start.sh
 4. **启动前端服务** (所有模块前端 + Console + Nginx)
 5. **健康检查** (验证所有服务就绪)
 
-**访问地址** (部署完成后): `ADDP_PUBLIC_ORIGIN`；未设置时为 `http://localhost:<NGINX_PORT>`，默认 `http://localhost:80`。Console、模块前端和 `/api/` 均由这个 Nginx 入口转发；容器内使用稳定服务名和端口，应用模块不发布其他宿主机端口。域名、HTTPS 或上级反向代理部署时在根 `.env` 配置实际的 `ADDP_PUBLIC_ORIGIN`。
+**访问地址** (部署完成后): `ADDP_PUBLIC_ORIGIN`；未设置时为 `http://localhost:<NGINX_PORT>`，默认 `http://localhost:80`。Console、模块前端和 `/api/` 均由这个 Nginx 入口转发；容器内使用稳定服务名和端口，应用模块不发布其他宿主机端口。需要限制宿主机监听范围时设置 `NGINX_BIND_HOST`，默认 `0.0.0.0`；隔离验收使用 `127.0.0.1`。域名、HTTPS 或上级反向代理部署时在根 `.env` 配置实际的 `ADDP_PUBLIC_ORIGIN`。
 
   ### 构建和部署
   - [`Makefile`](Makefile) - 项目范围的编排命令

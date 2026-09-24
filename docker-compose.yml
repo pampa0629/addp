@@ -15,6 +15,7 @@
 # 环境变量配置（可选，支持不同部署场景）:
 #   Compose project 固定为 addp-app，所有内置计算引擎统一归入该应用项目
 #   NGINX_PORT           - Nginx 统一网关端口（默认: 80）
+#   NGINX_BIND_HOST      - Nginx 宿主机监听地址（默认: 0.0.0.0）
 #   ADDP_PUBLIC_ORIGIN    - 浏览器与外部客户端访问的统一入口 origin（默认: http://localhost:${NGINX_PORT:-80}）
 #   REGISTRY             - 镜像仓库地址（默认: localhost:5001）
 #   IMAGE_TAG            - 镜像标签（默认: latest）
@@ -1492,6 +1493,14 @@ services:
     container_name: gateway
     environment:
       - PORT=8000
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=${POSTGRES_USER:-addp}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-addp_password}
+      - POSTGRES_DB=${POSTGRES_DB:-addp}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-addp_redis}
       - SYSTEM_URL=http://system-backend:8180
       - MANAGER_URL=http://manager-backend:8081
       - META_URL=http://meta-backend:8082
@@ -1540,7 +1549,7 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-nginx:${IMAGE_TAG:-latest}
     container_name: addp-nginx
     ports:
-      - "${NGINX_PORT:-80}:80"
+      - "${NGINX_BIND_HOST:-0.0.0.0}:${NGINX_PORT:-80}:80"
     networks:
       - addp-network
     depends_on:
@@ -1554,7 +1563,7 @@ services:
       - ontology-frontend
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://127.0.0.1/health"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1/health"]
       interval: 10s
       timeout: 5s
       retries: 3

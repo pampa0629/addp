@@ -1,0 +1,9 @@
+# Diagnostic ports are bound to loopback only for the disposable Hosted T4 gate.
+# The production Compose file itself publishes only Nginx.
+services:
+  system-backend:
+    ports:
+      - "127.0.0.1:8180:8180"
+  gateway:
+    ports:
+      - "127.0.0.1:8000:8000"

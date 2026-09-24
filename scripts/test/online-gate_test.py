@@ -76,6 +76,7 @@ class OnlineGateTest(unittest.TestCase):
         self.assertEqual(
             set(ONLINE_GATE.SUITES),
             {
+                "compose-public-origin",
                 "consumer-engine-recovery",
                 "enterprise-catalog-publishing",
                 "kingbase-consumer-flow",
@@ -129,6 +130,7 @@ class OnlineGateTest(unittest.TestCase):
         self.assertEqual(opengauss_suite.command, oceanbase_suite.command)
         self.assertEqual(opengauss_suite.services, oceanbase_suite.services)
         self.assertTrue(opengauss_suite.nightly)
+        self.assertTrue(ONLINE_GATE.SUITES["metric-service-revision-lifecycle"].nightly)
         self.assertFalse(oceanbase_suite.nightly)
         tidb_suite = ONLINE_GATE.SUITES["tidb-consumer-flow"]
         self.assertEqual(tidb_suite.command, oceanbase_suite.command)

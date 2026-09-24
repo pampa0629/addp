@@ -95,6 +95,11 @@ verify_empty_infra() {
   done
 }
 verify_empty_infra || fail "refusing existing or unverifiable addp-infra containers, networks or volumes"
+for hosted_project in "${HOSTED_FIXTURE_COMPOSE_PROJECTS[@]:-}"; do
+  [ -n "$hosted_project" ] || continue
+  [ -z "$(docker ps -aq --filter "label=com.docker.compose.project=$hosted_project")" ] ||
+    fail "refusing existing Compose project: $hosted_project"
+done
 for fixture_image in "${HOSTED_FIXTURE_IMAGES[@]:-}"; do
   [ -n "$fixture_image" ] || continue
   if docker image inspect "$fixture_image" >/dev/null 2>&1; then
@@ -140,6 +145,10 @@ run_daemon_launcher_logged() {
   return "$command_status"
 }
 
+stop_online_application() {
+  run_logged bash scripts/dev/stop.sh
+}
+
 finish() {
   local status=$?
   local cleanup=passed
@@ -147,7 +156,7 @@ finish() {
   trap - EXIT INT TERM
   set +e
   if [ "$application_owned" -eq 1 ]; then
-    run_logged bash scripts/dev/stop.sh || cleanup=failed
+    stop_online_application || cleanup=failed
   fi
   if [ "$fixture_owned" -eq 1 ]; then
     stop_online_fixture || cleanup=failed
@@ -195,6 +204,7 @@ set -a
 # Non-production defaults, only inside a verified disposable Hosted deployment.
 source "$ROOT_DIR/.env.example"
 set +a
+export INFRA_BIND_HOST=127.0.0.1
 export ADDP_ONLINE_HOST=1 ADDP_ONLINE_HOSTED=1 ADDP_ONLINE_TEST=1
 export ONLINE_SUITE POSTGRES_DB=addp_online SERVICE_HOST=127.0.0.1
 export SYSTEM_URL=http://127.0.0.1:8180 GATEWAY_URL=http://127.0.0.1:8000

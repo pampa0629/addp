@@ -45,6 +45,10 @@ class Suite:
 # Only executable owner-maintained Online suites belong here. Do not register
 # placeholders: an entry means the suite is ready for real Online acceptance.
 SUITES: Mapping[str, Suite] = {
+    "compose-public-origin": Suite(
+        command=(sys.executable, "scripts/test/compose-public-origin-online.py"),
+        services=(("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL")),
+    ),
     "ontology-revision-lifecycle": Suite(
         command=(sys.executable, "-m", "scripts.test.ontology-revision-lifecycle-online"),
         services=(("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL"), ("ontology", "ONTOLOGY_URL")),
@@ -176,6 +180,7 @@ SUITES: Mapping[str, Suite] = {
             ("security", "SECURITY_URL"),
             ("service", "SERVICE_URL"),
         ),
+        nightly=True,
     ),
     "quality-dynamic-binding": Suite(
         command=(sys.executable, "-m", "scripts.test.quality-dynamic-binding-online"),

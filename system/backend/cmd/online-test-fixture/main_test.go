@@ -69,6 +69,19 @@ func contains(values []string, target string) bool {
 	return false
 }
 
+func TestComposePublicOriginFixtureHasNoGrantedPermissions(t *testing.T) {
+	permissions, err := suitePermissions("compose-public-origin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(permissions) != 0 {
+		t.Fatalf("unexpected public origin fixture permissions: %#v", permissions)
+	}
+	if needsEngineProvisioner("compose-public-origin") {
+		t.Fatal("public origin fixture must not grant Engine provisioner access")
+	}
+}
+
 func TestValidateExternalEnvironment(t *testing.T) {
 	valid := []string{"GITHUB_ACTIONS=true", "RUNNER_OS=Linux", "ADDP_ONLINE_HOSTED=1"}
 	if err := validateExternalEnvironment(valid, filepath.Join(t.TempDir(), "fixture.env")); err != nil {

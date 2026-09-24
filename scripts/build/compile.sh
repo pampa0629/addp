@@ -13,8 +13,9 @@ ARCH="$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')"
 MULTI_ARCH=false
 FORCE_REBUILD=false
 LOCAL_BUILD=false
+SELECTED_SERVICES="all"
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-COMPILE_CACHE_DIR="${PROJECT_ROOT}/.compile-cache"
+source "${PROJECT_ROOT}/scripts/dev/build-identity.sh"
 
 # Build configuration
 BUILD_TYPE="${BUILD_TYPE:-release}"
@@ -30,7 +31,7 @@ export GOPATH="${LOCAL_GOPATH}"
 export GOCACHE="${LOCAL_GOCACHE}"
 export GOTOOLCHAIN="local"
 
-mkdir -p "$COMPILE_CACHE_DIR" "$LOCAL_GOMODCACHE" "$LOCAL_GOPATH" "$LOCAL_GOCACHE"
+mkdir -p "$LOCAL_GOMODCACHE" "$LOCAL_GOPATH" "$LOCAL_GOCACHE"
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -46,6 +47,11 @@ while [[ $# -gt 0 ]]; do
         --local)
             LOCAL_BUILD=true
             shift
+            ;;
+        --services)
+            [ "$#" -ge 2 ] || { echo "--services requires a comma-separated service list" >&2; exit 1; }
+            SELECTED_SERVICES="$2"
+            shift 2
             ;;
         *)
             echo -e "${RED}Unknown: $1${NC}"
@@ -64,93 +70,71 @@ echo -e "${BLUE}ADDP Binary Compiler${NC}"
 echo -e "Architecture: ${GREEN}${ARCH}${NC}"
 echo -e "Smart Cache: ${GREEN}Enabled${NC}\n"
 
-# Get latest source file modification time for a service
-get_source_mtime() {
-    local dir=$1
-    local latest=0
-
-    # Find all .go files and get the latest modification time
-    while IFS= read -r file; do
-        if [[ "$OSTYPE" == "darwin"* ]]; then
-            mtime=$(stat -f %m "$file" 2>/dev/null || echo 0)
+# The cache is keyed by the real Go dependency graph, including common/ and
+# build settings. An mtime check would reuse stale production binaries.
+service_entry_point() {
+    local name=$1 dir=$2
+    if [[ "$name" == *-worker ]]; then
+        if [ "$name" = "transfer-continuous-worker" ]; then
+            printf './cmd/continuous-worker\n'
         else
-            mtime=$(stat -c %Y "$file" 2>/dev/null || echo 0)
+            printf './cmd/worker\n'
         fi
-        [[ $mtime -gt $latest ]] && latest=$mtime
-    done < <(find "$dir" -name "*.go" -type f 2>/dev/null)
-
-    echo "$latest"
+    elif [ ! -d "$dir/cmd/server" ] && [ -d "$dir/cmd/gateway" ]; then
+        printf './cmd/gateway\n'
+    else
+        printf './cmd/server\n'
+    fi
 }
 
-# Check if binary needs recompilation
 needs_recompile() {
     local name=$1 dir=$2 arch=$3 binary_name=$4
-
-    # Force rebuild if --force flag is set
-    if [[ "$FORCE_REBUILD" == true ]]; then
-        return 0  # needs recompile
-    fi
-
-    # Calculate output path
-    local output_dir="${DIST_DIR}/${BUILD_TYPE}-${GOOS}-${arch}"
-    local binary_path="${output_dir}/${binary_name}"
-
-    # If binary doesn't exist, needs recompile
-    if [ ! -f "$binary_path" ]; then
-        return 0  # needs recompile
-    fi
-
-    # Get binary modification time
-    if [[ "$OSTYPE" == "darwin"* ]]; then
-        binary_mtime=$(stat -f %m "$binary_path" 2>/dev/null || echo 0)
-    else
-        binary_mtime=$(stat -c %Y "$binary_path" 2>/dev/null || echo 0)
-    fi
-
-    # Check cache file (include build context in cache name)
-    local cache_file="${COMPILE_CACHE_DIR}/${name}-${BUILD_TYPE}-${GOOS}-${arch}.cache"
-    if [ -f "$cache_file" ]; then
-        cached_mtime=$(cat "$cache_file")
-    else
-        cached_mtime=0
-    fi
-
-    # Get latest source modification time
-    source_mtime=$(get_source_mtime "$dir")
-
-    # If source is newer than binary or cache, needs recompile
-    if [[ $source_mtime -gt $binary_mtime ]] || [[ $source_mtime -gt $cached_mtime ]]; then
-        return 0  # needs recompile
-    fi
-
-    return 1  # no need to recompile
-}
-
-# Update compile cache
-update_compile_cache() {
-    local name=$1 arch=$2
-    local cache_file="${COMPILE_CACHE_DIR}/${name}-${BUILD_TYPE}-${GOOS}-${arch}.cache"
-    date +%s > "$cache_file"
+    [ "$FORCE_REBUILD" = false ] || return 0
+    local relative_output="dist/${BUILD_TYPE}-${GOOS}-${arch}/${binary_name}"
+    local entry_point
+    entry_point=$(service_entry_point "$name" "$dir")
+    [ -x "${PROJECT_ROOT}/${relative_output}" ] || return 0
+    local fingerprint_path current_fingerprint recorded_fingerprint
+    fingerprint_path=$(addp_build_fingerprint_path "$relative_output")
+    [ -f "$fingerprint_path" ] || return 0
+    current_fingerprint=$(compile_source_fingerprint "$dir" "$arch" "$entry_point") || return 0
+    recorded_fingerprint=$(sed -n '1p' "$fingerprint_path")
+    [ "$current_fingerprint" = "$recorded_fingerprint" ] && return 1
+    return 0
 }
 
 NATIVE_GOOS="$(go env GOOS)"
 NATIVE_GOARCH="$(go env GOARCH)"
 GO_DOCKER_IMAGE="golang:1.24"
 
+compile_source_fingerprint() {
+    local dir=$1 arch=$2 entry_point=$3
+    if [[ "$GOOS" != "$NATIVE_GOOS" ]]; then
+        docker run --rm \
+            --platform "${GOOS}/${arch}" \
+            -v "${PROJECT_ROOT}:/workspace" \
+            -v "${LOCAL_GOMODCACHE}:/go/pkg/mod" \
+            -v "${LOCAL_GOCACHE}:/root/.cache/go-build" \
+            -e GOMODCACHE=/go/pkg/mod \
+            -e GOCACHE=/root/.cache/go-build \
+            -e GOTOOLCHAIN=local \
+            -e CGO_ENABLED=1 \
+            -w "/workspace/${dir}" \
+            "${GO_DOCKER_IMAGE}" \
+            bash -c 'PROJECT_ROOT=/workspace; source /workspace/scripts/dev/build-identity.sh; addp_source_fingerprint "/workspace/$1" "$2"' \
+            _ "$dir" "$entry_point"
+    else
+        (export GOOS GOARCH="$arch" CGO_ENABLED=1;
+          addp_source_fingerprint "${PROJECT_ROOT}/${dir}" "$entry_point")
+    fi
+}
+
 compile_service() {
     local name=$1 dir=$2 arch=$3
+    COMPILE_WAS_BUILT=false
 
-    # Detect entry point
-    local entry_point="./cmd/server"
-
-    if [[ "$name" == *"-worker" ]]; then
-        entry_point="./cmd/worker"
-        if [ "$name" = "transfer-continuous-worker" ]; then
-            entry_point="./cmd/continuous-worker"
-        fi
-    elif [ ! -d "$dir/cmd/server" ] && [ -d "$dir/cmd/gateway" ]; then
-        entry_point="./cmd/gateway"
-    fi
+    local entry_point
+    entry_point=$(service_entry_point "$name" "$dir")
 
     # Calculate output path: dist/{build}-{os}-{arch}/{binary_name}
     local output_dir="${DIST_DIR}/${BUILD_TYPE}-${GOOS}-${arch}"
@@ -169,10 +153,17 @@ compile_service() {
         echo -e "${YELLOW}Compiling ${name} for ${GOOS}/${arch}...${NC}"
 
         local build_ok=false
+        local fingerprint_before fingerprint_after git_commit built_at build_id ldflags
+        fingerprint_before=$(compile_source_fingerprint "$dir" "$arch" "$entry_point") || return 1
+        git_commit=$(git -C "$PROJECT_ROOT" rev-parse HEAD)
+        built_at=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+        build_id="$(date -u '+%Y%m%dT%H%M%SZ')-${name}-$$"
+        ldflags="-s -w -X github.com/addp/common/buildinfo.BuildID=${build_id} -X github.com/addp/common/buildinfo.GitCommit=${git_commit} -X github.com/addp/common/buildinfo.SourceFingerprint=${fingerprint_before} -X github.com/addp/common/buildinfo.BuiltAt=${built_at}"
+        local temporary_output="${output_path}.tmp.$$"
 
         if [[ "$GOOS" != "$NATIVE_GOOS" ]]; then
             # Cross-OS compilation: use Docker to handle CGO dependencies (e.g. go-duckdb)
-            local rel_output="${output_path#$PROJECT_ROOT/}"
+            local rel_output="${temporary_output#$PROJECT_ROOT/}"
             if docker run --rm \
                 --platform "${GOOS}/${arch}" \
                 -v "${PROJECT_ROOT}:/workspace" \
@@ -181,25 +172,30 @@ compile_service() {
                 -e GOMODCACHE=/go/pkg/mod \
                 -e GOCACHE=/root/.cache/go-build \
                 -e GOTOOLCHAIN=local \
+                -e CGO_ENABLED=1 \
                 -w "/workspace/${dir}" \
                 "${GO_DOCKER_IMAGE}" \
-                go build -ldflags="-s -w" -o "/workspace/${rel_output}" ${entry_point}; then
+                go build -ldflags="$ldflags" -o "/workspace/${rel_output}" "$entry_point"; then
                 build_ok=true
             fi
         else
             # Native build
             cd "$dir"
-            if CGO_ENABLED=1 GOOS="${GOOS}" GOARCH="$arch" go build -ldflags="-s -w" -o "$output_path" $entry_point; then
+            if CGO_ENABLED=1 GOOS="${GOOS}" GOARCH="$arch" go build -ldflags="$ldflags" -o "$temporary_output" "$entry_point"; then
                 build_ok=true
             fi
             cd - > /dev/null
         fi
 
-        if [[ "$build_ok" == true ]]; then
+        fingerprint_after=$(compile_source_fingerprint "$dir" "$arch" "$entry_point") || build_ok=false
+        if [[ "$build_ok" == true && "$fingerprint_after" == "$fingerprint_before" ]]; then
+            mv -f "$temporary_output" "$output_path"
+            printf '%s\n' "$fingerprint_after" > "$(addp_build_fingerprint_path "dist/${BUILD_TYPE}-${GOOS}-${arch}/${binary_name}")"
+            COMPILE_WAS_BUILT=true
             echo -e "${GREEN}✓ Compiled ${binary_name} → ${output_path} ($(du -h $output_path | cut -f1))${NC}"
-            update_compile_cache "$name" "$arch"
             return 0
         else
+            rm -f "$temporary_output"
             echo -e "${RED}✗ Failed ${name}${NC}"
             return 1
         fi
@@ -236,6 +232,26 @@ SERVICES=(
     "inference-backend:inference/backend"
     "gateway:gateway"
 )
+if [ "$SELECTED_SERVICES" != all ]; then
+    IFS=',' read -ra selected <<< "$SELECTED_SERVICES"
+    [ "${#selected[@]}" -gt 0 ] || { echo "--services must name at least one service" >&2; exit 1; }
+    filtered=()
+    for name in "${selected[@]}"; do
+        found=false
+        for svc in "${SERVICES[@]}"; do
+            if [ "${svc%%:*}" = "$name" ]; then
+                filtered+=("$svc")
+                found=true
+                break
+            fi
+        done
+        [ "$found" = true ] || { echo "unknown --services entry: $name" >&2; exit 1; }
+    done
+    [ "${#filtered[@]}" -eq "${#selected[@]}" ] &&
+        [ "$(printf '%s\n' "${selected[@]}" | LC_ALL=C sort -u | wc -l | tr -d ' ')" -eq "${#selected[@]}" ] ||
+        { echo "--services contains duplicates" >&2; exit 1; }
+    SERVICES=("${filtered[@]}")
+fi
 failed=()
 compiled=0
 cached=0
@@ -254,7 +270,7 @@ for svc in "${SERVICES[@]}"; do
             [[ "$name" == *"-worker" ]] && binary_name="${binary_name}-worker"
 
             if compile_service "$name" "$dir" "$a"; then
-                if needs_recompile "$name" "$dir" "$a" "$binary_name" 2>/dev/null; then
+                if [ "$COMPILE_WAS_BUILT" = true ]; then
                     ((compiled++)) || true
                 else
                     ((cached++)) || true
@@ -270,7 +286,7 @@ for svc in "${SERVICES[@]}"; do
         [[ "$name" == *"-worker" ]] && binary_name="${binary_name}-worker"
 
         if compile_service "$name" "$dir" "$ARCH"; then
-            if needs_recompile "$name" "$dir" "$ARCH" "$binary_name" 2>/dev/null; then
+            if [ "$COMPILE_WAS_BUILT" = true ]; then
                 ((compiled++)) || true
             else
                 ((cached++)) || true

@@ -39,7 +39,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
-      - "${POSTGRES_PORT:-15432}:5432"
+      - "${INFRA_BIND_HOST:-0.0.0.0}:${POSTGRES_PORT:-15432}:5432"
     networks:
       - addp-network
     restart: unless-stopped
@@ -56,7 +56,7 @@ services:
     volumes:
       - redis_data:/data
     ports:
-      - "${REDIS_PORT:-16379}:6379"
+      - "${INFRA_BIND_HOST:-0.0.0.0}:${REDIS_PORT:-16379}:6379"
     networks:
       - addp-network
     restart: unless-stopped
@@ -92,8 +92,8 @@ services:
     volumes:
       - minio_data:/data
     ports:
-      - "${MINIO_API_PORT:-19000}:9000"
-      - "${MINIO_CONSOLE_PORT:-19001}:9001"
+      - "${INFRA_BIND_HOST:-0.0.0.0}:${MINIO_API_PORT:-19000}:9000"
+      - "${INFRA_BIND_HOST:-0.0.0.0}:${MINIO_CONSOLE_PORT:-19001}:9001"
     networks:
       - addp-network
     restart: unless-stopped
@@ -113,7 +113,7 @@ services:
     volumes:
       - meilisearch_data:/meili_data
     ports:
-      - "${MEILISEARCH_PORT:-17700}:7700"
+      - "${INFRA_BIND_HOST:-0.0.0.0}:${MEILISEARCH_PORT:-17700}:7700"
     networks:
       - addp-network
     restart: unless-stopped
@@ -165,7 +165,7 @@ services:
     volumes:
       - redpanda_data:/var/lib/redpanda/data
     ports:
-      - "${INFRA_KAFKA_PORT:-19092}:9092"
+      - "${INFRA_BIND_HOST:-0.0.0.0}:${INFRA_KAFKA_PORT:-19092}:9092"
     networks:
       - addp-network
     restart: unless-stopped
@@ -260,7 +260,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
-      - "${KAFKA_CONNECT_PORT:-18083}:8083"
+      - "${INFRA_BIND_HOST:-0.0.0.0}:${KAFKA_CONNECT_PORT:-18083}:8083"
     networks:
       - addp-network
     restart: unless-stopped

@@ -68,6 +68,8 @@ func suitePermissions(suite string) ([]string, error) {
 		return metricPermissions, nil
 	case "ontology-revision-lifecycle":
 		return ontologyPermissions, nil
+	case "compose-public-origin":
+		return nil, nil
 	default:
 		return nil, errors.New("unsupported Online identity fixture suite")
 	}
@@ -195,23 +197,25 @@ func run(args []string, environment []string) error {
 	if err != nil {
 		return fmt.Errorf("establish consumer membership: %w", err)
 	}
-	role, err := roleService.CreateRole(ctx, iam.CreateTenantRoleInput{
-		TenantID: tenant.ID, RoleKey: "online." + strings.ReplaceAll(*suite, "-", "_"),
-		Name: "Online suite consumer", Description: "Ephemeral external T4 minimum permissions",
-		ScopeTypes: []string{"tenant"}, PermissionKeys: permissions,
-		ActorPrincipalID: administrator.PrincipalID,
-		Audit:            audit("external-online-consumer-role"),
-	})
-	if err != nil {
-		return fmt.Errorf("create consumer role: %w", err)
-	}
-	if _, err := roleService.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{
-		TenantID: tenant.ID, MembershipID: membership.Membership.ID,
-		RoleIDs: []int64{role.ID}, ScopeType: "tenant", Reason: "External T4 acceptance",
-		ActorPrincipalID: administrator.PrincipalID,
-		Audit:            audit("external-online-consumer-assignment"),
-	}); err != nil {
-		return fmt.Errorf("assign consumer role: %w", err)
+	if len(permissions) > 0 {
+		role, err := roleService.CreateRole(ctx, iam.CreateTenantRoleInput{
+			TenantID: tenant.ID, RoleKey: "online." + strings.ReplaceAll(*suite, "-", "_"),
+			Name: "Online suite consumer", Description: "Ephemeral external T4 minimum permissions",
+			ScopeTypes: []string{"tenant"}, PermissionKeys: permissions,
+			ActorPrincipalID: administrator.PrincipalID,
+			Audit:            audit("external-online-consumer-role"),
+		})
+		if err != nil {
+			return fmt.Errorf("create consumer role: %w", err)
+		}
+		if _, err := roleService.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{
+			TenantID: tenant.ID, MembershipID: membership.Membership.ID,
+			RoleIDs: []int64{role.ID}, ScopeType: "tenant", Reason: "External T4 acceptance",
+			ActorPrincipalID: administrator.PrincipalID,
+			Audit:            audit("external-online-consumer-assignment"),
+		}); err != nil {
+			return fmt.Errorf("assign consumer role: %w", err)
+		}
 	}
 
 	consumerSession, err := issueSession(ctx, selectionService, consumer.PrincipalID, "external-online-consumer-session")

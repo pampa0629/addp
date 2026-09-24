@@ -17,9 +17,11 @@
 
 PostgreSQL、Redis、FalkorDB、MinIO、Meilisearch、Infra Kafka 和 Kafka Connect 由 `docker-compose.infra.yml` 管理。本地 `scripts/infra/up.sh` 优先使用根 `.env` 中的宿主机端口；若被其他进程占用，自动选取空闲端口，并在输出中报告。已经运行的本工作区容器保持现有映射，重启不随意换端口。开发进程从 Compose 查询实际映射，再构造数据库、缓存、存储、搜索和 Kafka 地址；容器间继续使用固定的服务名和内部端口。端口监听本身不能作为 ADDP 容器就绪或所有权的证据，必须核对 Compose 项目和健康状态。
 
+Infra 宿主机绑定地址由 `INFRA_BIND_HOST` 指定，默认 `0.0.0.0`；Hosted Online 固定为 `127.0.0.1`。FalkorDB 始终只绑定回环。该地址只影响宿主机发布，不改变容器网络中的服务名或端口。
+
 自动选端口只适用于本地基础设施宿主机映射。生产部署与 `addp-online` 专用 Runner 按其显式环境配置运行。Docker 最终绑定仍可能遇到检查后的并发抢占；启动失败时报告实际冲突，不连接占用该端口的其他服务。
 
-根 `docker-compose.yml` 的容器部署只向宿主机发布 Nginx 统一入口 `${NGINX_PORT:-80}:80`；Console、模块 Frontend、Gateway、Backend 和内置 Workflow Runtime 仅在应用 Docker 网络中使用稳定服务名和固定容器端口。Nginx 按路径转发前端与 `/api/`，Gateway 从 System 的 Backend 实例注册事实发现业务路由；Frontend 端口不注册到 System。宿主机入口端口由部署配置明确指定，冲突时启动失败，不在生产环境自动漂移。容器部署的对外 origin 由 `ADDP_PUBLIC_ORIGIN` 指定；未设置时按 `http://localhost:${NGINX_PORT:-80}` 构造，System 的 `PUBLIC_API_URL`、`CONSOLE_URL` 和 Monitor 的告警链接均使用此 origin。经域名、TLS 或上级反向代理发布时必须显式指定用户实际访问的 origin。模块 standalone 模式仍可单独部署，但不通过根 Compose 再发布一组固定的宿主机端口。
+根 `docker-compose.yml` 的容器部署只向宿主机发布 Nginx 统一入口 `${NGINX_BIND_HOST:-0.0.0.0}:${NGINX_PORT:-80}:80`；Console、模块 Frontend、Gateway、Backend 和内置 Workflow Runtime 仅在应用 Docker 网络中使用稳定服务名和固定容器端口。Nginx 按路径转发前端与 `/api/`，Gateway 从 System 的 Backend 实例注册事实发现业务路由；Frontend 端口不注册到 System。宿主机入口端口由部署配置明确指定，冲突时启动失败，不在生产环境自动漂移。容器部署的对外 origin 由 `ADDP_PUBLIC_ORIGIN` 指定；未设置时按 `http://localhost:${NGINX_PORT:-80}` 构造，System 的 `PUBLIC_API_URL`、`CONSOLE_URL` 和 Monitor 的告警链接均使用此 origin。经域名、TLS 或上级反向代理发布时必须显式指定用户实际访问的 origin。模块 standalone 模式仍可单独部署，但不通过根 Compose 再发布一组固定的宿主机端口。
 
 本地开发的 Gateway、各模块 Backend/Frontend 与工作流 Runtime 同样以本表开发端口为首选值。`scripts/dev/start.sh` 在 Infra 就绪后统一检查监听者；首选端口被其他服务占用时选取空闲端口，将最终端口注入模块进程、Gateway URL、Console 代理、iframe 地址、CORS 来源及 Vite HMR。运行中的本工作区服务沿用原端口；解析结果保存在忽略版本控制的 `.dev-state/ports.env`，仅作为本地运行状态，不改写根 `.env`。显式 `addp-online` Runner 仍使用配置端口并在冲突时失败。端口检查与监听之间仍可能出现并发抢占，实际绑定失败必须明确报错。
 

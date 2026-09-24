@@ -121,6 +121,8 @@ T4 只在隔离的 ADDP 测试部署执行，并按运行条件选择唯一部�
 
 三种 profile 共用同一个 `make test-online` 分发器和 owner 业务断言，生命周期脚本只负责当次环境和夹具。编排只调用现有 Infra、开发生命周期脚本和 `make test-online`，不得在 workflow 中复制模块启动逻辑或业务断言。退出路径必须停止本次应用进程并报告清理结果；常规 macOS self-hosted Infra 可在专用 Runner 常驻，Hosted 与 License 受控 owner-managed profile 的 Infra 必须随 Job 销毁。
 
+生产 Compose 单入口 T4 使用 Hosted disposable profile：在全新 Runner 上用正式构建入口生成 System Backend、Gateway、Console、System Frontend、Nginx 镜像，启动真实的这五个应用容器及当次 Infra。对外 Nginx 使用非默认回环端口；仅 T4 Compose 覆盖文件允许 System Backend 和 Gateway 额外发布回环诊断端口供通用构建身份预检，正式 Compose 保持只有 Nginx 对外发布。未参与验收的 Nginx 静态 upstream 只提供当次网络名称占位，不模拟参与断言的服务。业务断言必须从公开入口检查 Console、System Frontend、零权限 Tenant User 的 System AuthContext，以及引擎读取权限守卫返回 403，并核对 System 对外 origin 和容器实际端口；全部退出路径销毁应用、占位容器、镜像仓库和 Infra，核对容器、网络、卷零残留。首次真实通过前仅手工触发。
+
 质量动态绑定 T4 `quality-dynamic-binding` 使用专用 Tenant 的两个已审批 Model 物化任务作为永久夹具；两个 PostgreSQL 目标表必须预先存在、结构相同、行数稳定且非零。每轮经正式 API 创建带 Run ID 的规则、方案和编排，验证 Model 默认版本输入、上游 `target_locator` 动态绑定、失败阻断、重复失败工单去重、两个目标的结果与工单隔离，以及显式升级规则修订后逐目标恢复。方案默认绑定不得被执行覆盖，Model 定义和物理数据不得修改。清理只删除本轮编排、方案及规则并确认 404；执行审计保留，方案关联工单由 Quality 删除方案事务清理。执行未终结或创建响应丢失时不得报告零残留。入口和确定性脚本测试分别为 `make test-online ONLINE_SUITE=quality-dynamic-binding`、`make test-online-runner`；只登记手工 T4，首次专用环境真实通过前不加入夜间调度。
 
 ### 5.2 开关、身份与拓扑预检
@@ -162,7 +164,7 @@ Manager 平台内部产物类 T4 使用专用 Business MinIO Fixture 和永久 M
 
 Manager 混合检索类 T4 使用同一专用 Business MinIO Fixture 和永久 MinIO Engine Instance，Fixture owner 额外幂等写入仓库内确定性 JPG。专用 Tenant 必须通过正式 Inference 与 Manager 配置 API 预置支持文本和图片、维度为 2560 的 Model Profile 及 `semantic_search_embedding` 场景绑定；Provider Credential 只保存在 Inference 加密存储，Online 环境只声明预期 Model Profile ID。suite 不创建、更新或删除 Provider、Deployment、Model Profile、Credential 和场景绑定，而经 Gateway 触发真实 Meta scan 与 Manager ad-hoc embedding，验证 Inference、pgvector、Meilisearch 和 Manager 对称 RRF 融合的完整链路：同一 `document_id` 的关键词与向量候选只能返回一次，纯向量候选必须在融合后参与统一分页，响应不得包含旧 `vector_hits`。每轮 embedding 结果必须通过 Manager 正式 API 删除并确认零残留；新增 suite 只登记手工 `workflow_dispatch`，首次真实通过前不得加入夜间调度。
 
-指标修订生命周期 T4 `metric-service-revision-lifecycle` 唯一使用 GitHub Hosted `ubuntu-24.04` 临时部署，手工调度时明确选择 PostgreSQL 或 TiDB 业务引擎，每次只运行一个引擎变体。每轮自动创建独立 Infra、非默认 Tenant、最小权限 User、所选业务数据源，并通过正式 Meta、Standard 和 Model API 建立扫描结构、已发布定义、已审批逻辑表及已发布指标夹具。两个引擎变体复用同一指标契约、确定性数据和业务断言；各自使用符合其引擎目录模型的命名空间和独立物理夹具。使用带 Run ID 的独立实现，验证首次查询的非空确定结果、后续发布不会自动切换服务、撤回绑定修订后服务仍 active 但查询被拒绝，以及显式重绑后恢复。实现和修订历史在验收期间保持完整，禁止 SQL 删除或绕过 Model 生命周期；临时 Query Service 通过正式 API 删除并验证 404。退出时销毁整套临时数据库、业务容器和凭据，仅将无密钥的引擎类型、ID、状态、校验摘要、日志与清理结果归档为 Actions Artifact。不得复用个人环境、永久测试租户或自托管 profile；两个变体各自在首次真实通过前仅允许手工调度。
+指标修订生命周期 T4 `metric-service-revision-lifecycle` 唯一使用 GitHub Hosted `ubuntu-24.04` 临时部署，手工调度时明确选择 PostgreSQL 或 TiDB 业务引擎，每次只运行一个引擎变体；每日夜间调度在独立 Job 中运行两个变体。每轮自动创建独立 Infra、非默认 Tenant、最小权限 User、所选业务数据源，并通过正式 Meta、Standard 和 Model API 建立扫描结构、已发布定义、已审批逻辑表及已发布指标夹具。两个引擎变体复用同一指标契约、确定性数据和业务断言；各自使用符合其引擎目录模型的命名空间和独立物理夹具。使用带 Run ID 的独立实现，验证首次查询的非空确定结果、后续发布不会自动切换服务、撤回绑定修订后服务仍 active 但查询被拒绝，以及显式重绑后恢复。实现和修订历史在验收期间保持完整，禁止 SQL 删除或绕过 Model 生命周期；临时 Query Service 通过正式 API 删除并验证 404。退出时销毁整套临时数据库、业务容器和凭据，仅将无密钥的引擎类型、ID、状态、校验摘要、日志与清理结果归档为 Actions Artifact。不得复用个人环境、永久测试租户或自托管 profile；两个变体须各自首次真实通过并确认清理零残留后才可进入夜间调度。
 
 限时原值访问 T4 必须使用两名不同的专用 User，覆盖 `manager/preview` 的完整流程：申请用户在 Manager 出口发起申请，另一名审批用户在 Security 审批，批准后仅申请用户在有效期内看到原值，审批用户和其他用户仍看到遮盖值。到期后不得刷新 Security 投影或调用 Security 判定，必须直接由 Manager 根据本地投影恢复遮盖。Enrollment、Assessment、AccessRequest、Exemption 聚合及不可变修订属于专用 Tenant 的长期治理与审计事实，不作为临时业务资源删除；Assessment 修订使授权立即失效的事务语义由 Security PostgreSQL T2 覆盖，禁止为了 T4 重复运行而篡改或删除不可变审计历史。
 

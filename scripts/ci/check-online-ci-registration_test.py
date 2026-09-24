@@ -120,7 +120,10 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         registered = {"metric-service-revision-lifecycle"}
         CHECK.validate_metric_engine_variant(self.repository, registered)
         for missing in ("        default: postgresql\n", "          - tidb\n",
-                        "      ADDP_ONLINE_METRIC_ENGINE_TYPE: ${{ inputs.metric_engine }}\n"):
+                        "      fail-fast: false\n",
+                        "        metric_engine: ${{ fromJSON(github.event_name == 'schedule' && '[\"postgresql\",\"tidb\"]' || format('[\"{0}\"]', inputs.metric_engine)) }}\n",
+                        "      group: online-t4-metric-service-revision-lifecycle-${{ matrix.metric_engine }}\n",
+                        "      ADDP_ONLINE_METRIC_ENGINE_TYPE: ${{ matrix.metric_engine }}\n"):
             with self.subTest(missing=missing):
                 self.workflow.write_text(actual.replace(missing, "", 1), encoding="utf-8")
                 with self.assertRaises(CHECK.RegistrationError):
@@ -286,13 +289,13 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         with self.assertRaisesRegex(CHECK.RegistrationError, "concurrency group"):
             CHECK.check_registration(self.repository)
 
-    def test_repository_schedules_only_graduated_opengauss_profile(self) -> None:
+    def test_repository_schedules_graduated_opengauss_and_metric_profiles(self) -> None:
         repository = SCRIPT.parents[2]
 
         registry = CHECK.load_suite_registry(repository)
         nightly = CHECK.load_nightly_suites(registry)
 
-        self.assertEqual(nightly, {"opengauss-consumer-flow"})
+        self.assertEqual(nightly, {"opengauss-consumer-flow", "metric-service-revision-lifecycle"})
         CHECK.check_registration(repository)
 
     def test_rejects_workflow_without_readiness_check(self) -> None:

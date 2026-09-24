@@ -1315,8 +1315,19 @@ def validate_metric_engine_variant(repository: Path, registered: set[str]) -> No
             or re.findall(r"(?m)^          - ([a-z]+)$", options.group("body")) != ["postgresql", "tidb"]):
         raise RegistrationError("metric Online T4 must select PostgreSQL or TiDB explicitly")
     job = re.search(r"(?ms)^  metric-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)", workflow)
-    if job is None or "      ADDP_ONLINE_METRIC_ENGINE_TYPE: ${{ inputs.metric_engine }}\n" not in job.group("body"):
-        raise RegistrationError("Hosted metric T4 must pass the selected engine to its lifecycle")
+    if job is None:
+        raise RegistrationError("Hosted metric T4 job is missing")
+    body = job.group("body")
+    required = (
+        "    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.suite == 'metric-service-revision-lifecycle')\n",
+        "      fail-fast: false\n",
+        "        metric_engine: ${{ fromJSON(github.event_name == 'schedule' && '[\"postgresql\",\"tidb\"]' || format('[\"{0}\"]', inputs.metric_engine)) }}\n",
+        "      group: online-t4-metric-service-revision-lifecycle-${{ matrix.metric_engine }}\n",
+        "      ADDP_ONLINE_METRIC_ENGINE_TYPE: ${{ matrix.metric_engine }}\n",
+        "          name: online-t4-metric-service-revision-lifecycle-${{ matrix.metric_engine }}-${{ github.run_id }}\n",
+    )
+    if any(fragment not in body for fragment in required):
+        raise RegistrationError("Hosted metric T4 must schedule both engines and dispatch only the selected engine")
 
 
 def check_registration(repository: Path) -> None:
