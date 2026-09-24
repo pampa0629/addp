@@ -4,8 +4,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 cd "${ROOT_DIR}"
+source "${SCRIPT_DIR}/ports.sh"
 
-if [ -f ".env" ]; then
+if [ "${ADDP_DEV_PORTS_RESOLVED:-0}" != 1 ] && [ -f ".env" ]; then
   set -a
   source .env
   set +a
@@ -83,7 +84,7 @@ ensure_supermap_workflow_image() {
 
 ensure_supermap_workflow_image
 
-docker rm -f supermap-workflow-engine >/dev/null 2>&1 || true
+addp_dev_remove_owned_container supermap-workflow-engine
 mkdir -p "${output_dir}" .dev-pids
 
 mount_args=(-v "${output_dir}:/tmp/supermap-out")

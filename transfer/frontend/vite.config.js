@@ -8,13 +8,13 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 export default defineConfig({
   plugins: [vue()],
   server: {
-    port: 5176,
+    port: Number(process.env.TRANSFER_FE_PORT || 5176),
     strictPort: true, // 端口被占用时报错，不自动切换
     hmr: {
       protocol: 'ws',
       host: 'localhost',
-      port: 5176,
-      clientPort: 5176
+      port: Number(process.env.TRANSFER_FE_PORT || 5176),
+      clientPort: Number(process.env.TRANSFER_FE_PORT || 5176)
     },
     fs: {
       allow: [
@@ -25,7 +25,7 @@ export default defineConfig({
     },
     proxy: {
       '/api': {
-        target: 'http://localhost:8000', // 统一通过 Gateway 访问
+        target: `http://localhost:${process.env.GATEWAY_PORT || 8000}`, // 统一通过 Gateway 访问
         changeOrigin: true
       }
     }

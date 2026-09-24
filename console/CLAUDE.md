@@ -9,8 +9,8 @@ Console 是 ADDP 的统一前端入口，负责登录、全局导航、主题/�
 ## 技术栈与端口
 
 - 前端：Vue 3 + Vue Router + Pinia + Element Plus。
-- 开发端口：`5170`，启动脚本环境变量 `CONSOLE_FE_PORT`。
-- 开发代理：`/api` 统一代理到 Gateway `http://localhost:8000`。
+- 开发首选端口：`5170`，启动脚本解析后的实际端口由 `CONSOLE_FE_PORT` 传入。
+- 开发代理：`/api` 统一代理到启动时解析出的 Gateway 端口。
 
 ## 重要目录
 

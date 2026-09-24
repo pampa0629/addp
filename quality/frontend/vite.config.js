@@ -26,13 +26,13 @@ export default defineConfig({
     include: ['element-plus/es']
   },
   server: {
-    port: 5183,
+    port: Number(process.env.QUALITY_FE_PORT || 5183),
     strictPort: true,
     hmr: {
       protocol: 'ws',
       host: 'localhost',
-      port: 5183,
-      clientPort: 5183
+      port: Number(process.env.QUALITY_FE_PORT || 5183),
+      clientPort: Number(process.env.QUALITY_FE_PORT || 5183)
     },
     fs: {
       allow: [
@@ -43,7 +43,7 @@ export default defineConfig({
     },
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',
+        target: `http://localhost:${process.env.GATEWAY_PORT || 8000}`,
         changeOrigin: true
       }
     }

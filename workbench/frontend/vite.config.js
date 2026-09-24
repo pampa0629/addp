@@ -35,6 +35,6 @@ export default defineConfig({
     '@element-plus/icons-vue': resolve(__dirname, 'node_modules/@element-plus/icons-vue'),
     'element-plus': resolve(__dirname, 'node_modules/element-plus'), 'vue-i18n': resolve(__dirname, 'node_modules/vue-i18n')
   }, dedupe: ['vue', 'vue-i18n', 'element-plus', '@element-plus/icons-vue', 'axios', 'echarts', 'ol', 'proj4'] },
-  server: { port: 5190, strictPort: true, hmr: !isE2E, fs: { allow: [resolve(__dirname, '..'), resolve(__dirname, '../..'), resolve(__dirname, '../../common-frontend')] }, proxy: isE2E ? {} : { '/api': { target: 'http://localhost:8000', changeOrigin: true } } },
+  server: { port: Number(process.env.WORKBENCH_FE_PORT || 5190), strictPort: true, hmr: !isE2E, fs: { allow: [resolve(__dirname, '..'), resolve(__dirname, '../..'), resolve(__dirname, '../../common-frontend')] }, proxy: isE2E ? {} : { '/api': { target: `http://localhost:${process.env.GATEWAY_PORT || 8000}`, changeOrigin: true } } },
   base: isE2E ? '/' : '/workbench/'
 })

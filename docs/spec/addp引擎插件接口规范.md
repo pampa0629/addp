@@ -44,11 +44,11 @@ type EnginePlugin interface {
 - 所有可由 System 注册的内置插件必须实现 `ConnectionSpecProvider.ConnectionSpec()`，返回 `engine.connection/v1`。字段顺序、控件类型、默认值、必填、敏感、身份、条件显示、选项和跨字段约束只能在该描述中声明一次；System API、共享前端表单、敏感字段处理和身份归一化必须消费该描述，不得维护 `engine_type` 列表或条件分支。
 - 商业数据库插件若受官方驱动平台与再分发限制，可以把不含驱动的插件控制面代码编入 System，同时通过专用 build tag 只在获准平台加载官方驱动。此时无驱动进程只允许登记和展示，不得执行 `TestConnection` 或任何数据面 Provider；调用必须返回明确的执行边界错误，不能退化为 TCP 探活、CLI 代调或第三方驱动。
 - `DefaultPort()`、`RequiredFields()`、`SensitiveFields()` 与 `ConnectionIdentityFields()` 是现有运行时接口方法；内置可注册插件的这些方法必须从 `ConnectionSpec()` 派生，不能重复保存常量或字段列表。`ValidateConnectionInfo()` 负责协议级及条件级校验，`TestConnection()` 负责真实只读连接验证。
-- `ConnectionSpec` 中 `identity=true` 的非敏感字段决定 Engine Instance 身份。MongoDB 的身份是服务端点 `host`、`port` 与认证主体 `user`、`auth_source`；`database` 只是可选的工作台初始数据库，不是身份或权限边界。其他数据库插件按自身协议声明端点字段；对象存储声明 `endpoint`；NFS 声明 `server`、`export_path`。
+- `ConnectionSpec` 中 `identity=true` 的非敏感字段决定当前连接地址去重键，不决定永久 `engine_id`。MongoDB 的地址键是服务端点 `host`、`port` 与认证主体 `user`、`auth_source`；`database` 只是可选的工作台初始数据库，不是身份或权限边界。其他数据库插件按自身协议声明端点字段；对象存储声明 `endpoint`；NFS 声明 `server`、`export_path`。
 - `GET /api/v1/system/engine-types` 返回当前编译进 System 且 `origin=general` 的描述数组，并同时投影 capabilities 与 Engine Catalog Model。该接口不返回连接值或凭据；新增国产或其他数据库后，注册入口必须由插件描述自动出现，不允许同步修改前端类型列表或表单分支。
-- System 创建 Engine Instance 后会冻结身份字段。更新请求改变任一身份字段时返回 HTTP 409，用户必须创建新的 Engine Instance；密码等敏感凭据允许原地轮换。默认端口按插件语义归一化后比较，不能把省略默认值和显式默认值误判为不同端点。
-- System 使用插件声明的身份字段生成持久身份键，并在 Tenant 与 `engine_type` 范围内强制唯一。相同身份重复注册返回原 Engine Instance；`deleted` 墓碑只能通过显式恢复操作重新启用，恢复请求必须提交与原身份键一致的完整连接配置。名称、描述、密码、capabilities 和连接状态不参与身份键。
-- `engine_id` 只由数据库 identity sequence 分配且永久不复用。删除完成后 System 保留 `deleted` 墓碑和非敏感身份字段，清除 `ConnectionSpec` 中 `sensitive=true` 的凭据；插件和上层调用方不得通过物理删除、重置 sequence 或按名称新建来改变这一语义。
+- 有 `system.engine.update` 权限的用户确认同一实际引擎搬迁后，可在现有更新接口修改地址键字段并保留 `engine_id` 与已有引用；请求必须显式确认这一事实。System 校验连接配置、拒绝其他非删除实例占用的新地址，重置连接观测并发布更新事件。地址变化不自动证明源数据相同；要改接不同实际引擎必须新建实例并由各 owner 重绑。默认端口按插件语义归一化后比较。
+- System 使用插件声明的地址键字段在 Tenant 与 `engine_type` 范围内对非删除实例强制唯一。相同地址重复注册返回现有非删除 Engine Instance；`deleted` 墓碑不占用地址。恢复墓碑须用户显式确认同一实际引擎，提交完整连接配置并检查地址冲突。名称、描述、密码、capabilities 和连接状态不参与地址键。
+- `engine_id` 只由数据库 identity sequence 分配且永久不复用。删除完成后 System 保留 `deleted` 墓碑和非敏感连接字段，清除 `ConnectionSpec` 中 `sensitive=true` 的凭据；插件和上层调用方不得通过物理删除、重置 sequence 或按名称新建来改变这一语义。
 - 自研且未编译进当前进程的 extension engine 使用标准 HTTP 运行时身份字段 `protocol + host + port`，不得通过任意非敏感字段猜测身份。
 - `TestConnection()` 必须执行需要认证的最小只读真实操作，不能只做网络连通检查，也不得创建、更新、删除外部资源。
 - `Capabilities()` 必须返回结构化 `engine.capabilities/v1` 能力模板。该方法不得连接具体实例，不做运行时探测，只表达插件和 Provider 实现的能力上限。
@@ -639,6 +639,8 @@ TiDB 8.5.8 的 MySQL 协议层会拒绝驱动为 `ReadOnly=true` 生成的事务
 - 各 `common/engine/plugins/<engine>` 拥有引擎实现。`common/query/sqlcompile` 只承载显式共享的 SQL 编译组件，不导入具体引擎，不维护引擎名称分支。MySQL 与 TiDB 的共同 SQL 方言和执行前校验流程由 `common/engine/plugins/shared/analytical` 唯一实现；各 Provider 注入目录模型、系统库规则、实例认证和字段事实加载器，不互相导入 Provider 包。TiDB 必须独立认证版本、会话与语义，不能因协议兼容自动继承分析能力。
 - Model 拥有指标定义修订的引用、业务计算契约、关系解析和逻辑计划构建。Common 和引擎实现不接受指标 ID、`count_distinct`／`directional_overlap` 业务操作名或 Outdoor 专用字段。
 - Service 拥有发布服务、消费权限、结构化请求校验、cursor 和结果输出；排序、筛选、分页转为通用结果请求，不对指标原生查询做字符串包装。Workbench 仍只消费 Service 契约。
+
+TiDB 上层 T2 由既有 `make test-common-tidb` 同时运行 Common Provider、Model 共享指标金样和 Service 查询测试；Model/Service 的发布持久化仍由各自 PostgreSQL 门禁验证。上层测试与 Hosted T4 分开：T2 使用受控远程响应，T4 才覆盖真实 Gateway、IAM、Meta、Standard、Model 和 Service 的发布查询生命周期。
 
 #### 指标能力扩展影响矩阵
 

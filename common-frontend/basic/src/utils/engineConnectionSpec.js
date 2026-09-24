@@ -1,6 +1,6 @@
 export const SENSITIVE_PLACEHOLDER = '********'
 
-export const isMaskedSensitiveValue = value => typeof value === 'string' && /\*{4,}/.test(value)
+export const isMaskedSensitiveValue = value => typeof value === 'string' && /^\*{4,}$/.test(value)
 
 export function matchesFieldCondition(condition, connectionInfo = {}) {
   if (!condition) return true
@@ -33,7 +33,7 @@ export function applyConnectionSpecDefaults(connectionSpec, connectionInfo = {})
       normalized[field.key] = ''
     }
     const storedFlag = `_has_${field.key}`
-    if (field.sensitive && (original[storedFlag] === true || isMaskedSensitiveValue(value))) {
+    if (field.sensitive && isMaskedSensitiveValue(value)) {
       normalized[storedFlag] = true
       normalized[field.key] = SENSITIVE_PLACEHOLDER
     }

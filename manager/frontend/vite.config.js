@@ -79,17 +79,17 @@ export default defineConfig({
     }
   },
   server: {
-    port: 5174,
+    port: Number(process.env.MANAGER_FE_PORT || 5174),
     strictPort: true, // 端口被占用时报错，不自动切换
     hmr: isE2E ? false : {
       protocol: 'ws',
       host: 'localhost',
-      port: 5174,
-      clientPort: 5174
+      port: Number(process.env.MANAGER_FE_PORT || 5174),
+      clientPort: Number(process.env.MANAGER_FE_PORT || 5174)
     },
     proxy: {
       '/api': {
-        target: 'http://localhost:8000', // 统一通过 Gateway 访问
+        target: `http://localhost:${process.env.GATEWAY_PORT || 8000}`, // 统一通过 Gateway 访问
         changeOrigin: true
       }
     },

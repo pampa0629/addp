@@ -20,7 +20,7 @@ export default defineConfig({
     include: ['@antv/g6']
   },
   server: {
-    port: 5177,
+    port: Number(process.env.ORCHESTRATOR_FE_PORT || 5177),
     strictPort: true, // 端口被占用时报错，不自动切换
     host: '0.0.0.0',
     hmr: isE2E ? false : {
@@ -28,12 +28,12 @@ export default defineConfig({
       // 在 iframe 中运行时,强制使用正确的端口
       protocol: 'ws',
       host: 'localhost',
-      port: 5177,
-      clientPort: 5177
+      port: Number(process.env.ORCHESTRATOR_FE_PORT || 5177),
+      clientPort: Number(process.env.ORCHESTRATOR_FE_PORT || 5177)
     },
     proxy: {
       '/api': {
-        target: 'http://localhost:8000', // 统一通过 Gateway 访问
+        target: `http://localhost:${process.env.GATEWAY_PORT || 8000}`, // 统一通过 Gateway 访问
         changeOrigin: true
       }
     }

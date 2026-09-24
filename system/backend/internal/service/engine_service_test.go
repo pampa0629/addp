@@ -944,93 +944,95 @@ func TestMergePlainConnectionInfoReplacesSensitiveValue(t *testing.T) {
 	}
 }
 
-func TestValidateConnectionIdentityUnchangedForPostgreSQL(t *testing.T) {
-	service := NewEngineService(&repository.EngineRepository{}, nil, nil)
-	original := models.ConnectionInfo{
-		"host":     "db.internal",
-		"database": "analytics",
+func TestUpdateEngineAddressPreservesIDAndReferences(t *testing.T) {
+	repo := newEngineServiceTestRepository(t)
+	service := NewEngineService(repo, nil, nil)
+	tenantID, actorID := uint(7), uint(42)
+	original := models.ConnectionInfo{"protocol": "http", "host": "runtime.internal", "port": 8080}
+	created, _, err := service.Create(&models.EngineCreateRequest{
+		Name: "Runtime A", EngineType: "custom_runtime", EngineOrigin: "extension",
+		ConnectionInfo: original, Capabilities: customRuntimeCapabilities(),
+	}, actorID, tenantID)
+	if err != nil {
+		t.Fatal(err)
 	}
-
-	for _, test := range []struct {
-		name    string
-		updated models.ConnectionInfo
-		wantErr bool
-	}{
-		{
-			name: "default port is equivalent to explicit port",
-			updated: models.ConnectionInfo{
-				"host":     "db.internal",
-				"port":     5432,
-				"database": "analytics",
-			},
-		},
-		{
-			name: "credentials may change",
-			updated: models.ConnectionInfo{
-				"host":     "db.internal",
-				"database": "analytics",
-				"user":     "new-user",
-				"password": "new-password",
-			},
-		},
-		{
-			name: "host is immutable",
-			updated: models.ConnectionInfo{
-				"host":     "db-new.internal",
-				"database": "analytics",
-			},
-			wantErr: true,
-		},
-		{
-			name: "port is immutable",
-			updated: models.ConnectionInfo{
-				"host":     "db.internal",
-				"port":     5433,
-				"database": "analytics",
-			},
-			wantErr: true,
-		},
-		{
-			name: "database is immutable",
-			updated: models.ConnectionInfo{
-				"host":     "db.internal",
-				"database": "warehouse",
-			},
-			wantErr: true,
-		},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			err := service.validateConnectionIdentityUnchanged("postgresql", original, test.updated)
-			if test.wantErr && !errors.Is(err, ErrEngineIdentityImmutable) {
-				t.Fatalf("validateConnectionIdentityUnchanged() error = %v, want ErrEngineIdentityImmutable", err)
-			}
-			if !test.wantErr && err != nil {
-				t.Fatalf("validateConnectionIdentityUnchanged() error = %v", err)
-			}
-		})
+	stored, err := repo.GetByID(created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored.ConnectionStatus = models.EngineConnectionOnline
+	if err := repo.Update(stored); err != nil {
+		t.Fatal(err)
+	}
+	moved := models.ConnectionInfo{"protocol": "http", "host": "runtime.internal", "port": 8081}
+	request := &models.EngineUpdateRequest{Version: stored.Version, ConnectionInfo: &moved}
+	if _, err := service.Update(created.ID, tenantID, request); !errors.Is(err, ErrEngineRelocationUnconfirmed) {
+		t.Fatalf("unconfirmed move error = %v", err)
+	}
+	request.ConfirmSameEngine = true
+	updated, err := service.Update(created.ID, tenantID, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.ID != created.ID || updated.Version <= stored.Version || updated.ConnectionStatus != models.EngineConnectionUnknown {
+		t.Fatalf("moved engine = %#v", updated)
+	}
+	newKey, err := buildConnectionIdentityKey("custom_runtime", moved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.IdentityKey != newKey {
+		t.Fatalf("address key = %s, want %s", updated.IdentityKey, newKey)
+	}
+	if found, err := repo.FindByIdentityKey("custom_runtime", &tenantID, newKey); err != nil || found.ID != created.ID {
+		t.Fatalf("new address did not resolve to original ID: engine=%#v err=%v", found, err)
+	}
+	if err := service.RecordConnectionStatusForAddress(created.ID, stored.IdentityKey, models.EngineConnectionOnline, "stale probe"); err != nil {
+		t.Fatal(err)
+	}
+	latest, err := repo.GetByID(created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if latest.ConnectionStatus != models.EngineConnectionUnknown {
+		t.Fatalf("old address probe changed new address status: %s", latest.ConnectionStatus)
+	}
+	if _, err := service.Update(created.ID, tenantID, request); !errors.Is(err, ErrEngineVersionConflict) {
+		t.Fatalf("stale version error = %v", err)
 	}
 }
 
-func TestMongoConnectionIdentityUsesAuthenticationPrincipal(t *testing.T) {
-	service := &EngineService{}
-	original := models.ConnectionInfo{
-		"host": "mongo.internal", "port": 27017, "user": "reader",
-		"auth_source": "", "database": "business", "password": "old",
+func TestUpdateEngineAddressRejectsOccupiedAddress(t *testing.T) {
+	repo := newEngineServiceTestRepository(t)
+	service := NewEngineService(repo, nil, nil)
+	tenantID, actorID := uint(7), uint(42)
+	makeEngine := func(name string, port int) *models.Engine {
+		t.Helper()
+		result, _, err := service.Create(&models.EngineCreateRequest{
+			Name: name, EngineType: "custom_runtime", EngineOrigin: "extension",
+			ConnectionInfo: models.ConnectionInfo{"protocol": "http", "host": "runtime.internal", "port": port},
+			Capabilities:   customRuntimeCapabilities(),
+		}, actorID, tenantID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return result
 	}
-
-	passwordRotation := models.ConnectionInfo{
-		"host": "mongo.internal", "port": 27017, "user": "reader",
-		"auth_source": "admin", "database": "Outdoor", "password": "new",
+	first := makeEngine("Runtime A", 8080)
+	second := makeEngine("Runtime B", 8081)
+	moved := models.ConnectionInfo{"protocol": "http", "host": "runtime.internal", "port": 8081}
+	_, err := service.Update(first.ID, tenantID, &models.EngineUpdateRequest{
+		Version: first.Version, ConnectionInfo: &moved, ConfirmSameEngine: true,
+	})
+	if !errors.Is(err, ErrEngineAddressConflict) {
+		t.Fatalf("occupied address error = %v", err)
 	}
-	if err := service.validateConnectionIdentityUnchanged("mongodb", original, passwordRotation); err != nil {
-		t.Fatalf("default database and password must be mutable: %v", err)
+	stored, err := repo.GetByID(first.ID)
+	if err != nil {
+		t.Fatal(err)
 	}
-
-	changedUser := models.ConnectionInfo{
-		"host": "mongo.internal", "port": 27017, "user": "writer", "auth_source": "admin",
-	}
-	if err := service.validateConnectionIdentityUnchanged("mongodb", original, changedUser); !errors.Is(err, ErrEngineIdentityImmutable) {
-		t.Fatalf("changing MongoDB user must change identity, got %v", err)
+	if stored.ID != first.ID || stored.IdentityKey == second.IdentityKey {
+		t.Fatalf("first engine changed on conflict: %#v", stored)
 	}
 }
 
@@ -1103,7 +1105,7 @@ func TestCreateIsIdempotentByPermanentIdentityAndPreservesDisabledState(t *testi
 	}
 }
 
-func TestDeletedIdentityRequiresExplicitRestoreAndKeepsID(t *testing.T) {
+func TestDeletedEngineCanRestoreItsIDAndDoesNotReserveAddress(t *testing.T) {
 	repo := newEngineServiceTestRepository(t)
 	service := NewEngineService(repo, nil, nil)
 	tenantID := uint(7)
@@ -1129,10 +1131,6 @@ func TestDeletedIdentityRequiresExplicitRestoreAndKeepsID(t *testing.T) {
 	if err := repo.Update(stored); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := service.Create(request, actorID, tenantID); !errors.Is(err, ErrEngineRestoreRequired) {
-		t.Fatalf("Create() error = %v, want ErrEngineRestoreRequired", err)
-	}
-
 	restored, err := service.Restore(stored.ID, tenantID, actorID, &models.EngineRestoreRequest{
 		Version: stored.Version, Name: "Runtime Restored", ConnectionInfo: request.ConnectionInfo,
 		Capabilities: customRuntimeCapabilities(),
@@ -1142,6 +1140,19 @@ func TestDeletedIdentityRequiresExplicitRestoreAndKeepsID(t *testing.T) {
 	}
 	if restored.ID != createdEngine.ID || restored.LifecycleState != models.EngineLifecycleActive || restored.Version <= stored.Version {
 		t.Fatalf("restored engine = %#v", restored)
+	}
+	stored, err = repo.GetByID(restored.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored.LifecycleState = models.EngineLifecycleDeleted
+	if err := repo.Update(stored); err != nil {
+		t.Fatal(err)
+	}
+	request.Name = "New registration"
+	newEngine, created, err := service.Create(request, actorID, tenantID)
+	if err != nil || !created || newEngine.ID == restored.ID {
+		t.Fatalf("Create() after tombstone engine=%#v created=%v err=%v", newEngine, created, err)
 	}
 }
 

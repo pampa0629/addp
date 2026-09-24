@@ -16,17 +16,17 @@ export default defineConfig({
     dedupe: ['vue', 'vue-i18n', 'element-plus', '@element-plus/icons-vue', 'axios']
   },
   server: {
-    port: 5175,
+    port: Number(process.env.META_FE_PORT || 5175),
     strictPort: true, // 端口被占用时报错，不自动切换
     hmr: {
       protocol: 'ws',
       host: 'localhost',
-      port: 5175,
-      clientPort: 5175
+      port: Number(process.env.META_FE_PORT || 5175),
+      clientPort: Number(process.env.META_FE_PORT || 5175)
     },
     proxy: {
       '/api': {
-        target: 'http://localhost:8000', // 统一通过 Gateway 访问
+        target: `http://localhost:${process.env.GATEWAY_PORT || 8000}`, // 统一通过 Gateway 访问
         changeOrigin: true
       }
     },

@@ -220,7 +220,9 @@ const requestURL = computed(() => {
   const serviceName = service.value?.service_name
   if (!serviceName) return ''
 
-  const apiBase = import.meta.env.DEV ? 'http://localhost:8086' : window.location.origin
+  const apiBase = import.meta.env.DEV
+    ? `${window.location.protocol}//${window.location.hostname}:${import.meta.env.VITE_ADDP_SERVICE_BACKEND_PORT || 8086}`
+    : window.location.origin
   const base = `${apiBase}/ogc`
 
   if (protocol.value === 'ogc_api') {

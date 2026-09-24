@@ -15,11 +15,11 @@ export default defineConfig({
     dedupe: ['vue', 'vue-i18n', 'element-plus', '@element-plus/icons-vue', 'axios']
   },
   server: {
-    port: 5188,
+    port: Number(process.env.INFERENCE_FE_PORT || 5188),
     strictPort: true,
     host: '0.0.0.0',
     proxy: {
-      '/api': { target: 'http://localhost:8000', changeOrigin: true }
+      '/api': { target: `http://localhost:${process.env.GATEWAY_PORT || 8000}`, changeOrigin: true }
     },
     fs: { allow: ['..'] }
   },

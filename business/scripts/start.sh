@@ -305,7 +305,15 @@ if [ "$ENABLE_OPENGAUSS" = true ]; then
     echo -e "${GREEN}✓ openGauss ${OPENGAUSS_OFFICIAL_VERSION} 官方介质已校验并加载${NC}"
 fi
 
-# 4. 检查端口占用（幂等）
+# 4. 解析本地 Business 端口，已登记的端口在重启后保持不变。
+source "$SCRIPT_DIR/ports.sh"
+SELECTED_PORT_SERVICES=()
+[ "$ENABLE_PG" = true ] && SELECTED_PORT_SERVICES+=(postgres)
+[ "$ENABLE_MYSQL" = true ] && SELECTED_PORT_SERVICES+=(mysql)
+[ "$ENABLE_MINIO" = true ] && SELECTED_PORT_SERVICES+=(minio)
+addp_business_resolve_ports "${SELECTED_PORT_SERVICES[@]}"
+
+# 其余 Business 服务仍使用显式端口；启动前提示当前占用。
 PG_PORT=${POSTGRES_PORT:-5433}
 ORACLE_PORT_VAL=${ORACLE_PORT:-15210}
 SUPERMAP_PG_PORT=${SUPERMAP_POSTGRESQL_PORT:-5434}
@@ -370,16 +378,13 @@ check_port_used_by_self() {
 
 echo -e "${YELLOW}检查端口...${NC}"
 PORTS_TO_CHECK=""
-[ "$ENABLE_PG" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $PG_PORT"
 [ "$ENABLE_ORACLE" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $ORACLE_PORT_VAL"
 [ "$ENABLE_SUPERMAP_PG" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $SUPERMAP_PG_PORT"
-[ "$ENABLE_MINIO" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $MINIO_API $MINIO_CONSOLE"
 [ "$ENABLE_CLICKHOUSE" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $CLICKHOUSE_PORT $CLICKHOUSE_HTTP_PORT"
 [ "$ENABLE_MONGODB" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $MONGO_PORT"
 [ "$ENABLE_DORIS" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $DORIS_FE_PORT $DORIS_FE_HTTP_PORT"
 [ "$ENABLE_SPARK" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $SPARK_MASTER_PORT $SPARK_MASTER_UI $SPARK_THRIFT_PORT"
 [ "$ENABLE_NEO4J" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $NEO4J_HTTP_PORT_VAL $NEO4J_BOLT_PORT_VAL"
-[ "$ENABLE_MYSQL" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $MYSQL_PORT_VAL"
 [ "$ENABLE_OCEANBASE" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $OCEANBASE_PORT_VAL"
 [ "$ENABLE_TIDB" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $TIDB_PORT_VAL"
 [ "$ENABLE_OPENGAUSS" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $OPENGAUSS_PORT_VAL"
@@ -594,28 +599,29 @@ if [ "$ENABLE_NFS" = true ]; then
         exit 1
     fi
 
-    if [ "$EUID" -ne 0 ]; then
-        echo -e "${RED}✗ 配置 macOS NFS 需要 sudo 权限${NC}"
-        echo -e "${YELLOW}请在仓库根目录使用: sudo bash business/scripts/start.sh -nfs${NC}"
-        exit 1
-    fi
-
     EXPORTS_FILE="/etc/exports"
     OLD_EXPORT="${PROJECT_ROOT}/nas-data"
     NEW_EXPORT="${NFS_EXPORT_PATH}"
-
-    if [ -f "${EXPORTS_FILE}" ]; then
-        sed -i '' "s|${OLD_EXPORT}|${NEW_EXPORT}|g" "${EXPORTS_FILE}"
+    if grep -Fqx "${NEW_EXPORT} -alldirs -mapall=501 -noresvport" "$EXPORTS_FILE" 2>/dev/null &&
+       nfsd status 2>/dev/null | grep -q 'nfsd is running' &&
+       showmount -e localhost 2>/dev/null | grep -Fq "$NEW_EXPORT"; then
+        echo -e "${GREEN}✓ macOS NFS 导出已运行，沿用现有配置${NC}"
+    else
+        if [ "$EUID" -ne 0 ]; then
+            echo -e "${RED}✗ 配置 macOS NFS 需要 sudo 权限${NC}"
+            echo -e "${YELLOW}请在仓库根目录使用: sudo bash business/scripts/start.sh -nfs${NC}"
+            exit 1
+        fi
+        if [ -f "${EXPORTS_FILE}" ]; then
+            sed -i '' "s|${OLD_EXPORT}|${NEW_EXPORT}|g" "${EXPORTS_FILE}"
+        fi
+        if ! grep -Fqx "${NEW_EXPORT} -alldirs -mapall=501 -noresvport" "${EXPORTS_FILE}" 2>/dev/null; then
+            echo "${NEW_EXPORT} -alldirs -mapall=501 -noresvport" >> "${EXPORTS_FILE}"
+        fi
+        nfsd restart >/dev/null 2>&1 || nfsd enable >/dev/null 2>&1 || true
+        nfsd checkexports >/dev/null 2>&1 || true
+        echo -e "${GREEN}✓ macOS NFS 导出已配置并重载${NC}"
     fi
-
-    if ! grep -Fq "${NEW_EXPORT} -alldirs -mapall=501 -noresvport" "${EXPORTS_FILE}" 2>/dev/null; then
-        echo "${NEW_EXPORT} -alldirs -mapall=501 -noresvport" >> "${EXPORTS_FILE}"
-    fi
-
-    nfsd restart >/dev/null 2>&1 || nfsd enable >/dev/null 2>&1 || true
-    nfsd checkexports >/dev/null 2>&1 || true
-
-    echo -e "${GREEN}✓ macOS NFS 导出已配置并重载${NC}"
 fi
 echo ""
 
@@ -623,13 +629,19 @@ echo ""
 echo -e "${YELLOW}⏳ 等待服务就绪...${NC}"
 
 if [ "$ENABLE_PG" = true ]; then
+    PG_READY=false
     for i in {1..30}; do
         if docker exec business-postgres pg_isready -U business >/dev/null 2>&1; then
             echo -e "${GREEN}✓ PostgreSQL 就绪${NC}"
+            PG_READY=true
             break
         fi
         sleep 1
     done
+    if [ "$PG_READY" != true ]; then
+        echo -e "${RED}✗ PostgreSQL 未在 30 秒内就绪${NC}"
+        exit 1
+    fi
 fi
 
 if [ "$ENABLE_ORACLE" = true ]; then
@@ -675,13 +687,19 @@ if [ "$ENABLE_SUPERMAP_PG" = true ]; then
 fi
 
 if [ "$ENABLE_MINIO" = true ]; then
+    MINIO_READY=false
     for i in {1..30}; do
         if curl -sf http://localhost:${MINIO_API}/minio/health/live >/dev/null 2>&1; then
             echo -e "${GREEN}✓ MinIO 就绪${NC}"
+            MINIO_READY=true
             break
         fi
         sleep 1
     done
+    if [ "$MINIO_READY" != true ]; then
+        echo -e "${RED}✗ MinIO 未在 30 秒内就绪${NC}"
+        exit 1
+    fi
 fi
 
 if [ "$ENABLE_CLICKHOUSE" = true ]; then
@@ -745,10 +763,13 @@ fi
 
 if [ "$ENABLE_NFS" = true ]; then
     NFS_EXPORT_PATH="${PROJECT_ROOT}/nfs/data"
-    if [ -d "${NFS_EXPORT_PATH}" ]; then
+    if [ -d "${NFS_EXPORT_PATH}" ] &&
+       nfsd status 2>/dev/null | grep -q 'nfsd is running' &&
+       showmount -e localhost 2>/dev/null | grep -Fq "${NFS_EXPORT_PATH}"; then
         echo -e "${GREEN}✓ NFS 就绪${NC}"
     else
-        echo -e "${YELLOW}⚠️  NFS 导出目录不存在: ${NFS_EXPORT_PATH}${NC}"
+        echo -e "${RED}✗ NFS 导出不可访问: ${NFS_EXPORT_PATH}${NC}"
+        exit 1
     fi
 fi
 
@@ -768,6 +789,10 @@ if [ "$ENABLE_MYSQL" = true ]; then
     fi
 
     bash mysql/init-cdc.sh
+fi
+
+if [ "${#SELECTED_PORT_SERVICES[@]}" -gt 0 ]; then
+    addp_business_save_actual_ports
 fi
 
 if [ "$ENABLE_OCEANBASE" = true ]; then

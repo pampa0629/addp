@@ -58,10 +58,10 @@ const (
 	MsgModuleVersionConflict        = "system.module.version_conflict"
 	MsgTaskProviderNotFound         = "system.task_provider.not_found"
 
-	MsgEngineIdentityImmutable           = "system.engine.identity_immutable"
+	MsgEngineAddressConflict             = "system.engine.address_conflict"
+	MsgEngineRelocationUnconfirmed       = "system.engine.relocation_unconfirmed"
 	MsgEngineDeleting                    = "system.engine.deleting"
 	MsgEngineDeleted                     = "system.engine.deleted"
-	MsgEngineRestoreRequired             = "system.engine.restore_required"
 	MsgEngineVersionConflict             = "system.engine.version_conflict"
 	MsgEngineLifecycleInvalid            = "system.engine.lifecycle_invalid"
 	MsgEngineArtifactPolicyInvalid       = "system.engine.artifact_policy_invalid"

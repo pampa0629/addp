@@ -74,7 +74,7 @@ services:
     volumes:
       - falkordb_data:/data
     ports:
-      - "127.0.0.1:16479:6379"
+      - "127.0.0.1:${FALKORDB_PORT:-16479}:6379"
     networks:
       - addp-network
     restart: unless-stopped

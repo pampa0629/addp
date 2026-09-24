@@ -47,7 +47,7 @@ echo -e "${YELLOW}========================================${NC}"
 echo ""
 
 # Load environment variables
-if [ -f ./.env ]; then
+if [ "${ADDP_INFRA_RESOLVED:-0}" != "1" ] && [ -f ./.env ]; then
     set -a
     # shellcheck disable=SC1091
     source ./.env || true

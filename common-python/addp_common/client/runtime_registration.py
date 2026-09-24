@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import threading
 from collections.abc import Callable
 from typing import Any
@@ -9,6 +10,15 @@ from typing import Any
 import httpx
 
 from .service_token import SyncOAuthServiceTokenSource
+
+
+def runtime_advertised_port(listen_port: int) -> int:
+    """Return the host port reported to System by a containerized Runtime."""
+    raw = os.getenv("RUNTIME_PUBLIC_PORT")
+    port = int(raw) if raw else listen_port
+    if port < 1 or port > 65535:
+        raise ValueError("RUNTIME_PUBLIC_PORT must be a TCP port")
+    return port
 
 
 def register_runtime_engine(

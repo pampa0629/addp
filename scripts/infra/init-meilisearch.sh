@@ -17,7 +17,7 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 cd "${PROJECT_ROOT}"
 
 # Optional: load env overrides if present
-if [ -f ./.env ]; then
+if [ "${ADDP_INFRA_RESOLVED:-0}" != "1" ] && [ -f ./.env ]; then
   set -a
   # shellcheck disable=SC1091
   source ./.env || true

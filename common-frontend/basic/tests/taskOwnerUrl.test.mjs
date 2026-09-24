@@ -20,3 +20,16 @@ test('production, test and unallocated origins remain unchanged', () => {
     assert.equal(resolveConsoleOrigin({origin, protocol:'https:', hostname:'localhost', port}), origin)
   }
 })
+
+test('resolves allocated module ports to the allocated Console port', () => {
+  const environment = {
+    VITE_ADDP_FRONTEND_PORTS: 'console:15170,manager:15174,ontology:15192',
+    VITE_ADDP_CONSOLE_PORT: '15170'
+  }
+  assert.equal(resolveConsoleOrigin({
+    origin: 'http://localhost:15174', protocol: 'http:', hostname: 'localhost', port: '15174'
+  }, '', environment), 'http://localhost:15170')
+  assert.equal(resolveConsoleOrigin({
+    origin: 'http://localhost:4192', protocol: 'http:', hostname: 'localhost', port: '4192'
+  }, '', environment), 'http://localhost:4192')
+})

@@ -114,6 +114,18 @@ class OnlineCIRegistrationTest(unittest.TestCase):
 
         self.assertEqual(setup_node_pin(online), setup_node_pin(platform))
 
+    def test_metric_engine_variant_is_explicitly_wired_to_hosted_job(self) -> None:
+        actual = (SCRIPT.parents[2] / ".github/workflows/online-t4-gates.yml").read_text(encoding="utf-8")
+        self.workflow.write_text(actual, encoding="utf-8")
+        registered = {"metric-service-revision-lifecycle"}
+        CHECK.validate_metric_engine_variant(self.repository, registered)
+        for missing in ("        default: postgresql\n", "          - tidb\n",
+                        "      ADDP_ONLINE_METRIC_ENGINE_TYPE: ${{ inputs.metric_engine }}\n"):
+            with self.subTest(missing=missing):
+                self.workflow.write_text(actual.replace(missing, "", 1), encoding="utf-8")
+                with self.assertRaises(CHECK.RegistrationError):
+                    CHECK.validate_metric_engine_variant(self.repository, registered)
+
     def test_discovers_hosted_profile_from_metadata(self) -> None:
         hosted = self.repository / "scripts/test/online-hosted-example-gate.sh"
         hosted.write_text(

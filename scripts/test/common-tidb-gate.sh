@@ -63,6 +63,18 @@ if grep -q -- '--- SKIP:' "$WORK_DIR/common-tidb.log"; then
     exit 1
 fi
 
+# Owner tests keep their business fixtures local while reusing this owned server.
+for owner in model service; do
+    (
+        cd "$ROOT_DIR/$owner/backend"
+        ADDP_TIDB_INTEGRATION=1 go test ./internal/service -run '^TestIntegrationTiDB' -count=1 -v
+    ) 2>&1 | tee "$WORK_DIR/$owner-tidb.log"
+    if grep -q -- '--- SKIP:' "$WORK_DIR/$owner-tidb.log"; then
+        echo "TiDB gate refuses skipped $owner tests" >&2
+        exit 1
+    fi
+done
+
 docker run --rm --network "${COMPOSE_PROJECT}_default" \
     mysql:8.0@sha256:7dcddc01f13bab2f15cde676d44d01f61fc9f99fe7785e86196dfc07d358ae2b \
     mysql -htidb -P4000 -uroot --protocol=tcp --connect-timeout=10 \

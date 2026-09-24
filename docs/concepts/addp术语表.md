@@ -16,7 +16,7 @@
 | File Geodatabase | 文件地理数据库 | ArcGIS `.gdb` 目录承载的多图层矢量容器格式；ADDP 使用 `format=filegdb + layout=whole + data_type=container` 表达，feature class / table 是容器 child。 | 内置开源数据面使用 GDAL OpenFileGDB；普通图层读写不等同 Enterprise Geodatabase、SDE 注册、拓扑或版本化支持。 |
 | Microsoft Access Database | Microsoft Access 数据库 | Microsoft Jet / Access `.mdb` 承载的通用数据库容器格式；ADDP 使用 `format=access + layout=single + data_type=container` 表达。 | `.mdb` 后缀和 `application/x-msaccess` MIME 只证明 Access 容器候选，不能证明它是 ArcGIS Personal Geodatabase。 |
 | Personal Geodatabase | 个人地理数据库 | Microsoft Access `.mdb` 承载、且经 ArcGIS PGeo 驱动确定性识别的旧 ArcGIS 地理数据库容器格式；ADDP 使用 `format=pgeo + layout=single + data_type=container` 表达。 | Meta 深度扫描从 `access` 候选精化为 `pgeo`；内置开源数据面只允许作为只读 source，通过 GDAL PGeo + unixODBC / MDB Tools 抽取，不提供 `.mdb` 写回。 |
-| Engine Instance | 引擎实例 | System 中一条绑定到确定物理端点、具有永久平台 ID 的引擎登记事实。 | `engine_id` 单调分配、永久保留且不得复用；物理端点身份不可原地改变，端点变化必须创建新的 Engine Instance。相同身份重复注册或显式恢复墓碑时沿用原 ID。 |
+| Engine Instance | 引擎实例 | System 中一条代表同一实际引擎、具有永久平台 ID 的登记事实。 | `engine_id` 单调分配、永久保留且不得复用；同一实际引擎搬迁时，有 `system.engine.update` 权限的用户可确认后更新连接地址并保留 ID 与已有引用。不同实际引擎必须创建新实例，不得借编辑改挂旧引用。连接地址键只用于当前非删除实例去重。 |
 | Engine Runtime Descriptor | 引擎运行时描述 | System 面向受信 Runtime Service Principal 提供的脱敏 Engine Instance 控制面投影。 | 只包含实例身份、生命周期、能力声明和工作流/脚本运行时的 `protocol/host/port`；不包含数据引擎凭据、数据库连接参数或可直接读取业务数据的明文连接。 |
 | engine lifecycle state | 引擎生命周期状态 | Engine Instance 当前能否被正常消费、正在退出平台或已成为墓碑的状态。 | 统一使用 `active`、`disabled`、`deleting`、`deleted`；`deleting` 保留连接只用于 cleanup，`deleted` 仅保留永久身份和审计并移除敏感凭据，二者都不进入正常业务选择。 |
 | engine connectivity observation | 引擎连通性观测 | System 对 Engine Instance 最近一次连接检测得到的运行时观测结果。 | 统一使用 `online`、`offline`、`unknown`、`checking`；它是带检测时间和消息的缓存，不改变生命周期，也不等同于持续保持的物理连接。 |

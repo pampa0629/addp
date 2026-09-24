@@ -11,7 +11,7 @@ import (
 )
 
 func TestAnalyticalResultRequestsUseFrozenPackage(t *testing.T) {
-	for _, engineType := range []string{"postgresql", "mysql", "metric_test_extension"} {
+	for _, engineType := range []string{"postgresql", "mysql", "tidb", "metric_test_extension"} {
 		t.Run(engineType, func(t *testing.T) {
 			frozen, engine := metricServiceFixture(t, engineType)
 			snapshot := &models.QueryServiceDependencySnapshot{CapturedAt: time.Now(), MetricSource: &frozen}

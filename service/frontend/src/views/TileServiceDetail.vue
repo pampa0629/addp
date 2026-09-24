@@ -454,13 +454,9 @@ const metaApiBaseUrl = computed(() => {
 
 // 计算服务端点
 const baseURL = computed(() => {
-  // 开发环境：使用 Service 后端地址（8190）或 Gateway（8000）
-  // 生产环境：使用 Gateway（8000）
   if (import.meta.env.DEV) {
-    // 开发环境优先使用 Gateway，因为它有完整的路由
-    return 'http://localhost:8000'
+    return `${window.location.protocol}//${window.location.hostname}:${import.meta.env.VITE_ADDP_GATEWAY_PORT || 8000}`
   } else {
-    // 生产环境通过 Gateway 访问
     return window.location.origin
   }
 })

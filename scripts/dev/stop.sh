@@ -7,6 +7,7 @@ source "${SCRIPT_DIR}/../utils/colors.sh"
 
 cd "${ROOT_DIR}"
 source "${SCRIPT_DIR}/lifecycle-lock.sh"
+source "${SCRIPT_DIR}/ports.sh"
 addp_acquire_lifecycle_lock stop "$@"
 
 echo "🛑 停止 ADDP 开发环境"
@@ -55,24 +56,34 @@ stop_workspace_launchd_jobs() {
   fi
 }
 
-# 一次查询全部目标 TCP 监听端口；客户端连接不属于残留服务。
+addp_dev_pid_owned_by_workspace() {
+  local pid="$1" cwd
+  cwd=$(lsof -nP -a -p "$pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | head -n 1)
+  case "$cwd" in
+    "$ROOT_DIR"|"$ROOT_DIR"/*) return 0 ;;
+  esac
+  return 1
+}
+
+# 只清理当前工作区端口上、工作目录也属于当前工作区的残留监听者。
 stop_port_listeners() {
-  local ports="8180,8081,8082,8083,8084,8185,8086,8087,8089,8097,8098,8099,8100,8101,8102,8103,8104,8105,8110,8181,8182,8183,8184,8186,8190,8191,8192,8193,8195,8291,5170,5173,5174,5175,5176,5177,5178,5179,5180,5181,5182,5183,5184,5185,5186,5187,5188,5189,5190"
-  local listener_pids pid proc_cmd
+  local ports='' name variable preferred saved listener_pids pid proc_cmd
+  while read -r name variable preferred; do
+    saved=$(addp_dev_saved_port "$variable")
+    ports="${ports:+${ports},}${saved:-${!variable:-$preferred}}"
+  done < <(addp_dev_port_specs)
   listener_pids=$(lsof -nP -a -iTCP:"$ports" -sTCP:LISTEN -Fp 2>/dev/null |
     sed -n 's/^p\([0-9][0-9]*\)$/\1/p' | sort -u)
 
   for pid in $listener_pids; do
-    # 每个 PID 独立核验，不能把同一端口上的多个进程合并判断。
     proc_cmd=$(ps -p "$pid" -o command= 2>/dev/null) || continue
     [ -n "$proc_cmd" ] || continue
-    if echo "$proc_cmd" | grep -qE "(addp-|go run|vite|api_server\.py|manager/raster-mosaic-runtime.*app\.py|uvicorn|jupyter.*lab|agent/backend/main\.py|copilot/backend/main\.py)"; then
-      echo "  发现 ADDP 端口监听进程 (PID: $pid)，强制清理..."
+    if addp_dev_pid_owned_by_workspace "$pid"; then
+      echo "  发现工作区残留监听进程 (PID: $pid)，强制清理..."
       echo "    进程: $(echo "$proc_cmd" | cut -c1-80)"
       kill -9 "$pid" 2>/dev/null || true
     else
-      echo -e "${YELLOW}  ⚠️  ADDP 服务端口被非 ADDP 进程监听 (PID: $pid)，跳过清理${NC}"
-      echo "    进程: $(echo "$proc_cmd" | cut -c1-80)"
+      echo -e "${YELLOW}  ⚠️  端口被其他工作区进程监听 (PID: $pid)，跳过清理${NC}"
     fi
   done
 }
@@ -96,7 +107,7 @@ stop_services_concurrent() {
     for pidfile in .dev-pids/*.pid; do
       if [ -f "$pidfile" ]; then
         pid=$(cat "$pidfile" 2>/dev/null)
-        if [ -n "$pid" ] && ps -p "$pid" > /dev/null 2>&1; then
+        if [ -n "$pid" ] && ps -p "$pid" > /dev/null 2>&1 && addp_dev_pid_owned_by_workspace "$pid"; then
           all_pids+=("$pid")
           service_name=$(basename "$pidfile" .pid)
           pid_names+=("$service_name")
@@ -157,50 +168,14 @@ stop_services_concurrent() {
     fi
   fi
 
-  # Phase 5: 兜底清理 pkill（清理可能的残留进程）
-  # 清理 go run 进程
-  pkill -9 -f "go run cmd/server/main.go" 2>/dev/null || true
-  pkill -9 -f "go run cmd/worker/main.go" 2>/dev/null || true
-  pkill -9 -f "go run cmd/gateway/main.go" 2>/dev/null || true
-  # 清理二进制进程（新方式）
-  pkill -9 -f "addp-system" 2>/dev/null || true
-  pkill -9 -f "addp-manager" 2>/dev/null || true
-  pkill -9 -f "addp-meta" 2>/dev/null || true
-  pkill -9 -f "addp-transfer" 2>/dev/null || true
-  pkill -9 -f "addp-orchestrator" 2>/dev/null || true
-  pkill -9 -f "addp-develop" 2>/dev/null || true
-  pkill -9 -f "addp-service" 2>/dev/null || true
-  pkill -9 -f "addp-duckdb" 2>/dev/null || true
-  pkill -9 -f "addp-monitor" 2>/dev/null || true
-  pkill -9 -f "addp-standard" 2>/dev/null || true
-  pkill -9 -f "addp-model" 2>/dev/null || true
-  pkill -9 -f "addp-quality" 2>/dev/null || true
-  pkill -9 -f "addp-security" 2>/dev/null || true
-  pkill -9 -f "addp-asset" 2>/dev/null || true
-  pkill -9 -f "addp-catalog" 2>/dev/null || true
-  pkill -9 -f "addp-ontology" 2>/dev/null || true
-  pkill -9 -f "addp-workbench" 2>/dev/null || true
-  pkill -9 -f "addp-portal" 2>/dev/null || true
-  pkill -9 -f "addp-graph" 2>/dev/null || true
-  pkill -9 -f "addp-inference" 2>/dev/null || true
-  pkill -9 -f "addp-gateway" 2>/dev/null || true
-  pkill -9 -f "addp-.*-worker" 2>/dev/null || true
-  # 清理前端和 Python 进程
-  pkill -9 -f "vite" 2>/dev/null || true
-  pkill -9 -f "engines/geopython-workflow.*api_server.py" 2>/dev/null || true
-  pkill -9 -f "engines/model3d-workflow.*api_server.py" 2>/dev/null || true
-  pkill -9 -f "engines/pointcloud-workflow.*api_server.py" 2>/dev/null || true
-  pkill -9 -f "engines/document-workflow.*api_server.py" 2>/dev/null || true
-  pkill -9 -f "engines/spark-workflow.*api_server.py" 2>/dev/null || true
-  pkill -9 -f "engines/jupyter.*api_server.py" 2>/dev/null || true
-  pkill -9 -f "manager/raster-mosaic-runtime.*app.py" 2>/dev/null || true
-  pkill -9 -f "python.*main.py.*copilot" 2>/dev/null || true
-  pkill -9 -f "agent/backend/main.py" 2>/dev/null || true
-  pkill -9 -f "uvicorn main:app.*8087" 2>/dev/null || true
-  docker rm -f pointcloud-workflow-engine >/dev/null 2>&1 || true
-  docker rm -f document-workflow-engine >/dev/null 2>&1 || true
-  docker rm -f geopython-workflow-engine >/dev/null 2>&1 || true
-  docker rm -f supermap-workflow-engine >/dev/null 2>&1 || true
+  # Phase 5: 仅清理带当前工作区标签的 Runtime 容器。
+  for name in pointcloud-workflow document-workflow geopython-workflow supermap-workflow; do
+    local container="${name}-engine" labels
+    labels=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}|{{index .Config.Labels "com.docker.compose.service"}}|{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$container" 2>/dev/null) || continue
+    if [ "$labels" = "addp-app|${container}|${ROOT_DIR}" ]; then
+      docker rm -f "$container" >/dev/null 2>&1 || true
+    fi
+  done
 
   # Phase 6: 批量检查监听端口并清理残留进程（处理手动启动的进程）
   echo -e "${YELLOW}检查端口占用...${NC}"
@@ -234,18 +209,6 @@ for frontend_dir in "$ROOT_DIR/console/frontend" "$ROOT_DIR/system/frontend" "$R
   fi
 done
 echo "✓ 前端缓存已清理"
-
-# 清理 go run 的临时文件（避免旧二进制被使用）
-echo ""
-echo -e "${YELLOW}清理 go run 临时文件...${NC}"
-# 清理 go run 的两级缓存:
-# 1. 临时目录缓存
-rm -rf /tmp/go-build* 2>/dev/null || true
-rm -rf /var/folders/*/T/go-build* 2>/dev/null || true
-# 2. 用户级缓存（~/Library/Caches/go-build 中的二进制）
-# 注意：不清理编译缓存本身，只清理 go run 生成的可执行文件
-find "$HOME/Library/Caches/go-build" -name "main" -type f -mtime -1 -delete 2>/dev/null || true
-echo "✓ go run 临时文件已清理"
 
 # 保留开发二进制文件（加速重启）
 # 如需清理二进制，请手动删除: rm -rf .dev-bins

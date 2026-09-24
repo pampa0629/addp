@@ -21,6 +21,7 @@ type metricGoldenProvider interface {
 	plugin.EnginePlugin
 	plugin.AnalyticalCompilerProvider
 	plugin.EngineCatalogFactsProvider
+	plugin.EngineCatalogModelProvider
 }
 
 func runMetricGolden(t *testing.T, provider metricGoldenProvider, conn plugin.ConnectionInfo, db *sql.DB, database string, dialect query.Dialect) {
@@ -276,10 +277,11 @@ func metricGoldenResultRequest(t *testing.T, provider metricGoldenProvider, conn
 		return plugin.QueryRequest{}, err
 	}
 	engineID := uint(2)
-	term := "schema"
-	if provider.Type() == "mysql" {
-		term = "database"
+	branch, ok := plugin.EngineCatalogFirstBusinessBranch(provider.EngineCatalogModel())
+	if !ok {
+		t.Fatal("metric fixture requires a catalog namespace")
 	}
+	term := branch.Term
 	var sources []plugin.SourceBinding
 	for _, node := range p.Nodes {
 		if node.Scan == nil {

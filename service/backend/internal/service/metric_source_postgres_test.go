@@ -26,11 +26,13 @@ func TestMetricSourcePublicationAgainstPostgres(t *testing.T) {
 		if migrated {
 			name = "migrated_metric"
 		}
-		t.Run(name, func(t *testing.T) { testMetricSourcePublicationAgainstPostgres(t, migrated) })
+		for _, engineType := range []string{"postgresql", "mysql", "tidb"} {
+			t.Run(engineType+"/"+name, func(t *testing.T) { testMetricSourcePublicationAgainstPostgres(t, migrated, engineType) })
+		}
 	}
 }
 
-func testMetricSourcePublicationAgainstPostgres(t *testing.T, migrated bool) {
+func testMetricSourcePublicationAgainstPostgres(t *testing.T, migrated bool, engineType string) {
 	dsn := os.Getenv("SERVICE_POSTGRES_TEST_DSN")
 	if dsn == "" {
 		t.Skip("SERVICE_POSTGRES_TEST_DSN is not set")
@@ -74,7 +76,7 @@ func testMetricSourcePublicationAgainstPostgres(t *testing.T, migrated bool) {
 	if migrated && (item.Status != "inactive" || QueryServiceVersion(item) != "") {
 		t.Fatal("migrated service should be inactive without a consumer version")
 	}
-	plan, engine := metricServiceFixture(t, "postgresql")
+	plan, engine := metricServiceFixture(t, engineType)
 	plan.ParameterPresentation = map[string]commonquery.ParameterPresentation{}
 	for _, p := range plan.ExecutionPlan.Plan.Parameters {
 		plan.ParameterPresentation[p.Name] = commonquery.ParameterPresentation{Labels: map[string]string{"zh-cn": p.Name, "en": p.Name}, Descriptions: map[string]string{"zh-cn": "说明", "en": "Help"}}

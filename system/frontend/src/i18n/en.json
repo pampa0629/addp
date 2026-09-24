@@ -966,6 +966,8 @@
         "extensionProbeSuccess": "Protocol probe passed.",
         "extensionProbeSuccessWithOperators": "Protocol probe passed; {count} operators discovered.",
         "updateSuccess": "Updated successfully",
+        "relocateTitle": "Confirm engine address change",
+        "relocateConfirm": "Confirm that the new address reaches the same physical engine. Engine ID {id}, metadata, and task references will be preserved. If it reaches different data, existing references may point to the wrong content.",
         "restoreSuccess": "Engine restored; connection check is running",
         "opFailed": "Operation failed",
         "scanPolicySyncFailed": "Engine saved, but metadata scan orchestration failed: {error}",

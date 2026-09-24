@@ -19,17 +19,23 @@ import (
 )
 
 func TestPostgresMetricRevisionLifecycleIsIndependentAndImmutable(t *testing.T) {
-	for _, engineType := range []string{"postgresql", "mysql"} {
+	for _, engineType := range []string{"postgresql", "mysql", "tidb"} {
 		t.Run(engineType, func(t *testing.T) { testMetricRevisionLifecycle(t, engineType) })
 	}
 }
 
 // Metadata ownership always uses PostgreSQL; the metric source dialect varies.
 func testMetricRevisionLifecycle(t *testing.T, engineType string) {
-	namespaceType := "schema"
-	if engineType == "mysql" {
-		namespaceType = "database"
+	provider, err := plugin.Get(engineType)
+	if err != nil {
+		t.Fatal(err)
 	}
+	catalog := provider.(plugin.EngineCatalogModelProvider).EngineCatalogModel()
+	branch, ok := plugin.EngineCatalogFirstBusinessBranch(catalog)
+	if !ok {
+		t.Fatal("metric fixture requires a namespace")
+	}
+	namespaceType := branch.Term
 
 	tx, tenant := beginModelAggregatePostgresTransaction(t)
 	ctx := context.Background()
@@ -113,13 +119,13 @@ func testMetricRevisionLifecycle(t *testing.T, engineType string) {
 				switch field.DataType {
 				case "string":
 					f.NativeType = "text"
-					if engineType == "mysql" {
+					if namespaceType == "database" {
 						f.NativeType = "varchar(200)"
 						f.Size = 200
 					}
 				case "bool":
 					f.NativeType = "boolean"
-					if engineType == "mysql" {
+					if namespaceType == "database" {
 						f.NativeType = "tinyint(1)"
 					}
 				case "date":

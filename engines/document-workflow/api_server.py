@@ -175,7 +175,7 @@ def get_execution_status(execution_id: str):
 
 
 def register_to_system() -> bool:
-    from addp_common.client import register_runtime_engine
+    from addp_common.client import register_runtime_engine, runtime_advertised_port
 
     converter = converter_status()
     if not converter.get("available"):
@@ -184,7 +184,7 @@ def register_to_system() -> bool:
 
     port = int(os.getenv("PORT", 8105))
     runtime_host = os.getenv("RUNTIME_HOST", "localhost").strip()
-    connection_info: dict[str, Any] = {"protocol": os.getenv("PROTOCOL", "http"), "port": port}
+    connection_info: dict[str, Any] = {"protocol": os.getenv("PROTOCOL", "http"), "port": runtime_advertised_port(port)}
     if runtime_host:
         connection_info["host"] = runtime_host
     payload = {

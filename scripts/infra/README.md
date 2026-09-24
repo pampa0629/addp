@@ -89,6 +89,8 @@ bash scripts/test/certify-infra-kafka-ha.sh
 
 本地共享 `addp-postgres` 禁止创建清单之外的测试 database；所有非 IAM 测试复用 `addp_test`，System IAM、Fosite、API 与 Migration 测试复用 `addp_iam_test`。本地测试必须调用根 `Makefile` 或 `scripts/test/` 的标准门禁，由门禁重建并清理自己拥有的 Schema 或测试事实；禁止为了单次验证直接执行 `createdb`、`CREATE DATABASE`、`dropdb` 或 `DROP DATABASE`。如果现有门禁不能提供所需隔离，应先修正门禁的重置和清理能力，不能用新增 database 绕过问题。
 
+下文 DSN 中的 `15432` 仅为 ADDP 首选宿主机端口示例。端口发生自动调整时，先用 `bash scripts/infra/status.sh` 查询 `addp-postgres` 的实际映射，再向标准门禁提供对应 DSN；不得把占用首选端口的其他 PostgreSQL 实例当作 ADDP 测试库。
+
 System IAM 标准门禁在首次重置 Schema 前获取宿主机级文件锁 `/tmp/addp-system-iam-postgres-gate.lock`，覆盖完整运行及其子进程，跨 checkout 和 `--package` 选择互斥。另一轮仍在运行时立即失败，不开始数据库操作；进程退出后由操作系统释放锁，锁文件保持原位，不能通过删除锁文件解除占用。该边界同样用于独占 CI Runner；分包验证也必须串行运行。
 
 需要一次验证全部已登记基础设施集成门禁时，先显式配置各 owner 门禁要求的安全连接变量，再运行 `make test-integration`。该入口严格串行调用 PostgreSQL 和 MongoDB 模块级门禁，避免 `addp_test` 或 `addp_iam_test` 被并发重置；PostgreSQL 门禁不会创建新 database，也不会连接 `addp` 开发业务库。Manager MongoDB 门禁读取 `Outdoor/Persons`；目标为空时只创建一条确定性夹具，并在退出时恢复原状态。
@@ -104,7 +106,7 @@ GitHub Actions 使用每个 Job 独占、随 Job 销毁的 PostgreSQL 15 Service
 
 Ontology 修订/发布门禁使用 `ONTOLOGY_POSTGRES_TEST_DSN` 连接本地 `addp_test`，标准入口为 `make test-ontology-postgres`，并已纳入 `make test-module MODULE=ontology`、串行 `test-integration` 和辅助 macOS 巡检。门禁仅接管此前不存在的 ontology schema，用随机 Run ID 标记所有权；退出时核对标记并删除本轮执行记录和 schema，验证零残留，不删除或重建 common。CI 对应独占 `addp_ontology_test`，不访问开发库。具体语义范围见 [Ontology 模块说明](../../ontology/CLAUDE.md)。
 
-Ontology 的 FalkorDB 已纳入 `docker-compose.infra.yml`，使用独立 `falkordb_data` 卷、RDB 快照与 `INFRA_FALKORDB_PASSWORD`。已有开发环境须在根 `.env` 补充独立密码，再通过标准 `up.sh` 启动；生产 `setup-env.sh` 为新环境生成随机 Secret，对已有环境只校验不轮换。仅开放 `127.0.0.1:16479`，不开放 Browser、不复用 `addp-redis`、不注册为业务 Engine。该单机部署不等于生产 HA/TLS 已认证，也不代表 Ontology 发布运行时已接通。
+Ontology 的 FalkorDB 已纳入 `docker-compose.infra.yml`，使用独立 `falkordb_data` 卷、RDB 快照与 `INFRA_FALKORDB_PASSWORD`。已有开发环境须在根 `.env` 补充独立密码，再通过标准 `up.sh` 启动；生产 `setup-env.sh` 为新环境生成随机 Secret，对已有环境只校验不轮换。宿主机仅绑定 `127.0.0.1`，首选端口为 `16479`，冲突时自动选择空闲端口；不开放 Browser、不复用 `addp-redis`、不注册为业务 Engine。该单机部署不等于生产 HA/TLS 已认证，也不代表 Ontology 发布运行时已接通。
 
 正式部署与 `make test-ontology-falkor` 共用 `scripts/infra/falkordb.yml` 的固定镜像、非零超时、资源限制和带认证图健康检查。T2 使用独占 Compose Project、随机密码、动态回环端口及可销毁卷，验证保存快照并重建容器后的图恢复；不接受个人图数据库地址、不读取 `.env`，退出时删除并核验自有容器/卷/网络。该入口还要求 `ONTOLOGY_POSTGRES_TEST_DSN`，复用上述 PG owner 夹具验证首次投影执行、激活与失败保留旧版本，并清理本轮 schema/执行记录。PG 与 FalkorDB 门禁均被标准模块门禁自动发现及串行集成聚合；已有 `ontology-falkor` CI Job 同时提供独占 PostgreSQL Service，执行同一入口。
 
@@ -254,13 +256,18 @@ docker compose -f docker-compose.infra.yml restart meilisearch
 
 ## 端口映射
 
+宿主机端口为本地首选值。若发生冲突，`scripts/infra/up.sh` 选择空闲端口；使用 `bash scripts/infra/status.sh` 查看实际映射。
+
 | 服务 | 容器端口 | 主机端口 |
 |-----|---------|---------|
 | PostgreSQL | 5432 | 15432 |
 | Redis | 6379 | 16379 |
+| FalkorDB | 6379 | 16479（仅回环） |
 | MinIO API | 9000 | 19000 |
 | MinIO Console | 9001 | 19001 |
 | Meilisearch | 7700 | 17700 |
+| Infra Kafka | 9092 | 19092 |
+| Kafka Connect | 8083 | 18083 |
 
 ## 开发提示
 

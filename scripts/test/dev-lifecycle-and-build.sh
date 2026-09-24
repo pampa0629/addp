@@ -6,6 +6,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 LOCK_SCRIPT="${ROOT_DIR}/scripts/dev/lifecycle-lock.sh"
 BUILD_SCRIPT="${ROOT_DIR}/scripts/dev/build-identity.sh"
+PORT_SCRIPT="${ROOT_DIR}/scripts/dev/ports.sh"
 TEST_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/addp-dev-lifecycle-test.XXXXXX")
 
 cleanup() {
@@ -352,6 +353,11 @@ for name, args, failed in (
     dev.mkdir(parents=True)
     for filename in ("restart.sh", "lifecycle-lock.sh", "node-dependencies.sh", "jupyter-env.sh"):
         shutil.copy2(repository / "scripts/dev" / filename, dev / filename)
+    (dev / "ports.sh").write_text('addp_dev_load_saved_ports() { :; }\n')
+
+    infra = root / "scripts/infra"
+    infra.mkdir(parents=True)
+    (infra / "ports.sh").write_text('addp_infra_ready() { return 1; }\n')
 
     def script(relative, body):
         path = root / relative
@@ -438,6 +444,10 @@ for mode in ("listeners", "empty"):
     workspace.mkdir()
     script = r'''
 YELLOW= RED= NC=
+ROOT_DIR="$FIXTURE_ROOT"
+addp_dev_port_specs() { printf 'system SYSTEM_BACKEND_PORT 8180\nmanager MANAGER_BACKEND_PORT 8081\nconsole-frontend CONSOLE_FE_PORT 5170\n'; }
+addp_dev_saved_port() { :; }
+addp_dev_pid_owned_by_workspace() { [ "$1" = 101 ]; }
 lsof() {
   printf '%s\n' "$*" >> "$FIXTURE_ROOT/lsof-calls"
   [ "$FIXTURE_MODE" != empty ] || return 1
@@ -447,6 +457,8 @@ lsof() {
     printf '101\n202\n303\n'
   fi
 }
+
+
 ps() {
   printf '%s\n' "$*" >> "$FIXTURE_ROOT/ps-calls"
   case "$2" in
@@ -473,12 +485,68 @@ kill() { printf '%s\n' "$*" >> "$FIXTURE_ROOT/kill-calls"; }
         assert (workspace / "ps-calls").read_text().splitlines() == [
             "-p 101 -o command=", "-p 202 -o command=", "-p 303 -o command=",
         ]
-        assert "202" in result.stdout and "非 ADDP" in result.stdout
+        assert "202" in result.stdout and "其他工作区" in result.stdout
         assert "303" not in result.stdout, "exited processes must not produce misleading warnings"
     else:
         assert not (workspace / "kill-calls").exists()
         assert not (workspace / "ps-calls").exists()
 print("PASS: one LISTEN-only scan, deduplicated PIDs, foreign listeners preserved, exited/empty skipped")
+PY
+}
+
+test_dev_port_resolution() {
+  local workspace="${TEST_ROOT}/dev-ports"
+  mkdir -p "$workspace"
+  ROOT_DIR="$workspace" PORT_SCRIPT="$PORT_SCRIPT" bash -c '
+    set -e
+    source "$PORT_SCRIPT"
+    addp_dev_port_busy() { [ "$1" = 8000 ] || [ "$1" = 5170 ]; }
+    addp_dev_owned_listener() { return 1; }
+    addp_dev_resolve_ports >/dev/null
+    [ "$GATEWAY_PORT" = 18000 ]
+    [ "$CONSOLE_FE_PORT" = 15170 ]
+    [ "$PUBLIC_API_URL" = http://localhost:18000 ]
+    [ "$CONSOLE_URL" = http://localhost:15170 ]
+    [[ "$VITE_ADDP_FRONTEND_PORTS" == *"console:15170"* ]]
+    [[ "$ALLOWED_ORIGINS" == *"http://localhost:15170"* ]]
+    grep -qx "GATEWAY_PORT=18000" "$ROOT_DIR/.dev-state/ports.env"
+    addp_dev_owned_listener() { [ "$1:$2" = gateway:18000 ]; }
+    addp_dev_resolve_ports >/dev/null
+    [ "$GATEWAY_PORT" = 18000 ]
+    docker() {
+      if [ "$1" = inspect ] && [ "$2" = --format ]; then
+        printf "%s\n" "$container_labels"
+      elif [ "$1" = rm ]; then
+        touch "$ROOT_DIR/removed-container"
+      fi
+    }
+    container_labels="foreign|geopython-workflow-engine|$ROOT_DIR"
+    if addp_dev_remove_owned_container geopython-workflow-engine 2>/dev/null; then exit 1; fi
+    [ ! -e "$ROOT_DIR/removed-container" ]
+    container_labels="addp-app|geopython-workflow-engine|$ROOT_DIR"
+    addp_dev_remove_owned_container geopython-workflow-engine
+    [ -e "$ROOT_DIR/removed-container" ]
+  ' || fail "development port resolution did not propagate or preserve the selected port"
+}
+
+test_runtime_host_port_advertisement() {
+  python3 - "$ROOT_DIR" <<'PY'
+from pathlib import Path
+import sys
+
+root = Path(sys.argv[1])
+start = (root / 'scripts/dev/start.sh').read_text()
+for name, variable in (
+    ('geopython-workflow', 'GEOPYTHON_WORKFLOW_PORT'),
+    ('pointcloud-workflow', 'POINTCLOUD_WORKFLOW_PORT'),
+    ('document-workflow', 'DOCUMENT_WORKFLOW_PORT'),
+):
+    assert f'-e RUNTIME_PUBLIC_PORT="${{{variable}}}"' in start, (name, variable)
+    source = (root / f'engines/{name}/api_server.py').read_text()
+    assert 'runtime_advertised_port(port)' in source, name
+supermap = (root / 'scripts/dev/supermap-workflow.sh').read_text()
+assert 'ADDP_DEV_PORTS_RESOLVED' in supermap
+print('PASS: container Runtime host ports reach System registration')
 PY
 }
 
@@ -616,13 +684,19 @@ ps() {
 }
 kill() { [ "$1" = -0 ] && [ "$2" = 111 ]; }
 '''
-for mode in ('empty', 'occupied', 'stale', 'error', 'managed', 'worker', 'dead-process', 'malformed', 'parse'):
+for mode in ('empty', 'occupied', 'stale', 'error', 'managed', 'managed-mismatch', 'owned', 'worker', 'dead-process', 'malformed', 'parse'):
     workspace=temporary/('start-ports-'+mode)
     (workspace/'.dev-pids').mkdir(parents=True)
     script=base+helpers+'\n'
     if mode=='managed':
         (workspace/'.dev-pids/managed.pid').write_text('111\n')
         script+='if check_service_running managed 8180; then exit 7; fi\ntouch completed\n'
+    elif mode=='managed-mismatch':
+        (workspace/'.dev-pids/managed.pid').write_text('111\n')
+        script+='addp_dev_owned_listener() { return 1; }\ncheck_service_running managed 8180\ntouch completed\n'
+    elif mode=='owned':
+        script+='addp_dev_owned_listener() { [ "$1:$2" = "geopython-workflow-engine:18099" ]; }\n'
+        script+='if check_service_running geopython-workflow-engine 18099; then exit 7; fi\ntouch completed\n'
     elif mode=='parse':
         script+='scan_start_listeners > parsed\ntouch completed\n'
     elif mode=='worker':
@@ -638,7 +712,7 @@ for mode in ('empty', 'occupied', 'stale', 'error', 'managed', 'worker', 'dead-p
             script+='check_service_running fixture 8180\n'
         script+='touch completed\n'
     result=subprocess.run(['bash','-c',script],env=dict(os.environ,CASE_ROOT=str(workspace),MODE=mode),capture_output=True,text=True,timeout=10)
-    failed=mode in ('occupied','error','dead-process','malformed')
+    failed=mode in ('occupied','error','dead-process','malformed','managed-mismatch')
     assert (result.returncode!=0)==failed, (mode,result.stdout,result.stderr)
     assert (workspace/'completed').exists()!=failed, mode
     calls=(workspace/'calls').read_text().splitlines() if (workspace/'calls').exists() else []
@@ -885,6 +959,8 @@ test_start_batches_listening_ports
 test_parallel_runtime_startup
 test_python_dependency_install_lock
 test_stop_batches_listening_ports
+test_dev_port_resolution
+test_runtime_host_port_advertisement
 test_restart_preserves_cache_and_batches_swagger
 test_lifecycle_lock_rejects_concurrent_owner
 test_lifecycle_lock_allows_descendant_inheritance

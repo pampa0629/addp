@@ -29,13 +29,13 @@ export default defineConfig({
     include: ['@antv/g6', 'ol', 'proj4']
   },
   server: {
-    port: 5186,
+    port: Number(process.env.AGENT_FE_PORT || 5186),
     strictPort: true,
     hmr: {
       protocol: 'ws',
       host: 'localhost',
-      port: 5186,
-      clientPort: 5186
+      port: Number(process.env.AGENT_FE_PORT || 5186),
+      clientPort: Number(process.env.AGENT_FE_PORT || 5186)
     },
     fs: {
       allow: [
@@ -45,7 +45,7 @@ export default defineConfig({
     },
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',
+        target: `http://localhost:${process.env.GATEWAY_PORT || 8000}`,
         changeOrigin: true
       }
     }

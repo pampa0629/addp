@@ -7,6 +7,7 @@ import {
   MapLocation, Collection,
 } from '@element-plus/icons-vue'
 import { splitConsoleRoute } from '../utils/consoleNavigation'
+import { parseDevPorts } from '@common-ui/utils/devPorts'
 
 // ─── 群组导航配置 ────────────────────────────────────────────────────────────
 // label 值为 i18n key，渲染时通过 t(group.label) 翻译
@@ -52,31 +53,34 @@ export const ALL_HOME_CARDS = [
 const _dev = import.meta.env.DEV
 const _protocol = window.location.protocol
 const _host = window.location.hostname
+const _devPorts = parseDevPorts(import.meta.env.VITE_ADDP_FRONTEND_PORTS)
 
-function _url(devPort, prodPath) {
-  return _dev ? `${_protocol}//${_host}:${devPort}` : `${_protocol}//${_host}/${prodPath}`
+function _url(module, devPort, prodPath, devPath = '') {
+  return _dev
+    ? `${_protocol}//${_host}:${_devPorts[module] || devPort}${devPath}`
+    : `${_protocol}//${_host}/${prodPath}`
 }
 
 export const MODULE_URLS = {
-  ontology: _dev ? `${_protocol}//${_host}:5192/ontology` : _url(5192, 'ontology'),
-  system:       _url(5173, 'system'),
-  manager:      _url(5174, 'manager'),
-  meta:         _url(5175, 'meta'),
-  transfer:     _url(5176, 'transfer'),
-  orchestrator: _url(5177, 'orchestrator'),
-  develop:      _url(5178, 'develop'),
-  service:      _url(5180, 'service'),
-  workbench:    _dev ? `${_protocol}//${_host}:5190/workbench` : _url(5190, 'workbench'),
-  monitor:      _url(5179, 'monitor'),
-  standard:     _url(5181, 'standard'),
-  modeling:     _url(5182, 'model'),
-  quality:      _url(5183, 'quality'),
-  security:     _url(5191, 'security'),
-  catalog:      _url(5189, 'catalog'),
-  asset:        _url(5184, 'asset'),
-  agent:        _url(5186, 'agent'),
-  graph:        _url(5187, 'graph'),
-  inference:    _url(5188, 'inference'),
+  ontology:     _url('ontology', 5192, 'ontology', '/ontology'),
+  system:       _url('system', 5173, 'system'),
+  manager:      _url('manager', 5174, 'manager'),
+  meta:         _url('meta', 5175, 'meta'),
+  transfer:     _url('transfer', 5176, 'transfer'),
+  orchestrator: _url('orchestrator', 5177, 'orchestrator'),
+  develop:      _url('develop', 5178, 'develop'),
+  service:      _url('service', 5180, 'service'),
+  workbench:    _url('workbench', 5190, 'workbench', '/workbench'),
+  monitor:      _url('monitor', 5179, 'monitor'),
+  standard:     _url('standard', 5181, 'standard'),
+  modeling:     _url('model', 5182, 'model'),
+  quality:      _url('quality', 5183, 'quality'),
+  security:     _url('security', 5191, 'security'),
+  catalog:      _url('catalog', 5189, 'catalog'),
+  asset:        _url('asset', 5184, 'asset'),
+  agent:        _url('agent', 5186, 'agent'),
+  graph:        _url('graph', 5187, 'graph'),
+  inference:    _url('inference', 5188, 'inference'),
 }
 
 export const PORTAL_URL = window.location.origin

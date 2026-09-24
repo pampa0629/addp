@@ -10,7 +10,7 @@
           </template>
           <div class="help-content">
             <h4>{{ t('console.apiDocs.helpTitle') }}</h4>
-            <p>{{ t('console.apiDocs.helpBaseUrl') }}</p>
+            <p>{{ t('console.apiDocs.helpBaseUrl', { url: gatewayUrl }) }}</p>
             <p>{{ t('console.apiDocs.helpVersionPrefix') }}</p>
             <p>{{ t('console.apiDocs.helpAuth') }}</p>
             <p>{{ t('console.apiDocs.helpContentType') }}</p>
@@ -117,147 +117,153 @@
 import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { QuestionFilled } from '@element-plus/icons-vue'
+import { parseDevPorts } from '@common-ui/utils/devPorts'
 
 const { t } = useI18n()
 
 const isDev = import.meta.env.DEV
 const protocol = window.location.protocol
 const hostname = window.location.hostname
+const gatewayUrl = isDev
+  ? `${protocol}//${hostname}:${import.meta.env.VITE_ADDP_GATEWAY_PORT || 8000}`
+  : window.location.origin
+const backendPorts = parseDevPorts(import.meta.env.VITE_ADDP_BACKEND_PORTS)
+const displayPort = (module, preferred) => isDev ? `:${backendPorts[module] || preferred}` : `:${preferred}`
 
 // 各模块配置
-// swaggerUrl: 开发环境直连各模块端口，生产环境通过 nginx 路由
+// swaggerUrl: 开发环境走 Console 代理，生产环境通过 nginx 路由
 // healthUrl: 开发环境通过 Vite proxy 避免 CORS，生产环境不检测
 const viewer = (specUrl) => `/swagger-viewer.html?url=${encodeURIComponent(specUrl)}`
 
 const modules = computed(() => [
   {
-    name: 'ontology', label: t('console.apiDocs.modules.ontology'), port: 8195,
+    name: 'ontology', label: t('console.apiDocs.modules.ontology'), port: displayPort('ontology', 8195),
     swaggerUrl: isDev ? viewer('/swagger-spec/ontology') : viewer('/ontology/swagger/doc.json'),
     healthUrl: isDev ? '/module-health/ontology' : null,
   },
   {
     name: 'agent',
     label: t('console.apiDocs.modules.agent'),
-    port: ':8190',
+    port: displayPort('agent', 8190),
     swaggerUrl: isDev ? viewer('/swagger-spec/agent') : viewer('/agent/openapi.json'),
     healthUrl: isDev ? '/module-health/agent' : null,
   },
   {
     name: 'copilot',
     label: t('console.apiDocs.modules.copilot'),
-    port: ':8087',
+    port: displayPort('copilot', 8087),
     swaggerUrl: isDev ? viewer('/swagger-spec/copilot') : viewer('/copilot/openapi.json'),
     healthUrl: isDev ? '/module-health/copilot' : null,
   },
   {
     name: 'graph',
     label: t('console.apiDocs.modules.graph'),
-    port: ':8186',
+    port: displayPort('graph', 8186),
     swaggerUrl: isDev ? viewer('/swagger-spec/graph') : viewer('/graph/swagger/doc.json'),
     healthUrl: isDev ? '/module-health/graph' : null,
   },
   {
     name: 'inference',
     label: t('console.apiDocs.modules.inference'),
-    port: ':8191',
+    port: displayPort('inference', 8191),
     swaggerUrl: isDev ? viewer('/swagger-spec/inference') : viewer('/inference/swagger/doc.json'),
     healthUrl: isDev ? '/module-health/inference' : null,
   },
   {
     name: 'develop',
     label: t('console.apiDocs.modules.develop'),
-    port: ':8185',
+    port: displayPort('develop', 8185),
     swaggerUrl: isDev ? viewer('/swagger-spec/develop') : viewer('/develop/swagger/doc.json'),
     healthUrl: isDev ? '/module-health/develop' : null,
   },
   {
     name: 'manager',
     label: t('console.apiDocs.modules.manager'),
-    port: ':8081',
+    port: displayPort('manager', 8081),
     swaggerUrl: isDev ? viewer('/swagger-spec/manager') : viewer('/manager/swagger/doc.json'),
     healthUrl: isDev ? '/module-health/manager' : null,
   },
   {
     name: 'meta',
     label: t('console.apiDocs.modules.meta'),
-    port: ':8082',
+    port: displayPort('meta', 8082),
     swaggerUrl: isDev ? viewer('/swagger-spec/meta') : viewer('/meta/swagger/doc.json'),
     healthUrl: isDev ? '/module-health/meta' : null,
   },
   {
     name: 'model',
     label: t('console.apiDocs.modules.model'),
-    port: ':8181',
+    port: displayPort('model', 8181),
     swaggerUrl: isDev ? viewer('/swagger-spec/model') : viewer('/model/swagger/doc.json'),
     healthUrl: isDev ? '/module-health/model' : null,
   },
   {
     name: 'monitor',
     label: t('console.apiDocs.modules.monitor'),
-    port: ':8100',
+    port: displayPort('monitor', 8100),
     swaggerUrl: isDev ? viewer('/swagger-spec/monitor') : viewer('/monitor/swagger/doc.json'),
     healthUrl: isDev ? '/module-health/monitor' : null,
   },
   {
     name: 'orchestrator',
     label: t('console.apiDocs.modules.orchestrator'),
-    port: ':8084',
+    port: displayPort('orchestrator', 8084),
     swaggerUrl: isDev ? viewer('/swagger-spec/orchestrator') : viewer('/orchestrator/swagger/doc.json'),
     healthUrl: isDev ? '/module-health/orchestrator' : null,
   },
   {
     name: 'portal',
     label: t('console.apiDocs.modules.portal'),
-    port: ':8184',
+    port: displayPort('portal', 8184),
     swaggerUrl: isDev ? viewer('/swagger-spec/portal') : viewer('/portal/swagger/doc.json'),
     healthUrl: isDev ? '/module-health/portal' : null,
   },
   {
     name: 'quality',
     label: t('console.apiDocs.modules.quality'),
-    port: ':8182',
+    port: displayPort('quality', 8182),
     swaggerUrl: isDev ? viewer('/swagger-spec/quality') : viewer('/quality/swagger/doc.json'),
     healthUrl: isDev ? '/module-health/quality' : null,
   },
   {
     name: 'catalog',
     label: t('console.apiDocs.modules.catalog'),
-    port: ':8192',
+    port: displayPort('catalog', 8192),
     swaggerUrl: isDev ? viewer('/swagger-spec/catalog') : viewer('/catalog/swagger/doc.json'),
     healthUrl: isDev ? '/module-health/catalog' : null,
   },
   {
     name: 'service',
     label: t('console.apiDocs.modules.service'),
-    port: ':8086',
+    port: displayPort('service', 8086),
     swaggerUrl: isDev ? viewer('/swagger-spec/service') : viewer('/service/swagger/doc.json'),
     healthUrl: isDev ? '/module-health/service' : null,
   },
   {
     name: 'workbench',
     label: t('console.apiDocs.modules.workbench'),
-    port: ':8193',
+    port: displayPort('workbench', 8193),
     swaggerUrl: isDev ? viewer('/swagger-spec/workbench') : viewer('/workbench/swagger/doc.json'),
     healthUrl: isDev ? '/module-health/workbench' : null,
   },
   {
     name: 'standard',
     label: t('console.apiDocs.modules.standard'),
-    port: ':8110',
+    port: displayPort('standard', 8110),
     swaggerUrl: isDev ? viewer('/swagger-spec/standard') : viewer('/standard/swagger/doc.json'),
     healthUrl: isDev ? '/module-health/standard' : null,
   },
   {
     name: 'system',
     label: t('console.apiDocs.modules.system'),
-    port: ':8180',
+    port: displayPort('system', 8180),
     swaggerUrl: isDev ? viewer('/swagger-spec/system') : viewer('/system/swagger/doc.json'),
     healthUrl: isDev ? '/module-health/system' : null,
   },
   {
     name: 'transfer',
     label: t('console.apiDocs.modules.transfer'),
-    port: ':8083',
+    port: displayPort('transfer', 8083),
     swaggerUrl: isDev ? viewer('/swagger-spec/transfer') : viewer('/transfer/swagger/doc.json'),
     healthUrl: isDev ? '/module-health/transfer' : null,
   },

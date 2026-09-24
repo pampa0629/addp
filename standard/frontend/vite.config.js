@@ -26,14 +26,14 @@ export default defineConfig({
     dedupe: ['vue', 'vue-i18n', 'element-plus', '@element-plus/icons-vue', 'axios']
   },
   server: {
-    port: 5181,
+    port: Number(process.env.STANDARD_FE_PORT || 5181),
     strictPort: true,
     // E2E uses port 4181 and must not bind to or reload from the live server.
     hmr: process.env.ADDP_E2E === '1' ? false : {
       protocol: 'ws',
       host: 'localhost',
-      port: 5181,
-      clientPort: 5181
+      port: Number(process.env.STANDARD_FE_PORT || 5181),
+      clientPort: Number(process.env.STANDARD_FE_PORT || 5181)
     },
     fs: {
       allow: [
@@ -44,7 +44,7 @@ export default defineConfig({
     },
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',
+        target: `http://localhost:${process.env.GATEWAY_PORT || 8000}`,
         changeOrigin: true
       }
     }

@@ -732,9 +732,9 @@ jobs:
           status: ${{ job.status }}
 
   common-tidb:
-    name: Common Engine Provider integration (TiDB 8.5.8)
+    name: Common, Model and Service metric contracts (TiDB 8.5.8)
     needs: selection
-    if: needs.selection.outputs.common == 'true' || needs.selection.outputs.develop == 'true' || needs.selection.outputs.service == 'true' || needs.selection.outputs.transfer == 'true'
+    if: needs.selection.outputs.model == 'true' || needs.selection.outputs.common == 'true' || needs.selection.outputs.develop == 'true' || needs.selection.outputs.service == 'true' || needs.selection.outputs.transfer == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -756,7 +756,7 @@ jobs:
         if: always()
         uses: ./.github/actions/ci-gate-summary
         with:
-          gate: Common Engine Provider integration (TiDB 8.5.8)
+          gate: Common, Model and Service metric contracts (TiDB 8.5.8)
           status: ${{ job.status }}
 
   common-mysql-data-protection:

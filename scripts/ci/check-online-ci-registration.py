@@ -1297,6 +1297,28 @@ def load_workflow_suites(
     return set(re.findall(r"(?m)^          - ([a-z][a-z0-9-]*)$", options.group("body")))
 
 
+def validate_metric_engine_variant(repository: Path, registered: set[str]) -> None:
+    if "metric-service-revision-lifecycle" not in registered:
+        return
+    workflow = (repository / ".github/workflows/online-t4-gates.yml").read_text(encoding="utf-8")
+    selection = re.search(
+        r"(?ms)^      metric_engine:\n(?P<body>.*?)(?=^permissions:|\Z)", workflow
+    )
+    if selection is None:
+        raise RegistrationError("metric Online T4 engine choice is missing")
+    choice = selection.group("body")
+    options = re.search(r"(?m)^        options:\n(?P<body>(?:          - [a-z]+\n)+)", choice)
+    if ("        type: choice\n" not in choice
+            or "        required: true\n" not in choice
+            or "        default: postgresql\n" not in choice
+            or options is None
+            or re.findall(r"(?m)^          - ([a-z]+)$", options.group("body")) != ["postgresql", "tidb"]):
+        raise RegistrationError("metric Online T4 must select PostgreSQL or TiDB explicitly")
+    job = re.search(r"(?ms)^  metric-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)", workflow)
+    if job is None or "      ADDP_ONLINE_METRIC_ENGINE_TYPE: ${{ inputs.metric_engine }}\n" not in job.group("body"):
+        raise RegistrationError("Hosted metric T4 must pass the selected engine to its lifecycle")
+
+
 def check_registration(repository: Path) -> None:
     registry = load_suite_registry(repository)
     registered = load_registered_suites(registry)
@@ -1311,6 +1333,7 @@ def check_registration(repository: Path) -> None:
         raise RegistrationError(
             f"Online workflow choices {sorted(workflow)} do not match registered suites {sorted(registered)}"
         )
+    validate_metric_engine_variant(repository, registered)
     validate_module_registry_process_profile(repository, registered)
     validate_consumer_engine_recovery_profile(repository, registered)
     validate_enterprise_catalog_publishing_profile(repository, registered)

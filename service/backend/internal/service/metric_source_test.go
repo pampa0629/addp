@@ -8,6 +8,7 @@ import (
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/engine/plugins/mysql"
 	"github.com/addp/common/engine/plugins/postgresql"
+	"github.com/addp/common/engine/plugins/tidb"
 	commonmodels "github.com/addp/common/models"
 	commonquery "github.com/addp/common/query"
 	queryplan "github.com/addp/common/query/plan"
@@ -20,7 +21,7 @@ import (
 )
 
 func TestMetricServiceBindingIsExactAndCannotOverrideCompiledFormula(t *testing.T) {
-	for _, engineType := range []string{"postgresql", "mysql", "metric_test_extension"} {
+	for _, engineType := range []string{"postgresql", "mysql", "tidb", "metric_test_extension"} {
 		for _, kind := range []string{"", "details"} {
 			t.Run(engineType+"/"+kind, func(t *testing.T) { testMetricServiceBinding(t, engineType, kind) })
 		}
@@ -138,6 +139,8 @@ func metricServiceFixture(t *testing.T, engineType string) (commonclient.ModelMe
 	} = &postgresql.PostgreSQLPlugin{}
 	if engineType == "mysql" {
 		provider = &mysql.MySQLPlugin{}
+	} else if engineType == "tidb" {
+		provider = &tidb.Plugin{}
 	} else if engineType == "metric_test_extension" {
 		provider = &metricExtensionProvider{PostgreSQLPlugin: &postgresql.PostgreSQLPlugin{}}
 	}

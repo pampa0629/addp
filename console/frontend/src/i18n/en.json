@@ -122,7 +122,7 @@
       "title": "API Docs",
       "platformCenter": "Platform API Center",
       "helpTitle": "ADDP Platform API Documentation",
-      "helpBaseUrl": "Base URL: http://localhost:8000 (Gateway entry)",
+      "helpBaseUrl": "Base URL: {url} (Gateway entry)",
       "helpVersionPrefix": "Version prefix: /api/v1/",
       "helpAuth": "Auth: Bearer opaque access token",
       "helpContentType": "Content-Type: application/json",

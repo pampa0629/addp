@@ -966,6 +966,8 @@
         "extensionProbeSuccess": "协议探测通过",
         "extensionProbeSuccessWithOperators": "协议探测通过，发现 {count} 个算子",
         "updateSuccess": "更新成功",
+        "relocateTitle": "确认引擎地址变更",
+        "relocateConfirm": "请确认新地址仍连接同一个实际引擎。保存后保留引擎 ID {id} 及其元数据、任务引用；若连接的是另一份数据，旧引用可能指向错误内容。",
         "restoreSuccess": "引擎已恢复，正在重新检测连接",
         "opFailed": "操作失败",
         "scanPolicySyncFailed": "引擎已保存，但元数据扫描编排失败：{error}",

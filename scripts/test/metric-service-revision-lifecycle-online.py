@@ -247,6 +247,9 @@ def main():
         engine_id = int(os.environ["ADDP_ONLINE_CONSUMER_ENGINE_ID"])
         if engine_id <= 0:
             raise SuiteError("disposable metric engine identity is required")
+        engine_type = os.environ["ADDP_ONLINE_METRIC_ENGINE_TYPE"]
+        if engine_type not in FIXTURE.NAMESPACES:
+            raise SuiteError("unsupported metric fixture engine type")
         report["identity"] = validate_user_identity(
             GatewayClient(os.environ["SYSTEM_URL"], token, timeout), tenant_id,
             REQUIRED_PERMISSIONS | FIXTURE.REQUIRED_PERMISSIONS,
@@ -254,9 +257,10 @@ def main():
         signal.signal(signal.SIGTERM, interrupted)
         signal.signal(signal.SIGINT, interrupted)
         client = GatewayClient(os.environ["GATEWAY_URL"], token, timeout)
-        report.update({"suite": SUITE, "run_id": run_id, "tenant_id": str(tenant_id), "result": "failed"})
+        report.update({"suite": SUITE, "run_id": run_id, "tenant_id": str(tenant_id),
+                       "engine_type": engine_type, "result": "failed"})
         checkpoint()
-        template_id, revision_id = FIXTURE.prepare(client, engine_id, tenant_id, report, checkpoint)
+        template_id, revision_id = FIXTURE.prepare(client, engine_id, tenant_id, engine_type, report, checkpoint)
         run_suite(client, tenant_id, run_id, template_id, revision_id,
                   FIXTURE.QUERY, FIXTURE.EXPECTED_DATA, report, checkpoint)
 

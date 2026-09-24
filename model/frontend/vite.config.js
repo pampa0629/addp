@@ -41,13 +41,13 @@ export default defineConfig({
     dedupe: ['vue', 'vue-i18n', 'element-plus', '@element-plus/icons-vue', 'axios']
   },
   server: {
-    port: 5182,
+    port: Number(process.env.MODEL_FE_PORT || 5182),
     strictPort: true,
     hmr: isE2E ? false : {
       protocol: 'ws',
       host: 'localhost',
-      port: 5182,
-      clientPort: 5182
+      port: Number(process.env.MODEL_FE_PORT || 5182),
+      clientPort: Number(process.env.MODEL_FE_PORT || 5182)
     },
     fs: {
       allow: [
@@ -58,7 +58,7 @@ export default defineConfig({
     },
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',
+        target: `http://localhost:${process.env.GATEWAY_PORT || 8000}`,
         changeOrigin: true
       }
     }

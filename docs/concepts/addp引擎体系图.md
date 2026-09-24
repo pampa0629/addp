@@ -8,7 +8,7 @@
 
 | 概念 | 含义 |
 | --- | --- |
-| Engine Instance | System 中的一条引擎实例，保存租户、名称、类型、连接配置、能力声明、生命周期和连通性观测；一条记录只绑定一个确定的物理端点。 |
+| Engine Instance | System 中的一条引擎实例，保存租户、名称、类型、连接配置、能力声明、生命周期和连通性观测；代表同一实际引擎，连接地址可随其搬迁而更新。 |
 | Engine Plugin | `common/engine/plugins/<engine_type>` 下的内置引擎适配实现，负责非通用的连接、校验、测试和能力暴露；实现标准 Workflow Runtime 协议的外部运行时不要求编译期 Plugin。 |
 | Official-driver Execution Boundary | 受限商业驱动从固定官方介质注入并真正执行连接、目录、查询与读写 Provider 的部署边界；控制面登记可以位于边界外，但不得把无法加载驱动的宿主进程标记为具备真实连接能力。 |
 | Capability | 插件返回的结构化能力声明，版本为 `engine.capabilities/v1`。 |
@@ -20,17 +20,17 @@
 
 ### Engine Instance 身份与生命周期
 
-- `engine_id` 是 Engine Instance 的平台身份，不是可重定向到任意物理引擎的连接槽位。
-- 可注册插件通过 `ConnectionSpec()` 统一声明连接字段；其中 `identity=true` 的字段构成 Engine Instance 身份。PostgreSQL 一类数据库通常使用 `host + port + database`；MongoDB 使用 `host + port + user + auth_source`，其中 `database` 仅是可选初始数据库；对象存储通常使用 `endpoint`，NFS 使用 `server + export_path`。
-- 名称、描述、凭据和非身份连接参数可以原地更新；任何身份字段变化都必须创建新的 Engine Instance，不得保留原 ID 并改指向另一物理端点。
+- `engine_id` 是同一实际引擎在平台中的永久身份，不是可重定向到任意其他引擎的连接槽位。同一引擎搬迁引起的 IP、端口等连接地址变化保留原 ID、元数据和任务引用。
+- 可注册插件通过 `ConnectionSpec()` 统一声明连接字段；其中 `identity=true` 的字段构成当前连接地址去重键。PostgreSQL 一类数据库通常使用 `host + port + database`；MongoDB 使用 `host + port + user + auth_source`，其中 `database` 仅是可选初始数据库；对象存储通常使用 `endpoint`，NFS 使用 `server + export_path`。
+- 具有 `system.engine.update` 权限的用户可在编辑页确认新地址仍指向同一实际引擎后更新这些字段。System 校验插件连接配置、拒绝占用其他非删除实例的地址，并把连通性观测重置为待检测；不能仅凭连接成功证明是同一份数据。改接不同实际引擎必须创建新实例，由 owner 显式迁移引用。
 - `engine_id` 由数据库 identity sequence 单调分配，永久保留且不得回收、复用、手工指定或通过重置 sequence 重新分配。删除 Engine Instance 不释放其 ID。
-- System 根据 `tenant scope + engine_type + ConnectionSpec identity fields` 规范化生成持久身份键。相同身份的重复注册是幂等操作：`active` 或 `disabled` 实例返回原 ID，不创建重复记录，也不绕过管理员禁用状态；`deleting` 实例拒绝注册；`deleted` 实例返回“需要恢复”的冲突，必须通过显式恢复操作继续沿用原 ID。名称相同不构成同一实例，身份字段不同必须创建新 ID。
+- System 根据 `tenant scope + engine_type + ConnectionSpec identity fields` 规范化生成当前连接地址键。相同地址的重复注册是幂等操作：`active` 或 `disabled` 实例返回原 ID，不创建重复记录，也不绕过管理员禁用状态；`deleting` 实例拒绝注册。`deleted` 墓碑不占用地址，新登记获得新 ID；恢复墓碑时必须检查地址没有被其他非删除实例占用。名称相同不构成同一实例。
 - 生命周期统一为 `active`、`disabled`、`deleting`、`deleted`。业务选择器展示已注册、`active` 且目标 capability 匹配的引擎；`connection_status` 不负责隐藏选择项，而是决定其是否可选。只有 `online` 实例可建立新绑定或发起使用，离线、未知或检测中的实例保留展示并明确禁选。删除前先在原生命周期执行只读影响评估；用户确认后才进入 `deleting`，冻结新绑定和新执行并保留连接配置供权威复扫和 cleanup 使用。参与模块不可用、存在运行任务或复扫影响变化时删除必须暂停；cleanup 完成后转为 `deleted` 墓碑，保留 ID、Tenant、类型、身份键和删除审计，移除敏感凭据并退出普通列表、选择器、Runtime Descriptor 和执行路径。System 不物理删除墓碑。
 - 生命周期是平台管理意图，表示引擎实例是否被启用；连通性观测是 System 最近一次检测的运行事实，两者独立维护。连通性观测只更新 `connection_status`、`last_check_at` 和 `check_message`，不得递增 Engine Instance 聚合根 `version`，也不得改变资源 `updated_at`；否则后台巡检会使用户编辑基线无效。`active + offline` 表示实例仍被启用但当前不是可用引擎候选，不表示生命周期已自动停用。System 引擎管理清单必须继续展示该实例，供用户查看失败原因、修改连接、重新测试或删除。
 - 业务模块返回的新建任务、查询、工作流、Notebook、扫描、传输等引擎选择列表，应包含 `active + capability matched` 的注册选择项并返回 `connection_status`；只有 `active + online + capability matched` 的 Engine Instance 才是当前可执行候选。Backend 候选接口或共享选择层必须给出该判定，前端必须展示但禁用非 `online` 项；真正绑定或执行时 Backend 必须根据 System 当前事实再次校验，不得依赖前端状态。
 - 已保存任务或配置引用的 Engine Instance 后续变为 offline、unknown、checking、disabled、deleting、deleted 或缺失时，owner 仍显示原绑定及其不可用原因，但禁止新执行；不得静默清空、自动改选或按名称匹配替代实例。
 - Engine 删除不物理删除用户创建的任务、服务或治理配置；owner 模块将其保留为可重绑定状态，或禁用并标记 `missing_engine`。Meta 快照、缓存和明确登记的派生产物可由各 owner cleanup executor 物理回收。
-- 恢复 `deleted` Engine Instance 必须由用户显式确认并提交与原身份键一致的完整连接配置；System 使用新凭据重新生成能力，将生命周期置为 `active`、连通性置为 `unknown`，再异步检测。恢复沿用原 `engine_id`，因此仍引用该 ID 的旧任务和配置可在实例重新 `online` 后恢复可执行；这一效果只能由显式恢复触发。若用户要绑定不同物理端点，必须创建新 Engine Instance，再由 owner 校验能力并原子重绑。ResourceLocator 重绑定保留 path/type，清除旧 Meta `node_id/item_id`。
+- 恢复 `deleted` Engine Instance 必须由用户显式确认并提交完整连接配置，确认仍为同一实际引擎；System 检查地址未被其他非删除实例占用，使用新凭据重新生成能力，将生命周期置为 `active`、连通性置为 `unknown`，再异步检测。恢复沿用原 `engine_id`，因此仍引用该 ID 的旧任务和配置可在实例重新 `online` 后恢复可执行。若用户要绑定不同实际引擎，必须创建新 Engine Instance，再由 owner 校验能力并原子重绑。ResourceLocator 重绑定保留 path/type，清除旧 Meta `node_id/item_id`。
 - 用户登记的 Engine Instance 归当前 Tenant，不归登记人。`created_by` 只记录审计来源，不能成为后续读取、写入、DDL 或执行授权依据。
 - `tenant_id=NULL` 只允许平台共享的内置计算 Runtime；共享 Runtime 只提供计算能力，不因此获得任意 Tenant 数据权限。
 - `inference_runtime` Engine Instance 绑定一个确定的 Inference Runtime 服务端点，而不是一个在线厂商账号或模型端点。Provider Connection、Model Deployment 和 Model Profile 归 Inference owner，不进入 `system.engines`。

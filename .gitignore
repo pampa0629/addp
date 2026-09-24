@@ -105,6 +105,7 @@ temp/
 # Local development binaries
 .dev-bins/
 .dev-state/
+.business-state/
 
 # Vue/Vite
 .vite/

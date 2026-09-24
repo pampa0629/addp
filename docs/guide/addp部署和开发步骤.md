@@ -19,6 +19,7 @@ bash scripts/infra/up.sh
 
 此脚本自动完成:
 - 启动 PostgreSQL (addp-postgres)、Redis (addp-redis)、FalkorDB (addp-falkordb)、MinIO (addp-minio)、Meilisearch (addp-meilisearch) 等容器
+- 默认宿主机端口被占用时自动选择空闲端口并打印实际地址；容器内部地址不变
 - 初始化所有模块的 PostgreSQL schemas
 - 初始化 MinIO buckets 和 Redis 配置
 - 配置 Meilisearch 索引
@@ -41,7 +42,9 @@ bash scripts/dev/start.sh
 
 开发生命周期安装 Node 依赖时以 `package-lock.json` 为不可变构建输入，并统一执行 `npm ci`；缺少锁文件时直接失败，锁文件生成只属于显式的依赖维护流程。因此本地启动和 Hosted Online 门禁不会在安装依赖时改写已跟踪的锁文件或污染构建身份。
 
-启动脚本的 Infra 快速检查包含 FalkorDB 固定端口 `16479`；旧环境只有原来的四项服务运行时，不会跳过 Infra 启动，而会交给 `scripts/infra/up.sh` 补齐。端口可达仅决定是否需要启动 Infra，不能代替 Backend 的 `/health/ready`：Ontology 仍须验证 PostgreSQL、FalkorDB 图能力及 System 注册全部就绪。
+启动脚本按 Compose 项目、服务名和容器健康状态检查 Infra；其他服务即使占用 ADDP 的首选端口，也不能被当作 ADDP Infra。实际宿主机映射由 Compose 查询并注入开发进程。Backend 仍须通过 `/health/ready`：Ontology 还需验证 PostgreSQL、FalkorDB 图能力及 System 注册全部就绪。
+
+开发启动还会检查 Gateway、模块 Backend/Frontend 和工作流 Runtime 的首选端口。发生冲突时，启动输出会显示替代端口，实际地址以输出和 `.dev-state/ports.env` 为准；Console 的代理、iframe、API 文档和各前端 Gateway 代理同步使用该结果。停止脚本只清理当前工作区的进程及容器，不会清理占用首选端口的其他服务。
 
 自动启动以下内容:
 1. 基础设施 (如未运行)

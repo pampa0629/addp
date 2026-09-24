@@ -22,16 +22,16 @@ export default defineConfig({
   },
   server: {
     hmr: process.env.ADDP_E2E === '1' ? false : undefined,
-    port: 5180,
+    port: Number(process.env.SERVICE_FE_PORT || 5180),
     strictPort: true,
     host: '0.0.0.0',
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',
+        target: `http://localhost:${process.env.GATEWAY_PORT || 8000}`,
         changeOrigin: true
       },
       '/ogc': {
-        target: 'http://localhost:8000',
+        target: `http://localhost:${process.env.GATEWAY_PORT || 8000}`,
         changeOrigin: true
       }
     }

@@ -35,12 +35,17 @@ type EngineCreateRequest struct {
 }
 
 type EngineUpdateRequest struct {
-	Version        int64           `json:"version" binding:"required,gt=0"`
-	Name           *string         `json:"name"` // 显示名称
+	Version           int64           `json:"version" binding:"required,gt=0"`
+	Name              *string         `json:"name"` // 显示名称
+	ConnectionInfo    *ConnectionInfo `json:"connection_info"`
+	ConfirmSameEngine bool            `json:"confirm_same_engine"` // 地址变更时确认仍为同一实际引擎
+	Description       *string         `json:"description"`
+	LifecycleState    *string         `json:"lifecycle_state"`
+	Capabilities      *JSONString     `json:"capabilities"` // 能力声明JSON
+}
+
+type EngineConnectionTestRequest struct {
 	ConnectionInfo *ConnectionInfo `json:"connection_info"`
-	Description    *string         `json:"description"`
-	LifecycleState *string         `json:"lifecycle_state"`
-	Capabilities   *JSONString     `json:"capabilities"` // 能力声明JSON
 }
 
 type EngineDeleteRequest struct {
@@ -51,11 +56,12 @@ type EngineDeleteRequest struct {
 }
 
 type EngineRestoreRequest struct {
-	Version        int64          `json:"version" binding:"required,gt=0"`
-	Name           string         `json:"name" binding:"required"`
-	ConnectionInfo ConnectionInfo `json:"connection_info" binding:"required"`
-	Description    string         `json:"description"`
-	Capabilities   *JSONString    `json:"capabilities"`
+	Version           int64          `json:"version" binding:"required,gt=0"`
+	Name              string         `json:"name" binding:"required"`
+	ConnectionInfo    ConnectionInfo `json:"connection_info" binding:"required"`
+	ConfirmSameEngine bool           `json:"confirm_same_engine"`
+	Description       string         `json:"description"`
+	Capabilities      *JSONString    `json:"capabilities"`
 }
 
 type EngineDeletionAssessmentRequest struct {

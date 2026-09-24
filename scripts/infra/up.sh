@@ -100,129 +100,19 @@ if ! docker compose version >/dev/null 2>&1; then
   exit 1
 fi
 
-check_port() {
-  local port="$1"
-  if lsof -nP -i ":${port}" >/dev/null 2>&1; then
-    echo "busy"
-  else
-    echo "free"
-  fi
-}
-
-echo -e "${YELLOW}▶ 端口占用检查（固定端口，不自动改）${NC}"
-
-# default desired ports
-PG_PORT=15432
-REDIS_PORT=16379
-FALKORDB_PORT=16479
-MINIO_API_PORT=19000
-MINIO_CONSOLE_PORT=19001
-MEILISEARCH_PORT=17700
-KAFKA_PORT=19092
-KAFKA_CONNECT_PORT=18083
-
-# Track if all services are already running (for idempotency)
-ALL_SERVICES_RUNNING=true
-
-port_used_by_container() {
-  local port="$1"; local name="$2"
-  local ports
-  ports=$(docker ps --filter name="^/${name}$" --format '{{.Ports}}' 2>/dev/null || true)
-  # 支持范围起始 (:9000-> 或 :9000-9001->), 范围结束 (-9001->), 单端口 (:9000->)
-  if echo "$ports" | grep -qE "(^|:)${port}(-[0-9]+)?->|[0-9]+-${port}->"; then
-    return 0
-  fi
-  return 1
-}
-
-legacy_override="docker-compose.override.autogen.yml"
-[ -f "$legacy_override" ] && echo -e "${YELLOW}发现历史覆盖文件 $legacy_override，将忽略该文件（推荐删除）。${NC}"
-
-# PostgreSQL（固定 15432）
-if [ "$(check_port "$PG_PORT")" = "busy" ]; then
-  if port_used_by_container "$PG_PORT" "addp-postgres"; then
-    echo -e "  ${GREEN}✓ PostgreSQL 端口 ${PG_PORT} 已由 addp-postgres 容器使用${NC}"
-  else
-    echo -e "  ${RED}✗ PostgreSQL 端口 ${PG_PORT} 被其他进程占用${NC}"
-    echo -e "    建议：使用 lsof -nP -i :${PG_PORT} 查占用并释放，或临时调整 docker-compose.yml 端口映射。"
-    exit 1
-  fi
-else
-  echo -e "  ${GREEN}✓ PostgreSQL 端口 ${PG_PORT} 可用${NC}"
-  ALL_SERVICES_RUNNING=false
+source "${SCRIPT_DIR}/ports.sh"
+echo -e "${YELLOW}▶ 解析 ADDP Infra 宿主机端口${NC}"
+addp_infra_resolve_ports
+export ADDP_INFRA_RESOLVED=1
+ALL_SERVICES_RUNNING=false
+if addp_infra_ready; then
+  ALL_SERVICES_RUNNING=true
 fi
 
-# Redis（固定 16379）
-if [ "$(check_port "$REDIS_PORT")" = "busy" ]; then
-  if port_used_by_container "$REDIS_PORT" "addp-redis"; then
-    echo -e "  ${GREEN}✓ Redis 端口 ${REDIS_PORT} 已由 addp-redis 容器使用${NC}"
-  else
-    echo -e "  ${RED}✗ Redis 端口 ${REDIS_PORT} 被其他进程占用${NC}"
-    echo -e "    建议：使用 lsof -nP -i :${REDIS_PORT} 查占用并释放，或临时调整 docker-compose.yml 端口映射。"
-    exit 1
-  fi
-else
-  echo -e "  ${GREEN}✓ Redis 端口 ${REDIS_PORT} 可用${NC}"
-  ALL_SERVICES_RUNNING=false
-fi
-
-# FalkorDB（固定回环 16479；不自动选择端口）
-if [ "$(check_port "$FALKORDB_PORT")" = "busy" ]; then
-  if port_used_by_container "$FALKORDB_PORT" "addp-falkordb"; then
-    echo -e "  ${GREEN}✓ FalkorDB 端口 ${FALKORDB_PORT} 已由 addp-falkordb 使用${NC}"
-  else
-    echo -e "  ${RED}✗ FalkorDB 端口 ${FALKORDB_PORT} 被其他进程占用${NC}"
-    exit 1
-  fi
-else
-  ALL_SERVICES_RUNNING=false
-fi
-
-# MinIO（固定 19000/19001）
-if [ "$(check_port "$MINIO_API_PORT")" = "busy" ] || [ "$(check_port "$MINIO_CONSOLE_PORT")" = "busy" ]; then
-  if port_used_by_container "$MINIO_API_PORT" "addp-minio" || port_used_by_container "$MINIO_CONSOLE_PORT" "addp-minio"; then
-    echo -e "  ${GREEN}✓ MinIO 端口 ${MINIO_API_PORT}/${MINIO_CONSOLE_PORT} 已由 addp-minio 容器使用${NC}"
-  elif port_used_by_container "$MINIO_API_PORT" "business-minio" || port_used_by_container "$MINIO_CONSOLE_PORT" "business-minio"; then
-    echo -e "  ${RED}✗ 检测到 business-minio 使用了系统保留端口 ${MINIO_API_PORT}/${MINIO_CONSOLE_PORT}${NC}"
-    echo -e "    请到 business/.env 将 BUSINESS_MINIO_API_PORT/BUSINESS_MINIO_CONSOLE_PORT 改为 9002/9003，然后重启 business。"
-    exit 1
-  else
-    echo -e "  ${RED}✗ MinIO 端口 ${MINIO_API_PORT}/${MINIO_CONSOLE_PORT} 被其他进程占用${NC}"
-    echo -e "    建议：使用 lsof -nP -i :${MINIO_API_PORT},${MINIO_CONSOLE_PORT} 查占用并释放。"
-    exit 1
-  fi
-else
-  echo -e "  ${GREEN}✓ MinIO 端口 ${MINIO_API_PORT}/${MINIO_CONSOLE_PORT} 可用${NC}"
-  ALL_SERVICES_RUNNING=false
-fi
-
-# Infra Kafka（固定 19092）
-if [ "$(check_port "$KAFKA_PORT")" = "busy" ]; then
-  if port_used_by_container "$KAFKA_PORT" "addp-redpanda"; then
-    echo -e "  ${GREEN}✓ Infra Kafka 端口 ${KAFKA_PORT} 已由 addp-redpanda 容器使用${NC}"
-  else
-    echo -e "  ${RED}✗ Infra Kafka 端口 ${KAFKA_PORT} 被其他进程占用${NC}"
-    echo -e "    建议：使用 lsof -nP -i :${KAFKA_PORT} 查占用并释放。"
-    exit 1
-  fi
-else
-  echo -e "  ${GREEN}✓ Infra Kafka 端口 ${KAFKA_PORT} 可用${NC}"
-  ALL_SERVICES_RUNNING=false
-fi
-
-# Kafka Connect REST（固定 18083）
-if [ "$(check_port "$KAFKA_CONNECT_PORT")" = "busy" ]; then
-  if port_used_by_container "$KAFKA_CONNECT_PORT" "addp-kafka-connect"; then
-    echo -e "  ${GREEN}✓ Kafka Connect 端口 ${KAFKA_CONNECT_PORT} 已由 addp-kafka-connect 容器使用${NC}"
-  else
-    echo -e "  ${RED}✗ Kafka Connect 端口 ${KAFKA_CONNECT_PORT} 被其他进程占用${NC}"
-    echo -e "    建议：使用 lsof -nP -i :${KAFKA_CONNECT_PORT} 查占用并释放。"
-    exit 1
-  fi
-else
-  echo -e "  ${GREEN}✓ Kafka Connect 端口 ${KAFKA_CONNECT_PORT} 可用${NC}"
-  ALL_SERVICES_RUNNING=false
-fi
+echo "  PostgreSQL: ${POSTGRES_PORT}  Redis: ${REDIS_PORT}  FalkorDB: ${FALKORDB_PORT}"
+echo "  MinIO: ${MINIO_API_PORT}/${MINIO_CONSOLE_PORT}  Meilisearch: ${MEILISEARCH_PORT}"
+echo "  Infra Kafka: ${INFRA_KAFKA_PORT}  Kafka Connect: ${KAFKA_CONNECT_PORT}"
+echo ""
 
 echo -e "${YELLOW}▶ 检查 Docker 镜像...${NC}"
 
@@ -268,6 +158,7 @@ if [ "$ALL_SERVICES_RUNNING" = "true" ]; then
 fi
 echo -e "${YELLOW}▶ 启动或校验基础设施容器${NC}"
 compose up -d
+addp_infra_read_actual_ports
 echo ""
 echo -e "${YELLOW}等待服务就绪...${NC}"
 
@@ -326,7 +217,7 @@ done
 # MinIO
 printf "%s" "- MinIO      "
 for i in $(seq 1 ${max_wait}); do
-  if curl -sf http://localhost:19000/minio/health/live >/dev/null 2>&1; then
+  if curl -sf "http://localhost:${MINIO_API_PORT}/minio/health/live" >/dev/null 2>&1; then
     echo -e "${GREEN}✓${NC}"
     break
   fi
@@ -344,7 +235,7 @@ fi
 # Meilisearch
 printf "%s" "- Meilisearch "
 for i in $(seq 1 ${max_wait}); do
-  if curl -sf http://localhost:17700/health >/dev/null 2>&1; then
+  if curl -sf "http://localhost:${MEILISEARCH_PORT}/health" >/dev/null 2>&1; then
     echo -e "${GREEN}✓${NC}"
     break
   fi
@@ -415,13 +306,13 @@ echo ""
 echo -e "${GREEN}基础设施就绪！${NC}"
 echo ""
 echo "访问地址与默认凭据："
-echo "  - PostgreSQL:  localhost:15432  user=addp  password=addp_password  db=addp"
-echo "  - Redis:       localhost:16379  password=addp_redis"
-echo "  - FalkorDB:    127.0.0.1:16479  Ontology 私有 Infra（凭据不输出）"
-echo "  - MinIO API:   http://localhost:19000  user=${MINIO_ROOT_USER:-minioadmin}  password=${MINIO_ROOT_PASSWORD:-minioadmin}"
-echo "  - MinIO Console:http://localhost:19001"
-echo "  - Meilisearch: http://localhost:17700  master_key=${MEILISEARCH_MASTER_KEY:-未设置}"
-echo "  - Infra Kafka: localhost:19092  Redpanda / SASL_PLAINTEXT/SCRAM-SHA-256（内部使用）"
-echo "  - Kafka Connect:http://localhost:18083  （内部控制面）"
+echo "  - PostgreSQL:  localhost:${POSTGRES_PORT}  db=${POSTGRES_DB:-addp}"
+echo "  - Redis:       localhost:${REDIS_PORT}"
+echo "  - FalkorDB:    127.0.0.1:${FALKORDB_PORT}  Ontology 私有 Infra"
+echo "  - MinIO API:   http://localhost:${MINIO_API_PORT}"
+echo "  - MinIO Console:http://localhost:${MINIO_CONSOLE_PORT}"
+echo "  - Meilisearch: http://localhost:${MEILISEARCH_PORT}"
+echo "  - Infra Kafka: localhost:${INFRA_KAFKA_PORT}  Redpanda / SASL_PLAINTEXT/SCRAM-SHA-256"
+echo "  - Kafka Connect:http://localhost:${KAFKA_CONNECT_PORT}  内部控制面"
 echo ""
 echo -e "${YELLOW}提示：修改默认密码可通过根目录 .env 覆盖相应变量。${NC}"

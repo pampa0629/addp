@@ -3,7 +3,7 @@
 # ADDP_T2_SERVICES=postgres
 # ADDP_T2_REQUIRED_ENV=ONTOLOGY_POSTGRES_TEST_DSN
 # ADDP_T2_COMPOSE_FILE=scripts/test/docker-compose.ontology-falkor-t2.yml
-# ADDP_T2_INPUT_FILES=docker-compose.infra.yml .env.example scripts/infra/falkordb.yml scripts/infra/up.sh scripts/infra/status.sh scripts/infra/down.sh scripts/prod/setup-env.sh scripts/prod/wait-infra.sh
+# ADDP_T2_INPUT_FILES=docker-compose.infra.yml .env.example scripts/infra/falkordb.yml scripts/infra/ports.sh scripts/infra/up.sh scripts/infra/status.sh scripts/infra/down.sh scripts/prod/setup-env.sh scripts/prod/wait-infra.sh
 # Own the complete lifecycle of a disposable FalkorDB, never a developer endpoint.
 set -euo pipefail
 if [ -z "${ONTOLOGY_POSTGRES_TEST_DSN:-}" ]; then

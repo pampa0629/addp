@@ -8,6 +8,8 @@ ADDP 的配置按事实来源和生命周期分层管理，不建立由 System �
 - System 负责模块配置管理能力登记、AuthContext、Permission、统一审计及 System 自己拥有的配置，不理解其他模块的配置语义。
 - 每个 owner 模块定义、校验、保存并应用自己的普通运行配置；平台级不等于 System-owned。
 - 端口、数据库连接、基础设施地址和进程启动前必须可用的参数属于部署配置。
+- 本地开发启动时可将根 `.env` 中的基础设施宿主机端口作为首选值，解析出本次实际端口并注入同一次启动的进程环境。实际映射以 ADDP Compose 容器为准，不另建可编辑的配置事实源，也不覆写根 `.env`。
+- 模块加载根 `.env` 时只补齐进程环境中缺失的值；启动脚本或容器显式注入的部署值优先，避免运行时端口被 `.env` 中的首选值覆盖。
 - 密钥、密码和 Token pepper 属于 Secret，不进入普通配置表和配置能力声明。
 - 资源连接、任务定义和用户偏好保留各自的强类型实体，不降格为通用配置键值。
 
@@ -167,7 +169,7 @@ System IAM 安全策略是 `platform_only` 的 System-owned 平台安全配置�
 
 Ontology Backend 使用 `ONTOLOGY_BACKEND_PORT=8195`、`SYSTEM_URL` 和既有独立 `ONTOLOGY_SERVICE_CLIENT_SECRET`。`INFRA_FALKORDB_ADDRESS` 在宿主开发默认为 `127.0.0.1:16479`，容器部署显式覆盖为 `falkordb:6379`；密码只读取 `INFRA_FALKORDB_PASSWORD`。这些配置在启动前生效，不接受用户 API 修改。
 
-FalkorDB 是 Ontology 私有 Infra，不进入 System Engine 注册，也不复用 Infra Redis。根 `.env` 的 `INFRA_FALKORDB_PASSWORD` 是独立 Secret，必须非空；生产初始化生成随机值，禁止使用模板开发密码或复用 Redis 密码。宿主开发连接固定为 `127.0.0.1:16479`，容器通过 `falkordb:6379` 连接；不开放 Browser。
+FalkorDB 是 Ontology 私有 Infra，不进入 System Engine 注册，也不复用 Infra Redis。根 `.env` 的 `INFRA_FALKORDB_PASSWORD` 是独立 Secret，必须非空；生产初始化生成随机值，禁止使用模板开发密码或复用 Redis 密码。宿主开发连接首选 `127.0.0.1:16479`，端口冲突时由 Infra 启动入口解析实际端口并注入 `INFRA_FALKORDB_ADDRESS`；容器通过 `falkordb:6379` 连接。不开放 Browser。
 
 `scripts/infra/falkordb.yml` 是正式 Compose 与 disposable T2 共用的服务定义，随现有 Infra 打包路径发布，固定镜像 digest、非零查询预算、线程/查询内存/队列上限和容器资源限制。`/data` 使用独立 `falkordb_data` 卷，采用 RDB 快照；PG 仍是恢复权威，RDB 不能替代发布摘要校验与重建。此单机配置只用于本地开发/受控同机网络，未声明生产 TLS、HA 或灾备认证。
 
@@ -379,6 +381,8 @@ TRANSFER_META_SCAN_CLAIM_TTL=2m
 生产环境必须显式设置 `INFRA_KAFKA_CDC_RETENTION_BYTES`，并按峰值写入速率、7 天恢复窗口、副本因子和安全余量校验磁盘容量；time/bytes 任一边界先到都会删除旧 segment。开发状态脚本按 75%/85% 展示 degraded/critical 磁盘水位。生产耐久语义固定为 3 副本、producer `acks=all`、至少 2 broker 确认，由 RF=3 的 Raft majority 实现；Transfer 不读取或下发 `min.insync.replicas` topic 属性。`INFRA_KAFKA_INTERNAL_REPLICATION_FACTOR` 控制 Connect internal topics 的副本数，生产设为 3。凭据分别由 infra admin、Kafka Connect 和 Transfer consumer 使用，不复用业务 Kafka Engine 凭据。`INFRA_KAFKA_SASL_MECHANISM` 固定为部署级 `scram-sha-256`，由 Infra admin、Connect、Transfer continuous 和 DLQ 共同消费，禁止进入用户任务配置。正式单机开发 Compose 仅在本机和 Docker 网络使用 `SASL_PLAINTEXT/SCRAM-SHA-256`；生产 HA profile 必须使用 `SASL_SSL`，固定 `write.caching=false`、Connect producer `acks=all`、10 秒 scheduled rebalance delay，并使用 `19092/19093/19094` 三个本地 external listener。broker service/container/DNS 固定为 `redpanda`/`addp-redpanda`/`redpanda:29092`，一次性 `redpanda-init` 使用同一 Redpanda 镜像内置的 `rpk` 初始化 SCRAM 用户、Connect internal topics 和 ACL；不得恢复 `kafka` broker service、Apache Kafka CLI 镜像或第二套初始化容器。拓扑参数与 Redpanda 原生健康观测只存在于部署/认证层。`KAFKA_CONNECT_LOOPBACK_HOST` 只用于 Connect 容器访问登记为 localhost/loopback 的开发业务库，不改写远程数据库主机。capture supervisor 已负责显式创建单分区 CDC topic、托管 connector、登记 generation/resource、监控状态和幂等 stop/cleanup。`TRANSFER_META_SCAN_CLAIM_TTL` 统一用于 continuous 首次目标扫描和 additive migration 后扫描的持久化 claim 租期；只用于进程崩溃后的过期接管，不是扫描结果超时，也不进入任务配置。该值必须大于 Meta client 固定的 60 秒 HTTP 超时，默认 2 分钟，为调用完成和 token fencing 留出余量。
 
 Business MySQL 作为本地 CDC 测试源时使用独立配置文件 `business/.env`：
+
+本地 `business/scripts/start.sh` 将 `POSTGRES_PORT`、`MYSQL_PORT`、`MINIO_API_PORT`、`MINIO_CONSOLE_PORT` 视为首次启动首选值；首次冲突自动选择空闲宿主机端口，成功后固定在 `business/.business-state/ports.env`。已登记的 Engine Instance 不随重启改写物理端点。宿主机开发进程登记实际发布端口；同一 Compose 网络内的进程登记 `business-*` 服务名和固定容器端口。
 
 ```bash
 MYSQL_ROOT_PASSWORD=change-in-production

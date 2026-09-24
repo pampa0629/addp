@@ -49,7 +49,7 @@ from .module_registry import (
     ModuleRegistryAPIError,
     ModuleRegistryClient,
 )
-from .runtime_registration import register_runtime_engine, retry_runtime_registration
+from .runtime_registration import register_runtime_engine, retry_runtime_registration, runtime_advertised_port
 
 __all__ = [
     "BaseClient",
@@ -94,5 +94,6 @@ __all__ = [
     "ModuleRegistryAPIError",
     "ModuleRegistryClient",
     "register_runtime_engine",
+    "runtime_advertised_port",
     "retry_runtime_registration",
 ]

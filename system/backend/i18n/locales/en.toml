@@ -139,17 +139,17 @@ other = "The module runtime instance does not exist; register it first"
 [system.module.version_conflict]
 other = "The module definition was changed by another operation; refresh and try again"
 
-[system.engine.identity_immutable]
-other = "The physical endpoint of an engine cannot be changed in place; create a new engine instance"
+[system.engine.address_conflict]
+other = "Another engine is already registered at this connection address"
+
+[system.engine.relocation_unconfirmed]
+other = "Confirm that the new connection address still points to the same physical engine"
 
 [system.engine.deleting]
 other = "The engine is reclaiming resources before deletion and cannot perform this operation"
 
 [system.engine.deleted]
 other = "The engine has been deleted and cannot perform this operation"
-
-[system.engine.restore_required]
-other = "An engine with the same physical identity was deleted; explicitly restore the original engine"
 
 [system.engine.version_conflict]
 other = "The engine was modified by another operation; refresh and try again"

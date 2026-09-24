@@ -1,6 +1,6 @@
 import httpx
 
-from addp_common.client.runtime_registration import register_runtime_engine, retry_runtime_registration
+from addp_common.client.runtime_registration import register_runtime_engine, retry_runtime_registration, runtime_advertised_port
 from addp_common.client.service_token import SyncOAuthServiceTokenSource
 
 
@@ -27,6 +27,13 @@ def test_sync_service_token_source_uses_tenant_client_credentials():
         assert source.token(7) == "addp_at_sync_tenant_token"
     finally:
         source.close()
+
+
+def test_runtime_advertised_port_uses_host_mapping(monkeypatch):
+    monkeypatch.delenv("RUNTIME_PUBLIC_PORT", raising=False)
+    assert runtime_advertised_port(8102) == 8102
+    monkeypatch.setenv("RUNTIME_PUBLIC_PORT", "18102")
+    assert runtime_advertised_port(8102) == 18102
 
 
 def test_register_runtime_engine_uses_platform_bearer(monkeypatch):

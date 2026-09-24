@@ -616,7 +616,7 @@ def register_to_system():
     """
     向 System Backend 自注册（创建或更新引擎记录）
     """
-    from addp_common.client import register_runtime_engine
+    from addp_common.client import register_runtime_engine, runtime_advertised_port
 
     system_url = os.getenv('SYSTEM_URL', 'http://localhost:8180')
     client_secret = os.getenv('GEOPYTHON_WORKFLOW_SERVICE_CLIENT_SECRET', '')
@@ -625,7 +625,7 @@ def register_to_system():
     port = int(os.getenv('PORT', 8099))
     protocol = os.getenv('PROTOCOL', 'http')
     runtime_host = os.getenv('RUNTIME_HOST', 'localhost').strip()
-    connection_info = {"protocol": protocol, "port": port}
+    connection_info = {"protocol": protocol, "port": runtime_advertised_port(port)}
     if runtime_host:
         connection_info["host"] = runtime_host
 

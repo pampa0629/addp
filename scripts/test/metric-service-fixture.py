@@ -14,10 +14,14 @@ QUERY = {"parameters": {"subject_id": "A", "start_date": "2026-01-01",
                         "end_date": "2027-01-01", "grain": "total"},
          "select": ["value"], "page": {"limit": 10}}
 EXPECTED_DATA = [{"value": 2}]
+NAMESPACES = {"postgresql": ("public", "schema"), "tidb": ("metric_fixture", "database")}
 
 
-def prepare(client, engine_id, tenant_id, report, checkpoint):
+def prepare(client, engine_id, tenant_id, engine_type, report, checkpoint):
     """Physical seed has duplicate events, a nonleader and an out-of-range event."""
+    if engine_type not in NAMESPACES:
+        raise API.SuiteError("unsupported metric fixture engine type")
+    namespace, namespace_type = NAMESPACES[engine_type]
     try:
         report["scan_execution_id"] = SCAN.wait_for_scan(client, engine_id, time.monotonic() + 180)
     except SCAN.SuiteError as error:
@@ -33,10 +37,11 @@ def prepare(client, engine_id, tenant_id, report, checkpoint):
         API.assert_tenant(result, tenant_id, path)
         return result
 
-    create("/api/v1/model/dw-layers", {"layer_code": "metric_online", "layer_name": "Metric Online"})
+    layer = "metric_online_" + engine_type
+    create("/api/v1/model/dw-layers", {"layer_code": layer, "layer_name": "Metric Online " + engine_type})
     metric_path = "/api/v1/standard/metrics"
     definition = create(metric_path, {
-        "scope_type": "tenant_common", "code": "online_metric_count", "metric_type": "atomic",
+        "scope_type": "tenant_common", "code": "online_metric_count_" + engine_type, "metric_type": "atomic",
         "effective_from": "2020-01-01T00:00:00Z",
         "name": "Online distinct leader events", "definition": "Count distinct led events per person",
         "statistical_caliber": "Distinct events, leader=true, within [start_date,end_date)",
@@ -60,9 +65,10 @@ def prepare(client, engine_id, tenant_id, report, checkpoint):
         name = "metric_" + kind
         table = create("/api/v1/model/logical-tables", {
             "name": name, "code": name, "table_type": "fact" if kind == "facts" else "dimension",
-            "layer": "metric_online", "scd_type": 0,
+            "layer": layer, "scd_type": 0,
             "grain_description": "One participation record" if kind == "facts" else "",
-            "materialization": {"target_parent_locator": f"addp://engine/{engine_id}/path/public?type=schema",
+            "materialization": {"target_parent_locator":
+                                f"addp://engine/{engine_id}/path/{namespace}?type={namespace_type}",
                                 "target_name": name},
         })
         path = f"/api/v1/model/logical-tables/{table['id']}"

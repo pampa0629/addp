@@ -8,7 +8,7 @@ describe('Ontology Console entry', () => {
     const config = read('../src/config/portalConfig.js')
     expect(config).toContain("modules: ['standard', 'modeling', 'quality', 'ontology']")
     expect(config).toContain("ontology: '/ontology/ontologies'")
-    expect(config).toContain('5192/ontology')
+    expect(config).toContain("_url('ontology', 5192, 'ontology', '/ontology')")
     const menu = config.match(/ontology: \{\s+label: 'console.menus.ontology.label'[\s\S]*?\n  \},/)[0]
     expect(menu).toContain("contexts: ['tenant']")
     expect(menu).toContain("permissions: ['ontology.revision.read']")

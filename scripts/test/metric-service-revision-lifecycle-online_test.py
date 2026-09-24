@@ -6,6 +6,7 @@ import sqlite3
 import subprocess
 import sys
 import unittest
+from contextlib import closing
 from pathlib import Path
 from unittest.mock import patch
 
@@ -154,7 +155,7 @@ class MetricLifecycleTest(unittest.TestCase):
     def test_hosted_fixture_uses_reviewed_definition_and_approved_related_tables(self):
         client, report = FixtureGateway(), {}
         with patch.object(ONLINE.FIXTURE.SCAN, "wait_for_scan", return_value="scan-1"):
-            implementation, revision = ONLINE.FIXTURE.prepare(client, 8, 42, report, lambda: None)
+            implementation, revision = ONLINE.FIXTURE.prepare(client, 8, 42, "postgresql", report, lambda: None)
         self.assertGreater(implementation, 0)
         self.assertEqual(revision, 99)
         self.assertEqual(len(client.tables), 3)
@@ -163,18 +164,29 @@ class MetricLifecycleTest(unittest.TestCase):
         self.assertEqual(client.contract["filters"][0]["value"], True)
         self.assertNotIn("DELETE", [method for method, _, _ in client.requests])
 
+    def test_tidb_fixture_uses_database_namespace_and_same_metric_contract(self):
+        client, report = FixtureGateway(), {}
+        with patch.object(ONLINE.FIXTURE.SCAN, "wait_for_scan", return_value="scan-1"):
+            ONLINE.FIXTURE.prepare(client, 8, 42, "tidb", report, lambda: None)
+        self.assertEqual(len(client.tables), 3)
+        self.assertTrue(all(table["materialization"]["target_parent_locator"] ==
+                            "addp://engine/8/path/metric_fixture?type=database"
+                            for table in client.tables.values()))
+        self.assertEqual(client.contract["operation"], "count_distinct")
+        self.assertEqual(client.contract["filters"][0]["value"], True)
+
     def test_failed_scan_creates_no_logical_or_standard_resources(self):
         client = FixtureGateway()
         with patch.object(ONLINE.FIXTURE.SCAN, "wait_for_scan", side_effect=ONLINE.FIXTURE.SCAN.SuiteError("failed")):
             with self.assertRaises(SuiteError):
-                ONLINE.FIXTURE.prepare(client, 8, 42, {}, lambda: None)
+                ONLINE.FIXTURE.prepare(client, 8, 42, "postgresql", {}, lambda: None)
         self.assertEqual(client.requests, [])
 
     def test_physical_seed_has_a_nontrivial_deterministic_expected_count(self):
         source = (Path(__file__).parents[2] / "business/scripts/online-metric-postgres-fixture.sh").read_text()
         sql = source.split("<<'SQL'\n", 1)[1].split("CREATE ROLE", 1)[0]
         # This checks the fixture's data contract, not the PostgreSQL runtime/compiler.
-        with sqlite3.connect(":memory:") as connection:
+        with closing(sqlite3.connect(":memory:")) as connection:
             connection.executescript(sql)
             value = connection.execute("""SELECT count(DISTINCT f.event_id)
                 FROM metric_facts f JOIN metric_events e USING(event_id)
@@ -183,6 +195,18 @@ class MetricLifecycleTest(unittest.TestCase):
             self.assertEqual(ONLINE.FIXTURE.EXPECTED_DATA, [{"value": value}])
             self.assertEqual(value, 2)
             self.assertGreater(connection.execute("SELECT count(*) FROM metric_facts WHERE person_id='A'").fetchone()[0], value)
+
+        tidb_source = (Path(__file__).parents[2] / "scripts/test/online-hosted-metric-gate.sh").read_text()
+        tidb_sql = tidb_source.split("<<SQL\n", 1)[1].split("\nSQL\n", 1)[0]
+        tidb_sql = "\n".join(line.replace("metric_fixture.", "") for line in tidb_sql.splitlines()
+                             if not line.startswith(("CREATE DATABASE", "CREATE USER", "GRANT ")))
+        with closing(sqlite3.connect(":memory:")) as connection:
+            connection.executescript(tidb_sql)
+            value = connection.execute("""SELECT count(DISTINCT f.event_id)
+                FROM metric_facts f JOIN metric_events e USING(event_id)
+                WHERE person_id='A' AND leader=1
+                  AND event_date >= '2026-01-01' AND event_date < '2027-01-01'""").fetchone()[0]
+            self.assertEqual(ONLINE.FIXTURE.EXPECTED_DATA, [{"value": value}])
 
     def run_scenario(self, gateway, report):
         return ONLINE.run_suite(gateway, 42, "run-42", 10, 100, QUERY, DATA, report)

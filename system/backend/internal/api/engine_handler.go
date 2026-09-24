@@ -270,6 +270,7 @@ func (h *EngineHandler) GetByID(c *gin.Context) {
 
 // Update godoc
 // @Summary      更新引擎 | Update engine
+// @Description  同一实际引擎搬迁时可确认后修改连接地址并保留 ID 与引用；新地址不得被其他引擎占用 | Confirm a move of the same physical engine to update its address while preserving its ID and references; the new address must be unoccupied
 // @Tags         引擎管理 | Engine Management
 // @Accept       json
 // @Produce      json
@@ -471,7 +472,7 @@ func (h *EngineHandler) Delete(c *gin.Context) {
 
 // Restore godoc
 // @Summary      恢复已删除引擎 | Restore deleted engine
-// @Description  使用与墓碑身份键一致的完整连接配置和新凭据显式恢复 Engine Instance，沿用原永久 ID | Explicitly restore an Engine Instance with complete connection details and fresh credentials matching the tombstone identity key while retaining its permanent ID
+// @Description  确认仍为同一实际引擎并提交完整连接配置和新凭据，沿用原永久 ID；地址不得被其他引擎占用 | Confirm the same physical engine and restore it with complete connection details and fresh credentials while retaining its permanent ID; the address must be unoccupied
 // @Tags         引擎管理 | Engine Management
 // @Accept       json
 // @Produce      json
@@ -520,22 +521,14 @@ func (h *EngineHandler) respondWithResourceError(c *gin.Context, err error) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	case errors.Is(err, service.ErrSpatialWorkspaceNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
-	case errors.Is(err, service.ErrEngineIdentityImmutable):
-		commonapi.RespondError(c, http.StatusConflict, commoni18n.T(c, sysi18n.MsgEngineIdentityImmutable))
+	case errors.Is(err, service.ErrEngineAddressConflict):
+		commonapi.RespondError(c, http.StatusConflict, commoni18n.T(c, sysi18n.MsgEngineAddressConflict))
+	case errors.Is(err, service.ErrEngineRelocationUnconfirmed):
+		commonapi.RespondError(c, http.StatusBadRequest, commoni18n.T(c, sysi18n.MsgEngineRelocationUnconfirmed))
 	case errors.Is(err, service.ErrEngineDeleting):
 		commonapi.RespondError(c, http.StatusConflict, commoni18n.T(c, sysi18n.MsgEngineDeleting))
 	case errors.Is(err, service.ErrEngineDeleted):
 		commonapi.RespondError(c, http.StatusConflict, commoni18n.T(c, sysi18n.MsgEngineDeleted))
-	case errors.Is(err, service.ErrEngineRestoreRequired):
-		response := gin.H{
-			"error":      commoni18n.T(c, sysi18n.MsgEngineRestoreRequired),
-			"error_code": "engine_restore_required",
-		}
-		var restoreErr *service.EngineRestoreRequiredError
-		if errors.As(err, &restoreErr) {
-			response["engine_id"] = restoreErr.EngineID
-		}
-		c.JSON(http.StatusConflict, response)
 	case errors.Is(err, service.ErrEngineVersionConflict):
 		c.JSON(http.StatusConflict, gin.H{
 			"error":      commoni18n.T(c, sysi18n.MsgEngineVersionConflict),
@@ -571,7 +564,7 @@ func (h *EngineHandler) respondWithResourceError(c *gin.Context, err error) {
 // @Produce      json
 // @Security     BearerAuth
 // @Param        id path int true "引擎ID | Engine ID"
-// @Param        request body models.EngineUpdateRequest false "临时连接配置 | Temporary connection info"
+// @Param        request body models.EngineConnectionTestRequest false "临时连接配置 | Temporary connection info"
 // @Success      200 {object} models.EngineConnectionTestResponse
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      404 {object} models.ErrorResponse
@@ -584,7 +577,7 @@ func (h *EngineHandler) TestConnection(c *gin.Context) {
 		return
 	}
 
-	var req models.EngineUpdateRequest
+	var req models.EngineConnectionTestRequest
 	var override *models.ConnectionInfo
 	if c.Request.Body != nil && c.Request.ContentLength > 0 {
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -607,8 +600,9 @@ func (h *EngineHandler) TestConnection(c *gin.Context) {
 
 	probe, err := h.testEngineConnection(engine)
 	if err != nil {
-		// 更新为offline
-		h.engineService.RecordConnectionStatus(id, "offline", err.Error())
+		if override == nil {
+			h.engineService.RecordConnectionStatusForAddress(id, engine.IdentityKey, "offline", err.Error())
+		}
 
 		commonapi.RespondSuccess(c, gin.H{
 			"success": false,
@@ -618,8 +612,9 @@ func (h *EngineHandler) TestConnection(c *gin.Context) {
 		return
 	}
 
-	// 更新为online
-	h.engineService.RecordConnectionStatus(id, "online", "连接正常")
+	if override == nil {
+		h.engineService.RecordConnectionStatusForAddress(id, engine.IdentityKey, "online", "连接正常")
+	}
 
 	commonapi.RespondSuccess(c, gin.H{
 		"success": true,

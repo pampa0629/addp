@@ -122,7 +122,7 @@
             <el-button size="small" type="primary" :disabled="['deleting', 'deleted'].includes(row.lifecycle_state)" @click="testConnection(row)">{{ t('system.engine.actions.test') }}</el-button>
             <el-button size="small" @click="viewEngineDetails(row)">{{ t('system.engine.actions.detail') }}</el-button>
             <el-button
-				v-if="row.lifecycle_state === 'deleted'"
+			v-if="row.lifecycle_state === 'deleted' && authStore.hasPermission('system.engine.update')"
 				size="small"
 				type="success"
 				@click="restoreEngine(row)"
@@ -699,11 +699,13 @@ import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { useConsolePageDescriptor } from '@common-ui'
 import { getEngineRefreshInterval, paginateEngines } from '../utils/engineList'
-import { switchStorageEngineType } from '../utils/engineForm'
+import { hasEngineAddressChanged, switchStorageEngineType } from '../utils/engineForm'
+import { useAuthStore } from '../store/auth'
 import { navigateSystemRoute } from '../utils/moduleNavigation'
 import { resolveEngineDetailRouteState } from '../utils/routeState'
 
 const { t } = useI18n()
+const authStore = useAuthStore()
 const route = useRoute()
 const router = useRouter()
 
@@ -803,7 +805,6 @@ const form = ref({
   name: '',
   description: '',
 	lifecycle_state: 'active',
-	version: 1,
   connection_info: {}
 })
 
@@ -1068,7 +1069,7 @@ const getEngineTypeColor = (type) => {
 }
 
 const canEditEngine = (row) => {
-	return !row.is_builtin && row.engine_origin === 'general' && !['deleting', 'deleted'].includes(row.lifecycle_state)
+	return authStore.hasPermission('system.engine.update') && !row.is_builtin && row.engine_origin === 'general' && !['deleting', 'deleted'].includes(row.lifecycle_state)
 }
 
 const getLifecycleTagType = (state) => ({
@@ -1493,7 +1494,6 @@ const editEngine = async (row) => {
     name: row.name,
     description: row.description,
 		lifecycle_state: row.lifecycle_state,
-		version: row.version,
     connection_info: { ...row.connection_info },
     ...(scanConfig ? { scan_config: scanConfig } : {})
   }
@@ -1512,7 +1512,6 @@ const restoreEngine = (row) => {
 		name: row.name,
 		description: row.description,
 		lifecycle_state: row.lifecycle_state,
-		version: row.version,
 		connection_info: { ...row.connection_info }
 	}
 	dialogVisible.value = true
@@ -1565,7 +1564,7 @@ const testBeforeCreate = async () => {
   testing.value = true
   try {
     const response = isEdit.value && !isRestore.value
-      ? await enginesAPI.testExistingConnection(editId.value, splitEngineAndScanPayload(form.value).enginePayload)
+      ? await enginesAPI.testExistingConnection(editId.value, { connection_info: form.value.connection_info })
       : await enginesAPI.testConnection(splitEngineAndScanPayload(form.value).enginePayload)
 
     if (response.success) {
@@ -1577,12 +1576,6 @@ const testBeforeCreate = async () => {
     ElMessage.error(t('system.engine.msg.testFailed', { error: error.response?.data?.error || error.message }))
   } finally {
     testing.value = false
-	if (isRestore.value) {
-		await enginesAPI.restore(editId.value, submitData)
-		ElMessage.success(t('system.engine.msg.restoreSuccess'))
-    } else if (isEdit.value) {
-      await loadEngines()
-    }
   }
 }
 
@@ -1607,14 +1600,37 @@ const submitForm = async () => {
   const valid = await formRef?.validate()
   if (!valid) return
 
+  const { enginePayload, scanConfig } = splitEngineAndScanPayload(form.value)
+  const submitData = { ...enginePayload }
+  if (isEdit.value) {
+    submitData.version = editingEngine.value.version
+  }
+  if (isEdit.value && editingEngine.value) {
+    const descriptor = engineTypeDescriptors.value.find(item => item.type === editingEngine.value.engine_type)
+    if (hasEngineAddressChanged(descriptor, editingEngine.value.connection_info, submitData.connection_info)) {
+      try {
+        await ElMessageBox.confirm(
+          t('system.engine.msg.relocateConfirm', { id: editId.value }),
+          t('system.engine.msg.relocateTitle'),
+          { type: 'warning', confirmButtonText: t('system.engine.actions.save'), cancelButtonText: t('system.engine.actions.cancel') }
+        )
+      } catch {
+        return
+      }
+      submitData.confirm_same_engine = true
+    }
+  }
+
   submitting.value = true
   try {
-    const { enginePayload, scanConfig } = splitEngineAndScanPayload(form.value)
-    let submitData = { ...enginePayload }
-
-    if (isEdit.value) {
+    if (isRestore.value) {
+      await enginesAPI.restore(editId.value, submitData)
+      ElMessage.success(t('system.engine.msg.restoreSuccess'))
+    } else if (isEdit.value) {
       const response = await enginesAPI.update(editId.value, submitData)
-      await syncEngineScanPolicyAfterSave(engineFromResponse(response) || { id: editId.value, name: submitData.name }, scanConfig || defaultImmediateScanConfig())
+      if (scanConfig) {
+        await syncEngineScanPolicyAfterSave(engineFromResponse(response) || { id: editId.value, name: submitData.name }, scanConfig)
+      }
       ElMessage.success(t('system.engine.msg.updateSuccess'))
     } else {
       const response = await enginesAPI.create(submitData)
@@ -1888,7 +1904,6 @@ const resetForm = () => {
     name: '',
     description: '',
 		lifecycle_state: 'active',
-		version: 1,
     connection_info: {}
   }
   editingEngine.value = null

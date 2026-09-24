@@ -154,6 +154,7 @@ test-infra-postgresql-init: ## 校验本地 PostgreSQL 保留测试库及扩展�
 	@python3 scripts/infra/init-postgresql_test.py
 
 test-business-config: ## 校验 Business Compose 和服务管理脚本（不启动容器）
+	@bash -n scripts/utils/register-business.sh
 	@docker compose --env-file business/.env.example -f business/docker-compose.yml config --quiet
 	@docker compose --env-file business/.env.example -f business/docker-compose.yml config --services | grep -Fxq oceanbase
 	@docker compose --env-file business/.env.example -f business/docker-compose.yml config --images | grep -Fxq oceanbase/oceanbase-ce:4.4.2-lts
@@ -209,7 +210,8 @@ test-business-config: ## 校验 Business Compose 和服务管理脚本（不启�
 	@grep -Fq '00ad2206ac93cf28c7702cd624b7c59dc1a146f9dca1f81ed19eeac430416c0b' scripts/lib/opengauss-official-media.sh
 	@grep -Fq 'opengauss_official_container_ready business-opengauss opengauss_gsql' business/scripts/start.sh
 	@test "$$(grep -c -- '--default-character-set=utf8mb4' business/scripts/start.sh)" -ge 4
-	@bash -n business/scripts/start.sh business/scripts/stop.sh business/scripts/restart.sh business/scripts/kingbase.sh business/scripts/dameng.sh scripts/utils/register-business.sh scripts/lib/opengauss-official-media.sh scripts/lib/kingbase-official-media.sh scripts/lib/dameng-official-media.sh scripts/test/common-kingbase-gate.sh scripts/test/common-dameng-gate.sh scripts/test/kingbase-official-media-release-gate.sh scripts/test/dameng-official-media-release-gate.sh
+	@bash -n business/scripts/start.sh business/scripts/ports.sh business/scripts/stop.sh business/scripts/restart.sh business/scripts/kingbase.sh business/scripts/dameng.sh scripts/utils/register-business.sh scripts/lib/opengauss-official-media.sh scripts/lib/kingbase-official-media.sh scripts/lib/dameng-official-media.sh scripts/test/business-port-resolution.sh scripts/test/common-kingbase-gate.sh scripts/test/common-dameng-gate.sh scripts/test/kingbase-official-media-release-gate.sh scripts/test/dameng-official-media-release-gate.sh
+	@bash scripts/test/business-port-resolution.sh
 	@bash business/scripts/start.sh --help | grep -Fq -- '-oceanbase'
 	@bash business/scripts/start.sh --help | grep -Fq -- '-tidb'
 	@bash business/scripts/start.sh --help | grep -Fq -- '-opengauss'
@@ -277,7 +279,7 @@ test-model-mysql: ## 使用一次性 MySQL database 验证数据库无关指标�
 test-common-oceanbase: ## 使用一次性 OceanBase database 验证 Engine Provider 契约
 	@bash scripts/test/common-oceanbase-gate.sh
 
-test-common-tidb: ## 使用一次性 TiDB database 验证 Engine Provider 契约
+test-common-tidb: ## 使用一次性 TiDB database 验证 Provider、Model 指标及 Service 查询契约
 	@bash scripts/test/common-tidb-gate.sh
 
 test-common-opengauss: ## 在 Linux x86_64 hosted runner 使用一次性 openGauss database 验证 Provider 契约
@@ -394,7 +396,8 @@ test-release-runner: ## 运行 T5 分发器和 CI 登记检查的确定性测试
 
 .PHONY: test-dev-lifecycle
 test-dev-lifecycle: ## 验证 Swagger 增量、增量重启、批量端口检查、构建指纹、Runtime 并发与安装锁
-	@bash -n scripts/dev/restart.sh scripts/dev/start.sh scripts/dev/stop.sh scripts/dev/lifecycle-lock.sh scripts/dev/build-identity.sh scripts/dev/jupyter-env.sh scripts/swagger/gen-swagger.sh scripts/test/dev-lifecycle-and-build.sh
+	@bash -n scripts/dev/restart.sh scripts/dev/start.sh scripts/dev/stop.sh scripts/dev/ports.sh scripts/dev/lifecycle-lock.sh scripts/dev/build-identity.sh scripts/dev/jupyter-env.sh scripts/infra/ports.sh scripts/infra/up.sh scripts/test/infra-port-resolution.sh scripts/swagger/gen-swagger.sh scripts/test/dev-lifecycle-and-build.sh
+	@bash scripts/test/infra-port-resolution.sh
 	@bash scripts/test/dev-lifecycle-and-build.sh
 	@cd common && go test ./schema ./repository ./dataprotection/projectionstore
 	@for module in security meta quality transfer; do (cd $$module/backend && go test -tags sqlite_load_extension ./cmd/... -run '^$$') || exit 1; done

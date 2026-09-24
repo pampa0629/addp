@@ -43,21 +43,21 @@ export default defineConfig({
   },
 
   server: {
-    port: 5178,
+    port: Number(process.env.DEVELOP_FE_PORT || 5178),
     strictPort: true,
     host: '0.0.0.0',
     hmr: isE2E ? false : {
       protocol: 'ws',
       host: 'localhost',
-      port: 5178,
-      clientPort: 5178
+      port: Number(process.env.DEVELOP_FE_PORT || 5178),
+      clientPort: Number(process.env.DEVELOP_FE_PORT || 5178)
     },
     fs: {
       allow: ['..']
     },
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',  // 代理到 Gateway，由 Gateway 统一路由
+        target: `http://localhost:${process.env.GATEWAY_PORT || 8000}`,  // 代理到 Gateway，由 Gateway 统一路由
         changeOrigin: true,
         ws: true
       }

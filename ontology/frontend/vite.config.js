@@ -31,12 +31,12 @@ export default defineConfig({
     ]
   },
   server: {
-    port: 5192,
+    port: Number(process.env.ONTOLOGY_FE_PORT || 5192),
     strictPort: true,
     hmr: !testing,
     fs: { allow: [resolve(__dirname, '../..')] },
     proxy: testing
       ? {}
-      : { '/api': { target: 'http://localhost:8000', changeOrigin: true } }
+      : { '/api': { target: `http://localhost:${process.env.GATEWAY_PORT || 8000}`, changeOrigin: true } }
   }
 })

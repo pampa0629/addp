@@ -54,9 +54,15 @@ func TestAnalyticalQueryExecutionAgainstPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	password, _ := parsed.User.Password()
-	frozen, descriptor := metricServiceFixture(t, "postgresql")
+	testAnalyticalQueryExecution(t, "postgresql", commonmodels.ConnectionInfo{"host": parsed.Hostname(), "port": port, "database": strings.TrimPrefix(parsed.Path, "/"), "user": parsed.User.Username(), "password": password, "sslmode": "disable"})
+}
+
+// Model and System HTTP responses are controlled fixtures; the executor and database are real.
+func testAnalyticalQueryExecution(t *testing.T, engineType string, connection commonmodels.ConnectionInfo) {
+	t.Helper()
+	frozen, descriptor := metricServiceFixture(t, engineType)
 	engine := descriptor.AsEngine()
-	engine.ConnectionInfo = commonmodels.ConnectionInfo{"host": parsed.Hostname(), "port": port, "database": strings.TrimPrefix(parsed.Path, "/"), "user": parsed.User.Username(), "password": password, "sslmode": "disable"}
+	engine.ConnectionInfo = connection
 	t.Cleanup(func() { _ = plugin.ClosePool(engine.ID) })
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -72,7 +78,13 @@ func TestAnalyticalQueryExecutionAgainstPostgres(t *testing.T) {
 	executor.SetModelClient(commonclient.NewModelClient(server.URL, tokens, server.Client()))
 	gate := &analyticalExecutionGate{}
 	executor.SetProtectionGate(gate)
-	snapshot := &models.QueryServiceDependencySnapshot{CapturedAt: time.Now(), MetricSource: &frozen}
+	publisher := NewQueryServiceService(nil, commonclient.NewSystemClient(server.URL, tokens), nil, "")
+	publisher.SetModelClient(commonclient.NewModelClient(server.URL, tokens, server.Client()))
+	binding, err := publisher.resolveMetricSource(t.Context(), &models.CreateQueryServiceRequest{ConfigType: "analytical", MetricSource: &models.MetricSourceRequest{ImplementationID: frozen.ImplementationID, RevisionID: frozen.RevisionID}}, 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot := &models.QueryServiceDependencySnapshot{CapturedAt: time.Now(), MetricSource: binding}
 	snapshot.DependencyHash = queryServiceDependencyHash(snapshot)
 	service := &models.QueryService{ID: 17, TenantID: 7, ConfigType: "analytical", DataConfig: models.JSONB{models.QueryServiceSourceSnapshotKey: queryServiceSnapshotPayload(snapshot)}}
 	request := &models.QueryExecutionRequest{Parameters: map[string]interface{}{"subject_id": "A", "start_date": "2026-01-01", "end_date": "2027-01-01", "grain": "total"}, Select: []string{"value"}, Page: models.QueryPageRequest{Limit: 1}}

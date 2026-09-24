@@ -7,6 +7,7 @@ def test_register_to_system_uses_canonical_runtime_identity(monkeypatch):
     monkeypatch.setenv("SYSTEM_URL", "http://system:8180")
     monkeypatch.setenv("GEOPYTHON_WORKFLOW_SERVICE_CLIENT_SECRET", "test-secret")
     monkeypatch.setenv("PORT", "8099")
+    monkeypatch.setenv("RUNTIME_PUBLIC_PORT", "18099")
 
     def fake_register_runtime_engine(system_url, client_id, client_secret, payload):
         calls.append((system_url, client_id, client_secret, payload))
@@ -27,7 +28,7 @@ def test_register_to_system_uses_canonical_runtime_identity(monkeypatch):
             "engine_type": "geopython_workflow",
             "name": "GeoPython Workflow",
             "description": "基于 Python 地理计算生态的工作流引擎，支持 Pandas、GeoPandas、GDAL/OGR 等能力",
-            "connection_info": {"protocol": "http", "port": 8099, "host": "localhost"},
+            "connection_info": {"protocol": "http", "port": 18099, "host": "localhost"},
             "capabilities": {
                 "schema_version": "engine.capabilities/v1",
                 "engine_type": "geopython_workflow",

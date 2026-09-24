@@ -29,6 +29,14 @@ on:
           - transfer-insert-only-mysql
           - transfer-relational-sql-etl
           - workbench-service-consumption
+      metric_engine:
+        description: Business engine for metric-service-revision-lifecycle
+        required: true
+        type: choice
+        default: postgresql
+        options:
+          - postgresql
+          - tidb
 
 permissions:
   contents: read
@@ -150,7 +158,7 @@ jobs:
           details-file: ${{ runner.temp }}/addp-online-${{ github.run_id }}/summary.txt
 
   metric-hosted-t4:
-    name: Online T4 (metric-service-revision-lifecycle, Linux x86_64)
+    name: Online T4 (metric-service-revision-lifecycle, ${{ inputs.metric_engine }}, Linux x86_64)
     if: github.event_name == 'workflow_dispatch' && inputs.suite == 'metric-service-revision-lifecycle'
     concurrency:
       group: online-t4-metric-service-revision-lifecycle
@@ -161,6 +169,7 @@ jobs:
       ADDP_ONLINE_HOST: "1"
       ADDP_ONLINE_HOSTED: "1"
       ONLINE_SUITE_INPUT: metric-service-revision-lifecycle
+      ADDP_ONLINE_METRIC_ENGINE_TYPE: ${{ inputs.metric_engine }}
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -197,7 +206,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: online-t4-metric-service-revision-lifecycle-${{ github.run_id }}
+          name: online-t4-metric-service-revision-lifecycle-${{ inputs.metric_engine }}-${{ github.run_id }}
           path: |
             ${{ runner.temp }}/addp-online-${{ github.run_id }}/
             logs/
@@ -208,7 +217,7 @@ jobs:
         if: always()
         uses: ./.github/actions/ci-gate-summary
         with:
-          gate: Online T4 (metric-service-revision-lifecycle, Linux x86_64)
+          gate: Online T4 (metric-service-revision-lifecycle, ${{ inputs.metric_engine }}, Linux x86_64)
           status: ${{ job.status }}
           details-file: ${{ runner.temp }}/addp-online-${{ github.run_id }}/summary.txt
 

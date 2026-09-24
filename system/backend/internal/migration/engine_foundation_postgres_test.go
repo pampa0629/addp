@@ -85,14 +85,29 @@ func TestEngineFoundationAgainstPostgres(t *testing.T) {
 	if lifecycle != "deleted" {
 		t.Fatalf("first Engine lifecycle = %q, want deleted", lifecycle)
 	}
+	var replacementID int64
+	if err := db.QueryRow(`
+		INSERT INTO system.engines (name, engine_type, connection_info, identity_key)
+		VALUES (
+			'Reused Address Probe', 'postgresql',
+			'{"host":"engine-a","port":5432,"database":"probe"}'::jsonb,
+			'{"host":"engine-a","port":"5432","database":"probe"}'::jsonb
+		)
+		RETURNING id
+	`).Scan(&replacementID); err != nil {
+		t.Fatalf("deleted tombstone should release its address: %v", err)
+	}
+	if replacementID == firstID {
+		t.Fatal("new registration reused the deleted Engine ID")
+	}
 	if _, err := db.Exec(`
 		INSERT INTO system.engines (name, engine_type, connection_info, identity_key)
 		VALUES (
-			'Duplicate Identity Probe', 'postgresql',
+			'Duplicate Active Address Probe', 'postgresql',
 			'{"host":"engine-a","port":5432,"database":"probe"}'::jsonb,
 			'{"host":"engine-a","port":"5432","database":"probe"}'::jsonb
 		)
 	`); err == nil {
-		t.Fatal("soft-deleted Engine identity was reused")
+		t.Fatal("two non-deleted Engine instances occupied the same address")
 	}
 }

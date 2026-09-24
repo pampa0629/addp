@@ -77,6 +77,14 @@ if [ -f ".env" ]; then
     source .env
     set +a
 fi
+source "${ROOT_DIR}/scripts/infra/ports.sh"
+if addp_infra_ready; then
+    addp_infra_read_actual_ports
+fi
+source "${SCRIPT_DIR}/ports.sh"
+if [ "${ADDP_ONLINE_HOST:-0}" != 1 ]; then
+    addp_dev_load_saved_ports
+fi
 export MODEL3D_WORKFLOW_PORT="${MODEL3D_WORKFLOW_PORT:-8101}"
 export POINTCLOUD_WORKFLOW_PORT="${POINTCLOUD_WORKFLOW_PORT:-8102}"
 export DOCUMENT_WORKFLOW_PORT="${DOCUMENT_WORKFLOW_PORT:-8105}"
@@ -791,6 +799,11 @@ restart_scoped_python_services() {
 }
 
 if only_python_service_params; then
+    if ! addp_infra_ready; then
+        echo "❌ ADDP Infra 未就绪，无法安全地局部重启 Python 服务" >&2
+        exit 1
+    fi
+    addp_infra_read_actual_ports
     restart_scoped_python_services
     exit 0
 fi

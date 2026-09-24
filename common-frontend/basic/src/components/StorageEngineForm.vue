@@ -56,6 +56,7 @@
           :rows="field.rows || undefined"
           :placeholder="field.placeholder_key ? t(field.placeholder_key) : field.placeholder"
           :show-password="field.input === 'password'"
+          @focus="field.input === 'password' && selectStoredSensitiveValue(field.key, $event)"
         />
       </el-form-item>
       <div v-if="storedSensitiveFields.has(field.key)" class="field-hint">
@@ -152,10 +153,8 @@ import { ArrowDown, ArrowRight } from '@element-plus/icons-vue'
 import ScheduleConfig from './ScheduleConfig.vue'
 import { buildScheduleFromForm, decodeScheduleToForm } from '../utils/schedule'
 import {
-  SENSITIVE_PLACEHOLDER,
   applyConnectionSpecDefaults,
   buildConnectionRules,
-  isMaskedSensitiveValue,
   visibleConnectionFields
 } from '../utils/engineConnectionSpec'
 
@@ -273,6 +272,12 @@ const ensureConnectionDefaults = (form) => {
 
 const applySensitiveHints = () => {
   formState.connection_info = applyConnectionSpecDefaults(selectedConnectionSpec.value, formState.connection_info)
+}
+
+const selectStoredSensitiveValue = (key, event) => {
+  if (storedSensitiveFields.value.has(key)) {
+    event.target?.select()
+  }
 }
 
 const formState = reactive({
@@ -443,30 +448,6 @@ defineExpose({
   formState
 })
 
-watch(
-  () => (selectedConnectionSpec.value?.fields || [])
-    .filter(field => field.sensitive)
-    .map(field => [field.key, formState.connection_info?.[field.key]]),
-  entries => {
-    if (syncingFromProps) return
-    for (const [key, value] of entries) {
-      const storedFlag = `_has_${key}`
-      const hadStoredValue = formState.connection_info?.[storedFlag] === true
-      if (!hadStoredValue && isMaskedSensitiveValue(value)) {
-        formState.connection_info[key] = ''
-        continue
-      }
-      if (isMaskedSensitiveValue(value)) {
-        formState.connection_info[storedFlag] = true
-      } else if (value) {
-        formState.connection_info[storedFlag] = true
-      } else {
-        delete formState.connection_info[storedFlag]
-      }
-    }
-  },
-  { deep: true }
-)
 </script>
 
 <style scoped>

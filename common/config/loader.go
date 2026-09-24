@@ -17,7 +17,7 @@ var (
 	projectRootMu sync.RWMutex
 )
 
-// LoadEnv 在项目根目录加载统一的 .env 文件，并在成功后设置 PROJECT_ROOT。
+// LoadEnv 用根 .env 补齐进程环境中缺失的值，并设置 PROJECT_ROOT。
 func LoadEnv() {
 	root := discoverProjectRoot()
 	if root != "" {
@@ -29,8 +29,8 @@ func LoadEnv() {
 		envPath = filepath.Join(root, ".env")
 	}
 
-	// 使用 Overload 强制覆盖环境变量（开发模式需要 .env 文件优先）
-	if err := godotenv.Overload(envPath); err != nil {
+	// 启动脚本和容器注入的部署值优先于根 .env 中的首选值。
+	if err := godotenv.Load(envPath); err != nil {
 		logger.L().Warn("环境变量文件加载失败，使用系统环境变量", "path", envPath, "error", err)
 	} else {
 		logger.L().Info("已加载 .env 配置", "path", envPath)

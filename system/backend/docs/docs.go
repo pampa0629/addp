@@ -1170,6 +1170,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "同一实际引擎搬迁时可确认后修改连接地址并保留 ID 与引用；新地址不得被其他引擎占用 | Confirm a move of the same physical engine to update its address while preserving its ID and references; the new address must be unoccupied",
                 "consumes": [
                     "application/json"
                 ],
@@ -1585,7 +1586,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "使用与墓碑身份键一致的完整连接配置和新凭据显式恢复 Engine Instance，沿用原永久 ID | Explicitly restore an Engine Instance with complete connection details and fresh credentials matching the tombstone identity key while retaining its permanent ID",
+                "description": "确认仍为同一实际引擎并提交完整连接配置和新凭据，沿用原永久 ID；地址不得被其他引擎占用 | Confirm the same physical engine and restore it with complete connection details and fresh credentials while retaining its permanent ID; the address must be unoccupied",
                 "consumes": [
                     "application/json"
                 ],
@@ -1749,7 +1750,7 @@ const docTemplate = `{
                         "name": "request",
                         "in": "body",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.EngineUpdateRequest"
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.EngineConnectionTestRequest"
                         }
                     }
                 ],
@@ -11027,6 +11028,14 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_system_internal_models.EngineConnectionTestRequest": {
+            "type": "object",
+            "properties": {
+                "connection_info": {
+                    "$ref": "#/definitions/github_com_addp_system_internal_models.ConnectionInfo"
+                }
+            }
+        },
         "github_com_addp_system_internal_models.EngineConnectionTestResponse": {
             "type": "object",
             "properties": {
@@ -11226,6 +11235,9 @@ const docTemplate = `{
                 "capabilities": {
                     "type": "string"
                 },
+                "confirm_same_engine": {
+                    "type": "boolean"
+                },
                 "connection_info": {
                     "$ref": "#/definitions/github_com_addp_system_internal_models.ConnectionInfo"
                 },
@@ -11284,6 +11296,10 @@ const docTemplate = `{
                 "capabilities": {
                     "description": "能力声明JSON",
                     "type": "string"
+                },
+                "confirm_same_engine": {
+                    "description": "地址变更时确认仍为同一实际引擎",
+                    "type": "boolean"
                 },
                 "connection_info": {
                     "$ref": "#/definitions/github_com_addp_system_internal_models.ConnectionInfo"

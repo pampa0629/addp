@@ -44,14 +44,12 @@ Policy OK. No changes required.
 ---
 
 ### register-business.sh
-**用途**: 将 `business/` 中的业务 PostgreSQL、Oracle、MinIO 注册到 System 引擎管理
+**用途**: 将本机已启动的 Business PostgreSQL、MySQL、MinIO、NFS 和可选业务引擎注册到 System 引擎管理
 
 **注意**:
-- 脚本在宿主机检查 Business 服务，但引擎连接测试由 ADDP 容器内服务发起。
-- 默认注册地址为 `business-postgres:5432`、`business-oracle:1521/FREEPDB1` 和 `business-minio:9000`，不要改成 `localhost`。
-- 运行前必须先启动 Business PostgreSQL、Oracle 和 MinIO；Oracle 第一期只提供普通表 Catalog/查询/只读快照，不启用 CDC 或 ArcGIS SDE。
-- 如果检测到 `business_business-network`，脚本会把正在运行的 ADDP 容器接入该网络。
-- 同名引擎已存在时，默认会更新连接信息；如需跳过更新，可设置 `REGISTER_BUSINESS_UPDATE_EXISTING=false`。
+- 脚本用于本机开发拓扑：ADDP 模块作为宿主机进程访问 Business。PostgreSQL、MySQL 和 MinIO 从本工作区 Compose 容器读取实际宿主机端口；NFS 使用当前导出路径。其他已启动的可选引擎使用 `business/.env` 中的宿主机端口。
+- 运行前必须先启动 Business PostgreSQL 和 MinIO；MySQL、NFS、Oracle 等未启动时跳过。Oracle 第一期只提供普通表 Catalog/查询/只读快照，不启用 CDC 或 ArcGIS SDE。
+- 统一调用 System 创建接口；System 按 Tenant、引擎类型和物理端点幂等复用原 ID。端点变化创建新 Engine Instance，脚本不会按名称修改旧记录或自动搬迁其他模块绑定。新实例名称附带宿主机端口，便于与历史实例区分。
 - 脚本不接收用户名、密码或环境变量 Token；运行时在隐藏的交互式提示中输入当前 User Access Token。
 
 **命令**:

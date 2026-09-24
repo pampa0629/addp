@@ -193,7 +193,7 @@ def get_execution_status(execution_id: str):
 
 
 def register_to_system() -> bool:
-    from addp_common.client import register_runtime_engine
+    from addp_common.client import register_runtime_engine, runtime_advertised_port
 
     converter = converter_status()
     if not converter.get("available"):
@@ -207,7 +207,7 @@ def register_to_system() -> bool:
     runtime_host = os.getenv("RUNTIME_HOST", "localhost").strip()
     connection_info = {
         "protocol": protocol,
-        "port": port,
+        "port": runtime_advertised_port(port),
     }
     if runtime_host:
         connection_info["host"] = runtime_host

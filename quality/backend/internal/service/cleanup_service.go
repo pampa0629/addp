@@ -344,6 +344,9 @@ func (s *CleanupService) listEngineCandidates(ctx context.Context, tenantID int6
 			return candidates, err
 		}
 		for _, binding := range bindings {
+			if binding.Locator == "" {
+				continue
+			}
 			locator, err := resourcetree.ParseURI(binding.Locator)
 			if err != nil {
 				return candidates, err

@@ -23,13 +23,13 @@ export default defineConfig({
     include: ['@element-plus/icons-vue']  // 明确包含这个依赖
   },
   server: {
-    port: 5173,
+    port: Number(process.env.SYSTEM_FE_PORT || 5173),
     strictPort: true, // 端口被占用时报错，不自动切换
     hmr: {
       protocol: 'ws',
       host: 'localhost',
-      port: 5173,
-      clientPort: 5173
+      port: Number(process.env.SYSTEM_FE_PORT || 5173),
+      clientPort: Number(process.env.SYSTEM_FE_PORT || 5173)
     },
     fs: {
       allow: [
@@ -47,7 +47,7 @@ export default defineConfig({
     },
     proxy: {
       '/api': {
-        target: 'http://localhost:8000', // 统一通过 Gateway 访问
+        target: `http://localhost:${process.env.GATEWAY_PORT || 8000}`, // 统一通过 Gateway 访问
         changeOrigin: true
       }
     }

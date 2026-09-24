@@ -25,6 +25,10 @@ func TestQualityCleanupScanFindsEngineBoundState(t *testing.T) {
 	svc := NewCleanupService(db, nil, nil)
 	createQualityCleanupPlan(t, db, 7, 13, "task_other")
 	createQualityCleanupPlan(t, db, 7, 12, "task-match")
+	unbound := createQualityCleanupPlan(t, db, 7, 13, "task-unbound")
+	if err := db.Model(&unbound).Update("table_bindings", json.RawMessage(`[{"alias":"target","locator":""}]`)).Error; err != nil {
+		t.Fatalf("clear optional default locator: %v", err)
+	}
 	createQualityCleanupIssue(t, db, 7, 12, "issue-match", "open")
 	createQualityCleanupIssue(t, db, 7, 13, "issue-other", "open")
 

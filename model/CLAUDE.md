@@ -350,7 +350,7 @@ draft ⇄ approved
    ```
    PostgreSQL 集成测试未设置 `ADDP_TEST_MODEL_POSTGRES_DSN` 时会跳过；并发、事务和迁移相关改动必须通过根 Makefile 的第二条标准门禁执行，不能直接创建临时 database。
 
-指标计算采用“Model 构建中立计划 → 引擎独立编译器 → 唯一 PreparedQuery”，完整契约见 [Model 约束](docs/model概念与数据约束规范.md#数据库无关计划与修订) 和 [引擎插件规范](../docs/spec/addp引擎插件接口规范.md#数据库无关分析计算契约)。元数据生命周期及 PG 金样沿 `make test-model-postgres`；MySQL 真实计算沿 `ADDP_TEST_MYSQL_PASSWORD=<disposable-password> make test-model-mysql`，自动清理 addp_model_mysql_it_* 并拒绝跳过，两者已登记 T2 并验证同一中立计划。Service 负责在线指标查询，Develop 负责持久表加工；页面物理绑定与建表扩展另行跟踪。
+指标计算采用“Model 构建中立计划 → 引擎独立编译器 → 唯一 PreparedQuery”，完整契约见 [Model 约束](docs/model概念与数据约束规范.md#数据库无关计划与修订) 和 [引擎插件规范](../docs/spec/addp引擎插件接口规范.md#数据库无关分析计算契约)。元数据生命周期及 PG 金样沿 `make test-model-postgres`；MySQL 真实计算沿 `ADDP_TEST_MYSQL_PASSWORD=<disposable-password> make test-model-mysql`，自动清理 addp_model_mysql_it_* 并拒绝跳过，两者已登记 T2 并验证同一中立计划。TiDB 复用同一金样，经 `make test-common-tidb` 的隔离实例执行；测试来源路径从 Provider 的目录模型派生，不按引擎名判断 namespace。Service 负责在线指标查询，Develop 负责持久表加工；页面物理绑定与建表扩展另行跟踪。
 
 维度关联改动沿用现有自动发现门禁：`make test-module MODULE=model` 覆盖平台一致性、Go 单元、前端路由及交互、PostgreSQL 事务测试；其中数据库测试需配置上述测试 DSN。`make test-model-frontend` 包含关系入口唯一所有权、URL 恢复、审批只读、原位更新和冲突保留测试；CI 继续使用已登记的 Model 前端与 PostgreSQL 作业。
 

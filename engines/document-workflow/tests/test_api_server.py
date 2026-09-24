@@ -80,11 +80,12 @@ def test_register_to_system_uses_document_identity(monkeypatch):
     monkeypatch.setenv("SYSTEM_URL", "http://system:8180")
     monkeypatch.setenv("DOCUMENT_WORKFLOW_SERVICE_CLIENT_SECRET", "secret")
     monkeypatch.setenv("RUNTIME_HOST", "document-workflow-engine")
+    monkeypatch.setenv("RUNTIME_PUBLIC_PORT", "18105")
 
     assert api_server.register_to_system() is True
     assert captured["client_id"] == "addp-document"
     assert captured["payload"]["engine_type"] == "document_workflow"
-    assert captured["payload"]["connection_info"]["port"] == 8105
+    assert captured["payload"]["connection_info"]["port"] == 18105
 
 
 def test_registration_retry_skips_when_libreoffice_unavailable(monkeypatch):
@@ -99,4 +100,3 @@ def test_registration_retry_skips_when_libreoffice_unavailable(monkeypatch):
     monkeypatch.setattr(api_server, "register_to_system", fake_register)
     api_server.register_to_system_with_retry()
     assert called is False
-

@@ -23,36 +23,26 @@ import (
 )
 
 var (
-	ErrResourceNotFound          = errors.New("资源不存在")
-	ErrResourceForbidden         = errors.New("没有权限访问该资源")
-	ErrBuiltinResourceImmutable  = errors.New("内置资源不可删除或修改")
-	ErrUnsupportedEngineType     = errors.New("不支持的系统引擎类型")
-	ErrSpatialWorkspaceNotFound  = errors.New("未找到可启用的空间工作区")
-	ErrEngineIdentityImmutable   = errors.New("引擎物理端点身份不可修改")
-	ErrEngineDeleting            = errors.New("引擎正在删除，不能执行该操作")
-	ErrEngineDeleted             = errors.New("引擎已删除，不能执行该操作")
-	ErrEngineRestoreRequired     = errors.New("相同身份的引擎已删除，必须显式恢复")
-	ErrEngineVersionConflict     = errors.New("引擎已被其他操作修改，请刷新后重试")
-	ErrInvalidEngineLifecycle    = errors.New("无效的引擎生命周期状态")
-	ErrInvalidArtifactPolicy     = errors.New("无效的外部产物处理策略")
-	ErrEngineCleanupUnavailable  = errors.New("引擎删除所需的资源回收服务不可用")
-	ErrDeletionAssessmentInvalid = errors.New("引擎删除影响评估无效")
-	ErrDeletionAssessmentPending = errors.New("引擎删除影响评估尚未完成")
-	ErrDeletionAssessmentExpired = errors.New("引擎删除影响评估已过期")
-	ErrDeletionImpactChanged     = errors.New("引擎删除影响已经变化，需要重新确认")
-	ErrDeletionRunningExecutions = errors.New("仍有运行任务正在使用该引擎")
-	ErrDeletionConfirmation      = errors.New("删除确认文本与引擎名称不一致")
+	ErrResourceNotFound            = errors.New("资源不存在")
+	ErrResourceForbidden           = errors.New("没有权限访问该资源")
+	ErrBuiltinResourceImmutable    = errors.New("内置资源不可删除或修改")
+	ErrUnsupportedEngineType       = errors.New("不支持的系统引擎类型")
+	ErrSpatialWorkspaceNotFound    = errors.New("未找到可启用的空间工作区")
+	ErrEngineAddressConflict       = errors.New("连接地址已被其他引擎登记")
+	ErrEngineRelocationUnconfirmed = errors.New("修改连接地址必须确认仍为同一实际引擎")
+	ErrEngineDeleting              = errors.New("引擎正在删除，不能执行该操作")
+	ErrEngineDeleted               = errors.New("引擎已删除，不能执行该操作")
+	ErrEngineVersionConflict       = errors.New("引擎已被其他操作修改，请刷新后重试")
+	ErrInvalidEngineLifecycle      = errors.New("无效的引擎生命周期状态")
+	ErrInvalidArtifactPolicy       = errors.New("无效的外部产物处理策略")
+	ErrEngineCleanupUnavailable    = errors.New("引擎删除所需的资源回收服务不可用")
+	ErrDeletionAssessmentInvalid   = errors.New("引擎删除影响评估无效")
+	ErrDeletionAssessmentPending   = errors.New("引擎删除影响评估尚未完成")
+	ErrDeletionAssessmentExpired   = errors.New("引擎删除影响评估已过期")
+	ErrDeletionImpactChanged       = errors.New("引擎删除影响已经变化，需要重新确认")
+	ErrDeletionRunningExecutions   = errors.New("仍有运行任务正在使用该引擎")
+	ErrDeletionConfirmation        = errors.New("删除确认文本与引擎名称不一致")
 )
-
-type EngineRestoreRequiredError struct {
-	EngineID uint
-}
-
-func (e *EngineRestoreRequiredError) Error() string {
-	return fmt.Sprintf("%s（engine_id=%d）", ErrEngineRestoreRequired.Error(), e.EngineID)
-}
-
-func (e *EngineRestoreRequiredError) Unwrap() error { return ErrEngineRestoreRequired }
 
 var disallowedSystemEngineTypes = map[string]struct{}{
 	"sqlite":     {},
@@ -181,8 +171,6 @@ func (s *EngineService) resolveIdempotentRegistration(existing *models.Engine) (
 		return s.sanitizeResource(existing), false, nil
 	case models.EngineLifecycleDeleting:
 		return nil, false, ErrEngineDeleting
-	case models.EngineLifecycleDeleted:
-		return nil, false, &EngineRestoreRequiredError{EngineID: existing.ID}
 	default:
 		return nil, false, fmt.Errorf("%w: %s", ErrInvalidEngineLifecycle, existing.LifecycleState)
 	}
@@ -484,6 +472,7 @@ func (s *EngineService) Update(id, tenantID uint, req *models.EngineUpdateReques
 		}
 	}
 
+	addressChanged := false
 	if req.Name != nil {
 		engine.Name = *req.Name
 	}
@@ -494,8 +483,24 @@ func (s *EngineService) Update(id, tenantID uint, req *models.EngineUpdateReques
 		}
 		// 合并明文连接信息：如果新值是脱敏占位符，保留原值。
 		mergedConnInfo := s.mergePlainConnectionInfo(engine.EngineType, plainConnInfo, *req.ConnectionInfo)
-		if err := s.validateConnectionIdentityUnchanged(engine.EngineType, plainConnInfo, mergedConnInfo); err != nil {
+		if s.usesPluginCapabilities(engine.EngineType) {
+			if err := engineplugin.ValidateConnectionInfo(engine.EngineType, engineplugin.ConnectionInfo(mergedConnInfo)); err != nil {
+				return nil, err
+			}
+		}
+		addressKey, err := buildConnectionIdentityKey(engine.EngineType, mergedConnInfo)
+		if err != nil {
 			return nil, err
+		}
+		if addressKey != engine.IdentityKey && !req.ConfirmSameEngine {
+			return nil, ErrEngineRelocationUnconfirmed
+		}
+		if addressKey != engine.IdentityKey {
+			if existing, findErr := s.repo.FindByIdentityKey(engine.EngineType, engine.TenantID, addressKey); findErr == nil && existing.ID != engine.ID {
+				return nil, ErrEngineAddressConflict
+			} else if findErr != nil && !errors.Is(findErr, gorm.ErrRecordNotFound) {
+				return nil, findErr
+			}
 		}
 
 		// 加密敏感字段
@@ -504,6 +509,13 @@ func (s *EngineService) Update(id, tenantID uint, req *models.EngineUpdateReques
 			return nil, fmt.Errorf("加密连接信息失败: %w", err)
 		}
 		engine.ConnectionInfo = encryptedConnInfo
+		if addressKey != engine.IdentityKey {
+			addressChanged = true
+			engine.IdentityKey = addressKey
+			engine.ConnectionStatus = models.EngineConnectionUnknown
+			engine.LastCheckAt = nil
+			engine.CheckMessage = ""
+		}
 	}
 	if req.Description != nil {
 		engine.Description = *req.Description
@@ -525,6 +537,11 @@ func (s *EngineService) Update(id, tenantID uint, req *models.EngineUpdateReques
 	}
 
 	if err := s.persistEngine(engine); err != nil {
+		if addressChanged {
+			if existing, findErr := s.repo.FindByIdentityKey(engine.EngineType, engine.TenantID, engine.IdentityKey); findErr == nil && existing.ID != engine.ID {
+				return nil, ErrEngineAddressConflict
+			}
+		}
 		return nil, err
 	}
 
@@ -903,12 +920,22 @@ func (s *EngineService) Restore(id, tenantID, actorID uint, req *models.EngineRe
 	if engine.Version != req.Version {
 		return nil, ErrEngineVersionConflict
 	}
+	if s.usesPluginCapabilities(engine.EngineType) {
+		if err := engineplugin.ValidateConnectionInfo(engine.EngineType, engineplugin.ConnectionInfo(req.ConnectionInfo)); err != nil {
+			return nil, err
+		}
+	}
 	identityKey, err := buildConnectionIdentityKey(engine.EngineType, req.ConnectionInfo)
 	if err != nil {
 		return nil, err
 	}
-	if string(identityKey) != string(engine.IdentityKey) {
-		return nil, ErrEngineIdentityImmutable
+	if identityKey != engine.IdentityKey && !req.ConfirmSameEngine {
+		return nil, ErrEngineRelocationUnconfirmed
+	}
+	if existing, findErr := s.repo.FindByIdentityKey(engine.EngineType, engine.TenantID, identityKey); findErr == nil && existing.ID != engine.ID {
+		return nil, ErrEngineAddressConflict
+	} else if findErr != nil && !errors.Is(findErr, gorm.ErrRecordNotFound) {
+		return nil, findErr
 	}
 	encryptedConnInfo, err := s.encryptConnectionInfoForStorage(engine.EngineType, req.ConnectionInfo)
 	if err != nil {
@@ -917,6 +944,7 @@ func (s *EngineService) Restore(id, tenantID, actorID uint, req *models.EngineRe
 	engine.Name = strings.TrimSpace(req.Name)
 	engine.Description = req.Description
 	engine.ConnectionInfo = encryptedConnInfo
+	engine.IdentityKey = identityKey
 	engine.Capabilities = req.Capabilities
 	if err := s.prepareEngineCapabilities(engine); err != nil {
 		return nil, err
@@ -932,6 +960,9 @@ func (s *EngineService) Restore(id, tenantID, actorID uint, req *models.EngineRe
 	engine.RestoredAt = &now
 	engine.RestoredBy = &actorID
 	if err := s.persistEngine(engine); err != nil {
+		if existing, findErr := s.repo.FindByIdentityKey(engine.EngineType, engine.TenantID, identityKey); findErr == nil && existing.ID != engine.ID {
+			return nil, ErrEngineAddressConflict
+		}
 		return nil, err
 	}
 	if s.eventPublisher != nil {
@@ -1186,39 +1217,12 @@ func (s *EngineService) mergePlainConnectionInfo(engineType string, original, up
 	return merged
 }
 
-func (s *EngineService) validateConnectionIdentityUnchanged(engineType string, original, updated models.ConnectionInfo) error {
-	fields, plugin, err := connectionIdentityDefinition(engineType)
-	if err != nil {
-		return err
-	}
-	changed := make([]string, 0)
-	for _, field := range fields {
-		before := normalizedConnectionIdentityValue(field, original, plugin)
-		after := normalizedConnectionIdentityValue(field, updated, plugin)
-		if before != after {
-			changed = append(changed, field)
-		}
-	}
-	if len(changed) > 0 {
-		return fmt.Errorf("%w: %s", ErrEngineIdentityImmutable, strings.Join(changed, ", "))
-	}
-	return nil
-}
-
 func buildConnectionIdentityKey(engineType string, connInfo models.ConnectionInfo) (models.JSONString, error) {
 	identityKey, err := engineplugin.BuildConnectionIdentityKey(engineType, engineplugin.ConnectionInfo(connInfo))
 	if err != nil {
 		return "", err
 	}
 	return models.JSONString(identityKey), nil
-}
-
-func connectionIdentityDefinition(engineType string) ([]string, engineplugin.EnginePlugin, error) {
-	return engineplugin.ConnectionIdentityDefinition(engineType)
-}
-
-func normalizedConnectionIdentityValue(field string, connInfo models.ConnectionInfo, plugin engineplugin.EnginePlugin) string {
-	return engineplugin.NormalizeConnectionIdentityValue(field, engineplugin.ConnectionInfo(connInfo), plugin)
 }
 
 func (s *EngineService) stripConnectionInfoMetaFields(connInfo models.ConnectionInfo) models.ConnectionInfo {
@@ -1504,7 +1508,7 @@ func (s *EngineService) checkAndUpdateConnectionStatus(engineID uint, forceCapab
 	// 这类记录不属于外部数据/计算引擎，不能通过 EnginePlugin 做连接检测。
 	if strings.HasPrefix(engine.EngineType, "api.") {
 		fmt.Printf("[ConnectionCheck] ⏭️  跳过API类型资源\n")
-		s.updateConnectionStatus(engineID, "unknown", "API类型资源不支持自动连接检测")
+		s.updateConnectionStatusForAddress(engineID, &engine.IdentityKey, "unknown", "API类型资源不支持自动连接检测")
 		return false
 	}
 
@@ -1512,7 +1516,7 @@ func (s *EngineService) checkAndUpdateConnectionStatus(engineID uint, forceCapab
 	decryptedConnInfo, err := s.decryptStoredConnectionInfo(engine.EngineType, engine.ConnectionInfo)
 	if err != nil {
 		fmt.Printf("[ConnectionCheck] ❌ 解密连接信息失败: %v\n", err)
-		s.updateConnectionStatus(engineID, "unknown", fmt.Sprintf("解密连接信息失败: %v", err))
+		s.updateConnectionStatusForAddress(engineID, &engine.IdentityKey, "unknown", fmt.Sprintf("解密连接信息失败: %v", err))
 		return false
 	}
 	engine.ConnectionInfo = decryptedConnInfo
@@ -1528,7 +1532,7 @@ func (s *EngineService) checkAndUpdateConnectionStatus(engineID uint, forceCapab
 	// 5. 更新状态
 	if err != nil {
 		fmt.Printf("[ConnectionCheck] ❌ 连接测试失败: %v\n", err)
-		s.updateConnectionStatus(engineID, "offline", err.Error())
+		s.updateConnectionStatusForAddress(engineID, &engine.IdentityKey, "offline", err.Error())
 		return false
 	}
 
@@ -1542,7 +1546,7 @@ func (s *EngineService) checkAndUpdateConnectionStatus(engineID uint, forceCapab
 			fmt.Printf("[ConnectionCheck] ⚠️  能力刷新失败，保留最后一次成功结果: %v\n", err)
 		}
 	}
-	s.updateConnectionStatus(engineID, models.EngineConnectionOnline, checkMessage)
+	s.updateConnectionStatusForAddress(engineID, &engine.IdentityKey, models.EngineConnectionOnline, checkMessage)
 	return true
 }
 
@@ -1593,9 +1597,17 @@ func (s *EngineService) AsyncCheckConnection(engineID uint) error {
 
 // updateConnectionStatus 内部方法：更新连接状态
 func (s *EngineService) updateConnectionStatus(engineID uint, status, message string) error {
+	return s.updateConnectionStatusForAddress(engineID, nil, status, message)
+}
+
+func (s *EngineService) updateConnectionStatusForAddress(engineID uint, addressKey *models.JSONString, status, message string) error {
 	now := time.Now()
-	if err := s.repo.UpdateConnectionObservation(engineID, status, now, message); err != nil {
+	applied, err := s.repo.UpdateConnectionObservation(engineID, status, now, message, addressKey)
+	if err != nil {
 		return err
+	}
+	if !applied {
+		return nil
 	}
 
 	if !strings.EqualFold(strings.TrimSpace(status), "online") {
@@ -1671,6 +1683,11 @@ func (s *EngineService) RecordConnectionStatus(engineID uint, status string, mes
 	return s.updateConnectionStatus(engineID, status, message)
 }
 
+// RecordConnectionStatusForAddress discards a probe result after the address changes.
+func (s *EngineService) RecordConnectionStatusForAddress(engineID uint, addressKey models.JSONString, status, message string) error {
+	return s.updateConnectionStatusForAddress(engineID, &addressKey, status, message)
+}
+
 // CreateEngine 创建引擎
 
 func (s *EngineService) CreateEngine(engine *models.Engine) (*models.Engine, bool, error) {
@@ -1709,40 +1726,6 @@ func (s *EngineService) CreateEngine(engine *models.Engine) (*models.Engine, boo
 		return nil, false, err
 	}
 	return engine, true, nil
-}
-
-// UpdateEngine 更新引擎
-func (s *EngineService) UpdateEngine(engine *models.Engine) error {
-	if engine == nil || engine.ID == 0 {
-		return errors.New("无效的引擎数据")
-	}
-	stored, err := s.repo.GetByID(engine.ID)
-	if err != nil {
-		return err
-	}
-	if stored.LifecycleState == models.EngineLifecycleDeleting {
-		return ErrEngineDeleting
-	}
-	if stored.LifecycleState == models.EngineLifecycleDeleted {
-		return ErrEngineDeleted
-	}
-	original, err := s.decryptStoredConnectionInfo(stored.EngineType, stored.ConnectionInfo)
-	if err != nil {
-		return fmt.Errorf("解密连接信息失败: %w", err)
-	}
-	updated := s.mergePlainConnectionInfo(stored.EngineType, original, engine.ConnectionInfo)
-	if err := s.validateConnectionIdentityUnchanged(engine.EngineType, original, updated); err != nil {
-		return err
-	}
-	encryptedConnInfo, err := s.encryptConnectionInfoForStorage(stored.EngineType, updated)
-	if err != nil {
-		return fmt.Errorf("加密连接信息失败: %w", err)
-	}
-	engine.ConnectionInfo = encryptedConnInfo
-	if err := s.prepareEngineCapabilities(engine); err != nil {
-		return err
-	}
-	return s.persistEngine(engine)
 }
 
 func (s *EngineService) prepareEngineCapabilities(engine *models.Engine) error {

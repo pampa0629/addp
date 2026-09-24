@@ -93,6 +93,22 @@ def test_register_to_system_with_retry_delegates_to_shared_registration_policy(m
     }
 
 
+def test_register_to_system_advertises_host_mapping(monkeypatch):
+    captured = {}
+
+    def fake_register(system_url, client_id, client_secret, payload):
+        captured.update(payload=payload)
+        return 202, {"status": "accepted"}
+
+    monkeypatch.setattr(api_server, "converter_status", lambda: {"available": True})
+    monkeypatch.setattr("addp_common.client.register_runtime_engine", fake_register)
+    monkeypatch.setenv("PORT", "8102")
+    monkeypatch.setenv("RUNTIME_PUBLIC_PORT", "18102")
+
+    assert api_server.register_to_system() is True
+    assert captured["payload"]["connection_info"]["port"] == 18102
+
+
 def test_register_to_system_with_retry_skips_when_pdal_unavailable(monkeypatch):
     called = False
 

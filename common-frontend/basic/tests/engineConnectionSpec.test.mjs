@@ -48,8 +48,15 @@ test('connection spec preserves masked sensitive values generically', () => {
     applyConnectionSpecDefaults(connectionSpec, { security: 'secure', password: '******' }),
     { endpoint: 'localhost', security: 'secure', password: '********', _has_password: true }
   )
+})
+
+test('new sensitive input replaces the stored mask without being reset', () => {
   assert.deepEqual(
-    applyConnectionSpecDefaults(connectionSpec, { security: 'secure', password: 'abcd****wxyz' }),
-    { endpoint: 'localhost', security: 'secure', password: '********', _has_password: true }
+    applyConnectionSpecDefaults(connectionSpec, { security: 'secure', password: 'newSecret123', _has_password: true }),
+    { endpoint: 'localhost', security: 'secure', password: 'newSecret123' }
+  )
+  assert.deepEqual(
+    applyConnectionSpecDefaults(connectionSpec, { security: 'secure', password: 'name****suffix' }),
+    { endpoint: 'localhost', security: 'secure', password: 'name****suffix' }
   )
 })

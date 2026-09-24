@@ -19,13 +19,13 @@ export default defineConfig({
     dedupe: ['vue', 'vue-i18n', 'element-plus', '@element-plus/icons-vue', 'axios']
   },
   server: {
-    port: 5179,
+    port: Number(process.env.MONITOR_FE_PORT || 5179),
     strictPort: true,
     hmr: {
       protocol: 'ws',
       host: 'localhost',
-      port: 5179,
-      clientPort: 5179
+      port: Number(process.env.MONITOR_FE_PORT || 5179),
+      clientPort: Number(process.env.MONITOR_FE_PORT || 5179)
     },
     fs: {
       allow: [
@@ -36,7 +36,7 @@ export default defineConfig({
     },
     proxy: {
       '/api': {
-        target: 'http://localhost:8000', // 统一通过 Gateway 访问
+        target: `http://localhost:${process.env.GATEWAY_PORT || 8000}`, // 统一通过 Gateway 访问
         changeOrigin: true
       }
     }

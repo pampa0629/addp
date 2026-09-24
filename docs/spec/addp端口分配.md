@@ -1,6 +1,6 @@
 # Port Allocation (ADDP)
 
-统一定义 ADDP 系统库与业务库的容器端口，避免冲突。
+统一定义 ADDP 系统库与业务库的容器端口。下列 System 宿主机端口是本地开发首选值；容器内部端口保持固定。
 
 ## System (ADDP 基础设施)
 
@@ -15,7 +15,13 @@
 - 辅助 macOS CI disposable MySQL: `13306`（仅 `make local-ci` 运行期间占用）
 - 辅助 macOS CI disposable OceanBase: `12881`（仅 `make local-ci` 运行期间占用）
 
-PostgreSQL、Redis、MinIO 和 Meilisearch 当前来源于 `docker-compose.infra.yml`；Infra Kafka/Kafka Connect 端口已由工作包 3A 保留，工作包 3B 才写入 compose 和启动脚本。脚本固定使用这些端口，不会自动改动；若被其他进程占用，`scripts/infra/up.sh` 会给出提示，可能导致启动失败。请使用 `lsof -nP -i :<port>` 查占用并释放，或手动调整 compose 端口映射。
+PostgreSQL、Redis、FalkorDB、MinIO、Meilisearch、Infra Kafka 和 Kafka Connect 由 `docker-compose.infra.yml` 管理。本地 `scripts/infra/up.sh` 优先使用根 `.env` 中的宿主机端口；若被其他进程占用，自动选取空闲端口，并在输出中报告。已经运行的本工作区容器保持现有映射，重启不随意换端口。开发进程从 Compose 查询实际映射，再构造数据库、缓存、存储、搜索和 Kafka 地址；容器间继续使用固定的服务名和内部端口。端口监听本身不能作为 ADDP 容器就绪或所有权的证据，必须核对 Compose 项目和健康状态。
+
+自动选端口只适用于本地基础设施宿主机映射。生产部署与 `addp-online` 专用 Runner 按其显式环境配置运行。Docker 最终绑定仍可能遇到检查后的并发抢占；启动失败时报告实际冲突，不连接占用该端口的其他服务。
+
+本地开发的 Gateway、各模块 Backend/Frontend 与工作流 Runtime 同样以本表开发端口为首选值。`scripts/dev/start.sh` 在 Infra 就绪后统一检查监听者；首选端口被其他服务占用时选取空闲端口，将最终端口注入模块进程、Gateway URL、Console 代理、iframe 地址、CORS 来源及 Vite HMR。运行中的本工作区服务沿用原端口；解析结果保存在忽略版本控制的 `.dev-state/ports.env`，仅作为本地运行状态，不改写根 `.env`。显式 `addp-online` Runner 仍使用配置端口并在冲突时失败。端口检查与监听之间仍可能出现并发抢占，实际绑定失败必须明确报错。
+
+容器化工作流 Runtime 仍在内部固定端口监听，其向 System 自注册的连接端口必须是宿主机映射端口；开发启动通过 `RUNTIME_PUBLIC_PORT` 向 GeoPython、PointCloud、Document Runtime 传递该端口。SuperMap Runtime 不自注册，需要按启动输出中的实际端口登记。
 
 `13306` 和 `12881` 由 `scripts/test/docker-compose.local-macos-ci.yml` 中的固定 digest MySQL 8 与 OceanBase CE 4.4.2 LTS 使用，不属于 System 或 Business 长期基础设施。两个服务都无数据卷，只绑定 `127.0.0.1`，在本地巡检的确定性门禁和编译开始前完成健康检查，并在巡检的统一退出清理中删除。
 
@@ -38,7 +44,11 @@ PostgreSQL、Redis、MinIO 和 Meilisearch 当前来源于 `docker-compose.infra
 - KingbaseES SQL: `5436`（容器端口 `54321`，仅 owner-managed disposable Business 样例）
 - 达梦 DM8 SQL: `5236`（容器端口 `5236`，ARM64 官方介质 disposable 数据库，以 `engine_type=dameng` 登记）
 
-来源：`business/docker-compose.yml`。常规 Business 服务可通过 `business/.env` 覆盖；KingbaseES 与 DM8 技术夹具不进入该文件，只分别接受调用独立 profile 时当前 shell 中的 `KINGBASE_PORT`、`DAMENG_PORT`。脚本固定使用这些端口，不会自动改动；若被其他进程占用，启动脚本会给出警告并继续尝试（可能失败）。
+来源：`business/docker-compose.yml`。常规 Business 服务可通过 `business/.env` 指定首选宿主机端口；KingbaseES 与 DM8 技术夹具不进入该文件，只分别接受调用独立 profile 时当前 shell 中的 `KINGBASE_PORT`、`DAMENG_PORT`。
+
+本地 `business/scripts/start.sh` 对 Business PostgreSQL、MySQL 和 MinIO 的首次启动检查实际监听端口，首选值被占用时选择空闲宿主机端口。成功启动后把实际 Compose 映射保存到忽略版本控制的 `business/.business-state/ports.env`。再次启动和重启必须沿用该端口；已保存端口被其他服务占用时直接失败，不自动漂移已登记的 Engine Instance 物理端点。运行中的本工作区容器以实际 Compose 映射为准，容器内部端口始终不变。其他 Business 服务当前仍使用显式配置端口，冲突时不能视为已自动适配。
+
+本机开发进程连接 Business Engine 时应登记 `127.0.0.1` 和该服务的实际宿主机端口；同一 Docker 网络内的 ADDP 进程应登记 `business-*` 服务名和固定内部端口。同一实际 Business Engine 搬迁到新宿主机端口时，有权限的用户在 System 引擎编辑页确认后更新地址，保留原 `engine_id` 和引用；不同实际引擎仍须创建新实例并显式迁移绑定。
 
 ```bash
 BUSINESS_POSTGRES_PORT=5433
@@ -62,16 +72,16 @@ DAMENG_PORT=5236
 
 Ontology Backend 使用 `8195`（开发/容器一致），经 Gateway `/api/v1/ontology` 访问。Ontology Frontend 开发端口为 `5192`，Docker 映射 `8123:80`；Console 入口 `/ontology/ontologies`。确定性浏览器测试独占回环 `4192`，不复用开发服务。
 
-- **System MinIO 使用 19000/19001**，Business 侧不得占用这两个端口。
-- **Business MinIO 使用 9002/9003**，System 侧不得占用这两个端口。
-- System PostgreSQL 使用 15432；Business PostgreSQL 使用 5433。
+- **System MinIO 首选 19000/19001**，Business 侧不得主动配置为这两个首选端口。
+- **Business MinIO 首选 9002/9003**，System 侧不得占用这两个首选端口。
+- System PostgreSQL 首选 15432；Business PostgreSQL 使用 5433。
 - SuperMap SDX+ for PostgreSQL 专用实例使用 5434，且不得安装 PostGIS 或与 5433 的 SuperMap SDX+ for PostGIS 工作区共用数据卷。
-- Infra Kafka 使用 19092；Business Kafka 使用 29092。两者必须是独立集群，Business Kafka 才能注册为 System Engine。
+- Infra Kafka 首选 19092；Business Kafka 使用 29092。两者必须是独立集群，Business Kafka 才能注册为 System Engine。
 
 脚本约束：
 
-- `scripts/infra/up.sh`：若检测到 `business-minio` 占用了 19000/19001，将报错并退出，提示修改 `business/.env`。
-- `business/scripts/start.sh`：若配置了 19000/19001，将报错并退出，提示改为 9002/9003；对 5433 端口仅警告不改动。
+- `scripts/infra/up.sh`：若首选端口被其他容器占用，选择空闲宿主机端口并报告；不得复用其他容器的服务。
+- `business/scripts/start.sh`：Business MinIO 首选端口不得配置为 System MinIO 的 19000/19001；PostgreSQL、MySQL、MinIO 的首次端口冲突按上述本地规则解析，已持久化端口冲突则失败。
 
 ## 快速校验
 
@@ -83,7 +93,7 @@ make ports-validate
 
 输出会显示 business/.env 的端口配置、System 默认端口以及当前运行容器的实际映射，帮助定位问题。
 
-如果本地已有其他服务占用 19000/19001，可改用其他未占用端口。
+如果本地已有其他服务占用 System 首选端口，`scripts/infra/up.sh` 自动选择其他空闲端口；`scripts/dev/start.sh` 读取实际映射。
 
 ## 使用建议
 
@@ -91,9 +101,7 @@ make ports-validate
   - 先启动 Business：`cd business && ./scripts/start.sh`
   - 再启动 System 基础设施：`bash scripts/infra/up.sh` 或 `make infra-up`
   - 注册到 ADDP 的 Business 引擎地址应使用容器可访问地址，例如 `business-postgres:5432`、`business-minio:9000`；不要使用 `localhost`，因为连接测试由 ADDP 容器内服务发起。
-- 如遇端口冲突：
-  - 参考本文件调整 `business/.env` 或根目录 `.env`
-  - 重新启动对应容器：`docker-compose down && docker-compose up -d`
+- 如遇 Business 已持久化端口被其他服务占用，先释放该端口；若同一实际引擎必须搬迁，先通过标准 Business 生命周期脚本启动，再由有权限的用户在 System 编辑页确认并更新其连接地址。
 
 
 ### 端口分配

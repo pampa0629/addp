@@ -46,6 +46,7 @@ MINIO_API_PORT=$(get_port minio 9000 || echo 19000)
 MINIO_CONSOLE_PORT=$(get_port minio 9001 || echo 19001)
 KAFKA_PORT=$(get_port redpanda 9092 || echo 19092)
 KAFKA_CONNECT_PORT=$(get_port kafka-connect 8083 || echo 18083)
+FALKORDB_PORT=$(get_port falkordb 6379 || echo 16479)
 
 # Postgres
 printf "%s" "- PostgreSQL (localhost:${PG_PORT}):  "
@@ -64,7 +65,7 @@ else
 fi
 
 # FalkorDB
-printf "%s" "- FalkorDB (127.0.0.1:16479):          "
+printf "%s" "- FalkorDB (127.0.0.1:${FALKORDB_PORT}):          "
 FALKORDB_HEALTH=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}' addp-falkordb 2>/dev/null || true)
 if [ "$FALKORDB_HEALTH" = "healthy" ]; then
   echo -e "${GREEN}Healthy${NC}"

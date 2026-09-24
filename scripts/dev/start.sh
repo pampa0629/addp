@@ -696,9 +696,18 @@ require_started_process() {
 check_service_running() {
   local service_name="$1" port="${2:-}"
   local pidfile=".dev-pids/${service_name}.pid" pid listeners proc_cmd
+  if [ -n "$port" ] && declare -F addp_dev_owned_listener >/dev/null &&
+    addp_dev_owned_listener "$service_name" "$port"; then
+    echo -e "${YELLOW}⚠️  ${service_name} 已在端口 ${port} 运行，跳过启动${NC}"
+    return 1
+  fi
   if [ -f "$pidfile" ]; then
     pid=$(cat "$pidfile" 2>/dev/null)
     if [ -n "$pid" ] && ps -p "$pid" > /dev/null 2>&1; then
+      if [ -n "$port" ] && declare -F addp_dev_owned_listener >/dev/null; then
+        echo "✗ ${service_name} PID 文件中的进程仍在运行，但没有监听分配端口 ${port}" >&2
+        exit 1
+      fi
       echo -e "${YELLOW}⚠️  ${service_name} 已在运行 (PID: $pid)，跳过启动${NC}"
       return 1
     fi
@@ -930,43 +939,27 @@ echo ""
 echo -e "${YELLOW}Step 1/7: 启动基础设施（PostgreSQL, Redis, FalkorDB, MinIO, Meilisearch）${NC}"
 echo ""
 
-# 检查基础设施是否已运行 - 通过端口检查，不依赖 Docker CLI
-# （docker inspect / docker compose ps 在某些 Docker Desktop 环境下会挂起）
-INFRA_RUNNING=false
-RUNNING_COUNT=0
-INFRA_PORT_CHECKS=(
-  "PostgreSQL:${POSTGRES_PORT:-15432}"
-  "Redis:${REDIS_PORT:-16379}"
-  "FalkorDB:16479"
-  "MinIO:${MINIO_API_PORT:-19000}"
-  "Meilisearch:${MEILISEARCH_PORT:-17700}"
-)
-for svc_port in "${INFRA_PORT_CHECKS[@]}"; do
-  svc="${svc_port%%:*}"
-  port="${svc_port##*:}"
-  if nc -z -w1 localhost "$port" 2>/dev/null; then
-    echo -e "  ${GREEN}✓ $svc${NC}"
-    RUNNING_COUNT=$((RUNNING_COUNT + 1))
-  else
-    echo -e "  ${YELLOW}○ $svc 未就绪${NC}"
-  fi
-done
-if [ "$RUNNING_COUNT" -eq "${#INFRA_PORT_CHECKS[@]}" ]; then
-  INFRA_RUNNING=true
-  echo -e "${GREEN}✓ 基础设施已在运行,跳过启动${NC}"
-  echo -e "${YELLOW}  (如需重启基础设施,请运行: bash scripts/infra/down.sh && bash scripts/infra/up.sh)${NC}"
-fi
-
-# 如果基础设施未完全运行,则启动
-if [ "$INFRA_RUNNING" = false ]; then
+source "${ROOT_DIR}/scripts/infra/ports.sh"
+if addp_infra_ready; then
+  echo -e "${GREEN}✓ ADDP Infra 容器健康，跳过启动${NC}"
+else
   echo -e "${YELLOW}启动基础设施服务...${NC}"
-  # 调用基础设施启动脚本(单一职责原则)
   if ! bash "${ROOT_DIR}/scripts/infra/up.sh"; then
     echo -e "${RED}✗ 基础设施启动失败,请检查 Docker 是否运行${NC}"
     echo -e "${YELLOW}提示: 运行 'docker info' 检查 Docker 状态${NC}"
     exit 1
   fi
   echo -e "${GREEN}✓ 基础设施启动完成${NC}"
+fi
+
+addp_infra_read_actual_ports
+echo "  PostgreSQL: localhost:${POSTGRES_PORT}  Redis: localhost:${REDIS_PORT}  MinIO: localhost:${MINIO_API_PORT}"
+
+if [ "${ADDP_ONLINE_HOST:-0}" != 1 ]; then
+  source "${SCRIPT_DIR}/ports.sh"
+  addp_dev_resolve_ports
+  generate_service_urls
+  export RASTER_MOSAIC_RUNTIME_URL="http://${SERVICE_HOST:-localhost}:${RASTER_MOSAIC_RUNTIME_PORT}"
 fi
 
 echo ""
@@ -1396,7 +1389,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
 
   # 启动 Graph Backend（带检查）
   if [ "$START_GRAPH_BACKEND" = true ]; then
-    if check_service_running "graph" "8186"; then
+    if check_service_running "graph" "$GRAPH_BACKEND_PORT"; then
       .dev-bins/addp-graph > logs/graph-backend.log 2> logs/graph-backend-stderr.log &
       GRAPH_PID=$!
       echo $GRAPH_PID > .dev-pids/graph.pid
@@ -1858,7 +1851,7 @@ start_geopython_workflow_engine_process() {
   ensure_geopython_workflow_image "$image"
 
   echo "启动 GeoPython Workflow Docker runtime..."
-  docker rm -f geopython-workflow-engine >/dev/null 2>&1 || true
+  addp_dev_remove_owned_container geopython-workflow-engine
   mkdir -p "${source_dir}" logs .dev-pids
   GEOPYTHON_WORKFLOW_PID=$(
     docker run -d \
@@ -1869,6 +1862,7 @@ start_geopython_workflow_engine_process() {
       --add-host=host.docker.internal:host-gateway \
       -p "${GEOPYTHON_WORKFLOW_PORT}:8099" \
       -e PORT=8099 \
+      -e RUNTIME_PUBLIC_PORT="${GEOPYTHON_WORKFLOW_PORT}" \
       -e SYSTEM_URL="http://host.docker.internal:${system_port}" \
       -e GEOPYTHON_WORKFLOW_SERVICE_CLIENT_SECRET="${GEOPYTHON_WORKFLOW_SERVICE_CLIENT_SECRET:-}" \
       -e GEOPYTHON_WORKFLOW_LOOPBACK_HOST=host.docker.internal \
@@ -2097,7 +2091,7 @@ if curl -s "http://localhost:${MODEL3D_WORKFLOW_PORT}/health" 2>/dev/null | grep
     echo -e "${YELLOW}⚠️  检测到 Docker 版 Model3D Workflow Engine 正占用 ${MODEL3D_WORKFLOW_PORT}${NC}"
     echo -e "${YELLOW}   dev 模式需要宿主机 Python runtime，以便与 Manager 统一访问 infra MinIO localhost:${MINIO_API_PORT:-19000}${NC}"
     echo "  停止 Docker 版 Model3D Workflow Engine..."
-    docker rm -f model3d-workflow-engine >/dev/null
+    addp_dev_remove_owned_container model3d-workflow-engine
     rm -f .dev-pids/model3d-workflow-engine.pid
     echo -e "${GREEN}✓ Docker 版 Model3D Workflow Engine 已停止，继续启动宿主机 runtime${NC}"
     start_model3d_workflow_engine_process
@@ -2178,8 +2172,7 @@ start_pointcloud_workflow_engine_process() {
   ensure_pointcloud_workflow_image "$image"
 
   echo "启动 PointCloud Workflow Engine Docker runtime..."
-  docker rm -f pointcloud-workflow-engine >/dev/null 2>&1 || true
-  pkill -9 -f "engines/pointcloud-workflow/api_server.py" 2>/dev/null || true
+  addp_dev_remove_owned_container pointcloud-workflow-engine
   mkdir -p "${work_dir}"
   mkdir -p .dev-pids
   POINTCLOUD_WORKFLOW_PID=$(
@@ -2191,6 +2184,7 @@ start_pointcloud_workflow_engine_process() {
       --add-host=host.docker.internal:host-gateway \
       -p "${POINTCLOUD_WORKFLOW_PORT}:8102" \
       -e PORT=8102 \
+      -e RUNTIME_PUBLIC_PORT="${POINTCLOUD_WORKFLOW_PORT}" \
       -e SYSTEM_URL="http://host.docker.internal:${system_port}" \
       -e POINTCLOUD_WORKFLOW_SERVICE_CLIENT_SECRET="${POINTCLOUD_WORKFLOW_SERVICE_CLIENT_SECRET:-}" \
       -e POINTCLOUD_PDAL_BIN=/opt/conda/bin/pdal \
@@ -2243,8 +2237,8 @@ if curl -s "http://localhost:${POINTCLOUD_WORKFLOW_PORT}/health" 2>/dev/null | g
       start_pointcloud_workflow_engine_process
     fi
   else
-    echo -e "${YELLOW}⚠️  检测到非容器 PointCloud Workflow Engine 正占用 ${POINTCLOUD_WORKFLOW_PORT}，切换到 Docker runtime${NC}"
-    start_pointcloud_workflow_engine_process
+    echo -e "${RED}✗ ${POINTCLOUD_WORKFLOW_PORT} 上运行着非受管 PointCloud Workflow Engine，请先停止该进程${NC}"
+    exit 1
   fi
 elif check_service_running "pointcloud-workflow-engine" "$POINTCLOUD_WORKFLOW_PORT"; then
   start_pointcloud_workflow_engine_process
@@ -2312,8 +2306,7 @@ start_document_workflow_engine_process() {
   local work_dir="${DOCUMENT_WORK_HOST_PATH:-${ROOT_DIR}/data/document-work}"
   local system_port="${SYSTEM_BACKEND_PORT:-8180}"
   ensure_document_workflow_image "$image"
-  docker rm -f document-workflow-engine >/dev/null 2>&1 || true
-  pkill -9 -f "engines/document-workflow/api_server.py" 2>/dev/null || true
+  addp_dev_remove_owned_container document-workflow-engine
   mkdir -p "$work_dir" .dev-pids
   DOCUMENT_WORKFLOW_PID=$(
     docker run -d \
@@ -2328,6 +2321,7 @@ start_document_workflow_engine_process() {
       --add-host=host.docker.internal:host-gateway \
       -p "${DOCUMENT_WORKFLOW_PORT}:8105" \
       -e PORT=8105 \
+      -e RUNTIME_PUBLIC_PORT="${DOCUMENT_WORKFLOW_PORT}" \
       -e SYSTEM_URL="http://host.docker.internal:${system_port}" \
       -e DOCUMENT_WORKFLOW_SERVICE_CLIENT_SECRET="${DOCUMENT_WORKFLOW_SERVICE_CLIENT_SECRET:-}" \
       -e DOCUMENT_LIBREOFFICE_BIN=/usr/bin/soffice \
@@ -2365,6 +2359,9 @@ if curl -s "http://localhost:${DOCUMENT_WORKFLOW_PORT}/health" 2>/dev/null | gre
   DOCUMENT_WORKFLOW_PID=$(cat .dev-pids/document-workflow-engine.pid 2>/dev/null || true)
   if docker ps --filter "name=^/document-workflow-engine$" --format '{{.Names}}' 2>/dev/null | grep -qx document-workflow-engine && curl -s "http://localhost:${DOCUMENT_WORKFLOW_PORT}/health" | grep -q '"status":"healthy"'; then
     echo -e "${GREEN}✓ Document Workflow Engine 已在运行 (${DOCUMENT_WORKFLOW_PID:-document-workflow-engine})${NC}"
+  elif ! docker ps --filter "name=^/document-workflow-engine$" --format '{{.Names}}' 2>/dev/null | grep -qx document-workflow-engine; then
+    echo -e "${RED}✗ ${DOCUMENT_WORKFLOW_PORT} 上运行着非受管 Document Workflow Engine，请先停止该进程${NC}"
+    exit 1
   else
     start_document_workflow_engine_process
   fi
@@ -2394,8 +2391,8 @@ if curl -s "http://localhost:${SUPERMAP_WORKFLOW_PORT}/health" 2>/dev/null | gre
       start_supermap_workflow_engine_process
     fi
   else
-    echo -e "${YELLOW}⚠️  检测到非容器 SuperMap Workflow Engine 正占用 ${SUPERMAP_WORKFLOW_PORT}，切换到 Docker runtime${NC}"
-    start_supermap_workflow_engine_process
+    echo -e "${RED}✗ ${SUPERMAP_WORKFLOW_PORT} 上运行着非受管 SuperMap Workflow Engine，请先停止该进程${NC}"
+    exit 1
   fi
 elif check_service_running "supermap-workflow-engine" "$SUPERMAP_WORKFLOW_PORT"; then
   start_supermap_workflow_engine_process
@@ -2991,7 +2988,7 @@ if [ "$START_ONTOLOGY_FRONTEND" = true ] || [ "$START_CONSOLE" = true ] || [ "$S
   fi
 
   if [ "$START_GRAPH_FRONTEND" = true ]; then
-    FRONTEND_CONFIGS+=("graph:5187:graph/frontend")
+    FRONTEND_CONFIGS+=("graph:${GRAPH_FE_PORT}:graph/frontend")
   fi
 
   if [ "$START_INFERENCE_FRONTEND" = true ]; then
