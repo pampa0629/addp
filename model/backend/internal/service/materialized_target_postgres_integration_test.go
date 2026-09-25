@@ -82,7 +82,10 @@ func TestPostgresMaterializedTargetCreationPreservesRowsAndRejectsDrift(t *testi
 	}
 	t.Cleanup(func() { db.Exec("DROP SCHEMA " + schema + " CASCADE"); pool, _ := db.DB(); pool.Close() })
 	table := &models.LogicalTable{ID: 77, Code: "target", Materialization: models.JSONB{"target_parent_locator": "addp://engine/1/path/" + schema + "?type=schema", "target_name": "target"}}
-	fields := []models.LogicalField{{ColumnName: "id", DataType: "int", IsPK: true, Nullable: false}}
+	fields := []models.LogicalField{
+		{ColumnName: "id", DataType: "int", IsPK: true, Nullable: false},
+		{ColumnName: "amount", DataType: "decimal", Nullable: false},
+	}
 	fingerprint, err := materializationSchemaFingerprint(table, fields)
 	if err != nil {
 		t.Fatal(err)
@@ -102,7 +105,18 @@ func TestPostgresMaterializedTargetCreationPreservesRowsAndRejectsDrift(t *testi
 			t.Fatal(err)
 		}
 	}
-	if err := db.Exec("INSERT INTO " + qualifiedIdentifier(schema, "target") + " VALUES (42)").Error; err != nil {
+	var amountType string
+	if err := db.Raw(`SELECT pg_catalog.format_type(a.atttypid, a.atttypmod)
+FROM pg_catalog.pg_attribute a
+JOIN pg_catalog.pg_class c ON c.oid = a.attrelid
+JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+WHERE n.nspname = ? AND c.relname = 'target' AND a.attname = 'amount'`, schema).Scan(&amountType).Error; err != nil {
+		t.Fatal(err)
+	}
+	if amountType != "numeric(38,18)" {
+		t.Fatalf("decimal physical type = %q", amountType)
+	}
+	if err := db.Exec("INSERT INTO " + qualifiedIdentifier(schema, "target") + " VALUES (42, 123.456)").Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := create(); err != nil {
@@ -118,6 +132,15 @@ func TestPostgresMaterializedTargetCreationPreservesRowsAndRejectsDrift(t *testi
 		t.Fatal("untracked structural drift accepted")
 	}
 	db.Exec("ALTER TABLE " + qualifiedIdentifier(schema, "target") + " DROP COLUMN extra")
+	if err := db.Exec("ALTER TABLE " + qualifiedIdentifier(schema, "target") + " ALTER COLUMN amount TYPE numeric").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := create(); err == nil {
+		t.Fatal("decimal precision drift accepted")
+	}
+	if err := db.Exec("ALTER TABLE " + qualifiedIdentifier(schema, "target") + " ALTER COLUMN amount TYPE numeric(38,18)").Error; err != nil {
+		t.Fatal(err)
+	}
 	table.ID = 78
 	if err := create(); err == nil {
 		t.Fatal("foreign ownership accepted")

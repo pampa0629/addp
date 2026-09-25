@@ -258,7 +258,8 @@ func runGroupedDecimalMetricGolden(t *testing.T, provider metricGoldenProvider, 
 	table := dialect.QuoteIdentifier(database) + "." + dialect.QuoteIdentifier("metric_golden_areas")
 	for _, statement := range []string{
 		"CREATE TABLE " + table + " (city varchar(200), area_m2 decimal(38,18))",
-		"INSERT INTO " + table + " VALUES ('长沙',1.25),('长沙',2.50),('永州',0.50),('',0.75),(NULL,9),(NULL,NULL)",
+		// City-scale totals and nonzero 18th decimal digits expose float coercion.
+		"INSERT INTO " + table + " VALUES ('长沙',9043526587.962176100000000001),('长沙',2.500000000000000009),('永州',11848801485.818872040000000007),('',0.750000000000000003),(NULL,9),(NULL,NULL)",
 	} {
 		if _, err := db.Exec(statement); err != nil {
 			t.Fatal(err)
@@ -281,7 +282,7 @@ func runGroupedDecimalMetricGolden(t *testing.T, provider metricGoldenProvider, 
 	if err != nil || result == nil || len(result.Rows) != 3 {
 		t.Fatalf("grouped sum result=%#v err=%v", result, err)
 	}
-	want := map[string]string{"": "0.750000000000000000", "长沙": "3.750000000000000000", "永州": "0.500000000000000000"}
+	want := map[string]string{"": "0.750000000000000003", "长沙": "9043526590.462176100000000010", "永州": "11848801485.818872040000000007"}
 	for _, row := range result.Rows {
 		key, ok := row["group_key"].(string)
 		if !ok || row["value"] != want[key] {
