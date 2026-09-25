@@ -59,7 +59,7 @@ func TestPostgresStartupSchemaOwnership(t *testing.T) {
 	if err := db.Raw("SELECT current_database()").Scan(&database).Error; err != nil {
 		t.Fatal(err)
 	}
-	if database != "addp_test" && !(os.Getenv("CI") == "true" && strings.Contains(database, "test")) {
+	if database != "addp_test" && !(os.Getenv("CI") == "true" && strings.Contains(database, "disposable")) {
 		t.Fatalf("unsafe test database %q", database)
 	}
 	const name = "startup_contract_test"

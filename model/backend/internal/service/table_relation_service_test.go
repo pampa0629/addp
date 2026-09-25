@@ -59,6 +59,10 @@ func testDimensionRelationOwnershipAndUpdates(t *testing.T, db *gorm.DB, tenantI
 	if added.Version != 2 {
 		t.Fatalf("version = %d", added.Version)
 	}
+	created, err := repo.GetByID(added.Relation.ID, fact.ID, tenantID)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, id := range []int64{fact.ID, dimension.ID} {
 		rows, err := svc.ListDimensionRelations(id, tenantID)
 		if err != nil || len(rows) != 1 {
@@ -82,7 +86,7 @@ func testDimensionRelationOwnershipAndUpdates(t *testing.T, db *gorm.DB, tenantI
 	if err != nil {
 		t.Fatal(err)
 	}
-	if updated.Relation.ID != added.Relation.ID || !updated.Relation.CreatedAt.Equal(added.Relation.CreatedAt) || updated.Version != 3 || updated.Relation.TargetField != alternate.ID {
+	if updated.Relation.ID != created.ID || !updated.Relation.CreatedAt.Equal(created.CreatedAt) || updated.Version != 3 || updated.Relation.TargetField != alternate.ID {
 		t.Fatalf("update replaced identity or did not update mapping: %+v", updated)
 	}
 	_, err = svc.UpdateDimensionRelation(added.Relation.ID, fact.ID, tenantID, &req)
