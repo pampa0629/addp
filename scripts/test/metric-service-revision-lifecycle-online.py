@@ -44,10 +44,10 @@ def exact_revision(item, revision_id, status):
 
 
 def validate_fixture_query(query, expected):
-    if not isinstance(query, dict) or set(query) != {"parameters", "select", "page"}:
+    if not isinstance(query, dict) or set(query) not in ({"select", "page"}, {"parameters", "select", "page"}):
         raise SuiteError("metric query must contain only parameters, select and page")
-    if not isinstance(query["parameters"], dict) or not query["parameters"]:
-        raise SuiteError("metric query requires explicit parameters")
+    if "parameters" in query and (not isinstance(query["parameters"], dict) or not query["parameters"]):
+        raise SuiteError("metric query parameters must be nonempty when provided")
     fields = query["select"]
     if (not isinstance(fields, list) or not fields
             or not all(isinstance(f, str) and f for f in fields)
@@ -76,7 +76,17 @@ def assert_binding(service, implementation_id, revision_id, tenant_id, name):
 
 def assert_query(client, name, query, expected, service_version):
     result = client.request("POST", f"/api/query/{name}/query", (200,), query).payload
-    if (result.get("data") != expected or result.get("page", {}).get("has_more") is not False
+    actual = result.get("data")
+    if expected and "group_key" in expected[0] and isinstance(actual, list):
+        keys = [row.get("group_key") for row in actual if isinstance(row, dict)]
+        data_matches = (len(actual) == len(expected) and len(keys) == len(actual)
+                        and all(isinstance(key, str) for key in keys)
+                        and len(set(keys)) == len(keys)
+                        and {row["group_key"]: row for row in actual} ==
+                        {row["group_key"]: row for row in expected})
+    else:
+        data_matches = actual == expected
+    if (not data_matches or result.get("page", {}).get("has_more") is not False
             or result.get("service_version") != service_version or not service_version):
         raise SuiteError("metric query did not return the complete expected data and service version")
 
@@ -257,12 +267,22 @@ def main():
         signal.signal(signal.SIGTERM, interrupted)
         signal.signal(signal.SIGINT, interrupted)
         client = GatewayClient(os.environ["GATEWAY_URL"], token, timeout)
-        report.update({"suite": SUITE, "run_id": run_id, "tenant_id": str(tenant_id),
+        report.update({"schema_version": "addp.online-suite/v1", "suite": SUITE,
+                       "run_id": run_id, "tenant_id": str(tenant_id),
                        "engine_type": engine_type, "result": "failed"})
         checkpoint()
         template_id, revision_id = FIXTURE.prepare(client, engine_id, tenant_id, engine_type, report, checkpoint)
+        grouped = report["grouped_fixture"]
+        report["cases"] = {"count_distinct": {}, "sum_decimal_by_group": {}}
+        checkpoint()
         run_suite(client, tenant_id, run_id, template_id, revision_id,
-                  FIXTURE.QUERY, FIXTURE.EXPECTED_DATA, report, checkpoint)
+                  FIXTURE.QUERY, FIXTURE.EXPECTED_DATA, report["cases"]["count_distinct"], checkpoint)
+        grouped_run_id = run_id[:40] + "_area_" + hashlib.sha256(run_id.encode()).hexdigest()[:12]
+        run_suite(client, tenant_id, grouped_run_id, grouped["implementation_id"], grouped["revision_id"],
+                  FIXTURE.GROUPED_QUERY, FIXTURE.GROUPED_EXPECTED_DATA,
+                  report["cases"]["sum_decimal_by_group"], checkpoint)
+        report["result"] = "passed"
+        report["cleanup"] = "passed"
 
     except (KeyError, ValueError, SuiteError) as error:
         report["result"] = "failed"

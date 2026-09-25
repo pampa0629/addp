@@ -87,6 +87,8 @@ class HostedMetricGateTest(unittest.TestCase):
         self.assertIn("down --volumes --remove-orphans", trace)
         self.assertNotIn("metric-fixture:start", trace)
         self.assertIn("CREATE TABLE metric_fixture.metric_facts", seed.read_text())
+        self.assertIn("CREATE TABLE metric_fixture.metric_areas", seed.read_text())
+        self.assertIn("area_m2 DECIMAL(38,18)", seed.read_text())
         self.assertIn("leader TINYINT(1)", seed.read_text())
         self.assertFalse(self.host.secrets.exists())
         self.assertIn("cleanup=passed", (self.host.artifacts / "summary.txt").read_text())

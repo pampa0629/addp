@@ -57,9 +57,11 @@ CREATE DATABASE metric_fixture CHARACTER SET utf8mb4;
 CREATE TABLE metric_fixture.metric_people (person_id VARCHAR(32) PRIMARY KEY);
 CREATE TABLE metric_fixture.metric_events (event_id VARCHAR(32) PRIMARY KEY, event_date DATE NOT NULL);
 CREATE TABLE metric_fixture.metric_facts (row_id BIGINT PRIMARY KEY, person_id VARCHAR(32) NOT NULL, event_id VARCHAR(32) NOT NULL, leader TINYINT(1) NOT NULL);
+CREATE TABLE metric_fixture.metric_areas (parcel_id BIGINT PRIMARY KEY, city VARCHAR(100), area_m2 DECIMAL(38,18) NOT NULL);
 INSERT INTO metric_fixture.metric_people VALUES ('A'), ('B');
 INSERT INTO metric_fixture.metric_events VALUES ('e1','2026-01-01'), ('e2','2026-02-01'), ('e3','2026-03-01'), ('old','2025-12-31');
 INSERT INTO metric_fixture.metric_facts VALUES (1,'A','e1',1), (2,'A','e1',1), (3,'A','e2',1), (4,'A','e3',0), (5,'A','old',1), (6,'B','e3',1);
+INSERT INTO metric_fixture.metric_areas VALUES (1,'长沙',9043526587.962176100000000001), (2,'长沙',2.500000000000000009), (3,'永州',11848801485.818872040000000007), (4,'',0.750000000000000003), (5,NULL,9.000000000000000000);
 CREATE USER 'metric_reader'@'%' IDENTIFIED BY '$METRIC_TIDB_PASSWORD';
 GRANT SELECT ON metric_fixture.* TO 'metric_reader'@'%';
 SQL

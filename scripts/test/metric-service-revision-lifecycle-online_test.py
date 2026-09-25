@@ -2,11 +2,13 @@ import copy
 import importlib
 import json
 import os
+import re
 import sqlite3
 import subprocess
 import sys
 import unittest
 from contextlib import closing
+from decimal import Decimal, localcontext
 from pathlib import Path
 from unittest.mock import patch
 
@@ -27,7 +29,8 @@ class FixtureGateway:
         self.fields = {}
         self.requests = []
         self.serial = 10
-        self.definition_version = 1
+        self.definition_versions = {}
+        self.contracts = []
 
     def request(self, method, path, expected, body=None):
         self.requests.append((method, path, copy.deepcopy(body)))
@@ -38,11 +41,14 @@ class FixtureGateway:
             return Response(201, identity)
         if path == "/api/v1/standard/metrics":
             assert body["effective_from"] == "2020-01-01T00:00:00Z"
+            self.definition_versions[identity["id"]] = 1
             return Response(201, dict(identity, draft_revision={"id": 7}))
         if path.startswith("/api/v1/standard/metrics/"):
-            assert body["version"] == self.definition_version
-            self.definition_version += 1
-            return Response(200, {"version": self.definition_version, "current_revision": {"status": "published"}})
+            definition_id = int(path.split("/")[5])
+            assert body["version"] == self.definition_versions[definition_id]
+            self.definition_versions[definition_id] += 1
+            return Response(200, {"version": self.definition_versions[definition_id],
+                                  "current_revision": {"status": "published"}})
         if path.endswith("/logical-tables"):
             self.tables[identity["id"]] = dict(identity, **body, status="draft", fields=[])
             return Response(201, copy.deepcopy(self.tables[identity["id"]]))
@@ -69,7 +75,12 @@ class FixtureGateway:
             return Response(201, identity)
         if path.endswith("/draft"):
             self.contract = body["contract"]
-            assert self.fields[self.contract["time"]["field_id"]]["data_type"] == "date"
+            self.contracts.append(self.contract)
+            if self.contract["operation"] == "sum_decimal_by_group":
+                assert self.fields[self.contract["group"]["field_id"]]["data_type"] == "string"
+                assert self.fields[self.contract["measure"]["field_id"]]["data_type"] == "decimal"
+            else:
+                assert self.fields[self.contract["time"]["field_id"]]["data_type"] == "date"
             return Response(200, {"version": 2, "revisions": [{"id": 99, "status": "draft"}]})
         if path.endswith("/99/publish"):
             return Response(200, {})
@@ -77,8 +88,9 @@ class FixtureGateway:
 
 
 class Gateway:
-    def __init__(self, defect=None):
+    def __init__(self, defect=None, data=None):
         self.defect = defect
+        self.data = DATA if data is None else data
         self.calls = []
         self.template = {"id": 10, "version": 4, "tenant_id": 42, "fact_table_id": 5,
                          "metric_definition_id": 6, "revisions": [{"id": 100, "status": "published",
@@ -146,7 +158,7 @@ class Gateway:
             revision = next(r for r in self.item["revisions"] if r["id"] == bound)
             if revision["status"] == "withdrawn" and self.defect != "executes_withdrawn":
                 return 500, {"error_code": "wrong" if self.defect == "wrong_error" else "query_execution_failed"}
-            data = [{"value": 999}] if self.defect == "wrong_data" else DATA
+            data = [{"value": 999}] if self.defect == "wrong_data" else self.data
             return 200, {"data": data, "page": {"has_more": self.defect == "partial"},
                          "service_version": self.service["service_version"]}
         raise AssertionError(f"unexpected request {method} {path}")
@@ -159,22 +171,26 @@ class MetricLifecycleTest(unittest.TestCase):
             implementation, revision = ONLINE.FIXTURE.prepare(client, 8, 42, "postgresql", report, lambda: None)
         self.assertGreater(implementation, 0)
         self.assertEqual(revision, 99)
-        self.assertEqual(len(client.tables), 3)
-        self.assertEqual(len(report["fixture_resources"]), 6)
+        self.assertEqual(len(client.tables), 4)
+        self.assertEqual(len(report["fixture_resources"]), 9)
         self.assertTrue(all(table["status"] == "approved" for table in client.tables.values()))
-        self.assertEqual(client.contract["filters"][0]["value"], True)
+        self.assertEqual([contract["operation"] for contract in client.contracts],
+                         ["count_distinct", "sum_decimal_by_group"])
+        self.assertEqual(client.contracts[0]["filters"][0]["value"], True)
+        self.assertGreater(report["grouped_fixture"]["implementation_id"], 0)
         self.assertNotIn("DELETE", [method for method, _, _ in client.requests])
 
     def test_tidb_fixture_uses_database_namespace_and_same_metric_contract(self):
         client, report = FixtureGateway(), {}
         with patch.object(ONLINE.FIXTURE.SCAN, "wait_for_scan", return_value="scan-1"):
             ONLINE.FIXTURE.prepare(client, 8, 42, "tidb", report, lambda: None)
-        self.assertEqual(len(client.tables), 3)
+        self.assertEqual(len(client.tables), 4)
         self.assertTrue(all(table["materialization"]["target_parent_locator"] ==
                             "addp://engine/8/path/metric_fixture?type=database"
                             for table in client.tables.values()))
-        self.assertEqual(client.contract["operation"], "count_distinct")
-        self.assertEqual(client.contract["filters"][0]["value"], True)
+        self.assertEqual([contract["operation"] for contract in client.contracts],
+                         ["count_distinct", "sum_decimal_by_group"])
+        self.assertEqual(client.contracts[0]["filters"][0]["value"], True)
 
     def test_failed_scan_creates_no_logical_or_standard_resources(self):
         client = FixtureGateway()
@@ -209,6 +225,19 @@ class MetricLifecycleTest(unittest.TestCase):
                   AND event_date >= '2026-01-01' AND event_date < '2027-01-01'""").fetchone()[0]
             self.assertEqual(ONLINE.FIXTURE.EXPECTED_DATA, [{"value": value}])
 
+        pg_area_insert = next(line for line in sql.splitlines() if line.startswith("INSERT INTO metric_areas "))
+        tidb_area_insert = next(line.replace("metric_fixture.", "") for line in tidb_sql.splitlines()
+                                if line.startswith("INSERT INTO metric_areas "))
+        self.assertEqual(pg_area_insert, tidb_area_insert)
+        self.assertIn("(5,NULL,9.000000000000000000)", pg_area_insert)
+        totals = {}
+        with localcontext() as context:
+            context.prec = 60
+            for city, value in re.findall(r"\(\d+,'([^']*)',([0-9.]+)\)", pg_area_insert):
+                totals[city] = totals.get(city, Decimal(0)) + Decimal(value)
+        self.assertEqual({row["group_key"]: row["value"] for row in ONLINE.FIXTURE.GROUPED_EXPECTED_DATA},
+                         {city: format(value, ".18f") for city, value in totals.items()})
+
     def run_scenario(self, gateway, report):
         return ONLINE.run_suite(gateway, 42, "run-42", 10, 100, QUERY, DATA, report)
 
@@ -228,6 +257,33 @@ class MetricLifecycleTest(unittest.TestCase):
         # Cleanup uses the new service aggregate version, not its pre-rebind version.
         self.assertIn(("DELETE", ONLINE.SERVICE + "/22", {"version": 2}), client.calls)
         self.assertNotIn("parameters", json.dumps(report))
+
+    def test_parameterless_grouped_decimal_lifecycle_checks_exact_values(self):
+        expected = ONLINE.FIXTURE.GROUPED_EXPECTED_DATA
+        client, report = Gateway(data=list(reversed(expected))), {}
+        client.template["revisions"][0]["contract"] = {
+            "operation": "sum_decimal_by_group", "group": {"field_id": 21},
+            "measure": {"field_id": 22},
+        }
+        ONLINE.run_suite(client, 42, "run-42-area", 10, 100,
+                         ONLINE.FIXTURE.GROUPED_QUERY, expected, report)
+        self.assertEqual(report["result"], "passed")
+        self.assertEqual(report["row_count"], 3)
+        self.assertIsNone(client.service)
+        self.assertTrue(all("parameters" not in body for method, path, body in client.calls
+                            if path.startswith("/api/query/") and method == "POST"))
+
+        wrong = [dict(row) for row in expected]
+        wrong[1]["value"] = "9043526590.462176100000000011"
+        client = Gateway(data=wrong)
+        client.template["revisions"][0]["contract"] = {
+            "operation": "sum_decimal_by_group", "group": {"field_id": 21},
+            "measure": {"field_id": 22},
+        }
+        with self.assertRaisesRegex(SuiteError, "complete expected data"):
+            ONLINE.run_suite(client, 42, "run-42-area", 10, 100,
+                             ONLINE.FIXTURE.GROUPED_QUERY, expected, {})
+        self.assertIsNone(client.service)
 
     def test_business_defects_fail_and_still_clean_service(self):
         for defect in ("auto_bind", "ignore_rebind", "executes_withdrawn", "wrong_error",
@@ -275,6 +331,7 @@ class MetricLifecycleTest(unittest.TestCase):
         for query, data in ((QUERY, []), (dict(QUERY, page={"limit": 101}), DATA),
                             (dict(QUERY, page={"limit": True}), DATA),
                             (dict(QUERY, page={"limit": 10, "cursor": "old"}), DATA),
+                            (dict(QUERY, parameters={}), DATA),
                             (QUERY, [{"unexpected": 10}]), (dict(QUERY, sql="SELECT 1"), DATA)):
             with self.assertRaises(SuiteError):
                 ONLINE.validate_fixture_query(query, data)

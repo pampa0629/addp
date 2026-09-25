@@ -36,9 +36,11 @@ docker exec -i "$container" psql -U postgres -d metric_fixture -v ON_ERROR_STOP=
 CREATE TABLE metric_people (person_id text PRIMARY KEY);
 CREATE TABLE metric_events (event_id text PRIMARY KEY, event_date date NOT NULL);
 CREATE TABLE metric_facts (row_id bigint PRIMARY KEY, person_id text NOT NULL, event_id text NOT NULL, leader boolean NOT NULL);
+CREATE TABLE metric_areas (parcel_id bigint PRIMARY KEY, city varchar(100), area_m2 numeric(38,18) NOT NULL);
 INSERT INTO metric_people VALUES ('A'), ('B');
 INSERT INTO metric_events VALUES ('e1','2026-01-01'), ('e2','2026-02-01'), ('e3','2026-03-01'), ('old','2025-12-31');
 INSERT INTO metric_facts VALUES (1,'A','e1',true), (2,'A','e1',true), (3,'A','e2',true), (4,'A','e3',false), (5,'A','old',true), (6,'B','e3',true);
+INSERT INTO metric_areas VALUES (1,'长沙',9043526587.962176100000000001), (2,'长沙',2.500000000000000009), (3,'永州',11848801485.818872040000000007), (4,'',0.750000000000000003), (5,NULL,9.000000000000000000);
 CREATE ROLE metric_reader LOGIN PASSWORD :'reader_password';
 GRANT CONNECT ON DATABASE metric_fixture TO metric_reader;
 GRANT USAGE ON SCHEMA public TO metric_reader;
