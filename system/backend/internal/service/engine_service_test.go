@@ -1398,6 +1398,13 @@ func newEngineServiceTestRepository(t *testing.T) *repository.EngineRepository {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("get sqlite connection pool: %v", err)
+	}
+	// Restore launches a connection check in the background. Serialize access to
+	// this in-memory SQLite database so the check cannot lock out test writes.
+	sqlDB.SetMaxOpenConns(1)
 	if err := db.AutoMigrate(&models.Engine{}); err != nil {
 		t.Fatalf("auto migrate engine: %v", err)
 	}
