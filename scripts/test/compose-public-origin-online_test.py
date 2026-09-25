@@ -1,10 +1,12 @@
 import importlib.util
+import io
 import json
 import os
 import sys
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import DEFAULT, MagicMock, patch
 
 
 SCRIPT = Path(__file__).with_name("compose-public-origin-online.py")
@@ -30,6 +32,19 @@ class ComposePublicOriginOnlineTest(unittest.TestCase):
         self.env.start()
         self.addCleanup(self.env.stop)
 
+    def test_main_includes_meta_frontend_and_gateway_route(self):
+        checks = {
+            name: DEFAULT for name in (
+                "root_compose_ports", "infra_compose_ports", "assert_platform_ports", "assert_isolated_groups",
+                "assert_frontend", "assert_authorized_gateway", "assert_meta_gateway_route",
+            )
+        }
+        with patch.multiple(MODULE, **checks) as mocked, redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(MODULE.main(), 0)
+        mocked["assert_frontend"].assert_any_call("/meta/", "/meta/")
+        mocked["assert_meta_gateway_route"].assert_called_once_with()
+        self.assertIn("meta", json.loads(output.getvalue())["frontends"])
+
     @patch.object(MODULE, "docker_json")
     def test_production_compose_publishes_only_one_loopback_entry(self, docker_json):
         docker_json.return_value = {"services": {"nginx": {"ports": [{"published": "18080", "host_ip": "127.0.0.1"}]}, "gateway": {}, "system-backend": {}}}
@@ -45,13 +60,30 @@ class ComposePublicOriginOnlineTest(unittest.TestCase):
             "gateway": container("gateway", {"8000/tcp": [{"HostIp": "127.0.0.1", "HostPort": "8000"}]}, ["SYSTEM_URL=http://system-backend:8180", "POSTGRES_HOST=postgres", "POSTGRES_DB=addp_online", "REDIS_HOST=redis"]),
             "console": container("console"),
             "system-frontend": container("system-frontend"),
+            "meta-backend": container("meta-backend", env=["SERVICE_HOST=meta-backend", "SYSTEM_URL=http://system-backend:8180", "POSTGRES_HOST=postgres", "POSTGRES_DB=addp_online"]),
+            "meta-frontend": container("meta-frontend"),
             "addp-nginx": container("addp-nginx", {"80/tcp": [{"HostIp": "127.0.0.1", "HostPort": "18080"}]}),
         }
         docker_json.side_effect = lambda *args: fixtures[args[-1]]
         MODULE.assert_platform_ports()
+        self.assertIn("meta-backend", [call.args[-1] for call in docker_json.call_args_list])
+        self.assertIn("meta-frontend", [call.args[-1] for call in docker_json.call_args_list])
+        fixtures["meta-backend"][0]["State"]["Health"]["Status"] = "unhealthy"
+        with self.assertRaises(MODULE.AcceptanceError):
+            MODULE.assert_platform_ports()
+        fixtures["meta-backend"][0]["State"]["Health"]["Status"] = "healthy"
         fixtures["system-backend"][0]["Config"]["Env"][0] = "PUBLIC_API_URL=http://localhost:80"
         with self.assertRaises(MODULE.AcceptanceError):
             MODULE.assert_platform_ports()
+
+    @patch("time.sleep")
+    @patch.object(MODULE, "request")
+    def test_meta_route_reaches_owner_permission_guard(self, request, sleep):
+        request.side_effect = [(503, b"{}", "application/json"), (403, b"{}", "application/json")]
+        MODULE.assert_meta_gateway_route()
+        self.assertEqual(request.call_count, 2)
+        request.assert_any_call("/api/v1/meta/engines", "test-token")
+        sleep.assert_called_once()
 
     @patch.object(MODULE, "docker_json")
     @patch.object(MODULE.subprocess, "run")

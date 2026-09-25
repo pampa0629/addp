@@ -71,7 +71,9 @@ class HostedPublicOriginGateTest(unittest.TestCase):
                               cwd=self.host.repository, env=env, capture_output=True, text=True, timeout=20)
 
     def test_preflight_refuses_existing_app_and_personal_environment(self):
-        for override in ({"ADDP_TEST_EXISTING_CONTAINER": "registry"}, {"ADDP_TEST_EXISTING_PROJECT_VOLUME": "business"}, {"GITHUB_ACTIONS": "false"}, {"RUNNER_OS": "macOS"}):
+        for override in ({"ADDP_TEST_EXISTING_CONTAINER": "registry"}, {"ADDP_TEST_EXISTING_CONTAINER": "meta-backend"},
+                         {"ADDP_TEST_EXISTING_CONTAINER": "meta-frontend"}, {"ADDP_TEST_EXISTING_PROJECT_VOLUME": "business"},
+                         {"GITHUB_ACTIONS": "false"}, {"RUNNER_OS": "macOS"}):
             with self.subTest(override=override):
                 result = self.run_gate(check=True, **override)
                 self.assertNotEqual(result.returncode, 0)
@@ -85,13 +87,15 @@ class HostedPublicOriginGateTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         trace = self.host.trace.read_text()
         for step in (
-            "infra-up", "make:build BUILD_ARGS=--arch amd64 --services system-backend,gateway",
-            "make:build-images IMAGE_BUILD_ARGS=--verify --services system-backend,gateway,console,system-frontend,nginx,geopython-workflow-engine",
+            "infra-up", "make:build BUILD_ARGS=--arch amd64 --services system-backend,gateway,meta-backend",
+            "make:build-images IMAGE_BUILD_ARGS=--verify --services system-backend,gateway,meta-backend,console,system-frontend,meta-frontend,nginx,geopython-workflow-engine",
             "make:test-online ONLINE_SUITE=compose-public-origin", "docker:compose -f", "docker:rm -fv addp-online-public-origin-upstreams registry", "infra-down",
+            " up -d --no-deps --wait meta-backend", " up -d --no-deps --wait meta-frontend",
             "docker:compose -f " + str(self.host.repository / "docker-compose.runtimes.yml") + " up -d --no-deps --wait --wait-timeout 180 geopython-workflow-engine",
             "docker:compose --env-file /dev/null -f " + str(self.host.repository / "business/docker-compose.yml") + " up -d --no-deps --wait --wait-timeout 180 minio",
         ):
             self.assertIn(step, trace)
+        self.assertNotIn("--network-alias meta-frontend", trace)
         self.assertLess(trace.index("make:test-online ONLINE_SUITE=compose-public-origin"), trace.index("business/docker-compose.yml down --remove-orphans --volumes"))
         self.assertLess(trace.index("business/docker-compose.yml down --remove-orphans --volumes"), trace.index("docker-compose.runtimes.yml down --remove-orphans --volumes"))
         self.assertFalse(self.host.secrets.exists())
