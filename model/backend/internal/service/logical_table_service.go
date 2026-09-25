@@ -787,7 +787,7 @@ func (s *LogicalTableService) mapDataTypeToPostgreSQL(dataType string, length *i
 	case "float":
 		return "DOUBLE PRECISION"
 	case "decimal":
-		return "NUMERIC"
+		return "NUMERIC(38,18)"
 	case "date":
 		return "DATE"
 	case "datetime":

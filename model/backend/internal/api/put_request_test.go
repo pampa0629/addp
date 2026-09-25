@@ -70,3 +70,17 @@ func TestModelPutRequestsAcceptCompleteZeroAndNullableValues(t *testing.T) {
 		})
 	}
 }
+
+func TestMetricDraftRequestAcceptsGroupedDecimalSumWithoutDistinctFields(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	context, _ := gin.CreateTestContext(httptest.NewRecorder())
+	context.Request = httptest.NewRequest(http.MethodPut, "/", strings.NewReader(`{"version":1,"metric_definition_revision_id":1,"contract":{"operation":"sum_decimal_by_group","group":{"field_id":21,"relation_id":0},"measure":{"field_id":22,"relation_id":0}}}`))
+	context.Request.Header.Set("Content-Type", "application/json")
+	var request models.SaveMetricImplementationRevisionRequest
+	if err := context.ShouldBindJSON(&request); err != nil {
+		t.Fatalf("ShouldBindJSON: %v", err)
+	}
+	if request.Contract.Group == nil || request.Contract.Measure == nil || request.Contract.Group.FieldID != 21 || request.Contract.Measure.FieldID != 22 {
+		t.Fatalf("unexpected grouped sum contract: %+v", request.Contract)
+	}
+}

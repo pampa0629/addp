@@ -430,6 +430,28 @@ for (const missingTarget of [false, true]) {
   })
 }
 
+test('draft physical target selection survives token renewal and binds the canonical catalog', async ({ page }) => {
+  const backend = await installMockBackend(page, {
+    draftTable: true,
+    concurrentLogicalTable: true,
+    unconfiguredTarget: true,
+    resourceTreeExpired: true,
+    permissions: [...DEFAULT_PERMISSIONS, 'model.logical_model.update']
+  })
+  await page.goto('/logical-tables/2?tab=physical-target')
+  const picker = page.locator('.resource-tree-picker')
+  await picker.locator('.el-select__wrapper').click()
+  await page.getByRole('option', { name: /业务库/ }).click()
+  await expect(picker.getByRole('treeitem', { name: 'public' })).toBeVisible()
+  await picker.getByRole('treeitem', { name: 'public' }).click()
+  await page.getByRole('textbox', { name: '目标表名' }).fill('dwd_farmland_area')
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  await expect.poll(() => backend.getLogicalTable().materialization).toEqual({
+    target_parent_locator: 'addp://engine/2/path/public?type=schema&node_id=22',
+    target_name: 'dwd_farmland_area'
+  })
+})
+
 test('dialog baselines track real edits and preserve the page draft when discarded', async ({ page }) => {
   await installMockBackend(page, { draftTable: true, lifecycle: true, permissions: [...DEFAULT_PERMISSIONS, 'model.logical_model.update', 'model.logical_model.create'] })
   await page.goto('/logical-tables/2')
@@ -721,6 +743,7 @@ async function installMockBackend(target, options = {}) {
   let dwLayer = structuredClone(DW_LAYER)
   if (options.concurrentLogicalTable || options.draftTable) logicalTable.status = 'draft'
   if (options.lifecycle) logicalTable.table_type = 'fact'
+  if (options.unconfiguredTarget) logicalTable.materialization = {}
   if (options.withoutNodeID) logicalTable.materialization.target_parent_locator = 'addp://engine/2/path/public?type=schema'
   let fieldName = "编号"
   const ddlRequests = []
@@ -772,11 +795,17 @@ async function installMockBackend(target, options = {}) {
     const root = { id: 'engine-2', label: '业务库', type: 'database', locator: 'addp://engine/2/path/?type=database&node_id=21', children: [schema], metadata: { node_id: 21, engine_id: 2 } }
     if (path === '/api/v1/meta/engines') return fulfillJSON(route, [{
       id: 2, name: '业务库', engine_type: 'postgresql', engine_family: 'tabular',
-      catalog_top_term: 'schema', engine_catalog_leaf_term: 'table', status: 'online'
+      catalog_top_term: 'schema', catalog_leaf_term: 'table', lifecycle_state: 'active', connection_status: 'online'
     }])
-    if (path === '/api/v1/meta/resource-tree/2') return fulfillJSON(route, root)
+    if (path === '/api/v1/meta/resource-tree/2') {
+      if (options.resourceTreeExpired) {
+        options.resourceTreeExpired = false
+        return fulfillJSON(route, { error: 'expired' }, 401)
+      }
+      return fulfillJSON(route, root)
+    }
     if (path === '/api/v1/meta/resource-tree/2/ancestors') return fulfillJSON(route, { ancestors: options.missingTarget ? [] : [root, schema] })
-    if (path === '/api/v1/meta/resource-tree/2/node') return fulfillJSON(route, schema)
+    if (path === '/api/v1/meta/resource-tree/2/node') return fulfillJSON(route, url.searchParams.get('locator') === root.locator ? root : schema)
     if (path === '/api/v1/standard/metrics') return fulfillJSON(route, { data: [], total: 0 })
     if (path === '/api/v1/model/metric-implementations') return fulfillJSON(route, [])
     if (path === '/api/v1/model/logical-tables/2/approve' || path === '/api/v1/model/logical-tables/2/reopen') {
@@ -954,6 +983,7 @@ async function installMockBackend(target, options = {}) {
     getReopenRequests: () => reopenRequests,
     getDDLRequests: () => structuredClone(ddlRequests),
     getEntity: () => structuredClone(entity),
+    getLogicalTable: () => structuredClone(logicalTable),
     getEntityListRequests: () => entityListRequests,
     getDWLayerUpdateVersions: () => [...dwLayerUpdateVersions],
     getLogicalTableUpdateVersions: () => [...logicalTableUpdateVersions],

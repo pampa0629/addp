@@ -1103,6 +1103,10 @@ for (const kind of ['code-set', 'metric']) {
     await expect(dialog).not.toBeVisible()
     expect(payload).toBeDefined()
     expect(payload).not.toHaveProperty('change_summary')
+    if (kind === 'metric') {
+      expect(payload).not.toHaveProperty('dependency_ids')
+      expect(payload.dependencies).toEqual([])
+    }
   })
 }
 

@@ -126,7 +126,7 @@ test('logical table physical target follows the engine catalog namespace', async
   assert.match(source, /mode="node"/)
   assert.match(source, /:selectable-filter="isTargetNamespaceSelection"/)
   assert.match(source, /:engine-filter="isSupportedPhysicalTargetEngine"/)
-  assert.match(source, /engine\?\.engine_catalog_leaf_term === 'table'/)
+  assert.match(source, /engine\?\.catalog_leaf_term === 'table'/)
   assert.match(source, /node\?\.type === engine\.catalog_top_term/)
   assert.match(source, /canExecuteMaterialization/)
   assert.match(source, /name="physical-target"/)

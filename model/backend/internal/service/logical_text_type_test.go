@@ -15,3 +15,13 @@ func TestLogicalTextPhysicalMapping(t *testing.T) {
 		t.Fatalf("retired logical type=%s", got)
 	}
 }
+
+func TestLogicalDecimalPhysicalMapping(t *testing.T) {
+	got := (&LogicalTableService{}).mapDataTypeToPostgreSQL("decimal", nil)
+	if got != "NUMERIC(38,18)" {
+		t.Fatalf("decimal physical type=%s", got)
+	}
+	if normalizePostgreSQLType(got) != normalizePostgreSQLType("numeric(38,18)") {
+		t.Fatalf("decimal physical type cannot be validated: %s", got)
+	}
+}

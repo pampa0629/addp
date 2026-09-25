@@ -349,7 +349,7 @@ const loadEngines = () => {
 }
 
 const handleEngineDropdownVisible = visible => {
-  if (visible) loadEngines()
+  if (visible && engines.value.length === 0) loadEngines()
 }
 
 const engineOptionLabel = engine => (

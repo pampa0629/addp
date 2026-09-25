@@ -1,7 +1,16 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createLatestRequestCoordinator } from '../../../common-frontend/basic/src/utils/latestRequest.js'
-import { applicationParameterPresetsValid, buildDataApplicationPreview, commitLatestDataApplicationRequest, confirmDataApplicationAction, createApplicationParameterPreset, dataApplicationEditorMutationContext, dataApplicationEditorRouteContext, normalizedApplicationSnapshot, synchronizeApplicationParameterPresets } from '../src/utils/dataApplicationDraft.mjs'
+import { applicationParameterPresetsValid, buildDataApplicationPreview, commitLatestDataApplicationRequest, confirmDataApplicationAction, copySelectionBinding, createApplicationParameterPreset, dataApplicationEditorMutationContext, dataApplicationEditorRouteContext, normalizedApplicationSnapshot, synchronizeApplicationParameterPresets } from '../src/utils/dataApplicationDraft.mjs'
+
+test('copies a selection binding with nested reactive assignments', () => {
+  const assignment = new Proxy({ source_field: 'city', application_parameter_key: 'city' }, {})
+  const binding = new Proxy({ source_component_id: 'chart', assignments: new Proxy([assignment], {}) }, {})
+  const copy = copySelectionBinding(binding)
+  assert.deepEqual(copy, { source_component_id: 'chart', assignments: [{ source_field: 'city', application_parameter_key: 'city' }] })
+  assignment.source_field = 'stale'
+  assert.equal(copy.assignments[0].source_field, 'city')
+})
 
 test('normalizes a Vue-style reactive snapshot without cloning the Proxy directly', () => {
   const snapshot = new Proxy({

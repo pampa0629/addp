@@ -255,7 +255,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { createLatestRequestCoordinator, useUnsavedChangesGuard } from '@common-ui'
 import { createDataApplication, getDataApplication, offlineDataApplication, publishDataApplication, updateDataApplication } from '../api/dataApplications'
 import { getConsumerDescriptor } from '../api/services'
-import { applicationParameterPresetsValid, buildDataApplicationPreview, commitLatestDataApplicationRequest, confirmDataApplicationAction, createApplicationParameterPreset, dataApplicationEditorMutationContext, dataApplicationEditorRouteContext, normalizedApplicationSnapshot, synchronizeApplicationParameterPresets } from '../utils/dataApplicationDraft.mjs'
+import { applicationParameterPresetsValid, buildDataApplicationPreview, commitLatestDataApplicationRequest, confirmDataApplicationAction, copySelectionBinding, createApplicationParameterPreset, dataApplicationEditorMutationContext, dataApplicationEditorRouteContext, normalizedApplicationSnapshot, synchronizeApplicationParameterPresets } from '../utils/dataApplicationDraft.mjs'
 import { APPLICATION_PRESENTATION_SECTIONS, canHideApplicationParameters } from '../utils/dataApplicationRuntime.mjs'
 import { applicationParameterSelectionSources, selectionParameterType, affectedSelectionComponentIDs, compatibleSelectionParameters as compatibleSelectionParameterList, selectionSourceFields } from '../utils/dataApplicationSelection.mjs'
 import { navigateWorkbenchRoute } from '../utils/moduleNavigation'
@@ -557,12 +557,12 @@ function addSelectionBinding(targetKey = '') {
   selectionDraft.value = { source_component_id: '', assignments: [{ source_field: '', application_parameter_key: targetKey }] }
 }
 function editSelectionBinding(index) {
-  selectionDraft.value = structuredClone(toRaw(application.snapshot.selection_bindings[index]))
+  selectionDraft.value = copySelectionBinding(application.snapshot.selection_bindings[index])
   selectionEditingSource.value = selectionDraft.value.source_component_id
 }
 function applySelectionBinding() {
   if (!selectionDraftValid.value) return
-  const binding = structuredClone(toRaw(selectionDraft.value))
+  const binding = copySelectionBinding(selectionDraft.value)
   const index = application.snapshot.selection_bindings.findIndex(b => b.source_component_id === selectionEditingSource.value)
   if (index < 0) application.snapshot.selection_bindings.push(binding)
   else application.snapshot.selection_bindings.splice(index, 1, binding)

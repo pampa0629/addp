@@ -277,7 +277,8 @@
             <el-col :xs="24" :lg="16">
               <el-form-item :label="t('model.materialization.target_location')">
                 <ResourceTreePicker
-                  v-if="canEdit"
+                  v-if="hasEditablePhysicalTarget"
+                  v-show="canEdit"
                   v-model="targetParentSelection"
                   api-base-url="/api/v1/meta"
                   mode="node"
@@ -290,7 +291,7 @@
                   @select="handleTargetParentSelect"
                 />
                 <el-input
-                  v-else
+                  v-if="!canEdit"
                   :model-value="formatLocatorDisplayPath(materializationForm.target_parent_locator)"
                   :placeholder="t('model.materialization.not_configured')"
                   disabled
@@ -560,6 +561,11 @@ useConsolePageDescriptor(router, 'modeling', {
   ready: computed(() => Boolean(table.value?.name))
 })
 const canEdit = computed(() => isEditableDraft(table.value.status, authStore.hasPermission('model.logical_model.update')))
+const hasEditablePhysicalTarget = ref(false)
+watch([canEdit, () => table.value.status], ([editable, status]) => {
+  if (status !== 'draft') hasEditablePhysicalTarget.value = false
+  else if (editable) hasEditablePhysicalTarget.value = true
+}, { immediate: true })
 const canCreateField = computed(() => canPerformDraftAction(
   table.value.status,
   authStore.hasPermission('model.logical_model.create')
@@ -590,7 +596,7 @@ const ddlContent = ref('')
 
 const isSupportedPhysicalTargetEngine = engine =>
   engine?.engine_family === 'tabular' &&
-  engine?.engine_catalog_leaf_term === 'table' &&
+  engine?.catalog_leaf_term === 'table' &&
   ['schema', 'database'].includes(engine?.catalog_top_term)
 
 const isPostgreSQLTargetEngine = engine =>

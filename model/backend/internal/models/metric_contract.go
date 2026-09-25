@@ -16,14 +16,16 @@ type MetricBooleanFilter struct {
 
 // MetricContract is the typed executable metric contract. Business names
 // and physical identifiers are resolved by Model, never supplied as SQL.
+// Count/overlap references are validated by the operation-aware plan builder;
+// grouped sums intentionally omit those references entirely.
 type MetricContract struct {
 	IncludeDetails    bool                  `json:"include_details,omitempty"`
 	Operation         string                `json:"operation" binding:"required,oneof=count_distinct directional_overlap sum_decimal_by_group"`
-	Subject           MetricFieldReference  `json:"subject"`
+	Subject           MetricFieldReference  `json:"subject" binding:"-"`
 	SubjectRelationID int64                 `json:"subject_relation_id"`
 	SubjectLabel      *MetricFieldReference `json:"subject_label,omitempty"`
-	Distinct          MetricFieldReference  `json:"distinct"`
-	Time              MetricFieldReference  `json:"time"`
+	Distinct          MetricFieldReference  `json:"distinct" binding:"-"`
+	Time              MetricFieldReference  `json:"time" binding:"-"`
 	Group             *MetricFieldReference `json:"group,omitempty"`
 	Measure           *MetricFieldReference `json:"measure,omitempty"`
 	Filters           []MetricBooleanFilter `json:"filters"`

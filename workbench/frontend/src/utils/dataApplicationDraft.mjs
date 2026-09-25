@@ -2,6 +2,13 @@ import { initialApplicationParameterValue } from './dataApplicationParameters.mj
 import { buildComponentQuery } from './dataApplicationRuntime.mjs'
 import { assertApplicationOptionValues } from './applicationParameterOptions.mjs'
 
+export function copySelectionBinding(binding) {
+  return {
+    source_component_id: binding.source_component_id,
+    assignments: binding.assignments.map(({ source_field, application_parameter_key }) => ({ source_field, application_parameter_key })),
+  }
+}
+
 export function captureApplicationInitialValues(snapshot, descriptors, values) {
   const result = {}
   for (const parameter of snapshot.parameters) {
