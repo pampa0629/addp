@@ -539,6 +539,55 @@ test_dev_port_resolution() {
   ' || fail "development port resolution did not propagate or preserve the selected port"
 }
 
+test_dev_real_listener_collision() {
+  local workspace="${TEST_ROOT}/dev-real-listener-collision"
+  mkdir -p "$workspace"
+  python3 - "$PORT_SCRIPT" "$workspace" <<'PY'
+import os
+from pathlib import Path
+import socket
+import subprocess
+import sys
+
+port_script, workspace = sys.argv[1:]
+listeners = []
+for _ in range(2):
+    listener = socket.socket()
+    listener.bind(("127.0.0.1", 0))
+    listener.listen()
+    listeners.append(listener)
+gateway_busy, console_busy = (listener.getsockname()[1] for listener in listeners)
+environment = dict(os.environ, ROOT_DIR=workspace, PORT_SCRIPT=port_script,
+                   GATEWAY_PORT=str(gateway_busy), CONSOLE_FE_PORT=str(console_busy),
+                   SERVICE_HOST="localhost", ALLOWED_ORIGINS="")
+script = '''
+set -euo pipefail
+source "$PORT_SCRIPT"
+addp_dev_port_specs() {
+  printf 'gateway GATEWAY_PORT 8000\\nconsole-frontend CONSOLE_FE_PORT 5170\\n'
+}
+addp_dev_resolve_ports >/dev/null
+printf '%s\\n' "$GATEWAY_PORT" "$CONSOLE_FE_PORT" "$PUBLIC_API_URL" "$CONSOLE_URL" "$VITE_ADDP_FRONTEND_PORTS" "$ALLOWED_ORIGINS"
+'''
+result = subprocess.run(["bash", "-c", script], env=environment,
+                        capture_output=True, text=True, timeout=15)
+assert result.returncode == 0, result.stdout + result.stderr
+gateway, console, api_url, console_url, frontend_ports, origins = result.stdout.splitlines()
+assert 18000 <= int(gateway) < 18100 and int(gateway) != gateway_busy, result.stdout
+assert 15170 <= int(console) < 15270 and int(console) != console_busy, result.stdout
+assert api_url == f"http://localhost:{gateway}", api_url
+assert console_url == f"http://localhost:{console}", console_url
+assert frontend_ports == f"console:{console}", frontend_ports
+assert f"http://localhost:{console}" in origins.split(","), origins
+state = (Path(workspace) / ".dev-state/ports.env").read_text()
+assert f"GATEWAY_PORT={gateway}\n" in state, state
+assert f"CONSOLE_FE_PORT={console}\n" in state, state
+for listener in listeners:
+    listener.close()
+print("PASS: real TCP listeners trigger free Gateway and Vite ports with propagated origins")
+PY
+}
+
 test_dev_owned_listener_matches_recorded_pid() {
   local workspace="${TEST_ROOT}/dev-owned-listener"
   mkdir -p "$workspace/.dev-pids"
@@ -549,6 +598,36 @@ test_dev_owned_listener_matches_recorded_pid() {
     lsof() { printf "%s\n" "$$"; }
     addp_dev_owned_listener system 8180
   ' || fail "development port ownership did not match the recorded listener PID"
+}
+
+test_dev_runtime_owned_listeners_match_pidfiles() {
+  local workspace="${TEST_ROOT}/dev-runtime-owned-listeners"
+  mkdir -p "$workspace/.dev-pids" "$workspace/.dev-state"
+  ROOT_DIR="$workspace" PORT_SCRIPT="$PORT_SCRIPT" bash -c '
+    set -euo pipefail
+    source "$PORT_SCRIPT"
+    lsof() { printf "%s\n" "$$"; }
+    checked=0
+    while read -r name variable preferred; do
+      case "$variable" in
+        MATH_WORKFLOW_PORT) pidfile=math-workflow-engine ;;
+        JUPYTER_API_PORT) pidfile=jupyter-api-server ;;
+        SPARK_WORKFLOW_PORT) pidfile=spark-workflow-engine ;;
+        MODEL3D_WORKFLOW_PORT) pidfile=model3d-workflow-engine ;;
+        *) continue ;;
+      esac
+      printf "%s\n" "$$" > "$ROOT_DIR/.dev-pids/${pidfile}.pid"
+      addp_dev_owned_listener "$name" "$preferred"
+      printf "%s=%s\n" "$variable" "$((preferred + 10000))" >> "$ROOT_DIR/.dev-state/ports.env"
+      checked=$((checked + 1))
+    done < <(addp_dev_port_specs)
+    [ "$checked" -eq 4 ]
+    addp_dev_load_saved_ports
+    [ "$MATH_WORKFLOW_PORT" -eq 18089 ]
+    [ "$JUPYTER_API_PORT" -eq 18097 ]
+    [ "$SPARK_WORKFLOW_PORT" -eq 18098 ]
+    [ "$MODEL3D_WORKFLOW_PORT" -eq 18101 ]
+  ' || fail "runtime port ownership did not match the startup PID files"
 }
 
 test_runtime_host_port_advertisement() {
@@ -1049,7 +1128,9 @@ test_parallel_runtime_startup
 test_python_dependency_install_lock
 test_stop_batches_listening_ports
 test_dev_port_resolution
+test_dev_real_listener_collision
 test_dev_owned_listener_matches_recorded_pid
+test_dev_runtime_owned_listeners_match_pidfiles
 test_runtime_host_port_advertisement
 test_compose_public_port_policy
 test_prod_compose_init_health

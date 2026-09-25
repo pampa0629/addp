@@ -46,11 +46,11 @@ catalog-frontend CATALOG_FE_PORT 5189
 workbench-frontend WORKBENCH_FE_PORT 5190
 security-frontend SECURITY_FE_PORT 5191
 ontology-frontend ONTOLOGY_FE_PORT 5192
-math-workflow MATH_WORKFLOW_PORT 8089
-jupyter JUPYTER_API_PORT 8097
-spark-workflow SPARK_WORKFLOW_PORT 8098
+math-workflow-engine MATH_WORKFLOW_PORT 8089
+jupyter-api-server JUPYTER_API_PORT 8097
+spark-workflow-engine SPARK_WORKFLOW_PORT 8098
 geopython-workflow GEOPYTHON_WORKFLOW_PORT 8099
-model3d-workflow MODEL3D_WORKFLOW_PORT 8101
+model3d-workflow-engine MODEL3D_WORKFLOW_PORT 8101
 pointcloud-workflow POINTCLOUD_WORKFLOW_PORT 8102
 supermap-workflow SUPERMAP_WORKFLOW_PORT 8103
 duckdb DUCKDB_RUNTIME_PORT 8104
