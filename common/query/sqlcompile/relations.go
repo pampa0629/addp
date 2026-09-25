@@ -56,13 +56,6 @@ func CompileRelations(r plugin.CompileRequest, expression ExpressionDialect, res
 	for _, source := range r.Sources {
 		b.sources[source.Source] = source
 	}
-	if scan != nil {
-		for _, fields := range schemas {
-			if err := scan.ValidateSchema(fields); err != nil {
-				return RenderedRelations{}, err
-			}
-		}
-	}
 	ids := make([]plan.NodeID, 0, len(p.Nodes))
 	for _, n := range p.Nodes {
 		ids = append(ids, n.ID)
@@ -165,6 +158,11 @@ func (b *relationBuilder) visit(id plan.NodeID) (err error) {
 	n := b.nodes[id]
 	for _, input := range n.Inputs() {
 		if err := b.visit(input); err != nil {
+			return err
+		}
+	}
+	if b.scan != nil {
+		if err := b.scan.ValidateSchema(b.schemas[id]); err != nil {
 			return err
 		}
 	}
