@@ -416,6 +416,14 @@ func (s *MetricImplementationService) metricEngineDescriptor(ctx context.Context
 	return engine, nil
 }
 
+func newMetricPlanPackage(request plugin.CompileRequest, compiler plugin.AnalyticalCompiler) (plugin.AnalyticalPlanPackage, error) {
+	pkg, err := plugin.NewAnalyticalPlanPackage(request, compiler)
+	if err != nil {
+		return plugin.AnalyticalPlanPackage{}, apperrors.Wrap(apperrors.KindValidation, "analytical_unavailable", i18n.MsgMetricEngineUnsupported, err)
+	}
+	return pkg, nil
+}
+
 func resolveMetricPlan(tx *gorm.DB, item *models.MetricImplementation, contract models.MetricContract, metadata *metricPlanMetadata) (plugin.AnalyticalPlanPackage, models.JSONB, string, error) {
 	if metadata == nil || metadata.Engine == nil {
 		return plugin.AnalyticalPlanPackage{}, nil, "", metricConflict()
@@ -522,9 +530,9 @@ func resolveMetricPlan(tx *gorm.DB, item *models.MetricImplementation, contract 
 	if err != nil {
 		return plugin.AnalyticalPlanPackage{}, nil, "", err
 	}
-	executionPlan, err := plugin.NewAnalyticalPlanPackage(plugin.CompileRequest{Plan: logicalPlan, Sources: sources, Instance: instance}, compiler)
+	executionPlan, err := newMetricPlanPackage(plugin.CompileRequest{Plan: logicalPlan, Sources: sources, Instance: instance}, compiler)
 	if err != nil {
-		return plugin.AnalyticalPlanPackage{}, nil, "", apperrors.Wrap(apperrors.KindValidation, "analytical_unavailable", i18n.MsgMetricEngineUnsupported, err)
+		return plugin.AnalyticalPlanPackage{}, nil, "", err
 	}
 	dependencies := []models.JSONB{}
 	seen := map[models.MetricFieldReference]bool{}
@@ -554,7 +562,7 @@ func resolveMetricPlan(tx *gorm.DB, item *models.MetricImplementation, contract 
 		if err != nil {
 			return plugin.AnalyticalPlanPackage{}, nil, "", err
 		}
-		details, err := plugin.NewAnalyticalPlanPackage(plugin.CompileRequest{Plan: detailPlan, Sources: detailSources, Instance: instance}, compiler)
+		details, err := newMetricPlanPackage(plugin.CompileRequest{Plan: detailPlan, Sources: detailSources, Instance: instance}, compiler)
 		if err != nil {
 			return plugin.AnalyticalPlanPackage{}, nil, "", err
 		}

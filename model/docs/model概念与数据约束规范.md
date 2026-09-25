@@ -173,7 +173,7 @@ Model 将名称字段及关联纳入既有依赖快照与数据库无关计划�
 
 `metric_plan_neutral.go` 从现有指标契约构建逻辑计划，`metric_plan.go` 校验请求参数，`metric_source_metadata.go` 读取 Meta 并绑定物理来源；`metric_implementation_service.go` 继续负责来源模型、定义修订、审批、并发与发布。Model 表／字段／关联 ID 映射为计划内 SourceID／ColumnID；物理来源放入独立 SourceBinding，以完整 EngineCatalogPath leaf 表达。禁止在指标编译器中假设一个 namespace 加表名，禁止接收 SQL 字符串或数据库原生函数参数。
 
-草稿保存：校验 Standard 发布定义、已审批事实／维度及关联，生成确定的 Plan 与 Sources，调用当前引擎编译器 Check/Compile 验证可表达性，保存中立计划包及 owner 依赖。编译是结构与支持性验证，不执行业务数据查询，页面必须继续区分结构校验和真实数据验收。远程 Standard 与 System 请求在本地行锁之前完成，事务内重新核对本地版本、引用和来源引擎身份。
+草稿保存：校验 Standard 发布定义、已审批事实／维度及关联，生成确定的 Plan 与 Sources，调用当前引擎编译器 Check/Compile 验证可表达性，保存中立计划包及 owner 依赖。汇总计划与可选明细计划任一编译器拒绝，均以 `analytical_unavailable` 校验错误（HTTP 400）拒绝保存，不把明细拒绝降为内部错误。编译是结构与支持性验证，不执行业务数据查询，页面必须继续区分结构校验和真实数据验收。远程 Standard 与 System 请求在本地行锁之前完成，事务内重新核对本地版本、引用和来源引擎身份。
 
 物理字段结构统一读取 Meta 已扫描的 `type_info.table`，通过完整 Engine Catalog 路径定位来源；只投影参与计算字段的名称／路径、类型／NativeType、长度／精度及可空性到 SourceBinding，不从逻辑类型猜测原生声明。来源未扫描或必要事实不完整时，明确要求先扫描／刷新。Meta 请求同样在本地行锁前完成，事务内核对对应模型来源与字段映射。Model 不新增实时引擎结构读取通道或 System 结构权限；执行 Provider 仍在计算事务内复核真实结构，Meta 快照不替代执行期漂移检查。
 
