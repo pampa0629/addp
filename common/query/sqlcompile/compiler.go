@@ -25,7 +25,11 @@ func (c RelationalCompiler) Check(r plugin.CompileRequest) (plugin.SupportReport
 	if errors.Is(err, plugin.ErrAnalyticalUnsupported) {
 		var unsupported *unsupportedPlanError
 		if errors.As(err, &unsupported) {
-			return plugin.SupportReport{Diagnostics: []plugin.SupportDiagnostic{{Code: "unsupported_plan_node", NodeID: unsupported.NodeID, Operation: unsupported.Operation}}}, nil
+			code := unsupported.Code
+			if code == "" {
+				code = "unsupported_plan_node"
+			}
+			return plugin.SupportReport{Diagnostics: []plugin.SupportDiagnostic{{Code: code, NodeID: unsupported.NodeID, Operation: unsupported.Operation, SourceID: unsupported.SourceID, ColumnID: unsupported.ColumnID}}}, nil
 		}
 		return plugin.SupportReport{Diagnostics: []plugin.SupportDiagnostic{{Code: "unsupported_relation_plan"}}}, nil
 	}
@@ -46,8 +50,11 @@ func (c RelationalCompiler) Compile(r plugin.CompileRequest) (plugin.CompiledQue
 // public report remains stable while callers can tell which plan operation
 // needs a capability or compiler change.
 type unsupportedPlanError struct {
+	Code      string
 	NodeID    plan.NodeID
 	Operation string
+	SourceID  plan.SourceID
+	ColumnID  string
 }
 
 func (e *unsupportedPlanError) Error() string {

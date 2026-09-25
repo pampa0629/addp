@@ -83,8 +83,10 @@ type ColumnBinding struct {
 	Field  datatype.FieldInfo `json:"field"`
 }
 type SupportDiagnostic struct {
-	Code   string      `json:"code"`
-	NodeID plan.NodeID `json:"node_id,omitempty"`
+	Code     string        `json:"code"`
+	NodeID   plan.NodeID   `json:"node_id,omitempty"`
+	SourceID plan.SourceID `json:"source_id,omitempty"`
+	ColumnID string        `json:"column_id,omitempty"`
 	// Operation identifies the plan operation whose support was rejected. It
 	// is optional because some diagnostics describe the complete request or
 	// the result envelope rather than one node.
@@ -214,11 +216,27 @@ func checkAnalyticalRequest(r CompileRequest, c AnalyticalCompiler) error {
 		return ErrAnalyticalInvalid
 	}
 	nodes := map[plan.NodeID]bool{}
+	sources := map[plan.SourceID]map[string]bool{}
 	for _, n := range r.Plan.Nodes {
 		nodes[n.ID] = true
+		if n.Scan != nil {
+			columns := map[string]bool{}
+			for _, field := range n.Scan.Fields {
+				columns[field.Name] = true
+			}
+			sources[n.Scan.Source] = columns
+		}
 	}
 	for _, d := range report.Diagnostics {
 		if !plan.Symbol(d.Code) || (d.NodeID != "" && !nodes[d.NodeID]) || (d.Operation != "" && !plan.Symbol(d.Operation)) {
+			return ErrAnalyticalInvalid
+		}
+		if d.SourceID != "" {
+			columns, ok := sources[d.SourceID]
+			if !ok || (d.ColumnID != "" && !columns[d.ColumnID]) {
+				return ErrAnalyticalInvalid
+			}
+		} else if d.ColumnID != "" {
 			return ErrAnalyticalInvalid
 		}
 	}

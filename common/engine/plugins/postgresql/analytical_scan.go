@@ -68,7 +68,7 @@ func (analyticalScanDialect) Column(c plugin.ColumnBinding, alias string) (sqlco
 		}
 	}
 	if !supported {
-		return sqlcompile.CheckedExpression{}, plugin.ErrAnalyticalUnsupported
+		return sqlcompile.CheckedExpression{}, sqlcompile.ErrUnsupportedSourceFieldType
 	}
 	return sqlcompile.CheckedExpression{SQL: value, Type: f.Type}, nil
 }

@@ -16,6 +16,7 @@ func TestNativeAnalyticalCompiler(t *testing.T) {
 		t.Fatal("registry identity mismatch")
 	}
 	conformance.CompilerContract(t, c)
+	conformance.CompilerSourceDiagnostics(t, c, p.EngineCatalogModel(), "integer")
 	if a := p.Capabilities().Compute.Query.Analytical; a != nil && a.Supported {
 		t.Fatal("static template advertises uncertified instance")
 	}

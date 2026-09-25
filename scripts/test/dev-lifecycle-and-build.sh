@@ -21,7 +21,7 @@ fail() {
 
 wait_for_path() {
   local path="$1"
-  for _ in {1..50}; do
+  for _ in {1..500}; do
     [ -e "$path" ] && return 0
     sleep 0.02
   done
@@ -284,15 +284,20 @@ EOF
 
   PROJECT_ROOT="$workspace" ADDP_GO_COMMAND="$workspace/tools/go-wrapper" bash -c 'cd "$2"; source "$1"; addp_atomic_go_build service service .dev-bins/addp-service ./cmd/server' _ "$BUILD_SCRIPT" "$workspace" &
   local build_pid=$!
-  for _ in {1..50}; do
+  for _ in {1..500}; do
     compgen -G "$workspace/.dev-bins/.tmp/addp-service.*" >/dev/null && break
     sleep 0.02
   done
   compgen -G "$workspace/.dev-bins/.tmp/addp-service.*" >/dev/null || {
     kill "$build_pid" 2>/dev/null || true
+    wait "$build_pid" 2>/dev/null || true
     fail "interrupted build did not create temporary binary path"
   }
-  wait_for_path "$workspace/wrapper.pid" || fail "interrupted build wrapper pid was not recorded"
+  if ! wait_for_path "$workspace/wrapper.pid"; then
+    kill "$build_pid" 2>/dev/null || true
+    wait "$build_pid" 2>/dev/null || true
+    fail "interrupted build wrapper pid was not recorded"
+  fi
   kill -TERM "$(cat "$workspace/wrapper.pid")" 2>/dev/null || true
   wait "$build_pid" 2>/dev/null || true
   if compgen -G "$workspace/.dev-bins/.tmp/addp-service.*" >/dev/null; then

@@ -754,7 +754,7 @@ PG 通过 ACCESS SHARE 锁防止表结构变更，首期只接受无继承／分
 
 `AnalyticalInstance` 只向编译请求传递 EngineID 和已经收敛的 `AnalyticalCapability`，不传递连接信息或实例配置自由字典。定义该类型不等于已在 System 的能力响应中启用它；生产能力投影须与编译实现及真实数据库认证一起接入。
 
-`CompilerIdentity` 由实现 ID 和编译实现版本组成，不是运行时 Provider 指针；现有唯一插件注册表通过当前引擎返回接口。Check 不执行数据面查询，区分 `supported=false` 的已知能力限制与校验／内部错误，返回稳定 code、可选的 node_id、可选的 operation 和可本地化参数，禁止将原生 SQL 或凭据放入诊断。Compile 必须自行再次校验请求，不依赖调用方已调用 Check。关系型共享编译器至少在能够确定时返回 `unsupported_plan_node` 及被拒绝节点的操作名；无法归因到单个节点时才返回请求级诊断。
+`CompilerIdentity` 由实现 ID 和编译实现版本组成，不是运行时 Provider 指针；现有唯一插件注册表通过当前引擎返回接口。Check 不执行数据面查询，区分 `supported=false` 的已知能力限制与校验／内部错误，返回稳定 code、可选的 node_id、operation、source_id 和 column_id，禁止将原生 SQL、物理路径或凭据放入诊断。`source_id`、`column_id` 只引用计划内的逻辑身份；有列身份时必须同时有来源身份。Compile 必须自行再次校验请求，不依赖调用方已调用 Check。关系型共享编译器在能够确定时返回 `unsupported_plan_node` 及被拒绝节点的操作名；扫描拒绝应进一步区分 `unsupported_source_path`、`unsupported_source_column` 与 `unsupported_source_field_type`，并指出扫描节点及可确定的来源／列。无法归因到单个节点时才返回请求级诊断。
 
 `CompiledQuery` 由通用执行层消费，包含可转换为既有 QueryRequest 的原生语言与查询模板、预期输出契约、编译器身份和确定性指纹。它是运行时派生物，不替代 Model 业务定义、不授予执行权限、不接受调用方改写。编译器是无连接、无请求值、确定性的实现；类型和错误规范化由实际 Query Provider 按预期输出契约完成。不得为分析查询新建第二个 Execute 接口或绕开 PreparedQuery 状态机。
 

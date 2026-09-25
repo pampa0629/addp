@@ -213,6 +213,9 @@ func (b *relationBuilder) visit(id plan.NodeID) (err error) {
 		source := b.sources[n.Scan.Source]
 		table, err := b.scan.Table(source)
 		if err != nil {
+			if errors.Is(err, plugin.ErrAnalyticalUnsupported) {
+				return &unsupportedPlanError{Code: "unsupported_source_path", NodeID: id, Operation: n.Op, SourceID: n.Scan.Source}
+			}
 			return err
 		}
 		alias := b.names[id] + "_source"
@@ -225,6 +228,13 @@ func (b *relationBuilder) visit(id plan.NodeID) (err error) {
 		for _, field := range n.Scan.Fields {
 			x, err := b.scan.Column(bindings[field.Name], alias)
 			if err != nil {
+				if errors.Is(err, plugin.ErrAnalyticalUnsupported) {
+					code := "unsupported_source_column"
+					if errors.Is(err, ErrUnsupportedSourceFieldType) {
+						code = "unsupported_source_field_type"
+					}
+					return &unsupportedPlanError{Code: code, NodeID: id, Operation: n.Op, SourceID: n.Scan.Source, ColumnID: field.Name}
+				}
 				return err
 			}
 			if x.Type != field.Type {

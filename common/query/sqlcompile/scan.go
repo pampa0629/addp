@@ -1,10 +1,16 @@
 package sqlcompile
 
 import (
+	"fmt"
+
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/query/plan"
 )
+
+// ErrUnsupportedSourceFieldType lets a native ScanDialect distinguish an
+// unsupported physical type from an unsupported column path or expression.
+var ErrUnsupportedSourceFieldType = fmt.Errorf("%w: source field type", plugin.ErrAnalyticalUnsupported)
 
 // ScanDialect is an engine-owned compiler strategy, not an owner SQL API.
 // Table validates and quotes the entire catalog leaf. Column validates native

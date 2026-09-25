@@ -17,6 +17,15 @@ import (
 // It proves the interface seam, not production support or owner integration.
 type independentCompiler struct{ version string }
 
+type invalidDiagnosticCompiler struct {
+	independentCompiler
+	diagnostic plugin.SupportDiagnostic
+}
+
+func (c invalidDiagnosticCompiler) Check(plugin.CompileRequest) (plugin.SupportReport, error) {
+	return plugin.SupportReport{Diagnostics: []plugin.SupportDiagnostic{c.diagnostic}}, nil
+}
+
 func (c independentCompiler) Identity() plugin.CompilerIdentity {
 	return plugin.CompilerIdentity{ID: "external.analytics", Version: c.version}
 }
@@ -199,6 +208,21 @@ func TestAnalyticalBindingRejections(t *testing.T) {
 			change(&r)
 			if r.Validate() == nil {
 				t.Fatal("invalid binding or capability accepted")
+			}
+		})
+	}
+}
+
+func TestAnalyticalSupportDiagnosticReferences(t *testing.T) {
+	for name, diagnostic := range map[string]plugin.SupportDiagnostic{
+		"unknown source":        {Code: "source_unsupported", SourceID: "other"},
+		"unknown column":        {Code: "column_unsupported", SourceID: "items", ColumnID: "other"},
+		"column without source": {Code: "column_unsupported", ColumnID: "id"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := plugin.NewAnalyticalPlanPackage(analyticalFixture(), invalidDiagnosticCompiler{independentCompiler: independentCompiler{"1.0"}, diagnostic: diagnostic})
+			if !errors.Is(err, plugin.ErrAnalyticalInvalid) {
+				t.Fatalf("invalid diagnostic accepted: %v", err)
 			}
 		})
 	}

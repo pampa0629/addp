@@ -240,5 +240,5 @@ func (MySQLCompatibleScanDialect) Column(c plugin.ColumnBinding, alias string) (
 			}
 		}
 	}
-	return sqlcompile.CheckedExpression{}, plugin.ErrAnalyticalUnsupported
+	return sqlcompile.CheckedExpression{}, sqlcompile.ErrUnsupportedSourceFieldType
 }
