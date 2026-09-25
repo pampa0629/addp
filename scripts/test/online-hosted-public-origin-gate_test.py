@@ -23,6 +23,10 @@ class HostedPublicOriginGateTest(unittest.TestCase):
         self.host._executable("docker", '''
             #!/usr/bin/env bash
             if [ "$1 $2" = "compose version" ]; then exit 0; fi
+            if [ "${ADDP_TEST_VERIFY_PORT_SCOPE:-0}" = 1 ] && [[ "$*" == *"business/docker-compose.yml"* ]]; then
+              [ "${MINIO_API_PORT:-}" = 127.0.0.1:19002 ] &&
+                [ "${MINIO_CONSOLE_PORT:-}" = 127.0.0.1:19003 ] || exit 1
+            fi
             if [ "$1 $2" = "container inspect" ]; then
               [ "${ADDP_TEST_EXISTING_CONTAINER:-}" = "$3" ]; exit
             fi
@@ -88,6 +92,23 @@ class HostedPublicOriginGateTest(unittest.TestCase):
         self.assertLess(trace.index("business/docker-compose.yml down --remove-orphans --volumes"), trace.index("docker-compose.runtimes.yml down --remove-orphans --volumes"))
         self.assertFalse(self.host.secrets.exists())
         self.assertIn("infra_cleanup=zero_residuals", (self.host.artifacts / "summary.txt").read_text())
+
+    def test_business_minio_bindings_are_scoped_to_business_compose(self):
+        for script, marker in (("up", "infra-up"), ("down", "infra-down")):
+            self.host._write_repository_script(f"scripts/infra/{script}.sh", f'''
+                #!/usr/bin/env bash
+                [[ "${{MINIO_API_PORT:-19000}}" =~ ^[0-9]+$ ]] || exit 1
+                [[ "${{MINIO_CONSOLE_PORT:-19001}}" =~ ^[0-9]+$ ]] || exit 1
+                echo {marker} >> "$ADDP_TEST_GATE_TRACE"
+            ''')
+        subprocess.run(["git", "add", "."], cwd=self.host.repository, check=True)
+        subprocess.run(["git", "commit", "-qm", "check MinIO port scope"], cwd=self.host.repository, check=True)
+        result = self.run_gate(ADDP_TEST_VERIFY_PORT_SCOPE="1")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        trace = self.host.trace.read_text()
+        self.assertIn("infra-up", trace)
+        self.assertIn("infra-down", trace)
+        self.assertIn("business/docker-compose.yml up -d", trace)
 
     def test_scenario_failure_still_cleans_application_and_infra(self):
         result = self.run_gate(ADDP_TEST_SUITE_FAIL="1")

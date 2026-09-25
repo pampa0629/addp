@@ -20,7 +20,8 @@ compose_runtimes() {
 }
 
 compose_business() {
-  docker compose --env-file /dev/null -f "$ROOT_DIR/business/docker-compose.yml" "$@"
+  MINIO_API_PORT=127.0.0.1:19002 MINIO_CONSOLE_PORT=127.0.0.1:19003 \
+    docker compose --env-file /dev/null -f "$ROOT_DIR/business/docker-compose.yml" "$@"
 }
 
 verify_empty_project() {
@@ -60,8 +61,6 @@ export ADDP_PUBLIC_ORIGIN=http://127.0.0.1:18080
 export ADDP_ONLINE_PUBLIC_ORIGIN="$ADDP_PUBLIC_ORIGIN"
 export ALLOWED_ORIGINS="$ADDP_PUBLIC_ORIGIN"
 export REGISTRY=localhost:5001 IMAGE_TAG=latest
-export MINIO_API_PORT=127.0.0.1:19002 MINIO_CONSOLE_PORT=127.0.0.1:19003
-
 infra_owned=1
 run_logged bash scripts/infra/up.sh
 fixture_owned=1
