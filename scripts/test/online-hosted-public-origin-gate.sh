@@ -95,7 +95,8 @@ run_logged compose_business up -d --no-deps --wait --wait-timeout 180 minio
 run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite compose-public-origin --output "$1"' _ "$IDENTITY_ENV"
 # shellcheck disable=SC1090
 source "$IDENTITY_ENV"
-run_logged make test-online "ONLINE_SUITE=$ONLINE_SUITE"
+MINIO_API_PORT=127.0.0.1:19002 MINIO_CONSOLE_PORT=127.0.0.1:19003 \
+  run_logged make test-online "ONLINE_SUITE=$ONLINE_SUITE"
 
 run_logged compose_business down --remove-orphans --volumes
 verify_empty_project business || fail "Business Compose project has residual resources"
