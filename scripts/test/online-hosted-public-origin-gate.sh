@@ -6,7 +6,7 @@ set -euo pipefail
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 ROOT_DIR=$(cd "$SCRIPT_DIR/../.." && pwd -P)
 ONLINE_SUITE=compose-public-origin
-HOSTED_FIXTURE_CONTAINERS=(registry addp-online-public-origin-upstreams system-backend gateway console system-frontend meta-backend meta-frontend addp-nginx geopython-workflow-engine business-minio)
+HOSTED_FIXTURE_CONTAINERS=(registry addp-online-public-origin-upstreams system-backend gateway console system-frontend meta-backend meta-frontend manager-backend manager-frontend addp-nginx geopython-workflow-engine business-minio)
 HOSTED_FIXTURE_COMPOSE_PROJECTS=(addp-platform addp-runtimes business)
 HOSTED_FIXTURE_IMAGES=()
 COMPOSE_OVERLAY="$ROOT_DIR/scripts/test/docker-compose.public-origin-t4.yml"
@@ -74,20 +74,21 @@ for _ in $(seq 1 30); do
   sleep 1
 done
 [ "$registry_ready" -eq 1 ] || fail "disposable image registry did not become ready"
-run_logged make build BUILD_ARGS="--arch amd64 --services system-backend,gateway,meta-backend"
-run_logged make build-images IMAGE_BUILD_ARGS="--verify --services system-backend,gateway,meta-backend,console,system-frontend,meta-frontend,nginx,geopython-workflow-engine"
+run_logged make build BUILD_ARGS="--arch amd64 --services system-backend,gateway,meta-backend,manager-backend"
+run_logged make build-images IMAGE_BUILD_ARGS="--verify --services system-backend,gateway,meta-backend,manager-backend,console,system-frontend,meta-frontend,manager-frontend,nginx,geopython-workflow-engine"
 
 application_owned=1
 run_logged compose_app up -d --no-deps --wait system-backend
 run_logged compose_app up -d --no-deps --wait gateway console system-frontend
 run_logged compose_app up -d --no-deps --wait meta-backend
 run_logged compose_app up -d --no-deps --wait meta-frontend
+run_logged compose_app up -d --no-deps --wait manager-backend
+run_logged compose_app up -d --no-deps --wait manager-frontend
 
 # Nginx resolves its legacy static upstream names at startup. These aliases
 # occupy no host ports and do not replace any service under test.
 run_logged docker run -d --name addp-online-public-origin-upstreams \
   --network addp-network \
-  --network-alias manager-frontend \
   --network-alias transfer-frontend --network-alias orchestrator-frontend \
   --network-alias develop-frontend --network-alias service-frontend nginx:alpine
 run_logged compose_app up -d --no-deps --wait nginx

@@ -64,7 +64,7 @@ def running_container(name: str, project: str = "addp-platform") -> dict[str, ob
 
 def assert_platform_ports() -> None:
     expected = {"system-backend": ("8180/tcp", 8180), "gateway": ("8000/tcp", 8000), "addp-nginx": ("80/tcp", PUBLIC_PORT)}
-    for name in ("system-backend", "gateway", "console", "system-frontend", "meta-backend", "meta-frontend", "addp-nginx"):
+    for name in ("system-backend", "gateway", "console", "system-frontend", "meta-backend", "meta-frontend", "manager-backend", "manager-frontend", "addp-nginx"):
         container = running_container(name)
         bindings = container["HostConfig"].get("PortBindings") or {}
         if name in expected:
@@ -89,6 +89,12 @@ def assert_platform_ports() -> None:
             for key, value in {"SERVICE_HOST": "meta-backend", "SYSTEM_URL": "http://system-backend:8180", "POSTGRES_HOST": "postgres", "POSTGRES_DB": "addp_online"}.items():
                 if env.get(key) != value:
                     raise AcceptanceError(f"Meta {key} differs from the internal topology")
+        if name == "manager-backend":
+            if container["State"].get("Health", {}).get("Status") != "healthy":
+                raise AcceptanceError("Manager Backend is not healthy")
+            for key, value in {"SERVICE_HOST": "manager-backend", "SYSTEM_URL": "http://system-backend:8180", "META_URL": "http://meta-backend:8082", "POSTGRES_HOST": "postgres", "POSTGRES_DB": "addp_online", "REDIS_HOST": "redis", "MINIO_ENDPOINT": "minio:9000"}.items():
+                if env.get(key) != value:
+                    raise AcceptanceError(f"Manager {key} differs from the internal topology")
 
 
 def assert_isolated_groups() -> None:
@@ -195,17 +201,17 @@ def assert_authorized_gateway() -> None:
         raise AcceptanceError("public Gateway did not preserve System's engine permission guard")
 
 
-def assert_meta_gateway_route() -> None:
+def assert_module_gateway_route(module: str, path: str) -> None:
     token = os.environ["ADDP_ONLINE_TEST_USER_ACCESS_TOKEN"]
     for attempt in range(30):
-        status, _, _ = request("/api/v1/meta/engines", token)
+        status, _, _ = request(path, token)
         if status == 403:
             return
         if status != 503:
-            raise AcceptanceError(f"public Gateway Meta route returned HTTP {status}, expected Meta permission guard")
+            raise AcceptanceError(f"public Gateway {module} route returned HTTP {status}, expected owner permission guard")
         if attempt < 29:
             time.sleep(1)
-    raise AcceptanceError("public Gateway did not discover the registered Meta Backend")
+    raise AcceptanceError(f"public Gateway did not discover the registered {module} Backend")
 
 
 def main() -> int:
@@ -220,9 +226,11 @@ def main() -> int:
     assert_frontend("/", "/")
     assert_frontend("/system/", "/system/")
     assert_frontend("/meta/", "/meta/")
+    assert_frontend("/manager/", "/manager/")
     assert_authorized_gateway()
-    assert_meta_gateway_route()
-    print(json.dumps({"schema_version": "addp.online-suite/v1", "suite": "compose-public-origin", "public_port": PUBLIC_PORT, "frontends": ["console", "system", "meta"], "gateway_auth_context": "passed", "gateway_engine_permission_guard": "passed", "gateway_meta_permission_guard": "passed", "compose_projects": ["addp-infra", "addp-platform", "addp-runtimes", "business"]}, sort_keys=True))
+    assert_module_gateway_route("Meta", "/api/v1/meta/engines")
+    assert_module_gateway_route("Manager", "/api/v1/manager/engines")
+    print(json.dumps({"schema_version": "addp.online-suite/v1", "suite": "compose-public-origin", "public_port": PUBLIC_PORT, "frontends": ["console", "system", "meta", "manager"], "gateway_auth_context": "passed", "gateway_engine_permission_guard": "passed", "gateway_meta_permission_guard": "passed", "gateway_manager_permission_guard": "passed", "compose_projects": ["addp-infra", "addp-platform", "addp-runtimes", "business"]}, sort_keys=True))
     return 0
 
 

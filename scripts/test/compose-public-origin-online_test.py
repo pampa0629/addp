@@ -32,18 +32,23 @@ class ComposePublicOriginOnlineTest(unittest.TestCase):
         self.env.start()
         self.addCleanup(self.env.stop)
 
-    def test_main_includes_meta_frontend_and_gateway_route(self):
+    def test_main_includes_meta_and_manager_frontends_and_gateway_routes(self):
         checks = {
             name: DEFAULT for name in (
                 "root_compose_ports", "infra_compose_ports", "assert_platform_ports", "assert_isolated_groups",
-                "assert_frontend", "assert_authorized_gateway", "assert_meta_gateway_route",
+                "assert_frontend", "assert_authorized_gateway", "assert_module_gateway_route",
             )
         }
         with patch.multiple(MODULE, **checks) as mocked, redirect_stdout(io.StringIO()) as output:
             self.assertEqual(MODULE.main(), 0)
         mocked["assert_frontend"].assert_any_call("/meta/", "/meta/")
-        mocked["assert_meta_gateway_route"].assert_called_once_with()
-        self.assertIn("meta", json.loads(output.getvalue())["frontends"])
+        mocked["assert_frontend"].assert_any_call("/manager/", "/manager/")
+        self.assertEqual(mocked["assert_module_gateway_route"].call_count, 2)
+        mocked["assert_module_gateway_route"].assert_any_call("Meta", "/api/v1/meta/engines")
+        mocked["assert_module_gateway_route"].assert_any_call("Manager", "/api/v1/manager/engines")
+        report = json.loads(output.getvalue())
+        self.assertEqual(report["frontends"], ["console", "system", "meta", "manager"])
+        self.assertEqual(report["gateway_manager_permission_guard"], "passed")
 
     @patch.object(MODULE, "docker_json")
     def test_production_compose_publishes_only_one_loopback_entry(self, docker_json):
@@ -62,12 +67,24 @@ class ComposePublicOriginOnlineTest(unittest.TestCase):
             "system-frontend": container("system-frontend"),
             "meta-backend": container("meta-backend", env=["SERVICE_HOST=meta-backend", "SYSTEM_URL=http://system-backend:8180", "POSTGRES_HOST=postgres", "POSTGRES_DB=addp_online"]),
             "meta-frontend": container("meta-frontend"),
+            "manager-backend": container("manager-backend", env=["SERVICE_HOST=manager-backend", "SYSTEM_URL=http://system-backend:8180", "META_URL=http://meta-backend:8082", "POSTGRES_HOST=postgres", "POSTGRES_DB=addp_online", "REDIS_HOST=redis", "MINIO_ENDPOINT=minio:9000"]),
+            "manager-frontend": container("manager-frontend"),
             "addp-nginx": container("addp-nginx", {"80/tcp": [{"HostIp": "127.0.0.1", "HostPort": "18080"}]}),
         }
         docker_json.side_effect = lambda *args: fixtures[args[-1]]
         MODULE.assert_platform_ports()
         self.assertIn("meta-backend", [call.args[-1] for call in docker_json.call_args_list])
         self.assertIn("meta-frontend", [call.args[-1] for call in docker_json.call_args_list])
+        self.assertIn("manager-backend", [call.args[-1] for call in docker_json.call_args_list])
+        self.assertIn("manager-frontend", [call.args[-1] for call in docker_json.call_args_list])
+        fixtures["manager-backend"][0]["State"]["Health"]["Status"] = "unhealthy"
+        with self.assertRaises(MODULE.AcceptanceError):
+            MODULE.assert_platform_ports()
+        fixtures["manager-backend"][0]["State"]["Health"]["Status"] = "healthy"
+        fixtures["manager-backend"][0]["Config"]["Env"][2] = "META_URL=http://127.0.0.1:8082"
+        with self.assertRaises(MODULE.AcceptanceError):
+            MODULE.assert_platform_ports()
+        fixtures["manager-backend"][0]["Config"]["Env"][2] = "META_URL=http://meta-backend:8082"
         fixtures["meta-backend"][0]["State"]["Health"]["Status"] = "unhealthy"
         with self.assertRaises(MODULE.AcceptanceError):
             MODULE.assert_platform_ports()
@@ -80,9 +97,18 @@ class ComposePublicOriginOnlineTest(unittest.TestCase):
     @patch.object(MODULE, "request")
     def test_meta_route_reaches_owner_permission_guard(self, request, sleep):
         request.side_effect = [(503, b"{}", "application/json"), (403, b"{}", "application/json")]
-        MODULE.assert_meta_gateway_route()
+        MODULE.assert_module_gateway_route("Meta", "/api/v1/meta/engines")
         self.assertEqual(request.call_count, 2)
         request.assert_any_call("/api/v1/meta/engines", "test-token")
+        sleep.assert_called_once()
+
+    @patch("time.sleep")
+    @patch.object(MODULE, "request")
+    def test_manager_route_reaches_owner_permission_guard(self, request, sleep):
+        request.side_effect = [(503, b"{}", "application/json"), (403, b"{}", "application/json")]
+        MODULE.assert_module_gateway_route("Manager", "/api/v1/manager/engines")
+        self.assertEqual(request.call_count, 2)
+        request.assert_any_call("/api/v1/manager/engines", "test-token")
         sleep.assert_called_once()
 
     @patch.object(MODULE, "docker_json")
