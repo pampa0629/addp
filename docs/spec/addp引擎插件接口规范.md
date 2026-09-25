@@ -628,7 +628,7 @@ TiDB 8.5.8 的 MySQL 协议层会拒绝驱动为 `ReadOnly=true` 生成的事务
 
 ### 数据库无关分析计算契约
 
-> 状态：2026-09-22 目标设计已确认；Common 中立计划、开放编译接口、冻结包、内部结果协议和 SQL PreparedQuery 桥接已实现。PostgreSQL、MySQL 与 TiDB 已提供正式的 `AnalyticalCompilerProvider`，其中 MySQL/TiDB 的兼容 SQL 编译组件由 `common/engine/plugins/shared/analytical` 共享；Model 生成数据库无关计划包，Service 在预览和执行时按当前引擎编译为 `QueryRequest`，并继续复用既有 PreparedQuery、授权和数据保护链路。PG/MySQL/TiDB 已有共享编译一致性测试和真实数据库门禁。后续工作重点是把扩展影响矩阵、支持性诊断和新增 Provider 的一致性门禁固化；当前不再保留 `AnalyticalSQLProvider`、封闭 `AnalyticalDialect` 或 Model/Service SQL 拼接路径。
+> 状态：2026-09-22 目标设计已确认；Common 中立计划、开放编译接口、冻结包、内部结果协议和 SQL PreparedQuery 桥接已实现。PostgreSQL、MySQL 与 TiDB 已提供正式的 `AnalyticalCompilerProvider`，其中 MySQL/TiDB 的兼容 SQL 编译组件由 `common/engine/plugins/shared/analytical` 共享；Model 生成数据库无关计划包，Service 在预览和执行时按当前引擎编译为 `QueryRequest`，并继续复用既有 PreparedQuery、授权和数据保护链路。PG/MySQL/TiDB 已有共享编译一致性测试和真实数据库门禁；内置插件聚合包现在按注册表自动对所有非空分析编译器执行连接无关的一致性门禁，新增 Provider 不需要手工加入编译器测试名单。后续仍需按具体引擎补充来源诊断与真实数据库语义门禁；当前不再保留 `AnalyticalSQLProvider`、封闭 `AnalyticalDialect` 或 Model/Service SQL 拼接路径。
 
 #### 所有权与依赖
 
