@@ -94,6 +94,13 @@ copy_common_files() {
         echo -e "${RED}Error: docker-compose.yml not found${NC}"
         exit 1
     fi
+    if [ -f "docker-compose.runtimes.yml" ]; then
+        cp docker-compose.runtimes.yml "$OUTPUT_DIR/"
+        echo -e "${GREEN}✓ docker-compose.runtimes.yml copied${NC}"
+    else
+        echo -e "${RED}Error: docker-compose.runtimes.yml not found${NC}"
+        exit 1
+    fi
 
     # 2. Copy environment template
     if [ -f ".env.example" ]; then
@@ -291,7 +298,7 @@ if [ "$FAILED" -eq 0 ]; then
     echo -e "${YELLOW}Next steps:${NC}"
     echo "1. Configure environment: bash scripts/prod/setup-env.sh && vim .env"
     echo "2. Start infrastructure: bash scripts/infra/up.sh"
-    echo "3. Start services: docker compose -f docker-compose.yml --env-file .env up -d"
+    echo "3. Start services: bash scripts/prod/start.sh"
     exit 0
 else
     echo -e "${RED}✗ Some images failed to load${NC}"
@@ -309,17 +316,18 @@ update_registry_url() {
     echo -e "${YELLOW}Updating registry URLs to ${REGISTRY}...${NC}"
 
     # Replace localhost:5001 with actual registry URL
-    if [ -f "$OUTPUT_DIR/docker-compose.yml" ]; then
+    for compose_file in docker-compose.yml docker-compose.runtimes.yml; do
+        [ -f "$OUTPUT_DIR/$compose_file" ] || continue
         # Use perl for cross-platform compatibility (macOS + Linux)
         if command -v perl &> /dev/null; then
-            perl -pi -e "s|localhost:5001|${REGISTRY}|g" "$OUTPUT_DIR/docker-compose.yml"
+            perl -pi -e "s|localhost:5001|${REGISTRY}|g" "$OUTPUT_DIR/$compose_file"
         else
             # Fallback to sed with backup
-            sed -i.bak "s|localhost:5001|${REGISTRY}|g" "$OUTPUT_DIR/docker-compose.yml"
-            rm -f "$OUTPUT_DIR/docker-compose.yml.bak"
+            sed -i.bak "s|localhost:5001|${REGISTRY}|g" "$OUTPUT_DIR/$compose_file"
+            rm -f "$OUTPUT_DIR/$compose_file.bak"
         fi
-        echo -e "${GREEN}✓ Registry URLs updated in docker-compose.yml${NC}"
-    fi
+        echo -e "${GREEN}✓ Registry URLs updated in $compose_file${NC}"
+    done
 }
 
 # Function: Generate mode-specific README
@@ -337,7 +345,8 @@ This package contains **pre-built Docker images** for offline deployment (no reg
 - `images/` - Pre-built Docker images (40 tar files, ~5-10GB total)
 - `load-images.sh` - Script to load all images into Docker
 - `docker-compose.infra.yml` - Infrastructure services configuration
-- `docker-compose.yml` - Application services configuration
+- `docker-compose.yml` - Platform services configuration
+- `docker-compose.runtimes.yml` - Built-in Runtime services configuration
 - `.env.example` - Environment variables template
 - `scripts/infra/` - Infrastructure initialization scripts
 - `scripts/prod/` - Production startup/stop scripts
@@ -420,7 +429,7 @@ bash scripts/infra/up.sh
 
 ```bash
 # Start all ADDP services
-docker compose -f docker-compose.yml --env-file .env up -d
+bash scripts/prod/start.sh
 ```
 
 ### 6. Verify Deployment
@@ -428,14 +437,13 @@ docker compose -f docker-compose.yml --env-file .env up -d
 ```bash
 # Check service status
 docker compose -f docker-compose.yml ps
+docker compose -f docker-compose.runtimes.yml ps
 
 # Check logs
 docker compose -f docker-compose.yml logs -f
 
 # Access application
 # Console: http://server-ip:80 (via Nginx, recommended)
-# Direct: http://server-ip:5170 (Console)
-# API Gateway: http://server-ip:8000
 ```
 
 ## IAM Bootstrap
@@ -493,14 +501,14 @@ To update to a new version:
 
 ```bash
 # 1. Stop services
-docker compose -f docker-compose.yml down
+bash scripts/prod/stop.sh
 
 # 2. Transfer new package with updated images
 # 3. Load new images (will overwrite old versions)
 ./load-images.sh
 
 # 4. Restart services
-docker compose -f docker-compose.yml --env-file .env up -d
+bash scripts/prod/start.sh
 ```
 
 ## Architecture
@@ -529,7 +537,8 @@ This package is for **registry-based deployment** (requires access to Docker reg
 ## Package Contents
 
 - \`docker-compose.infra.yml\` - Infrastructure services
-- \`docker-compose.yml\` - Application services (configured for registry: **${REGISTRY}**)
+- \`docker-compose.yml\` - Platform services (configured for registry: **${REGISTRY}**)
+- \`docker-compose.runtimes.yml\` - Built-in Runtime services
 - \`.env.example\` - Environment variables template
 - \`scripts/infra/\` - Infrastructure initialization scripts
 - \`scripts/prod/\` - Production startup/stop scripts
@@ -594,6 +603,7 @@ sudo systemctl restart docker
 \`\`\`bash
 # Pull all images from registry
 docker compose -f docker-compose.yml pull
+docker compose -f docker-compose.runtimes.yml pull
 \`\`\`
 
 ### 5. Start Services
@@ -603,7 +613,7 @@ docker compose -f docker-compose.yml pull
 bash scripts/infra/up.sh
 
 # Start application services
-docker compose -f docker-compose.yml --env-file .env up -d
+bash scripts/prod/start.sh
 \`\`\`
 
 ### 6. Verify Deployment
@@ -611,6 +621,7 @@ docker compose -f docker-compose.yml --env-file .env up -d
 \`\`\`bash
 # Check service status
 docker compose -f docker-compose.yml ps
+docker compose -f docker-compose.runtimes.yml ps
 
 # Check logs
 docker compose -f docker-compose.yml logs -f
@@ -621,9 +632,10 @@ docker compose -f docker-compose.yml logs -f
 \`\`\`bash
 # Pull new images
 docker compose -f docker-compose.yml pull
+docker compose -f docker-compose.runtimes.yml pull
 
 # Restart services (zero downtime)
-docker compose -f docker-compose.yml up -d
+bash scripts/prod/start.sh
 \`\`\`
 
 ## Architecture
@@ -664,7 +676,8 @@ Git Commit: $(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 
 Package Contents:
 - docker-compose.infra.yml (infrastructure)
-- docker-compose.yml (application)
+- docker-compose.yml (platform)
+- docker-compose.runtimes.yml (built-in runtimes)
 - .env.example (environment template)
 - scripts/infra/ (initialization scripts)
 - scripts/prod/ (production scripts)
@@ -759,9 +772,9 @@ transfer_to_server() {
         echo "3. Load images: ./load-images.sh"
         echo "4. Start infrastructure: bash scripts/infra/up.sh"
     else
-        echo "3. Pull images: docker compose -f docker-compose.yml pull"
+        echo "3. Pull images: docker compose -f docker-compose.yml pull && docker compose -f docker-compose.runtimes.yml pull"
     fi
-    echo "5. Start services: docker compose -f docker-compose.yml --env-file .env up -d"
+    echo "5. Start services: bash scripts/prod/start.sh"
 }
 
 # Main execution

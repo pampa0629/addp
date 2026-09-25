@@ -30,7 +30,7 @@ check_service() {
   fi
 }
 
-for compose_file in docker-compose.infra.yml docker-compose.yml; do
+for compose_file in docker-compose.infra.yml docker-compose.yml docker-compose.runtimes.yml; do
   echo "=== $compose_file ==="
   while IFS= read -r service; do
     check_service "$compose_file" "$service"

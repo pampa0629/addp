@@ -7,7 +7,7 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 ROOT_DIR=$(cd "$SCRIPT_DIR/../.." && pwd -P)
 ONLINE_SUITE=compose-public-origin
 HOSTED_FIXTURE_CONTAINERS=(registry addp-online-public-origin-upstreams system-backend gateway console system-frontend addp-nginx)
-HOSTED_FIXTURE_COMPOSE_PROJECTS=(addp-app)
+HOSTED_FIXTURE_COMPOSE_PROJECTS=(addp-platform)
 HOSTED_FIXTURE_IMAGES=()
 COMPOSE_OVERLAY="$ROOT_DIR/scripts/test/docker-compose.public-origin-t4.yml"
 
@@ -16,9 +16,9 @@ compose_app() {
 }
 
 verify_empty_app() {
-  [ -z "$(docker ps -aq --filter label=com.docker.compose.project=addp-app)" ] &&
-    [ -z "$(docker network ls -q --filter label=com.docker.compose.project=addp-app)" ] &&
-    [ -z "$(docker volume ls -q --filter label=com.docker.compose.project=addp-app)" ]
+  [ -z "$(docker ps -aq --filter label=com.docker.compose.project=addp-platform)" ] &&
+    [ -z "$(docker network ls -q --filter label=com.docker.compose.project=addp-platform)" ] &&
+    [ -z "$(docker volume ls -q --filter label=com.docker.compose.project=addp-platform)" ]
 }
 
 stop_online_fixture() {

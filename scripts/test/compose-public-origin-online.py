@@ -56,7 +56,7 @@ def running_container(name: str) -> dict[str, object]:
     if not isinstance(containers, list) or len(containers) != 1:
         raise AcceptanceError(f"missing container {name}")
     container = containers[0]
-    if not container["State"]["Running"] or container["Config"]["Labels"].get("com.docker.compose.project") != "addp-app":
+    if not container["State"]["Running"] or container["Config"]["Labels"].get("com.docker.compose.project") != "addp-platform":
         raise AcceptanceError(f"{name} is not an owned running Compose container")
     return container
 

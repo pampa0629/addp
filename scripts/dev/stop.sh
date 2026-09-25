@@ -172,7 +172,7 @@ stop_services_concurrent() {
   for name in pointcloud-workflow document-workflow geopython-workflow supermap-workflow; do
     local container="${name}-engine" labels
     labels=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}|{{index .Config.Labels "com.docker.compose.service"}}|{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$container" 2>/dev/null) || continue
-    if [ "$labels" = "addp-app|${container}|${ROOT_DIR}" ]; then
+    if [ "$labels" = "addp-runtimes|${container}|${ROOT_DIR}" ]; then
       docker rm -f "$container" >/dev/null 2>&1 || true
     fi
   done

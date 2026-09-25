@@ -24,7 +24,7 @@ connect_business_network() {
   fi
 
   echo -e "${YELLOW}连接 ADDP 服务到 Business 网络 (${network})...${NC}"
-  for container in $(docker compose -f docker-compose.yml ps -q 2>/dev/null); do
+  for container in $(docker compose -f docker-compose.yml ps -q 2>/dev/null) $(docker compose -f docker-compose.runtimes.yml ps -q 2>/dev/null); do
     if docker inspect "$container" --format '{{json .NetworkSettings.Networks}}' | grep -q "\"${network}\""; then
       continue
     fi
@@ -44,16 +44,19 @@ fi
 bash scripts/prod/setup-env.sh
 
 # 第一步：启动基础设施层
-echo -e "${YELLOW}[1/3] 启动基础设施层...${NC}"
+echo -e "${YELLOW}[1/4] 启动基础设施层...${NC}"
 docker compose -f docker-compose.infra.yml up -d
 bash scripts/prod/wait-infra.sh
 
 # 第二步：System 先就绪，再启动应用全量服务。
-echo -e "${YELLOW}[2/3] 等待 System Backend 就绪...${NC}"
+echo -e "${YELLOW}[2/4] 等待 System Backend 就绪...${NC}"
 docker compose -f docker-compose.yml up -d --wait --wait-timeout 120 system-backend
 
-echo -e "${YELLOW}[3/3] 启动并等待应用服务就绪...${NC}"
+echo -e "${YELLOW}[3/4] 启动并等待平台服务就绪...${NC}"
 docker compose -f docker-compose.yml up -d --wait --wait-timeout 180
+
+echo -e "${YELLOW}[4/4] 启动并等待内置 Runtime 就绪...${NC}"
+docker compose -f docker-compose.runtimes.yml up -d --wait --wait-timeout 180
 
 connect_business_network
 
@@ -67,3 +70,4 @@ echo -e "${GREEN}✓ ADDP 容器部署已启动${NC}"
 echo -e "统一入口: ${public_origin}"
 echo ""
 docker compose -f docker-compose.yml ps --format "table {{.Service}}\t{{.State}}\t{{.Health}}\t{{.Ports}}"
+docker compose -f docker-compose.runtimes.yml ps --format "table {{.Service}}\t{{.State}}\t{{.Health}}\t{{.Ports}}"

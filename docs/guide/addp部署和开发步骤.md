@@ -156,6 +156,10 @@ Develop 正式任务向 NFS 输出 UDBX 时，不需要预先为某个 NFS 存�
 
 ### 第四步: 本地 Docker Compose 模式
 
+本地和生产容器部署使用 `addp-infra`、`addp-platform`、`addp-runtimes` 三个 ADDP Compose project；业务数据引擎保留独立 `business` project。平台模块共用 `addp-platform` 生命周期，内置 Runtime 由 `docker-compose.runtimes.yml` 独立启动；所有 ADDP project 在外部 `addp-network` 上以服务名互访。Docker Desktop 中看到的 project 分组不等于 System 模块或引擎注册表。
+
+从旧 `addp-app` 容器部署切换时，须先核对该 project 的容器归属并停止旧项目，再以本节标准入口启动新分组；固定 `container_name` 不能在两个 project 下同时存在。此切换不删除 `addp-infra` 或 `business` 的数据卷。源码开发模式中的容器化 Runtime 仍由 `scripts/dev/` 启停，其项目标签用于 Docker Desktop 分组，不以生产 Compose 命令接管。
+
 ```bash
 # 通过 Docker Compose 启动完整平台
 bash scripts/local/start.sh
@@ -180,8 +184,8 @@ bash scripts/prod/start.sh
 
 1. **启动基础设施** (PostgreSQL、Redis、MinIO、Meilisearch)
 2. **启动 System Backend** (其他服务依赖它)
-3. **启动业务后端** (Manager、Meta、Transfer、Orchestrator、Develop、GeoPython Workflow、Model3D Workflow Engine、PointCloud Workflow Engine、SuperMap Workflow Engine、Gateway)
-4. **启动前端服务** (所有模块前端 + Console + Nginx)
+3. **启动平台服务** (Manager、Meta、Transfer、Orchestrator、Develop 等 Backend、Gateway、前端、Console 和 Nginx)
+4. **启动内置 Runtime** (GeoPython Workflow、Model3D Workflow、PointCloud Workflow、SuperMap Workflow 等独立 `addp-runtimes` 服务)
 5. **健康检查** (验证所有服务就绪)
 
 **访问地址** (部署完成后): `ADDP_PUBLIC_ORIGIN`；未设置时为 `http://localhost:<NGINX_PORT>`，默认 `http://localhost:80`。Console、模块前端和 `/api/` 均由这个 Nginx 入口转发；容器内使用稳定服务名和端口，应用模块不发布其他宿主机端口。需要限制宿主机监听范围时设置 `NGINX_BIND_HOST`，默认 `0.0.0.0`；隔离验收使用 `127.0.0.1`。域名、HTTPS 或上级反向代理部署时在根 `.env` 配置实际的 `ADDP_PUBLIC_ORIGIN`。

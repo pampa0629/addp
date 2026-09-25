@@ -29,6 +29,7 @@ if [ ! -f ".env" ]; then
 fi
 
 echo -e "${YELLOW}Stopping ADDP services...${NC}"
+docker compose -f docker-compose.runtimes.yml --env-file .env down
 docker compose -f docker-compose.yml --env-file .env down
 
 echo ""

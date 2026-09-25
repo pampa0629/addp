@@ -1856,7 +1856,8 @@ start_geopython_workflow_engine_process() {
   GEOPYTHON_WORKFLOW_PID=$(
     docker run -d \
       --name geopython-workflow-engine \
-      --label com.docker.compose.project=addp-app \
+      --label com.docker.compose.project=addp-runtimes \
+      --label com.docker.compose.project.config_files="${ROOT_DIR}/docker-compose.runtimes.yml" \
       --label com.docker.compose.service=geopython-workflow-engine \
       --label com.docker.compose.project.working_dir="${ROOT_DIR}" \
       --add-host=host.docker.internal:host-gateway \
@@ -2178,7 +2179,8 @@ start_pointcloud_workflow_engine_process() {
   POINTCLOUD_WORKFLOW_PID=$(
     docker run -d \
       --name pointcloud-workflow-engine \
-      --label com.docker.compose.project=addp-app \
+      --label com.docker.compose.project=addp-runtimes \
+      --label com.docker.compose.project.config_files="${ROOT_DIR}/docker-compose.runtimes.yml" \
       --label com.docker.compose.service=pointcloud-workflow-engine \
       --label com.docker.compose.project.working_dir="${ROOT_DIR}" \
       --add-host=host.docker.internal:host-gateway \
@@ -2311,7 +2313,8 @@ start_document_workflow_engine_process() {
   DOCUMENT_WORKFLOW_PID=$(
     docker run -d \
       --name document-workflow-engine \
-      --label com.docker.compose.project=addp-app \
+      --label com.docker.compose.project=addp-runtimes \
+      --label com.docker.compose.project.config_files="${ROOT_DIR}/docker-compose.runtimes.yml" \
       --label com.docker.compose.service=document-workflow-engine \
       --label com.docker.compose.project.working_dir="${ROOT_DIR}" \
       --read-only \

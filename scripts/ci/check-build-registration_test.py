@@ -57,6 +57,7 @@ class BuildRegistrationTest(unittest.TestCase):
             "services:\n  sample:\n"
             "    image: ${REGISTRY:-localhost:5001}/addp-sample-backend:${IMAGE_TAG:-latest}\n",
         )
+        self._write("docker-compose.runtimes.yml", "services: {}\n")
         self._write(
             "Makefile",
             "build:\n\t@bash scripts/build/compile.sh $(BUILD_ARGS)\n\n"

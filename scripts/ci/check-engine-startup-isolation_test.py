@@ -37,9 +37,25 @@ document-workflow common-python/addp_common/module_lifecycle.py
             "docker-compose.yml": f"""services:
   manager-backend:
     image: manager
-{manager_dep}  duckdb-engine:
+{manager_dep}""",
+            "docker-compose.runtimes.yml": f"""services:
+  duckdb-engine:
     image: duckdb
-{runtime_dep}""",
+{runtime_dep}  jupyter-engine:
+    image: jupyter
+  geopython-workflow-engine:
+    image: geopython
+  model3d-workflow-engine:
+    image: model3d
+  pointcloud-workflow-engine:
+    image: pointcloud
+  document-workflow-engine:
+    image: document
+  supermap-workflow-engine:
+    image: supermap
+  spark-workflow-engine:
+    image: spark
+""",
             "system/backend/cmd/server/main.go": "package main\nfunc main() {}\n",
             "system/backend/internal/config/config.go": "package config\n",
             "manager/backend/cmd/server/main.go": """package main

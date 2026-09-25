@@ -54,6 +54,16 @@ fi
 
 echo ""
 
+echo -e "${CYAN}=== Built-in Runtimes ===${NC}"
+echo ""
+if docker compose -f docker-compose.runtimes.yml ps --format json 2>/dev/null | grep -q .; then
+    docker compose -f docker-compose.runtimes.yml ps
+else
+    echo -e "${YELLOW}No built-in runtimes running${NC}"
+fi
+
+echo ""
+
 # =============================================================================
 # Service URL
 # =============================================================================

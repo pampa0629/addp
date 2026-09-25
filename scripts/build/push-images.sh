@@ -426,6 +426,7 @@ else
     echo "   ./scripts/build/package.sh --mode registry --registry $TARGET_REGISTRY"
     echo "3. Deploy on server:"
     echo "   docker compose -f docker-compose.yml pull"
+    echo "   docker compose -f docker-compose.runtimes.yml pull"
     echo "   bash scripts/prod/start.sh"
     exit 0
 fi

@@ -177,7 +177,7 @@ Math Workflow 是参考实现，随无参数全量启动运行服务，但不会
 - [ ] 在 common engine 插件中声明 `engine.capabilities/v1` 能力
 - [ ] 决定注册方式：生产运行时可配置启动自注册；参考实现可通过 System 引擎管理手动注册
 - [ ] 添加到 `scripts/dev/start.sh`
-- [ ] 如需容器化部署，添加到 `docker-compose.yml`、`scripts/build/build-images.sh`、`scripts/local/start.sh` 和 `scripts/prod/start.sh`
+- [ ] 如需容器化部署，添加到 `docker-compose.runtimes.yml` 和 `scripts/build/build-images.sh`；现有 `scripts/local/start.sh`、`scripts/prod/start.sh` 自动启动 Runtime project，并由平台一致性门禁核对登记
 - [ ] 编写 README 说明引擎功能和使用方法
 
 ## 参考实现

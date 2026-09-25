@@ -169,9 +169,13 @@ minio         (port 9000-9001) - MinIO 对象存储
 meilisearch   (port 7700)  - Meilisearch 全文搜索
 ```
 
-### 应用层 (docker-compose.yml)
+### 平台层 (docker-compose.yml)
 
-Console、各模块 Frontend、Backend、Gateway 和内置 Workflow Runtime 使用 Docker 网络内的服务名与固定容器端口。应用层只将 Nginx 的 `NGINX_PORT` 发布到宿主机，浏览器通过这个统一入口访问模块页面和 `/api/`。
+Console、各模块 Frontend、Backend 和 Gateway 使用 Docker 网络内的服务名与固定容器端口。平台层只将 Nginx 的 `NGINX_PORT` 发布到宿主机，浏览器通过这个统一入口访问模块页面和 `/api/`。
+
+### 内置 Runtime (docker-compose.runtimes.yml)
+
+内置计算与 Notebook Runtime 由 `addp-runtimes` 独立管理，通过外部 `addp-network` 连接平台和 Infra；不发布宿主机端口。`scripts/local/start.sh` 在平台就绪后启动 Runtime，`stop.sh` 先停止 Runtime 再停止平台。
 
 ### 镜像来源
 
@@ -348,7 +352,8 @@ docker compose -f docker-compose.yml ps system-backend
 - [scripts/prod/README.md](../prod/README.md) - 生产部署脚本
 - [CLAUDE.md](../../CLAUDE.md) - 项目整体架构文档
 - [docker-compose.infra.yml](../../docker-compose.infra.yml) - 基础设施层配置
-- [docker-compose.yml](../../docker-compose.yml) - 应用层配置
+- [docker-compose.yml](../../docker-compose.yml) - 平台层配置
+- [docker-compose.runtimes.yml](../../docker-compose.runtimes.yml) - 内置 Runtime 配置
 
 ## 注意事项
 

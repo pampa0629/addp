@@ -2,7 +2,7 @@
 # =============================================================================
 # ADDP Local Docker Deployment Starter
 # =============================================================================
-# Description: Start ADDP services using Docker Compose (infrastructure + app)
+# Description: Start ADDP services using Docker Compose (infrastructure + platform + runtimes)
 # Usage: ./scripts/local/start.sh
 #
 # Features:
@@ -143,12 +143,13 @@ else
     exit 1
 fi
 
-# Step 4: Start application layer and wait for container health.
+# Step 4: Start platform and runtime projects and wait for container health.
 echo ""
 echo -e "${BLUE}========================================${NC}"
 echo -e "${BLUE}🚀 Starting Application Layer${NC}"
 echo -e "${BLUE}========================================${NC}"
 docker compose -f docker-compose.yml up -d --wait --wait-timeout 180 --remove-orphans
+docker compose -f docker-compose.runtimes.yml up -d --wait --wait-timeout 180 --remove-orphans
 
 published_port="$(docker compose -f docker-compose.yml port nginx 80 | sed 's/.*://')"
 public_origin="${ADDP_PUBLIC_ORIGIN:-$(sed -n 's/^ADDP_PUBLIC_ORIGIN=//p' .env | tail -n 1)}"
@@ -160,6 +161,7 @@ echo -e "${GREEN}✓ ADDP 容器服务已就绪${NC}"
 echo -e "统一入口: ${public_origin}"
 echo ""
 docker compose -f docker-compose.yml ps
+docker compose -f docker-compose.runtimes.yml ps
 echo ""
 echo -e "${GREEN}Management Commands:${NC}"
 echo "  bash scripts/local/status.sh"

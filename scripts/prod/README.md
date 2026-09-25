@@ -31,9 +31,10 @@ cd /path/to/addp
 
 1. 启动基础设施并等待其就绪。
 2. 启动 System Backend，使用 Docker Compose 容器健康检查等待就绪。
-3. 启动应用 Compose 中全部服务，并等待有健康检查的容器变为 healthy、其他容器进入 running。
+3. 启动 `addp-platform` 中全部平台服务，并等待有健康检查的容器变为 healthy、其他容器进入 running。
+4. 启动 `addp-runtimes` 中全部内置 Runtime，再检查两组服务状态。
 
-容器内部端口固定，应用 Compose 仅将 Nginx 的 `NGINX_PORT` 发布到宿主机。启动脚本报告统一访问地址；`ADDP_PUBLIC_ORIGIN` 留空时为 `http://localhost:<NGINX_PORT>`。域名、HTTPS 或上级反向代理部署须填写用户实际访问的 `ADDP_PUBLIC_ORIGIN`。
+容器内部端口固定，平台 Compose 仅将 Nginx 的 `NGINX_PORT` 发布到宿主机。启动脚本报告统一访问地址；`ADDP_PUBLIC_ORIGIN` 留空时为 `http://localhost:<NGINX_PORT>`。域名、HTTPS 或上级反向代理部署须填写用户实际访问的 `ADDP_PUBLIC_ORIGIN`。
 
 ### 示例
 

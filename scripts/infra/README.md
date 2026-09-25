@@ -187,7 +187,8 @@ ADDP_TEST_POSTGRES_SSLMODE=disable \
 ### Docker Compose 项目
 
 - `addp-infra` - 本目录管理（`docker-compose.infra.yml`）
-- `addp-app` - 应用服务（`docker-compose.yml`）
+- `addp-platform` - 平台服务（`docker-compose.yml`）
+- `addp-runtimes` - 内置计算与 Notebook Runtime（`docker-compose.runtimes.yml`）
 - `business` - 业务数据库（`business/docker-compose.yml`）
 
 ### 网络隔离

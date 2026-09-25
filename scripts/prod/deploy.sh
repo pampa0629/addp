@@ -208,7 +208,7 @@ if [ "$SKIP_DEPLOY" = false ]; then
         export IMAGE_TAG="${VERSION}"
         export REGISTRY="${REGISTRY}"
         
-        if docker stack deploy --prune -c docker-compose.yml addp; then
+        if docker stack deploy --prune -c docker-compose.yml -c docker-compose.runtimes.yml addp; then
             echo -e "${GREEN}✓ Swarm stack deployed${NC}"
             
             # Wait for services to be running
@@ -228,7 +228,7 @@ if [ "$SKIP_DEPLOY" = false ]; then
         export IMAGE_TAG="${VERSION}"
         export REGISTRY="${REGISTRY}"
         
-        if docker-compose -f docker-compose.infra.yml -f docker-compose.yml up -d --remove-orphans; then
+        if bash scripts/prod/start.sh; then
             echo -e "${GREEN}✓ Services started${NC}"
         else
             echo -e "${RED}✗ Deployment failed${NC}"

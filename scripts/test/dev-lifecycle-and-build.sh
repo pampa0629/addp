@@ -533,7 +533,7 @@ test_dev_port_resolution() {
     container_labels="foreign|geopython-workflow-engine|$ROOT_DIR"
     if addp_dev_remove_owned_container geopython-workflow-engine 2>/dev/null; then exit 1; fi
     [ ! -e "$ROOT_DIR/removed-container" ]
-    container_labels="addp-app|geopython-workflow-engine|$ROOT_DIR"
+    container_labels="addp-runtimes|geopython-workflow-engine|$ROOT_DIR"
     addp_dev_remove_owned_container geopython-workflow-engine
     [ -e "$ROOT_DIR/removed-container" ]
   ' || fail "development port resolution did not propagate or preserve the selected port"
@@ -583,15 +583,25 @@ import sys
 
 root = Path(sys.argv[1])
 compose = (root / 'docker-compose.yml').read_text()
+runtimes = (root / 'docker-compose.runtimes.yml').read_text()
+assert re.search(r'(?m)^name: addp-platform$', compose)
+assert re.search(r'(?m)^name: addp-runtimes$', runtimes)
+assert re.search(r'(?m)^    external: true$', runtimes)
 published = []
 for block in re.split(r'(?=^  [a-z0-9-]+:\n)', compose, flags=re.M):
     service = re.match(r'^  ([a-z0-9-]+):\n', block)
     if service and re.search(r'(?m)^    ports:\s*$', block):
         published.append(service.group(1))
 assert published == ['nginx'], published
+assert not re.search(r'(?m)^    ports:\s*$', runtimes), 'Runtime must not publish host ports'
 for variable in ('PUBLIC_API_URL', 'CONSOLE_URL', 'MONITOR_CONSOLE_BASE_URL'):
     assert f'{variable}=${{ADDP_PUBLIC_ORIGIN:-http://localhost:${{NGINX_PORT:-80}}}}' in compose, variable
-print('PASS: Compose publishes only Nginx and derives one public origin')
+for folder in ('local', 'prod'):
+    start = (root / 'scripts' / folder / 'start.sh').read_text()
+    stop = (root / 'scripts' / folder / 'stop.sh').read_text()
+    assert 'docker compose -f docker-compose.runtimes.yml up' in start, folder
+    assert re.search(r'docker compose -f docker-compose\.runtimes\.yml(?: --env-file \.env)? down', stop), folder
+print('PASS: platform and Runtime Compose projects preserve one public origin and lifecycle')
 PY
 }
 

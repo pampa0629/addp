@@ -32,17 +32,17 @@ bash scripts/dev/start.sh -duckdb
 
 ## 镜像运行
 
-DuckDB 与 Jupyter、PointCloud 等内置计算引擎一样，由根 `docker-compose.yml` 同时声明
+DuckDB 与 Jupyter、PointCloud 等内置计算引擎一样，由根 `docker-compose.runtimes.yml` 同时声明
 `build` 和 `image`。镜像启动只使用这一条 Compose 路径，Compose project 固定为
-`addp-app`：
+`addp-runtimes`：
 
 ```bash
-docker compose -f docker-compose.yml build duckdb-engine
-docker compose -f docker-compose.yml up -d duckdb-engine
-docker compose -f docker-compose.yml ps duckdb-engine
+docker compose -f docker-compose.runtimes.yml build duckdb-engine
+docker compose -f docker-compose.runtimes.yml up -d duckdb-engine
+docker compose -f docker-compose.runtimes.yml ps duckdb-engine
 ```
 
-不要使用独立 `docker run` 创建 DuckDB Runtime；否则容器不会进入 `addp-app`，也无法复用
+不要使用独立 `docker run` 创建 DuckDB Runtime；否则容器不会进入 `addp-runtimes`，也无法复用
 统一的依赖、网络、健康检查和停止流程。
 
 根 Compose 固定设置 `DUCKDB_SOURCE_LOOPBACK_HOST=host.docker.internal`，并通过

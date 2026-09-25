@@ -16,7 +16,7 @@ SPEC.loader.exec_module(MODULE)
 
 
 def container(name, bindings=None, env=None):
-    return [{"State": {"Running": True}, "Config": {"Labels": {"com.docker.compose.project": "addp-app"}, "Env": env or []}, "HostConfig": {"PortBindings": bindings or {}}}]
+    return [{"State": {"Running": True}, "Config": {"Labels": {"com.docker.compose.project": "addp-platform"}, "Env": env or []}, "HostConfig": {"PortBindings": bindings or {}}}]
 
 
 class ComposePublicOriginOnlineTest(unittest.TestCase):

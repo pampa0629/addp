@@ -385,7 +385,8 @@ restart_geopython_workflow_service() {
     mkdir -p "${source_dir}" logs .dev-pids
     docker run -d \
         --name geopython-workflow-engine \
-        --label com.docker.compose.project=addp-app \
+        --label com.docker.compose.project=addp-runtimes \
+        --label com.docker.compose.project.config_files="${ROOT_DIR}/docker-compose.runtimes.yml" \
         --label com.docker.compose.service=geopython-workflow-engine \
         --label com.docker.compose.project.working_dir="${ROOT_DIR}" \
         --add-host=host.docker.internal:host-gateway \
@@ -513,7 +514,8 @@ restart_pointcloud_workflow_service() {
     mkdir -p .dev-pids
     docker run -d \
         --name pointcloud-workflow-engine \
-        --label com.docker.compose.project=addp-app \
+        --label com.docker.compose.project=addp-runtimes \
+        --label com.docker.compose.project.config_files="${ROOT_DIR}/docker-compose.runtimes.yml" \
         --label com.docker.compose.service=pointcloud-workflow-engine \
         --label com.docker.compose.project.working_dir="${ROOT_DIR}" \
         --add-host=host.docker.internal:host-gateway \
@@ -611,7 +613,8 @@ restart_document_workflow_service() {
     mkdir -p "$work_dir" .dev-pids
     docker run -d \
         --name document-workflow-engine \
-        --label com.docker.compose.project=addp-app \
+        --label com.docker.compose.project=addp-runtimes \
+        --label com.docker.compose.project.config_files="${ROOT_DIR}/docker-compose.runtimes.yml" \
         --label com.docker.compose.service=document-workflow-engine \
         --label com.docker.compose.project.working_dir="${ROOT_DIR}" \
         --read-only \

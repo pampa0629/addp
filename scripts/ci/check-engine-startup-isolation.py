@@ -182,6 +182,7 @@ def validate(repository: Path) -> list[str]:
     errors: list[str] = []
     start_path = repository / "scripts/dev/start.sh"
     compose_path = repository / "docker-compose.yml"
+    runtime_compose_path = repository / "docker-compose.runtimes.yml"
     system_main_path = repository / "system/backend/cmd/server/main.go"
     system_config_path = repository / "system/backend/internal/config/config.go"
 
@@ -201,6 +202,17 @@ def validate(repository: Path) -> list[str]:
             errors.append(f"scripts/dev/start.sh case {name} implicitly starts Engine Runtime flags: {', '.join(forbidden)}")
 
     compose = compose_path.read_text(encoding="utf-8")
+    runtime_compose = runtime_compose_path.read_text(encoding="utf-8")
+    platform_blocks = compose_service_blocks(compose)
+    runtime_services = re.split(r"(?m)^(?:networks|volumes):\s*$", runtime_compose, maxsplit=1)[0]
+    runtime_blocks = compose_service_blocks(runtime_services)
+    expected_runtimes = RUNTIME_COMPOSE_SERVICES - {"math-workflow-engine"}
+    for service in sorted(expected_runtimes & platform_blocks.keys()):
+        errors.append(f"docker-compose.yml Engine Runtime {service} belongs in docker-compose.runtimes.yml")
+    for service in sorted(expected_runtimes - runtime_blocks.keys()):
+        errors.append(f"docker-compose.runtimes.yml Engine Runtime {service} is missing")
+    for service in sorted(runtime_blocks.keys() - expected_runtimes):
+        errors.append(f"docker-compose.runtimes.yml non-runtime service {service} is misplaced")
     for service, block in compose_service_blocks(compose).items():
         dependencies = compose_dependencies(block)
         if service in RUNTIME_COMPOSE_SERVICES and "system-backend" in dependencies:
@@ -212,11 +224,15 @@ def validate(repository: Path) -> list[str]:
         forbidden = sorted(dependencies & RUNTIME_COMPOSE_SERVICES)
         if forbidden:
             errors.append(f"docker-compose.yml service {service} depends on Engine Runtime services: {', '.join(forbidden)}")
+    for service, block in runtime_blocks.items():
+        if "system-backend" in compose_dependencies(block):
+            errors.append(f"docker-compose.runtimes.yml Engine Runtime {service} depends on System startup order")
 
     system_sources = {
         str(system_main_path.relative_to(repository)): system_main_path.read_text(encoding="utf-8"),
         str(system_config_path.relative_to(repository)): system_config_path.read_text(encoding="utf-8"),
         str(compose_path.relative_to(repository)): compose,
+        str(runtime_compose_path.relative_to(repository)): runtime_compose,
         ".env.example": (repository / ".env.example").read_text(encoding="utf-8"),
     }
     for relative_path, source in system_sources.items():

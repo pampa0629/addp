@@ -407,7 +407,10 @@ def makefile_script_references(makefile: str) -> set[str]:
 def validate_registration(repository: Path) -> list[str]:
     compile_script = (repository / "scripts/build/compile.sh").read_text(encoding="utf-8")
     image_script = (repository / "scripts/build/build-images.sh").read_text(encoding="utf-8")
-    compose = (repository / "docker-compose.yml").read_text(encoding="utf-8")
+    compose = "\n".join(
+        (repository / path).read_text(encoding="utf-8")
+        for path in ("docker-compose.yml", "docker-compose.runtimes.yml")
+    )
     makefile = (repository / "Makefile").read_text(encoding="utf-8")
     platform_workflow_path = repository / ".github/workflows/platform-ci.yml"
     release_workflow_path = repository / ".github/workflows/release-and-t2-gates.yml"

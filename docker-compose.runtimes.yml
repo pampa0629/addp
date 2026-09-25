@@ -1,0 +1,275 @@
+# ADDP 内置计算与 Notebook Runtime，独立于平台模块部署。
+# 与 addp-platform、addp-infra 共用外部 addp-network。
+name: addp-runtimes
+
+services:
+  duckdb-engine:
+    build:
+      context: .
+      dockerfile: engines/duckdb/Dockerfile
+    image: ${REGISTRY:-localhost:5001}/addp-duckdb-engine:${IMAGE_TAG:-latest}
+    container_name: duckdb-engine
+    environment:
+      - SERVICE_HOST=duckdb-engine
+      - SYSTEM_URL=http://system-backend:8180
+      - META_URL=http://meta-backend:8082
+      - DUCKDB_SERVICE_CLIENT_SECRET=${DUCKDB_SERVICE_CLIENT_SECRET}
+      - DUCKDB_RUNTIME_PORT=8104
+      - DUCKDB_EXTENSION_DIRECTORY=/opt/addp/duckdb/extensions
+      - DUCKDB_MAX_ROWS=${DUCKDB_MAX_ROWS:-10000}
+      - DUCKDB_MAX_MEMORY=${DUCKDB_MAX_MEMORY:-1GB}
+      - DUCKDB_THREADS=${DUCKDB_THREADS:-4}
+      - DUCKDB_QUERY_TIMEOUT=${DUCKDB_QUERY_TIMEOUT:-60s}
+      - DUCKDB_SOURCE_LOOPBACK_HOST=host.docker.internal
+      - GIN_MODE=release
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    expose:
+      - "8104"
+    networks:
+      - addp-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8104/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  # ==================== Transfer 模块 ====================
+
+  jupyter-engine:
+    build:
+      context: .
+      dockerfile: engines/jupyter/Dockerfile
+    image: ${REGISTRY:-localhost:5001}/addp-jupyter-engine:${IMAGE_TAG:-latest}
+    container_name: jupyter-engine
+    environment:
+      - API_PORT=8097
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-minioadmin}
+      - SYSTEM_URL=http://system-backend:8180
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    expose:
+      - "8097"
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - addp-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8097/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  # ==================== GeoPython Workflow (Python 数据处理工作流引擎) ====================
+
+  geopython-workflow-engine:
+    build:
+      context: .
+      dockerfile: engines/geopython-workflow/Dockerfile
+    image: ${REGISTRY:-localhost:5001}/addp-geopython-workflow-engine:${IMAGE_TAG:-latest}
+    container_name: geopython-workflow-engine
+    environment:
+      - RUNTIME_HOST=geopython-workflow-engine
+      - PORT=8099
+      - SYSTEM_URL=http://system-backend:8180
+      - GEOPYTHON_WORKFLOW_SERVICE_CLIENT_SECRET=${GEOPYTHON_WORKFLOW_SERVICE_CLIENT_SECRET}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - GEOPYTHON_WORKFLOW_GUNICORN_TIMEOUT=${GEOPYTHON_WORKFLOW_GUNICORN_TIMEOUT:-7200}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=${POSTGRES_USER:-addp}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB:-addp}
+      - DB_SCHEMA=develop
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - addp-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8099/health', timeout=3)\""]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+
+  # ==================== Model3D Workflow Engine（三维模型转换工作流引擎） ====================
+
+  model3d-workflow-engine:
+    image: ${REGISTRY:-localhost:5001}/addp-model3d-workflow-engine:${IMAGE_TAG:-latest}
+    container_name: model3d-workflow-engine
+    environment:
+      - RUNTIME_HOST=model3d-workflow-engine
+      - PORT=8101
+      - SYSTEM_URL=http://system-backend:8180
+      - MODEL3D_WORKFLOW_SERVICE_CLIENT_SECRET=${MODEL3D_WORKFLOW_SERVICE_CLIENT_SECRET}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - MODEL3D_CONVERTER_BIN=/opt/addp/model3d-workflow/bin/_3dtile
+      - MODEL3D_MESH_CONVERTER_BIN=/usr/bin/assimp
+      - MODEL3D_GAUSSIAN_SPLAT_NODE_BIN=/usr/bin/node
+      - GDAL_DATA=/opt/addp/model3d-workflow/bin/gdal
+      - PROJ_DATA=/opt/addp/model3d-workflow/bin/proj
+      - OSG_LIBRARY_PATH=/opt/addp/model3d-workflow/bin/osgPlugins-3.6.5
+    volumes:
+      - ./logs:/app/logs
+      - ${MODEL3D_DATA_HOST_PATH:-./business/nfs/data}:${MODEL3D_DATA_CONTAINER_PATH:-/Users/pampa/code/addp/business/nfs/data}:ro
+    networks:
+      - addp-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8101/health', timeout=3)\""]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+
+  # ==================== PointCloud Workflow Engine（点云处理工作流引擎） ====================
+
+  pointcloud-workflow-engine:
+    build:
+      context: .
+      dockerfile: engines/pointcloud-workflow/Dockerfile
+    image: ${REGISTRY:-localhost:5001}/addp-pointcloud-workflow-engine:${IMAGE_TAG:-latest}
+    container_name: pointcloud-workflow-engine
+    environment:
+      - PORT=8102
+      - SYSTEM_URL=http://system-backend:8180
+      - POINTCLOUD_WORKFLOW_SERVICE_CLIENT_SECRET=${POINTCLOUD_WORKFLOW_SERVICE_CLIENT_SECRET}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - POINTCLOUD_PDAL_BIN=/opt/conda/bin/pdal
+      - POINTCLOUD_WORK_DIR=/work/pointcloud
+      - CPL_TMPDIR=/work/pointcloud
+      - RUNTIME_HOST=pointcloud-workflow-engine
+    volumes:
+      - ./logs:/app/logs
+      - ${POINTCLOUD_WORK_HOST_PATH:-./data/pointcloud-work}:/work/pointcloud
+      - ${POINTCLOUD_DATA_HOST_PATH:-./business/nfs/data}:${POINTCLOUD_DATA_CONTAINER_PATH:-/Users/pampa/code/addp/business/nfs/data}:ro
+    networks:
+      - addp-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8102/health', timeout=3)\""]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+
+  # ==================== Document Workflow Engine（文档静态预览转换引擎） ====================
+
+  document-workflow-engine:
+    build:
+      context: .
+      dockerfile: engines/document-workflow/Dockerfile
+    image: ${REGISTRY:-localhost:5001}/addp-document-workflow-engine:${IMAGE_TAG:-latest}
+    container_name: document-workflow-engine
+    environment:
+      - PORT=8105
+      - SYSTEM_URL=http://system-backend:8180
+      - DOCUMENT_WORKFLOW_SERVICE_CLIENT_SECRET=${DOCUMENT_WORKFLOW_SERVICE_CLIENT_SECRET}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - DOCUMENT_LIBREOFFICE_BIN=/usr/bin/soffice
+      - DOCUMENT_WORK_DIR=/work/document
+      - DOCUMENT_CONVERSION_CONCURRENCY=${DOCUMENT_CONVERSION_CONCURRENCY:-1}
+      - DOCUMENT_CONVERSION_TIMEOUT_SECONDS=${DOCUMENT_CONVERSION_TIMEOUT_SECONDS:-600}
+      - DOCUMENT_OBJECT_STORE_LOOPBACK_HOST=${DOCUMENT_OBJECT_STORE_LOOPBACK_HOST:-host.docker.internal}
+      - RUNTIME_HOST=document-workflow-engine
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=67108864
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./logs:/app/logs
+      - ${DOCUMENT_WORK_HOST_PATH:-./data/document-work}:/work/document
+      - ${DOCUMENT_DATA_HOST_PATH:-./business/nfs/data}:${DOCUMENT_DATA_CONTAINER_PATH:-/Users/pampa/code/addp/business/nfs/data}:ro
+    networks:
+      - addp-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8105/health', timeout=3)\""]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+
+  # ==================== SuperMap Workflow Engine（超图工作流引擎） ====================
+
+  supermap-workflow-engine:
+    image: ${REGISTRY:-localhost:5001}/addp-supermap-workflow-engine:${IMAGE_TAG:-latest}
+    container_name: supermap-workflow-engine
+    platform: ${SUPERMAP_WORKFLOW_PLATFORM:-linux/arm64}
+    cap_add:
+      - SYS_ADMIN
+    security_opt:
+      - apparmor=unconfined
+    environment:
+      - PORT=8103
+      - SYSTEM_URL=http://system-backend:8180
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    volumes:
+      - ./logs:/app/logs
+      - ${SUPERMAP_OUTPUT_HOST_PATH:-/tmp/supermap-out}:/tmp/supermap-out
+      - ${SUPERMAP_DATA_HOST_PATH:-./business/nfs/data}:/mnt/supermap/data:ro
+    networks:
+      - addp-network
+    restart: unless-stopped
+    mem_limit: ${SUPERMAP_WORKFLOW_MEMORY_LIMIT:-8g}
+    healthcheck:
+      test: ["CMD-SHELL", "curl --max-time 2 -fsS http://127.0.0.1:8103/health | grep -q '\"status\":\"healthy\"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 90s
+
+  spark-workflow-engine:
+    build:
+      context: ./engines/spark-workflow
+      dockerfile: Dockerfile
+    image: ${REGISTRY:-localhost:5001}/addp-spark-workflow-engine:${IMAGE_TAG:-latest}
+    container_name: spark-workflow-engine
+    environment:
+      - RUNTIME_HOST=spark-workflow-engine
+      - PORT=8098
+      - SYSTEM_URL=http://system-backend:8180
+      - SPARK_WORKFLOW_SERVICE_CLIENT_SECRET=${SPARK_WORKFLOW_SERVICE_CLIENT_SECRET}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=${POSTGRES_USER:-addp}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB:-addp}
+      - DB_SCHEMA=develop
+      - SPARK_MODE=local
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - addp-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8098/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+
+networks:
+  addp-network:
+    external: true
+    name: addp-network

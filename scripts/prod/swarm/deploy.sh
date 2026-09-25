@@ -36,6 +36,10 @@ if [ ! -f "docker-compose.yml" ]; then
     echo "❌ docker-compose.yml 不存在"
     exit 1
 fi
+if [ ! -f "docker-compose.runtimes.yml" ]; then
+    echo "❌ docker-compose.runtimes.yml 不存在"
+    exit 1
+fi
 
 echo "✅ 配置文件检查通过"
 echo ""
@@ -93,11 +97,11 @@ echo ""
 if [[ $DEPLOY_MODE =~ ^[2]$ ]]; then
     # System Only
     export COMPOSE_PROFILES=""
-    docker stack deploy -c docker-compose.yml addp
+    docker stack deploy -c docker-compose.yml -c docker-compose.runtimes.yml addp
 else
     # Full
     export COMPOSE_PROFILES="full"
-    COMPOSE_PROFILES=full docker stack deploy -c docker-compose.yml addp
+    COMPOSE_PROFILES=full docker stack deploy -c docker-compose.yml -c docker-compose.runtimes.yml addp
 fi
 
 echo ""

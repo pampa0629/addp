@@ -72,7 +72,7 @@ addp_dev_owned_listener() {
     geopython-workflow|pointcloud-workflow|document-workflow|supermap-workflow)
       local container="${name}-engine" labels mapping
       labels=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}|{{index .Config.Labels "com.docker.compose.service"}}|{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$container" 2>/dev/null) || return 1
-      [ "$labels" = "addp-app|${container}|${ROOT_DIR}" ] || return 1
+      [ "$labels" = "addp-runtimes|${container}|${ROOT_DIR}" ] || return 1
       [ "$(docker inspect --format '{{.State.Running}}' "$container")" = true ] || return 1
       mapping=$(docker port "$container" 2>/dev/null | awk -v port="$port" '$0 ~ ":" port "$" { found=1 } END { exit !found }') || return 1
       return 0
@@ -98,7 +98,7 @@ addp_dev_remove_owned_container() {
   local container="$1" labels
   docker inspect "$container" >/dev/null 2>&1 || return 0
   labels=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}|{{index .Config.Labels "com.docker.compose.service"}}|{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$container" 2>/dev/null) || return 1
-  if [ "$labels" != "addp-app|${container}|${ROOT_DIR}" ]; then
+  if [ "$labels" != "addp-runtimes|${container}|${ROOT_DIR}" ]; then
     echo "✗ 容器名 ${container} 已存在，但不属于当前工作区" >&2
     return 1
   fi

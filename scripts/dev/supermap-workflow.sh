@@ -95,7 +95,8 @@ fi
 echo "  启动 SuperMap Workflow Engine..."
 docker run -d \
   --name supermap-workflow-engine \
-  --label com.docker.compose.project=addp-app \
+  --label com.docker.compose.project=addp-runtimes \
+  --label com.docker.compose.project.config_files="${ROOT_DIR}/docker-compose.runtimes.yml" \
   --label com.docker.compose.service=supermap-workflow-engine \
   --label com.docker.compose.project.working_dir="${ROOT_DIR}" \
   --platform "${platform}" \
