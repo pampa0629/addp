@@ -32,7 +32,7 @@ class ComposePublicOriginOnlineTest(unittest.TestCase):
         self.env.start()
         self.addCleanup(self.env.stop)
 
-    def test_main_includes_meta_and_manager_frontends_and_gateway_routes(self):
+    def test_main_includes_module_frontends_and_gateway_routes(self):
         checks = {
             name: DEFAULT for name in (
                 "root_compose_ports", "infra_compose_ports", "assert_platform_ports", "assert_isolated_groups",
@@ -43,12 +43,15 @@ class ComposePublicOriginOnlineTest(unittest.TestCase):
             self.assertEqual(MODULE.main(), 0)
         mocked["assert_frontend"].assert_any_call("/meta/", "/meta/")
         mocked["assert_frontend"].assert_any_call("/manager/", "/manager/")
-        self.assertEqual(mocked["assert_module_gateway_route"].call_count, 2)
+        mocked["assert_frontend"].assert_any_call("/transfer/", "/transfer/")
+        self.assertEqual(mocked["assert_module_gateway_route"].call_count, 3)
         mocked["assert_module_gateway_route"].assert_any_call("Meta", "/api/v1/meta/engines")
         mocked["assert_module_gateway_route"].assert_any_call("Manager", "/api/v1/manager/engines")
+        mocked["assert_module_gateway_route"].assert_any_call("Transfer", "/api/v1/transfer/system-engines")
         report = json.loads(output.getvalue())
-        self.assertEqual(report["frontends"], ["console", "system", "meta", "manager"])
+        self.assertEqual(report["frontends"], ["console", "system", "meta", "manager", "transfer"])
         self.assertEqual(report["gateway_manager_permission_guard"], "passed")
+        self.assertEqual(report["gateway_transfer_permission_guard"], "passed")
 
     @patch.object(MODULE, "docker_json")
     def test_production_compose_publishes_only_one_loopback_entry(self, docker_json):
@@ -69,6 +72,8 @@ class ComposePublicOriginOnlineTest(unittest.TestCase):
             "meta-frontend": container("meta-frontend"),
             "manager-backend": container("manager-backend", env=["SERVICE_HOST=manager-backend", "SYSTEM_URL=http://system-backend:8180", "META_URL=http://meta-backend:8082", "POSTGRES_HOST=postgres", "POSTGRES_DB=addp_online", "REDIS_HOST=redis", "MINIO_ENDPOINT=minio:9000"]),
             "manager-frontend": container("manager-frontend"),
+            "transfer-backend": container("transfer-backend", env=["SERVICE_HOST=transfer-backend", "SYSTEM_URL=http://system-backend:8180", "META_URL=http://meta-backend:8082", "POSTGRES_HOST=postgres", "POSTGRES_DB=addp_online", "REDIS_HOST=redis", "INFRA_KAFKA_BOOTSTRAP_SERVERS=redpanda:29092", "KAFKA_CONNECT_URL=http://kafka-connect:8083"]),
+            "transfer-frontend": container("transfer-frontend"),
             "addp-nginx": container("addp-nginx", {"80/tcp": [{"HostIp": "127.0.0.1", "HostPort": "18080"}]}),
         }
         docker_json.side_effect = lambda *args: fixtures[args[-1]]
@@ -77,6 +82,16 @@ class ComposePublicOriginOnlineTest(unittest.TestCase):
         self.assertIn("meta-frontend", [call.args[-1] for call in docker_json.call_args_list])
         self.assertIn("manager-backend", [call.args[-1] for call in docker_json.call_args_list])
         self.assertIn("manager-frontend", [call.args[-1] for call in docker_json.call_args_list])
+        self.assertIn("transfer-backend", [call.args[-1] for call in docker_json.call_args_list])
+        self.assertIn("transfer-frontend", [call.args[-1] for call in docker_json.call_args_list])
+        fixtures["transfer-backend"][0]["State"]["Health"]["Status"] = "unhealthy"
+        with self.assertRaises(MODULE.AcceptanceError):
+            MODULE.assert_platform_ports()
+        fixtures["transfer-backend"][0]["State"]["Health"]["Status"] = "healthy"
+        fixtures["transfer-backend"][0]["Config"]["Env"][6] = "INFRA_KAFKA_BOOTSTRAP_SERVERS=localhost:19092"
+        with self.assertRaises(MODULE.AcceptanceError):
+            MODULE.assert_platform_ports()
+        fixtures["transfer-backend"][0]["Config"]["Env"][6] = "INFRA_KAFKA_BOOTSTRAP_SERVERS=redpanda:29092"
         fixtures["manager-backend"][0]["State"]["Health"]["Status"] = "unhealthy"
         with self.assertRaises(MODULE.AcceptanceError):
             MODULE.assert_platform_ports()
