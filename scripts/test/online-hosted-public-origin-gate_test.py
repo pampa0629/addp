@@ -51,8 +51,8 @@ class HostedPublicOriginGateTest(unittest.TestCase):
             #!/usr/bin/env bash
             echo "make:$*" >> "$ADDP_TEST_GATE_TRACE"
             if [ "$1" = test-online ] && [ "${ADDP_TEST_VERIFY_PORT_SCOPE:-0}" = 1 ]; then
-              [ "${MINIO_API_PORT:-}" = 127.0.0.1:19002 ] &&
-                [ "${MINIO_CONSOLE_PORT:-}" = 127.0.0.1:19003 ] || exit 1
+              [[ "${MINIO_API_PORT:-19000}" =~ ^[0-9]+$ ]] &&
+                [[ "${MINIO_CONSOLE_PORT:-19001}" =~ ^[0-9]+$ ]] || exit 1
             fi
             if [ "$1" = build-images ] && [ "${ADDP_TEST_BUILD_FAIL:-0}" = 1 ]; then exit 1; fi
             if [ "$1" = test-online ] && [ "${ADDP_TEST_SUITE_FAIL:-0}" = 1 ]; then exit 1; fi

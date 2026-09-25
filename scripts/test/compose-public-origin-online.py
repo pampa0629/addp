@@ -21,8 +21,8 @@ OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 PUBLIC_PORT = 18080
 
 
-def docker_json(*args: str) -> object:
-    result = subprocess.run(["docker", *args], check=True, capture_output=True, text=True)
+def docker_json(*args: str, env: dict[str, str] | None = None) -> object:
+    result = subprocess.run(["docker", *args], check=True, capture_output=True, text=True, env=env)
     return json.loads(result.stdout)
 
 
@@ -86,7 +86,10 @@ def assert_platform_ports() -> None:
 
 def assert_isolated_groups() -> None:
     runtimes = docker_json("compose", "-f", "docker-compose.runtimes.yml", "config", "--format", "json")
-    business = docker_json("compose", "--env-file", "/dev/null", "-f", "business/docker-compose.yml", "config", "--format", "json")
+    business = docker_json(
+        "compose", "--env-file", "/dev/null", "-f", "business/docker-compose.yml", "config", "--format", "json",
+        env={**os.environ, "MINIO_API_PORT": "127.0.0.1:19002", "MINIO_CONSOLE_PORT": "127.0.0.1:19003"},
+    )
     if runtimes.get("name") != "addp-runtimes" or "geopython-workflow-engine" not in runtimes.get("services", {}):
         raise AcceptanceError("Runtime Compose project is invalid")
     if any(service.get("ports") for service in runtimes["services"].values()):
