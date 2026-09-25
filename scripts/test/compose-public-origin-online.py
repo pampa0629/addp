@@ -64,7 +64,7 @@ def running_container(name: str, project: str = "addp-platform") -> dict[str, ob
 
 def assert_platform_ports() -> None:
     expected = {"system-backend": ("8180/tcp", 8180), "gateway": ("8000/tcp", 8000), "addp-nginx": ("80/tcp", PUBLIC_PORT)}
-    for name in ("system-backend", "gateway", "console", "system-frontend", "meta-backend", "meta-frontend", "manager-backend", "manager-frontend", "transfer-backend", "transfer-frontend", "addp-nginx"):
+    for name in ("system-backend", "gateway", "console", "system-frontend", "meta-backend", "meta-frontend", "manager-backend", "manager-frontend", "transfer-backend", "transfer-frontend", "orchestrator-backend", "orchestrator-frontend", "addp-nginx"):
         container = running_container(name)
         bindings = container["HostConfig"].get("PortBindings") or {}
         if name in expected:
@@ -101,6 +101,12 @@ def assert_platform_ports() -> None:
             for key, value in {"SERVICE_HOST": "transfer-backend", "SYSTEM_URL": "http://system-backend:8180", "META_URL": "http://meta-backend:8082", "POSTGRES_HOST": "postgres", "POSTGRES_DB": "addp_online", "REDIS_HOST": "redis", "INFRA_KAFKA_BOOTSTRAP_SERVERS": "redpanda:29092", "KAFKA_CONNECT_URL": "http://kafka-connect:8083"}.items():
                 if env.get(key) != value:
                     raise AcceptanceError(f"Transfer {key} differs from the internal topology")
+        if name == "orchestrator-backend":
+            if container["State"].get("Health", {}).get("Status") != "healthy":
+                raise AcceptanceError("Orchestrator Backend is not healthy")
+            for key, value in {"SERVICE_HOST": "orchestrator-backend", "SYSTEM_URL": "http://system-backend:8180", "POSTGRES_HOST": "postgres", "POSTGRES_DB": "addp_online", "REDIS_HOST": "redis"}.items():
+                if env.get(key) != value:
+                    raise AcceptanceError(f"Orchestrator {key} differs from the internal topology")
 
 
 def assert_isolated_groups() -> None:
@@ -234,11 +240,13 @@ def main() -> int:
     assert_frontend("/meta/", "/meta/")
     assert_frontend("/manager/", "/manager/")
     assert_frontend("/transfer/", "/transfer/")
+    assert_frontend("/orchestrator/", "/orchestrator/")
     assert_authorized_gateway()
     assert_module_gateway_route("Meta", "/api/v1/meta/engines")
     assert_module_gateway_route("Manager", "/api/v1/manager/engines")
     assert_module_gateway_route("Transfer", "/api/v1/transfer/system-engines")
-    print(json.dumps({"schema_version": "addp.online-suite/v1", "suite": "compose-public-origin", "public_port": PUBLIC_PORT, "frontends": ["console", "system", "meta", "manager", "transfer"], "gateway_auth_context": "passed", "gateway_engine_permission_guard": "passed", "gateway_meta_permission_guard": "passed", "gateway_manager_permission_guard": "passed", "gateway_transfer_permission_guard": "passed", "compose_projects": ["addp-infra", "addp-platform", "addp-runtimes", "business"]}, sort_keys=True))
+    assert_module_gateway_route("Orchestrator", "/api/v1/orchestrator/orchestrations")
+    print(json.dumps({"schema_version": "addp.online-suite/v1", "suite": "compose-public-origin", "public_port": PUBLIC_PORT, "frontends": ["console", "system", "meta", "manager", "transfer", "orchestrator"], "gateway_auth_context": "passed", "gateway_engine_permission_guard": "passed", "gateway_meta_permission_guard": "passed", "gateway_manager_permission_guard": "passed", "gateway_transfer_permission_guard": "passed", "gateway_orchestrator_permission_guard": "passed", "compose_projects": ["addp-infra", "addp-platform", "addp-runtimes", "business"]}, sort_keys=True))
     return 0
 
 

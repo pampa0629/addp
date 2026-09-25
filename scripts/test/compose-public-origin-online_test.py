@@ -44,14 +44,17 @@ class ComposePublicOriginOnlineTest(unittest.TestCase):
         mocked["assert_frontend"].assert_any_call("/meta/", "/meta/")
         mocked["assert_frontend"].assert_any_call("/manager/", "/manager/")
         mocked["assert_frontend"].assert_any_call("/transfer/", "/transfer/")
-        self.assertEqual(mocked["assert_module_gateway_route"].call_count, 3)
+        mocked["assert_frontend"].assert_any_call("/orchestrator/", "/orchestrator/")
+        self.assertEqual(mocked["assert_module_gateway_route"].call_count, 4)
         mocked["assert_module_gateway_route"].assert_any_call("Meta", "/api/v1/meta/engines")
         mocked["assert_module_gateway_route"].assert_any_call("Manager", "/api/v1/manager/engines")
         mocked["assert_module_gateway_route"].assert_any_call("Transfer", "/api/v1/transfer/system-engines")
+        mocked["assert_module_gateway_route"].assert_any_call("Orchestrator", "/api/v1/orchestrator/orchestrations")
         report = json.loads(output.getvalue())
-        self.assertEqual(report["frontends"], ["console", "system", "meta", "manager", "transfer"])
+        self.assertEqual(report["frontends"], ["console", "system", "meta", "manager", "transfer", "orchestrator"])
         self.assertEqual(report["gateway_manager_permission_guard"], "passed")
         self.assertEqual(report["gateway_transfer_permission_guard"], "passed")
+        self.assertEqual(report["gateway_orchestrator_permission_guard"], "passed")
 
     @patch.object(MODULE, "docker_json")
     def test_production_compose_publishes_only_one_loopback_entry(self, docker_json):
@@ -74,6 +77,8 @@ class ComposePublicOriginOnlineTest(unittest.TestCase):
             "manager-frontend": container("manager-frontend"),
             "transfer-backend": container("transfer-backend", env=["SERVICE_HOST=transfer-backend", "SYSTEM_URL=http://system-backend:8180", "META_URL=http://meta-backend:8082", "POSTGRES_HOST=postgres", "POSTGRES_DB=addp_online", "REDIS_HOST=redis", "INFRA_KAFKA_BOOTSTRAP_SERVERS=redpanda:29092", "KAFKA_CONNECT_URL=http://kafka-connect:8083"]),
             "transfer-frontend": container("transfer-frontend"),
+            "orchestrator-backend": container("orchestrator-backend", env=["SERVICE_HOST=orchestrator-backend", "SYSTEM_URL=http://system-backend:8180", "POSTGRES_HOST=postgres", "POSTGRES_DB=addp_online", "REDIS_HOST=redis"]),
+            "orchestrator-frontend": container("orchestrator-frontend"),
             "addp-nginx": container("addp-nginx", {"80/tcp": [{"HostIp": "127.0.0.1", "HostPort": "18080"}]}),
         }
         docker_json.side_effect = lambda *args: fixtures[args[-1]]
@@ -84,6 +89,16 @@ class ComposePublicOriginOnlineTest(unittest.TestCase):
         self.assertIn("manager-frontend", [call.args[-1] for call in docker_json.call_args_list])
         self.assertIn("transfer-backend", [call.args[-1] for call in docker_json.call_args_list])
         self.assertIn("transfer-frontend", [call.args[-1] for call in docker_json.call_args_list])
+        self.assertIn("orchestrator-backend", [call.args[-1] for call in docker_json.call_args_list])
+        self.assertIn("orchestrator-frontend", [call.args[-1] for call in docker_json.call_args_list])
+        fixtures["orchestrator-backend"][0]["State"]["Health"]["Status"] = "unhealthy"
+        with self.assertRaises(MODULE.AcceptanceError):
+            MODULE.assert_platform_ports()
+        fixtures["orchestrator-backend"][0]["State"]["Health"]["Status"] = "healthy"
+        fixtures["orchestrator-backend"][0]["Config"]["Env"][0] = "SERVICE_HOST=127.0.0.1"
+        with self.assertRaises(MODULE.AcceptanceError):
+            MODULE.assert_platform_ports()
+        fixtures["orchestrator-backend"][0]["Config"]["Env"][0] = "SERVICE_HOST=orchestrator-backend"
         fixtures["transfer-backend"][0]["State"]["Health"]["Status"] = "unhealthy"
         with self.assertRaises(MODULE.AcceptanceError):
             MODULE.assert_platform_ports()
@@ -124,6 +139,15 @@ class ComposePublicOriginOnlineTest(unittest.TestCase):
         MODULE.assert_module_gateway_route("Manager", "/api/v1/manager/engines")
         self.assertEqual(request.call_count, 2)
         request.assert_any_call("/api/v1/manager/engines", "test-token")
+        sleep.assert_called_once()
+
+    @patch("time.sleep")
+    @patch.object(MODULE, "request")
+    def test_orchestrator_route_reaches_owner_permission_guard(self, request, sleep):
+        request.side_effect = [(503, b"{}", "application/json"), (403, b"{}", "application/json")]
+        MODULE.assert_module_gateway_route("Orchestrator", "/api/v1/orchestrator/orchestrations")
+        self.assertEqual(request.call_count, 2)
+        request.assert_any_call("/api/v1/orchestrator/orchestrations", "test-token")
         sleep.assert_called_once()
 
     @patch.object(MODULE, "docker_json")
