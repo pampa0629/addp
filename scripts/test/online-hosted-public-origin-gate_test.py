@@ -26,7 +26,20 @@ class HostedPublicOriginGateTest(unittest.TestCase):
             if [ "$1 $2" = "container inspect" ]; then
               [ "${ADDP_TEST_EXISTING_CONTAINER:-}" = "$3" ]; exit
             fi
+            if [ "$1 $2" = "inspect -f" ]; then
+              printf '%s\n' true
+              exit 0
+            fi
+            if [ "$1 $2" = "volume ls" ] && [ "${ADDP_TEST_EXISTING_PROJECT_VOLUME:-}" = business ] &&
+               [[ "$*" == *"com.docker.compose.project=business"* ]]; then
+              printf '%s\n' retained-business-volume
+              exit 0
+            fi
             echo "docker:$*" >> "$ADDP_TEST_GATE_TRACE"
+            if [ "${ADDP_TEST_RUNTIME_UP_FAIL:-0}" = 1 ] &&
+               [[ "$*" == *"up -d --no-deps --wait --wait-timeout 180 geopython-workflow-engine"* ]]; then
+              exit 1
+            fi
             exit 0
         ''')
         self.host._executable("curl", "#!/usr/bin/env bash\nexit 0\n")
@@ -50,22 +63,29 @@ class HostedPublicOriginGateTest(unittest.TestCase):
                               cwd=self.host.repository, env=env, capture_output=True, text=True, timeout=20)
 
     def test_preflight_refuses_existing_app_and_personal_environment(self):
-        for override in ({"ADDP_TEST_EXISTING_CONTAINER": "registry"}, {"GITHUB_ACTIONS": "false"}, {"RUNNER_OS": "macOS"}):
+        for override in ({"ADDP_TEST_EXISTING_CONTAINER": "registry"}, {"ADDP_TEST_EXISTING_PROJECT_VOLUME": "business"}, {"GITHUB_ACTIONS": "false"}, {"RUNNER_OS": "macOS"}):
             with self.subTest(override=override):
                 result = self.run_gate(check=True, **override)
                 self.assertNotEqual(result.returncode, 0)
-                self.assertFalse(self.host.trace.exists())
+                trace = self.host.trace.read_text() if self.host.trace.exists() else ""
+                self.assertNotIn("infra-up", trace)
+                self.assertNotIn("up -d", trace)
+                self.host.trace.unlink(missing_ok=True)
 
-    def test_builds_five_real_images_and_cleans_owned_topology(self):
+    def test_builds_platform_and_runtime_images_and_cleans_owned_projects(self):
         result = self.run_gate()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         trace = self.host.trace.read_text()
         for step in (
             "infra-up", "make:build BUILD_ARGS=--arch amd64 --services system-backend,gateway",
-            "make:build-images IMAGE_BUILD_ARGS=--verify --services system-backend,gateway,console,system-frontend,nginx",
+            "make:build-images IMAGE_BUILD_ARGS=--verify --services system-backend,gateway,console,system-frontend,nginx,geopython-workflow-engine",
             "make:test-online ONLINE_SUITE=compose-public-origin", "docker:compose -f", "docker:rm -fv addp-online-public-origin-upstreams registry", "infra-down",
+            "docker:compose -f " + str(self.host.repository / "docker-compose.runtimes.yml") + " up -d --no-deps --wait --wait-timeout 180 geopython-workflow-engine",
+            "docker:compose --env-file /dev/null -f " + str(self.host.repository / "business/docker-compose.yml") + " up -d --no-deps --wait --wait-timeout 180 minio",
         ):
             self.assertIn(step, trace)
+        self.assertLess(trace.index("make:test-online ONLINE_SUITE=compose-public-origin"), trace.index("business/docker-compose.yml down --remove-orphans --volumes"))
+        self.assertLess(trace.index("business/docker-compose.yml down --remove-orphans --volumes"), trace.index("docker-compose.runtimes.yml down --remove-orphans --volumes"))
         self.assertFalse(self.host.secrets.exists())
         self.assertIn("infra_cleanup=zero_residuals", (self.host.artifacts / "summary.txt").read_text())
 
@@ -74,6 +94,8 @@ class HostedPublicOriginGateTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         trace = self.host.trace.read_text()
         self.assertIn("down --remove-orphans --volumes", trace)
+        self.assertIn("docker-compose.runtimes.yml down --remove-orphans --volumes", trace)
+        self.assertIn("business/docker-compose.yml down --remove-orphans --volumes", trace)
         self.assertIn("docker:rm -fv addp-online-public-origin-upstreams registry", trace)
         self.assertIn("infra-down", trace)
         self.assertFalse(self.host.secrets.exists())
@@ -84,6 +106,15 @@ class HostedPublicOriginGateTest(unittest.TestCase):
         trace = self.host.trace.read_text()
         self.assertNotIn("up -d --no-deps", trace)
         self.assertIn("docker:rm -fv addp-online-public-origin-upstreams registry", trace)
+        self.assertIn("infra-down", trace)
+        self.assertFalse(self.host.secrets.exists())
+
+    def test_runtime_start_failure_cleans_every_owned_project(self):
+        result = self.run_gate(ADDP_TEST_RUNTIME_UP_FAIL="1")
+        self.assertNotEqual(result.returncode, 0)
+        trace = self.host.trace.read_text()
+        for project_file in ("docker-compose.runtimes.yml", "business/docker-compose.yml", "docker-compose.yml"):
+            self.assertIn(project_file + " down --remove-orphans --volumes", trace)
         self.assertIn("infra-down", trace)
         self.assertFalse(self.host.secrets.exists())
 

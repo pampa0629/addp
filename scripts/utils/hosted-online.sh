@@ -97,8 +97,16 @@ verify_empty_infra() {
 verify_empty_infra || fail "refusing existing or unverifiable addp-infra containers, networks or volumes"
 for hosted_project in "${HOSTED_FIXTURE_COMPOSE_PROJECTS[@]:-}"; do
   [ -n "$hosted_project" ] || continue
-  [ -z "$(docker ps -aq --filter "label=com.docker.compose.project=$hosted_project")" ] ||
+  hosted_remaining=$(docker ps -aq --filter "label=com.docker.compose.project=$hosted_project") ||
+    fail "cannot inspect Compose project: $hosted_project"
+  [ -z "$hosted_remaining" ] ||
     fail "refusing existing Compose project: $hosted_project"
+  for kind in network volume; do
+    hosted_remaining=$(docker "$kind" ls -q --filter "label=com.docker.compose.project=$hosted_project") ||
+      fail "cannot inspect Compose project $kind: $hosted_project"
+    [ -z "$hosted_remaining" ] ||
+      fail "refusing existing Compose project $kind: $hosted_project"
+  done
 done
 for fixture_image in "${HOSTED_FIXTURE_IMAGES[@]:-}"; do
   [ -n "$fixture_image" ] || continue
