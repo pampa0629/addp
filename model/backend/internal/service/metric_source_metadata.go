@@ -49,8 +49,10 @@ func (s *MetricImplementationService) metricSourceMetadata(ctx context.Context, 
 	ids := map[int64]bool{item.FactTableID: true}
 	relationIDs := metricContractRelationIDs(contract)
 	var relations []models.TableRelation
-	if err := s.repo.DB().WithContext(ctx).Where("tenant_id = ? AND source_table = ? AND id IN ?", item.TenantID, item.FactTableID, relationIDs).Find(&relations).Error; err != nil {
-		return nil, err
+	if len(relationIDs) > 0 {
+		if err := s.repo.DB().WithContext(ctx).Where("tenant_id = ? AND source_table = ? AND id IN ?", item.TenantID, item.FactTableID, relationIDs).Find(&relations).Error; err != nil {
+			return nil, err
+		}
 	}
 	if len(relations) != len(relationIDs) {
 		return nil, invalidRequest()
@@ -127,6 +129,9 @@ func metricMetadataIncomplete() error {
 	return apperrors.Validation("metric_metadata_incomplete", i18n.MsgMetricMetadataIncomplete)
 }
 func metricContractRelationIDs(c models.MetricContract) []int64 {
+	if c.Operation == "sum_decimal_by_group" {
+		return nil
+	}
 	ids := map[int64]metricPlanRelation{c.SubjectRelationID: {}}
 	refs := []models.MetricFieldReference{c.Subject, c.Distinct, c.Time}
 	for _, f := range c.Filters {

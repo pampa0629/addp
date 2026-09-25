@@ -391,7 +391,11 @@ func (b *relationBuilder) visit(id plan.NodeID) (err error) {
 				preCols = append(preCols, x.SQL+" AS "+b.q(alias))
 				value = b.q(pre) + "." + b.q(alias)
 			}
-			aggCols = append(aggCols, "COUNT("+value+") AS "+b.q(alias))
+			function := "COUNT"
+			if m.Op == "sum_decimal" {
+				function = "SUM"
+			}
+			aggCols = append(aggCols, function+"("+value+") AS "+b.q(alias))
 		}
 		checkInput(b.ref(a.Input))
 		if len(preCols) == 0 {
@@ -408,8 +412,18 @@ func (b *relationBuilder) visit(id plan.NodeID) (err error) {
 			return err
 		}
 		for i, m := range a.Measures {
-			value := b.expression.CastDecimal(b.q(agg)+"."+b.q("m"+strconv.Itoa(i)), 38, 18)
-			x, err := LosslessInteger(CheckedExpression{SQL: value, Type: datatype.FieldTypeDecimal}, b.expression)
+			value := b.q(agg) + "." + b.q("m"+strconv.Itoa(i))
+			if m.Op == "sum_decimal" {
+				valid := "(" + value + " >= -" + decimalMax + " AND " + value + " <= " + decimalMax + ")"
+				safe := "CASE WHEN " + valid + " THEN " + b.expression.CastDecimal(value, 38, 18) + " ELSE " + b.expression.CastDecimal("NULL", 38, 18) + " END"
+				if err := track(CheckedExpression{SQL: safe, Invalid: "(" + value + " IS NOT NULL AND NOT " + valid + ")"}); err != nil {
+					return err
+				}
+				output = append(output, safe+" AS "+b.q(m.Name))
+				invalid = append(invalid, "("+value+" IS NOT NULL AND NOT "+valid+")")
+				continue
+			}
+			x, err := LosslessInteger(CheckedExpression{SQL: b.expression.CastDecimal(value, 38, 18), Type: datatype.FieldTypeDecimal}, b.expression)
 			if err != nil {
 				return err
 			}

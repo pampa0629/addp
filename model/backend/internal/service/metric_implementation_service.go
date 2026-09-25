@@ -480,13 +480,20 @@ func resolveMetricPlan(tx *gorm.DB, item *models.MetricImplementation, contract 
 		return plugin.AnalyticalPlanPackage{}, nil, "", err
 	}
 	refs := []models.MetricFieldReference{contract.Subject, contract.Distinct, contract.Time}
+	ids := map[int64]bool{contract.SubjectRelationID: true}
+	if contract.Operation == "sum_decimal_by_group" {
+		if contract.Group == nil || contract.Measure == nil {
+			return plugin.AnalyticalPlanPackage{}, nil, "", invalidRequest()
+		}
+		refs = []models.MetricFieldReference{*contract.Group, *contract.Measure}
+		ids = map[int64]bool{}
+	}
 	if contract.SubjectLabel != nil {
 		refs = append(refs, *contract.SubjectLabel)
 	}
 	for _, filter := range contract.Filters {
 		refs = append(refs, filter.Field)
 	}
-	ids := map[int64]bool{contract.SubjectRelationID: true}
 	for _, ref := range refs {
 		if ref.RelationID > 0 {
 			ids[ref.RelationID] = true
@@ -497,8 +504,10 @@ func resolveMetricPlan(tx *gorm.DB, item *models.MetricImplementation, contract 
 	for id := range ids {
 		relationIDs = append(relationIDs, id)
 	}
-	if err := tx.Where("id IN ? AND tenant_id = ? AND source_table = ?", relationIDs, item.TenantID, item.FactTableID).Order("target_table, id").Find(&relations).Error; err != nil {
-		return plugin.AnalyticalPlanPackage{}, nil, "", err
+	if len(relationIDs) > 0 {
+		if err := tx.Where("id IN ? AND tenant_id = ? AND source_table = ?", relationIDs, item.TenantID, item.FactTableID).Order("target_table, id").Find(&relations).Error; err != nil {
+			return plugin.AnalyticalPlanPackage{}, nil, "", err
+		}
 	}
 	if len(relations) != len(ids) {
 		return plugin.AnalyticalPlanPackage{}, nil, "", invalidRequest()
@@ -579,6 +588,9 @@ func resolveMetricPlan(tx *gorm.DB, item *models.MetricImplementation, contract 
 }
 
 func metricPlanSignature(operation string) ([]commonClient.ModelMetricParameter, []datatype.FieldInfo, []string) {
+	if operation == "sum_decimal_by_group" {
+		return nil, []datatype.FieldInfo{{Name: "group_key", Type: datatype.FieldTypeString}, {Name: "value", Type: datatype.FieldTypeDecimal}}, []string{"group_key"}
+	}
 	parameters := []commonClient.ModelMetricParameter{{Name: "subject_id", Type: datatype.FieldTypeString, Required: true}, {Name: "start_date", Type: datatype.FieldTypeDate, Required: true}, {Name: "end_date", Type: datatype.FieldTypeDate, Required: true}, {Name: "grain", Type: datatype.FieldTypeString, Required: true, Options: metricParameterOptions("grain")}}
 	fields := []datatype.FieldInfo{{Name: "subject_id", Type: datatype.FieldTypeString, Nullable: false}, {Name: "bucket", Type: datatype.FieldTypeDate, Nullable: false}, {Name: "value", Type: datatype.FieldTypeBigInt, Nullable: false}}
 	keys := []string{"subject_id", "bucket"}

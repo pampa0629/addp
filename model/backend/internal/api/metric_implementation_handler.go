@@ -273,7 +273,7 @@ func (h *MetricImplementationHandler) Delete(c *gin.Context) {
 // @Accept json
 // @Param body body models.MetricPlanRequest true "计划参数 | Plan parameters"
 // @Summary 读取已发布指标计算计划 | Read published metric computation plan
-// @Description result_kind=details 读取同修订去重明细；省略读取汇总。 | result_kind=details selects distinct members of the same revision; omission selects summary.
+// @Description result_kind=details 读取同修订去重明细；省略读取汇总。sum_decimal_by_group 无查询参数，input 应省略。 | result_kind=details selects distinct members of the same revision; omission selects summary. sum_decimal_by_group has no query parameters; omit input.
 // @Tags Model
 // @Produce json
 // @Param id path int true "指标实现 ID | Metric implementation ID"

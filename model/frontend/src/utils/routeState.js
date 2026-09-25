@@ -93,6 +93,20 @@ export const resolveDimensionalModelRouteState = (routeQuery = {}) => {
   return { domainId, tableId, query, changed: !queriesEqual(routeQuery, query) }
 }
 
+export const buildMetricImplementationListRouteQuery = ({ sourceDomainId, factTableId }) => {
+  const query = {}
+  if (sourceDomainId) query.source_domain_id = String(sourceDomainId)
+  if (factTableId) query.fact_table_id = String(factTableId)
+  return query
+}
+
+export const resolveMetricImplementationListRouteState = (routeQuery = {}) => {
+  const sourceDomainId = positiveInteger(routeQuery.source_domain_id, null)
+  const factTableId = positiveInteger(routeQuery.fact_table_id, null)
+  const query = buildMetricImplementationListRouteQuery({ sourceDomainId, factTableId })
+  return { sourceDomainId, factTableId, query, changed: !queriesEqual(routeQuery, query) }
+}
+
 export const resolveLogicalTableDetailRouteState = (routeQuery = {}, tableType) => {
   const query = resolveLogicalTableListRouteState(routeQuery).query
   const supportsRelations = tableType === 'fact' || tableType === 'dimension'

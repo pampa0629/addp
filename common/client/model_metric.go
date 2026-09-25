@@ -108,7 +108,10 @@ func (c *ModelClient) GetMetricPlan(ctx context.Context, id, revisionID int64, i
 		return nil, errors.New("metric plan requires tenant and revision identity")
 	}
 	var plan ModelMetricPlan
-	request := map[string]any{"input": input, "result_kind": resultKind}
+	request := map[string]any{"result_kind": resultKind}
+	if len(input) > 0 {
+		request["input"] = input
+	}
 	path := fmt.Sprintf("/api/v1/model/metric-implementations/%d/revisions/%d/plan", id, revisionID)
 	if err := c.doJSON(ctx, http.MethodPost, path, request, &plan); err != nil {
 		return nil, err

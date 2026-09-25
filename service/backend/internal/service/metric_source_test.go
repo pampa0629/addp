@@ -131,6 +131,65 @@ func testMetricServiceBinding(t *testing.T, engineType, kind string) {
 	}
 }
 
+func TestParameterlessGroupedMetricPublishesAndExecutesThroughFrozenPlan(t *testing.T) {
+	frozen, engine := metricServiceFixture(t, "postgresql")
+	fields := []datatype.FieldInfo{{Name: "group_key", Type: datatype.FieldTypeString}, {Name: "value", Type: datatype.FieldTypeDecimal, Precision: 38, Scale: 18}}
+	logical := queryplan.Plan{SchemaVersion: queryplan.SchemaVersion, SemanticProfile: queryplan.SemanticProfile,
+		Nodes: []queryplan.Node{{ID: "rows", Op: "constant_rows", ConstantRows: &queryplan.ConstantRows{Fields: fields, Rows: [][]queryplan.Literal{{{Type: datatype.FieldTypeString, Text: "长沙"}, {Type: datatype.FieldTypeDecimal, Text: "3.75"}}}}}},
+		Root:  "rows", Output: queryplan.OutputContract{Fields: fields, StableKey: []string{"group_key"}}}
+	capability := plugin.AnalyticalCapability{Supported: true, PlanVersions: []string{queryplan.SchemaVersion}, SemanticProfiles: []string{queryplan.SemanticProfile}}
+	var err error
+	frozen.ExecutionPlan, err = plugin.NewAnalyticalPlanPackage(plugin.CompileRequest{Plan: logical, Instance: plugin.AnalyticalInstance{EngineID: 2, Capability: capability}}, (&postgresql.PostgreSQLPlugin{}).AnalyticalCompiler())
+	if err != nil {
+		t.Fatal(err)
+	}
+	frozen.ParameterLabels = nil
+	frozen.ParameterPresentation = nil
+	if err := frozen.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.HasSuffix(r.URL.Path, "/plan") {
+			var request struct {
+				Input json.RawMessage `json:"input"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil || len(request.Input) != 0 {
+				t.Errorf("parameterless Model request: input=%s err=%v", request.Input, err)
+			}
+			requests++
+			_ = json.NewEncoder(w).Encode(frozen)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(engine)
+	}))
+	defer server.Close()
+	tokens := commonclient.ServiceTokenProviderFunc(func(context.Context, uint) (string, error) { return "addp_at_test", nil })
+	owner := commonclient.NewModelClient(server.URL, tokens, server.Client())
+	publisher := NewQueryServiceService(nil, commonclient.NewSystemClient(server.URL, tokens), nil, "")
+	publisher.SetModelClient(owner)
+	binding, err := publisher.resolveMetricSource(t.Context(), &models.CreateQueryServiceRequest{ConfigType: "analytical", MetricSource: &models.MetricSourceRequest{ImplementationID: 3, RevisionID: 7}}, 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot := &models.QueryServiceDependencySnapshot{CapturedAt: time.Now(), MetricSource: binding}
+	snapshot.DependencyHash = queryServiceDependencyHash(snapshot)
+	service := &models.QueryService{ID: 71, TenantID: 7, ConfigType: "analytical", MaxFeatures: 10, Status: "active", DataConfig: models.JSONB{models.QueryServiceSourceSnapshotKey: queryServiceSnapshotPayload(snapshot)}}
+	executor := &QueryExecutorService{}
+	executor.SetModelClient(owner)
+	if err := executor.validateMetricSource(t.Context(), service, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := executor.validateMetricSource(t.Context(), service, map[string]interface{}{"unexpected": 1}); err == nil {
+		t.Fatal("undeclared parameter accepted")
+	}
+	query, request, err := compileAnalyticalQuery(service, &models.QueryExecutionRequest{Page: models.QueryPageRequest{Limit: 10}}, queryProtocolREST, engine.AsEngine(), newQueryTokenCodec([]byte(strings.Repeat("k", 32))))
+	if err != nil || query == nil || request.Query == "" || requests != 2 {
+		t.Fatalf("parameterless query=%#v request=%#v calls=%d err=%v", query, request, requests, err)
+	}
+}
+
 func metricServiceFixture(t *testing.T, engineType string) (commonclient.ModelMetricPlan, commonmodels.EngineRuntimeDescriptor) {
 	t.Helper()
 	var provider interface {

@@ -143,9 +143,11 @@ Model 遵循平台 API 规范中的资源并发版本规则。`Entity`、`Logica
 
 MetricImplementation 使用稳定身份与不可变修订，稳定身份保存来源事实表、指标定义身份、名称和自身 `version`；修订保存指标定义发布修订、结构化 `contract`、依赖快照及 hash。修订状态为 `draft|published|withdrawn`，同一实现最多一个草稿。已发布内容不可修改；撤回后拒绝新执行。未发布身份可删除，曾发布身份保留。旧 `source_config/dimension_config/filter_config/expression_config` 和 `active|disabled` 写路径删除。
 
-首期 `contract.operation=count_distinct`；`subject/distinct/time` 使用 `{field_id, relation_id}` 引用，`relation_id=0` 只表示来源事实自身。`subject_relation_id` 指向主体维度唯一主键，用于区分不存在主体与零活动。`filters` 只接受 `{field,value:boolean}` 固定条件，不接受 SQL。时间字段必须为 DATE。输出为 `subject_id,bucket,value`；查询参数为 `subject_id,start_date,end_date,grain`，粒度仅 `month|total`，时间左闭右开，最多 120 个相交月份。月查询对已存在主体补零，不存在主体返回空结果。编译目标由来源引擎的 AnalyticalCompilerProvider 决定，缺少能力时明确拒绝。
+`contract.operation=count_distinct`；`subject/distinct/time` 使用 `{field_id, relation_id}` 引用，`relation_id=0` 只表示来源事实自身。`subject_relation_id` 指向主体维度唯一主键，用于区分不存在主体与零活动。`filters` 只接受 `{field,value:boolean}` 固定条件，不接受 SQL。时间字段必须为 DATE。输出为 `subject_id,bucket,value`；查询参数为 `subject_id,start_date,end_date,grain`，粒度仅 `month|total`，时间左闭右开，最多 120 个相交月份。月查询对已存在主体补零，不存在主体返回空结果。编译目标由来源引擎的 AnalyticalCompilerProvider 决定，缺少能力时明确拒绝。
 
 `contract.operation=directional_overlap` 复用同一事实来源、主体字段、主体维度、集合成员去重字段与 DATE 字段；两个人员角色共享字段映射，角色由必填 `subject_id` 和 `comparison_id` 明确绑定。此操作不接受额外固定过滤，避免把主领队过滤或未定义作用范围的条件带入参加活动集合。额外必填参数 `directions=forward|both` 选择单方向或交换角色的双向组合；两者共用一次 PreparedQuery 执行和同一快照。任一人员不存在时整次结果为空；人员存在但集合为空时对应方向为 0；同人非空为 1。
+
+`contract.operation=sum_decimal_by_group` 表示当前来源事实表的静态快照，`group` 与 `measure` 都引用该事实表字段，分别要求 string 与 DECIMAL(38,18)，不声明主体维度、去重对象、日期、查询参数或明细结果。Model 排除 NULL 分组键，对入选行的 NULL 度量报质量错误；空字符串仍是合法且不同于其他字符串的键，需要排除时应在确定的上游来源中完成。输出 `group_key,value`，其中 `value` 为精确 decimal 和，分组键为非空稳定键，空来源返回空结果；求和越界由通用计划求值错误阻断。面积等单位与数据准备方法归 Standard 指标定义及来源加工所有，Model 只绑定已准备的数值字段，不注入 PostGIS 或其他数据库函数。首个耕地样例应使用 EPSG:32650 投影平面几何面积，先由来源加工产出平方米 decimal 字段；既有 `SHAPE_Area` 是经纬度平面面积，不能作为平方米口径。
 
 双向结果每方向每个时间桶一行，输出 `direction,subject_id,comparison_id,bucket,value,subject_count,comparison_count,shared_count`；`direction=forward|reverse` 区分有序角色，即使两个人相同也保持唯一行键 `direction,bucket`。`value` 为未按展示精度提前舍入的 decimal 比例，三个 count 为解释字段，不另建指标。月份比例和全期比例各自从范围内集合计算。先分别去重形成双方完整集合，再计算交集和分母，禁止从内连接结果统计分母。质量检查覆盖两个人员。
 
@@ -269,6 +271,7 @@ Cleanup 是内部强制生命周期写入，不从外部请求接收 `version`�
 - `GET /logical-tables/:id/dimension-relations` 对事实表返回出向关系，对维度表返回入向关系；仍只读 Model 本地事实。`PUT /logical-tables/:id/dimension-relations/:rid` 完整提交目标维度、两端字段、关系类型及事实表版本，保持关系 ID；与新增、删除共用父版本与事务校验。禁止通过删除后重建模拟编辑。
 - 维度建模以事实表为中心展示维度关联、度量与指标实现，图标题统一为“模型关系图”。业务域复用 Standard 的 Domain 和 LogicalTable.domain_id；筛选仅约束左侧事实表，已选事实表的跨域维度关系及可关联维度不受该筛选裁剪。事实表详情展示归属业务域。
 - 维度建模沿用唯一公开路由 `/modeling/star-schema`；`domain_id` 正整数表示指定业务域，省略表示全部业务域（包含未归属表），`table_id` 表示当前事实表。切换域时清除不属于新域的当前事实表；刷新及浏览器前进/后退恢复同一筛选和选择，不自动选择其他事实表。
+- 指标实现不另存业务域：当前来源业务域取来源事实表的 `domain_id`，指标定义的适用范围与归属业务域仍由 Standard 拥有，两者允许不同。指标实现全局列表分别显示来源业务域和指标定义的适用范围/归属域，并可按当前来源事实表业务域筛选；筛选只影响查找，不限制跨域引用、执行或权限。来源域筛选保存在列表路由 `source_domain_id` 中，省略表示全部（包括未归属事实表），正整数表示精确域；缺少当前 Standard 展示信息时明确提示不可用，不推断历史修订的归属。
 - 维度建模前端变更复用 `make test-model-frontend` 和 `make test-console-frontend`，由现有前端 CI 自动发现执行，不新增测试入口。
 - ER 图无业务域上下文时先选域；`domain_id=all` 显式进入全域总览，正整数表示指定域，省略表示未选择。`related=1` 仅在指定域时展开一跳跨域关系，两端实体必须存在；外域实体标注业务域。实体列表进入 ER 图保留当前域。Mermaid 导出复用当前业务域或显式全域选择；导入从 Markdown 文档元数据读取范围，先预览再增量创建，不覆盖或删除现有模型。
 - 编排流程统一从 Orchestrator 进入；逻辑表详情物理目标页签的执行记录按钮只展示该表的建表执行。

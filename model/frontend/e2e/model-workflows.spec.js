@@ -964,6 +964,80 @@ async function installMockBackend(target, options = {}) {
   }
 }
 
+test('metric implementations distinguish source domain from definition ownership', async ({ page }) => {
+  await installMockBackend(page, { permissions: [...DEFAULT_PERMISSIONS, 'model.metric_implementation.read'] })
+  const facts = [
+    { id: 1, name: '客户事实', domain_id: 1, table_type: 'fact', status: 'approved' },
+    { id: 3, name: '户外事实', domain_id: 2, table_type: 'fact', status: 'approved' },
+    { id: 9, name: '公共事实', domain_id: null, table_type: 'fact', status: 'approved' }
+  ]
+  await page.route('**/api/v1/model/logical-tables?**', route => fulfillJSON(route, { data: facts, total: facts.length }))
+  await page.route('**/api/v1/standard/metrics?**', route => fulfillJSON(route, { data: [
+    { id: 10, code: 'cross_domain', scope_type: 'domain', owner_domain_id: 1, current_revision: { name: '跨域定义' } },
+    { id: 11, code: 'customer_metric', scope_type: 'domain', owner_domain_id: 1, current_revision: { name: '客户定义' } },
+    { id: 12, code: 'common_metric', scope_type: 'tenant_common', current_revision: { name: '公共定义' } }
+  ], total: 3 }))
+  await page.route('**/api/v1/model/metric-implementations', route => fulfillJSON(route, [
+    { id: 201, name: '跨域指标', fact_table_id: 3, metric_definition_id: 10 },
+    { id: 202, name: '客户指标', fact_table_id: 1, metric_definition_id: 11 },
+    { id: 203, name: '公共指标', fact_table_id: 9, metric_definition_id: 12 }
+  ]))
+
+  await page.goto('/metric-implementations?source_domain_id=2')
+  const row = page.getByRole('row').filter({ hasText: '跨域指标' })
+  await expect(row).toBeVisible()
+  await expect(row.getByRole('cell')).toHaveText(['跨域指标', '户外事实', '户外域', '客户域'])
+  await expect(page.getByText('客户指标', { exact: true })).toHaveCount(0)
+  await page.reload()
+  await expect(row).toBeVisible()
+  await page.locator('.metric-domain-filter .el-select').click()
+  await page.getByRole('option', { name: '全部来源业务域' }).click()
+  await expect(page).toHaveURL(/\/metric-implementations$/)
+  await expect(page.getByRole('row').filter({ hasText: '公共指标' }).getByRole('cell')).toHaveText(['公共指标', '公共事实', '未归属业务域', '租户公共'])
+  await page.route('**/api/v1/standard/domains', route => fulfillJSON(route, { error: '不可用' }, 503))
+  await page.goto('/metric-implementations?source_domain_id=2')
+  await expect(page.getByRole('alert').filter({ hasText: '引用数据暂不可用' })).toBeVisible()
+  await page.locator('.metric-domain-filter .el-select').click()
+  await page.getByRole('option', { name: '全部来源业务域' }).click()
+  await expect(page).toHaveURL(/\/metric-implementations$/)
+})
+
+test('grouped decimal metric saves only fact group and measure references', async ({ page }) => {
+  await installMockBackend(page, { permissions: [...DEFAULT_PERMISSIONS, 'model.metric_implementation.read', 'model.metric_implementation.update'] })
+  const fact = { id: 3, name: '耕地图斑事实', domain_id: 2, table_type: 'fact', status: 'approved' }
+  const definition = { id: 12, code: 'farmland_area', scope_type: 'domain', owner_domain_id: 2, current_revision: { name: '耕地面积' } }
+  const item = { id: 77, name: '城市耕地面积', fact_table_id: 3, metric_definition_id: 12, version: 1, revisions: [] }
+  let saved
+  await page.route('**/api/v1/model/logical-tables?**', route => fulfillJSON(route, { data: [fact], total: 1 }))
+  await page.route('**/api/v1/standard/metrics?**', route => fulfillJSON(route, { data: [definition], total: 1 }))
+  await page.route('**/api/v1/model/metric-implementations/77', route => fulfillJSON(route, item))
+  await page.route('**/api/v1/model/logical-tables/3/fields', route => fulfillJSON(route, [
+    { id: 21, name: '城市', column_name: 'city', data_type: 'string' },
+    { id: 22, name: '面积（平方米）', column_name: 'area_m2', data_type: 'decimal' },
+    { id: 23, name: '图斑日期', column_name: 'snapshot_date', data_type: 'date' }
+  ]))
+  await page.route('**/api/v1/model/logical-tables/3/dimension-relations', route => fulfillJSON(route, []))
+  await page.route('**/api/v1/standard/metrics/12/revisions', route => fulfillJSON(route, [{ id: 120, revision_no: 1, name: '耕地面积', status: 'published' }]))
+  await page.route('**/api/v1/model/metric-implementations/77/draft', async route => {
+    saved = route.request().postDataJSON()
+    return fulfillJSON(route, { ...item, version: 2, revisions: [{ id: 78, revision_no: 1, status: 'draft', metric_definition_revision_id: 120, contract: saved.contract }] })
+  })
+  await page.goto('/metric-implementations/77')
+  await page.locator('.el-form-item').filter({ hasText: '计算方式' }).locator('.el-select').click()
+  await page.getByRole('option', { name: '按分组求和' }).click()
+  await expect(page.getByText('按当前来源快照分组', { exact: false })).toBeVisible()
+  await page.locator('.el-form-item').filter({ hasText: '选择定义修订' }).locator('.el-select').click()
+  await page.getByRole('option', { name: '耕地面积 · R1' }).click()
+  await page.locator('.el-form-item').filter({ hasText: '分组字段' }).locator('.el-select').click()
+  await page.getByRole('option', { name: '耕地图斑事实 · 城市 (city)' }).click()
+  await page.locator('.el-form-item').filter({ hasText: '十进制度量字段' }).locator('.el-select').click()
+  await page.getByRole('option', { name: '耕地图斑事实 · 面积（平方米） (area_m2)' }).click()
+  await page.getByRole('button', { name: '保存并校验草稿' }).click()
+  await expect.poll(() => saved).toEqual({ version: 1, metric_definition_revision_id: 120, contract: {
+    operation: 'sum_decimal_by_group', group: { relation_id: 0, field_id: 21 }, measure: { relation_id: 0, field_id: 22 }
+  } })
+})
+
 async function fulfillJSON(route, body, status = 200) {
   await route.fulfill({
     status,

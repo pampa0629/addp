@@ -10,7 +10,9 @@ import {
   resolveLogicalTableListRouteState,
   resolveERDiagramRouteState,
   buildDimensionalModelRouteQuery,
-  resolveDimensionalModelRouteState
+  resolveDimensionalModelRouteState,
+  buildMetricImplementationListRouteQuery,
+  resolveMetricImplementationListRouteState
 } from '../src/utils/routeState.js'
 
 test('entity detail return state preserves business-domain filter', () => {
@@ -62,6 +64,16 @@ test('dimensional modeling canonicalizes invalid IDs and removes unrelated query
   const state = resolveDimensionalModelRouteState({ domain_id: '02', table_id: '06' })
   assert.equal(state.changed, true)
   assert.deepEqual(state.query, { domain_id: '2', table_id: '6' })
+})
+
+test('metric implementation list restores its source domain and fact table independently', () => {
+  const state = resolveMetricImplementationListRouteState({ source_domain_id: '02', fact_table_id: '6', revision_id: '9' })
+  assert.equal(state.sourceDomainId, 2)
+  assert.equal(state.factTableId, 6)
+  assert.equal(state.changed, true)
+  assert.deepEqual(state.query, { source_domain_id: '2', fact_table_id: '6' })
+  assert.deepEqual(buildMetricImplementationListRouteQuery({ sourceDomainId: null, factTableId: null }), {})
+  assert.deepEqual(resolveMetricImplementationListRouteState({ source_domain_id: 'unassigned' }).query, {})
 })
 
 test('table relation links preserve source identity and recoverable selection', () => {

@@ -244,6 +244,7 @@ func (v *validator) node(n Node, scope map[NodeID][]datatype.FieldInfo) ([]datat
 			return bad()
 		}
 		for _, m := range a.Measures {
+			result := field(m.Name, datatype.FieldTypeBigInt, false)
 			switch m.Op {
 			case "count_rows":
 				if m.Value != nil {
@@ -256,10 +257,23 @@ func (v *validator) node(n Node, scope map[NodeID][]datatype.FieldInfo) ([]datat
 				if _, err := v.expr(*m.Value, scope, 0); err != nil {
 					return nil, err
 				}
+			case "sum_decimal":
+				if m.Value == nil {
+					return bad()
+				}
+				value, err := v.expr(*m.Value, scope, 0)
+				if err != nil {
+					return nil, err
+				}
+				if value.Type != datatype.FieldTypeDecimal || value.Precision != 38 || value.Scale != 18 {
+					return bad()
+				}
+				result = field(m.Name, datatype.FieldTypeDecimal, true)
+				result.Precision, result.Scale = 38, 18
 			default:
 				return bad()
 			}
-			out = append(out, field(m.Name, datatype.FieldTypeBigInt, false))
+			out = append(out, result)
 		}
 		return out, nil
 	case "union_all":

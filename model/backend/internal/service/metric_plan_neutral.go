@@ -15,7 +15,16 @@ func buildMetricPlan(contract models.MetricContract, bindings metricPlanBindings
 }
 
 func buildMetricResultPlan(contract models.MetricContract, bindings metricPlanBindings, details bool) (plan.Plan, error) {
+	if contract.Operation == "sum_decimal_by_group" {
+		if details {
+			return plan.Plan{}, invalidRequest()
+		}
+		return buildGroupedDecimalSumPlan(contract, bindings)
+	}
 	if (contract.IncludeDetails && contract.Operation != "count_distinct") || (details && !contract.IncludeDetails) {
+		return plan.Plan{}, invalidRequest()
+	}
+	if contract.Group != nil || contract.Measure != nil {
 		return plan.Plan{}, invalidRequest()
 	}
 	b := metricPlanBuilder{p: plan.Plan{SchemaVersion: plan.SchemaVersion, SemanticProfile: plan.SemanticProfile}, columns: map[models.MetricFieldReference]string{}, scans: map[int64]plan.NodeID{}}
@@ -278,6 +287,46 @@ func buildMetricResultPlan(contract models.MetricContract, bindings metricPlanBi
 			b.p.Output.Fields = append(b.p.Output.Fields, datatype.FieldInfo{Name: labelName, Type: datatype.FieldTypeString, Nullable: true})
 		}
 	}
+	if err := plan.Validate(b.p); err != nil {
+		return plan.Plan{}, fmt.Errorf("build metric plan: %w", err)
+	}
+	return b.p, nil
+}
+
+// The source owns its unit and any preprocessing. The metric plan only groups
+// a current snapshot and sums an exact decimal without exposing native SQL.
+func buildGroupedDecimalSumPlan(contract models.MetricContract, bindings metricPlanBindings) (plan.Plan, error) {
+	if contract.IncludeDetails || contract.Subject != (models.MetricFieldReference{}) || contract.SubjectRelationID != 0 || contract.SubjectLabel != nil || contract.Distinct != (models.MetricFieldReference{}) || contract.Time != (models.MetricFieldReference{}) || len(contract.Filters) != 0 || len(bindings.Relations) != 0 || contract.Group == nil || contract.Measure == nil || contract.Group.RelationID != 0 || contract.Measure.RelationID != 0 || contract.Group.FieldID <= 0 || contract.Measure.FieldID <= 0 {
+		return plan.Plan{}, invalidRequest()
+	}
+	group, groupOK := bindings.Fact.Fields[contract.Group.FieldID]
+	measure, measureOK := bindings.Fact.Fields[contract.Measure.FieldID]
+	if !groupOK || !measureOK || group.ID != contract.Group.FieldID || measure.ID != contract.Measure.FieldID || group.DataType != "string" || measure.DataType != "decimal" || group.ColumnName == "" || measure.ColumnName == "" {
+		return plan.Plan{}, invalidRequest()
+	}
+	b := metricPlanBuilder{p: plan.Plan{SchemaVersion: plan.SchemaVersion, SemanticProfile: plan.SemanticProfile}, columns: map[models.MetricFieldReference]string{}, scans: map[int64]plan.NodeID{}}
+	groupName := fmt.Sprintf("r0_f%d", group.ID)
+	measureName := fmt.Sprintf("r0_f%d", measure.ID)
+	b.columns[*contract.Group] = groupName
+	b.columns[*contract.Measure] = measureName
+	b.p.Nodes = append(b.p.Nodes, plan.Node{ID: "source_0", Op: "scan", Scan: &plan.Scan{Source: "source_0", Fields: []datatype.FieldInfo{
+		{Name: groupName, Type: datatype.FieldTypeString, Nullable: true},
+		{Name: measureName, Type: datatype.FieldTypeDecimal, Nullable: true, Precision: 38, Scale: 18},
+	}}})
+	source := plan.NodeID("source_0")
+	selected := b.filter(source, metricOp("not", metricOp("is_null", b.ref(source, *contract.Group))))
+	b.assert(b.filter(selected, metricOp("is_null", b.ref(selected, *contract.Measure))), "metric_value_required")
+	value := b.ref(selected, *contract.Measure)
+	grouped := b.aggregate(selected,
+		[]plan.Projection{{Name: "group_key", Expr: b.ref(selected, *contract.Group)}},
+		[]plan.Measure{{Name: "total", Op: "sum_decimal", Value: &value}})
+	b.p.Root = b.project(grouped, []plan.Projection{
+		{Name: "group_key", Expr: metricCol(grouped, "group_key")},
+		{Name: "value", Expr: metricOp("coalesce", metricCol(grouped, "total"), metricLiteral(datatype.FieldTypeDecimal, "0"))},
+	})
+	_, output, stable := metricPlanSignature(contract.Operation)
+	output[1].Precision, output[1].Scale = 38, 18
+	b.p.Output = plan.OutputContract{Fields: output, StableKey: stable}
 	if err := plan.Validate(b.p); err != nil {
 		return plan.Plan{}, fmt.Errorf("build metric plan: %w", err)
 	}

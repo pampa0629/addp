@@ -78,6 +78,15 @@ func relationCases() []relationExample {
 	measure := col("groups", "value")
 	grouped := plan.Node{ID: "grouped", Op: "aggregate", Aggregate: &plan.Aggregate{Input: "groups", Groups: []plan.Projection{{Name: "key", Expr: col("groups", "key")}}, Measures: []plan.Measure{{Name: "rows", Op: "count_rows"}, {Name: "values", Op: "count_value", Value: &measure}}}}
 	cases = append(cases, relationExample{name: "group exact text and count NULL", nodes: []plan.Node{groupedSource, grouped}, root: "grouped", key: []string{"key"}, want: []map[string]any{{"key": "A", "rows": int64(1), "values": int64(0)}, {"key": "a", "rows": int64(2), "values": int64(1)}, {"key": "a ", "rows": int64(1), "values": int64(1)}}})
+	decimal := func(s string) plan.Literal { return plan.Literal{Type: datatype.FieldTypeDecimal, Text: s} }
+	decimalNull := plan.Literal{Type: datatype.FieldTypeDecimal, Null: true}
+	sumSource := rows("sum_source", []datatype.FieldInfo{field("key", datatype.FieldTypeString, false), {Name: "amount", Type: datatype.FieldTypeDecimal, Nullable: true, Precision: 38, Scale: 18}},
+		[]plan.Literal{text("A"), decimal("1.25")}, []plan.Literal{text("A"), decimal("2.50")}, []plan.Literal{text("A"), decimalNull}, []plan.Literal{text("B"), decimalNull})
+	amount := col("sum_source", "amount")
+	summed := plan.Node{ID: "summed", Op: "aggregate", Aggregate: &plan.Aggregate{Input: "sum_source", Groups: []plan.Projection{{Name: "key", Expr: col("sum_source", "key")}}, Measures: []plan.Measure{{Name: "total", Op: "sum_decimal", Value: &amount}}}}
+	cases = append(cases, relationExample{name: "sum decimal ignores NULL and preserves exact value", nodes: []plan.Node{sumSource, summed}, root: "summed", key: []string{"key"}, want: []map[string]any{{"key": "A", "total": "3.750000000000000000"}, {"key": "B", "total": nil}}})
+	overflowSource := rows("sum_source", sumSource.ConstantRows.Fields, []plan.Literal{text("A"), decimal("99999999999999999999.999999999999999999")}, []plan.Literal{text("A"), decimal("0.000000000000000001")})
+	cases = append(cases, relationExample{name: "sum decimal overflow is an evaluation error", nodes: []plan.Node{overflowSource, summed}, root: "summed", key: []string{"key"}, failure: "summed"})
 	empty := rows("empty", []datatype.FieldInfo{field("id", datatype.FieldTypeInt, false)})
 	cases = append(cases, relationExample{name: "global count empty relation", nodes: []plan.Node{empty, count("counted", "empty")}, root: "counted", key: []string{"count"}, want: []map[string]any{{"count": int64(0)}}})
 	nullGrouped := plan.Node{ID: "null_group", Op: "aggregate", Aggregate: &plan.Aggregate{Input: "labels", Groups: []plan.Projection{{Name: "key", Expr: col("labels", "label")}}, Measures: []plan.Measure{{Name: "rows", Op: "count_rows"}}}}
@@ -210,6 +219,8 @@ func relationOutput(t *testing.T, tc relationExample) plan.OutputContract {
 		fields = []datatype.FieldInfo{f("count", datatype.FieldTypeBigInt, false)}
 	case "grouped":
 		fields = []datatype.FieldInfo{f("key", datatype.FieldTypeString, false), f("rows", datatype.FieldTypeBigInt, false), f("values", datatype.FieldTypeBigInt, false)}
+	case "summed":
+		fields = []datatype.FieldInfo{f("key", datatype.FieldTypeString, false), {Name: "total", Type: datatype.FieldTypeDecimal, Nullable: true, Precision: 38, Scale: 18}}
 	case "unknown", "error_filter":
 		fields = []datatype.FieldInfo{f("id", datatype.FieldTypeInt, false), f("label", datatype.FieldTypeString, true)}
 	case "error_group":

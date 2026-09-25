@@ -250,7 +250,67 @@ func runMetricGolden(t *testing.T, provider metricGoldenProvider, conn plugin.Co
 			})
 		}
 	}
+	runGroupedDecimalMetricGolden(t, provider, conn, db, database, dialect)
+}
 
+func runGroupedDecimalMetricGolden(t *testing.T, provider metricGoldenProvider, conn plugin.ConnectionInfo, db *sql.DB, database string, dialect query.Dialect) {
+	t.Helper()
+	table := dialect.QuoteIdentifier(database) + "." + dialect.QuoteIdentifier("metric_golden_areas")
+	for _, statement := range []string{
+		"CREATE TABLE " + table + " (city varchar(200), area_m2 decimal(38,18))",
+		"INSERT INTO " + table + " VALUES ('长沙',1.25),('长沙',2.50),('永州',0.50),('',0.75),(NULL,9),(NULL,NULL)",
+	} {
+		if _, err := db.Exec(statement); err != nil {
+			t.Fatal(err)
+		}
+	}
+	contract, bindings := groupedDecimalFixture()
+	request, err := metricGoldenRequest(t, provider, conn, database, contract, bindings, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared, err := provider.PrepareQuery(t.Context(), conn, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	readSet, err := prepared.ReadSet(t.Context())
+	if err != nil || len(readSet.Paths) != 1 {
+		t.Fatalf("grouped sum read set=%#v err=%v", readSet, err)
+	}
+	result, err := prepared.Execute(t.Context())
+	if err != nil || result == nil || len(result.Rows) != 3 {
+		t.Fatalf("grouped sum result=%#v err=%v", result, err)
+	}
+	want := map[string]string{"": "0.750000000000000000", "长沙": "3.750000000000000000", "永州": "0.500000000000000000"}
+	for _, row := range result.Rows {
+		key, ok := row["group_key"].(string)
+		if !ok || row["value"] != want[key] {
+			t.Fatalf("unexpected grouped decimal row: %#v", row)
+		}
+		delete(want, key)
+	}
+	if len(want) != 0 {
+		t.Fatalf("missing grouped decimal rows: %v", want)
+	}
+	if _, err := db.Exec("INSERT INTO " + table + " VALUES ('长沙',NULL)"); err != nil {
+		t.Fatal(err)
+	}
+	request, err = metricGoldenRequest(t, provider, conn, database, contract, bindings, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared, err = provider.PrepareQuery(t.Context(), conn, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := prepared.Execute(t.Context()); err == nil {
+		t.Fatal("NULL measure did not fail the metric quality assertion")
+	} else {
+		var assertion *plugin.AnalyticalAssertionError
+		if !errors.As(err, &assertion) || assertion.Code != "metric_value_required" {
+			t.Fatalf("wrong measure quality error: %v", err)
+		}
+	}
 }
 
 func metricGoldenRequest(t *testing.T, provider metricGoldenProvider, conn plugin.ConnectionInfo, namespace string, contract models.MetricContract, bindings metricPlanBindings, parameters map[string]interface{}) (plugin.QueryRequest, error) {
@@ -265,6 +325,9 @@ func metricGoldenResultRequest(t *testing.T, provider metricGoldenProvider, conn
 		return plugin.QueryRequest{}, err
 	}
 	order := []plan.SortKey{{Name: "bucket", Direction: "asc"}}
+	if contract.Operation == "sum_decimal_by_group" {
+		order = []plan.SortKey{{Name: "group_key", Direction: "asc"}}
+	}
 	if contract.Operation == "directional_overlap" {
 		order = append(order, plan.SortKey{Name: "direction", Direction: "asc"})
 	}

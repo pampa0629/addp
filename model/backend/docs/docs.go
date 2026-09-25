@@ -4522,7 +4522,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "result_kind=details 读取同修订去重明细；省略读取汇总。 | result_kind=details selects distinct members of the same revision; omission selects summary.",
+                "description": "result_kind=details 读取同修订去重明细；省略读取汇总。sum_decimal_by_group 无查询参数，input 应省略。 | result_kind=details selects distinct members of the same revision; omission selects summary. sum_decimal_by_group has no query parameters; omit input.",
                 "consumes": [
                     "application/json"
                 ],
@@ -6575,8 +6575,7 @@ const docTemplate = `{
         "github_com_addp_model_internal_models.MetricContract": {
             "type": "object",
             "required": [
-                "operation",
-                "subject_relation_id"
+                "operation"
             ],
             "properties": {
                 "distinct": {
@@ -6588,14 +6587,21 @@ const docTemplate = `{
                         "$ref": "#/definitions/github_com_addp_model_internal_models.MetricBooleanFilter"
                     }
                 },
+                "group": {
+                    "$ref": "#/definitions/github_com_addp_model_internal_models.MetricFieldReference"
+                },
                 "include_details": {
                     "type": "boolean"
+                },
+                "measure": {
+                    "$ref": "#/definitions/github_com_addp_model_internal_models.MetricFieldReference"
                 },
                 "operation": {
                     "type": "string",
                     "enum": [
                         "count_distinct",
-                        "directional_overlap"
+                        "directional_overlap",
+                        "sum_decimal_by_group"
                     ]
                 },
                 "subject": {

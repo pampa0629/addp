@@ -155,6 +155,25 @@ func TestSchemaInferenceAndAssertions(t *testing.T) {
 		t.Fatal("count_rows accepted a value")
 	}
 }
+
+func TestDecimalSumInference(t *testing.T) {
+	p := fixture()
+	p.Nodes = append(p.Nodes, plan.Node{ID: "totals", Op: "aggregate", Aggregate: &plan.Aggregate{
+		Input: "source", Groups: []plan.Projection{{Name: "id", Expr: column("source", "id")}},
+		Measures: []plan.Measure{{Name: "total", Op: "sum_decimal", Value: ptr(column("source", "value"))}},
+	}})
+	p.Root = "totals"
+	p.Output.Fields = []datatype.FieldInfo{f("id", datatype.FieldTypeString, false), f("total", datatype.FieldTypeDecimal, true)}
+	mustValid(t, p)
+	p.Nodes[1].Aggregate.Measures[0].Value = nil
+	if plan.Validate(p) == nil {
+		t.Fatal("sum_decimal accepted a missing value")
+	}
+	p.Nodes[1].Aggregate.Measures[0].Value = ptr(column("source", "id"))
+	if plan.Validate(p) == nil {
+		t.Fatal("sum_decimal accepted a string")
+	}
+}
 func ptr(e plan.Expr) *plan.Expr { return &e }
 
 func TestJoinAndUnionNullability(t *testing.T) {

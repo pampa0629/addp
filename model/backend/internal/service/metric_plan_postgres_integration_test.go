@@ -26,6 +26,40 @@ func metricGoldenContract() (models.MetricContract, metricPlanBindings) {
 	return models.MetricContract{Operation: "count_distinct", Subject: models.MetricFieldReference{FieldID: 1}, SubjectRelationID: 10, Distinct: models.MetricFieldReference{FieldID: 2}, Time: models.MetricFieldReference{FieldID: 6, RelationID: 11}, Filters: []models.MetricBooleanFilter{{Field: models.MetricFieldReference{FieldID: 3}, Value: true}}}, bindings
 }
 
+func groupedDecimalFixture() (models.MetricContract, metricPlanBindings) {
+	group := models.MetricFieldReference{FieldID: 21}
+	measure := models.MetricFieldReference{FieldID: 22}
+	return models.MetricContract{Operation: "sum_decimal_by_group", Group: &group, Measure: &measure}, metricPlanBindings{
+		Fact: metricPlanSource{Metadata: metricTableMetadata{Name: "metric_golden_areas"}, Fields: map[int64]models.LogicalField{
+			21: {ID: 21, ColumnName: "city", DataType: "string"},
+			22: {ID: 22, ColumnName: "area_m2", DataType: "decimal"},
+		}}, Relations: map[int64]metricPlanRelation{},
+	}
+}
+
+func TestGroupedDecimalMetricUsesOneNeutralFactPlan(t *testing.T) {
+	contract, bindings := groupedDecimalFixture()
+	p, err := buildMetricPlan(contract, bindings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p.Parameters) != 0 || len(p.Assertions) != 1 || len(p.Output.Fields) != 2 || p.Output.Fields[0].Name != "group_key" || p.Output.Fields[1].Type != "decimal" || p.Output.Fields[1].Nullable || len(p.Output.StableKey) != 1 || p.Output.StableKey[0] != "group_key" {
+		t.Fatalf("grouped sum contract: %+v", p)
+	}
+	if ids := metricContractRelationIDs(contract); len(ids) != 0 {
+		t.Fatalf("unexpected dimension relations: %v", ids)
+	}
+	contract.Time = models.MetricFieldReference{FieldID: 22}
+	if _, err := buildMetricPlan(contract, bindings); err == nil {
+		t.Fatal("snapshot sum accepted an undeclared time field")
+	}
+	contract.Time = models.MetricFieldReference{}
+	bindings.Fact.Fields[22] = models.LogicalField{ID: 22, ColumnName: "area_m2", DataType: "string"}
+	if _, err := buildMetricPlan(contract, bindings); err == nil {
+		t.Fatal("snapshot sum accepted a nondecimal measure")
+	}
+}
+
 func TestMetricSubjectLabelRequiresExplicitIdentityDimensionString(t *testing.T) {
 	for _, ref := range []models.MetricFieldReference{{FieldID: 1}, {FieldID: 6, RelationID: 11}, {FieldID: 999, RelationID: 10}, {FieldID: 7, RelationID: 10}} {
 		contract, bindings := metricGoldenContract()

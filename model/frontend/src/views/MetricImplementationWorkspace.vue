@@ -16,8 +16,21 @@
       show-icon
       :closable="false"
     />
+    <el-alert v-if="!error && domainLoadError" :title="t('model.common.reference_data_unavailable')" type="warning" show-icon :closable="false" />
     <el-card v-if="!route.params.id && !error" shadow="never">
-      <el-table :data="items" stripe
+      <div class="metric-domain-filter">
+        <span id="metric-source-domain-label">{{ t('model.metric_workspace.source_domain') }}</span>
+        <BusinessDomainSelect
+          :model-value="sourceDomainId || ''"
+          :options="domains"
+          aria-labelledby="metric-source-domain-label"
+          @update:model-value="changeSourceDomain"
+        >
+          <el-option :label="t('model.metric_workspace.all_source_domains')" value="" />
+          <el-option v-if="domainLoadError && sourceDomainId" :label="t('model.metric_workspace.domain_unavailable')" :value="sourceDomainId" />
+        </BusinessDomainSelect>
+      </div>
+      <el-table :data="filteredItems" stripe
         ><el-table-column prop="name" :label="t('model.metric_workspace.name')"
           ><template #default="{ row }"
             ><el-button link type="primary" @click="go(row.id)">{{
@@ -28,6 +41,10 @@
           ><template #default="{ row }">{{
             tables.find((table) => table.id === row.fact_table_id)?.name || '—'
           }}</template></el-table-column
+        ><el-table-column :label="t('model.metric_workspace.source_domain')" min-width="150"
+          ><template #default="{ row }">{{ sourceDomainLabel(row) }}</template></el-table-column
+        ><el-table-column :label="t('model.metric_workspace.definition_ownership')" min-width="150"
+          ><template #default="{ row }">{{ definitionOwnershipLabel(row) }}</template></el-table-column
         ></el-table
       >
     </el-card>
@@ -147,11 +164,21 @@
                 value="directional_overlap"
                 :label="t('model.metric_workspace.directional_overlap')"
               />
+              <el-option
+                value="sum_decimal_by_group"
+                :label="t('model.metric_workspace.sum_decimal_by_group')"
+              />
             </el-select>
           </el-form-item>
           <el-alert
             v-if="form.operation === 'directional_overlap'"
             :title="t('model.metric_workspace.overlap_contract')"
+            type="info"
+            :closable="false"
+          />
+          <el-alert
+            v-if="form.operation === 'sum_decimal_by_group'"
+            :title="t('model.metric_workspace.grouped_sum_contract')"
             type="info"
             :closable="false"
           />
@@ -165,7 +192,7 @@
                 :value="definition.id"
                 :label="`${definition.name} · R${definition.revision_no}`" /></el-select
           ></el-form-item>
-          <div class="field-grid">
+          <div v-if="form.operation !== 'sum_decimal_by_group'" class="field-grid">
             <el-form-item :label="t('model.metric_workspace.subject')" required
               ><el-select v-model="form.subject_field_id"
                 ><el-option
@@ -218,6 +245,24 @@
                   :value="field.key"
                   :label="field.label" /></el-select
             ></el-form-item>
+          </div>
+          <div v-else class="field-grid">
+            <el-form-item :label="t('model.metric_workspace.group_field')" required>
+              <el-select v-model="form.group">
+                <el-option
+                  v-for="field in choices.filter(v => v.relation_id === 0 && v.data_type === 'string')"
+                  :key="field.key" :value="field.key" :label="field.label"
+                />
+              </el-select>
+            </el-form-item>
+            <el-form-item :label="t('model.metric_workspace.measure_field')" required>
+              <el-select v-model="form.measure">
+                <el-option
+                  v-for="field in choices.filter(v => v.relation_id === 0 && v.data_type === 'decimal')"
+                  :key="field.key" :value="field.key" :label="field.label"
+                />
+              </el-select>
+            </el-form-item>
           </div>
           <el-form-item
             v-if="form.operation === 'count_distinct'"
@@ -391,8 +436,9 @@ import { computed, reactive, ref, watch } from 'vue';
 import { useRouter, useRoute, onBeforeRouteUpdate } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { ElMessage } from 'element-plus';
-import { openConsoleRoute, listResourceTreeEngines } from '@common-ui';
+import { BusinessDomainSelect, buildBusinessDomainOptions, openConsoleRoute, listResourceTreeEngines } from '@common-ui';
 import {
+  domainAPI,
   logicalTableAPI,
   standardMetricAPI,
   metricImplementationAPI as api,
@@ -402,6 +448,7 @@ import { useAuthStore } from '../store/auth';
 import { navigateModelRoute } from '../utils/moduleNavigation';
 import { useUnsavedChanges } from '../composables/useUnsavedChanges';
 import { getModelErrorMessage } from '../utils/apiError';
+import { buildMetricImplementationListRouteQuery, resolveMetricImplementationListRouteState } from '../utils/routeState';
 import MetricSourceSummary from '../components/MetricSourceSummary.vue';
 import MetricRevisionServices from '../components/MetricRevisionServices.vue';
 const router = useRouter(),
@@ -411,6 +458,7 @@ const router = useRouter(),
 const items = ref([]),
   item = ref(null),
   tables = ref([]),
+  domains = ref([]),
   definitions = ref([]),
   definitionRevisions = ref([]),
   relations = ref([]),
@@ -419,6 +467,7 @@ const sourceEngines = ref([]), sourceEngineError = ref(false);
 const loading = ref(false),
   busy = ref(false),
   error = ref(''),
+  domainLoadError = ref(false),
   selectedRevision = ref(null),
   editingNew = ref(false),
   serviceDialog = ref(false),
@@ -439,6 +488,8 @@ const blank = () => ({
   include_details: false,
   distinct: '',
   time: '',
+  group: '',
+  measure: '',
   filters: [],
 });
 const form = reactive(blank());
@@ -452,6 +503,26 @@ const editable = computed(
 );
 const can = (action) =>
   auth.hasPermission(`model.metric_implementation.${action}`);
+const sourceDomainId = computed(() => resolveMetricImplementationListRouteState(route.query).sourceDomainId);
+const filteredItems = computed(() => sourceDomainId.value
+  ? items.value.filter(row => Number(tables.value.find(table => table.id === row.fact_table_id)?.domain_id) === sourceDomainId.value)
+  : items.value);
+const domainLabel = id => domains.value.find(domain => domain.id === Number(id))?.path.join(' / ')
+  || t('model.metric_workspace.domain_unavailable');
+const sourceDomainLabel = row => {
+  const table = tables.value.find(value => value.id === row.fact_table_id);
+  if (!table) return t('model.metric_workspace.domain_unavailable');
+  return table.domain_id ? domainLabel(table.domain_id) : t('model.metric_workspace.unassigned_source');
+};
+const definitionOwnershipLabel = row => {
+  const definition = definitions.value.find(value => value.id === row.metric_definition_id);
+  if (!definition) return t('model.metric_workspace.domain_unavailable');
+  if (definition.scope_type === 'platform') return t('model.metric_workspace.platform_scope');
+  if (definition.scope_type === 'tenant_common') return t('model.metric_workspace.tenant_common_scope');
+  return definition.scope_type === 'domain' && definition.owner_domain_id
+    ? domainLabel(definition.owner_domain_id)
+    : t('model.metric_workspace.domain_unavailable');
+};
 const { isDirty, markSaved, confirmDiscardChanges } = useUnsavedChanges({
   state: computed(() => (isNew.value ? identity : form)),
   t,
@@ -459,7 +530,14 @@ const { isDirty, markSaved, confirmDiscardChanges } = useUnsavedChanges({
 const go = (id) =>
   navigateModelRoute(router, {
     path: `/metric-implementations${id ? `/${id}` : ''}`,
+    query: buildMetricImplementationListRouteQuery({
+      sourceDomainId: sourceDomainId.value,
+    }),
   });
+const changeSourceDomain = value => navigateModelRoute(router, {
+  path: '/metric-implementations',
+  query: buildMetricImplementationListRouteQuery({ sourceDomainId: Number(value) || null }),
+});
 const refKey = (v) => `${v.relation_id}:${v.field_id}`;
 const fieldRef = (key) => {
   const [relation_id, field_id] = key.split(':').map(Number);
@@ -483,12 +561,14 @@ function setRevision(id) {
       metric_definition_revision_id: r.metric_definition_revision_id,
       operation: c.operation,
       include_details: Boolean(c.include_details),
-      subject_field_id: c.subject.field_id,
-      subject_relation_id: c.subject_relation_id,
+      subject_field_id: c.subject?.field_id || null,
+      subject_relation_id: c.subject_relation_id || null,
       subject_label: c.subject_label ? refKey(c.subject_label) : '',
-      distinct: refKey(c.distinct),
-      time: refKey(c.time),
-      filters: c.filters.map((v) => ({
+      distinct: c.distinct ? refKey(c.distinct) : '',
+      time: c.time ? refKey(c.time) : '',
+      group: c.group ? refKey(c.group) : '',
+      measure: c.measure ? refKey(c.measure) : '',
+      filters: (c.filters || []).map((v) => ({
         field: refKey(v.field),
         value: v.value,
       })),
@@ -532,19 +612,26 @@ async function load() {
     return;
   }
   try {
-    const [allTables, defs] = await Promise.all([
+    if (!route.params.id) {
+      const state = resolveMetricImplementationListRouteState(route.query);
+      if (state.changed) {
+        await navigateModelRoute(router, { path: '/metric-implementations', query: state.query }, { history: 'replace' });
+        return;
+      }
+    }
+    const [allTables, defs, domainResult] = await Promise.all([
       logicalTableAPI.listAll(),
       standardMetricAPI.listAll(),
+      domainAPI.list().then(value => ({ value }), () => ({ error: true })),
     ]);
     if (request !== generation) return;
     tables.value = allTables;
     definitions.value = defs;
+    domainLoadError.value = Boolean(domainResult.error);
+    domains.value = domainResult.error ? [] : buildBusinessDomainOptions(domainResult.value || []);
     if (!route.params.id) {
-      items.value = await api.list(
-        route.query.fact_table_id
-          ? { fact_table_id: Number(route.query.fact_table_id) }
-          : {},
-      );
+      const { factTableId } = resolveMetricImplementationListRouteState(route.query);
+      items.value = await api.list(factTableId ? { fact_table_id: factTableId } : {});
       markSaved();
       return;
     }
@@ -650,13 +737,15 @@ const create = () =>
   });
 const save = () =>
   action(async () => {
-    if (
-      !form.metric_definition_revision_id ||
-      !form.subject_field_id ||
-      !form.subject_relation_id
-    )
+    if (!form.metric_definition_revision_id || (form.operation === 'sum_decimal_by_group'
+      ? (!form.group || !form.measure)
+      : (!form.subject_field_id || !form.subject_relation_id || !form.distinct || !form.time)))
       throw Error(t('model.metric_workspace.required'));
-    const contract = {
+    const contract = form.operation === 'sum_decimal_by_group' ? {
+      operation: form.operation,
+      group: fieldRef(form.group),
+      measure: fieldRef(form.measure),
+    } : {
       ...(form.include_details ? { include_details: true } : {}),
       operation: form.operation,
       subject: { relation_id: 0, field_id: form.subject_field_id },
@@ -774,6 +863,7 @@ const openServiceDialog = () =>
   });
 const operationChanged = () => {
   if (form.operation === 'directional_overlap') { form.filters = []; form.include_details = false; }
+  if (form.operation === 'sum_decimal_by_group') { form.filters = []; form.include_details = false; }
 };
 const reloadServiceTarget = () => action(async () => {
   const target = await metricServiceAPI.get(existingServiceID.value);
@@ -836,7 +926,7 @@ onBeforeRouteUpdate((to, from) =>
     : true,
 );
 watch(
-  () => [route.params.id, route.query.fact_table_id, route.query.revision_id],
+  () => [route.params.id, route.query.fact_table_id, route.query.source_domain_id, route.query.revision_id],
   load,
   { immediate: true },
 );
@@ -858,6 +948,16 @@ watch(
 }
 .workspace-header h2 {
   margin: 0;
+}
+.metric-domain-filter {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.metric-domain-filter .el-select {
+  width: min(320px, 100%);
 }
 .publication-source {
   margin-bottom: 20px;

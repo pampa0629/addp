@@ -85,6 +85,7 @@ Develop TaskProvider 的 canonical 前端路由为：
 | Modeling | 实体详情 Tab | `tab` |
 | Modeling | 逻辑表详情维度关联 | `tab=relations`、`relation_id`；默认模型定义页签省略，关系 ID 只用于关联页签 |
 | Modeling | 维度建模业务域与当前事实表 | `domain_id`（正整数；省略表示全部）、`table_id`；域筛选不裁剪跨域维度关系 |
+| Modeling | 指标实现全局列表的来源业务域 | `source_domain_id`（正整数；省略表示全部且包含未归属事实表）、可选 `fact_table_id`；只筛选当前来源事实表，不改变 Standard 指标定义归属或跨域引用 |
 | Quality | 执行详情 | path parameter `execution_id` |
 | Quality | 规则应用列表筛选与分页 | `engine_id`、`schema_name`、`table_name`、`page`、`page_size` |
 | Quality | 问题工单详情 | path `/issues/:id` |
