@@ -48,6 +48,7 @@ SUITES: Mapping[str, Suite] = {
     "compose-public-origin": Suite(
         command=(sys.executable, "scripts/test/compose-public-origin-online.py"),
         services=(("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL")),
+        nightly=True,
     ),
     "ontology-revision-lifecycle": Suite(
         command=(sys.executable, "-m", "scripts.test.ontology-revision-lifecycle-online"),

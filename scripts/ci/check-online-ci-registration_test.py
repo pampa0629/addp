@@ -289,13 +289,20 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         with self.assertRaisesRegex(CHECK.RegistrationError, "concurrency group"):
             CHECK.check_registration(self.repository)
 
-    def test_repository_schedules_graduated_opengauss_and_metric_profiles(self) -> None:
+    def test_repository_schedules_graduated_hosted_profiles(self) -> None:
         repository = SCRIPT.parents[2]
 
         registry = CHECK.load_suite_registry(repository)
         nightly = CHECK.load_nightly_suites(registry)
 
-        self.assertEqual(nightly, {"opengauss-consumer-flow", "metric-service-revision-lifecycle"})
+        self.assertEqual(
+            nightly,
+            {
+                "compose-public-origin",
+                "opengauss-consumer-flow",
+                "metric-service-revision-lifecycle",
+            },
+        )
         CHECK.check_registration(repository)
 
     def test_rejects_workflow_without_readiness_check(self) -> None:

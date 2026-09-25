@@ -97,7 +97,7 @@ jobs:
 
   compose-public-origin-hosted-t4:
     name: Online T4 (compose-public-origin, Linux x86_64)
-    if: github.event_name == 'workflow_dispatch' && inputs.suite == 'compose-public-origin'
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.suite == 'compose-public-origin')
     concurrency:
       group: online-t4-compose-public-origin
       cancel-in-progress: false

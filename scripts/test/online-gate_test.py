@@ -129,6 +129,7 @@ class OnlineGateTest(unittest.TestCase):
         opengauss_suite = ONLINE_GATE.SUITES["opengauss-consumer-flow"]
         self.assertEqual(opengauss_suite.command, oceanbase_suite.command)
         self.assertEqual(opengauss_suite.services, oceanbase_suite.services)
+        self.assertTrue(ONLINE_GATE.SUITES["compose-public-origin"].nightly)
         self.assertTrue(opengauss_suite.nightly)
         self.assertTrue(ONLINE_GATE.SUITES["metric-service-revision-lifecycle"].nightly)
         self.assertFalse(oceanbase_suite.nightly)
