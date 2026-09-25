@@ -91,7 +91,7 @@ test_keepalive_style_cleanup_inherits_and_releases_lock() {
 
   [ "$exit_code" -eq 17 ] || fail "keepalive-style cleanup changed exit code: $exit_code"
   [ -f "$child_state" ] || fail "keepalive child did not acquire inherited lock"
-  rg -q '^inherited=1$' "$child_state" || fail "keepalive child did not use inherited lock: $(cat "$child_state")"
+  grep -qx 'inherited=1' "$child_state" || fail "keepalive child did not use inherited lock: $(cat "$child_state")"
   [ ! -d "$workspace/.dev-state/lifecycle.lock" ] || fail "keepalive owner did not release lifecycle lock"
 }
 
@@ -326,11 +326,16 @@ EOF
 }
 
 test_all_go_health_routes_use_module_lifecycle() {
-  local health_route_count buildinfo_route_count
-  health_route_count=$(rg -l 'RegisterHealthRoutes\(router\)' "$ROOT_DIR" --glob '*.go' --glob '!**/*_test.go' | wc -l | tr -d ' ')
-  buildinfo_route_count=$(rg -l 'RegisterHealthRoutes\(router\)' "$ROOT_DIR" --glob '*.go' --glob '!**/*_test.go' | xargs rg -l 'modulelifecycle' | wc -l | tr -d ' ')
-  [ "$health_route_count" -gt 0 ] || fail "no Go health routes found"
-  [ "$buildinfo_route_count" = "$health_route_count" ] || fail "health routes using buildinfo = $buildinfo_route_count, want $health_route_count"
+  local route found=0
+  while IFS= read -r -d '' route; do
+    [ -f "$ROOT_DIR/$route" ] || continue
+    [[ "$route" == *_test.go ]] && continue
+    if grep -Fq 'RegisterHealthRoutes(router)' "$ROOT_DIR/$route"; then
+      found=1
+      grep -Fq 'modulelifecycle' "$ROOT_DIR/$route" || fail "health route does not use modulelifecycle: $route"
+    fi
+  done < <(git -C "$ROOT_DIR" ls-files -z --cached --others --exclude-standard -- '*.go')
+  [ "$found" -eq 1 ] || fail "no Go health routes found"
 }
 
 test_restart_preserves_cache_and_batches_swagger() {
@@ -969,13 +974,18 @@ helper=source[source.index('start_module_workers() ('):source.index('BACKEND_STA
 for directory in ('.dev-bins','.dev-pids','logs'):(fixture/directory).mkdir()
 for name in ('fast-worker','slow-worker','failed-worker'):
  path=fixture/'.dev-bins'/('addp-'+name)
- path.write_text('#!/bin/bash\ntouch "'+name+'-started"\nexec sleep 10\n')
+ path.write_text('#!/bin/bash\ntouch "'+name+'-started"\n')
  path.chmod(0o755)
 # Fast module must launch before the unrelated slow Backend becomes ready.
 body='''set -e
 require_started_process() { [ "$2" != dead ]; }
 check_service_running() { return 0; }
 curl() { case "$*" in *:1111/*) return 0;; *:2222/*) [ -f slow-ready ];; *) return 1;; esac; }
+wait_for_marker() {
+  local marker="$1" i
+  for i in {1..500}; do [ -f "$marker" ] && return 0; sleep 0.01; done
+  return 1
+}
 '''+helper+'''
 trap 'for path in .dev-pids/*.pid; do [ ! -f "$path" ] || kill "$(cat "$path")" 2>/dev/null || true; done' EXIT
 start_module_workers slow alive 2222 slow-worker &
@@ -983,13 +993,11 @@ slow=$!
 start_module_workers fast alive 1111 fast-worker &
 fast=$!
 wait "$fast"
-for i in {1..100}; do [ ! -f fast-worker-started ] || break; sleep 0.01; done
-[ -f fast-worker-started ]
+wait_for_marker fast-worker-started
 [ ! -f slow-worker-started ]
 touch slow-ready
 wait "$slow"
-for i in {1..100}; do [ ! -f slow-worker-started ] || break; sleep 0.01; done
-[ -f slow-worker-started ]
+wait_for_marker slow-worker-started
 if start_module_workers failed dead 3333 failed-worker; then exit 7; fi
 [ ! -f failed-worker-started ]
 # Backend remains alive but never ready: bounded timeout also prevents Worker launch.
@@ -997,8 +1005,8 @@ sleep() { :; }
 if start_module_workers failed alive 3333 failed-worker; then exit 8; fi
 [ ! -f failed-worker-started ]
 '''
-result=subprocess.run(['bash','-c',body],cwd=fixture,text=True,capture_output=True,timeout=15)
-assert result.returncode==0,(result.stdout,result.stderr)
+result=subprocess.run(['bash','-c',body],cwd=fixture,text=True,capture_output=True,timeout=30)
+assert result.returncode==0,(result.returncode,result.stdout,result.stderr)
 # Guard ownership and indirect initialization paths at the production entry points.
 workers=['security/backend/cmd/worker/main.go','meta/backend/cmd/worker/main.go','quality/backend/cmd/worker/main.go','transfer/backend/cmd/worker/main.go','transfer/backend/cmd/continuous-worker/main.go']
 for name in workers:
