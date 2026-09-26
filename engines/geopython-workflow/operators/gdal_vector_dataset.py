@@ -31,6 +31,15 @@ DETECTION_SCHEMA = "gdal.vector-dataset.detect/v1"
 INSPECTION_SCHEMA = "gdal.vector-dataset.inspect/v1"
 DETECT_OPERATORS = ("vector_dataset.detect",)
 INSPECT_OPERATORS = ("vector_dataset.inspect",)
+FILEGDB_SYSTEM_TABLES = frozenset({
+    "GDB_DBTune",
+    "GDB_ItemRelationshipTypes",
+    "GDB_ItemRelationships",
+    "GDB_ItemTypes",
+    "GDB_Items",
+    "GDB_SpatialRefs",
+    "GDB_SystemCatalog",
+})
 READ_OPERATORS = (
     "vector_dataset.read_open",
     "vector_dataset.read_batch",
@@ -73,8 +82,9 @@ def inspect(access_plan: dict[str, Any], child_limit: int = 100) -> dict[str, An
     if isinstance(child_limit, bool) or not isinstance(child_limit, int) or child_limit <= 0 or child_limit > 1000:
         raise ValueError("child_limit must be an integer between 1 and 1000")
     plan = require_source_plan({"access_plan": access_plan})
-    with _opened_source(plan) as dataset:
-        layer_count = dataset.GetLayerCount()
+    opened_source = _opened_source(plan, inspect_empty_filegdb=True)
+    with opened_source as dataset:
+        layer_count = 0 if opened_source.empty_filegdb else dataset.GetLayerCount()
         children: list[dict[str, Any]] = []
         valid_child_count = 0
         skipped_layer_count = 0
@@ -320,29 +330,64 @@ def write_abort(
 
 
 class _opened_source:
-    def __init__(self, plan: dict[str, Any]):
+    def __init__(self, plan: dict[str, Any], *, inspect_empty_filegdb: bool = False):
         self.plan = plan
+        self.inspect_empty_filegdb = inspect_empty_filegdb
+        self.empty_filegdb = False
         self.temp_dir: tempfile.TemporaryDirectory[str] | None = None
         self.dataset = None
 
     def __enter__(self):
         source = self.plan["source"]
         self.temp_dir = tempfile.TemporaryDirectory(prefix="addp-gdal-vector-")
-        work_dir = Path(self.temp_dir.name)
-        path = stage_source_directory(self.plan, work_dir) if source.get("kind") == "directory" else stage_source_file(self.plan, work_dir)
-        driver_name = {"filegdb": "OpenFileGDB", "pgeo": "PGeo"}.get(source.get("format"))
-        if not driver_name:
-            raise ValueError(f"unsupported GDAL vector source format: {source.get('format')}")
-        _required_driver(driver_name, writable=False)
-        self.dataset = gdal.OpenEx(str(path), gdal.OF_VECTOR, allowed_drivers=[driver_name])
-        if self.dataset is None:
-            raise RuntimeError(f"open {source.get('format')} dataset failed: {path}")
-        return self.dataset
+        try:
+            work_dir = Path(self.temp_dir.name)
+            path = stage_source_directory(self.plan, work_dir) if source.get("kind") == "directory" else stage_source_file(self.plan, work_dir)
+            driver_name = {"filegdb": "OpenFileGDB", "pgeo": "PGeo"}.get(source.get("format"))
+            if not driver_name:
+                raise ValueError(f"unsupported GDAL vector source format: {source.get('format')}")
+            _required_driver(driver_name, writable=False)
+            try:
+                self.dataset = gdal.OpenEx(str(path), gdal.OF_VECTOR, allowed_drivers=[driver_name])
+            except RuntimeError:
+                if not (self.inspect_empty_filegdb and driver_name == "OpenFileGDB"):
+                    raise
+                self.dataset = _open_empty_filegdb(path)
+                if self.dataset is None:
+                    raise
+                self.empty_filegdb = True
+            if self.dataset is None:
+                raise RuntimeError(f"open {source.get('format')} dataset failed: {path}")
+            return self.dataset
+        except Exception:
+            self.temp_dir.cleanup()
+            self.temp_dir = None
+            raise
 
     def __exit__(self, exc_type, exc_value, traceback):
         self.dataset = None
         if self.temp_dir is not None:
             self.temp_dir.cleanup()
+
+
+def _open_empty_filegdb(path: Path):
+    """Confirm a FileGDB has only its internal tables before treating it as empty."""
+    try:
+        dataset = gdal.OpenEx(
+            str(path),
+            gdal.OF_VECTOR,
+            allowed_drivers=["OpenFileGDB"],
+            open_options=["LIST_ALL_TABLES=YES"],
+        )
+    except RuntimeError:
+        return None
+    if dataset is None:
+        return None
+    layer_names = {
+        dataset.GetLayerByIndex(index).GetName()
+        for index in range(dataset.GetLayerCount())
+    }
+    return dataset if layer_names == FILEGDB_SYSTEM_TABLES else None
 
 
 def _required_driver(name: str, *, writable: bool):

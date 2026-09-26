@@ -199,7 +199,10 @@ func HTTPInvokeOperator(ctx context.Context, connInfo ConnectionInfo, operatorNa
 		}
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return result, fmt.Errorf("invoke operator failed with status %d: %s", resp.StatusCode, string(respBody))
+		if result.Error != "" {
+			return result, fmt.Errorf("invoke operator failed with status %d: %s", resp.StatusCode, result.Error)
+		}
+		return result, fmt.Errorf("invoke operator failed with status %d", resp.StatusCode)
 	}
 	if err := runtimeFailureFromStandardFields("invoke operator", result.Status, result.Error, result.ErrorCode, result.Details); err != nil {
 		return result, err

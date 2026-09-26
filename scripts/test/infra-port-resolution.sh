@@ -134,3 +134,58 @@ if addp_infra_ready; then
 fi
 
 echo 'ADDP Infra port resolution OK'
+
+# The lifecycle entry must never erase local volumes from a non-interactive
+# worktree cleanup, even when --force was supplied by an automation wrapper.
+TEST_DIR=$(mktemp -d)
+trap 'rm -rf "$TEST_DIR"' EXIT
+mkdir -p "$TEST_DIR/bin" "$TEST_DIR/repo/scripts/infra"
+cp "${SCRIPT_DIR}/../infra/down.sh" "$TEST_DIR/repo/scripts/infra/down.sh"
+cat > "$TEST_DIR/bin/docker" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+case "$1" in
+  compose)
+    if [[ "$2" == version ]]; then exit 0; fi
+    [[ "$2" == -f && "$3" == docker-compose.infra.yml ]] || exit 2
+    case "$4" in
+      ps) echo addp-postgres ;;
+      down) printf '%s\n' "${5:-down}" > "$MOCK_DOWN_MARKER" ;;
+      *) exit 2 ;;
+    esac
+    ;;
+  inspect)
+    printf '%s\n' "$MOCK_WORKING_DIR"
+    ;;
+  *) exit 2 ;;
+esac
+EOF
+chmod +x "$TEST_DIR/bin/docker"
+DOWN_SCRIPT="$TEST_DIR/repo/scripts/infra/down.sh"
+MOCK_MARKER="$TEST_DIR/down-called"
+
+if env -u GITHUB_ACTIONS -u ADDP_ONLINE_HOST -u ADDP_ONLINE_TEST \
+  PATH="$TEST_DIR/bin:$PATH" MOCK_DOWN_MARKER="$MOCK_MARKER" \
+  MOCK_WORKING_DIR="$TEST_DIR/repo" \
+  bash "$DOWN_SCRIPT" --volumes --force </dev/null >"$TEST_DIR/local.log" 2>&1; then
+  echo 'non-interactive local volume deletion was accepted' >&2
+  exit 1
+fi
+[ ! -e "$MOCK_MARKER" ]
+
+if env PATH="$TEST_DIR/bin:$PATH" MOCK_DOWN_MARKER="$MOCK_MARKER" \
+  MOCK_WORKING_DIR="$TEST_DIR/foreign" \
+  bash "$DOWN_SCRIPT" --force </dev/null >"$TEST_DIR/foreign.log" 2>&1; then
+  echo 'foreign-worktree container removal was accepted' >&2
+  exit 1
+fi
+[ ! -e "$MOCK_MARKER" ]
+
+env GITHUB_ACTIONS=true ADDP_ONLINE_HOST=1 ADDP_ONLINE_TEST=1 \
+  ADDP_ONLINE_HOSTED=1 POSTGRES_DB=addp_online \
+  PATH="$TEST_DIR/bin:$PATH" MOCK_DOWN_MARKER="$MOCK_MARKER" \
+  MOCK_WORKING_DIR="$TEST_DIR/repo" \
+  bash "$DOWN_SCRIPT" --volumes --force </dev/null >"$TEST_DIR/online.log" 2>&1
+[ "$(cat "$MOCK_MARKER")" = -v ]
+
+echo 'ADDP Infra down safety OK'

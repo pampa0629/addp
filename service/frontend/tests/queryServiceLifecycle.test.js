@@ -57,6 +57,35 @@ test('conflict keeps local state and inputs and never retries a stale activation
   assert.equal(calls, 1)
 })
 
+test('metric rebind sends an exact revision with the current version and clears old preview state', async () => {
+  const requests = []
+  const state = {
+    sourceSnapshot: { value: { metric_source: { implementation_id: 4, revision_id: 16, result_kind: 'summary' } } },
+    rebindSelection: { value: null }, rebindDialogOpen: { value: false }, rebindSaving: { value: false },
+    service: { value: { id: 41, version: 3, status: 'active' } }, serviceId: { value: 41 }, versionConflict: { value: false },
+    previewData: { value: [{ group_key: 'old' }] },
+    previewPagination: { value: { page: 2, hasMore: true, nextCursor: 'old', cursors: ['', 'old'] } },
+    metricRevisionRefresh: { value: 0 },
+    queryServiceAPI: { rebindMetricSource: async (id, body) => {
+      requests.push({ id, body: JSON.parse(JSON.stringify(body)) })
+      return { id, version: body.version + 1, status: 'active', data_config: { source_snapshot: { metric_source: body.metric_source } } }
+    } },
+    captureVersionConflict: () => false, ElMessage: { success() {}, error() {} }, t: key => key
+  }
+  const rebindSource = source.slice(source.indexOf('const openRebindDialog ='), source.indexOf('const checkSourceSnapshot ='))
+  const { openRebindDialog, rebindMetricSource } = vm.runInNewContext(`${rebindSource}\n({ openRebindDialog, rebindMetricSource })`, state)
+  openRebindDialog()
+  assert.equal(state.rebindSelection.value.revision_id, 16)
+  state.rebindSelection.value = { implementation_id: 4, revision_id: 19 }
+  await rebindMetricSource()
+  assert.deepEqual(requests, [{ id: 41, body: { metric_source: { implementation_id: 4, revision_id: 19 }, version: 3 } }])
+  assert.equal(state.service.value.version, 4)
+  assert.equal(state.rebindDialogOpen.value, false)
+  assert.equal(state.previewData.value.length, 0)
+  assert.equal(state.previewPagination.value.nextCursor, '')
+  assert.equal(state.metricRevisionRefresh.value, 1)
+})
+
 test('incomplete metric cannot be activated and inactive preview makes no query', async () => {
   const { state, toggle } = harness(async () => assert.fail('unbound metric activated'))
   state.metricBindingRequired.value = true

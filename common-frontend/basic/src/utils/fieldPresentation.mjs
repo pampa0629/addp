@@ -47,7 +47,7 @@ export function formatFieldPresentationValue(value, presentation = null, locale 
       ? new Intl.NumberFormat(locale, {
           minimumFractionDigits: presentation.precision,
           maximumFractionDigits: presentation.precision,
-        }).format(numeric)
+        }).format(value)
       : basicDisplayValue(value)
   } else if (presentation.temporal_format) {
     formatted = formatTemporalValue(value, presentation.temporal_format, locale) || basicDisplayValue(value)

@@ -891,6 +891,8 @@ renderer 只能消费输出契约，不根据业务名称猜测角色。第一�
 - 通过事件返回排序、分页、选择、bbox 和地图视角等交互意图；
 - 只使用 ADDP 主题变量和导出的双语 i18n 消息，不持久化业务状态。
 
+Service 返回的 decimal 字符串在表格、数值卡片及图表的数据标签和提示中，必须直接按原始十进制值与显式精度格式化，不得先转换为 JavaScript `Number` 而改变展示值。图表坐标计算可以使用有限浮点近似，但这一近似不能覆盖原始值的文本展示，也不能回写 Service 结果或应用快照。
+
 现有 `TablePreview` 和 `GeoJsonPreview` 继续表示 Manager 式数据预览：它们消费预览响应结构并包含原始内容展示，不改名或扩张为 Workbench 结果 renderer。新增组件不保留另一个 Workbench 私有同功能实现。
 
 Data Application Component 中的 `renderer_type` 是 `renderer_config` 的可辨识标签。Backend 必须使用 `table | chart | map | value` 四个具体 DTO 严格解码并拒绝未知字段，不使用无约束 `map[string]interface{}`。不为 renderer config 另增一个与 Data Application `version` 并行的版本字段。

@@ -183,6 +183,7 @@
         <el-alert v-else-if="sourceSnapshot?.metric_source" :title="t('service.query.metricOrigin')" :description="t('service.query.metricOriginDescription')" type="info" :closable="false" />
         <el-button v-if="sourceSnapshot?.metric_source" link type="primary" @click="openConsoleRoute(`/modeling/metric-implementations/${sourceSnapshot.metric_source.implementation_id}?revision_id=${sourceSnapshot.metric_source.revision_id}`)">{{ t('service.query.metricOriginDetail') }} · {{ metricRevisionLabel }}</el-button>
         <el-tag v-if="sourceSnapshot?.metric_source">{{ t(sourceSnapshot.metric_source.result_kind === 'details' ? 'service.query.metricDetails' : 'service.query.metricSummary') }}</el-tag>
+        <el-button v-if="service?.config_type === 'analytical' && auth.hasPermission('service.definition.update') && auth.hasPermission('model.metric_implementation.read')" :disabled="versionConflict || rebindSaving" @click="openRebindDialog">{{ t('service.query.rebindMetricSource') }}</el-button>
         <section v-if="service?.config_type === 'analytical' && sourceSnapshot?.metric_source" class="metric-revision-status" :aria-label="t('service.query.metricRevisionStatus')" aria-live="polite">
           <div class="metric-revision-status-header">
             <strong>{{ t('service.query.metricRevisionStatus') }}</strong>
@@ -249,6 +250,14 @@
         </div>
       </div>
     </el-card>
+
+    <el-dialog v-model="rebindDialogOpen" :title="t('service.query.rebindMetricSource')" width="600px" :close-on-click-modal="false">
+      <PublishedMetricSourcePicker v-if="rebindDialogOpen" v-model="rebindSelection" />
+      <template #footer>
+        <el-button :disabled="rebindSaving" @click="rebindDialogOpen = false">{{ t('service.common.cancel') }}</el-button>
+        <el-button type="primary" :loading="rebindSaving" :disabled="!rebindSelection || versionConflict" @click="rebindMetricSource">{{ t('service.common.confirm') }}</el-button>
+      </template>
+    </el-dialog>
 
 	<el-card v-if="sourceSnapshot" :header="t('service.query.snapshotTitle')" class="snapshot-card">
 	  <el-descriptions :column="2" border>
@@ -409,6 +418,7 @@ import { ArrowLeft, Link } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import { TablePreview } from '@common-ui-map'
 import queryServiceAPI from '@/api/queryService'
+import PublishedMetricSourcePicker from '../components/PublishedMetricSourcePicker.vue'
 import { createModelMetricAPI } from '../../../../common-frontend/basic/src/api/modelMetrics.js'
 import client from '../api/client'
 import { useAuthStore } from '../store/auth'
@@ -445,6 +455,9 @@ useConsolePageDescriptor(router, 'service', {
 const loading = ref(false)
 const statusUpdating = ref(false)
 const versionConflict = ref(false)
+const rebindDialogOpen = ref(false)
+const rebindSelection = ref(null)
+const rebindSaving = ref(false)
 const snapshotChecking = ref(false)
 const snapshotRefreshing = ref(false)
 const snapshotDiff = ref(null)
@@ -714,6 +727,36 @@ const goBack = () => {
 
 const goToEdit = () => {
   navigateServiceRoute(router, `/query-services/${serviceId.value}/edit`)
+}
+
+const openRebindDialog = () => {
+  const source = sourceSnapshot.value?.metric_source
+  rebindSelection.value = source ? {
+    implementation_id: source.implementation_id,
+    revision_id: source.revision_id,
+    ...(source.result_kind === 'details' ? { result_kind: 'details' } : {})
+  } : null
+  rebindDialogOpen.value = true
+}
+
+const rebindMetricSource = async () => {
+  if (!service.value || !rebindSelection.value || rebindSaving.value || versionConflict.value) return
+  rebindSaving.value = true
+  try {
+    service.value = await queryServiceAPI.rebindMetricSource(serviceId.value, {
+      metric_source: rebindSelection.value,
+      version: service.value.version
+    })
+    rebindDialogOpen.value = false
+    previewData.value = []
+    previewPagination.value = { ...previewPagination.value, page: 1, hasMore: false, nextCursor: '', cursors: [''] }
+    metricRevisionRefresh.value++
+    ElMessage.success(t('service.query.rebindMetricSourceSuccess'))
+  } catch (error) {
+    if (!captureVersionConflict(error)) ElMessage.error(t('service.query.rebindMetricSourceFailed') + ': ' + (error.response?.data?.error || error.message))
+  } finally {
+    rebindSaving.value = false
+  }
 }
 
 const checkSourceSnapshot = async () => {

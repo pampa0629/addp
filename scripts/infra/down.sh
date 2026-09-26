@@ -22,7 +22,7 @@ Usage: bash scripts/infra/down.sh [-v|--volumes] [--force]
 
 Options:
   -v, --volumes   同时删除数据卷（警告：会删除所有数据）
-  --force         跳过容器验证确认（用于自动化脚本）
+  --force         跳过非 ADDP 容器确认；不会跳过数据卷删除确认
 
 说明：
   默认停止并删除容器、网络，但保留数据卷。
@@ -71,12 +71,45 @@ if ! docker compose version >/dev/null 2>&1; then
   echo -e "${RED}✗ docker compose 不可用${NC}"; exit 1
 fi
 
+# 删除数据卷是不可逆操作。只有经过独立准入的 Online 一次性 Runner 可无交互清理；
+# 本地 --force 仅影响容器名称检查，不能授权非交互删除开发数据。
+if [[ "$REMOVE_VOLUMES" == true ]]; then
+  if [[ "${GITHUB_ACTIONS:-}" == true && "${ADDP_ONLINE_HOST:-}" == 1 &&
+        "${ADDP_ONLINE_TEST:-}" == 1 && "${POSTGRES_DB:-}" == addp_online &&
+        ( "${ADDP_ONLINE_HOSTED:-}" == 1 || "${ADDP_ONLINE_OWNER_MANAGED:-}" == 1 ) &&
+        ! -e ./.env ]]; then
+    :
+  else
+    if [[ ! -t 0 ]]; then
+      echo -e "${RED}✗ 本地非交互环境禁止删除 addp-infra 数据卷${NC}" >&2
+      exit 1
+    fi
+    read -r -p '输入 DELETE addp-infra VOLUMES 确认删除全部基础设施数据卷: ' confirm || exit 1
+    if [[ "$confirm" != 'DELETE addp-infra VOLUMES' ]]; then
+      echo -e "${YELLOW}✗ 操作已取消${NC}" >&2
+      exit 1
+    fi
+  fi
+fi
+
 # 验证将要删除的容器范围
 echo -e "${YELLOW}▶ 检查即将停止的容器...${NC}"
 
 CONTAINERS_TO_REMOVE=$(compose ps -a --format "{{.Name}}" 2>/dev/null || true)
 
 if [ -n "$CONTAINERS_TO_REMOVE" ]; then
+  while IFS= read -r container; do
+    [[ -n "$container" ]] || continue
+    owner_dir=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$container" 2>/dev/null) || {
+      echo -e "${RED}✗ 无法验证容器 $container 的 Compose 工作目录${NC}" >&2
+      exit 1
+    }
+    if [[ "$owner_dir" != "$PROJECT_ROOT" ]]; then
+      echo -e "${RED}✗ 容器 $container 属于其他工作区：$owner_dir${NC}" >&2
+      exit 1
+    fi
+  done <<< "$CONTAINERS_TO_REMOVE"
+
   echo -e "${BLUE}将停止并删除以下容器:${NC}"
   echo "$CONTAINERS_TO_REMOVE" | while read -r container; do
     echo "  - $container"

@@ -91,13 +91,27 @@ func (s *ScanExecutionService) CreateManualRun(ctx context.Context, tenantID, us
 	return execution, nil
 }
 
-func (s *ScanExecutionService) CreateUnscannedRuns(ctx context.Context, tenantID, userID uint) ([]*commonExecution.TaskExecution, error) {
+type UnscannedRunSubmissionFailure struct {
+	EngineID   uint   `json:"engine_id"`
+	EngineName string `json:"engine_name"`
+	Message    string `json:"message"`
+}
+
+type UnscannedRunSubmission struct {
+	Runs               []*commonExecution.TaskExecution
+	SubmissionFailures []UnscannedRunSubmissionFailure
+}
+
+func (s *ScanExecutionService) CreateUnscannedRuns(ctx context.Context, tenantID, userID uint) (UnscannedRunSubmission, error) {
+	result := UnscannedRunSubmission{
+		Runs:               []*commonExecution.TaskExecution{},
+		SubmissionFailures: []UnscannedRunSubmissionFailure{},
+	}
 	resources, err := s.engineService.GetEnginesWithStats(tenantID)
 	if err != nil {
-		return nil, err
+		return result, err
 	}
 
-	runs := make([]*commonExecution.TaskExecution, 0, len(resources))
 	for _, resource := range resources {
 		if resource == nil {
 			continue
@@ -112,6 +126,11 @@ func (s *ScanExecutionService) CreateUnscannedRuns(ctx context.Context, tenantID
 			Source:    commonExecution.ModuleMeta,
 		})
 		if err != nil {
+			result.SubmissionFailures = append(result.SubmissionFailures, UnscannedRunSubmissionFailure{
+				EngineID:   resource.EngineID,
+				EngineName: resource.ResourceName,
+				Message:    boundedSubmissionFailure(err.Error()),
+			})
 			s.log.Warn("未扫描引擎后台扫描运行创建失败，跳过该引擎",
 				"engine_id", resource.EngineID,
 				"engine_name", resource.ResourceName,
@@ -119,9 +138,18 @@ func (s *ScanExecutionService) CreateUnscannedRuns(ctx context.Context, tenantID
 			)
 			continue
 		}
-		runs = append(runs, run)
+		result.Runs = append(result.Runs, run)
 	}
-	return runs, nil
+	return result, nil
+}
+
+func boundedSubmissionFailure(message string) string {
+	const maxRunes = 512
+	runes := []rune(message)
+	if len(runes) > maxRunes {
+		return string(runes[:maxRunes])
+	}
+	return message
 }
 
 // CreateTaskManualRun 基于已有扫描任务定义创建一次手动执行

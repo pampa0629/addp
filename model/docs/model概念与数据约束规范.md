@@ -147,7 +147,7 @@ MetricImplementation 使用稳定身份与不可变修订，稳定身份保存�
 
 `contract.operation=directional_overlap` 复用同一事实来源、主体字段、主体维度、集合成员去重字段与 DATE 字段；两个人员角色共享字段映射，角色由必填 `subject_id` 和 `comparison_id` 明确绑定。此操作不接受额外固定过滤，避免把主领队过滤或未定义作用范围的条件带入参加活动集合。额外必填参数 `directions=forward|both` 选择单方向或交换角色的双向组合；两者共用一次 PreparedQuery 执行和同一快照。任一人员不存在时整次结果为空；人员存在但集合为空时对应方向为 0；同人非空为 1。
 
-`contract.operation=sum_decimal_by_group` 表示当前来源事实表的静态快照，`group` 与 `measure` 都引用该事实表字段，分别要求 string 与 DECIMAL(38,18)，不声明主体维度、去重对象、日期、查询参数或明细结果。Model 排除 NULL 分组键，对入选行的 NULL 度量报质量错误；空字符串仍是合法且不同于其他字符串的键，需要排除时应在确定的上游来源中完成。输出 `group_key,value`，其中 `value` 为精确 decimal 和，分组键为非空稳定键，空来源返回空结果；求和越界由通用计划求值错误阻断。面积等单位与数据准备方法归 Standard 指标定义及来源加工所有，Model 只绑定已准备的数值字段，不注入 PostGIS 或其他数据库函数。首个耕地样例应使用 EPSG:32650 投影平面几何面积，先由来源加工产出平方米 decimal 字段；既有 `SHAPE_Area` 是经纬度平面面积，不能作为平方米口径。
+`contract.operation=sum_decimal_by_group` 表示当前来源事实表的静态快照，`group` 与 `measure` 都引用该事实表字段，分别要求 string 与 DECIMAL(38,18)，不声明主体维度、去重对象、日期、查询参数或明细结果。Model 排除 NULL 分组键，对入选行的 NULL 度量报质量错误；空字符串仍是合法且不同于其他字符串的键，需要排除时应在确定的上游来源中完成。输出 `group_key,value`，其中 `value` 为精确 decimal 和，分组键为非空稳定键，空来源返回空结果；求和越界由通用计划求值错误阻断。面积等单位与数据准备方法归 Standard 指标定义及来源加工所有，Model 只绑定已准备的数值字段，不注入 PostGIS 或其他数据库函数。耕地样例先使用 EPSG:32650 投影平面几何计算平方米面积，再由确定的来源加工逐图斑除以 10000，按 DECIMAL(38,18) 的精度产出公顷数值字段；指标定义修订以公顷为单位，Model 绑定该字段并按城市求和。换算发生在聚合前，因此验收应以逐行公顷值之和为准，不把平方米汇总后换算的结果冒充同一精度口径。既有 `SHAPE_Area` 是经纬度平面面积，不能作为平方米或公顷口径。
 
 双向结果每方向每个时间桶一行，输出 `direction,subject_id,comparison_id,bucket,value,subject_count,comparison_count,shared_count`；`direction=forward|reverse` 区分有序角色，即使两个人相同也保持唯一行键 `direction,bucket`。`value` 为未按展示精度提前舍入的 decimal 比例，三个 count 为解释字段，不另建指标。月份比例和全期比例各自从范围内集合计算。先分别去重形成双方完整集合，再计算交集和分母，禁止从内连接结果统计分母。质量检查覆盖两个人员。
 

@@ -54,7 +54,7 @@ export function buildChartOption(rows, config, locale = 'zh-CN', options = {}) {
         ...selection,
         label: textStyle,
         data: rows.map((row, index) => ({ name: labels[index], value: Number(row[measure]) })),
-        tooltip: { valueFormatter: (value) => formatFieldPresentationValueWithState(value, measurePresentation, locale) },
+        tooltip: { valueFormatter: (_value, dataIndex) => formatFieldPresentationValueWithState(rows[dataIndex]?.[measure], measurePresentation, locale) },
       }]
     }
   }
@@ -99,11 +99,11 @@ export function buildChartOption(rows, config, locale = 'zh-CN', options = {}) {
             show: true,
             position: 'top',
             ...textStyle,
-            formatter: ({ value }) => formatFieldPresentationValue(value, presentation, locale),
+            formatter: ({ dataIndex }) => formatFieldPresentationValue(rows[dataIndex]?.[measure], presentation, locale),
           },
         } : {}),
         data: rows.map((row) => Number(row?.[measure])),
-        tooltip: { valueFormatter: (value) => formatFieldPresentationValueWithState(value, presentation, locale) },
+        tooltip: { valueFormatter: (_value, dataIndex) => formatFieldPresentationValueWithState(rows[dataIndex]?.[measure], presentation, locale) },
       }
     })
   }

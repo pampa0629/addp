@@ -193,6 +193,12 @@ def plan_module(repository: Path, module: str, include_platform: bool = True) ->
             raise ModuleGateError(f"Makefile target {python_target} is missing")
         steps.append(Step(f"{module} Python T1", ("make", python_target), repository))
 
+    for path in repository_files(repository, f"{module}/*/requirements.txt"):
+        runtime = Path(path).parent.name
+        target = f"test-{runtime}"
+        if make_target(makefile, target) is not None:
+            steps.append(Step(f"{module} Python T1 ({runtime})", ("make", target), repository))
+
     integration_scripts = sorted(set(hosted_t2_scripts(repository)) | {
         path for path in repository_files(repository, "scripts/test/*-gate.sh")
         if T2_OWNED_SERVICES_PATTERN.search((repository / path).read_text(encoding="utf-8"))

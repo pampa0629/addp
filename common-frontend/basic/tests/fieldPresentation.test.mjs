@@ -59,6 +59,7 @@ test('value label validation rejects duplicates, unsupported types and unbounded
 
 test('formats numeric and temporal values through the same controlled contract', () => {
   assert.equal(formatFieldPresentationValue(1234.5, presentations[0], 'zh-CN'), '1,234.50 元')
+  assert.equal(formatFieldPresentationValue('9043526590.462176100000000010', { precision: 8, unit: 'm²' }, 'en-US'), '9,043,526,590.46217610 m²')
   assert.equal(formatFieldPresentationValue(null, presentations[0], 'zh-CN'), '—')
   assert.match(formatFieldPresentationValue('2026-09-06T12:34:56+08:00', presentations[1], 'zh-CN'), /2026/)
   assert.equal(formatFieldPresentationValue('not-a-date', presentations[1], 'zh-CN'), 'not-a-date')

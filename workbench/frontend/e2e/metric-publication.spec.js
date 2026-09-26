@@ -447,6 +447,25 @@ test(`shared chart paints count labels and theme text for count ${count}`, async
 })
 }
 
+test('published metric card keeps the exact decimal display from the Service result', async ({ page, context }) => {
+  const backend = await installMetricApplicationBackend(context, { rebound: true })
+  const published = backend.published
+  const component = published.snapshot.components.find(item => item.service_ref.service_id === 72)
+  component.renderer_type = 'value'
+  component.renderer_config = { items: [{ field: 'value', label: '面积', unit: 'm²', precision: 8 }] }
+  backend.descriptors[72].output_contract.fields.find(field => field.name === 'value').type = 'decimal'
+  backend.descriptors[72].input_contract.fields.find(field => field.name === 'value').type = 'decimal'
+  await context.route(`**/data_applications/${published.id}/runtime`, route => route.fulfill({ json: published }))
+  await context.route('**/api/query/metric_72/query', route => route.fulfill({ json: {
+    data: [{ bucket: '2026-01-01', value: '9043526590.462176100000000010' }],
+    page: { has_more: false, next_cursor: '' },
+  } }))
+
+  await page.goto(runtimePath)
+  await expect(page.locator('.scalar-value-renderer .value-number')).toHaveText('9,043,526,590.46217610')
+  expect(backend.unexpected).toEqual([])
+})
+
 test('optional text contains filters reset pagination and clearing restores an unfiltered request', async ({ page, context }) => {
   const backend = await installMetricApplicationBackend(context, { rebound: true })
   const published = backend.published

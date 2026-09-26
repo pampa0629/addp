@@ -26,6 +26,5 @@ export function formatScalarValue(value, precision, locale = 'zh-CN') {
   return new Intl.NumberFormat(locale, {
     minimumFractionDigits: precision,
     maximumFractionDigits: precision,
-  }).format(Number(value))
+  }).format(value)
 }
-

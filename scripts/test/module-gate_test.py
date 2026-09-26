@@ -57,6 +57,17 @@ class ModuleGateTest(unittest.TestCase):
     def tearDown(self) -> None:
         self.temporary_directory.cleanup()
 
+    def test_discovers_registered_nested_python_runtime(self) -> None:
+        requirements = self.repository / "sample" / "runtime" / "requirements.txt"
+        requirements.parent.mkdir(parents=True)
+        requirements.write_text("pytest\n", encoding="utf-8")
+        makefile = self.repository / "Makefile"
+        makefile.write_text(makefile.read_text() + "test-runtime:\n\t@true\n")
+
+        steps = MODULE.plan_module(self.repository, "sample")
+
+        self.assertIn(("make", "test-runtime"), [step.command for step in steps])
+
     def test_plans_platform_and_discovered_module_gates(self) -> None:
         steps = MODULE.plan_module(self.repository, "sample")
         self.assertEqual(

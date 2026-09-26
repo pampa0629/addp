@@ -137,6 +137,8 @@ Meta 扫描允许在同一执行中继续处理多个目标，但不得因为“
 5. 有失败目标时不新增 `partial` 状态；公共执行状态仍严格遵循 `pending / running / success / failed / timeout / cancelled`。
 6. 由 capability 边界明确判定为不支持的可选 deep facts，或因未取得去重锁而明确跳过的重复扫描，不计为目标失败。
 
+“一键补扫未扫描引擎”跨引擎提交多个独立 execution。单个引擎提交失败时，Meta 继续提交后续引擎，并在提交响应的 `submission_failures` 中返回该引擎 ID、名称和失败原因；`runs` 只包含已成功提交的 execution。前端等待每个已提交 execution 进入终态，单个 execution 失败或查询失败不得中断后续 execution 的等待。全部处理完毕后统一展示成功数、失败数，以及每个失败引擎的提交错误或 `error_details.failed_target_samples`；单个 execution 内的失败终态仍遵守上述聚合规则。
+
 例如 System 注册 engine 时创建的自动扫描任务：
 
 | 字段 | 取值 |

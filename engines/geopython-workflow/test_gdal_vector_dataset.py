@@ -226,6 +226,36 @@ def test_filegdb_inspect_returns_lightweight_container_children(tmp_path):
     assert result["format_info"]["driver"] == "OpenFileGDB"
 
 
+def test_filegdb_inspect_empty_container_has_no_children(tmp_path):
+    source = tmp_path / "empty.gdb"
+    driver = gdal.GetDriverByName("OpenFileGDB")
+    if driver is None or driver.GetMetadataItem(gdal.DCAP_CREATE) != "YES":
+        pytest.skip("writable OpenFileGDB driver is unavailable")
+    dataset = driver.Create(str(source), 0, 0, 0, gdal.GDT_Unknown)
+    assert dataset is not None
+    dataset = None
+
+    result = inspect(_source_plan(source))
+
+    assert result["container"] == {
+        "child_count": 0,
+        "default_child": "",
+        "resource_count": 1,
+        "children": [],
+    }
+    assert result["format_info"]["driver"] == "OpenFileGDB"
+    assert result["format_info"]["layer_count"] == 0
+
+
+def test_filegdb_inspect_rejects_invalid_container(tmp_path):
+    source = tmp_path / "invalid.gdb"
+    source.mkdir()
+    (source / "garbage").write_text("not a FileGDB")
+
+    with pytest.raises(RuntimeError):
+        inspect(_source_plan(source))
+
+
 def test_filegdb_inspect_attribute_table_has_no_geometry_column(tmp_path):
     source = tmp_path / "attributes.gdb"
     driver = gdal.GetDriverByName("OpenFileGDB")
@@ -296,8 +326,11 @@ def test_inspect_skips_unreadable_dataset_layers(monkeypatch):
             return FakeDriver()
 
     class FakeOpenedSource:
-        def __init__(self, plan):
+        empty_filegdb = False
+
+        def __init__(self, plan, *, inspect_empty_filegdb=False):
             del plan
+            assert inspect_empty_filegdb
 
         def __enter__(self):
             return FakeDataset()

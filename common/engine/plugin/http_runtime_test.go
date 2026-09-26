@@ -429,6 +429,9 @@ func TestHTTPInvokeOperatorParsesErrorDetails(t *testing.T) {
 	if err == nil {
 		t.Fatal("HTTPInvokeOperator returned nil error for failed status")
 	}
+	if !strings.Contains(err.Error(), "算子执行失败") || strings.Contains(err.Error(), "gdal_translate stderr") {
+		t.Fatalf("operator error must preserve the concise runtime reason without traceback: %v", err)
+	}
 	if result == nil || result.Status != "failed" || result.Error != "算子执行失败" || result.ErrorCode != "EXECUTION_FAILED" || result.Details != "gdal_translate stderr" {
 		t.Fatalf("unexpected result: %+v", result)
 	}

@@ -39,6 +39,9 @@ func TestCreateUnscannedRunsSubmitsUnscannedEngines(t *testing.T) {
 		ConnectionStatus: commonModels.EngineConnectionOnline,
 		Capabilities:     &capJSON,
 	}
+	unavailableEngine := engine
+	unavailableEngine.ID = 8
+	unavailableEngine.Name = "Unavailable MinIO"
 	systemServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/v1/system/oauth/token" {
 			if err := r.ParseForm(); err != nil {
@@ -58,7 +61,9 @@ func TestCreateUnscannedRunsSubmitsUnscannedEngines(t *testing.T) {
 		}
 		switch r.URL.Path {
 		case "/api/v1/system/engines":
-			_ = json.NewEncoder(w).Encode([]commonModels.Engine{engine})
+			_ = json.NewEncoder(w).Encode([]commonModels.Engine{unavailableEngine, engine})
+		case "/api/v1/system/engines/8":
+			http.Error(w, `{"error":"engine disappeared"}`, http.StatusNotFound)
 		case "/api/v1/system/engines/9":
 			_ = json.NewEncoder(w).Encode(engine)
 		default:
@@ -81,12 +86,17 @@ func TestCreateUnscannedRunsSubmitsUnscannedEngines(t *testing.T) {
 	repo := NewScanService(db, engineSvc)
 	execSvc := NewScanExecutionService(db, repo, engineSvc, nil)
 
-	runs, err := execSvc.CreateUnscannedRuns(context.Background(), tenantID, 7)
+	result, err := execSvc.CreateUnscannedRuns(context.Background(), tenantID, 7)
 	if err != nil {
 		t.Fatalf("CreateUnscannedRuns() error = %v", err)
 	}
+	runs := result.Runs
 	if len(runs) != 1 {
 		t.Fatalf("runs len = %d, want 1", len(runs))
+	}
+	if len(result.SubmissionFailures) != 1 || result.SubmissionFailures[0].EngineID != 8 ||
+		result.SubmissionFailures[0].EngineName != "Unavailable MinIO" || result.SubmissionFailures[0].Message == "" {
+		t.Fatalf("submission failures = %#v", result.SubmissionFailures)
 	}
 	if runs[0].ExecutionID == "" || runs[0].Status != commonExecution.ExecutionStatusPending {
 		t.Fatalf("run = %#v", runs[0])

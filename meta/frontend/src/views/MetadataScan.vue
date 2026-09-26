@@ -28,6 +28,13 @@
           :show-text="false"
         />
         <div class="scan-status__detail">{{ activeScan.detail }}</div>
+        <div v-if="activeScan.failures.length" class="scan-status__failures">
+          <div v-for="(failure, index) in activeScan.failures" :key="index" class="scan-status__failure">
+            <strong v-if="failure.engineName">{{ failure.engineName }}</strong>
+            <span v-if="failure.target">{{ failure.engineName ? ' · ' : '' }}{{ failure.target }}</span>
+            <span v-if="failure.message">{{ failure.target || failure.engineName ? ' — ' : '' }}{{ failure.message }}</span>
+          </div>
+        </div>
       </div>
 
       <div class="scan-container" ref="containerRef">
@@ -395,6 +402,7 @@ import metaApi from '../api/meta'
 import { isDirectLeafCatalog } from '../utils/catalogScanView'
 import { navigateMetaRoute } from '../utils/moduleNavigation'
 import { resolveMetadataScanRouteState } from '../utils/routeState'
+import { scanRunFailureSamples, waitForScanRuns } from '../utils/scanRunBatch'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -429,7 +437,8 @@ const activeScan = ref({
   title: '',
   detail: '',
   percent: 0,
-  status: ''
+  status: '',
+  failures: []
 })
 
 const allScanTasks = ref([])
@@ -1068,8 +1077,9 @@ const waitForScanRun = async (run, hooks = {}) => {
       return latest
     }
     if (FAILED_SCAN_STATUSES.has(status)) {
-      const message = latest?.error_message || latest?.error || latest?.progress_message || status
-      throw new Error(message)
+      const error = new Error(latest?.error_details?.message || latest?.error_message || latest?.error || status)
+      error.run = latest
+      throw error
     }
     if (!ACTIVE_SCAN_STATUSES.has(status) && status) {
       return latest
@@ -1079,28 +1089,6 @@ const waitForScanRun = async (run, hooks = {}) => {
   return latest
 }
 
-const waitForScanRuns = async (runs = [], hooks = {}) => {
-  const validRuns = runs.filter(scanRunIDOf)
-  for (let index = 0; index < validRuns.length; index += 1) {
-    const run = validRuns[index]
-    await waitForScanRun(run, {
-      onProgress: latest => {
-        notifyScanHook(hooks.onProgress, {
-          run: latest,
-          index,
-          total: validRuns.length
-        })
-      }
-    })
-    notifyScanHook(hooks.onRunCompleted, {
-      run,
-      index,
-      total: validRuns.length
-    })
-  }
-  return validRuns.length
-}
-
 const startScanStatus = (title, detail, percent = 5) => {
   cancelScanStatusTimer()
   activeScan.value = {
@@ -1108,7 +1096,8 @@ const startScanStatus = (title, detail, percent = 5) => {
     title,
     detail,
     percent: clampScanPercent(percent),
-    status: ''
+    status: '',
+    failures: []
   }
 }
 
@@ -1119,7 +1108,8 @@ const updateScanStatus = ({ title = '', detail = '', percent = 10, status = '' }
     title: title || activeScan.value.title || t('meta.scan.scanRunning'),
     detail: detail || activeScan.value.detail || t('meta.scan.scanWaiting'),
     percent: clampScanPercent(percent),
-    status
+    status,
+    failures: []
   }
 }
 
@@ -1156,7 +1146,8 @@ const completeScanStatus = (title, detail) => {
     title,
     detail,
     percent: 100,
-    status: 'success'
+    status: 'success',
+    failures: []
   }
   scanStatusTimer = window.setTimeout(() => {
     clearScanStatus()
@@ -1165,12 +1156,14 @@ const completeScanStatus = (title, detail) => {
 
 const failScanStatus = (error) => {
   cancelScanStatusTimer()
+  const failures = error?.run ? scanRunFailureSamples(error.run, error) : []
   activeScan.value = {
     visible: true,
     title: t('meta.scan.scanFailed'),
-    detail: error?.response?.data?.error || error?.message || t('meta.scan.scanFailed'),
+    detail: failures.length ? t('meta.scan.scanFailureDetails') : error?.response?.data?.error || error?.message || t('meta.scan.scanFailed'),
     percent: 100,
-    status: 'exception'
+    status: 'exception',
+    failures
   }
 }
 
@@ -1181,7 +1174,8 @@ const clearScanStatus = () => {
     title: '',
     detail: '',
     percent: 0,
-    status: ''
+    status: '',
+    failures: []
   }
 }
 
@@ -1209,41 +1203,69 @@ const clampScanPercent = value => Math.max(0, Math.min(100, Math.round(Number(va
 
 // 一键补扫未扫描引擎
 const handleCreateUnscannedScanRuns = async () => {
-	try {
-		await ElMessageBox.confirm(
-			t('meta.scan.unscannedScanConfirmMsg'),
-			t('meta.scan.unscannedScanConfirmTitle'),
-			{ type: 'warning' }
-		)
+  try {
+    await ElMessageBox.confirm(
+      t('meta.scan.unscannedScanConfirmMsg'),
+      t('meta.scan.unscannedScanConfirmTitle'),
+      { type: 'warning' }
+    )
 
     unscannedScanning.value = true
     const res = await metaApi.createUnscannedScanRuns()
     const runs = Array.isArray(res?.runs) ? res.runs : []
-	const submitted = Number(res?.submitted || runs.length || 0)
-	if (submitted === 0) {
-		ElMessage.success(t('meta.scan.unscannedScanNoRuns'))
-		return
-	}
-	startScanStatus(
-		t('meta.scan.unscannedScanSubmitted', { n: submitted }),
-		t('meta.scan.scanWaiting'),
-		5
-	)
-	await waitForScanRuns(runs, {
-		onProgress: payload => updateBatchScanStatus(payload, t('meta.scan.unscannedScanSubmitted', { n: submitted }))
-	})
-	completeScanStatus(
-		t('meta.scan.unscannedScanCompleted', { n: submitted }),
-		t('meta.scan.unscannedScanCompleted', { n: submitted })
-	)
-	ElMessage.success(t('meta.scan.unscannedScanCompleted', { n: submitted }))
-	await Promise.all([loadEngines(), loadScanTasks()])
-} catch (error) {
-	if (error !== 'cancel') {
-		failScanStatus(error)
-		ElMessage.error(t('meta.scan.unscannedScanFailed', { msg: error.response?.data?.error || error.message }))
-	}
-} finally {
+    const submissionFailures = Array.isArray(res?.submission_failures) ? res.submission_failures : []
+    const submitted = runs.length
+    if (submitted === 0 && submissionFailures.length === 0) {
+      ElMessage.success(t('meta.scan.unscannedScanNoRuns'))
+      return
+    }
+    startScanStatus(
+      t('meta.scan.unscannedScanSubmitted', { n: submitted }),
+      t('meta.scan.scanWaiting'),
+      5
+    )
+    const results = await waitForScanRuns(runs, (run, onProgress) => waitForScanRun(run, { onProgress }), {
+      onProgress: payload => updateBatchScanStatus(payload, t('meta.scan.unscannedScanSubmitted', { n: submitted }))
+    })
+    const failedRuns = results.filter(result => result.error)
+    const failedCount = submissionFailures.length + failedRuns.length
+    const successCount = results.length - failedRuns.length
+    if (failedCount > 0) {
+      const failures = submissionFailures.map(failure => ({
+        engineName: failure.engine_name || String(failure.engine_id || ''),
+        target: '',
+        message: failure.message || t('meta.scan.scanFailed')
+      }))
+      for (const result of failedRuns) {
+        const engineID = Number(result.run?.execution_config?.engine_id || result.run?.execution_config?.engineId)
+        const engineName = engines.value.find(engine => Number(engine.id) === engineID)?.name || String(engineID || '')
+        failures.push(...scanRunFailureSamples(result.run, result.error).map(failure => ({
+          engineName,
+          ...failure
+        })))
+      }
+      const summary = t('meta.scan.unscannedScanPartial', { success: successCount, failed: failedCount })
+      activeScan.value = {
+        visible: true,
+        title: summary,
+        detail: t('meta.scan.scanFailureDetails'),
+        percent: 100,
+        status: 'exception',
+        failures
+      }
+      ElMessage.warning(summary)
+    } else {
+      const summary = t('meta.scan.unscannedScanCompleted', { n: successCount })
+      completeScanStatus(summary, summary)
+      ElMessage.success(summary)
+    }
+    await Promise.allSettled([loadEngines(), loadScanTasks()])
+  } catch (error) {
+    if (error !== 'cancel') {
+      failScanStatus(error)
+      ElMessage.error(t('meta.scan.unscannedScanFailed', { msg: error.response?.data?.error || error.message }))
+    }
+  } finally {
     unscannedScanning.value = false
   }
 }
@@ -1253,6 +1275,7 @@ const handleBatchScan = async () => {
   if (!selectedCatalogEntries.value.length) return
 
   const terminology = getCatalogEntryTerminology(selectedResource.value)
+  let submitted = false
 
   try {
     await ElMessageBox.confirm(
@@ -1265,19 +1288,22 @@ const handleBatchScan = async () => {
 
     const catalogPaths = selectedCatalogEntries.value.map(item => catalogEntryTargetOf(item)).filter(Boolean)
     const run = await metaApi.createManualScanRun(selectedResource.value.id, catalogPaths, { scan_depth: 'deep', force: false })
+    submitted = true
     startScanStatus(t('meta.scan.batchScanSubmitted'), t('meta.scan.scanWaiting'), 5)
     await waitForScanRun(run, {
       onProgress: latest => updateScanStatusFromRun(latest, t('meta.scan.batchScanSubmitted'))
     })
     completeScanStatus(t('meta.scan.batchScanCompleted'), t('meta.scan.batchScanCompleted'))
     ElMessage.success(t('meta.scan.batchScanCompleted'))
-    await loadCatalogEntries(selectedResource.value)
   } catch (error) {
     if (error !== 'cancel') {
       failScanStatus(error)
       ElMessage.error(t('meta.scan.batchScanFailed', { msg: error.response?.data?.error || error.message }))
     }
   } finally {
+    if (submitted) {
+      await loadCatalogEntries()
+    }
     scanning.value = false
   }
 }
@@ -1540,12 +1566,23 @@ onBeforeUnmount(() => {
 
 .scan-status__detail {
   margin-top: 4px;
-  overflow: hidden;
   color: var(--addp-text-secondary);
   font-size: 12px;
   line-height: 1.4;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+}
+
+.scan-status__failures {
+  max-height: 180px;
+  margin-top: 6px;
+  overflow-y: auto;
+  color: var(--el-color-danger);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.scan-status__failure {
+  overflow-wrap: anywhere;
 }
 
 .scan-container {

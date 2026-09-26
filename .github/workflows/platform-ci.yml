@@ -230,6 +230,45 @@ jobs:
           gate: Document Workflow tests
           status: ${{ job.status }}
 
+  geopython-workflow-tests:
+    name: GeoPython GDAL tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install GDAL system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gdal-bin libgdal-dev
+
+      - name: Prepare GeoPython test environment
+        uses: ./.github/actions/prepare-python-gate
+        with:
+          venv-path: engines/geopython-workflow/.venv
+          cache-dependency-path: |
+            engines/geopython-workflow/requirements.txt
+            common-python/pyproject.toml
+          requirements-file: engines/geopython-workflow/requirements.txt
+          editable-install: ./common-python
+
+      - name: Install matching GDAL bindings and pytest
+        run: engines/geopython-workflow/.venv/bin/python -m pip install "GDAL==$(gdal-config --version)" pytest
+
+      - name: Run GeoPython GDAL tests
+        run: make test-geopython-workflow
+
+      - name: Summarize GeoPython GDAL gate
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: GeoPython GDAL tests
+          status: ${{ job.status }}
+
   agent-offline-evaluation:
     name: Agent offline evaluation
     runs-on: ubuntu-24.04

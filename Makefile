@@ -93,7 +93,7 @@ check-cli-release: ## 创建 Tag 前校验 CLI 版本、main HEAD 和 Platform C
 infra-up: ## 启动系统库基础设施（带端口预检与健康检查）
 	@bash scripts/infra/up.sh
 
-infra-down: ## 停止系统库基础设施（可选 --rm） 用法：make infra-down ARGS=--rm
+infra-down: ## 停止系统库基础设施（保留数据卷；删除数据卷需交互确认）
 	@bash scripts/infra/down.sh $(ARGS)
 
 infra-restart: ## 重启系统库基础设施（先停再启）
@@ -119,6 +119,11 @@ test-common-python: ## 运行 common-python 全量测试
 DOCUMENT_WORKFLOW_PYTHON ?= engines/document-workflow/.venv/bin/python
 test-document-workflow: ## 运行 Document Workflow Engine 确定性测试
 	@cd engines/document-workflow && $(abspath $(DOCUMENT_WORKFLOW_PYTHON)) -m pytest -q tests
+
+GEOPYTHON_WORKFLOW_PYTHON ?= engines/geopython-workflow/.venv/bin/python
+.PHONY: test-geopython-workflow
+test-geopython-workflow: ## 运行 GeoPython GDAL 确定性回归测试
+	@cd engines/geopython-workflow && PYTHONPATH="$(CURDIR)/common-python" $(abspath $(GEOPYTHON_WORKFLOW_PYTHON)) -m pytest -q test_gdal_vector_dataset.py
 
 test-copilot: ## 运行 Copilot 后端全量确定性测试
 	@cd copilot/backend && venv/bin/python -m pytest -q tests

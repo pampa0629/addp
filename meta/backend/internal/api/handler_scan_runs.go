@@ -16,7 +16,7 @@ import (
 
 // CreateUnscannedScanRuns 提交未扫描存储引擎的后台扫描运行
 // @Summary 提交未扫描存储引擎后台扫描 | Submit background scans for unscanned engines
-// @Description 为当前租户下尚未完成元数据扫描的存储引擎创建手动后台扫描运行 | Create manual background scan runs for engines that have not been scanned for current tenant
+// @Description 为当前租户下尚未完成元数据扫描的存储引擎创建手动后台扫描运行；单个引擎提交失败不会中断后续引擎，响应包含 submission_failures | Create manual background scan runs for unscanned tenant engines; per-engine submission failures do not stop later engines and are returned in submission_failures
 // @Tags Meta Scan
 // @Produce json
 // @Success 202 {object} map[string]interface{} "已提交的扫描运行 | Submitted scan runs"
@@ -35,15 +35,16 @@ func (h *Handler) CreateUnscannedScanRuns(c *gin.Context) {
 
 	tenantID := commonAuth.GetTenantID(c)
 	userID := commonAuth.GetUserID(c)
-	runs, err := h.executionService.CreateUnscannedRuns(c.Request.Context(), tenantID, userID)
+	result, err := h.executionService.CreateUnscannedRuns(c.Request.Context(), tenantID, userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
 	c.JSON(http.StatusAccepted, gin.H{
-		"runs":      runs,
-		"submitted": len(runs),
+		"runs":                result.Runs,
+		"submitted":           len(result.Runs),
+		"submission_failures": result.SubmissionFailures,
 	})
 }
 

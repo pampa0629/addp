@@ -39,8 +39,8 @@ business 容器由 `business/` 目录独立管理，可脱离 ADDP 部署。
 - **down.sh** - 停止 ADDP 基础设施（默认保留数据）
   ```bash
   bash scripts/infra/down.sh           # 保留数据卷
-  bash scripts/infra/down.sh -v        # 删除数据卷
-  bash scripts/infra/down.sh --force   # 跳过确认
+  bash scripts/infra/down.sh -v        # 交互输入确认短语后删除数据卷
+  bash scripts/infra/down.sh --force   # 仅跳过非 ADDP 容器确认
   ```
 
 - **status.sh** - 查看基础设施状态
@@ -680,6 +680,8 @@ SKIP_MEILISEARCH_INIT=0
 
 `up.sh` 会自动完成所有初始化,无需手动执行其他脚本。
 
+`down.sh -v` 在本地必须由交互终端输入 `DELETE addp-infra VOLUMES`，`--force` 不会跳过这项确认；非交互删除仅供已完成独立准入的 GitHub Online 一次性环境使用。脚本还会核对容器的 Compose 工作目录，拒绝从另一个 worktree 停止本工作区的容器。
+
 ### 数据持久化
 
 所有数据存储在 Docker volumes 中:
@@ -692,7 +694,7 @@ SKIP_MEILISEARCH_INIT=0
 **停止容器不会丢失数据**,除非显式删除 volumes:
 ```bash
 # 危险操作！会删除所有数据
-docker compose -f docker-compose.infra.yml down -v
+bash scripts/infra/down.sh --volumes
 ```
 
 ### 端口冲突检查

@@ -9,6 +9,12 @@ test('accepts one complete service row without computing a value in the renderer
   assert.equal(formatScalarValue(12.345, 2, 'en-US'), '12.35')
 })
 
+test('keeps exact decimal digits when formatting a metric value', () => {
+  const value = '9043526590.462176100000000010'
+  assert.deepEqual(validateScalarValueResult([{ total: value }], config), { valid: true, reason: '' })
+  assert.equal(formatScalarValue(value, 8, 'en-US'), '9,043,526,590.46217610')
+})
+
 test('rejects partial, empty, multi-row, duplicated, and non-numeric value results', () => {
   assert.equal(validateScalarValueResult([{ total: 12 }], config, true).reason, 'partial_result')
   assert.equal(validateScalarValueResult([], config).reason, 'single_row_required')
@@ -16,4 +22,3 @@ test('rejects partial, empty, multi-row, duplicated, and non-numeric value resul
   assert.equal(validateScalarValueResult([{ total: null }], config).reason, 'invalid_measure')
   assert.equal(validateScalarValueResult([{ total: 1 }], { items: [config.items[0], config.items[0]] }).reason, 'invalid_config')
 })
-

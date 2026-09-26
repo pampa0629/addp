@@ -31,7 +31,7 @@ test('uses field presentations for chart labels and tooltip values without chang
 
   assert.equal(option.series[0].name, '金额')
   assert.deepEqual(option.series[0].data, [12.5])
-  assert.equal(option.series[0].tooltip.valueFormatter(12.5), '12.50 元')
+  assert.equal(option.series[0].tooltip.valueFormatter(12.5, 0), '12.50 元')
   assert.equal(option.yAxis.name, '金额（元）')
   assert.equal(option.yAxis.axisLabel.formatter(12.5), '12.50')
   assert.equal(option.xAxis.nameLocation, 'middle')
@@ -49,8 +49,8 @@ test('adds a controlled state label to chart tooltips without recoloring series 
   }, 'zh-CN')
 
   assert.deepEqual(option.series[0].data, [125])
-  assert.equal(option.series[0].tooltip.valueFormatter(125), '125 元 · 高额')
-  assert.equal(option.series[0].label.formatter({ value: 125 }), '125 元')
+  assert.equal(option.series[0].tooltip.valueFormatter(125, 0), '125 元 · 高额')
+  assert.equal(option.series[0].label.formatter({ dataIndex: 0 }), '125 元')
   assert.equal(option.series[0].itemStyle, undefined)
 })
 
@@ -66,11 +66,25 @@ test('bar labels show zero and signed values with field units and locale precisi
     assert.equal(series.label.position, 'top')
     assert.equal(series.label.color, 'theme-text')
   }
-  assert.equal(option.series[0].label.formatter({ value: 89 }), '89 次')
-  assert.equal(option.series[0].label.formatter({ value: 0 }), '0 次')
-  assert.equal(option.series[1].label.formatter({ value: -1234.5 }), '-1.234,50 EUR')
+  assert.equal(option.series[0].label.formatter({ dataIndex: 0 }), '89 次')
+  assert.equal(option.series[0].label.formatter({ dataIndex: 1 }), '0 次')
+  assert.equal(option.series[1].label.formatter({ dataIndex: 0 }), '-1.234,50 EUR')
   assert.deepEqual(option.series[1].data, [-1234.5, 0])
   assert.equal(buildChartOption(rows, { ...config, chart_type: 'line' }).series[0].label, undefined)
+})
+
+test('chart geometry may approximate decimal values while labels use exact source digits', () => {
+  const value = '9043526590.462176100000000010'
+  for (const chart_type of ['bar', 'line', 'pie']) {
+    const option = buildChartOption([{ city: '长沙', value }], {
+      chart_type, dimension: 'city', measures: ['value'],
+      field_presentations: [{ field: 'value', precision: 8, unit: 'm²' }],
+    }, 'en-US')
+    assert.equal(option.series[0].tooltip.valueFormatter(option.series[0].data[0], 0), '9,043,526,590.46217610 m²')
+    if (chart_type === 'bar') {
+      assert.equal(option.series[0].label.formatter({ dataIndex: 0 }), '9,043,526,590.46217610 m²')
+    }
+  }
 })
 
 test('enables one theme-controlled selected item without changing numeric series data', () => {

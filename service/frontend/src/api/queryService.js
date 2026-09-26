@@ -33,6 +33,10 @@ export default {
     return client.put(`/service/query/${id}`, data)
   },
 
+  rebindMetricSource(id, data) {
+    return client.put(`/service/query/${id}/metric-source`, data)
+  },
+
   // 删除查询服务
   deleteService(id, version) {
     return client.delete(`/service/query/${id}`, { data: { version } })

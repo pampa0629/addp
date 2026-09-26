@@ -1764,7 +1764,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "为当前租户下尚未完成元数据扫描的存储引擎创建手动后台扫描运行 | Create manual background scan runs for engines that have not been scanned for current tenant",
+                "description": "为当前租户下尚未完成元数据扫描的存储引擎创建手动后台扫描运行；单个引擎提交失败不会中断后续引擎，响应包含 submission_failures | Create manual background scan runs for unscanned tenant engines; per-engine submission failures do not stop later engines and are returned in submission_failures",
                 "produces": [
                     "application/json"
                 ],
