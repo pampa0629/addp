@@ -18,6 +18,13 @@ const params = new URL(location.href).searchParams
 const scope = params.get('scope') || 'platform'
 const permissions = ['develop.configuration.read']
 if (params.get('readonly') !== 'true') permissions.push('develop.configuration.update')
-auth.authContext = { context: { type: scope }, authorization: { role_assignments: [{ permissions }] } }
+const tenantID = '3'
+auth.authContext = {
+  context: scope === 'tenant' ? { type: 'tenant', tenant_id: tenantID } : { type: 'platform' },
+  authorization: { role_assignments: [{
+    scope: scope === 'tenant' ? { type: 'tenant', tenant_id: tenantID } : { type: 'platform' },
+    permissions
+  }] }
+}
 const { i18n } = createAddpI18n({ moduleMessages: { 'zh-cn': zh, en }, listenToConsole: false })
 app.use(i18n).use(ElementPlus).mount('#app')

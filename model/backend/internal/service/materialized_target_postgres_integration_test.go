@@ -27,8 +27,10 @@ func TestPostgresMaterializedTargetDecommissionIsOwnedExactAndIdempotent(t *test
 	}
 	t.Cleanup(func() { _ = db.Exec("DROP SCHEMA " + quoteIdentifier(schemaName) + " CASCADE").Error })
 
-	ownedMarker := materializationMarker(7, strings.Repeat("a", 64), uuid.NewString())
-	foreignMarker := materializationMarker(8, strings.Repeat("b", 64), uuid.NewString())
+	ownerToken := uuid.NewString()
+	foreignToken := uuid.NewString()
+	ownedMarker := materializationMarker(ownerToken, strings.Repeat("a", 64), uuid.NewString())
+	foreignMarker := materializationMarker(foreignToken, strings.Repeat("b", 64), uuid.NewString())
 	for _, statement := range []string{
 		"CREATE TABLE " + qualifiedIdentifier(schemaName, "owned") + " (value BIGINT)",
 		"COMMENT ON TABLE " + qualifiedIdentifier(schemaName, "owned") + " IS " + quoteSQLLiteral(ownedMarker),
@@ -41,18 +43,33 @@ func TestPostgresMaterializedTargetDecommissionIsOwnedExactAndIdempotent(t *test
 		}
 	}
 
-	if err := dropOwnedMaterializedTarget(db, schemaName, "owned", 7); err != nil {
+	if err := dropOwnedMaterializedTarget(db, schemaName, "owned", ownerToken); err != nil {
 		t.Fatalf("drop owned target: %v", err)
 	}
 	assertMaterializationTableExists(t, db, schemaName, "owned", false)
-	if err := dropOwnedMaterializedTarget(db, schemaName, "owned", 7); err != nil {
+	if err := dropOwnedMaterializedTarget(db, schemaName, "owned", ownerToken); err != nil {
 		t.Fatalf("idempotent missing target: %v", err)
 	}
 	for _, tableName := range []string{"foreign_owned", "unmarked"} {
-		if err := dropOwnedMaterializedTarget(db, schemaName, tableName, 7); err == nil {
+		if err := dropOwnedMaterializedTarget(db, schemaName, tableName, ownerToken); err == nil {
 			t.Fatalf("drop accepted %s", tableName)
 		}
 		assertMaterializationTableExists(t, db, schemaName, tableName, true)
+	}
+}
+
+func TestMaterializationMarkerRejectsPreviousIDBasedOwnership(t *testing.T) {
+	previousMarker := "addp:model-materialization:v1:5:" + strings.Repeat("a", 64) + ":" + uuid.NewString()
+	if _, ok := parseMaterializationMarker(previousMarker); ok {
+		t.Fatal("previous ID-based marker must not establish ownership")
+	}
+	ownerToken := uuid.NewString()
+	marker := materializationMarker(ownerToken, strings.Repeat("b", 64), uuid.NewString())
+	if !materializationMarkerOwnedBy(marker, ownerToken) {
+		t.Fatal("new marker did not match its owner token")
+	}
+	if materializationMarkerOwnedBy(marker, uuid.NewString()) {
+		t.Fatal("new marker matched a foreign owner token")
 	}
 }
 
@@ -81,7 +98,7 @@ func TestPostgresMaterializedTargetCreationPreservesRowsAndRejectsDrift(t *testi
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { db.Exec("DROP SCHEMA " + schema + " CASCADE"); pool, _ := db.DB(); pool.Close() })
-	table := &models.LogicalTable{ID: 77, Code: "target", Materialization: models.JSONB{"target_parent_locator": "addp://engine/1/path/" + schema + "?type=schema", "target_name": "target"}}
+	table := &models.LogicalTable{ID: 77, Code: "target", PhysicalOwnerToken: uuid.NewString(), Materialization: models.JSONB{"target_parent_locator": "addp://engine/1/path/" + schema + "?type=schema", "target_name": "target"}}
 	fields := []models.LogicalField{
 		{ColumnName: "id", DataType: "int", IsPK: true, Nullable: false},
 		{ColumnName: "amount", DataType: "decimal", Nullable: false},
@@ -141,7 +158,7 @@ WHERE n.nspname = ? AND c.relname = 'target' AND a.attname = 'amount'`, schema).
 	if err := db.Exec("ALTER TABLE " + qualifiedIdentifier(schema, "target") + " ALTER COLUMN amount TYPE numeric(38,18)").Error; err != nil {
 		t.Fatal(err)
 	}
-	table.ID = 78
+	table.PhysicalOwnerToken = uuid.NewString()
 	if err := create(); err == nil {
 		t.Fatal("foreign ownership accepted")
 	}

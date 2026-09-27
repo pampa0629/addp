@@ -18,6 +18,9 @@ dsn_without_query=${MANAGER_POSTGRES_TEST_DSN%%\?*}
 database=${dsn_without_query##*/}
 case "$database" in addp_test|*disposable*) ;; *) echo "MANAGER_POSTGRES_TEST_DSN must identify addp_test or a disposable database" >&2; exit 1 ;; esac
 
+source "$ROOT_DIR/scripts/infra/ports.sh"
+addp_infra_verify_test_postgres_dsn "$MANAGER_POSTGRES_TEST_DSN"
+
 cd "$ROOT_DIR/manager/backend"
 ADDP_POSTGRES_INTEGRATION=1 \
     go test ./internal/repository \

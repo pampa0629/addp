@@ -652,9 +652,9 @@ PY
 }
 
 test_compose_public_port_policy() {
-  bash -n "$ROOT_DIR/scripts/local/start.sh" "$ROOT_DIR/scripts/local/status.sh" \
+  bash -n "$ROOT_DIR/scripts/local/start.sh" "$ROOT_DIR/scripts/local/stop.sh" "$ROOT_DIR/scripts/local/status.sh" \
     "$ROOT_DIR/scripts/prod/start.sh" "$ROOT_DIR/scripts/prod/health-check.sh" \
-    "$ROOT_DIR/scripts/prod/deploy.sh" || fail "Compose lifecycle shell syntax is invalid"
+    "$ROOT_DIR/scripts/prod/deploy.sh" "$ROOT_DIR/scripts/prod/stop.sh" || fail "Compose lifecycle shell syntax is invalid"
   python3 - "$ROOT_DIR" <<'PY'
 from pathlib import Path
 import re
@@ -682,6 +682,45 @@ for folder in ('local', 'prod'):
     assert re.search(r'docker compose -f docker-compose\.runtimes\.yml(?: --env-file \.env)? down', stop), folder
 print('PASS: platform and Runtime Compose projects preserve one public origin and lifecycle')
 PY
+}
+
+test_local_stop_rejects_volume_deletion() {
+  local fixture
+  fixture=$(mktemp -d)
+  cat > "$fixture/docker" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$ADDP_STOP_MOCK_LOG"
+EOF
+  chmod +x "$fixture/docker"
+  if PATH="$fixture:$PATH" ADDP_STOP_MOCK_LOG="$fixture/docker.log" \
+    bash "$ROOT_DIR/scripts/local/stop.sh" --all --volumes > "$fixture/output" 2>&1; then
+    rm -rf "$fixture"
+    fail "local stop accepted volume deletion"
+  fi
+  if [ -e "$fixture/docker.log" ]; then
+    rm -rf "$fixture"
+    fail "local stop contacted Docker before rejecting volume deletion"
+  fi
+  if PATH="$fixture:$PATH" ADDP_STOP_MOCK_LOG="$fixture/docker.log" \
+    bash "$ROOT_DIR/scripts/prod/stop.sh" --volumes > "$fixture/output" 2>&1; then
+    rm -rf "$fixture"
+    fail "production stop accepted an unsupported volume option"
+  fi
+  if [ -e "$fixture/docker.log" ]; then
+    rm -rf "$fixture"
+    fail "production stop contacted Docker before rejecting the volume option"
+  fi
+  python3 - "$ROOT_DIR/scripts/local/stop.sh" <<'PY'
+from pathlib import Path
+import sys
+
+source = Path(sys.argv[1]).read_text()
+assert 'bash "$SCRIPT_DIR/../infra/down.sh"' in source
+assert 'docker compose -f docker-compose.infra.yml down' not in source
+assert ' down -v' not in source
+PY
+  rm -rf "$fixture"
+  echo "PASS: local stop rejects volume deletion before Docker and delegates Infra stop"
 }
 
 test_prod_compose_init_health() {
@@ -1133,6 +1172,7 @@ test_dev_owned_listener_matches_recorded_pid
 test_dev_runtime_owned_listeners_match_pidfiles
 test_runtime_host_port_advertisement
 test_compose_public_port_policy
+test_local_stop_rejects_volume_deletion
 test_prod_compose_init_health
 test_restart_preserves_cache_and_batches_swagger
 test_lifecycle_lock_rejects_concurrent_owner

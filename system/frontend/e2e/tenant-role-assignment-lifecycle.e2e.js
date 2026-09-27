@@ -240,7 +240,7 @@ test('tenant administrator filters members and assigns multiple roles in one req
         authorization: {
           role_assignments: [{
             role_key: 'tenant.administrator',
-            scope: { type: 'tenant' },
+            scope: { type: 'tenant', tenant_id: '1' },
             permissions: authorizationPermissions
           }]
         }
@@ -498,7 +498,7 @@ test('high-risk self assignment completes MFA step-up and retries the original r
         authorization: {
           role_assignments: [{
             role_key: 'tenant.administrator',
-            scope: { type: 'tenant' },
+            scope: { type: 'tenant', tenant_id: '1' },
             permissions: authorizationPermissions
           }]
         }

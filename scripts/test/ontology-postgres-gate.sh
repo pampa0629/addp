@@ -8,6 +8,9 @@ if [ -z "${ONTOLOGY_POSTGRES_TEST_DSN:-}" ]; then
     echo "ONTOLOGY_POSTGRES_TEST_DSN must select local addp_test or the dedicated CI test database" >&2
     exit 1
 fi
+source "$ROOT_DIR/scripts/infra/ports.sh"
+addp_infra_verify_test_postgres_dsn "$ONTOLOGY_POSTGRES_TEST_DSN"
+
 WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/addp-ontology-postgres.XXXXXX")
 export ONTOLOGY_POSTGRES_TEST_RUN_ID
 ONTOLOGY_POSTGRES_TEST_RUN_ID=$(python3 -c 'import uuid; print(uuid.uuid4())')

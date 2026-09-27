@@ -64,10 +64,11 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useTaskWizardState } from './useTaskWizardState'
 import { taskAPI } from '@/api/tasks'
 import { getItemByID, getItemFieldsByID } from '@/api/meta'
-import { systemEnginesAPI } from '@/api/systemEngines'
+import { engineCatalogAPI } from '@/api/engineCatalog'
 import { parseTransferLocator } from '@/utils/resourceLocator'
 import { navigateTransferRoute } from '@/utils/moduleNavigation'
 import { taskEngineDescriptors } from './continuousTask.mjs'
+import { useAuthStore } from '@/store/auth'
 
 // 导入步骤组件
 import Step1SelectSource from './Step1SelectSource.vue'
@@ -78,6 +79,7 @@ import Step5Review from './Step5Review.vue'
 
 const router = useRouter()
 const route = useRoute()
+const authStore = useAuthStore()
 const { t } = useI18n()
 const wizardState = useTaskWizardState()
 const submitting = ref(false)
@@ -133,7 +135,7 @@ async function loadTaskEngineDescriptors(task) {
 }
 
 async function resolveEngines() {
-  const response = await systemEnginesAPI.list()
+  const response = await engineCatalogAPI.list()
   return response?.data || response || []
 }
 
@@ -210,8 +212,11 @@ async function handleSubmit() {
       : await wizardState.submitTask()
 
     if (success) {
-      // 跳转到任务列表页面
-      await navigateTransferRoute(router, '/tasks', { history: 'replace' })
+      if (authStore.hasPermission('transfer.task.read')) {
+        await navigateTransferRoute(router, '/tasks', { history: 'replace' })
+      } else {
+        wizardState.reset()
+      }
     }
   } catch (error) {
     if (error !== 'cancel') {
@@ -240,8 +245,9 @@ async function handleCancel() {
     )
 
     wizardState.reset()
-    // 跳转到任务列表页面
-    await navigateTransferRoute(router, '/tasks', { history: 'replace' })
+    if (authStore.hasPermission('transfer.task.read')) {
+      await navigateTransferRoute(router, '/tasks', { history: 'replace' })
+    }
   } catch (error) {
     // 用户点击了"继续编辑"
   }

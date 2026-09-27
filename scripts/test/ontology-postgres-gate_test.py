@@ -19,6 +19,9 @@ class OntologyGateTest(unittest.TestCase):
         target = self.root / "scripts/test/ontology-postgres-gate.sh"
         target.parent.mkdir(parents=True)
         shutil.copyfile(SCRIPT, target)
+        utility = self.root / "scripts/infra/ports.sh"
+        utility.parent.mkdir(parents=True)
+        shutil.copyfile(SCRIPT.parents[1] / "infra/ports.sh", utility)
         (self.root / "ontology/backend").mkdir(parents=True)
         fake_bin = self.root / "fake-bin"
         fake_bin.mkdir()
@@ -37,7 +40,8 @@ exit "${TEST_MAIN_EXIT:-0}"
         self.command = ["bash", str(target)]
         self.env = dict(os.environ, PATH=str(fake_bin) + os.pathsep + os.environ["PATH"],
                         TEST_INVOCATIONS=str(self.log),
-                        ONTOLOGY_POSTGRES_TEST_DSN="postgres://fixture@127.0.0.1/addp_test")
+                        ONTOLOGY_POSTGRES_TEST_DSN="postgres://fixture@127.0.0.1/addp_test",
+                        GITHUB_ACTIONS="true")
 
     def run_gate(self, **extra):
         return subprocess.run(self.command, env=dict(self.env, **extra), capture_output=True, text=True, timeout=10)

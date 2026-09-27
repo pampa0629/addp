@@ -779,20 +779,20 @@ make build-images
 docker images | grep addp
 ```
 
-### Q5: 如何清理所有数据？
+### Q5: 如何停止服务并保留数据？
 
 ```bash
-# ⚠️ 危险操作：会删除所有数据
-
 # 开发模式
 bash scripts/dev/stop.sh
 
 # 本地 Docker
-bash scripts/local/stop.sh --all --volumes
+bash scripts/local/stop.sh --all
 
 # 生产环境
-bash scripts/prod/stop.sh --volumes
+bash scripts/prod/stop.sh
 ```
+
+以上命令均保留持久化卷。需要销毁 Infra 数据时，先核验可恢复备份及目标 Compose project，再通过 `scripts/infra/down.sh --volumes` 的独立交互流程操作；不要把删卷作为常规故障排查步骤。
 
 ---
 

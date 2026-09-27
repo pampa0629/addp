@@ -45,6 +45,7 @@ func TestRegisterIAMMigratedBusinessRoutes(t *testing.T) {
 		"GET /api/v1/system/admin/cleanup/history",
 		"GET /api/v1/system/admin/cleanup/tasks/:task_id",
 		"GET /api/v1/system/engine-types",
+		"GET /api/v1/system/engine-catalog/engines",
 		"GET /api/v1/system/engines",
 		"GET /api/v1/system/engines/:id",
 		"GET /api/v1/system/engines/:id/deletion-assessments/:assessment_id",

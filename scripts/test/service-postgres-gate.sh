@@ -18,6 +18,9 @@ database=${dsn_without_query##*/}
 case "$SERVICE_POSTGRES_TEST_DSN" in postgres://*/*|postgresql://*/*) ;; *) echo "SERVICE_POSTGRES_TEST_DSN must use a PostgreSQL URL" >&2; exit 1 ;; esac
 case "$database" in *test*|*disposable*) ;; *) echo "SERVICE_POSTGRES_TEST_DSN must identify a disposable test database" >&2; exit 1 ;; esac
 
+source "$ROOT_DIR/scripts/infra/ports.sh"
+addp_infra_verify_test_postgres_dsn "$SERVICE_POSTGRES_TEST_DSN"
+
 cd "$ROOT_DIR/service/backend"
 go test ./internal/protection ./internal/repository ./internal/service -run '^(TestServiceExecuteProtectionAgainstPostgres|TestConsumerCatalogAgainstPostgres|TestCatalogQueryServiceChangeFeedAgainstPostgres|TestQueryServiceConsumerContractMigrationAgainstPostgres|TestMetricSourcePublicationAgainstPostgres|TestAnalyticalPublicationMigrationAgainstPostgres|TestAnalyticalQueryExecutionAgainstPostgres|TestQueryServiceVersionAgainstPostgres|TestQueryServiceMetricReferencesAgainstPostgres)$' -count=1 -v 2>&1 | tee "$WORK_DIR/service.log"
 if grep -q -- '--- SKIP:' "$WORK_DIR/service.log"; then

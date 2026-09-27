@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { managerAuthContext } from './managerAuthContext.js'
 
 const TIDB_ENGINE = {
   id: 25,
@@ -84,10 +85,7 @@ async function installMockBackend(page) {
       return fulfillJSON(route, { id: 1, username: 'manager-e2e' })
     }
     if (path === '/api/v1/system/auth/context') {
-      return fulfillJSON(route, {
-        context: { type: 'tenant' },
-        authorization: { role_assignments: [{ permissions: [] }] }
-      })
+      return fulfillJSON(route, managerAuthContext)
     }
     if (path === '/api/v1/manager/engines') {
       return fulfillJSON(route, { data: [TIDB_ENGINE] })

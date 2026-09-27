@@ -2,7 +2,7 @@
   <div class="page-container">
     <div class="page-header">
       <h2>{{ t('graph.knowledgeGraph.title') }}</h2>
-      <el-button type="primary" @click="showCreateDialog = true">
+      <el-button v-if="authStore.hasPermission('graph.graph.create') && authStore.hasPermission('graph.ontology.read') && authStore.hasPermission('system.engine_catalog.read')" type="primary" @click="showCreateDialog = true">
         <el-icon><Plus /></el-icon> {{ t('graph.knowledgeGraph.create') }}
       </el-button>
     </div>
@@ -25,13 +25,13 @@
       <el-table-column :label="t('graph.common.actions')" width="320" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" size="small" @click="handleBrowse(row)">{{ t('graph.knowledgeGraph.explore') }}</el-button>
-          <el-button link type="success" size="small" @click="handleBuild(row)">{{ t('graph.knowledgeGraph.build') }}</el-button>
-          <el-button link type="warning" size="small" @click="handleReview(row)">
+          <el-button v-if="authStore.hasPermission('graph.build_task.read')" link type="success" size="small" @click="handleBuild(row)">{{ t('graph.knowledgeGraph.build') }}</el-button>
+          <el-button v-if="authStore.hasPermission('graph.review.read')" link type="warning" size="small" @click="handleReview(row)">
             {{ t('graph.knowledgeGraph.review') }}<template v-if="pendingCounts[row.id]">（{{ pendingCounts[row.id] }}）</template>
           </el-button>
-          <el-button link type="primary" size="small" @click="handleEdit(row)">{{ t('graph.common.edit') }}</el-button>
-          <el-button link type="warning" size="small" @click="handleInferSchema(row)">{{ t('graph.knowledgeGraph.inferOntology') }}</el-button>
-          <el-button link type="danger" size="small" @click="handleDelete(row)">{{ t('graph.common.delete') }}</el-button>
+          <el-button v-if="authStore.hasPermission('graph.graph.update')" link type="primary" size="small" @click="handleEdit(row)">{{ t('graph.common.edit') }}</el-button>
+          <el-button v-if="authStore.hasPermission('graph.graph.update')" link type="warning" size="small" @click="handleInferSchema(row)">{{ t('graph.knowledgeGraph.inferOntology') }}</el-button>
+          <el-button v-if="authStore.hasPermission('graph.graph.delete')" link type="danger" size="small" @click="handleDelete(row)">{{ t('graph.common.delete') }}</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -104,6 +104,7 @@ import SchemaInferenceDialog from '../components/SchemaInferenceDialog.vue'
 import { useI18n } from 'vue-i18n'
 import { navigateGraphRoute } from '@/utils/moduleNavigation'
 import { engineSelectionState, isEngineSelectable } from '@common-ui'
+import { useAuthStore } from '../store/auth'
 
 const { t } = useI18n()
 const loading = ref(false)
@@ -128,6 +129,7 @@ const editRules = computed(() => ({
   name: [{ required: true, message: t('graph.knowledgeGraph.nameRequired'), trigger: 'change' }]
 }))
 const router = useRouter()
+const authStore = useAuthStore()
 const rules = computed(() => ({
   name: [{ required: true, message: t('graph.knowledgeGraph.nameRequired'), trigger: 'change' }],
   ontology_id: [{ required: true, message: t('graph.knowledgeGraph.ontologyRequired'), trigger: 'change' }],
@@ -176,10 +178,13 @@ watch(showCreateDialog, (val) => {
 const load = async () => {
   loading.value = true
   try {
-    const [gr, or] = await Promise.all([knowledgeGraphAPI.list(), ontologyAPI.list()])
+    const [gr, or] = await Promise.all([
+      knowledgeGraphAPI.list(),
+      authStore.hasPermission('graph.ontology.read') ? ontologyAPI.list() : Promise.resolve([])
+    ])
     graphs.value = gr || []
     ontologies.value = or || []
-    for (const g of graphs.value) {
+    for (const g of authStore.hasPermission('graph.review.read') ? graphs.value : []) {
       buildAPI.getPendingCount(g.id).then(r => {
         if (r.data.count > 0) pendingCounts.value[g.id] = r.data.count
       }).catch(() => {})

@@ -75,7 +75,7 @@ const router = createRouter({
 })
 
 router.beforeEach(createAuthGuard(useAuthStore, {
-  moduleName: 'Asset',
+  router, moduleName: 'Asset',
   loginRouteName: 'Login'
 }))
 

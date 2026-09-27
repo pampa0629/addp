@@ -4,7 +4,7 @@
       <h2>{{ t('orchestrator.orchestrationList.title') }}</h2>
       <div class="header-actions">
         <MonitorExecutionsButton module="orchestrator" task-type="orchestration" />
-        <el-button type="primary" @click="handleCreate">{{ t('orchestrator.orchestrationList.createBtn') }}</el-button>
+        <el-button v-if="authStore.hasPermission('orchestrator.workflow.create')" type="primary" @click="handleCreate">{{ t('orchestrator.orchestrationList.createBtn') }}</el-button>
       </div>
     </div>
 
@@ -43,10 +43,10 @@
       </el-table-column>
       <el-table-column :label="t('orchestrator.orchestrationList.colActions')" width="300">
         <template #default="scope">
-          <el-button size="small" @click="handleEdit(scope.row)">{{ t('orchestrator.orchestrationList.editBtn') }}</el-button>
+          <el-button v-if="authStore.hasPermission('orchestrator.workflow.update')" size="small" @click="handleEdit(scope.row)">{{ t('orchestrator.orchestrationList.editBtn') }}</el-button>
           <OrchestrationExecuteButton v-if="authStore.hasPermission('orchestrator.workflow.execute')" size="small" :orchestration="scope.row" :execute="orchestrationAPI.execute" :disabled="executingId !== null" @busy="executingId = $event ? scope.row.id : null" />
           <el-button size="small" type="info" @click="handleViewExecutions(scope.row)">{{ t('orchestrator.orchestrationList.recordsBtn') }}</el-button>
-          <el-button size="small" type="danger" @click="handleDelete(scope.row)">{{ t('orchestrator.orchestrationList.deleteBtn') }}</el-button>
+          <el-button v-if="authStore.hasPermission('orchestrator.workflow.delete')" size="small" type="danger" @click="handleDelete(scope.row)">{{ t('orchestrator.orchestrationList.deleteBtn') }}</el-button>
         </template>
       </el-table-column>
     </el-table>

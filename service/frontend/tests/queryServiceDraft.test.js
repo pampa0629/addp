@@ -12,7 +12,7 @@ code = code.replace(/^import\s+([\s\S]*?)\s+from\s+['"]([^'"]+)['"];?$/gm, (_, b
   .replace('export default', 'return')
 const create = new Function('modules', code)
 
-function harness(api = {}, params = {}, metadata = async () => ({ has_geometry: false })) {
+function harness(api = {}, params = {}, metadata = async () => ({ has_geometry: false }), canBrowseMeta = true) {
   const route = Vue.reactive({ params, name: params.id ? 'QueryServiceEdit' : 'QueryServiceCreate', query: {} })
   let guard, pendingLoad, unmount
   const scope = Vue.effectScope()
@@ -30,6 +30,7 @@ function harness(api = {}, params = {}, metadata = async () => ({ has_geometry: 
     '@/utils/resourceSelection': {},
     '@/utils/queryServiceEngines': { queryServiceExecutionEngines: value => value, federatedQueryRuntimes: value => value, tableSelectionUsesRuntime: () => false },
     '@/utils/serviceHelper': { SERVICE_NAME_PATTERN: /.+/ },
+    '@/store/auth': { useAuthStore: () => ({ hasPermission: permission => canBrowseMeta && permission === 'meta.catalog.read' }) },
     '@/utils/moduleNavigation': { navigateServiceRoute: async (_router, path) => { navigations.push({ path, dirty: guard.isDirty() }) } },
     '../components/PublishedMetricSourcePicker.vue': {},
     '../../../../common-frontend/basic/src/components/ParameterValueInput.vue': {},
@@ -43,6 +44,12 @@ function harness(api = {}, params = {}, metadata = async () => ({ has_geometry: 
   }
 }
 const service = id => ({ id, version: 2, service_name: `service_${id}`, title: `Service ${id}`, config_type: 'sql', sql_query: 'SELECT id FROM sample', named_parameters: [], data_config: {}, protocols: { rest_api: { enabled: true } } })
+
+test('query creation starts in SQL mode when Meta catalog is unavailable', () => {
+  const h = harness({}, {}, async () => ({ has_geometry: false }), false)
+  assert.equal(h.state.form.config_type, 'sql')
+  h.unmount()
+})
 
 test('query draft protects SQL, nested parameters, source and publishing inputs; UI state stays clean', async () => {
   const h = harness()

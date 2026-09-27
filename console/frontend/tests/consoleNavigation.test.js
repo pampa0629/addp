@@ -122,13 +122,13 @@ describe('Console navigation bridge', () => {
     expect(searchSource).not.toContain("route: '/transfer/executions'")
     expect(configSource).not.toContain("index: '/orchestrator/executions'")
     expect(searchSource).not.toContain("route: '/orchestrator/executions'")
-    expect(searchIndex('传输执行', key => key).map(item => item.route))
+    expect(searchIndex('传输执行', key => key, ['monitor.execution.read'], 'tenant').map(item => item.route))
       .toContain('/monitor/executions?module=transfer&task_type=sync')
-    expect(searchIndex('编排执行', key => key).map(item => item.route))
+    expect(searchIndex('编排执行', key => key, ['monitor.execution.read'], 'tenant').map(item => item.route))
       .toContain('/monitor/executions?module=orchestrator&task_type=orchestration')
     expect(searchIndex('传输执行', key => key === 'console.menus.monitor.transferExecutions'
       ? zhCn.console.menus.monitor.transferExecutions
-      : key)).toContainEqual(expect.objectContaining({ label: '传输执行记录' }))
+      : key, ['monitor.execution.read'], 'tenant')).toContainEqual(expect.objectContaining({ label: '传输执行记录' }))
     expect(zhCn.console.menus.monitor.transferExecutions)
       .not.toBe(zhCn.console.menus.monitor.orchestrationExecutions)
   })
@@ -185,7 +185,8 @@ describe('Console navigation bridge', () => {
     expect(viteSource).toContain("'/swagger-spec/catalog'")
 
     expect(searchIndex('治理覆盖率', key => key, [])).toEqual([])
-    expect(searchIndex('治理覆盖率', key => key, ['catalog.inventory.read']).map(item => item.route))
+    expect(searchIndex('治理覆盖率', key => key, ['catalog.inventory.read'], 'tenant')).toEqual([])
+    expect(searchIndex('治理覆盖率', key => key, ['catalog.inventory.read', 'catalog.entry.read'], 'tenant').map(item => item.route))
       .toContain('/catalog/governance/coverage')
   })
 
@@ -198,7 +199,7 @@ describe('Console navigation bridge', () => {
 	const configSource = readFileSync(new URL('../src/config/portalConfig.js', import.meta.url), 'utf8')
 	expect(configSource).toContain("index: '/quality/rules', icon: List, label: 'console.menus.quality.rules', permissions: ['quality.rule.read']")
 	expect(searchIndex('质量规则', key => key, []).map(item => item.route)).not.toContain('/quality/rules')
-	expect(searchIndex('质量规则', key => key, ['quality.rule.read']).map(item => item.route)).toContain('/quality/rules')
+	expect(searchIndex('质量规则', key => key, ['quality.rule.read'], 'tenant').map(item => item.route)).toContain('/quality/rules')
 	expect(configSource).toContain("index: '/quality/plans', icon: List, label: 'console.menus.quality.plans', recentLabel: 'console.menus.quality.recentPlans', permissions: ['quality.plan.read']")
 	expect(configSource).not.toContain("index: '/quality/executions'")
 	expect(configSource).toContain("index: '/quality/issues',            icon: Warning, label: 'console.menus.quality.issues', recentLabel: 'console.menus.quality.recentIssues', permissions: ['quality.issue.read']")

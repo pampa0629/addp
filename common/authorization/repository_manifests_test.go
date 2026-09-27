@@ -13,8 +13,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		t.Fatalf("LoadRepositoryAuthorizationCatalog() error = %v", err)
 	}
 	descriptors := report.Permissions
-	if len(descriptors) != 448 {
-		t.Fatalf("descriptor count = %d, want 448", len(descriptors))
+	if len(descriptors) != 450 {
+		t.Fatalf("descriptor count = %d, want 450", len(descriptors))
 	}
 	for _, descriptor := range descriptors {
 		if descriptor.OwnerModule == "security" && !reflect.DeepEqual(descriptor.AllowedScopeTypes, []string{"tenant"}) {
@@ -80,6 +80,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"standard.domain.read",
 		"standard.element.read",
 		"standard.metric.read",
+		"standard.unit.read",
 		"system.execution_authorization.create",
 	})
 	assertRepositoryRolePrincipalTypes(t, roles, "tenant.manager_runtime", []string{"service_principal"})
@@ -91,6 +92,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"security.protection_projection.read",
 		"security.protection_projection.update",
 		"system.engine.read",
+		"system.engine_catalog.read",
 		"system.engine_descriptor.read",
 		"transfer.execution.create",
 		"transfer.execution.read",
@@ -102,6 +104,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"audit.tenant_event.create",
 		"manager.content_index.update",
 		"system.engine.read",
+		"system.engine_catalog.read",
 		"system.engine_descriptor.read",
 	})
 	assertRepositoryRolePrincipalTypes(t, roles, "tenant.model_runtime", []string{"service_principal"})
@@ -147,6 +150,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"security.protection_projection.read",
 		"security.protection_projection.update",
 		"system.engine.read",
+		"system.engine_catalog.read",
 		"system.engine_descriptor.read",
 		"system.execution_authorization.execute",
 	})
@@ -155,12 +159,13 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"model.entity.read",
 		"model.entity_relation.read",
 		"system.engine.read",
+		"system.engine_catalog.read",
 	})
 	assertRepositoryRolePermissions(t, roles, "tenant.geopython_runtime", []string{"manager.derived_artifact.create"})
 	assertRepositoryRolePermissions(t, roles, "tenant.document_runtime", []string{"manager.derived_artifact.create"})
 	assertRepositoryRolePermissions(t, roles, "tenant.model3d_runtime", []string{"manager.derived_artifact.create"})
 	assertRepositoryRolePermissions(t, roles, "tenant.pointcloud_runtime", []string{"manager.derived_artifact.create"})
-	assertRepositoryRolePermissions(t, roles, "tenant.spark_runtime", []string{"system.engine.read"})
+	assertRepositoryRolePermissions(t, roles, "tenant.spark_runtime", []string{"system.engine.read", "system.engine_catalog.read"})
 	assertRepositoryRolePermissions(t, roles, "tenant.monitor_runtime", []string{
 		"audit.tenant_event.create",
 		"meta.scan_task.read",
@@ -170,6 +175,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"standard.domain.read",
 		"standard.element.read",
 		"system.engine.read",
+		"system.engine_catalog.read",
 		"system.execution_authorization.execute",
 	})
 	assertRepositoryRolePrincipalTypes(t, roles, "platform.manager_runtime", []string{"service_principal"})
@@ -254,6 +260,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	assertRepositoryRolePermissions(t, roles, "tenant.data_steward", []string{
 		"develop.data_read.execute",
 		"develop.data_write.execute",
+		"inference.model_label.read",
 		"manager.content.read",
 		"manager.data_item.create",
 		"manager.data_item.read",
@@ -271,6 +278,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"meta.scan_task.execute",
 		"meta.scan_task.read",
 		"meta.scan_task.update",
+		"system.engine_catalog.read",
 	})
 	assertRepositoryRolePermissions(t, roles, "tenant.data_engineer", []string{
 		"develop.data_read.execute",
@@ -289,6 +297,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"manager.data_item.read",
 		"manager.data_profile.execute",
 		"manager.search.execute",
+		"meta.catalog.read",
 		"monitor.execution.read",
 		"orchestrator.workflow.create",
 		"orchestrator.workflow.delete",
@@ -329,6 +338,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"service.external_registration.delete",
 		"service.external_registration.read",
 		"service.external_registration.update",
+		"system.engine_catalog.read",
 		"system.execution_authorization.create",
 	})
 	assertRepositoryRolePermissions(t, roles, "tenant.service_runtime", []string{
@@ -339,6 +349,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"security.protection_projection.read",
 		"security.protection_projection.update",
 		"system.engine.read",
+		"system.engine_catalog.read",
 		"system.engine_descriptor.read",
 		"system.execution_authorization.execute",
 	})
@@ -376,6 +387,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	})
 	assertRepositoryRolePermissions(t, roles, "tenant.governance_manager", []string{
 		"develop.data_read.execute",
+		"meta.catalog.read",
 		"meta.lineage.read",
 		"monitor.execution.read",
 		"quality.issue.read",
@@ -423,6 +435,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"standard.unit.delete",
 		"standard.unit.read",
 		"standard.unit.update",
+		"system.engine_catalog.read",
 		"system.execution_authorization.create",
 	})
 	assertRepositoryRoleScopes(t, roles, "tenant.protected_data_requester", []string{"tenant"})
@@ -432,6 +445,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	})
 	assertRepositoryRoleScopes(t, roles, "tenant.security_manager", []string{"tenant"})
 	assertRepositoryRolePermissions(t, roles, "tenant.security_manager", []string{
+		"meta.catalog.read",
 		"security.assessment.create",
 		"security.assessment.read",
 		"security.assessment.update",
@@ -509,6 +523,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"graph.review.read",
 		"graph.review.reject",
 		"graph.review.update",
+		"system.engine_catalog.read",
 	})
 }
 

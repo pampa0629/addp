@@ -222,7 +222,7 @@ import {
 } from '@addp/common-frontend'
 import { capabilitiesAPI } from '@/api/capabilities'
 import { getItemFieldsByID, getNodeByCatalogPath } from '@/api/meta'
-import { systemEnginesAPI } from '@/api/systemEngines'
+import { engineCatalogAPI } from '@/api/engineCatalog'
 import { parseTransferLocator } from '@/utils/resourceLocator'
 import {
   isNativeTargetSelectable,
@@ -895,7 +895,7 @@ function applyOutputFormatFromFileName(fileName) {
 async function loadEngines() {
   loadingEngines.value = true
   try {
-    const data = await systemEnginesAPI.list()
+    const data = await engineCatalogAPI.list()
     engines.value = (data || []).filter(engine =>
       engine?.id !== undefined &&
       engine?.id !== null &&

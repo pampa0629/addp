@@ -59,6 +59,7 @@
         <el-button :icon="Refresh" @click="loadBrowseSnapshot" :title="t('graph.browser.resetView')" />
         <!-- 图分析切换按钮 -->
         <el-button
+          v-if="authStore.hasPermission('graph.analysis.read')"
           :type="activeRightPanel === 'analysis' ? 'primary' : ''"
           :icon="DataAnalysis"
           :title="t('graph.browser.graphAnalysis')"
@@ -147,6 +148,7 @@
         <div v-else style="height: 100%; overflow: hidden;">
           <AnalysisPanel
             :graph-id="Number(graphId)"
+            :can-execute="authStore.hasPermission('graph.analysis.execute')"
             :selected-node-id="selectedNode"
             :node-shapes="nodeShapes"
             :schema-rel-types="relationshipTypes"
@@ -182,8 +184,10 @@ import {
 import { createLatestOperationController } from '../utils/graphOperationController'
 import { useConsolePageDescriptor } from '@common-ui'
 import { useI18n } from 'vue-i18n'
+import { useAuthStore } from '../store/auth'
 
 const { t } = useI18n()
+const authStore = useAuthStore()
 
 const route = useRoute()
 const router = useRouter()
@@ -417,6 +421,7 @@ async function loadGraphMeta() {
 }
 
 async function loadCapabilities() {
+  if (!authStore.hasPermission('graph.analysis.read')) return
   try {
     capabilities.value = await analysisAPI.getCapabilities(graphId.value)
   } catch (e) {

@@ -30,7 +30,7 @@ export default {
 
   // 获取 Neo4j 引擎列表（通过 system 模块）
   getNeo4jEngines() {
-    return client.get('/system/engines', {
+    return client.get('/system/engine-catalog/engines', {
       params: { engine_type: 'neo4j' }
     })
   },

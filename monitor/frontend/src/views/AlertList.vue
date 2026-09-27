@@ -44,9 +44,9 @@
         </el-table-column>
         <el-table-column :label="t('monitor.alert.actions')" width="260" fixed="right">
           <template #default="{ row }">
-            <el-button text type="primary" @click="openExecution(row)">{{ t('monitor.alert.view_execution') }}</el-button>
-            <el-button v-if="row.status === 'open'" text @click="acknowledge(row)">{{ t('monitor.alert.acknowledge') }}</el-button>
-            <el-button v-if="row.status !== 'resolved'" text @click="suppress(row)">{{ t('monitor.alert.suppress_one_hour') }}</el-button>
+            <el-button v-if="authStore.hasPermission('monitor.execution.read')" text type="primary" @click="openExecution(row)">{{ t('monitor.alert.view_execution') }}</el-button>
+            <el-button v-if="row.status === 'open' && authStore.hasPermission('monitor.alert_incident.update')" text @click="acknowledge(row)">{{ t('monitor.alert.acknowledge') }}</el-button>
+            <el-button v-if="row.status !== 'resolved' && authStore.hasPermission('monitor.alert_incident.update')" text @click="suppress(row)">{{ t('monitor.alert.suppress_one_hour') }}</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -73,8 +73,10 @@ import { acknowledgeAlert, listAlerts, suppressAlert } from '@/api/monitor'
 import AlertRuleList from './AlertRuleList.vue'
 import { navigateMonitorRoute } from '@/utils/moduleNavigation'
 import { resolveMonitorTabRouteState } from '@/utils/tabRouteState'
+import { useAuthStore } from '../store/auth'
 
 const { t, te } = useI18n()
+const authStore = useAuthStore()
 const router = useRouter()
 const route = useRoute()
 const resolveRouteState = routeQuery => resolveMonitorTabRouteState(routeQuery, ['incidents', 'rules'], 'incidents')

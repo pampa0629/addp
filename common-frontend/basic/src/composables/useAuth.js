@@ -1,4 +1,6 @@
 import axios from 'axios'
+import ModuleAccessDenied from '../components/ModuleAccessDenied.vue'
+import { allowsConsoleRoute } from '../authorization/consoleRouteAccess'
 
 import {
   createBrowserAuthSession,
@@ -43,8 +45,14 @@ function redirectToLogin() {
 }
 
 export function collectAuthContextPermissions(authContext) {
+  const context = authContext?.context
+  if (!context || !['platform', 'tenant'].includes(context.type)) return []
   const keys = new Set()
   for (const assignment of authContext?.authorization?.role_assignments || []) {
+    if (context.type === 'platform' && assignment.scope?.type !== 'platform') continue
+    if (context.type === 'tenant' && (
+      assignment.scope?.type !== 'tenant' || !context.tenant_id || assignment.scope?.tenant_id !== context.tenant_id
+    )) continue
     for (const permission of assignment.permissions || []) keys.add(permission)
   }
   return [...keys].sort()
@@ -53,8 +61,20 @@ export function collectAuthContextPermissions(authContext) {
 export function createAuthGuard(authStoreOrGetter, config = {}) {
   const {
     loginRouteName = 'Login',
-    normalizeRedirect = (path) => path
+    normalizeRedirect = (path) => path,
+    moduleName,
+    router
   } = config
+  const modulePrefix = moduleName === 'Model' ? 'modeling' : moduleName?.toLowerCase()
+  const checkPageAccess = router && modulePrefix && modulePrefix !== 'console'
+  if (checkPageAccess && !router.hasRoute('AccessDenied')) {
+    router.addRoute({
+      path: '/forbidden',
+      name: 'AccessDenied',
+      component: ModuleAccessDenied,
+      meta: { requiresAuth: true }
+    })
+  }
 
   return async (to, _from, next) => {
     const authStore = resolveAuthStore(authStoreOrGetter)
@@ -74,6 +94,14 @@ export function createAuthGuard(authStoreOrGetter, config = {}) {
         name: loginRouteName,
         query: { redirect: normalizeRedirect(to.fullPath) }
       })
+    }
+    if (authStore.isAuthenticated && checkPageAccess && to.name !== 'AccessDenied' && !isPublic) {
+      const route = to.path === '/' && modulePrefix === 'system' ? '/system/account/security' :
+        modulePrefix === 'portal' ? to.path :
+          `/${modulePrefix}${to.path === '/' ? '' : to.path}`
+      if (!allowsConsoleRoute(route, authStore.contextType, authStore.permissions)) {
+        return next({ name: 'AccessDenied', replace: true })
+      }
     }
     next()
   }

@@ -53,7 +53,7 @@ test('one application parameter derives the common service options without copyi
  assert.throws(()=>assertApplicationOptionValues(snapshot,descriptors,{shared:'按月'}))
  const draft=createNamedParameterDraft(descriptors.a.input_contract.named_parameters[0])
  assert.deepEqual(draft.options,[option('total'),option('month')])
- const persisted=buildComponentConfiguration({ref:{}, contract_fingerprint:'same',input_contract:{}},{name:'Example',description:'',columns:['value'],parameters:[{...draft,value:'month'}],rendererType:'table',pageLimit:1},'a')
+ const persisted=buildComponentConfiguration({ref:{}, contract_fingerprint:'same',input_contract:{}},{name:'Example',description:'',columns:['value'],displayColumns:['value'],parameters:[{...draft,value:'month'}],rendererType:'table',pageLimit:1},'a')
  assert.equal('options' in persisted.parameter_definitions[0],false)
 })
 test('missing descriptors, changed fingerprints, empty domains and labels conflicts block inputs',()=>{

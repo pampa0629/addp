@@ -10,14 +10,14 @@
         </span>
       </div>
       <div class="header-right">
-        <button @click="refreshMetadata" class="btn btn-primary" :disabled="!service || loading || refreshing">
+        <button v-if="canUpdate" @click="refreshMetadata" class="btn btn-primary" :disabled="!service || loading || refreshing">
           {{ refreshing ? $t('service.registered.refreshing') : $t('service.registered.refreshMetadata') }}
         </button>
         <button @click="healthCheck" class="btn btn-success" :disabled="!service || loading || checking">
           {{ checking ? $t('service.registered.checking') : $t('service.registered.healthCheck') }}
         </button>
-        <button @click="goToEdit" class="btn btn-warning" :disabled="!service || loading">{{ $t('service.common.edit') }}</button>
-        <button @click="handleDelete" class="btn btn-danger" :disabled="!service || loading || deleting">{{ $t('service.common.delete') }}</button>
+        <button v-if="canUpdate" @click="goToEdit" class="btn btn-warning" :disabled="!service || loading">{{ $t('service.common.edit') }}</button>
+        <button v-if="canDelete" @click="handleDelete" class="btn btn-danger" :disabled="!service || loading || deleting">{{ $t('service.common.delete') }}</button>
       </div>
     </div>
 
@@ -210,9 +210,14 @@ import registeredServiceAPI from '@/api/registeredService'
 import { copyToClipboard as copyTextToClipboard } from '../utils/serviceHelper'
 import { navigateServiceRoute } from '@/utils/moduleNavigation'
 import { publishConsolePageDescriptor } from '@common-ui'
+import { useAuthStore } from '../store/auth'
 
 export default {
   name: 'RegisteredServiceDetail',
+  computed: {
+    canUpdate() { return useAuthStore().hasPermission('service.external_registration.update') },
+    canDelete() { return useAuthStore().hasPermission('service.external_registration.delete') }
+  },
   watch: {
     '$route.params.id': {
       immediate: true,

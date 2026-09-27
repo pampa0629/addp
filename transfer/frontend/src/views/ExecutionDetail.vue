@@ -1,6 +1,7 @@
 <template>
   <div class="execution-detail">
     <MonitorExecutionsButton
+      v-if="authStore.hasPermission('monitor.execution.read')"
       module="transfer"
       task-type="sync"
       :source-task-id="execution.task_id"
@@ -267,6 +268,7 @@
 </template>
 
 <script setup>
+import { useAuthStore } from '@/store/auth'
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { MonitorExecutionsButton, useConsolePageDescriptor } from '@common-ui'
@@ -285,6 +287,7 @@ import {
 } from '@addp/common-frontend'
 
 const { t } = useI18n()
+const authStore = useAuthStore()
 
 const route = useRoute()
 const router = useRouter()

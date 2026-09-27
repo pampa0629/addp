@@ -21,7 +21,7 @@ async function openForm(page, { editId } = {}) {
   await page.route(url => url.pathname.startsWith('/api/'), async route => {
     const path = new URL(route.request().url()).pathname
     if (path === '/api/v1/meta/engines') return route.fulfill({ json: [] })
-    if (path === '/api/v1/system/engines') return route.fulfill({ json: [
+    if (path === '/api/v1/system/engine-catalog/engines') return route.fulfill({ json: [
       { id: 1, name: 'fixture-postgres', engine_type: 'postgresql', lifecycle_state: 'active', connection_status: 'online', capabilities: { compute: { query: { supported: true, languages: ['sql'] } } } }
     ] })
     if (path === '/api/v1/service/query-engines/1/sample-query') return route.fulfill({ json: { language: 'sql', query: draftSQL } })

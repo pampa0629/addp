@@ -36,9 +36,17 @@
           router
           class="sidebar-menu"
         >
-          <el-menu-item index="/tasks">
+          <el-menu-item v-if="canReadTasks" index="/tasks">
             <el-icon><List /></el-icon>
             <span>{{ t('transfer.layout.taskList') }}</span>
+          </el-menu-item>
+
+          <el-menu-item
+            v-if="canCreateTask && !canReadTasks"
+            index="/tasks/create"
+          >
+            <el-icon><Plus /></el-icon>
+            <span>{{ t('transfer.layout.createTask') }}</span>
           </el-menu-item>
 
         </el-menu>
@@ -60,7 +68,8 @@ import {
   User,
   ArrowDown,
   SwitchButton,
-  List
+  List,
+  Plus
 } from '@element-plus/icons-vue'
 
 const router = useRouter()
@@ -68,6 +77,8 @@ const route = useRoute()
 const { t } = useI18n()
 const authStore = useAuthStore()
 const isInIframe = ref(false)
+const canReadTasks = computed(() => authStore.hasPermission('transfer.task.read'))
+const canCreateTask = computed(() => authStore.hasPermission('transfer.task.create') && authStore.hasPermission('meta.catalog.read'))
 
 onMounted(() => {
   isInIframe.value = window.self !== window.top
@@ -76,6 +87,7 @@ onMounted(() => {
 // 子页面（详情、表单）激活父级菜单项
 const activeMenu = computed(() => {
   const path = route.path
+  if (path === '/tasks/create') return canReadTasks.value ? '/tasks' : '/tasks/create'
   if (path.startsWith('/tasks')) return '/tasks'
   if (path.startsWith('/executions')) return '/tasks'
   return path

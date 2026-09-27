@@ -44,6 +44,7 @@ class AgentAuthMiddlewareTests(unittest.IsolatedAsyncioTestCase):
                     role_key="tenant.ai_user",
                     scope_type="tenant",
                     permissions=("agent.session.read",),
+                    scope_tenant_id=3,
                 ),
             ),
         )

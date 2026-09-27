@@ -13,7 +13,7 @@
         />
         <button @click="handleSearch" class="btn btn-primary">{{ $t('service.common.search') }}</button>
       </div>
-      <button @click="goToCreate" class="btn btn-success">{{ $t('service.registered.createBtn') }}</button>
+      <button v-if="canCreate" @click="goToCreate" class="btn btn-success">{{ $t('service.registered.createBtn') }}</button>
     </div>
 
     <!-- 服务列表 -->
@@ -65,10 +65,10 @@
             <td>{{ formatDate(service.created_at) }}</td>
             <td class="actions">
               <button @click="goToDetail(service.id)" class="btn btn-sm btn-info">{{ $t('service.common.detail') }}</button>
-              <button @click="goToEdit(service.id)" class="btn btn-sm btn-warning">{{ $t('service.common.edit') }}</button>
-              <button @click="refreshMetadata(service.id)" class="btn btn-sm btn-primary">{{ $t('service.common.refresh') }}</button>
+              <button v-if="canUpdate" @click="goToEdit(service.id)" class="btn btn-sm btn-warning">{{ $t('service.common.edit') }}</button>
+              <button v-if="canUpdate" @click="refreshMetadata(service.id)" class="btn btn-sm btn-primary">{{ $t('service.common.refresh') }}</button>
               <button @click="healthCheck(service.id)" class="btn btn-sm btn-success">{{ $t('service.common.check') }}</button>
-              <button @click="confirmDelete(service.id)" :disabled="deleting" class="btn btn-sm btn-danger">{{ $t('service.common.delete') }}</button>
+              <button v-if="canDelete" @click="confirmDelete(service.id)" :disabled="deleting" class="btn btn-sm btn-danger">{{ $t('service.common.delete') }}</button>
             </td>
           </tr>
         </tbody>
@@ -97,6 +97,7 @@
 </template>
 
 <script>
+import { useAuthStore } from '@/store/auth'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import registeredServiceAPI from '@/api/registeredService'
 import { navigateServiceRoute } from '@/utils/moduleNavigation'
@@ -116,6 +117,9 @@ export default {
     }
   },
   computed: {
+    canCreate() { return useAuthStore().hasPermission('service.external_registration.create') },
+    canUpdate() { return useAuthStore().hasPermission('service.external_registration.update') },
+    canDelete() { return useAuthStore().hasPermission('service.external_registration.delete') },
     totalPages() {
       return Math.ceil(this.total / this.limit)
     }

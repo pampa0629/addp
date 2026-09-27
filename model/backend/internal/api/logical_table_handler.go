@@ -101,7 +101,7 @@ func (h *LogicalTableHandler) ListLogicalTables(c *gin.Context) {
 
 // CreateLogicalTable POST /api/v1/model/logical-tables
 // @Summary 创建逻辑表 | Create logical table
-// @Description 物理目标父定位符须匹配目标引擎 Engine Catalog 的表级父命名空间；配置目标不代表支持该引擎建表。 | The physical target parent must match the target engine's table-parent namespace in Engine Catalog; configuring a target does not imply Model DDL support for that engine.
+// @Description 物理目标父定位符须匹配目标引擎 Engine Catalog 的表级父命名空间；目标表由一张逻辑表独占，配置目标不代表支持该引擎建表。 | The physical target parent must match the target engine's table-parent namespace in Engine Catalog; each target is exclusively claimed by one logical table, and configuring a target does not imply Model DDL support for that engine.
 // @Tags Model
 // @Accept json
 // @Produce json
@@ -111,7 +111,7 @@ func (h *LogicalTableHandler) ListLogicalTables(c *gin.Context) {
 // @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
 // @Failure 400 {object} models.ErrorResponse "请求无效 | Invalid request"
 // @Failure 404 {object} models.ErrorResponse "引用的业务域不存在 | Referenced business domain not found"
-// @Failure 409 {object} models.ErrorResponse "逻辑表编码冲突 | Logical table code conflict"
+// @Failure 409 {object} models.ErrorResponse "逻辑表编码或物理目标冲突 | Logical table code or physical target conflict"
 // @Failure 503 {object} models.ErrorResponse "数据标准或引擎描述服务不可用 | Data Standard or engine descriptor service unavailable"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["model.logical_model.create"]
@@ -168,7 +168,7 @@ func (h *LogicalTableHandler) GetLogicalTable(c *gin.Context) {
 
 // UpdateLogicalTable PUT /api/v1/model/logical-tables/:id
 // @Summary 更新逻辑表 | Update logical table
-// @Description 物理目标父定位符须匹配目标引擎 Engine Catalog 的表级父命名空间。 | The physical target parent must match the target engine's table-parent namespace in Engine Catalog.
+// @Description 物理目标父定位符须匹配目标引擎 Engine Catalog 的表级父命名空间；目标表由一张逻辑表独占。 | The physical target parent must match the target engine's table-parent namespace in Engine Catalog; each target is exclusively claimed by one logical table.
 // @Tags Model
 // @Accept json
 // @Produce json
@@ -179,7 +179,7 @@ func (h *LogicalTableHandler) GetLogicalTable(c *gin.Context) {
 // @Failure 403 {object} models.ErrorResponse "权限不足 | Permission denied"
 // @Failure 400 {object} models.ErrorResponse "请求或逻辑表 ID 无效 | Invalid request or logical table ID"
 // @Failure 404 {object} models.ErrorResponse "逻辑表不存在 | Logical table not found"
-// @Failure 409 {object} models.ErrorResponse "逻辑表状态或字段列名冲突 | Logical table state or field column name conflict"
+// @Failure 409 {object} models.ErrorResponse "逻辑表状态或物理目标冲突 | Logical table state or physical target conflict"
 // @Failure 503 {object} models.ErrorResponse "数据标准或引擎描述服务不可用 | Data Standard or engine descriptor service unavailable"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["model.logical_model.update"]

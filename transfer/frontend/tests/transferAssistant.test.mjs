@@ -9,7 +9,7 @@ const taskWizard = readFileSync(new URL('../src/views/TaskWizard/TaskWizard.vue'
 const zhCN = JSON.parse(readFileSync(new URL('../src/i18n/zh-cn.json', import.meta.url), 'utf8'))
 
 test('传输任务创建助手只挂载在任务列表页', () => {
-  assert.match(taskList, /<TransferAIAssistant @task-created="loadPageData"/)
+  assert.match(taskList, /<TransferAIAssistant v-if="canCreate && canAskCopilot" @task-created="loadPageData"/)
   assert.doesNotMatch(taskWizard, /TransferAIAssistant/)
   assert.equal(zhCN.transfer.taskAssistant.title, '传输任务创建助手')
 })

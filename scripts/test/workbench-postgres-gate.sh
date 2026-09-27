@@ -18,6 +18,9 @@ database=${dsn_without_query##*/}
 case "$WORKBENCH_POSTGRES_TEST_DSN" in postgres://*/*|postgresql://*/*) ;; *) echo "WORKBENCH_POSTGRES_TEST_DSN must use a PostgreSQL URL" >&2; exit 1 ;; esac
 case "$database" in addp_test|*disposable*) ;; *) echo "WORKBENCH_POSTGRES_TEST_DSN must use addp_test or an isolated disposable database" >&2; exit 1 ;; esac
 
+source "$ROOT_DIR/scripts/infra/ports.sh"
+addp_infra_verify_test_postgres_dsn "$WORKBENCH_POSTGRES_TEST_DSN"
+
 cd "$ROOT_DIR/workbench/backend"
 go test ./internal/repository -run '^TestWorkbenchDataApplicationRepositoryAgainstPostgres$' -count=1 -v 2>&1 | tee "$WORK_DIR/workbench.log"
 if grep -q -- '--- SKIP:' "$WORK_DIR/workbench.log"; then

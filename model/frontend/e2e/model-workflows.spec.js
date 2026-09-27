@@ -787,8 +787,8 @@ async function installMockBackend(target, options = {}) {
     }
     if (path === '/api/v1/system/auth/context') {
       return fulfillJSON(route, {
-        context: { type: 'tenant' },
-        authorization: { role_assignments: [{ permissions }] }
+        context: { type: 'tenant', tenant_id: '1' },
+        authorization: { role_assignments: [{ scope: { type: 'tenant', tenant_id: '1' }, permissions }] }
       })
     }
     const schema = { id: 'schema-22', label: 'public', type: 'schema', locator: 'addp://engine/2/path/public?type=schema&node_id=22', children: [], metadata: { node_id: 22, engine_id: 2 } }
@@ -1100,7 +1100,7 @@ async function expectDialogWithinViewport(page, dialog) {
 }
 
 test('approved table queues materialization and links only its task executions without becoming dirty', async ({ page }) => {
- await installMockBackend(page,{permissions:[...DEFAULT_PERMISSIONS,'model.materialization.execute']})
+ await installMockBackend(page,{permissions:[...DEFAULT_PERMISSIONS,'model.materialization.execute','monitor.execution.read']})
  let calls=0
  await page.route('**/api/v1/model/logical-tables/2/materialized-target',async route=>{calls++;expect(route.request().postDataJSON()).toEqual({version:1});await new Promise(r=>setTimeout(r,150));return fulfillJSON(route,{execution_id:'11111111-1111-4111-8111-111111111111',status:'pending'})})
  await page.goto('/logical-tables/2')

@@ -1,6 +1,6 @@
 # Transfer 模块基本概念及配置说明
 
-更新时间：2026-09-12
+更新时间：2026-09-26
 
 本文档定义 Transfer 稳定任务配置、执行状态、bounded snapshot 主链路、watermark bounded incremental 规则，以及 continuous/Kafka 契约与当前实现边界。旧版顶层 `mode`、`target.policy.write_mode`、`connector_type`、`source_config`、`target_config`、`output_format`、`file_type`、旧 endpoint `engine_id` 等字段不再兼容。
 
@@ -42,6 +42,14 @@ Transfer 执行记录使用统一表 `common.task_executions`。Transfer API 会
 | `logs` | 从 error details 中投影出来的简短执行日志。 |
 
 snapshot checkpoint 用于 progress / diagnostics，不表示可从 checkpoint 自动续写。watermark incremental 使用独立同步主状态 resume。失败 snapshot retry 走 restartable：创建新 execution 并从头重新执行；append 任务 retry 会被拒绝。
+
+### 1.3 租户阶段的任务授权
+
+Transfer 任务定义与执行记录在当前 Tenant 内共享。`transfer.task.read` 可以读取当前 Tenant 的任务列表、统计、详情和相应执行记录；创建者身份不额外赋予功能 Permission，也不限制有读取权限的其他租户成员。`transfer.task.create/update/execute/delete` 分别控制创建、修改、执行和删除，彼此不隐式包含。跨 Tenant 的任务 ID 按不存在处理。Department 与 Project Group 工作区及任务级分享在本阶段不生效，组织 Scope 不能扩大为 Tenant 权限；要启用组织 Scope，必须先完成任务归属、同范围列表裁剪及 owner 授权设计。
+
+创建向导的格式和 CDC 支持矩阵不包含任务或引擎实例，已认证 Tenant 用户可读取 `GET /capabilities`，不依赖 `transfer.task.read`。源与目标引擎选择使用 Meta 的引擎目录和资源树，调用者另需 `meta.catalog.read`；目录可见性不表示用户具有独立的数据资源授权。当前 Transfer 仅按 Tenant 归属和任务功能权限控制任务创建、执行；个人、部门、项目组或逐资源授权需在 owner 契约明确后另行设计。创建与启动是两个动作：没有 `transfer.task.execute` 时创建成功后不得自动启动；没有 `transfer.task.read` 时不得跳转到任务列表。内置角色和自定义角色应显式组合创建向导需要的跨模块权限。
+
+Console 和 Transfer 页面按入口及动作权限显示：无任务权限时不提供任务入口，直达地址显示无权限状态；仅有创建权限的账号可进入创建向导；只读者可进入租户任务列表与详情但看不到写操作。API 对每次请求独立执行功能权限与 Tenant 校验，不能以隐藏按钮代替授权。
 
 ## 二、任务 Config JSON
 

@@ -10,12 +10,68 @@ import (
 	commonauth "github.com/addp/common/authorization"
 	commonexecution "github.com/addp/common/execution"
 	"github.com/addp/common/execution/executiontest"
+	"github.com/addp/common/models"
 	"github.com/addp/common/modulelifecycle"
 	"github.com/addp/monitor/internal/service"
 	"github.com/gin-gonic/gin"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
+
+type taskProviderAuditLister struct{}
+
+func (taskProviderAuditLister) ListTaskProviders() ([]*models.TaskProvider, error) {
+	capabilities := models.JSONString(`{"task_capabilities":[{"type":"sync","display_name":"Sync","edit_url":"/transfer/tasks/{id}/edit"}]}`)
+	return []*models.TaskProvider{{
+		ModuleName: "transfer",
+		TaskProviderDeclaration: models.TaskProviderDeclaration{
+			DisplayName:  "Transfer",
+			Capabilities: &capabilities,
+		},
+		Backends: []models.TaskProviderBackend{{InstanceID: "internal-instance", BaseURL: "http://internal.example:8080"}},
+	}}, nil
+}
+
+func TestTaskProviderDirectoryUsesExecutionReadAndOmitsBackends(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	systemServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(monitorTenantAuthContext()); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+	}))
+	defer systemServer.Close()
+
+	healthService := service.NewHealthCheckService(taskProviderAuditLister{}, nil)
+	router := SetupRouter(nil, nil, healthService, nil, nil, nil, nil, nil, nil, systemServer.URL, nil, nil, modulelifecycle.NewStandalone("monitor"))
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/monitor/task-providers", nil)
+	request.Header.Set("Authorization", "Bearer addp_at_monitor")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("task provider status = %d, want 200; body=%s", response.Code, response.Body.String())
+	}
+	var providers []map[string]any
+	if err := json.Unmarshal(response.Body.Bytes(), &providers); err != nil {
+		t.Fatalf("decode task provider response: %v", err)
+	}
+	if len(providers) != 1 || providers[0]["module_name"] != "transfer" || providers[0]["display_name"] != "Transfer" || providers[0]["capabilities"] == nil {
+		t.Fatalf("task provider display projection = %#v", providers)
+	}
+	for key := range providers[0] {
+		if key != "module_name" && key != "display_name" && key != "capabilities" {
+			t.Fatalf("unexpected task provider field %q", key)
+		}
+	}
+
+	healthRequest := httptest.NewRequest(http.MethodGet, "/api/v1/monitor/providers/health", nil)
+	healthRequest.Header.Set("Authorization", "Bearer addp_at_monitor")
+	healthResponse := httptest.NewRecorder()
+	router.ServeHTTP(healthResponse, healthRequest)
+	if healthResponse.Code != http.StatusForbidden {
+		t.Fatalf("provider health status = %d, want 403", healthResponse.Code)
+	}
+}
 
 func TestSetupRouterRegistersExecutionTreeRoute(t *testing.T) {
 	gin.SetMode(gin.TestMode)

@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	commonAuth "github.com/addp/common/middleware/auth"
+	"github.com/addp/common/models"
 	"github.com/addp/monitor/internal/service"
 	"github.com/gin-gonic/gin"
 )
@@ -12,6 +13,13 @@ import (
 // HealthHandler 健康检查 Handler
 type HealthHandler struct {
 	healthService *service.HealthCheckService
+}
+
+// TaskProviderDisplay 仅包含执行记录页面显示与跳转所需的任务能力事实。
+type TaskProviderDisplay struct {
+	ModuleName   string             `json:"module_name"`
+	DisplayName  string             `json:"display_name"`
+	Capabilities *models.JSONString `json:"capabilities,omitempty"`
 }
 
 // NewHealthHandler 创建 Handler
@@ -25,9 +33,10 @@ func NewHealthHandler(healthService *service.HealthCheckService) *HealthHandler 
 // @Summary 获取任务提供者列表 | Get task providers
 // @Tags Monitor
 // @Produce json
-// @Success 200 {array} models.TaskProvider
+// @Description 返回执行记录页面使用的任务能力投影，不包含 Backend 地址、实例身份或健康状态。| Return the task capability projection used by the execution page, without Backend addresses, instance identities, or health status.
+// @Success 200 {array} TaskProviderDisplay
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["monitor.health.read"]
+// @x-addp-required-permissions ["monitor.execution.read"]
 // @Router /task-providers [get]
 // @Security BearerAuth
 func (h *HealthHandler) GetTaskProviders(c *gin.Context) {
@@ -37,7 +46,18 @@ func (h *HealthHandler) GetTaskProviders(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, providers)
+	result := make([]TaskProviderDisplay, 0, len(providers))
+	for _, provider := range providers {
+		if provider == nil {
+			continue
+		}
+		result = append(result, TaskProviderDisplay{
+			ModuleName:   provider.ModuleName,
+			DisplayName:  provider.DisplayName,
+			Capabilities: provider.Capabilities,
+		})
+	}
+	c.JSON(http.StatusOK, result)
 }
 
 // CheckAllProvidersHealth 检查所有任务提供者运行态健康状态

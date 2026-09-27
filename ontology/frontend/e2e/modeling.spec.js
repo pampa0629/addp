@@ -369,7 +369,7 @@ test('non-tenant contexts fail closed without ontology requests', async ({
   const state = await installBackend(context, { contextType: 'platform' })
   await page.goto(editor)
   await expect(
-    page.getByText('需要租户会话及本体读取权限。', { exact: true })
+    page.getByText('无权访问此页面', { exact: true })
   ).toBeVisible()
   expect(state.headers).toEqual([])
   expect(state.writes).toEqual([])

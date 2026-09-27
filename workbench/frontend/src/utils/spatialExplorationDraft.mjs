@@ -100,7 +100,7 @@ export function buildSpatialExplorationDraft(configuration, idFactory = () => cr
     mapPalette: configuration.mapPalette, mapLegendTitle: String(configuration.mapLegendTitle || '').trim(),
   }, detail), ids.map)
   const table = buildComponentConfiguration(detail, withPresentations({
-    name: titles.table, description: '', columns: tableColumns, pageLimit: boundedLimit(detail, detail.input_contract.page.default_limit),
+    name: titles.table, description: '', columns: tableColumns, displayColumns: [...tableColumns], pageLimit: boundedLimit(detail, detail.input_contract.page.default_limit),
     rendererType: 'table', parameters: [detailParameter],
   }, detail), ids.table)
 

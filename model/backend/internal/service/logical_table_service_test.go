@@ -10,6 +10,7 @@ import (
 	commonClient "github.com/addp/common/client"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/model/internal/models"
+	"github.com/addp/model/internal/repository"
 )
 
 func testPhysicalTargetSystemClient(t *testing.T, engineType string) *commonClient.SystemServiceClient {
@@ -192,5 +193,39 @@ func TestNormalizeMaterializationCollapsesEmptyTargetToEmptyObject(t *testing.T)
 	})
 	if len(normalized) != 0 {
 		t.Fatalf("empty materialization must be canonicalized to an empty object: %#v", normalized)
+	}
+}
+
+func TestNormalizeMaterializationDropsMetaNodeID(t *testing.T) {
+	normalized := normalizeMaterialization(map[string]interface{}{
+		"target_parent_locator": "addp://engine/2/path/outdoor?type=schema&node_id=31",
+		"target_name":           "dim_outdoor_person",
+	})
+	if got := normalized["target_parent_locator"]; got != "addp://engine/2/path/outdoor?type=schema" {
+		t.Fatalf("canonical parent locator = %v", got)
+	}
+}
+
+func TestPhysicalTargetClaimIsExclusiveAcrossTenants(t *testing.T) {
+	db := setupLifecycleServiceTestDB(t)
+	repo := repository.NewLogicalTableRepository(db)
+	first := &models.LogicalTable{
+		TenantID: 11, Name: "First", Code: "first", TableType: "dimension", Layer: "dim", Status: "draft", CreatedBy: 1,
+		Materialization: models.JSONB{"target_parent_locator": "addp://engine/2/path/outdoor?type=schema", "target_name": "dim_outdoor_person"},
+	}
+	if err := repo.Create(first); err != nil {
+		t.Fatalf("create first table: %v", err)
+	}
+	target := normalizeMaterialization(map[string]interface{}{
+		"target_parent_locator": "addp://engine/2/path/outdoor?node_id=9&type=schema",
+		"target_name":           "dim_outdoor_person",
+	})
+	requireDomainErrorCode(t, requirePhysicalTargetAvailable(repo, target, 0), "logical_table_physical_target_conflict")
+	if err := requirePhysicalTargetAvailable(repo, target, first.ID); err != nil {
+		t.Fatalf("owner must retain its target: %v", err)
+	}
+	otherTarget := models.JSONB{"target_parent_locator": "addp://engine/2/path/outdoor?type=schema", "target_name": "dim_outdoor_activity"}
+	if err := requirePhysicalTargetAvailable(repo, otherTarget, 0); err != nil {
+		t.Fatalf("different target rejected: %v", err)
 	}
 }

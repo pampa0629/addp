@@ -3557,6 +3557,7 @@ func TestRunnerAgainstPostgres(t *testing.T) {
 	}
 
 	assertIAMCatalogSeed(t, db)
+	assertEngineCatalogBusinessGrants(t, db)
 	assertWorkbenchRuntimeCatalog(t, db, 9, 6, 4, 0)
 	assertStandardDocumentCatalog(t, db)
 	assertMonitorAuthorizationCatalog(t, db)
@@ -4362,13 +4363,13 @@ func assertServicePrincipalRuntimeConstraints(t *testing.T, db *sql.DB) {
 		t.Fatalf("read platform.manager_runtime permissions: %v", err)
 	}
 	if catalogTenantPermissions != "develop.catalog.read,iam.department.read,iam.project_group.read,iam.tenant_membership.read,meta.catalog.read,model.catalog.read,quality.catalog.read,service.catalog.read,standard.catalog.read,standard.domain.read,standard.element.read,standard.glossary.read,system.engine_descriptor.read,workbench.catalog.read" ||
-		managerTenantPermissions != "audit.tenant_event.create,inference.runtime.execute,meta.catalog.read,meta.scan_task.execute,security.protection_projection.read,security.protection_projection.update,system.engine_descriptor.read,system.engine.read,transfer.execution.create,transfer.execution.read,transfer.task.create,transfer.task.execute,transfer.task.read" ||
-		metaTenantPermissions != "audit.tenant_event.create,manager.content_index.update,system.engine_descriptor.read,system.engine.read" ||
-		serviceTenantPermissions != "audit.tenant_event.create,meta.catalog.read,meta.lineage.create,model.metric_implementation.read,security.protection_projection.read,security.protection_projection.update,system.engine_descriptor.read,system.engine.read,system.execution_authorization.execute" ||
-		transferTenantPermissions != "audit.tenant_event.create,meta.catalog.read,meta.inspect.execute,meta.scan_task.execute,security.protection_projection.read,security.protection_projection.update,system.engine_descriptor.read,system.engine.read,system.execution_authorization.execute" ||
+		managerTenantPermissions != "audit.tenant_event.create,inference.runtime.execute,meta.catalog.read,meta.scan_task.execute,security.protection_projection.read,security.protection_projection.update,system.engine_catalog.read,system.engine_descriptor.read,system.engine.read,transfer.execution.create,transfer.execution.read,transfer.task.create,transfer.task.execute,transfer.task.read" ||
+		metaTenantPermissions != "audit.tenant_event.create,manager.content_index.update,system.engine_catalog.read,system.engine_descriptor.read,system.engine.read" ||
+		serviceTenantPermissions != "audit.tenant_event.create,meta.catalog.read,meta.lineage.create,model.metric_implementation.read,security.protection_projection.read,security.protection_projection.update,system.engine_catalog.read,system.engine_descriptor.read,system.engine.read,system.execution_authorization.execute" ||
+		transferTenantPermissions != "audit.tenant_event.create,meta.catalog.read,meta.inspect.execute,meta.scan_task.execute,security.protection_projection.read,security.protection_projection.update,system.engine_catalog.read,system.engine_descriptor.read,system.engine.read,system.execution_authorization.execute" ||
 		developTenantPermissions != "audit.tenant_event.create,meta.catalog.read,meta.lineage.create,meta.scan_task.execute,security.protection_projection.read,security.protection_projection.update,system.engine_descriptor.read,system.execution_authorization.execute,system.notebook_session_authorization.execute,transfer.execution.create,transfer.execution.read" ||
 		copilotTenantPermissions != "develop.task.read,inference.runtime.execute,system.engine_descriptor.read" ||
-		qualityTenantPermissions != "meta.catalog.read,standard.domain.read,standard.element.read,system.engine.read,system.execution_authorization.execute" ||
+		qualityTenantPermissions != "meta.catalog.read,standard.domain.read,standard.element.read,system.engine_catalog.read,system.engine.read,system.execution_authorization.execute" ||
 		catalogPlatformPermissions != "platform.tenant.read,system.runtime_registry.update" ||
 		metaPlatformPermissions != "system.runtime_registry.update" ||
 		developPlatformPermissions != "platform.tenant.read,system.runtime_registry.update" ||
@@ -5419,6 +5420,47 @@ func assertAuditContextConstraints(t *testing.T, db *sql.DB) {
 	}
 }
 
+func assertEngineCatalogBusinessGrants(t *testing.T, db *sql.DB) {
+	t.Helper()
+	var permissionCount, expectedRoleCount, governanceMetaCount int
+	if err := db.QueryRow(`
+		SELECT count(*)
+		FROM system.permissions
+		WHERE permission_key = 'system.engine_catalog.read'
+		  AND status = 'active'
+		  AND tenant_customizable
+	`).Scan(&permissionCount); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`
+		SELECT count(DISTINCT role.role_key)
+		FROM system.role_permissions AS role_permission
+		JOIN system.roles AS role ON role.id = role_permission.role_id
+		JOIN system.permissions AS permission ON permission.id = role_permission.permission_id
+		WHERE permission.permission_key = 'system.engine_catalog.read'
+		  AND role.role_key IN (
+		    'tenant.data_steward', 'tenant.governance_manager',
+		    'tenant.graph_engineer', 'tenant.service_publisher',
+		    'tenant.infrastructure_administrator'
+		  )
+	`).Scan(&expectedRoleCount); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`
+		SELECT count(*)
+		FROM system.role_permissions AS role_permission
+		JOIN system.roles AS role ON role.id = role_permission.role_id
+		JOIN system.permissions AS permission ON permission.id = role_permission.permission_id
+		WHERE role.role_key = 'tenant.governance_manager'
+		  AND permission.permission_key = 'meta.catalog.read'
+	`).Scan(&governanceMetaCount); err != nil {
+		t.Fatal(err)
+	}
+	if permissionCount != 1 || expectedRoleCount != 5 || governanceMetaCount != 1 {
+		t.Fatalf("engine catalog grants = permission:%d roles:%d governance_meta:%d, want 1, 5, 1", permissionCount, expectedRoleCount, governanceMetaCount)
+	}
+}
+
 func assertIAMCatalogSeed(t *testing.T, db *sql.DB) {
 	t.Helper()
 
@@ -5436,8 +5478,8 @@ func assertIAMCatalogSeed(t *testing.T, db *sql.DB) {
 	if err := db.QueryRow(`SELECT count(DISTINCT owner_module), count(*) FILTER (WHERE owner_module = 'system') FROM system.permissions`).Scan(&ownerCount, &systemPermissionCount); err != nil {
 		t.Fatalf("read seeded Permission owners: %v", err)
 	}
-	if ownerCount != 20 || systemPermissionCount != 136 {
-		t.Fatalf("seeded Permission owners = %d and System Permissions = %d, want 20 and 136", ownerCount, systemPermissionCount)
+	if ownerCount != 20 || systemPermissionCount != 137 {
+		t.Fatalf("seeded Permission owners = %d and System Permissions = %d, want 20 and 137", ownerCount, systemPermissionCount)
 	}
 
 	var obsoletePermissionCount, apiConsumerPermissionCount int

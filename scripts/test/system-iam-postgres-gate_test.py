@@ -2,6 +2,7 @@
 
 import os
 from pathlib import Path
+import shutil
 import signal
 import subprocess
 import tempfile
@@ -25,6 +26,9 @@ class SystemIAMGateLockTest(unittest.TestCase):
             (checkout / "system/backend").mkdir(parents=True)
             script = checkout / "scripts/test/system-iam-postgres-gate.sh"
             script.write_text(source.replace("/tmp/addp-system-iam-postgres-gate.lock", str(self.lock)))
+            utility = checkout / "scripts/infra/ports.sh"
+            utility.parent.mkdir(parents=True)
+            shutil.copyfile(Path(__file__).parents[1] / "infra/ports.sh", utility)
             self.scripts.append(script)
         bin_dir = self.root / "bin"
         bin_dir.mkdir()
@@ -46,6 +50,7 @@ sys.exit(int(os.environ.get("TEST_GO_STATUS", "0")))
         go.chmod(0o755)
         self.environment = dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}",
                                 ADDP_SYSTEM_POSTGRES_TEST_DSN="postgres://fixture/addp_iam_test",
+                                GITHUB_ACTIONS="true",
                                 TEST_STARTED=str(self.started), TEST_RELEASE=str(self.release))
 
     def tearDown(self):

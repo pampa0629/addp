@@ -1589,6 +1589,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "返回执行记录页面使用的任务能力投影，不包含 Backend 地址、实例身份或健康状态。| Return the task capability projection used by the execution page, without Backend addresses, instance identities, or health status.",
                 "produces": [
                     "application/json"
                 ],
@@ -1602,14 +1603,14 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/models.TaskProvider"
+                                "$ref": "#/definitions/internal_api.TaskProviderDisplay"
                             }
                         }
                     }
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
-                    "monitor.health.read"
+                    "monitor.execution.read"
                 ]
             }
         },
@@ -3512,6 +3513,20 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_api.TaskProviderDisplay": {
+            "type": "object",
+            "properties": {
+                "capabilities": {
+                    "type": "string"
+                },
+                "display_name": {
+                    "type": "string"
+                },
+                "module_name": {
+                    "type": "string"
+                }
+            }
+        },
         "internal_api.UpdateAlertRuleRequest": {
             "type": "object",
             "properties": {
@@ -3754,87 +3769,6 @@ const docTemplate = `{
         "models.JSONMap": {
             "type": "object",
             "additionalProperties": true
-        },
-        "models.TaskProvider": {
-            "type": "object",
-            "properties": {
-                "available": {
-                    "type": "boolean"
-                },
-                "backends": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/models.TaskProviderBackend"
-                    }
-                },
-                "capabilities": {
-                    "description": "能力描述（JSON 格式，含 task.capabilities/v2、task_capabilities 等）",
-                    "type": "string"
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "description": {
-                    "description": "描述",
-                    "type": "string"
-                },
-                "display_name": {
-                    "description": "显示名称",
-                    "type": "string"
-                },
-                "enabled": {
-                    "type": "boolean"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "module_name": {
-                    "type": "string"
-                },
-                "module_version": {
-                    "type": "integer"
-                },
-                "task_cancel_endpoint": {
-                    "description": "任务取消端点",
-                    "type": "string"
-                },
-                "task_detail_endpoint": {
-                    "description": "任务详情端点",
-                    "type": "string"
-                },
-                "task_execute_endpoint": {
-                    "description": "任务执行端点",
-                    "type": "string"
-                },
-                "task_list_endpoint": {
-                    "description": "任务列表端点",
-                    "type": "string"
-                },
-                "task_status_endpoint": {
-                    "description": "任务状态端点",
-                    "type": "string"
-                },
-                "unavailable_reason": {
-                    "type": "string"
-                },
-                "updated_at": {
-                    "type": "string"
-                }
-            }
-        },
-        "models.TaskProviderBackend": {
-            "type": "object",
-            "properties": {
-                "base_url": {
-                    "type": "string"
-                },
-                "instance_id": {
-                    "type": "string"
-                },
-                "lease_expires_at": {
-                    "type": "string"
-                }
-            }
         }
     },
     "securityDefinitions": {

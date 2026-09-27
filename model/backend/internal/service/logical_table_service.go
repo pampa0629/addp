@@ -3,12 +3,14 @@ package service
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
 	"time"
 	"unicode/utf8"
 
+	commonapi "github.com/addp/common/api"
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/resourcetree"
@@ -132,6 +134,9 @@ func (s *LogicalTableService) CreateLogicalTable(req *models.CreateLogicalTableR
 			return apperrors.NotFound("dw_layer_not_found", i18n.MsgLayerNotFound)
 		}
 		txRepo := repository.NewLogicalTableRepository(tx)
+		if err := requirePhysicalTargetAvailable(txRepo, table.Materialization, 0); err != nil {
+			return err
+		}
 		exists, err := txRepo.ExistsByCode(req.Code, tenantID, 0)
 		if err != nil {
 			return err
@@ -140,11 +145,20 @@ func (s *LogicalTableService) CreateLogicalTable(req *models.CreateLogicalTableR
 			return apperrors.Conflict("logical_table_code_conflict", i18n.MsgTableCodeConflict)
 		}
 		if err := txRepo.Create(table); err != nil {
-			return modelResourceError(err, "logical_table_code", i18n.MsgTableCodeConflict)
+			return err
 		}
 		return nil
 	})
 	if err != nil {
+		if _, ok := apperrors.As(err); ok {
+			return nil, err
+		}
+		if errors.Is(err, commonapi.ErrConflict) {
+			if lookupErr := requirePhysicalTargetAvailable(s.repo, table.Materialization, 0); lookupErr != nil {
+				return nil, lookupErr
+			}
+			return nil, apperrors.Conflict("logical_table_code_conflict", i18n.MsgTableCodeConflict)
+		}
 		return nil, err
 	}
 	return table, nil
@@ -251,6 +265,9 @@ func (s *LogicalTableService) UpdateLogicalTable(id, tenantID, userID int64, req
 		if err := validateMaterialization(previewTable, fields); err != nil {
 			return apperrors.Wrap(apperrors.KindValidation, "materialization_invalid", i18n.MsgValidationFailed, err)
 		}
+		if err := requirePhysicalTargetAvailable(repository.NewLogicalTableRepository(tx), normalizedMaterialization, id); err != nil {
+			return err
+		}
 		if _, err := repository.LockDWLayerByCode(tx, req.Layer, tenantID); err != nil {
 			return apperrors.NotFound("dw_layer_not_found", i18n.MsgLayerNotFound)
 		}
@@ -266,9 +283,30 @@ func (s *LogicalTableService) UpdateLogicalTable(id, tenantID, userID int64, req
 		return repository.NewLogicalTableRepository(tx).Update(table)
 	})
 	if err != nil {
+		if _, ok := apperrors.As(err); ok {
+			return nil, err
+		}
+		if errors.Is(err, commonapi.ErrConflict) {
+			if lookupErr := requirePhysicalTargetAvailable(s.repo, normalizeMaterialization(req.Materialization), id); lookupErr != nil {
+				return nil, lookupErr
+			}
+		}
 		return nil, err
 	}
 	return table, nil
+}
+
+func requirePhysicalTargetAvailable(repo *repository.LogicalTableRepository, config models.JSONB, excludeID int64) error {
+	parent, _ := materializationString(config, "target_parent_locator")
+	name, _ := materializationString(config, "target_name")
+	occupied, err := repo.ExistsByPhysicalTarget(parent, name, excludeID)
+	if err != nil {
+		return err
+	}
+	if occupied {
+		return apperrors.Conflict("logical_table_physical_target_conflict", i18n.MsgTablePhysicalTargetConflict)
+	}
+	return nil
 }
 
 func (s *LogicalTableService) DeleteLogicalTable(id, tenantID, version int64) error {
@@ -684,6 +722,12 @@ func normalizeMaterialization(config map[string]interface{}) models.JSONB {
 				continue
 			}
 			normalized[key] = trimmed
+		}
+	}
+	if uri, ok := normalized["target_parent_locator"].(string); ok {
+		if locator, err := resourcetree.ParseURI(uri); err == nil && locator.ItemID == nil {
+			locator.NodeID = nil
+			normalized["target_parent_locator"] = locator.ToURI()
 		}
 	}
 	return normalized

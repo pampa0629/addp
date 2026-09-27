@@ -4,7 +4,7 @@
       <el-tabs v-model="activeTab" @tab-change="handleTabChange">
         <el-tab-pane :label="t('manager.vectorization.tasksTab')" name="tasks">
           <div class="tab-toolbar task-tab-toolbar">
-            <el-button type="primary" :icon="Plus" @click="requestCreateDialog">
+            <el-button v-if="canCreateTask" type="primary" :icon="Plus" @click="requestCreateDialog">
               {{ t('manager.vectorization.create') }}
             </el-button>
             <el-button :icon="Refresh" circle @click="loadTasks" />
@@ -64,22 +64,22 @@
             <el-table-column :label="t('manager.vectorization.actions')" width="400">
               <template #default="{ row }">
                 <div class="task-actions">
-                  <el-button type="primary" size="small" :loading="executingId === row.id" @click="executeTask(row)">
+                  <el-button v-if="canCreateTask" type="primary" size="small" :loading="executingId === row.id" @click="executeTask(row)">
                     {{ t('manager.vectorization.execute') }}
                   </el-button>
-                  <el-button size="small" @click="requestEditTask(row)">
+                  <el-button v-if="canUpdateTask" size="small" @click="requestEditTask(row)">
                     {{ t('manager.vectorization.edit') }}
                   </el-button>
                   <el-button size="small" @click="viewTaskResults(row)">
                     {{ t('manager.vectorization.results') }}
                   </el-button>
-                  <el-button size="small" :disabled="!row.last_execution_id" @click="openTaskExecution(row)">
+                  <el-button v-if="canReadExecutions" size="small" :disabled="!row.last_execution_id" @click="openTaskExecution(row)">
                     {{ t('manager.vectorization.monitor') }}
                   </el-button>
                   <el-button size="small" @click="showTaskDetail(row)">
                     {{ t('manager.vectorization.detail') }}
                   </el-button>
-                  <el-button size="small" type="danger" @click="deleteTask(row)">
+                  <el-button v-if="canDeleteTask" size="small" type="danger" @click="deleteTask(row)">
                     {{ t('manager.vectorization.delete') }}
                   </el-button>
                 </div>
@@ -187,7 +187,7 @@
                 {{ formatDateTime(row.vectorized_at) }}
               </template>
             </el-table-column>
-            <el-table-column :label="t('manager.vectorization.monitor')" width="100">
+            <el-table-column v-if="canReadExecutions" :label="t('manager.vectorization.monitor')" width="100">
               <template #default="{ row }">
                 <el-button size="small" :disabled="!row.last_execution_id" @click="openResultExecution(row)">
                   {{ t('manager.vectorization.monitor') }}
@@ -201,10 +201,10 @@
                   <el-button size="small" :disabled="!row.locator" @click="locateResult(row)">
                     {{ t('manager.vectorization.locate') }}
                   </el-button>
-                  <el-button size="small" :loading="revectorizingId === row.id" @click="revectorizeResult(row)">
+                  <el-button v-if="canCreateTask" size="small" :loading="revectorizingId === row.id" @click="revectorizeResult(row)">
                     {{ t('manager.vectorization.revectorize') }}
                   </el-button>
-                  <el-button size="small" type="danger" @click="deleteResult(row)">
+                  <el-button v-if="canDeleteTask" size="small" type="danger" @click="deleteResult(row)">
                     {{ t('manager.vectorization.delete') }}
                   </el-button>
                 </div>
@@ -291,7 +291,7 @@
       </el-form>
       <template #footer>
         <el-button @click="formDialogVisible = false">{{ t('manager.vectorization.cancel') }}</el-button>
-        <el-button type="primary" :loading="saving" @click="saveTask">{{ t('manager.vectorization.save') }}</el-button>
+        <el-button v-if="editingId ? canUpdateTask : canCreateTask" type="primary" :loading="saving" @click="saveTask">{{ t('manager.vectorization.save') }}</el-button>
       </template>
     </el-dialog>
 
@@ -377,9 +377,10 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { openMonitorExecution, parseLocatorSafe, ResourceTreePicker, ScheduleConfig, ScheduleDisplay } from '@addp/common-frontend'
 import client from '../api/client'
-import { listInferenceDeployments, listInferenceProfiles } from '../api/embeddingConfiguration'
+import { listInferenceModelLabels } from '../api/embeddingConfiguration'
 import { formatDateTime } from '../utils/formatters'
 import { normalizeEngineCatalog, resolveEngineName } from '../utils/enginePresentation'
+import { useAuthStore } from '../store/auth'
 import {
   DEFAULT_VECTOR_MAX_FILE_SIZE_MB,
   SUPPORTED_VECTOR_EXTENSIONS,
@@ -399,6 +400,11 @@ defineProps({
 const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
+const authStore = useAuthStore()
+const canCreateTask = computed(() => authStore.hasPermission('manager.derived_artifact.create'))
+const canUpdateTask = computed(() => authStore.hasPermission('manager.derived_artifact.update'))
+const canDeleteTask = computed(() => authStore.hasPermission('manager.derived_artifact.delete'))
+const canReadExecutions = computed(() => authStore.hasPermission('monitor.execution.read'))
 
 const resolveRouteState = routeQuery => resolveManagerTaskWorkspaceRouteState({
   routeQuery,
@@ -422,8 +428,7 @@ const engineOptions = ref([])
 const resultNodeDialogVisible = ref(false)
 const resultResourceSelection = ref(null)
 const selectedResultNode = ref(null)
-const inferenceProfiles = ref([])
-const inferenceDeployments = ref([])
+const inferenceModelLabels = ref([])
 
 const tasks = ref([])
 const tasksLoading = ref(false)
@@ -444,7 +449,7 @@ const selectedTask = ref(null)
 const embeddingStatuses = ['ready', 'outdated', 'failed', 'unsupported', 'missing_source']
 const storageEngineTypes = new Set(['minio', 's3', 'nfs', 'nas'])
 const supportedExtensions = SUPPORTED_VECTOR_EXTENSIONS
-const embeddingModelLabels = computed(() => buildEmbeddingModelLabels(inferenceProfiles.value, inferenceDeployments.value))
+const embeddingModelLabels = computed(() => buildEmbeddingModelLabels(inferenceModelLabels.value))
 
 const formTitle = computed(() => editingId.value ? t('manager.vectorization.editTitle') : t('manager.vectorization.createTitle'))
 const resultNodeFilterLabel = computed(() => {
@@ -803,16 +808,10 @@ const loadStorageEngines = async (force = false) => {
 
 const loadInferenceModelCatalog = async () => {
   try {
-    const [profilePage, deploymentPage] = await Promise.all([
-      listInferenceProfiles(),
-      listInferenceDeployments()
-    ])
-    inferenceProfiles.value = profilePage.data || []
-    inferenceDeployments.value = deploymentPage.data || []
+    inferenceModelLabels.value = await listInferenceModelLabels()
   } catch (error) {
     console.error('加载向量模型目录失败:', error)
-    inferenceProfiles.value = []
-    inferenceDeployments.value = []
+    inferenceModelLabels.value = []
   }
 }
 

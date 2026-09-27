@@ -49,6 +49,7 @@ const (
 	MsgInvalidFieldID                   = "model.logical_table.invalid_field_id"
 	MsgDDLPreviewInvalid                = "model.logical_table.ddl_preview_invalid"
 	MsgTableCodeConflict                = "model.logical_table.code_conflict"
+	MsgTablePhysicalTargetConflict      = "model.logical_table.physical_target_conflict"
 	MsgTableStateConflict               = "model.logical_table.state_conflict"
 	MsgTableMaterializationConfigured   = "model.logical_table.materialization_configured"
 	MsgTableMaterializationBatchActive  = "model.logical_table.materialization_batch_active"

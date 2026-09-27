@@ -4,7 +4,7 @@
       <h2>{{ t('graph.build.title') }}</h2>
       <div class="header-actions">
         <MonitorExecutionsButton module="graph" task-type="kg_build" />
-        <el-button type="primary" @click="showCreateDialog = true">{{ t('graph.build.createTask') }}</el-button>
+        <el-button v-if="authStore.hasPermission('graph.build_task.create')" type="primary" @click="showCreateDialog = true">{{ t('graph.build.createTask') }}</el-button>
       </div>
     </div>
 
@@ -29,14 +29,14 @@
         <div class="task-footer">
           <span class="task-date">{{ formatDate(task.created_at) }}</span>
           <div class="task-actions" @click.stop>
-            <el-button v-if="task.status === 'pending' || task.status === 'failed'" size="small" type="primary" @click="handleRun(task)">{{ t('graph.build.run') }}</el-button>
-            <el-button v-if="task.status === 'running'" size="small" type="warning" @click="handleCancel(task)">{{ t('graph.build.cancel') }}</el-button>
-            <el-button v-if="task.status === 'success' || task.status === 'cancelled'" size="small" type="primary" plain @click="handleRerun(task)">{{ t('graph.build.rerun') }}</el-button>
-            <el-button size="small" @click="goReview(task)">
+            <el-button v-if="authStore.hasPermission('graph.build_task.execute') && (task.status === 'pending' || task.status === 'failed')" size="small" type="primary" @click="handleRun(task)">{{ t('graph.build.run') }}</el-button>
+            <el-button v-if="authStore.hasPermission('graph.build_task.cancel') && task.status === 'running'" size="small" type="warning" @click="handleCancel(task)">{{ t('graph.build.cancel') }}</el-button>
+            <el-button v-if="authStore.hasPermission('graph.build_task.execute') && (task.status === 'success' || task.status === 'cancelled')" size="small" type="primary" plain @click="handleRerun(task)">{{ t('graph.build.rerun') }}</el-button>
+            <el-button v-if="authStore.hasPermission('graph.review.read')" size="small" @click="goReview(task)">
               {{ t('graph.build.reviewBtn') }}
               <el-badge v-if="pendingCounts[task.id]" :value="pendingCounts[task.id]" class="review-badge" />
             </el-button>
-            <el-button size="small" type="danger" @click="handleDelete(task.id)">{{ t('graph.common.delete') }}</el-button>
+            <el-button v-if="authStore.hasPermission('graph.build_task.delete')" size="small" type="danger" @click="handleDelete(task.id)">{{ t('graph.common.delete') }}</el-button>
           </div>
         </div>
       </div>
@@ -89,8 +89,10 @@ import { useI18n } from 'vue-i18n'
 import { navigateGraphRoute } from '@/utils/moduleNavigation'
 import { useKnowledgeGraphPageDescriptor } from '../composables/useKnowledgeGraphPageDescriptor'
 import { MonitorExecutionsButton } from '@common-ui'
+import { useAuthStore } from '../store/auth'
 
 const { t } = useI18n()
+const authStore = useAuthStore()
 
 const props = defineProps({ graphId: { type: [String, Number], required: true } })
 const router = useRouter()
@@ -120,8 +122,9 @@ async function loadTasks() {
   try {
     const res = await buildAPI.listTasks(props.graphId)
     tasks.value = res || []
-    const countRes = await buildAPI.getPendingCount(props.graphId)
-    const total = countRes.count || 0
+    const countRes = authStore.hasPermission('graph.review.read')
+      ? await buildAPI.getPendingCount(props.graphId) : null
+    const total = countRes?.count || 0
     // 简单地将 pending 数显示在第一个 running/success 任务上
     if (total > 0 && tasks.value.length > 0) {
       pendingCounts.value[tasks.value[0].id] = total

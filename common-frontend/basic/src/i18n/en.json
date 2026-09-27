@@ -456,6 +456,10 @@
     "typeTable": "Table",
     "typeView": "View"
   },
+  "moduleAccessDenied": {
+    "title": "Access denied",
+    "description": "Your account does not have the required permission. Contact an administrator."
+  },
   "unsavedChanges": {
     "title": "Unsaved changes",
     "message": "Leaving will discard your unsaved changes. Leave this page?",

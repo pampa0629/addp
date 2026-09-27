@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { managerAuthContext } from './managerAuthContext.js'
 
 const POSTGRES_ENGINE = {
   id: 11,
@@ -337,10 +338,7 @@ async function installMockBackend(page, options = {}) {
       return fulfillJSON(route, { id: 1, username: 'manager-e2e' })
     }
     if (path === '/api/v1/system/auth/context') {
-      return fulfillJSON(route, {
-        context: { type: 'tenant' },
-        authorization: { role_assignments: [{ permissions: [] }] }
-      })
+      return fulfillJSON(route, managerAuthContext)
     }
     if (path === '/api/v1/meta/engines') {
       return fulfillJSON(route, [POSTGRES_ENGINE, NFS_ENGINE])

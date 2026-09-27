@@ -37,6 +37,10 @@ Model 只负责由已审批 LogicalTable 创建或校验目标物理表，以及
 
 `POST /logical-tables/{id}/materialized-target` 使用当前用户授权及逻辑表 `version`，返回 202 和统一执行标识。TaskProvider 执行入口仅接受 addp-orchestrator 与有效父 execution，二者调用同一服务，交由 Model Backend 内嵌执行方领取后在目标 PostgreSQL 事务中建表。目标不存在时创建；已存在时必须归属本逻辑表且结构完全一致，幂等成功并保留记录。结构不一致明确拒绝，不自动丢弃或替换表。结构升级需要单独明确设计，当前不猜测 ALTER 或破坏性重建。
 
+Model 的 LogicalTable 物理目标配置是目标占用的权威事实。保存时把父 ResourceLocator 规范化为仅含 Engine ID、业务路径和节点类型的 URI，剔除 Meta `node_id`；对所有已配置目标按规范化父定位符与目标表名建立跨 Tenant 唯一约束。重复目标在创建或修改逻辑表时返回明确冲突，不能等到建表时让先执行者胜出。清空配置、删除逻辑表或显式改配目标时，原占用才释放；改配不自动覆盖另一逻辑表的占用。数据库唯一约束兜住并发写入。
+
+PostgreSQL 表注释中的最小机器标记只是物理侧的创建凭据，不是 Model 归属的第二权威记录。Model 为每个逻辑表保存随机所有权令牌，建表时把令牌、结构指纹和创建 execution 写入标记；校验和删除必须同时匹配令牌及结构/目标确认，不再仅凭可复用的自增逻辑表 ID 判断归属。标记缺失、不匹配或物理结构漂移时拒绝操作，不自动接管、覆盖或删除表。Infra 记录丢失后，Business 表注释不能自行恢复 Model 定义；需要恢复 Model 备份，或按明确恢复流程重建目标。
+
 `DELETE /logical-tables/{id}/materialized-target` 要求精确目标确认和版本，只删除属于当前逻辑表的目标物理表。创建、校验及删除在控制库锁定 LogicalTable，在目标库对目标串行化；不改写物理目标配置。物理结构操作不执行数据加工或质量检查。
 
 Develop 查询任务通过 ResourceLocator 指定已存在的正式输出表；在同一目标事务内执行覆盖或追加，不负责模型 DDL。Orchestrator 按任务依赖调度可选建表步骤、计算和 Quality 数据校验；任何步骤失败不回滚其他已提交步骤。Quality 校验读取正式表，不引用 Model 私有资源，也不执行发布。

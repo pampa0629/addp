@@ -2,7 +2,7 @@
   <div class="chat-layout">
     <aside class="sidebar">
       <div class="sidebar-header">
-        <el-button type="primary" size="small" :icon="Plus" @click="createSession">
+        <el-button v-if="authStore.hasPermission('agent.session.create')" type="primary" size="small" :icon="Plus" @click="createSession">
           {{ t('agent.chat.newSession') }}
         </el-button>
       </div>
@@ -18,6 +18,7 @@
           <el-icon><ChatDotRound /></el-icon>
           <span class="session-title">{{ session.title }}</span>
           <el-button
+            v-if="authStore.hasPermission('agent.session.delete')"
             class="delete-btn"
             type="danger"
             link
@@ -44,7 +45,7 @@
         <div v-else-if="messages.length === 0 && !liveMessage" class="empty-hint">
           <el-icon size="48"><ChatDotRound /></el-icon>
           <p>{{ t('agent.chat.welcome') }}</p>
-          <div class="quick-actions">
+          <div v-if="canRun" class="quick-actions">
             <el-tag
               v-for="hint in quickHints"
               :key="hint"
@@ -99,11 +100,11 @@
           :rows="3"
           :placeholder="t('agent.chat.inputPlaceholder')"
           resize="none"
-          :disabled="isLoading"
+          :disabled="isLoading || !canRun"
           @keydown.ctrl.enter="handleSend"
         />
         <div class="input-actions">
-          <el-tooltip v-if="isLoading" :content="t('agent.chat.cancel')">
+          <el-tooltip v-if="isLoading && authStore.hasPermission('agent.run.cancel')" :content="t('agent.chat.cancel')">
             <el-button
               :icon="CircleClose"
               :loading="isCancelling"
@@ -111,14 +112,14 @@
               @click="cancelActiveRun"
             />
           </el-tooltip>
-          <el-tooltip v-if="!isLoading && retryRunId" :content="t('agent.chat.retry')">
+          <el-tooltip v-if="!isLoading && retryRunId && authStore.hasPermission('agent.run.execute')" :content="t('agent.chat.retry')">
             <el-button
               :icon="RefreshRight"
               :aria-label="t('agent.chat.retry')"
               @click="retryFailedRun"
             />
           </el-tooltip>
-          <el-button v-if="!isLoading" type="primary" :icon="Position" @click="handleSend">
+          <el-button v-if="!isLoading && canRun" type="primary" :icon="Position" @click="handleSend">
             {{ t('agent.chat.send') }}
           </el-button>
         </div>
@@ -145,6 +146,7 @@ import { routeAfterSessionDeletion, resolveAgentSessionRouteState } from '../uti
 
 const { t } = useI18n()
 const authStore = useAuthStore()
+const canRun = computed(() => ['agent.run.create', 'agent.run.execute', 'agent.run.read'].every(permission => authStore.hasPermission(permission)))
 const route = useRoute()
 const router = useRouter()
 

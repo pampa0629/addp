@@ -238,7 +238,7 @@ import { Close, MagicStick } from '@element-plus/icons-vue'
 import { defaultResourceCandidatesByRole, engineSelectionState, isEngineSelectable, normalizeFieldType, ResourceTreePicker } from '@addp/common-frontend'
 import { transferCopilotAPI } from '@/api/copilot'
 import { taskAPI, fieldDefinitionRecommendationAPI } from '@/api/tasks'
-import { systemEnginesAPI } from '@/api/systemEngines'
+import { engineCatalogAPI } from '@/api/engineCatalog'
 import { capabilitiesAPI } from '@/api/capabilities'
 import { getItemFieldsByID } from '@/api/meta'
 import { getManagerPreview } from '@/api/managerPreview'
@@ -347,7 +347,7 @@ function reset() {
 watch(visible, value => { if (!value && !busy.value) reset() })
 
 async function loadEngines() {
-  const response = await systemEnginesAPI.list()
+  const response = await engineCatalogAPI.list()
   engines.value = Array.isArray(response?.data) ? response.data : (response || [])
   return engines.value
 }

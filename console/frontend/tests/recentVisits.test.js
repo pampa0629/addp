@@ -85,4 +85,10 @@ describe('Console recent visits', () => {
     const nextEntry = { key: '/graph/graphs/1/browse', route: '/graph/graphs/1/browse?tab=relations' }
     expect(prependRecentVisit([oldEntry], nextEntry)).toEqual([nextEntry])
   })
+
+  it('keeps visits from different tenant contexts separate', () => {
+    const tenantA = { key: '/transfer/tasks', route: '/transfer/tasks', contextKey: 'tenant:3' }
+    const tenantB = { key: '/transfer/tasks', route: '/transfer/tasks', contextKey: 'tenant:4' }
+    expect(prependRecentVisit([tenantA], tenantB)).toEqual([tenantB, tenantA])
+  })
 })

@@ -34,14 +34,14 @@
 		  {{ t('service.query.snapshotCheck') }}
 		</el-button>
         <el-button
-          v-if="service"
+          v-if="service && auth.hasPermission('service.definition.update')"
           :type="service.status === 'active' ? 'warning' : 'primary'"
           :loading="statusUpdating"
           :disabled="loading || previewLoading || versionConflict || (service.status !== 'active' && metricBindingRequired)"
           @click="toggleServiceStatus"
         >{{ t(service.status === 'active' ? 'service.query.deactivate' : 'service.query.activate') }}</el-button>
-        <el-button @click="goToEdit">{{ t('service.common.edit') }}</el-button>
-        <el-button type="danger" :disabled="versionConflict || statusUpdating" @click="handleDelete">{{ t('service.common.delete') }}</el-button>
+        <el-button v-if="auth.hasPermission('service.definition.update')" @click="goToEdit">{{ t('service.common.edit') }}</el-button>
+        <el-button v-if="auth.hasPermission('service.definition.delete')" type="danger" :disabled="versionConflict || statusUpdating" @click="handleDelete">{{ t('service.common.delete') }}</el-button>
       </div>
     </div>
 
@@ -279,7 +279,7 @@
 		<el-tag v-if="snapshotDiff.table_changed" type="warning">{{ t('service.query.snapshotTableChanged') }}</el-tag>
 		<el-tag v-if="snapshotDiff.spatial_changed" type="warning">{{ t('service.query.snapshotSpatialChanged') }}</el-tag>
 		<el-tag v-if="snapshotDiff.object_table_changed" type="warning">{{ t('service.query.snapshotObjectChanged') }}</el-tag>
-		<el-button type="primary" :loading="snapshotRefreshing" @click="refreshSourceSnapshot">
+		<el-button v-if="auth.hasPermission('service.definition.update')" type="primary" :loading="snapshotRefreshing" @click="refreshSourceSnapshot">
 		  {{ t('service.query.snapshotRefresh') }}
 		</el-button>
 	  </div>
@@ -442,6 +442,11 @@ const engineDisplay = (id) => {
   return `${engine.name} · ${engine.engine_type} (#${engine.id})`
 }
 onMounted(async () => {
+  if (!auth.hasPermission('system.engine_catalog.read')) {
+    enginesUnavailable.value = true
+    enginesLoading.value = false
+    return
+  }
   try { engines.value = await queryServiceAPI.getStorageEngines() }
   catch { enginesUnavailable.value = true }
   finally { enginesLoading.value = false }

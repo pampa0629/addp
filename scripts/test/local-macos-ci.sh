@@ -194,6 +194,7 @@ validate_host() {
 clear_integration_gate_environment() {
   unset ADDP_SYSTEM_POSTGRES_TEST_DSN
   unset ASSET_POSTGRES_TEST_DSN
+  unset SECURITY_POSTGRES_TEST_DSN
   unset META_POSTGRES_TEST_DSN
   unset CATALOG_POSTGRES_TEST_DSN
   unset DEVELOP_POSTGRES_TEST_DSN
@@ -209,6 +210,7 @@ clear_integration_gate_environment() {
   unset ADDP_TEST_POSTGRES_PASSWORD
   unset ADDP_TEST_POSTGRES_DATABASE
   unset ADDP_TEST_POSTGRES_SSLMODE
+  unset ADDP_LOCAL_CI_POSTGRES
   unset ADDP_TEST_MYSQL_HOST
   unset ADDP_TEST_MYSQL_PORT
   unset ADDP_TEST_MYSQL_USER
@@ -307,6 +309,7 @@ run_integration_gates() {
   env \
     ADDP_SYSTEM_POSTGRES_TEST_DSN="$iam_dsn" \
     ASSET_POSTGRES_TEST_DSN="$shared_dsn" \
+    SECURITY_POSTGRES_TEST_DSN="$shared_dsn" \
     META_POSTGRES_TEST_DSN="$shared_dsn" \
     CATALOG_POSTGRES_TEST_DSN="$shared_dsn" \
     DEVELOP_POSTGRES_TEST_DSN="$shared_dsn" \
@@ -322,6 +325,7 @@ run_integration_gates() {
     ADDP_TEST_POSTGRES_PASSWORD=addp_password \
     ADDP_TEST_POSTGRES_DATABASE=addp_test \
     ADDP_TEST_POSTGRES_SSLMODE=disable \
+    ADDP_LOCAL_CI_POSTGRES=1 \
     ADDP_LOCAL_CI_MYSQL=1 \
     ADDP_LOCAL_CI_OCEANBASE=1 \
     "$@"

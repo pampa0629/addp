@@ -207,17 +207,9 @@ func NewIAMPermissionGuard(requiredPermissions ...string) (gin.HandlerFunc, erro
 			abortIAMAuthenticationRequired(c)
 			return
 		}
-		granted := make(map[string]struct{})
-		for _, assignment := range authContext.Authorization.RoleAssignments {
-			for _, permission := range assignment.Permissions {
-				granted[permission] = struct{}{}
-			}
-		}
-		for _, permission := range required {
-			if _, exists := granted[permission]; !exists {
-				abortIAMPermissionDenied(c)
-				return
-			}
+		if !commonauth.HasContextPermissions(authContext, required...) {
+			abortIAMPermissionDenied(c)
+			return
 		}
 		c.Next()
 	}, nil

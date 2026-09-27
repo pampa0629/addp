@@ -27,6 +27,7 @@ func SetupRouter(cfg *config.Config, handler *Handler, lifecycle *modulelifecycl
 	permission := func(keys ...string) gin.HandlerFunc { return commonauth.MustNewPermissionGuard(keys...) }
 	control := router.Group("/api/v1/inference")
 	control.Use(authMiddleware)
+	control.GET("/model-labels", commonauth.MustNewContextGuard("tenant"), permission(inferenceauthorization.PermissionInferenceModelLabelRead), handler.ListModelLabels)
 	control.GET("/provider-templates", permission(inferenceauthorization.PermissionInferenceProviderRead), handler.ListProviderTemplates)
 	providers := control.Group("/provider-connections")
 	providers.GET("", permission(inferenceauthorization.PermissionInferenceProviderRead), handler.ListProviders)

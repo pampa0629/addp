@@ -136,7 +136,7 @@ test('tenant administrator manages a service account lifecycle without leaking s
         context: { type: 'tenant', tenant_id: '1', tenant_membership_id: '11' },
         authentication: { assurance_level: 'aal2' },
         authorization: {
-          role_assignments: [{ role_key: 'tenant.administrator', scope_type: 'tenant', permissions }]
+          role_assignments: [{ role_key: 'tenant.administrator', scope: { type: 'tenant', tenant_id: '1' }, permissions }]
         }
       })
       return

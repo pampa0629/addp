@@ -18,6 +18,9 @@ database=${dsn_without_query##*/}
 case "$DEVELOP_POSTGRES_TEST_DSN" in postgres://*/*|postgresql://*/*) ;; *) echo "DEVELOP_POSTGRES_TEST_DSN must use a PostgreSQL URL" >&2; exit 1 ;; esac
 case "$database" in *test*|*disposable*) ;; *) echo "DEVELOP_POSTGRES_TEST_DSN must identify a disposable test database" >&2; exit 1 ;; esac
 
+source "$ROOT_DIR/scripts/infra/ports.sh"
+addp_infra_verify_test_postgres_dsn "$DEVELOP_POSTGRES_TEST_DSN"
+
 cd "$ROOT_DIR/develop/backend"
 go test ./internal/repository \
     -run '^(TestCatalogDevTaskChangeFeedAgainstPostgres|TestExportSessionScopeAgainstPostgres|TestQueryExecutionQueueAgainstPostgres)$' \

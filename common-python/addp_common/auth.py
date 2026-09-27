@@ -14,6 +14,7 @@ class RoleAssignment:
     role_key: str
     scope_type: str
     permissions: tuple[str, ...]
+    scope_tenant_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -42,7 +43,19 @@ class AuthorizationContext:
 
     @property
     def permissions(self) -> tuple[str, ...]:
-        return tuple(sorted({permission for assignment in self.role_assignments for permission in assignment.permissions}))
+        if self.context_type == "tenant" and self.tenant_id is not None:
+            scope_type = "tenant"
+        elif self.context_type == "platform":
+            scope_type = "platform"
+        else:
+            return ()
+        return tuple(sorted({
+            permission
+            for assignment in self.role_assignments
+            if assignment.scope_type == scope_type
+            and (scope_type == "platform" or assignment.scope_tenant_id == self.tenant_id)
+            for permission in assignment.permissions
+        }))
 
 
 def allows_permissions(context: AuthorizationContext, required_permissions: tuple[str, ...]) -> bool:
@@ -117,6 +130,11 @@ def _parse_role_assignments(value: object) -> tuple[RoleAssignment, ...]:
         scope_type = scope.get("type")
         if scope_type not in {"platform", "tenant", "department", "project_group"}:
             raise ValueError(f"authorization context {field}.scope.type is invalid")
+        scope_tenant_id = None if scope_type == "platform" else _parse_id(
+            scope.get("tenant_id"), f"{field}.scope.tenant_id"
+        )
+        if scope_type == "platform" and scope.get("tenant_id") is not None:
+            raise ValueError(f"authorization context {field}.scope.tenant_id is invalid")
         _parse_time(assignment["valid_from"], f"{field}.valid_from")
         _parse_optional_time(assignment["valid_until"], f"{field}.valid_until")
         assignments.append(
@@ -125,6 +143,7 @@ def _parse_role_assignments(value: object) -> tuple[RoleAssignment, ...]:
                 role_key=role_key,
                 scope_type=scope_type,
                 permissions=_parse_string_tuple(assignment["permissions"], f"{field}.permissions", nonempty=True),
+                scope_tenant_id=scope_tenant_id,
             )
         )
     return tuple(assignments)

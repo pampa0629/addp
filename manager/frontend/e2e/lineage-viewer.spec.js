@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { managerAuthContext } from './managerAuthContext.js'
 
 const locator = 'addp://engine/9/path/public/current?type=table&item_id=3'
 const node = id => ({ kind: 'data_item', item_id: id, name: id === 3 ? 'current' : `source_${id}`, full_name: `public.table_${id}`, engine_id: 9, engine_name: 'Lineage PostgreSQL', item_type: 'table' })
@@ -15,7 +16,7 @@ test('lineage fills the viewport, controls query depth and survives resizing and
     const path = url.pathname
     if (path.endsWith('/system/refresh')) return json(route, { access_token: 'lineage-e2e-token', expires_in: 3600 })
     if (path.endsWith('/system/users/me')) return json(route, { id: 1, username: 'lineage-e2e' })
-    if (path.endsWith('/system/auth/context')) return json(route, { context: { type: 'tenant' }, authorization: { role_assignments: [{ permissions: [] }] } })
+    if (path.endsWith('/system/auth/context')) return json(route, managerAuthContext)
     if (path.endsWith('/manager/engines')) return json(route, { data: [{ id: 9, name: 'Lineage PostgreSQL', engine_type: 'postgresql', lifecycle_state: 'active', connection_status: 'online' }] })
     if (path.endsWith('/ancestors')) return json(route, { target_locator: locator, ancestors: [{ id: locator, locator, label: 'current', type: 'table', metadata: { item_id: 3 } }] })
     if (path.endsWith('/meta/lineage/graph')) {
@@ -67,7 +68,7 @@ test('expands a single direction from a node while keeping the current table and
   const url=new URL(route.request().url()); const path=url.pathname
   if(path.endsWith('/system/refresh')) return json(route,{access_token:'lineage-e2e-token',expires_in:3600})
   if(path.endsWith('/system/users/me')) return json(route,{id:1,username:'lineage-e2e'})
-  if(path.endsWith('/system/auth/context')) return json(route,{context:{type:'tenant'},authorization:{role_assignments:[{permissions:[]}]}})
+  if(path.endsWith('/system/auth/context')) return json(route,managerAuthContext)
   if(path.endsWith('/manager/engines')) return json(route,{data:[{id:9,name:'Lineage PostgreSQL',engine_type:'postgresql',lifecycle_state:'active',connection_status:'online'}]})
   if(path.endsWith('/ancestors')) return json(route,{target_locator:locator,ancestors:[{id:locator,locator,label:'current',type:'table',metadata:{item_id:3}}]})
   if(path.endsWith('/meta/lineage/graph')) {
@@ -110,7 +111,7 @@ test('edge evidence opens the source execution in Monitor', async ({ page }) => 
   const path=new URL(route.request().url()).pathname
   if(path.endsWith('/system/refresh')) return json(route,{access_token:'lineage-e2e-token',expires_in:3600})
   if(path.endsWith('/system/users/me')) return json(route,{id:1,username:'lineage-e2e'})
-  if(path.endsWith('/system/auth/context')) return json(route,{context:{type:'tenant'},authorization:{role_assignments:[{permissions:[]}]}})
+  if(path.endsWith('/system/auth/context')) return json(route,managerAuthContext)
   if(path.endsWith('/manager/engines')) return json(route,{data:[{id:9,name:'Lineage PostgreSQL',engine_type:'postgresql',lifecycle_state:'active',connection_status:'online'}]})
   if(path.endsWith('/ancestors')) return json(route,{target_locator:locator,ancestors:[{id:locator,locator,label:'current',type:'table',metadata:{item_id:3}}]})
   if(path.endsWith('/meta/lineage/graph')) return json(route,{subject:node(3),nodes:[node(1),node(3)],edges:[{...edge(1,3),evidence:{execution_id:'lineage-source-execution'}}]})

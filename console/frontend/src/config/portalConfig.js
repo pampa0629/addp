@@ -1,7 +1,7 @@
 import {
   Coin, Reading, Tools, Folder, Shop, ChatDotRound, Memo, Setting,
   Upload, Box, DataAnalysis, Grid, CircleCheck, Edit, Link, Operation, DataLine,
-  List, Connection, Search, Document, Share, DataBoard, Odometer,
+  List, Connection, Search, Document, Share, DataBoard, Odometer, Plus,
   TrendCharts, SortDown, FolderOpened, Warning, Monitor, Notebook,
   Files, Tickets, Key, Refresh, Lock, SetUp,
   MapLocation, Collection,
@@ -29,7 +29,10 @@ export const MODULE_GROUPS = [
 
 export const ALL_HOME_CARDS = [
   { module: 'ontology', label: 'console.modules.ontology.label', icon: Connection, cssVar: '--el-color-primary', desc: 'console.modules.ontology.desc', contexts: ['tenant'], permissions: ['ontology.revision.read'] },
-  { module: 'transfer',     label: 'console.modules.transfer.label',     icon: Upload,       cssVar: '--addp-module-transfer',     desc: 'console.modules.transfer.desc' },
+  { module: 'transfer',     label: 'console.modules.transfer.label',     icon: Upload,       cssVar: '--addp-module-transfer',     desc: 'console.modules.transfer.desc', access: [
+    { context: 'tenant', permissions: ['transfer.task.read'] },
+    { context: 'tenant', permissionMode: 'all', permissions: ['transfer.task.create', 'meta.catalog.read'] },
+  ] },
   { module: 'meta',         label: 'console.modules.meta.label',         icon: Box,          cssVar: '--addp-module-meta',          desc: 'console.modules.meta.desc' },
   { module: 'security',     label: 'console.modules.security.label',     icon: Lock,         cssVar: '--addp-module-security',      desc: 'console.modules.security.desc' },
   { module: 'manager',      label: 'console.modules.manager.label',      icon: DataAnalysis, cssVar: '--addp-module-manager',       desc: 'console.modules.manager.desc' },
@@ -204,7 +207,8 @@ export const SIDEBAR_MENUS = {
   transfer: {
     label: 'console.menus.transfer.label', icon: Upload,
     items: [
-      { index: '/transfer/tasks',        icon: List,       label: 'console.menus.transfer.tasks' },
+      { index: '/transfer/tasks',        icon: List, label: 'console.menus.transfer.tasks', contexts: ['tenant'], permissions: ['transfer.task.read'] },
+      { index: '/transfer/tasks/create', icon: Plus, label: 'console.menus.transfer.create', contexts: ['tenant'], permissionMode: 'all', permissions: ['transfer.task.create', 'meta.catalog.read'], fallbackFor: '/transfer/tasks' },
     ],
   },
   meta: {

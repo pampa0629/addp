@@ -1,3 +1,5 @@
+import { consoleRouteAccess } from '@common-ui'
+
 function matchesContext(expected, actual) {
   return !expected || expected === 'any' || expected === actual
 }
@@ -9,8 +11,10 @@ function matchesPermissions(required, granted, mode) {
 
 export function matchesNavigationAccess(entry, contextType, grantedPermissions = []) {
   const granted = grantedPermissions instanceof Set ? grantedPermissions : new Set(grantedPermissions)
-  if (entry.access?.length) {
-    return entry.access.some(rule =>
+  const routeRules = consoleRouteAccess(entry.index || entry.route)
+  const access = routeRules || entry.access
+  if (access?.length) {
+    return access.some(rule =>
       matchesContext(rule.context, contextType) && matchesPermissions(rule.permissions, granted, rule.permissionMode)
     )
   }
@@ -30,10 +34,11 @@ function filterMenuItem(item, contextType, granted) {
 export function filterSidebarMenus(menus, contextType, grantedPermissions = []) {
   const granted = new Set(grantedPermissions)
   return Object.fromEntries(Object.entries(menus).map(([module, menu]) => {
-    if (!menu.items) return [module, menu]
+    if (!menu.items) return [module, matchesNavigationAccess(menu, contextType, granted) ? menu : null]
     const items = menu.items
       .map(item => filterMenuItem(item, contextType, granted))
       .filter(Boolean)
-    return [module, { ...menu, items }]
+    const visibleIndexes = new Set(items.map(item => item.index))
+    return [module, { ...menu, items: items.filter(item => !item.fallbackFor || !visibleIndexes.has(item.fallbackFor)) }]
   }))
 }

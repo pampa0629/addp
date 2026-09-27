@@ -23,7 +23,7 @@
             border
             style="width: 100%"
           >
-            <el-table-column type="selection" width="48" />
+            <el-table-column v-if="authStore.hasAnyPermission(['asset.application.approve', 'asset.application.reject'])" type="selection" width="48" />
             <el-table-column :label="t('asset.application.assetName')" min-width="160">
               <template #default="{ row }">
                 <span class="asset-name">{{ row.asset_name || `Asset #${row.asset_id}` }}</span>
@@ -58,11 +58,11 @@
             <el-table-column :label="t('asset.application.actions')" width="140" align="center" fixed="right">
               <template #default="{ row }">
                 <template v-if="deriveDisplayStatus(row) === 'pending'">
-                  <el-button type="primary" size="small" text @click="openApproveDialog(row)">{{ t('asset.application.approve') }}</el-button>
-                  <el-button type="danger" size="small" text @click="openRejectDialog(row)">{{ t('asset.application.reject') }}</el-button>
+                  <el-button v-if="authStore.hasPermission('asset.application.approve')" type="primary" size="small" text @click="openApproveDialog(row)">{{ t('asset.application.approve') }}</el-button>
+                  <el-button v-if="authStore.hasPermission('asset.application.reject')" type="danger" size="small" text @click="openRejectDialog(row)">{{ t('asset.application.reject') }}</el-button>
                 </template>
                 <el-button
-                  v-else-if="deriveDisplayStatus(row) === 'authorized'"
+                  v-else-if="deriveDisplayStatus(row) === 'authorized' && authStore.hasPermission('asset.application.revoke')"
                   type="danger"
                   size="small"
                   text
@@ -73,10 +73,10 @@
             </el-table-column>
           </el-table>
 
-          <div class="batch-bar" v-if="selectedRows.length > 0">
+          <div class="batch-bar" v-if="selectedRows.length > 0 && authStore.hasAnyPermission(['asset.application.approve', 'asset.application.reject'])">
             <span class="selected-count">{{ t('asset.application.selectedCount', { count: selectedRows.length }) }}</span>
-            <el-button type="primary" size="small" @click="batchApprove">{{ t('asset.application.batchApprove') }}</el-button>
-            <el-button type="danger" size="small" plain @click="openBatchRejectDialog">{{ t('asset.application.batchReject') }}</el-button>
+            <el-button v-if="authStore.hasPermission('asset.application.approve')" type="primary" size="small" @click="batchApprove">{{ t('asset.application.batchApprove') }}</el-button>
+            <el-button v-if="authStore.hasPermission('asset.application.reject')" type="danger" size="small" plain @click="openBatchRejectDialog">{{ t('asset.application.batchReject') }}</el-button>
           </div>
 
           <div class="pagination-bar">
@@ -92,7 +92,7 @@
       </el-tab-pane>
 
       <!-- ===== 问题反馈 ===== -->
-      <el-tab-pane name="feedbacks">
+      <el-tab-pane v-if="authStore.hasPermission('asset.rating.read')" name="feedbacks">
         <template #label>
           {{ t('asset.application.feedbackTab') }}
           <el-badge v-if="unhandledCount > 0" :value="unhandledCount" type="danger" style="margin-left: 4px" />
@@ -137,6 +137,7 @@
             <el-table-column :label="t('asset.application.actions')" width="110" align="center" fixed="right">
               <template #default="{ row }">
                 <el-button
+                  v-if="authStore.hasPermission('asset.rating.update')"
                   :type="row.is_handled ? 'info' : 'primary'"
                   size="small"
                   text
@@ -205,10 +206,12 @@ import { useI18n } from 'vue-i18n'
 import { formatDate, resolveCanonicalTabRouteState } from '@common-ui'
 import { applicationAPI, ratingAPI } from '../api/asset'
 import { navigateAssetRoute } from '../utils/moduleNavigation'
+import { useAuthStore } from '../store/auth'
 
 const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
+const authStore = useAuthStore()
 
 // ===== Tab =====
 const APPLICATION_TABS = ['applications', 'feedbacks']
@@ -433,7 +436,7 @@ async function restoreTabFromRoute() {
     }, { history: 'replace' })
     return
   }
-  if (routeState.tab === 'feedbacks') await fetchFeedbacks()
+  if (routeState.tab === 'feedbacks' && authStore.hasPermission('asset.rating.read')) await fetchFeedbacks()
 }
 
 watch(() => route.query, restoreTabFromRoute)
@@ -441,7 +444,7 @@ watch(() => route.query, restoreTabFromRoute)
 onMounted(async () => {
   await restoreTabFromRoute()
   fetchApplications()
-  fetchUnhandledCount()
+  if (authStore.hasPermission('asset.rating.read')) fetchUnhandledCount()
 })
 </script>
 

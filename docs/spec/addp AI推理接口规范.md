@@ -130,6 +130,8 @@ Scenario Binding 的有效解析顺序固定为：
 
 平台资源管理使用 `inference.provider.*`、`inference.deployment.*`、`inference.profile.*` Permission；Tenant 资源使用相同稳定 Permission，并由 AuthContext scope 限定。数据面只接受受信调用模块的 Service Access Token，并要求显式 Tenant Context；终端用户 Token 不直接调用内部推理数据面。
 
+业务页面展示模型名称时使用租户可定制的 `inference.model_label.read`，由 Inference 提供 `GET /api/v1/inference/model-labels`。响应只包含当前 Context 可见的 Profile ID、Profile 名称和其绑定 Deployment 的上游模型标识，不包含 Provider、Endpoint、凭据、状态、管理字段或跨租户资源。已禁用但仍可见的 Profile 保留标签，供历史任务展示；该权限不授权管理列表、配置或推理执行。Manager 向量化任务页首次加载依赖此投影。
+
 ## 四、凭据
 
 Provider credential 使用部署级 `ENCRYPTION_KEY` 进行认证加密。数据库只保存 ciphertext、nonce、算法版本、credential version、更新时间和操作者 Principal ID。
@@ -162,6 +164,7 @@ Provider credential 使用部署级 `ENCRYPTION_KEY` 进行认证加密。数据
 | `POST /model-deployments/{id}/probe` | 显式执行无副作用可达性和能力探测。 |
 | `GET/POST /model-profiles` | 列表或创建 Profile。 |
 | `GET/PUT /model-profiles/{id}` | 读取或更新 Profile；已创建 Profile 只允许禁用，不物理删除。 |
+| `GET /model-labels` | 查询当前 Context 可见的窄模型标签投影。 |
 
 Provider 或 Deployment 存在 Inference 本地的下游引用时，删除必须返回 `409 resource_in_use`。Inference 不读取各业务模块的 Scenario Binding，因此第一版 Model Profile 只允许禁用，不提供删除 API；引用已禁用 Profile 的调用明确返回 `model_profile_unavailable`。后续若需要物理回收，必须先定义跨 owner cleanup 协议，不能增加反向私有表查询。
 

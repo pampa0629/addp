@@ -37,7 +37,7 @@
           <el-button v-else-if="accessStatus.status === 'effective'" type="success" size="large" @click="openDataApplication">
             {{ t('portal.assetDetail.openApplication') }}
           </el-button>
-          <el-button v-else type="primary" size="large" @click="applyDialogVisible = true">
+          <el-button v-else-if="authStore.hasPermission('asset.application.create')" type="primary" size="large" @click="applyDialogVisible = true">
             {{ t('portal.assetDetail.applyUsage') }}
           </el-button>
         </div>
@@ -92,7 +92,7 @@
       </el-card>
 
       <!-- 评价区 -->
-      <el-card class="detail-section" shadow="never" v-loading="ratingsLoading">
+      <el-card v-if="authStore.hasPermission('asset.rating.read')" class="detail-section" shadow="never" v-loading="ratingsLoading">
         <template #header>
           <div class="section-header-with-action">
             <span class="section-title">
@@ -103,7 +103,7 @@
               </span>
             </span>
             <el-button
-              v-if="accessStatus.status === 'effective'"
+              v-if="accessStatus.status === 'effective' && authStore.hasPermission('asset.rating.create') && authStore.hasPermission('asset.rating.update')"
               type="primary"
               size="small"
               plain
@@ -210,11 +210,14 @@ import { formatDate, openConsoleRoute } from '@common-ui'
 import { assetAPI } from '../api/portal'
 import { useAssetType } from '../composables/useAssetType'
 import { assetDetailReturnTarget } from '../utils/routeState'
+import { useAuthStore } from '../store/auth'
 
 const { t } = useI18n()
 const { getTypeName } = useAssetType()
 const route = useRoute()
 const router = useRouter()
+const authStore = useAuthStore()
+const canReadApplyStatus = computed(() => authStore.hasPermission('asset.application.read') && authStore.hasPermission('asset.authorization.read'))
 
 const loading = ref(false)
 const asset = ref(null)
@@ -358,8 +361,8 @@ watch(() => route.params.id, async () => {
   ratingStats.value = { avg_score: 0, count: 0 }
   await fetchAsset()
   if (asset.value) {
-    fetchApplyStatus()
-    fetchRatings()
+    if (canReadApplyStatus.value) fetchApplyStatus()
+    if (authStore.hasPermission('asset.rating.read')) fetchRatings()
   }
 }, { immediate: true })
 </script>

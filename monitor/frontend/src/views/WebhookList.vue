@@ -7,7 +7,7 @@
             <span class="page-title">{{ t('monitor.webhook.title') }}</span>
             <div class="page-description">{{ t('monitor.webhook.description') }}</div>
           </div>
-          <el-button type="primary" @click="openCreateDialog">
+          <el-button v-if="authStore.hasPermission('monitor.notification_destination.create')" type="primary" @click="openCreateDialog">
             <el-icon><Plus /></el-icon>
             {{ t('monitor.webhook.create') }}
           </el-button>
@@ -41,7 +41,7 @@
         </el-table-column>
         <el-table-column :label="t('monitor.webhook.enabled')" width="100">
           <template #default="{ row }">
-            <el-switch :model-value="row.enabled" @change="value => toggleDestination(row, value)" />
+            <el-switch :model-value="row.enabled" :disabled="!authStore.hasPermission('monitor.notification_destination.update')" @change="value => toggleDestination(row, value)" />
           </template>
         </el-table-column>
         <el-table-column :label="t('monitor.webhook.updated_at')" width="180">
@@ -49,11 +49,11 @@
         </el-table-column>
         <el-table-column :label="t('monitor.webhook.actions')" width="230" fixed="right">
           <template #default="{ row }">
-            <el-button text type="primary" @click="openEditDialog(row)">{{ t('monitor.webhook.edit') }}</el-button>
-            <el-button text type="primary" :loading="testingDestinationId === row.id" @click="testDestination(row)">
+            <el-button v-if="authStore.hasPermission('monitor.notification_destination.update')" text type="primary" @click="openEditDialog(row)">{{ t('monitor.webhook.edit') }}</el-button>
+            <el-button v-if="authStore.hasPermission('monitor.notification_destination.execute')" text type="primary" :loading="testingDestinationId === row.id" @click="testDestination(row)">
               {{ t('monitor.webhook.test') }}
             </el-button>
-            <el-button text type="danger" :loading="deletingDestinationId === row.id" @click="deleteDestination(row)">
+            <el-button v-if="authStore.hasPermission('monitor.notification_destination.delete')" text type="danger" :loading="deletingDestinationId === row.id" @click="deleteDestination(row)">
               {{ t('monitor.webhook.delete') }}
             </el-button>
           </template>
@@ -122,7 +122,7 @@
         <el-table-column :label="t('monitor.webhook.actions')" width="100" fixed="right">
           <template #default="{ row }">
             <el-button
-              v-if="canRetryNotificationDelivery(row)"
+              v-if="authStore.hasPermission('monitor.notification_delivery.retry') && canRetryNotificationDelivery(row)"
               text
               type="primary"
               :loading="retryingDeliveryId === row.delivery_id"
@@ -179,6 +179,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useAuthStore } from '../store/auth'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   createWebhookDestination,
@@ -197,6 +198,7 @@ import {
 } from '@/utils/notification'
 
 const { t } = useI18n()
+const authStore = useAuthStore()
 const destinations = ref([])
 const deliveries = ref([])
 const loadingDestinations = ref(false)

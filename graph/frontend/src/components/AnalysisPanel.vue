@@ -142,6 +142,7 @@
       </template>
 
       <el-button
+        v-if="canExecute"
         type="primary"
         style="width: 100%; margin-top: 8px"
         :loading="running"
@@ -214,6 +215,7 @@ const { t } = useI18n()
 
 const props = defineProps({
   graphId: { type: [Number, String], required: true },
+  canExecute: { type: Boolean, default: false },
   selectedNodeId: { type: String, default: '' },
   nodeShapes: { type: Array, default: () => [] },
   schemaRelTypes: { type: Array, default: () => [] },

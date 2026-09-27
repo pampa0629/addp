@@ -54,7 +54,7 @@ def test_tenant_permission_dependency_requires_role_permission(monkeypatch):
             tenant_id=3,
             tenant_membership_id=8,
             role_assignments=(
-                RoleAssignment(1, "tenant.ai_user", "tenant", ("copilot.sql.execute",)),
+                RoleAssignment(1, "tenant.ai_user", "tenant", ("copilot.sql.execute",), 3),
             ),
         )
 
@@ -84,7 +84,7 @@ def test_tenant_service_dependency_requires_bound_client_and_permission(monkeypa
             tenant_id=7,
             tenant_membership_id=9,
             role_assignments=(
-                RoleAssignment(4, "tenant.graph_runtime", "tenant", ("copilot.knowledge_graph.execute",)),
+                RoleAssignment(4, "tenant.graph_runtime", "tenant", ("copilot.knowledge_graph.execute",), 7),
             ),
         )
 
@@ -101,7 +101,7 @@ def test_tenant_service_dependency_requires_bound_client_and_permission(monkeypa
             tenant_id=7,
             tenant_membership_id=10,
             role_assignments=(
-                RoleAssignment(5, "tenant.copilot_runtime", "tenant", ("copilot.knowledge_graph.execute",)),
+                RoleAssignment(5, "tenant.copilot_runtime", "tenant", ("copilot.knowledge_graph.execute",), 7),
             ),
         )
 

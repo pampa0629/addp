@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { developAuthContext } from './developAuthContext.js'
 
 test('keeps every task action on one line', async ({ page }) => {
   await installMockBackend(page)
@@ -67,6 +68,7 @@ async function installMockBackend(page) {
     if (path === '/api/v1/system/users/me') {
       return fulfillJSON(route, { id: 1, username: 'develop-e2e' })
     }
+    if (path === '/api/v1/system/auth/context') return fulfillJSON(route, developAuthContext)
     if (path === '/api/v1/develop/task-definitions') {
       return fulfillJSON(route, { items: tasks, total: tasks.length, page: 1, page_size: 20 })
     }

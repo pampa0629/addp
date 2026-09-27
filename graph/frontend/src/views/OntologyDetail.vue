@@ -8,17 +8,17 @@
       <el-tag :type="ontology?.status === 'active' ? 'success' : 'info'" size="small">
         {{ ontology?.status === 'active' ? t('graph.common.active') : t('graph.common.archived') }}
       </el-tag>
-      <el-button size="small" @click="openEdit">{{ t('graph.common.edit') }}</el-button>
-      <el-button size="small" type="success" @click="showVersionDialog = true">{{ t('graph.ontology.createVersionSnapshot') }}</el-button>
-      <el-button size="small" type="warning" @click="openImportFromModel">{{ t('graph.ontology.importFromModel') }}</el-button>
-      <el-button size="small" type="info" @click="openInferFromEngine">{{ t('graph.ontology.inferFromNeo4j') }}</el-button>
+      <el-button v-if="authStore.hasPermission('graph.ontology.update')" size="small" @click="openEdit">{{ t('graph.common.edit') }}</el-button>
+      <el-button v-if="authStore.hasPermission('graph.ontology.create')" size="small" type="success" @click="showVersionDialog = true">{{ t('graph.ontology.createVersionSnapshot') }}</el-button>
+      <el-button v-if="authStore.hasPermission('graph.ontology.update')" size="small" type="warning" @click="openImportFromModel">{{ t('graph.ontology.importFromModel') }}</el-button>
+      <el-button v-if="authStore.hasPermission('graph.ontology.update')" size="small" type="info" @click="openInferFromEngine">{{ t('graph.ontology.inferFromNeo4j') }}</el-button>
     </div>
 
     <el-tabs v-model="activeTab" @tab-change="handleTabChange">
       <!-- 实体类型 -->
       <el-tab-pane :label="t('graph.ontology.entityTypes')" name="entities">
         <div class="tab-toolbar">
-          <el-button type="primary" size="small" @click="showEntityForm(null)">
+          <el-button v-if="authStore.hasPermission('graph.ontology.create')" type="primary" size="small" @click="showEntityForm(null)">
             <el-icon><Plus /></el-icon> {{ t('graph.ontology.addEntityType') }}
           </el-button>
         </div>
@@ -55,8 +55,8 @@
           </el-table-column>
           <el-table-column :label="t('graph.common.actions')" width="120">
             <template #default="{ row }">
-              <el-button link size="small" @click="showEntityForm(row)">{{ t('graph.common.edit') }}</el-button>
-              <el-button link type="danger" size="small" @click="deleteEntityType(row)">{{ t('graph.common.delete') }}</el-button>
+              <el-button v-if="authStore.hasPermission('graph.ontology.update')" link size="small" @click="showEntityForm(row)">{{ t('graph.common.edit') }}</el-button>
+              <el-button v-if="authStore.hasPermission('graph.ontology.delete')" link type="danger" size="small" @click="deleteEntityType(row)">{{ t('graph.common.delete') }}</el-button>
             </template>
           </el-table-column>
         </el-table>
@@ -65,7 +65,7 @@
       <!-- 关系类型 -->
       <el-tab-pane :label="t('graph.ontology.relationTypes')" name="relations">
         <div class="tab-toolbar">
-          <el-button type="primary" size="small" @click="showRelationForm(null)">
+          <el-button v-if="authStore.hasPermission('graph.ontology.create')" type="primary" size="small" @click="showRelationForm(null)">
             <el-icon><Plus /></el-icon> {{ t('graph.ontology.addRelationType') }}
           </el-button>
         </div>
@@ -87,8 +87,8 @@
           </el-table-column>
           <el-table-column :label="t('graph.common.actions')" width="120">
             <template #default="{ row }">
-              <el-button link size="small" @click="showRelationForm(row)">{{ t('graph.common.edit') }}</el-button>
-              <el-button link type="danger" size="small" @click="deleteRelationType(row)">{{ t('graph.common.delete') }}</el-button>
+              <el-button v-if="authStore.hasPermission('graph.ontology.update')" link size="small" @click="showRelationForm(row)">{{ t('graph.common.edit') }}</el-button>
+              <el-button v-if="authStore.hasPermission('graph.ontology.delete')" link type="danger" size="small" @click="deleteRelationType(row)">{{ t('graph.common.delete') }}</el-button>
             </template>
           </el-table-column>
         </el-table>
@@ -369,8 +369,10 @@ import InferFromEngineDialog from '../components/InferFromEngineDialog.vue'
 import { useI18n } from 'vue-i18n'
 import { resolveCanonicalTabRouteState, useConsolePageDescriptor } from '@common-ui'
 import { navigateGraphRoute } from '@/utils/moduleNavigation'
+import { useAuthStore } from '../store/auth'
 
 const { t } = useI18n()
+const authStore = useAuthStore()
 
 const route = useRoute()
 const router = useRouter()

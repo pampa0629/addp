@@ -181,7 +181,7 @@ const router = createRouter({
 import { createAuthGuard } from '@common-ui'
 
 router.beforeEach(createAuthGuard(useAuthStore, {
-  moduleName: 'Service',
+  router, moduleName: 'Service',
   loginRouteName: 'Login',
   normalizeRedirect  // 传入自定义规范化函数
 }))

@@ -118,16 +118,12 @@ bash scripts/local/stop.sh
 
 # 停止所有服务 (包括基础设施)
 bash scripts/local/stop.sh --all
-
-# 停止并删除数据卷 (危险操作!)
-bash scripts/local/stop.sh --all --volumes
 ```
 
 **选项**:
 - `--all`: 同时停止基础设施层
-- `--volumes`: 删除数据卷 (会删除所有数据,需要确认)
 
-**默认行为**: 仅停止应用层,保留基础设施运行,这样重启应用时速度更快。
+`stop.sh` 始终保留数据卷；`--all` 通过 `scripts/infra/down.sh` 停止基础设施。数据卷删除不属于常规停止或故障排查步骤。
 
 #### 3. status.sh - 查看状态
 
@@ -276,14 +272,7 @@ minio_data           - MinIO 对象存储数据
 meilisearch_data     - Meilisearch 索引数据
 ```
 
-**删除数据** (危险操作):
-```bash
-# 停止服务并删除数据卷
-bash scripts/local/stop.sh --all --volumes
-
-# 手动删除特定 volume
-docker volume rm addp-infra_postgres_data
-```
+需要重建持久化数据时，先核验可恢复备份和目标 Compose project，再使用 `scripts/infra/down.sh --volumes` 的专用交互确认流程。Docker Desktop 或 Docker CLI 直接删除 volume 不受脚本保护。
 
 ## 高级用法
 
@@ -370,6 +359,6 @@ docker compose -f docker-compose.yml ps system-backend
 3. **验证镜像**: `docker images | grep addp`
 4. **检查端口**: `lsof -i :[port]`
 5. **重启服务**: `bash scripts/local/restart.sh`
-6. **完全重置**: `bash scripts/local/stop.sh --all --volumes && bash scripts/local/start.sh`
+6. **重新启动**: `bash scripts/local/stop.sh --all && bash scripts/local/start.sh`（保留数据卷）
 
 如果问题仍然存在,请查看具体服务日志或联系开发团队。

@@ -164,6 +164,22 @@ func TestTenantControlPlaneOnlyProjectsAuthorizedPlatformResources(t *testing.T)
 	if profiles.Total != 1 || profiles.Data[0].ID != allowedProfile.ID {
 		t.Fatalf("unexpected profile projection: %+v", profiles)
 	}
+	labels, err := control.ListModelLabels(ctx, tenant)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(labels) != 1 || labels[0].ID != allowedProfile.ID || labels[0].Name != allowedProfile.Name || labels[0].UpstreamModel != allowedDeployment.UpstreamModel {
+		t.Fatalf("unexpected tenant model label projection: %+v", labels)
+	}
+	encodedLabels, err := json.Marshal(labels)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{"provider_connection_id", "model_deployment_id", "endpoint", "credential", "status", deniedProfile.ID} {
+		if strings.Contains(string(encodedLabels), forbidden) {
+			t.Fatalf("model label projection leaked %q: %s", forbidden, encodedLabels)
+		}
+	}
 
 	if _, err := control.GetProvider(ctx, tenant, deniedProvider.ID); err != ErrNotFound {
 		t.Fatalf("unauthorized provider must be hidden, got %v", err)

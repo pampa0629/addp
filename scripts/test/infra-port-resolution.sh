@@ -9,6 +9,7 @@ MOCK_PRESENT=0
 MOCK_FOREIGN=0
 MOCK_EXTRA_BUSY=''
 unset ADDP_ONLINE_HOST
+unset GITHUB_ACTIONS ADDP_LOCAL_CI_POSTGRES
 
 mock_service() {
   case "$1" in
@@ -122,6 +123,46 @@ addp_infra_read_actual_ports
 [ "$POSTGRES_PORT" = 25432 ]
 [ "$REDIS_PORT" = 26379 ]
 addp_infra_ready
+
+addp_infra_verify_test_postgres_target localhost 25432 addp_test
+addp_infra_verify_test_postgres_dsn 'postgres://addp:secret@127.0.0.1:25432/addp_iam_test?sslmode=disable'
+if addp_infra_verify_test_postgres_target localhost 15432 addp_test >/dev/null 2>&1; then
+  echo 'stale PostgreSQL test port was accepted' >&2
+  exit 1
+fi
+if addp_infra_verify_test_postgres_target 127.0.0.2 15432 addp_test >/dev/null 2>&1; then
+  echo 'alternate loopback address bypassed PostgreSQL test port verification' >&2
+  exit 1
+fi
+if addp_infra_verify_test_postgres_dsn 'postgres://addp:secret@localhost/addp_test' >/dev/null 2>&1; then
+  echo 'PostgreSQL test DSN without a port was accepted' >&2
+  exit 1
+fi
+if addp_infra_verify_test_postgres_target localhost 25432 addp >/dev/null 2>&1; then
+  echo 'development database was accepted as a test database' >&2
+  exit 1
+fi
+MOCK_PRESENT=0
+if addp_infra_verify_test_postgres_target localhost 15432 addp_test >/dev/null 2>&1; then
+  echo 'PostgreSQL test target was accepted without an ADDP container' >&2
+  exit 1
+fi
+MOCK_PRESENT=1
+MOCK_FOREIGN=1
+if addp_infra_verify_test_postgres_target localhost 25432 addp_test >/dev/null 2>&1; then
+  echo 'foreign PostgreSQL container was accepted as ADDP Infra' >&2
+  exit 1
+fi
+MOCK_FOREIGN=0
+GITHUB_ACTIONS=true addp_infra_verify_test_postgres_target localhost 5432 addp_ci_test
+ADDP_LOCAL_CI_POSTGRES=1 addp_infra_verify_test_postgres_target 127.0.0.1 15432 addp_test
+
+while IFS= read -r gate; do
+  if ! rg -q 'addp_infra_verify_test_postgres_(dsn|target)' "$gate"; then
+    echo "PostgreSQL T2 gate lacks local target verification: $gate" >&2
+    exit 1
+  fi
+done < <(rg -l '^# ADDP_T2_SERVICES=.*postgres' "${SCRIPT_DIR}"/*-gate.sh)
 
 MOCK_FOREIGN=1
 if addp_infra_resolve_ports >/dev/null 2>&1; then

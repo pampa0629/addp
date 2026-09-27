@@ -11,8 +11,8 @@
           scope="task"
         />
         <el-button v-if="canRun" type="primary" :loading="running" @click="handleRun">{{ t('graph.build.runTask') }}</el-button>
-        <el-button v-if="task?.status === 'running'" type="warning" @click="handleCancel">{{ t('graph.build.cancel') }}</el-button>
-        <el-button @click="openReview">
+        <el-button v-if="task?.status === 'running' && authStore.hasPermission('graph.build_task.cancel')" type="warning" @click="handleCancel">{{ t('graph.build.cancel') }}</el-button>
+        <el-button v-if="authStore.hasPermission('graph.review.read')" @click="openReview">
           {{ t('graph.build.reviewQueue') }}
           <el-badge v-if="pendingCount > 0" :value="pendingCount" style="margin-left:6px" />
         </el-button>
@@ -87,7 +87,7 @@
           </el-table-column>
           <el-table-column :label="t('graph.common.actions')" width="80">
             <template #default="{ row }">
-              <el-button size="small" type="danger" text @click="handleDeleteMaterial(row.id)">{{ t('graph.common.delete') }}</el-button>
+              <el-button v-if="authStore.hasPermission('graph.build_task.update')" size="small" type="danger" text @click="handleDeleteMaterial(row.id)">{{ t('graph.common.delete') }}</el-button>
             </template>
           </el-table-column>
         </el-table>
@@ -106,8 +106,10 @@ import { buildAPI } from '../api/graphBuild'
 import { useI18n } from 'vue-i18n'
 import { navigateGraphRoute } from '@/utils/moduleNavigation'
 import { MonitorExecutionsButton, useConsolePageDescriptor } from '@common-ui'
+import { useAuthStore } from '../store/auth'
 
 const { t } = useI18n()
+const authStore = useAuthStore()
 
 const route = useRoute()
 const router = useRouter()
@@ -128,18 +130,18 @@ const running = ref(false)
 const uploadingFiles = ref([])
 let pollTimer = null
 
-const canRun = computed(() => task.value && ['pending', 'failed', 'cancelled'].includes(task.value.status))
-const canUpload = computed(() => task.value && task.value.status !== 'running')
+const canRun = computed(() => authStore.hasPermission('graph.build_task.execute') && task.value && ['pending', 'failed', 'cancelled'].includes(task.value.status))
+const canUpload = computed(() => authStore.hasPermission('graph.build_task.update') && task.value && task.value.status !== 'running')
 
 async function loadTask() {
   try {
     const [res, countRes] = await Promise.all([
       buildAPI.getTask(graphId, taskId),
-      buildAPI.getPendingCount(graphId),
+      authStore.hasPermission('graph.review.read') ? buildAPI.getPendingCount(graphId) : Promise.resolve(null),
     ])
     task.value = res
     materials.value = task.value.materials || []
-    pendingCount.value = countRes.count || 0
+    pendingCount.value = countRes?.count || 0
   } catch (e) {
     ElMessage.error(t('graph.common.loadFailed'))
   }

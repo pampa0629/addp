@@ -5,10 +5,10 @@
       <div class="sidebar-header">
         <h3>{{ t('develop.notebook.listTitle') }}</h3>
         <div class="actions">
-          <el-button type="primary" size="small" @click="showCreateDialog">
+          <el-button v-if="authStore.hasPermission('develop.notebook.create')" type="primary" size="small" @click="showCreateDialog">
             <el-icon><Plus /></el-icon> {{ t('develop.notebook.create') }}
           </el-button>
-          <el-button size="small" @click="showUploadDialog">
+          <el-button v-if="authStore.hasPermission('develop.notebook.create')" size="small" @click="showUploadDialog">
             <el-icon><Upload /></el-icon> {{ t('develop.notebook.upload') }}
           </el-button>
           <el-button size="small" circle :title="t('develop.notebook.refresh')" @click="loadNotebooks">
@@ -37,7 +37,7 @@
           :key="notebook.id"
           class="notebook-item"
           :class="{ active: currentNotebook && currentNotebook.id === notebook.id }"
-          @click="selectNotebook(notebook)"
+          @click="canEditNotebook && selectNotebook(notebook)"
         >
           <div class="notebook-info">
             <div class="notebook-name">{{ notebook.display_name || notebook.name }}</div>
@@ -47,13 +47,13 @@
           </div>
 
           <div class="notebook-actions" @click.stop>
-            <el-tooltip :content="t('develop.notebook.edit')">
+            <el-tooltip v-if="canEditNotebook" :content="t('develop.notebook.edit')">
               <el-button type="primary" size="small" text @click="selectNotebook(notebook)">
                 <el-icon><EditPen /></el-icon>
               </el-button>
             </el-tooltip>
 
-            <el-tooltip :content="t('develop.notebook.execute')">
+            <el-tooltip v-if="authStore.hasPermission('develop.task.execute')" :content="t('develop.notebook.execute')">
               <el-button
                 type="success"
                 size="small"
@@ -77,19 +77,19 @@
               />
             </el-tooltip>
 
-            <el-dropdown @command="handleCommand($event, notebook)">
+            <el-dropdown v-if="canEditNotebook || authStore.hasPermission('develop.notebook.delete')" @command="handleCommand($event, notebook)">
               <el-button size="small" text>
                 <el-icon><More /></el-icon>
               </el-button>
               <template #dropdown>
                 <el-dropdown-menu>
-                  <el-dropdown-item command="rebind">
+                  <el-dropdown-item v-if="canEditNotebook" command="rebind">
                     <el-icon><Switch /></el-icon> {{ t('develop.notebook.changeEngine') }}
                   </el-dropdown-item>
                   <el-dropdown-item command="download">
                     <el-icon><Download /></el-icon> {{ t('develop.notebook.download') }}
                   </el-dropdown-item>
-                  <el-dropdown-item command="delete" divided>
+                  <el-dropdown-item v-if="authStore.hasPermission('develop.notebook.delete')" command="delete" divided>
                     <el-icon><Delete /></el-icon> {{ t('develop.notebook.delete') }}
                   </el-dropdown-item>
                 </el-dropdown-menu>
@@ -133,10 +133,11 @@
             </el-tooltip>
           </div>
           <div class="toolbar-actions">
-            <el-button size="small" :loading="sessionLoading" @click="openNotebookSession(currentNotebook, { force: true })">
+            <el-button v-if="canEditNotebook" size="small" :loading="sessionLoading" @click="openNotebookSession(currentNotebook, { force: true })">
               <el-icon><Refresh /></el-icon> {{ t('develop.notebook.reloadEditor') }}
             </el-button>
             <el-button
+              v-if="authStore.hasPermission('develop.task.execute')"
               type="primary"
               size="small"
               :disabled="!isNotebookEngineAvailable(currentNotebook)"
@@ -144,7 +145,7 @@
             >
               <el-icon><VideoPlay /></el-icon> {{ t('develop.notebook.execute') }}
             </el-button>
-            <el-button size="small" @click="showBindingDialog(currentNotebook)">
+            <el-button v-if="canEditNotebook" size="small" @click="showBindingDialog(currentNotebook)">
               <el-icon><Switch /></el-icon> {{ t('develop.notebook.changeEngine') }}
             </el-button>
             <el-button size="small" @click="downloadNotebook(currentNotebook)">
@@ -543,6 +544,7 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Close, Upload, Refresh, Search, EditPen, VideoPlay, More, Download, Delete, Switch, Plus, MagicStick, InfoFilled } from '@element-plus/icons-vue'
 import { notebookAPI } from '@/api/notebook'
+import { useAuthStore } from '../store/auth'
 import { deleteDevTask, executeDevTask, getDevTask } from '@/api/devTask'
 import { engineSelectionState, isEngineSelectable, MonitorExecutionsButton, openMonitorExecution } from '@addp/common-frontend'
 import { useRoute, useRouter } from 'vue-router'
@@ -560,6 +562,8 @@ import dayjs from 'dayjs'
 const router = useRouter()
 const route = useRoute()
 const { t } = useI18n()
+const authStore = useAuthStore()
+const canEditNotebook = computed(() => authStore.hasPermission('develop.notebook.update') && authStore.hasPermission('develop.task.read'))
 
 // 列表相关
 const notebooks = ref([])
@@ -1211,6 +1215,7 @@ const insertCopilotCell = async () => {
 }
 
 const openNotebookSession = async (notebook, options = {}) => {
+  if (!canEditNotebook.value) return
   if (!notebook?.id || sessionLoading.value) return
   if (notebookSession.value?.task_id === notebook.id && !options.force) return
   if (options.force) await closeNotebookSession()

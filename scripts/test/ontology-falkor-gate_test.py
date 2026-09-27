@@ -22,6 +22,9 @@ class FalkorGateTest(unittest.TestCase):
         target = self.root / "scripts/test/ontology-falkor-gate.sh"
         target.parent.mkdir(parents=True)
         shutil.copyfile(SCRIPT, target)
+        utility = self.root / "scripts/infra/ports.sh"
+        utility.parent.mkdir(parents=True)
+        shutil.copyfile(REPOSITORY / "scripts/infra/ports.sh", utility)
         (self.root / "ontology/backend").mkdir(parents=True)
         fake_bin = self.root / "fake-bin"
         fake_bin.mkdir()
@@ -64,6 +67,7 @@ exit "${TEST_MAIN_EXIT:-0}"
         self.env = dict(os.environ, PATH=str(fake_bin) + os.pathsep + os.environ["PATH"],
                         TEST_INVOCATIONS=str(self.log),
                         ONTOLOGY_POSTGRES_TEST_DSN="postgres://fixture@127.0.0.1/addp_test",
+                        GITHUB_ACTIONS="true",
                         ONTOLOGY_FALKOR_TEST_ADDRESS="production:6379",
                         INFRA_FALKORDB_PASSWORD="inherited-infra-not-allowed",
                         ONTOLOGY_FALKOR_TEST_PASSWORD="inherited-not-allowed")

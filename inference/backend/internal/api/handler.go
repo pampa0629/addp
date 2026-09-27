@@ -37,6 +37,22 @@ func (h *Handler) Capabilities(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"schema_version": commoninference.SchemaVersion, "operations": []string{"chat", "embedding", "rerank"}, "modalities": []string{"text", "image"}, "streaming": false})
 }
 
+// ListModelLabels godoc
+// @Summary 查询可见模型标签 | List visible model labels
+// @Tags Inference Model
+// @Produce json
+// @Success 200 {array} service.ModelLabel
+// @Failure 401 {object} commoninference.ErrorResponse
+// @Failure 403 {object} commoninference.ErrorResponse
+// @Security BearerAuth
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["inference.model_label.read"]
+// @Router /model-labels [get]
+func (h *Handler) ListModelLabels(c *gin.Context) {
+	labels, err := h.control.ListModelLabels(c.Request.Context(), actor(c))
+	respond(c, labels, err)
+}
+
 // ListProviderTemplates godoc
 // @Summary 查询模型服务模板 | List provider templates
 // @Tags Inference Provider

@@ -9,7 +9,7 @@ function findMenuItem(items, path) {
   return null
 }
 
-export function buildRecentVisitEntry({ module, fullPath, menuConfig, descriptor = null }) {
+export function buildRecentVisitEntry({ module, fullPath, menuConfig, descriptor = null, contextKey = '' }) {
   if (!module || !menuConfig || typeof fullPath !== 'string' || descriptor?.recent === false) return null
 
   const [pathPart] = splitConsoleRoute(fullPath)
@@ -26,7 +26,8 @@ export function buildRecentVisitEntry({ module, fullPath, menuConfig, descriptor
     route: fullPath,
     label: item?.recentLabel || item?.label || menuConfig.recentLabel || menuConfig.label,
     module,
-    icon: module
+    icon: module,
+    contextKey
   }
   if (title) entry.title = title
   if (subject) entry.subject = subject
@@ -36,5 +37,5 @@ export function buildRecentVisitEntry({ module, fullPath, menuConfig, descriptor
 export function prependRecentVisit(list, entry, limit = 5) {
   if (!entry) return Array.isArray(list) ? list : []
   const current = Array.isArray(list) ? list : []
-  return [entry, ...current.filter(item => item.key !== entry.key)].slice(0, limit)
+  return [entry, ...current.filter(item => item.key !== entry.key || item.contextKey !== entry.contextKey)].slice(0, limit)
 }

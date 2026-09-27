@@ -2,7 +2,7 @@
   <div class="page" data-testid="data-application-list">
     <div class="page-header">
       <div><h2>{{ t('workbench.dataApplications') }}</h2><p>{{ t('workbench.dataApplicationsSubtitle') }}</p></div>
-      <el-button type="primary" @click="router.push('/applications/new')"><el-icon><Plus /></el-icon>{{ t('workbench.createDataApplication') }}</el-button>
+      <el-button v-if="authStore.hasPermission('workbench.data_application.create')" type="primary" @click="router.push('/applications/new')"><el-icon><Plus /></el-icon>{{ t('workbench.createDataApplication') }}</el-button>
     </div>
     <el-card v-loading="loading || Boolean(deletingID)">
       <el-table :data="items">
@@ -14,9 +14,9 @@
         <el-table-column prop="updated_at" :label="t('workbench.updatedAt')" min-width="180" />
         <el-table-column width="240" fixed="right">
           <template #default="scope">
-            <el-button link type="primary" @click="router.push(`/applications/${scope.row.id}`)">{{ t('workbench.edit') }}</el-button>
-            <el-button v-if="scope.row.publication_status === 'published'" link type="primary" @click="openDelivery(scope.row)">{{ t('workbench.deliver') }}</el-button>
-            <el-button v-if="!scope.row.current_revision_number" link type="danger" @click="remove(scope.row)">{{ t('workbench.delete') }}</el-button>
+            <el-button v-if="authStore.hasPermission('workbench.data_application.update')" link type="primary" @click="router.push(`/applications/${scope.row.id}`)">{{ t('workbench.edit') }}</el-button>
+            <el-button v-if="scope.row.publication_status === 'published' && authStore.hasPermission('workbench.data_application.execute')" link type="primary" @click="openDelivery(scope.row)">{{ t('workbench.deliver') }}</el-button>
+            <el-button v-if="!scope.row.current_revision_number && authStore.hasPermission('workbench.data_application.delete')" link type="danger" @click="remove(scope.row)">{{ t('workbench.delete') }}</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -38,8 +38,10 @@ import { deleteDataApplication, listDataApplications } from '../api/dataApplicat
 import { commitLatestDataApplicationRequest, confirmDataApplicationAction, dataApplicationDeletionContext, dataApplicationListPageContext } from '../utils/dataApplicationDraft.mjs'
 import { navigateWorkbenchRoute } from '../utils/moduleNavigation'
 import DataApplicationDeliveryDialog from '../components/DataApplicationDeliveryDialog.vue'
+import { useAuthStore } from '../store/auth'
 
 const { t } = useI18n()
+const authStore = useAuthStore()
 const rawRouter = useRouter()
 const router = { push: (location) => navigateWorkbenchRoute(rawRouter, location) }
 const items = ref([])

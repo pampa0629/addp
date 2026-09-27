@@ -47,7 +47,7 @@
           <!-- 公共：引擎选择 -->
           <el-form-item :label="t('service.graph.neo4jEngineLabel')" required>
             <el-select v-model="form.engine_id" :placeholder="t('service.graph.neo4jEnginePlaceholder')" style="width: 300px" :loading="enginesLoading">
-              <el-option v-for="e in neo4jEngines" :key="e.id" :label="`${e.name} (${e.host || e.connection_info?.host || ''})`" :value="e.id" />
+              <el-option v-for="e in neo4jEngines" :key="e.id" :label="`${e.name} (${e.engine_type})`" :value="e.id" />
             </el-select>
             <el-button link @click="loadEngines" style="margin-left: 8px">{{ t('service.common.refresh') }}</el-button>
           </el-form-item>

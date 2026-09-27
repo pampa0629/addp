@@ -8,6 +8,7 @@ const UNARY_OPERATORS = new Set(['is_null', 'is_not_null'])
 export function configureSelectionListDraft(draft, descriptor, { searchField, labelField, valueField, searchLabel }) {
   draft.rendererType = 'table'
   draft.columns = [...new Set([labelField, valueField].filter(Boolean))]
+  draft.displayColumns = [...draft.columns]
   draft.parameters = draft.parameters.filter(parameter => parameter.bindingKind === 'named')
   const field = descriptor.input_contract.fields.find(field => field.name === searchField && field.type === 'string' && field.filterable && field.operators?.includes('contains'))
   if (field) {
@@ -178,6 +179,7 @@ export function draftFromComponent(component, descriptor) {
     name: component.title,
     description: component.description || '',
     columns: [...(component.query_template?.select || [])],
+    displayColumns: [...(config.columns || [])],
     fixedFilter: component.query_template.fixed_filter || null,
     orderBy: component.query_template.order_by?.map(item => ({ ...item })) || null,
     pageLimit: component.query_template?.page_limit || descriptor.input_contract.page.default_limit,
@@ -262,7 +264,7 @@ export function buildRendererConfig(draft) {
     },
   })
   if (draft.rendererType === 'value') return { items: draft.valueItems.map(serializeValueItem) }
-  return withPresentations({ columns: [...draft.columns] })
+  return withPresentations({ columns: [...draft.displayColumns] })
 }
 
 export function controlTypeFor(field, operator) {
@@ -309,7 +311,7 @@ function rendererFieldNames(draft) {
     : draft.rendererType === 'map'
       ? [draft.mapLabelField, ...(draft.tooltipFields || []), draft.mapStyleMode === 'uniform' ? '' : draft.mapColorField]
       : draft.rendererType === 'table'
-        ? draft.columns || []
+        ? draft.displayColumns || []
         : []
   return [...new Set(source.filter(Boolean))]
 }

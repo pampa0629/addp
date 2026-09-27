@@ -247,7 +247,7 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { formatLocatorDisplayPath } from '@addp/common-frontend'
 import { TARGET_OVERRIDE_POLICY } from './targetOverride.mjs'
-import { systemEnginesAPI } from '@/api/systemEngines'
+import { engineCatalogAPI } from '@/api/engineCatalog'
 import { engineNameForID } from '@/utils/engineDisplay.mjs'
 import { dataTypeLabel, formatLabel, representationLabel, writeModeLabel } from '@/utils/transferDisplay'
 
@@ -298,7 +298,7 @@ const targetEngineName = computed(() => engineNameForID(engines.value, props.wiz
 
 onMounted(async () => {
   try {
-    const response = await systemEnginesAPI.list()
+    const response = await engineCatalogAPI.list()
     engines.value = response?.data || response || []
   } catch (error) {
     console.error('加载引擎名称失败:', error)

@@ -18,6 +18,9 @@ database=${dsn_without_query##*/}
 case "$META_POSTGRES_TEST_DSN" in postgres://*/*|postgresql://*/*) ;; *) echo "META_POSTGRES_TEST_DSN must use a PostgreSQL URL" >&2; exit 1 ;; esac
 case "$database" in *test*|*disposable*) ;; *) echo "META_POSTGRES_TEST_DSN must identify a disposable test database" >&2; exit 1 ;; esac
 
+source "$ROOT_DIR/scripts/infra/ports.sh"
+addp_infra_verify_test_postgres_dsn "$META_POSTGRES_TEST_DSN"
+
 cd "$ROOT_DIR/meta/backend"
 go test ./internal/repository -run '^(TestDataItemChangeMigrationAgainstPostgres|TestLineageLifecycleMigrationAgainstPostgres|TestNodeStatisticsMigrationAgainstPostgres|TestNodeScanTimeMigrationAgainstPostgres)$' -count=1 -v 2>&1 | tee "$WORK_DIR/meta.log"
 if grep -q -- '--- SKIP:' "$WORK_DIR/meta.log"; then

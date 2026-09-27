@@ -1,5 +1,5 @@
 <template>
-  <el-button @click="handleClick">
+  <el-button v-if="canViewExecutions" @click="handleClick">
     <slot>{{ label }}</slot>
   </el-button>
 </template>
@@ -8,6 +8,7 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { openMonitorExecutions } from '../utils/taskOwnerUrl'
+import { getBoundAuthStore } from '../composables/useAuth'
 
 const props = defineProps({
   module: {
@@ -30,6 +31,13 @@ const props = defineProps({
 })
 
 const { t } = useI18n()
+const canViewExecutions = computed(() => {
+  try {
+    return getBoundAuthStore().hasPermission('monitor.execution.read')
+  } catch {
+    return false
+  }
+})
 
 const label = computed(() => t(
   props.scope === 'task'
@@ -37,9 +45,12 @@ const label = computed(() => t(
     : 'common.executionMonitor.viewExecutions'
 ))
 
-const handleClick = () => openMonitorExecutions({
+const handleClick = () => {
+  if (!canViewExecutions.value) return
+  openMonitorExecutions({
   module: props.module,
   task_type: props.taskType,
   source_task_id: props.sourceTaskId
-})
+  })
+}
 </script>

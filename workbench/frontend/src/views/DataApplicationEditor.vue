@@ -8,9 +8,9 @@
       <div class="actions">
         <el-button data-testid="draft-preview-action" :disabled="!application.snapshot.components.length" @click="openDraftPreview">{{ t('workbench.previewApplication') }}</el-button>
         <el-button :loading="saving" type="primary" :disabled="!application.snapshot.components.length" @click="save">{{ isCreate ? t('workbench.createDraft') : t('workbench.saveDraft') }}</el-button>
-        <el-button v-if="application.publication_status === 'unpublished' && !isCreate" :disabled="dirty" :loading="publishing" type="success" @click="publish">{{ t('workbench.publish') }}</el-button>
-        <el-button v-else-if="application.publication_status === 'offline' || application.has_unpublished_changes" :disabled="dirty" :loading="publishing" type="success" @click="publish">{{ t('workbench.publishRevision') }}</el-button>
-        <el-button v-if="application.publication_status === 'published'" @click="openDelivery">{{ t('workbench.deliver') }}</el-button>
+        <el-button v-if="authStore.hasPermission('workbench.data_application.publish') && application.publication_status === 'unpublished' && !isCreate" :disabled="dirty" :loading="publishing" type="success" @click="publish">{{ t('workbench.publish') }}</el-button>
+        <el-button v-else-if="authStore.hasPermission('workbench.data_application.publish') && (application.publication_status === 'offline' || application.has_unpublished_changes)" :disabled="dirty" :loading="publishing" type="success" @click="publish">{{ t('workbench.publishRevision') }}</el-button>
+        <el-button v-if="application.publication_status === 'published' && authStore.hasPermission('workbench.data_application.execute')" @click="openDelivery">{{ t('workbench.deliver') }}</el-button>
       </div>
     </header>
 
@@ -223,7 +223,7 @@
       <p v-if="application.snapshot.selection_bindings.length" class="muted">{{ t('workbench.studio.tryInteraction') }}</p>
     </section>
 
-        <el-button v-if="settingsPanel === 'page' && application.publication_status === 'published'" :loading="offlining" type="danger" plain @click="offline">{{ t('workbench.offline') }}</el-button>
+        <el-button v-if="settingsPanel === 'page' && application.publication_status === 'published' && authStore.hasPermission('workbench.data_application.publish')" :loading="offlining" type="danger" plain @click="offline">{{ t('workbench.offline') }}</el-button>
       </div>
       <template #footer><el-button type="primary" :disabled="Boolean(selectionDraft)" @click="settingsPanel = ''">{{ t('workbench.studio.done') }}</el-button></template>
     </el-drawer>
@@ -265,6 +265,7 @@ import ApplicationSelectionDialog from '../components/ApplicationSelectionDialog
 import ParameterValueInput from '../../../../common-frontend/basic/src/components/ParameterValueInput.vue'
 import DataApplicationCanvas from '../components/DataApplicationCanvas.vue'
 import DataApplicationDeliveryDialog from '../components/DataApplicationDeliveryDialog.vue'
+import { useAuthStore } from '../store/auth'
 import SpatialExplorationWizard from '../components/SpatialExplorationWizard.vue'
 
 const rendererIcons = { table: Grid, chart: Histogram, value: Odometer, map: Location }
@@ -299,6 +300,7 @@ const selectionListTarget = ref(null)
 const creationTargetKey = ref('')
 const editorCanvas = ref(null)
 const { t } = useI18n()
+const authStore = useAuthStore()
 const route = useRoute()
 const rawRouter = useRouter()
 const router = { push: (location) => navigateWorkbenchRoute(rawRouter, location), replace: (location) => navigateWorkbenchRoute(rawRouter, location, { history: 'replace' }) }

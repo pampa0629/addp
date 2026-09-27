@@ -1064,6 +1064,7 @@ function formCombobox(container, label) {
 
 async function installMockBackend(page, options = {}) {
   const permissions = [
+    'meta.catalog.read',
     'security.classification.read',
     'security.classification.create',
     'security.classification.delete',
@@ -1315,7 +1316,7 @@ async function installMockBackend(page, options = {}) {
     if (path === '/api/v1/system/refresh') return fulfillJSON(route, { access_token: 'security-e2e-token', expires_in: 3600 })
     if (path === '/api/v1/system/users/me') return fulfillJSON(route, { id: 7, username: 'security-e2e' })
     if (path === '/api/v1/system/auth/context') {
-      return fulfillJSON(route, { context: { type: 'tenant', tenant_id: '11' }, authorization: { role_assignments: [{ permissions }] } })
+      return fulfillJSON(route, { context: { type: 'tenant', tenant_id: '11' }, authorization: { role_assignments: [{ scope: { type: 'tenant', tenant_id: '11' }, permissions }] } })
     }
     if (path === '/api/v1/system/engines') return fulfillJSON(route, [{ id: 2, name: '业务 PostgreSQL', engine_type: 'postgresql', lifecycle_state: 'active', connection_status: 'online' }])
     if (path === '/api/v1/meta/engines') return fulfillJSON(route, [{ id: 2, name: '业务 PostgreSQL', engine_type: 'postgresql', lifecycle_state: 'active', connection_status: 'online' }])

@@ -13,7 +13,7 @@ test('Monitor owns the Transfer-wide execution list', () => {
   assert.equal(existsSync(new URL('../src/views/ExecutionList.vue', import.meta.url)), false)
   assert.equal(existsSync(new URL('../src/views/Dashboard.vue', import.meta.url)), false)
 
-  assert.match(taskListSource, /MonitorExecutionsButton module="transfer" task-type="sync"/)
+  assert.match(taskListSource, /MonitorExecutionsButton v-if="canMonitor" module="transfer" task-type="sync"/)
 })
 
 test('Transfer task details retain domain history and link to the filtered Monitor view', () => {

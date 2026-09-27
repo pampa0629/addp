@@ -112,6 +112,9 @@ other = "当前配置无法生成建表语句，请检查物理目标配置和�
 [model.logical_table.code_conflict]
 other = "逻辑表编码已存在"
 
+[model.logical_table.physical_target_conflict]
+other = "该物理目标已由其他逻辑表占用，请选择其他目标或先释放原配置"
+
 [model.logical_table.state_conflict]
 other = "逻辑表当前状态不允许此操作"
 

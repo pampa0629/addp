@@ -5,6 +5,11 @@
     "logout": "Logout",
     "sessionExpired": "Session expired, please login again",
     "logoutSuccess": "Logged out successfully",
+    "accessDenied": {
+      "title": "Access denied",
+      "description": "This account does not have permission to use this page.",
+      "backHome": "Back to home"
+    },
     "invitation": {
       "title": "Accept tenant invitation",
       "description": "After joining the tenant, you can use ADDP with the roles assigned by an administrator.",
@@ -441,7 +446,8 @@
       "ontology": { "label": "Domain ontology", "list": "Domain ontology modeling" },
       "transfer": {
         "label": "Data Transfer",
-        "tasks": "Transfer Tasks"
+        "tasks": "Transfer Tasks",
+        "create": "Create Transfer Task"
       },
       "meta": {
         "label": "Metadata",

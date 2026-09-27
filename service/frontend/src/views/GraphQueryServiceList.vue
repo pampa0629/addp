@@ -2,7 +2,7 @@
   <div class="graph-service-list">
     <div class="page-header">
       <h2>{{ t('service.graph.listTitle') }}</h2>
-      <el-button type="primary" @click="openCreate">
+      <el-button v-if="canCreate" type="primary" @click="openCreate">
         {{ t('service.graph.createBtn') }}
       </el-button>
     </div>
@@ -68,8 +68,8 @@
           <td>{{ formatDate(svc.created_at) }}</td>
           <td class="actions">
             <el-button size="small" @click="openDetail(svc)">{{ t('service.common.detail') }}</el-button>
-            <el-button size="small" @click="openEdit(svc)">{{ t('service.common.edit') }}</el-button>
-            <el-button size="small" type="danger" @click="confirmDelete(svc)">{{ t('service.common.delete') }}</el-button>
+            <el-button v-if="canUpdate" size="small" @click="openEdit(svc)">{{ t('service.common.edit') }}</el-button>
+            <el-button v-if="canDelete" size="small" type="danger" @click="confirmDelete(svc)">{{ t('service.common.delete') }}</el-button>
           </td>
         </tr>
       </tbody>
@@ -90,16 +90,21 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import graphApi from '../api/graphQueryService'
 import { navigateServiceRoute } from '@/utils/moduleNavigation'
+import { useAuthStore } from '../store/auth'
 
 const { t } = useI18n()
 const router = useRouter()
+const authStore = useAuthStore()
+const canCreate = computed(() => authStore.hasPermission('service.definition.create') && authStore.hasPermission('system.engine_catalog.read'))
+const canUpdate = computed(() => authStore.hasPermission('service.definition.update') && authStore.hasPermission('system.engine_catalog.read'))
+const canDelete = computed(() => authStore.hasPermission('service.definition.delete'))
 const openCreate = () => navigateServiceRoute(router, '/graph-services/create')
 const openDetail = service => navigateServiceRoute(router, `/graph-services/${service.id}`)
 const openEdit = service => navigateServiceRoute(router, `/graph-services/${service.id}/edit`)

@@ -2,7 +2,7 @@
   <div class="page-container">
     <div class="page-header">
       <h2>{{ t('graph.ontology.management') }}</h2>
-      <el-button type="primary" @click="openCreate">
+      <el-button v-if="authStore.hasPermission('graph.ontology.create')" type="primary" @click="openCreate">
         <el-icon><Plus /></el-icon> {{ t('graph.ontology.create') }}
       </el-button>
     </div>
@@ -27,8 +27,8 @@
       <el-table-column :label="t('graph.common.actions')" width="180" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" size="small" @click="openDetail(row)">{{ t('graph.common.view') }}</el-button>
-          <el-button link size="small" @click="openEdit(row)">{{ t('graph.common.edit') }}</el-button>
-          <el-button link type="danger" size="small" @click="handleDelete(row)">{{ t('graph.common.delete') }}</el-button>
+          <el-button v-if="authStore.hasPermission('graph.ontology.update')" link size="small" @click="openEdit(row)">{{ t('graph.common.edit') }}</el-button>
+          <el-button v-if="authStore.hasPermission('graph.ontology.delete')" link type="danger" size="small" @click="handleDelete(row)">{{ t('graph.common.delete') }}</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -43,9 +43,11 @@ import { Plus } from '@element-plus/icons-vue'
 import { ontologyAPI } from '../api/ontology'
 import { useI18n } from 'vue-i18n'
 import { navigateGraphRoute } from '@/utils/moduleNavigation'
+import { useAuthStore } from '../store/auth'
 
 const { t } = useI18n()
 const router = useRouter()
+const authStore = useAuthStore()
 const loading = ref(false)
 const ontologies = ref([])
 const openCreate = () => navigateGraphRoute(router, '/ontologies/create')

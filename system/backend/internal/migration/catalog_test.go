@@ -14,8 +14,44 @@ func TestEmbeddedMigrationCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadCatalog() error = %v", err)
 	}
-	if catalog.LatestVersion != 156 {
-		t.Fatalf("LatestVersion = %d, want 156", catalog.LatestVersion)
+	if catalog.LatestVersion != 160 {
+		t.Fatalf("LatestVersion = %d, want 160", catalog.LatestVersion)
+	}
+}
+
+func TestInferenceModelLabelMigrationPublishesNarrowTenantGrant(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000159_iam_inference_model_label_read.up.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, fragment := range []string{
+		"'inference.model_label.read'",
+		"ARRAY['tenant', 'department', 'project_group']",
+		"'tenant.administrator', 'tenant.data_steward'",
+		"authorization_version + 1",
+		"authorization_catalog_changed",
+	} {
+		if !strings.Contains(string(data), fragment) {
+			t.Fatalf("migration 159 missing %q", fragment)
+		}
+	}
+}
+
+func TestPageCatalogDependencyMigrationPublishesRoleGrants(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000160_iam_page_catalog_dependencies.up.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, fragment := range []string{
+		"('tenant.administrator', 'meta.catalog.read')",
+		"('tenant.security_manager', 'meta.catalog.read')",
+		"('tenant.data_architect', 'standard.unit.read')",
+		"authorization_version + 1",
+		"authorization_catalog_changed",
+	} {
+		if !strings.Contains(string(data), fragment) {
+			t.Fatalf("migration 160 missing %q", fragment)
+		}
 	}
 }
 

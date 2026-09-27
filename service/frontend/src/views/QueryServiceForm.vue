@@ -31,6 +31,7 @@
 
         <el-radio-group v-model="form.config_type" class="config-radio-group">
           <div
+            v-if="canBrowseMeta"
             class="config-card-wrapper"
             :class="{ 'selected': form.config_type === 'table' }"
             @click="form.config_type = 'table'"
@@ -93,6 +94,7 @@
           </template>
 
           <ResourceTreePicker
+            v-if="canBrowseMeta"
             ref="tablePickerRef"
             :api-base-url="metaApiBaseUrl"
             :engine-filter="queryTableEngineFilter"
@@ -475,10 +477,13 @@ import {
 } from '@/utils/queryServiceEngines'
 import { navigateServiceRoute } from '@/utils/moduleNavigation'
 import { SERVICE_NAME_PATTERN } from '@/utils/serviceHelper'
+import { useAuthStore } from '@/store/auth'
 
 const { t } = useI18n()
 const router = useRouter()
 const route = useRoute()
+const authStore = useAuthStore()
+const canBrowseMeta = computed(() => authStore.hasPermission('meta.catalog.read'))
 
 const loading = ref(false)
 const submitting = ref(false)
@@ -507,7 +512,7 @@ const reloadDefinition = async () => {
 }
 const createForm = () => ({
   version: null,
-  config_type: 'table',
+  config_type: canBrowseMeta.value ? 'table' : 'sql',
   engine_id: null,
   runtime_engine_id: null,
   execution_engine_id: null,

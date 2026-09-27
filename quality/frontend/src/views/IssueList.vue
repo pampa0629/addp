@@ -17,7 +17,7 @@
           <el-option :label="t('quality.issue.ignored')" value="ignored" />
         </el-select>
       </el-form-item>
-      <el-form-item :label="t('quality.issue.engineFilter')">
+      <el-form-item v-if="authStore.hasPermission('system.engine_catalog.read')" :label="t('quality.issue.engineFilter')">
         <el-select
           v-model="filter.engine_id"
           clearable
@@ -261,6 +261,10 @@ const restoreListFromRoute = async (query) => {
 }
 
 const fetchEngines = async () => {
+  if (!authStore.hasPermission('system.engine_catalog.read')) {
+    engines.value = []
+    return
+  }
   try {
     const result = await systemEngineAPI.list()
     engines.value = (result || []).filter(engine => engine.engine_type === 'postgresql' && engine.lifecycle_state === 'active')

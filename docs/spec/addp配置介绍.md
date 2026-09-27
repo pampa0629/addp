@@ -17,7 +17,7 @@ ADDP 的配置按事实来源和生命周期分层管理，不建立由 System �
 
 | 类别 | 典型内容 | 事实来源 | 维护者 |
 | --- | --- | --- | --- |
-| 部署配置 | 端口、数据库、Redis、MinIO、Kafka、模块间地址、启动开关 | 根 `.env`、容器 environment 或部署系统 | 部署运维人员 |
+| 部署配置 | 端口、数据库、Redis、MinIO、Kafka、模块间地址、启动开关 | ADDP 根 `.env`、本地 Business `business/.env`、容器 environment 或部署系统，按部署单元归属 | 部署运维人员 |
 | Secret | 数据库密码、Service Client Secret、API Key、pepper、加密密钥 | Secret Manager 或受控环境注入 | 部署运维或安全人员 |
 | 平台普通运行配置 | 模块运行策略、全局限额、重试和保留策略 | 对应 owner 模块的持久化配置 | Platform System Administrator |
 | 平台安全配置 | 认证、MFA、平台 IdP 和安全策略 | System IAM | Platform Security Administrator |
@@ -114,8 +114,9 @@ Develop 租户配置页只读展示当前最大查询超时、结果预览上限
 
 ## 根目录环境配置唯一路径
 
-- 根目录 `.env.example` 是 ADDP 开发与部署环境变量的唯一模板。
-- 实际配置统一使用根目录 `.env`；生产环境也不使用 `.env.prod` 或其他平行文件。
+- 根目录 `.env.example` 是 ADDP 基础设施和模块进程环境变量的唯一模板；独立 Business 容器使用 `business/.env.example`。
+- ADDP 基础设施和模块进程实际配置统一使用根目录 `.env`；生产环境也不使用 `.env.prod` 或其他平行文件。
+- 本地 Business 引擎容器由 `business/.env` 独立配置；根 `.env` 不保存 Business PostgreSQL、Business MinIO 的账号和密码。辅助脚本从 `business/.env` 读取这些凭据，容器实际映射端口以 Business Compose 为准；Engine Instance 连接信息由 System 管理。
 - 模块进程可以接收容器或启动脚本显式注入的模块配置，但不再维护独立的长期 `.env` 路径。
 - 模块代码不得硬编码 `../../.env` 等相对路径，也不得加载 `.env.local` 形成覆盖层；标准启动脚本负责把根 `.env` 注入进程环境。
 - `.env` 和任何 Secret 不得提交到 Git；模板中只保留开发默认值、空值或明确的占位值。
@@ -559,25 +560,8 @@ MINIO_ROOT_PASSWORD=minioadmin
 MINIO_API_PORT=19000
 MINIO_BUCKET=system
 
-# Oracle Free - Business 普通表与 Oracle Spatial 测试源（业务容器内使用 business-oracle:1521）
-# 常规镜像保留 Oracle Spatial；-slim 镜像会卸载 Spatial/Locator，不得使用。
-ORACLE_IMAGE=gvenzl/oracle-free:23
-ORACLE_SYS_PASSWORD=oracle_sys_password
-ORACLE_APP_USER=business
-ORACLE_APP_PASSWORD=business_oracle_password
-ORACLE_SERVICE_NAME=FREEPDB1
-ORACLE_PORT=15210
-
-# MinIO - 业务数据 (部署在 business/docker-compose.yml)
-# 注意：Business 引擎连接信息由 ADDP 容器内服务使用，生产 Docker 部署请使用 business 网络服务名，不要写 localhost。
-BUSINESS_PG_HOST=business-postgres
-BUSINESS_PG_PORT=5432
-BUSINESS_PG_USER=business
-BUSINESS_PG_PASSWORD=business_password
-BUSINESS_PG_DB=business
-BUSINESS_MINIO_ENDPOINT=business-minio:9000
-BUSINESS_MINIO_ACCESS_KEY=minioadmin
-BUSINESS_MINIO_SECRET_KEY=minioadmin
+# 本地 Business PostgreSQL 和 MinIO 的部署凭据配置在 business/.env。
+# 注册为 Engine Instance 后，连接信息由 System 管理。
 
 ```
 

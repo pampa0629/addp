@@ -5,6 +5,7 @@ from addp_common.auth import (
     AuthorizationContext,
     allows_delegated_tool,
     allows_permissions,
+    RoleAssignment,
     resolve_authorization_context,
 )
 
@@ -100,6 +101,27 @@ def _service_context_response(*, platform: bool = False):
 
 
 class AuthorizationContextTests(unittest.IsolatedAsyncioTestCase):
+    async def test_organizational_assignment_does_not_grant_tenant_permission(self):
+        context = AuthorizationContext(
+            principal_id=12,
+            tenant_id=3,
+            role_assignments=(
+                RoleAssignment(21, "tenant.data_engineer", "department", ("develop.task.read",), 3),
+                RoleAssignment(22, "tenant.data_engineer", "tenant", ("develop.task.execute",), 3),
+            ),
+        )
+        self.assertEqual(context.permissions, ("develop.task.execute",))
+        self.assertFalse(allows_permissions(context, ("develop.task.read",)))
+        self.assertTrue(allows_permissions(context, ("develop.task.execute",)))
+
+    async def test_other_tenant_assignment_does_not_grant_permission(self):
+        context = AuthorizationContext(
+            principal_id=12,
+            tenant_id=3,
+            role_assignments=(RoleAssignment(23, "tenant.data_engineer", "tenant", ("develop.task.read",), 4),),
+        )
+        self.assertFalse(allows_permissions(context, ("develop.task.read",)))
+
     async def test_resolves_canonical_auth_context_v1(self):
         _SystemClient.response = _context_response()
 

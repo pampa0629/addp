@@ -45,6 +45,11 @@ type PageResult[T any] struct {
 	PageSize   int   `json:"page_size"`
 	TotalPages int   `json:"total_pages"`
 }
+type ModelLabel struct {
+	ID            string `json:"id"`
+	Name          string `json:"name"`
+	UpstreamModel string `json:"upstream_model"`
+}
 type ProviderView struct {
 	models.ProviderConnection
 	AllowedTenantIDs []uint           `json:"allowed_tenant_ids"`
@@ -350,6 +355,31 @@ func (s *ControlPlane) ListProfiles(ctx context.Context, actor Actor, page, page
 		}
 	}
 	return paginate(result, page, pageSize), nil
+}
+func (s *ControlPlane) ListModelLabels(ctx context.Context, actor Actor) ([]ModelLabel, error) {
+	if err := validateActor(actor); err != nil {
+		return nil, err
+	}
+	profiles, err := s.store.ListProfiles(ctx)
+	if err != nil {
+		return nil, err
+	}
+	labels := make([]ModelLabel, 0, len(profiles))
+	for _, profile := range profiles {
+		visible, err := s.profileVisible(ctx, actor, &profile)
+		if err != nil {
+			return nil, err
+		}
+		if !visible {
+			continue
+		}
+		deployment, err := s.store.GetDeployment(ctx, profile.ModelDeploymentID)
+		if err != nil {
+			return nil, err
+		}
+		labels = append(labels, ModelLabel{ID: profile.ID, Name: profile.Name, UpstreamModel: deployment.UpstreamModel})
+	}
+	return labels, nil
 }
 func (s *ControlPlane) CreateProfile(ctx context.Context, actor Actor, input ProfileInput) (*models.ModelProfile, error) {
 	value, err := s.normalizeProfile(ctx, actor, input)

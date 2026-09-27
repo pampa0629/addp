@@ -1447,7 +1447,7 @@ for (const suffix of ['', '?revision_id=411']) {
       if (request.url().includes('/standard/code-sets')) codeSetRequests.push(request.url())
     })
     await installMockBackend(page, {
-      permissions: ['standard.element.read'],
+      permissions: ['standard.element.read', 'standard.domain.read'],
       elements: [{ id: 41, code: 'gender', name: '历史性别', data_type: 'string', status: 'approved', value_domain_kind: 'enumeration', code_set_revision_id: 310 }],
       elementCodeSetSnapshots: { 310: { revision_id: '310', code_set_id: '31', name: '历史性别码表', code: 'gender', revision_no: 1, status: 'withdrawn' } }
     })
@@ -1919,6 +1919,8 @@ test('matches document panel controls to the backend permission combinations', a
     permissions: [
       'standard.metric.read',
       'standard.metric.update',
+      'standard.domain.read',
+      'standard.unit.read',
       'standard.document.read',
       'standard.document.create'
     ],
@@ -2319,8 +2321,8 @@ async function installMockBackend(page, options = {}) {
     if (path === '/api/v1/system/auth/context') {
       const token = request.headers().authorization?.replace(/^Bearer\s+/i, '')
       return fulfillJSON(route, {
-        context: { type: 'tenant' },
-        authorization: { role_assignments: [{ permissions: authContextPermissionsByToken[token] ?? permissions }] }
+        context: { type: 'tenant', tenant_id: '1' },
+        authorization: { role_assignments: [{ scope: { type: 'tenant', tenant_id: '1' }, permissions: authContextPermissionsByToken[token] ?? permissions }] }
       })
     }
     if (path === '/api/v1/standard/domains') return fulfillJSON(route, domains)

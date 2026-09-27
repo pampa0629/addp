@@ -7,7 +7,7 @@
             <span class="page-title">{{ t('monitor.alert_rule.title') }}</span>
             <div class="page-description">{{ t('monitor.alert_rule.description') }}</div>
           </div>
-          <el-button type="primary" @click="openCreateDialog">
+          <el-button v-if="authStore.hasPermission('monitor.alert_rule.create') && authStore.hasPermission('monitor.notification_destination.read')" type="primary" @click="openCreateDialog">
             <el-icon><Plus /></el-icon>
             {{ t('monitor.alert_rule.create') }}
           </el-button>
@@ -47,7 +47,7 @@
         </el-table-column>
         <el-table-column :label="t('monitor.alert_rule.enabled')" width="90">
           <template #default="{ row }">
-            <el-switch :model-value="row.enabled" @change="value => toggleRule(row, value)" />
+            <el-switch :model-value="row.enabled" :disabled="!authStore.hasPermission('monitor.alert_rule.update')" @change="value => toggleRule(row, value)" />
           </template>
         </el-table-column>
         <el-table-column :label="t('monitor.alert_rule.updated_at')" width="180">
@@ -55,8 +55,8 @@
         </el-table-column>
         <el-table-column :label="t('monitor.alert.actions')" width="150" fixed="right">
           <template #default="{ row }">
-            <el-button text type="primary" @click="openEditDialog(row)">{{ t('monitor.alert_rule.edit') }}</el-button>
-            <el-button text type="danger" @click="removeRule(row)">{{ t('monitor.alert_rule.delete') }}</el-button>
+            <el-button v-if="authStore.hasPermission('monitor.alert_rule.update') && authStore.hasPermission('monitor.notification_destination.read')" text type="primary" @click="openEditDialog(row)">{{ t('monitor.alert_rule.edit') }}</el-button>
+            <el-button v-if="authStore.hasPermission('monitor.alert_rule.delete')" text type="danger" @click="removeRule(row)">{{ t('monitor.alert_rule.delete') }}</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -116,6 +116,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { Plus } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
+import { useAuthStore } from '../store/auth'
 import {
   createAlertRule,
   deleteAlertRule,
@@ -133,6 +134,7 @@ import {
 } from '@/utils/alertRule'
 
 const { t } = useI18n()
+const authStore = useAuthStore()
 const loading = ref(false)
 const saving = ref(false)
 const rules = ref([])
@@ -173,7 +175,9 @@ async function loadData() {
   loading.value = true
   try {
     const [ruleData, targetData, webhookData, emailData] = await Promise.all([
-      listAlertRules(), listAlertRuleTargets(), listWebhookDestinations(), listEmailDestinations()
+      listAlertRules(), listAlertRuleTargets(),
+      authStore.hasPermission('monitor.notification_destination.read') ? listWebhookDestinations() : Promise.resolve([]),
+      authStore.hasPermission('monitor.notification_destination.read') ? listEmailDestinations() : Promise.resolve([])
     ])
     rules.value = ruleData || []
     targets.value = targetData || []

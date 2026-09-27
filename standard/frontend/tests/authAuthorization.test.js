@@ -7,6 +7,11 @@ import {
   setRuntimeAccessToken
 } from '@common-ui'
 
+const contextFor = permission => ({
+  context: { type: 'tenant', tenant_id: '1' },
+  authorization: { role_assignments: [{ scope: { type: 'tenant', tenant_id: '1' }, permissions: [permission] }] }
+})
+
 describe('Standard authorization refresh', () => {
   beforeEach(() => {
     const values = new Map()
@@ -29,12 +34,7 @@ describe('Standard authorization refresh', () => {
       logout: vi.fn(),
       getUser: vi.fn(async token => ({ data: { id: token } })),
       getAuthContext: vi.fn(async token => ({
-        data: {
-          context: { type: 'tenant' },
-          authorization: {
-            role_assignments: [{ permissions: [token === 'new-token' ? 'standard.glossary.create' : 'standard.glossary.read'] }]
-          }
-        }
+        data: contextFor(token === 'new-token' ? 'standard.glossary.create' : 'standard.glossary.read')
       }))
     }
     const useTestAuthStore = defineStore('standard-auth-refresh', createAuthStore('standard-auth-refresh', authAPI, { persistUser: false }))
@@ -59,7 +59,7 @@ describe('Standard authorization refresh', () => {
       getUser: vi.fn(async token => ({ data: { id: token } })),
       getAuthContext: vi.fn(token => token === 'old-token'
         ? oldContext
-        : Promise.resolve({ data: { authorization: { role_assignments: [{ permissions: ['standard.glossary.create'] }] } } }))
+        : Promise.resolve({ data: contextFor('standard.glossary.create') }))
     }
     const useTestAuthStore = defineStore('standard-auth-race', createAuthStore('standard-auth-race', authAPI, { persistUser: false }))
     const store = useTestAuthStore()
@@ -67,7 +67,7 @@ describe('Standard authorization refresh', () => {
     setRuntimeAccessToken('old-token')
     const initialized = store.initializeSession()
     setRuntimeAccessToken('new-token')
-    resolveOld({ data: { authorization: { role_assignments: [{ permissions: ['standard.glossary.delete'] }] } } })
+    resolveOld({ data: contextFor('standard.glossary.delete') })
     await initialized
     await vi.waitFor(() => expect(store.hasPermission('standard.glossary.create')).toBe(true))
     expect(store.hasPermission('standard.glossary.delete')).toBe(false)
@@ -82,7 +82,7 @@ describe('Standard authorization refresh', () => {
       getUser: vi.fn(async token => ({ data: { id: token } })),
       getAuthContext: vi.fn(token => token === 'old-token'
         ? oldContext
-        : Promise.resolve({ data: { authorization: { role_assignments: [{ permissions: ['standard.glossary.create'] }] } } }))
+        : Promise.resolve({ data: contextFor('standard.glossary.create') }))
     }
     const useTestAuthStore = defineStore('standard-auth-stale-failure', createAuthStore('standard-auth-stale-failure', authAPI, { persistUser: false }))
     const store = useTestAuthStore()

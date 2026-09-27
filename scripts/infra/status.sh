@@ -134,11 +134,19 @@ fi
 if docker ps --filter name='^/business-postgres$' --format '{{.Names}}' | grep -q '^business-postgres$'; then
   echo ""
   echo -e "${YELLOW}▶ 本地业务 PostgreSQL logical replication${NC}"
-  docker exec business-postgres psql -U "${BUSINESS_PG_USER:-business}" -d "${BUSINESS_PG_DB:-business}" -P pager=off -c "
+  (
+    [ -f ./business/.env ] || exit 1
+    unset POSTGRES_USER POSTGRES_DB
+    # shellcheck disable=SC1091
+    source ./business/.env
+    : "${POSTGRES_USER:?business/.env 缺少 POSTGRES_USER}"
+    : "${POSTGRES_DB:?business/.env 缺少 POSTGRES_DB}"
+    docker exec business-postgres psql -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" -P pager=off -c "
     SELECT slot_name,
            active,
            pg_size_pretty(pg_wal_lsn_diff(pg_current_wal_lsn(), restart_lsn)) AS retained_wal
     FROM pg_replication_slots
     ORDER BY slot_name;
-  " 2>/dev/null || echo -e "${RED}无法读取本地业务 PostgreSQL replication slot${NC}"
+    "
+  ) 2>/dev/null || echo -e "${RED}无法读取本地业务 PostgreSQL replication slot${NC}"
 fi

@@ -115,6 +115,7 @@ class LocalMacOSCiTest(unittest.TestCase):
             #!/bin/bash
             printf '%s\n' "$*" >> "$MAKE_LOG"
             printf '%s|%s\n' "$*" "${DEVELOP_POSTGRES_TEST_DSN-UNSET}" >> "$MAKE_ENVIRONMENT_LOG"
+            printf 'postgres-marker:%s|%s\n' "$*" "${ADDP_LOCAL_CI_POSTGRES-UNSET}" >> "$MAKE_ENVIRONMENT_LOG"
             printf '%s|%s|%s|%s|%s|%s\n' "$*" \
               "${ADDP_LOCAL_CI_MYSQL-UNSET}" \
               "${ADDP_TEST_MYSQL_HOST-UNSET}" \
@@ -588,6 +589,8 @@ class LocalMacOSCiTest(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
         self.assertIn("test|UNSET", self._make_environments())
+        self.assertIn("postgres-marker:test|UNSET", self._make_environments())
+        self.assertIn("postgres-marker:test-integration|1", self._make_environments())
         self.assertIn(
             "test-integration|postgres://addp:addp_password@127.0.0.1:15432/addp_test?sslmode=disable",
             self._make_environments(),

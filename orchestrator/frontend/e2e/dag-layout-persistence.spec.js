@@ -842,7 +842,7 @@ async function installMockBackend(page, initialOrchestration, taskLibrary = {}) 
     if (path === '/api/v1/system/refresh') {
       return fulfillJSON(route, { access_token: 'dag-e2e-token', expires_in: 3600 })
     }
-    if (path === '/api/v1/system/auth/context') return fulfillJSON(route, { context: { type: 'tenant' }, authorization: { role_assignments: [{ permissions: ['orchestrator.workflow.read', 'orchestrator.workflow.execute'] }] } })
+    if (path === '/api/v1/system/auth/context') return fulfillJSON(route, { context: { type: 'tenant', tenant_id: '1' }, authorization: { role_assignments: [{ scope: { type: 'tenant', tenant_id: '1' }, permissions: ['orchestrator.workflow.read', 'orchestrator.workflow.create', 'orchestrator.workflow.update', 'orchestrator.workflow.execute'] }] } })
     if (path === '/api/v1/system/users/me') {
       return fulfillJSON(route, { id: 1, username: 'dag-e2e' })
     }

@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 # ADDP_T2_SERVICES=postgres
+# ADDP_T2_REQUIRED_ENV=ADDP_TEST_POSTGRES_PORT,ADDP_TEST_POSTGRES_PASSWORD
 # common-postgres-gate.sh - Run Common PostgreSQL Engine Provider integration tests.
 
 set -euo pipefail
+
+: "${ADDP_TEST_POSTGRES_PORT:?Set ADDP_TEST_POSTGRES_PORT to the verified PostgreSQL test service mapping}"
+: "${ADDP_TEST_POSTGRES_PASSWORD:?Set ADDP_TEST_POSTGRES_PASSWORD for the PostgreSQL test service}"
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/addp-common-postgres.XXXXXX")
@@ -17,6 +21,12 @@ case "$database" in
         ;;
 esac
 
+source "$ROOT_DIR/scripts/infra/ports.sh"
+addp_infra_verify_test_postgres_target "${ADDP_TEST_POSTGRES_HOST:-localhost}" "$ADDP_TEST_POSTGRES_PORT" "$database"
+if [ -n "${ADDP_TEST_EXECUTION_POSTGRES_DSN:-}" ]; then
+    addp_infra_verify_test_postgres_dsn "$ADDP_TEST_EXECUTION_POSTGRES_DSN"
+fi
+
 cd "$ROOT_DIR/common"
 ADDP_POSTGRES_INTEGRATION=1 \
     go test ./engine/plugins/postgresql \
@@ -29,9 +39,9 @@ if grep -q -- '--- SKIP:' "$WORK_DIR/common-postgres.log"; then
 fi
 
 postgres_host=${ADDP_TEST_POSTGRES_HOST:-localhost}
-postgres_port=${ADDP_TEST_POSTGRES_PORT:-15432}
+postgres_port=$ADDP_TEST_POSTGRES_PORT
 postgres_user=${ADDP_TEST_POSTGRES_USER:-addp}
-postgres_password=${ADDP_TEST_POSTGRES_PASSWORD:-addp_password}
+postgres_password=$ADDP_TEST_POSTGRES_PASSWORD
 postgres_sslmode=${ADDP_TEST_POSTGRES_SSLMODE:-disable}
 execution_dsn=${ADDP_TEST_EXECUTION_POSTGRES_DSN:-postgres://${postgres_user}:${postgres_password}@${postgres_host}:${postgres_port}/${database}?sslmode=${postgres_sslmode}}
 

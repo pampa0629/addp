@@ -12,9 +12,9 @@
         </div>
       </div>
       <div class="header-right">
-        <el-button @click="goToEdit">{{ t('service.common.edit') }}</el-button>
+        <el-button v-if="canUpdate" @click="goToEdit">{{ t('service.common.edit') }}</el-button>
         <el-button @click="goToTest">{{ t('service.published.testService') }}</el-button>
-        <el-button type="danger" @click="handleDelete">{{ t('service.common.delete') }}</el-button>
+        <el-button v-if="canDelete" type="danger" @click="handleDelete">{{ t('service.common.delete') }}</el-button>
       </div>
     </div>
 
@@ -217,10 +217,14 @@ import { copyToClipboard } from '../utils/serviceHelper'
 import { navigateServiceRoute } from '@/utils/moduleNavigation'
 import { LineageViewer, createLineageApi, normalizeLineageGraph } from '@common-ui-graph'
 import { useConsolePageDescriptor } from '@common-ui'
+import { useAuthStore } from '../store/auth'
 
 const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
+const authStore = useAuthStore()
+const canUpdate = computed(() => authStore.hasPermission('service.definition.update'))
+const canDelete = computed(() => authStore.hasPermission('service.definition.delete'))
 
 const loading = ref(false)
 const service = ref(null)

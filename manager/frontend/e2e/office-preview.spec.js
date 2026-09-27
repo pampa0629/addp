@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { managerAuthContext } from './managerAuthContext.js'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import JSZip from 'jszip'
@@ -162,10 +163,7 @@ async function installMockBackend(page, documentCase) {
       return fulfillJSON(route, { id: 1, username: 'manager-e2e' })
     }
     if (path === '/api/v1/system/auth/context') {
-      return fulfillJSON(route, {
-        context: { type: 'tenant' },
-        authorization: { role_assignments: [{ permissions: [] }] }
-      })
+      return fulfillJSON(route, managerAuthContext)
     }
     if (path === '/api/v1/manager/engines') {
       return fulfillJSON(route, { data: [ENGINE] })

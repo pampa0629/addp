@@ -1989,7 +1989,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "物理目标父定位符须匹配目标引擎 Engine Catalog 的表级父命名空间；配置目标不代表支持该引擎建表。 | The physical target parent must match the target engine's table-parent namespace in Engine Catalog; configuring a target does not imply Model DDL support for that engine.",
+                "description": "物理目标父定位符须匹配目标引擎 Engine Catalog 的表级父命名空间；目标表由一张逻辑表独占，配置目标不代表支持该引擎建表。 | The physical target parent must match the target engine's table-parent namespace in Engine Catalog; each target is exclusively claimed by one logical table, and configuring a target does not imply Model DDL support for that engine.",
                 "consumes": [
                     "application/json"
                 ],
@@ -2043,7 +2043,7 @@
                         }
                     },
                     "409": {
-                        "description": "逻辑表编码冲突 | Logical table code conflict",
+                        "description": "逻辑表编码或物理目标冲突 | Logical table code or physical target conflict",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
@@ -2128,7 +2128,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "物理目标父定位符须匹配目标引擎 Engine Catalog 的表级父命名空间。 | The physical target parent must match the target engine's table-parent namespace in Engine Catalog.",
+                "description": "物理目标父定位符须匹配目标引擎 Engine Catalog 的表级父命名空间；目标表由一张逻辑表独占。 | The physical target parent must match the target engine's table-parent namespace in Engine Catalog; each target is exclusively claimed by one logical table.",
                 "consumes": [
                     "application/json"
                 ],
@@ -2189,7 +2189,7 @@
                         }
                     },
                     "409": {
-                        "description": "逻辑表状态或字段列名冲突 | Logical table state or field column name conflict",
+                        "description": "逻辑表状态或物理目标冲突 | Logical table state or physical target conflict",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }

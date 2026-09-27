@@ -84,7 +84,7 @@ export async function installMetricApplicationBackend(context, { rebound = false
     const send = (data, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(data) })
     if (path === '/api/v1/system/refresh') return send({ access_token: 'isolated-e2e-token', expires_in: 3600 })
     if (path === '/api/v1/system/users/me') return send({ id: 1, username: 'fixture-author' })
-    if (path === '/api/v1/system/auth/context') return send({ context: { type: 'tenant', tenant_id: 1 }, authorization: { role_assignments: [{ permissions: ['workbench.data_application.read', 'workbench.data_application.create'] }] } })
+    if (path === '/api/v1/system/auth/context') return send({ context: { type: 'tenant', tenant_id: '1' }, authorization: { role_assignments: [{ scope: { type: 'tenant', tenant_id: '1' }, permissions: ['workbench.data_application.read', 'workbench.data_application.create', 'workbench.data_application.update', 'workbench.data_application.publish', 'workbench.data_application.execute'] }] } })
     if (path === '/api/v1/service/consumer/services') return send({ data: Object.values(descriptors), total: 2 })
     const match = path.match(/^\/api\/v1\/service\/consumer\/services\/query\/(71|72)$/)
     if (match) {

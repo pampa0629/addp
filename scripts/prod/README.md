@@ -54,46 +54,16 @@ cd /opt/addp
 
 ## stop.sh
 
-**用途**: 停止所有 ADDP 生产环境服务
+**用途**: 停止平台与内置 Runtime 容器，保留基础设施、Business 服务及全部数据卷
 
 ### 使用方法
 
 ```bash
-# 停止所有服务
-./scripts/prod/stop.sh
-
-# 停止服务并移除容器
-./scripts/prod/stop.sh --remove
-
-# 停止服务并移除卷（⚠️ 会删除数据）
-./scripts/prod/stop.sh --volumes
-```
-
-### 参数说明
-
-| 参数 | 说明 |
-|------|------|
-| 无参数 | 停止容器但保留数据 |
-| `--remove` | 停止并移除容器 |
-| `--volumes` | 停止、移除容器并删除数据卷 |
-
-### 停止顺序
-
-```
-1. 停止前端服务（Console, System, Manager, etc.）
-2. 停止业务后端（Gateway, Manager, Meta, Transfer, etc.）
-3. 停止基础设施（PostgreSQL, Redis, MinIO, Meilisearch）
-```
-
-### ⚠️ 重要提示
-
-```bash
-# ❌ 危险操作：会删除所有数据
-./scripts/prod/stop.sh --volumes
-
-# ✅ 安全操作：仅停止服务，保留数据
+# 停止平台与 Runtime 服务
 ./scripts/prod/stop.sh
 ```
+
+该脚本没有 `--remove` 或 `--volumes` 参数。需要停止 Infra 时，单独使用 `scripts/infra/down.sh`，默认保留卷。需要销毁数据时，先核验可恢复备份及目标 Compose project，再走 Infra 专用交互确认流程。
 
 ### 示例
 
@@ -101,11 +71,7 @@ cd /opt/addp
 # 场景 1: 临时停止服务（维护）
 ./scripts/prod/stop.sh
 
-# 场景 2: 完全清理重新部署
-./scripts/prod/stop.sh --volumes
-docker volume prune -f
-
-# 场景 3: 重启服务
+# 场景 2: 重启服务
 ./scripts/prod/stop.sh
 ./scripts/prod/start.sh
 ```
@@ -347,7 +313,7 @@ docker exec <container-id> env | grep SYSTEM_URL
 
 ### 问题 4: 数据丢失
 
-当前仓库尚未提供经过恢复演练的平台级备份入口。生产部署前必须单独建立同时覆盖 PostgreSQL、MinIO、部署配置与密钥材料的备份方案，并记录版本、校验和、保留策略和恢复演练证据；不能把单次 `pg_dump` 或文件复制当作完整平台备份。
+`make infra-backup` 与 `make infra-restore-drill` 只覆盖本地 System PostgreSQL、Infra MinIO 当前对象及根 `.env`，并能在隔离容器中验证恢复；它们不是完整生产备份。生产部署前仍须建立覆盖 Business 引擎及其他持久状态的独立备份方案，落实异机存储、加密、保留策略与定期恢复演练；不能把单次本机导出当作灾备。
 
 ---
 
@@ -386,16 +352,9 @@ docker system df
 ```bash
 # 清理未使用的镜像
 docker image prune -a
-
-# 清理未使用的卷
-docker volume prune
-
-# 清理未使用的网络
-docker network prune
-
-# 完整清理（⚠️ 谨慎使用）
-docker system prune -a --volumes
 ```
+
+不要在 ADDP 主机执行 `docker volume prune` 或带 `--volumes` 的全局清理；停止中的持久化卷可能被删除。检查卷归属后，只通过各项目的专用生命周期入口处理。
 
 ---
 

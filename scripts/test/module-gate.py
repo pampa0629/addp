@@ -228,15 +228,6 @@ def plan_module(repository: Path, module: str, include_platform: bool = True) ->
     return steps
 
 
-def local_postgres_environment_example(name: str) -> str | None:
-    if "POSTGRES" not in name or not name.endswith("_DSN"):
-        return None
-    database = (
-        "addp_iam_test" if name == "ADDP_SYSTEM_POSTGRES_TEST_DSN" else "addp_test"
-    )
-    return f"postgres://addp:addp_password@127.0.0.1:15432/{database}?sslmode=disable"
-
-
 def preflight_required_environment(
     steps: list[Step], base_environment: dict[str, str]
 ) -> None:
@@ -264,19 +255,11 @@ def preflight_required_environment(
         requirement_text = ", ".join(" or ".join(group) for group in requirements)
         lines.append(f"- {target}: {requirement_text}")
 
-        names = [group[0] for group in requirements if len(group) == 1]
-        examples = [(name, local_postgres_environment_example(name)) for name in names]
-        if (
-            len(names) == len(requirements)
-            and examples
-            and all(value is not None for _, value in examples)
-            and target.startswith("test-")
-        ):
-            module = target.removeprefix("test-").split("-", 1)[0]
-            assignments = " ".join(f"{name}='{value}'" for name, value in examples)
+        if any("POSTGRES" in name for group in requirements for name in group):
             lines.append(
-                f"  local PostgreSQL example: {assignments} "
-                f"make test-module MODULE={module}"
+                "  Local ADDP PostgreSQL: run bash scripts/infra/status.sh, then use "
+                "the verified addp-postgres host port and an allowed test database. "
+                "Do not use the .env preferred port as the running port."
             )
     lines.append(
         "Configure only allowed disposable test resources; see scripts/infra/README.md."

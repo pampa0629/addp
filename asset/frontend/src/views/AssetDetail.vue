@@ -11,9 +11,9 @@
       </div>
       <div class="header-actions" v-if="!editMode && asset">
 		<el-button v-if="canEdit" @click="startEdit">{{ t('asset.assetDetail.edit') }}</el-button>
-        <el-button v-if="asset.status === 'draft'" type="success" @click="handlePublish">{{ t('asset.assetDetail.submitPublish') }}</el-button>
-        <el-button v-if="asset.status === 'published'" type="warning" plain @click="handleOffline">{{ t('asset.assetDetail.offline') }}</el-button>
-        <el-button v-if="asset.status === 'offline'" type="primary" @click="handlePublish">{{ t('asset.assetDetail.republish') }}</el-button>
+        <el-button v-if="asset.status === 'draft' && authStore.hasPermission('asset.entry.publish')" type="success" @click="handlePublish">{{ t('asset.assetDetail.submitPublish') }}</el-button>
+        <el-button v-if="asset.status === 'published' && authStore.hasPermission('asset.entry.offline')" type="warning" plain @click="handleOffline">{{ t('asset.assetDetail.offline') }}</el-button>
+        <el-button v-if="asset.status === 'offline' && authStore.hasPermission('asset.entry.publish')" type="primary" @click="handlePublish">{{ t('asset.assetDetail.republish') }}</el-button>
         <el-popconfirm
           v-if="['draft', 'offline'].includes(asset.status)"
           :title="t('asset.assetDetail.deleteConfirm')"
@@ -23,7 +23,7 @@
           @confirm="handleDelete"
         >
           <template #reference>
-            <el-button type="danger" plain>{{ t('asset.assetDetail.delete') }}</el-button>
+            <el-button v-if="authStore.hasPermission('asset.entry.delete')" type="danger" plain>{{ t('asset.assetDetail.delete') }}</el-button>
           </template>
         </el-popconfirm>
       </div>
@@ -167,11 +167,13 @@ import CatalogEntryPicker from '../components/CatalogEntryPicker.vue'
 import { assetAPI, categoryAPI, typeDefinitionAPI } from '../api/asset'
 import { useI18n } from 'vue-i18n'
 import { navigateAssetRoute } from '../utils/moduleNavigation'
+import { useAuthStore } from '../store/auth'
 
 const { t } = useI18n()
 
 const route = useRoute()
 const router = useRouter()
+const authStore = useAuthStore()
 
 const editMode = computed(() => route.name === 'AssetEdit')
 const assetId = computed(() => route.params.id)
@@ -208,7 +210,7 @@ const rules = computed(() => ({
 	components: [{ type: 'array', min: 1, message: t('asset.assetCreate.componentRequired'), trigger: 'change' }]
 }))
 
-const canEdit = computed(() => Boolean(asset.value) && asset.value.status !== 'published')
+const canEdit = computed(() => Boolean(asset.value) && asset.value.status !== 'published' && authStore.hasPermission('asset.entry.update'))
 
 // 将分类树扁平化为 el-cascader 所需格式（保留树形结构）
 const categoryOptions = computed(() => categoryTree.value)

@@ -50,6 +50,7 @@
       <div class="toolbar-actions">
         <el-tooltip :content="t('develop.query.testConnection')">
           <el-button
+            v-if="canExecuteReadQuery"
             circle
             :loading="testingConnection"
             :disabled="!selectedTarget || switchingQueryTarget || savingForEngineSwitch"
@@ -61,6 +62,7 @@
         </el-tooltip>
         <el-tooltip :content="t('develop.query.generateQueryTemplate')">
           <el-button
+            v-if="canExecuteReadQuery"
             circle
             :loading="loadingSampleQuery"
             :disabled="!selectedTarget || executing || switchingQueryTarget || savingForEngineSwitch"
@@ -81,6 +83,7 @@
           </el-button>
         </el-tooltip>
         <el-button
+          v-if="canSaveTask"
           :disabled="!selectedTarget || !queryContent.trim() || !relationTaskValid || executing || switchingQueryTarget || savingForEngineSwitch"
           @click="handlePersistQueryTask"
         >
@@ -88,6 +91,7 @@
           {{ t('develop.query.saveQuery') }}
         </el-button>
         <el-button
+          v-if="authStore.hasPermission('develop.task.execute')"
           type="primary"
           :loading="executing"
           :disabled="loadingSampleQuery || !selectedTarget || !queryContent.trim() || !relationTaskValid || switchingQueryTarget || savingForEngineSwitch"
@@ -789,6 +793,7 @@ import {
 } from '@/utils/developTaskRoute'
 import { navigateDevelopTaskEditor } from '@/utils/developNavigation'
 import { createLatestRequestCoordinator } from '@common-ui'
+import { useAuthStore } from '../store/auth'
 import {
   formatterLanguageForQuery,
   formatGeneratedQueryForEditor,
@@ -821,6 +826,9 @@ import {
 const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
+const authStore = useAuthStore()
+const canExecuteReadQuery = computed(() => authStore.hasPermission('develop.task.execute') && authStore.hasPermission('develop.data_read.execute'))
+const canSaveTask = computed(() => authStore.hasPermission(currentTaskId.value ? 'develop.task.update' : 'develop.task.create'))
 
 const currentTaskId = ref(null)
 const currentTaskName = ref('')

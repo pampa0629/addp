@@ -7,7 +7,6 @@
 #
 # Options:
 #   --all       Stop both application and infrastructure layers
-#   --volumes   Remove data volumes (WARNING: deletes all data)
 #
 # Default behavior: Stop application layer only (keep infrastructure running)
 # =============================================================================
@@ -26,7 +25,6 @@ NC='\033[0m' # No Color
 
 # Configuration
 STOP_INFRA=false
-REMOVE_VOLUMES=false
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -35,17 +33,12 @@ while [[ $# -gt 0 ]]; do
             STOP_INFRA=true
             shift
             ;;
-        --volumes)
-            REMOVE_VOLUMES=true
-            shift
-            ;;
         *)
             echo -e "${RED}Unknown option: $1${NC}"
             echo ""
             echo "Usage: $0 [OPTIONS]"
             echo "Options:"
             echo "  --all       Stop both application and infrastructure layers"
-            echo "  --volumes   Remove data volumes (WARNING: deletes all data)"
             exit 1
             ;;
     esac
@@ -64,15 +57,9 @@ echo ""
 
 echo -e "${YELLOW}▶️  Stopping application layer...${NC}"
 
-if [ "$REMOVE_VOLUMES" = true ]; then
-    docker compose -f docker-compose.runtimes.yml down -v
-    docker compose -f docker-compose.yml down -v
-    echo -e "${GREEN}✓ Application layer stopped (volumes removed)${NC}"
-else
-    docker compose -f docker-compose.runtimes.yml down
-    docker compose -f docker-compose.yml down
-    echo -e "${GREEN}✓ Application layer stopped (volumes preserved)${NC}"
-fi
+docker compose -f docker-compose.runtimes.yml down
+docker compose -f docker-compose.yml down
+echo -e "${GREEN}✓ Application layer stopped (volumes preserved)${NC}"
 
 # =============================================================================
 # Stop Infrastructure Layer (Optional)
@@ -82,21 +69,8 @@ if [ "$STOP_INFRA" = true ]; then
     echo ""
     echo -e "${YELLOW}▶️  Stopping infrastructure layer...${NC}"
 
-    if [ "$REMOVE_VOLUMES" = true ]; then
-        echo -e "${RED}⚠️  WARNING: This will delete all database data!${NC}"
-        read -p "Are you sure? (yes/no): " -r
-        echo
-        if [[ $REPLY =~ ^[Yy][Ee][Ss]$ ]]; then
-            docker compose -f docker-compose.infra.yml down -v
-            echo -e "${GREEN}✓ Infrastructure layer stopped (volumes removed)${NC}"
-        else
-            docker compose -f docker-compose.infra.yml down
-            echo -e "${GREEN}✓ Infrastructure layer stopped (volumes preserved)${NC}"
-        fi
-    else
-        docker compose -f docker-compose.infra.yml down
-        echo -e "${GREEN}✓ Infrastructure layer stopped (volumes preserved)${NC}"
-    fi
+    bash "$SCRIPT_DIR/../infra/down.sh"
+    echo -e "${GREEN}✓ Infrastructure layer stopped (volumes preserved)${NC}"
 else
     echo ""
     echo -e "${CYAN}ℹ️  Infrastructure layer is still running${NC}"

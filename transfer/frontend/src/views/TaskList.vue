@@ -5,8 +5,8 @@
         <div class="card-header">
           <span>{{ t('transfer.taskList.title') }}</span>
           <div class="header-actions">
-            <MonitorExecutionsButton module="transfer" task-type="sync" />
-            <el-button type="primary" @click="handleCreate">
+            <MonitorExecutionsButton v-if="canMonitor" module="transfer" task-type="sync" />
+            <el-button v-if="canCreate" type="primary" @click="handleCreate">
               <el-icon><Plus /></el-icon>
               {{ t('transfer.taskList.createTask') }}
             </el-button>
@@ -91,44 +91,44 @@
         <el-table-column :label="t('transfer.taskList.actions')" width="430" fixed="right">
           <template #default="{ row }">
             <el-button size="small" @click="handleDetail(row.id)">{{ t('transfer.taskList.detail') }}</el-button>
-            <el-button size="small" @click="handleEdit(row)" :disabled="isRunning(row) || isCDCSchemaBlocked(row)">{{ t('transfer.taskList.edit') }}</el-button>
+            <el-button v-if="canEdit" size="small" @click="handleEdit(row)" :disabled="isRunning(row) || isCDCSchemaBlocked(row)">{{ t('transfer.taskList.edit') }}</el-button>
             <template v-if="isContinuousTask(row)">
-              <el-tooltip :content="continuousStartDisabledMessage(row)" :disabled="!continuousStartDisabledMessage(row)" placement="top">
+              <el-tooltip v-if="row.desired_state === 'paused' ? canUpdate : canExecute" :content="continuousStartDisabledMessage(row)" :disabled="!continuousStartDisabledMessage(row)" placement="top">
                 <span class="continuous-start-action">
                   <el-button size="small" type="primary" @click="handleStartContinuous(row)" :disabled="!canStartContinuous(row)">
                     {{ row.desired_state === 'paused' ? t('transfer.taskList.resume') : t('transfer.taskList.start') }}
                   </el-button>
                 </span>
               </el-tooltip>
-              <el-button size="small" type="warning" @click="handlePause(row)" :disabled="row.desired_state !== 'running' || isCDCSchemaBlocked(row)">
+              <el-button v-if="canUpdate" size="small" type="warning" @click="handlePause(row)" :disabled="row.desired_state !== 'running' || isCDCSchemaBlocked(row)">
                 {{ t('transfer.taskList.pause') }}
               </el-button>
-              <el-button size="small" :type="isDatabaseCDCTask(row) ? 'danger' : undefined" @click="handleStop(row)" :disabled="row.desired_state === 'stopped' && row.capture?.status !== 'cleanup_failed'">
+              <el-button v-if="canUpdate" size="small" :type="isDatabaseCDCTask(row) ? 'danger' : undefined" @click="handleStop(row)" :disabled="row.desired_state === 'stopped' && row.capture?.status !== 'cleanup_failed'">
                 {{ row.capture?.status === 'cleanup_failed' ? t('transfer.taskList.retryCleanup') : t('transfer.taskList.stop') }}
               </el-button>
-              <el-button size="small" type="danger" @click="handleDelete(row)" :disabled="row.desired_state !== 'stopped' || isRunning(row)">
+              <el-button v-if="canDelete" size="small" type="danger" @click="handleDelete(row)" :disabled="row.desired_state !== 'stopped' || isRunning(row)">
                 {{ t('transfer.taskList.delete') }}
               </el-button>
             </template>
             <template v-else-if="isManualTask(row)">
-              <el-button size="small" type="primary" @click="handleExecute(row)" :disabled="isRunning(row)">
+              <el-button v-if="canExecute" size="small" type="primary" @click="handleExecute(row)" :disabled="isRunning(row)">
                 {{ t('transfer.taskList.execute') }}
               </el-button>
-              <el-button size="small" type="danger" @click="handleDelete(row)" :disabled="!canDeleteManual(row)">
+              <el-button v-if="canDelete" size="small" type="danger" @click="handleDelete(row)" :disabled="!canDeleteManual(row)">
                 {{ t('transfer.taskList.delete') }}
               </el-button>
             </template>
             <template v-else>
-              <el-button size="small" type="primary" @click="handleResume(row)" :disabled="!canStartSchedule(row)">
+              <el-button v-if="canUpdate" size="small" type="primary" @click="handleResume(row)" :disabled="!canStartSchedule(row)">
                 {{ t('transfer.taskList.start') }}
               </el-button>
-              <el-button size="small" type="warning" @click="handlePause(row)" :disabled="!canPauseSchedule(row)">
+              <el-button v-if="canUpdate" size="small" type="warning" @click="handlePause(row)" :disabled="!canPauseSchedule(row)">
                 {{ t('transfer.taskList.pause') }}
               </el-button>
-              <el-button size="small" @click="handleExecute(row)" :disabled="isRunning(row)">
+              <el-button v-if="canExecute" size="small" @click="handleExecute(row)" :disabled="isRunning(row)">
                 {{ t('transfer.taskList.runOnce') }}
               </el-button>
-              <el-button size="small" type="danger" @click="handleDelete(row)" :disabled="isRunning(row)">
+              <el-button v-if="canDelete" size="small" type="danger" @click="handleDelete(row)" :disabled="isRunning(row)">
                 {{ t('transfer.taskList.delete') }}
               </el-button>
             </template>
@@ -149,12 +149,12 @@
         />
       </div>
     </el-card>
-    <TransferAIAssistant @task-created="loadPageData" />
+    <TransferAIAssistant v-if="canCreate && canAskCopilot" @task-created="loadPageData" />
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -165,9 +165,18 @@ import { formatSchedule, getTaskStatusLabel, getTaskStatusTagType } from '@/util
 import { buildCDCStopRequest, continuousStartDisabledReason, isCDCSchemaBlocked, isDatabaseCDCTask } from '@/utils/cdcTask.mjs'
 import { navigateTransferRoute } from '@/utils/moduleNavigation'
 import TransferAIAssistant from '@/components/TransferAIAssistant.vue'
+import { useAuthStore } from '@/store/auth'
 
 const router = useRouter()
 const { t } = useI18n()
+const authStore = useAuthStore()
+const canCreate = computed(() => authStore.hasPermission('transfer.task.create') && authStore.hasPermission('meta.catalog.read'))
+const canEdit = computed(() => authStore.hasPermission('transfer.task.update') && authStore.hasPermission('meta.catalog.read'))
+const canExecute = computed(() => authStore.hasPermission('transfer.task.execute'))
+const canUpdate = computed(() => authStore.hasPermission('transfer.task.update'))
+const canDelete = computed(() => authStore.hasPermission('transfer.task.delete'))
+const canMonitor = computed(() => authStore.hasPermission('monitor.execution.read'))
+const canAskCopilot = computed(() => authStore.hasPermission('copilot.transfer.execute'))
 
 const loading = ref(false)
 const tasks = ref([])

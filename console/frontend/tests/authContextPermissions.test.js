@@ -5,10 +5,11 @@ import { collectAuthContextPermissions, createAuthAPI } from '../../../common-fr
 describe('collectAuthContextPermissions', () => {
   it('collects a stable unique permission set across assignments', () => {
     const authContext = {
+      context: { type: 'platform' },
       authorization: {
         role_assignments: [
-          { role_key: 'platform.system_administrator', permissions: ['platform.tenant.read', 'iam.platform_identity_change.read'] },
-          { role_key: 'platform.statistics_viewer', permissions: ['statistics.summary.read', 'platform.tenant.read'] }
+          { role_key: 'platform.system_administrator', scope: { type: 'platform' }, permissions: ['platform.tenant.read', 'iam.platform_identity_change.read'] },
+          { role_key: 'platform.statistics_viewer', scope: { type: 'platform' }, permissions: ['statistics.summary.read', 'platform.tenant.read'] }
         ]
       }
     }
@@ -23,6 +24,21 @@ describe('collectAuthContextPermissions', () => {
   it('defaults to an empty permission set for missing authorization facts', () => {
     expect(collectAuthContextPermissions(null)).toEqual([])
     expect(collectAuthContextPermissions({ authorization: { role_assignments: [] } })).toEqual([])
+  })
+})
+
+describe('tenant navigation permissions', () => {
+  it('ignores organizational and other tenant assignments', () => {
+    const authContext = {
+      context: { type: 'tenant', tenant_id: '3' },
+      authorization: { role_assignments: [
+        { scope: { type: 'department', tenant_id: '3', department_id: '9' }, permissions: ['transfer.task.read'] },
+        { scope: { type: 'tenant', tenant_id: '3' }, permissions: ['transfer.task.create', 'meta.catalog.read'] },
+        { scope: { type: 'tenant', tenant_id: '4' }, permissions: ['transfer.task.delete'] }
+      ] }
+    }
+    expect(collectAuthContextPermissions(authContext)).toEqual(['meta.catalog.read', 'transfer.task.create'])
+    expect(collectAuthContextPermissions({ ...authContext, context: { type: 'platform' } })).toEqual([])
   })
 })
 

@@ -332,7 +332,7 @@ def test_workflow_tool_auth_requires_delegated_audience_and_scope(monkeypatch):
         scope_mode="restricted",
         scopes=("workflow.draft.generate",),
         role_assignments=(
-            RoleAssignment(1, "tenant.ai_user", "tenant", ("copilot.workflow.execute",)),
+            RoleAssignment(1, "tenant.ai_user", "tenant", ("copilot.workflow.execute",), 3),
         ),
     )
     monkeypatch.setattr(auth, "resolve_authorization_context", AsyncMock(return_value=valid))
@@ -348,7 +348,7 @@ def test_workflow_tool_auth_requires_delegated_audience_and_scope(monkeypatch):
         scope_mode="restricted",
         scopes=("workflow.draft.generate",),
         role_assignments=(
-            RoleAssignment(1, "tenant.ai_user", "tenant", ("copilot.workflow.execute",)),
+            RoleAssignment(1, "tenant.ai_user", "tenant", ("copilot.workflow.execute",), 3),
         ),
     )
     monkeypatch.setattr(auth, "resolve_authorization_context", AsyncMock(return_value=invalid))

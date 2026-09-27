@@ -199,11 +199,11 @@
       </div>
 
       <div class="primary-actions">
-        <el-button type="primary" :disabled="!canSave || editorBusy" :loading="saving" @click="handleSave">
+        <el-button v-if="canSaveTask" type="primary" :disabled="!canSave || editorBusy" :loading="saving" @click="handleSave">
           <el-icon><DocumentAdd /></el-icon>
           {{ t('develop.workflow.save') }}
         </el-button>
-        <el-button ref="executeTriggerButtonRef" type="success" :disabled="!canExecute" :loading="executionButtonLoading" @click="handleExecute">
+        <el-button v-if="authStore.hasPermission('develop.task.execute')" ref="executeTriggerButtonRef" type="success" :disabled="!canExecute" :loading="executionButtonLoading" @click="handleExecute">
           <el-icon><VideoPlay /></el-icon>
           {{ t('develop.workflow.execute') }}
         </el-button>
@@ -214,7 +214,7 @@
           </el-button>
           <template #dropdown>
             <el-dropdown-menu>
-              <el-dropdown-item command="saveAs" :disabled="!canSave || editorBusy">
+              <el-dropdown-item v-if="authStore.hasPermission('develop.task.create')" command="saveAs" :disabled="!canSave || editorBusy">
                 <el-icon><CopyDocument /></el-icon>{{ t('develop.workflow.saveAs') }}
               </el-dropdown-item>
               <el-dropdown-item command="viewJson" :disabled="!hasValidWorkflow">
@@ -715,6 +715,7 @@ import {
   developTaskIDFromRoute
 } from '@/utils/developTaskRoute'
 import { navigateDevelopTaskEditor } from '@/utils/developNavigation'
+import { useAuthStore } from '../store/auth'
 import {
   ExecutionParameterForm,
   focusElement,
@@ -727,6 +728,8 @@ import {
 const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
+const authStore = useAuthStore()
+const canSaveTask = computed(() => authStore.hasPermission(currentTaskId.value ? 'develop.task.update' : 'develop.task.create'))
 
 const workflowEngines = ref([])
 const workflowEngineId = ref(null)

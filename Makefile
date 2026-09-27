@@ -1,6 +1,6 @@
 .PHONY: help build build-images select-image-services local-ci test test-changed test-module test-platform test-local-ci-runner test-node-dependencies test-infra-postgresql-init test-book test-engine-plugin-registration test-engine-startup-isolation test-integration test-integration-hosted test-online test-online-runner test-release test-release-runner test-go test-agent-frontend test-asset-frontend test-catalog-frontend test-common-frontend test-console-frontend test-copilot test-document-workflow test-develop-frontend test-graph-frontend test-inference-frontend test-manager-frontend test-model-frontend test-quality-frontend test-security-frontend test-meta-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend test-service-frontend test-standard-frontend test-system-frontend test-transfer-frontend test-workbench-frontend test-execution-fixtures test-projection-store-ownership test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release test-common-python test-common-python-cli-release test-common-postgres test-common-mysql-data-protection test-manager-postgres test-manager-mongodb-security test-system-iam-postgres test-asset-postgres test-meta-postgres test-catalog-postgres test-develop-postgres test-model-postgres test-quality-postgres test-security-postgres test-service-postgres test-standard-postgres test-transfer-postgres test-workbench-postgres test-arcgis-open-formats \
         build-iam-bootstrap build-iam-recovery build-iam-migration-repair \
-        dev-start dev-restart dev-stop infra-up infra-down infra-restart infra-status prod-start prod-restart prod-stop prod-health ports-validate
+        dev-start dev-restart dev-stop infra-up infra-down infra-restart infra-status infra-backup infra-restore-drill infra-cloud-backup test-infra-backup prod-start prod-restart prod-stop prod-health ports-validate
 
 .PHONY: test-business-config test-common-oceanbase test-common-opengauss test-common-tidb test-common-kingbase test-common-dameng test-common-oracle-decimal test-common-doris-decimal test-common-clickhouse-decimal test-opengauss-official-media-release test-kingbase-official-media-release test-dameng-official-media-release test-integration-owner-managed
 
@@ -103,6 +103,18 @@ infra-restart: ## 重启系统库基础设施（先停再启）
 infra-status: ## 查看系统库基础设施状态与健康
 	@bash scripts/infra/status.sh
 
+infra-backup: ## 只读备份本地 ADDP Infra；需 BACKUP_ROOT=/绝对路径
+	@test -n "$(BACKUP_ROOT)" || (echo "BACKUP_ROOT is required" >&2; exit 2)
+	@python3 scripts/infra/backup.py create --output-root "$(BACKUP_ROOT)"
+
+infra-restore-drill: ## 在无端口、无持久卷的隔离容器中演练；需 BACKUP_DIR=/绝对路径
+	@test -n "$(BACKUP_DIR)" || (echo "BACKUP_DIR is required" >&2; exit 2)
+	@python3 scripts/infra/backup.py drill --backup-dir "$(BACKUP_DIR)"
+
+infra-cloud-backup: ## 备份并隔离演练后加密到本地网盘监视目录；需 BACKUP_ROOT、EXPORT_ROOT、PRIVATE_ROOT
+	@test -n "$(BACKUP_ROOT)" -a -n "$(EXPORT_ROOT)" -a -n "$(PRIVATE_ROOT)" || (echo "BACKUP_ROOT, EXPORT_ROOT and PRIVATE_ROOT are required" >&2; exit 2)
+	@python3 scripts/infra/backup-to-netdisk.py daily --backup-root "$(BACKUP_ROOT)" --export-root "$(EXPORT_ROOT)" --private-root "$(PRIVATE_ROOT)"
+
 ports-validate: ## 校验 System/Business 端口分配是否符合策略
 	@bash scripts/utils/ports-validate.sh
 
@@ -159,7 +171,8 @@ test-infra-postgresql-init: ## 校验本地 PostgreSQL 保留测试库及扩展�
 	@python3 scripts/infra/init-postgresql_test.py
 
 test-business-config: ## 校验 Business Compose 和服务管理脚本（不启动容器）
-	@bash -n scripts/utils/register-business.sh
+	@bash -n scripts/utils/register-business.sh scripts/infra/status.sh scripts/test/certify-infra-kafka.sh scripts/test/certify-infra-kafka-ha.sh
+	@! rg -q '^BUSINESS_(PG|MINIO|ORACLE)_' .env.example
 	@docker compose --env-file business/.env.example -f business/docker-compose.yml config --quiet
 	@docker compose --env-file business/.env.example -f business/docker-compose.yml config --services | grep -Fxq oceanbase
 	@docker compose --env-file business/.env.example -f business/docker-compose.yml config --images | grep -Fxq oceanbase/oceanbase-ce:4.4.2-lts
@@ -409,6 +422,9 @@ test-dev-lifecycle: ## 验证 Swagger 增量、增量重启、批量端口检查
 	@cd common && go test ./schema ./repository ./dataprotection/projectionstore
 	@for module in security meta quality transfer; do (cd $$module/backend && go test -tags sqlite_load_extension ./cmd/... -run '^$$') || exit 1; done
 
+test-infra-backup: ## 验证备份清单、隔离路径及恢复容器所有权防线
+	@python3 -m unittest scripts/test/infra_backup_test.py
+
 .PHONY: test-go-dependency-policy
 test-go-dependency-policy: ## 验证 Go 依赖规约检查器并核对当前版本
 	@python3 scripts/test/check-deps-version_test.py
@@ -416,6 +432,7 @@ test-go-dependency-policy: ## 验证 Go 依赖规约检查器并核对当前版�
 
 test-platform: ## 运行无外部服务依赖的平台一致性门禁
 	@$(MAKE) test-dev-lifecycle
+	@$(MAKE) test-infra-backup
 	@$(MAKE) test-business-config
 	@$(MAKE) test-common-frontend
 	@$(MAKE) test-book
@@ -653,8 +670,8 @@ prod-restart: ## 重启完整生产环境
 	@bash scripts/prod/stop.sh
 	@bash scripts/prod/start.sh
 
-prod-stop: ## 停止生产环境；参数使用 ARGS="--remove|--volumes"
-	@bash scripts/prod/stop.sh $(ARGS)
+prod-stop: ## 停止平台与 Runtime 容器，保留基础设施和数据卷
+	@bash scripts/prod/stop.sh
 
 prod-health: ## 检查生产环境服务健康状态
 	@bash scripts/prod/health-check.sh

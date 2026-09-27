@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { developAuthContext } from './developAuthContext.js'
 
 const ENGINE = {
   id: 11,
@@ -325,6 +326,7 @@ async function installMockBackend(page, {
     if (path === '/api/v1/system/users/me') {
       return fulfillJSON(route, { id: 1, username: 'develop-e2e' })
     }
+    if (path === '/api/v1/system/auth/context') return fulfillJSON(route, developAuthContext)
     if (path === '/api/v1/develop/engines') {
       return fulfillJSON(route, engines)
     }

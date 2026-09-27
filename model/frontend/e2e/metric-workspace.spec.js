@@ -113,8 +113,8 @@ async function installBackend(page, options = {}) {
       return send({ id: 1, username: 'metric-author' });
     if (path === '/api/v1/system/auth/context')
       return send({
-        context: { type: 'tenant' },
-        authorization: { role_assignments: [{ permissions }] },
+        context: { type: 'tenant', tenant_id: '1' },
+        authorization: { role_assignments: [{ scope: { type: 'tenant', tenant_id: '1' }, permissions }] },
       });
     if (path === '/api/v1/meta/engines') {
       engineReads.push(path);

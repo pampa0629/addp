@@ -157,9 +157,8 @@ fi
 # 应用会使用新密码连接旧数据库，导致 password authentication failed。
 if docker volume inspect addp-infra_postgres_data > /dev/null 2>&1; then
   echo -e "${RED}错误: 检测到已有 PostgreSQL 数据卷 addp-infra_postgres_data，但当前目录没有 .env${NC}"
-  echo -e "${YELLOW}请从原部署目录复制 .env 后再启动；如果确认要全新部署，请先执行:${NC}"
-  echo -e "${YELLOW}  docker compose -f docker-compose.infra.yml down -v${NC}"
-  echo -e "${YELLOW}  或手动删除数据卷: docker volume rm addp-infra_postgres_data${NC}"
+  echo -e "${YELLOW}请从原部署目录恢复 .env 后再启动；不要因缺少配置文件而直接删除数据卷。${NC}"
+  echo -e "${YELLOW}如果确需全新部署，先核验可恢复备份和卷归属，再走 Infra 独立删卷流程。${NC}"
   exit 1
 fi
 

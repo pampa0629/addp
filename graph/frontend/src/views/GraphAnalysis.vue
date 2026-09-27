@@ -23,7 +23,7 @@
         {{ capabilities.spatial_available ? t('graph.analysis.spatialAvailable') : t('graph.analysis.spatialUnavailable') }}
       </el-tag>
       <el-button
-        v-if="capabilities?.spatial_available && capabilities?.pending_layers?.length > 0"
+        v-if="authStore.hasPermission('graph.analysis.execute') && capabilities?.spatial_available && capabilities?.pending_layers?.length > 0"
         size="small"
         type="warning"
         :loading="syncing"
@@ -320,6 +320,7 @@
         </template>
 
         <el-button
+          v-if="authStore.hasPermission('graph.analysis.execute')"
           type="primary"
           :loading="running"
           :disabled="!selectedAlgo"
@@ -415,8 +416,10 @@ import { analysisAPI } from '../api/analysis'
 import { browseAPI } from '../api/browse'
 import GraphCanvas from '../components/GraphCanvas.vue'
 import { useI18n } from 'vue-i18n'
+import { useAuthStore } from '../store/auth'
 
 const { t } = useI18n()
+const authStore = useAuthStore()
 
 const graphs = ref([])
 const selectedGraphId = ref(null)

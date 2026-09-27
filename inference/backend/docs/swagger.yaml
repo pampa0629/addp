@@ -54,6 +54,15 @@ definitions:
       provider_connection_id:
         type: string
     type: object
+  github_com_addp_inference_internal_service.ModelLabel:
+    properties:
+      id:
+        type: string
+      name:
+        type: string
+      upstream_model:
+        type: string
+    type: object
   github_com_addp_inference_internal_service.ProbeResponse:
     properties:
       adapter_type:
@@ -722,6 +731,33 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - inference.deployment.execute
+  /model-labels:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_addp_inference_internal_service.ModelLabel'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/inference.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/inference.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 查询可见模型标签 | List visible model labels
+      tags:
+      - Inference Model
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - inference.model_label.read
   /model-profiles:
     get:
       parameters:

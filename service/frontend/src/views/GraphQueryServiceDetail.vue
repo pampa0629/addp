@@ -5,7 +5,7 @@
       <h2>{{ service?.title || t('service.graph.detailTitle') }}</h2>
       <div class="header-actions">
         <el-tag :type="statusType(service?.status)" size="default">{{ statusText(service?.status) }}</el-tag>
-        <el-button @click="goToEdit">{{ t('service.common.edit') }}</el-button>
+        <el-button v-if="canUpdate" @click="goToEdit">{{ t('service.common.edit') }}</el-button>
       </div>
     </div>
 
@@ -179,9 +179,12 @@ import { ArrowLeft } from '@element-plus/icons-vue'
 import graphApi from '../api/graphQueryService'
 import { navigateServiceRoute } from '@/utils/moduleNavigation'
 import { useConsolePageDescriptor } from '@common-ui'
+import { useAuthStore } from '../store/auth'
 
 const route = useRoute()
 const router = useRouter()
+const authStore = useAuthStore()
+const canUpdate = computed(() => authStore.hasPermission('service.definition.update'))
 const { t } = useI18n()
 const id = route.params.id
 const goBack = () => navigateServiceRoute(router, '/graph-services', { history: 'replace' })

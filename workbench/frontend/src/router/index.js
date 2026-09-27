@@ -15,5 +15,5 @@ const routes = [
 ]
 const routerBase = window.location.pathname.startsWith('/workbench/') ? '/workbench/' : '/'
 const router = createRouter({ history: createWebHistory(routerBase), routes })
-router.beforeEach(createAuthGuard(useAuthStore, { moduleName: 'Workbench', loginRouteName: 'Login' }))
+router.beforeEach(createAuthGuard(useAuthStore, { router, moduleName: 'Workbench', loginRouteName: 'Login' }))
 export default router

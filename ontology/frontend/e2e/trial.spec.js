@@ -171,7 +171,7 @@ for (const change of [
     if (change === 'logout') state.backend.sessionExpired = true
     state.expireOnce = true
     await page.getByRole('button', { name: '开始试算', exact: true }).click()
-    if (['principal', 'tenant', 'membership'].includes(change)) {
+    if (['principal', 'membership'].includes(change)) {
       await expect.poll(() => state.backend.refreshCount).toBe(2)
       await expect(page.getByTestId('trial-input')).toContainText(
         '未知（未读取）'
@@ -187,9 +187,7 @@ for (const change of [
       if (change === 'logout')
         await expect(page).toHaveURL(/\/ontology\/login\?redirect=/)
       else
-        await expect(
-          page.getByText('需要租户会话及本体语义读取权限。', { exact: true })
-        ).toBeVisible()
+        await expect(page.getByText('需要租户会话及本体语义读取权限。', { exact: true })).toBeVisible()
     }
     await expect(page.getByTestId('trial-result')).toHaveCount(0)
     expect(state.requests).toHaveLength(1)
@@ -386,9 +384,7 @@ test('semantic permission required; English and narrow layout supported', async 
   await fixture(context, { permissions: allPermissions, locale: 'en' })
   await page.goto(path)
   await expect(
-    page.getByText(
-      'A tenant session and ontology semantic read permission are required.'
-    )
+    page.getByText('Access denied', { exact: true })
   ).toBeVisible()
   await expect(
     page.getByRole('button', { name: 'Run trial', exact: true })

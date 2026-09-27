@@ -491,6 +491,49 @@
                 ]
             }
         },
+        "/model-labels": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Inference Model"
+                ],
+                "summary": "查询可见模型标签 | List visible model labels",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_addp_inference_internal_service.ModelLabel"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/inference.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/inference.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "inference.model_label.read"
+                ]
+            }
+        },
         "/model-profiles": {
             "get": {
                 "security": [
@@ -1183,6 +1226,20 @@
                     }
                 },
                 "provider_connection_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_inference_internal_service.ModelLabel": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "upstream_model": {
                     "type": "string"
                 }
             }

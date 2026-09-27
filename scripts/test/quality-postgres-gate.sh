@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 # ADDP_T2_SERVICES=postgres
+# ADDP_T2_REQUIRED_ENV=ADDP_TEST_POSTGRES_PORT,ADDP_TEST_POSTGRES_PASSWORD
 # quality-postgres-gate.sh - Run Quality PostgreSQL integration tests against a disposable database.
 
 set -euo pipefail
+
+: "${ADDP_TEST_POSTGRES_PORT:?Set ADDP_TEST_POSTGRES_PORT to the verified PostgreSQL test service mapping}"
+: "${ADDP_TEST_POSTGRES_PASSWORD:?Set ADDP_TEST_POSTGRES_PASSWORD for the PostgreSQL test service}"
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/addp-quality-postgres.XXXXXX")
@@ -47,6 +51,9 @@ run_without_skips() {
         exit 1
     fi
 }
+
+source "$ROOT_DIR/scripts/infra/ports.sh"
+addp_infra_verify_test_postgres_target "${ADDP_TEST_POSTGRES_HOST:-localhost}" "$ADDP_TEST_POSTGRES_PORT" "$database"
 
 cd "$ROOT_DIR/quality/backend"
 reset_started=1

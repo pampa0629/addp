@@ -18,7 +18,7 @@
           <!-- 分隔线 + 目录标题 -->
           <div class="category-section-header">
             <span>{{ t('asset.assetManager.category') }}</span>
-            <el-button link type="primary" size="small" @click="openAddRootCategory">{{ t('asset.assetManager.newButton') }}</el-button>
+            <el-button v-if="authStore.hasPermission('asset.category.create')" link type="primary" size="small" @click="openAddRootCategory">{{ t('asset.assetManager.newButton') }}</el-button>
           </div>
 
           <!-- 分类树 -->
@@ -37,9 +37,9 @@
                 <el-icon><Folder /></el-icon>
                 <span class="node-label">{{ data.name }}</span>
                 <div class="node-actions" @click.stop>
-                  <el-button link size="small" @click="openAddSubCategory(data)">+</el-button>
-                  <el-button link size="small" @click="openRenameCategory(data)">改</el-button>
-                  <el-button link size="small" type="danger" @click="deleteCategory(data)">删</el-button>
+                  <el-button v-if="authStore.hasPermission('asset.category.create')" link size="small" @click="openAddSubCategory(data)">+</el-button>
+                  <el-button v-if="authStore.hasPermission('asset.category.update')" link size="small" @click="openRenameCategory(data)">改</el-button>
+                  <el-button v-if="authStore.hasPermission('asset.category.delete')" link size="small" type="danger" @click="deleteCategory(data)">删</el-button>
                 </div>
                 <span class="count">{{ data.count || 0 }}</span>
               </div>
@@ -69,15 +69,15 @@
             <el-option :label="t('asset.assetManager.offline')" value="offline" />
           </el-select>
           <span class="total-label">{{ t('asset.assetManager.total', { count: total }) }}</span>
-          <el-button type="primary" @click="openCreate">{{ t('asset.assetManager.createButton') }}</el-button>
+          <el-button v-if="authStore.hasPermission('asset.entry.update')" type="primary" @click="openCreate">{{ t('asset.assetManager.createButton') }}</el-button>
         </div>
 
         <!-- 批量操作栏 -->
-        <div v-if="selectedIds.length > 0" class="batch-bar">
+        <div v-if="selectedIds.length > 0 && canBatchAct" class="batch-bar">
           <span class="selected-label">{{ t('asset.assetManager.selectedCount', { count: selectedIds.length }) }}</span>
-          <el-button size="small" type="success" @click="batchPublish">{{ t('asset.assetManager.batchPublish') }}</el-button>
-          <el-button size="small" @click="batchOffline">{{ t('asset.assetManager.batchOffline') }}</el-button>
-          <el-dropdown @command="batchCategorize">
+          <el-button v-if="authStore.hasPermission('asset.entry.publish')" size="small" type="success" @click="batchPublish">{{ t('asset.assetManager.batchPublish') }}</el-button>
+          <el-button v-if="authStore.hasPermission('asset.entry.offline')" size="small" @click="batchOffline">{{ t('asset.assetManager.batchOffline') }}</el-button>
+          <el-dropdown v-if="authStore.hasPermission('asset.entry.update')" @command="batchCategorize">
             <el-button size="small">{{ t('asset.assetManager.assignCategory') }} <el-icon><ArrowDown /></el-icon></el-button>
             <template #dropdown>
               <el-dropdown-menu>
@@ -98,7 +98,7 @@
           @selection-change="onSelectionChange"
           style="width: 100%"
         >
-          <el-table-column type="selection" width="44" />
+          <el-table-column v-if="canBatchAct" type="selection" width="44" />
           <el-table-column prop="name" :label="t('asset.assetManager.name')" min-width="180" show-overflow-tooltip>
             <template #default="{ row }">
               <el-link type="primary" @click="openDetail(row.id)">{{ row.name }}</el-link>
@@ -123,14 +123,14 @@
                 {{ t('asset.assetDetail.assetDetail') }}
               </el-button>
               <el-button
-                v-if="row.status !== 'published'"
+                v-if="row.status !== 'published' && authStore.hasPermission('asset.entry.publish')"
                 link
                 type="primary"
                 size="small"
                 @click="publishOne(row)"
               >{{ t('asset.assetManager.publish') }}</el-button>
               <el-button
-                v-if="row.status === 'published'"
+                v-if="row.status === 'published' && authStore.hasPermission('asset.entry.offline')"
                 link
                 type="warning"
                 size="small"
@@ -177,10 +177,13 @@ import { Folder, FolderOpened, ArrowDown } from '@element-plus/icons-vue'
 import { assetAPI, categoryAPI, typeDefinitionAPI } from '../api/asset'
 import { useI18n } from 'vue-i18n'
 import { navigateAssetRoute } from '../utils/moduleNavigation'
+import { useAuthStore } from '../store/auth'
 
 const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
+const authStore = useAuthStore()
+const canBatchAct = computed(() => authStore.hasAnyPermission(['asset.entry.publish', 'asset.entry.offline', 'asset.entry.update']))
 
 // ===== 状态 =====
 const loading = ref(false)

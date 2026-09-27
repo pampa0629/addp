@@ -84,7 +84,7 @@ const normalizeRedirect = fullPath => {
 }
 
 router.beforeEach(createAuthGuard(useAuthStore, {
-  moduleName: 'Develop',
+  router, moduleName: 'Develop',
   loginRouteName: 'Login',
   normalizeRedirect
 }))

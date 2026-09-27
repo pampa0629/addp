@@ -4,7 +4,7 @@
     <div class="toolbar">
       <div class="toolbar-left">
         <h2>{{ t('develop.taskManagement.title') }}</h2>
-        <el-dropdown @command="handleCreate">
+        <el-dropdown v-if="authStore.hasPermission('develop.task.create')" @command="handleCreate">
           <el-button type="primary">
             <el-icon><Plus /></el-icon>
             {{ t('develop.taskManagement.newTask') }}
@@ -113,6 +113,7 @@
           <template #default="{ row }">
             <div class="task-actions">
               <el-button
+                v-if="authStore.hasPermission('develop.task.execute')"
                 type="primary"
                 size="small"
                 @click="handleExecute(row)"
@@ -121,6 +122,7 @@
                 {{ t('develop.taskManagement.execute') }}
               </el-button>
               <el-button
+                v-if="authStore.hasPermission('develop.task.update')"
                 type="default"
                 size="small"
                 @click="handleEdit(row)"
@@ -137,6 +139,7 @@
                 {{ t('develop.taskManagement.detail') }}
               </el-button>
               <el-button
+                v-if="authStore.hasPermission('develop.task.delete')"
                 type="danger"
                 size="small"
                 @click="handleDelete(row)"
@@ -225,9 +228,11 @@ import {
 } from '@/api/devTask'
 import { ExecutionParameterForm, MonitorExecutionsButton, openMonitorExecution } from '@addp/common-frontend'
 import { navigateDevelopTaskEditor } from '@/utils/developNavigation'
+import { useAuthStore } from '../store/auth'
 
 const router = useRouter()
 const { t } = useI18n()
+const authStore = useAuthStore()
 
 // 状态管理
 const loading = ref(false)

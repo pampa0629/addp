@@ -42,6 +42,33 @@ test('canvas selection, title, layout and formatting edit one draft without chan
   expect(backend.unexpected).toEqual([])
 })
 
+test('a table hides a display column without dropping its query field', async ({ page, context }) => {
+  const backend = await installMetricApplicationBackend(context, { rebound: true })
+  await page.goto(applicationPath)
+  const card = page.getByTestId('runtime-component').first()
+  await expect(card.locator('thead')).toContainText('方向')
+  await card.click()
+  await page.getByTestId('component-inspector').getByRole('button', { name: '字段与展示设置', exact: true }).click()
+  const editor = page.getByTestId('application-component-editor')
+  const queryDirection = editor.getByRole('group', { name: '查询字段' }).locator('input[value="direction"]')
+  const displayDirection = editor.getByRole('group', { name: '表格显示列' }).locator('input[value="direction"]')
+  await expect(queryDirection).toBeChecked()
+  await expect(displayDirection).toBeChecked()
+  await editor.getByRole('group', { name: '表格显示列' }).locator('label').filter({ hasText: '方向' }).click()
+  await expect(displayDirection).not.toBeChecked()
+  await expect(queryDirection).toBeChecked()
+  await page.getByRole('dialog').getByRole('button', { name: '应用组件配置', exact: true }).click()
+  await expect(card.locator('thead')).not.toContainText('方向')
+  await expect(card.locator('tbody tr')).toHaveCount(2)
+  await page.getByRole('button', { name: '保存草稿', exact: true }).click()
+  await expect.poll(() => backend.writes.length).toBe(1)
+  expect(backend.draft.snapshot.components[0].query_template.select).toContain('direction')
+  expect(backend.draft.snapshot.components[0].renderer_config.columns).not.toContain('direction')
+  await page.reload()
+  await expect(card.locator('thead')).not.toContainText('方向')
+  expect(backend.unexpected).toEqual([])
+})
+
 for (const locale of ['zh-cn', 'en']) {
 test(`new application goes from a service through query inputs to a saved draft (${locale})`, async ({ page, context }) => {
   const backend = await installMetricApplicationBackend(context, { rebound: true, locale, configure(draft, descriptors) {

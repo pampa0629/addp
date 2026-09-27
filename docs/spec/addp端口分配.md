@@ -17,6 +17,8 @@
 
 PostgreSQL、Redis、FalkorDB、MinIO、Meilisearch、Infra Kafka 和 Kafka Connect 由 `docker-compose.infra.yml` 管理。本地 `scripts/infra/up.sh` 优先使用根 `.env` 中的宿主机端口；若被其他进程占用，自动选取空闲端口，并在输出中报告。已经运行的本工作区容器保持现有映射，重启不随意换端口。开发进程从 Compose 查询实际映射，再构造数据库、缓存、存储、搜索和 Kafka 地址；容器间继续使用固定的服务名和内部端口。端口监听本身不能作为 ADDP 容器就绪或所有权的证据，必须核对 Compose 项目和健康状态。
 
+新会话或本地门禁开始前运行 `bash scripts/infra/status.sh` 查询当前映射。运行事实保存在 Docker Compose 容器映射中，根 `.env` 只记录首选值，不写回动态结果，也不另建一份 Infra 端口状态文件。测试 DSN 必须显式指向核实后的 ADDP PostgreSQL 宿主机端口及允许的测试 database；本地门禁不得在未提供端口时自行回退到 `15432`。CI 独占 PostgreSQL Service 的显式端口不受本地端口改选影响。
+
 Infra 宿主机绑定地址由 `INFRA_BIND_HOST` 指定，默认 `0.0.0.0`；Hosted Online 固定为 `127.0.0.1`。FalkorDB 始终只绑定回环。该地址只影响宿主机发布，不改变容器网络中的服务名或端口。
 
 自动选端口只适用于本地基础设施宿主机映射。生产部署与 `addp-online` 专用 Runner 按其显式环境配置运行。Docker 最终绑定仍可能遇到检查后的并发抢占；启动失败时报告实际冲突，不连接占用该端口的其他服务。

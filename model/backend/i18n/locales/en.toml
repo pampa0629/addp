@@ -112,6 +112,9 @@ other = "A create statement cannot be generated from the current configuration. 
 [model.logical_table.code_conflict]
 other = "Logical table code already exists"
 
+[model.logical_table.physical_target_conflict]
+other = "This physical target is already assigned to another logical table. Choose another target or release the existing assignment first"
+
 [model.logical_table.state_conflict]
 other = "The logical table state does not allow this operation"
 

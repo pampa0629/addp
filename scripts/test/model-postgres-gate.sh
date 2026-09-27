@@ -35,6 +35,9 @@ case "$database" in
         ;;
 esac
 
+source "$ROOT_DIR/scripts/infra/ports.sh"
+addp_infra_verify_test_postgres_dsn "$ADDP_TEST_MODEL_POSTGRES_DSN"
+
 run_without_skips() {
     local package=$1
     local pattern=${2:-^TestPostgres}

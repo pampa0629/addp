@@ -1,10 +1,10 @@
 <template>
   <el-container class="console-container">
     <PortalHeader
-      :groups="MODULE_GROUPS"
+      :groups="visibleGroups"
       :active-group="activeGroup"
       :user="user"
-      :permissions="authStore.permissions"
+      :permissions="navigationPermissions"
       :context-type="authStore.contextType"
       @group-click="handleGroupClick"
       @logo-click="handleLogoClick"
@@ -35,11 +35,25 @@
           :active-group="activeGroup"
           :home-cards="homeCards"
           :user="user"
-          :permissions="authStore.permissions"
+          :permissions="navigationPermissions"
+          :context-type="authStore.contextType"
+          :context-key="recentContextKey"
+          :portal-available="Boolean(portalLandingRoute)"
           @card-click="navigateToModule"
           @portal-click="openPortal"
           @navigate="handleMenuSelect"
         />
+
+        <el-result
+          v-else-if="currentModule === 'access-denied'"
+          icon="warning"
+          :title="t('console.accessDenied.title')"
+          :sub-title="t('console.accessDenied.description')"
+        >
+          <template #extra>
+            <el-button type="primary" @click="handleLogoClick">{{ t('console.accessDenied.backHome') }}</el-button>
+          </template>
+        </el-result>
 
 		<ConfigurationManagement
 		  v-else-if="currentModule === 'configuration'"
@@ -135,10 +149,11 @@ import {
 import { useI18n } from 'vue-i18n'
 import { MagicStick, Close } from '@element-plus/icons-vue'
 import {
-  MODULE_GROUPS, ALL_HOME_CARDS, SIDEBAR_MENUS, DEFAULT_ROUTES,
+  MODULE_GROUPS, ALL_HOME_CARDS, SIDEBAR_MENUS,
   MODULE_URLS, PORTAL_URL, buildModuleUrl,
 } from '../config/portalConfig'
 import { filterSidebarMenus, matchesNavigationAccess } from '../utils/navigationAccess'
+import { consoleRouteAccess } from '@common-ui'
 import PortalHeader from '../components/portal/PortalHeader.vue'
 import PortalSidebar from '../components/portal/PortalSidebar.vue'
 import PortalHome from '../components/portal/PortalHome.vue'
@@ -182,6 +197,10 @@ const leaveProtection = useConsoleUnsavedChangesGuard(router, {
 watch(iframeNavigationKey, () => leaveProtection.reset(), { flush: 'sync' })
 
 const effectiveSidebarCollapsed = computed(() => isCollapsed.value || isNarrowViewport.value)
+const navigationPermissions = computed(() => authStore.permissions)
+const recentContextKey = computed(() => authStore.contextType === 'tenant'
+  ? `tenant:${authStore.authContext?.context?.tenant_id || ''}`
+  : authStore.contextType === 'platform' ? 'platform' : '')
 
 const currentGroupConfig = computed(() =>
   MODULE_GROUPS.find(g => g.key === activeGroup.value) || null
@@ -198,17 +217,28 @@ const activeGroupModules = computed(() =>
   currentGroupConfig.value?.modules || []
 )
 
-const homeCards = computed(() => {
-  const accessible = ALL_HOME_CARDS.filter(card => matchesNavigationAccess(card, authStore.contextType, authStore.permissions))
-  if (!activeGroup.value) return accessible
-  return accessible.filter(c => activeGroupModules.value.includes(c.module))
-})
-
 const visibleSidebarMenus = computed(() => filterSidebarMenus(
   SIDEBAR_MENUS,
   authStore.contextType,
-  authStore.permissions
+  navigationPermissions.value
 ))
+const visibleModules = computed(() => new Set(Object.entries(visibleSidebarMenus.value)
+  .filter(([, menu]) => menu && (menu.flat || menu.items?.length))
+  .map(([module]) => module)))
+const portalLandingRoute = computed(() =>
+  ['/portal/home', '/portal/my/applications'].find(path => canOpenPage(path)) || '')
+const visibleGroups = computed(() => MODULE_GROUPS.filter(group =>
+  (group.isPortal && !!portalLandingRoute.value) || group.isApiDocs ||
+  group.modules.some(module => visibleModules.value.has(module))))
+const homeCards = computed(() => {
+  const accessible = ALL_HOME_CARDS.filter(card => visibleModules.value.has(card.module))
+  if (!activeGroup.value) return accessible
+  return accessible.filter(card => activeGroupModules.value.includes(card.module))
+})
+function canOpenPage(path) {
+  const access = consoleRouteAccess(path)
+  return !!access && matchesNavigationAccess({ access }, authStore.contextType, navigationPermissions.value)
+}
 
 onMounted(async () => {
   narrowViewportQuery = window.matchMedia('(max-width: 760px)')
@@ -403,6 +433,17 @@ function syncRouteToPortal(fullPath) {
   const pagePath = parts.slice(1).join('/')
   const page = queryPart ? `${pagePath}?${queryPart}` : pagePath
   currentModule.value = module
+
+  if (!canOpenPage(pathPart)) {
+    currentModule.value = 'access-denied'
+    iframeUrl.value = ''
+    return
+  }
+
+  const fallback = SIDEBAR_MENUS[module]?.items?.find(item => item.index === pathPart)?.fallbackFor
+  if (fallback && visibleSidebarMenus.value[module]?.items?.some(item => item.index === fallback)) {
+    activeMenu.value = fallback
+  }
 	if (module === 'configuration') {
 		activeGroup.value = 'system'
 		sidebarModules.value = ['system']
@@ -430,15 +471,15 @@ function syncRouteToPortal(fullPath) {
 }
 
 watch(
-  () => route.fullPath,
-  (fullPath) => syncRouteToPortal(fullPath),
+  [() => route.fullPath, navigationPermissions],
+  ([fullPath]) => syncRouteToPortal(fullPath),
   { immediate: true }
 )
 
 const RECENT_KEY = 'addp_recent_visits_v2'
 function recordRecentVisit(module, fullPath, descriptor = null) {
   const menuConfig = SIDEBAR_MENUS[module]
-  const entry = buildRecentVisitEntry({ module, fullPath, menuConfig, descriptor })
+  const entry = buildRecentVisitEntry({ module, fullPath, menuConfig, descriptor, contextKey: recentContextKey.value })
   if (!entry) return
   try {
     const raw = localStorage.getItem(RECENT_KEY)
@@ -453,9 +494,11 @@ const navigateToModule = async (module) => {
     activeGroup.value = group.key
     sidebarModules.value = group.modules  // 显示整个群组的所有模块
   }
-  const route = DEFAULT_ROUTES[module]
-  if (route) {
-    await router.push(route)
+  const menu = visibleSidebarMenus.value[module]
+  const firstItem = menu?.items?.flatMap(item => item.children?.length ? item.children : [item])[0]
+  const targetRoute = menu?.flat ? menu.index : firstItem?.index
+  if (targetRoute) {
+    await router.push(targetRoute)
   }
   await nextTick()
   if (sidebarRef.value && group) {
@@ -464,7 +507,7 @@ const navigateToModule = async (module) => {
 }
 
 const openPortal = () => {
-  window.open(PORTAL_URL + '/portal/home', '_blank')
+  if (portalLandingRoute.value) window.open(PORTAL_URL + portalLandingRoute.value, '_blank')
 }
 
 const handleIframeLoad = () => {

@@ -149,6 +149,84 @@ func TestListEnginesReturnsCompleteArray(t *testing.T) {
 	}
 }
 
+func TestCatalogSelectorExcludesConnectionAndOtherTenants(t *testing.T) {
+	tenantID := uint(3)
+	otherTenantID := uint(2)
+	capabilities := models.JSONString(`{"schema_version":"engine.capabilities/v1","storage":{"catalog":{"supported":true,"real_time":true},"catalog_model":{"path_version":"catalog.path/v1","root_term":"server"}}}`)
+	workflowCapabilities := models.JSONString(`{"schema_version":"engine.capabilities/v1","compute":{"workflow":{"supported":true}}}`)
+	router := newEngineListTestRouter(t,
+		models.Engine{
+			TenantID: &tenantID, Name: "visible", EngineType: "postgresql",
+			EngineOrigin: "general", LifecycleState: models.EngineLifecycleActive,
+			ConnectionStatus: models.EngineConnectionOnline,
+			ConnectionInfo:   models.ConnectionInfo{"host": "private.example", "password": "secret"},
+			Capabilities:     &capabilities,
+		},
+		models.Engine{
+			TenantID: &otherTenantID, Name: "hidden", EngineType: "postgresql",
+			EngineOrigin: "general", LifecycleState: models.EngineLifecycleActive,
+			ConnectionInfo: models.ConnectionInfo{"password": "other-secret"},
+		},
+		models.Engine{
+			Name: "workflow-only", EngineType: "spark_workflow", EngineOrigin: "extension",
+			LifecycleState: models.EngineLifecycleActive, Capabilities: &workflowCapabilities,
+		},
+		models.Engine{
+			TenantID: &tenantID, Name: "spark-resource", EngineType: "spark",
+			EngineOrigin: "general", LifecycleState: models.EngineLifecycleActive,
+			Capabilities: &capabilities,
+		},
+	)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/engine-catalog/engines", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	var selectors []map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &selectors); err != nil {
+		t.Fatal(err)
+	}
+	if len(selectors) != 2 || selectors[0]["name"] != "visible" || selectors[1]["name"] != "spark-resource" {
+		t.Fatalf("selectors = %#v, want only current tenant catalog-capable engines", selectors)
+	}
+	if declared, ok := selectors[0]["capabilities"].(map[string]any); !ok || declared["schema_version"] != "engine.capabilities/v1" {
+		t.Fatalf("selector capabilities = %#v, want structured capability object", selectors[0]["capabilities"])
+	}
+	for _, forbidden := range []string{"connection_info", "tenant_id", "identity_key", "check_message", "created_by", "version"} {
+		if _, exists := selectors[0][forbidden]; exists {
+			t.Fatalf("selector exposes %s: %#v", forbidden, selectors[0])
+		}
+	}
+}
+
+func TestCatalogRequestsRejectWorkflowRuntimeWithoutLiveCatalog(t *testing.T) {
+	tenantID := uint(3)
+	workflowCapabilities := models.JSONString(`{"schema_version":"engine.capabilities/v1","compute":{"workflow":{"supported":true}}}`)
+	router := newEngineListTestRouter(t, models.Engine{
+		TenantID: &tenantID, Name: "workflow-only", EngineType: "spark_workflow",
+		EngineOrigin: "extension", LifecycleState: models.EngineLifecycleActive,
+		ConnectionStatus: models.EngineConnectionOnline, Capabilities: &workflowCapabilities,
+	})
+	for _, path := range []string{"/engines/1/catalog/children", "/engines/1/catalog/facts"} {
+		t.Run(path, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"path":{"segments":[]}}`))
+			req.Header.Set("Content-Type", "application/json")
+			router.ServeHTTP(rec, req)
+			if rec.Code != http.StatusUnprocessableEntity {
+				t.Fatalf("status = %d, want 422, body=%s", rec.Code, rec.Body.String())
+			}
+			var response models.ErrorResponse
+			if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+				t.Fatal(err)
+			}
+			if response.ErrorCode != "engine_catalog_operation_unsupported" {
+				t.Fatalf("error_code = %q", response.ErrorCode)
+			}
+		})
+	}
+}
+
 func newEngineListTestRouter(t *testing.T, engines ...models.Engine) *gin.Engine {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -175,6 +253,9 @@ func newEngineListTestRouter(t *testing.T, engines ...models.Engine) *gin.Engine
 		c.Next()
 	})
 	router.GET("/engines", handler.List)
+	router.GET("/engine-catalog/engines", handler.ListCatalogSelectors)
+	router.POST("/engines/:id/catalog/children", handler.ListEngineCatalogChildren)
+	router.POST("/engines/:id/catalog/facts", handler.DescribeEngineCatalogFacts)
 	return router
 }
 

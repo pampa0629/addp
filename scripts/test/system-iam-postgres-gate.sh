@@ -37,6 +37,9 @@ if [ -z "${ADDP_SYSTEM_POSTGRES_TEST_DSN:-}" ]; then
     exit 1
 fi
 
+source "$ROOT_DIR/scripts/infra/ports.sh"
+addp_infra_verify_test_postgres_dsn "$ADDP_SYSTEM_POSTGRES_TEST_DSN"
+
 # All checkouts share the same local IAM test database. Keep the open file
 # description alive in this shell and its children until the entire gate exits.
 # Never unlink the file: another process could otherwise lock a new inode.

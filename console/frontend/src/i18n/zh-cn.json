@@ -5,6 +5,11 @@
     "logout": "退出登录",
     "sessionExpired": "登录已过期，请重新登录",
     "logoutSuccess": "已退出登录",
+    "accessDenied": {
+      "title": "无权访问此页面",
+      "description": "当前账号缺少访问此功能所需的权限。",
+      "backHome": "返回首页"
+    },
     "invitation": {
       "title": "接受租户邀请",
       "description": "加入租户后，你将按管理员分配的角色使用 ADDP。",
@@ -441,7 +446,8 @@
       "ontology": { "label": "领域本体", "list": "领域本体建模" },
       "transfer": {
         "label": "数据传输",
-        "tasks": "传输任务"
+        "tasks": "传输任务",
+        "create": "创建传输任务"
       },
       "meta": {
         "label": "元数据",

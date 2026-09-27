@@ -364,7 +364,7 @@ func TestCanonicalAuthContextRolePermissionHelpers(t *testing.T) {
 	setCanonicalAuthContext(context, authContext)
 
 	if !HasRolePermission(context, "manager.content.read") ||
-		!HasAllRolePermissions(context, "manager.content.read", "manager.data_item.update") ||
+		HasAllRolePermissions(context, "manager.content.read", "manager.data_item.update") ||
 		HasAllRolePermissions(context) ||
 		HasRolePermission(context, "manager.content.delete") ||
 		HasRolePermission(context, "manager.read") {
@@ -386,6 +386,52 @@ func TestCanonicalAuthContextRolePermissionHelpers(t *testing.T) {
 		HasRolePermission(emptyContext, "manager.content.read") ||
 		RolePermissionScopes(emptyContext, "manager.content.read") != nil {
 		t.Fatal("helpers accepted a missing canonical AuthContext")
+	}
+}
+
+func TestPermissionGuardRejectsOrganizationalAssignment(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	base := testCanonicalAuthContext()
+	departmentID := "9"
+	departmentOnly := base
+	departmentOnly.Authorization.RoleAssignments = []commonauth.RoleAssignment{{
+		AssignmentID: "403",
+		RoleKey:      "tenant.data_engineer",
+		Scope: commonauth.AssignmentScope{
+			Type: "department", TenantID: base.Context.TenantID, DepartmentID: &departmentID,
+		},
+		Permissions: []string{"transfer.task.read"},
+		SourceType:  "manual",
+		ValidFrom:   base.Authorization.RoleAssignments[0].ValidFrom,
+	}}
+	tenantAllowed := base
+	tenantAllowed.Authorization.RoleAssignments = []commonauth.RoleAssignment{{
+		AssignmentID: "404",
+		RoleKey:      "tenant.data_engineer",
+		Scope:        commonauth.AssignmentScope{Type: "tenant", TenantID: base.Context.TenantID},
+		Permissions:  []string{"transfer.task.read"},
+		SourceType:   "manual",
+		ValidFrom:    base.Authorization.RoleAssignments[0].ValidFrom,
+	}}
+	guard := MustNewPermissionGuard("transfer.task.read")
+	for _, test := range []struct {
+		name       string
+		context    commonauth.AuthContext
+		wantStatus int
+	}{
+		{"department", departmentOnly, http.StatusForbidden},
+		{"tenant", tenantAllowed, http.StatusNoContent},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			router := gin.New()
+			router.Use(func(c *gin.Context) { setCanonicalAuthContext(c, test.context); c.Next() })
+			router.GET("/tasks", guard, func(c *gin.Context) { c.Status(http.StatusNoContent) })
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/tasks", nil))
+			if response.Code != test.wantStatus {
+				t.Fatalf("status=%d body=%s, want %d", response.Code, response.Body.String(), test.wantStatus)
+			}
+		})
 	}
 }
 

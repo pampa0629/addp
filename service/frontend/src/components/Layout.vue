@@ -36,27 +36,27 @@
           router
           class="sidebar-menu"
         >
-          <el-menu-item index="/query-services">
+          <el-menu-item v-if="authStore.hasPermission('service.definition.read')" index="/query-services">
             <el-icon><Upload /></el-icon>
             <span>{{ t('service.nav.queryService') }}</span>
           </el-menu-item>
 
-          <el-menu-item index="/tile">
+          <el-menu-item v-if="authStore.hasPermission('service.definition.read')" index="/tile">
             <el-icon><Grid /></el-icon>
             <span>{{ t('service.nav.tileService') }}</span>
           </el-menu-item>
 
-          <el-menu-item index="/graph-services">
+          <el-menu-item v-if="authStore.hasPermission('service.definition.read')" index="/graph-services">
             <el-icon><Share /></el-icon>
             <span>{{ t('service.nav.graphService') }}</span>
           </el-menu-item>
 
-          <el-menu-item index="/services">
+          <el-menu-item v-if="authStore.hasPermission('service.external_registration.read')" index="/services">
             <el-icon><Connection /></el-icon>
             <span>{{ t('service.nav.registeredService') }}</span>
           </el-menu-item>
 
-          <el-menu-item index="/catalog">
+          <el-menu-item v-if="authStore.hasAnyPermission(['service.definition.read', 'service.external_registration.read'])" index="/catalog">
             <el-icon><FolderOpened /></el-icon>
             <span>{{ t('service.nav.catalog') }}</span>
           </el-menu-item>

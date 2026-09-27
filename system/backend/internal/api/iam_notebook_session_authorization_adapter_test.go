@@ -18,7 +18,7 @@ func TestNotebookEngineCatalogUnknownErrorKeepsFailureBoundary(t *testing.T) {
 		expected string
 	}{
 		{name: "control plane", respond: respondNotebookEngineCatalogError, expected: "engine_catalog_control_plane_failed"},
-		{name: "provider", respond: respondNotebookEngineCatalogProviderError, expected: "engine_catalog_provider_failed"},
+		{name: "provider", respond: respondEngineCatalogProviderError, expected: "engine_catalog_provider_failed"},
 	}
 
 	for _, test := range tests {

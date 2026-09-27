@@ -13,5 +13,5 @@ const router = createRouter({ history: createWebHistory(import.meta.env.DEV ? '/
   { path: '/login', name: 'Login', component: () => import('../views/Login.vue'), meta: { requiresAuth: false } },
   { path: '/', component: Layout, redirect: '/sensitive-data-definitions', meta: { requiresAuth: true }, children }
 ] })
-router.beforeEach(createAuthGuard(useAuthStore, { moduleName: 'Security', loginRouteName: 'Login' }))
+router.beforeEach(createAuthGuard(useAuthStore, { router, moduleName: 'Security', loginRouteName: 'Login' }))
 export default router

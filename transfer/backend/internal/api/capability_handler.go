@@ -91,8 +91,7 @@ func NewTransferCapabilityHandler() *TransferCapabilityHandler {
 // @Tags 传输能力 | Capabilities
 // @Produce json
 // @Success 200 {object} api.TransferCapabilitiesResponse
-// @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["transfer.task.read"]
+// @x-addp-auth-mode "authenticated"
 // @Router /capabilities [get]
 // @Security BearerAuth
 func (h *TransferCapabilityHandler) Get(c *gin.Context) {

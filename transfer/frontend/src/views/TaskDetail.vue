@@ -11,41 +11,42 @@
           <span>{{ t('transfer.taskDetail.taskDetailTitle', { name: task.name }) }}</span>
           <div>
             <template v-if="isContinuousTask">
-              <el-tooltip :content="continuousStartDisabledMessage" :disabled="!continuousStartDisabledMessage" placement="top">
+              <el-tooltip v-if="task.desired_state === 'paused' ? canUpdate : canExecute" :content="continuousStartDisabledMessage" :disabled="!continuousStartDisabledMessage" placement="top">
                 <span class="continuous-start-action">
                   <el-button type="primary" @click="handleStartContinuous" :disabled="!canStartContinuous">
                     {{ task.desired_state === 'paused' ? t('transfer.taskDetail.resume') : t('transfer.taskDetail.start') }}
                   </el-button>
                 </span>
               </el-tooltip>
-              <el-button type="warning" @click="handlePause" :disabled="task.desired_state !== 'running' || isCDCSchemaBlocked">
+              <el-button v-if="canUpdate" type="warning" @click="handlePause" :disabled="task.desired_state !== 'running' || isCDCSchemaBlocked">
                 {{ t('transfer.taskDetail.pause') }}
               </el-button>
-              <el-button :type="isDatabaseCDC ? 'danger' : undefined" @click="handleStop" :disabled="task.desired_state === 'stopped' && task.capture?.status !== 'cleanup_failed'">
+              <el-button v-if="canUpdate" :type="isDatabaseCDC ? 'danger' : undefined" @click="handleStop" :disabled="task.desired_state === 'stopped' && task.capture?.status !== 'cleanup_failed'">
                 {{ task.capture?.status === 'cleanup_failed' ? t('transfer.taskDetail.retryCleanup') : t('transfer.taskDetail.stop') }}
               </el-button>
             </template>
             <template v-else-if="isManualTask">
-              <el-button type="primary" data-testid="task-execute" @click="handleExecute" :disabled="task.status === 'running'">
+              <el-button v-if="canExecute" type="primary" data-testid="task-execute" @click="handleExecute" :disabled="task.status === 'running'">
                 {{ t('transfer.taskDetail.execute') }}
               </el-button>
             </template>
             <template v-else>
-              <el-button type="primary" @click="handleResume" :disabled="!canStartSchedule">
+              <el-button v-if="canUpdate" type="primary" @click="handleResume" :disabled="!canStartSchedule">
                 {{ t('transfer.taskDetail.start') }}
               </el-button>
-              <el-button type="warning" @click="handlePause" :disabled="!canPauseSchedule">
+              <el-button v-if="canUpdate" type="warning" @click="handlePause" :disabled="!canPauseSchedule">
                 {{ t('transfer.taskDetail.pause') }}
               </el-button>
-              <el-button @click="handleExecute" :disabled="task.status === 'running'">
+              <el-button v-if="canExecute" @click="handleExecute" :disabled="task.status === 'running'">
                 {{ t('transfer.taskDetail.runOnce') }}
               </el-button>
             </template>
-            <el-button @click="handleEdit" :disabled="!canEditTask">{{ t('transfer.taskDetail.edit') }}</el-button>
+            <el-button v-if="canEdit" @click="handleEdit" :disabled="!canEditTask">{{ t('transfer.taskDetail.edit') }}</el-button>
             <el-button v-if="canCreateReplay" type="primary" plain @click="openReplayDialog">
               {{ t('transfer.taskDetail.createReplay') }}
             </el-button>
             <MonitorExecutionsButton
+              v-if="canMonitor"
               module="transfer"
               task-type="sync"
               :source-task-id="route.params.id"
@@ -136,7 +137,7 @@
 					show-icon
 				/>
 				<el-button
-					v-if="schemaChange?.approvable"
+					v-if="canUpdate && schemaChange?.approvable"
 					type="primary"
 					:loading="schemaChangeLoading"
 					@click="openSchemaChangeDialog"
@@ -154,7 +155,7 @@
 					show-icon
 				/>
 				<el-button
-					v-if="schemaChangeScanNotice.retryable"
+					v-if="canUpdate && schemaChangeScanNotice.retryable"
 					type="primary"
 					:loading="schemaChangeSubmitting"
 					@click="retrySchemaChangeScan"
@@ -332,7 +333,7 @@
         <el-table-column :label="t('transfer.taskDetail.actions')" width="150">
           <template #default="{ row }">
             <el-button size="small" @click="viewExecution(row.execution_id)">{{ t('transfer.taskDetail.detail') }}</el-button>
-            <el-button size="small" type="primary" @click="retryExecution(row.execution_id)" v-if="row.status === 'failed' && !isContinuousTask">
+            <el-button size="small" type="primary" @click="retryExecution(row.execution_id)" v-if="canExecute && row.status === 'failed' && !isContinuousTask">
               {{ t('transfer.taskDetail.retry') }}
             </el-button>
           </template>
@@ -454,18 +455,24 @@ import { ArrowLeft } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import { continuousRecoveryTagType, formatLocatorDisplayPath, getContinuousRecovery } from '@addp/common-frontend'
 import { taskAPI, executionAPI } from '@/api/tasks'
-import { systemEnginesAPI } from '@/api/systemEngines'
+import { engineCatalogAPI } from '@/api/engineCatalog'
 import { formatSchedule, getTaskStatusLabel, getTaskStatusTagType, getExecutionTagType, getExecutionLabel } from '@/utils/formatters'
 import { buildCDCStopRequest, continuousStartDisabledReason, getCDCCaptureHealthWarning, getCDCSourceRecoveryWarning, isCDCSchemaBlocked as isCDCSchemaBlockedTask, isDatabaseCDCTask } from '@/utils/cdcTask.mjs'
 import { parseTransferLocator } from '@/utils/resourceLocator'
 import { buildSchemaChangeApproval, buildSchemaChangeScanRetry, getSchemaChangeScanNotice } from '@/utils/schemaChange.mjs'
 import { navigateTransferRoute } from '@/utils/moduleNavigation'
 import { engineNameForID } from '@/utils/engineDisplay.mjs'
+import { useAuthStore } from '@/store/auth'
 
 const { t } = useI18n()
 
 const route = useRoute()
 const router = useRouter()
+const authStore = useAuthStore()
+const canExecute = computed(() => authStore.hasPermission('transfer.task.execute'))
+const canUpdate = computed(() => authStore.hasPermission('transfer.task.update'))
+const canEdit = computed(() => canUpdate.value && authStore.hasPermission('meta.catalog.read'))
+const canMonitor = computed(() => authStore.hasPermission('monitor.execution.read'))
 const loading = ref(false)
 const task = ref({})
 const engines = ref([])
@@ -505,7 +512,7 @@ const isBusinessKafkaRecordTask = computed(() => isContinuousTask.value &&
   task.value?.config?.source?.change_stream?.encoding === 'json')
 const recordFailureMode = computed(() => task.value?.config?.runtime?.record_failure?.mode)
 const isDeadLetterTask = computed(() => isBusinessKafkaRecordTask.value && recordFailureMode.value === 'dead_letter')
-const canCreateReplay = computed(() => isBusinessKafkaRecordTask.value && recordFailureMode.value === 'block')
+const canCreateReplay = computed(() => canExecute.value && isBusinessKafkaRecordTask.value && recordFailureMode.value === 'block')
 const isDatabaseCDC = computed(() => isDatabaseCDCTask(task.value))
 const isCDCSchemaBlocked = computed(() => isCDCSchemaBlockedTask(task.value))
 const schemaChangeScanNotice = computed(() => getSchemaChangeScanNotice(schemaChange.value))
@@ -620,8 +627,9 @@ const loadTask = async () => {
 }
 
 const loadEngines = async () => {
+  if (!authStore.hasPermission('meta.catalog.read')) return
   try {
-    const response = await systemEnginesAPI.list()
+    const response = await engineCatalogAPI.list()
     engines.value = response?.data || response || []
   } catch (error) {
     console.error('加载引擎名称失败:', error)

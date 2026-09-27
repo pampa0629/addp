@@ -42,7 +42,7 @@ test('System is always enabled while a business module can be disabled', async (
         authentication: { assurance_level: 'aal2' },
         authorization: {
           role_assignments: [{
-            role_key: 'platform.system_administrator', scope_type: 'platform',
+            role_key: 'platform.system_administrator', scope: { type: 'platform' },
             permissions: ['platform.module.read', 'platform.module.update']
           }]
         }

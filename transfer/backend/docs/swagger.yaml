@@ -372,40 +372,6 @@ definitions:
       confirmed:
         type: boolean
     type: object
-  github_com_addp_transfer_internal_models.SystemEngineDoc:
-    properties:
-      check_message:
-        type: string
-      connection_info:
-        additionalProperties: true
-        type: object
-      connection_status:
-        example: online
-        type: string
-      description:
-        type: string
-      engine_origin:
-        example: general
-        type: string
-      engine_type:
-        example: minio
-        type: string
-      id:
-        example: 1
-        type: integer
-      is_active:
-        example: true
-        type: boolean
-      is_builtin:
-        example: false
-        type: boolean
-      name:
-        example: Business MinIO
-        type: string
-      tenant_id:
-        example: 1
-        type: integer
-    type: object
   github_com_addp_transfer_internal_models.TableTransferTaskConfigDoc:
     properties:
       batch_size:
@@ -1229,9 +1195,7 @@ paths:
       summary: 获取传输能力 | Get transfer capabilities
       tags:
       - 传输能力 | Capabilities
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - transfer.task.read
+      x-addp-auth-mode: authenticated
   /executions:
     get:
       parameters:
@@ -1637,45 +1601,6 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - transfer.configuration.update
-  /system-engines:
-    get:
-      description: 返回当前租户可见、active 且具备存储能力的 System 注册引擎及其连接状态；非 online 项由前端展示并禁选 |
-        Returns visible, active, storage-capable registered System engines with connection
-        status; clients must show but disable non-online options
-      parameters:
-      - description: 引擎类型 | Engine type
-        in: query
-        name: engine_type
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            items:
-              $ref: '#/definitions/github_com_addp_transfer_internal_models.SystemEngineDoc'
-            type: array
-        "502":
-          description: Bad Gateway
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "503":
-          description: Service Unavailable
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 列出系统引擎 | List system engines
-      tags:
-      - 系统引擎 | System Engines
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - transfer.task.read
   /task-definitions:
     get:
       consumes:

@@ -194,7 +194,7 @@ func (h *IAMNotebookSessionAuthorizationHandler) ListEngineCatalogChildren(c *gi
 		respondNotebookEngineCatalogError(c, err)
 		return
 	}
-	if err := requireNotebookEngineCatalogCapability(engine); err != nil {
+	if err := requireLiveEngineCatalogCapability(engine); err != nil {
 		respondNotebookEngineCatalogError(c, err)
 		return
 	}
@@ -202,7 +202,7 @@ func (h *IAMNotebookSessionAuthorizationHandler) ListEngineCatalogChildren(c *gi
 		Path: request.Path, Options: request.Options,
 	})
 	if err != nil {
-		respondNotebookEngineCatalogProviderError(c, err)
+		respondEngineCatalogProviderError(c, err)
 		return
 	}
 	c.Header("Cache-Control", "no-store")
@@ -281,10 +281,7 @@ func notebookDataEngineDescriptor(descriptor *models.EngineRuntimeDescriptor) bo
 	if descriptor == nil || !engineselection.IsAvailableStorageEngine(descriptor.AsEngine()) || descriptor.Capabilities == nil {
 		return false
 	}
-	capabilities, err := engineplugin.ParseEngineCapabilities(string(*descriptor.Capabilities))
-	return err == nil && capabilities.Storage != nil && capabilities.Storage.Catalog != nil &&
-		capabilities.Storage.Catalog.Supported && capabilities.Storage.Catalog.RealTime &&
-		capabilities.Storage.CatalogModel != nil
+	return hasLiveEngineCatalogCapability(descriptor.AsEngine())
 }
 
 // DeriveExecutionEngineAccess godoc
@@ -426,18 +423,6 @@ func validateNotebookEngineCatalogRequest(request IAMNotebookEngineCatalogChildr
 	return nil
 }
 
-func requireNotebookEngineCatalogCapability(engine *models.Engine) error {
-	if engine == nil || engine.Capabilities == nil {
-		return engineplugin.WrapEngineCatalogError(engineplugin.EngineCatalogErrorUnsupported, errors.New("engine has no catalog capability"))
-	}
-	capabilities, err := engineplugin.ParseEngineCapabilities(string(*engine.Capabilities))
-	if err != nil || capabilities.Storage == nil || capabilities.Storage.Catalog == nil ||
-		!capabilities.Storage.Catalog.Supported || capabilities.Storage.CatalogModel == nil {
-		return engineplugin.WrapEngineCatalogError(engineplugin.EngineCatalogErrorUnsupported, errors.New("engine has no supported catalog model"))
-	}
-	return nil
-}
-
 func parseCanonicalNotebookEngineCatalogUUID(value string) (uuid.UUID, error) {
 	parsed, err := uuid.Parse(value)
 	if err != nil || parsed == uuid.Nil || parsed.String() != value {
@@ -447,18 +432,18 @@ func parseCanonicalNotebookEngineCatalogUUID(value string) (uuid.UUID, error) {
 }
 
 func respondNotebookEngineCatalogError(c *gin.Context, err error) {
-	respondNotebookEngineCatalogErrorWithDefault(
+	respondEngineCatalogErrorWithDefault(
 		c, err, sysi18n.MsgEngineCatalogControlPlaneFailed, "engine_catalog_control_plane_failed",
 	)
 }
 
-func respondNotebookEngineCatalogProviderError(c *gin.Context, err error) {
-	respondNotebookEngineCatalogErrorWithDefault(
+func respondEngineCatalogProviderError(c *gin.Context, err error) {
+	respondEngineCatalogErrorWithDefault(
 		c, err, sysi18n.MsgEngineCatalogProviderFailed, "engine_catalog_provider_failed",
 	)
 }
 
-func respondNotebookEngineCatalogErrorWithDefault(c *gin.Context, err error, defaultMessageID, defaultErrorCode string) {
+func respondEngineCatalogErrorWithDefault(c *gin.Context, err error, defaultMessageID, defaultErrorCode string) {
 	status := http.StatusBadGateway
 	messageID := defaultMessageID
 	errorCode := defaultErrorCode

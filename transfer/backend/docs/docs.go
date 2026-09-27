@@ -38,10 +38,7 @@ const docTemplate = `{
                         }
                     }
                 },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "transfer.task.read"
-                ]
+                "x-addp-auth-mode": "authenticated"
             }
         },
         "/executions": {
@@ -655,64 +652,6 @@ const docTemplate = `{
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "transfer.configuration.update"
-                ]
-            }
-        },
-        "/system-engines": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "返回当前租户可见、active 且具备存储能力的 System 注册引擎及其连接状态；非 online 项由前端展示并禁选 | Returns visible, active, storage-capable registered System engines with connection status; clients must show but disable non-online options",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "系统引擎 | System Engines"
-                ],
-                "summary": "列出系统引擎 | List system engines",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "引擎类型 | Engine type",
-                        "name": "engine_type",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/github_com_addp_transfer_internal_models.SystemEngineDoc"
-                            }
-                        }
-                    },
-                    "502": {
-                        "description": "Bad Gateway",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "503": {
-                        "description": "Service Unavailable",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "transfer.task.read"
                 ]
             }
         },
@@ -2688,53 +2627,6 @@ const docTemplate = `{
                 },
                 "confirmed": {
                     "type": "boolean"
-                }
-            }
-        },
-        "github_com_addp_transfer_internal_models.SystemEngineDoc": {
-            "type": "object",
-            "properties": {
-                "check_message": {
-                    "type": "string"
-                },
-                "connection_info": {
-                    "type": "object",
-                    "additionalProperties": true
-                },
-                "connection_status": {
-                    "type": "string",
-                    "example": "online"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "engine_origin": {
-                    "type": "string",
-                    "example": "general"
-                },
-                "engine_type": {
-                    "type": "string",
-                    "example": "minio"
-                },
-                "id": {
-                    "type": "integer",
-                    "example": 1
-                },
-                "is_active": {
-                    "type": "boolean",
-                    "example": true
-                },
-                "is_builtin": {
-                    "type": "boolean",
-                    "example": false
-                },
-                "name": {
-                    "type": "string",
-                    "example": "Business MinIO"
-                },
-                "tenant_id": {
-                    "type": "integer",
-                    "example": 1
                 }
             }
         },

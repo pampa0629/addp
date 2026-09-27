@@ -2,12 +2,12 @@
   <el-container class="layout">
     <!-- 顶部导航 -->
     <el-header class="header">
-      <div class="header-left" style="cursor:pointer" @click="$router.push('/portal/home')">
+      <div class="header-left" :style="{ cursor: canReadAssets ? 'pointer' : 'default' }" @click="canReadAssets && $router.push('/portal/home')">
         <el-icon class="logo-icon"><DataBoard /></el-icon>
         <span class="title">{{ t('portal.layout.title') }}</span>
       </div>
 
-      <div class="header-center">
+      <div v-if="canReadAssets" class="header-center">
         <el-input
           v-model="searchKeyword"
           :placeholder="t('portal.layout.searchPlaceholder')"
@@ -19,7 +19,7 @@
       </div>
 
       <div class="header-right">
-        <el-button text @click="$router.push('/portal/my/applications')">
+        <el-button v-if="authStore.hasPermission('asset.application.read')" text @click="$router.push('/portal/my/applications')">
           <el-icon><Tickets /></el-icon>
           {{ t('portal.layout.myApplications') }}
         </el-button>
@@ -64,6 +64,7 @@ import {
 const { t } = useI18n()
 const router = useRouter()
 const authStore = useAuthStore()
+const canReadAssets = computed(() => authStore.hasPermission('asset.entry.read'))
 const searchKeyword = ref('')
 const userDisplayName = computed(() =>
   authStore.user?.display_name ||

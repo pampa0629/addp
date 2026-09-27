@@ -4,7 +4,7 @@
       <h2>{{ t('asset.category.title') }}</h2>
       <div class="header-actions">
         <el-button :icon="Refresh" :loading="loading" @click="loadTree">{{ t('asset.category.refresh') }}</el-button>
-        <el-button type="primary" :icon="Plus" @click="openCreate(null)">{{ t('asset.category.newRootCategory') }}</el-button>
+        <el-button v-if="authStore.hasPermission('asset.category.create')" type="primary" :icon="Plus" @click="openCreate(null)">{{ t('asset.category.newRootCategory') }}</el-button>
       </div>
     </div>
 
@@ -27,6 +27,7 @@
                 <span class="node-label">{{ data.name }}</span>
                 <span class="node-actions">
                   <el-button
+                    v-if="authStore.hasPermission('asset.category.create')"
                     link
                     size="small"
                     :icon="Plus"
@@ -35,6 +36,7 @@
                     :aria-label="t('asset.category.addSubCategory')"
                   />
                   <el-button
+                    v-if="authStore.hasPermission('asset.category.update')"
                     link
                     size="small"
                     :icon="Edit"
@@ -43,6 +45,7 @@
                     :aria-label="t('asset.category.edit')"
                   />
                   <el-button
+                    v-if="authStore.hasPermission('asset.category.delete')"
                     link
                     size="small"
                     :icon="Delete"
@@ -56,7 +59,7 @@
             </template>
           </el-tree>
           <el-empty v-else-if="!loading" :description="t('asset.category.emptyDesc')">
-            <el-button type="primary" :icon="Plus" @click="openCreate(null)">{{ t('asset.category.newRootCategory') }}</el-button>
+            <el-button v-if="authStore.hasPermission('asset.category.create')" type="primary" :icon="Plus" @click="openCreate(null)">{{ t('asset.category.newRootCategory') }}</el-button>
           </el-empty>
         </el-card>
       </el-col>
@@ -76,9 +79,9 @@
             <el-descriptions-item :label="t('asset.category.updatedAt')">{{ formatTime(selected.updated_at) }}</el-descriptions-item>
           </el-descriptions>
           <div class="detail-actions">
-            <el-button :icon="Plus" @click="openCreate(selected)">{{ t('asset.category.addSubCategory') }}</el-button>
-            <el-button :icon="Edit" @click="openEdit(selected)">{{ t('asset.category.edit') }}</el-button>
-            <el-button :icon="Delete" type="danger" @click="handleDelete(selected)">{{ t('asset.category.delete') }}</el-button>
+            <el-button v-if="authStore.hasPermission('asset.category.create')" :icon="Plus" @click="openCreate(selected)">{{ t('asset.category.addSubCategory') }}</el-button>
+            <el-button v-if="authStore.hasPermission('asset.category.update')" :icon="Edit" @click="openEdit(selected)">{{ t('asset.category.edit') }}</el-button>
+            <el-button v-if="authStore.hasPermission('asset.category.delete')" :icon="Delete" type="danger" @click="handleDelete(selected)">{{ t('asset.category.delete') }}</el-button>
           </div>
         </el-card>
         <el-empty v-else :description="t('asset.category.selectHint')" />
@@ -143,6 +146,7 @@ import { ref, computed, nextTick, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Edit, Delete, Refresh } from '@element-plus/icons-vue'
 import { categoryAPI } from '../api/asset'
+import { useAuthStore } from '../store/auth'
 import { useI18n } from 'vue-i18n'
 import {
   ROOT_CATEGORY_PARENT,
@@ -152,6 +156,7 @@ import {
 } from '../utils/categoryTree'
 
 const { t, locale } = useI18n()
+const authStore = useAuthStore()
 
 const loading = ref(false)
 const treeData = ref([])

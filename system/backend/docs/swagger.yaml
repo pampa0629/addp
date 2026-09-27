@@ -1117,6 +1117,23 @@ definitions:
         example: schema
         type: string
     type: object
+  github_com_addp_system_internal_models.EngineCatalogSelector:
+    properties:
+      capabilities:
+        type: object
+      connection_status:
+        type: string
+      engine_origin:
+        type: string
+      engine_type:
+        type: string
+      id:
+        type: integer
+      lifecycle_state:
+        type: string
+      name:
+        type: string
+    type: object
   github_com_addp_system_internal_models.EngineConnectionProbe:
     properties:
       operators_count:
@@ -4319,6 +4336,45 @@ paths:
       tags:
       - 配置管理 | Configuration Management
       x-addp-auth-mode: self
+  /engine-catalog/engines:
+    get:
+      description: 仅返回当前 Tenant 可见且声明实时 Catalog Model 的引擎最小选择投影，不包含连接信息或管理字段 | Return
+        a minimal selection projection of visible engines declaring a live Catalog
+        Model, without connection details or management fields
+      parameters:
+      - description: 引擎类型 | Engine type
+        in: query
+        name: engine_type
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_addp_system_internal_models.EngineCatalogSelector'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 获取目录选择用引擎列表 | List engines for catalog selection
+      tags:
+      - 引擎目录 | Engine Catalog
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.engine_catalog.read
   /engine-types:
     get:
       description: 返回由内置插件声明的引擎类型、连接表单、能力和 Catalog Model；响应不包含任何连接值或凭据 | Return engine
@@ -4590,10 +4646,10 @@ paths:
     post:
       consumes:
       - application/json
-      description: 基于 System 管理的引擎连接信息实时浏览真实引擎 catalog。请求空 path 返回显性结构 root；请求 root
-        path 返回 schema、bucket、database、directory 等第一层业务节点。| Browse live engine catalog
-        using System-managed connection information. Empty path returns the explicit
-        structural root; root path returns first business branches.
+      description: 基于声明了实时目录能力的引擎连接信息浏览真实 catalog。请求空 path 返回显性结构 root；不支持目录的引擎返回
+        422。| Browse a real catalog using an engine declaring live catalog capability.
+        An empty path returns the structural root; engines without catalog support
+        return 422.
       parameters:
       - description: 引擎ID | Engine ID
         in: path
@@ -4621,29 +4677,49 @@ paths:
           description: Unauthorized
           schema:
             $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
         "404":
           description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "422":
+          description: 引擎不支持实时目录 | Engine does not support a live catalog
           schema:
             $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
             $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "502":
+          description: Bad Gateway
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "504":
+          description: Gateway Timeout
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
       security:
       - BearerAuth: []
       summary: 列出实时 catalog 子节点 | List live catalog children
       tags:
-      - 引擎管理 | Engine Management
+      - 引擎目录 | Engine Catalog
       x-addp-auth-mode: permission
       x-addp-required-permissions:
-      - system.engine.read
+      - system.engine_catalog.read
   /engines/{id}/catalog/facts:
     post:
       consumes:
       - application/json
-      description: 基于 System 管理的引擎连接读取一个 catalog 叶子的结构事实；普通列表不会携带的字段详情通过此接口按需读取。|
-        Read structural facts for one catalog leaf using the System-managed engine
-        connection. Field details omitted from list responses are loaded here on demand.
+      description: 从声明了实时目录能力的引擎读取一个 catalog 叶子的结构事实；不支持目录的引擎返回 422。| Read facts for
+        a catalog leaf from an engine declaring live catalog capability; engines without
+        catalog support return 422.
       parameters:
       - description: 引擎ID | Engine ID
         in: path
@@ -4671,22 +4747,42 @@ paths:
           description: Unauthorized
           schema:
             $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
         "404":
           description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "422":
+          description: 引擎不支持实时目录 | Engine does not support a live catalog
           schema:
             $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
             $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "502":
+          description: Bad Gateway
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "504":
+          description: Gateway Timeout
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
       security:
       - BearerAuth: []
       summary: 获取实时 catalog 叶子事实 | Describe live catalog leaf facts
       tags:
-      - 引擎管理 | Engine Management
+      - 引擎目录 | Engine Catalog
       x-addp-auth-mode: permission
       x-addp-required-permissions:
-      - system.engine.read
+      - system.engine_catalog.read
   /engines/{id}/deletion-assessments:
     post:
       consumes:

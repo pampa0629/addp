@@ -456,6 +456,10 @@
     "typeTable": "数据表",
     "typeView": "视图"
   },
+  "moduleAccessDenied": {
+    "title": "无权访问此页面",
+    "description": "当前账号缺少所需权限，请联系管理员。"
+  },
   "unsavedChanges": {
     "title": "有未保存的修改",
     "message": "离开后将丢失尚未保存的修改。确定离开吗？",

@@ -20,7 +20,7 @@ describe('ontology engine API', () => {
     client.get.mockResolvedValue(engines)
 
     await expect(engineAPI.getNeo4jEngines()).resolves.toBe(engines)
-    expect(client.get).toHaveBeenCalledWith('/system/engines', {
+    expect(client.get).toHaveBeenCalledWith('/system/engine-catalog/engines', {
       params: { engine_type: 'neo4j' }
     })
   })

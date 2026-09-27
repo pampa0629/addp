@@ -39,11 +39,11 @@
           router
           class="el-menu-vertical"
         >
-          <el-menu-item index="/data-explorer">
+          <el-menu-item v-if="authStore.hasPermission('manager.content.read')" index="/data-explorer">
             <el-icon><Search /></el-icon>
             <span>{{ t('manager.layout.dataExplorer') }}</span>
           </el-menu-item>
-          <el-menu-item index="/data-retrieval">
+          <el-menu-item v-if="authStore.hasPermission('manager.search.execute')" index="/data-retrieval">
             <el-icon><Document /></el-icon>
             <span>{{ t('manager.layout.dataRetrieval') }}</span>
           </el-menu-item>
@@ -51,7 +51,7 @@
 			<el-icon><Setting /></el-icon>
 			<span>{{ t('manager.layout.embeddingConfiguration') }}</span>
 		  </el-menu-item>
-          <el-sub-menu index="/tasks">
+          <el-sub-menu v-if="authStore.hasPermission('manager.derived_artifact.read')" index="/tasks">
             <template #title>
             <el-icon><Operation /></el-icon>
             <span>{{ t('manager.layout.dataTasks') }}</span>

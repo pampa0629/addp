@@ -43,11 +43,20 @@ if [ -f ./.env ]; then
   set +a
 fi
 
-if [ -f ./business/.env ]; then
-  set -a
-  source ./business/.env || true
-  set +a
+if [ ! -f ./business/.env ]; then
+  echo -e "${RED}✗ 缺少 business/.env，请先从 business/.env.example 创建${NC}" >&2
+  exit 1
 fi
+# 根 .env 的系统 PostgreSQL/MinIO 值不能作为 Business 凭据回退。
+unset POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB MINIO_ROOT_USER MINIO_ROOT_PASSWORD
+set -a
+source ./business/.env
+set +a
+: "${POSTGRES_USER:?business/.env 缺少 POSTGRES_USER}"
+: "${POSTGRES_PASSWORD:?business/.env 缺少 POSTGRES_PASSWORD}"
+: "${POSTGRES_DB:?business/.env 缺少 POSTGRES_DB}"
+: "${MINIO_ROOT_USER:?business/.env 缺少 MINIO_ROOT_USER}"
+: "${MINIO_ROOT_PASSWORD:?business/.env 缺少 MINIO_ROOT_PASSWORD}"
 validate_business_pins
 
 # 配置参数
@@ -60,9 +69,9 @@ BUSINESS_PG_PORT=$(business_mapped_port postgres business-postgres 5432) || {
   echo -e "${RED}✗ 无法读取本工作区 Business PostgreSQL 的宿主机端口${NC}" >&2
   exit 1
 }
-BUSINESS_PG_USER="${POSTGRES_USER:-business}"
-BUSINESS_PG_PASSWORD="${POSTGRES_PASSWORD:-business_password}"
-BUSINESS_PG_DB="${POSTGRES_DB:-business}"
+BUSINESS_PG_USER="${POSTGRES_USER}"
+BUSINESS_PG_PASSWORD="${POSTGRES_PASSWORD}"
+BUSINESS_PG_DB="${POSTGRES_DB}"
 
 BUSINESS_MYSQL_HOST=127.0.0.1
 BUSINESS_MYSQL_USER="${MYSQL_USER:-business}"
@@ -108,8 +117,8 @@ BUSINESS_MINIO_PORT=$(business_mapped_port minio business-minio 9000) || {
   exit 1
 }
 BUSINESS_MINIO_ENDPOINT="127.0.0.1:${BUSINESS_MINIO_PORT}"
-BUSINESS_MINIO_USER="${BUSINESS_MINIO_ACCESS_KEY:-${MINIO_ROOT_USER:-minioadmin}}"
-BUSINESS_MINIO_PASSWORD="${BUSINESS_MINIO_SECRET_KEY:-${MINIO_ROOT_PASSWORD:-minioadmin}}"
+BUSINESS_MINIO_USER="${MINIO_ROOT_USER}"
+BUSINESS_MINIO_PASSWORD="${MINIO_ROOT_PASSWORD}"
 
 echo -e "${YELLOW}▶ 检查服务可用性...${NC}"
 

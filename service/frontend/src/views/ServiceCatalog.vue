@@ -3,8 +3,8 @@
     <div class="header">
       <h2>{{ t('service.catalog.title') }}</h2>
       <div class="header-actions">
-        <el-button type="success" @click="openQueryServices">{{ t('service.catalog.manageQuery') }}</el-button>
-        <el-button type="primary" @click="openRegisteredServices">{{ t('service.catalog.manageRegistered') }}</el-button>
+        <el-button v-if="canReadDefinitions" type="success" @click="openQueryServices">{{ t('service.catalog.manageQuery') }}</el-button>
+        <el-button v-if="canReadRegistrations" type="primary" @click="openRegisteredServices">{{ t('service.catalog.manageRegistered') }}</el-button>
       </div>
     </div>
 
@@ -129,10 +129,14 @@ import graphQueryServiceAPI from '../api/graphQueryService'
 import ServiceCard from '../components/ServiceCard.vue'
 import { getEnabledProtocols } from '../utils/serviceHelper'
 import { navigateServiceRoute } from '@/utils/moduleNavigation'
+import { useAuthStore } from '../store/auth'
 
 const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
+const authStore = useAuthStore()
+const canReadDefinitions = computed(() => authStore.hasPermission('service.definition.read'))
+const canReadRegistrations = computed(() => authStore.hasPermission('service.external_registration.read'))
 const loading = ref(false)
 const catalogTabs = ['all', 'wms', 'wfs', 'wmts', 'ogc_api', 'xyz', 'rest', 'graph']
 const resolveRouteState = routeQuery => resolveCanonicalTabRouteState({
@@ -207,10 +211,10 @@ const loadCatalog = async () => {
 
     // 并行加载查询服务、注册服务和瓦片服务
     const [queryData, registeredData, tileData, graphData] = await Promise.all([
-      loadQueryServices(),
-      loadRegisteredServices(),
-      loadTileServices(),
-      loadGraphQueryServices()
+      canReadDefinitions.value ? loadQueryServices() : [],
+      canReadRegistrations.value ? loadRegisteredServices() : [],
+      canReadDefinitions.value ? loadTileServices() : [],
+      canReadDefinitions.value ? loadGraphQueryServices() : []
     ])
 
     externalServices.value = []  // 旧架构的外部服务已废弃
@@ -271,6 +275,8 @@ const loadTileServices = async () => {
 
 // 处理服务点击
 const handleServiceClick = (service) => {
+  if (service._source === 'registered' && !canReadRegistrations.value) return
+  if (service._source !== 'registered' && !canReadDefinitions.value) return
   if (service._source === 'external') {
     navigateServiceRoute(router, `/services/${service.id}`)
   } else if (service._source === 'query') {

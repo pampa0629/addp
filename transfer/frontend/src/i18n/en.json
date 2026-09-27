@@ -1,5 +1,9 @@
 {
   "transfer": {
+    "accessDenied": {
+      "title": "Access denied",
+      "description": "This account does not have permission to use this page."
+    },
     "layout": {
       "title": "Transfer Data",
       "user": "User",

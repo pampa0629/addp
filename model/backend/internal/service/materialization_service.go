@@ -26,7 +26,7 @@ import (
 )
 
 const materializationAuthorizationTTL = int64(3600)
-const materializationMarkerPrefix = "addp:model-materialization:v1:"
+const materializationMarkerPrefix = "addp:model-materialization:v2:"
 
 var errMaterializedTargetOwnershipMismatch = errors.New("materialized target ownership marker mismatch")
 
@@ -104,7 +104,7 @@ func (s *MaterializationService) DecommissionMaterializedTarget(
 		}
 		schemaName := requestedLocator.Path[len(requestedLocator.Path)-1]
 		if err := pool.WithContext(ctx).Transaction(func(physicalTx *gorm.DB) error {
-			return dropOwnedMaterializedTarget(physicalTx, schemaName, strings.TrimSpace(request.TargetName), logicalTableID)
+			return dropOwnedMaterializedTarget(physicalTx, schemaName, strings.TrimSpace(request.TargetName), table.PhysicalOwnerToken)
 		}); err != nil {
 			if errors.Is(err, errMaterializedTargetOwnershipMismatch) {
 				return apperrors.Conflict("materialized_target_ownership_mismatch", modeli18n.MsgMaterializedTargetConflict)
@@ -144,7 +144,7 @@ func materializedTargetConfirmationMatches(table *models.LogicalTable, request m
 		targetName == strings.TrimSpace(request.TargetName)
 }
 
-func dropOwnedMaterializedTarget(tx *gorm.DB, schemaName, tableName string, logicalTableID int64) error {
+func dropOwnedMaterializedTarget(tx *gorm.DB, schemaName, tableName, ownerToken string) error {
 	if err := lockMaterializedTarget(tx, schemaName, tableName); err != nil {
 		return err
 	}
@@ -152,7 +152,7 @@ func dropOwnedMaterializedTarget(tx *gorm.DB, schemaName, tableName string, logi
 	if err != nil || !exists {
 		return err
 	}
-	if !materializationMarkerOwnedBy(comment, logicalTableID) {
+	if !materializationMarkerOwnedBy(comment, ownerToken) {
 		return errMaterializedTargetOwnershipMismatch
 	}
 	return tx.Exec("DROP TABLE " + qualifiedIdentifier(schemaName, tableName)).Error
@@ -267,12 +267,12 @@ func physicalTableComment(tx *gorm.DB, schemaName, tableName string) (string, bo
 	return comment.String, true, nil
 }
 
-func materializationMarker(logicalTableID int64, fingerprint, operationID string) string {
-	return materializationMarkerPrefix + strconv.FormatInt(logicalTableID, 10) + ":" + fingerprint + ":" + operationID
+func materializationMarker(ownerToken, fingerprint, operationID string) string {
+	return materializationMarkerPrefix + ownerToken + ":" + fingerprint + ":" + operationID
 }
 
 type materializationOwnershipMarker struct {
-	LogicalTableID    int64
+	OwnerToken        string
 	SchemaFingerprint string
 	OperationID       string
 }
@@ -286,21 +286,21 @@ func parseMaterializationMarker(marker string) (materializationOwnershipMarker, 
 	if len(parts) != 3 || len(parts[1]) != 64 || strings.TrimSpace(parts[2]) == "" {
 		return materializationOwnershipMarker{}, false
 	}
-	logicalTableID, err := strconv.ParseInt(parts[0], 10, 64)
-	if err != nil || logicalTableID <= 0 {
+	ownerToken, err := uuid.Parse(parts[0])
+	if err != nil {
 		return materializationOwnershipMarker{}, false
 	}
 	if _, err := hex.DecodeString(parts[1]); err != nil {
 		return materializationOwnershipMarker{}, false
 	}
 	return materializationOwnershipMarker{
-		LogicalTableID: logicalTableID, SchemaFingerprint: parts[1], OperationID: parts[2],
+		OwnerToken: ownerToken.String(), SchemaFingerprint: parts[1], OperationID: parts[2],
 	}, true
 }
 
-func materializationMarkerOwnedBy(marker string, logicalTableID int64) bool {
+func materializationMarkerOwnedBy(marker, ownerToken string) bool {
 	parsed, ok := parseMaterializationMarker(marker)
-	return ok && parsed.LogicalTableID == logicalTableID
+	return ok && parsed.OwnerToken == ownerToken
 }
 
 func qualifiedIdentifier(schemaName, tableName string) string {
@@ -377,6 +377,9 @@ func (s *MaterializationService) ensureMaterializedTable(tx *gorm.DB, table *mod
 	if len(fields) == 0 {
 		return apperrors.Validation("materialization_definition_invalid", modeli18n.MsgMaterializationInvalid)
 	}
+	if _, err := uuid.Parse(table.PhysicalOwnerToken); err != nil {
+		return apperrors.Validation("materialization_owner_token_invalid", modeli18n.MsgMaterializationInvalid)
+	}
 	if err := lockMaterializedTarget(tx, schema, name); err != nil {
 		return err
 	}
@@ -386,7 +389,7 @@ func (s *MaterializationService) ensureMaterializedTable(tx *gorm.DB, table *mod
 	}
 	if exists {
 		marker, ok := parseMaterializationMarker(comment)
-		if !ok || marker.LogicalTableID != table.ID {
+		if !ok || marker.OwnerToken != table.PhysicalOwnerToken {
 			return apperrors.Conflict("materialized_target_ownership_mismatch", modeli18n.MsgMaterializedTargetConflict)
 		}
 		if marker.SchemaFingerprint != fingerprint {
@@ -397,7 +400,7 @@ func (s *MaterializationService) ensureMaterializedTable(tx *gorm.DB, table *mod
 	if err := tx.Exec(s.logicalTableSvc.generatePostgreSQLDDL(table, fields)).Error; err != nil {
 		return err
 	}
-	return tx.Exec("COMMENT ON TABLE " + qualifiedIdentifier(schema, name) + " IS " + quoteSQLLiteral(materializationMarker(table.ID, fingerprint, operationID))).Error
+	return tx.Exec("COMMENT ON TABLE " + qualifiedIdentifier(schema, name) + " IS " + quoteSQLLiteral(materializationMarker(table.PhysicalOwnerToken, fingerprint, operationID))).Error
 }
 func lockMaterializedTarget(tx *gorm.DB, schema, name string) error {
 	return tx.Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", qualifiedIdentifier(schema, name)).Error

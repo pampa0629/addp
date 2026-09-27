@@ -16,7 +16,7 @@ describe('Ontology Console entry', () => {
     expect(matchesNavigationAccess(boundary,'tenant',['ontology.revision.read'])).toBe(true)
     expect(matchesNavigationAccess(boundary,'platform',['ontology.revision.read'])).toBe(false)
     expect(matchesNavigationAccess(boundary,'tenant',[])).toBe(false)
-    expect(read('../src/views/Portal.vue')).toContain('ALL_HOME_CARDS.filter(card => matchesNavigationAccess')
+    expect(read('../src/views/Portal.vue')).toContain('ALL_HOME_CARDS.filter(card => visibleModules.value.has(card.module))')
     expect(read('../src/config/searchIndex.js')).toContain("route: '/ontology/ontologies', contexts: ['tenant'], permissions: ['ontology.revision.read']")
   })
   it('has bilingual menu, card and API labels', () => {

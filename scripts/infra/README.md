@@ -91,7 +91,13 @@ bash scripts/test/certify-infra-kafka-ha.sh
 
 本地共享 `addp-postgres` 禁止创建清单之外的测试 database；所有非 IAM 测试复用 `addp_test`，System IAM、Fosite、API 与 Migration 测试复用 `addp_iam_test`。本地测试必须调用根 `Makefile` 或 `scripts/test/` 的标准门禁，由门禁重建并清理自己拥有的 Schema 或测试事实；禁止为了单次验证直接执行 `createdb`、`CREATE DATABASE`、`dropdb` 或 `DROP DATABASE`。如果现有门禁不能提供所需隔离，应先修正门禁的重置和清理能力，不能用新增 database 绕过问题。
 
-下文 DSN 中的 `15432` 仅为 ADDP 首选宿主机端口示例。端口发生自动调整时，先用 `bash scripts/infra/status.sh` 查询 `addp-postgres` 的实际映射，再向标准门禁提供对应 DSN；不得把占用首选端口的其他 PostgreSQL 实例当作 ADDP 测试库。
+下文 DSN 中的 `15432` 仅为 ADDP 首选宿主机端口示例。每次从新会话执行本地门禁前，先运行 `bash scripts/infra/status.sh`，确认 `addp-postgres` 的实际映射和健康状态，再把该端口显式填入 `*_POSTGRES_TEST_DSN` 或 `ADDP_TEST_POSTGRES_PORT`。根 `.env` 记录首选值，不记录动态运行结果；不要根据 `.env` 或端口号猜测测试库身份。标准 PostgreSQL T2 门禁会在执行测试前核对本地回环目标与当前工作区容器的实际映射，并限制本地 database 为 `addp_test` 或 `addp_iam_test`；映射不符或无法核实即停止。若实际映射不是示例端口，必须替换下文命令中的端口，不得把占用首选端口的其他 PostgreSQL 实例当作 ADDP 测试库。
+
+只需机器可读的 PostgreSQL 宿主机端口时，在仓库根目录执行以下只读命令；`addp_infra_verify_container` 会先核对容器属于当前工作区的 ADDP Infra：
+
+```bash
+bash -c 'source scripts/infra/ports.sh && addp_infra_verify_container postgres addp-postgres && addp_infra_mapped_port addp-postgres 5432'
+```
 
 System IAM 标准门禁在首次重置 Schema 前获取宿主机级文件锁 `/tmp/addp-system-iam-postgres-gate.lock`，覆盖完整运行及其子进程，跨 checkout 和 `--package` 选择互斥。另一轮仍在运行时立即失败，不开始数据库操作；进程退出后由操作系统释放锁，锁文件保持原位，不能通过删除锁文件解除占用。该边界同样用于独占 CI Runner；分包验证也必须串行运行。
 
@@ -165,7 +171,7 @@ ASSET_POSTGRES_TEST_DSN='postgres://addp:addp_password@localhost:15432/addp_test
   make test-asset-postgres
 ```
 
-Security Schema 门禁默认使用本地 `addp_test`；也可以显式覆盖为独占 disposable database：
+Security Schema 门禁必须显式提供 `SECURITY_POSTGRES_TEST_DSN`，本地仅使用 `addp_test`，CI 可使用 Job 独占的 disposable database。宿主机端口发生自动调整时，DSN 必须填写 ADDP PostgreSQL 的实际映射端口：
 
 ```bash
 SECURITY_POSTGRES_TEST_DSN='postgres://addp:addp_password@localhost:15432/addp_test?sslmode=disable' \
@@ -681,6 +687,18 @@ SKIP_MEILISEARCH_INIT=0
 `up.sh` 会自动完成所有初始化,无需手动执行其他脚本。
 
 `down.sh -v` 在本地必须由交互终端输入 `DELETE addp-infra VOLUMES`，`--force` 不会跳过这项确认；非交互删除仅供已完成独立准入的 GitHub Online 一次性环境使用。脚本还会核对容器的 Compose 工作目录，拒绝从另一个 worktree 停止本工作区的容器。
+
+### 本地 Infra 备份与隔离恢复演练
+
+`make infra-backup BACKUP_ROOT=/绝对路径/ADDP-backups` 从当前工作区拥有的运行中 Infra PostgreSQL 和 MinIO 只读导出 `addp` 数据库、Bucket 元数据/IAM 与当前对象，并复制根 `.env`。输出目录必须在仓库外，权限为当前用户独占；完成时生成逐文件 SHA-256 清单。备份中含凭据，不能提交到 Git、共享给他人或放入无加密的云同步目录。
+
+`make infra-restore-drill BACKUP_DIR=/绝对路径/ADDP-backups/<备份目录>` 先校验清单，再使用与来源相同的镜像创建两个没有宿主机端口、没有持久卷的一次性容器。PostgreSQL 在隔离容器内真实恢复并核对关键表行数；MinIO 在隔离容器内导入 Bucket/IAM 并逐 Bucket 恢复对象，下载后比较文件哈希。演练结束仅清理本轮带所有权标签的一次性容器。该入口不连接或重置当前 `addp`、`addp_test`、`addp_iam_test`，不停止服务，不修改 Infra/Business/SCP 卷。
+
+本地备份覆盖当前 System 数据库和 Infra MinIO 的当前对象版本，不覆盖 Business 引擎、Redis、FalkorDB、Meilisearch、Kafka 的持久事实，也不保存 MinIO 对象历史版本。正式平台备份还需界定这些状态的恢复来源、使用独立存储与加密保留策略，并做定期演练；本地单份备份不等于灾备。
+
+本机网盘备份使用 `make infra-cloud-backup BACKUP_ROOT=/Users/pampa/addp-backups EXPORT_ROOT=/Users/pampa/addp-cloud-encrypted PRIVATE_ROOT=/Users/pampa/.config/addp/backup`。入口先只读生成上述 Infra 快照，在无宿主机端口和持久卷的隔离容器中恢复核对，再用 age 收件人公钥生成 `.tar.age`，解密流并逐文件核对 SHA-256，最后才原子移入网盘客户端监视的本地目录；脚本本身不将明文快照或私钥放入该目录。`.sha256` 是加密文件的校验值，`last-run.json` 仅记在私有目录。失败时保留本地快照供检查，不上传不完整归档，也不自动删除已有备份。
+
+当前这台 Mac 的用户级 `launchd` 任务 `/Users/pampa/Library/LaunchAgents/com.addp.infra-backup.plist` 每天本地时间 02:00 执行上述 Make 入口，日志在 `/Users/pampa/.config/addp/backup/`。百度网盘“文件夹自动备份”将本地 `/Users/pampa/addp-cloud-encrypted` 自动上传至云端 `/addp备份/addp-cloud-encrypted/`。任务需要该用户已登录、Docker/Infra 正在运行且网盘客户端可上传；电脑关机时不会补跑。原始 age 私钥保存在 `/Users/pampa/.config/addp/backup/identity.txt`（0600）；应用户要求，无独立恢复密码的副本已放在同步目录的 `addp-recovery-identity.txt`，并在网盘目录中确认可见。持有该网盘目录访问权的人因此也能解密其中的归档；如需恢复网盘侧的保密性，应删除云端及同步目录中的私钥副本，改由独立于网盘的安全介质保管。网盘客户端当前提示每月文件夹备份额度 10 GB；超额、离线或登录过期时，本地成功不代表云端成功，需核对传输记录和云端文件。此流程仍仅覆盖上一段列出的 Infra 数据。
 
 ### 数据持久化
 

@@ -43,6 +43,7 @@
           <div class="panel-header">
             <h3>{{ t('meta.scan.storageEngineList') }}</h3>
             <el-button
+              v-if="canExecuteScan"
               type="primary"
               @click="handleCreateUnscannedScanRuns"
               :loading="unscannedScanning"
@@ -131,6 +132,7 @@
               <template #default="{ row }">
                 <div class="engine-actions">
                   <el-button
+                    v-if="canUpdateSchedule"
                     type="success"
                     size="default"
                     plain
@@ -157,7 +159,7 @@
             <h3>{{ rightPanelTitle }}</h3>
             <div v-if="selectedResource" class="catalogEntry-actions-bar">
               <el-button
-                v-if="selectedCatalogIsDirectLeaf"
+                v-if="selectedCatalogIsDirectLeaf && canExecuteScan"
                 type="primary"
                 size="default"
                 @click="handleScanSelectedEngine"
@@ -172,7 +174,7 @@
               </div>
 
               <el-button
-                v-if="!selectedCatalogIsDirectLeaf"
+                v-if="!selectedCatalogIsDirectLeaf && canExecuteScan"
                 type="primary"
                 size="default"
                 @click="handleBatchScan"
@@ -276,6 +278,7 @@
                 <template #default="{ row }">
                   <div class="catalogEntry-actions">
                     <el-button
+                      v-if="canExecuteScan"
                       type="primary"
                       size="default"
                       @click.stop="handleScanCatalogEntry(row)"
@@ -285,6 +288,7 @@
                       {{ row.scan_status === 'completed' ? t('meta.scan.rescan') : t('meta.scan.scan') }}
                     </el-button>
                     <el-button
+                      v-if="canCreateSchedule || canUpdateSchedule"
                       type="success"
                       size="default"
                       plain
@@ -337,7 +341,7 @@
       </el-form>
       <template #footer>
         <el-button @click="scheduleDialogVisible = false">{{ t('meta.scan.cancel') }}</el-button>
-        <el-button type="primary" @click="submitScheduleForm" :loading="savingSchedule">
+        <el-button v-if="canUpdateSchedule" type="primary" @click="submitScheduleForm" :loading="savingSchedule">
           {{ t('meta.scan.save') }}
         </el-button>
       </template>
@@ -380,6 +384,7 @@
       <template #footer>
         <el-button @click="catalogEntryScheduleDialogVisible = false">{{ t('meta.scan.cancel') }}</el-button>
         <el-button
+          v-if="currentCatalogEntryTask ? canUpdateSchedule : canCreateSchedule"
           type="primary"
           @click="submitCatalogEntrySchedule"
           :loading="savingSchedule"
@@ -399,6 +404,7 @@ import { useI18n } from 'vue-i18n'
 import { Search, Refresh, CircleCheck, CircleClose, Warning, QuestionFilled, Clock, Link, Document } from '@element-plus/icons-vue'
 import { MonitorExecutionsButton, ScheduleConfig, describeCron, decodeScheduleToForm } from '@common-ui'
 import metaApi from '../api/meta'
+import { useAuthStore } from '../store/auth'
 import { isDirectLeafCatalog } from '../utils/catalogScanView'
 import { navigateMetaRoute } from '../utils/moduleNavigation'
 import { resolveMetadataScanRouteState } from '../utils/routeState'
@@ -407,6 +413,10 @@ import { scanRunFailureSamples, waitForScanRuns } from '../utils/scanRunBatch'
 const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
+const authStore = useAuthStore()
+const canExecuteScan = computed(() => authStore.hasPermission('meta.scan_task.execute'))
+const canCreateSchedule = computed(() => authStore.hasPermission('meta.scan_task.create'))
+const canUpdateSchedule = computed(() => authStore.hasPermission('meta.scan_task.update'))
 
 const AUTO_SCHEDULE_DESC_MARK = '[PortalAutoSchedule]'
 const SCAN_RUN_POLL_INTERVAL_MS = 2000
@@ -629,7 +639,7 @@ const handleSelectResource = async (row) => {
 }
 
 const handleScheduleClick = async row => {
-  if (!row) return
+  if (!row || !canUpdateSchedule.value) return
   if (!selectedResource.value || selectedResource.value.id !== row.id) {
     await handleSelectResource(row)
   }
@@ -1309,6 +1319,7 @@ const handleBatchScan = async () => {
 }
 
 const submitScheduleForm = async () => {
+  if (!canUpdateSchedule.value) return
   if (!selectedResource.value) {
     ElMessage.warning(t('meta.scan.selectEngineFirst'))
     return
@@ -1384,6 +1395,7 @@ const handleScanCatalogEntry = async (catalogEntry) => {
 
 // 顶层资源调度相关方法
 const handleCatalogEntrySchedule = async (catalogEntry) => {
+  if (!canCreateSchedule.value && !canUpdateSchedule.value) return
   currentCatalogEntry.value = catalogEntry
   const catalogEntryName = catalogEntryNameOf(catalogEntry)
   // 查找该顶层资源的调度任务
@@ -1412,6 +1424,7 @@ const handleCatalogEntrySchedule = async (catalogEntry) => {
 
 const submitCatalogEntrySchedule = async () => {
   if (!currentCatalogEntry.value) return
+  if (currentCatalogEntryTask.value ? !canUpdateSchedule.value : !canCreateSchedule.value) return
 
   const catalogEntryName = catalogEntryNameOf(currentCatalogEntry.value)
   const catalogPath = catalogEntryTargetOf(currentCatalogEntry.value) || catalogEntryName

@@ -141,7 +141,7 @@ func SetupRouter(
 		api.POST("/email-deliveries/:delivery_id/retry", permission(monitorauthorization.PermissionMonitorNotificationDeliveryRetry), emailHandler.RetryEmailDelivery)
 
 		// 模块健康检查
-		api.GET("/task-providers", permission(monitorauthorization.PermissionMonitorHealthRead), healthHandler.GetTaskProviders)
+		api.GET("/task-providers", permission(monitorauthorization.PermissionMonitorExecutionRead), healthHandler.GetTaskProviders)
 		api.GET("/providers/health", permission(monitorauthorization.PermissionMonitorHealthRead), healthHandler.CheckAllProvidersHealth)
 		api.GET("/providers/:module/health", permission(monitorauthorization.PermissionMonitorHealthRead), healthHandler.CheckProviderHealth)
 		if runtimeHealthHandler != nil {

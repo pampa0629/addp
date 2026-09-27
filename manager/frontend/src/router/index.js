@@ -72,7 +72,7 @@ const router = createRouter({
 import { createAuthGuard } from '@common-ui'
 
 router.beforeEach(createAuthGuard(useAuthStore, {
-  moduleName: 'Manager',
+  router, moduleName: 'Manager',
   loginRouteName: 'Login'
 }))
 

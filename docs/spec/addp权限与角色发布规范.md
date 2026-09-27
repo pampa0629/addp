@@ -1,6 +1,6 @@
 # ADDP 权限与角色发布规范
 
-更新日期：2026-09-12
+更新日期：2026-09-26
 
 状态：正式规范。本文定义 Permission、Role、Role Assignment、Scope、模块 Manifest、发布期聚合和路由授权声明的唯一规则。
 
@@ -164,7 +164,25 @@ Role 选择器必须把兼容 Role 分为“可分配角色”和“已分配角
 
 Tenant 管理界面按账号类别提供唯一授权入口：“角色管理 > 角色分配”只查询和选择 User Membership；Tenant-owned Service Account 的角色只从“应用接入 > 租户服务账号”管理；Platform-owned Runtime Service Principal 的角色只从“应用接入 > 平台运行账号”查看。两个入口继续复用相同的 Role Assignment API、校验和审计事实，但不得混排数据或共用可变更操作。Platform-owned Runtime Service Principal 只读，不允许 Tenant 管理员创建或撤销其系统引导的 Role Assignment；Tenant-owned Service Account 只可选择 `allowed_principal_types` 包含 `service_principal` 的 Role。
 
-## 七、HTTP 与 Tool 授权声明
+## 七、租户阶段的部分授权账号
+
+在个人、Department 和 Project Group 工作区及跨工作区授权形成完整 owner 契约前，业务资源的第一阶段交互以当前 Tenant 为隔离边界。Tenant 内是否共享由各资源 owner 的现有规范明确规定；不得将 Department 或 Project Group Scope 当作 Tenant Scope，也不得因暂缓工作区设计而绕过已有的引擎、数据和敏感信息授权。组织目录及其成员关系可以继续管理，但本节不赋予它们业务资源访问效果。
+
+Console 和业务前端只从当前 AuthContext 的有效 Assignment 判断候选功能权限，不根据角色名或组织名称推断权限。导航、首页卡片、搜索、最近访问、直接地址和浏览器历史应使用一致的页面入口条件；无权进入时显示无权限状态，不加载业务 iframe 或发起该页面的业务请求。没有可访问页面的模块不显示空入口。页面内创建、更新、执行、删除等操作分别按对应 Permission 展示，功能 Permission 之间不隐式包含。前端判断仅改善体验，最终由 API owner 对每个请求授权。
+
+Monitor 仪表盘以 `monitor.statistics.read` 准入；仅持有该权限时展示统计、趋势和运行指标，不请求或展示需要 `monitor.health.read` 的健康信息，也不请求或展示需要 `monitor.execution.read` 的最近执行记录。执行记录页以 `monitor.execution.read` 准入，其任务提供者目录只返回显示名称、模块名和任务能力等页面必需字段，不能附带 Backend 地址、实例身份或健康探测结果。该目录接口使用执行记录读取权限；健康探测接口继续使用 `monitor.health.read`。
+
+业务页面首屏必需的跨模块目录权限必须列入同一页面的 all-of 准入条件。Manager 的数据浏览、检索及任务页面读取数据项引擎选择项时需有 `manager.data_item.read`；Model 的领域、分层或指标引用页面依其实际读取分别要求 `standard.domain.read`、`model.dw_layer.read`、`standard.metric.read`、`model.logical_model.read`；Develop 的 SQL 和工作流编辑器读取 Meta 引擎目录时需有 `meta.catalog.read`。只有实际无需该引用的页面才能独立准入，不能先进入页面再以 403 响应掩盖缺失依赖。
+
+Standard 的术语表、数据元、码表和文档页读取领域目录时需有 `standard.domain.read`，指标页另需 `standard.unit.read`。Security 的敏感定义页需要分级目录读取权限，防护纳管页需要 `meta.catalog.read`。Asset 管理侧申请页需要 `asset.management.read`；Catalog 治理覆盖、治理任务及集合页依照其 API 契约还需要 `catalog.entry.read`。Manager 向量化任务页展示模型名称只使用 Inference 的 `inference.model_label.read` 窄投影，不要求模型管理列表权限；平台侧 Manager 推理绑定设置页确实使用模型管理列表，因此需要 `inference.profile.read` 和 `inference.deployment.read`。
+
+已认证账号缺少功能 Permission 时 API 返回 403，认证失效返回 401；跨 Tenant 或按 owner 策略隐藏存在性的资源详情返回 404。有列表 Permission 但结果为空时返回空集合，不解释为无权。权限或 Tenant Context 更新后必须重新计算入口和操作并清除旧租户资源视图。角色模板应显式包含页面实际依赖的跨模块 Permission，不得通过增加无关的读取权限或服务身份代理来消除前端 403。
+
+通用功能 Permission 判断在 Tenant Context 只接受绑定当前 Tenant 的 Tenant Scope，在 Platform Context 只接受 Platform Scope。Department 或 Project Group Scope 不能通过通用 Guard 取得整租户业务 API 的 Allow。业务模块在接受仅有 Department 或 Project Group Scope 的 Assignment 前，必须已有明确的资源 Scope Binding、owner 授权判断和同范围列表裁剪；缺少这些能力时拒绝该 Scope，不能把功能 Guard 通过视为资源授权完成。业务模块对部分授权账号的验收至少覆盖无权限、只读、仅创建、可执行和跨 Tenant 五类上下文，并分别验证导航、直达地址、列表、详情及写操作。
+
+引擎管理读取与业务页面的目录浏览分开授权。`system.engine.read` 只用于 System 引擎管理接口及其脱敏管理详情；可定制的业务 Permission `system.engine_catalog.read` 允许读取当前 Tenant 可见、声明 `storage.catalog.supported=true`、`storage.catalog.real_time=true` 且具备 `storage.catalog_model` 的引擎目录选择投影（仅 ID、名称、类型、来源、生命周期、连接状态及标准能力声明），以及该引擎的实时目录子节点与结构事实。目录能力以声明为准，不按 `engine_type` 或 `engine_family` 推断；`spark_workflow` 等只提供计算能力的运行时不进入目录选择投影，实际 Spark 通用资源可依其目录能力进入。目录选择投影不得返回连接地址、凭据、管理状态或内部身份字段。对不具备实时目录能力的引擎直接请求目录子节点或结构事实，System 返回 422 与稳定的 `engine_catalog_operation_unsupported` 错误码。Quality、Graph、Service 等业务选择器必须使用该投影，不得为选择引擎而请求管理列表。页面入口只要求页面初次加载必需的 Permission；创建等操作依赖目录时，操作入口再要求 `system.engine_catalog.read`。System 继续按当前 Tenant 校验每个目录请求中的引擎 ID，权限本身不扩大引擎可见范围；Department 和 Project Group Assignment 在本阶段不取得该 API 的 Allow。
+
+## 八、HTTP 与 Tool 授权声明
 
 每个公开 OpenAPI Operation 必须声明 `x-addp-auth-mode`：
 
@@ -183,7 +201,7 @@ public | authenticated | self | permission | delegated_tool | resource_ticket | 
 
 Swagger/OpenAPI 的具体注解方式见 `docs/spec/addp-Swagger集成指南.md`。
 
-## 八、发布期聚合
+## 九、发布期聚合
 
 `common/authorization/cmd/manifest` 是唯一聚合器。它读取所有 owner Manifest、System 内置 Role Manifest、OpenAPI 和 Tool Manifest，执行：
 
@@ -198,7 +216,7 @@ Swagger/OpenAPI 的具体注解方式见 `docs/spec/addp-Swagger集成指南.md`
 
 Permission 收缩、Role 权限移除或主体授权变化必须同步推进受影响 Principal 的授权版本，并按安全语义撤销 Token Family，不能等待 Access Token 自然过期。
 
-## 九、模块生命周期
+## 十、模块生命周期
 
 模块暂时不可用不等于 Permission 删除。服务启停不修改 IAM 目录。
 
@@ -212,7 +230,7 @@ Permission 收缩、Role 权限移除或主体授权变化必须同步推进受�
 
 不保留旧 Permission 别名、旧路由或双目录查询。
 
-## 十、验证
+## 十一、验证
 
 最小发布门：
 

@@ -39,7 +39,7 @@
 
     <el-row :gutter="20">
       <!-- 模块健康状态 -->
-      <el-col :span="8">
+      <el-col v-if="canReadHealth" :span="8">
         <el-card shadow="hover">
           <template #header>
             <div class="card-header">
@@ -62,7 +62,7 @@
       </el-col>
 
       <!-- 执行趋势图表 -->
-      <el-col :span="16">
+      <el-col :span="canReadHealth ? 16 : 24">
         <el-card shadow="hover">
           <template #header>
             <div class="card-header">
@@ -79,7 +79,7 @@
       </el-col>
     </el-row>
 
-    <el-card shadow="hover" class="runtime-health-card">
+    <el-card v-if="canReadHealth" shadow="hover" class="runtime-health-card">
       <template #header>
         <div class="card-header">
           <span>{{ t('monitor.dashboard.runtime_health.title') }}</span>
@@ -175,11 +175,11 @@
     </el-card>
 
     <!-- 最近执行记录 -->
-    <el-card shadow="hover" style="margin-top: 20px;">
+    <el-card v-if="canReadExecutions" shadow="hover" style="margin-top: 20px;">
       <template #header>
         <div class="card-header">
           <span>{{ t('monitor.dashboard.recent_executions') }}</span>
-          <el-button text @click="gotoExecutionList">
+          <el-button v-if="authStore.hasPermission('monitor.execution.read')" text @click="gotoExecutionList">
             {{ t('monitor.dashboard.view_all') }}
             <el-icon><ArrowRight /></el-icon>
           </el-button>
@@ -187,6 +187,7 @@
       </template>
       <execution-table
         :executions="recentExecutions"
+        :can-view="authStore.hasPermission('monitor.execution.read')"
         @view="handleViewExecution"
       />
     </el-card>
@@ -213,10 +214,14 @@ import ExecutionTable from '@/components/ExecutionTable.vue'
 import { useTheme } from '@common-ui'
 import { executionDetailLocation } from '@/utils/executionNavigation'
 import { navigateMonitorRoute } from '@/utils/moduleNavigation'
+import { useAuthStore } from '../store/auth'
 
 const router = useRouter()
+const authStore = useAuthStore()
 const { t, te } = useI18n()
 const { mode } = useTheme()
+const canReadHealth = computed(() => authStore.hasPermission('monitor.health.read'))
+const canReadExecutions = computed(() => authStore.hasPermission('monitor.execution.read'))
 
 // 数据
 const stats = ref({})
@@ -258,13 +263,16 @@ async function loadStatistics() {
 
 // 加载模块健康状态
 async function loadModulesHealth() {
+  if (!canReadHealth.value) return
   loadingModules.value = true
   try {
     const data = await checkAllProviderHealth()
-    modules.value = data || []
+    if (canReadHealth.value) modules.value = data || []
   } catch (error) {
-    ElMessage.error(t('monitor.dashboard.modules_failed'))
-    console.error(error)
+    if (canReadHealth.value) {
+      ElMessage.error(t('monitor.dashboard.modules_failed'))
+      console.error(error)
+    }
   } finally {
     loadingModules.value = false
   }
@@ -277,13 +285,17 @@ async function refreshModulesHealth() {
 }
 
 async function loadRuntimeHealth(options = {}) {
+  if (!canReadHealth.value) return
   const silent = options.silent === true
   if (!silent) loadingRuntimeHealth.value = true
   try {
-    runtimeHealth.value = await listRuntimeHealth() || []
+    const result = await listRuntimeHealth()
+    if (canReadHealth.value) runtimeHealth.value = result || []
   } catch (error) {
-    if (!silent) ElMessage.error(t('monitor.dashboard.runtime_health.load_failed'))
-    console.error(error)
+    if (canReadHealth.value) {
+      if (!silent) ElMessage.error(t('monitor.dashboard.runtime_health.load_failed'))
+      console.error(error)
+    }
   } finally {
     if (!silent) loadingRuntimeHealth.value = false
   }
@@ -481,20 +493,23 @@ function renderTrendChart() {
 
 // 加载最近执行记录
 async function loadRecentExecutions() {
+  if (!canReadExecutions.value) return
   try {
     const data = await listExecutions({ page: 1, page_size: 10 })
-    recentExecutions.value = data.executions || []
+    if (canReadExecutions.value) recentExecutions.value = data.executions || []
   } catch (error) {
-    ElMessage.error(t('monitor.dashboard.executions_failed'))
-    console.error(error)
+    if (canReadExecutions.value) {
+      ElMessage.error(t('monitor.dashboard.executions_failed'))
+      console.error(error)
+    }
   }
 }
 
 async function refreshExecutionSummary() {
   await Promise.all([
     loadStatistics(),
-    loadRecentExecutions(),
-    loadRuntimeHealth({ silent: true })
+    canReadExecutions.value ? loadRecentExecutions() : Promise.resolve(),
+    canReadHealth.value ? loadRuntimeHealth({ silent: true }) : Promise.resolve()
   ])
 }
 
@@ -515,14 +530,31 @@ function gotoExecutionList() {
 onMounted(async () => {
   await Promise.all([
     loadStatistics(),
-    loadModulesHealth(),
+    canReadHealth.value ? loadModulesHealth() : Promise.resolve(),
     loadTrendData(),
-    loadRecentExecutions(),
-    loadRuntimeHealth(),
+    canReadExecutions.value ? loadRecentExecutions() : Promise.resolve(),
+    canReadHealth.value ? loadRuntimeHealth() : Promise.resolve(),
     loadRuntimeMetrics()
   ])
   refreshTimer = window.setInterval(refreshExecutionSummary, 5000)
   runtimeMetricsRefreshTimer = window.setInterval(() => loadRuntimeMetrics({ silent: true }), 30000)
+})
+
+watch(canReadHealth, allowed => {
+  if (allowed) {
+    void Promise.all([loadModulesHealth(), loadRuntimeHealth()])
+  } else {
+    modules.value = []
+    runtimeHealth.value = []
+  }
+})
+
+watch(canReadExecutions, allowed => {
+  if (allowed) {
+    void loadRecentExecutions()
+  } else {
+    recentExecutions.value = []
+  }
 })
 
 // 监听主题变化，重新渲染图表

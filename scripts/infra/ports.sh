@@ -32,6 +32,67 @@ addp_infra_mapped_port() {
   printf '%s\n' "${mapping##*:}"
 }
 
+# Guard local PostgreSQL T2 gates before they can reset schemas or run migrations.
+# Hosted CI and the dedicated local macOS CI own disposable databases outside addp-infra.
+addp_infra_verify_test_postgres_target() {
+  local host="$1" port="$2" database="$3" mapped state
+  if [ "${GITHUB_ACTIONS:-}" = true ] || [ "${ADDP_LOCAL_CI_POSTGRES:-}" = 1 ]; then
+    return 0
+  fi
+  case "$host" in localhost|localhost.|127.*|::1) ;; *) return 0 ;; esac
+  case "$database" in
+    addp_test|addp_iam_test) ;;
+    *) echo "✗ 本地 ADDP PostgreSQL 门禁仅允许 addp_test 或 addp_iam_test" >&2; return 1 ;;
+  esac
+  if ! [[ "$port" =~ ^[0-9]+$ ]] || (( 10#$port < 1 || 10#$port > 65535 )); then
+    echo "✗ 本地 PostgreSQL 测试连接必须显式指定有效端口" >&2
+    return 1
+  fi
+  if ! command -v docker >/dev/null 2>&1; then
+    echo "✗ 无法核实 ADDP PostgreSQL 容器映射：Docker 不可用" >&2
+    return 1
+  fi
+  addp_infra_verify_container postgres addp-postgres || {
+    echo "✗ 无法核实当前工作区的 addp-postgres；先运行 bash scripts/infra/status.sh" >&2
+    return 1
+  }
+  state=$(docker inspect --format '{{.State.Running}}' addp-postgres 2>/dev/null) || return 1
+  [ "$state" = true ] || {
+    echo "✗ addp-postgres 未运行" >&2
+    return 1
+  }
+  mapped=$(addp_infra_mapped_port addp-postgres 5432) || {
+    echo "✗ 无法读取 addp-postgres 的实际宿主机端口" >&2
+    return 1
+  }
+  [ "$port" = "$mapped" ] || {
+    echo "✗ PostgreSQL 测试端口 ${port} 与 addp-postgres 实际映射 ${mapped} 不一致；先运行 bash scripts/infra/status.sh" >&2
+    return 1
+  }
+}
+
+addp_infra_verify_test_postgres_dsn() {
+  local parsed host port database
+  parsed=$(python3 -c '
+import sys
+from urllib.parse import unquote, urlsplit
+
+try:
+    value = urlsplit(sys.stdin.readline().rstrip("\n"))
+    if value.scheme not in ("postgres", "postgresql") or not value.hostname:
+        raise ValueError("invalid PostgreSQL URL")
+    host = value.hostname
+    database = unquote(value.path.lstrip("/"))
+    if not database or any(char in host + database for char in "|\r\n"):
+        raise ValueError("invalid PostgreSQL URL target")
+    print(host + "|" + (str(value.port) if value.port else "") + "|" + database)
+except ValueError:
+    sys.exit("✗ PostgreSQL 测试 DSN 缺少有效的主机、端口或 database")
+' <<< "$1") || return 1
+  IFS='|' read -r host port database <<< "$parsed"
+  addp_infra_verify_test_postgres_target "$host" "$port" "$database"
+}
+
 addp_infra_port_busy() {
   lsof -nP -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1
 }

@@ -9,6 +9,7 @@ import (
 
 	commonapi "github.com/addp/common/api"
 	engineplugin "github.com/addp/common/engine/plugin"
+	engineselection "github.com/addp/common/engine/selection"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	sysi18n "github.com/addp/system/i18n"
 	"github.com/addp/system/internal/models"
@@ -142,6 +143,75 @@ func (h *EngineHandler) List(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, toEngineResponses(engines))
+}
+
+// ListCatalogSelectors godoc
+// @Summary      获取目录选择用引擎列表 | List engines for catalog selection
+// @Description  仅返回当前 Tenant 可见且声明实时 Catalog Model 的引擎最小选择投影，不包含连接信息或管理字段 | Return a minimal selection projection of visible engines declaring a live Catalog Model, without connection details or management fields
+// @Tags         引擎目录 | Engine Catalog
+// @Produce      json
+// @Security     BearerAuth
+// @Param        engine_type query string false "引擎类型 | Engine type"
+// @Success      200 {array} models.EngineCatalogSelector
+// @Failure      401 {object} models.ErrorResponse
+// @Failure      403 {object} models.ErrorResponse
+// @Failure      500 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["system.engine_catalog.read"]
+// @Router       /engine-catalog/engines [get]
+func (h *EngineHandler) ListCatalogSelectors(c *gin.Context) {
+	_, tenantID, _, err := iamTenantActor(c)
+	if err != nil {
+		respondIAMError(c, err)
+		return
+	}
+	engines, err := h.engineService.List(service.EngineListFilter{
+		EngineType:      c.Query("engine_type"),
+		IncludeBuiltin:  true,
+		LifecycleStates: []string{models.EngineLifecycleActive},
+	}, tenantID)
+	if err != nil {
+		commonapi.RespondError(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	selectors := make([]models.EngineCatalogSelector, 0, len(engines))
+	for _, engine := range engines {
+		if !hasLiveEngineCatalogCapability(&engine) {
+			continue
+		}
+		var capabilities json.RawMessage
+		if engine.Capabilities != nil && *engine.Capabilities != "" {
+			capabilities = json.RawMessage(*engine.Capabilities)
+		}
+		selectors = append(selectors, models.EngineCatalogSelector{
+			ID:               engine.ID,
+			Name:             engine.Name,
+			EngineType:       engine.EngineType,
+			EngineOrigin:     engine.EngineOrigin,
+			LifecycleState:   engine.LifecycleState,
+			ConnectionStatus: engine.ConnectionStatus,
+			Capabilities:     capabilities,
+		})
+	}
+	c.JSON(http.StatusOK, selectors)
+}
+
+func hasLiveEngineCatalogCapability(engine *models.Engine) bool {
+	if engine == nil {
+		return false
+	}
+	capabilities, err := engineselection.ParseCapabilities(engine.Capabilities)
+	return err == nil && capabilities != nil && capabilities.Storage != nil &&
+		capabilities.Storage.Catalog != nil && capabilities.Storage.Catalog.Supported &&
+		capabilities.Storage.Catalog.RealTime && capabilities.Storage.CatalogModel != nil
+}
+
+func requireLiveEngineCatalogCapability(engine *models.Engine) error {
+	if hasLiveEngineCatalogCapability(engine) {
+		return nil
+	}
+	return engineplugin.WrapEngineCatalogError(engineplugin.EngineCatalogErrorUnsupported,
+		errors.New("engine has no real-time catalog capability"))
 }
 
 // ListRuntimeDescriptors godoc
@@ -729,8 +799,8 @@ func toEngineDetailResponse(engine *models.Engine) engineResponse {
 
 // ListEngineCatalogChildren 列出指定引擎的实时 catalog 子节点。
 // @Summary 列出实时 catalog 子节点 | List live catalog children
-// @Description 基于 System 管理的引擎连接信息实时浏览真实引擎 catalog。请求空 path 返回显性结构 root；请求 root path 返回 schema、bucket、database、directory 等第一层业务节点。| Browse live engine catalog using System-managed connection information. Empty path returns the explicit structural root; root path returns first business branches.
-// @Tags 引擎管理 | Engine Management
+// @Description 基于声明了实时目录能力的引擎连接信息浏览真实 catalog。请求空 path 返回显性结构 root；不支持目录的引擎返回 422。| Browse a real catalog using an engine declaring live catalog capability. An empty path returns the structural root; engines without catalog support return 422.
+// @Tags 引擎目录 | Engine Catalog
 // @Accept json
 // @Produce json
 // @Security BearerAuth
@@ -739,10 +809,15 @@ func toEngineDetailResponse(engine *models.Engine) engineResponse {
 // @Success 200 {object} models.EngineCatalogListChildrenResponse
 // @Failure 400 {object} models.ErrorResponse
 // @Failure 401 {object} models.ErrorResponse
+// @Failure 403 {object} models.ErrorResponse
 // @Failure 404 {object} models.ErrorResponse
 // @Failure 500 {object} models.ErrorResponse
+// @Failure 422 {object} models.ErrorResponse "引擎不支持实时目录 | Engine does not support a live catalog"
+// @Failure 502 {object} models.ErrorResponse
+// @Failure 503 {object} models.ErrorResponse
+// @Failure 504 {object} models.ErrorResponse
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["system.engine.read"]
+// @x-addp-required-permissions ["system.engine_catalog.read"]
 // @Router /engines/{id}/catalog/children [post]
 func (h *EngineHandler) ListEngineCatalogChildren(c *gin.Context) {
 	id, err := commonapi.BindIDParam(c, "id")
@@ -766,10 +841,14 @@ func (h *EngineHandler) ListEngineCatalogChildren(c *gin.Context) {
 		h.respondWithResourceError(c, err)
 		return
 	}
+	if err := requireLiveEngineCatalogCapability(engine); err != nil {
+		respondEngineCatalogProviderError(c, err)
+		return
+	}
 
 	nodes, err := h.storageEngineService.ListEngineCatalogChildren(c.Request.Context(), engine, req)
 	if err != nil {
-		commonapi.RespondError(c, http.StatusInternalServerError, err.Error())
+		respondEngineCatalogProviderError(c, err)
 		return
 	}
 
@@ -778,8 +857,8 @@ func (h *EngineHandler) ListEngineCatalogChildren(c *gin.Context) {
 
 // DescribeEngineCatalogFacts 返回指定实时 catalog 叶子的结构事实。
 // @Summary 获取实时 catalog 叶子事实 | Describe live catalog leaf facts
-// @Description 基于 System 管理的引擎连接读取一个 catalog 叶子的结构事实；普通列表不会携带的字段详情通过此接口按需读取。| Read structural facts for one catalog leaf using the System-managed engine connection. Field details omitted from list responses are loaded here on demand.
-// @Tags 引擎管理 | Engine Management
+// @Description 从声明了实时目录能力的引擎读取一个 catalog 叶子的结构事实；不支持目录的引擎返回 422。| Read facts for a catalog leaf from an engine declaring live catalog capability; engines without catalog support return 422.
+// @Tags 引擎目录 | Engine Catalog
 // @Accept json
 // @Produce json
 // @Security BearerAuth
@@ -788,10 +867,15 @@ func (h *EngineHandler) ListEngineCatalogChildren(c *gin.Context) {
 // @Success 200 {object} plugin.EngineCatalogFacts
 // @Failure 400 {object} models.ErrorResponse
 // @Failure 401 {object} models.ErrorResponse
+// @Failure 403 {object} models.ErrorResponse
 // @Failure 404 {object} models.ErrorResponse
 // @Failure 500 {object} models.ErrorResponse
+// @Failure 422 {object} models.ErrorResponse "引擎不支持实时目录 | Engine does not support a live catalog"
+// @Failure 502 {object} models.ErrorResponse
+// @Failure 503 {object} models.ErrorResponse
+// @Failure 504 {object} models.ErrorResponse
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["system.engine.read"]
+// @x-addp-required-permissions ["system.engine_catalog.read"]
 // @Router /engines/{id}/catalog/facts [post]
 func (h *EngineHandler) DescribeEngineCatalogFacts(c *gin.Context) {
 	id, err := commonapi.BindIDParam(c, "id")
@@ -813,9 +897,13 @@ func (h *EngineHandler) DescribeEngineCatalogFacts(c *gin.Context) {
 		h.respondWithResourceError(c, err)
 		return
 	}
+	if err := requireLiveEngineCatalogCapability(engine); err != nil {
+		respondEngineCatalogProviderError(c, err)
+		return
+	}
 	facts, err := h.storageEngineService.DescribeEngineCatalogFacts(c.Request.Context(), engine, req)
 	if err != nil {
-		commonapi.RespondError(c, http.StatusInternalServerError, err.Error())
+		respondEngineCatalogProviderError(c, err)
 		return
 	}
 	commonapi.RespondSuccess(c, facts)

@@ -26,14 +26,12 @@ export const SUPPORTED_VECTOR_EXTENSIONS = [
 
 export const DEFAULT_VECTOR_MAX_FILE_SIZE_MB = 10
 
-export const buildEmbeddingModelLabels = (profiles = [], deployments = []) => {
-  const deploymentByID = new Map(deployments.map((deployment) => [deployment.id, deployment]))
-  return new Map(profiles.map((profile) => {
-    const deployment = deploymentByID.get(profile.model_deployment_id)
-    const labelParts = [profile.name, deployment?.upstream_model]
+export const buildEmbeddingModelLabels = (models = []) => {
+  return new Map(models.map((model) => {
+    const labelParts = [model.name, model.upstream_model]
       .map((value) => String(value || '').trim())
       .filter(Boolean)
-    return [profile.id, labelParts.join(' · ') || '-']
+    return [model.id, labelParts.join(' · ') || '-']
   }))
 }
 

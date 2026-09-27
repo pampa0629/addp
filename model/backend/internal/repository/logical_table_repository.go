@@ -23,6 +23,24 @@ func (r *LogicalTableRepository) Create(table *models.LogicalTable) error {
 	return commonrepo.WrapDBError(r.db.Create(table).Error)
 }
 
+// ExistsByPhysicalTarget checks the exclusive target claim across all Tenants.
+// The caller passes the canonical parent locator saved in materialization.
+func (r *LogicalTableRepository) ExistsByPhysicalTarget(parentLocator, targetName string, excludeID int64) (bool, error) {
+	if parentLocator == "" || targetName == "" {
+		return false, nil
+	}
+	query := r.db.Model(&models.LogicalTable{}).
+		Where("materialization->>'target_parent_locator' = ? AND materialization->>'target_name' = ?", parentLocator, targetName)
+	if excludeID > 0 {
+		query = query.Where("id <> ?", excludeID)
+	}
+	var count int64
+	if err := query.Count(&count).Error; err != nil {
+		return false, commonrepo.WrapDBError(err)
+	}
+	return count > 0, nil
+}
+
 func (r *LogicalTableRepository) GetByID(id, tenantID int64) (*models.LogicalTable, error) {
 	var table models.LogicalTable
 	err := r.db.Where("id = ? AND tenant_id = ?", id, tenantID).First(&table).Error

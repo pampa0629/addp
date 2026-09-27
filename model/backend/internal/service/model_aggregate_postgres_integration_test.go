@@ -2,14 +2,17 @@ package service
 
 import (
 	"context"
+	"errors"
 	"os"
 	"testing"
 	"time"
 
+	commonapi "github.com/addp/common/api"
 	"github.com/addp/common/events"
 	"github.com/addp/model/internal/migration"
 	"github.com/addp/model/internal/models"
 	"github.com/addp/model/internal/repository"
+	"github.com/google/uuid"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -33,6 +36,59 @@ func beginModelAggregatePostgresTransaction(t *testing.T) (*gorm.DB, int64) {
 	}
 	t.Cleanup(func() { _ = tx.Rollback().Error })
 	return tx, time.Now().UnixNano()
+}
+
+func TestPostgresPhysicalTargetClaimIsUniqueAcrossTenants(t *testing.T) {
+	tx, tenantID := beginModelAggregatePostgresTransaction(t)
+	repo := repository.NewLogicalTableRepository(tx)
+	for _, ownerTenantID := range []int64{tenantID, tenantID + 1} {
+		if err := repository.NewDWLayerRepository(tx).Create(&models.DWLayer{
+			TenantID: ownerTenantID, LayerCode: "pg_target", LayerName: "Physical target test", Version: 1,
+		}); err != nil {
+			t.Fatalf("create layer for tenant %d: %v", ownerTenantID, err)
+		}
+	}
+	parent := "addp://engine/2/path/outdoor?type=schema"
+	first := &models.LogicalTable{
+		TenantID: tenantID, Name: "Person A", Code: "person_a", TableType: "dimension", Layer: "pg_target", Status: "draft", CreatedBy: 1,
+		Materialization: models.JSONB{"target_parent_locator": parent, "target_name": "dim_person"},
+	}
+	if err := repo.Create(first); err != nil {
+		t.Fatalf("create first owner: %v", err)
+	}
+	var firstToken string
+	if err := tx.Raw("SELECT physical_owner_token::text FROM model.logical_tables WHERE id = ?", first.ID).Scan(&firstToken).Error; err != nil {
+		t.Fatalf("read first owner token: %v", err)
+	}
+	if _, err := uuid.Parse(firstToken); err != nil {
+		t.Fatalf("owner token is not UUID: %q: %v", firstToken, err)
+	}
+	if err := tx.SavePoint("duplicate_target").Error; err != nil {
+		t.Fatal(err)
+	}
+	second := &models.LogicalTable{
+		TenantID: tenantID + 1, Name: "Person B", Code: "person_b", TableType: "dimension", Layer: "pg_target", Status: "draft", CreatedBy: 1,
+		Materialization: models.JSONB{"target_parent_locator": parent, "target_name": "dim_person"},
+	}
+	if err := repo.Create(second); !errors.Is(err, commonapi.ErrConflict) {
+		t.Fatalf("duplicate physical target error = %v, want conflict", err)
+	}
+	if err := tx.RollbackTo("duplicate_target").Error; err != nil {
+		t.Fatalf("rollback duplicate attempt: %v", err)
+	}
+	if err := tx.Model(first).Update("materialization", models.JSONB{}).Error; err != nil {
+		t.Fatalf("release first target: %v", err)
+	}
+	if err := repo.Create(second); err != nil {
+		t.Fatalf("claim released target: %v", err)
+	}
+	var secondToken string
+	if err := tx.Raw("SELECT physical_owner_token::text FROM model.logical_tables WHERE id = ?", second.ID).Scan(&secondToken).Error; err != nil {
+		t.Fatalf("read second owner token: %v", err)
+	}
+	if secondToken == firstToken {
+		t.Fatalf("new owner reused previous token: %q", secondToken)
+	}
 }
 
 func TestPostgresLogicalTableAggregateRejectsStaleFieldAndTableWrites(t *testing.T) {

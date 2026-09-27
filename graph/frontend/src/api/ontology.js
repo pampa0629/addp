@@ -105,7 +105,7 @@ export const knowledgeGraphAPI = {
 export const engineAPI = {
   // 获取 Neo4j 引擎列表
   getNeo4jEngines() {
-    return client.get('/system/engines', {
+    return client.get('/system/engine-catalog/engines', {
       params: { engine_type: 'neo4j' }
     })
   },

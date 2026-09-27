@@ -23,12 +23,12 @@
           <el-option :label="t('graph.review.statusModified')" value="modified" />
         </el-select>
         <el-button
-          v-if="selectedIds.length > 0"
+          v-if="selectedIds.length > 0 && authStore.hasPermission('graph.review.approve')"
           type="success"
           @click="handleBatchApprove"
         >{{ t('graph.review.batchApprove') }} ({{ selectedIds.length }})</el-button>
         <el-button
-          v-if="selectedIds.length > 0"
+          v-if="selectedIds.length > 0 && authStore.hasPermission('graph.review.reject')"
           type="danger"
           @click="handleBatchReject"
         >{{ t('graph.review.batchReject') }} ({{ selectedIds.length }})</el-button>
@@ -41,7 +41,7 @@
       @selection-change="handleSelectionChange"
       row-key="id"
     >
-      <el-table-column type="selection" width="40" :selectable="row => row.status === 'pending'" />
+      <el-table-column v-if="authStore.hasAnyPermission(['graph.review.approve', 'graph.review.reject'])" type="selection" width="40" :selectable="row => row.status === 'pending'" />
       <el-table-column :label="t('graph.review.itemType')" width="80">
         <template #default="{ row }">
           <el-tag :type="row.item_type === 'entity' ? 'primary' : 'success'" size="small">
@@ -78,9 +78,9 @@
       <el-table-column :label="t('graph.common.actions')" width="200" fixed="right">
         <template #default="{ row }">
           <template v-if="row.status === 'pending'">
-            <el-button size="small" type="success" @click="handleApprove(row.id)">{{ t('graph.review.approve') }}</el-button>
-            <el-button size="small" type="danger" @click="handleReject(row.id)">{{ t('graph.review.reject') }}</el-button>
-            <el-button size="small" @click="openModifyDialog(row)">{{ t('graph.review.modify') }}</el-button>
+            <el-button v-if="authStore.hasPermission('graph.review.approve')" size="small" type="success" @click="handleApprove(row.id)">{{ t('graph.review.approve') }}</el-button>
+            <el-button v-if="authStore.hasPermission('graph.review.reject')" size="small" type="danger" @click="handleReject(row.id)">{{ t('graph.review.reject') }}</el-button>
+            <el-button v-if="authStore.hasPermission('graph.review.update')" size="small" @click="openModifyDialog(row)">{{ t('graph.review.modify') }}</el-button>
           </template>
           <el-text v-else size="small" type="info">{{ t('graph.review.processed') }}</el-text>
         </template>
@@ -144,8 +144,10 @@ import { useI18n } from 'vue-i18n'
 import { resolveCanonicalTabRouteState } from '@common-ui'
 import { navigateGraphRoute } from '@/utils/moduleNavigation'
 import { useKnowledgeGraphPageDescriptor } from '../composables/useKnowledgeGraphPageDescriptor'
+import { useAuthStore } from '../store/auth'
 
 const { t } = useI18n()
+const authStore = useAuthStore()
 
 const route = useRoute()
 const router = useRouter()

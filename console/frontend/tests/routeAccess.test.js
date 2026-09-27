@@ -1,0 +1,94 @@
+import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { CONSOLE_ROUTE_ACCESS, consoleRouteAccess } from '@common-ui'
+import { matchesNavigationAccess } from '../src/utils/navigationAccess'
+
+describe('Console page access', () => {
+  it('has one rule for every navigable menu page', () => {
+    const source = readFileSync(new URL('../src/config/portalConfig.js', import.meta.url), 'utf8')
+    const pages = [...source.matchAll(/index: '(\/[^']+)'/g)].map(match => match[1])
+    for (const page of pages.filter(path => !['/system/iam', '/manager/tasks'].includes(path))) {
+      expect(consoleRouteAccess(page), page).toBeTruthy()
+    }
+    expect(Object.keys(CONSOLE_ROUTE_ACCESS).length).toBeGreaterThan(60)
+  })
+
+  it('keeps create-only Transfer accounts on the create page', () => {
+    const permissions = ['transfer.task.create', 'meta.catalog.read']
+    expect(matchesNavigationAccess({ route: '/transfer/tasks/create' }, 'tenant', permissions)).toBe(true)
+    expect(matchesNavigationAccess({ route: '/transfer/tasks' }, 'tenant', permissions)).toBe(false)
+  })
+
+  it('checks context and additional action permissions on direct addresses', () => {
+    const read = ['transfer.task.read']
+    expect(matchesNavigationAccess({ route: '/transfer/tasks/4/detail' }, 'tenant', read)).toBe(true)
+    expect(matchesNavigationAccess({ route: '/transfer/tasks/4/edit' }, 'tenant', read)).toBe(false)
+    expect(matchesNavigationAccess({ route: '/transfer/tasks/4/edit' }, 'tenant',
+      [...read, 'transfer.task.update', 'meta.catalog.read'])).toBe(true)
+    expect(matchesNavigationAccess({ route: '/transfer/tasks' }, 'platform', read)).toBe(false)
+    expect(matchesNavigationAccess({ route: '/monitor/executions?module=transfer' }, 'tenant',
+      ['monitor.execution.read'])).toBe(true)
+    expect(matchesNavigationAccess({ route: '/monitor/dashboard' }, 'tenant',
+      ['monitor.statistics.read'])).toBe(true)
+    expect(matchesNavigationAccess({ route: '/monitor/dashboard' }, 'tenant',
+      ['monitor.health.read'])).toBe(false)
+    expect(matchesNavigationAccess({ route: '/service/query-services/create' }, 'tenant',
+      ['service.definition.read'])).toBe(false)
+    expect(matchesNavigationAccess({ route: '/service/query-services/create' }, 'tenant',
+      ['service.definition.read', 'service.definition.create'])).toBe(false)
+    expect(matchesNavigationAccess({ route: '/service/query-services/create' }, 'tenant',
+      ['service.definition.read', 'service.definition.create', 'system.engine_catalog.read'])).toBe(true)
+    expect(matchesNavigationAccess({ route: '/meta/scan' }, 'tenant',
+      ['meta.catalog.read', 'meta.scan_task.read'])).toBe(false)
+    expect(matchesNavigationAccess({ route: '/meta/scan' }, 'tenant',
+      ['meta.catalog.read', 'meta.scan_task.read', 'system.engine_catalog.read'])).toBe(true)
+    expect(matchesNavigationAccess({ route: '/manager/settings/embedding' }, 'platform',
+      ['manager.configuration.read'])).toBe(false)
+    expect(matchesNavigationAccess({ route: '/manager/settings/embedding' }, 'platform',
+      ['manager.configuration.read', 'inference.profile.read', 'inference.deployment.read'])).toBe(true)
+    expect(matchesNavigationAccess({ route: '/asset/assets/5/edit' }, 'tenant',
+      ['asset.management.read', 'asset.entry.read'])).toBe(false)
+    expect(matchesNavigationAccess({ route: '/asset/assets' }, 'tenant',
+      ['asset.management.read', 'asset.entry.read'])).toBe(false)
+    expect(matchesNavigationAccess({ route: '/asset/assets' }, 'tenant',
+      ['asset.management.read', 'asset.entry.read', 'asset.category.read'])).toBe(true)
+    expect(matchesNavigationAccess({ route: '/graph/analysis' }, 'tenant',
+      ['graph.analysis.read'])).toBe(false)
+    expect(matchesNavigationAccess({ route: '/graph/analysis' }, 'tenant',
+      ['graph.analysis.read', 'graph.graph.read'])).toBe(true)
+    expect(matchesNavigationAccess({ route: '/graph/graphs/5/build' }, 'tenant',
+      ['graph.build_task.read'])).toBe(false)
+    expect(matchesNavigationAccess({ route: '/graph/graphs/5/build' }, 'tenant',
+      ['graph.build_task.read', 'graph.graph.read'])).toBe(true)
+    expect(matchesNavigationAccess({ route: '/graph/graphs/5/review' }, 'tenant',
+      ['graph.review.read'])).toBe(false)
+    expect(matchesNavigationAccess({ route: '/graph/graphs/5/review' }, 'tenant',
+      ['graph.review.read', 'graph.graph.read'])).toBe(true)
+  })
+
+  it('requires the catalogs that business pages load immediately', () => {
+    const cases = [
+      ['/manager/data-explorer', ['manager.content.read'], 'manager.data_item.read'],
+      ['/manager/data-retrieval', ['manager.search.execute'], 'manager.data_item.read'],
+      ['/manager/tasks/quick-view', ['manager.derived_artifact.read'], 'manager.data_item.read'],
+      ['/manager/tasks/embedding', ['manager.derived_artifact.read', 'manager.data_item.read'], 'inference.model_label.read'],
+      ['/modeling/entities', ['model.entity.read'], 'standard.domain.read'],
+      ['/modeling/logical-tables', ['model.logical_model.read', 'standard.domain.read'], 'model.dw_layer.read'],
+      ['/modeling/metric-implementations', ['model.metric_implementation.read', 'model.logical_model.read', 'standard.domain.read'], 'standard.metric.read'],
+      ['/develop/sql', ['develop.task.read'], 'meta.catalog.read'],
+      ['/develop/workflow', ['develop.task.read'], 'meta.catalog.read'],
+      ['/standard/glossaries', ['standard.glossary.read'], 'standard.domain.read'],
+      ['/standard/metrics', ['standard.metric.read', 'standard.domain.read'], 'standard.unit.read'],
+      ['/security/sensitive-data-definitions', ['security.sensitive_data_type.read', 'security.detector.read', 'security.protection_baseline.read', 'security.grade.read'], 'security.classification.read'],
+      ['/security/protection-enrollments', ['security.enrollment.read'], 'meta.catalog.read'],
+      ['/catalog/governance/coverage', ['catalog.inventory.read'], 'catalog.entry.read'],
+      ['/catalog/governance/tasks', ['catalog.entry.update'], 'catalog.entry.read'],
+      ['/catalog/collections', ['catalog.collection.read'], 'catalog.entry.read'],
+      ['/asset/applications', ['asset.application.read'], 'asset.management.read'],
+    ]
+    for (const [route, given, dependency] of cases) {
+      expect(matchesNavigationAccess({ route }, 'tenant', given), route).toBe(false)
+      expect(matchesNavigationAccess({ route }, 'tenant', [...given, dependency]), route).toBe(true)
+    }
+  })
+})

@@ -18,6 +18,9 @@ database=${dsn_without_query##*/}
 case "$ASSET_POSTGRES_TEST_DSN" in postgres://*/*|postgresql://*/*) ;; *) echo "ASSET_POSTGRES_TEST_DSN must use a PostgreSQL URL" >&2; exit 1 ;; esac
 case "$database" in addp_test|*disposable*|*test*) ;; *) echo "ASSET_POSTGRES_TEST_DSN must use addp_test or an isolated disposable database" >&2; exit 1 ;; esac
 
+source "$ROOT_DIR/scripts/infra/ports.sh"
+addp_infra_verify_test_postgres_dsn "$ASSET_POSTGRES_TEST_DSN"
+
 cd "$ROOT_DIR/asset/backend"
 go test ./internal/repository -run '^TestAssetSchemaMigrationAgainstPostgres$' -count=1 -v 2>&1 | tee "$WORK_DIR/asset.log"
 if grep -q -- '--- SKIP:' "$WORK_DIR/asset.log"; then

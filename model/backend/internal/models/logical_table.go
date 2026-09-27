@@ -4,23 +4,24 @@ import "time"
 
 // LogicalTable 逻辑表
 type LogicalTable struct {
-	ID               int64     `gorm:"primaryKey;autoIncrement" json:"id"`
-	TenantID         int64     `gorm:"not null;index" json:"tenant_id"`
-	DomainID         *int64    `gorm:"index" json:"domain_id,omitempty"`
-	Name             string    `gorm:"size:200;not null" json:"name"`
-	Code             string    `gorm:"size:200;not null" json:"code"` // 逻辑表稳定编码
-	Description      string    `gorm:"type:text" json:"description"`
-	TableType        string    `gorm:"size:30;not null" json:"table_type"`                // 建模角色：entity/fact/dimension
-	Layer            string    `gorm:"size:20" json:"layer"`                              // 当前 Tenant 中已存在的 DWLayer 编码
-	Status           string    `gorm:"size:20;default:'draft'" json:"status"`             // draft/approved
-	GrainDescription string    `gorm:"type:text" json:"grain_description"`                // 仅 fact 表：粒度声明（如"每行代表一笔支付事务"）
-	SCDType          int       `gorm:"default:0" json:"scd_type"`                         // 仅 dimension 表：缓慢变化维类型 0=静态/1=覆盖/2=拉链/3=混合
-	Materialization  JSONB     `gorm:"type:jsonb;serializer:json" json:"materialization"` // 物理目标配置
-	Version          int64     `gorm:"not null;default:1" json:"version"`
-	CreatedBy        int64     `gorm:"not null" json:"created_by"`
-	UpdatedBy        *int64    `json:"updated_by,omitempty"`
-	CreatedAt        time.Time `json:"created_at"`
-	UpdatedAt        time.Time `json:"updated_at"`
+	ID                 int64     `gorm:"primaryKey;autoIncrement" json:"id"`
+	TenantID           int64     `gorm:"not null;index" json:"tenant_id"`
+	DomainID           *int64    `gorm:"index" json:"domain_id,omitempty"`
+	Name               string    `gorm:"size:200;not null" json:"name"`
+	Code               string    `gorm:"size:200;not null" json:"code"` // 逻辑表稳定编码
+	Description        string    `gorm:"type:text" json:"description"`
+	TableType          string    `gorm:"size:30;not null" json:"table_type"`                // 建模角色：entity/fact/dimension
+	Layer              string    `gorm:"size:20" json:"layer"`                              // 当前 Tenant 中已存在的 DWLayer 编码
+	Status             string    `gorm:"size:20;default:'draft'" json:"status"`             // draft/approved
+	GrainDescription   string    `gorm:"type:text" json:"grain_description"`                // 仅 fact 表：粒度声明（如"每行代表一笔支付事务"）
+	SCDType            int       `gorm:"default:0" json:"scd_type"`                         // 仅 dimension 表：缓慢变化维类型 0=静态/1=覆盖/2=拉链/3=混合
+	Materialization    JSONB     `gorm:"type:jsonb;serializer:json" json:"materialization"` // 物理目标配置
+	PhysicalOwnerToken string    `gorm:"->;type:uuid" json:"-"`                             // 物理表凭据；数据库生成，绝不由客户端提交
+	Version            int64     `gorm:"not null;default:1" json:"version"`
+	CreatedBy          int64     `gorm:"not null" json:"created_by"`
+	UpdatedBy          *int64    `json:"updated_by,omitempty"`
+	CreatedAt          time.Time `json:"created_at"`
+	UpdatedAt          time.Time `json:"updated_at"`
 }
 
 func (LogicalTable) TableName() string {

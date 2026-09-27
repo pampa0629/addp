@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import subprocess
 import sys
 import tempfile
@@ -103,6 +104,43 @@ class ModuleGateTest(unittest.TestCase):
                 MODULE.run_steps(steps, dry_run=False, base_environment={})
 
         run.assert_not_called()
+
+    def test_postgres_preflight_points_to_actual_infra_mapping(self) -> None:
+        steps = MODULE.plan_module(self.repository, "sample")
+
+        with self.assertRaises(MODULE.ModuleGateError) as failure:
+            MODULE.preflight_required_environment(steps, {})
+
+        message = str(failure.exception)
+        self.assertIn("bash scripts/infra/status.sh", message)
+        self.assertIn("addp-postgres", message)
+        self.assertNotIn("127.0.0.1:15432", message)
+
+    def test_shared_postgres_gates_refuse_implicit_port_before_running_tests(self) -> None:
+        repository = SCRIPT.parents[2]
+        environment = os.environ.copy()
+        environment.pop("ADDP_TEST_POSTGRES_PORT", None)
+        environment.pop("ADDP_TEST_POSTGRES_PASSWORD", None)
+        for owner in ("common", "quality", "transfer"):
+            with self.subTest(owner=owner):
+                gate = repository / f"scripts/test/{owner}-postgres-gate.sh"
+                declaration = MODULE.required_t2_environment(gate.read_text())
+                self.assertEqual(
+                    (("ADDP_TEST_POSTGRES_PORT",), ("ADDP_TEST_POSTGRES_PASSWORD",)),
+                    declaration,
+                )
+                result = subprocess.run(
+                    ["bash", str(gate)],
+                    cwd=repository,
+                    env=environment,
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                    check=False,
+                )
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn("ADDP_TEST_POSTGRES_PORT", result.stderr)
+                self.assertNotIn("=== RUN", result.stdout)
 
     def test_discovers_owner_managed_disposable_services_without_hosted_registration(self) -> None:
         path = self.repository / "scripts/test/sample-falkor-gate.sh"

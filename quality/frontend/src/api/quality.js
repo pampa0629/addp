@@ -13,7 +13,7 @@ export const standardDomainAPI = {
 
 // 跨模块: 引擎列表（System 模块）
 export const systemEngineAPI = {
-  list: (params) => client.get('/system/engines', { params })
+  list: (params) => client.get('/system/engine-catalog/engines', { params })
 }
 
 export const systemCatalogAPI = {

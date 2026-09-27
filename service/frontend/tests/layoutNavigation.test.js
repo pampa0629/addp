@@ -21,7 +21,7 @@ test('Service navigation has one layout owner', () => {
 })
 
 test('standalone menu routes, order, icons and translations match Console', () => {
-  const actual = [...layout.matchAll(/<el-menu-item index="([^"]+)">\s*<el-icon><(\w+)\s*\/><\/el-icon>\s*<span>\{\{ t\('service\.nav\.(\w+)'\) \}\}<\/span>/g)]
+  const actual = [...layout.matchAll(/<el-menu-item [^>]*index="([^"]+)">\s*<el-icon><(\w+)\s*\/><\/el-icon>\s*<span>\{\{ t\('service\.nav\.(\w+)'\) \}\}<\/span>/g)]
     .map(([, path, icon, label]) => ({ path, icon, label }))
   assert.equal(expected.length, 5)
   assert.deepEqual(actual.map(({ path, icon }) => ({ path, icon })), expected.map(({ path, icon }) => ({ path, icon })))
@@ -32,7 +32,7 @@ test('standalone menu routes, order, icons and translations match Console', () =
   }
 })
 
-async function renderLayout(embedded, path) {
+async function renderLayout(embedded, path, permissions = ['service.definition.read', 'service.external_registration.read']) {
   const { descriptor } = parse(layout)
   let code = compileScript(descriptor, { id: 'service-layout', inlineTemplate: true }).content
   code = code.replace(/import \{([^}]+)\} from ["']([^"']+)["']/g,
@@ -41,7 +41,11 @@ async function renderLayout(embedded, path) {
   const modules = {
     vue: Vue,
     'vue-router': { useRouter: () => ({}), useRoute: () => ({ path }) },
-    '../store/auth': { useAuthStore: () => ({ user: { username: 'tester' } }) },
+    '../store/auth': { useAuthStore: () => ({
+      user: { username: 'tester' },
+      hasPermission: permission => permissions.includes(permission),
+      hasAnyPermission: required => required.some(permission => permissions.includes(permission))
+    }) },
     'vue-i18n': { useI18n: () => ({ t: key => key }) },
     '@element-plus/icons-vue': icons
   }
@@ -69,4 +73,12 @@ test('standalone detail pages keep the corresponding Console menu active', async
     assert.match(html, new RegExp(`default-active="${path}"`))
     assert.match(html, /service-page/)
   }
+})
+
+test('standalone navigation hides pages outside a limited permission set', async () => {
+  const html = await renderLayout(false, '/services', ['service.external_registration.read'])
+  assert.match(html, /index="\/services"/)
+  assert.match(html, /index="\/catalog"/)
+  assert.doesNotMatch(html, /index="\/query-services"/)
+  assert.doesNotMatch(html, /index="\/tile"/)
 })

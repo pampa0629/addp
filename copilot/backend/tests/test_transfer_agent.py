@@ -76,7 +76,7 @@ def test_transfer_reports_missing_inference_binding_as_service_unavailable(monke
         tenant_id=7,
         tenant_membership_id=9,
         role_assignments=(
-            RoleAssignment(4, "tenant.transfer_user", "tenant", ("copilot.transfer.execute",)),
+            RoleAssignment(4, "tenant.transfer_user", "tenant", ("copilot.transfer.execute",), 7),
         ),
     )
     with pytest.raises(HTTPException) as error:

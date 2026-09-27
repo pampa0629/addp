@@ -16,6 +16,10 @@ export function updateInferenceBinding(payload) {
   return client.put('/manager/settings/inference-binding', payload)
 }
 
+export function listInferenceModelLabels() {
+  return client.get('/inference/model-labels')
+}
+
 export function listInferenceProfiles() {
   return client.get('/inference/model-profiles', { params: { page: 1, page_size: 100 } })
 }

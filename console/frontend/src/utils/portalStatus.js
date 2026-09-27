@@ -1,4 +1,4 @@
-const STATUS_REQUESTS = [
+export const STATUS_REQUESTS = [
   { key: 'engines', permission: 'system.engine.read', url: '/system/engines', readTotal: response => response.length },
   { key: 'datasets', permission: 'meta.catalog.read', url: '/meta/stats' },
   { key: 'services', permission: 'service.definition.read', url: '/service/query?page_size=1' },

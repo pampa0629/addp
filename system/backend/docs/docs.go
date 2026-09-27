@@ -871,6 +871,64 @@ const docTemplate = `{
                 "x-addp-auth-mode": "self"
             }
         },
+        "/engine-catalog/engines": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅返回当前 Tenant 可见且声明实时 Catalog Model 的引擎最小选择投影，不包含连接信息或管理字段 | Return a minimal selection projection of visible engines declaring a live Catalog Model, without connection details or management fields",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "引擎目录 | Engine Catalog"
+                ],
+                "summary": "获取目录选择用引擎列表 | List engines for catalog selection",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "引擎类型 | Engine type",
+                        "name": "engine_type",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_addp_system_internal_models.EngineCatalogSelector"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.engine_catalog.read"
+                ]
+            }
+        },
         "/engine-types": {
             "get": {
                 "security": [
@@ -1309,7 +1367,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "基于 System 管理的引擎连接信息实时浏览真实引擎 catalog。请求空 path 返回显性结构 root；请求 root path 返回 schema、bucket、database、directory 等第一层业务节点。| Browse live engine catalog using System-managed connection information. Empty path returns the explicit structural root; root path returns first business branches.",
+                "description": "基于声明了实时目录能力的引擎连接信息浏览真实 catalog。请求空 path 返回显性结构 root；不支持目录的引擎返回 422。| Browse a real catalog using an engine declaring live catalog capability. An empty path returns the structural root; engines without catalog support return 422.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1317,7 +1375,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "引擎管理 | Engine Management"
+                    "引擎目录 | Engine Catalog"
                 ],
                 "summary": "列出实时 catalog 子节点 | List live catalog children",
                 "parameters": [
@@ -1357,8 +1415,20 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
                         }
                     },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "引擎不支持实时目录 | Engine does not support a live catalog",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
                         }
@@ -1368,11 +1438,29 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
                         }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "504": {
+                        "description": "Gateway Timeout",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
-                    "system.engine.read"
+                    "system.engine_catalog.read"
                 ]
             }
         },
@@ -1383,7 +1471,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "基于 System 管理的引擎连接读取一个 catalog 叶子的结构事实；普通列表不会携带的字段详情通过此接口按需读取。| Read structural facts for one catalog leaf using the System-managed engine connection. Field details omitted from list responses are loaded here on demand.",
+                "description": "从声明了实时目录能力的引擎读取一个 catalog 叶子的结构事实；不支持目录的引擎返回 422。| Read facts for a catalog leaf from an engine declaring live catalog capability; engines without catalog support return 422.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1391,7 +1479,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "引擎管理 | Engine Management"
+                    "引擎目录 | Engine Catalog"
                 ],
                 "summary": "获取实时 catalog 叶子事实 | Describe live catalog leaf facts",
                 "parameters": [
@@ -1431,8 +1519,20 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
                         }
                     },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "引擎不支持实时目录 | Engine does not support a live catalog",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
                         }
@@ -1442,11 +1542,29 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
                         }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "504": {
+                        "description": "Gateway Timeout",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
-                    "system.engine.read"
+                    "system.engine_catalog.read"
                 ]
             }
         },
@@ -11012,6 +11130,32 @@ const docTemplate = `{
                 "term": {
                     "type": "string",
                     "example": "schema"
+                }
+            }
+        },
+        "github_com_addp_system_internal_models.EngineCatalogSelector": {
+            "type": "object",
+            "properties": {
+                "capabilities": {
+                    "type": "object"
+                },
+                "connection_status": {
+                    "type": "string"
+                },
+                "engine_origin": {
+                    "type": "string"
+                },
+                "engine_type": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "lifecycle_state": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
                 }
             }
         },

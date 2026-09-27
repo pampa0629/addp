@@ -142,6 +142,14 @@
                 </el-checkbox>
               </el-checkbox-group>
             </el-form-item>
+            <el-form-item v-if="draft.rendererType === 'table'" :label="t('workbench.visibleColumns')">
+              <el-checkbox-group v-model="draft.displayColumns" @change="syncRendererFields">
+                <el-checkbox v-for="name in draft.columns" :key="name" :value="name">
+                  {{ draft.fieldPresentations.find(item => item.field === name)?.label || outputField(name)?.comment || name }}
+                </el-checkbox>
+              </el-checkbox-group>
+              <p class="help-text">{{ t('workbench.visibleColumnsHint') }}</p>
+            </el-form-item>
             </template>
             <el-form-item :label="t('workbench.pageLimit')">
               <el-input-number v-model="draft.pageLimit" :min="1" :max="descriptor.input_contract.page.max_limit" @change="resetResult" />
@@ -395,7 +403,7 @@ function suggestionFields(suggestion) {
 async function applyDisplaySuggestion(suggestion) {
   Object.assign(draft, {
     rendererType: suggestion.rendererType, chartType: suggestion.chartType || 'bar',
-    columns: [...suggestion.columns], dimension: suggestion.dimension || '', measures: [...(suggestion.measures || [])],
+    columns: [...suggestion.columns], displayColumns: suggestion.rendererType === 'table' ? [...suggestion.columns] : [], dimension: suggestion.dimension || '', measures: [...(suggestion.measures || [])],
     geometryField: suggestion.geometryField || '', mapLabelField: '', tooltipFields: [], mapStyleMode: 'uniform', mapColorField: '', mapPalette: 'primary', mapLegendTitle: '',
     fieldPresentations: [], totalAsValue: false, resultNameField: '', valueItems: [], pageLimit: descriptor.value.input_contract.page.default_limit,
   })
@@ -415,6 +423,7 @@ const rendererConfig = computed(() => buildRendererConfig(draft))
 const contractChanged = computed(() => Boolean(configurationFingerprint.value && descriptor.value && configurationFingerprint.value !== descriptor.value.contract_fingerprint))
 const validDraft = computed(() => {
   if (!descriptor.value || !draft.name.trim() || draft.columns.length === 0) return false
+  if (draft.rendererType === 'table' && (draft.displayColumns.length === 0 || draft.displayColumns.some(name => !draft.columns.includes(name)))) return false
   if (props.selectionTarget && (!['search', 'label', 'value'].every(kind => selectionListFields.value[kind].some(field => field.name === selectionFields[kind]))
     || !draft.parameters.some(parameter => parameter.bindingKind !== 'named' && parameter.field === selectionFields.search && parameter.operator === 'contains' && !parameter.applicationParameterKey))) return false
   if (props.duplicate && contractChanged.value) return false
@@ -450,7 +459,7 @@ function componentContextKey(component = props.component) {
 
 function emptyDraft() {
   return {
-    name: '', description: '', columns: [], fixedFilter: null, orderBy: null, pageLimit: 50, parameters: [], rendererType: 'table', chartType: 'bar', totalAsValue: false, resultNameField: '', dimension: '', measures: [], valueItems: [], fieldPresentations: [],
+    name: '', description: '', columns: [], displayColumns: [], fixedFilter: null, orderBy: null, pageLimit: 50, parameters: [], rendererType: 'table', chartType: 'bar', totalAsValue: false, resultNameField: '', dimension: '', measures: [], valueItems: [], fieldPresentations: [],
     geometryField: '', mapLabelField: '', tooltipFields: [], mapStyleMode: 'uniform', mapColorField: '', mapPalette: 'primary', mapLegendTitle: '',
   }
 }
@@ -526,6 +535,7 @@ async function selectService(selectedServiceKey = serviceKey.value) {
       name: data.title,
       description: data.description || '',
       columns: [...(data.input_contract.default_selection || [])],
+      displayColumns: [...(data.input_contract.default_selection || [])],
       pageLimit: data.input_contract.page.default_limit,
       parameters: namedParameters,
     })
@@ -546,7 +556,9 @@ async function selectService(selectedServiceKey = serviceKey.value) {
 
 function initializeRenderer() {
   if (!descriptor.value) return
-  if (draft.rendererType === 'chart') {
+  if (draft.rendererType === 'table' && draft.displayColumns.length === 0) {
+    draft.displayColumns = [...draft.columns]
+  } else if (draft.rendererType === 'chart') {
     draft.dimension ||= dimensionFields.value[0]?.name || ''
     if (draft.measures.length === 0) draft.measures = numericOutputFields.value.slice(0, 1).map((field) => field.name)
   } else if (draft.rendererType === 'map') {
@@ -575,6 +587,7 @@ function syncRendererFields() {
         ? draft.valueItems.map((item) => item.field)
         : []
   draft.columns = [...new Set([...draft.columns, ...required.filter(Boolean)])]
+  if (draft.rendererType === 'table') draft.displayColumns = draft.displayColumns.filter(name => draft.columns.includes(name))
   draft.fieldPresentations = synchronizeFieldPresentations(draft, outputFields.value)
   resetResult()
 }

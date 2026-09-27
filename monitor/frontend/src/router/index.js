@@ -47,7 +47,7 @@ const router = createRouter({
 
 // 使用标准认证守卫
 router.beforeEach(createAuthGuard(useAuthStore, {
-  moduleName: 'Monitor',
+  router, moduleName: 'Monitor',
   loginRouteName: 'Login'
 }))
 

@@ -9,8 +9,8 @@
         <MonitorExecutionsButton module="manager" :task-type="monitorTaskType" />
         <template v-if="category !== 'embedding'">
           <el-button @click="loadTasks"><el-icon><Refresh /></el-icon>{{ t('manager.derivedTasks.refresh') }}</el-button>
-          <el-button v-if="category === 'managed_quick_view'" type="primary" @click="beginQuickViewCreate"><el-icon><Plus /></el-icon>{{ t('manager.derivedTasks.createQuickView') }}</el-button>
-          <el-dropdown v-else split-button type="primary" @click="beginCreate(defaultSpatialTaskType)" @command="beginCreate">
+          <el-button v-if="canCreateTask && category === 'managed_quick_view'" type="primary" @click="beginQuickViewCreate"><el-icon><Plus /></el-icon>{{ t('manager.derivedTasks.createQuickView') }}</el-button>
+          <el-dropdown v-else-if="canCreateTask" split-button type="primary" @click="beginCreate(defaultSpatialTaskType)" @command="beginCreate">
             <el-icon><Plus /></el-icon>{{ t('manager.derivedTasks.createSpatial') }}
             <template #dropdown>
               <el-dropdown-menu>
@@ -35,14 +35,14 @@
       <el-select v-model="bindingStatus" clearable :placeholder="t('manager.derivedTasks.allBindingStatuses')" @change="changeStatusFilter">
         <el-option :label="t('manager.derivedTasks.bindingStatus.missing')" value="missing" />
       </el-select>
-      <el-button type="danger" plain :disabled="selectedTasks.length === 0" :loading="batchDeleting" @click="removeSelected">
+      <el-button v-if="canDeleteTask" type="danger" plain :disabled="selectedTasks.length === 0" :loading="batchDeleting" @click="removeSelected">
         {{ t('manager.derivedTasks.batchDelete', { count: selectedTasks.length }) }}
       </el-button>
       <span class="summary">{{ t('manager.derivedTasks.total', { total }) }}</span>
     </div>
 
     <el-table v-loading="loading" :data="tasks" stripe @selection-change="handleSelectionChange">
-      <el-table-column type="selection" width="48" />
+      <el-table-column v-if="canDeleteTask" type="selection" width="48" />
       <el-table-column :label="t('manager.derivedTasks.columns.name')" min-width="220" show-overflow-tooltip>
         <template #default="{ row }"><el-button link type="primary" @click="showDetail(row)">{{ row.name }}</el-button></template>
       </el-table-column>
@@ -72,11 +72,11 @@
           <el-button link type="primary" @click="showDetail(row)">{{ t('manager.derivedTasks.detail') }}</el-button>
           <el-button v-if="sourceLocator(row)" link @click="openSource(row)">{{ t('manager.derivedTasks.source') }}</el-button>
           <el-button v-if="isSpatialBusinessTask(row)" link :loading="openingTargetTaskID === row.id" @click="openTargetData(row)">{{ t('manager.derivedTasks.targetData') }}</el-button>
-          <el-button v-if="isRebindableTask(row)" link type="warning" @click="beginRebind(row)">{{ t('manager.derivedTasks.rebind') }}</el-button>
-          <el-button v-if="isSpatialBusinessTask(row)" link @click="beginEdit(row)">{{ t('manager.derivedTasks.edit') }}</el-button>
-          <el-button link type="primary" :loading="executingTaskID === row.id" :disabled="!row.enabled || isExecuting(row)" @click="execute(row)">{{ t('manager.derivedTasks.execute') }}</el-button>
-          <el-button v-if="row.last_execution_id" link @click="openMonitor(row)">{{ t('manager.derivedTasks.monitor') }}</el-button>
-          <el-button link type="danger" @click="remove(row)">{{ t('manager.derivedTasks.delete') }}</el-button>
+          <el-button v-if="canUpdateTask && canReadSource && isRebindableTask(row)" link type="warning" @click="beginRebind(row)">{{ t('manager.derivedTasks.rebind') }}</el-button>
+          <el-button v-if="canUpdateTask && isSpatialBusinessTask(row)" link @click="beginEdit(row)">{{ t('manager.derivedTasks.edit') }}</el-button>
+          <el-button v-if="canCreateTask" link type="primary" :loading="executingTaskID === row.id" :disabled="!row.enabled || isExecuting(row)" @click="execute(row)">{{ t('manager.derivedTasks.execute') }}</el-button>
+          <el-button v-if="canReadExecutions && row.last_execution_id" link @click="openMonitor(row)">{{ t('manager.derivedTasks.monitor') }}</el-button>
+          <el-button v-if="canDeleteTask" link type="danger" @click="remove(row)">{{ t('manager.derivedTasks.delete') }}</el-button>
         </template>
       </el-table-column>
       <template #empty><el-empty :description="t('manager.derivedTasks.empty')" /></template>
@@ -90,9 +90,9 @@
       <div v-if="selectedTask" class="detail-actions">
         <el-button v-if="sourceLocator(selectedTask)" type="primary" plain @click="openSource(selectedTask)">{{ t('manager.derivedTasks.viewSource') }}</el-button>
         <el-button v-if="isSpatialBusinessTask(selectedTask)" type="primary" plain :loading="openingTargetTaskID === selectedTask.id" @click="openTargetData(selectedTask)">{{ t('manager.derivedTasks.viewTargetData') }}</el-button>
-        <el-button v-if="isRebindableTask(selectedTask)" type="warning" @click="beginRebind(selectedTask)">{{ t('manager.derivedTasks.rebind') }}</el-button>
-        <el-button :loading="executingTaskID === selectedTask.id" :disabled="!selectedTask.enabled || isExecuting(selectedTask)" @click="execute(selectedTask)">{{ t('manager.derivedTasks.execute') }}</el-button>
-        <el-button v-if="selectedTask.last_execution_id" @click="openMonitor(selectedTask)">{{ t('manager.derivedTasks.monitor') }}</el-button>
+        <el-button v-if="canUpdateTask && canReadSource && isRebindableTask(selectedTask)" type="warning" @click="beginRebind(selectedTask)">{{ t('manager.derivedTasks.rebind') }}</el-button>
+        <el-button v-if="canCreateTask" :loading="executingTaskID === selectedTask.id" :disabled="!selectedTask.enabled || isExecuting(selectedTask)" @click="execute(selectedTask)">{{ t('manager.derivedTasks.execute') }}</el-button>
+        <el-button v-if="canReadExecutions && selectedTask.last_execution_id" @click="openMonitor(selectedTask)">{{ t('manager.derivedTasks.monitor') }}</el-button>
       </div>
       <el-descriptions v-if="selectedTask" :column="1" border>
         <el-descriptions-item :label="t('manager.derivedTasks.columns.type')">{{ taskTypeLabel(selectedTask.task_type) }}</el-descriptions-item>
@@ -169,11 +169,18 @@ import { navigateManagerRoute } from '../utils/moduleNavigation'
 import QuickViewTaskCreator from '../components/tasks/QuickViewTaskCreator.vue'
 import VectorTileSetTaskEditor from '../components/tasks/VectorTileSetTaskEditor.vue'
 import RasterMosaicTaskEditor from '../components/tasks/RasterMosaicTaskEditor.vue'
+import { useAuthStore } from '../store/auth'
 
 const VectorizationTasks = defineAsyncComponent(() => import('./VectorizationTasks.vue'))
 
 const route = useRoute()
 const router = useRouter()
+const authStore = useAuthStore()
+const canCreateTask = computed(() => authStore.hasPermission('manager.derived_artifact.create'))
+const canUpdateTask = computed(() => authStore.hasPermission('manager.derived_artifact.update'))
+const canDeleteTask = computed(() => authStore.hasPermission('manager.derived_artifact.delete'))
+const canReadSource = computed(() => authStore.hasPermission('manager.data_item.read'))
+const canReadExecutions = computed(() => authStore.hasPermission('monitor.execution.read'))
 const { t } = useI18n()
 const confirmCurrentResult = useCurrentResultConfirmation()
 const { engineName, loadQuickViewEngines, resourcePath } = useQuickViewResourceDisplay(t)

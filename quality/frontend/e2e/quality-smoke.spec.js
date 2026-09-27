@@ -745,10 +745,11 @@ async function installMockBackend(page, options = {}) {
       return fulfillJSON(route, { id: 1, username: "quality-e2e" });
     if (path === "/api/v1/system/auth/context")
       return fulfillJSON(route, {
-        context: { type: "tenant" },
+        context: { type: "tenant", tenant_id: "1" },
         authorization: {
           role_assignments: [
             {
+              scope: { type: "tenant", tenant_id: "1" },
               permissions: [
                 ...["read", "create", "update", "delete", "execute"].map(
                   (a) => "quality.plan." + a,
@@ -797,7 +798,7 @@ async function installMockBackend(page, options = {}) {
         connection_status: "online",
       },
     ];
-    if (["/api/v1/system/engines", "/api/v1/meta/engines"].includes(path))
+    if (["/api/v1/system/engine-catalog/engines", "/api/v1/meta/engines"].includes(path))
       return fulfillJSON(route, engines);
     const table = {
       id: "table-23",

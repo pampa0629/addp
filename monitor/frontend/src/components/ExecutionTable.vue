@@ -75,7 +75,7 @@
     </el-table-column>
     <el-table-column :label="t('monitor.table.actions')" width="100" fixed="right">
       <template #default="{ row }">
-        <el-button text size="small" @click.stop="handleView(row)">
+        <el-button v-if="canView" text size="small" @click.stop="handleView(row)">
           {{ t('monitor.table.view_detail') }}
         </el-button>
       </template>
@@ -97,6 +97,10 @@ const props = defineProps({
   taskProviders: {
     type: Array,
     default: () => []
+  },
+  canView: {
+    type: Boolean,
+    default: true
   }
 })
 
@@ -181,6 +185,7 @@ function handleRowClick(row) {
 }
 
 function handleView(row) {
+  if (!props.canView) return
   emit('view', row)
 }
 </script>

@@ -63,7 +63,7 @@ export async function installBackend(context, options = {}) {
       },
       authorization: {
         role_assignments: [
-          { permissions: options.permissions || allPermissions }
+          { scope: { type: 'tenant', tenant_id: '7' }, permissions: options.permissions || allPermissions }
         ]
       }
     },

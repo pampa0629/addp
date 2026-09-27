@@ -4,7 +4,8 @@ import { matchesNavigationAccess } from '../utils/navigationAccess'
 // label: 显示名 i18n key，keywords: 中英文关键词用于模糊匹配，route: 导航目标
 export const SEARCH_INDEX = [
   // 数据传输
-  { labelKey: 'console.menus.transfer.tasks',       module: 'transfer',     route: '/transfer/tasks',        keywords: ['传输任务', '数据导入', '数据接入', 'transfer', 'import', '同步'] },
+  { labelKey: 'console.menus.transfer.tasks',       module: 'transfer', route: '/transfer/tasks', contexts: ['tenant'], permissions: ['transfer.task.read'], keywords: ['传输任务', '数据导入', '数据接入', 'transfer', 'import', '同步'] },
+  { labelKey: 'console.menus.transfer.create', module: 'transfer', route: '/transfer/tasks/create', contexts: ['tenant'], permissionMode: 'all', permissions: ['transfer.task.create', 'meta.catalog.read'], keywords: ['创建传输任务', 'create transfer task'] },
   // 元数据
   { labelKey: 'console.menus.meta.scan',            module: 'meta',         route: '/meta/scan',             keywords: ['元数据扫描', '扫描', '元数据', 'metadata', 'scan'] },
   // 数据管理

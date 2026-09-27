@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { filterSidebarMenus, matchesNavigationAccess } from '../src/utils/navigationAccess'
+import { consoleRouteAccess } from '@common-ui'
 
 const menus = {
   system: {
@@ -61,5 +62,33 @@ describe('Console navigation access filtering', () => {
       }
     }
     expect(filterSidebarMenus(restricted, 'platform', []).system.items).toEqual([])
+  })
+
+  it('keeps Console sidebars as unique page destinations without duplicate create actions', async () => {
+    vi.stubGlobal('window', { location: { protocol: 'http:', hostname: 'localhost', origin: 'http://localhost' } })
+    try {
+      const { SIDEBAR_MENUS } = await import('../src/config/portalConfig.js')
+      for (const [module, menu] of Object.entries(SIDEBAR_MENUS)) {
+        const items = menu.items?.flatMap(item => item.children || [item]) || [menu]
+        const indexes = items.map(item => item.index)
+        const labels = items.map(item => item.label)
+        expect(new Set(indexes).size, `${module} has duplicate destinations`).toBe(indexes.length)
+        expect(new Set(labels).size, `${module} has duplicate labels`).toBe(labels.length)
+
+        for (const item of items) {
+          expect(consoleRouteAccess(item.index), item.index).toBeTruthy()
+          if (!/\/(?:create|new|edit)(?:\/|$)/.test(item.index)) continue
+          expect(item.fallbackFor, `${item.index} needs a parent page`).toBeTruthy()
+          expect(indexes, `${item.index} needs a visible parent`).toContain(item.fallbackFor)
+          const permissions = [item.index, item.fallbackFor]
+            .flatMap(path => consoleRouteAccess(path) || [])
+            .flatMap(rule => rule.permissions || [])
+          const visible = filterSidebarMenus({ [module]: menu }, 'tenant', permissions)[module].items
+          expect(visible.map(entry => entry.index)).not.toContain(item.index)
+        }
+      }
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 })

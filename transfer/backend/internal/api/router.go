@@ -85,12 +85,10 @@ func SetupRouter(
 	// 创建 Handlers
 	taskHandler := NewTaskHandler(taskService)
 	executionHandler := NewExecutionHandler(executionService, taskService)
-	systemEngineHandler := NewSystemEngineHandler(systemClient)
 	capabilityHandler := NewTransferCapabilityHandler()
 	fieldDefinitionRecommendationHandler := NewFieldDefinitionRecommendationHandler(fieldDefinitionRecommendationService)
 
-	protected.GET("/system-engines", permission(transferauthorization.PermissionTransferTaskRead), systemEngineHandler.List)
-	protected.GET("/capabilities", permission(transferauthorization.PermissionTransferTaskRead), capabilityHandler.Get)
+	protected.GET("/capabilities", capabilityHandler.Get)
 	protected.POST("/field-definition-recommendations", permission(transferauthorization.PermissionTransferTaskCreate), fieldDefinitionRecommendationHandler.Create)
 	// TaskProvider 只允许 Orchestrator Runtime 使用专用最小权限访问。
 	taskProvider := protected.Group("/task-provider")
@@ -127,12 +125,12 @@ func SetupRouter(
 	{
 		executions.POST("", permission(transferauthorization.PermissionTransferExecutionCreate), executionHandler.CreateExecution)                           // 创建一次性同步执行
 		executions.GET("/:execution_id/result", permission(transferauthorization.PermissionTransferExecutionRead), executionHandler.GetOwnedExecutionResult) // 回查当前模块自己创建的一次性执行
-		executions.GET("", permission(transferauthorization.PermissionTransferTaskRead), executionHandler.ListExecutions)                                    // 获取执行记录列表
-		executions.GET("/statistics", permission(transferauthorization.PermissionTransferTaskRead), executionHandler.GetExecutionStatistics)                 // 获取执行统计
-		executions.GET("/:execution_id", permission(transferauthorization.PermissionTransferTaskRead), executionHandler.GetExecution)                        // 获取执行详情
-		executions.POST("/:execution_id/retry", permission(transferauthorization.PermissionTransferTaskExecute), executionHandler.RetryExecution)            // 重试执行
-		executions.GET("/:execution_id/progress", permission(transferauthorization.PermissionTransferTaskRead), executionHandler.GetExecutionProgress)       // 获取执行进度
-		executions.GET("/:execution_id/logs", permission(transferauthorization.PermissionTransferTaskRead), executionHandler.GetExecutionLogs)               // 获取执行日志
+		executions.GET("", permission(transferauthorization.PermissionTransferTaskRead), executionHandler.ListExecutions)                              // 获取执行记录列表
+		executions.GET("/statistics", permission(transferauthorization.PermissionTransferTaskRead), executionHandler.GetExecutionStatistics)           // 获取执行统计
+		executions.GET("/:execution_id", permission(transferauthorization.PermissionTransferTaskRead), executionHandler.GetExecution)                  // 获取执行详情
+		executions.POST("/:execution_id/retry", permission(transferauthorization.PermissionTransferTaskExecute), executionHandler.RetryExecution)      // 重试执行
+		executions.GET("/:execution_id/progress", permission(transferauthorization.PermissionTransferTaskRead), executionHandler.GetExecutionProgress) // 获取执行进度
+		executions.GET("/:execution_id/logs", permission(transferauthorization.PermissionTransferTaskRead), executionHandler.GetExecutionLogs)         // 获取执行日志
 	}
 
 	return router

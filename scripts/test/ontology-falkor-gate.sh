@@ -11,6 +11,8 @@ if [ -z "${ONTOLOGY_POSTGRES_TEST_DSN:-}" ]; then
     exit 1
 fi
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+source "$ROOT_DIR/scripts/infra/ports.sh"
+addp_infra_verify_test_postgres_dsn "$ONTOLOGY_POSTGRES_TEST_DSN"
 WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/addp-ontology-falkor.XXXXXX")
 RUN_ID=$(python3 -c 'import uuid; print(uuid.uuid4().hex)')
 export ONTOLOGY_POSTGRES_TEST_RUN_ID

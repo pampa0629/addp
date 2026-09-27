@@ -8,6 +8,11 @@
 
 set -e
 
+if [ "$#" -ne 0 ]; then
+    echo "错误: stop.sh 不接受参数；停止平台容器时始终保留数据卷" >&2
+    exit 2
+fi
+
 # Color codes
 RED='\033[0;31m'
 GREEN='\033[0;32m'

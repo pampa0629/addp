@@ -76,6 +76,7 @@
       </div>
       <div v-if="allModulesExpanded" class="cards-grid">
         <el-card
+          v-if="portalAvailable"
           shadow="hover"
           class="module-card"
           @click="$emit('portal-click')"
@@ -107,7 +108,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   DataBoard, ArrowDown, ArrowRight,
@@ -115,7 +116,10 @@ import {
   Connection,
 } from '@element-plus/icons-vue'
 import client from '../../api/client'
-import { fetchPortalStatus } from '../../utils/portalStatus'
+import { fetchPortalStatus, STATUS_REQUESTS } from '../../utils/portalStatus'
+import { consoleRouteAccess } from '@common-ui'
+import { matchesNavigationAccess } from '../../utils/navigationAccess'
+import { splitConsoleRoute } from '../../utils/consoleNavigation'
 
 const { t } = useI18n()
 
@@ -124,6 +128,9 @@ const props = defineProps({
   homeCards: { type: Array, required: true },
   user: { type: Object, default: null },
   permissions: { type: Array, default: () => [] },
+  contextType: { type: String, default: null },
+  contextKey: { type: String, default: '' },
+  portalAvailable: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['card-click', 'portal-click', 'navigate'])
@@ -137,19 +144,26 @@ const userDisplayName = computed(() =>
 
 const statusData = ref({ engines: null, datasets: null, services: null, tasks: null })
 const statusLoading = ref(true)
+let statusRequestId = 0
 
 const statusStats = computed(() => [
   { key: 'engines',  icon: Connection,   color: 'var(--addp-module-system)',   label: 'console.home.stats.engines',  value: statusData.value.engines,  loading: statusLoading.value },
   { key: 'datasets', icon: Box,          color: 'var(--addp-module-meta)',     label: 'console.home.stats.datasets', value: statusData.value.datasets, loading: statusLoading.value },
   { key: 'services', icon: Link,         color: 'var(--addp-module-service)',  label: 'console.home.stats.services', value: statusData.value.services, loading: statusLoading.value },
   { key: 'tasks',    icon: Operation,    color: 'var(--addp-module-orchestrator)', label: 'console.home.stats.runningTasks', value: statusData.value.tasks, loading: statusLoading.value },
-])
+].filter(stat => STATUS_REQUESTS.find(request => request.key === stat.key && props.permissions.includes(request.permission))))
 
 async function fetchStatus() {
+  const requestId = ++statusRequestId
   statusLoading.value = true
-  statusData.value = await fetchPortalStatus(client, props.permissions)
+  statusData.value = { engines: null, datasets: null, services: null, tasks: null }
+  const result = await fetchPortalStatus(client, props.permissions)
+  if (requestId !== statusRequestId) return
+  statusData.value = result
   statusLoading.value = false
 }
+
+watch(() => props.contextKey, () => fetchStatus())
 
 // ─── 状态推断 ────────────────────────────────────────────────────────────────
 
@@ -254,7 +268,9 @@ const ALL_SCENARIOS = [
 const recommendedScenarios = computed(() => {
   const stage = platformStage.value
   if (stage === 'loading') return []
-  const matched = ALL_SCENARIOS.filter(s => s.stages.includes(stage))
+  const available = new Set(props.homeCards.map(card => card.module))
+  const matched = ALL_SCENARIOS.filter(s => s.stages.includes(stage) &&
+    s.path.every(step => available.has(step.module)))
   return matched.slice(0, 3)
 })
 
@@ -273,7 +289,13 @@ function loadRecentVisits() {
 }
 
 const recentVisits = computed(() =>
-  recentVisitsRaw.value.map(item => {
+  recentVisitsRaw.value.filter(item => {
+    if (!props.contextKey || item.contextKey !== props.contextKey) return false
+    if (!props.homeCards.some(card => card.module === item.module)) return false
+    const [path] = splitConsoleRoute(item.route)
+    const access = consoleRouteAccess(path)
+    return !!access && matchesNavigationAccess({ access }, props.contextType, props.permissions)
+  }).map(item => {
     const card = props.homeCards.find(c => c.module === item.module)
     return { ...item, icon: card?.icon || DataBoard }
   })

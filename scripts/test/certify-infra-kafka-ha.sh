@@ -16,10 +16,39 @@ if [ -f ./.env ]; then
   set +a
 fi
 
+# Business 凭据只从独立部署配置读取；在子进程内加载，避免覆盖 Infra Compose 的同名变量。
+with_business_pg() (
+  [ -f ./business/.env ] || { echo 'missing business/.env' >&2; return 1; }
+  unset POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB
+  # shellcheck disable=SC1091
+  source ./business/.env
+  : "${POSTGRES_USER:?business/.env 缺少 POSTGRES_USER}"
+  : "${POSTGRES_PASSWORD:?business/.env 缺少 POSTGRES_PASSWORD}"
+  : "${POSTGRES_DB:?business/.env 缺少 POSTGRES_DB}"
+  "$@"
+)
+
+business_pg_psql() {
+  docker exec business-postgres psql -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" "$@"
+}
+
+business_pg_jq() {
+  jq -n --arg user "${POSTGRES_USER}" --arg password "${POSTGRES_PASSWORD}" \
+    --arg database "${POSTGRES_DB}" --arg port "${BUSINESS_PG_PORT}" "$@"
+}
+
+with_business_pg true
+
 for command in docker curl jq go rg openssl awk; do
   command -v "${command}" >/dev/null 2>&1 || { echo "missing command: ${command}" >&2; exit 1; }
 done
 docker compose version >/dev/null
+source ./business/scripts/ports.sh
+BUSINESS_PG_PORT=$(
+  PROJECT_ROOT="${PROJECT_ROOT}/business"
+  addp_business_verify_container postgres business-postgres
+  addp_business_mapped_port business-postgres 5432
+)
 
 STAMP="$(date +%Y%m%d%H%M%S)"
 REPORT_DIR="${TMPDIR:-/tmp}/addp-redpanda-ha-certification-${STAMP}"
@@ -289,7 +318,7 @@ cleanup_probe() {
   curl -sf -X DELETE "http://localhost:18083/connectors/${CONNECTOR}" >/dev/null
   curl -sf -X DELETE "http://localhost:18084/connectors/${CONNECTOR}" >/dev/null
   sleep 1
-  docker exec business-postgres psql -U "${BUSINESS_PG_USER:-business}" -d "${BUSINESS_PG_DB:-business}" -v ON_ERROR_STOP=0 -c \
+  with_business_pg business_pg_psql -v ON_ERROR_STOP=0 -c \
     "SELECT pg_drop_replication_slot('${SLOT}') WHERE EXISTS (SELECT 1 FROM pg_replication_slots WHERE slot_name='${SLOT}' AND NOT active); DROP PUBLICATION IF EXISTS \"${PUBLICATION}\"; DROP SCHEMA IF EXISTS \"${SOURCE_SCHEMA}\" CASCADE;" >/dev/null 2>&1
   rpk_admin group delete "${LOAD_GROUP}" >/dev/null 2>&1
   rpk_admin topic delete "${LOAD_TOPIC}" "${RETENTION_TOPIC}" "${PERF_TOPIC}" "${DATA_TOPIC}" >/dev/null 2>&1
@@ -493,18 +522,17 @@ printf 'before_offset=%s\nafter_offset=%s\n' "${quorum_before_offset}" "${quorum
 [ "${quorum_after_offset}" -eq "${quorum_before_offset}" ]
 
 echo "[RP-HA-03] Connect distributed ownership and worker failover"
-docker exec business-postgres psql -U "${BUSINESS_PG_USER:-business}" -d "${BUSINESS_PG_DB:-business}" -v ON_ERROR_STOP=1 -c \
+with_business_pg business_pg_psql -v ON_ERROR_STOP=1 -c \
   "CREATE SCHEMA \"${SOURCE_SCHEMA}\"; CREATE TABLE \"${SOURCE_SCHEMA}\".\"${SOURCE_TABLE}\" (id bigint PRIMARY KEY, name text NOT NULL); INSERT INTO \"${SOURCE_SCHEMA}\".\"${SOURCE_TABLE}\" VALUES (1, 'snapshot');" >/dev/null
 rpk_admin topic create "${DATA_TOPIC}" --partitions 1 --replicas 3 \
   --topic-config cleanup.policy=delete >/dev/null
-jq -n \
+with_business_pg business_pg_jq \
   --arg connector "${CONNECTOR}" --arg schema "${SOURCE_SCHEMA}" --arg table "${SOURCE_TABLE}" \
   --arg topic "${DATA_TOPIC}" --arg slot "${SLOT}" --arg publication "${PUBLICATION}" \
-  --arg user "${BUSINESS_PG_USER:-business}" --arg password "${BUSINESS_PG_PASSWORD:-business_password}" \
   '{
     "connector.class":"io.debezium.connector.postgresql.PostgresConnector", "tasks.max":"1",
-    "database.hostname":"host.docker.internal", "database.port":"5433", "database.user":$user,
-    "database.password":$password, "database.dbname":"business", "topic.prefix":$connector,
+    "database.hostname":"host.docker.internal", "database.port":$port, "database.user":$user,
+    "database.password":$password, "database.dbname":$database, "topic.prefix":$connector,
     "plugin.name":"pgoutput", "slot.name":$slot, "publication.name":$publication,
     "publication.autocreate.mode":"filtered", "snapshot.mode":"initial", "schema.include.list":$schema,
     "table.include.list":($schema + "." + $table), "key.converter":"org.apache.kafka.connect.json.JsonConverter",
@@ -538,7 +566,7 @@ printf '%s\n' "${status_after}" >"${REPORT_DIR}/connector-after-worker-failure.j
 wait_connect http://localhost:18083
 wait_connect http://localhost:18084
 before_resume_offset="$(topic_offset "${DATA_TOPIC}" latest)"
-docker exec business-postgres psql -U "${BUSINESS_PG_USER:-business}" -d "${BUSINESS_PG_DB:-business}" -v ON_ERROR_STOP=1 -c \
+with_business_pg business_pg_psql -v ON_ERROR_STOP=1 -c \
   "INSERT INTO \"${SOURCE_SCHEMA}\".\"${SOURCE_TABLE}\" VALUES (2, 'after-worker-failover');" >/dev/null
 wait_topic_latest_greater_than \
   "${DATA_TOPIC}" "${before_resume_offset}" 60 "connector did not resume after worker failover" >/dev/null

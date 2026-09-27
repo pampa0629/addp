@@ -21,8 +21,8 @@
         </div>
       </div>
       <div class="header-right">
-        <el-button @click="goToEdit">{{ t('service.common.edit') }}</el-button>
-        <el-button type="danger" @click="handleDelete">{{ t('service.common.delete') }}</el-button>
+        <el-button v-if="canUpdate" @click="goToEdit">{{ t('service.common.edit') }}</el-button>
+        <el-button v-if="canDelete" type="danger" @click="handleDelete">{{ t('service.common.delete') }}</el-button>
       </div>
     </div>
 
@@ -71,7 +71,7 @@
     <!-- 图层管理卡片 -->
     <el-card :header="t('service.tile.layerManagementTitle')" style="margin-bottom: 20px">
       <div class="layer-actions" style="margin-bottom: 16px">
-        <el-button type="primary" @click="showAddLayerDialog">{{ t('service.tile.addLayerBtn') }}</el-button>
+        <el-button v-if="canUpdate" type="primary" @click="showAddLayerDialog">{{ t('service.tile.addLayerBtn') }}</el-button>
       </div>
 
       <el-table
@@ -133,8 +133,9 @@
         </el-table-column>
         <el-table-column :label="t('service.common.actions')" width="220" fixed="right">
           <template #default="{ row }">
-            <el-button size="small" @click="showEditLayerDialog(row)">{{ t('service.common.edit') }}</el-button>
+            <el-button v-if="canUpdate" size="small" @click="showEditLayerDialog(row)">{{ t('service.common.edit') }}</el-button>
             <el-button
+              v-if="canUpdate"
               size="small"
               type="warning"
               @click="clearLayerCache(row)"
@@ -142,7 +143,7 @@
             >
               {{ t('service.tile.clearCacheBtn') }}
             </el-button>
-            <el-button size="small" type="danger" @click="deleteLayer(row)">{{ t('service.common.delete') }}</el-button>
+            <el-button v-if="canUpdate" size="small" type="danger" @click="deleteLayer(row)">{{ t('service.common.delete') }}</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -372,7 +373,7 @@
 
       <template #footer>
         <el-button @click="layerDialogVisible = false">{{ t('service.common.cancel') }}</el-button>
-        <el-button type="primary" @click="saveLayer">{{ t('service.common.save') }}</el-button>
+        <el-button v-if="canUpdate" type="primary" @click="saveLayer">{{ t('service.common.save') }}</el-button>
       </template>
     </el-dialog>
   </div>
@@ -389,6 +390,7 @@ import { TilePreview } from '@common-ui-map'
 import { copyToClipboard } from '../utils/serviceHelper'
 import { navigateServiceRoute } from '@/utils/moduleNavigation'
 import { tilePreviewConfig, tilePreviewCoordinate } from '../utils/tileServicePreview'
+import { useAuthStore } from '../store/auth'
 import { ResourceTreePicker, detectTableMetadata, locatorPathFromSelection, useConsolePageDescriptor } from '@common-ui'
 import {
   defaultTileLayerName,
@@ -403,6 +405,9 @@ import {
 const router = useRouter()
 const route = useRoute()
 const { t } = useI18n()
+const authStore = useAuthStore()
+const canUpdate = computed(() => authStore.hasPermission('service.definition.update'))
+const canDelete = computed(() => authStore.hasPermission('service.definition.delete'))
 
 // 状态
 const service = ref(null)

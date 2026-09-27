@@ -8,6 +8,7 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { formatLocatorDisplayPath } from '@addp/common-frontend'
 import { taskAPI } from '@/api/tasks'
+import { useAuthStore } from '@/store/auth'
 import { parseTransferLocator } from '@/utils/resourceLocator'
 import {
   hasAtomicPartitionedTableChangeApply,
@@ -45,6 +46,7 @@ import { TARGET_OVERRIDE_POLICY, withTargetOverride } from './targetOverride.mjs
 
 export function useTaskWizardState() {
   const { t } = useI18n()
+  const authStore = useAuthStore()
   // ===== 状态定义 =====
   const currentStep = ref(0)
   const taskName = ref('')
@@ -962,7 +964,7 @@ export function useTaskWizardState() {
     try {
       const created = await taskAPI.create(taskConfig.value)
       const task = created?.data || created
-      if (!schedule.value && task?.id) {
+      if (!schedule.value && task?.id && authStore.hasPermission('transfer.task.execute')) {
         try {
           await taskAPI.start(task.id)
           ElMessage.success(t('transfer.taskWizard.taskCreateAndStartSuccess'))

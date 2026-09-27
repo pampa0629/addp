@@ -168,10 +168,10 @@
         </el-form-item>
         <el-alert :title="t('quality.targets.definitionHelp')" type="info" :closable="false" />
         <div class="section-heading">
-          <el-button @click="bindingToEdit = null; tablePickerVisible = !tablePickerVisible">{{ t('quality.plan.addTable') }}</el-button>
+          <el-button v-if="can('meta.catalog.read')" @click="bindingToEdit = null; tablePickerVisible = !tablePickerVisible">{{ t('quality.plan.addTable') }}</el-button>
           <el-button @click="addDeferredTable">{{ t('quality.targets.addInput') }}</el-button>
         </div>
-        <el-form-item v-if="tablePickerVisible" :label="t('quality.plan.addTable')">
+        <el-form-item v-if="tablePickerVisible && can('meta.catalog.read')" :label="t('quality.plan.addTable')">
           <ResourceTreePicker
             api-base-url="/api/v1/meta"
             mode="item"

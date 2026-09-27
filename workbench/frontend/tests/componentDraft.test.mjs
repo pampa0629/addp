@@ -14,7 +14,7 @@ test('existing trial values follow application bindings without persisting tempo
     named_parameters: [{ name: 'threshold', type: 'int', required: true }, { name: 'enabled', type: 'bool', required: true }],
     page: { default_limit: 20 }, order: { stable_key: ['id'] },
   }, output_contract: { fields: [{ name: 'id', type: 'string' }] } }
-  const originalDraft = { name: 'Source', description: '', columns: ['id'], pageLimit: 20, rendererType: 'table', parameters: [
+  const originalDraft = { name: 'Source', description: '', columns: ['id'], displayColumns: ['id'], pageLimit: 20, rendererType: 'table', parameters: [
     { key: 'number', label: 'Count', bindingKind: 'named', name: 'threshold', fieldType: 'int', controlType: 'number', operator: 'eq', required: true, value: 88 },
     { key: 'flag', label: 'Enabled', bindingKind: 'named', name: 'enabled', fieldType: 'bool', controlType: 'select', operator: 'eq', required: true, value: true },
     { key: 'tags', label: 'Tags', bindingKind: 'filter', field: 'tags', fieldType: 'string', controlType: 'multiselect', operator: 'in', required: false, value: ['history'] },
@@ -92,9 +92,29 @@ test('value labels round trip through the sole renderer compiler without alterin
   assert.equal(component.renderer_config.field_presentations[0].value_labels[0].label, 'A → B')
 })
 
+test('table keeps a hidden selection key in the query while showing only explicit display columns', () => {
+  const source = { ...descriptor, output_contract: { fields: [
+    { name: 'person_id', type: 'string' },
+    { name: 'nickname', type: 'string' },
+    { name: 'activity_count', type: 'bigint' },
+  ] } }
+  const draft = {
+    name: 'People', description: '', rendererType: 'table', pageLimit: 20, parameters: [],
+    columns: ['person_id', 'nickname', 'activity_count'], displayColumns: ['nickname', 'activity_count'],
+    fieldPresentations: [],
+  }
+  draft.fieldPresentations = synchronizeFieldPresentations(draft, source.output_contract.fields)
+  assert.deepEqual(draft.fieldPresentations.map(item => item.field), ['nickname', 'activity_count'])
+  assert.deepEqual(buildQueryRequest(source, draft).select, ['person_id', 'nickname', 'activity_count'])
+  const saved = buildComponentConfiguration(source, draft, 'people')
+  assert.deepEqual(saved.query_template.select, ['person_id', 'nickname', 'activity_count'])
+  assert.deepEqual(saved.renderer_config.columns, ['nickname', 'activity_count'])
+  assert.deepEqual(draftFromComponent(saved, source).displayColumns, ['nickname', 'activity_count'])
+})
+
 test('compiles a reusable application component without service or domain field assumptions', () => {
   const draft = {
-    name: 'component', description: '', columns: ['id', 'amount'], pageLimit: 50,
+    name: 'component', description: '', columns: ['id', 'amount'], displayColumns: ['id', 'amount'], pageLimit: 50,
     rendererType: 'table',
     fieldPresentations: [
       { field: 'id', label: '订单编号', fieldType: 'string', unit: '', precision: null, temporalFormat: '', width: 160 },
@@ -180,7 +200,7 @@ test('persists explicit map labels and controlled thematic style without raw col
 
 test('compiles descriptor operators with their typed runtime values', () => {
   const draft = {
-    name: 'filters', description: '', columns: ['id'], pageLimit: 25, rendererType: 'table',
+    name: 'filters', description: '', columns: ['id'], displayColumns: ['id'], pageLimit: 25, rendererType: 'table',
     parameters: [
       { key: 'statuses', label: 'Statuses', controlType: 'multiselect', required: false, field: 'status', operator: 'in', fieldType: 'string', value: ['paid', 'shipped'] },
       { key: 'missing', label: 'Missing', controlType: 'checkbox', required: false, field: 'shipped_at', operator: 'is_null', fieldType: 'timestamp', value: true },
@@ -200,7 +220,7 @@ test('compiles descriptor operators with their typed runtime values', () => {
 
 test('keeps an optional boolean parameter unset until the user chooses true or false', () => {
   const draft = {
-    name: 'boolean', description: '', columns: ['id'], pageLimit: 25, rendererType: 'table',
+    name: 'boolean', description: '', columns: ['id'], displayColumns: ['id'], pageLimit: 25, rendererType: 'table',
     parameters: [{ key: 'active', label: 'Active', controlType: 'select', required: false, field: 'active', operator: 'eq', fieldType: 'bool', value: '' }],
   }
   assert.equal(buildQueryRequest(descriptor, draft).filter, null)
@@ -223,7 +243,7 @@ test('compiles service named parameters into the same structured request and com
   const named = createNamedParameterDraft({ name: 'person_id_a', type: 'string', required: true, description: 'First person' })
   named.value = 'person-1'
   const draft = {
-    name: 'overlap', description: '', columns: ['overlap_count'], pageLimit: 1, rendererType: 'table',
+    name: 'overlap', description: '', columns: ['overlap_count'], displayColumns: ['overlap_count'], pageLimit: 1, rendererType: 'table',
     parameters: [named],
   }
   assert.deepEqual(buildQueryRequest(descriptor, draft), {
@@ -240,7 +260,7 @@ test('compiles service named parameters into the same structured request and com
 test('keeps required parameters without component defaults saveable but not previewable', () => {
   const named = createNamedParameterDraft({ name: 'person_id', type: 'string', required: true, description: 'Person' })
   const draft = {
-    name: 'runtime-bound', description: '', columns: ['metric'], pageLimit: 50, rendererType: 'table',
+    name: 'runtime-bound', description: '', columns: ['metric'], displayColumns: ['metric'], pageLimit: 50, rendererType: 'table',
     parameters: [named],
   }
 

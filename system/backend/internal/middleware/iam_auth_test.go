@@ -192,6 +192,58 @@ func TestIAMPermissionGuardRequiresAllPermissionsAcrossAssignments(t *testing.T)
 	}
 }
 
+func TestIAMPermissionGuardRejectsOrganizationalScopeForTenantAPI(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	guard, err := NewIAMPermissionGuard("system.engine.execute")
+	if err != nil {
+		t.Fatal(err)
+	}
+	authContext := testIAMAuthContext()
+	tenantID := *authContext.Context.TenantID
+	departmentID := "9"
+	authContext.Authorization.RoleAssignments = []commonauth.RoleAssignment{{
+		AssignmentID: "403",
+		RoleKey:      "tenant.infrastructure_administrator",
+		Scope: commonauth.AssignmentScope{
+			Type: "department", TenantID: &tenantID, DepartmentID: &departmentID,
+		},
+		Permissions: []string{"system.engine.execute"},
+		SourceType:  "manual",
+		ValidFrom:   authContext.Authorization.RoleAssignments[0].ValidFrom,
+	}}
+	response := performIAMGuardRequest(withIAMAuthContext(authContext), guard)
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403; body = %s", response.Code, response.Body.String())
+	}
+}
+
+func TestEngineCatalogPermissionDoesNotInheritEngineManagementRead(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	catalogGuard, err := NewIAMPermissionGuard("system.engine_catalog.read")
+	if err != nil {
+		t.Fatal(err)
+	}
+	managementGuard, err := NewIAMPermissionGuard("system.engine.read")
+	if err != nil {
+		t.Fatal(err)
+	}
+	context := testIAMAuthContext()
+	context.Authorization.RoleAssignments[0].Permissions = []string{"system.engine_catalog.read"}
+	if response := performIAMGuardRequest(withIAMAuthContext(context), catalogGuard); response.Code != http.StatusNoContent {
+		t.Fatalf("catalog permission status = %d, want 204", response.Code)
+	}
+	if response := performIAMGuardRequest(withIAMAuthContext(context), managementGuard); response.Code != http.StatusForbidden {
+		t.Fatalf("management permission status = %d, want 403", response.Code)
+	}
+	departmentID := "9"
+	context.Authorization.RoleAssignments[0].Scope = commonauth.AssignmentScope{
+		Type: "department", TenantID: context.Context.TenantID, DepartmentID: &departmentID,
+	}
+	if response := performIAMGuardRequest(withIAMAuthContext(context), catalogGuard); response.Code != http.StatusForbidden {
+		t.Fatalf("department catalog permission status = %d, want 403", response.Code)
+	}
+}
+
 func TestIAMCredentialGuardAllowsOnlyConfiguredTokenTypes(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	guard, err := NewIAMCredentialGuard("first_party_access_token", "oauth_access_token")

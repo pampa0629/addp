@@ -348,7 +348,7 @@ func MustNewPermissionGuard(requiredPermissions ...string) gin.HandlerFunc {
 // Role Assignment. Owner resource policy and restricted client scopes remain
 // separate mandatory checks.
 func HasRolePermission(c *gin.Context, permission string) bool {
-	return len(RolePermissionScopes(c, permission)) > 0
+	return HasAllRolePermissions(c, permission)
 }
 
 func HasAllRolePermissions(c *gin.Context, requiredPermissions ...string) bool {
@@ -363,22 +363,7 @@ func HasAllRolePermissions(c *gin.Context, requiredPermissions ...string) bool {
 }
 
 func hasAllRolePermissions(authContext commonauth.AuthContext, requiredPermissions []string) bool {
-	if len(requiredPermissions) == 0 {
-		return false
-	}
-	required := make(map[string]struct{}, len(requiredPermissions))
-	for _, permission := range requiredPermissions {
-		if commonauth.ValidatePermissionKey(permission) != nil {
-			return false
-		}
-		required[permission] = struct{}{}
-	}
-	for _, assignment := range authContext.Authorization.RoleAssignments {
-		for _, permission := range assignment.Permissions {
-			delete(required, permission)
-		}
-	}
-	return len(required) == 0
+	return commonauth.HasContextPermissions(authContext, requiredPermissions...)
 }
 
 // RolePermissionScopes returns the effective Assignment Scopes that contain a

@@ -87,6 +87,7 @@ T2 使用真实但可丢弃的基础设施，并满足：
 - 必须由调用方注入连接条件的 owner gate 同时声明 `# ADDP_T2_REQUIRED_ENV=<name[|alternative],...>`，逗号表示“同时需要”，竖线表示等价的安全前置条件。`make test-module` 与 `make test-changed` 必须在执行任何 T0/T1 前一次性检查全部所需条件，缺失时失败关闭并给出 owner、变量及安全测试环境提示；`--dry-run` 仅展示计划，不要求真实连接条件。CI 登记检查必须确认对应 Job 显式提供每组条件中的至少一个变量。
 - 需要 owner 持有合法 License 或受控介质的门禁必须声明 `# ADDP_T2_OWNER_MANAGED=<runtime>`，只通过 owner 受控 Linux 主机上的 `make test-integration-owner-managed` 人工执行，不进入 GitHub Actions、普通 `make test-integration` 或 macOS 定时巡检。登记检查必须拒绝 workflow 调用这类目标及其聚合入口。脚本必须验证官方介质与 License SHA-256、拥有 disposable 容器全生命周期并验证零残留。
 - 本地共享 `addp-postgres` 只允许使用 `addp_test` 与 `addp_iam_test`，并且只能通过根 `Makefile` 或 `scripts/test/` 的标准入口操作。
+- 本地 PostgreSQL T2 门禁必须由调用方显式提供测试 DSN 或端口；不得在未提供时回退到 `.env` 的首选端口。调用方先用 `bash scripts/infra/status.sh` 核实 ADDP Compose 实际映射。标准 PostgreSQL 门禁在执行测试或清理前，必须核对本地回环连接的端口与当前工作区 `addp-postgres` 的实际 Compose 映射一致，且 database 仅为 `addp_test` 或 `addp_iam_test`；容器不存在、归属不符或映射不一致时直接失败，不根据 `.env` 猜测。门禁前置检查不得输出一个写死首选端口的可复制连接命令。GitHub Actions 的独占 Service 与辅助 macOS CI 的独占临时 PostgreSQL 使用各自入口显式配置的端口和 database，不套用本地共享 Infra 校验。
 - 禁止为单次验证直接创建或删除数据库；现有标准入口不能满足隔离时，先完善入口及自动清理。
 - 门禁在任何破坏性动作前校验数据库身份，拒绝开发库、生产库或不满足 owner 安全约束的连接。
 - 每个场景只清理自己拥有的 Schema 或带唯一运行标识的事实，并验证零残留。
