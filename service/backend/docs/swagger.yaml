@@ -2708,6 +2708,12 @@ paths:
             additionalProperties:
               type: string
             type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
         "500":
           description: Internal Server Error
           schema:
@@ -4291,6 +4297,12 @@ paths:
             items:
               $ref: '#/definitions/github_com_addp_service_internal_models.TileServiceLayerDTO'
             type: array
+        "404":
+          description: 当前租户中服务不存在 | Service not found in current tenant
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       summary: 列出图层 | List layers
       tags:
       - TileService
@@ -4319,6 +4331,12 @@ paths:
           description: 已创建的图层 | Created layer
           schema:
             $ref: '#/definitions/github_com_addp_service_internal_models.TileServiceLayerDTO'
+        "404":
+          description: 当前租户中服务不存在 | Service not found in current tenant
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       summary: 添加图层 | Add layer
       tags:
       - TileService
@@ -4343,6 +4361,12 @@ paths:
       responses:
         "204":
           description: 删除成功 | Deleted successfully
+        "404":
+          description: 当前租户中图层不存在 | Layer not found in current tenant
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       summary: 删除图层 | Delete layer
       tags:
       - TileService
@@ -4368,6 +4392,12 @@ paths:
           description: 图层详情 | Layer details
           schema:
             $ref: '#/definitions/github_com_addp_service_internal_models.TileServiceLayerDTO'
+        "404":
+          description: 当前租户中图层不存在 | Layer not found in current tenant
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       summary: 获取图层详情 | Get layer details
       tags:
       - TileService
@@ -4401,6 +4431,12 @@ paths:
           description: 已更新的图层 | Updated layer
           schema:
             $ref: '#/definitions/github_com_addp_service_internal_models.TileServiceLayerDTO'
+        "404":
+          description: 当前租户中图层不存在 | Layer not found in current tenant
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       summary: 更新图层 | Update layer
       tags:
       - TileService
@@ -4420,6 +4456,12 @@ paths:
       responses:
         "204":
           description: 删除成功 | Deleted successfully
+        "404":
+          description: 当前租户中服务不存在 | Service not found in current tenant
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       summary: 删除瓦片服务 | Delete tile service
       tags:
       - TileService
@@ -4440,6 +4482,12 @@ paths:
           description: 瓦片服务详情 | Tile service details
           schema:
             $ref: '#/definitions/github_com_addp_service_internal_models.TileServiceDTO'
+        "404":
+          description: 当前租户中服务不存在 | Service not found in current tenant
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       summary: 获取瓦片服务详情 | Get tile service details
       tags:
       - TileService
@@ -4468,6 +4516,12 @@ paths:
           description: 已更新的瓦片服务 | Updated tile service
           schema:
             $ref: '#/definitions/github_com_addp_service_internal_models.TileServiceDTO'
+        "404":
+          description: 当前租户中服务不存在 | Service not found in current tenant
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       summary: 更新瓦片服务 | Update tile service
       tags:
       - TileService

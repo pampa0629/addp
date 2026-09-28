@@ -88,7 +88,7 @@ const handleLogin = async () => {
       ElMessage.success(t('monitor.login.success'))
 
       // 跳转到重定向页面或默认首页
-      const redirect = route.query.redirect || '/dashboard'
+      const redirect = route.query.redirect || '/'
       router.push(redirect)
     } catch (error) {
       console.error('Login error:', error)

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
+import { allowsConsoleRoute } from '../../../common-frontend/basic/src/authorization/consoleRouteAccess.js'
 
 const routerSource = readFileSync(new URL('../src/router/index.js', import.meta.url), 'utf8')
 const layoutSource = readFileSync(new URL('../src/components/Layout.vue', import.meta.url), 'utf8')
@@ -21,13 +22,17 @@ test('Quality routes declare the matching human read permission', () => {
 })
 
 test('standalone Quality navigation hides entries without their human read permission', () => {
-	for (const permission of [
-		'quality.rule.read',
-		'quality.plan.read',
-		'quality.issue.read'
+	assert.match(layoutSource, /allowsConsoleRoute\(`\/quality\$\{path\}`/)
+	for (const [path, permission] of [
+		['/rules', 'quality.rule.read'],
+		['/plans', 'quality.plan.read'],
+		['/issues', 'quality.issue.read']
 	]) {
-		assert.ok(layoutSource.includes(`v-if="can('${permission}')"`))
+		assert.ok(layoutSource.includes(`v-if="canEnter('${path}')"`))
+		assert.equal(allowsConsoleRoute(`/quality${path}`, 'tenant', []), false)
+		assert.equal(allowsConsoleRoute(`/quality${path}`, 'tenant', [permission]), true)
 	}
+	assert.equal(allowsConsoleRoute('/quality/overview', 'tenant', ['quality.plan.read']), false)
 	assert.doesNotMatch(layoutSource, /index="\/executions"/)
 })
 

@@ -11,6 +11,29 @@ import (
 	"time"
 )
 
+func TestStandardClientListsTenantDomains(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/v1/standard/domains" || r.Header.Get("Authorization") != "Bearer tenant-token" {
+			t.Fatalf("unexpected domain request: %s %s %#v", r.Method, r.URL.Path, r.Header)
+		}
+		_, _ = w.Write([]byte(`[{"id":7,"name":"Outdoor","code":"outdoor","description":"Outdoor data","lifecycle_state":"active","tenant_id":10,"children":[{"id":8,"parent_id":7,"name":"Activity","code":"activity","lifecycle_state":"active"}]}]`))
+	}))
+	defer server.Close()
+	client := NewStandardClient(server.URL, ServiceTokenProviderFunc(func(_ context.Context, tenantID uint) (string, error) {
+		if tenantID != 10 {
+			t.Fatalf("tenant = %d", tenantID)
+		}
+		return "tenant-token", nil
+	}), server.Client()).WithTenantID(10)
+	domains, err := client.ListDomains(context.Background())
+	if err != nil || len(domains) != 1 || len(domains[0].Children) != 1 || domains[0].Children[0].ParentID == nil || *domains[0].Children[0].ParentID != 7 {
+		t.Fatalf("domains = %#v, error = %v", domains, err)
+	}
+	if _, err := NewStandardClient(server.URL, nil, server.Client()).ListDomains(context.Background()); err == nil {
+		t.Fatal("missing tenant context accepted")
+	}
+}
+
 func TestStandardClientResolvesExactReferencesInRequestOrder(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/standard/references/resolve" {
@@ -150,6 +173,24 @@ func TestStandardClientHidesCrossTenantReference(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "tenant 8") {
 		t.Fatalf("ValidateDomain() leaked owner tenant: %v", err)
+	}
+}
+
+func TestStandardClientListsOnlyPublishedElementRevisionOptions(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/v1/standard/elements/12/revisions" || r.Header.Get("Authorization") != "Bearer tenant-token" {
+			t.Fatalf("unexpected Standard request: %s %s", r.Method, r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[{"id":1201,"revision_no":1,"status":"published","name":"Customer ID"},{"id":1202,"revision_no":2,"status":"draft","name":"Draft"}]`))
+	}))
+	defer server.Close()
+	client := NewStandardClient(server.URL, ServiceTokenProviderFunc(func(context.Context, uint) (string, error) {
+		return "tenant-token", nil
+	}), server.Client()).WithTenantID(7)
+	options, err := client.ListPublishedElementRevisions(context.Background(), 12)
+	if err != nil || len(options) != 1 || options[0].ID != 1201 {
+		t.Fatalf("published options = %#v, error = %v", options, err)
 	}
 }
 
@@ -302,6 +343,34 @@ func TestStandardClientResolvesElementRevisionsAtOnePointInTime(t *testing.T) {
 	}
 	if len(bindings) != 2 || bindings[12].RevisionID != 1201 || bindings[7].RevisionNo != 2 {
 		t.Fatalf("bindings = %#v", bindings)
+	}
+}
+
+func TestStandardClientResolvesExactElementRevisionsWithoutReselecting(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/standard/runtime/element-revisions/resolve-exact" {
+			t.Fatalf("unexpected Standard request: %s %s", r.Method, r.URL.String())
+		}
+		var request exactElementRevisionResolutionRequest
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatal(err)
+		}
+		if len(request.RevisionIDs) != 2 || request.RevisionIDs[0] != "101" || request.RevisionIDs[1] != "999" {
+			t.Fatalf("revision request = %#v", request)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"results":[{"revision_id":"101","found":true,"snapshot":{"element_id":"10","element_revision_id":"101","revision_no":1,"status":"withdrawn","scope_type":"tenant_common","code":"member_status","name":"Historical status","data_type":"string","value_domain_kind":"unrestricted","effective_from":"2026-01-01T00:00:00Z"}},{"revision_id":"999","found":false}]}`))
+	}))
+	defer server.Close()
+	client := NewStandardClient(server.URL, ServiceTokenProviderFunc(func(context.Context, uint) (string, error) {
+		return "tenant-token", nil
+	}), server.Client()).WithTenantID(7)
+	resolved, err := client.ResolveExactElementRevisions(context.Background(), []int64{101, 999, 101})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resolved) != 2 || resolved[101] == nil || resolved[101].RevisionID != 101 || resolved[101].Status != "withdrawn" || resolved[999] != nil {
+		t.Fatalf("exact revisions = %#v", resolved)
 	}
 }
 

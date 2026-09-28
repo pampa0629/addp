@@ -3,7 +3,7 @@ import { createAuthGuard } from '@common-ui'
 import { useAuthStore } from '../store/auth'
 import Layout from '../components/Layout.vue'
 const router = createRouter({
-  history: createWebHistory('/ontology/'),
+  history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     {
       path: '/login',

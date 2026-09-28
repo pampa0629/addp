@@ -185,7 +185,7 @@ func TestTenantAdministrationClosureAgainstPostgres(t *testing.T) {
 	}
 	disabledDepartment, err := organizationService.CreateDepartment(ctx, CreateDepartmentInput{
 		TenantID: tenant.ID, ActorPrincipalID: initialAdministrator.ID,
-		Name: "Disabled Scope", Audit: tenantAudit,
+		Code: "disabled_scope", Name: "Disabled Scope", Audit: tenantAudit,
 	})
 	if err != nil {
 		t.Fatalf("create disabled assignment scope fixture: %v", err)
@@ -206,7 +206,7 @@ func TestTenantAdministrationClosureAgainstPostgres(t *testing.T) {
 	}
 	closedProjectGroup, err := organizationService.CreateProjectGroup(ctx, CreateProjectGroupInput{
 		TenantID: tenant.ID, ActorPrincipalID: initialAdministrator.ID,
-		Code: "closed_scope", Name: "Closed Scope", Status: ProjectGroupStatusActive, Audit: tenantAudit,
+		Code: "closed_scope", Name: "Closed Scope", Audit: tenantAudit,
 	})
 	if err != nil {
 		t.Fatalf("create closed assignment scope fixture: %v", err)
@@ -227,7 +227,7 @@ func TestTenantAdministrationClosureAgainstPostgres(t *testing.T) {
 	}
 	activeDepartment, err := organizationService.CreateDepartment(ctx, CreateDepartmentInput{
 		TenantID: tenant.ID, ActorPrincipalID: initialAdministrator.ID,
-		Name: "Research Scope", Audit: tenantAudit,
+		Code: "research_scope", Name: "Research Scope", Audit: tenantAudit,
 	})
 	if err != nil {
 		t.Fatalf("create active assignment scope fixture: %v", err)

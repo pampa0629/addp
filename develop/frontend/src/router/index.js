@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import Layout from '../components/Layout.vue'
 import Login from '../views/Login.vue'
 import { useAuthStore } from '../store/auth'
+import { resolveModuleLandingRoute } from '../../../../common-frontend/basic/src/authorization/consoleRouteAccess.js'
 
 const routes = [
   {
@@ -13,9 +14,17 @@ const routes = [
   {
     path: '/',
     component: Layout,
-    redirect: '/sql',
     meta: { requiresAuth: true },
     children: [
+      {
+        path: '',
+        name: 'DevelopHome',
+        beforeEnter: () => {
+          const authStore = useAuthStore()
+          return resolveModuleLandingRoute('/develop', ['/sql', '/notebook', '/workflow', '/tasks'], authStore.contextType, authStore.permissions)
+        },
+        meta: { requiresAuth: true, handlesForbidden: true }
+      },
       {
         path: 'sql',
         name: 'QueryEditor',
@@ -57,7 +66,7 @@ const routes = [
 ]
 
 const router = createRouter({
-  history: createWebHistory(import.meta.env.DEV ? '/' : '/develop/'),
+  history: createWebHistory(import.meta.env.BASE_URL),
   routes
 })
 
@@ -67,12 +76,12 @@ import { createAuthGuard } from '@common-ui'
 // 路径规范化函数：处理 /develop/ 前缀
 const normalizeRedirect = fullPath => {
   if (!fullPath) {
-    return '/sql'
+    return '/'
   }
 
   // 处理根路径重定向
   if (fullPath === '/develop' || fullPath === '/develop/') {
-    return '/sql'
+    return '/'
   }
 
   // 移除模块前缀（如果存在）

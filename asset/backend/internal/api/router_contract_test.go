@@ -127,7 +127,9 @@ func assetPermissionRouteContracts() []permissionRouteContract {
 		{http.MethodGet, "/api/v1/asset/consumer/applications", "", []string{authorization.PermissionAssetApplicationRead}},
 		{http.MethodGet, "/api/v1/asset/consumer/assets/invalid/application-status", "", []string{authorization.PermissionAssetApplicationRead, authorization.PermissionAssetAuthorizationRead}},
 		{http.MethodGet, "/api/v1/asset/consumer/assets/invalid/ratings", "", []string{authorization.PermissionAssetRatingRead}},
-		{http.MethodPost, "/api/v1/asset/consumer/assets/invalid/ratings", `{}`, []string{authorization.PermissionAssetRatingCreate, authorization.PermissionAssetRatingUpdate}},
+		{http.MethodGet, "/api/v1/asset/consumer/assets/invalid/my-rating", "", []string{authorization.PermissionAssetRatingUpdate}},
+		{http.MethodPost, "/api/v1/asset/consumer/assets/invalid/ratings", `{}`, []string{authorization.PermissionAssetRatingCreate}},
+		{http.MethodPut, "/api/v1/asset/consumer/assets/invalid/ratings", `{}`, []string{authorization.PermissionAssetRatingUpdate}},
 	}
 }
 
@@ -158,7 +160,7 @@ func TestRouterPublishesOnlyImplementedTypeDefinitionOperations(t *testing.T) {
 			publicBusinessRoutes++
 		}
 	}
-	if publicBusinessRoutes != 41 {
-		t.Fatalf("public business route count = %d, want 41", publicBusinessRoutes)
+	if publicBusinessRoutes != 43 {
+		t.Fatalf("public business route count = %d, want 43", publicBusinessRoutes)
 	}
 }

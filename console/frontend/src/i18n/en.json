@@ -34,6 +34,8 @@
       "defaultName": "User"
     },
     "home": {
+      "noAvailableModules": "No business modules are available for this account",
+      "noAvailableModulesHint": "Contact an administrator to request access.",
       "nextSteps": "Suggested Next Steps",
       "recentVisits": "Recent Visits",
       "allModules": "All Modules",
@@ -555,6 +557,9 @@
       "catalog": {
         "label": "Enterprise Catalog",
         "entries": "Resource Browse",
+        "myEntries": "My Catalog",
+        "collections": "Project Collections",
+        "tasks": "Governance Tasks",
         "coverage": "Governance Coverage"
       },
       "asset": {

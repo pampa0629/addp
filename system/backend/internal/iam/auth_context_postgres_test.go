@@ -890,7 +890,7 @@ func insertProjectGroup(t *testing.T, db *gorm.DB, tenantID int64, code string) 
 	var id int64
 	if err := db.Raw(`
 		INSERT INTO system.project_groups (tenant_id, code, name, status)
-		VALUES (?, ?, ?, 'planned')
+		VALUES (?, ?, ?, 'active')
 		RETURNING id
 	`, tenantID, code, code).Scan(&id).Error; err != nil {
 		t.Fatalf("insert project group: %v", err)

@@ -36,7 +36,7 @@
           router
           class="sidebar-menu"
         >
-          <el-menu-item index="/orchestrations">
+          <el-menu-item v-if="canEnter('/orchestrations')" index="/orchestrations">
             <el-icon><List /></el-icon>
             <span>{{ t('orchestrator.layout.orchestrations') }}</span>
           </el-menu-item>
@@ -55,6 +55,7 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '../store/auth'
+import { allowsConsoleRoute } from '@common-ui'
 import {
   User,
   ArrowDown,
@@ -65,6 +66,7 @@ import {
 const { t } = useI18n()
 const router = useRouter()
 const authStore = useAuthStore()
+const canEnter = path => allowsConsoleRoute(`/orchestrator${path}`, authStore.contextType, authStore.permissions)
 const isInIframe = ref(false)
 
 onMounted(() => {

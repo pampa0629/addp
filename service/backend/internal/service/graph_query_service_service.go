@@ -118,7 +118,7 @@ func (s *GraphQueryServiceService) CreateService(
 		return nil, fmt.Errorf("create service failed: %w", err)
 	}
 
-	service, err = s.repo.GetByID(service.ID)
+	service, err = s.repo.GetByIDAndTenant(service.ID, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("get created service failed: %w", err)
 	}
@@ -128,10 +128,10 @@ func (s *GraphQueryServiceService) CreateService(
 
 // UpdateService 更新图查询服务
 func (s *GraphQueryServiceService) UpdateService(
-	id uint,
+	id, tenantID uint,
 	req *models.UpdateGraphQueryServiceRequest,
 ) (*models.GraphQueryServiceDTO, error) {
-	service, err := s.repo.GetByID(id)
+	service, err := s.repo.GetByIDAndTenant(id, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("get service failed: %w", err)
 	}
@@ -173,11 +173,11 @@ func (s *GraphQueryServiceService) UpdateService(
 		updates["status"] = *req.Status
 	}
 
-	if err := s.repo.Update(id, updates); err != nil {
+	if err := s.repo.Update(id, tenantID, updates); err != nil {
 		return nil, fmt.Errorf("update service failed: %w", err)
 	}
 
-	service, err = s.repo.GetByID(id)
+	service, err = s.repo.GetByIDAndTenant(id, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("get updated service failed: %w", err)
 	}
@@ -185,12 +185,12 @@ func (s *GraphQueryServiceService) UpdateService(
 	return s.toDTO(service), nil
 }
 
-func (s *GraphQueryServiceService) DeleteService(id uint) error {
-	return s.repo.Delete(id)
+func (s *GraphQueryServiceService) DeleteService(id, tenantID uint) error {
+	return s.repo.Delete(id, tenantID)
 }
 
-func (s *GraphQueryServiceService) GetService(id uint) (*models.GraphQueryServiceDTO, error) {
-	service, err := s.repo.GetByID(id)
+func (s *GraphQueryServiceService) GetService(id, tenantID uint) (*models.GraphQueryServiceDTO, error) {
+	service, err := s.repo.GetByIDAndTenant(id, tenantID)
 	if err != nil {
 		return nil, err
 	}

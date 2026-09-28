@@ -41,7 +41,7 @@ func TestCatalogMigrateAgainstPostgres(t *testing.T) {
 		"uq_catalog_open_governance_task",
 		"uq_catalog_entry_mark",
 		"uq_catalog_collection_name", "uq_catalog_collection_entry",
-		"uq_catalog_semantic_association", "uq_catalog_primary_domain", "uq_catalog_component_element",
+		"uq_catalog_semantic_association", "uq_catalog_primary_domain", "uq_catalog_approved_standard_mapping",
 	} {
 		var count int64
 		if err := tx.Raw(`SELECT COUNT(*) FROM pg_indexes WHERE schemaname = 'catalog' AND indexname = ?`, name).Scan(&count).Error; err != nil {
@@ -54,6 +54,7 @@ func TestCatalogMigrateAgainstPostgres(t *testing.T) {
 	for _, name := range []string{
 		"ck_catalog_entries_merge_shape", "ck_catalog_entries_successor_shape", "ck_catalog_entries_governance_visibility",
 		"ck_catalog_source_shape",
+		"ck_catalog_standard_mapping_shape",
 		"ck_catalog_semantic_shape", "ck_catalog_responsibility_shape",
 		"ck_catalog_governance_task_type", "ck_catalog_governance_task_status", "ck_catalog_governance_task_reason", "ck_catalog_governance_task_resolution",
 		"ck_catalog_entry_mark_type",
@@ -63,7 +64,7 @@ func TestCatalogMigrateAgainstPostgres(t *testing.T) {
 		"fk_catalog_governance_tasks_entry",
 		"fk_catalog_entry_marks_entry",
 		"fk_catalog_collection_entries_collection", "fk_catalog_collection_entries_entry",
-		"fk_catalog_semantic_entry", "fk_catalog_component_element_entry", "fk_catalog_component_element_component",
+		"fk_catalog_semantic_entry", "fk_catalog_standard_mapping_entry", "fk_catalog_standard_mapping_component",
 	} {
 		var count int64
 		if err := tx.Raw(`SELECT COUNT(*) FROM pg_constraint WHERE connamespace = 'catalog'::regnamespace AND conname = ?`, name).Scan(&count).Error; err != nil {
@@ -89,6 +90,55 @@ func TestCatalogMigrateAgainstPostgres(t *testing.T) {
 	}
 	if err := tx.Create(&binding).Error; err != nil {
 		t.Fatalf("insert binding: %v", err)
+	}
+	component := models.Component{
+		ID: uuid.New(), TenantID: 7, CatalogEntryID: entry.ID,
+		ComponentKey: "id", DisplayName: "id", ComponentStatus: models.SourceStatusActive,
+		ObservedSnapshot: map[string]interface{}{"name": "id"},
+	}
+	if err := tx.Create(&component).Error; err != nil {
+		t.Fatalf("insert component: %v", err)
+	}
+	if err := tx.Exec(`CREATE TABLE catalog.component_element_associations (
+		id uuid PRIMARY KEY, tenant_id bigint NOT NULL, catalog_entry_id uuid NOT NULL,
+		component_id uuid NOT NULL, element_id bigint NOT NULL, observed_version bigint NOT NULL,
+		observed_snapshot jsonb NOT NULL, verified_at timestamptz NOT NULL,
+		created_at timestamptz, updated_at timestamptz
+	)`).Error; err != nil {
+		t.Fatalf("create legacy association table: %v", err)
+	}
+	legacyID := uuid.New()
+	if err := tx.Create(&legacyComponentElementAssociation{
+		ID: legacyID, TenantID: 7, CatalogEntryID: entry.ID, ComponentID: component.ID,
+		ElementID: 50, ObservedVersion: 4, ObservedSnapshot: map[string]interface{}{"name": "Order ID"},
+		VerifiedAt: entry.CreatedAt, CreatedAt: entry.CreatedAt, UpdatedAt: entry.CreatedAt,
+	}).Error; err != nil {
+		t.Fatalf("insert legacy association: %v", err)
+	}
+	if err := Migrate(tx); err != nil {
+		t.Fatalf("migrate legacy association: %v", err)
+	}
+	if tx.Migrator().HasTable(&legacyComponentElementAssociation{}) {
+		t.Fatal("legacy association table remains after migration")
+	}
+	var migrated models.StandardMapping
+	if err := tx.First(&migrated, "id = ?", legacyID).Error; err != nil {
+		t.Fatalf("read migrated mapping: %v", err)
+	}
+	if migrated.Source != models.StandardMappingSourceLegacy || migrated.ReviewStatus != models.StandardMappingProposed || migrated.ElementRevisionID != nil || migrated.ElementID != 50 || migrated.Evidence["legacy_observed_snapshot"] == nil {
+		t.Fatalf("legacy mapping was falsely reviewed or lost evidence: %#v", migrated)
+	}
+	if err := tx.SavePoint("invalid_mapping_revision").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Model(&migrated).Update("source", models.StandardMappingSourceManual).Error; err == nil {
+		t.Fatal("manual mapping without a pinned revision passed the schema constraint")
+	}
+	if err := tx.RollbackTo("invalid_mapping_revision").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := Migrate(tx); err != nil {
+		t.Fatalf("post-conversion Migrate() must be idempotent: %v", err)
 	}
 	modelEntry := models.Entry{
 		ID: uuid.New(), TenantID: 7, EntryType: models.EntryTypeLogicalModel, EntryStatus: models.EntryStatusActive,

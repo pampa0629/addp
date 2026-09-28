@@ -36,6 +36,29 @@ func (c *StandardClient) WithTenantID(tenantID uint) *StandardClient {
 	return &StandardClient{tenantHTTPClient: c.tenantHTTPClient.withTenantID(tenantID)}
 }
 
+// StandardDomainTree is the owner response used for read-only domain discovery.
+// Catalog must project only explicitly public fields from this response.
+type StandardDomainTree struct {
+	ID             int64                 `json:"id"`
+	Name           string                `json:"name"`
+	Code           string                `json:"code"`
+	Description    string                `json:"description"`
+	ParentID       *int64                `json:"parent_id,omitempty"`
+	LifecycleState string                `json:"lifecycle_state"`
+	Children       []*StandardDomainTree `json:"children,omitempty"`
+}
+
+func (c *StandardClient) ListDomains(ctx context.Context) ([]*StandardDomainTree, error) {
+	if c == nil || c.tenantID == nil || *c.tenantID == 0 {
+		return nil, errors.New("Standard domain list requires tenant context")
+	}
+	var domains []*StandardDomainTree
+	if err := c.doJSON(ctx, http.MethodGet, "/api/v1/standard/domains", nil, &domains); err != nil {
+		return nil, fmt.Errorf("Standard list domains: %w", err)
+	}
+	return domains, nil
+}
+
 const StandardCatalogResourceChangesSchemaVersion = "standard.catalog_resource_changes/v1"
 
 type StandardCatalogResourceChange struct {
@@ -321,6 +344,28 @@ type ElementRevisionResponse struct {
 	CompiledQualityRules dataquality.Document `json:"compiled_quality_rules"`
 }
 
+// ListPublishedElementRevisions returns only exact published choices for a
+// mapping picker. Historical withdrawn and editable revisions are excluded.
+func (c *StandardClient) ListPublishedElementRevisions(ctx context.Context, elementID int64) ([]ElementRevisionResponse, error) {
+	if elementID <= 0 {
+		return nil, errors.New("invalid Standard element ID")
+	}
+	var revisions []ElementRevisionResponse
+	if err := c.doJSON(ctx, http.MethodGet, fmt.Sprintf("/api/v1/standard/elements/%d/revisions", elementID), nil, &revisions); err != nil {
+		return nil, fmt.Errorf("standard list element revisions: %w", err)
+	}
+	published := make([]ElementRevisionResponse, 0, len(revisions))
+	for _, revision := range revisions {
+		if revision.ID <= 0 || revision.RevisionNo <= 0 {
+			return nil, errors.New("standard returned an invalid element revision")
+		}
+		if revision.Status == "published" {
+			published = append(published, revision)
+		}
+	}
+	return published, nil
+}
+
 type ElementSummary struct {
 	ID   int64  `json:"id"`
 	Name string `json:"name"`
@@ -331,6 +376,7 @@ type ElementRevisionBinding struct {
 	ElementID       int64                            `json:"element_id,string"`
 	RevisionID      int64                            `json:"element_revision_id,string"`
 	RevisionNo      int64                            `json:"revision_no"`
+	Status          string                           `json:"status"`
 	ScopeType       string                           `json:"scope_type"`
 	OwnerDomainID   *int64                           `json:"owner_domain_id,omitempty,string"`
 	Code            string                           `json:"code"`
@@ -398,6 +444,20 @@ type ElementRevisionResolution struct {
 
 type ElementRevisionResolutionResponse struct {
 	Results []ElementRevisionResolution `json:"results"`
+}
+
+type exactElementRevisionResolutionRequest struct {
+	RevisionIDs []string `json:"revision_ids"`
+}
+
+type ExactElementRevisionResolution struct {
+	RevisionID int64                   `json:"revision_id,string"`
+	Found      bool                    `json:"found"`
+	Snapshot   *ElementRevisionBinding `json:"snapshot,omitempty"`
+}
+
+type ExactElementRevisionResolutionResponse struct {
+	Results []ExactElementRevisionResolution `json:"results"`
 }
 
 type ElementCandidate struct {
@@ -553,6 +613,71 @@ func (c *StandardClient) ResolveElementRevisionSnapshots(ctx context.Context, el
 	}
 	if len(result) != len(unique) {
 		return nil, errors.New("standard resolve element revisions returned incomplete results")
+	}
+	return result, nil
+}
+
+// ResolveExactElementRevisions reads pinned historical revisions by immutable
+// revision ID. It never substitutes the currently effective element revision.
+func (c *StandardClient) ResolveExactElementRevisions(ctx context.Context, revisionIDs []int64) (map[int64]*ElementRevisionBinding, error) {
+	if c == nil || c.tenantID == nil || *c.tenantID == 0 {
+		return nil, errors.New("standard resolve exact element revisions requires a tenant")
+	}
+	unique := make([]int64, 0, len(revisionIDs))
+	seen := make(map[int64]struct{}, len(revisionIDs))
+	for _, id := range revisionIDs {
+		if id <= 0 {
+			return nil, errors.New("standard resolve exact element revisions requires positive ids")
+		}
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		seen[id] = struct{}{}
+		unique = append(unique, id)
+	}
+	result := make(map[int64]*ElementRevisionBinding, len(unique))
+	for offset := 0; offset < len(unique); offset += 200 {
+		end := offset + 200
+		if end > len(unique) {
+			end = len(unique)
+		}
+		batch := unique[offset:end]
+		encoded := make([]string, len(batch))
+		for index, id := range batch {
+			encoded[index] = strconv.FormatInt(id, 10)
+		}
+		var response ExactElementRevisionResolutionResponse
+		if err := c.doJSON(ctx, http.MethodPost, "/api/v1/standard/runtime/element-revisions/resolve-exact",
+			exactElementRevisionResolutionRequest{RevisionIDs: encoded}, &response); err != nil {
+			return nil, fmt.Errorf("standard resolve exact element revisions: %w", err)
+		}
+		if len(response.Results) != len(batch) {
+			return nil, errors.New("standard resolve exact element revisions returned a result count mismatch")
+		}
+		for index, resolution := range response.Results {
+			if resolution.RevisionID != batch[index] {
+				return nil, errors.New("standard resolve exact element revisions returned results out of request order")
+			}
+			if !resolution.Found {
+				if resolution.Snapshot != nil {
+					return nil, errors.New("standard resolve exact element revisions returned a snapshot for a missing revision")
+				}
+				result[resolution.RevisionID] = nil
+				continue
+			}
+			snapshot := resolution.Snapshot
+			if snapshot == nil || snapshot.RevisionID != resolution.RevisionID || snapshot.ElementID <= 0 || snapshot.RevisionNo <= 0 ||
+				(snapshot.Status != "published" && snapshot.Status != "withdrawn") || strings.TrimSpace(snapshot.DataType) == "" ||
+				snapshot.EffectiveFrom.IsZero() || !validStandardOwnership(snapshot.ScopeType, snapshot.OwnerDomainID) {
+				return nil, errors.New("standard resolve exact element revisions returned an invalid snapshot")
+			}
+			if codeSet := snapshot.CodeSetRevision; codeSet != nil {
+				if !validStandardOwnership(codeSet.ScopeType, codeSet.OwnerDomainID) || !validStandardCodeSetOrigin(codeSet.Origin, codeSet.ScopeType) {
+					return nil, errors.New("standard resolve exact element revisions returned an invalid code set snapshot")
+				}
+			}
+			result[resolution.RevisionID] = snapshot
+		}
 	}
 	return result, nil
 }

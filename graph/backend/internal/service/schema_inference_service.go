@@ -65,21 +65,6 @@ type SchemaInferencePreview struct {
 	RelationTypes []InferredRelationType `json:"relation_types"`
 }
 
-// ListNeo4jEngines 返回当前租户下所有 Neo4j 引擎
-func (s *SchemaInferenceService) ListNeo4jEngines(tenantID uint) ([]commonModels.Engine, error) {
-	engines, err := s.systemClient.WithTenantID(tenantID).ListEngines(context.Background())
-	if err != nil {
-		return nil, fmt.Errorf("list neo4j engines: %w", err)
-	}
-	filtered := make([]commonModels.Engine, 0, len(engines))
-	for _, engine := range engines {
-		if engine.EngineType == "neo4j" && engineselection.IsSelectionOptionForComputeEntrypoint(&engine, "query") {
-			filtered = append(filtered, engine)
-		}
-	}
-	return filtered, nil
-}
-
 // InferSchema 从指定知识图谱推导 Schema（不写库，仅预览）
 func (s *SchemaInferenceService) InferSchema(ctx context.Context, graphID, tenantID uint, ontologyID *uint) (*SchemaInferencePreview, error) {
 	_, engine, err := s.neo4jSvc.getGraphAndEngine(graphID, tenantID)
@@ -109,11 +94,20 @@ func (s *SchemaInferenceService) inferWithEngine(ctx context.Context, engine *co
 	existingEntityNames := make(map[string]bool)
 	existingRelNames := make(map[string]bool)
 	if ontologyID != nil {
-		ets, _ := s.ontologySvc.ListEntityTypes(*ontologyID, tenantID)
+		if _, err := s.ontologyRepo.GetByID(*ontologyID, tenantID); err != nil {
+			return nil, err
+		}
+		ets, err := s.ontologySvc.ListEntityTypes(*ontologyID, tenantID)
+		if err != nil {
+			return nil, err
+		}
 		for _, et := range ets {
 			existingEntityNames[et.Name] = true
 		}
-		rts, _ := s.ontologySvc.ListRelationTypes(*ontologyID, tenantID)
+		rts, err := s.ontologySvc.ListRelationTypes(*ontologyID, tenantID)
+		if err != nil {
+			return nil, err
+		}
 		for _, rt := range rts {
 			existingRelNames[rt.Name] = true
 		}
@@ -196,6 +190,9 @@ func (s *SchemaInferenceService) inferWithEngine(ctx context.Context, engine *co
 
 // ApplyInferredSchema 将选中的推导结果（来自图谱）应用到本体
 func (s *SchemaInferenceService) ApplyInferredSchema(ctx context.Context, graphID, tenantID uint, req *models.ApplyInferredSchemaRequest) (*ImportResult, error) {
+	if _, err := s.ontologyRepo.GetByID(req.OntologyID, tenantID); err != nil {
+		return nil, err
+	}
 	preview, err := s.InferSchema(ctx, graphID, tenantID, &req.OntologyID)
 	if err != nil {
 		return nil, err
@@ -205,6 +202,9 @@ func (s *SchemaInferenceService) ApplyInferredSchema(ctx context.Context, graphI
 
 // ApplyInferredSchemaFromEngine 将选中的推导结果（来自引擎）应用到指定本体
 func (s *SchemaInferenceService) ApplyInferredSchemaFromEngine(ctx context.Context, engineID, ontologyID, tenantID uint, req *models.ApplyInferredSchemaFromEngineRequest) (*ImportResult, error) {
+	if _, err := s.ontologyRepo.GetByID(ontologyID, tenantID); err != nil {
+		return nil, err
+	}
 	preview, err := s.InferSchemaFromEngine(ctx, engineID, tenantID, &ontologyID)
 	if err != nil {
 		return nil, err

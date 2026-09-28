@@ -25,6 +25,7 @@ type IAMDepartmentResponse struct {
 
 type IAMCreateDepartmentRequest struct {
 	ParentID *string `json:"parent_id"`
+	Code     string  `json:"code"`
 	Name     string  `json:"name"`
 }
 
@@ -73,29 +74,20 @@ type IAMProjectGroupResponse struct {
 	Name        string                 `json:"name"`
 	Description string                 `json:"description"`
 	Status      iam.ProjectGroupStatus `json:"status"`
-	StartsAt    *time.Time             `json:"starts_at"`
-	EndsAt      *time.Time             `json:"ends_at"`
 	Version     int64                  `json:"version"`
 	CreatedAt   time.Time              `json:"created_at"`
 	UpdatedAt   time.Time              `json:"updated_at"`
 }
 
 type IAMCreateProjectGroupRequest struct {
-	Code        string                 `json:"code"`
-	Name        string                 `json:"name"`
-	Description string                 `json:"description"`
-	Status      iam.ProjectGroupStatus `json:"status"`
-	StartsAt    *time.Time             `json:"starts_at"`
-	EndsAt      *time.Time             `json:"ends_at"`
+	Code string `json:"code"`
+	Name string `json:"name"`
 }
 
 type IAMUpdateProjectGroupRequest struct {
-	Name        string                 `json:"name"`
-	Description string                 `json:"description"`
-	Status      iam.ProjectGroupStatus `json:"status"`
-	StartsAt    *time.Time             `json:"starts_at"`
-	EndsAt      *time.Time             `json:"ends_at"`
-	Version     int64                  `json:"version"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Version     int64  `json:"version"`
 }
 
 type IAMCreateProjectGroupMembershipRequest struct {
@@ -184,7 +176,7 @@ func (h *IAMOrganizationHandler) CreateDepartment(c *gin.Context) {
 	}
 	department, err := h.service.CreateDepartment(c.Request.Context(), iam.CreateDepartmentInput{
 		TenantID: int64(tenantID), ActorPrincipalID: int64(actorID), ParentID: parentID,
-		Name: request.Name, Audit: iamAuditMetadataWithStatus(c, http.StatusCreated),
+		Code: request.Code, Name: request.Name, Audit: iamAuditMetadataWithStatus(c, http.StatusCreated),
 	})
 	if err != nil {
 		respondIAMError(c, err)
@@ -478,7 +470,7 @@ func (h *IAMOrganizationHandler) CloseDepartmentMembership(c *gin.Context) {
 // @Param page query int false "页码 | Page number"
 // @Param page_size query int false "每页数量 | Page size"
 // @Param search query string false "编码或名称 | Code or name"
-// @Param status query string false "状态：planned/active/closed | Status: planned/active/closed"
+// @Param status query string false "状态：active/closed | Status: active/closed"
 // @Success 200 {object} object{data=[]IAMProjectGroupResponse,total=int64,page=int,page_size=int,total_pages=int}
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["iam.project_group.read"]
@@ -529,7 +521,6 @@ func (h *IAMOrganizationHandler) CreateProjectGroup(c *gin.Context) {
 	}
 	group, err := h.service.CreateProjectGroup(c.Request.Context(), iam.CreateProjectGroupInput{
 		TenantID: int64(tenantID), ActorPrincipalID: int64(actorID), Code: request.Code, Name: request.Name,
-		Description: request.Description, Status: request.Status, StartsAt: request.StartsAt, EndsAt: request.EndsAt,
 		Audit: iamAuditMetadataWithStatus(c, http.StatusCreated),
 	})
 	if err != nil {
@@ -598,7 +589,6 @@ func (h *IAMOrganizationHandler) UpdateProjectGroup(c *gin.Context) {
 	group, err := h.service.UpdateProjectGroup(c.Request.Context(), iam.UpdateProjectGroupInput{
 		TenantID: int64(tenantID), ProjectGroupID: groupID, Version: request.Version,
 		ActorPrincipalID: int64(actorID), Name: request.Name, Description: request.Description,
-		Status: request.Status, StartsAt: request.StartsAt, EndsAt: request.EndsAt,
 		Audit: iamAuditMetadataWithStatus(c, http.StatusOK),
 	})
 	if err != nil {
@@ -870,7 +860,7 @@ func parseProjectGroupStatus(value string) (*iam.ProjectGroupStatus, error) {
 	if normalized == "" {
 		return nil, nil
 	}
-	if normalized != iam.ProjectGroupStatusPlanned && normalized != iam.ProjectGroupStatusActive && normalized != iam.ProjectGroupStatusClosed {
+	if normalized != iam.ProjectGroupStatusActive && normalized != iam.ProjectGroupStatusClosed {
 		return nil, commonapi.ErrBadRequest
 	}
 	return &normalized, nil
@@ -898,7 +888,7 @@ func mapIAMDepartment(department iam.Department) IAMDepartmentResponse {
 func mapIAMProjectGroup(group iam.ProjectGroup) IAMProjectGroupResponse {
 	return IAMProjectGroupResponse{
 		ID: strconv.FormatInt(group.ID, 10), Code: group.Code, Name: group.Name, Description: group.Description,
-		Status: group.Status, StartsAt: group.StartsAt, EndsAt: group.EndsAt, Version: group.Version,
+		Status: group.Status, Version: group.Version,
 		CreatedAt: group.CreatedAt, UpdatedAt: group.UpdatedAt,
 	}
 }

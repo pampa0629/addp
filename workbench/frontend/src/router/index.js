@@ -6,14 +6,16 @@ import Login from '../views/Login.vue'
 
 const routes = [
   { path: '/login', name: 'Login', component: Login, meta: { requiresAuth: false } },
-  { path: '/data-apps/:id', name: 'DataApplicationRuntime', component: () => import('../views/DataApplicationRuntime.vue'), meta: { requiresAuth: true } },
+  { path: '/data-apps/:id', name: 'DataApplicationRuntime', component: () => import('../views/DataApplicationRuntime.vue'), meta: { requiresAuth: true, handlesForbidden: true } },
   { path: '/', component: Layout, redirect: '/applications', meta: { requiresAuth: true }, children: [
     { path: 'applications', name: 'DataApplicationList', component: () => import('../views/DataApplicationList.vue'), meta: { requiresAuth: true } },
     { path: 'applications/new', name: 'DataApplicationCreate', component: () => import('../views/DataApplicationEditor.vue'), meta: { requiresAuth: true } },
     { path: 'applications/:id', name: 'DataApplicationEdit', component: () => import('../views/DataApplicationEditor.vue'), meta: { requiresAuth: true } }
   ] }
 ]
-const routerBase = window.location.pathname.startsWith('/workbench/') ? '/workbench/' : '/'
+const routerBase = window.location.pathname.startsWith('/data-apps/')
+  ? '/'
+  : import.meta.env.BASE_URL
 const router = createRouter({ history: createWebHistory(routerBase), routes })
 router.beforeEach(createAuthGuard(useAuthStore, { router, moduleName: 'Workbench', loginRouteName: 'Login' }))
 export default router

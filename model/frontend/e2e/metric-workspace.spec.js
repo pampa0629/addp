@@ -3,8 +3,10 @@ import { test, expect } from '@playwright/test';
 async function installBackend(page, options = {}) {
   const permissions = [
     'model.logical_model.read',
+    'model.dw_layer.read',
     ...(options.engineRead === false ? [] : ['meta.catalog.read']),
     'standard.metric.read',
+    'standard.domain.read',
     'service.definition.create',
     ...(options.serviceRead === false ? [] : ['service.definition.read']),
     'service.definition.update',

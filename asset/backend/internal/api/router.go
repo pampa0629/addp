@@ -103,7 +103,9 @@ func SetupRouter(db *gorm.DB, systemURL string, redisClient *redis.Client, asset
 	consumer.GET("/applications", permission(assetauthorization.PermissionAssetApplicationRead), handler.listConsumerApplications)
 	consumer.GET("/assets/:id/application-status", permission(assetauthorization.PermissionAssetApplicationRead, assetauthorization.PermissionAssetAuthorizationRead), handler.getConsumerApplicationStatus)
 	consumer.GET("/assets/:id/ratings", permission(assetauthorization.PermissionAssetRatingRead), handler.listConsumerRatings)
-	consumer.POST("/assets/:id/ratings", permission(assetauthorization.PermissionAssetRatingCreate, assetauthorization.PermissionAssetRatingUpdate), handler.upsertConsumerRating)
+	consumer.GET("/assets/:id/my-rating", permission(assetauthorization.PermissionAssetRatingUpdate), handler.getOwnConsumerRatingForUpdate)
+	consumer.POST("/assets/:id/ratings", permission(assetauthorization.PermissionAssetRatingCreate), handler.createConsumerRating)
+	consumer.PUT("/assets/:id/ratings", permission(assetauthorization.PermissionAssetRatingUpdate), handler.updateConsumerRating)
 
 	return router
 }

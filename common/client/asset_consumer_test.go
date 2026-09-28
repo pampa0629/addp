@@ -37,6 +37,9 @@ func TestAssetClientUsesRequestScopedUserBearerWithoutIdentityFields(t *testing.
 	requestCount := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestCount++
+		if strings.HasSuffix(r.URL.Path, "/ratings") && r.Method != http.MethodPost && r.Method != http.MethodPut {
+			t.Errorf("rating write method = %s", r.Method)
+		}
 		if got := r.Header.Get("Authorization"); got != "Bearer user-access-token" {
 			t.Errorf("Authorization = %q", got)
 		}
@@ -68,13 +71,18 @@ func TestAssetClientUsesRequestScopedUserBearerWithoutIdentityFields(t *testing.
 	}); err != nil {
 		t.Fatalf("CreateApplication: %v", err)
 	}
-	if _, err := client.UpsertRating(context.Background(), "user-access-token", 12, UpsertRatingRequest{
+	if _, err := client.CreateRating(context.Background(), "user-access-token", 12, RatingWriteRequest{
 		Score: 5, Comment: "useful",
 	}); err != nil {
-		t.Fatalf("UpsertRating: %v", err)
+		t.Fatalf("CreateRating: %v", err)
 	}
-	if requestCount != 2 {
-		t.Fatalf("request count = %d, want 2", requestCount)
+	if _, err := client.UpdateRating(context.Background(), "user-access-token", 12, RatingWriteRequest{
+		Score: 4, Comment: "revised",
+	}); err != nil {
+		t.Fatalf("UpdateRating: %v", err)
+	}
+	if requestCount != 3 {
+		t.Fatalf("request count = %d, want 3", requestCount)
 	}
 }
 

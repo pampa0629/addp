@@ -1,8 +1,8 @@
 # ADDP 企业资源目录与 Catalog 模块专题
 
-更新时间：2026-08-31
+更新时间：2026-09-27
 
-状态：阶段 0 至阶段 6 的架构、实现与确定性门禁已收口；企业资源目录、资产目录和引擎资源树的命名边界及 `AssetCategory` 单路径迁移已完成；专用 macOS T4 和停机恢复场景作为外部条件验证继续保留，不阻塞本专题完成
+状态：阶段 0 至阶段 6 的既定架构与实现已收口；2026-09-27 根据真实使用反馈重新打开目录价值呈现、业务域适用性和 StandardMapping 落地清单。既有 T4 外部条件验证继续保留，不把旧阶段的完成误作新清单的完成。
 
 ## 一、文档定位
 
@@ -1199,7 +1199,7 @@ Catalog 新模块实现必须同时覆盖：
 4. 在专用 Runner 配置 User Token、Tenant、Fixture Engine、Domain、Department 后执行 `enterprise-catalog-publishing`，回填自动建档、完整编目、失效引用治理与清理证据。
 5. 在明确的停机窗口执行来源 missing、停机追赶、显式重绑、System 恢复和 owner `503` 专项 T4；不得在共享开发服务上擅自停止 System、Standard、Meta 或 Catalog。
 6. 推荐继任项的名称选择器已有定向门禁；当前已治理资源为 0、资源盘点为 1045，没有可进入弃用流程的 `curated|certified` 样本。后续只在自然产生合适治理状态样本后补运行态写入证据，不为验收篡改 CatalogEntry。
-7. 如需重跑完整 Catalog 模块门禁，显式使用 `CATALOG_POSTGRES_TEST_DSN='postgres://addp:addp_password@127.0.0.1:15432/addp_test?sslmode=disable' make test-module MODULE=catalog`；不得新建本地测试 database。
+7. 如需重跑完整 Catalog 模块门禁，先用 `bash scripts/infra/status.sh` 核对 `addp-postgres` 实际宿主机端口，再显式设置指向本地 `addp_test` 的 `CATALOG_POSTGRES_TEST_DSN` 并执行 `make test-module MODULE=catalog`；不得假定首选端口当前有效，也不得新建本地测试 database。
 8. System 全量 IAM PostgreSQL 门禁与全仓授权门禁已在 AssetCategory permission migration 109 收口后通过。后续若再次失败，应按对应 owner 根因处理，不得放宽计数、跳过测试或恢复 `asset.catalog.*` 兼容权限。
 9. 治理缺口处置、企业目录上下文导航、“待归类”“待分配部门”和七维治理覆盖率均已完成运行态验收；后续会话不要重复重启或重做共享环境点击，只在相关契约再次变化时重跑。
 10. 旧 `accountability` 已从 API 响应、Swagger、URL 和页面删除，只在负向测试与规范删除说明中出现；不得恢复复合维度或兼容 query。
@@ -1209,3 +1209,112 @@ Catalog 新模块实现必须同时覆盖：
 14. **已完成**：AssetCategory 父目录选择器、完整更新契约、所有前端更新调用方、同 Tenant 目录图事务锁、环路/跨 Tenant/同级重名/版本冲突校验、统一 Asset 门禁，以及真实页面“移动→移回→刷新”和“重命名→恢复”验收均已通过；测试目录已恢复原名称与层级，树高亮与详情状态同步，浏览器无 warning/error。后续不要新增 `/move` 路由、局部更新负载、手工 ID 输入或第二份目录关系。
 15. **已完成**：Catalog 编目状态与页面信息架构已完成实现、确定性门禁、统一重启和真实页面验收；`4ff43d3a-3815-49fc-80e7-831dd7cc92b8` 与 `f0359420-a884-4e11-a87f-bd60e37a65e2` 已正式撤销编目，均恢复为 `discovered + inventory`、离开户外域并进入“待归类”，来源绑定保持 active，且分别产生 `catalog.entry.curation_withdrawn` 审计。后续不要直接写数据库、新建撤销路由或恢复通用“业务编目”按钮。
 16. **已完成**：Catalog 认证与弃用治理生命周期已经完成文档、后端、前端、Swagger、完整 Catalog 模块门禁、PostgreSQL 可逆认证闭环和统一重启后的只读页面验收。当前 Tenant 没有自然形成的 `curated|certified` 样本，不得为验收直接改库或制造不可恢复的 `deprecated` 事实；受控已编目样本的状态化入口继续由统一 T4 周期回归验证。
+
+## 二十四、2026-09-27 目录价值呈现复核与新一轮清单
+
+用户实际体验表明，虽然 Catalog 已有跨来源建档、专业事实联邦、责任、语义、关系、个人集合与治理覆盖率，主入口仍容易被理解成“只给资源打业务域和部门”。新一轮改进不扩大 Catalog 的专业事实所有权，目标是让使用者沿“找到资源 → 理解含义和来源 → 识别关系与治理缺口 → 协作治理 → 判断能否进入资产发布”走通现有能力，再补真正缺失的语义绑定。
+
+1. **业务域规则和误导性操作（代码与门禁已完成，运行态只读核对已完成，页面点击待验）**：业务域定义唯一归 Standard；Model Entity / LogicalTable、Standard MetricDefinition 的主域由各自 owner 管理，Catalog 只动态引用，不能在批量治理中提供主域写入。Standard 的 `platform|tenant_common` 指标在 owner 无 `domain_id` 时属于“公共且无专属归属域”，可以编目和认证，在主域覆盖率中记为不适用而非待归类。Standard 变化源带 `scope_type` 并对存量指标补发变化事件，保证已有 Catalog 来源摘要能追上当前事实。
+2. **已有能力可见性（代码与门禁已完成，运行态路由核对已完成，页面点击待验）**：Console 企业目录导航及功能搜索补上 Catalog 已有的“我的目录”“项目集合”“责任治理队列”入口；不新增第二套数据或页面协议。资源详情明确区分 Catalog 自有语义关联与 owner 管理的主域，提供跳转专业事实的入口。
+3. **领域一致性回归（只读核对已完成，页面点击待验）**：以 Outdoor 固定样本核对 Standard 指标、Model 模型、Meta DataItem 与 Catalog 主域的 owner 和适用性，不能把 Quality 计划/规则的 `owner_domain_id` 误认作被检查 DataItem 的主域；记录真正的来源冲突，不通过复制业务域字段消除表面不一致。
+4. **StandardMapping 正式闭环（代码与门禁已完成，真实页面只读部分已验，业务写入闭环待做）**：Catalog 已把组件 Element 旧关联替换为有独立身份和并发版本的 StandardMapping 候选、审核、驳回与撤回路径；人工候选写入使用 `catalog.entry.update`，审核决策使用独立的 `catalog.standard_mapping.review`，不借用条目认证权限。Catalog 数据字典只读取已审核映射并精确解析冻结的 Standard ElementRevision；治理覆盖率只计算已审核映射，条目认证审计固定当时的已审核映射 ID 与版本。前端详情以独立面板展示候选及审核动作，旧条目编辑负载不再包含映射；历史 `component_element_associations` 在数据库迁移事务中保留证据并转为 `legacy/proposed`，随后删旧表，不伪造历史修订和审核。Catalog、Standard 的完整 `make test-module` 门禁、System IAM 全量 PostgreSQL 门禁、Console 前端单测/浏览器测试/构建、Swagger 路由覆盖均已通过；候选更新的返回版本与持久化版本一致性已有回归测试。重启后运行态的进程、迁移、角色授权与路由已只读核对，登录态候选表单与未审核字典已点击验收；候选提交、审核及已审核字典的真实业务闭环仍待验。Copilot 专用 Service Principal 提交候选的对接尚未实施，不能把人工候选 API 误记为 Copilot 集成完成。
+5. **按角色组织入口（进行中）**：基于同一 `CatalogEntry` 查询，区分普通使用者的资源发现/理解、业务治理者的待办/覆盖率、管理员的资源盘点；优先改文案、默认视图和导航，不为每个角色复制资源实体或新建目录树。当前先在同一资源浏览页按视图收敛列表列：默认“已治理资源”突出业务说明和治理状态，不再以来源引擎、来源状态和目录可见性占据主要阅读空间，但来源失效仍在名称旁明确提示；“资源盘点”保留完整诊断列。既有责任治理队列、覆盖率和盘点权限入口不改。还需结合真实使用者与治理者身份检查菜单优先级及默认进入方式，不能仅凭管理员账号代替普通使用者验收。Asset 发布仍归 Asset，Portal 消费仍只归 Portal。
+
+本轮代码变更的验收门禁为 Standard、Catalog、Console 的 `make test-module`，其中 Standard/Catalog 包含 PostgreSQL T2，Console 包含前端测试和构建；运行态页面证据须在相应服务加载新版本后另记，不把编译或单元测试等同于真实页面验收。
+
+门禁记录：Catalog、Console 的完整 `make test-module` 均已通过；Standard 的 T0、Go T1、前端 T1/T3（含 103 项浏览器测试及构建）通过，PostgreSQL T2 由 `make test-standard-postgres` 单独通过，包含存量摘要补发与重复迁移幂等回归。Standard 首次完整命令因 `.env` 测试密码与运行中的 `addp-postgres` 凭据不一致，在 T2 连接前失败；随后只读提取该容器自身配置并对 URL 密码编码，未修改数据库凭据。
+
+2026-09-28 重启后运行态核对：Catalog、Standard、Model、Meta 的 `/health/ready` 均 Ready，Console/Catalog 前端返回 200，Catalog 未登录 API 返回预期 401。当前服务下发的 Console 导航/功能搜索代码已有“我的目录”“项目集合”“责任治理队列”入口，Catalog 前端下发代码已有 owner 主域写入限制。只读数据库核对 Standard 唯一 Outdoor 域 `id=1`：3 个 Standard MetricDefinition、3 个 Model Entity、4 个 Model LogicalTable 的 owner 主域均为 `1`，对应 10 条 Catalog 当前 active 来源摘要也均为 `domain_id=1`，没有发现这批 owner 来源的主域冲突；这 10 条仍为 `discovered + inventory`，不把来源主域误记为已业务编目。Meta 中可辨认的 `ods_outdoor_*`、`dim_outdoor_*`、`dwd_outdoor_*`、`dws_outdoor_*` DataItem 仍是资源盘点项，当前没有主域；Meta 扫描本身不推断业务域，应由 Catalog 治理关联，不能据名称自动判定其域。浏览器自动化两次超时，因此登录态页面点击与交互验收尚未完成，不记为通过。
+
+StandardMapping 权限已确认并落实到 Manifest、IAM 和 Catalog API：`catalog.entry.update` 用于人工创建、编辑、删除候选；独立的 `catalog.standard_mapping.review` 用于审核通过、驳回和撤回；`catalog.entry.certify` 只用于整个目录条目认证。第一阶段不强制提交者与审核者为不同自然人，但各操作独立审计。Copilot 的候选提交若后续接入，只允许专用 Service Principal，始终只产生 `proposed`，不赋予 review 权限；当前尚无 Copilot 专用提交入口。
+
+2026-09-28 再次重启后的 StandardMapping 只读运行态核对：System、Standard、Catalog、Gateway 的 `/health/ready` 与 Console/Catalog 前端入口均返回 200；System `schema_migrations` 为 `161,false`，`catalog.standard_mappings` 已存在且旧 `catalog.component_element_associations` 已不存在。新权限 `catalog.standard_mapping.review` 为 active，已授予产品内置 `tenant.administrator` 角色；Catalog 当前 Swagger 已包含候选、修订选项、审核通过、驳回与撤回路由，未登录访问候选和修订选项均返回预期 401。运行中的 Catalog 前端已下发 `StandardMappingPanel`，其候选创建、修订选项与审核调用均在当前资源中。`make test-catalog-frontend` 再次通过（16 个测试文件、60 项测试及构建）；现有前端测试验证 API 路径，但不等同实际组件点击。主库目前有 2355 个 Catalog DataItem Component、7 个已发布 Standard ElementRevision，但 StandardMapping 记录为 0；这只能证明结构和路由加载，不能证明任一实际字段与标准之间存在合理的业务映射。只读核对发现 `outdoor.dws_outdoor_person_metric.person_id` 与已发布标准“人员标识”在名称和数据类型上相符，可以作为待业务确认的验收候选，尚未认定或写入。该次检查时 Mac 锁屏，浏览器自动化未能完成页面点击；也不为验收在共享主库制造未经业务确认的已审核映射。其后的页面只读验收与待完成的写入闭环分别记录如下，不能把路由和结构核对误记为主库业务闭环通过。
+
+同日解锁后的真实页面只读验收：从 Console 目录详情及 Catalog 页面打开 `dws_outdoor_person_metric`，在“编目信息”看到独立字段标准映射面板和空状态；候选表单可按名称选择 `person_id`、Standard“人员标识 · outdoor_person_id”以及“R1 · 人员标识”，无须输入技术 ID。“专业事实”的联邦数据字典仍把 `person_id` 显示为“未关联数据元”，符合主库没有已审核映射的现状。验收发现候选表单误用“保存编目”按钮文案，已改为新建时“提交候选”、编辑时“保存修改”；空映射表渲染还曾请求 `catalog.mapping.sources.undefined` 翻译，定位为无真实映射行时的占位渲染，已只对具有映射身份的行翻译来源。新浏览器页再次打开空表后无 warning/error，主库映射数保持 0。此轮仅证明选择器、空状态和未审核字典的真实页面行为；映射写入、审核后的字典和覆盖率，以及不同权限主体的按钮状态尚未验收，不能视为正式业务闭环完成。
+
+本次前端修正后的 `make test-module MODULE=catalog` 已通过（平台 T0、Catalog Go T1、前端 16 个文件/60 项测试与构建、Catalog PostgreSQL T2；测试库仅用 `addp_test`）。现有门禁和这次页面观察没有代替正式落标的业务确认；只有确认 `dws_outdoor_person_metric.person_id` 与 Standard“人员标识”R1 的语义一致，才在共享开发主库提交并审核候选。
+
+同日按角色入口的第一步：Catalog 同一资源浏览路由已按 `governance|inventory` 显示不同列表列，未增加资源副本或第二套目录。真实页面只读检查表明，“已治理资源”表头为目录名称、资源类型、业务说明、治理状态、更新时间；“资源盘点”保留来源状态、可见性和来源引擎等诊断列，且新页面无浏览器 warning/error。已治理资源的来源失效仍在名称旁保留显式警示，不因隐藏诊断列而掩盖异常。当前真实 Tenant 默认已治理视图为 0 项，因此只验到表头与空态，不能据此声称有业务内容可发现；现有跨模块 `enterprise-catalog-publishing` 浏览器用例已增加同一已编目样本在两种视图中的列断言，等待专用 T4 再验真实内容。`make test-module MODULE=console` 已通过平台 T0、107 项前端单测、81 项确定性浏览器测试与构建；`make test-module MODULE=catalog` 使用容器实际 `addp` 用户和允许的 `addp_test` 重跑后通过平台 T0、Catalog Go、60 项前端单测与构建、PostgreSQL T2。首次 Catalog 完整命令误用 `postgres` 用户导致 T2 认证失败，随后只修正测试 DSN，未修改数据库、迁移或凭据。Online T4 在本机没有专用环境，本轮未执行。
+
+同日补齐映射列表的固定修订展示：此前前端以 `element_revision_id` 直接拼出“R ID”，会将数据库 ID 错当修订号。现在 CatalogEntry 详情只通过现有 Standard 精确修订批量接口动态取得数据元名称、编码和真正的 `revision_no`，返回可丢弃的 `element_reference` 展示摘要；历史已撤回发布修订仍按固定 ID 解析，不能滑到当前修订。Standard 不可达、固定修订缺失或迁移候选尚未固定修订分别显示明确不可用/待补选状态，映射关系仍可读取；组件失效也不把裸 ID 当名称展示。没有新增数据库列、反向投影、兼容路径或新的 Standard 端点。后端测试覆盖历史修订、缺失、未固定、Standard 不可达时详情继续可读；前端测试覆盖人类可读文案与 ID/修订号区别。Catalog Swagger 已同步，完整 `make test-module MODULE=catalog` 再次通过平台 T0、Go T1、前端 17 个文件/62 项测试与生产构建、PostgreSQL T2。当前共享开发库仍无正式映射，不以单测冒充真实已审核列表的运行态验收；后端新响应需服务加载新代码后方可在页面观察。
+
+## 二十五、业务域上下文与资源浏览收拢
+
+本节回应“Catalog 不能只像一个给资源填写业务域和部门的表单”的真实使用反馈。参考[《数据治理 100 问》第 043 问](../books/数据治理100问/05-元数据、资产与语义篇/043-资源目录体系与数据资产目录.md)对企业目录的通用定位：各专业模块维护事实，企业目录提供跨目录身份、关联、发现与治理视角。ADDP 的具体模块边界仍按本专题和正式规范执行：Standard 定义业务域、标准与指标，Model 定义实体和逻辑模型，Catalog 组织企业资源身份与自身关联，Asset 负责资产组合和发布；书中“企业目录也可提供资产视图”的通用表述不意味着把 Asset 事实迁入 Catalog。
+
+### 25.1 页面目的与导航
+
+- 业务域定义仍由 Standard 唯一维护；Catalog 只为 DataItem 等自有归属关系的资源引用权威 Domain，Model / Standard 对象的主域仍以专业 owner 为准。业务域虽有定义和跨模块语义，但也是目录浏览的一项正交维度，不应独占 Catalog 首屏或侧边栏独立入口。
+- Catalog 统一以 `/entries` 为“资源浏览”入口：未选择业务域时只展示多维筛选和权威分页列表；选择任一业务域后，在同页增加定义、层级和按类型汇总的紧凑上下文，类型入口继续改变同一列表的 `entry_type` 筛选。业务域下拉可搜索 Standard 当前全部业务域，包含零资源域；ID 只进入规范 `primary_domain_id` URL，不要求用户输入。不为部门、资源类型各建同构页面，也不建立第二套资源列表、目录树或 `CatalogEntry`。
+- 切换业务域应更新同页上下文、URL、计数与列表；各区独立加载和显示不可用状态，一个专业模块暂不可达不得让 Catalog 页面或服务整体不可用。域上下文的类型数量使用当前查看范围、精确主域与责任部门分面，不包含名称与高级筛选；列表结果数另按完整查询显示，不得混称为同一口径。
+- “全部相关信息”表示完整的导航范围与可继续分页查看的对象，不表示把所有数据项一次性渲染成超长页面。域内资源只展示按类型数量和同页筛选入口，具体条目由下方权威分页列表呈现。
+
+### 25.2 页面信息结构与事实来源
+
+| 区域 | 首版展示与用户要回答的问题 | 权威事实 / 现有入口 | 边界与当前缺口 |
+| --- | --- | --- | --- |
+| 业务域选择与概况 | 当前域的名称、编码、定义和层级路径；“我正在看哪个业务范围？” | Standard Domain，经 Catalog `GET /domains` 裁剪动态读取 | Catalog `/entries/facets` 只列当前可见条目实际引用的域，不能作为包含零资源域的完整选择列表；Catalog `/reference-candidates` 是编辑专用且要求 `catalog.entry.update`。读取权限契约见 25.5。 |
+| 专业语义 | 该域定义的术语、数据元与指标各有多少、是什么；“本域如何定义业务概念？” | Standard 的按 `owner_domain_id` 查询和专业详情；指标也有 CatalogEntry 可导航身份 | 公共且无专属归属域的标准不算本域对象；不把 Standard 定义复制为 Catalog 可编辑记录，不因为 Catalog 可读就绕过 Standard 专业读取权限。 |
+| 模型与企业资源 | 本域业务实体、逻辑模型、指标、数据项、服务、应用等分类数量与分页入口；“定义落到了哪些具体资源？” | Model / Standard 对象的 owner 主域；Meta DataItem、Service 等以 Catalog 自有主域关联；Catalog `/entries` 与 `/entries/facets` 已有按 `primary_domain_id` 的权限感知列表 | Model / Standard 主域由 owner 维护，Catalog 只动态引用；未业务归类的 Meta DataItem 不因技术名称含 `outdoor` 就归入户外域。同一专业对象已有 CatalogEntry 时不在两个资源区重复计数。 |
+| 已证实的关联 | 从所选资源进入“标准映射、模型关系、来源、血缘、继任”等已有详情；“这些对象之间有什么已确认的关系？” | Catalog StandardMapping / 来源绑定；Model、Standard、Meta 各自的专业关系读取 | 同属一个域只是共同出现，不能画成依赖边。首版只从对象进入现有关系详情，不预设一张尚无权威查询契约的域级全量关系图。 |
+| 治理情况 | 域内已编目、已认证、待治理资源及可处理入口；“缺口在哪里、谁负责？” | CatalogEntry 状态、责任、治理任务与当前资源盘点查询 | 现有 `/governance/coverage` 是全局统计且没有业务域参数，不能直接显示为域内覆盖率；域级覆盖口径与权限须单独确认。`discovered` 和缺口只对有盘点权限的治理者出现。 |
+| 资产产出 | 未来可显示“使用本域资源的已发布资产”，并跳至 Asset / Portal；“哪些成果已对外提供？” | Asset 的发布与组成关系 | Asset 可组合多个域的 CatalogEntry，不能把资产强行判为单一域。现有公开路由未提供按 CatalogEntry 反查已发布资产的明确契约，首版不伪造数量或在 Catalog 保存资产副本。 |
+
+### 25.3 “属于”和“相关”的判定
+
+1. **归属本域**：Standard / Model 对象采用 owner 声明的专属主业务域；由 Catalog 管理主域的资源采用 Catalog 当前确认的主域。此组构成首版默认的“域内资源”与数量口径，先按精确选中域计算，不暗含父域下全部子域。
+2. **与本域有关**：其他域对象只有存在明确的 secondary Domain 关联或由事实 owner 提供的专业关系、Catalog 已审核 StandardMapping 等证据时，才可作为另一个标明关系类型和来源的区域呈现；不得并入“归属本域”计数。首版先提供逐对象已有关系的进入路径，域级反向关联检索待契约核查后再做。
+3. **尚待归类**：没有已确认主域的 DataItem 留在有盘点权限的治理缺口视图，不列入任一选中域。`platform|tenant_common` 且无专属域的公共标准是“公共”，不是治理缺口。技术路径、名称相似、同一部门或 Asset 组合均不能自动证明域归属。
+4. 如果未来需要“包含子域”，必须提供显式开关并分别标注当前域与子域数量；不能悄悄改变精确域筛选和计数语义。业务域不是内容访问权限、审批边界或 AssetCategory 树。
+
+### 25.4 首版交互与验收样例
+
+建议从任意可见业务域切换到另一个域时，同一 `/entries` 页面切换定义、分组数量和权威列表；刷新可分享 URL 后保持所选域。阅读者默认看到其可发现的已治理资源，拥有 `catalog.inventory.read` 的人员才可切换到资源盘点和缺口。零资源域仍能选中并看到 Standard 定义，列表显示当前范围无结果；owner 不可达时显示“当前专业信息不可用”，已有列表与分面仍可独立使用。
+
+验收先以户外域检查一条真实导航链：在资源浏览中选域 → 看见 Standard 定义与 Model / Standard 已声明归属的目录对象 → 进入各自 owner 详情 → 返回同一筛选列表。再选择另一个域或无资源域，证明页面、URL、权限和空态均不依赖硬编码的户外域。当前已观察到的 Outdoor 名称、数量和技术路径只用于核对，不替代业务确认；不得为填满页面而把未确认 DataItem 或 StandardMapping 写入共享主库。
+
+### 25.5 实施前必须确认的契约
+
+| 问题 | 当前只读核对 | 建议方向 / 待确认决定 |
+| --- | --- | --- |
+| 普通 Catalog 阅读者如何选择所有可浏览业务域？ | Standard `/domains` 要求 `standard.domain.read`；Catalog 分面仅含已引用且当前可见的域，编辑候选要求 `catalog.entry.update`。 | **已确认**：`catalog.entry.read` 可以发现本 Tenant 的业务域名称、编码、定义和层级。Catalog 通过自身只读接口动态读取 Standard 当前 Domain，并严格裁剪为域概况；不授予 Standard 专业管理权限，不持久化 Domain 副本。 |
+| 域内专业定义是否向仅有 Catalog 阅读权限的人展示？ | Standard 术语、数据元、指标各有独立 read Permission；Model 实体与逻辑模型亦有独立 read Permission。 | **已确认**：Catalog 读者可看目录自身有权展示的资源摘要和治理事实；术语、数据元和指标清单由页面持当前 User Token 分别读取 Standard，缺少对应读取权限时不请求并明确显示不可访问。详情入口还须满足 Console 的相应路由权限；首版不使用 Catalog 运行身份代理专业详情，也不将专业定义写入 Catalog。 |
+| 域级治理数字从哪里来？ | 现有 Catalog `/governance/coverage` 只聚合全局盘点，`/entries` 可按主域查询。 | 先确定所选域、治理视图、适用对象与子域的分母口径，再决定是否需要 Catalog 的域范围即时聚合；不得给全局数字换上域名称。 |
+| 域级关系和资产结果是否进入首版？ | 现有关系主要在条目详情按 owner 联邦展示；Asset 没有明确的按域或按 CatalogEntry 反查已发布资产的公开消费契约。 | 首版只提供有证据的逐对象关系导航；资产结果与域级关系汇总待查询、权限及跨域计数契约确认后追加，不建泛化关系表或资产投影。 |
+
+首版已确认的域概况、资源分组和 Standard 专业定义分页摘要收拢到唯一 `/entries` 页面，资源盘点只对额外具有 `catalog.inventory.read` 的人员开放。专业定义分别请求 Standard `/glossaries`、`/elements`、`/metrics`，限定 `scope_type=domain` 与精确的 `owner_domain_id`；每类数量采用该 owner 分页响应的 `total`，含其当前可读生命周期对象，不等同已发布数，也不等同 CatalogEntry 数量。公共范围定义不算所选域对象；父域不隐含子域。三个读取权限、加载、拒绝和不可用状态独立，不能因一类失败阻断 Catalog 资源列表。域级治理覆盖率、全量关系图和资产结果仍待确认，不得用域内 CatalogEntry 数量冒充其统计。本节不授权更改业务域归属、标准映射或资产发布事实。
+
+### 25.6 首版实现跟进
+
+- [x] 在 Catalog 提供 `GET /domains`：使用现有 Standard 公共读取契约和 Catalog Tenant 运行权限动态获取业务域树，只返回当前 Tenant 的名称、编码、定义、层级与字符串稳定 ID；Standard 不可达只影响这次概况读取。
+- [x] 第一版曾增加 `/domains` 独立页面；真实使用后确认与资源浏览重复，本轮收拢到唯一 `/entries` 页面，不保留前端旧路由或菜单入口。
+- [x] `/entries` 从 Standard 域概况读取完整下拉候选；选中后同页展示定义、路径与可点击的类型计数，保留唯一权威分页列表、规范 URL、零资源域、权限与独立不可用状态。Catalog 模块门禁（含 PostgreSQL 集成）、Console 前端门禁和共享前端测试已通过；真实 Tenant 的多域交互验收仍单列如下。
+- [x] 普通 `catalog.entry.read` 与额外 `catalog.inventory.read` 的页面范围分离；专业详情只跳转 owner/既有条目页面，不用 Catalog 服务身份扩权代理。
+- [x] 在选域上下文展示 Standard 术语、数据元、指标的独立权限分页摘要；以 Standard 精确归属域查询的 `total` 计数，按当前 User Token 授权，独立错误/空态，详情路由另验权限。Catalog 前端定向测试与构建、完整 `make test-module MODULE=catalog`（含 PostgreSQL 集成）通过；前端变更由现有 Catalog 自动发现和 CI 门禁覆盖，无新增路由或 Swagger 契约。
+- [ ] 在运行中的真实 Tenant 验收至少两个业务域、一个空域以及 Standard 短时不可达；当前单测、构建和 PostgreSQL 集成门禁不能替代这项交互验收。
+- [ ] 讨论跨资源关系、域级治理覆盖率与 Asset 结果的独立权限、查询和计数契约；确认后再纳入页面，不以同域共现推断关系。
+
+2026-09-28 本机只读核验：开发 Tenant 的 Standard 当前仅有一个有效业务域“户外域”，当前浏览器的权限验收账号也没有 Catalog 模块权限，因此不能据此勾选真实多域、空域与降级验收。现有 `enterprise-catalog-publishing` 在线浏览器用例已补充对已配置业务域的定义展示、类型筛选和刷新后 URL 保持的断言；该在线用例需要专用 User 凭据与环境，尚未在本机执行。后续应在专用验收环境准备第二个业务域和一个零资源域，运行现有在线门禁，再人工核对 Standard 不可达时列表独立可用。
+
+同日补齐该 Online 套件的契约回归：Python 断言现使用独立 `component_standard_mapping` 治理覆盖维度，编目请求不再携带已删除的 `component_elements` 或旧的 `deprecation_reason` 字段；重复运行若发现永久夹具的主业务域与专用环境配置不一致，会在写入前明确失败，不擅自改写业务归属。`make test-online-runner` 的确定性测试与 CI 注册检查通过；这不等于已执行专用环境的 `enterprise-catalog-publishing` T4，也不满足上面的多域、空域及 Standard 不可达真实交互验收。
+
+同日新增 Standard 专业定义摘要：页面持当前 User Token 分别请求术语、数据元和指标的精确归属域分页列表；某类无读取权限不发请求，`403` 与 owner 不可用分别提示，域切换忽略旧响应；只有满足 Console 专业详情路由权限时才给出跳转。此摘要不占用 CatalogEntry 的资源类型计数，也不复制专业定义。定向测试覆盖请求参数、独立权限、旧响应与失败分类；尚未执行真实多域/空域及 Standard 故障的在线交互验收。
+
+### 25.7 本域专业内容的收拢与扩展
+
+- 选中业务域后的概况卡片始终展示 Standard 定义与 Catalog 资源类型入口；“本域专业内容”作为卡片内默认收拢、可展开的区域，按需读取专业模块，不另设独立页面或同构资源列表。切换业务域时按新的精确域重新读取，过期响应不得覆盖当前域。
+- Standard 的术语、数据元、指标仍由 Standard 分别授权和分页。Model 的实体、逻辑模型已经拥有 CatalogEntry 并进入上方类型入口与下方权威列表；展开区仅提供保留 `domain_id` 的专业页面入口，不重复列出这些对象或再制造一组资源数量。
+- Quality 的规则、方案及当前待处理问题分别按 Quality 公开列表的 `owner_domain_id` 精确过滤，使用当前 User Token 和各自的 `quality.*.read` 权限；仅显示 owner 返回的数量、少量导航摘要及保留域筛选的专业入口。不保存 Quality 投影，不使用需要额外 Monitor 权限的质量 Overview 冒充域质量评分。Quality 的“本域负责”是治理责任归属，不表示被检查的物理数据属于本域；待处理问题只计 `open`，不等于全部问题或域内数据质量结论。
+- 上方 Catalog 类型数采用当前查看范围、主域和责任部门分面；展开区的 Standard 与 Quality 数字仅按所选精确业务域及各自专业权限计算，不随责任部门、目录范围、名称或资源类型筛选变化。界面分别标出这些口径；某个 owner 不可用或拒绝访问只影响自己的区域，不能阻断 Catalog 列表。公共归属、子域及仅有名称相似的对象均不并入本域数量。
+
+实施跟进：
+
+- [x] 将独立的 Standard 摘要收进业务域卡片的默认收拢区，展开后按需加载；Model 提供带精确域筛选且受 Console 路由权限约束的专业入口，不重复目录对象。
+- [x] Quality 规则、方案及 `open` 问题使用当前 User Token 分别查询精确 `owner_domain_id`，独立处理读取权限、拒绝访问、owner 不可用与域切换旧响应；不调用 Quality Overview 推断域质量评分。
+- [x] 中英文页面分别说明 Catalog 分面与专业 owner 数字的不同范围。定向测试覆盖请求路径、权限、旧响应与收拢结构；`make test-catalog-frontend` 和使用本机已核实 PostgreSQL 映射的 `make test-module MODULE=catalog` 已通过。平台 Swagger 覆盖检查对当前 Agent FastAPI 投影有 warn-only 告警，不属于本次 Catalog 前端变更。
+- [x] 在既有 `enterprise-catalog-publishing` Online 浏览器用例中补充卡片默认收拢、展开后 Standard / Quality 各自按当前 Tenant 授权呈现、再次收拢的断言；无需新增 suite、权限或 CI 登记。此用例仍须在专用 T4 环境实际执行，且当前专用账号若无 Model / Quality 导航权限，不能据此声称这些跨模块跳转已完成验收。
+- [ ] 在专用真实 Tenant 验收展开、切域、Model/Quality 导航与 Standard/Quality 权限缺失或暂不可达状态；现有单测、构建和 PostgreSQL 门禁不等于真实浏览器验收。
+
+2026-09-28 本机只读交互核对：运行中的户外域目录卡片已能展示 Standard 术语、数据元、指标，Model 专业入口及 Quality 规则、方案、`open` 问题；点击一条指标定义后进入 Standard 对应指标详情。当前 Tenant 仍只有一个可用业务域；屏幕随后锁定，未继续核对切域、Model / Quality 跳转和故障降级。因此以上观察仅是局部运行态证据，不勾选完整验收项。
+
+同日门禁：`make test-online-runner` 的确定性测试通过（238 项），`make test-console-frontend` 串行重跑通过（单测 132 项、浏览器回归 81 项及构建）。首次与 Online Runner 并行执行时，Console 的一条既有 Transfer 权限浏览器用例在 5 秒内未匹配到 iframe；失败快照中已有 iframe，串行重跑未复现，暂不修改非本轮所有的 Transfer 用例。新增断言所在的完整 T4 Online suite 未在本机执行，仍需专用隔离部署验收。

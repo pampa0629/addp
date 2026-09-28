@@ -23,5 +23,5 @@ export default defineConfig({
     },
     fs: { allow: ['..'] }
   },
-  base: process.env.NODE_ENV === 'development' ? '/' : '/inference/'
+  base: process.env.NODE_ENV === 'development' ? '/' : '/module-ui/inference/'
 })

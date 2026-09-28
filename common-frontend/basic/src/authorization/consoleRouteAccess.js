@@ -45,7 +45,6 @@ export const CONSOLE_ROUTE_ACCESS = {
   '/service/services': [tenant('service.external_registration.read')],
   '/service/catalog': [anyOf('tenant', 'service.definition.read', 'service.external_registration.read')],
   '/workbench/applications': [tenant('workbench.data_application.read')],
-  '/workbench/data-apps': [tenant('workbench.data_application.execute')],
   '/orchestrator/orchestrations': [tenant('orchestrator.workflow.read')],
   '/monitor/dashboard': [tenant('monitor.statistics.read')],
   '/monitor/executions': [tenant('monitor.execution.read')],
@@ -143,4 +142,10 @@ export function allowsConsoleRoute(path, contextType, grantedPermissions = []) {
       ? rule.permissions.every(permission => granted.has(permission))
       : rule.permissions.some(permission => granted.has(permission))
   })
+}
+
+export function resolveModuleLandingRoute(modulePrefix, modulePaths, contextType, grantedPermissions = []) {
+  return modulePaths.find(path =>
+    allowsConsoleRoute(`${modulePrefix}${path}`, contextType, grantedPermissions)
+  ) || '/forbidden'
 }

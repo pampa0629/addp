@@ -1,9 +1,11 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
+	commonapi "github.com/addp/common/api"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	servicei18n "github.com/addp/service/i18n"
 	"github.com/addp/service/internal/models"
@@ -78,6 +80,7 @@ func (h *TileServiceHandler) CreateTileService(c *gin.Context) {
 // @Produce json
 // @Param id path int true "服务 ID | Service ID"
 // @Success 200 {object} models.TileServiceDTO "瓦片服务详情 | Tile service details"
+// @Failure 404 {object} map[string]string "当前租户中服务不存在 | Service not found in current tenant"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["service.definition.read"]
 // @Router /tile/{id} [get]
@@ -91,7 +94,7 @@ func (h *TileServiceHandler) GetTileService(c *gin.Context) {
 	}
 
 	// 2. 调用服务层获取瓦片服务
-	tileServiceDTO, err := h.tileServiceService.GetService(uint(id))
+	tileServiceDTO, err := h.tileServiceService.GetService(uint(id), tenantIDValue(c))
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Service not found"})
 		return
@@ -223,6 +226,7 @@ func (h *TileServiceHandler) SearchTileServices(c *gin.Context) {
 // @Param id path int true "服务 ID | Service ID"
 // @Param body body models.UpdateTileServiceRequest true "更新瓦片服务请求 | Update tile service request"
 // @Success 200 {object} models.TileServiceDTO "已更新的瓦片服务 | Updated tile service"
+// @Failure 404 {object} map[string]string "当前租户中服务不存在 | Service not found in current tenant"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["service.definition.update"]
 // @Router /tile/{id} [put]
@@ -243,8 +247,12 @@ func (h *TileServiceHandler) UpdateTileService(c *gin.Context) {
 	}
 
 	// 3. 调用服务层更新瓦片服务
-	tileServiceDTO, err := h.tileServiceService.UpdateService(uint(id), &req)
+	tileServiceDTO, err := h.tileServiceService.UpdateService(uint(id), tenantIDValue(c), &req)
 	if err != nil {
+		if errors.Is(err, commonapi.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Service not found"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -259,6 +267,7 @@ func (h *TileServiceHandler) UpdateTileService(c *gin.Context) {
 // @Produce json
 // @Param id path int true "服务 ID | Service ID"
 // @Success 204 "删除成功 | Deleted successfully"
+// @Failure 404 {object} map[string]string "当前租户中服务不存在 | Service not found in current tenant"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["service.definition.delete"]
 // @Router /tile/{id} [delete]
@@ -272,7 +281,11 @@ func (h *TileServiceHandler) DeleteTileService(c *gin.Context) {
 	}
 
 	// 2. 调用服务层删除瓦片服务
-	if err := h.tileServiceService.DeleteService(uint(id)); err != nil {
+	if err := h.tileServiceService.DeleteService(uint(id), tenantIDValue(c)); err != nil {
+		if errors.Is(err, commonapi.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Service not found"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -293,6 +306,7 @@ func (h *TileServiceHandler) DeleteTileService(c *gin.Context) {
 // @Param serviceId path int true "服务 ID | Service ID"
 // @Param body body models.CreateTileLayerRequest true "创建图层请求 | Create layer request"
 // @Success 201 {object} models.TileServiceLayerDTO "已创建的图层 | Created layer"
+// @Failure 404 {object} map[string]string "当前租户中服务不存在 | Service not found in current tenant"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["service.definition.update"]
 // @Router /tile-layers/{serviceId} [post]
@@ -313,8 +327,12 @@ func (h *TileServiceHandler) AddLayer(c *gin.Context) {
 	}
 
 	// 3. 调用服务层添加图层
-	layerDTO, err := h.tileServiceService.AddLayer(uint(serviceID), &req)
+	layerDTO, err := h.tileServiceService.AddLayer(uint(serviceID), tenantIDValue(c), &req)
 	if err != nil {
+		if errors.Is(err, commonapi.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Service not found"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -330,10 +348,15 @@ func (h *TileServiceHandler) AddLayer(c *gin.Context) {
 // @Param serviceId path int true "服务 ID | Service ID"
 // @Param layerId path int true "图层 ID | Layer ID"
 // @Success 200 {object} models.TileServiceLayerDTO "图层详情 | Layer details"
+// @Failure 404 {object} map[string]string "当前租户中图层不存在 | Layer not found in current tenant"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["service.definition.read"]
 // @Router /tile-layers/{serviceId}/{layerId} [get]
 func (h *TileServiceHandler) GetLayer(c *gin.Context) {
+	serviceID, ok := tileServiceID(c)
+	if !ok {
+		return
+	}
 	// 1. 解析路径参数
 	layerIDStr := c.Param("layerId")
 	layerID, err := strconv.ParseUint(layerIDStr, 10, 32)
@@ -343,7 +366,7 @@ func (h *TileServiceHandler) GetLayer(c *gin.Context) {
 	}
 
 	// 2. 调用服务层获取图层
-	layerDTO, err := h.tileServiceService.GetLayer(uint(layerID))
+	layerDTO, err := h.tileServiceService.GetLayer(uint(layerID), serviceID, tenantIDValue(c))
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Layer not found"})
 		return
@@ -359,6 +382,7 @@ func (h *TileServiceHandler) GetLayer(c *gin.Context) {
 // @Produce json
 // @Param serviceId path int true "服务 ID | Service ID"
 // @Success 200 {object} []models.TileServiceLayerDTO "图层列表 | Layer list"
+// @Failure 404 {object} map[string]string "当前租户中服务不存在 | Service not found in current tenant"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["service.definition.read"]
 // @Router /tile-layers/{serviceId} [get]
@@ -372,8 +396,12 @@ func (h *TileServiceHandler) ListLayers(c *gin.Context) {
 	}
 
 	// 2. 调用服务层列出图层
-	layers, err := h.tileServiceService.ListLayers(uint(serviceID))
+	layers, err := h.tileServiceService.ListLayers(uint(serviceID), tenantIDValue(c))
 	if err != nil {
+		if errors.Is(err, commonapi.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Service not found"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -391,10 +419,15 @@ func (h *TileServiceHandler) ListLayers(c *gin.Context) {
 // @Param layerId path int true "图层 ID | Layer ID"
 // @Param body body models.UpdateTileLayerRequest true "更新图层请求 | Update layer request"
 // @Success 200 {object} models.TileServiceLayerDTO "已更新的图层 | Updated layer"
+// @Failure 404 {object} map[string]string "当前租户中图层不存在 | Layer not found in current tenant"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["service.definition.update"]
 // @Router /tile-layers/{serviceId}/{layerId} [put]
 func (h *TileServiceHandler) UpdateLayer(c *gin.Context) {
+	serviceID, ok := tileServiceID(c)
+	if !ok {
+		return
+	}
 	// 1. 解析路径参数
 	layerIDStr := c.Param("layerId")
 	layerID, err := strconv.ParseUint(layerIDStr, 10, 32)
@@ -411,8 +444,12 @@ func (h *TileServiceHandler) UpdateLayer(c *gin.Context) {
 	}
 
 	// 3. 调用服务层更新图层
-	layerDTO, err := h.tileServiceService.UpdateLayer(uint(layerID), &req)
+	layerDTO, err := h.tileServiceService.UpdateLayer(uint(layerID), serviceID, tenantIDValue(c), &req)
 	if err != nil {
+		if errors.Is(err, commonapi.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Layer not found"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -428,10 +465,15 @@ func (h *TileServiceHandler) UpdateLayer(c *gin.Context) {
 // @Param serviceId path int true "服务 ID | Service ID"
 // @Param layerId path int true "图层 ID | Layer ID"
 // @Success 204 "删除成功 | Deleted successfully"
+// @Failure 404 {object} map[string]string "当前租户中图层不存在 | Layer not found in current tenant"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["service.definition.update"]
 // @Router /tile-layers/{serviceId}/{layerId} [delete]
 func (h *TileServiceHandler) DeleteLayer(c *gin.Context) {
+	serviceID, ok := tileServiceID(c)
+	if !ok {
+		return
+	}
 	// 1. 解析路径参数
 	layerIDStr := c.Param("layerId")
 	layerID, err := strconv.ParseUint(layerIDStr, 10, 32)
@@ -441,11 +483,24 @@ func (h *TileServiceHandler) DeleteLayer(c *gin.Context) {
 	}
 
 	// 2. 调用服务层删除图层
-	if err := h.tileServiceService.DeleteLayer(uint(layerID)); err != nil {
+	if err := h.tileServiceService.DeleteLayer(uint(layerID), serviceID, tenantIDValue(c)); err != nil {
+		if errors.Is(err, commonapi.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Layer not found"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
 	// 3. 返回成功
 	c.Status(http.StatusNoContent)
+}
+
+func tileServiceID(c *gin.Context) (uint, bool) {
+	id, err := strconv.ParseUint(c.Param("serviceId"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid service ID"})
+		return 0, false
+	}
+	return uint(id), true
 }

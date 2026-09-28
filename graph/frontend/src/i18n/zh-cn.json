@@ -70,6 +70,7 @@
       "logout": "退出登录",
       "ontologyModeling": "本体建模",
       "knowledgeGraph": "知识图谱",
+      "graphAnalysis": "图分析",
       "knowledgeService": "知识服务"
     },
     "ontology": {

@@ -85,6 +85,9 @@ other = "The verification code is invalid, expired, or the session state has cha
 [system.iam.role_assignment_already_exists]
 other = "This member already has the role in this scope; no duplicate assignment is needed."
 
+[system.iam.organization_code_already_exists]
+other = "This code is already used by an organization of the same type in this tenant. Choose another code."
+
 [system.iam.role_assignment_principal_type_not_allowed]
 other = "The role cannot be assigned to this member type."
 

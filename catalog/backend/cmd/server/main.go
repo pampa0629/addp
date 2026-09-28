@@ -98,7 +98,7 @@ func main() {
 	)
 	personalCatalogService := service.NewPersonalCatalogService(db, entryService)
 	collectionService := service.NewCollectionService(db, entryService).WithSystemReferenceResolver(systemReferenceResolver)
-	router := api.SetupRouter(cfg.SystemURL, lifecycle, entryService, governanceTaskService, personalCatalogService, collectionService, syncRunner)
+	router := api.SetupRouter(cfg.SystemURL, lifecycle, entryService, governanceTaskService, personalCatalogService, collectionService, syncRunner, service.NewStandardDomainOverviewReader(standardClient))
 	listener, err := net.Listen("tcp", ":"+cfg.Port)
 	if err != nil {
 		log.Fatalf("Failed to bind Catalog listener: %v", err)

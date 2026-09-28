@@ -90,7 +90,7 @@ const handleLogin = async () => {
       if (redirectPath) {
         router.push(redirectPath)
       } else {
-        router.push({ name: 'TaskList' })
+        router.push('/')
       }
     } catch (error) {
       ElMessage.error(error.response?.data?.error || t('transfer.login.failed'))

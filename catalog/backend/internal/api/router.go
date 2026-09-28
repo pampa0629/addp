@@ -13,14 +13,14 @@ import (
 	ginSwagger "github.com/swaggo/gin-swagger"
 )
 
-func SetupRouter(systemURL string, lifecycle *modulelifecycle.Controller, entries *service.EntryService, governanceTasks *service.GovernanceTaskService, personal *service.PersonalCatalogService, collections *service.CollectionService, syncRunner *service.SourceSyncRunner) *gin.Engine {
+func SetupRouter(systemURL string, lifecycle *modulelifecycle.Controller, entries *service.EntryService, governanceTasks *service.GovernanceTaskService, personal *service.PersonalCatalogService, collections *service.CollectionService, syncRunner *service.SourceSyncRunner, domains service.DomainOverviewReader) *gin.Engine {
 	router := gin.New()
 	router.Use(gin.Recovery(), commoni18n.I18nMiddleware())
 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 	lifecycle.RegisterHealthRoutes(router)
 	router.Use(lifecycle.RequireReady())
 
-	handler := NewHandler(entries, governanceTasks, personal, collections, syncRunner)
+	handler := NewHandler(entries, governanceTasks, personal, collections, syncRunner).WithDomainOverviewReader(domains)
 	api := router.Group("/api/v1/catalog")
 	api.Use(
 		commonAuth.MustNewMiddleware(commonAuth.MiddlewareConfig{SystemURL: systemURL}),
@@ -32,6 +32,7 @@ func SetupRouter(systemURL string, lifecycle *modulelifecycle.Controller, entrie
 		catalogauthorization.PermissionCatalogInventoryRead,
 	)
 	updatePermission := commonAuth.MustNewPermissionGuard(catalogauthorization.PermissionCatalogEntryUpdate)
+	mappingReviewPermission := commonAuth.MustNewPermissionGuard(catalogauthorization.PermissionCatalogStandardMappingReview)
 	batchGovernancePermission := commonAuth.MustNewPermissionGuard(
 		catalogauthorization.PermissionCatalogInventoryRead,
 		catalogauthorization.PermissionCatalogEntryUpdate,
@@ -52,6 +53,7 @@ func SetupRouter(systemURL string, lifecycle *modulelifecycle.Controller, entrie
 		catalogauthorization.PermissionCatalogCollectionUpdate,
 	)
 	api.GET("/entries", readPermission, handler.ListEntries)
+	api.GET("/domains", readPermission, handler.ListDomainOverviews)
 	api.GET("/entries/facets", readPermission, handler.ListEntryFacets)
 	api.POST("/entries/resolve-sources", readPermission, handler.ResolveSourceEntries)
 	api.POST("/entries/batch_governance", batchGovernancePermission, handler.BatchGovernanceEntries)
@@ -61,6 +63,15 @@ func SetupRouter(systemURL string, lifecycle *modulelifecycle.Controller, entrie
 	api.GET("/entries/:id/data-dictionary/export", readPermission, handler.ExportEntryDataDictionary)
 	api.PUT("/entries/:id", updatePermission, handler.UpdateEntry)
 	api.PUT("/entries/:id/governance", updatePermission, handler.UpdateEntryGovernance)
+	api.GET("/standard-mappings", readPermission, handler.ListStandardMappings)
+	api.POST("/standard-mappings", updatePermission, handler.CreateStandardMapping)
+	api.GET("/standard-mappings/revision-options", updatePermission, handler.ListStandardMappingRevisionOptions)
+	api.GET("/standard-mappings/:id", readPermission, handler.GetStandardMapping)
+	api.PUT("/standard-mappings/:id", updatePermission, handler.UpdateStandardMapping)
+	api.DELETE("/standard-mappings/:id", updatePermission, handler.DeleteStandardMapping)
+	api.POST("/standard-mappings/:id/approve", mappingReviewPermission, handler.ApproveStandardMapping)
+	api.POST("/standard-mappings/:id/reject", mappingReviewPermission, handler.RejectStandardMapping)
+	api.POST("/standard-mappings/:id/withdraw", mappingReviewPermission, handler.WithdrawStandardMapping)
 	api.POST("/entries/:id/rebind-source", rebindPermission, handler.RebindSource)
 	api.GET("/entries/:id/history", historyPermission, handler.GetEntryHistory)
 	api.GET("/governance/tasks", readPermission, updatePermission, handler.ListGovernanceTasks)

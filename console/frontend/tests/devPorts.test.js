@@ -77,7 +77,10 @@ describe('开发端口传递', () => {
       expect(config.server.proxy['/api'].target).toBe('http://localhost:18000')
       expect(config.server.proxy['/module-health/system'].target).toBe('http://localhost:18180')
       expect(config.server.proxy['/module-health/portal'].target).toBe('http://localhost:18184')
-      expect(config.server.proxy['/workbench'].target).toBe('http://localhost:15190')
+      expect(config.server.proxy['/data-apps'].target).toBe('http://localhost:15190')
+      expect(config.server.proxy['/module-ui/workbench'].target).toBe('http://localhost:15190')
+      expect(config.server.proxy['/data-apps'].rewrite('/data-apps/application-a')).toBe('/module-ui/workbench/data-apps/application-a')
+      expect(config.server.proxy).not.toHaveProperty('/workbench')
     } finally {
       for (const [name, value] of Object.entries(previous)) {
         if (value === undefined) delete process.env[name]

@@ -54,20 +54,26 @@ func TestOrganizationServiceAgainstPostgres(t *testing.T) {
 
 	root, err := organizationService.CreateDepartment(ctx, CreateDepartmentInput{
 		TenantID: tenant.ID, ActorPrincipalID: user.PrincipalID,
-		Name: "Root", Audit: tenantAudit,
+		Code: "root", Name: "Root", Audit: tenantAudit,
 	})
 	if err != nil {
 		t.Fatalf("create root department: %v", err)
 	}
 	child, err := organizationService.CreateDepartment(ctx, CreateDepartmentInput{
 		TenantID: tenant.ID, ActorPrincipalID: user.PrincipalID, ParentID: &root.ID,
-		Name: "Child", Audit: tenantAudit,
+		Code: "child", Name: "Child", Audit: tenantAudit,
 	})
 	if err != nil {
 		t.Fatalf("create child department: %v", err)
 	}
 	if !organizationCodePattern.MatchString(root.Code) || !organizationCodePattern.MatchString(child.Code) || root.Code == child.Code {
-		t.Fatalf("generated department codes root=%q child=%q", root.Code, child.Code)
+		t.Fatalf("department codes root=%q child=%q", root.Code, child.Code)
+	}
+	if _, err := organizationService.CreateDepartment(ctx, CreateDepartmentInput{
+		TenantID: tenant.ID, ActorPrincipalID: user.PrincipalID,
+		Code: root.Code, Name: "Duplicate Root", Audit: tenantAudit,
+	}); !errors.Is(err, ErrOrganizationCodeAlreadyExists) {
+		t.Fatalf("duplicate department code error = %v, want code conflict", err)
 	}
 	if _, err := organizationService.UpdateDepartment(ctx, UpdateDepartmentInput{
 		TenantID: tenant.ID, DepartmentID: root.ID, Version: root.Version,
@@ -115,15 +121,21 @@ func TestOrganizationServiceAgainstPostgres(t *testing.T) {
 		t.Fatalf("recreate ended department membership = %#v error=%v", recreatedDepartmentMembership, err)
 	}
 
-	startsAt := now.Add(24 * time.Hour)
-	endsAt := startsAt.Add(7 * 24 * time.Hour)
 	projectGroup, err := organizationService.CreateProjectGroup(ctx, CreateProjectGroupInput{
 		TenantID: tenant.ID, ActorPrincipalID: user.PrincipalID,
-		Code: "future_project", Name: "Future Project", Status: ProjectGroupStatusPlanned,
-		StartsAt: &startsAt, EndsAt: &endsAt, Audit: tenantAudit,
+		Code: "future_project", Name: "Future Project", Audit: tenantAudit,
 	})
 	if err != nil {
 		t.Fatalf("create future project group: %v", err)
+	}
+	if projectGroup.Status != ProjectGroupStatusActive {
+		t.Fatalf("new project group status = %q, want active", projectGroup.Status)
+	}
+	if _, err := organizationService.CreateProjectGroup(ctx, CreateProjectGroupInput{
+		TenantID: tenant.ID, ActorPrincipalID: user.PrincipalID,
+		Code: projectGroup.Code, Name: "Duplicate Project", Audit: tenantAudit,
+	}); !errors.Is(err, ErrOrganizationCodeAlreadyExists) {
+		t.Fatalf("duplicate project group code error = %v, want code conflict", err)
 	}
 	serviceAccount, err := NewTenantServiceAccountService(repository).Create(ctx, CreateTenantServiceAccountInput{
 		TenantID: tenant.ID, ActorPrincipalID: user.PrincipalID,
@@ -176,8 +188,8 @@ func TestOrganizationServiceAgainstPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatalf("close future project group: %v", err)
 	}
-	if closedProjectGroup.Status != ProjectGroupStatusClosed || closedProjectGroup.EndsAt == nil || !closedProjectGroup.EndsAt.Equal(endsAt) {
-		t.Fatalf("closed project group = %#v, want planned ends_at preserved", closedProjectGroup)
+	if closedProjectGroup.Status != ProjectGroupStatusClosed {
+		t.Fatalf("closed project group = %#v, want closed", closedProjectGroup)
 	}
 
 	var auditCount int64

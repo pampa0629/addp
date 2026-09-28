@@ -1,6 +1,7 @@
 package repository
 
 import (
+	commonapi "github.com/addp/common/api"
 	commonrepo "github.com/addp/common/repository"
 	"github.com/addp/service/internal/models"
 	"gorm.io/gorm"
@@ -18,9 +19,9 @@ func (r *GraphQueryServiceRepository) Create(service *models.GraphQueryService) 
 	return r.db.Create(service).Error
 }
 
-func (r *GraphQueryServiceRepository) GetByID(id uint) (*models.GraphQueryService, error) {
+func (r *GraphQueryServiceRepository) GetByIDAndTenant(id, tenantID uint) (*models.GraphQueryService, error) {
 	var service models.GraphQueryService
-	err := r.db.Where("id = ?", id).First(&service).Error
+	err := r.db.Where("id = ? AND tenant_id = ?", id, tenantID).First(&service).Error
 	if err != nil {
 		return nil, commonrepo.WrapDBError(err)
 	}
@@ -77,12 +78,26 @@ func (r *GraphQueryServiceRepository) Search(tenantID uint, keyword string, offs
 	return services, total, nil
 }
 
-func (r *GraphQueryServiceRepository) Update(id uint, updates map[string]interface{}) error {
-	return r.db.Model(&models.GraphQueryService{}).Where("id = ?", id).Updates(updates).Error
+func (r *GraphQueryServiceRepository) Update(id, tenantID uint, updates map[string]interface{}) error {
+	result := r.db.Model(&models.GraphQueryService{}).Where("id = ? AND tenant_id = ?", id, tenantID).Updates(updates)
+	if result.Error != nil {
+		return commonrepo.WrapDBError(result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return commonapi.ErrNotFound
+	}
+	return nil
 }
 
-func (r *GraphQueryServiceRepository) Delete(id uint) error {
-	return r.db.Delete(&models.GraphQueryService{}, id).Error
+func (r *GraphQueryServiceRepository) Delete(id, tenantID uint) error {
+	result := r.db.Where("id = ? AND tenant_id = ?", id, tenantID).Delete(&models.GraphQueryService{})
+	if result.Error != nil {
+		return commonrepo.WrapDBError(result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return commonapi.ErrNotFound
+	}
+	return nil
 }
 
 func (r *GraphQueryServiceRepository) CheckServiceNameUnique(serviceName string, tenantID uint, excludeID *uint) (bool, error) {

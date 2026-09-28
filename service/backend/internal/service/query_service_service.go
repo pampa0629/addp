@@ -237,7 +237,7 @@ func (s *QueryServiceService) CreateService(ctx context.Context, req *models.Cre
 	}
 
 	// 11. 重新加载服务（获取完整数据）
-	service, err = s.repo.GetByID(service.ID)
+	service, err = s.repo.GetByIDAndTenant(service.ID, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("get created service failed: %w", err)
 	}
@@ -692,8 +692,8 @@ func normalizeQueryFieldList(value interface{}, key string) ([]string, error) {
 }
 
 // GetService 获取服务详情
-func (s *QueryServiceService) GetService(id uint) (*models.QueryServiceDTO, error) {
-	service, err := s.repo.GetByID(id)
+func (s *QueryServiceService) GetService(id, tenantID uint) (*models.QueryServiceDTO, error) {
+	service, err := s.repo.GetByIDAndTenant(id, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("get service failed: %w", err)
 	}
@@ -816,12 +816,9 @@ func (s *QueryServiceService) DeleteService(ctx context.Context, id, tenantID ui
 
 // CheckSourceSnapshot 显式读取 Meta 当前事实并比较已发布快照。
 func (s *QueryServiceService) CheckSourceSnapshot(id, tenantID uint) (*models.QueryServiceSnapshotDiff, error) {
-	service, err := s.repo.GetByID(id)
+	service, err := s.repo.GetByIDAndTenant(id, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("get service failed: %w", err)
-	}
-	if service.TenantID != tenantID {
-		return nil, errors.New("query service does not belong to current tenant")
 	}
 	published := service.SourceSnapshot()
 	if service.IsSQLMode() {
@@ -841,12 +838,9 @@ func (s *QueryServiceService) CheckSourceSnapshot(id, tenantID uint) (*models.Qu
 
 // RefreshSourceSnapshot 用 Meta 当前事实替换表模式查询服务的依赖快照。
 func (s *QueryServiceService) RefreshSourceSnapshot(ctx context.Context, id, tenantID uint, version int64) (*models.QueryServiceDTO, error) {
-	service, err := s.repo.GetByID(id)
+	service, err := s.repo.GetByIDAndTenant(id, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("get service failed: %w", err)
-	}
-	if service.TenantID != tenantID {
-		return nil, commonapi.ErrNotFound
 	}
 	if version <= 0 || service.Version != version {
 		return nil, commonapi.ErrConflict

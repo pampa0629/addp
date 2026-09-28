@@ -97,18 +97,20 @@
 | CatalogEntry → Glossary Term | 多对多 |
 | CatalogComponent → ElementRevision（StandardMapping） | 每个组件最多一个当前已审核映射；候选可有多条，审核时必须收敛 |
 
-`curated` 及以上 CatalogEntry 必须有一个有效 primary Domain。Meta DataItem 的 primary Domain 是 Catalog 关联；Model Entity / LogicalTable 和 Standard MetricDefinition 的 primary Domain 是 owner 当前 `domain_id`。Catalog 对自身持有的 Domain、Glossary 和 StandardMapping 通过 Standard owner 契约验证同一 Tenant、对象存在且生命周期允许引用；Standard 名称可进入搜索投影，但不成为 Catalog 权威字段。
+`curated` 及以上 CatalogEntry 通常必须有一个有效 primary Domain。唯一例外是 Standard MetricDefinition 的 `scope_type=platform|tenant_common` 且 owner 未声明 `domain_id`：其“公共且无专属归属域”是明确的专业事实，允许编目，不算待归类。`scope_type=domain` 的指标、Model Entity / LogicalTable 及其他条目仍须有主业务域。Meta DataItem 的 primary Domain 是 Catalog 关联；Model Entity / LogicalTable 和 Standard MetricDefinition 的 primary Domain 是 owner 当前 `domain_id`。Catalog 不因缺少主域而给 owner 管理的对象另建人工主域。Catalog 对自身持有的 Domain、Glossary 和 StandardMapping 通过 Standard owner 契约验证同一 Tenant、对象存在且生命周期允许引用；Standard 名称可进入搜索投影，但不成为 Catalog 权威字段。
 
 StandardMapping 是独立、可审核、可并发编辑的关系事实，不是 CatalogEntry 聚合中的无身份数组项。至少保存 `id + tenant_id + catalog_entry_id + component_id + element_id + element_revision_id + source + confidence + evidence + review_status + version`：
 
-- `element_revision_id` 必须属于 `element_id` 且已经发布；正式映射不得动态跟随数据元当前修订。
+- 新建候选必须明确提交 `element_revision_id`；它必须属于 `element_id`，且在创建时为已发布修订。正式映射不得动态跟随数据元当前修订。仅迁移自无法证明历史采用修订的旧关联可暂时没有 `element_revision_id`，此类 `proposed` 候选只能由人工补选并验证确定修订后进入审核，不能计入覆盖率或数据字典。
 - `source` 区分人工与 Copilot 建议；Copilot 只能创建 `proposed` 候选，不能直接写入 `approved`。
 - `review_status` 固定为 `proposed|approved|rejected|withdrawn`。只有 `approved` 计入治理覆盖率并进入数据字典。Quality 检查方案独立配置，不以该映射为执行前置。
 - 同一组件在任一时点最多一个 `approved` 映射。批准新候选时必须在同一事务撤回旧映射并推进双方版本，不能依赖先查后写。
 - `evidence` 保存推荐依据和来源定位；置信度只辅助审核，不代替审核结论。
 - CatalogEntry 为 `certified` 时禁止直接创建、编辑、批准、拒绝或撤回映射；必须先走既有撤销认证动作。
 
-当前 `component_element_associations` 仅保存 `element_id` 并随 CatalogEntry 完整更新整体替换，无法冻结修订、承载审核和被 Quality 稳定引用。迁移时必须原位替换为 StandardMapping：无法证明历史采用修订的现有关联转为 `proposed`，不得用迁移时当前修订伪造已审核历史；旧表、旧请求字段和旧聚合更新路线随后删除。
+CatalogEntry 详情读取 StandardMapping 时，映射身份、审核状态和确定修订 ID 始终来自 Catalog；面向人的数据元名称、编码和修订号只通过 Standard 精确修订批量接口即时解析，作为可丢弃的响应展示摘要，不写入 Catalog 表或搜索投影，也不能按当前修订替换已固定的历史修订。无修订的迁移候选明确显示“待补选修订”；Standard 暂不可达或确定修订已不存在时，详情和映射事实仍可读取，但展示摘要必须标记不可用，不得把数据库修订 ID 伪装成 `R` 修订号或回退为另一修订。候选编辑仍只允许选择当前已发布修订。
+
+旧 `component_element_associations` 仅保存 `element_id` 并随 CatalogEntry 完整更新整体替换，无法冻结修订、承载审核和被 Quality 稳定引用。数据库迁移将无法证明历史采用修订的现有关联转为 `source=legacy`、`element_revision_id=null` 的 `proposed` 候选，保留原 Element 稳定身份与历史观察证据，不用迁移时当前修订伪造已审核历史；迁移事务随后删除旧表，业务 API、请求字段和聚合更新不再提供旧路线。
 
 Model 自身保存的 Entity / LogicalTable `domain_id`、属性或字段冻结的 `element_revision_id`、MetricImplementation 及建模关系是参与审批、设计和物化的专业内生关系，仍由 Model 权威维护，不复制为 Catalog 人工语义关联。Catalog 动态读取并以“Model 声明的专业关系”展示；Model 已声明主业务域时，它构成该 Model 来源条目的有效 primary Domain，Catalog 不接受另一条冲突的人工 primary Domain。修改这类关系必须进入 Model 唯一写路径。
 
@@ -182,7 +184,7 @@ discovered ⇄ curated ⇄ certified → deprecated
                      ↘ deprecated
 ```
 
-- `discovered → curated`：业务名称、说明、有效 primary Domain、责任部门、业务责任人和至少一个数据管理员完整；Model 来源的 primary Domain 取 owner 当前声明，不要求也不允许 Catalog primary 副本；
+- `discovered → curated`：业务名称、说明、适用时有效的 primary Domain、责任部门、业务责任人和至少一个数据管理员完整；Model 来源的 primary Domain 取 owner 当前声明，不要求也不允许 Catalog primary 副本；Standard 公共指标无专属域时遵守 3.1 节唯一例外；
 - `curated → discovered`：唯一表示“撤销编目”。它不是普通字段编辑或任意状态回退，而是把误编目或不再具备完整业务治理事实的条目原子恢复为自动发现状态；请求必须同时清空 Catalog 自有业务名称、业务说明、Domain、Glossary、责任和推荐继任关系，并把可见性恢复为 `inventory`。来源绑定、CatalogEntry 稳定身份、专业 owner 事实、独立 StandardMapping、版本和审计历史必须保留；StandardMapping 如需撤回，必须走自身审核生命周期，不能隐藏在条目更新中；
 - `curated → certified`：需要独立认证权限和认证审计；认证只确认当前 CatalogEntry 聚合版本和当前已审核 StandardMapping 集合，不允许在同一请求中改变业务名称、说明、语义关联、责任、映射或可见性；
 - `certified → curated`：唯一表示“撤销认证”。必须具有认证权限并填写原因，只改变治理状态并完整保留当前编目事实；撤销后使用普通编目更新完成修订，再由同一路径重新认证；
@@ -214,7 +216,9 @@ Console 的固定页面标题使用“企业资源目录”，侧边栏入口使
 
 视图是同一组 CatalogEntry 的权限感知查询，不新增实体、复制条目或维护双轨索引。DataItem 全量自动建档且可在 `inventory` 查询；完成业务编目后，同一 CatalogEntry 自然进入 `governance` 视图。
 
-目录浏览采用“主业务域 + 上下文分面 + 权威分页列表”，不建立持久化企业目录树。Standard Domain 是主业务分类，Accountable Department 是可交叉的组织责任分面，Entry Type 是资源形态分面；三者不能被固化为 Domain 拥有 Department、Department 拥有资源类型的父子事实。前端在同一 `/entries` 路由中按“业务域 → 责任部门 → 资源类型”逐步缩小当前查询，所有选择写入规范 URL，并继续由 `/entries` 返回同一批 CatalogEntry。
+目录浏览采用“主业务域 + 上下文分面 + 权威分页列表”，不建立持久化企业目录树。Standard Domain 是主业务分类，Accountable Department 是可交叉的组织责任分面，Entry Type 是资源形态分面；三者不能被固化为 Domain 拥有 Department、Department 拥有资源类型的父子事实。前端只在 `/entries` 路由中按“业务域 → 责任部门 → 资源类型”逐步缩小当前查询，所有选择写入规范 URL，并继续由 `/entries` 返回同一批 CatalogEntry。选中业务域时，同页展示 Standard 当前定义、层级和按资源类型汇总的上下文；汇总只使用相同的 `/entries/facets`，类型入口改变同页筛选，不生成第二套资源列表。业务域之外的分面不因同样可筛选就各自建立概况页。
+
+Catalog `GET /domains` 仅对 `catalog.entry.read` 开放，动态使用 `addp-catalog` Tenant Service Token 读取 Standard 当前业务域树，响应裁剪为稳定 ID、名称、编码、定义、父域 ID 与层级；不返回 Standard 审计字段或专业对象详情，不落库或缓存完整 Domain 树。该接口使 `/entries` 的业务域选择包含当前尚无可见条目的 Standard Domain，而 `/entries/facets` 只统计当前可见 CatalogEntry 引用的域；两者不能互相替代。它不等于授予调用者 `standard.domain.read` 或其他 Standard / Model 读取权限。Standard 暂不可达时只使域定义和完整候选暂不可用，Catalog 启动、Ready、条目列表和现有已引用域分面继续工作。上下文中的类型数量仅使用当前调用者权限、查看范围、所选精确主域和责任部门口径，不包含名称及高级筛选条件；列表结果数量仍以实际查询为准。普通读者不见资源盘点，专业详情仍直接到 owner 按 User Token 判权。
 
 前端把业务域、责任部门和资源类型表达为三个独立、可搜索且带计数的浏览维度，不显示 `1/2/3` 层级编号或父子树外观；已选维度以可独立清除的当前范围展示。名称搜索保持常显，来源状态、治理状态、目录可见性和来源引擎属于高级筛选，默认折叠。详情页优先显示业务可理解的概览和编目信息，来源身份、owner 当前事实、联邦专业读模型、关系与审计分别进入“专业事实”和“关系与历史”；进入编辑模式时只显示完整编目表单，不在同一滚动页面下继续重复只读详情。
 
@@ -325,7 +329,7 @@ Catalog 使用 `addp-catalog` Tenant Service Access Token 和不可委派、不�
 GET /api/v1/standard/catalog-resources/changes?after_cursor={opaque}&limit=200
 ```
 
-响应 Schema 固定为 `standard.catalog_resource_changes/v1`，变化项固定 `source_type=metric`，`source_identity` 使用公开正整数 ID 的规范十进制字符串，`operation=upsert|missing`。首次迁移必须回填所有现存 Metric；变化历史不设保留窗口，Standard、Model 和 Meta 各自使用独立 Catalog checkpoint，任一来源不可达都不能阻塞其他来源或 Catalog Ready。
+响应 Schema 固定为 `standard.catalog_resource_changes/v1`，变化项固定 `source_type=metric`，`source_identity` 使用公开正整数 ID 的规范十进制字符串，`operation=upsert|missing`。最小观察摘要须包含 `scope_type`；有 owner 主业务域时包含 `domain_id`，无专属主域时不伪造空 ID。首次迁移必须回填所有现存 Metric；此后摘要契约补充字段时，Standard 用同一 append-only 变化源为存量指标补发事件，由 Catalog 依单调事件 ID 正常追赶，不直接修改 Catalog 来源表。变化历史不设保留窗口，Standard、Model 和 Meta 各自使用独立 Catalog checkpoint，任一来源不可达都不能阻塞其他来源或 Catalog Ready。
 
 当前 Metric 摘要通过唯一批量动态解析接口读取：
 
@@ -451,7 +455,7 @@ Catalog 只为联邦导航提供自己拥有的来源绑定解析：前端把 ow
 | 维度 | 适用分母 | 覆盖判定 |
 | --- | --- | --- |
 | `business_definition` | 全部 active 条目 | 业务名称和业务说明均非空 |
-| `primary_domain` | 全部 active 条目 | Catalog 自有 primary Domain 存在，或 Model / Standard 最近一次最小观察摘要具有 owner `domain_id` |
+| `primary_domain` | 除 `scope_type=platform|tenant_common` 且无 owner `domain_id` 的 Standard MetricDefinition 外的 active 条目 | Catalog 自有 primary Domain 存在，或 Model / Standard 最近一次最小观察摘要具有 owner `domain_id`；公共指标记为不适用，不进入“待归类”缺口 |
 | `accountable_department` | 全部 active 条目 | 至少存在一个 active 责任部门 |
 | `business_owner` | 全部 active 条目 | 至少存在一个 active 业务责任人 |
 | `data_steward` | 全部 active 条目 | 至少存在一个 active 数据管理员 |
@@ -501,6 +505,7 @@ GET /api/v1/catalog/entries/{id}/data-dictionary?as_of={RFC3339}
 - `as_of` 可选，省略时由 Catalog 在一次请求中固定一个 UTC 服务器时点；显式值必须是带时区的 RFC3339 时间。
 - Catalog 先使用现有目录可见性规则校验条目，再使用 `addp-catalog` Tenant Service Access Token 调用 Meta `GET /api/v1/meta/items/{item_id}/fields?include_details=true` 读取当前物理字段。Catalog 不从已观察摘要伪造当前字段，也不解析路径猜测 Meta 身份。
 - Catalog 用自身权威且已审核的 StandardMapping 把 Meta 字段连接到确定的 `element_revision_id`，然后通过 Standard 的精确修订批量读取契约解析该不可变数据元修订及其固定引用的码值集修订；不得按稳定 `element_id` 和查询时点重新选择另一修订。
+- Standard 提供只读 `POST /api/v1/standard/runtime/element-revisions/resolve-exact`，接受同 Tenant 最多 200 个互异的确定 `element_revision_id`，按请求顺序返回 `revision_id + found + snapshot`；仅 `published|withdrawn` 历史发布修订可返回快照，跨 Tenant、不存在或未发布统一 `found=false`。Catalog 创建/补选候选时还必须校验结果中的 `element_id` 与请求一致、修订当时为 `published`，查询已审核历史映射时可读取后来 `withdrawn` 的确定快照。此精确读取契约与 Model 的按 `element_id + as_of` 生效解析并列，但语义不同，不作彼此的兼容兜底。
 - `as_of` 只用于说明映射所指修订在该业务时点是否处于生效区间，不改变 StandardMapping 的修订选择。Model 审批按统一审批时点解析“当前生效修订”，Catalog 对既有映射则按 `element_revision_id` 精确读取，两种契约不可合并或互相兜底。
 - 响应按 Meta 字段顺序返回物理名称、原生类型、通用类型、可空、主键、默认表达式、注释等物理事实，并可选组合数据元编码、名称、定义、数据类型、格式、值域、安全等级、生效区间及码项。未关联 Element 的物理字段仍必须返回，其标准解释为 `null`。
 - `as_of` 只回溯 Standard 修订语义；Meta 当前没有物理 Schema 时态版本，因此不得把本视图表述为历史物理结构快照。
@@ -525,6 +530,7 @@ BasePath 固定为 `/api/v1/catalog`。第一阶段公开单一路由集合：
 | --- | --- | --- |
 | GET | `/entries` | 权限感知的分页搜索与分面筛选 |
 | GET | `/entries/facets` | 返回当前目录视图可见条目中出现的 Domain、Department 和 Engine Instance 候选引用 |
+| GET | `/domains` | 动态返回当前 Tenant 的 Standard Domain 最小概况树，供 `catalog.entry.read` 的 `/entries` 完整业务域候选与上下文说明使用；不是独立前端页面 |
 | POST | `/entries/resolve-sources` | 把专业关系节点的精确来源身份批量解析为当前可见 CatalogEntry，不复制 owner 关系 |
 | POST | `/entries/batch_governance` | 对显式选择的 CatalogEntry 原子批量分配主业务域或责任部门 |
 | GET | `/reference-candidates` | 按名称分页查询当前可建立语义或责任关联的 owner 候选 |
@@ -534,6 +540,7 @@ BasePath 固定为 `/api/v1/catalog`。第一阶段公开单一路由集合：
 | PUT | `/entries/:id` | 使用聚合根 `version` 原子更新 `discovered|curated` 阶段的编目、语义、责任与可见性；`curated → discovered` 只接受完整撤销编目形状，不承担认证或弃用转换 |
 | PUT | `/entries/:id/governance` | 使用聚合根 `version` 原子执行认证、撤销认证、弃用或弃用信息维护；只更新治理状态、推荐继任项和领域审计，不替换编目事实 |
 | GET/POST | `/standard-mappings` | 分页读取或创建字段/组件标准映射候选；创建必须携带确定数据元修订和来源证据 |
+| GET | `/standard-mappings/revision-options` | Catalog 使用运行身份动态返回所选数据元可用的已发布修订，供候选映射下拉选择；不复制 Standard 修订事实 |
 | GET/PUT/DELETE | `/standard-mappings/:id` | 读取、完整更新或删除仍为 `proposed` 的映射，写操作使用映射自身 `version` |
 | POST | `/standard-mappings/:id/approve` | 审核通过候选；同一事务撤回该组件旧 approved 映射并推进版本 |
 | POST | `/standard-mappings/:id/reject` | 驳回候选并记录审核意见 |
@@ -627,6 +634,7 @@ Catalog 是以下 Permission 的 owner，正式 Key 在 `catalog/authorization/p
 - `catalog.entry.read`：读取企业目录的基础权限，所有列表和详情请求均必需；
 - `catalog.inventory.read`：在 `catalog.entry.read` 基础上额外查看自动盘点和 `inventory` 条目；不能单独授权读取接口；
 - `catalog.entry.update`：编目和普通关系维护；
+- `catalog.standard_mapping.review`：审核通过、驳回或撤回字段/组件标准映射；创建、编辑、删除候选仍使用 `catalog.entry.update`。该权限不代替 `catalog.entry.certify`，后者只认证整个目录条目。第一阶段不强制提交者与审核者为不同自然人，但每次操作均独立审计；Copilot Service Principal 不持有审核权限；
 - `catalog.entry.certify`：推进到 `certified`；
 - `catalog.entry.deprecate`：弃用目录条目；
 - `catalog.source.rebind`：显式来源重绑；

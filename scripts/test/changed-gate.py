@@ -118,6 +118,15 @@ def affected_modules(repository: Path, files: list[str]) -> list[str]:
     if any(path.startswith("service/frontend/") for path in files):
         affected.add("console")
 
+    # Workbench's browser gate loads its delivery runtime through the Console Vite proxy.
+    if any(path in {
+        "console/frontend/vite.config.js",
+        "console/frontend/src/config/portalConfig.js",
+        "console/frontend/package.json",
+        "console/frontend/package-lock.json",
+    } for path in files):
+        affected.add("workbench")
+
     for path in files:
         evaluation_match = re.fullmatch(r"evals/([a-z][a-z0-9-]*)-scenarios(?:/.*)?", path)
         if evaluation_match:

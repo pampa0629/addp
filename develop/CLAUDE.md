@@ -66,6 +66,8 @@ Develop 在模块定义中声明 TaskProvider 角色，发布 `query`、`workflo
 
 Develop 任务编辑器遵守 `docs/spec/addp前端路由与可恢复状态规范.md`。Console URL 必须能够恢复当前 `dev_tasks.id`，canonical 路由固定为 `/develop/{sql|workflow|notebook}?action={create|edit}&id={id}`：创建动作不带 `id`，编辑动作只使用 `id`。`/develop/tasks` 只表示任务列表，`taskId` 旧参数不得保留。
 
+Develop 独立访问根路径或登录后未指定回跳地址时，在 AuthContext 加载后按侧栏顺序选择第一个有权进入的页面：`/sql`、`/notebook`、`/workflow`、`/tasks`。页面准入复用 Console 权限映射；均不可访问时进入 `/forbidden`。显式业务地址仍按原目标独立校验权限。
+
 查询工作台固定使用左侧 Meta 技术资源树、右侧编辑器与结果上下分栏。资源树直接消费 Meta resource-tree，不新增 Develop 私有 Engine Catalog API；native query engine 同时是 Runtime Engine 与 Source Engine，因此只展示当前 Engine 的原生路径；声明 `compute.query.federation.supported=true` 的共享 Runtime 不拥有可导航的 Engine Catalog，工作台必须按 `federation.source_engine_types` 过滤并展示当前 Tenant 的 Source Engine 资源树。查询语言、默认语言和结果类型从 `capabilities.compute.query` 读取。即时查询只调用 `POST /api/v1/develop/executions` 创建 `task_type=query`、`source_task_id=null` 的 execution，再按 execution ID 回查结果；不保留 `/develop/execute`。查询任务统一在 `/develop/tasks` 管理，不保留 `/develop/sql-tasks`。
 
 查询工作台语句诊断统一消费 `POST /api/v1/develop/query-preflight` 返回的 Provider `QueryAnalysis`。前端不得按关键字、正则、通用分词或 Meta 样本字段自行诊断 SQL、MQL、Cypher；`schema_coverage` 为 `sampled` 或 `unknown` 时不得显示“字段不存在”。关系参数编辑态只由 Develop PostgreSQL AST 编译器校验已声明的裸关系参数名、CTE 和作用域结构，覆盖度固定为 `unknown`；执行期 locator 绑定后的真实语义仍由同一 Provider 计划验证。查询编辑器以唯一“查询参数”面板按定义顺序展示全部参数；面板只把裸 `name` 作为唯一参数名，不显示第二套“参数名称”“引用标识”或语言语法字段。`type=relation` 在界面中显示为“数据表”，其余类型显示对应值类型，不再建立“任务输入”“关系输入”“数据输入”“值参数”等平行入口；插入动作按当前查询语言和参数类型生成正确语法。

@@ -19,7 +19,9 @@ type MetaFieldResolver interface {
 }
 
 type StandardElementRevisionResolver interface {
-	ResolveElementRevisionSnapshots(context.Context, int64, []int64, time.Time) (map[int64]*commonClient.ElementRevisionBinding, error)
+	ValidateElementReference(context.Context, int64, int64) error
+	ResolveExactElementRevisions(context.Context, int64, []int64) (map[int64]*commonClient.ElementRevisionBinding, error)
+	ListPublishedElementRevisions(context.Context, int64, int64) ([]commonClient.ElementRevisionResponse, error)
 }
 
 type metaClientFieldResolver struct{ client *commonClient.MetaClient }
@@ -41,16 +43,29 @@ func NewStandardClientElementRevisionResolver(client *commonClient.StandardClien
 	return &standardClientElementRevisionResolver{client: client}
 }
 
-func (r *standardClientElementRevisionResolver) ResolveElementRevisionSnapshots(
+func (r *standardClientElementRevisionResolver) ValidateElementReference(ctx context.Context, tenantID, elementID int64) error {
+	if r == nil || r.client == nil || tenantID <= 0 || elementID <= 0 {
+		return fmt.Errorf("Standard element revision resolver is unavailable")
+	}
+	return r.client.WithTenantID(uint(tenantID)).ValidateElement(ctx, elementID)
+}
+
+func (r *standardClientElementRevisionResolver) ResolveExactElementRevisions(
 	ctx context.Context,
 	tenantID int64,
-	elementIDs []int64,
-	asOf time.Time,
+	revisionIDs []int64,
 ) (map[int64]*commonClient.ElementRevisionBinding, error) {
 	if r == nil || r.client == nil || tenantID <= 0 {
 		return nil, fmt.Errorf("Standard element revision resolver is unavailable")
 	}
-	return r.client.WithTenantID(uint(tenantID)).ResolveElementRevisionSnapshots(ctx, elementIDs, asOf)
+	return r.client.WithTenantID(uint(tenantID)).ResolveExactElementRevisions(ctx, revisionIDs)
+}
+
+func (r *standardClientElementRevisionResolver) ListPublishedElementRevisions(ctx context.Context, tenantID, elementID int64) ([]commonClient.ElementRevisionResponse, error) {
+	if r == nil || r.client == nil || tenantID <= 0 {
+		return nil, fmt.Errorf("Standard element revision resolver is unavailable")
+	}
+	return r.client.WithTenantID(uint(tenantID)).ListPublishedElementRevisions(ctx, elementID)
 }
 
 type DataDictionary struct {
@@ -66,6 +81,7 @@ type DataDictionaryField struct {
 	ElementID   *int64                         `json:"element_id,omitempty,string" swaggertype:"string"`
 	Physical    datatype.FieldInfo             `json:"physical"`
 	Standard    *DataDictionaryElementRevision `json:"standard,omitempty"`
+	IsEffective *bool                          `json:"is_effective,omitempty"`
 }
 
 // DataDictionaryElementRevision is Catalog's public projection of the exact
@@ -125,45 +141,48 @@ func (s *EntryService) GetDataDictionary(
 		componentByKey[component.ComponentKey] = component
 		componentIDs = append(componentIDs, component.ID)
 	}
-	associations := []models.ComponentElementAssociation{}
+	mappings := []models.StandardMapping{}
 	if len(componentIDs) > 0 {
 		if err := s.db.WithContext(ctx).
-			Where("tenant_id = ? AND catalog_entry_id = ? AND component_id IN ?", tenantID, entryID, componentIDs).
-			Find(&associations).Error; err != nil {
-			return nil, fmt.Errorf("get data dictionary element associations: %w", err)
+			Where("tenant_id = ? AND catalog_entry_id = ? AND component_id IN ? AND review_status = ?", tenantID, entryID, componentIDs, models.StandardMappingApproved).
+			Find(&mappings).Error; err != nil {
+			return nil, fmt.Errorf("get data dictionary approved standard mappings: %w", err)
 		}
 	}
-	associationByComponentID := make(map[uuid.UUID]models.ComponentElementAssociation, len(associations))
-	for _, association := range associations {
-		if _, duplicate := associationByComponentID[association.ComponentID]; duplicate {
-			return nil, fmt.Errorf("component %s has multiple data element associations", association.ComponentID)
+	mappingByComponentID := make(map[uuid.UUID]models.StandardMapping, len(mappings))
+	for _, mapping := range mappings {
+		if mapping.ElementRevisionID == nil {
+			return nil, fmt.Errorf("approved mapping %s has no pinned revision", mapping.ID)
 		}
-		associationByComponentID[association.ComponentID] = association
+		if _, duplicate := mappingByComponentID[mapping.ComponentID]; duplicate {
+			return nil, fmt.Errorf("component %s has multiple approved standard mappings", mapping.ComponentID)
+		}
+		mappingByComponentID[mapping.ComponentID] = mapping
 	}
 
 	fields, err := s.metaFields.ResolveItemFields(ctx, tenantID, itemID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: Meta fields: %v", ErrDataDictionaryDependencyUnavailable, err)
 	}
-	elementIDs := make([]int64, 0, len(fields))
-	seenElementIDs := make(map[int64]struct{}, len(fields))
+	revisionIDs := make([]int64, 0, len(fields))
+	seenRevisionIDs := make(map[int64]struct{}, len(fields))
 	for _, field := range fields {
 		component, ok := componentByKey[field.Name]
 		if !ok {
 			continue
 		}
-		association, ok := associationByComponentID[component.ID]
+		mapping, ok := mappingByComponentID[component.ID]
 		if !ok {
 			continue
 		}
-		if _, seen := seenElementIDs[association.ElementID]; !seen {
-			seenElementIDs[association.ElementID] = struct{}{}
-			elementIDs = append(elementIDs, association.ElementID)
+		if _, seen := seenRevisionIDs[*mapping.ElementRevisionID]; !seen {
+			seenRevisionIDs[*mapping.ElementRevisionID] = struct{}{}
+			revisionIDs = append(revisionIDs, *mapping.ElementRevisionID)
 		}
 	}
-	resolved := make(map[int64]*commonClient.ElementRevisionBinding, len(elementIDs))
-	if len(elementIDs) > 0 {
-		resolved, err = s.elementRevisions.ResolveElementRevisionSnapshots(ctx, tenantID, elementIDs, asOf.UTC())
+	resolved := make(map[int64]*commonClient.ElementRevisionBinding, len(revisionIDs))
+	if len(revisionIDs) > 0 {
+		resolved, err = s.elementRevisions.ResolveExactElementRevisions(ctx, tenantID, revisionIDs)
 		if err != nil {
 			return nil, fmt.Errorf("%w: Standard revisions: %v", ErrDataDictionaryDependencyUnavailable, err)
 		}
@@ -174,12 +193,19 @@ func (s *EntryService) GetDataDictionary(
 		if component, ok := componentByKey[field.Name]; ok {
 			componentID := component.ID
 			row.ComponentID = &componentID
-			if association, associated := associationByComponentID[component.ID]; associated {
-				elementID := association.ElementID
+			if mapping, associated := mappingByComponentID[component.ID]; associated {
+				elementID := mapping.ElementID
 				row.ElementID = &elementID
-				if snapshot := resolved[elementID]; snapshot != nil {
+				if snapshot := resolved[*mapping.ElementRevisionID]; snapshot != nil {
+					if snapshot.ElementID != elementID || snapshot.RevisionID != *mapping.ElementRevisionID {
+						return nil, fmt.Errorf("%w: Standard revision identity mismatch", ErrDataDictionaryDependencyUnavailable)
+					}
 					standard := DataDictionaryElementRevision(*snapshot)
 					row.Standard = &standard
+					effective := !asOf.Before(snapshot.EffectiveFrom) && (snapshot.EffectiveTo == nil || asOf.Before(*snapshot.EffectiveTo))
+					row.IsEffective = &effective
+				} else {
+					return nil, fmt.Errorf("%w: pinned Standard revision %d unavailable", ErrDataDictionaryDependencyUnavailable, *mapping.ElementRevisionID)
 				}
 			}
 		}

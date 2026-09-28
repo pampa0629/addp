@@ -2,8 +2,11 @@ package repository
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/addp/catalog/internal/models"
+	commonModels "github.com/addp/common/models"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -33,15 +36,69 @@ func Migrate(db *gorm.DB) error {
 			&models.CollectionEntry{},
 			&models.CollectionAuditEvent{},
 			&models.SemanticAssociation{},
-			&models.ComponentElementAssociation{},
+			&models.StandardMapping{},
 			&models.SourceCheckpoint{},
 			&models.ProjectionTask{},
 			&models.AuditEvent{},
 		); err != nil {
 			return fmt.Errorf("auto migrate catalog schema: %w", err)
 		}
+		if err := migrateLegacyComponentElements(tx); err != nil {
+			return err
+		}
 		return applyConstraints(tx)
 	})
+}
+
+// The old table is read only during the single transactional replacement. An
+// unknown historical revision must never become an approved mapping.
+type legacyComponentElementAssociation struct {
+	ID               uuid.UUID `gorm:"type:uuid;primaryKey"`
+	TenantID         int64
+	CatalogEntryID   uuid.UUID
+	ComponentID      uuid.UUID
+	ElementID        int64
+	ObservedVersion  int64
+	ObservedSnapshot commonModels.JSONMap `gorm:"type:jsonb"`
+	VerifiedAt       time.Time
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+}
+
+func (legacyComponentElementAssociation) TableName() string {
+	return "catalog.component_element_associations"
+}
+
+func migrateLegacyComponentElements(tx *gorm.DB) error {
+	if !tx.Migrator().HasTable(&legacyComponentElementAssociation{}) {
+		return nil
+	}
+	var legacy []legacyComponentElementAssociation
+	if err := tx.Find(&legacy).Error; err != nil {
+		return fmt.Errorf("read legacy Catalog component associations: %w", err)
+	}
+	for _, old := range legacy {
+		evidence := commonModels.JSONMap{
+			"legacy_observed_version":  old.ObservedVersion,
+			"legacy_observed_snapshot": old.ObservedSnapshot,
+			"legacy_verified_at":       old.VerifiedAt.Format(time.RFC3339Nano),
+		}
+		row := models.StandardMapping{
+			ID: old.ID, TenantID: old.TenantID, CatalogEntryID: old.CatalogEntryID,
+			ComponentID: old.ComponentID, ElementID: old.ElementID,
+			Source: models.StandardMappingSourceLegacy, Evidence: evidence,
+			ReviewStatus: models.StandardMappingProposed, Version: 1,
+			ProposedByType: "migration", ProposedByID: "legacy-component-element",
+			CreatedAt: old.CreatedAt, UpdatedAt: old.UpdatedAt,
+		}
+		if err := tx.Create(&row).Error; err != nil {
+			return fmt.Errorf("migrate legacy Catalog component association: %w", err)
+		}
+	}
+	if err := tx.Migrator().DropTable(&legacyComponentElementAssociation{}); err != nil {
+		return fmt.Errorf("drop replaced Catalog component association table: %w", err)
+	}
+	return nil
 }
 
 func applyConstraints(db *gorm.DB) error {
@@ -95,7 +152,16 @@ func applyConstraints(db *gorm.DB) error {
 		`CREATE UNIQUE INDEX IF NOT EXISTS uq_catalog_responsibility ON catalog.responsibilities (tenant_id, catalog_entry_id, role, subject_type, subject_id)`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS uq_catalog_semantic_association ON catalog.semantic_associations (tenant_id, catalog_entry_id, semantic_type, semantic_id, relation_role)`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS uq_catalog_primary_domain ON catalog.semantic_associations (tenant_id, catalog_entry_id) WHERE semantic_type = 'domain' AND relation_role = 'primary'`,
-		`CREATE UNIQUE INDEX IF NOT EXISTS uq_catalog_component_element ON catalog.component_element_associations (tenant_id, component_id)`,
+		`ALTER TABLE catalog.standard_mappings DROP CONSTRAINT IF EXISTS ck_catalog_standard_mapping_shape`,
+		`ALTER TABLE catalog.standard_mappings ADD CONSTRAINT ck_catalog_standard_mapping_shape CHECK (
+			element_id > 0 AND version > 0
+			AND source IN ('manual', 'copilot', 'legacy')
+			AND review_status IN ('proposed', 'approved', 'rejected', 'withdrawn')
+			AND (confidence IS NULL OR confidence BETWEEN 0 AND 1)
+			AND ((element_revision_id IS NOT NULL AND element_revision_id > 0) OR (source = 'legacy' AND review_status = 'proposed' AND element_revision_id IS NULL))
+			AND char_length(btrim(proposed_by_type)) > 0 AND char_length(btrim(proposed_by_id)) > 0
+		)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS uq_catalog_approved_standard_mapping ON catalog.standard_mappings (tenant_id, component_id) WHERE review_status = 'approved'`,
 		`ALTER TABLE catalog.semantic_associations DROP CONSTRAINT IF EXISTS ck_catalog_semantic_shape`,
 		`ALTER TABLE catalog.semantic_associations ADD CONSTRAINT ck_catalog_semantic_shape CHECK (
 			(semantic_type = 'domain' AND relation_role IN ('primary', 'secondary'))
@@ -154,10 +220,10 @@ func applyConstraints(db *gorm.DB) error {
 		`ALTER TABLE catalog.collection_entries ADD CONSTRAINT fk_catalog_collection_entries_entry FOREIGN KEY (catalog_entry_id) REFERENCES catalog.entries(id) ON DELETE RESTRICT`,
 		`ALTER TABLE catalog.semantic_associations DROP CONSTRAINT IF EXISTS fk_catalog_semantic_entry`,
 		`ALTER TABLE catalog.semantic_associations ADD CONSTRAINT fk_catalog_semantic_entry FOREIGN KEY (catalog_entry_id) REFERENCES catalog.entries(id) ON DELETE RESTRICT`,
-		`ALTER TABLE catalog.component_element_associations DROP CONSTRAINT IF EXISTS fk_catalog_component_element_entry`,
-		`ALTER TABLE catalog.component_element_associations ADD CONSTRAINT fk_catalog_component_element_entry FOREIGN KEY (catalog_entry_id) REFERENCES catalog.entries(id) ON DELETE RESTRICT`,
-		`ALTER TABLE catalog.component_element_associations DROP CONSTRAINT IF EXISTS fk_catalog_component_element_component`,
-		`ALTER TABLE catalog.component_element_associations ADD CONSTRAINT fk_catalog_component_element_component FOREIGN KEY (component_id) REFERENCES catalog.components(id) ON DELETE RESTRICT`,
+		`ALTER TABLE catalog.standard_mappings DROP CONSTRAINT IF EXISTS fk_catalog_standard_mapping_entry`,
+		`ALTER TABLE catalog.standard_mappings ADD CONSTRAINT fk_catalog_standard_mapping_entry FOREIGN KEY (catalog_entry_id) REFERENCES catalog.entries(id) ON DELETE RESTRICT`,
+		`ALTER TABLE catalog.standard_mappings DROP CONSTRAINT IF EXISTS fk_catalog_standard_mapping_component`,
+		`ALTER TABLE catalog.standard_mappings ADD CONSTRAINT fk_catalog_standard_mapping_component FOREIGN KEY (component_id) REFERENCES catalog.components(id) ON DELETE RESTRICT`,
 		`ALTER TABLE catalog.projection_tasks DROP CONSTRAINT IF EXISTS fk_catalog_projection_entry`,
 		`ALTER TABLE catalog.projection_tasks ADD CONSTRAINT fk_catalog_projection_entry FOREIGN KEY (catalog_entry_id) REFERENCES catalog.entries(id) ON DELETE CASCADE`,
 		`ALTER TABLE catalog.audit_events DROP CONSTRAINT IF EXISTS fk_catalog_audit_entry`,

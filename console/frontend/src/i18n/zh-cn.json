@@ -34,6 +34,8 @@
       "defaultName": "用户"
     },
     "home": {
+      "noAvailableModules": "当前账号暂无可用业务模块",
+      "noAvailableModulesHint": "请联系管理员授予相应权限。",
       "nextSteps": "建议下一步",
       "recentVisits": "最近访问",
       "allModules": "所有模块",
@@ -555,6 +557,9 @@
       "catalog": {
         "label": "企业资源目录",
         "entries": "资源浏览",
+        "myEntries": "我的目录",
+        "collections": "项目组集合",
+        "tasks": "治理待办",
         "coverage": "治理覆盖率"
       },
       "asset": {

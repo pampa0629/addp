@@ -108,7 +108,7 @@
 
 | 英文术语 | 中文术语 | 定义 | 备注 |
 |---|---|---|---|
-| business domain | 业务域 | 对业务能力、业务语义和治理责任进行稳定划分的组织边界。 | 业务域是跨 Standard、Model、Catalog、Quality 等模块复用的治理维度；它不是权限/审批容器、目录分类或可见范围。对象可由一个业务域负责，同时被其他业务域复用。 |
+| business domain | 业务域 | 对业务能力、业务语义和治理责任进行稳定划分的组织边界。 | 业务域定义由 Standard 唯一维护，Standard、Model、Catalog、Quality 等模块按各自对象职责引用；它不是权限/审批容器、目录分类或可见范围。对象可由一个业务域负责，同时被其他业务域复用；平台级和租户公共标准可以没有专属归属域，“公共”不等于“待归类”。 |
 | standard scope | 标准适用范围 | 描述标准对象在哪个治理范围内成立，固定为 `platform`、`tenant_common` 或 `domain`。 | `domain` 范围必须指定 `owner_domain_id`；`platform` 和 `tenant_common` 不强制归属业务域。适用范围回答“在哪里成立”，归属域回答“谁负责”，二者不可混用。 |
 | standard stable code | 标准稳定编码 | 在一个 Tenant 和确定标准类型内唯一、创建后不可变的机器标识。 | 业务域、业务术语、数据元、码值集、指标定义、标准文档及标准分类的公开创建入口统一接受小写 `snake_case`；不自动转换用户输入。业务域和适用范围可独立调整，因此归属域编码前缀不是正式标准稳定编码的强制组成部分；业务域前缀只是 Copilot 新候选的生成约束。 |
 | standard category | 标准分类 | 为标准对象提供树形浏览、筛选和导航的分类节点。 | 分类仅用于信息架构，可以按对象类型设置不同分类树；不得用分类代替业务域、权限或审核状态。 |
@@ -470,8 +470,8 @@
 | Role | 角色 | Permission 的命名集合。 | Role 本身不表达业务资源实例；具体作用范围由 Role Assignment 和 owner Resource Grant / Policy 决定。 |
 | Data Architect | 数据架构师 | 负责维护 Tenant 全局数据架构与建模约束的内置业务角色。 | 当前使用 `tenant.data_architect`，只允许 Tenant Scope 和 User Principal，负责业务实体、实体关系、逻辑模型、数仓分层与命名规范。质量执行策略由 Quality 管理。 |
 | Role Assignment | 角色分配 | 将 Role 赋予 Principal，并声明 Platform、Tenant、Department 或 Project Group Scope 的授权事实。 | 不使用 `user_type` 同时表达身份类别和完整权限。 |
-| Department | 部门 | Tenant 内表达稳定组织归属的层级组织单元。 | 一个 User 可有一个主部门和多个附加部门；父子部门权限默认不继承。 |
-| Project Group | 项目组 | Tenant 内面向跨部门协作的成员集合。 | 严格属于单个 Tenant，第一阶段不嵌套，不改变成员的 Department 归属。 |
+| Department | 部门 | Tenant 内表达稳定组织归属的层级组织单元。 | 一个 User 可有一个主部门和多个附加部门；父子部门权限默认不继承。名称表达显示名称；编码由用户创建时必填，同 Tenant 内唯一，创建后不可修改，作为技术身份。 |
+| Project Group | 项目组 | Tenant 内面向跨部门协作的成员集合。 | 严格属于单个 Tenant，第一阶段不嵌套，不改变成员的 Department 归属；创建即启用，关闭后不可恢复。名称表达显示名称；编码由用户创建时必填，同 Tenant 内唯一，创建后不可修改，作为技术身份。 |
 | Resource Grant | 资源授权 | owner 模块将特定资源动作显式授予 User、Department、Project Group、Role 主体集合或 Service Principal 的事实。 | 最终资源访问判断仍由 owner 执行；Asset 的授权记录可以是授权来源。 |
 | Resource Scope Binding | 资源作用域绑定 | owner 模块将资源实例显式关联到 Department 或 Project Group Scope 的事实。 | 只用于判断 scoped Role Assignment 是否覆盖资源；不直接授予 Permission 或 Resource Grant。 |
 | Resource Policy | 资源策略 | owner 模块基于资源生命周期、归属、可见级别、密级和业务条件执行的版本化授权规则。 | 第一阶段使用 owner 代码和结构化字段，不引入任意表达式 DSL 或中央策略引擎。 |

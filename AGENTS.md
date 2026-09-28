@@ -147,7 +147,7 @@ bash scripts/dev/start.sh -system
 - Gateway: `http://localhost:8000`
 - System Backend: `http://localhost:8180`
 
-本地端口排查先运行 `bash scripts/infra/status.sh`，以 `addp-postgres` 等 ADDP 容器的实际 Compose 映射为准。根 `.env` 和 `docs/spec/addp端口分配.md` 中的端口是首选值；冲突时 Infra 会自动改选，且不会改写 `.env`。新的会话在拼接测试 DSN 前必须核对实际映射及容器归属，尤其不能把占用首选 `15432` 的其他 PostgreSQL 当成 `addp-postgres`。测试库仅使用上文规定的 `addp_test` 或 `addp_iam_test`；具体入口见 `scripts/infra/README.md` 的“PostgreSQL database 清单”。开发服务实际端口另见 `.dev-state/ports.env` 和标准启动脚本输出。
+本地 Infra 或测试连接不得从 `.env` 首选端口推断实际端口；运行前先执行 `bash scripts/infra/status.sh`。端口与容器归属规则见 `docs/spec/addp端口分配.md`；PostgreSQL 测试库和门禁规则见 `docs/spec/addp测试与验收规范.md`，具体入口见 `scripts/infra/README.md` 的“PostgreSQL database 清单”。
 
 基础设施宿主机首选端口：PostgreSQL `15432`、Redis `16379`、Infra MinIO `19000-19001`；Business MinIO 首选 `9002-9003`。
 

@@ -31,6 +31,8 @@ other = "语义或责任引用校验服务当前不可用"
 other = "来源重绑前置条件不满足，请刷新并核对目标条目与临时条目"
 [catalog.error.search_unavailable]
 other = "企业目录搜索投影当前不可用"
+[catalog.error.domain_overview_unavailable]
+other = "业务域概况暂时不可用，请稍后重试"
 [catalog.error.inventory_permission_required]
 other = "查看企业资源盘点需要独立的盘点权限"
 [catalog.error.curation_requirements_not_met]
@@ -75,7 +77,11 @@ other = "创建、更新和删除当前参与项目组拥有的企业目录集�
 [permissions.catalog.entry.update.name]
 other = "维护企业资源目录"
 [permissions.catalog.entry.update.description]
-other = "维护目录业务信息、语义关联、责任和可见性"
+other = "维护目录业务信息、普通语义关联、标准映射候选、责任和可见性"
+[permissions.catalog.standard_mapping.review.name]
+other = "审核字段标准映射"
+[permissions.catalog.standard_mapping.review.description]
+other = "审核通过、驳回或撤回字段与数据元修订的映射"
 [permissions.catalog.entry.certify.name]
 other = "认证企业目录条目"
 [permissions.catalog.entry.certify.description]

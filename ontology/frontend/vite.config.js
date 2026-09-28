@@ -6,7 +6,7 @@ import { resolve } from 'node:path'
 
 const testing = process.env.ADDP_E2E === '1'
 export default defineConfig({
-  base: '/ontology/',
+  base: process.env.NODE_ENV === 'development' ? '/ontology/' : '/module-ui/ontology/',
   cacheDir: testing ? 'node_modules/.vite-e2e' : 'node_modules/.vite',
   plugins: [
     vue(),

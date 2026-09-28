@@ -50,6 +50,14 @@ const (
 	SemanticRoleSecondary = "secondary"
 	SemanticRoleApplies   = "applies"
 
+	StandardMappingSourceManual  = "manual"
+	StandardMappingSourceCopilot = "copilot"
+	StandardMappingSourceLegacy  = "legacy"
+	StandardMappingProposed      = "proposed"
+	StandardMappingApproved      = "approved"
+	StandardMappingRejected      = "rejected"
+	StandardMappingWithdrawn     = "withdrawn"
+
 	ResponsibilityRoleAccountableDepartment = "accountable_department"
 	ResponsibilityRoleBusinessOwner         = "business_owner"
 	ResponsibilityRoleDataSteward           = "data_steward"
@@ -227,22 +235,29 @@ type SemanticAssociation struct {
 
 func (SemanticAssociation) TableName() string { return "catalog.semantic_associations" }
 
-type ComponentElementAssociation struct {
-	ID               uuid.UUID            `gorm:"type:uuid;primaryKey" json:"id"`
-	TenantID         int64                `gorm:"not null;index" json:"-"`
-	CatalogEntryID   uuid.UUID            `gorm:"type:uuid;not null;index" json:"catalog_entry_id"`
-	ComponentID      uuid.UUID            `gorm:"type:uuid;not null;index" json:"component_id"`
-	ElementID        int64                `gorm:"not null" json:"element_id,string" swaggertype:"string"`
-	ObservedVersion  int64                `gorm:"not null" json:"observed_version"`
-	ObservedSnapshot commonModels.JSONMap `gorm:"type:jsonb;not null" json:"observed_snapshot"`
-	VerifiedAt       time.Time            `gorm:"not null" json:"verified_at"`
-	CreatedAt        time.Time            `json:"created_at"`
-	UpdatedAt        time.Time            `json:"updated_at"`
+type StandardMapping struct {
+	ID                uuid.UUID            `gorm:"type:uuid;primaryKey" json:"id"`
+	TenantID          int64                `gorm:"not null;index" json:"-"`
+	CatalogEntryID    uuid.UUID            `gorm:"type:uuid;not null;index" json:"catalog_entry_id"`
+	ComponentID       uuid.UUID            `gorm:"type:uuid;not null;index" json:"component_id"`
+	ElementID         int64                `gorm:"not null" json:"element_id,string" swaggertype:"string"`
+	ElementRevisionID *int64               `json:"element_revision_id,omitempty,string" swaggertype:"string"`
+	Source            string               `gorm:"size:16;not null" json:"source"`
+	Confidence        *float64             `json:"confidence,omitempty"`
+	Evidence          commonModels.JSONMap `gorm:"type:jsonb;not null" json:"evidence"`
+	ReviewStatus      string               `gorm:"size:16;not null;index" json:"review_status"`
+	Version           int64                `gorm:"not null" json:"version"`
+	ProposedByType    string               `gorm:"size:32;not null" json:"proposed_by_type"`
+	ProposedByID      string               `gorm:"size:255;not null" json:"proposed_by_id"`
+	ReviewedByType    *string              `gorm:"size:32" json:"reviewed_by_type,omitempty"`
+	ReviewedByID      *string              `gorm:"size:255" json:"reviewed_by_id,omitempty"`
+	ReviewOpinion     *string              `gorm:"type:text" json:"review_opinion,omitempty"`
+	ReviewedAt        *time.Time           `json:"reviewed_at,omitempty"`
+	CreatedAt         time.Time            `json:"created_at"`
+	UpdatedAt         time.Time            `json:"updated_at"`
 }
 
-func (ComponentElementAssociation) TableName() string {
-	return "catalog.component_element_associations"
-}
+func (StandardMapping) TableName() string { return "catalog.standard_mappings" }
 
 type SourceCheckpoint struct {
 	ID           int64     `gorm:"primaryKey;autoIncrement" json:"-"`

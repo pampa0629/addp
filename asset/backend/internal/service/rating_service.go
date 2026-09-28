@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -12,6 +13,13 @@ import (
 type RatingService struct {
 	db *gorm.DB
 }
+
+var (
+	ErrRatingAccessDenied  = errors.New("rating access denied")
+	ErrRatingAlreadyExists = errors.New("rating already exists")
+	ErrRatingNotFound      = errors.New("rating not found")
+	ErrRatingAssetHidden   = errors.New("rating asset is not published")
+)
 
 func NewRatingService(db *gorm.DB) *RatingService {
 	return &RatingService{db: db}
@@ -28,8 +36,8 @@ type RatingWithUser struct {
 	AssetName string `json:"asset_name"`
 }
 
-// UpsertRatingReq 提交/更新评价请求
-type UpsertRatingReq struct {
+// RatingWriteReq 创建或修改评价请求
+type RatingWriteReq struct {
 	Score   float32  `json:"score" binding:"required,min=1,max=5"`
 	Comment string   `json:"comment"`
 	Tags    []string `json:"tags"` // 问题反馈标签
@@ -102,15 +110,20 @@ func (s *RatingService) GetByUser(tenantID uint, userID int64, assetID int64) (*
 	return &r, err
 }
 
-// Upsert 创建或更新评价（每用户每资产只能有一条）
-// 若已存在则更新，否则创建
-func (s *RatingService) Upsert(tenantID uint, userID int64, assetID int64, req *UpsertRatingReq) (*models.Rating, error) {
+func (s *RatingService) Average(tenantID uint, assetID int64) (float64, error) {
+	var average float64
+	err := s.db.Model(&models.Rating{}).
+		Where("tenant_id = ? AND asset_id = ?", tenantID, assetID).
+		Select("COALESCE(AVG(score), 0)").Scan(&average).Error
+	return average, err
+}
+
+func ratingForWrite(tenantID uint, userID, assetID int64, req *RatingWriteReq) models.Rating {
 	tags := req.Tags
 	if tags == nil {
 		tags = []string{}
 	}
-
-	rating := models.Rating{
+	return models.Rating{
 		TenantID:  int64(tenantID),
 		AssetID:   assetID,
 		UserID:    userID,
@@ -120,21 +133,75 @@ func (s *RatingService) Upsert(tenantID uint, userID int64, assetID int64, req *
 		IsHandled: false,
 		UpdatedAt: time.Now(),
 	}
+}
 
-	// OnConflict: 若 (asset_id, user_id) 已存在则更新 score/comment/tags/updated_at
-	// 注意：is_handled 不在更新列表中，保留管理员设置
-	result := s.db.Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "asset_id"}, {Name: "user_id"}},
-		DoUpdates: clause.AssignmentColumns([]string{"score", "comment", "tags", "updated_at"}),
-	}).Create(&rating)
+func (s *RatingService) withEffectiveAuthorization(tenantID uint, userID, assetID int64, write func(*gorm.DB) error) error {
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		var asset models.Asset
+		err := tx.Clauses(clause.Locking{Strength: "SHARE"}).
+			Select("id").
+			Where("tenant_id = ? AND id = ? AND status = ?", tenantID, assetID, "published").
+			First(&asset).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrRatingAssetHidden
+		}
+		if err != nil {
+			return err
+		}
+		var authorization models.Authorization
+		err = tx.Clauses(clause.Locking{Strength: "SHARE"}).
+			Select("id").
+			Where("tenant_id = ? AND user_id = ? AND asset_id = ? AND status = ? AND (expires_at IS NULL OR expires_at > ?)",
+				tenantID, userID, assetID, models.AuthorizationStatusEffective, time.Now().UTC()).
+			First(&authorization).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrRatingAccessDenied
+		}
+		if err != nil {
+			return err
+		}
+		return write(tx)
+	})
+}
 
-	if result.Error != nil {
-		return nil, result.Error
+// Create 仅创建本人的评价；唯一索引保证并发重复创建不会变成修改。
+func (s *RatingService) Create(tenantID uint, userID, assetID int64, req *RatingWriteReq) (*models.Rating, error) {
+	rating := ratingForWrite(tenantID, userID, assetID, req)
+	err := s.withEffectiveAuthorization(tenantID, userID, assetID, func(tx *gorm.DB) error {
+		result := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&rating)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return ErrRatingAlreadyExists
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
+	return &rating, nil
+}
 
-	// 重新查询以获取完整记录（包括 id、created_at 等）
+// Update 仅修改本人的现有评价，不改变管理员处理状态。
+func (s *RatingService) Update(tenantID uint, userID, assetID int64, req *RatingWriteReq) (*models.Rating, error) {
+	rating := ratingForWrite(tenantID, userID, assetID, req)
 	var saved models.Rating
-	if err := s.db.Where("tenant_id = ? AND user_id = ? AND asset_id = ?", tenantID, userID, assetID).First(&saved).Error; err != nil {
+	err := s.withEffectiveAuthorization(tenantID, userID, assetID, func(tx *gorm.DB) error {
+		result := tx.Model(&models.Rating{}).
+			Where("tenant_id = ? AND user_id = ? AND asset_id = ?", tenantID, userID, assetID).
+			Updates(map[string]interface{}{
+				"score": rating.Score, "comment": rating.Comment, "tags": rating.Tags, "updated_at": rating.UpdatedAt,
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return ErrRatingNotFound
+		}
+		return tx.Where("tenant_id = ? AND user_id = ? AND asset_id = ?", tenantID, userID, assetID).First(&saved).Error
+	})
+	if err != nil {
 		return nil, err
 	}
 	return &saved, nil

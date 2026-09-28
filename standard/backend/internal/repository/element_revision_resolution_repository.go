@@ -40,6 +40,39 @@ func (r *ElementRepository) ResolveEffectiveRevisions(
 	return elements, revisions, nil
 }
 
+// ResolveExactRevisions reads immutable published history by revision identity.
+// It deliberately does not apply effectiveAt: Catalog mappings pin a revision,
+// while as_of only describes whether that revision was effective at a time.
+func (r *ElementRepository) ResolveExactRevisions(
+	ctx context.Context,
+	tenantID int64,
+	revisionIDs []int64,
+) ([]models.Element, []models.ElementRevision, error) {
+	if len(revisionIDs) == 0 {
+		return []models.Element{}, []models.ElementRevision{}, nil
+	}
+	revisions := []models.ElementRevision{}
+	if err := r.db.WithContext(ctx).Table("standard.element_revisions AS er").Select("er.*").
+		Joins("JOIN standard.elements e ON e.id = er.element_id").
+		Where("e.tenant_id = ? AND er.id IN ? AND er.status IN ?", tenantID, revisionIDs,
+			[]string{models.RevisionStatusPublished, models.RevisionStatusWithdrawn}).
+		Find(&revisions).Error; err != nil {
+		return nil, nil, fmt.Errorf("resolve exact data element revisions: %w", err)
+	}
+	elementIDs := make([]int64, 0, len(revisions))
+	for _, revision := range revisions {
+		elementIDs = append(elementIDs, revision.ElementID)
+	}
+	elements := []models.Element{}
+	if len(elementIDs) > 0 {
+		if err := r.db.WithContext(ctx).Where("tenant_id = ? AND id IN ?", tenantID, elementIDs).
+			Find(&elements).Error; err != nil {
+			return nil, nil, fmt.Errorf("resolve exact data element identities: %w", err)
+		}
+	}
+	return elements, revisions, nil
+}
+
 func (r *CodeSetRepository) ResolveRevisionSnapshots(
 	ctx context.Context,
 	tenantID int64,

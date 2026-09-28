@@ -334,7 +334,7 @@ func (r *Repository) ListEffectiveProjectGroupMemberships(
 		WHERE membership.tenant_membership_id = ?
 		  AND membership.tenant_id = ?
 		  AND membership.status = 'active'
-		  AND project_group.status <> 'closed'
+		  AND project_group.status = 'active'
 		ORDER BY membership.project_group_id ASC
 	`, tenantMembershipID, tenantID).Scan(&memberships).Error
 	if err != nil {
@@ -412,7 +412,7 @@ func (r *Repository) ListEffectiveRoleAssignmentPermissions(
 						  AND membership.tenant_id = assignment.tenant_id
 						  AND membership.project_group_id = assignment.project_group_id
 						  AND membership.status = 'active'
-						  AND project_group.status <> 'closed'
+						  AND project_group.status = 'active'
 					)
 				)
 			)

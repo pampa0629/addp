@@ -74,7 +74,7 @@ test(`new application goes from a service through query inputs to a saved draft 
   const backend = await installMetricApplicationBackend(context, { rebound: true, locale, configure(draft, descriptors) {
     descriptors[71].output_contract.fields.find(f => f.name === 'value').comment = '重叠比例'
   } })
-  await page.goto('/workbench/applications/new')
+  await page.goto('/module-ui/workbench/applications/new')
   await expect(page.getByTestId('application-start')).toBeVisible()
   await expect(page.getByTestId('component-inspector')).toHaveCount(0)
   await page.getByTestId('start-table').click()
@@ -698,7 +698,7 @@ test('copying a stale contract requires explicit reconfiguration before trial or
 for (const locale of ['zh-cn', 'en']) {
 test(`new application uses an explicit field suggestion and queries only after required inputs (${locale})`, async ({ page, context }) => {
   const backend = await installMetricApplicationBackend(context, { rebound: true, locale })
-  await page.goto('/workbench/applications/new')
+  await page.goto('/module-ui/workbench/applications/new')
   await page.getByTestId('start-table').click()
   const editor = page.getByTestId('application-component-editor')
   await choose(page, editor.locator('.el-form-item').filter({ hasText: locale === 'en' ? 'Data service' : '数据服务' }), '定向重叠率服务')
@@ -735,7 +735,7 @@ test('choosing a display queries valid service defaults and switching services c
     descriptors[72].input_contract.named_parameters[0].default = 'total'
   } })
   await page.setViewportSize({ width: 680, height: 900 })
-  await page.goto('/workbench/applications/new')
+  await page.goto('/module-ui/workbench/applications/new')
   await page.getByTestId('start-value').click()
   const editor = page.getByTestId('application-component-editor')
   const service = editor.locator('.el-form-item').filter({ hasText: '数据服务' })
@@ -833,7 +833,7 @@ for (const locale of ['zh-cn', 'en']) {
 test(`new application continues from first chart through search selection to initial values (${locale})`, async ({ page, context }) => {
   const { backend, queries } = await personnelApplication(context, { locale })
   const isEnglish = locale === 'en'
-  await page.goto('/workbench/applications/new')
+  await page.goto('/module-ui/workbench/applications/new')
   await page.getByTestId('start-chart').click()
   const editor = page.getByTestId('application-component-editor')
   const dialog = page.getByRole('dialog')

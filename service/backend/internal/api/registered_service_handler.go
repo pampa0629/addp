@@ -5,11 +5,11 @@ import (
 	"net/http"
 	"strconv"
 
+	commonapi "github.com/addp/common/api"
 	"github.com/addp/common/logger"
 	"github.com/addp/service/internal/models"
 	svc "github.com/addp/service/internal/service"
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 )
 
 // RegisteredServiceHandler 处理注册服务相关的 HTTP 请求
@@ -61,7 +61,7 @@ func (h *RegisteredServiceHandler) CreateService(c *gin.Context) {
 	result, err := h.svc.CreateService(&req, tenantID, userID)
 	if err != nil {
 		// 区分不同的错误类型
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, commonapi.ErrNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		} else {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -159,9 +159,9 @@ func (h *RegisteredServiceHandler) GetService(c *gin.Context) {
 		return
 	}
 
-	result, err := h.svc.GetService(uint(id))
+	result, err := h.svc.GetService(uint(id), tenantIDValue(c))
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, commonapi.ErrNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Service not found"})
 		} else {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get service: " + err.Error()})
@@ -200,9 +200,9 @@ func (h *RegisteredServiceHandler) UpdateService(c *gin.Context) {
 		return
 	}
 
-	result, err := h.svc.UpdateService(uint(id), &req)
+	result, err := h.svc.UpdateService(uint(id), tenantIDValue(c), &req)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, commonapi.ErrNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Service not found"})
 		} else {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -234,8 +234,8 @@ func (h *RegisteredServiceHandler) DeleteService(c *gin.Context) {
 		return
 	}
 
-	if err := h.svc.DeleteService(uint(id)); err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+	if err := h.svc.DeleteService(uint(id), tenantIDValue(c)); err != nil {
+		if errors.Is(err, commonapi.ErrNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Service not found"})
 		} else {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete service: " + err.Error()})
@@ -275,8 +275,8 @@ func (h *RegisteredServiceHandler) RefreshMetadata(c *gin.Context) {
 		req.Force = false
 	}
 
-	if err := h.svc.RefreshMetadata(uint(id), req.Force); err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+	if err := h.svc.RefreshMetadata(uint(id), tenantIDValue(c), req.Force); err != nil {
+		if errors.Is(err, commonapi.ErrNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Service not found"})
 		} else if err.Error() == "metadata refresh is only supported for OGC services" {
 			// 业务逻辑错误：不支持的服务类型
@@ -311,9 +311,9 @@ func (h *RegisteredServiceHandler) HealthCheck(c *gin.Context) {
 		return
 	}
 
-	result, err := h.svc.HealthCheck(uint(id))
+	result, err := h.svc.HealthCheck(uint(id), tenantIDValue(c))
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, commonapi.ErrNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Service not found"})
 		} else {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to perform health check: " + err.Error()})
@@ -341,7 +341,7 @@ func (h *RegisteredServiceHandler) ProxyService(c *gin.Context) {
 	// 代理请求到外部服务
 	err = h.svc.ProxyServiceRequest(uint(id), tenantID, userID, c)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, commonapi.ErrNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Service not found"})
 		} else {
 			c.JSON(http.StatusBadGateway, gin.H{"error": "Proxy request failed: " + err.Error()})

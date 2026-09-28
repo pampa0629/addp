@@ -105,6 +105,12 @@ func SetupRouter(
 			permission(standardauthorization.PermissionStandardElementRead),
 			elementRevisionResolutionHandler.Resolve,
 		)
+		api.POST(
+			"/runtime/element-revisions/resolve-exact",
+			commonAuth.MustNewServiceClientGuard("addp-catalog"),
+			permission(standardauthorization.PermissionStandardElementRead),
+			elementRevisionResolutionHandler.ResolveExact,
+		)
 
 		domains := api.Group("/domains")
 		{

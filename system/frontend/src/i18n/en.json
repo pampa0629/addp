@@ -262,6 +262,11 @@
       },
       "organization": {
         "versionConflict": "This organization record changed. Refresh before submitting again; your current input has been preserved.",
+        "copyCode": "Copy code",
+        "codeCopied": "Code copied",
+        "codeAlreadyExists": "This code is already in use. Choose another one",
+        "codeCreateHint": "Code is required and cannot be changed after creation",
+        "codeImmutableHint": "Code cannot be changed after creation",
         "parent": "Parent Department",
         "root": "Top-level Department",
         "members": "Manage Members",
@@ -286,9 +291,7 @@
           "title": "Project Groups",
           "create": "Create Project Group",
           "edit": "Edit Project Group",
-          "period": "Project Period",
-          "startsAt": "Planned Start",
-          "endsAt": "Planned End",
+          "inUse": "In use",
           "close": "Close Project Group",
           "closeHint": "A closed project group cannot be restored and its temporary collaboration access becomes ineffective."
         }
@@ -422,6 +425,7 @@
           "restore": "Restore",
           "retry": "Retry",
           "revoke": "Revoke",
+          "review": "Review",
           "suspend": "Suspend",
           "unlink": "Unlink",
           "update": "Update"
@@ -546,6 +550,7 @@
           "source": "Catalog Source",
           "sql": "SQL Generation",
           "standard_document": "Standard Document",
+          "standard_mapping": "Field and Component Standard Mapping",
           "standard_reference": "Standard Reference",
           "statistics": "Monitoring Statistics",
           "subject": "Subject",
@@ -692,7 +697,6 @@
         "active": "Active",
         "effective": "Effective",
         "scheduled": "Scheduled",
-        "planned": "Planned",
         "disabled": "Disabled",
         "suspended": "Suspended",
         "closed": "Closed",

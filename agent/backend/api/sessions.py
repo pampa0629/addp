@@ -41,11 +41,13 @@ class SessionResponse(BaseModel):
     },
 )
 async def list_sessions(request: Request, db: AsyncSession = Depends(get_db)):
-    """获取当前用户的会话列表"""
-    user_id = request.state.principal_id
+    """获取当前 Tenant 内当前用户的会话列表"""
     result = await db.execute(
         select(Session)
-        .where(Session.user_id == user_id)
+        .where(
+            Session.user_id == request.state.principal_id,
+            Session.tenant_id == request.state.tenant_id,
+        )
         .order_by(Session.updated_at.desc())
     )
     sessions = result.scalars().all()
@@ -97,11 +99,12 @@ async def create_session(request: Request, body: SessionCreate, db: AsyncSession
     },
 )
 async def get_session(session_id: int, request: Request, db: AsyncSession = Depends(get_db)):
-    """获取会话详情"""
+    """获取当前 Tenant 内当前用户拥有的会话详情"""
     result = await db.execute(
         select(Session).where(
             Session.id == session_id,
             Session.user_id == request.state.principal_id,
+            Session.tenant_id == request.state.tenant_id,
         )
     )
     session = result.scalar_one_or_none()
@@ -125,11 +128,12 @@ async def get_session(session_id: int, request: Request, db: AsyncSession = Depe
     },
 )
 async def delete_session(session_id: int, request: Request, db: AsyncSession = Depends(get_db)):
-    """删除会话"""
+    """删除当前 Tenant 内当前用户拥有的会话"""
     result = await db.execute(
         select(Session).where(
             Session.id == session_id,
             Session.user_id == request.state.principal_id,
+            Session.tenant_id == request.state.tenant_id,
         )
     )
     session = result.scalar_one_or_none()

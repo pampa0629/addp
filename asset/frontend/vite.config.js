@@ -40,5 +40,5 @@ export default defineConfig({
       }
     }
   },
-  base: process.env.NODE_ENV === 'development' ? '/' : '/asset/'
+  base: process.env.NODE_ENV === 'development' ? '/' : '/module-ui/asset/'
 })

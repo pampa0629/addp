@@ -22,6 +22,7 @@ import (
 
 type Handler struct {
 	entries         *service.EntryService
+	domains         service.DomainOverviewReader
 	governanceTasks *service.GovernanceTaskService
 	personal        *service.PersonalCatalogService
 	collections     *service.CollectionService
@@ -39,21 +40,15 @@ type updateResponsibilityRequest struct {
 	SubjectID   string `json:"subject_id"`
 }
 
-type updateComponentElementRequest struct {
-	ComponentID string `json:"component_id"`
-	ElementID   string `json:"element_id"`
-}
-
 type updateEntryRequest struct {
-	Version             int64                           `json:"version" minimum:"1"`
-	BusinessName        *string                         `json:"business_name"`
-	BusinessDescription *string                         `json:"business_description"`
-	GovernanceStatus    string                          `json:"governance_status" enums:"discovered,curated"`
-	Visibility          string                          `json:"visibility" enums:"inventory,department,tenant"`
-	Domains             []updateDomainLinkRequest       `json:"domains"`
-	GlossaryIDs         []string                        `json:"glossary_ids"`
-	Responsibilities    []updateResponsibilityRequest   `json:"responsibilities"`
-	ComponentElements   []updateComponentElementRequest `json:"component_elements"`
+	Version             int64                         `json:"version" minimum:"1"`
+	BusinessName        *string                       `json:"business_name"`
+	BusinessDescription *string                       `json:"business_description"`
+	GovernanceStatus    string                        `json:"governance_status" enums:"discovered,curated"`
+	Visibility          string                        `json:"visibility" enums:"inventory,department,tenant"`
+	Domains             []updateDomainLinkRequest     `json:"domains"`
+	GlossaryIDs         []string                      `json:"glossary_ids"`
+	Responsibilities    []updateResponsibilityRequest `json:"responsibilities"`
 }
 
 type updateEntryGovernanceRequest struct {
@@ -120,6 +115,11 @@ type deleteCollectionRequest struct {
 
 func NewHandler(entries *service.EntryService, governanceTasks *service.GovernanceTaskService, personal *service.PersonalCatalogService, collections *service.CollectionService, syncRunner *service.SourceSyncRunner) *Handler {
 	return &Handler{entries: entries, governanceTasks: governanceTasks, personal: personal, collections: collections, sync: syncRunner}
+}
+
+func (h *Handler) WithDomainOverviewReader(reader service.DomainOverviewReader) *Handler {
+	h.domains = reader
+	return h
 }
 
 // ListMyProjectGroups 动态解析当前 User 可访问的目录集合项目组。
@@ -518,7 +518,7 @@ func (h *Handler) ListGovernanceTasks(c *gin.Context) {
 // @Param primary_domain_id query string false "主业务域稳定 ID | Primary Domain stable ID"
 // @Param accountable_department_id query string false "责任部门稳定 ID | Accountable Department stable ID"
 // @Param source_engine_id query string false "来源引擎稳定 ID | Source engine stable ID"
-// @Param coverage_dimension query string false "治理缺口维度；必须与 view=inventory、coverage_state=missing 同时使用 | Governance gap dimension; requires view=inventory and coverage_state=missing" Enums(business_definition,primary_domain,accountable_department,business_owner,data_steward,glossary,component_element)
+// @Param coverage_dimension query string false "治理缺口维度；必须与 view=inventory、coverage_state=missing 同时使用 | Governance gap dimension; requires view=inventory and coverage_state=missing" Enums(business_definition,primary_domain,accountable_department,business_owner,data_steward,glossary,component_standard_mapping)
 // @Param coverage_state query string false "治理覆盖状态；第一阶段仅支持 missing | Governance coverage state; only missing is supported in the first release" Enums(missing)
 // @Param page query int false "页码，默认 1 | Page number, default 1"
 // @Param page_size query int false "每页数量，默认 20，最大 200 | Page size, default 20 and maximum 200"
@@ -703,7 +703,7 @@ func (h *Handler) ListReferenceCandidates(c *gin.Context) {
 
 // GetEntry 获取企业目录聚合详情。
 // @Summary 获取企业目录详情 | Get enterprise catalog entry
-// @Description 返回目录条目、当前来源绑定和组件；目录可见不代表底层数据内容授权 | Return the catalog entry, current source binding, and components; catalog visibility does not grant data content access
+// @Description 返回目录条目、当前来源绑定和组件；映射的数据元名称与修订号按固定修订从 Standard 动态解析，失败时只标记展示摘要不可用而保留映射事实；目录可见不代表底层数据内容授权 | Return the catalog entry, current source binding, and components; mapping element names and revision numbers are resolved dynamically from pinned Standard revisions, and resolution failures mark only the display summary unavailable; catalog visibility does not grant data content access
 // @Tags Catalog
 // @Produce json
 // @Param id path string true "CatalogEntry UUID"
@@ -859,7 +859,7 @@ func marshalDataDictionaryExport(dictionary *service.DataDictionary) ([]byte, st
 
 // UpdateEntry 原子更新企业目录的完整可编辑聚合。
 // @Summary 维护企业资源编目 | Maintain enterprise resource curation
-// @Description 使用聚合根 version 原子替换 discovered 或 curated 阶段的业务信息、语义关联、责任、组件数据元关联和可见性；curated 回到 discovered 只表示撤销编目，必须清空全部 Catalog 人工编目字段并恢复 inventory；认证、撤销认证和弃用只允许使用治理子资源；Standard 或 System 校验不可达时明确失败但不影响模块 Ready | Atomically replace business metadata, semantic links, responsibilities, component-element links, and visibility while the entry is discovered or curated; curated to discovered exclusively withdraws curation and must clear every Catalog-owned curation field while restoring inventory visibility; certification, certification withdrawal, and deprecation exclusively use the governance subresource; unavailable Standard or System validation fails explicitly without affecting module readiness
+// @Description 使用聚合根 version 原子替换 discovered 或 curated 阶段的业务信息、普通语义关联、责任和可见性；字段标准映射使用独立资源和版本；curated 回到 discovered 只表示撤销编目，必须清空全部 Catalog 人工编目字段并恢复 inventory；认证、撤销认证和弃用只允许使用治理子资源 | Atomically replace business metadata, ordinary semantic links, responsibilities, and visibility while discovered or curated; field standard mappings use independent resources and versions; curated to discovered withdraws curation and clears Catalog-owned curation fields; certification and deprecation use the governance subresource
 // @Tags Catalog
 // @Accept json
 // @Produce json
@@ -1166,11 +1166,10 @@ func mapUpdateEntryRequest(request updateEntryRequest) (service.UpdateEntryInput
 	input := service.UpdateEntryInput{
 		Version: request.Version, BusinessName: request.BusinessName,
 		BusinessDescription: request.BusinessDescription, GovernanceStatus: request.GovernanceStatus,
-		Visibility:        request.Visibility,
-		Domains:           make([]service.DomainLinkInput, 0, len(request.Domains)),
-		GlossaryIDs:       make([]int64, 0, len(request.GlossaryIDs)),
-		Responsibilities:  make([]service.ResponsibilityInput, 0, len(request.Responsibilities)),
-		ComponentElements: make([]service.ComponentElementInput, 0, len(request.ComponentElements)),
+		Visibility:       request.Visibility,
+		Domains:          make([]service.DomainLinkInput, 0, len(request.Domains)),
+		GlossaryIDs:      make([]int64, 0, len(request.GlossaryIDs)),
+		Responsibilities: make([]service.ResponsibilityInput, 0, len(request.Responsibilities)),
 	}
 	for _, domain := range request.Domains {
 		id, err := parseCanonicalPositiveInt64(domain.ID)
@@ -1193,19 +1192,6 @@ func mapUpdateEntryRequest(request updateEntryRequest) (service.UpdateEntryInput
 		}
 		input.Responsibilities = append(input.Responsibilities, service.ResponsibilityInput{
 			Role: responsibility.Role, SubjectType: responsibility.SubjectType, SubjectID: id,
-		})
-	}
-	for _, component := range request.ComponentElements {
-		componentID, err := uuid.Parse(component.ComponentID)
-		if err != nil || componentID == uuid.Nil || componentID.String() != component.ComponentID {
-			return input, service.ErrInvalidEntryUpdate
-		}
-		elementID, err := parseCanonicalPositiveInt64(component.ElementID)
-		if err != nil {
-			return input, err
-		}
-		input.ComponentElements = append(input.ComponentElements, service.ComponentElementInput{
-			ComponentID: componentID, ElementID: elementID,
 		})
 	}
 	return input, nil
@@ -1482,6 +1468,10 @@ func respondError(c *gin.Context, status int, err error) {
 		status = http.StatusServiceUnavailable
 		message = commoni18n.T(c, catalogi18n.MsgSearchUnavailable)
 		errorCode = "catalog_search_unavailable"
+	case errors.Is(err, service.ErrDomainOverviewUnavailable):
+		status = http.StatusServiceUnavailable
+		message = commoni18n.T(c, catalogi18n.MsgDomainOverviewUnavailable)
+		errorCode = "catalog_domain_overview_unavailable"
 	case errors.Is(err, service.ErrInventoryPermissionRequired):
 		status = http.StatusForbidden
 		message = commoni18n.T(c, catalogi18n.MsgInventoryPermissionRequired)
@@ -1518,6 +1508,22 @@ func respondError(c *gin.Context, status int, err error) {
 		status = http.StatusServiceUnavailable
 		message = commoni18n.T(c, catalogi18n.MsgDataDictionaryDependencyUnavailable)
 		errorCode = "catalog_data_dictionary_dependency_unavailable"
+	case errors.Is(err, service.ErrStandardMappingNotFound):
+		status = http.StatusNotFound
+		message = commoni18n.T(c, catalogi18n.MsgEntryNotFound)
+		errorCode = "catalog_standard_mapping_not_found"
+	case errors.Is(err, service.ErrInvalidStandardMapping):
+		status = http.StatusBadRequest
+		message = commoni18n.T(c, catalogi18n.MsgInvalidParams)
+		errorCode = "invalid_request"
+	case errors.Is(err, service.ErrStandardMappingVersionConflict):
+		status = http.StatusConflict
+		message = commoni18n.T(c, catalogi18n.MsgVersionConflict)
+		errorCode = "catalog_standard_mapping_version_conflict"
+	case errors.Is(err, service.ErrStandardMappingStateConflict):
+		status = http.StatusConflict
+		message = commoni18n.T(c, catalogi18n.MsgEntryNotEditable)
+		errorCode = "catalog_standard_mapping_state_conflict"
 	case status == http.StatusBadRequest:
 		message = commoni18n.T(c, catalogi18n.MsgInvalidParams)
 		errorCode = "invalid_request"

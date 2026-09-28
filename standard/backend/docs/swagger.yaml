@@ -2554,6 +2554,11 @@ definitions:
         - tenant_common
         - domain
         type: string
+      status:
+        enum:
+        - published
+        - withdrawn
+        type: string
       unit_id:
         example: ""
         type: string
@@ -2563,6 +2568,16 @@ definitions:
         - range
         - enumeration
         type: string
+    type: object
+  github_com_addp_standard_internal_service.ExactElementRevisionResolution:
+    properties:
+      found:
+        type: boolean
+      revision_id:
+        example: ""
+        type: string
+      snapshot:
+        $ref: '#/definitions/github_com_addp_standard_internal_service.ElementRevisionSnapshot'
     type: object
   github_com_addp_standard_internal_service.ReferenceCandidate:
     properties:
@@ -2679,6 +2694,25 @@ definitions:
       results:
         items:
           $ref: '#/definitions/github_com_addp_standard_internal_service.ElementRevisionResolution'
+        type: array
+    type: object
+  internal_api.exactElementRevisionResolutionRequest:
+    properties:
+      revision_ids:
+        items:
+          type: string
+        maxItems: 200
+        minItems: 1
+        type: array
+        uniqueItems: true
+    required:
+    - revision_ids
+    type: object
+  internal_api.exactElementRevisionResolutionResponse:
+    properties:
+      results:
+        items:
+          $ref: '#/definitions/github_com_addp_standard_internal_service.ExactElementRevisionResolution'
         type: array
     type: object
   internal_api.referenceResolutionRequest:
@@ -6627,6 +6661,62 @@ paths:
       security:
       - BearerAuth: []
       summary: 按时点批量解析数据元修订 | Resolve data element revisions at one point in time
+      tags:
+      - StandardRuntime
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.element.read
+  /runtime/element-revisions/resolve-exact:
+    post:
+      consumes:
+      - application/json
+      description: 仅 addp-catalog Tenant Service Principal 可读取已发布或已撤回的历史发布修订；不按当前生效时间重新选版，跨
+        Tenant、未发布或不存在统一 found=false | Only the addp-catalog tenant service principal
+        may read published or withdrawn historical revisions; it never reselects by
+        current effective time, and cross-tenant, unpublished or missing revisions
+        return found=false
+      parameters:
+      - description: 确定修订 ID，最多 200 个 | Exact revision IDs, up to 200
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.exactElementRevisionResolutionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.exactElementRevisionResolutionResponse'
+        "400":
+          description: 请求无效 | Invalid request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: 需要认证 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 仅允许 addp-catalog 且需数据元读取权限 | addp-catalog and element read
+            permission required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: 解析失败 | Resolution failed
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 精确批量读取数据元修订 | Read exact data element revisions in a batch
       tags:
       - StandardRuntime
       x-addp-auth-mode: permission

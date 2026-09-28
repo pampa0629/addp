@@ -550,8 +550,9 @@ test-orchestrator-frontend: ## 运行 Orchestrator 前端确定性测试、编�
 	@cd orchestrator/frontend && npm run test:e2e:routes
 	@cd orchestrator/frontend && npm run build
 
-test-portal-frontend: ## 运行 Portal 前端确定性测试与构建
+test-portal-frontend: ## 运行 Portal 前端确定性测试、浏览器回归与构建
 	@cd portal/frontend && npm test
+	@cd portal/frontend && npm run test:e2e
 	@cd portal/frontend && npm run build
 
 test-service-frontend: ## 运行 Service 前端确定性测试与构建

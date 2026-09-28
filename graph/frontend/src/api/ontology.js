@@ -72,9 +72,6 @@ export const ontologyAPI = {
   },
 
   // F5b: 从 Neo4j 引擎推导本体（不依赖知识图谱）
-  listNeo4jEngines() {
-    return client.get('/graph/ontologies/neo4j-engines')
-  },
   inferSchemaFromEngine(engineId, ontologyId) {
     const params = `engine_id=${engineId}${ontologyId ? `&ontology_id=${ontologyId}` : ''}`
     return client.get(`/graph/ontologies/infer-schema/from-engine?${params}`)

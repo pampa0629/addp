@@ -1,5 +1,33 @@
 basePath: /api/v1/asset
 definitions:
+  github_com_addp_asset_internal_models.Rating:
+    properties:
+      asset_id:
+        type: integer
+      comment:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: integer
+      is_handled:
+        description: 管理员是否已处理问题反馈
+        type: boolean
+      score:
+        description: 1-5 分
+        type: number
+      tags:
+        description: 反馈标签（问题反馈时填写，如：数据质量问题/文档不清晰）
+        items:
+          type: string
+        type: array
+      tenant_id:
+        type: integer
+      updated_at:
+        type: string
+      user_id:
+        type: integer
+    type: object
   github_com_addp_asset_internal_service.ApproveApplicationReq:
     properties:
       note:
@@ -167,6 +195,38 @@ definitions:
     required:
     - version
     type: object
+  github_com_addp_asset_internal_service.RatingWithUser:
+    properties:
+      asset_id:
+        type: integer
+      asset_name:
+        type: string
+      comment:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: integer
+      is_handled:
+        description: 管理员是否已处理问题反馈
+        type: boolean
+      score:
+        description: 1-5 分
+        type: number
+      tags:
+        description: 反馈标签（问题反馈时填写，如：数据质量问题/文档不清晰）
+        items:
+          type: string
+        type: array
+      tenant_id:
+        type: integer
+      updated_at:
+        type: string
+      user_id:
+        type: integer
+      user_name:
+        type: string
+    type: object
   github_com_addp_asset_internal_service.RejectApplicationReq:
     properties:
       reason:
@@ -248,6 +308,30 @@ definitions:
         type: array
     required:
     - score
+    type: object
+  internal_api.consumerRatingsResponse:
+    properties:
+      avg_score:
+        type: number
+      data:
+        items:
+          $ref: '#/definitions/github_com_addp_asset_internal_service.RatingWithUser'
+        type: array
+      my_rating:
+        $ref: '#/definitions/github_com_addp_asset_internal_models.Rating'
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+  internal_api.ownConsumerRatingResponse:
+    properties:
+      rating:
+        $ref: '#/definitions/github_com_addp_asset_internal_models.Rating'
     type: object
   internal_api.ratingHandledRequest:
     properties:
@@ -1195,8 +1279,10 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - asset.application.create
-  /consumer/assets/{id}/ratings:
+  /consumer/assets/{id}/my-rating:
     get:
+      description: 仅返回当前用户在已上架资产上的评价，不开放其他用户评价列表 | Return only the current user's
+        rating on a published asset, without listing other users' ratings
       parameters:
       - description: 资产 ID | Asset ID
         in: path
@@ -1209,8 +1295,38 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
+            $ref: '#/definitions/internal_api.ownConsumerRatingResponse'
+        "404":
+          description: 资产不存在 | Asset not found
+          schema:
+            additionalProperties:
+              type: string
             type: object
+      security:
+      - BearerAuth: []
+      summary: 获取本人评价以修改 | Get own rating for editing
+      tags:
+      - Asset Consumer
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - asset.rating.update
+  /consumer/assets/{id}/ratings:
+    get:
+      description: 分页返回公开评价，并独立返回当前用户评价与全量平均分 | Paginate published ratings and independently
+        return the current user's rating and overall average
+      parameters:
+      - description: 资产 ID | Asset ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.consumerRatingsResponse'
       security:
       - BearerAuth: []
       summary: 获取已上架资产评价 | List published asset ratings
@@ -1237,19 +1353,73 @@ paths:
       produces:
       - application/json
       responses:
-        "200":
-          description: OK
+        "201":
+          description: Created
           schema:
             additionalProperties: true
             type: object
+        "403":
+          description: 没有有效资产授权 | No effective asset authorization
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: 本人评价已存在 | Own rating already exists
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       security:
       - BearerAuth: []
-      summary: 提交或更新资产评价 | Submit or update asset rating
+      summary: 创建资产评价 | Create asset rating
       tags:
       - Asset Consumer
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - asset.rating.create
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 资产 ID | Asset ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 评价 | Rating
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.consumerRatingRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: 没有有效资产授权 | No effective asset authorization
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: 本人评价不存在 | Own rating not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 修改本人资产评价 | Update own asset rating
+      tags:
+      - Asset Consumer
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
       - asset.rating.update
   /consumer/assets/stats:
     get:

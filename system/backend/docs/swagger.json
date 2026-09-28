@@ -8122,7 +8122,7 @@
                     },
                     {
                         "type": "string",
-                        "description": "状态：planned/active/closed | Status: planned/active/closed",
+                        "description": "状态：active/closed | Status: active/closed",
                         "name": "status",
                         "in": "query"
                     }
@@ -10524,12 +10524,10 @@
         "github_com_addp_system_internal_iam.ProjectGroupStatus": {
             "type": "string",
             "enum": [
-                "planned",
                 "active",
                 "closed"
             ],
             "x-enum-varnames": [
-                "ProjectGroupStatusPlanned",
                 "ProjectGroupStatusActive",
                 "ProjectGroupStatusClosed"
             ]
@@ -12173,6 +12171,9 @@
         "internal_api.IAMCreateDepartmentRequest": {
             "type": "object",
             "properties": {
+                "code": {
+                    "type": "string"
+                },
                 "name": {
                     "type": "string"
                 },
@@ -12251,20 +12252,8 @@
                 "code": {
                     "type": "string"
                 },
-                "description": {
-                    "type": "string"
-                },
-                "ends_at": {
-                    "type": "string"
-                },
                 "name": {
                     "type": "string"
-                },
-                "starts_at": {
-                    "type": "string"
-                },
-                "status": {
-                    "$ref": "#/definitions/github_com_addp_system_internal_iam.ProjectGroupStatus"
                 }
             }
         },
@@ -13242,16 +13231,10 @@
                 "description": {
                     "type": "string"
                 },
-                "ends_at": {
-                    "type": "string"
-                },
                 "id": {
                     "type": "string"
                 },
                 "name": {
-                    "type": "string"
-                },
-                "starts_at": {
                     "type": "string"
                 },
                 "status": {
@@ -13944,17 +13927,8 @@
                 "description": {
                     "type": "string"
                 },
-                "ends_at": {
-                    "type": "string"
-                },
                 "name": {
                     "type": "string"
-                },
-                "starts_at": {
-                    "type": "string"
-                },
-                "status": {
-                    "$ref": "#/definitions/github_com_addp_system_internal_iam.ProjectGroupStatus"
                 },
                 "version": {
                     "type": "integer"

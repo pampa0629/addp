@@ -72,6 +72,7 @@ bash scripts/swagger/check-route-coverage.sh asset
 ## 前端公开路由
 
 - 模块内 Router 使用 `/assets`、`/applications`、`/categories` 等无模块前缀路径；Console 公开 URL 统一加 `/asset` 前缀。
+- 独立访问 Asset 根路径或登录后未指定回跳地址时，在 AuthContext 加载后按侧栏顺序选择第一个有权进入的页面：`/type-definitions`、`/categories`、`/assets`、`/applications`、`/dashboard`。准入条件复用 Console 页面权限映射；均不可访问时进入 `/forbidden`。显式业务地址保持原目标并独立校验权限。
 - 资产公开路由为 `/assets/new`、`/assets/:id` 和 `/assets/:id/edit`；创建与编辑都基于 CatalogEntry 选择和组合。
 - 资产列表分类使用 `category_id`；申请与授权默认 `applications` Tab 省略，问题反馈使用 `?tab=feedbacks`。
 - 业务导航统一调用 `frontend/src/utils/moduleNavigation.js`；编辑保存和取消均用 `replace` 回到详情。

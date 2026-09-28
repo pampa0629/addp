@@ -33,15 +33,19 @@
     <el-container class="main-container">
       <el-aside class="sidebar" width="200px">
         <el-menu :default-active="activeMenu" router class="sidebar-menu">
-          <el-menu-item index="/ontologies">
+          <el-menu-item v-if="canEnter('/ontologies')" index="/ontologies">
             <el-icon><Document /></el-icon>
             <span>{{ t('graph.layout.ontologyModeling') }}</span>
           </el-menu-item>
-          <el-menu-item index="/graphs">
+          <el-menu-item v-if="canEnter('/graphs')" index="/graphs">
             <el-icon><Connection /></el-icon>
             <span>{{ t('graph.layout.knowledgeGraph') }}</span>
           </el-menu-item>
-          <el-menu-item index="/knowledge-service">
+          <el-menu-item v-if="canEnter('/analysis')" index="/analysis">
+            <el-icon><DataLine /></el-icon>
+            <span>{{ t('graph.layout.graphAnalysis') }}</span>
+          </el-menu-item>
+          <el-menu-item v-if="canEnter('/knowledge-service')" index="/knowledge-service">
             <el-icon><Share /></el-icon>
             <span>{{ t('graph.layout.knowledgeService') }}</span>
           </el-menu-item>
@@ -59,7 +63,8 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '../store/auth'
-import { User, ArrowDown, SwitchButton, Document, Connection, Share } from '@element-plus/icons-vue'
+import { allowsConsoleRoute } from '@common-ui'
+import { User, ArrowDown, SwitchButton, Document, Connection, DataLine, Share } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
@@ -67,6 +72,7 @@ const { t } = useI18n()
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
+const canEnter = path => allowsConsoleRoute(`/graph${path}`, authStore.contextType, authStore.permissions)
 const isInIframe = ref(false)
 
 onMounted(() => {
@@ -77,6 +83,7 @@ const activeMenu = computed(() => {
   const path = route.path
   if (path.startsWith('/ontologies')) return '/ontologies'
   if (path.startsWith('/graphs')) return '/graphs'
+  if (path.startsWith('/analysis')) return '/analysis'
   if (path.startsWith('/knowledge-service')) return '/knowledge-service'
   return path
 })

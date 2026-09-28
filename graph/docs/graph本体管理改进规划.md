@@ -281,7 +281,7 @@ ModelServiceURL string `mapstructure:"MODEL_URL"` // 默认 http://localhost:818
 
 **F5b（从 Neo4j 引擎直接推导，无需图谱）**：本体建模可完全脱离图谱，直接选择 system 已注册的 Neo4j 引擎进行推导。入口位于 `OntologyDetail.vue` 页面的"从 Neo4j 推导"按钮。
 ```
-GET  /api/v1/graph/ontologies/neo4j-engines                          // 列出 system 注册的 Neo4j 引擎
+GET  /api/v1/system/engine-catalog/engines?engine_type=neo4j        // 当前租户的窄引擎目录投影
 GET  /api/v1/graph/ontologies/infer-schema/from-engine?engine_id=X  // 推导预览（不写库）
 POST /api/v1/graph/ontologies/:id/infer-schema/from-engine/apply    // 应用到本体
 Body: {
@@ -324,15 +324,15 @@ RETURN labels(a) AS src, type(r) AS rel, labels(b) AS tgt, count(r) AS cnt
 ```
 
 **改动文件**：
-- 修改：`graph/backend/internal/service/schema_inference_service.go`（重构，新增 `ListNeo4jEngines`/`InferSchemaFromEngine`/`inferWithEngine`/`ApplyInferredSchemaFromEngine`/`applyPreview`）
-- 修改：`graph/backend/internal/api/ontology_handler.go`（新增 `ListNeo4jEngines`/`InferSchemaFromEngine`/`ApplyInferredSchemaFromEngine` handler）
+- 修改：`graph/backend/internal/service/schema_inference_service.go`（保留 `InferSchemaFromEngine`/`inferWithEngine`/`ApplyInferredSchemaFromEngine`/`applyPreview`）
+- 修改：`graph/backend/internal/api/ontology_handler.go`（`InferSchemaFromEngine`/`ApplyInferredSchemaFromEngine` handler）
 - 修改：`graph/backend/internal/api/browse_handler.go`（F5a 的 `InferSchema`/`ApplyInferredSchema` handler）
 - 修改：`graph/backend/internal/api/router.go`（F5a + F5b 路由，静态路径置于 `/:id` 之前）
 - 新建：`graph/frontend/src/components/InferFromEngineDialog.vue`（F5b 对话框）
 - 新建：`graph/frontend/src/components/SchemaInferenceDialog.vue`（F5a 对话框）
 - 修改：`graph/frontend/src/views/OntologyDetail.vue`（"从 Neo4j 推导"按钮，F5b 入口）
 - 修改：`graph/frontend/src/views/KnowledgeGraphList.vue`（F5a 入口）
-- 修改：`graph/frontend/src/api/ontology.js`（新增 `listNeo4jEngines`/`inferSchemaFromEngine`/`applyInferredSchemaFromEngine`）
+- 修改：`graph/frontend/src/api/ontology.js`（`inferSchemaFromEngine`/`applyInferredSchemaFromEngine`；引擎选择复用 System 窄目录 API）
 - 修改：`graph/frontend/src/api/browse.js`（F5a 相关 API）
 
 ---

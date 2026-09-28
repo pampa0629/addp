@@ -98,7 +98,7 @@ func (s *TileServiceService) CreateService(req *models.CreateTileServiceRequest,
 	}
 
 	// 8. 重新加载服务（获取完整数据，包括自动生成的 ID）
-	service, err = s.repo.GetServiceByID(service.ID)
+	service, err = s.repo.GetServiceByIDAndTenant(service.ID, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("get created service failed: %w", err)
 	}
@@ -107,8 +107,8 @@ func (s *TileServiceService) CreateService(req *models.CreateTileServiceRequest,
 }
 
 // GetService 获取瓦片服务详情
-func (s *TileServiceService) GetService(id uint) (*models.TileServiceDTO, error) {
-	service, err := s.repo.GetServiceByID(id)
+func (s *TileServiceService) GetService(id, tenantID uint) (*models.TileServiceDTO, error) {
+	service, err := s.repo.GetServiceByIDAndTenant(id, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("get service failed: %w", err)
 	}
@@ -169,9 +169,9 @@ func (s *TileServiceService) SearchServices(tenantID uint, keyword string, offse
 }
 
 // UpdateService 更新瓦片服务
-func (s *TileServiceService) UpdateService(id uint, req *models.UpdateTileServiceRequest) (*models.TileServiceDTO, error) {
+func (s *TileServiceService) UpdateService(id, tenantID uint, req *models.UpdateTileServiceRequest) (*models.TileServiceDTO, error) {
 	// 获取现有服务
-	service, err := s.repo.GetServiceByID(id)
+	service, err := s.repo.GetServiceByIDAndTenant(id, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("get service failed: %w", err)
 	}
@@ -207,12 +207,12 @@ func (s *TileServiceService) UpdateService(id uint, req *models.UpdateTileServic
 	}
 
 	// 执行更新
-	if err := s.repo.UpdateService(id, updates); err != nil {
+	if err := s.repo.UpdateService(id, tenantID, updates); err != nil {
 		return nil, fmt.Errorf("update service failed: %w", err)
 	}
 
 	// 重新加载服务
-	service, err = s.repo.GetServiceByID(id)
+	service, err = s.repo.GetServiceByIDAndTenant(id, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("get updated service failed: %w", err)
 	}
@@ -221,8 +221,8 @@ func (s *TileServiceService) UpdateService(id uint, req *models.UpdateTileServic
 }
 
 // DeleteService 删除瓦片服务（会级联删除所有图层）
-func (s *TileServiceService) DeleteService(id uint) error {
-	if err := s.repo.DeleteService(id); err != nil {
+func (s *TileServiceService) DeleteService(id, tenantID uint) error {
+	if err := s.repo.DeleteService(id, tenantID); err != nil {
 		return fmt.Errorf("delete service failed: %w", err)
 	}
 	return nil
@@ -233,9 +233,9 @@ func (s *TileServiceService) DeleteService(id uint) error {
 // ============================================================================
 
 // AddLayer 为服务添加新图层
-func (s *TileServiceService) AddLayer(serviceID uint, req *models.CreateTileLayerRequest) (*models.TileServiceLayerDTO, error) {
+func (s *TileServiceService) AddLayer(serviceID, tenantID uint, req *models.CreateTileLayerRequest) (*models.TileServiceLayerDTO, error) {
 	// 1. 验证服务是否存在
-	serviceModel, err := s.repo.GetServiceByID(serviceID)
+	serviceModel, err := s.repo.GetServiceByIDAndTenant(serviceID, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("service not found: %w", err)
 	}
@@ -272,7 +272,7 @@ func (s *TileServiceService) AddLayer(serviceID uint, req *models.CreateTileLaye
 	}
 
 	// 6. 重新加载图层
-	layer, err = s.repo.GetLayerByID(layer.ID)
+	layer, err = s.repo.GetLayerByIDAndTenant(layer.ID, serviceID, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("get created layer failed: %w", err)
 	}
@@ -281,8 +281,8 @@ func (s *TileServiceService) AddLayer(serviceID uint, req *models.CreateTileLaye
 }
 
 // GetLayer 获取图层详情
-func (s *TileServiceService) GetLayer(layerID uint) (*models.TileServiceLayerDTO, error) {
-	layer, err := s.repo.GetLayerByID(layerID)
+func (s *TileServiceService) GetLayer(layerID, serviceID, tenantID uint) (*models.TileServiceLayerDTO, error) {
+	layer, err := s.repo.GetLayerByIDAndTenant(layerID, serviceID, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("get layer failed: %w", err)
 	}
@@ -290,8 +290,11 @@ func (s *TileServiceService) GetLayer(layerID uint) (*models.TileServiceLayerDTO
 }
 
 // ListLayers 列出服务下的所有图层
-func (s *TileServiceService) ListLayers(serviceID uint) ([]models.TileServiceLayerDTO, error) {
-	layers, err := s.repo.ListLayers(serviceID)
+func (s *TileServiceService) ListLayers(serviceID, tenantID uint) ([]models.TileServiceLayerDTO, error) {
+	if _, err := s.repo.GetServiceByIDAndTenant(serviceID, tenantID); err != nil {
+		return nil, fmt.Errorf("get service failed: %w", err)
+	}
+	layers, err := s.repo.ListLayers(serviceID, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("list layers failed: %w", err)
 	}
@@ -305,9 +308,9 @@ func (s *TileServiceService) ListLayers(serviceID uint) ([]models.TileServiceLay
 }
 
 // UpdateLayer 更新图层
-func (s *TileServiceService) UpdateLayer(layerID uint, req *models.UpdateTileLayerRequest) (*models.TileServiceLayerDTO, error) {
+func (s *TileServiceService) UpdateLayer(layerID, serviceID, tenantID uint, req *models.UpdateTileLayerRequest) (*models.TileServiceLayerDTO, error) {
 	// 获取现有图层
-	layer, err := s.repo.GetLayerByID(layerID)
+	layer, err := s.repo.GetLayerByIDAndTenant(layerID, serviceID, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("get layer failed: %w", err)
 	}
@@ -323,7 +326,7 @@ func (s *TileServiceService) UpdateLayer(layerID uint, req *models.UpdateTileLay
 	}
 	if req.LayerConfig != nil {
 		// 验证新配置
-		serviceModel, err := s.repo.GetServiceByID(layer.ServiceID)
+		serviceModel, err := s.repo.GetServiceByIDAndTenant(serviceID, tenantID)
 		if err != nil {
 			return nil, fmt.Errorf("get layer service failed: %w", err)
 		}
@@ -340,12 +343,12 @@ func (s *TileServiceService) UpdateLayer(layerID uint, req *models.UpdateTileLay
 	}
 
 	// 执行更新
-	if err := s.repo.UpdateLayer(layerID, updates); err != nil {
+	if err := s.repo.UpdateLayer(layerID, serviceID, tenantID, updates); err != nil {
 		return nil, fmt.Errorf("update layer failed: %w", err)
 	}
 
 	// 重新加载图层
-	layer, err = s.repo.GetLayerByID(layerID)
+	layer, err = s.repo.GetLayerByIDAndTenant(layerID, serviceID, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("get updated layer failed: %w", err)
 	}
@@ -354,8 +357,8 @@ func (s *TileServiceService) UpdateLayer(layerID uint, req *models.UpdateTileLay
 }
 
 // DeleteLayer 删除图层
-func (s *TileServiceService) DeleteLayer(layerID uint) error {
-	if err := s.repo.DeleteLayer(layerID); err != nil {
+func (s *TileServiceService) DeleteLayer(layerID, serviceID, tenantID uint) error {
+	if err := s.repo.DeleteLayer(layerID, serviceID, tenantID); err != nil {
 		return fmt.Errorf("delete layer failed: %w", err)
 	}
 	return nil

@@ -702,12 +702,10 @@ definitions:
     - ProjectGroupRelationRoleCoordinator
   github_com_addp_system_internal_iam.ProjectGroupStatus:
     enum:
-    - planned
     - active
     - closed
     type: string
     x-enum-varnames:
-    - ProjectGroupStatusPlanned
     - ProjectGroupStatusActive
     - ProjectGroupStatusClosed
   github_com_addp_system_internal_iam.TenantInvitationStatus:
@@ -1819,6 +1817,8 @@ definitions:
     type: object
   internal_api.IAMCreateDepartmentRequest:
     properties:
+      code:
+        type: string
       name:
         type: string
       parent_id:
@@ -1869,16 +1869,8 @@ definitions:
     properties:
       code:
         type: string
-      description:
-        type: string
-      ends_at:
-        type: string
       name:
         type: string
-      starts_at:
-        type: string
-      status:
-        $ref: '#/definitions/github_com_addp_system_internal_iam.ProjectGroupStatus'
     type: object
   internal_api.IAMCreateServiceAccountRequest:
     properties:
@@ -2514,13 +2506,9 @@ definitions:
         type: string
       description:
         type: string
-      ends_at:
-        type: string
       id:
         type: string
       name:
-        type: string
-      starts_at:
         type: string
       status:
         $ref: '#/definitions/github_com_addp_system_internal_iam.ProjectGroupStatus'
@@ -2974,14 +2962,8 @@ definitions:
     properties:
       description:
         type: string
-      ends_at:
-        type: string
       name:
         type: string
-      starts_at:
-        type: string
-      status:
-        $ref: '#/definitions/github_com_addp_system_internal_iam.ProjectGroupStatus'
       version:
         type: integer
     type: object
@@ -9130,7 +9112,7 @@ paths:
         in: query
         name: search
         type: string
-      - description: '状态：planned/active/closed | Status: planned/active/closed'
+      - description: '状态：active/closed | Status: active/closed'
         in: query
         name: status
         type: string

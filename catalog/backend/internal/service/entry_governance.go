@@ -68,6 +68,13 @@ func (s *EntryService) UpdateGovernance(
 				return err
 			}
 		}
+		var certifiedMappings []models.StandardMapping
+		if eventType == "catalog.entry.certified" {
+			if err := tx.Where("tenant_id = ? AND catalog_entry_id = ? AND review_status = ?", tenantID, id, models.StandardMappingApproved).
+				Order("component_id ASC, id ASC").Find(&certifiedMappings).Error; err != nil {
+				return fmt.Errorf("snapshot certified StandardMapping versions: %w", err)
+			}
+		}
 
 		now := time.Now().UTC()
 		result := tx.Model(&models.Entry{}).
@@ -93,6 +100,13 @@ func (s *EntryService) UpdateGovernance(
 		}
 		if input.Reason != nil {
 			details["reason"] = *input.Reason
+		}
+		if eventType == "catalog.entry.certified" {
+			versions := make([]commonModels.JSONMap, 0, len(certifiedMappings))
+			for _, mapping := range certifiedMappings {
+				versions = append(versions, commonModels.JSONMap{"id": mapping.ID.String(), "version": mapping.Version})
+			}
+			details["approved_standard_mappings"] = versions
 		}
 		if entry.RecommendedSuccessorEntryID != nil {
 			details["previous_recommended_successor_entry_id"] = entry.RecommendedSuccessorEntryID.String()
@@ -193,11 +207,11 @@ func validateCertificationRequirements(tx *gorm.DB, tenantID int64, entry models
 		return ErrCertificationRequirementsNotMet
 	}
 
-	ownerPrimaryDomain, err := hasOwnerPrimaryDomain(entry.EntryType, source)
+	ownerDomainRequirementMet, err := hasOwnerDomainRequirement(entry.EntryType, source)
 	if err != nil {
 		return err
 	}
-	if !ownerPrimaryDomain {
+	if !ownerDomainRequirementMet {
 		var primaryDomainCount int64
 		if err := tx.Model(&models.SemanticAssociation{}).Where(
 			"tenant_id = ? AND catalog_entry_id = ? AND semantic_type = ? AND relation_role = ?",
@@ -233,13 +247,13 @@ func validateCertificationRequirements(tx *gorm.DB, tenantID int64, entry models
 	return nil
 }
 
-func hasOwnerPrimaryDomain(entryType string, source models.SourceBinding) (bool, error) {
+func hasOwnerDomainRequirement(entryType string, source models.SourceBinding) (bool, error) {
 	if !ownerManagesPrimaryDomain(entryType, source) {
 		return false, nil
 	}
-	ownerPrimaryDomain, valid := observedOwnerPrimaryDomain(source)
+	ownerDomainRequirementMet, valid := ownerDomainRequirementSatisfied(entryType, source)
 	if !valid {
 		return false, ErrCertificationRequirementsNotMet
 	}
-	return ownerPrimaryDomain, nil
+	return ownerDomainRequirementMet, nil
 }

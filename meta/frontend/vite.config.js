@@ -4,7 +4,7 @@ import { resolve } from 'path'
 
 export default defineConfig({
   plugins: [vue()],
-  base: process.env.NODE_ENV === 'development' ? '/' : '/meta/',  // 开发模式用 /，生产模式用 /meta/
+  base: process.env.NODE_ENV === 'development' ? '/' : '/module-ui/meta/',  // 开发模式用 /，生产模式用 /module-ui/meta/
   resolve: {
     alias: {
       '@': resolve(__dirname, 'src'),

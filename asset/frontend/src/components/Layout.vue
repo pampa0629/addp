@@ -32,26 +32,26 @@
     <el-container class="main-container">
       <el-aside class="sidebar" width="200px">
         <el-menu :default-active="activeMenu" router class="sidebar-menu">
-          <el-sub-menu index="asset-catalog">
+          <el-sub-menu v-if="hasAssetCatalog" index="asset-catalog">
             <template #title>
               <el-icon><Folder /></el-icon>
               <span>{{ t('asset.layout.assetCatalog') }}</span>
             </template>
-            <el-menu-item index="/type-definitions">
+            <el-menu-item v-if="canEnter('/type-definitions')" index="/type-definitions">
               <el-icon><Grid /></el-icon>
               <span>{{ t('asset.layout.assetTypes') }}</span>
             </el-menu-item>
-            <el-menu-item index="/categories">
+            <el-menu-item v-if="canEnter('/categories')" index="/categories">
               <el-icon><Files /></el-icon>
               <span>{{ t('asset.layout.categoryManagement') }}</span>
             </el-menu-item>
-            <el-menu-item index="/assets">
+            <el-menu-item v-if="canEnter('/assets')" index="/assets">
               <el-icon><List /></el-icon>
               <span>{{ t('asset.layout.assetWorkbench') }}</span>
             </el-menu-item>
           </el-sub-menu>
 
-          <el-sub-menu index="asset-apply">
+          <el-sub-menu v-if="canEnter('/applications')" index="asset-apply">
             <template #title>
               <el-icon><Document /></el-icon>
               <span>{{ t('asset.layout.applicationAndAuth') }}</span>
@@ -62,7 +62,7 @@
             </el-menu-item>
           </el-sub-menu>
 
-          <el-menu-item index="/dashboard">
+          <el-menu-item v-if="canEnter('/dashboard')" index="/dashboard">
             <el-icon><DataAnalysis /></el-icon>
             <span>{{ t('asset.layout.dashboard') }}</span>
           </el-menu-item>
@@ -80,6 +80,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '../store/auth'
+import { allowsConsoleRoute } from '@common-ui'
 import { useI18n } from 'vue-i18n'
 import {
   User, ArrowDown, SwitchButton, Folder,
@@ -89,6 +90,8 @@ import {
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
+const canEnter = path => allowsConsoleRoute(`/asset${path}`, authStore.contextType, authStore.permissions)
+const hasAssetCatalog = computed(() => ['/type-definitions', '/categories', '/assets'].some(canEnter))
 const { t } = useI18n()
 const isInIframe = ref(false)
 

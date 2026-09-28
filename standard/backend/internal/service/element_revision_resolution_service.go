@@ -44,6 +44,7 @@ type ElementRevisionSnapshot struct {
 	ElementID         int64                    `json:"element_id,string" swaggertype:"string"`
 	ElementRevisionID int64                    `json:"element_revision_id,string" swaggertype:"string"`
 	RevisionNo        int64                    `json:"revision_no"`
+	Status            string                   `json:"status" enums:"published,withdrawn"`
 	ScopeType         string                   `json:"scope_type" enums:"platform,tenant_common,domain"`
 	OwnerDomainID     *int64                   `json:"owner_domain_id,omitempty,string" swaggertype:"string"`
 	Code              string                   `json:"code"`
@@ -69,6 +70,12 @@ type ElementRevisionResolution struct {
 	ElementID int64                    `json:"element_id,string" swaggertype:"string"`
 	Found     bool                     `json:"found"`
 	Snapshot  *ElementRevisionSnapshot `json:"snapshot,omitempty"`
+}
+
+type ExactElementRevisionResolution struct {
+	RevisionID int64                    `json:"revision_id,string" swaggertype:"string"`
+	Found      bool                     `json:"found"`
+	Snapshot   *ElementRevisionSnapshot `json:"snapshot,omitempty"`
 }
 
 type ElementRevisionResolutionService struct {
@@ -138,26 +145,104 @@ func (s *ElementRevisionResolutionService) Resolve(
 			results = append(results, result)
 			continue
 		}
-		snapshot := &ElementRevisionSnapshot{
-			ElementID: element.ID, ElementRevisionID: revision.ID, RevisionNo: revision.RevisionNo,
-			ScopeType: element.ScopeType, OwnerDomainID: element.OwnerDomainID, Code: element.Code, Name: revision.Name, Definition: revision.Definition,
-			DataType: revision.DataType, Length: revision.Length, PrecisionNum: revision.PrecisionNum, Scale: revision.Scale,
-			Nullable: revision.Nullable, DefaultValue: revision.DefaultValue, Format: revision.Format,
-			ValueDomainKind: revision.ValueDomainKind, RangeConstraint: revision.RangeConstraint,
-			UnitID:        revision.UnitID,
-			ExampleValues: append([]string{}, revision.ExampleValues...), EffectiveFrom: revision.EffectiveFrom.UTC(), EffectiveTo: utcTimePointer(revision.EffectiveTo),
-		}
-		if revision.CodeSetRevisionID != nil {
-			record, ok := codeSetByRevisionID[*revision.CodeSetRevisionID]
-			if !ok {
-				return nil, fmt.Errorf("element revision %d references missing code set revision %d", revision.ID, *revision.CodeSetRevisionID)
-			}
-			snapshot.CodeSetRevision = codeSetSnapshot(record)
+		snapshot, err := elementRevisionSnapshot(element, revision, codeSetByRevisionID)
+		if err != nil {
+			return nil, err
 		}
 		result.Found, result.Snapshot = true, snapshot
 		results = append(results, result)
 	}
 	return results, nil
+}
+
+// ResolveExact reads a pinned historical revision without selecting a new
+// revision from an as_of timestamp. Draft and foreign-tenant IDs are hidden.
+func (s *ElementRevisionResolutionService) ResolveExact(
+	ctx context.Context,
+	tenantID int64,
+	revisionIDs []int64,
+) ([]ExactElementRevisionResolution, error) {
+	if s == nil || s.elements == nil || s.codeSets == nil || tenantID <= 0 || len(revisionIDs) == 0 || len(revisionIDs) > MaxElementRevisionResolutionBatchSize {
+		return nil, ErrInvalidElementRevisionResolutionRequest
+	}
+	seen := make(map[int64]struct{}, len(revisionIDs))
+	for _, id := range revisionIDs {
+		if id <= 0 {
+			return nil, ErrInvalidElementRevisionResolutionRequest
+		}
+		if _, duplicate := seen[id]; duplicate {
+			return nil, ErrInvalidElementRevisionResolutionRequest
+		}
+		seen[id] = struct{}{}
+	}
+	elements, revisions, err := s.elements.ResolveExactRevisions(ctx, tenantID, revisionIDs)
+	if err != nil {
+		return nil, err
+	}
+	elementByID := make(map[int64]models.Element, len(elements))
+	for _, element := range elements {
+		elementByID[element.ID] = element
+	}
+	revisionByID := make(map[int64]models.ElementRevision, len(revisions))
+	codeSetRevisionIDs := make([]int64, 0, len(revisions))
+	for _, revision := range revisions {
+		revisionByID[revision.ID] = revision
+		if revision.CodeSetRevisionID != nil {
+			codeSetRevisionIDs = append(codeSetRevisionIDs, *revision.CodeSetRevisionID)
+		}
+	}
+	codeSets, err := s.codeSets.ResolveRevisionSnapshots(ctx, tenantID, uniqueInt64s(codeSetRevisionIDs))
+	if err != nil {
+		return nil, err
+	}
+	codeSetByRevisionID := make(map[int64]repository.ResolvedCodeSetRevision, len(codeSets))
+	for _, record := range codeSets {
+		codeSetByRevisionID[record.Revision.ID] = record
+	}
+	results := make([]ExactElementRevisionResolution, 0, len(revisionIDs))
+	for _, id := range revisionIDs {
+		result := ExactElementRevisionResolution{RevisionID: id}
+		revision, found := revisionByID[id]
+		if !found || revision.EffectiveFrom == nil {
+			results = append(results, result)
+			continue
+		}
+		element, found := elementByID[revision.ElementID]
+		if !found {
+			return nil, fmt.Errorf("element revision %d has no tenant identity", id)
+		}
+		result.Snapshot, err = elementRevisionSnapshot(element, revision, codeSetByRevisionID)
+		if err != nil {
+			return nil, err
+		}
+		result.Found = true
+		results = append(results, result)
+	}
+	return results, nil
+}
+
+func elementRevisionSnapshot(
+	element models.Element,
+	revision models.ElementRevision,
+	codeSetByRevisionID map[int64]repository.ResolvedCodeSetRevision,
+) (*ElementRevisionSnapshot, error) {
+	snapshot := &ElementRevisionSnapshot{
+		ElementID: element.ID, ElementRevisionID: revision.ID, RevisionNo: revision.RevisionNo, Status: revision.Status,
+		ScopeType: element.ScopeType, OwnerDomainID: element.OwnerDomainID, Code: element.Code, Name: revision.Name, Definition: revision.Definition,
+		DataType: revision.DataType, Length: revision.Length, PrecisionNum: revision.PrecisionNum, Scale: revision.Scale,
+		Nullable: revision.Nullable, DefaultValue: revision.DefaultValue, Format: revision.Format,
+		ValueDomainKind: revision.ValueDomainKind, RangeConstraint: revision.RangeConstraint,
+		UnitID:        revision.UnitID,
+		ExampleValues: append([]string{}, revision.ExampleValues...), EffectiveFrom: revision.EffectiveFrom.UTC(), EffectiveTo: utcTimePointer(revision.EffectiveTo),
+	}
+	if revision.CodeSetRevisionID != nil {
+		record, ok := codeSetByRevisionID[*revision.CodeSetRevisionID]
+		if !ok {
+			return nil, fmt.Errorf("element revision %d references missing code set revision %d", revision.ID, *revision.CodeSetRevisionID)
+		}
+		snapshot.CodeSetRevision = codeSetSnapshot(record)
+	}
+	return snapshot, nil
 }
 
 func codeSetSnapshot(record repository.ResolvedCodeSetRevision) *CodeSetRevisionSnapshot {

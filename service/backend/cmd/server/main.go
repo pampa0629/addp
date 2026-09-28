@@ -302,7 +302,7 @@ func main() {
 			// 对每个服务执行健康检查
 			for _, service := range services {
 				totalChecked++
-				result, err := registeredServiceService.HealthCheck(service.ID)
+				result, err := registeredServiceService.HealthCheck(service.ID, tenant.ID)
 				if err != nil {
 					logger.L().Error("健康检查失败", "service_id", service.ID, "service_name", service.ServiceName, "error", err)
 					totalFailed++
@@ -378,7 +378,7 @@ func main() {
 					service.ServiceType == "wmts" || service.ServiceType == "ogc_api" {
 
 					totalRefreshed++
-					err := registeredServiceService.RefreshMetadata(service.ID, false)
+					err := registeredServiceService.RefreshMetadata(service.ID, tenant.ID, false)
 					if err != nil {
 						logger.L().Error("元数据刷新失败",
 							"service_id", service.ID,

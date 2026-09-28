@@ -11,7 +11,7 @@
       <el-button v-if="authStore.hasPermission('graph.ontology.update')" size="small" @click="openEdit">{{ t('graph.common.edit') }}</el-button>
       <el-button v-if="authStore.hasPermission('graph.ontology.create')" size="small" type="success" @click="showVersionDialog = true">{{ t('graph.ontology.createVersionSnapshot') }}</el-button>
       <el-button v-if="authStore.hasPermission('graph.ontology.update')" size="small" type="warning" @click="openImportFromModel">{{ t('graph.ontology.importFromModel') }}</el-button>
-      <el-button v-if="authStore.hasPermission('graph.ontology.update')" size="small" type="info" @click="openInferFromEngine">{{ t('graph.ontology.inferFromNeo4j') }}</el-button>
+      <el-button v-if="authStore.hasPermission('graph.ontology.update') && authStore.hasPermission('system.engine_catalog.read')" size="small" type="info" @click="openInferFromEngine">{{ t('graph.ontology.inferFromNeo4j') }}</el-button>
     </div>
 
     <el-tabs v-model="activeTab" @tab-change="handleTabChange">

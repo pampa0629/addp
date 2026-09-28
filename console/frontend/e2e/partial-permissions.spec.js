@@ -91,8 +91,11 @@ for (const [name, scope] of [
 
 test('an account without Portal pages sees no Portal entry on the Console home', async ({ page }) => {
   await openAsTenant(page, '/', [])
-  await page.getByText('所有模块', { exact: true }).click()
+  await expect(page.getByText('当前账号暂无可用业务模块')).toBeVisible()
+  await expect(page.getByText('请从顶部选择功能区域，或直接点击模块卡片进入')).toHaveCount(0)
+  await expect(page.getByText('所有模块', { exact: true })).toHaveCount(0)
   await expect(page.getByRole('heading', { name: '数据门户' })).toHaveCount(0)
+  await expect(page.locator('.copilot-fab-wrapper')).toHaveCount(0)
 })
 
 test('an applications-only account opens its accessible Portal page', async ({ page }) => {

@@ -48,7 +48,7 @@ export default defineConfig({
       }
     }
   },
-  base: process.env.NODE_ENV === 'development' ? '/' : '/quality/',
+  base: process.env.NODE_ENV === 'development' ? '/' : '/module-ui/quality/',
   build: {
     rollupOptions: {
       output: {

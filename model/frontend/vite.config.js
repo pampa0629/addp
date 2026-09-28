@@ -63,7 +63,7 @@ export default defineConfig({
       }
     }
   },
-  base: process.env.NODE_ENV === 'development' ? '/' : '/model/',
+  base: process.env.NODE_ENV === 'development' ? '/' : '/module-ui/model/',
   build: {
     // Mermaid keeps unused diagram engines in lazy chunks; the entry budget above
     // remains the user-facing performance gate.

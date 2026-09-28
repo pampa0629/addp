@@ -4,7 +4,7 @@
       <div class="iam-filters">
         <el-input v-model="filters.search" :placeholder="t('system.iam.common.search')" clearable :prefix-icon="Search" @keyup.enter="reload" @clear="reload" />
         <el-select v-model="filters.status" clearable :placeholder="t('system.iam.common.status')" @change="reload">
-          <el-option v-for="item in ['planned', 'active', 'closed']" :key="item" :label="statusLabel(item)" :value="item" />
+          <el-option v-for="item in ['active', 'closed']" :key="item" :label="statusLabel(item)" :value="item" />
         </el-select>
         <el-button :icon="Refresh" @click="reload">{{ t('system.iam.common.refresh') }}</el-button>
       </div>
@@ -12,10 +12,9 @@
     </div>
 
     <el-table v-loading="loading" :data="rows" stripe>
-      <el-table-column :label="t('system.iam.common.name')" min-width="220"><template #default="{ row }"><div class="iam-primary-cell"><strong>{{ row.name }}</strong><span>{{ row.code }}</span></div></template></el-table-column>
+      <el-table-column :label="t('system.iam.common.name')" min-width="220"><template #default="{ row }"><div class="iam-primary-cell"><strong>{{ row.name }}</strong><el-tooltip :content="row.code"><el-button link :icon="CopyDocument" :aria-label="t('system.iam.organization.copyCode')" @click="copyCode(row.code)" /></el-tooltip></div></template></el-table-column>
       <el-table-column :label="t('system.iam.common.description')" min-width="220" show-overflow-tooltip prop="description" />
       <el-table-column :label="t('system.iam.common.status')" width="120"><template #default="{ row }"><el-tag :type="statusType(row.status)">{{ statusLabel(row.status) }}</el-tag></template></el-table-column>
-      <el-table-column :label="t('system.iam.organization.projectGroups.period')" min-width="210"><template #default="{ row }">{{ period(row) }}</template></el-table-column>
       <el-table-column :label="t('system.iam.common.actions')" width="280" fixed="right">
         <template #default="{ row }">
           <el-button v-if="can('iam.project_group_membership.read')" link type="primary" :icon="User" @click="openMembers(row)">{{ t('system.iam.organization.members') }}</el-button>
@@ -28,16 +27,13 @@
 
     <el-dialog v-model="formVisible" :title="formMode === 'create' ? t('system.iam.organization.projectGroups.create') : t('system.iam.organization.projectGroups.edit')" width="600px" :close-on-click-modal="false">
       <el-alert v-if="versionConflict" type="warning" :closable="false" show-icon :title="t('system.iam.organization.versionConflict')" />
-      <el-form label-position="top" class="iam-form-grid">
-        <el-form-item :label="t('system.iam.common.code')" :error="organizationCodeError"><el-input v-model="form.code" :disabled="formMode === 'edit'" /></el-form-item>
+      <el-form label-position="top">
         <el-form-item :label="t('system.iam.common.name')"><el-input v-model="form.name" /></el-form-item>
-        <el-form-item class="iam-form-span" :label="t('system.iam.common.description')"><el-input v-model="form.description" type="textarea" :rows="3" /></el-form-item>
-        <el-form-item :label="t('system.iam.common.status')">
-          <el-select v-model="form.status" style="width: 100%"><el-option v-for="item in writableStatuses" :key="item" :label="statusLabel(item)" :value="item" /></el-select>
+        <el-form-item :label="t('system.iam.common.code')" :required="formMode === 'create'" :error="organizationCodeError">
+          <el-input v-model="form.code" :disabled="formMode === 'edit'" />
+          <el-text type="info" size="small">{{ t(formMode === 'create' ? 'system.iam.organization.codeCreateHint' : 'system.iam.organization.codeImmutableHint') }}</el-text>
         </el-form-item>
-        <div />
-        <el-form-item :label="t('system.iam.organization.projectGroups.startsAt')"><el-date-picker v-model="form.startsAt" type="datetime" clearable style="width: 100%" /></el-form-item>
-        <el-form-item :label="t('system.iam.organization.projectGroups.endsAt')"><el-date-picker v-model="form.endsAt" type="datetime" clearable style="width: 100%" /></el-form-item>
+        <el-form-item v-if="formMode === 'edit'" :label="t('system.iam.common.description')"><el-input v-model="form.description" type="textarea" :rows="3" /></el-form-item>
       </el-form>
       <template #footer><el-button @click="formVisible = false">{{ t('system.iam.common.cancel') }}</el-button><el-button type="primary" :loading="submitting" :disabled="!formValid" @click="save">{{ t('system.iam.common.save') }}</el-button></template>
     </el-dialog>
@@ -47,9 +43,9 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { CircleClose, Edit, Plus, Refresh, Search, User } from '@element-plus/icons-vue'
+import { CircleClose, CopyDocument, Edit, Plus, Refresh, Search, User } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import { iamAPI } from '../../api/iam'
 import { useAuthStore } from '../../store/auth'
@@ -70,18 +66,17 @@ const formVisible = ref(false)
 const formMode = ref('create')
 const editing = ref(null)
 const versionConflict = ref(false)
-const form = reactive({ code: '', name: '', description: '', status: 'planned', startsAt: null, endsAt: null })
+const codeConflict = ref(false)
+const form = reactive({ code: '', name: '', description: '' })
 const membersVisible = ref(false)
 const selectedGroup = ref(null)
-const writableStatuses = computed(() => formMode.value === 'edit' && editing.value?.status === 'active' ? ['active'] : ['planned', 'active'])
 const organizationCodeValid = computed(() => isValidOrganizationCode(form.code))
-const organizationCodeError = computed(() => form.code && !organizationCodeValid.value ? t('system.iam.validation.organizationCode') : '')
-const formValid = computed(() => organizationCodeValid.value && Boolean(form.name.trim()) && (!form.startsAt || !form.endsAt || form.endsAt > form.startsAt))
+const organizationCodeError = computed(() => codeConflict.value ? t('system.iam.organization.codeAlreadyExists') : form.code && !organizationCodeValid.value ? t('system.iam.validation.organizationCode') : '')
+const formValid = computed(() => organizationCodeValid.value && Boolean(form.name.trim()))
+watch(() => form.code, () => { codeConflict.value = false })
 
-function statusLabel(value) { return t(`system.iam.status.${value}`) }
-function statusType(value) { return ({ planned: 'info', active: 'success', closed: 'info' })[value] || 'info' }
-function formatDate(value) { return value ? new Date(value).toLocaleString() : '-' }
-function period(row) { return `${formatDate(row.starts_at)} — ${formatDate(row.ends_at)}` }
+function statusLabel(value) { return value === 'active' ? t('system.iam.organization.projectGroups.inUse') : t('system.iam.status.closed') }
+function statusType(value) { return value === 'active' ? 'success' : 'info' }
 async function load() {
   loading.value = true
   try {
@@ -93,24 +88,25 @@ async function load() {
 function reload() { page.value = 1; return load() }
 function openCreate() {
   formMode.value = 'create'; editing.value = null; versionConflict.value = false
-  Object.assign(form, { code: '', name: '', description: '', status: 'planned', startsAt: null, endsAt: null }); formVisible.value = true
+  codeConflict.value = false; Object.assign(form, { code: '', name: '', description: '' }); formVisible.value = true
 }
 function openEdit(row) {
   formMode.value = 'edit'; editing.value = row; versionConflict.value = false
-  Object.assign(form, { code: row.code, name: row.name, description: row.description || '', status: row.status, startsAt: row.starts_at ? new Date(row.starts_at) : null, endsAt: row.ends_at ? new Date(row.ends_at) : null }); formVisible.value = true
+  Object.assign(form, { code: row.code, name: row.name, description: row.description || '' }); formVisible.value = true
 }
 function requestPayload() {
-  return { code: form.code.trim(), name: form.name.trim(), description: form.description.trim(), status: form.status, starts_at: form.startsAt?.toISOString() || null, ends_at: form.endsAt?.toISOString() || null }
+  return { code: form.code.trim(), name: form.name.trim() }
 }
 async function save() {
   submitting.value = true; versionConflict.value = false
   try {
     const payload = requestPayload()
     if (formMode.value === 'create') await iamAPI.projectGroups.create(payload)
-    else { delete payload.code; payload.version = editing.value.version; await iamAPI.projectGroups.update(editing.value.id, payload) }
+    else await iamAPI.projectGroups.update(editing.value.id, { name: form.name.trim(), description: form.description.trim(), version: editing.value.version })
     ElMessage.success(t('system.iam.common.saved')); formVisible.value = false; await load()
   } catch (error) {
     if (error.response?.data?.error_code === 'resource_version_conflict') versionConflict.value = true
+    if (error.response?.data?.error_code === 'organization_code_already_exists') codeConflict.value = true
     ElMessage.error(error.response?.data?.error || t('system.iam.common.saveFailed'))
   } finally { submitting.value = false }
 }
@@ -125,5 +121,6 @@ async function closeGroup(row) {
   } catch (error) { if (error !== 'cancel' && error !== 'close') ElMessage.error(error.response?.data?.error || t('system.iam.common.updateFailed')) }
 }
 function openMembers(row) { selectedGroup.value = row; membersVisible.value = true }
+async function copyCode(code) { await navigator.clipboard.writeText(code); ElMessage.success(t('system.iam.organization.codeCopied')) }
 onMounted(load)
 </script>

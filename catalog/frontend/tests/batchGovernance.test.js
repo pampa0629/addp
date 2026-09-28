@@ -3,6 +3,7 @@ import {
   BATCH_GOVERNANCE_ASSIGN_ACCOUNTABLE_DEPARTMENT,
   BATCH_GOVERNANCE_ASSIGN_PRIMARY_DOMAIN,
   BATCH_GOVERNANCE_MAX_ENTRIES,
+  availableBatchOperations,
   buildBatchGovernancePayload,
   unsupportedPrimaryDomainEntries
 } from '../src/utils/batchGovernance'
@@ -23,6 +24,8 @@ describe('Catalog batch governance', () => {
     const rows = [first, { ...second, entry_type: 'business_entity' }, { ...second, id: '33333333-3333-4333-8333-333333333333', entry_type: 'metric' }]
     expect(unsupportedPrimaryDomainEntries(rows).map(row => row.entry_type)).toEqual(['business_entity', 'metric'])
     expect(() => buildBatchGovernancePayload(rows, BATCH_GOVERNANCE_ASSIGN_PRIMARY_DOMAIN, '7')).toThrow('owner-managed primary domain')
+    expect(availableBatchOperations(rows)).toEqual([BATCH_GOVERNANCE_ASSIGN_ACCOUNTABLE_DEPARTMENT])
+    expect(availableBatchOperations([first])).toEqual([BATCH_GOVERNANCE_ASSIGN_PRIMARY_DOMAIN, BATCH_GOVERNANCE_ASSIGN_ACCOUNTABLE_DEPARTMENT])
   })
 
   it('rejects implicit, duplicate, malformed, or oversized member sets', () => {

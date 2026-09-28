@@ -60,7 +60,7 @@
           :closable="false"
           show-icon
           class="owner-domain-alert"
-          :title="form.ownerPrimaryDomainId ? t('catalog.edit.ownerPrimaryDomain', { module: ownerModuleName }) : t('catalog.edit.ownerPrimaryDomainMissing', { module: ownerModuleName })"
+          :title="form.ownerPrimaryDomainId ? t('catalog.edit.ownerPrimaryDomain', { module: ownerModuleName }) : form.ownerModule === 'standard' && ['platform', 'tenant_common'].includes(form.ownerScopeType) ? t('catalog.edit.ownerPublicScope') : t('catalog.edit.ownerPrimaryDomainMissing', { module: ownerModuleName })"
         />
         <div v-for="(domain, index) in form.domains" :key="`domain-${index}`" class="edit-row domain-row">
           <BusinessDomainSelect :options="businessDomainReferenceOptions(candidateState.domain.options)" show-code
@@ -135,36 +135,6 @@
         <el-empty v-if="form.responsibilities.length === 0" :image-size="60" :description="t('catalog.edit.noResponsibilities')" />
       </section>
 
-      <section v-if="!form.ownerManagedComponents" class="edit-section">
-        <div class="section-title">
-          <div>
-            <strong>{{ t('catalog.edit.componentElements') }}</strong>
-            <p>{{ t('catalog.edit.componentElementHint') }}</p>
-          </div>
-        </div>
-        <el-table :data="form.componentElements">
-          <el-table-column prop="componentName" :label="t('catalog.entry.componentName')" min-width="220" />
-          <el-table-column prop="componentStatus" :label="t('catalog.entry.componentStatus')" width="140">
-            <template #default="{ row }">{{ catalogStatusLabel(t, 'catalog.status.source', row.componentStatus) }}</template>
-          </el-table-column>
-          <el-table-column :label="t('catalog.edit.element')" min-width="260">
-            <template #default="{ row }">
-              <el-select
-                v-model="row.elementId"
-                clearable filterable remote reserve-keyword
-                :disabled="row.componentStatus !== 'active'"
-                :loading="candidateState.element.loading"
-                :remote-method="search => searchCandidates('element', search)"
-                :placeholder="t('catalog.edit.elementPlaceholder')"
-                @visible-change="visible => visible && searchCandidates('element', '')"
-              >
-                <el-option v-for="option in candidateState.element.options" :key="option.id" :label="candidateLabel(option)" :value="option.id" />
-              </el-select>
-            </template>
-          </el-table-column>
-        </el-table>
-      </section>
-
       <div class="editor-actions">
         <el-button @click="$emit('cancel')">{{ t('catalog.edit.cancel') }}</el-button>
         <el-button type="primary" :loading="saving" :disabled="conflict" @click="submit">{{ t('catalog.edit.save') }}</el-button>
@@ -179,7 +149,6 @@ import { computed, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { listReferenceCandidates } from '../api/catalog'
-import { catalogStatusLabel } from '../utils/catalogStatusLabel'
 import {
   buildEntryEditForm,
   buildUpdatePayload,
@@ -196,7 +165,7 @@ const props = defineProps({
 const emit = defineEmits(['submit', 'cancel', 'reload'])
 const { t } = useI18n()
 const form = reactive(buildEditorForm(props.entry))
-const candidateTypes = ['domain', 'glossary', 'element', 'department', 'user']
+const candidateTypes = ['domain', 'glossary', 'department', 'user']
 const candidateState = reactive(Object.fromEntries(candidateTypes.map(type => [type, { options: [], loading: false, version: 0 }])))
 const responsibilityRoles = ['accountable_department', 'business_owner', 'data_steward', 'technical_owner']
 const ownerModuleName = computed(() => ({ model: 'Model', standard: 'Standard', service: 'Service', develop: 'Develop' }[form.ownerModule] || ''))
@@ -228,9 +197,6 @@ function resetCandidateOptions(entry) {
     if (item.status === 'active' && (item.subject_type === 'department' || item.subject_type === 'user')) {
       mergeCandidate(item.subject_type, historicalCandidate(item.subject_type, item.subject_id, item.observed_snapshot))
     }
-  }
-  for (const item of entry?.component_elements || []) {
-    mergeCandidate('element', historicalCandidate('element', item.element_id, item.observed_snapshot))
   }
 }
 
@@ -278,7 +244,6 @@ async function searchCandidates(type, search = '') {
 function selectedCandidateIDs(type) {
   if (type === 'domain') return form.domains.map(item => String(item.id || '')).filter(Boolean)
   if (type === 'glossary') return form.glossaryIDs.map(item => String(item || '')).filter(Boolean)
-  if (type === 'element') return form.componentElements.map(item => String(item.elementId || '')).filter(Boolean)
   return form.responsibilities
     .filter(item => responsibilitySubjectType(item.role) === type)
     .map(item => String(item.subjectId || '')).filter(Boolean)
@@ -312,8 +277,7 @@ function validateForm() {
   const allIDs = [
     ...form.domains.map(item => item.id),
     ...form.glossaryIDs,
-    ...form.responsibilities.map(item => item.subjectId),
-    ...form.componentElements.filter(item => item.elementId !== null && item.elementId !== '').map(item => item.elementId)
+    ...form.responsibilities.map(item => item.subjectId)
   ]
   if (allIDs.some(id => !isCanonicalPositiveID(id))) {
     ElMessage.error(t('catalog.edit.invalidId'))

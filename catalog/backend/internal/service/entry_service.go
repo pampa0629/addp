@@ -52,15 +52,29 @@ type EntrySummary struct {
 
 type EntryDetail struct {
 	models.Entry
-	DisplayName          string                               `json:"display_name"`
-	RecommendedSuccessor *EntrySummary                        `json:"recommended_successor,omitempty"`
-	Source               *models.SourceBinding                `json:"source,omitempty"`
-	Components           []models.Component                   `json:"components"`
-	SemanticLinks        []models.SemanticAssociation         `json:"semantic_links"`
-	Responsibilities     []models.Responsibility              `json:"responsibilities"`
-	ComponentElements    []models.ComponentElementAssociation `json:"component_elements"`
-	SourceResolution     *SourceResolution                    `json:"source_resolution,omitempty"`
-	QualitySummary       *QualitySummary                      `json:"quality_summary,omitempty"`
+	DisplayName          string                       `json:"display_name"`
+	RecommendedSuccessor *EntrySummary                `json:"recommended_successor,omitempty"`
+	Source               *models.SourceBinding        `json:"source,omitempty"`
+	Components           []models.Component           `json:"components"`
+	SemanticLinks        []models.SemanticAssociation `json:"semantic_links"`
+	Responsibilities     []models.Responsibility      `json:"responsibilities"`
+	StandardMappings     []StandardMappingDetail      `json:"standard_mappings"`
+	SourceResolution     *SourceResolution            `json:"source_resolution,omitempty"`
+	QualitySummary       *QualitySummary              `json:"quality_summary,omitempty"`
+}
+
+// StandardMappingDetail keeps the Catalog-owned relationship intact while
+// resolving only its human-readable, pinned Standard revision for this read.
+type StandardMappingDetail struct {
+	models.StandardMapping
+	ElementReference StandardMappingElementReference `json:"element_reference"`
+}
+
+type StandardMappingElementReference struct {
+	Status     string `json:"status" enums:"resolved,unavailable,missing,unfixed"`
+	Name       string `json:"name,omitempty"`
+	Code       string `json:"code,omitempty"`
+	RevisionNo int64  `json:"revision_no,omitempty"`
 }
 
 type QualitySummary struct {
@@ -528,10 +542,10 @@ func (s *EntryService) Get(ctx context.Context, tenantID int64, access EntryAcce
 		Order("role ASC, subject_id ASC").Find(&responsibilities).Error; err != nil {
 		return nil, fmt.Errorf("get Catalog responsibilities: %w", err)
 	}
-	var componentElements []models.ComponentElementAssociation
+	var standardMappings []models.StandardMapping
 	if err := s.db.WithContext(ctx).Where("tenant_id = ? AND catalog_entry_id = ?", tenantID, id).
-		Order("component_id ASC").Find(&componentElements).Error; err != nil {
-		return nil, fmt.Errorf("get Catalog component elements: %w", err)
+		Order("component_id ASC, created_at ASC").Find(&standardMappings).Error; err != nil {
+		return nil, fmt.Errorf("get Catalog standard mappings: %w", err)
 	}
 	displayName, _ := source.ObservedSnapshot["name"].(string)
 	if entry.BusinessName != nil && strings.TrimSpace(*entry.BusinessName) != "" {
@@ -539,7 +553,8 @@ func (s *EntryService) Get(ctx context.Context, tenantID int64, access EntryAcce
 	}
 	detail := &EntryDetail{
 		Entry: entry, DisplayName: displayName, Source: &source, Components: components,
-		SemanticLinks: semanticLinks, Responsibilities: responsibilities, ComponentElements: componentElements,
+		SemanticLinks: semanticLinks, Responsibilities: responsibilities,
+		StandardMappings: s.resolveStandardMappingDetails(ctx, tenantID, standardMappings),
 	}
 	if entry.RecommendedSuccessorEntryID != nil {
 		successor, err := s.getVisibleEntrySummary(ctx, tenantID, access, *entry.RecommendedSuccessorEntryID)

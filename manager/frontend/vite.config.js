@@ -97,5 +97,5 @@ export default defineConfig({
       allow: ['..']
     }
   },
-  base: process.env.NODE_ENV === 'development' ? '/' : '/manager/'  // 开发模式用 /，生产模式用 /manager/
+  base: process.env.NODE_ENV === 'development' ? '/' : '/module-ui/manager/'  // 开发模式用 /，生产模式用 /module-ui/manager/
 })

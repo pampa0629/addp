@@ -126,7 +126,11 @@
               <el-descriptions-item :label="t('catalog.entries.type')">{{ entryTypeLabel(entry.entry_type) }}</el-descriptions-item>
               <el-descriptions-item :label="t('catalog.entries.governanceStatus')">{{ t(`catalog.status.governance.${entry.governance_status}`) }}</el-descriptions-item>
               <el-descriptions-item :label="t('catalog.entries.visibility')">{{ t(`catalog.status.visibility.${entry.visibility}`) }}</el-descriptions-item>
-              <el-descriptions-item :label="t('catalog.entry.primaryDomain')">{{ primaryDomainName }}</el-descriptions-item>
+              <el-descriptions-item :label="t('catalog.entry.primaryDomain')">
+                {{ primaryDomainName }}
+                <el-text v-if="ownerManagedDomain && ownerDomainID" type="info" size="small">{{ t('catalog.entry.ownerManagedDomain', { module: ownerModuleName }) }}</el-text>
+                <el-button v-if="ownerManagedDomain && ownerDetailUrl" text type="primary" tag="a" :href="ownerDetailUrl" target="_top">{{ t('catalog.entry.ownerDetail', { module: ownerModuleName }) }}</el-button>
+              </el-descriptions-item>
               <el-descriptions-item :label="t('catalog.entry.accountableDepartment')">{{ accountableDepartmentName }}</el-descriptions-item>
               <el-descriptions-item :label="t('catalog.entry.businessOwner')">{{ businessOwnerName }}</el-descriptions-item>
             </el-descriptions>
@@ -423,9 +427,6 @@
           <el-table-column prop="component_status" :label="t('catalog.entry.componentStatus')" width="140">
             <template #default="{ row }">{{ catalogStatusLabel(t, 'catalog.status.source', row.component_status) }}</template>
           </el-table-column>
-          <el-table-column :label="t('catalog.edit.element')" min-width="180">
-            <template #default="{ row }">{{ componentElementByID.get(row.id)?.observed_snapshot?.name || (componentElementByID.has(row.id) ? t('catalog.edit.referenceUnavailable') : '-') }}</template>
-          </el-table-column>
         </el-table>
         <el-empty v-if="!entry.components?.length" :description="t('catalog.entry.noComponents')" />
       </el-card>
@@ -471,6 +472,11 @@
           </el-card>
         </el-col>
       </el-row>
+
+      <StandardMappingPanel
+        v-if="!editing && activeDetailTab === 'curation' && entry.entry_type === 'data_item'"
+        :entry="entry" :can-edit="canEdit" :can-review="canReviewMapping" @changed="loadEntry"
+      />
 
 	  <el-card v-if="!editing && activeDetailTab === 'relations' && canReadAudit" shadow="never" class="history-card">
 		<template #header>
@@ -542,7 +548,8 @@ import { navigateConsoleModuleRoute, openConsoleRoute, resolveCanonicalTabRouteS
 import { createLineageApi, normalizeLineageGraph } from '@addp/common-frontend/graph/lineageApi.js'
 import EntryEditor from '../components/EntryEditor.vue'
 import EntryGovernanceDialog from '../components/EntryGovernanceDialog.vue'
-import { exportEntryDataDictionary, getEntry, getEntryDataDictionary, getEntryHistory, getMyEntryMarks, rebindSource, replaceMyEntryMarks, resolveSourceEntries, updateEntry, updateEntryGovernance } from '../api/catalog'
+import StandardMappingPanel from '../components/StandardMappingPanel.vue'
+import { exportEntryDataDictionary, getEntry, getEntryDataDictionary, getEntryHistory, getMyEntryMarks, listDomainOverviews, rebindSource, replaceMyEntryMarks, resolveSourceEntries, updateEntry, updateEntryGovernance } from '../api/catalog'
 import client from '../api/client'
 import { useAuthStore } from '../store/auth'
 import { catalogStatusLabel } from '../utils/catalogStatusLabel'
@@ -550,7 +557,7 @@ import { dataDictionaryExportFileName, normalizeDataDictionaryBlobError, saveDat
 import { activeCodeItemLabels, formatPhysicalType, formatRangeConstraint } from '../utils/dataDictionaryView'
 import { buildCertificationPayload, buildCertificationWithdrawalPayload, buildDeprecationPayload, buildWithdrawCurationPayload, curationAction } from '../utils/entryEdit'
 import { buildEntryListQuery, parseEntryListRoute } from '../utils/entryRouteState'
-import { isProfessionalOwner, professionalOwnerName } from '../utils/entryOwnerPresentation'
+import { isProfessionalOwner, professionalOwnerName, resolveOwnerPrimaryDomain } from '../utils/entryOwnerPresentation'
 import { lineageFailureState, lineageNodesToSourceReferences, resolveLineageSubject } from '../utils/lineageView'
 import {
   normalizeProfessionalRelations,
@@ -592,6 +599,7 @@ let requestVersion = 0
 let dataDictionaryRequestVersion = 0
 const canEdit = computed(() => authStore.hasPermission('catalog.entry.update'))
 const canCertify = computed(() => authStore.hasPermission('catalog.entry.certify'))
+const canReviewMapping = computed(() => authStore.hasPermission('catalog.standard_mapping.review'))
 const canDeprecate = computed(() => authStore.hasPermission('catalog.entry.deprecate'))
 const canRebind = computed(() => authStore.hasPermission('catalog.source.rebind'))
 const canReadAudit = computed(() => authStore.hasPermission('catalog.audit.read'))
@@ -632,8 +640,29 @@ const rebindFormComplete = computed(() => Boolean(
 	rebindForm.value.temporary_entry_id && rebindForm.value.temporary_entry_version > 0 &&
 	rebindForm.value.new_source_identity && rebindForm.value.reason && rebindForm.value.evidence
 ))
-const componentElementByID = computed(() => new Map((entry.value?.component_elements || []).map(item => [item.component_id, item])))
-const primaryDomainName = computed(() => semanticReferenceName('domain', 'primary'))
+const ownerManagedDomain = computed(() => (
+  (entry.value?.source?.source_module === 'model' && ['business_entity', 'logical_model'].includes(entry.value?.entry_type)) ||
+  (entry.value?.source?.source_module === 'standard' && entry.value?.entry_type === 'metric')
+))
+const ownerDomainID = computed(() => {
+  if (!ownerManagedDomain.value) return ''
+  const summary = entry.value?.source_resolution?.summary || entry.value?.source?.observed_snapshot || {}
+  return String(summary.domain_id || '')
+})
+const ownerDomain = ref(null)
+const ownerDomainState = ref('idle')
+let ownerDomainRequestVersion = 0
+const primaryDomainName = computed(() => {
+  if (!ownerManagedDomain.value) return semanticReferenceName('domain', 'primary')
+  if (ownerDomainID.value) {
+    if (ownerDomainState.value === 'loading') return t('catalog.entry.domainLoading')
+    if (ownerDomainState.value === 'ready') return ownerDomain.value.name
+    return t('catalog.entry.domainUnavailable')
+  }
+  const summary = entry.value?.source_resolution?.summary || entry.value?.source?.observed_snapshot || {}
+  if (entry.value?.entry_type === 'metric' && ['platform', 'tenant_common'].includes(summary.scope_type)) return t('catalog.entry.publicScope')
+  return '-'
+})
 const accountableDepartmentName = computed(() => responsibilityReferenceName('accountable_department'))
 const businessOwnerName = computed(() => responsibilityReferenceName('business_owner'))
 const isProfessionalEntry = computed(() => isProfessionalOwner(entry.value?.source?.source_module))
@@ -1229,7 +1258,7 @@ async function goBack() {
 async function openQualityDetail() {
   const path = entry.value?.quality_summary?.detail_path
   if (!path) return
-  await openConsoleRoute(path, { source: 'addp-catalog' })
+  await openConsoleRoute(path)
 }
 
 function entryTypeLabel(entryType) {
@@ -1250,6 +1279,21 @@ function formatDate(value) {
   return new Intl.DateTimeFormat(locale.value === 'en' ? 'en-US' : 'zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
 }
 
+watch(entry, async () => {
+  const version = ++ownerDomainRequestVersion
+  const domainID = ownerDomainID.value
+  ownerDomain.value = null
+  ownerDomainState.value = domainID ? 'loading' : 'idle'
+  if (!domainID) return
+  try {
+    const domainTree = await listDomainOverviews()
+    if (version !== ownerDomainRequestVersion) return
+    ownerDomain.value = resolveOwnerPrimaryDomain(domainTree, domainID)
+    ownerDomainState.value = ownerDomain.value ? 'ready' : 'unavailable'
+  } catch {
+    if (version === ownerDomainRequestVersion) ownerDomainState.value = 'unavailable'
+  }
+}, { immediate: true })
 watch(() => route.params.id, loadEntry, { immediate: true })
 watch(() => route.query, async query => {
   const state = detailTabRouteState(query)

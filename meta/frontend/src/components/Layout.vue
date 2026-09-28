@@ -43,7 +43,7 @@
           router
           class="el-menu-vertical"
         >
-          <el-menu-item index="/scan">
+          <el-menu-item v-if="canEnter('/scan')" index="/scan">
             <el-icon><Search /></el-icon>
             <span>{{ t('meta.layout.metadataScan') }}</span>
           </el-menu-item>
@@ -71,10 +71,12 @@ import {
   Avatar
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '../store/auth'
+import { allowsConsoleRoute } from '@common-ui'
 
 const { t } = useI18n()
 const router = useRouter()
 const authStore = useAuthStore()
+const canEnter = path => allowsConsoleRoute(`/meta${path}`, authStore.contextType, authStore.permissions)
 
 const isInIframe = ref(false)
 

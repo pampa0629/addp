@@ -30,7 +30,7 @@
             {{ t('graph.knowledgeGraph.review') }}<template v-if="pendingCounts[row.id]">（{{ pendingCounts[row.id] }}）</template>
           </el-button>
           <el-button v-if="authStore.hasPermission('graph.graph.update')" link type="primary" size="small" @click="handleEdit(row)">{{ t('graph.common.edit') }}</el-button>
-          <el-button v-if="authStore.hasPermission('graph.graph.update')" link type="warning" size="small" @click="handleInferSchema(row)">{{ t('graph.knowledgeGraph.inferOntology') }}</el-button>
+          <el-button v-if="authStore.hasPermission('graph.ontology.read') && authStore.hasPermission('graph.ontology.update')" link type="warning" size="small" @click="handleInferSchema(row)">{{ t('graph.knowledgeGraph.inferOntology') }}</el-button>
           <el-button v-if="authStore.hasPermission('graph.graph.delete')" link type="danger" size="small" @click="handleDelete(row)">{{ t('graph.common.delete') }}</el-button>
         </template>
       </el-table-column>

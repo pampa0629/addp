@@ -36,5 +36,5 @@ export default defineConfig({
       }
     }
   },
-  base: process.env.NODE_ENV === 'development' ? '/' : '/service/'
+  base: process.env.NODE_ENV === 'development' ? '/' : '/module-ui/service/'
 })

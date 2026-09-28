@@ -25,6 +25,7 @@ const (
 	MsgReferenceValidationUnavailable        = "catalog.error.reference_validation_unavailable"
 	MsgSourceRebindConflict                  = "catalog.error.source_rebind_conflict"
 	MsgSearchUnavailable                     = "catalog.error.search_unavailable"
+	MsgDomainOverviewUnavailable             = "catalog.error.domain_overview_unavailable"
 	MsgInventoryPermissionRequired           = "catalog.error.inventory_permission_required"
 	MsgCurationRequirementsNotMet            = "catalog.error.curation_requirements_not_met"
 	MsgDeprecationReasonRequired             = "catalog.error.deprecation_reason_required"

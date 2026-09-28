@@ -1,6 +1,6 @@
 schema_version: addp.permission_manifest/v1
 owner_module: catalog
-manifest_version: 5
+manifest_version: 6
 permissions:
   - key: catalog.audit.read
     allowed_scope_types: [tenant]
@@ -82,3 +82,11 @@ permissions:
     status: active
     name_i18n_key: permissions.catalog.source.rebind.name
     description_i18n_key: permissions.catalog.source.rebind.description
+  - key: catalog.standard_mapping.review
+    allowed_scope_types: [tenant]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.catalog.standard_mapping.review.name
+    description_i18n_key: permissions.catalog.standard_mapping.review.description

@@ -25,24 +25,31 @@ func (f *fakeMetaFieldResolver) ResolveItemFields(_ context.Context, tenantID, i
 }
 
 type fakeElementRevisionResolver struct {
-	snapshots  map[int64]*commonClient.ElementRevisionBinding
-	err        error
-	tenantID   int64
-	elementIDs []int64
-	asOf       time.Time
+	snapshots   map[int64]*commonClient.ElementRevisionBinding
+	err         error
+	validateErr error
+	tenantID    int64
+	revisionIDs []int64
 }
 
-func (f *fakeElementRevisionResolver) ResolveElementRevisionSnapshots(
+func (f *fakeElementRevisionResolver) ValidateElementReference(context.Context, int64, int64) error {
+	return f.validateErr
+}
+
+func (f *fakeElementRevisionResolver) ResolveExactElementRevisions(
 	_ context.Context,
 	tenantID int64,
-	elementIDs []int64,
-	asOf time.Time,
+	revisionIDs []int64,
 ) (map[int64]*commonClient.ElementRevisionBinding, error) {
-	f.tenantID, f.elementIDs, f.asOf = tenantID, append([]int64(nil), elementIDs...), asOf
+	f.tenantID, f.revisionIDs = tenantID, append([]int64(nil), revisionIDs...)
 	return f.snapshots, f.err
 }
 
-func TestGetDataDictionaryFederatesCurrentPhysicalFieldsAndPointInTimeStandards(t *testing.T) {
+func (f *fakeElementRevisionResolver) ListPublishedElementRevisions(context.Context, int64, int64) ([]commonClient.ElementRevisionResponse, error) {
+	return nil, f.err
+}
+
+func TestGetDataDictionaryFederatesPhysicalFieldsAndApprovedPinnedStandardRevisions(t *testing.T) {
 	db := openCatalogServiceTestDB(t)
 	entry, idComponent := createEditableCatalogEntry(t, db, 7)
 	if err := db.Model(&models.SourceBinding{}).Where("catalog_entry_id = ?", entry.ID).
@@ -58,11 +65,12 @@ func TestGetDataDictionaryFederatesCurrentPhysicalFieldsAndPointInTimeStandards(
 		t.Fatal(err)
 	}
 	now := time.Date(2026, 8, 28, 10, 0, 0, 0, time.UTC)
-	for _, association := range []models.ComponentElementAssociation{
-		{ID: uuid.New(), TenantID: 7, CatalogEntryID: entry.ID, ComponentID: idComponent.ID, ElementID: 50, ObservedVersion: 1, ObservedSnapshot: map[string]any{}, VerifiedAt: now},
-		{ID: uuid.New(), TenantID: 7, CatalogEntryID: entry.ID, ComponentID: nameComponent.ID, ElementID: 60, ObservedVersion: 1, ObservedSnapshot: map[string]any{}, VerifiedAt: now},
+	revisionID, candidateRevisionID := int64(501), int64(601)
+	for _, mapping := range []models.StandardMapping{
+		{ID: uuid.New(), TenantID: 7, CatalogEntryID: entry.ID, ComponentID: idComponent.ID, ElementID: 50, ElementRevisionID: &revisionID, Source: models.StandardMappingSourceManual, ReviewStatus: models.StandardMappingApproved, Version: 2, ProposedByType: "user", ProposedByID: "1", Evidence: map[string]any{}, CreatedAt: now, UpdatedAt: now},
+		{ID: uuid.New(), TenantID: 7, CatalogEntryID: entry.ID, ComponentID: nameComponent.ID, ElementID: 60, ElementRevisionID: &candidateRevisionID, Source: models.StandardMappingSourceManual, ReviewStatus: models.StandardMappingProposed, Version: 1, ProposedByType: "user", ProposedByID: "1", Evidence: map[string]any{}, CreatedAt: now, UpdatedAt: now},
 	} {
-		if err := db.Create(&association).Error; err != nil {
+		if err := db.Create(&mapping).Error; err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -72,8 +80,7 @@ func TestGetDataDictionaryFederatesCurrentPhysicalFieldsAndPointInTimeStandards(
 		{Name: "created_at", Type: datatype.FieldTypeTimestamp, Nullable: false, OrdinalPosition: 3},
 	}}
 	standard := &fakeElementRevisionResolver{snapshots: map[int64]*commonClient.ElementRevisionBinding{
-		50: {ElementID: 50, RevisionID: 501, RevisionNo: 3, Code: "order_id", Name: "Order ID", DataType: "bigint", ValueDomainKind: "unrestricted", EffectiveFrom: now.Add(-time.Hour)},
-		60: nil,
+		501: {ElementID: 50, RevisionID: 501, RevisionNo: 3, Code: "order_id", Name: "Order ID", DataType: "bigint", ValueDomainKind: "unrestricted", EffectiveFrom: now.Add(-time.Hour)},
 	}}
 	dictionary, err := NewEntryService(db, nil, nil).WithDataDictionaryResolvers(meta, standard).
 		GetDataDictionary(context.Background(), 7, EntryAccess{Inventory: true}, entry.ID, now)
@@ -83,17 +90,27 @@ func TestGetDataDictionaryFederatesCurrentPhysicalFieldsAndPointInTimeStandards(
 	if dictionary.SchemaVersion != DataDictionarySchemaVersion || dictionary.EntryID != entry.ID || !dictionary.AsOf.Equal(now) || len(dictionary.Fields) != 3 {
 		t.Fatalf("dictionary = %#v", dictionary)
 	}
-	if dictionary.Fields[0].Physical.Name != "customer_name" || dictionary.Fields[0].ElementID == nil || *dictionary.Fields[0].ElementID != 60 || dictionary.Fields[0].Standard != nil {
-		t.Fatalf("historically unresolved field = %#v", dictionary.Fields[0])
+	if dictionary.Fields[0].Physical.Name != "customer_name" || dictionary.Fields[0].ElementID != nil || dictionary.Fields[0].Standard != nil {
+		t.Fatalf("unapproved candidate leaked into dictionary: %#v", dictionary.Fields[0])
 	}
 	if dictionary.Fields[1].Physical.Name != "id" || dictionary.Fields[1].Standard == nil || dictionary.Fields[1].Standard.RevisionID != 501 {
 		t.Fatalf("resolved field = %#v", dictionary.Fields[1])
 	}
+	if dictionary.Fields[1].IsEffective == nil || !*dictionary.Fields[1].IsEffective {
+		t.Fatalf("current pinned revision effectiveness = %#v", dictionary.Fields[1])
+	}
+	before := now.Add(-2 * time.Hour)
+	historical, err := NewEntryService(db, nil, nil).WithDataDictionaryResolvers(meta, standard).
+		GetDataDictionary(context.Background(), 7, EntryAccess{Inventory: true}, entry.ID, before)
+	if err != nil || historical.Fields[1].Standard == nil || historical.Fields[1].Standard.RevisionID != 501 ||
+		historical.Fields[1].IsEffective == nil || *historical.Fields[1].IsEffective {
+		t.Fatalf("as_of changed the pinned Standard revision: %#v, error = %v", historical, err)
+	}
 	if dictionary.Fields[2].ComponentID != nil || dictionary.Fields[2].ElementID != nil || dictionary.Fields[2].Standard != nil {
 		t.Fatalf("unmapped live field = %#v", dictionary.Fields[2])
 	}
-	if meta.tenantID != 7 || meta.itemID != 21 || standard.tenantID != 7 || len(standard.elementIDs) != 2 || standard.elementIDs[0] != 60 || standard.elementIDs[1] != 50 || !standard.asOf.Equal(now) {
-		t.Fatalf("resolver calls = meta(%d,%d) standard(%d,%v,%s)", meta.tenantID, meta.itemID, standard.tenantID, standard.elementIDs, standard.asOf)
+	if meta.tenantID != 7 || meta.itemID != 21 || standard.tenantID != 7 || len(standard.revisionIDs) != 1 || standard.revisionIDs[0] != 501 {
+		t.Fatalf("resolver calls = meta(%d,%d) standard(%d,%v)", meta.tenantID, meta.itemID, standard.tenantID, standard.revisionIDs)
 	}
 }
 

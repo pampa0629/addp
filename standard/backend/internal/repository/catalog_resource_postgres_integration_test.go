@@ -42,10 +42,41 @@ func TestPostgresCatalogMetricChangeFeedCapturesOwnerLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(changes) == 0 || changes[len(changes)-1].SourceType != models.CatalogSourceTypeMetric || changes[len(changes)-1].Operation != "upsert" || changes[len(changes)-1].Snapshot["metric_type"] != "atomic" {
+	if len(changes) == 0 || changes[len(changes)-1].SourceType != models.CatalogSourceTypeMetric || changes[len(changes)-1].Operation != "upsert" || changes[len(changes)-1].Snapshot["metric_type"] != "atomic" || changes[len(changes)-1].Snapshot["scope_type"] != "tenant_common" {
 		t.Fatalf("initial changes = %#v", changes)
 	}
 	lastID := changes[len(changes)-1].ID
+	replayTx := db.Begin()
+	if replayTx.Error != nil {
+		t.Fatal(replayTx.Error)
+	}
+	defer replayTx.Rollback()
+	if err := replayTx.Exec("DELETE FROM standard.data_migrations WHERE version = ?", 2026092701).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := Migrate(replayTx); err != nil {
+		t.Fatalf("replay existing Metric snapshot: %v", err)
+	}
+	replayed, err := NewCatalogResourceRepository(replayTx).ListChanges(context.Background(), tenantID, lastID, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(replayed) != 1 || replayed[0].Snapshot["scope_type"] != "tenant_common" || replayed[0].ID <= lastID {
+		t.Fatalf("replayed metric changes = %#v", replayed)
+	}
+	if err := Migrate(replayTx); err != nil {
+		t.Fatalf("repeat Metric snapshot migration: %v", err)
+	}
+	var replayCount int64
+	if err := replayTx.Table("standard.catalog_resource_changes").Where("tenant_id = ? AND id > ?", tenantID, lastID).Count(&replayCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if replayCount != 1 {
+		t.Fatalf("replay count after repeat migration = %d", replayCount)
+	}
+	if err := replayTx.Rollback().Error; err != nil {
+		t.Fatal(err)
+	}
 	effectiveFrom := time.Now().UTC()
 	if err := db.Model(&revision).Updates(map[string]any{"name": "Catalog metric current", "status": models.RevisionStatusPublished, "effective_from": effectiveFrom}).Error; err != nil {
 		t.Fatal(err)

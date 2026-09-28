@@ -92,7 +92,7 @@ func TestDataApplicationRuntimeFollowsAssetGrantLifecycle(t *testing.T) {
 	accessRules := repository.NewResourceAccessRuleRepository(db)
 	applicationService := service.NewDataApplicationService(repository.NewDataApplicationRepository(db), nil, accessRules)
 	grantService := service.NewResourceGrantService(accessRules)
-	router := runtimeAuthorizationRouter(t, applicationService)
+	router := runtimeAuthorizationRouter(t, applicationService, []string{workbenchauthorization.PermissionWorkbenchDataApplicationExecute})
 	runtimePath := "/api/v1/workbench/data_applications/" + applicationID + "/runtime"
 
 	assertRuntimeAccessDenied(t, performRuntimeAuthorizationRequest(router, runtimePath))
@@ -103,6 +103,10 @@ func TestDataApplicationRuntimeFollowsAssetGrantLifecycle(t *testing.T) {
 	}
 	if _, err := grantService.FulfillAssetGrant(7, "73", grantRequest); err != nil {
 		t.Fatalf("fulfill Asset grant: %v", err)
+	}
+	withoutExecute := runtimeAuthorizationRouter(t, applicationService, []string{workbenchauthorization.PermissionWorkbenchDataApplicationRead})
+	if denied := performRuntimeAuthorizationRequest(withoutExecute, runtimePath); denied.Code != http.StatusForbidden {
+		t.Fatalf("granted resource without execute role status=%d body=%s", denied.Code, denied.Body.String())
 	}
 
 	allowed := performRuntimeAuthorizationRequest(router, runtimePath)
@@ -123,11 +127,9 @@ func TestDataApplicationRuntimeFollowsAssetGrantLifecycle(t *testing.T) {
 	assertRuntimeAccessDenied(t, performRuntimeAuthorizationRequest(router, runtimePath))
 }
 
-func runtimeAuthorizationRouter(t *testing.T, applications *service.DataApplicationService) *gin.Engine {
+func runtimeAuthorizationRouter(t *testing.T, applications *service.DataApplicationService, permissions []string) *gin.Engine {
 	t.Helper()
-	authContext := authtest.NewTenantUserAuthContext("7", "91", []string{
-		workbenchauthorization.PermissionWorkbenchDataApplicationExecute,
-	})
+	authContext := authtest.NewTenantUserAuthContext("7", "91", permissions)
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
 		if err := commonAuth.SetAuthContextForGin(c, authContext); err != nil {

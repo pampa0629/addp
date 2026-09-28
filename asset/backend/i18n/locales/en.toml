@@ -66,3 +66,12 @@ other = "Revocation requested"
 
 [asset.rating.missing_asset_id]
 other = "Missing asset_id parameter"
+
+[asset.rating.access_denied]
+other = "No effective authorization for this asset"
+
+[asset.rating.already_exists]
+other = "You have already rated this asset; use update instead"
+
+[asset.rating.not_found]
+other = "Your asset rating was not found"

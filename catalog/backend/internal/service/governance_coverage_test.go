@@ -57,10 +57,12 @@ func TestGovernanceCoverageUsesApplicabilityAwareCatalogFacts(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Create(&models.ComponentElementAssociation{
+	revisionID := int64(501)
+	if err := db.Create(&models.StandardMapping{
 		ID: uuid.New(), TenantID: 7, CatalogEntryID: metaEntry.ID, ComponentID: component.ID,
-		ElementID: 50, ObservedVersion: 1, ObservedSnapshot: commonModels.JSONMap{"name": "Order ID"},
-		VerifiedAt: now, CreatedAt: now, UpdatedAt: now,
+		ElementID: 50, ElementRevisionID: &revisionID, Source: models.StandardMappingSourceManual,
+		ReviewStatus: models.StandardMappingApproved, Version: 2, ProposedByType: "user", ProposedByID: "1",
+		Evidence: commonModels.JSONMap{"name": "Order ID"}, CreatedAt: now, UpdatedAt: now,
 	}).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +87,7 @@ func TestGovernanceCoverageUsesApplicabilityAwareCatalogFacts(t *testing.T) {
 	assertCoverageDimension(t, dimensions[CoverageDimensionBusinessOwner], 1, 3, 33.33)
 	assertCoverageDimension(t, dimensions[CoverageDimensionDataSteward], 1, 3, 33.33)
 	assertCoverageDimension(t, dimensions[CoverageDimensionGlossary], 1, 3, 33.33)
-	componentCoverage := dimensions[CoverageDimensionComponentElement]
+	componentCoverage := dimensions[CoverageDimensionComponentStandardMapping]
 	assertCoverageDimension(t, componentCoverage, 1, 1, 100)
 	if componentCoverage.NotApplicable != 2 || modelEntry.ID == metaEntry.ID {
 		t.Fatalf("component coverage = %#v", componentCoverage)
@@ -99,6 +101,34 @@ func TestGovernanceCoverageRequiresInventoryPermission(t *testing.T) {
 	db := openCatalogServiceTestDB(t)
 	if _, err := NewEntryService(db, nil, nil).GetGovernanceCoverage(context.Background(), 7, EntryAccess{}); !errors.Is(err, ErrInventoryPermissionRequired) {
 		t.Fatalf("GetGovernanceCoverage() error = %v", err)
+	}
+}
+
+func TestGovernanceCoverageExcludesSharedMetricWithoutOwnerDomain(t *testing.T) {
+	db := openCatalogServiceTestDB(t)
+	entry := createMetricCatalogEntry(t, db, 7, "")
+	var binding models.SourceBinding
+	if err := db.Where("catalog_entry_id = ? AND is_current = ?", entry.ID, true).First(&binding).Error; err != nil {
+		t.Fatal(err)
+	}
+	binding.ObservedSnapshot["scope_type"] = "tenant_common"
+	if err := db.Save(&binding).Error; err != nil {
+		t.Fatal(err)
+	}
+	svc := NewEntryService(db, nil, nil)
+	coverage, err := svc.GetGovernanceCoverage(context.Background(), 7, EntryAccess{Inventory: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if coverage.Dimensions[1].Applicable != 0 || coverage.Dimensions[1].NotApplicable != 1 || coverage.Dimensions[1].NotCovered != 0 {
+		t.Fatalf("primary domain coverage = %#v", coverage.Dimensions[1])
+	}
+	missing, err := svc.List(context.Background(), 7, EntryAccess{Inventory: true}, EntryListFilter{
+		View: EntryViewInventory, CoverageDimension: CoverageDimensionPrimaryDomain, CoverageState: CoverageStateMissing,
+		Page: 1, PageSize: 20,
+	})
+	if err != nil || missing.Total != 0 {
+		t.Fatalf("missing primary domains = %#v, error = %v", missing, err)
 	}
 }
 

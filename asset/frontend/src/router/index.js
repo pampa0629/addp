@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { createAuthGuard } from '@common-ui'
+import { resolveModuleLandingRoute } from '../../../../common-frontend/basic/src/authorization/consoleRouteAccess.js'
 import { useAuthStore } from '../store/auth'
 import Layout from '../components/Layout.vue'
 import Login from '../views/Login.vue'
@@ -14,9 +15,17 @@ const routes = [
   {
     path: '/',
     component: Layout,
-    redirect: '/assets',
     meta: { requiresAuth: true },
     children: [
+      {
+        path: '',
+        name: 'AssetHome',
+        beforeEnter: () => {
+          const authStore = useAuthStore()
+          return resolveModuleLandingRoute('/asset', ['/type-definitions', '/categories', '/assets', '/applications', '/dashboard'], authStore.contextType, authStore.permissions)
+        },
+        meta: { requiresAuth: true, handlesForbidden: true }
+      },
       {
         path: 'type-definitions',
         name: 'TypeDefinitionList',
@@ -70,7 +79,7 @@ const routes = [
 ]
 
 const router = createRouter({
-  history: createWebHistory(import.meta.env.DEV ? '/' : '/asset/'),
+  history: createWebHistory(import.meta.env.BASE_URL),
   routes
 })
 

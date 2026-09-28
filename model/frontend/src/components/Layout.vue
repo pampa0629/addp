@@ -33,29 +33,29 @@
     <el-container class="main-container">
       <el-aside class="sidebar" width="200px">
         <el-menu :default-active="activeMenu" router class="sidebar-menu">
-          <el-sub-menu index="modeling">
+          <el-sub-menu v-if="hasModelingPages" index="modeling">
             <template #title>
               <el-icon><Box /></el-icon>
               <span>{{ t('model.layout.modeling') }}</span>
             </template>
-            <el-menu-item index="/entities">
+            <el-menu-item v-if="canEnter('/entities')" index="/entities">
               <el-icon><Memo /></el-icon>
               <span>{{ t('model.layout.entities') }}</span>
             </el-menu-item>
-            <el-menu-item index="/er-diagram">
+            <el-menu-item v-if="canEnter('/er-diagram')" index="/er-diagram">
               <el-icon><Connection /></el-icon>
               <span>{{ t('model.layout.erDiagram') }}</span>
             </el-menu-item>
-            <el-menu-item index="/dw-layers">
+            <el-menu-item v-if="canEnter('/dw-layers')" index="/dw-layers">
               <el-icon><Tickets /></el-icon>
               <span>{{ t('model.layout.dwLayers') }}</span>
             </el-menu-item>
-            <el-menu-item index="/logical-tables">
+            <el-menu-item v-if="canEnter('/logical-tables')" index="/logical-tables">
               <el-icon><Operation /></el-icon>
               <span>{{ t('model.layout.logicalTables') }}</span>
             </el-menu-item>
-            <el-menu-item index="/metric-implementations"><el-icon><Operation /></el-icon><span>{{ t('model.metric_workspace.title') }}</span></el-menu-item>
-            <el-menu-item index="/star-schema">
+            <el-menu-item v-if="canEnter('/metric-implementations')" index="/metric-implementations"><el-icon><Operation /></el-icon><span>{{ t('model.metric_workspace.title') }}</span></el-menu-item>
+            <el-menu-item v-if="canEnter('/star-schema')" index="/star-schema">
               <el-icon><Star /></el-icon>
               <span>{{ t('model.layout.starSchema') }}</span>
             </el-menu-item>
@@ -74,6 +74,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '../store/auth'
+import { allowsConsoleRoute } from '@common-ui'
 import {
   User, ArrowDown, SwitchButton,
   DataAnalysis, Box, Tickets, Memo, Operation, Connection, Star, SetUp
@@ -85,6 +86,8 @@ const { t } = useI18n()
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
+const canEnter = path => allowsConsoleRoute(`/modeling${path}`, authStore.contextType, authStore.permissions)
+const hasModelingPages = computed(() => ['/entities', '/er-diagram', '/dw-layers', '/logical-tables', '/metric-implementations', '/star-schema'].some(canEnter))
 const isInIframe = ref(false)
 
 onMounted(() => {

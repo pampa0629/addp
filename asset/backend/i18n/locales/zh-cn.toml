@@ -66,3 +66,12 @@ other = "撤销请求已提交"
 
 [asset.rating.missing_asset_id]
 other = "缺少 asset_id 参数"
+
+[asset.rating.access_denied]
+other = "当前账号没有该资产的有效授权"
+
+[asset.rating.already_exists]
+other = "您已评价过该资产，请使用修改操作"
+
+[asset.rating.not_found]
+other = "您的资产评价不存在"

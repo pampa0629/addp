@@ -8,11 +8,6 @@ const RESPONSIBILITY_SUBJECT_TYPES = Object.freeze({
 export function buildEntryEditForm(entry) {
   const semanticLinks = Array.isArray(entry?.semantic_links) ? entry.semantic_links : []
   const ownerManagedSemantics = ['model', 'standard'].includes(entry?.source?.source_module)
-  const ownerManagedComponents = ['model', 'standard', 'service', 'develop'].includes(entry?.source?.source_module)
-  const componentElements = new Map(
-    (Array.isArray(entry?.component_elements) ? entry.component_elements : [])
-      .map(link => [String(link.component_id), link.element_id])
-  )
   return {
     version: Number(entry?.version || 0),
     businessName: entry?.business_name || '',
@@ -20,10 +15,12 @@ export function buildEntryEditForm(entry) {
     governanceStatus: entry?.governance_status || 'discovered',
     visibility: entry?.visibility || 'inventory',
     ownerManagedSemantics,
-    ownerManagedComponents,
     ownerModule: entry?.source?.source_module || '',
     ownerPrimaryDomainId: ownerManagedSemantics
       ? String(entry?.source_resolution?.summary?.domain_id || entry?.source?.observed_snapshot?.domain_id || '')
+      : '',
+    ownerScopeType: ownerManagedSemantics
+      ? String(entry?.source_resolution?.summary?.scope_type || entry?.source?.observed_snapshot?.scope_type || '')
       : '',
     domains: semanticLinks
       .filter(link => link.semantic_type === 'domain')
@@ -34,16 +31,7 @@ export function buildEntryEditForm(entry) {
       .map(link => String(link.semantic_id)),
     responsibilities: (Array.isArray(entry?.responsibilities) ? entry.responsibilities : [])
       .filter(item => item.status === 'active')
-      .map(item => ({ role: item.role, subjectId: String(item.subject_id) })),
-    componentElements: (Array.isArray(entry?.components) ? entry.components : [])
-      .map(component => ({
-        componentId: String(component.id),
-        componentName: component.display_name,
-        componentStatus: component.component_status,
-        elementId: componentElements.has(String(component.id))
-          ? String(componentElements.get(String(component.id)))
-          : null
-      }))
+      .map(item => ({ role: item.role, subjectId: String(item.subject_id) }))
   }
 }
 
@@ -60,10 +48,7 @@ export function buildUpdatePayload(form) {
       role: item.role,
       subject_type: RESPONSIBILITY_SUBJECT_TYPES[item.role],
       subject_id: String(item.subjectId).trim()
-    })),
-    component_elements: form.ownerManagedComponents ? [] : form.componentElements
-      .filter(item => item.elementId !== null && item.elementId !== undefined && item.elementId !== '')
-      .map(item => ({ component_id: item.componentId, element_id: String(item.elementId).trim() }))
+    }))
   }
   return payload
 }
@@ -77,8 +62,7 @@ export function buildWithdrawCurationPayload(entry) {
     visibility: 'inventory',
     domains: [],
     glossary_ids: [],
-    responsibilities: [],
-    component_elements: []
+    responsibilities: []
   }
 }
 
@@ -113,7 +97,10 @@ export function buildDeprecationPayload(entry, reason, recommendedSuccessorEntry
 }
 
 export function hasEffectivePrimaryDomain(form) {
-  if (form.ownerManagedSemantics) return isCanonicalPositiveID(form.ownerPrimaryDomainId)
+  if (form.ownerManagedSemantics) {
+    if (isCanonicalPositiveID(form.ownerPrimaryDomainId)) return true
+    return form.ownerModule === 'standard' && ['platform', 'tenant_common'].includes(form.ownerScopeType)
+  }
   return form.domains.filter(item => item.role === 'primary').length === 1
 }
 

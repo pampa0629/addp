@@ -61,29 +61,29 @@ const _devPorts = parseDevPorts(import.meta.env.VITE_ADDP_FRONTEND_PORTS)
 function _url(module, devPort, prodPath, devPath = '') {
   return _dev
     ? `${_protocol}//${_host}:${_devPorts[module] || devPort}${devPath}`
-    : `${window.location.origin}/${prodPath}`
+    : `${window.location.origin}/${prodPath}/`
 }
 
 export const MODULE_URLS = {
-  ontology:     _url('ontology', 5192, 'ontology', '/ontology'),
-  system:       _url('system', 5173, 'system'),
-  manager:      _url('manager', 5174, 'manager'),
-  meta:         _url('meta', 5175, 'meta'),
-  transfer:     _url('transfer', 5176, 'transfer'),
-  orchestrator: _url('orchestrator', 5177, 'orchestrator'),
-  develop:      _url('develop', 5178, 'develop'),
-  service:      _url('service', 5180, 'service'),
-  workbench:    _url('workbench', 5190, 'workbench', '/workbench'),
-  monitor:      _url('monitor', 5179, 'monitor'),
-  standard:     _url('standard', 5181, 'standard'),
-  modeling:     _url('model', 5182, 'model'),
-  quality:      _url('quality', 5183, 'quality'),
-  security:     _url('security', 5191, 'security'),
-  catalog:      _url('catalog', 5189, 'catalog'),
-  asset:        _url('asset', 5184, 'asset'),
-  agent:        _url('agent', 5186, 'agent'),
-  graph:        _url('graph', 5187, 'graph'),
-  inference:    _url('inference', 5188, 'inference'),
+  ontology:     _url('ontology', 5192, 'module-ui/ontology', '/ontology'),
+  system:       _url('system', 5173, 'module-ui/system'),
+  manager:      _url('manager', 5174, 'module-ui/manager'),
+  meta:         _url('meta', 5175, 'module-ui/meta'),
+  transfer:     _url('transfer', 5176, 'module-ui/transfer'),
+  orchestrator: _url('orchestrator', 5177, 'module-ui/orchestrator'),
+  develop:      _url('develop', 5178, 'module-ui/develop'),
+  service:      _url('service', 5180, 'module-ui/service'),
+  workbench:    _url('workbench', 5190, 'module-ui/workbench', '/module-ui/workbench'),
+  monitor:      _url('monitor', 5179, 'module-ui/monitor'),
+  standard:     _url('standard', 5181, 'module-ui/standard'),
+  modeling:     _url('model', 5182, 'module-ui/model'),
+  quality:      _url('quality', 5183, 'module-ui/quality'),
+  security:     _url('security', 5191, 'module-ui/security'),
+  catalog:      _url('catalog', 5189, 'module-ui/catalog'),
+  asset:        _url('asset', 5184, 'module-ui/asset'),
+  agent:        _url('agent', 5186, 'module-ui/agent'),
+  graph:        _url('graph', 5187, 'module-ui/graph'),
+  inference:    _url('inference', 5188, 'module-ui/inference'),
 }
 
 export const PORTAL_URL = window.location.origin
@@ -316,6 +316,9 @@ export const SIDEBAR_MENUS = {
     label: 'console.menus.catalog.label', icon: Collection,
     items: [
       { index: '/catalog/entries', icon: List, label: 'console.menus.catalog.entries' },
+      { index: '/catalog/me/entries', icon: Collection, label: 'console.menus.catalog.myEntries', permissions: ['catalog.entry.read'] },
+      { index: '/catalog/collections', icon: FolderOpened, label: 'console.menus.catalog.collections', permissions: ['catalog.collection.read'] },
+      { index: '/catalog/governance/tasks', icon: Warning, label: 'console.menus.catalog.tasks', permissions: ['catalog.entry.update'] },
       { index: '/catalog/governance/coverage', icon: DataAnalysis, label: 'console.menus.catalog.coverage', permissions: ['catalog.inventory.read'] },
     ],
   },
@@ -402,7 +405,7 @@ export function buildModuleUrl(module, page) {
   const mappedPage = (map && map[pagePath] !== undefined) ? map[pagePath] : pagePath
   const actualPage = queryPart ? `${mappedPage}?${queryPart}` : mappedPage
 
-  const url = actualPage ? `${base}/${actualPage}` : base
+  const url = actualPage ? `${base.replace(/\/$/, '')}/${actualPage}` : base
 
   return url
 }

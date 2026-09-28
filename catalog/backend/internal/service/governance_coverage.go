@@ -10,14 +10,14 @@ import (
 )
 
 const (
-	CoverageDimensionBusinessDefinition    = "business_definition"
-	CoverageDimensionPrimaryDomain         = "primary_domain"
-	CoverageDimensionAccountableDepartment = "accountable_department"
-	CoverageDimensionBusinessOwner         = "business_owner"
-	CoverageDimensionDataSteward           = "data_steward"
-	CoverageDimensionGlossary              = "glossary"
-	CoverageDimensionComponentElement      = "component_element"
-	CoverageStateMissing                   = "missing"
+	CoverageDimensionBusinessDefinition       = "business_definition"
+	CoverageDimensionPrimaryDomain            = "primary_domain"
+	CoverageDimensionAccountableDepartment    = "accountable_department"
+	CoverageDimensionBusinessOwner            = "business_owner"
+	CoverageDimensionDataSteward              = "data_steward"
+	CoverageDimensionGlossary                 = "glossary"
+	CoverageDimensionComponentStandardMapping = "component_standard_mapping"
+	CoverageStateMissing                      = "missing"
 )
 
 type governanceCoveragePredicate struct {
@@ -26,7 +26,17 @@ type governanceCoveragePredicate struct {
 }
 
 const (
-	coverageAllEntriesPredicate         = "TRUE"
+	coverageAllEntriesPredicate              = "TRUE"
+	coveragePrimaryDomainApplicablePredicate = `NOT EXISTS (
+		SELECT 1 FROM catalog.source_bindings source
+		WHERE source.tenant_id = entries.tenant_id
+		  AND source.catalog_entry_id = entries.id
+		  AND source.is_current = TRUE
+		  AND source.source_module = 'standard'
+		  AND source.source_type = 'metric'
+		  AND source.observed_snapshot ->> 'scope_type' IN ('platform', 'tenant_common')
+		  AND COALESCE(source.observed_snapshot ->> 'domain_id', '') = ''
+	)`
 	coverageBusinessDefinitionPredicate = `(
 		entries.business_name IS NOT NULL AND TRIM(entries.business_name) <> ''
 		AND entries.business_description IS NOT NULL AND TRIM(entries.business_description) <> ''
@@ -59,17 +69,18 @@ const (
 		  AND component.catalog_entry_id = entries.id
 		  AND component.component_status = 'active'
 	)`
-	coverageComponentElementPredicate = `(
+	coverageComponentStandardMappingPredicate = `(
 		` + coverageComponentApplicablePredicate + ` AND NOT EXISTS (
 			SELECT 1 FROM catalog.components component
 			WHERE component.tenant_id = entries.tenant_id
 			  AND component.catalog_entry_id = entries.id
 			  AND component.component_status = 'active'
 			  AND NOT EXISTS (
-				SELECT 1 FROM catalog.component_element_associations element_link
-				WHERE element_link.tenant_id = component.tenant_id
-				  AND element_link.catalog_entry_id = component.catalog_entry_id
-				  AND element_link.component_id = component.id
+				SELECT 1 FROM catalog.standard_mappings mapping
+				WHERE mapping.tenant_id = component.tenant_id
+				  AND mapping.catalog_entry_id = component.catalog_entry_id
+				  AND mapping.component_id = component.id
+				  AND mapping.review_status = 'approved'
 			  )
 		)
 	)`
@@ -90,7 +101,7 @@ func coveragePredicateFor(dimension string) (governanceCoveragePredicate, bool) 
 	case CoverageDimensionBusinessDefinition:
 		return governanceCoveragePredicate{applicable: coverageAllEntriesPredicate, covered: coverageBusinessDefinitionPredicate}, true
 	case CoverageDimensionPrimaryDomain:
-		return governanceCoveragePredicate{applicable: coverageAllEntriesPredicate, covered: coveragePrimaryDomainPredicate}, true
+		return governanceCoveragePredicate{applicable: coveragePrimaryDomainApplicablePredicate, covered: coveragePrimaryDomainPredicate}, true
 	case CoverageDimensionAccountableDepartment:
 		return governanceCoveragePredicate{applicable: coverageAllEntriesPredicate, covered: coverageResponsibilityPredicate(models.ResponsibilityRoleAccountableDepartment)}, true
 	case CoverageDimensionBusinessOwner:
@@ -99,8 +110,8 @@ func coveragePredicateFor(dimension string) (governanceCoveragePredicate, bool) 
 		return governanceCoveragePredicate{applicable: coverageAllEntriesPredicate, covered: coverageResponsibilityPredicate(models.ResponsibilityRoleDataSteward)}, true
 	case CoverageDimensionGlossary:
 		return governanceCoveragePredicate{applicable: coverageAllEntriesPredicate, covered: coverageGlossaryPredicate}, true
-	case CoverageDimensionComponentElement:
-		return governanceCoveragePredicate{applicable: coverageComponentApplicablePredicate, covered: coverageComponentElementPredicate}, true
+	case CoverageDimensionComponentStandardMapping:
+		return governanceCoveragePredicate{applicable: coverageComponentApplicablePredicate, covered: coverageComponentStandardMappingPredicate}, true
 	default:
 		return governanceCoveragePredicate{}, false
 	}
@@ -119,7 +130,7 @@ type GovernanceStatusCoverage struct {
 }
 
 type GovernanceCoverageDimension struct {
-	Key           string  `json:"key" enums:"business_definition,primary_domain,accountable_department,business_owner,data_steward,glossary,component_element"`
+	Key           string  `json:"key" enums:"business_definition,primary_domain,accountable_department,business_owner,data_steward,glossary,component_standard_mapping"`
 	Covered       int64   `json:"covered"`
 	Applicable    int64   `json:"applicable"`
 	NotCovered    int64   `json:"not_covered"`
@@ -142,19 +153,20 @@ func (s *EntryService) GetGovernanceCoverage(ctx context.Context, tenantID int64
 		return nil, ErrInventoryPermissionRequired
 	}
 	type aggregateRow struct {
-		TotalEntries                 int64
-		Discovered                   int64
-		Curated                      int64
-		Certified                    int64
-		Deprecated                   int64
-		BusinessDefinitionCovered    int64
-		PrimaryDomainCovered         int64
-		AccountableDepartmentCovered int64
-		BusinessOwnerCovered         int64
-		DataStewardCovered           int64
-		GlossaryCovered              int64
-		ComponentApplicable          int64
-		ComponentElementCovered      int64
+		TotalEntries                    int64
+		Discovered                      int64
+		Curated                         int64
+		Certified                       int64
+		Deprecated                      int64
+		BusinessDefinitionCovered       int64
+		PrimaryDomainApplicable         int64
+		PrimaryDomainCovered            int64
+		AccountableDepartmentCovered    int64
+		BusinessOwnerCovered            int64
+		DataStewardCovered              int64
+		GlossaryCovered                 int64
+		ComponentApplicable             int64
+		ComponentStandardMappingCovered int64
 	}
 	var aggregate aggregateRow
 	businessDefinition, _ := coveragePredicateFor(CoverageDimensionBusinessDefinition)
@@ -163,7 +175,7 @@ func (s *EntryService) GetGovernanceCoverage(ctx context.Context, tenantID int64
 	businessOwner, _ := coveragePredicateFor(CoverageDimensionBusinessOwner)
 	dataSteward, _ := coveragePredicateFor(CoverageDimensionDataSteward)
 	glossary, _ := coveragePredicateFor(CoverageDimensionGlossary)
-	componentElement, _ := coveragePredicateFor(CoverageDimensionComponentElement)
+	componentMapping, _ := coveragePredicateFor(CoverageDimensionComponentStandardMapping)
 	selectExpression := fmt.Sprintf(`
 		COUNT(*) AS total_entries,
 		COALESCE(SUM(CASE WHEN entries.governance_status = 'discovered' THEN 1 ELSE 0 END), 0) AS discovered,
@@ -171,16 +183,17 @@ func (s *EntryService) GetGovernanceCoverage(ctx context.Context, tenantID int64
 		COALESCE(SUM(CASE WHEN entries.governance_status = 'certified' THEN 1 ELSE 0 END), 0) AS certified,
 		COALESCE(SUM(CASE WHEN entries.governance_status = 'deprecated' THEN 1 ELSE 0 END), 0) AS deprecated,
 		COALESCE(SUM(CASE WHEN %s THEN 1 ELSE 0 END), 0) AS business_definition_covered,
+		COALESCE(SUM(CASE WHEN %s THEN 1 ELSE 0 END), 0) AS primary_domain_applicable,
 		COALESCE(SUM(CASE WHEN %s THEN 1 ELSE 0 END), 0) AS primary_domain_covered,
 		COALESCE(SUM(CASE WHEN %s THEN 1 ELSE 0 END), 0) AS accountable_department_covered,
 		COALESCE(SUM(CASE WHEN %s THEN 1 ELSE 0 END), 0) AS business_owner_covered,
 		COALESCE(SUM(CASE WHEN %s THEN 1 ELSE 0 END), 0) AS data_steward_covered,
 		COALESCE(SUM(CASE WHEN %s THEN 1 ELSE 0 END), 0) AS glossary_covered,
 		COALESCE(SUM(CASE WHEN %s THEN 1 ELSE 0 END), 0) AS component_applicable,
-		COALESCE(SUM(CASE WHEN %s THEN 1 ELSE 0 END), 0) AS component_element_covered`,
-		businessDefinition.covered, primaryDomain.covered, accountableDepartment.covered,
+		COALESCE(SUM(CASE WHEN %s THEN 1 ELSE 0 END), 0) AS component_standard_mapping_covered`,
+		businessDefinition.covered, primaryDomain.applicable, primaryDomain.covered, accountableDepartment.covered,
 		businessOwner.covered, dataSteward.covered, glossary.covered,
-		componentElement.applicable, componentElement.covered,
+		componentMapping.applicable, componentMapping.covered,
 	)
 	if err := s.visibleEntriesQuery(ctx, tenantID, access).
 		Where("entries.entry_status = ?", models.EntryStatusActive).
@@ -200,12 +213,12 @@ func (s *EntryService) GetGovernanceCoverage(ctx context.Context, tenantID int64
 
 	dimensions := []GovernanceCoverageDimension{
 		coverageDimension(CoverageDimensionBusinessDefinition, aggregate.BusinessDefinitionCovered, total, total),
-		coverageDimension(CoverageDimensionPrimaryDomain, aggregate.PrimaryDomainCovered, total, total),
+		coverageDimension(CoverageDimensionPrimaryDomain, aggregate.PrimaryDomainCovered, aggregate.PrimaryDomainApplicable, total),
 		coverageDimension(CoverageDimensionAccountableDepartment, aggregate.AccountableDepartmentCovered, total, total),
 		coverageDimension(CoverageDimensionBusinessOwner, aggregate.BusinessOwnerCovered, total, total),
 		coverageDimension(CoverageDimensionDataSteward, aggregate.DataStewardCovered, total, total),
 		coverageDimension(CoverageDimensionGlossary, aggregate.GlossaryCovered, total, total),
-		coverageDimension(CoverageDimensionComponentElement, aggregate.ComponentElementCovered, aggregate.ComponentApplicable, total),
+		coverageDimension(CoverageDimensionComponentStandardMapping, aggregate.ComponentStandardMappingCovered, aggregate.ComponentApplicable, total),
 	}
 
 	return &GovernanceCoverage{

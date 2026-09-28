@@ -26,7 +26,7 @@ COVERAGE_DIMENSIONS = {
     "business_owner",
     "data_steward",
     "glossary",
-    "component_element",
+    "component_standard_mapping",
 }
 
 
@@ -417,8 +417,7 @@ def assert_portal_category_absent(client: GatewayClient, category_id: int) -> No
 def editable_catalog_payload(entry: dict[str, object]) -> dict[str, object]:
     semantic_links = entry.get("semantic_links") or []
     responsibilities = entry.get("responsibilities") or []
-    component_elements = entry.get("component_elements") or []
-    if not all(isinstance(values, list) for values in (semantic_links, responsibilities, component_elements)):
+    if not all(isinstance(values, list) for values in (semantic_links, responsibilities)):
         raise SuiteError("CatalogEntry editable associations must be arrays")
     return {
         "version": positive_int(entry.get("version"), "CatalogEntry version"),
@@ -441,13 +440,21 @@ def editable_catalog_payload(entry: dict[str, object]) -> dict[str, object]:
             for item in responsibilities
             if isinstance(item, dict)
         ],
-        "component_elements": [
-            {"component_id": str(item["component_id"]), "element_id": str(item["element_id"])}
-            for item in component_elements
-            if isinstance(item, dict)
-        ],
-        "deprecation_reason": None,
     }
+
+
+def validate_fixture_curation(entry: dict[str, object], domain_id: int) -> dict[str, object]:
+    original = editable_catalog_payload(entry)
+    status = original["governance_status"]
+    if status not in {"discovered", "curated"}:
+        raise SuiteError("Online Catalog fixture must be discovered or curated")
+    if status == "curated":
+        primary_domains = [
+            str(link["id"]) for link in original["domains"] if link["role"] == "primary"
+        ]
+        if primary_domains != [str(domain_id)]:
+            raise SuiteError("Existing Online Catalog fixture does not belong to the configured business domain")
+    return original
 
 
 def curate_fixture_entry(
@@ -461,10 +468,8 @@ def curate_fixture_entry(
     entry_id = entry.get("id")
     if not isinstance(entry_id, str) or not entry_id:
         raise SuiteError("CatalogEntry id is missing")
-    original = editable_catalog_payload(entry)
+    original = validate_fixture_curation(entry, domain_id)
     status = original["governance_status"]
-    if status == "deprecated":
-        raise SuiteError("Online Catalog fixture must not be deprecated")
     initialized = status == "discovered"
     if initialized:
         update = {
@@ -480,8 +485,6 @@ def curate_fixture_entry(
                 {"role": "business_owner", "subject_type": "user", "subject_id": str(principal_id)},
                 {"role": "data_steward", "subject_type": "user", "subject_id": str(principal_id)},
             ],
-            "component_elements": [],
-            "deprecation_reason": None,
         }
         restore = None
     else:
@@ -538,7 +541,7 @@ def run_suite(
         assert_catalog_entry_in_view(client, "inventory", fingerprint, entry_id)
         source_resolution = validate_catalog_source_resolution(client, fingerprint, entry_id)
         coverage_before = validate_governance_coverage(client)
-        initial_editable = editable_catalog_payload(entry)
+        initial_editable = validate_fixture_curation(entry, domain_id)
         if initial_editable.get("governance_status") != "discovered":
             restore_payload = initial_editable
         curated, returned_restore, fixture_initialized = curate_fixture_entry(

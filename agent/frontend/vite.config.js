@@ -50,7 +50,7 @@ export default defineConfig({
       }
     }
   },
-  base: process.env.NODE_ENV === 'development' ? '/' : '/agent/',
+  base: process.env.NODE_ENV === 'development' ? '/' : '/module-ui/agent/',
   build: {
     outDir: resolve(__dirname, OUT_BASE ? `${OUT_BASE}/${BUILD_TYPE}/frontend/agent` : 'dist'),
     sourcemap: BUILD_TYPE === 'debug',

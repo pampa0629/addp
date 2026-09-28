@@ -1479,6 +1479,53 @@ const docTemplate = `{
                 ]
             }
         },
+        "/consumer/assets/{id}/my-rating": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅返回当前用户在已上架资产上的评价，不开放其他用户评价列表 | Return only the current user's rating on a published asset, without listing other users' ratings",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Asset Consumer"
+                ],
+                "summary": "获取本人评价以修改 | Get own rating for editing",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "资产 ID | Asset ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ownConsumerRatingResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "资产不存在 | Asset not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "asset.rating.update"
+                ]
+            }
+        },
         "/consumer/assets/{id}/ratings": {
             "get": {
                 "security": [
@@ -1486,6 +1533,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "分页返回公开评价，并独立返回当前用户评价与全量平均分 | Paginate published ratings and independently return the current user's rating and overall average",
                 "produces": [
                     "application/json"
                 ],
@@ -1506,8 +1554,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/internal_api.consumerRatingsResponse"
                         }
                     }
                 },
@@ -1516,7 +1563,7 @@ const docTemplate = `{
                     "asset.rating.read"
                 ]
             },
-            "post": {
+            "put": {
                 "security": [
                     {
                         "BearerAuth": []
@@ -1531,7 +1578,7 @@ const docTemplate = `{
                 "tags": [
                     "Asset Consumer"
                 ],
-                "summary": "提交或更新资产评价 | Submit or update asset rating",
+                "summary": "修改本人资产评价 | Update own asset rating",
                 "parameters": [
                     {
                         "type": "integer",
@@ -1557,12 +1604,95 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "403": {
+                        "description": "没有有效资产授权 | No effective asset authorization",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "本人评价不存在 | Own rating not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
-                    "asset.rating.create",
                     "asset.rating.update"
+                ]
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Asset Consumer"
+                ],
+                "summary": "创建资产评价 | Create asset rating",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "资产 ID | Asset ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "评价 | Rating",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.consumerRatingRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "没有有效资产授权 | No effective asset authorization",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "本人评价已存在 | Own rating already exists",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "asset.rating.create"
                 ]
             }
         },
@@ -1789,6 +1919,47 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "github_com_addp_asset_internal_models.Rating": {
+            "type": "object",
+            "properties": {
+                "asset_id": {
+                    "type": "integer"
+                },
+                "comment": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "is_handled": {
+                    "description": "管理员是否已处理问题反馈",
+                    "type": "boolean"
+                },
+                "score": {
+                    "description": "1-5 分",
+                    "type": "number"
+                },
+                "tags": {
+                    "description": "反馈标签（问题反馈时填写，如：数据质量问题/文档不清晰）",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "integer"
+                }
+            }
+        },
         "github_com_addp_asset_internal_service.ApproveApplicationReq": {
             "type": "object",
             "properties": {
@@ -2037,6 +2208,53 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_asset_internal_service.RatingWithUser": {
+            "type": "object",
+            "properties": {
+                "asset_id": {
+                    "type": "integer"
+                },
+                "asset_name": {
+                    "type": "string"
+                },
+                "comment": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "is_handled": {
+                    "description": "管理员是否已处理问题反馈",
+                    "type": "boolean"
+                },
+                "score": {
+                    "description": "1-5 分",
+                    "type": "number"
+                },
+                "tags": {
+                    "description": "反馈标签（问题反馈时填写，如：数据质量问题/文档不清晰）",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "integer"
+                },
+                "user_name": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_asset_internal_service.RejectApplicationReq": {
             "type": "object",
             "required": [
@@ -2152,6 +2370,43 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
+                }
+            }
+        },
+        "internal_api.consumerRatingsResponse": {
+            "type": "object",
+            "properties": {
+                "avg_score": {
+                    "type": "number"
+                },
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_asset_internal_service.RatingWithUser"
+                    }
+                },
+                "my_rating": {
+                    "$ref": "#/definitions/github_com_addp_asset_internal_models.Rating"
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "total_pages": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api.ownConsumerRatingResponse": {
+            "type": "object",
+            "properties": {
+                "rating": {
+                    "$ref": "#/definitions/github_com_addp_asset_internal_models.Rating"
                 }
             }
         },

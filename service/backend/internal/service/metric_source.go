@@ -120,12 +120,9 @@ func (s *QueryServiceService) RebindMetricSource(ctx context.Context, id, tenant
 		return nil, ErrInvalidStructuredQuery
 	}
 	// Check ownership before resolving a new publication.
-	current, err := s.repo.GetByID(id)
+	current, err := s.repo.GetByIDAndTenant(id, tenantID)
 	if err != nil {
 		return nil, err
-	}
-	if current.TenantID != tenantID {
-		return nil, commonapi.ErrNotFound
 	}
 	if current.Version != req.Version {
 		return nil, commonapi.ErrConflict

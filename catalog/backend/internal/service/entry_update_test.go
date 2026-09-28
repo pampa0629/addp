@@ -15,7 +15,7 @@ import (
 
 func TestEntryUpdateCuratesCompleteAggregateAtomically(t *testing.T) {
 	db := openCatalogServiceTestDB(t)
-	entry, component := createEditableCatalogEntry(t, db, 7)
+	entry, _ := createEditableCatalogEntry(t, db, 7)
 	standard := &fakeStandardReferenceResolver{}
 	system := &fakeSystemReferenceResolver{}
 	service := NewEntryService(db, standard, system)
@@ -32,7 +32,6 @@ func TestEntryUpdateCuratesCompleteAggregateAtomically(t *testing.T) {
 			{Role: models.ResponsibilityRoleBusinessOwner, SubjectType: models.ResponsibilitySubjectUser, SubjectID: 40},
 			{Role: models.ResponsibilityRoleDataSteward, SubjectType: models.ResponsibilitySubjectUser, SubjectID: 41},
 		},
-		ComponentElements: []ComponentElementInput{{ComponentID: component.ID, ElementID: 50}},
 	}, UpdateEntryActor{Type: "user", ID: "99"})
 	if err != nil {
 		t.Fatalf("Update() error = %v", err)
@@ -40,8 +39,8 @@ func TestEntryUpdateCuratesCompleteAggregateAtomically(t *testing.T) {
 	if result.Version != 2 || result.GovernanceStatus != models.GovernanceStatusCurated || result.Visibility != models.VisibilityDepartment {
 		t.Fatalf("entry = %#v", result.Entry)
 	}
-	if len(result.SemanticLinks) != 3 || len(result.Responsibilities) != 3 || len(result.ComponentElements) != 1 {
-		t.Fatalf("aggregate counts = semantic:%d responsibility:%d component:%d", len(result.SemanticLinks), len(result.Responsibilities), len(result.ComponentElements))
+	if len(result.SemanticLinks) != 3 || len(result.Responsibilities) != 3 || len(result.StandardMappings) != 0 {
+		t.Fatalf("aggregate counts = semantic:%d responsibility:%d mapping:%d", len(result.SemanticLinks), len(result.Responsibilities), len(result.StandardMappings))
 	}
 	if result.SemanticLinks[0].ObservedVersion != 7 || result.Responsibilities[0].ObservedSnapshot["name"] == "" {
 		t.Fatalf("observed snapshots = semantic:%#v responsibility:%#v", result.SemanticLinks[0], result.Responsibilities[0])
@@ -63,7 +62,7 @@ func TestEntryUpdateCuratesCompleteAggregateAtomically(t *testing.T) {
 
 func TestEntryUpdateWithdrawsCurationAtomically(t *testing.T) {
 	db := openCatalogServiceTestDB(t)
-	entry, component := createEditableCatalogEntry(t, db, 7)
+	entry, _ := createEditableCatalogEntry(t, db, 7)
 	name, description := "Wrong outdoor application", "Incorrect business curation"
 	curationService := NewEntryService(db, &fakeStandardReferenceResolver{}, &fakeSystemReferenceResolver{})
 	curated, err := curationService.Update(context.Background(), 7, entry.ID, UpdateEntryInput{
@@ -76,7 +75,6 @@ func TestEntryUpdateWithdrawsCurationAtomically(t *testing.T) {
 			{Role: models.ResponsibilityRoleBusinessOwner, SubjectType: models.ResponsibilitySubjectUser, SubjectID: 40},
 			{Role: models.ResponsibilityRoleDataSteward, SubjectType: models.ResponsibilitySubjectUser, SubjectID: 41},
 		},
-		ComponentElements: []ComponentElementInput{{ComponentID: component.ID, ElementID: 50}},
 	}, UpdateEntryActor{Type: "user", ID: "99"})
 	if err != nil {
 		t.Fatalf("curate entry: %v", err)
@@ -95,8 +93,8 @@ func TestEntryUpdateWithdrawsCurationAtomically(t *testing.T) {
 		withdrawn.Visibility != models.VisibilityInventory || withdrawn.BusinessName != nil || withdrawn.BusinessDescription != nil {
 		t.Fatalf("withdrawn entry = %#v", withdrawn.Entry)
 	}
-	if len(withdrawn.SemanticLinks) != 0 || len(withdrawn.Responsibilities) != 0 || len(withdrawn.ComponentElements) != 0 {
-		t.Fatalf("withdrawn aggregate counts = semantic:%d responsibility:%d component:%d", len(withdrawn.SemanticLinks), len(withdrawn.Responsibilities), len(withdrawn.ComponentElements))
+	if len(withdrawn.SemanticLinks) != 0 || len(withdrawn.Responsibilities) != 0 || len(withdrawn.StandardMappings) != 0 {
+		t.Fatalf("withdrawn aggregate counts = semantic:%d responsibility:%d mapping:%d", len(withdrawn.SemanticLinks), len(withdrawn.Responsibilities), len(withdrawn.StandardMappings))
 	}
 	if withdrawn.Source.SourceIdentity == "" || withdrawn.Source.SourceStatus != models.SourceStatusActive {
 		t.Fatalf("source binding was not preserved: %#v", withdrawn.Source)
@@ -399,6 +397,49 @@ func TestStandardMetricUsesOwnerDomainAndDynamicCurrentSummary(t *testing.T) {
 	}
 }
 
+func TestStandardSharedMetricCanBeCuratedAndCertifiedWithoutInventedPrimaryDomain(t *testing.T) {
+	db := openCatalogServiceTestDB(t)
+	entry := createMetricCatalogEntry(t, db, 7, "")
+	var binding models.SourceBinding
+	if err := db.Where("catalog_entry_id = ? AND is_current = ?", entry.ID, true).First(&binding).Error; err != nil {
+		t.Fatal(err)
+	}
+	binding.ObservedSnapshot["scope_type"] = "tenant_common"
+	if err := db.Save(&binding).Error; err != nil {
+		t.Fatal(err)
+	}
+	name, description := "Shared metric", "A common metric available across domains"
+	responsibilities := []ResponsibilityInput{
+		{Role: models.ResponsibilityRoleAccountableDepartment, SubjectType: models.ResponsibilitySubjectDepartment, SubjectID: 30},
+		{Role: models.ResponsibilityRoleBusinessOwner, SubjectType: models.ResponsibilitySubjectUser, SubjectID: 40},
+		{Role: models.ResponsibilityRoleDataSteward, SubjectType: models.ResponsibilitySubjectUser, SubjectID: 41},
+	}
+	service := NewEntryService(db, &fakeStandardReferenceResolver{}, &fakeSystemReferenceResolver{})
+	result, err := service.Update(context.Background(), 7, entry.ID, UpdateEntryInput{
+		Version: entry.Version, BusinessName: &name, BusinessDescription: &description,
+		GovernanceStatus: models.GovernanceStatusCurated, Visibility: models.VisibilityTenant,
+		Responsibilities: responsibilities,
+	}, UpdateEntryActor{Type: "user", ID: "99"})
+	if err != nil || result == nil || result.GovernanceStatus != models.GovernanceStatusCurated || len(result.SemanticLinks) != 0 {
+		t.Fatalf("shared metric curation = %#v, error = %v", result, err)
+	}
+	certified, err := service.UpdateGovernance(context.Background(), 7, entry.ID, UpdateEntryGovernanceInput{
+		Version: result.Version, GovernanceStatus: models.GovernanceStatusCertified,
+	}, UpdateEntryGovernanceAuthorization{CanCertify: true}, UpdateEntryActor{Type: "user", ID: "99"})
+	if err != nil || certified == nil || certified.GovernanceStatus != models.GovernanceStatusCertified {
+		t.Fatalf("shared metric certification = %#v, error = %v", certified, err)
+	}
+	for _, scope := range []string{"", "domain"} {
+		ownerSatisfied, err := validateOwnerSemanticInput(models.EntryTypeMetric, models.SourceBinding{
+			SourceModule: models.SourceModuleStandard, SourceType: models.SourceTypeMetric,
+			ObservedSnapshot: map[string]any{"scope_type": scope},
+		}, UpdateEntryInput{})
+		if err != nil || ownerSatisfied {
+			t.Fatalf("scope %q unexpectedly satisfied owner domain: %v, %v", scope, ownerSatisfied, err)
+		}
+	}
+}
+
 func TestServiceQueryServiceUsesDynamicFactsAndCatalogOwnedPrimaryDomain(t *testing.T) {
 	db := openCatalogServiceTestDB(t)
 	now := time.Now().UTC()
@@ -443,13 +484,8 @@ func TestServiceQueryServiceUsesDynamicFactsAndCatalogOwnedPrimaryDomain(t *test
 	if len(updated.SemanticLinks) != 1 || updated.SemanticLinks[0].SemanticID != 41 {
 		t.Fatalf("updated semantics = %#v", updated.SemanticLinks)
 	}
-	invalid := UpdateEntryInput{Version: updated.Version, BusinessName: &name, BusinessDescription: &description,
-		GovernanceStatus: models.GovernanceStatusCurated, Visibility: models.VisibilityTenant,
-		Domains: []DomainLinkInput{{ID: 41, Role: models.SemanticRolePrimary}}, Responsibilities: responsibilities,
-		ComponentElements: []ComponentElementInput{{ComponentID: uuid.New(), ElementID: 51}},
-	}
-	if _, err := svc.Update(context.Background(), 7, entry.ID, invalid, UpdateEntryActor{Type: "user", ID: "99"}); !errors.Is(err, ErrInvalidEntryUpdate) {
-		t.Fatalf("Catalog QueryService component copy accepted: %v", err)
+	if len(updated.StandardMappings) != 0 {
+		t.Fatalf("QueryService unexpectedly has Catalog field mappings: %#v", updated.StandardMappings)
 	}
 }
 
@@ -578,6 +614,10 @@ func createModelCatalogEntry(t *testing.T, db *gorm.DB, tenantID int64, domainID
 func createMetricCatalogEntry(t *testing.T, db *gorm.DB, tenantID int64, domainID string) models.Entry {
 	t.Helper()
 	now := time.Date(2026, 8, 26, 0, 0, 0, 0, time.UTC)
+	snapshot := map[string]interface{}{"name": "Order amount"}
+	if domainID != "" {
+		snapshot["domain_id"] = domainID
+	}
 	entry := models.Entry{ID: uuid.New(), TenantID: tenantID, EntryType: models.EntryTypeMetric,
 		EntryStatus: models.EntryStatusActive, GovernanceStatus: models.GovernanceStatusDiscovered,
 		Visibility: models.VisibilityInventory, Version: 1, CreatedAt: now, UpdatedAt: now}
@@ -587,7 +627,7 @@ func createMetricCatalogEntry(t *testing.T, db *gorm.DB, tenantID int64, domainI
 	if err := db.Create(&models.SourceBinding{ID: uuid.New(), TenantID: tenantID, CatalogEntryID: entry.ID,
 		SourceModule: models.SourceModuleStandard, SourceType: models.SourceTypeMetric, SourceIdentity: "21",
 		SourceStatus: models.SourceStatusActive, SourceVersion: "00000000000000000001", IsCurrent: true,
-		BoundAt: now, ObservedSnapshot: map[string]interface{}{"name": "Order amount", "domain_id": domainID}, ObservedAt: now,
+		BoundAt: now, ObservedSnapshot: snapshot, ObservedAt: now,
 		CreatedAt: now, UpdatedAt: now}).Error; err != nil {
 		t.Fatal(err)
 	}

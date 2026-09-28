@@ -583,6 +583,11 @@ func respondIAMError(c *gin.Context, err error) {
 		messageID = sysi18n.MsgOrganizationVersionConflict
 		code := "resource_version_conflict"
 		errorCode = &code
+	case errors.Is(err, iam.ErrOrganizationCodeAlreadyExists):
+		status = http.StatusConflict
+		messageID = sysi18n.MsgOrganizationCodeAlreadyExists
+		code := "organization_code_already_exists"
+		errorCode = &code
 	case errors.Is(err, iam.ErrTenantRoleAssignmentAlreadyExists):
 		status = http.StatusConflict
 		messageID = sysi18n.MsgRoleAssignmentAlreadyExists

@@ -198,7 +198,7 @@ func (h *QueryServiceHandler) GetService(c *gin.Context) {
 		return
 	}
 
-	result, err := h.svc.GetService(uint(id))
+	result, err := h.svc.GetService(uint(id), tenantIDValue(c))
 	if err != nil {
 		if errors.Is(err, commonapi.ErrNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Service not found"})

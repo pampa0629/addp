@@ -70,6 +70,7 @@
       "logout": "Logout",
       "ontologyModeling": "Ontology Modeling",
       "knowledgeGraph": "Knowledge Graph",
+      "graphAnalysis": "Graph Analysis",
       "knowledgeService": "Knowledge Service"
     },
     "ontology": {

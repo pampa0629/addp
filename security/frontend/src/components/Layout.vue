@@ -3,9 +3,9 @@
   <el-container v-else class="layout">
     <el-header class="header"><span class="title"><el-icon><Lock /></el-icon>{{ t('security.layout.title') }}</span><el-button link @click="logout">{{ t('security.layout.logout') }}</el-button></el-header>
     <el-container><el-aside width="220px"><el-menu router :default-active="route.path">
-      <el-menu-item index="/classification-grading"><el-icon><DataBoard /></el-icon>{{ t('security.resources.classificationGrading') }}</el-menu-item>
-      <el-menu-item index="/sensitive-data-definitions"><el-icon><Key /></el-icon>{{ t('security.resources.sensitiveDataDefinition') }}</el-menu-item>
-      <el-menu-item index="/protection-enrollments"><el-icon><CircleCheck /></el-icon>{{ t('security.resources.protectionEnrollment') }}</el-menu-item>
+      <el-menu-item v-if="canEnter('/classification-grading')" index="/classification-grading"><el-icon><DataBoard /></el-icon>{{ t('security.resources.classificationGrading') }}</el-menu-item>
+      <el-menu-item v-if="canEnter('/sensitive-data-definitions')" index="/sensitive-data-definitions"><el-icon><Key /></el-icon>{{ t('security.resources.sensitiveDataDefinition') }}</el-menu-item>
+      <el-menu-item v-if="canEnter('/protection-enrollments')" index="/protection-enrollments"><el-icon><CircleCheck /></el-icon>{{ t('security.resources.protectionEnrollment') }}</el-menu-item>
     </el-menu></el-aside><el-main><router-view /></el-main></el-container>
   </el-container>
 </template>
@@ -14,8 +14,10 @@ import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { Lock, DataBoard, Key, CircleCheck } from '@element-plus/icons-vue'
+import { allowsConsoleRoute } from '@common-ui'
 import { useAuthStore } from '../store/auth'
 const embedded = ref(false); const route = useRoute(); const router = useRouter(); const auth = useAuthStore(); const { t } = useI18n()
+const canEnter = path => allowsConsoleRoute(`/security${path}`, auth.contextType, auth.permissions)
 onMounted(() => { embedded.value = window.self !== window.top })
 function logout() { auth.logout(); router.push('/login') }
 </script>

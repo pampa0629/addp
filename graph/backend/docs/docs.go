@@ -1175,6 +1175,24 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
@@ -1183,6 +1201,9 @@ const docTemplate = `{
                     }
                 },
                 "x-addp-auth-mode": "permission",
+                "x-addp-conditional-permissions": [
+                    "graph.ontology.read"
+                ],
                 "x-addp-required-permissions": [
                     "graph.graph.read"
                 ]
@@ -1237,6 +1258,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
@@ -1246,7 +1273,8 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
-                    "graph.graph.update"
+                    "graph.graph.read",
+                    "graph.ontology.update"
                 ]
             }
         },
@@ -2082,49 +2110,10 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     },
-                    "500": {
-                        "description": "Internal Server Error",
+                    "404": {
+                        "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
-                        }
-                    },
-                    "503": {
-                        "description": "Service Unavailable",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "graph.ontology.read"
-                ]
-            }
-        },
-        "/ontologies/neo4j-engines": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "返回 active 且支持查询的 Neo4j 注册引擎及其连接状态；非 online 项由前端展示并禁选 | Return active registered Neo4j engines supporting queries with connection status; clients must show but disable non-online options",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "本体管理 | Ontology Management"
-                ],
-                "summary": "列出 Neo4j 引擎 | List Neo4j engines",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "additionalProperties": true
-                            }
                         }
                     },
                     "500": {
@@ -2142,7 +2131,8 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
-                    "graph.ontology.read"
+                    "graph.ontology.read",
+                    "system.engine_catalog.read"
                 ]
             }
         },
@@ -2786,6 +2776,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
                         }
                     },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
@@ -2801,7 +2797,8 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
-                    "graph.ontology.update"
+                    "graph.ontology.update",
+                    "system.engine_catalog.read"
                 ]
             }
         },

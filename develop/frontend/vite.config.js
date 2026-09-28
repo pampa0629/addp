@@ -64,5 +64,5 @@ export default defineConfig({
     }
   },
 
-  base: process.env.NODE_ENV === 'development' ? '/' : '/develop/'
+  base: process.env.NODE_ENV === 'development' ? '/' : '/module-ui/develop/'
 })

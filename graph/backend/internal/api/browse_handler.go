@@ -1,15 +1,20 @@
 package api
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 
+	commonAuth "github.com/addp/common/middleware/auth"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	graphi18n "github.com/addp/graph/i18n"
+	graphauthorization "github.com/addp/graph/internal/authorization"
 	"github.com/addp/graph/internal/models"
 	"github.com/addp/graph/internal/service"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 type BrowseHandler struct {
@@ -195,27 +200,39 @@ func (h *BrowseHandler) GetConstraints(c *gin.Context) {
 // @Param        id          path  int true  "知识图谱 ID | Knowledge graph ID"
 // @Param        ontology_id query int false "本体 ID | Ontology ID"
 // @Success      200 {object} map[string]interface{}
+// @Failure      400 {object} models.ErrorResponse
+// @Failure      403 {object} models.ErrorResponse
+// @Failure      404 {object} models.ErrorResponse
 // @Failure      500 {object} models.ErrorResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["graph.graph.read"]
+// @x-addp-conditional-permissions ["graph.ontology.read"]
 // @Router       /graphs/{id}/infer-schema [get]
 func (h *BrowseHandler) InferSchema(c *gin.Context) {
 	graphID := parseUintParam(c, "id")
 	tenantID := getTenantID(c)
 
 	var ontologyID *uint
-	if v := c.Query("ontology_id"); v != "" {
-		id := parseUintParam(c, "ontology_id") // won't work from query
-		// parse manually
-		var oid uint
-		if _, err := fmt.Sscanf(v, "%d", &oid); err == nil && oid > 0 {
-			ontologyID = &oid
+	if v, supplied := c.GetQuery("ontology_id"); supplied {
+		parsedID, err := strconv.ParseUint(v, 10, 64)
+		if err != nil || parsedID == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, commoni18n.MsgInvalidParams)})
+			return
 		}
-		_ = id
+		oid := uint(parsedID)
+		ontologyID = &oid
+		if !commonAuth.HasRolePermission(c, graphauthorization.PermissionGraphOntologyRead) {
+			c.JSON(http.StatusForbidden, gin.H{"error": commoni18n.T(c, graphi18n.MsgUnauthorized)})
+			return
+		}
 	}
 
 	preview, err := h.schemaInference.InferSchema(c.Request.Context(), graphID, tenantID, ontologyID)
 	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, graphi18n.MsgNotFound)})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -232,9 +249,10 @@ func (h *BrowseHandler) InferSchema(c *gin.Context) {
 // @Param        request body models.ApplyInferredSchemaRequest true "应用请求 | Apply request"
 // @Success      200 {object} map[string]interface{}
 // @Failure      400 {object} models.ErrorResponse
+// @Failure      404 {object} models.ErrorResponse
 // @Failure      500 {object} models.ErrorResponse
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["graph.graph.update"]
+// @x-addp-required-permissions ["graph.graph.read","graph.ontology.update"]
 // @Router       /graphs/{id}/infer-schema/apply [post]
 func (h *BrowseHandler) ApplyInferredSchema(c *gin.Context) {
 	graphID := parseUintParam(c, "id")
@@ -248,6 +266,10 @@ func (h *BrowseHandler) ApplyInferredSchema(c *gin.Context) {
 
 	result, err := h.schemaInference.ApplyInferredSchema(c.Request.Context(), graphID, tenantID, &req)
 	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, graphi18n.MsgNotFound)})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

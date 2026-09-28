@@ -40,7 +40,7 @@ func TestCatalogResourceServiceListsOpaqueVersionedMetricChanges(t *testing.T) {
 func TestCatalogResourceServiceResolvesMetricsInRequestOrder(t *testing.T) {
 	domainID, categoryID, unitID := int64(31), int64(41), int64(51)
 	service := NewCatalogResourceService(&catalogResourceRepositoryStub{metrics: []models.MetricDefinitionAggregate{{
-		MetricDefinition: models.MetricDefinition{ID: 9, TenantID: 7, Code: "order_amount", LifecycleState: "active", Version: 4, OwnerDomainID: &domainID, CategoryID: &categoryID},
+		MetricDefinition: models.MetricDefinition{ID: 9, TenantID: 7, Code: "order_amount", ScopeType: "domain", LifecycleState: "active", Version: 4, OwnerDomainID: &domainID, CategoryID: &categoryID},
 		CurrentRevision:  &models.MetricDefinitionRevision{ID: 19, MetricDefinitionID: 9, RevisionNo: 1, Name: "Order amount", MetricType: "atomic", Status: models.RevisionStatusPublished, UnitID: &unitID},
 	}}})
 	result, err := service.Resolve(context.Background(), 7, []models.CatalogReference{
@@ -50,7 +50,7 @@ func TestCatalogResourceServiceResolvesMetricsInRequestOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(result.Results) != 2 || !result.Results[0].Found || result.Results[1].Found ||
-		result.Results[0].Summary["domain_id"] != "31" || result.Results[0].DetailPath != "/standard/metrics/9" {
+		result.Results[0].Summary["domain_id"] != "31" || result.Results[0].Summary["scope_type"] != "domain" || result.Results[0].DetailPath != "/standard/metrics/9" {
 		t.Fatalf("result = %#v", result)
 	}
 }

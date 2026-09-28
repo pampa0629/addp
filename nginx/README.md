@@ -21,85 +21,48 @@ docker-compose up -d nginx
 ### 方式 2: 独立 Docker 容器
 
 ```bash
-# 1. 构建前端
-cd system/frontend
-npm run build
-
-# 2. 启动 Nginx
+# 构建并启动包含唯一生产路由配置的镜像
+docker build -t addp-nginx ./nginx
 docker run -d \
   --name addp-nginx \
   -p 80:80 \
-  -v $(pwd)/nginx/nginx.conf:/etc/nginx/conf.d/default.conf \
-  -v $(pwd)/system/frontend/dist:/usr/share/nginx/html \
   --network addp-network \
-  nginx:alpine
+  addp-nginx
 ```
 
-### 方式 3: 本地 Nginx
+Console 公开路由由根入口处理；各模块 iframe 与静态资源通过 `/module-ui/<frontend>/` 转发。`/portal/` 和 `/data-apps/` 保持独立入口。生产镜像与部署包均使用 `nginx/nginx.conf`。
 
-如果系统已安装 Nginx：
-
-```bash
-# macOS
-brew install nginx
-
-# Ubuntu/Debian
-sudo apt install nginx
-
-# 复制配置
-sudo cp nginx/nginx.conf /usr/local/etc/nginx/servers/addp.conf
-
-# 测试配置
-sudo nginx -t
-
-# 重载配置
-sudo nginx -s reload
-```
+`nginx.conf` 是完整的 Nginx 主配置，依赖 ADDP 容器网络中的服务名，不能作为本地 Nginx 的 `servers/` 片段直接复制。
 
 ## 配置说明
 
-### 静态文件路径
+### Console 与模块路径
 
 ```nginx
 location / {
-    root /usr/share/nginx/html;  # 前端文件位置
-    try_files $uri $uri/ /index.html;
+    proxy_pass http://console;
+}
+location /module-ui/system/ {
+    proxy_pass http://system-frontend/;
 }
 ```
+
+其余模块在同一配置中采用各自的 `/module-ui/<frontend>/` 路由；Console 的 `/<module>/` 公开地址仍由根入口处理。
 
 ### API 代理
 
 ```nginx
 location /api/ {
-    proxy_pass http://gateway_backend;  # 代理到 Gateway
-}
-```
-
-### 缓存策略
-
-```nginx
-# HTML - 不缓存
-location ~* \.html$ {
-    add_header Cache-Control "no-cache";
-}
-
-# 静态资源 - 缓存 1 年
-location ~* \.(js|css|png|jpg)$ {
-    expires 1y;
+    proxy_pass http://gateway;
 }
 ```
 
 ## 验证配置
 
 ```bash
-# 测试配置文件语法
-nginx -t
-
-# 查看 Nginx 版本
-nginx -v
-
-# 查看配置详情
-nginx -T
+# 在已启动的 ADDP Nginx 容器内检查实际加载的配置
+docker exec addp-nginx nginx -t
+docker exec addp-nginx nginx -T
 ```
 
 ## 常见问题
@@ -114,22 +77,12 @@ lsof -i :80
 listen 8080;  # 改为其他端口
 ```
 
-### 2. 权限问题
-
-```bash
-# 确保 Nginx 用户有权限访问文件
-chmod -R 755 system/frontend/dist
-```
-
-### 3. 日志查看
+### 2. 日志查看
 
 ```bash
 # Docker 容器日志
 docker logs addp-nginx
 
-# 本地 Nginx 日志
-tail -f /var/log/nginx/addp-access.log
-tail -f /var/log/nginx/addp-error.log
 ```
 
 ## HTTPS 配置

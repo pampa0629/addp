@@ -21,6 +21,7 @@
               :key="e.id"
               :label="e.name"
               :value="e.id"
+              :disabled="!isEngineSelectable(e)"
             />
           </el-select>
         </el-form-item>
@@ -28,7 +29,7 @@
       <div style="text-align:right;margin-top:8px">
         <el-button
           type="primary"
-          :disabled="!selectedEngineId"
+          :disabled="!selectedEngine"
           @click="runInference"
         >{{ t('graph.inferFromEngine.startInfer') }}</el-button>
       </div>
@@ -142,8 +143,9 @@
 import { ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Loading } from '@element-plus/icons-vue'
-import { ontologyAPI } from '../api/ontology'
+import { ontologyAPI, engineAPI } from '../api/ontology'
 import { useI18n } from 'vue-i18n'
+import { isEngineSelectable } from '@common-ui'
 
 const { t } = useI18n()
 
@@ -158,6 +160,7 @@ const applying = ref(false)
 const loadingEngines = ref(false)
 const engines = ref([])
 const selectedEngineId = ref(null)
+const selectedEngine = computed(() => engines.value.find(engine => engine.id === selectedEngineId.value && isEngineSelectable(engine)))
 const preview = ref(null)
 const conflict = ref('skip')
 const selectedEntityNames = ref([])
@@ -180,7 +183,7 @@ async function handleOpen() {
   selectedRelationKeys.value = []
   loadingEngines.value = true
   try {
-    const res = await ontologyAPI.listNeo4jEngines()
+    const res = await engineAPI.getNeo4jEngines()
     engines.value = res
   } catch (e) {
     ElMessage.error(t('graph.inferFromEngine.loadEnginesFailed', { msg: e.message || e }))

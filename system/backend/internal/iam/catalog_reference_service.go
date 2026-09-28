@@ -171,7 +171,7 @@ func (s *CatalogReferenceService) resolve(
 	for _, projectGroup := range projectGroups {
 		resolved[catalogReferenceKey(CatalogSubjectTypeProjectGroup, projectGroup.ID)] = CatalogReferenceResolution{
 			SubjectType: CatalogSubjectTypeProjectGroup, ID: projectGroup.ID, Found: true,
-			Referenceable: projectGroup.Status != string(ProjectGroupStatusClosed), Name: projectGroup.Name,
+			Referenceable: projectGroup.Status == string(ProjectGroupStatusActive), Name: projectGroup.Name,
 			Code: projectGroup.Code, Status: projectGroup.Status,
 		}
 	}

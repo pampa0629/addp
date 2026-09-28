@@ -33,18 +33,18 @@
     <el-container class="main-container">
       <el-aside class="sidebar" width="200px">
         <el-menu :default-active="activeMenu" router class="sidebar-menu">
-          <el-sub-menu index="quality">
+          <el-sub-menu v-if="hasQualityPages" index="quality">
             <template #title>
               <el-icon><CircleCheck /></el-icon>
               <span>{{ t('quality.layout.qualityManagement') }}</span>
             </template>
-            <el-menu-item v-if="can('quality.plan.read') && can('quality.issue.read') && can('monitor.execution.read')" index="/overview"><el-icon><CircleCheck /></el-icon><span>{{ t('quality.overview.title') }}</span></el-menu-item>
-            <el-menu-item v-if="can('quality.rule.read')" index="/rules"><el-icon><List /></el-icon><span>{{ t('quality.rule.title') }}</span></el-menu-item>
-            <el-menu-item v-if="can('quality.plan.read')" index="/plans">
+            <el-menu-item v-if="canEnter('/overview')" index="/overview"><el-icon><CircleCheck /></el-icon><span>{{ t('quality.overview.title') }}</span></el-menu-item>
+            <el-menu-item v-if="canEnter('/rules')" index="/rules"><el-icon><List /></el-icon><span>{{ t('quality.rule.title') }}</span></el-menu-item>
+            <el-menu-item v-if="canEnter('/plans')" index="/plans">
               <el-icon><Lock /></el-icon>
               <span>{{ t('quality.layout.qualityPlans') }}</span>
             </el-menu-item>
-            <el-menu-item v-if="can('quality.issue.read')" index="/issues">
+            <el-menu-item v-if="canEnter('/issues')" index="/issues">
               <el-icon><Warning /></el-icon>
               <span>{{ t('quality.layout.issues') }}</span>
             </el-menu-item>
@@ -63,6 +63,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '../store/auth'
+import { allowsConsoleRoute } from '@common-ui'
 import {
   User, ArrowDown, SwitchButton, CircleCheck,
   Warning, Lock, List
@@ -74,7 +75,8 @@ const { t } = useI18n()
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
-const can = permission => authStore.hasPermission(permission)
+const canEnter = path => allowsConsoleRoute(`/quality${path}`, authStore.contextType, authStore.permissions)
+const hasQualityPages = computed(() => ['/overview', '/rules', '/plans', '/issues'].some(canEnter))
 const isInIframe = ref(false)
 
 onMounted(() => {

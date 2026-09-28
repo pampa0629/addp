@@ -1430,7 +1430,7 @@
   "paths": {
     "/api/v1/agent/chat": {
       "post": {
-        "description": "接收标准 AG-UI RunAgentInput，并以 text/event-stream 返回 AG-UI 事件。",
+        "description": "接收当前 Tenant 内本人会话的标准 AG-UI RunAgentInput，并以 text/event-stream 返回 AG-UI 事件。",
         "operationId": "chat_api_v1_agent_chat_post",
         "requestBody": {
           "content": {
@@ -1748,7 +1748,7 @@
     },
     "/api/v1/agent/sessions": {
       "get": {
-        "description": "获取当前用户的会话列表",
+        "description": "获取当前 Tenant 内当前用户的会话列表",
         "operationId": "list_sessions_api_v1_agent_sessions_get",
         "responses": {
           "200": {
@@ -1824,7 +1824,7 @@
     },
     "/api/v1/agent/sessions/{session_id}": {
       "delete": {
-        "description": "删除会话",
+        "description": "删除当前 Tenant 内当前用户拥有的会话",
         "operationId": "delete_session_api_v1_agent_sessions__session_id__delete",
         "parameters": [
           {
@@ -1872,7 +1872,7 @@
         ]
       },
       "get": {
-        "description": "获取会话详情",
+        "description": "获取当前 Tenant 内当前用户拥有的会话详情",
         "operationId": "get_session_api_v1_agent_sessions__session_id__get",
         "parameters": [
           {
@@ -1922,6 +1922,7 @@
     },
     "/api/v1/agent/sessions/{session_id}/messages": {
       "get": {
+        "description": "只返回当前 Tenant 内当前用户拥有的会话消息。",
         "operationId": "get_messages_api_v1_agent_sessions__session_id__messages_get",
         "parameters": [
           {

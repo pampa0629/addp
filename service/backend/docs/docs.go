@@ -930,6 +930,15 @@ const docTemplate = `{
                             }
                         }
                     },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
@@ -3219,6 +3228,15 @@ const docTemplate = `{
                                 "$ref": "#/definitions/github_com_addp_service_internal_models.TileServiceLayerDTO"
                             }
                         }
+                    },
+                    "404": {
+                        "description": "当前租户中服务不存在 | Service not found in current tenant",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
@@ -3261,6 +3279,15 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_service_internal_models.TileServiceLayerDTO"
                         }
+                    },
+                    "404": {
+                        "description": "当前租户中服务不存在 | Service not found in current tenant",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
@@ -3299,6 +3326,15 @@ const docTemplate = `{
                         "description": "图层详情 | Layer details",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_service_internal_models.TileServiceLayerDTO"
+                        }
+                    },
+                    "404": {
+                        "description": "当前租户中图层不存在 | Layer not found in current tenant",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
                         }
                     }
                 },
@@ -3349,6 +3385,15 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_service_internal_models.TileServiceLayerDTO"
                         }
+                    },
+                    "404": {
+                        "description": "当前租户中图层不存在 | Layer not found in current tenant",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
@@ -3383,6 +3428,15 @@ const docTemplate = `{
                 "responses": {
                     "204": {
                         "description": "删除成功 | Deleted successfully"
+                    },
+                    "404": {
+                        "description": "当前租户中图层不存在 | Layer not found in current tenant",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
@@ -3494,6 +3548,15 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_service_internal_models.TileServiceDTO"
                         }
+                    },
+                    "404": {
+                        "description": "当前租户中服务不存在 | Service not found in current tenant",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
@@ -3536,6 +3599,15 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_service_internal_models.TileServiceDTO"
                         }
+                    },
+                    "404": {
+                        "description": "当前租户中服务不存在 | Service not found in current tenant",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
@@ -3563,6 +3635,15 @@ const docTemplate = `{
                 "responses": {
                     "204": {
                         "description": "删除成功 | Deleted successfully"
+                    },
+                    "404": {
+                        "description": "当前租户中服务不存在 | Service not found in current tenant",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",

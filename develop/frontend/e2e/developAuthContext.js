@@ -11,7 +11,7 @@ export const developAuthContext = {
         'develop.notebook.update', 'develop.notebook.delete',
         'develop.data_read.execute', 'develop.data_write.execute',
         'develop.data_ddl.execute', 'develop.data_external_effect.execute',
-        'develop.catalog.read', 'monitor.execution.read'
+        'develop.catalog.read', 'meta.catalog.read', 'monitor.execution.read'
       ]
     }]
   }

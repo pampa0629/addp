@@ -209,10 +209,13 @@ func openCatalogServiceTestDB(t *testing.T) *gorm.DB {
 			id TEXT PRIMARY KEY, tenant_id INTEGER NOT NULL, catalog_entry_id TEXT NOT NULL, semantic_type TEXT NOT NULL,
 			semantic_id INTEGER NOT NULL, relation_role TEXT NOT NULL, observed_version INTEGER NOT NULL,
 			observed_snapshot JSON NOT NULL, verified_at DATETIME NOT NULL, created_at DATETIME, updated_at DATETIME)`,
-		`CREATE TABLE catalog.component_element_associations (
+		`CREATE TABLE catalog.standard_mappings (
 			id TEXT PRIMARY KEY, tenant_id INTEGER NOT NULL, catalog_entry_id TEXT NOT NULL, component_id TEXT NOT NULL,
-			element_id INTEGER NOT NULL, observed_version INTEGER NOT NULL, observed_snapshot JSON NOT NULL,
-			verified_at DATETIME NOT NULL, created_at DATETIME, updated_at DATETIME)`,
+			element_id INTEGER NOT NULL, element_revision_id INTEGER, source TEXT NOT NULL, confidence REAL,
+			evidence JSON NOT NULL, review_status TEXT NOT NULL, version INTEGER NOT NULL,
+			proposed_by_type TEXT NOT NULL, proposed_by_id TEXT NOT NULL, reviewed_by_type TEXT,
+			reviewed_by_id TEXT, review_opinion TEXT, reviewed_at DATETIME,
+			created_at DATETIME, updated_at DATETIME)`,
 	}
 	for _, statement := range statements {
 		if err := db.Exec(statement).Error; err != nil {

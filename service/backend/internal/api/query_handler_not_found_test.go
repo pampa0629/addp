@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	authmiddleware "github.com/addp/common/middleware/auth"
 	"github.com/addp/service/internal/repository"
 	serviceimpl "github.com/addp/service/internal/service"
 	"github.com/gin-gonic/gin"
@@ -20,7 +21,8 @@ func TestQueryServiceGetReturnsNotFoundForMissingResource(t *testing.T) {
 	}
 	for _, statement := range []string{
 		`ATTACH DATABASE ':memory:' AS service`,
-		`CREATE TABLE service.query_services (id INTEGER PRIMARY KEY)`,
+		`CREATE TABLE service.query_services (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL)`,
+		`INSERT INTO service.query_services (id, tenant_id) VALUES (8, 8)`,
 	} {
 		if err := db.Exec(statement).Error; err != nil {
 			t.Fatal(err)
@@ -31,14 +33,17 @@ func TestQueryServiceGetReturnsNotFoundForMissingResource(t *testing.T) {
 		serviceimpl.NewQueryServiceService(repository.NewQueryServiceRepository(db), nil, nil, ""),
 		nil,
 	)
-	response := httptest.NewRecorder()
-	context, _ := gin.CreateTestContext(response)
-	context.Request = httptest.NewRequest(http.MethodGet, "/api/v1/service/query/404", nil)
-	context.Params = gin.Params{{Key: "id", Value: "404"}}
-
-	handler.GetService(context)
-
-	if response.Code != http.StatusNotFound {
-		t.Fatalf("status = %d, want %d; body=%s", response.Code, http.StatusNotFound, response.Body.String())
+	for _, id := range []string{"404", "8"} {
+		response := httptest.NewRecorder()
+		context, _ := gin.CreateTestContext(response)
+		context.Request = httptest.NewRequest(http.MethodGet, "/api/v1/service/query/"+id, nil)
+		context.Params = gin.Params{{Key: "id", Value: id}}
+		if err := authmiddleware.SetAuthContextForGin(context, testTenantUserAuthContext(t, 7)); err != nil {
+			t.Fatal(err)
+		}
+		handler.GetService(context)
+		if response.Code != http.StatusNotFound {
+			t.Fatalf("id %s status = %d, want %d; body=%s", id, response.Code, http.StatusNotFound, response.Body.String())
+		}
 	}
 }

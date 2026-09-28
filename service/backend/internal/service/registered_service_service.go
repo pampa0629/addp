@@ -90,7 +90,7 @@ func (s *RegisteredServiceService) CreateService(req *models.CreateRegisteredSer
 	}
 
 	// 6. 重新加载服务（获取完整数据）
-	service, err = s.repo.GetByID(service.ID)
+	service, err = s.repo.GetByIDAndTenant(service.ID, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("get created service failed: %w", err)
 	}
@@ -99,8 +99,8 @@ func (s *RegisteredServiceService) CreateService(req *models.CreateRegisteredSer
 }
 
 // GetService 获取服务详情
-func (s *RegisteredServiceService) GetService(id uint) (*models.RegisteredServiceDTO, error) {
-	service, err := s.repo.GetByID(id)
+func (s *RegisteredServiceService) GetService(id, tenantID uint) (*models.RegisteredServiceDTO, error) {
+	service, err := s.repo.GetByIDAndTenant(id, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("get service failed: %w", err)
 	}
@@ -149,9 +149,9 @@ func (s *RegisteredServiceService) SearchServices(tenantID uint, keyword string,
 }
 
 // UpdateService 更新服务
-func (s *RegisteredServiceService) UpdateService(id uint, req *models.UpdateRegisteredServiceRequest) (*models.RegisteredServiceDTO, error) {
+func (s *RegisteredServiceService) UpdateService(id, tenantID uint, req *models.UpdateRegisteredServiceRequest) (*models.RegisteredServiceDTO, error) {
 	// 获取现有服务
-	service, err := s.repo.GetByID(id)
+	service, err := s.repo.GetByIDAndTenant(id, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("get service failed: %w", err)
 	}
@@ -182,12 +182,12 @@ func (s *RegisteredServiceService) UpdateService(id uint, req *models.UpdateRegi
 	}
 
 	// 执行更新
-	if err := s.repo.Update(id, updates); err != nil {
+	if err := s.repo.Update(id, tenantID, updates); err != nil {
 		return nil, fmt.Errorf("update service failed: %w", err)
 	}
 
 	// 重新加载服务
-	service, err = s.repo.GetByID(id)
+	service, err = s.repo.GetByIDAndTenant(id, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("get updated service failed: %w", err)
 	}
@@ -196,16 +196,16 @@ func (s *RegisteredServiceService) UpdateService(id uint, req *models.UpdateRegi
 }
 
 // DeleteService 删除服务
-func (s *RegisteredServiceService) DeleteService(id uint) error {
-	if err := s.repo.Delete(id); err != nil {
+func (s *RegisteredServiceService) DeleteService(id, tenantID uint) error {
+	if err := s.repo.Delete(id, tenantID); err != nil {
 		return fmt.Errorf("delete service failed: %w", err)
 	}
 	return nil
 }
 
 // RefreshMetadata 刷新服务元数据
-func (s *RegisteredServiceService) RefreshMetadata(id uint, force bool) error {
-	service, err := s.repo.GetByID(id)
+func (s *RegisteredServiceService) RefreshMetadata(id, tenantID uint, force bool) error {
+	service, err := s.repo.GetByIDAndTenant(id, tenantID)
 	if err != nil {
 		return fmt.Errorf("get service failed: %w", err)
 	}
@@ -218,17 +218,17 @@ func (s *RegisteredServiceService) RefreshMetadata(id uint, force bool) error {
 	// 刷新元数据
 	if err := s.refreshOGCMetadata(service); err != nil {
 		// 更新服务状态为错误
-		_ = s.repo.UpdateStatus(id, "error", err.Error())
+		_ = s.repo.UpdateStatus(id, tenantID, "error", err.Error())
 		return fmt.Errorf("refresh metadata failed: %w", err)
 	}
 
 	// 更新服务状态为活跃
-	return s.repo.UpdateStatus(id, "active", "")
+	return s.repo.UpdateStatus(id, tenantID, "active", "")
 }
 
 // HealthCheck 健康检查
-func (s *RegisteredServiceService) HealthCheck(id uint) (*models.HealthCheckResult, error) {
-	service, err := s.repo.GetByID(id)
+func (s *RegisteredServiceService) HealthCheck(id, tenantID uint) (*models.HealthCheckResult, error) {
+	service, err := s.repo.GetByIDAndTenant(id, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("get service failed: %w", err)
 	}
@@ -237,13 +237,13 @@ func (s *RegisteredServiceService) HealthCheck(id uint) (*models.HealthCheckResu
 	result := s.performHealthCheck(service)
 
 	// 更新最后检查时间
-	_ = s.repo.UpdateHealthCheck(id)
+	_ = s.repo.UpdateHealthCheck(id, tenantID)
 
 	// 如果检查失败，更新服务状态
 	if result.Status == "unhealthy" || result.Status == "error" {
-		_ = s.repo.UpdateStatus(id, "error", result.Message)
+		_ = s.repo.UpdateStatus(id, tenantID, "error", result.Message)
 	} else {
-		_ = s.repo.UpdateStatus(id, "active", "")
+		_ = s.repo.UpdateStatus(id, tenantID, "active", "")
 	}
 
 	return result, nil
@@ -479,7 +479,7 @@ func (s *RegisteredServiceService) refreshWMSMetadata(service *models.Registered
 	}
 
 	// 更新元数据
-	if err := s.repo.UpdateMetadata(service.ID, metadata); err != nil {
+	if err := s.repo.UpdateMetadata(service.ID, service.TenantID, metadata); err != nil {
 		return fmt.Errorf("failed to update metadata: %w", err)
 	}
 
@@ -573,7 +573,7 @@ func (s *RegisteredServiceService) refreshWFSMetadata(service *models.Registered
 	}
 
 	// 更新服务元数据
-	if err := s.repo.UpdateMetadata(service.ID, metadata); err != nil {
+	if err := s.repo.UpdateMetadata(service.ID, service.TenantID, metadata); err != nil {
 		return fmt.Errorf("failed to update metadata: %w", err)
 	}
 
@@ -679,7 +679,7 @@ func (s *RegisteredServiceService) refreshWMTSMetadata(service *models.Registere
 	}
 
 	// 更新服务元数据
-	if err := s.repo.UpdateMetadata(service.ID, metadata); err != nil {
+	if err := s.repo.UpdateMetadata(service.ID, service.TenantID, metadata); err != nil {
 		return fmt.Errorf("failed to update metadata: %w", err)
 	}
 
@@ -776,7 +776,7 @@ func (s *RegisteredServiceService) refreshOGCAPIMetadata(service *models.Registe
 		"refreshed_at": time.Now(),
 	}
 
-	if err := s.repo.UpdateMetadata(service.ID, metadata); err != nil {
+	if err := s.repo.UpdateMetadata(service.ID, service.TenantID, metadata); err != nil {
 		return fmt.Errorf("failed to update metadata: %w", err)
 	}
 

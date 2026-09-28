@@ -10,6 +10,13 @@ import { isSynchronizedIframeRoute, splitConsoleRoute } from '../src/utils/conso
 import { searchIndex } from '../src/config/searchIndex'
 
 describe('Console navigation bridge', () => {
+  it('keeps one Catalog browse entry for resource and domain discovery', () => {
+    const configSource = readFileSync(new URL('../src/config/portalConfig.js', import.meta.url), 'utf8')
+    expect(configSource).toContain("index: '/catalog/entries'")
+    expect(configSource).not.toContain("index: '/catalog/domains'")
+    expect(searchIndex('业务域', key => key, ['catalog.entry.read'], 'tenant').map(item => item.route)).toContain('/catalog/entries')
+  })
+
   it('removes retired Standard collection entry points', () => {
     const configSource = readFileSync(new URL('../src/config/portalConfig.js', import.meta.url), 'utf8')
     const zhCn = JSON.parse(readFileSync(new URL('../src/i18n/zh-cn.json', import.meta.url), 'utf8'))
@@ -170,10 +177,16 @@ describe('Console navigation bridge', () => {
     expect(configSource).toContain("modules: ['catalog', 'asset']")
     expect(configSource).toContain("catalog:      '/catalog/entries'")
     expect(configSource).toContain("index: '/catalog/entries'")
+    expect(configSource).toContain("index: '/catalog/me/entries'")
+    expect(configSource).toContain("index: '/catalog/collections'")
+    expect(configSource).toContain("index: '/catalog/governance/tasks'")
     expect(configSource).toContain("index: '/catalog/governance/coverage'")
 
     const searchSource = readFileSync(new URL('../src/config/searchIndex.js', import.meta.url), 'utf8')
     expect(searchSource).toContain("module: 'catalog', route: '/catalog/entries'")
+    expect(searchSource).toContain("module: 'catalog', route: '/catalog/me/entries'")
+    expect(searchSource).toContain("module: 'catalog', route: '/catalog/collections'")
+    expect(searchSource).toContain("module: 'catalog', route: '/catalog/governance/tasks'")
     expect(searchSource).toContain("module: 'catalog', route: '/catalog/governance/coverage'")
 
     const apiDocsSource = readFileSync(new URL('../src/views/ApiDocs.vue', import.meta.url), 'utf8')
@@ -188,6 +201,16 @@ describe('Console navigation bridge', () => {
     expect(searchIndex('治理覆盖率', key => key, ['catalog.inventory.read'], 'tenant')).toEqual([])
     expect(searchIndex('治理覆盖率', key => key, ['catalog.inventory.read', 'catalog.entry.read'], 'tenant').map(item => item.route))
       .toContain('/catalog/governance/coverage')
+    expect(searchIndex('我的目录', key => key, ['catalog.entry.read'], 'tenant').map(item => item.route))
+      .toContain('/catalog/me/entries')
+    expect(searchIndex('目录集合', key => key, ['catalog.collection.read'], 'tenant').map(item => item.route))
+      .not.toContain('/catalog/collections')
+    expect(searchIndex('目录集合', key => key, ['catalog.collection.read', 'catalog.entry.read'], 'tenant').map(item => item.route))
+      .toContain('/catalog/collections')
+    expect(searchIndex('责任治理', key => key, ['catalog.entry.update'], 'tenant').map(item => item.route))
+      .not.toContain('/catalog/governance/tasks')
+    expect(searchIndex('责任治理', key => key, ['catalog.entry.update', 'catalog.entry.read'], 'tenant').map(item => item.route))
+      .toContain('/catalog/governance/tasks')
   })
 
 
@@ -359,7 +382,7 @@ it('orders modeling from entity design to table design and publishing in both sh
   const layout = readFileSync(new URL('../../../model/frontend/src/components/Layout.vue', import.meta.url), 'utf8')
   const routes = ['entities', 'er-diagram', 'dw-layers', 'logical-tables', 'metric-implementations', 'star-schema']
   const consoleRoutes = [...config.matchAll(/index: '\/modeling\/([^']+)'/g)].map(match => match[1])
-  const standaloneRoutes = [...layout.matchAll(/el-menu-item index="\/([^"]+)"/g)].map(match => match[1])
+  const standaloneRoutes = [...layout.matchAll(/<el-menu-item\b[^>]*\bindex="\/([^"]+)"/g)].map(match => match[1])
   expect(consoleRoutes).toEqual(routes)
   expect(standaloneRoutes).toEqual(routes)
   expect(config).toContain("modeling:     '/modeling/entities'")

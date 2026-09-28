@@ -12,7 +12,7 @@
     </div>
 
     <el-table v-loading="loading" :data="rows" stripe>
-      <el-table-column :label="t('system.iam.common.name')" min-width="220"><template #default="{ row }"><div class="iam-primary-cell"><strong>{{ row.name }}</strong><span>{{ row.code }}</span></div></template></el-table-column>
+      <el-table-column :label="t('system.iam.common.name')" min-width="220"><template #default="{ row }"><div class="iam-primary-cell"><strong>{{ row.name }}</strong><el-tooltip :content="row.code"><el-button link :icon="CopyDocument" :aria-label="t('system.iam.organization.copyCode')" @click="copyCode(row.code)" /></el-tooltip></div></template></el-table-column>
       <el-table-column :label="t('system.iam.organization.parent')" min-width="170"><template #default="{ row }">{{ departmentName(row.parent_id) }}</template></el-table-column>
       <el-table-column :label="t('system.iam.common.status')" width="120"><template #default="{ row }"><el-tag :type="row.status === 'active' ? 'success' : 'info'">{{ statusLabel(row.status) }}</el-tag></template></el-table-column>
       <el-table-column :label="t('system.iam.common.updatedAt')" width="180"><template #default="{ row }">{{ formatDate(row.updated_at) }}</template></el-table-column>
@@ -31,6 +31,10 @@
       <el-alert v-if="versionConflict" type="warning" :closable="false" show-icon :title="t('system.iam.organization.versionConflict')" />
       <el-form label-position="top">
         <el-form-item :label="t('system.iam.common.name')"><el-input v-model="form.name" /></el-form-item>
+        <el-form-item :label="t('system.iam.common.code')" :required="formMode === 'create'" :error="organizationCodeError">
+          <el-input v-model="form.code" :disabled="formMode === 'edit'" />
+          <el-text type="info" size="small">{{ t(formMode === 'create' ? 'system.iam.organization.codeCreateHint' : 'system.iam.organization.codeImmutableHint') }}</el-text>
+        </el-form-item>
         <el-form-item :label="t('system.iam.organization.parent')">
           <el-select v-model="form.parentId" clearable style="width: 100%" :placeholder="t('system.iam.organization.root')">
             <el-option v-for="item in parentOptions" :key="item.id" :label="`${item.name} · ${item.code}`" :value="item.id" />
@@ -45,12 +49,13 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { CircleClose, Edit, Plus, Refresh, RefreshLeft, Search, User } from '@element-plus/icons-vue'
+import { CircleClose, CopyDocument, Edit, Plus, Refresh, RefreshLeft, Search, User } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import { iamAPI } from '../../api/iam'
 import { useAuthStore } from '../../store/auth'
+import { isValidOrganizationCode } from '../../utils/organizationIdentity'
 import OrganizationMembershipsDialog from './OrganizationMembershipsDialog.vue'
 
 const { t } = useI18n()
@@ -68,10 +73,14 @@ const formVisible = ref(false)
 const formMode = ref('create')
 const editing = ref(null)
 const versionConflict = ref(false)
-const form = reactive({ name: '', parentId: null })
+const codeConflict = ref(false)
+const form = reactive({ code: '', name: '', parentId: null })
 const membersVisible = ref(false)
 const selectedDepartment = ref(null)
-const formValid = computed(() => Boolean(form.name.trim()))
+const organizationCodeValid = computed(() => isValidOrganizationCode(form.code))
+const organizationCodeError = computed(() => codeConflict.value ? t('system.iam.organization.codeAlreadyExists') : form.code && !organizationCodeValid.value ? t('system.iam.validation.organizationCode') : '')
+const formValid = computed(() => organizationCodeValid.value && Boolean(form.name.trim()))
+watch(() => form.code, () => { codeConflict.value = false })
 const parentOptions = computed(() => allDepartments.value.filter(item => item.status === 'active' && item.id !== editing.value?.id))
 
 function statusLabel(value) { return t(`system.iam.status.${value}`) }
@@ -93,20 +102,21 @@ async function load() {
 function reload() { page.value = 1; return load() }
 async function openCreate() {
   await loadOptions(); formMode.value = 'create'; editing.value = null; versionConflict.value = false
-  Object.assign(form, { name: '', parentId: null }); formVisible.value = true
+  codeConflict.value = false; Object.assign(form, { code: '', name: '', parentId: null }); formVisible.value = true
 }
 async function openEdit(row) {
   await loadOptions(); formMode.value = 'edit'; editing.value = row; versionConflict.value = false
-  Object.assign(form, { name: row.name, parentId: row.parent_id }); formVisible.value = true
+  Object.assign(form, { code: row.code, name: row.name, parentId: row.parent_id }); formVisible.value = true
 }
 async function save() {
   submitting.value = true; versionConflict.value = false
   try {
-    if (formMode.value === 'create') await iamAPI.departments.create({ name: form.name.trim(), parent_id: form.parentId || null })
+    if (formMode.value === 'create') await iamAPI.departments.create({ code: form.code.trim(), name: form.name.trim(), parent_id: form.parentId || null })
     else await iamAPI.departments.update(editing.value.id, { name: form.name.trim(), parent_id: form.parentId || null, version: editing.value.version })
     ElMessage.success(t('system.iam.common.saved')); formVisible.value = false; await load()
   } catch (error) {
     if (error.response?.data?.error_code === 'resource_version_conflict') versionConflict.value = true
+    if (error.response?.data?.error_code === 'organization_code_already_exists') codeConflict.value = true
     ElMessage.error(error.response?.data?.error || t('system.iam.common.saveFailed'))
   } finally { submitting.value = false }
 }
@@ -122,5 +132,6 @@ async function changeStatus(row, action) {
   } catch (error) { if (error !== 'cancel' && error !== 'close') ElMessage.error(error.response?.data?.error || t('system.iam.common.updateFailed')) }
 }
 function openMembers(row) { selectedDepartment.value = row; membersVisible.value = true }
+async function copyCode(code) { await navigator.clipboard.writeText(code); ElMessage.success(t('system.iam.organization.codeCopied')) }
 onMounted(load)
 </script>

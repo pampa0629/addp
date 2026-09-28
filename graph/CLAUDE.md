@@ -172,12 +172,15 @@ Graph 是以下 Permission 的唯一 owner：
 路由与 Permission 语义映射固定如下：
 
 - Ontology 的实体类、关系类、版本、Model 导入、Schema 推导和约束/空间映射都是 Ontology 聚合内部能力，按操作语义映射到 `graph.ontology.read/create/update/delete`。
-- 图谱实例 CRUD 映射到 `graph.graph.*`；Schema、统计、浏览、搜索、展开、路径和私有 Knowledge Service 查询使用 `graph.graph.read`。公开 Knowledge Service 由图谱的显式公开策略决定，不伪造 Principal Permission。
+- 从 Neo4j 引擎直接推导本体时，选择器使用 System 的 `system.engine_catalog.read` 窄目录；预览与应用 API 在本体读取或更新权限之外还要求该目录权限。Graph 不返回完整引擎对象供前端选择。
+- 图谱实例 CRUD 映射到 `graph.graph.*`；Schema 预览、统计、浏览、搜索、展开、路径和私有 Knowledge Service 查询使用 `graph.graph.read`。从图谱推导 Schema 并写入本体时同时要求 `graph.graph.read` 与 `graph.ontology.update`，不能用图谱更新权代替本体更新权。公开 Knowledge Service 由图谱的显式公开策略决定，不伪造 Principal Permission。
 - 用户构建任务使用 `graph.build_task.*`；Graph TaskProvider 只允许 `addp-orchestrator` Service Client，并使用 `graph.task_provider.read|execute`。上传或删除材料使用 `graph.build_task.update`；重跑使用 `graph.build_task.execute`。
 - Analysis 能力探测使用 `graph.analysis.read`，算法执行和空间图层同步使用 `graph.analysis.execute`。
 - Review 列表/数量使用 `graph.review.read`，通过、拒绝和修改分别使用 `graph.review.approve/reject/update`；批量路由必须按请求 action 校验对应 Permission。
 
 `delegable` 当前统一保守为 `false`，待 Graph Knowledge Service、Agent Tool 和 OAuth Scope 映射阶段逐项评审，不在首批目录中默认开放委托。
+
+独立访问 Graph 根路径时，在 AuthContext 加载后依照 Console 的本体建模、知识图谱、图分析、知识服务顺序进入首个可访问页面；没有可访问页面则显示无权限。独立侧栏使用相同的页面准入条件与顺序，显式页面 URL 保持原样。
 
 Graph 调用 Copilot 图谱抽取时必须从当前构建任务取得 `tenant_id`，通过 `GRAPH_SERVICE_CLIENT_SECRET` 换取短期 Tenant Service Access Token。不得发送共享 `X-Internal-API-Key`、客户端自报 Tenant Header 或厂商模型凭据。
 

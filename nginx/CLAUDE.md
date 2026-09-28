@@ -9,7 +9,6 @@
 ```text
 nginx/
 ├── nginx.conf
-├── nginx.prod.conf
 ├── Dockerfile
 └── README.md
 ```

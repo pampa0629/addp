@@ -40,5 +40,5 @@ export default defineConfig({
       }
     }
   },
-  base: process.env.NODE_ENV === 'development' ? '/' : '/graph/'
+  base: process.env.NODE_ENV === 'development' ? '/' : '/module-ui/graph/'
 })

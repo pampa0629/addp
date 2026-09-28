@@ -108,6 +108,22 @@ class ChangedGateTest(unittest.TestCase):
             self.assertEqual(["console", "service"], MODULE.affected_modules(self.repository, [path]))
         self.assertEqual(["service"], MODULE.affected_modules(self.repository, ["service/backend/internal/service/query.go"]))
 
+    def test_console_delivery_route_changes_include_workbench_browser_gate(self) -> None:
+        console_manifest = self.repository / "console/frontend/package.json"
+        console_manifest.parent.mkdir(parents=True)
+        console_manifest.write_text("{}\n", encoding="utf-8")
+        path = self.repository / "workbench/frontend/package.json"
+        path.parent.mkdir(parents=True)
+        path.write_text("{}\n", encoding="utf-8")
+        subprocess.run(["git", "add", "."], cwd=self.repository, check=True)
+        for changed in (
+            "console/frontend/vite.config.js",
+            "console/frontend/src/config/portalConfig.js",
+            "console/frontend/package-lock.json",
+        ):
+            with self.subTest(path=changed):
+                self.assertEqual(["console", "workbench"], MODULE.affected_modules(self.repository, [changed]))
+
     def test_consumer_scan_skips_tracked_files_deleted_from_worktree(self) -> None:
         (self.repository / "sample/frontend/package.json").unlink()
         self.assertEqual(

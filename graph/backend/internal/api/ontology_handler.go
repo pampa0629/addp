@@ -11,6 +11,7 @@ import (
 	"github.com/addp/graph/internal/models"
 	"github.com/addp/graph/internal/service"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 type OntologyHandler struct {
@@ -618,32 +619,6 @@ func (h *OntologyHandler) ImportFromModel(c *gin.Context) {
 
 // --- Infer schema from Neo4j engine (no knowledge graph needed) ---
 
-// ListNeo4jEngines godoc
-// @Summary      列出 Neo4j 引擎 | List Neo4j engines
-// @Description  返回 active 且支持查询的 Neo4j 注册引擎及其连接状态；非 online 项由前端展示并禁选 | Return active registered Neo4j engines supporting queries with connection status; clients must show but disable non-online options
-// @Tags         本体管理 | Ontology Management
-// @Produce      json
-// @Security     BearerAuth
-// @Success      200 {array} map[string]interface{}
-// @Failure      500 {object} models.ErrorResponse
-// @Failure      503 {object} models.ErrorResponse
-// @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["graph.ontology.read"]
-// @Router       /ontologies/neo4j-engines [get]
-func (h *OntologyHandler) ListNeo4jEngines(c *gin.Context) {
-	if h.schemaInferenceSvc == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "schema inference not available"})
-		return
-	}
-	tenantID := getTenantID(c)
-	engines, err := h.schemaInferenceSvc.ListNeo4jEngines(tenantID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, engines)
-}
-
 // InferSchemaFromEngine godoc
 // @Summary      从引擎推断 Schema | Infer schema from engine
 // @Tags         本体管理 | Ontology Management
@@ -653,10 +628,11 @@ func (h *OntologyHandler) ListNeo4jEngines(c *gin.Context) {
 // @Param        ontology_id query int false "本体 ID | Ontology ID"
 // @Success      200 {object} map[string]interface{}
 // @Failure      400 {object} models.ErrorResponse
+// @Failure      404 {object} models.ErrorResponse
 // @Failure      500 {object} models.ErrorResponse
 // @Failure      503 {object} models.ErrorResponse
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["graph.ontology.read"]
+// @x-addp-required-permissions ["graph.ontology.read","system.engine_catalog.read"]
 // @Router       /ontologies/infer-schema/from-engine [get]
 func (h *OntologyHandler) InferSchemaFromEngine(c *gin.Context) {
 	if h.schemaInferenceSvc == nil {
@@ -681,6 +657,10 @@ func (h *OntologyHandler) InferSchemaFromEngine(c *gin.Context) {
 
 	preview, err := h.schemaInferenceSvc.InferSchemaFromEngine(c.Request.Context(), engineID, tenantID, ontologyID)
 	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, graphi18n.MsgNotFound)})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -697,10 +677,11 @@ func (h *OntologyHandler) InferSchemaFromEngine(c *gin.Context) {
 // @Param        request body models.ApplyInferredSchemaFromEngineRequest true "应用请求 | Apply request"
 // @Success      200 {object} map[string]interface{}
 // @Failure      400 {object} models.ErrorResponse
+// @Failure      404 {object} models.ErrorResponse
 // @Failure      500 {object} models.ErrorResponse
 // @Failure      503 {object} models.ErrorResponse
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["graph.ontology.update"]
+// @x-addp-required-permissions ["graph.ontology.update","system.engine_catalog.read"]
 // @Router       /ontologies/{id}/infer-schema/from-engine/apply [post]
 func (h *OntologyHandler) ApplyInferredSchemaFromEngine(c *gin.Context) {
 	if h.schemaInferenceSvc == nil {
@@ -721,6 +702,10 @@ func (h *OntologyHandler) ApplyInferredSchemaFromEngine(c *gin.Context) {
 
 	result, err := h.schemaInferenceSvc.ApplyInferredSchemaFromEngine(c.Request.Context(), req.EngineID, ontologyID, tenantID, &req)
 	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, graphi18n.MsgNotFound)})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

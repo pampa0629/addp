@@ -3,16 +3,19 @@ package iam
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
 
 	commonapi "github.com/addp/common/api"
+	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
 var ErrOrganizationVersionConflict = errors.Join(commonapi.ErrConflict, errors.New("organization resource version conflict"))
+var ErrOrganizationCodeAlreadyExists = fmt.Errorf("%w: organization code already exists", commonapi.ErrConflict)
 
 type ManagedOrganizationMembership struct {
 	ID                 int64
@@ -92,7 +95,7 @@ func (r *Repository) IsDepartmentDescendant(ctx context.Context, tenantID, rootI
 }
 
 func (r *Repository) CreateDepartment(ctx context.Context, department *Department) error {
-	return wrapRepositoryError(r.db.WithContext(ctx).Create(department).Error)
+	return wrapOrganizationCodeConflict(r.db.WithContext(ctx).Create(department).Error, "departments_tenant_id_code_key")
 }
 
 func (r *Repository) UpdateDepartment(ctx context.Context, tenantID, departmentID, version int64, parentID *int64, name string) error {
@@ -224,13 +227,21 @@ func (r *Repository) LockProjectGroup(ctx context.Context, tenantID, groupID int
 }
 
 func (r *Repository) CreateProjectGroup(ctx context.Context, group *ProjectGroup) error {
-	return wrapRepositoryError(r.db.WithContext(ctx).Create(group).Error)
+	return wrapOrganizationCodeConflict(r.db.WithContext(ctx).Create(group).Error, "project_groups_tenant_id_code_key")
 }
 
-func (r *Repository) UpdateProjectGroup(ctx context.Context, tenantID, groupID, version int64, name, description string, status ProjectGroupStatus, startsAt, endsAt *time.Time) error {
+func wrapOrganizationCodeConflict(err error, constraint string) error {
+	var postgresError *pgconn.PgError
+	if errors.As(err, &postgresError) && postgresError.Code == "23505" && postgresError.ConstraintName == constraint {
+		return ErrOrganizationCodeAlreadyExists
+	}
+	return wrapRepositoryError(err)
+}
+
+func (r *Repository) UpdateProjectGroup(ctx context.Context, tenantID, groupID, version int64, name, description string) error {
 	result := r.db.WithContext(ctx).Model(&ProjectGroup{}).
 		Where("tenant_id = ? AND id = ? AND version = ?", tenantID, groupID, version).
-		Updates(map[string]any{"name": name, "description": description, "status": status, "starts_at": startsAt, "ends_at": endsAt, "version": gorm.Expr("version + 1")})
+		Updates(map[string]any{"name": name, "description": description, "version": gorm.Expr("version + 1")})
 	return r.organizationWriteResult(ctx, result, &ProjectGroup{}, tenantID, groupID)
 }
 

@@ -49,7 +49,7 @@ export default defineConfig({
       }
     }
   },
-  base: process.env.NODE_ENV === 'development' ? '/' : '/standard/',
+  base: process.env.NODE_ENV === 'development' ? '/' : '/module-ui/standard/',
   build: {
     rollupOptions: {
       output: {

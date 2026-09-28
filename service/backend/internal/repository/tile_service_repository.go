@@ -1,6 +1,7 @@
 package repository
 
 import (
+	commonapi "github.com/addp/common/api"
 	commonrepo "github.com/addp/common/repository"
 	"github.com/addp/service/internal/models"
 	"gorm.io/gorm"
@@ -27,10 +28,10 @@ func (r *TileServiceRepository) CreateService(service *models.TileService) error
 	return r.db.Create(service).Error
 }
 
-// GetServiceByID 根据 ID 获取瓦片服务
-func (r *TileServiceRepository) GetServiceByID(id uint) (*models.TileService, error) {
+// GetServiceByIDAndTenant 在当前租户读取瓦片服务。
+func (r *TileServiceRepository) GetServiceByIDAndTenant(id, tenantID uint) (*models.TileService, error) {
 	var service models.TileService
-	err := r.db.Preload("Layers").Where("id = ?", id).First(&service).Error
+	err := r.db.Preload("Layers").Where("id = ? AND tenant_id = ?", id, tenantID).First(&service).Error
 	if err != nil {
 		return nil, commonrepo.WrapDBError(err)
 	}
@@ -77,13 +78,27 @@ func (r *TileServiceRepository) ListServices(tenantID uint, offset int, limit in
 }
 
 // UpdateService 更新瓦片服务
-func (r *TileServiceRepository) UpdateService(id uint, updates map[string]interface{}) error {
-	return r.db.Model(&models.TileService{}).Where("id = ?", id).Updates(updates).Error
+func (r *TileServiceRepository) UpdateService(id, tenantID uint, updates map[string]interface{}) error {
+	result := r.db.Model(&models.TileService{}).Where("id = ? AND tenant_id = ?", id, tenantID).Updates(updates)
+	if result.Error != nil {
+		return commonrepo.WrapDBError(result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return commonapi.ErrNotFound
+	}
+	return nil
 }
 
 // DeleteService 删除瓦片服务（会级联删除图层）
-func (r *TileServiceRepository) DeleteService(id uint) error {
-	return r.db.Delete(&models.TileService{}, id).Error
+func (r *TileServiceRepository) DeleteService(id, tenantID uint) error {
+	result := r.db.Where("id = ? AND tenant_id = ?", id, tenantID).Delete(&models.TileService{})
+	if result.Error != nil {
+		return commonrepo.WrapDBError(result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return commonapi.ErrNotFound
+	}
+	return nil
 }
 
 // CheckServiceNameUnique 检查服务名称是否唯一
@@ -137,10 +152,15 @@ func (r *TileServiceRepository) CreateLayer(layer *models.TileServiceLayer) erro
 	return r.db.Create(layer).Error
 }
 
-// GetLayerByID 根据 ID 获取图层
-func (r *TileServiceRepository) GetLayerByID(id uint) (*models.TileServiceLayer, error) {
+func (r *TileServiceRepository) tenantLayerQuery(serviceID, tenantID uint) *gorm.DB {
+	ownedService := r.db.Model(&models.TileService{}).Select("id").Where("id = ? AND tenant_id = ?", serviceID, tenantID)
+	return r.db.Where("service_id = ? AND service_id IN (?)", serviceID, ownedService)
+}
+
+// GetLayerByIDAndTenant 验证图层、路径父服务和租户属于同一资源。
+func (r *TileServiceRepository) GetLayerByIDAndTenant(id, serviceID, tenantID uint) (*models.TileServiceLayer, error) {
 	var layer models.TileServiceLayer
-	err := r.db.Where("id = ?", id).First(&layer).Error
+	err := r.tenantLayerQuery(serviceID, tenantID).Where("id = ?", id).First(&layer).Error
 	if err != nil {
 		return nil, commonrepo.WrapDBError(err)
 	}
@@ -158,9 +178,9 @@ func (r *TileServiceRepository) GetLayerByServiceAndName(serviceID uint, layerNa
 }
 
 // ListLayers 列出服务下的所有图层
-func (r *TileServiceRepository) ListLayers(serviceID uint) ([]models.TileServiceLayer, error) {
+func (r *TileServiceRepository) ListLayers(serviceID, tenantID uint) ([]models.TileServiceLayer, error) {
 	var layers []models.TileServiceLayer
-	err := r.db.Where("service_id = ?", serviceID).Order("display_order ASC, created_at ASC").Find(&layers).Error
+	err := r.tenantLayerQuery(serviceID, tenantID).Order("display_order ASC, created_at ASC").Find(&layers).Error
 	if err != nil {
 		return nil, err
 	}
@@ -168,13 +188,27 @@ func (r *TileServiceRepository) ListLayers(serviceID uint) ([]models.TileService
 }
 
 // UpdateLayer 更新图层
-func (r *TileServiceRepository) UpdateLayer(id uint, updates map[string]interface{}) error {
-	return r.db.Model(&models.TileServiceLayer{}).Where("id = ?", id).Updates(updates).Error
+func (r *TileServiceRepository) UpdateLayer(id, serviceID, tenantID uint, updates map[string]interface{}) error {
+	result := r.tenantLayerQuery(serviceID, tenantID).Model(&models.TileServiceLayer{}).Where("id = ?", id).Updates(updates)
+	if result.Error != nil {
+		return commonrepo.WrapDBError(result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return commonapi.ErrNotFound
+	}
+	return nil
 }
 
 // DeleteLayer 删除图层
-func (r *TileServiceRepository) DeleteLayer(id uint) error {
-	return r.db.Delete(&models.TileServiceLayer{}, id).Error
+func (r *TileServiceRepository) DeleteLayer(id, serviceID, tenantID uint) error {
+	result := r.tenantLayerQuery(serviceID, tenantID).Where("id = ?", id).Delete(&models.TileServiceLayer{})
+	if result.Error != nil {
+		return commonrepo.WrapDBError(result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return commonapi.ErrNotFound
+	}
+	return nil
 }
 
 // CheckLayerNameUnique 检查图层名称是否唯一（同一服务下）

@@ -262,6 +262,11 @@
       },
       "organization": {
         "versionConflict": "该组织记录已发生变化，请刷新后再提交；当前输入已保留。",
+        "copyCode": "复制编码",
+        "codeCopied": "编码已复制",
+        "codeAlreadyExists": "该编码已存在，请换一个编码",
+        "codeCreateHint": "编码必填，创建后不可修改",
+        "codeImmutableHint": "编码创建后不可修改",
         "parent": "上级部门",
         "root": "顶级部门",
         "members": "成员管理",
@@ -286,9 +291,7 @@
           "title": "项目组",
           "create": "创建项目组",
           "edit": "编辑项目组",
-          "period": "项目周期",
-          "startsAt": "计划开始时间",
-          "endsAt": "计划结束时间",
+          "inUse": "使用中",
           "close": "关闭项目组",
           "closeHint": "项目组关闭后不可恢复，相关临时协作权限将失效。"
         }
@@ -422,6 +425,7 @@
           "restore": "恢复",
           "retry": "重试",
           "revoke": "撤销",
+          "review": "审核",
           "suspend": "停用",
           "unlink": "解除关联",
           "update": "修改"
@@ -546,6 +550,7 @@
           "source": "目录来源",
           "sql": "SQL 生成",
           "standard_document": "标准文档",
+          "standard_mapping": "字段与组件标准映射",
           "standard_reference": "标准引用",
           "statistics": "监控统计",
           "subject": "主体",
@@ -692,7 +697,6 @@
         "active": "有效",
         "effective": "当前生效",
         "scheduled": "等待生效",
-        "planned": "计划中",
         "disabled": "已停用",
         "suspended": "已暂停",
         "closed": "已关闭",

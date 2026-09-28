@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -12,6 +13,58 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
+
+func TestPostgresExactElementRevisionResolutionKeepsPublishedHistory(t *testing.T) {
+	dsn := os.Getenv("STANDARD_POSTGRES_TEST_DSN")
+	if dsn == "" {
+		t.Skip("STANDARD_POSTGRES_TEST_DSN is not set")
+	}
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := Migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	tx := db.Begin()
+	if tx.Error != nil {
+		t.Fatal(tx.Error)
+	}
+	defer tx.Rollback()
+	tenantID := time.Now().UnixNano()
+	element := models.Element{TenantID: tenantID, ScopeType: "tenant_common", Code: "exact_history", CreatedBy: 1, Version: 1, LifecycleState: "active"}
+	foreign := models.Element{TenantID: tenantID + 1, ScopeType: "tenant_common", Code: "exact_foreign", CreatedBy: 1, Version: 1, LifecycleState: "active"}
+	for _, identity := range []*models.Element{&element, &foreign} {
+		if err := tx.Create(identity).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	cutover := time.Now().UTC().Add(-time.Hour)
+	oldFrom := cutover.Add(-time.Hour)
+	old := models.ElementRevision{ElementID: element.ID, RevisionNo: 1, Status: "withdrawn", Name: "Pinned old", Definition: "Old definition", DataType: "string", ValueDomainKind: "unrestricted", EffectiveFrom: &oldFrom, EffectiveTo: &cutover, ChangeSummary: "Initial", CreatedBy: 1}
+	current := models.ElementRevision{ElementID: element.ID, RevisionNo: 2, Status: "published", Name: "Current", Definition: "New definition", DataType: "string", ValueDomainKind: "unrestricted", EffectiveFrom: &cutover, ChangeSummary: "Update", CreatedBy: 1}
+	draft := models.ElementRevision{ElementID: element.ID, RevisionNo: 3, Status: "draft", Name: "Draft", Definition: "Unreleased", DataType: "string", ValueDomainKind: "unrestricted", ChangeSummary: "Draft", CreatedBy: 1}
+	foreignRevision := models.ElementRevision{ElementID: foreign.ID, RevisionNo: 1, Status: "published", Name: "Foreign", Definition: "Foreign", DataType: "string", ValueDomainKind: "unrestricted", EffectiveFrom: &oldFrom, ChangeSummary: "Initial", CreatedBy: 1}
+	for _, revision := range []*models.ElementRevision{&old, &current, &draft, &foreignRevision} {
+		if err := tx.Create(revision).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	elements, revisions, err := NewElementRepository(tx).ResolveExactRevisions(context.Background(), tenantID, []int64{old.ID, current.ID, draft.ID, foreignRevision.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(elements) != 1 || elements[0].ID != element.ID || len(revisions) != 2 {
+		t.Fatalf("exact resolution: elements=%#v revisions=%#v", elements, revisions)
+	}
+	got := map[int64]models.ElementRevision{}
+	for _, revision := range revisions {
+		got[revision.ID] = revision
+	}
+	if got[old.ID].Name != "Pinned old" || got[current.ID].Name != "Current" {
+		t.Fatalf("exact revision identities = %#v", got)
+	}
+}
 
 func TestPostgresGlossaryMappingsPreserveIdentityLifecycle(t *testing.T) {
 	dsn := os.Getenv("STANDARD_POSTGRES_TEST_DSN")

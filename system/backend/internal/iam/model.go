@@ -111,9 +111,8 @@ const (
 type ProjectGroupStatus string
 
 const (
-	ProjectGroupStatusPlanned ProjectGroupStatus = "planned"
-	ProjectGroupStatusActive  ProjectGroupStatus = "active"
-	ProjectGroupStatusClosed  ProjectGroupStatus = "closed"
+	ProjectGroupStatusActive ProjectGroupStatus = "active"
+	ProjectGroupStatusClosed ProjectGroupStatus = "closed"
 )
 
 type ProjectGroupRelationRole string
@@ -411,8 +410,6 @@ type ProjectGroup struct {
 	Name        string             `gorm:"column:name;not null"`
 	Description string             `gorm:"column:description;not null"`
 	Status      ProjectGroupStatus `gorm:"column:status;not null"`
-	StartsAt    *time.Time         `gorm:"column:starts_at"`
-	EndsAt      *time.Time         `gorm:"column:ends_at"`
 	Version     int64              `gorm:"column:version;not null"`
 	CreatedAt   time.Time          `gorm:"column:created_at;autoCreateTime"`
 	UpdatedAt   time.Time          `gorm:"column:updated_at;autoUpdateTime"`

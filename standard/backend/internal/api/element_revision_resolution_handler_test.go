@@ -73,4 +73,32 @@ func TestElementRevisionResolutionRouteRequiresCatalogOrModelService(t *testing.
 			t.Fatalf("token %q status = %d, want %d; body=%s", testCase.token, response.Code, testCase.want, response.Body.String())
 		}
 	}
+	exactBody := `{"revision_ids":["101","201","999"]}`
+	exactPath := "/api/v1/standard/runtime/element-revisions/resolve-exact"
+	exactResponse := performTenantRequest(router, http.MethodPost, exactPath, "catalog-token", exactBody)
+	if exactResponse.Code != http.StatusOK {
+		t.Fatalf("exact status = %d; body=%s", exactResponse.Code, exactResponse.Body.String())
+	}
+	var exact exactElementRevisionResolutionResponse
+	if err := json.Unmarshal(exactResponse.Body.Bytes(), &exact); err != nil {
+		t.Fatal(err)
+	}
+	if len(exact.Results) != 3 || !exact.Results[0].Found || exact.Results[0].Snapshot == nil || exact.Results[0].Snapshot.ElementRevisionID != 101 || exact.Results[1].Found || exact.Results[2].Found {
+		t.Fatalf("exact results = %#v", exact.Results)
+	}
+	for _, testCase := range []struct {
+		token string
+		want  int
+	}{{"model-token", http.StatusForbidden}, {"asset-token", http.StatusForbidden}, {"no-permission", http.StatusForbidden}, {"", http.StatusUnauthorized}} {
+		response := performTenantRequest(router, http.MethodPost, exactPath, testCase.token, exactBody)
+		if response.Code != testCase.want {
+			t.Fatalf("exact token %q status = %d, want %d; body=%s", testCase.token, response.Code, testCase.want, response.Body.String())
+		}
+	}
+	for _, body := range []string{`{"revision_ids":["101","101"]}`, `{"revision_ids":["0"]}`, `{"revision_ids":[]}`} {
+		response := performTenantRequest(router, http.MethodPost, exactPath, "catalog-token", body)
+		if response.Code != http.StatusBadRequest {
+			t.Fatalf("exact invalid body %s status = %d; response=%s", body, response.Code, response.Body.String())
+		}
+	}
 }

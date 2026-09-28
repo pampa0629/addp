@@ -4,6 +4,10 @@ export async function listEntries(params) {
 	return client.get('/catalog/entries', { params })
 }
 
+export async function listDomainOverviews() {
+	return client.get('/catalog/domains')
+}
+
 export async function listEntryFacets(params) {
 	return client.get('/catalog/entries/facets', { params })
 }
@@ -43,6 +47,27 @@ export async function updateEntry(id, payload) {
 
 export async function updateEntryGovernance(id, payload) {
 	return client.put(`/catalog/entries/${encodeURIComponent(id)}/governance`, payload)
+}
+
+export async function listStandardMappingRevisionOptions(elementId) {
+	return client.get('/catalog/standard-mappings/revision-options', { params: { element_id: elementId } })
+}
+
+export async function createStandardMapping(payload) {
+	return client.post('/catalog/standard-mappings', payload)
+}
+
+export async function updateStandardMapping(id, payload) {
+	return client.put(`/catalog/standard-mappings/${encodeURIComponent(id)}`, payload)
+}
+
+export async function deleteStandardMapping(id, version) {
+	return client.delete(`/catalog/standard-mappings/${encodeURIComponent(id)}`, { data: { version } })
+}
+
+export async function reviewStandardMapping(id, action, payload) {
+	if (!['approve', 'reject', 'withdraw'].includes(action)) throw new Error('invalid standard mapping action')
+	return client.post(`/catalog/standard-mappings/${encodeURIComponent(id)}/${action}`, payload)
 }
 
 export async function rebindSource(id, payload) {

@@ -16,10 +16,13 @@ type projectionRecordNotFoundCaptureLogger struct {
 	recordNotFoundCount int
 }
 
-func (capture *projectionRecordNotFoundCaptureLogger) LogMode(logger.LogLevel) logger.Interface { return capture }
+func (capture *projectionRecordNotFoundCaptureLogger) LogMode(logger.LogLevel) logger.Interface {
+	return capture
+}
 func (capture *projectionRecordNotFoundCaptureLogger) Info(context.Context, string, ...interface{}) {}
 func (capture *projectionRecordNotFoundCaptureLogger) Warn(context.Context, string, ...interface{}) {}
-func (capture *projectionRecordNotFoundCaptureLogger) Error(context.Context, string, ...interface{}) {}
+func (capture *projectionRecordNotFoundCaptureLogger) Error(context.Context, string, ...interface{}) {
+}
 func (capture *projectionRecordNotFoundCaptureLogger) Trace(_ context.Context, _ time.Time, _ func() (string, int64), err error) {
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		capture.recordNotFoundCount++

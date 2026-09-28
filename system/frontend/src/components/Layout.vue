@@ -51,12 +51,12 @@
             <span>{{ t('system.layout.overview') }}</span>
           </el-menu-item>
 
-          <el-sub-menu index="system">
+          <el-sub-menu v-if="hasSystemPages" index="system">
             <template #title>
               <el-icon><Setting /></el-icon>
               <span>{{ t('system.layout.systemMgmt') }}</span>
             </template>
-            <el-sub-menu index="/iam">
+            <el-sub-menu v-if="visibleIAMPages.length" index="/iam">
               <template #title>
                 <el-icon><Lock /></el-icon>
                 <span>{{ t('system.layout.iam') }}</span>
@@ -66,15 +66,15 @@
                 <span>{{ t(page.label) }}</span>
               </el-menu-item>
             </el-sub-menu>
-            <el-menu-item v-if="authStore.hasPermission('platform.module.read')" index="/modules">
+            <el-menu-item v-if="canEnter('/modules')" index="/modules">
               <el-icon><Operation /></el-icon>
               <span>{{ t('system.layout.moduleMgmt') }}</span>
             </el-menu-item>
-            <el-menu-item v-if="authStore.hasPermission('system.engine.read')" index="/engines">
+            <el-menu-item v-if="canEnter('/engines')" index="/engines">
               <el-icon><Connection /></el-icon>
               <span>{{ t('system.layout.engineMgmt') }}</span>
             </el-menu-item>
-            <el-menu-item v-if="authStore.hasPermission('system.cleanup.read')" index="/cleanup">
+            <el-menu-item v-if="canEnter('/cleanup')" index="/cleanup">
               <el-icon><Refresh /></el-icon>
               <span>{{ t('system.layout.cleanup') }}</span>
             </el-menu-item>
@@ -93,6 +93,7 @@
 import { computed, ref, onBeforeUnmount, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '../store/auth'
+import { allowsConsoleRoute } from '@common-ui'
 import {
   Platform,
   User,
@@ -115,6 +116,7 @@ const { t } = useI18n()
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
+const canEnter = path => allowsConsoleRoute(`/system${path}`, authStore.contextType, authStore.permissions)
 
 // 检测是否在 iframe 中
 const isInIframe = ref(false)
@@ -146,6 +148,7 @@ const visibleIAMPages = computed(() => availableIAMPages(
   authStore.contextType,
   permission => authStore.hasPermission(permission)
 ))
+const hasSystemPages = computed(() => visibleIAMPages.value.length > 0 || ['/modules', '/engines', '/cleanup'].some(canEnter))
 const iamPageIcons = {
   identity: User,
   organization: OfficeBuilding,

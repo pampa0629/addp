@@ -3,7 +3,7 @@ import { createAuthGuard } from '@common-ui'
 import { useAuthStore } from '../store/auth'
 
 const router = createRouter({
-  history: createWebHistory(import.meta.env.DEV ? '/' : '/inference/'),
+  history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     {
       path: '/login',

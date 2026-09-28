@@ -15,6 +15,17 @@ func TestEntryGovernanceCertifiesAndFreezesCuration(t *testing.T) {
 	entry, component := createEditableCatalogEntry(t, db, 7)
 	service := NewEntryService(db, &fakeStandardReferenceResolver{}, &fakeSystemReferenceResolver{})
 	curated := curateCompleteEntry(t, service, entry, component)
+	mapping := models.StandardMapping{
+		ID: uuid.New(), TenantID: 7, CatalogEntryID: entry.ID, ComponentID: component.ID,
+		ElementID: 50, Source: models.StandardMappingSourceManual,
+		ReviewStatus: models.StandardMappingApproved, Version: 2,
+		ProposedByType: "user", ProposedByID: "99", Evidence: map[string]interface{}{"reason": "verified"},
+	}
+	revisionID := int64(501)
+	mapping.ElementRevisionID = &revisionID
+	if err := db.Create(&mapping).Error; err != nil {
+		t.Fatal(err)
+	}
 
 	certified, err := service.UpdateGovernance(context.Background(), 7, entry.ID, UpdateEntryGovernanceInput{
 		Version: curated.Version, GovernanceStatus: models.GovernanceStatusCertified,
@@ -24,8 +35,20 @@ func TestEntryGovernanceCertifiesAndFreezesCuration(t *testing.T) {
 	}
 	if certified.GovernanceStatus != models.GovernanceStatusCertified || certified.Version != curated.Version+1 ||
 		certified.BusinessName == nil || *certified.BusinessName != "Orders" || len(certified.SemanticLinks) != 2 ||
-		len(certified.Responsibilities) != 3 || len(certified.ComponentElements) != 1 {
+		len(certified.Responsibilities) != 3 || len(certified.StandardMappings) != 1 {
 		t.Fatalf("certified aggregate = %#v", certified)
+	}
+	var certificationAudit models.AuditEvent
+	if err := db.Where("catalog_entry_id = ? AND event_type = ?", entry.ID, "catalog.entry.certified").First(&certificationAudit).Error; err != nil {
+		t.Fatal(err)
+	}
+	snapshot, ok := certificationAudit.Details["approved_standard_mappings"].([]interface{})
+	if !ok || len(snapshot) != 1 {
+		t.Fatalf("certification mapping snapshot = %#v", certificationAudit.Details)
+	}
+	first, ok := snapshot[0].(map[string]interface{})
+	if !ok || first["id"] != mapping.ID.String() || first["version"] != float64(2) {
+		t.Fatalf("certification mapping version = %#v", snapshot[0])
 	}
 
 	name, description := "Changed orders", "An edit that must be rejected while certified"
@@ -80,7 +103,7 @@ func TestEntryGovernanceWithdrawsCertificationPreservingCuration(t *testing.T) {
 	}
 	if withdrawn.GovernanceStatus != models.GovernanceStatusCurated || withdrawn.Version != certified.Version+1 ||
 		withdrawn.BusinessName == nil || *withdrawn.BusinessName != "Orders" || len(withdrawn.SemanticLinks) != 2 ||
-		len(withdrawn.Responsibilities) != 3 || len(withdrawn.ComponentElements) != 1 {
+		len(withdrawn.Responsibilities) != 3 || len(withdrawn.StandardMappings) != 0 {
 		t.Fatalf("withdrawn aggregate = %#v", withdrawn)
 	}
 	var audit models.AuditEvent
@@ -152,7 +175,7 @@ func TestEntryGovernanceMaintainsDeprecatedSuccessor(t *testing.T) {
 	}
 }
 
-func curateCompleteEntry(t *testing.T, service *EntryService, entry models.Entry, component models.Component) *EntryDetail {
+func curateCompleteEntry(t *testing.T, service *EntryService, entry models.Entry, _ models.Component) *EntryDetail {
 	t.Helper()
 	name, description := "Orders", "Canonical customer orders"
 	result, err := service.Update(context.Background(), entry.TenantID, entry.ID, UpdateEntryInput{
@@ -165,7 +188,6 @@ func curateCompleteEntry(t *testing.T, service *EntryService, entry models.Entry
 			{Role: models.ResponsibilityRoleBusinessOwner, SubjectType: models.ResponsibilitySubjectUser, SubjectID: 40},
 			{Role: models.ResponsibilityRoleDataSteward, SubjectType: models.ResponsibilitySubjectUser, SubjectID: 41},
 		},
-		ComponentElements: []ComponentElementInput{{ComponentID: component.ID, ElementID: 50}},
 	}, UpdateEntryActor{Type: "user", ID: "99"})
 	if err != nil {
 		t.Fatalf("curate complete entry: %v", err)

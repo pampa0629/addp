@@ -13,6 +13,7 @@ const requiredNames = [
   'ADDP_ONLINE_CATALOG_SOURCE_IDENTITY',
   'ADDP_ONLINE_CATALOG_BUSINESS_NAME',
   'ADDP_ONLINE_CATALOG_COVERAGE_TOTAL',
+  'ADDP_ONLINE_TEST_CATALOG_DOMAIN_ID',
   'ADDP_ONLINE_ASSET_CATEGORY_ID',
   'ADDP_ONLINE_ASSET_ID',
   'GATEWAY_URL'
@@ -30,6 +31,22 @@ async function json(response, operation) {
     throw new Error(`${operation} returned HTTP ${response.status()} (${payload?.error_code || 'unknown'})`)
   }
   return payload
+}
+
+function findDomain(nodes, id) {
+  for (const domain of nodes) {
+    if (String(domain.id) === id) return domain
+    const child = findDomain(domain.children || [], id)
+    if (child) return child
+  }
+  return null
+}
+
+function grantedPermissions(identity) {
+  const tenantID = identity?.context?.tenant_id
+  return new Set((identity?.authorization?.role_assignments || [])
+    .filter(assignment => assignment.scope?.type === 'tenant' && assignment.scope.tenant_id === tenantID)
+    .flatMap(assignment => assignment.permissions || []))
 }
 
 async function login(page, username, password, redirect) {
@@ -130,10 +147,22 @@ test('enterprise Catalog renders governance coverage, human-readable navigation,
     await expect(detail).toContainText(env.ADDP_ONLINE_CATALOG_SOURCE_IDENTITY)
     await expect(detail).not.toContainText('undefined')
 
+    await page.goto(`/catalog/entries?view=governance&source_identity=${encodeURIComponent(env.ADDP_ONLINE_CATALOG_SOURCE_IDENTITY)}`)
+    frame = page.frameLocator('iframe[data-testid="module-iframe"]')
+    const discoveryList = frame.getByTestId('catalog-entry-list')
+    await expect(discoveryList).toHaveAttribute('data-load-state', 'loaded')
+    await expect(discoveryList.getByTestId('catalog-entry-results')).toContainText(env.ADDP_ONLINE_CATALOG_BUSINESS_NAME)
+    await expect(discoveryList.getByRole('columnheader', { name: '业务说明' })).toBeVisible()
+    await expect(discoveryList.getByRole('columnheader', { name: '来源状态' })).toHaveCount(0)
+    await expect(discoveryList.getByRole('columnheader', { name: '来源引擎' })).toHaveCount(0)
+
     await page.goto(`/catalog/entries?view=inventory&source_identity=${encodeURIComponent(env.ADDP_ONLINE_CATALOG_SOURCE_IDENTITY)}`)
     frame = page.frameLocator('iframe[data-testid="module-iframe"]')
     const entryList = frame.getByTestId('catalog-entry-list')
     await expect(entryList).toHaveAttribute('data-load-state', 'loaded')
+    await expect(entryList.getByRole('columnheader', { name: '业务说明' })).toHaveCount(0)
+    await expect(entryList.getByRole('columnheader', { name: '来源状态' })).toBeVisible()
+    await expect(entryList.getByRole('columnheader', { name: '来源引擎' })).toBeVisible()
     const viewScope = frame.getByTestId('catalog-view-scope')
     await expect(viewScope).toHaveAttribute('data-active-view', 'inventory')
     await expect(viewScope).toHaveAttribute('data-result-total', /\d+/)
@@ -160,6 +189,52 @@ test('enterprise Catalog renders governance coverage, human-readable navigation,
     await expect(frame.getByTestId('catalog-batch-governance-operation')).toBeVisible()
     await expect(frame.getByTestId('catalog-batch-governance-target')).toBeVisible()
     await batchDialog.locator('.el-dialog__headerbtn').click()
+
+    const domains = await json(await api.get('/api/v1/catalog/domains'), 'read Catalog domain overviews')
+    const domain = findDomain(domains, env.ADDP_ONLINE_TEST_CATALOG_DOMAIN_ID)
+    expect(domain, 'configured online business domain exists in Standard').not.toBeNull()
+    await page.goto(`/catalog/entries?view=inventory&primary_domain_id=${encodeURIComponent(domain.id)}`)
+    frame = page.frameLocator('iframe[data-testid="module-iframe"]')
+    const domainList = frame.getByTestId('catalog-entry-list')
+    await expect(domainList).toHaveAttribute('data-load-state', 'loaded')
+    const domainContext = frame.getByTestId('catalog-domain-context')
+    await expect(domainContext).toContainText(domain.name)
+    await expect(domainContext).toContainText(domain.code)
+    await expect(domainList.getByTestId('catalog-entry-results')).toContainText(env.ADDP_ONLINE_CATALOG_BUSINESS_NAME)
+    const professionalToggle = frame.getByTestId('catalog-domain-professional-toggle')
+    await expect(professionalToggle).toHaveAttribute('aria-expanded', 'false')
+    await expect(frame.getByTestId('catalog-domain-professional-summary')).toHaveCount(0)
+    await professionalToggle.click()
+    await expect(professionalToggle).toHaveAttribute('aria-expanded', 'true')
+    const professionalSummary = frame.getByTestId('catalog-domain-professional-summary')
+    await expect(professionalSummary).toBeVisible()
+    await expect(frame.getByTestId('catalog-domain-model-links')).toBeVisible()
+    const permissions = grantedPermissions(browserIdentity)
+    for (const [key, permission] of [
+      ['glossaries', 'standard.glossary.read'],
+      ['elements', 'standard.element.read'],
+      ['metrics', 'standard.metric.read']
+    ]) {
+      await expect(frame.getByTestId(`catalog-domain-standard-${key}`))
+        .toHaveAttribute('data-state', permissions.has(permission) ? 'ready' : 'forbidden')
+    }
+    for (const [key, permission] of [
+      ['rules', 'quality.rule.read'],
+      ['plans', 'quality.plan.read'],
+      ['issues', 'quality.issue.read']
+    ]) {
+      await expect(frame.getByTestId(`catalog-domain-quality-${key}`))
+        .toHaveAttribute('data-state', permissions.has(permission) ? 'ready' : 'forbidden')
+    }
+    await professionalToggle.click()
+    await expect(professionalToggle).toHaveAttribute('aria-expanded', 'false')
+    await expect(professionalSummary).toHaveCount(0)
+    await domainContext.getByRole('button', { name: /数据项 · \d+/ }).click()
+    await expect.poll(() => new URL(page.url()).searchParams.get('entry_type')).toBe('data_item')
+    await page.reload()
+    frame = page.frameLocator('iframe[data-testid="module-iframe"]')
+    await expect(frame.getByTestId('catalog-domain-context')).toContainText(domain.name)
+    await expect(frame.getByTestId('catalog-entry-results')).toContainText(env.ADDP_ONLINE_CATALOG_BUSINESS_NAME)
 
     const portalCategoryPath = `/portal/categories/${env.ADDP_ONLINE_ASSET_CATEGORY_ID}`
     await page.goto(portalCategoryPath)

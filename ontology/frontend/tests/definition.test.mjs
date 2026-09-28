@@ -142,5 +142,5 @@ test('translations have matching leaves and lifecycle/build/CI registration exis
   assert.match(read(`${root}/nginx/nginx.conf`), /ontology-frontend:80/)
   const portal = read(`${root}/console/frontend/src/config/portalConfig.js`)
   assert.match(portal, /ontology\.revision\.read/)
-  assert.match(portal, /ontology:\s+_url\('ontology', 5192, 'ontology', '\/ontology'\)/)
+  assert.match(portal, /ontology:\s+_url\('ontology', 5192, 'module-ui\/ontology', '\/ontology'\)/)
 })

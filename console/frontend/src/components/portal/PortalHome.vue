@@ -4,12 +4,19 @@
     <div class="home-header">
       <div class="welcome-text">
         <h2>{{ t('console.welcome.greeting', { name: userDisplayName }) }}</h2>
-        <p>{{ t('console.welcome.subtitle') }}</p>
+        <p v-if="hasAccessibleModules">{{ t('console.welcome.subtitle') }}</p>
       </div>
     </div>
 
+    <el-result
+      v-if="!hasAccessibleModules"
+      icon="info"
+      :title="t('console.home.noAvailableModules')"
+      :sub-title="t('console.home.noAvailableModulesHint')"
+    />
+
     <!-- 状态快照 -->
-    <div class="status-snapshot">
+    <div v-if="statusStats.length" class="status-snapshot">
       <div
         v-for="stat in statusStats"
         :key="stat.key"
@@ -25,7 +32,7 @@
     </div>
 
     <!-- 建议下一步 -->
-    <div class="section">
+    <div v-if="recommendedScenarios.length" class="section">
       <h3 class="section-title">{{ t('console.home.nextSteps') }}</h3>
       <div class="scenario-grid">
         <div
@@ -69,7 +76,7 @@
     </div>
 
     <!-- 所有模块（折叠） -->
-    <div class="section">
+    <div v-if="hasAccessibleModules" class="section">
       <div class="section-header" @click="allModulesExpanded = !allModulesExpanded">
         <h3 class="section-title">{{ t('console.home.allModules') }}</h3>
         <el-icon class="expand-icon" :class="{ 'is-expanded': allModulesExpanded }"><ArrowDown /></el-icon>
@@ -139,6 +146,7 @@ const userDisplayName = computed(() =>
   props.user?.local_account?.username ||
   t('console.welcome.defaultName')
 )
+const hasAccessibleModules = computed(() => props.homeCards.length > 0 || props.portalAvailable)
 
 // ─── 状态快照 ────────────────────────────────────────────────────────────────
 

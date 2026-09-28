@@ -89,8 +89,8 @@ const handleLogin = async () => {
       ElMessage.success(t('develop.login.success'))
 
       // 优先跳转到 redirect 参数指定的页面
-      const redirect = route.query.redirect || '/sql'
-      window.location.href = redirect
+      const redirect = route.query.redirect || '/'
+      await router.push(redirect)
     } catch (err) {
       console.error('[Login] Login or redirect failed:', err)
 

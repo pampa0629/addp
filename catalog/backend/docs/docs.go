@@ -376,6 +376,59 @@ const docTemplate = `{
                 ]
             }
         },
+        "/domains": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "使用 Catalog 运行身份动态读取 Standard 当前业务域，只公开名称、编码、定义和层级；不授予 Standard 专业详情权限，不保存副本 | Dynamically read current Standard domains using Catalog's service identity, exposing only name, code, description and hierarchy; does not grant Standard detail access or store copies",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Catalog"
+                ],
+                "summary": "查询企业目录业务域概况 | List catalog business domain overviews",
+                "responses": {
+                    "200": {
+                        "description": "当前业务域概况 | Current domain overviews",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_addp_catalog_internal_service.DomainOverview"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "Standard 当前不可达 | Standard currently unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "catalog.entry.read"
+                ]
+            }
+        },
         "/entries": {
             "get": {
                 "security": [
@@ -487,7 +540,7 @@ const docTemplate = `{
                             "business_owner",
                             "data_steward",
                             "glossary",
-                            "component_element"
+                            "component_standard_mapping"
                         ],
                         "type": "string",
                         "description": "治理缺口维度；必须与 view=inventory、coverage_state=missing 同时使用 | Governance gap dimension; requires view=inventory and coverage_state=missing",
@@ -824,7 +877,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "返回目录条目、当前来源绑定和组件；目录可见不代表底层数据内容授权 | Return the catalog entry, current source binding, and components; catalog visibility does not grant data content access",
+                "description": "返回目录条目、当前来源绑定和组件；映射的数据元名称与修订号按固定修订从 Standard 动态解析，失败时只标记展示摘要不可用而保留映射事实；目录可见不代表底层数据内容授权 | Return the catalog entry, current source binding, and components; mapping element names and revision numbers are resolved dynamically from pinned Standard revisions, and resolution failures mark only the display summary unavailable; catalog visibility does not grant data content access",
                 "produces": [
                     "application/json"
                 ],
@@ -898,7 +951,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "使用聚合根 version 原子替换 discovered 或 curated 阶段的业务信息、语义关联、责任、组件数据元关联和可见性；curated 回到 discovered 只表示撤销编目，必须清空全部 Catalog 人工编目字段并恢复 inventory；认证、撤销认证和弃用只允许使用治理子资源；Standard 或 System 校验不可达时明确失败但不影响模块 Ready | Atomically replace business metadata, semantic links, responsibilities, component-element links, and visibility while the entry is discovered or curated; curated to discovered exclusively withdraws curation and must clear every Catalog-owned curation field while restoring inventory visibility; certification, certification withdrawal, and deprecation exclusively use the governance subresource; unavailable Standard or System validation fails explicitly without affecting module readiness",
+                "description": "使用聚合根 version 原子替换 discovered 或 curated 阶段的业务信息、普通语义关联、责任和可见性；字段标准映射使用独立资源和版本；curated 回到 discovered 只表示撤销编目，必须清空全部 Catalog 人工编目字段并恢复 inventory；认证、撤销认证和弃用只允许使用治理子资源 | Atomically replace business metadata, ordinary semantic links, responsibilities, and visibility while discovered or curated; field standard mappings use independent resources and versions; curated to discovered withdraws curation and clears Catalog-owned curation fields; certification and deprecation use the governance subresource",
                 "consumes": [
                     "application/json"
                 ],
@@ -1967,6 +2020,718 @@ const docTemplate = `{
                     "catalog.reference.read"
                 ]
             }
+        },
+        "/standard-mappings": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Catalog Standard Mappings"
+                ],
+                "summary": "查询字段标准映射 | List field standard mappings",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "CatalogEntry UUID",
+                        "name": "catalog_entry_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "页码 | Page",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量，最多 200 | Page size, maximum 200",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_catalog_internal_service.StandardMappingList"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "catalog.entry.read"
+                ]
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Catalog Standard Mappings"
+                ],
+                "summary": "提交字段标准映射候选 | Propose a field standard mapping",
+                "parameters": [
+                    {
+                        "description": "确定的数据元修订及证据 | Exact element revision and evidence",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.standardMappingRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.standardMappingResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "catalog.entry.update"
+                ]
+            }
+        },
+        "/standard-mappings/revision-options": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Catalog Standard Mappings"
+                ],
+                "summary": "查询可选数据元修订 | List published element revision choices",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "数据元稳定 ID | Stable element ID",
+                        "name": "element_id",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_addp_catalog_internal_service.StandardMappingRevisionOption"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "catalog.entry.update"
+                ]
+            }
+        },
+        "/standard-mappings/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Catalog Standard Mappings"
+                ],
+                "summary": "查询字段标准映射 | Get a field standard mapping",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "StandardMapping UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.standardMappingResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "catalog.entry.read"
+                ]
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Catalog Standard Mappings"
+                ],
+                "summary": "修改字段标准映射候选 | Update a proposed field standard mapping",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "StandardMapping UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "完整候选及映射版本 | Complete candidate and mapping version",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.standardMappingRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.standardMappingResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "catalog.entry.update"
+                ]
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Catalog Standard Mappings"
+                ],
+                "summary": "删除字段标准映射候选 | Delete a proposed field standard mapping",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "StandardMapping UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "映射版本 | Mapping version",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.deleteStandardMappingRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "已删除 | Deleted"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "catalog.entry.update"
+                ]
+            }
+        },
+        "/standard-mappings/{id}/approve": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Catalog Standard Mappings"
+                ],
+                "summary": "审核通过字段标准映射 | Approve a field standard mapping",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "StandardMapping UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "版本与审核意见 | Version and review opinion",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.standardMappingDecisionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.standardMappingResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "catalog.standard_mapping.review"
+                ]
+            }
+        },
+        "/standard-mappings/{id}/reject": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Catalog Standard Mappings"
+                ],
+                "summary": "驳回字段标准映射 | Reject a field standard mapping",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "StandardMapping UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "版本与审核意见 | Version and review opinion",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.standardMappingDecisionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.standardMappingResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "catalog.standard_mapping.review"
+                ]
+            }
+        },
+        "/standard-mappings/{id}/withdraw": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Catalog Standard Mappings"
+                ],
+                "summary": "撤回字段标准映射 | Withdraw a field standard mapping",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "StandardMapping UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "版本与撤回原因 | Version and withdrawal reason",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.standardMappingDecisionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.standardMappingResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "catalog.standard_mapping.review"
+                ]
+            }
         }
     },
     "definitions": {
@@ -2250,39 +3015,6 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_addp_catalog_internal_models.ComponentElementAssociation": {
-            "type": "object",
-            "properties": {
-                "catalog_entry_id": {
-                    "type": "string"
-                },
-                "component_id": {
-                    "type": "string"
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "element_id": {
-                    "type": "string",
-                    "example": ""
-                },
-                "id": {
-                    "type": "string"
-                },
-                "observed_snapshot": {
-                    "$ref": "#/definitions/models.JSONMap"
-                },
-                "observed_version": {
-                    "type": "integer"
-                },
-                "updated_at": {
-                    "type": "string"
-                },
-                "verified_at": {
-                    "type": "string"
-                }
-            }
-        },
         "github_com_addp_catalog_internal_models.Responsibility": {
             "type": "object",
             "properties": {
@@ -2405,6 +3137,67 @@ const docTemplate = `{
                 },
                 "updated_at": {
                     "type": "string"
+                }
+            }
+        },
+        "github_com_addp_catalog_internal_models.StandardMapping": {
+            "type": "object",
+            "properties": {
+                "catalog_entry_id": {
+                    "type": "string"
+                },
+                "component_id": {
+                    "type": "string"
+                },
+                "confidence": {
+                    "type": "number"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "element_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "element_revision_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "evidence": {
+                    "$ref": "#/definitions/models.JSONMap"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "proposed_by_id": {
+                    "type": "string"
+                },
+                "proposed_by_type": {
+                    "type": "string"
+                },
+                "review_opinion": {
+                    "type": "string"
+                },
+                "review_status": {
+                    "type": "string"
+                },
+                "reviewed_at": {
+                    "type": "string"
+                },
+                "reviewed_by_id": {
+                    "type": "string"
+                },
+                "reviewed_by_type": {
+                    "type": "string"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
                 }
             }
         },
@@ -2700,6 +3493,9 @@ const docTemplate = `{
                 "scope_type": {
                     "type": "string"
                 },
+                "status": {
+                    "type": "string"
+                },
                 "unit_id": {
                     "type": "string",
                     "example": "0"
@@ -2720,11 +3516,40 @@ const docTemplate = `{
                     "type": "string",
                     "example": ""
                 },
+                "is_effective": {
+                    "type": "boolean"
+                },
                 "physical": {
                     "$ref": "#/definitions/datatype.FieldInfo"
                 },
                 "standard": {
                     "$ref": "#/definitions/github_com_addp_catalog_internal_service.DataDictionaryElementRevision"
+                }
+            }
+        },
+        "github_com_addp_catalog_internal_service.DomainOverview": {
+            "type": "object",
+            "properties": {
+                "children": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_catalog_internal_service.DomainOverview"
+                    }
+                },
+                "code": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "parent_id": {
+                    "type": "string"
                 }
             }
         },
@@ -2736,12 +3561,6 @@ const docTemplate = `{
                 },
                 "business_name": {
                     "type": "string"
-                },
-                "component_elements": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/github_com_addp_catalog_internal_models.ComponentElementAssociation"
-                    }
                 },
                 "components": {
                     "type": "array",
@@ -2796,6 +3615,12 @@ const docTemplate = `{
                 },
                 "source_resolution": {
                     "$ref": "#/definitions/github_com_addp_catalog_internal_service.SourceResolution"
+                },
+                "standard_mappings": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_catalog_internal_service.StandardMappingDetail"
+                    }
                 },
                 "updated_at": {
                     "type": "string"
@@ -3060,7 +3885,7 @@ const docTemplate = `{
                         "business_owner",
                         "data_steward",
                         "glossary",
-                        "component_element"
+                        "component_standard_mapping"
                     ]
                 },
                 "not_applicable": {
@@ -3325,6 +4150,130 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_catalog_internal_service.StandardMappingDetail": {
+            "type": "object",
+            "properties": {
+                "catalog_entry_id": {
+                    "type": "string"
+                },
+                "component_id": {
+                    "type": "string"
+                },
+                "confidence": {
+                    "type": "number"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "element_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "element_reference": {
+                    "$ref": "#/definitions/github_com_addp_catalog_internal_service.StandardMappingElementReference"
+                },
+                "element_revision_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "evidence": {
+                    "$ref": "#/definitions/models.JSONMap"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "proposed_by_id": {
+                    "type": "string"
+                },
+                "proposed_by_type": {
+                    "type": "string"
+                },
+                "review_opinion": {
+                    "type": "string"
+                },
+                "review_status": {
+                    "type": "string"
+                },
+                "reviewed_at": {
+                    "type": "string"
+                },
+                "reviewed_by_id": {
+                    "type": "string"
+                },
+                "reviewed_by_type": {
+                    "type": "string"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_catalog_internal_service.StandardMappingElementReference": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "revision_no": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "resolved",
+                        "unavailable",
+                        "missing",
+                        "unfixed"
+                    ]
+                }
+            }
+        },
+        "github_com_addp_catalog_internal_service.StandardMappingList": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_catalog_internal_models.StandardMapping"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "total_pages": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_catalog_internal_service.StandardMappingRevisionOption": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "revision_no": {
+                    "type": "integer"
+                }
+            }
+        },
         "internal_api.batchGovernanceEntryRequest": {
             "type": "object",
             "required": [
@@ -3391,6 +4340,15 @@ const docTemplate = `{
             }
         },
         "internal_api.deleteCollectionRequest": {
+            "type": "object",
+            "properties": {
+                "version": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            }
+        },
+        "internal_api.deleteStandardMappingRequest": {
             "type": "object",
             "properties": {
                 "version": {
@@ -3468,6 +4426,108 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_api.standardMappingDecisionRequest": {
+            "type": "object",
+            "properties": {
+                "opinion": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            }
+        },
+        "internal_api.standardMappingRequest": {
+            "type": "object",
+            "properties": {
+                "catalog_entry_id": {
+                    "type": "string",
+                    "format": "uuid"
+                },
+                "component_id": {
+                    "type": "string",
+                    "format": "uuid"
+                },
+                "confidence": {
+                    "type": "number"
+                },
+                "element_id": {
+                    "type": "string"
+                },
+                "element_revision_id": {
+                    "type": "string"
+                },
+                "evidence": {
+                    "$ref": "#/definitions/models.JSONMap"
+                },
+                "version": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            }
+        },
+        "internal_api.standardMappingResponse": {
+            "type": "object",
+            "properties": {
+                "catalog_entry_id": {
+                    "type": "string"
+                },
+                "component_id": {
+                    "type": "string"
+                },
+                "confidence": {
+                    "type": "number"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "element_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "element_revision_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "evidence": {
+                    "$ref": "#/definitions/models.JSONMap"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "proposed_by_id": {
+                    "type": "string"
+                },
+                "proposed_by_type": {
+                    "type": "string"
+                },
+                "review_opinion": {
+                    "type": "string"
+                },
+                "review_status": {
+                    "type": "string"
+                },
+                "reviewed_at": {
+                    "type": "string"
+                },
+                "reviewed_by_id": {
+                    "type": "string"
+                },
+                "reviewed_by_type": {
+                    "type": "string"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
         "internal_api.updateCollectionRequest": {
             "type": "object",
             "properties": {
@@ -3486,17 +4546,6 @@ const docTemplate = `{
                 "version": {
                     "type": "integer",
                     "minimum": 1
-                }
-            }
-        },
-        "internal_api.updateComponentElementRequest": {
-            "type": "object",
-            "properties": {
-                "component_id": {
-                    "type": "string"
-                },
-                "element_id": {
-                    "type": "string"
                 }
             }
         },
@@ -3547,12 +4596,6 @@ const docTemplate = `{
                 },
                 "business_name": {
                     "type": "string"
-                },
-                "component_elements": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/internal_api.updateComponentElementRequest"
-                    }
                 },
                 "domains": {
                     "type": "array",

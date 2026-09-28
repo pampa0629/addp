@@ -147,12 +147,12 @@ copy_common_files() {
     fi
 
     # 6. Copy nginx configuration (if exists)
-    if [ -f "nginx/nginx.prod.conf" ]; then
+    if [ -f "nginx/nginx.conf" ]; then
         mkdir -p "$OUTPUT_DIR/nginx"
-        cp nginx/nginx.prod.conf "$OUTPUT_DIR/nginx/"
-        echo -e "${GREEN}✓ nginx/nginx.prod.conf copied${NC}"
+        cp nginx/nginx.conf "$OUTPUT_DIR/nginx/"
+        echo -e "${GREEN}✓ nginx/nginx.conf copied${NC}"
     else
-        echo -e "${YELLOW}Warning: nginx/nginx.prod.conf not found${NC}"
+        echo -e "${YELLOW}Warning: nginx/nginx.conf not found${NC}"
     fi
 }
 

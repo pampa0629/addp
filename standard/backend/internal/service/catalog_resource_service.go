@@ -111,7 +111,7 @@ func (s *CatalogResourceService) Resolve(ctx context.Context, tenantID int64, re
 func metricCatalogSummary(metric models.MetricDefinitionAggregate) map[string]any {
 	result := map[string]any{
 		"name": metric.Code, "code": metric.Code, "object_kind": "metric",
-		"lifecycle_state": metric.LifecycleState,
+		"lifecycle_state": metric.LifecycleState, "scope_type": metric.ScopeType,
 	}
 	if revision := displayMetricRevision(metric); revision != nil {
 		result["name"], result["metric_type"], result["metric_status"] = revision.Name, revision.MetricType, revision.Status

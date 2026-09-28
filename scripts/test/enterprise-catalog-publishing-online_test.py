@@ -29,7 +29,6 @@ class FakeClient:
                 {"role": "business_owner", "subject_type": "user", "subject_id": "51"},
                 {"role": "data_steward", "subject_type": "user", "subject_id": "51"},
             ],
-            "component_elements": [],
         }
         self.asset_exists = False
         self.asset_status = ""
@@ -92,7 +91,7 @@ class FakeClient:
                 self._coverage_dimension("business_owner", int("business_owner" in responsibility_roles), 1),
                 self._coverage_dimension("data_steward", int("data_steward" in responsibility_roles), 1),
                 self._coverage_dimension("glossary", 0, 1),
-                self._coverage_dimension("component_element", 0, 0),
+                self._coverage_dimension("component_standard_mapping", 0, 0),
             ]
             return SUITE.Response(
                 200,
@@ -101,6 +100,12 @@ class FakeClient:
         if path == f"/api/v1/catalog/entries/{self.entry['id']}":
             if method == "GET":
                 return SUITE.Response(200, copy.deepcopy(self.entry))
+            expected_fields = {
+                "version", "business_name", "business_description", "governance_status",
+                "visibility", "domains", "glossary_ids", "responsibilities",
+            }
+            if set(body) != expected_fields:
+                raise AssertionError(f"unexpected Catalog update fields: {set(body) ^ expected_fields}")
             self.entry.update(copy.deepcopy(body))
             if "domains" in body:
                 self.entry["semantic_links"] = [
@@ -192,6 +197,19 @@ class FakeClient:
 
 
 class EnterpriseCatalogPublishingOnlineTest(unittest.TestCase):
+    def test_catalog_contract_uses_independent_standard_mappings(self) -> None:
+        client = FakeClient()
+        self.assertEqual(
+            SUITE.COVERAGE_DIMENSIONS,
+            {
+                "business_definition", "primary_domain", "accountable_department",
+                "business_owner", "data_steward", "glossary", "component_standard_mapping",
+            },
+        )
+        payload = SUITE.editable_catalog_payload(client.entry)
+        self.assertNotIn("component_elements", payload)
+        self.assertNotIn("deprecation_reason", payload)
+
     def test_runs_unique_route_and_removes_temporary_resources(self) -> None:
         client = FakeClient()
         original = copy.deepcopy(client.entry)
@@ -250,6 +268,28 @@ class EnterpriseCatalogPublishingOnlineTest(unittest.TestCase):
         self.assertEqual(curated["governance_status"], "curated")
         self.assertEqual(curated["business_name"], "ADDP Online Catalog Fixture")
         self.assertEqual(curated["domains"], [{"id": "31", "role": "primary"}])
+
+    def test_existing_fixture_rejects_a_different_primary_domain_without_mutating_it(self) -> None:
+        client = FakeClient()
+        client.entry["semantic_links"] = [
+            {"semantic_type": "domain", "semantic_id": "99", "relation_role": "primary"}
+        ]
+
+        with self.assertRaisesRegex(SUITE.SuiteError, "configured business domain"):
+            SUITE.curate_fixture_entry(client, client.entry, "run-1", 31, 41, 51)
+
+        self.assertNotIn(("PUT", f"/api/v1/catalog/entries/{client.entry['id']}"), client.calls)
+
+    def test_domain_preflight_failure_does_not_trigger_cleanup_write(self) -> None:
+        client = FakeClient()
+        client.entry["semantic_links"] = [
+            {"semantic_type": "domain", "semantic_id": "99", "relation_role": "primary"}
+        ]
+
+        with self.assertRaisesRegex(SUITE.SuiteError, "configured business domain"):
+            SUITE.run_suite(client, 42, 7, "run-1", 31, 41, 51, 10)
+
+        self.assertNotIn(("PUT", f"/api/v1/catalog/entries/{client.entry['id']}"), client.calls)
 
     def test_validates_tenant_user_identity_and_permissions(self) -> None:
         class IdentityClient:

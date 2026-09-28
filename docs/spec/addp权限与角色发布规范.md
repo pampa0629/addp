@@ -170,6 +170,14 @@ Tenant 管理界面按账号类别提供唯一授权入口：“角色管理 > �
 
 Console 和业务前端只从当前 AuthContext 的有效 Assignment 判断候选功能权限，不根据角色名或组织名称推断权限。导航、首页卡片、搜索、最近访问、直接地址和浏览器历史应使用一致的页面入口条件；无权进入时显示无权限状态，不加载业务 iframe 或发起该页面的业务请求。没有可访问页面的模块不显示空入口。页面内创建、更新、执行、删除等操作分别按对应 Permission 展示，功能 Permission 之间不隐式包含。前端判断仅改善体验，最终由 API owner 对每个请求授权。
 
+模块 standalone 根路径在 AuthContext 加载后，按该模块明确的页面顺序进入第一个符合上述 Console 页面准入条件的地址；没有可访问页面时进入无权限页。登录后返回根路径也使用同一选择，不固定跳转某个需要额外权限的页面；显式业务 URL 仍按自身准入条件判断，不改写为根路径的默认页面。
+
+Agent 聊天页以 `agent.session.read` 读取当前 Tenant 的本人会话；已有会话发送消息只需 `agent.run.create` 和 `agent.run.execute`，首次新建会话还需 `agent.session.create`。`agent.run.read` 只用于运行详情与事件回放，不能成为正常发送的隐含前提。Agent 的会话列表、详情、删除、消息读取及对话执行均以当前 User 和 Tenant 同时限定资源；其他 Tenant 的会话按不存在返回 404。
+
+Graph 从现有图谱推导 Schema 的预览以 `graph.graph.read` 读取图谱；预览若传入 `ontology_id` 比对目标本体，还需 `graph.ontology.read`。将推导结果写入本体时，必须同时具备源图谱的 `graph.graph.read` 与目标本体的 `graph.ontology.update`，并由 Graph 校验两者同属当前 Tenant。该写入不以 `graph.graph.update` 代替本体修改权限。Graph 前端的应用入口还须有 `graph.ontology.read`，用于读取目标本体选择目录；缺少任一入口依赖时不打开会请求受保护目录的对话框。
+
+Graph 从 Neo4j 引擎直接推导本体时，选择器只调用 System 的 `system.engine_catalog.read` 窄目录投影；Graph 不再提供返回完整引擎对象的代理列表。推导预览同时要求 `graph.ontology.read` 与 `system.engine_catalog.read`，应用到本体同时要求 `graph.ontology.update` 与 `system.engine_catalog.read`。当前 Tenant 的引擎身份仍由 Graph 通过 System 校验，目录权限不能替代本体权限。
+
 Monitor 仪表盘以 `monitor.statistics.read` 准入；仅持有该权限时展示统计、趋势和运行指标，不请求或展示需要 `monitor.health.read` 的健康信息，也不请求或展示需要 `monitor.execution.read` 的最近执行记录。执行记录页以 `monitor.execution.read` 准入，其任务提供者目录只返回显示名称、模块名和任务能力等页面必需字段，不能附带 Backend 地址、实例身份或健康探测结果。该目录接口使用执行记录读取权限；健康探测接口继续使用 `monitor.health.read`。
 
 业务页面首屏必需的跨模块目录权限必须列入同一页面的 all-of 准入条件。Manager 的数据浏览、检索及任务页面读取数据项引擎选择项时需有 `manager.data_item.read`；Model 的领域、分层或指标引用页面依其实际读取分别要求 `standard.domain.read`、`model.dw_layer.read`、`standard.metric.read`、`model.logical_model.read`；Develop 的 SQL 和工作流编辑器读取 Meta 引擎目录时需有 `meta.catalog.read`。只有实际无需该引用的页面才能独立准入，不能先进入页面再以 403 响应掩盖缺失依赖。
@@ -177,6 +185,10 @@ Monitor 仪表盘以 `monitor.statistics.read` 准入；仅持有该权限时展
 Standard 的术语表、数据元、码表和文档页读取领域目录时需有 `standard.domain.read`，指标页另需 `standard.unit.read`。Security 的敏感定义页需要分级目录读取权限，防护纳管页需要 `meta.catalog.read`。Asset 管理侧申请页需要 `asset.management.read`；Catalog 治理覆盖、治理任务及集合页依照其 API 契约还需要 `catalog.entry.read`。Manager 向量化任务页展示模型名称只使用 Inference 的 `inference.model_label.read` 窄投影，不要求模型管理列表权限；平台侧 Manager 推理绑定设置页确实使用模型管理列表，因此需要 `inference.profile.read` 和 `inference.deployment.read`。
 
 已认证账号缺少功能 Permission 时 API 返回 403，认证失效返回 401；跨 Tenant 或按 owner 策略隐藏存在性的资源详情返回 404。有列表 Permission 但结果为空时返回空集合，不解释为无权。权限或 Tenant Context 更新后必须重新计算入口和操作并清除旧租户资源视图。角色模板应显式包含页面实际依赖的跨模块 Permission，不得通过增加无关的读取权限或服务身份代理来消除前端 403。
+
+Service 管理端的查询服务、图查询服务、注册服务、瓦片服务与图层均以当前 Tenant 为资源边界。按 ID 读取、修改、删除或运行管理操作时，owner 必须在查询和写入条件中同时约束 Tenant；图层路径中的 `serviceId` 还必须与图层实际所属服务一致。跨 Tenant 的 ID 和不匹配的父子 ID 均按不存在返回 404，不得因拥有同一功能 Permission 而访问其他 Tenant 的服务。
+
+Asset 消费面的评价写入按首次创建和修改已有评价分别授权：创建只要求 `asset.rating.create`，修改只要求 `asset.rating.update`，二者都必须由 Asset 在写入时确认当前 User 对该已上架资产仍有有效授权。重复创建不能变成更新，修改不存在的本人评价不能变成创建；Portal 仅转发当前 User 身份和对应操作。评价读取权限独立，不能作为写入的隐含前提；有读取权限时，评价列表应单独投影本人评价，不得用当前分页是否包含本人评价来判断创建或修改动作。只有修改权限的账号可以读取本人评价的窄投影以填写编辑表单，但不得因此读取公开评价列表。Portal 不得把 `asset.application.read` 或 `asset.authorization.read` 作为评价操作的隐含前提；拥有申请状态读取权限时可据此隐藏无有效授权的操作，无法读取状态时仅按评价功能权限展示候选操作，由 Asset 在写入时最终拒绝无有效授权的请求。
 
 通用功能 Permission 判断在 Tenant Context 只接受绑定当前 Tenant 的 Tenant Scope，在 Platform Context 只接受 Platform Scope。Department 或 Project Group Scope 不能通过通用 Guard 取得整租户业务 API 的 Allow。业务模块在接受仅有 Department 或 Project Group Scope 的 Assignment 前，必须已有明确的资源 Scope Binding、owner 授权判断和同范围列表裁剪；缺少这些能力时拒绝该 Scope，不能把功能 Guard 通过视为资源授权完成。业务模块对部分授权账号的验收至少覆盖无权限、只读、仅创建、可执行和跨 Tenant 五类上下文，并分别验证导航、直达地址、列表、详情及写操作。
 

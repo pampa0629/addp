@@ -6,6 +6,8 @@
 
 数据元精确修订 GET 返回 ElementRevisionDetail：在原修订内容上提供稳定 element_code 和按 code_set_revision_id 解析的码值集完整只读快照。历史已撤回码值集仍按确定 ID 展示，不改用当前生效修订；权限仍为 standard.element.read，跨租户及不匹配的数据元/修订拒绝。Quality 管理界面可读取该投影追溯来源，worker 不依赖它。
 
+Catalog 的已审核字段标准映射按确定 `element_revision_id` 冻结。Standard 的 `/runtime/element-revisions/resolve-exact` 只为 Catalog 批量读取同 Tenant 的已发布及已撤回历史修订与固定码值集快照；它不按 `as_of` 重新选版，与 Model 使用的 `/runtime/element-revisions/resolve` 按当前生效修订解析是不同契约。
+
 数据元详情无论默认打开还是通过 `revision_id` 定位，均读取选中修订的精确详情。关联码值集的名称、编码、版次和状态来自该修订快照，不以可选候选反推历史引用；绑定快照缺失或身份不匹配时明确报错。只读状态不请求码值集候选，查看历史不额外要求 `standard.code_set.read`；可编辑草稿仍按类型与生效时间提供已发布候选，已绑定但不再可选的修订仅保留显示，不允许重新选入。选择其他候选后不显示旧快照的状态。
 
 Standard 定义 Domain、Glossary、Element、MetricDefinition、CodeSet、Unit 和标准来源文档等可复用业务语义，但不拥有这些语义与具体 DataItem、CatalogEntry 或 CatalogComponent 的应用关系。具体字段/组件到标准修订的映射只由 Catalog 保存；检查方案、规则来源快照、执行结果和问题只由 Quality 保存。Standard 不依赖 Meta 或 Catalog，不保存 `catalog_entry_id`、反向资源列表或质量执行事实。安全分类、安全等级、敏感类型和保护基线统一属于 Security，Standard 不保存第二份安全事实。

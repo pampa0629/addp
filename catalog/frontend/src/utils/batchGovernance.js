@@ -8,6 +8,14 @@ export function unsupportedPrimaryDomainEntries(rows = []) {
   return rows.filter(row => ownerManagedPrimaryDomainTypes.has(row?.entry_type))
 }
 
+export function availableBatchOperations(rows = []) {
+  const operations = [BATCH_GOVERNANCE_ASSIGN_ACCOUNTABLE_DEPARTMENT]
+  if (rows.length > 0 && unsupportedPrimaryDomainEntries(rows).length === 0) {
+    operations.unshift(BATCH_GOVERNANCE_ASSIGN_PRIMARY_DOMAIN)
+  }
+  return operations
+}
+
 export function buildBatchGovernancePayload(rows, operation, referenceID) {
   if (!Array.isArray(rows) || rows.length < 1 || rows.length > BATCH_GOVERNANCE_MAX_ENTRIES) {
     throw new Error('invalid batch governance member count')

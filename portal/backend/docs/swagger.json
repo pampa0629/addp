@@ -221,6 +221,52 @@
                 ]
             }
         },
+        "/assets/{id}/my-rating": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Portal"
+                ],
+                "summary": "获取本人资产评价以修改 | Get own asset rating for editing",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "资产ID | Asset ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.portalOwnRatingResponse"
+                        }
+                    },
+                    "502": {
+                        "description": "资产服务调用失败 | Asset service request failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "asset.rating.update"
+                ]
+            }
+        },
         "/assets/{id}/ratings": {
             "get": {
                 "security": [
@@ -228,6 +274,7 @@
                         "BearerAuth": []
                     }
                 ],
+                "description": "当前用户评价与全量平均分来自 Asset，不依赖公开列表的当前分页 | Current user's rating and overall average come from Asset independently of the public page",
                 "produces": [
                     "application/json"
                 ],
@@ -248,8 +295,7 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/internal_api.portalRatingsResponse"
                         }
                     },
                     "502": {
@@ -267,7 +313,7 @@
                     "asset.rating.read"
                 ]
             },
-            "post": {
+            "put": {
                 "security": [
                     {
                         "BearerAuth": []
@@ -282,7 +328,7 @@
                 "tags": [
                     "Portal"
                 ],
-                "summary": "提交资产评价 | Submit asset rating",
+                "summary": "修改本人资产评价 | Update own asset rating",
                 "parameters": [
                     {
                         "type": "integer",
@@ -322,8 +368,65 @@
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
-                    "asset.rating.create",
                     "asset.rating.update"
+                ]
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Portal"
+                ],
+                "summary": "创建资产评价 | Create asset rating",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "资产ID | Asset ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "评价信息 | Rating info",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "502": {
+                        "description": "资产服务调用失败 | Asset service request failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "asset.rating.create"
                 ]
             }
         },
@@ -540,6 +643,74 @@
                 "x-addp-required-permissions": [
                     "asset.entry.read"
                 ]
+            }
+        }
+    },
+    "definitions": {
+        "client.RatingItem": {
+            "type": "object",
+            "properties": {
+                "asset_id": {
+                    "type": "integer"
+                },
+                "comment": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "is_handled": {
+                    "type": "boolean"
+                },
+                "score": {
+                    "type": "number"
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "integer"
+                },
+                "user_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.portalOwnRatingResponse": {
+            "type": "object",
+            "properties": {
+                "rating": {
+                    "$ref": "#/definitions/client.RatingItem"
+                }
+            }
+        },
+        "internal_api.portalRatingsResponse": {
+            "type": "object",
+            "properties": {
+                "avg_score": {
+                    "type": "number"
+                },
+                "my_rating": {
+                    "$ref": "#/definitions/client.RatingItem"
+                },
+                "ratings": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/client.RatingItem"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
             }
         }
     },

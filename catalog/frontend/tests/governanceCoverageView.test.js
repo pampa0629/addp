@@ -22,6 +22,10 @@ describe('catalog governance coverage view', () => {
     expect(buildMissingCoverageEntryQuery('accountable_department')).toEqual({
       view: 'inventory', coverage_dimension: 'accountable_department', coverage_state: 'missing'
     })
+    expect(buildMissingCoverageEntryQuery('component_standard_mapping')).toEqual({
+      view: 'inventory', coverage_dimension: 'component_standard_mapping', coverage_state: 'missing'
+    })
+    expect(buildMissingCoverageEntryQuery('component_element')).toBeNull()
     expect(buildMissingCoverageEntryQuery('accountability')).toBeNull()
     expect(buildMissingCoverageEntryQuery('unknown')).toBeNull()
   })

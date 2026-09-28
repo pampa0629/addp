@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
-import { isProfessionalOwner, professionalOwnerName } from '../src/utils/entryOwnerPresentation.js'
+import en from '../src/i18n/en.json'
+import zhCn from '../src/i18n/zh-cn.json'
+import { isProfessionalOwner, professionalOwnerName, resolveOwnerPrimaryDomain } from '../src/utils/entryOwnerPresentation.js'
 
 describe('Catalog entry professional owner presentation', () => {
   it('recognizes every professional source owner including Workbench', () => {
@@ -22,5 +24,21 @@ describe('Catalog entry professional owner presentation', () => {
     expect(source).toContain(':href="ownerDetailUrl"')
     expect(source).toContain('target="_top"')
     expect(source).not.toContain('@click="openOwnerDetail"')
+  })
+
+  it('resolves the actual owner domain name from the Standard hierarchy', () => {
+    const domains = [{ id: '1', name: '业务域', children: [{ id: '2', name: '户外域' }] }]
+    expect(resolveOwnerPrimaryDomain(domains, 2)?.name).toBe('户外域')
+    expect(resolveOwnerPrimaryDomain(domains, 3)).toBeNull()
+    expect(resolveOwnerPrimaryDomain(null, 2)).toBeNull()
+  })
+
+  it('keeps owner domain labels under the detail namespace in both languages', () => {
+    for (const messages of [zhCn, en]) {
+      expect(messages.catalog.entry.ownerManagedDomain).toBeTruthy()
+      expect(messages.catalog.entry.publicScope).toBeTruthy()
+      expect(messages.catalog.entries.ownerManagedDomain).toBeUndefined()
+      expect(messages.catalog.entries.publicScope).toBeUndefined()
+    }
   })
 })

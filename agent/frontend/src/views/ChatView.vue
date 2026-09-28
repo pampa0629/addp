@@ -146,7 +146,6 @@ import { routeAfterSessionDeletion, resolveAgentSessionRouteState } from '../uti
 
 const { t } = useI18n()
 const authStore = useAuthStore()
-const canRun = computed(() => ['agent.run.create', 'agent.run.execute', 'agent.run.read'].every(permission => authStore.hasPermission(permission)))
 const route = useRoute()
 const router = useRouter()
 
@@ -159,6 +158,11 @@ useConsolePageDescriptor(router, 'agent', {
   ready: computed(() => Boolean(currentSession.value?.title))
 })
 const sessionUnavailable = ref(false)
+const canRun = computed(() =>
+  !sessionUnavailable.value &&
+  ['agent.run.create', 'agent.run.execute'].every(permission => authStore.hasPermission(permission)) &&
+  (Boolean(currentSessionId.value) || authStore.hasPermission('agent.session.create'))
+)
 const sessionsLoaded = ref(false)
 const messages = ref([])
 const inputText = ref('')
@@ -371,7 +375,7 @@ function createSubscriber() {
 }
 
 async function replayActiveRun() {
-  if (!activeRunId.value) return false
+  if (!activeRunId.value || !authStore.hasPermission('agent.run.read')) return false
   startLiveMessage()
   await replayAgentRunEvents({
     agentRunId: activeRunId.value,
@@ -455,7 +459,7 @@ async function retryFailedRun() {
 
 async function handleSend() {
   const content = inputText.value.trim()
-  if (!content || isLoading.value) return
+  if (!content || isLoading.value || !canRun.value) return
 
   if (!currentSessionId.value && !await createSession()) return
 

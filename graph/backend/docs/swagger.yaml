@@ -2019,6 +2019,18 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
@@ -2029,6 +2041,8 @@ paths:
       tags:
       - 图谱浏览 | Graph Browse
       x-addp-auth-mode: permission
+      x-addp-conditional-permissions:
+      - graph.ontology.read
       x-addp-required-permissions:
       - graph.graph.read
   /graphs/{id}/infer-schema/apply:
@@ -2059,6 +2073,10 @@ paths:
           description: Bad Request
           schema:
             $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
@@ -2070,7 +2088,8 @@ paths:
       - 图谱浏览 | Graph Browse
       x-addp-auth-mode: permission
       x-addp-required-permissions:
-      - graph.graph.update
+      - graph.graph.read
+      - graph.ontology.update
   /graphs/{id}/path:
     post:
       consumes:
@@ -2973,6 +2992,10 @@ paths:
           description: Bad Request
           schema:
             $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
@@ -2989,6 +3012,7 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - graph.ontology.update
+      - system.engine_catalog.read
   /ontologies/{id}/relation-types:
     get:
       description: 获取本体下的所有关系类型 | Get all relation types under an ontology
@@ -3254,6 +3278,10 @@ paths:
           description: Bad Request
           schema:
             $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
@@ -3270,37 +3298,7 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - graph.ontology.read
-  /ontologies/neo4j-engines:
-    get:
-      description: 返回 active 且支持查询的 Neo4j 注册引擎及其连接状态；非 online 项由前端展示并禁选 | Return active
-        registered Neo4j engines supporting queries with connection status; clients
-        must show but disable non-online options
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            items:
-              additionalProperties: true
-              type: object
-            type: array
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
-        "503":
-          description: Service Unavailable
-          schema:
-            $ref: '#/definitions/github_com_addp_graph_internal_models.ErrorResponse'
-      security:
-      - BearerAuth: []
-      summary: 列出 Neo4j 引擎 | List Neo4j engines
-      tags:
-      - 本体管理 | Ontology Management
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - graph.ontology.read
+      - system.engine_catalog.read
   /task-provider/executions/{execution_id}:
     get:
       description: 按 execution_id 查询 Graph 构建任务统一执行记录。| Get a Graph build task execution

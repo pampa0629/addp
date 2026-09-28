@@ -139,7 +139,7 @@ func (h *GraphQueryHandler) GetService(c *gin.Context) {
 		return
 	}
 
-	result, err := h.svc.GetService(id)
+	result, err := h.svc.GetService(id, tenantIDValue(c))
 	if err != nil {
 		if errors.Is(err, commonapi.ErrNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Service not found"})
@@ -179,7 +179,7 @@ func (h *GraphQueryHandler) UpdateService(c *gin.Context) {
 		return
 	}
 
-	result, err := h.svc.UpdateService(id, &req)
+	result, err := h.svc.UpdateService(id, tenantIDValue(c), &req)
 	if err != nil {
 		if errors.Is(err, commonapi.ErrNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Service not found"})
@@ -198,6 +198,7 @@ func (h *GraphQueryHandler) UpdateService(c *gin.Context) {
 // @Produce json
 // @Param id path int true "服务ID | Service ID"
 // @Success 200 {object} map[string]string
+// @Failure 404 {object} map[string]string
 // @Failure 500 {object} map[string]string
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["service.definition.delete"]
@@ -210,7 +211,11 @@ func (h *GraphQueryHandler) DeleteService(c *gin.Context) {
 		return
 	}
 
-	if err := h.svc.DeleteService(id); err != nil {
+	if err := h.svc.DeleteService(id, tenantIDValue(c)); err != nil {
+		if errors.Is(err, commonapi.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Service not found"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

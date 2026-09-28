@@ -72,7 +72,9 @@ func SetupRouter(
 	// 资产评价（Phase 6）
 	// ============================================================
 	api.GET("/assets/:id/ratings", permission("asset.rating.read"), handleGetRatings(assetClient))
-	api.POST("/assets/:id/ratings", permission("asset.rating.create", "asset.rating.update"), handleSubmitRating(assetClient))
+	api.GET("/assets/:id/my-rating", permission("asset.rating.update"), handleGetOwnRatingForUpdate(assetClient))
+	api.POST("/assets/:id/ratings", permission("asset.rating.create"), handleCreateRating(assetClient))
+	api.PUT("/assets/:id/ratings", permission("asset.rating.update"), handleUpdateRating(assetClient))
 
 	return router
 }

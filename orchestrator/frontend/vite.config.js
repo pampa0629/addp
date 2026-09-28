@@ -38,5 +38,5 @@ export default defineConfig({
       }
     }
   },
-  base: process.env.NODE_ENV === 'development' ? '/' : '/orchestrator/'  // 开发模式用 /，生产模式用 /orchestrator/
+  base: process.env.NODE_ENV === 'development' ? '/' : '/module-ui/orchestrator/'  // 开发模式用 /，生产模式用 /module-ui/orchestrator/
 })

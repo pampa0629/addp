@@ -6,11 +6,21 @@ function source(relativePath) {
 }
 
 describe('organization management ownership', () => {
-  it('lets System own department codes instead of asking administrators to enter them', () => {
+  it('requires manually entered codes for both organization forms and locks them after creation', () => {
     const departments = source('../src/components/iam/DepartmentsPanel.vue')
+    const groups = source('../src/components/iam/ProjectGroupsPanel.vue')
 
-    expect(departments).not.toContain('v-model="form.code"')
-    expect(departments).toContain("iamAPI.departments.create({ name: form.name.trim(), parent_id: form.parentId || null })")
+    for (const panel of [departments, groups]) {
+      expect(panel).not.toContain('suggestOrganizationCode')
+      expect(panel).toContain('v-model="form.code"')
+      expect(panel).toContain(':required="formMode === \'create\'"')
+      expect(panel).toContain('system.iam.organization.codeCreateHint')
+      expect(panel).toContain(':disabled="formMode === \'edit\'"')
+    }
+    expect(departments).toContain('code: form.code.trim()')
+    expect(groups).not.toContain('starts_at')
+    expect(groups).not.toContain('ends_at')
+    expect(groups).not.toContain("'planned'")
   })
 
   it('limits organization member candidates to user accounts and guards empty table rows', () => {

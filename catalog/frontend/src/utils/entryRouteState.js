@@ -5,7 +5,7 @@ const ALLOWED_GOVERNANCE_STATUSES = new Set(['discovered', 'curated', 'certified
 const ALLOWED_VISIBILITIES = new Set(['inventory', 'department', 'tenant'])
 const ALLOWED_COVERAGE_DIMENSIONS = new Set([
   'business_definition', 'primary_domain', 'accountable_department', 'business_owner',
-  'data_steward', 'glossary', 'component_element'
+  'data_steward', 'glossary', 'component_standard_mapping'
 ])
 const MAX_INT64 = 9223372036854775807n
 

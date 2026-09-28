@@ -1,4 +1,48 @@
 basePath: /api/v1/portal
+definitions:
+  client.RatingItem:
+    properties:
+      asset_id:
+        type: integer
+      comment:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: integer
+      is_handled:
+        type: boolean
+      score:
+        type: number
+      tags:
+        items:
+          type: string
+        type: array
+      updated_at:
+        type: string
+      user_id:
+        type: integer
+      user_name:
+        type: string
+    type: object
+  internal_api.portalOwnRatingResponse:
+    properties:
+      rating:
+        $ref: '#/definitions/client.RatingItem'
+    type: object
+  internal_api.portalRatingsResponse:
+    properties:
+      avg_score:
+        type: number
+      my_rating:
+        $ref: '#/definitions/client.RatingItem'
+      ratings:
+        items:
+          $ref: '#/definitions/client.RatingItem'
+        type: array
+      total:
+        type: integer
+    type: object
 host: localhost:8184
 info:
   contact: {}
@@ -142,7 +186,7 @@ paths:
       x-addp-required-permissions:
       - asset.application.read
       - asset.authorization.read
-  /assets/{id}/ratings:
+  /assets/{id}/my-rating:
     get:
       parameters:
       - description: 资产ID | Asset ID
@@ -156,8 +200,38 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
+            $ref: '#/definitions/internal_api.portalOwnRatingResponse'
+        "502":
+          description: 资产服务调用失败 | Asset service request failed
+          schema:
+            additionalProperties:
+              type: string
             type: object
+      security:
+      - BearerAuth: []
+      summary: 获取本人资产评价以修改 | Get own asset rating for editing
+      tags:
+      - Portal
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - asset.rating.update
+  /assets/{id}/ratings:
+    get:
+      description: 当前用户评价与全量平均分来自 Asset，不依赖公开列表的当前分页 | Current user's rating and overall
+        average come from Asset independently of the public page
+      parameters:
+      - description: 资产ID | Asset ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.portalRatingsResponse'
         "502":
           description: 资产服务调用失败 | Asset service request failed
           schema:
@@ -191,6 +265,44 @@ paths:
       produces:
       - application/json
       responses:
+        "201":
+          description: Created
+          schema:
+            additionalProperties: true
+            type: object
+        "502":
+          description: 资产服务调用失败 | Asset service request failed
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 创建资产评价 | Create asset rating
+      tags:
+      - Portal
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - asset.rating.create
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 资产ID | Asset ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 评价信息 | Rating info
+        in: body
+        name: body
+        required: true
+        schema:
+          additionalProperties: true
+          type: object
+      produces:
+      - application/json
+      responses:
         "200":
           description: OK
           schema:
@@ -204,12 +316,11 @@ paths:
             type: object
       security:
       - BearerAuth: []
-      summary: 提交资产评价 | Submit asset rating
+      summary: 修改本人资产评价 | Update own asset rating
       tags:
       - Portal
       x-addp-auth-mode: permission
       x-addp-required-permissions:
-      - asset.rating.create
       - asset.rating.update
   /categories:
     get:

@@ -51,8 +51,7 @@ func SetupRouter(
 			ontologies.GET("", permission(graphauthorization.PermissionGraphOntologyRead), ontologyHandler.List)
 			ontologies.POST("", permission(graphauthorization.PermissionGraphOntologyCreate), ontologyHandler.Create)
 			ontologies.GET("/import-preview/from-model", permission(graphauthorization.PermissionGraphOntologyRead), ontologyHandler.ImportPreviewFromModel)
-			ontologies.GET("/neo4j-engines", permission(graphauthorization.PermissionGraphOntologyRead), ontologyHandler.ListNeo4jEngines)
-			ontologies.GET("/infer-schema/from-engine", permission(graphauthorization.PermissionGraphOntologyRead), ontologyHandler.InferSchemaFromEngine)
+			ontologies.GET("/infer-schema/from-engine", permission(graphauthorization.PermissionGraphOntologyRead, "system.engine_catalog.read"), ontologyHandler.InferSchemaFromEngine)
 
 			ontology := ontologies.Group("/:id")
 			{
@@ -60,7 +59,7 @@ func SetupRouter(
 				ontology.PUT("", permission(graphauthorization.PermissionGraphOntologyUpdate), ontologyHandler.Update)
 				ontology.DELETE("", permission(graphauthorization.PermissionGraphOntologyDelete), ontologyHandler.Delete)
 				ontology.POST("/import-from-model", permission(graphauthorization.PermissionGraphOntologyUpdate), ontologyHandler.ImportFromModel)
-				ontology.POST("/infer-schema/from-engine/apply", permission(graphauthorization.PermissionGraphOntologyUpdate), ontologyHandler.ApplyInferredSchemaFromEngine)
+				ontology.POST("/infer-schema/from-engine/apply", permission(graphauthorization.PermissionGraphOntologyUpdate, "system.engine_catalog.read"), ontologyHandler.ApplyInferredSchemaFromEngine)
 
 				// 实体类型（:eid 为实体类型ID）
 				ontology.GET("/entity-types", permission(graphauthorization.PermissionGraphOntologyRead), ontologyHandler.ListEntityTypes)
@@ -97,7 +96,7 @@ func SetupRouter(
 				graph.GET("/browse-snapshot", permission(graphauthorization.PermissionGraphGraphRead), browseHandler.GetBrowseSnapshot)
 				graph.GET("/constraints", permission(graphauthorization.PermissionGraphGraphRead), browseHandler.GetConstraints)
 				graph.GET("/infer-schema", permission(graphauthorization.PermissionGraphGraphRead), browseHandler.InferSchema)
-				graph.POST("/infer-schema/apply", permission(graphauthorization.PermissionGraphGraphUpdate), browseHandler.ApplyInferredSchema)
+				graph.POST("/infer-schema/apply", permission(graphauthorization.PermissionGraphGraphRead, graphauthorization.PermissionGraphOntologyUpdate), browseHandler.ApplyInferredSchema)
 				graph.POST("/search", permission(graphauthorization.PermissionGraphGraphRead), browseHandler.SearchNodes)
 				graph.POST("/expand", permission(graphauthorization.PermissionGraphGraphRead), browseHandler.ExpandTarget)
 				graph.POST("/path", permission(graphauthorization.PermissionGraphGraphRead), browseHandler.FindPath)

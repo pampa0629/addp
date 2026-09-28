@@ -1,3 +1,5 @@
+import { buildBusinessDomainOptions } from '@common-ui'
+
 const PROFESSIONAL_OWNER_NAMES = Object.freeze({
   model: 'Model',
   standard: 'Standard',
@@ -12,4 +14,9 @@ export function isProfessionalOwner(sourceModule) {
 
 export function professionalOwnerName(sourceModule) {
   return PROFESSIONAL_OWNER_NAMES[String(sourceModule || '')] || ''
+}
+
+export function resolveOwnerPrimaryDomain(domainTree, domainID) {
+  if (!Array.isArray(domainTree) || !domainID) return null
+  return buildBusinessDomainOptions(domainTree).find(domain => String(domain.id) === String(domainID)) || null
 }

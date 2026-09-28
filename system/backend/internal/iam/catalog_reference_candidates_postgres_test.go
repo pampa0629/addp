@@ -49,14 +49,14 @@ func TestCatalogReferenceCandidatesAgainstPostgres(t *testing.T) {
 	establishContextSelectionMembership(t, ctx, membershipService, tenant.ID, user.PrincipalID, tenantAudit)
 	department, err := organizationService.CreateDepartment(ctx, CreateDepartmentInput{
 		TenantID: tenant.ID, ActorPrincipalID: user.PrincipalID,
-		Name: "Sales", Audit: tenantAudit,
+		Code: "sales", Name: "Sales", Audit: tenantAudit,
 	})
 	if err != nil {
 		t.Fatalf("create candidate department: %v", err)
 	}
 	projectGroup, err := organizationService.CreateProjectGroup(ctx, CreateProjectGroupInput{
 		TenantID: tenant.ID, ActorPrincipalID: user.PrincipalID,
-		Code: "delivery", Name: "Delivery", Status: ProjectGroupStatusActive, Audit: tenantAudit,
+		Code: "delivery", Name: "Delivery", Audit: tenantAudit,
 	})
 	if err != nil {
 		t.Fatalf("create project group reference: %v", err)

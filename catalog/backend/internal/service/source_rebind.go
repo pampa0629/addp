@@ -193,7 +193,7 @@ func lockCurrentBinding(tx *gorm.DB, tenantID int64, entryID uuid.UUID) (*models
 }
 
 func ensureTemporaryEntryHasNoHumanWork(tx *gorm.DB, tenantID int64, entryID uuid.UUID) error {
-	for _, model := range []interface{}{&models.SemanticAssociation{}, &models.Responsibility{}, &models.ComponentElementAssociation{}} {
+	for _, model := range []interface{}{&models.SemanticAssociation{}, &models.Responsibility{}, &models.StandardMapping{}} {
 		var count int64
 		if err := tx.Model(model).Where("tenant_id = ? AND catalog_entry_id = ?", tenantID, entryID).Count(&count).Error; err != nil {
 			return fmt.Errorf("inspect temporary Catalog entry relationships: %w", err)

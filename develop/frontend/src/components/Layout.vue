@@ -36,22 +36,22 @@
           router
           class="sidebar-menu"
         >
-          <el-menu-item index="/sql">
+          <el-menu-item v-if="canEnter('/sql')" index="/sql">
             <el-icon><Document /></el-icon>
             <span>{{ t('develop.nav.queryEditor') }}</span>
           </el-menu-item>
 
-          <el-menu-item index="/notebook">
+          <el-menu-item v-if="canEnter('/notebook')" index="/notebook">
             <el-icon><Notebook /></el-icon>
             <span>{{ t('develop.nav.notebook') }}</span>
           </el-menu-item>
 
-          <el-menu-item index="/workflow">
+          <el-menu-item v-if="canEnter('/workflow')" index="/workflow">
             <el-icon><Connection /></el-icon>
             <span>{{ t('develop.nav.workflow') }}</span>
           </el-menu-item>
 
-          <el-menu-item index="/tasks">
+          <el-menu-item v-if="canEnter('/tasks')" index="/tasks">
             <el-icon><List /></el-icon>
             <span>{{ t('develop.nav.tasks') }}</span>
           </el-menu-item>
@@ -70,6 +70,7 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../store/auth'
+import { allowsConsoleRoute } from '@common-ui'
 import { useI18n } from 'vue-i18n'
 import {
   User,
@@ -83,6 +84,7 @@ import {
 
 const router = useRouter()
 const authStore = useAuthStore()
+const canEnter = path => allowsConsoleRoute(`/develop${path}`, authStore.contextType, authStore.permissions)
 const { t } = useI18n()
 // 同步初始化，避免 iframe 模式下先渲染完整布局再切换导致子组件重挂载
 const isInIframe = ref(window.self !== window.top)

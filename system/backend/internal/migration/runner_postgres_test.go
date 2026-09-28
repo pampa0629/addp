@@ -16,6 +16,77 @@ import (
 	"github.com/addp/system/internal/testsupport"
 )
 
+func TestProjectGroupLifecycleForwardMigrationAgainstPostgres(t *testing.T) {
+	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
+	if dsn == "" {
+		t.Skip("set ADDP_SYSTEM_POSTGRES_TEST_DSN to a disposable PostgreSQL database")
+	}
+	testsupport.RequireDisposablePostgresDSN(t, dsn)
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`DROP SCHEMA IF EXISTS system CASCADE; DROP SCHEMA IF EXISTS common CASCADE`); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	before, through := migrationFilesBeforeAndThrough(t, "000162_iam_project_group_lifecycle.up.sql")
+	if err := (&Runner{DSN: dsn, FS: before, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`
+		INSERT INTO system.tenants (code, name) VALUES ('lifecycle-test', 'Lifecycle Test');
+		INSERT INTO system.project_groups (tenant_id, code, name, status, starts_at, ends_at)
+		SELECT id, 'planned-group', 'Planned Group', 'planned', now(), now() + interval '1 day'
+		FROM system.tenants WHERE code = 'lifecycle-test';
+		INSERT INTO system.project_groups (tenant_id, code, name, status)
+		SELECT id, 'closed-group', 'Closed Group', 'closed'
+		FROM system.tenants WHERE code = 'lifecycle-test';
+	`); err != nil {
+		t.Fatal(err)
+	}
+	if err := (&Runner{DSN: dsn, FS: through, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var plannedStatus, closedStatus string
+	if err := db.QueryRow(`SELECT status FROM system.project_groups WHERE code = 'planned-group'`).Scan(&plannedStatus); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`SELECT status FROM system.project_groups WHERE code = 'closed-group'`).Scan(&closedStatus); err != nil {
+		t.Fatal(err)
+	}
+	if plannedStatus != "active" || closedStatus != "closed" {
+		t.Fatalf("migrated statuses = %q, %q; want active, closed", plannedStatus, closedStatus)
+	}
+	var dateColumnCount int
+	if err := db.QueryRow(`
+		SELECT count(*) FROM information_schema.columns
+		WHERE table_schema = 'system' AND table_name = 'project_groups'
+		  AND column_name IN ('starts_at', 'ends_at')
+	`).Scan(&dateColumnCount); err != nil {
+		t.Fatal(err)
+	}
+	if dateColumnCount != 0 {
+		t.Fatalf("project group schedule columns remain: %d", dateColumnCount)
+	}
+	var newStatus string
+	if err := db.QueryRow(`
+		INSERT INTO system.project_groups (tenant_id, code, name)
+		SELECT id, 'new-group', 'New Group' FROM system.tenants WHERE code = 'lifecycle-test'
+		RETURNING status
+	`).Scan(&newStatus); err != nil {
+		t.Fatal(err)
+	}
+	if newStatus != "active" {
+		t.Fatalf("new project group status = %q, want active", newStatus)
+	}
+	if _, err := db.Exec(`UPDATE system.project_groups SET status = 'planned' WHERE code = 'new-group'`); err == nil {
+		t.Fatal("planned status remains accepted")
+	}
+}
+
 func TestSystemModuleAlwaysEnabledForwardMigrationAgainstPostgres(t *testing.T) {
 	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
 	if dsn == "" {
@@ -4402,12 +4473,26 @@ func assertServicePrincipalRuntimeConstraints(t *testing.T, db *sql.DB) {
 	`).Scan(&tenantAdministratorCatalogPermissions); err != nil {
 		t.Fatalf("count tenant administrator Catalog permissions: %v", err)
 	}
-	if platformAdministratorCatalogPermissions != 0 || tenantAdministratorCatalogPermissions != 10 {
+	if platformAdministratorCatalogPermissions != 0 || tenantAdministratorCatalogPermissions != 11 {
 		t.Fatalf(
-			"Catalog administrator permissions platform=%d tenant=%d, want 0 and 10",
+			"Catalog administrator permissions platform=%d tenant=%d, want 0 and 11",
 			platformAdministratorCatalogPermissions,
 			tenantAdministratorCatalogPermissions,
 		)
+	}
+	var mappingReviewerGrants int
+	if err := db.QueryRow(`
+		SELECT count(*) FROM system.role_permissions AS role_permission
+		JOIN system.roles AS role ON role.id = role_permission.role_id
+		JOIN system.permissions AS permission ON permission.id = role_permission.permission_id
+		WHERE role.role_key = 'tenant.administrator' AND role.tenant_id IS NULL
+		  AND permission.permission_key = 'catalog.standard_mapping.review'
+		  AND permission.status = 'active' AND role_permission.source_type = 'product'
+	`).Scan(&mappingReviewerGrants); err != nil {
+		t.Fatalf("count Catalog standard mapping reviewer grant: %v", err)
+	}
+	if mappingReviewerGrants != 1 {
+		t.Fatalf("Catalog standard mapping reviewer grants = %d, want 1", mappingReviewerGrants)
 	}
 
 	var developPlatformAssignmentCount, managerPlatformAssignmentCount int

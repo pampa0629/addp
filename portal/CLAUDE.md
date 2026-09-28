@@ -52,7 +52,7 @@ portal/
 bash scripts/dev/start.sh -portal
 bash scripts/dev/restart.sh -portal
 curl http://localhost:8184/health/ready
-cd portal/frontend && npm test && npm run build
+cd portal/frontend && npm test && npm run test:e2e && npm run build
 ```
 
 API 或路由变更后运行：

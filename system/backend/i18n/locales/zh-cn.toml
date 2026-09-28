@@ -85,6 +85,9 @@ other = "验证码无效、已过期或会话状态已变化"
 [system.iam.role_assignment_already_exists]
 other = "该成员已在此授权范围拥有该角色，无需重复分配。"
 
+[system.iam.organization_code_already_exists]
+other = "该编码已被当前租户的同类组织使用，请换一个编码。"
+
 [system.iam.role_assignment_principal_type_not_allowed]
 other = "该角色不能分配给此类型的成员。"
 

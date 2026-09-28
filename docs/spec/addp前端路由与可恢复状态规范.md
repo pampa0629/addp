@@ -14,6 +14,14 @@
 4. Console 路由固定为 `/{module}{moduleFullPath}`。模块不得硬编码 Console 端口、直接修改 `window.parent.history` 或自行实现 `postMessage` 导航协议。
 5. 跨模块导航、模块内公开导航和地址栏同步统一使用 `common-frontend` 提供的 Console navigation 能力。
 
+Console 的公开路由与模块前端的加载地址必须可区分，不能让同一 Origin 的同一路径同时指向 Console 和独立模块：
+
+- 开发环境由 Console 端口独占 `/{module}{moduleFullPath}`，模块从各自的前端端口加载；Console 不得把自己的公开路由代理给模块。
+- 生产单入口下，Console 公开地址仍为 `/{module}{moduleFullPath}`；iframe 加载地址统一为 `/module-ui/{frontend}{moduleFullPath}`，静态资源位于 `/module-ui/{frontend}/`。`frontend` 是实际模块前端名称，例如 Console 的 `modeling` 对应 `model` 前端。顶层 Console 路由不得转发给 iframe 模块。
+- 生产路由只维护 `nginx/nginx.conf` 一份配置；Nginx 镜像与部署包使用同一份文件，避免模块加载路径分叉。
+- 已有的 Swagger 文档精确地址（例如 `/ontology/swagger/doc.json`、`/catalog/swagger/doc.json`）只用于文档代理，不承担模块页面路由。
+- 独立开发地址使用各模块自己的前端端口与开发基路径。Workbench 使用 `/module-ui/workbench{moduleFullPath}`，Ontology 使用 `/ontology{moduleFullPath}`；其余模块使用各自前端端口根路径。Workbench 的开发与生产静态资源均位于 `/module-ui/workbench/`，开发环境由 Console 在该路径代理 Workbench 资源，使 Console 同 origin 的 `/data-apps/` 运行入口能加载同一前端。`/data-apps/` 和 `/portal/` 是独立运行入口，不占用 Console 模块管理路由。
+
 ## 三、必须进入 URL 的状态
 
 满足以下任一条件的状态必须进入 URL：

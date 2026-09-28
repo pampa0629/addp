@@ -10,10 +10,46 @@ const client = vi.hoisted(() => ({
 
 vi.mock('../src/api/client', () => ({ default: client }))
 
-import { batchGovernance, exportEntryDataDictionary, getEntry, getEntryDataDictionary, getGovernanceCoverage, listEntries, listEntryFacets, listMyProjectGroups, listReferenceCandidates, replaceMyEntryMarks, resolveSourceEntries, updateEntryGovernance } from '../src/api/catalog'
+import { batchGovernance, createStandardMapping, deleteStandardMapping, exportEntryDataDictionary, getEntry, getEntryDataDictionary, getGovernanceCoverage, listDomainOverviews, listEntries, listEntryFacets, listMyProjectGroups, listReferenceCandidates, listStandardMappingRevisionOptions, replaceMyEntryMarks, resolveSourceEntries, reviewStandardMapping, updateEntryGovernance, updateStandardMapping } from '../src/api/catalog'
+import { listDomainElements, listDomainGlossaries, listDomainMetrics } from '../src/api/standard'
+import { listDomainQualityIssues, listDomainQualityPlans, listDomainQualityRules } from '../src/api/quality'
+import { domainStandardQuery } from '../src/utils/domainStandardSummary'
+import { domainQualityQuery } from '../src/utils/domainQualitySummary'
 
 describe('catalog frontend API paths', () => {
   beforeEach(() => vi.clearAllMocks())
+
+  it('reads domain overviews through Catalog, not Standard user APIs', async () => {
+    await listDomainOverviews()
+    expect(client.get).toHaveBeenCalledWith('/catalog/domains')
+  })
+
+  it('reads domain-owned professional definitions directly from Standard with exact pagination', async () => {
+    const params = domainStandardQuery('42', 2)
+    await listDomainGlossaries(params)
+    await listDomainElements(params)
+    await listDomainMetrics(params)
+    expect(params).toEqual({ scope_type: 'domain', owner_domain_id: '42', page: 2, page_size: 5 })
+    expect(client.get.mock.calls).toEqual([
+      ['/standard/glossaries', { params }],
+      ['/standard/elements', { params }],
+      ['/standard/metrics', { params }]
+    ])
+  })
+
+  it('reads domain-owned quality governance directly from Quality with the current user client', async () => {
+    const rules = domainQualityQuery('42', 'rules')
+    const plans = domainQualityQuery('42', 'plans')
+    const issues = domainQualityQuery('42', 'issues')
+    await listDomainQualityRules(rules)
+    await listDomainQualityPlans(plans)
+    await listDomainQualityIssues(issues)
+    expect(client.get.mock.calls).toEqual([
+      ['/quality/rules', { params: rules }],
+      ['/quality/plans', { params: plans }],
+      ['/quality/issues', { params: issues }]
+    ])
+  })
 
   it('uses paths relative to the shared /api/v1 client base', async () => {
     await listEntries({ page: 1 })
@@ -45,5 +81,21 @@ describe('catalog frontend API paths', () => {
     expect(client.put).toHaveBeenCalledWith('/catalog/me/entries/entry%2Fid/marks', { favorite: true, following: false })
     expect(client.put).toHaveBeenCalledWith('/catalog/entries/entry%2Fid/governance', { version: 3, governance_status: 'certified' })
     expect(axios.getUri({ baseURL: '/api/v1', url: client.get.mock.calls[0][0] })).toBe('/api/v1/catalog/entries')
+  })
+
+  it('uses only the independent StandardMapping candidate and review routes', async () => {
+    const payload = { catalog_entry_id: 'entry', component_id: 'component', element_id: '50', element_revision_id: '501' }
+    await listStandardMappingRevisionOptions('50')
+    await createStandardMapping(payload)
+    await updateStandardMapping('mapping/id', { ...payload, version: 1 })
+    await deleteStandardMapping('mapping/id', 2)
+    await reviewStandardMapping('mapping/id', 'approve', { version: 3, opinion: '' })
+
+    expect(client.get).toHaveBeenCalledWith('/catalog/standard-mappings/revision-options', { params: { element_id: '50' } })
+    expect(client.post).toHaveBeenCalledWith('/catalog/standard-mappings', payload)
+    expect(client.put).toHaveBeenCalledWith('/catalog/standard-mappings/mapping%2Fid', { ...payload, version: 1 })
+    expect(client.delete).toHaveBeenCalledWith('/catalog/standard-mappings/mapping%2Fid', { data: { version: 2 } })
+    expect(client.post).toHaveBeenCalledWith('/catalog/standard-mappings/mapping%2Fid/approve', { version: 3, opinion: '' })
+    await expect(reviewStandardMapping('mapping/id', 'certify', { version: 3 })).rejects.toThrow('invalid standard mapping action')
   })
 })

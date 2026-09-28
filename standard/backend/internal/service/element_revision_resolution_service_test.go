@@ -57,6 +57,43 @@ func TestElementRevisionResolutionRejectsInvalidBatch(t *testing.T) {
 	}
 }
 
+func TestElementRevisionResolutionExactKeepsPinnedHistoricalRevision(t *testing.T) {
+	db := openElementResolutionTestDB(t)
+	for _, statement := range []string{
+		`INSERT INTO standard.elements (id,tenant_id,scope_type,code,lifecycle_state) VALUES (10,7,'tenant_common','member_status','active'), (20,8,'tenant_common','foreign','active')`,
+		`INSERT INTO standard.element_revisions (id,element_id,revision_no,status,name,definition,data_type,nullable,value_domain_kind,code_set_revision_id,effective_from,effective_to) VALUES
+			(101,10,1,'withdrawn','Old status','Historical definition','string',0,'enumeration',501,'2026-01-01T00:00:00Z','2026-06-01T00:00:00Z'),
+			(102,10,2,'published','New status','Current definition','string',0,'unrestricted',NULL,'2026-06-01T00:00:00Z',NULL),
+			(103,10,3,'draft','Draft','Not released','string',0,'unrestricted',NULL,NULL,NULL),
+			(201,20,1,'published','Foreign','Foreign definition','string',0,'unrestricted',NULL,'2026-01-01T00:00:00Z',NULL)`,
+		`INSERT INTO standard.code_sets (id,tenant_id,scope_type,origin,code,lifecycle_state) VALUES (50,7,'tenant_common','tenant','status_codes','active')`,
+		`INSERT INTO standard.code_set_revisions (id,code_set_id,revision_no,status,name,description,value_type) VALUES (501,50,1,'withdrawn','Old codes','Exact old codes','string')`,
+		`INSERT INTO standard.code_set_revision_items (id,code_set_revision_id,code,label,sort_order,status) VALUES (1,501,'old','Old',1,'active')`,
+	} {
+		if err := db.Exec(statement).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	svc := NewElementRevisionResolutionService(repository.NewElementRepository(db), repository.NewCodeSetRepository(db))
+	results, err := svc.ResolveExact(context.Background(), 7, []int64{101, 102, 103, 201, 999})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 5 || !results[0].Found || !results[1].Found || results[2].Found || results[3].Found || results[4].Found {
+		t.Fatalf("exact results = %#v", results)
+	}
+	old := results[0].Snapshot
+	if old == nil || old.ElementRevisionID != 101 || old.ElementID != 10 || old.Status != "withdrawn" || old.Name != "Old status" || old.CodeSetRevision == nil || old.CodeSetRevision.RevisionID != 501 || old.CodeSetRevision.Items[0].Code != "old" {
+		t.Fatalf("pinned old snapshot = %#v", old)
+	}
+	if results[1].Snapshot.ElementRevisionID != 102 || results[1].Snapshot.Status != "published" {
+		t.Fatalf("current snapshot = %#v", results[1].Snapshot)
+	}
+	if _, err := svc.ResolveExact(context.Background(), 7, []int64{101, 101}); !errors.Is(err, ErrInvalidElementRevisionResolutionRequest) {
+		t.Fatalf("duplicate error = %v", err)
+	}
+}
+
 func TestElementRevisionDetailKeepsHistoricalSourceAndTenantBoundary(t *testing.T) {
 	db := openElementResolutionTestDB(t)
 	for _, statement := range []string{

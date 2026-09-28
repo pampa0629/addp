@@ -41,6 +41,7 @@ const (
 	MsgRoleAssignmentExpired                         = "system.iam.role_assignment_expired"
 	MsgOrganizationMembershipPrincipalTypeNotAllowed = "system.iam.organization_membership_principal_type_not_allowed"
 	MsgOrganizationVersionConflict                   = "system.iam.organization_version_conflict"
+	MsgOrganizationCodeAlreadyExists                 = "system.iam.organization_code_already_exists"
 	MsgOAuthClientVersionConflict                    = "system.iam.oauth_client_version_conflict"
 	MsgServiceAccountVersionConflict                 = "system.iam.service_account_version_conflict"
 

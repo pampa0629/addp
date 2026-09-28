@@ -34,16 +34,27 @@ func TestPostgresGovernanceCoverageAndSourceResolution(t *testing.T) {
 
 	metaEntry, component := createEditableCatalogEntry(t, tx, 71)
 	modelEntry := createModelCatalogEntry(t, tx, 71, "31")
+	sharedMetric := createMetricCatalogEntry(t, tx, 71, "")
+	var sharedBinding models.SourceBinding
+	if err := tx.Where("catalog_entry_id = ? AND is_current = ?", sharedMetric.ID, true).First(&sharedBinding).Error; err != nil {
+		t.Fatal(err)
+	}
+	sharedBinding.ObservedSnapshot["scope_type"] = "tenant_common"
+	if err := tx.Save(&sharedBinding).Error; err != nil {
+		t.Fatal(err)
+	}
 	now := time.Date(2026, 8, 27, 0, 0, 0, 0, time.UTC)
 	if err := tx.Model(&models.Entry{}).Where("id = ?", metaEntry.ID).Updates(map[string]any{
 		"business_name": "Orders", "business_description": "Enterprise order facts",
 	}).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := tx.Create(&models.ComponentElementAssociation{
+	revisionID := int64(511)
+	if err := tx.Create(&models.StandardMapping{
 		ID: uuid.New(), TenantID: 71, CatalogEntryID: metaEntry.ID, ComponentID: component.ID,
-		ElementID: 51, ObservedVersion: 1, ObservedSnapshot: commonModels.JSONMap{"name": "Order ID"},
-		VerifiedAt: now, CreatedAt: now, UpdatedAt: now,
+		ElementID: 51, ElementRevisionID: &revisionID, Source: models.StandardMappingSourceManual,
+		ReviewStatus: models.StandardMappingApproved, Version: 2, ProposedByType: "user", ProposedByID: "1",
+		Evidence: commonModels.JSONMap{"name": "Order ID"}, CreatedAt: now, UpdatedAt: now,
 	}).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -53,7 +64,8 @@ func TestPostgresGovernanceCoverageAndSourceResolution(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetGovernanceCoverage() error = %v", err)
 	}
-	if coverage.TotalEntries != 2 || len(coverage.Dimensions) != 7 || coverage.Dimensions[1].Key != CoverageDimensionPrimaryDomain || coverage.Dimensions[1].Covered != 1 {
+	if coverage.TotalEntries != 3 || len(coverage.Dimensions) != 7 || coverage.Dimensions[1].Key != CoverageDimensionPrimaryDomain ||
+		coverage.Dimensions[1].Covered != 1 || coverage.Dimensions[1].Applicable != 2 || coverage.Dimensions[1].NotApplicable != 1 {
 		t.Fatalf("coverage = %#v", coverage)
 	}
 	for _, dimension := range coverage.Dimensions {

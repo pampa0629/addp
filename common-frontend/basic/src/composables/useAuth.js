@@ -95,7 +95,7 @@ export function createAuthGuard(authStoreOrGetter, config = {}) {
         query: { redirect: normalizeRedirect(to.fullPath) }
       })
     }
-    if (authStore.isAuthenticated && checkPageAccess && to.name !== 'AccessDenied' && !isPublic) {
+    if (authStore.isAuthenticated && checkPageAccess && !to.meta?.handlesForbidden && to.name !== 'AccessDenied' && !isPublic) {
       const route = to.path === '/' && modulePrefix === 'system' ? '/system/account/security' :
         modulePrefix === 'portal' ? to.path :
           `/${modulePrefix}${to.path === '/' ? '' : to.path}`

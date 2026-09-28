@@ -9,7 +9,6 @@ import (
 	"time"
 
 	commonapi "github.com/addp/common/api"
-	"github.com/google/uuid"
 )
 
 var organizationCodePattern = regexp.MustCompile(`^[a-z][a-z0-9_]{0,62}[a-z0-9]$|^[a-z]$`)
@@ -22,7 +21,7 @@ var ErrOrganizationMembershipPrincipalTypeNotAllowed = fmt.Errorf(
 type CreateDepartmentInput struct {
 	TenantID, ActorPrincipalID int64
 	ParentID                   *int64
-	Name                       string
+	Code, Name                 string
 	Audit                      AuditMetadata
 }
 
@@ -61,17 +60,13 @@ type CloseOrganizationMembershipInput struct {
 
 type CreateProjectGroupInput struct {
 	TenantID, ActorPrincipalID int64
-	Code, Name, Description    string
-	Status                     ProjectGroupStatus
-	StartsAt, EndsAt           *time.Time
+	Code, Name                 string
 	Audit                      AuditMetadata
 }
 
 type UpdateProjectGroupInput struct {
 	TenantID, ProjectGroupID, Version, ActorPrincipalID int64
 	Name, Description                                   string
-	Status                                              ProjectGroupStatus
-	StartsAt, EndsAt                                    *time.Time
 	Audit                                               AuditMetadata
 }
 
@@ -120,13 +115,15 @@ func (s *OrganizationService) GetDepartment(ctx context.Context, tenantID, depar
 }
 
 func (s *OrganizationService) CreateDepartment(ctx context.Context, input CreateDepartmentInput) (*Department, error) {
-	name := strings.TrimSpace(input.Name)
-	if name == "" || input.TenantID <= 0 || input.ActorPrincipalID <= 0 {
+	code, name, err := validateOrganizationIdentity(input.Code, input.Name)
+	if err != nil || input.TenantID <= 0 || input.ActorPrincipalID <= 0 {
+		if err != nil {
+			return nil, err
+		}
 		return nil, commonapi.ErrBadRequest
 	}
-	code := "department_" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	department := &Department{TenantID: input.TenantID, ParentID: input.ParentID, Code: code, Name: name, Status: DepartmentStatusActive, Version: 1}
-	err := s.repository.Transaction(ctx, func(tx *Repository) error {
+	err = s.repository.Transaction(ctx, func(tx *Repository) error {
 		if err := tx.LockDepartmentStructure(ctx, input.TenantID); err != nil {
 			return err
 		}
@@ -342,18 +339,18 @@ func (s *OrganizationService) GetProjectGroup(ctx context.Context, tenantID, gro
 
 func (s *OrganizationService) CreateProjectGroup(ctx context.Context, input CreateProjectGroupInput) (*ProjectGroup, error) {
 	code, name, err := validateOrganizationIdentity(input.Code, input.Name)
-	if err != nil || input.TenantID <= 0 || input.ActorPrincipalID <= 0 || !validProjectGroupWritableStatus(input.Status) || !validProjectDates(input.StartsAt, input.EndsAt) {
+	if err != nil || input.TenantID <= 0 || input.ActorPrincipalID <= 0 {
 		if err != nil {
 			return nil, err
 		}
 		return nil, commonapi.ErrBadRequest
 	}
-	group := &ProjectGroup{TenantID: input.TenantID, Code: code, Name: name, Description: strings.TrimSpace(input.Description), Status: input.Status, StartsAt: utcTimePointer(input.StartsAt), EndsAt: utcTimePointer(input.EndsAt), Version: 1}
+	group := &ProjectGroup{TenantID: input.TenantID, Code: code, Name: name, Description: "", Status: ProjectGroupStatusActive, Version: 1}
 	err = s.repository.Transaction(ctx, func(tx *Repository) error {
 		if err := tx.CreateProjectGroup(ctx, group); err != nil {
 			return err
 		}
-		return writeOrganizationAudit(ctx, tx, input.Audit, "iam.project_group.created", AuditRiskMedium, "project_group", group.ID, map[string]any{"tenant_id": input.TenantID, "code": code, "status": input.Status})
+		return writeOrganizationAudit(ctx, tx, input.Audit, "iam.project_group.created", AuditRiskMedium, "project_group", group.ID, map[string]any{"tenant_id": input.TenantID, "code": code, "status": ProjectGroupStatusActive})
 	})
 	if err != nil {
 		return nil, err
@@ -363,7 +360,7 @@ func (s *OrganizationService) CreateProjectGroup(ctx context.Context, input Crea
 
 func (s *OrganizationService) UpdateProjectGroup(ctx context.Context, input UpdateProjectGroupInput) (*ProjectGroup, error) {
 	name := strings.TrimSpace(input.Name)
-	if input.TenantID <= 0 || input.ProjectGroupID <= 0 || input.Version <= 0 || input.ActorPrincipalID <= 0 || name == "" || !validProjectGroupWritableStatus(input.Status) || !validProjectDates(input.StartsAt, input.EndsAt) {
+	if input.TenantID <= 0 || input.ProjectGroupID <= 0 || input.Version <= 0 || input.ActorPrincipalID <= 0 || name == "" {
 		return nil, commonapi.ErrBadRequest
 	}
 	err := s.repository.Transaction(ctx, func(tx *Repository) error {
@@ -371,13 +368,13 @@ func (s *OrganizationService) UpdateProjectGroup(ctx context.Context, input Upda
 		if err != nil {
 			return err
 		}
-		if current.Status == ProjectGroupStatusClosed || (current.Status == ProjectGroupStatusActive && input.Status == ProjectGroupStatusPlanned) {
+		if current.Status == ProjectGroupStatusClosed {
 			return fmt.Errorf("%w: invalid project group lifecycle transition", commonapi.ErrConflict)
 		}
-		if err := tx.UpdateProjectGroup(ctx, input.TenantID, input.ProjectGroupID, input.Version, name, strings.TrimSpace(input.Description), input.Status, utcTimePointer(input.StartsAt), utcTimePointer(input.EndsAt)); err != nil {
+		if err := tx.UpdateProjectGroup(ctx, input.TenantID, input.ProjectGroupID, input.Version, name, strings.TrimSpace(input.Description)); err != nil {
 			return err
 		}
-		return writeOrganizationAudit(ctx, tx, input.Audit, "iam.project_group.updated", AuditRiskMedium, "project_group", input.ProjectGroupID, map[string]any{"tenant_id": input.TenantID, "status": input.Status})
+		return writeOrganizationAudit(ctx, tx, input.Audit, "iam.project_group.updated", AuditRiskMedium, "project_group", input.ProjectGroupID, map[string]any{"tenant_id": input.TenantID})
 	})
 	if err != nil {
 		return nil, err
@@ -429,7 +426,7 @@ func (s *OrganizationService) CreateProjectGroupMembership(ctx context.Context, 
 		if err != nil {
 			return err
 		}
-		if group.Status == ProjectGroupStatusClosed {
+		if group.Status != ProjectGroupStatusActive {
 			return fmt.Errorf("%w: project group is closed", commonapi.ErrConflict)
 		}
 		tenantMembership, err := tx.GetManagedTenantMembership(ctx, input.TenantID, input.TenantMembershipID)
@@ -465,7 +462,7 @@ func (s *OrganizationService) UpdateProjectGroupMembership(ctx context.Context, 
 		if err != nil {
 			return err
 		}
-		if group.Status == ProjectGroupStatusClosed {
+		if group.Status != ProjectGroupStatusActive {
 			return fmt.Errorf("%w: project group is closed", commonapi.ErrConflict)
 		}
 		current, err := tx.GetProjectGroupMembership(ctx, input.TenantID, input.ProjectGroupID, input.MembershipID)
@@ -554,16 +551,8 @@ func validDepartmentRole(value DepartmentRelationRole) bool {
 	return value == DepartmentRelationRoleMember || value == DepartmentRelationRoleLeader
 }
 
-func validProjectGroupWritableStatus(value ProjectGroupStatus) bool {
-	return value == ProjectGroupStatusPlanned || value == ProjectGroupStatusActive
-}
-
 func validProjectGroupRole(value ProjectGroupRelationRole) bool {
 	return value == ProjectGroupRelationRoleMember || value == ProjectGroupRelationRoleLeader || value == ProjectGroupRelationRoleCoordinator
-}
-
-func validProjectDates(startsAt, endsAt *time.Time) bool {
-	return startsAt == nil || endsAt == nil || endsAt.After(*startsAt)
 }
 
 func writeOrganizationAudit(ctx context.Context, tx *Repository, metadata AuditMetadata, event string, risk AuditRiskLevel, entityType string, entityID int64, details map[string]any) error {

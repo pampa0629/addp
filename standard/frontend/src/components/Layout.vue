@@ -33,36 +33,36 @@
     <el-container class="main-container">
       <el-aside class="sidebar" width="200px">
         <el-menu :default-active="activeMenu" router class="sidebar-menu">
-          <el-sub-menu index="standard">
+          <el-sub-menu v-if="hasStandardPages" index="standard">
             <template #title>
               <el-icon><Document /></el-icon>
               <span>{{ $t('standard.layout.dataStandard') }}</span>
             </template>
-            <el-menu-item index="/domains">
+            <el-menu-item v-if="canEnter('/domains')" index="/domains">
               <el-icon><Grid /></el-icon>
               <span>{{ $t('standard.layout.domains') }}</span>
             </el-menu-item>
-            <el-menu-item index="/glossaries">
+            <el-menu-item v-if="canEnter('/glossaries')" index="/glossaries">
               <el-icon><Reading /></el-icon>
               <span>{{ $t('standard.layout.glossaries') }}</span>
             </el-menu-item>
-            <el-menu-item index="/elements">
+            <el-menu-item v-if="canEnter('/elements')" index="/elements">
               <el-icon><Collection /></el-icon>
               <span>{{ $t('standard.layout.elements') }}</span>
             </el-menu-item>
-            <el-menu-item index="/code-sets">
+            <el-menu-item v-if="canEnter('/code-sets')" index="/code-sets">
               <el-icon><List /></el-icon>
               <span>{{ $t('standard.layout.codeSets') }}</span>
             </el-menu-item>
-            <el-menu-item index="/units">
+            <el-menu-item v-if="canEnter('/units')" index="/units">
               <el-icon><Odometer /></el-icon>
               <span>{{ $t('standard.layout.units') }}</span>
             </el-menu-item>
-            <el-menu-item index="/metrics">
+            <el-menu-item v-if="canEnter('/metrics')" index="/metrics">
               <el-icon><TrendCharts /></el-icon>
               <span>{{ $t('standard.layout.metrics') }}</span>
             </el-menu-item>
-            <el-menu-item index="/documents">
+            <el-menu-item v-if="canEnter('/documents')" index="/documents">
               <el-icon><Files /></el-icon>
               <span>{{ $t('standard.layout.documents') }}</span>
             </el-menu-item>
@@ -81,6 +81,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '../store/auth'
+import { allowsConsoleRoute } from '@common-ui'
 import {
   User, ArrowDown, SwitchButton, Document,
   Grid, Reading, Collection, DataAnalysis,
@@ -91,6 +92,8 @@ import {
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
+const canEnter = path => allowsConsoleRoute(`/standard${path}`, authStore.contextType, authStore.permissions)
+const hasStandardPages = computed(() => ['/domains', '/glossaries', '/elements', '/code-sets', '/units', '/metrics', '/documents'].some(canEnter))
 const isInIframe = ref(false)
 
 onMounted(() => {

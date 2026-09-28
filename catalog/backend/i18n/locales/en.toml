@@ -31,6 +31,8 @@ other = "Semantic or responsibility reference validation is currently unavailabl
 other = "Source rebind preconditions are not satisfied; refresh and verify both entries"
 [catalog.error.search_unavailable]
 other = "The enterprise catalog search projection is currently unavailable"
+[catalog.error.domain_overview_unavailable]
+other = "Business domain overviews are temporarily unavailable; please try again later"
 [catalog.error.inventory_permission_required]
 other = "Viewing the enterprise inventory requires the separate inventory permission"
 [catalog.error.curation_requirements_not_met]
@@ -75,7 +77,11 @@ other = "Create, update, and delete enterprise catalog collections owned by proj
 [permissions.catalog.entry.update.name]
 other = "Maintain enterprise catalog"
 [permissions.catalog.entry.update.description]
-other = "Maintain business metadata, semantic links, responsibilities, and visibility"
+other = "Maintain business metadata, ordinary semantic links, standard mapping candidates, responsibilities, and visibility"
+[permissions.catalog.standard_mapping.review.name]
+other = "Review field standard mappings"
+[permissions.catalog.standard_mapping.review.description]
+other = "Approve, reject, or withdraw mappings between fields and data element revisions"
 [permissions.catalog.entry.certify.name]
 other = "Certify catalog entries"
 [permissions.catalog.entry.certify.description]

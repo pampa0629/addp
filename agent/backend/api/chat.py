@@ -133,9 +133,13 @@ def _parse_optional_datetime(value: Any) -> datetime | None:
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
-async def _get_owned_session(db: AsyncSession, session_id: int, user_id: int) -> Session:
+async def _get_owned_session(db: AsyncSession, session_id: int, user_id: int, tenant_id: int) -> Session:
     result = await db.execute(
-        select(Session).where(Session.id == session_id, Session.user_id == user_id)
+        select(Session).where(
+            Session.id == session_id,
+            Session.user_id == user_id,
+            Session.tenant_id == tenant_id,
+        )
     )
     session = result.scalar_one_or_none()
     if session is None:
@@ -280,7 +284,7 @@ async def _save_assistant_message(
 @router.post(
     "/chat",
     summary="运行智能体 | Run Agent",
-    description="接收标准 AG-UI RunAgentInput，并以 text/event-stream 返回 AG-UI 事件。",
+    description="接收当前 Tenant 内本人会话的标准 AG-UI RunAgentInput，并以 text/event-stream 返回 AG-UI 事件。",
     dependencies=[Depends(require_permissions(AGENT_RUN_CREATE, AGENT_RUN_EXECUTE))],
     openapi_extra={
         "x-ai-hint": "使用 threadId 指定已有 ADDP Agent 会话；messages 中最后一条 user 消息是本次新输入。",
@@ -298,9 +302,7 @@ async def chat(request: Request, body: RunAgentInput, db: AsyncSession = Depends
 
     user_id = int(request.state.principal_id)
     tenant_id = int(request.state.tenant_id)
-    session = await _get_owned_session(db, session_id, user_id)
-    if session.tenant_id != tenant_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="无权访问该会话")
+    session = await _get_owned_session(db, session_id, user_id, tenant_id)
 
     retry_run_id = getattr(request.state, "agent_run_retry_id", None)
     resumed_from_interaction = False
@@ -850,6 +852,7 @@ async def retry_chat(
 @router.get(
     "/sessions/{session_id}/messages",
     summary="获取会话消息 | List Session Messages",
+    description="只返回当前 Tenant 内当前用户拥有的会话消息。",
     dependencies=[Depends(require_permissions(AGENT_SESSION_READ))],
     openapi_extra={
         "x-addp-auth-mode": "permission",
@@ -857,7 +860,12 @@ async def retry_chat(
     },
 )
 async def get_messages(session_id: int, request: Request, db: AsyncSession = Depends(get_db)):
-    await _get_owned_session(db, session_id, int(request.state.principal_id))
+    await _get_owned_session(
+        db,
+        session_id,
+        int(request.state.principal_id),
+        int(request.state.tenant_id),
+    )
 
     msg_result = await db.execute(
         select(Message)
@@ -869,6 +877,7 @@ async def get_messages(session_id: int, request: Request, db: AsyncSession = Dep
         select(Interaction).where(
             Interaction.session_id == session_id,
             Interaction.user_id == int(request.state.principal_id),
+            Interaction.tenant_id == int(request.state.tenant_id),
         )
     )
     interaction_status = {

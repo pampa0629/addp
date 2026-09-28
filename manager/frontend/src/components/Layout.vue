@@ -39,32 +39,32 @@
           router
           class="el-menu-vertical"
         >
-          <el-menu-item v-if="authStore.hasPermission('manager.content.read')" index="/data-explorer">
+          <el-menu-item v-if="canEnter('/data-explorer')" index="/data-explorer">
             <el-icon><Search /></el-icon>
             <span>{{ t('manager.layout.dataExplorer') }}</span>
           </el-menu-item>
-          <el-menu-item v-if="authStore.hasPermission('manager.search.execute')" index="/data-retrieval">
+          <el-menu-item v-if="canEnter('/data-retrieval')" index="/data-retrieval">
             <el-icon><Document /></el-icon>
             <span>{{ t('manager.layout.dataRetrieval') }}</span>
           </el-menu-item>
-		  <el-menu-item v-if="authStore.hasAnyPermission(['manager.configuration.read'])" index="/settings/embedding">
+		  <el-menu-item v-if="canEnter('/settings/embedding')" index="/settings/embedding">
 			<el-icon><Setting /></el-icon>
 			<span>{{ t('manager.layout.embeddingConfiguration') }}</span>
 		  </el-menu-item>
-          <el-sub-menu v-if="authStore.hasPermission('manager.derived_artifact.read')" index="/tasks">
+          <el-sub-menu v-if="hasTaskPages" index="/tasks">
             <template #title>
             <el-icon><Operation /></el-icon>
             <span>{{ t('manager.layout.dataTasks') }}</span>
             </template>
-            <el-menu-item index="/tasks/quick-view">
+            <el-menu-item v-if="canEnter('/tasks/quick-view')" index="/tasks/quick-view">
               <el-icon><View /></el-icon>
               <span>{{ t('manager.layout.quickViewTasks') }}</span>
             </el-menu-item>
-            <el-menu-item index="/tasks/spatial">
+            <el-menu-item v-if="canEnter('/tasks/spatial')" index="/tasks/spatial">
               <el-icon><MapLocation /></el-icon>
               <span>{{ t('manager.layout.spatialDataTasks') }}</span>
             </el-menu-item>
-            <el-menu-item index="/tasks/embedding">
+            <el-menu-item v-if="canEnter('/tasks/embedding')" index="/tasks/embedding">
               <el-icon><Connection /></el-icon>
               <span>{{ t('manager.layout.embeddingTasks') }}</span>
             </el-menu-item>
@@ -83,6 +83,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../store/auth'
+import { allowsConsoleRoute } from '@common-ui'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import {
@@ -102,6 +103,8 @@ import {
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
+const canEnter = path => allowsConsoleRoute(`/manager${path}`, authStore.contextType, authStore.permissions)
+const hasTaskPages = computed(() => ['/tasks/quick-view', '/tasks/spatial', '/tasks/embedding'].some(canEnter))
 const { t } = useI18n()
 
 // 检测是否在 iframe 中

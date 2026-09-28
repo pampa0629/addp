@@ -28,23 +28,23 @@
     <el-container class="main-container">
       <el-aside class="sidebar" width="220px">
         <el-menu :default-active="activeMenu" router class="sidebar-menu">
-          <el-menu-item index="/entries">
+          <el-menu-item v-if="canEnter('/entries')" index="/entries">
             <el-icon><List /></el-icon>
             <span>{{ t('catalog.layout.entries') }}</span>
           </el-menu-item>
-          <el-menu-item index="/me/entries">
+          <el-menu-item v-if="canEnter('/me/entries')" index="/me/entries">
             <el-icon><UserFilled /></el-icon>
             <span>{{ t('catalog.layout.myCatalog') }}</span>
           </el-menu-item>
-          <el-menu-item v-if="canReadCollections" index="/collections">
+          <el-menu-item v-if="canEnter('/collections')" index="/collections">
             <el-icon><FolderOpened /></el-icon>
             <span>{{ t('catalog.layout.collections') }}</span>
           </el-menu-item>
-          <el-menu-item v-if="canManageGovernance" index="/governance/tasks">
+          <el-menu-item v-if="canEnter('/governance/tasks')" index="/governance/tasks">
             <el-icon><WarningFilled /></el-icon>
             <span>{{ t('catalog.layout.governanceTasks') }}</span>
           </el-menu-item>
-          <el-menu-item v-if="canViewCoverage" index="/governance/coverage">
+          <el-menu-item v-if="canEnter('/governance/coverage')" index="/governance/coverage">
             <el-icon><DataAnalysis /></el-icon>
             <span>{{ t('catalog.layout.governanceCoverage') }}</span>
           </el-menu-item>
@@ -62,6 +62,7 @@ import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ArrowDown, Collection, DataAnalysis, FolderOpened, List, SwitchButton, User, UserFilled, WarningFilled } from '@element-plus/icons-vue'
+import { allowsConsoleRoute } from '@common-ui'
 import { useAuthStore } from '../store/auth'
 
 const route = useRoute()
@@ -70,9 +71,7 @@ const authStore = useAuthStore()
 const { t } = useI18n()
 const isInIframe = window.self !== window.top
 const activeMenu = computed(() => route.path.startsWith('/entries') ? '/entries' : route.path)
-const canManageGovernance = computed(() => authStore.hasPermission('catalog.entry.update'))
-const canReadCollections = computed(() => authStore.hasPermission('catalog.collection.read'))
-const canViewCoverage = computed(() => authStore.hasPermission('catalog.entry.read') && authStore.hasPermission('catalog.inventory.read'))
+const canEnter = path => allowsConsoleRoute(`/catalog${path}`, authStore.contextType, authStore.permissions)
 
 async function handleCommand(command) {
   if (command !== 'logout') return

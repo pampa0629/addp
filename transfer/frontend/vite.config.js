@@ -41,5 +41,5 @@ export default defineConfig({
     },
     dedupe: ['vue', 'vue-i18n', 'element-plus', '@element-plus/icons-vue', 'axios']
   },
-  base: process.env.NODE_ENV === 'development' ? '/' : '/transfer/'  // 开发模式用 /，生产模式用 /transfer/
+  base: process.env.NODE_ENV === 'development' ? '/' : '/module-ui/transfer/'  // 开发模式用 /，生产模式用 /module-ui/transfer/
 })

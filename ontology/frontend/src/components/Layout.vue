@@ -11,7 +11,7 @@
     <el-container>
       <el-aside class="sidebar" width="176px">
         <el-menu default-active="/ontologies" @select="navigate">
-          <el-menu-item index="/ontologies">
+          <el-menu-item v-if="canEnter('/ontologies')" index="/ontologies">
             {{ t('ontology.list') }}
           </el-menu-item>
         </el-menu>
@@ -23,12 +23,13 @@
 <script setup>
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
-import { LangSwitcher, navigateConsoleModuleRoute } from '@common-ui'
+import { LangSwitcher, allowsConsoleRoute, navigateConsoleModuleRoute } from '@common-ui'
 import { useAuthStore } from '../store/auth'
 const { t } = useI18n()
 const router = useRouter(),
   auth = useAuthStore(),
   embedded = window.self !== window.top
+const canEnter = path => allowsConsoleRoute(`/ontology${path}`, auth.contextType, auth.permissions)
 const navigate = (path) => navigateConsoleModuleRoute(router, 'ontology', path)
 async function logout() {
   // Run the existing editor leave guard before revoking the session.

@@ -41,5 +41,5 @@ export default defineConfig({
       }
     }
   },
-  base: process.env.NODE_ENV === 'development' ? '/' : '/catalog/'
+  base: process.env.NODE_ENV === 'development' ? '/' : '/module-ui/catalog/'
 })

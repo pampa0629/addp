@@ -1,6 +1,7 @@
 package repository
 
 import (
+	commonapi "github.com/addp/common/api"
 	commonrepo "github.com/addp/common/repository"
 	"github.com/addp/service/internal/models"
 	"gorm.io/gorm"
@@ -21,10 +22,20 @@ func (r *RegisteredServiceRepository) Create(service *models.RegisteredService) 
 	return r.db.Create(service).Error
 }
 
-// GetByID 根据 ID 获取服务（包含图层）
+// GetByID 仅供公开代理端点按 ID 获取服务；租户管理 API 必须使用 GetByIDAndTenant。
 func (r *RegisteredServiceRepository) GetByID(id uint) (*models.RegisteredService, error) {
 	var service models.RegisteredService
 	err := r.db.Preload("Layers").Where("id = ?", id).First(&service).Error
+	if err != nil {
+		return nil, commonrepo.WrapDBError(err)
+	}
+	return &service, nil
+}
+
+// GetByIDAndTenant 仅向当前租户返回管理详情。
+func (r *RegisteredServiceRepository) GetByIDAndTenant(id, tenantID uint) (*models.RegisteredService, error) {
+	var service models.RegisteredService
+	err := r.db.Preload("Layers").Where("id = ? AND tenant_id = ?", id, tenantID).First(&service).Error
 	if err != nil {
 		return nil, commonrepo.WrapDBError(err)
 	}
@@ -88,13 +99,27 @@ func (r *RegisteredServiceRepository) ListByServiceType(tenantID uint, serviceTy
 }
 
 // Update 更新服务
-func (r *RegisteredServiceRepository) Update(id uint, updates map[string]interface{}) error {
-	return r.db.Model(&models.RegisteredService{}).Where("id = ?", id).Updates(updates).Error
+func (r *RegisteredServiceRepository) Update(id, tenantID uint, updates map[string]interface{}) error {
+	result := r.db.Model(&models.RegisteredService{}).Where("id = ? AND tenant_id = ?", id, tenantID).Updates(updates)
+	if result.Error != nil {
+		return commonrepo.WrapDBError(result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return commonapi.ErrNotFound
+	}
+	return nil
 }
 
 // Delete 删除服务（级联删除图层）
-func (r *RegisteredServiceRepository) Delete(id uint) error {
-	return r.db.Delete(&models.RegisteredService{}, id).Error
+func (r *RegisteredServiceRepository) Delete(id, tenantID uint) error {
+	result := r.db.Where("id = ? AND tenant_id = ?", id, tenantID).Delete(&models.RegisteredService{})
+	if result.Error != nil {
+		return commonrepo.WrapDBError(result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return commonapi.ErrNotFound
+	}
+	return nil
 }
 
 // GetByTenant 获取租户下满足条件的所有服务（不分页）
@@ -147,24 +172,24 @@ func (r *RegisteredServiceRepository) Search(tenantID uint, keyword string, offs
 }
 
 // UpdateStatus 更新服务状态
-func (r *RegisteredServiceRepository) UpdateStatus(id uint, status string, errorMessage string) error {
+func (r *RegisteredServiceRepository) UpdateStatus(id, tenantID uint, status string, errorMessage string) error {
 	updates := map[string]interface{}{
 		"status": status,
 	}
 	if errorMessage != "" {
 		updates["error_message"] = errorMessage
 	}
-	return r.db.Model(&models.RegisteredService{}).Where("id = ?", id).Updates(updates).Error
+	return r.Update(id, tenantID, updates)
 }
 
 // UpdateMetadata 更新服务元数据
-func (r *RegisteredServiceRepository) UpdateMetadata(id uint, metadata map[string]interface{}) error {
-	return r.db.Model(&models.RegisteredService{}).Where("id = ?", id).Update("metadata", metadata).Error
+func (r *RegisteredServiceRepository) UpdateMetadata(id, tenantID uint, metadata map[string]interface{}) error {
+	return r.Update(id, tenantID, map[string]interface{}{"metadata": metadata})
 }
 
 // UpdateHealthCheck 更新健康检查时间
-func (r *RegisteredServiceRepository) UpdateHealthCheck(id uint) error {
-	return r.db.Model(&models.RegisteredService{}).Where("id = ?", id).Update("last_checked_at", gorm.Expr("NOW()")).Error
+func (r *RegisteredServiceRepository) UpdateHealthCheck(id, tenantID uint) error {
+	return r.Update(id, tenantID, map[string]interface{}{"last_checked_at": gorm.Expr("NOW()")})
 }
 
 // GetActiveServices 获取所有活跃的服务

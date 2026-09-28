@@ -17,7 +17,6 @@ import (
 )
 
 func TestMapUpdateEntryRequestParsesCanonicalCrossModuleIDs(t *testing.T) {
-	componentID := uuid.New()
 	input, err := mapUpdateEntryRequest(updateEntryRequest{
 		Version: 3, GovernanceStatus: models.GovernanceStatusCurated, Visibility: models.VisibilityTenant,
 		Domains:     []updateDomainLinkRequest{{ID: "9223372036854775807", Role: models.SemanticRolePrimary}},
@@ -26,13 +25,33 @@ func TestMapUpdateEntryRequestParsesCanonicalCrossModuleIDs(t *testing.T) {
 			Role: models.ResponsibilityRoleBusinessOwner, SubjectType: models.ResponsibilitySubjectUser,
 			SubjectID: "9007199254740993",
 		}},
-		ComponentElements: []updateComponentElementRequest{{ComponentID: componentID.String(), ElementID: "50"}},
 	})
 	if err != nil {
 		t.Fatalf("mapUpdateEntryRequest() error = %v", err)
 	}
-	if input.Domains[0].ID != int64(9223372036854775807) || input.Responsibilities[0].SubjectID != int64(9007199254740993) || input.ComponentElements[0].ComponentID != componentID {
+	if input.Domains[0].ID != int64(9223372036854775807) || input.Responsibilities[0].SubjectID != int64(9007199254740993) {
 		t.Fatalf("input = %#v", input)
+	}
+}
+
+func TestStandardMappingRequestPinsCanonicalRevision(t *testing.T) {
+	entryID, componentID := uuid.New(), uuid.New()
+	input, err := parseMappingInput(standardMappingRequest{
+		CatalogEntryID: entryID.String(), ComponentID: componentID.String(),
+		ElementID: "9007199254740993", ElementRevisionID: "9007199254740994",
+	})
+	if err != nil || input.CatalogEntryID != entryID || input.ComponentID != componentID ||
+		input.ElementID != 9007199254740993 || input.ElementRevisionID != 9007199254740994 {
+		t.Fatalf("parsed mapping = %#v, error = %v", input, err)
+	}
+	for _, value := range []string{"", "0", "01", "9007199254740994.0", "9223372036854775808"} {
+		_, err := parseMappingInput(standardMappingRequest{
+			CatalogEntryID: entryID.String(), ComponentID: componentID.String(),
+			ElementID: "50", ElementRevisionID: value,
+		})
+		if err == nil {
+			t.Fatalf("noncanonical revision %q accepted", value)
+		}
 	}
 }
 
@@ -110,13 +129,13 @@ func TestMapBatchGovernanceRequestRejectsImplicitOrNonCanonicalMembers(t *testin
 
 func TestCatalogCrossModuleIDsMarshalAsStrings(t *testing.T) {
 	payload, err := json.Marshal(struct {
-		Responsibility models.Responsibility              `json:"responsibility"`
-		Semantic       models.SemanticAssociation         `json:"semantic"`
-		Element        models.ComponentElementAssociation `json:"element"`
+		Responsibility models.Responsibility      `json:"responsibility"`
+		Semantic       models.SemanticAssociation `json:"semantic"`
+		Mapping        models.StandardMapping     `json:"mapping"`
 	}{
 		Responsibility: models.Responsibility{SubjectID: 9007199254740993},
 		Semantic:       models.SemanticAssociation{SemanticID: 9007199254740994},
-		Element:        models.ComponentElementAssociation{ElementID: 9007199254740995},
+		Mapping:        models.StandardMapping{ElementID: 9007199254740995},
 	})
 	if err != nil {
 		t.Fatal(err)

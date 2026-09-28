@@ -1,16 +1,9 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import Layout from '../components/Layout.vue'
 import { useAuthStore } from '../store/auth'
+import { resolveServiceLandingRoute } from './serviceLandingRoute.mjs'
 
-const normalizeRedirect = fullPath => {
-  if (!fullPath) {
-    return '/query-services'
-  }
-  if (fullPath === '/' || fullPath === '/') {
-    return '/query-services'
-  }
-  return fullPath
-}
+const normalizeRedirect = fullPath => fullPath || '/'
 
 const routes = [
   {
@@ -22,9 +15,17 @@ const routes = [
   {
     path: '/',
     component: Layout,
-    redirect: '/query-services',
     meta: { requiresAuth: true },
     children: [
+      {
+        path: '',
+        name: 'ServiceHome',
+        beforeEnter: () => {
+          const authStore = useAuthStore()
+          return resolveServiceLandingRoute(authStore.contextType, authStore.permissions)
+        },
+        meta: { requiresAuth: true, handlesForbidden: true }
+      },
       // === 查询服务路由 ===
       {
         path: 'query-services',
@@ -173,7 +174,7 @@ const routes = [
 ]
 
 const router = createRouter({
-  history: createWebHistory(import.meta.env.DEV ? '/' : '/service/'),
+  history: createWebHistory(import.meta.env.BASE_URL),
   routes
 })
 

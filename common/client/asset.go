@@ -170,7 +170,7 @@ type RatingItem struct {
 	UpdatedAt string   `json:"updated_at"`
 }
 
-type UpsertRatingRequest struct {
+type RatingWriteRequest struct {
 	Score   float32  `json:"score"`
 	Comment string   `json:"comment"`
 	Tags    []string `json:"tags"`
@@ -182,8 +182,14 @@ type paginatedApplications struct {
 }
 
 type paginatedRatings struct {
-	Total int64        `json:"total"`
-	Items []RatingItem `json:"data"`
+	Total    int64        `json:"total"`
+	Items    []RatingItem `json:"data"`
+	MyRating *RatingItem  `json:"my_rating"`
+	AvgScore float64      `json:"avg_score"`
+}
+
+type ownRatingResponse struct {
+	Rating *RatingItem `json:"rating"`
 }
 
 func (c *AssetClient) GetAssets(ctx context.Context, accessToken string, opts AssetQueryOptions) (*AssetListResponse, error) {
@@ -262,20 +268,38 @@ func (c *AssetClient) GetApplyStatus(ctx context.Context, accessToken string, as
 	return &result, nil
 }
 
-func (c *AssetClient) GetRatings(ctx context.Context, accessToken string, assetID int64) ([]RatingItem, int64, error) {
+func (c *AssetClient) GetRatings(ctx context.Context, accessToken string, assetID int64) ([]RatingItem, int64, *RatingItem, float64, error) {
 	query := url.Values{"page_size": {"50"}}
 	var result paginatedRatings
 	path := fmt.Sprintf("/api/v1/asset/consumer/assets/%d/ratings", assetID)
 	if err := c.do(ctx, accessToken, http.MethodGet, path, query, nil, &result); err != nil {
-		return nil, 0, err
+		return nil, 0, nil, 0, err
 	}
-	return result.Items, result.Total, nil
+	return result.Items, result.Total, result.MyRating, result.AvgScore, nil
 }
 
-func (c *AssetClient) UpsertRating(ctx context.Context, accessToken string, assetID int64, request UpsertRatingRequest) (*RatingItem, error) {
+func (c *AssetClient) GetOwnRatingForUpdate(ctx context.Context, accessToken string, assetID int64) (*RatingItem, error) {
+	var result ownRatingResponse
+	path := fmt.Sprintf("/api/v1/asset/consumer/assets/%d/my-rating", assetID)
+	if err := c.do(ctx, accessToken, http.MethodGet, path, nil, nil, &result); err != nil {
+		return nil, err
+	}
+	return result.Rating, nil
+}
+
+func (c *AssetClient) CreateRating(ctx context.Context, accessToken string, assetID int64, request RatingWriteRequest) (*RatingItem, error) {
 	var result RatingItem
 	path := fmt.Sprintf("/api/v1/asset/consumer/assets/%d/ratings", assetID)
 	if err := c.do(ctx, accessToken, http.MethodPost, path, nil, request, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (c *AssetClient) UpdateRating(ctx context.Context, accessToken string, assetID int64, request RatingWriteRequest) (*RatingItem, error) {
+	var result RatingItem
+	path := fmt.Sprintf("/api/v1/asset/consumer/assets/%d/ratings", assetID)
+	if err := c.do(ctx, accessToken, http.MethodPut, path, nil, request, &result); err != nil {
 		return nil, err
 	}
 	return &result, nil

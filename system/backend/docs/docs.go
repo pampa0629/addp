@@ -8129,7 +8129,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "状态：planned/active/closed | Status: planned/active/closed",
+                        "description": "状态：active/closed | Status: active/closed",
                         "name": "status",
                         "in": "query"
                     }
@@ -10531,12 +10531,10 @@ const docTemplate = `{
         "github_com_addp_system_internal_iam.ProjectGroupStatus": {
             "type": "string",
             "enum": [
-                "planned",
                 "active",
                 "closed"
             ],
             "x-enum-varnames": [
-                "ProjectGroupStatusPlanned",
                 "ProjectGroupStatusActive",
                 "ProjectGroupStatusClosed"
             ]
@@ -12180,6 +12178,9 @@ const docTemplate = `{
         "internal_api.IAMCreateDepartmentRequest": {
             "type": "object",
             "properties": {
+                "code": {
+                    "type": "string"
+                },
                 "name": {
                     "type": "string"
                 },
@@ -12258,20 +12259,8 @@ const docTemplate = `{
                 "code": {
                     "type": "string"
                 },
-                "description": {
-                    "type": "string"
-                },
-                "ends_at": {
-                    "type": "string"
-                },
                 "name": {
                     "type": "string"
-                },
-                "starts_at": {
-                    "type": "string"
-                },
-                "status": {
-                    "$ref": "#/definitions/github_com_addp_system_internal_iam.ProjectGroupStatus"
                 }
             }
         },
@@ -13249,16 +13238,10 @@ const docTemplate = `{
                 "description": {
                     "type": "string"
                 },
-                "ends_at": {
-                    "type": "string"
-                },
                 "id": {
                     "type": "string"
                 },
                 "name": {
-                    "type": "string"
-                },
-                "starts_at": {
                     "type": "string"
                 },
                 "status": {
@@ -13951,17 +13934,8 @@ const docTemplate = `{
                 "description": {
                     "type": "string"
                 },
-                "ends_at": {
-                    "type": "string"
-                },
                 "name": {
                     "type": "string"
-                },
-                "starts_at": {
-                    "type": "string"
-                },
-                "status": {
-                    "$ref": "#/definitions/github_com_addp_system_internal_iam.ProjectGroupStatus"
                 },
                 "version": {
                     "type": "integer"

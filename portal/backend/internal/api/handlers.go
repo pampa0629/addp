@@ -7,7 +7,6 @@ import (
 
 	commonAPI "github.com/addp/common/api"
 	commonClient "github.com/addp/common/client"
-	commonAuth "github.com/addp/common/middleware/auth"
 	"github.com/gin-gonic/gin"
 )
 
@@ -356,11 +355,19 @@ func handleAssetDetail(assetClient *commonClient.AssetClient) gin.HandlerFunc {
 // 资产评价（Phase 6）
 // ============================================================
 
+type portalRatingsResponse struct {
+	Ratings  []commonClient.RatingItem `json:"ratings"`
+	Total    int64                     `json:"total"`
+	AvgScore float64                   `json:"avg_score"`
+	MyRating *commonClient.RatingItem  `json:"my_rating"`
+}
+
 // @Summary 获取资产评价列表 | Get asset ratings
+// @Description 当前用户评价与全量平均分来自 Asset，不依赖公开列表的当前分页 | Current user's rating and overall average come from Asset independently of the public page
 // @Tags Portal
 // @Produce json
 // @Param id path int true "资产ID | Asset ID"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} portalRatingsResponse
 // @Failure 502 {object} map[string]string "资产服务调用失败 | Asset service request failed"
 // @Router /assets/{id}/ratings [get]
 // @Security BearerAuth
@@ -370,46 +377,71 @@ func handleAssetDetail(assetClient *commonClient.AssetClient) gin.HandlerFunc {
 // 返回评价列表 + 当前用户的评价 + 平均分统计
 func handleGetRatings(assetClient *commonClient.AssetClient) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		userID := int64(commonAuth.GetUserID(c))
-
 		assetID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 		if err != nil {
 			commonAPI.BadRequestError(c, "无效的资产 ID")
 			return
 		}
 
-		ratings, total, err := assetClient.GetRatings(c.Request.Context(), userAccessToken(c), assetID)
+		ratings, total, myRating, avgScore, err := assetClient.GetRatings(c.Request.Context(), userAccessToken(c), assetID)
 		if err != nil {
 			writeAssetClientError(c, err, "获取评价失败")
 			return
 		}
 
-		// 从列表中找当前用户的评价
-		var myRating *commonClient.RatingItem
-		var totalScore float64
-		for i := range ratings {
-			totalScore += float64(ratings[i].Score)
-			if ratings[i].UserID == userID {
-				r := ratings[i]
-				myRating = &r
-			}
-		}
-
-		var avgScore float64
-		if total > 0 {
-			avgScore = totalScore / float64(total)
-		}
-
-		commonAPI.SuccessResponse(c, gin.H{
-			"ratings":   ratings,
-			"total":     total,
-			"avg_score": avgScore,
-			"my_rating": myRating,
+		commonAPI.SuccessResponse(c, portalRatingsResponse{
+			Ratings: ratings, Total: total, AvgScore: avgScore, MyRating: myRating,
 		})
 	}
 }
 
-// @Summary 提交资产评价 | Submit asset rating
+type portalOwnRatingResponse struct {
+	Rating *commonClient.RatingItem `json:"rating"`
+}
+
+// @Summary 获取本人资产评价以修改 | Get own asset rating for editing
+// @Tags Portal
+// @Produce json
+// @Param id path int true "资产ID | Asset ID"
+// @Success 200 {object} portalOwnRatingResponse
+// @Failure 502 {object} map[string]string "资产服务调用失败 | Asset service request failed"
+// @Router /assets/{id}/my-rating [get]
+// @Security BearerAuth
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["asset.rating.update"]
+func handleGetOwnRatingForUpdate(assetClient *commonClient.AssetClient) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		assetID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+		if err != nil {
+			commonAPI.BadRequestError(c, "无效的资产 ID")
+			return
+		}
+		rating, err := assetClient.GetOwnRatingForUpdate(c.Request.Context(), userAccessToken(c), assetID)
+		if err != nil {
+			writeAssetClientError(c, err, "获取评价失败")
+			return
+		}
+		commonAPI.SuccessResponse(c, portalOwnRatingResponse{Rating: rating})
+	}
+}
+
+// @Summary 创建资产评价 | Create asset rating
+// @Tags Portal
+// @Accept json
+// @Produce json
+// @Param id path int true "资产ID | Asset ID"
+// @Param body body map[string]interface{} true "评价信息 | Rating info"
+// @Success 201 {object} map[string]interface{}
+// @Failure 502 {object} map[string]string "资产服务调用失败 | Asset service request failed"
+// @Router /assets/{id}/ratings [post]
+// @Security BearerAuth
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["asset.rating.create"]
+func handleCreateRating(assetClient *commonClient.AssetClient) gin.HandlerFunc {
+	return handleWriteRating(assetClient, true)
+}
+
+// @Summary 修改本人资产评价 | Update own asset rating
 // @Tags Portal
 // @Accept json
 // @Produce json
@@ -417,13 +449,15 @@ func handleGetRatings(assetClient *commonClient.AssetClient) gin.HandlerFunc {
 // @Param body body map[string]interface{} true "评价信息 | Rating info"
 // @Success 200 {object} map[string]interface{}
 // @Failure 502 {object} map[string]string "资产服务调用失败 | Asset service request failed"
-// @Router /assets/{id}/ratings [post]
+// @Router /assets/{id}/ratings [put]
 // @Security BearerAuth
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["asset.rating.create","asset.rating.update"]
-// handleSubmitRating POST /api/portal/assets/:id/ratings
-// 提交或修改评价（upsert 语义，每用户每资产只能有一条）
-func handleSubmitRating(assetClient *commonClient.AssetClient) gin.HandlerFunc {
+// @x-addp-required-permissions ["asset.rating.update"]
+func handleUpdateRating(assetClient *commonClient.AssetClient) gin.HandlerFunc {
+	return handleWriteRating(assetClient, false)
+}
+
+func handleWriteRating(assetClient *commonClient.AssetClient, create bool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		assetID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 		if err != nil {
@@ -440,15 +474,25 @@ func handleSubmitRating(assetClient *commonClient.AssetClient) gin.HandlerFunc {
 			return
 		}
 
-		rating, err := assetClient.UpsertRating(c.Request.Context(), userAccessToken(c), assetID, commonClient.UpsertRatingRequest{
+		request := commonClient.RatingWriteRequest{
 			Score:   body.Score,
 			Comment: body.Comment,
 			Tags:    body.Tags,
-		})
+		}
+		var rating *commonClient.RatingItem
+		if create {
+			rating, err = assetClient.CreateRating(c.Request.Context(), userAccessToken(c), assetID, request)
+		} else {
+			rating, err = assetClient.UpdateRating(c.Request.Context(), userAccessToken(c), assetID, request)
+		}
 		if err != nil {
 			writeAssetClientError(c, err, "提交评价失败")
 			return
 		}
-		commonAPI.SuccessResponse(c, rating)
+		if create {
+			commonAPI.CreatedResponse(c, rating)
+		} else {
+			commonAPI.SuccessResponse(c, rating)
+		}
 	}
 }

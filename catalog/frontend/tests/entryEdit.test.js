@@ -29,7 +29,7 @@ describe('catalog entry edit contract', () => {
         { role: 'accountable_department', subject_id: '9007199254740993', status: 'active' }
       ],
       components: [{ id: 'component-1', display_name: 'id', component_status: 'active' }],
-      component_elements: [{ component_id: 'component-1', element_id: 50 }]
+      standard_mappings: [{ component_id: 'component-1', element_id: '50', review_status: 'approved' }]
     })
     const payload = buildUpdatePayload(form)
     expect(payload.version).toBe(4)
@@ -40,7 +40,7 @@ describe('catalog entry edit contract', () => {
       subject_type: 'department',
       subject_id: '9007199254740993'
     }])
-    expect(payload.component_elements).toEqual([{ component_id: 'component-1', element_id: '50' }])
+    expect(payload).not.toHaveProperty('component_elements')
     expect(payload).not.toHaveProperty('recommended_successor_entry_id')
   })
 
@@ -53,8 +53,7 @@ describe('catalog entry edit contract', () => {
       visibility: 'inventory',
       domains: [],
       glossary_ids: [],
-      responsibilities: [],
-      component_elements: []
+      responsibilities: []
     })
   })
 
@@ -100,15 +99,14 @@ describe('catalog entry edit contract', () => {
         { semantic_type: 'domain', semantic_id: 31, relation_role: 'primary' },
         { semantic_type: 'domain', semantic_id: 33, relation_role: 'secondary' }
       ],
-      components: [{ id: 'component-1', display_name: 'id', component_status: 'active' }],
-      component_elements: [{ component_id: 'component-1', element_id: 50 }]
+      components: [{ id: 'component-1', display_name: 'id', component_status: 'active' }]
     })
 
     expect(form.ownerManagedSemantics).toBe(true)
     expect(form.ownerPrimaryDomainId).toBe('32')
     expect(form.domains).toEqual([{ id: '33', role: 'secondary' }])
     expect(hasEffectivePrimaryDomain(form)).toBe(true)
-    expect(buildUpdatePayload(form).component_elements).toEqual([])
+    expect(buildUpdatePayload(form)).not.toHaveProperty('component_elements')
   })
 
   it('keeps Standard Metric professional semantics read-only', () => {
@@ -123,7 +121,17 @@ describe('catalog entry edit contract', () => {
     expect(form.ownerModule).toBe('standard')
     expect(form.ownerPrimaryDomainId).toBe('41')
     expect(form.domains).toEqual([{ id: '42', role: 'secondary' }])
-    expect(buildUpdatePayload(form).component_elements).toEqual([])
+    expect(buildUpdatePayload(form)).not.toHaveProperty('component_elements')
+  })
+
+  it('allows a shared Standard Metric to be curated without inventing a primary domain', () => {
+    const form = buildEntryEditForm({
+      source: { source_module: 'standard', source_type: 'metric', observed_snapshot: { scope_type: 'tenant_common' } },
+      semantic_links: []
+    })
+    expect(form.ownerPrimaryDomainId).toBe('')
+    expect(hasEffectivePrimaryDomain(form)).toBe(true)
+    expect(buildUpdatePayload(form).domains).toEqual([])
   })
 
   it('keeps Service professional components out while Catalog owns the primary domain', () => {
@@ -131,15 +139,13 @@ describe('catalog entry edit contract', () => {
       version: 1,
       source: { source_module: 'service', source_type: 'query_service', observed_snapshot: { name: 'Orders API' } },
       semantic_links: [{ semantic_type: 'domain', semantic_id: 41, relation_role: 'primary' }],
-      components: [{ id: 'component-1', display_name: 'value', component_status: 'active' }],
-      component_elements: [{ component_id: 'component-1', element_id: 50 }]
+      components: [{ id: 'component-1', display_name: 'value', component_status: 'active' }]
     })
 
     expect(form.ownerManagedSemantics).toBe(false)
-    expect(form.ownerManagedComponents).toBe(true)
     expect(form.ownerModule).toBe('service')
     expect(form.domains).toEqual([{ id: '41', role: 'primary' }])
-    expect(buildUpdatePayload(form).component_elements).toEqual([])
+    expect(buildUpdatePayload(form)).not.toHaveProperty('component_elements')
   })
 
   it('keeps Develop task internals out while Catalog owns business semantics', () => {
@@ -151,8 +157,7 @@ describe('catalog entry edit contract', () => {
     })
 
     expect(form.ownerManagedSemantics).toBe(false)
-    expect(form.ownerManagedComponents).toBe(true)
     expect(form.domains).toEqual([{ id: '51', role: 'primary' }])
-    expect(buildUpdatePayload(form).component_elements).toEqual([])
+    expect(buildUpdatePayload(form)).not.toHaveProperty('component_elements')
   })
 })

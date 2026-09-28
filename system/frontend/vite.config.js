@@ -52,7 +52,7 @@ export default defineConfig({
       }
     }
   },
-  base: process.env.NODE_ENV === 'development' ? '/' : '/system/',  // 开发模式用 /，生产模式用 /system/
+  base: process.env.NODE_ENV === 'development' ? '/' : '/module-ui/system/',  // 开发模式用 /，生产模式用 /module-ui/system/
   build: {
     outDir: resolve(__dirname, OUT_BASE ? `${OUT_BASE}/${BUILD_TYPE}/frontend/system` : 'dist'),
     sourcemap: BUILD_TYPE === 'debug',

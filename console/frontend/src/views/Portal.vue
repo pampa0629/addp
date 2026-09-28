@@ -71,7 +71,7 @@
 
     <!-- 右下角魔法棒 + 向左滑出面板（仅首页显示） -->
     <transition name="fab-fade">
-      <div v-if="currentModule === 'home'" class="copilot-fab-wrapper">
+      <div v-if="currentModule === 'home' && (homeCards.length || portalLandingRoute)" class="copilot-fab-wrapper">
         <!-- 滑出的输入面板 -->
         <transition name="copilot-slide">
           <div v-if="copilotOpen" class="copilot-inline-panel">

@@ -462,6 +462,7 @@ jobs:
           - module: portal
             name: Portal
             target: test-portal-frontend
+            playwright: true
           - module: service
             name: Service
             target: test-service-frontend
@@ -509,6 +510,11 @@ jobs:
       - name: Install Service dependencies for Console query-form integration
         if: steps.selection.outputs.run == 'true' && matrix.module == 'console'
         working-directory: service/frontend
+        run: npm ci
+
+      - name: Install Console dependencies for Workbench delivery runtime integration
+        if: steps.selection.outputs.run == 'true' && matrix.module == 'workbench'
+        working-directory: console/frontend
         run: npm ci
 
       - name: Install Chromium for ${{ matrix.name }} Playwright tests

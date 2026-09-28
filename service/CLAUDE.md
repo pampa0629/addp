@@ -49,6 +49,7 @@ Service 是 `service.definition.*`、`service.external_registration.*` 和 `serv
 - 服务消费目录：`GET /consumer/services` 以 `service.data_read.execute` 返回当前用户可执行服务摘要，`GET /consumer/services/:service_type/:service_id` 返回 `addp.service_consumer/v1` Consumer Descriptor；`GET /consumer/api-consumer-services` 以 `service.definition.read` 向 API Consumer 管理员返回同一 owner 过滤后的可授权摘要，但不授予数据执行权。所有目录都不得投影 SQL、Engine、schema、table 或管理 DTO。
 - 企业目录来源：`GET /catalog-resources/changes` 返回 QueryService 最小摘要变化；`POST /runtime/catalog-references/resolve` 动态返回当前最小摘要。两个路由只接受 `addp-catalog` 和 `service.catalog.read`，不得返回 SQL、协议、输出契约或 Consumer Descriptor。
 - 查询服务管理：`POST/GET /query`、`GET/PUT/DELETE /query/:id`；公开执行端点：`POST /api/query/:serviceName/query`。 列表可同时传入正整数 `metric_implementation_id` 与 `metric_revision_id`，仅返回当前租户内绑定该确切修订的 analytical 服务（包括停用服务）；两项必须同时提供，不完整、重复或非法值返回 400。筛选与 search、分页共同作用，total 为筛选后总数。
+- 管理 API：查询服务、图查询服务、注册服务、瓦片服务与图层按 ID 读取或写入时，必须以 AuthContext 的当前 Tenant 限定资源；`/tile-layers/:serviceId/:layerId` 还须校验图层所属服务与路径一致，跨租户或不匹配返回 404。注册服务的公开代理端点属于单独的外部消费边界。
 - 图查询服务管理：`POST/GET /graph`、`GET/PUT/DELETE /graph/:id`；公开执行端点：`POST /api/gquery/:serviceName`。
 - 注册服务管理：`POST/GET /registered`、`GET/PUT/DELETE /registered/:id`、`POST /registered/:id/refresh`、`POST /registered/:id/health`；公开代理：`ANY /api/service/registered/proxy/:id/*path`。
 - 瓦片服务管理：`POST/GET /tile`、`GET /tile/search`、`GET /tile/by-name/:serviceName`、`GET/PUT/DELETE /tile/:id`、`/tile-layers/:serviceId`。
@@ -112,6 +113,7 @@ curl http://localhost:8086/health/ready
 ## 前端公开路由
 
 - `App.vue` 只渲染路由，`Layout.vue` 是模块布局唯一所有者；独立访问只显示一套导航，菜单名称、顺序、图标和目标以 Console 数据服务菜单为准（查询服务、瓦片服务、图查询服务、服务注册、服务目录）。iframe 模式从首次渲染起只显示业务内容。
+- 独立访问模块根路径时，在 AuthContext 加载后选择当前账号可进入的首个管理页面：具备 `service.definition.read` 进入查询服务，否则具备 `service.external_registration.read` 进入服务注册；两者都没有时显示无权限。登录重定向保留根路径，由同一选择逻辑处理，不把注册服务账号送到查询服务。
 
 - 模块内 Router 使用 `/query-services`、`/services`、`/published-services`、`/tile`、`/graph-services` 等无模块前缀路径；Console 公开 URL 统一加 `/service` 前缀。
 - 资源身份和创建、编辑、详情、测试职责使用 path 表达；创建成功后用 `replace` 进入详情，其余列表到详情使用 `push`。

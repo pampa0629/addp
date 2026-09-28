@@ -581,7 +581,7 @@ func validateAssignmentScopeTarget(ctx context.Context, repository *Repository, 
 			}
 			return err
 		}
-		if projectGroup.Status == ProjectGroupStatusClosed {
+		if projectGroup.Status != ProjectGroupStatusActive {
 			return ErrTenantRoleAssignmentScopeUnavailable
 		}
 	}

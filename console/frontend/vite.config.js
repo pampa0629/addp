@@ -32,9 +32,9 @@ export default defineConfig({
         target: `http://localhost:${process.env.WORKBENCH_FE_PORT || 5190}`,
         changeOrigin: true,
         ws: true,
-        rewrite: (path) => `/workbench${path}`
+        rewrite: (path) => `/module-ui/workbench${path}`
       },
-      '/workbench': {
+      '/module-ui/workbench': {
         target: `http://localhost:${process.env.WORKBENCH_FE_PORT || 5190}`,
         changeOrigin: true,
         ws: true

@@ -1,7 +1,7 @@
 // In-memory API boundary for browser tests. No request reaches a running ADDP service.
 export const applicationID = '38ef4190-0101-4000-8000-000000000001'
-export const applicationPath = `/workbench/applications/${applicationID}`
-export const runtimePath = `/data-apps/${applicationID}`
+export const applicationPath = `/module-ui/workbench/applications/${applicationID}`
+export const runtimePath = `http://127.0.0.1:4170/data-apps/${applicationID}`
 const copy = value => structuredClone(value)
 const option = (value, zh, en) => ({ value, labels: { 'zh-cn': zh, en } })
 const grainOptions = [option('total', '全期', 'Total'), option('month', '按月', 'Monthly')]
@@ -56,7 +56,7 @@ function component(id, rebound) {
   }
 }
 
-export async function installMetricApplicationBackend(context, { rebound = false, locale = 'zh-cn', deferDescriptors = false, configure = () => {} } = {}) {
+export async function installMetricApplicationBackend(context, { rebound = false, locale = 'zh-cn', deferDescriptors = false, configure = () => {}, permissions = ['workbench.data_application.read', 'workbench.data_application.create', 'workbench.data_application.update', 'workbench.data_application.publish', 'workbench.data_application.execute'], runtimeGranted = true } = {}) {
   const components = [component(71, rebound), component(72, rebound)]
   let draft = {
     id: applicationID, name: '指标应用回归', description: 'Isolated browser contract fixture', version: 4,
@@ -78,14 +78,16 @@ export async function installMetricApplicationBackend(context, { rebound = false
   const originalPublished = copy(published)
   const requests = [], writes = [], unexpected = []
   const pending = new Map()
+  let hasRuntimeGrant = runtimeGranted
   await context.addInitScript(lang => localStorage.setItem('addp-lang', lang), locale)
   await context.route(url => url.pathname.startsWith('/api/'), async route => {
     const request = route.request(), path = new URL(request.url()).pathname, method = request.method()
     const send = (data, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(data) })
     if (path === '/api/v1/system/refresh') return send({ access_token: 'isolated-e2e-token', expires_in: 3600 })
     if (path === '/api/v1/system/users/me') return send({ id: 1, username: 'fixture-author' })
-    if (path === '/api/v1/system/auth/context') return send({ context: { type: 'tenant', tenant_id: '1' }, authorization: { role_assignments: [{ scope: { type: 'tenant', tenant_id: '1' }, permissions: ['workbench.data_application.read', 'workbench.data_application.create', 'workbench.data_application.update', 'workbench.data_application.publish', 'workbench.data_application.execute'] }] } })
+    if (path === '/api/v1/system/auth/context') return send({ context: { type: 'tenant', tenant_id: '1' }, authorization: { role_assignments: [{ scope: { type: 'tenant', tenant_id: '1' }, permissions }] } })
     if (path === '/api/v1/service/consumer/services') return send({ data: Object.values(descriptors), total: 2 })
+    if (path === '/api/v1/workbench/data_applications' && method === 'GET') return send({ data: [draft], total: 1 })
     const match = path.match(/^\/api\/v1\/service\/consumer\/services\/query\/(71|72)$/)
     if (match) {
       const id = Number(match[1])
@@ -116,7 +118,11 @@ export async function installMetricApplicationBackend(context, { rebound = false
       published = { id: draft.id, name: draft.name, description: draft.description, revision_number: draft.current_revision_number, snapshot: copy(draft.snapshot) }
       return send(draft)
     }
-    if (path === `${base}/runtime`) return send(published)
+    if (path === `${base}/runtime`) {
+      if (!permissions.includes('workbench.data_application.execute')) return send({ error: 'Forbidden' }, 403)
+      if (!hasRuntimeGrant) return send({ error: 'Access denied', error_code: 'workbench_data_application_access_denied' }, 403)
+      return send(published)
+    }
     const query = path.match(/^\/api\/query\/metric_(71|72)\/query$/)
     if (query) {
       const id = Number(query[1]), body = request.postDataJSON()
@@ -141,5 +147,6 @@ export async function installMetricApplicationBackend(context, { rebound = false
     pending,
     releaseDescriptor(id) { const release = pending.get(id); pending.delete(id); release?.() },
     releaseAll() { deferDescriptors = false; for (const release of pending.values()) release(); pending.clear() },
+    setRuntimeGranted(value) { hasRuntimeGrant = value },
   }
 }

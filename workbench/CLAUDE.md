@@ -71,7 +71,7 @@ Table/Chart 的 date 字段可显式配置 `temporal_format=period` 和 `period`
 
 自由文本回车由 `ApplicationParameterFields` 发出提交意图，画布按所在区域复用单组件或全页查询；输入法确认候选、重复键及下拉选项确认不得触发。`metric-publication.spec.js` 覆盖中英文回车查询、局部筛选清空、游标重置和原始 ID 联动，测试仍走同一前端标准入口与既有 CI 矩阵。
 
-Playwright 自动管理独立的 `127.0.0.1:4190` Vite 测试服务，使用独立缓存并关闭 Gateway 代理，不接管已有开发服务。失败截图和 trace 写入系统临时目录 `addp-workbench-playwright-results`，CI 失败时上传对应 artifact。真实后端联调仍使用既有 `make test-online ONLINE_SUITE=workbench-service-consumption`，并满足该入口声明的环境条件。
+Playwright 自动管理独立的 `127.0.0.1:4190` Workbench Vite 测试服务和 `127.0.0.1:4170` Console Vite 代理，使用独立缓存并关闭 Gateway 代理，不接管已有开发服务。数据应用运行页通过 Console 同源 `/data-apps/` 入口测试，资源由 `/module-ui/workbench/` 代理加载。失败截图和 trace 写入系统临时目录 `addp-workbench-playwright-results`，CI 失败时上传对应 artifact。真实后端联调仍使用既有 `make test-online ONLINE_SUITE=workbench-service-consumption`，并满足该入口声明的环境条件。
 
 `frontend/e2e/runtime-fullscreen.spec.js` 通过真实 Fullscreen API 和鼠标滚轮验证已发布 desktop 应用在宽屏、窄屏下的全屏滚动、下方组件可达和退出后整页滚动恢复，并验证 wallboard 全屏仍将组件约束在视口内；由同一前端标准入口与 CI 矩阵自动发现。
 

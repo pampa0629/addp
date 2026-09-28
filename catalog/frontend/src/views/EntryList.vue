@@ -64,6 +64,14 @@
       :title="t('catalog.entries.facetUnavailable', { facets: formattedUnavailableFacets })"
     />
 
+    <el-alert
+      v-if="domainsError"
+      class="facet-alert"
+      type="warning"
+      :closable="false"
+      :title="t('catalog.entries.domainContext.unavailable')"
+    />
+
     <el-card v-if="!coverageGapActive" v-loading="facetsLoading" shadow="never" class="navigation-card" data-testid="catalog-entry-navigation">
       <template #header>
         <div class="navigation-header">
@@ -73,20 +81,20 @@
       </template>
       <nav class="navigation-grid" :aria-label="t('catalog.entries.navigation.title')">
         <el-form-item :label="t('catalog.entries.navigation.primaryDomain')">
-          <BusinessDomainSelect :options="businessDomainReferenceOptions(domainOptions)"
+          <BusinessDomainSelect :options="domainOptions"
             :model-value="filters.primary_domain_id"
             data-testid="catalog-domain-navigation"
             clearable
             filterable
             :placeholder="t('catalog.entries.navigation.allDomains')"
-            @change="changeDomainNavigation"
+            @update:model-value="changeDomainNavigation"
           >
             <el-option
               v-if="filters.view === 'inventory'"
               value="__unclassified__"
               :label="`${t('catalog.entries.navigation.unclassifiedDomain')} · ${t('catalog.entries.navigation.governanceGap')}`"
             />
-            <template #suffix="{ option }"><span class="domain-count"> ({{ option.count || 0 }})</span></template>
+            <template #suffix="{ option }"><span v-if="option.count !== undefined" class="domain-count"> ({{ option.count }})</span></template>
           </BusinessDomainSelect>
         </el-form-item>
         <el-form-item :label="t('catalog.entries.navigation.accountableDepartment')">
@@ -130,6 +138,56 @@
           {{ item.label }}
         </el-tag>
       </div>
+    </el-card>
+
+    <el-card v-if="filters.primary_domain_id && !coverageGapActive" shadow="never" class="domain-context-card" data-testid="catalog-domain-context">
+      <template #header>
+        <div class="domain-context-header">
+          <strong>{{ selectedDomain?.name || t('catalog.entries.unresolvedReference') }}</strong>
+          <span>{{ t('catalog.entries.domainContext.owner') }}</span>
+        </div>
+      </template>
+      <p v-if="domainsLoading" class="domain-context-note">{{ t('catalog.entries.domainContext.loading') }}</p>
+      <template v-else-if="selectedDomain">
+        <p class="domain-context-path">{{ selectedDomain.path.join(' / ') }} · {{ selectedDomain.code }}</p>
+        <p class="domain-context-definition">{{ selectedDomain.description || t('catalog.entries.domainContext.noDefinition') }}</p>
+      </template>
+      <p v-else-if="!domainsError" class="domain-context-note">{{ t('catalog.entries.domainContext.invalid') }}</p>
+      <div v-if="!facetsLoading" class="domain-type-summary">
+        <span>{{ t('catalog.entries.domainContext.typeSummary') }}</span>
+        <span v-if="facetsError">{{ t('catalog.entries.domainContext.typesUnavailable') }}</span>
+        <template v-else>
+          <el-button
+            v-for="item in domainTypeSummaries"
+            :key="item.entry_type"
+            text
+            :type="filters.entry_type === item.entry_type ? 'primary' : undefined"
+            @click="selectNavigation('entry_type', item.entry_type)"
+          >
+            {{ entryTypeLabel(item.entry_type) }} · {{ item.count }}
+          </el-button>
+        </template>
+        <span v-if="!facetsError && domainTypeSummaries.length === 0">{{ t('catalog.entries.domainContext.empty') }}</span>
+      </div>
+      <p class="domain-context-note">{{ t('catalog.entries.domainContext.countScope') }}</p>
+      <div v-if="selectedDomain" class="domain-professional-toggle">
+        <el-button
+          data-testid="catalog-domain-professional-toggle"
+          text
+          type="primary"
+          :aria-expanded="professionalOpen"
+          aria-controls="catalog-domain-professional-content"
+          @click="professionalOpen = !professionalOpen"
+        >
+          {{ t('catalog.entries.domainContext.professionalContent') }} · {{ t(`catalog.entries.domainContext.${professionalOpen ? 'collapse' : 'expand'}`) }}
+        </el-button>
+      </div>
+      <DomainProfessionalSummary
+        v-if="selectedDomain && professionalOpen"
+        id="catalog-domain-professional-content"
+        :domain-id="filters.primary_domain_id"
+        :refresh-token="professionalRefreshToken"
+      />
     </el-card>
 
     <el-card shadow="never" class="filter-card">
@@ -192,26 +250,32 @@
           </el-button>
         </div>
       </div>
-      <el-table ref="entryTable" v-loading="loading" :data="result.data" row-key="id" @selection-change="handleSelectionChange" @row-click="openEntry">
+      <el-table ref="entryTable" v-loading="loading" :data="result.data" row-key="id" data-testid="catalog-entry-results" @selection-change="handleSelectionChange" @row-click="openEntry">
         <el-table-column v-if="canBatchGovernance" type="selection" width="48" />
         <el-table-column prop="display_name" :label="t('catalog.entries.name')" min-width="220" show-overflow-tooltip>
           <template #default="{ row }">
             <span class="entry-link">{{ row.display_name || t('catalog.entries.unnamed') }}</span>
+            <el-tag v-if="filters.view === 'governance' && row.source_status === 'missing'" class="entry-source-warning" type="danger" size="small">
+              {{ catalogStatusLabel(t, 'catalog.status.source', row.source_status) }}
+            </el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="entry_type" :label="t('catalog.entries.type')" width="130">
           <template #default="{ row }">{{ entryTypeLabel(row.entry_type) }}</template>
         </el-table-column>
-        <el-table-column prop="source_status" :label="t('catalog.entries.sourceStatus')" width="130">
+        <el-table-column v-if="filters.view === 'governance'" prop="business_description" :label="t('catalog.edit.businessDescription')" min-width="300" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.business_description || '-' }}</template>
+        </el-table-column>
+        <el-table-column v-if="filters.view === 'inventory'" prop="source_status" :label="t('catalog.entries.sourceStatus')" width="130">
           <template #default="{ row }"><el-tag :type="sourceTagType(row.source_status)">{{ catalogStatusLabel(t, 'catalog.status.source', row.source_status) }}</el-tag></template>
         </el-table-column>
         <el-table-column prop="governance_status" :label="t('catalog.entries.governanceStatus')" width="150">
           <template #default="{ row }"><el-tag :type="governanceTagType(row.governance_status)">{{ catalogStatusLabel(t, 'catalog.status.governance', row.governance_status) }}</el-tag></template>
         </el-table-column>
-        <el-table-column prop="visibility" :label="t('catalog.entries.visibility')" width="130">
+        <el-table-column v-if="filters.view === 'inventory'" prop="visibility" :label="t('catalog.entries.visibility')" width="130">
           <template #default="{ row }">{{ catalogStatusLabel(t, 'catalog.status.visibility', row.visibility) }}</template>
         </el-table-column>
-        <el-table-column :label="t('catalog.entries.sourceEngine')" min-width="180" show-overflow-tooltip>
+        <el-table-column v-if="filters.view === 'inventory'" :label="t('catalog.entries.sourceEngine')" min-width="180" show-overflow-tooltip>
           <template #default="{ row }">{{ sourceEngineLabel(row.source_engine_id) }}</template>
         </el-table-column>
         <el-table-column prop="updated_at" :label="t('catalog.entries.updatedAt')" min-width="180">
@@ -253,8 +317,8 @@
             style="width: 100%"
             @change="changeBatchOperation"
           >
-            <el-option :label="t('catalog.entries.batchGovernance.assignPrimaryDomain')" value="assign_primary_domain" />
-            <el-option :label="t('catalog.entries.batchGovernance.assignAccountableDepartment')" value="assign_accountable_department" />
+            <el-option v-if="batchOperations.includes(BATCH_GOVERNANCE_ASSIGN_PRIMARY_DOMAIN)" :label="t('catalog.entries.batchGovernance.assignPrimaryDomain')" :value="BATCH_GOVERNANCE_ASSIGN_PRIMARY_DOMAIN" />
+            <el-option :label="t('catalog.entries.batchGovernance.assignAccountableDepartment')" :value="BATCH_GOVERNANCE_ASSIGN_ACCOUNTABLE_DEPARTMENT" />
           </el-select>
         </el-form-item>
         <el-alert
@@ -314,13 +378,13 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { Refresh, Search, WarningFilled } from '@element-plus/icons-vue'
 import { BusinessDomainSelect, businessDomainReferenceOptions, navigateConsoleModuleRoute } from '@common-ui'
-import { batchGovernance, listEntries, listEntryFacets, listReferenceCandidates } from '../api/catalog'
+import { batchGovernance, listDomainOverviews, listEntries, listEntryFacets, listReferenceCandidates } from '../api/catalog'
 import { useAuthStore } from '../store/auth'
 import { catalogStatusLabel } from '../utils/catalogStatusLabel'
 import { coverageDimensionLabel } from '../utils/governanceCoverageView'
@@ -331,11 +395,14 @@ import {
   buildEntryFacetQuery
 } from '../utils/entryNavigation'
 import { buildEntryListQuery, isCanonicalEntryListQuery, parseEntryListRoute } from '../utils/entryRouteState'
+import { domainBrowseOptions } from '../utils/domainBrowseContext'
+import DomainProfessionalSummary from '../components/DomainProfessionalSummary.vue'
 import {
   BATCH_GOVERNANCE_ASSIGN_ACCOUNTABLE_DEPARTMENT,
   BATCH_GOVERNANCE_ASSIGN_PRIMARY_DOMAIN,
   buildBatchGovernancePayload,
-  unsupportedPrimaryDomainEntries
+  unsupportedPrimaryDomainEntries,
+  availableBatchOperations
 } from '../utils/batchGovernance'
 
 const route = useRoute()
@@ -353,6 +420,12 @@ const result = reactive({ data: [], total: 0, page: 1, page_size: 20, total_page
 const facets = reactive(emptyFacets())
 const loading = ref(false)
 const facetsLoading = ref(false)
+const facetsError = ref(false)
+const domainTree = ref(null)
+const domainsLoading = ref(false)
+const domainsError = ref(false)
+const professionalRefreshToken = ref(0)
+const professionalOpen = ref(false)
 const entryTable = ref(null)
 const selectedEntries = ref([])
 const batchDialogVisible = ref(false)
@@ -374,7 +447,11 @@ const coverageGapTitle = computed(() => t('catalog.entries.coverageGapActive', {
 const emptyDescription = computed(() => coverageGapActive.value
   ? t('catalog.entries.coverageGapEmpty', { dimension: coverageDimensionLabel(t, filters.coverage_dimension, 'name') })
   : t(`catalog.entries.view.${filters.view}Empty`))
-const domainOptions = computed(() => optionsWithSelected(facets.primary_domains, filters.primary_domain_id))
+const domainOptions = computed(() => domainBrowseOptions(domainTree.value, facets.primary_domains, filters.primary_domain_id, t('catalog.entries.unresolvedReference')))
+const selectedDomain = computed(() => Array.isArray(domainTree.value)
+  ? domainOptions.value.find(option => String(option.id) === filters.primary_domain_id && option.path.length > 0)
+  : null)
+const domainTypeSummaries = computed(() => facets.entry_types.filter(option => option.count > 0))
 const departmentOptions = computed(() => optionsWithSelected(facets.accountable_departments, filters.accountable_department_id))
 const entryTypeOptions = computed(() => optionsWithSelectedEntryType(facets.entry_types, filters.entry_type))
 const engineOptions = computed(() => optionsWithSelected(facets.source_engines, filters.source_engine_id))
@@ -390,6 +467,7 @@ const currentScope = computed(() => {
   return scope
 })
 const unsupportedBatchEntries = computed(() => unsupportedPrimaryDomainEntries(selectedEntries.value))
+const batchOperations = computed(() => availableBatchOperations(selectedEntries.value))
 const batchTargetLabel = computed(() => batchForm.operation === BATCH_GOVERNANCE_ASSIGN_PRIMARY_DOMAIN
   ? t('catalog.entries.primaryDomain')
   : batchForm.operation === BATCH_GOVERNANCE_ASSIGN_ACCOUNTABLE_DEPARTMENT
@@ -488,9 +566,11 @@ async function loadFacets(force = false) {
     const response = await listEntryFacets(params)
     if (version !== facetRequestVersion) return
     Object.assign(facets, emptyFacets(), response)
+    facetsError.value = false
     loadedFacetKey = facetKey
   } catch {
     if (version !== facetRequestVersion) return
+    facetsError.value = true
     Object.assign(facets, {
       view: filters.view,
       primary_domains: { status: 'unavailable', options: [] },
@@ -501,6 +581,19 @@ async function loadFacets(force = false) {
     loadedFacetKey = facetKey
   } finally {
     if (version === facetRequestVersion) facetsLoading.value = false
+  }
+}
+
+async function loadDomains() {
+  domainsLoading.value = true
+  domainsError.value = false
+  try {
+    domainTree.value = await listDomainOverviews()
+  } catch {
+    domainTree.value = null
+    domainsError.value = true
+  } finally {
+    domainsLoading.value = false
   }
 }
 
@@ -578,7 +671,8 @@ async function clearCoverageGap() {
 
 async function refreshPage() {
   loadedFacetKey = ''
-  await Promise.all([loadEntries(), loadFacets(true)])
+  professionalRefreshToken.value += 1
+  await Promise.all([loadEntries(), loadFacets(true), loadDomains()])
 }
 
 async function changePage(page) {
@@ -611,7 +705,7 @@ function clearBatchSelection() {
 
 function openBatchGovernance() {
   if (selectedEntries.value.length === 0) return
-  batchForm.operation = filters.coverage_dimension === 'primary_domain'
+  batchForm.operation = filters.coverage_dimension === 'primary_domain' && batchOperations.value.includes(BATCH_GOVERNANCE_ASSIGN_PRIMARY_DOMAIN)
     ? BATCH_GOVERNANCE_ASSIGN_PRIMARY_DOMAIN
     : filters.coverage_dimension === 'accountable_department'
       ? BATCH_GOVERNANCE_ASSIGN_ACCOUNTABLE_DEPARTMENT
@@ -707,6 +801,7 @@ watch(() => route.query, async query => {
   }
   await Promise.all([loadEntries(), loadFacets()])
 }, { immediate: true })
+onMounted(loadDomains)
 </script>
 
 <style scoped>
@@ -725,6 +820,15 @@ watch(() => route.query, async query => {
 .facet-alert, .coverage-gap-alert { margin-bottom: 16px; }
 .coverage-gap-title { display: flex; align-items: center; justify-content: space-between; gap: 16px; width: 100%; }
 .navigation-card { margin-bottom: 16px; }
+.domain-context-card { margin-bottom: 16px; }
+.domain-context-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.domain-context-header span, .domain-context-path, .domain-context-note { color: var(--addp-text-secondary); font-size: 13px; }
+.domain-context-path { margin: 0 0 8px; }
+.domain-context-definition { margin: 0; color: var(--addp-text-primary); line-height: 1.6; white-space: pre-wrap; }
+.domain-context-note { margin: 10px 0 0; line-height: 1.5; }
+.domain-professional-toggle { margin-top: 14px; border-top: 1px solid var(--el-border-color-lighter); padding-top: 8px; }
+.domain-type-summary { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; margin-top: 12px; }
+.domain-type-summary > span:first-child { font-weight: 600; color: var(--addp-text-primary); }
 .navigation-header { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
 .navigation-header span { color: var(--addp-text-secondary); font-size: 12px; }
 .navigation-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
@@ -741,6 +845,7 @@ watch(() => route.query, async query => {
 .batch-dialog-description { margin: 0 0 16px; color: var(--addp-text-secondary); }
 .batch-target-field { margin-top: 16px; }
 .entry-link { color: var(--el-color-primary); font-weight: 600; }
+.entry-source-warning { margin-inline-start: 8px; }
 .pagination-row { display: flex; justify-content: flex-end; margin-top: 16px; }
 @media (max-width: 900px) {
   .page-header { flex-direction: column; }

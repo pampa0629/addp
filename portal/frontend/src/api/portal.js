@@ -22,7 +22,9 @@ export const assetAPI = {
   apply: (id, data) => client.post(`/portal/assets/${id}/apply`, data),
   getApplyStatus: (id) => client.get(`/portal/assets/${id}/apply-status`),
   getRatings: (id) => client.get(`/portal/assets/${id}/ratings`),
-  addRating: (id, data) => client.post(`/portal/assets/${id}/ratings`, data)
+  getOwnRatingForUpdate: (id) => client.get(`/portal/assets/${id}/my-rating`),
+  createRating: (id, data) => client.post(`/portal/assets/${id}/ratings`, data),
+  updateRating: (id, data) => client.put(`/portal/assets/${id}/ratings`, data)
 }
 
 // 我的申请与授权

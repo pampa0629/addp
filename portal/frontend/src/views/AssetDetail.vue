@@ -92,7 +92,7 @@
       </el-card>
 
       <!-- 评价区 -->
-      <el-card v-if="authStore.hasPermission('asset.rating.read')" class="detail-section" shadow="never" v-loading="ratingsLoading">
+      <el-card v-if="authStore.hasPermission('asset.rating.read') || ratingAction" class="detail-section" shadow="never" v-loading="ratingsLoading">
         <template #header>
           <div class="section-header-with-action">
             <span class="section-title">
@@ -103,7 +103,7 @@
               </span>
             </span>
             <el-button
-              v-if="accessStatus.status === 'effective' && authStore.hasPermission('asset.rating.create') && authStore.hasPermission('asset.rating.update')"
+              v-if="ratingAction"
               type="primary"
               size="small"
               plain
@@ -112,9 +112,9 @@
           </div>
         </template>
 
-        <el-empty v-if="ratings.length === 0" :description="t('portal.assetDetail.noRatings')" :image-size="60" />
+        <el-empty v-if="authStore.hasPermission('asset.rating.read') && ratings.length === 0" :description="t('portal.assetDetail.noRatings')" :image-size="60" />
 
-        <div v-else class="rating-list">
+        <div v-else-if="authStore.hasPermission('asset.rating.read')" class="rating-list">
           <div v-for="r in ratings" :key="r.id" class="rating-item">
             <div class="rating-header">
               <span class="rating-user">{{ r.user_name || '匿名用户' }}</span>
@@ -210,6 +210,7 @@ import { formatDate, openConsoleRoute } from '@common-ui'
 import { assetAPI } from '../api/portal'
 import { useAssetType } from '../composables/useAssetType'
 import { assetDetailReturnTarget } from '../utils/routeState'
+import { resolveRatingAction } from '../utils/ratingAction'
 import { useAuthStore } from '../store/auth'
 
 const { t } = useI18n()
@@ -221,7 +222,7 @@ const canReadApplyStatus = computed(() => authStore.hasPermission('asset.applica
 
 const loading = ref(false)
 const asset = ref(null)
-const accessStatus = ref({ status: 'none', open_path: '' })
+const accessStatus = ref({ status: null, open_path: '' })
 
 const applyDialogVisible = ref(false)
 const submitting = ref(false)
@@ -235,6 +236,12 @@ const applyRules = computed(() => ({
 const ratingsLoading = ref(false)
 const ratings = ref([])
 const myRating = ref(null)
+const ratingAction = computed(() => resolveRatingAction({
+  hasOwnRating: Boolean(myRating.value),
+  canCreate: authStore.hasPermission('asset.rating.create'),
+  canUpdate: authStore.hasPermission('asset.rating.update'),
+  knownAccessStatus: accessStatus.value.status
+}))
 const ratingStats = ref({ avg_score: 0, count: 0 })
 const ratingDialogVisible = ref(false)
 const submittingRating = ref(false)
@@ -267,6 +274,15 @@ async function fetchRatings() {
   }
 }
 
+async function fetchOwnRatingForUpdate() {
+  try {
+    const data = await assetAPI.getOwnRatingForUpdate(route.params.id)
+    myRating.value = data.rating || null
+  } catch (err) {
+    console.error('获取本人评价失败:', err)
+  }
+}
+
 function openRatingDialog() {
   if (myRating.value) {
     ratingForm.value = {
@@ -287,10 +303,13 @@ async function submitRating() {
   }
   submittingRating.value = true
   try {
-    await assetAPI.addRating(route.params.id, ratingForm.value)
+    const rating = ratingAction.value === 'update'
+      ? await assetAPI.updateRating(route.params.id, ratingForm.value)
+      : await assetAPI.createRating(route.params.id, ratingForm.value)
     ElMessage.success(t('portal.assetDetail.ratingSubmitted'))
     ratingDialogVisible.value = false
-    await fetchRatings()
+    if (authStore.hasPermission('asset.rating.read')) await fetchRatings()
+    else myRating.value = rating
   } catch (err) {
     ElMessage.error(err.message || t('portal.assetDetail.ratingFailed'))
   } finally {
@@ -325,7 +344,7 @@ async function fetchApplyStatus() {
     const data = await assetAPI.getApplyStatus(route.params.id)
     accessStatus.value = { status: data.status || 'none', open_path: data.open_path || '' }
   } catch {
-    accessStatus.value = { status: 'none', open_path: '' }
+    accessStatus.value = { status: null, open_path: '' }
   }
 }
 
@@ -355,7 +374,7 @@ async function submitApply() {
 
 watch(() => route.params.id, async () => {
   asset.value = null
-  accessStatus.value = { status: 'none', open_path: '' }
+  accessStatus.value = { status: null, open_path: '' }
   ratings.value = []
   myRating.value = null
   ratingStats.value = { avg_score: 0, count: 0 }
@@ -363,6 +382,7 @@ watch(() => route.params.id, async () => {
   if (asset.value) {
     if (canReadApplyStatus.value) fetchApplyStatus()
     if (authStore.hasPermission('asset.rating.read')) fetchRatings()
+    else if (authStore.hasPermission('asset.rating.update')) fetchOwnRatingForUpdate()
   }
 }, { immediate: true })
 </script>

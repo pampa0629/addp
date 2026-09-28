@@ -109,7 +109,10 @@ const DW_LAYER = {
 
 const DEFAULT_PERMISSIONS = [
   'model.entity.read',
-  'model.logical_model.read'
+  'model.logical_model.read',
+  'model.dw_layer.read',
+  'standard.domain.read',
+  'standard.metric.read'
 ]
 
 const MERMAID_SNAPSHOT = `# ADDP Entity Relationship Diagram

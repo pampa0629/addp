@@ -271,6 +271,7 @@ def run_offline_checks() -> list[dict[str, Any]]:
                 "agent.backend.tests.test_ag_ui_protocol",
                 "agent.backend.tests.test_checkpoints",
                 "agent.backend.tests.test_messages",
+                "agent.backend.tests.test_session_tenant_isolation",
                 "agent.backend.tests.test_run_events",
                 "agent.backend.tests.test_runs",
             ],

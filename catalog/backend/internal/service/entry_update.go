@@ -71,21 +71,15 @@ type ResponsibilityInput struct {
 	SubjectID   int64  `json:"subject_id,string" binding:"required,gt=0" swaggertype:"string"`
 }
 
-type ComponentElementInput struct {
-	ComponentID uuid.UUID `json:"component_id" binding:"required"`
-	ElementID   int64     `json:"element_id" binding:"required,gt=0" minimum:"1"`
-}
-
 type UpdateEntryInput struct {
-	Version             int64                   `json:"version" binding:"required,gt=0" minimum:"1"`
-	BusinessName        *string                 `json:"business_name"`
-	BusinessDescription *string                 `json:"business_description"`
-	GovernanceStatus    string                  `json:"governance_status" binding:"required" enums:"discovered,curated"`
-	Visibility          string                  `json:"visibility" binding:"required" enums:"inventory,department,tenant"`
-	Domains             []DomainLinkInput       `json:"domains"`
-	GlossaryIDs         []int64                 `json:"glossary_ids"`
-	Responsibilities    []ResponsibilityInput   `json:"responsibilities"`
-	ComponentElements   []ComponentElementInput `json:"component_elements"`
+	Version             int64                 `json:"version" binding:"required,gt=0" minimum:"1"`
+	BusinessName        *string               `json:"business_name"`
+	BusinessDescription *string               `json:"business_description"`
+	GovernanceStatus    string                `json:"governance_status" binding:"required" enums:"discovered,curated"`
+	Visibility          string                `json:"visibility" binding:"required" enums:"inventory,department,tenant"`
+	Domains             []DomainLinkInput     `json:"domains"`
+	GlossaryIDs         []int64               `json:"glossary_ids"`
+	Responsibilities    []ResponsibilityInput `json:"responsibilities"`
 }
 
 type UpdateEntryActor struct {
@@ -140,17 +134,13 @@ func (s *EntryService) Update(
 		).First(&source).Error; err != nil {
 			return fmt.Errorf("lock Catalog source binding: %w", err)
 		}
-		ownerPrimaryDomain, err := validateOwnerSemanticInput(entry.EntryType, source, input)
+		ownerDomainRequirementMet, err := validateOwnerSemanticInput(entry.EntryType, source, input)
 		if err != nil {
 			return err
 		}
-		if err := validateCurationTransition(entry.GovernanceStatus, input, ownerPrimaryDomain); err != nil {
+		if err := validateCurationTransition(entry.GovernanceStatus, input, ownerDomainRequirementMet); err != nil {
 			return err
 		}
-		if err := validateComponentOwnership(tx, tenantID, id, input.ComponentElements); err != nil {
-			return err
-		}
-
 		now := time.Now().UTC()
 		if err := replaceSemanticAssociations(tx, tenantID, id, input, references, now); err != nil {
 			return err
@@ -161,10 +151,6 @@ func (s *EntryService) Update(
 		if err := resolveSupersededResponsibilityTasks(tx, tenantID, id, input.Responsibilities, now); err != nil {
 			return err
 		}
-		if err := replaceComponentElements(tx, tenantID, id, input.ComponentElements, references, now); err != nil {
-			return err
-		}
-
 		result := tx.Model(&models.Entry{}).
 			Where("tenant_id = ? AND id = ? AND version = ?", tenantID, id, input.Version).
 			Updates(map[string]interface{}{
@@ -183,8 +169,7 @@ func (s *EntryService) Update(
 			"previous_governance_status": entry.GovernanceStatus,
 			"governance_status":          input.GovernanceStatus, "visibility": input.Visibility,
 			"domain_count": len(input.Domains), "glossary_count": len(input.GlossaryIDs),
-			"responsibility_count":    len(input.Responsibilities),
-			"component_element_count": len(input.ComponentElements),
+			"responsibility_count": len(input.Responsibilities),
 		}
 		auditEventType := "catalog.entry.updated"
 		if isWithdrawCurationTransition(entry.GovernanceStatus, input.GovernanceStatus) {
@@ -243,7 +228,7 @@ func validateUpdateShape(input UpdateEntryInput) error {
 		!oneOf(input.Visibility, models.VisibilityInventory, models.VisibilityDepartment, models.VisibilityTenant) {
 		return ErrInvalidEntryUpdate
 	}
-	if len(input.Domains)+len(input.GlossaryIDs)+len(input.ComponentElements) > 200 || len(input.Responsibilities) > 200 {
+	if len(input.Domains)+len(input.GlossaryIDs) > 200 || len(input.Responsibilities) > 200 {
 		return ErrInvalidEntryUpdate
 	}
 	seenStandard := make(map[string]struct{})
@@ -290,16 +275,6 @@ func validateUpdateShape(input UpdateEntryInput) error {
 	if roleCounts[models.ResponsibilityRoleAccountableDepartment] > 1 || roleCounts[models.ResponsibilityRoleBusinessOwner] > 1 {
 		return ErrInvalidEntryUpdate
 	}
-	seenComponents := make(map[uuid.UUID]struct{})
-	for _, component := range input.ComponentElements {
-		if component.ComponentID == uuid.Nil || component.ElementID <= 0 {
-			return ErrInvalidEntryUpdate
-		}
-		if _, exists := seenComponents[component.ComponentID]; exists {
-			return ErrInvalidEntryUpdate
-		}
-		seenComponents[component.ComponentID] = struct{}{}
-	}
 	return nil
 }
 
@@ -312,15 +287,12 @@ func (s *EntryService) resolveUpdateReferences(
 		standard: make(map[string]commonClient.StandardReferenceResolution),
 		system:   make(map[string]commonClient.SystemCatalogReferenceResolution),
 	}
-	standardReferences := make([]commonClient.StandardReference, 0, len(input.Domains)+len(input.GlossaryIDs)+len(input.ComponentElements))
+	standardReferences := make([]commonClient.StandardReference, 0, len(input.Domains)+len(input.GlossaryIDs))
 	for _, domain := range input.Domains {
 		standardReferences = append(standardReferences, commonClient.StandardReference{ObjectType: models.SemanticTypeDomain, ID: domain.ID})
 	}
 	for _, glossaryID := range input.GlossaryIDs {
 		standardReferences = append(standardReferences, commonClient.StandardReference{ObjectType: models.SemanticTypeGlossary, ID: glossaryID})
-	}
-	for _, component := range input.ComponentElements {
-		standardReferences = append(standardReferences, commonClient.StandardReference{ObjectType: "element", ID: component.ElementID})
 	}
 	if len(standardReferences) > 0 {
 		if s.standard == nil {
@@ -374,7 +346,7 @@ func (s *EntryService) resolveUpdateReferences(
 	return validated, nil
 }
 
-func validateCurationTransition(current string, input UpdateEntryInput, ownerPrimaryDomain bool) error {
+func validateCurationTransition(current string, input UpdateEntryInput, ownerDomainRequirementMet bool) error {
 	if current == models.GovernanceStatusCertified || current == models.GovernanceStatusDeprecated ||
 		input.GovernanceStatus == models.GovernanceStatusCertified || input.GovernanceStatus == models.GovernanceStatusDeprecated {
 		return ErrEntryNotEditable
@@ -403,7 +375,7 @@ func validateCurationTransition(current string, input UpdateEntryInput, ownerPri
 		for _, responsibility := range input.Responsibilities {
 			roleCounts[responsibility.Role]++
 		}
-		if (primaryDomains != 1 && !ownerPrimaryDomain) || (primaryDomains != 0 && ownerPrimaryDomain) ||
+		if (primaryDomains != 1 && !ownerDomainRequirementMet) || (primaryDomains != 0 && ownerDomainRequirementMet) ||
 			roleCounts[models.ResponsibilityRoleAccountableDepartment] != 1 ||
 			roleCounts[models.ResponsibilityRoleBusinessOwner] != 1 || roleCounts[models.ResponsibilityRoleDataSteward] < 1 {
 			return ErrCurationRequirementsNotMet
@@ -419,14 +391,10 @@ func isWithdrawCurationTransition(current, next string) bool {
 func isWithdrawnCurationShape(input UpdateEntryInput) bool {
 	return input.BusinessName == nil && input.BusinessDescription == nil &&
 		input.Visibility == models.VisibilityInventory && len(input.Domains) == 0 &&
-		len(input.GlossaryIDs) == 0 && len(input.Responsibilities) == 0 &&
-		len(input.ComponentElements) == 0
+		len(input.GlossaryIDs) == 0 && len(input.Responsibilities) == 0
 }
 
 func validateOwnerSemanticInput(entryType string, source models.SourceBinding, input UpdateEntryInput) (bool, error) {
-	if source.SourceModule != models.SourceModuleMeta && len(input.ComponentElements) > 0 {
-		return false, ErrInvalidEntryUpdate
-	}
 	ownerManaged := ownerManagesPrimaryDomain(entryType, source)
 	if !ownerManaged {
 		return false, nil
@@ -436,11 +404,23 @@ func validateOwnerSemanticInput(entryType string, source models.SourceBinding, i
 			return false, ErrInvalidEntryUpdate
 		}
 	}
-	ownerPrimaryDomain, valid := observedOwnerPrimaryDomain(source)
+	ownerDomainRequirementMet, valid := ownerDomainRequirementSatisfied(entryType, source)
 	if !valid {
 		return false, ErrInvalidEntryUpdate
 	}
-	return ownerPrimaryDomain, nil
+	return ownerDomainRequirementMet, nil
+}
+
+func ownerDomainRequirementSatisfied(entryType string, source models.SourceBinding) (bool, bool) {
+	owned, valid := observedOwnerPrimaryDomain(source)
+	if !valid || owned {
+		return owned, valid
+	}
+	if source.SourceModule == models.SourceModuleStandard && entryType == models.EntryTypeMetric {
+		scope, _ := source.ObservedSnapshot["scope_type"].(string)
+		return scope == "platform" || scope == "tenant_common", true
+	}
+	return false, true
 }
 
 func ownerManagesPrimaryDomain(entryType string, source models.SourceBinding) bool {
@@ -463,26 +443,6 @@ func observedOwnerPrimaryDomain(source models.SourceBinding) (bool, bool) {
 		return false, false
 	}
 	return true, true
-}
-
-func validateComponentOwnership(tx *gorm.DB, tenantID int64, entryID uuid.UUID, inputs []ComponentElementInput) error {
-	if len(inputs) == 0 {
-		return nil
-	}
-	ids := make([]uuid.UUID, 0, len(inputs))
-	for _, input := range inputs {
-		ids = append(ids, input.ComponentID)
-	}
-	var count int64
-	if err := tx.Model(&models.Component{}).
-		Where("tenant_id = ? AND catalog_entry_id = ? AND id IN ? AND component_status = ?", tenantID, entryID, ids, models.SourceStatusActive).
-		Count(&count).Error; err != nil {
-		return fmt.Errorf("validate Catalog components: %w", err)
-	}
-	if count != int64(len(ids)) {
-		return ErrReferenceNotReferenceable
-	}
-	return nil
 }
 
 func replaceSemanticAssociations(tx *gorm.DB, tenantID int64, entryID uuid.UUID, input UpdateEntryInput, references *validatedEntryReferences, now time.Time) error {
@@ -532,28 +492,6 @@ func replaceResponsibilities(tx *gorm.DB, tenantID int64, entryID uuid.UUID, inp
 	if len(rows) > 0 {
 		if err := tx.Create(&rows).Error; err != nil {
 			return fmt.Errorf("create Catalog responsibilities: %w", err)
-		}
-	}
-	return nil
-}
-
-func replaceComponentElements(tx *gorm.DB, tenantID int64, entryID uuid.UUID, inputs []ComponentElementInput, references *validatedEntryReferences, now time.Time) error {
-	if err := tx.Where("tenant_id = ? AND catalog_entry_id = ?", tenantID, entryID).Delete(&models.ComponentElementAssociation{}).Error; err != nil {
-		return fmt.Errorf("replace Catalog component elements: %w", err)
-	}
-	rows := make([]models.ComponentElementAssociation, 0, len(inputs))
-	for _, input := range inputs {
-		resolved := references.standard[fmt.Sprintf("element:%d", input.ElementID)]
-		rows = append(rows, models.ComponentElementAssociation{
-			ID: uuid.New(), TenantID: tenantID, CatalogEntryID: entryID,
-			ComponentID: input.ComponentID, ElementID: input.ElementID,
-			ObservedVersion: resolved.Version, ObservedSnapshot: standardSnapshot(resolved),
-			VerifiedAt: now, CreatedAt: now, UpdatedAt: now,
-		})
-	}
-	if len(rows) > 0 {
-		if err := tx.Create(&rows).Error; err != nil {
-			return fmt.Errorf("create Catalog component elements: %w", err)
 		}
 	}
 	return nil

@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { createAuthGuard } from '@common-ui'
+import { resolveModuleLandingRoute } from '../../../../common-frontend/basic/src/authorization/consoleRouteAccess.js'
 import { useAuthStore } from '../store/auth'
 import Layout from '../components/Layout.vue'
 
@@ -13,9 +14,17 @@ const routes = [
   {
     path: '/',
     component: Layout,
-    redirect: '/ontologies',
     meta: { requiresAuth: true },
     children: [
+      {
+        path: '',
+        name: 'GraphHome',
+        beforeEnter: () => {
+          const authStore = useAuthStore()
+          return resolveModuleLandingRoute('/graph', ['/ontologies', '/graphs', '/analysis', '/knowledge-service'], authStore.contextType, authStore.permissions)
+        },
+        meta: { requiresAuth: true, handlesForbidden: true }
+      },
       {
         path: 'ontologies',
         name: 'OntologyList',
@@ -88,7 +97,7 @@ const routes = [
 ]
 
 const router = createRouter({
-  history: createWebHistory(import.meta.env.DEV ? '/' : '/graph/'),
+  history: createWebHistory(import.meta.env.BASE_URL),
   routes
 })
 
