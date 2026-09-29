@@ -118,6 +118,10 @@ def affected_modules(repository: Path, files: list[str]) -> list[str]:
     if any(path.startswith("service/frontend/") for path in files):
         affected.add("console")
 
+    # Console's deterministic browser gate mounts the real Catalog coverage page.
+    if any(path.startswith("catalog/frontend/") for path in files):
+        affected.add("console")
+
     # Workbench's browser gate loads its delivery runtime through the Console Vite proxy.
     if any(path in {
         "console/frontend/vite.config.js",

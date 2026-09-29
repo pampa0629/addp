@@ -129,6 +129,22 @@ test('enterprise Catalog renders governance coverage, human-readable navigation,
     await expect(frame.getByTestId('catalog-coverage-dimension')).toHaveCount(7)
     await expect(coverage).not.toContainText('undefined')
 
+    await frame.locator('[data-testid="catalog-coverage-status-link"][data-status="curated"]').click()
+    await expect.poll(() => new URL(page.url()).searchParams.get('governance_status')).toBe('curated')
+    frame = page.frameLocator('iframe[data-testid="module-iframe"]')
+    await expect(frame.getByTestId('catalog-entry-list')).toHaveAttribute('data-load-state', 'loaded')
+    await expect(frame.getByTestId('catalog-entry-results')).toContainText(env.ADDP_ONLINE_CATALOG_BUSINESS_NAME)
+
+    await page.goto('/catalog/entries?view=inventory&governance_status=discovered')
+    frame = page.frameLocator('iframe[data-testid="module-iframe"]')
+    await expect(frame.getByTestId('catalog-entry-list')).toHaveAttribute('data-load-state', 'loaded')
+    await expect(frame.getByTestId('catalog-discovered-guidance')).toContainText('批量分配主业务域或责任部门不会改变编目状态')
+
+    await page.goto('/catalog/entries?view=inventory&coverage_dimension=accountable_department&coverage_state=missing')
+    frame = page.frameLocator('iframe[data-testid="module-iframe"]')
+    await expect(frame.getByTestId('catalog-entry-list')).toHaveAttribute('data-load-state', 'loaded')
+    await expect(frame.getByTestId('catalog-coverage-gap-alert')).toContainText('可在缺口列表勾选条目并批量分配责任部门')
+
     const detailPath = `/catalog/entries/${env.ADDP_ONLINE_CATALOG_ENTRY_ID}?view=inventory`
     await page.goto(detailPath)
     frame = page.frameLocator('iframe[data-testid="module-iframe"]')

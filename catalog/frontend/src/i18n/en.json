@@ -143,9 +143,19 @@
       },
       "search": "Name",
       "searchPlaceholder": "Search business or source name",
-      "coverageGapActive": "Resolving entries missing “{dimension}”. Name search is unavailable in this view; other structured filters remain available.",
+      "coverageGapActive": "Viewing entries missing “{dimension}”. Name search is unavailable in this view; other structured filters remain available.",
       "coverageGapEmpty": "No entries missing “{dimension}” match the current filters",
       "exitCoverageGap": "Exit gap view",
+      "discoveredGuidance": "These entries have not been curated. With catalog update permission, open an entry and select Start curation; assigning a primary domain or accountable department does not change its curation status.",
+      "coverageGapGuidance": {
+        "business_definition": "This gap means the business name or description is missing. Starting curation also requires a primary domain and the required responsibilities. Certified or deprecated entries cannot be edited directly.",
+        "primary_domain": "With catalog update permission, select entries in the gap list to batch-assign a Catalog-managed primary domain. Maintain Model- or Standard-owned domains in their professional modules.",
+        "accountable_department": "With catalog update permission, select entries in the gap list to batch-assign an accountable department. This does not complete curation.",
+        "business_owner": "A user with catalog update permission can select a business owner in the entry's curation editor, subject to its governance status.",
+        "data_steward": "A user with catalog update permission can select a data steward in the entry's curation editor, subject to its governance status.",
+        "glossary": "A user with catalog update permission can link a business glossary term in the entry's curation editor. This is not mandatory for curation.",
+        "component_standard_mapping": "Open a data item's Curation tab. A user with the relevant permission can create and review component standard mappings; only approved mappings count as covered."
+      },
       "navigation": {
         "title": "Browse dimensions",
         "description": "Domain, accountable department, and resource type are independent filter dimensions",
@@ -245,6 +255,8 @@
       "applicable": "Applicable",
       "notApplicable": "Not applicable",
       "openMissing": "Open {count} entries missing {dimension}",
+      "viewEntries": "View entries",
+      "openStatus": "View {count} entries with status {status}",
       "dimensions": {
         "business_definition": {
           "name": "Business definition",
@@ -338,6 +350,8 @@
     "entry": {
       "recentVisitTitle": "Enterprise catalog entry",
       "loadFailed": "Failed to load the catalog entry",
+      "coverageGapContext": "Catalog filter: missing “{dimension}”",
+      "backToCoverageGap": "Back to gap list",
       "catalogFacts": "Enterprise catalog facts",
       "sourceFacts": "Technical source",
       "tabs": {

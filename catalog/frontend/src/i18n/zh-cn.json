@@ -143,9 +143,19 @@
       },
       "search": "名称",
       "searchPlaceholder": "搜索业务名称或来源名称",
-      "coverageGapActive": "正在处置“{dimension}”未覆盖条目；名称搜索在此视图中不可用，其他结构化筛选仍可继续使用。",
+      "coverageGapActive": "正在查看“{dimension}”未覆盖条目；名称搜索在此视图中不可用，其他结构化筛选仍可继续使用。",
       "coverageGapEmpty": "当前条件下没有“{dimension}”未覆盖条目",
       "exitCoverageGap": "退出缺口视图",
+      "discoveredGuidance": "这些条目尚未完成业务编目。有目录维护权限时，打开条目选择“开始编目”；批量分配主业务域或责任部门不会改变编目状态。",
+      "coverageGapGuidance": {
+        "business_definition": "此缺口表示业务名称或说明未补齐。打开条目开始业务编目时，还需满足主业务域和责任关系的必填条件；已认证或已弃用条目不能直接编辑。",
+        "primary_domain": "有目录维护权限时，可在缺口列表勾选条目并批量分配 Catalog 管理的主业务域；Model 和 Standard 自有归属在专业模块维护。",
+        "accountable_department": "有目录维护权限时，可在缺口列表勾选条目并批量分配责任部门；分配本身不会完成业务编目。",
+        "business_owner": "由有目录维护权限的人员打开条目，在编目编辑器中选择业务责任人；操作仍受条目治理状态约束。",
+        "data_steward": "由有目录维护权限的人员打开条目，在编目编辑器中选择数据管理员；操作仍受条目治理状态约束。",
+        "glossary": "由有目录维护权限的人员打开条目，在编目编辑器中关联业务术语；术语关联不是完成编目的强制条件。",
+        "component_standard_mapping": "打开数据项详情的编目信息，由有相应权限的人员建立并审核组件标准映射；只有已审核映射计入覆盖。"
+      },
       "navigation": {
         "title": "浏览维度",
         "description": "业务域、责任部门和资源类型是相互独立的筛选维度",
@@ -245,6 +255,8 @@
       "applicable": "适用",
       "notApplicable": "不适用",
       "openMissing": "查看{dimension}未覆盖条目，共 {count} 条",
+      "viewEntries": "查看条目",
+      "openStatus": "查看{status}条目，共 {count} 条",
       "dimensions": {
         "business_definition": {
           "name": "业务定义",
@@ -338,6 +350,8 @@
     "entry": {
       "recentVisitTitle": "企业目录条目",
       "loadFailed": "加载目录条目失败",
+      "coverageGapContext": "目录筛选：“{dimension}”未覆盖",
+      "backToCoverageGap": "返回缺口列表",
       "catalogFacts": "企业目录事实",
       "sourceFacts": "技术来源",
       "tabs": {

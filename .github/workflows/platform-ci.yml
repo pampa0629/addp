@@ -512,6 +512,11 @@ jobs:
         working-directory: service/frontend
         run: npm ci
 
+      - name: Install Catalog dependencies for Console coverage navigation
+        if: steps.selection.outputs.run == 'true' && matrix.module == 'console'
+        working-directory: catalog/frontend
+        run: npm ci
+
       - name: Install Console dependencies for Workbench delivery runtime integration
         if: steps.selection.outputs.run == 'true' && matrix.module == 'workbench'
         working-directory: console/frontend

@@ -8,6 +8,7 @@ import (
 
 	"github.com/addp/catalog/internal/models"
 	"github.com/addp/catalog/internal/repository"
+	commonClient "github.com/addp/common/client"
 	commonModels "github.com/addp/common/models"
 	"github.com/google/uuid"
 	"gorm.io/driver/postgres"
@@ -35,6 +36,21 @@ func TestPostgresGovernanceCoverageAndSourceResolution(t *testing.T) {
 	metaEntry, component := createEditableCatalogEntry(t, tx, 71)
 	modelEntry := createModelCatalogEntry(t, tx, 71, "31")
 	sharedMetric := createMetricCatalogEntry(t, tx, 71, "")
+	secondComponent := models.Component{
+		ID: uuid.New(), TenantID: 71, CatalogEntryID: metaEntry.ID, ComponentKey: "activity_name",
+		DisplayName: "activity_name", DataType: "string", ComponentStatus: models.SourceStatusActive,
+		Ordinal: 2, ObservedSnapshot: commonModels.JSONMap{"name": "activity_name"},
+	}
+	inactiveComponent := models.Component{
+		ID: uuid.New(), TenantID: 71, CatalogEntryID: metaEntry.ID, ComponentKey: "old_name",
+		DisplayName: "old_name", DataType: "string", ComponentStatus: models.SourceStatusMissing,
+		Ordinal: 3, ObservedSnapshot: commonModels.JSONMap{"name": "old_name"},
+	}
+	for _, extra := range []*models.Component{&secondComponent, &inactiveComponent} {
+		if err := tx.Create(extra).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
 	var sharedBinding models.SourceBinding
 	if err := tx.Where("catalog_entry_id = ? AND is_current = ?", sharedMetric.ID, true).First(&sharedBinding).Error; err != nil {
 		t.Fatal(err)
@@ -58,6 +74,16 @@ func TestPostgresGovernanceCoverageAndSourceResolution(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatal(err)
 	}
+	secondRevisionID := int64(512)
+	proposedMapping := models.StandardMapping{
+		ID: uuid.New(), TenantID: 71, CatalogEntryID: metaEntry.ID, ComponentID: secondComponent.ID,
+		ElementID: 52, ElementRevisionID: &secondRevisionID, Source: models.StandardMappingSourceManual,
+		ReviewStatus: models.StandardMappingProposed, Version: 1, ProposedByType: "user", ProposedByID: "1",
+		Evidence: commonModels.JSONMap{"name": "Activity name"}, CreatedAt: now, UpdatedAt: now,
+	}
+	if err := tx.Create(&proposedMapping).Error; err != nil {
+		t.Fatal(err)
+	}
 
 	svc := NewEntryService(tx, nil, nil)
 	coverage, err := svc.GetGovernanceCoverage(context.Background(), 71, EntryAccess{Inventory: true})
@@ -67,6 +93,12 @@ func TestPostgresGovernanceCoverageAndSourceResolution(t *testing.T) {
 	if coverage.TotalEntries != 3 || len(coverage.Dimensions) != 7 || coverage.Dimensions[1].Key != CoverageDimensionPrimaryDomain ||
 		coverage.Dimensions[1].Covered != 1 || coverage.Dimensions[1].Applicable != 2 || coverage.Dimensions[1].NotApplicable != 1 {
 		t.Fatalf("coverage = %#v", coverage)
+	}
+	for _, dimension := range coverage.Dimensions {
+		if dimension.Key == CoverageDimensionComponentStandardMapping &&
+			(dimension.Covered != 0 || dimension.Applicable != 1 || dimension.NotCovered != 1 || dimension.NotApplicable != 2) {
+			t.Fatalf("proposed mapping must not cover the second active component: %#v", dimension)
+		}
 	}
 	for _, dimension := range coverage.Dimensions {
 		listed, listErr := svc.List(context.Background(), 71, EntryAccess{Inventory: true}, EntryListFilter{
@@ -79,6 +111,32 @@ func TestPostgresGovernanceCoverageAndSourceResolution(t *testing.T) {
 		if listed.Total != dimension.NotCovered || int64(len(listed.Data)) != dimension.NotCovered {
 			t.Fatalf("List(%s missing) = total %d rows %d, coverage not_covered = %d", dimension.Key, listed.Total, len(listed.Data), dimension.NotCovered)
 		}
+	}
+	resolver := &fakeElementRevisionResolver{snapshots: map[int64]*commonClient.ElementRevisionBinding{
+		secondRevisionID: {ElementID: 52, RevisionID: secondRevisionID, Status: "published"},
+	}}
+	approved, err := svc.WithDataDictionaryResolvers(nil, resolver).ReviewStandardMapping(
+		context.Background(), 71, proposedMapping.ID, "approve", StandardMappingDecision{Version: 1}, UpdateEntryActor{Type: "user", ID: "1"},
+	)
+	if err != nil || approved.ReviewStatus != models.StandardMappingApproved {
+		t.Fatalf("approve second component mapping = %#v, error = %v", approved, err)
+	}
+	coverage, err = svc.GetGovernanceCoverage(context.Background(), 71, EntryAccess{Inventory: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, dimension := range coverage.Dimensions {
+		if dimension.Key == CoverageDimensionComponentStandardMapping &&
+			(dimension.Covered != 1 || dimension.Applicable != 1 || dimension.NotCovered != 0 || dimension.NotApplicable != 2) {
+			t.Fatalf("approved mappings must cover every active component: %#v", dimension)
+		}
+	}
+	mappingGap, err := svc.List(context.Background(), 71, EntryAccess{Inventory: true}, EntryListFilter{
+		View: EntryViewInventory, CoverageDimension: CoverageDimensionComponentStandardMapping, CoverageState: CoverageStateMissing,
+		Page: 1, PageSize: 20,
+	})
+	if err != nil || mappingGap.Total != 0 {
+		t.Fatalf("approved mapping gap = %#v, error = %v", mappingGap, err)
 	}
 	facets, err := svc.ListFacets(context.Background(), 71, EntryAccess{Inventory: true}, EntryFacetFilter{
 		View: EntryViewInventory, PrimaryDomainID: 31,

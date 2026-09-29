@@ -47,6 +47,22 @@
       <template #extra><el-button type="primary" @click="loadEntry">{{ t('catalog.common.retry') }}</el-button></template>
     </el-result>
     <template v-else-if="entry">
+      <el-alert
+        v-if="coverageGapDimension"
+        class="coverage-context"
+        data-testid="catalog-entry-coverage-context"
+        type="info"
+        :closable="false"
+        show-icon
+      >
+        <template #title>
+          <div class="coverage-context-title">
+            <strong>{{ t('catalog.entry.coverageGapContext', { dimension: coverageDimensionLabel(t, coverageGapDimension, 'name') }) }}</strong>
+            <el-button link type="primary" @click="goBack">{{ t('catalog.entry.backToCoverageGap') }}</el-button>
+          </div>
+          <p class="coverage-context-guidance">{{ t(`catalog.entries.coverageGapGuidance.${coverageGapDimension}`) }}</p>
+        </template>
+      </el-alert>
       <el-card shadow="never" class="summary-card">
         <div class="summary-header">
           <div class="summary-title">
@@ -559,6 +575,7 @@ import { dataDictionaryExportFileName, normalizeDataDictionaryBlobError, saveDat
 import { activeCodeItemLabels, formatPhysicalType, formatRangeConstraint } from '../utils/dataDictionaryView'
 import { buildCertificationPayload, buildCertificationWithdrawalPayload, buildDeprecationPayload, buildWithdrawCurationPayload, curationAction } from '../utils/entryEdit'
 import { buildEntryListQuery, parseEntryListRoute } from '../utils/entryRouteState'
+import { coverageDimensionLabel } from '../utils/governanceCoverageView'
 import { isProfessionalOwner, professionalOwnerName, resolveOwnerPrimaryDomain } from '../utils/entryOwnerPresentation'
 import { lineageFailureState, lineageNodesToSourceReferences, resolveLineageSubject } from '../utils/lineageView'
 import {
@@ -572,6 +589,7 @@ import {
 
 const route = useRoute()
 const router = useRouter()
+const coverageGapDimension = computed(() => parseEntryListRoute(route.query).coverage_dimension)
 const LineageViewer = defineAsyncComponent(() => import('@addp/common-frontend/graph/LineageViewer.vue'))
 const { t, locale } = useI18n()
 const authStore = useAuthStore()
@@ -1316,6 +1334,9 @@ watch(
 .page-header, .header-actions { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
 .header-actions { margin-bottom: 0; }
 .summary-card { margin-bottom: 16px; }
+.coverage-context { margin-bottom: 16px; }
+.coverage-context-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.coverage-context-guidance { margin: 4px 0 0; font-weight: 400; }
 .successor-card { margin-bottom: 16px; }
 .detail-tabs { margin-bottom: 16px; }
 .summary-header, .summary-tags, .card-title-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }

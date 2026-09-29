@@ -53,8 +53,19 @@
           <span>{{ coverageGapTitle }}</span>
           <el-button link type="primary" @click="clearCoverageGap">{{ t('catalog.entries.exitCoverageGap') }}</el-button>
         </div>
+        <p class="coverage-gap-guidance">{{ t(`catalog.entries.coverageGapGuidance.${filters.coverage_dimension}`) }}</p>
       </template>
     </el-alert>
+
+    <el-alert
+      v-if="discoveredInventoryActive && !coverageGapActive"
+      class="coverage-gap-alert"
+      data-testid="catalog-discovered-guidance"
+      type="info"
+      :closable="false"
+      show-icon
+      :title="t('catalog.entries.discoveredGuidance')"
+    />
 
     <el-alert
       v-if="unavailableFacetLabels.length > 0"
@@ -441,6 +452,7 @@ let loadedFacetKey = ''
 
 const pageDescription = computed(() => t(`catalog.entries.view.${filters.view}Description`))
 const coverageGapActive = computed(() => Boolean(filters.coverage_dimension && filters.coverage_state === 'missing'))
+const discoveredInventoryActive = computed(() => filters.view === 'inventory' && filters.governance_status === 'discovered')
 const coverageGapTitle = computed(() => t('catalog.entries.coverageGapActive', {
   dimension: coverageDimensionLabel(t, filters.coverage_dimension, 'name')
 }))
@@ -818,7 +830,8 @@ onMounted(loadDomains)
 .view-scope-total { margin-left: auto; color: var(--addp-text-secondary); font-size: 13px; }
 .view-scope-description { margin: 10px 0 0; color: var(--addp-text-secondary); font-size: 13px; line-height: 1.6; }
 .facet-alert, .coverage-gap-alert { margin-bottom: 16px; }
-.coverage-gap-title { display: flex; align-items: center; justify-content: space-between; gap: 16px; width: 100%; }
+.coverage-gap-title { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 16px; width: 100%; }
+.coverage-gap-guidance { margin: 4px 0 0; font-size: 12px; line-height: 1.5; }
 .navigation-card { margin-bottom: 16px; }
 .domain-context-card { margin-bottom: 16px; }
 .domain-context-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }

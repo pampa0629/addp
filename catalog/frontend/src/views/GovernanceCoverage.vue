@@ -26,6 +26,15 @@
         <el-col v-for="status in coverage.governance_statuses" :key="status.status" :xs="12" :sm="8" :lg="4">
           <el-card shadow="never">
             <el-statistic :title="t(`catalog.status.governance.${status.status}`)" :value="status.count" />
+            <el-button
+              v-if="status.count > 0"
+              link
+              type="primary"
+              data-testid="catalog-coverage-status-link"
+              :data-status="status.status"
+              :aria-label="t('catalog.coverage.openStatus', { status: t(`catalog.status.governance.${status.status}`), count: status.count })"
+              @click="openStatusEntries(status)"
+            >{{ t('catalog.coverage.viewEntries') }}</el-button>
           </el-card>
         </el-col>
       </el-row>
@@ -77,7 +86,7 @@ import { useRouter } from 'vue-router'
 import { Refresh } from '@element-plus/icons-vue'
 import { navigateConsoleModuleRoute, useConsolePageDescriptor } from '@common-ui'
 import { getGovernanceCoverage } from '../api/catalog'
-import { buildMissingCoverageEntryQuery, coverageDimensionLabel } from '../utils/governanceCoverageView'
+import { buildGovernanceStatusEntryQuery, buildMissingCoverageEntryQuery, coverageDimensionLabel } from '../utils/governanceCoverageView'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -106,6 +115,13 @@ async function loadCoverage() {
 async function openMissingEntries(dimension) {
   if (!dimension || dimension.not_covered <= 0) return
   const query = buildMissingCoverageEntryQuery(dimension.key)
+  if (!query) return
+  await navigateConsoleModuleRoute(router, 'catalog', { path: '/entries', query })
+}
+
+async function openStatusEntries(status) {
+  if (!status || status.count <= 0) return
+  const query = buildGovernanceStatusEntryQuery(status.status)
   if (!query) return
   await navigateConsoleModuleRoute(router, 'catalog', { path: '/entries', query })
 }
