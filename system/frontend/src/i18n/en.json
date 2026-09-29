@@ -29,6 +29,7 @@
       "disabledSuccess": "Module disabled",
       "enabledAria": "Toggle enabled state for module {name}",
       "systemAlwaysEnabled": "Always enabled",
+      "tabs": { "overview": "Module Overview", "instances": "Service Instances" },
       "columns": {
         "id": "Record ID",
         "name": "Module",
@@ -57,8 +58,8 @@
       },
       "stopReasons": { "graceful": "Graceful Exit", "lease_expired": "Lease expired; possible unexpected exit" },
       "status": {
-        "up": "Online",
-        "down": "Offline"
+        "up": "UP · Online",
+        "down": "DOWN · Offline"
       },
       "roles": {
         "backend": "Backend",
@@ -75,27 +76,46 @@
       "instanceSummary": "{online} online · {offline} offline observations",
       "instances": {
         "title": "Current Runtime Projection ({count})",
-        "historyAction": "View Full History",
+        "queryAction": "Query this module's instances",
         "empty": "No runtime instance has registered yet",
         "id": "Instance ID",
         "role": "Role",
         "status": "Status",
+        "endpoint": "Instance Host/IP:Port",
+        "noEndpoint": "No listening endpoint",
+        "more": "{count} more instances; expand to view",
         "url": "Service URL",
         "healthCheckUrl": "Health Check URL",
         "lastHeartbeat": "Last Heartbeat",
         "leaseExpiresAt": "Lease Expires",
+        "offlineDeterminedAt": "Offline Determined At",
+        "diagnostics": "Diagnostics",
+        "leaseExpiredHint": "Lease expiration only indicates lost contact; it does not prove that the process exited.",
         "registeredAt": "Registered At",
         "processStartedAt": "Process Started At",
         "stopReason": "Stop Reason",
-        "uptime": "Process Uptime",
-        "uptimeValue": "{days} d {hours} h"
+        "uptime": "Continuous Uptime",
+        "uptimeDays": "{days} d {hours} h {minutes} min",
+        "uptimeHours": "{hours} h {minutes} min",
+        "uptimeMinutes": "{minutes} min {seconds} s",
+        "uptimeSeconds": "{seconds} s"
       },
-      "history": {
-        "title": "{name} · Runtime Instance History",
-        "roleFilter": "Filter by role",
-        "statusFilter": "Filter by effective status",
-        "empty": "No runtime instance history matches the filters",
-        "loadFailed": "Failed to load runtime instance history"
+      "query": {
+        "module": "Service name",
+        "host": "Registered hostname or IP",
+        "role": "Instance role",
+        "status": "Runtime status",
+        "registeredPeriod": "Registration time range",
+        "allTime": "All registration times",
+        "custom": "Custom range",
+        "from": "Start time",
+        "to": "End time",
+        "search": "Search",
+        "reset": "Reset",
+        "timeHint": "The time filter selects instance registration time, not past availability. Address search exactly matches the registered endpoint host or IP; instances without an endpoint do not match it.",
+        "empty": "No service instances match the filters",
+        "loadFailed": "Failed to load service instances",
+        "periods": { "m15": "Last 15 minutes", "m30": "Last 30 minutes", "h1": "Last hour", "h6": "Last 6 hours", "h12": "Last 12 hours", "h24": "Last 24 hours", "d7": "Last 7 days" }
       }
     },
     "iam": {

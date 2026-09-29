@@ -16,6 +16,59 @@ import (
 	"github.com/addp/system/internal/testsupport"
 )
 
+func TestModuleRegisteredHostForwardMigrationAgainstPostgres(t *testing.T) {
+	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
+	if dsn == "" {
+		t.Skip("set ADDP_SYSTEM_POSTGRES_TEST_DSN to a disposable PostgreSQL database")
+	}
+	testsupport.RequireDisposablePostgresDSN(t, dsn)
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`DROP SCHEMA IF EXISTS system CASCADE; DROP SCHEMA IF EXISTS common CASCADE`); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	before, through := migrationFilesBeforeAndThrough(t, "000164_module_runtime_registered_host.up.sql")
+	if err := (&Runner{DSN: dsn, FS: before, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`
+		INSERT INTO system.module_definitions (module_name, route_prefix) VALUES ('manager', '/manager');
+		INSERT INTO system.module_runtime_instances
+		    (module_definition_id, instance_id, role, module_url, health_check_url, last_heartbeat, lease_expires_at, registered_at)
+		SELECT id, 'backend-1', 'backend', 'http://Manager.Local:8081', '', now(), now() + interval '30 seconds', now()
+		FROM system.module_definitions WHERE module_name = 'manager';
+		INSERT INTO system.module_runtime_instances
+		    (module_definition_id, instance_id, role, module_url, health_check_url, last_heartbeat, lease_expires_at, registered_at)
+		SELECT id, 'worker-1', 'worker', '', '', now(), now() + interval '30 seconds', now()
+		FROM system.module_definitions WHERE module_name = 'manager';
+		INSERT INTO system.module_runtime_instances
+		    (module_definition_id, instance_id, role, module_url, health_check_url, last_heartbeat, lease_expires_at, registered_at)
+		SELECT id, 'scheduler-1', 'scheduler', '', 'http://[::1]:8180/health/ready', now(), now() + interval '30 seconds', now()
+		FROM system.module_definitions WHERE module_name = 'manager';
+	`); err != nil {
+		t.Fatal(err)
+	}
+	if err := (&Runner{DSN: dsn, FS: through, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	for instanceID, wantHost := range map[string]string{
+		"backend-1": "manager.local", "worker-1": "", "scheduler-1": "::1",
+	} {
+		var got string
+		if err := db.QueryRow(`SELECT registered_host FROM system.module_runtime_instances WHERE instance_id = $1`, instanceID).Scan(&got); err != nil {
+			t.Fatal(err)
+		}
+		if got != wantHost {
+			t.Fatalf("%s registered_host = %q, want %q", instanceID, got, wantHost)
+		}
+	}
+}
+
 func TestProjectGroupLifecycleForwardMigrationAgainstPostgres(t *testing.T) {
 	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
 	if dsn == "" {

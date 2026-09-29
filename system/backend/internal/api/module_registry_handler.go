@@ -273,35 +273,55 @@ func (h *ModuleRegistryHandler) GetModulePlatform(c *gin.Context) {
 }
 
 // ListModuleRuntimeInstancesPlatform godoc
-// @Summary      分页查询模块运行实例历史 | List module runtime instance history
-// @Description  平台系统管理员分页读取指定模块全部 Backend、Worker、Scheduler 实例历史；该集合只读，不提供健康状态写入 | A platform system administrator reads the complete Backend, Worker, and Scheduler instance history of a module with pagination; this collection is read-only and exposes no health-state writes
+// @Summary      跨模块分页查询运行实例 | List runtime instances across modules
+// @Description  按模块、登记主机、角色、当前有效状态和登记时间范围组合查询实例历史；时间范围不表示历史在线状态 | Search instance history by module, registered host, role, current effective status, and registration time range; the time range does not reconstruct past availability
 // @Tags         平台模块管理 | Platform Module Management
 // @Produce      json
 // @Security     BearerAuth
-// @Param        module_name path string true "模块名 | Module name"
+// @Param        module_name query string false "稳定模块名，精确匹配 | Stable module name, exact match"
+// @Param        registered_host query string false "登记端点主机名或 IP，精确匹配 | Registered endpoint hostname or IP, exact match"
 // @Param        role query string false "角色过滤：backend、worker、scheduler、ingress | Role filter: backend, worker, scheduler, ingress"
 // @Param        status query string false "有效状态过滤：up、down | Effective status filter: up, down"
+// @Param        registered_from query string false "登记时间下界，RFC3339，含 | Registration time lower bound, RFC3339, inclusive"
+// @Param        registered_to query string false "登记时间上界，RFC3339，不含 | Registration time upper bound, RFC3339, exclusive"
 // @Param        page query int false "页码 | Page number" default(1)
 // @Param        page_size query int false "每页数量，最大 100 | Page size, maximum 100" default(10)
-// @Success      200 {object} object{data=[]models.ModuleRuntimeInstanceInfo,total=int64,page=int,page_size=int,total_pages=int}
+// @Success      200 {object} object{data=[]models.ModuleRuntimeInstanceRecord,total=int64,page=int,page_size=int,total_pages=int}
 // @Failure      400 {object} models.ErrorResponse
 // @Failure      401 {object} models.ErrorResponse
 // @Failure      403 {object} models.ErrorResponse
-// @Failure      404 {object} models.ErrorResponse
 // @Failure      500 {object} models.ErrorResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["platform.module.read"]
-// @Router       /platform/modules/{module_name}/instances [get]
+// @Router       /platform/module-instances [get]
 func (h *ModuleRegistryHandler) ListModuleRuntimeInstancesPlatform(c *gin.Context) {
 	page, pageSize := commonapi.ParsePagination(c)
-	instances, total, err := h.service.ListModuleRuntimeInstances(c.Param("module_name"), models.ModuleRuntimeInstanceFilter{
-		Role: c.Query("role"), Status: c.Query("status"), Page: page, PageSize: pageSize,
+	var registeredFrom, registeredTo time.Time
+	for _, bound := range []struct {
+		value  string
+		target *time.Time
+	}{
+		{c.Query("registered_from"), &registeredFrom},
+		{c.Query("registered_to"), &registeredTo},
+	} {
+		if bound.value == "" {
+			continue
+		}
+		parsed, parseErr := time.Parse(time.RFC3339, bound.value)
+		if parseErr != nil {
+			commonapi.RespondError(c, http.StatusBadRequest, commoni18n.T(c, commoni18n.MsgInvalidParams))
+			return
+		}
+		*bound.target = parsed
+	}
+	instances, total, err := h.service.ListModuleRuntimeInstances(models.ModuleRuntimeInstanceFilter{
+		ModuleName: c.Query("module_name"), RegisteredHost: c.Query("registered_host"),
+		Role: c.Query("role"), Status: c.Query("status"), RegisteredFrom: registeredFrom, RegisteredTo: registeredTo,
+		Page: page, PageSize: pageSize,
 	})
 	switch {
 	case errors.Is(err, service.ErrInvalidModuleRuntimeInstanceQuery):
 		commonapi.RespondError(c, http.StatusBadRequest, commoni18n.T(c, commoni18n.MsgInvalidParams))
-	case errors.Is(err, commonapi.ErrNotFound):
-		commonapi.RespondError(c, http.StatusNotFound, commoni18n.T(c, sysi18n.MsgModuleNotFound))
 	case err != nil:
 		commonapi.RespondError(c, http.StatusInternalServerError, commoni18n.T(c, sysi18n.MsgInternalError))
 	default:

@@ -353,7 +353,7 @@ frontend/src/
 - `/api/v1/system/platform/identity_changes` - 平台身份变更申请、复核和监督；
 - `/api/v1/system/platform/audit/events` - 平台审计查询、汇总、趋势和导出。
 - `/api/v1/system/platform/modules` - 模块定义、有界当前运行实例投影和带版本的启用状态管理；不得携带全部实例历史。
-- `/api/v1/system/platform/modules/:module_name/instances` - 当前模块全部运行实例历史的只读分页查询，支持 role、status 过滤。
+- `/api/v1/system/platform/module-instances` - 跨模块运行实例历史的唯一只读分页查询，支持模块名、登记主机、role、当前有效 status 与登记时间范围组合过滤。
 
 ### Tenant IAM 管理（Tenant Context + 精确 Permission）
 - `/api/v1/system/tenant/memberships` - 当前 Tenant Membership 查询、有效期和生命周期；

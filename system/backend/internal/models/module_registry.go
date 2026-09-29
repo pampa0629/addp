@@ -44,6 +44,7 @@ type ModuleRuntimeInstance struct {
 	Role               string         `gorm:"not null;size:30;index" json:"role"`
 	ModuleURL          string         `gorm:"size:255" json:"module_url"`
 	HealthCheckURL     string         `gorm:"size:255" json:"health_check_url"`
+	RegisteredHost     string         `gorm:"size:255;index" json:"registered_host"`
 	Status             string         `gorm:"not null;default:'up';size:20;index" json:"status"`
 	LastHeartbeat      time.Time      `gorm:"not null;index" json:"last_heartbeat"`
 	LeaseExpiresAt     time.Time      `gorm:"not null;index" json:"lease_expires_at"`
@@ -103,6 +104,7 @@ type ModuleRuntimeInstanceInfo struct {
 	Role             string                 `json:"role"`
 	ModuleURL        string                 `json:"module_url"`
 	HealthCheckURL   string                 `json:"health_check_url"`
+	RegisteredHost   string                 `json:"registered_host"`
 	Status           string                 `json:"status"`
 	LastHeartbeat    time.Time              `json:"last_heartbeat"`
 	LeaseExpiresAt   time.Time              `json:"lease_expires_at"`
@@ -115,10 +117,24 @@ type ModuleRuntimeInstanceInfo struct {
 }
 
 type ModuleRuntimeInstanceFilter struct {
-	Role     string
-	Status   string
-	Page     int
-	PageSize int
+	ModuleName     string
+	RegisteredHost string
+	Role           string
+	Status         string
+	RegisteredFrom time.Time
+	RegisteredTo   time.Time
+	Page           int
+	PageSize       int
+}
+
+type ModuleRuntimeInstanceRecord struct {
+	ModuleName string `json:"module_name"`
+	ModuleRuntimeInstanceInfo
+}
+
+type ModuleRuntimeInstanceRow struct {
+	ModuleRuntimeInstance `gorm:"embedded"`
+	ModuleName            string `gorm:"column:module_name"`
 }
 
 type ModuleInfo struct {

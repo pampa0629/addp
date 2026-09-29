@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -218,21 +219,27 @@ func TestListModuleRuntimeInstancesPlatformUsesPaginatedContract(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	if err := registry.Register(&models.ModuleRegistrationRequest{ProcessStartedAt: time.Now(),
+		ModuleName: "meta", InstanceID: "meta-a", Role: models.ModuleRuntimeRoleBackend,
+		ModuleURL: "http://meta.local:8082", RoutePrefix: "/meta",
+	}); err != nil {
+		t.Fatal(err)
+	}
 	handler := NewModuleRegistryHandler(registry)
 	router := gin.New()
 	router.Use(commoni18n.I18nMiddleware())
-	router.GET("/platform/modules/:module_name/instances", handler.ListModuleRuntimeInstancesPlatform)
+	router.GET("/platform/module-instances", handler.ListModuleRuntimeInstancesPlatform)
 
-	response := performModuleRegistryRequest(router, http.MethodGet, "/platform/modules/manager/instances?page=1&page_size=1", "")
+	response := performModuleRegistryRequest(router, http.MethodGet, "/platform/module-instances?module_name=manager&page=1&page_size=1", "")
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200, body=%s", response.Code, response.Body.String())
 	}
 	var payload struct {
-		Data       []models.ModuleRuntimeInstanceInfo `json:"data"`
-		Total      int64                              `json:"total"`
-		Page       int                                `json:"page"`
-		PageSize   int                                `json:"page_size"`
-		TotalPages int                                `json:"total_pages"`
+		Data       []models.ModuleRuntimeInstanceRecord `json:"data"`
+		Total      int64                                `json:"total"`
+		Page       int                                  `json:"page"`
+		PageSize   int                                  `json:"page_size"`
+		TotalPages int                                  `json:"total_pages"`
 	}
 	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
 		t.Fatal(err)
@@ -240,13 +247,39 @@ func TestListModuleRuntimeInstancesPlatformUsesPaginatedContract(t *testing.T) {
 	if len(payload.Data) != 1 || payload.Total != 2 || payload.Page != 1 || payload.PageSize != 1 || payload.TotalPages != 2 {
 		t.Fatalf("paginated response = %#v", payload)
 	}
+	if payload.Data[0].ModuleName != "manager" || payload.Data[0].RegisteredHost == "" {
+		t.Fatalf("instance identity = %#v", payload.Data[0])
+	}
+	response = performModuleRegistryRequest(router, http.MethodGet, "/platform/module-instances?registered_host=MANAGER-A&role=backend&status=up&registered_from="+
+		url.QueryEscape(time.Now().Add(-time.Hour).Format(time.RFC3339))+"&registered_to="+
+		url.QueryEscape(time.Now().Add(time.Hour).Format(time.RFC3339)), "")
+	if response.Code != http.StatusOK {
+		t.Fatalf("combined filter status = %d, body=%s", response.Code, response.Body.String())
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Total != 1 || len(payload.Data) != 1 || payload.Data[0].InstanceID != "manager-a" {
+		t.Fatalf("combined filter = %#v", payload)
+	}
+	response = performModuleRegistryRequest(router, http.MethodGet, "/platform/module-instances?page_size=10", "")
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Total != 3 {
+		t.Fatalf("cross-module total = %d", payload.Total)
+	}
 
-	response = performModuleRegistryRequest(router, http.MethodGet, "/platform/modules/manager/instances?role=api", "")
+	response = performModuleRegistryRequest(router, http.MethodGet, "/platform/module-instances?role=api", "")
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf("invalid role status = %d, body=%s", response.Code, response.Body.String())
 	}
-	response = performModuleRegistryRequest(router, http.MethodGet, "/platform/modules/missing/instances", "")
-	if response.Code != http.StatusNotFound {
+	response = performModuleRegistryRequest(router, http.MethodGet, "/platform/module-instances?registered_from=not-a-time", "")
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("invalid time status = %d, body=%s", response.Code, response.Body.String())
+	}
+	response = performModuleRegistryRequest(router, http.MethodGet, "/platform/module-instances?module_name=missing", "")
+	if response.Code != http.StatusOK {
 		t.Fatalf("missing module status = %d, body=%s", response.Code, response.Body.String())
 	}
 }

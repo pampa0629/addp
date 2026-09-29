@@ -280,8 +280,8 @@ func TestModuleRegistrySeparatesBoundedCurrentProjectionFromPaginatedHistory(t *
 		t.Fatalf("current projection = %#v", projection)
 	}
 
-	page, total, err := registry.ListModuleRuntimeInstances("manager", models.ModuleRuntimeInstanceFilter{
-		Page: 1, PageSize: 2,
+	page, total, err := registry.ListModuleRuntimeInstances(models.ModuleRuntimeInstanceFilter{
+		ModuleName: "manager", Page: 1, PageSize: 2,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -290,25 +290,25 @@ func TestModuleRegistrySeparatesBoundedCurrentProjectionFromPaginatedHistory(t *
 		t.Fatalf("history page = %#v, total=%d", page, total)
 	}
 
-	up, upTotal, err := registry.ListModuleRuntimeInstances("manager", models.ModuleRuntimeInstanceFilter{
-		Status: models.ModuleRuntimeStatusUp, Page: 1, PageSize: 10,
+	up, upTotal, err := registry.ListModuleRuntimeInstances(models.ModuleRuntimeInstanceFilter{
+		ModuleName: "manager", Status: models.ModuleRuntimeStatusUp, Page: 1, PageSize: 10,
 	})
 	if err != nil || upTotal != 3 || len(up) != 3 {
 		t.Fatalf("up history = %#v, total=%d, error=%v", up, upTotal, err)
 	}
-	down, downTotal, err := registry.ListModuleRuntimeInstances("manager", models.ModuleRuntimeInstanceFilter{
-		Status: models.ModuleRuntimeStatusDown, Page: 1, PageSize: 10,
+	down, downTotal, err := registry.ListModuleRuntimeInstances(models.ModuleRuntimeInstanceFilter{
+		ModuleName: "manager", Status: models.ModuleRuntimeStatusDown, Page: 1, PageSize: 10,
 	})
 	if err != nil || downTotal != 3 || len(down) != 3 || down[0].InstanceID != "worker-latest" {
 		t.Fatalf("down history = %#v, total=%d, error=%v", down, downTotal, err)
 	}
-	workers, workerTotal, err := registry.ListModuleRuntimeInstances("manager", models.ModuleRuntimeInstanceFilter{
-		Role: models.ModuleRuntimeRoleWorker, Page: 1, PageSize: 10,
+	workers, workerTotal, err := registry.ListModuleRuntimeInstances(models.ModuleRuntimeInstanceFilter{
+		ModuleName: "manager", Role: models.ModuleRuntimeRoleWorker, Page: 1, PageSize: 10,
 	})
 	if err != nil || workerTotal != 2 || len(workers) != 2 {
 		t.Fatalf("worker history = %#v, total=%d, error=%v", workers, workerTotal, err)
 	}
-	if _, _, err := registry.ListModuleRuntimeInstances("manager", models.ModuleRuntimeInstanceFilter{
+	if _, _, err := registry.ListModuleRuntimeInstances(models.ModuleRuntimeInstanceFilter{
 		Role: "api", Page: 1, PageSize: 10,
 	}); !errors.Is(err, ErrInvalidModuleRuntimeInstanceQuery) {
 		t.Fatalf("invalid role error = %v", err)

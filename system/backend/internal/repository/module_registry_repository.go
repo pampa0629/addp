@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"net/url"
+	"strings"
 	"time"
 
 	commonapi "github.com/addp/common/api"
@@ -41,6 +43,18 @@ func marshalRegistryJSON(value interface{}) (datatypes.JSON, error) {
 	}
 	data, err := json.Marshal(value)
 	return datatypes.JSON(data), err
+}
+
+func registeredHost(moduleURL, healthCheckURL string) string {
+	address := moduleURL
+	if address == "" {
+		address = healthCheckURL
+	}
+	parsed, err := url.Parse(address)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return ""
+	}
+	return strings.ToLower(parsed.Hostname())
 }
 
 // Register 原子维护持久定义和当前进程实例；不覆盖管理员 enabled 状态。
@@ -131,7 +145,8 @@ func (r *ModuleRegistryRepository) Register(req *models.ModuleRegistrationReques
 		instance := models.ModuleRuntimeInstance{
 			ModuleDefinitionID: definition.ID, InstanceID: req.InstanceID, Role: req.Role,
 			ModuleURL: req.ModuleURL, HealthCheckURL: req.HealthCheckURL,
-			Status: models.ModuleRuntimeStatusUp, LastHeartbeat: now, LeaseExpiresAt: now.Add(leaseDuration),
+			RegisteredHost: registeredHost(req.ModuleURL, req.HealthCheckURL),
+			Status:         models.ModuleRuntimeStatusUp, LastHeartbeat: now, LeaseExpiresAt: now.Add(leaseDuration),
 			ProcessStartedAt: &req.ProcessStartedAt,
 			Metadata:         metadata, RegisteredAt: now,
 		}
@@ -139,7 +154,8 @@ func (r *ModuleRegistryRepository) Register(req *models.ModuleRegistrationReques
 			Columns: []clause.Column{{Name: "module_definition_id"}, {Name: "instance_id"}},
 			DoUpdates: clause.Assignments(map[string]interface{}{
 				"role": req.Role, "module_url": req.ModuleURL, "health_check_url": req.HealthCheckURL,
-				"status": models.ModuleRuntimeStatusUp, "last_heartbeat": now,
+				"registered_host": instance.RegisteredHost,
+				"status":          models.ModuleRuntimeStatusUp, "last_heartbeat": now,
 				"lease_expires_at": now.Add(leaseDuration), "metadata": metadata, "updated_at": now,
 				"process_started_at": req.ProcessStartedAt, "stopped_at": nil, "stop_reason": "",
 			}),
@@ -287,34 +303,42 @@ func (r *ModuleRegistryRepository) listCurrentRuntimeInstances(definitionIDs []u
 }
 
 func (r *ModuleRegistryRepository) ListModuleRuntimeInstances(
-	moduleName string,
 	filter models.ModuleRuntimeInstanceFilter,
 	now time.Time,
-) ([]models.ModuleRuntimeInstance, int64, error) {
-	var definition models.ModuleDefinition
-	if err := r.db.Select("id").Where("module_name = ?", moduleName).First(&definition).Error; err != nil {
-		return nil, 0, commonrepo.WrapDBError(err)
+) ([]models.ModuleRuntimeInstanceRow, int64, error) {
+	query := r.db.Table("module_runtime_instances").
+		Joins("JOIN module_definitions ON module_definitions.id = module_runtime_instances.module_definition_id")
+	if filter.ModuleName != "" {
+		query = query.Where("module_definitions.module_name = ?", filter.ModuleName)
 	}
-	query := r.db.Model(&models.ModuleRuntimeInstance{}).
-		Where("module_definition_id = ?", definition.ID)
+	if filter.RegisteredHost != "" {
+		query = query.Where("module_runtime_instances.registered_host = ?", filter.RegisteredHost)
+	}
 	if filter.Role != "" {
-		query = query.Where("role = ?", filter.Role)
+		query = query.Where("module_runtime_instances.role = ?", filter.Role)
 	}
 	switch filter.Status {
 	case models.ModuleRuntimeStatusUp:
-		query = query.Where("status = ? AND lease_expires_at > ?", models.ModuleRuntimeStatusUp, now)
+		query = query.Where("module_runtime_instances.status = ? AND module_runtime_instances.lease_expires_at > ?", models.ModuleRuntimeStatusUp, now)
 	case models.ModuleRuntimeStatusDown:
-		query = query.Where("status = ? OR lease_expires_at <= ?", models.ModuleRuntimeStatusDown, now)
+		query = query.Where("module_runtime_instances.status = ? OR module_runtime_instances.lease_expires_at <= ?", models.ModuleRuntimeStatusDown, now)
+	}
+	if !filter.RegisteredFrom.IsZero() {
+		query = query.Where("module_runtime_instances.registered_at >= ?", filter.RegisteredFrom)
+	}
+	if !filter.RegisteredTo.IsZero() {
+		query = query.Where("module_runtime_instances.registered_at < ?", filter.RegisteredTo)
 	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
-	var instances []models.ModuleRuntimeInstance
-	if err := query.Order("registered_at DESC, id DESC").
+	var instances []models.ModuleRuntimeInstanceRow
+	if err := query.Select("module_runtime_instances.*, module_definitions.module_name AS module_name").
+		Order("module_runtime_instances.registered_at DESC, module_runtime_instances.id DESC").
 		Offset((filter.Page - 1) * filter.PageSize).
 		Limit(filter.PageSize).
-		Find(&instances).Error; err != nil {
+		Scan(&instances).Error; err != nil {
 		return nil, 0, err
 	}
 	return instances, total, nil

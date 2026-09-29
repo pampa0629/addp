@@ -29,6 +29,7 @@
       "disabledSuccess": "模块已禁用",
       "enabledAria": "切换模块 {name} 的启用状态",
       "systemAlwaysEnabled": "始终启用",
+      "tabs": { "overview": "模块概览", "instances": "服务实例" },
       "columns": {
         "id": "记录 ID",
         "name": "模块名",
@@ -57,8 +58,8 @@
       },
       "stopReasons": { "graceful": "正常退出", "lease_expired": "租约超时，疑似异常退出" },
       "status": {
-        "up": "在线",
-        "down": "离线"
+        "up": "UP · 在线",
+        "down": "DOWN · 离线"
       },
       "roles": {
         "backend": "Backend",
@@ -75,27 +76,46 @@
       "instanceSummary": "{online} 在线 · {offline} 离线观测",
       "instances": {
         "title": "当前运行投影（{count}）",
-        "historyAction": "查看全部历史",
+        "queryAction": "查询该模块实例",
         "empty": "尚无运行实例登记",
         "id": "实例 ID",
         "role": "角色",
         "status": "状态",
+        "endpoint": "实例主机/IP:端口",
+        "noEndpoint": "无监听端点",
+        "more": "另有 {count} 个实例，展开查看",
         "url": "服务地址",
         "healthCheckUrl": "健康检查地址",
         "lastHeartbeat": "最近心跳",
         "leaseExpiresAt": "租约到期",
+        "offlineDeterminedAt": "下线判定时间",
+        "diagnostics": "诊断",
+        "leaseExpiredHint": "租约超时仅表示实例失联，不能据此断定进程已经退出。",
         "registeredAt": "注册时间",
         "processStartedAt": "进程启动时间",
         "stopReason": "下线原因",
-        "uptime": "本次运行时长",
-        "uptimeValue": "{days} 天 {hours} 小时"
+        "uptime": "持续运行时长",
+        "uptimeDays": "{days} 天 {hours} 小时 {minutes} 分钟",
+        "uptimeHours": "{hours} 小时 {minutes} 分钟",
+        "uptimeMinutes": "{minutes} 分钟 {seconds} 秒",
+        "uptimeSeconds": "{seconds} 秒"
       },
-      "history": {
-        "title": "{name} · 运行实例历史",
-        "roleFilter": "筛选角色",
-        "statusFilter": "筛选有效状态",
-        "empty": "没有符合条件的历史实例",
-        "loadFailed": "加载运行实例历史失败"
+      "query": {
+        "module": "服务名称",
+        "host": "登记主机名或 IP",
+        "role": "实例角色",
+        "status": "运行状态",
+        "registeredPeriod": "登记时间范围",
+        "allTime": "全部登记时间",
+        "custom": "自定义时间",
+        "from": "起始时间",
+        "to": "结束时间",
+        "search": "查询",
+        "reset": "重置",
+        "timeHint": "时间条件筛选实例登记时间，不代表该时段的历史在线状态；地址按登记端点主机名或 IP 精确匹配，无监听端点的实例不参与地址筛选。",
+        "empty": "没有符合条件的服务实例",
+        "loadFailed": "加载服务实例失败",
+        "periods": { "m15": "近 15 分钟", "m30": "近 30 分钟", "h1": "近 1 小时", "h6": "近 6 小时", "h12": "近 12 小时", "h24": "近 24 小时", "d7": "近 7 天" }
       }
     },
     "iam": {

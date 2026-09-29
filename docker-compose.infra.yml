@@ -27,7 +27,7 @@ services:
       - -c
       - maintenance_work_mem=128MB
       - -c
-      - max_connections=100
+      - max_connections=200
       - -c
       - timezone=Asia/Shanghai
     environment:

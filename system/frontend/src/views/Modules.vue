@@ -9,7 +9,7 @@
             <h2>{{ t('system.module.title') }}</h2>
             <p>{{ t('system.module.description') }}</p>
           </div>
-          <el-button :icon="Refresh" :loading="loading" @click="refreshNow">
+          <el-button v-if="activeTab === 'overview'" :icon="Refresh" :loading="loading" @click="refreshNow">
             {{ t('system.module.refresh') }}
           </el-button>
         </div>
@@ -39,251 +39,172 @@
         :closable="false"
       />
 
-      <div class="summary-grid">
-        <div class="summary-item">
-          <span class="summary-value">{{ modules.length }}</span>
-          <span class="summary-label">{{ t('system.module.summary.definitions') }}</span>
-        </div>
-        <div class="summary-item">
-          <span class="summary-value">{{ routableModuleCount }}</span>
-          <span class="summary-label">{{ t('system.module.summary.routable') }}</span>
-        </div>
-        <div class="summary-item">
-          <span class="summary-value">{{ onlineInstanceCount }}</span>
-          <span class="summary-label">{{ t('system.module.summary.onlineInstances') }}</span>
-        </div>
-        <div class="summary-item">
-          <span class="summary-value">{{ onlineWorkerInstanceCount }}</span>
-          <span class="summary-label">{{ t('system.module.summary.workers') }}</span>
-        </div>
-        <div class="summary-item">
-          <span class="summary-value">{{ attentionCount }}</span>
-          <span class="summary-label">{{ t('system.module.summary.attention') }}</span>
-        </div>
-      </div>
-
-      <div class="module-toolbar">
-        <el-radio-group v-model="attentionOnly" size="small">
-          <el-radio-button :value="false">{{ t('system.module.filters.all') }}</el-radio-button>
-          <el-radio-button :value="true">{{ t('system.module.filters.attention') }}</el-radio-button>
-        </el-radio-group>
-      </div>
-
-      <el-table v-loading="loading" :data="visibleModules" row-key="id" stripe>
-        <el-table-column type="expand">
-          <template #default="{ row }">
-            <div class="instance-panel">
-              <div class="definition-observation">
-                <span class="definition-observation-label">{{ t('system.module.declarations.title') }}</span>
-                <el-tag v-if="configurationEntryCount(row) > 0" size="small" effect="plain">
-                  {{ t('system.module.declarations.configuration', { count: configurationEntryCount(row) }) }}
-                </el-tag>
-                <el-tag v-if="row.task_provider" size="small" type="success" effect="plain">
-                  {{ t('system.module.declarations.taskProvider') }}
-                </el-tag>
-                <span v-if="configurationEntryCount(row) === 0 && !row.task_provider" class="definition-observation-empty">
-                  {{ t('system.module.declarations.empty') }}
-                </span>
-              </div>
-              <div class="instance-panel-heading">
-                <div class="instance-panel-title">
-                  {{ t('system.module.instances.title', { count: row.instances.length }) }}
-                </div>
-                <el-button type="primary" link @click.stop="openInstanceHistory(row)">
-                  {{ t('system.module.instances.historyAction') }}
-                </el-button>
-              </div>
-              <el-empty
-                v-if="row.instances.length === 0"
-                :description="t('system.module.instances.empty')"
-                :image-size="72"
-              />
-              <el-table v-else :data="row.instances" size="small" border>
-                <el-table-column prop="instance_id" :label="t('system.module.instances.id')" min-width="190" show-overflow-tooltip />
-                <el-table-column :label="t('system.module.instances.role')" width="120">
-                  <template #default="{ row: instance }">
-                    <el-tag size="small" effect="plain" :type="roleTagType(instance.role)">
-                      {{ roleLabel(instance.role) }}
-                    </el-tag>
-                  </template>
-                </el-table-column>
-                <el-table-column :label="t('system.module.instances.status')" width="110">
-                  <template #default="{ row: instance }">
-                    <span class="status-cell">
-                      <span class="status-dot" :class="isInstanceOnline(instance) ? 'is-online' : 'is-offline'"></span>
-                      {{ isInstanceOnline(instance) ? t('system.module.status.up') : t('system.module.status.down') }}
-                    </span>
-                  </template>
-                </el-table-column>
-                <el-table-column :label="t('system.module.instances.stopReason')" width="145">
-                  <template #default="{ row: instance }">{{ stopReasonLabel(instance) }}</template>
-                </el-table-column>
-                <el-table-column prop="module_url" :label="t('system.module.instances.url')" min-width="210" show-overflow-tooltip>
-                  <template #default="{ row: instance }">{{ instance.module_url || '—' }}</template>
-                </el-table-column>
-                <el-table-column prop="health_check_url" :label="t('system.module.instances.healthCheckUrl')" min-width="210" show-overflow-tooltip>
-                  <template #default="{ row: instance }">{{ instance.health_check_url || '—' }}</template>
-                </el-table-column>
-                <el-table-column :label="t('system.module.instances.lastHeartbeat')" width="180">
-                  <template #default="{ row: instance }">{{ formatDate(instance.last_heartbeat) }}</template>
-                </el-table-column>
-                <el-table-column :label="t('system.module.instances.leaseExpiresAt')" width="180">
-                  <template #default="{ row: instance }">{{ formatDate(instance.lease_expires_at) }}</template>
-                </el-table-column>
-                <el-table-column :label="t('system.module.instances.registeredAt')" width="180">
-                  <template #default="{ row: instance }">{{ formatDate(instance.registered_at) }}</template>
-                </el-table-column>
-                <el-table-column :label="t('system.module.instances.processStartedAt')" width="180">
-                  <template #default="{ row: instance }">{{ formatDate(instance.process_started_at) }}</template>
-                </el-table-column>
-                <el-table-column :label="t('system.module.instances.uptime')" width="150">
-                  <template #default="{ row: instance }">{{ formatUptime(instance) }}</template>
-                </el-table-column>
-              </el-table>
+      <el-tabs v-model="activeTab" class="module-tabs">
+        <el-tab-pane :label="t('system.module.tabs.overview')" name="overview">
+          <div class="summary-grid">
+            <div class="summary-item">
+              <span class="summary-value">{{ modules.length }}</span>
+              <span class="summary-label">{{ t('system.module.summary.definitions') }}</span>
             </div>
-          </template>
-        </el-table-column>
-        <el-table-column prop="id" :label="t('system.module.columns.id')" width="72" />
-        <el-table-column :label="t('system.module.columns.name')" min-width="190">
-          <template #default="{ row }">
-            <div class="module-name">{{ resolveIAMModuleName(row.module_name, t, te) }}</div>
-            <span class="module-technical-name">{{ row.module_name }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column :label="t('system.module.columns.routePrefix')" min-width="150" show-overflow-tooltip>
-          <template #default="{ row }">{{ row.route_prefix || '—' }}</template>
-        </el-table-column>
-        <el-table-column :label="t('system.module.columns.availability')" width="130">
-          <template #default="{ row }">
-            <el-tag :type="availabilityTagType(row)">
-              {{ availabilityLabel(row) }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column :label="t('system.module.columns.instances')" width="160">
-          <template #default="{ row }">
-            {{ instanceSummary(row) }}
-          </template>
-        </el-table-column>
-        <el-table-column :label="t('system.module.columns.enabled')" width="130" align="center">
-          <template #default="{ row }">
-            <el-tag v-if="row.module_name === 'system' || row.module_name === 'gateway'" type="info" :title="t('system.module.systemAlwaysEnabled')">
-              {{ t('system.module.systemAlwaysEnabled') }}
-            </el-tag>
-            <el-switch
-              v-else
-              :model-value="row.enabled"
-              :loading="isUpdating(row.module_name)"
-              :disabled="!canUpdate || isUpdating(row.module_name)"
-              :aria-label="t('system.module.enabledAria', { name: row.module_name })"
-              @change="value => updateEnabled(row, value)"
-            />
-          </template>
-        </el-table-column>
-        <el-table-column prop="version" :label="t('system.module.columns.version')" width="90" align="center" />
-        <el-table-column :label="t('system.module.columns.updatedAt')" width="180">
-          <template #default="{ row }">{{ formatDate(row.updated_at) }}</template>
-        </el-table-column>
-      </el-table>
+            <div class="summary-item">
+              <span class="summary-value">{{ routableModuleCount }}</span>
+              <span class="summary-label">{{ t('system.module.summary.routable') }}</span>
+            </div>
+            <div class="summary-item">
+              <span class="summary-value">{{ onlineInstanceCount }}</span>
+              <span class="summary-label">{{ t('system.module.summary.onlineInstances') }}</span>
+            </div>
+            <div class="summary-item">
+              <span class="summary-value">{{ onlineWorkerInstanceCount }}</span>
+              <span class="summary-label">{{ t('system.module.summary.workers') }}</span>
+            </div>
+            <div class="summary-item">
+              <span class="summary-value">{{ attentionCount }}</span>
+              <span class="summary-label">{{ t('system.module.summary.attention') }}</span>
+            </div>
+          </div>
+
+          <div class="module-toolbar">
+            <el-radio-group v-model="attentionOnly" size="small">
+              <el-radio-button :value="false">{{ t('system.module.filters.all') }}</el-radio-button>
+              <el-radio-button :value="true">{{ t('system.module.filters.attention') }}</el-radio-button>
+            </el-radio-group>
+          </div>
+
+          <el-table v-loading="loading" :data="visibleModules" row-key="id" stripe>
+            <el-table-column type="expand">
+              <template #default="{ row }">
+                <div class="instance-panel">
+                  <div class="definition-observation">
+                    <span class="definition-observation-label">{{ t('system.module.declarations.title') }}</span>
+                    <el-tag v-if="configurationEntryCount(row) > 0" size="small" effect="plain">
+                      {{ t('system.module.declarations.configuration', { count: configurationEntryCount(row) }) }}
+                    </el-tag>
+                    <el-tag v-if="row.task_provider" size="small" type="success" effect="plain">
+                      {{ t('system.module.declarations.taskProvider') }}
+                    </el-tag>
+                    <span v-if="configurationEntryCount(row) === 0 && !row.task_provider" class="definition-observation-empty">
+                      {{ t('system.module.declarations.empty') }}
+                    </span>
+                  </div>
+                  <div class="instance-panel-heading">
+                    <div class="instance-panel-title">
+                      {{ t('system.module.instances.title', { count: row.instances.length }) }}
+                    </div>
+                    <el-button type="primary" link @click.stop="openInstanceHistory(row)">
+                      {{ t('system.module.instances.queryAction') }}
+                    </el-button>
+                  </div>
+                  <el-empty
+                    v-if="row.instances.length === 0"
+                    :description="t('system.module.instances.empty')"
+                    :image-size="72"
+                  />
+                  <el-table v-else :data="row.instances" size="small" border>
+                    <el-table-column prop="instance_id" :label="t('system.module.instances.id')" min-width="190" show-overflow-tooltip />
+                    <el-table-column :label="t('system.module.instances.role')" width="120">
+                      <template #default="{ row: instance }">
+                        <el-tag size="small" effect="plain" :type="roleTagType(instance.role)">
+                          {{ roleLabel(instance.role) }}
+                        </el-tag>
+                      </template>
+                    </el-table-column>
+                    <el-table-column :label="t('system.module.instances.status')" width="110">
+                      <template #default="{ row: instance }">
+                        <el-tag size="small" :type="instanceStatusTagType(instance)">{{ instanceStatusLabel(instance) }}</el-tag>
+                      </template>
+                    </el-table-column>
+                    <el-table-column :label="t('system.module.instances.stopReason')" width="145">
+                      <template #default="{ row: instance }">{{ stopReasonLabel(instance) }}</template>
+                    </el-table-column>
+                    <el-table-column :label="t('system.module.instances.endpoint')" min-width="180" show-overflow-tooltip>
+                      <template #default="{ row: instance }">{{ endpointLabel(instance) }}</template>
+                    </el-table-column>
+                    <el-table-column prop="module_url" :label="t('system.module.instances.url')" min-width="210" show-overflow-tooltip>
+                      <template #default="{ row: instance }">{{ instance.module_url || '—' }}</template>
+                    </el-table-column>
+                    <el-table-column prop="health_check_url" :label="t('system.module.instances.healthCheckUrl')" min-width="210" show-overflow-tooltip>
+                      <template #default="{ row: instance }">{{ instance.health_check_url || '—' }}</template>
+                    </el-table-column>
+                    <el-table-column :label="t('system.module.instances.lastHeartbeat')" width="180">
+                      <template #default="{ row: instance }">{{ formatDate(instance.last_heartbeat) }}</template>
+                    </el-table-column>
+                    <el-table-column :label="t('system.module.instances.leaseExpiresAt')" width="180">
+                      <template #default="{ row: instance }">{{ formatDate(instance.lease_expires_at) }}</template>
+                    </el-table-column>
+                    <el-table-column :label="t('system.module.instances.registeredAt')" width="180">
+                      <template #default="{ row: instance }">{{ formatDate(instance.registered_at) }}</template>
+                    </el-table-column>
+                    <el-table-column :label="t('system.module.instances.processStartedAt')" width="180">
+                      <template #default="{ row: instance }">{{ formatDate(instance.process_started_at) }}</template>
+                    </el-table-column>
+                    <el-table-column :label="t('system.module.instances.uptime')" width="150">
+                      <template #default="{ row: instance }">{{ formatUptime(instance) }}</template>
+                    </el-table-column>
+                  </el-table>
+                </div>
+              </template>
+            </el-table-column>
+            <el-table-column prop="id" :label="t('system.module.columns.id')" width="72" />
+            <el-table-column :label="t('system.module.columns.name')" min-width="190">
+              <template #default="{ row }">
+                <div class="module-name">{{ resolveIAMModuleName(row.module_name, t, te) }}</div>
+                <span class="module-technical-name">{{ row.module_name }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column :label="t('system.module.columns.routePrefix')" min-width="150" show-overflow-tooltip>
+              <template #default="{ row }">{{ row.route_prefix || '—' }}</template>
+            </el-table-column>
+            <el-table-column :label="t('system.module.columns.availability')" width="130">
+              <template #default="{ row }">
+                <el-tag :type="availabilityTagType(row)">
+                  {{ availabilityLabel(row) }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column :label="t('system.module.columns.instances')" min-width="360">
+              <template #default="{ row }">
+                <div class="instance-summary">{{ instanceSummary(row) }}</div>
+                <div v-for="instance in previewInstances(row)" :key="instance.instance_id" class="instance-observation">
+                  <el-tag size="small" :type="instanceStatusTagType(instance)">{{ instanceStatusLabel(instance) }}</el-tag>
+                  <span class="instance-observation-endpoint" :title="instance.module_url || instance.health_check_url || ''">
+                    {{ roleLabel(instance.role) }} · {{ endpointLabel(instance) }}
+                  </span>
+                  <span class="instance-observation-uptime">{{ formatUptime(instance) }}</span>
+                </div>
+                <span v-if="(row.instances || []).length > 2" class="instance-observation-more">
+                  {{ t('system.module.instances.more', { count: row.instances.length - 2 }) }}
+                </span>
+              </template>
+            </el-table-column>
+            <el-table-column :label="t('system.module.columns.enabled')" width="130" align="center">
+              <template #default="{ row }">
+                <el-tag v-if="row.module_name === 'system' || row.module_name === 'gateway'" type="info" :title="t('system.module.systemAlwaysEnabled')">
+                  {{ t('system.module.systemAlwaysEnabled') }}
+                </el-tag>
+                <el-switch
+                  v-else
+                  :model-value="row.enabled"
+                  :loading="isUpdating(row.module_name)"
+                  :disabled="!canUpdate || isUpdating(row.module_name)"
+                  :aria-label="t('system.module.enabledAria', { name: row.module_name })"
+                  @change="value => updateEnabled(row, value)"
+                />
+              </template>
+            </el-table-column>
+            <el-table-column prop="version" :label="t('system.module.columns.version')" width="90" align="center" />
+            <el-table-column :label="t('system.module.columns.updatedAt')" width="180">
+              <template #default="{ row }">{{ formatDate(row.updated_at) }}</template>
+            </el-table-column>
+          </el-table>
+        </el-tab-pane>
+        <el-tab-pane :label="t('system.module.tabs.instances')" name="instances">
+          <ModuleInstances v-if="activeTab === 'instances'" :modules="modules" :initial-module-name="selectedModuleName"
+            @clear-selection="selectedModuleName = ''" />
+        </el-tab-pane>
+      </el-tabs>
     </el-card>
 
-    <el-dialog
-      v-model="historyVisible"
-      class="instance-history-dialog"
-      :title="t('system.module.history.title', { name: historyModuleName })"
-      width="min(1180px, 94vw)"
-      destroy-on-close
-      @closed="closeInstanceHistory"
-    >
-      <div class="history-toolbar">
-        <el-select
-          v-model="historyRole"
-          :placeholder="t('system.module.history.roleFilter')"
-          clearable
-          @change="applyHistoryFilters"
-        >
-          <el-option
-            v-for="role in historyRoles"
-            :key="role"
-            :label="roleLabel(role)"
-            :value="role"
-          />
-        </el-select>
-        <el-select
-          v-model="historyStatus"
-          :placeholder="t('system.module.history.statusFilter')"
-          clearable
-          @change="applyHistoryFilters"
-        >
-          <el-option :label="t('system.module.status.up')" value="up" />
-          <el-option :label="t('system.module.status.down')" value="down" />
-        </el-select>
-      </div>
-
-      <el-alert
-        v-if="historyError"
-        class="history-alert"
-        type="error"
-        :title="historyError"
-        show-icon
-        :closable="false"
-      />
-
-      <el-table v-loading="historyLoading" :data="historyRows" border stripe>
-        <el-table-column prop="id" :label="t('system.module.columns.id')" width="76" />
-        <el-table-column prop="instance_id" :label="t('system.module.instances.id')" min-width="190" show-overflow-tooltip />
-        <el-table-column :label="t('system.module.instances.role')" width="120">
-          <template #default="{ row: instance }">
-            <el-tag size="small" effect="plain" :type="roleTagType(instance.role)">
-              {{ roleLabel(instance.role) }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column :label="t('system.module.instances.status')" width="110">
-          <template #default="{ row: instance }">
-            <span class="status-cell">
-              <span class="status-dot" :class="isInstanceOnline(instance) ? 'is-online' : 'is-offline'"></span>
-              {{ isInstanceOnline(instance) ? t('system.module.status.up') : t('system.module.status.down') }}
-            </span>
-          </template>
-        </el-table-column>
-        <el-table-column :label="t('system.module.instances.stopReason')" width="145">
-          <template #default="{ row: instance }">{{ stopReasonLabel(instance) }}</template>
-        </el-table-column>
-        <el-table-column prop="module_url" :label="t('system.module.instances.url')" min-width="210" show-overflow-tooltip>
-          <template #default="{ row: instance }">{{ instance.module_url || '—' }}</template>
-        </el-table-column>
-        <el-table-column :label="t('system.module.instances.lastHeartbeat')" width="180">
-          <template #default="{ row: instance }">{{ formatDate(instance.last_heartbeat) }}</template>
-        </el-table-column>
-        <el-table-column :label="t('system.module.instances.leaseExpiresAt')" width="180">
-          <template #default="{ row: instance }">{{ formatDate(instance.lease_expires_at) }}</template>
-        </el-table-column>
-        <el-table-column :label="t('system.module.instances.registeredAt')" width="180">
-          <template #default="{ row: instance }">{{ formatDate(instance.registered_at) }}</template>
-        </el-table-column>
-        <el-table-column :label="t('system.module.instances.processStartedAt')" width="180">
-          <template #default="{ row: instance }">{{ formatDate(instance.process_started_at) }}</template>
-        </el-table-column>
-        <el-table-column :label="t('system.module.instances.uptime')" width="150">
-          <template #default="{ row: instance }">{{ formatUptime(instance) }}</template>
-        </el-table-column>
-        <template #empty>
-          <el-empty :description="t('system.module.history.empty')" :image-size="72" />
-        </template>
-      </el-table>
-
-      <el-pagination
-        class="history-pagination"
-        v-model:current-page="historyPage"
-        v-model:page-size="historyPageSize"
-        :page-sizes="[10, 20, 50, 100]"
-        :total="historyTotal"
-        layout="total, sizes, prev, pager, next"
-        @current-change="loadInstanceHistory"
-        @size-change="changeHistoryPageSize"
-      />
-    </el-dialog>
   </section>
 </template>
 
@@ -297,6 +218,8 @@ import { modulesAPI } from '../api/modules'
 import { useAuthStore } from '../store/auth'
 import { resolveIAMModuleName } from '../utils/iamPresentation'
 import { getModuleAvailability, isModuleRoutable, isRuntimeInstanceOnline, moduleNeedsAttention } from '../utils/moduleRegistry'
+import { formatRuntimeUptime, getRegisteredEndpoint } from '../utils/moduleRuntimePresentation'
+import ModuleInstances from '../components/ModuleInstances.vue'
 
 const { t, te } = useI18n()
 const authStore = useAuthStore()
@@ -308,20 +231,10 @@ const conflictMessage = ref('')
 const announcement = ref('')
 const refreshPaused = ref(false)
 const updatingModules = ref(new Set())
-const historyVisible = ref(false)
-const historyModuleName = ref('')
-const historyLoading = ref(false)
-const historyRows = ref([])
-const historyTotal = ref(0)
-const historyPage = ref(1)
-const historyPageSize = ref(10)
-const historyRole = ref('')
-const historyStatus = ref('')
-const historyError = ref('')
-const historyRoles = ['backend', 'worker', 'scheduler', 'ingress']
+const activeTab = ref('overview')
+const selectedModuleName = ref('')
 let refreshTimer = null
 let moduleListRequestInFlight = false
-let historyRequestGeneration = 0
 
 const canUpdate = computed(() => authStore.hasPermission('platform.module.update'))
 const allInstances = computed(() => modules.value.flatMap(module => module.instances || []))
@@ -342,12 +255,19 @@ function stopReasonLabel(instance) {
 }
 
 function formatUptime(instance) {
-  if (!instance.process_started_at) return '—'
-  const startedAt = new Date(instance.process_started_at).getTime()
-  const stoppedAt = isInstanceOnline(instance) ? Date.now() : instance.stopped_at ? new Date(instance.stopped_at).getTime() : NaN
-  if (!Number.isFinite(startedAt) || !Number.isFinite(stoppedAt) || stoppedAt < startedAt) return '—'
-  const hours = Math.floor((stoppedAt - startedAt) / 3600000)
-  return t('system.module.instances.uptimeValue', { days: Math.floor(hours / 24), hours: hours % 24 })
+  return formatRuntimeUptime(instance, t)
+}
+
+function endpointLabel(instance) {
+  return getRegisteredEndpoint(instance) || t('system.module.instances.noEndpoint')
+}
+
+function instanceStatusLabel(instance) {
+  return t(`system.module.status.${isInstanceOnline(instance) ? 'up' : 'down'}`)
+}
+
+function instanceStatusTagType(instance) {
+  return isInstanceOnline(instance) ? 'success' : 'danger'
 }
 
 function isInstanceOnline(instance) {
@@ -395,6 +315,12 @@ function instanceSummary(module) {
   return t('system.module.instanceSummary', { online, offline: instances.length - online })
 }
 
+function previewInstances(module) {
+  return [...(module.instances || [])]
+    .sort((left, right) => Number(isInstanceOnline(left)) - Number(isInstanceOnline(right)))
+    .slice(0, 2)
+}
+
 function formatDate(value) {
   if (!value) return '—'
   const date = new Date(value)
@@ -438,58 +364,9 @@ async function refreshNow() {
   await loadModules({ announce: true, force: true })
 }
 
-async function openInstanceHistory(module) {
-  historyModuleName.value = module.module_name
-  historyPage.value = 1
-  historyPageSize.value = 10
-  historyRole.value = ''
-  historyStatus.value = ''
-  historyRows.value = []
-  historyTotal.value = 0
-  historyError.value = ''
-  historyVisible.value = true
-  await loadInstanceHistory()
-}
-
-function closeInstanceHistory() {
-  historyRequestGeneration += 1
-  historyModuleName.value = ''
-  historyRows.value = []
-  historyTotal.value = 0
-  historyError.value = ''
-}
-
-async function loadInstanceHistory() {
-  if (!historyModuleName.value) return
-  const generation = ++historyRequestGeneration
-  historyLoading.value = true
-  historyError.value = ''
-  try {
-    const response = await modulesAPI.listInstances(historyModuleName.value, {
-      page: historyPage.value,
-      page_size: historyPageSize.value,
-      ...(historyRole.value ? { role: historyRole.value } : {}),
-      ...(historyStatus.value ? { status: historyStatus.value } : {})
-    })
-    if (generation !== historyRequestGeneration) return
-    historyRows.value = response.data || []
-    historyTotal.value = response.total || 0
-  } catch (error) {
-    if (generation !== historyRequestGeneration) return
-    historyError.value = error.response?.data?.error || error.message || t('system.module.history.loadFailed')
-  } finally {
-    if (generation === historyRequestGeneration) historyLoading.value = false
-  }
-}
-
-async function applyHistoryFilters() {
-  historyPage.value = 1
-  await loadInstanceHistory()
-}
-
-async function changeHistoryPageSize() {
-  historyPage.value = 1
-  await loadInstanceHistory()
+function openInstanceHistory(module) {
+  selectedModuleName.value = module.module_name
+  activeTab.value = 'instances'
 }
 
 async function updateEnabled(module, enabled) {
@@ -623,44 +500,11 @@ onUnmounted(() => {
   margin-bottom: 10px;
 }
 
-.history-toolbar {
-  display: flex;
-  gap: 12px;
-  margin-bottom: 14px;
-}
-
-.history-toolbar .el-select {
-  width: 190px;
-}
-
-.history-alert {
-  margin-bottom: 14px;
-}
-
-.history-pagination {
-  justify-content: flex-end;
-  margin-top: 16px;
-}
-
-.status-cell {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-}
-
-.status-dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-}
-
-.status-dot.is-online {
-  background: var(--el-color-success);
-}
-
-.status-dot.is-offline {
-  background: var(--el-color-danger);
-}
+.instance-summary { color: var(--addp-text-secondary); font-size: 12px; }
+.instance-observation { display: flex; align-items: center; gap: 8px; margin-top: 5px; min-width: 0; }
+.instance-observation-endpoint { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.instance-observation-uptime { flex: none; color: var(--addp-text-secondary); font-size: 12px; }
+.instance-observation-more { display: block; margin-top: 5px; color: var(--addp-text-tertiary); font-size: 12px; }
 
 @media (max-width: 900px) {
   .summary-grid {

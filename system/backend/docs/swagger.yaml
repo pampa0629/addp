@@ -1455,6 +1455,44 @@ definitions:
         type: string
       registered_at:
         type: string
+      registered_host:
+        type: string
+      role:
+        type: string
+      status:
+        type: string
+      stop_reason:
+        type: string
+      stopped_at:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  github_com_addp_system_internal_models.ModuleRuntimeInstanceRecord:
+    properties:
+      health_check_url:
+        type: string
+      id:
+        type: integer
+      instance_id:
+        type: string
+      last_heartbeat:
+        type: string
+      lease_expires_at:
+        type: string
+      metadata:
+        additionalProperties: true
+        type: object
+      module_name:
+        type: string
+      module_url:
+        type: string
+      process_started_at:
+        type: string
+      registered_at:
+        type: string
+      registered_host:
+        type: string
       role:
         type: string
       status:
@@ -5940,6 +5978,92 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - iam.platform_identity_change.reject
+  /platform/module-instances:
+    get:
+      description: 按模块、登记主机、角色、当前有效状态和登记时间范围组合查询实例历史；时间范围不表示历史在线状态 | Search instance
+        history by module, registered host, role, current effective status, and registration
+        time range; the time range does not reconstruct past availability
+      parameters:
+      - description: 稳定模块名，精确匹配 | Stable module name, exact match
+        in: query
+        name: module_name
+        type: string
+      - description: 登记端点主机名或 IP，精确匹配 | Registered endpoint hostname or IP, exact
+          match
+        in: query
+        name: registered_host
+        type: string
+      - description: '角色过滤：backend、worker、scheduler、ingress | Role filter: backend,
+          worker, scheduler, ingress'
+        in: query
+        name: role
+        type: string
+      - description: '有效状态过滤：up、down | Effective status filter: up, down'
+        in: query
+        name: status
+        type: string
+      - description: 登记时间下界，RFC3339，含 | Registration time lower bound, RFC3339, inclusive
+        in: query
+        name: registered_from
+        type: string
+      - description: 登记时间上界，RFC3339，不含 | Registration time upper bound, RFC3339, exclusive
+        in: query
+        name: registered_to
+        type: string
+      - default: 1
+        description: 页码 | Page number
+        in: query
+        name: page
+        type: integer
+      - default: 10
+        description: 每页数量，最大 100 | Page size, maximum 100
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              data:
+                items:
+                  $ref: '#/definitions/github_com_addp_system_internal_models.ModuleRuntimeInstanceRecord'
+                type: array
+              page:
+                type: integer
+              page_size:
+                type: integer
+              total:
+                type: integer
+              total_pages:
+                type: integer
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 跨模块分页查询运行实例 | List runtime instances across modules
+      tags:
+      - 平台模块管理 | Platform Module Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - platform.module.read
   /platform/modules:
     get:
       description: 平台系统管理员读取持久模块定义及 Backend、Worker、Scheduler 当前租约投影 | A platform system
@@ -6071,85 +6195,6 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - platform.module.update
-  /platform/modules/{module_name}/instances:
-    get:
-      description: 平台系统管理员分页读取指定模块全部 Backend、Worker、Scheduler 实例历史；该集合只读，不提供健康状态写入
-        | A platform system administrator reads the complete Backend, Worker, and
-        Scheduler instance history of a module with pagination; this collection is
-        read-only and exposes no health-state writes
-      parameters:
-      - description: 模块名 | Module name
-        in: path
-        name: module_name
-        required: true
-        type: string
-      - description: '角色过滤：backend、worker、scheduler、ingress | Role filter: backend,
-          worker, scheduler, ingress'
-        in: query
-        name: role
-        type: string
-      - description: '有效状态过滤：up、down | Effective status filter: up, down'
-        in: query
-        name: status
-        type: string
-      - default: 1
-        description: 页码 | Page number
-        in: query
-        name: page
-        type: integer
-      - default: 10
-        description: 每页数量，最大 100 | Page size, maximum 100
-        in: query
-        name: page_size
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            properties:
-              data:
-                items:
-                  $ref: '#/definitions/github_com_addp_system_internal_models.ModuleRuntimeInstanceInfo'
-                type: array
-              page:
-                type: integer
-              page_size:
-                type: integer
-              total:
-                type: integer
-              total_pages:
-                type: integer
-            type: object
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
-        "403":
-          description: Forbidden
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
-      security:
-      - BearerAuth: []
-      summary: 分页查询模块运行实例历史 | List module runtime instance history
-      tags:
-      - 平台模块管理 | Platform Module Management
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - platform.module.read
   /platform/security_policy:
     get:
       produces:

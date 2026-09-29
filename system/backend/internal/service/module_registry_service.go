@@ -121,13 +121,14 @@ func (s *ModuleRegistryService) ListModules() ([]*models.ModuleInfo, error) {
 }
 
 func (s *ModuleRegistryService) ListModuleRuntimeInstances(
-	moduleName string,
 	filter models.ModuleRuntimeInstanceFilter,
-) ([]models.ModuleRuntimeInstanceInfo, int64, error) {
-	moduleName = strings.TrimSpace(moduleName)
+) ([]models.ModuleRuntimeInstanceRecord, int64, error) {
+	filter.ModuleName = strings.TrimSpace(filter.ModuleName)
+	filter.RegisteredHost = strings.ToLower(strings.TrimSpace(filter.RegisteredHost))
 	filter.Role = strings.ToLower(strings.TrimSpace(filter.Role))
 	filter.Status = strings.ToLower(strings.TrimSpace(filter.Status))
-	if moduleName == "" || filter.Page < 1 || filter.PageSize < 1 || filter.PageSize > 100 {
+	if filter.Page < 1 || filter.PageSize < 1 || filter.PageSize > 100 ||
+		(!filter.RegisteredFrom.IsZero() && !filter.RegisteredTo.IsZero() && !filter.RegisteredFrom.Before(filter.RegisteredTo)) {
 		return nil, 0, ErrInvalidModuleRuntimeInstanceQuery
 	}
 	switch filter.Role {
@@ -141,13 +142,16 @@ func (s *ModuleRegistryService) ListModuleRuntimeInstances(
 		return nil, 0, ErrInvalidModuleRuntimeInstanceQuery
 	}
 	now := time.Now()
-	instances, total, err := s.repo.ListModuleRuntimeInstances(moduleName, filter, now)
+	instances, total, err := s.repo.ListModuleRuntimeInstances(filter, now)
 	if err != nil {
 		return nil, 0, err
 	}
-	result := make([]models.ModuleRuntimeInstanceInfo, 0, len(instances))
+	result := make([]models.ModuleRuntimeInstanceRecord, 0, len(instances))
 	for index := range instances {
-		result = append(result, convertRuntimeInstanceInfo(&instances[index], now))
+		result = append(result, models.ModuleRuntimeInstanceRecord{
+			ModuleName:                instances[index].ModuleName,
+			ModuleRuntimeInstanceInfo: convertRuntimeInstanceInfo(&instances[index].ModuleRuntimeInstance, now),
+		})
 	}
 	return result, total, nil
 }
@@ -359,7 +363,7 @@ func convertRuntimeInstanceInfoWithStatus(instance *models.ModuleRuntimeInstance
 	}
 	return models.ModuleRuntimeInstanceInfo{
 		ID: instance.ID, InstanceID: instance.InstanceID, Role: instance.Role,
-		ModuleURL: instance.ModuleURL, HealthCheckURL: instance.HealthCheckURL,
+		ModuleURL: instance.ModuleURL, HealthCheckURL: instance.HealthCheckURL, RegisteredHost: instance.RegisteredHost,
 		Status: status, LastHeartbeat: instance.LastHeartbeat, LeaseExpiresAt: instance.LeaseExpiresAt,
 		ProcessStartedAt: instance.ProcessStartedAt, StoppedAt: instance.StoppedAt, StopReason: instance.StopReason,
 		Metadata: metadata, RegisteredAt: instance.RegisteredAt, UpdatedAt: instance.UpdatedAt,
