@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
-import { filterSidebarMenus, matchesNavigationAccess } from '../src/utils/navigationAccess'
+import { filterSidebarMenus, firstAccessibleModuleRoute, matchesNavigationAccess } from '../src/utils/navigationAccess'
 import { consoleRouteAccess } from '@common-ui'
+import zhCn from '../src/i18n/zh-cn.json'
+import en from '../src/i18n/en.json'
 
 const menus = {
   system: {
@@ -28,6 +30,11 @@ const menus = {
 }
 
 describe('Console navigation access filtering', () => {
+  it('labels the Catalog responsibility queue precisely in both languages', () => {
+    expect(zhCn.console.menus.catalog.tasks).toBe('责任治理队列')
+    expect(en.console.menus.catalog.tasks).toBe('Responsibility Governance Queue')
+  })
+
   it('requires every permission when an entry declares all mode', () => {
     const entry = { permissions: ['quality.plan.read', 'quality.issue.read', 'monitor.execution.read'], permissionMode: 'all' }
     for (const missing of entry.permissions) {
@@ -62,6 +69,25 @@ describe('Console navigation access filtering', () => {
       }
     }
     expect(filterSidebarMenus(restricted, 'platform', []).system.items).toEqual([])
+  })
+
+  it('chooses the same first visible page for module cards and module root addresses', async () => {
+    vi.stubGlobal('window', { location: { protocol: 'http:', hostname: 'localhost', origin: 'http://localhost' } })
+    try {
+      const { SIDEBAR_MENUS } = await import('../src/config/portalConfig.js')
+      for (const [module, permissions, expected] of [
+        ['transfer', ['transfer.task.create', 'meta.catalog.read'], '/transfer/tasks/create'],
+        ['monitor', ['monitor.execution.read'], '/monitor/executions'],
+        ['system', ['iam.tenant_role.read'], '/system/iam/roles'],
+        ['agent', ['agent.session.read'], '/agent'],
+        ['monitor', [], ''],
+      ]) {
+        const visible = filterSidebarMenus({ [module]: SIDEBAR_MENUS[module] }, 'tenant', permissions)[module]
+        expect(firstAccessibleModuleRoute(visible), module).toBe(expected)
+      }
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 
   it('keeps Console sidebars as unique page destinations without duplicate create actions', async () => {

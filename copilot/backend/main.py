@@ -17,9 +17,12 @@ from addp_common import (
     ready_response,
     terminate_process_on_registration_failure,
 )
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
+from starlette.exceptions import HTTPException
 
 from config import settings
 
@@ -97,6 +100,26 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan
 )
+
+
+class ErrorResponse(BaseModel):
+    error: str
+
+
+@app.exception_handler(HTTPException)
+async def http_error_response(_request: Request, error: HTTPException):
+    return JSONResponse(
+        status_code=error.status_code,
+        content={"error": error.detail},
+        headers=error.headers,
+    )
+
+
+_auth_error_responses = {
+    401: {"model": ErrorResponse, "description": "认证失效 | Authentication required"},
+    403: {"model": ErrorResponse, "description": "权限不足 | Permission denied"},
+}
+
 app.add_middleware(ModuleReadyMiddleware, readiness=_readiness)
 
 _API_PREFIX = "/api/v1/copilot"
@@ -114,17 +137,35 @@ app.add_middleware(
 from api import inference_scenario_binding_router, navigate_router, notebook_router, query_router, transfer_router, workflow_router  # noqa: E402
 from api.kg_extract_api import router as kg_extract_router  # noqa: E402
 from api.standard_document_extract_api import router as standard_document_extract_router  # noqa: E402
-app.include_router(workflow_router, prefix=_API_PREFIX, tags=["工作流智能体 | Workflow Agent"])
-app.include_router(query_router, prefix=_API_PREFIX, tags=["查询智能体 | Query Agent"])
-app.include_router(notebook_router, prefix=_API_PREFIX, tags=["Notebook 智能体 | Notebook Agent"])
-app.include_router(transfer_router, prefix=_API_PREFIX, tags=["Transfer 智能体 | Transfer Agent"])
-app.include_router(kg_extract_router, prefix=_API_PREFIX, tags=["图谱构建 | KG Build"])
-app.include_router(standard_document_extract_router, prefix=_API_PREFIX, tags=["数据标准 | Data Standard"])
-app.include_router(navigate_router, prefix=_API_PREFIX, tags=["导航引导 | Navigation Guide"])
+app.include_router(
+    workflow_router, prefix=_API_PREFIX, tags=["工作流智能体 | Workflow Agent"], responses=_auth_error_responses,
+)
+app.include_router(
+    query_router, prefix=_API_PREFIX, tags=["查询智能体 | Query Agent"], responses=_auth_error_responses,
+)
+app.include_router(
+    notebook_router, prefix=_API_PREFIX, tags=["Notebook 智能体 | Notebook Agent"], responses=_auth_error_responses,
+)
+app.include_router(
+    transfer_router, prefix=_API_PREFIX, tags=["Transfer 智能体 | Transfer Agent"], responses=_auth_error_responses,
+)
+app.include_router(
+    kg_extract_router, prefix=_API_PREFIX, tags=["图谱构建 | KG Build"], responses=_auth_error_responses,
+)
+app.include_router(
+    standard_document_extract_router,
+    prefix=_API_PREFIX,
+    tags=["数据标准 | Data Standard"],
+    responses=_auth_error_responses,
+)
+app.include_router(
+    navigate_router, prefix=_API_PREFIX, tags=["导航引导 | Navigation Guide"], responses=_auth_error_responses,
+)
 app.include_router(
     inference_scenario_binding_router,
     prefix=_API_PREFIX,
     tags=["配置管理 | Configuration Management"],
+    responses=_auth_error_responses,
 )
 
 

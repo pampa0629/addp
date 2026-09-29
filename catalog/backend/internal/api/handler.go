@@ -976,12 +976,12 @@ func (h *Handler) UpdateEntryGovernance(c *gin.Context) {
 }
 
 // BatchGovernanceEntries 原子批量分配主业务域或责任部门。
-// @Summary 批量治理企业目录条目 | Batch-govern enterprise catalog entries
-// @Description 对 1 到 200 个显式选择且分别携带 version 的 CatalogEntry 原子分配同一个主业务域或责任部门；按稳定顺序锁定全部条目，任一失败整批回滚；不接受筛选结果全选；Model 业务实体/逻辑模型和 Standard 指标的主业务域仍由专业模块维护 | Atomically assign one primary domain or accountable department to 1–200 explicitly selected CatalogEntries, each with its own version; all entries are locked in stable order and any failure rolls back the entire batch; filter-wide selection is not accepted; primary domains of Model business entities/logical models and Standard metrics remain owner-managed
+// @Summary 批量分配目录条目的主业务域或责任部门 | Batch-assign primary domains or accountable departments to catalog entries
+// @Description 对 1 到 200 个显式选择且分别携带 version 的 CatalogEntry 原子分配同一个主业务域或责任部门，不改变编目状态；按稳定顺序锁定全部条目，任一失败整批回滚；不接受筛选结果全选；Model 业务实体/逻辑模型和 Standard 指标的主业务域仍由专业模块维护 | Atomically assign one primary domain or accountable department to 1–200 explicitly selected CatalogEntries, each with its own version, without changing curation status; all entries are locked in stable order and any failure rolls back the entire batch; filter-wide selection is not accepted; primary domains of Model business entities/logical models and Standard metrics remain owner-managed
 // @Tags Catalog
 // @Accept json
 // @Produce json
-// @Param request body batchGovernanceRequest true "显式成员批量治理请求；跨模块 BIGINT ID 使用规范十进制字符串 | Explicit-member batch governance request; cross-module BIGINT IDs use canonical decimal strings"
+// @Param request body batchGovernanceRequest true "显式成员批量分配请求；跨模块 BIGINT ID 使用规范十进制字符串 | Explicit-member batch assignment request; cross-module BIGINT IDs use canonical decimal strings"
 // @Success 200 {object} service.BatchGovernanceResult "批次 ID 与按请求顺序返回的新版本 | Batch ID and new versions in request order"
 // @Failure 400 {object} map[string]interface{} "请求无效 | Invalid request"
 // @Failure 401 {object} map[string]interface{} "未认证 | Unauthorized"

@@ -169,7 +169,7 @@ Department 表达长期组织责任，Project Group 表达阶段性协作，User
 
 Catalog 提供三个权限感知视图：
 
-1. 治理目录：Catalog 的默认业务视图，查看允许发现的 `curated`、`certified` 和 `deprecated` 条目；即使调用者拥有盘点权限，也不因此默认混入 `discovered` 条目。
+1. 已编目资源：Catalog 的默认业务视图，查看允许发现的 `curated`、`certified` 和 `deprecated` 条目；即使调用者拥有盘点权限，也不因此默认混入 `discovered` 条目。“已编目”不表示均已认证或发布为资产。
 2. 资源盘点：只对同时具有 `catalog.entry.read` 和 `catalog.inventory.read` 的治理、技术人员开放，查看允许发现的 `discovered` 及以上条目；自动建档的 DataItem 全量可查，但只在该视图中默认进入结果集。
 3. 资产门户：消费者通过 Asset / Portal 的 AssetCategory 多级资产目录查看已发布资产，不直接浏览 Catalog 全量盘点。
 
@@ -180,6 +180,8 @@ Catalog 编目编辑器同样不要求用户识别稳定 ID。Domain、Glossary�
 资源盘点仍使用 Catalog 的分面与分页列表，不在 Catalog 重建 Engine—Node—DataItem 技术资源树；技术路径树继续归 Meta / Manager。
 
 治理覆盖率也是资源盘点的动态读模型：Catalog 直接聚合当前 CatalogEntry、语义关联、责任和组件已审核 StandardMapping，按适用对象计算分母，不保存第二份覆盖率投影。它回答“企业目录治理完成到什么程度”，不替代 Quality 数据质量评分，也不推断 owner 专业模型是否完整。
+
+覆盖率下钻得到的目录治理缺口只是当前事实的查询结果，不自动形成待办。当前责任治理队列只处理既有关联的部门或人员失效所派生的责任移交任务，不是全部待治理资源的清单。
 
 目录详情中的影响分析采用联邦组合：Meta 提供血缘，Model / Standard 提供专业关系，Catalog 提供推荐继任和来源绑定解析。前端始终使用当前 User Token 查询事实 owner；Catalog 只把 owner 节点的稳定来源身份解析到当前可见 CatalogEntry，便于继续目录导航。三类关系保留各自 owner、方向、类型和证据，不合并为无来源的通用边，也不在 Catalog 复制专业关系。
 

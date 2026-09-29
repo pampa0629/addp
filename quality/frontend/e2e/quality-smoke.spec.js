@@ -62,6 +62,16 @@ const execution = {
   },
 };
 
+test('partial access lands on plans and denies a direct rules URL before loading rules', async ({ page }) => {
+  const state = await installMockBackend(page, { permissions: ['quality.plan.read'] });
+  await page.goto('/');
+  await expect(page).toHaveURL(/\/plans$/);
+  await page.goto('/rules');
+  await expect(page).toHaveURL(/\/forbidden$/);
+  expect(state.listRequests.some(request => request.path === '/api/v1/quality/rules')).toBe(false);
+  expect(state.unexpected).toEqual([]);
+});
+
 test("single plan navigation and failed execution retain evidence", async ({
   page,
 }) => {
@@ -750,7 +760,7 @@ async function installMockBackend(page, options = {}) {
           role_assignments: [
             {
               scope: { type: "tenant", tenant_id: "1" },
-              permissions: [
+              permissions: options.permissions || [
                 ...["read", "create", "update", "delete", "execute"].map(
                   (a) => "quality.plan." + a,
                 ),

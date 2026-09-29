@@ -160,7 +160,7 @@ console.log(FormatType.SHAPEFILE) // "shapefile"
 
 ### 数据血缘组件
 
-`@addp/common-frontend/graph` 提供 `LineageViewer`、`createLineageApi` 和 `normalizeLineageGraph`，消费 Meta `GET /api/v1/meta/lineage/graph` 返回的 `{ nodes, edges }`，可在 Service、Manager、Asset 页面内嵌展示。请求函数由宿主注入，组件不处理 Token。`LineageViewer` 填满宿主容器，宿主须提供有界的 flex 高度；通过 `v-model:depth` 接收层数变化并重查 API，默认一层。共享组件负责交叉连线隔离、悬停/选中高亮和截断提示。
+`@addp/common-frontend/graph` 提供 `LineageViewer`、`createLineageApi` 和 `normalizeLineageGraph`，消费 Meta `GET /api/v1/meta/lineage/graph` 返回的 `{ nodes, edges }`，可在 Service、Manager、Asset 页面内嵌展示。请求函数由宿主注入，组件不处理 Token。`LineageViewer` 填满宿主容器，宿主须提供有界的 flex 高度；宿主通过 `v-model:depth` 接收层数变化，以同一层数重查 API。未传入层数时组件显示 2 层，宿主可显式指定初始层数。共享组件负责交叉连线隔离、悬停/选中高亮和截断提示。
 
 ### ResourceLocator 定位符系统
 
@@ -524,6 +524,7 @@ const sorted = sortTree(treeData, (a, b) => a.label.localeCompare(b.label))
 > 📚 **详细文档**: [AUTH_USAGE_GUIDE.md](./basic/composables/AUTH_USAGE_GUIDE.md)
 
 - **createAuthGuard(authStore, config)** - 创建标准化的 Vue Router 路由守卫
+- `createAuthGuard` 的 `homeRoute` 默认 `/`；公开路径带模块前缀的独立应用显式指定自身根路径，已认证用户访问登录页时返回该根路径。
 - **createAuthInterceptor(authStore, moduleName)** - 创建智能等待的 Axios 请求拦截器
 - **createAuthStoreConfig(storeName, authAPI, options)** - 生成标准化的 Pinia auth store 配置
 - **resolveLoginRedirect(value, fallbackRoute)** - 解析登录后的站内回跳，只保留当前 origin 的完整 `fullPath`，并对外部地址、协议相对地址和登录循环失败关闭

@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { createAuthGuard } from '@common-ui'
+import { resolveModuleLandingRoute } from '../../../../common-frontend/basic/src/authorization/consoleRouteAccess.js'
 import { useAuthStore } from '../store/auth'
 import Layout from '../components/Layout.vue'
 import Login from '../views/Login.vue'
@@ -14,9 +15,17 @@ const routes = [
   {
     path: '/',
     component: Layout,
-    redirect: '/entities',
     meta: { requiresAuth: true },
     children: [
+      {
+        path: '',
+        name: 'ModelHome',
+        beforeEnter: () => {
+          const authStore = useAuthStore()
+          return resolveModuleLandingRoute('/modeling', ['/entities', '/er-diagram', '/dw-layers', '/logical-tables', '/metric-implementations', '/star-schema'], authStore.contextType, authStore.permissions)
+        },
+        meta: { requiresAuth: true, handlesForbidden: true }
+      },
       { path: 'metric-implementations/:id?', name: 'MetricImplementationWorkspace', component: () => import('../views/MetricImplementationWorkspace.vue'), meta: { requiresAuth: true, title: '指标实现' } },
       {
         path: 'dw-layers',

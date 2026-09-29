@@ -1,6 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
+import { createMemoryHistory, createRouter } from 'vue-router'
+import { resolveModuleLandingRoute } from '../../../common-frontend/basic/src/authorization/consoleRouteAccess.js'
 import {
   assetDetailReturnTarget,
   resolveCategoryRouteState,
@@ -67,8 +69,33 @@ test('Portal exposes only the AssetCategory navigation contract', () => {
 
   assert.match(api, /\/portal\/categories/)
   assert.doesNotMatch(api, /\/portal\/catalogs/)
-  assert.match(router, /portal\/categories\/:id/)
+  assert.match(router, /path: '\/portal'/)
+  assert.match(router, /path: 'categories\/:id'/)
   assert.match(detail, /asset\.value\?\.category_id/)
+})
+
+test('Portal root selects the accessible consumer page', async () => {
+  const source = readSource('router/index.js')
+  const routeTable = source.slice(source.indexOf('const routes ='), source.indexOf('const router ='))
+  for (const [permissions, contextType, expected] of [
+    [['asset.entry.read'], 'tenant', '/portal/home'],
+    [['asset.application.read'], 'tenant', '/portal/my/applications'],
+    [['asset.entry.read', 'asset.application.read'], 'tenant', '/portal/home'],
+    [[], 'tenant', '/forbidden'],
+    [['asset.application.read'], 'platform', '/forbidden']
+  ]) {
+    const authStore = { contextType, permissions }
+    const routes = new Function('Layout', 'Login', 'useAuthStore', 'resolveModuleLandingRoute', `${routeTable}; return routes`)(
+      {}, {}, () => authStore, resolveModuleLandingRoute
+    )
+    for (const child of routes[1].children) {
+      if (child.component) child.component = {}
+    }
+    routes.push({ path: '/forbidden', component: {} })
+    const router = createRouter({ history: createMemoryHistory(), routes })
+    await router.push('/portal/')
+    assert.equal(router.currentRoute.value.path, expected)
+  }
 })
 
 test('Portal presents AssetCategory navigation as the Asset Directory', () => {

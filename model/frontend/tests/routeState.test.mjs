@@ -1,5 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { createMemoryHistory, createRouter } from 'vue-router'
+import { resolveModuleLandingRoute } from '../../../common-frontend/basic/src/authorization/consoleRouteAccess.js'
 import {
   buildTableRelationRoute,
   resolveLogicalTableDetailRouteState,
@@ -14,6 +17,41 @@ import {
   buildMetricImplementationListRouteQuery,
   resolveMetricImplementationListRouteState
 } from '../src/utils/routeState.js'
+
+const routerSource = readFileSync(new URL('../src/router/index.js', import.meta.url), 'utf8')
+const routeTable = routerSource.slice(routerSource.indexOf('const routes ='), routerSource.indexOf('const router ='))
+
+function createModelRouter(permissions, contextType = 'tenant') {
+  const authStore = { contextType, permissions }
+  const routes = new Function('Layout', 'Login', 'useAuthStore', 'resolveModuleLandingRoute', `${routeTable}; return routes`)(
+    {}, {}, () => authStore, resolveModuleLandingRoute
+  )
+  for (const child of routes[1].children) {
+    if (child.component) child.component = {}
+  }
+  routes.push({ path: '/forbidden', component: {} })
+  return createRouter({ history: createMemoryHistory(), routes })
+}
+
+test('Model standalone root selects an accessible Console page', async () => {
+  for (const [permissions, contextType, expected] of [
+    [['model.entity.read', 'standard.domain.read'], 'tenant', '/entities'],
+    [['model.dw_layer.read'], 'tenant', '/dw-layers'],
+    [['model.logical_model.read', 'model.dw_layer.read', 'standard.domain.read'], 'tenant', '/dw-layers'],
+    [['model.entity.read'], 'tenant', '/forbidden'],
+    [['model.metric_implementation.read'], 'tenant', '/forbidden'],
+    [[], 'tenant', '/forbidden'],
+    [['model.dw_layer.read'], 'platform', '/forbidden']
+  ]) {
+    const router = createModelRouter(permissions, contextType)
+    await router.push('/')
+    assert.equal(router.currentRoute.value.path, expected)
+  }
+
+  const direct = createModelRouter(['model.dw_layer.read'])
+  await direct.push('/dw-layers?category=dwd')
+  assert.equal(direct.currentRoute.value.fullPath, '/dw-layers?category=dwd')
+})
 
 test('entity detail return state preserves business-domain filter', () => {
   const state = resolveEntityListRouteState({ domain_id: '2', page: '3', tab: 'attributes' })

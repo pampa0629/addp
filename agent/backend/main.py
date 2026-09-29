@@ -1,9 +1,11 @@
 import asyncio
 import logging
 import uvicorn
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer
+from starlette.exceptions import HTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
 from utils.logging_setup import setup_logging
 from config import settings
@@ -12,6 +14,7 @@ from middleware.auth import auth_middleware
 from api.sessions import router as sessions_router
 from api.chat import router as chat_router
 from api.runs import router as runs_router
+from api.runs import ErrorResponse
 from api.inference_scenario_bindings import router as inference_scenario_bindings_router
 from utils.llm import AgentInferenceService
 from addp_common.client import (
@@ -45,6 +48,21 @@ app = FastAPI(
     version="1.0.0",
 )
 
+
+@app.exception_handler(HTTPException)
+async def http_error_response(_request: Request, error: HTTPException):
+    return JSONResponse(
+        status_code=error.status_code,
+        content={"error": error.detail},
+        headers=error.headers,
+    )
+
+
+_auth_error_responses = {
+    401: {"model": ErrorResponse, "description": "认证失效 | Authentication required"},
+    403: {"model": ErrorResponse, "description": "权限不足 | Permission denied"},
+}
+
 # CORS 配置
 app.add_middleware(
     CORSMiddleware,
@@ -62,21 +80,25 @@ app.include_router(
     sessions_router,
     prefix=_API_PREFIX,
     dependencies=[Depends(_bearer_auth)],
+    responses=_auth_error_responses,
 )
 app.include_router(
     chat_router,
     prefix=_API_PREFIX,
     dependencies=[Depends(_bearer_auth)],
+    responses=_auth_error_responses,
 )
 app.include_router(
     runs_router,
     prefix=_API_PREFIX,
     dependencies=[Depends(_bearer_auth)],
+    responses=_auth_error_responses,
 )
 app.include_router(
     inference_scenario_bindings_router,
     prefix=_API_PREFIX,
     dependencies=[Depends(_bearer_auth)],
+    responses=_auth_error_responses,
 )
 
 

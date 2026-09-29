@@ -12,7 +12,7 @@
     </div>
 
     <el-table v-loading="loading" :data="rows" stripe>
-      <el-table-column :label="t('system.iam.common.name')" min-width="220"><template #default="{ row }"><div class="iam-primary-cell"><strong>{{ row.name }}</strong><el-tooltip :content="row.code"><el-button link :icon="CopyDocument" :aria-label="t('system.iam.organization.copyCode')" @click="copyCode(row.code)" /></el-tooltip></div></template></el-table-column>
+      <el-table-column :label="t('system.iam.common.name')" min-width="220"><template #default="{ row }"><div class="iam-primary-cell"><strong>{{ row.name }}</strong><div class="iam-code-line"><span>{{ row.code }}</span><el-tooltip :content="t('system.iam.organization.copyCode')"><el-button link type="primary" :icon="CopyDocument" :aria-label="t('system.iam.organization.copyCode')" @click="copyCode(row.code)" /></el-tooltip></div></div></template></el-table-column>
       <el-table-column :label="t('system.iam.common.description')" min-width="220" show-overflow-tooltip prop="description" />
       <el-table-column :label="t('system.iam.common.status')" width="120"><template #default="{ row }"><el-tag :type="statusType(row.status)">{{ statusLabel(row.status) }}</el-tag></template></el-table-column>
       <el-table-column :label="t('system.iam.common.actions')" width="280" fixed="right">
@@ -121,6 +121,13 @@ async function closeGroup(row) {
   } catch (error) { if (error !== 'cancel' && error !== 'close') ElMessage.error(error.response?.data?.error || t('system.iam.common.updateFailed')) }
 }
 function openMembers(row) { selectedGroup.value = row; membersVisible.value = true }
-async function copyCode(code) { await navigator.clipboard.writeText(code); ElMessage.success(t('system.iam.organization.codeCopied')) }
+async function copyCode(code) {
+  try {
+    await navigator.clipboard.writeText(code)
+    ElMessage.success(t('system.iam.organization.codeCopied'))
+  } catch {
+    ElMessage.error(t('system.iam.organization.codeCopyFailed'))
+  }
+}
 onMounted(load)
 </script>

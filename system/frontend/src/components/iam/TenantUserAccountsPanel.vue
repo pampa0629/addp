@@ -6,6 +6,7 @@
         <el-select v-model="filters.status" :placeholder="t('system.iam.common.status')" clearable @change="reload"><el-option v-for="status in statuses" :key="status" :label="statusLabel(status)" :value="status" /></el-select>
         <el-button :icon="Refresh" @click="reload">{{ t('system.iam.common.refresh') }}</el-button>
       </div>
+      <el-button v-if="can('iam.tenant_invitation.read') && can('iam.tenant_invitation.create')" type="primary" :icon="Plus" @click="openInvitations">{{ t('system.iam.memberships.inviteUser') }}</el-button>
     </div>
 
     <el-table v-loading="loading" :data="rows" stripe>
@@ -14,8 +15,9 @@
       <el-table-column :label="t('system.iam.common.status')" width="120"><template #default="{ row }"><el-tag :type="statusType(row.status)">{{ statusLabel(row.status) }}</el-tag></template></el-table-column>
       <el-table-column :label="t('system.iam.memberships.joinedAt')" width="180"><template #default="{ row }">{{ formatDate(row.joined_at) }}</template></el-table-column>
       <el-table-column :label="t('system.iam.memberships.expiresAt')" width="180"><template #default="{ row }">{{ formatDate(row.expires_at) }}</template></el-table-column>
-      <el-table-column :label="t('system.iam.common.actions')" width="280" fixed="right">
+      <el-table-column :label="t('system.iam.common.actions')" width="380" fixed="right">
         <template #default="{ row }">
+          <el-button v-if="can('iam.tenant_role_assignment.read')" link type="primary" :icon="UserFilled" @click="openRoles(row)">{{ t(canManageRoles(row) ? 'system.iam.memberships.manageRoles' : 'system.iam.memberships.viewRoles') }}</el-button>
           <el-button v-if="can('iam.tenant_membership.update') && row.status !== 'ended'" link type="primary" :icon="Edit" @click="openExpiry(row)">{{ t('system.iam.common.edit') }}</el-button>
           <el-button v-if="can('iam.tenant_membership.suspend') && row.status === 'active'" link type="warning" :icon="VideoPause" @click="changeStatus(row, 'suspend')">{{ t('system.iam.common.suspend') }}</el-button>
           <el-button v-if="can('iam.tenant_membership.restore') && row.status === 'suspended'" link type="success" :icon="RefreshLeft" @click="changeStatus(row, 'restore')">{{ t('system.iam.common.restore') }}</el-button>
@@ -30,20 +32,32 @@
       <el-form label-position="top"><el-form-item :label="t('system.iam.memberships.expiresAt')"><el-date-picker v-model="expiryDate" type="datetime" clearable /></el-form-item></el-form>
       <template #footer><el-button @click="expiryVisible = false">{{ t('system.iam.common.cancel') }}</el-button><el-button type="primary" :loading="submitting" @click="saveExpiry">{{ t('system.iam.common.save') }}</el-button></template>
     </el-dialog>
+
+    <el-drawer v-model="rolesVisible" :title="t('system.iam.memberships.roleDrawerTitle', { name: selectedAccount?.display_name || '' })" size="min(960px, calc(100% - 24px))" destroy-on-close>
+      <TenantRoleAssignmentsPanel
+        v-if="selectedAccount"
+        :fixed-membership="selectedAccount"
+        :read-only="!canManageRoles(selectedAccount)"
+      />
+    </el-drawer>
   </section>
 </template>
 
 <script setup>
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { CircleClose, Edit, Refresh, RefreshLeft, Search, VideoPause } from '@element-plus/icons-vue'
+import { CircleClose, Edit, Plus, Refresh, RefreshLeft, Search, UserFilled, VideoPause } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
 import { iamAPI } from '../../api/iam'
 import { useAuthStore } from '../../store/auth'
 import { resolveMembershipSourceLabel } from '../../utils/iamPresentation'
+import { navigateSystemRoute } from '../../utils/moduleNavigation'
+import TenantRoleAssignmentsPanel from './TenantRoleAssignmentsPanel.vue'
 
 const { t, te } = useI18n()
 const authStore = useAuthStore()
+const router = useRouter()
 const can = (permission) => authStore.hasPermission(permission)
 const statuses = ['active', 'suspended', 'ended']
 const rows = ref([])
@@ -56,10 +70,13 @@ const filters = reactive({ search: '', status: '' })
 const expiryVisible = ref(false)
 const expiryRow = ref(null)
 const expiryDate = ref(null)
+const rolesVisible = ref(false)
+const selectedAccount = ref(null)
 
 function statusLabel(status) { return t(`system.iam.status.${status}`) }
 function sourceLabel(sourceType) { return resolveMembershipSourceLabel(sourceType, t, te) }
 function isCurrentMembership(row) { return row.id === authStore.authContext?.context?.tenant_membership_id }
+function canManageRoles(row) { return row.status !== 'ended' && (can('iam.tenant_role_assignment.create') || can('iam.tenant_role_assignment.revoke')) }
 function statusType(status) { return ({ active: 'success', suspended: 'warning', ended: 'info' })[status] || 'info' }
 function formatDate(value) { return value ? new Date(value).toLocaleString() : '-' }
 async function load() {
@@ -71,6 +88,8 @@ async function load() {
   finally { loading.value = false }
 }
 function reload() { page.value = 1; return load() }
+function openInvitations() { return navigateSystemRoute(router, { name: 'IAMAccounts', query: { tab: 'invitations' } }) }
+function openRoles(row) { selectedAccount.value = row; rolesVisible.value = true }
 function openExpiry(row) { expiryRow.value = row; expiryDate.value = row.expires_at ? new Date(row.expires_at) : null; expiryVisible.value = true }
 async function saveExpiry() {
   submitting.value = true

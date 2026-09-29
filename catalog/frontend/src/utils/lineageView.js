@@ -1,4 +1,4 @@
-export function resolveLineageSubject(entry) {
+export function resolveLineageSubject(entry, depth = 2) {
   const source = entry?.source
   if (entry?.entry_status !== 'active' || source?.source_module !== 'meta' ||
       source?.source_type !== 'data_item' || source?.source_status !== 'active') {
@@ -13,7 +13,7 @@ export function resolveLineageSubject(entry) {
     subject_kind: 'data_item',
     item_id: itemId,
     direction: 'both',
-    depth: 3,
+    depth,
     limit: 100
   }
 }

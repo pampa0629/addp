@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-async function openAsTenant(page, path, permissions) {
+async function openAsTenant(page, path, permissions, { configurationEntries } = {}) {
   const businessRequests = []
   await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
   await page.route('**/api/v1/**', route => {
@@ -18,6 +18,9 @@ async function openAsTenant(page, path, permissions) {
           scope: { type: 'tenant', tenant_id: '3' }, permissions
         }] }
       } })
+    }
+    if (pathname === '/api/v1/system/configuration-management/entries' && configurationEntries) {
+      return route.fulfill({ json: configurationEntries })
     }
     businessRequests.push(pathname)
     return route.fulfill({ status: 403, json: { error: 'unexpected_business_request' } })
@@ -42,6 +45,7 @@ const independentlyReadablePages = [
   ['/modeling/entities', ['model.entity.read', 'standard.domain.read']],
   ['/quality/plans', ['quality.plan.read']],
   ['/develop/sql', ['develop.task.read', 'meta.catalog.read']],
+  ['/manager/data-retrieval', ['manager.search.execute', 'manager.data_item.read']],
   ['/service/query-services', ['service.definition.read']],
   ['/workbench/applications', ['workbench.data_application.read']],
   ['/orchestrator/orchestrations', ['orchestrator.workflow.read']],
@@ -65,6 +69,38 @@ for (const [path, permissions] of independentlyReadablePages) {
     expect(businessRequests).toEqual([])
   })
 }
+
+test('retrieval-only Manager account opens its permitted page from the Console card', async ({ page }) => {
+  const businessRequests = await openAsTenant(page, '/', ['manager.search.execute', 'manager.data_item.read'])
+  await page.getByText('所有模块', { exact: true }).click()
+  const managerCard = page.locator('.module-card').filter({ has: page.getByRole('heading', { name: '数据管理' }) })
+  await expect(managerCard).toBeVisible()
+  await managerCard.click()
+  await expect(page).toHaveURL(/\/manager\/data-retrieval$/)
+  await expect(page.locator('iframe.module-iframe')).toHaveAttribute('src', /\/data-retrieval$/)
+  expect(businessRequests).toEqual([])
+})
+
+test('create-only Transfer account opens the wizard from the Console module root', async ({ page }) => {
+  const businessRequests = await openAsTenant(page, '/transfer', ['transfer.task.create', 'meta.catalog.read'])
+  await expect(page).toHaveURL(/\/transfer\/tasks\/create$/)
+  await expect(page.locator('iframe.module-iframe')).toHaveAttribute('src', /\/tasks\/create$/)
+  expect(businessRequests).toEqual([])
+})
+
+test('execution-only Monitor account opens its permitted page from the Console module root', async ({ page }) => {
+  const businessRequests = await openAsTenant(page, '/monitor', ['monitor.execution.read'])
+  await expect(page).toHaveURL(/\/monitor\/executions$/)
+  await expect(page.locator('iframe.module-iframe')).toHaveAttribute('src', /\/executions$/)
+  expect(businessRequests).toEqual([])
+})
+
+test('a module root without page permissions shows no business iframe', async ({ page }) => {
+  const businessRequests = await openAsTenant(page, '/transfer', [])
+  await expect(page.locator('.el-result')).toContainText('无权访问')
+  await expect(page.locator('iframe.module-iframe')).toHaveCount(0)
+  expect(businessRequests).toEqual([])
+})
 
 test('statistics-only account sees Monitor dashboard without execution access', async ({ page }) => {
   const businessRequests = await openAsTenant(page, '/monitor/dashboard', ['monitor.statistics.read'])
@@ -90,6 +126,149 @@ test('a completed Meta scan read grant opens only its permitted entry', async ({
   await expect(page.locator('iframe.module-iframe')).toHaveAttribute('src', /\/scan$/)
   await expect(page.locator('.sidebar .el-menu-item')).toHaveCount(1)
   await expectDenied(page, '/system/engines')
+  expect(businessRequests).toEqual([])
+})
+
+test('same-tenant AuthContext refresh updates the Console home status snapshot', async ({ page }) => {
+  let permissions = []
+  let engineReads = 0
+  await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
+  await page.route('**/api/v1/**', route => {
+    const pathname = new URL(route.request().url()).pathname
+    if (pathname === '/api/v1/system/refresh') {
+      return route.fulfill({ json: { access_token: 'initial-token', expires_in: 300 } })
+    }
+    if (pathname === '/api/v1/system/users/me') {
+      return route.fulfill({ json: { id: 32, username: 'minimal-permissions-user' } })
+    }
+    if (pathname === '/api/v1/system/auth/context') {
+      return route.fulfill({ json: {
+        context: { type: 'tenant', tenant_id: '3' },
+        authorization: { role_assignments: [{ scope: { type: 'tenant', tenant_id: '3' }, permissions }] }
+      } })
+    }
+    if (pathname === '/api/v1/system/engines') {
+      engineReads += 1
+      return route.fulfill({ json: [{ id: 1 }, { id: 2 }] })
+    }
+    return route.fulfill({ status: 403, json: { error: 'unexpected_business_request' } })
+  })
+
+  await page.goto('/')
+  await expect(page.getByText('当前账号暂无可用业务模块')).toBeVisible()
+  await expect(page.locator('.status-snapshot')).toHaveCount(0)
+  expect(engineReads).toBe(0)
+
+  const refreshAuthContext = () => page.evaluate(async () => {
+    const { useAuthStore } = await import('/src/store/auth.js')
+    await useAuthStore().fetchAuthContext({ force: true })
+  })
+
+  permissions = ['system.engine.read']
+  await refreshAuthContext()
+  await expect(page.locator('.status-snapshot .stat-value')).toContainText('2')
+  expect(engineReads).toBe(1)
+
+  permissions = []
+  await refreshAuthContext()
+  await expect(page.locator('.status-snapshot')).toHaveCount(0)
+  expect(engineReads).toBe(1)
+})
+
+test('configuration owner direct URL does not inherit access from a different owner', async ({ page }) => {
+  const businessRequests = await openAsTenant(page, '/configuration/monitor', ['develop.configuration.read'])
+  await expect(page.locator('.el-result')).toContainText('无权访问')
+  await expect(page.locator('[data-testid="configuration-management"]')).toHaveCount(0)
+  expect(businessRequests).toEqual([])
+})
+
+test('configuration hub omits entries whose page needs an ungranted reference catalog', async ({ page }) => {
+  const entries = ['agent', 'develop'].map(owner => ({
+    id: `${owner}.configuration`,
+    owner_module: owner,
+    frontend_route: `/configuration/${owner}`,
+    scope_types: ['platform_default_with_tenant_override'],
+    available: true
+  }))
+  const businessRequests = await openAsTenant(page, '/configuration', [
+    'agent.configuration.read', 'develop.configuration.read'
+  ], { configurationEntries: entries })
+  await expect(page.locator('.entries-table .el-table__row')).toHaveCount(1)
+  await expect(page.locator('.entries-table .el-table__row')).toContainText('develop')
+  expect(businessRequests).toEqual([])
+})
+
+test('same-tenant configuration grants refresh the visible owner entries immediately', async ({ page }) => {
+  let permissions = ['develop.configuration.read']
+  let entryReads = 0
+  await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
+  await page.route('**/api/v1/**', route => {
+    const pathname = new URL(route.request().url()).pathname
+    if (pathname === '/api/v1/system/refresh') {
+      return route.fulfill({ json: { access_token: 'configuration-refresh-token', expires_in: 300 } })
+    }
+    if (pathname === '/api/v1/system/users/me') {
+      return route.fulfill({ json: { id: 34, username: 'configuration-refresh-user' } })
+    }
+    if (pathname === '/api/v1/system/auth/context') {
+      return route.fulfill({ json: {
+        context: { type: 'tenant', tenant_id: '3' },
+        authorization: { role_assignments: [{ scope: { type: 'tenant', tenant_id: '3' }, permissions }] }
+      } })
+    }
+    if (pathname === '/api/v1/system/configuration-management/entries') {
+      entryReads += 1
+      const owners = permissions.includes('agent.configuration.read') ? ['agent', 'develop'] : ['develop']
+      return route.fulfill({ json: owners.map(owner => ({
+        id: `${owner}.configuration`, owner_module: owner,
+        frontend_route: `/configuration/${owner}`,
+        scope_types: ['platform_default_with_tenant_override'], available: true
+      })) })
+    }
+    return route.fulfill({ status: 403, json: { error: 'unexpected_business_request' } })
+  })
+
+  await page.goto('/configuration')
+  await expect(page.locator('.entries-table .el-table__row')).toHaveCount(1)
+  expect(entryReads).toBe(1)
+
+  permissions = ['develop.configuration.read', 'agent.configuration.read', 'inference.profile.read']
+  await page.evaluate(async () => {
+    const { useAuthStore } = await import('/src/store/auth.js')
+    await useAuthStore().fetchAuthContext({ force: true })
+  })
+  await expect(page.locator('.entries-table .el-table__row')).toHaveCount(2)
+  expect(entryReads).toBe(2)
+})
+
+test('platform Inference configuration entry opens with all three management reads', async ({ page }) => {
+  const businessRequests = []
+  await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
+  await page.route('**/api/v1/**', route => {
+    const pathname = new URL(route.request().url()).pathname
+    if (pathname === '/api/v1/system/refresh') {
+      return route.fulfill({ json: { access_token: 'platform-inference-token', expires_in: 300 } })
+    }
+    if (pathname === '/api/v1/system/users/me') {
+      return route.fulfill({ json: { id: 33, username: 'platform-inference-user' } })
+    }
+    if (pathname === '/api/v1/system/auth/context') {
+      return route.fulfill({ json: {
+        context: { type: 'platform' },
+        authorization: { role_assignments: [{
+          scope: { type: 'platform' },
+          permissions: ['inference.provider.read', 'inference.deployment.read', 'inference.profile.read']
+        }] }
+      } })
+    }
+    businessRequests.push(pathname)
+    return route.fulfill({ status: 403, json: { error: 'unexpected_business_request' } })
+  })
+  await page.route(/^http:\/\/127\.0\.0\.1:(?!4170)\d+\//, route =>
+    route.fulfill({ contentType: 'text/html', body: '<title>Module fixture</title>' }))
+  await page.goto('/inference/settings/models')
+  await expect(page.locator('iframe.module-iframe')).toHaveAttribute('src', /\/settings\/models$/)
+  await expect(page.locator('.el-result')).toHaveCount(0)
   expect(businessRequests).toEqual([])
 })
 

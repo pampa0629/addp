@@ -61,6 +61,7 @@ export function collectAuthContextPermissions(authContext) {
 export function createAuthGuard(authStoreOrGetter, config = {}) {
   const {
     loginRouteName = 'Login',
+    homeRoute = '/',
     normalizeRedirect = (path) => path,
     moduleName,
     router
@@ -88,7 +89,7 @@ export function createAuthGuard(authStoreOrGetter, config = {}) {
     const requiresAuth = to.matched.some((record) => record.meta?.requiresAuth !== false)
     const isPublic = to.name === loginRouteName
 
-    if (authStore.isAuthenticated && isPublic) return next('/')
+    if (authStore.isAuthenticated && isPublic) return next(homeRoute)
     if (!authStore.isAuthenticated && requiresAuth && !isPublic) {
       return next({
         name: loginRouteName,

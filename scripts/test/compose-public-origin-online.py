@@ -158,13 +158,15 @@ def assert_isolated_groups() -> None:
             raise AcceptanceError("Business MinIO is not reachable through its selected loopback port")
 
 
-def request(path: str, token: str | None = None) -> tuple[int, bytes, str]:
+def request(path: str, token: str | None = None, *, method: str = "GET", body: bytes | None = None) -> tuple[int, bytes, str]:
     headers = {"Accept": "application/json, text/html"}
     if token is not None:
         headers["Authorization"] = f"Bearer {token}"
+    if body is not None:
+        headers["Content-Type"] = "application/json"
     target = os.environ["ADDP_ONLINE_PUBLIC_ORIGIN"] + path
     try:
-        with OPENER.open(urllib.request.Request(target, headers=headers), timeout=15) as response:
+        with OPENER.open(urllib.request.Request(target, data=body, headers=headers, method=method), timeout=15) as response:
             return response.status, response.read(2_000_000), response.headers.get("Content-Type", "")
     except urllib.error.HTTPError as error:
         return error.code, error.read(2_000_000), error.headers.get("Content-Type", "")
@@ -213,6 +215,75 @@ def assert_authorized_gateway() -> None:
         raise AcceptanceError("public Gateway did not preserve System's engine permission guard")
 
 
+def assert_context_permissions(token: str, expected: set[str]) -> None:
+    status, body, _ = request("/api/v1/system/auth/context", token)
+    if status != 200:
+        raise AcceptanceError(f"permission fixture AuthContext returned HTTP {status}")
+    context = json.loads(body)
+    if context.get("principal", {}).get("type") != "user" or context.get("context", {}).get("tenant_id") != os.environ["ADDP_ONLINE_TEST_TENANT_ID"]:
+        raise AcceptanceError("permission fixture has the wrong Tenant User context")
+    assignments = context.get("authorization", {}).get("role_assignments")
+    if not isinstance(assignments, list):
+        raise AcceptanceError("permission fixture AuthContext omitted assignments")
+    if any(assignment.get("scope") != {"type": "tenant", "tenant_id": os.environ["ADDP_ONLINE_TEST_TENANT_ID"]} for assignment in assignments):
+        raise AcceptanceError("permission fixture AuthContext contains an unrelated scope")
+    granted = {
+        key for assignment in assignments
+        for key in assignment.get("permissions", [])
+    }
+    if granted != expected:
+        raise AcceptanceError(f"permission fixture grants {sorted(granted)}, expected {sorted(expected)}")
+
+
+def assert_partial_permission_matrix() -> None:
+    reader = os.environ["ADDP_ONLINE_READ_USER_ACCESS_TOKEN"]
+    creator = os.environ["ADDP_ONLINE_CREATE_USER_ACCESS_TOKEN"]
+    administrator = os.environ["ADDP_ONLINE_ADMIN_USER_ACCESS_TOKEN"]
+    assert_context_permissions(reader, {
+        "meta.catalog.read", "manager.data_item.read", "transfer.task.read", "orchestrator.workflow.read",
+    })
+    assert_context_permissions(creator, {
+        "meta.scan_task.create", "transfer.task.create", "orchestrator.workflow.create", "orchestrator.workflow.execute",
+    })
+
+    for module, path in (
+        ("Meta", "/api/v1/meta/engines"),
+        ("Manager", "/api/v1/manager/engines"),
+        ("Transfer", "/api/v1/transfer/task-definitions"),
+        ("Orchestrator", "/api/v1/orchestrator/orchestrations"),
+    ):
+        for token, expected, context in ((None, 401, "unauthenticated"), (reader, 200, "reader"), (creator, 403, "creator")):
+            status, _, _ = request(path, token)
+            if status != expected:
+                raise AcceptanceError(f"{module} {context} list returned HTTP {status}, expected {expected}")
+
+    for module, path in (
+        ("Meta", "/api/v1/meta/scan/tasks"),
+        ("Transfer", "/api/v1/transfer/task-definitions"),
+        ("Orchestrator", "/api/v1/orchestrator/orchestrations"),
+    ):
+        for token, expected, context in ((None, 401, "unauthenticated"), (reader, 403, "reader"), (creator, 400, "creator")):
+            status, _, _ = request(path, token, method="POST", body=b"{")
+            if status != expected:
+                raise AcceptanceError(f"{module} {context} malformed create returned HTTP {status}, expected {expected}")
+
+    own_id = os.environ["ADDP_ONLINE_OWN_ASSIGNMENT_ID"]
+    foreign_id = os.environ["ADDP_ONLINE_CROSS_TENANT_ASSIGNMENT_ID"]
+    if not own_id.isdecimal() or not foreign_id.isdecimal() or own_id == foreign_id:
+        raise AcceptanceError("permission fixture assignment identities are invalid")
+    own_path = f"/api/v1/system/tenant/role_assignments/{own_id}"
+    for token, expected, context in ((None, 401, "unauthenticated"), (reader, 403, "reader"), (administrator, 200, "administrator")):
+        status, body, _ = request(own_path, token)
+        if status != expected:
+            raise AcceptanceError(f"System {context} assignment detail returned HTTP {status}, expected {expected}")
+        if expected == 200 and json.loads(body).get("id") != own_id:
+            raise AcceptanceError("System returned a different own-Tenant assignment")
+    foreign_path = f"/api/v1/system/tenant/role_assignments/{foreign_id}"
+    status, _, _ = request(foreign_path, administrator)
+    if status != 404:
+        raise AcceptanceError(f"System cross-Tenant assignment detail returned HTTP {status}, expected 404")
+
+
 def assert_module_gateway_route(module: str, path: str) -> None:
     token = os.environ["ADDP_ONLINE_TEST_USER_ACCESS_TOKEN"]
     for attempt in range(30):
@@ -246,7 +317,8 @@ def main() -> int:
     assert_module_gateway_route("Manager", "/api/v1/manager/engines")
     assert_module_gateway_route("Transfer", "/api/v1/transfer/system-engines")
     assert_module_gateway_route("Orchestrator", "/api/v1/orchestrator/orchestrations")
-    print(json.dumps({"schema_version": "addp.online-suite/v1", "suite": "compose-public-origin", "public_port": PUBLIC_PORT, "frontends": ["console", "system", "meta", "manager", "transfer", "orchestrator"], "gateway_auth_context": "passed", "gateway_engine_permission_guard": "passed", "gateway_meta_permission_guard": "passed", "gateway_manager_permission_guard": "passed", "gateway_transfer_permission_guard": "passed", "gateway_orchestrator_permission_guard": "passed", "compose_projects": ["addp-infra", "addp-platform", "addp-runtimes", "business"]}, sort_keys=True))
+    assert_partial_permission_matrix()
+    print(json.dumps({"schema_version": "addp.online-suite/v1", "suite": "compose-public-origin", "public_port": PUBLIC_PORT, "frontends": ["console", "system", "meta", "manager", "transfer", "orchestrator"], "gateway_auth_context": "passed", "gateway_engine_permission_guard": "passed", "gateway_meta_permission_guard": "passed", "gateway_manager_permission_guard": "passed", "gateway_transfer_permission_guard": "passed", "gateway_orchestrator_permission_guard": "passed", "gateway_partial_permission_matrix": "passed", "compose_projects": ["addp-infra", "addp-platform", "addp-runtimes", "business"]}, sort_keys=True))
     return 0
 
 

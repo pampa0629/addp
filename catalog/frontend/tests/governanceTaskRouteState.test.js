@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import zhCn from '../src/i18n/zh-cn.json'
+import en from '../src/i18n/en.json'
 import {
   buildGovernanceEntryCandidateQuery,
   buildGovernanceTaskQuery,
@@ -7,6 +9,14 @@ import {
 } from '../src/utils/governanceTaskRouteState.js'
 
 describe('Catalog governance task route state', () => {
+  it('names the curated view without implying certification and keeps responsibility tasks separate from coverage gaps', () => {
+    expect(zhCn.catalog.entries.view.governance).toBe('已编目资源')
+    expect(en.catalog.entries.view.governance).toBe('Curated Resources')
+    expect(zhCn.catalog.governanceTasks.title).toBe('责任治理队列')
+    expect(zhCn.catalog.governanceTasks.description).toContain('治理缺口')
+    expect(en.catalog.governanceTasks.description).toContain('Governance Coverage')
+  })
+
   it('normalizes invalid values to the open queue defaults', () => {
     expect(parseGovernanceTaskRoute({ status: 'invalid', entry_id: '01', page: '-1', page_size: '500' })).toEqual({
       status: 'open',

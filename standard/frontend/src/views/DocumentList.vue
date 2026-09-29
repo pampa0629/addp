@@ -78,6 +78,7 @@ const emptyForm = () => ({ code: '', scope_type: 'tenant_common', owner_domain_i
 const form = ref(emptyForm())
 const rules = computed(() => ({
   code: buildStandardCodeRules(t, 'standard.document.codeRequired'),
+  scope_type: [{ required: true, message: t('standard.common.selectScope'), trigger: 'change' }],
   name: [{ required: true, message: t('standard.document.nameRequired'), trigger: 'blur' }],
   doc_type: [{ required: true, message: t('standard.document.typeRequired'), trigger: 'change' }],
   owner_domain_id: [{ required: form.value.scope_type === 'domain', message: t('standard.common.selectDomain'), trigger: 'change' }]

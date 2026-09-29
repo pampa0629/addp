@@ -1,5 +1,31 @@
 import { expect, test } from '@playwright/test'
 
+test('application-only account lands on its applications and cannot open asset home', async ({ page }) => {
+  const businessRequests = []
+  await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
+  await page.route('**/api/v1/**', route => {
+    const path = new URL(route.request().url()).pathname
+    if (path === '/api/v1/system/refresh') return route.fulfill({ json: { access_token: 'portal-application-token', expires_in: 300 } })
+    if (path === '/api/v1/system/users/me') return route.fulfill({ json: { id: 32, username: 'portal-applications-user' } })
+    if (path === '/api/v1/system/auth/context') return route.fulfill({ json: {
+      context: { type: 'tenant', tenant_id: '3' },
+      authorization: { role_assignments: [{ scope: { type: 'tenant', tenant_id: '3' }, permissions: ['asset.application.read'] }] }
+    } })
+    businessRequests.push(path)
+    if (path === '/api/v1/portal/my/applications') return route.fulfill({ json: [] })
+    return route.fulfill({ status: 403, json: { error: 'unexpected_business_request' } })
+  })
+
+  await page.goto('/portal/')
+  await expect(page).toHaveURL(/\/portal\/my\/applications$/)
+  await expect(page.getByRole('heading', { name: '我的申请与授权' })).toBeVisible()
+  await page.goto('/portal/home')
+  await expect(page).toHaveURL(/\/forbidden$/)
+  expect(businessRequests).not.toContain('/api/v1/portal/home')
+  await page.goto('/portal/login')
+  await expect(page).toHaveURL(/\/portal\/my\/applications$/)
+})
+
 async function openAsset(page, permissions, { ownRating = null, accessStatus = null } = {}) {
   const requests = []
   await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))

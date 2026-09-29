@@ -45,6 +45,7 @@ portal/
 - 搜索页使用 `keyword`、`type_id`、`page`，资产分类页使用 path `/portal/categories/:id` 与 query `page`，默认页码 1 省略。
 - 资产详情唯一使用 `/portal/assets/:id`。返回操作只复用已验证的 `/portal/...` 浏览器历史；没有合法 Portal 来源时，根据资产 `category_id` 回资产分类，否则回搜索页。
 - 不接受任意 `return_url`，不把申请表单、API Key、Token 或服务凭据写入 URL。
+- Portal 根路径 `/portal/` 在 AuthContext 加载后，先选择具备 `asset.entry.read` 的 `/portal/home`，否则选择具备 `asset.application.read` 的 `/portal/my/applications`；均不可访问时进入 `/forbidden`。独立登录路径为 `/portal/login`，登录后默认返回 `/portal/`，显式的门户地址仍按自身准入条件判断，不改跳其他页面。
 
 ## 开发与验证
 

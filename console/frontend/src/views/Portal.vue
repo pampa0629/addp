@@ -152,7 +152,7 @@ import {
   MODULE_GROUPS, ALL_HOME_CARDS, SIDEBAR_MENUS,
   MODULE_URLS, PORTAL_URL, buildModuleUrl,
 } from '../config/portalConfig'
-import { filterSidebarMenus, matchesNavigationAccess } from '../utils/navigationAccess'
+import { filterSidebarMenus, firstAccessibleModuleRoute, matchesNavigationAccess } from '../utils/navigationAccess'
 import { consoleRouteAccess } from '@common-ui'
 import PortalHeader from '../components/portal/PortalHeader.vue'
 import PortalSidebar from '../components/portal/PortalSidebar.vue'
@@ -494,9 +494,7 @@ const navigateToModule = async (module) => {
     activeGroup.value = group.key
     sidebarModules.value = group.modules  // 显示整个群组的所有模块
   }
-  const menu = visibleSidebarMenus.value[module]
-  const firstItem = menu?.items?.flatMap(item => item.children?.length ? item.children : [item])[0]
-  const targetRoute = menu?.flat ? menu.index : firstItem?.index
+  const targetRoute = firstAccessibleModuleRoute(visibleSidebarMenus.value[module])
   if (targetRoute) {
     await router.push(targetRoute)
   }

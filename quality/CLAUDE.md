@@ -25,6 +25,7 @@ Quality 不依赖企业 Catalog。Standard 的已发布数据元可以导入为�
 - api/plan_handler.go：/plans CRUD、手动 run；api/rule_handler.go：/rules CRUD、候选数据元和反向引用查询。
 - api/task_provider_handler.go：仅声明 quality_plan。
 - frontend/src/views/RuleList.vue：规则定义与来源；PlanList.vue：选规则、固定修订、绑定目标与执行。约束控件唯一所有者为 RuleConstraintFields.vue，方案页只读展示。ExecutionDetail.vue 展示领域结果；IssueList/IssueDetail 管理问题。
+- Quality 独立前端根路径在 AuthContext 加载后，按 Console 菜单顺序 `/overview`、`/rules`、`/plans`、`/issues` 选择第一个满足页面准入条件的地址；没有可访问页面时进入 `/forbidden`。登录后的默认返回地址为根路径。显式业务地址只按自身权限判断，不能静默改跳其他页面；执行详情是业务深链，不参与根路径候选。
 - RuleList 的数据元导入支持空关键词分页浏览和名称/编码搜索，保留已选来源；RuleSourceDetails 通过当前用户读取 Standard 精确修订详情，展示数据元、码值集修订及码项含义。无 Standard 读取权限或查询失败时仍保留冻结来源身份和约束，不影响执行。手工规则不推断来源。
 - 无可导入规则的数据元仍可选中预览来源，但不能确认导入；根据精确修订区分未配置值约束与缺少编译规则，读取失败时不猜测原因。历史发布修订缺少编译规则时，应在 Standard 创建并审核发布新修订，不改写历史快照、不在 Quality 重新推导约束。
 - authorization/permissions.yaml：quality.rule.* 与 quality.plan.* 分离；方案写入还要求 rule.read，方案运行不要求规则管理权限。

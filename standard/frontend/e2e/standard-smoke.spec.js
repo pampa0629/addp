@@ -86,6 +86,7 @@ const createDocumentFixture = (overrides = {}) => {
     version_label: 'v1',
     description: '户外业务数据标准',
     file_name: 'outdoor-standard.md',
+    file_key: 'documents/outdoor-standard.md',
     file_size: 2048,
     media_type: 'text/markdown',
     content_sha256: 'f'.repeat(64),
@@ -254,6 +255,20 @@ const narrowVisualPages = visualPages.filter(([, , name]) => (
 
 const themeVisualPages = narrowVisualPages
 const themeVisualModes = ['dark', 'blue', 'purple']
+
+test('unit-only access lands on units and denies direct domain navigation', async ({ page }) => {
+  await installMockBackend(page, { permissions: ['standard.unit.read'] })
+  await page.goto('/')
+  await expect(page).toHaveURL(/\/units$/)
+
+  const domainRequests = []
+  page.on('request', request => {
+    if (new URL(request.url()).pathname === '/api/v1/standard/domains') domainRequests.push(request.url())
+  })
+  await page.goto('/domains')
+  await expect(page).toHaveURL(/\/forbidden$/)
+  expect(domainRequests).toEqual([])
+})
 
 test('loads every Standard management page', async ({ page }) => {
   await installMockBackend(page)
@@ -594,7 +609,7 @@ for (const language of ['zh-cn', 'en']) {
     page.on('request', request => { if (request.method() === 'PUT') writes.push(request) })
     await page.goto('/glossaries/21?revision_id=211')
     const en = language === 'en'
-    const name = page.getByRole('textbox', { name: en ? 'Term Name' : '术语名称', exact: true })
+    const name = page.getByRole('textbox', { name: en ? /Term Name/ : /术语名称/ })
     await expect(name).toBeDisabled()
     const save = page.getByRole('button', { name: en ? 'Save' : '保存', exact: true })
     await expect(save).toHaveCount(1)
@@ -745,18 +760,18 @@ for (const language of ['zh-cn', 'en']) {
     })
     await page.goto('/glossaries/21')
     const en = language === 'en'
-    const name = page.getByRole('textbox', { name: en ? 'Term Name' : '术语名称', exact: true })
+    const name = page.getByRole('textbox', { name: en ? /Term Name/ : /术语名称/ })
     await name.fill('unsaved term')
     const dialog = await selectGlossaryElement(page, language)
     await dialog.getByRole('button', { name: en ? 'Confirm' : '确定', exact: true }).click()
     await expect(dialog).not.toBeVisible()
-    await expect(page.locator('.glossary-detail').getByRole('alert')).toContainText(en ? 'Links were saved' : '关联已保存')
+    await expect(page.locator('.glossary-detail .el-alert').filter({ hasText: en ? 'Links were saved' : '关联已保存' })).toBeVisible()
     await expect(name).toHaveValue('unsaved term')
     await expect(page.getByText(en ? 'Unsaved' : '未保存', { exact: true })).toBeVisible()
     await expect(page.getByRole('button', { name: en ? 'Manage Data Elements' : '管理关联数据元', exact: true })).toBeDisabled()
     await page.getByRole('button', { name: en ? 'Refresh' : '刷新', exact: true }).click()
     await expect(page.getByRole('row').filter({ hasText: 'person_id' })).toBeVisible()
-    await expect(page.locator('.glossary-detail').getByRole('alert')).toHaveCount(0)
+    await expect(page.locator('.glossary-detail .el-alert').filter({ hasText: en ? 'Links were saved' : '关联已保存' })).toHaveCount(0)
     expect(writes).toBe(1)
     expect(reads).toBe(3)
     await expect(name).toHaveValue('unsaved term')
@@ -1159,6 +1174,108 @@ test('submits a new glossary only once when the confirm action fires twice', asy
   expect((await createRequest).postDataJSON()).not.toHaveProperty('change_summary')
 })
 
+test('explains that a glossary needs an effective time before review', async ({ page }) => {
+  await installMockBackend(page, { glossaryEffectiveFromMissing: true })
+  const submitRequests = []
+  page.on('request', request => {
+    if (request.method() === 'POST' && new URL(request.url()).pathname === '/api/v1/standard/glossaries/21/revisions/211/submit') submitRequests.push(request.url())
+  })
+  await page.goto('/glossaries/21')
+
+  await expect(page.locator('.glossary-detail .el-form-item').filter({ hasText: '生效时间' })).toHaveClass(/is-required/)
+
+  await page.getByRole('button', { name: '提交审核' }).click()
+
+  await expect(page.locator('.el-alert').getByText('提交审核前请填写生效时间')).toBeVisible()
+  await expect(page.getByRole('dialog', { name: '提示' })).toHaveCount(0)
+  expect(submitRequests).toEqual([])
+})
+
+test('submits a glossary revision that has an effective time', async ({ page }) => {
+  await installMockBackend(page)
+  await page.goto('/glossaries/21')
+
+  await page.getByRole('button', { name: '提交审核' }).click()
+  const submitRequest = page.waitForRequest(request => request.method() === 'POST' && new URL(request.url()).pathname === '/api/v1/standard/glossaries/21/revisions/211/submit')
+  await page.getByRole('dialog', { name: '提示' }).getByRole('button', { name: '确定' }).click()
+  expect((await submitRequest).postDataJSON()).toEqual({ version: 1 })
+})
+
+for (const [name, path, options, field] of [
+  ['glossary', '/glossaries/21', {}, '术语名称'],
+  ['data element', '/elements/41', { elements: [{ id: 41, code: 'person_id', name: '人员标识', data_type: 'string', status: 'draft', effective_from: '2026-08-12T08:00:00Z' }] }, '中文名称'],
+  ['code set', '/code-sets/31', { codeSetDraft: true }, '名称'],
+  ['metric definition', '/metrics/51', { metrics: [{ id: 51, code: 'person_count', name: '人数', type: 'atomic', status: 'draft' }] }, '指标名称'],
+  ['standard document', '/documents/71', { documents: [createDocumentFixture({ revision: { effective_from: '2026-08-12T08:00:00Z' } })] }, '文档名称']
+]) {
+  test(`${name} explains saving before review while a field is edited`, async ({ page }) => {
+    await installMockBackend(page, options)
+    await page.goto(path)
+    const submit = page.getByRole('button', { name: '提交审核' })
+    await expect(submit).toBeEnabled()
+    await page.locator('.el-form-item').filter({ hasText: field }).first().locator('input,textarea').first().fill('待保存的修改')
+    await expect(page.locator('.el-alert').getByText('当前有未保存的修改，请先保存，再提交审核')).toBeVisible()
+    await expect(submit).toBeDisabled()
+  })
+}
+
+test('enables glossary review after saving an edited revision', async ({ page }) => {
+  await installMockBackend(page)
+  await page.goto('/glossaries/21')
+  const name = page.locator('.el-form-item').filter({ hasText: '术语名称' }).locator('input')
+  await name.fill('已保存的领队')
+  const submit = page.getByRole('button', { name: '提交审核' })
+  await expect(submit).toBeDisabled()
+  await page.locator('.page-header').getByRole('button', { name: '保存' }).click()
+  await expect(submit).toBeEnabled()
+  await expect(page.locator('.el-alert').getByText('当前有未保存的修改，请先保存，再提交审核')).toHaveCount(0)
+  const request = page.waitForRequest(req => req.method() === 'POST' && new URL(req.url()).pathname.endsWith('/glossaries/21/revisions/211/submit'))
+  await submit.click()
+  await page.getByRole('dialog', { name: '提示' }).getByRole('button', { name: '确定' }).click()
+  expect((await request).postDataJSON()).toEqual({ version: 2 })
+})
+
+test('marks the standard document attachment required for review', async ({ page }) => {
+  await installMockBackend(page, { documents: [createDocumentFixture({ revision: { effective_from: '2026-08-12T08:00:00Z', file_name: '' } })] })
+  await page.goto('/documents/71')
+  await expect(page.locator('.el-alert').getByText('提交审核前请上传标准文档文件')).toBeVisible()
+  await expect(page.locator('.el-divider .required-mark')).toBeVisible()
+})
+
+for (const [name, path, createLabel, field] of [
+  ['glossary', '/glossaries', '新建术语', '适用范围'],
+  ['code set', '/code-sets', '新建码值集', '码值类型'],
+  ['standard document', '/documents', '录入文档', '适用范围']
+]) {
+  test(`${name} creation marks required fields`, async ({ page }) => {
+    await installMockBackend(page)
+    await page.goto(path)
+    await page.getByRole('button', { name: createLabel }).click()
+    await expect(page.getByRole('dialog').locator('.el-form-item').filter({ hasText: field })).toHaveClass(/is-required/)
+  })
+}
+
+for (const [name, path, options] of [
+  ['data element', '/elements/41', { elements: [{ id: 41, code: 'person_id', name: '人员标识', data_type: 'string', status: 'draft' }] }],
+  ['code set', '/code-sets/31', { codeSetDraft: true }],
+  ['metric definition', '/metrics/51', { metricEffectiveFromMissing: true, metrics: [{ id: 51, code: 'person_count', name: '人数', type: 'atomic', status: 'draft' }] }],
+  ['standard document', '/documents/71', { documents: [createDocumentFixture()] }]
+]) {
+  test(`${name} draft marks effective time as required for review`, async ({ page }) => {
+    await installMockBackend(page, options)
+    const submitRequests = []
+    page.on('request', request => {
+      if (request.method() === 'POST' && new URL(request.url()).pathname.endsWith('/submit')) submitRequests.push(request.url())
+    })
+    await page.goto(path)
+
+    await expect(page.locator('.el-form-item').filter({ hasText: '生效时间' })).toHaveClass(/is-required/)
+    await page.getByRole('button', { name: '提交审核' }).click()
+    await expect(page.locator('.el-alert').getByText('提交审核前请填写生效时间')).toBeVisible()
+    expect(submitRequests).toEqual([])
+  })
+}
+
 test('hides glossary delete after any publication history exists', async ({ page }) => {
   const backend = await installMockBackend(page, { glossaryPublicationHistory: true })
   await page.goto('/glossaries')
@@ -1296,7 +1413,7 @@ test('exact historical element revision survives reload and history selection up
   })
   await page.goto('/elements/41?revision_id=410')
   await expect(page.getByRole('heading', { name: '冻结的人员标识', exact: true })).toBeVisible()
-  await expect(page.getByRole('textbox', { name: '中文名称', exact: true })).toBeDisabled()
+  await expect(page.getByRole('textbox', { name: /中文名称/ })).toBeDisabled()
   await page.reload()
   await expect(page.getByRole('heading', { name: '冻结的人员标识', exact: true })).toBeVisible()
   await page.getByText('R1 · 当前人员标识', { exact: true }).click()
@@ -1317,7 +1434,7 @@ test('creating a draft while viewing a frozen revision opens the new draft ident
   await dialog.getByRole('textbox').fill('修订数据元说明')
   await dialog.getByRole('button', { name: '确定', exact: true }).click()
   await expect(page).toHaveURL(/\/elements\/41\?revision_id=412$/)
-  await expect(page.getByRole('textbox', { name: '中文名称', exact: true })).toBeEditable()
+  await expect(page.getByRole('textbox', { name: /中文名称/ })).toBeEditable()
 })
 
 for (const destination of ['list', 'history']) {
@@ -1327,7 +1444,7 @@ for (const destination of ['list', 'history']) {
       elementHistory: [{ id: 410, element_id: 41, revision_no: 1, name: '历史人员标识', data_type: 'string', status: 'published' }]
     })
     await page.goto('/elements/41?revision_id=411')
-    const name = page.getByRole('textbox', { name: '中文名称', exact: true })
+    const name = page.getByRole('textbox', { name: /中文名称/ })
     await name.fill('尚未保存的名称')
     const navigate = () => destination === 'list'
       ? page.getByRole('button', { name: '返回', exact: true }).click()
@@ -1348,7 +1465,7 @@ for (const firstSection of ['identity', 'revision']) {
   test(`element saving ${firstSection} first preserves the other unsaved section`, async ({ page }) => {
     await installMockBackend(page, { elements: [{ id: 41, code: 'person_id', name: '人员标识', data_type: 'string', status: 'draft' }] })
     await page.goto('/elements/41')
-    const name = page.getByRole('textbox', { name: '中文名称', exact: true })
+    const name = page.getByRole('textbox', { name: /中文名称/ })
     await name.fill('更新后的名称')
     const tags = page.getByRole('combobox', { name: '标签', exact: true })
     await tags.fill('新标签')
@@ -1376,14 +1493,14 @@ test('failed element save retains unload protection and blocks revision actions 
     elements: [{ id: 41, code: 'person_id', name: '人员标识', data_type: 'string', status: 'draft' }]
   })
   await page.goto('/elements/41')
-  const name = page.getByRole('textbox', { name: '中文名称', exact: true })
+  const name = page.getByRole('textbox', { name: /中文名称/ })
   await name.fill('本地尚未保存')
   await page.locator('.page-header').getByRole('button', { name: '保存', exact: true }).click()
   await expect(page.getByText('资源已被其他用户修改，请刷新后重试')).toBeVisible()
   await expect(name).toHaveValue('本地尚未保存')
   expect(await page.evaluate(() => window.dispatchEvent(new Event('beforeunload', { cancelable: true })))).toBe(false)
-  await page.getByRole('button', { name: '提交审核', exact: true }).click()
-  await expect(page.getByText('请先保存当前修改，再执行状态操作')).toBeVisible()
+  await expect(page.getByRole('button', { name: '提交审核', exact: true })).toBeDisabled()
+  await expect(page.locator('.el-alert').getByText('当前有未保存的修改，请先保存，再提交审核')).toBeVisible()
   expect(backend.getActionRequests()).toEqual([])
   await page.getByRole('button', { name: '返回', exact: true }).click()
   await expect(page.getByRole('dialog', { name: '有未保存的修改' })).toBeVisible()
@@ -1398,7 +1515,7 @@ test('a late element save response cannot overwrite a different selected revisio
     elementHistory: [{ id: 410, element_id: 41, revision_no: 1, name: '历史人员标识', data_type: 'string', status: 'published' }]
   })
   await page.goto('/elements/41?revision_id=411')
-  await page.getByRole('textbox', { name: '中文名称', exact: true }).fill('待保存的修订名称')
+  await page.getByRole('textbox', { name: /中文名称/ }).fill('待保存的修订名称')
   const request = page.waitForRequest(req => req.method() === 'PUT')
   await page.locator('.page-header').getByRole('button', { name: '保存', exact: true }).click()
   await request
@@ -1408,7 +1525,7 @@ test('a late element save response cannot overwrite a different selected revisio
   const response = page.waitForResponse(res => res.request().method() === 'PUT')
   releaseSave()
   await response
-  await expect(page.getByRole('textbox', { name: '中文名称', exact: true })).toHaveValue('历史人员标识')
+  await expect(page.getByRole('textbox', { name: /中文名称/ })).toHaveValue('历史人员标识')
   await expect(page).toHaveURL(/revision_id=410$/)
   await expect(page.getByText('未保存', { exact: true })).toHaveCount(0)
 })
@@ -1432,7 +1549,7 @@ test('element iframe publishes only dirty state and clears it after saving', asy
   }))
   await page.goto('/unsaved-host')
   const frame = page.frameLocator('iframe')
-  await frame.getByRole('textbox', { name: '中文名称', exact: true }).fill('不得向父窗口发送的草稿')
+  await frame.getByRole('textbox', { name: /中文名称/ }).fill('不得向父窗口发送的草稿')
   await expect(page.locator('#state')).toContainText('"dirty":true')
   const message = JSON.parse(await page.locator('#state').textContent())
   expect(Object.keys(message).sort()).toEqual(['active', 'dirty', 'id', 'type'])
@@ -1534,6 +1651,7 @@ test('submits and publishes a draft data element revision', async ({ page }) => 
       data_type: 'string',
       domain_id: 2,
       status: 'draft',
+      effective_from: '2026-08-12T08:00:00Z',
       quality_rules: null
     }]
   })
@@ -1563,6 +1681,7 @@ test('submits a data element only once when confirmation fires twice', async ({ 
       data_type: 'string',
       domain_id: 2,
       status: 'draft',
+      effective_from: '2026-08-12T08:00:00Z',
       quality_rules: null
     }]
   })
@@ -1992,6 +2111,7 @@ async function installMockBackend(page, options = {}) {
   const documents = (options.documents || []).map(item => ({ ...item }))
   const elements = (options.elements || []).map(item => ({ ...item }))
   const glossaryFixtures = structuredClone(glossaries)
+  if (options.glossaryEffectiveFromMissing) glossaryFixtures[0].draft_revision.effective_from = null
   let glossaryElementIDs = [...(options.glossaryElementIDs || [])]
   const documentCandidateFamilyResponse = structuredClone(options.documentCandidateFamilies || createCandidateFamilyResponse([]))
   if (options.glossaryPublicationHistory) {
@@ -2019,7 +2139,7 @@ async function installMockBackend(page, options = {}) {
       unit_id: null,
       dependencies: [],
       change_summary: '初始修订',
-      effective_from: '2026-08-12T08:00:00Z',
+      effective_from: options.metricEffectiveFromMissing ? null : '2026-08-12T08:00:00Z',
       status: item.status === 'approved' ? 'published' : item.status === 'deprecated' ? 'withdrawn' : item.status,
       created_at: item.created_at || '2026-08-12T08:00:00Z'
     }
@@ -2053,6 +2173,7 @@ async function installMockBackend(page, options = {}) {
       example_values: [],
       compiled_quality_rules: item.compiled_quality_rules || null,
       change_summary: '初始修订',
+      effective_from: item.effective_from ?? null,
       status: item.status === 'approved' ? 'published' : item.status,
       created_at: '2026-08-12T08:00:00Z'
     }
@@ -2093,6 +2214,12 @@ async function installMockBackend(page, options = {}) {
     version: 1,
     current_revision: codeSetRevision,
     draft_revision: null
+  }
+  if (options.codeSetDraft) {
+    codeSetRevision.status = 'draft'
+    codeSetAggregate.current_revision = null
+    codeSetAggregate.draft_revision = codeSetRevision
+    codeSetAggregate.draft_revision_id = codeSetRevision.id
   }
   const permissions = options.permissions ?? allStandardPermissions
   const authContextPermissionsByToken = options.authContextPermissionsByToken || {}

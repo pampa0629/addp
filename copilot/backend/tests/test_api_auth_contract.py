@@ -1,7 +1,10 @@
 import asyncio
+import json
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi import HTTPException
+from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from addp_common.auth import AuthorizationContext, RoleAssignment
@@ -43,6 +46,41 @@ def test_tenant_user_rejects_tenantless_context(monkeypatch):
         asyncio.run(auth.require_tenant_user(None, "en"))
     assert exc_info.value.status_code == 403
     assert exc_info.value.detail == "This endpoint requires a tenant context"
+
+
+def test_missing_bearer_token_is_unauthorized():
+    with pytest.raises(HTTPException) as denied:
+        asyncio.run(auth._resolve_user(None, "en"))
+    assert denied.value.status_code == 401
+    assert denied.value.detail == "Authentication token is required"
+
+
+def test_permission_error_uses_addp_response_shape():
+    from main import app
+    from starlette.exceptions import HTTPException as StarletteHTTPException
+
+    response = asyncio.run(app.exception_handlers[StarletteHTTPException](None, HTTPException(403, "Insufficient permission")))
+    assert response.status_code == 403
+    assert json.loads(response.body) == {"error": "Insufficient permission"}
+
+
+def test_ready_copilot_http_permission_statuses_use_addp_errors():
+    from main import app
+
+    context = AuthorizationContext(principal_id=1, tenant_id=3, tenant_membership_id=8)
+    with (
+        patch("main.ready_response", return_value=({}, True)),
+        patch("dependencies.auth.resolve_authorization_context", new=AsyncMock(return_value=context)),
+    ):
+        client = TestClient(app)
+        path = "/api/v1/copilot/settings/inference-bindings/sql"
+        unauthenticated = client.get(path, headers={"Accept-Language": "en"})
+        denied = client.get(path, headers={"Authorization": "Bearer user-token", "Accept-Language": "en"})
+
+    assert unauthenticated.status_code == 401
+    assert unauthenticated.json() == {"error": "Authentication token is required"}
+    assert denied.status_code == 403
+    assert denied.json() == {"error": "Insufficient permission"}
 
 
 def test_tenant_permission_dependency_requires_role_permission(monkeypatch):
@@ -117,6 +155,14 @@ def test_copilot_openapi_declares_authorization_contracts():
 
     specification = app.openapi()
     paths = specification["paths"]
+
+    for path, methods in paths.items():
+        if path in {"/", "/health/live", "/health/ready"}:
+            continue
+        for operation in methods.values():
+            for status_code in ("401", "403"):
+                schema = operation["responses"][status_code]["content"]["application/json"]["schema"]
+                assert schema["$ref"].endswith("/ErrorResponse")
 
     assert paths["/query/generate"]["post"]["x-addp-auth-mode"] == "delegated_tool"
     assert paths["/query/generate"]["post"]["x-addp-required-permissions"] == [

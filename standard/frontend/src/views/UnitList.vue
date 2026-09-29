@@ -79,7 +79,7 @@
         <el-form-item :label="$t('standard.common.name')" required>
           <el-input v-model="categoryForm.name" />
         </el-form-item>
-        <el-form-item :label="$t('standard.common.code')" required>
+        <el-form-item :label="$t('standard.common.code')" :required="!editingCategory">
           <el-input v-model="categoryForm.code" :placeholder="$t('standard.common.codePlaceholder')" :disabled="!!editingCategory" />
         </el-form-item>
         <el-form-item :label="$t('standard.common.description')">
@@ -98,8 +98,8 @@
     <!-- 新增/编辑计量单位对话框 -->
     <el-dialog v-model="showAddUnit" :title="editingUnit ? $t('standard.unit.editUnit') : $t('standard.unit.createUnit')" width="400px">
       <el-form :model="unitForm" label-width="80px">
-        <el-form-item :label="$t('standard.unit.categoryLabel')" required>
-          <el-select v-model="unitForm.category_id" style="width:100%">
+        <el-form-item :label="$t('standard.unit.categoryLabel')" :required="!editingUnit">
+          <el-select v-model="unitForm.category_id" style="width:100%" :disabled="Boolean(editingUnit)">
             <el-option v-for="c in categories" :key="c.id" :label="c.name" :value="c.id" />
           </el-select>
         </el-form-item>

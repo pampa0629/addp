@@ -70,7 +70,7 @@ export const CONSOLE_ROUTE_ACCESS = {
   '/graph/graphs': [tenant('graph.graph.read')],
   '/graph/analysis': [tenant('graph.analysis.read', 'graph.graph.read')],
   '/graph/knowledge-service': [tenant('graph.graph.read')],
-  '/inference/settings/models': [tenant('inference.provider.read', 'inference.deployment.read', 'inference.profile.read')],
+  '/inference/settings/models': [platform('inference.provider.read', 'inference.deployment.read', 'inference.profile.read'), tenant('inference.provider.read', 'inference.deployment.read', 'inference.profile.read')],
   '/system/iam/organization': [platform('platform.tenant.read'), anyOf('tenant', 'iam.department.read', 'iam.project_group.read')],
   '/system/iam/accounts': [anyOf('platform', 'iam.user.read', 'iam.platform_identity_change.read'), anyOf('tenant', 'iam.tenant_membership.read', 'iam.tenant_invitation.read')],
   '/system/iam/roles': [anyOf('tenant', 'iam.tenant_role.read', 'iam.tenant_role_assignment.read')],
@@ -81,9 +81,27 @@ export const CONSOLE_ROUTE_ACCESS = {
   '/system/cleanup': [tenant('system.cleanup.read')],
   '/system/account/security': [{ context: 'any' }],
   '/configuration': [
-    anyOf('platform', 'platform.configuration.read', 'develop.configuration.read', 'manager.configuration.read', 'monitor.configuration.read', 'service.configuration.read', 'transfer.configuration.read'),
-    anyOf('tenant', 'develop.configuration.read'),
+    platform('agent.configuration.read', 'inference.profile.read'),
+    platform('copilot.configuration.read', 'inference.profile.read'),
+    platform('develop.configuration.read'),
+    platform('manager.configuration.read'),
+    platform('transfer.configuration.read'),
+    platform('monitor.configuration.read'),
+    platform('service.configuration.read'),
+    platform('inference.provider.read', 'inference.deployment.read', 'inference.profile.read'),
+    tenant('agent.configuration.read', 'inference.profile.read'),
+    tenant('copilot.configuration.read', 'inference.profile.read'),
+    tenant('develop.configuration.read'),
+    tenant('manager.configuration.read'),
+    tenant('inference.provider.read', 'inference.deployment.read', 'inference.profile.read'),
   ],
+  '/configuration/agent': [platform('agent.configuration.read', 'inference.profile.read'), tenant('agent.configuration.read', 'inference.profile.read')],
+  '/configuration/copilot': [platform('copilot.configuration.read', 'inference.profile.read'), tenant('copilot.configuration.read', 'inference.profile.read')],
+  '/configuration/develop': [platform('develop.configuration.read'), tenant('develop.configuration.read')],
+  '/configuration/manager': [platform('manager.configuration.read'), tenant('manager.configuration.read')],
+  '/configuration/transfer': [platform('transfer.configuration.read')],
+  '/configuration/monitor': [platform('monitor.configuration.read')],
+  '/configuration/service': [platform('service.configuration.read')],
   '/manager/spatial-preview': [tenant('manager.content.read')],
   '/manager/settings/embedding': [platform('manager.configuration.read', 'inference.profile.read', 'inference.deployment.read')],
   '/service/published-services': [tenant('service.definition.read')],
@@ -94,7 +112,6 @@ export const CONSOLE_ROUTE_ACCESS = {
 export function consoleRouteAccess(path) {
   if (!path) return null
   const pathname = path.split(/[?#]/, 1)[0].replace(/\/$/, '') || '/'
-  if (pathname === '/transfer') return CONSOLE_ROUTE_ACCESS['/transfer/tasks']
   if (/^\/transfer\/tasks\/[^/]+\/edit$/.test(pathname)) {
     return [tenant('transfer.task.read', 'transfer.task.update', 'meta.catalog.read')]
   }
@@ -125,6 +142,7 @@ export function consoleRouteAccess(path) {
   if (pathname === '/ontology/ontologies/new') return [tenant('ontology.revision.update')]
   if (/^\/ontology\/ontologies\/[^/]+\/trial$/.test(pathname)) return [tenant('ontology.semantic.read')]
   if (CONSOLE_ROUTE_ACCESS[pathname]) return CONSOLE_ROUTE_ACCESS[pathname]
+  if (pathname.startsWith('/configuration/')) return null
   const parent = Object.keys(CONSOLE_ROUTE_ACCESS)
     .filter(route => pathname.startsWith(`${route}/`))
     .sort((a, b) => b.length - a.length)[0]

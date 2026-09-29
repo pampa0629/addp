@@ -297,7 +297,9 @@
         </template>
         <div v-if="lineageLoading" v-loading="true" class="lineage-loading" />
         <template v-else-if="lineageState === 'ready'">
-          <LineageViewer :graph="lineageGraph" :height="420" />
+          <div class="lineage-viewer-frame">
+            <LineageViewer :graph="lineageGraph" v-model:depth="lineageDepth" />
+          </div>
           <el-alert
             v-if="lineageCatalogEntryState === 'unavailable'"
             type="warning"
@@ -717,7 +719,8 @@ const qualityAlertType = computed(() => {
   if (['pending', 'running'].includes(summary.last_execution_status)) return 'warning'
   return summary.last_execution_status === 'success' ? 'success' : 'info'
 })
-const lineageSubject = computed(() => resolveLineageSubject(entry.value))
+const lineageDepth = ref(2)
+const lineageSubject = computed(() => resolveLineageSubject(entry.value, lineageDepth.value))
 const lineageGraph = ref(normalizeLineageGraph())
 const lineageState = ref('idle')
 const lineageLoading = ref(false)
@@ -1300,7 +1303,7 @@ watch(() => route.query, async query => {
   activeDetailTab.value = state.tab
   if (state.changed) await router.replace({ query: state.query })
 }, { immediate: true })
-watch(() => [lineageSubject.value?.item_id || '', canReadLineage.value], loadLineage, { immediate: true })
+watch(() => [lineageSubject.value?.item_id || '', canReadLineage.value, lineageDepth.value], loadLineage, { immediate: true })
 watch(
   () => [professionalRelationSubject.value?.key || '', canReadProfessionalRelations.value],
   loadProfessionalRelations,
@@ -1331,6 +1334,7 @@ watch(
 .quality-card { margin-bottom: 16px; }
 .lineage-card { margin-bottom: 16px; }
 .lineage-loading { min-height: 180px; }
+.lineage-viewer-frame { height: clamp(420px, 70vh, 720px); }
 .lineage-mapping-alert { margin-top: 16px; }
 .lineage-catalog-entries h3 { color: var(--addp-text-primary); font-size: 15px; margin: 18px 0 10px; }
 .data-dictionary-card { margin-bottom: 16px; }

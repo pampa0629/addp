@@ -245,11 +245,15 @@
       },
       "memberships": {
         "editExpiry": "Set Membership Expiry",
+        "manageRoles": "Manage Roles",
+        "viewRoles": "View Roles",
+        "roleDrawerTitle": "Roles for {name}",
         "expiresAt": "Expires At",
         "joinedAt": "Joined At",
         "member": "Member",
         "memberType": "Account Type",
         "currentAccount": "Current Account",
+        "inviteUser": "Invite User",
         "source": "Source"
       },
       "memberSelect": {
@@ -264,6 +268,7 @@
         "versionConflict": "This organization record changed. Refresh before submitting again; your current input has been preserved.",
         "copyCode": "Copy code",
         "codeCopied": "Code copied",
+        "codeCopyFailed": "Could not copy the code. Copy it manually.",
         "codeAlreadyExists": "This code is already in use. Choose another one",
         "codeCreateHint": "Code is required and cannot be changed after creation",
         "codeImmutableHint": "Code cannot be changed after creation",

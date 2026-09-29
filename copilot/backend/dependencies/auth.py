@@ -7,6 +7,7 @@ from config import settings
 
 
 bearer_auth = HTTPBearer(
+    auto_error=False,
     scheme_name="BearerAuth",
     description="ADDP 用户访问令牌：Authorization: Bearer <token>",
 )
@@ -18,9 +19,14 @@ def _message(accept_language: str | None, zh_cn: str, en: str) -> str:
 
 
 async def _resolve_user(
-    credentials: HTTPAuthorizationCredentials = Depends(bearer_auth),
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_auth),
     accept_language: str | None = Header(default=None, alias="Accept-Language"),
 ) -> AuthorizationContext:
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=_message(accept_language, "未提供认证 Token", "Authentication token is required"),
+        )
     try:
         return await resolve_authorization_context(settings.get_system_url(), credentials.credentials)
     except httpx.HTTPStatusError as exc:

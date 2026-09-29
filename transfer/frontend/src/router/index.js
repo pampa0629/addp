@@ -1,16 +1,17 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import Layout from '../components/Layout.vue'
 import { useAuthStore } from '../store/auth'
+import { resolveModuleLandingRoute } from '../../../../common-frontend/basic/src/authorization/consoleRouteAccess.js'
 
 const normalizeRedirect = fullPath => {
   if (!fullPath) {
-    return '/tasks'
+    return '/'
   }
   if (fullPath === '/transfer' || fullPath === '/transfer/') {
-    return '/tasks'
+    return '/'
   }
   if (fullPath.startsWith('/transfer/')) {
-    return fullPath.replace('/transfer', '') || '/tasks'
+    return fullPath.replace('/transfer', '') || '/'
   }
   return fullPath
 }
@@ -25,9 +26,17 @@ const routes = [
   {
     path: '/',
     component: Layout,
-    redirect: '/tasks',
     meta: { requiresAuth: true },
     children: [
+      {
+        path: '',
+        name: 'TransferHome',
+        beforeEnter: () => {
+          const authStore = useAuthStore()
+          return resolveModuleLandingRoute('/transfer', ['/tasks', '/tasks/create'], authStore.contextType, authStore.permissions)
+        },
+        meta: { requiresAuth: true, handlesForbidden: true }
+      },
       {
         path: 'tasks',
         name: 'TaskList',
@@ -85,12 +94,6 @@ router.beforeEach(createAuthGuard(useAuthStore, {
 router.beforeEach((to) => {
   const authStore = useAuthStore()
   if (!authStore.isAuthenticated || to.name === 'AccessDenied') return true
-  if (to.name === 'TaskList' && to.redirectedFrom?.path === '/' &&
-      !authStore.hasPermission('transfer.task.read') &&
-      authStore.hasPermission('transfer.task.create') &&
-      authStore.hasPermission('meta.catalog.read')) {
-    return { name: 'TaskCreate', replace: true }
-  }
   const required = to.meta?.requiredPermissions || []
   if (required.every(permission => authStore.hasPermission(permission))) return true
   return { name: 'AccessDenied', replace: true }

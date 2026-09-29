@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { createAuthGuard } from '@common-ui'
+import { resolveModuleLandingRoute } from '../../../../common-frontend/basic/src/authorization/consoleRouteAccess.js'
 import { useAuthStore } from '../store/auth'
 import Layout from '../components/Layout.vue'
 import Login from '../views/Login.vue'
@@ -14,9 +15,17 @@ const routes = [
   {
     path: '/',
     component: Layout,
-    redirect: '/domains',
     meta: { requiresAuth: true },
     children: [
+      {
+        path: '',
+        name: 'StandardHome',
+        beforeEnter: () => {
+          const authStore = useAuthStore()
+          return resolveModuleLandingRoute('/standard', ['/domains', '/glossaries', '/elements', '/code-sets', '/units', '/metrics', '/documents'], authStore.contextType, authStore.permissions)
+        },
+        meta: { requiresAuth: true, handlesForbidden: true }
+      },
       {
         path: 'domains',
         name: 'DomainList',

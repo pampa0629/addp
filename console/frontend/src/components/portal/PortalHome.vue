@@ -171,7 +171,12 @@ async function fetchStatus() {
   statusLoading.value = false
 }
 
-watch(() => props.contextKey, () => fetchStatus())
+const statusPermissionKey = computed(() => STATUS_REQUESTS
+  .filter(request => props.permissions.includes(request.permission))
+  .map(request => request.permission)
+  .join('|'))
+
+watch([() => props.contextKey, statusPermissionKey], () => fetchStatus())
 
 // ─── 状态推断 ────────────────────────────────────────────────────────────────
 

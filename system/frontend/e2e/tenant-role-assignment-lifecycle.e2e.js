@@ -445,6 +445,19 @@ test('tenant administrator filters members and assigns multiple roles in one req
     },
     { action: 'revoke', input: { reason: 'E2E revoke' } }
   ])
+
+  await page.goto('/iam/accounts')
+  const accountRow = page.getByRole('row').filter({ hasText: 'Alice Researcher' })
+  await accountRow.getByRole('button', { name: '角色分配' }).click()
+  const rolesDrawer = page.getByRole('dialog', { name: 'Alice Researcher的角色' })
+  await expect(rolesDrawer).toBeVisible()
+  await expect(rolesDrawer.getByRole('row').filter({ hasText: '租户管理员' })).toBeVisible()
+  expect(listQueries.some((query) => query.membership_id === '12' && query.principal_type === 'user')).toBe(true)
+
+  await rolesDrawer.getByRole('button', { name: '分配角色', exact: true }).click()
+  const accountAssignmentDialog = page.getByRole('dialog', { name: '分配角色' })
+  await expect(accountAssignmentDialog).toContainText('Alice Researcher')
+  await expect(accountAssignmentDialog.getByRole('combobox', { name: /成员/ })).toHaveCount(0)
 })
 
 test('high-risk self assignment completes MFA step-up and retries the original request', async ({ page }) => {

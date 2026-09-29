@@ -1,9 +1,10 @@
+import json
 import unittest
 from unittest.mock import AsyncMock, patch
 
 import httpx
-from fastapi import HTTPException
 from starlette.requests import Request
+from starlette.exceptions import HTTPException
 from starlette.responses import JSONResponse
 
 from addp_common.auth import AuthorizationContext, RoleAssignment
@@ -64,6 +65,12 @@ class AgentAuthMiddlewareTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(HTTPException, "权限不足") as denied:
             await require_permissions("agent.session.delete")(request)
         self.assertEqual(denied.exception.status_code, 403)
+
+        from main import app
+
+        response = await app.exception_handlers[HTTPException](request, denied.exception)
+        self.assertEqual(json.loads(response.body), {"error": "权限不足"})
+        self.assertEqual(response.status_code, 403)
 
     async def test_returns_unauthorized_for_rejected_token(self):
         error = httpx.HTTPStatusError(

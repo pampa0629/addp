@@ -5,7 +5,7 @@
       <div v-if="!loadError && glossary.id" class="header-right">
         <el-button v-if="!glossary.draft_revision && canUpdate" @click="newDraft">{{ $t('standard.glossary.createRevision') }}</el-button>
         <el-button v-if="editable" type="primary" :loading="savingRevision" :disabled="savingIdentity || savingElements" @click="saveRevision">{{ $t('standard.common.save') }}</el-button>
-        <el-button v-if="editable" type="warning" @click="runRevisionAction('submit')">{{ $t('standard.revision.submit') }}</el-button>
+        <el-button v-if="editable" type="warning" :disabled="isDirty || saving" @click="runRevisionAction('submit')">{{ $t('standard.revision.submit') }}</el-button>
         <el-button v-if="reviewing && canPublish" @click="runRevisionAction('return')">{{ $t('standard.revision.return') }}</el-button>
         <el-button v-if="reviewing && canPublish" type="success" @click="runRevisionAction('publish')">{{ $t('standard.revision.publish') }}</el-button>
         <el-button v-if="revision.status === 'published' && canPublish" type="danger" @click="runRevisionAction('withdraw')">{{ $t('standard.revision.withdraw') }}</el-button>
@@ -13,16 +13,17 @@
     </div>
 
     <el-alert v-if="loadError" :title="loadError" type="error" :closable="false" />
-    <el-row v-else :gutter="20">
+    <el-alert v-else-if="editable && reviewHint" :title="reviewHint" type="warning" :closable="false" show-icon class="review-hint" />
+    <el-row v-if="!loadError" :gutter="20">
       <el-col :span="16">
         <el-card class="section-card">
           <template #header><div class="card-header"><h3>{{ $t('standard.glossary.identityInfo') }}</h3><el-button v-if="canUpdate && glossary.id" type="primary" size="small" :loading="savingIdentity" :disabled="savingRevision || savingElements" @click="saveIdentity">{{ $t('standard.common.save') }}</el-button></div></template>
           <el-form label-width="120px" :disabled="!canUpdate || saving">
             <el-form-item :label="$t('standard.common.code')"><el-input :model-value="glossary.code" disabled /></el-form-item>
-            <el-form-item :label="$t('standard.common.scopeLabel')">
+            <el-form-item :label="$t('standard.common.scopeLabel')" :required="canUpdate">
               <el-select v-model="identity.scope_type" style="width:100%" @change="onScopeChange"><el-option :label="$t('standard.common.scopeValue.tenant_common')" value="tenant_common" /><el-option :label="$t('standard.common.scopeValue.domain')" value="domain" /></el-select>
             </el-form-item>
-            <el-form-item v-if="identity.scope_type === 'domain'" :label="$t('standard.glossary.domainLabel')"><BusinessDomainSelect v-model="identity.owner_domain_id" style="width:100%" :options="domains" /></el-form-item>
+            <el-form-item v-if="identity.scope_type === 'domain'" :label="$t('standard.glossary.domainLabel')" :required="canUpdate"><BusinessDomainSelect v-model="identity.owner_domain_id" style="width:100%" :options="domains" /></el-form-item>
             <el-form-item :label="$t('standard.common.tags')"><el-select v-model="identity.tags" multiple filterable allow-create default-first-option style="width:100%" /></el-form-item>
           </el-form>
         </el-card>
@@ -30,13 +31,13 @@
         <el-card class="section-card">
           <template #header><div class="card-header"><h3>{{ $t('standard.glossary.revisionInfo') }}</h3><span v-if="revision.revision_no">R{{ revision.revision_no }}</span></div></template>
           <el-form label-width="120px" :disabled="!editable || saving">
-            <el-form-item :label="$t('standard.glossary.nameLabel')"><el-input v-model="revision.name" /></el-form-item>
+            <el-form-item :label="$t('standard.glossary.nameLabel')" :required="editable"><el-input v-model="revision.name" /></el-form-item>
             <el-form-item :label="$t('standard.glossary.aliasLabel')"><el-select v-model="revision.alias" multiple filterable allow-create default-first-option style="width:100%" /></el-form-item>
-            <el-form-item :label="$t('standard.glossary.definitionLabel')"><el-input v-model="revision.definition" type="textarea" :rows="4" /></el-form-item>
+            <el-form-item :label="$t('standard.glossary.definitionLabel')" :required="editable"><el-input v-model="revision.definition" type="textarea" :rows="4" /></el-form-item>
             <el-form-item :label="$t('standard.glossary.exampleLabel')"><el-input v-model="revision.example" type="textarea" :rows="2" /></el-form-item>
             <el-form-item :label="$t('standard.glossary.noteLabel')"><el-input v-model="revision.note" type="textarea" :rows="2" /></el-form-item>
-            <el-form-item :label="$t('standard.revision.changeSummary')"><el-input v-model="revision.change_summary" /></el-form-item>
-            <el-form-item :label="$t('standard.revision.effectiveFrom')"><el-date-picker v-model="revision.effective_from" type="datetime" value-format="YYYY-MM-DDTHH:mm:ssZ" style="width:100%" /></el-form-item>
+            <el-form-item :label="$t('standard.revision.changeSummary')" :required="editable"><el-input v-model="revision.change_summary" /></el-form-item>
+            <el-form-item :label="$t('standard.revision.effectiveFrom')" :required="editable"><el-date-picker v-model="revision.effective_from" type="datetime" value-format="YYYY-MM-DDTHH:mm:ssZ" style="width:100%" /></el-form-item>
             <el-form-item :label="$t('standard.revision.effectiveTo')"><el-date-picker v-model="revision.effective_to" type="datetime" value-format="YYYY-MM-DDTHH:mm:ssZ" clearable style="width:100%" /></el-form-item>
           </el-form>
         </el-card>
@@ -127,6 +128,7 @@ const formatTime = value => formatStandardDateTime(value, locale.value)
 const elementName = item => item.draft_revision?.name || item.current_revision?.name || item.name || item.code
 const editableState = computed(() => ({ identity: { ...identity, tags: [...identity.tags] }, revision: { ...revision, alias: [...(revision.alias || [])], related_ids: [...(revision.related_ids || [])] } }))
 const { isDirty, markSaved } = useUnsavedChanges({ state: editableState })
+const reviewHint = computed(() => isDirty.value ? t('standard.revision.saveBeforeReview') : !revision.effective_from ? t('standard.revision.effectiveFromRequired') : '')
 const setRevision = value => { Object.keys(revision).forEach(key => delete revision[key]); Object.assign(revision, JSON.parse(JSON.stringify(value || {}))); revision.alias ||= []; revision.related_ids ||= [] }
 const goBack = () => {
   const { revision_id, ...query } = route.query
@@ -212,6 +214,7 @@ async function newDraft() {
 }
 async function runRevisionAction(action) {
   if (isDirty.value || saving.value) { ElMessage.warning(t('standard.common.saveBeforeAction')); return }
+  if (action === 'submit' && !revision.effective_from) { ElMessage.warning(t('standard.revision.effectiveFromRequired')); return }
   try { await ElMessageBox.confirm(t(`standard.revision.confirm.${action}`), t('standard.common.hint'), { type: 'warning' }); await glossaryAPI[`${action}Revision`](glossary.value.id, revision.id, glossary.value.version); await load() }
   catch (error) { if (!isCanceledInteraction(error)) ElMessage.error(getStandardErrorMessage(error, t)) }
 }
@@ -299,5 +302,6 @@ onMounted(async () => { try { domains.value = buildBusinessDomainOptions(await d
 .page-header { margin-bottom:20px; }
 .header-left h2, .card-header h3 { margin:0; color:var(--addp-text-primary); }
 .section-card { margin-bottom:20px; }
+.review-hint { margin-bottom:16px; }
 @media (max-width:768px) { .glossary-detail { padding:12px; } .page-header { align-items:flex-start; flex-wrap:wrap; } .glossary-detail :deep(.el-col) { max-width:100%; flex:0 0 100%; } }
 </style>

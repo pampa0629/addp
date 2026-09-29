@@ -60,6 +60,16 @@ var ontologyPermissions = []string{
 	"system.execution_authorization.create",
 }
 
+var publicOriginReadPermissions = []string{
+	"meta.catalog.read", "manager.data_item.read",
+	"transfer.task.read", "orchestrator.workflow.read",
+}
+
+var publicOriginCreatePermissions = []string{
+	"meta.scan_task.create", "transfer.task.create",
+	"orchestrator.workflow.create", "orchestrator.workflow.execute",
+}
+
 func suitePermissions(suite string) ([]string, error) {
 	switch suite {
 	case "opengauss-consumer-flow", "kingbase-consumer-flow":
@@ -158,12 +168,13 @@ func run(args []string, environment []string) error {
 	if err != nil {
 		return err
 	}
-	if _, err := tenantService.Create(ctx, iam.CreateTenantInput{
+	reserveTenant, err := tenantService.Create(ctx, iam.CreateTenantInput{
 		Code: "external-online-reserve", Name: "External Online Reserve",
 		InitialAdministratorPrincipalID: reserve.PrincipalID,
 		ActorPrincipalID:                reserve.PrincipalID,
 		Audit:                           audit("external-online-reserve-tenant"),
-	}); err != nil {
+	})
+	if err != nil {
 		return fmt.Errorf("create reserve tenant: %w", err)
 	}
 
@@ -225,6 +236,48 @@ func run(args []string, environment []string) error {
 	values := map[string]string{
 		"ADDP_ONLINE_TEST_TENANT_ID":         fmt.Sprintf("%d", tenant.ID),
 		"ADDP_ONLINE_TEST_USER_ACCESS_TOKEN": consumerSession.AccessToken,
+	}
+	if *suite == "compose-public-origin" {
+		readerSession, _, err := createPermissionFixture(ctx, identity, membershipService, roleService, selectionService,
+			tenant.ID, administrator.PrincipalID, "external-online-public-reader", publicOriginReadPermissions)
+		if err != nil {
+			return err
+		}
+		creatorSession, _, err := createPermissionFixture(ctx, identity, membershipService, roleService, selectionService,
+			tenant.ID, administrator.PrincipalID, "external-online-public-creator", publicOriginCreatePermissions)
+		if err != nil {
+			return err
+		}
+		administratorSession, err := issueSession(ctx, selectionService, administrator.PrincipalID, "external-online-administrator-session")
+		if err != nil {
+			return err
+		}
+		ownAssignments, _, err := roleService.ListAssignments(ctx, tenant.ID, iam.TenantRoleAssignmentFilter{}, 1, 100)
+		if err != nil {
+			return fmt.Errorf("resolve own Tenant assignment: %w", err)
+		}
+		var ownAssignmentID int64
+		for _, assignment := range ownAssignments {
+			if assignment.PrincipalID == administrator.PrincipalID {
+				ownAssignmentID = assignment.ID
+				break
+			}
+		}
+		if ownAssignmentID <= 0 {
+			return errors.New("own Tenant administrator assignment is missing")
+		}
+		reserveAssignments, _, err := roleService.ListAssignments(ctx, reserveTenant.ID, iam.TenantRoleAssignmentFilter{}, 1, 20)
+		if err != nil {
+			return fmt.Errorf("resolve cross-Tenant assignment: %w", err)
+		}
+		if len(reserveAssignments) == 0 || reserveAssignments[0].PrincipalID != reserve.PrincipalID {
+			return errors.New("reserve Tenant administrator assignment is missing")
+		}
+		values["ADDP_ONLINE_ADMIN_USER_ACCESS_TOKEN"] = administratorSession.AccessToken
+		values["ADDP_ONLINE_READ_USER_ACCESS_TOKEN"] = readerSession.AccessToken
+		values["ADDP_ONLINE_CREATE_USER_ACCESS_TOKEN"] = creatorSession.AccessToken
+		values["ADDP_ONLINE_OWN_ASSIGNMENT_ID"] = fmt.Sprintf("%d", ownAssignmentID)
+		values["ADDP_ONLINE_CROSS_TENANT_ASSIGNMENT_ID"] = fmt.Sprintf("%d", reserveAssignments[0].ID)
 	}
 	if needsEngineProvisioner(*suite) {
 		provisioner, err := createUser(ctx, identity, "external-online-engine-provisioner")
@@ -304,6 +357,57 @@ func createUser(ctx context.Context, service *iam.IdentityService, username stri
 	return created, nil
 }
 
+func createPermissionFixture(
+	ctx context.Context,
+	identity *iam.IdentityService,
+	memberships *iam.TenantMembershipService,
+	roles *iam.TenantRoleService,
+	selection *iam.ContextSelectionService,
+	tenantID, actorPrincipalID int64,
+	username string,
+	permissions []string,
+) (*iam.IssuedBrowserSession, int64, error) {
+	user, err := createUser(ctx, identity, username)
+	if err != nil {
+		return nil, 0, err
+	}
+	membership, err := memberships.EstablishMembership(ctx, iam.EstablishTenantMembershipInput{
+		TenantID: tenantID, PrincipalID: user.PrincipalID,
+		SourceType:           iam.TenantMembershipSourceManual,
+		CreatedByPrincipalID: &actorPrincipalID,
+		Audit:                audit(username + "-membership"),
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("establish %s membership: %w", username, err)
+	}
+	role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{
+		TenantID: tenantID, RoleKey: "online." + strings.ReplaceAll(username, "-", "_"),
+		Name: username, ScopeTypes: []string{"tenant"}, PermissionKeys: permissions,
+		ActorPrincipalID: actorPrincipalID,
+		Audit:            audit(username + "-role"),
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("create %s role: %w", username, err)
+	}
+	assignments, err := roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{
+		TenantID: tenantID, MembershipID: membership.Membership.ID,
+		RoleIDs: []int64{role.ID}, ScopeType: "tenant", Reason: "Disposable public origin permission acceptance",
+		ActorPrincipalID: actorPrincipalID,
+		Audit:            audit(username + "-assignment"),
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("assign %s role: %w", username, err)
+	}
+	if len(assignments) != 1 || assignments[0].ID <= 0 {
+		return nil, 0, fmt.Errorf("%s role assignment was not persisted", username)
+	}
+	session, err := issueSession(ctx, selection, user.PrincipalID, username+"-session")
+	if err != nil {
+		return nil, 0, err
+	}
+	return session, assignments[0].ID, nil
+}
+
 func issueSession(ctx context.Context, service *iam.ContextSelectionService, principalID int64, requestID string) (*iam.IssuedBrowserSession, error) {
 	result, err := service.BeginContextSelection(ctx, iam.BeginContextSelectionInput{
 		PrincipalID: principalID,
@@ -340,7 +444,12 @@ func writeEnvironmentFile(path string, values map[string]string) error {
 		return fmt.Errorf("protect fixture environment: %w", err)
 	}
 	for _, key := range []string{
+		"ADDP_ONLINE_ADMIN_USER_ACCESS_TOKEN",
+		"ADDP_ONLINE_CREATE_USER_ACCESS_TOKEN",
+		"ADDP_ONLINE_CROSS_TENANT_ASSIGNMENT_ID",
 		"ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN",
+		"ADDP_ONLINE_OWN_ASSIGNMENT_ID",
+		"ADDP_ONLINE_READ_USER_ACCESS_TOKEN",
 		"ADDP_ONLINE_TEST_TENANT_ID",
 		"ADDP_ONLINE_TEST_USER_ACCESS_TOKEN",
 	} {

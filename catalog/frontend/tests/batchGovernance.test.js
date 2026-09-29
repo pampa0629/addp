@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import zhCn from '../src/i18n/zh-cn.json'
+import en from '../src/i18n/en.json'
 import {
   BATCH_GOVERNANCE_ASSIGN_ACCOUNTABLE_DEPARTMENT,
   BATCH_GOVERNANCE_ASSIGN_PRIMARY_DOMAIN,
@@ -12,6 +14,14 @@ const first = { id: '11111111-1111-4111-8111-111111111111', version: 2, entry_ty
 const second = { id: '22222222-2222-4222-8222-222222222222', version: 5, entry_type: 'data_service' }
 
 describe('Catalog batch governance', () => {
+  it('names the visible action as assignment without implying curation or task creation', () => {
+    expect(zhCn.catalog.entries.batchGovernance.action).toBe('批量分配')
+    expect(zhCn.catalog.entries.batchGovernance.title).toBe('批量分配主业务域或责任部门')
+    expect(zhCn.catalog.entries.batchGovernance.description).toContain('不会改变编目状态')
+    expect(en.catalog.entries.batchGovernance.action).toBe('Batch assignment')
+    expect(en.catalog.entries.batchGovernance.title).toContain('primary domain or accountable department')
+  })
+
   it('builds an explicit member payload without filter state', () => {
     expect(buildBatchGovernancePayload([second, first], BATCH_GOVERNANCE_ASSIGN_ACCOUNTABLE_DEPARTMENT, '42')).toEqual({
       entries: [{ id: second.id, version: 5 }, { id: first.id, version: 2 }],

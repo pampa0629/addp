@@ -4,6 +4,7 @@ const RESPONSIBILITY_SUBJECT_TYPES = Object.freeze({
   data_steward: 'user',
   technical_owner: 'user'
 })
+const REQUIRED_CURATION_ROLES = ['accountable_department', 'business_owner', 'data_steward']
 
 export function buildEntryEditForm(entry) {
   const semanticLinks = Array.isArray(entry?.semantic_links) ? entry.semantic_links : []
@@ -33,6 +34,30 @@ export function buildEntryEditForm(entry) {
       .filter(item => item.status === 'active')
       .map(item => ({ role: item.role, subjectId: String(item.subject_id) }))
   }
+}
+
+export function withRequiredResponsibilityRows(form) {
+  const responsibilities = [...form.responsibilities]
+  for (const role of REQUIRED_CURATION_ROLES) {
+    if (!responsibilities.some(item => item.role === role)) responsibilities.push({ role, subjectId: '' })
+  }
+  return { ...form, responsibilities }
+}
+
+export function requiredCurationGaps(form) {
+  const gaps = []
+  if (!String(form.businessName || '').trim()) gaps.push('businessName')
+  if (!String(form.businessDescription || '').trim()) gaps.push('businessDescription')
+  if (!hasEffectivePrimaryDomain(form)) gaps.push('primaryDomain')
+  for (const [role, key] of [
+    ['accountable_department', 'accountableDepartment'],
+    ['business_owner', 'businessOwner'],
+    ['data_steward', 'dataSteward']
+  ]) {
+    const assigned = form.responsibilities.filter(item => item.role === role && isCanonicalPositiveID(item.subjectId))
+    if (role === 'data_steward' ? assigned.length < 1 : assigned.length !== 1) gaps.push(key)
+  }
+  return gaps
 }
 
 export function buildUpdatePayload(form) {
@@ -101,7 +126,7 @@ export function hasEffectivePrimaryDomain(form) {
     if (isCanonicalPositiveID(form.ownerPrimaryDomainId)) return true
     return form.ownerModule === 'standard' && ['platform', 'tenant_common'].includes(form.ownerScopeType)
   }
-  return form.domains.filter(item => item.role === 'primary').length === 1
+  return form.domains.filter(item => item.role === 'primary' && isCanonicalPositiveID(item.id)).length === 1
 }
 
 export function responsibilitySubjectType(role) {

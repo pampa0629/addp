@@ -44,7 +44,7 @@ const editableScopes=EDITABLE_STANDARD_SCOPES
 const filters=reactive({keyword:String(route.query.keyword||''),scope_type:String(route.query.scope_type||''),owner_domain_id:route.query.owner_domain_id?Number(route.query.owner_domain_id):null,status:String(route.query.status||''),page:Number(route.query.page)||1,page_size:Number(route.query.page_size)||20})
 const blank=()=>({code:'',name:'',scope_type:'tenant_common',owner_domain_id:null,value_type:'string',description:''})
 const form=reactive(blank())
-const rules=computed(()=>({code:buildStandardCodeRules(t,'standard.codeSet.codeRequired'),name:[{required:true,message:t('standard.codeSet.nameRequired')}],scope_type:[{required:true,message:t('standard.common.selectScope')}],owner_domain_id:requiresOwnerDomain(form.scope_type)?[{required:true,message:t('standard.common.ownerDomainRequired')}]:[],description:[{required:true,message:t('standard.codeSet.descriptionRequired')}]}))
+const rules=computed(()=>({code:buildStandardCodeRules(t,'standard.codeSet.codeRequired'),name:[{required:true,message:t('standard.codeSet.nameRequired')}],scope_type:[{required:true,message:t('standard.common.selectScope')}],owner_domain_id:requiresOwnerDomain(form.scope_type)?[{required:true,message:t('standard.common.ownerDomainRequired')}]:[],value_type:[{required:true,message:t('standard.codeSet.valueTypeRequired')}],description:[{required:true,message:t('standard.codeSet.descriptionRequired')}]}))
 const working=row=>row.draft_revision||row.current_revision
 const domainName=id=>domains.value.find(x=>x.id===id)?.name||'-'
 const statusLabel=s=>s?t(`standard.revision.status.${s}`):'-'

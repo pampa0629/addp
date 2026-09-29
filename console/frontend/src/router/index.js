@@ -1,6 +1,8 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { createAuthGuard } from '@common-ui'
 import { useAuthStore } from '../store/auth'
+import { SIDEBAR_MENUS } from '../config/portalConfig'
+import { filterSidebarMenus, firstAccessibleModuleRoute } from '../utils/navigationAccess'
 
 const routes = [
   {
@@ -34,8 +36,20 @@ const routes = [
     meta: { requiresAuth: true, title: 'OAuth-addp' }
   },
   {
-    path: '/meta',
-    redirect: '/meta/scan'
+    path: '/:module',
+    name: 'ConsoleModuleRoot',
+    component: () => import('../views/Portal.vue'),
+    meta: { requiresAuth: true, title: '控制台-addp' },
+    beforeEnter: (to) => {
+      const module = to.params.module
+      const menu = SIDEBAR_MENUS[module]
+      if (!menu) return true
+      const authStore = useAuthStore()
+      const visibleMenu = filterSidebarMenus({ [module]: menu }, authStore.contextType, authStore.permissions)[module]
+      const landing = firstAccessibleModuleRoute(visibleMenu)
+      if (!landing && module === 'system') return '/system/account/security'
+      return landing && landing !== to.path ? landing : true
+    }
   },
   {
     path: '/:pathMatch(.*)*',

@@ -9,12 +9,13 @@
           R{{ revision.revision_no }} · {{ statusLabel(revision.status) }}
         </el-tag>
         <el-tag v-if="codeSet.origin">{{ $t(`standard.codeSet.originValue.${codeSet.origin}`) }}</el-tag>
+        <el-tag v-if="isDirty" type="warning">{{ $t('standard.common.unsaved') }}</el-tag>
       </div>
       <div class="actions">
         <el-button v-if="editable" type="primary" :loading="savingRevision" @click="saveRevision">
           {{ $t('standard.common.save') }}
         </el-button>
-        <el-button v-if="editable" type="warning" @click="act('submit')">{{ $t('standard.revision.submit') }}</el-button>
+        <el-button v-if="editable" type="warning" :disabled="isDirty || savingIdentity || savingRevision" @click="act('submit')">{{ $t('standard.revision.submit') }}</el-button>
         <el-button v-if="reviewing && canPublish" @click="act('return')">{{ $t('standard.revision.return') }}</el-button>
         <el-button v-if="reviewing && canPublish" type="success" @click="act('publish')">{{ $t('standard.revision.publish') }}</el-button>
         <el-button v-if="!codeSet.draft_revision && canUpdate && !platform" @click="newDraft">
@@ -25,6 +26,7 @@
         </el-button>
       </div>
     </div>
+    <el-alert v-if="editable && reviewHint" :title="reviewHint" type="warning" :closable="false" show-icon class="review-hint" />
 
     <el-row :gutter="16">
       <el-col :xs="24" :lg="16">
@@ -51,7 +53,7 @@
                 </el-form-item>
               </el-col>
               <el-col :xs="24" :sm="12">
-                <el-form-item :label="$t('standard.common.scopeLabel')">
+                <el-form-item :label="$t('standard.common.scopeLabel')" :required="identityEditable">
                   <el-select v-model="codeSet.scope_type" class="field-control">
                     <el-option v-for="scope in scopeOptions" :key="scope" :label="scopeLabel(scope)" :value="scope" :disabled="scope === 'platform'" />
                   </el-select>
@@ -84,12 +86,12 @@
           <el-form :model="revision" label-width="130px" :disabled="!editable">
             <el-row :gutter="16">
               <el-col :xs="24" :sm="12">
-                <el-form-item :label="$t('standard.codeSet.nameLabel')">
+                <el-form-item :label="$t('standard.codeSet.nameLabel')" :required="editable">
                   <el-input v-model="revision.name" />
                 </el-form-item>
               </el-col>
               <el-col :xs="24" :sm="12">
-                <el-form-item :label="$t('standard.codeSet.valueType')">
+                <el-form-item :label="$t('standard.codeSet.valueType')" :required="editable">
                   <el-select v-model="revision.value_type" class="field-control">
                     <el-option value="string" />
                     <el-option value="int" />
@@ -98,7 +100,7 @@
                 </el-form-item>
               </el-col>
               <el-col :xs="24" :sm="12">
-                <el-form-item :label="$t('standard.revision.effectiveFrom')">
+                <el-form-item :label="$t('standard.revision.effectiveFrom')" :required="editable">
                   <el-date-picker
                     v-model="revision.effective_from"
                     type="datetime"
@@ -118,10 +120,10 @@
                 </el-form-item>
               </el-col>
             </el-row>
-            <el-form-item :label="$t('standard.codeSet.descriptionLabel')">
+            <el-form-item :label="$t('standard.codeSet.descriptionLabel')" :required="editable">
               <el-input v-model="revision.description" type="textarea" :rows="3" />
             </el-form-item>
-            <el-form-item :label="$t('standard.revision.changeSummary')">
+            <el-form-item :label="$t('standard.revision.changeSummary')" :required="editable">
               <el-input v-model="revision.change_summary" type="textarea" :rows="2" />
             </el-form-item>
           </el-form>
@@ -188,7 +190,7 @@
       width="min(560px, calc(100vw - 24px))"
     >
       <el-form :model="itemForm" label-position="top">
-        <el-form-item :label="$t('standard.codeSet.itemCode')" required>
+        <el-form-item :label="$t('standard.codeSet.itemCode')" :required="!editingItem">
           <el-input v-model="itemForm.code" :disabled="Boolean(editingItem)" />
         </el-form-item>
         <el-form-item :label="$t('standard.codeSet.itemLabel')" required>
@@ -200,7 +202,7 @@
         <el-form-item :label="$t('standard.common.sort')">
           <el-input-number v-model="itemForm.sort_order" :min="0" />
         </el-form-item>
-        <el-form-item :label="$t('standard.common.status')">
+        <el-form-item :label="$t('standard.common.status')" required>
           <el-radio-group v-model="itemForm.status" @change="handleItemStatusChange">
             <el-radio value="active">{{ $t('standard.codeSet.itemStatus.active') }}</el-radio>
             <el-radio value="deprecated">{{ $t('standard.codeSet.itemStatus.deprecated') }}</el-radio>
@@ -238,6 +240,7 @@ import { ArrowLeft, Plus } from '@element-plus/icons-vue'
 import { StatusAnnouncer, useConsolePageDescriptor } from '@common-ui'
 import { codeSetAPI, domainAPI } from '../api/standard'
 import { useStandardPermissions } from '../composables/useStandardPermissions'
+import { useUnsavedChanges } from '../composables/useUnsavedChanges'
 import { navigateStandardRoute } from '@/utils/moduleNavigation'
 import { formatStandardDateTime } from '../utils/dateTime'
 import { getStandardErrorMessage, isCanceledInteraction } from '../utils/apiError'
@@ -285,6 +288,12 @@ const editable = computed(() => (
   codeSet.value.draft_revision_id === revision.id
 ))
 const reviewing = computed(() => revision.status === 'in_review' && codeSet.value.draft_revision_id === revision.id)
+const editableState = computed(() => ({
+  identity: { ...buildStandardOwnership(codeSet.value.scope_type, codeSet.value.owner_domain_id), tags: codeSet.value.tags || [] },
+  revision: buildCodeSetRevisionPayload(revision, 0)
+}))
+const { isDirty, markSaved } = useUnsavedChanges({ state: editableState })
+const reviewHint = computed(() => isDirty.value ? t('standard.revision.saveBeforeReview') : !revision.effective_from ? t('standard.revision.effectiveFromRequired') : '')
 const replacementItems = computed(() => listReplacementItems(revision.items, editingItem.value?.id))
 
 useConsolePageDescriptor(router, 'standard', {
@@ -320,6 +329,7 @@ async function load() {
     codeSet.value.tags ||= []
     revisions.value = history || []
     setRevision(aggregate.draft_revision || aggregate.current_revision || history?.[0])
+    markSaved()
   } catch (error) {
     ElMessage.error(getStandardErrorMessage(error, t, 'standard.common.loadFailed'))
     goBack()
@@ -350,6 +360,7 @@ async function saveIdentity() {
       tags: codeSet.value.tags || []
     })
     codeSet.value.tags ||= []
+    markSaved('identity')
     announcement.value = t('standard.common.saveSuccess')
     ElMessage.success(announcement.value)
   } catch (error) {
@@ -367,16 +378,19 @@ watch(() => codeSet.value.scope_type, scope => {
 async function saveRevision() {
   savingRevision.value = true
   announcement.value = t('standard.common.saving')
+  const pendingIdentity = editableState.value.identity
   try {
-    codeSet.value = await codeSetAPI.updateRevision(
+    const aggregate = await codeSetAPI.updateRevision(
       codeSet.value.id,
       revision.id,
       buildCodeSetRevisionPayload(revision, codeSet.value.version)
     )
-    setRevision(codeSet.value.draft_revision)
+    codeSet.value = { ...aggregate, ...pendingIdentity }
+    setRevision(aggregate.draft_revision)
+    markSaved('revision')
+    revisions.value = revisions.value.map(item => item.id === revision.id ? aggregate.draft_revision : item)
     announcement.value = t('standard.common.saveSuccess')
     ElMessage.success(announcement.value)
-    await load()
   } catch (error) {
     announcement.value = t('standard.common.saveFailed')
     ElMessage.error(getStandardErrorMessage(error, t, 'standard.common.saveFailed'))
@@ -386,6 +400,14 @@ async function saveRevision() {
 }
 
 async function act(action) {
+  if (isDirty.value || savingIdentity.value || savingRevision.value) {
+    ElMessage.warning(t('standard.common.saveBeforeAction'))
+    return
+  }
+  if (action === 'submit' && !revision.effective_from) {
+    ElMessage.warning(t('standard.revision.effectiveFromRequired'))
+    return
+  }
   try {
     await ElMessageBox.confirm(
       t(`standard.revision.confirm.${action}`),
@@ -411,6 +433,10 @@ async function act(action) {
 }
 
 async function newDraft() {
+  if (isDirty.value || savingIdentity.value || savingRevision.value) {
+    ElMessage.warning(t('standard.common.saveBeforeAction'))
+    return
+  }
   try {
     const { value } = await ElMessageBox.prompt(
       t('standard.revision.changeSummary'),
@@ -434,6 +460,7 @@ async function newDraft() {
 }
 
 function openItem(item) {
+  if (isDirty.value) { ElMessage.warning(t('standard.common.saveBeforeAction')); return }
   editingItem.value = item || null
   Object.assign(itemForm, item ? {
     code: item.code,
@@ -490,6 +517,7 @@ async function saveItem() {
 }
 
 async function removeItem(item) {
+  if (isDirty.value) { ElMessage.warning(t('standard.common.saveBeforeAction')); return }
   try {
     await ElMessageBox.confirm(
       t('standard.codeSet.confirmDeleteItem', { name: item.label }),
@@ -520,7 +548,7 @@ function replacementLabel(replacementItemID) {
   return item ? `${item.label} (${item.code})` : `#${replacementItemID}`
 }
 
-const selectRevision = item => setRevision(item)
+const selectRevision = item => { if (isDirty.value) { ElMessage.warning(t('standard.common.saveBeforeAction')); return }; setRevision(item); markSaved() }
 const goBack = () => navigateStandardRoute(router, { path: '/code-sets', query: route.query }, { history: 'replace' })
 
 watch(() => route.params.id, () => {
@@ -536,6 +564,7 @@ watch(() => route.params.id, () => {
 .page-header{gap:16px;margin-bottom:16px}
 .header-left,.actions{gap:10px;flex-wrap:wrap}
 .section{margin-bottom:16px}
+.review-hint{margin-bottom:16px}
 .field-control{width:100%}
 .history-row{gap:8px}
 .page-shell :deep(.el-card){background:var(--addp-bg-primary);border-color:var(--addp-border-color)}

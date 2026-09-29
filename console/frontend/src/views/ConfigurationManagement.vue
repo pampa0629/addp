@@ -54,12 +54,13 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, ArrowRight, Refresh } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '../store/auth'
+import { allowsConsoleRoute } from '@common-ui'
 import { listConfigurationManagementEntries } from '../api/configurationManagement'
 import ModuleConfiguration from '../components/configuration/ModuleConfiguration.vue'
 import { translateDynamicKey } from '../utils/configurationI18n'
@@ -73,6 +74,7 @@ const entries = ref([])
 const loadFailed = ref(false)
 const ENTRY_REFRESH_INTERVAL_MS = 10000
 let entriesRequest = null
+let entriesRequestId = 0
 let refreshTimer = null
 const CONSOLE_MODULE_ROUTES = {
   agent: '/configuration/agent',
@@ -95,6 +97,8 @@ const ENTRY_LABEL_KEYS = {
 const moduleEntries = computed(() => {
   const modules = new Map()
   for (const entry of entries.value) {
+    const route = CONSOLE_MODULE_ROUTES[entry.owner_module] || entry.frontend_route
+    if (!allowsConsoleRoute(route, authStore.contextType, authStore.permissions)) continue
     const existing = modules.get(entry.owner_module)
     if (!existing) {
       modules.set(entry.owner_module, {
@@ -143,12 +147,15 @@ function loadEntries({ silent = false } = {}) {
   if (entriesRequest) return entriesRequest
 
   if (!silent) loading.value = true
+  const requestId = ++entriesRequestId
   entriesRequest = listConfigurationManagementEntries()
     .then((result) => {
+      if (requestId !== entriesRequestId) return
       entries.value = result
       loadFailed.value = false
     })
     .catch(() => {
+      if (requestId !== entriesRequestId) return
       loadFailed.value = true
       if (!silent) {
         entries.value = []
@@ -156,12 +163,22 @@ function loadEntries({ silent = false } = {}) {
       }
     })
     .finally(() => {
+      if (requestId !== entriesRequestId) return
       if (!silent) loading.value = false
       entriesRequest = null
     })
 
   return entriesRequest
 }
+
+watch(() => authStore.authContext, (context) => {
+  entriesRequestId += 1
+  entriesRequest = null
+  entries.value = []
+  loadFailed.value = false
+  loading.value = false
+  if (context && !selectedOwner.value) loadEntries()
+})
 
 function refreshEntries() {
   if (!selectedOwner.value && document.visibilityState !== 'hidden') {
@@ -187,6 +204,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  entriesRequestId += 1
   if (refreshTimer !== null) window.clearInterval(refreshTimer)
 })
 </script>

@@ -245,11 +245,15 @@
       },
       "memberships": {
         "editExpiry": "设置成员关系有效期",
+        "manageRoles": "角色分配",
+        "viewRoles": "查看角色",
+        "roleDrawerTitle": "{name}的角色",
         "expiresAt": "到期时间",
         "joinedAt": "加入时间",
         "member": "成员",
         "memberType": "账号类型",
         "currentAccount": "当前账号",
+        "inviteUser": "邀请用户",
         "source": "来源"
       },
       "memberSelect": {
@@ -264,6 +268,7 @@
         "versionConflict": "该组织记录已发生变化，请刷新后再提交；当前输入已保留。",
         "copyCode": "复制编码",
         "codeCopied": "编码已复制",
+        "codeCopyFailed": "复制编码失败，请手动复制",
         "codeAlreadyExists": "该编码已存在，请换一个编码",
         "codeCreateHint": "编码必填，创建后不可修改",
         "codeImmutableHint": "编码创建后不可修改",

@@ -1,5 +1,40 @@
 import { test, expect } from '@playwright/test'
-import { runtimePath, installMetricApplicationBackend } from './fixtures/metricApplication.js'
+import { applicationPath, runtimePath, installMetricApplicationBackend } from './fixtures/metricApplication.js'
+
+test('zero-permission account cannot load management URLs or request Workbench APIs', async ({ page, context }) => {
+  await installMetricApplicationBackend(context, { permissions: [] })
+  const workbenchRequests = []
+  page.on('request', request => {
+    if (new URL(request.url()).pathname.startsWith('/api/v1/workbench/')) workbenchRequests.push(request.url())
+  })
+
+  for (const path of ['/module-ui/workbench/', '/module-ui/workbench/applications', '/module-ui/workbench/applications/new', applicationPath]) {
+    await page.goto(path)
+    await expect(page).toHaveURL(/\/module-ui\/workbench\/forbidden$/)
+    await expect(page.locator('.module-access-denied')).toBeVisible()
+  }
+  expect(workbenchRequests).toEqual([])
+})
+
+test('read-only Workbench account cannot open creation or editing URLs', async ({ page, context }) => {
+  await installMetricApplicationBackend(context, { permissions: ['workbench.data_application.read'] })
+  const workbenchRequests = []
+  page.on('request', request => {
+    if (new URL(request.url()).pathname.startsWith('/api/v1/workbench/')) workbenchRequests.push(request.url())
+  })
+
+  await page.goto('/module-ui/workbench/')
+  await expect(page).toHaveURL(/\/module-ui\/workbench\/applications$/)
+  await expect(page.getByTestId('data-application-list')).toBeVisible()
+  workbenchRequests.length = 0
+
+  for (const path of ['/module-ui/workbench/applications/new', applicationPath]) {
+    await page.goto(path)
+    await expect(page).toHaveURL(/\/module-ui\/workbench\/forbidden$/)
+    await expect(page.locator('.module-access-denied')).toBeVisible()
+  }
+  expect(workbenchRequests).toEqual([])
+})
 
 test('delivery opens the Console same-origin runtime with Workbench assets', async ({ page, context }) => {
   const backend = await installMetricApplicationBackend(context)

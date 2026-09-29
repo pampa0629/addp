@@ -129,7 +129,7 @@ Standard MetricDefinition 的业务定义、统计口径、专业状态、`domai
 
 Project Group 不作为长期责任主体。它只在后续协作集合、草稿、评审和治理任务中使用。User 离职或 Department 失效不会自动删除 CatalogEntry；Catalog 将关系标记为待移交并进入治理队列。
 
-System 的 Department / Project Group 管理契约以 `system/docs/IAM数据模型与迁移规范.md` 为准。Catalog 不创建、修改或关闭组织对象，只通过 System 精确解析接口验证责任引用，并在已引用 Department 或 User 变为不可引用时建立本地治理待办。Project Group 只作为后续 Catalog 协作集合的主体，不进入长期责任关系。
+System 的 Department / Project Group 管理契约以 `system/docs/IAM数据模型与迁移规范.md` 为准。Catalog 不创建、修改或关闭组织对象，只通过 System 精确解析接口验证责任引用，并在已引用 Department 或 User 变为不可引用时建立本地责任治理任务。Project Group 只作为后续 Catalog 协作集合的主体，不进入长期责任关系。
 
 责任失效对账使用 System 同一个精确批量解析契约，不新增组织变化副本或第二条事实同步路线。Catalog 按 Tenant 周期性读取当前 `active` / `needs_transfer` 责任，最多 200 个一批进行解析，并在 Catalog 本地事务中执行：
 
@@ -212,7 +212,7 @@ Catalog 列表只提供两个相互排他的目录视图：
 - `governance`：默认视图，只包含 `curated|certified|deprecated` 条目；调用者拥有 `catalog.inventory.read` 不改变该默认值。
 - `inventory`：企业资源盘点视图，包含 `discovered|curated|certified|deprecated` 条目，必须同时具有 `catalog.entry.read` 和 `catalog.inventory.read`。
 
-Console 的固定页面标题使用“企业资源目录”，侧边栏入口使用“资源浏览”，两个视图标签分别使用“已治理资源”和“资源盘点”。不得同时使用“目录浏览”“治理目录”“企业目录导航”等相近名称制造另一套目录概念。`discovered` 条目主操作为“开始编目”；`curated` 条目主操作为“编辑编目”，认证和撤销编目放在明确的治理操作中；`certified` 条目只提供“撤销认证”和“弃用资源”，不显示通用编目编辑器；`deprecated` 只提供“维护弃用信息”，不得修改冻结的编目事实。
+Console 的固定页面标题使用“企业资源目录”，侧边栏入口使用“资源浏览”，两个视图标签分别使用“已编目资源”和“资源盘点”。“已编目资源”包含 `curated|certified|deprecated`，不表示全部已认证、质量合格或已发布为资产。不得同时使用“目录浏览”“治理目录”“企业目录导航”等相近名称制造另一套目录概念。`discovered` 条目主操作为“开始编目”；`curated` 条目主操作为“编辑编目”，认证和撤销编目放在明确的治理操作中；`certified` 条目只提供“撤销认证”和“弃用资源”，不显示通用编目编辑器；`deprecated` 只提供“维护弃用信息”，不得修改冻结的编目事实。
 
 视图是同一组 CatalogEntry 的权限感知查询，不新增实体、复制条目或维护双轨索引。DataItem 全量自动建档且可在 `inventory` 查询；完成业务编目后，同一 CatalogEntry 自然进入 `governance` 视图。
 
@@ -404,8 +404,10 @@ POST /api/v1/quality/runtime/catalog-summaries/resolve
 第一阶段仅对当前来源满足 `source_module=meta`、`source_type=data_item`、`source_status=active` 且已观察摘要具有规范正整数 `item_id` 的 active CatalogEntry 展示数据血缘。Catalog Frontend 使用当前 User Access Token 直接调用 Meta 唯一图接口：
 
 ```http
-GET /api/v1/meta/lineage/graph?subject_kind=data_item&item_id={item_id}&direction=both&depth=3&limit=100
+GET /api/v1/meta/lineage/graph?subject_kind=data_item&item_id={item_id}&direction=both&depth=2&limit=100
 ```
+
+`depth=2` 是 Catalog 首次展示的层数；用户在共享血缘查看器中切换层数时，Catalog 必须以所选层数重新查询 Meta，而不是仅改变下拉框显示。
 
 Meta 继续执行 `meta.lineage.read`、Tenant 和资源可见性校验。Catalog 前端复用 `common-frontend/graph` 的 `LineageViewer` 和 DTO 标准化能力，并合并共享双语词条；不得复制图组件、解析 locator 或从 `full_name` 猜测 Meta Item 身份。
 
@@ -566,6 +568,8 @@ BasePath 固定为 `/api/v1/catalog`。第一阶段公开单一路由集合：
 
 `POST /entries/batch_governance` 是资源盘点中的显式成员批量命令，只允许同时具有 `catalog.inventory.read` 与 `catalog.entry.update` 的治理人员调用。请求固定包含 1 到 200 个互不重复的 `{id, version}`、单一 `operation=assign_primary_domain|assign_accountable_department` 和 owner 稳定 `reference_id`；不接受筛选条件、查询结果全选或手工输入裸 ID。Catalog 在写事务前只向对应 owner 精确校验一次目标可引用性，在事务中按 CatalogEntry UUID 稳定排序加锁并校验全部成员，再只替换每个条目的主业务域或责任部门这一项关系，保留其他语义与责任事实。任一条目不存在、跨 Tenant、非 active、版本冲突、目标不可引用或不适用时整批回滚；成功后每个条目版本递增并按原请求顺序返回 `{id, version}`。
 
+资源盘点中的用户操作称“批量分配”，弹窗明确说明只支持主业务域或责任部门的单项分配。该命令不完成业务编目、不推进认证或弃用状态，也不自动生成责任治理任务；不得用泛化的“批量治理”文案暗示上述能力。
+
 Model `business_entity|logical_model` 与 Standard `metric` 的主业务域由专业 owner 维护，Catalog 批量命令不得覆盖；包含任一此类条目时整批返回 `409 catalog_batch_governance_unsupported_entry`。每个成功条目必须写入独立审计记录并共享同一个 `batch_id`，同时投递搜索投影任务。显式成员和逐条版本共同构成并发快照，因此本命令不创建 Tenant 级集合 `revision`；前端遇到冲突必须保留选择和输入供用户刷新后重新确认，不能自动覆盖。
 
 列表使用标准 `{data,total,page,page_size,total_pages}` 响应；`view=governance|inventory` 是稳定目录视图，省略时唯一表示 `governance`。`search`、`entry_type`、`source_status`、`governance_status`、`visibility`、`primary_domain_id`、`accountable_department_id`、`source_engine_id`、`coverage_dimension`、`coverage_state` 等过滤参数必须在 Swagger 中逐项声明，排序字段使用白名单。显式请求 `view=inventory` 但缺少 `catalog.inventory.read` 时返回 `403`，不静默降级到治理目录；治理缺口参数组合不满足 5.12 节约束时返回 `400`。
@@ -589,6 +593,8 @@ Model `business_entity|logical_model` 与 Standard `metric` 的主业务域由�
 所有用户可见错误使用 Catalog i18n；Swagger 使用中文在前、英文在后的双语注解，并为每个公开 Operation 声明 `x-addp-auth-mode` 和精确 Permission。
 
 `GET /governance/tasks` 第一阶段只接受 `status=open|resolved`、可选 `entry_id`、`page` 和 `page_size`，同时使用 `catalog.entry.read` 与 `catalog.entry.update` Permission。返回任务、CatalogEntry 当前显示名和版本，治理人员从任务进入现有条目编目页修复责任；任务列表不新增责任写入或任务关单权限。前端按 CatalogEntry 名称远程搜索并提交 `entry_id`，不提供 UUID 手工输入。
+
+Console 和 Catalog 的菜单、页面均称“责任治理队列”：只有既有关联的 Department 或 User 失效所派生的 `responsibility_transfer` 任务进入此页。未编目、未分配主域或责任等目录治理缺口仍通过治理覆盖率下钻到资源盘点，不自动生成任务；不得将此页标成泛化的“治理待办”。
 
 `GET /me/entries` 必须显式提交 `relation=responsible|favorite|following`，只接受 `page` 和 `page_size`，使用标准目录分页结构并再次应用当前调用者可见性。个人 marks 读写使用 `catalog.entry.read`，目标条目不可见时统一返回 `404`。
 

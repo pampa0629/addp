@@ -36,6 +36,8 @@ Metric 的指标依赖与基准指标关系通过当前 User Token 读取 `GET /
 
 **外部存储**: MinIO（存储标准文档文件，bucket 名为 `standard`）
 
+独立前端根路径在 AuthContext 加载后，按 Console 菜单顺序 `/domains`、`/glossaries`、`/elements`、`/code-sets`、`/units`、`/metrics`、`/documents` 选择第一个符合页面准入条件的地址；没有可访问页面时进入 `/forbidden`。登录后的默认返回地址为根路径。显式列表或详情地址继续只按自身权限判断，不改跳其他标准页面。
+
 ## 已确认的目标边界与迁移顺序
 
 - 业务域只表达业务语义与治理责任，不表达可见范围、审核容器或目录分类。标准对象独立维护修订和发布流程，不再建立标准成员清单的独立治理容器。

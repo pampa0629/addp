@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '../store/auth'
+import { resolveModuleLandingRoute } from '../../../../common-frontend/basic/src/authorization/consoleRouteAccess.js'
 
 const routes = [
   {
@@ -15,7 +16,15 @@ const routes = [
     children: [
       {
         path: '',
-        redirect: 'data-explorer'
+        name: 'ManagerHome',
+        beforeEnter: () => {
+          const authStore = useAuthStore()
+          return resolveModuleLandingRoute('/manager', [
+            '/data-explorer', '/data-retrieval', '/tasks/quick-view',
+            '/tasks/spatial', '/tasks/embedding', '/settings/embedding'
+          ], authStore.contextType, authStore.permissions)
+        },
+        meta: { requiresAuth: true, handlesForbidden: true }
       },
       {
 		path: 'settings/embedding',

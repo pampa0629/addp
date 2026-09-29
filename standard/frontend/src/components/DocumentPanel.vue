@@ -50,7 +50,7 @@
         <el-form-item :label="$t('standard.documentPanel.nameLabel')" required>
           <el-input v-model="uploadForm.name" :placeholder="$t('standard.document.namePlaceholder')" />
         </el-form-item>
-        <el-form-item :label="$t('standard.documentPanel.typeLabel')">
+        <el-form-item :label="$t('standard.documentPanel.typeLabel')" required>
           <el-select v-model="uploadForm.doc_type" style="width:100%">
             <el-option :label="$t('standard.document.national')" value="national" />
             <el-option :label="$t('standard.document.industry')" value="industry" />

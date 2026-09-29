@@ -217,14 +217,19 @@ const formRef = ref()
 const filters = reactive({ membership_id: '', scope_type: '', effective_state: 'effective' })
 const form = reactive({ membershipId: '', roleIds: [], scopeType: 'tenant', departmentId: '', projectGroupId: '', validUntil: null, reason: '' })
 const fixedMembership = computed(() => props.fixedMembership)
-const fixedMember = computed(() => fixedMembership.value ? {
-  id: fixedMembership.value.membership_id,
-  principal_id: fixedMembership.value.id,
-  principal_type: 'service_principal',
-  display_name: fixedMembership.value.name,
-  status: fixedMembership.value.membership_status
-} : null)
-const effectiveMembershipID = computed(() => fixedMembership.value?.membership_id || filters.membership_id || '')
+const fixedMember = computed(() => {
+  const membership = fixedMembership.value
+  if (!membership) return null
+  if (membership.principal_type === 'user') return membership
+  return {
+    id: membership.membership_id,
+    principal_id: membership.id,
+    principal_type: 'service_principal',
+    display_name: membership.name,
+    status: membership.membership_status
+  }
+})
+const effectiveMembershipID = computed(() => fixedMember.value?.id || filters.membership_id || '')
 const currentMembershipID = computed(() => authStore.authContext?.context?.tenant_membership_id || '')
 const showingCurrentAccount = computed(() => Boolean(currentMembershipID.value && String(filters.membership_id) === String(currentMembershipID.value)))
 const activeMembers = computed(() => membershipOptions.value.filter((member) => member.status === 'active'))
@@ -309,7 +314,7 @@ async function load() {
       page: page.value,
       page_size: pageSize.value,
       membership_id: effectiveMembershipID.value || undefined,
-      principal_type: fixedMembership.value ? 'service_principal' : 'user',
+      principal_type: fixedMember.value?.principal_type || 'user',
       scope_type: filters.scope_type || undefined,
       effective_state: filters.effective_state
     })
@@ -381,7 +386,7 @@ async function openCreate(roleKey = '') {
   Object.assign(form, { membershipId: '', roleIds: [], scopeType: 'tenant', departmentId: '', projectGroupId: '', validUntil: null, reason: '' })
   try {
     await loadOptions()
-    if (fixedMembership.value) form.membershipId = fixedMembership.value.membership_id
+    if (fixedMember.value) form.membershipId = fixedMember.value.id
     else if (activeMembers.value.some((member) => String(member.id) === String(currentMembershipID.value))) form.membershipId = currentMembershipID.value
     await loadMemberAssignments()
     const recommendedRole = roles.value.find((role) => role.role_key === roleKey)
@@ -474,7 +479,7 @@ onMounted(() => {
   load()
   if (!fixedMembership.value) loadFilterOptions()
 })
-watch(() => fixedMembership.value?.membership_id, () => {
+watch(() => fixedMember.value?.id, () => {
   page.value = 1
   dialogVisible.value = false
   load()

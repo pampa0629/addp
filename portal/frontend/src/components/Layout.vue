@@ -81,7 +81,7 @@ const handleSearch = () => {
 const handleCommand = (command) => {
   if (command === 'logout') {
     authStore.logout()
-    router.push('/login')
+    router.push('/portal/login')
   }
 }
 </script>

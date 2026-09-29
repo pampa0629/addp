@@ -42,3 +42,9 @@ export function filterSidebarMenus(menus, contextType, grantedPermissions = []) 
     return [module, { ...menu, items: items.filter(item => !item.fallbackFor || !visibleIndexes.has(item.fallbackFor)) }]
   }))
 }
+
+export function firstAccessibleModuleRoute(menu) {
+  if (!menu) return ''
+  if (menu.flat) return menu.index || ''
+  return menu.items?.flatMap(item => item.children?.length ? item.children : [item])[0]?.index || ''
+}

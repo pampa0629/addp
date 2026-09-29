@@ -72,6 +72,9 @@
       "publish": "发布",
       "withdraw": "撤回",
       "effectiveFrom": "生效时间",
+      "effectiveFromRequired": "提交审核前请填写生效时间",
+      "saveBeforeReview": "当前有未保存的修改，请先保存，再提交审核",
+      "documentFileRequired": "提交审核前请上传标准文档文件",
       "effectiveTo": "失效时间",
       "status": {
         "draft": "草稿",
@@ -310,6 +313,7 @@
       "descriptionLabel": "描述",
       "descriptionRequired": "请输入描述",
       "valueType": "码值类型",
+      "valueTypeRequired": "请选择码值类型",
       "origin": "来源",
       "originValue": {
         "platform": "平台",

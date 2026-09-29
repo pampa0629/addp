@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
 import {
   buildEntryEditForm,
   buildCertificationPayload,
@@ -10,10 +11,49 @@ import {
   hasEffectivePrimaryDomain,
   isCanonicalPositiveID,
   isCanonicalUUID,
+  requiredCurationGaps,
+  withRequiredResponsibilityRows,
   responsibilitySubjectType
 } from '../src/utils/entryEdit'
 
 describe('catalog entry edit contract', () => {
+  it('shows curation requirements and loads published glossary candidates for dropdown selection', () => {
+    const source = readFileSync(new URL('../src/components/EntryEditor.vue', import.meta.url), 'utf8')
+    expect(source).toContain('v-if="missingRequirements.length"')
+    expect(source).toContain('remote-show-suffix')
+    expect(source).toContain("searchCandidates('glossary', '')")
+    expect(source).toContain('noPublishedGlossaries')
+    expect(source).toContain('visibilityAudience.')
+  })
+
+  it('prepares exactly the missing required responsibility rows without overwriting existing choices', () => {
+    const form = withRequiredResponsibilityRows(buildEntryEditForm({
+      responsibilities: [{ role: 'accountable_department', subject_id: '12', status: 'active' }]
+    }))
+    expect(form.responsibilities).toEqual([
+      { role: 'accountable_department', subjectId: '12' },
+      { role: 'business_owner', subjectId: '' },
+      { role: 'data_steward', subjectId: '' }
+    ])
+    expect(withRequiredResponsibilityRows(form).responsibilities).toEqual(form.responsibilities)
+  })
+
+  it('reports only actual curation gaps and treats glossary links as optional', () => {
+    const form = withRequiredResponsibilityRows(buildEntryEditForm({}))
+    expect(requiredCurationGaps(form)).toEqual([
+      'businessName', 'businessDescription', 'primaryDomain',
+      'accountableDepartment', 'businessOwner', 'dataSteward'
+    ])
+    form.businessName = '户外人员'
+    form.businessDescription = '参与户外活动的人员'
+    form.domains.push({ id: '1', role: 'primary' })
+    form.responsibilities[0].subjectId = '11'
+    form.responsibilities[1].subjectId = '12'
+    form.responsibilities[2].subjectId = '13'
+    expect(requiredCurationGaps(form)).toEqual([])
+    expect(form.glossaryIDs).toEqual([])
+  })
+
   it('maps detail projections into one complete update payload', () => {
     const form = buildEntryEditForm({
       version: 4,

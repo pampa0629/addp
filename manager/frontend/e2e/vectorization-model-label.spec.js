@@ -68,6 +68,50 @@ test('read-only vectorization page displays a model label without model manageme
   expect(pageErrors).toEqual([])
 })
 
+test('a retrieval-only account opens its accessible Manager landing page', async ({ page }) => {
+  await page.route('**/api/v1/**', route => {
+    const path = new URL(route.request().url()).pathname
+    if (path === '/api/v1/system/refresh') return json(route, { access_token: 'manager-retrieval-token', expires_in: 3600 })
+    if (path === '/api/v1/system/users/me') return json(route, { id: 34, username: 'retrieval-user' })
+    if (path === '/api/v1/system/auth/context') {
+      return json(route, {
+        context: { type: 'tenant', tenant_id: '1' },
+        authorization: { role_assignments: [{
+          scope: { type: 'tenant', tenant_id: '1' }, permissions: ['manager.search.execute', 'manager.data_item.read']
+        }] }
+      })
+    }
+    return json(route, { data: [], total: 0 })
+  })
+
+  await page.goto('/')
+  await expect(page).toHaveURL(/\/data-retrieval$/)
+  await expect(page.locator('.el-result')).toHaveCount(0)
+})
+
+test('an account without Manager page permission gets no page request from root or a direct URL', async ({ page }) => {
+  const businessRequests = []
+  await page.route('**/api/v1/**', route => {
+    const path = new URL(route.request().url()).pathname
+    if (path === '/api/v1/system/refresh') return json(route, { access_token: 'manager-no-permission-token', expires_in: 3600 })
+    if (path === '/api/v1/system/users/me') return json(route, { id: 33, username: 'no-permission-user' })
+    if (path === '/api/v1/system/auth/context') {
+      return json(route, { context: { type: 'tenant', tenant_id: '1' }, authorization: { role_assignments: [] } })
+    }
+    businessRequests.push(path)
+    return json(route, {}, 403)
+  })
+
+  await page.goto('/')
+  await expect(page).toHaveURL(/\/forbidden$/)
+  await expect(page.locator('.el-result')).toBeVisible()
+
+  await page.goto('/data-explorer')
+  await expect(page).toHaveURL(/\/forbidden$/)
+  await expect(page.locator('.el-result')).toBeVisible()
+  expect(businessRequests).toEqual([])
+})
+
 function json(route, body, status = 200) {
   return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) })
 }

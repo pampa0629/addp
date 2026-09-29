@@ -28,6 +28,11 @@ class ComposePublicOriginOnlineTest(unittest.TestCase):
             "ADDP_ONLINE_PUBLIC_ORIGIN": "http://127.0.0.1:18080",
             "ADDP_ONLINE_TEST_USER_ACCESS_TOKEN": "test-token",
             "ADDP_ONLINE_TEST_TENANT_ID": "42",
+            "ADDP_ONLINE_READ_USER_ACCESS_TOKEN": "read-token",
+            "ADDP_ONLINE_CREATE_USER_ACCESS_TOKEN": "create-token",
+            "ADDP_ONLINE_ADMIN_USER_ACCESS_TOKEN": "admin-token",
+            "ADDP_ONLINE_OWN_ASSIGNMENT_ID": "84",
+            "ADDP_ONLINE_CROSS_TENANT_ASSIGNMENT_ID": "86",
         })
         self.env.start()
         self.addCleanup(self.env.stop)
@@ -36,7 +41,7 @@ class ComposePublicOriginOnlineTest(unittest.TestCase):
         checks = {
             name: DEFAULT for name in (
                 "root_compose_ports", "infra_compose_ports", "assert_platform_ports", "assert_isolated_groups",
-                "assert_frontend", "assert_authorized_gateway", "assert_module_gateway_route",
+                "assert_frontend", "assert_authorized_gateway", "assert_module_gateway_route", "assert_partial_permission_matrix",
             )
         }
         with patch.multiple(MODULE, **checks) as mocked, redirect_stdout(io.StringIO()) as output:
@@ -50,11 +55,50 @@ class ComposePublicOriginOnlineTest(unittest.TestCase):
         mocked["assert_module_gateway_route"].assert_any_call("Manager", "/api/v1/manager/engines")
         mocked["assert_module_gateway_route"].assert_any_call("Transfer", "/api/v1/transfer/system-engines")
         mocked["assert_module_gateway_route"].assert_any_call("Orchestrator", "/api/v1/orchestrator/orchestrations")
+        mocked["assert_partial_permission_matrix"].assert_called_once()
         report = json.loads(output.getvalue())
         self.assertEqual(report["frontends"], ["console", "system", "meta", "manager", "transfer", "orchestrator"])
         self.assertEqual(report["gateway_manager_permission_guard"], "passed")
         self.assertEqual(report["gateway_transfer_permission_guard"], "passed")
         self.assertEqual(report["gateway_orchestrator_permission_guard"], "passed")
+        self.assertEqual(report["gateway_partial_permission_matrix"], "passed")
+
+    def test_real_token_matrix_checks_lists_writes_and_cross_tenant_detail(self):
+        read_permissions = ["meta.catalog.read", "manager.data_item.read", "transfer.task.read", "orchestrator.workflow.read"]
+        create_permissions = ["meta.scan_task.create", "transfer.task.create", "orchestrator.workflow.create", "orchestrator.workflow.execute"]
+        calls = []
+
+        def fixture(path, token=None, *, method="GET", body=None):
+            calls.append((path, token, method, body))
+            if path == "/api/v1/system/auth/context":
+                permissions = read_permissions if token == "read-token" else create_permissions
+                context = {
+                    "principal": {"type": "user"}, "context": {"type": "tenant", "tenant_id": "42"},
+                    "authorization": {"role_assignments": [{
+                        "scope": {"type": "tenant", "tenant_id": "42"}, "permissions": permissions,
+                    }]},
+                }
+                return 200, json.dumps(context).encode(), "application/json"
+            if path.startswith("/api/v1/system/tenant/role_assignments/"):
+                status = 401 if token is None else 403 if token == "read-token" else 200 if path.endswith("/84") else 404
+                return status, b'{"id":"84"}' if status == 200 else b"{}", "application/json"
+            if method == "POST":
+                return (401 if token is None else 403 if token == "read-token" else 400), b"{}", "application/json"
+            return (401 if token is None else 200 if token == "read-token" else 403), b"{}", "application/json"
+
+        with patch.object(MODULE, "request", side_effect=fixture):
+            MODULE.assert_partial_permission_matrix()
+        self.assertIn(("/api/v1/transfer/task-definitions", "create-token", "POST", b"{"), calls)
+        self.assertIn(("/api/v1/system/tenant/role_assignments/86", "admin-token", "GET", None), calls)
+
+        def exposed_foreign_assignment(path, token=None, *, method="GET", body=None):
+            if path.endswith("/86"):
+                return 200, b"{}", "application/json"
+            return fixture(path, token, method=method, body=body)
+
+        with patch.object(MODULE, "request", side_effect=exposed_foreign_assignment):
+            with self.assertRaises(MODULE.AcceptanceError):
+                MODULE.assert_partial_permission_matrix()
 
     @patch.object(MODULE, "docker_json")
     def test_production_compose_publishes_only_one_loopback_entry(self, docker_json):

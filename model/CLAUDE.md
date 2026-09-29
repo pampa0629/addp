@@ -36,6 +36,8 @@ Model 声明 `logical_table_materialization` TaskProvider；已持久化的 Logi
 
 **数据库 Schema**: `model`
 
+独立前端根路径在 AuthContext 加载后，按 Console 菜单顺序 `/entities`、`/er-diagram`、`/dw-layers`、`/logical-tables`、`/metric-implementations`、`/star-schema` 选择第一个符合页面准入条件的地址；没有可访问页面时进入 `/forbidden`。登录后的默认返回地址为根路径。显式业务地址仍只按自身权限判断，不静默改跳其他页面。
+
 ## 目录结构
 
 ```

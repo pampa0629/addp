@@ -166,6 +166,8 @@ watch([availableTabs, () => route.query, pageKey], restoreTabFromRoute, { immedi
 .iam-primary-cell { display: flex; flex-direction: column; gap: 3px; }
 .iam-primary-cell strong { font-weight: 600; color: var(--addp-text-primary); }
 .iam-primary-cell span { color: var(--addp-text-secondary); font-size: 12px; }
+.iam-code-line { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.iam-code-line span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .iam-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
 .iam-form-span { grid-column: 1 / -1; }
 @media (max-width: 760px) {

@@ -1,26 +1,27 @@
 <template>
   <div class="document-detail" v-loading="loading">
     <div class="page-header">
-      <div class="header-left"><el-button :icon="ArrowLeft" @click="goBack">{{ $t('standard.common.back') }}</el-button><h2>{{ title }}</h2><el-tag :type="statusType(revision.status)">{{ statusLabel(revision.status) }}</el-tag></div>
+      <div class="header-left"><el-button :icon="ArrowLeft" @click="goBack">{{ $t('standard.common.back') }}</el-button><h2>{{ title }}</h2><el-tag :type="statusType(revision.status)">{{ statusLabel(revision.status) }}</el-tag><el-tag v-if="isDirty" type="warning">{{ $t('standard.common.unsaved') }}</el-tag></div>
       <div class="header-right">
         <el-button v-if="!document.draft_revision && canUpdate" @click="newDraft">{{ $t('standard.document.createRevision') }}</el-button>
         <el-button v-if="editable" type="primary" :loading="saving" @click="saveAll">{{ $t('standard.common.save') }}</el-button>
-        <el-button v-if="editable" type="warning" @click="revisionAction('submit')">{{ $t('standard.revision.submit') }}</el-button>
+        <el-button v-if="editable" type="warning" :disabled="isDirty || saving || uploading" @click="revisionAction('submit')">{{ $t('standard.revision.submit') }}</el-button>
         <el-button v-if="reviewing && canPublish" @click="revisionAction('return')">{{ $t('standard.revision.return') }}</el-button>
         <el-button v-if="reviewing && canPublish" type="success" @click="revisionAction('publish')">{{ $t('standard.revision.publish') }}</el-button>
         <el-button v-if="revision.status === 'published' && canPublish" type="danger" @click="revisionAction('withdraw')">{{ $t('standard.revision.withdraw') }}</el-button>
       </div>
     </div>
 
+    <el-alert v-if="editable && reviewHint" :title="reviewHint" type="warning" :closable="false" show-icon class="review-hint" />
     <el-row :gutter="20">
       <el-col :span="16">
         <el-card class="section-card">
-          <template #header><h3>{{ $t('standard.document.identityInfo') }}</h3></template>
-          <el-form label-width="120px" :disabled="!canUpdate">
+          <template #header><div class="card-header"><h3>{{ $t('standard.document.identityInfo') }}</h3><el-button v-if="canUpdate && !editable" type="primary" size="small" :loading="saving" @click="saveIdentity">{{ $t('standard.common.save') }}</el-button></div></template>
+          <el-form label-width="120px" :disabled="!canUpdate || saving">
             <el-form-item :label="$t('standard.common.code')"><el-input :model-value="document.code" disabled /></el-form-item>
-            <el-form-item :label="$t('standard.common.scopeLabel')"><el-select v-model="identity.scope_type" style="width:100%" @change="onScopeChange"><el-option :label="$t('standard.common.scopeValue.tenant_common')" value="tenant_common" /><el-option :label="$t('standard.common.scopeValue.domain')" value="domain" /></el-select></el-form-item>
-            <el-form-item v-if="identity.scope_type === 'domain'" :label="$t('standard.document.domainLabel')"><BusinessDomainSelect v-model="identity.owner_domain_id" style="width:100%" :options="domains" /></el-form-item>
-            <el-form-item :label="$t('standard.document.typeLabel')"><el-select v-model="identity.doc_type" style="width:100%"><el-option v-for="type in documentTypes" :key="type" :label="$t(`standard.document.${type}`)" :value="type" /></el-select></el-form-item>
+            <el-form-item :label="$t('standard.common.scopeLabel')" :required="canUpdate"><el-select v-model="identity.scope_type" style="width:100%" @change="onScopeChange"><el-option :label="$t('standard.common.scopeValue.tenant_common')" value="tenant_common" /><el-option :label="$t('standard.common.scopeValue.domain')" value="domain" /></el-select></el-form-item>
+            <el-form-item v-if="identity.scope_type === 'domain'" :label="$t('standard.document.domainLabel')" :required="canUpdate"><BusinessDomainSelect v-model="identity.owner_domain_id" style="width:100%" :options="domains" /></el-form-item>
+            <el-form-item :label="$t('standard.document.typeLabel')" :required="canUpdate"><el-select v-model="identity.doc_type" style="width:100%"><el-option v-for="type in documentTypes" :key="type" :label="$t(`standard.document.${type}`)" :value="type" /></el-select></el-form-item>
             <el-form-item :label="$t('standard.document.sourceLabel')"><el-input v-model="identity.source_org" /></el-form-item>
             <el-form-item :label="$t('standard.common.tags')"><el-select v-model="identity.tags" multiple filterable allow-create default-first-option style="width:100%" /></el-form-item>
           </el-form>
@@ -29,14 +30,14 @@
         <el-card class="section-card">
           <template #header><div class="card-header"><h3>{{ $t('standard.document.revisionInfo') }}</h3><span v-if="revision.revision_no">R{{ revision.revision_no }}</span></div></template>
           <el-form label-width="120px" :disabled="!editable">
-            <el-form-item :label="$t('standard.document.nameLabel')"><el-input v-model="revision.name" /></el-form-item>
+            <el-form-item :label="$t('standard.document.nameLabel')" :required="editable"><el-input v-model="revision.name" /></el-form-item>
             <el-form-item :label="$t('standard.document.versionLabel')"><el-input v-model="revision.version_label" /></el-form-item>
             <el-form-item :label="$t('standard.document.descriptionLabel')"><el-input v-model="revision.description" type="textarea" :rows="4" /></el-form-item>
-            <el-form-item :label="$t('standard.revision.changeSummary')"><el-input v-model="revision.change_summary" /></el-form-item>
-            <el-form-item :label="$t('standard.revision.effectiveFrom')"><el-date-picker v-model="revision.effective_from" type="datetime" value-format="YYYY-MM-DDTHH:mm:ssZ" style="width:100%" /></el-form-item>
+            <el-form-item :label="$t('standard.revision.changeSummary')" :required="editable"><el-input v-model="revision.change_summary" /></el-form-item>
+            <el-form-item :label="$t('standard.revision.effectiveFrom')" :required="editable"><el-date-picker v-model="revision.effective_from" type="datetime" value-format="YYYY-MM-DDTHH:mm:ssZ" style="width:100%" /></el-form-item>
             <el-form-item :label="$t('standard.revision.effectiveTo')"><el-date-picker v-model="revision.effective_to" type="datetime" value-format="YYYY-MM-DDTHH:mm:ssZ" clearable style="width:100%" /></el-form-item>
           </el-form>
-          <el-divider>{{ $t('standard.document.attachment') }}</el-divider>
+          <el-divider><span v-if="editable" class="required-mark">*</span>{{ $t('standard.document.attachment') }}</el-divider>
           <div class="file-row">
             <span>{{ revision.file_name || $t('standard.document.noAttachment') }}<template v-if="revision.file_name"> · {{ formatFileSize(revision.file_size) }} · SHA256 {{ shortHash(revision.content_sha256) }}</template></span>
             <el-button v-if="revision.file_name" link type="primary" @click="downloadRevision">{{ $t('standard.document.download') }}</el-button>
@@ -182,6 +183,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { createLatestRequestCoordinator, useConsolePageDescriptor } from '@common-ui'
 import { documentAPI, domainAPI } from '../api/standard'
 import { useStandardPermissions } from '../composables/useStandardPermissions'
+import { useUnsavedChanges } from '../composables/useUnsavedChanges'
 import { useAuthStore } from '../store/auth'
 import { buildStandardPermission } from '../utils/standardPermissions'
 import { getStandardErrorMessage, isCanceledInteraction } from '../utils/apiError'
@@ -205,6 +207,13 @@ const candidateRequests = createLatestRequestCoordinator()
 const documentTypes = ['national', 'industry', 'internal', 'reference']
 const comparisonResults = ['new', 'exact', 'content_conflict', 'scope_conflict']
 const editable = computed(() => canUpdate.value && revision.status === 'draft' && document.value.draft_revision_id === revision.id)
+const editableState = computed(() => ({
+  identity: { ...identity, tags: [...(identity.tags || [])] },
+  revision: { name: revision.name, version_label: revision.version_label, publish_date: revision.publish_date, description: revision.description, change_summary: revision.change_summary, effective_from: revision.effective_from, effective_to: revision.effective_to }
+}))
+const { isDirty, markSaved } = useUnsavedChanges({ state: editableState })
+const hasRevisionFile = computed(() => Boolean(revision.file_key && revision.file_name && revision.content_sha256))
+const reviewHint = computed(() => isDirty.value ? t('standard.revision.saveBeforeReview') : !revision.effective_from ? t('standard.revision.effectiveFromRequired') : !hasRevisionFile.value ? t('standard.revision.documentFileRequired') : '')
 const reviewing = computed(() => revision.status === 'in_review' && document.value.draft_revision_id === revision.id)
 const canExtract = computed(() => canCreateExtraction.value && Boolean(revision.file_name) && (revision.media_type === 'text/markdown' || revision.file_name?.toLowerCase().endsWith('.md')))
 const title = computed(() => revision.name || document.value.code || t('standard.document.detailTitle'))
@@ -265,6 +274,7 @@ async function load() {
     document.value = aggregate; history.value = revisions || []; applyCandidateFamilyResponse(candidateRows); mappings.value = mappingRows || { elements: [], glossaries: [], metrics: [] }
     Object.assign(identity, { scope_type: aggregate.scope_type, owner_domain_id: aggregate.owner_domain_id || null, doc_type: aggregate.doc_type, source_org: aggregate.source_org || '', tags: aggregate.tags || [] })
     setRevision(aggregate.draft_revision || aggregate.current_revision || history.value[0])
+    markSaved()
   } catch (error) { ElMessage.error(getStandardErrorMessage(error, t, 'standard.common.loadFailed')); goBack() }
   finally { loading.value = false }
 }
@@ -305,12 +315,23 @@ async function saveAll() {
   catch (error) { ElMessage.error(getStandardErrorMessage(error, t)) }
   finally { saving.value = false }
 }
-async function newDraft() { try { const { value } = await ElMessageBox.prompt(t('standard.revision.changeSummary'), t('standard.document.createRevision'), { inputValidator: input => Boolean(input?.trim()) }); await documentAPI.createRevision(document.value.id, { version: document.value.version, change_summary: value.trim() }); await load() } catch (error) { if (!isCanceledInteraction(error)) ElMessage.error(getStandardErrorMessage(error, t)) } }
-async function revisionAction(action) { try { await ElMessageBox.confirm(t(`standard.revision.confirm.${action}`), t('standard.common.hint'), { type: 'warning' }); await documentAPI[`${action}Revision`](document.value.id, revision.id, document.value.version); await load() } catch (error) { if (!isCanceledInteraction(error)) ElMessage.error(getStandardErrorMessage(error, t)) } }
-function selectRevision(row) { setRevision(row) }
-async function uploadRevision(file) { if (!editable.value || uploading.value) return; uploading.value = true; try { const data = new FormData(); data.append('file', file.raw); await documentAPI.uploadFile(document.value.id, revision.id, data, document.value.version); ElMessage.success(t('standard.document.uploadSuccess')); await load() } catch (error) { ElMessage.error(getStandardErrorMessage(error, t)) } finally { uploading.value = false } }
+async function saveIdentity() {
+  if (saving.value) return
+  if (identity.scope_type === 'domain' && !identity.owner_domain_id) { ElMessage.warning(t('standard.common.selectDomain')); return }
+  saving.value = true
+  try {
+    document.value = await documentAPI.update(document.value.id, { ...identity, version: document.value.version })
+    markSaved('identity')
+    ElMessage.success(t('standard.common.saveSuccess'))
+  } catch (error) { ElMessage.error(getStandardErrorMessage(error, t)) }
+  finally { saving.value = false }
+}
+async function newDraft() { if (isDirty.value || saving.value) { ElMessage.warning(t('standard.common.saveBeforeAction')); return } try { const { value } = await ElMessageBox.prompt(t('standard.revision.changeSummary'), t('standard.document.createRevision'), { inputValidator: input => Boolean(input?.trim()) }); await documentAPI.createRevision(document.value.id, { version: document.value.version, change_summary: value.trim() }); await load() } catch (error) { if (!isCanceledInteraction(error)) ElMessage.error(getStandardErrorMessage(error, t)) } }
+async function revisionAction(action) { if (isDirty.value || saving.value || uploading.value) { ElMessage.warning(t('standard.common.saveBeforeAction')); return } if (action === 'submit' && !revision.effective_from) { ElMessage.warning(t('standard.revision.effectiveFromRequired')); return } if (action === 'submit' && !hasRevisionFile.value) { ElMessage.warning(t('standard.revision.documentFileRequired')); return } try { await ElMessageBox.confirm(t(`standard.revision.confirm.${action}`), t('standard.common.hint'), { type: 'warning' }); await documentAPI[`${action}Revision`](document.value.id, revision.id, document.value.version); await load() } catch (error) { if (!isCanceledInteraction(error)) ElMessage.error(getStandardErrorMessage(error, t)) } }
+function selectRevision(row) { if (isDirty.value) { ElMessage.warning(t('standard.common.saveBeforeAction')); return } setRevision(row); markSaved() }
+async function uploadRevision(file) { if (!editable.value || uploading.value) return; if (isDirty.value) { ElMessage.warning(t('standard.common.saveBeforeAction')); return } uploading.value = true; try { const data = new FormData(); data.append('file', file.raw); await documentAPI.uploadFile(document.value.id, revision.id, data, document.value.version); ElMessage.success(t('standard.document.uploadSuccess')); await load() } catch (error) { ElMessage.error(getStandardErrorMessage(error, t)) } finally { uploading.value = false } }
 async function downloadRevision() { try { const blob = await documentAPI.download(document.value.id, revision.id); saveBlob(blob, revision.file_name || revision.name) } catch (error) { ElMessage.error(getStandardErrorMessage(error, t, 'standard.document.downloadFailed')) } }
-async function extractCandidates() { if (extracting.value) return; extracting.value = true; try { await documentAPI.extractCandidates(document.value.id, revision.id, document.value.version); ElMessage.success(t('standard.document.extractionSuccess')); await load() } catch (error) { ElMessage.error(getStandardErrorMessage(error, t)) } finally { extracting.value = false } }
+async function extractCandidates() { if (extracting.value) return; if (isDirty.value) { ElMessage.warning(t('standard.common.saveBeforeAction')); return } extracting.value = true; try { await documentAPI.extractCandidates(document.value.id, revision.id, document.value.version); ElMessage.success(t('standard.document.extractionSuccess')); await load() } catch (error) { ElMessage.error(getStandardErrorMessage(error, t)) } finally { extracting.value = false } }
 async function decideCandidate(candidate, status) { try { await documentAPI.updateCandidate(candidate.id, { version: candidate.version, status }); await loadCandidateFamilies(); ElMessage.success(t('standard.common.updateSuccess')) } catch (error) { ElMessage.error(getStandardErrorMessage(error, t)) } }
 async function decideCandidateFamily(family, winner) {
   if (decidingCandidateFamily.value || !canDecideCandidateFamily(family)) return
@@ -398,5 +419,7 @@ onMounted(async () => { try { domains.value = buildBusinessDomainOptions(await d
 
 <style scoped>
 .document-detail { padding:20px; }.page-header,.header-left,.header-right,.card-header,.file-row,.candidate-header,.candidate-family-header,.candidate-family-header > div,.candidate-family-meta,.candidate-reference,.comparison-summary,.comparison-target,.formalization-result,.candidate-toolbar,.candidate-comparison-facets,.candidate-comparison-label,.candidate-group-meta,.candidate-occurrence-header,.candidate-variant-differences-header,.candidate-variant-value { display:flex; align-items:center; gap:12px; }.page-header,.card-header,.candidate-header,.candidate-family-header,.comparison-target,.formalization-result,.candidate-occurrence-header { justify-content:space-between; }.page-header { margin-bottom:20px; }.header-left h2,.card-header h3 { margin:0; }.section-card { margin-bottom:20px; }.file-row,.candidate-toolbar,.candidate-comparison-facets,.candidate-comparison-facets .el-radio-group,.candidate-group-meta,.candidate-family-header { flex-wrap:wrap; }.hint { margin-top:14px; }.candidate-toolbar,.candidate-comparison-facets { margin-bottom:14px; }.candidate-toolbar .candidate-search { width:280px; }.candidate-toolbar .el-select { width:180px; }.candidate-toolbar > span,.candidate-comparison-label,.candidate-group-meta,.candidate-family-meta,.candidate-variant-differences-header span { color:var(--addp-text-secondary); }.candidate-comparison-label { gap:2px; }.candidate-comparison-help { color:var(--addp-text-secondary); }.candidate-group-meta { margin-top:8px; font-size:13px; }.candidate-families { border-top:0; }.candidate-family { margin-bottom:12px; border:1px solid var(--el-border-color-light); border-radius:6px; overflow:hidden; }.candidate-family :deep(.el-collapse-item__header) { height:auto; min-height:48px; padding:10px 14px; border-bottom:0; background:var(--addp-bg-secondary); }.candidate-family :deep(.el-collapse-item__wrap) { border-bottom:0; }.candidate-family :deep(.el-collapse-item__content) { padding:12px 14px 2px; }.candidate-family-header { width:100%; padding-right:12px; }.candidate-family-meta { font-size:13px; }.candidate-variant-differences { margin-bottom:12px; padding:12px; border:1px solid var(--el-color-warning-light-5); border-radius:6px; background:var(--el-color-warning-light-9); }.candidate-variant-differences-header { margin-bottom:10px; flex-wrap:wrap; }.candidate-variant-difference-row { display:grid; grid-template-columns:120px minmax(0,1fr); gap:10px; padding:8px 0; border-top:1px solid var(--el-border-color-light); }.candidate-variant-values,.candidate-variant-code-items { display:flex; flex-direction:column; gap:6px; min-width:0; }.candidate-variant-value { align-items:flex-start; min-width:0; overflow-wrap:anywhere; }.candidate-variant-jump { flex:none; padding:0; border:0; background:transparent; cursor:pointer; }.candidate-variant-jump:focus-visible { outline:2px solid var(--el-color-primary); outline-offset:2px; border-radius:4px; }.candidate-family-decision-hint { margin-bottom:12px; }.candidate-card { margin-bottom:10px; }.candidate-card:focus { box-shadow:0 0 0 2px var(--el-color-primary-light-5); }.candidate-header > div { display:flex; align-items:center; gap:8px; }.candidate-reference { margin:8px 0; color:var(--addp-text-secondary); }.candidate-reference code { color:var(--addp-text-primary); overflow-wrap:anywhere; }.candidate-comparison { margin:10px 0; padding:10px 12px; border:1px solid var(--el-border-color-light); border-radius:6px; background:var(--addp-bg-secondary); }.comparison-target { margin-top:8px; }.comparison-target span { min-width:0; overflow-wrap:anywhere; }.comparison-differences { margin-top:10px; }.comparison-value { white-space:pre-wrap; overflow-wrap:anywhere; color:var(--addp-text-primary); }.comparison-item + .comparison-item { margin-top:4px; }.candidate-card pre { white-space:pre-wrap; background:var(--addp-bg-secondary); padding:10px; border-radius:4px; }.candidate-card blockquote { margin:8px 0; padding:8px 12px; border-left:3px solid var(--el-color-primary); background:var(--addp-bg-secondary); }.candidate-card blockquote small { color:var(--addp-text-secondary); }.candidate-occurrences { margin:10px 0; }.candidate-occurrence + .candidate-occurrence { margin-top:12px; padding-top:12px; border-top:1px solid var(--addp-border-color-light); }.candidate-actions { text-align:right; }.candidate-pagination { justify-content:flex-end; margin-top:16px; }.formalization-result { margin-top:12px; padding:8px 10px; border-radius:6px; background:var(--el-color-success-light-9); color:var(--el-color-success-dark-2); }.formalization-form { margin-top:18px; }.formalization-form code { margin-left:8px; }.mapping-tag { margin:4px; }
+.review-hint { margin-bottom:16px; }
+.required-mark { color:var(--el-color-danger); margin-right:4px; }
 @media (max-width:768px) { .document-detail { padding:12px; }.page-header { align-items:flex-start; flex-wrap:wrap; }.document-detail :deep(.el-col) { max-width:100%; flex:0 0 100%; }.candidate-variant-difference-row { grid-template-columns:1fr; } }
 </style>

@@ -52,6 +52,10 @@
 | Catalog Collection | 企业目录集合 | Catalog 中由一个 Project Group 拥有、用于组织多个 CatalogEntry 的命名协作聚合。 | 只引用 System Project Group 和 CatalogEntry；不是 Workspace、资产或新的目录身份，项目组关闭后保留历史但不可继续协作。 |
 | catalog source status | 企业目录来源状态 | 专业来源当前是否仍可由 owner 观察到的状态。 | 统一使用 `active`、`missing`；与治理成熟度和资产发布状态正交。 |
 | catalog governance status | 企业目录治理状态 | CatalogEntry 从自动发现到业务治理确认的成熟度。 | 统一使用 `discovered`、`curated`、`certified`、`deprecated`；来源消失不自动改变治理状态。 |
+| curated resource view | 已编目资源视图 | Catalog 中查看已完成业务编目或从已编目状态继续进入认证、弃用阶段的资源。 | 包含 `curated`、`certified`、`deprecated`，不包含 `discovered`；“已编目”不等于已认证、质量合格或已发布为资产。 |
+| catalog governance gap | 目录治理缺口 | Catalog 根据当前条目事实计算出的某项业务定义、语义或责任覆盖不足。 | 覆盖率和资源盘点可下钻定位缺口；缺口是动态查询结果，不自动创建待办任务。 |
+| responsibility governance task | 责任治理任务 | Catalog 对既有关联的 Department 或 User 变为不可引用而派生的责任移交工作事实。 | 当前“责任治理队列”只列此类任务；未编目、未分配责任或其他治理缺口不因此进入队列，任务随责任替换或原引用恢复而解决。 |
+| catalog batch assignment | 目录批量分配 | Catalog 对资源盘点中明确选中的条目，原子设置同一个主业务域或责任部门。 | 每次只执行一种分配，不能覆盖专业模块拥有的业务域；它不改变编目状态、不执行认证，也不自动创建治理任务。页面操作称“批量分配”。 |
 | withdraw curation | 撤销编目 | 将误编目或不再具备完整业务治理事实的 `curated` CatalogEntry 原子恢复为 `discovered` 自动发现状态。 | 清除 Catalog 当前人工编目覆盖并恢复 `inventory` 可见性；不删除 CatalogEntry、来源绑定、专业事实或审计历史，也不是 `certified` / `deprecated` 的通用回退。 |
 | certification | 认证 | 对某个已编目 CatalogEntry 的当前聚合版本作出治理确认，使其进入 `certified`。 | 认证只改变治理状态，不允许在同一操作中修改业务编目事实；认证历史由 Catalog 领域审计保留。 |
 | withdraw certification | 撤销认证 | 因业务事实需要修改或原认证结论不再成立，将 `certified` CatalogEntry 显式恢复为 `curated`。 | 必须填写原因并具有认证权限；不清除编目事实。后续编辑完成后可重新认证，不建立第二份认证草稿或 CatalogEntry。 |

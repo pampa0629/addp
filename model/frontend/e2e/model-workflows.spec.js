@@ -126,6 +126,20 @@ erDiagram
 \`\`\`
 `
 
+test('DW-layer-only access lands on layers and denies a direct entity URL', async ({ page }) => {
+  await installMockBackend(page, { permissions: ['model.dw_layer.read'] })
+  await page.goto('/')
+  await expect(page).toHaveURL(/\/dw-layers$/)
+
+  const entityRequests = []
+  page.on('request', request => {
+    if (new URL(request.url()).pathname === '/api/v1/model/entities') entityRequests.push(request.url())
+  })
+  await page.goto('/entities')
+  await expect(page).toHaveURL(/\/forbidden$/)
+  expect(entityRequests).toEqual([])
+})
+
 test('shows an explicit permission error instead of an empty entity page after a 403', async ({ page }) => {
   const backend = await installMockBackend(page, { forbidEntityList: true })
 

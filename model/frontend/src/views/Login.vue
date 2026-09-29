@@ -89,7 +89,7 @@ const handleLogin = async () => {
   try {
     await authStore.login(loginForm.username, loginForm.password)
     ElMessage.success(t('model.login.login_success'))
-    const redirect = route.query.redirect || '/dw-layers'
+    const redirect = route.query.redirect || '/'
     await router.push(redirect)
   } catch (error) {
     ElMessage.error(error.message || t('model.login.login_failed'))

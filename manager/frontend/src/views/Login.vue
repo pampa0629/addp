@@ -23,13 +23,14 @@
 
 <script setup>
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../store/auth'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
 const router = useRouter()
+const route = useRoute()
 const authStore = useAuthStore()
 
 const form = ref({
@@ -49,7 +50,7 @@ const handleLogin = async () => {
   try {
     await authStore.login(form.value.username, form.value.password)
     ElMessage.success(t('manager.login.success'))
-    router.push('/')
+    await router.push(route.query.redirect || '/')
   } catch (error) {
     ElMessage.error(error.response?.data?.error || t('manager.login.failed'))
   } finally {

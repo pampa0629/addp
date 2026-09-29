@@ -46,6 +46,25 @@ describe('Console page access', () => {
       ['manager.configuration.read'])).toBe(false)
     expect(matchesNavigationAccess({ route: '/manager/settings/embedding' }, 'platform',
       ['manager.configuration.read', 'inference.profile.read', 'inference.deployment.read'])).toBe(true)
+    expect(matchesNavigationAccess({ route: '/configuration/monitor' }, 'tenant',
+      ['develop.configuration.read', 'monitor.configuration.read'])).toBe(false)
+    expect(matchesNavigationAccess({ route: '/configuration/monitor' }, 'platform',
+      ['develop.configuration.read'])).toBe(false)
+    expect(matchesNavigationAccess({ route: '/configuration/monitor' }, 'platform',
+      ['monitor.configuration.read'])).toBe(true)
+    expect(matchesNavigationAccess({ route: '/configuration/agent' }, 'tenant',
+      ['agent.configuration.read'])).toBe(false)
+    expect(matchesNavigationAccess({ route: '/configuration/agent' }, 'tenant',
+      ['agent.configuration.read', 'inference.profile.read'])).toBe(true)
+    expect(matchesNavigationAccess({ route: '/configuration' }, 'tenant',
+      ['agent.configuration.read', 'inference.profile.read'])).toBe(true)
+    expect(matchesNavigationAccess({ route: '/configuration' }, 'tenant',
+      ['agent.configuration.read'])).toBe(false)
+    expect(matchesNavigationAccess({ route: '/configuration' }, 'platform',
+      ['inference.provider.read', 'inference.deployment.read', 'inference.profile.read'])).toBe(true)
+    expect(matchesNavigationAccess({ route: '/inference/settings/models' }, 'platform',
+      ['inference.provider.read', 'inference.deployment.read', 'inference.profile.read'])).toBe(true)
+    expect(consoleRouteAccess('/configuration/unknown')).toBeNull()
     expect(matchesNavigationAccess({ route: '/asset/assets/5/edit' }, 'tenant',
       ['asset.management.read', 'asset.entry.read'])).toBe(false)
     expect(matchesNavigationAccess({ route: '/asset/assets' }, 'tenant',

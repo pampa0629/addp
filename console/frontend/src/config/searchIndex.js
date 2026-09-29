@@ -68,7 +68,7 @@ export const SEARCH_INDEX = [
   { labelKey: 'console.menus.catalog.entries', module: 'catalog', route: '/catalog/entries', keywords: ['企业资源目录', '企业资源', '业务元数据', '业务域', '按域查看', 'catalog', 'enterprise catalog', 'inventory', 'domain'] },
   { labelKey: 'console.menus.catalog.myEntries', module: 'catalog', route: '/catalog/me/entries', keywords: ['我的目录', '收藏', '关注', 'my catalog', 'favorites', 'following'] },
   { labelKey: 'console.menus.catalog.collections', module: 'catalog', route: '/catalog/collections', keywords: ['目录集合', '项目集合', '协作', 'catalog collection', 'project group'] },
-  { labelKey: 'console.menus.catalog.tasks', module: 'catalog', route: '/catalog/governance/tasks', keywords: ['责任治理', '治理队列', '待办', 'catalog governance tasks', 'stewardship'] },
+  { labelKey: 'console.menus.catalog.tasks', module: 'catalog', route: '/catalog/governance/tasks', keywords: ['责任治理', '责任失效', '责任移交', 'responsibility governance', 'responsibility transfer'] },
   { labelKey: 'console.menus.catalog.coverage', module: 'catalog', route: '/catalog/governance/coverage', permissions: ['catalog.inventory.read'], keywords: ['治理覆盖率', '治理完整度', 'catalog governance coverage', 'completeness'] },
   // 资产管理
   { labelKey: 'console.menus.asset.assets',          module: 'asset', route: '/asset/assets',          keywords: ['资产', '数据资产', 'asset'] },

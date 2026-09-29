@@ -14,7 +14,7 @@
         <el-button v-if="editable" type="primary" :loading="savingRevision" @click="saveRevision">
           {{ $t('standard.common.save') }}
         </el-button>
-        <el-button v-if="editable" type="warning" @click="act('submit')">{{ $t('standard.revision.submit') }}</el-button>
+        <el-button v-if="editable" type="warning" :disabled="isDirty || savingIdentity || savingRevision" @click="act('submit')">{{ $t('standard.revision.submit') }}</el-button>
         <el-button v-if="reviewing && canPublish" @click="act('return')">{{ $t('standard.revision.return') }}</el-button>
         <el-button v-if="reviewing && canPublish" type="success" @click="act('publish')">{{ $t('standard.revision.publish') }}</el-button>
         <el-button v-if="!element.draft_revision && canUpdate" @click="newDraft">
@@ -27,7 +27,8 @@
     </div>
 
     <el-alert v-if="loadError" :title="loadError" type="error" :closable="false" />
-    <el-row v-else :gutter="16">
+    <el-alert v-else-if="editable && reviewHint" :title="reviewHint" type="warning" :closable="false" show-icon class="review-hint" />
+    <el-row v-if="!loadError" :gutter="16">
       <el-col :xs="24" :lg="16">
         <el-card shadow="never" class="section">
           <template #header>
@@ -52,7 +53,7 @@
                 </el-form-item>
               </el-col>
               <el-col :xs="24" :sm="12">
-                <el-form-item :label="$t('standard.common.scopeLabel')">
+                <el-form-item :label="$t('standard.common.scopeLabel')" :required="identityEditable">
                   <el-select v-model="element.scope_type" class="field-control">
                     <el-option v-for="scope in scopeOptions" :key="scope" :label="scopeLabel(scope)" :value="scope" :disabled="scope === 'platform'" />
                   </el-select>
@@ -85,12 +86,12 @@
           <el-form :model="revision" label-width="130px" :disabled="!editable || savingIdentity || savingRevision">
             <el-row :gutter="16">
               <el-col :xs="24" :sm="12">
-                <el-form-item :label="$t('standard.element.nameLabel')">
+                <el-form-item :label="$t('standard.element.nameLabel')" :required="editable">
                   <el-input v-model="revision.name" />
                 </el-form-item>
               </el-col>
               <el-col :xs="24" :sm="12">
-                <el-form-item :label="$t('standard.element.dataTypeLabel')">
+                <el-form-item :label="$t('standard.element.dataTypeLabel')" :required="editable">
                   <ElementDataTypeSelect v-model="revision.data_type" @change="handleDataTypeChange" />
                 </el-form-item>
               </el-col>
@@ -130,7 +131,7 @@
             </el-row>
             <el-row :gutter="16" class="effective-interval">
               <el-col :xs="24" :sm="12">
-                <el-form-item :label="$t('standard.revision.effectiveFrom')">
+                <el-form-item :label="$t('standard.revision.effectiveFrom')" :required="editable">
                   <el-date-picker
                     v-model="revision.effective_from"
                     type="datetime"
@@ -150,7 +151,7 @@
                 </el-form-item>
               </el-col>
             </el-row>
-            <el-form-item :label="$t('standard.element.definitionLabel')">
+            <el-form-item :label="$t('standard.element.definitionLabel')" :required="editable">
               <el-input v-model="revision.definition" type="textarea" :rows="3" />
             </el-form-item>
             <el-form-item v-if="supportsFormat(revision.data_type)" :label="$t('standard.element.formatLabel')">
@@ -171,7 +172,7 @@
                 class="field-control"
               />
             </el-form-item>
-            <el-form-item :label="$t('standard.revision.changeSummary')">
+            <el-form-item :label="$t('standard.revision.changeSummary')" :required="editable">
               <el-input v-model="revision.change_summary" type="textarea" :rows="2" />
             </el-form-item>
           </el-form>
@@ -180,7 +181,7 @@
         <el-card shadow="never" class="section">
           <template #header>{{ $t('standard.element.valueDomain') }}</template>
           <el-form :model="revision" label-width="130px" :disabled="!editable || savingIdentity || savingRevision">
-            <el-form-item :label="$t('standard.element.valueDomainKind')">
+            <el-form-item :label="$t('standard.element.valueDomainKind')" :required="editable">
               <el-radio-group v-model="revision.value_domain_kind" @change="resetValueDomain">
                 <el-radio-button value="unrestricted">{{ $t('standard.element.unrestricted') }}</el-radio-button>
                 <el-radio-button value="range" :disabled="!isNumericDataType(revision.data_type)">
@@ -216,6 +217,7 @@
             <el-form-item
               v-if="revision.value_domain_kind === 'enumeration'"
               :label="$t('standard.element.codeSetLabel')"
+              :required="editable"
             >
               <el-select v-if="editable" v-model="revision.code_set_revision_id" filterable class="field-control">
                 <el-option
@@ -361,6 +363,7 @@ const editableState = computed(() => ({
   revision: buildElementRevisionPayload(revision, 0)
 }))
 const { isDirty, markSaved } = useUnsavedChanges({ state: editableState })
+const reviewHint = computed(() => isDirty.value ? t('standard.revision.saveBeforeReview') : !revision.effective_from ? t('standard.revision.effectiveFromRequired') : '')
 
 useConsolePageDescriptor(router, 'standard', {
   title: computed(() => t('standard.element.recentVisitTitle')),
@@ -528,6 +531,10 @@ async function act(action) {
     ElMessage.warning(t('standard.common.saveBeforeAction'))
     return
   }
+  if (action === 'submit' && !revision.effective_from) {
+    ElMessage.warning(t('standard.revision.effectiveFromRequired'))
+    return
+  }
   try {
     await ElMessageBox.confirm(
       t(`standard.revision.confirm.${action}`),
@@ -603,6 +610,7 @@ onBeforeUnmount(() => {
 .page-header{gap:16px;margin-bottom:16px}
 .header-left,.actions{gap:10px;flex-wrap:wrap}
 .section{margin-bottom:16px}
+.review-hint{margin-bottom:16px}
 .field-control{width:100%}
 .compiled-rules{margin-top:16px}
 .history-row{gap:8px}

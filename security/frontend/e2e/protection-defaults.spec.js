@@ -10,6 +10,20 @@ const accessRejectionRequestID = 'cf72b9b5-063d-4f22-aa07-5c7977580d2e'
 const findingID = '8dfe6d44-dd40-4f63-b2bb-aaeb5d7f83f4'
 const newEnrollmentLocator = 'addp://engine/2/path/business/customers_new?type=table&item_id=201'
 
+test('classification-only access lands on foundations and denies sensitive definitions', async ({ page }) => {
+  await installMockBackend(page, { permissions: ['security.classification.read', 'security.grade.read'] })
+  await page.goto('/')
+  await expect(page).toHaveURL(/\/classification-grading$/)
+
+  const definitionRequests = []
+  page.on('request', request => {
+    if (new URL(request.url()).pathname === '/api/v1/security/sensitive-data-types') definitionRequests.push(request.url())
+  })
+  await page.goto('/sensitive-data-definitions')
+  await expect(page).toHaveURL(/\/forbidden$/)
+  expect(definitionRequests).toEqual([])
+})
+
 test('marks and validates required classification and grade fields inline', async ({ page }) => {
   const backend = await installMockBackend(page)
 
@@ -1063,7 +1077,7 @@ function formCombobox(container, label) {
 }
 
 async function installMockBackend(page, options = {}) {
-  const permissions = [
+  const permissions = options.permissions || [
     'meta.catalog.read',
     'security.classification.read',
     'security.classification.create',

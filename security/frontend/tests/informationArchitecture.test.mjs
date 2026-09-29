@@ -1,7 +1,45 @@
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
+import { createMemoryHistory, createRouter } from 'vue-router'
+import { resolveModuleLandingRoute } from '../../../common-frontend/basic/src/authorization/consoleRouteAccess.js'
 
 const readSource = relativePath => readFileSync(new URL(relativePath, import.meta.url), 'utf8')
+
+function createSecurityRouter(permissions, contextType = 'tenant') {
+  const source = readSource('../src/router/index.js')
+  const childrenSource = source.slice(source.indexOf('const children ='), source.indexOf('const router ='))
+  const authStore = { contextType, permissions }
+  const children = new Function('useAuthStore', 'resolveModuleLandingRoute', `${childrenSource}; return children`)(
+    () => authStore, resolveModuleLandingRoute
+  )
+  for (const child of children) {
+    if (child.component) child.component = {}
+  }
+  return createRouter({
+    history: createMemoryHistory(),
+    routes: [{ path: '/', component: {}, children }, { path: '/forbidden', component: {} }]
+  })
+}
+
+describe('Security standalone landing', () => {
+  it('selects an accessible page and keeps explicit URLs', async () => {
+    for (const [permissions, contextType, expected] of [
+      [['security.classification.read', 'security.grade.read'], 'tenant', '/classification-grading'],
+      [['security.enrollment.read', 'meta.catalog.read'], 'tenant', '/protection-enrollments'],
+      [['security.classification.read'], 'tenant', '/forbidden'],
+      [[], 'tenant', '/forbidden'],
+      [['security.classification.read', 'security.grade.read'], 'platform', '/forbidden']
+    ]) {
+      const router = createSecurityRouter(permissions, contextType)
+      await router.push('/')
+      expect(router.currentRoute.value.path).toBe(expected)
+    }
+
+    const direct = createSecurityRouter(['security.classification.read', 'security.grade.read'])
+    await direct.push('/classification-grading?tab=grades')
+    expect(direct.currentRoute.value.fullPath).toBe('/classification-grading?tab=grades')
+  })
+})
 
 describe('Security product information architecture', () => {
   it('separates low-change classification foundations from sensitive data definitions', () => {
@@ -25,7 +63,7 @@ describe('Security product information architecture', () => {
     expect(router).not.toContain("import SensitiveDataDefinitions from '../views/SensitiveDataDefinitions.vue'")
     expect(router).not.toContain("import ProtectionEnrollmentList from '../views/ProtectionEnrollmentList.vue'")
     expect(router).not.toContain("path: 'protection-baselines'")
-    expect(router).toContain("redirect: '/sensitive-data-definitions'")
+    expect(router).toContain("resolveModuleLandingRoute('/security'")
     expect(router).not.toContain("['classifications', 'classification']")
     expect(router).not.toContain("['grades', 'grade']")
     expect(router).not.toContain("['sensitive-data-types', 'sensitiveDataType']")

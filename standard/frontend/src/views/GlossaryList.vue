@@ -96,6 +96,7 @@ const revisionStatuses = ['draft', 'in_review', 'published', 'withdrawn']
 const filters = reactive({ keyword: '', owner_domain_id: null, status: '', page: 1, page_size: 20 })
 const rules = computed(() => ({
   code: buildStandardCodeRules(t, 'standard.glossary.codeRequired'),
+  scope_type: [{ required: true, message: t('standard.common.selectScope'), trigger: 'change' }],
   name: [{ required: true, message: t('standard.glossary.nameRequired'), trigger: 'blur' }],
   definition: [{ required: true, message: t('standard.glossary.definitionRequired'), trigger: 'blur' }],
   owner_domain_id: [{ required: form.value.scope_type === 'domain', message: t('standard.common.selectDomain'), trigger: 'change' }]

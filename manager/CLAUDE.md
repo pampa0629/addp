@@ -127,6 +127,7 @@ manager/
 ## 前端公开路由
 
 - Manager 前端遵守 `docs/spec/addp前端路由与可恢复状态规范.md`，模块内公开导航统一通过 `src/utils/moduleNavigation.js`，不得直接形成 iframe 私有历史。
+- 独立访问 `/` 或登录后无指定目标时，按数据探查、数据检索、快显任务、空间数据任务、向量化任务、平台向量化配置的顺序，进入当前 AuthContext 可访问的第一个页面；没有可进入的首页时显示无权限页。具体页面准入与 Console 共用 `CONSOLE_ROUTE_ACCESS`，显式业务地址仍单独校验。
 - Data Explorer 使用 ResourceLocator 表达当前资源身份，默认 `preview` Tab 从 URL 省略，非默认稳定 Tab 使用 `tab` query。
 - “数据任务”是 Manager 唯一任务工作区，在父菜单下固定提供 `/manager/tasks/quick-view`、`/manager/tasks/spatial`、`/manager/tasks/embedding` 三个纵向子入口并复用同一页面组件。分类身份由 path 表达，不得再用 `category` query；任务类型筛选、向量化子视图和当前 `task_id` 保留在 canonical query 中，规范化使用 `replace`，跨页面进入资源或任务使用 `push`。
 - Manager 受管快显的 TaskProvider `create_url` 指向 `/manager/tasks/quick-view` 并携带 `task_type` 和 `create=1`；页面只选择源 item，不选择目标。`edit_url` 指向同一路径并携带 `task_type` 和 `task_id`，任务定义保持只读。Embedding 的 `create_url` / `edit_url` 指向 `/manager/tasks/embedding`，不得恢复 `/manager/vectorization-tasks` 或 `/manager/derived-tasks` 路径。

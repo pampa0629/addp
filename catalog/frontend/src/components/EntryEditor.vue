@@ -23,11 +23,21 @@
       </template>
     </el-alert>
 
+    <el-alert
+      v-if="missingRequirements.length"
+      type="info"
+      :closable="false"
+      show-icon
+      :title="t('catalog.edit.missingRequired', { fields: missingRequirementNames })"
+      class="section-gap"
+    />
+
     <el-form label-position="top" @submit.prevent="submit">
       <el-row :gutter="16">
         <el-col :xs="24" :md="16">
           <el-form-item :label="t('catalog.entry.businessName')" required>
-            <el-input v-model="form.businessName" maxlength="200" show-word-limit />
+            <el-input v-model="form.businessName" maxlength="200" show-word-limit :placeholder="t('catalog.edit.businessNamePlaceholder')" />
+            <div v-if="entry.display_name" class="field-hint">{{ t('catalog.edit.sourceNameHint', { name: entry.display_name }) }}</div>
           </el-form-item>
         </el-col>
         <el-col :xs="24" :md="8">
@@ -40,16 +50,17 @@
                 :value="visibility"
               />
             </el-select>
+            <div class="field-hint">{{ t('catalog.edit.visibilityHint') }} {{ t(`catalog.edit.visibilityAudience.${form.visibility}`) }}</div>
           </el-form-item>
         </el-col>
       </el-row>
       <el-form-item :label="t('catalog.edit.businessDescription')" required>
-        <el-input v-model="form.businessDescription" type="textarea" :rows="4" maxlength="2000" show-word-limit />
+        <el-input v-model="form.businessDescription" type="textarea" :rows="4" maxlength="2000" show-word-limit :placeholder="t('catalog.edit.businessDescriptionPlaceholder')" />
       </el-form-item>
       <section class="edit-section">
         <div class="section-title">
           <div>
-            <strong>{{ t('catalog.edit.domains') }}</strong>
+            <strong><span v-if="!ownerHasPublicScope" class="required-mark">*</span> {{ t('catalog.edit.domains') }}</strong>
             <p>{{ form.ownerManagedSemantics ? t('catalog.edit.ownerDomainHint', { module: ownerModuleName }) : t('catalog.edit.dynamicCandidateHint') }}</p>
           </div>
           <el-button size="small" @click="addDomain">{{ t('catalog.edit.addDomain') }}</el-button>
@@ -84,14 +95,14 @@
         <div class="section-title">
           <div>
             <strong>{{ t('catalog.edit.glossaries') }}</strong>
-            <p>{{ t('catalog.edit.dynamicCandidateHint') }}</p>
+            <p>{{ t('catalog.edit.glossaryHint') }}</p>
           </div>
-          <el-button size="small" @click="form.glossaryIDs.push('')">{{ t('catalog.edit.addGlossary') }}</el-button>
+          <el-button size="small" @click="addGlossary">{{ t('catalog.edit.addGlossary') }}</el-button>
         </div>
         <div v-for="(_, index) in form.glossaryIDs" :key="`glossary-${index}`" class="edit-row id-row">
           <el-select
             v-model="form.glossaryIDs[index]"
-            filterable remote reserve-keyword
+            filterable remote reserve-keyword remote-show-suffix
             :loading="candidateState.glossary.loading"
             :remote-method="search => searchCandidates('glossary', search)"
             :placeholder="t('catalog.edit.glossaryPlaceholder')"
@@ -102,17 +113,19 @@
           <el-button type="danger" text @click="form.glossaryIDs.splice(index, 1)">{{ t('catalog.edit.remove') }}</el-button>
         </div>
         <el-empty v-if="form.glossaryIDs.length === 0" :image-size="60" :description="t('catalog.edit.noGlossaries')" />
+        <p v-else-if="candidateState.glossary.loaded && !candidateState.glossary.loading && candidateState.glossary.options.length === 0" class="field-hint">{{ t('catalog.edit.noPublishedGlossaries') }}</p>
       </section>
 
       <section class="edit-section">
         <div class="section-title">
           <div>
-            <strong>{{ t('catalog.edit.responsibilities') }}</strong>
+            <strong><span class="required-mark">*</span> {{ t('catalog.edit.responsibilities') }}</strong>
             <p>{{ t('catalog.edit.responsibilityHint') }}</p>
           </div>
           <el-button size="small" @click="addResponsibility">{{ t('catalog.edit.addResponsibility') }}</el-button>
         </div>
         <div v-for="(item, index) in form.responsibilities" :key="`responsibility-${index}`" class="edit-row responsibility-row">
+          <span v-if="requiredResponsibilityRoles.includes(item.role)" class="required-mark row-required-mark">*</span>
           <el-select v-model="item.role" @change="changeResponsibilityRole(item)">
             <el-option v-for="role in responsibilityRoles" :key="role" :label="t(`catalog.edit.role.${role}`)" :value="role" />
           </el-select>
@@ -152,8 +165,9 @@ import { listReferenceCandidates } from '../api/catalog'
 import {
   buildEntryEditForm,
   buildUpdatePayload,
-  hasEffectivePrimaryDomain,
   isCanonicalPositiveID,
+  requiredCurationGaps,
+  withRequiredResponsibilityRows,
   responsibilitySubjectType
 } from '../utils/entryEdit'
 
@@ -166,8 +180,12 @@ const emit = defineEmits(['submit', 'cancel', 'reload'])
 const { t } = useI18n()
 const form = reactive(buildEditorForm(props.entry))
 const candidateTypes = ['domain', 'glossary', 'department', 'user']
-const candidateState = reactive(Object.fromEntries(candidateTypes.map(type => [type, { options: [], loading: false, version: 0 }])))
+const candidateState = reactive(Object.fromEntries(candidateTypes.map(type => [type, { options: [], loading: false, loaded: false, version: 0 }])))
 const responsibilityRoles = ['accountable_department', 'business_owner', 'data_steward', 'technical_owner']
+const requiredResponsibilityRoles = responsibilityRoles.slice(0, 3)
+const missingRequirements = computed(() => requiredCurationGaps(form))
+const missingRequirementNames = computed(() => missingRequirements.value.map(key => t(`catalog.edit.requiredField.${key}`)).join(t('catalog.edit.listSeparator')))
+const ownerHasPublicScope = computed(() => form.ownerManagedSemantics && form.ownerModule === 'standard' && ['platform', 'tenant_common'].includes(form.ownerScopeType))
 const ownerModuleName = computed(() => ({ model: 'Model', standard: 'Standard', service: 'Service', develop: 'Develop' }[form.ownerModule] || ''))
 const editorTitleKey = computed(() => props.entry.governance_status === 'discovered' ? 'startTitle' : 'editTitle')
 
@@ -179,7 +197,7 @@ watch(() => props.entry, entry => {
 resetCandidateOptions(props.entry)
 
 function buildEditorForm(entry) {
-  const next = buildEntryEditForm(entry)
+  const next = withRequiredResponsibilityRows(buildEntryEditForm(entry))
   next.governanceStatus = 'curated'
   return next
 }
@@ -187,7 +205,10 @@ function buildEditorForm(entry) {
 const visibilityOptions = ['inventory', 'department', 'tenant']
 
 function resetCandidateOptions(entry) {
-  for (const type of candidateTypes) candidateState[type].options = []
+  for (const type of candidateTypes) {
+    candidateState[type].options = []
+    candidateState[type].loaded = false
+  }
   for (const link of entry?.semantic_links || []) {
     if (link.semantic_type === 'domain' || link.semantic_type === 'glossary') {
       mergeCandidate(link.semantic_type, historicalCandidate(link.semantic_type, link.semantic_id, link.observed_snapshot))
@@ -226,7 +247,7 @@ async function searchCandidates(type, search = '') {
       reference_type: type,
       ...(String(search || '').trim() ? { search: String(search).trim() } : {}),
       page: 1,
-      page_size: 20
+      page_size: type === 'glossary' ? 50 : 20
     })
     if (version !== state.version) return
     const selected = new Set(selectedCandidateIDs(type))
@@ -234,6 +255,7 @@ async function searchCandidates(type, search = '') {
     const options = new Map((response.data || []).map(item => [String(item.id), { ...item, id: String(item.id) }]))
     for (const item of preserved) if (!options.has(item.id)) options.set(item.id, item)
     state.options = [...options.values()]
+    state.loaded = true
   } catch (error) {
     if (version === state.version) ElMessage.error(error?.response?.data?.error || t('catalog.edit.candidateSearchFailed'))
   } finally {
@@ -260,6 +282,11 @@ function addDomain() {
   })
 }
 
+function addGlossary() {
+  form.glossaryIDs.push('')
+  searchCandidates('glossary', '')
+}
+
 function addResponsibility() {
   form.responsibilities.push({ role: 'data_steward', subjectId: '' })
 }
@@ -274,6 +301,10 @@ function submit() {
 }
 
 function validateForm() {
+  if (missingRequirements.value.length) {
+    ElMessage.error(t('catalog.edit.missingRequired', { fields: missingRequirementNames.value }))
+    return false
+  }
   const allIDs = [
     ...form.domains.map(item => item.id),
     ...form.glossaryIDs,
@@ -293,13 +324,6 @@ function validateForm() {
     ElMessage.error(t('catalog.edit.multiplePrimaryDomains'))
     return false
   }
-  const roleCounts = Object.fromEntries(responsibilityRoles.map(role => [role, form.responsibilities.filter(item => item.role === role).length]))
-  if (!form.businessName.trim() || !form.businessDescription.trim() ||
-      !hasEffectivePrimaryDomain(form) ||
-      roleCounts.accountable_department !== 1 || roleCounts.business_owner !== 1 || roleCounts.data_steward < 1) {
-    ElMessage.error(t('catalog.edit.curationIncomplete'))
-    return false
-  }
   return true
 }
 </script>
@@ -309,6 +333,9 @@ function validateForm() {
 .editor-header, .section-title, .editor-actions { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .editor-header p, .section-title p { margin: 4px 0 0; color: var(--addp-text-secondary); font-size: 13px; }
 .editor-header > span { color: var(--addp-text-secondary); font-size: 13px; }
+.field-hint { margin: 4px 0 0; color: var(--addp-text-secondary); font-size: 12px; line-height: 1.5; }
+.required-mark { color: var(--el-color-danger); }
+.row-required-mark { position: absolute; left: -11px; top: 50%; transform: translateY(-50%); }
 .section-gap, .edit-section { margin-bottom: 20px; }
 .owner-domain-alert { margin-bottom: 12px; }
 .edit-section { border-top: 1px solid var(--el-border-color-lighter); padding-top: 18px; }
@@ -316,7 +343,7 @@ function validateForm() {
 .edit-row { display: grid; align-items: center; gap: 12px; margin-bottom: 10px; }
 .domain-row { grid-template-columns: minmax(180px, 1fr) 180px auto; }
 .id-row { grid-template-columns: minmax(180px, 1fr) auto; }
-.responsibility-row { grid-template-columns: minmax(190px, 1fr) auto minmax(180px, 1fr) auto; }
+.responsibility-row { position: relative; grid-template-columns: minmax(190px, 1fr) auto minmax(180px, 1fr) auto; }
 .editor-actions { justify-content: flex-end; margin-top: 24px; }
 .editor-card :deep(.el-select) { width: 100%; }
 @media (max-width: 760px) {

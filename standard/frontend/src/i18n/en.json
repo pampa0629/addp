@@ -72,6 +72,9 @@
       "publish": "Publish",
       "withdraw": "Withdraw",
       "effectiveFrom": "Effective From",
+      "effectiveFromRequired": "Enter an effective time before submitting for review",
+      "saveBeforeReview": "Save the current changes before submitting for review",
+      "documentFileRequired": "Upload the standard document file before submitting for review",
       "effectiveTo": "Effective To",
       "status": {
         "draft": "Draft",
@@ -311,6 +314,7 @@
       "descriptionLabel": "Description",
       "descriptionRequired": "Please enter a description",
       "valueType": "Value Type",
+      "valueTypeRequired": "Select a value type",
       "origin": "Origin",
       "originValue": {
         "platform": "Platform",
