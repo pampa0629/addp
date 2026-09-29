@@ -132,7 +132,8 @@ func (r *ModuleRegistryRepository) Register(req *models.ModuleRegistrationReques
 			ModuleDefinitionID: definition.ID, InstanceID: req.InstanceID, Role: req.Role,
 			ModuleURL: req.ModuleURL, HealthCheckURL: req.HealthCheckURL,
 			Status: models.ModuleRuntimeStatusUp, LastHeartbeat: now, LeaseExpiresAt: now.Add(leaseDuration),
-			Metadata: metadata, RegisteredAt: now,
+			ProcessStartedAt: &req.ProcessStartedAt,
+			Metadata:         metadata, RegisteredAt: now,
 		}
 		if err := tx.Clauses(clause.OnConflict{
 			Columns: []clause.Column{{Name: "module_definition_id"}, {Name: "instance_id"}},
@@ -140,6 +141,7 @@ func (r *ModuleRegistryRepository) Register(req *models.ModuleRegistrationReques
 				"role": req.Role, "module_url": req.ModuleURL, "health_check_url": req.HealthCheckURL,
 				"status": models.ModuleRuntimeStatusUp, "last_heartbeat": now,
 				"lease_expires_at": now.Add(leaseDuration), "metadata": metadata, "updated_at": now,
+				"process_started_at": req.ProcessStartedAt, "stopped_at": nil, "stop_reason": "",
 			}),
 		}).Create(&instance).Error; err != nil {
 			return err
@@ -208,6 +210,7 @@ func (r *ModuleRegistryRepository) UpdateHeartbeat(moduleName, instanceID string
 		}
 		if err := tx.Model(&instance).Updates(map[string]interface{}{
 			"last_heartbeat": now, "lease_expires_at": now.Add(leaseDuration), "status": models.ModuleRuntimeStatusUp,
+			"stopped_at": nil, "stop_reason": "",
 		}).Error; err != nil {
 			return err
 		}
@@ -330,7 +333,7 @@ func (r *ModuleRegistryRepository) MarkStaleModules(now time.Time) (bool, error)
 		}
 		result := tx.Model(&models.ModuleRuntimeInstance{}).
 			Where("lease_expires_at <= ? AND status = ?", now, models.ModuleRuntimeStatusUp).
-			Updates(map[string]interface{}{"status": models.ModuleRuntimeStatusDown, "updated_at": now})
+			Updates(map[string]interface{}{"status": models.ModuleRuntimeStatusDown, "stopped_at": gorm.Expr("lease_expires_at"), "stop_reason": models.ModuleRuntimeStopExpired, "updated_at": now})
 		if result.Error != nil {
 			return result.Error
 		}
@@ -365,9 +368,17 @@ func (r *ModuleRegistryRepository) Deregister(moduleName, instanceID string) (bo
 		if instance.Status != models.ModuleRuntimeStatusUp {
 			return nil
 		}
-		changed = definition.Enabled && instance.Role == models.ModuleRuntimeRoleBackend && instance.LeaseExpiresAt.After(now)
+		leaseValid := instance.LeaseExpiresAt.After(now)
+		changed = definition.Enabled && instance.Role == models.ModuleRuntimeRoleBackend && leaseValid
+		stoppedAt := now
+		stopReason := models.ModuleRuntimeStopGraceful
+		if !leaseValid {
+			stoppedAt = instance.LeaseExpiresAt
+			stopReason = models.ModuleRuntimeStopExpired
+		}
 		if err := tx.Model(&instance).Updates(map[string]interface{}{
-			"status": models.ModuleRuntimeStatusDown, "lease_expires_at": now, "updated_at": now,
+			"status": models.ModuleRuntimeStatusDown, "lease_expires_at": stoppedAt, "stopped_at": stoppedAt,
+			"stop_reason": stopReason, "updated_at": now,
 		}).Error; err != nil {
 			return err
 		}

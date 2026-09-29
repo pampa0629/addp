@@ -1222,6 +1222,7 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-gateway:${IMAGE_TAG:-latest}
     container_name: gateway
     environment:
+      - SERVICE_HOST=gateway
       - PORT=8000
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432

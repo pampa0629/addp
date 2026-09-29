@@ -4,6 +4,10 @@ export function isRuntimeInstanceOnline(instance, now = Date.now()) {
 }
 
 export function getModuleAvailability(module, now = Date.now()) {
+  if (module?.module_name === 'gateway') {
+    return (module.instances || []).some(instance => instance.role === 'ingress' && isRuntimeInstanceOnline(instance, now))
+      ? 'ingress_online' : 'ingress_offline'
+  }
   if (!module?.enabled) return 'disabled'
 
   const backendInstances = (module.instances || []).filter(instance => instance.role === 'backend')
@@ -17,4 +21,12 @@ export function getModuleAvailability(module, now = Date.now()) {
 
 export function isModuleRoutable(module, now = Date.now()) {
   return getModuleAvailability(module, now) === 'routable'
+}
+
+export function moduleNeedsAttention(module, now = Date.now()) {
+  const availability = getModuleAvailability(module, now)
+  if (availability === 'no_backend' || availability === 'backend_offline' || availability === 'ingress_offline') return true
+  return (module?.instances || []).some(instance =>
+    !isRuntimeInstanceOnline(instance, now) && instance.stop_reason === 'lease_expired'
+  )
 }

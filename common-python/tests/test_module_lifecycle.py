@@ -2,7 +2,7 @@ import asyncio
 import unittest
 
 from addp_common.client import ModuleRegistration
-from addp_common.module_lifecycle import register_after_listener
+from addp_common.module_lifecycle import live_response, register_after_listener
 
 
 class _RegistryClient:
@@ -14,6 +14,10 @@ class _RegistryClient:
 
 
 class ModuleLifecycleTest(unittest.IsolatedAsyncioTestCase):
+    def test_health_uses_registration_process_start(self):
+        registration = ModuleRegistration(module_name="agent", module_url="http://agent:8190", route_prefix="/agent")
+        self.assertEqual(live_response("agent")["started_at"], registration.process_started_at)
+
     async def test_registration_waits_until_listener_is_bound(self):
         reservation = await asyncio.start_server(lambda _reader, _writer: None, "127.0.0.1", 0)
         port = reservation.sockets[0].getsockname()[1]

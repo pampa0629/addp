@@ -78,6 +78,7 @@ roles:
     permissions:
       - iam.api_consumer_runtime.read
       - system.runtime_registry.read
+      - system.runtime_registry.update
   - key: platform.geopython_runtime
     role_type: platform_builtin
     name_i18n_key: roles.platform.geopython_runtime.name

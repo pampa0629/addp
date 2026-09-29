@@ -238,6 +238,7 @@ type ModuleRegistrationRequest struct {
 	ModuleURL               string                                     `json:"module_url"`
 	RoutePrefix             string                                     `json:"route_prefix"`
 	HealthCheckURL          string                                     `json:"health_check_url,omitempty"`
+	ProcessStartedAt        time.Time                                  `json:"process_started_at"`
 	Metadata                map[string]interface{}                     `json:"metadata,omitempty"`
 	ConfigurationManagement *commonconfiguration.ManagementDeclaration `json:"configuration_management,omitempty"`
 	TaskProvider            *models.TaskProviderDeclaration            `json:"task_provider,omitempty"`
@@ -247,6 +248,7 @@ const (
 	ModuleRuntimeRoleBackend   = "backend"
 	ModuleRuntimeRoleWorker    = "worker"
 	ModuleRuntimeRoleScheduler = "scheduler"
+	ModuleRuntimeRoleIngress   = "ingress"
 )
 
 type ModuleInfo struct {
@@ -269,17 +271,20 @@ type ModuleRoutingSnapshot struct {
 }
 
 type ModuleRuntimeInstanceInfo struct {
-	ID             uint                   `json:"id"`
-	InstanceID     string                 `json:"instance_id"`
-	Role           string                 `json:"role"`
-	ModuleURL      string                 `json:"module_url"`
-	HealthCheckURL string                 `json:"health_check_url"`
-	Status         string                 `json:"status"`
-	LastHeartbeat  time.Time              `json:"last_heartbeat"`
-	LeaseExpiresAt time.Time              `json:"lease_expires_at"`
-	Metadata       map[string]interface{} `json:"metadata"`
-	RegisteredAt   time.Time              `json:"registered_at"`
-	UpdatedAt      time.Time              `json:"updated_at"`
+	ID               uint                   `json:"id"`
+	InstanceID       string                 `json:"instance_id"`
+	Role             string                 `json:"role"`
+	ModuleURL        string                 `json:"module_url"`
+	HealthCheckURL   string                 `json:"health_check_url"`
+	Status           string                 `json:"status"`
+	LastHeartbeat    time.Time              `json:"last_heartbeat"`
+	LeaseExpiresAt   time.Time              `json:"lease_expires_at"`
+	ProcessStartedAt *time.Time             `json:"process_started_at"`
+	StoppedAt        *time.Time             `json:"stopped_at"`
+	StopReason       string                 `json:"stop_reason"`
+	Metadata         map[string]interface{} `json:"metadata"`
+	RegisteredAt     time.Time              `json:"registered_at"`
+	UpdatedAt        time.Time              `json:"updated_at"`
 }
 
 func (c *SystemClient) String() string {

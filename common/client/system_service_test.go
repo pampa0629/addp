@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/addp/common/buildinfo"
 	"github.com/addp/common/models"
 )
 
@@ -240,6 +241,9 @@ func TestRegisterAndHeartbeatGeneratesBackendInstanceDeclaration(t *testing.T) {
 		cancel()
 		if request.InstanceID == "" || request.Role != ModuleRuntimeRoleBackend {
 			t.Fatalf("runtime identity = %#v", request)
+		}
+		if !request.ProcessStartedAt.Equal(buildinfo.ProcessStartedAt()) {
+			t.Fatalf("process start = %s, want %s", request.ProcessStartedAt, buildinfo.ProcessStartedAt())
 		}
 		if request.Metadata["module"] != "manager" || request.Metadata["version"] != "test" {
 			t.Fatalf("runtime metadata = %#v", request.Metadata)

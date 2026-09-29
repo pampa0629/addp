@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/addp/common/buildinfo"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/models"
 	"github.com/google/uuid"
@@ -434,6 +435,7 @@ func newModuleRegistrationLifecycle(request *ModuleRegistrationRequest) (*Module
 		return lifecycle, ModuleRegistrationRequest{}
 	}
 	registration := *request
+	registration.ProcessStartedAt = buildinfo.ProcessStartedAt()
 	if strings.TrimSpace(registration.InstanceID) == "" {
 		registration.InstanceID = uuid.NewString()
 	}

@@ -57,7 +57,7 @@ const (
 	MsgModuleRegistrationInvalid    = "system.module.registration_invalid"
 	MsgModuleRuntimeInstanceMissing = "system.module.runtime_instance_missing"
 	MsgModuleVersionConflict        = "system.module.version_conflict"
-	MsgSystemModuleImmutable        = "system.module.system_immutable"
+	MsgBootstrapModuleImmutable     = "system.module.bootstrap_immutable"
 	MsgTaskProviderNotFound         = "system.task_provider.not_found"
 
 	MsgEngineAddressConflict             = "system.engine.address_conflict"

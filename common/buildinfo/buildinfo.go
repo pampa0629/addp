@@ -7,7 +7,7 @@ var (
 	GitCommit         = "unknown"
 	SourceFingerprint = "unknown"
 	BuiltAt           = "unknown"
-	startedAt         = time.Now().UTC().Format(time.RFC3339Nano)
+	startedAt         = time.Now().UTC()
 )
 
 type HealthResponse struct {
@@ -28,6 +28,8 @@ func Health(module string) HealthResponse {
 		GitCommit:         GitCommit,
 		SourceFingerprint: SourceFingerprint,
 		BuiltAt:           BuiltAt,
-		StartedAt:         startedAt,
+		StartedAt:         startedAt.Format(time.RFC3339Nano),
 	}
 }
+
+func ProcessStartedAt() time.Time { return startedAt }

@@ -14,11 +14,12 @@
     </div>
 
     <el-alert v-if="projectGroupsUnavailable" type="warning" :closable="false" show-icon :title="t('catalog.collections.projectGroupsUnavailable')" class="membership-hint" />
-    <el-alert v-else-if="!projectGroupsLoading && readGroupOptions.length === 0" type="info" :closable="false" show-icon :title="t('catalog.collections.noMembership')" class="membership-hint" />
+    <el-alert v-else-if="!projectGroupsLoading && readGroupOptions.length === 0" type="info" :closable="false" show-icon :title="t('catalog.collections.noEligibleGroup')" class="membership-hint" />
+    <el-alert v-else-if="!projectGroupsLoading && canUpdate && updateGroupOptions.length === 0" type="info" :closable="false" show-icon :title="t('catalog.collections.noWritableGroup')" class="membership-hint" />
 
     <el-card shadow="never" class="filter-card">
       <el-form :inline="true">
-        <el-form-item :label="t('catalog.collections.projectGroup')">
+        <el-form-item :label="t('catalog.collections.accessibleProjectGroup')">
           <el-select v-model="filters.project_group_id" clearable :placeholder="t('catalog.common.all')" @change="changeGroup">
             <el-option v-for="group in readGroupOptions" :key="group.project_group_id" :label="groupLabel(group)" :value="group.project_group_id" />
           </el-select>
@@ -30,24 +31,26 @@
       <el-table v-loading="loading" :data="result.data" @row-click="openCollection">
         <el-table-column prop="name" :label="t('catalog.collections.name')" min-width="220"><template #default="{ row }"><span class="collection-link">{{ row.name }}</span></template></el-table-column>
         <el-table-column prop="description" :label="t('catalog.collections.collectionDescription')" min-width="260" show-overflow-tooltip />
-        <el-table-column prop="project_group_id" :label="t('catalog.collections.projectGroup')" min-width="160"><template #default="{ row }">{{ projectGroupLabel(row.project_group_id) }}</template></el-table-column>
+        <el-table-column prop="project_group_id" :label="t('catalog.collections.ownerProjectGroup')" min-width="160"><template #default="{ row }">{{ projectGroupLabel(row.project_group_id) }}</template></el-table-column>
         <el-table-column prop="updated_at" :label="t('catalog.entries.updatedAt')" min-width="180"><template #default="{ row }">{{ formatDate(row.updated_at) }}</template></el-table-column>
       </el-table>
-      <el-empty v-if="!loading && result.data.length === 0" :description="t('catalog.collections.empty')" />
+      <el-empty v-if="!loading && result.data.length === 0" :description="emptyDescription" />
       <div class="pagination-row">
         <el-pagination background layout="total, sizes, prev, pager, next" :total="result.total" :current-page="filters.page" :page-size="filters.page_size" :page-sizes="[20, 50, 100, 200]" @current-change="changePage" @size-change="changePageSize" />
       </div>
     </el-card>
 
-    <el-dialog v-model="createVisible" :title="t('catalog.collections.create')" width="560px" :close-on-click-modal="false">
+    <el-dialog v-model="createVisible" :title="t('catalog.collections.create')" width="680px" :close-on-click-modal="false">
       <el-form label-position="top">
-        <el-form-item :label="t('catalog.collections.projectGroup')" required>
+        <el-form-item :label="t('catalog.collections.ownerProjectGroup')" required>
           <el-select v-model="createForm.project_group_id" style="width: 100%">
             <el-option v-for="group in updateGroupOptions" :key="group.project_group_id" :label="groupLabel(group)" :value="group.project_group_id" />
           </el-select>
         </el-form-item>
         <el-form-item :label="t('catalog.collections.name')" required><el-input v-model="createForm.name" maxlength="200" show-word-limit /></el-form-item>
         <el-form-item :label="t('catalog.collections.collectionDescription')"><el-input v-model="createForm.description" type="textarea" :rows="4" maxlength="2000" show-word-limit /></el-form-item>
+        <el-form-item :label="t('catalog.collections.entries')"><CollectionEntryPicker v-model="createForm.entry_ids" /></el-form-item>
+        <p class="form-hint">{{ t('catalog.collections.createEntriesHint') }}</p>
       </el-form>
       <template #footer>
         <el-button @click="createVisible = false">{{ t('catalog.edit.cancel') }}</el-button>
@@ -65,6 +68,7 @@ import { ElMessage } from 'element-plus'
 import { Plus, Refresh } from '@element-plus/icons-vue'
 import { navigateConsoleModuleRoute } from '@common-ui'
 import { createCollection, listCollections, listMyProjectGroups } from '../api/catalog'
+import CollectionEntryPicker from '../components/CollectionEntryPicker.vue'
 import { useAuthStore } from '../store/auth'
 import { buildCollectionQuery, isCanonicalCollectionQuery, parseCollectionRoute } from '../utils/collectionRouteState'
 
@@ -80,12 +84,17 @@ const creating = ref(false)
 const projectGroupsLoading = ref(false)
 const projectGroupsUnavailable = ref(false)
 const projectGroupOptions = ref([])
-const createForm = reactive({ project_group_id: '', name: '', description: '' })
+const createForm = reactive({ project_group_id: '', name: '', description: '', entry_ids: [] })
 let requestVersion = 0
 const canUpdate = computed(() => authStore.hasPermission('catalog.collection.update'))
 const allGroupOptions = computed(() => projectGroupOptions.value)
 const readGroupOptions = computed(() => allGroupOptions.value.filter(group => group.can_read))
 const updateGroupOptions = computed(() => allGroupOptions.value.filter(group => group.can_update))
+const emptyDescription = computed(() => {
+  if (!projectGroupsLoading.value && !projectGroupsUnavailable.value && readGroupOptions.value.length === 0) return t('catalog.collections.noEligibleGroupEmpty')
+  if (filters.project_group_id) return t('catalog.collections.emptyInGroup')
+  return t('catalog.collections.empty')
+})
 
 function groupLabel(group) {
   const code = group.code ? ` · ${group.code}` : ''
@@ -139,14 +148,14 @@ async function openCollection(row) {
 
 function openCreate() {
   const filteredGroup = updateGroupOptions.value.some(group => group.project_group_id === filters.project_group_id) ? filters.project_group_id : ''
-  Object.assign(createForm, { project_group_id: filteredGroup || updateGroupOptions.value[0]?.project_group_id || '', name: '', description: '' })
+  Object.assign(createForm, { project_group_id: filteredGroup || updateGroupOptions.value[0]?.project_group_id || '', name: '', description: '', entry_ids: [] })
   createVisible.value = true
 }
 
 async function submitCreate() {
   creating.value = true
   try {
-    const created = await createCollection({ ...createForm, name: createForm.name.trim(), description: createForm.description.trim(), entry_ids: [] })
+    const created = await createCollection({ ...createForm, name: createForm.name.trim(), description: createForm.description.trim() })
     createVisible.value = false
     ElMessage.success(t('catalog.collections.created'))
     await navigateConsoleModuleRoute(router, 'catalog', { path: `/collections/${created.id}` })
@@ -181,6 +190,7 @@ watch(() => route.query, async query => {
 .filter-card :deep(.el-select) { width: 300px; }
 .table-card :deep(.el-table__row) { cursor: pointer; }
 .collection-link { color: var(--el-color-primary); font-weight: 600; }
+.form-hint { margin: 0; color: var(--addp-text-secondary); font-size: 13px; }
 .pagination-row { display: flex; justify-content: flex-end; margin-top: 16px; }
 @media (max-width: 760px) { .page-header { flex-direction: column; } }
 </style>

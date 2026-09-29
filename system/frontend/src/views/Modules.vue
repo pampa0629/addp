@@ -56,9 +56,20 @@
           <span class="summary-value">{{ onlineWorkerInstanceCount }}</span>
           <span class="summary-label">{{ t('system.module.summary.workers') }}</span>
         </div>
+        <div class="summary-item">
+          <span class="summary-value">{{ attentionCount }}</span>
+          <span class="summary-label">{{ t('system.module.summary.attention') }}</span>
+        </div>
       </div>
 
-      <el-table v-loading="loading" :data="modules" row-key="id" stripe>
+      <div class="module-toolbar">
+        <el-radio-group v-model="attentionOnly" size="small">
+          <el-radio-button :value="false">{{ t('system.module.filters.all') }}</el-radio-button>
+          <el-radio-button :value="true">{{ t('system.module.filters.attention') }}</el-radio-button>
+        </el-radio-group>
+      </div>
+
+      <el-table v-loading="loading" :data="visibleModules" row-key="id" stripe>
         <el-table-column type="expand">
           <template #default="{ row }">
             <div class="instance-panel">
@@ -104,6 +115,9 @@
                     </span>
                   </template>
                 </el-table-column>
+                <el-table-column :label="t('system.module.instances.stopReason')" width="145">
+                  <template #default="{ row: instance }">{{ stopReasonLabel(instance) }}</template>
+                </el-table-column>
                 <el-table-column prop="module_url" :label="t('system.module.instances.url')" min-width="210" show-overflow-tooltip>
                   <template #default="{ row: instance }">{{ instance.module_url || '—' }}</template>
                 </el-table-column>
@@ -119,13 +133,26 @@
                 <el-table-column :label="t('system.module.instances.registeredAt')" width="180">
                   <template #default="{ row: instance }">{{ formatDate(instance.registered_at) }}</template>
                 </el-table-column>
+                <el-table-column :label="t('system.module.instances.processStartedAt')" width="180">
+                  <template #default="{ row: instance }">{{ formatDate(instance.process_started_at) }}</template>
+                </el-table-column>
+                <el-table-column :label="t('system.module.instances.uptime')" width="150">
+                  <template #default="{ row: instance }">{{ formatUptime(instance) }}</template>
+                </el-table-column>
               </el-table>
             </div>
           </template>
         </el-table-column>
         <el-table-column prop="id" :label="t('system.module.columns.id')" width="72" />
-        <el-table-column prop="module_name" :label="t('system.module.columns.name')" min-width="150" />
-        <el-table-column prop="route_prefix" :label="t('system.module.columns.routePrefix')" min-width="150" show-overflow-tooltip />
+        <el-table-column :label="t('system.module.columns.name')" min-width="190">
+          <template #default="{ row }">
+            <div class="module-name">{{ resolveIAMModuleName(row.module_name, t, te) }}</div>
+            <span class="module-technical-name">{{ row.module_name }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column :label="t('system.module.columns.routePrefix')" min-width="150" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.route_prefix || '—' }}</template>
+        </el-table-column>
         <el-table-column :label="t('system.module.columns.availability')" width="130">
           <template #default="{ row }">
             <el-tag :type="availabilityTagType(row)">
@@ -140,7 +167,7 @@
         </el-table-column>
         <el-table-column :label="t('system.module.columns.enabled')" width="130" align="center">
           <template #default="{ row }">
-            <el-tag v-if="row.module_name === 'system'" type="info" :title="t('system.module.systemAlwaysEnabled')">
+            <el-tag v-if="row.module_name === 'system' || row.module_name === 'gateway'" type="info" :title="t('system.module.systemAlwaysEnabled')">
               {{ t('system.module.systemAlwaysEnabled') }}
             </el-tag>
             <el-switch
@@ -215,10 +242,13 @@
         <el-table-column :label="t('system.module.instances.status')" width="110">
           <template #default="{ row: instance }">
             <span class="status-cell">
-              <span class="status-dot" :class="instance.status === 'up' ? 'is-online' : 'is-offline'"></span>
-              {{ instance.status === 'up' ? t('system.module.status.up') : t('system.module.status.down') }}
+              <span class="status-dot" :class="isInstanceOnline(instance) ? 'is-online' : 'is-offline'"></span>
+              {{ isInstanceOnline(instance) ? t('system.module.status.up') : t('system.module.status.down') }}
             </span>
           </template>
+        </el-table-column>
+        <el-table-column :label="t('system.module.instances.stopReason')" width="145">
+          <template #default="{ row: instance }">{{ stopReasonLabel(instance) }}</template>
         </el-table-column>
         <el-table-column prop="module_url" :label="t('system.module.instances.url')" min-width="210" show-overflow-tooltip>
           <template #default="{ row: instance }">{{ instance.module_url || '—' }}</template>
@@ -231,6 +261,12 @@
         </el-table-column>
         <el-table-column :label="t('system.module.instances.registeredAt')" width="180">
           <template #default="{ row: instance }">{{ formatDate(instance.registered_at) }}</template>
+        </el-table-column>
+        <el-table-column :label="t('system.module.instances.processStartedAt')" width="180">
+          <template #default="{ row: instance }">{{ formatDate(instance.process_started_at) }}</template>
+        </el-table-column>
+        <el-table-column :label="t('system.module.instances.uptime')" width="150">
+          <template #default="{ row: instance }">{{ formatUptime(instance) }}</template>
         </el-table-column>
         <template #empty>
           <el-empty :description="t('system.module.history.empty')" :image-size="72" />
@@ -259,11 +295,13 @@ import { useI18n } from 'vue-i18n'
 import { StatusAnnouncer } from '@common-ui'
 import { modulesAPI } from '../api/modules'
 import { useAuthStore } from '../store/auth'
-import { getModuleAvailability, isModuleRoutable, isRuntimeInstanceOnline } from '../utils/moduleRegistry'
+import { resolveIAMModuleName } from '../utils/iamPresentation'
+import { getModuleAvailability, isModuleRoutable, isRuntimeInstanceOnline, moduleNeedsAttention } from '../utils/moduleRegistry'
 
-const { t } = useI18n()
+const { t, te } = useI18n()
 const authStore = useAuthStore()
 const modules = ref([])
+const attentionOnly = ref(false)
 const loading = ref(false)
 const loadError = ref('')
 const conflictMessage = ref('')
@@ -280,7 +318,7 @@ const historyPageSize = ref(10)
 const historyRole = ref('')
 const historyStatus = ref('')
 const historyError = ref('')
-const historyRoles = ['backend', 'worker', 'scheduler']
+const historyRoles = ['backend', 'worker', 'scheduler', 'ingress']
 let refreshTimer = null
 let moduleListRequestInFlight = false
 let historyRequestGeneration = 0
@@ -292,6 +330,25 @@ const onlineWorkerInstanceCount = computed(() => allInstances.value.filter(insta
   instance.role === 'worker' && isInstanceOnline(instance)
 )).length)
 const routableModuleCount = computed(() => modules.value.filter(isRoutable).length)
+const attentionCount = computed(() => modules.value.filter(moduleNeedsAttention).length)
+const visibleModules = computed(() => modules.value
+  .filter(module => !attentionOnly.value || moduleNeedsAttention(module))
+  .sort((left, right) => Number(moduleNeedsAttention(right)) - Number(moduleNeedsAttention(left)) || left.module_name.localeCompare(right.module_name)))
+
+function stopReasonLabel(instance) {
+  if (isInstanceOnline(instance)) return '—'
+  const key = `system.module.stopReasons.${instance.stop_reason}`
+  return instance.stop_reason && te(key) ? t(key) : '—'
+}
+
+function formatUptime(instance) {
+  if (!instance.process_started_at) return '—'
+  const startedAt = new Date(instance.process_started_at).getTime()
+  const stoppedAt = isInstanceOnline(instance) ? Date.now() : instance.stopped_at ? new Date(instance.stopped_at).getTime() : NaN
+  if (!Number.isFinite(startedAt) || !Number.isFinite(stoppedAt) || stoppedAt < startedAt) return '—'
+  const hours = Math.floor((stoppedAt - startedAt) / 3600000)
+  return t('system.module.instances.uptimeValue', { days: Math.floor(hours / 24), hours: hours % 24 })
+}
 
 function isInstanceOnline(instance) {
   return isRuntimeInstanceOnline(instance)
@@ -309,8 +366,10 @@ function availabilityTagType(module) {
   return {
     routable: 'success',
     disabled: 'warning',
-    no_backend: 'info',
-    backend_offline: 'danger'
+    no_backend: 'danger',
+    backend_offline: 'danger',
+    ingress_online: 'success',
+    ingress_offline: 'danger'
   }[getModuleAvailability(module)] || 'info'
 }
 
@@ -434,7 +493,7 @@ async function changeHistoryPageSize() {
 }
 
 async function updateEnabled(module, enabled) {
-  if (module.module_name === 'system' || !canUpdate.value || isUpdating(module.module_name)) return
+  if (module.module_name === 'system' || module.module_name === 'gateway' || !canUpdate.value || isUpdating(module.module_name)) return
   setUpdating(module.module_name, true)
   conflictMessage.value = ''
   try {
@@ -499,10 +558,14 @@ onUnmounted(() => {
 
 .summary-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 12px;
   margin-bottom: 16px;
 }
+
+.module-toolbar { margin-bottom: 12px; }
+.module-name { color: var(--addp-text-primary); font-weight: 600; }
+.module-technical-name { color: var(--addp-text-tertiary); font-size: 12px; }
 
 .summary-item {
   display: flex;

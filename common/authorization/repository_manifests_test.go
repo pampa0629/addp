@@ -190,6 +190,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	assertRepositoryRolePermissions(t, roles, "platform.gateway_runtime", []string{
 		"iam.api_consumer_runtime.read",
 		"system.runtime_registry.read",
+		"system.runtime_registry.update",
 	})
 	assertRepositoryRolePermissions(t, roles, "platform.model_runtime", []string{
 		"system.runtime_registry.update",

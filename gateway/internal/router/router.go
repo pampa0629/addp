@@ -22,7 +22,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func SetupRouter(cfg *config.Config) *gin.Engine {
+func SetupRouter(cfg *config.Config) (*gin.Engine, *commonClient.SystemServiceClient) {
 	router := gin.Default()
 
 	// CORS 中间件
@@ -139,7 +139,7 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 		registerModuleRoutes(api, systemProxy, moduleDiscovery)
 	}
 
-	return router
+	return router, systemServiceClient
 }
 
 func selectModuleBackend(module *commonClient.ModuleInfo, now time.Time) (string, bool) {

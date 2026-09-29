@@ -2,6 +2,7 @@ import asyncio
 import json
 import unittest
 import uuid
+from datetime import datetime
 
 import httpx
 
@@ -94,6 +95,8 @@ class ModuleRegistryClientTests(unittest.IsolatedAsyncioTestCase):
                 registered_instance_id = payload["instance_id"]
                 uuid.UUID(registered_instance_id)
                 self.assertEqual(payload["role"], "backend")
+                self.assertEqual(payload["process_started_at"], registration.process_started_at)
+                datetime.fromisoformat(payload["process_started_at"])
                 self.assertEqual(
                     payload["configuration_management"]["schema_version"],
                     "addp.configuration-management/v1",
@@ -171,6 +174,7 @@ class ModuleRegistryClientTests(unittest.IsolatedAsyncioTestCase):
 
         uuid.UUID(first.instance_id)
         self.assertEqual(first.instance_id, second.instance_id)
+        self.assertEqual(first.process_started_at, second.process_started_at)
         self.assertEqual((first.role, second.role), ("backend", "backend"))
 
     async def test_run_deregisters_the_registered_instance_when_cancelled(self):

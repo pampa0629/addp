@@ -14,10 +14,11 @@ async function fulfillJSON(route, status, body) {
   })
 }
 
-test('System is always enabled while a business module can be disabled', async ({ page }) => {
+test('System and Gateway stay enabled while a business module can be disabled', async ({ page }) => {
   const modules = [
     { id: 1, module_name: 'system', route_prefix: '/system', enabled: true, version: 1, instances: [] },
-    { id: 2, module_name: 'manager', route_prefix: '/manager', enabled: true, version: 1, instances: [] }
+    { id: 2, module_name: 'manager', route_prefix: '/manager', enabled: true, version: 1, instances: [] },
+    { id: 3, module_name: 'gateway', route_prefix: '', enabled: true, version: 1, instances: [] }
   ]
   const writes = []
   await page.route('**/api/v1/system/**', async (route) => {
@@ -65,10 +66,16 @@ test('System is always enabled while a business module can be disabled', async (
   await page.locator('button.auth-login-primary').click()
 
   await expect(page).toHaveURL(/\/modules$/)
-  const systemRow = page.getByRole('row').filter({ has: page.getByRole('cell', { name: 'system', exact: true }) })
-  const managerRow = page.getByRole('row').filter({ has: page.getByRole('cell', { name: 'manager', exact: true }) })
+  const moduleRow = name => page.getByRole('row').filter({
+    has: page.locator('.module-technical-name').filter({ hasText: new RegExp(`^${name}$`) })
+  })
+  const systemRow = moduleRow('system')
+  const gatewayRow = moduleRow('gateway')
+  const managerRow = moduleRow('manager')
   await expect(systemRow.getByText('始终启用')).toBeVisible()
   await expect(systemRow.getByRole('switch')).toHaveCount(0)
+  await expect(gatewayRow.getByText('始终启用')).toBeVisible()
+  await expect(gatewayRow.getByRole('switch')).toHaveCount(0)
   await managerRow.locator('.el-switch').click()
   await expect.poll(() => writes).toEqual([{ enabled: false, version: 1 }])
 })

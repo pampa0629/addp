@@ -61,12 +61,13 @@ func TestModuleDiscoveryRetriesAfterInitialRefreshFailure(t *testing.T) {
 	t.Fatal("module discovery did not recover after the initial refresh failure")
 }
 
-func TestSelectRoutableBackendsIgnoresWorkerAndExpiredInstances(t *testing.T) {
+func TestSelectRoutableBackendsIgnoresNonBackendAndExpiredInstances(t *testing.T) {
 	now := time.Now()
 	module := &client.ModuleInfo{
 		ModuleName: "manager", Enabled: true,
 		Instances: []client.ModuleRuntimeInstanceInfo{
 			{InstanceID: "worker", Role: "worker", Status: "up", LeaseExpiresAt: now.Add(time.Minute)},
+			{InstanceID: "ingress", Role: client.ModuleRuntimeRoleIngress, ModuleURL: "http://gateway", Status: "up", LeaseExpiresAt: now.Add(time.Minute)},
 			{InstanceID: "expired", Role: "backend", ModuleURL: "http://expired", Status: "up", LeaseExpiresAt: now.Add(-time.Second)},
 			{InstanceID: "backend-b", Role: "backend", ModuleURL: "http://b", Status: "up", LeaseExpiresAt: now.Add(time.Minute)},
 			{InstanceID: "backend-a", Role: "backend", ModuleURL: "http://a", Status: "up", LeaseExpiresAt: now.Add(time.Minute)},

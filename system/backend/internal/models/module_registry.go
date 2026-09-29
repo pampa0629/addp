@@ -12,8 +12,11 @@ const (
 	ModuleRuntimeRoleBackend   = "backend"
 	ModuleRuntimeRoleWorker    = "worker"
 	ModuleRuntimeRoleScheduler = "scheduler"
+	ModuleRuntimeRoleIngress   = "ingress"
 	ModuleRuntimeStatusUp      = "up"
 	ModuleRuntimeStatusDown    = "down"
+	ModuleRuntimeStopGraceful  = "graceful"
+	ModuleRuntimeStopExpired   = "lease_expired"
 	ModuleRuntimeLeaseDuration = 30 * time.Second
 )
 
@@ -44,6 +47,9 @@ type ModuleRuntimeInstance struct {
 	Status             string         `gorm:"not null;default:'up';size:20;index" json:"status"`
 	LastHeartbeat      time.Time      `gorm:"not null;index" json:"last_heartbeat"`
 	LeaseExpiresAt     time.Time      `gorm:"not null;index" json:"lease_expires_at"`
+	ProcessStartedAt   *time.Time     `json:"process_started_at"`
+	StoppedAt          *time.Time     `json:"stopped_at"`
+	StopReason         string         `gorm:"size:30" json:"stop_reason"`
 	Metadata           datatypes.JSON `gorm:"type:jsonb" json:"metadata"`
 	RegisteredAt       time.Time      `gorm:"not null" json:"registered_at"`
 	CreatedAt          time.Time      `gorm:"autoCreateTime" json:"created_at"`
@@ -67,8 +73,9 @@ type ModuleRegistrationRequest struct {
 	InstanceID              string                                     `json:"instance_id" binding:"required"`
 	Role                    string                                     `json:"role" binding:"required"`
 	ModuleURL               string                                     `json:"module_url"`
-	RoutePrefix             string                                     `json:"route_prefix" binding:"required"`
+	RoutePrefix             string                                     `json:"route_prefix"`
 	HealthCheckURL          string                                     `json:"health_check_url"`
+	ProcessStartedAt        time.Time                                  `json:"process_started_at" binding:"required"`
 	Metadata                map[string]interface{}                     `json:"metadata"`
 	ConfigurationManagement *commonconfiguration.ManagementDeclaration `json:"configuration_management"`
 	TaskProvider            *commonmodels.TaskProviderDeclaration      `json:"task_provider"`
@@ -91,17 +98,20 @@ type ModuleDefinitionUpdateRequest struct {
 }
 
 type ModuleRuntimeInstanceInfo struct {
-	ID             uint                   `json:"id"`
-	InstanceID     string                 `json:"instance_id"`
-	Role           string                 `json:"role"`
-	ModuleURL      string                 `json:"module_url"`
-	HealthCheckURL string                 `json:"health_check_url"`
-	Status         string                 `json:"status"`
-	LastHeartbeat  time.Time              `json:"last_heartbeat"`
-	LeaseExpiresAt time.Time              `json:"lease_expires_at"`
-	Metadata       map[string]interface{} `json:"metadata"`
-	RegisteredAt   time.Time              `json:"registered_at"`
-	UpdatedAt      time.Time              `json:"updated_at"`
+	ID               uint                   `json:"id"`
+	InstanceID       string                 `json:"instance_id"`
+	Role             string                 `json:"role"`
+	ModuleURL        string                 `json:"module_url"`
+	HealthCheckURL   string                 `json:"health_check_url"`
+	Status           string                 `json:"status"`
+	LastHeartbeat    time.Time              `json:"last_heartbeat"`
+	LeaseExpiresAt   time.Time              `json:"lease_expires_at"`
+	ProcessStartedAt *time.Time             `json:"process_started_at"`
+	StoppedAt        *time.Time             `json:"stopped_at"`
+	StopReason       string                 `json:"stop_reason"`
+	Metadata         map[string]interface{} `json:"metadata"`
+	RegisteredAt     time.Time              `json:"registered_at"`
+	UpdatedAt        time.Time              `json:"updated_at"`
 }
 
 type ModuleRuntimeInstanceFilter struct {

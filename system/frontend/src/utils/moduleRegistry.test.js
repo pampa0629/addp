@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { getModuleAvailability, isModuleRoutable, isRuntimeInstanceOnline } from './moduleRegistry'
+import { getModuleAvailability, isModuleRoutable, isRuntimeInstanceOnline, moduleNeedsAttention } from './moduleRegistry'
 
 const now = Date.parse('2026-08-22T10:00:00Z')
 
@@ -38,5 +38,26 @@ describe('module registry projections', () => {
       instances: [{ ...backend, lease_expires_at: '2026-08-22T10:00:00Z' }]
     }, now)).toBe('backend_offline')
     expect(getModuleAvailability({ enabled: true, instances: [backend] }, now)).toBe('routable')
+  })
+
+  it('shows Gateway ingress health without treating it as a route target', () => {
+    const ingress = {
+      role: 'ingress', status: 'up', module_url: 'http://gateway:8000',
+      lease_expires_at: '2026-08-22T10:00:30Z'
+    }
+    const gateway = { module_name: 'gateway', enabled: true, instances: [ingress] }
+    expect(getModuleAvailability(gateway, now)).toBe('ingress_online')
+    expect(isModuleRoutable(gateway, now)).toBe(false)
+    expect(moduleNeedsAttention(gateway, now)).toBe(false)
+    expect(moduleNeedsAttention({ ...gateway, instances: [{ ...ingress, lease_expires_at: '2026-08-22T10:00:00Z' }] }, now)).toBe(true)
+  })
+
+  it('surfaces enabled modules without a backend and expired instances', () => {
+    expect(moduleNeedsAttention({ enabled: true, instances: [] }, now)).toBe(true)
+    expect(moduleNeedsAttention({ enabled: false, instances: [] }, now)).toBe(false)
+    expect(moduleNeedsAttention({ enabled: true, instances: [{
+      role: 'worker', status: 'down', stop_reason: 'lease_expired',
+      lease_expires_at: '2026-08-22T09:59:00Z'
+    }] }, now)).toBe(true)
   })
 })

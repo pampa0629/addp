@@ -6,13 +6,9 @@ import asyncio
 import json
 import os
 import signal
-from datetime import datetime, timezone
 from typing import Callable
 
-from .client.module_registry import ModuleRegistration, ModuleRegistryClient
-
-
-_STARTED_AT = datetime.now(timezone.utc).isoformat()
+from .client.module_registry import PROCESS_STARTED_AT, ModuleRegistration, ModuleRegistryClient
 
 
 def _build_identity() -> dict[str, str]:
@@ -21,7 +17,7 @@ def _build_identity() -> dict[str, str]:
         "git_commit": os.getenv("ADDP_GIT_COMMIT", "unknown"),
         "source_fingerprint": os.getenv("ADDP_SOURCE_FINGERPRINT", "unknown"),
         "built_at": os.getenv("ADDP_BUILT_AT", "unknown"),
-        "started_at": _STARTED_AT,
+        "started_at": PROCESS_STARTED_AT,
     }
 
 

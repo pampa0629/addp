@@ -26,9 +26,16 @@
           :is="panelComponents[tab.panel]"
           v-if="activeTab === tab.key"
           v-bind="tab.props || {}"
+          @open-members="openProjectGroupMembers"
         />
       </el-tab-pane>
     </el-tabs>
+    <OrganizationMembershipsDialog
+      v-if="canShowProjectGroupMembers"
+      v-model="projectGroupMembersVisible"
+      kind="project_group"
+      :organization="selectedProjectGroup"
+    />
   </div>
 </template>
 
@@ -56,6 +63,7 @@ import APIConsumersPanel from '@/components/iam/APIConsumersPanel.vue'
 import DepartmentsPanel from '../components/iam/DepartmentsPanel.vue'
 import IdentityChangesPanel from '../components/iam/IdentityChangesPanel.vue'
 import OAuthClientsPanel from '../components/iam/OAuthClientsPanel.vue'
+import OrganizationMembershipsDialog from '../components/iam/OrganizationMembershipsDialog.vue'
 import PlatformTenantsPanel from '../components/iam/PlatformTenantsPanel.vue'
 import PlatformUsersPanel from '../components/iam/PlatformUsersPanel.vue'
 import ProjectGroupsPanel from '../components/iam/ProjectGroupsPanel.vue'
@@ -75,12 +83,21 @@ const route = useRoute()
 const router = useRouter()
 const activeTab = ref('')
 const authContext = computed(() => authStore.authContext)
+const selectedProjectGroup = ref(null)
+const projectGroupMembersVisible = ref(false)
+const projectGroupTenantId = ref('')
 const contextType = computed(() => authStore.contextType)
 const pageKey = computed(() => String(route.meta?.iamPage || ''))
 const pageDefinition = computed(() => findIAMPage(pageKey.value))
 const pageTitle = computed(() => pageDefinition.value ? t(pageDefinition.value.label) : t('system.iam.title'))
 const showTenantRoleSetup = computed(() => needsTenantRoleSetup(authContext.value))
 const availableTabs = computed(() => availableIAMTabs(pageKey.value, contextType.value, permission => authStore.hasPermission(permission)))
+const canShowProjectGroupMembers = computed(() =>
+  projectGroupMembersVisible.value && pageKey.value === 'organization' && activeTab.value === 'project-groups' &&
+  authContext.value?.context?.type === 'tenant' &&
+  String(authContext.value.context.tenant_id) === projectGroupTenantId.value &&
+  authStore.hasPermission('iam.project_group_membership.read')
+)
 
 const panelComponents = {
   users: markRaw(PlatformUsersPanel),
@@ -121,11 +138,19 @@ function tabIcon(panel) {
 }
 
 async function restoreTabFromRoute() {
+  if (!authContext.value) return
   const routeState = resolveIAMCategoryRouteState(availableTabs.value.map(tab => tab.key), route.query)
   activeTab.value = routeState.activeTab
   if (routeState.changed && pageDefinition.value) {
     await navigateSystemRoute(router, { name: pageDefinition.value.routeName, query: routeState.query }, { history: 'replace' })
   }
+}
+
+function openProjectGroupMembers(group) {
+  if (!group?.id || authContext.value?.context?.type !== 'tenant') return
+  selectedProjectGroup.value = group
+  projectGroupTenantId.value = String(authContext.value.context.tenant_id)
+  projectGroupMembersVisible.value = true
 }
 
 async function selectTab(tab) {
@@ -144,6 +169,16 @@ async function openRoleAssignments() {
 }
 
 watch([availableTabs, () => route.query, pageKey], restoreTabFromRoute, { immediate: true })
+watch([pageKey, activeTab], ([page, tab]) => {
+  if (page !== 'organization' || tab !== 'project-groups') projectGroupMembersVisible.value = false
+})
+watch(authContext, context => {
+  if (!context || !projectGroupMembersVisible.value) return
+  if (String(context.context?.tenant_id) !== projectGroupTenantId.value ||
+    !authStore.hasPermission('iam.project_group_membership.read')) {
+    projectGroupMembersVisible.value = false
+  }
+})
 </script>
 
 <style>

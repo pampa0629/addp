@@ -657,22 +657,22 @@ graph TB
 ### 核心机制说明
 
 **1. 持久模块定义**:
-- `module_definitions` 保存稳定 `module_name`、路由前缀、管理员启用状态和配置管理入口声明；模块进程离线不会删除该定义。
-- 业务模块的 `enabled` 是管理员意图，与实例心跳健康独立。禁用业务模块时所有实例即使仍有心跳也不得进入 Gateway 路由或 Console 动态入口。System 是引导控制面，其 `enabled` 固定为 true，不接受管理员禁用；自注册实例只供运行观测和配置入口声明，Gateway 通过部署提供的 `SYSTEM_URL` 访问 System。
+- `module_definitions` 保存稳定 `module_name`、路由前缀、管理员启用状态和配置管理入口声明；模块进程离线不会删除该定义。Gateway Ingress 无业务路由前缀，定义的 `route_prefix` 为空。
+- 业务模块的 `enabled` 是管理员意图，与实例心跳健康独立。禁用业务模块时所有实例即使仍有心跳也不得进入 Gateway 路由或 Console 动态入口。System 和 Gateway 是引导控制面与平台入口，其 `enabled` 固定为 true，不接受管理员禁用；自注册实例只供运行观测。Gateway 通过部署提供的 `SYSTEM_URL` 直接访问 System。
 - 模块首次注册创建定义；后续注册按 `module_name` 幂等更新允许由 owner 发布的声明，不改变定义 ID。
-- 模块定义是可变持久化主资源，使用正整数 `version` 进行乐观并发控制。平台系统管理员通过 `/api/v1/system/platform/modules` 读取定义和实例投影，只能通过带 `version` 的更新请求修改业务模块的 `enabled`；System 的 `enabled` 不可修改。路由前缀和配置入口声明仍由 owner 注册发布，不提供管理员手工编辑路径。
+- 模块定义是可变持久化主资源，使用正整数 `version` 进行乐观并发控制。平台系统管理员通过 `/api/v1/system/platform/modules` 读取定义和实例投影，只能通过带 `version` 的更新请求修改业务模块的 `enabled`；System 与 Gateway 的 `enabled` 不可修改。路由前缀和配置入口声明仍由 owner 注册发布，不提供管理员手工编辑路径。
 - 相同 owner 声明的重复注册保持幂等且不递增 `version`；路由前缀或配置入口声明实际变化时，System 原子更新声明并递增 `version`，同时保持管理员 `enabled` 不变。
 
 **2. 临时运行实例租约**:
-- 每个 Backend 或 Worker 进程启动时生成本次进程唯一的 `instance_id`，并以 `module_name + instance_id` 注册到 `module_runtime_instances`。
-- 运行实例声明 `role`；只有 `backend` 实例具有 Gateway 路由端点，`worker`、`scheduler` 等角色只用于运行状态和容量观测。
+- 每个 Backend、Worker、Scheduler 或 Gateway Ingress 进程启动时生成本次进程唯一的 `instance_id`，并以 `module_name + instance_id` 注册到 `module_runtime_instances`，同时提交本次进程启动时间。
+- 运行实例声明 `role`；只有 `backend` 实例具有 Gateway 业务路由端点。Gateway 使用不可路由的 `ingress` 角色和自身监听地址；`worker`、`scheduler` 与 `ingress` 只用于运行观测。Gateway 在 HTTP 监听建立后通过直连 System 的同一注册客户端维护自身租约，不通过 Gateway 自己代理注册请求；Gateway Ready 仍以已应用 System 路由快照为条件。
 - 同一模块允许多个运行实例并存，注册不会互相覆盖 URL、版本或元数据。
 - 注册提交完整实例声明；后续心跳只续租并更新 `last_heartbeat`，不得借心跳覆盖模块定义、管理员启用状态或实例元数据。
 - Backend 必须先完成自身必需 Infra 初始化并成功绑定 HTTP 监听端口，再发起后台注册；不得把尚未监听的 `module_url` 提前发布为可路由实例。
 
 **3. 周期心跳机制**:
 - 模块每 **10 秒**发送一次心跳到 System
-- System 将超过租约超时时间未心跳的运行实例标记为 `down`，但不删除运行实例历史，也不删除持久模块定义。
+- System 将超过租约超时时间未心跳的运行实例标记为 `down` 并记录 `lease_expired` 与到期时间，但不删除运行实例历史，也不删除持久模块定义。正常注销记录 `graceful` 与注销时间。`lease_expired` 表示失联或疑似异常退出，不证明进程崩溃；同一进程重新注册时恢复为 `up` 并清除离线原因。
 - 同一 `instance_id` 重新注册可恢复为 `up`；新进程必须使用新的 `instance_id`。
 - 任一次心跳失败后，Go 与 Python 公共客户端的下一次请求都必须使用同一 `instance_id` 幂等重注册；注册失败使用有界退避，不能继续发送必然失败的心跳直到租约过期。
 - 公共客户端必须发布 `starting|registered|recovering|failed|stopped` 五态进程内快照。首次注册成功进入 `registered`；任一心跳失败立即进入 `recovering`，重注册成功后恢复。该快照只供本进程就绪判断，不落库、不发布第二套注册事实。
@@ -682,10 +682,11 @@ graph TB
 - Runtime 模块注册、心跳和注销失败必须返回 `{error, error_code}`；稳定错误码使用 `module_registration_invalid`、`module_runtime_instance_not_found`、`module_registry_unauthorized`、`module_registry_forbidden`、`module_registration_failed`、`module_heartbeat_failed` 和 `module_deregistration_failed`。Go 与 Python 公共客户端都必须保留 `method`、`path`、`status_code`、`error_code`、`error_message` 和受限长度的 `response_body`；后台生命周期日志还必须包含 `operation`、`module`、`instance_id` 和 `role`，不得只输出无结构的异常文本。Token Endpoint 的成功响应含凭据，诊断只能记录稳定错误码、可重试性、响应体字节数、Content-Type 和不含值的字段校验原因，禁止记录原始响应体或任何 Token 值。
 
 **管理面边界**:
-- `platform.module.read` 允许平台系统管理员查看模块定义及其 Backend、Worker、Scheduler 实例投影；`platform.module.update` 只允许修改业务模块定义的 `enabled` 管理意图。System 行只展示固定启用状态，不提供开关；更新接口拒绝对 System 的写入。
+- `platform.module.read` 允许平台系统管理员查看模块定义及其 Backend、Worker、Scheduler、Ingress 实例投影；`platform.module.update` 只允许修改业务模块定义的 `enabled` 管理意图。System 与 Gateway 行只展示固定启用状态，不提供开关；更新接口拒绝对这两个模块的写入。
+- 平台模块页以现有产品中文模块名称说明核心职责，并保留稳定 `module_name` 供定位；展示词条由前端国际化维护，不写入注册表。实例详情展示端点、租约状态、最近心跳和以进程启动时间计算的运行时长；历史区分正常注销与租约超时。路由资格仅由 Backend 租约计算，不代表 `/health/ready` 实测结果。
 - 管理界面不得创建模块定义、删除运行实例、手工修改 `status` 或延长租约。定义由 owner 首次注册产生，实例健康只能由注册、心跳和租约到期推进。
 - 管理界面按固定周期重新读取 System 当前投影；进程稍后启动并重新注册后，无需重启 System 或前端即可显示为可用。
-- `GET /api/v1/system/platform/modules` 和模块详情只返回有界的当前运行投影：保留全部租约有效的实例；某个角色当前没有有效租约时，仅保留该角色最近一次离线观测，用于区分“从未注册该角色”和“该角色当前离线”。不得在模块主列表中携带全部历史实例。
+- `GET /api/v1/system/platform/modules` 和模块详情只返回有界的当前运行投影：保留全部租约有效的实例；某个角色当前没有有效租约时，仅保留该角色最近一次离线观测，用于区分“从未注册该角色”和“该角色当前离线”。不得在模块主列表中携带全部历史实例。页面的“需关注”仅基于当前投影的租约超时或当前服务入口不可用；全部下线记录仍从实例历史读取，不以旧实例的正常退出制造持续告警。
 - `GET /api/v1/system/platform/modules/{module_name}/instances` 是全部实例历史的唯一只读分页入口，按 `registered_at DESC, id DESC` 稳定排序，并支持 role、status 过滤。历史记录继续保留，管理面不提供删除或健康写入。
 - `module_runtime_instances` 记录会被心跳、注销和租约收敛更新，是实例生命周期历史，不是追加式审计事件；管理员启停等操作审计仍以 `audit_logs` 为唯一事实源。
 

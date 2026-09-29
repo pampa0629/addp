@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import zhCn from '../src/i18n/zh-cn.json'
 import en from '../src/i18n/en.json'
-import { buildGovernanceStatusEntryQuery, buildMissingCoverageEntryQuery, coverageDimensionLabel } from '../src/utils/governanceCoverageView'
+import { buildGovernanceStatusEntryQuery, buildMissingCoverageEntryQuery, coverageDimensionLabel, coverageGapDetailTab } from '../src/utils/governanceCoverageView'
 import { parseEntryListRoute } from '../src/utils/entryRouteState'
 
 describe('catalog governance coverage view', () => {
@@ -31,6 +31,16 @@ describe('catalog governance coverage view', () => {
     expect(buildMissingCoverageEntryQuery('component_element')).toBeNull()
     expect(buildMissingCoverageEntryQuery('accountability')).toBeNull()
     expect(buildMissingCoverageEntryQuery('unknown')).toBeNull()
+  })
+
+  it('opens item-level governance gaps in curation while leaving batch-assignment gaps on the default detail tab', () => {
+    for (const dimension of ['business_definition', 'business_owner', 'data_steward', 'glossary', 'component_standard_mapping']) {
+      expect(coverageGapDetailTab(dimension, 'missing')).toBe('curation')
+    }
+    for (const dimension of ['primary_domain', 'accountable_department', 'unknown']) {
+      expect(coverageGapDetailTab(dimension, 'missing')).toBe('')
+    }
+    expect(coverageGapDetailTab('business_definition', '')).toBe('')
   })
 
   it('drills governance status counts into the inventory without treating them as coverage gaps', () => {

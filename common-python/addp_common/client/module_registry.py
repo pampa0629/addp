@@ -6,6 +6,7 @@ import asyncio
 import logging
 import os
 import threading
+from datetime import datetime, timezone
 from typing import Literal
 from urllib.parse import quote
 from uuid import uuid4
@@ -21,6 +22,7 @@ logger = logging.getLogger("addp.module_registry")
 _PROCESS_INSTANCE_LOCK = threading.Lock()
 _PROCESS_INSTANCE_PID = 0
 _PROCESS_INSTANCE_ID = ""
+PROCESS_STARTED_AT = datetime.now(timezone.utc).isoformat()
 
 
 def _process_instance_id() -> str:
@@ -60,6 +62,7 @@ class ModuleRegistration(_ContractModel):
     module_url: str
     route_prefix: str
     health_check_url: str = ""
+    process_started_at: str = Field(default=PROCESS_STARTED_AT)
     metadata: dict[str, object] = Field(default_factory=dict)
     configuration_management: ConfigurationManagementDeclaration | None = None
 

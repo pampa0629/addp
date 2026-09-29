@@ -17,7 +17,7 @@
     },
     "module": {
       "title": "Module Management",
-      "description": "Manage persistent module enablement and observe live Backend, Worker, and Scheduler leases.",
+      "description": "View module responsibilities, instance leases, and uptime, and manage business module enablement.",
       "refresh": "Refresh",
       "reload": "Reload",
       "refreshed": "Module state refreshed",
@@ -33,7 +33,7 @@
         "id": "Record ID",
         "name": "Module",
         "routePrefix": "Route Prefix",
-        "availability": "Routability",
+        "availability": "Runtime Availability",
         "instances": "Runtime Instances",
         "enabled": "Admin Enabled",
         "version": "Version",
@@ -43,14 +43,19 @@
         "definitions": "Module Definitions",
         "routable": "Routable Modules",
         "onlineInstances": "Online Instances",
-        "workers": "Online Workers"
+        "workers": "Online Workers",
+        "attention": "Modules Needing Attention"
       },
+      "filters": { "all": "All", "attention": "Needs Attention" },
       "availability": {
         "routable": "Routable",
         "disabled": "Admin Disabled",
         "no_backend": "No Backend",
-        "backend_offline": "Backend Offline"
+        "backend_offline": "Backend Offline",
+        "ingress_online": "Ingress Online",
+        "ingress_offline": "Ingress Offline"
       },
+      "stopReasons": { "graceful": "Graceful Exit", "lease_expired": "Lease expired; possible unexpected exit" },
       "status": {
         "up": "Online",
         "down": "Offline"
@@ -58,7 +63,8 @@
       "roles": {
         "backend": "Backend",
         "worker": "Worker",
-        "scheduler": "Scheduler"
+        "scheduler": "Scheduler",
+        "ingress": "Ingress"
       },
       "declarations": {
         "title": "Module Declarations",
@@ -78,7 +84,11 @@
         "healthCheckUrl": "Health Check URL",
         "lastHeartbeat": "Last Heartbeat",
         "leaseExpiresAt": "Lease Expires",
-        "registeredAt": "Registered At"
+        "registeredAt": "Registered At",
+        "processStartedAt": "Process Started At",
+        "stopReason": "Stop Reason",
+        "uptime": "Process Uptime",
+        "uptimeValue": "{days} d {hours} h"
       },
       "history": {
         "title": "{name} · Runtime Instance History",

@@ -38,7 +38,6 @@
       <template #footer><el-button @click="formVisible = false">{{ t('system.iam.common.cancel') }}</el-button><el-button type="primary" :loading="submitting" :disabled="!formValid" @click="save">{{ t('system.iam.common.save') }}</el-button></template>
     </el-dialog>
 
-    <OrganizationMembershipsDialog v-model="membersVisible" kind="project_group" :organization="selectedGroup" />
   </div>
 </template>
 
@@ -50,7 +49,8 @@ import { useI18n } from 'vue-i18n'
 import { iamAPI } from '../../api/iam'
 import { useAuthStore } from '../../store/auth'
 import { isValidOrganizationCode } from '../../utils/organizationIdentity'
-import OrganizationMembershipsDialog from './OrganizationMembershipsDialog.vue'
+
+const emit = defineEmits(['open-members'])
 
 const { t } = useI18n()
 const authStore = useAuthStore()
@@ -68,8 +68,6 @@ const editing = ref(null)
 const versionConflict = ref(false)
 const codeConflict = ref(false)
 const form = reactive({ code: '', name: '', description: '' })
-const membersVisible = ref(false)
-const selectedGroup = ref(null)
 const organizationCodeValid = computed(() => isValidOrganizationCode(form.code))
 const organizationCodeError = computed(() => codeConflict.value ? t('system.iam.organization.codeAlreadyExists') : form.code && !organizationCodeValid.value ? t('system.iam.validation.organizationCode') : '')
 const formValid = computed(() => organizationCodeValid.value && Boolean(form.name.trim()))
@@ -120,7 +118,7 @@ async function closeGroup(row) {
     ElMessage.success(t('system.iam.common.updated')); await load()
   } catch (error) { if (error !== 'cancel' && error !== 'close') ElMessage.error(error.response?.data?.error || t('system.iam.common.updateFailed')) }
 }
-function openMembers(row) { selectedGroup.value = row; membersVisible.value = true }
+function openMembers(row) { emit('open-members', row) }
 async function copyCode(code) {
   try {
     await navigator.clipboard.writeText(code)

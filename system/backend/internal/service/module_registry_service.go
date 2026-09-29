@@ -18,7 +18,7 @@ import (
 
 var ErrInvalidModuleRegistration = errors.New("invalid module registration")
 var ErrModuleDefinitionVersionConflict = errors.New("module definition version conflict")
-var ErrSystemModuleImmutable = errors.New("system module enabled state is immutable")
+var ErrBootstrapModuleImmutable = errors.New("platform bootstrap module enabled state is immutable")
 var ErrInvalidModuleRuntimeInstanceQuery = errors.New("invalid module runtime instance query")
 
 type ModuleRegistryService struct {
@@ -42,13 +42,22 @@ func (s *ModuleRegistryService) Register(req *models.ModuleRegistrationRequest) 
 	req.ModuleURL = strings.TrimRight(strings.TrimSpace(req.ModuleURL), "/")
 	req.RoutePrefix = strings.TrimSpace(req.RoutePrefix)
 	req.HealthCheckURL = strings.TrimRight(strings.TrimSpace(req.HealthCheckURL), "/")
-	if req.ModuleName == "" || req.InstanceID == "" || req.Role == "" || req.RoutePrefix == "" {
-		return fmt.Errorf("%w: module_name, instance_id, role and route_prefix are required", ErrInvalidModuleRegistration)
+	if req.ModuleName == "" || req.InstanceID == "" || req.Role == "" || req.ProcessStartedAt.IsZero() {
+		return fmt.Errorf("%w: module_name, instance_id, role and process_started_at are required", ErrInvalidModuleRegistration)
 	}
 	switch req.Role {
-	case models.ModuleRuntimeRoleBackend, models.ModuleRuntimeRoleWorker, models.ModuleRuntimeRoleScheduler:
+	case models.ModuleRuntimeRoleBackend, models.ModuleRuntimeRoleWorker, models.ModuleRuntimeRoleScheduler, models.ModuleRuntimeRoleIngress:
 	default:
-		return fmt.Errorf("%w: role must be backend, worker or scheduler", ErrInvalidModuleRegistration)
+		return fmt.Errorf("%w: invalid module runtime role", ErrInvalidModuleRegistration)
+	}
+	if req.Role == models.ModuleRuntimeRoleIngress {
+		if req.ModuleName != "gateway" || req.RoutePrefix != "" || req.ModuleURL == "" || req.ConfigurationManagement != nil || req.TaskProvider != nil {
+			return fmt.Errorf("%w: ingress must be gateway without a business route or module declarations", ErrInvalidModuleRegistration)
+		}
+	} else if req.ModuleName == "gateway" {
+		return fmt.Errorf("%w: gateway may only register as ingress", ErrInvalidModuleRegistration)
+	} else if req.RoutePrefix == "" {
+		return fmt.Errorf("%w: route_prefix is required", ErrInvalidModuleRegistration)
 	}
 	if req.Role == models.ModuleRuntimeRoleBackend && req.ModuleURL == "" {
 		return fmt.Errorf("%w: backend module_url is required", ErrInvalidModuleRegistration)
@@ -122,7 +131,7 @@ func (s *ModuleRegistryService) ListModuleRuntimeInstances(
 		return nil, 0, ErrInvalidModuleRuntimeInstanceQuery
 	}
 	switch filter.Role {
-	case "", models.ModuleRuntimeRoleBackend, models.ModuleRuntimeRoleWorker, models.ModuleRuntimeRoleScheduler:
+	case "", models.ModuleRuntimeRoleBackend, models.ModuleRuntimeRoleWorker, models.ModuleRuntimeRoleScheduler, models.ModuleRuntimeRoleIngress:
 	default:
 		return nil, 0, ErrInvalidModuleRuntimeInstanceQuery
 	}
@@ -148,8 +157,8 @@ func (s *ModuleRegistryService) UpdateModuleDefinition(moduleName string, req *m
 	if moduleName == "" || req == nil || req.Enabled == nil || req.Version < 1 {
 		return nil, fmt.Errorf("%w: enabled and positive version are required", ErrInvalidModuleRegistration)
 	}
-	if moduleName == "system" {
-		return nil, ErrSystemModuleImmutable
+	if moduleName == "system" || moduleName == "gateway" {
+		return nil, ErrBootstrapModuleImmutable
 	}
 	definition, _, err := s.repo.UpdateEnabled(moduleName, *req.Enabled, req.Version)
 	if errors.Is(err, repository.ErrModuleDefinitionVersionConflict) {
@@ -319,7 +328,7 @@ func (s *ModuleRegistryService) convertToModuleInfo(definition *models.ModuleDef
 		if activeInstancesOnly && status != models.ModuleRuntimeStatusUp {
 			continue
 		}
-		instances = append(instances, convertRuntimeInstanceInfoWithStatus(&instance, status))
+		instances = append(instances, convertRuntimeInstanceInfo(&instance, now))
 	}
 	return &models.ModuleInfo{
 		ID: definition.ID, ModuleName: definition.ModuleName, RoutePrefix: definition.RoutePrefix,
@@ -335,7 +344,12 @@ func convertRuntimeInstanceInfo(instance *models.ModuleRuntimeInstance, now time
 	if !instance.LeaseExpiresAt.After(now) {
 		status = models.ModuleRuntimeStatusDown
 	}
-	return convertRuntimeInstanceInfoWithStatus(instance, status)
+	info := convertRuntimeInstanceInfoWithStatus(instance, status)
+	if instance.Status == models.ModuleRuntimeStatusUp && status == models.ModuleRuntimeStatusDown {
+		info.StopReason = models.ModuleRuntimeStopExpired
+		info.StoppedAt = &instance.LeaseExpiresAt
+	}
+	return info
 }
 
 func convertRuntimeInstanceInfoWithStatus(instance *models.ModuleRuntimeInstance, status string) models.ModuleRuntimeInstanceInfo {
@@ -347,6 +361,7 @@ func convertRuntimeInstanceInfoWithStatus(instance *models.ModuleRuntimeInstance
 		ID: instance.ID, InstanceID: instance.InstanceID, Role: instance.Role,
 		ModuleURL: instance.ModuleURL, HealthCheckURL: instance.HealthCheckURL,
 		Status: status, LastHeartbeat: instance.LastHeartbeat, LeaseExpiresAt: instance.LeaseExpiresAt,
+		ProcessStartedAt: instance.ProcessStartedAt, StoppedAt: instance.StoppedAt, StopReason: instance.StopReason,
 		Metadata: metadata, RegisteredAt: instance.RegisteredAt, UpdatedAt: instance.UpdatedAt,
 	}
 }

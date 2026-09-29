@@ -29,7 +29,7 @@ func taskProviderModuleRegistryForTest(t *testing.T) (*gorm.DB, *ModuleRegistryS
 
 func taskProviderModuleRequestForTest() *models.ModuleRegistrationRequest {
 	capabilities := commonmodels.JSONString(`{"schema_version":"task.capabilities/v2","task_capabilities":[{"type":"scan","display_name":"Scan","description":"Scan metadata","definition_schema":{"type":"object"},"supports_schedule":false,"supports_cancel":false,"supports_inline_execution":false,"create_url":"/meta/scan","edit_url":"/meta/scan?id=:id","deprecated":false}]}`)
-	return &models.ModuleRegistrationRequest{
+	return &models.ModuleRegistrationRequest{ProcessStartedAt: time.Now(),
 		ModuleName: "meta", InstanceID: "meta-a", Role: models.ModuleRuntimeRoleBackend,
 		ModuleURL: "http://meta-a:8082", RoutePrefix: "/meta",
 		TaskProvider: &commonmodels.TaskProviderDeclaration{
@@ -161,7 +161,7 @@ func TestBackendMayWithdrawTaskProviderButWorkerCannot(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	workerRequest := &models.ModuleRegistrationRequest{
+	workerRequest := &models.ModuleRegistrationRequest{ProcessStartedAt: time.Now(),
 		ModuleName: request.ModuleName, InstanceID: "meta-worker-a", Role: models.ModuleRuntimeRoleWorker,
 		RoutePrefix: request.RoutePrefix,
 	}

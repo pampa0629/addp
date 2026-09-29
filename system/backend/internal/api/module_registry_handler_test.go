@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	sharedauth "github.com/addp/common/middleware/auth"
 	commoni18n "github.com/addp/common/middleware/i18n"
@@ -31,9 +32,22 @@ func TestModuleRegistryRuntimeErrorsExposeStableCodes(t *testing.T) {
 		router := newModuleRegistryRuntimeTestRouter(t, "addp-meta")
 		response := performModuleRegistryRequest(router, http.MethodPost, "/runtime/modules", `{
 			"module_name":"manager","instance_id":"manager-1","role":"backend",
-			"module_url":"http://manager:8080","route_prefix":"/manager"
+			"module_url":"http://manager:8080","route_prefix":"/manager",
+			"process_started_at":"2026-09-29T00:00:00Z"
 		}`)
 		assertModuleRegistryErrorCode(t, response, http.StatusForbidden, moduleRegistryForbiddenErrorCode)
+	})
+
+	t.Run("gateway ingress accepts an empty route prefix", func(t *testing.T) {
+		router := newModuleRegistryRuntimeTestRouter(t, "addp-gateway")
+		response := performModuleRegistryRequest(router, http.MethodPost, "/runtime/modules", `{
+			"module_name":"gateway","instance_id":"gateway-1","role":"ingress",
+			"module_url":"http://gateway:8000","route_prefix":"",
+			"process_started_at":"2026-09-29T00:00:00Z"
+		}`)
+		if response.Code != http.StatusOK {
+			t.Fatalf("gateway ingress status = %d, body=%s", response.Code, response.Body.String())
+		}
 	})
 
 	t.Run("heartbeat instance is missing", func(t *testing.T) {
@@ -106,7 +120,7 @@ func TestUpdateModulePlatformUsesOptimisticVersion(t *testing.T) {
 		t.Fatal(err)
 	}
 	registry := service.NewModuleRegistryService(repository.NewModuleRegistryRepository(db))
-	if err := registry.Register(&models.ModuleRegistrationRequest{
+	if err := registry.Register(&models.ModuleRegistrationRequest{ProcessStartedAt: time.Now(),
 		ModuleName: "manager", InstanceID: "manager-backend-1", Role: models.ModuleRuntimeRoleBackend,
 		ModuleURL: "http://manager:8080", RoutePrefix: "/manager",
 	}); err != nil {
@@ -157,7 +171,7 @@ func TestUpdateModulePlatformRejectsSystem(t *testing.T) {
 		t.Fatal(err)
 	}
 	registry := service.NewModuleRegistryService(repository.NewModuleRegistryRepository(db))
-	if err := registry.Register(&models.ModuleRegistrationRequest{
+	if err := registry.Register(&models.ModuleRegistrationRequest{ProcessStartedAt: time.Now(),
 		ModuleName: "system", InstanceID: "system-backend-1", Role: models.ModuleRuntimeRoleBackend,
 		ModuleURL: "http://system:8180", RoutePrefix: "/system",
 	}); err != nil {
@@ -172,7 +186,7 @@ func TestUpdateModulePlatformRejectsSystem(t *testing.T) {
 			payload = `{"enabled":true,"version":1}`
 		}
 		response := performModuleRegistryRequest(router, http.MethodPut, "/platform/modules/system", payload)
-		assertModuleRegistryErrorCode(t, response, http.StatusConflict, "system_module_immutable")
+		assertModuleRegistryErrorCode(t, response, http.StatusConflict, "bootstrap_module_immutable")
 	}
 	var definition models.ModuleDefinition
 	if err := db.Where("module_name = ?", "system").First(&definition).Error; err != nil {
@@ -197,7 +211,7 @@ func TestListModuleRuntimeInstancesPlatformUsesPaginatedContract(t *testing.T) {
 	}
 	registry := service.NewModuleRegistryService(repository.NewModuleRegistryRepository(db))
 	for _, instanceID := range []string{"manager-a", "manager-b"} {
-		if err := registry.Register(&models.ModuleRegistrationRequest{
+		if err := registry.Register(&models.ModuleRegistrationRequest{ProcessStartedAt: time.Now(),
 			ModuleName: "manager", InstanceID: instanceID, Role: models.ModuleRuntimeRoleBackend,
 			ModuleURL: "http://" + instanceID + ":8081", RoutePrefix: "/manager",
 		}); err != nil {

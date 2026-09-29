@@ -43,9 +43,7 @@
         <el-form-item :label="t('catalog.collections.name')" required><el-input v-model="editForm.name" maxlength="200" show-word-limit /></el-form-item>
         <el-form-item :label="t('catalog.collections.collectionDescription')"><el-input v-model="editForm.description" type="textarea" :rows="3" maxlength="2000" show-word-limit /></el-form-item>
         <el-form-item :label="t('catalog.collections.entries')">
-          <el-select v-model="editForm.entry_ids" multiple filterable remote reserve-keyword :remote-method="searchEntries" :loading="entrySearching" style="width: 100%" :placeholder="t('catalog.collections.searchEntries')">
-            <el-option v-for="entry in entryOptions" :key="entry.id" :label="entry.display_name || t('catalog.entries.unnamed')" :value="entry.id" />
-          </el-select>
+          <CollectionEntryPicker v-model="editForm.entry_ids" :initial-entries="collection?.entries || []" />
         </el-form-item>
         <p class="form-hint">{{ t('catalog.collections.replaceHint') }}</p>
       </el-form>
@@ -64,7 +62,8 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Delete, Edit, Refresh } from '@element-plus/icons-vue'
 import { navigateConsoleModuleRoute, useConsolePageDescriptor } from '@common-ui'
-import { deleteCollection, getCollection, listEntries, listMyProjectGroups, updateCollection } from '../api/catalog'
+import { deleteCollection, getCollection, listMyProjectGroups, updateCollection } from '../api/catalog'
+import CollectionEntryPicker from '../components/CollectionEntryPicker.vue'
 import { useAuthStore } from '../store/auth'
 import { catalogStatusLabel } from '../utils/catalogStatusLabel'
 import { canAccessProjectGroup } from '../utils/projectGroupScope'
@@ -79,12 +78,9 @@ const error = ref('')
 const editVisible = ref(false)
 const saving = ref(false)
 const versionConflict = ref(false)
-const entrySearching = ref(false)
-const entryOptions = ref([])
 const projectGroupOptions = ref([])
 const editForm = reactive({ name: '', description: '', entry_ids: [] })
 let requestVersion = 0
-let searchVersion = 0
 const canUpdate = computed(() => Boolean(collection.value) && canAccessProjectGroup(authStore.authContext, 'catalog.collection.update', collection.value.project_group_id))
 const projectGroupLabel = computed(() => {
   const group = projectGroupOptions.value.find(item => item.project_group_id === String(collection.value?.project_group_id || ''))
@@ -132,24 +128,7 @@ function openEdit() {
     description: collection.value.description || '',
     entry_ids: (collection.value.entries || []).map(entry => entry.id)
   })
-  entryOptions.value = [...(collection.value.entries || [])]
   editVisible.value = true
-}
-
-async function searchEntries(search) {
-  const version = ++searchVersion
-  entrySearching.value = true
-  try {
-    const response = await listEntries({ search: String(search || '').trim(), page: 1, page_size: 50 })
-    if (version !== searchVersion) return
-    const selected = new Map((collection.value?.entries || []).map(entry => [entry.id, entry]))
-    for (const entry of response.data || []) selected.set(entry.id, entry)
-    entryOptions.value = [...selected.values()]
-  } catch (requestError) {
-    if (version === searchVersion) ElMessage.error(requestError?.response?.data?.error || t('catalog.entries.loadFailed'))
-  } finally {
-    if (version === searchVersion) entrySearching.value = false
-  }
 }
 
 async function saveCollection() {

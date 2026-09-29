@@ -113,7 +113,7 @@ func (h *ModuleRegistryHandler) HeartbeatService(c *gin.Context) {
 
 // DeregisterService godoc
 // @Summary      注销当前模块运行实例 | Deregister current module runtime instance
-// @Description  正常退出的模块进程将自身实例立即标记为 down；持久模块定义和实例历史保留 | A normally exiting module process immediately marks its own instance down while preserving the persistent definition and instance history
+// @Description  正常退出的模块进程将自身实例立即标记为 down 并记录 graceful 原因；持久模块定义和实例历史保留 | A normally exiting module process immediately marks its own instance down with a graceful reason while preserving the persistent definition and instance history
 // @Tags         运行时注册 | Runtime Registry
 // @Produce      json
 // @Security     BearerAuth
@@ -279,7 +279,7 @@ func (h *ModuleRegistryHandler) GetModulePlatform(c *gin.Context) {
 // @Produce      json
 // @Security     BearerAuth
 // @Param        module_name path string true "模块名 | Module name"
-// @Param        role query string false "角色过滤：backend、worker、scheduler | Role filter: backend, worker, scheduler"
+// @Param        role query string false "角色过滤：backend、worker、scheduler、ingress | Role filter: backend, worker, scheduler, ingress"
 // @Param        status query string false "有效状态过滤：up、down | Effective status filter: up, down"
 // @Param        page query int false "页码 | Page number" default(1)
 // @Param        page_size query int false "每页数量，最大 100 | Page size, maximum 100" default(10)
@@ -311,7 +311,7 @@ func (h *ModuleRegistryHandler) ListModuleRuntimeInstancesPlatform(c *gin.Contex
 
 // UpdateModulePlatform godoc
 // @Summary      更新平台模块启用状态 | Update platform module enabled state
-// @Description  只更新业务模块的管理员 enabled 意图；System 是始终启用的引导控制面，更新返回 409 system_module_immutable | Updates only business module enabled intent; System is an always-enabled bootstrap control plane and updates return 409 system_module_immutable
+// @Description  只更新业务模块的管理员 enabled 意图；System 与 Gateway 固定启用，更新返回 409 bootstrap_module_immutable | Updates only business module enabled intent; System and Gateway are always enabled, and updates return 409 bootstrap_module_immutable
 // @Tags         平台模块管理 | Platform Module Management
 // @Accept       json
 // @Produce      json
@@ -336,9 +336,9 @@ func (h *ModuleRegistryHandler) UpdateModulePlatform(c *gin.Context) {
 	}
 	module, err := h.service.UpdateModuleDefinition(c.Param("module_name"), &req)
 	switch {
-	case errors.Is(err, service.ErrSystemModuleImmutable):
+	case errors.Is(err, service.ErrBootstrapModuleImmutable):
 		c.JSON(http.StatusConflict, gin.H{
-			"error": commoni18n.T(c, sysi18n.MsgSystemModuleImmutable), "error_code": "system_module_immutable",
+			"error": commoni18n.T(c, sysi18n.MsgBootstrapModuleImmutable), "error_code": "bootstrap_module_immutable",
 		})
 		return
 	case errors.Is(err, service.ErrModuleDefinitionVersionConflict):

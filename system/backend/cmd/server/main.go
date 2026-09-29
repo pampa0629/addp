@@ -8,6 +8,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/addp/common/buildinfo"
 	commonConfig "github.com/addp/common/config"
 	commonconfiguration "github.com/addp/common/configuration"
 	"github.com/addp/common/dbbridge"
@@ -203,12 +204,13 @@ func main() {
 
 func newSystemRegistrationRequest(serviceURL, instanceID string) *models.ModuleRegistrationRequest {
 	return &models.ModuleRegistrationRequest{
-		ModuleName:     "system",
-		InstanceID:     instanceID,
-		Role:           models.ModuleRuntimeRoleBackend,
-		ModuleURL:      serviceURL,
-		RoutePrefix:    "/system",
-		HealthCheckURL: serviceURL + "/health/ready",
+		ModuleName:       "system",
+		InstanceID:       instanceID,
+		Role:             models.ModuleRuntimeRoleBackend,
+		ModuleURL:        serviceURL,
+		RoutePrefix:      "/system",
+		HealthCheckURL:   serviceURL + "/health/ready",
+		ProcessStartedAt: buildinfo.ProcessStartedAt(),
 		Metadata: map[string]interface{}{
 			"module": "system",
 		},

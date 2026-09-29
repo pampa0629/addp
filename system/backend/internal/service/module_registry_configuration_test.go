@@ -120,10 +120,10 @@ func TestModuleRegistrySeparatesDefinitionFromRuntimeInstanceLease(t *testing.T)
 	registry := NewModuleRegistryService(repo)
 	for name, request := range map[string]*models.ModuleRegistrationRequest{
 		"unknown role": {
-			ModuleName: "manager", InstanceID: "invalid-role", Role: "api", RoutePrefix: "/manager",
+			ModuleName: "manager", InstanceID: "invalid-role", Role: "api", RoutePrefix: "/manager", ProcessStartedAt: time.Now(),
 		},
 		"backend without URL": {
-			ModuleName: "manager", InstanceID: "invalid-backend", Role: models.ModuleRuntimeRoleBackend, RoutePrefix: "/manager",
+			ModuleName: "manager", InstanceID: "invalid-backend", Role: models.ModuleRuntimeRoleBackend, RoutePrefix: "/manager", ProcessStartedAt: time.Now(),
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -132,7 +132,7 @@ func TestModuleRegistrySeparatesDefinitionFromRuntimeInstanceLease(t *testing.T)
 			}
 		})
 	}
-	backend := &models.ModuleRegistrationRequest{
+	backend := &models.ModuleRegistrationRequest{ProcessStartedAt: time.Now(),
 		ModuleName: "manager", InstanceID: "backend-a", Role: models.ModuleRuntimeRoleBackend,
 		ModuleURL: "http://manager-a:8080", RoutePrefix: "/manager",
 		ConfigurationManagement: &commonconfiguration.ManagementDeclaration{
@@ -145,7 +145,7 @@ func TestModuleRegistrySeparatesDefinitionFromRuntimeInstanceLease(t *testing.T)
 			}},
 		},
 	}
-	worker := &models.ModuleRegistrationRequest{
+	worker := &models.ModuleRegistrationRequest{ProcessStartedAt: time.Now(),
 		ModuleName: "manager", InstanceID: "worker-a", Role: models.ModuleRuntimeRoleWorker, RoutePrefix: "/manager",
 	}
 	if err := registry.Register(backend); err != nil {
@@ -221,7 +221,7 @@ func TestModuleRegistrySeparatesBoundedCurrentProjectionFromPaginatedHistory(t *
 	registry := NewModuleRegistryService(repository.NewModuleRegistryRepository(db))
 	register := func(instanceID, role, moduleURL string) {
 		t.Helper()
-		if err := registry.Register(&models.ModuleRegistrationRequest{
+		if err := registry.Register(&models.ModuleRegistrationRequest{ProcessStartedAt: time.Now(),
 			ModuleName: "manager", InstanceID: instanceID, Role: role,
 			ModuleURL: moduleURL, RoutePrefix: "/manager",
 		}); err != nil {
@@ -243,7 +243,7 @@ func TestModuleRegistrySeparatesBoundedCurrentProjectionFromPaginatedHistory(t *
 		t.Fatal(err)
 	}
 	register("scheduler-current", models.ModuleRuntimeRoleScheduler, "")
-	if err := registry.Register(&models.ModuleRegistrationRequest{
+	if err := registry.Register(&models.ModuleRegistrationRequest{ProcessStartedAt: time.Now(),
 		ModuleName: "service", InstanceID: "service-old", Role: models.ModuleRuntimeRoleBackend,
 		ModuleURL: "http://service-old:8086", RoutePrefix: "/service",
 	}); err != nil {
@@ -328,7 +328,7 @@ func TestModuleRoutingRevisionChangesOnlyWithTopologyAndWatchReturnsFreshSnapsho
 	}
 	repo := repository.NewModuleRegistryRepository(db)
 	registry := NewModuleRegistryService(repo)
-	registration := &models.ModuleRegistrationRequest{
+	registration := &models.ModuleRegistrationRequest{ProcessStartedAt: time.Now(),
 		ModuleName: "manager", InstanceID: "manager-a", Role: models.ModuleRuntimeRoleBackend,
 		ModuleURL: "http://manager-a:8081", RoutePrefix: "/manager",
 	}
@@ -449,7 +449,7 @@ func TestModuleDefinitionAdminUpdateUsesVersionAndKeepsRegistrationIdempotent(t 
 }
 
 func configurationRegistration(owner, scopeType string) models.ModuleRegistrationRequest {
-	return models.ModuleRegistrationRequest{
+	return models.ModuleRegistrationRequest{ProcessStartedAt: time.Now(),
 		ModuleName:  owner,
 		InstanceID:  owner + "-backend-test",
 		Role:        models.ModuleRuntimeRoleBackend,
@@ -503,7 +503,7 @@ func TestModuleRegistrationChecksPermissionCatalogOwnership(t *testing.T) {
 		t.Fatal(err)
 	}
 	registry := NewModuleRegistryService(repository.NewModuleRegistryRepository(db))
-	request := models.ModuleRegistrationRequest{
+	request := models.ModuleRegistrationRequest{ProcessStartedAt: time.Now(),
 		ModuleName: "system", InstanceID: "system-test", Role: models.ModuleRuntimeRoleBackend,
 		ModuleURL: "http://localhost:8180", RoutePrefix: "/system",
 		ConfigurationManagement: &commonconfiguration.ManagementDeclaration{

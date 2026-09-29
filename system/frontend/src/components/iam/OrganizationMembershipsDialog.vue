@@ -167,5 +167,5 @@ async function closeMembership(row) {
   } catch (error) { if (error !== 'cancel' && error !== 'close') ElMessage.error(error.response?.data?.error || t('system.iam.common.updateFailed')) }
 }
 
-watch(() => [props.modelValue, props.organization?.id], ([visible]) => { if (visible) reload() })
+watch(() => [props.modelValue, props.organization?.id], ([visible]) => { if (visible) reload() }, { immediate: true })
 </script>

@@ -398,7 +398,7 @@ import { BusinessDomainSelect, businessDomainReferenceOptions, navigateConsoleMo
 import { batchGovernance, listDomainOverviews, listEntries, listEntryFacets, listReferenceCandidates } from '../api/catalog'
 import { useAuthStore } from '../store/auth'
 import { catalogStatusLabel } from '../utils/catalogStatusLabel'
-import { coverageDimensionLabel } from '../utils/governanceCoverageView'
+import { coverageDimensionLabel, coverageGapDetailTab } from '../utils/governanceCoverageView'
 import {
   applyEntryNavigationSelection,
   applyUnassignedDepartmentSelection,
@@ -700,9 +700,12 @@ async function changePageSize(pageSize) {
 
 async function openEntry(row, column) {
   if (column?.type === 'selection') return
+  const query = buildEntryListQuery(filters)
+  const detailTab = coverageGapDetailTab(filters.coverage_dimension, filters.coverage_state)
+  if (detailTab) query.tab = detailTab
   await navigateConsoleModuleRoute(router, 'catalog', {
     path: `/entries/${row.id}`,
-    query: buildEntryListQuery(filters)
+    query
   })
 }
 

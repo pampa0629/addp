@@ -3387,7 +3387,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "只更新业务模块的管理员 enabled 意图；System 是始终启用的引导控制面，更新返回 409 system_module_immutable | Updates only business module enabled intent; System is an always-enabled bootstrap control plane and updates return 409 system_module_immutable",
+                "description": "只更新业务模块的管理员 enabled 意图；System 与 Gateway 固定启用，更新返回 409 bootstrap_module_immutable | Updates only business module enabled intent; System and Gateway are always enabled, and updates return 409 bootstrap_module_immutable",
                 "consumes": [
                     "application/json"
                 ],
@@ -3491,7 +3491,7 @@
                     },
                     {
                         "type": "string",
-                        "description": "角色过滤：backend、worker、scheduler | Role filter: backend, worker, scheduler",
+                        "description": "角色过滤：backend、worker、scheduler、ingress | Role filter: backend, worker, scheduler, ingress",
                         "name": "role",
                         "in": "query"
                     },
@@ -5566,7 +5566,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "正常退出的模块进程将自身实例立即标记为 down；持久模块定义和实例历史保留 | A normally exiting module process immediately marks its own instance down while preserving the persistent definition and instance history",
+                "description": "正常退出的模块进程将自身实例立即标记为 down 并记录 graceful 原因；持久模块定义和实例历史保留 | A normally exiting module process immediately marks its own instance down with a graceful reason while preserving the persistent definition and instance history",
                 "produces": [
                     "application/json"
                 ],
@@ -11540,8 +11540,8 @@
             "required": [
                 "instance_id",
                 "module_name",
-                "role",
-                "route_prefix"
+                "process_started_at",
+                "role"
             ],
             "properties": {
                 "configuration_management": {
@@ -11561,6 +11561,9 @@
                     "type": "string"
                 },
                 "module_url": {
+                    "type": "string"
+                },
+                "process_started_at": {
                     "type": "string"
                 },
                 "role": {
@@ -11616,6 +11619,9 @@
                 "module_url": {
                     "type": "string"
                 },
+                "process_started_at": {
+                    "type": "string"
+                },
                 "registered_at": {
                     "type": "string"
                 },
@@ -11623,6 +11629,12 @@
                     "type": "string"
                 },
                 "status": {
+                    "type": "string"
+                },
+                "stop_reason": {
+                    "type": "string"
+                },
+                "stopped_at": {
                     "type": "string"
                 },
                 "updated_at": {
