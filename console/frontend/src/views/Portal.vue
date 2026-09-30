@@ -472,7 +472,11 @@ function syncRouteToPortal(fullPath) {
 
 watch(
   [() => route.fullPath, navigationPermissions],
-  ([fullPath]) => syncRouteToPortal(fullPath),
+  ([fullPath], [previousFullPath] = []) => {
+    // Permission updates must not reload an already open, still permitted page.
+    if (fullPath === previousFullPath && iframeUrl.value && canOpenPage(splitConsoleRoute(fullPath)[0])) return
+    syncRouteToPortal(fullPath)
+  },
   { immediate: true }
 )
 

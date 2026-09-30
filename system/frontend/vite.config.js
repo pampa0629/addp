@@ -1,14 +1,13 @@
+import { withFrontendTestIsolation } from '../../common-frontend/basic/src/utils/viteTestIsolation.mjs'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { resolve } from 'path'
-import { tmpdir } from 'node:os'
 
 const BUILD_TYPE = process.env.BUILD_TYPE || 'release'
 const OUT_BASE = process.env.OUT_DIR
 
-export default defineConfig(({ mode }) => ({
+export default defineConfig(withFrontendTestIsolation('system', {
   plugins: [vue()],
-  cacheDir: mode === 'test' ? resolve(tmpdir(), `addp-system-vite-test-${process.pid}`) : undefined,
   resolve: {
     alias: {
       '@': resolve(__dirname, 'src'),

@@ -1,3 +1,4 @@
+import { withFrontendTestIsolation } from '../../common-frontend/basic/src/utils/viteTestIsolation.mjs'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { resolve } from 'path'
@@ -5,11 +6,9 @@ import { fileURLToPath } from 'url'
 import { viteStaticCopy } from 'vite-plugin-static-copy'
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url))
-const isE2E = process.env.ADDP_E2E === '1'
 
-export default defineConfig({
+export default defineConfig(withFrontendTestIsolation('manager', {
   // Browser tests must not invalidate the running development server's chunks.
-  cacheDir: isE2E ? 'node_modules/.vite-e2e' : 'node_modules/.vite',
   plugins: [
     vue(),
     viteStaticCopy({
@@ -81,7 +80,7 @@ export default defineConfig({
   server: {
     port: Number(process.env.MANAGER_FE_PORT || 5174),
     strictPort: true, // 端口被占用时报错，不自动切换
-    hmr: isE2E ? false : {
+    hmr: {
       protocol: 'ws',
       host: 'localhost',
       port: Number(process.env.MANAGER_FE_PORT || 5174),
@@ -98,4 +97,4 @@ export default defineConfig({
     }
   },
   base: process.env.NODE_ENV === 'development' ? '/' : '/module-ui/manager/'  // 开发模式用 /，生产模式用 /module-ui/manager/
-})
+}))

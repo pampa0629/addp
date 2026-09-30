@@ -22,11 +22,13 @@ export default defineConfig({
     command: 'ADDP_E2E=1 VITE_ADDP_FRONTEND_PORTS=workbench:4190 VITE_ADDP_CONSOLE_PORT=4170 npm run dev -- --host 127.0.0.1 --port 4190 --strictPort',
     url: 'http://127.0.0.1:4190/module-ui/workbench/',
     reuseExistingServer: false,
+    gracefulShutdown: { signal: 'SIGTERM', timeout: 5000 },
     timeout: 30_000,
   }, {
     command: 'ADDP_E2E=1 WORKBENCH_FE_PORT=4190 npm --prefix ../../console/frontend run dev -- --host 127.0.0.1 --port 4170 --strictPort',
     url: 'http://127.0.0.1:4170/data-apps/fixture',
     reuseExistingServer: false,
+    gracefulShutdown: { signal: 'SIGTERM', timeout: 5000 },
     timeout: 30_000,
   }],
 })

@@ -261,6 +261,85 @@ test('role revocation refreshes an active session and removes the page from ever
   expect(unexpectedRequests).toEqual([])
 })
 
+for (const contextFailure of [false, true]) {
+  test(`role expiry removes the active page in both tabs and preserves other roles (context failure: ${contextFailure})`, async ({ context, page }) => {
+    const start = new Date('2026-09-30T00:00:00Z')
+    const expiry = new Date(start.getTime() + 120_000)
+    let expired = false
+    let refreshRequests = 0
+    let contextRequests = 0
+    let monitorLoads = 0
+    let unavailable = contextFailure
+    await context.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
+    await context.route('**/api/v1/**', route => {
+      const path = new URL(route.request().url()).pathname
+      if (path.endsWith('/refresh')) {
+        refreshRequests += 1
+        return route.fulfill({ json: { access_token: 'role-expiry-token', expires_in: 300 } })
+      }
+      if (path.endsWith('/users/me')) return route.fulfill({ json: { id: '32', display_name: 'Expiry fixture' } })
+      if (path.endsWith('/auth/context')) {
+        contextRequests += 1
+        if (expired && unavailable) return route.fulfill({ status: 503, json: { error: 'unavailable' } })
+        const scope = { type: 'tenant', tenant_id: '3' }
+        return route.fulfill({ json: {
+          context: { type: 'tenant', tenant_id: '3' },
+          authorization: { role_assignments: [
+            { scope, permissions: ['monitor.statistics.read'], valid_until: null },
+            ...(!expired ? [{ scope, permissions: ['transfer.task.read'], valid_until: expiry.toISOString() }] : [])
+          ] }
+        } })
+      }
+      return route.fulfill({ status: 403, json: { error: 'unexpected_business_request' } })
+    })
+    await context.route(/^http:\/\/127\.0\.0\.1:(?!4170)\d+\//, route => {
+      if (new URL(route.request().url()).pathname === '/dashboard') monitorLoads += 1
+      return route.fulfill({ contentType: 'text/html', body: '<title>Module fixture</title>' })
+    })
+
+    await page.clock.install({ time: start })
+    await page.goto('/transfer/tasks')
+    await expect(page.locator('iframe.module-iframe')).toHaveCount(1)
+    const peer = await context.newPage()
+    await peer.goto('/transfer/tasks')
+    await expect(peer.locator('iframe.module-iframe')).toHaveCount(1)
+    const remaining = await context.newPage()
+    await remaining.goto('/monitor/dashboard')
+    await expect(remaining.locator('iframe.module-iframe')).toHaveCount(1)
+    await expect.poll(() => monitorLoads).toBe(1)
+    await page.clock.pauseAt(new Date(start.getTime() + 10_000))
+    const initialRefreshRequests = refreshRequests
+    const initialContextRequests = contextRequests
+    await page.clock.runFor(109_999)
+    for (const tab of [page, peer]) {
+      await expect(tab.locator('iframe.module-iframe')).toHaveCount(1)
+    }
+    expired = true
+    await page.clock.runFor(1)
+    for (const tab of [page, peer]) {
+      await expect(tab.locator('.el-result')).toContainText('无权访问')
+      await expect(tab.locator('iframe.module-iframe')).toHaveCount(0)
+      await expect(tab.locator('.sidebar .el-menu-item').filter({ hasText: '传输任务' })).toHaveCount(0)
+      expect(await tab.evaluate(async () => {
+        const { useAuthStore } = await import('/src/store/auth.js')
+        const store = useAuthStore()
+        return { status: store.sessionStatus, permissions: store.permissions }
+      })).toEqual({ status: 'authenticated', permissions: ['monitor.statistics.read'] })
+    }
+    await expect.poll(() => contextRequests).toBe(initialContextRequests + 3)
+    expect(refreshRequests).toBe(initialRefreshRequests)
+    await expect(remaining.locator('iframe.module-iframe')).toHaveAttribute('src', /\/dashboard$/)
+    expect(monitorLoads).toBe(1)
+    await page.evaluate(async () => {
+      const { default: router } = await import('/src/router/index.js')
+      await router.push('/monitor/dashboard')
+    })
+    await expect(page.locator('iframe.module-iframe')).toHaveAttribute('src', /\/dashboard$/)
+    unavailable = false
+    await expectDenied(page, '/transfer/tasks')
+  })
+}
+
 test('configuration owner direct URL does not inherit access from a different owner', async ({ page }) => {
   const businessRequests = await openAsTenant(page, '/configuration/monitor', ['develop.configuration.read'])
   await expect(page.locator('.el-result')).toContainText('无权访问')

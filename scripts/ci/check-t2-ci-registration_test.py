@@ -378,6 +378,89 @@ class T2CIRegistrationTest(unittest.TestCase):
 
         self.assertEqual([], MODULE.validate_registration(self.repository))
 
+    def _add_owned_source_build(self) -> Path:
+        image = "pingcap/tidb:v8.5.8@sha256:" + "d" * 64
+        self._add_owned_service_gate(image)
+        compose = self.repository / "scripts/test/docker-compose.tidb-t2.yml"
+        compose.write_text(compose.read_text().replace(
+            f"    image: {image}",
+            "    image: owned-test:build\n    build:\n      context: ./build\n      dockerfile: Dockerfile",
+        ))
+        script = self.repository / "scripts/test/common-tidb-gate.sh"
+        script.write_text(script.read_text().replace(
+            "docker compose up", "docker compose build tidb\ndocker compose up",
+        ) + "# ADDP_T2_INPUT_FILES=scripts/test/build/Dockerfile\n")
+        dockerfile = self.repository / "scripts/test/build/Dockerfile"
+        dockerfile.parent.mkdir()
+        dockerfile.write_text(
+            "FROM golang:1.24@sha256:" + "a" * 64 + " AS build\n"
+            "RUN git clone --depth 1 --branch release https://example.test/source.git source && "
+            'test "$(git -C source rev-parse HEAD)" = ' + "b" * 40 + " && echo built\n"
+            "FROM alpine:3.20@sha256:" + "c" * 64 + "\n"
+            "COPY --from=build /output /output\n"
+        )
+        return dockerfile
+
+    def test_accepts_source_pinned_owned_build(self) -> None:
+        self._add_owned_source_build()
+        self.assertEqual([], MODULE.validate_registration(self.repository))
+
+    def test_rejects_unpinned_owned_build_inputs(self) -> None:
+        dockerfile = self._add_owned_source_build()
+        original = dockerfile.read_text()
+        variants = {
+            "floating base": original.replace("golang:1.24@sha256:" + "a" * 64, "golang:latest"),
+            "missing git check": original.replace('test "$(git -C source rev-parse HEAD)"', 'echo "source"'),
+            "invalid git SHA": original.replace("b" * 40, "release"),
+            "masked git check": original.replace(" && echo built", " || true"),
+            "unverified later checkout": original + "RUN git -C source checkout main\n",
+            "unverified git fetch": original + "RUN git fetch https://example.test/other.git main\n",
+            "external stage copy": original.replace("--from=build", "--from=unverified:latest"),
+            "malformed local copy": original + 'COPY "unterminated /input\n',
+            "dynamic base": original.replace("FROM golang:1.24@sha256:" + "a" * 64, "ARG BASE\nFROM ${BASE}"),
+        }
+        for name, text in variants.items():
+            with self.subTest(name=name):
+                dockerfile.write_text(text)
+                self.assertTrue(MODULE.validate_registration(self.repository))
+
+    def test_rejects_unregistered_build_inputs_and_missing_build_execution(self) -> None:
+        dockerfile = self._add_owned_source_build()
+        script = self.repository / "scripts/test/common-tidb-gate.sh"
+        original = script.read_text()
+        script.write_text(original.replace("# ADDP_T2_INPUT_FILES=scripts/test/build/Dockerfile\n", ""))
+        self.assertTrue(any("ADDP_T2_INPUT_FILES" in error for error in MODULE.validate_registration(self.repository)))
+        script.write_text(original.replace("docker compose build tidb\n", ""))
+        self.assertTrue(any("compose build" in error for error in MODULE.validate_registration(self.repository)))
+        script.write_text(original)
+        (dockerfile.parent / "input.txt").write_text("source")
+        dockerfile.write_text(dockerfile.read_text() + "COPY input.txt /input.txt\n")
+        self.assertTrue(any("COPY/ADD" in error for error in MODULE.validate_registration(self.repository)))
+        script.write_text(original.replace("scripts/test/build/Dockerfile", "scripts/test/build/Dockerfile scripts/test/build/input.txt"))
+        self.assertEqual([], MODULE.validate_registration(self.repository))
+
+    def test_rejects_build_parameter_override_and_external_context(self) -> None:
+        self._add_owned_source_build()
+        compose = self.repository / "scripts/test/docker-compose.tidb-t2.yml"
+        original = compose.read_text()
+        compose.write_text(original.replace("      dockerfile: Dockerfile", "      dockerfile: Dockerfile\n      args: override"))
+        self.assertTrue(MODULE.validate_registration(self.repository))
+        compose.write_text(original.replace("context: ./build", "context: ../../../../outside"))
+        self.assertTrue(MODULE.validate_registration(self.repository))
+
+    def test_image_override_cannot_hide_inherited_unpinned_build(self) -> None:
+        dockerfile = self._add_owned_source_build()
+        compose = self.repository / "scripts/test/docker-compose.tidb-t2.yml"
+        base = self.repository / "scripts/test/base-build.yml"
+        base.write_text("services:\n  database:\n    build:\n      context: ./build\n      dockerfile: Dockerfile\n")
+        compose.write_text(compose.read_text().replace(
+            "    image: owned-test:build\n    build:\n      context: ./build\n      dockerfile: Dockerfile",
+            "    image: registry/service:v1@sha256:" + "e" * 64 + "\n    extends:\n      file: base-build.yml\n      service: database",
+        ))
+        self.assertEqual([], MODULE.validate_registration(self.repository))
+        dockerfile.write_text(dockerfile.read_text().replace('test "$(git -C source rev-parse HEAD)"', 'echo "unverified"'))
+        self.assertTrue(MODULE.validate_registration(self.repository))
+
     def test_resolves_owned_compose_image_extends_without_weakening_pin(self) -> None:
         self._add_owned_service_gate("pingcap/tidb:v8.5.8@sha256:" + "d" * 64)
         compose = self.repository / "scripts/test/docker-compose.tidb-t2.yml"

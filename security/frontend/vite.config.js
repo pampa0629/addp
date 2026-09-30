@@ -1,10 +1,11 @@
+import { withFrontendTestIsolation } from '../../common-frontend/basic/src/utils/viteTestIsolation.mjs'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import Components from 'unplugin-vue-components/vite'
 import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
 import { resolve } from 'path'
 
-export default defineConfig({
+export default defineConfig(withFrontendTestIsolation('security', {
   plugins: [vue(), Components({ resolvers: [ElementPlusResolver({ importStyle: false })] })],
   resolve: {
     alias: {
@@ -18,4 +19,4 @@ export default defineConfig({
   },
   server: { port: Number(process.env.SECURITY_FE_PORT || 5191), strictPort: true, fs: { allow: [resolve(__dirname, '..'), resolve(__dirname, '../..'), resolve(__dirname, '../../common-frontend')] }, proxy: { '/api': { target: `http://localhost:${process.env.GATEWAY_PORT || 8000}`, changeOrigin: true } } },
   base: process.env.NODE_ENV === 'development' ? '/' : '/module-ui/security/'
-})
+}))

@@ -1,3 +1,4 @@
+import { withFrontendTestIsolation } from '../../common-frontend/basic/src/utils/viteTestIsolation.mjs'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { resolve } from 'path'
@@ -6,7 +7,7 @@ const BUILD_TYPE = process.env.BUILD_TYPE || 'release'
 const OUT_BASE = process.env.OUT_DIR
 const IS_E2E = process.env.ADDP_E2E === '1'
 
-export default defineConfig({
+export default defineConfig(withFrontendTestIsolation('console', {
   plugins: [vue()],
   resolve: {
     alias: {
@@ -18,7 +19,7 @@ export default defineConfig({
   server: {
     port: Number(process.env.CONSOLE_FE_PORT || 5170),
     strictPort: true, // 端口被占用时报错，不自动切换
-    hmr: IS_E2E ? false : {
+    hmr: {
       protocol: 'ws',
       host: 'localhost',
       port: Number(process.env.CONSOLE_FE_PORT || 5170),
@@ -96,4 +97,4 @@ export default defineConfig({
     minify: BUILD_TYPE !== 'debug',
     emptyOutDir: true
   }
-})
+}))

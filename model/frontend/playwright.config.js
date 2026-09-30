@@ -8,11 +8,12 @@ export default defineConfig({
   workers: 1,
   timeout: 60_000,
   reporter: 'line',
-  outputDir: resolve(tmpdir(), 'addp-model-playwright-results'),
+  outputDir: resolve(process.env.RUNNER_TEMP || tmpdir(), 'addp-model-playwright-results'),
   use: {
     baseURL: 'http://127.0.0.1:4182',
     headless: true,
     screenshot: 'only-on-failure',
+    trace: 'retain-on-failure',
     viewport: { width: 900, height: 760 },
     actionTimeout: 10_000
   },
@@ -21,6 +22,7 @@ export default defineConfig({
     command: 'ADDP_E2E=1 npm run dev -- --host 127.0.0.1 --port 4182 --strictPort',
     url: 'http://127.0.0.1:4182',
     reuseExistingServer: false,
+    gracefulShutdown: { signal: 'SIGTERM', timeout: 5000 },
     timeout: 30_000
   }
 })

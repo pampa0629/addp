@@ -1,10 +1,10 @@
+import { withFrontendTestIsolation } from '../../common-frontend/basic/src/utils/viteTestIsolation.mjs'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { resolve } from 'path'
 
-const isE2E = process.env.ADDP_E2E === '1'
 
-export default defineConfig({
+export default defineConfig(withFrontendTestIsolation('develop', {
   plugins: [
     vue()
   ],
@@ -46,7 +46,7 @@ export default defineConfig({
     port: Number(process.env.DEVELOP_FE_PORT || 5178),
     strictPort: true,
     host: '0.0.0.0',
-    hmr: isE2E ? false : {
+    hmr: {
       protocol: 'ws',
       host: 'localhost',
       port: Number(process.env.DEVELOP_FE_PORT || 5178),
@@ -65,4 +65,4 @@ export default defineConfig({
   },
 
   base: process.env.NODE_ENV === 'development' ? '/' : '/module-ui/develop/'
-})
+}))

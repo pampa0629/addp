@@ -1,10 +1,9 @@
+import { withFrontendTestIsolation } from '../../common-frontend/basic/src/utils/viteTestIsolation.mjs'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { resolve } from 'path'
 
-const isE2E = process.env.ADDP_E2E === '1'
-
-export default defineConfig({
+export default defineConfig(withFrontendTestIsolation('orchestrator', {
   plugins: [vue()],
   resolve: {
     alias: {
@@ -23,7 +22,7 @@ export default defineConfig({
     port: Number(process.env.ORCHESTRATOR_FE_PORT || 5177),
     strictPort: true, // 端口被占用时报错，不自动切换
     host: '0.0.0.0',
-    hmr: isE2E ? false : {
+    hmr: {
       // 修复 iframe 嵌入时 HMR WebSocket 连接问题
       // 在 iframe 中运行时,强制使用正确的端口
       protocol: 'ws',
@@ -39,4 +38,4 @@ export default defineConfig({
     }
   },
   base: process.env.NODE_ENV === 'development' ? '/' : '/module-ui/orchestrator/'  // 开发模式用 /，生产模式用 /module-ui/orchestrator/
-})
+}))

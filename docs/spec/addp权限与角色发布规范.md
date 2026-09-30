@@ -170,6 +170,8 @@ Tenant 管理界面按账号类别提供唯一授权入口：“角色管理 > �
 
 Console 和业务前端只从当前 AuthContext 的有效 Assignment 判断候选功能权限，不根据角色名或组织名称推断权限。导航、首页卡片、搜索、最近访问、直接地址和浏览器历史应使用一致的页面入口条件；无权进入时显示无权限状态，不加载业务 iframe 或发起该页面的业务请求。没有可访问页面的模块不显示空入口。页面内创建、更新、执行、删除等操作分别按对应 Permission 展示，功能 Permission 之间不隐式包含。前端判断仅改善体验，最终由 API owner 对每个请求授权。
 
+Role Assignment 到期后，共享 AuthStore 按登录认证规范自动更新候选权限并重新读取 AuthContext。已打开页面失去准入权限时必须移除业务 iframe 并显示无权限状态；其他有效角色提供的页面继续可用，已打开且仍有准入权限的业务 iframe 不因此次权限更新重新加载，登录状态保留。
+
 Console 中具有模块导航的模块根地址与模块 standalone 根路径均在 AuthContext 加载后，按该模块明确的页面顺序进入第一个符合上述 Console 页面准入条件的地址；没有可访问页面时进入无权限页。登录后返回根路径也使用同一选择，不固定跳转某个需要额外权限的页面；显式业务 URL 仍按自身准入条件判断，不改写为根路径的默认页面。
 
 Console 配置管理总入口只对至少可读取一个当前上下文配置页面的账号显示；`/configuration/{owner}` 直达地址按该 owner 的配置读取 Permission 与声明的 Platform/Tenant 范围单独校验，不能沿用总入口的任一权限条件。Agent 和 Copilot 的推理绑定页首屏还读取 Inference Profile 管理列表，因此分别同时要求对应 owner 的配置读取 Permission 与 `inference.profile.read`。Inference 自有管理页在 Platform 和 Tenant Context 都按 Provider、Deployment、Profile 三项读取 Permission 准入。System 的入口目录仍按声明过滤，但 Console 不展示缺少页面依赖权限的条目；具体配置 API 继续由 owner 最终授权。

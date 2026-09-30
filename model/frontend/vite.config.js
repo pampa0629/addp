@@ -1,3 +1,4 @@
+import { withFrontendTestIsolation } from '../../common-frontend/basic/src/utils/viteTestIsolation.mjs'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import Components from 'unplugin-vue-components/vite'
@@ -5,7 +6,6 @@ import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
 import path from 'path'
 import { resolve } from 'path'
 
-const isE2E = process.env.ADDP_E2E === '1'
 const ENTRY_CHUNK_LIMIT_BYTES = 500 * 1024
 
 const enforceEntryChunkBudget = () => ({
@@ -21,8 +21,7 @@ const enforceEntryChunkBudget = () => ({
   }
 })
 
-export default defineConfig({
-  cacheDir: isE2E ? 'node_modules/.vite-e2e' : 'node_modules/.vite',
+export default defineConfig(withFrontendTestIsolation('model', {
   plugins: [
     vue(),
     Components({ resolvers: [ElementPlusResolver({ importStyle: false })] }),
@@ -43,7 +42,7 @@ export default defineConfig({
   server: {
     port: Number(process.env.MODEL_FE_PORT || 5182),
     strictPort: true,
-    hmr: isE2E ? false : {
+    hmr: {
       protocol: 'ws',
       host: 'localhost',
       port: Number(process.env.MODEL_FE_PORT || 5182),
@@ -82,4 +81,4 @@ export default defineConfig({
       }
     }
   }
-})
+}))

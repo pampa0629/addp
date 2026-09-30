@@ -397,6 +397,15 @@ jobs:
         if: steps.selection.outputs.run == 'true'
         run: make test-model-frontend
 
+      - name: Upload Model browser failure evidence
+        if: failure() && steps.selection.outputs.run == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: model-browser-failure-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/addp-model-playwright-results/
+          if-no-files-found: ignore
+          retention-days: 14
+
       - name: Report skipped Model frontend gate
         if: steps.selection.outputs.run != 'true'
         run: echo "Model frontend gate did not run because no registered path changed."

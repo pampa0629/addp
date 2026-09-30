@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import re
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -179,12 +180,85 @@ def service_has_required_nofile_limit(service_block: str) -> bool:
     )
 
 
-def compose_image_is_pinned(repository: Path, path: Path, service: str,
-                            seen: frozenset = frozenset()) -> bool:
-    """Resolve only the image through explicit local Compose extends mappings.
+def dockerfile_build_is_pinned(repository: Path, context: Path, dockerfile: Path,
+                              declared_inputs: frozenset[str]) -> bool:
+    """Inspect local build inputs without executing Docker or shell commands."""
+    root, context, dockerfile = repository.resolve(), context.resolve(), dockerfile.resolve()
+    if not context.is_relative_to(root) or not context.is_dir() or not dockerfile.is_relative_to(context) or not dockerfile.is_file():
+        raise RegistrationError("owned build must use an existing repository context and Dockerfile")
+    if dockerfile.relative_to(root).as_posix() not in declared_inputs:
+        raise RegistrationError("owned build Dockerfile must be declared in ADDP_T2_INPUT_FILES")
+    stages: set[str] = set()
+    external_base_count = 0
+    text = re.sub(r"\\\n\s*", " ", dockerfile.read_text(encoding="utf-8"))
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        instruction, _, body = line.partition(" ")
+        instruction = instruction.upper()
+        if instruction == "ARG":
+            return False
+        if instruction == "FROM":
+            match = re.fullmatch(r"(\S+)(?:\s+AS\s+(\w+))?", body, re.IGNORECASE)
+            if match is None:
+                return False
+            image, stage = match.groups()
+            if image.lower() not in stages and image != "scratch":
+                if not service_image_is_pinned(f"image: {image}"):
+                    return False
+                external_base_count += 1
+            if stage:
+                stages.add(stage.lower())
+        elif instruction == "RUN" and re.search(r"\bgit\s+(?:-\S+(?:\s+\S+)?\s+)*(?:fetch|pull|checkout)\b", body):
+            return False
+        elif instruction == "RUN" and "git clone" in body:
+            if re.search(r"[;|]", body):
+                return False
+            clones = list(re.finditer(r"git clone\s+(?:--(?:depth|branch)\s+[\w./:-]+\s+)*https://[\w./-]+\s+([\w./-]+)\s*&&", body))
+            if len(clones) != body.count("git clone"):
+                return False
+            for clone in clones:
+                destination = re.escape(clone.group(1))
+                check = re.search(rf'test\s+"\$\(git -C {destination} rev-parse HEAD\)"\s*=\s*(?:[0-9a-f]{{40}}|[0-9a-f]{{64}})\s*&&', body[clone.end():])
+                if check is None:
+                    return False
+        elif instruction in {"COPY", "ADD"}:
+            try:
+                parts = shlex.split(body)
+            except ValueError:
+                return False
+            if parts and parts[0].startswith("--from="):
+                if parts[0].split("=", 1)[1].lower() not in stages:
+                    return False
+                continue
+            if len(parts) < 2 or any(part.startswith("--") for part in parts):
+                return False
+            for source in parts[:-1]:
+                source_path = (context / source).resolve()
+                if not source_path.is_relative_to(context):
+                    return False
+                matches = list(context.glob(source)) if not Path(source).is_absolute() else []
+                if not matches:
+                    return False
+                for match in matches:
+                    files = list(match.rglob("*")) if match.is_dir() else [match]
+                    for file in files:
+                        resolved = file.resolve()
+                        if not resolved.is_relative_to(context):
+                            return False
+                        if resolved.is_file() and resolved.relative_to(root).as_posix() not in declared_inputs:
+                            raise RegistrationError("owned build COPY/ADD inputs must be declared in ADDP_T2_INPUT_FILES")
+    return external_base_count > 0
+
+
+def compose_service_is_pinned(repository: Path, path: Path, service: str,
+                             declared_inputs: frozenset[str], source_builds: set[Path],
+                             seen: frozenset = frozenset()) -> bool:
+    """Resolve a fixed image or a local source-pinned build through Compose extends.
 
     Do not execute Compose, expand environment variables, or accept external paths.
-    A child image replaces the parent image; an unpinned override must fail.
+    A child definition replaces the parent; unpinned overrides must fail.
     """
     path = path.resolve()
     identity = (path, service)
@@ -195,16 +269,34 @@ def compose_image_is_pinned(repository: Path, path: Path, service: str,
     block = compose_service_block(path.read_text(encoding="utf-8"), service)
     if block is None:
         raise RegistrationError(f"Compose extends service {service} is missing")
-    if re.search(r"(?m)^    image:", block):
-        return service_image_is_pinned(block)
+    if re.search(r"(?m)^    build:", block):
+        source_builds.add(path)
+        # Extends merges build mappings; partial overrides could inherit args.
+        if re.search(r"(?m)^    extends:", block):
+            return False
+        build = re.search(r"(?ms)^    build:\s*\n((?:^      [^\n]*\n?)+)", block)
+        if build is None:
+            return False
+        fields = dict(re.findall(r"(?m)^      (\w+): ([\w./-]+)\s*$", build.group(1)))
+        if set(fields) != {"context", "dockerfile"} or len(build.group(1).splitlines()) != 2:
+            return False
+        context = path.parent / fields["context"]
+        source_builds.add((context / fields["dockerfile"]).resolve())
+        return dockerfile_build_is_pinned(repository, context, context / fields["dockerfile"], declared_inputs)
+    image_override = re.search(r"(?m)^    image:", block) is not None
     extension = re.search(r"(?m)^    extends:\s*\n((?:^      [^\n]*\n?)+)", block)
     if not extension:
-        return False
+        return service_image_is_pinned(block) if image_override else False
     fields = dict(re.findall(r"(?m)^      (file|service): ([a-zA-Z0-9_./-]+)\s*$", extension.group(1)))
     if set(fields) != {"file", "service"} or Path(fields["file"]).is_absolute():
         raise RegistrationError("Compose extends requires explicit local file and service")
-    return compose_image_is_pinned(repository, path.parent / fields["file"],
-                                   fields["service"], seen | {identity})
+    parent_builds: set[Path] = set()
+    parent_pinned = compose_service_is_pinned(repository, path.parent / fields["file"],
+                                             fields["service"], declared_inputs, parent_builds, seen | {identity})
+    source_builds.update(parent_builds)
+    if image_override and not parent_builds:
+        return service_image_is_pinned(block)
+    return parent_pinned
 
 
 def make_recipe(makefile: str, target: str) -> str | None:
@@ -359,6 +451,10 @@ def validate_registration(repository: Path) -> list[str]:
             errors.append(f"{script}: shared module change selector is missing")
 
     for script, target, owner, services, compose_path in discover_owned_service_gates(repository):
+        script_content = (repository / script).read_text(encoding="utf-8")
+        inputs_match = re.search(r"(?m)^# ADDP_T2_INPUT_FILES=([^\n]+)$", script_content)
+        declared_inputs = frozenset(inputs_match.group(1).split()) if inputs_match else frozenset()
+        source_builds: set[Path] = set()
         recipe = make_recipe(makefile, target)
         if recipe is None:
             errors.append(f"{script}: Makefile target {target} is missing")
@@ -390,7 +486,7 @@ def validate_registration(repository: Path) -> list[str]:
             for service in services:
                 service_block = compose_service_block(compose, service)
                 try:
-                    pinned = compose_image_is_pinned(repository, compose_file, service) if service_block else False
+                    pinned = compose_service_is_pinned(repository, compose_file, service, declared_inputs, source_builds) if service_block else False
                 except RegistrationError as error:
                     errors.append(f"{script}: {error}")
                     continue
@@ -409,6 +505,8 @@ def validate_registration(repository: Path) -> list[str]:
         script_content = (repository / script).read_text(encoding="utf-8")
         if "docker compose" not in script_content or "down --volumes --remove-orphans" not in script_content or "disposable" not in script_content:
             errors.append(f"{script}: owned-service gate must own disposable Compose startup and cleanup")
+        if source_builds and not re.search(r"(?m)^(?:docker )?compose build\s", script_content):
+            errors.append(f"{script}: owned source build must run compose build explicitly")
         selection_step = next(
             (
                 step

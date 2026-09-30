@@ -1,0 +1,22 @@
+services:
+  minio:
+    image: ${STANDARD_MINIO_TEST_IMAGE:?owned test image is required}
+    build:
+      context: ../infra
+      dockerfile: Dockerfile.minio
+    command: server /data
+    environment:
+      MINIO_ROOT_USER: ${STANDARD_MINIO_TEST_ACCESS_KEY:?owned access key is required}
+      MINIO_ROOT_PASSWORD: ${STANDARD_MINIO_TEST_SECRET_KEY:?owned secret key is required}
+    ports:
+      - "127.0.0.1::9000"
+    volumes:
+      - minio_data:/data
+    restart: "no"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/ready"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+volumes:
+  minio_data:

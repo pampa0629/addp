@@ -1,3 +1,4 @@
+import { withFrontendTestIsolation } from '../../common-frontend/basic/src/utils/viteTestIsolation.mjs'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import Components from 'unplugin-vue-components/vite'
@@ -5,9 +6,8 @@ import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
 import { resolve } from 'node:path'
 
 const testing = process.env.ADDP_E2E === '1'
-export default defineConfig({
+export default defineConfig(withFrontendTestIsolation('ontology', {
   base: process.env.NODE_ENV === 'development' ? '/ontology/' : '/module-ui/ontology/',
-  cacheDir: testing ? 'node_modules/.vite-e2e' : 'node_modules/.vite',
   plugins: [
     vue(),
     Components({ resolvers: [ElementPlusResolver({ importStyle: false })] })
@@ -33,10 +33,9 @@ export default defineConfig({
   server: {
     port: Number(process.env.ONTOLOGY_FE_PORT || 5192),
     strictPort: true,
-    hmr: !testing,
     fs: { allow: [resolve(__dirname, '../..')] },
     proxy: testing
       ? {}
       : { '/api': { target: `http://localhost:${process.env.GATEWAY_PORT || 8000}`, changeOrigin: true } }
   }
-})
+}))

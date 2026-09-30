@@ -15,9 +15,10 @@ export default defineConfig({
     viewport: { width: 1280, height: 800 }
   },
   webServer: {
-    command: 'PORTAL_FE_PORT=4191 npm run dev -- --host 127.0.0.1 --port 4191 --strictPort',
+    command: 'ADDP_E2E=1 PORTAL_FE_PORT=4191 npm run dev -- --host 127.0.0.1 --port 4191 --strictPort',
     url: 'http://127.0.0.1:4191/portal/',
     reuseExistingServer: false,
+    gracefulShutdown: { signal: 'SIGTERM', timeout: 5000 },
     timeout: 30_000
   }
 })

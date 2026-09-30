@@ -32,6 +32,7 @@
 - Engine 删除不物理删除用户创建的任务、服务或治理配置；owner 模块将其保留为可重绑定状态，或禁用并标记 `missing_engine`。Meta 快照、缓存和明确登记的派生产物可由各 owner cleanup executor 物理回收。
 - 恢复 `deleted` Engine Instance 必须由用户显式确认并提交完整连接配置，确认仍为同一实际引擎；System 检查地址未被其他非删除实例占用，使用新凭据重新生成能力，将生命周期置为 `active`、连通性置为 `unknown`，再异步检测。恢复沿用原 `engine_id`，因此仍引用该 ID 的旧任务和配置可在实例重新 `online` 后恢复可执行。若用户要绑定不同实际引擎，必须创建新 Engine Instance，再由 owner 校验能力并原子重绑。ResourceLocator 重绑定保留 path/type，清除旧 Meta `node_id/item_id`。
 - 用户登记的 Engine Instance 归当前 Tenant，不归登记人。`created_by` 只记录审计来源，不能成为后续读取、写入、DDL 或执行授权依据。
+- 物理表、文件或对象的访问规则归 System 引擎访问控制领域唯一维护，作为已确认、待实现的职责扩展；不是 System IAM 的全平台中央业务 ACL。访问模块执行同一源数据规则，专业业务对象的授权仍归各自 owner。接入主体、业务确认、授权办理及责任移交的目标规则见 [授权上下文规范 5.5](../spec/addp授权上下文规范.md#55-目录责任业务授权决定与源数据授权)。
 - `tenant_id=NULL` 只允许平台共享的内置计算 Runtime；共享 Runtime 只提供计算能力，不因此获得任意 Tenant 数据权限。
 - `inference_runtime` Engine Instance 绑定一个确定的 Inference Runtime 服务端点，而不是一个在线厂商账号或模型端点。Provider Connection、Model Deployment 和 Model Profile 归 Inference owner，不进入 `system.engines`。
 
@@ -57,7 +58,7 @@ ADDP 中容易混淆的三个概念需要明确区分：
 边界原则：
 
 - System 负责引擎控制面、连通性检测和实时 Engine Catalog 发现，对外提供 `POST /api/v1/system/engines/:id/catalog/children`。路由中的 `catalog` 已由 `engines/:id` 限定，不表示企业 Catalog。连通性字段是最近一次检测缓存，不是长期持有的连接句柄。
-- 实时 Engine Catalog 只展示当前连接身份按引擎原生权限可访问的资源：MongoDB 按 roles 枚举数据库和集合，关系型引擎按 schema `USAGE` 或等价权限枚举命名空间。ADDP 的 Tenant/Engine 使用授权只控制“谁能使用该 Engine Instance”，不复制、扩大或覆盖引擎内部权限。
+- 实时 Engine Catalog 的物理可达上限是当前连接身份的引擎原生权限：MongoDB 按 roles 枚举数据库和集合，关系型引擎按 schema `USAGE` 或等价权限枚举命名空间。ADDP 授权只能在该上限内进一步收窄，不能扩大或覆盖引擎内部权限。当前 Tenant/Engine 级检查不等于目标表已授权；细粒度发现及内容访问仍按上述职责扩展实施，不能把连接可达直接解释为用户可见或可读。
 - Meta 负责扫描任务、元数据落库、元数据快照查询和索引事件，不再提供新的实时浏览公共接口。
 - Manager 负责数据管理体验和数据预览；展示已纳管资产时消费 Meta 快照，读取真实内容时走 Manager 后端预览能力。
 

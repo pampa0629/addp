@@ -84,6 +84,7 @@ T2 使用真实但可丢弃的基础设施，并满足：
 
 - CI Job 使用独占 Service 和随 Job 销毁的数据库。
 - 托管外部服务的 owner gate 必须在脚本头声明 `# ADDP_T2_SERVICES=<service,...>`；模块门禁、CI 注册和后续新增数据库类型都消费该声明，不按数据库名称维护发现分支。
+- owner 自建的临时服务通过 `ADDP_T2_OWNED_SERVICES` 和 `ADDP_T2_COMPOSE_FILE` 登记，必须拥有独立 Compose 项目、回环随机端口以及退出清理和零残留检查。镜像使用固定 tag 与 digest；需要沿用仓库源码构建时，允许引用仓库内的单一 Dockerfile，但外部基础镜像须固定 tag 与 digest，Git 源码须在同一构建步骤中核对固定提交，构建上下文须位于仓库内，Dockerfile 与本地复制输入须登记到 `ADDP_T2_INPUT_FILES`。登记检查拒绝仓库外路径、构建参数覆盖和未固定源码；门禁必须实际构建，不接受开发环境已有同名镜像作为构建证据。
 - 必须由调用方注入连接条件的 owner gate 同时声明 `# ADDP_T2_REQUIRED_ENV=<name[|alternative],...>`，逗号表示“同时需要”，竖线表示等价的安全前置条件。`make test-module` 与 `make test-changed` 必须在执行任何 T0/T1 前一次性检查全部所需条件，缺失时失败关闭并给出 owner、变量及安全测试环境提示；`--dry-run` 仅展示计划，不要求真实连接条件。CI 登记检查必须确认对应 Job 显式提供每组条件中的至少一个变量。
 - 需要 owner 持有合法 License 或受控介质的门禁必须声明 `# ADDP_T2_OWNER_MANAGED=<runtime>`，只通过 owner 受控 Linux 主机上的 `make test-integration-owner-managed` 人工执行，不进入 GitHub Actions、普通 `make test-integration` 或 macOS 定时巡检。登记检查必须拒绝 workflow 调用这类目标及其聚合入口。脚本必须验证官方介质与 License SHA-256、拥有 disposable 容器全生命周期并验证零残留。
 - 本地共享 `addp-postgres` 只允许使用 `addp_test` 与 `addp_iam_test`，并且只能通过根 `Makefile` 或 `scripts/test/` 的标准入口操作。
@@ -97,6 +98,8 @@ T2 使用真实但可丢弃的基础设施，并满足：
 ### 4.3 T3
 
 T3 的 PR 主路径使用独立端口、受控 API 夹具和非个人登录态。真实 System、Gateway、owner Backend、真实身份与数据源的浏览器链路归入 T4，不与确定性浏览器测试混跑。
+
+确定性 Playwright 的每个 Vite `webServer` 必须显式设置 `ADDP_E2E=1`、回环 host、独立端口及 `--strictPort`，并设置 `reuseExistingServer: false` 与带正数超时的 `gracefulShutdown: { signal: 'SIGTERM', timeout: 5000 }`，使缓存清理钩子能够执行。被启动的前端统一使用 `common-frontend/basic/src/utils/viteTestIsolation.mjs` 的 `withFrontendTestIsolation` 包装 Vite 配置：测试关闭 HMR，依赖缓存按模块和进程隔离到操作系统临时目录，Vite 关闭、进程正常退出及收到 `SIGTERM` / `SIGINT` 时清理；开发配置不启用该隔离。模块不得另行维护测试缓存或 HMR 分支。现有前端 CI 登记检查自动发现确定性 Playwright 配置及跨模块夹具服务，在 `make test-platform` 中拒绝遗漏隔离、复用开发服务、端口漂移或地址不一致。Online T4 的专用部署配置不套用此 Vite 夹具规则。
 
 浏览器测试重点证明布局、路由、权限反馈、状态恢复、关键交互和响应式行为，不重复后端已经覆盖的全部字段或业务规则。
 

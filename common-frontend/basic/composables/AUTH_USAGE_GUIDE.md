@@ -39,6 +39,8 @@ export const useAuthStore = defineStore(
 
 `persistUser` 只控制非敏感当前用户资料，不影响 Token；Access Token 始终只在内存中。
 
+AuthStore 统一维护 Role Assignment 的到期检查：到最近的 `valid_until` 时更新候选权限并重读 AuthContext，标签页恢复前台时再次检查。角色自然到期不刷新或撤销有效的 Browser Session，也不移除其他有效角色的权限；读取失败不恢复已到期的候选权限。模块只消费 Store 的 `permissions` / `hasPermission`，不得自行维护到期计时或刷新流程。Store 销毁时应调用 Pinia `$dispose()`，共享层会同时清理到期计时与监听。
+
 认证 API 使用 `createAuthAPI()`：
 
 ```javascript

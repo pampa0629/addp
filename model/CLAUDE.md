@@ -356,6 +356,8 @@ draft ⇄ approved
 
 维度关联改动沿用现有自动发现门禁：`make test-module MODULE=model` 覆盖平台一致性、Go 单元、前端路由及交互、PostgreSQL 事务测试；其中数据库测试需配置上述测试 DSN。`make test-model-frontend` 包含关系入口唯一所有权、URL 恢复、审批只读、原位更新和冲突保留测试；CI 继续使用已登记的 Model 前端与 PostgreSQL 作业。
 
+Model 确定性浏览器门禁只在失败时保留截图与 Playwright trace；trace 可用于查看页面快照、请求响应及浏览器错误。产物统一写入 `RUNNER_TEMP`（本地未设置时使用操作系统临时目录）下的 `addp-model-playwright-results/`，不进入仓库。Model 前端 CI Job 在失败时上传该目录，保留 14 天；重跑前应先复制需要保留的本地产物，因为 Playwright 会清空同一输出目录。排查使用失败输出中的 `playwright show-trace` 命令，不通过增加重试或放宽断言超时掩盖偶发失败。
+
 ## 前端公开路由
 
 - 模块内 Router 使用 `/dw-layers`、`/entities`、`/logical-tables`、`/er-diagram`、`/star-schema`；Console 模块名为 `modeling`，公开 URL 统一加 `/modeling` 前缀。

@@ -143,6 +143,8 @@ Gateway AccessLog 只服务于外部 API Key 请求的性能、缓存和限流�
 7. 广播 Token 更新、会话失效和退出事件；
 8. Refresh 失败时区分无会话、网络故障和服务不可用，不因瞬时网络错误直接清除会话。
 
+Role Assignment 自然到期不等同于 Access Token 或 Browser Session 到期。共享 AuthStore 必须按当前 AuthContext 中最近的 `valid_until` 更新候选权限并重新读取 `/auth/context`，不等待 Access Token 主动刷新，也不要求用户重新登录。到期的缓存 Assignment 不再提供候选权限；其他有效 Assignment 保留。读取失败时不得恢复已到期的候选权限，瞬时网络故障不清除登录状态。标签页从后台或休眠恢复时必须重新检查到期边界；Context 切换、退出和 Store 销毁时清理旧上下文的计时与监听。计时与恢复检查只在共享认证层实现，模块不得另建权限刷新流程。浏览器时间只用于界面收敛，最终授权和 Assignment 有效性仍由 System 的数据库时间决定。
+
 顶层页面通过 HttpOnly Cookie 调用：
 
 ```text

@@ -1,4 +1,4 @@
-.PHONY: help build build-images select-image-services local-ci test test-changed test-module test-platform test-local-ci-runner test-node-dependencies test-infra-postgresql-init test-book test-engine-plugin-registration test-engine-startup-isolation test-integration test-integration-hosted test-online test-online-runner test-release test-release-runner test-go test-agent-frontend test-asset-frontend test-catalog-frontend test-common-frontend test-console-frontend test-copilot test-document-workflow test-develop-frontend test-graph-frontend test-inference-frontend test-manager-frontend test-model-frontend test-quality-frontend test-security-frontend test-meta-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend test-service-frontend test-standard-frontend test-system-frontend test-transfer-frontend test-workbench-frontend test-execution-fixtures test-projection-store-ownership test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release test-common-python test-common-python-cli-release test-common-postgres test-common-mysql-data-protection test-manager-postgres test-manager-mongodb-security test-system-iam-postgres test-asset-postgres test-meta-postgres test-catalog-postgres test-develop-postgres test-model-postgres test-quality-postgres test-security-postgres test-service-postgres test-standard-postgres test-transfer-postgres test-workbench-postgres test-arcgis-open-formats \
+.PHONY: test-frontend-ci-registration help build build-images select-image-services local-ci test test-changed test-module test-platform test-local-ci-runner test-node-dependencies test-infra-postgresql-init test-book test-engine-plugin-registration test-engine-startup-isolation test-integration test-integration-hosted test-online test-online-runner test-release test-release-runner test-go test-agent-frontend test-asset-frontend test-catalog-frontend test-common-frontend test-console-frontend test-copilot test-document-workflow test-develop-frontend test-graph-frontend test-inference-frontend test-manager-frontend test-model-frontend test-quality-frontend test-security-frontend test-meta-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend test-service-frontend test-standard-frontend test-system-frontend test-transfer-frontend test-workbench-frontend test-execution-fixtures test-projection-store-ownership test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release test-common-python test-common-python-cli-release test-common-postgres test-common-mysql-data-protection test-manager-postgres test-manager-mongodb-security test-system-iam-postgres test-asset-postgres test-meta-postgres test-catalog-postgres test-develop-postgres test-model-postgres test-quality-postgres test-security-postgres test-service-postgres test-standard-postgres test-transfer-postgres test-workbench-postgres test-arcgis-open-formats \
         build-iam-bootstrap build-iam-recovery build-iam-migration-repair \
         dev-start dev-restart dev-stop infra-up infra-down infra-restart infra-status infra-backup infra-restore-drill infra-cloud-backup test-infra-backup prod-start prod-restart prod-stop prod-health ports-validate
 
@@ -361,7 +361,7 @@ test-security-postgres: ## 使用一次性 PostgreSQL 数据库运行 Security �
 test-service-postgres: ## 使用一次性 PostgreSQL 数据库运行 Service 数据保护与 Consumer Catalog 集成门禁
 	@bash scripts/test/service-postgres-gate.sh
 
-test-standard-postgres: ## 使用测试 PostgreSQL 数据库运行 Standard 约束、旧能力清理和引用门禁
+test-standard-postgres: ## 使用测试 PostgreSQL 与独立临时 MinIO 运行 Standard 集成门禁
 	@bash scripts/test/standard-postgres-gate.sh
 
 .PHONY: test-ontology-postgres
@@ -446,8 +446,7 @@ test-platform: ## 运行无外部服务依赖的平台一致性门禁
 	@python3 scripts/ci/check-build-registration_test.py
 	@python3 scripts/ci/select-image-services_test.py
 	@python3 scripts/ci/check-build-registration.py --repository "$(CURDIR)"
-	@python3 scripts/ci/check-frontend-ci-registration_test.py
-	@python3 scripts/ci/check-frontend-ci-registration.py --repository "$(CURDIR)"
+	@$(MAKE) test-frontend-ci-registration
 	@python3 scripts/ci/check-python-ci-registration_test.py
 	@python3 scripts/ci/check-python-ci-registration.py --repository "$(CURDIR)"
 	@python3 scripts/ci/check-t2-ci-registration_test.py
@@ -465,6 +464,10 @@ test-platform: ## 运行无外部服务依赖的平台一致性门禁
 	@$(MAKE) test-projection-store-ownership
 	@$(MAKE) test-online-runner
 	@$(MAKE) test-authorization
+
+test-frontend-ci-registration: ## 校验前端 CI 登记和浏览器夹具隔离
+	@python3 scripts/ci/check-frontend-ci-registration_test.py
+	@python3 scripts/ci/check-frontend-ci-registration.py --repository "$(CURDIR)"
 
 test-book: ## 校验《数据治理100问》源稿目录、编号和延伸阅读链接
 	@python3 docs/books/数据治理100问/tools/validate.py

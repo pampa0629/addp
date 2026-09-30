@@ -57,6 +57,7 @@ class FrontendCIRegistrationTest(unittest.TestCase):
         self.assertEqual([], MODULE.validate_registration(self.repository))
 
     def enable_browser_suite(self) -> None:
+        self.write_isolated_fixture()
         path = self.repository / "sample/frontend/package.json"
         package = json.loads(path.read_text())
         package["scripts"]["test:e2e"] = "playwright test"
@@ -70,6 +71,71 @@ class FrontendCIRegistrationTest(unittest.TestCase):
             ) + "      - if: matrix.playwright == true\n        run: npx playwright install --with-deps chromium\n",
             encoding="utf-8",
         )
+
+    def write_isolated_fixture(self) -> None:
+        frontend = self.repository / "sample/frontend"
+        self.vite = frontend / "vite.config.js"
+        self.vite.write_text(
+            "import { withFrontendTestIsolation } from '../../common-frontend/basic/src/utils/viteTestIsolation.mjs'\n"
+            "export default defineConfig(withFrontendTestIsolation('sample', {\n"
+            "  server: { port: Number(process.env.SAMPLE_FE_PORT || 5199) }\n"
+            "}))\n"
+        )
+        self.playwright = frontend / "playwright.config.js"
+        self.playwright.write_text(
+            "export default defineConfig({\n  use: { baseURL: 'http://127.0.0.1:4199' },\n  webServer: {\n"
+            "    command: 'ADDP_E2E=1 npm run dev -- --host 127.0.0.1 --port 4199 --strictPort',\n"
+            "    url: 'http://127.0.0.1:4199/login',\n"
+            "    reuseExistingServer: false,\n    gracefulShutdown: { signal: 'SIGTERM', timeout: 5000 },\n  }\n})\n"
+        )
+        package_path = frontend / "package.json"
+        package = json.loads(package_path.read_text())
+        package["scripts"]["dev"] = "vite"
+        package_path.write_text(json.dumps(package))
+        subprocess.run(["git", "add", "."], cwd=self.repository, check=True)
+
+    def test_rejects_unsafe_browser_isolation(self) -> None:
+        cases = [
+            ("playwright", "ADDP_E2E=1 ", "", "ADDP_E2E=1"),
+            ("playwright", "ADDP_E2E=1 ", "ADDP_E2E=1 ADDP_E2E=0 ", "ADDP_E2E=1"),
+            ("playwright", "--strictPort'", "--strictPort && npm run dev'", "single Vite fixture"),
+            ("playwright", " --strictPort", "", "--strictPort"),
+            ("playwright", "reuseExistingServer: false", "reuseExistingServer: true", "must not reuse"),
+            ("playwright", "gracefulShutdown: { signal: 'SIGTERM', timeout: 5000 },", "", "bounded SIGTERM"),
+            ("playwright", "--port 4199", "--port 5199", "distinct from development"),
+            ("playwright", "127.0.0.1:4199", "127.0.0.1:4200", "URL must match"),
+            ("playwright", "--host 127.0.0.1", "--host 0.0.0.0", "loopback"),
+            ("playwright", "baseURL: 'http://127.0.0.1:4199'", "baseURL: 'http://127.0.0.1:5199'", "browser baseURL"),
+            ("vite", "withFrontendTestIsolation('sample', {", "{", "shared withFrontendTestIsolation"),
+            ("vite", "server: {", "server: { hmr: isE2E ? false : true,", "test HMR"),
+            ("vite", "server: {", "cacheDir: 'node_modules/.vite-e2e', server: {", "module-owned"),
+        ]
+        for file_name, old, new, message in cases:
+            with self.subTest(message=message):
+                self.enable_browser_suite()
+                path = getattr(self, file_name)
+                path.write_text(path.read_text().replace(old, new))
+                self.assertTrue(any(message in error for error in MODULE.validate_registration(self.repository)))
+
+    def test_checks_cross_module_fixture_servers(self) -> None:
+        self.enable_browser_suite()
+        other = self.repository / "other/frontend"
+        other.mkdir(parents=True)
+        (other / "package.json").write_text('{"scripts":{"dev":"vite"}}')
+        (other / "vite.config.js").write_text('export default defineConfig({})')
+        self.playwright.write_text(self.playwright.read_text().replace(
+            "ADDP_E2E=1 npm run dev", "ADDP_E2E=1 npm --prefix ../../other/frontend run dev"
+        ))
+        self.assertTrue(any("shared withFrontendTestIsolation" in error
+                            for error in MODULE.validate_browser_isolation(self.repository)))
+
+    def test_rejects_missing_browser_config(self) -> None:
+        self.enable_browser_suite()
+        self.playwright.unlink()
+        subprocess.run(["git", "rm", "--cached", "sample/frontend/playwright.config.js"],
+                       cwd=self.repository, check=True, capture_output=True)
+        self.assertIn("sample: deterministic Playwright config is missing",
+                      MODULE.validate_registration(self.repository))
 
     def test_accepts_registered_browser_suite(self) -> None:
         self.enable_browser_suite()

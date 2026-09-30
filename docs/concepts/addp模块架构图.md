@@ -238,6 +238,7 @@ graph TB
 - **服务层**: 各业务模块的后端服务,提供 RESTful API
 - **业务模块边界**: Transfer、Develop、Model、Quality 等是对等 owner，默认只向下依赖 System、Meta、Common 和 Engine Provider。跨 owner 协作优先由 Orchestrator 连接 TaskProvider 稳定输出与必填运行时输入，数据资源使用 ResourceLocator 交接；引入 Common Client 只解决传输实现重复，不会消除 owner-specific ID、API 或生命周期造成的语义依赖。任务定义非必要不得保存其他业务 owner 的专有 ID。
 - **企业目录主线**: Meta 维护 DataItem 技术事实并提供可恢复变化；Catalog 建立企业目录身份、业务语义关联、责任和搜索；Asset 从 Catalog 选择并组合目录对象；Portal 只消费已发布资产。图中的虚线业务调用都是运行软依赖，不构成启动或 Ready 条件。
+- **源数据授权主线（已确认，表级贯通待实现）**: Catalog 维护企业责任与业务关联，System 引擎访问控制领域唯一维护物理源数据规则，Manager、Develop、Quality、Transfer 等执行相同权威规则；专业模型、服务、应用等对象的授权仍归各自 owner。责任不自动赋予访问或办理权限，业务确认不等于授权生效，Catalog 不是实际访问的运行前提。分工、接入限时只读与责任移交遵循 `docs/spec/addp授权上下文规范.md` 5.5，不新增 System IAM 中央业务 ACL。
 - **数据标准主线**: Standard 拥有业务域、术语、数据元、码值集、单位、指标定义和标准来源文档等语义契约；Model 拥有逻辑模型、公共/一致性维度、维度层级和指标实现，并冻结采用的 Standard 修订；Catalog 拥有实际字段/组件到标准修订的映射；Quality 拥有规则应用、执行、符合性结果和问题。Standard 可以聚合展示落标与符合性，但不复制后三者的事实。
 - **数据安全主线**: Security 与 Catalog 并行消费 Meta 事实，但只精确读取已显式纳管目标；Security 编译 Owner-specific 保护投影，Manager、Transfer、Develop 和 Service 后台拉取后在本模块服务端出口执行。Catalog 只联邦展示 Security 专业事实，不是安全发现或保护生效的前置。
 - **Worker运行时**: Quality、Meta、Security 与 Transfer bounded execution 使用 owner 模块附属的独立 Worker；Develop Query、Manager bounded 与 Model logical table materialization 使用 owner Backend 内嵌 Supervisor。每种 task type 只能选择其中一条路线。

@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 > Enterprise Catalog（企业资源目录）由独立 Catalog 模块拥有。System 只提供 Tenant、Department、Project Group、User、成员关系、AuthContext、模块注册和 `addp-catalog` 服务身份，不保存 CatalogEntry、业务语义关联、责任关系或企业目录搜索投影。
 
+> 源数据授权职责扩展（已确认，表级贯通待实现）：System 的引擎访问控制领域唯一维护物理表、文件或对象的访问规则；不是 System IAM 接管所有业务对象 ACL，不建立可独立编辑的 Catalog 责任副本。Catalog 与 System 的办理入口应使用同一规则写路径；各访问模块执行同一权威规则。接入阶段限时只读、业务确认／办理分工及责任移交以 `docs/spec/addp授权上下文规范.md` 5.5 为准，不能把现有 Engine ID + read/write/ddl 执行范围视为表级授权已经实现。
+
 ## 项目概述
 
 **全域数据平台 (All Domain Data Platform)** 是企业级数据平台的核心能力模块，提供基础系统功能：
@@ -65,7 +67,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 make test-system-frontend
 ```
 
-System 前端 HMR 复用实际 HTTP 监听端口。浏览器测试以 `test` mode 通过 CLI 使用独立端口 `4173`，不得另外绑定开发端口 `5173`；`test` mode 的 Vite 依赖缓存按进程隔离到操作系统临时目录，不覆盖开发服务的缓存。
+System 前端 HMR 复用实际 HTTP 监听端口。浏览器测试通过 CLI 使用独立端口 `4173`，设置 `ADDP_E2E=1` 并使用共享 `withFrontendTestIsolation`；测试关闭 HMR，依赖缓存按模块和进程隔离到操作系统临时目录，退出时清理。不得另外绑定开发端口 `5173` 或覆盖开发服务缓存。
 
 ## 项目结构
 

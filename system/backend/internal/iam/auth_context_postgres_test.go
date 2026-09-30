@@ -240,6 +240,48 @@ func TestAuthContextServiceAgainstPostgres(t *testing.T) {
 		)
 	})
 
+	t.Run("role validity uses an inclusive start and exclusive expiry without removing other roles", func(t *testing.T) {
+		audit := AuditMetadata{RequestID: stringPointer("auth-context-role-expiry")}
+		user := createContextSelectionUser(t, ctx, identityService, "auth-context-role-expiry", audit)
+		tenant := createContextSelectionTenant(t, ctx, membershipService, "role-expiry", audit)
+		membership := establishContextSelectionMembership(t, ctx, membershipService, tenant.ID, user.PrincipalID, audit)
+		validFrom := currentTime.Add(time.Minute)
+		validUntil := validFrom.Add(time.Minute)
+		insertRoleAssignment(t, db, user.PrincipalID, "tenant.data_viewer", "tenant", &tenant.ID, nil, nil, currentTime, nil, "manual")
+		insertRoleAssignment(t, db, user.PrincipalID, "tenant.ai_user", "tenant", &tenant.ID, nil, nil, validFrom, &validUntil, "manual")
+		for _, boundary := range []struct {
+			name      string
+			at        time.Time
+			effective bool
+		}{
+			{"before start", validFrom.Add(-time.Microsecond), false},
+			{"at start", validFrom, true},
+			{"before expiry", validUntil.Add(-time.Microsecond), true},
+			{"at expiry", validUntil, false},
+			{"after expiry", validUntil.Add(time.Microsecond), false},
+		} {
+			t.Run(boundary.name, func(t *testing.T) {
+				rows, err := repository.ListEffectiveRoleAssignmentPermissions(ctx, user.PrincipalID, PrincipalTypeUser,
+					ContextTypeTenant, &tenant.ID, &membership.Membership.ID, boundary.at)
+				if err != nil {
+					t.Fatalf("read effective roles: %v", err)
+				}
+				assignments, err := buildRoleAssignments(rows)
+				if err != nil {
+					t.Fatalf("project effective roles: %v", err)
+				}
+				var hasTimedRole, hasPermanentRole bool
+				for _, assignment := range assignments {
+					hasTimedRole = hasTimedRole || assignment.RoleKey == "tenant.ai_user"
+					hasPermanentRole = hasPermanentRole || assignment.RoleKey == "tenant.data_viewer"
+				}
+				if hasTimedRole != boundary.effective || !hasPermanentRole {
+					t.Fatalf("effective roles at %s: timed=%t permanent=%t", boundary.name, hasTimedRole, hasPermanentRole)
+				}
+			})
+		}
+	})
+
 	t.Run("platform projection is isolated and version mismatch is unauthorized", func(t *testing.T) {
 		audit := AuditMetadata{RequestID: stringPointer("auth-context-platform")}
 		user := createContextSelectionUser(t, ctx, identityService, "auth-context-platform", audit)

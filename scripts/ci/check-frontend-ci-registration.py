@@ -6,9 +6,11 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import shlex
 import subprocess
 import sys
 from pathlib import Path
+from urllib.parse import urlparse
 
 
 class RegistrationError(RuntimeError):
@@ -62,6 +64,107 @@ def workflow_jobs(repository: Path) -> list[str]:
             for index, match in enumerate(matches)
         )
     return jobs
+
+
+ISOLATION_IMPORT = "../../common-frontend/basic/src/utils/viteTestIsolation.mjs"
+
+
+def validate_browser_isolation(repository: Path) -> list[str]:
+    """Check literal deterministic fixture recipes without launching Node or services."""
+    repository = repository.resolve()
+    errors = []
+    config_paths = git_files(repository, "*/frontend/playwright.config.*")
+    for module in discover_frontends(repository):
+        package = json.loads((repository / module / "frontend/package.json").read_text())
+        if any(name == "test:e2e" and "playwright test" in command
+               for name, command in package.get("scripts", {}).items()):
+            if not any(path.startswith(f"{module}/frontend/") for path in config_paths):
+                errors.append(f"{module}: deterministic Playwright config is missing")
+    development_ports = set()
+    for path in git_files(repository, "*/frontend/vite.config.*"):
+        development_ports.update(int(port) for port in re.findall(
+            r"process\.env\.[A-Z_]+_FE_PORT\s*\|\|\s*(\d+)",
+            (repository / path).read_text(encoding="utf-8"),
+        ))
+    for path in config_paths:
+        source = (repository / path).read_text(encoding="utf-8")
+        servers = list(re.finditer(
+            r"command:\s*(['\"])(?P<command>[^\n]*?)\1\s*,(?P<body>.*?)^\s*}",
+            source, re.M | re.S,
+        ))
+        if not servers or len(servers) != len(re.findall(r"\bcommand\s*:", source)):
+            errors.append(f"{path}: each deterministic webServer must use a literal npm fixture recipe")
+            continue
+        ports = set()
+        for server in servers:
+            label = f"{path}: {server.group('command')}"
+            try:
+                tokens = shlex.split(server.group('command'))
+                npm_index = tokens.index("npm")
+                environment = dict(token.split("=", 1) for token in tokens[:npm_index] if "=" in token)
+                if environment.get("ADDP_E2E") != "1":
+                    raise ValueError("webServer must explicitly set ADDP_E2E=1")
+                if any(token in {"&&", ";", "|", "||", "&"} for token in tokens):
+                    raise ValueError("webServer must launch only its single Vite fixture")
+                arguments = tokens[npm_index + 1:]
+                frontend = repository / Path(path).parent
+                if arguments[:1] == ["--prefix"]:
+                    frontend = (frontend / arguments[1]).resolve()
+                    arguments = arguments[2:]
+                if arguments[:3] != ["run", "dev", "--"]:
+                    raise ValueError("webServer must use npm run dev with explicit Vite CLI arguments")
+                if "--strictPort" not in arguments:
+                    raise ValueError("webServer must set --strictPort")
+                host = arguments[arguments.index("--host") + 1]
+                port = int(arguments[arguments.index("--port") + 1])
+                if host != "127.0.0.1" or not 1 <= port <= 65535:
+                    raise ValueError("webServer must bind an explicit loopback port")
+                if port in development_ports or port in ports:
+                    raise ValueError("webServer port must be distinct from development and sibling fixtures")
+                ports.add(port)
+                body = server.group("body")
+                url_match = re.search(r"url:\s*['\"]([^'\"]+)['\"]", body)
+                if url_match is None:
+                    raise ValueError("webServer must declare its readiness URL")
+                url = urlparse(url_match.group(1))
+                if url.scheme != "http" or url.hostname != host or url.port != port:
+                    raise ValueError("webServer URL must match its CLI host and port")
+                if not re.search(r"reuseExistingServer:\s*false\b", body):
+                    raise ValueError("webServer must not reuse an existing server")
+                if not re.search(
+                    r"gracefulShutdown:\s*{\s*signal:\s*['\"]SIGTERM['\"],\s*timeout:\s*[1-9]\d*\s*}", body,
+                ):
+                    raise ValueError("webServer must declare bounded SIGTERM graceful shutdown")
+                relative_frontend = frontend.relative_to(repository)
+                if len(relative_frontend.parts) != 2 or relative_frontend.parts[1] != "frontend":
+                    raise ValueError("webServer must start an ADDP frontend owner")
+                package = json.loads((frontend / "package.json").read_text(encoding="utf-8"))
+                if not re.match(r"^vite(?:\s|$)", package.get("scripts", {}).get("dev", "")):
+                    raise ValueError("fixture dev script must directly launch Vite")
+                vite = (frontend / "vite.config.js").read_text(encoding="utf-8")
+                module = relative_frontend.parts[0]
+                if not re.search(
+                    rf"import\s*{{\s*withFrontendTestIsolation\s*}}\s*from\s*['\"]{re.escape(ISOLATION_IMPORT)}['\"]",
+                    vite,
+                ) or not re.search(
+                    rf"export default defineConfig\(withFrontendTestIsolation\(['\"]{re.escape(module)}['\"],\s*{{",
+                    vite,
+                ):
+                    raise ValueError("Vite config must use the shared withFrontendTestIsolation owner")
+                if re.search(r"\bhmr\s*:\s*(?:process\.env\.ADDP_E2E|!?isE2E|!?IS_E2E|!?testing)\b", vite):
+                    raise ValueError("module-owned Vite test HMR branches are forbidden")
+                if re.search(r"\bcacheDir\s*:", vite):
+                    raise ValueError("module-owned Vite cache isolation is forbidden")
+            except (ValueError, IndexError, OSError, json.JSONDecodeError) as error:
+                errors.append(f"{label}: {error}")
+        base_url = re.search(r"baseURL:\s*['\"]([^'\"]+)['\"]", source)
+        try:
+            url = urlparse(base_url.group(1) if base_url else "")
+            if url.scheme != "http" or url.hostname != "127.0.0.1" or url.port not in ports:
+                raise ValueError("browser baseURL must use a declared loopback fixture port")
+        except ValueError as error:
+            errors.append(f"{path}: {error}")
+    return errors
 
 
 def validate_registration(repository: Path) -> list[str]:
@@ -130,6 +233,7 @@ def validate_registration(repository: Path) -> list[str]:
             errors.append(
                 f"{module}: root test target dependency {target} is missing"
             )
+    errors.extend(validate_browser_isolation(repository))
     return errors
 
 

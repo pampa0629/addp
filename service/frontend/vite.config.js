@@ -1,8 +1,9 @@
+import { withFrontendTestIsolation } from '../../common-frontend/basic/src/utils/viteTestIsolation.mjs'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { resolve } from 'path'
 
-export default defineConfig({
+export default defineConfig(withFrontendTestIsolation('service', {
   plugins: [vue()],
   resolve: {
     alias: {
@@ -21,7 +22,6 @@ export default defineConfig({
     include: ['@amap/amap-jsapi-loader', 'ol', 'proj4']
   },
   server: {
-    hmr: process.env.ADDP_E2E === '1' ? false : undefined,
     port: Number(process.env.SERVICE_FE_PORT || 5180),
     strictPort: true,
     host: '0.0.0.0',
@@ -37,4 +37,4 @@ export default defineConfig({
     }
   },
   base: process.env.NODE_ENV === 'development' ? '/' : '/module-ui/service/'
-})
+}))

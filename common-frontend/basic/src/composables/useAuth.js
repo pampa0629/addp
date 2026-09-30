@@ -44,11 +44,12 @@ function redirectToLogin() {
   if (target) window.location.assign(target)
 }
 
-export function collectAuthContextPermissions(authContext) {
+export function collectAuthContextPermissions(authContext, at = Date.now()) {
   const context = authContext?.context
   if (!context || !['platform', 'tenant'].includes(context.type)) return []
   const keys = new Set()
   for (const assignment of authContext?.authorization?.role_assignments || []) {
+    if (assignment.valid_until != null && !(Date.parse(assignment.valid_until) > at)) continue
     if (context.type === 'platform' && assignment.scope?.type !== 'platform') continue
     if (context.type === 'tenant' && (
       assignment.scope?.type !== 'tenant' || !context.tenant_id || assignment.scope?.tenant_id !== context.tenant_id
@@ -129,12 +130,87 @@ function createAuthStoreConfig(storeName, authAPI, options = {}) {
   let boundStore = null
   let unsubscribe = null
   let observedToken = null
+  let authorizationTimer = null
+
+  function clearAuthorizationTimer() {
+    if (authorizationTimer !== null) clearTimeout(authorizationTimer)
+    authorizationTimer = null
+  }
+
+  function scheduleAuthorizationExpiry(store) {
+    clearAuthorizationTimer()
+    if (!store.token) return
+    const at = Date.now()
+    const deadlines = (store.authContext?.authorization?.role_assignments || [])
+      .map(assignment => Date.parse(assignment.valid_until))
+      .filter(deadline => deadline > at)
+    if (!deadlines.length) return
+    // Browser timers have a signed 32-bit delay; long grants are checked in chunks.
+    const delay = Math.min(Math.min(...deadlines) - at, 2_147_483_647)
+    authorizationTimer = setTimeout(checkAuthorizationExpiry, delay)
+  }
+
+  function checkAuthorizationExpiry() {
+    const store = boundStore
+    if (!store) return
+    const at = Date.now()
+    const assignments = store.authContext?.authorization?.role_assignments || []
+    if (assignments.some(assignment => {
+      const deadline = Date.parse(assignment.valid_until)
+      return deadline > store.authorizationEvaluatedAt && deadline <= at
+    })) store.authorizationEvaluatedAt = at
+    scheduleAuthorizationExpiry(store)
+    const expired = assignments.some(assignment => assignment.valid_until != null && Date.parse(assignment.valid_until) <= at)
+    if (!store.token || !expired) return
+    const authorizationToken = store.token
+    store.fetchAuthContext().catch(async (error) => {
+      if (boundStore !== store || store.token !== authorizationToken) return
+      if (isAuthenticationFailure(error)) {
+        try {
+          await store.refreshAuthorization()
+          return
+        } catch (refreshError) {
+          error = refreshError
+          if (isAuthenticationFailure(error)) store.clearLocalSession()
+        }
+      }
+      console.warn(`[${storeName}] Role expiry authorization refresh failed:`, error)
+    })
+  }
+
+  function setAuthContext(store, authContext) {
+    store.authorizationEvaluatedAt = Date.now()
+    store.authContext = authContext
+    scheduleAuthorizationExpiry(store)
+  }
+
+  function onAuthorizationResume() {
+    if (globalThis.document?.visibilityState === 'hidden') return
+    checkAuthorizationExpiry()
+  }
 
   function bindStore(store) {
     boundAuthStore = store
     if (boundStore === store) return
     unsubscribe?.()
+    clearAuthorizationTimer()
     boundStore = store
+    globalThis.window?.addEventListener('focus', onAuthorizationResume)
+    globalThis.document?.addEventListener('visibilitychange', onAuthorizationResume)
+    const disposeStore = store.$dispose.bind(store)
+    store.$dispose = () => {
+      if (boundStore === store) {
+        clearAuthorizationTimer()
+        store.authContextRequestId += 1
+        unsubscribe?.()
+        globalThis.window?.removeEventListener('focus', onAuthorizationResume)
+        globalThis.document?.removeEventListener('visibilitychange', onAuthorizationResume)
+        authSession.dispose()
+        boundStore = null
+        if (boundAuthStore === store) boundAuthStore = null
+      }
+      disposeStore()
+    }
     unsubscribe = subscribeAccessToken(({ token, expiresAt }) => {
       const previousToken = observedToken
       observedToken = token
@@ -143,7 +219,7 @@ function createAuthStoreConfig(storeName, authAPI, options = {}) {
       store.tokenExpiresAt = expiresAt
       if (!token) {
         store.user = null
-        store.authContext = null
+        setAuthContext(store, null)
         store.sessionStatus = 'anonymous'
         if (persistUser) localStorage.removeItem('user')
         if (wasAuthenticated && store.sessionInitialized && !authSession.isEmbedded() && typeof window !== 'undefined') {
@@ -157,7 +233,7 @@ function createAuthStoreConfig(storeName, authAPI, options = {}) {
         store.sessionStatus === 'authenticated'
       ) {
         const authorizationToken = token
-        store.authContext = null
+        setAuthContext(store, null)
         store.fetchAuthContext({ force: true }).catch((error) => {
           const currentToken = getAccessToken() || store.token
           if (currentToken !== authorizationToken) return
@@ -218,6 +294,7 @@ function createAuthStoreConfig(storeName, authAPI, options = {}) {
         }
       })() : null,
       authContext: null,
+      authorizationEvaluatedAt: Date.now(),
       isLoadingUser: false,
       userLoadPromise: null,
       authContextLoadPromise: null,
@@ -231,7 +308,7 @@ function createAuthStoreConfig(storeName, authAPI, options = {}) {
     getters: {
       isAuthenticated: (state) => Boolean(state.token),
       contextType: (state) => state.authContext?.context?.type || null,
-      permissions: (state) => collectAuthContextPermissions(state.authContext),
+      permissions: (state) => collectAuthContextPermissions(state.authContext, state.authorizationEvaluatedAt),
       hasPermission() {
         return (permission) => this.permissions.includes(permission)
       },
@@ -339,7 +416,7 @@ function createAuthStoreConfig(storeName, authAPI, options = {}) {
       async switchContext(context) {
         bindStore(this)
         const session = await authSession.switchContext(context)
-        this.authContext = null
+        setAuthContext(this, null)
         this.authContextLoadPromise = null
         await this.fetchSessionState()
         this.sessionStatus = 'authenticated'
@@ -373,7 +450,7 @@ function createAuthStoreConfig(storeName, authAPI, options = {}) {
         if (this.authContextLoadPromise && !force) return this.authContextLoadPromise
         const token = getAccessToken() || this.token
         if (!token) {
-          this.authContext = null
+          setAuthContext(this, null)
           return null
         }
 
@@ -383,7 +460,7 @@ function createAuthStoreConfig(storeName, authAPI, options = {}) {
           .then((response) => {
             const currentToken = getAccessToken() || this.token
             if (requestId !== this.authContextRequestId || currentToken !== token) return null
-            this.authContext = response.data || response
+            setAuthContext(this, response.data || response)
             return this.authContext
           })
           .catch((error) => {
@@ -413,7 +490,7 @@ function createAuthStoreConfig(storeName, authAPI, options = {}) {
         bindStore(this)
         authSession.clearToken({ broadcastEvent: false })
         this.user = null
-        this.authContext = null
+        setAuthContext(this, null)
         this.isLoadingUser = false
         this.userLoadPromise = null
         this.authContextLoadPromise = null

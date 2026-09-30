@@ -21,6 +21,7 @@ export default defineConfig({
     command: 'ADDP_E2E=1 npm run dev -- --host 127.0.0.1 --port 4178 --strictPort',
     url: 'http://127.0.0.1:4178',
     reuseExistingServer: false,
+    gracefulShutdown: { signal: 'SIGTERM', timeout: 5000 },
     timeout: 30_000
   }
 })

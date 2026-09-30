@@ -477,6 +477,10 @@
 | Department | 部门 | Tenant 内表达稳定组织归属的层级组织单元。 | 一个 User 可有一个主部门和多个附加部门；父子部门权限默认不继承。名称表达显示名称；编码由用户创建时必填，同 Tenant 内唯一，创建后不可修改，作为技术身份。 |
 | Project Group | 项目组 | Tenant 内面向跨部门协作的成员集合。 | 严格属于单个 Tenant，第一阶段不嵌套，不改变成员的 Department 归属；创建即启用，关闭后不可恢复。名称表达显示名称；编码由用户创建时必填，同 Tenant 内唯一，创建后不可修改，作为技术身份。 |
 | Resource Grant | 资源授权 | owner 模块将特定资源动作显式授予 User、Department、Project Group、Role 主体集合或 Service Principal 的事实。 | 最终资源访问判断仍由 owner 执行；Asset 的授权记录可以是授权来源。 |
+| source data authorization authority | 源数据授权权威 | 同一物理表、文件或对象访问规则的唯一维护方。 | 已确认由 System 的引擎访问控制领域承担，不是 System IAM 的全平台中央 ACL；访问模块执行其权威规则，不能分别维护源数据授权副本。专业业务对象的授权仍归各自 owner；表级贯通尚未实现。 |
+| business authorization decision | 业务授权决定 | 有效业务责任人对一次明确资源、接收主体、动作和期限的共享或权限扩大作出的确认。 | 不等于责任身份、IAM Role、Resource Grant 或数据访问成功；必须验证当前资格并由授权维护方履约。普通只读共享允许确认人与办理人同人，但必须分别具备两方面资格；不隐含允许申请人自批。 |
+| authorization fulfillment | 授权办理 | 具备办理功能和目标管理范围的主体，将有效业务或接入授权依据落实为资源访问规则，或执行规则撤销的行为。 | 办理权限不等于业务批准权；业务责任人、数据管理员和技术维护者不因承担责任自动获得办理或内容访问权。 |
+| onboarding authorization authority | 接入授权主体 | 尚未明确业务责任时，被显式授予限定引擎资源管理范围、可办理有限初始访问授权的主体。 | 只向指定账号或项目组授予明确选中资源的限时只读，不包含全租户公开、写入或 DDL；明确业务责任后，新增共享与扩大权限须转由业务责任人确认。不是新的 IAM 身份或永久业务负责人，具体委派契约待实现。 |
 | Resource Scope Binding | 资源作用域绑定 | owner 模块将资源实例显式关联到 Department 或 Project Group Scope 的事实。 | 只用于判断 scoped Role Assignment 是否覆盖资源；不直接授予 Permission 或 Resource Grant。 |
 | Resource Policy | 资源策略 | owner 模块基于资源生命周期、归属、可见级别、密级和业务条件执行的版本化授权规则。 | 第一阶段使用 owner 代码和结构化字段，不引入任意表达式 DSL 或中央策略引擎。 |
 | Resource Access Rule | 资源访问规则 | owner 本地保存的结构化 Allow 或 Explicit Deny 记录，绑定资源、主体选择器、Permission、有效期和来源。 | `effect=allow` 时构成 Resource Grant，`effect=deny` 时构成 Explicit Deny；不进入 System IAM 中央表。 |
