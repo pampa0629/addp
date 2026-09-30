@@ -21,7 +21,7 @@ test('System and Gateway stay enabled while a business module can be disabled', 
     { id: 1, module_name: 'system', route_prefix: '/system', enabled: true, version: 1, instances: [] },
     { id: 2, module_name: 'manager', route_prefix: '/manager', enabled: true, version: 1, instances: [
       { instance_id: 'manager-backend', role: 'backend', status: 'up', module_url: 'http://manager.local:8081', process_started_at: startedAt, lease_expires_at: leaseExpiresAt },
-      { instance_id: 'manager-worker', role: 'worker', status: 'down', module_url: '', process_started_at: startedAt,
+      { instance_id: 'manager-worker', host_node_name: 'host-a', runtime_hostname: 'container-a', role: 'worker', status: 'down', module_url: '', process_started_at: startedAt,
         last_heartbeat: startedAt, lease_expires_at: startedAt, stopped_at: startedAt, stop_reason: 'lease_expired' }
     ] },
     { id: 3, module_name: 'gateway', route_prefix: '', enabled: true, version: 1, instances: [] }
@@ -67,7 +67,9 @@ test('System and Gateway stay enabled while a business module can be disabled', 
         registered_at: startedAt
       }))
       const data = all.filter(instance => (!params.module_name || instance.module_name === params.module_name) &&
-        (!params.registered_host || instance.registered_host === params.registered_host))
+        (!params.registered_host || instance.registered_host === params.registered_host) &&
+        (!params.node_name || [instance.host_node_name, instance.runtime_hostname].some(name => name?.toLowerCase() === params.node_name.toLowerCase())) &&
+        (!params.role || instance.role === params.role) && (!params.status || instance.status === params.status))
       return fulfillJSON(route, 200, { data, total: data.length, page: Number(params.page), page_size: Number(params.page_size), total_pages: 1 })
     }
     if (path.endsWith('/platform/modules/manager') && method === 'PUT') {
@@ -106,17 +108,58 @@ test('System and Gateway stay enabled while a business module can be disabled', 
   await page.getByRole('button', { name: '查询该模块实例' }).click()
   await expect(page.getByRole('tab', { name: '服务实例' })).toHaveAttribute('aria-selected', 'true')
   await expect.poll(() => instanceQueries.at(-1)?.module_name).toBe('manager')
+  await expect.poll(() => instanceQueries.at(-1)?.status).toBe('up')
+  await expect(page.locator('.module-instances .el-table__body tr')).toHaveCount(1)
+  await expect(page.locator('.module-instances').getByText('manager-worker', { exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '查询', exact: true })).toHaveCount(0)
+  await page.getByPlaceholder('登记主机名或 IP').fill('manager')
   await page.getByPlaceholder('登记主机名或 IP').fill('manager.local')
-  await page.getByRole('button', { name: '查询', exact: true }).click()
   await expect.poll(() => instanceQueries.at(-1)?.registered_host).toBe('manager.local')
+  expect(instanceQueries.some(query => query.registered_host === 'manager')).toBe(false)
   await expect(page.locator('.module-instances .el-table__body tr')).toHaveCount(1)
   await page.locator('.module-instances .el-select').nth(3).click()
   await page.getByRole('option', { name: '近 15 分钟' }).click()
-  await page.getByRole('button', { name: '查询', exact: true }).click()
   await expect.poll(() => instanceQueries.at(-1)?.registered_from).toMatch(/^\d{4}-\d{2}-\d{2}T/)
   await expect.poll(() => instanceQueries.at(-1)?.registered_to).toMatch(/^\d{4}-\d{2}-\d{2}T/)
+  await page.locator('.module-instances .el-select').nth(1).click()
+  await page.getByRole('option', { name: 'Backend', exact: true }).click()
+  await expect.poll(() => instanceQueries.at(-1)?.role).toBe('backend')
+  await page.locator('.module-instances .el-select').nth(2).click()
+  await page.getByRole('option', { name: 'UP · 在线' }).click()
+  await expect.poll(() => instanceQueries.at(-1)?.status).toBe('up')
+  await page.locator('.module-instances .el-select').first().click()
+  await page.getByRole('option', { name: '系统管理', exact: true }).click()
+  await expect.poll(() => instanceQueries.at(-1)?.module_name).toBe('system')
+  await expect(page.getByText('没有符合条件的服务实例', { exact: true })).toBeVisible()
+  const queriesBeforeCustomRange = instanceQueries.length
+  await page.locator('.module-instances .el-select').nth(3).click()
+  await page.getByRole('option', { name: '自定义时间' }).click()
+  await expect(page.getByText('请选择完整的起止时间', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '刷新', exact: true })).toBeDisabled()
+  expect(instanceQueries).toHaveLength(queriesBeforeCustomRange)
+  const customRange = page.locator('.module-instances .query-range')
+  await customRange.getByPlaceholder('起始时间').fill('2020-01-01 00:00:00')
+  await customRange.getByPlaceholder('结束时间').fill('2030-01-01 00:00:00')
+  await customRange.getByPlaceholder('结束时间').press('Enter')
+  await expect.poll(() => instanceQueries.at(-1)?.registered_from).toMatch(/^2019-12-31T|^2020-01-01T/)
+  await expect(page.getByRole('button', { name: '刷新', exact: true })).toBeEnabled()
   await page.getByRole('button', { name: '重置' }).click()
-  await expect.poll(() => instanceQueries.at(-1)?.module_name).toBeUndefined()
+  await expect.poll(() => instanceQueries.at(-1)).toEqual({ page: '1', page_size: '10', status: 'up' })
+  await expect(page.locator('.module-instances .el-table__body tr')).toHaveCount(1)
+  await page.locator('.module-instances .el-select').nth(2).click()
+  await page.getByRole('option', { name: '全部状态', exact: true }).click()
+  await expect.poll(() => instanceQueries.at(-1)?.status).toBeUndefined()
+  await expect(page.locator('.module-instances .el-table__body tr')).toHaveCount(2)
+  await page.locator('.module-instances .el-select').nth(2).click()
+  await page.getByRole('option', { name: 'DOWN · 离线', exact: true }).click()
+  await expect.poll(() => instanceQueries.at(-1)?.status).toBe('down')
+  await expect(page.locator('.module-instances .el-table__body tr')).toHaveCount(1)
+  await page.getByPlaceholder('宿主节点或运行环境主机名').fill('HOST-A')
+  await expect.poll(() => instanceQueries.at(-1)?.node_name).toBe('HOST-A')
+  await expect(page.locator('.module-instances .el-table__body tr')).toHaveCount(1)
+  await expect(page.locator('.module-instances').getByText('container-a', { exact: false })).toBeVisible()
+  await page.getByPlaceholder('宿主节点或运行环境主机名').fill('container-a')
+  await expect.poll(() => instanceQueries.at(-1)?.node_name).toBe('container-a')
   const workerRow = page.locator('.module-instances .el-table__body tr').filter({ hasText: 'manager-worker' })
   await workerRow.locator('.el-table__expand-icon').click()
   const diagnostics = page.locator('.module-instances .el-table__expanded-cell')
@@ -126,4 +169,8 @@ test('System and Gateway stay enabled while a business module can be disabled', 
   await expect(diagnostics).toContainText('租约超时，疑似异常退出')
   await expect(diagnostics).toContainText('租约超时仅表示实例失联，不能据此断定进程已经退出。')
   await expect(diagnostics).toContainText(/\d{4}\/\d{1,2}\/\d{1,2} \d{1,2}:\d{2}:\d{2}/)
+  await page.getByRole('button', { name: '重置' }).click()
+  await expect.poll(() => instanceQueries.at(-1)).toEqual({ page: '1', page_size: '10', status: 'up' })
+  await expect(page.getByPlaceholder('宿主节点或运行环境主机名')).toHaveValue('')
+  await expect(page.locator('.module-instances .el-table__body tr')).toHaveCount(1)
 })

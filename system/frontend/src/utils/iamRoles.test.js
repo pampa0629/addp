@@ -11,6 +11,7 @@ import {
   resolveRoleDescription,
   resolveRoleName,
   resolveTenantScopeLabel,
+  summarizeEffectiveTenantRoles,
   tenantRoleKeys
 } from './iamRoles'
 
@@ -22,6 +23,20 @@ const t = (key) => messages[key]
 const te = (key) => Object.hasOwn(messages, key)
 
 describe('IAM tenant role presentation', () => {
+  it('summarizes unique effective roles across scopes and excludes inactive validity states', () => {
+    const steward = { role_id: '3', role_key: 'tenant.data_steward', role_name: '数据管理员', effective_state: 'effective' }
+    const administrator = { role_id: '1', role_key: 'tenant.administrator', role_name_i18n_key: 'roles.tenant.administrator.name', effective_state: 'effective' }
+    const summary = summarizeEffectiveTenantRoles([
+      { ...steward, scope_type: 'tenant' },
+      administrator,
+      { ...steward, scope_type: 'department', department_id: '8' },
+      ...['scheduled', 'expired', 'revoked'].map((effective_state, index) => ({ role_id: String(index + 10), role_key: 'tenant.data_viewer', status: 'active', effective_state }))
+    ])
+    expect(summary.map((role) => role.role_id)).toEqual(['1', '3'])
+    expect(summary.map((role) => resolveRoleName(role, t, te))).toEqual(['租户组织与权限管理员', '数据管理员'])
+    expect(summarizeEffectiveTenantRoles([])).toEqual([])
+  })
+
   it('validates two lowercase role key segments and trims surrounding whitespace', () => {
     for (const key of ['custom.ontology_manager', 'tenant.reader', 'a.b', 'custom_2.role_3']) {
       expect(isValidTenantRoleKey(` \t${key}\n`), key).toBe(true)

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -659,5 +660,27 @@ func TestSystemServiceClientReadsRuntimeDescriptorsWithoutLegacyHeaders(t *testi
 	descriptors, err := client.ListEngineRuntimeDescriptors(context.Background())
 	if err != nil || len(descriptors) != 1 || descriptors[0].ID != 12 {
 		t.Fatalf("ListEngineRuntimeDescriptors() descriptors=%#v error=%v", descriptors, err)
+	}
+}
+
+func TestModuleLifecycleCollectsRuntimeNodeIdentity(t *testing.T) {
+	t.Setenv("ADDP_HOST_NODE_NAME", " host-a ")
+	hostname, err := os.Hostname()
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := &ModuleRegistrationRequest{ModuleName: "meta", Role: ModuleRuntimeRoleWorker,
+		HostNodeName: "incorrect-host", RuntimeHostname: "incorrect-runtime"}
+	_, registration := newModuleRegistrationLifecycle(request)
+	if registration.HostNodeName != "host-a" || registration.RuntimeHostname != strings.TrimSpace(hostname) {
+		t.Fatalf("node identity = %#v", registration)
+	}
+	if request.HostNodeName != "incorrect-host" {
+		t.Fatal("caller request was mutated")
+	}
+	t.Setenv("ADDP_HOST_NODE_NAME", "")
+	_, local := newModuleRegistrationLifecycle(request)
+	if local.HostNodeName != "" || local.RuntimeHostname != strings.TrimSpace(hostname) {
+		t.Fatalf("unknown host node must remain empty: %#v", local)
 	}
 }

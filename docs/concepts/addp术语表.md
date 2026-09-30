@@ -521,6 +521,8 @@
 | module definition | 模块定义 | System 按稳定 `module_name` 保存的持久模块身份、路由声明和业务模块的管理员启用意图。 | 进程离线不删除；业务模块的管理员写操作使用聚合根 `version` 做并发控制。System 与 Gateway 定义的 `enabled` 固定为 true。 |
 | module runtime instance | 模块运行实例 | Backend、Worker、Scheduler 或 Ingress 一次具体进程登记及其短期租约。 | 健康由心跳和租约计算；正常注销记录 `graceful`，租约超时记录 `lease_expired`，后者仅表示失联，不能证明进程崩溃。进程运行时长以进程启动时间计算，模块定义更新时间和首次注册时间不得替代。管理员不能手工改成在线，实例也不拥有独立并发版本。 |
 | registered host | 登记主机 | 从模块运行实例的服务地址（无服务地址时为健康检查地址）解析出的主机名或 IP，不包含端口。 | 用于按登记地址精确筛选实例；域名和 `localhost` 不等于物理节点 IP。无监听端点的 Worker、Scheduler 可以为空，不据此推断其节点地址。 |
+| runtime hostname | 运行环境主机名 | 由进程所在操作系统自动采集的主机名，容器内表示容器运行环境。 | 对应 `runtime_hostname`；用于定位包括无监听端点 Worker 在内的进程，不从登记 URL 或实例 ID 推断宿主节点。 |
+| host node name | 宿主节点名 | 部署环境明确提供的进程所属宿主节点标识。 | 对应 `host_node_name`，由 `ADDP_HOST_NODE_NAME` 注入；未提供时为空，不把容器主机名当作宿主节点名。节点信息仅供观测，不参与路由、Ready 或租约判断。 |
 | module enabled state | 模块启用状态 | 平台系统管理员是否允许业务模块参与路由和动态入口聚合的持久意图。 | 与实例 `status` 独立；业务模块的注册和心跳不得覆盖。System 与 Gateway 不提供管理员禁用操作。 |
 | routable backend | 可路由 Backend | 同时满足模块已启用、角色为 `backend`、状态为 `up`、租约未过期且 URL 有效的运行实例。 | Worker、Scheduler 和 Gateway Ingress 只可观测，不参与 Gateway 业务路由。 |
 | module registry revision | 模块注册表修订号 | System 对可路由模块拓扑变更维护的单调递增版本。 | 新增、恢复、下线、端点变化和管理员启停会递增；普通续租心跳不递增。 |

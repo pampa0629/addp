@@ -9,6 +9,7 @@ import (
 	"time"
 
 	commonapi "github.com/addp/common/api"
+	commonauth "github.com/addp/common/authorization"
 	"github.com/addp/system/internal/migration"
 	"github.com/addp/system/internal/testsupport"
 	"gorm.io/driver/postgres"
@@ -302,6 +303,18 @@ func TestTenantAdministrationClosureAgainstPostgres(t *testing.T) {
 	}); !errors.Is(err, commonapi.ErrBadRequest) {
 		t.Fatalf("role assignment revocation without reason error = %v, want bad request", err)
 	}
+	memberLogin, err := loginService.LoginLocalBrowser(ctx, LoginLocalBrowserInput{
+		Username: "tenant-infrastructure-administrator", Password: "tenant-administration-password", Audit: tenantAudit,
+	})
+	if err != nil || memberLogin.Session == nil {
+		t.Fatalf("login role holder before revocation: %v", err)
+	}
+	memberSession := memberLogin.Session
+	familyBeforeRevocation := readRefreshFamily(t, db, memberSession.FamilyID)
+	memberContext, err := authContextService.ResolveFirstPartyAccessToken(ctx, memberSession.AccessToken)
+	if err != nil || !commonauth.HasContextPermissions(*memberContext, "system.engine.create", "manager.data_item.read") {
+		t.Fatalf("role holder permissions before revocation: %v", err)
+	}
 	revoked, err := roleService.RevokeAssignment(ctx, RevokeTenantRoleAssignmentInput{
 		TenantID: tenant.ID, AssignmentID: assigned.ID, Reason: "assignment test completed",
 		ActorPrincipalID: initialAdministrator.ID, Audit: tenantAudit,
@@ -310,6 +323,39 @@ func TestTenantAdministrationClosureAgainstPostgres(t *testing.T) {
 		revoked.RevokedReason == nil || *revoked.RevokedReason != "assignment test completed" ||
 		revoked.RevokedByDisplayName == nil || *revoked.RevokedByDisplayName != initialAdministrator.DisplayName {
 		t.Fatalf("revoked assignment = %#v err=%v", revoked, err)
+	}
+	if _, err := authContextService.ResolveFirstPartyAccessToken(ctx, memberSession.AccessToken); err == nil {
+		t.Fatal("old access token remained valid immediately after role revocation")
+	} else {
+		var validationError *CredentialValidationError
+		if !errors.As(err, &validationError) || validationError.Reason != CredentialInvalidAuthorizationVersion {
+			t.Fatalf("revoked role holder token error = %v, want authorization version mismatch", err)
+		}
+	}
+	refreshedSession, err := tokenService.RotateBrowserRefreshToken(ctx, RotateBrowserRefreshTokenInput{
+		RefreshToken: memberSession.RefreshToken, Audit: tenantAudit,
+	})
+	if err != nil {
+		t.Fatalf("refresh role holder session after revocation: %v", err)
+	}
+	familyAfterRevocation := readRefreshFamily(t, db, memberSession.FamilyID)
+	if refreshedSession.FamilyID != memberSession.FamilyID || familyAfterRevocation.RevokedAt != nil ||
+		familyAfterRevocation.IssuedAuthorizationVersion <= familyBeforeRevocation.IssuedAuthorizationVersion ||
+		!familyAfterRevocation.ExpiresAt.Equal(familyBeforeRevocation.ExpiresAt) {
+		t.Fatal("role revocation did not preserve and advance the existing session family")
+	}
+	refreshedContext, err := authContextService.ResolveFirstPartyAccessToken(ctx, refreshedSession.AccessToken)
+	if err != nil {
+		t.Fatalf("resolve role holder context after revocation: %v", err)
+	}
+	if commonauth.HasContextPermissions(*refreshedContext, "system.engine.create") ||
+		!commonauth.HasContextPermissions(*refreshedContext, "manager.data_item.read") {
+		t.Fatal("refreshed context retained revoked permissions or lost the remaining role's permissions")
+	}
+	for _, assignment := range refreshedContext.Authorization.RoleAssignments {
+		if assignment.RoleKey == "tenant.infrastructure_administrator" {
+			t.Fatal("refreshed context retained the revoked role assignment")
+		}
 	}
 	replacementBatch, err := roleService.CreateAssignments(ctx, CreateTenantRoleAssignmentsInput{
 		TenantID: tenant.ID, MembershipID: membership.Membership.ID, RoleIDs: []int64{infrastructureRole.ID},

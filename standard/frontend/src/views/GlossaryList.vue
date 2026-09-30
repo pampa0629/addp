@@ -5,6 +5,8 @@
       <el-button v-if="canCreate" type="primary" :icon="Plus" @click="openCreateDialog">{{ $t('standard.glossary.create') }}</el-button>
     </div>
 
+    <p class="lifecycle-hint">{{ $t('standard.glossary.deletionRule') }}</p>
+
     <el-card class="filter-card">
       <el-row :gutter="12">
         <el-col :span="8"><el-input v-model="filters.keyword" :placeholder="$t('standard.glossary.searchPlaceholder')" clearable :prefix-icon="Search" @change="handleFilterChange" /></el-col>
@@ -39,7 +41,12 @@
         </el-table-column>
         <el-table-column :label="$t('standard.common.actions')" width="150" fixed="right">
           <template #default="{ row }">
-            <div class="table-actions"><el-button link type="primary" @click="goToDetail(row)">{{ $t('standard.common.detail') }}</el-button><el-button v-if="canDelete && isGlossaryDeletable(row)" link type="danger" @click="handleDelete(row)">{{ $t('standard.common.delete') }}</el-button></div>
+            <div class="table-actions">
+              <el-button link type="primary" @click="goToDetail(row)">{{ $t('standard.common.detail') }}</el-button>
+              <el-tooltip v-if="canDelete" :disabled="isGlossaryDeletable(row)" :content="$t('standard.glossary.deleteBlockedByHistory')" placement="top">
+                <span><el-button link type="danger" :disabled="!isGlossaryDeletable(row)" @click="handleDelete(row)">{{ $t('standard.common.delete') }}</el-button></span>
+              </el-tooltip>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -72,6 +79,7 @@
 </template>
 
 <script setup>
+import { getStandardDisplayRevision as displayRevision } from '../utils/standardRevision'
 import { BusinessDomainSelect, buildBusinessDomainOptions } from '@common-ui'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -101,7 +109,6 @@ const rules = computed(() => ({
   definition: [{ required: true, message: t('standard.glossary.definitionRequired'), trigger: 'blur' }],
   owner_domain_id: [{ required: form.value.scope_type === 'domain', message: t('standard.common.selectDomain'), trigger: 'change' }]
 }))
-const displayRevision = row => row.draft_revision || row.current_revision
 const statusType = status => ({ draft: 'info', in_review: 'warning', published: 'success', withdrawn: 'danger' }[status] || 'info')
 const statusLabel = status => status ? t(`standard.revision.status.${status}`) : '-'
 const scopeLabel = scope => scope ? t(`standard.common.scopeValue.${scope}`) : '-'
@@ -146,6 +153,8 @@ onMounted(loadDomains)
 .filter-card, .table-card { margin-bottom:16px; }
 .pagination { margin-top:16px; justify-content:flex-end; }
 .term-name { font-weight:500; color:var(--addp-text-primary); }
-.table-actions { display:flex; flex-wrap:nowrap; white-space:nowrap; }
+.lifecycle-hint { color:var(--addp-text-secondary); font-size:14px; line-height:1.6; margin:0 0 16px; }
+.table-actions { display:flex; align-items:center; gap:12px; flex-wrap:nowrap; white-space:nowrap; }
+.table-actions > span { display:inline-flex; }
 @media (max-width:768px) { .glossary-list { padding:12px; } }
 </style>

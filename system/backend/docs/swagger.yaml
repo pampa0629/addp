@@ -1400,6 +1400,8 @@ definitions:
         $ref: '#/definitions/configuration.ManagementDeclaration'
       health_check_url:
         type: string
+      host_node_name:
+        type: string
       instance_id:
         type: string
       metadata:
@@ -1414,6 +1416,8 @@ definitions:
       role:
         type: string
       route_prefix:
+        type: string
+      runtime_hostname:
         type: string
       task_provider:
         $ref: '#/definitions/models.TaskProviderDeclaration'
@@ -1438,6 +1442,8 @@ definitions:
     properties:
       health_check_url:
         type: string
+      host_node_name:
+        type: string
       id:
         type: integer
       instance_id:
@@ -1459,6 +1465,8 @@ definitions:
         type: string
       role:
         type: string
+      runtime_hostname:
+        type: string
       status:
         type: string
       stop_reason:
@@ -1471,6 +1479,8 @@ definitions:
   github_com_addp_system_internal_models.ModuleRuntimeInstanceRecord:
     properties:
       health_check_url:
+        type: string
+      host_node_name:
         type: string
       id:
         type: integer
@@ -1494,6 +1504,8 @@ definitions:
       registered_host:
         type: string
       role:
+        type: string
+      runtime_hostname:
         type: string
       status:
         type: string
@@ -5987,6 +5999,11 @@ paths:
       - description: 稳定模块名，精确匹配 | Stable module name, exact match
         in: query
         name: module_name
+        type: string
+      - description: 宿主节点名或运行环境主机名，不区分大小写的精确匹配 | Host node name or runtime hostname,
+          case-insensitive exact match
+        in: query
+        name: node_name
         type: string
       - description: 登记端点主机名或 IP，精确匹配 | Registered endpoint hostname or IP, exact
           match

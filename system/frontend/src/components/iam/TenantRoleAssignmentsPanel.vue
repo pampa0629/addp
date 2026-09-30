@@ -189,6 +189,7 @@ const props = defineProps({
   fixedMembership: { type: Object, default: null },
   readOnly: { type: Boolean, default: false }
 })
+const emit = defineEmits(['assignments-changed'])
 
 const { t, te } = useI18n()
 const MAX_ROLE_ASSIGNMENT_BATCH_SIZE = 50
@@ -355,20 +356,10 @@ async function loadMemberAssignments() {
   if (!membershipId) return
   assignmentsLoading.value = true
   try {
-    const collected = []
-    let assignmentPage = 1
-    let totalPages = 1
-    do {
-      const result = await iamAPI.tenantRoleAssignments.list({
-        membership_id: membershipId,
-        effective_state: 'effective',
-        page: assignmentPage,
-        page_size: 100
-      })
-      collected.push(...(result.data || []))
-      totalPages = result.total_pages || 1
-      assignmentPage += 1
-    } while (assignmentPage <= totalPages)
+    const collected = await iamAPI.tenantRoleAssignments.listAll({
+      membership_id: membershipId,
+      effective_state: 'effective'
+    })
     if (request === assignmentRequest) memberAssignments.value = collected
   } catch (error) {
     if (request === assignmentRequest) ElMessage.error(error.response?.data?.error || t('system.iam.common.loadFailed'))
@@ -413,6 +404,7 @@ async function submit() {
   }
   try {
     const assignments = await createAssignmentsWithStepUp(payload)
+    emit('assignments-changed', payload.membership_id)
     await refreshCurrentMemberAuthorization(form.membershipId)
     ElMessage.success(t('system.iam.roleAssignments.assignedCount', { count: assignments.length }))
     dialogVisible.value = false
@@ -440,6 +432,7 @@ async function revoke(row) {
       confirmButtonText: t('system.iam.common.confirm'), cancelButtonText: t('system.iam.common.cancel'), type: 'warning'
     })
     await iamAPI.tenantRoleAssignments.revoke(row.id, value.trim())
+    emit('assignments-changed', row.membership_id)
     await refreshCurrentMemberAuthorization(row.membership_id)
     ElMessage.success(t('system.iam.common.updated'))
     await load()

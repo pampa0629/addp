@@ -1,31 +1,32 @@
 <template>
   <div class="module-instances">
     <div class="query-toolbar">
-      <el-select v-model="moduleName" :placeholder="t('system.module.query.module')" clearable filterable class="query-control">
+      <el-select v-model="moduleName" :placeholder="t('system.module.query.module')" clearable filterable class="query-control" @change="search">
         <el-option v-for="module in modules" :key="module.module_name"
           :label="resolveIAMModuleName(module.module_name, t, te)" :value="module.module_name" />
       </el-select>
-      <el-input v-model.trim="registeredHost" :placeholder="t('system.module.query.host')" clearable class="query-control" />
-      <el-select v-model="role" :placeholder="t('system.module.query.role')" clearable class="query-control">
+      <el-input v-model.trim="registeredHost" :placeholder="t('system.module.query.host')" clearable class="query-control"
+        @input="scheduleSearch" @clear="search" @keyup.enter="search" />
+      <el-input v-model.trim="nodeName" :placeholder="t('system.module.query.node')" clearable class="query-control"
+        @input="scheduleSearch" @clear="search" @keyup.enter="search" />
+      <el-select v-model="role" :placeholder="t('system.module.query.role')" clearable class="query-control" @change="search">
         <el-option v-for="item in roles" :key="item" :label="roleLabel(item)" :value="item" />
       </el-select>
-      <el-select v-model="status" :placeholder="t('system.module.query.status')" clearable class="query-control">
+      <el-select v-model="status" :aria-label="t('system.module.query.status')" class="query-control" @change="search">
+        <el-option :label="t('system.module.query.allStatuses')" value="" />
         <el-option :label="t('system.module.status.up')" value="up" />
         <el-option :label="t('system.module.status.down')" value="down" />
       </el-select>
-      <el-select v-model="period" :aria-label="t('system.module.query.registeredPeriod')" class="query-control">
+      <el-select v-model="period" :aria-label="t('system.module.query.registeredPeriod')" class="query-control" @change="search">
         <el-option :label="t('system.module.query.allTime')" value="all" />
         <el-option v-for="item in periods" :key="item.value" :label="t(item.label)" :value="item.value" />
         <el-option :label="t('system.module.query.custom')" value="custom" />
       </el-select>
       <el-date-picker v-if="period === 'custom'" v-model="customRange" type="datetimerange"
         :start-placeholder="t('system.module.query.from')" :end-placeholder="t('system.module.query.to')"
-        class="query-range" />
-      <el-button type="primary" :disabled="period === 'custom' && !validCustomRange" @click="search">
-        {{ t('system.module.query.search') }}
-      </el-button>
+        class="query-range" @change="search" />
       <el-button @click="reset">{{ t('system.module.query.reset') }}</el-button>
-      <el-button :icon="Refresh" :loading="loading" @click="load">{{ t('system.module.refresh') }}</el-button>
+      <el-button :icon="Refresh" :loading="loading" :disabled="period === 'custom' && !validCustomRange" @click="refresh">{{ t('system.module.refresh') }}</el-button>
     </div>
     <p class="query-hint">{{ t('system.module.query.timeHint') }}</p>
     <el-alert v-if="error" type="error" :title="error" show-icon :closable="false" class="query-error" />
@@ -39,6 +40,8 @@
               <el-descriptions-item :label="t('system.module.instances.leaseExpiresAt')">{{ formatDate(row.lease_expires_at) }}</el-descriptions-item>
               <el-descriptions-item :label="t('system.module.instances.offlineDeterminedAt')">{{ formatDate(row.stopped_at) }}</el-descriptions-item>
               <el-descriptions-item :label="t('system.module.instances.stopReason')">{{ stopReasonLabel(row) }}</el-descriptions-item>
+              <el-descriptions-item :label="t('system.module.instances.hostNodeName')">{{ row.host_node_name || t('system.module.instances.nodeUnknown') }}</el-descriptions-item>
+              <el-descriptions-item :label="t('system.module.instances.runtimeHostname')">{{ row.runtime_hostname || t('system.module.instances.nodeUnknown') }}</el-descriptions-item>
               <el-descriptions-item :label="t('system.module.instances.url')">{{ row.module_url || '—' }}</el-descriptions-item>
               <el-descriptions-item :label="t('system.module.instances.healthCheckUrl')">{{ row.health_check_url || '—' }}</el-descriptions-item>
             </el-descriptions>
@@ -57,6 +60,9 @@
       <el-table-column prop="instance_id" :label="t('system.module.instances.id')" min-width="185" show-overflow-tooltip />
       <el-table-column :label="t('system.module.instances.role')" width="112">
         <template #default="{ row }">{{ roleLabel(row.role) }}</template>
+      </el-table-column>
+      <el-table-column :label="t('system.module.instances.node')" min-width="220">
+        <template #default="{ row }"><ModuleInstanceNode :instance="row" /></template>
       </el-table-column>
       <el-table-column :label="t('system.module.instances.endpoint')" min-width="180" show-overflow-tooltip>
         <template #default="{ row }">{{ getRegisteredEndpoint(row) || t('system.module.instances.noEndpoint') }}</template>
@@ -80,7 +86,7 @@
       <el-table-column :label="t('system.module.instances.stopReason')" width="170">
         <template #default="{ row }">{{ stopReasonLabel(row) }}</template>
       </el-table-column>
-      <template #empty><el-empty :description="t('system.module.query.empty')" :image-size="72" /></template>
+      <template #empty><el-empty :description="t(period === 'custom' && !validCustomRange ? 'system.module.query.completeRange' : 'system.module.query.empty')" :image-size="72" /></template>
     </el-table>
     <el-pagination v-model:current-page="page" v-model:page-size="pageSize" :page-sizes="[10, 20, 50, 100]"
       :total="total" layout="total, sizes, prev, pager, next" class="query-pagination"
@@ -92,6 +98,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Refresh } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
+import ModuleInstanceNode from './ModuleInstanceNode.vue'
 import { modulesAPI } from '../api/modules'
 import { resolveIAMModuleName } from '../utils/iamPresentation'
 import { isRuntimeInstanceOnline } from '../utils/moduleRegistry'
@@ -115,8 +122,10 @@ const periods = [
 ]
 const moduleName = ref(props.initialModuleName)
 const registeredHost = ref('')
+const nodeName = ref('')
 const role = ref('')
-const status = ref('')
+const defaultStatus = 'up'
+const status = ref(defaultStatus)
 const period = ref('all')
 const customRange = ref(null)
 const validCustomRange = computed(() => Array.isArray(customRange.value) && customRange.value.length === 2 &&
@@ -129,6 +138,7 @@ const pageSize = ref(10)
 const loading = ref(false)
 const error = ref('')
 let generation = 0
+let searchTimer = null
 
 function roleLabel(value) {
   return t(`system.module.roles.${value}`)
@@ -151,6 +161,7 @@ function currentParams() {
     page: page.value, page_size: pageSize.value,
     ...(applied.value.moduleName ? { module_name: applied.value.moduleName } : {}),
     ...(applied.value.registeredHost ? { registered_host: applied.value.registeredHost } : {}),
+    ...(applied.value.nodeName ? { node_name: applied.value.nodeName } : {}),
     ...(applied.value.role ? { role: applied.value.role } : {}),
     ...(applied.value.status ? { status: applied.value.status } : {})
   }
@@ -169,6 +180,7 @@ function currentParams() {
 }
 
 async function load() {
+  if (period.value === 'custom' && !validCustomRange.value) return
   const requestGeneration = ++generation
   loading.value = true
   error.value = ''
@@ -186,9 +198,18 @@ async function load() {
 }
 
 function search() {
-  if (period.value === 'custom' && !validCustomRange.value) return
+  clearTimeout(searchTimer)
+  searchTimer = null
+  if (period.value === 'custom' && !validCustomRange.value) {
+    generation += 1
+    loading.value = false
+    error.value = ''
+    rows.value = []
+    total.value = 0
+    return
+  }
   applied.value = {
-    moduleName: moduleName.value, registeredHost: registeredHost.value.trim(), role: role.value, status: status.value,
+    moduleName: moduleName.value, registeredHost: registeredHost.value.trim(), nodeName: nodeName.value.trim(), role: role.value, status: status.value,
     period: period.value,
     ...(period.value === 'custom' ? {
       from: new Date(customRange.value[0]).toISOString(), to: new Date(customRange.value[1]).toISOString()
@@ -198,16 +219,28 @@ function search() {
   load()
 }
 
+function scheduleSearch() {
+  clearTimeout(searchTimer)
+  generation += 1
+  loading.value = false
+  searchTimer = setTimeout(search, 300)
+}
+
+function refresh() {
+  if (searchTimer !== null) search()
+  else load()
+}
+
 function reset() {
   moduleName.value = ''
   registeredHost.value = ''
+  nodeName.value = ''
   role.value = ''
-  status.value = ''
+  status.value = defaultStatus
   period.value = 'all'
   customRange.value = null
-  const hadInitialModule = !!props.initialModuleName
   emit('clear-selection')
-  if (!hadInitialModule) search()
+  search()
 }
 
 function changePageSize() {
@@ -216,11 +249,12 @@ function changePageSize() {
 }
 
 watch(() => props.initialModuleName, value => {
+  if (moduleName.value === value) return
   moduleName.value = value
   search()
 })
 onMounted(search)
-onUnmounted(() => { generation += 1 })
+onUnmounted(() => { clearTimeout(searchTimer); generation += 1 })
 </script>
 
 <style scoped>

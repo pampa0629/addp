@@ -101,6 +101,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "latest_revision 是最高修订号的完整历史展示投影，current_revision 只表示指定时点生效的已发布修订。 | latest_revision contains the complete highest-numbered revision for historical display; current_revision contains only the published revision effective at the requested time.",
                 "produces": [
                     "application/json"
                 ],
@@ -222,6 +223,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "latest_revision 是最高修订号的完整历史展示投影，current_revision 只表示指定时点生效的已发布修订。 | latest_revision contains the complete highest-numbered revision for historical display; current_revision contains only the published revision effective at the requested time.",
                 "produces": [
                     "application/json"
                 ],
@@ -915,6 +917,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "latest_revision 是最高修订号的完整历史展示投影，current_revision 只表示指定时点生效的已发布修订。 | latest_revision contains the complete highest-numbered revision for historical display; current_revision contains only the published revision effective at the requested time.",
                 "produces": [
                     "application/json"
                 ],
@@ -1063,6 +1066,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "latest_revision 是最高修订号的完整历史展示投影，current_revision 只表示指定时点生效的已发布修订。 | latest_revision contains the complete highest-numbered revision for historical display; current_revision contains only the published revision effective at the requested time.",
                 "produces": [
                     "application/json"
                 ],
@@ -2541,6 +2545,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "latest_revision 是最高修订号的完整历史展示投影，current_revision 只表示指定时点生效的已发布修订。 | latest_revision contains the complete highest-numbered revision for historical display; current_revision contains only the published revision effective at the requested time.",
                 "produces": [
                     "application/json"
                 ],
@@ -2677,6 +2682,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "latest_revision 是最高修订号的完整历史展示投影，current_revision 只表示指定时点生效的已发布修订。 | latest_revision contains the complete highest-numbered revision for historical display; current_revision contains only the published revision effective at the requested time.",
                 "produces": [
                     "application/json"
                 ],
@@ -3439,6 +3445,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "同时返回工作修订、当前生效修订与最新历史修订；管理展示按此顺序选择，撤回历史仍保留名称与定义。 | Returns working, currently effective, and latest historical revisions. Management views use that order and retain withdrawn names and definitions.",
                 "produces": [
                     "application/json"
                 ],
@@ -3575,6 +3582,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "latest_revision 是最高修订号的历史展示投影，current_revision 只表示指定时点生效的已发布修订。 | latest_revision is the highest-numbered revision for historical display; current_revision only represents a published revision effective at the requested time.",
                 "produces": [
                     "application/json"
                 ],
@@ -4761,6 +4769,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "latest_revision 是最高修订号的完整历史展示投影，current_revision 只表示指定时点生效的已发布修订。 | latest_revision contains the complete highest-numbered revision for historical display; current_revision contains only the published revision effective at the requested time.",
                 "produces": [
                     "application/json"
                 ],
@@ -4908,6 +4917,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "latest_revision 是最高修订号的完整历史展示投影，current_revision 只表示指定时点生效的已发布修订。 | latest_revision contains the complete highest-numbered revision for historical display; current_revision contains only the published revision effective at the requested time.",
                 "produces": [
                     "application/json"
                 ],
@@ -6470,6 +6480,14 @@ const docTemplate = `{
                 "id": {
                     "type": "integer"
                 },
+                "latest_revision": {
+                    "description": "最高修订号，不表示当前生效 | Highest revision number, not necessarily effective",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.CodeSetRevision"
+                        }
+                    ]
+                },
                 "lifecycle_state": {
                     "type": "string"
                 },
@@ -7226,6 +7244,14 @@ const docTemplate = `{
                 },
                 "id": {
                     "type": "integer"
+                },
+                "latest_revision": {
+                    "description": "最高修订号，不表示当前生效 | Highest revision number, not necessarily effective",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.DocumentRevision"
+                        }
+                    ]
                 },
                 "lifecycle_state": {
                     "type": "string"
@@ -8091,6 +8117,14 @@ const docTemplate = `{
                 "id": {
                     "type": "integer"
                 },
+                "latest_revision": {
+                    "description": "最高修订号，不表示当前生效 | Highest revision number, not necessarily effective",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.ElementRevision"
+                        }
+                    ]
+                },
                 "lifecycle_state": {
                     "type": "string"
                 },
@@ -8273,6 +8307,14 @@ const docTemplate = `{
                 },
                 "id": {
                     "type": "integer"
+                },
+                "latest_revision": {
+                    "description": "最高修订号，不表示当前生效 | Highest revision number, not necessarily effective",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.GlossaryRevision"
+                        }
+                    ]
                 },
                 "lifecycle_state": {
                     "type": "string"
@@ -8544,6 +8586,14 @@ const docTemplate = `{
                 },
                 "id": {
                     "type": "integer"
+                },
+                "latest_revision": {
+                    "description": "最高修订号，不表示当前生效 | Highest revision number, not necessarily effective",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.MetricDefinitionRevision"
+                        }
+                    ]
                 },
                 "lifecycle_state": {
                     "type": "string"

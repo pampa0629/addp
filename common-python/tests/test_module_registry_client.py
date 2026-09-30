@@ -2,6 +2,7 @@ import asyncio
 import json
 import unittest
 import uuid
+from unittest.mock import patch
 from datetime import datetime
 
 import httpx
@@ -18,6 +19,16 @@ from addp_common.client import (
 
 
 class ModuleRegistryClientTests(unittest.IsolatedAsyncioTestCase):
+    def test_registration_collects_runtime_and_deployment_nodes(self):
+        with patch.dict("os.environ", {"ADDP_HOST_NODE_NAME": " host-a "}), patch("socket.gethostname", return_value="container-a"):
+            registration = ModuleRegistration(module_name="agent", module_url="http://agent", route_prefix="/agent")
+        self.assertEqual(registration.host_node_name, "host-a")
+        self.assertEqual(registration.runtime_hostname, "container-a")
+        with patch.dict("os.environ", {"ADDP_HOST_NODE_NAME": ""}), patch("socket.gethostname", side_effect=OSError("unavailable")):
+            unknown = ModuleRegistration(module_name="agent", module_url="http://agent", route_prefix="/agent")
+        self.assertEqual(unknown.host_node_name, "")
+        self.assertEqual(unknown.runtime_hostname, "")
+
     def test_retry_classification_is_an_explicit_allowlist(self):
         request = httpx.Request("POST", "http://system/api/v1/system/runtime/modules")
         responses = {
@@ -95,6 +106,8 @@ class ModuleRegistryClientTests(unittest.IsolatedAsyncioTestCase):
                 registered_instance_id = payload["instance_id"]
                 uuid.UUID(registered_instance_id)
                 self.assertEqual(payload["role"], "backend")
+                self.assertEqual(payload["runtime_hostname"], registration.runtime_hostname)
+                self.assertEqual(payload["host_node_name"], registration.host_node_name)
                 self.assertEqual(payload["process_started_at"], registration.process_started_at)
                 datetime.fromisoformat(payload["process_started_at"])
                 self.assertEqual(

@@ -95,6 +95,10 @@ func (r *DocumentRepository) GetAggregateAt(id, tenantID int64, asOf time.Time) 
 		return nil, err
 	}
 	result := &models.DocumentAggregate{Document: *document}
+	result.LatestRevision, err = latestRevision[models.DocumentRevision](r.db, "document_id", document.ID)
+	if err != nil {
+		return nil, err
+	}
 	if revision, loadErr := r.getEffectiveRevision(r.db, document.ID, asOf); loadErr == nil {
 		result.CurrentRevision = revision
 	} else if !errors.Is(loadErr, gorm.ErrRecordNotFound) {

@@ -125,6 +125,7 @@
 </template>
 
 <script setup>
+import { getStandardDisplayRevision as displayRevision } from '../utils/standardRevision'
 import { computed, ref, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Document, Paperclip } from '@element-plus/icons-vue'
@@ -200,7 +201,6 @@ const docTypeLabel = (type) => ({
   reference: t('standard.document.reference')
 }[type] || type)
 const docTypeTagType = getDocumentTypeTagType
-const displayRevision = doc => doc?.draft_revision || doc?.current_revision
 
 const loadDocs = async () => {
   if (!props.entityId) return

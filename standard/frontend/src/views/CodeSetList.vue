@@ -23,6 +23,7 @@
 </template>
 
 <script setup>
+import { getStandardDisplayRevision as working } from '../utils/standardRevision'
 import { BusinessDomainSelect, buildBusinessDomainOptions } from '@common-ui'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -45,7 +46,6 @@ const filters=reactive({keyword:String(route.query.keyword||''),scope_type:Strin
 const blank=()=>({code:'',name:'',scope_type:'tenant_common',owner_domain_id:null,value_type:'string',description:''})
 const form=reactive(blank())
 const rules=computed(()=>({code:buildStandardCodeRules(t,'standard.codeSet.codeRequired'),name:[{required:true,message:t('standard.codeSet.nameRequired')}],scope_type:[{required:true,message:t('standard.common.selectScope')}],owner_domain_id:requiresOwnerDomain(form.scope_type)?[{required:true,message:t('standard.common.ownerDomainRequired')}]:[],value_type:[{required:true,message:t('standard.codeSet.valueTypeRequired')}],description:[{required:true,message:t('standard.codeSet.descriptionRequired')}]}))
-const working=row=>row.draft_revision||row.current_revision
 const domainName=id=>domains.value.find(x=>x.id===id)?.name||'-'
 const statusLabel=s=>s?t(`standard.revision.status.${s}`):'-'
 const statusType=s=>({draft:'info',in_review:'warning',published:'success',withdrawn:'danger'}[s]||'info')

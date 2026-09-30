@@ -626,3 +626,7 @@ System 不提供公开 `/register`。平台 IAM 管理使用 `/platform/*`，Ten
 | `copilot.configuration` | Copilot | `inference_bindings`、`matching_policy` | 匹配阈值、候选数量上限 | 推理场景绑定、匹配阈值、候选数量上限 |
 
 模块数据库保存配置事实并使用版本号进行并发更新；密钥类字段必须使用专用加密凭据，不通过普通键值配置返回。
+
+### 模块运行节点标识
+
+`ADDP_HOST_NODE_NAME` 是可选的部署参数，用于向 System 登记进程所在宿主节点。多节点部署必须由编排为每个进程注入实际所属节点名；单节点 Compose 从根环境配置传入。容器内的自动 `runtime_hostname` 仅表示运行环境，不能替代宿主节点名。本地开发未配置时，仍能通过自动采集的运行环境主机名定位本机；宿主节点字段保持空值。该参数不影响服务端点、路由、Ready 或健康租约。

@@ -107,6 +107,7 @@ func (h *MetricHandler) DeleteCategory(c *gin.Context) {
 }
 
 // @Summary 获取指标定义列表 | List metric definitions
+// @Description latest_revision 是最高修订号的完整历史展示投影，current_revision 只表示指定时点生效的已发布修订。 | latest_revision contains the complete highest-numbered revision for historical display; current_revision contains only the published revision effective at the requested time.
 // @Tags Standard
 // @Produce json
 // @Param category_id query int false "分类 ID | Category ID"
@@ -202,6 +203,7 @@ func (h *MetricHandler) CreateMetric(c *gin.Context) {
 }
 
 // @Summary 获取指标定义聚合 | Get metric definition aggregate
+// @Description latest_revision 是最高修订号的完整历史展示投影，current_revision 只表示指定时点生效的已发布修订。 | latest_revision contains the complete highest-numbered revision for historical display; current_revision contains only the published revision effective at the requested time.
 // @Tags Standard
 // @Produce json
 // @Param as_of query string false "生效时点 | Effective point in time"

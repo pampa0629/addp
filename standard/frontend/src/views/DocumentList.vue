@@ -48,6 +48,7 @@
 </template>
 
 <script setup>
+import { getStandardDisplayRevision as displayRevision } from '../utils/standardRevision'
 import { BusinessDomainSelect, buildBusinessDomainOptions } from '@common-ui'
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { Plus, Search } from '@element-plus/icons-vue'
@@ -83,7 +84,6 @@ const rules = computed(() => ({
   doc_type: [{ required: true, message: t('standard.document.typeRequired'), trigger: 'change' }],
   owner_domain_id: [{ required: form.value.scope_type === 'domain', message: t('standard.common.selectDomain'), trigger: 'change' }]
 }))
-const displayRevision = row => row.draft_revision || row.current_revision
 const docTypeLabel = type => t(`standard.document.${type}`)
 const docTypeTagType = getDocumentTypeTagType
 const statusLabel = status => status ? t(`standard.revision.status.${status}`) : '-'

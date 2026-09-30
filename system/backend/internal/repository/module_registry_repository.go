@@ -146,7 +146,8 @@ func (r *ModuleRegistryRepository) Register(req *models.ModuleRegistrationReques
 			ModuleDefinitionID: definition.ID, InstanceID: req.InstanceID, Role: req.Role,
 			ModuleURL: req.ModuleURL, HealthCheckURL: req.HealthCheckURL,
 			RegisteredHost: registeredHost(req.ModuleURL, req.HealthCheckURL),
-			Status:         models.ModuleRuntimeStatusUp, LastHeartbeat: now, LeaseExpiresAt: now.Add(leaseDuration),
+			HostNodeName:   req.HostNodeName, RuntimeHostname: req.RuntimeHostname,
+			Status: models.ModuleRuntimeStatusUp, LastHeartbeat: now, LeaseExpiresAt: now.Add(leaseDuration),
 			ProcessStartedAt: &req.ProcessStartedAt,
 			Metadata:         metadata, RegisteredAt: now,
 		}
@@ -155,7 +156,8 @@ func (r *ModuleRegistryRepository) Register(req *models.ModuleRegistrationReques
 			DoUpdates: clause.Assignments(map[string]interface{}{
 				"role": req.Role, "module_url": req.ModuleURL, "health_check_url": req.HealthCheckURL,
 				"registered_host": instance.RegisteredHost,
-				"status":          models.ModuleRuntimeStatusUp, "last_heartbeat": now,
+				"host_node_name":  req.HostNodeName, "runtime_hostname": req.RuntimeHostname,
+				"status": models.ModuleRuntimeStatusUp, "last_heartbeat": now,
 				"lease_expires_at": now.Add(leaseDuration), "metadata": metadata, "updated_at": now,
 				"process_started_at": req.ProcessStartedAt, "stopped_at": nil, "stop_reason": "",
 			}),
@@ -313,6 +315,9 @@ func (r *ModuleRegistryRepository) ListModuleRuntimeInstances(
 	}
 	if filter.RegisteredHost != "" {
 		query = query.Where("module_runtime_instances.registered_host = ?", filter.RegisteredHost)
+	}
+	if filter.NodeName != "" {
+		query = query.Where("LOWER(module_runtime_instances.host_node_name) = ? OR LOWER(module_runtime_instances.runtime_hostname) = ?", filter.NodeName, filter.NodeName)
 	}
 	if filter.Role != "" {
 		query = query.Where("module_runtime_instances.role = ?", filter.Role)

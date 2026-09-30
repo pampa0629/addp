@@ -45,6 +45,15 @@ func (r *CodeSetRepository) GetAggregateAt(id, tenantID int64, asOf time.Time) (
 		return nil, err
 	}
 	result := &models.CodeSetAggregate{CodeSet: *identity}
+	result.LatestRevision, err = latestRevision[models.CodeSetRevision](r.db, "code_set_id", identity.ID)
+	if err != nil {
+		return nil, err
+	}
+	if result.LatestRevision != nil {
+		if err := r.loadItems(r.db, result.LatestRevision); err != nil {
+			return nil, err
+		}
+	}
 	if revision, loadErr := r.getEffectiveRevision(r.db, identity.ID, asOf); loadErr == nil {
 		result.CurrentRevision = revision
 	} else if !errors.Is(loadErr, gorm.ErrRecordNotFound) {

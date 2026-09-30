@@ -14,6 +14,18 @@ import { iamAPI } from './iam'
 describe('IAM management API contract', () => {
   beforeEach(() => vi.clearAllMocks())
 
+  it('collects all assignment pages with member and validity filters without returning partial failures', async () => {
+    const filters = { membership_id: '9', principal_type: 'user', effective_state: 'effective' }
+    client.get.mockResolvedValueOnce({ data: [{ id: '1' }], total_pages: 2 })
+      .mockResolvedValueOnce({ data: [{ id: '2' }], total_pages: 2 })
+    await expect(iamAPI.tenantRoleAssignments.listAll(filters)).resolves.toEqual([{ id: '1' }, { id: '2' }])
+    for (const page of [1, 2]) expect(client.get).toHaveBeenNthCalledWith(page, '/system/tenant/role_assignments', {
+      params: { ...filters, page, page_size: 100 }
+    })
+    client.get.mockResolvedValueOnce({ data: [{ id: '1' }], total_pages: 2 }).mockRejectedValueOnce(new Error('page failed'))
+    await expect(iamAPI.tenantRoleAssignments.listAll(filters)).rejects.toThrow('page failed')
+  })
+
   it('collects every tenant membership page for member selectors', async () => {
     client.get
       .mockResolvedValueOnce({ data: [{ id: '1' }], total_pages: 2 })

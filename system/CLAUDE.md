@@ -65,6 +65,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 make test-system-frontend
 ```
 
+System 前端 HMR 复用实际 HTTP 监听端口。浏览器测试以 `test` mode 通过 CLI 使用独立端口 `4173`，不得另外绑定开发端口 `5173`；`test` mode 的 Vite 依赖缓存按进程隔离到操作系统临时目录，不覆盖开发服务的缓存。
+
 ## 项目结构
 
 ### 后端架构（Go）
@@ -253,7 +255,7 @@ frontend/src/
 **system.module_definitions / system.module_runtime_instances 表**:
 - `module_definitions` 按稳定 `module_name` 保存持久定义和管理员 `enabled` 状态，进程离线不删除定义
 - `module_definitions.version` 是聚合根乐观并发版本；心跳不得递增它，幂等重复注册保持版本不变，只有 owner 模块级声明实际变化时才原子递增且不得覆盖管理员 `enabled`
-- `module_runtime_instances` 按 `(module_definition_id, instance_id)` 保存进程角色、端点、元数据、心跳和租约
+- `module_runtime_instances` 按 `(module_definition_id, instance_id)` 保存进程角色、端点、运行环境主机名 `runtime_hostname`、部署注入的宿主节点名 `host_node_name`、元数据、心跳和租约
 - 心跳只续租实例；只有 `enabled + backend + up + lease valid` 的实例可供 Gateway 路由
 - `configuration_management` 只保存版本化配置管理入口声明（owner、scope、前端路由和读写 Permission），不保存模块配置键、配置值或 Secret
 

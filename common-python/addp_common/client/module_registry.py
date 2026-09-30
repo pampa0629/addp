@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import socket
 import threading
 from datetime import datetime, timezone
 from typing import Literal
@@ -55,6 +56,13 @@ class ConfigurationManagementDeclaration(_ContractModel):
     entries: list[ConfigurationManagementEntry] = Field(min_length=1)
 
 
+def _runtime_hostname() -> str:
+    try:
+        return socket.gethostname().strip()
+    except OSError:
+        return ""
+
+
 class ModuleRegistration(_ContractModel):
     module_name: str
     instance_id: str = Field(default_factory=_process_instance_id, min_length=1, max_length=100)
@@ -62,6 +70,8 @@ class ModuleRegistration(_ContractModel):
     module_url: str
     route_prefix: str
     health_check_url: str = ""
+    host_node_name: str = Field(default_factory=lambda: os.environ.get("ADDP_HOST_NODE_NAME", "").strip(), max_length=255)
+    runtime_hostname: str = Field(default_factory=_runtime_hostname, max_length=255)
     process_started_at: str = Field(default=PROCESS_STARTED_AT)
     metadata: dict[str, object] = Field(default_factory=dict)
     configuration_management: ConfigurationManagementDeclaration | None = None

@@ -136,3 +136,72 @@ func TestRuntimeObservationDistinguishesGracefulFromLeaseExpiry(t *testing.T) {
 }
 
 func boolPointer(value bool) *bool { return &value }
+
+func TestRuntimeNodesLocateWorkersWithoutChangingRoutingFacts(t *testing.T) {
+	registry, repo, _ := newObservationRegistry(t)
+	request := &models.ModuleRegistrationRequest{ModuleName: "meta", InstanceID: "worker-a", Role: models.ModuleRuntimeRoleWorker,
+		RoutePrefix: "/meta", ProcessStartedAt: time.Now(), HostNodeName: " host-a ", RuntimeHostname: " container-a "}
+	if err := registry.Register(request); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := registry.GetModule("meta")
+	revision, err := repo.GetRegistryRevision()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"HOST-A", "container-a"} {
+		rows, total, err := registry.ListModuleRuntimeInstances(models.ModuleRuntimeInstanceFilter{NodeName: name, Role: "worker", Page: 1, PageSize: 10})
+		if err != nil || total != 1 || len(rows) != 1 || rows[0].HostNodeName != "host-a" || rows[0].RuntimeHostname != "container-a" || rows[0].RegisteredHost != "" {
+			t.Fatalf("node query %q: rows=%#v total=%d err=%v", name, rows, total, err)
+		}
+	}
+	_, total, err := registry.ListModuleRuntimeInstances(models.ModuleRuntimeInstanceFilter{NodeName: "host-a", ModuleName: "manager", Page: 1, PageSize: 10})
+	if err != nil || total != 0 {
+		t.Fatalf("node filter escaped module condition: total=%d err=%v", total, err)
+	}
+	request.HostNodeName = "host-b"
+	request.RuntimeHostname = "container-b"
+	if err := registry.Register(request); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := registry.GetModule("meta")
+	afterRevision, err := repo.GetRegistryRevision()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Version != before.Version || afterRevision != revision || after.Instances[0].RuntimeHostname != "container-b" {
+		t.Fatalf("node-only change altered routing/version: before=%#v after=%#v revisions=%d/%d", before, after, revision, afterRevision)
+	}
+	request.HostNodeName = ""
+	request.RuntimeHostname = ""
+	if err := registry.Register(request); err != nil {
+		t.Fatal(err)
+	}
+	after, _ = registry.GetModule("meta")
+	if after.Instances[0].HostNodeName != "" || after.Instances[0].RuntimeHostname != "" {
+		t.Fatal("unknown node kept stale identity")
+	}
+
+	backend := &models.ModuleRegistrationRequest{ModuleName: "meta", InstanceID: "backend-a", Role: models.ModuleRuntimeRoleBackend,
+		RoutePrefix: "/meta", ModuleURL: "http://meta.local:8082", ProcessStartedAt: time.Now(), HostNodeName: "host-a"}
+	if err := registry.Register(backend); err != nil {
+		t.Fatal(err)
+	}
+	before, _ = registry.GetModule("meta")
+	revision, err = repo.GetRegistryRevision()
+	if err != nil {
+		t.Fatal(err)
+	}
+	backend.HostNodeName = "host-b"
+	if err := registry.Register(backend); err != nil {
+		t.Fatal(err)
+	}
+	after, _ = registry.GetModule("meta")
+	afterRevision, err = repo.GetRegistryRevision()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Version != before.Version || afterRevision != revision {
+		t.Fatal("backend node change altered module version or routing revision")
+	}
+}

@@ -3300,6 +3300,12 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
+                        "description": "宿主节点名或运行环境主机名，不区分大小写的精确匹配 | Host node name or runtime hostname, case-insensitive exact match",
+                        "name": "node_name",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
                         "description": "登记端点主机名或 IP，精确匹配 | Registered endpoint hostname or IP, exact match",
                         "name": "registered_host",
                         "in": "query"
@@ -11568,6 +11574,9 @@ const docTemplate = `{
                 "health_check_url": {
                     "type": "string"
                 },
+                "host_node_name": {
+                    "type": "string"
+                },
                 "instance_id": {
                     "type": "string"
                 },
@@ -11588,6 +11597,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "route_prefix": {
+                    "type": "string"
+                },
+                "runtime_hostname": {
                     "type": "string"
                 },
                 "task_provider": {
@@ -11618,6 +11630,9 @@ const docTemplate = `{
                 "health_check_url": {
                     "type": "string"
                 },
+                "host_node_name": {
+                    "type": "string"
+                },
                 "id": {
                     "type": "integer"
                 },
@@ -11649,6 +11664,9 @@ const docTemplate = `{
                 "role": {
                     "type": "string"
                 },
+                "runtime_hostname": {
+                    "type": "string"
+                },
                 "status": {
                     "type": "string"
                 },
@@ -11667,6 +11685,9 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "health_check_url": {
+                    "type": "string"
+                },
+                "host_node_name": {
                     "type": "string"
                 },
                 "id": {
@@ -11701,6 +11722,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "role": {
+                    "type": "string"
+                },
+                "runtime_hostname": {
                     "type": "string"
                 },
                 "status": {

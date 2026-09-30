@@ -1276,15 +1276,70 @@ for (const [name, path, options] of [
   })
 }
 
-test('hides glossary delete after any publication history exists', async ({ page }) => {
+test('explains why glossary delete is disabled after publication history exists', async ({ page }) => {
   const backend = await installMockBackend(page, { glossaryPublicationHistory: true })
   await page.goto('/glossaries')
 
   const row = page.getByRole('row').filter({ hasText: 'leader' })
   await expect(row.getByRole('button', { name: '详情' })).toBeVisible()
-  await expect(row.getByRole('button', { name: '删除' })).toHaveCount(0)
+  await expect(row.getByRole('button', { name: '删除' })).toBeDisabled()
   expect(backend.getDeleteRequests()).toEqual([])
 })
+
+for (const language of ['zh-cn', 'en']) {
+  for (const [kind, path, code, name] of [
+    ['element', '/elements', 'person_id', '人员标识'],
+    ['code set', '/code-sets', 'gender', '性别'],
+    ['metric', '/metrics', 'person_count', '人数'],
+    ['document', '/documents', 'outdoor_data_standard', '户外数据标准']
+  ]) {
+    test(`withdrawn ${kind} retains list and default detail content in ${language}`, async ({ page }) => {
+      await installMockBackend(page, {
+        language, historicalOnly: true,
+        elements: [{ id: 41, code: 'person_id', name: '人员标识', data_type: 'string', status: 'published' }],
+        metrics: [{ id: 51, code: 'person_count', name: '人数', type: 'atomic', status: 'published' }],
+        documents: [createDocumentFixture()]
+      })
+      if (language === 'en') await page.setViewportSize({ width: 760, height: 1000 })
+      await page.goto(path)
+      const row = page.getByRole('row').filter({ hasText: code })
+      await expect(row).toContainText(name)
+      await expect(row).toContainText(language === 'en' ? 'Withdrawn' : '已撤回')
+      await row.getByRole('button', { name: language === 'en' ? 'Detail' : '详情', exact: true }).click()
+      await expect(page.getByRole('heading', { name, exact: true })).toBeVisible()
+      await expect(page.getByRole('button', { name: language === 'en' ? 'Submit for Review' : '提交审核', exact: true })).toHaveCount(0)
+      await page.reload()
+      await expect(page.getByRole('heading', { name, exact: true })).toBeVisible()
+    })
+  }
+}
+
+for (const language of ['zh-cn', 'en']) {
+  test(`withdrawn glossary keeps its content and explains deletion restrictions in ${language}`, async ({ page }) => {
+    await installMockBackend(page, { glossaryWithdrawn: true, language })
+    if (language === 'en') await page.setViewportSize({ width: 760, height: 1000 })
+    await page.goto('/glossaries')
+    const en = language === 'en'
+    const rule = en
+      ? 'Only terms that have never been published can be deleted. Published terms retain their revision history, including after withdrawal.'
+      : '只有从未发布过的术语可以删除。发布过的术语需保留修订历史，撤回后仍不能删除。'
+    const reason = en
+      ? 'This term has been published. Its revision history must be retained, including after withdrawal.'
+      : '该术语已发布过，需保留修订历史，撤回后仍不能删除。'
+    await expect(page.getByText(rule, { exact: true })).toBeVisible()
+    const row = page.getByRole('row').filter({ hasText: 'leader' })
+    await expect(row).toContainText('领队')
+    await expect(row).toContainText('发起并组织户外活动的人')
+    await expect(row).toContainText(en ? 'Withdrawn' : '已撤回')
+    const deleteButton = row.getByRole('button', { name: en ? 'Delete' : '删除', exact: true })
+    await expect(deleteButton).toBeDisabled()
+    await deleteButton.locator('..').hover()
+    await expect(page.getByRole('tooltip')).toHaveText(reason)
+    await row.getByRole('button', { name: en ? 'Detail' : '详情', exact: true }).click()
+    await expect(page.getByRole('heading', { name: '领队', exact: true })).toBeVisible()
+    await expect(page.getByText(rule, { exact: true })).toBeVisible()
+  })
+}
 
 test('keeps tree actions on one line and canceling delete sends no request', async ({ page }) => {
   const backend = await installMockBackend(page)
@@ -2111,22 +2166,26 @@ async function installMockBackend(page, options = {}) {
   const documents = (options.documents || []).map(item => ({ ...item }))
   const elements = (options.elements || []).map(item => ({ ...item }))
   const glossaryFixtures = structuredClone(glossaries)
+  glossaryFixtures[0].latest_revision = glossaryFixtures[0].draft_revision
   if (options.glossaryEffectiveFromMissing) glossaryFixtures[0].draft_revision.effective_from = null
   let glossaryElementIDs = [...(options.glossaryElementIDs || [])]
   const documentCandidateFamilyResponse = structuredClone(options.documentCandidateFamilies || createCandidateFamilyResponse([]))
-  if (options.glossaryPublicationHistory) {
-    const published = { ...glossaryFixtures[0].draft_revision, status: 'published' }
+  if (options.glossaryPublicationHistory || options.glossaryWithdrawn) {
+    const published = { ...glossaryFixtures[0].draft_revision, status: options.glossaryWithdrawn ? 'withdrawn' : 'published' }
     Object.assign(glossaryFixtures[0], {
       draft_revision_id: null,
       draft_revision: null,
-      current_revision: published,
+      current_revision: options.glossaryWithdrawn ? null : published,
+      latest_revision: published,
       has_publication_history: true
     })
   }
   const glossaryHistory = options.glossaryHistory ? [{ ...glossaryFixtures[0].draft_revision, id: 210, name: '历史领队', status: 'published' }] : []
+  const glossaryRevisions = () => [glossaryFixtures[0].draft_revision, glossaryFixtures[0].current_revision, glossaryFixtures[0].latest_revision, ...glossaryHistory]
+    .filter((item, index, items) => item && items.findIndex(candidate => candidate?.id === item.id) === index)
   if (options.glossaryHistory) glossaryFixtures[0].draft_revision.revision_no = 2
   const metrics = (options.metrics || []).map(item => {
-    if (item.current_revision || item.draft_revision) return structuredClone(item)
+    if (item.current_revision || item.draft_revision || item.latest_revision) return structuredClone(item)
     const revision = {
       id: item.id * 10 + 1,
       metric_definition_id: item.id,
@@ -2220,6 +2279,23 @@ async function installMockBackend(page, options = {}) {
     codeSetAggregate.current_revision = null
     codeSetAggregate.draft_revision = codeSetRevision
     codeSetAggregate.draft_revision_id = codeSetRevision.id
+  }
+  for (const aggregate of [...elementAggregates, ...metrics, ...documents, codeSetAggregate]) {
+    aggregate.latest_revision ||= aggregate.draft_revision || aggregate.current_revision
+    if (options.historicalOnly) {
+      aggregate.latest_revision = { ...aggregate.latest_revision, status: 'withdrawn' }
+      aggregate.draft_revision = aggregate.current_revision = null
+      aggregate.draft_revision_id = null
+      aggregate.has_publication_history = true
+    }
+  }
+  const fixtureRevisions = (aggregate, history = []) => {
+    const revisions = [...history, aggregate?.draft_revision, aggregate?.current_revision, aggregate?.latest_revision]
+      .filter((item, index, items) => item && items.findIndex(candidate => candidate?.id === item.id) === index)
+    // History order is not the default-selection contract.
+    return options.historicalOnly && aggregate?.latest_revision
+      ? [{ ...aggregate.latest_revision, id: aggregate.latest_revision.id - 1, revision_no: 0, name: '旧历史内容' }, ...revisions]
+      : revisions
   }
   const permissions = options.permissions ?? allStandardPermissions
   const authContextPermissionsByToken = options.authContextPermissionsByToken || {}
@@ -2481,12 +2557,12 @@ async function installMockBackend(page, options = {}) {
         aggregate.version += 1
         return fulfillJSON(route, aggregate, 201)
       }
-      return fulfillJSON(route, [glossaryFixtures[0].draft_revision, glossaryFixtures[0].current_revision, ...glossaryHistory].filter(Boolean))
+      return fulfillJSON(route, glossaryRevisions())
     }
     const glossaryRevisionMatch = path.match(/^\/api\/v1\/standard\/glossaries\/21\/revisions\/(\d+)$/)
     if (glossaryRevisionMatch) {
       const aggregate = glossaryFixtures[0]
-      const revision = [aggregate.draft_revision, aggregate.current_revision, ...glossaryHistory].find(item => item?.id === Number(glossaryRevisionMatch[1]))
+      const revision = glossaryRevisions().find(item => item.id === Number(glossaryRevisionMatch[1]))
       if (!revision) return fulfillJSON(route, { error: '修订不存在' }, 404)
       if (revision.id === 210 && options.glossaryRevisionDenied) return fulfillJSON(route, { error: '无权读取修订' }, 403)
       if (request.method() === 'PUT') {
@@ -2536,12 +2612,11 @@ async function installMockBackend(page, options = {}) {
         element.version += 1
         return fulfillJSON(route, element)
       }
-      const revision = element?.draft_revision || element?.current_revision
-      return fulfillJSON(route, [...(options.elementHistory || []), ...(revision ? [revision] : [])])
+      return fulfillJSON(route, fixtureRevisions(element, options.elementHistory))
     }
     if (request.method() === 'GET' && /^\/api\/v1\/standard\/elements\/41\/revisions\/\d+$/.test(path)) {
       const element = elementAggregates.find(item => item.id === 41)
-      const revision = [...(options.elementHistory || []), element?.draft_revision, element?.current_revision].find(item => item?.id === Number(path.split('/').at(-1)))
+      const revision = fixtureRevisions(element, options.elementHistory).find(item => item?.id === Number(path.split('/').at(-1)))
       const detail = revision ? { ...revision, code_set_revision: options.elementCodeSetSnapshots?.[revision.code_set_revision_id] } : null
       return route.fulfill({ status: options.forbidElementRevision ? 403 : revision ? 200 : 404, contentType: 'application/json', body: JSON.stringify(options.forbidElementRevision ? { error: '无权读取此数据元修订' } : detail || { error: '数据元修订不存在' }) })
     }
@@ -2550,7 +2625,7 @@ async function installMockBackend(page, options = {}) {
       return fulfillJSON(route, { data: [codeSetAggregate], total: 1 })
     }
     if (path === '/api/v1/standard/code-sets/31') return fulfillJSON(route, codeSetAggregate)
-    if (path === '/api/v1/standard/code-sets/31/revisions') return fulfillJSON(route, [codeSetRevision])
+    if (path === '/api/v1/standard/code-sets/31/revisions') return fulfillJSON(route, fixtureRevisions(codeSetAggregate))
     if (path === '/api/v1/standard/code-sets/31/documents') return fulfillJSON(route, [])
     if (path === '/api/v1/standard/measurement-categories') return fulfillJSON(route, [])
     if (path === '/api/v1/standard/units') return fulfillJSON(route, [])
@@ -2559,8 +2634,7 @@ async function installMockBackend(page, options = {}) {
     if (path === '/api/v1/standard/metrics/51') return fulfillJSON(route, metrics.find(item => item.id === 51) || {})
     if (path === '/api/v1/standard/metrics/51/revisions') {
       const metric = metrics.find(item => item.id === 51)
-      const revision = metric?.draft_revision || metric?.current_revision
-      return fulfillJSON(route, revision ? [revision] : [])
+      return fulfillJSON(route, fixtureRevisions(metric))
     }
     if (path === '/api/v1/standard/metrics/51/documents') {
       metricDocumentListRequests += 1
@@ -2570,8 +2644,7 @@ async function installMockBackend(page, options = {}) {
     if (path === '/api/v1/standard/documents/71') return fulfillJSON(route, documents.find(item => item.id === 71) || {})
     if (path === '/api/v1/standard/documents/71/revisions') {
       const document = documents.find(item => item.id === 71)
-      const revision = document?.draft_revision || document?.current_revision
-      return fulfillJSON(route, revision ? [revision] : [])
+      return fulfillJSON(route, fixtureRevisions(document))
     }
     if (path === '/api/v1/standard/documents/71/extraction-candidate-families') return fulfillJSON(route, filterCandidateFamilyResponse(documentCandidateFamilyResponse, url))
     if (path === '/api/v1/standard/documents/71/extraction-candidate-family-decisions') {
@@ -2588,8 +2661,7 @@ async function installMockBackend(page, options = {}) {
     if (path === '/api/v1/standard/documents/72') return fulfillJSON(route, documents.find(item => item.id === 72) || {})
     if (path === '/api/v1/standard/documents/72/revisions') {
       const document = documents.find(item => item.id === 72)
-      const revision = document?.draft_revision || document?.current_revision
-      return fulfillJSON(route, revision ? [revision] : [])
+      return fulfillJSON(route, fixtureRevisions(document))
     }
     if (path === '/api/v1/standard/documents/72/extraction-candidate-families') return fulfillJSON(route, filterCandidateFamilyResponse(documentCandidateFamilyResponse, url))
     if (path === '/api/v1/standard/documents/72/mappings') return fulfillJSON(route, { elements: [], glossaries: [], metrics: [] })

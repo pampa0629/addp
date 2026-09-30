@@ -17,7 +17,7 @@ export default defineConfig({
     viewport: { width: 1440, height: 900 }
   },
   webServer: {
-    command: 'npm run dev -- --host 127.0.0.1 --port 4173 --strictPort',
+    command: 'npm run dev -- --mode test --host 127.0.0.1 --port 4173 --strictPort',
     url: 'http://127.0.0.1:4173/login',
     reuseExistingServer: false,
     timeout: 30_000

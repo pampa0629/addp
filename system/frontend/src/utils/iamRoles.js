@@ -124,3 +124,11 @@ export function partitionTenantRoleOptions(roleOptions) {
     assigned: (roleOptions || []).filter((role) => role.assigned)
   }
 }
+
+export function summarizeEffectiveTenantRoles(assignments) {
+  const roles = new Map()
+  for (const assignment of assignments) {
+    if (assignment.effective_state === 'effective') roles.set(assignment.role_id, assignment)
+  }
+  return [...roles.values()].sort((left, right) => left.role_key.localeCompare(right.role_key))
+}

@@ -1,6 +1,8 @@
 package repository
 
 import (
+	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 
@@ -8,6 +10,99 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
+
+func TestStandardAggregateRetainsLatestHistoricalContent(t *testing.T) {
+	for _, kind := range []struct {
+		name, identity, revisions, ownerColumn, extraColumns, extraValues string
+		read                                                              func(*gorm.DB, time.Time) (any, error)
+	}{
+		{"element", "elements", "element_revisions", "element_id", ", definition, data_type, value_domain_kind", ", '定义', 'string', 'unrestricted'", func(db *gorm.DB, at time.Time) (any, error) { return NewElementRepository(db).GetAggregateAt(1, 7, at) }},
+		{"code_set", "code_sets", "code_set_revisions", "code_set_id", ", description, value_type", ", '定义', 'string'", func(db *gorm.DB, at time.Time) (any, error) { return NewCodeSetRepository(db).GetAggregateAt(1, 7, at) }},
+		{"metric", "metric_definitions", "metric_definition_revisions", "metric_definition_id", ", definition, statistical_caliber, metric_type", ", '定义', '口径', 'derived'", func(db *gorm.DB, at time.Time) (any, error) { return NewMetricRepository(db).GetAggregateAt(1, 7, at) }},
+		{"document", "documents", "document_revisions", "document_id", ", description, file_name", ", '定义', 'history.md'", func(db *gorm.DB, at time.Time) (any, error) {
+			return NewDocumentRepository(db).GetAggregateAt(1, 7, at)
+		}},
+	} {
+		for _, state := range []string{"withdrawn", "future", "expired"} {
+			t.Run(kind.name+"/"+state, func(t *testing.T) {
+				db := openTemporalRevisionTestDB(t)
+				identityColumns, identityValues := "", ""
+				if kind.name == "code_set" {
+					identityColumns, identityValues = ", origin", ", 'tenant'"
+				}
+				if err := db.Exec(fmt.Sprintf("INSERT INTO standard.%s (id, tenant_id, code, version, lifecycle_state%s) VALUES (1, 7, 'history', 1, 'active'%s)", kind.identity, identityColumns, identityValues)).Error; err != nil {
+					t.Fatal(err)
+				}
+				from := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+				end := from.AddDate(1, 0, 0)
+				status := models.RevisionStatusPublished
+				var to *time.Time = &end
+				if state == "withdrawn" {
+					status, to = models.RevisionStatusWithdrawn, nil
+				}
+				if state == "future" {
+					from, to = from.AddDate(10, 0, 0), nil
+				}
+				query := fmt.Sprintf("INSERT INTO standard.%s (id, %s, revision_no, status, name, change_summary, effective_from, effective_to%s) VALUES (?, 1, ?, ?, ?, 'change', ?, ?%s)", kind.revisions, kind.ownerColumn, kind.extraColumns, kind.extraValues)
+				if err := db.Exec(query, 9, 1, models.RevisionStatusPublished, "旧内容", end.AddDate(-2, 0, 0), end.AddDate(-1, 0, 0)).Error; err != nil {
+					t.Fatal(err)
+				}
+				if err := db.Exec(query, 2, 2, status, "最新历史内容", from, to).Error; err != nil {
+					t.Fatal(err)
+				}
+				if kind.name == "code_set" {
+					if err := db.Exec("INSERT INTO standard.code_set_revision_items (id, code_set_revision_id, code, label, sort_order, status) VALUES (1, 2, 'x', '保留码值', 1, 'active')").Error; err != nil {
+						t.Fatal(err)
+					}
+				}
+				if kind.name == "metric" {
+					if err := db.Exec("INSERT INTO standard.metric_definition_revision_dependencies (id, metric_definition_revision_id, dependency_definition_id, dependency_revision_id, relation_kind) VALUES (1, 2, 10, 100, 'base')").Error; err != nil {
+						t.Fatal(err)
+					}
+				}
+				aggregate, err := kind.read(db, time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
+				if err != nil {
+					t.Fatal(err)
+				}
+				payload, err := json.Marshal(aggregate)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var result struct {
+					Latest *struct {
+						ID                                    int64
+						RevisionNo                            int64 `json:"revision_no"`
+						Name, Status, Definition, Description string
+						FileName                              string `json:"file_name"`
+						Items, Dependencies                   []json.RawMessage
+					} `json:"latest_revision"`
+				}
+				var fields map[string]json.RawMessage
+				if err := json.Unmarshal(payload, &fields); err != nil {
+					t.Fatal(err)
+				}
+				if err := json.Unmarshal(payload, &result); err != nil {
+					t.Fatal(err)
+				}
+				if len(fields["current_revision"]) != 0 || len(fields["draft_revision"]) != 0 || result.Latest == nil || result.Latest.ID != 2 || result.Latest.RevisionNo != 2 || result.Latest.Name != "最新历史内容" || result.Latest.Status != status {
+					t.Fatalf("historical content missing or treated as effective: %s", payload)
+				}
+				if result.Latest.Definition != "定义" && result.Latest.Description != "定义" {
+					t.Fatalf("historical definition lost: %s", payload)
+				}
+				if kind.name == "document" && result.Latest.FileName != "history.md" {
+					t.Fatalf("historical file metadata lost: %s", payload)
+				}
+				if kind.name == "code_set" && len(result.Latest.Items) != 1 {
+					t.Fatalf("historical items lost: %s", payload)
+				}
+				if kind.name == "metric" && len(result.Latest.Dependencies) != 1 {
+					t.Fatalf("frozen dependencies lost: %s", payload)
+				}
+			})
+		}
+	}
+}
 
 func TestElementPublishKeepsPublishedHistoryAndResolvesByAsOf(t *testing.T) {
 	db := openTemporalRevisionTestDB(t)
@@ -182,6 +277,8 @@ func openTemporalRevisionTestDB(t *testing.T) *gorm.DB {
 		t.Fatal(err)
 	}
 	for _, statement := range []string{
+		`CREATE TABLE standard.documents (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, code TEXT NOT NULL, draft_revision_id INTEGER, version INTEGER NOT NULL, lifecycle_state TEXT NOT NULL)`,
+		`CREATE TABLE standard.document_revisions (id INTEGER PRIMARY KEY, document_id INTEGER NOT NULL, revision_no INTEGER NOT NULL, status TEXT NOT NULL, name TEXT NOT NULL, description TEXT, file_name TEXT, change_summary TEXT NOT NULL, effective_from DATETIME, effective_to DATETIME)`,
 		`CREATE TABLE standard.glossaries (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, code TEXT NOT NULL, draft_revision_id INTEGER, version INTEGER NOT NULL, lifecycle_state TEXT NOT NULL, updated_by INTEGER, updated_at DATETIME)`,
 		`CREATE TABLE standard.glossary_revisions (id INTEGER PRIMARY KEY, glossary_id INTEGER NOT NULL, revision_no INTEGER NOT NULL, status TEXT NOT NULL, name TEXT NOT NULL, alias TEXT, definition TEXT NOT NULL, example TEXT, note TEXT, related_ids TEXT, change_summary TEXT NOT NULL, effective_from DATETIME, effective_to DATETIME, submitted_by INTEGER, submitted_at DATETIME, published_by INTEGER, published_at DATETIME, created_by INTEGER, updated_by INTEGER, created_at DATETIME, updated_at DATETIME)`,
 		`CREATE TABLE standard.elements (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, code TEXT NOT NULL, draft_revision_id INTEGER, version INTEGER NOT NULL, lifecycle_state TEXT NOT NULL, updated_by INTEGER, updated_at DATETIME)`,

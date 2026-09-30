@@ -12,6 +12,8 @@
       </div>
     </div>
 
+    <p v-if="!loadError && glossary.id" class="lifecycle-hint">{{ $t('standard.glossary.deletionRule') }}</p>
+
     <el-alert v-if="loadError" :title="loadError" type="error" :closable="false" />
     <el-alert v-else-if="editable && reviewHint" :title="reviewHint" type="warning" :closable="false" show-icon class="review-hint" />
     <el-row v-if="!loadError" :gutter="20">
@@ -85,6 +87,7 @@
 </template>
 
 <script setup>
+import { getStandardDisplayRevision } from '../utils/standardRevision'
 import { BusinessDomainSelect, buildBusinessDomainOptions, createLatestRequestCoordinator } from '@common-ui'
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -125,7 +128,7 @@ useConsolePageDescriptor(router, 'standard', { title: computed(() => t('standard
 const statusType = status => ({ draft: 'info', in_review: 'warning', published: 'success', withdrawn: 'danger' }[status] || 'info')
 const statusLabel = status => status ? t(`standard.revision.status.${status}`) : '-'
 const formatTime = value => formatStandardDateTime(value, locale.value)
-const elementName = item => item.draft_revision?.name || item.current_revision?.name || item.name || item.code
+const elementName = item => getStandardDisplayRevision(item)?.name || item.name || item.code
 const editableState = computed(() => ({ identity: { ...identity, tags: [...identity.tags] }, revision: { ...revision, alias: [...(revision.alias || [])], related_ids: [...(revision.related_ids || [])] } }))
 const { isDirty, markSaved } = useUnsavedChanges({ state: editableState })
 const reviewHint = computed(() => isDirty.value ? t('standard.revision.saveBeforeReview') : !revision.effective_from ? t('standard.revision.effectiveFromRequired') : '')
@@ -154,7 +157,7 @@ async function load() {
     if (requestedRevision !== undefined) buildGlossaryRevisionLocation(glossaryID, requestedRevision)
     const [aggregate, revisions, elements] = await Promise.all([glossaryAPI.get(glossaryID), glossaryAPI.listRevisions(glossaryID), glossaryAPI.getElements(glossaryID)])
     if (!detailRequests.isCurrent(request, detailTarget.value)) return
-    const selectedID = requestedRevision ?? (aggregate.draft_revision || aggregate.current_revision || revisions?.[0])?.id
+    const selectedID = requestedRevision ?? getStandardDisplayRevision(aggregate)?.id
     const selectedRevision = selectedID ? await glossaryAPI.getRevision(glossaryID, selectedID) : null
     if (!detailRequests.isCurrent(request, detailTarget.value)) return
     glossary.value = aggregate; history.value = revisions || []; mappedElements.value = elements || []
@@ -303,5 +306,6 @@ onMounted(async () => { try { domains.value = buildBusinessDomainOptions(await d
 .header-left h2, .card-header h3 { margin:0; color:var(--addp-text-primary); }
 .section-card { margin-bottom:20px; }
 .review-hint { margin-bottom:16px; }
+.lifecycle-hint { color:var(--addp-text-secondary); font-size:14px; line-height:1.6; margin:0 0 16px; }
 @media (max-width:768px) { .glossary-detail { padding:12px; } .page-header { align-items:flex-start; flex-wrap:wrap; } .glossary-detail :deep(.el-col) { max-width:100%; flex:0 0 100%; } }
 </style>

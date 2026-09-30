@@ -174,6 +174,7 @@
 </template>
 
 <script setup>
+import { getStandardDisplayRevision } from '../utils/standardRevision'
 import { BusinessDomainSelect, buildBusinessDomainOptions } from '@common-ui'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ArrowLeft, InfoFilled, Search } from '@element-plus/icons-vue'
@@ -273,7 +274,7 @@ async function load() {
     const [aggregate, revisions, candidateRows, mappingRows] = await Promise.all([documentAPI.get(route.params.id), documentAPI.listRevisions(route.params.id), documentAPI.listCandidateFamilies(route.params.id, candidateQuery), documentAPI.getMappings(route.params.id)])
     document.value = aggregate; history.value = revisions || []; applyCandidateFamilyResponse(candidateRows); mappings.value = mappingRows || { elements: [], glossaries: [], metrics: [] }
     Object.assign(identity, { scope_type: aggregate.scope_type, owner_domain_id: aggregate.owner_domain_id || null, doc_type: aggregate.doc_type, source_org: aggregate.source_org || '', tags: aggregate.tags || [] })
-    setRevision(aggregate.draft_revision || aggregate.current_revision || history.value[0])
+    setRevision(getStandardDisplayRevision(aggregate))
     markSaved()
   } catch (error) { ElMessage.error(getStandardErrorMessage(error, t, 'standard.common.loadFailed')); goBack() }
   finally { loading.value = false }

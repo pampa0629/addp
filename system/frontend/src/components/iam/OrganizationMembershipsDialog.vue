@@ -69,7 +69,7 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, onScopeDispose, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { CircleClose, Edit, Plus, Refresh } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
@@ -84,6 +84,8 @@ const props = defineProps({
 const emit = defineEmits(['update:modelValue'])
 const { t } = useI18n()
 const authStore = useAuthStore()
+let disposed = false
+onScopeDispose(() => { disposed = true })
 const dialogVisible = computed({ get: () => props.modelValue, set: value => emit('update:modelValue', value) })
 const api = computed(() => props.kind === 'department' ? iamAPI.departments : iamAPI.projectGroups)
 const permissionPrefix = computed(() => props.kind === 'department' ? 'iam.department_membership' : 'iam.project_group_membership')
@@ -111,6 +113,19 @@ function statusLabel(value) { return t(`system.iam.status.${value}`) }
 function organizationLabel(value) { return value ? t(`system.iam.organization.${value}`) : '' }
 function relationRole(row) { return props.kind === 'department' ? row.department_role : row.project_group_role }
 function reload() { page.value = 1; return load() }
+async function reloadAfterMembershipChange(tenantMembershipId) {
+  const context = authStore.authContext?.context
+  try {
+    if (context?.type === 'tenant' && String(context.tenant_membership_id) === String(tenantMembershipId)) {
+      await authStore.refreshAuthorization()
+    }
+    if (disposed || authStore.authContext?.context?.tenant_id !== context?.tenant_id ||
+      !authStore.hasPermission(`${permissionPrefix.value}.read`)) return
+    await load()
+  } catch (error) {
+    ElMessage.error(error.response?.data?.error || t('system.iam.common.loadFailed'))
+  }
+}
 async function load() {
   if (!props.organization?.id) return
   loading.value = true
@@ -139,10 +154,11 @@ function openEdit(row) {
   formVisible.value = true
 }
 async function saveMembership() {
+  const tenantMembershipId = form.tenantMembershipId
   submitting.value = true; versionConflict.value = false
   try {
     if (formMode.value === 'create') {
-      const payload = { tenant_membership_id: form.tenantMembershipId, relation_role: form.relationRole }
+      const payload = { tenant_membership_id: tenantMembershipId, relation_role: form.relationRole }
       if (props.kind === 'department') payload.membership_type = form.membershipType
       await api.value.createMembership(props.organization.id, payload)
     } else {
@@ -150,7 +166,8 @@ async function saveMembership() {
       if (props.kind === 'department') payload.membership_type = form.membershipType
       await api.value.updateMembership(props.organization.id, editingRow.value.id, payload)
     }
-    ElMessage.success(t('system.iam.common.saved')); formVisible.value = false; await load()
+    ElMessage.success(t('system.iam.common.saved')); formVisible.value = false
+    await reloadAfterMembershipChange(tenantMembershipId)
   } catch (error) {
     if (error.response?.data?.error_code === 'resource_version_conflict') versionConflict.value = true
     ElMessage.error(error.response?.data?.error || t('system.iam.common.saveFailed'))
@@ -163,7 +180,8 @@ async function closeMembership(row) {
       confirmButtonText: t('system.iam.common.confirm'), cancelButtonText: t('system.iam.common.cancel'), type: 'warning'
     })
     await api.value.closeMembership(props.organization.id, row.id, row.version, value.trim())
-    ElMessage.success(t('system.iam.common.updated')); await load()
+    ElMessage.success(t('system.iam.common.updated'))
+    await reloadAfterMembershipChange(row.tenant_membership_id)
   } catch (error) { if (error !== 'cancel' && error !== 'close') ElMessage.error(error.response?.data?.error || t('system.iam.common.updateFailed')) }
 }
 

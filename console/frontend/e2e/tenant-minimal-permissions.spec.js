@@ -175,6 +175,92 @@ test('same-tenant AuthContext refresh updates the Console home status snapshot',
   expect(engineReads).toBe(1)
 })
 
+test('role revocation refreshes an active session and removes the page from every open tab', async ({ context, page }) => {
+  let revoked = false
+  let refreshRequests = 0
+  let moduleLoads = 0
+  const taskTokens = []
+  const unexpectedRequests = []
+  await context.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
+  await context.route('**/api/v1/**', async route => {
+    const request = route.request()
+    const pathname = new URL(request.url()).pathname
+    if (pathname === '/api/v1/system/refresh') {
+      refreshRequests += 1
+      return route.fulfill({ json: {
+        access_token: revoked ? 'revocation-fresh-token' : 'revocation-original-token', expires_in: 300
+      } })
+    }
+    const token = await request.headerValue('authorization')
+    if (pathname === '/api/v1/transfer/tasks') {
+      taskTokens.push(token)
+      return route.fulfill({ status: token === 'Bearer revocation-original-token' ? 401 : 403,
+        json: { error: 'permission_denied' } })
+    }
+    if (revoked && token !== 'Bearer revocation-fresh-token') {
+      return route.fulfill({ status: 401, json: { error: 'authentication_required' } })
+    }
+    if (pathname === '/api/v1/system/users/me') {
+      return route.fulfill({ json: { id: '32', display_name: 'Role revocation fixture' } })
+    }
+    if (pathname === '/api/v1/system/auth/context') {
+      const scope = { type: 'tenant', tenant_id: '3' }
+      return route.fulfill({ json: {
+        context: { type: 'tenant', tenant_id: '3', tenant_membership_id: '32' },
+        authorization: { role_assignments: [
+          { role_key: 'custom.monitor', scope, permissions: ['monitor.statistics.read'] },
+          ...(!revoked ? [{ role_key: 'custom.transfer', scope, permissions: ['transfer.task.read'] }] : [])
+        ] }
+      } })
+    }
+    unexpectedRequests.push(pathname)
+    return route.fulfill({ status: 403, json: { error: 'unexpected_business_request' } })
+  })
+  await context.route(/^http:\/\/127\.0\.0\.1:(?!4170)\d+\//, route => {
+    moduleLoads += 1
+    return route.fulfill({ contentType: 'text/html', body: '<title>Module fixture</title>' })
+  })
+
+  await page.goto('/transfer/tasks')
+  await expect(page.locator('iframe.module-iframe')).toHaveCount(1)
+  const peer = await context.newPage()
+  await peer.goto('/transfer/tasks')
+  await expect(peer.locator('iframe.module-iframe')).toHaveCount(1)
+  await expect.poll(() => moduleLoads).toBe(2)
+  const initialRefreshRequests = refreshRequests
+
+  revoked = true
+  const status = await page.evaluate(async () => {
+    const { default: client } = await import('/src/api/client.js')
+    try {
+      await client.get('/transfer/tasks')
+      return 200
+    } catch (error) {
+      return error.response.status
+    }
+  })
+  expect(status).toBe(403)
+  expect(taskTokens).toEqual(['Bearer revocation-original-token', 'Bearer revocation-fresh-token'])
+  expect(refreshRequests).toBe(initialRefreshRequests + 1)
+  for (const tab of [page, peer]) {
+    await expect(tab).toHaveURL(/\/transfer\/tasks$/)
+    await expect(tab.locator('.el-result')).toContainText('无权访问')
+    await expect(tab.locator('iframe.module-iframe')).toHaveCount(0)
+    await expect(tab.locator('.sidebar .el-menu-item').filter({ hasText: '传输任务' })).toHaveCount(0)
+    expect(await tab.evaluate(async () => {
+      const { useAuthStore } = await import('/src/store/auth.js')
+      return useAuthStore().sessionStatus
+    })).toBe('authenticated')
+  }
+
+  await expectDenied(page, '/transfer/tasks')
+  expect(moduleLoads).toBe(2)
+  await page.goto('/monitor/dashboard')
+  await expect(page.locator('iframe.module-iframe')).toHaveAttribute('src', /\/dashboard$/)
+  await expect.poll(() => moduleLoads).toBe(3)
+  expect(unexpectedRequests).toEqual([])
+})
+
 test('configuration owner direct URL does not inherit access from a different owner', async ({ page }) => {
   const businessRequests = await openAsTenant(page, '/configuration/monitor', ['develop.configuration.read'])
   await expect(page.locator('.el-result')).toContainText('无权访问')

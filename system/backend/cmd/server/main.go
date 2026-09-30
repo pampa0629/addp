@@ -203,7 +203,9 @@ func main() {
 }
 
 func newSystemRegistrationRequest(serviceURL, instanceID string) *models.ModuleRegistrationRequest {
+	hostNodeName, runtimeHostname := commonConfig.RuntimeNodeIdentity()
 	return &models.ModuleRegistrationRequest{
+		HostNodeName: hostNodeName, RuntimeHostname: runtimeHostname,
 		ModuleName:       "system",
 		InstanceID:       instanceID,
 		Role:             models.ModuleRuntimeRoleBackend,

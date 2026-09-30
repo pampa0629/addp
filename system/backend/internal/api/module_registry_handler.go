@@ -279,6 +279,7 @@ func (h *ModuleRegistryHandler) GetModulePlatform(c *gin.Context) {
 // @Produce      json
 // @Security     BearerAuth
 // @Param        module_name query string false "稳定模块名，精确匹配 | Stable module name, exact match"
+// @Param        node_name query string false "宿主节点名或运行环境主机名，不区分大小写的精确匹配 | Host node name or runtime hostname, case-insensitive exact match"
 // @Param        registered_host query string false "登记端点主机名或 IP，精确匹配 | Registered endpoint hostname or IP, exact match"
 // @Param        role query string false "角色过滤：backend、worker、scheduler、ingress | Role filter: backend, worker, scheduler, ingress"
 // @Param        status query string false "有效状态过滤：up、down | Effective status filter: up, down"
@@ -315,7 +316,7 @@ func (h *ModuleRegistryHandler) ListModuleRuntimeInstancesPlatform(c *gin.Contex
 		*bound.target = parsed
 	}
 	instances, total, err := h.service.ListModuleRuntimeInstances(models.ModuleRuntimeInstanceFilter{
-		ModuleName: c.Query("module_name"), RegisteredHost: c.Query("registered_host"),
+		ModuleName: c.Query("module_name"), RegisteredHost: c.Query("registered_host"), NodeName: c.Query("node_name"),
 		Role: c.Query("role"), Status: c.Query("status"), RegisteredFrom: registeredFrom, RegisteredTo: registeredTo,
 		Page: page, PageSize: pageSize,
 	})

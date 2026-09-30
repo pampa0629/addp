@@ -71,6 +71,7 @@ type DocumentAggregate struct {
 	Document
 	CurrentRevision       *DocumentRevision `json:"current_revision,omitempty"`
 	DraftRevision         *DocumentRevision `json:"draft_revision,omitempty"`
+	LatestRevision        *DocumentRevision `json:"latest_revision,omitempty"` // 最高修订号，不表示当前生效 | Highest revision number, not necessarily effective
 	HasPublicationHistory bool              `json:"has_publication_history"`
 }
 

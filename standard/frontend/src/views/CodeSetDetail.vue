@@ -231,6 +231,7 @@
 </template>
 
 <script setup>
+import { getStandardDisplayRevision } from '../utils/standardRevision'
 import { BusinessDomainSelect, buildBusinessDomainOptions } from '@common-ui'
 import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -328,7 +329,7 @@ async function load() {
     codeSet.value = aggregate
     codeSet.value.tags ||= []
     revisions.value = history || []
-    setRevision(aggregate.draft_revision || aggregate.current_revision || history?.[0])
+    setRevision(getStandardDisplayRevision(aggregate))
     markSaved()
   } catch (error) {
     ElMessage.error(getStandardErrorMessage(error, t, 'standard.common.loadFailed'))

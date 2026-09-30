@@ -7038,3 +7038,54 @@ func assertPublicationRemoval(t *testing.T, db *sql.DB) {
 		t.Fatalf("retired active=%d validation bindings=%d", activeOld, bindings)
 	}
 }
+
+func TestModuleRuntimeNodeIdentityForwardMigrationAgainstPostgres(t *testing.T) {
+	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
+	if dsn == "" {
+		t.Skip("set ADDP_SYSTEM_POSTGRES_TEST_DSN to a disposable PostgreSQL database")
+	}
+	testsupport.RequireDisposablePostgresDSN(t, dsn)
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`DROP SCHEMA IF EXISTS system CASCADE; DROP SCHEMA IF EXISTS common CASCADE`); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	before, through := migrationFilesBeforeAndThrough(t, "000165_module_runtime_node_identity.up.sql")
+	if err := (&Runner{DSN: dsn, FS: before, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`
+        INSERT INTO system.module_definitions (module_name, route_prefix) VALUES ('meta', '/meta');
+        INSERT INTO system.module_runtime_instances
+            (module_definition_id, instance_id, role, module_url, last_heartbeat, lease_expires_at, registered_at)
+        SELECT id, 'hostname-looking-worker-id', 'worker', '', now(), now() + interval '30 seconds', now()
+        FROM system.module_definitions WHERE module_name = 'meta';
+    `); err != nil {
+		t.Fatal(err)
+	}
+	if err := (&Runner{DSN: dsn, FS: through, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var host, runtime string
+	if err := db.QueryRow(`SELECT host_node_name, runtime_hostname FROM system.module_runtime_instances WHERE instance_id = 'hostname-looking-worker-id'`).Scan(&host, &runtime); err != nil {
+		t.Fatal(err)
+	}
+	if host != "" || runtime != "" {
+		t.Fatalf("migration invented node identity: host=%q runtime=%q", host, runtime)
+	}
+	if _, err := db.Exec(`UPDATE system.module_runtime_instances SET host_node_name = 'host-a', runtime_hostname = 'container-a'`); err != nil {
+		t.Fatal(err)
+	}
+	var count int
+	if err := db.QueryRow(`SELECT count(*) FROM system.module_runtime_instances WHERE lower(host_node_name) = 'host-a' OR lower(runtime_hostname) = 'container-a'`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("node query count = %d", count)
+	}
+}

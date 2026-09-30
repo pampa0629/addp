@@ -193,6 +193,7 @@ test('tenant administrator filters members and assigns multiple roles in one req
     })
   ]
   const mutations = []
+  let nextAssignmentID = 601
   const listQueries = []
   let authContextRequests = 0
   let authenticated = false
@@ -283,10 +284,10 @@ test('tenant administrator filters members and assigns multiple roles in one req
       const input = request.postDataJSON()
       mutations.push({ action: 'create', input })
       const selectedMember = members.find((member) => member.id === input.membership_id)
-      const created = input.role_ids.map((roleID, index) => {
+      const created = input.role_ids.map((roleID) => {
         const selectedRole = roles.find((role) => role.id === roleID)
         return assignment({
-          id: String(601 + index),
+          id: String(nextAssignmentID++),
           membership_id: selectedMember.id,
           principal_id: selectedMember.principal_id,
           display_name: selectedMember.display_name,
@@ -304,10 +305,11 @@ test('tenant administrator filters members and assigns multiple roles in one req
       await fulfillJSON(route, 201, created)
       return
     }
-    if (path.endsWith('/tenant/role_assignments/601/revoke') && method === 'POST') {
+    if (path.includes('/tenant/role_assignments/') && path.endsWith('/revoke') && method === 'POST') {
+      const assignmentID = path.split('/').at(-2)
       const input = request.postDataJSON()
       mutations.push({ action: 'revoke', input })
-      assignments = assignments.map((item) => item.id === '601'
+      assignments = assignments.map((item) => item.id === assignmentID
         ? {
             ...item,
             status: 'revoked',
@@ -319,7 +321,7 @@ test('tenant administrator filters members and assigns multiple roles in one req
             revoked_at: '2026-09-09T07:00:00Z'
           }
         : item)
-      await fulfillJSON(route, 200, assignments.find((item) => item.id === '601'))
+      await fulfillJSON(route, 200, assignments.find((item) => item.id === assignmentID))
       return
     }
 
@@ -394,7 +396,10 @@ test('tenant administrator filters members and assigns multiple roles in one req
   await roleListbox.getByRole('option', { name: /数据查看者/ }).click()
   await roleListbox.getByRole('option', { name: /数据管理员/ }).click()
   await expect(dialog.getByText('已选择 2 个角色', { exact: true })).toBeVisible()
-  await dialog.locator('textarea').fill('E2E batch assignment')
+  await roleCombobox.press('Escape')
+  const assignmentReason = dialog.getByRole('textbox', { name: /授权原因/ })
+  await assignmentReason.fill('E2E batch assignment')
+  await expect(assignmentReason).toHaveValue('E2E batch assignment')
   await dialog.getByRole('button', { name: '确认分配', exact: true }).click()
 
   const viewerRow = page.getByRole('row').filter({ hasText: '数据查看者' }).filter({ hasText: 'Alice Researcher' })
@@ -448,7 +453,9 @@ test('tenant administrator filters members and assigns multiple roles in one req
 
   await page.goto('/iam/accounts')
   const accountRow = page.getByRole('row').filter({ hasText: 'Alice Researcher' })
-  await accountRow.getByRole('button', { name: '角色分配' }).click()
+  await expect(accountRow.getByRole('button', { name: '2 个生效角色' })).toBeVisible()
+  await expect(accountRow).toContainText('数据管理员')
+  await accountRow.getByRole('button', { name: '2 个生效角色' }).click()
   const rolesDrawer = page.getByRole('dialog', { name: 'Alice Researcher的角色' })
   await expect(rolesDrawer).toBeVisible()
   await expect(rolesDrawer.getByRole('row').filter({ hasText: '租户管理员' })).toBeVisible()
@@ -458,7 +465,91 @@ test('tenant administrator filters members and assigns multiple roles in one req
   const accountAssignmentDialog = page.getByRole('dialog', { name: '分配角色' })
   await expect(accountAssignmentDialog).toContainText('Alice Researcher')
   await expect(accountAssignmentDialog.getByRole('combobox', { name: /成员/ })).toHaveCount(0)
+  const accountRoleCombobox = accountAssignmentDialog.getByRole('combobox', { name: /角色/ })
+  const accountRoleListboxID = await accountRoleCombobox.getAttribute('aria-controls')
+  await accountRoleCombobox.press('ArrowDown')
+  await page.locator(`[id="${accountRoleListboxID}"]`).getByRole('option', { name: /数据查看者/ }).click()
+  await accountRoleCombobox.press('Escape')
+  const accountAssignmentReason = accountAssignmentDialog.getByRole('textbox', { name: /授权原因/ })
+  await accountAssignmentReason.fill('E2E account assignment summary')
+  await expect(accountAssignmentReason).toHaveValue('E2E account assignment summary')
+  await accountAssignmentDialog.getByRole('button', { name: '确认分配', exact: true }).click()
+  await expect(accountRow.getByRole('button', { name: '3 个生效角色' })).toBeVisible()
+  const activeSteward = rolesDrawer.getByRole('row').filter({ hasText: '数据管理员' }).filter({ hasText: '当前生效' })
+  await activeSteward.getByRole('button', { name: '撤销', exact: true }).click()
+  const revokeDialog = page.getByRole('dialog', { name: '撤销', exact: true })
+  await revokeDialog.getByRole('textbox').fill('E2E account summary refresh')
+  await revokeDialog.getByRole('button', { name: '确认', exact: true }).click()
+  await expect(accountRow.getByRole('button', { name: '2 个生效角色' })).toBeVisible()
+  await expect(accountRow).not.toContainText('数据管理员')
 })
+
+for (const canReadRoles of [true, false]) {
+  test(`account role summaries respect read permission (${canReadRoles}) and recover from a failed page`, async ({ page }, testInfo) => {
+    let authenticated = false
+    let failAlice = true
+    const assignmentQueries = []
+    const emptyMember = { ...members[1], id: '13', display_name: 'No Roles User', username: 'no-roles' }
+    const permissions = canReadRoles ? authorizationPermissions : ['iam.tenant_membership.read']
+    await page.route('**/api/v1/system/**', async (route) => {
+      const request = route.request()
+      const url = new URL(request.url())
+      const path = url.pathname
+      if (request.method() === 'OPTIONS') return fulfillJSON(route, 204, {})
+      if (path.endsWith('/refresh')) return fulfillJSON(route, authenticated ? 200 : 401, authenticated ? { access_token: 'summary-token', expires_in: 300 } : { error: 'authentication_required' })
+      if (path.endsWith('/login')) {
+        authenticated = true
+        return fulfillJSON(route, 200, { next_action: 'session_issued', session: { access_token: 'summary-token', expires_in: 300 } })
+      }
+      if (path.endsWith('/users/me')) return fulfillJSON(route, 200, { id: '1', username: 'e2e-admin', display_name: 'E2E Administrator' })
+      if (path.endsWith('/auth/context-options')) return fulfillJSON(route, 200, { contexts: [{ type: 'tenant', tenant_id: '1', tenant_membership_id: '11', current: true }] })
+      if (path.endsWith('/auth/context')) return fulfillJSON(route, 200, {
+        principal: { id: '1', principal_type: 'user' }, context: { type: 'tenant', tenant_id: '1', tenant_membership_id: '11' },
+        authentication: { assurance_level: 'aal2' }, authorization: { role_assignments: [{ role_key: 'tenant.administrator', scope: { type: 'tenant', tenant_id: '1' }, permissions }] }
+      })
+      if (path.endsWith('/tenant/memberships')) return fulfillJSON(route, 200, paginated([...members, emptyMember]))
+      if (path.endsWith('/tenant/role_assignments')) {
+        expect(canReadRoles).toBe(true)
+        const query = Object.fromEntries(url.searchParams.entries())
+        assignmentQueries.push(query)
+        expect(query).toMatchObject({ principal_type: 'user', effective_state: 'effective', page_size: '100' })
+        if (query.membership_id === '13') return fulfillJSON(route, 200, paginated([]))
+        if (query.membership_id === '11') return fulfillJSON(route, 200, paginated([assignment()]))
+        expect(query.membership_id).toBe('12')
+        const roleAssignments = ['101', '102', '103'].map((id) => {
+          const role = roles.find((item) => item.id === id)
+          return assignment({ id: `summary-${id}`, membership_id: '12', role_id: id, role_key: role.role_key, role_name: role.name })
+        })
+        if (query.page === '1') return fulfillJSON(route, 200, { ...paginated(roleAssignments.slice(0, 2)), total_pages: 2 })
+        if (failAlice) return fulfillJSON(route, 500, { error: 'later_page_failed' })
+        return fulfillJSON(route, 200, { ...paginated([roleAssignments[2], { ...roleAssignments[0], id: 'summary-duplicate', scope_type: 'department', department_id: '301' }]), total_pages: 2 })
+      }
+      throw new Error(`unexpected account summary request: ${path}`)
+    })
+    await page.goto('/login?redirect=%2Fiam%2Faccounts')
+    await page.locator('input[autocomplete="username"]').fill('e2e-admin')
+    await page.locator('input[autocomplete="current-password"]').fill('not-transmitted')
+    await page.locator('button.auth-login-primary').click()
+    await expect(page.getByRole('heading', { name: '账号管理' })).toBeVisible()
+    const alice = page.getByRole('row').filter({ hasText: 'Alice Researcher' })
+    if (!canReadRoles) {
+      await expect(alice).toBeVisible()
+      await expect(page.locator('.iam-account-roles')).toHaveCount(0)
+      expect(assignmentQueries).toEqual([])
+      return
+    }
+    await expect(alice.getByRole('button', { name: '加载角色失败，重试' })).toBeVisible()
+    await expect(alice).not.toContainText('暂无生效角色')
+    await expect(page.getByRole('row').filter({ hasText: 'No Roles User' })).toContainText('暂无生效角色')
+    failAlice = false
+    await alice.getByRole('button', { name: '加载角色失败，重试' }).click()
+    await expect(alice.getByRole('button', { name: '3 个生效角色' })).toBeVisible()
+    await expect(alice.locator('.iam-account-role-tags .el-tag')).toHaveCount(3)
+    await expect(alice.locator('.iam-account-role-tags')).toContainText('+1')
+    await expect(alice.locator('.iam-account-role-tags')).toHaveAttribute('title', '租户管理员、数据管理员、数据查看者')
+    await page.screenshot({ path: testInfo.outputPath('account-role-summary.png') })
+  })
+}
 
 test('high-risk self assignment completes MFA step-up and retries the original request', async ({ page }) => {
   const currentAssignments = [assignment()]
@@ -595,7 +686,10 @@ test('high-risk self assignment completes MFA step-up and retries the original r
   await expect(roleCombobox).toBeEnabled()
   await roleCombobox.press('ArrowDown')
   await page.locator(`[id="${roleListboxID}"]`).getByRole('option', { name: /数据管理员/ }).click()
-  await assignmentDialog.locator('textarea').fill('E2E high-risk self assignment')
+  await roleCombobox.press('Escape')
+  const assignmentReason = assignmentDialog.getByRole('textbox', { name: /授权原因/ })
+  await assignmentReason.fill('E2E high-risk self assignment')
+  await expect(assignmentReason).toHaveValue('E2E high-risk self assignment')
   await assignmentDialog.getByRole('button', { name: '确认分配', exact: true }).click()
 
   const stepUpDialog = page.getByRole('dialog', { name: '确认高风险操作' })

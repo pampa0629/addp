@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/addp/common/buildinfo"
+	"github.com/addp/common/config"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/models"
 	"github.com/google/uuid"
@@ -436,6 +437,7 @@ func newModuleRegistrationLifecycle(request *ModuleRegistrationRequest) (*Module
 	}
 	registration := *request
 	registration.ProcessStartedAt = buildinfo.ProcessStartedAt()
+	registration.HostNodeName, registration.RuntimeHostname = config.RuntimeNodeIdentity()
 	if strings.TrimSpace(registration.InstanceID) == "" {
 		registration.InstanceID = uuid.NewString()
 	}

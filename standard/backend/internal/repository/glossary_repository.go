@@ -48,6 +48,10 @@ func (r *GlossaryRepository) GetAggregateAt(id, tenantID int64, asOf time.Time) 
 		return nil, err
 	}
 	result := &models.GlossaryAggregate{Glossary: *glossary}
+	result.LatestRevision, err = latestRevision[models.GlossaryRevision](r.db, "glossary_id", glossary.ID)
+	if err != nil {
+		return nil, err
+	}
 	if revision, loadErr := r.getEffectiveRevision(r.db, glossary.ID, asOf); loadErr == nil {
 		result.CurrentRevision = revision
 	} else if !errors.Is(loadErr, gorm.ErrRecordNotFound) {

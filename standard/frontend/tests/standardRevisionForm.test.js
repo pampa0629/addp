@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs'
+import { getStandardDisplayRevision } from '../src/utils/standardRevision'
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -115,5 +116,31 @@ describe('Standard definition presentation ownership', () => {
       expect(source).not.toContain('steward_id')
       expect(source).not.toContain('stewardId')
     }
+  })
+})
+
+
+describe('Standard management revision display', () => {
+  it('keeps withdrawn history visible and prefers working or effective content', () => {
+    const latest = { id: 3, status: 'withdrawn', name: '历史定义' }
+    const current = { id: 1, status: 'published', name: '生效定义' }
+    const draft = { id: 4, status: 'draft', name: '工作定义' }
+    expect(getStandardDisplayRevision({ latest_revision: latest })).toBe(latest)
+    expect(getStandardDisplayRevision({ latest_revision: latest, current_revision: current })).toBe(current)
+    expect(getStandardDisplayRevision({ latest_revision: latest, current_revision: current, draft_revision: draft })).toBe(draft)
+    expect(getStandardDisplayRevision(null)).toBeUndefined()
+    expect(getStandardDisplayRevision({})).toBeUndefined()
+  })
+
+  it('uses one canonical selector for all management views and the document panel', () => {
+    const consumers = ['GlossaryList', 'GlossaryDetail', 'ElementList', 'ElementDetail', 'CodeSetList', 'CodeSetDetail', 'MetricList', 'MetricDetail', 'DocumentList', 'DocumentDetail'].map(name => `views/${name}`)
+    consumers.push('components/DocumentPanel')
+    for (const name of consumers) {
+      const source = readFileSync(new URL(`../src/${name}.vue`, import.meta.url), 'utf8')
+      expect(source).toContain('getStandardDisplayRevision')
+      expect(source).not.toMatch(/draft_revision\s*\|\|/)
+      expect(source).not.toMatch(/history(?:\.value)?\??\.?(?:\[0\])/)
+    }
+    expect(readFileSync(new URL('../src/utils/glossaryRouteState.js', import.meta.url), 'utf8')).not.toContain('getGlossaryDisplayRevision')
   })
 })

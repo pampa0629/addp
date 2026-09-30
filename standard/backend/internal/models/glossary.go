@@ -109,6 +109,7 @@ type GlossaryAggregate struct {
 	Glossary
 	CurrentRevision       *GlossaryRevision `json:"current_revision,omitempty"`
 	DraftRevision         *GlossaryRevision `json:"draft_revision,omitempty"`
+	LatestRevision        *GlossaryRevision `json:"latest_revision,omitempty"` // 最高修订号，不表示当前生效 | Highest revision number, not necessarily effective
 	HasPublicationHistory bool              `json:"has_publication_history"`
 }
 

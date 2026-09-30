@@ -215,6 +215,7 @@ func TestListModuleRuntimeInstancesPlatformUsesPaginatedContract(t *testing.T) {
 		if err := registry.Register(&models.ModuleRegistrationRequest{ProcessStartedAt: time.Now(),
 			ModuleName: "manager", InstanceID: instanceID, Role: models.ModuleRuntimeRoleBackend,
 			ModuleURL: "http://" + instanceID + ":8081", RoutePrefix: "/manager",
+			HostNodeName: "host-" + instanceID, RuntimeHostname: "container-" + instanceID,
 		}); err != nil {
 			t.Fatal(err)
 		}
@@ -250,7 +251,7 @@ func TestListModuleRuntimeInstancesPlatformUsesPaginatedContract(t *testing.T) {
 	if payload.Data[0].ModuleName != "manager" || payload.Data[0].RegisteredHost == "" {
 		t.Fatalf("instance identity = %#v", payload.Data[0])
 	}
-	response = performModuleRegistryRequest(router, http.MethodGet, "/platform/module-instances?registered_host=MANAGER-A&role=backend&status=up&registered_from="+
+	response = performModuleRegistryRequest(router, http.MethodGet, "/platform/module-instances?registered_host=MANAGER-A&node_name=HOST-MANAGER-A&role=backend&status=up&registered_from="+
 		url.QueryEscape(time.Now().Add(-time.Hour).Format(time.RFC3339))+"&registered_to="+
 		url.QueryEscape(time.Now().Add(time.Hour).Format(time.RFC3339)), "")
 	if response.Code != http.StatusOK {

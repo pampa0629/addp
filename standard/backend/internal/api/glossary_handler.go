@@ -21,6 +21,7 @@ func NewGlossaryHandler(svc *service.GlossaryService) *GlossaryHandler {
 
 // ListGlossaries godoc
 // @Summary 获取业务术语列表 | List glossaries
+// @Description 同时返回工作修订、当前生效修订与最新历史修订；管理展示按此顺序选择，撤回历史仍保留名称与定义。 | Returns working, currently effective, and latest historical revisions. Management views use that order and retain withdrawn names and definitions.
 // @Tags Standard
 // @Produce json
 // @Param element_id query int false "关联数据元 ID | Related data element ID"
@@ -127,6 +128,7 @@ func (h *GlossaryHandler) CreateGlossary(c *gin.Context) {
 }
 
 // GetGlossary godoc
+// @Description latest_revision 是最高修订号的历史展示投影，current_revision 只表示指定时点生效的已发布修订。 | latest_revision is the highest-numbered revision for historical display; current_revision only represents a published revision effective at the requested time.
 // @Summary 获取业务术语聚合 | Get glossary aggregate
 // @Tags Standard
 // @Produce json

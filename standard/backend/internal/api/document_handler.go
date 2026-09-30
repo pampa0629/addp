@@ -29,6 +29,7 @@ func NewDocumentHandler(svc *service.DocumentService) *DocumentHandler {
 }
 
 // @Summary 获取标准文档列表 | List standard documents
+// @Description latest_revision 是最高修订号的完整历史展示投影，current_revision 只表示指定时点生效的已发布修订。 | latest_revision contains the complete highest-numbered revision for historical display; current_revision contains only the published revision effective at the requested time.
 // @Tags Standard
 // @Produce json
 // @Param scope_type query string false "适用范围 | Scope" Enums(platform,tenant_common,domain)
@@ -99,6 +100,7 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 }
 
 // @Summary 获取标准文档详情 | Get standard document detail
+// @Description latest_revision 是最高修订号的完整历史展示投影，current_revision 只表示指定时点生效的已发布修订。 | latest_revision contains the complete highest-numbered revision for historical display; current_revision contains only the published revision effective at the requested time.
 // @Tags Standard
 // @Produce json
 // @Param as_of query string false "生效时点（RFC3339） | Effective point in time (RFC3339)"

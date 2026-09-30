@@ -1,12 +1,14 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { resolve } from 'path'
+import { tmpdir } from 'node:os'
 
 const BUILD_TYPE = process.env.BUILD_TYPE || 'release'
 const OUT_BASE = process.env.OUT_DIR
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [vue()],
+  cacheDir: mode === 'test' ? resolve(tmpdir(), `addp-system-vite-test-${process.pid}`) : undefined,
   resolve: {
     alias: {
       '@': resolve(__dirname, 'src'),
@@ -27,9 +29,7 @@ export default defineConfig({
     strictPort: true, // 端口被占用时报错，不自动切换
     hmr: {
       protocol: 'ws',
-      host: 'localhost',
-      port: Number(process.env.SYSTEM_FE_PORT || 5173),
-      clientPort: Number(process.env.SYSTEM_FE_PORT || 5173)
+      host: 'localhost'
     },
     fs: {
       allow: [
@@ -68,4 +68,4 @@ export default defineConfig({
       }
     }
   }
-})
+}))

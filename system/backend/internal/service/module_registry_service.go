@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	commonconfiguration "github.com/addp/common/configuration"
 	"github.com/addp/common/logger"
@@ -38,6 +39,11 @@ func (s *ModuleRegistryService) Register(req *models.ModuleRegistrationRequest) 
 	}
 	req.ModuleName = strings.TrimSpace(req.ModuleName)
 	req.InstanceID = strings.TrimSpace(req.InstanceID)
+	req.HostNodeName = strings.TrimSpace(req.HostNodeName)
+	req.RuntimeHostname = strings.TrimSpace(req.RuntimeHostname)
+	if utf8.RuneCountInString(req.HostNodeName) > 255 || utf8.RuneCountInString(req.RuntimeHostname) > 255 {
+		return fmt.Errorf("%w: node names must not exceed 255 characters", ErrInvalidModuleRegistration)
+	}
 	req.Role = strings.ToLower(strings.TrimSpace(req.Role))
 	req.ModuleURL = strings.TrimRight(strings.TrimSpace(req.ModuleURL), "/")
 	req.RoutePrefix = strings.TrimSpace(req.RoutePrefix)
@@ -125,6 +131,7 @@ func (s *ModuleRegistryService) ListModuleRuntimeInstances(
 ) ([]models.ModuleRuntimeInstanceRecord, int64, error) {
 	filter.ModuleName = strings.TrimSpace(filter.ModuleName)
 	filter.RegisteredHost = strings.ToLower(strings.TrimSpace(filter.RegisteredHost))
+	filter.NodeName = strings.ToLower(strings.TrimSpace(filter.NodeName))
 	filter.Role = strings.ToLower(strings.TrimSpace(filter.Role))
 	filter.Status = strings.ToLower(strings.TrimSpace(filter.Status))
 	if filter.Page < 1 || filter.PageSize < 1 || filter.PageSize > 100 ||
@@ -364,6 +371,7 @@ func convertRuntimeInstanceInfoWithStatus(instance *models.ModuleRuntimeInstance
 	return models.ModuleRuntimeInstanceInfo{
 		ID: instance.ID, InstanceID: instance.InstanceID, Role: instance.Role,
 		ModuleURL: instance.ModuleURL, HealthCheckURL: instance.HealthCheckURL, RegisteredHost: instance.RegisteredHost,
+		HostNodeName: instance.HostNodeName, RuntimeHostname: instance.RuntimeHostname,
 		Status: status, LastHeartbeat: instance.LastHeartbeat, LeaseExpiresAt: instance.LeaseExpiresAt,
 		ProcessStartedAt: instance.ProcessStartedAt, StoppedAt: instance.StoppedAt, StopReason: instance.StopReason,
 		Metadata: metadata, RegisteredAt: instance.RegisteredAt, UpdatedAt: instance.UpdatedAt,

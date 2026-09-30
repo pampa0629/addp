@@ -55,6 +55,10 @@ func (r *ElementRepository) GetAggregateAt(id, tenantID int64, asOf time.Time) (
 		return nil, err
 	}
 	result := &models.ElementAggregate{Element: *element}
+	result.LatestRevision, err = latestRevision[models.ElementRevision](r.db, "element_id", element.ID)
+	if err != nil {
+		return nil, err
+	}
 	if revision, loadErr := r.getEffectiveRevision(r.db, element.ID, asOf); loadErr == nil {
 		result.CurrentRevision = revision
 	} else if !errors.Is(loadErr, gorm.ErrRecordNotFound) {

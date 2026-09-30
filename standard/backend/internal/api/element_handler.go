@@ -23,6 +23,7 @@ func NewElementHandler(svc *service.ElementService) *ElementHandler { return &El
 
 // ListElements godoc
 // @Summary 获取数据元列表 | List data elements
+// @Description latest_revision 是最高修订号的完整历史展示投影，current_revision 只表示指定时点生效的已发布修订。 | latest_revision contains the complete highest-numbered revision for historical display; current_revision contains only the published revision effective at the requested time.
 // @Tags Standard
 // @Produce json
 // @Param ids query string false "数据元 ID 集合，逗号分隔，最多 100 个 | Data element IDs, comma-separated, maximum 100"
@@ -154,6 +155,7 @@ func (h *ElementHandler) CreateElement(c *gin.Context) {
 
 // GetElement godoc
 // @Summary 获取数据元聚合 | Get data element aggregate
+// @Description latest_revision 是最高修订号的完整历史展示投影，current_revision 只表示指定时点生效的已发布修订。 | latest_revision contains the complete highest-numbered revision for historical display; current_revision contains only the published revision effective at the requested time.
 // @Tags Standard
 // @Produce json
 // @Param as_of query string false "生效时点（RFC3339，默认服务端当前时间） | Effective point in time (RFC3339, defaults to server time)"

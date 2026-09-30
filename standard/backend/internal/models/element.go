@@ -107,6 +107,7 @@ type ElementAggregate struct {
 	Element
 	CurrentRevision *ElementRevision `json:"current_revision,omitempty"`
 	DraftRevision   *ElementRevision `json:"draft_revision,omitempty"`
+	LatestRevision  *ElementRevision `json:"latest_revision,omitempty"` // 最高修订号，不表示当前生效 | Highest revision number, not necessarily effective
 }
 
 // PublishedElementReference 是跨模块解析已发布数据元时使用的只读投影。

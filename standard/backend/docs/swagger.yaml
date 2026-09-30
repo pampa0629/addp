@@ -82,6 +82,10 @@ definitions:
         type: integer
       id:
         type: integer
+      latest_revision:
+        allOf:
+        - $ref: '#/definitions/github_com_addp_standard_internal_models.CodeSetRevision'
+        description: 最高修订号，不表示当前生效 | Highest revision number, not necessarily effective
       lifecycle_state:
         type: string
       origin:
@@ -605,6 +609,10 @@ definitions:
         type: boolean
       id:
         type: integer
+      latest_revision:
+        allOf:
+        - $ref: '#/definitions/github_com_addp_standard_internal_models.DocumentRevision'
+        description: 最高修订号，不表示当前生效 | Highest revision number, not necessarily effective
       lifecycle_state:
         type: string
       owner_domain_id:
@@ -1196,6 +1204,10 @@ definitions:
         type: integer
       id:
         type: integer
+      latest_revision:
+        allOf:
+        - $ref: '#/definitions/github_com_addp_standard_internal_models.ElementRevision'
+        description: 最高修订号，不表示当前生效 | Highest revision number, not necessarily effective
       lifecycle_state:
         type: string
       owner_domain_id:
@@ -1319,6 +1331,10 @@ definitions:
         type: boolean
       id:
         type: integer
+      latest_revision:
+        allOf:
+        - $ref: '#/definitions/github_com_addp_standard_internal_models.GlossaryRevision'
+        description: 最高修订号，不表示当前生效 | Highest revision number, not necessarily effective
       lifecycle_state:
         type: string
       owner_domain_id:
@@ -1501,6 +1517,10 @@ definitions:
         type: integer
       id:
         type: integer
+      latest_revision:
+        allOf:
+        - $ref: '#/definitions/github_com_addp_standard_internal_models.MetricDefinitionRevision'
+        description: 最高修订号，不表示当前生效 | Highest revision number, not necessarily effective
       lifecycle_state:
         type: string
       owner_domain_id:
@@ -2794,6 +2814,10 @@ paths:
       - standard.catalog.read
   /code-sets:
     get:
+      description: latest_revision 是最高修订号的完整历史展示投影，current_revision 只表示指定时点生效的已发布修订。
+        | latest_revision contains the complete highest-numbered revision for historical
+        display; current_revision contains only the published revision effective at
+        the requested time.
       parameters:
       - description: 适用范围 | Scope
         enum:
@@ -2894,6 +2918,10 @@ paths:
       x-addp-required-permissions:
       - standard.code_set.delete
     get:
+      description: latest_revision 是最高修订号的完整历史展示投影，current_revision 只表示指定时点生效的已发布修订。
+        | latest_revision contains the complete highest-numbered revision for historical
+        display; current_revision contains only the published revision effective at
+        the requested time.
       parameters:
       - description: 生效时点（RFC3339，默认服务端当前时间） | Effective point in time (RFC3339, defaults
           to server time)
@@ -3326,6 +3354,10 @@ paths:
       - standard.document.update
   /documents:
     get:
+      description: latest_revision 是最高修订号的完整历史展示投影，current_revision 只表示指定时点生效的已发布修订。
+        | latest_revision contains the complete highest-numbered revision for historical
+        display; current_revision contains only the published revision effective at
+        the requested time.
       parameters:
       - description: 适用范围 | Scope
         enum:
@@ -3455,6 +3487,10 @@ paths:
       x-addp-required-permissions:
       - standard.document.delete
     get:
+      description: latest_revision 是最高修订号的完整历史展示投影，current_revision 只表示指定时点生效的已发布修订。
+        | latest_revision contains the complete highest-numbered revision for historical
+        display; current_revision contains only the published revision effective at
+        the requested time.
       parameters:
       - description: 生效时点（RFC3339） | Effective point in time (RFC3339)
         in: query
@@ -4403,6 +4439,10 @@ paths:
       - standard.domain.update
   /elements:
     get:
+      description: latest_revision 是最高修订号的完整历史展示投影，current_revision 只表示指定时点生效的已发布修订。
+        | latest_revision contains the complete highest-numbered revision for historical
+        display; current_revision contains only the published revision effective at
+        the requested time.
       parameters:
       - description: 数据元 ID 集合，逗号分隔，最多 100 个 | Data element IDs, comma-separated,
           maximum 100
@@ -4522,6 +4562,10 @@ paths:
       x-addp-required-permissions:
       - standard.element.delete
     get:
+      description: latest_revision 是最高修订号的完整历史展示投影，current_revision 只表示指定时点生效的已发布修订。
+        | latest_revision contains the complete highest-numbered revision for historical
+        display; current_revision contains only the published revision effective at
+        the requested time.
       parameters:
       - description: 生效时点（RFC3339，默认服务端当前时间） | Effective point in time (RFC3339, defaults
           to server time)
@@ -4988,6 +5032,9 @@ paths:
       - standard.element.publish
   /glossaries:
     get:
+      description: 同时返回工作修订、当前生效修订与最新历史修订；管理展示按此顺序选择，撤回历史仍保留名称与定义。 | Returns working,
+        currently effective, and latest historical revisions. Management views use
+        that order and retain withdrawn names and definitions.
       parameters:
       - description: 关联数据元 ID | Related data element ID
         in: query
@@ -5106,6 +5153,10 @@ paths:
       x-addp-required-permissions:
       - standard.glossary.delete
     get:
+      description: latest_revision 是最高修订号的历史展示投影，current_revision 只表示指定时点生效的已发布修订。
+        | latest_revision is the highest-numbered revision for historical display;
+        current_revision only represents a published revision effective at the requested
+        time.
       parameters:
       - description: 生效时点（RFC3339，默认服务端当前时间） | Effective point in time (RFC3339, defaults
           to server time)
@@ -5841,6 +5892,10 @@ paths:
       - standard.metric.update
   /metrics:
     get:
+      description: latest_revision 是最高修订号的完整历史展示投影，current_revision 只表示指定时点生效的已发布修订。
+        | latest_revision contains the complete highest-numbered revision for historical
+        display; current_revision contains only the published revision effective at
+        the requested time.
       parameters:
       - description: 分类 ID | Category ID
         in: query
@@ -5965,6 +6020,10 @@ paths:
       x-addp-required-permissions:
       - standard.metric.delete
     get:
+      description: latest_revision 是最高修订号的完整历史展示投影，current_revision 只表示指定时点生效的已发布修订。
+        | latest_revision contains the complete highest-numbered revision for historical
+        display; current_revision contains only the published revision effective at
+        the requested time.
       parameters:
       - description: 生效时点 | Effective point in time
         in: query

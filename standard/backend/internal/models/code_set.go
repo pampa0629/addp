@@ -71,6 +71,7 @@ type CodeSetAggregate struct {
 	CodeSet
 	CurrentRevision *CodeSetRevision `json:"current_revision,omitempty"`
 	DraftRevision   *CodeSetRevision `json:"draft_revision,omitempty"`
+	LatestRevision  *CodeSetRevision `json:"latest_revision,omitempty"` // 最高修订号，不表示当前生效 | Highest revision number, not necessarily effective
 }
 
 type CreateCodeSetRequest struct {

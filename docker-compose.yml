@@ -35,6 +35,7 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-system-backend:${IMAGE_TAG:-latest}
     container_name: system-backend
     environment:
+      - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
       - SERVICE_HOST=system-backend
       - ENV=${ENV:-development}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
@@ -118,6 +119,7 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-manager-backend:${IMAGE_TAG:-latest}
     container_name: manager-backend
     environment:
+      - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
       - SERVICE_HOST=manager-backend
       - PORT=8081
       - DB_SCHEMA=manager
@@ -175,6 +177,7 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-meta-backend:${IMAGE_TAG:-latest}
     container_name: meta-backend
     environment:
+      - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
       - SERVICE_HOST=meta-backend
       - PORT=8082
       - DB_SCHEMA=meta
@@ -221,6 +224,7 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-meta-worker:${IMAGE_TAG:-latest}
     # Note: No container_name for Swarm compatibility (allows multiple replicas)
     environment:
+      - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
       - DB_SCHEMA=meta
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
@@ -276,6 +280,7 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-transfer-backend:${IMAGE_TAG:-latest}
     container_name: transfer-backend
     environment:
+      - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
       - SERVICE_HOST=transfer-backend
       - PORT=8083
       - DB_SCHEMA=transfer
@@ -351,6 +356,7 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-transfer-bounded-worker:${IMAGE_TAG:-latest}
     # Note: No container_name for Swarm compatibility (allows multiple replicas)
     environment:
+      - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
       - DB_SCHEMA=transfer
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
@@ -445,6 +451,7 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-orchestrator-backend:${IMAGE_TAG:-latest}
     container_name: orchestrator-backend
     environment:
+      - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
       - SERVICE_HOST=orchestrator-backend
       - PORT=8084
       - DB_SCHEMA=orchestrator
@@ -487,6 +494,7 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-develop-backend:${IMAGE_TAG:-latest}
     container_name: develop-backend
     environment:
+      - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
       - SERVICE_HOST=develop-backend
       - DEVELOP_BACKEND_PORT=8185
       - ENV=production
@@ -536,6 +544,7 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-service-backend:${IMAGE_TAG:-latest}
     container_name: service-backend
     environment:
+      - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
       - SERVICE_HOST=service-backend
       - PORT=8086
       - ENV=production
@@ -588,6 +597,7 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-monitor-backend:${IMAGE_TAG:-latest}
     container_name: monitor-backend
     environment:
+      - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
       - SERVICE_HOST=monitor-backend
       - MONITOR_BACKEND_PORT=8100
       - MONITOR_WEBHOOK_ALLOW_PRIVATE_NETWORKS=${MONITOR_WEBHOOK_ALLOW_PRIVATE_NETWORKS:-false}
@@ -632,6 +642,7 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-standard-backend:${IMAGE_TAG:-latest}
     container_name: standard-backend
     environment:
+      - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
       - SERVICE_HOST=standard-backend
       - STANDARD_BACKEND_PORT=8110
       - SYSTEM_URL=http://system-backend:8180
@@ -681,6 +692,7 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-catalog-backend:${IMAGE_TAG:-latest}
     container_name: catalog-backend
     environment:
+      - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
       - SERVICE_HOST=catalog-backend
       - CATALOG_BACKEND_PORT=8192
       - SYSTEM_URL=http://system-backend:8180
@@ -731,6 +743,7 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-workbench-backend:${IMAGE_TAG:-latest}
     container_name: workbench-backend
     environment:
+      - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
       - SERVICE_HOST=workbench-backend
       - WORKBENCH_BACKEND_PORT=8193
       - SYSTEM_URL=http://system-backend:8180
@@ -773,6 +786,7 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-copilot-backend:${IMAGE_TAG:-latest}
     container_name: copilot-backend
     environment:
+      - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
       - SERVICE_HOST=copilot-backend
       - PORT=8087
       - GATEWAY_URL=http://gateway:8000
@@ -806,6 +820,7 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-model-backend:${IMAGE_TAG:-latest}
     container_name: model-backend
     environment:
+      - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
       - SERVICE_HOST=model-backend
       - PORT=8181
       - SYSTEM_URL=http://system-backend:8180
@@ -848,6 +863,7 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-quality-backend:${IMAGE_TAG:-latest}
     container_name: quality-backend
     environment:
+      - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
       - SERVICE_HOST=quality-backend
       - QUALITY_BACKEND_PORT=8182
       - QUALITY_CHECK_TIMEOUT=${QUALITY_CHECK_TIMEOUT:-30m}
@@ -882,6 +898,7 @@ services:
   quality-worker:
     image: ${REGISTRY:-localhost:5001}/addp-quality-worker:${IMAGE_TAG:-latest}
     environment:
+      - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
       - QUALITY_CHECK_TIMEOUT=${QUALITY_CHECK_TIMEOUT:-30m}
       - QUALITY_WORKER_CONCURRENCY=${QUALITY_WORKER_CONCURRENCY:-4}
       - QUALITY_WORKER_LEASE_DURATION=${QUALITY_WORKER_LEASE_DURATION:-30m}
@@ -924,6 +941,7 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-ontology-backend:${IMAGE_TAG:-latest}
     container_name: ontology-backend
     environment:
+      - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
       - SERVICE_HOST=ontology-backend
       - ONTOLOGY_BACKEND_PORT=8195
       - SYSTEM_URL=http://system-backend:8180
@@ -952,6 +970,7 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-security-backend:${IMAGE_TAG:-latest}
     container_name: security-backend
     environment:
+      - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
       - SERVICE_HOST=security-backend
       - SECURITY_BACKEND_PORT=8194
       - SYSTEM_URL=http://system-backend:8180
@@ -977,6 +996,7 @@ services:
   security-worker:
     image: ${REGISTRY:-localhost:5001}/addp-security-worker:${IMAGE_TAG:-latest}
     environment:
+      - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
       - SERVICE_HOST=security-worker
       - SECURITY_BACKEND_PORT=8194
       - SYSTEM_URL=http://system-backend:8180
@@ -1012,6 +1032,7 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-asset-backend:${IMAGE_TAG:-latest}
     container_name: asset-backend
     environment:
+      - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
       - SERVICE_HOST=asset-backend
       - ASSET_BACKEND_PORT=8183
       - SYSTEM_URL=http://system-backend:8180
@@ -1057,6 +1078,7 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-portal-backend:${IMAGE_TAG:-latest}
     container_name: portal-backend
     environment:
+      - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
       - PORTAL_BACKEND_PORT=8184
       - SYSTEM_URL=http://system-backend:8180
       - ASSET_URL=http://asset-backend:8183
@@ -1093,6 +1115,7 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-graph-backend:${IMAGE_TAG:-latest}
     container_name: graph-backend
     environment:
+      - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
       - SERVICE_HOST=graph-backend
       - GRAPH_BACKEND_PORT=8186
       - SYSTEM_URL=http://system-backend:8180
@@ -1128,6 +1151,7 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-inference-backend:${IMAGE_TAG:-latest}
     container_name: inference-backend
     environment:
+      - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
       - SERVICE_HOST=inference-backend
       - INFERENCE_BACKEND_PORT=8191
       - SYSTEM_URL=http://system-backend:8180
@@ -1177,6 +1201,7 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-agent-backend:${IMAGE_TAG:-latest}
     container_name: agent-backend
     environment:
+      - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
       - SERVICE_HOST=agent-backend
       - AGENT_BACKEND_PORT=8190
       - AGENT_DB_SCHEMA=agent
@@ -1222,6 +1247,7 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-gateway:${IMAGE_TAG:-latest}
     container_name: gateway
     environment:
+      - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
       - SERVICE_HOST=gateway
       - PORT=8000
       - POSTGRES_HOST=postgres

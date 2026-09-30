@@ -19,6 +19,7 @@ func NewCodeSetHandler(svc *service.CodeSetService) *CodeSetHandler { return &Co
 
 // ListCodeSets godoc
 // @Summary 获取码值集列表 | List code sets
+// @Description latest_revision 是最高修订号的完整历史展示投影，current_revision 只表示指定时点生效的已发布修订。 | latest_revision contains the complete highest-numbered revision for historical display; current_revision contains only the published revision effective at the requested time.
 // @Tags Standard
 // @Produce json
 // @Param scope_type query string false "适用范围 | Scope" Enums(platform,tenant_common,domain)
@@ -110,6 +111,7 @@ func (h *CodeSetHandler) CreateCodeSet(c *gin.Context) {
 
 // GetCodeSet godoc
 // @Summary 获取码值集聚合 | Get code set aggregate
+// @Description latest_revision 是最高修订号的完整历史展示投影，current_revision 只表示指定时点生效的已发布修订。 | latest_revision contains the complete highest-numbered revision for historical display; current_revision contains only the published revision effective at the requested time.
 // @Tags Standard
 // @Produce json
 // @Param as_of query string false "生效时点（RFC3339，默认服务端当前时间） | Effective point in time (RFC3339, defaults to server time)"

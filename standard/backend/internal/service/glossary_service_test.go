@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -99,6 +100,95 @@ func TestGlossaryServiceDeletesNeverPublishedIdentityAndDraft(t *testing.T) {
 	}
 	if identityCount != 0 || revisionCount != 0 {
 		t.Fatalf("remaining identity=%d revisions=%d, want both zero", identityCount, revisionCount)
+	}
+}
+
+func TestGlossaryServiceListPreservesWithdrawnContent(t *testing.T) {
+	db := openGlossaryServiceTestDB(t)
+	repo := repository.NewGlossaryRepository(db)
+	svc := NewGlossaryService(repo, repository.NewTenantReferenceRepository(db))
+	from := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+	aggregate, err := svc.CreateGlossary(&models.CreateGlossaryRequest{
+		ScopeType: models.StandardScopeTenantCommon, Code: "withdrawn_term", Name: "已撤回术语", Definition: "保留的业务定义", EffectiveFrom: &from,
+	}, 7, 9, "初始创建")
+	if err != nil {
+		t.Fatal(err)
+	}
+	revisionID := aggregate.DraftRevision.ID
+	aggregate, err = svc.SubmitRevision(aggregate.ID, revisionID, 7, 9, aggregate.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	aggregate, err = svc.PublishRevision(aggregate.ID, revisionID, 7, 9, aggregate.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = svc.WithdrawRevision(aggregate.ID, revisionID, 7, 9, aggregate.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	items, total, err := svc.ListGlossaries(7, repository.ListGlossaryOptions{Status: models.RevisionStatusWithdrawn})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total != 1 || len(items) != 1 || items[0].CurrentRevision != nil || items[0].DraftRevision != nil || !items[0].HasPublicationHistory {
+		t.Fatalf("withdrawn aggregate = %#v, total = %d", items, total)
+	}
+	payload, err := json.Marshal(items[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var projection struct {
+		LatestRevision *models.GlossaryRevision `json:"latest_revision"`
+	}
+	if err := json.Unmarshal(payload, &projection); err != nil {
+		t.Fatal(err)
+	}
+	if projection.LatestRevision == nil || projection.LatestRevision.Status != models.RevisionStatusWithdrawn || projection.LatestRevision.Name != "已撤回术语" || projection.LatestRevision.Definition != "保留的业务定义" {
+		t.Fatalf("latest history missing from list response: %s", payload)
+	}
+	if err := svc.DeleteGlossary(aggregate.ID, 7); !errors.Is(err, ErrGlossaryPublicationHistory) {
+		t.Fatalf("withdrawn deletion = %v, want publication history conflict", err)
+	}
+}
+
+func TestGlossaryAggregateLatestHistoryDoesNotBecomeEffective(t *testing.T) {
+	for _, scenario := range []string{"withdrawn", "future", "expired"} {
+		t.Run(scenario, func(t *testing.T) {
+			db := openGlossaryServiceTestDB(t)
+			identity := models.Glossary{TenantID: 7, ScopeType: models.StandardScopeTenantCommon, Code: "history_only", CreatedBy: 9, Version: 1, LifecycleState: "active"}
+			if err := db.Create(&identity).Error; err != nil {
+				t.Fatal(err)
+			}
+			past := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+			end := past.AddDate(1, 0, 0)
+			old := models.GlossaryRevision{GlossaryID: identity.ID, RevisionNo: 1, Name: "旧定义", Definition: "已失效的旧内容", Status: models.RevisionStatusPublished, EffectiveFrom: &past, EffectiveTo: &end, ChangeSummary: "initial", CreatedBy: 9}
+			if err := db.Create(&old).Error; err != nil {
+				t.Fatal(err)
+			}
+			latest := old
+			latest.ID, latest.RevisionNo, latest.Name = 0, 2, "最新历史定义"
+			switch scenario {
+			case "withdrawn":
+				latest.Status = models.RevisionStatusWithdrawn
+			case "future":
+				future := past.AddDate(10, 0, 0)
+				latest.EffectiveFrom, latest.EffectiveTo = &future, nil
+			case "expired":
+				laterEnd := end.AddDate(1, 0, 0)
+				latest.EffectiveFrom, latest.EffectiveTo = &end, &laterEnd
+			}
+			if err := db.Create(&latest).Error; err != nil {
+				t.Fatal(err)
+			}
+			aggregate, err := repository.NewGlossaryRepository(db).GetAggregateAt(identity.ID, 7, past.AddDate(6, 0, 0))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if aggregate.CurrentRevision != nil || aggregate.DraftRevision != nil || aggregate.LatestRevision == nil || aggregate.LatestRevision.ID != latest.ID || !aggregate.HasPublicationHistory {
+				t.Fatalf("history confused with effective content: %#v", aggregate)
+			}
+		})
 	}
 }
 

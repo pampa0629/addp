@@ -44,6 +44,8 @@ type ModuleRuntimeInstance struct {
 	Role               string         `gorm:"not null;size:30;index" json:"role"`
 	ModuleURL          string         `gorm:"size:255" json:"module_url"`
 	HealthCheckURL     string         `gorm:"size:255" json:"health_check_url"`
+	HostNodeName       string         `gorm:"size:255;not null;default:''" json:"host_node_name"`
+	RuntimeHostname    string         `gorm:"size:255;not null;default:''" json:"runtime_hostname"`
 	RegisteredHost     string         `gorm:"size:255;index" json:"registered_host"`
 	Status             string         `gorm:"not null;default:'up';size:20;index" json:"status"`
 	LastHeartbeat      time.Time      `gorm:"not null;index" json:"last_heartbeat"`
@@ -76,6 +78,8 @@ type ModuleRegistrationRequest struct {
 	ModuleURL               string                                     `json:"module_url"`
 	RoutePrefix             string                                     `json:"route_prefix"`
 	HealthCheckURL          string                                     `json:"health_check_url"`
+	HostNodeName            string                                     `json:"host_node_name"`
+	RuntimeHostname         string                                     `json:"runtime_hostname"`
 	ProcessStartedAt        time.Time                                  `json:"process_started_at" binding:"required"`
 	Metadata                map[string]interface{}                     `json:"metadata"`
 	ConfigurationManagement *commonconfiguration.ManagementDeclaration `json:"configuration_management"`
@@ -108,6 +112,8 @@ type ModuleRuntimeInstanceInfo struct {
 	Status           string                 `json:"status"`
 	LastHeartbeat    time.Time              `json:"last_heartbeat"`
 	LeaseExpiresAt   time.Time              `json:"lease_expires_at"`
+	HostNodeName     string                 `json:"host_node_name"`
+	RuntimeHostname  string                 `json:"runtime_hostname"`
 	ProcessStartedAt *time.Time             `json:"process_started_at"`
 	StoppedAt        *time.Time             `json:"stopped_at"`
 	StopReason       string                 `json:"stop_reason"`
@@ -119,6 +125,7 @@ type ModuleRuntimeInstanceInfo struct {
 type ModuleRuntimeInstanceFilter struct {
 	ModuleName     string
 	RegisteredHost string
+	NodeName       string
 	Role           string
 	Status         string
 	RegisteredFrom time.Time

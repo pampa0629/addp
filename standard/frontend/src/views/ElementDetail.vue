@@ -294,6 +294,7 @@
 </template>
 
 <script setup>
+import { getStandardDisplayRevision } from '../utils/standardRevision'
 import { BusinessDomainSelect, buildBusinessDomainOptions } from '@common-ui'
 import ElementDataTypeSelect from '../components/ElementDataTypeSelect.vue'
 import UnitSelect from '../components/UnitSelect.vue'
@@ -408,7 +409,7 @@ async function load() {
       elementAPI.listRevisions(elementId)
     ])
     if (!detailRequests.isCurrent(request, detailTarget.value)) return
-    const selectedId = requestedRevision ?? (aggregate.draft_revision || aggregate.current_revision || history?.[0])?.id
+    const selectedId = requestedRevision ?? getStandardDisplayRevision(aggregate)?.id
     const exactRevision = selectedId ? await elementAPI.getRevision(elementId, selectedId) : null
     if (!detailRequests.isCurrent(request, detailTarget.value)) return
     if (exactRevision?.code_set_revision_id &&

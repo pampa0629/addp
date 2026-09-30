@@ -50,3 +50,10 @@ func GetServiceHost() string {
 	}
 	return host
 }
+
+// RuntimeNodeIdentity separates deployment-provided host nodes from OS hostnames.
+// An unavailable hostname remains unknown and does not affect readiness.
+func RuntimeNodeIdentity() (hostNodeName, runtimeHostname string) {
+	runtimeHostname, _ = os.Hostname()
+	return strings.TrimSpace(os.Getenv("ADDP_HOST_NODE_NAME")), strings.TrimSpace(runtimeHostname)
+}

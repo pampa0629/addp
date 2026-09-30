@@ -37,6 +37,7 @@
 </template>
 
 <script setup>
+import { getStandardDisplayRevision as workingRevision } from '../utils/standardRevision'
 import { BusinessDomainSelect, buildBusinessDomainOptions } from '@common-ui'
 import ElementDataTypeSelect from '../components/ElementDataTypeSelect.vue'
 import { onMounted, reactive, ref, computed, watch } from 'vue'
@@ -63,7 +64,6 @@ const filters = reactive({ keyword: '', scope_type: '', owner_domain_id: null, s
 const emptyForm = () => ({ code: '', name: '', definition: '', data_type: 'string', length: null, nullable: true, scope_type: 'tenant_common', owner_domain_id: null, value_domain_kind: 'unrestricted' })
 const form = reactive(emptyForm())
 const rules = computed(() => ({ code: buildStandardCodeRules(t, 'standard.element.codeRequired'), name: [{ required: true, message: t('standard.element.nameRequired') }], definition: [{ required: true, message: t('standard.element.definitionRequired') }], data_type: [{ required: true, message: t('standard.element.dataTypeRequired') }], scope_type: [{ required: true, message: t('standard.common.selectScope') }], owner_domain_id: requiresOwnerDomain(form.scope_type) ? [{ required: true, message: t('standard.common.ownerDomainRequired') }] : [] }))
-const workingRevision = row => row.draft_revision || row.current_revision
 const statusLabel = s => s ? t(`standard.revision.status.${s}`) : '-'
 const statusType = s => ({ draft: 'info', in_review: 'warning', published: 'success', withdrawn: 'danger' }[s] || 'info')
 const scopeLabel = scope => scope ? t(standardScopeLabelKey(scope)) : '-'

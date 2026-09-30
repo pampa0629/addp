@@ -99,6 +99,10 @@ func (r *MetricRepository) GetAggregateAt(id, tenantID int64, asOf time.Time) (*
 		return nil, err
 	}
 	result := &models.MetricDefinitionAggregate{MetricDefinition: *identity}
+	result.LatestRevision, err = latestRevision[models.MetricDefinitionRevision](r.db.Preload("Dependencies", func(db *gorm.DB) *gorm.DB { return db.Order("id ASC") }), "metric_definition_id", identity.ID)
+	if err != nil {
+		return nil, err
+	}
 	if revision, loadErr := r.getEffectiveRevision(r.db, id, asOf); loadErr == nil {
 		result.CurrentRevision = revision
 	} else if !errors.Is(loadErr, gorm.ErrRecordNotFound) {

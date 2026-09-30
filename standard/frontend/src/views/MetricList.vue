@@ -49,6 +49,7 @@
 </template>
 
 <script setup>
+import { getStandardDisplayRevision as workingRevision } from '../utils/standardRevision'
 import { BusinessDomainSelect, buildBusinessDomainOptions } from '@common-ui'
 import UnitSelect from '../components/UnitSelect.vue'
 import {computed,onMounted,reactive,ref,watch} from 'vue'
@@ -69,7 +70,6 @@ const categoryDialog=ref(false),savingCategory=ref(false),editingCategory=ref(nu
 const filters=reactive({keyword:'',metric_type:'',scope_type:'',owner_domain_id:null,status:'',page:1,page_size:20})
 const blank=()=>({code:'',name:'',metric_type:'atomic',category_id:null,scope_type:'tenant_common',owner_domain_id:null,tags:[],unit_id:null,definition:'',statistical_caliber:'',semantic_formula:'',dependency_ids:[]});const form=reactive(blank())
 const rules=computed(()=>({code:buildStandardCodeRules(t,'standard.metric.codeRequired'),name:[{required:true,message:t('standard.metric.nameRequired')}],metric_type:[{required:true,message:t('standard.metric.typeRequired')}],definition:[{required:true,message:t('standard.metric.definitionRequired')}],statistical_caliber:[{required:true,message:t('standard.metric.caliberRequired')}],scope_type:[{required:true,message:t('standard.common.selectScope')}],owner_domain_id:requiresOwnerDomain(form.scope_type)?[{required:true,message:t('standard.common.ownerDomainRequired')}]:[],dependency_ids:form.metric_type==='derived'?[{validator:(_,v,done)=>v?.length===1?done():done(new Error(t('standard.metric.derivedDependencyRequired')))}]:form.metric_type==='composite'?[{validator:(_,v,done)=>v?.length?done():done(new Error(t('standard.metric.compositeDependencyRequired')))}]:[]}))
-const workingRevision=row=>row.draft_revision||row.current_revision
 const typeLabel=type=>type?t(`standard.metric.${type}`):'-',statusLabel=status=>status?t(`standard.revision.status.${status}`):'-',statusType=status=>({draft:'info',in_review:'warning',published:'success',withdrawn:'danger'}[status]||'info'),scopeLabel=scope=>scope?t(standardScopeLabelKey(scope)):'-'
 const domainName=id=>domains.value.find(item=>item.id===id)?.name||'-',buildTree=(list,parent=null)=>list.filter(item=>(item.parent_id||null)===parent).map(item=>({...item,children:buildTree(list,item.id)})),categoryTree=computed(()=>buildTree(categories.value))
 const load=async()=>{loading.value=true;try{const params=Object.fromEntries(Object.entries(filters).filter(([,v])=>v!==''&&v!=null));const result=await metricAPI.list(params);metrics.value=result.data||[];total.value=result.total||0}catch(error){ElMessage.error(getStandardErrorMessage(error,t,'standard.common.loadFailed'))}finally{loading.value=false}}

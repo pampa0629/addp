@@ -117,6 +117,9 @@
                     <el-table-column :label="t('system.module.instances.stopReason')" width="145">
                       <template #default="{ row: instance }">{{ stopReasonLabel(instance) }}</template>
                     </el-table-column>
+                    <el-table-column :label="t('system.module.instances.node')" min-width="220">
+                      <template #default="{ row: instance }"><ModuleInstanceNode :instance="instance" /></template>
+                    </el-table-column>
                     <el-table-column :label="t('system.module.instances.endpoint')" min-width="180" show-overflow-tooltip>
                       <template #default="{ row: instance }">{{ endpointLabel(instance) }}</template>
                     </el-table-column>
@@ -219,6 +222,7 @@ import { useAuthStore } from '../store/auth'
 import { resolveIAMModuleName } from '../utils/iamPresentation'
 import { getModuleAvailability, isModuleRoutable, isRuntimeInstanceOnline, moduleNeedsAttention } from '../utils/moduleRegistry'
 import { formatRuntimeUptime, getRegisteredEndpoint } from '../utils/moduleRuntimePresentation'
+import ModuleInstanceNode from '../components/ModuleInstanceNode.vue'
 import ModuleInstances from '../components/ModuleInstances.vue'
 
 const { t, te } = useI18n()
