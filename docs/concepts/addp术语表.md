@@ -205,7 +205,7 @@
 | 英文术语 | 中文术语 | 定义 | 备注 |
 |---|---|---|---|
 | attributes | 元数据属性 | `meta_item.attributes` 中保存的结构化扩展事实。 | 包含 `storage`、`item`、`type_info`、`format_info`、`access_index`、`capabilities`。 |
-| item fingerprint | 数据项指纹 | 由 `engine_id + full_name` 计算的稳定 data item 身份。 | 同一数据项内容变化时指纹不变；不是内容哈希，也不是源版本。`item_id` 只是当前 Meta 行引用。 |
+| item fingerprint | 数据项指纹 | 由 `engine_id + full_name` 计算的数据项定位身份；这两个输入不变时指纹稳定。 | 内容变化不改变指纹；改名或路径变化会改变指纹，外部删除后同名重建保持相同定位身份。不是内容哈希、源版本或访问授权；访问仍核验当前有效规则，不以物理创建实例变化自动撤销逻辑资源授权。`item_id` 只是当前 Meta 行引用。 |
 | source version | 源版本 | 表达某个稳定数据项的当前内容版本事实。 | 可由 `content_hash`、`data_updated_at`、`last_modified_at` 或格式专用版本事实组成；用于判断派生结果是否过期，不替代 item fingerprint。 |
 | dependency snapshot | 依赖快照 | 业务定义在创建或显式刷新时，从上游当前事实中选择其执行和对外契约真正依赖的部分并冻结保存。 | 不是完整 Meta item 副本。Meta 提供源事实和源时间；业务模块记录采集时间并对依赖投影计算 hash。差异用于提示重新发布，不自动改变既有业务契约。 |
 | lineage | 数据血缘 | 数据项之间的来源、派生和服务依赖关系的关系视图。 | 归 Meta 管理关系事实和查询投影；不是新的数据资产实体或独立图数据库。完整边界见 [数据血缘能力规范](../spec/addp数据血缘能力规范.md)。 |
@@ -477,7 +477,8 @@
 | Department | 部门 | Tenant 内表达稳定组织归属的层级组织单元。 | 一个 User 可有一个主部门和多个附加部门；父子部门权限默认不继承。名称表达显示名称；编码由用户创建时必填，同 Tenant 内唯一，创建后不可修改，作为技术身份。 |
 | Project Group | 项目组 | Tenant 内面向跨部门协作的成员集合。 | 严格属于单个 Tenant，第一阶段不嵌套，不改变成员的 Department 归属；创建即启用，关闭后不可恢复。名称表达显示名称；编码由用户创建时必填，同 Tenant 内唯一，创建后不可修改，作为技术身份。 |
 | Resource Grant | 资源授权 | owner 模块将特定资源动作显式授予 User、Department、Project Group、Role 主体集合或 Service Principal 的事实。 | 最终资源访问判断仍由 owner 执行；Asset 的授权记录可以是授权来源。 |
-| source data authorization authority | 源数据授权权威 | 同一物理表、文件或对象访问规则的唯一维护方。 | 已确认由 System 的引擎访问控制领域承担，不是 System IAM 的全平台中央 ACL；访问模块执行其权威规则，不能分别维护源数据授权副本。专业业务对象的授权仍归各自 owner；表级贯通尚未实现。 |
+| source data authorization authority | 源数据授权权威 | 同一源数据逻辑资源访问规则的唯一维护方。 | 已确认由 System 的引擎访问控制领域承担，不是 System IAM 的全平台中央 ACL；访问模块执行其权威规则，不能分别维护源数据授权副本。专业业务对象的授权仍归各自 owner；表级贯通尚未实现。 |
+| source data authorization target | 源数据授权目标 | 在 Tenant 边界内，以已登记 Engine 身份和完整结构化 EngineCatalogPath 确定的源数据逻辑资源。 | 不是物理对象每次创建的身份；没有在 ADDP 中改变资源绑定或授权时，外部同名重建仍按同一逻辑资源处理。不同 Engine 或路径是不同目标，不随 Catalog 重绑自动转移规则；指纹、Meta 行 ID 和 CatalogEntry ID 不代替当前有效访问规则。 |
 | business authorization decision | 业务授权决定 | 有效业务责任人对一次明确资源、接收主体、动作和期限的共享或权限扩大作出的确认。 | 不等于责任身份、IAM Role、Resource Grant 或数据访问成功；必须验证当前资格并由授权维护方履约。普通只读共享允许确认人与办理人同人，但必须分别具备两方面资格；不隐含允许申请人自批。 |
 | authorization fulfillment | 授权办理 | 具备办理功能和目标管理范围的主体，将有效业务或接入授权依据落实为资源访问规则，或执行规则撤销的行为。 | 办理权限不等于业务批准权；业务责任人、数据管理员和技术维护者不因承担责任自动获得办理或内容访问权。 |
 | onboarding authorization authority | 接入授权主体 | 尚未明确业务责任时，被显式授予限定引擎资源管理范围、可办理有限初始访问授权的主体。 | 只向指定账号或项目组授予明确选中资源的限时只读，不包含全租户公开、写入或 DDL；明确业务责任后，新增共享与扩大权限须转由业务责任人确认。不是新的 IAM 身份或永久业务负责人，具体委派契约待实现。 |

@@ -1,18 +1,18 @@
-FROM localhost:5001/node:18.20.5-alpine AS builder
+ARG NODE_VERSION
+FROM localhost:5001/node:${NODE_VERSION}-alpine AS builder
 
 WORKDIR /app
 
-COPY quality/frontend/package.json ./
+COPY quality/frontend/package.json quality/frontend/package-lock.json ./
 
-RUN npm install --no-package-lock && \
-    npm install --no-save "@rollup/rollup-linux-$(node -p 'process.arch')-musl" && \
-    npm cache clean --force
+RUN npm ci
 
 COPY common-frontend /common-frontend
 
 RUN ln -s /app/node_modules /common-frontend/node_modules
 
-COPY quality/frontend .
+COPY quality/frontend/index.html quality/frontend/vite.config.js ./
+COPY quality/frontend/src ./src
 
 RUN npm run build
 

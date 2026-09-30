@@ -50,7 +50,7 @@
       <el-table-column :label="t('system.iam.roles.role')" min-width="210"><template #default="{ row }"><div class="iam-primary-cell"><strong>{{ assignmentRoleName(row) }}</strong><span class="iam-role-key">{{ row.role_key }}</span></div></template></el-table-column>
       <el-table-column :label="t('system.iam.roleAssignments.scope')" min-width="230"><template #default="{ row }">{{ scopeValue(row) }}</template></el-table-column>
       <el-table-column :label="t('system.iam.common.status')" width="110"><template #default="{ row }"><el-tag :type="assignmentStateTagType(row.effective_state)">{{ t(`system.iam.status.${row.effective_state}`) }}</el-tag></template></el-table-column>
-      <el-table-column :label="t('system.iam.roleAssignments.validUntil')" width="180"><template #default="{ row }">{{ formatDate(row.valid_until) }}</template></el-table-column>
+      <el-table-column :label="t('system.iam.roleAssignments.validUntil')" width="180"><template #default="{ row }">{{ row.valid_until ? formatDate(row.valid_until) : t('system.iam.roleAssignments.noExpiry') }}</template></el-table-column>
       <el-table-column :label="t('system.iam.common.actions')" width="180" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" :icon="View" @click="openDetails(row.id)">{{ t('system.iam.common.view') }}</el-button>

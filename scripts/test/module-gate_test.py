@@ -151,6 +151,67 @@ class ModuleGateTest(unittest.TestCase):
         commands = [step.command for step in MODULE.plan_module(self.repository, "sample")]
         self.assertEqual(commands.count(("make", "test-sample-falkor")), 1)
 
+    def _run_common_postgres_group(self, arguments: list[str], output: str = "PASS") -> tuple[subprocess.CompletedProcess[str], list[str]]:
+        repository = SCRIPT.parents[2]
+        with tempfile.TemporaryDirectory(dir=self.repository) as directory:
+            fixture = Path(directory)
+            calls = fixture / "go-calls"
+            go = fixture / "go"
+            go.write_text(
+                '#!/usr/bin/env bash\n'
+                'printf "%s\\n" "$*" >> "$ADDP_GATE_TEST_GO_CALLS"\n'
+                'printf "%s\\n" "$ADDP_GATE_TEST_GO_OUTPUT"\n',
+                encoding="utf-8",
+            )
+            go.chmod(0o755)
+            environment = os.environ.copy()
+            environment.update({
+                "PATH": str(fixture) + os.pathsep + environment["PATH"],
+                # Only mocked Go executes; no database or Docker operation is performed.
+                "GITHUB_ACTIONS": "true",
+                "ADDP_TEST_POSTGRES_HOST": "127.0.0.1",
+                "ADDP_TEST_POSTGRES_PORT": "5432",
+                "ADDP_TEST_POSTGRES_DATABASE": "addp_test",
+                "ADDP_TEST_POSTGRES_PASSWORD": "fixture-password",
+                "ADDP_GATE_TEST_GO_CALLS": str(calls),
+                "ADDP_GATE_TEST_GO_OUTPUT": output,
+            })
+            environment.pop("ADDP_TEST_EXECUTION_POSTGRES_DSN", None)
+            result = subprocess.run(
+                ["bash", str(repository / "scripts/test/common-postgres-gate.sh"), *arguments],
+                cwd=repository, env=environment, capture_output=True, text=True,
+                timeout=10, check=False,
+            )
+            return result, calls.read_text().splitlines() if calls.exists() else []
+
+    def test_common_postgres_group_preserves_full_default_and_scopes_explicitly(self) -> None:
+        result, calls = self._run_common_postgres_group([])
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(4, len(calls))
+        self.assertIn("TestIntegrationPostgresAnalyticalArithmetic", calls[0])
+        self.assertIn("TestIntegrationResolvePostgresQuery(ReadSet|OutputLineage)", calls[0])
+        self.assertIn("./execution", calls[1])
+        self.assertIn("./dataprotection/projectionstore", calls[2])
+        self.assertIn("./dbbridge", calls[3])
+
+        result, calls = self._run_common_postgres_group(["--test", "query-read-set"])
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(1, len(calls))
+        self.assertIn("-run ^TestIntegrationResolvePostgresQuery(ReadSet|OutputLineage)", calls[0])
+        self.assertNotIn("TestIntegrationPostgresAnalyticalArithmetic", calls[0])
+        self.assertIn("query-read-set", result.stdout)
+
+    def test_common_postgres_group_rejects_skips_and_unknown_groups(self) -> None:
+        result, calls = self._run_common_postgres_group(["--test", "query-read-set"], "--- SKIP: fixture")
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("refuses skipped tests", result.stderr)
+        self.assertEqual(1, len(calls))
+        for arguments in (["--test", "unknown"], ["--test"], ["--unknown"]):
+            with self.subTest(arguments=arguments):
+                result, calls = self._run_common_postgres_group(arguments)
+                self.assertEqual(2, result.returncode)
+                self.assertEqual([], calls)
+
     def test_runs_after_required_t2_environment_is_present(self) -> None:
         steps = MODULE.plan_module(self.repository, "sample")
 

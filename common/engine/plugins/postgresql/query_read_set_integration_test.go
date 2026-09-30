@@ -2,13 +2,93 @@ package postgresql
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
+	"reflect"
 	"testing"
 	"time"
 
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/models"
 )
+
+// Authorization targets use logical catalog paths, not physical creation identities.
+// These DDL operations affect only this test's disposable fixture, never an enrolled source.
+func TestIntegrationResolvePostgresQueryReadSetKeepsLogicalTargetAcrossSameNameRecreation(t *testing.T) {
+	db, pg, connInfo := openPostgresPrepareIntegration(t, false)
+	schemaName := "common_pg_it"
+	tableName := fmt.Sprintf("read_set_identity_%d", time.Now().UnixNano())
+	renamedName := tableName + "_renamed"
+	t.Cleanup(func() {
+		defer db.Close()
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		for _, name := range []string{tableName, renamedName} {
+			if _, err := db.ExecContext(cleanupCtx, fmt.Sprintf(`DROP TABLE IF EXISTS "%s"."%s"`, schemaName, name)); err != nil {
+				t.Errorf("cleanup lifecycle fixture %s failed: %v", name, err)
+			}
+		}
+		var remaining int
+		if err := db.QueryRowContext(cleanupCtx, `
+			SELECT count(*) FROM pg_catalog.pg_class cls
+			JOIN pg_catalog.pg_namespace ns ON ns.oid = cls.relnamespace
+			WHERE ns.nspname = $1 AND cls.relname IN ($2, $3)
+		`, schemaName, tableName, renamedName).Scan(&remaining); err != nil {
+			t.Errorf("verify lifecycle fixture cleanup failed: %v", err)
+		} else if remaining != 0 {
+			t.Errorf("lifecycle fixture cleanup left %d relations", remaining)
+		}
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	catalog := &postgresDatabaseReadCatalog{db: db}
+	readSet := func(name string) *plugin.QueryReadSet {
+		t.Helper()
+		prepared, err := pg.PrepareQuery(ctx, connInfo, plugin.QueryRequest{
+			EngineID: 91, Language: "sql",
+			Query:   fmt.Sprintf(`SELECT id FROM "%s"."%s"`, schemaName, name),
+			Options: plugin.QueryOptions{ReadOnly: true},
+		})
+		if err != nil {
+			t.Fatalf("prepare lifecycle query failed: %v", err)
+		}
+		result, err := prepared.ReadSet(ctx)
+		if err != nil {
+			t.Fatalf("resolve lifecycle read set failed: %v", err)
+		}
+		if len(result.Paths) != 1 {
+			t.Fatalf("expected one lifecycle read path, got %#v", result.Paths)
+		}
+		assertPostgresReadPath(t, result.Paths[0], 91, schemaName, name, plugin.EngineCatalogKindTable)
+		return result
+	}
+	fingerprint := func(name string) string {
+		return models.GenerateItemFingerprint(91, schemaName+"."+name)
+	}
+
+	createPostgresPrepareBaseTable(t, ctx, db, schemaName, tableName, `"id" bigint NOT NULL`)
+	originalReadSet := readSet(tableName)
+	originalFingerprint := fingerprint(tableName)
+
+	if _, err := db.ExecContext(ctx, fmt.Sprintf(`ALTER TABLE "%s"."%s" RENAME TO "%s"`, schemaName, tableName, renamedName)); err != nil {
+		t.Fatalf("rename lifecycle fixture failed: %v", err)
+	}
+	if _, err := catalog.ResolveRelation(ctx, postgresRelationReference{Schema: schemaName, Name: tableName}); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("old name after rename should not resolve, got %v", err)
+	}
+	if fingerprint(renamedName) == originalFingerprint || reflect.DeepEqual(readSet(renamedName), originalReadSet) {
+		t.Fatal("rename must change the name-derived fingerprint and read path")
+	}
+
+	if _, err := db.ExecContext(ctx, fmt.Sprintf(`DROP TABLE "%s"."%s"`, schemaName, renamedName)); err != nil {
+		t.Fatalf("drop lifecycle fixture failed: %v", err)
+	}
+	createPostgresPrepareBaseTable(t, ctx, db, schemaName, tableName, `"id" bigint NOT NULL`)
+	if fingerprint(tableName) != originalFingerprint || !reflect.DeepEqual(readSet(tableName), originalReadSet) {
+		t.Fatal("same-name recreation must retain the logical locator fingerprint and read path")
+	}
+}
 
 func TestIntegrationResolvePostgresQueryReadSetAllowsTrustedBuiltins(t *testing.T) {
 	db, pg, connInfo := openPostgresPrepareIntegration(t, false)

@@ -93,6 +93,7 @@ T2 使用真实但可丢弃的基础设施，并满足：
 - 门禁在任何破坏性动作前校验数据库身份，拒绝开发库、生产库或不满足 owner 安全约束的连接。
 - 每个场景只清理自己拥有的 Schema 或带唯一运行标识的事实，并验证零残留。
 - 门禁拒绝意外 Skip，避免“命令成功但测试未运行”。
+- Common PostgreSQL 的默认 `make test-common-postgres` 保持完整门禁。仅验证查询读取集合及输出血缘时，可在同样的显式测试连接条件下运行 `bash scripts/test/common-postgres-gate.sh --test query-read-set`；该分组包含真实资源改名及同名重建的定位身份案例，保留数据库身份检查、Skip 拒绝和场景清理。分组结果只证明所选范围，不替代完整 T2 门禁；CI 继续使用无分组选项的默认入口。
 - Manager 派生任务定义、语义唯一约束、资源绑定与资源回收的持久化契约由 `make test-manager-postgres` 在真实 PostgreSQL 中覆盖；该门禁只允许本地 `addp_test` 或 CI 随 Job 销毁的 disposable database。
 
 ### 4.3 T3
@@ -231,6 +232,8 @@ T5 按产品或 Runtime 独立准备真实前置条件，例如 macOS Keychain�
 KingbaseES 的 T2 Provider 与 T5 官方介质认证暂不接入 GitHub Actions，保留标准命令与确定性回归，由持有正规 License 的 owner 在受控 Linux x86_64 主机人工执行。T5 未声明 `workflow_job` 表示不由 GitHub Actions 编排，登记检查拒绝 workflow 调用其 suite 或内部 owner 目标；恢复自动执行前需另行确认 Runner 隔离与生命周期方案。此调整不改变 Online T4 的现有协议，脚本回归通过不代表真实授权认证通过。
 
 ## 七、CI 编排与登记
+
+产品镜像构建继续由 `make build-images` 唯一入口负责。构建调度最多同时执行两个任务，基础镜像预热先于任务启动；单路和两路使用同一实现。前端 Node 版本来自根 `.node-version`，仅使用锁文件安装依赖。`make test-platform` 校验这些契约，并验证并发上限、失败汇总、日志隔离及中断时的进程和临时目录清理。现有 Platform CI 产品构建 Job 复用该入口验证实际镜像；Node 版本变更必须通过影响选择命中全部前端镜像，不缩减受影响服务范围。
 
 发布工作流安全审计统一由 `make test-workflow-security` 执行，并纳入本地 `test-platform` 与 CI 现有 System IAM required Job。唯一脚本固定 zizmor 1.28.0，只扫描 `.github/workflows/release-and-t2-gates.yml`，使用 auditor、medium 最低严重级别、关闭在线审计，不读取自定义配置或忽略标记；安装、扫描或输入收集失败必须阻断。首次运行需联网取得固定版本的二进制 wheel，使用临时虚拟环境且退出时清理；不依赖 ADDP 服务或数据库。
 

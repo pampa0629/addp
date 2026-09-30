@@ -76,6 +76,12 @@ class SelectImageServicesTest(unittest.TestCase):
         self.assertIn("console", selected)
         self.assertIn("meta-frontend", selected)
 
+    def test_node_version_change_selects_all_frontend_images(self) -> None:
+        self.assertEqual(
+            ["system-backend", "agent-backend", "console", "meta-frontend", "nginx"],
+            self._select(".node-version"),
+        )
+
     def test_shared_python_change_selects_real_consumers(self) -> None:
         selected = self._select("common-python/addp_common/client.py")
         self.assertIn("agent-backend", selected)

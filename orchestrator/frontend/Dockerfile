@@ -1,28 +1,23 @@
-FROM localhost:5001/node:18.20.5-alpine AS builder
+ARG NODE_VERSION
+FROM localhost:5001/node:${NODE_VERSION}-alpine AS builder
 
-WORKDIR /app
+WORKDIR /repo/addp/orchestrator/frontend
 
 # 复制 package.json
-COPY orchestrator/frontend/package.json ./
+COPY common-frontend/package.json /repo/addp/common-frontend/package.json
+COPY orchestrator/frontend/package.json orchestrator/frontend/package-lock.json ./
 
-# 安装依赖 (不使用 lock 文件以避免 npm bug)
-# 显式安装 rollup 的本地依赖
-RUN npm install --no-package-lock && \
-    npm install --no-save "@rollup/rollup-linux-$(node -p 'process.arch')-musl" && \
-    npm cache clean --force
+RUN npm ci
 
 # 复制 common-frontend (用于内部依赖解析)
-COPY common-frontend /common-frontend
+COPY common-frontend /repo/addp/common-frontend
 
-# 创建符号链接:
-# 1. 让 common-frontend 能访问 node_modules
-# 2. 让 @addp/common-frontend 指向 /common-frontend
-RUN ln -s /app/node_modules /common-frontend/node_modules && \
-    mkdir -p /app/node_modules/@addp && \
-    ln -s /common-frontend /app/node_modules/@addp/common-frontend
+# 共享源码复用模块依赖；本地包链接由 npm ci 按锁文件创建
+RUN ln -s /repo/addp/orchestrator/frontend/node_modules /repo/addp/common-frontend/node_modules
 
 # 复制源代码
-COPY orchestrator/frontend .
+COPY orchestrator/frontend/index.html orchestrator/frontend/vite.config.js ./
+COPY orchestrator/frontend/src ./src
 
 # 构建
 RUN npm run build
@@ -31,7 +26,7 @@ RUN npm run build
 FROM localhost:5001/nginx:alpine
 
 # 复制构建产物
-COPY --from=builder /app/dist /usr/share/nginx/html
+COPY --from=builder /repo/addp/orchestrator/frontend/dist /usr/share/nginx/html
 
 # 复制 nginx 配置
 COPY orchestrator/frontend/nginx.conf /etc/nginx/conf.d/default.conf

@@ -58,7 +58,7 @@ erDiagram
 
 Catalog 不提供任意 `CatalogRelation` 或可配置关系类型。当前唯一由 Catalog 拥有的跨条目关系是弃用条目指向一个推荐继任项：它表达“两个不同企业身份之间的治理迁移建议”，不表达数据血缘、专业依赖、同义词或同一身份合并。
 
-Meta DataItem fingerprint 是技术资源身份；`CatalogEntry.id` 是企业目录身份。二者不能互相替代。
+Meta DataItem fingerprint 是技术资源的定位身份；`CatalogEntry.id` 是企业目录身份。二者不能互相替代，也都不是数据访问授权。源数据规则针对 Tenant 内由 Engine 与完整 EngineCatalogPath 确定的逻辑资源，不跟踪源端每次物理创建；外部同名重建保持逻辑目标，访问仍核验当前有效规则。
 
 ## 三、模块事实所有权
 
@@ -134,6 +134,8 @@ stateDiagram-v2
 - 资产 `draft` / `published` / `offline` 状态只属于 Asset。
 
 物理路径变化产生新的 fingerprint。平台不得通过名称或结构相似度自动猜测重命名；治理人员可以通过显式重绑把新来源接到原 CatalogEntry，并把临时 CatalogEntry 留作指向原身份的 `merged` 墓碑。
+
+上述重绑维护企业目录身份与关联历史，不转移源数据授权。Catalog 编辑业务名称不修改来源表名，不提供来源表改名功能。源数据授权按 ADDP 中登记的逻辑资源处理：用户未在 ADDP 改变绑定或规则时，外部同名重建不自动改变原授权；不同路径或不同 Engine 的规则不自动跟随重绑。接入本身不授权修改源库，也不要求安装源端身份记录或触发器。具体访问仍须通过当前功能权限、有效资源规则及安全条件。
 
 治理人员把 `curated` 或 `certified` 条目推进为 `deprecated` 时，可以同时指定一个推荐继任 CatalogEntry。推荐继任项必须是同 Tenant、来源有效且当前为 `curated` 或 `certified` 的 active 条目。旧条目仍可独立读取并保留历史，不自动跳转；这与 `merged` 表达的“同一企业身份归并”严格区分。
 

@@ -1,4 +1,5 @@
-FROM localhost:5001/node:18.20.5-alpine AS builder
+ARG NODE_VERSION
+FROM localhost:5001/node:${NODE_VERSION}-alpine AS builder
 
 WORKDIR /repo/addp/manager/frontend
 
@@ -8,7 +9,7 @@ COPY manager/frontend/package.json ./package.json
 COPY manager/frontend/package-lock.json ./package-lock.json
 
 # 按 lockfile 安装依赖，避免镜像构建时依赖版本漂移
-RUN npm ci && npm cache clean --force
+RUN npm ci
 
 # 复制 common-frontend (Vite 别名需要)
 COPY common-frontend /repo/addp/common-frontend

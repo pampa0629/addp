@@ -443,6 +443,7 @@ test-platform: ## 运行无外部服务依赖的平台一致性门禁
 	@python3 scripts/test/ontology-postgres-gate_test.py
 	@$(MAKE) test-ontology-infra-config
 	@$(MAKE) test-go-dependency-policy
+	@bash -n scripts/build/build-images.sh
 	@python3 scripts/ci/check-build-registration_test.py
 	@python3 scripts/ci/select-image-services_test.py
 	@python3 scripts/ci/check-build-registration.py --repository "$(CURDIR)"

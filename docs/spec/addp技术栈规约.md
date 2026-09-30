@@ -100,6 +100,8 @@
 ### 前端
 
 - **运行时**: Node.js 24（根目录 `.node-version` 是工具链版本的唯一事实源）
+- 前端产品镜像同样读取根 `.node-version`，由唯一镜像构建入口传入 `NODE_VERSION`；Dockerfile 不维护另一个 Node 版本或默认值。
+- 前端产品镜像必须复制 `package.json` 与 `package-lock.json` 后执行 `npm ci`。包括 Rollup 平台包在内的依赖均由锁文件确定，不允许构建期间执行 `npm install` 或绕过锁文件。
 - **框架**: Vue 3 + Composition API
 - **构建工具**: Vite
 - **UI 库**: Element Plus

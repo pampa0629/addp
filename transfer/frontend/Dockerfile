@@ -1,24 +1,23 @@
-FROM localhost:5001/node:18.20.5-alpine AS builder
+ARG NODE_VERSION
+FROM localhost:5001/node:${NODE_VERSION}-alpine AS builder
 
-WORKDIR /app
+WORKDIR /repo/addp/transfer/frontend
 
 # 复制 package.json
-COPY transfer/frontend/package.json ./
+COPY common-frontend/package.json /repo/addp/common-frontend/package.json
+COPY transfer/frontend/package.json transfer/frontend/package-lock.json ./
 
-# 安装依赖 (不使用 lock 文件以避免 npm bug)
-# 显式安装 rollup 的本地依赖
-RUN npm install --no-package-lock && \
-    npm install --no-save "@rollup/rollup-linux-$(node -p 'process.arch')-musl" && \
-    npm cache clean --force
+RUN npm ci
 
 # 复制 common-frontend (Vite 别名需要)
-COPY common-frontend /common-frontend
+COPY common-frontend /repo/addp/common-frontend
 
 # 创建符号链接，让 common-frontend 能访问 node_modules
-RUN ln -s /app/node_modules /common-frontend/node_modules
+RUN ln -s /repo/addp/transfer/frontend/node_modules /repo/addp/common-frontend/node_modules
 
 # 复制源代码
-COPY transfer/frontend .
+COPY transfer/frontend/index.html transfer/frontend/vite.config.js ./
+COPY transfer/frontend/src ./src
 
 # 构建
 RUN npm run build
@@ -27,7 +26,7 @@ RUN npm run build
 FROM localhost:5001/nginx:alpine
 
 # 复制构建产物
-COPY --from=builder /app/dist /usr/share/nginx/html
+COPY --from=builder /repo/addp/transfer/frontend/dist /usr/share/nginx/html
 
 # 复制 nginx 配置
 COPY transfer/frontend/nginx.conf /etc/nginx/conf.d/default.conf

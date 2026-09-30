@@ -1,15 +1,12 @@
-FROM localhost:5001/node:18.20.5-alpine AS builder
+ARG NODE_VERSION
+FROM localhost:5001/node:${NODE_VERSION}-alpine AS builder
 
 WORKDIR /app
 
 # 复制 package.json
-COPY console/frontend/package.json ./
+COPY console/frontend/package.json console/frontend/package-lock.json ./
 
-# 安装依赖 (不使用 lock 文件以避免 npm bug)
-# 显式安装 rollup 的本地依赖
-RUN npm install --no-package-lock && \
-    npm install --no-save "@rollup/rollup-linux-$(node -p 'process.arch')-musl" && \
-    npm cache clean --force
+RUN npm ci
 
 # 复制 common-frontend (Vite 别名需要)
 COPY common-frontend /common-frontend
@@ -18,7 +15,9 @@ COPY common-frontend /common-frontend
 RUN ln -s /app/node_modules /common-frontend/node_modules
 
 # 复制源代码
-COPY console/frontend .
+COPY console/frontend/index.html console/frontend/vite.config.js ./
+COPY console/frontend/src ./src
+COPY console/frontend/public ./public
 
 # 构建
 RUN npm run build

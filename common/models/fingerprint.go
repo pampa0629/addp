@@ -50,7 +50,9 @@ func GenerateAssetFingerprint(tenantID int64, sourceModule, sourceReference stri
 //	fingerprint := GenerateItemFingerprint(engineID, fullName)
 //
 // 特性:
-//   - 同一数据项的指纹始终不变，无论数据内容如何变化
+//   - engineID 与完整 identifier 不变时指纹稳定，内容变化不影响指纹
+//   - 改名或路径变化会改变指纹，外部同名重建保持相同逻辑定位身份
+//   - 指纹不是访问许可，逻辑资源访问仍须核验当前有效授权规则
 //   - 用于去重、变更检测、数据血缘追踪
 func GenerateItemFingerprint(resID uint, identifier string) string {
 	data := fmt.Sprintf("%d:%s", resID, identifier)

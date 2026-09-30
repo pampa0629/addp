@@ -11,6 +11,7 @@
 #   --services SERVICE_LIST   Build specific services (comma-separated)
 #   --multi-arch              Build for both ARM64 and AMD64 (default: native only)
 #   --force                   Force rebuild all images (skip smart cache check)
+#   --jobs 1|2                Maximum simultaneous builds (default: 2)
 #   --verify                  CI verification: non-interactive, force build, do not push product images
 #
 # Default behavior: Builds for native platform only (faster, no Docker Hub needed)
@@ -36,10 +37,23 @@ BUILD_PLATFORMS="linux/$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')"  # 
 MULTI_ARCH=false
 FORCE_BUILD=false
 VERIFY_ONLY=false
+BUILD_JOBS=2
+IMAGE_WORK_DIR=""
+IMAGE_SCHEDULER_PID=""
+NODE_VERSION=$(tr -d '[:space:]' < "$PROJECT_ROOT/.node-version")
+if ! [[ "$NODE_VERSION" =~ ^[1-9][0-9]*$ ]]; then
+    echo "Error: .node-version must contain a Node major version" >&2
+    exit 1
+fi
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
+        --jobs)
+            BUILD_JOBS="${2:-}"
+            case "$BUILD_JOBS" in 1|2) ;; *) echo "--jobs must be 1 or 2" >&2; exit 1 ;; esac
+            shift 2
+            ;;
         --registry)
             REGISTRY="$2"
             shift 2
@@ -793,6 +807,7 @@ build_service() {
     if [ "$MULTI_ARCH" = true ]; then
         # Multi-arch build with buildx (requires push to registry)
         build_cmd="docker buildx build \
+            --build-arg NODE_VERSION=${NODE_VERSION} \
             --build-arg BUILD_ARCH=${arch} \
             --build-arg GOOS=linux \
             --build-arg BUILD_TYPE=${BUILD_TYPE:-release} \
@@ -813,6 +828,7 @@ build_service() {
     else
         # Native platform build with regular docker (load to local)
         build_cmd="docker build \
+            --build-arg NODE_VERSION=${NODE_VERSION} \
             --build-arg BUILD_ARCH=${arch} \
             --build-arg GOOS=linux \
             --build-arg BUILD_TYPE=${BUILD_TYPE:-release} \
@@ -864,6 +880,121 @@ build_service() {
     fi
 }
 
+cleanup_image_build() {
+    local status=$?
+    trap - EXIT INT TERM
+    if [ -n "$IMAGE_SCHEDULER_PID" ]; then
+        kill -TERM "$IMAGE_SCHEDULER_PID" 2>/dev/null || true
+        wait "$IMAGE_SCHEDULER_PID" 2>/dev/null || true
+    fi
+    if [ -n "$IMAGE_WORK_DIR" ]; then rm -rf "$IMAGE_WORK_DIR"; fi
+    exit "$status"
+}
+trap cleanup_image_build EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+# Each worker owns a process group, including delegated runtime builders.
+schedule_image_builds() {
+    export -f build_service
+    export REGISTRY IMAGE_TAG USE_CACHE BUILD_PLATFORMS MULTI_ARCH VERIFY_ONLY PROJECT_ROOT NODE_VERSION
+    export RED GREEN YELLOW BLUE NC
+    python3 - "$IMAGE_WORK_DIR" "$BUILD_JOBS" "$@" <<'PY' &
+import os
+import signal
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+work = Path(sys.argv[1])
+limit = int(sys.argv[2])
+pending = iter(sys.argv[3:])
+active = {}
+interrupted = 0
+
+def interrupt(signum, frame):
+    global interrupted
+    interrupted = signum
+
+signal.signal(signal.SIGINT, interrupt)
+signal.signal(signal.SIGTERM, interrupt)
+
+def stop_workers():
+    for process in active:
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+    deadline = time.monotonic() + 5
+    # A worker can exit before its descendants, so check its entire group.
+    remaining = {process.pid for process in active}
+    while remaining and time.monotonic() < deadline:
+        for process in active:
+            process.poll()
+        for pid in tuple(remaining):
+            try:
+                os.killpg(pid, 0)
+            except ProcessLookupError:
+                remaining.remove(pid)
+        if remaining:
+            time.sleep(0.05)
+    for pid in remaining:
+        try:
+            os.killpg(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    for process, (_, stream, _) in active.items():
+        process.wait()
+        stream.close()
+
+try:
+    with (work / 'results.tsv').open('w') as results:
+        exhausted = False
+        while active or not exhausted:
+            if interrupted:
+                break
+            while len(active) < limit and not exhausted and not interrupted:
+                definition = next(pending, None)
+                if definition is None:
+                    exhausted = True
+                    break
+                name, directory = definition.split(':', 1)
+                stream = (work / (name + '.log')).open('w')
+                try:
+                    process = subprocess.Popen(
+                        ['bash', '-c', 'build_service "$1" "$2"', '_', name, directory],
+                        stdout=stream, stderr=subprocess.STDOUT, start_new_session=True,
+                    )
+                except BaseException:
+                    stream.close()
+                    raise
+                active[process] = (name, stream, time.monotonic())
+            for process, (name, stream, started) in tuple(active.items()):
+                code = process.poll()
+                if code is None:
+                    continue
+                stream.close()
+                elapsed = time.monotonic() - started
+                print((work / (name + '.log')).read_text(), end='', flush=True)
+                print(f'Image result: {name}, exit={code}, duration={elapsed:.2f}s', flush=True)
+                results.write(f'{name}\t{code}\t{elapsed:.2f}\n')
+                results.flush()
+                del active[process]
+            if active:
+                time.sleep(0.05)
+finally:
+    stop_workers()
+if interrupted:
+    sys.exit(128 + interrupted)
+PY
+    IMAGE_SCHEDULER_PID=$!
+    local status=0
+    wait "$IMAGE_SCHEDULER_PID" || status=$?
+    IMAGE_SCHEDULER_PID=""
+    return "$status"
+}
+
 # Pull base images and push to local registry so Dockerfiles can use localhost:5001/ prefix
 seed_base_images() {
     local service_def
@@ -872,7 +1003,7 @@ seed_base_images() {
         local service_dir="${service_def#*:}"
         local dockerfile
         while IFS= read -r dockerfile; do
-            required_images+="$(grep -Eho 'localhost:5001/[A-Za-z0-9._/-]+:[A-Za-z0-9._-]+' "$dockerfile" 2>/dev/null | sed 's#^localhost:5001/##')"$'\n'
+            required_images+="$(sed 's/${NODE_VERSION}/'"$NODE_VERSION"'/g' "$dockerfile" | grep -Eho 'localhost:5001/[A-Za-z0-9._/-]+:[A-Za-z0-9._-]+' | sed 's#^localhost:5001/##')"$'\n'
         done < <(find "$service_dir" -type f -name 'Dockerfile*' 2>/dev/null)
     done
     required_images=$(printf '%s' "$required_images" | sed '/^$/d' | sort -u)
@@ -884,7 +1015,7 @@ seed_base_images() {
 
     local base_images=(
         "nginx:alpine"
-        "node:18.20.5-alpine"
+        "node:${NODE_VERSION}-alpine"
         "node:20-alpine"
         "python:3.11-slim"
         "python:3.12-slim"
@@ -1053,6 +1184,7 @@ main() {
 
     local failed_services=()
     local skipped_services=()
+    local build_results=()
 
     write_ci_summary() {
         local result="$1"
@@ -1062,6 +1194,7 @@ main() {
             echo
             echo "- Result: ${result}"
             echo "- Selected: ${#services[@]} service(s)"
+            echo "- Maximum simultaneous builds: ${BUILD_JOBS}"
             for service_def in "${services[@]}"; do
                 echo "  - ${service_def%%:*}"
             done
@@ -1071,10 +1204,13 @@ main() {
                     echo "  - ${failed}"
                 done
             fi
+            for detail in "${build_results[@]}"; do echo "  - ${detail}"; done
         } > "$ADDP_CI_SUMMARY_FILE"
     }
 
-    # Build each service
+    IMAGE_WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/addp-image-build.XXXXXX")
+    local scheduled_services=()
+    # Cache selection and base seeding finish before any worker starts.
     for service_def in "${services[@]}"; do
         IFS=':' read -r service_name service_dir <<< "$service_def"
 
@@ -1085,10 +1221,18 @@ main() {
             continue
         fi
 
-        if ! build_service "$service_name" "$service_dir"; then
-            failed_services+=("$service_name")
-        fi
+        scheduled_services+=("$service_def")
     done
+    echo "Maximum simultaneous image builds: $BUILD_JOBS"
+    schedule_image_builds "${scheduled_services[@]}" || {
+        write_ci_summary failure
+        return 1
+    }
+    local result_name result_code result_duration
+    while IFS=$'\t' read -r result_name result_code result_duration; do
+        build_results+=("${result_name}: exit=${result_code}, duration=${result_duration}s")
+        if [ "$result_code" -ne 0 ]; then failed_services+=("$result_name"); fi
+    done < "$IMAGE_WORK_DIR/results.tsv"
 
     # Summary
     echo ""

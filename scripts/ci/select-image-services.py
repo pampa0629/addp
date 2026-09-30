@@ -67,7 +67,7 @@ def select_services(
             or name.endswith("-worker")
         )
 
-    if any(
+    if ".node-version" in changed_paths or any(
         path == "common-frontend" or path.startswith("common-frontend/")
         for path in changed_paths
     ):

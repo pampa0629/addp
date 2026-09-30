@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import glob
+import json
 import re
 import shlex
 import subprocess
@@ -302,9 +303,21 @@ def quoted_shell_array(text: str, declaration: str) -> list[str]:
     return re.findall(r'^\s*"([^"\n]+)"\s*$', match.group("body"), re.MULTILINE)
 
 
-def base_image_seed_entries(text: str) -> list[tuple[str, str]]:
+def expand_build_arguments(text: str, arguments: dict[str, str]) -> str:
+    return re.sub(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}",
+                  lambda match: arguments.get(match.group(1), match.group(0)), text)
+
+
+def dockerfile_instructions(text: str) -> list[tuple[str, str]]:
+    logical = re.sub(r"\\\s*\n\s*", " ", text)
+    return [(match.group(1).upper(), match.group(2)) for line in logical.splitlines()
+            if (match := re.match(r"^\s*([A-Za-z]+)\s+(.+)$", line))]
+
+
+def base_image_seed_entries(text: str, arguments: dict[str, str] | None = None) -> list[tuple[str, str]]:
     entries: list[tuple[str, str]] = []
     for entry in quoted_shell_array(text, "base_images"):
+        entry = expand_build_arguments(entry, arguments or {})
         source, separator, target = entry.partition("=")
         entries.append((source, target if separator else source))
     return entries
@@ -319,26 +332,23 @@ def uses_latest_tag(image: str) -> bool:
     return name_and_tag.rpartition(":")[2] == "latest"
 
 
-def local_registry_base_images(text: str) -> set[str]:
+def local_registry_base_images(text: str, build_arguments: dict[str, str] | None = None) -> set[str]:
     """返回 Dockerfile 从本地 Registry 引用的基础镜像，排除内部构建阶段。"""
-    arguments: dict[str, str] = {}
+    arguments = dict(build_arguments or {})
     stages: set[str] = set()
     images: set[str] = set()
     for line in text.splitlines():
         stripped = line.strip()
         argument = re.match(r"(?i)^ARG\s+([A-Za-z_][A-Za-z0-9_]*)(?:=(\S+))?", stripped)
         if argument and argument.group(2) is not None:
-            arguments[argument.group(1)] = argument.group(2)
+            arguments.setdefault(argument.group(1), argument.group(2))
             continue
         instruction = re.match(
             r"(?i)^FROM(?:\s+--\S+)*\s+(\S+)(?:\s+AS\s+(\S+))?", stripped
         )
         if not instruction:
             continue
-        image = instruction.group(1)
-        variable = re.fullmatch(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}", image)
-        if variable:
-            image = arguments.get(variable.group(1), image)
+        image = expand_build_arguments(instruction.group(1), arguments)
         if image not in stages and image.startswith("localhost:5001/"):
             images.add(image.removeprefix("localhost:5001/"))
         if instruction.group(2):
@@ -416,8 +426,12 @@ def validate_registration(repository: Path) -> list[str]:
     release_workflow_path = repository / ".github/workflows/release-and-t2-gates.yml"
     compiled = shell_array(compile_script, "SERVICES")
     images = shell_array(image_script, "services")
-    seed_entries = base_image_seed_entries(image_script)
-    seeded_images = seeded_base_images(image_script)
+    node_version = (repository / ".node-version").read_text().strip()
+    if not re.fullmatch(r"[1-9][0-9]*", node_version):
+        raise RegistrationError(".node-version must contain a Node major version")
+    build_arguments = {"NODE_VERSION": node_version}
+    seed_entries = base_image_seed_entries(image_script, build_arguments)
+    seeded_images = {target for _, target in seed_entries}
     expected_compiled = expected_compile_entries(repository)
     available_files = set(repository_files(repository))
     errors: list[str] = []
@@ -574,7 +588,7 @@ def validate_registration(repository: Path) -> list[str]:
                 )
             )
             for base_image in sorted(
-                local_registry_base_images(definition_path.read_text(encoding="utf-8"))
+                local_registry_base_images(definition_path.read_text(encoding="utf-8"), build_arguments)
             ):
                 if uses_latest_tag(base_image):
                     errors.append(
@@ -586,6 +600,36 @@ def validate_registration(repository: Path) -> list[str]:
                         f"{name}: base image localhost:5001/{base_image} is not "
                         "registered in seed_base_images"
                     )
+        if name == "console" or name.endswith("-frontend"):
+            dockerfile_text = definition_path.read_text(encoding="utf-8")
+            if not re.search(r"(?m)^ARG NODE_VERSION\s*$", dockerfile_text) or not re.search(
+                r"(?m)^FROM localhost:5001/node:\$\{NODE_VERSION\}-alpine AS builder\s*$",
+                dockerfile_text,
+            ) or re.search(r"(?m)^ARG NODE_VERSION=", dockerfile_text):
+                errors.append(f"{name}: frontend Node image must receive the root NODE_VERSION without a default")
+            instructions = dockerfile_instructions(dockerfile_text)
+            if any(instruction == "COPY" and
+                   directory in [token.rstrip("/") for token in shlex.split(body)[:-1]]
+                   for instruction, body in instructions):
+                errors.append(f"{name}: frontend image must COPY source inputs without host node_modules")
+            commands = [body for instruction, body in instructions if instruction == "RUN"]
+            install_index = next((index for index, (instruction, body) in enumerate(instructions)
+                                  if instruction == "RUN" and re.search(r"\bnpm\s+ci\b", body)), len(instructions))
+            if not any(instruction == "COPY" and f"{directory}/package-lock.json" in body
+                       for instruction, body in instructions[:install_index]):
+                errors.append(f"{name}: frontend image must COPY package-lock.json before npm ci")
+            if not any(re.search(r"\bnpm\s+ci\b", command) for command in commands) or any(
+                re.search(r"\bnpm\s+(?:install|i)\b|--no-package-lock", command) for command in commands
+            ):
+                errors.append(f"{name}: frontend image must install exclusively through npm ci")
+            lock = repository / directory / "package-lock.json"
+            if not lock.is_file():
+                errors.append(f"{name}: frontend package-lock.json is missing")
+            else:
+                packages = json.loads(lock.read_text()).get("packages", {})
+                for arch in ("arm64", "x64"):
+                    if f"node_modules/@rollup/rollup-linux-{arch}-musl" not in packages:
+                        errors.append(f"{name}: lockfile must include the Rollup linux-{arch}-musl package")
 
     for path in repository_files(repository, "*/frontend/package.json"):
         module = path.split("/", 1)[0]
@@ -662,7 +706,7 @@ def main() -> int:
             (repository / "scripts/build/build-images.sh").read_text(encoding="utf-8"),
             "services",
         ))
-    except (OSError, RegistrationError, subprocess.CalledProcessError) as error:
+    except (OSError, ValueError, RegistrationError, subprocess.CalledProcessError) as error:
         print(f"Build registration check failed: {error}", file=sys.stderr)
         return 1
     if errors:

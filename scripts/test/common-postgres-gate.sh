@@ -5,6 +5,19 @@
 
 set -euo pipefail
 
+test_group=all
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --test)
+            case "${2:-}" in
+                all|query-read-set) test_group="$2"; shift 2 ;;
+                *) echo "usage: $0 [--test all|query-read-set]" >&2; exit 2 ;;
+            esac
+            ;;
+        *) echo "usage: $0 [--test all|query-read-set]" >&2; exit 2 ;;
+    esac
+done
+
 : "${ADDP_TEST_POSTGRES_PORT:?Set ADDP_TEST_POSTGRES_PORT to the verified PostgreSQL test service mapping}"
 : "${ADDP_TEST_POSTGRES_PASSWORD:?Set ADDP_TEST_POSTGRES_PASSWORD for the PostgreSQL test service}"
 
@@ -28,14 +41,23 @@ if [ -n "${ADDP_TEST_EXECUTION_POSTGRES_DSN:-}" ]; then
 fi
 
 cd "$ROOT_DIR/common"
+test_pattern='^(TestIntegrationPostgresAnalyticalInstance|TestIntegrationPostgresAnalyticalText|TestIntegrationPostgresAnalyticalDateBuckets|TestIntegrationPostgresAnalyticalScan|TestIntegrationPostgresAnalyticalRelations|TestIntegrationPostgresAnalyticalCalendar|TestIntegrationPostgresAnalyticalExpressions|TestIntegrationPostgresAnalyticalArithmetic|TestIntegrationPostgresLosslessAnalyticalInteger|TestIntegrationPostgresAnalyticalResultAssertions|TestIntegrationPostgresBoundedWatermarkResumeAndIdempotentUpsert|TestIntegrationPostgresReadBatchHonorsSpatialEncoding|TestIntegrationPostgresQueryReadSessionBindsExactNumericText|TestIntegrationResolvePostgresQuery(ReadSet|OutputLineage))'
+if [ "$test_group" = query-read-set ]; then
+    test_pattern='^TestIntegrationResolvePostgresQuery(ReadSet|OutputLineage)'
+fi
 ADDP_POSTGRES_INTEGRATION=1 \
     go test ./engine/plugins/postgresql \
-    -run '^(TestIntegrationPostgresAnalyticalInstance|TestIntegrationPostgresAnalyticalText|TestIntegrationPostgresAnalyticalDateBuckets|TestIntegrationPostgresAnalyticalScan|TestIntegrationPostgresAnalyticalRelations|TestIntegrationPostgresAnalyticalCalendar|TestIntegrationPostgresAnalyticalExpressions|TestIntegrationPostgresAnalyticalArithmetic|TestIntegrationPostgresLosslessAnalyticalInteger|TestIntegrationPostgresAnalyticalResultAssertions|TestIntegrationPostgresBoundedWatermarkResumeAndIdempotentUpsert|TestIntegrationPostgresReadBatchHonorsSpatialEncoding|TestIntegrationPostgresQueryReadSessionBindsExactNumericText|TestIntegrationResolvePostgresQuery(ReadSet|OutputLineage))' \
+    -run "$test_pattern" \
     -count=1 -v 2>&1 | tee "$WORK_DIR/common-postgres.log"
 
 if grep -q -- '--- SKIP:' "$WORK_DIR/common-postgres.log"; then
     echo "Common PostgreSQL gate refuses skipped tests" >&2
     exit 1
+fi
+
+if [ "$test_group" = query-read-set ]; then
+    echo "Common PostgreSQL query-read-set group passed (not the full gate)"
+    exit 0
 fi
 
 postgres_host=${ADDP_TEST_POSTGRES_HOST:-localhost}

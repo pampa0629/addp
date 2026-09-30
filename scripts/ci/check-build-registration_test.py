@@ -3,6 +3,11 @@
 from __future__ import annotations
 
 import importlib.util
+import json
+import os
+import signal
+import time
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -28,8 +33,13 @@ class BuildRegistrationTest(unittest.TestCase):
             "ARG BUILD_TYPE=release\nARG GOOS=linux\nARG BUILD_ARCH=amd64\n"
             "COPY dist/${BUILD_TYPE}-${GOOS}-${BUILD_ARCH}/sample ./server\n",
         )
+        self._write(".node-version", "24\n")
         self._write("sample/frontend/package.json", "{}\n")
-        self._write("sample/frontend/Dockerfile", "FROM scratch\n")
+        self._write("sample/frontend/package-lock.json", json.dumps({"packages": {
+            "node_modules/@rollup/rollup-linux-arm64-musl": {},
+            "node_modules/@rollup/rollup-linux-x64-musl": {},
+        }}))
+        self._write("sample/frontend/Dockerfile", self.frontend_definition())
         for dockerfile in MODULE.AUXILIARY_DOCKERFILES:
             self._write(dockerfile, "FROM scratch\n")
         self._write(
@@ -41,6 +51,7 @@ class BuildRegistrationTest(unittest.TestCase):
             'ADDP_CI_SUMMARY_FILE="${ADDP_CI_SUMMARY_FILE:-}"\n'
             'seed_base_images() {\n    local base_images=(\n'
             '        "python:3.12-slim"\n'
+            '        "node:${NODE_VERSION}-alpine"\n'
             "    )\n}\n\n"
             'main() {\n    local services=(\n'
             '        "sample-backend:sample/backend"\n'
@@ -100,6 +111,13 @@ class BuildRegistrationTest(unittest.TestCase):
         )
         subprocess.run(["git", "add", "."], cwd=self.repository, check=True)
 
+    @staticmethod
+    def frontend_definition() -> str:
+        return ("ARG NODE_VERSION\n"
+                "FROM localhost:5001/node:${NODE_VERSION}-alpine AS builder\n"
+                "COPY sample/frontend/package.json sample/frontend/package-lock.json ./\n"
+                "RUN npm ci\n")
+
     def tearDown(self) -> None:
         self.temporary_directory.cleanup()
 
@@ -107,6 +125,26 @@ class BuildRegistrationTest(unittest.TestCase):
         path = self.repository / relative_path
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
+
+    def test_rejects_frontend_hardcoded_node_version(self):
+        self._write("sample/frontend/Dockerfile", self.frontend_definition().replace("${NODE_VERSION}","18"))
+        self.assertTrue(any("root NODE_VERSION" in error for error in MODULE.validate_registration(self.repository)))
+
+    def test_rejects_frontend_unlocked_install_after_ci(self):
+        self._write("sample/frontend/Dockerfile", self.frontend_definition()+"RUN npm install --no-save extra\n")
+        self.assertIn("sample-frontend: frontend image must install exclusively through npm ci", MODULE.validate_registration(self.repository))
+
+    def test_rejects_missing_lockfile_copy_before_install(self):
+        self._write("sample/frontend/Dockerfile",self.frontend_definition().replace(" sample/frontend/package-lock.json", ""))
+        self.assertIn("sample-frontend: frontend image must COPY package-lock.json before npm ci", MODULE.validate_registration(self.repository))
+
+    def test_rejects_copying_host_frontend_dependencies(self):
+        self._write("sample/frontend/Dockerfile",self.frontend_definition()+"COPY sample/frontend .\n")
+        self.assertIn("sample-frontend: frontend image must COPY source inputs without host node_modules",MODULE.validate_registration(self.repository))
+
+    def test_rejects_missing_locked_musl_platform_package(self):
+        self._write("sample/frontend/package-lock.json",json.dumps({"packages": {}}))
+        self.assertIn("sample-frontend: lockfile must include the Rollup linux-x64-musl package",MODULE.validate_registration(self.repository))
 
     def test_accepts_complete_registration(self) -> None:
         self.assertEqual([], MODULE.validate_registration(self.repository))
@@ -420,7 +458,7 @@ class BuildRegistrationTest(unittest.TestCase):
         self._write("sample/frontend/runtime-config.json", "{}\n")
         self._write(
             "sample/frontend/Dockerfile",
-            "FROM scratch\nCOPY sample/frontend/runtime-config.json ./runtime-config.json\n",
+            self.frontend_definition() + "COPY sample/frontend/runtime-config.json ./runtime-config.json\n",
         )
         self.assertEqual([], MODULE.validate_registration(self.repository))
 
@@ -487,9 +525,10 @@ class BuildRegistrationTest(unittest.TestCase):
         )
         self._write(
             "sample/frontend/Dockerfile",
+            self.frontend_definition() +
             "ARG BASE_IMAGE=localhost:5001/custom-node:22\n"
-            "FROM ${BASE_IMAGE} AS builder\n"
-            "FROM builder\n",
+            "FROM ${BASE_IMAGE} AS alias\n"
+            "FROM alias\n",
         )
         self.assertEqual([], MODULE.validate_registration(self.repository))
 
@@ -542,6 +581,147 @@ class BuildRegistrationTest(unittest.TestCase):
             "sample/frontend/Dockerfile: Rollup native package architecture must be selected dynamically",
             MODULE.validate_registration(self.repository),
         )
+
+
+class ImageBuildRuntimeTest(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix='addp-image-builder-test-')
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.builder = self.root / 'scripts/build/build-images.sh'
+        self.builder.parent.mkdir(parents=True)
+        shutil.copyfile(SCRIPT.parents[1] / 'build/build-images.sh', self.builder)
+        (self.root / '.node-version').write_text('24\n')
+        self.services = ['console', 'system-frontend', 'manager-frontend', 'standard-frontend']
+        for module in ('console', 'system', 'manager', 'standard'):
+            directory = self.root / module / 'frontend'
+            directory.mkdir(parents=True)
+            (directory / 'Dockerfile').write_text('ARG NODE_VERSION\nFROM localhost:5001/node:${NODE_VERSION}-alpine\n')
+        self.bin = self.root / 'fake-bin'
+        self.bin.mkdir()
+        executable = self.bin / 'docker'
+        executable.write_text('''#!/usr/bin/env python3
+import fcntl, json, os, signal, subprocess, sys, time
+from pathlib import Path
+root=Path(os.environ['FAKE_STATE'])
+args=sys.argv[1:]
+if Path(sys.argv[0]).name=='curl':
+    print('{"tags": []}')
+    sys.exit(0)
+if args[:2]==['image','inspect']:
+    if '--format' in args:
+        print(os.environ['FAKE_ARCH'])
+        sys.exit(0)
+    sys.exit(1)
+if not args or args[0]!='build':
+    sys.exit(0)
+name=args[args.index('--tag')+1].split('/addp-')[1].split(':')[0]
+def event(kind):
+    with (root/'lock').open('a') as lock:
+        fcntl.flock(lock,fcntl.LOCK_EX)
+        with (root/'events').open('a') as output:
+            output.write(json.dumps({'kind':kind,'name':name,'pid':os.getpid(),'group':os.getpgrp(),'args':args})+'\\n')
+def interrupted(signum,frame):
+    raise SystemExit(128+signum)
+signal.signal(signal.SIGTERM,interrupted)
+signal.signal(signal.SIGINT,interrupted)
+event('start')
+child=None
+try:
+    print(name+' log start',flush=True)
+    if os.environ.get('FAKE_BLOCK')=='1':
+        child=subprocess.Popen([sys.executable,'-c','import time; time.sleep(60)'])
+        event('child')
+        time.sleep(60)
+    else:
+        time.sleep(0.2)
+    print(name+' log end',flush=True)
+finally:
+    if child:
+        child.wait(timeout=10)
+    event('end')
+sys.exit(9 if name==os.environ.get('FAKE_FAILURE') else 0)
+''')
+        executable.chmod(0o755)
+        shutil.copyfile(executable, self.bin / 'curl')
+        (self.bin / 'curl').chmod(0o755)
+        self.env = dict(os.environ, PATH=str(self.bin)+os.pathsep+os.environ['PATH'],
+                        FAKE_STATE=str(self.root), FAKE_ARCH='arm64' if os.uname().machine in ('arm64','aarch64') else 'amd64',
+                        TMPDIR=str(self.root), ADDP_CI_SUMMARY_FILE=str(self.root/'summary'))
+
+    def run_builder(self, *args, **extra):
+        return subprocess.run(['bash',str(self.builder),'--verify','--services',','.join(self.services),*args],
+                              env=dict(self.env,**extra),text=True,capture_output=True,timeout=20)
+
+    def events(self):
+        path = self.root/'events'
+        return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
+
+    def peak(self):
+        active = maximum = 0
+        for event in self.events():
+            if event['kind']=='start': active+=1
+            elif event['kind']=='end': active-=1
+            maximum=max(maximum,active)
+        self.assertEqual(0,active)
+        return maximum
+
+    def test_default_two_workers_use_root_node_version_and_isolated_logs(self):
+        (self.root/'.node-version').write_text('26\n')
+        result=self.run_builder()
+        self.assertEqual(0,result.returncode,result.stdout+result.stderr)
+        self.assertEqual(2,self.peak())
+        starts=[event for event in self.events() if event['kind']=='start']
+        self.assertEqual(set(self.services),{event['name'] for event in starts})
+        for event in starts: self.assertIn('NODE_VERSION=26',event['args'])
+        markers=[line for line in result.stdout.splitlines() if ' log ' in line]
+        for index in range(0,len(markers),2):
+            self.assertEqual(markers[index].replace('start','end'),markers[index+1])
+        self.assertIn('duration=',(self.root/'summary').read_text())
+        self.assertEqual([],list(self.root.glob('addp-image-build.*')))
+
+    def test_single_worker_uses_same_scheduler(self):
+        result=self.run_builder('--jobs','1')
+        self.assertEqual(0,result.returncode,result.stdout+result.stderr)
+        self.assertEqual(1,self.peak())
+
+    def test_failure_is_reported_and_other_images_finish(self):
+        result=self.run_builder(FAKE_FAILURE='manager-frontend')
+        self.assertNotEqual(0,result.returncode)
+        self.assertEqual(set(self.services),{event['name'] for event in self.events() if event['kind']=='end'})
+        self.assertIn('- Failed: 1 service(s)\n  - manager-frontend',(self.root/'summary').read_text())
+        self.assertEqual(2,self.peak())
+        self.assertEqual([],list(self.root.glob('addp-image-build.*')))
+
+    def test_rejects_more_than_two_workers_before_docker(self):
+        result=self.run_builder('--jobs','3')
+        self.assertNotEqual(0,result.returncode)
+        self.assertEqual([],self.events())
+
+    def test_interrupt_stops_worker_process_groups_and_cleans_logs(self):
+        process=subprocess.Popen(['bash',str(self.builder),'--verify','--services',','.join(self.services)],
+                                 env=dict(self.env,FAKE_BLOCK='1'),stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
+        try:
+            deadline=time.monotonic()+10
+            while time.monotonic()<deadline:
+                if sum(event['kind']=='child' for event in self.events())==2: break
+                time.sleep(0.02)
+            else: self.fail('Both workers did not reach the blocking build')
+            process.send_signal(signal.SIGTERM)
+            output,_=process.communicate(timeout=15)
+            self.assertEqual(143,process.returncode,output)
+            self.assertEqual(2,self.peak())
+            for event in self.events():
+                if event['kind']=='start':
+                    with self.assertRaises(ProcessLookupError): os.killpg(event['group'],0)
+            self.assertEqual([],list(self.root.glob('addp-image-build.*')))
+        finally:
+            if process.poll() is None:
+                process.kill();process.communicate()
+            for event in self.events():
+                if event['kind']=='start':
+                    try: os.killpg(event['group'],signal.SIGKILL)
+                    except ProcessLookupError: pass
 
 
 if __name__ == "__main__":
