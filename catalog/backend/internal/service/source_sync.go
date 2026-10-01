@@ -202,10 +202,12 @@ func applyMetaDataItemChange(tx *gorm.DB, tenantID int64, change commonClient.Me
 
 func createEntryFromMetaChange(tx *gorm.DB, tenantID int64, change commonClient.MetaDataItemChange) error {
 	now := change.ObservedAt.UTC()
+	established := false
 	entry := models.Entry{
 		ID: uuid.New(), TenantID: tenantID, EntryType: models.EntryTypeDataItem,
 		EntryStatus: models.EntryStatusActive, GovernanceStatus: models.GovernanceStatusDiscovered,
 		Visibility: models.VisibilityInventory, Version: 1,
+		BusinessResponsibilityEstablished: &established,
 	}
 	if err := tx.Create(&entry).Error; err != nil {
 		return fmt.Errorf("create Catalog entry: %w", err)

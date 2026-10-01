@@ -267,6 +267,7 @@ func TestCatalogMigrateAgainstPostgres(t *testing.T) {
 	if err := tx.RollbackTo("invalid_successor_shape").Error; err != nil {
 		t.Fatal(err)
 	}
+	assertBusinessResponsibilityEvidenceMigration(t, tx)
 	duplicate := binding
 	duplicate.ID = uuid.New()
 	duplicate.CatalogEntryID = secondEntry.ID

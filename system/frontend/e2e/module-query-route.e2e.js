@@ -12,11 +12,12 @@ test('standalone instance links restore filters, ranges and pagination after rel
   await expect(list.getByPlaceholder('登记主机名或 IP')).toHaveValue('manager.local')
   await expect(list.getByPlaceholder('宿主节点或运行环境主机名')).toHaveValue('host-a')
   await expect.poll(() => queries.at(-1)).toEqual({
-    module_name: 'manager', registered_host: 'manager.local', node_name: 'host-a', role: 'backend',
-    registered_from: '2026-10-01T00:00:00.000Z', registered_to: '2026-10-02T00:00:00.000Z', page: '2', page_size: '20'
+    module_name: 'manager', registered_host: 'manager.local', node_name: 'host-a', role: 'backend', time_basis: 'offline',
+    time_from: '2026-10-01T00:00:00.000Z', time_to: '2026-10-02T00:00:00.000Z', page: '2', page_size: '20'
   })
   await page.reload()
   await expect(list.getByText('page-2-0', { exact: true })).toBeVisible()
+  await expect(list.locator('.el-select').filter({ has: page.getByRole('combobox', { name: '时间依据', exact: true }) })).toContainText('离线判定时间')
   const historyLength = await page.evaluate(() => history.length)
   await list.getByPlaceholder('登记主机名或 IP').fill('host-b')
   await list.getByPlaceholder('登记主机名或 IP').press('Enter')
@@ -32,8 +33,74 @@ test('standalone instance links restore filters, ranges and pagination after rel
   await expect(list.getByPlaceholder('登记主机名或 IP')).toHaveValue('host-b')
   await page.goForward()
   await expect(page.getByRole('tab', { name: '模块概览' })).toHaveAttribute('aria-selected', 'true')
-  await page.goto('/modules?tab=instances&status=invalid&page=-1&registered_period=custom&registered_from=invalid&token=secret')
+  await page.goto('/modules?tab=instances&status=invalid&page=-1&time_period=custom&time_from=invalid&token=secret')
   await expect(page).toHaveURL(/\/modules\?tab=instances$/)
   await expect.poll(() => queries.at(-1)).toEqual({ page: '1', page_size: '10', status: 'up' })
+  expect(errors).toEqual([])
+})
+
+test('offline time finds an old registration, queries immediately and removes it after recovery', async ({ page }) => {
+  const now = new Date('2026-10-01T12:00:00Z')
+  await page.clock.install({ time: now })
+  await mockModuleQueryAPI(page)
+  const queries = []
+  const errors = []
+  page.on('pageerror', error => errors.push(error.message))
+  const rows = [
+    { instance_id: 'old-registration-recent-offline', stopped_at: new Date(now.getTime() - 300000).toISOString() },
+    { instance_id: 'old-offline', stopped_at: new Date(now.getTime() - 7200000).toISOString() }
+  ].map(row => ({
+    ...row, module_name: 'manager', role: 'backend', status: 'down',
+    module_url: 'http://manager.local:8081', registered_host: 'manager.local', host_node_name: 'host-a',
+    registered_at: new Date(now.getTime() - 7 * 86400000).toISOString(),
+    lease_expires_at: row.stopped_at, stop_reason: 'lease_expired'
+  }))
+  await page.route('**/api/v1/system/platform/module-instances?*', async route => {
+    if (route.request().method() === 'OPTIONS') return route.fallback()
+    const params = Object.fromEntries(new URL(route.request().url()).searchParams)
+    queries.push(params)
+    const data = rows.filter(row => {
+      if (params.status && row.status !== params.status) return false
+      const date = params.time_basis === 'offline' ? row.stopped_at : row.registered_at
+      if (params.time_basis === 'offline' && !date) return false
+      return (!params.time_from || date >= params.time_from) && (!params.time_to || date < params.time_to)
+    })
+    return route.fulfill({
+      headers: {
+        'access-control-allow-origin': route.request().headers().origin || 'http://127.0.0.1:4173',
+        'access-control-allow-credentials': 'true'
+      },
+      json: { data, total: data.length, page: Number(params.page), page_size: Number(params.page_size) }
+    })
+  })
+  await page.goto('/modules?tab=instances&module_name=manager&registered_host=manager.local&node_name=host-a&role=backend&status=down&time_period=1h')
+  const list = page.locator('.module-instances')
+  await expect(list.getByText('没有符合条件的服务实例', { exact: true })).toBeVisible()
+  await list.locator('.el-select').filter({ has: page.getByRole('combobox', { name: '时间依据', exact: true }) }).click()
+  await page.getByRole('option', { name: '离线判定时间', exact: true }).click()
+  await expect.poll(() => queries.at(-1)?.time_basis).toBe('offline')
+  await expect(list.getByText('old-registration-recent-offline', { exact: true })).toBeVisible()
+  await expect(list.getByText('old-offline', { exact: true })).toHaveCount(0)
+  await expect(list.getByRole('columnheader', { name: '离线判定时间', exact: true })).toBeVisible()
+  await expect(list.getByText('租约超时，疑似异常退出', { exact: true })).toBeVisible()
+  await page.screenshot({ path: '/tmp/addp-offline-time-query-verified.png', fullPage: true })
+  const url = page.url()
+  expect(new URL(url).searchParams.get('time_period')).toBe('1h')
+  expect(queries.at(-1)).toMatchObject({
+    time_basis: 'offline', status: 'down', module_name: 'manager', registered_host: 'manager.local',
+    node_name: 'host-a', role: 'backend', page: '1', page_size: '10'
+  })
+  await page.reload()
+  await expect(list.getByText('old-registration-recent-offline', { exact: true })).toBeVisible()
+  await expect(list.locator('.el-select').filter({ has: page.getByRole('combobox', { name: '时间依据', exact: true }) })).toContainText('离线判定时间')
+  rows[0] = { ...rows[0], status: 'up', stopped_at: null, stop_reason: '', lease_expires_at: new Date(now.getTime() + 3600000).toISOString() }
+  await page.clock.fastForward(11000)
+  await expect(list.getByText('没有符合条件的服务实例', { exact: true })).toBeVisible()
+  await expect(page).toHaveURL(url)
+  await list.getByRole('button', { name: '重置', exact: true }).click()
+  await expect.poll(() => queries.at(-1)).toEqual({ page: '1', page_size: '10', status: 'up' })
+  await expect(list.locator('.el-select').filter({ has: page.getByRole('combobox', { name: '时间依据', exact: true }) })).toContainText('登记时间')
+  await expect(list.getByRole('columnheader', { name: '离线判定时间', exact: true })).toHaveCount(0)
+  await expect(list.getByText('old-registration-recent-offline', { exact: true })).toBeVisible()
   expect(errors).toEqual([])
 })

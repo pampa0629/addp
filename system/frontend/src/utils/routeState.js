@@ -15,7 +15,7 @@ function singleQueryValue(value) {
   return typeof value === 'string' ? value.trim() : ''
 }
 
-function registrationTime(value) {
+function queryTime(value) {
   const text = singleQueryValue(value)
   if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(text)) return ''
   const time = new Date(text)
@@ -29,7 +29,7 @@ export function resolveModulesRouteState(routeQuery = {}) {
   const instances = singleQueryValue(routeQuery.tab) === 'instances'
   const filters = {
     moduleName: '', registeredHost: '', nodeName: '', role: '', status: 'up',
-    period: 'all', from: '', to: '', page: 1, pageSize: 10
+    timeBasis: 'registered', period: 'all', from: '', to: '', page: 1, pageSize: 10
   }
   const preservedQuery = {}
   if (instances) {
@@ -48,16 +48,20 @@ export function resolveModulesRouteState(routeQuery = {}) {
       filters.status = status === 'all' ? '' : status
       preservedQuery.status = status
     }
-    const period = singleQueryValue(routeQuery.registered_period)
+    if (singleQueryValue(routeQuery.time_basis) === 'offline') {
+      filters.timeBasis = 'offline'
+      preservedQuery.time_basis = 'offline'
+    }
+    const period = singleQueryValue(routeQuery.time_period)
     if (MODULE_INSTANCE_PERIODS.some(item => item.value === period)) {
       filters.period = period
-      preservedQuery.registered_period = period
+      preservedQuery.time_period = period
     } else if (period === 'custom') {
-      const from = registrationTime(routeQuery.registered_from)
-      const to = registrationTime(routeQuery.registered_to)
+      const from = queryTime(routeQuery.time_from)
+      const to = queryTime(routeQuery.time_to)
       if (from && to && from < to) {
         Object.assign(filters, { period, from, to })
-        Object.assign(preservedQuery, { registered_period: period, registered_from: from, registered_to: to })
+        Object.assign(preservedQuery, { time_period: period, time_from: from, time_to: to })
       }
     }
     const page = Number(singleQueryValue(routeQuery.page))
@@ -85,7 +89,7 @@ export function buildModuleInstancesQuery(filters) {
     tab: 'instances', module_name: filters.moduleName, registered_host: filters.registeredHost,
     node_name: filters.nodeName, role: filters.role,
     status: filters.status === '' ? 'all' : filters.status,
-    registered_period: filters.period, registered_from: filters.from, registered_to: filters.to,
+    time_basis: filters.timeBasis, time_period: filters.period, time_from: filters.from, time_to: filters.to,
     page: String(filters.page), page_size: String(filters.pageSize)
   }).query
 }

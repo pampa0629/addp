@@ -9,15 +9,17 @@ import (
 )
 
 const (
-	ModuleRuntimeRoleBackend   = "backend"
-	ModuleRuntimeRoleWorker    = "worker"
-	ModuleRuntimeRoleScheduler = "scheduler"
-	ModuleRuntimeRoleIngress   = "ingress"
-	ModuleRuntimeStatusUp      = "up"
-	ModuleRuntimeStatusDown    = "down"
-	ModuleRuntimeStopGraceful  = "graceful"
-	ModuleRuntimeStopExpired   = "lease_expired"
-	ModuleRuntimeLeaseDuration = 30 * time.Second
+	ModuleRuntimeRoleBackend    = "backend"
+	ModuleRuntimeRoleWorker     = "worker"
+	ModuleRuntimeRoleScheduler  = "scheduler"
+	ModuleRuntimeRoleIngress    = "ingress"
+	ModuleRuntimeStatusUp       = "up"
+	ModuleRuntimeStatusDown     = "down"
+	ModuleRuntimeStopGraceful   = "graceful"
+	ModuleRuntimeStopExpired    = "lease_expired"
+	ModuleRuntimeTimeRegistered = "registered"
+	ModuleRuntimeTimeOffline    = "offline"
+	ModuleRuntimeLeaseDuration  = 30 * time.Second
 )
 
 // ModuleDefinition 是稳定模块身份和管理员意图，不随进程上下线改变。
@@ -128,8 +130,9 @@ type ModuleRuntimeInstanceFilter struct {
 	NodeName       string
 	Role           string
 	Status         string
-	RegisteredFrom time.Time
-	RegisteredTo   time.Time
+	TimeBasis      string
+	TimeFrom       time.Time
+	TimeTo         time.Time
 	Page           int
 	PageSize       int
 }

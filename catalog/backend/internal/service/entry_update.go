@@ -170,6 +170,7 @@ func (s *EntryService) Update(
 			"governance_status":          input.GovernanceStatus, "visibility": input.Visibility,
 			"domain_count": len(input.Domains), "glossary_count": len(input.GlossaryIDs),
 			"responsibility_count": len(input.Responsibilities),
+			"responsibilities":     input.Responsibilities,
 		}
 		auditEventType := "catalog.entry.updated"
 		if isWithdrawCurationTransition(entry.GovernanceStatus, input.GovernanceStatus) {
@@ -500,6 +501,22 @@ func replaceResponsibilities(tx *gorm.DB, tenantID int64, entryID uuid.UUID, inp
 		if err := tx.Create(&rows).Error; err != nil {
 			return fmt.Errorf("create Catalog responsibilities: %w", err)
 		}
+	}
+	for _, input := range inputs {
+		if input.Role != models.ResponsibilityRoleBusinessOwner {
+			continue
+		}
+		// Both callers have validated current System references and hold the
+		// aggregate lock. Never reset history when replacing/clearing roles.
+		result := tx.Model(&models.Entry{}).Where("tenant_id = ? AND id = ?", tenantID, entryID).
+			UpdateColumn("business_responsibility_established", true)
+		if result.Error != nil {
+			return fmt.Errorf("record Catalog business responsibility establishment: %w", result.Error)
+		}
+		if result.RowsAffected != 1 {
+			return ErrEntryNotFound
+		}
+		break
 	}
 	return nil
 }

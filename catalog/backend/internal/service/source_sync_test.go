@@ -57,6 +57,7 @@ func TestSourceSyncCreatesStableEntryAndAppliesMissingChange(t *testing.T) {
 	if entry.GovernanceStatus != models.GovernanceStatusDiscovered || entry.Visibility != models.VisibilityInventory || entry.Version != 1 {
 		t.Fatalf("entry = %#v", entry)
 	}
+	assertBusinessResponsibilityEvidence(t, db, entry.ID, boolEvidence(false))
 	var componentCount int64
 	if err := db.Model(&models.Component{}).Where("catalog_entry_id = ? AND component_status = ?", entry.ID, models.SourceStatusActive).Count(&componentCount).Error; err != nil {
 		t.Fatalf("count components: %v", err)
@@ -164,7 +165,8 @@ func openCatalogServiceTestDB(t *testing.T) *gorm.DB {
 		`CREATE TABLE catalog.entries (
 			id TEXT PRIMARY KEY, tenant_id INTEGER NOT NULL, entry_type TEXT NOT NULL, entry_status TEXT NOT NULL,
 			merged_into_entry_id TEXT, recommended_successor_entry_id TEXT, business_name TEXT, business_description TEXT, governance_status TEXT NOT NULL,
-			visibility TEXT NOT NULL, version INTEGER NOT NULL, created_at DATETIME, updated_at DATETIME)`,
+			visibility TEXT NOT NULL, business_responsibility_established BOOLEAN,
+			version INTEGER NOT NULL, created_at DATETIME, updated_at DATETIME)`,
 		`CREATE TABLE catalog.source_bindings (
 			id TEXT PRIMARY KEY, tenant_id INTEGER NOT NULL, catalog_entry_id TEXT NOT NULL, source_module TEXT NOT NULL,
 			source_type TEXT NOT NULL, source_identity TEXT NOT NULL, source_status TEXT NOT NULL, source_version TEXT NOT NULL,

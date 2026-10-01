@@ -25,7 +25,8 @@ describe('modules API', () => {
       registered_host: 'worker.local',
       role: 'worker',
       status: 'down',
-      registered_from: '2026-09-29T00:00:00Z',
+      time_basis: 'offline',
+      time_from: '2026-09-29T00:00:00Z',
       page: 2,
       page_size: 20
     })
@@ -38,7 +39,8 @@ describe('modules API', () => {
           registered_host: 'worker.local',
           role: 'worker',
           status: 'down',
-          registered_from: '2026-09-29T00:00:00Z',
+          time_basis: 'offline',
+          time_from: '2026-09-29T00:00:00Z',
           page: 2,
           page_size: 20
         }

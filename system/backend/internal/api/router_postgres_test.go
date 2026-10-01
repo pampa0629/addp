@@ -7,7 +7,9 @@ import (
 	"time"
 
 	"github.com/addp/system/internal/migration"
+	"github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/repository"
+	"github.com/addp/system/internal/service"
 	"github.com/addp/system/internal/testsupport"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/stdlib"
@@ -65,6 +67,7 @@ func TestTargetSystemCompositionAgainstPostgres(t *testing.T) {
 			t.Fatalf("obsolete table %s exists=%t err=%v", obsoleteTable, exists, err)
 		}
 	}
+	assertOfflineTimeQueryAgainstPostgres(t, db)
 
 	cfg := testIAMRuntimeConfig()
 	router := SetupRouter(db, cfg)
@@ -80,6 +83,59 @@ func TestTargetSystemCompositionAgainstPostgres(t *testing.T) {
 	}
 	if !runtimeEngineRegistration {
 		t.Fatal("Bearer runtime engine registration route is missing")
+	}
+}
+
+func assertOfflineTimeQueryAgainstPostgres(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	// Roll back all runtime facts created by this assertion in the standard test DB.
+	tx := db.Begin()
+	if tx.Error != nil {
+		t.Fatal(tx.Error)
+	}
+	defer tx.Rollback()
+	repo := repository.NewModuleRegistryRepository(tx)
+	registry := service.NewModuleRegistryService(repo)
+	now := time.Now().UTC().Truncate(time.Second)
+	offlineAt := now.Add(-5 * time.Minute)
+	if err := registry.Register(&models.ModuleRegistrationRequest{
+		ModuleName: "manager", InstanceID: "offline-time-postgres-probe", Role: models.ModuleRuntimeRoleBackend,
+		ModuleURL: "http://manager.local:8081", RoutePrefix: "/manager", ProcessStartedAt: now.Add(-7 * 24 * time.Hour),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Model(&models.ModuleRuntimeInstance{}).Where("instance_id = ?", "offline-time-postgres-probe").Updates(map[string]interface{}{
+		"registered_at": now.Add(-7 * 24 * time.Hour), "lease_expires_at": offlineAt,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	filter := models.ModuleRuntimeInstanceFilter{
+		ModuleName: "manager", Status: "down", TimeBasis: "offline", Page: 1, PageSize: 10,
+		TimeFrom: now.Add(-time.Hour).In(time.FixedZone("query-offset", 9*3600)), TimeTo: now,
+	}
+	rows, total, err := registry.ListModuleRuntimeInstances(filter)
+	if err != nil || total != 1 || len(rows) != 1 || rows[0].InstanceID != "offline-time-postgres-probe" || rows[0].StoppedAt == nil || !rows[0].StoppedAt.Equal(offlineAt) {
+		t.Fatalf("PostgreSQL offline time/offset projection: rows=%#v total=%d err=%v", rows, total, err)
+	}
+	filter.TimeBasis = "registered"
+	_, total, err = registry.ListModuleRuntimeInstances(filter)
+	if err != nil || total != 0 {
+		t.Fatalf("PostgreSQL registration range included old process: total=%d err=%v", total, err)
+	}
+	if _, err := repo.MarkStaleModules(now); err != nil {
+		t.Fatal(err)
+	}
+	filter.TimeBasis = "offline"
+	_, total, err = registry.ListModuleRuntimeInstances(filter)
+	if err != nil || total != 1 {
+		t.Fatalf("PostgreSQL scan changed offline membership: total=%d err=%v", total, err)
+	}
+	if err := registry.SendHeartbeat("manager", "offline-time-postgres-probe"); err != nil {
+		t.Fatal(err)
+	}
+	_, total, err = registry.ListModuleRuntimeInstances(filter)
+	if err != nil || total != 0 {
+		t.Fatalf("PostgreSQL recovered process remained offline: total=%d err=%v", total, err)
 	}
 }
 

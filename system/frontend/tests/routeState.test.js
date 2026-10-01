@@ -10,10 +10,10 @@ describe('System recoverable route state', () => {
   it('restores instance filters and omits defaults without leaking unrelated parameters', () => {
     const state = resolveModulesRouteState({
       tab: 'instances', module_name: ' manager ', registered_host: ' host-a ', node_name: 'container-a',
-      role: 'worker', status: 'up', registered_period: '15m', page: '02', page_size: '20', token: 'must-not-persist'
+      role: 'worker', status: 'up', time_period: '15m', page: '02', page_size: '20', token: 'must-not-persist'
     })
     expect(state.query).toEqual({ tab: 'instances', module_name: 'manager', registered_host: 'host-a',
-      node_name: 'container-a', role: 'worker', registered_period: '15m', page: '2', page_size: '20' })
+      node_name: 'container-a', role: 'worker', time_period: '15m', page: '2', page_size: '20' })
     expect(state.filters).toMatchObject({ moduleName: 'manager', status: 'up', page: 2, pageSize: 20 })
     expect(state.changed).toBe(true)
     expect(resolveModulesRouteState(state.query).changed).toBe(false)
@@ -27,22 +27,35 @@ describe('System recoverable route state', () => {
     expect(buildModuleInstancesQuery(resolveModulesRouteState({ tab: 'instances' }).filters)).toEqual({ tab: 'instances' })
   })
 
+  it('restores offline time queries and removes retired registration-only parameters', () => {
+    const query = { tab: 'instances', status: 'down', time_basis: 'offline', time_period: '1h' }
+    const state = resolveModulesRouteState(query)
+    expect(state.filters).toMatchObject({ timeBasis: 'offline', period: '1h', status: 'down' })
+    expect(buildModuleInstancesQuery(state.filters)).toEqual(query)
+    expect(state.changed).toBe(false)
+    expect(resolveModulesRouteState({ tab: 'instances', time_basis: 'registered' }).query).toEqual({ tab: 'instances' })
+    expect(resolveModulesRouteState({ tab: 'instances', time_basis: ['offline', 'registered'] }).query).toEqual({ tab: 'instances' })
+    expect(resolveModulesRouteState({ tab: 'instances', time_basis: 'started',
+      registered_period: 'custom', registered_from: '2026-10-01T00:00:00Z', registered_to: '2026-10-02T00:00:00Z'
+    }).query).toEqual({ tab: 'instances' })
+  })
+
   it('canonicalizes complete custom ranges to UTC and discards incomplete or inverted ranges', () => {
-    const state = resolveModulesRouteState({ tab: 'instances', registered_period: 'custom',
-      registered_from: '2026-10-01T08:00:00+08:00', registered_to: '2026-10-01T09:00:00+08:00' })
-    expect(state.query).toEqual({ tab: 'instances', registered_period: 'custom',
-      registered_from: '2026-10-01T00:00:00.000Z', registered_to: '2026-10-01T01:00:00.000Z' })
+    const state = resolveModulesRouteState({ tab: 'instances', time_period: 'custom',
+      time_from: '2026-10-01T08:00:00+08:00', time_to: '2026-10-01T09:00:00+08:00' })
+    expect(state.query).toEqual({ tab: 'instances', time_period: 'custom',
+      time_from: '2026-10-01T00:00:00.000Z', time_to: '2026-10-01T01:00:00.000Z' })
     for (const range of [
-      { registered_from: 'invalid', registered_to: '2026-10-01T00:00:00Z' },
-      { registered_from: '2026-02-30T00:00:00Z', registered_to: '2026-10-01T00:00:00Z' },
-      { registered_from: '2026-10-01T00:00:00Z' },
-      { registered_from: '2026-10-02T00:00:00Z', registered_to: '2026-10-01T00:00:00Z' }
-    ]) expect(resolveModulesRouteState({ tab: 'instances', registered_period: 'custom', ...range }).query).toEqual({ tab: 'instances' })
+      { time_from: 'invalid', time_to: '2026-10-01T00:00:00Z' },
+      { time_from: '2026-02-30T00:00:00Z', time_to: '2026-10-01T00:00:00Z' },
+      { time_from: '2026-10-01T00:00:00Z' },
+      { time_from: '2026-10-02T00:00:00Z', time_to: '2026-10-01T00:00:00Z' }
+    ]) expect(resolveModulesRouteState({ tab: 'instances', time_period: 'custom', ...range }).query).toEqual({ tab: 'instances' })
   })
 
   it('removes invalid enums, repeated fields, unsafe pages and unsupported page sizes', () => {
     expect(resolveModulesRouteState({ tab: 'instances', module_name: ['manager', 'system'], status: 'bad',
-      role: 'other', registered_period: 'bad', page: '9007199254740992', page_size: '11' }).query).toEqual({ tab: 'instances' })
+      role: 'other', time_period: 'bad', page: '9007199254740992', page_size: '11' }).query).toEqual({ tab: 'instances' })
     expect(resolveModulesRouteState({ tab: ['instances', 'overview'], module_name: 'manager' }).query).toEqual({})
     expect(resolveModulesRouteState({ tab: 'overview', status: 'down', page: '2' }).query).toEqual({})
   })

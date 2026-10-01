@@ -46,8 +46,41 @@ func Migrate(db *gorm.DB) error {
 		if err := migrateLegacyComponentElements(tx); err != nil {
 			return err
 		}
+		if err := migrateBusinessResponsibilityEvidence(tx); err != nil {
+			return err
+		}
 		return applyConstraints(tx)
 	})
+}
+
+// Positive legacy evidence is safe to recover. Missing or count-only history
+// cannot prove a negative; it remains NULL, including previously discovered rows.
+func migrateBusinessResponsibilityEvidence(tx *gorm.DB) error {
+	if tx.Dialector.Name() != "postgres" {
+		return nil
+	}
+	err := tx.Exec(`UPDATE catalog.entries AS entry
+		SET business_responsibility_established = TRUE
+		WHERE entry.business_responsibility_established IS NULL AND (
+			entry.governance_status IN ('curated', 'certified', 'deprecated')
+			OR EXISTS (SELECT 1 FROM catalog.responsibilities AS responsibility
+				WHERE responsibility.tenant_id = entry.tenant_id AND responsibility.catalog_entry_id = entry.id
+				AND responsibility.role = 'business_owner' AND responsibility.subject_type = 'user')
+			OR EXISTS (SELECT 1 FROM catalog.audit_events AS audit
+				WHERE audit.tenant_id = entry.tenant_id AND audit.catalog_entry_id = entry.id AND (
+					audit.details->>'governance_status' IN ('curated', 'certified', 'deprecated')
+					OR audit.details->>'previous_governance_status' IN ('curated', 'certified', 'deprecated')
+					OR EXISTS (SELECT 1 FROM jsonb_array_elements(
+						CASE WHEN jsonb_typeof(audit.details->'responsibilities') = 'array'
+						THEN audit.details->'responsibilities' ELSE '[]'::jsonb END
+					) AS subject WHERE subject->>'role' = 'business_owner' AND subject->>'subject_type' = 'user'
+						AND subject->>'subject_id' ~ '^[1-9][0-9]*$')
+				))
+		)`).Error
+	if err != nil {
+		return fmt.Errorf("recover Catalog business responsibility evidence: %w", err)
+	}
+	return nil
 }
 
 // The old table is read only during the single transactional replacement. An
@@ -106,6 +139,20 @@ func applyConstraints(db *gorm.DB) error {
 		return nil
 	}
 	statements := []string{
+		`CREATE OR REPLACE FUNCTION catalog.preserve_business_responsibility_establishment()
+		RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog AS $$
+		BEGIN
+			IF NEW.business_responsibility_established IS DISTINCT FROM OLD.business_responsibility_established
+				AND NEW.business_responsibility_established IS DISTINCT FROM TRUE THEN
+				RAISE EXCEPTION 'Catalog business responsibility establishment evidence cannot be reset'
+					USING ERRCODE = '23514';
+			END IF;
+			RETURN NEW;
+		END $$`,
+		`DROP TRIGGER IF EXISTS preserve_business_responsibility_establishment ON catalog.entries`,
+		`CREATE TRIGGER preserve_business_responsibility_establishment
+			BEFORE UPDATE OF business_responsibility_established ON catalog.entries
+			FOR EACH ROW EXECUTE FUNCTION catalog.preserve_business_responsibility_establishment()`,
 		`ALTER TABLE catalog.entries DROP CONSTRAINT IF EXISTS ck_catalog_entries_entry_type`,
 		`ALTER TABLE catalog.entries ADD CONSTRAINT ck_catalog_entries_entry_type CHECK (entry_type IN ('data_item', 'business_entity', 'logical_model', 'metric', 'data_service', 'development_artifact', 'data_application'))`,
 		`ALTER TABLE catalog.entries DROP CONSTRAINT IF EXISTS ck_catalog_entries_entry_status`,

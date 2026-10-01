@@ -357,7 +357,7 @@ frontend/src/
 - `/api/v1/system/platform/identity_changes` - 平台身份变更申请、复核和监督；
 - `/api/v1/system/platform/audit/events` - 平台审计查询、汇总、趋势和导出。
 - `/api/v1/system/platform/modules` - 模块定义、有界当前运行实例投影和带版本的启用状态管理；不得携带全部实例历史。
-- `/api/v1/system/platform/module-instances` - 跨模块运行实例历史的唯一只读分页查询，支持模块名、登记主机、role、当前有效 status 与登记时间范围组合过滤。
+- `/api/v1/system/platform/module-instances` - 跨模块运行实例记录的唯一只读分页查询，支持模块名、登记主机、节点、role、当前有效 status 与时间范围组合过滤。`time_basis=registered|offline` 选择登记时间或离线判定时间（默认登记），统一使用 `time_from` / `time_to`，范围下界含、上界不含，按选定时间倒序及 ID 倒序稳定分页；旧的登记时间专属 query 删除。离线查询仅展示仍保留离线观测的实例，包括尚未被扫描落库的租约过期实例；恢复后退出结果，不代表完整的历史离线事件或历史可用率。
 
 ### Tenant IAM 管理（Tenant Context + 精确 Permission）
 - `/api/v1/system/tenant/memberships` - 当前 Tenant Membership 查询、有效期和生命周期；
@@ -419,6 +419,6 @@ API 消费方不是 Principal，不能分配 Role。首期只绑定 Service Cons
 - 引擎详情唯一使用 `/engines/:id`，详情稳定子视图使用 `tab=connection|capabilities`，默认基础信息省略。
 - 审计入口唯一使用 `/iam/security?tab=audit`，审计范围由当前 Platform 或 Tenant Context 决定，并支持 `module_name`、`principal_id`、`principal_type`、`entity_type`、`entity_id` 稳定筛选；资源回收不再跳转不存在的 `Logs` route。
 - 模块管理唯一使用 `/modules`；页面只对持有 `platform.module.read` 的 Platform User 显示，启停还要求 `platform.module.update`。
-- 服务实例使用 `tab=instances`，组合筛选、登记时段及分页使用 `docs/spec/addp前端路由与可恢复状态规范.md` 中的唯一 query 契约；默认 UP 省略，全部状态显式为 `status=all`。筛选和分页由现有 System 导航桥 replace 到 Console 或 standalone URL，刷新、分享和历史导航从 URL 恢复；未应用输入不写入地址栏。System 前端门禁覆盖 standalone，Console 前端门禁加载真实 System 页面覆盖 iframe 同步与刷新。
+- 服务实例使用 `tab=instances`，组合筛选、时间依据、时段及分页使用 `docs/spec/addp前端路由与可恢复状态规范.md` 中的唯一 query 契约；默认 UP 和登记时间依据省略，全部状态显式为 `status=all`。时间依据选择后立即查询，保留其余筛选和时段并回到第 1 页；重置恢复 UP、登记时间、全部时间和默认分页。筛选和分页由现有 System 导航桥 replace 到 Console 或 standalone URL，刷新、分享和历史导航从 URL 恢复；未应用输入不写入地址栏。System 前端门禁覆盖 standalone，Console 前端门禁加载真实 System 页面覆盖 iframe 同步与刷新。
 - 服务实例页沿用模块概览的 10 秒刷新间隔，重新读取当前已应用的组合条件与分页，更新心跳、租约及运行时长；后台刷新不显示整表加载遮罩。有请求进行中、文本防抖未结束、自定义时间范围不完整或浏览器页面隐藏时跳过后台刷新，旧响应不得覆盖新查询；离开服务实例页停止该页轮询。该行为由既有 `make test-system-frontend` 和 System 前端 CI Job 的浏览器回归覆盖。
 - 同一实例的租约过期及恢复由确定性浏览器用例连续验证：全部状态列表自动从 UP 更新为 DOWN；已离线实例不出现在 UP 筛选中，恢复实例自动退出 DOWN 筛选；组合条件与 URL 保持不变。租约超时只说明失联，离线时不推断进程持续运行时长；相同进程续租恢复后继续按原启动时间计算。真实 System/Gateway 注册和恢复链路另由隔离部署中的 T4 `module-registry-recovery` 验证，不以受控 API 夹具替代。

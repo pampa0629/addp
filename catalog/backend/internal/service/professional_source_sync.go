@@ -361,8 +361,10 @@ func validProfessionalSourceIdentity(sourceModule, identity string) bool {
 
 func createEntryFromProfessionalChange(tx *gorm.DB, tenantID int64, sourceModule, entryType string, change ProfessionalResourceChange) error {
 	now := change.ObservedAt.UTC()
+	established := false
 	entry := models.Entry{ID: uuid.New(), TenantID: tenantID, EntryType: entryType, EntryStatus: models.EntryStatusActive,
-		GovernanceStatus: models.GovernanceStatusDiscovered, Visibility: models.VisibilityInventory, Version: 1, CreatedAt: now, UpdatedAt: now}
+		GovernanceStatus: models.GovernanceStatusDiscovered, Visibility: models.VisibilityInventory, Version: 1, CreatedAt: now, UpdatedAt: now,
+		BusinessResponsibilityEstablished: &established}
 	if err := tx.Create(&entry).Error; err != nil {
 		return fmt.Errorf("create Catalog entry from %s: %w", sourceModule, err)
 	}

@@ -308,8 +308,18 @@ func (r *ModuleRegistryRepository) ListModuleRuntimeInstances(
 	filter models.ModuleRuntimeInstanceFilter,
 	now time.Time,
 ) ([]models.ModuleRuntimeInstanceRow, int64, error) {
-	query := r.db.Table("module_runtime_instances").
-		Joins("JOIN module_definitions ON module_definitions.id = module_runtime_instances.module_definition_id")
+	query := r.db.Table("module_runtime_instances")
+	timeColumn := "module_runtime_instances.registered_at"
+	if filter.TimeBasis == models.ModuleRuntimeTimeOffline {
+		// Match the read projection before the lease scanner persists the observation.
+		observations := r.db.Model(&models.ModuleRuntimeInstance{}).Select(`module_runtime_instances.*,
+			CASE WHEN status = ? AND lease_expires_at <= ? THEN lease_expires_at
+			ELSE stopped_at END AS offline_determined_at`, models.ModuleRuntimeStatusUp, now)
+		query = r.db.Table("(?) AS module_runtime_instances", observations)
+		timeColumn = "module_runtime_instances.offline_determined_at"
+		query = query.Where(timeColumn + " IS NOT NULL")
+	}
+	query = query.Joins("JOIN module_definitions ON module_definitions.id = module_runtime_instances.module_definition_id")
 	if filter.ModuleName != "" {
 		query = query.Where("module_definitions.module_name = ?", filter.ModuleName)
 	}
@@ -328,11 +338,11 @@ func (r *ModuleRegistryRepository) ListModuleRuntimeInstances(
 	case models.ModuleRuntimeStatusDown:
 		query = query.Where("module_runtime_instances.status = ? OR module_runtime_instances.lease_expires_at <= ?", models.ModuleRuntimeStatusDown, now)
 	}
-	if !filter.RegisteredFrom.IsZero() {
-		query = query.Where("module_runtime_instances.registered_at >= ?", filter.RegisteredFrom)
+	if !filter.TimeFrom.IsZero() {
+		query = query.Where(timeColumn+" >= ?", filter.TimeFrom)
 	}
-	if !filter.RegisteredTo.IsZero() {
-		query = query.Where("module_runtime_instances.registered_at < ?", filter.RegisteredTo)
+	if !filter.TimeTo.IsZero() {
+		query = query.Where(timeColumn+" < ?", filter.TimeTo)
 	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
@@ -340,7 +350,7 @@ func (r *ModuleRegistryRepository) ListModuleRuntimeInstances(
 	}
 	var instances []models.ModuleRuntimeInstanceRow
 	if err := query.Select("module_runtime_instances.*, module_definitions.module_name AS module_name").
-		Order("module_runtime_instances.registered_at DESC, module_runtime_instances.id DESC").
+		Order(timeColumn + " DESC, module_runtime_instances.id DESC").
 		Offset((filter.Page - 1) * filter.PageSize).
 		Limit(filter.PageSize).
 		Scan(&instances).Error; err != nil {

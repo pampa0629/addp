@@ -21,6 +21,7 @@ func assertDeprecatedResponsibilityTransferAndWithdrawal(t *testing.T, db *gorm.
 	entry, component := createEditableCatalogEntry(t, db, 7)
 	entries := NewEntryService(db, &fakeStandardReferenceResolver{}, &fakeSystemReferenceResolver{})
 	curated := curateCompleteEntry(t, entries, entry, component)
+	assertBusinessResponsibilityEvidence(t, db, entry.ID, boolEvidence(true))
 	if err := db.Model(&models.Entry{}).Where("id = ?", entry.ID).Update("visibility", models.VisibilityDepartment).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -51,6 +52,7 @@ func assertDeprecatedResponsibilityTransferAndWithdrawal(t *testing.T, db *gorm.
 	if before.Version <= deprecated.Version {
 		t.Fatal("invalid references did not advance the aggregate version")
 	}
+	assertBusinessResponsibilityEvidence(t, db, entry.ID, boolEvidence(true))
 	// Standard is deliberately absent: frozen semantic facts are not revalidated.
 	entries = NewEntryService(db, nil, &fakeSystemReferenceResolver{})
 	input := TransferEntryResponsibilitiesInput{
@@ -135,6 +137,7 @@ func assertDeprecatedResponsibilityTransferAndWithdrawal(t *testing.T, db *gorm.
 		t.Fatal(err)
 	}
 	assertEntryVersionAndGovernance(t, db, entry.ID, before.Version+1, models.GovernanceStatusDeprecated)
+	assertBusinessResponsibilityEvidence(t, db, entry.ID, boolEvidence(true))
 	if !reflect.DeepEqual(before.BusinessName, after.BusinessName) || !reflect.DeepEqual(before.BusinessDescription, after.BusinessDescription) ||
 		before.Visibility != after.Visibility || !reflect.DeepEqual(before.RecommendedSuccessorEntryID, after.RecommendedSuccessorEntryID) ||
 		!reflect.DeepEqual(before.SemanticLinks, after.SemanticLinks) || !reflect.DeepEqual(before.Source, after.Source) ||
@@ -196,6 +199,7 @@ func assertDeprecatedResponsibilityTransferAndWithdrawal(t *testing.T, db *gorm.
 	if restored.GovernanceStatus != models.GovernanceStatusCurated || restored.RecommendedSuccessorEntryID != nil || !reflect.DeepEqual(restored.Responsibilities, after.Responsibilities) || !reflect.DeepEqual(restored.SemanticLinks, after.SemanticLinks) {
 		t.Fatalf("restored aggregate=%#v", restored)
 	}
+	assertBusinessResponsibilityEvidence(t, db, entry.ID, boolEvidence(true))
 	audit = models.AuditEvent{}
 	if err := db.Where("catalog_entry_id = ? AND event_type = ?", entry.ID, "catalog.entry.deprecation_withdrawn").First(&audit).Error; err != nil {
 		t.Fatal(err)

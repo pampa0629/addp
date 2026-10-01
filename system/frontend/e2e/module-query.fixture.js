@@ -43,4 +43,4 @@ export async function mockModuleQueryAPI(page) {
   return queries
 }
 
-export const moduleQueryLink = '?tab=instances&module_name=manager&registered_host=manager.local&node_name=host-a&role=backend&status=all&registered_period=custom&registered_from=2026-10-01T00%3A00%3A00.000Z&registered_to=2026-10-02T00%3A00%3A00.000Z&page=2&page_size=20'
+export const moduleQueryLink = '?tab=instances&module_name=manager&registered_host=manager.local&node_name=host-a&role=backend&status=all&time_basis=offline&time_period=custom&time_from=2026-10-01T00%3A00%3A00.000Z&time_to=2026-10-02T00%3A00%3A00.000Z&page=2&page_size=20'

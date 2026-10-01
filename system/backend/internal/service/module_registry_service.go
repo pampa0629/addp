@@ -134,8 +134,15 @@ func (s *ModuleRegistryService) ListModuleRuntimeInstances(
 	filter.NodeName = strings.ToLower(strings.TrimSpace(filter.NodeName))
 	filter.Role = strings.ToLower(strings.TrimSpace(filter.Role))
 	filter.Status = strings.ToLower(strings.TrimSpace(filter.Status))
+	filter.TimeBasis = strings.ToLower(strings.TrimSpace(filter.TimeBasis))
+	if filter.TimeBasis == "" {
+		filter.TimeBasis = models.ModuleRuntimeTimeRegistered
+	}
+	if filter.TimeBasis != models.ModuleRuntimeTimeRegistered && filter.TimeBasis != models.ModuleRuntimeTimeOffline {
+		return nil, 0, ErrInvalidModuleRuntimeInstanceQuery
+	}
 	if filter.Page < 1 || filter.PageSize < 1 || filter.PageSize > 100 ||
-		(!filter.RegisteredFrom.IsZero() && !filter.RegisteredTo.IsZero() && !filter.RegisteredFrom.Before(filter.RegisteredTo)) {
+		(!filter.TimeFrom.IsZero() && !filter.TimeTo.IsZero() && !filter.TimeFrom.Before(filter.TimeTo)) {
 		return nil, 0, ErrInvalidModuleRuntimeInstanceQuery
 	}
 	switch filter.Role {

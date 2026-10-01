@@ -17,7 +17,11 @@
         <el-option :label="t('system.module.status.up')" value="up" />
         <el-option :label="t('system.module.status.down')" value="down" />
       </el-select>
-      <el-select v-model="period" :aria-label="t('system.module.query.registeredPeriod')" class="query-control" @change="search">
+      <el-select v-model="timeBasis" :aria-label="t('system.module.query.timeBasis')" class="query-control" @change="search">
+        <el-option :label="t('system.module.query.registeredTime')" value="registered" />
+        <el-option :label="t('system.module.query.offlineTime')" value="offline" />
+      </el-select>
+      <el-select v-model="period" :aria-label="t('system.module.query.timeRange')" class="query-control" @change="search">
         <el-option :label="t('system.module.query.allTime')" value="all" />
         <el-option v-for="item in periods" :key="item.value" :label="t(item.label)" :value="item.value" />
         <el-option :label="t('system.module.query.custom')" value="custom" />
@@ -83,6 +87,9 @@
       <el-table-column :label="t('system.module.instances.registeredAt')" width="175">
         <template #default="{ row }">{{ formatDate(row.registered_at) }}</template>
       </el-table-column>
+      <el-table-column v-if="applied.timeBasis === 'offline'" :label="t('system.module.instances.offlineDeterminedAt')" width="175">
+        <template #default="{ row }">{{ formatDate(row.stopped_at) }}</template>
+      </el-table-column>
       <el-table-column :label="t('system.module.instances.stopReason')" width="170">
         <template #default="{ row }">{{ stopReasonLabel(row) }}</template>
       </el-table-column>
@@ -119,6 +126,7 @@ const nodeName = ref('')
 const role = ref('')
 const defaultStatus = 'up'
 const status = ref(defaultStatus)
+const timeBasis = ref('registered')
 const period = ref('all')
 const customRange = ref(null)
 const validCustomRange = computed(() => Array.isArray(customRange.value) && customRange.value.length === 2 &&
@@ -158,17 +166,18 @@ function currentParams() {
     ...(applied.value.registeredHost ? { registered_host: applied.value.registeredHost } : {}),
     ...(applied.value.nodeName ? { node_name: applied.value.nodeName } : {}),
     ...(applied.value.role ? { role: applied.value.role } : {}),
-    ...(applied.value.status ? { status: applied.value.status } : {})
+    ...(applied.value.status ? { status: applied.value.status } : {}),
+    ...(applied.value.timeBasis === 'offline' ? { time_basis: 'offline' } : {})
   }
   if (applied.value.period === 'custom') {
-    params.registered_from = applied.value.from
-    params.registered_to = applied.value.to
+    params.time_from = applied.value.from
+    params.time_to = applied.value.to
   } else {
     const preset = periods.find(item => item.value === applied.value.period)
     if (preset) {
       const now = Date.now()
-      params.registered_from = new Date(now - preset.minutes * 60000).toISOString()
-      params.registered_to = new Date(now).toISOString()
+      params.time_from = new Date(now - preset.minutes * 60000).toISOString()
+      params.time_to = new Date(now).toISOString()
     }
   }
   return params
@@ -208,7 +217,7 @@ function search() {
   }
   const filters = {
     moduleName: moduleName.value, registeredHost: registeredHost.value.trim(), nodeName: nodeName.value.trim(), role: role.value, status: status.value,
-    period: period.value,
+    timeBasis: timeBasis.value, period: period.value,
     ...(period.value === 'custom' ? {
       from: new Date(customRange.value[0]).toISOString(), to: new Date(customRange.value[1]).toISOString()
     } : {})
@@ -264,6 +273,7 @@ function restoreRoute() {
   nodeName.value = filters.nodeName
   role.value = filters.role
   status.value = filters.status
+  timeBasis.value = filters.timeBasis
   period.value = filters.period
   customRange.value = filters.period === 'custom' ? [new Date(filters.from), new Date(filters.to)] : null
   page.value = filters.page

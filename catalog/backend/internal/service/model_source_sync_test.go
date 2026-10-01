@@ -51,6 +51,7 @@ func TestModelSourceSyncCreatesUpdatesAndMarksMissing(t *testing.T) {
 	if entry.EntryType != models.EntryTypeLogicalModel || entry.Version != 1 {
 		t.Fatalf("entry = %#v", entry)
 	}
+	assertBusinessResponsibilityEvidence(t, db, entry.ID, boolEvidence(false))
 	if err := syncService.SyncTenant(context.Background(), 7); err != nil {
 		t.Fatal(err)
 	}

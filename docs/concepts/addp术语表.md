@@ -483,6 +483,7 @@
 | source data authorization authority | 源数据授权权威 | 同一源数据逻辑资源访问规则的唯一维护方。 | 已确认由 System 的引擎访问控制领域承担，不是 System IAM 的全平台中央 ACL；访问模块执行其权威规则，不能分别维护源数据授权副本。专业业务对象的授权仍归各自 owner；表级贯通尚未实现。 |
 | source data authorization target | 源数据授权目标 | 在 Tenant 边界内，以已登记 Engine 身份和完整结构化 EngineCatalogPath 确定的源数据逻辑资源。 | 不是物理对象每次创建的身份；没有在 ADDP 中改变资源绑定或授权时，外部同名重建仍按同一逻辑资源处理。不同 Engine 或路径是不同目标，不随 Catalog 重绑自动转移规则；指纹、Meta 行 ID 和 CatalogEntry ID 不代替当前有效访问规则。 |
 | business authorization decision | 业务授权决定 | 有效业务责任人对一次明确资源、接收主体、动作和期限的共享或权限扩大作出的确认。 | 不等于责任身份、IAM Role、Resource Grant 或数据访问成功；必须验证当前资格并由授权维护方履约。普通只读共享允许确认人与办理人同人，但必须分别具备两方面资格；不隐含允许申请人自批。 |
+| business responsibility establishment evidence | 业务责任建立依据 | Catalog 对企业条目是否曾明确保存有效业务负责人的不可回退历史依据。 | 首次保存有效 `business_owner` 即建立，不以完成编目为前提；仅分配部门或业务域不算。撤销编目、责任移交或失效不清除此依据。旧历史不足时保留未知，不等同从未建立；不是新的治理阶段、当前资格证明或数据授权。 |
 | authorization fulfillment | 授权办理 | 具备办理功能和目标管理范围的主体，将有效业务或接入授权依据落实为资源访问规则，或执行规则撤销的行为。 | 办理权限不等于业务批准权；业务责任人、数据管理员和技术维护者不因承担责任自动获得办理或内容访问权。 |
 | engine access management delegation | 引擎授权管理委派 | System 引擎访问控制领域将一个明确 Engine 的有限授权管理资格，显式委派给当前 Tenant 的有效用户成员。 | 独立于 Role Assignment、Catalog 责任和内容访问 Grant；必须指定到期时间与原因，可撤销，不允许转委派。首版不包含 namespace 递归、写入、DDL 或整库读取。 |
 | onboarding authorization authority | 接入授权主体 | 尚未明确业务责任时，被显式授予限定引擎资源管理范围、可办理有限初始访问授权的主体。 | 只向指定账号或项目组授予明确选中资源的限时只读，不包含全租户公开、写入或 DDL；明确业务责任后，新增共享与扩大权限须转由业务责任人确认。不是新的 IAM 身份或永久业务负责人；管理委派与内容访问授权独立，不能从引擎登记动作推导。 |
@@ -529,6 +530,7 @@
 |---|---|---|---|
 | module definition | 模块定义 | System 按稳定 `module_name` 保存的持久模块身份、路由声明和业务模块的管理员启用意图。 | 进程离线不删除；业务模块的管理员写操作使用聚合根 `version` 做并发控制。System 与 Gateway 定义的 `enabled` 固定为 true。 |
 | module runtime instance | 模块运行实例 | Backend、Worker、Scheduler 或 Ingress 一次具体进程登记及其短期租约。 | 健康由心跳和租约计算；正常注销记录 `graceful`，租约超时记录 `lease_expired`，后者仅表示失联，不能证明进程崩溃。进程运行时长以进程启动时间计算，模块定义更新时间和首次注册时间不得替代。管理员不能手工改成在线，实例也不拥有独立并发版本。 |
+| instance offline determination time | 实例离线判定时间 | System 对当前实例离线观测采用的时间；正常注销使用注销时间，租约超时使用租约到期时间。 | 对应实例投影 `stopped_at`，不是已确认的进程退出时间。租约已过期但扫描尚未落库时，读取仍按到期时间判定；同一实例恢复后清除该观测。按此时间查询不代表完整的历史离线事件查询。 |
 | registered host | 登记主机 | 从模块运行实例的服务地址（无服务地址时为健康检查地址）解析出的主机名或 IP，不包含端口。 | 用于按登记地址精确筛选实例；域名和 `localhost` 不等于物理节点 IP。无监听端点的 Worker、Scheduler 可以为空，不据此推断其节点地址。 |
 | runtime hostname | 运行环境主机名 | 由进程所在操作系统自动采集的主机名，容器内表示容器运行环境。 | 对应 `runtime_hostname`；用于定位包括无监听端点 Worker 在内的进程，不从登记 URL 或实例 ID 推断宿主节点。 |
 | host node name | 宿主节点名 | 部署环境明确提供的进程所属宿主节点标识。 | 对应 `host_node_name`，由 `ADDP_HOST_NODE_NAME` 注入；未提供时为空，不把容器主机名当作宿主节点名。节点信息仅供观测，不参与路由、Ready 或租约判断。 |

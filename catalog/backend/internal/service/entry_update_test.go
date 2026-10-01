@@ -563,10 +563,12 @@ func completeGovernedUpdateInput(name, description string) UpdateEntryInput {
 func createEditableCatalogEntry(t *testing.T, db *gorm.DB, tenantID int64) (models.Entry, models.Component) {
 	t.Helper()
 	now := time.Date(2026, 8, 26, 0, 0, 0, 0, time.UTC)
+	established := false
 	entry := models.Entry{
 		ID: uuid.New(), TenantID: tenantID, EntryType: models.EntryTypeDataItem,
 		EntryStatus: models.EntryStatusActive, GovernanceStatus: models.GovernanceStatusDiscovered,
 		Visibility: models.VisibilityInventory, Version: 1, CreatedAt: now, UpdatedAt: now,
+		BusinessResponsibilityEstablished: &established,
 	}
 	if err := db.Create(&entry).Error; err != nil {
 		t.Fatal(err)
@@ -683,15 +685,19 @@ func (r *fakeStandardReferenceResolver) ResolveStandardReferences(_ context.Cont
 	return results, nil
 }
 
-type fakeSystemReferenceResolver struct{ calls int }
+type fakeSystemReferenceResolver struct {
+	calls          int
+	rejectedUserID int64
+}
 
 func (r *fakeSystemReferenceResolver) ResolveSystemReferences(_ context.Context, _ int64, references []commonClient.SystemCatalogReference) ([]commonClient.SystemCatalogReferenceResolution, error) {
 	r.calls++
 	results := make([]commonClient.SystemCatalogReferenceResolution, 0, len(references))
 	for _, reference := range references {
 		results = append(results, commonClient.SystemCatalogReferenceResolution{
-			SubjectType: reference.SubjectType, ID: reference.ID, Found: true, Referenceable: true,
-			Name: reference.SubjectType + " name", Code: reference.SubjectType + "_code",
+			SubjectType: reference.SubjectType, ID: reference.ID, Found: true,
+			Referenceable: reference.SubjectType != models.ResponsibilitySubjectUser || reference.ID != r.rejectedUserID,
+			Name:          reference.SubjectType + " name", Code: reference.SubjectType + "_code",
 			Status: "active", PrincipalStatus: "active", MembershipStatus: "active",
 		})
 	}

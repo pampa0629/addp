@@ -274,7 +274,7 @@ func (h *ModuleRegistryHandler) GetModulePlatform(c *gin.Context) {
 
 // ListModuleRuntimeInstancesPlatform godoc
 // @Summary      跨模块分页查询运行实例 | List runtime instances across modules
-// @Description  按模块、登记主机、角色、当前有效状态和登记时间范围组合查询实例历史；时间范围不表示历史在线状态 | Search instance history by module, registered host, role, current effective status, and registration time range; the time range does not reconstruct past availability
+// @Description  按模块、节点、角色、当前有效状态及登记或离线判定时间组合查询实例；恢复后退出离线时间查询，不重建历史在线状态 | Search instances by module, node, role, current effective status and registration or offline determination time; recovered instances leave offline-time results, without reconstructing past availability
 // @Tags         平台模块管理 | Platform Module Management
 // @Produce      json
 // @Security     BearerAuth
@@ -283,8 +283,9 @@ func (h *ModuleRegistryHandler) GetModulePlatform(c *gin.Context) {
 // @Param        registered_host query string false "登记端点主机名或 IP，精确匹配 | Registered endpoint hostname or IP, exact match"
 // @Param        role query string false "角色过滤：backend、worker、scheduler、ingress | Role filter: backend, worker, scheduler, ingress"
 // @Param        status query string false "有效状态过滤：up、down | Effective status filter: up, down"
-// @Param        registered_from query string false "登记时间下界，RFC3339，含 | Registration time lower bound, RFC3339, inclusive"
-// @Param        registered_to query string false "登记时间上界，RFC3339，不含 | Registration time upper bound, RFC3339, exclusive"
+// @Param        time_basis query string false "时间依据：registered 登记、offline 离线判定 | Time basis: registered or offline determination" Enums(registered,offline) default(registered)
+// @Param        time_from query string false "选定时间依据的下界，RFC3339，含 | Lower bound of the selected time basis, RFC3339, inclusive"
+// @Param        time_to query string false "选定时间依据的上界，RFC3339，不含 | Upper bound of the selected time basis, RFC3339, exclusive"
 // @Param        page query int false "页码 | Page number" default(1)
 // @Param        page_size query int false "每页数量，最大 100 | Page size, maximum 100" default(10)
 // @Success      200 {object} object{data=[]models.ModuleRuntimeInstanceRecord,total=int64,page=int,page_size=int,total_pages=int}
@@ -297,13 +298,13 @@ func (h *ModuleRegistryHandler) GetModulePlatform(c *gin.Context) {
 // @Router       /platform/module-instances [get]
 func (h *ModuleRegistryHandler) ListModuleRuntimeInstancesPlatform(c *gin.Context) {
 	page, pageSize := commonapi.ParsePagination(c)
-	var registeredFrom, registeredTo time.Time
+	var timeFrom, timeTo time.Time
 	for _, bound := range []struct {
 		value  string
 		target *time.Time
 	}{
-		{c.Query("registered_from"), &registeredFrom},
-		{c.Query("registered_to"), &registeredTo},
+		{c.Query("time_from"), &timeFrom},
+		{c.Query("time_to"), &timeTo},
 	} {
 		if bound.value == "" {
 			continue
@@ -317,7 +318,7 @@ func (h *ModuleRegistryHandler) ListModuleRuntimeInstancesPlatform(c *gin.Contex
 	}
 	instances, total, err := h.service.ListModuleRuntimeInstances(models.ModuleRuntimeInstanceFilter{
 		ModuleName: c.Query("module_name"), RegisteredHost: c.Query("registered_host"), NodeName: c.Query("node_name"),
-		Role: c.Query("role"), Status: c.Query("status"), RegisteredFrom: registeredFrom, RegisteredTo: registeredTo,
+		Role: c.Query("role"), Status: c.Query("status"), TimeBasis: c.Query("time_basis"), TimeFrom: timeFrom, TimeTo: timeTo,
 		Page: page, PageSize: pageSize,
 	})
 	switch {

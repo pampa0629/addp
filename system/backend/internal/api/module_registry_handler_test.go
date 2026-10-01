@@ -251,8 +251,8 @@ func TestListModuleRuntimeInstancesPlatformUsesPaginatedContract(t *testing.T) {
 	if payload.Data[0].ModuleName != "manager" || payload.Data[0].RegisteredHost == "" {
 		t.Fatalf("instance identity = %#v", payload.Data[0])
 	}
-	response = performModuleRegistryRequest(router, http.MethodGet, "/platform/module-instances?registered_host=MANAGER-A&node_name=HOST-MANAGER-A&role=backend&status=up&registered_from="+
-		url.QueryEscape(time.Now().Add(-time.Hour).Format(time.RFC3339))+"&registered_to="+
+	response = performModuleRegistryRequest(router, http.MethodGet, "/platform/module-instances?registered_host=MANAGER-A&node_name=HOST-MANAGER-A&role=backend&status=up&time_from="+
+		url.QueryEscape(time.Now().Add(-time.Hour).Format(time.RFC3339))+"&time_to="+
 		url.QueryEscape(time.Now().Add(time.Hour).Format(time.RFC3339)), "")
 	if response.Code != http.StatusOK {
 		t.Fatalf("combined filter status = %d, body=%s", response.Code, response.Body.String())
@@ -270,12 +270,34 @@ func TestListModuleRuntimeInstancesPlatformUsesPaginatedContract(t *testing.T) {
 	if payload.Total != 3 {
 		t.Fatalf("cross-module total = %d", payload.Total)
 	}
+	// A process registered a week ago must still be found by its recent offline time.
+	offlineAt := time.Now().Add(-5 * time.Minute).Truncate(time.Second)
+	if err := db.Model(&models.ModuleRuntimeInstance{}).Where("instance_id = ?", "manager-a").Updates(map[string]interface{}{
+		"registered_at": time.Now().Add(-7 * 24 * time.Hour), "lease_expires_at": offlineAt,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	response = performModuleRegistryRequest(router, http.MethodGet, "/platform/module-instances?module_name=manager&status=down&time_basis=offline&time_from="+
+		url.QueryEscape(time.Now().Add(-time.Hour).Format(time.RFC3339))+"&time_to="+url.QueryEscape(time.Now().Format(time.RFC3339)), "")
+	if response.Code != http.StatusOK {
+		t.Fatalf("offline query status=%d body=%s", response.Code, response.Body.String())
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Total != 1 || len(payload.Data) != 1 || payload.Data[0].InstanceID != "manager-a" || payload.Data[0].StoppedAt == nil || !payload.Data[0].StoppedAt.Equal(offlineAt) {
+		t.Fatalf("offline time response=%#v", payload)
+	}
+	response = performModuleRegistryRequest(router, http.MethodGet, "/platform/module-instances?time_basis=started", "")
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("invalid time basis status=%d", response.Code)
+	}
 
 	response = performModuleRegistryRequest(router, http.MethodGet, "/platform/module-instances?role=api", "")
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf("invalid role status = %d, body=%s", response.Code, response.Body.String())
 	}
-	response = performModuleRegistryRequest(router, http.MethodGet, "/platform/module-instances?registered_from=not-a-time", "")
+	response = performModuleRegistryRequest(router, http.MethodGet, "/platform/module-instances?time_from=not-a-time", "")
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf("invalid time status = %d, body=%s", response.Code, response.Body.String())
 	}

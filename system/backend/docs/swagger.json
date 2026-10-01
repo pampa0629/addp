@@ -3628,7 +3628,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "按模块、登记主机、角色、当前有效状态和登记时间范围组合查询实例历史；时间范围不表示历史在线状态 | Search instance history by module, registered host, role, current effective status, and registration time range; the time range does not reconstruct past availability",
+                "description": "按模块、节点、角色、当前有效状态及登记或离线判定时间组合查询实例；恢复后退出离线时间查询，不重建历史在线状态 | Search instances by module, node, role, current effective status and registration or offline determination time; recovered instances leave offline-time results, without reconstructing past availability",
                 "produces": [
                     "application/json"
                 ],
@@ -3668,15 +3668,26 @@
                         "in": "query"
                     },
                     {
+                        "enum": [
+                            "registered",
+                            "offline"
+                        ],
                         "type": "string",
-                        "description": "登记时间下界，RFC3339，含 | Registration time lower bound, RFC3339, inclusive",
-                        "name": "registered_from",
+                        "default": "registered",
+                        "description": "时间依据：registered 登记、offline 离线判定 | Time basis: registered or offline determination",
+                        "name": "time_basis",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "登记时间上界，RFC3339，不含 | Registration time upper bound, RFC3339, exclusive",
-                        "name": "registered_to",
+                        "description": "选定时间依据的下界，RFC3339，含 | Lower bound of the selected time basis, RFC3339, inclusive",
+                        "name": "time_from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "选定时间依据的上界，RFC3339，不含 | Upper bound of the selected time basis, RFC3339, exclusive",
+                        "name": "time_to",
                         "in": "query"
                     },
                     {

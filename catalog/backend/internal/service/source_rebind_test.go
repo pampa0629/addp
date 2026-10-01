@@ -34,6 +34,9 @@ func TestRebindSourcePreservesCanonicalIdentityAndHistory(t *testing.T) {
 		Where("source.source_identity = ?", "new-fingerprint").First(&temporary).Error; err != nil {
 		t.Fatalf("find temporary entry: %v", err)
 	}
+	if err := db.Model(&models.Entry{}).Where("id = ?", target.ID).UpdateColumn("business_responsibility_established", true).Error; err != nil {
+		t.Fatal(err)
+	}
 	var originalIDComponent models.Component
 	if err := db.Where("catalog_entry_id = ? AND component_key = ?", target.ID, "id").First(&originalIDComponent).Error; err != nil {
 		t.Fatalf("find original component: %v", err)
@@ -52,6 +55,8 @@ func TestRebindSourcePreservesCanonicalIdentityAndHistory(t *testing.T) {
 	if result.Source.ReplacedBindingID == nil {
 		t.Fatal("replacement binding does not retain previous binding reference")
 	}
+	assertBusinessResponsibilityEvidence(t, db, target.ID, boolEvidence(true))
+	assertBusinessResponsibilityEvidence(t, db, temporary.ID, boolEvidence(false))
 
 	if err := db.First(&temporary, "id = ?", temporary.ID).Error; err != nil {
 		t.Fatalf("reload temporary entry: %v", err)

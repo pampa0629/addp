@@ -89,10 +89,12 @@ type Entry struct {
 	BusinessName                *string    `gorm:"type:text" json:"business_name,omitempty"`
 	BusinessDescription         *string    `gorm:"type:text" json:"business_description,omitempty"`
 	GovernanceStatus            string     `gorm:"size:16;not null;index" json:"governance_status"`
-	Visibility                  string     `gorm:"size:16;not null;index" json:"visibility"`
-	Version                     int64      `gorm:"not null" json:"version"`
-	CreatedAt                   time.Time  `json:"created_at"`
-	UpdatedAt                   time.Time  `json:"updated_at"`
+	// Internal, monotonic history: nil means unknown legacy evidence, not false.
+	BusinessResponsibilityEstablished *bool     `json:"-"`
+	Visibility                        string    `gorm:"size:16;not null;index" json:"visibility"`
+	Version                           int64     `gorm:"not null" json:"version"`
+	CreatedAt                         time.Time `json:"created_at"`
+	UpdatedAt                         time.Time `json:"updated_at"`
 }
 
 func (Entry) TableName() string { return "catalog.entries" }

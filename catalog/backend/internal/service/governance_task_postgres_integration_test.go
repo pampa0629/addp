@@ -28,4 +28,5 @@ func TestPostgresResponsibilityRecoveryUsesEntryVisibility(t *testing.T) {
 	}
 	assertResponsibilityRecoveryUsesCurrentEntryVisibility(t, tx)
 	assertDeprecatedResponsibilityTransferAndWithdrawal(t, tx)
+	assertBusinessResponsibilityEstablishment(t, tx)
 }

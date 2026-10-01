@@ -137,6 +137,104 @@ func TestRuntimeObservationDistinguishesGracefulFromLeaseExpiry(t *testing.T) {
 
 func boolPointer(value bool) *bool { return &value }
 
+func TestRuntimeOfflineTimeQueryUsesCurrentObservationBeforeAndAfterLeaseScan(t *testing.T) {
+	registry, repo, db := newObservationRegistry(t)
+	now := time.Now().Truncate(time.Second)
+	from, to := now.Add(-time.Hour), now.Add(-time.Minute)
+	for _, fixture := range []struct {
+		id     string
+		module string
+		role   string
+		status string
+		at     time.Time
+	}{
+		{"lower-bound", "manager", "backend", "down", from},
+		{"expired-unscanned", "manager", "backend", "up", now.Add(-5 * time.Minute)},
+		{"expired-scanned", "manager", "backend", "down", now.Add(-5 * time.Minute)},
+		{"upper-bound", "manager", "backend", "down", to},
+		{"older-offline", "manager", "backend", "down", from.Add(-time.Second)},
+		{"online", "manager", "backend", "up", now.Add(time.Hour)},
+		{"other-module", "meta", "backend", "down", from},
+		{"other-role", "manager", "worker", "down", from},
+	} {
+		if err := registry.Register(&models.ModuleRegistrationRequest{
+			ModuleName: fixture.module, InstanceID: fixture.id, Role: fixture.role,
+			ModuleURL: "http://manager.local:8081", RoutePrefix: "/" + fixture.module,
+			ProcessStartedAt: now.Add(-7 * 24 * time.Hour), HostNodeName: "host-a",
+		}); err != nil {
+			t.Fatal(err)
+		}
+		fields := map[string]interface{}{
+			"registered_at": now.Add(-7 * 24 * time.Hour), "status": fixture.status,
+			"lease_expires_at": fixture.at,
+		}
+		if fixture.status == "down" {
+			fields["stopped_at"] = fixture.at
+			fields["stop_reason"] = models.ModuleRuntimeStopGraceful
+		}
+		if err := db.Model(&models.ModuleRuntimeInstance{}).Where("instance_id = ?", fixture.id).Updates(fields).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	filter := models.ModuleRuntimeInstanceFilter{
+		ModuleName: "manager", RegisteredHost: "MANAGER.LOCAL", NodeName: "HOST-A", Role: "backend",
+		Status: "down", TimeBasis: models.ModuleRuntimeTimeOffline, TimeFrom: from, TimeTo: to,
+		Page: 1, PageSize: 2,
+	}
+	rows, total, err := registry.ListModuleRuntimeInstances(filter)
+	if err != nil || total != 3 || len(rows) != 2 || rows[0].InstanceID != "expired-scanned" || rows[1].InstanceID != "expired-unscanned" {
+		t.Fatalf("offline time page: rows=%#v total=%d err=%v", rows, total, err)
+	}
+	if rows[1].StoppedAt == nil || !rows[1].StoppedAt.Equal(now.Add(-5*time.Minute)) || rows[1].StopReason != models.ModuleRuntimeStopExpired {
+		t.Fatalf("unscanned expired observation=%#v", rows[1])
+	}
+	filter.Page = 2
+	rows, total, err = registry.ListModuleRuntimeInstances(filter)
+	if err != nil || total != 3 || len(rows) != 1 || rows[0].InstanceID != "lower-bound" {
+		t.Fatalf("offline lower-inclusive/upper-exclusive page: rows=%#v total=%d err=%v", rows, total, err)
+	}
+	filter.Page = 1
+	filter.Status = "up"
+	_, total, err = registry.ListModuleRuntimeInstances(filter)
+	if err != nil || total != 0 {
+		t.Fatalf("online appeared in offline time range: total=%d err=%v", total, err)
+	}
+	filter.Status = ""
+	if _, err := repo.MarkStaleModules(now); err != nil {
+		t.Fatal(err)
+	}
+	rows, total, err = registry.ListModuleRuntimeInstances(filter)
+	if err != nil || total != 3 || len(rows) != 2 || rows[1].InstanceID != "expired-unscanned" {
+		t.Fatalf("scan changed offline query membership/order: rows=%#v total=%d err=%v", rows, total, err)
+	}
+	if err := registry.SendHeartbeat("manager", "expired-unscanned"); err != nil {
+		t.Fatal(err)
+	}
+	rows, total, err = registry.ListModuleRuntimeInstances(filter)
+	if err != nil || total != 2 || len(rows) != 2 || rows[1].InstanceID != "lower-bound" {
+		t.Fatalf("recovered instance remained in offline time query: rows=%#v total=%d err=%v", rows, total, err)
+	}
+	filter.TimeBasis = models.ModuleRuntimeTimeRegistered
+	_, total, err = registry.ListModuleRuntimeInstances(filter)
+	if err != nil || total != 0 {
+		t.Fatalf("old registrations appeared in recent registration range: total=%d err=%v", total, err)
+	}
+	filter.TimeBasis = models.ModuleRuntimeTimeOffline
+	filter.TimeFrom, filter.TimeTo = time.Time{}, time.Time{}
+	_, total, err = registry.ListModuleRuntimeInstances(filter)
+	if err != nil || total != 4 {
+		t.Fatalf("all offline times included online or recovered instances: total=%d err=%v", total, err)
+	}
+	for _, invalid := range []models.ModuleRuntimeInstanceFilter{
+		{TimeBasis: "process_started", Page: 1, PageSize: 10},
+		{TimeBasis: "offline", TimeFrom: to, TimeTo: from, Page: 1, PageSize: 10},
+	} {
+		if _, _, err := registry.ListModuleRuntimeInstances(invalid); !errors.Is(err, ErrInvalidModuleRuntimeInstanceQuery) {
+			t.Fatalf("invalid time filter accepted: %#v err=%v", invalid, err)
+		}
+	}
+}
+
 func TestRuntimeNodesLocateWorkersWithoutChangingRoutingFacts(t *testing.T) {
 	registry, repo, _ := newObservationRegistry(t)
 	request := &models.ModuleRegistrationRequest{ModuleName: "meta", InstanceID: "worker-a", Role: models.ModuleRuntimeRoleWorker,
