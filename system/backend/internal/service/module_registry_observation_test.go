@@ -172,6 +172,9 @@ func TestRuntimeOfflineTimeQueryUsesCurrentObservationBeforeAndAfterLeaseScan(t 
 			fields["stopped_at"] = fixture.at
 			fields["stop_reason"] = models.ModuleRuntimeStopGraceful
 		}
+		if fixture.id == "expired-scanned" {
+			fields["stop_reason"] = models.ModuleRuntimeStopExpired
+		}
 		if err := db.Model(&models.ModuleRuntimeInstance{}).Where("instance_id = ?", fixture.id).Updates(fields).Error; err != nil {
 			t.Fatal(err)
 		}
@@ -194,6 +197,26 @@ func TestRuntimeOfflineTimeQueryUsesCurrentObservationBeforeAndAfterLeaseScan(t 
 		t.Fatalf("offline lower-inclusive/upper-exclusive page: rows=%#v total=%d err=%v", rows, total, err)
 	}
 	filter.Page = 1
+	filter.StopReason = models.ModuleRuntimeStopExpired
+	rows, total, err = registry.ListModuleRuntimeInstances(filter)
+	if err != nil || total != 2 || len(rows) != 2 || rows[1].InstanceID != "expired-unscanned" {
+		t.Fatalf("expired reason before scan: rows=%#v total=%d err=%v", rows, total, err)
+	}
+	filter.TimeBasis = models.ModuleRuntimeTimeRegistered
+	filter.TimeFrom, filter.TimeTo = time.Time{}, time.Time{}
+	filter.Page, filter.PageSize = 2, 1
+	rows, total, err = registry.ListModuleRuntimeInstances(filter)
+	if err != nil || total != 2 || len(rows) != 1 || rows[0].StopReason != models.ModuleRuntimeStopExpired {
+		t.Fatalf("reason pagination independent of time basis: rows=%#v total=%d err=%v", rows, total, err)
+	}
+	filter.TimeBasis, filter.TimeFrom, filter.TimeTo = models.ModuleRuntimeTimeOffline, from, to
+	filter.Page, filter.PageSize = 1, 2
+	filter.StopReason = models.ModuleRuntimeStopGraceful
+	rows, total, err = registry.ListModuleRuntimeInstances(filter)
+	if err != nil || total != 1 || len(rows) != 1 || rows[0].InstanceID != "lower-bound" {
+		t.Fatalf("graceful reason: rows=%#v total=%d err=%v", rows, total, err)
+	}
+	filter.StopReason = models.ModuleRuntimeStopExpired
 	filter.Status = "up"
 	_, total, err = registry.ListModuleRuntimeInstances(filter)
 	if err != nil || total != 0 {
@@ -204,12 +227,17 @@ func TestRuntimeOfflineTimeQueryUsesCurrentObservationBeforeAndAfterLeaseScan(t 
 		t.Fatal(err)
 	}
 	rows, total, err = registry.ListModuleRuntimeInstances(filter)
-	if err != nil || total != 3 || len(rows) != 2 || rows[1].InstanceID != "expired-unscanned" {
+	if err != nil || total != 2 || len(rows) != 2 || rows[1].InstanceID != "expired-unscanned" {
 		t.Fatalf("scan changed offline query membership/order: rows=%#v total=%d err=%v", rows, total, err)
 	}
 	if err := registry.SendHeartbeat("manager", "expired-unscanned"); err != nil {
 		t.Fatal(err)
 	}
+	rows, total, err = registry.ListModuleRuntimeInstances(filter)
+	if err != nil || total != 1 || len(rows) != 1 || rows[0].InstanceID != "expired-scanned" {
+		t.Fatalf("recovered instance remained in reason query: rows=%#v total=%d err=%v", rows, total, err)
+	}
+	filter.StopReason = ""
 	rows, total, err = registry.ListModuleRuntimeInstances(filter)
 	if err != nil || total != 2 || len(rows) != 2 || rows[1].InstanceID != "lower-bound" {
 		t.Fatalf("recovered instance remained in offline time query: rows=%#v total=%d err=%v", rows, total, err)
@@ -226,6 +254,7 @@ func TestRuntimeOfflineTimeQueryUsesCurrentObservationBeforeAndAfterLeaseScan(t 
 		t.Fatalf("all offline times included online or recovered instances: total=%d err=%v", total, err)
 	}
 	for _, invalid := range []models.ModuleRuntimeInstanceFilter{
+		{StopReason: "unknown", Page: 1, PageSize: 10},
 		{TimeBasis: "process_started", Page: 1, PageSize: 10},
 		{TimeBasis: "offline", TimeFrom: to, TimeTo: from, Page: 1, PageSize: 10},
 	} {

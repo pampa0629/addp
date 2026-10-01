@@ -17,6 +17,10 @@
         <el-option :label="t('system.module.status.up')" value="up" />
         <el-option :label="t('system.module.status.down')" value="down" />
       </el-select>
+      <el-select v-model="stopReason" :empty-values="[null, undefined]" :aria-label="t('system.module.instances.stopReason')" class="query-control" @change="search">
+        <el-option :label="t('system.module.query.allStopReasons')" value="" />
+        <el-option v-for="reason in stopReasons" :key="reason" :label="t(`system.module.stopReasons.${reason}`)" :value="reason" />
+      </el-select>
       <el-select v-model="timeBasis" :aria-label="t('system.module.query.timeBasis')" class="query-control" @change="search">
         <el-option :label="t('system.module.query.registeredTime')" value="registered" />
         <el-option :label="t('system.module.query.offlineTime')" value="offline" />
@@ -116,7 +120,7 @@ import { modulesAPI } from '../api/modules'
 import { resolveIAMModuleName } from '../utils/iamPresentation'
 import { isRuntimeInstanceOnline } from '../utils/moduleRegistry'
 import { formatRuntimeUptime, getRegisteredEndpoint } from '../utils/moduleRuntimePresentation'
-import { MODULE_INSTANCE_ROLES, MODULE_INSTANCE_PERIODS, resolveModulesRouteState, buildModuleInstancesQuery } from '../utils/routeState'
+import { MODULE_INSTANCE_ROLES, MODULE_INSTANCE_STOP_REASONS, MODULE_INSTANCE_PERIODS, resolveModulesRouteState, buildModuleInstancesQuery } from '../utils/routeState'
 import { navigateSystemRoute } from '../utils/moduleNavigation'
 
 defineProps({ modules: { type: Array, required: true } })
@@ -124,6 +128,7 @@ const { t, te } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const roles = MODULE_INSTANCE_ROLES
+const stopReasons = MODULE_INSTANCE_STOP_REASONS
 const periods = MODULE_INSTANCE_PERIODS
 const moduleName = ref('')
 const registeredHost = ref('')
@@ -131,6 +136,7 @@ const nodeName = ref('')
 const role = ref('')
 const defaultStatus = 'up'
 const status = ref(defaultStatus)
+const stopReason = ref('')
 const timeBasis = ref('registered')
 const period = ref('all')
 const customRange = ref(null)
@@ -177,6 +183,7 @@ function currentParams() {
     ...(applied.value.nodeName ? { node_name: applied.value.nodeName } : {}),
     ...(applied.value.role ? { role: applied.value.role } : {}),
     ...(applied.value.status ? { status: applied.value.status } : {}),
+    ...(applied.value.stopReason ? { stop_reason: applied.value.stopReason } : {}),
     ...(applied.value.timeBasis === 'offline' ? { time_basis: 'offline' } : {})
   }
   if (applied.value.period === 'custom') {
@@ -234,7 +241,7 @@ function search() {
   }
   const filters = {
     moduleName: moduleName.value, registeredHost: registeredHost.value.trim(), nodeName: nodeName.value.trim(), role: role.value, status: status.value,
-    timeBasis: timeBasis.value, period: period.value,
+    stopReason: stopReason.value, timeBasis: timeBasis.value, period: period.value,
     ...(period.value === 'custom' ? {
       from: new Date(customRange.value[0]).toISOString(), to: new Date(customRange.value[1]).toISOString()
     } : {})
@@ -290,6 +297,7 @@ function restoreRoute() {
   nodeName.value = filters.nodeName
   role.value = filters.role
   status.value = filters.status
+  stopReason.value = filters.stopReason
   timeBasis.value = filters.timeBasis
   period.value = filters.period
   customRange.value = filters.period === 'custom' ? [new Date(filters.from), new Date(filters.to)] : null

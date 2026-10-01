@@ -6302,6 +6302,15 @@ paths:
         in: query
         name: status
         type: string
+      - description: 当前下线原因：graceful 正常退出、lease_expired 租约超时；未扫描的过期租约同样匹配，恢复实例不匹配
+          | Current stop reason; expired leases match before scanning, recovered instances
+          do not match
+        enum:
+        - graceful
+        - lease_expired
+        in: query
+        name: stop_reason
+        type: string
       - default: registered
         description: '时间依据：registered 登记、offline 离线判定 | Time basis: registered or
           offline determination'

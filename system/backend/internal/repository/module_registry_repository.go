@@ -338,6 +338,13 @@ func (r *ModuleRegistryRepository) ListModuleRuntimeInstances(
 	case models.ModuleRuntimeStatusDown:
 		query = query.Where("module_runtime_instances.status = ? OR module_runtime_instances.lease_expires_at <= ?", models.ModuleRuntimeStatusDown, now)
 	}
+	if filter.StopReason != "" {
+		query = query.Where(`CASE
+			WHEN module_runtime_instances.status = ? AND module_runtime_instances.lease_expires_at <= ? THEN ?
+			WHEN module_runtime_instances.status = ? THEN module_runtime_instances.stop_reason
+			ELSE '' END = ?`, models.ModuleRuntimeStatusUp, now, models.ModuleRuntimeStopExpired,
+			models.ModuleRuntimeStatusDown, filter.StopReason)
+	}
 	if !filter.TimeFrom.IsZero() {
 		query = query.Where(timeColumn+" >= ?", filter.TimeFrom)
 	}

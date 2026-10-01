@@ -277,7 +277,7 @@ func TestListModuleRuntimeInstancesPlatformUsesPaginatedContract(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatal(err)
 	}
-	response = performModuleRegistryRequest(router, http.MethodGet, "/platform/module-instances?module_name=manager&status=down&time_basis=offline&time_from="+
+	response = performModuleRegistryRequest(router, http.MethodGet, "/platform/module-instances?module_name=manager&status=down&stop_reason=lease_expired&time_basis=offline&time_from="+
 		url.QueryEscape(time.Now().Add(-time.Hour).Format(time.RFC3339))+"&time_to="+url.QueryEscape(time.Now().Format(time.RFC3339)), "")
 	if response.Code != http.StatusOK {
 		t.Fatalf("offline query status=%d body=%s", response.Code, response.Body.String())
@@ -287,6 +287,23 @@ func TestListModuleRuntimeInstancesPlatformUsesPaginatedContract(t *testing.T) {
 	}
 	if payload.Total != 1 || len(payload.Data) != 1 || payload.Data[0].InstanceID != "manager-a" || payload.Data[0].StoppedAt == nil || !payload.Data[0].StoppedAt.Equal(offlineAt) {
 		t.Fatalf("offline time response=%#v", payload)
+	}
+	if err := registry.Deregister("manager", "manager-b"); err != nil {
+		t.Fatal(err)
+	}
+	response = performModuleRegistryRequest(router, http.MethodGet, "/platform/module-instances?status=down&stop_reason=graceful&page_size=1", "")
+	if response.Code != http.StatusOK {
+		t.Fatalf("graceful query status=%d body=%s", response.Code, response.Body.String())
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Total != 1 || len(payload.Data) != 1 || payload.Data[0].InstanceID != "manager-b" {
+		t.Fatalf("graceful response=%#v", payload)
+	}
+	response = performModuleRegistryRequest(router, http.MethodGet, "/platform/module-instances?stop_reason=unknown", "")
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("invalid stop reason status=%d", response.Code)
 	}
 	response = performModuleRegistryRequest(router, http.MethodGet, "/platform/module-instances?time_basis=started", "")
 	if response.Code != http.StatusBadRequest {

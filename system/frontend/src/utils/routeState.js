@@ -1,6 +1,7 @@
 import { resolveCanonicalTabRouteState } from '@common-ui'
 
 export const MODULE_INSTANCE_ROLES = ['backend', 'worker', 'scheduler', 'ingress']
+export const MODULE_INSTANCE_STOP_REASONS = ['graceful', 'lease_expired']
 export const MODULE_INSTANCE_PERIODS = [
   { value: '15m', minutes: 15, label: 'system.module.query.periods.m15' },
   { value: '30m', minutes: 30, label: 'system.module.query.periods.m30' },
@@ -28,7 +29,7 @@ function queryTime(value) {
 export function resolveModulesRouteState(routeQuery = {}) {
   const instances = singleQueryValue(routeQuery.tab) === 'instances'
   const filters = {
-    moduleName: '', registeredHost: '', nodeName: '', role: '', status: 'up',
+    moduleName: '', registeredHost: '', nodeName: '', role: '', status: 'up', stopReason: '',
     timeBasis: 'registered', period: 'all', from: '', to: '', page: 1, pageSize: 10
   }
   const preservedQuery = {}
@@ -47,6 +48,11 @@ export function resolveModulesRouteState(routeQuery = {}) {
     if (status === 'down' || status === 'all') {
       filters.status = status === 'all' ? '' : status
       preservedQuery.status = status
+    }
+    const stopReason = singleQueryValue(routeQuery.stop_reason)
+    if (MODULE_INSTANCE_STOP_REASONS.includes(stopReason)) {
+      filters.stopReason = stopReason
+      preservedQuery.stop_reason = stopReason
     }
     if (singleQueryValue(routeQuery.time_basis) === 'offline') {
       filters.timeBasis = 'offline'
@@ -87,7 +93,7 @@ export function resolveModulesRouteState(routeQuery = {}) {
 export function buildModuleInstancesQuery(filters) {
   return resolveModulesRouteState({
     tab: 'instances', module_name: filters.moduleName, registered_host: filters.registeredHost,
-    node_name: filters.nodeName, role: filters.role,
+    node_name: filters.nodeName, role: filters.role, stop_reason: filters.stopReason,
     status: filters.status === '' ? 'all' : filters.status,
     time_basis: filters.timeBasis, time_period: filters.period, time_from: filters.from, time_to: filters.to,
     page: String(filters.page), page_size: String(filters.pageSize)

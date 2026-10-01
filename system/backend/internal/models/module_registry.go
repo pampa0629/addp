@@ -130,6 +130,7 @@ type ModuleRuntimeInstanceFilter struct {
 	NodeName       string
 	Role           string
 	Status         string
+	StopReason     string
 	TimeBasis      string
 	TimeFrom       time.Time
 	TimeTo         time.Time

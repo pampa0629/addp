@@ -134,6 +134,7 @@ func (s *ModuleRegistryService) ListModuleRuntimeInstances(
 	filter.NodeName = strings.ToLower(strings.TrimSpace(filter.NodeName))
 	filter.Role = strings.ToLower(strings.TrimSpace(filter.Role))
 	filter.Status = strings.ToLower(strings.TrimSpace(filter.Status))
+	filter.StopReason = strings.ToLower(strings.TrimSpace(filter.StopReason))
 	filter.TimeBasis = strings.ToLower(strings.TrimSpace(filter.TimeBasis))
 	if filter.TimeBasis == "" {
 		filter.TimeBasis = models.ModuleRuntimeTimeRegistered
@@ -152,6 +153,11 @@ func (s *ModuleRegistryService) ListModuleRuntimeInstances(
 	}
 	switch filter.Status {
 	case "", models.ModuleRuntimeStatusUp, models.ModuleRuntimeStatusDown:
+	default:
+		return nil, 0, ErrInvalidModuleRuntimeInstanceQuery
+	}
+	switch filter.StopReason {
+	case "", models.ModuleRuntimeStopGraceful, models.ModuleRuntimeStopExpired:
 	default:
 		return nil, 0, ErrInvalidModuleRuntimeInstanceQuery
 	}

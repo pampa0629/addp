@@ -189,6 +189,7 @@ test('offline time finds an old registration, queries immediately and removes it
     queries.push(params)
     const data = rows.filter(row => {
       if (params.status && row.status !== params.status) return false
+      if (params.stop_reason && row.stop_reason !== params.stop_reason) return false
       const date = params.time_basis === 'offline' ? row.stopped_at : row.registered_at
       if (params.time_basis === 'offline' && !date) return false
       return (!params.time_from || date >= params.time_from) && (!params.time_to || date < params.time_to)
@@ -215,16 +216,25 @@ test('offline time finds an old registration, queries immediately and removes it
   expect(statusIndex).toBeGreaterThanOrEqual(0)
   expect(headers[statusIndex + 1].trim()).toBe('离线判定时间')
   await expect(list.getByText('租约超时，疑似异常退出', { exact: true })).toBeVisible()
+  await list.locator('.el-select').filter({ has: page.getByRole('combobox', { name: '下线原因', exact: true }) }).click()
+  await page.getByRole('option', { name: '正常退出', exact: true }).click()
+  await expect.poll(() => queries.at(-1)?.stop_reason).toBe('graceful')
+  await expect(list.getByText('没有符合条件的服务实例', { exact: true })).toBeVisible()
+  await list.locator('.el-select').filter({ has: page.getByRole('combobox', { name: '下线原因', exact: true }) }).click()
+  await page.getByRole('option', { name: '租约超时，疑似异常退出', exact: true }).click()
+  await expect.poll(() => queries.at(-1)?.stop_reason).toBe('lease_expired')
+  await expect(list.getByText('old-registration-recent-offline', { exact: true })).toBeVisible()
   await page.screenshot({ path: '/tmp/addp-offline-time-query-verified.png', fullPage: true })
   const url = page.url()
   expect(new URL(url).searchParams.get('time_period')).toBe('1h')
   expect(queries.at(-1)).toMatchObject({
-    time_basis: 'offline', status: 'down', module_name: 'manager', registered_host: 'manager.local',
+    time_basis: 'offline', status: 'down', stop_reason: 'lease_expired', module_name: 'manager', registered_host: 'manager.local',
     node_name: 'host-a', role: 'backend', page: '1', page_size: '10'
   })
   await page.reload()
   await expect(list.getByText('old-registration-recent-offline', { exact: true })).toBeVisible()
   await expect(list.locator('.el-select').filter({ has: page.getByRole('combobox', { name: '时间依据', exact: true }) })).toContainText('离线判定时间')
+  await expect(list.locator('.el-select').filter({ has: page.getByRole('combobox', { name: '下线原因', exact: true }) })).toContainText('租约超时，疑似异常退出')
   rows[0] = { ...rows[0], status: 'up', stopped_at: null, stop_reason: '', lease_expires_at: new Date(now.getTime() + 3600000).toISOString() }
   await page.clock.fastForward(11000)
   await expect(list.getByText('没有符合条件的服务实例', { exact: true })).toBeVisible()
@@ -232,6 +242,7 @@ test('offline time finds an old registration, queries immediately and removes it
   await list.getByRole('button', { name: '重置', exact: true }).click()
   await expect.poll(() => queries.at(-1)).toEqual({ page: '1', page_size: '10', status: 'up' })
   await expect(list.locator('.el-select').filter({ has: page.getByRole('combobox', { name: '时间依据', exact: true }) })).toContainText('登记时间')
+  await expect(list.locator('.el-select').filter({ has: page.getByRole('combobox', { name: '下线原因', exact: true }) })).toContainText('全部下线原因')
   await expect(list.getByRole('columnheader', { name: '离线判定时间', exact: true })).toHaveCount(0)
   await expect(list.getByText('old-registration-recent-offline', { exact: true })).toBeVisible()
   expect(errors).toEqual([])

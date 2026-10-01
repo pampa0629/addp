@@ -283,6 +283,7 @@ func (h *ModuleRegistryHandler) GetModulePlatform(c *gin.Context) {
 // @Param        registered_host query string false "登记端点主机名或 IP，精确匹配 | Registered endpoint hostname or IP, exact match"
 // @Param        role query string false "角色过滤：backend、worker、scheduler、ingress | Role filter: backend, worker, scheduler, ingress"
 // @Param        status query string false "有效状态过滤：up、down | Effective status filter: up, down"
+// @Param        stop_reason query string false "当前下线原因：graceful 正常退出、lease_expired 租约超时；未扫描的过期租约同样匹配，恢复实例不匹配 | Current stop reason; expired leases match before scanning, recovered instances do not match" Enums(graceful,lease_expired)
 // @Param        time_basis query string false "时间依据：registered 登记、offline 离线判定 | Time basis: registered or offline determination" Enums(registered,offline) default(registered)
 // @Param        time_from query string false "选定时间依据的下界，RFC3339，含 | Lower bound of the selected time basis, RFC3339, inclusive"
 // @Param        time_to query string false "选定时间依据的上界，RFC3339，不含 | Upper bound of the selected time basis, RFC3339, exclusive"
@@ -318,7 +319,8 @@ func (h *ModuleRegistryHandler) ListModuleRuntimeInstancesPlatform(c *gin.Contex
 	}
 	instances, total, err := h.service.ListModuleRuntimeInstances(models.ModuleRuntimeInstanceFilter{
 		ModuleName: c.Query("module_name"), RegisteredHost: c.Query("registered_host"), NodeName: c.Query("node_name"),
-		Role: c.Query("role"), Status: c.Query("status"), TimeBasis: c.Query("time_basis"), TimeFrom: timeFrom, TimeTo: timeTo,
+		Role: c.Query("role"), Status: c.Query("status"), StopReason: c.Query("stop_reason"),
+		TimeBasis: c.Query("time_basis"), TimeFrom: timeFrom, TimeTo: timeTo,
 		Page: page, PageSize: pageSize,
 	})
 	switch {

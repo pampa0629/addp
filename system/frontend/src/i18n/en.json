@@ -111,6 +111,7 @@
         "role": "Instance role",
         "status": "Runtime status",
         "allStatuses": "All statuses",
+        "allStopReasons": "All stop reasons",
         "timeBasis": "Time basis",
         "registeredTime": "Registration time",
         "offlineTime": "Offline determination time",

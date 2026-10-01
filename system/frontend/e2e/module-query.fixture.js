@@ -33,6 +33,7 @@ export async function mockModuleQueryAPI(page) {
         module_name: params.module_name || 'manager', role: params.role || 'backend',
         module_url: `http://${params.registered_host || 'manager.local'}:8081`,
         host_node_name: params.node_name || 'host-a', status: params.status || 'up',
+        stop_reason: params.stop_reason || '',
         lease_expires_at: new Date(Date.now() + (params.status === 'down' ? -1000 : 60000)).toISOString(),
         process_started_at: new Date(Date.now() - 65000).toISOString()
       }))

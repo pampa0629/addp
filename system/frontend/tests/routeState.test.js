@@ -40,6 +40,20 @@ describe('System recoverable route state', () => {
     }).query).toEqual({ tab: 'instances' })
   })
 
+  it('restores stop reasons without changing status or time basis and removes invalid reasons', () => {
+    for (const stopReason of ['graceful', 'lease_expired']) {
+      const query = { tab: 'instances', status: 'all', stop_reason: stopReason, time_basis: 'offline', page: '2' }
+      const state = resolveModulesRouteState(query)
+      expect(state.filters).toMatchObject({ stopReason, status: '', timeBasis: 'offline', page: 2 })
+      expect(buildModuleInstancesQuery(state.filters)).toEqual(query)
+      expect(state.changed).toBe(false)
+    }
+    expect(resolveModulesRouteState({ tab: 'instances', stop_reason: 'graceful' }).filters.status).toBe('up')
+    for (const stop_reason of ['unknown', ['graceful', 'lease_expired'], '']) {
+      expect(resolveModulesRouteState({ tab: 'instances', stop_reason }).query).toEqual({ tab: 'instances' })
+    }
+  })
+
   it('canonicalizes complete custom ranges to UTC and discards incomplete or inverted ranges', () => {
     const state = resolveModulesRouteState({ tab: 'instances', time_period: 'custom',
       time_from: '2026-10-01T08:00:00+08:00', time_to: '2026-10-01T09:00:00+08:00' })

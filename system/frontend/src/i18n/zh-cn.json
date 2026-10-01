@@ -111,6 +111,7 @@
         "role": "实例角色",
         "status": "运行状态",
         "allStatuses": "全部状态",
+        "allStopReasons": "全部下线原因",
         "timeBasis": "时间依据",
         "registeredTime": "登记时间",
         "offlineTime": "离线判定时间",

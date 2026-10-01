@@ -357,7 +357,7 @@ frontend/src/
 - `/api/v1/system/platform/identity_changes` - 平台身份变更申请、复核和监督；
 - `/api/v1/system/platform/audit/events` - 平台审计查询、汇总、趋势和导出。
 - `/api/v1/system/platform/modules` - 模块定义、有界当前运行实例投影和带版本的启用状态管理；不得携带全部实例历史。
-- `/api/v1/system/platform/module-instances` - 跨模块运行实例记录的唯一只读分页查询，支持模块名、登记主机、节点、role、当前有效 status 与时间范围组合过滤。`time_basis=registered|offline` 选择登记时间或离线判定时间（默认登记），统一使用 `time_from` / `time_to`，范围下界含、上界不含，按选定时间倒序及 ID 倒序稳定分页；旧的登记时间专属 query 删除。离线查询仅展示仍保留离线观测的实例，包括尚未被扫描落库的租约过期实例；恢复后退出结果，不代表完整的历史离线事件或历史可用率。
+- `/api/v1/system/platform/module-instances` - 跨模块运行实例记录的唯一只读分页查询，支持模块名、登记主机、节点、role、当前有效 status、`stop_reason=graceful|lease_expired` 与时间范围组合过滤。`time_basis=registered|offline` 选择登记时间或离线判定时间（默认登记），统一使用 `time_from` / `time_to`，范围下界含、上界不含，按选定时间倒序及 ID 倒序稳定分页；旧的登记时间专属 query 删除。原因筛选与其他条件取交集，不自动修改状态或时间依据；离线时间及原因查询仅展示仍保留离线观测的实例，包括尚未被扫描落库的租约过期实例；恢复后退出结果，不代表完整的历史离线事件或历史可用率。
 
 ### Tenant IAM 管理（Tenant Context + 精确 Permission）
 - `/api/v1/system/tenant/memberships` - 当前 Tenant Membership 查询、有效期和生命周期；
