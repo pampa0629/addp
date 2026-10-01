@@ -136,6 +136,13 @@ func TestTenantAdministrationClosureAgainstPostgres(t *testing.T) {
 		!slices.Contains(initialAuthContext.Authorization.RoleAssignments[0].Permissions, "iam.tenant_role_assignment.create") {
 		t.Fatalf("initial tenant administrator AuthContext = %#v", initialAuthContext)
 	}
+	// The protected last tenant administrator must retain an explicit Catalog
+	// repair route even when a resource's former department and owners fail.
+	// This proves effective permissions after migration, not a role-name bypass.
+	if !commonauth.HasContextPermissions(*initialAuthContext,
+		"catalog.entry.read", "catalog.inventory.read", "catalog.entry.update", "catalog.entry.certify") {
+		t.Fatalf("protected tenant administrator lacks Catalog responsibility repair permissions: %#v", initialAuthContext.Authorization)
+	}
 
 	tenantContext := ContextTypeTenant
 	tenantAudit := AuditMetadata{

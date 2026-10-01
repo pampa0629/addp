@@ -150,7 +150,9 @@ func TestEngineAccessDelegationAgainstPostgres(t *testing.T) {
 	actor := engineaccess.Actor{TenantID: tenant.ID, PrincipalID: actorID, MembershipID: actorMember.ID, AuthorizationVersion: actorPrincipal.AuthorizationVersion, TokenExpiresAt: time.Now().Add(time.Hour)}
 	service := engineaccess.NewService(engineaccess.NewRepository(db), hasLiveEngineCatalogCapability)
 	baseInput := engineaccess.CreateInput{Actor: actor, EngineID: int64(engine.ID), TenantMembershipID: recipient.Membership.ID, ExpiresAt: time.Now().Add(time.Hour), Reason: "Explicit onboarding administration"}
-	limitedExpiry := time.Now().Add(30 * time.Minute)
+	// PostgreSQL persists timestamps at microsecond precision. Keep the exact
+	// membership-expiry boundary unchanged when the service reloads the member.
+	limitedExpiry := time.Now().Add(30 * time.Minute).Truncate(time.Microsecond)
 	limited, err := membershipService.EstablishMembership(ctx, iam.EstablishTenantMembershipInput{TenantID: tenant.ID, PrincipalID: newUser("Limited member"), SourceType: iam.TenantMembershipSourceManual, ExpiresAt: &limitedExpiry})
 	if err != nil {
 		t.Fatal(err)

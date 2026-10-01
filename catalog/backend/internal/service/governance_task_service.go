@@ -38,20 +38,24 @@ type GovernanceTaskListResult struct {
 
 type GovernanceTaskService struct {
 	db       *gorm.DB
+	entries  *EntryService
 	resolver SystemReferenceResolver
 	now      func() time.Time
 }
 
-func NewGovernanceTaskService(db *gorm.DB, resolver SystemReferenceResolver) *GovernanceTaskService {
-	return &GovernanceTaskService{db: db, resolver: resolver, now: time.Now}
+func NewGovernanceTaskService(db *gorm.DB, entries *EntryService, resolver SystemReferenceResolver) *GovernanceTaskService {
+	return &GovernanceTaskService{db: db, entries: entries, resolver: resolver, now: time.Now}
 }
 
-func (s *GovernanceTaskService) List(ctx context.Context, tenantID int64, filter GovernanceTaskListFilter) (*GovernanceTaskListResult, error) {
-	if s == nil || s.db == nil || tenantID <= 0 || filter.Page < 1 || filter.PageSize < 1 || filter.PageSize > 200 ||
+func (s *GovernanceTaskService) List(ctx context.Context, tenantID int64, access EntryAccess, filter GovernanceTaskListFilter) (*GovernanceTaskListResult, error) {
+	if s == nil || s.db == nil || s.entries == nil || tenantID <= 0 || filter.Page < 1 || filter.PageSize < 1 || filter.PageSize > 200 ||
 		(filter.Status != models.GovernanceTaskStatusOpen && filter.Status != models.GovernanceTaskStatusResolved) {
 		return nil, ErrInvalidPage
 	}
-	query := s.db.WithContext(ctx).Table("catalog.governance_tasks AS task").Where("task.tenant_id = ? AND task.status = ?", tenantID, filter.Status)
+	visibleEntries := s.entries.visibleEntriesQuery(ctx, tenantID, access).Select("entries.id")
+	query := s.db.WithContext(ctx).Table("catalog.governance_tasks AS task").
+		Where("task.tenant_id = ? AND task.status = ?", tenantID, filter.Status).
+		Where("task.catalog_entry_id IN (?)", visibleEntries)
 	if filter.EntryID != uuid.Nil {
 		query = query.Where("task.catalog_entry_id = ?", filter.EntryID)
 	}

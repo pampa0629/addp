@@ -450,7 +450,7 @@ func (h *Handler) ReplaceMyEntryMarks(c *gin.Context) {
 
 // ListGovernanceTasks 列出责任失效治理队列。
 // @Summary 查询责任治理队列 | List responsibility governance tasks
-// @Description 返回由 System 责任引用失效对账产生的任务；责任修复仍通过 CatalogEntry 完整聚合更新完成 | Return tasks derived from invalid System responsibility references; repair still uses the full CatalogEntry aggregate update
+// @Description 仅返回当前可见条目的责任失效任务，分页计数和筛选遵守相同可见性；责任修复仍通过 CatalogEntry 完整聚合更新完成 | Return responsibility tasks only for currently visible entries with the same visibility applied to counts and filters; repair uses the full CatalogEntry aggregate update
 // @Tags Catalog Governance
 // @Produce json
 // @Param status query string false "任务状态，默认 open | Task status, open by default" Enums(open,resolved)
@@ -489,7 +489,7 @@ func (h *Handler) ListGovernanceTasks(c *gin.Context) {
 		respondError(c, http.StatusBadRequest, service.ErrInvalidPage)
 		return
 	}
-	result, err := h.governanceTasks.List(c.Request.Context(), tenantID, service.GovernanceTaskListFilter{
+	result, err := h.governanceTasks.List(c.Request.Context(), tenantID, entryAccess(c), service.GovernanceTaskListFilter{
 		Status: status, EntryID: entryID, Page: page, PageSize: pageSize,
 	})
 	if err != nil {

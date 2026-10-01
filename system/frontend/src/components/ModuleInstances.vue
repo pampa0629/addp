@@ -90,12 +90,13 @@
     </el-table>
     <el-pagination v-model:current-page="page" v-model:page-size="pageSize" :page-sizes="[10, 20, 50, 100]"
       :total="total" layout="total, sizes, prev, pager, next" class="query-pagination"
-      @current-change="load" @size-change="changePageSize" />
+      @current-change="changePage" @size-change="changePageSize" />
   </div>
 </template>
 
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { Refresh } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import ModuleInstanceNode from './ModuleInstanceNode.vue'
@@ -103,24 +104,16 @@ import { modulesAPI } from '../api/modules'
 import { resolveIAMModuleName } from '../utils/iamPresentation'
 import { isRuntimeInstanceOnline } from '../utils/moduleRegistry'
 import { formatRuntimeUptime, getRegisteredEndpoint } from '../utils/moduleRuntimePresentation'
+import { MODULE_INSTANCE_ROLES, MODULE_INSTANCE_PERIODS, resolveModulesRouteState, buildModuleInstancesQuery } from '../utils/routeState'
+import { navigateSystemRoute } from '../utils/moduleNavigation'
 
-const props = defineProps({
-  modules: { type: Array, required: true },
-  initialModuleName: { type: String, default: '' }
-})
-const emit = defineEmits(['clear-selection'])
+defineProps({ modules: { type: Array, required: true } })
 const { t, te } = useI18n()
-const roles = ['backend', 'worker', 'scheduler', 'ingress']
-const periods = [
-  { value: '15m', minutes: 15, label: 'system.module.query.periods.m15' },
-  { value: '30m', minutes: 30, label: 'system.module.query.periods.m30' },
-  { value: '1h', minutes: 60, label: 'system.module.query.periods.h1' },
-  { value: '6h', minutes: 360, label: 'system.module.query.periods.h6' },
-  { value: '12h', minutes: 720, label: 'system.module.query.periods.h12' },
-  { value: '24h', minutes: 1440, label: 'system.module.query.periods.h24' },
-  { value: '7d', minutes: 10080, label: 'system.module.query.periods.d7' }
-]
-const moduleName = ref(props.initialModuleName)
+const route = useRoute()
+const router = useRouter()
+const roles = MODULE_INSTANCE_ROLES
+const periods = MODULE_INSTANCE_PERIODS
+const moduleName = ref('')
 const registeredHost = ref('')
 const nodeName = ref('')
 const role = ref('')
@@ -213,15 +206,22 @@ function search() {
     total.value = 0
     return
   }
-  applied.value = {
+  const filters = {
     moduleName: moduleName.value, registeredHost: registeredHost.value.trim(), nodeName: nodeName.value.trim(), role: role.value, status: status.value,
     period: period.value,
     ...(period.value === 'custom' ? {
       from: new Date(customRange.value[0]).toISOString(), to: new Date(customRange.value[1]).toISOString()
     } : {})
   }
-  page.value = 1
-  load()
+  writeRoute({ ...filters, page: 1, pageSize: pageSize.value })
+}
+
+function writeRoute(filters) {
+  generation += 1
+  const query = buildModuleInstancesQuery(filters)
+  const target = { name: 'Modules', query }
+  if (router.resolve(target).fullPath === route.fullPath) restoreRoute()
+  else navigateSystemRoute(router, target, { history: 'replace' })
 }
 
 function scheduleSearch() {
@@ -237,29 +237,42 @@ function refresh() {
 }
 
 function reset() {
-  moduleName.value = ''
-  registeredHost.value = ''
-  nodeName.value = ''
-  role.value = ''
-  status.value = defaultStatus
-  period.value = 'all'
-  customRange.value = null
-  emit('clear-selection')
-  search()
+  clearTimeout(searchTimer)
+  searchTimer = null
+  writeRoute({ status: defaultStatus, page: 1, pageSize: 10 })
+}
+
+function changePage() {
+  if (searchTimer !== null) return search()
+  writeRoute({ ...applied.value, page: page.value, pageSize: pageSize.value })
 }
 
 function changePageSize() {
-  page.value = 1
-  load()
+  if (searchTimer !== null) return search()
+  writeRoute({ ...applied.value, page: 1, pageSize: pageSize.value })
 }
 
-watch(() => props.initialModuleName, value => {
-  if (moduleName.value === value) return
-  moduleName.value = value
-  search()
-})
+function restoreRoute() {
+  clearTimeout(searchTimer)
+  searchTimer = null
+  generation += 1
+  const state = resolveModulesRouteState(route.query)
+  if (state.changed || state.tab !== 'instances') return
+  const filters = state.filters
+  moduleName.value = filters.moduleName
+  registeredHost.value = filters.registeredHost
+  nodeName.value = filters.nodeName
+  role.value = filters.role
+  status.value = filters.status
+  period.value = filters.period
+  customRange.value = filters.period === 'custom' ? [new Date(filters.from), new Date(filters.to)] : null
+  page.value = filters.page
+  pageSize.value = filters.pageSize
+  applied.value = filters
+  load()
+}
+watch(() => route.fullPath, restoreRoute, { immediate: true })
 onMounted(() => {
-  search()
   refreshTimer = window.setInterval(() => load({ silent: true }), 10000)
 })
 onUnmounted(() => {

@@ -15,6 +15,7 @@
       :closable="false"
       show-icon
       :title="t('catalog.governanceTasks.repairHint')"
+      :description="t('catalog.governanceTasks.visibilityHint')"
       class="repair-hint"
     />
 
@@ -98,6 +99,7 @@ import { Refresh, Search } from '@element-plus/icons-vue'
 import { navigateConsoleModuleRoute } from '@common-ui'
 import { listEntries, listGovernanceTasks } from '../api/catalog'
 import { catalogStatusLabel } from '../utils/catalogStatusLabel'
+import { useAuthStore } from '../store/auth'
 import {
   buildGovernanceEntryCandidateQuery,
   buildGovernanceTaskQuery,
@@ -108,6 +110,7 @@ import {
 const route = useRoute()
 const router = useRouter()
 const { t, locale } = useI18n()
+const authStore = useAuthStore()
 const filters = reactive(parseGovernanceTaskRoute(route.query))
 const result = reactive({ data: [], total: 0, page: 1, page_size: 20, total_pages: 0 })
 const loading = ref(false)
@@ -140,7 +143,7 @@ async function searchEntryOptions(search = '') {
   const version = ++entryOptionsRequestVersion
   entryOptionsLoading.value = true
   try {
-    const response = await listEntries(buildGovernanceEntryCandidateQuery(search))
+    const response = await listEntries(buildGovernanceEntryCandidateQuery(search, authStore.hasPermission('catalog.inventory.read')))
     if (version !== entryOptionsRequestVersion) return
     const selected = entryOptions.value.filter(item => item.id === filters.entry_id)
     const options = new Map(selected.map(item => [item.id, item]))

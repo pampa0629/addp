@@ -528,6 +528,11 @@ jobs:
         working-directory: catalog/frontend
         run: npm ci
 
+      - name: Install System dependencies for Console module query navigation
+        if: steps.selection.outputs.run == 'true' && matrix.module == 'console'
+        working-directory: system/frontend
+        run: npm ci
+
       - name: Install Console dependencies for Workbench delivery runtime integration
         if: steps.selection.outputs.run == 'true' && matrix.module == 'workbench'
         working-directory: console/frontend

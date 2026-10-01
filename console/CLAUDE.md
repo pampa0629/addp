@@ -33,6 +33,7 @@ console/frontend/
 - Transfer 有任务读取权限时，Console 侧栏只显示“传输任务”，创建操作由任务列表的主按钮进入；仅有创建权限且具备 `meta.catalog.read` 时，侧栏以“创建传输任务”作为模块入口。创建页对前者保持任务列表菜单选中，对后者保持创建菜单选中；直接地址仍按各页面 Permission 校验。
 - Ontology 的具体入口为“领域本体 → 领域本体建模”（`/ontology/ontologies`），仅当前 Tenant 且具有 `ontology.revision.read` 时显示；权限过滤后没有可见子项的模块不渲染空父菜单，不自动扩张角色权限。
 - Console 只做入口聚合，不承载业务模块的核心业务逻辑。
+- 模块管理查询恢复浏览器回归加载真实 System 前端，验证 Console 地址栏同步不重载 iframe、刷新和新标签恢复组合筛选与分页、单历史及前进/后退。Console 门禁和 CI 同时准备 System 锁定依赖；System 前端改动自动触发该宿主门禁。
 - 前端样式遵守 `common-frontend/docs/addp前端风格设计规范.md`，不要硬编码 ADDP 主题色。
 - 各模块仍应支持独立运行，Console iframe 集成不能破坏 standalone 模式。
 - Console 外层 URL 是 iframe 集成模式下的公开路由事实源。子模块通过共享 Console navigation bridge 同步自身路由；同模块已完成的导航只同步地址栏，不得重载 iframe，浏览器前进/后退或跨页面导航再由 Console 驱动 iframe 到目标路由。公开状态分类、canonical URL 和单历史约束统一遵守 `docs/spec/addp前端路由与可恢复状态规范.md`。

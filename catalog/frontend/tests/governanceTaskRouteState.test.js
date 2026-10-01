@@ -36,18 +36,23 @@ describe('Catalog governance task route state', () => {
     })
   })
 
-  it('searches governance task entry candidates across the inventory view', () => {
-    expect(buildGovernanceEntryCandidateQuery('  Outdoor  ')).toEqual({
+  it('searches inventory candidates only with explicit inventory access', () => {
+    expect(buildGovernanceEntryCandidateQuery('  Outdoor  ', true)).toEqual({
       view: 'inventory',
       search: 'Outdoor',
       page: 1,
       page_size: 20
     })
     expect(buildGovernanceEntryCandidateQuery()).toEqual({
-      view: 'inventory',
+      view: 'governance',
       page: 1,
       page_size: 20
     })
+    expect(buildGovernanceEntryCandidateQuery('  Outdoor  ', false)).toEqual({
+      view: 'governance', search: 'Outdoor', page: 1, page_size: 20
+    })
+    expect(zhCn.catalog.governanceTasks.visibilityHint).toContain('只显示您当前可查看')
+    expect(en.catalog.governanceTasks.visibilityHint).toContain('neither source data access')
   })
 
   it('compares canonical queries independently of key order', () => {

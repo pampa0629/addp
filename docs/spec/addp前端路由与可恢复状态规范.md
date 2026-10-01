@@ -107,6 +107,7 @@ Develop TaskProvider 的 canonical 前端路由为：
 | Catalog | 已治理资源 / 资源盘点筛选、分页与条目详情 | `view`、`search`、`entry_type`、`source_status`、`governance_status`、`visibility`、`primary_domain_id`、`accountable_department_id`、`source_engine_id`、`page`、`page_size`；默认 `view=governance` 省略，资源盘点显式使用 `view=inventory`；详情 path `/entries/:id`，以 `tab=curation\|professional\|relations` 恢复非默认子视图，并以同名列表 query 保留返回上下文 |
 | Meta | 扫描引擎与扫描任务入口 | `engine_id`、`task_id`；二者并存时任务所属引擎为事实源 |
 | System | IAM 分类页面、页内对象与审计筛选 | path `/iam/organization\|accounts\|roles\|application-access\|security`、`tab`、`event_name`、`result`、`risk_level`、`module_name`、`principal_id`、`principal_type`、`entity_type`、`entity_id`、`page` |
+| System | 模块管理服务实例筛选与分页 | path `/modules`，实例视图使用 `tab=instances`；`module_name`、`registered_host`、`node_name`、`role`、`status`、`registered_period`、`registered_from`、`registered_to`、`page`、`page_size` |
 | Standard | 标准文档详情 | path `/documents/:id`；列表筛选 query 原样保留 |
 | Standard | 数据元确定修订 | path `/elements/:id`、`revision_id`；显式指定后必须精确读取，失败不切换其他修订 |
 | Standard | 术语确定修订 | path `/glossaries/:id`、`revision_id`；历史切换使用 replace 并受未保存保护，显式读取失败不切换其他修订，返回列表移除修订参数并保留筛选 |
@@ -114,6 +115,8 @@ Develop TaskProvider 的 canonical 前端路由为：
 | Agent | 当前会话 | path `/sessions/:session_id`，Console 公开 URL 为 `/agent/sessions/:session_id` |
 
 模块内 Router path 不得重复携带 Console 模块前缀。例如 Modeling 模块内使用 `/entities/:id`，Console 公开 URL 才是 `/modeling/entities/:id`。
+
+System 模块管理默认进入模块概览；实例筛选参数仅用于 `tab=instances`。实例视图默认 UP、全部登记时间、第 1 页、每页 10 条，默认值省略；全部状态显式使用 `status=all`，API 请求不传状态筛选。`registered_period` 支持 `15m|30m|1h|6h|12h|24h|7d|custom`；相对时段在每次查询时重新计算，分享链接仍表示“最近”时段。自定义范围必须同时提供有时区的 RFC3339 起止时间且起点早于终点，URL 统一为 UTC ISO 时间。未完成的自定义范围和尚未应用的输入不写入 URL；未知参数、重复参数、无效枚举和分页值通过 replace 规范化。页签、筛选、分页和重置统一 replace 当前历史项；刷新和后台轮询不修改 URL。外部历史导航恢复 URL 中的状态，不沿用组件内的旧条件。
 
 Portal 是 Console 当前 origin 下的独立用户门户，不使用 iframe 模块导航桥；其公开路由固定保留 `/portal` 前缀。详情返回只允许使用已验证的 Portal 内部历史或 owner 数据推导的固定回退目标，不接受任意 `return_url`。
 

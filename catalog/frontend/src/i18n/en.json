@@ -222,6 +222,7 @@
       "title": "Responsibility Governance Queue",
       "description": "Only handles responsibility transfers after a linked department or user becomes invalid. Missing curation or responsibility does not create a task; users with inventory access can inspect gaps in Governance Coverage.",
       "repairHint": "A governance task is derived from responsibility state and cannot be closed independently. Replace the invalid responsibility on the catalog entry, or wait for the restored reference to resolve it automatically.",
+      "visibilityHint": "Only tasks for entries you can currently view are shown. If the accountable department becomes invalid, a governance user with tenant inventory and curation permissions must repair the responsibility. Withdraw certification before editing certified entries; deprecated entries remain frozen. Repair grants neither source data access nor approval authority for sharing.",
       "status": "Task status",
       "statusOpen": "Open",
       "statusResolved": "Resolved",

@@ -1518,7 +1518,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "返回由 System 责任引用失效对账产生的任务；责任修复仍通过 CatalogEntry 完整聚合更新完成 | Return tasks derived from invalid System responsibility references; repair still uses the full CatalogEntry aggregate update",
+                "description": "仅返回当前可见条目的责任失效任务，分页计数和筛选遵守相同可见性；责任修复仍通过 CatalogEntry 完整聚合更新完成 | Return responsibility tasks only for currently visible entries with the same visibility applied to counts and filters; repair uses the full CatalogEntry aggregate update",
                 "produces": [
                     "application/json"
                 ],

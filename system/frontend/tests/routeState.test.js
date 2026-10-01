@@ -1,10 +1,51 @@
 import { describe, expect, it } from 'vitest'
 import {
   resolveEngineDetailRouteState,
-  resolveIAMCategoryRouteState
+  resolveIAMCategoryRouteState,
+  resolveModulesRouteState,
+  buildModuleInstancesQuery
 } from '../src/utils/routeState'
 
 describe('System recoverable route state', () => {
+  it('restores instance filters and omits defaults without leaking unrelated parameters', () => {
+    const state = resolveModulesRouteState({
+      tab: 'instances', module_name: ' manager ', registered_host: ' host-a ', node_name: 'container-a',
+      role: 'worker', status: 'up', registered_period: '15m', page: '02', page_size: '20', token: 'must-not-persist'
+    })
+    expect(state.query).toEqual({ tab: 'instances', module_name: 'manager', registered_host: 'host-a',
+      node_name: 'container-a', role: 'worker', registered_period: '15m', page: '2', page_size: '20' })
+    expect(state.filters).toMatchObject({ moduleName: 'manager', status: 'up', page: 2, pageSize: 20 })
+    expect(state.changed).toBe(true)
+    expect(resolveModulesRouteState(state.query).changed).toBe(false)
+    expect(resolveModulesRouteState({}).changed).toBe(false)
+  })
+
+  it('keeps an explicit all-status query distinct from the UP default', () => {
+    const state = resolveModulesRouteState({ tab: 'instances', status: 'all' })
+    expect(state.filters.status).toBe('')
+    expect(buildModuleInstancesQuery(state.filters)).toEqual({ tab: 'instances', status: 'all' })
+    expect(buildModuleInstancesQuery(resolveModulesRouteState({ tab: 'instances' }).filters)).toEqual({ tab: 'instances' })
+  })
+
+  it('canonicalizes complete custom ranges to UTC and discards incomplete or inverted ranges', () => {
+    const state = resolveModulesRouteState({ tab: 'instances', registered_period: 'custom',
+      registered_from: '2026-10-01T08:00:00+08:00', registered_to: '2026-10-01T09:00:00+08:00' })
+    expect(state.query).toEqual({ tab: 'instances', registered_period: 'custom',
+      registered_from: '2026-10-01T00:00:00.000Z', registered_to: '2026-10-01T01:00:00.000Z' })
+    for (const range of [
+      { registered_from: 'invalid', registered_to: '2026-10-01T00:00:00Z' },
+      { registered_from: '2026-02-30T00:00:00Z', registered_to: '2026-10-01T00:00:00Z' },
+      { registered_from: '2026-10-01T00:00:00Z' },
+      { registered_from: '2026-10-02T00:00:00Z', registered_to: '2026-10-01T00:00:00Z' }
+    ]) expect(resolveModulesRouteState({ tab: 'instances', registered_period: 'custom', ...range }).query).toEqual({ tab: 'instances' })
+  })
+
+  it('removes invalid enums, repeated fields, unsafe pages and unsupported page sizes', () => {
+    expect(resolveModulesRouteState({ tab: 'instances', module_name: ['manager', 'system'], status: 'bad',
+      role: 'other', registered_period: 'bad', page: '9007199254740992', page_size: '11' }).query).toEqual({ tab: 'instances' })
+    expect(resolveModulesRouteState({ tab: ['instances', 'overview'], module_name: 'manager' }).query).toEqual({})
+    expect(resolveModulesRouteState({ tab: 'overview', status: 'down', page: '2' }).query).toEqual({})
+  })
   it('falls back to the first permitted IAM tab and removes unrelated query state', () => {
     expect(resolveIAMCategoryRouteState(['user-accounts', 'invitations'], {
       tab: 'users',

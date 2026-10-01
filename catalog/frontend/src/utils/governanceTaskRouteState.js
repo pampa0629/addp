@@ -32,10 +32,10 @@ export function buildGovernanceTaskQuery(state = {}) {
   return query
 }
 
-export function buildGovernanceEntryCandidateQuery(search = '') {
+export function buildGovernanceEntryCandidateQuery(search = '', canViewInventory = false) {
   const normalizedSearch = String(search || '').trim()
   return {
-    view: 'inventory',
+    view: canViewInventory ? 'inventory' : 'governance',
     ...(normalizedSearch ? { search: normalizedSearch } : {}),
     page: 1,
     page_size: 20

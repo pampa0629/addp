@@ -602,7 +602,9 @@ Model `business_entity|logical_model` 与 Standard `metric` 的主业务域由�
 
 所有用户可见错误使用 Catalog i18n；Swagger 使用中文在前、英文在后的双语注解，并为每个公开 Operation 声明 `x-addp-auth-mode` 和精确 Permission。
 
-`GET /governance/tasks` 第一阶段只接受 `status=open|resolved`、可选 `entry_id`、`page` 和 `page_size`，同时使用 `catalog.entry.read` 与 `catalog.entry.update` Permission。返回任务、CatalogEntry 当前显示名和版本，治理人员从任务进入现有条目编目页修复责任；任务列表不新增责任写入或任务关单权限。前端按 CatalogEntry 名称远程搜索并提交 `entry_id`，不提供 UUID 手工输入。
+`GET /governance/tasks` 第一阶段只接受 `status=open|resolved`、可选 `entry_id`、`page` 和 `page_size`，同时使用 `catalog.entry.read` 与 `catalog.entry.update` Permission。任务结果、分页计数和精确 `entry_id` 筛选必须复用条目详情的当前可见性，不能列出调用者无法打开的条目或泄露其任务数量。具有显式 `catalog.inventory.read` 的租户治理人员可发现本租户责任部门已失效的条目及任务，不依赖原部门成员关系；普通部门治理人员仍只看到当前可见条目的任务。返回任务、CatalogEntry 当前显示名和版本，治理人员从任务进入现有条目编目页修复责任；任务列表不新增责任写入或任务关单权限。前端按 CatalogEntry 名称远程搜索并提交 `entry_id`，有盘点权限时使用盘点视图，否则使用已编目资源视图，不提供 UUID 手工输入。
+
+责任修复复用完整编目聚合及版本校验，不自动赋予修复者业务责任、源数据读取或共享批准权。已认证条目须先按 4.1 节撤销认证后修复，弃用条目继续冻结，不能通过任务入口绕过状态门禁。租户治理账号必须通过 System 的有效角色分配显式配置；已初始化 Tenant 的最后一个有效 `tenant.administrator` 受到既有 IAM 保护，该角色明确包含读取、盘点、维护和认证 Permission，因此可复用为责任失效后的修复通道。Catalog 不根据角色名放行、不新增自动兜底赋权；此通道也不表示弃用条目的责任冻结边界已经解决。
 
 Console 和 Catalog 的菜单、页面均称“责任治理队列”：只有既有关联的 Department 或 User 失效所派生的 `responsibility_transfer` 任务进入此页。未编目、未分配主域或责任等目录治理缺口仍通过治理覆盖率下钻到资源盘点，不自动生成任务；不得将此页标成泛化的“治理待办”。
 

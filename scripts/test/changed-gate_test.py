@@ -118,6 +118,16 @@ class ChangedGateTest(unittest.TestCase):
             self.assertEqual(["catalog", "console"], MODULE.affected_modules(self.repository, [path]))
         self.assertEqual(["catalog"], MODULE.affected_modules(self.repository, ["catalog/backend/internal/service/governance_coverage.go"]))
 
+    def test_system_frontend_changes_include_console_module_query_gate(self) -> None:
+        for name in ("system", "console"):
+            path = self.repository / name / "frontend" / "package.json"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("{}\n", encoding="utf-8")
+        subprocess.run(["git", "add", "."], cwd=self.repository, check=True)
+        for path in ("system/frontend/src/views/Modules.vue", "system/frontend/package-lock.json"):
+            self.assertEqual(["console", "system"], MODULE.affected_modules(self.repository, [path]))
+        self.assertEqual(["system"], MODULE.affected_modules(self.repository, ["system/backend/internal/service/module.go"]))
+
     def test_console_delivery_route_changes_include_workbench_browser_gate(self) -> None:
         console_manifest = self.repository / "console/frontend/package.json"
         console_manifest.parent.mkdir(parents=True)

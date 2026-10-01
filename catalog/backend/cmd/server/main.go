@@ -63,11 +63,6 @@ func main() {
 	workbenchSyncService := service.NewProfessionalSourceSyncService(db, service.NewTenantWorkbenchChangeSource(workbenchClient))
 	syncRunner := service.NewSourceSyncRunner(db, cfg.SourceSyncInterval, systemClient, metaSyncService, modelSyncService, standardSyncService, serviceSyncService, developSyncService, workbenchSyncService)
 	syncRunner.Start(runtimeContext)
-	governanceTaskService := service.NewGovernanceTaskService(db, systemReferenceResolver)
-	responsibilityRunner := service.NewResponsibilityReconciliationRunner(
-		governanceTaskService, syncRunner, cfg.ResponsibilityReconciliationInterval,
-	)
-	responsibilityRunner.Start(runtimeContext)
 	searchIndex, err := service.NewMeilisearchCatalogIndex(cfg.MeilisearchURL, cfg.MeilisearchAPIKey, cfg.MeilisearchIndex)
 	if err != nil {
 		log.Fatalf("Failed to initialize Catalog search projection: %v", err)
@@ -97,6 +92,11 @@ func main() {
 		service.NewStandardClientElementRevisionResolver(standardClient),
 	)
 	personalCatalogService := service.NewPersonalCatalogService(db, entryService)
+	governanceTaskService := service.NewGovernanceTaskService(db, entryService, systemReferenceResolver)
+	responsibilityRunner := service.NewResponsibilityReconciliationRunner(
+		governanceTaskService, syncRunner, cfg.ResponsibilityReconciliationInterval,
+	)
+	responsibilityRunner.Start(runtimeContext)
 	collectionService := service.NewCollectionService(db, entryService).WithSystemReferenceResolver(systemReferenceResolver)
 	router := api.SetupRouter(cfg.SystemURL, lifecycle, entryService, governanceTaskService, personalCatalogService, collectionService, syncRunner, service.NewStandardDomainOverviewReader(standardClient))
 	listener, err := net.Listen("tcp", ":"+cfg.Port)

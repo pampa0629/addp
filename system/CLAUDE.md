@@ -419,4 +419,5 @@ API 消费方不是 Principal，不能分配 Role。首期只绑定 Service Cons
 - 引擎详情唯一使用 `/engines/:id`，详情稳定子视图使用 `tab=connection|capabilities`，默认基础信息省略。
 - 审计入口唯一使用 `/iam/security?tab=audit`，审计范围由当前 Platform 或 Tenant Context 决定，并支持 `module_name`、`principal_id`、`principal_type`、`entity_type`、`entity_id` 稳定筛选；资源回收不再跳转不存在的 `Logs` route。
 - 模块管理唯一使用 `/modules`；页面只对持有 `platform.module.read` 的 Platform User 显示，启停还要求 `platform.module.update`。
+- 服务实例使用 `tab=instances`，组合筛选、登记时段及分页使用 `docs/spec/addp前端路由与可恢复状态规范.md` 中的唯一 query 契约；默认 UP 省略，全部状态显式为 `status=all`。筛选和分页由现有 System 导航桥 replace 到 Console 或 standalone URL，刷新、分享和历史导航从 URL 恢复；未应用输入不写入地址栏。System 前端门禁覆盖 standalone，Console 前端门禁加载真实 System 页面覆盖 iframe 同步与刷新。
 - 服务实例页沿用模块概览的 10 秒刷新间隔，重新读取当前已应用的组合条件与分页，更新心跳、租约及运行时长；后台刷新不显示整表加载遮罩。有请求进行中、文本防抖未结束、自定义时间范围不完整或浏览器页面隐藏时跳过后台刷新，旧响应不得覆盖新查询；离开服务实例页停止该页轮询。该行为由既有 `make test-system-frontend` 和 System 前端 CI Job 的浏览器回归覆盖。

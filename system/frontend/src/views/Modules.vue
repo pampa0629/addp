@@ -202,8 +202,7 @@
           </el-table>
         </el-tab-pane>
         <el-tab-pane :label="t('system.module.tabs.instances')" name="instances">
-          <ModuleInstances v-if="activeTab === 'instances'" :modules="modules" :initial-module-name="selectedModuleName"
-            @clear-selection="selectedModuleName = ''" />
+          <ModuleInstances v-if="activeTab === 'instances'" :modules="modules" />
         </el-tab-pane>
       </el-tabs>
     </el-card>
@@ -212,7 +211,8 @@
 </template>
 
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { Refresh } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
@@ -224,6 +224,8 @@ import { getModuleAvailability, isModuleRoutable, isRuntimeInstanceOnline, modul
 import { formatRuntimeUptime, getRegisteredEndpoint } from '../utils/moduleRuntimePresentation'
 import ModuleInstanceNode from '../components/ModuleInstanceNode.vue'
 import ModuleInstances from '../components/ModuleInstances.vue'
+import { resolveModulesRouteState } from '../utils/routeState'
+import { navigateSystemRoute } from '../utils/moduleNavigation'
 
 const { t, te } = useI18n()
 const authStore = useAuthStore()
@@ -235,8 +237,18 @@ const conflictMessage = ref('')
 const announcement = ref('')
 const refreshPaused = ref(false)
 const updatingModules = ref(new Set())
-const activeTab = ref('overview')
-const selectedModuleName = ref('')
+const route = useRoute()
+const router = useRouter()
+const routeState = computed(() => resolveModulesRouteState(route.query))
+const activeTab = computed({
+  get: () => routeState.value.tab,
+  set: tab => navigateSystemRoute(router, { name: 'Modules', query: tab === 'instances' ? { tab } : {} }, { history: 'replace' })
+})
+watch(() => route.fullPath, () => {
+  if (routeState.value.changed) {
+    navigateSystemRoute(router, { name: 'Modules', query: routeState.value.query }, { history: 'replace' })
+  }
+}, { immediate: true })
 let refreshTimer = null
 let moduleListRequestInFlight = false
 
@@ -369,8 +381,9 @@ async function refreshNow() {
 }
 
 function openInstanceHistory(module) {
-  selectedModuleName.value = module.module_name
-  activeTab.value = 'instances'
+  navigateSystemRoute(router, {
+    name: 'Modules', query: { tab: 'instances', module_name: module.module_name }
+  }, { history: 'replace' })
 }
 
 async function updateEnabled(module, enabled) {
