@@ -58,6 +58,12 @@ type updateEntryGovernanceRequest struct {
 	RecommendedSuccessorEntryID *string `json:"recommended_successor_entry_id" format:"uuid"`
 }
 
+type transferEntryResponsibilitiesRequest struct {
+	Version          int64                         `json:"version" binding:"required,gt=0" minimum:"1"`
+	Reason           string                        `json:"reason" binding:"required"`
+	Responsibilities []updateResponsibilityRequest `json:"responsibilities" binding:"required,min=3,max=200"`
+}
+
 type batchGovernanceEntryRequest struct {
 	ID      string `json:"id" binding:"required" format:"uuid"`
 	Version int64  `json:"version" binding:"required,gt=0" minimum:"1"`
@@ -916,7 +922,7 @@ func (h *Handler) UpdateEntry(c *gin.Context) {
 
 // UpdateEntryGovernance 原子更新企业目录治理状态。
 // @Summary 维护企业资源治理状态 | Maintain enterprise resource governance state
-// @Description 使用聚合根 version 原子执行认证、撤销认证、弃用或弃用信息维护；只更新治理状态、可选推荐继任项和领域审计，不替换业务编目事实；撤销认证和弃用必须填写原因；推荐继任只允许指向同租户、来源有效且已编目或已认证的 active 条目 | Atomically certify, withdraw certification, deprecate, or maintain deprecation information using the aggregate version; only governance status, the optional recommended successor, and domain audit are updated, while curation facts remain unchanged; certification withdrawal and deprecation require a reason; a successor must be an active-source curated or certified entry in the same tenant
+// @Description 仅对当前可见条目使用 version 原子执行认证、撤销认证、弃用、撤销弃用或继任项维护；撤销弃用需要弃用权限和原因，只回到已编目并清除当前继任项，保留历史，不恢复认证、数据权限或资产发布；其他编目事实保持不变 | Atomically certify, withdraw certification, deprecate, withdraw deprecation or maintain successors on a currently visible entry using version; withdrawing deprecation requires deprecation permission and a reason, returns only to curated and clears the current successor while retaining history, without restoring certification, data permissions or asset publication; other curation facts remain unchanged
 // @Tags Catalog
 // @Accept json
 // @Produce json
@@ -929,7 +935,7 @@ func (h *Handler) UpdateEntry(c *gin.Context) {
 // @Failure 404 {object} map[string]interface{} "条目不存在 | Entry not found"
 // @Failure 409 {object} map[string]interface{} "版本、状态或推荐继任项冲突 | Version, state, or recommended-successor conflict"
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["catalog.entry.update"]
+// @x-addp-required-permissions ["catalog.entry.read","catalog.entry.update"]
 // @x-addp-conditional-permissions ["catalog.entry.certify","catalog.entry.deprecate"]
 // @Router /entries/{id}/governance [put]
 // @Security BearerAuth
@@ -959,6 +965,10 @@ func (h *Handler) UpdateEntryGovernance(c *gin.Context) {
 		respondError(c, http.StatusUnauthorized, service.ErrInvalidGovernanceUpdate)
 		return
 	}
+	if _, err := h.entries.Get(c.Request.Context(), tenantID, entryAccess(c), id); err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
 	h.sync.ObserveTenant(tenantID)
 	entry, err := h.entries.UpdateGovernance(
 		c.Request.Context(), tenantID, id, input,
@@ -968,6 +978,61 @@ func (h *Handler) UpdateEntryGovernance(c *gin.Context) {
 		},
 		service.UpdateEntryActor{Type: authContext.Principal.Type, ID: authContext.Principal.ID},
 	)
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	c.JSON(http.StatusOK, entry)
+}
+
+// TransferEntryResponsibilities 移交已弃用条目的责任。
+// @Summary 移交已弃用条目责任 | Transfer responsibilities of a deprecated entry
+// @Description 仅对当前可见且已弃用的 active 条目，按 version 原子替换完整责任关系；须填写原因及有效责任部门、业务负责人和数据管理员；状态、业务定义、语义、可见范围设置及来源保持不变；责任部门变化影响部门可见范围；替换旧责任时自动解决关联任务并记录审计；不需要弃用权限，不授予数据权限 | Atomically replace complete responsibilities of a currently visible active deprecated entry using version; a reason and valid department, business owner and steward are required; state, business definitions, semantics, visibility setting and source remain unchanged; department changes affect department visibility; replaced responsibility tasks are resolved with audit; deprecation permission is not required and no data permissions are granted
+// @Tags Catalog Governance
+// @Accept json
+// @Produce json
+// @Param id path string true "目录条目 UUID | Catalog entry UUID"
+// @Param request body transferEntryResponsibilitiesRequest true "完整责任移交请求 | Complete responsibility transfer"
+// @Success 200 {object} service.EntryDetail "移交后的条目 | Entry after transfer"
+// @Failure 400 {object} map[string]interface{} "请求或责任结构无效 | Invalid request or responsibility structure"
+// @Failure 401 {object} map[string]interface{} "未认证 | Unauthorized"
+// @Failure 403 {object} map[string]interface{} "缺少读取或维护权限 | Missing read or update permission"
+// @Failure 404 {object} map[string]interface{} "条目不存在或不可见 | Entry missing or not visible"
+// @Failure 409 {object} map[string]interface{} "版本、状态或引用冲突 | Version, state or reference conflict"
+// @Failure 503 {object} map[string]interface{} "责任校验服务不可用 | Responsibility validation unavailable"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["catalog.entry.read","catalog.entry.update"]
+// @Router /entries/{id}/responsibilities [put]
+// @Security BearerAuth
+func (h *Handler) TransferEntryResponsibilities(c *gin.Context) {
+	tenantID, ok := commonAuth.TenantIDFromGin(c)
+	if !ok {
+		respondError(c, http.StatusUnauthorized, service.ErrInvalidEntryUpdate)
+		return
+	}
+	id, err := parseCanonicalUUID(c.Param("id"))
+	if err != nil {
+		respondError(c, http.StatusBadRequest, service.ErrInvalidEntryUpdate)
+		return
+	}
+	var request transferEntryResponsibilitiesRequest
+	if err := commonapi.BindOptionalJSONStrict(c, &request); err != nil {
+		respondError(c, http.StatusBadRequest, service.ErrInvalidEntryUpdate)
+		return
+	}
+	responsibilities, err := mapResponsibilityRequests(request.Responsibilities)
+	if err != nil {
+		respondError(c, http.StatusBadRequest, err)
+		return
+	}
+	authContext, ok := commonAuth.AuthContextFromGin(c)
+	if !ok {
+		respondError(c, http.StatusUnauthorized, service.ErrInvalidEntryUpdate)
+		return
+	}
+	entry, err := h.entries.TransferResponsibilities(c.Request.Context(), tenantID, id, entryAccess(c),
+		service.TransferEntryResponsibilitiesInput{Version: request.Version, Reason: request.Reason, Responsibilities: responsibilities},
+		service.UpdateEntryActor{Type: authContext.Principal.Type, ID: authContext.Principal.ID})
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, err)
 		return
@@ -1185,16 +1250,26 @@ func mapUpdateEntryRequest(request updateEntryRequest) (service.UpdateEntryInput
 		}
 		input.GlossaryIDs = append(input.GlossaryIDs, id)
 	}
-	for _, responsibility := range request.Responsibilities {
+	responsibilities, err := mapResponsibilityRequests(request.Responsibilities)
+	if err != nil {
+		return input, err
+	}
+	input.Responsibilities = responsibilities
+	return input, nil
+}
+
+func mapResponsibilityRequests(request []updateResponsibilityRequest) ([]service.ResponsibilityInput, error) {
+	result := make([]service.ResponsibilityInput, 0, len(request))
+	for _, responsibility := range request {
 		id, err := parseCanonicalPositiveInt64(responsibility.SubjectID)
 		if err != nil {
-			return input, err
+			return nil, err
 		}
-		input.Responsibilities = append(input.Responsibilities, service.ResponsibilityInput{
+		result = append(result, service.ResponsibilityInput{
 			Role: responsibility.Role, SubjectType: responsibility.SubjectType, SubjectID: id,
 		})
 	}
-	return input, nil
+	return result, nil
 }
 
 func mapUpdateEntryGovernanceRequest(request updateEntryGovernanceRequest) (service.UpdateEntryGovernanceInput, error) {

@@ -185,6 +185,17 @@ func validateGovernanceUpdate(
 			return "", ErrInvalidGovernanceUpdate
 		}
 		return "catalog.entry.deprecation_updated", nil
+	case current == models.GovernanceStatusDeprecated && next == models.GovernanceStatusCurated:
+		if !authorization.CanDeprecate {
+			return "", ErrDeprecationPermissionRequired
+		}
+		if input.Reason == nil {
+			return "", ErrDeprecationReasonRequired
+		}
+		if input.RecommendedSuccessorEntryID != nil {
+			return "", ErrInvalidGovernanceUpdate
+		}
+		return "catalog.entry.deprecation_withdrawn", nil
 	default:
 		return "", ErrInvalidGovernanceTransition
 	}

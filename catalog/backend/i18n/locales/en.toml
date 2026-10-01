@@ -24,7 +24,7 @@ other = "Certification requirements are not met: the source must be active, cura
 [catalog.error.certification_withdrawal_reason_required]
 other = "A reason is required to withdraw certification"
 [catalog.error.deprecation_permission_required]
-other = "Deprecating a catalog entry requires the separate deprecation permission"
+other = "Deprecating or withdrawing deprecation requires the separate deprecation permission"
 [catalog.error.reference_validation_unavailable]
 other = "Semantic or responsibility reference validation is currently unavailable"
 [catalog.error.source_rebind_conflict]
@@ -38,7 +38,7 @@ other = "Viewing the enterprise inventory requires the separate inventory permis
 [catalog.error.curation_requirements_not_met]
 other = "Business name, description, primary domain, and required responsibilities must be complete"
 [catalog.error.deprecation_reason_required]
-other = "A reason is required to deprecate a catalog entry"
+other = "A reason is required to deprecate or withdraw deprecation of a catalog entry"
 [catalog.error.invalid_recommended_successor]
 other = "The recommended successor must be an active-source curated or certified catalog entry in the current tenant"
 [catalog.error.user_principal_required]
@@ -87,9 +87,9 @@ other = "Certify catalog entries"
 [permissions.catalog.entry.certify.description]
 other = "Promote eligible enterprise catalog entries to certified status"
 [permissions.catalog.entry.deprecate.name]
-other = "Deprecate catalog entries"
+other = "Deprecate and withdraw deprecation of catalog entries"
 [permissions.catalog.entry.deprecate.description]
-other = "Deprecate enterprise catalog entries with a governance reason and maintain an optional recommended successor"
+other = "Deprecate or withdraw deprecation of enterprise catalog entries with a governance reason, and maintain an optional recommended successor"
 [permissions.catalog.source.rebind.name]
 other = "Rebind catalog sources"
 [permissions.catalog.source.rebind.description]

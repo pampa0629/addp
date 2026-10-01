@@ -259,9 +259,16 @@ func validateUpdateShape(input UpdateEntryInput) error {
 		}
 		seenStandard[key] = struct{}{}
 	}
+	return validateResponsibilityInputs(input.Responsibilities)
+}
+
+func validateResponsibilityInputs(responsibilities []ResponsibilityInput) error {
+	if len(responsibilities) > 200 {
+		return ErrInvalidEntryUpdate
+	}
 	seenResponsibilities := make(map[string]struct{})
 	roleCounts := make(map[string]int)
-	for _, responsibility := range input.Responsibilities {
+	for _, responsibility := range responsibilities {
 		if responsibility.SubjectID <= 0 || !validResponsibilityShape(responsibility.Role, responsibility.SubjectType) {
 			return ErrInvalidEntryUpdate
 		}

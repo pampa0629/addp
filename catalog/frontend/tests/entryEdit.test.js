@@ -5,6 +5,9 @@ import {
   buildCertificationPayload,
   buildCertificationWithdrawalPayload,
   buildDeprecationPayload,
+  buildDeprecationWithdrawalPayload,
+  buildResponsibilityTransferPayload,
+  requiredResponsibilityGaps,
   buildUpdatePayload,
   buildWithdrawCurationPayload,
   curationAction,
@@ -17,6 +20,29 @@ import {
 } from '../src/utils/entryEdit'
 
 describe('catalog entry edit contract', () => {
+  it('withdraws deprecation without restoring certification or keeping a successor', () => {
+    expect(buildDeprecationWithdrawalPayload({ version: 8 }, ' Restore use ')).toEqual({
+      version: 8, governance_status: 'curated', reason: 'Restore use'
+    })
+  })
+
+  it('transfers only responsibilities and reason, not frozen curation fields', () => {
+    const form = withRequiredResponsibilityRows(buildEntryEditForm({ version: 9, governance_status: 'deprecated' }))
+    form.responsibilities.forEach((row, index) => { row.subjectId = String(index + 30) })
+    form.reason = ' Assign current team '
+    expect(requiredResponsibilityGaps(form)).toEqual([])
+    expect(requiredCurationGaps(form)).toContain('businessName')
+    expect(buildResponsibilityTransferPayload(form)).toEqual({
+      version: 9, reason: 'Assign current team', responsibilities: [
+        { role: 'accountable_department', subject_type: 'department', subject_id: '30' },
+        { role: 'business_owner', subject_type: 'user', subject_id: '31' },
+        { role: 'data_steward', subject_type: 'user', subject_id: '32' }
+      ]
+    })
+    const source = readFileSync(new URL('../src/components/EntryEditor.vue', import.meta.url), 'utf8')
+    expect(source).toContain('v-if="!responsibilityOnly"')
+    expect(source).toContain('transferDepartmentWarning')
+  })
   it('shows curation requirements and loads published glossary candidates for dropdown selection', () => {
     const source = readFileSync(new URL('../src/components/EntryEditor.vue', import.meta.url), 'utf8')
     expect(source).toContain('v-if="missingRequirements.length"')

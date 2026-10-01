@@ -222,7 +222,7 @@
       "title": "Responsibility Governance Queue",
       "description": "Only handles responsibility transfers after a linked department or user becomes invalid. Missing curation or responsibility does not create a task; users with inventory access can inspect gaps in Governance Coverage.",
       "repairHint": "A governance task is derived from responsibility state and cannot be closed independently. Replace the invalid responsibility on the catalog entry, or wait for the restored reference to resolve it automatically.",
-      "visibilityHint": "Only tasks for entries you can currently view are shown. If the accountable department becomes invalid, a governance user with tenant inventory and curation permissions must repair the responsibility. Withdraw certification before editing certified entries; deprecated entries remain frozen. Repair grants neither source data access nor approval authority for sharing.",
+      "visibilityHint": "Only tasks for entries you can currently view are shown. If the accountable department becomes invalid, a governance user with tenant inventory and curation permissions must repair the responsibility. Withdraw certification before editing certified entries; deprecated entries can transfer responsibilities while remaining deprecated. Repair grants neither source data access nor approval authority for sharing.",
       "status": "Task status",
       "statusOpen": "Open",
       "statusResolved": "Resolved",
@@ -563,6 +563,11 @@
       "relationRole": "Relation role",
       "referenceName": "Verified name",
       "responsibilities": "Responsibilities",
+      "transferTitle": "Transfer responsibilities",
+      "transferDescription": "Change only this deprecated entry's responsibilities. Keep its deprecated state and other curation facts unchanged; no data access is granted.",
+      "transferDepartmentWarning": "This entry is visible to its accountable department. Changing the department may remove visibility for former members and allow new members with catalog read permission to discover it. Governance users with inventory permission can still handle it.",
+      "transferReason": "Transfer reason",
+      "transferSave": "Confirm responsibility transfer",
       "responsibilityRole": "Responsibility role",
       "responsibilityStatus": "Link status",
       "componentElements": "Component element links",
@@ -592,6 +597,8 @@
       "cancel": "Cancel",
       "save": "Save curation",
       "saved": "Business curation saved",
+      "transferSaved": "Responsibilities transferred; the entry remains deprecated",
+      "transferFailed": "Failed to transfer responsibilities",
       "saveFailed": "Failed to save business curation",
       "moreActions": "More",
       "withdraw": "Withdraw curation",
@@ -650,7 +657,7 @@
       "deprecate": {
         "action": "Deprecate resource",
         "title": "Deprecate enterprise resource",
-        "description": "Deprecation means the enterprise resource is no longer recommended for use. This state cannot be restored; an active curated or certified successor may be recommended.",
+        "description": "Deprecation means the enterprise resource is no longer recommended for use. An active curated or certified successor may be recommended. Authorized withdrawal is possible, but does not automatically restore certification.",
         "reasonPlaceholder": "Explain the reason and impact of deprecation",
         "confirm": "Deprecate resource",
         "success": "Enterprise resource deprecated",
@@ -659,11 +666,20 @@
       "deprecated": {
         "action": "Maintain deprecation",
         "title": "Maintain deprecation information",
-        "description": "The deprecated state cannot be restored. Only the recommended successor can be changed or cleared, and the maintenance reason is audited.",
+        "description": "Only the recommended successor can be changed or cleared here, with an audited reason. Withdrawing deprecation and transferring responsibilities use their separate actions.",
         "reasonPlaceholder": "Explain why the deprecation information is changing",
         "confirm": "Save deprecation information",
         "success": "Deprecation information updated",
         "failed": "Failed to update deprecation information"
+      },
+      "withdraw-deprecation": {
+        "action": "Withdraw deprecation",
+        "title": "Withdraw enterprise resource deprecation",
+        "description": "Return the entry to curated and clear the current successor while retaining history. Certification, source data permissions and asset publication are not restored. Certification must be performed again if needed.",
+        "reasonPlaceholder": "Explain why deprecation is being withdrawn",
+        "confirm": "Confirm withdrawal",
+        "success": "Deprecation withdrawn; the entry is now curated",
+        "failed": "Failed to withdraw deprecation"
       }
     },
     "rebind": {

@@ -7,7 +7,7 @@
     @update:model-value="value => emit('update:visible', value)"
   >
     <el-alert
-      :type="mode === 'withdraw-certification' ? 'warning' : 'error'"
+      :type="mode.startsWith('withdraw-') ? 'warning' : 'error'"
       :closable="false"
       show-icon
       :title="t(`catalog.governance.${mode}.description`)"
@@ -49,7 +49,7 @@
     <template #footer>
       <el-button @click="emit('update:visible', false)">{{ t('catalog.edit.cancel') }}</el-button>
       <el-button
-        :type="mode === 'withdraw-certification' ? 'warning' : 'danger'"
+        :type="mode.startsWith('withdraw-') ? 'warning' : 'danger'"
         :loading="saving"
         @click="submit"
       >
@@ -72,7 +72,7 @@ const props = defineProps({
   mode: {
     type: String,
     required: true,
-    validator: value => ['withdraw-certification', 'deprecate', 'deprecated'].includes(value)
+    validator: value => ['withdraw-certification', 'withdraw-deprecation', 'deprecate', 'deprecated'].includes(value)
   },
   saving: { type: Boolean, default: false }
 })

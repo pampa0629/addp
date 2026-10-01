@@ -49,6 +49,10 @@ export async function updateEntryGovernance(id, payload) {
 	return client.put(`/catalog/entries/${encodeURIComponent(id)}/governance`, payload)
 }
 
+export async function transferEntryResponsibilities(id, payload) {
+	return client.put(`/catalog/entries/${encodeURIComponent(id)}/responsibilities`, payload)
+}
+
 export async function listStandardMappingRevisionOptions(elementId) {
 	return client.get('/catalog/standard-mappings/revision-options', { params: { element_id: elementId } })
 }

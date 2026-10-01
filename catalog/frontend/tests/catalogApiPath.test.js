@@ -15,9 +15,16 @@ import { listDomainElements, listDomainGlossaries, listDomainMetrics } from '../
 import { listDomainQualityIssues, listDomainQualityPlans, listDomainQualityRules } from '../src/api/quality'
 import { domainStandardQuery } from '../src/utils/domainStandardSummary'
 import { domainQualityQuery } from '../src/utils/domainQualitySummary'
+import { transferEntryResponsibilities } from '../src/api/catalog'
 
 describe('catalog frontend API paths', () => {
   beforeEach(() => vi.clearAllMocks())
+
+  it('uses a responsibility-only subresource for deprecated entries', async () => {
+    const payload = { version: 3, reason: 'Transfer', responsibilities: [] }
+    await transferEntryResponsibilities('entry/id', payload)
+    expect(client.put).toHaveBeenCalledWith('/catalog/entries/entry%2Fid/responsibilities', payload)
+  })
 
   it('reads domain overviews through Catalog, not Standard user APIs', async () => {
     await listDomainOverviews()

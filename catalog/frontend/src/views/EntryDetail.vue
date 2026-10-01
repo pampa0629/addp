@@ -15,7 +15,7 @@
 		<el-button v-if="entry" :type="marks.following ? 'primary' : ''" :icon="Bell" :loading="markSaving" @click="toggleMark('following')">
 		  {{ marks.following ? t('catalog.marks.following') : t('catalog.marks.follow') }}
 		</el-button>
-	        <el-button v-if="curationActionKey && !editing" data-testid="catalog-curation-action" type="primary" :icon="Edit" @click="openEditor">
+	        <el-button v-if="curationActionKey && !editing" data-testid="catalog-curation-action" type="primary" :icon="Edit" @click="openEditor()">
 	          {{ t(`catalog.edit.${curationActionKey}Action`) }}
 	        </el-button>
 		<el-button
@@ -30,6 +30,8 @@
 		  <el-button data-testid="catalog-more-actions" :icon="MoreFilled">{{ t('catalog.edit.moreActions') }}</el-button>
 		  <template #dropdown>
 			<el-dropdown-menu>
+			  <el-dropdown-item v-if="canMaintainDeprecation" data-testid="catalog-withdraw-deprecation-action" command="withdraw-deprecation">{{ t('catalog.governance.withdraw-deprecation.action') }}</el-dropdown-item>
+			  <el-dropdown-item v-if="canTransferResponsibilities" data-testid="catalog-transfer-responsibilities-action" command="transfer-responsibilities">{{ t('catalog.edit.transferTitle') }}</el-dropdown-item>
 			  <el-dropdown-item v-if="canCertifyResource" data-testid="catalog-certify-action" command="certify">{{ t('catalog.governance.certify.action') }}</el-dropdown-item>
 			  <el-dropdown-item v-if="canDeprecateResource && entry?.governance_status === 'curated'" data-testid="catalog-deprecate-action" command="deprecate">{{ t('catalog.governance.deprecate.action') }}</el-dropdown-item>
 			  <el-dropdown-item v-if="canWithdrawCertification" data-testid="catalog-withdraw-certification-action" command="withdraw-certification">{{ t('catalog.governance.withdraw-certification.action') }}</el-dropdown-item>
@@ -111,6 +113,7 @@
       <EntryEditor
         v-if="editing"
         :entry="entry"
+        :mode="editorMode"
         :saving="saving"
         :conflict="conflict"
         @submit="saveEntry"
@@ -567,13 +570,13 @@ import { createLineageApi, normalizeLineageGraph } from '@addp/common-frontend/g
 import EntryEditor from '../components/EntryEditor.vue'
 import EntryGovernanceDialog from '../components/EntryGovernanceDialog.vue'
 import StandardMappingPanel from '../components/StandardMappingPanel.vue'
-import { exportEntryDataDictionary, getEntry, getEntryDataDictionary, getEntryHistory, getMyEntryMarks, listDomainOverviews, rebindSource, replaceMyEntryMarks, resolveSourceEntries, updateEntry, updateEntryGovernance } from '../api/catalog'
+import { exportEntryDataDictionary, getEntry, getEntryDataDictionary, getEntryHistory, getMyEntryMarks, listDomainOverviews, rebindSource, replaceMyEntryMarks, resolveSourceEntries, updateEntry, updateEntryGovernance, transferEntryResponsibilities } from '../api/catalog'
 import client from '../api/client'
 import { useAuthStore } from '../store/auth'
 import { catalogStatusLabel } from '../utils/catalogStatusLabel'
 import { dataDictionaryExportFileName, normalizeDataDictionaryBlobError, saveDataDictionaryExport } from '../utils/dataDictionaryExport'
 import { activeCodeItemLabels, formatPhysicalType, formatRangeConstraint } from '../utils/dataDictionaryView'
-import { buildCertificationPayload, buildCertificationWithdrawalPayload, buildDeprecationPayload, buildWithdrawCurationPayload, curationAction } from '../utils/entryEdit'
+import { buildCertificationPayload, buildCertificationWithdrawalPayload, buildDeprecationPayload, buildDeprecationWithdrawalPayload, buildWithdrawCurationPayload, curationAction } from '../utils/entryEdit'
 import { buildEntryListQuery, parseEntryListRoute } from '../utils/entryRouteState'
 import { coverageDimensionLabel } from '../utils/governanceCoverageView'
 import { isProfessionalOwner, professionalOwnerName, resolveOwnerPrimaryDomain } from '../utils/entryOwnerPresentation'
@@ -599,6 +602,7 @@ const saving = ref(false)
 const editing = ref(false)
 const governanceDialogVisible = ref(false)
 const governanceDialogMode = ref('deprecate')
+const editorMode = ref('curation')
 const activeDetailTab = ref('overview')
 const conflict = ref(false)
 const error = ref('')
@@ -640,6 +644,9 @@ const canDeprecateResource = computed(() => (
 const canMaintainDeprecation = computed(() => (
   canEdit.value && canDeprecate.value && entry.value?.entry_status === 'active' && entry.value?.governance_status === 'deprecated'
 ))
+const canTransferResponsibilities = computed(() => (
+  canEdit.value && entry.value?.entry_status === 'active' && entry.value?.governance_status === 'deprecated'
+))
 const primaryGovernanceAction = computed(() => {
   if (canMaintainDeprecation.value) return 'deprecated'
   if (entry.value?.governance_status === 'certified' && canDeprecateResource.value) return 'deprecate'
@@ -652,6 +659,7 @@ const canRebindSource = computed(() => (
   canRebind.value && entry.value?.entry_status === 'active' && entry.value?.source?.source_status === 'missing'
 ))
 const hasMoreActions = computed(() => (
+  canMaintainDeprecation.value || canTransferResponsibilities.value ||
   canCertifyResource.value || canWithdrawCertification.value ||
   (canDeprecateResource.value && entry.value?.governance_status === 'curated') ||
   canWithdrawCuration.value || canRebindSource.value
@@ -781,7 +789,8 @@ function responsibilityReferenceName(role) {
   return responsibility?.observed_snapshot?.name || '-'
 }
 
-function openEditor() {
+function openEditor(mode = 'curation') {
+  editorMode.value = mode
   editing.value = true
 }
 
@@ -801,6 +810,14 @@ async function changeDetailTab(tab) {
 }
 
 async function handleMoreAction(command) {
+  if (command === 'transfer-responsibilities') {
+    openEditor('responsibilities')
+    return
+  }
+  if (command === 'withdraw-deprecation') {
+    openGovernanceDialog(command)
+    return
+  }
   if (command === 'certify') {
     await certifyEntry()
     return
@@ -848,6 +865,8 @@ async function submitGovernanceDialog({ reason, recommendedSuccessorEntryId }) {
   const mode = governanceDialogMode.value
   const payload = mode === 'withdraw-certification'
     ? buildCertificationWithdrawalPayload(entry.value, reason)
+    : mode === 'withdraw-deprecation'
+      ? buildDeprecationWithdrawalPayload(entry.value, reason)
     : buildDeprecationPayload(entry.value, reason, recommendedSuccessorEntryId)
   await applyGovernanceUpdate(payload, mode)
 }
@@ -1253,9 +1272,13 @@ async function saveEntry(payload) {
   saving.value = true
   conflict.value = false
   try {
-    entry.value = await updateEntry(entry.value.id, payload)
+    entry.value = editorMode.value === 'responsibilities'
+      ? await transferEntryResponsibilities(entry.value.id, payload)
+      : await updateEntry(entry.value.id, payload)
     editing.value = false
-    ElMessage.success(t('catalog.edit.saved'))
+    history.value = null
+    if (canReadAudit.value) await loadHistory()
+    ElMessage.success(t(editorMode.value === 'responsibilities' ? 'catalog.edit.transferSaved' : 'catalog.edit.saved'))
   } catch (requestError) {
     const code = requestError?.response?.data?.error_code
     if (requestError?.response?.status === 409 && code === 'catalog_entry_version_conflict') {
@@ -1263,7 +1286,7 @@ async function saveEntry(payload) {
       ElMessage.warning(t('catalog.edit.conflict'))
       return
     }
-    ElMessage.error(requestError?.response?.data?.error || t('catalog.edit.saveFailed'))
+    ElMessage.error(requestError?.response?.data?.error || t(editorMode.value === 'responsibilities' ? 'catalog.edit.transferFailed' : 'catalog.edit.saveFailed'))
   } finally {
     saving.value = false
   }

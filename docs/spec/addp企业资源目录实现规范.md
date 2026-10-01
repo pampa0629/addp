@@ -136,7 +136,7 @@ System 的 Department / Project Group 管理契约以 `system/docs/IAM数据模�
 1. `active` 引用变为不存在或不可引用时，将关系标记为 `needs_transfer`，打开一条 `responsibility_transfer` 治理任务，递增 CatalogEntry 聚合版本并写入领域审计和搜索投影任务；
 2. 同一条责任重复对账保持同一个 open 任务，不重复递增聚合版本或制造重复审计；
 3. 同一 System 身份恢复为可引用时，关系恢复为 `active`，治理任务以 `reference_restored` 自动解决，并递增聚合版本；
-4. 治理人员通过唯一的 `PUT /entries/:id` 完整替换责任聚合后，被删除或替换的失效责任任务以 `responsibility_replaced` 在同一事务自动解决；不提供独立“忽略失效责任”或手工关闭任务 API。
+4. 未认证的已编目条目通过 `PUT /entries/:id` 完整编目更新替换责任；已弃用条目只通过 `PUT /entries/:id/responsibilities` 完整替换责任子资源。被删除或替换的失效责任任务以 `responsibility_replaced` 在同一事务自动解决；不提供独立“忽略失效责任”或手工关闭任务 API。
 
 `catalog.governance_tasks` 是 Catalog 内派生的治理工作事实，不是责任关系副本。第一阶段字段固定表达 CatalogEntry、任务类型、责任角色、主体类型与 ID、失效原因、已观察主体摘要、`open` / `resolved` 状态、打开/解决时间和解决方式；数据库必须保证同一 Tenant、CatalogEntry、责任角色和主体最多一条 open `responsibility_transfer` 任务。任务不跨 Schema 建外键，System 不保存其反向投影。
 
@@ -188,8 +188,9 @@ Catalog 拥有当前责任资格及企业关联，System 的引擎访问控制�
 允许的单一路线：
 
 ```text
-discovered ⇄ curated ⇄ certified → deprecated
-                     ↘ deprecated
+discovered ⇄ curated ⇄ certified
+               ⇅           ↓
+           deprecated ←────┘
 ```
 
 - `discovered → curated`：业务名称、说明、适用时有效的 primary Domain、责任部门、业务责任人和至少一个数据管理员完整；Model 来源的 primary Domain 取 owner 当前声明，不要求也不允许 Catalog primary 副本；Standard 公共指标无专属域时遵守 3.1 节唯一例外；
@@ -197,11 +198,13 @@ discovered ⇄ curated ⇄ certified → deprecated
 - `curated → certified`：需要独立认证权限和认证审计；认证只确认当前 CatalogEntry 聚合版本和当前已审核 StandardMapping 集合，不允许在同一请求中改变业务名称、说明、语义关联、责任、映射或可见性；
 - `certified → curated`：唯一表示“撤销认证”。必须具有认证权限并填写原因，只改变治理状态并完整保留当前编目事实；撤销后使用普通编目更新完成修订，再由同一路径重新认证；
 - `curated|certified → deprecated`：必须具有弃用权限并填写原因，只改变治理状态和可选推荐继任项，不允许夹带业务编目修改；
-- `deprecated → deprecated`：只允许具有弃用权限的用户填写原因并变更或清除推荐继任项；其他编目事实冻结；
+- `deprecated → deprecated`：治理接口只允许具有弃用权限的用户填写原因并变更或清除推荐继任项；独立责任子资源允许读取及编目维护权限持有者移交责任，无需弃用权限。业务名称、说明、语义关联、可见范围设置和来源绑定继续冻结；
 - 弃用时可以指定一个推荐继任项；推荐继任项不是必填，没有替代资源时允许为空；
-- `deprecated` 不允许恢复；除“撤销编目”和“撤销认证”外不允许任何回退。重新认证不是独立状态、实体或兼容 API，固定由“撤销认证 → 编辑编目 → 认证”构成同一 CatalogEntry 上的可审计闭环。
+- `deprecated → curated`：唯一表示“撤销弃用”，需要读取、编目维护和弃用权限，填写原因并校验当前版本；保留编目事实，清除当前推荐继任项并在审计中保留原关系。不自动回到 `certified`，不恢复源数据访问、源对象或资产发布。除上述明确转换外不允许任意回退。
 
-通用编目更新 `PUT /entries/:id` 只维护 `discovered|curated` 阶段的完整编目聚合和撤销编目，不接受进入、维持或退出 `certified|deprecated` 的请求。认证、撤销认证、弃用和弃用信息维护唯一使用 `PUT /entries/:id/governance`，请求携带当前聚合 `version`、目标 `governance_status`、按转换要求填写的 `reason` 和可选 `recommended_successor_entry_id`。服务端在同一事务中锁定 CatalogEntry、校验状态与版本、更新治理状态或推荐继任项、递增版本并分别写入 `catalog.entry.certified`、`catalog.entry.certification_withdrawn`、`catalog.entry.deprecated` 或 `catalog.entry.deprecation_updated` 审计；该路径不替换编目关联，也不依赖 Standard / System 当前可达。
+责任移交只接受 `version`、`reason` 与完整 `responsibilities`，仅适用于 active 的已弃用条目；要求一个有效责任部门、一个有效业务负责人和至少一个有效数据管理员，技术负责人可选，候选由 System 当前事实核验。拒绝夹带其他字段，不依赖 Standard 可达。移交在同一事务锁定条目、递增聚合版本、替换责任、解决旧任务并记录 `catalog.entry.responsibilities_transferred` 审计与搜索投影。部门可见条目更换责任部门时，当前可发现范围随之变化，前端必须提示；不把责任身份变成 IAM 或数据授权。
+
+通用编目更新 `PUT /entries/:id` 只维护 `discovered|curated` 阶段的完整编目聚合和撤销编目，不接受进入、维持或退出 `certified|deprecated` 的请求。认证、撤销认证、弃用、撤销弃用和弃用信息维护唯一使用 `PUT /entries/:id/governance`，请求携带当前聚合 `version`、目标 `governance_status`、按转换要求填写的 `reason` 和可选 `recommended_successor_entry_id`。服务端在同一事务中锁定 CatalogEntry、校验状态与版本、更新治理状态或推荐继任项、递增版本并分别写入 `catalog.entry.certified`、`catalog.entry.certification_withdrawn`、`catalog.entry.deprecated`、`catalog.entry.deprecation_withdrawn` 或 `catalog.entry.deprecation_updated` 审计；该治理写路径不替换编目关联，不重新调用 Standard / System 的专业引用解析服务。HTTP 接口仍遵守 System 统一认证与权限校验要求，不能把“不重新解析引用”理解为 System 不可用时自动放行。所有治理操作和已弃用条目责任移交均校验当前条目可见性。
 
 ### 4.2 目录可见性
 
@@ -220,7 +223,7 @@ Catalog 列表只提供两个相互排他的目录视图：
 - `governance`：默认视图，只包含 `curated|certified|deprecated` 条目；调用者拥有 `catalog.inventory.read` 不改变该默认值。
 - `inventory`：企业资源盘点视图，包含 `discovered|curated|certified|deprecated` 条目，必须同时具有 `catalog.entry.read` 和 `catalog.inventory.read`。
 
-Console 的固定页面标题使用“企业资源目录”，侧边栏入口使用“资源浏览”，两个视图标签分别使用“已编目资源”和“资源盘点”。“已编目资源”包含 `curated|certified|deprecated`，不表示全部已认证、质量合格或已发布为资产。不得同时使用“目录浏览”“治理目录”“企业目录导航”等相近名称制造另一套目录概念。`discovered` 条目主操作为“开始编目”；`curated` 条目主操作为“编辑编目”，认证和撤销编目放在明确的治理操作中；`certified` 条目只提供“撤销认证”和“弃用资源”，不显示通用编目编辑器；`deprecated` 只提供“维护弃用信息”，不得修改冻结的编目事实。
+Console 的固定页面标题使用“企业资源目录”，侧边栏入口使用“资源浏览”，两个视图标签分别使用“已编目资源”和“资源盘点”。“已编目资源”包含 `curated|certified|deprecated`，不表示全部已认证、质量合格或已发布为资产。不得同时使用“目录浏览”“治理目录”“企业目录导航”等相近名称制造另一套目录概念。`discovered` 条目主操作为“开始编目”；`curated` 条目主操作为“编辑编目”，认证和撤销编目放在明确的治理操作中；`certified` 条目只提供“撤销认证”和“弃用资源”，不显示通用编目编辑器；`deprecated` 提供“维护弃用信息”、权限感知的“撤销弃用”与“移交责任”，移交复用既有编辑器的责任部分，不开放其他冻结事实。
 
 视图是同一组 CatalogEntry 的权限感知查询，不新增实体、复制条目或维护双轨索引。DataItem 全量自动建档且可在 `inventory` 查询；完成业务编目后，同一 CatalogEntry 自然进入 `governance` 视图。
 
@@ -550,7 +553,8 @@ BasePath 固定为 `/api/v1/catalog`。第一阶段公开单一路由集合：
 | GET | `/entries/:id/data-dictionary` | 组合 Meta 当前物理字段、Catalog 已审核 StandardMapping 与其冻结的 Standard 修订 |
 | GET | `/entries/:id/data-dictionary/export` | 重新组合一次联邦数据字典并下载不可变 JSON 快照，不在服务端留存副本 |
 | PUT | `/entries/:id` | 使用聚合根 `version` 原子更新 `discovered|curated` 阶段的编目、语义、责任与可见性；`curated → discovered` 只接受完整撤销编目形状，不承担认证或弃用转换 |
-| PUT | `/entries/:id/governance` | 使用聚合根 `version` 原子执行认证、撤销认证、弃用或弃用信息维护；只更新治理状态、推荐继任项和领域审计，不替换编目事实 |
+| PUT | `/entries/:id/governance` | 使用聚合根 `version` 原子执行认证、撤销认证、弃用、撤销弃用或弃用信息维护；只更新治理状态、推荐继任项和领域审计，不替换编目事实 |
+| PUT | `/entries/:id/responsibilities` | 使用聚合根 `version` 与原因，仅对已弃用条目完整替换责任关系；保持弃用状态和其他事实冻结 |
 | GET/POST | `/standard-mappings` | 分页读取或创建字段/组件标准映射候选；创建必须携带确定数据元修订和来源证据 |
 | GET | `/standard-mappings/revision-options` | Catalog 使用运行身份动态返回所选数据元可用的已发布修订，供候选映射下拉选择；不复制 Standard 修订事实 |
 | GET/PUT/DELETE | `/standard-mappings/:id` | 读取、完整更新或删除仍为 `proposed` 的映射，写操作使用映射自身 `version` |
@@ -604,7 +608,7 @@ Model `business_entity|logical_model` 与 Standard `metric` 的主业务域由�
 
 `GET /governance/tasks` 第一阶段只接受 `status=open|resolved`、可选 `entry_id`、`page` 和 `page_size`，同时使用 `catalog.entry.read` 与 `catalog.entry.update` Permission。任务结果、分页计数和精确 `entry_id` 筛选必须复用条目详情的当前可见性，不能列出调用者无法打开的条目或泄露其任务数量。具有显式 `catalog.inventory.read` 的租户治理人员可发现本租户责任部门已失效的条目及任务，不依赖原部门成员关系；普通部门治理人员仍只看到当前可见条目的任务。返回任务、CatalogEntry 当前显示名和版本，治理人员从任务进入现有条目编目页修复责任；任务列表不新增责任写入或任务关单权限。前端按 CatalogEntry 名称远程搜索并提交 `entry_id`，有盘点权限时使用盘点视图，否则使用已编目资源视图，不提供 UUID 手工输入。
 
-责任修复复用完整编目聚合及版本校验，不自动赋予修复者业务责任、源数据读取或共享批准权。已认证条目须先按 4.1 节撤销认证后修复，弃用条目继续冻结，不能通过任务入口绕过状态门禁。租户治理账号必须通过 System 的有效角色分配显式配置；已初始化 Tenant 的最后一个有效 `tenant.administrator` 受到既有 IAM 保护，该角色明确包含读取、盘点、维护和认证 Permission，因此可复用为责任失效后的修复通道。Catalog 不根据角色名放行、不新增自动兜底赋权；此通道也不表示弃用条目的责任冻结边界已经解决。
+责任修复复用完整责任聚合及版本校验，不自动赋予修复者业务责任、源数据读取或共享批准权。已认证条目须先按 4.1 节撤销认证后修复；已弃用条目通过责任子资源移交，保持弃用及其他业务事实冻结，不必先撤销弃用。租户治理账号必须通过 System 的有效角色分配显式配置；已初始化 Tenant 的最后一个有效 `tenant.administrator` 受到既有 IAM 保护，该角色明确包含读取、盘点、维护和认证 Permission，因此可复用为责任失效后的修复通道。Catalog 不根据角色名放行、不新增自动兜底赋权。
 
 Console 和 Catalog 的菜单、页面均称“责任治理队列”：只有既有关联的 Department 或 User 失效所派生的 `responsibility_transfer` 任务进入此页。未编目、未分配主域或责任等目录治理缺口仍通过治理覆盖率下钻到资源盘点，不自动生成任务；不得将此页标成泛化的“治理待办”。
 
@@ -654,7 +658,7 @@ Catalog 是以下 Permission 的 owner，正式 Key 在 `catalog/authorization/p
 - `catalog.entry.update`：编目和普通关系维护；
 - `catalog.standard_mapping.review`：审核通过、驳回或撤回字段/组件标准映射；创建、编辑、删除候选仍使用 `catalog.entry.update`。该权限不代替 `catalog.entry.certify`，后者只认证整个目录条目。第一阶段不强制提交者与审核者为不同自然人，但每次操作均独立审计；Copilot Service Principal 不持有审核权限；
 - `catalog.entry.certify`：推进到 `certified`；
-- `catalog.entry.deprecate`：弃用目录条目；
+- `catalog.entry.deprecate`：弃用、撤销弃用及维护推荐继任项，均同时要求读取与编目维护权限；
 - `catalog.source.rebind`：显式来源重绑；
 - `catalog.audit.read`：读取目录审计。
 - `catalog.reference.read`：由 `addp-asset` 精确批量解析可组合和可发布状态；不授权用户列表或盘点视图。

@@ -59,6 +59,9 @@
 | withdraw curation | 撤销编目 | 将误编目或不再具备完整业务治理事实的 `curated` CatalogEntry 原子恢复为 `discovered` 自动发现状态。 | 清除 Catalog 当前人工编目覆盖并恢复 `inventory` 可见性；不删除 CatalogEntry、来源绑定、专业事实或审计历史，也不是 `certified` / `deprecated` 的通用回退。 |
 | certification | 认证 | 对某个已编目 CatalogEntry 的当前聚合版本作出治理确认，使其进入 `certified`。 | 认证只改变治理状态，不允许在同一操作中修改业务编目事实；认证历史由 Catalog 领域审计保留。 |
 | withdraw certification | 撤销认证 | 因业务事实需要修改或原认证结论不再成立，将 `certified` CatalogEntry 显式恢复为 `curated`。 | 必须填写原因并具有认证权限；不清除编目事实。后续编辑完成后可重新认证，不建立第二份认证草稿或 CatalogEntry。 |
+| deprecation | 弃用 | 将已编目或已认证的企业资源标记为不再推荐使用，进入 `deprecated`。 | 不删除源数据、不下架资产、不撤销数据授权；仍保留条目、责任和历史。 |
+| withdraw deprecation | 撤销弃用 | 显式将 `deprecated` CatalogEntry 恢复为 `curated`。 | 使用编目维护与弃用权限，必须填写原因；清除当前推荐继任关系，保留历史，不自动恢复认证、源数据权限或资产发布。 |
+| deprecated responsibility transfer | 已弃用条目责任移交 | 在保持弃用状态和冻结业务定义的前提下，替换条目的责任关系。 | 使用读取和编目维护权限，不要求弃用权限；责任部门变化会影响“责任部门可见”范围，必须提示并审计。 |
 | recertification | 重新认证 | 对撤销认证并完成业务事实修订后的 `curated` CatalogEntry 再次执行认证。 | 不是独立状态或旁路 API；固定由“撤销认证 → 编辑编目 → 认证”形成可审计闭环。 |
 | catalog visibility | 企业目录可见性 | Catalog 对某个 CatalogEntry 的发现范围。 | 第一阶段使用 `inventory`、`department`、`tenant`；只控制目录发现，不授予底层内容访问权。 |
 | Asset Directory | 资产目录 | Asset 面向消费者组织已发布资产的多级业务导航能力。 | 由 `AssetCategory` 树和资产归类关系形成；不复制企业资源目录、业务域或引擎资源树。 |

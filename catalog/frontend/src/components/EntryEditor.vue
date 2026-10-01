@@ -4,7 +4,7 @@
       <div class="editor-header">
         <div>
           <strong>{{ t(`catalog.edit.${editorTitleKey}`) }}</strong>
-          <p>{{ t('catalog.edit.description') }}</p>
+          <p>{{ t(responsibilityOnly ? 'catalog.edit.transferDescription' : 'catalog.edit.description') }}</p>
         </div>
         <span>{{ t('catalog.entry.version') }} {{ form.version }}</span>
       </div>
@@ -33,6 +33,9 @@
     />
 
     <el-form label-position="top" @submit.prevent="submit">
+      <el-alert v-if="responsibilityOnly && entry.visibility === 'department'" type="warning" :closable="false" show-icon
+        :title="t('catalog.edit.transferDepartmentWarning')" class="section-gap" />
+      <template v-if="!responsibilityOnly">
       <el-row :gutter="16">
         <el-col :xs="24" :md="16">
           <el-form-item :label="t('catalog.entry.businessName')" required>
@@ -115,6 +118,7 @@
         <el-empty v-if="form.glossaryIDs.length === 0" :image-size="60" :description="t('catalog.edit.noGlossaries')" />
         <p v-else-if="candidateState.glossary.loaded && !candidateState.glossary.loading && candidateState.glossary.options.length === 0" class="field-hint">{{ t('catalog.edit.noPublishedGlossaries') }}</p>
       </section>
+      </template>
 
       <section class="edit-section">
         <div class="section-title">
@@ -148,9 +152,13 @@
         <el-empty v-if="form.responsibilities.length === 0" :image-size="60" :description="t('catalog.edit.noResponsibilities')" />
       </section>
 
+      <el-form-item v-if="responsibilityOnly" :label="t('catalog.edit.transferReason')" required>
+        <el-input v-model="form.reason" type="textarea" :rows="3" maxlength="500" show-word-limit />
+      </el-form-item>
+
       <div class="editor-actions">
         <el-button @click="$emit('cancel')">{{ t('catalog.edit.cancel') }}</el-button>
-        <el-button type="primary" :loading="saving" :disabled="conflict" @click="submit">{{ t('catalog.edit.save') }}</el-button>
+        <el-button type="primary" :loading="saving" :disabled="conflict" @click="submit">{{ t(responsibilityOnly ? 'catalog.edit.transferSave' : 'catalog.edit.save') }}</el-button>
       </div>
     </el-form>
   </el-card>
@@ -165,14 +173,17 @@ import { listReferenceCandidates } from '../api/catalog'
 import {
   buildEntryEditForm,
   buildUpdatePayload,
+  buildResponsibilityTransferPayload,
   isCanonicalPositiveID,
   requiredCurationGaps,
+  requiredResponsibilityGaps,
   withRequiredResponsibilityRows,
   responsibilitySubjectType
 } from '../utils/entryEdit'
 
 const props = defineProps({
   entry: { type: Object, required: true },
+  mode: { type: String, default: 'curation', validator: value => ['curation', 'responsibilities'].includes(value) },
   saving: { type: Boolean, default: false },
   conflict: { type: Boolean, default: false }
 })
@@ -183,11 +194,12 @@ const candidateTypes = ['domain', 'glossary', 'department', 'user']
 const candidateState = reactive(Object.fromEntries(candidateTypes.map(type => [type, { options: [], loading: false, loaded: false, version: 0 }])))
 const responsibilityRoles = ['accountable_department', 'business_owner', 'data_steward', 'technical_owner']
 const requiredResponsibilityRoles = responsibilityRoles.slice(0, 3)
-const missingRequirements = computed(() => requiredCurationGaps(form))
+const responsibilityOnly = computed(() => props.mode === 'responsibilities')
+const missingRequirements = computed(() => responsibilityOnly.value ? requiredResponsibilityGaps(form) : requiredCurationGaps(form))
 const missingRequirementNames = computed(() => missingRequirements.value.map(key => t(`catalog.edit.requiredField.${key}`)).join(t('catalog.edit.listSeparator')))
 const ownerHasPublicScope = computed(() => form.ownerManagedSemantics && form.ownerModule === 'standard' && ['platform', 'tenant_common'].includes(form.ownerScopeType))
 const ownerModuleName = computed(() => ({ model: 'Model', standard: 'Standard', service: 'Service', develop: 'Develop' }[form.ownerModule] || ''))
-const editorTitleKey = computed(() => props.entry.governance_status === 'discovered' ? 'startTitle' : 'editTitle')
+const editorTitleKey = computed(() => responsibilityOnly.value ? 'transferTitle' : props.entry.governance_status === 'discovered' ? 'startTitle' : 'editTitle')
 
 watch(() => props.entry, entry => {
   Object.assign(form, buildEditorForm(entry))
@@ -199,6 +211,7 @@ resetCandidateOptions(props.entry)
 function buildEditorForm(entry) {
   const next = withRequiredResponsibilityRows(buildEntryEditForm(entry))
   next.governanceStatus = 'curated'
+  next.reason = ''
   return next
 }
 
@@ -297,7 +310,11 @@ function changeResponsibilityRole(item) {
 
 function submit() {
   if (!validateForm()) return
-  emit('submit', buildUpdatePayload(form))
+  if (responsibilityOnly.value && !form.reason.trim()) {
+    ElMessage.error(t('catalog.governance.reasonRequired'))
+    return
+  }
+  emit('submit', responsibilityOnly.value ? buildResponsibilityTransferPayload(form) : buildUpdatePayload(form))
 }
 
 function validateForm() {
@@ -306,14 +323,15 @@ function validateForm() {
     return false
   }
   const allIDs = [
-    ...form.domains.map(item => item.id),
-    ...form.glossaryIDs,
+    ...(responsibilityOnly.value ? [] : form.domains.map(item => item.id)),
+    ...(responsibilityOnly.value ? [] : form.glossaryIDs),
     ...form.responsibilities.map(item => item.subjectId)
   ]
   if (allIDs.some(id => !isCanonicalPositiveID(id))) {
     ElMessage.error(t('catalog.edit.invalidId'))
     return false
   }
+  if (responsibilityOnly.value) return true
   if (new Set(form.domains.map(item => String(item.id))).size !== form.domains.length ||
       new Set(form.glossaryIDs.map(String)).size !== form.glossaryIDs.length) {
     ElMessage.error(t('catalog.edit.duplicateReference'))

@@ -27,4 +27,5 @@ func TestPostgresResponsibilityRecoveryUsesEntryVisibility(t *testing.T) {
 		t.Fatalf("migrate Catalog schema: %v", err)
 	}
 	assertResponsibilityRecoveryUsesCurrentEntryVisibility(t, tx)
+	assertDeprecatedResponsibilityTransferAndWithdrawal(t, tx)
 }

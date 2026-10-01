@@ -222,7 +222,7 @@
       "title": "责任治理队列",
       "description": "仅处理已关联部门或人员失效后的责任移交；未编目或责任缺失等治理缺口不生成任务，可由有盘点权限的用户在治理覆盖率中查看。",
       "repairHint": "治理任务是责任状态的派生事实，不单独关闭；请进入目录条目替换失效责任，引用恢复后任务也会自动解决。",
-      "visibilityHint": "只显示您当前可查看条目的任务。原责任部门失效后，请由具有本租户资源盘点和编目维护权限的治理人员修复；已认证条目须先撤销认证，已弃用条目的编目信息仍冻结。责任修复不授予源数据访问或共享批准权。",
+      "visibilityHint": "只显示您当前可查看条目的任务。原责任部门失效后，请由具有本租户资源盘点和编目维护权限的治理人员修复；已认证条目须先撤销认证，已弃用条目可直接移交责任并保持弃用。责任修复不授予源数据访问或共享批准权。",
       "status": "任务状态",
       "statusOpen": "待处理",
       "statusResolved": "已解决",
@@ -563,6 +563,11 @@
       "relationRole": "关系角色",
       "referenceName": "已验证名称",
       "responsibilities": "责任关系",
+      "transferTitle": "移交责任",
+      "transferDescription": "只调整该已弃用条目的责任关系，保持弃用状态和其他编目信息不变，不授予数据访问权限。",
+      "transferDepartmentWarning": "当前条目按责任部门可见。更换责任部门后，原部门成员可能不再可见，新部门成员可按已有目录读取权限查看；具有盘点权限的治理人员仍可处理。",
+      "transferReason": "移交原因",
+      "transferSave": "确认移交责任",
       "responsibilityRole": "责任角色",
       "responsibilityStatus": "关系状态",
       "componentElements": "组件数据元关联",
@@ -592,6 +597,8 @@
       "cancel": "取消",
       "save": "保存编目",
       "saved": "业务编目已保存",
+      "transferSaved": "责任已移交，条目仍保持已弃用",
+      "transferFailed": "责任移交失败",
       "saveFailed": "保存业务编目失败",
       "moreActions": "更多",
       "withdraw": "撤销编目",
@@ -650,7 +657,7 @@
       "deprecate": {
         "action": "弃用资源",
         "title": "弃用企业资源",
-        "description": "弃用表示该企业资源不再推荐继续使用。该状态不可恢复；可选择一个有效的已编目或已认证条目作为继任项。",
+        "description": "弃用表示该企业资源不再推荐继续使用。可选择一个有效的已编目或已认证条目作为继任项；后续有权撤销弃用，但不会自动恢复认证。",
         "reasonPlaceholder": "说明弃用原因和影响",
         "confirm": "确认弃用",
         "success": "企业资源已弃用",
@@ -659,11 +666,20 @@
       "deprecated": {
         "action": "维护弃用信息",
         "title": "维护弃用信息",
-        "description": "弃用状态不可恢复。此处只允许更新或清除推荐继任项，并记录本次维护原因。",
+        "description": "此处只允许更新或清除推荐继任项，并记录本次维护原因。撤销弃用与移交责任使用各自的独立操作。",
         "reasonPlaceholder": "说明本次维护弃用信息的原因",
         "confirm": "保存弃用信息",
         "success": "弃用信息已更新",
         "failed": "更新弃用信息失败"
+      },
+      "withdraw-deprecation": {
+        "action": "撤销弃用",
+        "title": "撤销企业资源弃用",
+        "description": "条目将回到已编目状态，当前推荐继任关系将清除，历史保留。不自动恢复认证、源数据权限或资产发布；如需认证，应重新认证。",
+        "reasonPlaceholder": "说明撤销弃用的原因",
+        "confirm": "确认撤销弃用",
+        "success": "已撤销弃用，条目回到已编目状态",
+        "failed": "撤销弃用失败"
       }
     },
     "rebind": {

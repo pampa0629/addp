@@ -49,6 +49,11 @@ export function requiredCurationGaps(form) {
   if (!String(form.businessName || '').trim()) gaps.push('businessName')
   if (!String(form.businessDescription || '').trim()) gaps.push('businessDescription')
   if (!hasEffectivePrimaryDomain(form)) gaps.push('primaryDomain')
+  return [...gaps, ...requiredResponsibilityGaps(form)]
+}
+
+export function requiredResponsibilityGaps(form) {
+  const gaps = []
   for (const [role, key] of [
     ['accountable_department', 'accountableDepartment'],
     ['business_owner', 'businessOwner'],
@@ -109,6 +114,18 @@ export function buildCertificationWithdrawalPayload(entry, reason) {
     version: Number(entry?.version || 0),
     governance_status: 'curated',
     reason: nullableTrimmed(reason)
+  }
+}
+
+export function buildDeprecationWithdrawalPayload(entry, reason) {
+  return { version: Number(entry?.version || 0), governance_status: 'curated', reason: nullableTrimmed(reason) }
+}
+
+export function buildResponsibilityTransferPayload(form) {
+  return {
+    version: Number(form.version),
+    reason: String(form.reason || '').trim(),
+    responsibilities: buildUpdatePayload(form).responsibilities
   }
 }
 

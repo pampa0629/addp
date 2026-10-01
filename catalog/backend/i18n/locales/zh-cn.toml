@@ -24,7 +24,7 @@ other = "认证要求未满足：来源必须有效，业务编目与责任必�
 [catalog.error.certification_withdrawal_reason_required]
 other = "撤销认证必须填写原因"
 [catalog.error.deprecation_permission_required]
-other = "弃用企业目录条目需要独立弃用权限"
+other = "弃用或撤销弃用企业目录条目需要独立弃用权限"
 [catalog.error.reference_validation_unavailable]
 other = "语义或责任引用校验服务当前不可用"
 [catalog.error.source_rebind_conflict]
@@ -38,7 +38,7 @@ other = "查看企业资源盘点需要独立的盘点权限"
 [catalog.error.curation_requirements_not_met]
 other = "业务名称、业务说明、主业务域和必要责任尚未完整"
 [catalog.error.deprecation_reason_required]
-other = "弃用企业目录条目必须填写原因"
+other = "弃用或撤销弃用企业目录条目必须填写原因"
 [catalog.error.invalid_recommended_successor]
 other = "推荐继任项必须是当前租户中来源有效且已编目或已认证的目录条目"
 [catalog.error.user_principal_required]
@@ -87,9 +87,9 @@ other = "认证企业目录条目"
 [permissions.catalog.entry.certify.description]
 other = "将满足条件的企业目录条目推进为已认证状态"
 [permissions.catalog.entry.deprecate.name]
-other = "弃用企业目录条目"
+other = "弃用与撤销弃用企业目录条目"
 [permissions.catalog.entry.deprecate.description]
-other = "弃用企业目录条目、记录治理原因并维护可选推荐继任项"
+other = "弃用或撤销弃用企业目录条目、记录治理原因并维护可选推荐继任项"
 [permissions.catalog.source.rebind.name]
 other = "重绑目录来源"
 [permissions.catalog.source.rebind.description]

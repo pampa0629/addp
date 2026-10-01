@@ -1216,7 +1216,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "使用聚合根 version 原子执行认证、撤销认证、弃用或弃用信息维护；只更新治理状态、可选推荐继任项和领域审计，不替换业务编目事实；撤销认证和弃用必须填写原因；推荐继任只允许指向同租户、来源有效且已编目或已认证的 active 条目 | Atomically certify, withdraw certification, deprecate, or maintain deprecation information using the aggregate version; only governance status, the optional recommended successor, and domain audit are updated, while curation facts remain unchanged; certification withdrawal and deprecation require a reason; a successor must be an active-source curated or certified entry in the same tenant",
+                "description": "仅对当前可见条目使用 version 原子执行认证、撤销认证、弃用、撤销弃用或继任项维护；撤销弃用需要弃用权限和原因，只回到已编目并清除当前继任项，保留历史，不恢复认证、数据权限或资产发布；其他编目事实保持不变 | Atomically certify, withdraw certification, deprecate, withdraw deprecation or maintain successors on a currently visible entry using version; withdrawing deprecation requires deprecation permission and a reason, returns only to curated and clears the current successor while retaining history, without restoring certification, data permissions or asset publication; other curation facts remain unchanged",
                 "consumes": [
                     "application/json"
                 ],
@@ -1294,6 +1294,7 @@
                     "catalog.entry.deprecate"
                 ],
                 "x-addp-required-permissions": [
+                    "catalog.entry.read",
                     "catalog.entry.update"
                 ]
             }
@@ -1450,6 +1451,99 @@
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "catalog.source.rebind"
+                ]
+            }
+        },
+        "/entries/{id}/responsibilities": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅对当前可见且已弃用的 active 条目，按 version 原子替换完整责任关系；须填写原因及有效责任部门、业务负责人和数据管理员；状态、业务定义、语义、可见范围设置及来源保持不变；责任部门变化影响部门可见范围；替换旧责任时自动解决关联任务并记录审计；不需要弃用权限，不授予数据权限 | Atomically replace complete responsibilities of a currently visible active deprecated entry using version; a reason and valid department, business owner and steward are required; state, business definitions, semantics, visibility setting and source remain unchanged; department changes affect department visibility; replaced responsibility tasks are resolved with audit; deprecation permission is not required and no data permissions are granted",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Catalog Governance"
+                ],
+                "summary": "移交已弃用条目责任 | Transfer responsibilities of a deprecated entry",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "目录条目 UUID | Catalog entry UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "完整责任移交请求 | Complete responsibility transfer",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.transferEntryResponsibilitiesRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "移交后的条目 | Entry after transfer",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_catalog_internal_service.EntryDetail"
+                        }
+                    },
+                    "400": {
+                        "description": "请求或责任结构无效 | Invalid request or responsibility structure",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "缺少读取或维护权限 | Missing read or update permission",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "条目不存在或不可见 | Entry missing or not visible",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "版本、状态或引用冲突 | Version, state or reference conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "责任校验服务不可用 | Responsibility validation unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "catalog.entry.read",
+                    "catalog.entry.update"
                 ]
             }
         },
@@ -4518,6 +4612,31 @@
                 },
                 "version": {
                     "type": "integer"
+                }
+            }
+        },
+        "internal_api.transferEntryResponsibilitiesRequest": {
+            "type": "object",
+            "required": [
+                "reason",
+                "responsibilities",
+                "version"
+            ],
+            "properties": {
+                "reason": {
+                    "type": "string"
+                },
+                "responsibilities": {
+                    "type": "array",
+                    "maxItems": 200,
+                    "minItems": 3,
+                    "items": {
+                        "$ref": "#/definitions/internal_api.updateResponsibilityRequest"
+                    }
+                },
+                "version": {
+                    "type": "integer",
+                    "minimum": 1
                 }
             }
         },
