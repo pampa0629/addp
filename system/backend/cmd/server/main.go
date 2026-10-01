@@ -106,6 +106,9 @@ func main() {
 		Handler: router,
 	}
 
+	runtimeContext, stopRuntime := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stopRuntime()
+
 	// 在 goroutine 中启动服务器
 	go func() {
 		logger.L().Info("系统服务启动", "addr", cfg.ServerAddr)
@@ -115,50 +118,21 @@ func main() {
 		}
 	}()
 
-	// 启动服务注册与心跳（在服务器启动后）
+	// System 直接使用本地注册服务，退出前等待注销完成。
+	moduleRegistryService := service.NewModuleRegistryService(repository.NewModuleRegistryRepository(db))
+	serviceURL := commonConfig.BuildServiceURL(commonConfig.GetServiceHost(), cfg.ServerAddr)
+	registrationDone, registrationErr := startSystemRegistration(runtimeContext, moduleRegistryService,
+		newSystemRegistrationRequest(serviceURL, uuid.NewString()))
+	if registrationErr != nil {
+		logger.L().Error("System 模块注册失败", "error", registrationErr)
+	}
+	cleanupDone := make(chan struct{})
 	go func() {
-		// 等待3秒确保服务完全启动
-		time.Sleep(3 * time.Second)
-
-		// 构建服务URL
-		serviceHost := commonConfig.GetServiceHost()
-		serviceURL := commonConfig.BuildServiceURL(serviceHost, cfg.ServerAddr)
-
-		// 注册自己到模块注册表
-		moduleRegistryRepo := repository.NewModuleRegistryRepository(db)
-		moduleRegistryService := service.NewModuleRegistryService(moduleRegistryRepo)
-
-		// System 模块注册自己
-		instanceID := uuid.NewString()
-		registrationReq := newSystemRegistrationRequest(serviceURL, instanceID)
-
-		if err := moduleRegistryService.Register(registrationReq); err != nil {
-			logger.L().Error("System 模块注册失败", "error", err)
-		} else {
-			logger.L().Info("System 模块注册成功", "url", serviceURL)
-		}
-
-		// 启动心跳 goroutine
-		go func() {
-			ticker := time.NewTicker(10 * time.Second)
-			defer ticker.Stop()
-
-			for range ticker.C {
-				if err := moduleRegistryService.SendHeartbeat("system", instanceID); err != nil {
-					logger.L().Error("System 心跳失败", "error", err)
-				} else {
-					logger.L().Debug("System 心跳成功")
-				}
-			}
-		}()
-
-		// 启动租约回收任务（只标记超时运行实例，不删除模块定义）
-		ctx := context.Background()
-		go moduleRegistryService.StartCleanupTask(ctx)
+		defer close(cleanupDone)
+		moduleRegistryService.StartCleanupTask(runtimeContext)
 	}()
 
 	// 启动健康检查（在后台 goroutine 中持续更新最近连接状态）
-	healthCheckContext, cancelHealthChecks := context.WithCancel(context.Background())
 	go func() {
 		// 初始化 Redis 客户端（用于 EngineService）
 		var redisClient *redis.Client
@@ -176,20 +150,15 @@ func main() {
 
 		// 创建并运行健康检查器
 		healthChecker := service.NewHealthChecker(engineService)
-		healthChecker.Run(healthCheckContext, service.DefaultHealthCheckInterval)
+		healthChecker.Run(runtimeContext, service.DefaultHealthCheckInterval)
 	}()
 
-	// 等待中断信号以优雅关闭服务器
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
-
+	<-runtimeContext.Done()
 	logger.L().Info("正在关闭 System 服务器...")
-	cancelHealthChecks()
-
-	// 关闭所有数据库连接池
-	dbbridge.CloseAllPools()
-	logger.L().Info("已关闭所有数据库连接池")
+	if registrationDone != nil {
+		<-registrationDone
+	}
+	<-cleanupDone
 
 	// 关闭 HTTP 服务器，设置 5 秒超时
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -199,7 +168,42 @@ func main() {
 		logger.L().Error("服务器强制关闭", "error", err)
 	}
 
+	// 先结束 HTTP 在途请求，再关闭它们使用的数据库连接池。
+	dbbridge.CloseAllPools()
+	logger.L().Info("已关闭所有数据库连接池")
 	logger.L().Info("System 服务器已关闭")
+}
+
+func startSystemRegistration(ctx context.Context, registry *service.ModuleRegistryService, request *models.ModuleRegistrationRequest) (<-chan struct{}, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if err := registry.Register(request); err != nil {
+		return nil, err
+	}
+	logger.L().Info("System 模块注册成功", "url", request.ModuleURL)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		defer func() {
+			if err := registry.Deregister(request.ModuleName, request.InstanceID); err != nil {
+				logger.L().Error("System 模块注销失败", "error", err)
+			}
+		}()
+		ticker := time.NewTicker(10 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if err := registry.SendHeartbeat(request.ModuleName, request.InstanceID); err != nil {
+					logger.L().Error("System 心跳失败", "error", err)
+				}
+			}
+		}
+	}()
+	return done, nil
 }
 
 func newSystemRegistrationRequest(serviceURL, instanceID string) *models.ModuleRegistrationRequest {

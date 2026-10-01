@@ -434,75 +434,136 @@ print("PASS: restart preserves cache, batches Swagger and stops on generation fa
 PY
 }
 
-test_stop_batches_listening_ports() {
+test_stop_keeps_system_available_for_deregistration() {
   python3 - "$ROOT_DIR" "$TEST_ROOT" <<'PY'
 import os
 from pathlib import Path
-import re
+import shutil
 import subprocess
 import sys
 
-root, temporary = map(Path, sys.argv[1:])
-source = (root / "scripts/dev/stop.sh").read_text()
-# Exercise the actual Phase 6 orchestration without running destructive stop phases.
-phase = source.split("  # Phase 6:", 1)[1].split("  # Phase 7:", 1)[0]
-phase = phase.split("\n", 1)[1]
-helper = re.search(r"^stop_port_listeners\(\) \{.*?^\}", source, re.M | re.S)
-helpers = helper.group(0) if helper else ""
-for mode in ("listeners", "empty"):
-    workspace = temporary / ("stop-ports-" + mode)
-    workspace.mkdir()
-    script = r'''
-YELLOW= RED= NC=
-ROOT_DIR="$FIXTURE_ROOT"
-addp_dev_port_specs() { printf 'system SYSTEM_BACKEND_PORT 8180\nmanager MANAGER_BACKEND_PORT 8081\nconsole-frontend CONSOLE_FE_PORT 5170\n'; }
-addp_dev_saved_port() { :; }
-addp_dev_pid_owned_by_workspace() { [ "$1" = 101 ]; }
-lsof() {
-  printf '%s\n' "$*" >> "$FIXTURE_ROOT/lsof-calls"
-  [ "$FIXTURE_MODE" != empty ] || return 1
-  if [[ " $* " == *" -Fp "* ]]; then
-    printf 'p101\nf10\np202\nf12\np101\nf15\np303\nf19\n'
-  else
-    printf '101\n202\n303\n'
+repository, temporary = map(Path, sys.argv[1:])
+for mode in ('pid', 'listeners', 'launchd', 'launchd-failure'):
+    root = temporary / ('stop-order-' + mode)
+    (root / 'scripts/dev').mkdir(parents=True)
+    (root / 'scripts/utils').mkdir()
+    (root / 'scripts/utils/colors.sh').write_text('YELLOW= RED= GREEN= NC=\n')
+    for name in ('stop.sh', 'ports.sh', 'lifecycle-lock.sh'):
+        shutil.copy2(repository / 'scripts/dev' / name, root / 'scripts/dev' / name)
+    (root / '.dev-pids').mkdir()
+    for pid in (101, 102, 103, 105):
+        (root / str(pid)).touch()
+    if mode != 'listeners':
+        for name, pid in (('system', 101), ('meta-worker', 102), ('manager-backend', 103)):
+            (root / '.dev-pids' / (name + '.pid')).write_text(str(pid))
+    else:
+        # Workers without listeners still use their PID file.
+        (root / '.dev-pids/meta-worker.pid').write_text('102')
+    hooks = root / 'hooks.sh'
+    hooks.write_text(r'''
+uname() { printf 'Darwin\n'; }
+sleep() { :; }
+ps() {
+  [ -f "$FIXTURE_ROOT/$2" ] || return 1
+  if [[ " $* " == *" -o command= "* ]]; then
+    case "$2" in
+      101)
+        if [ "$FIXTURE_MODE" = listeners ]; then
+          printf '%s/.dev-bins/addp-system\n' "$FIXTURE_ROOT"
+        else
+          printf '.dev-bins/addp-system\n'
+        fi ;;
+      202) printf '/other-workspace/server\n' ;;
+      *) printf '%s/.dev-bins/addp-manager\n' "$FIXTURE_ROOT" ;;
+    esac
   fi
 }
-
-
-ps() {
-  printf '%s\n' "$*" >> "$FIXTURE_ROOT/ps-calls"
-  case "$2" in
-    101) printf '/workspace/.dev-bins/addp-manager\n' ;;
-    202) printf '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome\n' ;;
-    303) return 1 ;;
-    *) printf '/workspace/.dev-bins/addp-manager\n/Applications/Google Chrome\n' ;;
+lsof() {
+  if [[ " $* " == *" -d cwd "* ]]; then
+    if [ "$4" = 202 ]; then printf 'n/other-workspace\n'; else printf 'n%s\n' "$FIXTURE_ROOT"; fi
+  else
+    echo "$*" >> "$FIXTURE_ROOT/scans"
+    # Duplicate owned listeners, a foreign listener and an exited listener.
+    printf 'p101\np103\np105\np105\np202\np303\n'
+  fi
+}
+finish_module() {
+  [ -f "$FIXTURE_ROOT/101" ] || echo unavailable >> "$FIXTURE_ROOT/failures"
+  echo "deregister $1" >> "$FIXTURE_ROOT/events"
+  rm -f "$FIXTURE_ROOT/$1"
+}
+kill() {
+  local pid="${@: -1}"
+  echo "signal $*" >> "$FIXTURE_ROOT/events"
+  if [ "$pid" = 101 ]; then
+    for dependent in 102 103 105; do
+      [ ! -f "$FIXTURE_ROOT/$dependent" ] || echo premature >> "$FIXTURE_ROOT/failures"
+    done
+    [ -f "$FIXTURE_ROOT/runtime-stopped" ] || echo runtime-premature >> "$FIXTURE_ROOT/failures"
+    rm -f "$FIXTURE_ROOT/101"
+  elif [ "$pid" = 103 ] && [ "$1" != '-KILL' ]; then
+    # A module can exceed the grace period; it must be forced before System.
+    echo slow >> "$FIXTURE_ROOT/events"
+  elif [ "$1" = '-KILL' ]; then
+    rm -f "$FIXTURE_ROOT/$pid"
+  else
+    finish_module "$pid"
+  fi
+}
+launchctl() {
+  case "$1" in
+    list)
+      case "$FIXTURE_MODE" in launchd*) printf '101 0 com.addp.codex.system\n102 0 com.addp.codex.worker\n202 0 com.addp.codex.foreign\n';; esac ;;
+    print)
+      case "$2" in
+        *.system) [ -f "$FIXTURE_ROOT/101" ] && printf '%s/.dev-bins/addp-system\n' "$FIXTURE_ROOT" ;;
+        *.worker) [ -f "$FIXTURE_ROOT/102" ] && printf '%s/.dev-bins/addp-meta-worker\n' "$FIXTURE_ROOT" ;;
+        *.foreign) printf '/other-workspace/server\n' ;;
+      esac ;;
+    bootout)
+      echo "bootout $2" >> "$FIXTURE_ROOT/events"
+      case "$2" in
+        *.system) kill 101 ;;
+        *.worker) [ "$FIXTURE_MODE" != launchd-failure ] || return 1; finish_module 102 ;;
+        *) echo foreign >> "$FIXTURE_ROOT/failures" ;;
+      esac ;;
   esac
 }
-kill() { printf '%s\n' "$*" >> "$FIXTURE_ROOT/kill-calls"; }
-'''
-    script += helpers + "\nrun_phase() {\n" + phase + "\n}\nrun_phase\n"
-    result = subprocess.run(["bash", "-c", script], text=True, capture_output=True,
-                            env=dict(os.environ, FIXTURE_ROOT=str(workspace), FIXTURE_MODE=mode), timeout=10)
-    assert result.returncode == 0, result.stdout + result.stderr
-    calls = (workspace / "lsof-calls").read_text().splitlines()
-    assert len(calls) == 1, f"expected one listener scan, got {len(calls)}"
-    args = calls[0].split()
-    assert {"-nP", "-a", "-sTCP:LISTEN", "-Fp"} <= set(args), args
-    ports = next(arg.removeprefix("-iTCP:") for arg in args if arg.startswith("-iTCP:"))
-    assert {"8180", "8081", "5170"} <= set(ports.split(",")), ports
-    if mode == "listeners":
-        assert (workspace / "kill-calls").read_text().splitlines() == ["-9 101"]
-        assert (workspace / "ps-calls").read_text().splitlines() == [
-            "-p 101 -o command=", "-p 202 -o command=", "-p 303 -o command=",
-        ]
-        assert "202" in result.stdout and "其他工作区" in result.stdout
-        assert "303" not in result.stdout, "exited processes must not produce misleading warnings"
-    else:
-        assert not (workspace / "kill-calls").exists()
-        assert not (workspace / "ps-calls").exists()
-print("PASS: one LISTEN-only scan, deduplicated PIDs, foreign listeners preserved, exited/empty skipped")
+docker() {
+  case "$1" in
+    inspect)
+      [ "${@: -1}" = pointcloud-workflow-engine ] || return 1
+      printf 'addp-runtimes|pointcloud-workflow-engine|%s\n' "$FIXTURE_ROOT" ;;
+    stop)
+      [ -f "$FIXTURE_ROOT/101" ] || echo container-unavailable >> "$FIXTURE_ROOT/failures"
+      echo "docker $*" >> "$FIXTURE_ROOT/events"
+      touch "$FIXTURE_ROOT/runtime-stopped" ;;
+    rm)
+      [ -f "$FIXTURE_ROOT/runtime-stopped" ] || echo container-force >> "$FIXTURE_ROOT/failures"
+      echo "docker $*" >> "$FIXTURE_ROOT/events" ;;
+  esac
+}
+''')
+    (root / '202').touch()
+    env = {k: v for k, v in os.environ.items() if not k.startswith('ADDP_LIFECYCLE_')}
+    env.update(BASH_ENV=str(hooks), FIXTURE_ROOT=str(root), FIXTURE_MODE=mode)
+    result = subprocess.run(['bash', str(root / 'scripts/dev/stop.sh')],
+                            env=env, capture_output=True, text=True, timeout=15)
+    assert (result.returncode != 0) == (mode == 'launchd-failure'), result.stdout + result.stderr
+    assert not (root / 'failures').exists(), (mode, (root / 'failures').read_text(), result.stdout)
+    events = (root / 'events').read_text().splitlines()
+    assert 'deregister 102' in events and 'deregister 105' in events, events
+    assert any(event == 'signal -KILL 103' for event in events), events
+    assert sum('105' in event and event.startswith('signal ') for event in events) == 1, events
+    assert (root / '202').exists(), 'foreign listener was terminated'
+    scans = (root / 'scans').read_text().splitlines()
+    assert len(scans) == 1 and '-sTCP:LISTEN' in scans[0] and '-Fp' in scans[0], scans
+    assert '-iTCP:8000,8180,8081' in scans[0], scans
+    assert not (root / '.dev-state/lifecycle.lock').exists(), 'stop leaked lifecycle lock'
+print('PASS: System stops last; deregistration, bounded TERM/KILL, Runtime, launchd and foreign listeners')
 PY
 }
+
 
 test_dev_port_resolution() {
   local workspace="${TEST_ROOT}/dev-ports"
@@ -1160,12 +1221,12 @@ print('PASS: per-module Worker ordering, independent progress, dead/timeout Back
 PY
 }
 
+test_stop_keeps_system_available_for_deregistration
 test_worker_backend_readiness_order
 test_swagger_incremental_generation
 test_start_batches_listening_ports
 test_parallel_runtime_startup
 test_python_dependency_install_lock
-test_stop_batches_listening_ports
 test_dev_port_resolution
 test_dev_real_listener_collision
 test_dev_owned_listener_matches_recorded_pid

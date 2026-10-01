@@ -257,6 +257,7 @@ frontend/src/
 **system.module_definitions / system.module_runtime_instances 表**:
 - `module_definitions` 按稳定 `module_name` 保存持久定义和管理员 `enabled` 状态，进程离线不删除定义
 - `module_definitions.version` 是聚合根乐观并发版本；心跳不得递增它，幂等重复注册保持版本不变，只有 owner 模块级声明实际变化时才原子递增且不得覆盖管理员 `enabled`
+- System Backend 自身注册生命周期使用进程信号 Context，退出前完成实例注销、等待心跳与清理任务结束；开发停止顺序为其他模块和 Runtime 先退出、System 最后退出，正常注销记录 `graceful`，未完成注销的强制终止或失联实例仍按租约超时判断。
 - `module_runtime_instances` 按 `(module_definition_id, instance_id)` 保存进程角色、端点、运行环境主机名 `runtime_hostname`、部署注入的宿主节点名 `host_node_name`、元数据、心跳和租约
 - 心跳只续租实例；只有 `enabled + backend + up + lease valid` 的实例可供 Gateway 路由
 - `configuration_management` 只保存版本化配置管理入口声明（owner、scope、前端路由和读写 Permission），不保存模块配置键、配置值或 Secret

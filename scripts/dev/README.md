@@ -58,9 +58,9 @@ bash scripts/dev/start.sh
 # 停止所有服务
 bash scripts/dev/stop.sh
 # 自动执行:
-# 1. 卸载当前工作区的 com.addp.codex.* launchd 托管作业
-# 2. 读取 PID 文件,优雅停止进程
-# 3. 清理 Vite 缓存和孤立进程
+# 1. 合并 PID 文件与工作区残留监听者
+# 2. 停止其他模块和 Runtime，保留 System 供注销
+# 3. 最后停止 System，清理 Vite 缓存和 PID 文件
 
 # 重启服务
 bash scripts/dev/restart.sh
@@ -122,13 +122,12 @@ SKIP_MODTIDY=1 bash scripts/dev/start.sh
 **功能**: 停止所有开发服务
 
 **执行步骤**:
-1. 在 macOS 上卸载当前工作区的 `com.addp.codex.*` launchd 托管作业
-2. 读取 PID 文件(`.dev-pids/*.pid`)
-3. 优雅停止进程(`kill -TERM`)
-4. 等待进程退出(最多5秒)
-5. 强制杀死未退出进程(`kill -9`)
-6. 按进程名和开发端口清理 ADDP 残留进程
-7. 清理 Vite 缓存(`node_modules/.vite/`)并删除 PID 文件
+1. 合并 PID 文件和一次批量端口扫描中的工作区监听者，按 PID 去重
+2. 卸载其他模块的 launchd 作业，向其他模块、Worker 和前端发送 TERM
+3. 等待最多 5 秒，超时才发送 KILL；System 保持可用，接收实例注销
+4. 对工作区 Runtime 容器先执行 `docker stop -t 5`，再删除容器
+5. 最后卸载 System 的 launchd 作业、停止 System Backend，独立等待最多 5 秒
+6. 清理 Vite 缓存和 PID 文件
 
 **安全性**:
 - launchd 作业必须同时满足 `com.addp.codex.*` 标签和当前仓库绝对路径才会被卸载
