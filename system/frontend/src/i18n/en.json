@@ -124,6 +124,10 @@
         "timeHint": "The range filters the selected time basis; status is current UP/DOWN. Offline time only returns instances still offline and excludes recovered instances; lease expiry does not prove process exit. Address search exactly matches the registered host or IP; instances without an endpoint can be queried by runtime node name.",
         "empty": "No service instances match the filters",
         "loadFailed": "Failed to load service instances",
+        "notLoaded": "No successful data fetch for the current query yet",
+        "lastSuccess": "Last successful refresh: {time}",
+        "staleData": "Data is stale",
+        "staleHint": "Showing the last successfully fetched data. Instance status may have changed. Refresh the list.",
         "periods": { "m15": "Last 15 minutes", "m30": "Last 30 minutes", "h1": "Last hour", "h6": "Last 6 hours", "h12": "Last 12 hours", "h24": "Last 24 hours", "d7": "Last 7 days" }
       }
     },

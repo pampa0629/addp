@@ -121,9 +121,6 @@ func (b *ConsentBridge) CreateAuthorizationRequest(
 		return nil, err
 	}
 	requester.SetID(requestID.String())
-	if concrete, ok := requester.(*fosite.AuthorizeRequest); ok {
-		concrete.RequestedAt = b.now()
-	}
 	requestSecret, err := generateRequestSecret()
 	if err != nil {
 		return nil, err
@@ -133,12 +130,11 @@ func (b *ConsentBridge) CreateAuthorizationRequest(
 	if err != nil {
 		return nil, err
 	}
-	expiresAt := b.now().Add(b.requestTTL)
 	if err := b.provider.Storage.createAuthorizationRequest(
 		txCtx,
 		requester,
 		opaqueSignature(requestSecret),
-		expiresAt,
+		b.requestTTL,
 	); err != nil {
 		_ = b.provider.Storage.Rollback(txCtx)
 		return nil, err
@@ -653,7 +649,7 @@ func (s *Storage) createAuthorizationRequest(
 	ctx context.Context,
 	requester fosite.AuthorizeRequester,
 	requestSecretHash string,
-	expiresAt time.Time,
+	requestTTL time.Duration,
 ) error {
 	if err := validateStorageSignature(requestSecretHash); err != nil {
 		return err
@@ -666,6 +662,11 @@ func (s *Storage) createAuthorizationRequest(
 	if responseMode == fosite.ResponseModeDefault {
 		responseMode = fosite.ResponseModeQuery
 	}
+	databaseNow, err := s.databaseNow(ctx)
+	if err != nil {
+		return err
+	}
+	expiresAt := databaseNow.Add(requestTTL)
 	row := &authorizationRequestRow{
 		ID:                 requestID,
 		RequestSecretHash:  requestSecretHash,
@@ -676,9 +677,9 @@ func (s *Storage) createAuthorizationRequest(
 		RequestedScopes:    pq.StringArray(append([]string(nil), requester.GetRequestedScopes()...)),
 		RequestedAudiences: pq.StringArray(append([]string(nil), requester.GetRequestedAudience()...)),
 		Status:             "pending",
-		RequestedAt:        requester.GetRequestedAt().UTC(),
-		ExpiresAt:          expiresAt.UTC(),
-		CreatedAt:          s.now(),
+		RequestedAt:        databaseNow,
+		ExpiresAt:          expiresAt,
+		CreatedAt:          databaseNow,
 	}
 	if err := s.dbFromContext(ctx).Create(row).Error; err != nil {
 		return toFositeStorageError(err)
@@ -687,8 +688,8 @@ func (s *Storage) createAuthorizationRequest(
 		AuthorizationRequestID: requestID,
 		CodeChallenge:          requester.GetRequestForm().Get("code_challenge"),
 		CodeChallengeMethod:    requester.GetRequestForm().Get("code_challenge_method"),
-		ExpiresAt:              expiresAt.UTC(),
-		CreatedAt:              s.now(),
+		ExpiresAt:              expiresAt,
+		CreatedAt:              databaseNow,
 	}).Error)
 }
 

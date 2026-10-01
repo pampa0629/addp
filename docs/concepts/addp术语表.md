@@ -483,6 +483,7 @@
 | source data authorization authority | 源数据授权权威 | 同一源数据逻辑资源访问规则的唯一维护方。 | 已确认由 System 的引擎访问控制领域承担，不是 System IAM 的全平台中央 ACL；访问模块执行其权威规则，不能分别维护源数据授权副本。专业业务对象的授权仍归各自 owner；表级贯通尚未实现。 |
 | source data authorization target | 源数据授权目标 | 在 Tenant 边界内，以已登记 Engine 身份和完整结构化 EngineCatalogPath 确定的源数据逻辑资源。 | 不是物理对象每次创建的身份；没有在 ADDP 中改变资源绑定或授权时，外部同名重建仍按同一逻辑资源处理。不同 Engine 或路径是不同目标，不随 Catalog 重绑自动转移规则；指纹、Meta 行 ID 和 CatalogEntry ID 不代替当前有效访问规则。 |
 | business authorization decision | 业务授权决定 | 有效业务责任人对一次明确资源、接收主体、动作和期限的共享或权限扩大作出的确认。 | 不等于责任身份、IAM Role、Resource Grant 或数据访问成功；必须验证当前资格并由授权维护方履约。普通只读共享允许确认人与办理人同人，但必须分别具备两方面资格；不隐含允许申请人自批。 |
+| authorization fulfillment acceptance | 授权办理接受 | Catalog 在最终核验当前业务责任后，正式接受一次精确业务授权决定的行为。 | 是责任资格的分界，不是访问权限生效；接受前移交须由新负责人重新确认，接受后仅同一次、同参数办理可继续。自动办理窗口从正式接受起为 5 分钟，且不得晚于本次拟授权的绝对到期时间；不限制人员填写或审核时间，不改变接收方访问期限。已弃用条目禁止新的接受，弃用前已接受的同次办理仍按原窗口继续；已有访问规则单独撤销。必须与责任变更、弃用有可验证的先后顺序；接口尚待实施，不是永久凭据、Grant 副本或新的编目状态。 |
 | business responsibility establishment evidence | 业务责任建立依据 | Catalog 对企业条目是否曾明确保存有效业务负责人的不可回退历史依据。 | 首次保存有效 `business_owner` 即建立，不以完成编目为前提；仅分配部门或业务域不算。撤销编目、责任移交或失效不清除此依据。旧历史不足时保留未知，不等同从未建立；不是新的治理阶段、当前资格证明或数据授权。 |
 | authorization fulfillment | 授权办理 | 具备办理功能和目标管理范围的主体，将有效业务或接入授权依据落实为资源访问规则，或执行规则撤销的行为。 | 办理权限不等于业务批准权；业务责任人、数据管理员和技术维护者不因承担责任自动获得办理或内容访问权。 |
 | engine access management delegation | 引擎授权管理委派 | System 引擎访问控制领域将一个明确 Engine 的有限授权管理资格，显式委派给当前 Tenant 的有效用户成员。 | 独立于 Role Assignment、Catalog 责任和内容访问 Grant；必须指定到期时间与原因，可撤销，不允许转委派。首版不包含 namespace 递归、写入、DDL 或整库读取。 |

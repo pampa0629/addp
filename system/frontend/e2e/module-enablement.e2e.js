@@ -150,6 +150,7 @@ test('System and Gateway stay enabled while a business module can be disabled', 
   await page.locator('.module-instances .el-select').nth(2).click()
   await page.getByRole('option', { name: '全部状态', exact: true }).click()
   await expect.poll(() => instanceQueries.at(-1)?.status).toBeUndefined()
+  await expect(page.locator('.module-instances .el-select').nth(2)).toContainText('全部状态')
   await expect(page.locator('.module-instances .el-table__body tr')).toHaveCount(2)
   await page.locator('.module-instances .el-select').nth(2).click()
   await page.getByRole('option', { name: 'DOWN · 离线', exact: true }).click()
@@ -256,10 +257,13 @@ test('instance queries renew leases without losing filters or accepting an older
     const url = new URL(response.url())
     return url.pathname.endsWith('/platform/module-instances') && url.searchParams.get('status') === 'up'
   })
+  const latestFreshness = await query.getByTestId('instance-query-freshness').innerText()
+  await page.clock.fastForward(1000)
   releaseRefresh()
   await (await oldResponse).finished()
   await expect(query.getByText('down-1-0', { exact: true })).toBeVisible()
   await expect(query.getByText('up-2-0', { exact: true })).toHaveCount(0)
+  await expect(query.getByTestId('instance-query-freshness')).toHaveText(latestFreshness)
 
   await page.getByRole('tab', { name: '模块概览' }).click()
   const afterLeave = instanceQueries.length
@@ -292,6 +296,9 @@ test('one instance expires and recovers while automatic refresh preserves filter
   })
   await page.goto('/modules?tab=instances&module_name=manager&registered_host=manager.local&node_name=host-a&role=backend&status=all')
   const list = page.locator('.module-instances')
+  await expect(list.locator('.el-select').filter({
+    has: page.getByRole('combobox', { name: '运行状态', exact: true })
+  })).toContainText('全部状态')
   const row = () => list.locator('.el-table__row').filter({ hasText: instance.instance_id })
   const selectStatus = async label => {
     await list.locator('.el-select').filter({

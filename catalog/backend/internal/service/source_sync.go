@@ -118,10 +118,8 @@ func (s *SourceSyncService) applyBatch(ctx context.Context, tenantID int64, expe
 		if checkpoint.Cursor != expectedCursor {
 			return fmt.Errorf("Catalog source checkpoint changed concurrently")
 		}
-		for _, change := range batch.Changes {
-			if err := applyMetaDataItemChange(tx, tenantID, change); err != nil {
-				return err
-			}
+		if err := applyMetaDataItemChanges(tx, tenantID, batch.Changes...); err != nil {
+			return err
 		}
 		checkpoint.Cursor = batch.NextCursor
 		if err := tx.Save(checkpoint).Error; err != nil {
@@ -153,21 +151,37 @@ func lockCheckpoint(tx *gorm.DB, tenantID int64) (*models.SourceCheckpoint, erro
 	return &checkpoint, nil
 }
 
-func applyMetaDataItemChange(tx *gorm.DB, tenantID int64, change commonClient.MetaDataItemChange) error {
+func applyMetaDataItemChanges(tx *gorm.DB, tenantID int64, changes ...commonClient.MetaDataItemChange) error {
+	references := make([]CatalogSourceReference, 0, len(changes))
+	for _, change := range changes {
+		references = append(references, CatalogSourceReference{SourceModule: models.SourceModuleMeta,
+			SourceType: models.SourceTypeDataItem, SourceIdentity: strings.TrimSpace(change.SourceIdentity)})
+	}
+	bindings, err := lockSourceChangeBindings(tx, tenantID, references)
+	if err != nil {
+		return err
+	}
+	for _, change := range changes {
+		if err := applyMetaDataItemChange(tx, tenantID, change, bindings); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func applyMetaDataItemChange(tx *gorm.DB, tenantID int64, change commonClient.MetaDataItemChange, bindings map[string]*models.SourceBinding) error {
 	identity := strings.TrimSpace(change.SourceIdentity)
 	if identity == "" || len(change.SourceVersion) != 20 || (change.Operation != "upsert" && change.Operation != "missing") {
 		return fmt.Errorf("%w: malformed Meta DataItem change", ErrInvalidSourceChange)
 	}
-	var binding models.SourceBinding
-	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where(
-		"tenant_id = ? AND source_module = ? AND source_type = ? AND source_identity = ? AND is_current = ?",
-		tenantID, models.SourceModuleMeta, models.SourceTypeDataItem, identity, true,
-	).First(&binding).Error
-	if err == gorm.ErrRecordNotFound {
-		return createEntryFromMetaChange(tx, tenantID, change)
-	}
-	if err != nil {
-		return fmt.Errorf("find Catalog source binding: %w", err)
+	key := sourceReferenceKey(models.SourceModuleMeta, models.SourceTypeDataItem, identity)
+	binding := bindings[key]
+	if binding == nil {
+		created, err := createEntryFromMetaChange(tx, tenantID, change)
+		if err == nil {
+			bindings[key] = created
+		}
+		return err
 	}
 	if binding.SourceVersion >= change.SourceVersion {
 		return nil
@@ -183,13 +197,14 @@ func applyMetaDataItemChange(tx *gorm.DB, tenantID int64, change commonClient.Me
 		reason := "source_not_observed"
 		missingReason = &reason
 	}
-	if err := tx.Model(&binding).Updates(map[string]interface{}{
+	if err := tx.Model(binding).Updates(map[string]interface{}{
 		"source_status": status, "source_version": change.SourceVersion,
 		"observed_snapshot": commonModels.JSONMap(change.Snapshot), "observed_at": change.ObservedAt,
 		"missing_at": missingAt, "missing_reason": missingReason,
 	}).Error; err != nil {
 		return fmt.Errorf("update Catalog source binding: %w", err)
 	}
+	binding.SourceVersion = change.SourceVersion
 	if err := syncComponents(tx, tenantID, binding.CatalogEntryID, change); err != nil {
 		return err
 	}
@@ -200,7 +215,7 @@ func applyMetaDataItemChange(tx *gorm.DB, tenantID int64, change commonClient.Me
 	return enqueueProjection(tx, tenantID, binding.CatalogEntryID)
 }
 
-func createEntryFromMetaChange(tx *gorm.DB, tenantID int64, change commonClient.MetaDataItemChange) error {
+func createEntryFromMetaChange(tx *gorm.DB, tenantID int64, change commonClient.MetaDataItemChange) (*models.SourceBinding, error) {
 	now := change.ObservedAt.UTC()
 	established := false
 	entry := models.Entry{
@@ -210,7 +225,7 @@ func createEntryFromMetaChange(tx *gorm.DB, tenantID int64, change commonClient.
 		BusinessResponsibilityEstablished: &established,
 	}
 	if err := tx.Create(&entry).Error; err != nil {
-		return fmt.Errorf("create Catalog entry: %w", err)
+		return nil, fmt.Errorf("create Catalog entry: %w", err)
 	}
 	status := models.SourceStatusActive
 	var missingAt *time.Time
@@ -229,19 +244,22 @@ func createEntryFromMetaChange(tx *gorm.DB, tenantID int64, change commonClient.
 		ObservedSnapshot: commonModels.JSONMap(change.Snapshot), ObservedAt: now,
 	}
 	if err := tx.Create(&binding).Error; err != nil {
-		return fmt.Errorf("create Catalog source binding: %w", err)
+		return nil, fmt.Errorf("create Catalog source binding: %w", err)
 	}
 	if err := syncComponents(tx, tenantID, entry.ID, change); err != nil {
-		return err
+		return nil, err
 	}
 	if err := tx.Create(&models.AuditEvent{
 		ID: uuid.New(), TenantID: tenantID, CatalogEntryID: entry.ID,
 		EventType: "source_discovered", ActorType: "service_principal", ActorID: "addp-catalog",
 		Details: commonModels.JSONMap{"source_module": models.SourceModuleMeta, "source_identity": change.SourceIdentity},
 	}).Error; err != nil {
-		return fmt.Errorf("create Catalog source audit: %w", err)
+		return nil, fmt.Errorf("create Catalog source audit: %w", err)
 	}
-	return enqueueProjection(tx, tenantID, entry.ID)
+	if err := enqueueProjection(tx, tenantID, entry.ID); err != nil {
+		return nil, err
+	}
+	return &binding, nil
 }
 
 func syncComponents(tx *gorm.DB, tenantID int64, entryID uuid.UUID, change commonClient.MetaDataItemChange) error {

@@ -477,6 +477,14 @@ func TestStorageAgainstPostgres(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		originalNow := provider.Storage.now
+		originalBridgeNow := bridge.now
+		provider.Storage.now = func() time.Time { return time.Now().UTC().Add(time.Second) }
+		bridge.now = provider.Storage.now
+		defer func() {
+			provider.Storage.now = originalNow
+			bridge.now = originalBridgeNow
+		}()
 		verifier := strings.Repeat("B", 43)
 		challengeDigest := sha256.Sum256([]byte(verifier))
 		challenge := base64.RawURLEncoding.EncodeToString(challengeDigest[:])
@@ -490,8 +498,23 @@ func TestStorageAgainstPostgres(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CreateAuthorizationRequest() error = %v", err)
 		}
+		provider.Storage.now = originalNow
+		bridge.now = originalBridgeNow
 		if !strings.HasPrefix(created.RequestSecret, authorizationRequestSecretPrefix) || created.ExpiresIn != 300 {
 			t.Fatalf("created authorization request = %#v", created)
+		}
+		var requestRow authorizationRequestRow
+		if err := db.Where("id = ?", created.RequestID).Take(&requestRow).Error; err != nil {
+			t.Fatal(err)
+		}
+		var pkceRow pkceSessionRow
+		if err := db.Where("authorization_request_id = ?", created.RequestID).Take(&pkceRow).Error; err != nil {
+			t.Fatal(err)
+		}
+		if !requestRow.RequestedAt.Equal(requestRow.CreatedAt) ||
+			requestRow.ExpiresAt.Sub(requestRow.CreatedAt) != 5*time.Minute ||
+			!pkceRow.CreatedAt.Equal(requestRow.CreatedAt) || !pkceRow.ExpiresAt.Equal(requestRow.ExpiresAt) {
+			t.Fatal("authorization request and PKCE creation do not share database time and the requested lifetime")
 		}
 		var tenantID int64
 		if err := db.Raw(`SELECT tenant_id FROM system.tenant_memberships WHERE id = ?`, membershipID).
@@ -612,6 +635,10 @@ func TestStorageAgainstPostgres(t *testing.T) {
 		}
 		accessResponse, err := provider.OAuth2.NewAccessResponse(tokenAuditContext, accessRequest)
 		if err != nil {
+			var oauthError *fosite.RFC6749Error
+			if errors.As(err, &oauthError) {
+				t.Fatalf("NewAccessResponse() error = %v cause=%v", err, oauthError.Cause())
+			}
 			t.Fatalf("NewAccessResponse() error = %v", err)
 		}
 		recorder := httptest.NewRecorder()

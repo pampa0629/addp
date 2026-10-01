@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -692,6 +693,12 @@ func (s *EntryService) visibleEntriesQuery(ctx context.Context, tenantID int64, 
 func numericInt64(value interface{}) (int64, bool) {
 	switch typed := value.(type) {
 	case float64:
+		// Beyond the safe integer range, JSON decoding may already have rounded
+		// the identity; a whole float alone does not prove an exact source ID.
+		const maxSafeInteger = 1<<53 - 1
+		if math.IsNaN(typed) || math.IsInf(typed, 0) || math.Trunc(typed) != typed || math.Abs(typed) > maxSafeInteger {
+			return 0, false
+		}
 		return int64(typed), true
 	case int64:
 		return typed, true

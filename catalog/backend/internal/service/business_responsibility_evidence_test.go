@@ -78,7 +78,7 @@ func assertBusinessResponsibilityEstablishment(t *testing.T, db *gorm.DB) {
 		t.Fatal(err)
 	}
 	assertBusinessResponsibilityEvidence(t, db, entry.ID, boolEvidence(true))
-	if err := applyMetaDataItemChange(db, 7, commonClient.MetaDataItemChange{
+	if err := applyMetaDataItemChanges(db, 7, commonClient.MetaDataItemChange{
 		Operation: "missing", SourceIdentity: "fingerprint-" + entry.ID.String(), SourceVersion: "00000000000000000002",
 		ObservedAt: time.Now().UTC(), Snapshot: map[string]interface{}{"name": "Orders"},
 	}); err != nil {

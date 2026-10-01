@@ -88,6 +88,12 @@ OIDC Claims 和 Headers 的结构能力可以存在于 Fosite Session 实现中�
 - Refresh 轮换创建新 Token 并消费旧 Token；旧 Token 重放撤销整个 Family；
 - 审计写入失败时，协议状态转换和 Token 签发必须回滚。
 
+Authorization Request 的 `requested_at`、`created_at` 和过期点统一以创建事务的
+`transaction_timestamp()` 为基准；对应 PKCE Session 使用同一个创建时间与过期点。
+批准、拒绝或取消时的 `completed_at` 继续使用决定事务的数据库时间，不能混入应用
+时钟，避免宿主机与 PostgreSQL 时钟偏差破坏时间顺序约束。数据库时间读取失败时
+回滚创建事务，不使用应用时间兜底。
+
 ## 七、公开路由
 
 OAuth 路由统一位于 `/api/v1/system/oauth`，包括 Authorization Request、Device Code、Token、Revocation 和用户同意/Device 决定入口。

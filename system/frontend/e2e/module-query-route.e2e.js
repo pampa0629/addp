@@ -1,6 +1,134 @@
 import { expect, test } from '@playwright/test'
 import { mockModuleQueryAPI, moduleQueryLink } from './module-query.fixture'
 
+test('instance freshness tracks successful results, preserves stale data during retries and recovers', async ({ page }) => {
+  await page.clock.install({ time: new Date('2026-10-01T12:00:00Z') })
+  await mockModuleQueryAPI(page)
+  let mode = 'failure'
+  let release
+  const queries = []
+  await page.route('**/api/v1/system/platform/module-instances?*', async route => {
+    if (route.request().method() === 'OPTIONS') return route.fallback()
+    const params = Object.fromEntries(new URL(route.request().url()).searchParams)
+    queries.push(params)
+    const requestedMode = mode
+    if (requestedMode === 'pending') await new Promise(resolve => { release = resolve })
+    const headers = {
+      'access-control-allow-origin': route.request().headers().origin || 'http://127.0.0.1:4173',
+      'access-control-allow-credentials': 'true'
+    }
+    if (requestedMode === 'failure') return route.fulfill({ status: 503, headers, json: { error: '查询暂时不可用' } })
+    const data = params.status === 'down' ? [] : [{
+      instance_id: 'freshness-probe', module_name: 'manager', role: 'backend', status: 'up',
+      module_url: 'http://manager.local:8081', lease_expires_at: '2026-10-01T13:00:00Z'
+    }]
+    return route.fulfill({ headers, json: { data, total: data.length, page: 1, page_size: 10 } })
+  })
+  await page.goto('/modules?tab=instances')
+  const list = page.locator('.module-instances')
+  const freshness = list.getByTestId('instance-query-freshness')
+  const stale = list.getByText('数据已过期', { exact: true })
+  const failure = list.getByText('查询暂时不可用', { exact: true })
+  await expect(failure).toBeVisible()
+  await expect(freshness).toHaveText('当前查询尚未成功获取数据')
+  await expect(list.getByText('没有符合条件的服务实例', { exact: true })).toHaveCount(0)
+  await expect(stale).toHaveCount(0)
+
+  mode = 'success'
+  await list.getByRole('button', { name: '刷新', exact: true }).click()
+  await expect(list.getByText('freshness-probe', { exact: true })).toBeVisible()
+  await expect(freshness).toContainText('最后成功刷新：')
+  const firstSuccess = await freshness.innerText()
+  const queryURL = page.url()
+  mode = 'failure'
+  await page.clock.fastForward(10000)
+  await expect(stale).toBeVisible()
+  await expect(failure).toBeVisible()
+  await expect(freshness).toHaveText(firstSuccess)
+  await expect(list.getByText('freshness-probe', { exact: true })).toBeVisible()
+  await expect(page).toHaveURL(queryURL)
+
+  mode = 'pending'
+  await list.getByRole('button', { name: '刷新', exact: true }).click()
+  await expect.poll(() => typeof release).toBe('function')
+  await expect(stale).toBeVisible()
+  await expect(failure).toBeVisible()
+  await expect(freshness).toHaveText(firstSuccess)
+  release()
+  await expect(stale).toHaveCount(0)
+  await expect(failure).toHaveCount(0)
+  await expect(freshness).not.toHaveText(firstSuccess)
+
+  const recoveredAt = await freshness.innerText()
+  const queryCount = queries.length
+  release = undefined
+  await page.clock.fastForward(10000)
+  await expect.poll(() => typeof release).toBe('function')
+  await expect(stale).toHaveCount(0)
+  await page.clock.fastForward(10000)
+  await expect(stale).toBeVisible()
+  await expect(failure).toHaveCount(0)
+  await expect(freshness).toHaveText(recoveredAt)
+  expect(queries).toHaveLength(queryCount + 1)
+  await page.screenshot({ path: '/tmp/addp-instance-freshness-stale.png', fullPage: true })
+  mode = 'success'
+  release()
+  await expect(stale).toHaveCount(0)
+  await expect(freshness).not.toHaveText(recoveredAt)
+
+  mode = 'failure'
+  await list.locator('.el-select').filter({ has: page.getByRole('combobox', { name: '运行状态', exact: true }) }).click()
+  await page.getByRole('option', { name: 'DOWN · 离线', exact: true }).click()
+  await expect(failure).toBeVisible()
+  await expect(freshness).toHaveText('当前查询尚未成功获取数据')
+  await expect(list.getByText('freshness-probe', { exact: true })).toHaveCount(0)
+  await expect(list.getByRole('button', { name: '下一页', exact: true })).toHaveCount(0)
+  await expect(stale).toHaveCount(0)
+  mode = 'success'
+  await list.getByRole('button', { name: '刷新', exact: true }).click()
+  await expect(freshness).toContainText('最后成功刷新：')
+  await expect(list.getByText('没有符合条件的服务实例', { exact: true })).toBeVisible()
+  await expect(failure).toHaveCount(0)
+})
+
+test('returning to a visible instance page checks stale data and refreshes without changing filters', async ({ page }) => {
+  await page.clock.install({ time: new Date('2026-10-01T12:00:00Z') })
+  const queries = await mockModuleQueryAPI(page)
+  await page.goto('/modules?tab=instances&module_name=manager&role=backend')
+  const list = page.locator('.module-instances')
+  const freshness = list.getByTestId('instance-query-freshness')
+  await expect(freshness).toContainText('最后成功刷新：')
+  const firstSuccess = await freshness.innerText()
+  const url = page.url()
+  const queryCount = queries.length
+  await page.evaluate(() => {
+    window.fixturePageHidden = true
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => window.fixturePageHidden })
+    document.dispatchEvent(new Event('visibilitychange'))
+  })
+  await page.clock.fastForward(30000)
+  expect(queries).toHaveLength(queryCount)
+  let resume
+  await page.route('**/api/v1/system/platform/module-instances?*', async route => {
+    if (route.request().method() === 'OPTIONS') return route.fallback()
+    await new Promise(resolve => { resume = resolve })
+    return route.fallback()
+  })
+  await page.evaluate(() => {
+    window.fixturePageHidden = false
+    document.dispatchEvent(new Event('visibilitychange'))
+  })
+  await expect.poll(() => typeof resume).toBe('function')
+  await expect(list.getByText('数据已过期', { exact: true })).toBeVisible()
+  await expect(freshness).toHaveText(firstSuccess)
+  resume()
+  await expect.poll(() => queries.length).toBe(queryCount + 1)
+  await expect(list.getByText('数据已过期', { exact: true })).toHaveCount(0)
+  await expect(freshness).not.toHaveText(firstSuccess)
+  await expect(page).toHaveURL(url)
+  expect(queries.at(-1)).toEqual(queries[0])
+})
+
 test('standalone instance links restore filters, ranges and pagination after reload and history navigation', async ({ page }) => {
   const queries = await mockModuleQueryAPI(page)
   const errors = []
@@ -82,6 +210,10 @@ test('offline time finds an old registration, queries immediately and removes it
   await expect(list.getByText('old-registration-recent-offline', { exact: true })).toBeVisible()
   await expect(list.getByText('old-offline', { exact: true })).toHaveCount(0)
   await expect(list.getByRole('columnheader', { name: '离线判定时间', exact: true })).toBeVisible()
+  const headers = await list.getByRole('columnheader').allTextContents()
+  const statusIndex = headers.findIndex(header => header.trim() === '状态')
+  expect(statusIndex).toBeGreaterThanOrEqual(0)
+  expect(headers[statusIndex + 1].trim()).toBe('离线判定时间')
   await expect(list.getByText('租约超时，疑似异常退出', { exact: true })).toBeVisible()
   await page.screenshot({ path: '/tmp/addp-offline-time-query-verified.png', fullPage: true })
   const url = page.url()

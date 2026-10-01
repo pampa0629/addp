@@ -17,7 +17,7 @@ func TestRebindSourcePreservesCanonicalIdentityAndHistory(t *testing.T) {
 	db := openCatalogServiceTestDB(t)
 	now := time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)
 	createSourceEntry(t, db, 7, "old-fingerprint", "00000000000000000001", now, "orders", "id")
-	if err := applyMetaDataItemChange(db, 7, commonClient.MetaDataItemChange{
+	if err := applyMetaDataItemChanges(db, 7, commonClient.MetaDataItemChange{
 		Operation: "missing", SourceIdentity: "old-fingerprint", SourceVersion: "00000000000000000002",
 		ObservedAt: now.Add(time.Minute), Snapshot: map[string]interface{}{"name": "orders"},
 	}); err != nil {
@@ -106,7 +106,7 @@ func TestRebindSourceRejectsTemporaryEntryWithHumanWorkAtomically(t *testing.T) 
 	db := openCatalogServiceTestDB(t)
 	now := time.Now().UTC()
 	createSourceEntry(t, db, 9, "old", "00000000000000000001", now, "old")
-	if err := applyMetaDataItemChange(db, 9, commonClient.MetaDataItemChange{
+	if err := applyMetaDataItemChanges(db, 9, commonClient.MetaDataItemChange{
 		Operation: "missing", SourceIdentity: "old", SourceVersion: "00000000000000000002", ObservedAt: now,
 		Snapshot: map[string]interface{}{"name": "old"},
 	}); err != nil {
@@ -155,7 +155,7 @@ func createSourceEntry(t *testing.T, db *gorm.DB, tenantID int64, identity, vers
 	for index, field := range fields {
 		payloadFields = append(payloadFields, map[string]interface{}{"name": field, "type": "string", "ordinal_position": index + 1})
 	}
-	if err := applyMetaDataItemChange(db, tenantID, commonClient.MetaDataItemChange{
+	if err := applyMetaDataItemChanges(db, tenantID, commonClient.MetaDataItemChange{
 		Operation: "upsert", SourceIdentity: identity, SourceVersion: version, ObservedAt: observedAt,
 		Snapshot: map[string]interface{}{"name": name, "fields": payloadFields},
 	}); err != nil {

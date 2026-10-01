@@ -12,7 +12,7 @@
       <el-select v-model="role" :placeholder="t('system.module.query.role')" clearable class="query-control" @change="search">
         <el-option v-for="item in roles" :key="item" :label="roleLabel(item)" :value="item" />
       </el-select>
-      <el-select v-model="status" :aria-label="t('system.module.query.status')" class="query-control" @change="search">
+      <el-select v-model="status" :empty-values="[null, undefined]" :aria-label="t('system.module.query.status')" class="query-control" @change="search">
         <el-option :label="t('system.module.query.allStatuses')" value="" />
         <el-option :label="t('system.module.status.up')" value="up" />
         <el-option :label="t('system.module.status.down')" value="down" />
@@ -33,6 +33,11 @@
       <el-button :icon="Refresh" :loading="loading" :disabled="period === 'custom' && !validCustomRange" @click="refresh">{{ t('system.module.refresh') }}</el-button>
     </div>
     <p class="query-hint">{{ t('system.module.query.timeHint') }}</p>
+    <p class="query-freshness" data-testid="instance-query-freshness">
+      {{ lastSuccessAt === null ? t('system.module.query.notLoaded') : t('system.module.query.lastSuccess', { time: formatDate(lastSuccessAt) }) }}
+    </p>
+    <el-alert v-if="dataStale" type="warning" :title="t('system.module.query.staleData')"
+      :description="t('system.module.query.staleHint')" show-icon :closable="false" class="query-error" />
     <el-alert v-if="error" type="error" :title="error" show-icon :closable="false" class="query-error" />
 
     <el-table v-loading="loading" :data="rows" border stripe>
@@ -78,6 +83,9 @@
           </el-tag>
         </template>
       </el-table-column>
+      <el-table-column v-if="applied.timeBasis === 'offline'" :label="t('system.module.instances.offlineDeterminedAt')" width="175">
+        <template #default="{ row }">{{ formatDate(row.stopped_at) }}</template>
+      </el-table-column>
       <el-table-column :label="t('system.module.instances.uptime')" width="145">
         <template #default="{ row }">{{ formatRuntimeUptime(row, t) }}</template>
       </el-table-column>
@@ -87,15 +95,12 @@
       <el-table-column :label="t('system.module.instances.registeredAt')" width="175">
         <template #default="{ row }">{{ formatDate(row.registered_at) }}</template>
       </el-table-column>
-      <el-table-column v-if="applied.timeBasis === 'offline'" :label="t('system.module.instances.offlineDeterminedAt')" width="175">
-        <template #default="{ row }">{{ formatDate(row.stopped_at) }}</template>
-      </el-table-column>
       <el-table-column :label="t('system.module.instances.stopReason')" width="170">
         <template #default="{ row }">{{ stopReasonLabel(row) }}</template>
       </el-table-column>
-      <template #empty><el-empty :description="t(period === 'custom' && !validCustomRange ? 'system.module.query.completeRange' : 'system.module.query.empty')" :image-size="72" /></template>
+      <template #empty><el-empty :description="t(period === 'custom' && !validCustomRange ? 'system.module.query.completeRange' : lastSuccessAt === null ? 'system.module.query.notLoaded' : 'system.module.query.empty')" :image-size="72" /></template>
     </el-table>
-    <el-pagination v-model:current-page="page" v-model:page-size="pageSize" :page-sizes="[10, 20, 50, 100]"
+    <el-pagination v-if="lastSuccessAt !== null" v-model:current-page="page" v-model:page-size="pageSize" :page-sizes="[10, 20, 50, 100]"
       :total="total" layout="total, sizes, prev, pager, next" class="query-pagination"
       @current-change="changePage" @size-change="changePageSize" />
   </div>
@@ -138,6 +143,11 @@ const page = ref(1)
 const pageSize = ref(10)
 const loading = ref(false)
 const error = ref('')
+const refreshIntervalMs = 10000
+const lastSuccessAt = ref(null)
+const observedAt = ref(Date.now())
+const dataStale = computed(() => lastSuccessAt.value !== null &&
+  (Boolean(error.value) || observedAt.value - lastSuccessAt.value >= 2 * refreshIntervalMs))
 let generation = 0
 let searchTimer = null
 let refreshTimer = null
@@ -189,12 +199,14 @@ async function load({ silent = false } = {}) {
   const requestGeneration = ++generation
   requestsInFlight += 1
   if (!silent) loading.value = true
-  error.value = ''
   try {
     const response = await modulesAPI.listInstances(currentParams())
     if (requestGeneration !== generation) return
     rows.value = response.data || []
     total.value = response.total || 0
+    lastSuccessAt.value = Date.now()
+    observedAt.value = lastSuccessAt.value
+    error.value = ''
   } catch (failure) {
     if (requestGeneration !== generation) return
     error.value = failure.response?.data?.error || failure.message || t('system.module.query.loadFailed')
@@ -204,15 +216,20 @@ async function load({ silent = false } = {}) {
   }
 }
 
+function clearResults() {
+  rows.value = []
+  total.value = 0
+  lastSuccessAt.value = null
+  error.value = ''
+}
+
 function search() {
   clearTimeout(searchTimer)
   searchTimer = null
   if (period.value === 'custom' && !validCustomRange.value) {
     generation += 1
     loading.value = false
-    error.value = ''
-    rows.value = []
-    total.value = 0
+    clearResults()
     return
   }
   const filters = {
@@ -279,15 +296,22 @@ function restoreRoute() {
   page.value = filters.page
   pageSize.value = filters.pageSize
   applied.value = filters
+  clearResults()
   load()
+}
+function autoRefresh() {
+  observedAt.value = Date.now()
+  load({ silent: true })
 }
 watch(() => route.fullPath, restoreRoute, { immediate: true })
 onMounted(() => {
-  refreshTimer = window.setInterval(() => load({ silent: true }), 10000)
+  refreshTimer = window.setInterval(autoRefresh, refreshIntervalMs)
+  document.addEventListener('visibilitychange', autoRefresh)
 })
 onUnmounted(() => {
   clearTimeout(searchTimer)
   window.clearInterval(refreshTimer)
+  document.removeEventListener('visibilitychange', autoRefresh)
   generation += 1
 })
 </script>
@@ -296,8 +320,9 @@ onUnmounted(() => {
 .query-toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 10px 0; }
 .query-control { width: 175px; }
 .query-range { max-width: 380px; }
-.query-hint, .technical-name { color: var(--addp-text-secondary); font-size: 12px; }
+.query-hint, .query-freshness, .technical-name { color: var(--addp-text-secondary); font-size: 12px; }
 .query-hint { margin: 0 0 12px; }
+.query-freshness { margin: 0 0 12px; }
 .query-error { margin-bottom: 12px; }
 .query-pagination { justify-content: flex-end; margin-top: 16px; }
 .instance-diagnostics { padding: 12px 18px; }

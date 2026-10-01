@@ -243,10 +243,8 @@ func (s *ProfessionalSourceSyncService) applyBatch(ctx context.Context, tenantID
 		if checkpoint.Cursor != expectedCursor {
 			return fmt.Errorf("Catalog %s source checkpoint changed concurrently", s.source.SourceName())
 		}
-		for _, change := range batch.Changes {
-			if err := applyProfessionalResourceChange(tx, tenantID, s.source.SourceModule(), change); err != nil {
-				return err
-			}
+		if err := applyProfessionalResourceChanges(tx, tenantID, s.source.SourceModule(), batch.Changes...); err != nil {
+			return err
 		}
 		checkpoint.Cursor = batch.NextCursor
 		if err := tx.Save(checkpoint).Error; err != nil {
@@ -286,23 +284,39 @@ func lockSourceCheckpoint(tx *gorm.DB, tenantID int64, sourceModule, feedName st
 	return &checkpoint, nil
 }
 
-func applyProfessionalResourceChange(tx *gorm.DB, tenantID int64, sourceModule string, change ProfessionalResourceChange) error {
+func applyProfessionalResourceChanges(tx *gorm.DB, tenantID int64, sourceModule string, changes ...ProfessionalResourceChange) error {
+	references := make([]CatalogSourceReference, 0, len(changes))
+	for _, change := range changes {
+		references = append(references, CatalogSourceReference{SourceModule: sourceModule,
+			SourceType: change.SourceType, SourceIdentity: strings.TrimSpace(change.SourceIdentity)})
+	}
+	bindings, err := lockSourceChangeBindings(tx, tenantID, references)
+	if err != nil {
+		return err
+	}
+	for _, change := range changes {
+		if err := applyProfessionalResourceChange(tx, tenantID, sourceModule, change, bindings); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func applyProfessionalResourceChange(tx *gorm.DB, tenantID int64, sourceModule string, change ProfessionalResourceChange, bindings map[string]*models.SourceBinding) error {
 	identity := strings.TrimSpace(change.SourceIdentity)
 	entryType := professionalEntryType(sourceModule, change.SourceType)
 	if !validProfessionalSourceIdentity(sourceModule, identity) || entryType == "" ||
 		len(change.SourceVersion) != 20 || (change.Operation != "upsert" && change.Operation != "missing") || change.ObservedAt.IsZero() || len(change.Snapshot) == 0 {
 		return fmt.Errorf("%w: malformed %s catalog resource change", ErrInvalidSourceChange, sourceModule)
 	}
-	var binding models.SourceBinding
-	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where(
-		"tenant_id = ? AND source_module = ? AND source_type = ? AND source_identity = ? AND is_current = ?",
-		tenantID, sourceModule, change.SourceType, identity, true,
-	).First(&binding).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return createEntryFromProfessionalChange(tx, tenantID, sourceModule, entryType, change)
-	}
-	if err != nil {
-		return fmt.Errorf("find Catalog %s source binding: %w", sourceModule, err)
+	key := sourceReferenceKey(sourceModule, change.SourceType, identity)
+	binding := bindings[key]
+	if binding == nil {
+		created, err := createEntryFromProfessionalChange(tx, tenantID, sourceModule, entryType, change)
+		if err == nil {
+			bindings[key] = created
+		}
+		return err
 	}
 	if binding.SourceVersion >= change.SourceVersion {
 		return nil
@@ -317,13 +331,14 @@ func applyProfessionalResourceChange(tx *gorm.DB, tenantID int64, sourceModule s
 		reason := "source_deleted"
 		missingReason = &reason
 	}
-	if err := tx.Model(&binding).Updates(map[string]any{
+	if err := tx.Model(binding).Updates(map[string]any{
 		"source_status": status, "source_version": change.SourceVersion,
 		"observed_snapshot": commonModels.JSONMap(change.Snapshot), "observed_at": change.ObservedAt.UTC(),
 		"missing_at": missingAt, "missing_reason": missingReason,
 	}).Error; err != nil {
 		return fmt.Errorf("update Catalog %s source binding: %w", sourceModule, err)
 	}
+	binding.SourceVersion = change.SourceVersion
 	if err := tx.Model(&models.Entry{}).Where("tenant_id = ? AND id = ?", tenantID, binding.CatalogEntryID).
 		UpdateColumn("version", gorm.Expr("version + 1")).Error; err != nil {
 		return fmt.Errorf("advance Catalog entry version: %w", err)
@@ -359,14 +374,14 @@ func validProfessionalSourceIdentity(sourceModule, identity string) bool {
 	return err == nil && id > 0 && strconv.FormatInt(id, 10) == identity
 }
 
-func createEntryFromProfessionalChange(tx *gorm.DB, tenantID int64, sourceModule, entryType string, change ProfessionalResourceChange) error {
+func createEntryFromProfessionalChange(tx *gorm.DB, tenantID int64, sourceModule, entryType string, change ProfessionalResourceChange) (*models.SourceBinding, error) {
 	now := change.ObservedAt.UTC()
 	established := false
 	entry := models.Entry{ID: uuid.New(), TenantID: tenantID, EntryType: entryType, EntryStatus: models.EntryStatusActive,
 		GovernanceStatus: models.GovernanceStatusDiscovered, Visibility: models.VisibilityInventory, Version: 1, CreatedAt: now, UpdatedAt: now,
 		BusinessResponsibilityEstablished: &established}
 	if err := tx.Create(&entry).Error; err != nil {
-		return fmt.Errorf("create Catalog entry from %s: %w", sourceModule, err)
+		return nil, fmt.Errorf("create Catalog entry from %s: %w", sourceModule, err)
 	}
 	status := models.SourceStatusActive
 	var missingAt *time.Time
@@ -382,12 +397,15 @@ func createEntryFromProfessionalChange(tx *gorm.DB, tenantID int64, sourceModule
 		SourceStatus: status, SourceVersion: change.SourceVersion, IsCurrent: true, BoundAt: now,
 		MissingAt: missingAt, MissingReason: missingReason, ObservedSnapshot: commonModels.JSONMap(change.Snapshot), ObservedAt: now}
 	if err := tx.Create(&binding).Error; err != nil {
-		return fmt.Errorf("create Catalog %s source binding: %w", sourceModule, err)
+		return nil, fmt.Errorf("create Catalog %s source binding: %w", sourceModule, err)
 	}
 	if err := tx.Create(&models.AuditEvent{ID: uuid.New(), TenantID: tenantID, CatalogEntryID: entry.ID,
 		EventType: "source_discovered", ActorType: "service_principal", ActorID: "addp-catalog",
 		Details: commonModels.JSONMap{"source_module": sourceModule, "source_type": change.SourceType, "source_identity": change.SourceIdentity}, CreatedAt: now}).Error; err != nil {
-		return fmt.Errorf("create Catalog %s source audit: %w", sourceModule, err)
+		return nil, fmt.Errorf("create Catalog %s source audit: %w", sourceModule, err)
 	}
-	return enqueueProjection(tx, tenantID, entry.ID)
+	if err := enqueueProjection(tx, tenantID, entry.ID); err != nil {
+		return nil, err
+	}
+	return &binding, nil
 }
