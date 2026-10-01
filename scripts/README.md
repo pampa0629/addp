@@ -541,7 +541,10 @@ Online 唯一入口为 `make test-online ONLINE_SUITE=<suite>`，并要求环境
 | `ECV-05` 动态来源解析 | T4 | 同上 | Meta fingerprint 经 `POST /catalog/entries/resolve-sources` 精确解析到当前 active CatalogEntry |
 | `ECV-06` Catalog 与 Portal 交互 | T4 browser | 同上 | 覆盖率七维、CatalogEntry 详情、名称选择器、当前页显式多选和批量治理对话框可用；Portal 分类页展示临时目录与唯一 Asset 卡片，页面不出现 `undefined`，浏览器 warning/error 与失败业务响应均为 0 |
 | `ECV-07` 发布消费唯一路线 | T4 | 同上 | `Meta → Catalog → AssetComponent → Portal` 保持同一 CatalogEntry UUID；AssetCategory 出现在 Portal 目录树，分类子树只返回该临时 Asset |
-| `ECV-08` 清理 | T4 | 同上 | 临时 Asset 下架后删除，空分类从 Portal 树消失，Asset-owned 目录删除、Portal Asset 404，`residual_resources=0`，永久 fixture 编目聚合恢复 |
+| `ECV-08` 清理 | T4 | 同上 | 临时 Asset 下架后删除，空分类从 Portal 树消失，Asset-owned 目录删除、Portal Asset 404，`residual_resources=0`，永久 fixture 完整编目聚合重新读取并核对恢复 |
+| `ECV-09` 弃用责任与恢复 | T4 | 同上 | 专用 fixture 弃用后，经责任子资源增减可选技术负责人但保持弃用与其他冻结事实；撤销弃用只回到已编目；两类旧版本写入返回规范 409 且无副作用；成功和失败后恢复责任及编目信息 |
+
+`ECV-09` 复用当前专用 User、Domain 和 Department，不创建第二个身份或自动赋权。测试 User 除原有读取、盘点和编目维护权限外，必须显式具备 `catalog.entry.deprecate`，缺失时身份预检直接失败。责任变化只验证同账号的可选技术负责人配置；跨部门可发现范围、权限交集及审计原子性由现有 Catalog PostgreSQL T2 覆盖。脚本的故障注入及完整恢复断言复用 `make test-online-runner`，仍由 Platform CI 和现有 `Online T4 gates` 的 `enterprise-catalog-publishing` 执行，不另建 suite 或 workflow。
 
 T0-T3 checkout 执行：
 

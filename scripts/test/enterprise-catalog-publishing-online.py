@@ -92,6 +92,7 @@ REQUIRED_PERMISSIONS = {
     "meta.scan_task.read",
     "catalog.entry.read",
     "catalog.entry.update",
+    "catalog.entry.deprecate",
     "catalog.inventory.read",
     "asset.management.read",
     "asset.category.create",
@@ -457,6 +458,132 @@ def validate_fixture_curation(entry: dict[str, object], domain_id: int) -> dict[
     return original
 
 
+def curation_payload_facts(payload: dict[str, object]) -> dict[str, object]:
+    editable = {key: value for key, value in payload.items() if key != "version"}
+    for key in ("domains", "glossary_ids", "responsibilities"):
+        editable[key] = sorted(editable[key], key=lambda item: json.dumps(item, sort_keys=True))
+    return editable
+
+
+def catalog_fixture_facts(entry: dict[str, object]) -> dict[str, object]:
+    """Compare owner-editable facts, not volatile observations or association row IDs."""
+    source = _object(entry.get("source"), "Catalog fixture source")
+    return {
+        **curation_payload_facts(editable_catalog_payload(entry)),
+        "id": entry.get("id"),
+        "source_identity": source.get("source_identity"),
+        "recommended_successor_entry_id": entry.get("recommended_successor_entry_id"),
+    }
+
+
+def restore_catalog_fixture(
+    client: GatewayClient, entry_id: str, baseline: dict[str, object], run_id: str
+) -> None:
+    path = f"/api/v1/catalog/entries/{entry_id}"
+    current = _object(client.request("GET", path, (200,)).payload, "Catalog fixture cleanup")
+    if current.get("governance_status") == "deprecated":
+        current = _object(
+            client.request("PUT", path + "/governance", (200,), {
+                "version": positive_int(current.get("version"), "Catalog fixture cleanup version"),
+                "governance_status": "curated",
+                "reason": f"Restore dedicated Online fixture after {run_id}",
+            }).payload,
+            "Catalog fixture cleanup withdrawal",
+        )
+    if current.get("governance_status") != "curated" or baseline.get("governance_status") != "curated":
+        raise SuiteError("Catalog fixture cleanup requires curated state; no implicit lifecycle bypass")
+    restore = dict(baseline)
+    restore["version"] = positive_int(current.get("version"), "Catalog fixture cleanup version")
+    client.request("PUT", path, (200,), restore)
+    restored = _object(client.request("GET", path, (200,)).payload, "restored Catalog fixture")
+    actual = curation_payload_facts(editable_catalog_payload(restored))
+    expected = curation_payload_facts(baseline)
+    if actual != expected or restored.get("recommended_successor_entry_id") is not None:
+        raise SuiteError("Catalog fixture complete curation aggregate was not restored")
+
+
+def validate_deprecated_fixture_lifecycle(
+    client: GatewayClient, entry: dict[str, object], run_id: str, principal_id: int
+) -> dict[str, object]:
+    entry_id = str(entry["id"])
+    path = f"/api/v1/catalog/entries/{entry_id}"
+    baseline = editable_catalog_payload(entry)
+    if baseline["governance_status"] != "curated":
+        raise SuiteError("Catalog lifecycle fixture must start curated")
+    baseline_facts = catalog_fixture_facts(entry)
+    original_version = baseline["version"]
+    # Change a real responsibility without needing a second permanent User or Department.
+    responsibilities = [item for item in baseline["responsibilities"] if item["role"] != "technical_owner"]
+    if len(responsibilities) == len(baseline["responsibilities"]):
+        responsibilities.append({"role": "technical_owner", "subject_type": "user", "subject_id": str(principal_id)})
+    try:
+        deprecated = _object(client.request("PUT", path + "/governance", (200,), {
+            "version": original_version, "governance_status": "deprecated",
+            "reason": f"Dedicated Online deprecation {run_id}",
+        }).payload, "deprecated Catalog fixture")
+        expected = dict(baseline_facts, governance_status="deprecated")
+        if catalog_fixture_facts(deprecated) != expected:
+            raise SuiteError("Catalog deprecation changed frozen curation facts or source identity")
+        deprecated_version = positive_int(deprecated.get("version"), "deprecated Catalog fixture version")
+        if deprecated_version != original_version + 1:
+            raise SuiteError("Catalog deprecation did not increment the aggregate version")
+
+        conflict = client.request("PUT", path + "/governance", (409,), {
+            "version": original_version, "governance_status": "curated",
+            "reason": f"Reject stale Online withdrawal {run_id}",
+        })
+        if _object(conflict.payload, "withdrawal conflict").get("error_code") != "catalog_entry_version_conflict":
+            raise SuiteError("Catalog stale withdrawal did not return the canonical version conflict")
+        current = _object(client.request("GET", path, (200,)).payload, "Catalog fixture after stale withdrawal")
+        if current.get("version") != deprecated_version or catalog_fixture_facts(current) != expected:
+            raise SuiteError("Catalog stale withdrawal produced side effects")
+
+        transfer_body = {
+            "version": deprecated_version, "reason": f"Dedicated Online responsibility transfer {run_id}",
+            "responsibilities": responsibilities,
+        }
+        transferred = _object(client.request("PUT", path + "/responsibilities", (200,), transfer_body).payload,
+                              "transferred Catalog fixture")
+        expected["responsibilities"] = sorted(responsibilities, key=lambda item: json.dumps(item, sort_keys=True))
+        if catalog_fixture_facts(transferred) != expected:
+            raise SuiteError("Catalog responsibility transfer changed frozen facts or lost the replacement subjects")
+        transferred_version = positive_int(transferred.get("version"), "transferred Catalog fixture version")
+        if transferred_version != deprecated_version + 1:
+            raise SuiteError("Catalog responsibility transfer did not increment the aggregate version")
+
+        conflict = client.request("PUT", path + "/responsibilities", (409,), transfer_body)
+        if _object(conflict.payload, "responsibility conflict").get("error_code") != "catalog_entry_version_conflict":
+            raise SuiteError("Catalog stale responsibility transfer did not return the canonical version conflict")
+        current = _object(client.request("GET", path, (200,)).payload, "Catalog fixture after stale transfer")
+        if current.get("version") != transferred_version or catalog_fixture_facts(current) != expected:
+            raise SuiteError("Catalog stale responsibility transfer produced side effects")
+
+        withdrawn = _object(client.request("PUT", path + "/governance", (200,), {
+            "version": transferred_version, "governance_status": "curated",
+            "reason": f"Dedicated Online withdrawal {run_id}",
+        }).payload, "Catalog fixture after withdrawal")
+        expected["governance_status"] = "curated"
+        if catalog_fixture_facts(withdrawn) != expected:
+            raise SuiteError("Catalog withdrawal did not preserve curation facts and clear the successor")
+        withdrawn_version = positive_int(withdrawn.get("version"), "withdrawn Catalog fixture version")
+        if withdrawn_version != transferred_version + 1:
+            raise SuiteError("Catalog withdrawal did not increment the aggregate version")
+        return {
+            "states": ["curated", "deprecated", "deprecated", "curated"],
+            "versions": [original_version, deprecated_version, transferred_version, withdrawn_version],
+            "responsibility_change": "optional_technical_owner",
+            "stale_withdrawal": "rejected_without_side_effects",
+            "stale_responsibility_transfer": "rejected_without_side_effects",
+            "fixture_restoration": "passed",
+        }
+    finally:
+        # Read first even if a write response was lost; never retry the old command.
+        try:
+            restore_catalog_fixture(client, entry_id, baseline, run_id)
+        except Exception as error:
+            raise SuiteError(f"Catalog lifecycle fixture cleanup failed: {error}") from error
+
+
 def curate_fixture_entry(
     client: GatewayClient,
     entry: dict[str, object],
@@ -554,6 +681,8 @@ def run_suite(
         if coverage_after["total_entries"] != coverage_before["total_entries"]:
             raise SuiteError("Catalog curation unexpectedly changed the active entry denominator")
 
+        lifecycle = validate_deprecated_fixture_lifecycle(client, curated, run_id, principal_id)
+
         types = _array(client.request("GET", "/api/v1/asset/type-definitions", (200,)).payload, "Asset type definitions")
         enabled_types = [item for item in types if isinstance(item, dict) and item.get("enabled") is True]
         if not enabled_types:
@@ -639,6 +768,7 @@ def run_suite(
                 "inventory_and_governance_views": "passed",
                 "source_identity_resolution": "passed",
                 "governance_coverage": "passed",
+                "deprecated_responsibility_transfer_and_withdrawal": "passed",
                 "browser": "passed" if browser_runner is not None else "not-run",
                 "asset_portal_publishing": "passed",
                 "asset_category_portal_navigation": "passed",
@@ -650,6 +780,7 @@ def run_suite(
                 "after": coverage_after,
             },
             "browser": browser_evidence,
+            "catalog_lifecycle": lifecycle,
             "portal_category": portal_category,
             "temporary_resources_created": 2,
             "residual_resources": 0,
@@ -682,12 +813,7 @@ def run_suite(
                 cleanup_errors.append(f"Asset category: {error}")
         if entry_id is not None and restore_payload is not None:
             try:
-                current = _object(client.request("GET", f"/api/v1/catalog/entries/{entry_id}", (200,)).payload, "CatalogEntry cleanup")
-                restore = dict(restore_payload)
-                restore["version"] = positive_int(current.get("version"), "CatalogEntry cleanup version")
-                restored = _object(client.request("PUT", f"/api/v1/catalog/entries/{entry_id}", (200,), restore).payload, "restored CatalogEntry")
-                if restored.get("business_name") != restore.get("business_name"):
-                    raise SuiteError("CatalogEntry business metadata was not restored")
+                restore_catalog_fixture(client, entry_id, restore_payload, run_id)
             except Exception as error:
                 cleanup_errors.append(f"CatalogEntry: {error}")
         if cleanup_errors:

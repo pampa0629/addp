@@ -35,10 +35,13 @@ class FakeClient:
         self.catalog_exists = False
         self.category_name = ""
         self.calls: list[tuple[str, str]] = []
+        self.writes: list[tuple[str, dict]] = []
         self.execution_count = 0
 
     def request(self, method, path, expected, body=None):
         self.calls.append((method, path))
+        if body is not None:
+            self.writes.append((path, copy.deepcopy(body)))
         if path == "/api/v1/meta/scan/run/manual":
             self.execution_count += 1
             return SUITE.Response(201, {"execution_id": f"execution-{self.execution_count}", "status": "pending"})
@@ -97,7 +100,24 @@ class FakeClient:
                 200,
                 {"view": "inventory", "total_entries": 1, "governance_statuses": statuses, "dimensions": dimensions},
             )
-        if path == f"/api/v1/catalog/entries/{self.entry['id']}":
+        entry_path = f"/api/v1/catalog/entries/{self.entry['id']}"
+        if path in {entry_path + "/governance", entry_path + "/responsibilities"} and method == "PUT":
+            if body["version"] != self.entry["version"]:
+                return SUITE.Response(409, {"error_code": "catalog_entry_version_conflict"})
+            if path.endswith("/governance"):
+                if set(body) != {"version", "governance_status", "reason"}:
+                    raise AssertionError("unexpected governance fields")
+                self.entry["governance_status"] = body["governance_status"]
+                self.entry["recommended_successor_entry_id"] = None
+            else:
+                if set(body) != {"version", "reason", "responsibilities"}:
+                    raise AssertionError("unexpected responsibility transfer fields")
+                if self.entry["governance_status"] != "deprecated":
+                    raise AssertionError("responsibility-only update requires deprecated state")
+                self.entry["responsibilities"] = copy.deepcopy(body["responsibilities"])
+            self.entry["version"] += 1
+            return SUITE.Response(200, copy.deepcopy(self.entry))
+        if path == entry_path:
             if method == "GET":
                 return SUITE.Response(200, copy.deepcopy(self.entry))
             expected_fields = {
@@ -106,6 +126,10 @@ class FakeClient:
             }
             if set(body) != expected_fields:
                 raise AssertionError(f"unexpected Catalog update fields: {set(body) ^ expected_fields}")
+            if self.entry["governance_status"] == "deprecated":
+                raise AssertionError("complete curation cannot bypass deprecation")
+            if body["version"] != self.entry["version"]:
+                return SUITE.Response(409, {"error_code": "catalog_entry_version_conflict"})
             self.entry.update(copy.deepcopy(body))
             if "domains" in body:
                 self.entry["semantic_links"] = [
@@ -228,6 +252,8 @@ class EnterpriseCatalogPublishingOnlineTest(unittest.TestCase):
         self.assertEqual(report["cases"]["scan_idempotency"], "passed")
         self.assertEqual(report["cases"]["source_identity_resolution"], "passed")
         self.assertEqual(report["cases"]["governance_coverage"], "passed")
+        self.assertEqual(report["cases"]["deprecated_responsibility_transfer_and_withdrawal"], "passed")
+        self.assertEqual(report["catalog_lifecycle"]["states"], ["curated", "deprecated", "deprecated", "curated"])
         self.assertEqual(report["cases"]["browser"], "passed")
         self.assertEqual(report["cases"]["asset_category_portal_navigation"], "passed")
         self.assertEqual(
@@ -239,6 +265,7 @@ class EnterpriseCatalogPublishingOnlineTest(unittest.TestCase):
         self.assertFalse(client.catalog_exists)
         self.assertEqual(client.entry["business_name"], original["business_name"])
         self.assertEqual(client.entry["business_description"], original["business_description"])
+        self.assertEqual(SUITE.catalog_fixture_facts(client.entry), SUITE.catalog_fixture_facts(original))
         self.assertLess(
             client.calls.index(("POST", "/api/v1/asset/assets/30/offline")),
             client.calls.index(("DELETE", "/api/v1/asset/assets/30")),
@@ -280,6 +307,115 @@ class EnterpriseCatalogPublishingOnlineTest(unittest.TestCase):
 
         self.assertNotIn(("PUT", f"/api/v1/catalog/entries/{client.entry['id']}"), client.calls)
 
+    def test_lifecycle_changes_optional_responsibility_and_restores_full_aggregate(self) -> None:
+        for existing_technical_owner in (False, True):
+            with self.subTest(existing_technical_owner=existing_technical_owner):
+                client = FakeClient()
+                if existing_technical_owner:
+                    client.entry["responsibilities"].append(
+                        {"role": "technical_owner", "subject_type": "user", "subject_id": "52"}
+                    )
+                original = copy.deepcopy(client.entry)
+                report = SUITE.validate_deprecated_fixture_lifecycle(client, original, "run-1", 51)
+                self.assertEqual(report["versions"], [4, 5, 6, 7])
+                self.assertEqual(report["fixture_restoration"], "passed")
+                self.assertEqual(SUITE.catalog_fixture_facts(client.entry), SUITE.catalog_fixture_facts(original))
+                transfer = [body for path, body in client.writes if path.endswith("/responsibilities")][0]
+                self.assertNotEqual(transfer["responsibilities"], original["responsibilities"])
+                self.assertEqual(set(transfer), {"version", "reason", "responsibilities"})
+
+    def test_lifecycle_restores_after_committed_write_response_is_lost(self) -> None:
+        for phase in ("deprecation", "transfer", "withdrawal"):
+            with self.subTest(phase=phase):
+                class LostResponseClient(FakeClient):
+                    lost = False
+
+                    def request(self, method, path, expected, body=None):
+                        response = super().request(method, path, expected, body)
+                        matches = body is not None and (
+                            (phase == "deprecation" and body.get("reason", "").startswith("Dedicated Online deprecation")) or
+                            (phase == "transfer" and body.get("reason", "").startswith("Dedicated Online responsibility")) or
+                            (phase == "withdrawal" and body.get("reason", "").startswith("Dedicated Online withdrawal"))
+                        )
+                        if matches and not self.lost:
+                            self.lost = True
+                            raise SUITE.SuiteError("injected lost write response")
+                        return response
+
+                client = LostResponseClient()
+                original = copy.deepcopy(client.entry)
+                with self.assertRaisesRegex(SUITE.SuiteError, "lost write response"):
+                    SUITE.validate_deprecated_fixture_lifecycle(client, original, "run-1", 51)
+                self.assertEqual(SUITE.catalog_fixture_facts(client.entry), SUITE.catalog_fixture_facts(original))
+                attempted = [body for _, body in client.writes if body.get("reason", "").startswith({
+                    "deprecation": "Dedicated Online deprecation",
+                    "transfer": "Dedicated Online responsibility",
+                    "withdrawal": "Dedicated Online withdrawal",
+                }[phase])]
+                self.assertEqual(len(attempted), 1, "lost command must not be retried")
+
+    def test_lifecycle_detects_conflict_side_effects_and_restores_fixture(self) -> None:
+        for suffix, message in (("/governance", "stale withdrawal"), ("/responsibilities", "stale responsibility transfer")):
+            with self.subTest(suffix=suffix):
+                class BrokenConflictClient(FakeClient):
+                    def request(self, method, path, expected, body=None):
+                        response = super().request(method, path, expected, body)
+                        if response.status == 409 and path.endswith(suffix):
+                            self.entry["business_description"] = "unexpected stale write"
+                        return response
+
+                client = BrokenConflictClient()
+                original = copy.deepcopy(client.entry)
+                with self.assertRaisesRegex(SUITE.SuiteError, message + " produced side effects"):
+                    SUITE.validate_deprecated_fixture_lifecycle(client, original, "run-1", 51)
+                self.assertEqual(SUITE.catalog_fixture_facts(client.entry), SUITE.catalog_fixture_facts(original))
+
+    def test_lifecycle_cleanup_failure_cannot_report_success(self) -> None:
+        class FailedCleanupClient(FakeClient):
+            def request(self, method, path, expected, body=None):
+                if method == "PUT" and body is not None and "business_name" in body:
+                    raise SUITE.SuiteError("injected cleanup failure")
+                return super().request(method, path, expected, body)
+
+        client = FailedCleanupClient()
+        with self.assertRaisesRegex(SUITE.SuiteError, "cleanup failed.*injected cleanup failure"):
+            SUITE.validate_deprecated_fixture_lifecycle(client, client.entry, "run-1", 51)
+
+    def test_cleanup_checks_description_and_all_associations_not_just_name(self) -> None:
+        for key, broken_value in (("business_description", "not restored"), ("semantic_links", []),
+                                  ("responsibilities", []), ("visibility", "inventory")):
+            with self.subTest(key=key):
+                class IncompleteRestoreClient(FakeClient):
+                    def request(self, method, path, expected, body=None):
+                        response = super().request(method, path, expected, body)
+                        if method == "PUT" and body is not None and "business_name" in body:
+                            self.entry[key] = broken_value
+                        return response
+
+                client = IncompleteRestoreClient()
+                with self.assertRaisesRegex(SUITE.SuiteError, "complete curation aggregate was not restored"):
+                    SUITE.restore_catalog_fixture(client, client.entry["id"], SUITE.editable_catalog_payload(client.entry), "run-1")
+
+    def test_first_initialization_keeps_stable_curated_fixture_after_lifecycle_failure(self) -> None:
+        class LostDeprecationClient(FakeClient):
+            lost = False
+
+            def request(self, method, path, expected, body=None):
+                response = super().request(method, path, expected, body)
+                if body and body.get("governance_status") == "deprecated" and not self.lost:
+                    self.lost = True
+                    raise SUITE.SuiteError("injected lost response")
+                return response
+
+        client = LostDeprecationClient()
+        client.entry.update({"governance_status": "discovered", "business_name": None,
+                             "business_description": None, "semantic_links": [], "responsibilities": []})
+        with self.assertRaisesRegex(SUITE.SuiteError, "lost response"):
+            SUITE.run_suite(client, 42, 7, "run-1", 31, 41, 51, 10)
+        self.assertEqual(client.entry["governance_status"], "curated")
+        self.assertEqual(client.entry["business_name"], "ADDP Online Catalog Fixture")
+        self.assertEqual(len(client.entry["responsibilities"]), 3)
+
     def test_domain_preflight_failure_does_not_trigger_cleanup_write(self) -> None:
         client = FakeClient()
         client.entry["semantic_links"] = [
@@ -293,6 +429,8 @@ class EnterpriseCatalogPublishingOnlineTest(unittest.TestCase):
 
     def test_validates_tenant_user_identity_and_permissions(self) -> None:
         class IdentityClient:
+            permissions = SUITE.REQUIRED_PERMISSIONS
+
             def request(self, *_args, **_kwargs):
                 return SUITE.Response(
                     200,
@@ -304,7 +442,7 @@ class EnterpriseCatalogPublishingOnlineTest(unittest.TestCase):
                             "role_assignments": [
                                 {
                                     "role_key": "tenant.catalog_operator",
-                                    "permissions": sorted(SUITE.REQUIRED_PERMISSIONS),
+                                    "permissions": sorted(self.permissions),
                                 }
                             ]
                         },
@@ -314,6 +452,10 @@ class EnterpriseCatalogPublishingOnlineTest(unittest.TestCase):
         identity = SUITE.validate_user_identity(IdentityClient(), 42)
         self.assertEqual(identity["principal_id"], "51")
         self.assertEqual(identity["tenant_id"], "42")
+        missing_deprecation = IdentityClient()
+        missing_deprecation.permissions = SUITE.REQUIRED_PERMISSIONS - {"catalog.entry.deprecate"}
+        with self.assertRaisesRegex(SUITE.SuiteError, "missing required permissions: catalog.entry.deprecate"):
+            SUITE.validate_user_identity(missing_deprecation, 42)
 
     def test_validates_browser_report_contract(self) -> None:
         report = {

@@ -578,7 +578,7 @@ BasePath 固定为 `/api/v1/catalog`。第一阶段公开单一路由集合：
 
 不存在用户手工创建或删除 DataItem CatalogEntry 的 API。创建只来自变化源，删除以来源 `missing`、治理 `deprecated` 或条目 `merged` 表达。
 
-`PUT /entries/:id` 必须携带完整可编辑聚合和正整数 `version`，其中 `recommended_successor_entry_id` 使用规范 UUID 或 `null`。成功返回新完整资源并递增版本；版本冲突返回 `409` 和 `catalog_entry_version_conflict`，不能自动重试或覆盖。推荐继任目标不满足同 Tenant、状态或来源约束时返回 `409` 和 `catalog_recommended_successor_invalid`。
+`PUT /entries/:id` 必须携带完整可编辑编目聚合和正整数 `version`，不接受 `recommended_successor_entry_id`。治理子资源 `PUT /entries/:id/governance` 中的推荐继任字段使用规范 UUID 或 `null`。成功写入返回新完整资源并递增版本；版本冲突返回 `409` 和 `catalog_entry_version_conflict`，不能自动重试或覆盖。推荐继任目标不满足同 Tenant、状态或来源约束时返回 `409` 和 `catalog_recommended_successor_invalid`。
 
 `POST /entries/batch_governance` 是资源盘点中的显式成员批量命令，只允许同时具有 `catalog.inventory.read` 与 `catalog.entry.update` 的治理人员调用。请求固定包含 1 到 200 个互不重复的 `{id, version}`、单一 `operation=assign_primary_domain|assign_accountable_department` 和 owner 稳定 `reference_id`；不接受筛选条件、查询结果全选或手工输入裸 ID。Catalog 在写事务前只向对应 owner 精确校验一次目标可引用性，在事务中按 CatalogEntry UUID 稳定排序加锁并校验全部成员，再只替换每个条目的主业务域或责任部门这一项关系，保留其他语义与责任事实。任一条目不存在、跨 Tenant、非 active、版本冲突、目标不可引用或不适用时整批回滚；成功后每个条目版本递增并按原请求顺序返回 `{id, version}`。
 
@@ -740,6 +740,6 @@ Asset 的正式组合模型固定为 `asset.asset_components`：`catalog_entry_i
 - 搜索索引可从 PostgreSQL 重建，索引不可用不改变权威事实；
 - Swagger 路由覆盖和授权覆盖报告通过；
 - 旧发现、旧索引和旧来源字段删除后不存在兼容路由、字段或 fallback query。
-- T4 `enterprise-catalog-publishing` 在真实 System、Gateway 和各 owner 中重复执行 Meta 扫描，验证 fingerprint / CatalogEntry 身份幂等、资源盘点与治理目录视图、治理覆盖率、精确来源身份解析、CatalogEntry 自动建档与编目、AssetComponent 组合与发布、Portal 消费是唯一路线；同一专用 User 还必须通过真实浏览器验收 Console 覆盖率、目录详情和人类可读筛选器，最终通过正式 API 完成临时 Asset 和资产目录零残留清理。
+- T4 `enterprise-catalog-publishing` 在真实 System、Gateway 和各 owner 中重复执行 Meta 扫描，验证 fingerprint / CatalogEntry 身份幂等、资源盘点与治理目录视图、治理覆盖率、精确来源身份解析、CatalogEntry 自动建档与编目、已弃用责任子资源更新及撤销弃用、AssetComponent 组合与发布、Portal 消费是唯一路线；同一专用 User 还必须通过真实浏览器验收 Console 覆盖率、目录详情和人类可读筛选器，最终通过正式 API 完成临时 Asset 和资产目录零残留清理，并重新读取核对永久 fixture 的完整编目聚合恢复。具体生命周期用例边界以测试与验收规范 5.2 节为准。
 
 Asset 的删除生命周期固定为：`draft` 或 `offline` 可删除，`published` 必须先下架；不允许跳过下架直接删除已发布资产。

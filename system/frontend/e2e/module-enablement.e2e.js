@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { mockModuleQueryAPI } from './module-query.fixture'
 
 async function fulfillJSON(route, status, body) {
   await route.fulfill({
@@ -264,4 +265,91 @@ test('instance queries renew leases without losing filters or accepting an older
   const afterLeave = instanceQueries.length
   await page.clock.fastForward(20_000)
   expect(instanceQueries.length).toBe(afterLeave)
+})
+
+test('one instance expires and recovers while automatic refresh preserves filters and current status membership', async ({ page }) => {
+  const started = Date.now()
+  await page.clock.install({ time: new Date(started) })
+  await mockModuleQueryAPI(page)
+  const queries = []
+  const errors = []
+  page.on('pageerror', error => errors.push(error.message))
+  let instance = {
+    id: 1, instance_id: 'manager-lease-probe', module_name: 'manager', role: 'backend',
+    module_url: 'http://manager.local:8081', health_check_url: 'http://manager.local:8081/health/ready',
+    host_node_name: 'host-a', runtime_hostname: 'container-a', status: 'up',
+    process_started_at: new Date(started - 65_000).toISOString(),
+    registered_at: new Date(started - 65_000).toISOString(),
+    last_heartbeat: new Date(started).toISOString(),
+    lease_expires_at: new Date(started + 15_000).toISOString()
+  }
+  await page.route('**/api/v1/system/platform/module-instances?*', route => {
+    if (route.request().method() === 'OPTIONS') return fulfillJSON(route, 204, {})
+    const params = Object.fromEntries(new URL(route.request().url()).searchParams)
+    queries.push(params)
+    const data = !params.status || params.status === instance.status ? [instance] : []
+    return fulfillJSON(route, 200, { data, total: data.length, page: 1, page_size: 10 })
+  })
+  await page.goto('/modules?tab=instances&module_name=manager&registered_host=manager.local&node_name=host-a&role=backend&status=all')
+  const list = page.locator('.module-instances')
+  const row = () => list.locator('.el-table__row').filter({ hasText: instance.instance_id })
+  const selectStatus = async label => {
+    await list.locator('.el-select').filter({
+      has: page.getByRole('combobox', { name: '运行状态', exact: true })
+    }).locator('.el-select__wrapper').click()
+    await page.getByRole('option', { name: label, exact: true }).click()
+  }
+  await expect(row().locator('.el-tag').filter({ hasText: 'UP · 在线' })).toHaveClass(/el-tag--success/)
+  await expect(row()).toContainText('manager.local:8081')
+  await expect(row()).toContainText('1 分钟')
+  const allQuery = { ...queries.at(-1) }
+  const allURL = page.url()
+
+  instance = {
+    ...instance, status: 'down', stop_reason: 'lease_expired', stopped_at: instance.lease_expires_at
+  }
+  const beforeExpiry = queries.length
+  await page.clock.fastForward(20_000)
+  await expect.poll(() => queries.length).toBeGreaterThan(beforeExpiry)
+  await expect(row().locator('.el-tag').filter({ hasText: 'DOWN · 离线' })).toHaveClass(/el-tag--danger/)
+  expect(queries.at(-1)).toEqual(allQuery)
+  await expect(page).toHaveURL(allURL)
+  await expect(list.locator('.el-loading-mask')).toHaveCount(0)
+  await expect(row()).toContainText('租约超时，疑似异常退出')
+  const uptimeColumn = await list.getByRole('columnheader', { name: '持续运行时长', exact: true }).evaluate(el => el.cellIndex)
+  await expect(row().locator('td').nth(uptimeColumn)).toHaveText('—')
+  await row().locator('.el-table__expand-icon').click()
+  await expect(list.getByText('租约超时仅表示实例失联，不能据此断定进程已经退出。', { exact: true })).toBeVisible()
+
+  await selectStatus('UP · 在线')
+  await expect(list.getByText('没有符合条件的服务实例', { exact: true })).toBeVisible()
+  await expect(row()).toHaveCount(0)
+  await selectStatus('DOWN · 离线')
+  await expect(row().getByText('DOWN · 离线', { exact: true })).toBeVisible()
+  const downQuery = { ...queries.at(-1) }
+  const downURL = page.url()
+
+  instance = {
+    ...instance, status: 'up', stop_reason: '', stopped_at: null,
+    last_heartbeat: new Date(started + 20_000).toISOString(),
+    lease_expires_at: new Date(started + 120_000).toISOString()
+  }
+  const beforeRecovery = queries.length
+  await page.clock.fastForward(10_000)
+  await expect.poll(() => queries.length).toBeGreaterThan(beforeRecovery)
+  await expect(list.getByText('没有符合条件的服务实例', { exact: true })).toBeVisible()
+  await expect(row()).toHaveCount(0)
+  expect(queries.at(-1)).toEqual(downQuery)
+  await expect(page).toHaveURL(downURL)
+
+  await selectStatus('UP · 在线')
+  await expect(row().locator('.el-tag').filter({ hasText: 'UP · 在线' })).toHaveClass(/el-tag--success/)
+  await expect(row().locator('td').nth(uptimeColumn)).toContainText('1 分钟')
+  await expect(row()).not.toContainText('租约超时，疑似异常退出')
+  await row().locator('.el-table__expand-icon').click()
+  await expect(list.getByText('租约超时仅表示实例失联，不能据此断定进程已经退出。', { exact: true })).toHaveCount(0)
+  await expect(list.getByPlaceholder('登记主机名或 IP')).toHaveValue('manager.local')
+  await expect(list.getByPlaceholder('宿主节点或运行环境主机名')).toHaveValue('host-a')
+  expect(queries.at(-1)).toEqual({ ...allQuery, status: 'up' })
+  expect(errors).toEqual([])
 })
