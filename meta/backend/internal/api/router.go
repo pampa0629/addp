@@ -57,6 +57,7 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, engineService *service.EngineS
 		auth.MustNewContextGuard("tenant"),
 		auth.MustNewDelegatedPolicyGuard("meta", metaDelegatedToolPolicies()),
 	)
+	api.GET("/execution-read-scope", GetExecutionReadScope)
 	permission := func(keys ...string) gin.HandlerFunc {
 		return auth.MustNewPermissionGuard(keys...)
 	}

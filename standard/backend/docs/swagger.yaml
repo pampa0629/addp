@@ -1,5 +1,27 @@
 basePath: /api/v1/standard
 definitions:
+  execution.ReadGrant:
+    properties:
+      own_ad_hoc:
+        type: boolean
+      task_history:
+        type: boolean
+      task_type:
+        type: string
+    type: object
+  execution.ReadScope:
+    properties:
+      grants:
+        items:
+          $ref: '#/definitions/execution.ReadGrant'
+        type: array
+      module:
+        type: string
+      principal_id:
+        type: integer
+      tenant_id:
+        type: integer
+    type: object
   github_com_addp_standard_internal_models.CatalogReference:
     properties:
       source_identity:
@@ -5030,6 +5052,27 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - standard.element.publish
+  /execution-read-scope:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/execution.ReadScope'
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取执行读取范围 | Get execution read scope
+      tags:
+      - Execution diagnostics
+      x-addp-auth-mode: authenticated
   /glossaries:
     get:
       description: 同时返回工作修订、当前生效修订与最新历史修订；管理展示按此顺序选择，撤回历史仍保留名称与定义。 | Returns working,

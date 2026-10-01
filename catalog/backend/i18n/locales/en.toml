@@ -1,6 +1,17 @@
 [catalog.error.invalid_params]
 other = "Invalid request parameters"
 
+[catalog.error.sharing_confirmation_forbidden]
+other = "Current effective business ownership and an independent sharing confirmation permission are required; curation permission is insufficient"
+[catalog.error.sharing_decision_conflict]
+other = "This sharing decision ID is bound to different parameters; read the original record or use a new ID"
+[catalog.error.sharing_target_unsupported]
+other = "The current target must be an active non-deprecated scanned database table with verifiable complete source ancestry"
+[permissions.catalog.sharing_decision.create.name]
+other = "Confirm business sharing"
+[permissions.catalog.sharing_decision.create.description]
+other = "Explicitly confirm one exact read-only sharing decision as the current business owner; no data access is granted"
+
 [catalog.error.entry_not_found]
 other = "Catalog entry was not found"
 

@@ -3,10 +3,10 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/addp/common/buildinfo"
 	"log"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"syscall"
 
 	"github.com/addp/common/schema"
@@ -34,7 +34,7 @@ import (
 func main() {
 	commonConfig.LoadEnv()
 	cfg := config.Load()
-	logger.Init(logger.Options{Level: envOr("LOG_LEVEL", "info"), Format: "json", FilePath: filepath.Join("logs", "transfer-bounded-worker.log"), AddSource: true, RedirectStdLog: true})
+	logger.Init(logger.Options{Level: envOr("LOG_LEVEL", "info"), AddSource: true, RedirectStdLog: true})
 
 	db, err := connectDatabase(cfg)
 	if err != nil {
@@ -88,7 +88,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	registrationDone := systemRuntimeClient.RegisterAndHeartbeat(ctx, &commonClient.ModuleRegistrationRequest{
-		ModuleName: commonExecution.ModuleTransfer, InstanceID: workerInstanceID,
+		ModuleName: commonExecution.ModuleTransfer, InstanceID: buildinfo.ProcessInstanceID(),
 		Role: commonClient.ModuleRuntimeRoleWorker, RoutePrefix: "/transfer",
 		Metadata: map[string]interface{}{
 			"runtime_name": commonExecution.TaskTypeSync,

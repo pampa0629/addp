@@ -18,7 +18,7 @@ type RequestAuditWriter interface {
 
 func LoggerMiddleware(writer RequestAuditWriter) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if strings.Contains(c.Request.URL.Path, "/internal/") || c.Request.Method == "GET" {
+		if strings.Contains(c.Request.URL.Path, "/internal/") || (c.Request.Method == "GET" && !isRuntimeLogRead(c)) {
 			c.Next()
 			return
 		}
@@ -77,6 +77,20 @@ func requestAuditEvent(c *gin.Context, requestID string, duration time.Duration)
 		ModuleName: "system", EntityType: "http_request", EntityID: requestID,
 		Details: map[string]any{"duration_ms": duration.Milliseconds()},
 	}
+	if isRuntimeLogRead(c) {
+		event.EventName = "platform.module_log.read"
+		event.EntityType = "module_runtime_instance"
+		event.EntityID = c.Param("instance_id")
+		if event.EntityID == "" {
+			event.EntityID = requestID
+		}
+		event.Details = map[string]any{"module_name": c.Param("module_name")}
+		for _, key := range []string{"from", "to"} {
+			if t, err := time.Parse(time.RFC3339Nano, c.Query(key)); err == nil {
+				event.Details[key] = t.UTC().Format(time.RFC3339Nano)
+			}
+		}
+	}
 	if IsOAuthSecurityPath(path) {
 		oauthAudit := ResolveOAuthSecurityAudit(c)
 		event.EventName = oauthAudit.Event
@@ -97,6 +111,11 @@ func requestAuditEvent(c *gin.Context, requestID string, duration time.Duration)
 		}
 	}
 	return event
+}
+
+func isRuntimeLogRead(c *gin.Context) bool {
+	parts := strings.Split(strings.Trim(c.Request.URL.Path, "/"), "/")
+	return c.Request.Method == "GET" && len(parts) == 9 && strings.Join(parts[:5], "/") == "api/v1/system/platform/modules" && parts[6] == "instances" && parts[8] == "logs"
 }
 
 func oauthAuditResult(result string) iam.AuditResult {

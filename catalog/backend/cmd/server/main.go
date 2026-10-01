@@ -87,7 +87,7 @@ func main() {
 		service.NewServiceClientSourceResolver(serviceClient),
 		service.NewDevelopClientSourceResolver(developClient),
 		service.NewWorkbenchClientSourceResolver(workbenchClient),
-	).WithQualitySummaryResolver(service.NewQualityClientSummaryResolver(qualityClient)).WithDataDictionaryResolvers(
+	).WithSharingTargetResolver(service.NewSharingTargetResolver(metaClient, systemClient)).WithQualitySummaryResolver(service.NewQualityClientSummaryResolver(qualityClient)).WithDataDictionaryResolvers(
 		service.NewMetaClientFieldResolver(metaClient),
 		service.NewStandardClientElementRevisionResolver(standardClient),
 	)

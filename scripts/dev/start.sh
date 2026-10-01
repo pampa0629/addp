@@ -935,6 +935,13 @@ else
 fi
 echo ""
 
+# Output receiver is a shared launch utility, not a registered business module.
+if ! addp_go_build_is_current common .dev-bins/addp-runtime-log ./cmd/runtime-log; then
+  addp_atomic_go_build runtime-log common .dev-bins/addp-runtime-log ./cmd/runtime-log || exit 1
+fi
+export ADDP_RUNTIME_LOG_ROOT="${ADDP_RUNTIME_LOG_ROOT:-${PROJECT_ROOT}/logs/runtime}"
+case "$ADDP_RUNTIME_LOG_ROOT" in /*) ;; *) export ADDP_RUNTIME_LOG_ROOT="${PROJECT_ROOT}/${ADDP_RUNTIME_LOG_ROOT}" ;; esac
+
 # 1. 启动基础设施
 echo -e "${YELLOW}Step 1/7: 启动基础设施（PostgreSQL, Redis, FalkorDB, MinIO, Meilisearch）${NC}"
 echo ""
@@ -945,13 +952,24 @@ if addp_infra_ready; then
 else
   echo -e "${YELLOW}启动基础设施服务...${NC}"
   if ! bash "${ROOT_DIR}/scripts/infra/up.sh"; then
-    echo -e "${RED}✗ 基础设施启动失败,请检查 Docker 是否运行${NC}"
-    echo -e "${YELLOW}提示: 运行 'docker info' 检查 Docker 状态${NC}"
-    exit 1
+    if addp_infra_ready core; then
+      echo -e "${YELLOW}⚠️  运行日志设施未就绪；业务所需 Infra 健康，继续启动应用${NC}"
+    else
+      echo -e "${RED}✗ 基础设施启动失败,请检查 Docker 是否运行${NC}"
+      echo -e "${YELLOW}提示: 运行 'docker info' 检查 Docker 状态${NC}"
+      exit 1
+    fi
   fi
   echo -e "${GREEN}✓ 基础设施启动完成${NC}"
 fi
 
+if [ "${ADDP_ONLINE_HOST:-0}" != 1 ] && [ -f "${ROOT_DIR}/.env" ]; then
+  set -a
+  source "${ROOT_DIR}/.env"
+  set +a
+  export ADDP_RUNTIME_LOG_ROOT="${ADDP_RUNTIME_LOG_ROOT:-${PROJECT_ROOT}/logs/runtime}"
+  case "$ADDP_RUNTIME_LOG_ROOT" in /*) ;; *) export ADDP_RUNTIME_LOG_ROOT="${PROJECT_ROOT}/${ADDP_RUNTIME_LOG_ROOT}" ;; esac
+fi
 addp_infra_read_actual_ports
 echo "  PostgreSQL: localhost:${POSTGRES_PORT}  Redis: localhost:${REDIS_PORT}  MinIO: localhost:${MINIO_API_PORT}"
 
@@ -974,7 +992,7 @@ if [ "$START_SYSTEM_BACKEND" = true ]; then
   # 检查服务是否已在运行
   if check_service_running "system" "$SYSTEM_PORT"; then
     build_service "system" "system/backend"
-    .dev-bins/addp-system > logs/system-backend.log 2> logs/system-backend-stderr.log &
+    "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" launch --module system --role backend -- "${PROJECT_ROOT}/.dev-bins/addp-system" &
     SYSTEM_PID=$!
     echo $SYSTEM_PID > .dev-pids/system.pid
 
@@ -988,7 +1006,7 @@ if [ "$START_SYSTEM_BACKEND" = true ]; then
       WAIT_COUNT=$((WAIT_COUNT + 1))
       if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
         echo -e "${RED}✗ System Backend 启动超时${NC}"
-        echo "查看日志: tail -f logs/system-backend.log"
+        echo "查看日志: tail -f logs/runtime/system/*/*.jsonl"
         exit 1
       fi
     done
@@ -1172,7 +1190,7 @@ start_module_workers() (
   done
   for worker in "$@"; do
     if check_service_running "$worker" ""; then
-      ".dev-bins/addp-${worker}" > "logs/${worker}.log" 2>&1 &
+      "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" launch --module "$module" --role worker -- "${PROJECT_ROOT}/.dev-bins/addp-${worker}" &
       pid=$!
       echo "$pid" > ".dev-pids/${worker}.pid"
       echo "  ✓ ${worker} 已启动，所属 Backend 已就绪 (PID: $pid)"
@@ -1199,7 +1217,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   # 启动 Manager Backend（带检查）
   if [ "$START_MANAGER_BACKEND" = true ]; then
     if check_service_running "manager" "$MANAGER_BACKEND_PORT"; then
-      .dev-bins/addp-manager > logs/manager-backend.log 2> logs/manager-backend-stderr.log &
+      "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" launch --module manager --role backend -- "${PROJECT_ROOT}/.dev-bins/addp-manager" &
       MANAGER_PID=$!
       echo $MANAGER_PID > .dev-pids/manager.pid
       BACKEND_STARTS+=("manager:$MANAGER_PID")
@@ -1211,7 +1229,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   # 启动 Meta Backend（带检查）
   if [ "$START_META_BACKEND" = true ]; then
     if check_service_running "meta" "$META_BACKEND_PORT"; then
-      .dev-bins/addp-meta > logs/meta-backend.log 2> logs/meta-backend-stderr.log &
+      "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" launch --module meta --role backend -- "${PROJECT_ROOT}/.dev-bins/addp-meta" &
       META_PID=$!
       echo $META_PID > .dev-pids/meta.pid
       BACKEND_STARTS+=("meta:$META_PID")
@@ -1223,7 +1241,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   # 启动 Transfer Backend（带检查）
   if [ "$START_TRANSFER_BACKEND" = true ]; then
     if check_service_running "transfer" "$TRANSFER_BACKEND_PORT"; then
-      .dev-bins/addp-transfer > logs/transfer-backend.log 2> logs/transfer-backend-stderr.log &
+      "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" launch --module transfer --role backend -- "${PROJECT_ROOT}/.dev-bins/addp-transfer" &
       TRANSFER_PID=$!
       echo $TRANSFER_PID > .dev-pids/transfer.pid
       BACKEND_STARTS+=("transfer:$TRANSFER_PID")
@@ -1235,7 +1253,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   # 启动 Orchestrator Backend（带检查）
   if [ "$START_ORCHESTRATOR_BACKEND" = true ]; then
     if check_service_running "orchestrator" "$ORCHESTRATOR_BACKEND_PORT"; then
-      .dev-bins/addp-orchestrator > logs/orchestrator-backend.log 2> logs/orchestrator-backend-stderr.log &
+      "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" launch --module orchestrator --role backend -- "${PROJECT_ROOT}/.dev-bins/addp-orchestrator" &
       ORCHESTRATOR_PID=$!
       echo $ORCHESTRATOR_PID > .dev-pids/orchestrator.pid
       BACKEND_STARTS+=("orchestrator:$ORCHESTRATOR_PID")
@@ -1247,7 +1265,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   # 启动 Develop Backend（带检查）
   if [ "$START_DEVELOP_BACKEND" = true ]; then
     if check_service_running "develop" "$DEVELOP_BACKEND_PORT"; then
-      .dev-bins/addp-develop > logs/develop-backend.log 2> logs/develop-backend-stderr.log &
+      "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" launch --module develop --role backend -- "${PROJECT_ROOT}/.dev-bins/addp-develop" &
       DEVELOP_PID=$!
       echo $DEVELOP_PID > .dev-pids/develop.pid
       BACKEND_STARTS+=("develop:$DEVELOP_PID")
@@ -1259,7 +1277,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   # 启动 Service Backend（带检查）
   if [ "$START_SERVICE_BACKEND" = true ]; then
     if check_service_running "service" "$SERVICE_BACKEND_PORT"; then
-      .dev-bins/addp-service > logs/service-backend.log 2> logs/service-backend-stderr.log &
+      "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" launch --module service --role backend -- "${PROJECT_ROOT}/.dev-bins/addp-service" &
       SERVICE_PID=$!
       echo $SERVICE_PID > .dev-pids/service.pid
       BACKEND_STARTS+=("service:$SERVICE_PID")
@@ -1271,7 +1289,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   # 启动 Monitor Backend（带检查）
   if [ "$START_MONITOR_BACKEND" = true ]; then
     if check_service_running "monitor" "$MONITOR_BACKEND_PORT"; then
-      .dev-bins/addp-monitor > logs/monitor-backend.log 2> logs/monitor-backend-stderr.log &
+      "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" launch --module monitor --role backend -- "${PROJECT_ROOT}/.dev-bins/addp-monitor" &
       MONITOR_PID=$!
       echo $MONITOR_PID > .dev-pids/monitor.pid
       BACKEND_STARTS+=("monitor:$MONITOR_PID")
@@ -1283,7 +1301,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   # 启动 Standard Backend（带检查）
   if [ "$START_STANDARD_BACKEND" = true ]; then
     if check_service_running "standard" "$STANDARD_BACKEND_PORT"; then
-      .dev-bins/addp-standard > logs/standard-backend.log 2> logs/standard-backend-stderr.log &
+      "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" launch --module standard --role backend -- "${PROJECT_ROOT}/.dev-bins/addp-standard" &
       STANDARD_PID=$!
       echo $STANDARD_PID > .dev-pids/standard.pid
       BACKEND_STARTS+=("standard:$STANDARD_PID")
@@ -1295,7 +1313,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   # 启动 Model Backend（带检查）
   if [ "$START_MODEL_BACKEND" = true ]; then
     if check_service_running "model" "$MODEL_BACKEND_PORT"; then
-      .dev-bins/addp-model > logs/model-backend.log 2> logs/model-backend-stderr.log &
+      "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" launch --module model --role backend -- "${PROJECT_ROOT}/.dev-bins/addp-model" &
       MODEL_PID=$!
       echo $MODEL_PID > .dev-pids/model.pid
       BACKEND_STARTS+=("model:$MODEL_PID")
@@ -1307,7 +1325,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   # 启动 Quality Backend（带检查）
   if [ "$START_QUALITY_BACKEND" = true ]; then
     if check_service_running "quality" "$QUALITY_BACKEND_PORT"; then
-      .dev-bins/addp-quality > logs/quality-backend.log 2> logs/quality-backend-stderr.log &
+      "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" launch --module quality --role backend -- "${PROJECT_ROOT}/.dev-bins/addp-quality" &
       QUALITY_PID=$!
       echo $QUALITY_PID > .dev-pids/quality.pid
       BACKEND_STARTS+=("quality:$QUALITY_PID")
@@ -1318,7 +1336,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
 
   if [ "$START_SECURITY_BACKEND" = true ]; then
     if check_service_running "security" "$SECURITY_BACKEND_PORT"; then
-      .dev-bins/addp-security > logs/security-backend.log 2> logs/security-backend-stderr.log &
+      "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" launch --module security --role backend -- "${PROJECT_ROOT}/.dev-bins/addp-security" &
       SECURITY_PID=$!
       echo $SECURITY_PID > .dev-pids/security.pid
       BACKEND_STARTS+=("security:$SECURITY_PID")
@@ -1330,7 +1348,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   # 启动 Asset Backend（带检查）
   if [ "$START_ASSET_BACKEND" = true ]; then
     if check_service_running "asset" "$ASSET_BACKEND_PORT"; then
-      .dev-bins/addp-asset > logs/asset-backend.log 2> logs/asset-backend-stderr.log &
+      "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" launch --module asset --role backend -- "${PROJECT_ROOT}/.dev-bins/addp-asset" &
       ASSET_PID=$!
       echo $ASSET_PID > .dev-pids/asset.pid
       BACKEND_STARTS+=("asset:$ASSET_PID")
@@ -1342,7 +1360,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   # 启动 Catalog Backend（Meta / Model 同步由进程后台重试，不是启动依赖）
   if [ "$START_CATALOG_BACKEND" = true ]; then
     if check_service_running "catalog" "$CATALOG_BACKEND_PORT"; then
-      .dev-bins/addp-catalog > logs/catalog-backend.log 2> logs/catalog-backend-stderr.log &
+      "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" launch --module catalog --role backend -- "${PROJECT_ROOT}/.dev-bins/addp-catalog" &
       CATALOG_PID=$!
       echo $CATALOG_PID > .dev-pids/catalog.pid
       BACKEND_STARTS+=("catalog:$CATALOG_PID")
@@ -1354,7 +1372,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   # 启动 Ontology Backend；只消费私有 Infra 和 System 授权。
   if [ "$START_ONTOLOGY_BACKEND" = true ]; then
     if check_service_running "ontology" "$ONTOLOGY_BACKEND_PORT"; then
-      .dev-bins/addp-ontology > logs/ontology-backend.log 2> logs/ontology-backend-stderr.log &
+      "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" launch --module ontology --role backend -- "${PROJECT_ROOT}/.dev-bins/addp-ontology" &
       ONTOLOGY_PID=$!
       echo $ONTOLOGY_PID > .dev-pids/ontology.pid
       BACKEND_STARTS+=("ontology:$ONTOLOGY_PID")
@@ -1366,7 +1384,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   # 启动 Workbench Backend；Service 可暂时离线，不影响 Workbench Ready。
   if [ "$START_WORKBENCH_BACKEND" = true ]; then
     if check_service_running "workbench" "$WORKBENCH_BACKEND_PORT"; then
-      .dev-bins/addp-workbench > logs/workbench-backend.log 2> logs/workbench-backend-stderr.log &
+      "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" launch --module workbench --role backend -- "${PROJECT_ROOT}/.dev-bins/addp-workbench" &
       WORKBENCH_PID=$!
       echo $WORKBENCH_PID > .dev-pids/workbench.pid
       BACKEND_STARTS+=("workbench:$WORKBENCH_PID")
@@ -1378,7 +1396,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   # 启动 Portal Backend（带检查）
   if [ "$START_PORTAL_BACKEND" = true ]; then
     if check_service_running "portal" "$PORTAL_BACKEND_PORT"; then
-      .dev-bins/addp-portal > logs/portal-backend.log 2> logs/portal-backend-stderr.log &
+      "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" launch --module portal --role backend -- "${PROJECT_ROOT}/.dev-bins/addp-portal" &
       PORTAL_PID=$!
       echo $PORTAL_PID > .dev-pids/portal.pid
       BACKEND_STARTS+=("portal:$PORTAL_PID")
@@ -1390,7 +1408,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   # 启动 Graph Backend（带检查）
   if [ "$START_GRAPH_BACKEND" = true ]; then
     if check_service_running "graph" "$GRAPH_BACKEND_PORT"; then
-      .dev-bins/addp-graph > logs/graph-backend.log 2> logs/graph-backend-stderr.log &
+      "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" launch --module graph --role backend -- "${PROJECT_ROOT}/.dev-bins/addp-graph" &
       GRAPH_PID=$!
       echo $GRAPH_PID > .dev-pids/graph.pid
       BACKEND_STARTS+=("graph:$GRAPH_PID")
@@ -1401,7 +1419,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
 
   if [ "$START_INFERENCE_BACKEND" = true ]; then
     if check_service_running "inference" "${INFERENCE_BACKEND_PORT:-8191}"; then
-      .dev-bins/addp-inference > logs/inference-backend.log 2> logs/inference-backend-stderr.log &
+      "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" launch --module inference --role backend -- "${PROJECT_ROOT}/.dev-bins/addp-inference" &
       INFERENCE_PID=$!
       echo $INFERENCE_PID > .dev-pids/inference.pid
       BACKEND_STARTS+=("inference:$INFERENCE_PID")
@@ -1521,7 +1539,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
         WAIT_COUNT=$((WAIT_COUNT + 1))
         if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
           echo -e "${RED}✗ Manager Backend 启动超时${NC}"
-          echo "查看日志: tail -f logs/manager-backend.log"
+          echo "查看日志: tail -f logs/runtime/manager/*/*.jsonl"
           exit 1
         fi
       done
@@ -1553,7 +1571,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
         WAIT_COUNT=$((WAIT_COUNT + 1))
         if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
           echo -e "${RED}✗ Meta Backend 启动超时${NC}"
-          echo "查看日志: tail -f logs/meta-backend.log"
+          echo "查看日志: tail -f logs/runtime/meta/*/*.jsonl"
           exit 1
         fi
       done
@@ -1570,7 +1588,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
         WAIT_COUNT=$((WAIT_COUNT + 1))
         if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
           echo -e "${RED}✗ Transfer Backend 启动超时${NC}"
-          echo "查看日志: tail -f logs/transfer-backend-stderr.log"
+          echo "查看日志: tail -f logs/runtime/transfer/*/*.jsonl"
           exit 1
         fi
       done
@@ -1587,7 +1605,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
         WAIT_COUNT=$((WAIT_COUNT + 1))
         if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
           echo -e "${RED}✗ Orchestrator Backend 启动超时${NC}"
-          echo "查看日志: tail -f logs/orchestrator-backend-stderr.log"
+          echo "查看日志: tail -f logs/runtime/orchestrator/*/*.jsonl"
           exit 1
         fi
       done
@@ -1604,7 +1622,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
         WAIT_COUNT=$((WAIT_COUNT + 1))
         if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
           echo -e "${RED}✗ Develop Backend 启动超时${NC}"
-          echo "查看日志: tail -f logs/develop-backend.log"
+          echo "查看日志: tail -f logs/runtime/develop/*/*.jsonl"
           exit 1
         fi
       done
@@ -1621,7 +1639,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
         WAIT_COUNT=$((WAIT_COUNT + 1))
         if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
           echo -e "${RED}✗ Service Backend 启动超时${NC}"
-          echo "查看日志: tail -f logs/service-backend.log"
+          echo "查看日志: tail -f logs/runtime/service/*/*.jsonl"
           exit 1
         fi
       done
@@ -1637,7 +1655,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
         WAIT_COUNT=$((WAIT_COUNT + 1))
         if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
           echo -e "${RED}✗ Inference Backend 启动超时${NC}"
-          echo "查看日志: tail -f logs/inference-backend-stderr.log"
+          echo "查看日志: tail -f logs/runtime/inference/*/*.jsonl"
           exit 1
         fi
       done
@@ -1653,7 +1671,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
         WAIT_COUNT=$((WAIT_COUNT + 1))
         if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
           echo -e "${RED}✗ Catalog Backend 启动超时${NC}"
-          echo "查看日志: tail -f logs/catalog-backend-stderr.log"
+          echo "查看日志: tail -f logs/runtime/catalog/*/*.jsonl"
           exit 1
         fi
       done
@@ -1669,7 +1687,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
         WAIT_COUNT=$((WAIT_COUNT + 1))
         if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
           echo -e "${RED}✗ Workbench Backend 启动超时${NC}"
-          echo "查看日志: tail -f logs/workbench-backend-stderr.log"
+          echo "查看日志: tail -f logs/runtime/workbench/*/*.jsonl"
           exit 1
         fi
       done
@@ -1685,7 +1703,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
         sleep 1
         WAIT_COUNT=$((WAIT_COUNT + 1))
         if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
-          echo "Ontology Backend 启动超时；查看 logs/ontology-backend-stderr.log" >&2
+          echo "Ontology Backend 启动超时；查看 logs/runtime/ontology/*/*.jsonl" >&2
           exit 1
         fi
       done
@@ -2654,7 +2672,7 @@ if check_service_running "copilot-backend" "$COPILOT_BACKEND_PORT"; then
   export DATABASE_URL=postgresql://addp:addp_password@localhost:${POSTGRES_PORT}/addp
 
   # 直接使用虚拟环境的 Python
-  ./venv/bin/python main.py > ../../logs/copilot-backend.log 2> ../../logs/copilot-backend-stderr.log &
+  "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" launch --module copilot --role backend -- ./venv/bin/python main.py &
   COPILOT_PID=$!
   echo $COPILOT_PID > ../../.dev-pids/copilot-backend.pid
   cd ../..
@@ -2672,8 +2690,8 @@ if check_service_running "copilot-backend" "$COPILOT_BACKEND_PORT"; then
     if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
       echo -e " ${RED}✗${NC}"
       echo -e "${RED}✗ Copilot Backend 启动超时（60秒）${NC}"
-      echo -e "${YELLOW}查看日志: tail -f logs/copilot-backend.log${NC}"
-      echo -e "${YELLOW}或检查错误: tail -f logs/copilot-backend-stderr.log${NC}"
+      echo -e "${YELLOW}查看日志: tail -f logs/runtime/copilot/*/*.jsonl${NC}"
+      echo -e "${YELLOW}或检查错误: tail -f logs/runtime/copilot/*/*.jsonl${NC}"
       exit 1
     fi
   done
@@ -2734,8 +2752,8 @@ start_runtime_agent() (
     echo "启动 Agent Backend..."
     cd agent/backend
     export PORT=$AGENT_BACKEND_PORT
-    # 使用 main.py 绝对路径启动，便于 pkill -f "agent/backend/main.py" 精确匹配残留进程
-    ./venv/bin/python "${PROJECT_ROOT}/agent/backend/main.py" > ../../logs/agent-backend.log 2> ../../logs/agent-backend-stderr.log &
+    # 使用 main.py 绝对路径启动，便于停止脚本核对进程身份。
+    "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" launch --module agent --role backend -- ./venv/bin/python "${PROJECT_ROOT}/agent/backend/main.py" &
     AGENT_PID=$!
     echo $AGENT_PID > ../../.dev-pids/agent-backend.pid
     cd ../..
@@ -2752,8 +2770,8 @@ start_runtime_agent() (
       if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
         echo -e " ${RED}✗${NC}"
         echo -e "${RED}✗ Agent Backend 启动超时（60秒）${NC}"
-        echo -e "${YELLOW}查看日志: tail -f logs/agent-backend.log${NC}"
-        echo -e "${YELLOW}或检查错误: tail -f logs/agent-backend-stderr.log${NC}"
+        echo -e "${YELLOW}查看日志: tail -f logs/runtime/agent/*/*.jsonl${NC}"
+        echo -e "${YELLOW}或检查错误: tail -f logs/runtime/agent/*/*.jsonl${NC}"
         exit 1
       fi
     done
@@ -2824,7 +2842,7 @@ if [ "$START_GATEWAY" = true ]; then
   build_gateway
   # 重置 PORT 环境变量为 Gateway 的端口
   export PORT=$GATEWAY_PORT
-  .dev-bins/addp-gateway > logs/gateway.log 2> logs/gateway-stderr.log &
+  "${PROJECT_ROOT}/.dev-bins/addp-runtime-log" launch --module gateway --role ingress -- "${PROJECT_ROOT}/.dev-bins/addp-gateway" &
   GATEWAY_PID=$!
   echo $GATEWAY_PID > .dev-pids/gateway.pid
 
@@ -2837,7 +2855,7 @@ if [ "$START_GATEWAY" = true ]; then
     WAIT_COUNT=$((WAIT_COUNT + 1))
     if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
       echo -e "${RED}✗ Gateway 启动超时${NC}"
-      echo "查看日志: tail -f logs/gateway.log"
+      echo "查看日志: tail -f logs/runtime/gateway/*/*.jsonl"
       exit 1
     fi
   done
@@ -3162,23 +3180,23 @@ echo "  Transfer Bounded Worker: $TRANSFER_BOUNDED_WORKER_PID"
 echo "  Transfer Continuous Worker: $TRANSFER_CONTINUOUS_WORKER_PID"
 echo ""
 echo "日志文件:"
-echo "  System:   logs/system-backend.log"
-echo "  Manager:  logs/manager-backend.log"
-echo "  Meta:     logs/meta-backend.log"
-echo "  Transfer: logs/transfer-backend.log"
-echo "  Orchestrator: logs/orchestrator-backend.log"
-echo "  Develop:  logs/develop-backend.log"
-echo "  Service:  logs/service-backend.log"
+echo "  System:   logs/runtime/system/*/*.jsonl"
+echo "  Manager:  logs/runtime/manager/*/*.jsonl"
+echo "  Meta:     logs/runtime/meta/*/*.jsonl"
+echo "  Transfer: logs/runtime/transfer/*/*.jsonl"
+echo "  Orchestrator: logs/runtime/orchestrator/*/*.jsonl"
+echo "  Develop:  logs/runtime/develop/*/*.jsonl"
+echo "  Service:  logs/runtime/service/*/*.jsonl"
 echo "  DuckDB Runtime: logs/duckdb-runtime.log"
-echo "  Copilot:  logs/copilot-backend.log"
-echo "  Agent:    logs/agent-backend.log"
-echo "  Monitor:  logs/monitor-backend.log"
-echo "  Standard: logs/standard-backend.log"
-echo "  Model:    logs/model-backend.log"
-echo "  Quality:  logs/quality-backend.log"
-echo "  Catalog:  logs/catalog-backend.log"
-echo "  Workbench: logs/workbench-backend.log"
-echo "  Inference: logs/inference-backend.log"
+echo "  Copilot:  logs/runtime/copilot/*/*.jsonl"
+echo "  Agent:    logs/runtime/agent/*/*.jsonl"
+echo "  Monitor:  logs/runtime/monitor/*/*.jsonl"
+echo "  Standard: logs/runtime/standard/*/*.jsonl"
+echo "  Model:    logs/runtime/model/*/*.jsonl"
+echo "  Quality:  logs/runtime/quality/*/*.jsonl"
+echo "  Catalog:  logs/runtime/catalog/*/*.jsonl"
+echo "  Workbench: logs/runtime/workbench/*/*.jsonl"
+echo "  Inference: logs/runtime/inference/*/*.jsonl"
 echo "  GeoPython Workflow: logs/geopython-workflow-engine.log"
 echo "  Math Workflow Engine: logs/math-workflow-engine.log (显式 -math-workflow 启动时)"
 echo "  Model3D Workflow Engine: logs/model3d-workflow-engine.log"
@@ -3187,7 +3205,7 @@ echo "  Document Workflow Engine: docker logs document-workflow-engine"
 echo "  SuperMap Workflow Engine: docker logs supermap-workflow-engine"
 echo "  Spark 工作流引擎: logs/spark-workflow-engine.log"
 echo "  Jupyter Engine: logs/jupyter-engine.log"
-echo "  Gateway:  logs/gateway.log"
+echo "  Gateway:  logs/runtime/gateway/*/*.jsonl"
 echo "  Transfer Bounded Worker: logs/transfer-bounded-worker.log"
 echo "  Transfer Continuous Worker: logs/transfer-continuous-worker.log"
 echo "  Meta Worker: logs/meta-worker.log"

@@ -364,6 +364,7 @@ for name, args, failed in (
     for filename in ("restart.sh", "lifecycle-lock.sh", "node-dependencies.sh", "jupyter-env.sh"):
         shutil.copy2(repository / "scripts/dev" / filename, dev / filename)
     (dev / "ports.sh").write_text('addp_dev_load_saved_ports() { :; }\n')
+    (root / ".env").write_text('ADDP_HOST_NODE_NAME=fixture-host-node\nADDP_HOST_NODE_IPS=192.0.2.7,2001:db8::1\n')
 
     infra = root / "scripts/infra"
     infra.mkdir(parents=True)
@@ -376,13 +377,15 @@ for name, args, failed in (
         path.chmod(0o755)
 
     # Real restart orchestration, but no process termination, service or database access.
-    script("tools/pkill", "exit 0\n")
+    script("tools/pkill", 'echo "pkill $*" >> "$FIXTURE_ROOT/events"\n')
     script("tools/go", 'echo "$*" >> "$FIXTURE_ROOT/go-calls"\n')
     script("scripts/dev/stop.sh", 'echo stop >> "$FIXTURE_ROOT/events"\n')
     script("scripts/dev/start.sh", '''
 ROOT_DIR="$FIXTURE_ROOT"
 source "$ROOT_DIR/scripts/dev/lifecycle-lock.sh"
 addp_acquire_lifecycle_lock start
+[ "$ADDP_HOST_NODE_NAME" = fixture-host-node ]
+[ "$ADDP_HOST_NODE_IPS" = "192.0.2.7,2001:db8::1" ]
 echo start >> "$ROOT_DIR/events"
 ''')
     script("scripts/swagger/gen-swagger.sh", '''
@@ -422,6 +425,8 @@ exit 1
     assert all(source.stat().st_mtime_ns == 1_600_000_000_000_000_000 for source in sources), \
         "restart must not touch source timestamps"
     events = (root / "events").read_text().splitlines()
+    assert not any(event.startswith("pkill ") for event in events), \
+        "global restart must delegate shutdown to stop.sh without killing Python processes first: " + repr(events)
     target = "all" if args in ([], ["-all"]) else "system asset meta"
     expected = ["stop", "generate " + target]
     if not failed:
@@ -1170,8 +1175,11 @@ for name in ('fast-worker','slow-worker','failed-worker'):
  path=fixture/'.dev-bins'/('addp-'+name)
  path.write_text('#!/bin/bash\ntouch "'+name+'-started"\n')
  path.chmod(0o755)
+launcher=fixture/'.dev-bins/addp-runtime-log'
+launcher.write_text('#!/bin/bash\n[ "$1" = launch ] || exit 11\n[ "$2" = --module ] || exit 12\n[ "$4" = --role ] && [ "$5" = worker ] || exit 13\n[ "$6" = -- ] || exit 14\nshift 6\nexec "$@"\n')
+launcher.chmod(0o755)
 # Fast module must launch before the unrelated slow Backend becomes ready.
-body='''set -e
+body='PROJECT_ROOT='+__import__('shlex').quote(str(fixture))+'''\nset -e
 require_started_process() { [ "$2" != dead ]; }
 check_service_running() { return 0; }
 curl() { case "$*" in *:1111/*) return 0;; *:2222/*) [ -f slow-ready ];; *) return 1;; esac; }

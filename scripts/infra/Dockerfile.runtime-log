@@ -1,0 +1,11 @@
+FROM golang:1.24-alpine@sha256:8bee1901f1e530bfb4a7850aa7a479d17ae3a18beb6e09064ed54cfd245b7191 AS build
+WORKDIR /src
+ENV GOWORK=off CGO_ENABLED=0
+COPY common/go.mod common/go.sum ./
+COPY common/runtimelog ./runtimelog
+COPY common/cmd/runtime-log ./cmd/runtime-log
+RUN go build -trimpath -o /out/runtime-log ./cmd/runtime-log
+FROM alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc
+COPY --from=build /out/runtime-log /usr/local/bin/runtime-log
+ENTRYPOINT ["runtime-log"]
+CMD ["prune"]

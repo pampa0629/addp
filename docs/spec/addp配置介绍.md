@@ -629,4 +629,14 @@ System 不提供公开 `/register`。平台 IAM 管理使用 `/platform/*`，Ten
 
 ### 模块运行节点标识
 
+`ADDP_HOST_NODE_IPS` 是逗号分隔的宿主节点 IP 列表，由部署明确指定，不从服务 URL、DNS、容器主机名或客户端连接推断。只接受不带端口、网段或 zone 的 IPv4/IPv6 字面地址；登记时规范化并去重，IPv4 映射 IPv6 统一为 IPv4。未配置登记为空数组，非法配置不能静默丢弃。它仅用于观测，不改变 `SERVICE_HOST` 或 Gateway 转发地址。地址变化后通过正常重新登记更新，已有离线记录保留原值。
+
+System 的模块登记请求与实例响应统一使用 `host_node_ips: string[]`。平台实例查询新增 `node_ip`，按规范化后的 IP 在集合中精确匹配，并与其他条件取交集；非法 IP 返回 400。页面在运行节点中显示该集合，提供独立的宿主节点 IP 查询框，沿用文本防抖查询和 URL 状态恢复。
+
 `ADDP_HOST_NODE_NAME` 是可选的部署参数，用于向 System 登记进程所在宿主节点。多节点部署必须由编排为每个进程注入实际所属节点名；单节点 Compose 从根环境配置传入。容器内的自动 `runtime_hostname` 仅表示运行环境，不能替代宿主节点名。本地开发未配置时，仍能通过自动采集的运行环境主机名定位本机；宿主节点字段保持空值。该参数不影响服务端点、路由、Ready 或健康租约。
+
+本地开发需要按宿主节点查询模块实例时，在根 `.env` 显式填写 `ADDP_HOST_NODE_NAME=<本机节点名>`，由标准启动、重启脚本导出给 Backend、Worker、Gateway 和 Python 模块。macOS 可先用 `scutil --get LocalHostName` 核对本机名称；不要将通用的 `localhost` 用作区分不同机器的节点标识。配置在进程下次启动时生效，已有离线记录保留原登记信息。
+
+## 模块服务运行日志配置
+
+`ADDP_PROCESS_INSTANCE_ID` 由标准启动入口生成，不写入 .env；`ADDP_RUNTIME_LOG_ROOT` 指向节点受控日志根目录。日志按实例分段，应用统一 JSON 输出。`ADDP_RUNTIME_LOG_SEGMENT_BYTES`、`ADDP_RUNTIME_LOG_INSTANCE_BYTES`、`ADDP_RUNTIME_LOG_NODE_BYTES` 和 `ADDP_RUNTIME_LOG_SOURCE_HOURS` 分别控制段、实例、节点限额与最长源保留期；额度优先于时长。`LOKI_URL` 是 System 服务端受控查询地址，空值表示未接入；`LOKI_RETENTION_HOURS` 默认 168，须与 Loki Compactor 配置一致。日志存储和源文件不是零丢失归档，不以 positions 证明远端收妥。完整方案见 [运行日志设计](../next/ADDP模块服务运行日志设计.md)。

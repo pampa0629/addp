@@ -186,6 +186,14 @@ func openCatalogServiceTestDB(t *testing.T) *gorm.DB {
 		`CREATE TABLE catalog.audit_events (
 			id TEXT PRIMARY KEY, tenant_id INTEGER NOT NULL, catalog_entry_id TEXT NOT NULL, event_type TEXT NOT NULL,
 			actor_type TEXT NOT NULL, actor_id TEXT NOT NULL, details JSON NOT NULL, created_at DATETIME)`,
+		`CREATE TABLE catalog.sharing_decisions (
+			id TEXT PRIMARY KEY, tenant_id INTEGER NOT NULL, catalog_entry_id TEXT NOT NULL, entry_version INTEGER NOT NULL,
+			source_binding_id TEXT NOT NULL, source_version TEXT NOT NULL, responsibility_id TEXT NOT NULL,
+			engine_id INTEGER NOT NULL, catalog_path JSON NOT NULL, confirmed_by INTEGER NOT NULL,
+			confirmer_membership_id INTEGER NOT NULL, authorization_version INTEGER NOT NULL,
+			recipient_type TEXT NOT NULL, recipient_id INTEGER NOT NULL, action TEXT NOT NULL,
+			self_beneficiary BOOLEAN NOT NULL, confirmer_in_project_group BOOLEAN NOT NULL,
+			reason TEXT NOT NULL, expiry_mode TEXT NOT NULL, expires_at DATETIME, created_at DATETIME NOT NULL)`,
 		`CREATE TABLE catalog.responsibilities (
 			id TEXT PRIMARY KEY, tenant_id INTEGER NOT NULL, catalog_entry_id TEXT NOT NULL, role TEXT NOT NULL,
 			subject_type TEXT NOT NULL, subject_id INTEGER NOT NULL, status TEXT NOT NULL, observed_snapshot JSON NOT NULL,

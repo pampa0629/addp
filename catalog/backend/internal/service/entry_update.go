@@ -484,6 +484,22 @@ func newSemanticAssociation(tenantID int64, entryID uuid.UUID, semanticID int64,
 }
 
 func replaceResponsibilities(tx *gorm.DB, tenantID int64, entryID uuid.UUID, inputs []ResponsibilityInput, references *validatedEntryReferences, now time.Time) error {
+	var current []models.Responsibility
+	if err := tx.Where("tenant_id = ? AND catalog_entry_id = ?", tenantID, entryID).Find(&current).Error; err != nil {
+		return fmt.Errorf("read Catalog responsibilities for replacement: %w", err)
+	}
+	// A full curation submission also carries unchanged responsibility fields.
+	// Do not delete/recreate those identities merely to edit business prose.
+	if sameActiveResponsibilities(current, inputs) {
+		for _, row := range current {
+			resolved := references.system[fmt.Sprintf("%s:%d", row.SubjectType, row.SubjectID)]
+			if err := tx.Model(&models.Responsibility{}).Where("tenant_id = ? AND id = ?", tenantID, row.ID).
+				Updates(map[string]any{"observed_snapshot": systemSnapshot(resolved), "verified_at": now, "updated_at": now}).Error; err != nil {
+				return fmt.Errorf("refresh unchanged Catalog responsibility: %w", err)
+			}
+		}
+		return recordBusinessResponsibilityEstablishment(tx, tenantID, entryID, inputs)
+	}
 	if err := tx.Where("tenant_id = ? AND catalog_entry_id = ?", tenantID, entryID).Delete(&models.Responsibility{}).Error; err != nil {
 		return fmt.Errorf("replace Catalog responsibilities: %w", err)
 	}
@@ -502,6 +518,10 @@ func replaceResponsibilities(tx *gorm.DB, tenantID int64, entryID uuid.UUID, inp
 			return fmt.Errorf("create Catalog responsibilities: %w", err)
 		}
 	}
+	return recordBusinessResponsibilityEstablishment(tx, tenantID, entryID, inputs)
+}
+
+func recordBusinessResponsibilityEstablishment(tx *gorm.DB, tenantID int64, entryID uuid.UUID, inputs []ResponsibilityInput) error {
 	for _, input := range inputs {
 		if input.Role != models.ResponsibilityRoleBusinessOwner {
 			continue
@@ -519,6 +539,31 @@ func replaceResponsibilities(tx *gorm.DB, tenantID int64, entryID uuid.UUID, inp
 		break
 	}
 	return nil
+}
+
+func sameActiveResponsibilities(current []models.Responsibility, inputs []ResponsibilityInput) bool {
+	if len(current) != len(inputs) {
+		return false
+	}
+	type subject struct {
+		role, kind string
+		id         int64
+	}
+	set := make(map[subject]bool, len(current))
+	for _, row := range current {
+		if row.Status != models.ResponsibilityStatusActive {
+			return false
+		}
+		set[subject{row.Role, row.SubjectType, row.SubjectID}] = true
+	}
+	for _, input := range inputs {
+		key := subject{input.Role, input.SubjectType, input.SubjectID}
+		if !set[key] {
+			return false
+		}
+		delete(set, key)
+	}
+	return len(set) == 0
 }
 
 func standardSnapshot(result commonClient.StandardReferenceResolution) commonModels.JSONMap {

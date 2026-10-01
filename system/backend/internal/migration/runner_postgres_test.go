@@ -13,7 +13,12 @@ import (
 	"testing/fstest"
 	"time"
 
+	"github.com/addp/system/internal/models"
+	"github.com/addp/system/internal/repository"
+	"github.com/addp/system/internal/service"
 	"github.com/addp/system/internal/testsupport"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 )
 
 func TestModuleRegisteredHostForwardMigrationAgainstPostgres(t *testing.T) {
@@ -5616,8 +5621,8 @@ func assertIAMCatalogSeed(t *testing.T, db *sql.DB) {
 	if err := db.QueryRow(`SELECT count(DISTINCT owner_module), count(*) FILTER (WHERE owner_module = 'system') FROM system.permissions`).Scan(&ownerCount, &systemPermissionCount); err != nil {
 		t.Fatalf("read seeded Permission owners: %v", err)
 	}
-	if ownerCount != 20 || systemPermissionCount != 140 {
-		t.Fatalf("seeded Permission owners = %d and System Permissions = %d, want 20 and 140", ownerCount, systemPermissionCount)
+	if ownerCount != 20 || systemPermissionCount != 141 {
+		t.Fatalf("seeded Permission owners = %d and System Permissions = %d, want 20 and 141", ownerCount, systemPermissionCount)
 	}
 
 	var obsoletePermissionCount, apiConsumerPermissionCount int
@@ -7087,5 +7092,79 @@ func TestModuleRuntimeNodeIdentityForwardMigrationAgainstPostgres(t *testing.T) 
 	}
 	if count != 1 {
 		t.Fatalf("node query count = %d", count)
+	}
+}
+
+func TestModuleRuntimeHostNodeIPsForwardMigrationAgainstPostgres(t *testing.T) {
+	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
+	if dsn == "" {
+		t.Skip("ADDP_SYSTEM_POSTGRES_TEST_DSN is not set")
+	}
+	testsupport.RequireDisposablePostgresDSN(t, dsn)
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	db.SetMaxOpenConns(1)
+	if _, err := db.Exec(`DROP SCHEMA IF EXISTS system CASCADE; DROP SCHEMA IF EXISTS common CASCADE`); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	before, through := migrationFilesBeforeAndThrough(t, "000169_module_runtime_host_node_ips.up.sql")
+	if err := (&Runner{DSN: dsn, FS: before, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO system.module_definitions(module_name,route_prefix) VALUES('meta','/meta');
+ INSERT INTO system.module_runtime_instances(module_definition_id,instance_id,role,last_heartbeat,lease_expires_at,registered_at)
+ SELECT id,'old-worker','worker',now(),now()+interval '30 seconds',now() FROM system.module_definitions WHERE module_name='meta'`); err != nil {
+		t.Fatal(err)
+	}
+	runner := &Runner{DSN: dsn, FS: through, Root: DefaultMigrationsRoot}
+	if err := runner.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := runner.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var addresses string
+	if err := db.QueryRow(`SELECT host_node_ips::text FROM system.module_runtime_instances WHERE instance_id='old-worker'`).Scan(&addresses); err != nil || addresses != "[]" {
+		t.Fatalf("old IPs=%q err=%v", addresses, err)
+	}
+	if _, err := db.Exec(`UPDATE system.module_runtime_instances SET host_node_ips='{}'::jsonb`); err == nil {
+		t.Fatal("accepted non-array host IPs")
+	}
+	var index string
+	if err := db.QueryRow(`SELECT indexdef FROM pg_indexes WHERE schemaname='system' AND indexname='idx_module_runtime_host_node_ips'`).Scan(&index); err != nil || !strings.Contains(index, "gin") {
+		t.Fatalf("IP index=%s err=%v", index, err)
+	}
+	if _, err := db.Exec(`SET search_path TO system,public`); err != nil {
+		t.Fatal(err)
+	}
+	store, err := gorm.Open(postgres.New(postgres.Config{Conn: db}), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry := service.NewModuleRegistryService(repository.NewModuleRegistryRepository(store))
+	request := &models.ModuleRegistrationRequest{ModuleName: "meta", InstanceID: "ip-worker", Role: "worker", RoutePrefix: "/meta", ProcessStartedAt: time.Now(), HostNodeName: "host-a", HostNodeIPs: []string{"192.0.2.7", "2001:0DB8::1"}}
+	if err := registry.Register(request); err != nil {
+		t.Fatal(err)
+	}
+	rows, total, err := registry.ListModuleRuntimeInstances(models.ModuleRuntimeInstanceFilter{NodeIP: "2001:db8:0:0::1", NodeName: "host-a", Role: "worker", Status: "up", Page: 1, PageSize: 10})
+	if err != nil || total != 1 || len(rows) != 1 || len(rows[0].HostNodeIPs) != 2 || rows[0].ModuleURL != "" {
+		t.Fatalf("rows=%#v total=%d err=%v", rows, total, err)
+	}
+	request.HostNodeIPs = []string{"192.0.2.8", "2001:db8::2"}
+	if err := registry.Register(request); err != nil {
+		t.Fatal(err)
+	}
+	_, total, err = registry.ListModuleRuntimeInstances(models.ModuleRuntimeInstanceFilter{NodeIP: "192.0.2.7", Page: 1, PageSize: 10})
+	if err != nil || total != 0 {
+		t.Fatalf("old IP matches=%d err=%v", total, err)
+	}
+	_, total, err = registry.ListModuleRuntimeInstances(models.ModuleRuntimeInstanceFilter{NodeIP: "2001:db8::2", Page: 1, PageSize: 10})
+	if err != nil || total != 1 {
+		t.Fatalf("updated IP matches=%d err=%v", total, err)
 	}
 }

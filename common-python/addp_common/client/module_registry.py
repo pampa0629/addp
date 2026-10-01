@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import logging
 import os
 import socket
@@ -13,7 +14,7 @@ from urllib.parse import quote
 from uuid import uuid4
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .service_token import OAuthServiceTokenSource, ServiceTokenError
 
@@ -33,8 +34,10 @@ def _process_instance_id() -> str:
     process_id = os.getpid()
     with _PROCESS_INSTANCE_LOCK:
         if _PROCESS_INSTANCE_PID != process_id or not _PROCESS_INSTANCE_ID:
+            first_process = _PROCESS_INSTANCE_PID == 0
             _PROCESS_INSTANCE_PID = process_id
-            _PROCESS_INSTANCE_ID = str(uuid4())
+            _PROCESS_INSTANCE_ID = os.getenv("ADDP_PROCESS_INSTANCE_ID") if first_process else None
+            _PROCESS_INSTANCE_ID = _PROCESS_INSTANCE_ID or str(uuid4())
         return _PROCESS_INSTANCE_ID
 
 
@@ -72,6 +75,23 @@ class ModuleRegistration(_ContractModel):
     health_check_url: str = ""
     host_node_name: str = Field(default_factory=lambda: os.environ.get("ADDP_HOST_NODE_NAME", "").strip(), max_length=255)
     runtime_hostname: str = Field(default_factory=_runtime_hostname, max_length=255)
+    host_node_ips: list[str] = Field(default_factory=lambda: os.environ.get("ADDP_HOST_NODE_IPS", "").strip().split(",") if os.environ.get("ADDP_HOST_NODE_IPS", "").strip() else [], validate_default=True)
+
+    @field_validator("host_node_ips")
+    @classmethod
+    def normalize_host_node_ips(cls, values: list[str]) -> list[str]:
+        addresses = []
+        for value in values:
+            if "%" in value:
+                raise ValueError("invalid host node IP")
+            address = ipaddress.ip_address(value.strip())
+            if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped:
+                address = address.ipv4_mapped
+            canonical = str(address)
+            if canonical not in addresses:
+                addresses.append(canonical)
+        return addresses
+
     process_started_at: str = Field(default=PROCESS_STARTED_AT)
     metadata: dict[str, object] = Field(default_factory=dict)
     configuration_management: ConfigurationManagementDeclaration | None = None

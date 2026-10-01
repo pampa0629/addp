@@ -871,3 +871,20 @@ MINIO_CONSOLE_PORT=19011
 Common PostgreSQL 门禁同时验证正式表结果的覆盖事务：重复覆盖、失败回滚、超时取消和并发写入。Model PostgreSQL 门禁验证正式表创建幂等、归属检查、结构漂移拒绝，以及物化任务排队、父子执行授权、固定版本和过期租约终态；Quality PostgreSQL 门禁验证物理表断言。均复用既有测试库与标准入口。
 
 `make test-security-postgres` 同时执行 `common/schema` 的真实 PostgreSQL 启动所有权回归：同 schema 并发迁移一次执行、只读 Worker 校验、失败 DDL 和版本回滚及拒绝降级。使用 `addp_test` 内专用测试 schema，并在测试结束清理；不创建额外 database。
+
+## 模块实例运行日志
+
+运行日志由共享 `runtime-log` 启动工具捕获，使用“节点分段文件 → Alloy → Loki → Infra MinIO”单一路径。`bash scripts/infra/up.sh` 管理日志设施，开发环境首次启动仅生成缺失的独立读写令牌和 S3 密钥；生产环境使用 `scripts/prod/setup-env.sh` 校验配置，不自动补凭据。读、写令牌不得复用，应用只输出日志，不携带 Loki 写入凭据。
+
+- 源目录 `ADDP_RUNTIME_LOG_ROOT` 默认 `./logs/runtime`，按模块和进程实例保存；相对 bind 路径必须以 `./` 开头。
+- Loki 使用独立 bucket `addp-runtime-logs` 和最小权限账号；初始化容器同时为 UID 10001 准备 `loki_data` 卷权限。
+- `loki_data` 保存 WAL、索引缓存和 Compactor 状态；`alloy_data` 保存读取位置；MinIO 数据卷保存集中日志。普通应用停止、重启和 `infra/down.sh` 不删除这些卷。
+- 只在回环地址发布查询代理和 Alloy 健康端口；实际端口由 `ports.sh` 分配并由 `status.sh` 读取，Loki 本体没有宿主机端口。
+- `bash scripts/infra/status.sh` 分别报告组件健康，并运行一次从源文件到查询结果的独立探针。成功只证明当前节点这一条测试消息送达，不能证明历史日志完整。
+- 接收器的 `status.json` 提供接收、写入、解析失败、截断、写失败及丢弃计数；独立清理器的 `housekeeping-status.json` 提供清理结果。Alloy 的 `/-/ready` 和 `/metrics` 提供采集器健康及发送重试、丢弃指标。进程输出普通文本标为 `unknown`，stderr 不自动标为 ERROR。
+
+节点源默认保留最长 48 小时，段/实例/节点数据额度默认 50 MiB/1 GiB/10 GiB。清理器每分钟检查关闭的分段，活动分段由锁保护；额度不足时丢弃新输出并计数。Loki 保留默认 7 天，Compactor 异步删除，不给 bucket 配置粗粒度生命周期过期。源文件、positions、探针结果都不是远端完整持久化回执。
+
+本地源码输出和 Docker 输出共用同一受控源目录。首版只部署一个应用节点；跨节点认证与 TLS 接入另行验收。日志属于可丢失的运维资料；没有自动备份和零丢失归档承诺。若需要灾备，必须协调备份 MinIO 日志 bucket 和 Loki WAL/Compactor 状态，不能只复制活动段文件或 Alloy positions。
+
+集成验证入口：`make test-system-runtime-log`。该入口创建自己的 disposable MinIO/Alloy/Loki，使用随机回环端口、临时凭据和源目录；退出时销毁自建容器、网络、数据卷并检查零残留，不接管开发 Infra。

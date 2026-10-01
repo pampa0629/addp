@@ -49,7 +49,7 @@ func (h *StatisticsHandler) GetStatistics(c *gin.Context) {
 	// 获取统计数据
 	stats, err := h.statisticsService.GetStatistics(c.Request.Context(), req)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error_code": "internal_error", "error": commoni18n.T(c, moni18n.MsgDiagnosticQueryFailed)})
 		return
 	}
 
@@ -80,7 +80,7 @@ func (h *StatisticsHandler) GetTrendData(c *gin.Context) {
 	// 获取趋势数据
 	trendData, err := h.statisticsService.GetTrendData(c.Request.Context(), tenantID, module, days)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error_code": "internal_error", "error": commoni18n.T(c, moni18n.MsgDiagnosticQueryFailed)})
 		return
 	}
 
@@ -117,7 +117,7 @@ func (h *StatisticsHandler) GetExecutionRuntimeMetrics(c *gin.Context) {
 		return
 	}
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error_code": "internal_error", "error": commoni18n.T(c, moni18n.MsgDiagnosticQueryFailed)})
 		return
 	}
 

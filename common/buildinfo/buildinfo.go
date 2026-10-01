@@ -1,6 +1,11 @@
 package buildinfo
 
-import "time"
+import (
+	"github.com/google/uuid"
+	"os"
+	"sync"
+	"time"
+)
 
 var (
 	BuildID           = "unknown"
@@ -8,9 +13,12 @@ var (
 	SourceFingerprint = "unknown"
 	BuiltAt           = "unknown"
 	startedAt         = time.Now().UTC()
+	identityOnce      sync.Once
+	processID         string
 )
 
 type HealthResponse struct {
+	InstanceID        string `json:"instance_id"`
 	Status            string `json:"status"`
 	Module            string `json:"module"`
 	BuildID           string `json:"build_id"`
@@ -22,6 +30,7 @@ type HealthResponse struct {
 
 func Health(module string) HealthResponse {
 	return HealthResponse{
+		InstanceID:        ProcessInstanceID(),
 		Status:            "ok",
 		Module:            module,
 		BuildID:           BuildID,
@@ -33,3 +42,15 @@ func Health(module string) HealthResponse {
 }
 
 func ProcessStartedAt() time.Time { return startedAt }
+
+// ProcessInstanceID is the single process identity shared by health, registration
+// and logs. Standard launchers supply it before executing the application.
+func ProcessInstanceID() string {
+	identityOnce.Do(func() {
+		processID = os.Getenv("ADDP_PROCESS_INSTANCE_ID")
+		if processID == "" {
+			processID = uuid.NewString()
+		}
+	})
+	return processID
+}

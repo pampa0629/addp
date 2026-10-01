@@ -120,6 +120,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	})
 
 	api := router.Group("/api/v1/system")
+	if err := registerExecutionReadScopeRoute(api, runtime); err != nil { panic(err) }
 	if err := RegisterEngineAccessDelegationRoutes(api, runtime, NewEngineAccessDelegationHandler(
 		engineaccess.NewService(engineaccess.NewRepository(db), hasLiveEngineCatalogCapability),
 	)); err != nil {

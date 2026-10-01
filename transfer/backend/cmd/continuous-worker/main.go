@@ -3,10 +3,10 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/addp/common/buildinfo"
 	"log"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"syscall"
 	"time"
 
@@ -35,7 +35,7 @@ import (
 func main() {
 	commonConfig.LoadEnv()
 	cfg := config.Load()
-	logger.Init(logger.Options{Level: envOr("LOG_LEVEL", "info"), Format: "json", FilePath: filepath.Join("logs", "transfer-continuous-worker.log"), AddSource: true, RedirectStdLog: true})
+	logger.Init(logger.Options{Level: envOr("LOG_LEVEL", "info"), AddSource: true, RedirectStdLog: true})
 	db, err := connectDatabase(cfg)
 	if err != nil {
 		log.Fatalf("continuous worker 连接 Infra PostgreSQL 失败: %v", err)
@@ -154,7 +154,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	registrationDone := systemRuntimeClient.RegisterAndHeartbeat(ctx, &commonClient.ModuleRegistrationRequest{
-		ModuleName: commonExecution.ModuleTransfer, InstanceID: owner,
+		ModuleName: commonExecution.ModuleTransfer, InstanceID: buildinfo.ProcessInstanceID(),
 		Role: commonClient.ModuleRuntimeRoleWorker, RoutePrefix: "/transfer",
 		Metadata: map[string]interface{}{
 			"runtime_name": "continuous_sync",

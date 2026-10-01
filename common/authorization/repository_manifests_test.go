@@ -13,8 +13,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		t.Fatalf("LoadRepositoryAuthorizationCatalog() error = %v", err)
 	}
 	descriptors := report.Permissions
-	if len(descriptors) != 454 {
-		t.Fatalf("descriptor count = %d, want 454", len(descriptors))
+	if len(descriptors) != 456 {
+		t.Fatalf("descriptor count = %d, want 456", len(descriptors))
 	}
 	for _, descriptor := range descriptors {
 		if descriptor.OwnerModule == "security" && !reflect.DeepEqual(descriptor.AllowedScopeTypes, []string{"tenant"}) {
@@ -28,6 +28,9 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	roles := report.Roles
 	for _, role := range roles {
 		for _, key := range role.Permissions {
+			if key == "catalog.sharing_decision.create" {
+				t.Fatalf("built-in role %q unexpectedly grants business confirmation", role.Key)
+			}
 			if key == "system.engine_access_delegation.create" || key == "system.engine_access_delegation.read" || key == "system.engine_access_delegation.revoke" {
 				t.Fatalf("built-in role %q unexpectedly grants management delegation permission %q", role.Key, key)
 			}

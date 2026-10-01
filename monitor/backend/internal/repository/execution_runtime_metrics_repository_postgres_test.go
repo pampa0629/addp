@@ -82,6 +82,26 @@ func TestIntegrationPostgresExecutionRuntimeMetrics(t *testing.T) {
 	if row.AvgQueueDurationMs <= 0 || row.P95QueueDurationMs <= 0 || row.AvgExecutionDurationMs != float64(executionTimeMs) {
 		t.Fatalf("duration metrics = queue %v/%v execution %v", row.AvgQueueDurationMs, row.P95QueueDurationMs, row.AvgExecutionDurationMs)
 	}
+	taskID := "deleted-task"
+	if err := db.Model(&commonExecution.TaskExecution{}).Where("execution_id = ?", executions[0].ExecutionID).Update("source_task_id", taskID).Error; err != nil {
+		t.Fatal(err)
+	}
+	scope := commonExecution.ReadScope{TenantID: tenantID, PrincipalID: 9, Module: "quality", Grants: []commonExecution.ReadGrant{{TaskType: "quality_plan", TaskHistory: true}}}
+	ctx := commonExecution.WithReadScopes(context.Background(), []commonExecution.ReadScope{scope})
+	rows, err = NewExecutionRuntimeMetricsRepository(db).List(ctx, tenantID, "quality", now.Add(-24*time.Hour), now)
+	if err != nil || len(rows) != 1 || rows[0].CreatedCount != 1 || rows[0].PendingCount != 0 {
+		t.Fatalf("scoped window/backlog=%#v err=%v", rows, err)
+	}
+	trend, err := commonExecution.NewTaskExecutionRepository(db).GetTrendData(ctx, tenantID, "quality", 7)
+	if err != nil || len(trend) != 1 || trend[0].Total != 1 {
+		t.Fatalf("scoped trend=%#v err=%v", trend, err)
+	}
+	ctx = commonExecution.WithReadScopes(context.Background(), []commonExecution.ReadScope{})
+	rows, err = NewExecutionRuntimeMetricsRepository(db).List(ctx, tenantID, "", now.Add(-24*time.Hour), now)
+	if err != nil || len(rows) != 0 {
+		t.Fatalf("denied metrics=%#v err=%v", rows, err)
+	}
+
 }
 
 func runtimeMetricsIntegrationDSN() string {

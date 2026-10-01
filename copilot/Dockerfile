@@ -38,3 +38,9 @@ COPY copilot/backend/ .
 EXPOSE 8087
 
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8087"]
+
+ARG BUILD_ARCH=amd64
+ARG BUILD_TYPE=release
+ARG GOOS=linux
+COPY dist/${BUILD_TYPE}-${GOOS}-${BUILD_ARCH}/runtime-log /app/runtime-log
+ENTRYPOINT ["/app/runtime-log", "launch", "--module", "copilot", "--role", "backend", "--"]

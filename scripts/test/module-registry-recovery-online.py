@@ -13,6 +13,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Iterable
 
@@ -20,6 +21,8 @@ from typing import Iterable
 class SuiteError(RuntimeError):
     pass
 
+
+PROCESS_STARTED_AT = datetime.now(timezone.utc).isoformat()
 
 LOOPBACK_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
@@ -33,6 +36,7 @@ class Registration:
     route_prefix: str
     health_check_url: str
     metadata: dict[str, object]
+    process_started_at: str = PROCESS_STARTED_AT
 
 
 @dataclass(frozen=True)
@@ -226,6 +230,7 @@ class RegistryClient:
                 "route_prefix": registration.route_prefix,
                 "health_check_url": registration.health_check_url,
                 "metadata": registration.metadata,
+                "process_started_at": registration.process_started_at,
             },
             headers=self.authorization,
         )

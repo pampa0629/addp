@@ -10,6 +10,9 @@ import (
 var localeFS embed.FS
 
 const (
+	MsgSharingConfirmationForbidden = "catalog.error.sharing_confirmation_forbidden"
+	MsgSharingDecisionConflict = "catalog.error.sharing_decision_conflict"
+	MsgSharingTargetUnsupported = "catalog.error.sharing_target_unsupported"
 	MsgInvalidParams                         = "catalog.error.invalid_params"
 	MsgEntryNotFound                         = "catalog.error.entry_not_found"
 	MsgOperationFailed                       = "catalog.error.operation_failed"

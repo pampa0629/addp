@@ -74,7 +74,9 @@ echo -e "Smart Cache: ${GREEN}Enabled${NC}\n"
 # build settings. An mtime check would reuse stale production binaries.
 service_entry_point() {
     local name=$1 dir=$2
-    if [[ "$name" == *-worker ]]; then
+    if [ "$name" = "runtime-log" ]; then
+        printf './cmd/runtime-log\n'
+    elif [[ "$name" == *-worker ]]; then
         if [ "$name" = "transfer-continuous-worker" ]; then
             printf './cmd/continuous-worker\n'
         else
@@ -231,6 +233,7 @@ SERVICES=(
     "graph-backend:graph/backend"
     "inference-backend:inference/backend"
     "gateway:gateway"
+    "runtime-log:common"
 )
 if [ "$SELECTED_SERVICES" != all ]; then
     IFS=',' read -ra selected <<< "$SELECTED_SERVICES"
@@ -251,6 +254,7 @@ if [ "$SELECTED_SERVICES" != all ]; then
         [ "$(printf '%s\n' "${selected[@]}" | LC_ALL=C sort -u | wc -l | tr -d ' ')" -eq "${#selected[@]}" ] ||
         { echo "--services contains duplicates" >&2; exit 1; }
     SERVICES=("${filtered[@]}")
+    if [[ ",${SELECTED_SERVICES}," != *,runtime-log,* ]]; then SERVICES+=("runtime-log:common"); fi
 fi
 failed=()
 compiled=0

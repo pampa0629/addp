@@ -821,22 +821,7 @@ fi
 echo "📦 构建计划: 同步 Swagger，按完整构建指纹复用或编译产物"
 echo ""
 
-# 1. 先强制杀死 Python 服务（避免端口残留导致 stop.sh 误判为非 ADDP 进程）
-echo "🐍 强制终止 Python 服务..."
-pkill -9 -f "engines/geopython-workflow/api_server.py" 2>/dev/null || true
-pkill -9 -f "engines/math-workflow/api_server.py" 2>/dev/null || true
-pkill -9 -f "engines/model3d-workflow/api_server.py" 2>/dev/null || true
-pkill -9 -f "engines/pointcloud-workflow/api_server.py" 2>/dev/null || true
-pkill -9 -f "engines/document-workflow/api_server.py" 2>/dev/null || true
-pkill -9 -f "engines/spark-workflow/api_server.py" 2>/dev/null || true
-pkill -9 -f "engines/jupyter/api_server.py" 2>/dev/null || true
-pkill -9 -f "jupyter.*lab" 2>/dev/null || true
-pkill -9 -f "copilot/backend/main.py" 2>/dev/null || true
-pkill -9 -f "agent/backend/main.py" 2>/dev/null || true
-pkill -9 -f "uvicorn" 2>/dev/null || true
-echo ""
-
-# 2. 停止服务
+# 1. 统一停止工作区服务，保留 System 供 Go、Python 和 Runtime 完成注销。
 if ! "${SCRIPT_DIR}/stop.sh"; then
   echo ""
   echo "❌ 停止现有服务失败，已中断重启"
@@ -845,7 +830,7 @@ fi
 echo ""
 echo "✅ 已停止现有服务"
 
-# 3. Swagger 是 Go 构建输入，先生成，再由 start.sh 统一校验产物指纹。
+# 2. Swagger 是 Go 构建输入，先生成，再由 start.sh 统一校验产物指纹。
 if [ "$RESTART_ALL" = true ]; then
   echo "📄 重新生成所有模块 Swagger 文档..."
   run_swagger_generate all

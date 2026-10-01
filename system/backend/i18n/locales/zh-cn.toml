@@ -264,3 +264,12 @@ other = "委派目标必须是当前租户的有效用户成员和具备实时�
 other = "已到期或已撤销的委派只读，不能恢复或再次撤销"
 [system.engine_access_delegation.expiry_required]
 other = "请显式指定未来的到期时间，且不得超过目标成员关系的有效期"
+
+[system.module.runtime_log_invalid]
+other = "运行日志查询条件无效"
+
+[system.module.runtime_log_disabled]
+other = "运行日志尚未接入"
+
+[system.module.runtime_log_unavailable]
+other = "运行日志查询暂不可用"

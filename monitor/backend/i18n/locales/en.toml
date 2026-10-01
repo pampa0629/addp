@@ -7,6 +7,9 @@ other = "Invalid execution ID"
 [monitor.execution.not_found]
 other = "Execution record not found"
 
+[monitor.execution.owner_unavailable]
+other = "Task read permission cannot be verified right now; retry later"
+
 [monitor.alert.invalid_id]
 other = "Invalid alert ID"
 
@@ -110,3 +113,6 @@ other = "SMTP credential is required"
 
 [monitor.statistics.invalid_runtime_metric_duration]
 other = "Invalid observation window; supported values are 24h, 7d, and 30d"
+
+["monitor.err.diagnostic_query_failed"]
+other = "Cannot read execution diagnostics; retry later"

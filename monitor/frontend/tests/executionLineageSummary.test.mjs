@@ -25,14 +25,8 @@ test('execution detail delegates structured lineage rendering to its single comp
   assert.doesNotMatch(component, /temporary_artifact/)
 })
 
-test('raw execution metadata is collapsed by default and resets between executions', () => {
+test('execution detail exposes structured evidence without raw metadata or result preview', () => {
   const executionList = source('monitor/frontend/src/views/ExecutionList.vue')
-
-  assert.match(executionList, /const metadataExpandedPanels = ref\(\[\]\)/)
-  assert.match(executionList, /<el-collapse v-model="metadataExpandedPanels"/)
-  assert.match(executionList, /monitor\.execution\.detail\.raw_metadata/)
-  assert.match(
-    executionList,
-    /\(\) => currentExecution\.value\?\.execution_id,[\s\S]*?metadataExpandedPanels\.value = \[\]/
-  )
+  assert.match(executionList, /<ExecutionSteps/)
+  assert.doesNotMatch(executionList, /metadataExpandedPanels|executionMetadataText|hasWorkflowResultPreview|currentExecution\.result/)
 })

@@ -45,9 +45,10 @@ monitor/
 - `monitor.notification_routes` 显式绑定通用规则与 Webhook/邮件目标。无路由仍保留 incident/event，但不生成外部 delivery；规则更新、停用或删除必须先恢复其活动 incident。
 - 所有 evaluator 先收集 active signal，再由单一 reconciler 统一处理生命周期。任何 evaluator 查询失败不得恢复其拥有的现有 incident。
 - 通知前端唯一入口为 `/notifications`，通过 Webhook/邮件页签展示两个渠道；不保留旧 `/webhooks` 页面路由。
+- Monitor 的执行列表、详情、父子树、统计及关联告警先通过同步 BFF 向各 Owner 请求 `execution-read-scope`。Owner 重新认证 User，按本模块任务读取权限裁决；即时执行仅限触发人，读取历史不授予业务结果权限。无法裁决时返回 503。诊断 GET 以不含请求参数和凭据的最小事实写入独立 System 操作审计。
 - 执行记录字段以 `common/execution/task_execution.go` 为准；新增模块写执行记录时应复用 `common/execution/repository.go` 和 `common/execution.EnsureStore`。
 - 后台运行健康统一读取 `common.background_runtime_heartbeats`：独立有界执行进程使用 `execution_worker`，Backend 内嵌有界执行监督器使用 `execution_supervisor`，持续运行进程使用 `continuous_worker`，通知投递使用 `dispatcher`。`capacity/active_count` 只表示固定槽位及当前占用，不授予 lease，也不触发自动扩缩容。
-- 执行详情使用 `common-frontend/basic` 的唯一 `lineage_facts` 展示归一能力，按“输入资源 / 输出产物”展示 owner 已写入的真实读写事实。可解析的业务输入通过共享 Manager Data Explorer 路由打开；Monitor 不解析查询语句、不请求 Meta 补齐、不将 `addp-infra://` 平台内部产物当作业务数据项或跳转目标，也不据此推断产物生命周期；原始 JSON 保留为默认折叠的诊断证据，切换 execution 时必须重置折叠状态。
+- 执行详情使用 `common-frontend/basic` 的唯一 `lineage_facts` 展示归一能力，按“输入资源 / 输出产物”展示 owner 已写入的真实读写事实。可解析的业务输入通过共享 Manager Data Explorer 路由打开；Monitor 不解析查询语句、不请求 Meta 补齐、不将 `addp-infra://` 平台内部产物当作业务数据项或跳转目标，也不据此推断产物生命周期。执行步骤复用共享 `ExecutionSteps`，只展示已记录步骤的状态、时间、耗时及脱敏错误；没有步骤历史时明确说明，不从当前任务定义推测；同一 execution 重试后，旧步骤未标注 attempt 时显示证据不足提示。Monitor 不再返回或展示任意 metadata、执行配置或结果正文。
 
 ## 前端公开路由
 
@@ -63,6 +64,8 @@ bash scripts/dev/start.sh -monitor
 bash scripts/dev/restart.sh -monitor
 curl http://localhost:8100/health/ready
 ```
+
+第一期诊断门禁（T0–T3）：先用 `bash scripts/infra/status.sh` 核实 PostgreSQL 实际映射，再配置 `ADDP_TEST_POSTGRES_PORT`、`ADDP_TEST_POSTGRES_PASSWORD`，运行 `make test-module MODULE=monitor`。新 PostgreSQL 门禁为 `make test-monitor-postgres`，浏览器回归已包含在 `make test-monitor-frontend`；所有新增入口同步登记在 CI。真实 Gateway、System、Owner、Worker 链路属于 T4，未执行时不能算作通过。
 
 API 或路由变更后运行：
 

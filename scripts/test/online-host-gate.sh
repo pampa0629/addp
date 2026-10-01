@@ -104,7 +104,7 @@ case "$ONLINE_SUITE" in
     ;;
   module-registry-recovery)
     START_TARGET=-system
-    REQUIRED_SUITE_ENV=(SYSTEM_URL GATEWAY_URL MANAGER_URL MANAGER_SERVICE_CLIENT_SECRET)
+    REQUIRED_SUITE_ENV=(SYSTEM_URL GATEWAY_URL MANAGER_URL MANAGER_SERVICE_CLIENT_SECRET ADDP_HOST_NODE_IPS ADDP_ONLINE_TEST_PLATFORM_ACCESS_TOKEN)
     ;;
   oceanbase-consumer-flow)
     START_TARGET=-all
@@ -336,6 +336,7 @@ observe_module_lifecycle() {
   local phase=$1
   local timeout=$2
   local expected_instance_id=${3:-}
+  local baseline_phase=${4:-}
   local command=(
     python3 scripts/test/module-lifecycle-process-online.py
     --phase "$phase"
@@ -349,7 +350,19 @@ observe_module_lifecycle() {
   if [ -n "$expected_instance_id" ]; then
     command+=(--expected-instance-id "$expected_instance_id")
   fi
+  if [ -n "$baseline_phase" ]; then
+    command+=(--baseline "$ADDP_ONLINE_ARTIFACT_DIR/module-lifecycle-${baseline_phase}.json")
+  fi
   run_logged "${command[@]}"
+}
+
+module_lifecycle_instance_id() {
+  python3 - "$ADDP_ONLINE_ARTIFACT_DIR/module-lifecycle-${1}.json" <<'PYID'
+import json
+import sys
+with open(sys.argv[1], encoding="utf-8") as evidence:
+    print(json.load(evidence)["manager"]["instance_id"])
+PYID
 }
 
 finish() {
@@ -463,14 +476,7 @@ if [ "$ONLINE_SUITE" = "module-registry-recovery" ]; then
 
   run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh --exact-process --wait-live -manager
   observe_module_lifecycle business-before-system "$process_timeout"
-  manager_instance_id=$(python3 - "$ADDP_ONLINE_ARTIFACT_DIR/module-lifecycle-business-before-system.json" <<'PY'
-import json
-import sys
-
-with open(sys.argv[1], encoding="utf-8") as evidence:
-    print(json.load(evidence)["manager"]["instance_id"])
-PY
-  )
+  manager_instance_id=$(module_lifecycle_instance_id business-before-system)
 
   run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh --exact-process -system
   observe_module_lifecycle manager-registered "$process_timeout" "$manager_instance_id"
@@ -482,11 +488,19 @@ PY
   observe_module_lifecycle system-interrupted "$lease_timeout" "$manager_instance_id"
 
   run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh --exact-process -system
-  observe_module_lifecycle system-recovered "$process_timeout" "$manager_instance_id"
+  observe_module_lifecycle system-recovered "$process_timeout" "$manager_instance_id" gateway-established
+
+  run_logged bash scripts/dev/stop-exact-process.sh --force -manager
+  observe_module_lifecycle manager-abnormally-stopped "$lease_timeout" "$manager_instance_id" system-recovered
+
+  run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh --exact-process -manager
+  observe_module_lifecycle manager-restarted "$process_timeout" "" system-recovered
+  restarted_instance_id=$(module_lifecycle_instance_id manager-restarted)
 
   # Release the real Manager route before the existing two-probe lease and
   # multi-instance scenario claims the same module route prefix.
   run_logged bash scripts/dev/stop-exact-process.sh -manager
+  observe_module_lifecycle manager-gracefully-stopped "$process_timeout" "$restarted_instance_id" manager-restarted
   process_lifecycle=passed
 elif [ "$ONLINE_SUITE" = "consumer-engine-recovery" ]; then
   process_lifecycle=not-run

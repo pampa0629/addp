@@ -1,0 +1,35 @@
+local.file_match "runtime" {
+  path_targets = [{"__path__" = "/var/log/addp/*/*/*.jsonl", "deployment" = "addp"}]
+  sync_period = "5s"
+}
+loki.source.file "runtime" {
+  targets = local.file_match.runtime.targets
+  forward_to = [loki.process.runtime.receiver]
+  tail_from_end = false
+}
+loki.process "runtime" {
+  stage.json {
+    expressions = {module_name = "module_name", role = "role", instance_id = "instance_id", timestamp = "timestamp", level = "level", node_name = "node_name", entry_id = "entry_id"}
+  }
+  stage.labels {
+    values = {module_name = "", role = ""}
+  }
+  stage.structured_metadata {
+    values = {instance_id = "", level = "", node_name = "", entry_id = ""}
+  }
+  stage.timestamp {
+    source = "timestamp"
+    format = "RFC3339Nano"
+  }
+  stage.label_drop {
+    values = ["filename"]
+  }
+  forward_to = [loki.write.runtime.receiver]
+}
+loki.write "runtime" {
+  endpoint {
+    url = sys.env("LOKI_WRITE_URL")
+    bearer_token = sys.env("LOKI_WRITE_TOKEN")
+    max_backoff_retries = 10
+  }
+}

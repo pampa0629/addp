@@ -55,7 +55,7 @@ func (h *AlertHandler) ListAlerts(c *gin.Context) {
 		TenantID: tenantID, Status: c.Query("status"), Severity: c.Query("severity"), Module: c.Query("module"), Page: page, PageSize: pageSize,
 	})
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error_code": "internal_error", "error": commoni18n.T(c, moni18n.MsgDiagnosticQueryFailed)})
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -84,7 +84,7 @@ func (h *AlertHandler) AcknowledgeAlert(c *gin.Context) {
 		return
 	}
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error_code": "internal_error", "error": commoni18n.T(c, moni18n.MsgDiagnosticQueryFailed)})
 		return
 	}
 	c.JSON(http.StatusOK, alert)
@@ -120,7 +120,7 @@ func (h *AlertHandler) SuppressAlert(c *gin.Context) {
 		return
 	}
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error_code": "internal_error", "error": commoni18n.T(c, moni18n.MsgDiagnosticQueryFailed)})
 		return
 	}
 	c.JSON(http.StatusOK, alert)

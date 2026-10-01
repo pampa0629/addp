@@ -10,3 +10,6 @@ COPY dist/${BUILD_TYPE}-${GOOS}-${BUILD_ARCH}/ontology ./server
 RUN chmod +x ./server
 EXPOSE 8195
 CMD ["./server"]
+
+COPY dist/${BUILD_TYPE}-${GOOS}-${BUILD_ARCH}/runtime-log /app/runtime-log
+ENTRYPOINT ["/app/runtime-log", "launch", "--module", "ontology", "--role", "backend", "--"]

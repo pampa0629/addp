@@ -239,6 +239,7 @@ type ModuleRegistrationRequest struct {
 	RoutePrefix             string                                     `json:"route_prefix"`
 	HealthCheckURL          string                                     `json:"health_check_url,omitempty"`
 	HostNodeName            string                                     `json:"host_node_name"`
+	HostNodeIPs             []string                                   `json:"host_node_ips"`
 	RuntimeHostname         string                                     `json:"runtime_hostname"`
 	ProcessStartedAt        time.Time                                  `json:"process_started_at"`
 	Metadata                map[string]interface{}                     `json:"metadata,omitempty"`
@@ -282,6 +283,7 @@ type ModuleRuntimeInstanceInfo struct {
 	LastHeartbeat    time.Time              `json:"last_heartbeat"`
 	LeaseExpiresAt   time.Time              `json:"lease_expires_at"`
 	HostNodeName     string                 `json:"host_node_name"`
+	HostNodeIPs      []string               `json:"host_node_ips"`
 	RuntimeHostname  string                 `json:"runtime_hostname"`
 	ProcessStartedAt *time.Time             `json:"process_started_at"`
 	StoppedAt        *time.Time             `json:"stopped_at"`

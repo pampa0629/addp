@@ -43,11 +43,9 @@ func main() {
 	cfg := config.Load()
 	runtimeContext, stopRuntime := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopRuntime()
-	commonConfig.InitLogger("graph-backend.log", &commonConfig.LoggerOptions{
+	commonConfig.InitLogger(&commonConfig.LoggerOptions{
 		Level:     cfg.LogLevel,
-		Format:    cfg.LogFormat,
 		AddSource: &cfg.LogAddSource,
-		File:      cfg.LogFile,
 	})
 	logger := commonLogger.L()
 

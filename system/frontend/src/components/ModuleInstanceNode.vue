@@ -3,6 +3,9 @@
     <div :title="instance.host_node_name || t('system.module.instances.nodeUnknown')">
       <span>{{ t('system.module.instances.hostNodeName') }}：</span>{{ instance.host_node_name || t('system.module.instances.nodeUnknown') }}
     </div>
+    <div :title="instance.host_node_ips?.join(', ') || t('system.module.instances.nodeUnknown')">
+      <span>{{ t('system.module.instances.hostNodeIPs') }}：</span>{{ instance.host_node_ips?.join(', ') || t('system.module.instances.nodeUnknown') }}
+    </div>
     <div :title="instance.runtime_hostname || t('system.module.instances.nodeUnknown')">
       <span>{{ t('system.module.instances.runtimeHostname') }}：</span>{{ instance.runtime_hostname || t('system.module.instances.nodeUnknown') }}
     </div>

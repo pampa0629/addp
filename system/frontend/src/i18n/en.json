@@ -29,7 +29,10 @@
       "disabledSuccess": "Module disabled",
       "enabledAria": "Toggle enabled state for module {name}",
       "systemAlwaysEnabled": "Always enabled",
-      "tabs": { "overview": "Module Overview", "instances": "Service Instances" },
+      "tabs": {
+        "overview": "Module Overview",
+        "instances": "Service Instances"
+      },
       "columns": {
         "id": "Record ID",
         "name": "Module",
@@ -47,7 +50,10 @@
         "workers": "Online Workers",
         "attention": "Modules Needing Attention"
       },
-      "filters": { "all": "All", "attention": "Needs Attention" },
+      "filters": {
+        "all": "All",
+        "attention": "Needs Attention"
+      },
       "availability": {
         "routable": "Routable",
         "disabled": "Admin Disabled",
@@ -56,7 +62,10 @@
         "ingress_online": "Ingress Online",
         "ingress_offline": "Ingress Offline"
       },
-      "stopReasons": { "graceful": "Graceful Exit", "lease_expired": "Lease expired; possible unexpected exit" },
+      "stopReasons": {
+        "graceful": "Graceful Exit",
+        "lease_expired": "Lease expired; possible unexpected exit"
+      },
       "status": {
         "up": "UP · Online",
         "down": "DOWN · Offline"
@@ -83,6 +92,7 @@
         "status": "Status",
         "endpoint": "Instance Host/IP:Port",
         "node": "Runtime node",
+        "hostNodeIPs": "Host node IPs",
         "hostNodeName": "Host node",
         "runtimeHostname": "Runtime hostname",
         "nodeUnknown": "Not provided",
@@ -105,6 +115,7 @@
         "uptimeSeconds": "{seconds} s"
       },
       "query": {
+        "nodeIP": "Host node IP (exact match)",
         "module": "Service name",
         "node": "Host node or runtime hostname",
         "host": "Registered hostname or IP",
@@ -122,14 +133,53 @@
         "to": "End time",
         "completeRange": "Select both the start and end time",
         "reset": "Reset",
-        "timeHint": "The range filters the selected time basis; status is current UP/DOWN. Offline time only returns instances still offline and excludes recovered instances; lease expiry does not prove process exit. Address search exactly matches the registered host or IP; instances without an endpoint can be queried by runtime node name.",
+        "timeHint": "The range filters the selected time basis; status is current UP/DOWN. Offline time only returns instances still offline and excludes recovered instances; lease expiry does not prove process exit. Address search exactly matches the registered host or IP; instances without an endpoint can be queried by runtime node name or host node IP.",
         "empty": "No service instances match the filters",
         "loadFailed": "Failed to load service instances",
         "notLoaded": "No successful data fetch for the current query yet",
         "lastSuccess": "Last successful refresh: {time}",
         "staleData": "Data is stale",
         "staleHint": "Showing the last successfully fetched data. Instance status may have changed. Refresh the list.",
-        "periods": { "m15": "Last 15 minutes", "m30": "Last 30 minutes", "h1": "Last hour", "h6": "Last 6 hours", "h12": "Last 12 hours", "h24": "Last 24 hours", "d7": "Last 7 days" }
+        "periods": {
+          "m15": "Last 15 minutes",
+          "m30": "Last 30 minutes",
+          "h1": "Last hour",
+          "h6": "Last 6 hours",
+          "h12": "Last 12 hours",
+          "h24": "Last 24 hours",
+          "d7": "Last 7 days"
+        }
+      },
+      "logs": {
+        "title": "Runtime logs",
+        "view": "View logs",
+        "offlineWindow": "Around offline determination",
+        "level": "Log level",
+        "allLevels": "All levels",
+        "keyword": "Enter keyword",
+        "limit": "Display limit",
+        "limitValue": "Latest {n} entries",
+        "follow": "Follow latest",
+        "stale": "Showing previous results; data is stale",
+        "limited": "Display limit reached. Narrow the time range or add filters.",
+        "retention": "Range exceeds configured retention; results may be incomplete",
+        "summary": "Showing {n} entries, queried at {time}",
+        "coverageUnknown": "Collection completeness is unconfirmed",
+        "empty": "No logs match the current conditions",
+        "copy": "Copy",
+        "stack": "Exception stack",
+        "truncated": "This entry was truncated",
+        "invalidRange": "Select a valid time range of at most 7 days",
+        "failed": "Runtime log query failed",
+        "copied": "Log copied",
+        "copyFailed": "Copy failed",
+        "levels": {
+          "debug": "DEBUG",
+          "info": "INFO",
+          "warn": "WARN",
+          "error": "ERROR",
+          "unknown": "Unknown"
+        }
       }
     },
     "iam": {
@@ -533,6 +583,7 @@
           "entity": "Business Entity",
           "entity_relation": "Entity Relation",
           "entry": "Catalog Entry",
+          "sharing_decision": "Business Sharing Decision",
           "event": "Audit Event",
           "execution": "Execution Record",
           "execution_authorization": "Execution Authorization",
@@ -624,7 +675,8 @@
           "unit": "Unit of Measure",
           "user": "User Account",
           "workflow": "Workflow",
-          "metric_implementation": "Metric implementation"
+          "metric_implementation": "Metric implementation",
+          "module_log": "Module runtime logs"
         },
         "types": {
           "tenant_builtin": "Tenant Built-in Role",

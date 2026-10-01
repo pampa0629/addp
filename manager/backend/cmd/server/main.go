@@ -57,11 +57,9 @@ func main() {
 
 	// 加载配置
 	cfg := config.Load()
-	commonConfig.InitLogger("manager-backend.log", &commonConfig.LoggerOptions{
+	commonConfig.InitLogger(&commonConfig.LoggerOptions{
 		Level:     cfg.LogLevel,
-		Format:    cfg.LogFormat,
 		AddSource: &cfg.LogAddSource,
-		File:      cfg.LogFile,
 	})
 
 	// 检查端口是否可用

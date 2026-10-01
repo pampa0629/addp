@@ -14,3 +14,6 @@ RUN chmod +x ./server
 EXPOSE 8191
 
 CMD ["./server"]
+
+COPY dist/${BUILD_TYPE}-${GOOS}-${BUILD_ARCH}/runtime-log /app/runtime-log
+ENTRYPOINT ["/app/runtime-log", "launch", "--module", "inference", "--role", "backend", "--"]

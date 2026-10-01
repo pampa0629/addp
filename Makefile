@@ -255,6 +255,7 @@ test-business-config: ## 校验 Business Compose 和服务管理脚本（不启�
 
 test-integration: ## 严格串行运行所有本地可执行的 disposable 基础设施集成门禁
 	@$(MAKE) test-common-postgres
+	@$(MAKE) test-monitor-postgres
 	@$(MAKE) test-common-mysql-data-protection
 	@$(MAKE) test-model-mysql
 	@$(MAKE) test-common-oceanbase
@@ -262,6 +263,7 @@ test-integration: ## 严格串行运行所有本地可执行的 disposable 基�
 	@$(MAKE) test-manager-postgres
 	@$(MAKE) test-manager-mongodb-security
 	@$(MAKE) test-system-iam-postgres
+	@$(MAKE) test-system-runtime-log
 	@$(MAKE) test-asset-postgres
 	@$(MAKE) test-meta-postgres
 	@$(MAKE) test-catalog-postgres
@@ -284,6 +286,10 @@ test-integration-hosted: test-integration ## 严格串行追加 hosted-only disp
 
 test-integration-owner-managed: ## 仅在具备合法凭据的 owner 受控 Linux 主机人工串行运行门禁
 	@$(MAKE) test-common-kingbase
+
+.PHONY: test-monitor-postgres
+test-monitor-postgres: ## 使用隔离 PostgreSQL 验证 Monitor 读取隔离、执行聚合及通知链路
+	@bash scripts/test/monitor-postgres-gate.sh
 
 test-common-postgres: ## 使用一次性 PostgreSQL 数据库运行 Common Engine Provider、execution store 与保护投影存储集成门禁
 	@bash scripts/test/common-postgres-gate.sh
@@ -545,8 +551,9 @@ test-meta-frontend: ## 运行 Meta 前端确定性测试与构建
 	@cd meta/frontend && npm test
 	@cd meta/frontend && npm run build
 
-test-monitor-frontend: ## 运行 Monitor 前端确定性测试与构建
+test-monitor-frontend: ## 运行 Monitor 前端确定性测试、诊断浏览器回归与构建
 	@cd monitor/frontend && npm test
+	@cd monitor/frontend && npm run test:e2e
 	@cd monitor/frontend && npm run build
 
 test-orchestrator-frontend: ## 运行 Orchestrator 前端确定性测试、编辑器与路由浏览器回归及构建
@@ -680,3 +687,7 @@ prod-stop: ## 停止平台与 Runtime 容器，保留基础设施和数据卷
 
 prod-health: ## 检查生产环境服务健康状态
 	@bash scripts/prod/health-check.sh
+
+.PHONY: test-system-runtime-log
+test-system-runtime-log: ## 隔离验证模块运行日志采集、授权、持久化和实例隔离
+	@bash scripts/test/system-runtime-log-gate.sh

@@ -194,7 +194,7 @@ class InfraContractTest(unittest.TestCase):
         result = subprocess.run(
             ["docker", "compose", "--env-file", str(REPOSITORY / ".env.example"),
              "-f", str(REPOSITORY / path), "config", "--format", "json"],
-            env=dict(os.environ, INFRA_FALKORDB_PASSWORD=password),
+            env=dict(os.environ, INFRA_FALKORDB_PASSWORD=password, LOKI_READ_TOKEN="a"*32, LOKI_WRITE_TOKEN="b"*32, LOKI_S3_SECRET_KEY="c"*32),
             capture_output=True, text=True, timeout=30,
         )
         if password:

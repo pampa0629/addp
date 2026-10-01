@@ -29,12 +29,12 @@ function queryTime(value) {
 export function resolveModulesRouteState(routeQuery = {}) {
   const instances = singleQueryValue(routeQuery.tab) === 'instances'
   const filters = {
-    moduleName: '', registeredHost: '', nodeName: '', role: '', status: 'up', stopReason: '',
+    moduleName: '', registeredHost: '', nodeName: '', nodeIP: '', role: '', status: 'up', stopReason: '',
     timeBasis: 'registered', period: 'all', from: '', to: '', page: 1, pageSize: 10
   }
   const preservedQuery = {}
   if (instances) {
-    for (const [key, field] of [['module_name', 'moduleName'], ['registered_host', 'registeredHost'], ['node_name', 'nodeName']]) {
+    for (const [key, field] of [['module_name', 'moduleName'], ['registered_host', 'registeredHost'], ['node_name', 'nodeName'], ['node_ip', 'nodeIP']]) {
       const value = singleQueryValue(routeQuery[key])
       filters[field] = value
       if (value) preservedQuery[key] = value
@@ -93,7 +93,7 @@ export function resolveModulesRouteState(routeQuery = {}) {
 export function buildModuleInstancesQuery(filters) {
   return resolveModulesRouteState({
     tab: 'instances', module_name: filters.moduleName, registered_host: filters.registeredHost,
-    node_name: filters.nodeName, role: filters.role, stop_reason: filters.stopReason,
+    node_name: filters.nodeName, node_ip: filters.nodeIP, role: filters.role, stop_reason: filters.stopReason,
     status: filters.status === '' ? 'all' : filters.status,
     time_basis: filters.timeBasis, time_period: filters.period, time_from: filters.from, time_to: filters.to,
     page: String(filters.page), page_size: String(filters.pageSize)

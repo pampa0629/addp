@@ -119,6 +119,13 @@ class FrontendCIRegistrationTest(unittest.TestCase):
                 self.workflow.write_text(original.replace(old, new))
                 self.assertTrue(any(message in error for error in MODULE.validate_registration(self.repository)))
 
+    def test_worktree_browser_config_is_checked_before_staging(self) -> None:
+        self.enable_browser_suite()
+        subprocess.run(["git", "reset", "-q", "--", "sample/frontend/playwright.config.js"], cwd=self.repository, check=True)
+        self.assertEqual([], MODULE.validate_browser_isolation(self.repository))
+        self.playwright.write_text(self.playwright.read_text().replace("reuseExistingServer: false", "reuseExistingServer: true"))
+        self.assertTrue(MODULE.validate_browser_isolation(self.repository))
+
     def test_rejects_unsafe_browser_isolation(self) -> None:
         cases = [
             ("playwright", "ADDP_E2E=1 ", "", "ADDP_E2E=1"),

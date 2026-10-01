@@ -3,6 +3,8 @@ ADDP Copilot - FastAPI 应用入口
 """
 import asyncio
 import logging
+from addp_common.runtime_logging import setup_runtime_logging
+setup_runtime_logging()
 from contextlib import asynccontextmanager
 from addp_common.client import (
     ConfigurationManagementDeclaration,

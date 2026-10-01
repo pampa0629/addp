@@ -22,9 +22,9 @@ source "$ROOT_DIR/scripts/infra/ports.sh"
 addp_infra_verify_test_postgres_dsn "$CATALOG_POSTGRES_TEST_DSN"
 
 cd "$ROOT_DIR/catalog/backend"
-go test ./internal/repository -run '^TestCatalogMigrateAgainstPostgres$' -count=1 -v 2>&1 | tee "$WORK_DIR/catalog.log"
-go test ./internal/service -run '^TestPostgres(RecommendedSuccessorUsesCatalogAggregateAndTenantBoundary|EntryGovernanceCertificationLifecycle|GovernanceCoverageAndSourceResolution|BatchGovernanceUsesPerEntryVersionsAndRollsBackAtomically|ResponsibilityRecoveryUsesEntryVisibility)$' -count=1 -v 2>&1 | tee -a "$WORK_DIR/catalog.log"
-go test ./internal/api -run '^TestPostgresLifecycleRoutesUseCurrentVisibilityAndIndependentPermissions$' -count=1 -v 2>&1 | tee -a "$WORK_DIR/catalog.log"
+go test ./internal/repository -run '^TestCatalog(Migrate|FulfillmentChecks)AgainstPostgres$' -count=1 -v 2>&1 | tee "$WORK_DIR/catalog.log"
+go test ./internal/service -run '^TestPostgres(RecommendedSuccessorUsesCatalogAggregateAndTenantBoundary|EntryGovernanceCertificationLifecycle|GovernanceCoverageAndSourceResolution|BatchGovernanceUsesPerEntryVersionsAndRollsBackAtomically|ResponsibilityRecoveryUsesEntryVisibility|FulfillmentProtectsCurationAndSyncCheckpoint|SharingDecisionIsAtomicImmutableAndRetryable)$' -count=1 -v 2>&1 | tee -a "$WORK_DIR/catalog.log"
+go test ./internal/api -run '^TestPostgres(LifecycleRoutesUseCurrentVisibilityAndIndependentPermissions|SharingDecisionRoutesUseExplicitPermissionAndUserIdentity)$' -count=1 -v 2>&1 | tee -a "$WORK_DIR/catalog.log"
 if grep -q -- '--- SKIP:' "$WORK_DIR/catalog.log"; then
     echo "Catalog PostgreSQL gate refuses skipped tests" >&2
     exit 1

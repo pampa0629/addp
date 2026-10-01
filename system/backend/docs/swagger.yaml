@@ -419,6 +419,28 @@ definitions:
       task_type:
         type: string
     type: object
+  execution.ReadGrant:
+    properties:
+      own_ad_hoc:
+        type: boolean
+      task_history:
+        type: boolean
+      task_type:
+        type: string
+    type: object
+  execution.ReadScope:
+    properties:
+      grants:
+        items:
+          $ref: '#/definitions/execution.ReadGrant'
+        type: array
+      module:
+        type: string
+      principal_id:
+        type: integer
+      tenant_id:
+        type: integer
+    type: object
   fosite.RFC6749ErrorJson:
     properties:
       error:
@@ -1400,6 +1422,10 @@ definitions:
         $ref: '#/definitions/configuration.ManagementDeclaration'
       health_check_url:
         type: string
+      host_node_ips:
+        items:
+          type: string
+        type: array
       host_node_name:
         type: string
       instance_id:
@@ -1442,6 +1468,10 @@ definitions:
     properties:
       health_check_url:
         type: string
+      host_node_ips:
+        items:
+          type: string
+        type: array
       host_node_name:
         type: string
       id:
@@ -1480,6 +1510,10 @@ definitions:
     properties:
       health_check_url:
         type: string
+      host_node_ips:
+        items:
+          type: string
+        type: array
       host_node_name:
         type: string
       id:
@@ -1569,6 +1603,27 @@ definitions:
         enum:
         - active
         - suspended
+        type: string
+    type: object
+  github_com_addp_system_internal_service.RuntimeLogResult:
+    properties:
+      collection_state:
+        type: string
+      entries:
+        items:
+          $ref: '#/definitions/runtimelog.Entry'
+        type: array
+      from:
+        type: string
+      limited:
+        type: boolean
+      outside_retention:
+        type: boolean
+      queried_at:
+        type: string
+      returned:
+        type: integer
+      to:
         type: string
     type: object
   internal_api.CreateEngineAccessDelegationRequest:
@@ -3860,6 +3915,35 @@ definitions:
           type: string
         type: array
     type: object
+  runtimelog.Entry:
+    properties:
+      channel:
+        type: string
+      entry_id:
+        type: string
+      event_time:
+        type: string
+      instance_id:
+        type: string
+      level:
+        type: string
+      message:
+        type: string
+      module_name:
+        type: string
+      node_name:
+        type: string
+      request_id:
+        type: string
+      role:
+        type: string
+      stack:
+        type: string
+      timestamp:
+        type: string
+      truncated:
+        type: boolean
+    type: object
 host: localhost:8180
 info:
   contact: {}
@@ -5452,6 +5536,27 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - system.execution_authorization.execute
+  /execution-read-scope:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/execution.ReadScope'
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取清理执行读取范围 | Get cleanup execution read scope
+      tags:
+      - Execution diagnostics
+      x-addp-auth-mode: authenticated
   /internal/audit-logs:
     post:
       consumes:
@@ -6288,6 +6393,11 @@ paths:
         in: query
         name: node_name
         type: string
+      - description: 宿主节点 IPv4/IPv6，规范化后精确匹配 | Host node IPv4/IPv6, canonical exact
+          match
+        in: query
+        name: node_ip
+        type: string
       - description: 登记端点主机名或 IP，精确匹配 | Registered endpoint hostname or IP, exact
           match
         in: query
@@ -6515,6 +6625,96 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - platform.module.update
+  /platform/modules/{module_name}/instances/{instance_id}/logs:
+    get:
+      description: 有界查询已登记实例的日志；采集完整性未知，离线实例也可读取 | Bounded logs for a registered instance,
+        including offline instances; collection completeness is unknown
+      parameters:
+      - description: 模块名 | Module name
+        in: path
+        name: module_name
+        required: true
+        type: string
+      - description: 进程实例 ID | Process instance ID
+        in: path
+        name: instance_id
+        required: true
+        type: string
+      - description: UTC RFC3339 起始时间（含） | Inclusive UTC RFC3339 start
+        in: query
+        name: from
+        required: true
+        type: string
+      - description: UTC RFC3339 结束时间（不含） | Exclusive UTC RFC3339 end
+        in: query
+        name: to
+        required: true
+        type: string
+      - description: 日志级别 | Log level
+        enum:
+        - debug
+        - info
+        - warn
+        - error
+        - unknown
+        in: query
+        name: level
+        type: string
+      - description: 字面量关键字，最多 128 字符 | Literal keyword, at most 128 characters
+        in: query
+        name: keyword
+        type: string
+      - description: 返回上限，默认 200，最多 1000 | Limit, default 200, maximum 1000
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_service.RuntimeLogResult'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "502":
+          description: Bad Gateway
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "504":
+          description: Gateway Timeout
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 查看指定模块实例运行日志 | Read runtime logs of a module instance
+      tags:
+      - 平台模块管理 | Platform Module Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - platform.module_log.read
   /platform/security_policy:
     get:
       produces:

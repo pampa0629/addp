@@ -1547,6 +1547,179 @@
                 ]
             }
         },
+        "/entries/{id}/sharing_decisions": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "当前业务负责人显式确认；本人或本人项目组受益不自动拒绝。完整源目标由 Meta 当前祖先链与 System 能力描述核对；不接受自报确认人、路径或动作。必须显式选择 expiry_mode：at_time 提供未来 expires_at；until_revoked 无到期时间（省略或 null），仍受当前资格、撤销与安全约束，漏填模式不默认永久。decision_id 同参重试返回原记录；决定不是受理回执或 Grant，不授予数据访问 | The current business owner explicitly confirms sharing, including self or own project-group benefit. The exact target is checked against current Meta ancestry and System capabilities. Explicit expiry_mode is required: at_time requires future expires_at; until_revoked requires an omitted or null date and remains subject to current eligibility, revocation and safety. Missing mode never defaults to indefinite. Identical parameters recover the original decision, not an acceptance receipt, Grant or data access",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Catalog Sharing"
+                ],
+                "summary": "确认一次普通只读共享 | Confirm one ordinary read-only sharing decision",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "条目 UUID | Entry UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "共享确认参数 | Sharing confirmation parameters",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.createSharingDecisionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "同参恢复的原决定 | Original decision recovered with identical parameters",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_catalog_internal_service.SharingDecisionResult"
+                        }
+                    },
+                    "201": {
+                        "description": "新建的不可变业务决定 | New immutable business decision",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_catalog_internal_service.SharingDecisionResult"
+                        }
+                    },
+                    "400": {
+                        "description": "请求或期限无效 | Invalid request or expiry",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "缺少独立权限或当前业务责任 | Missing independent permission or current business ownership",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "条目不存在或不可见 | Entry missing or invisible",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "版本、决定参数或当前目标冲突 | Version, decision binding or current target conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "Meta 或 System 核验不可用 | Meta or System validation unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "catalog.entry.read",
+                    "catalog.sharing_decision.create"
+                ]
+            }
+        },
+        "/entries/{id}/sharing_decisions/{decision_id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅返回当前可见条目下由当前 User 确认的原记录；历史读取不要求仍为业务负责人。不重新确认、不延长到期时间、不返回 System Grant 或受理状态 | Return only the current User's original decision under a currently visible entry. Historical reads do not require current business ownership. No reconfirmation, expiry extension, System Grant or acceptance state is produced",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Catalog Sharing"
+                ],
+                "summary": "读取本人共享确认记录 | Read own sharing confirmation record",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "条目 UUID | Entry UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "决定 UUID | Decision UUID",
+                        "name": "decision_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "不可变原记录 | Immutable original record",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_catalog_internal_service.SharingDecisionResult"
+                        }
+                    },
+                    "400": {
+                        "description": "参数无效 | Invalid parameters",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "缺少独立功能权限 | Missing independent functional permissions",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "条目或本人记录不存在或不可见 | Entry or own record missing or invisible",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "catalog.entry.read",
+                    "catalog.sharing_decision.create"
+                ]
+            }
+        },
         "/governance/coverage": {
             "get": {
                 "security": [
@@ -4162,6 +4335,100 @@
                 }
             }
         },
+        "github_com_addp_catalog_internal_service.SharingDecisionResult": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string"
+                },
+                "authorization_version": {
+                    "type": "string",
+                    "example": ""
+                },
+                "catalog_entry_id": {
+                    "type": "string"
+                },
+                "confirmed_by": {
+                    "type": "string",
+                    "example": ""
+                },
+                "confirmer_in_project_group": {
+                    "type": "boolean"
+                },
+                "confirmer_membership_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "engine_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "entry_version": {
+                    "type": "string",
+                    "example": ""
+                },
+                "expires_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "x-nullable": true
+                },
+                "expiry_mode": {
+                    "type": "string",
+                    "enum": [
+                        "at_time",
+                        "until_revoked"
+                    ]
+                },
+                "id": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "recipient_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "recipient_type": {
+                    "type": "string"
+                },
+                "responsibility_id": {
+                    "type": "string"
+                },
+                "self_beneficiary": {
+                    "type": "boolean"
+                },
+                "source_binding_id": {
+                    "type": "string"
+                },
+                "source_version": {
+                    "type": "string"
+                },
+                "target": {
+                    "$ref": "#/definitions/github_com_addp_catalog_internal_service.SharingDecisionTarget"
+                }
+            }
+        },
+        "github_com_addp_catalog_internal_service.SharingDecisionTarget": {
+            "type": "object",
+            "properties": {
+                "engine_id": {
+                    "type": "string"
+                },
+                "segments": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/plugin.EngineCatalogSegment"
+                    }
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_catalog_internal_service.SourceEntryResolution": {
             "type": "object",
             "properties": {
@@ -4422,6 +4689,47 @@
                     "type": "string"
                 },
                 "project_group_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.createSharingDecisionRequest": {
+            "type": "object",
+            "required": [
+                "expiry_mode"
+            ],
+            "properties": {
+                "decision_id": {
+                    "type": "string",
+                    "format": "uuid"
+                },
+                "expires_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "x-nullable": true
+                },
+                "expiry_mode": {
+                    "type": "string",
+                    "enum": [
+                        "at_time",
+                        "until_revoked"
+                    ]
+                },
+                "reason": {
+                    "type": "string",
+                    "maxLength": 2000
+                },
+                "recipient_id": {
+                    "type": "string"
+                },
+                "recipient_type": {
+                    "type": "string",
+                    "enum": [
+                        "user",
+                        "project_group"
+                    ]
+                },
+                "version": {
                     "type": "string"
                 }
             }
@@ -4775,6 +5083,20 @@
         "models.JSONMap": {
             "type": "object",
             "additionalProperties": true
+        },
+        "plugin.EngineCatalogSegment": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "term": {
+                    "type": "string"
+                }
+            }
         }
     },
     "securityDefinitions": {

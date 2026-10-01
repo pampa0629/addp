@@ -16,12 +16,14 @@ Catalog 是企业资源目录的唯一事实源，负责稳定目录身份、来
 - 不向 Meta 或 Standard 回写 Catalog ID 或关联投影。
 - 责任关系不自动授予 IAM Role、数据访问或授权办理资格。已确认的目标规则以 `docs/spec/addp授权上下文规范.md` 5.5 为准：Catalog 提供当前责任资格及业务入口，System 引擎访问控制领域唯一维护源数据规则；不在 Catalog 新建 Grant 副本，不以 Catalog 可达性阻塞已有合法数据访问或其他模块 Ready。普通只读共享的同人确认／办理及责任移交边界已确认，表级贯通尚未实现。
 - 业务共享确认和源读取授权办理使用独立功能 Permission，首版仅通过角色显式分配，不默认授予内置管理员，不从编目权限、责任身份或引擎管理委派推导。Permission 与真实消费入口同时发布，不能先启用占位权限。
+- `POST /entries/:id/sharing_decisions` 已提供普通只读业务确认生产入口，须同时具备条目读取与 `catalog.sharing_decision.create`，并是当前业务负责人；本人或所在项目组受益可以显式确认。首版只支持 Meta 当前扫描的数据库 table，以实时祖先链和 System 引擎层级能力核对完整目标，不拆 `full_name`、不读取源数据。每次必须显式选择 `expiry_mode=at_time|until_revoked` 并填写用途：前者填写未来绝对到期时间（微秒精度，无统一天数上限），后者无到期日期；不默认永久、不使用日期哨兵。`sharing_decisions` 是不可修改的决定历史，不是 Grant 或受理回执；同参重试必须匹配模式及日期，恢复原记录。该 API 尚无前端入口，System 正式消费、受理与实际授权仍待贯通。
+- `lockCurrentSharingDecisionBasis` 只在 Catalog 本地事务中读取持久决定、按条目→当前来源→原责任关系锁定并核验当前依据；业务确认创建在提交前复用该核验。历史读取不调用它，普通名称／说明修改不使决定仅因聚合版本增加而失效；换源、原责任失效或同账号重新接任不能复活旧决定。它不核验 System 当前身份／功能权限／委派，不调用远端、不建立待核清、不构成受理依据或跨模块可信接口；后续办理消费者须补齐这些门禁后使用。
 - 跨模块只走公开 API 和 Tenant Service Access Token，不跨 Schema 查询。
 - `/entries` 的业务域上下文用 `catalog.entry.read` 动态发现 Standard Domain 的名称、编码、定义和层级，仅投影本次响应；独立前端业务域页已删除，Standard / Model 专业详情仍由 owner 对当前 User Token 判权，不能以 Catalog 运行身份代查。
 - 除 System 注册和本模块必需基础设施外，任何业务模块不可达都不能阻止进程启动；Meta / Model / Standard / Service / Develop 同步失败只产生滞后并后台重试，各 owner 使用独立 checkpoint。
 - `CatalogEntry` UUID 是企业稳定身份；Meta fingerprint 只是来源身份。
 - 首次保存有效 `business_owner` 即建立过业务责任，不等待完成编目。内部 nullable `business_responsibility_established` 只表达历史依据：新建为 false，责任写入同事务置 true，旧历史不足为 NULL；不得因撤销编目、移交、失效或来源变化重置，也不接受请求方编辑。不把它单独当作精确源资源的授权依据。
-- 业务责任资格以最终核验并正式接受本次办理为分界：接受前移交须重新确认，接受后移交只允许同一次、同参数办理继续。自动办理窗口为正式接受后 5 分钟，且不晚于拟授权的绝对到期时间，不限制人员操作时间；重试不得刷新，到期未生效须重新核验并接受，已生效的同次重试只返回原办理结果。接受不是 Grant 生效；接口和幂等消费尚待实施，不能用现有编目更新或只读查询替代接受动作。
+- Catalog 最终核验业务责任及精确业务决定，System 持久提交正式受理回执并唯一写入 Grant；Catalog 不另存第二份可编辑接受状态，也不复制业务决定到 System。接受前移交须重新确认，接受后只允许同一次、同参数办理继续。自动办理窗口使用 System 原受理时间，为 5 分钟；指定到期时间时另受该日期截断，长期有效仍只有 5 分钟；不限制人员操作，重试不得刷新。到期未生效须重新核验并接受，已生效同次重试只返回原结果。仅持本地锁调用 System 无法证明进程故障后的先后；`fulfillment_checks` 是发送前持久待核清事实，数据库保护受影响条目的依据写入，不保存 System 受理时间／截止时间。当前仅有内部协调底座；可信请求、核清恢复消费者及实际 Grant 仍待贯通，不能用编目更新或只读查询替代接受动作。
 - 已弃用条目禁止新的共享确认与办理接受；弃用前已接受的同次办理仍按原窗口继续，已有访问规则单独撤销。来源同步先按 UUID 稳定顺序锁定本批既有条目，再锁 current 来源绑定，与人工维护保持同一锁顺序，不以来源重新出现撤销弃用或清除责任历史。
 - `StandardMapping` 是 CatalogComponent 到确定 `Standard.ElementRevision` 的可审核、可追溯关系事实，拥有独立 UUID、并发版本、来源、置信度和审核状态。企业落标关系只归 Catalog；Quality 方案的物理目标与冻结标准来源仅表达检查意图，不构成第二套企业映射，也不以 Catalog 为前置。
 - 旧 `component_element_associations` 只在数据库迁移事务中读取：保留历史观察证据并转为未固定修订的 `legacy/proposed` 候选，随后删除旧表。业务 API 和 CatalogEntry 聚合更新只使用独立 StandardMapping；历史候选经人工固定发布修订并审核前，不得视为已落标。

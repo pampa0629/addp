@@ -99,6 +99,7 @@ AUXILIARY_DOCKERFILES = {
     "engines/supermap-workflow/Dockerfile.base": "SuperMap SDK base image build",
     "scripts/infra/Dockerfile.postgres": "infra PostgreSQL image build",
     "scripts/infra/Dockerfile.minio": "infra MinIO image build",
+    "scripts/infra/Dockerfile.runtime-log": "shared runtime log capture and source housekeeping",
 }
 
 
@@ -371,6 +372,8 @@ def expected_compile_entries(repository: Path) -> dict[str, str]:
         else:
             name = f"{module}-{command}"
         expected[name] = f"{module}/backend"
+    for path in repository_files(repository, "common/cmd/*/main.go"):
+        expected[Path(path).parts[2]] = "common"
     return expected
 
 
@@ -581,6 +584,9 @@ def validate_registration(repository: Path) -> list[str]:
                 f"{name}: {definition} does not COPY compiled binary {binary} "
                 "from dist/${BUILD_TYPE}-${GOOS}-${BUILD_ARCH}"
             )
+        if "runtime-log" in expected_compiled and (binary is not None or name in {"agent-backend", "copilot-backend"}):
+            if not dockerfile_copies_binary(definition_path.read_text(), "runtime-log"):
+                errors.append(f"{name}: {definition} must COPY shared runtime-log utility")
         if context is not None:
             errors.extend(
                 dockerfile_context_errors(
@@ -658,7 +664,7 @@ def validate_registration(repository: Path) -> list[str]:
             errors.append(f"{path}: auxiliary Dockerfile is unavailable in the worktree ({purpose})")
 
     for name in sorted(expected_compiled):
-        if name not in images:
+        if name not in images and expected_compiled[name] != "common":
             errors.append(f"{name}: compiled service/worker image registration is missing")
 
     build_recipe = make_recipe(makefile, "build")

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	commonapi "github.com/addp/common/api"
@@ -85,7 +86,7 @@ func (r *TaskExecutionRepository) GetByID(ctx context.Context, id int64, tenantI
 		query = query.Where("tenant_id = ?", tenantID)
 	}
 
-	err := query.First(&exec).Error
+	err := ApplyReadScopes(ctx, query).First(&exec).Error
 	return &exec, wrapDBError(err)
 }
 
@@ -96,20 +97,23 @@ func (r *TaskExecutionRepository) GetByExecutionID(ctx context.Context, executio
 	if tenantID != 0 {
 		query = query.Where("tenant_id = ?", tenantID)
 	}
-	err := query.First(&exec).Error
+	err := ApplyReadScopes(ctx, query).First(&exec).Error
 	return &exec, wrapDBError(err)
 }
 
 // ListChildrenByParentExecutionID 根据父执行 UUID 查询直接子执行
-func (r *TaskExecutionRepository) ListChildrenByParentExecutionID(ctx context.Context, parentExecutionID string, tenantID int) ([]*TaskExecution, error) {
+func (r *TaskExecutionRepository) ListChildrenByParentExecutionID(ctx context.Context, parentExecutionID string, tenantID, limit int) ([]*TaskExecution, error) {
+	if limit <= 0 || limit > 201 {
+		return nil, fmt.Errorf("child query limit must be between 1 and 201")
+	}
 	var executions []*TaskExecution
 	query := r.db.WithContext(ctx).
 		Where("parent_execution_id = ?", parentExecutionID)
 	if tenantID > 0 {
 		query = query.Where("tenant_id = ?", tenantID)
 	}
-	err := query.
-		Order("created_at ASC, id ASC").
+	err := ApplyReadScopes(ctx, query).
+		Order("created_at ASC, id ASC").Limit(limit).
 		Find(&executions).Error
 	return executions, err
 }
@@ -218,7 +222,7 @@ func (r *TaskExecutionRepository) buildFilterQuery(ctx context.Context, filter T
 		query = query.Where("created_at <= ?", *filter.EndDate)
 	}
 
-	return query
+	return ApplyReadScopes(ctx, query)
 }
 
 // GetTrendData 获取趋势数据（按天聚合）
@@ -234,12 +238,19 @@ func (r *TaskExecutionRepository) GetTrendData(ctx context.Context, tenantID int
 		WHERE tenant_id = ?
 		  AND created_at >= NOW() - INTERVAL '1 day' * ?
 		  AND (? = '' OR module = ?)
+		  AND /*EXECUTION_READ_SCOPE*/
 		GROUP BY DATE(created_at)
 		ORDER BY date ASC
 	`
 
 	var results []TrendDataPoint
-	err := r.db.WithContext(ctx).Raw(query, tenantID, days, module, module).Scan(&results).Error
+	predicate, readArgs := ReadPredicate(ctx)
+	if predicate == "" {
+		predicate = "1 = 1"
+	}
+	query = strings.ReplaceAll(query, "/*EXECUTION_READ_SCOPE*/", predicate)
+	args := append([]interface{}{tenantID, days, module, module}, readArgs...)
+	err := r.db.WithContext(ctx).Raw(query, args...).Scan(&results).Error
 	return results, err
 }
 

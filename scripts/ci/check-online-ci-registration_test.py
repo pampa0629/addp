@@ -382,6 +382,26 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         with self.assertRaisesRegex(CHECK.RegistrationError, "process profile is missing"):
             CHECK.check_registration(self.repository)
 
+    def test_module_profile_requires_force_stage_and_observer_configuration(self):
+        source = Path(__file__).resolve().parents[2]
+        paths = ("scripts/test/online-host-gate.sh", "scripts/dev/stop-exact-process.sh",
+                 "scripts/test/module-lifecycle-process-online.py", "scripts/dev/start.sh")
+        for relative in paths:
+            target = self.repository / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text((source / relative).read_text())
+        CHECK.validate_module_registry_process_profile(self.repository, {"module-registry-recovery"})
+        host = self.repository / paths[0]
+        original = host.read_text()
+        for fragment in ("bash scripts/dev/stop-exact-process.sh --force -manager",
+                         "observe_module_lifecycle manager-restarted",
+                         "ADDP_ONLINE_TEST_PLATFORM_ACCESS_TOKEN", "ADDP_HOST_NODE_IPS"):
+            with self.subTest(fragment=fragment):
+                host.write_text(original.replace(fragment, "REMOVED"))
+                with self.assertRaisesRegex(CHECK.RegistrationError, "process profile is missing"):
+                    CHECK.validate_module_registry_process_profile(self.repository, {"module-registry-recovery"})
+        host.write_text(original)
+
     def test_requires_consumer_engine_recovery_lifecycle_and_browser_assets(self) -> None:
         gate = self.repository / "scripts/test/online-gate.py"
         gate.write_text(

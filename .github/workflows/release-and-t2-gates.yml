@@ -30,6 +30,7 @@ jobs:
       manager: ${{ steps.manager.outputs.run }}
       meta: ${{ steps.meta.outputs.run }}
       model: ${{ steps.model.outputs.run }}
+      monitor: ${{ steps.monitor.outputs.run }}
       quality: ${{ steps.quality.outputs.run }}
       security: ${{ steps.security.outputs.run }}
       service: ${{ steps.service.outputs.run }}
@@ -94,6 +95,16 @@ jobs:
           ADDP_CI_HEAD: ${{ github.sha }}
           ADDP_CI_PR_BASE: ${{ github.event.pull_request.base.sha }}
         run: python3 scripts/ci/select-module-gate.py --module common
+
+      - name: Select Monitor PostgreSQL gate
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        id: monitor
+        env:
+          ADDP_CI_BEFORE: ${{ github.event.before }}
+          ADDP_CI_EVENT: ${{ github.event_name }}
+          ADDP_CI_HEAD: ${{ github.sha }}
+          ADDP_CI_PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: python3 scripts/ci/select-module-gate.py --module monitor
 
       - name: Select Manager integration gates
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
@@ -564,6 +575,55 @@ jobs:
         uses: ./.github/actions/ci-gate-summary
         with:
           gate: Common Engine Provider integration (PostgreSQL 15)
+          status: ${{ job.status }}
+
+  monitor-postgres:
+    name: Monitor execution and notification integration (PostgreSQL 15)
+    needs: selection
+    if: needs.selection.outputs.monitor == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgis/postgis:15-3.4@sha256:3f4a5d48e0be9580ed70ed618cd039ce57bbb2dd113053d3836e28513f1f87cd
+        env:
+          POSTGRES_USER: addp_ci
+          POSTGRES_PASSWORD: addp_ci_password
+          POSTGRES_DB: addp_monitor_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U addp_ci -d addp_monitor_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: monitor/backend/go.mod
+          cache: false
+
+      - name: Run Monitor PostgreSQL gate
+        env:
+          ADDP_TEST_POSTGRES_HOST: 127.0.0.1
+          ADDP_TEST_POSTGRES_PORT: 5432
+          ADDP_TEST_POSTGRES_USER: addp_ci
+          ADDP_TEST_POSTGRES_PASSWORD: addp_ci_password
+          ADDP_TEST_POSTGRES_DATABASE: addp_monitor_test
+          ADDP_TEST_POSTGRES_SSLMODE: disable
+        run: make test-monitor-postgres
+
+      - name: Summarize Monitor PostgreSQL gate
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: Monitor execution and notification integration (PostgreSQL 15)
           status: ${{ job.status }}
 
   common-opengauss:
@@ -1467,3 +1527,20 @@ jobs:
             --verify-tag \
             --generate-notes \
             --title "ADDP CLI $GITHUB_REF_NAME"
+
+  system-runtime-log:
+    name: System runtime log pipeline
+    needs: selection
+    if: needs.selection.outputs.system == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: common/go.mod
+          cache: false
+      - name: Verify isolated log lifecycle
+        run: make test-system-runtime-log

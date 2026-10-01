@@ -22,7 +22,6 @@ import (
 	"github.com/addp/system/internal/repository"
 	"github.com/addp/system/internal/service"
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -39,7 +38,7 @@ import (
 func main() {
 	// 加载根目录统一的环境变量
 	commonConfig.LoadEnv()
-	commonConfig.InitLogger("system-backend.log", nil)
+	commonConfig.InitLogger(nil)
 
 	// 加载配置
 	cfg := config.Load()
@@ -122,7 +121,7 @@ func main() {
 	moduleRegistryService := service.NewModuleRegistryService(repository.NewModuleRegistryRepository(db))
 	serviceURL := commonConfig.BuildServiceURL(commonConfig.GetServiceHost(), cfg.ServerAddr)
 	registrationDone, registrationErr := startSystemRegistration(runtimeContext, moduleRegistryService,
-		newSystemRegistrationRequest(serviceURL, uuid.NewString()))
+		newSystemRegistrationRequest(serviceURL, buildinfo.ProcessInstanceID()))
 	if registrationErr != nil {
 		logger.L().Error("System 模块注册失败", "error", registrationErr)
 	}
@@ -210,6 +209,7 @@ func newSystemRegistrationRequest(serviceURL, instanceID string) *models.ModuleR
 	hostNodeName, runtimeHostname := commonConfig.RuntimeNodeIdentity()
 	return &models.ModuleRegistrationRequest{
 		HostNodeName: hostNodeName, RuntimeHostname: runtimeHostname,
+		HostNodeIPs:      commonConfig.RuntimeHostNodeIPs(),
 		ModuleName:       "system",
 		InstanceID:       instanceID,
 		Role:             models.ModuleRuntimeRoleBackend,

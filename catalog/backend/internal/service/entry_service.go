@@ -293,6 +293,7 @@ type EntryService struct {
 	quality            QualitySummaryResolver
 	metaFields         MetaFieldResolver
 	elementRevisions   StandardElementRevisionResolver
+	sharingTargets     SharingTargetResolver
 }
 
 func (s *EntryService) WithQualitySummaryResolver(resolver QualitySummaryResolver) *EntryService {

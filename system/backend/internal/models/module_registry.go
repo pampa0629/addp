@@ -47,6 +47,7 @@ type ModuleRuntimeInstance struct {
 	ModuleURL          string         `gorm:"size:255" json:"module_url"`
 	HealthCheckURL     string         `gorm:"size:255" json:"health_check_url"`
 	HostNodeName       string         `gorm:"size:255;not null;default:''" json:"host_node_name"`
+	HostNodeIPs        []string       `gorm:"serializer:json;type:jsonb;not null;default:'[]'" json:"host_node_ips"`
 	RuntimeHostname    string         `gorm:"size:255;not null;default:''" json:"runtime_hostname"`
 	RegisteredHost     string         `gorm:"size:255;index" json:"registered_host"`
 	Status             string         `gorm:"not null;default:'up';size:20;index" json:"status"`
@@ -81,6 +82,7 @@ type ModuleRegistrationRequest struct {
 	RoutePrefix             string                                     `json:"route_prefix"`
 	HealthCheckURL          string                                     `json:"health_check_url"`
 	HostNodeName            string                                     `json:"host_node_name"`
+	HostNodeIPs             []string                                   `json:"host_node_ips"`
 	RuntimeHostname         string                                     `json:"runtime_hostname"`
 	ProcessStartedAt        time.Time                                  `json:"process_started_at" binding:"required"`
 	Metadata                map[string]interface{}                     `json:"metadata"`
@@ -115,6 +117,7 @@ type ModuleRuntimeInstanceInfo struct {
 	LastHeartbeat    time.Time              `json:"last_heartbeat"`
 	LeaseExpiresAt   time.Time              `json:"lease_expires_at"`
 	HostNodeName     string                 `json:"host_node_name"`
+	HostNodeIPs      []string               `json:"host_node_ips"`
 	RuntimeHostname  string                 `json:"runtime_hostname"`
 	ProcessStartedAt *time.Time             `json:"process_started_at"`
 	StoppedAt        *time.Time             `json:"stopped_at"`
@@ -128,6 +131,7 @@ type ModuleRuntimeInstanceFilter struct {
 	ModuleName     string
 	RegisteredHost string
 	NodeName       string
+	NodeIP         string
 	Role           string
 	Status         string
 	StopReason     string

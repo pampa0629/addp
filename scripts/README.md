@@ -836,3 +836,7 @@ bash scripts/prod/stop.sh
 
 **Version**: 0.1.14
 **Last Updated**: 2026-07-31
+
+## 模块实例运行日志验收
+
+模块实例运行日志 T2 入口为 `make test-system-runtime-log`，由 System owner 自建 disposable MinIO/Alloy/Loki 并清理全部测试资源；构建共享启动工具、身份关联、授权代理和重建保留同次验证，具体范围见 `scripts/infra/README.md`。

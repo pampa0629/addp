@@ -29,7 +29,10 @@
       "disabledSuccess": "模块已禁用",
       "enabledAria": "切换模块 {name} 的启用状态",
       "systemAlwaysEnabled": "始终启用",
-      "tabs": { "overview": "模块概览", "instances": "服务实例" },
+      "tabs": {
+        "overview": "模块概览",
+        "instances": "服务实例"
+      },
       "columns": {
         "id": "记录 ID",
         "name": "模块名",
@@ -47,7 +50,10 @@
         "workers": "在线 Worker",
         "attention": "需关注模块"
       },
-      "filters": { "all": "全部", "attention": "只看需关注" },
+      "filters": {
+        "all": "全部",
+        "attention": "只看需关注"
+      },
       "availability": {
         "routable": "可路由",
         "disabled": "管理员禁用",
@@ -56,7 +62,10 @@
         "ingress_online": "入口在线",
         "ingress_offline": "入口离线"
       },
-      "stopReasons": { "graceful": "正常退出", "lease_expired": "租约超时，疑似异常退出" },
+      "stopReasons": {
+        "graceful": "正常退出",
+        "lease_expired": "租约超时，疑似异常退出"
+      },
       "status": {
         "up": "UP · 在线",
         "down": "DOWN · 离线"
@@ -83,6 +92,7 @@
         "status": "状态",
         "endpoint": "实例主机/IP:端口",
         "node": "运行节点",
+        "hostNodeIPs": "宿主节点 IP",
         "hostNodeName": "宿主节点",
         "runtimeHostname": "运行环境",
         "nodeUnknown": "未提供",
@@ -105,6 +115,7 @@
         "uptimeSeconds": "{seconds} 秒"
       },
       "query": {
+        "nodeIP": "宿主节点 IP（精确匹配）",
         "module": "服务名称",
         "node": "宿主节点或运行环境主机名",
         "host": "登记主机名或 IP",
@@ -122,14 +133,53 @@
         "to": "结束时间",
         "completeRange": "请选择完整的起止时间",
         "reset": "重置",
-        "timeHint": "时间范围按选定的时间依据筛选；状态表示当前 UP/DOWN。离线判定时间仅查询仍离线的实例，恢复后退出结果，租约超时不代表进程已经退出。地址按登记主机名或 IP 精确匹配，无监听端点的实例可按运行节点名查询。",
+        "timeHint": "时间范围按选定的时间依据筛选；状态表示当前 UP/DOWN。离线判定时间仅查询仍离线的实例，恢复后退出结果，租约超时不代表进程已经退出。地址按登记主机名或 IP 精确匹配，无监听端点的实例可按运行节点名或宿主节点 IP 查询。",
         "empty": "没有符合条件的服务实例",
         "loadFailed": "加载服务实例失败",
         "notLoaded": "当前查询尚未成功获取数据",
         "lastSuccess": "最后成功刷新：{time}",
         "staleData": "数据已过期",
         "staleHint": "当前显示上次成功获取的数据，实例状态可能已变化。请刷新列表。",
-        "periods": { "m15": "近 15 分钟", "m30": "近 30 分钟", "h1": "近 1 小时", "h6": "近 6 小时", "h12": "近 12 小时", "h24": "近 24 小时", "d7": "近 7 天" }
+        "periods": {
+          "m15": "近 15 分钟",
+          "m30": "近 30 分钟",
+          "h1": "近 1 小时",
+          "h6": "近 6 小时",
+          "h12": "近 12 小时",
+          "h24": "近 24 小时",
+          "d7": "近 7 天"
+        }
+      },
+      "logs": {
+        "title": "运行日志",
+        "view": "查看日志",
+        "offlineWindow": "离线判定前后",
+        "level": "日志级别",
+        "allLevels": "全部级别",
+        "keyword": "输入关键字",
+        "limit": "展示上限",
+        "limitValue": "最近 {n} 条",
+        "follow": "自动跟随",
+        "stale": "当前显示上次结果，数据已过时",
+        "limited": "已达到展示上限，请缩小时间范围或增加筛选",
+        "retention": "所选范围超出配置保留期，结果可能不完整",
+        "summary": "显示 {n} 条，查询于 {time}",
+        "coverageUnknown": "采集完整性未确认",
+        "empty": "当前条件没有匹配日志",
+        "copy": "复制",
+        "stack": "异常堆栈",
+        "truncated": "本条日志已截断",
+        "invalidRange": "请选择有效时间范围，最长 7 天",
+        "failed": "运行日志查询失败",
+        "copied": "已复制日志",
+        "copyFailed": "复制失败",
+        "levels": {
+          "debug": "DEBUG",
+          "info": "INFO",
+          "warn": "WARN",
+          "error": "ERROR",
+          "unknown": "未知级别"
+        }
       }
     },
     "iam": {
@@ -533,6 +583,7 @@
           "entity": "业务实体",
           "entity_relation": "实体关系",
           "entry": "目录条目",
+          "sharing_decision": "业务共享决定",
           "event": "审计事件",
           "execution": "执行记录",
           "execution_authorization": "执行授权",
@@ -624,7 +675,8 @@
           "unit": "计量单位",
           "user": "用户账号",
           "workflow": "工作流",
-          "metric_implementation": "指标实现"
+          "metric_implementation": "指标实现",
+          "module_log": "模块运行日志"
         },
         "types": {
           "tenant_builtin": "租户内置角色",

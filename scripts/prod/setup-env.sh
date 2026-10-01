@@ -105,7 +105,7 @@ validate_production_env() {
 
   local key value previous
   for key in \
-    POSTGRES_PASSWORD REDIS_PASSWORD INFRA_FALKORDB_PASSWORD MINIO_ROOT_PASSWORD MEILISEARCH_MASTER_KEY \
+    LOKI_READ_TOKEN LOKI_WRITE_TOKEN LOKI_S3_SECRET_KEY POSTGRES_PASSWORD REDIS_PASSWORD INFRA_FALKORDB_PASSWORD MINIO_ROOT_PASSWORD MEILISEARCH_MASTER_KEY \
     INFRA_KAFKA_ADMIN_PASSWORD INFRA_KAFKA_CONNECT_PASSWORD \
     INFRA_KAFKA_TRANSFER_PASSWORD; do
     require_secret "$key" || return 1
@@ -113,6 +113,18 @@ validate_production_env() {
 
   if [ "$(env_value INFRA_FALKORDB_PASSWORD)" = "$(env_value REDIS_PASSWORD)" ]; then
     echo -e "${RED}错误: FalkorDB 与 Redis 密码不得复用${NC}"
+    return 1
+  fi
+
+  for key in LOKI_READ_TOKEN LOKI_WRITE_TOKEN; do
+    value="$(env_value "$key")"
+    if [[ ! "$value" =~ ^[a-zA-Z0-9_-]{32,128}$ ]]; then
+      echo "Invalid runtime log API token: $key" >&2
+      return 1
+    fi
+  done
+  if [ "$(env_value LOKI_READ_TOKEN)" = "$(env_value LOKI_WRITE_TOKEN)" ]; then
+    echo "Runtime log read/write tokens must be different" >&2
     return 1
   fi
 
@@ -178,6 +190,9 @@ replace_env REDIS_PASSWORD "$(gen_password)"
 replace_env INFRA_FALKORDB_PASSWORD "$(gen_password)"
 replace_env MINIO_ROOT_PASSWORD "$(gen_password)"
 replace_env MEILISEARCH_MASTER_KEY "$(gen_secret)"
+replace_env LOKI_READ_TOKEN "$(gen_secret)"
+replace_env LOKI_WRITE_TOKEN "$(gen_secret)"
+replace_env LOKI_S3_SECRET_KEY "$(gen_secret)"
 replace_env ENCRYPTION_KEY "$(gen_b64_key)"
 replace_env OAUTH_USER_CODE_PEPPER "$(gen_b64_key)"
 replace_env IAM_MFA_ENCRYPTION_KEY "$(gen_b64_key)"

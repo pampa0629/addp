@@ -1459,6 +1459,18 @@ func respondError(c *gin.Context, status int, err error) {
 	message := commoni18n.T(c, catalogi18n.MsgOperationFailed)
 	errorCode := "catalog_operation_failed"
 	switch {
+	case errors.Is(err, service.ErrSharingConfirmationForbidden):
+		status = http.StatusForbidden
+		message = commoni18n.T(c, catalogi18n.MsgSharingConfirmationForbidden)
+		errorCode = "catalog_sharing_confirmation_forbidden"
+	case errors.Is(err, service.ErrSharingDecisionConflict):
+		status = http.StatusConflict
+		message = commoni18n.T(c, catalogi18n.MsgSharingDecisionConflict)
+		errorCode = "catalog_sharing_decision_conflict"
+	case errors.Is(err, service.ErrSharingTargetUnsupported):
+		status = http.StatusConflict
+		message = commoni18n.T(c, catalogi18n.MsgSharingTargetUnsupported)
+		errorCode = "catalog_sharing_target_unsupported"
 	case errors.Is(err, service.ErrEntryNotFound):
 		status = http.StatusNotFound
 		message = commoni18n.T(c, catalogi18n.MsgEntryNotFound)

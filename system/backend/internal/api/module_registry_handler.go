@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 
@@ -19,7 +20,8 @@ import (
 
 // ModuleRegistryHandler 模块注册API处理器
 type ModuleRegistryHandler struct {
-	service *service.ModuleRegistryService
+	service     *service.ModuleRegistryService
+	runtimeLogs *service.RuntimeLogService
 }
 
 const (
@@ -33,8 +35,8 @@ const (
 )
 
 // NewModuleRegistryHandler 创建模块注册Handler
-func NewModuleRegistryHandler(service *service.ModuleRegistryService) *ModuleRegistryHandler {
-	return &ModuleRegistryHandler{service: service}
+func NewModuleRegistryHandler(registry *service.ModuleRegistryService) *ModuleRegistryHandler {
+	return &ModuleRegistryHandler{service: registry, runtimeLogs: service.NewRuntimeLogService(os.Getenv("LOKI_URL"), os.Getenv("LOKI_READ_TOKEN"))}
 }
 
 // RegisterService godoc
@@ -280,6 +282,7 @@ func (h *ModuleRegistryHandler) GetModulePlatform(c *gin.Context) {
 // @Security     BearerAuth
 // @Param        module_name query string false "稳定模块名，精确匹配 | Stable module name, exact match"
 // @Param        node_name query string false "宿主节点名或运行环境主机名，不区分大小写的精确匹配 | Host node name or runtime hostname, case-insensitive exact match"
+// @Param        node_ip query string false "宿主节点 IPv4/IPv6，规范化后精确匹配 | Host node IPv4/IPv6, canonical exact match"
 // @Param        registered_host query string false "登记端点主机名或 IP，精确匹配 | Registered endpoint hostname or IP, exact match"
 // @Param        role query string false "角色过滤：backend、worker、scheduler、ingress | Role filter: backend, worker, scheduler, ingress"
 // @Param        status query string false "有效状态过滤：up、down | Effective status filter: up, down"
@@ -319,7 +322,8 @@ func (h *ModuleRegistryHandler) ListModuleRuntimeInstancesPlatform(c *gin.Contex
 	}
 	instances, total, err := h.service.ListModuleRuntimeInstances(models.ModuleRuntimeInstanceFilter{
 		ModuleName: c.Query("module_name"), RegisteredHost: c.Query("registered_host"), NodeName: c.Query("node_name"),
-		Role: c.Query("role"), Status: c.Query("status"), StopReason: c.Query("stop_reason"),
+		NodeIP: c.Query("node_ip"),
+		Role:   c.Query("role"), Status: c.Query("status"), StopReason: c.Query("stop_reason"),
 		TimeBasis: c.Query("time_basis"), TimeFrom: timeFrom, TimeTo: timeTo,
 		Page: page, PageSize: pageSize,
 	})

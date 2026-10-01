@@ -238,6 +238,41 @@ const docTemplate = `{
                 ]
             }
         },
+        "/execution-read-scope": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅第一方租户用户；范围由 Owner 的现有读取 Permission 裁决，任务历史与本人一次性执行使用不同条件。| First-party tenant users only; Owner permissions decide task history and own ad-hoc visibility.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Execution diagnostics"
+                ],
+                "summary": "获取任务执行读取范围 | Get execution read scope",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/execution.ReadScope"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "authenticated"
+            }
+        },
         "/executions/{execution_id}": {
             "get": {
                 "security": [
@@ -2826,6 +2861,40 @@ const docTemplate = `{
                 "FieldTypeUUID",
                 "FieldTypeGeometry"
             ]
+        },
+        "execution.ReadGrant": {
+            "type": "object",
+            "properties": {
+                "own_ad_hoc": {
+                    "type": "boolean"
+                },
+                "task_history": {
+                    "type": "boolean"
+                },
+                "task_type": {
+                    "type": "string"
+                }
+            }
+        },
+        "execution.ReadScope": {
+            "type": "object",
+            "properties": {
+                "grants": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/execution.ReadGrant"
+                    }
+                },
+                "module": {
+                    "type": "string"
+                },
+                "principal_id": {
+                    "type": "integer"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                }
+            }
         },
         "github_com_addp_common_models.JSONMap": {
             "type": "object",

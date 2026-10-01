@@ -127,6 +127,12 @@ def validate_module_registry_process_profile(repository: Path, registered: set[s
         "bash scripts/dev/stop-exact-process.sh -system",
         "observe_module_lifecycle system-interrupted",
         "observe_module_lifecycle system-recovered",
+        "bash scripts/dev/stop-exact-process.sh --force -manager",
+        "observe_module_lifecycle manager-abnormally-stopped",
+        "observe_module_lifecycle manager-restarted",
+        "observe_module_lifecycle manager-gracefully-stopped",
+        "ADDP_ONLINE_TEST_PLATFORM_ACCESS_TOKEN",
+        "ADDP_HOST_NODE_IPS",
         "bash scripts/dev/stop-exact-process.sh -manager",
     )
     missing = [fragment for fragment in required_fragments if fragment not in host_gate]

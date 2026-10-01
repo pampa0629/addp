@@ -356,6 +356,7 @@ func (s *AlertService) List(ctx context.Context, req ListAlertsRequest) (*ListAl
 		req.PageSize = 20
 	}
 	query := s.db.WithContext(ctx).Model(&monitorModels.AlertIncident{}).Where("tenant_id = ?", req.TenantID)
+	query = s.visibleAlertQuery(ctx, query, req.TenantID)
 	if req.Status != "" {
 		query = query.Where("status = ?", req.Status)
 	}
@@ -373,11 +374,14 @@ func (s *AlertService) List(ctx context.Context, req ListAlertsRequest) (*ListAl
 	if err := query.Order("opened_at DESC, id DESC").Offset((req.Page - 1) * req.PageSize).Limit(req.PageSize).Find(&alerts).Error; err != nil {
 		return nil, err
 	}
+	for i := range alerts {
+		alerts[i] = safeAlertForRead(alerts[i])
+	}
 	return &ListAlertsResponse{Data: alerts, Total: total, Page: req.Page, PageSize: req.PageSize, TotalPages: int((total + int64(req.PageSize) - 1) / int64(req.PageSize))}, nil
 }
 
 func (s *AlertService) Acknowledge(ctx context.Context, id uint, tenantID int, actor string, now time.Time) (*monitorModels.AlertIncident, error) {
-	result := s.db.WithContext(ctx).Model(&monitorModels.AlertIncident{}).
+	result := s.visibleAlertQuery(ctx, s.db.WithContext(ctx).Model(&monitorModels.AlertIncident{}), tenantID).
 		Where("id = ? AND tenant_id = ? AND status = ?", id, tenantID, monitorModels.AlertStatusOpen).
 		Updates(map[string]interface{}{"status": monitorModels.AlertStatusAcknowledged, "acknowledged_at": now, "acknowledged_by": actor, "updated_at": now})
 	if result.Error != nil {
@@ -387,11 +391,13 @@ func (s *AlertService) Acknowledge(ctx context.Context, id uint, tenantID int, a
 		return nil, ErrAlertNotActive
 	}
 	var alert monitorModels.AlertIncident
-	return &alert, s.db.WithContext(ctx).First(&alert, "id = ? AND tenant_id = ?", id, tenantID).Error
+	err := s.db.WithContext(ctx).First(&alert, "id = ? AND tenant_id = ?", id, tenantID).Error
+	alert = safeAlertForRead(alert)
+	return &alert, err
 }
 
 func (s *AlertService) Suppress(ctx context.Context, id uint, tenantID int, until time.Time) (*monitorModels.AlertIncident, error) {
-	result := s.db.WithContext(ctx).Model(&monitorModels.AlertIncident{}).
+	result := s.visibleAlertQuery(ctx, s.db.WithContext(ctx).Model(&monitorModels.AlertIncident{}), tenantID).
 		Where("id = ? AND tenant_id = ? AND status IN ?", id, tenantID, []string{monitorModels.AlertStatusOpen, monitorModels.AlertStatusAcknowledged}).
 		Updates(map[string]interface{}{"suppressed_until": until, "updated_at": time.Now()})
 	if result.Error != nil {
@@ -401,7 +407,9 @@ func (s *AlertService) Suppress(ctx context.Context, id uint, tenantID int, unti
 		return nil, ErrAlertNotActive
 	}
 	var alert monitorModels.AlertIncident
-	return &alert, s.db.WithContext(ctx).First(&alert, "id = ? AND tenant_id = ?", id, tenantID).Error
+	err := s.db.WithContext(ctx).First(&alert, "id = ? AND tenant_id = ?", id, tenantID).Error
+	alert = safeAlertForRead(alert)
+	return &alert, err
 }
 
 func deriveObservationSignals(execution commonExecution.TaskExecution, now time.Time) []observationSignal {

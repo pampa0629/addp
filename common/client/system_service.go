@@ -20,7 +20,6 @@ import (
 	"github.com/addp/common/config"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/models"
-	"github.com/google/uuid"
 )
 
 // SystemServiceClient is the Bearer-only client used by ADDP service
@@ -438,8 +437,9 @@ func newModuleRegistrationLifecycle(request *ModuleRegistrationRequest) (*Module
 	registration := *request
 	registration.ProcessStartedAt = buildinfo.ProcessStartedAt()
 	registration.HostNodeName, registration.RuntimeHostname = config.RuntimeNodeIdentity()
+	registration.HostNodeIPs = config.RuntimeHostNodeIPs()
 	if strings.TrimSpace(registration.InstanceID) == "" {
-		registration.InstanceID = uuid.NewString()
+		registration.InstanceID = buildinfo.ProcessInstanceID()
 	}
 	if strings.TrimSpace(registration.Role) == "" {
 		registration.Role = ModuleRuntimeRoleBackend

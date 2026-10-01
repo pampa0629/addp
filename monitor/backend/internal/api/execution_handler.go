@@ -33,7 +33,9 @@ func NewExecutionHandler(queryService *service.ExecutionQueryService) *Execution
 // @Param status query string false "执行状态 | Status"
 // @Param trigger_type query string false "触发类型 | Trigger type"
 // @Param page query int false "页码 | Page" default(1)
-// @Param page_size query int false "每页数量 | Page size" default(20)
+// @Param page_size query int false "每页数量 | Page size" default(20) minimum(1) maximum(100)
+// @Failure 400 {object} ErrorResponse
+// @Failure 503 {object} ErrorResponse
 // @Success 200 {object} service.ListExecutionsResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["monitor.execution.read"]
@@ -46,8 +48,12 @@ func (h *ExecutionHandler) ListExecutions(c *gin.Context) {
 	}
 
 	// 解析查询参数
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+	page, pageErr := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, sizeErr := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+	if pageErr != nil || sizeErr != nil || page < 1 || pageSize < 1 || pageSize > 100 {
+		c.JSON(http.StatusBadRequest, gin.H{"error_code": "invalid_params", "error": commoni18n.T(c, commoni18n.MsgInvalidParams)})
+		return
+	}
 
 	req := &service.ListExecutionsRequest{
 		TenantID:     tenantID,
@@ -64,7 +70,7 @@ func (h *ExecutionHandler) ListExecutions(c *gin.Context) {
 	// 查询执行记录
 	resp, err := h.queryService.ListExecutions(c.Request.Context(), req)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error_code": "internal_error", "error": commoni18n.T(c, moni18n.MsgDiagnosticQueryFailed)})
 		return
 	}
 

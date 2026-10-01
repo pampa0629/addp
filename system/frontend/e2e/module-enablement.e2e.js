@@ -22,7 +22,7 @@ test('System and Gateway stay enabled while a business module can be disabled', 
     { id: 1, module_name: 'system', route_prefix: '/system', enabled: true, version: 1, instances: [] },
     { id: 2, module_name: 'manager', route_prefix: '/manager', enabled: true, version: 1, instances: [
       { instance_id: 'manager-backend', role: 'backend', status: 'up', module_url: 'http://manager.local:8081', process_started_at: startedAt, lease_expires_at: leaseExpiresAt },
-      { instance_id: 'manager-worker', host_node_name: 'host-a', runtime_hostname: 'container-a', role: 'worker', status: 'down', module_url: '', process_started_at: startedAt,
+      { instance_id: 'manager-worker', host_node_name: 'host-a', runtime_hostname: 'container-a', host_node_ips: ['192.0.2.7', '2001:db8::1'], role: 'worker', status: 'down', module_url: '', process_started_at: startedAt,
         last_heartbeat: startedAt, lease_expires_at: startedAt, stopped_at: startedAt, stop_reason: 'lease_expired' }
     ] },
     { id: 3, module_name: 'gateway', route_prefix: '', enabled: true, version: 1, instances: [] }
@@ -70,6 +70,7 @@ test('System and Gateway stay enabled while a business module can be disabled', 
       const data = all.filter(instance => (!params.module_name || instance.module_name === params.module_name) &&
         (!params.registered_host || instance.registered_host === params.registered_host) &&
         (!params.node_name || [instance.host_node_name, instance.runtime_hostname].some(name => name?.toLowerCase() === params.node_name.toLowerCase())) &&
+        (!params.node_ip || instance.host_node_ips?.includes(params.node_ip)) &&
         (!params.role || instance.role === params.role) && (!params.status || instance.status === params.status))
       return fulfillJSON(route, 200, { data, total: data.length, page: Number(params.page), page_size: Number(params.page_size), total_pages: 1 })
     }
@@ -162,9 +163,16 @@ test('System and Gateway stay enabled while a business module can be disabled', 
   await expect(page.locator('.module-instances').getByText('container-a', { exact: false })).toBeVisible()
   await page.getByPlaceholder('宿主节点或运行环境主机名').fill('container-a')
   await expect.poll(() => instanceQueries.at(-1)?.node_name).toBe('container-a')
+  await page.getByPlaceholder('宿主节点 IP（精确匹配）').fill('2001:db8::1')
+  await expect.poll(() => instanceQueries.at(-1)?.node_ip).toBe('2001:db8::1')
+  await expect(page.locator('.module-instances .el-table__body tr')).toHaveCount(1)
+  await expect(page).toHaveURL(/node_ip=2001(?::|%3A)db8/)
+  await expect(page.locator('.module-instances .instance-node')).toContainText('192.0.2.7, 2001:db8::1')
   const workerRow = page.locator('.module-instances .el-table__body tr').filter({ hasText: 'manager-worker' })
   await workerRow.locator('.el-table__expand-icon').click()
   const diagnostics = page.locator('.module-instances .el-table__expanded-cell')
+  await expect(diagnostics).toContainText('宿主节点 IP')
+  await expect(diagnostics).toContainText('192.0.2.7, 2001:db8::1')
   await expect(diagnostics).toContainText('最近心跳')
   await expect(diagnostics).toContainText('租约到期')
   await expect(diagnostics).toContainText('离线判定时间')
@@ -174,6 +182,7 @@ test('System and Gateway stay enabled while a business module can be disabled', 
   await page.getByRole('button', { name: '重置' }).click()
   await expect.poll(() => instanceQueries.at(-1)).toEqual({ page: '1', page_size: '10', status: 'up' })
   await expect(page.getByPlaceholder('宿主节点或运行环境主机名')).toHaveValue('')
+  await expect(page.getByPlaceholder('宿主节点 IP（精确匹配）')).toHaveValue('')
   await expect(page.locator('.module-instances .el-table__body tr')).toHaveCount(1)
 })
 

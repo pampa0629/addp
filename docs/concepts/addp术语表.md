@@ -482,9 +482,10 @@
 | Resource Grant | 资源授权 | owner 模块将特定资源动作显式授予 User、Department、Project Group、Role 主体集合或 Service Principal 的事实。 | 最终资源访问判断仍由 owner 执行；Asset 的授权记录可以是授权来源。 |
 | source data authorization authority | 源数据授权权威 | 同一源数据逻辑资源访问规则的唯一维护方。 | 已确认由 System 的引擎访问控制领域承担，不是 System IAM 的全平台中央 ACL；访问模块执行其权威规则，不能分别维护源数据授权副本。专业业务对象的授权仍归各自 owner；表级贯通尚未实现。 |
 | source data authorization target | 源数据授权目标 | 在 Tenant 边界内，以已登记 Engine 身份和完整结构化 EngineCatalogPath 确定的源数据逻辑资源。 | 不是物理对象每次创建的身份；没有在 ADDP 中改变资源绑定或授权时，外部同名重建仍按同一逻辑资源处理。不同 Engine 或路径是不同目标，不随 Catalog 重绑自动转移规则；指纹、Meta 行 ID 和 CatalogEntry ID 不代替当前有效访问规则。 |
-| source authorization approval requirement | 源数据授权批准要求 | System 引擎访问控制领域针对一个精确源数据目标保存的、新授权所需批准依据的版本化事实。 | 可要求 Catalog 业务确认，或经明确交接采用 System 独立批准；不复制 Catalog 责任人、部门或责任历史，不是 Resource Grant，也不因模块注册、停用或失联自动切换。未建立权威事实不等于已允许独立批准；首次启用的操作资格和跨模块协议须明确后实施。 |
-| business authorization decision | 业务授权决定 | 有效业务责任人对一次明确资源、接收主体、动作和期限的共享或权限扩大作出的确认。 | 不等于责任身份、IAM Role、Resource Grant 或数据访问成功；必须验证当前资格并由授权维护方履约。普通只读共享允许确认人与办理人同人，但必须分别具备两方面资格；不隐含允许申请人自批。 |
-| authorization fulfillment acceptance | 授权办理接受 | Catalog 在最终核验当前业务责任后，正式接受一次精确业务授权决定的行为。 | 是责任资格的分界，不是访问权限生效；接受前移交须由新负责人重新确认，接受后仅同一次、同参数办理可继续。自动办理窗口从正式接受起为 5 分钟，且不得晚于本次拟授权的绝对到期时间；不限制人员填写或审核时间，不改变接收方访问期限。已弃用条目禁止新的接受，弃用前已接受的同次办理仍按原窗口继续；已有访问规则单独撤销。必须与责任变更、弃用有可验证的先后顺序；接口尚待实施，不是永久凭据、Grant 副本或新的编目状态。 |
+| source authorization approval requirement | 源数据授权批准要求 | System 引擎访问控制领域针对一个精确源数据目标保存的、新授权所需批准依据的版本化事实。 | 可要求 Catalog 业务确认，或经明确交接采用 System 独立批准；不复制 Catalog 责任人、部门或责任历史，不是 Resource Grant，也不因模块注册、停用或失联自动切换。交接承接人只用于当前资格核验和审计，不构成永久唯一审批人或第二份账号白名单。未建立权威事实不等于已允许独立批准；首次启用需独立治理配置 Permission 与有效引擎管理委派，不能由编目维护权推导。完整跨模块事务协议待落实。 |
+| business authorization decision | 业务授权决定 | 有效业务责任人对一次明确资源、接收主体、动作和期限的共享或权限扩大作出的确认。 | 不等于责任身份、IAM Role、Resource Grant 或数据访问成功；必须验证当前资格并由授权维护方履约。普通只读允许显式确认自用或本人当前所在项目组受益，确认与办理资格分别核验；不适用于敏感原值例外、写入或 DDL 自批。有效期必须显式选择指定到期时间或长期有效（直至撤销）；前者为未来绝对时间、无统一天数上限，后者无时间终点但仍受当前资格、撤销及安全约束。漏填不默认永久，不放宽临时接入或管理委派。 |
+| authorization fulfillment acceptance | 授权办理接受 | Catalog 最终核验当前业务责任及精确业务决定后，由 System 引擎访问控制领域持久提交本次办理受理回执的行为。 | 正式受理点是 System 回执事务提交，不是 Catalog 单独保存接受状态，也不是访问权限生效。必须与责任变更、弃用、来源重绑及批准要求退出形成可验证顺序；接受前移交须由新负责人重新确认，接受后仅同一次、同参数办理可继续。自动办理窗口从 System 正式受理起为 5 分钟；指定到期时间时另受该日期截断，长期有效仍只有 5 分钟；不限制人员操作，不改变访问期限，重试不刷新。当前仅有内部协调底座，跨模块接口及完整故障恢复尚待贯通。 |
+| authorization fulfillment receipt | 授权办理受理回执 | System 对一次精确源数据授权办理保存的不可延长的正式受理事实。 | 只保存办理编号、精确目标及参数绑定、Catalog 业务决定引用、批准要求版本、System 受理时间、截止时间及审计依据；不复制业务责任人、部门或业务决定正文。不是凭据、Grant、可编辑责任副本或新的编目状态。Catalog 查询 System 回执展示结果，不另存第二份可编辑受理状态；回执缺失或查询失败不证明原办理未受理。 |
 | business responsibility establishment evidence | 业务责任建立依据 | Catalog 对企业条目是否曾明确保存有效业务负责人的不可回退历史依据。 | 首次保存有效 `business_owner` 即建立，不以完成编目为前提；仅分配部门或业务域不算，模块部署或注册也不算。撤销编目、责任移交或失效不清除此依据。旧历史不足时保留未知，不等同从未建立；不是新的治理阶段、当前资格证明或数据授权，也不是禁止用户明确退出 Catalog 的永久锁定。 |
 | authorization fulfillment | 授权办理 | 具备办理功能和目标管理范围的主体，将有效业务或接入授权依据落实为资源访问规则，或执行规则撤销的行为。 | 办理权限不等于业务批准权；业务责任人、数据管理员和技术维护者不因承担责任自动获得办理或内容访问权。 |
 | engine access management delegation | 引擎授权管理委派 | System 引擎访问控制领域将一个明确 Engine 的有限授权管理资格，显式委派给当前 Tenant 的有效用户成员。 | 独立于 Role Assignment、Catalog 责任和内容访问 Grant；必须指定到期时间与原因，可撤销，不允许转委派。首版不包含 namespace 递归、写入、DDL 或整库读取。 |
@@ -536,6 +537,7 @@
 | registered host | 登记主机 | 从模块运行实例的服务地址（无服务地址时为健康检查地址）解析出的主机名或 IP，不包含端口。 | 用于按登记地址精确筛选实例；域名和 `localhost` 不等于物理节点 IP。无监听端点的 Worker、Scheduler 可以为空，不据此推断其节点地址。 |
 | runtime hostname | 运行环境主机名 | 由进程所在操作系统自动采集的主机名，容器内表示容器运行环境。 | 对应 `runtime_hostname`；用于定位包括无监听端点 Worker 在内的进程，不从登记 URL 或实例 ID 推断宿主节点。 |
 | host node name | 宿主节点名 | 部署环境明确提供的进程所属宿主节点标识。 | 对应 `host_node_name`，由 `ADDP_HOST_NODE_NAME` 注入；未提供时为空，不把容器主机名当作宿主节点名。节点信息仅供观测，不参与路由、Ready 或租约判断。 |
+| host node IPs | 宿主节点 IP | 部署环境明确提供的宿主节点 IPv4、IPv6 地址集合。 | 对应 `host_node_ips`，由 `ADDP_HOST_NODE_IPS` 注入；未提供时为空数组。供展示与精确查询，不替代服务登记地址或容器 IP，不参与路由、Ready 或租约判断。 |
 | module enabled state | 模块启用状态 | 平台系统管理员是否允许业务模块参与路由和动态入口聚合的持久意图。 | 与实例 `status` 独立；业务模块的注册和心跳不得覆盖。System 与 Gateway 不提供管理员禁用操作。 |
 | routable backend | 可路由 Backend | 同时满足模块已启用、角色为 `backend`、状态为 `up`、租约未过期且 URL 有效的运行实例。 | Worker、Scheduler 和 Gateway Ingress 只可观测，不参与 Gateway 业务路由。 |
 | module registry revision | 模块注册表修订号 | System 对可路由模块拓扑变更维护的单调递增版本。 | 新增、恢复、下线、端点变化和管理员启停会递增；普通续租心跳不递增。 |
@@ -627,3 +629,18 @@
 9. 靠近 Meta 存储和扫描结果的内部契约使用 `node` / `item` 体系，例如 `meta_node`、`meta_item`、`node_id`、`item_id`。`node` 表达 Meta 树结构，`item` 表达已识别数据项，不应与 Engine Catalog entry 混用。
 10. `resource` 只作为 UI 或资源树展示语境中的宽泛称呼使用。Meta 模块、Engine 插件接口和跨模块 API 不应新增 `resource_*` 字段来替代已有 Engine Catalog、`node_*` 或 `item_*` 术语。
 11. Notebook Native Engine Facade 的公开方法、参数和返回对象使用具体引擎原生术语；`EngineCatalogPath`、`EngineCatalogEntry` 和 `EngineCatalogFacts` 只作为其内部实现契约，不要求 Notebook 使用者理解。
+
+## 租户任务执行诊断
+
+任务执行诊断围绕唯一 `common.task_executions.execution_id` 展示安全的执行概览、步骤、过程事件、失败原因和必要上下文。它由任务 Owner 产生事实并裁决读取权限，Monitor 聚合展示；不属于 System 的平台进程日志，也不替代操作审计。
+
+| 术语 | 中文 | 定义与边界 |
+| --- | --- | --- |
+| execution observation | 执行观测 | 对统一执行记录的显式安全投影；不直接返回执行配置、原始 metadata、数据预览、授权引用或所有权凭据。 |
+| execution read scope | 执行读取范围 | Owner 在当前同步 User 请求中裁决的强类型读取范围；第一版使用明确的任务类型和租户级任务历史读取、本人一次性执行读取条件。不是 Execution Authorization，也不是 Monitor 的中央 ACL。 |
+| execution event | 执行过程事件 | 附属于 execution 和 attempt 的追加式安全过程事实；用于阶段、批次汇总、警告和恢复追踪，不作为 execution 主状态或业务结果的第二事实源。 |
+
+
+## 模块服务运行日志
+
+运行日志是模块进程的启动输出、运行消息和异常堆栈，由受控启动边界赋予进程实例身份；正文归运行日志存储，不属于操作审计或任务执行记录。日志链路状态与实例 UP/DOWN 分开表达。单实例日志入口由 System 在 Platform Context 下授权。

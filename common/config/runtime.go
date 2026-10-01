@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"net"
+	"net/netip"
 	"os"
 	"strings"
 )
@@ -56,4 +57,31 @@ func GetServiceHost() string {
 func RuntimeNodeIdentity() (hostNodeName, runtimeHostname string) {
 	runtimeHostname, _ = os.Hostname()
 	return strings.TrimSpace(os.Getenv("ADDP_HOST_NODE_NAME")), strings.TrimSpace(runtimeHostname)
+}
+
+// RuntimeHostNodeIPs reads deployment-provided addresses without selecting interfaces.
+// Invalid values remain in the request so System rejects the registration.
+func RuntimeHostNodeIPs() []string {
+	value := strings.TrimSpace(os.Getenv("ADDP_HOST_NODE_IPS"))
+	if value == "" {
+		return []string{}
+	}
+	return strings.Split(value, ",")
+}
+
+func NormalizeHostNodeIPs(values []string) ([]string, error) {
+	result := make([]string, 0, len(values))
+	seen := make(map[string]bool, len(values))
+	for _, value := range values {
+		address, err := netip.ParseAddr(strings.TrimSpace(value))
+		if err != nil || address.Zone() != "" {
+			return nil, fmt.Errorf("invalid host node IP")
+		}
+		canonical := address.Unmap().String()
+		if !seen[canonical] {
+			seen[canonical] = true
+			result = append(result, canonical)
+		}
+	}
+	return result, nil
 }

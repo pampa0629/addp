@@ -8,6 +8,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 > 源数据授权职责扩展（已确认，表级贯通待实现）：System 的引擎访问控制领域唯一维护物理表、文件或对象的访问规则；不是 System IAM 接管所有业务对象 ACL，不建立可独立编辑的 Catalog 责任副本。Catalog 与 System 的办理入口应使用同一规则写路径；各访问模块执行同一权威规则。接入阶段限时只读、业务确认／办理分工及责任移交以 `docs/spec/addp授权上下文规范.md` 5.5 为准，不能把现有 Engine ID + read/write/ddl 执行范围视为表级授权已经实现。
 
+> 正式受理归属（2026-10-01 已确认，分步实施）：Catalog 管业务批准及当前责任核验，System 的引擎访问控制领域持久保存最小正式受理回执。回执与批准要求变更、Grant 写入在同一精确目标边界排序，不复制业务责任或业务决定正文；不是访问凭据或 Grant。原 5 分钟窗口不因重试刷新，退出不取消退出前已受理的同次、同参办理。迁移 000167 和内部仓储提供同次受理／关闭互斥、不可变结果及事务审计底座；000168 增加精确目标的版本化批准要求，新受理消费当前 `catalog` 模式及版本，退出／重新启用与受理共享目标锁。承接人仅用于当次资格核验及交接审计，不是永久唯一审批人。真实资格、业务决定与可信调用消费者仍待贯通，不发布实际办理接口，不以 Catalog 本地锁或独立时钟冒充先后证明。
+
+> 内部核清读取：`engineaccess.Repository.readFulfillment` 使用独立只读事务，与仲裁共用完整请求绑定匹配，不取仲裁锁；未找到不等于关闭，退出或过期不改写原回执。拒绝在受理写事务中暴露自身未提交结果。该仓储不替代可信跨模块核清接口、当前资格判断或实际 Grant 消费。
+
+> 内部操作来源底线：完整请求不可变绑定 User Principal、Tenant Membership 和授权版本；首次受理按身份 → 请求 → 目标顺序，在 IAM 共享行锁下核验当前身份、成员关系、租户及成员到期时间，业务核验后再查数据库墙钟。共享锁与审计外键引用兼容，不阻塞不同目标的独立读取核验；现有管理委派写入仍保留原写锁。关闭与只读历史核清不要求原操作人仍有效，不由历史结果恢复新办理资格。该身份引用并非可信来源证明，不代替后续 owner 持久事实核验、独立 Permission、管理委派或 Catalog 业务决定，仍无公开受理或 Grant 接口。
+
+> 普通只读共享有效期：每次显式选择 `at_time`（未来绝对到期时间）或 `until_revoked`（无到期日期，直至撤销）；遗漏模式或矛盾参数拒绝，模式与日期均绑定不可变请求。自动办理窗口仍为原受理时间起 5 分钟；限时共享另受授权到期时间截断，长期有效不延长办理窗口。000172 在排他锁与同一事务内将历史有限期回执无损标为 `at_time`、补齐绑定并恢复不可变触发器，不创建 Grant 或改变历史时间。临时接入、管理委派和敏感操作规则不变。
+
 ## 项目概述
 
 **全域数据平台 (All Domain Data Platform)** 是企业级数据平台的核心能力模块，提供基础系统功能：
@@ -258,7 +266,7 @@ frontend/src/
 - `module_definitions` 按稳定 `module_name` 保存持久定义和管理员 `enabled` 状态，进程离线不删除定义
 - `module_definitions.version` 是聚合根乐观并发版本；心跳不得递增它，幂等重复注册保持版本不变，只有 owner 模块级声明实际变化时才原子递增且不得覆盖管理员 `enabled`
 - System Backend 自身注册生命周期使用进程信号 Context，退出前完成实例注销、等待心跳与清理任务结束；开发停止顺序为其他模块和 Runtime 先退出、System 最后退出，正常注销记录 `graceful`，未完成注销的强制终止或失联实例仍按租约超时判断。
-- `module_runtime_instances` 按 `(module_definition_id, instance_id)` 保存进程角色、端点、运行环境主机名 `runtime_hostname`、部署注入的宿主节点名 `host_node_name`、元数据、心跳和租约
+- `module_runtime_instances` 按 `(module_definition_id, instance_id)` 保存进程角色、端点、运行环境主机名 `runtime_hostname`、部署注入的宿主节点名 `host_node_name`、宿主节点 IP 集合 `host_node_ips`、元数据、心跳和租约
 - 心跳只续租实例；只有 `enabled + backend + up + lease valid` 的实例可供 Gateway 路由
 - `configuration_management` 只保存版本化配置管理入口声明（owner、scope、前端路由和读写 Permission），不保存模块配置键、配置值或 Secret
 
@@ -269,7 +277,7 @@ frontend/src/
 
 ### 日志中间件
 
-`LoggerMiddleware` 自动记录所有非 GET 请求的审计日志，包括：
+`LoggerMiddleware` 自动记录非 GET 请求，以及模块实例运行日志的 GET 读取审计。运行日志读取审计只记录操作者、实例、时间范围和结果，不保存关键字和日志正文。其他审计包括：
 - 用户身份（如果已认证）
 - 请求方法和路径
 - 客户端 IP 地址
@@ -425,3 +433,14 @@ API 消费方不是 Principal，不能分配 Role。首期只绑定 Service Cons
 - 服务实例页沿用模块概览的 10 秒刷新间隔，重新读取当前已应用的组合条件与分页，更新心跳、租约及运行时长；后台刷新不显示整表加载遮罩。有请求进行中、文本防抖未结束、自定义时间范围不完整或浏览器页面隐藏时跳过后台刷新，旧响应不得覆盖新查询；离开服务实例页停止该页轮询。该行为由既有 `make test-system-frontend` 和 System 前端 CI Job 的浏览器回归覆盖。
 - 服务实例列表显示当前查询最后一次成功获取数据的本地时间，包括成功返回空列表的情况；该时间只表示列表获取时间，不代表实例心跳时间。刷新失败立即提示数据已过期；两个刷新周期（20 秒）没有成功更新时同样提示，保留同一查询的上次结果供查看。重试完成前保留失败及过期提示，只有当前查询成功响应才清除。切换筛选或分页、重置及未完成自定义时间范围时清除上一查询的结果和获取时间；旧响应不得更新获取时间。页面恢复可见时立即检查数据时效并尝试刷新。获取时间和过期状态不写入 URL。
 - 同一实例的租约过期及恢复由确定性浏览器用例连续验证：全部状态列表自动从 UP 更新为 DOWN；已离线实例不出现在 UP 筛选中，恢复实例自动退出 DOWN 筛选；组合条件与 URL 保持不变。租约超时只说明失联，离线时不推断进程持续运行时长；相同进程续租恢复后继续按原启动时间计算。真实 System/Gateway 注册和恢复链路另由隔离部署中的 T4 `module-registry-recovery` 验证，不以受控 API 夹具替代。
+
+
+## 模块实例运行日志
+
+System 平台的“模块管理 → 服务实例”提供已登记 UP/DOWN 实例的日志抽屉。独立 Permission `platform.module_log.read` 默认只授予平台系统管理员；租户、Runtime Service Principal 和仅有模块读取权限的用户不能读取正文。
+
+API 为 `GET /api/v1/system/platform/modules/{module_name}/instances/{instance_id}/logs`，参数 `from/to/level/keyword/limit`。固定实例、字面量关键字、有界时间窗口；默认 200 条，最多 1000 条且响应不超过 2 MiB，不提供虚构总数或完整分页。System 只访问受控 Loki 查询代理，不接收客户端文件路径、LogQL 或远端地址。失败返回明确错误，采集完整性始终标为未知。
+
+正文由 Alloy/Loki/MinIO 保存，不写入 IAM 审计表。标准开发和容器启动通过 `common/cmd/runtime-log` 生成并传递进程身份。重启产生新身份，原有 DOWN 登记事实保留，便于查询集中保留期内的旧日志。尚未登记的启动失败只保留节点源，不虚构服务实例。
+
+标准验证：`make test-module MODULE=system`（显式注入允许的 IAM 测试 DSN），`make test-system-runtime-log`。设计与限制见 [模块服务运行日志设计](../docs/next/ADDP模块服务运行日志设计.md)，设施运维见 [Infra 指南](../scripts/infra/README.md)。

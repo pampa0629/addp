@@ -19,3 +19,6 @@ EXPOSE 8100
 
 # 运行
 CMD ["./server"]
+
+COPY dist/${BUILD_TYPE}-${GOOS}-${BUILD_ARCH}/runtime-log /app/runtime-log
+ENTRYPOINT ["/app/runtime-log", "launch", "--module", "monitor", "--role", "backend", "--"]

@@ -11,6 +11,9 @@ var localeFS embed.FS
 
 // 消息 key 常量
 const (
+	MsgRuntimeLogInvalid                             = "system.module.runtime_log_invalid"
+	MsgRuntimeLogDisabled                            = "system.module.runtime_log_disabled"
+	MsgRuntimeLogUnavailable                         = "system.module.runtime_log_unavailable"
 	MsgTokenGenFailed                                = "system.auth.token_gen_failed"
 	MsgRegisterDisabled                              = "system.auth.register_disabled"
 	MsgMissingAuthHeader                             = "system.auth.missing_auth_header"

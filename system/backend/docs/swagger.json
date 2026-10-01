@@ -2385,6 +2385,40 @@
                 ]
             }
         },
+        "/execution-read-scope": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Execution diagnostics"
+                ],
+                "summary": "获取清理执行读取范围 | Get cleanup execution read scope",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/execution.ReadScope"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "authenticated"
+            }
+        },
         "/internal/audit-logs": {
             "post": {
                 "consumes": [
@@ -3651,6 +3685,12 @@
                     },
                     {
                         "type": "string",
+                        "description": "宿主节点 IPv4/IPv6，规范化后精确匹配 | Host node IPv4/IPv6, canonical exact match",
+                        "name": "node_ip",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
                         "description": "登记端点主机名或 IP，精确匹配 | Registered endpoint hostname or IP, exact match",
                         "name": "registered_host",
                         "in": "query"
@@ -3967,6 +4007,138 @@
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "platform.module.update"
+                ]
+            }
+        },
+        "/platform/modules/{module_name}/instances/{instance_id}/logs": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "有界查询已登记实例的日志；采集完整性未知，离线实例也可读取 | Bounded logs for a registered instance, including offline instances; collection completeness is unknown",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "平台模块管理 | Platform Module Management"
+                ],
+                "summary": "查看指定模块实例运行日志 | Read runtime logs of a module instance",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "模块名 | Module name",
+                        "name": "module_name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "进程实例 ID | Process instance ID",
+                        "name": "instance_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "UTC RFC3339 起始时间（含） | Inclusive UTC RFC3339 start",
+                        "name": "from",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "UTC RFC3339 结束时间（不含） | Exclusive UTC RFC3339 end",
+                        "name": "to",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "enum": [
+                            "debug",
+                            "info",
+                            "warn",
+                            "error",
+                            "unknown"
+                        ],
+                        "type": "string",
+                        "description": "日志级别 | Log level",
+                        "name": "level",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "字面量关键字，最多 128 字符 | Literal keyword, at most 128 characters",
+                        "name": "keyword",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "返回上限，默认 200，最多 1000 | Limit, default 200, maximum 1000",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_service.RuntimeLogResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "504": {
+                        "description": "Gateway Timeout",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "platform.module_log.read"
                 ]
             }
         },
@@ -10512,6 +10684,40 @@
                 }
             }
         },
+        "execution.ReadGrant": {
+            "type": "object",
+            "properties": {
+                "own_ad_hoc": {
+                    "type": "boolean"
+                },
+                "task_history": {
+                    "type": "boolean"
+                },
+                "task_type": {
+                    "type": "string"
+                }
+            }
+        },
+        "execution.ReadScope": {
+            "type": "object",
+            "properties": {
+                "grants": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/execution.ReadGrant"
+                    }
+                },
+                "module": {
+                    "type": "string"
+                },
+                "principal_id": {
+                    "type": "integer"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                }
+            }
+        },
         "fosite.RFC6749ErrorJson": {
             "type": "object",
             "properties": {
@@ -11940,6 +12146,12 @@
                 "health_check_url": {
                     "type": "string"
                 },
+                "host_node_ips": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "host_node_name": {
                     "type": "string"
                 },
@@ -11995,6 +12207,12 @@
             "properties": {
                 "health_check_url": {
                     "type": "string"
+                },
+                "host_node_ips": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "host_node_name": {
                     "type": "string"
@@ -12052,6 +12270,12 @@
             "properties": {
                 "health_check_url": {
                     "type": "string"
+                },
+                "host_node_ips": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "host_node_name": {
                     "type": "string"
@@ -12182,6 +12406,38 @@
                         "active",
                         "suspended"
                     ]
+                }
+            }
+        },
+        "github_com_addp_system_internal_service.RuntimeLogResult": {
+            "type": "object",
+            "properties": {
+                "collection_state": {
+                    "type": "string"
+                },
+                "entries": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/runtimelog.Entry"
+                    }
+                },
+                "from": {
+                    "type": "string"
+                },
+                "limited": {
+                    "type": "boolean"
+                },
+                "outside_retention": {
+                    "type": "boolean"
+                },
+                "queried_at": {
+                    "type": "string"
+                },
+                "returned": {
+                    "type": "integer"
+                },
+                "to": {
+                    "type": "string"
                 }
             }
         },
@@ -15674,6 +15930,50 @@
                     "items": {
                         "type": "string"
                     }
+                }
+            }
+        },
+        "runtimelog.Entry": {
+            "type": "object",
+            "properties": {
+                "channel": {
+                    "type": "string"
+                },
+                "entry_id": {
+                    "type": "string"
+                },
+                "event_time": {
+                    "type": "string"
+                },
+                "instance_id": {
+                    "type": "string"
+                },
+                "level": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "module_name": {
+                    "type": "string"
+                },
+                "node_name": {
+                    "type": "string"
+                },
+                "request_id": {
+                    "type": "string"
+                },
+                "role": {
+                    "type": "string"
+                },
+                "stack": {
+                    "type": "string"
+                },
+                "timestamp": {
+                    "type": "string"
+                },
+                "truncated": {
+                    "type": "boolean"
                 }
             }
         }

@@ -916,6 +916,8 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
+                        "maximum": 100,
+                        "minimum": 1,
                         "type": "integer",
                         "default": 20,
                         "description": "每页数量 | Page size",
@@ -928,6 +930,18 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_monitor_internal_service.ListExecutionsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
                     }
                 },
@@ -2046,6 +2060,29 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "execution.DiagnosticStep": {
+            "type": "object",
+            "properties": {
+                "duration": {
+                    "type": "integer"
+                },
+                "ended_at": {
+                    "type": "string"
+                },
+                "error_code": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_monitor_internal_models.AlertIncident": {
             "type": "object",
             "properties": {
@@ -2330,25 +2367,13 @@ const docTemplate = `{
         "github_com_addp_monitor_internal_service.ExecutionObservation": {
             "type": "object",
             "properties": {
-                "actor_principal_id": {
-                    "description": "User-derived execution authorization facts. The raw User/Service tokens\nand engine connection details are never persisted in task executions.",
-                    "type": "integer"
-                },
-                "actor_tenant_membership_id": {
-                    "type": "integer"
-                },
                 "attempt": {
                     "type": "integer"
                 },
-                "authorization_expires_at": {
-                    "type": "string"
-                },
                 "bytes_read": {
-                    "description": "Transfer 读取字节数",
                     "type": "integer"
                 },
                 "bytes_written": {
-                    "description": "Transfer 写入字节数",
                     "type": "integer"
                 },
                 "completed_at": {
@@ -2358,44 +2383,24 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "current_step": {
-                    "description": "当前步骤（Orchestrator/Workflow）",
                     "type": "string"
+                },
+                "diagnostics_truncated": {
+                    "type": "boolean"
                 },
                 "error_details": {
-                    "description": "错误详情（仅失败时有值）",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/models.JSONMap"
-                        }
-                    ]
-                },
-                "execution_authorization_id": {
-                    "type": "integer"
+                    "$ref": "#/definitions/models.JSONMap"
                 },
                 "execution_boundary": {
-                    "description": "ExecutionBoundary separates finite queue work from long-running runtime sessions.",
                     "type": "string"
                 },
-                "execution_config": {
-                    "description": "JSONB 字段",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/models.JSONMap"
-                        }
-                    ]
-                },
                 "execution_id": {
-                    "description": "执行标识",
                     "type": "string"
                 },
                 "execution_time_ms": {
-                    "description": "性能指标",
                     "type": "integer"
                 },
                 "id": {
-                    "type": "integer"
-                },
-                "issued_authorization_version": {
                     "type": "integer"
                 },
                 "lease_expires_at": {
@@ -2411,34 +2416,24 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "metadata": {
-                    "description": "模块特有扩展数据（结果、断点、步骤结果等）",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/models.JSONMap"
-                        }
-                    ]
+                    "$ref": "#/definitions/models.JSONMap"
                 },
                 "module": {
-                    "description": "模块标识",
                     "type": "string"
                 },
                 "parent_execution_id": {
-                    "description": "父执行（Orchestrator 子步骤追踪父编排）",
                     "type": "string"
                 },
                 "progress": {
-                    "description": "0-100",
                     "type": "integer"
                 },
                 "queue_duration_ms": {
                     "type": "integer"
                 },
                 "records_read": {
-                    "description": "Transfer 读取记录数",
                     "type": "integer"
                 },
                 "records_written": {
-                    "description": "Transfer 写入记录数",
                     "type": "integer"
                 },
                 "recovery_reason": {
@@ -2448,45 +2443,45 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "rows_affected": {
-                    "description": "SQL 影响行数",
                     "type": "integer"
                 },
                 "run_duration_ms": {
                     "type": "integer"
                 },
                 "source": {
-                    "description": "触发来源模块",
                     "type": "string"
                 },
                 "source_task_id": {
-                    "description": "关联原始任务",
                     "type": "string"
                 },
                 "source_task_name": {
-                    "description": "任务名称（冗余，便于查询）",
                     "type": "string"
                 },
                 "started_at": {
-                    "description": "时间戳",
                     "type": "string"
                 },
                 "status": {
-                    "description": "执行状态",
                     "type": "string"
+                },
+                "steps": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/execution.DiagnosticStep"
+                    }
+                },
+                "steps_attempt_unverified": {
+                    "type": "boolean"
+                },
+                "steps_truncated": {
+                    "type": "boolean"
                 },
                 "task_type": {
-                    "description": "稳定执行类型；可来自任务定义或 ad-hoc execution",
                     "type": "string"
                 },
-                "tenant_id": {
-                    "type": "integer"
-                },
                 "trigger_type": {
-                    "description": "触发信息",
                     "type": "string"
                 },
                 "triggered_by": {
-                    "description": "触发用户ID",
                     "type": "integer"
                 },
                 "updated_at": {
@@ -2599,6 +2594,9 @@ const docTemplate = `{
                 },
                 "execution": {
                     "$ref": "#/definitions/github_com_addp_monitor_internal_service.ExecutionObservation"
+                },
+                "truncated": {
+                    "type": "boolean"
                 }
             }
         },

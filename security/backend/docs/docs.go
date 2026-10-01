@@ -1593,6 +1593,40 @@ const docTemplate = `{
                 ]
             }
         },
+        "/execution-read-scope": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Execution diagnostics"
+                ],
+                "summary": "获取执行读取范围 | Get execution read scope",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/execution.ReadScope"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "authenticated"
+            }
+        },
         "/findings": {
             "get": {
                 "security": [
@@ -5443,6 +5477,40 @@ const docTemplate = `{
                 },
                 "valid_until": {
                     "type": "string"
+                }
+            }
+        },
+        "execution.ReadGrant": {
+            "type": "object",
+            "properties": {
+                "own_ad_hoc": {
+                    "type": "boolean"
+                },
+                "task_history": {
+                    "type": "boolean"
+                },
+                "task_type": {
+                    "type": "string"
+                }
+            }
+        },
+        "execution.ReadScope": {
+            "type": "object",
+            "properties": {
+                "grants": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/execution.ReadGrant"
+                    }
+                },
+                "module": {
+                    "type": "string"
+                },
+                "principal_id": {
+                    "type": "integer"
+                },
+                "tenant_id": {
+                    "type": "integer"
                 }
             }
         },

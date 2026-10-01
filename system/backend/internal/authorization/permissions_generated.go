@@ -74,6 +74,7 @@ const (
 	PermissionIamUserUpdate                             = "iam.user.update"
 	PermissionPlatformModuleRead                        = "platform.module.read"
 	PermissionPlatformModuleUpdate                      = "platform.module.update"
+	PermissionPlatformModuleLogRead                     = "platform.module_log.read"
 	PermissionPlatformTenantClose                       = "platform.tenant.close"
 	PermissionPlatformTenantCreate                      = "platform.tenant.create"
 	PermissionPlatformTenantInitialize                  = "platform.tenant.initialize"
@@ -172,6 +173,7 @@ var permissionKeys = [...]string{
 	"iam.user.update",
 	"platform.module.read",
 	"platform.module.update",
+	"platform.module_log.read",
 	"platform.tenant.close",
 	"platform.tenant.create",
 	"platform.tenant.initialize",

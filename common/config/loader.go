@@ -87,9 +87,7 @@ type BaseConfig struct {
 
 	// 日志配置
 	LogLevel     string
-	LogFormat    string
 	LogAddSource bool
-	LogFile      string
 }
 
 // LoadDeploymentConfig loads process bootstrap configuration from the root env.
@@ -102,9 +100,7 @@ func LoadDeploymentConfig(target *BaseConfig) {
 
 	target.EncryptionKey = LoadEncryptionKey()
 	target.LogLevel = GetEnv("LOG_LEVEL", "info")
-	target.LogFormat = GetEnv("LOG_FORMAT", "json")
 	target.LogAddSource = GetEnvBool("LOG_ADD_SOURCE", false)
-	target.LogFile = GetEnv("LOG_FILE", "")
 
 }
 

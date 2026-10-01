@@ -13,7 +13,12 @@ fail() {
 
 [ "${ADDP_ONLINE_HOST:-}" = "1" ] ||
   fail "ADDP_ONLINE_HOST must be exactly 1"
-[ "$#" -eq 1 ] || fail "usage: bash scripts/dev/stop-exact-process.sh -system|-manager|-gateway"
+force=0
+if [ "${1:-}" = "--force" ]; then
+  force=1
+  shift
+fi
+[ "$#" -eq 1 ] || fail "usage: bash scripts/dev/stop-exact-process.sh [--force] -system|-manager|-gateway"
 
 case "$1" in
   -system)
@@ -53,7 +58,19 @@ command_line=$(ps -p "$pid" -o command= 2>/dev/null || true)
 [[ "$command_line" =~ $expected_command ]] ||
   fail "PID $pid is not the managed $module binary"
 
-kill -TERM "$pid"
+# Relative binary names alone cannot prove checkout ownership.
+if [ -d "/proc/$pid" ]; then
+  process_cwd=$(readlink "/proc/$pid/cwd" 2>/dev/null || true)
+else
+  process_cwd=$(lsof -nP -a -p "$pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | head -n 1)
+fi
+[ "$process_cwd" = "$ROOT_DIR" ] || fail "PID $pid does not belong to this checkout"
+
+if [ "$force" -eq 1 ]; then
+  kill -KILL "$pid"
+else
+  kill -TERM "$pid"
+fi
 for _ in {1..50}; do
   if ! process_running "$pid"; then
     rm -f "$pidfile"

@@ -14,8 +14,9 @@ const maxExecutionTreeDepth = 8
 
 // ExecutionQueryService 执行查询服务
 type ExecutionQueryService struct {
-	repo *commonExecution.TaskExecutionRepository
-	now  func() time.Time
+	repo         *commonExecution.TaskExecutionRepository
+	now          func() time.Time
+	readResolver ExecutionReadResolver
 }
 
 // NewExecutionQueryService 创建执行查询服务
@@ -29,7 +30,7 @@ func NewExecutionQueryService(repo *commonExecution.TaskExecutionRepository) *Ex
 // ExecutionObservation is Monitor's safe projection of a shared execution.
 // LeaseToken remains owner-internal and is never part of this DTO.
 type ExecutionObservation struct {
-	*commonExecution.TaskExecution
+	*commonExecution.Observation
 	QueueDurationMs int64      `json:"queue_duration_ms"`
 	RunDurationMs   int64      `json:"run_duration_ms"`
 	LeaseOwner      *string    `json:"lease_owner,omitempty"`
@@ -65,10 +66,22 @@ type ListExecutionsResponse struct {
 type ExecutionTreeNode struct {
 	Execution *ExecutionObservation `json:"execution"`
 	Children  []*ExecutionTreeNode  `json:"children"`
+	Truncated bool                  `json:"truncated"`
 }
 
 // ListExecutions 分页查询执行记录
 func (s *ExecutionQueryService) ListExecutions(ctx context.Context, req *ListExecutionsRequest) (*ListExecutionsResponse, error) {
+	normalized := *req
+	req = &normalized
+	if req.Page <= 0 {
+		req.Page = 1
+	}
+	if req.PageSize <= 0 {
+		req.PageSize = 20
+	}
+	if req.PageSize > 100 {
+		req.PageSize = 100
+	}
 	if req.SourceTaskID != nil && (req.Module == "" || req.TaskType == "") {
 		return nil, errors.New("module and task_type are required when source_task_id is provided")
 	}
@@ -162,15 +175,23 @@ func (s *ExecutionQueryService) buildExecutionTree(
 		Execution: observeExecution(exec, observedAt),
 		Children:  []*ExecutionTreeNode{},
 	}
+	limit := 201 - len(visited)
 	if depth >= maxExecutionTreeDepth {
-		return node, nil
+		limit = 1
 	}
-
-	children, err := s.repo.ListChildrenByParentExecutionID(ctx, exec.ExecutionID, tenantID)
+	children, err := s.repo.ListChildrenByParentExecutionID(ctx, exec.ExecutionID, tenantID, limit)
 	if err != nil {
 		return nil, err
 	}
+	if depth >= maxExecutionTreeDepth {
+		node.Truncated = len(children) > 0
+		return node, nil
+	}
 	for _, child := range children {
+		if len(visited) >= 200 {
+			node.Truncated = true
+			break
+		}
 		childNode, err := s.buildExecutionTree(ctx, child, tenantID, depth+1, visited, observedAt)
 		if err != nil {
 			return nil, err
@@ -214,10 +235,15 @@ func observeExecution(execution *commonExecution.TaskExecution, now time.Time) *
 		}
 	}
 
+	var leaseOwner *string
+	if execution.LeaseOwner != nil {
+		value := commonExecution.SafeDiagnosticText(*execution.LeaseOwner)
+		leaseOwner = &value
+	}
 	return &ExecutionObservation{
-		TaskExecution: execution, QueueDurationMs: queueDuration, RunDurationMs: runDuration,
-		LeaseOwner: execution.LeaseOwner, LeaseExpiresAt: execution.LeaseExpiresAt,
-		LeaseState: leaseState, RecoveryReason: executionRecoveryReason(execution),
+		Observation: commonExecution.Observe(execution), QueueDurationMs: queueDuration, RunDurationMs: runDuration,
+		LeaseOwner: leaseOwner, LeaseExpiresAt: execution.LeaseExpiresAt,
+		LeaseState: leaseState, RecoveryReason: commonExecution.SafeDiagnosticText(executionRecoveryReason(execution)),
 	}
 }
 

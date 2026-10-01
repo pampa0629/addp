@@ -41,6 +41,7 @@ func SetupRouter(
 		commonAuth.MustNewMiddleware(commonAuth.MiddlewareConfig{SystemURL: cfg.SystemServiceURL}),
 		commonAuth.MustNewContextGuard("tenant"),
 	)
+	auth.GET("/execution-read-scope", GetExecutionReadScope)
 	permission := func(keys ...string) gin.HandlerFunc {
 		return commonAuth.MustNewPermissionGuard(keys...)
 	}

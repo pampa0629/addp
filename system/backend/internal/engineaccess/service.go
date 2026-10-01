@@ -206,9 +206,12 @@ func lockManagementActors(ctx context.Context, tx *Repository, a Actor, targetMe
 		return nil, time.Time{}, err
 	}
 	actor, actorMember := principals[a.PrincipalID], members[a.MembershipID]
-	if actor.PrincipalType != iam.PrincipalTypeUser || actor.Status != iam.PrincipalStatusActive || actor.AuthorizationVersion != a.AuthorizationVersion ||
-		actorMember.TenantID != a.TenantID || actorMember.PrincipalID != a.PrincipalID || actorMember.Status != iam.TenantMembershipStatusActive ||
-		(actorMember.ExpiresAt != nil && !actorMember.ExpiresAt.After(now)) || tenant.Status != iam.TenantStatusActive || !a.TokenExpiresAt.After(now) {
+	provenance := lockedUserProvenance{source: userProvenance{PrincipalID: a.PrincipalID, MembershipID: a.MembershipID,
+		AuthorizationVersion: a.AuthorizationVersion}, tenantID: a.TenantID, principal: actor, member: actorMember, tenant: tenant}
+	if err := provenance.check(now); err != nil {
+		return nil, time.Time{}, err
+	}
+	if !a.TokenExpiresAt.After(now) {
 		return nil, time.Time{}, commonapi.ErrForbidden
 	}
 	rows, err := identity.ListEffectiveRoleAssignmentPermissions(ctx, a.PrincipalID, iam.PrincipalTypeUser, iam.ContextTypeTenant, &a.TenantID, &a.MembershipID, now)

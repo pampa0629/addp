@@ -20,6 +20,14 @@ describe('System recoverable route state', () => {
     expect(resolveModulesRouteState({}).changed).toBe(false)
   })
 
+  it('restores node IP independently of endpoints and node names', () => {
+    const query = { tab: 'instances', node_ip: '2001:db8::1', node_name: 'host-a', registered_host: 'service.local' }
+    const state = resolveModulesRouteState(query)
+    expect(state.filters).toMatchObject({ nodeIP: '2001:db8::1', nodeName: 'host-a', registeredHost: 'service.local' })
+    expect(buildModuleInstancesQuery(state.filters)).toEqual(query)
+    expect(resolveModulesRouteState({ tab: 'instances', node_ip: ['192.0.2.1', '192.0.2.2'] }).query).toEqual({ tab: 'instances' })
+  })
+
   it('keeps an explicit all-status query distinct from the UP default', () => {
     const state = resolveModulesRouteState({ tab: 'instances', status: 'all' })
     expect(state.filters.status).toBe('')

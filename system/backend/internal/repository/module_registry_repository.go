@@ -71,6 +71,10 @@ func (r *ModuleRegistryRepository) Register(req *models.ModuleRegistrationReques
 	if err != nil {
 		return false, err
 	}
+	hostNodeIPs, err := marshalRegistryJSON(req.HostNodeIPs)
+	if err != nil {
+		return false, err
+	}
 	now := time.Now()
 	changed := false
 	err = r.db.Transaction(func(tx *gorm.DB) error {
@@ -147,7 +151,8 @@ func (r *ModuleRegistryRepository) Register(req *models.ModuleRegistrationReques
 			ModuleURL: req.ModuleURL, HealthCheckURL: req.HealthCheckURL,
 			RegisteredHost: registeredHost(req.ModuleURL, req.HealthCheckURL),
 			HostNodeName:   req.HostNodeName, RuntimeHostname: req.RuntimeHostname,
-			Status: models.ModuleRuntimeStatusUp, LastHeartbeat: now, LeaseExpiresAt: now.Add(leaseDuration),
+			HostNodeIPs: req.HostNodeIPs,
+			Status:      models.ModuleRuntimeStatusUp, LastHeartbeat: now, LeaseExpiresAt: now.Add(leaseDuration),
 			ProcessStartedAt: &req.ProcessStartedAt,
 			Metadata:         metadata, RegisteredAt: now,
 		}
@@ -157,7 +162,8 @@ func (r *ModuleRegistryRepository) Register(req *models.ModuleRegistrationReques
 				"role": req.Role, "module_url": req.ModuleURL, "health_check_url": req.HealthCheckURL,
 				"registered_host": instance.RegisteredHost,
 				"host_node_name":  req.HostNodeName, "runtime_hostname": req.RuntimeHostname,
-				"status": models.ModuleRuntimeStatusUp, "last_heartbeat": now,
+				"host_node_ips": hostNodeIPs,
+				"status":        models.ModuleRuntimeStatusUp, "last_heartbeat": now,
 				"lease_expires_at": now.Add(leaseDuration), "metadata": metadata, "updated_at": now,
 				"process_started_at": req.ProcessStartedAt, "stopped_at": nil, "stop_reason": "",
 			}),
@@ -325,6 +331,14 @@ func (r *ModuleRegistryRepository) ListModuleRuntimeInstances(
 	}
 	if filter.RegisteredHost != "" {
 		query = query.Where("module_runtime_instances.registered_host = ?", filter.RegisteredHost)
+	}
+	if filter.NodeIP != "" {
+		if r.db.Dialector.Name() == "sqlite" {
+			query = query.Where("EXISTS (SELECT 1 FROM json_each(module_runtime_instances.host_node_ips) WHERE value = ?)", filter.NodeIP)
+		} else {
+			addresses, _ := json.Marshal([]string{filter.NodeIP})
+			query = query.Where("module_runtime_instances.host_node_ips @> ?::jsonb", string(addresses))
+		}
 	}
 	if filter.NodeName != "" {
 		query = query.Where("LOWER(module_runtime_instances.host_node_name) = ? OR LOWER(module_runtime_instances.runtime_hostname) = ?", filter.NodeName, filter.NodeName)

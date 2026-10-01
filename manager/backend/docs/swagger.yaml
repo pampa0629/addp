@@ -199,6 +199,28 @@ definitions:
     - FieldTypeArray
     - FieldTypeUUID
     - FieldTypeGeometry
+  execution.ReadGrant:
+    properties:
+      own_ad_hoc:
+        type: boolean
+      task_history:
+        type: boolean
+      task_type:
+        type: string
+    type: object
+  execution.ReadScope:
+    properties:
+      grants:
+        items:
+          $ref: '#/definitions/execution.ReadGrant'
+        type: array
+      module:
+        type: string
+      principal_id:
+        type: integer
+      tenant_id:
+        type: integer
+    type: object
   execution.TaskExecution:
     properties:
       actor_principal_id:
@@ -3652,6 +3674,29 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - manager.content.read
+  /execution-read-scope:
+    get:
+      description: 仅第一方租户用户；范围由 Owner 的现有读取 Permission 裁决，任务历史与本人一次性执行使用不同条件。| First-party
+        tenant users only; Owner permissions decide task history and own ad-hoc visibility.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/execution.ReadScope'
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取任务执行读取范围 | Get execution read scope
+      tags:
+      - Execution diagnostics
+      x-addp-auth-mode: authenticated
   /executions/{execution_id}:
     get:
       description: 获取任务执行记录的状态信息 | Get status information of a task execution record

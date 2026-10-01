@@ -17,3 +17,6 @@ ENV TZ=Asia/Shanghai
 EXPOSE 8086
 
 CMD ["./server"]
+
+COPY dist/${BUILD_TYPE}-${GOOS}-${BUILD_ARCH}/runtime-log /app/runtime-log
+ENTRYPOINT ["/app/runtime-log", "launch", "--module", "service", "--role", "backend", "--"]

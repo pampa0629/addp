@@ -7,7 +7,6 @@ import (
 	"net"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"syscall"
 	"time"
 
@@ -76,18 +75,16 @@ func main() {
 	if logLevel == "" {
 		logLevel = "info"
 	}
-	logFile := filepath.Join("logs", "transfer-backend.log")
+
 	logger.Init(logger.Options{
-		Level:          logLevel,
-		Format:         "json",
-		FilePath:       logFile,
+		Level: logLevel,
+
 		AddSource:      true,
 		RedirectStdLog: true,
 	})
 	logger.L().Info("transfer backend starting",
 		"version", "0.0.20",
 		"log_level", logLevel,
-		"log_file", logFile,
 	)
 
 	// 检查端口是否可用

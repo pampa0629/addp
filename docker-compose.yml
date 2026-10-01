@@ -35,7 +35,10 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-system-backend:${IMAGE_TAG:-latest}
     container_name: system-backend
     environment:
+      - ADDP_RUNTIME_LOG_ROOT=/var/log/addp
+      - ADDP_RUNTIME_LOG_SOURCE_HOURS=${ADDP_RUNTIME_LOG_SOURCE_HOURS:-48}
       - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
+      - ADDP_HOST_NODE_IPS=${ADDP_HOST_NODE_IPS:-}
       - SERVICE_HOST=system-backend
       - ENV=${ENV:-development}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
@@ -93,7 +96,12 @@ services:
       - MANAGER_URL=http://manager-backend:8081
       - ORCHESTRATOR_URL=http://orchestrator-backend:8084
       - DEVELOP_URL=http://develop-backend:8185
+      - LOKI_URL=http://runtime-log-api:3100
+      - LOKI_READ_TOKEN=${LOKI_READ_TOKEN:?runtime log read token required}
+      - LOKI_RETENTION_HOURS=${LOKI_RETENTION_HOURS:-168}
       - GIN_MODE=release
+    volumes:
+      - ${ADDP_RUNTIME_LOG_ROOT:-./logs/runtime}:/var/log/addp
     networks:
       - addp-network
     restart: unless-stopped
@@ -119,7 +127,10 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-manager-backend:${IMAGE_TAG:-latest}
     container_name: manager-backend
     environment:
+      - ADDP_RUNTIME_LOG_ROOT=/var/log/addp
+      - ADDP_RUNTIME_LOG_SOURCE_HOURS=${ADDP_RUNTIME_LOG_SOURCE_HOURS:-48}
       - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
+      - ADDP_HOST_NODE_IPS=${ADDP_HOST_NODE_IPS:-}
       - SERVICE_HOST=manager-backend
       - PORT=8081
       - DB_SCHEMA=manager
@@ -149,6 +160,8 @@ services:
       - MANAGER_EXECUTION_HEARTBEAT_INTERVAL=${MANAGER_EXECUTION_HEARTBEAT_INTERVAL:-30s}
       - MANAGER_EXECUTION_CLAIM_INTERVAL=${MANAGER_EXECUTION_CLAIM_INTERVAL:-1s}
       - GIN_MODE=release
+    volumes:
+      - ${ADDP_RUNTIME_LOG_ROOT:-./logs/runtime}:/var/log/addp
     networks:
       - addp-network
     depends_on:
@@ -177,7 +190,10 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-meta-backend:${IMAGE_TAG:-latest}
     container_name: meta-backend
     environment:
+      - ADDP_RUNTIME_LOG_ROOT=/var/log/addp
+      - ADDP_RUNTIME_LOG_SOURCE_HOURS=${ADDP_RUNTIME_LOG_SOURCE_HOURS:-48}
       - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
+      - ADDP_HOST_NODE_IPS=${ADDP_HOST_NODE_IPS:-}
       - SERVICE_HOST=meta-backend
       - PORT=8082
       - DB_SCHEMA=meta
@@ -198,6 +214,8 @@ services:
       - SYSTEM_URL=http://system-backend:8180
       - META_SERVICE_CLIENT_SECRET=${META_SERVICE_CLIENT_SECRET}
       - GIN_MODE=release
+    volumes:
+      - ${ADDP_RUNTIME_LOG_ROOT:-./logs/runtime}:/var/log/addp
     networks:
       - addp-network
     depends_on:
@@ -224,7 +242,10 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-meta-worker:${IMAGE_TAG:-latest}
     # Note: No container_name for Swarm compatibility (allows multiple replicas)
     environment:
+      - ADDP_RUNTIME_LOG_ROOT=/var/log/addp
+      - ADDP_RUNTIME_LOG_SOURCE_HOURS=${ADDP_RUNTIME_LOG_SOURCE_HOURS:-48}
       - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
+      - ADDP_HOST_NODE_IPS=${ADDP_HOST_NODE_IPS:-}
       - DB_SCHEMA=meta
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
@@ -242,6 +263,8 @@ services:
       - META_BOUNDED_LEASE_DURATION=${META_BOUNDED_LEASE_DURATION:-2m}
       - META_BOUNDED_HEARTBEAT_INTERVAL=${META_BOUNDED_HEARTBEAT_INTERVAL:-30s}
       - META_BOUNDED_CLAIM_INTERVAL=${META_BOUNDED_CLAIM_INTERVAL:-1s}
+    volumes:
+      - ${ADDP_RUNTIME_LOG_ROOT:-./logs/runtime}:/var/log/addp
     networks:
       - addp-network
     depends_on:
@@ -280,7 +303,10 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-transfer-backend:${IMAGE_TAG:-latest}
     container_name: transfer-backend
     environment:
+      - ADDP_RUNTIME_LOG_ROOT=/var/log/addp
+      - ADDP_RUNTIME_LOG_SOURCE_HOURS=${ADDP_RUNTIME_LOG_SOURCE_HOURS:-48}
       - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
+      - ADDP_HOST_NODE_IPS=${ADDP_HOST_NODE_IPS:-}
       - SERVICE_HOST=transfer-backend
       - PORT=8083
       - DB_SCHEMA=transfer
@@ -330,6 +356,8 @@ services:
       - TRANSFER_DLQ_RECONCILE_TIMEOUT=${TRANSFER_DLQ_RECONCILE_TIMEOUT:-10s}
       - TRANSFER_DLQ_RECONCILE_FETCH_MAX_BYTES=${TRANSFER_DLQ_RECONCILE_FETCH_MAX_BYTES:-10485760}
       - GIN_MODE=release
+    volumes:
+      - ${ADDP_RUNTIME_LOG_ROOT:-./logs/runtime}:/var/log/addp
     networks:
       - addp-network
     depends_on:
@@ -346,6 +374,8 @@ services:
   transfer-frontend:
     image: ${REGISTRY:-localhost:5001}/addp-transfer-frontend:${IMAGE_TAG:-latest}
     container_name: transfer-frontend
+    volumes:
+      - ${ADDP_RUNTIME_LOG_ROOT:-./logs/runtime}:/var/log/addp
     networks:
       - addp-network
     depends_on:
@@ -356,7 +386,10 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-transfer-bounded-worker:${IMAGE_TAG:-latest}
     # Note: No container_name for Swarm compatibility (allows multiple replicas)
     environment:
+      - ADDP_RUNTIME_LOG_ROOT=/var/log/addp
+      - ADDP_RUNTIME_LOG_SOURCE_HOURS=${ADDP_RUNTIME_LOG_SOURCE_HOURS:-48}
       - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
+      - ADDP_HOST_NODE_IPS=${ADDP_HOST_NODE_IPS:-}
       - DB_SCHEMA=transfer
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
@@ -451,7 +484,10 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-orchestrator-backend:${IMAGE_TAG:-latest}
     container_name: orchestrator-backend
     environment:
+      - ADDP_RUNTIME_LOG_ROOT=/var/log/addp
+      - ADDP_RUNTIME_LOG_SOURCE_HOURS=${ADDP_RUNTIME_LOG_SOURCE_HOURS:-48}
       - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
+      - ADDP_HOST_NODE_IPS=${ADDP_HOST_NODE_IPS:-}
       - SERVICE_HOST=orchestrator-backend
       - PORT=8084
       - DB_SCHEMA=orchestrator
@@ -466,6 +502,8 @@ services:
       - SYSTEM_URL=http://system-backend:8180
       - ORCHESTRATOR_SERVICE_CLIENT_SECRET=${ORCHESTRATOR_SERVICE_CLIENT_SECRET}
       - GIN_MODE=release
+    volumes:
+      - ${ADDP_RUNTIME_LOG_ROOT:-./logs/runtime}:/var/log/addp
     networks:
       - addp-network
     depends_on:
@@ -494,7 +532,10 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-develop-backend:${IMAGE_TAG:-latest}
     container_name: develop-backend
     environment:
+      - ADDP_RUNTIME_LOG_ROOT=/var/log/addp
+      - ADDP_RUNTIME_LOG_SOURCE_HOURS=${ADDP_RUNTIME_LOG_SOURCE_HOURS:-48}
       - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
+      - ADDP_HOST_NODE_IPS=${ADDP_HOST_NODE_IPS:-}
       - SERVICE_HOST=develop-backend
       - DEVELOP_BACKEND_PORT=8185
       - ENV=production
@@ -516,6 +557,8 @@ services:
       - DEVELOP_QUERY_HEARTBEAT_SECONDS=${DEVELOP_QUERY_HEARTBEAT_SECONDS:-30}
       - DEVELOP_QUERY_CLAIM_INTERVAL_SECONDS=${DEVELOP_QUERY_CLAIM_INTERVAL_SECONDS:-1}
       - GIN_MODE=release
+    volumes:
+      - ${ADDP_RUNTIME_LOG_ROOT:-./logs/runtime}:/var/log/addp
     networks:
       - addp-network
     depends_on:
@@ -544,7 +587,10 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-service-backend:${IMAGE_TAG:-latest}
     container_name: service-backend
     environment:
+      - ADDP_RUNTIME_LOG_ROOT=/var/log/addp
+      - ADDP_RUNTIME_LOG_SOURCE_HOURS=${ADDP_RUNTIME_LOG_SOURCE_HOURS:-48}
       - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
+      - ADDP_HOST_NODE_IPS=${ADDP_HOST_NODE_IPS:-}
       - SERVICE_HOST=service-backend
       - PORT=8086
       - ENV=production
@@ -569,6 +615,8 @@ services:
       - DB_SCHEMA=service
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
       - GIN_MODE=release
+    volumes:
+      - ${ADDP_RUNTIME_LOG_ROOT:-./logs/runtime}:/var/log/addp
     networks:
       - addp-network
     depends_on:
@@ -597,7 +645,10 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-monitor-backend:${IMAGE_TAG:-latest}
     container_name: monitor-backend
     environment:
+      - ADDP_RUNTIME_LOG_ROOT=/var/log/addp
+      - ADDP_RUNTIME_LOG_SOURCE_HOURS=${ADDP_RUNTIME_LOG_SOURCE_HOURS:-48}
       - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
+      - ADDP_HOST_NODE_IPS=${ADDP_HOST_NODE_IPS:-}
       - SERVICE_HOST=monitor-backend
       - MONITOR_BACKEND_PORT=8100
       - MONITOR_WEBHOOK_ALLOW_PRIVATE_NETWORKS=${MONITOR_WEBHOOK_ALLOW_PRIVATE_NETWORKS:-false}
@@ -614,6 +665,8 @@ services:
       - REDIS_PASSWORD=${REDIS_PASSWORD:-addp_redis}
       - REDIS_DB=0
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+    volumes:
+      - ${ADDP_RUNTIME_LOG_ROOT:-./logs/runtime}:/var/log/addp
     networks:
       - addp-network
     depends_on:
@@ -642,7 +695,10 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-standard-backend:${IMAGE_TAG:-latest}
     container_name: standard-backend
     environment:
+      - ADDP_RUNTIME_LOG_ROOT=/var/log/addp
+      - ADDP_RUNTIME_LOG_SOURCE_HOURS=${ADDP_RUNTIME_LOG_SOURCE_HOURS:-48}
       - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
+      - ADDP_HOST_NODE_IPS=${ADDP_HOST_NODE_IPS:-}
       - SERVICE_HOST=standard-backend
       - STANDARD_BACKEND_PORT=8110
       - SYSTEM_URL=http://system-backend:8180
@@ -664,6 +720,8 @@ services:
       - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
       - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-minioadmin}
       - MINIO_USE_SSL=false
+    volumes:
+      - ${ADDP_RUNTIME_LOG_ROOT:-./logs/runtime}:/var/log/addp
     networks:
       - addp-network
     depends_on:
@@ -692,7 +750,10 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-catalog-backend:${IMAGE_TAG:-latest}
     container_name: catalog-backend
     environment:
+      - ADDP_RUNTIME_LOG_ROOT=/var/log/addp
+      - ADDP_RUNTIME_LOG_SOURCE_HOURS=${ADDP_RUNTIME_LOG_SOURCE_HOURS:-48}
       - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
+      - ADDP_HOST_NODE_IPS=${ADDP_HOST_NODE_IPS:-}
       - SERVICE_HOST=catalog-backend
       - CATALOG_BACKEND_PORT=8192
       - SYSTEM_URL=http://system-backend:8180
@@ -715,6 +776,8 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB:-addp}
       - GIN_MODE=release
+    volumes:
+      - ${ADDP_RUNTIME_LOG_ROOT:-./logs/runtime}:/var/log/addp
     networks:
       - addp-network
     depends_on:
@@ -743,7 +806,10 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-workbench-backend:${IMAGE_TAG:-latest}
     container_name: workbench-backend
     environment:
+      - ADDP_RUNTIME_LOG_ROOT=/var/log/addp
+      - ADDP_RUNTIME_LOG_SOURCE_HOURS=${ADDP_RUNTIME_LOG_SOURCE_HOURS:-48}
       - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
+      - ADDP_HOST_NODE_IPS=${ADDP_HOST_NODE_IPS:-}
       - SERVICE_HOST=workbench-backend
       - WORKBENCH_BACKEND_PORT=8193
       - SYSTEM_URL=http://system-backend:8180
@@ -755,6 +821,8 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB:-addp}
       - GIN_MODE=release
+    volumes:
+      - ${ADDP_RUNTIME_LOG_ROOT:-./logs/runtime}:/var/log/addp
     networks:
       - addp-network
     depends_on:
@@ -786,7 +854,10 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-copilot-backend:${IMAGE_TAG:-latest}
     container_name: copilot-backend
     environment:
+      - ADDP_RUNTIME_LOG_ROOT=/var/log/addp
+      - ADDP_RUNTIME_LOG_SOURCE_HOURS=${ADDP_RUNTIME_LOG_SOURCE_HOURS:-48}
       - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
+      - ADDP_HOST_NODE_IPS=${ADDP_HOST_NODE_IPS:-}
       - SERVICE_HOST=copilot-backend
       - PORT=8087
       - GATEWAY_URL=http://gateway:8000
@@ -801,6 +872,8 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB:-addp}
       - DB_SCHEMA=copilot
+    volumes:
+      - ${ADDP_RUNTIME_LOG_ROOT:-./logs/runtime}:/var/log/addp
     networks:
       - addp-network
     depends_on:
@@ -820,7 +893,10 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-model-backend:${IMAGE_TAG:-latest}
     container_name: model-backend
     environment:
+      - ADDP_RUNTIME_LOG_ROOT=/var/log/addp
+      - ADDP_RUNTIME_LOG_SOURCE_HOURS=${ADDP_RUNTIME_LOG_SOURCE_HOURS:-48}
       - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
+      - ADDP_HOST_NODE_IPS=${ADDP_HOST_NODE_IPS:-}
       - SERVICE_HOST=model-backend
       - PORT=8181
       - SYSTEM_URL=http://system-backend:8180
@@ -837,6 +913,8 @@ services:
       - REDIS_PASSWORD=${REDIS_PASSWORD:-addp_redis}
       - REDIS_DB=0
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+    volumes:
+      - ${ADDP_RUNTIME_LOG_ROOT:-./logs/runtime}:/var/log/addp
     networks:
       - addp-network
     depends_on:
@@ -863,7 +941,10 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-quality-backend:${IMAGE_TAG:-latest}
     container_name: quality-backend
     environment:
+      - ADDP_RUNTIME_LOG_ROOT=/var/log/addp
+      - ADDP_RUNTIME_LOG_SOURCE_HOURS=${ADDP_RUNTIME_LOG_SOURCE_HOURS:-48}
       - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
+      - ADDP_HOST_NODE_IPS=${ADDP_HOST_NODE_IPS:-}
       - SERVICE_HOST=quality-backend
       - QUALITY_BACKEND_PORT=8182
       - QUALITY_CHECK_TIMEOUT=${QUALITY_CHECK_TIMEOUT:-30m}
@@ -882,6 +963,8 @@ services:
       - REDIS_PASSWORD=${REDIS_PASSWORD:-addp_redis}
       - REDIS_DB=0
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+    volumes:
+      - ${ADDP_RUNTIME_LOG_ROOT:-./logs/runtime}:/var/log/addp
     networks:
       - addp-network
     depends_on:
@@ -898,7 +981,10 @@ services:
   quality-worker:
     image: ${REGISTRY:-localhost:5001}/addp-quality-worker:${IMAGE_TAG:-latest}
     environment:
+      - ADDP_RUNTIME_LOG_ROOT=/var/log/addp
+      - ADDP_RUNTIME_LOG_SOURCE_HOURS=${ADDP_RUNTIME_LOG_SOURCE_HOURS:-48}
       - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
+      - ADDP_HOST_NODE_IPS=${ADDP_HOST_NODE_IPS:-}
       - QUALITY_CHECK_TIMEOUT=${QUALITY_CHECK_TIMEOUT:-30m}
       - QUALITY_WORKER_CONCURRENCY=${QUALITY_WORKER_CONCURRENCY:-4}
       - QUALITY_WORKER_LEASE_DURATION=${QUALITY_WORKER_LEASE_DURATION:-30m}
@@ -910,6 +996,8 @@ services:
       - POSTGRES_USER=${POSTGRES_USER:-addp}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB:-addp}
+    volumes:
+      - ${ADDP_RUNTIME_LOG_ROOT:-./logs/runtime}:/var/log/addp
     networks:
       - addp-network
     depends_on:
@@ -941,7 +1029,10 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-ontology-backend:${IMAGE_TAG:-latest}
     container_name: ontology-backend
     environment:
+      - ADDP_RUNTIME_LOG_ROOT=/var/log/addp
+      - ADDP_RUNTIME_LOG_SOURCE_HOURS=${ADDP_RUNTIME_LOG_SOURCE_HOURS:-48}
       - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
+      - ADDP_HOST_NODE_IPS=${ADDP_HOST_NODE_IPS:-}
       - SERVICE_HOST=ontology-backend
       - ONTOLOGY_BACKEND_PORT=8195
       - SYSTEM_URL=http://system-backend:8180
@@ -953,6 +1044,8 @@ services:
       - POSTGRES_USER=${POSTGRES_USER:-addp}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB:-addp}
+    volumes:
+      - ${ADDP_RUNTIME_LOG_ROOT:-./logs/runtime}:/var/log/addp
     networks:
       - addp-network
     depends_on:
@@ -970,7 +1063,10 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-security-backend:${IMAGE_TAG:-latest}
     container_name: security-backend
     environment:
+      - ADDP_RUNTIME_LOG_ROOT=/var/log/addp
+      - ADDP_RUNTIME_LOG_SOURCE_HOURS=${ADDP_RUNTIME_LOG_SOURCE_HOURS:-48}
       - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
+      - ADDP_HOST_NODE_IPS=${ADDP_HOST_NODE_IPS:-}
       - SERVICE_HOST=security-backend
       - SECURITY_BACKEND_PORT=8194
       - SYSTEM_URL=http://system-backend:8180
@@ -980,6 +1076,8 @@ services:
       - POSTGRES_USER=${POSTGRES_USER:-addp}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB:-addp}
+    volumes:
+      - ${ADDP_RUNTIME_LOG_ROOT:-./logs/runtime}:/var/log/addp
     networks:
       - addp-network
     depends_on:
@@ -996,7 +1094,10 @@ services:
   security-worker:
     image: ${REGISTRY:-localhost:5001}/addp-security-worker:${IMAGE_TAG:-latest}
     environment:
+      - ADDP_RUNTIME_LOG_ROOT=/var/log/addp
+      - ADDP_RUNTIME_LOG_SOURCE_HOURS=${ADDP_RUNTIME_LOG_SOURCE_HOURS:-48}
       - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
+      - ADDP_HOST_NODE_IPS=${ADDP_HOST_NODE_IPS:-}
       - SERVICE_HOST=security-worker
       - SECURITY_BACKEND_PORT=8194
       - SYSTEM_URL=http://system-backend:8180
@@ -1007,6 +1108,8 @@ services:
       - POSTGRES_USER=${POSTGRES_USER:-addp}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB:-addp}
+    volumes:
+      - ${ADDP_RUNTIME_LOG_ROOT:-./logs/runtime}:/var/log/addp
     networks:
       - addp-network
     depends_on:
@@ -1032,7 +1135,10 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-asset-backend:${IMAGE_TAG:-latest}
     container_name: asset-backend
     environment:
+      - ADDP_RUNTIME_LOG_ROOT=/var/log/addp
+      - ADDP_RUNTIME_LOG_SOURCE_HOURS=${ADDP_RUNTIME_LOG_SOURCE_HOURS:-48}
       - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
+      - ADDP_HOST_NODE_IPS=${ADDP_HOST_NODE_IPS:-}
       - SERVICE_HOST=asset-backend
       - ASSET_BACKEND_PORT=8183
       - SYSTEM_URL=http://system-backend:8180
@@ -1050,6 +1156,8 @@ services:
       - REDIS_PASSWORD=${REDIS_PASSWORD:-addp_redis}
       - REDIS_DB=0
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+    volumes:
+      - ${ADDP_RUNTIME_LOG_ROOT:-./logs/runtime}:/var/log/addp
     networks:
       - addp-network
     depends_on:
@@ -1078,7 +1186,10 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-portal-backend:${IMAGE_TAG:-latest}
     container_name: portal-backend
     environment:
+      - ADDP_RUNTIME_LOG_ROOT=/var/log/addp
+      - ADDP_RUNTIME_LOG_SOURCE_HOURS=${ADDP_RUNTIME_LOG_SOURCE_HOURS:-48}
       - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
+      - ADDP_HOST_NODE_IPS=${ADDP_HOST_NODE_IPS:-}
       - PORTAL_BACKEND_PORT=8184
       - SYSTEM_URL=http://system-backend:8180
       - ASSET_URL=http://asset-backend:8183
@@ -1087,6 +1198,8 @@ services:
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD:-addp_redis}
       - REDIS_DB=0
+    volumes:
+      - ${ADDP_RUNTIME_LOG_ROOT:-./logs/runtime}:/var/log/addp
     networks:
       - addp-network
     depends_on:
@@ -1115,7 +1228,10 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-graph-backend:${IMAGE_TAG:-latest}
     container_name: graph-backend
     environment:
+      - ADDP_RUNTIME_LOG_ROOT=/var/log/addp
+      - ADDP_RUNTIME_LOG_SOURCE_HOURS=${ADDP_RUNTIME_LOG_SOURCE_HOURS:-48}
       - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
+      - ADDP_HOST_NODE_IPS=${ADDP_HOST_NODE_IPS:-}
       - SERVICE_HOST=graph-backend
       - GRAPH_BACKEND_PORT=8186
       - SYSTEM_URL=http://system-backend:8180
@@ -1132,6 +1248,8 @@ services:
       - MINIO_ENDPOINT=minio:9000
       - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
       - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-minioadmin}
+    volumes:
+      - ${ADDP_RUNTIME_LOG_ROOT:-./logs/runtime}:/var/log/addp
     networks:
       - addp-network
     depends_on:
@@ -1151,7 +1269,10 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-inference-backend:${IMAGE_TAG:-latest}
     container_name: inference-backend
     environment:
+      - ADDP_RUNTIME_LOG_ROOT=/var/log/addp
+      - ADDP_RUNTIME_LOG_SOURCE_HOURS=${ADDP_RUNTIME_LOG_SOURCE_HOURS:-48}
       - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
+      - ADDP_HOST_NODE_IPS=${ADDP_HOST_NODE_IPS:-}
       - SERVICE_HOST=inference-backend
       - INFERENCE_BACKEND_PORT=8191
       - SYSTEM_URL=http://system-backend:8180
@@ -1164,6 +1285,8 @@ services:
       - POSTGRES_DB=${POSTGRES_DB:-addp}
       - DB_SCHEMA=inference
       - GIN_MODE=release
+    volumes:
+      - ${ADDP_RUNTIME_LOG_ROOT:-./logs/runtime}:/var/log/addp
     networks:
       - addp-network
     restart: unless-stopped
@@ -1201,7 +1324,10 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-agent-backend:${IMAGE_TAG:-latest}
     container_name: agent-backend
     environment:
+      - ADDP_RUNTIME_LOG_ROOT=/var/log/addp
+      - ADDP_RUNTIME_LOG_SOURCE_HOURS=${ADDP_RUNTIME_LOG_SOURCE_HOURS:-48}
       - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
+      - ADDP_HOST_NODE_IPS=${ADDP_HOST_NODE_IPS:-}
       - SERVICE_HOST=agent-backend
       - AGENT_BACKEND_PORT=8190
       - AGENT_DB_SCHEMA=agent
@@ -1222,6 +1348,8 @@ services:
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD:-addp_redis}
       - REDIS_DB=0
+    volumes:
+      - ${ADDP_RUNTIME_LOG_ROOT:-./logs/runtime}:/var/log/addp
     networks:
       - addp-network
     depends_on:
@@ -1247,7 +1375,10 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-gateway:${IMAGE_TAG:-latest}
     container_name: gateway
     environment:
+      - ADDP_RUNTIME_LOG_ROOT=/var/log/addp
+      - ADDP_RUNTIME_LOG_SOURCE_HOURS=${ADDP_RUNTIME_LOG_SOURCE_HOURS:-48}
       - ADDP_HOST_NODE_NAME=${ADDP_HOST_NODE_NAME:-}
+      - ADDP_HOST_NODE_IPS=${ADDP_HOST_NODE_IPS:-}
       - SERVICE_HOST=gateway
       - PORT=8000
       - POSTGRES_HOST=postgres
@@ -1276,6 +1407,8 @@ services:
       - GRAPH_URL=http://graph-backend:8186
       - GATEWAY_SERVICE_CLIENT_SECRET=${GATEWAY_SERVICE_CLIENT_SECRET}
       - GIN_MODE=release
+    volumes:
+      - ${ADDP_RUNTIME_LOG_ROOT:-./logs/runtime}:/var/log/addp
     networks:
       - addp-network
     depends_on:

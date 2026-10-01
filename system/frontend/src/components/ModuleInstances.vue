@@ -9,6 +9,8 @@
         @input="scheduleSearch" @clear="search" @keyup.enter="search" />
       <el-input v-model.trim="nodeName" :placeholder="t('system.module.query.node')" clearable class="query-control"
         @input="scheduleSearch" @clear="search" @keyup.enter="search" />
+      <el-input v-model.trim="nodeIP" :placeholder="t('system.module.query.nodeIP')" clearable class="query-control"
+        @input="scheduleSearch" @clear="search" @keyup.enter="search" />
       <el-select v-model="role" :placeholder="t('system.module.query.role')" clearable class="query-control" @change="search">
         <el-option v-for="item in roles" :key="item" :label="roleLabel(item)" :value="item" />
       </el-select>
@@ -54,6 +56,7 @@
               <el-descriptions-item :label="t('system.module.instances.offlineDeterminedAt')">{{ formatDate(row.stopped_at) }}</el-descriptions-item>
               <el-descriptions-item :label="t('system.module.instances.stopReason')">{{ stopReasonLabel(row) }}</el-descriptions-item>
               <el-descriptions-item :label="t('system.module.instances.hostNodeName')">{{ row.host_node_name || t('system.module.instances.nodeUnknown') }}</el-descriptions-item>
+              <el-descriptions-item :label="t('system.module.instances.hostNodeIPs')">{{ row.host_node_ips?.join(', ') || t('system.module.instances.nodeUnknown') }}</el-descriptions-item>
               <el-descriptions-item :label="t('system.module.instances.runtimeHostname')">{{ row.runtime_hostname || t('system.module.instances.nodeUnknown') }}</el-descriptions-item>
               <el-descriptions-item :label="t('system.module.instances.url')">{{ row.module_url || '—' }}</el-descriptions-item>
               <el-descriptions-item :label="t('system.module.instances.healthCheckUrl')">{{ row.health_check_url || '—' }}</el-descriptions-item>
@@ -102,11 +105,15 @@
       <el-table-column :label="t('system.module.instances.stopReason')" width="170">
         <template #default="{ row }">{{ stopReasonLabel(row) }}</template>
       </el-table-column>
+      <el-table-column v-if="canReadLogs" :label="t('system.module.logs.title')" width="120" fixed="right">
+        <template #default="{ row }"><el-button text type="primary" @click="logInstance = row; logsOpen = true">{{ t('system.module.logs.view') }}</el-button></template>
+      </el-table-column>
       <template #empty><el-empty :description="t(period === 'custom' && !validCustomRange ? 'system.module.query.completeRange' : lastSuccessAt === null ? 'system.module.query.notLoaded' : 'system.module.query.empty')" :image-size="72" /></template>
     </el-table>
     <el-pagination v-if="lastSuccessAt !== null" v-model:current-page="page" v-model:page-size="pageSize" :page-sizes="[10, 20, 50, 100]"
       :total="total" layout="total, sizes, prev, pager, next" class="query-pagination"
       @current-change="changePage" @size-change="changePageSize" />
+    <ModuleRuntimeLogs v-model="logsOpen" :instance="logInstance" />
   </div>
 </template>
 
@@ -116,6 +123,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { Refresh } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import ModuleInstanceNode from './ModuleInstanceNode.vue'
+import ModuleRuntimeLogs from './ModuleRuntimeLogs.vue'
+import { useAuthStore } from '../store/auth'
 import { modulesAPI } from '../api/modules'
 import { resolveIAMModuleName } from '../utils/iamPresentation'
 import { isRuntimeInstanceOnline } from '../utils/moduleRegistry'
@@ -125,6 +134,9 @@ import { navigateSystemRoute } from '../utils/moduleNavigation'
 
 defineProps({ modules: { type: Array, required: true } })
 const { t, te } = useI18n()
+const authStore = useAuthStore()
+const canReadLogs = computed(() => authStore.hasPermission('platform.module_log.read'))
+const logInstance = ref(null), logsOpen = ref(false)
 const route = useRoute()
 const router = useRouter()
 const roles = MODULE_INSTANCE_ROLES
@@ -133,6 +145,7 @@ const periods = MODULE_INSTANCE_PERIODS
 const moduleName = ref('')
 const registeredHost = ref('')
 const nodeName = ref('')
+const nodeIP = ref('')
 const role = ref('')
 const defaultStatus = 'up'
 const status = ref(defaultStatus)
@@ -181,6 +194,7 @@ function currentParams() {
     ...(applied.value.moduleName ? { module_name: applied.value.moduleName } : {}),
     ...(applied.value.registeredHost ? { registered_host: applied.value.registeredHost } : {}),
     ...(applied.value.nodeName ? { node_name: applied.value.nodeName } : {}),
+    ...(applied.value.nodeIP ? { node_ip: applied.value.nodeIP } : {}),
     ...(applied.value.role ? { role: applied.value.role } : {}),
     ...(applied.value.status ? { status: applied.value.status } : {}),
     ...(applied.value.stopReason ? { stop_reason: applied.value.stopReason } : {}),
@@ -240,7 +254,7 @@ function search() {
     return
   }
   const filters = {
-    moduleName: moduleName.value, registeredHost: registeredHost.value.trim(), nodeName: nodeName.value.trim(), role: role.value, status: status.value,
+    moduleName: moduleName.value, registeredHost: registeredHost.value.trim(), nodeName: nodeName.value.trim(), nodeIP: nodeIP.value.trim(), role: role.value, status: status.value,
     stopReason: stopReason.value, timeBasis: timeBasis.value, period: period.value,
     ...(period.value === 'custom' ? {
       from: new Date(customRange.value[0]).toISOString(), to: new Date(customRange.value[1]).toISOString()
@@ -295,6 +309,7 @@ function restoreRoute() {
   moduleName.value = filters.moduleName
   registeredHost.value = filters.registeredHost
   nodeName.value = filters.nodeName
+  nodeIP.value = filters.nodeIP
   role.value = filters.role
   status.value = filters.status
   stopReason.value = filters.stopReason

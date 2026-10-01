@@ -77,4 +77,11 @@ until curl -f "http://localhost:${MEILISEARCH_PORT}/health" > /dev/null 2>&1; do
 done
 echo "✓ Meilisearch 已就绪"
 
-echo "所有基础设施服务已就绪！"
+echo "业务基础设施服务已就绪。"
+for component in addp-runtime-log-api addp-alloy addp-runtime-log-pruner; do
+  state=$(docker inspect --format '{{.State.Running}}:{{if .State.Health}}{{.State.Health.Status}}{{end}}' "$component" 2>/dev/null || true)
+  case "$state" in
+    true:healthy|true:) echo "✓ $component 已就绪" ;;
+    *) echo "警告: $component 未就绪；日志查询可能不可用，请运行 bash scripts/infra/status.sh 排查。" ;;
+  esac
+done

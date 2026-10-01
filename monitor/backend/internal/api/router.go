@@ -103,23 +103,24 @@ func SetupRouter(
 		api.Use(audit.ServiceAuditMiddleware("monitor", systemClient))
 	}
 
+	api.Use(executionReadAuditMiddleware(systemClient))
 	{
 		// 执行记录查询
-		api.GET("/executions", permission(monitorauthorization.PermissionMonitorExecutionRead), executionHandler.ListExecutions)
+		api.GET("/executions", permission(monitorauthorization.PermissionMonitorExecutionRead), executionReadMiddleware(queryService), executionHandler.ListExecutions)
 
 		// 统计数据
-		api.GET("/executions/stats", permission(monitorauthorization.PermissionMonitorStatisticsRead), statisticsHandler.GetStatistics)
-		api.GET("/executions/trend", permission(monitorauthorization.PermissionMonitorStatisticsRead), statisticsHandler.GetTrendData)
-		api.GET("/executions/runtime-metrics", permission(monitorauthorization.PermissionMonitorStatisticsRead), statisticsHandler.GetExecutionRuntimeMetrics)
+		api.GET("/executions/stats", permission(monitorauthorization.PermissionMonitorStatisticsRead), executionReadMiddleware(queryService), statisticsHandler.GetStatistics)
+		api.GET("/executions/trend", permission(monitorauthorization.PermissionMonitorStatisticsRead), executionReadMiddleware(queryService), statisticsHandler.GetTrendData)
+		api.GET("/executions/runtime-metrics", permission(monitorauthorization.PermissionMonitorStatisticsRead), executionReadMiddleware(queryService), statisticsHandler.GetExecutionRuntimeMetrics)
 
-		api.GET("/executions/by-execution-id/:execution_id/tree", permission(monitorauthorization.PermissionMonitorExecutionRead), executionHandler.GetExecutionTreeByExecutionID)
-		api.GET("/executions/by-execution-id/:execution_id", permission(monitorauthorization.PermissionMonitorExecutionRead), executionHandler.GetExecutionByExecutionID)
-		api.GET("/executions/:id/tree", permission(monitorauthorization.PermissionMonitorExecutionRead), executionHandler.GetExecutionTree)
-		api.GET("/executions/:id", permission(monitorauthorization.PermissionMonitorExecutionRead), executionHandler.GetExecution)
+		api.GET("/executions/by-execution-id/:execution_id/tree", permission(monitorauthorization.PermissionMonitorExecutionRead), executionReadMiddleware(queryService), executionHandler.GetExecutionTreeByExecutionID)
+		api.GET("/executions/by-execution-id/:execution_id", permission(monitorauthorization.PermissionMonitorExecutionRead), executionReadMiddleware(queryService), executionHandler.GetExecutionByExecutionID)
+		api.GET("/executions/:id/tree", permission(monitorauthorization.PermissionMonitorExecutionRead), executionReadMiddleware(queryService), executionHandler.GetExecutionTree)
+		api.GET("/executions/:id", permission(monitorauthorization.PermissionMonitorExecutionRead), executionReadMiddleware(queryService), executionHandler.GetExecution)
 
-		api.GET("/alerts", permission(monitorauthorization.PermissionMonitorAlertIncidentRead), alertHandler.ListAlerts)
-		api.POST("/alerts/:id/acknowledge", permission(monitorauthorization.PermissionMonitorAlertIncidentUpdate), alertHandler.AcknowledgeAlert)
-		api.POST("/alerts/:id/suppress", permission(monitorauthorization.PermissionMonitorAlertIncidentUpdate), alertHandler.SuppressAlert)
+		api.GET("/alerts", permission(monitorauthorization.PermissionMonitorAlertIncidentRead), executionReadMiddleware(queryService), alertHandler.ListAlerts)
+		api.POST("/alerts/:id/acknowledge", permission(monitorauthorization.PermissionMonitorAlertIncidentUpdate), executionReadMiddleware(queryService), alertHandler.AcknowledgeAlert)
+		api.POST("/alerts/:id/suppress", permission(monitorauthorization.PermissionMonitorAlertIncidentUpdate), executionReadMiddleware(queryService), alertHandler.SuppressAlert)
 		api.GET("/alert-rule-targets", permission(monitorauthorization.PermissionMonitorAlertRuleRead), alertRuleHandler.ListAlertRuleTargets)
 		api.GET("/alert-rules", permission(monitorauthorization.PermissionMonitorAlertRuleRead), alertRuleHandler.ListAlertRules)
 		api.POST("/alert-rules", permission(monitorauthorization.PermissionMonitorAlertRuleCreate), alertRuleHandler.CreateAlertRule)

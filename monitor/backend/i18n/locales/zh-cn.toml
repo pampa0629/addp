@@ -7,6 +7,9 @@ other = "无效的执行记录ID"
 [monitor.execution.not_found]
 other = "执行记录不存在"
 
+[monitor.execution.owner_unavailable]
+other = "暂时无法核验任务读取权限，请稍后重试"
+
 [monitor.alert.invalid_id]
 other = "告警 ID 无效"
 
@@ -111,3 +114,6 @@ other = "SMTP 凭据不能为空"
 
 [monitor.statistics.invalid_runtime_metric_duration]
 other = "统计窗口无效，仅支持 24h、7d 或 30d"
+
+["monitor.err.diagnostic_query_failed"]
+other = "读取执行诊断失败，请稍后重试"

@@ -32,6 +32,11 @@ def git_files(repository: Path, pattern: str) -> list[str]:
     return [line for line in result.stdout.splitlines() if line]
 
 
+def worktree_files(repository: Path, pattern: str) -> list[str]:
+    result = subprocess.run(["git", "ls-files", "-co", "--exclude-standard", "--", pattern], cwd=repository, check=True, capture_output=True, text=True)
+    return sorted({line for line in result.stdout.splitlines() if line and (repository / line).is_file()})
+
+
 def discover_frontends(repository: Path) -> list[str]:
     modules: list[str] = []
     for relative_path in git_files(repository, "*/frontend/package.json"):
@@ -73,7 +78,7 @@ def validate_browser_isolation(repository: Path) -> list[str]:
     """Check literal deterministic fixture recipes without launching Node or services."""
     repository = repository.resolve()
     errors = []
-    config_paths = git_files(repository, "*/frontend/playwright.config.*")
+    config_paths = worktree_files(repository, "*/frontend/playwright.config.*")
     for module in discover_frontends(repository):
         package = json.loads((repository / module / "frontend/package.json").read_text())
         if any(name == "test:e2e" and "playwright test" in command

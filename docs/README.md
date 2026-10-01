@@ -67,6 +67,7 @@
 - [Online 专用 Runner 首次验收待办](next/ADDP统一测试与Online验收体系方案.md)
 - [GitHub 外部治理与 T4 Runner 待办](next/ADDP持续集成体系改进专题.md)
 - [模块启动、就绪与注册治理待办](next/ADDP模块与引擎注册治理专题.md)
+- [模块服务运行日志设计草案（待讨论）](next/ADDP模块服务运行日志设计.md)
 - [Manager 前端浏览器回归测试专题](next/Manager前端浏览器回归测试专题.md)
 - [ADDP 企业资源目录与 Catalog 模块专题](next/ADDP企业资源目录能力专题.md)
 - [ADDP Engine Catalog 命名收敛与迁移专题](next/ADDP引擎目录命名收敛专题.md)

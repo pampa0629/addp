@@ -43,11 +43,9 @@ func main() {
 	cfg := config.LoadConfig()
 
 	// 重新初始化日志（支持动态级别/格式，并写入日志文件）
-	commonConfig.InitLogger("meta-backend.log", &commonConfig.LoggerOptions{
+	commonConfig.InitLogger(&commonConfig.LoggerOptions{
 		Level:     cfg.LogLevel,
-		Format:    cfg.LogFormat,
 		AddSource: &cfg.LogAddSource,
-		File:      cfg.LogFile,
 	})
 
 	// 检查端口是否可用
@@ -60,7 +58,6 @@ func main() {
 		"port", cfg.ServerPort,
 		"db_host", cfg.DBHost,
 		"log_level", cfg.LogLevel,
-		"log_format", cfg.LogFormat,
 	)
 
 	// 初始化数据库

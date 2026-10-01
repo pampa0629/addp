@@ -3,10 +3,10 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/addp/common/buildinfo"
 	"log"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"syscall"
 
 	"github.com/addp/common/schema"
@@ -32,7 +32,7 @@ import (
 func main() {
 	commonConfig.LoadEnv()
 	cfg := config.LoadConfig()
-	logger.Init(logger.Options{Level: cfg.LogLevel, Format: cfg.LogFormat, FilePath: filepath.Join("logs", "meta-worker.log"), AddSource: cfg.LogAddSource, RedirectStdLog: true})
+	logger.Init(logger.Options{Level: cfg.LogLevel, AddSource: cfg.LogAddSource, RedirectStdLog: true})
 
 	db, err := connectDatabase(cfg)
 	if err != nil {
@@ -76,7 +76,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	registrationDone := systemClient.RegisterAndHeartbeat(ctx, &commonClient.ModuleRegistrationRequest{
-		ModuleName: commonExecution.ModuleMeta, InstanceID: workerInstanceID,
+		ModuleName: commonExecution.ModuleMeta, InstanceID: buildinfo.ProcessInstanceID(),
 		Role: commonClient.ModuleRuntimeRoleWorker, RoutePrefix: "/meta",
 		Metadata: map[string]interface{}{
 			"runtime_name": commonExecution.TaskTypeScan,

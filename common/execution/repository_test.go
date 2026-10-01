@@ -20,7 +20,7 @@ func TestListChildrenByParentExecutionID(t *testing.T) {
 	insertTaskExecutionRepositoryTestRow(t, db, 3, 7, "child-a", ptrString("root"), "2026-01-01 10:01:00")
 	insertTaskExecutionRepositoryTestRow(t, db, 4, 8, "child-other-tenant", ptrString("root"), "2026-01-01 10:00:30")
 
-	children, err := repo.ListChildrenByParentExecutionID(context.Background(), "root", 7)
+	children, err := repo.ListChildrenByParentExecutionID(context.Background(), "root", 7, 20)
 	if err != nil {
 		t.Fatalf("list children: %v", err)
 	}

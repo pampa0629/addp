@@ -100,3 +100,25 @@ func TestLoggerMiddlewareWritesGenericRequestWithoutBodyOrQuery(t *testing.T) {
 		t.Fatalf("generic audit event = %#v", writer.events)
 	}
 }
+
+func TestRuntimeLogReadsAuditedWithoutKeywordOrOutput(t *testing.T) {
+	for _, status := range []int{200, 403, 502} {
+		writer := &requestAuditWriterStub{}
+		router := gin.New()
+		router.Use(LoggerMiddleware(writer))
+		router.GET("/api/v1/system/platform/modules/:module_name/instances/:instance_id/logs", func(c *gin.Context) { c.JSON(status, gin.H{"message": "private-output"}) })
+		router.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/api/v1/system/platform/modules/manager/instances/old-instance/logs?from=2026-10-01T00:00:00Z&to=2026-10-01T01:00:00Z&keyword=private-keyword", nil))
+		if len(writer.events) != 1 {
+			t.Fatal(writer.events)
+		}
+		event := writer.events[0]
+		if event.EventName != "platform.module_log.read" || event.EntityID != "old-instance" || len(event.Details) != 3 || event.Details["module_name"] != "manager" {
+			t.Fatalf("unexpected event %+v", event)
+		}
+		for k, v := range event.Details {
+			if strings.Contains(k+v.(string), "private") {
+				t.Fatal("audit leaked log or search text")
+			}
+		}
+	}
+}

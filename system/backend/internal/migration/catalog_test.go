@@ -14,8 +14,26 @@ func TestEmbeddedMigrationCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadCatalog() error = %v", err)
 	}
-	if catalog.LatestVersion != 166 {
-		t.Fatalf("LatestVersion = %d, want 166", catalog.LatestVersion)
+	if catalog.LatestVersion != 172 {
+		t.Fatalf("LatestVersion = %d, want 172", catalog.LatestVersion)
+	}
+}
+
+func TestCatalogSharingDecisionPermissionPublishesNoDefaultGrant(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000170_catalog_sharing_decision_permission.up.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{"INSERT INTO system.permissions", "'catalog.sharing_decision.create'", "ARRAY['tenant']::text[]", "'high', false", "'active'"} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 170 missing %q", fragment)
+		}
+	}
+	for _, forbidden := range []string{"INSERT INTO system.role_permissions", "INSERT INTO system.role_assignments", "INSERT INTO system.resource_grants", "'tenant.administrator'"} {
+		if strings.Contains(sql, forbidden) {
+			t.Fatalf("migration 170 silently grants %q", forbidden)
+		}
 	}
 }
 
@@ -1745,5 +1763,22 @@ func TestReadCatalogRejectsNonMigrationFile(t *testing.T) {
 	_, err := ReadCatalog(fstest.MapFS{"sql/README.md": {}}, "sql")
 	if err == nil || !strings.Contains(err.Error(), "invalid migration filename") {
 		t.Fatalf("ReadCatalog() error = %v, want invalid filename", err)
+	}
+}
+
+func TestRuntimeLogPermissionMigrationGrantsOnlyPlatformSystemAdministrator(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000171_platform_module_runtime_log_permission.up.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, fragment := range []string{"'platform.module_log.read'", "ARRAY['platform']::text[]", "role.role_key = 'platform.system_administrator'", "'platform_builtin'", "authorization_version + 1", "authorization_catalog_changed"} {
+		if !strings.Contains(string(data), fragment) {
+			t.Fatalf("migration 171 missing %q", fragment)
+		}
+	}
+	for _, forbidden := range []string{"tenant.administrator", "security_administrator", "audit_administrator", "INSERT INTO system.role_assignments"} {
+		if strings.Contains(string(data), forbidden) {
+			t.Fatalf("unexpected grant %q", forbidden)
+		}
 	}
 }

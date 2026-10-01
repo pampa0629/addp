@@ -25,6 +25,9 @@ func Migrate(db *gorm.DB) error {
 				return fmt.Errorf("acquire catalog schema lock: %w", err)
 			}
 		}
+		if err := migrateSharingDecisionExpiry(tx); err != nil {
+			return err
+		}
 		if err := tx.AutoMigrate(
 			&models.Entry{},
 			&models.SourceBinding{},
@@ -40,6 +43,8 @@ func Migrate(db *gorm.DB) error {
 			&models.SourceCheckpoint{},
 			&models.ProjectionTask{},
 			&models.AuditEvent{},
+			&models.FulfillmentCheck{},
+			&models.SharingDecision{},
 		); err != nil {
 			return fmt.Errorf("auto migrate catalog schema: %w", err)
 		}
@@ -49,7 +54,13 @@ func Migrate(db *gorm.DB) error {
 		if err := migrateBusinessResponsibilityEvidence(tx); err != nil {
 			return err
 		}
-		return applyConstraints(tx)
+		if err := applyConstraints(tx); err != nil {
+			return err
+		}
+		if err := applyFulfillmentConstraints(tx); err != nil {
+			return err
+		}
+		return applySharingDecisionConstraints(tx)
 	})
 }
 

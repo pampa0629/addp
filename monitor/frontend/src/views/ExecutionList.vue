@@ -424,34 +424,17 @@
           </el-table>
         </div>
 
-        <div v-if="hasWorkflowResultPreview" class="detail-section">
-          <div class="workflow-result-heading">
-            <h4>{{ t('monitor.execution.detail.workflow_result') }}</h4>
-            <el-tag :type="workflowResultPersisted ? 'success' : 'info'" effect="plain">
-              {{ workflowResultPersisted
-                ? t('monitor.execution.detail.workflow_result_saved')
-                : t('monitor.execution.detail.workflow_result_runtime_only') }}
-            </el-tag>
-          </div>
-          <div v-if="workflowResultScalar" class="workflow-result-scalar">
-            {{ formatWorkflowResultValue(workflowResultPreview) }}
-          </div>
-          <el-table v-else-if="workflowResultRows.length" :data="workflowResultRows" border stripe size="small">
-            <el-table-column
-              v-for="column in workflowResultColumns"
-              :key="column"
-              :prop="column"
-              :label="column"
-              min-width="140"
-            />
-          </el-table>
-          <pre v-else class="workflow-result-json">{{ workflowResultText }}</pre>
-        </div>
+        <ExecutionSteps
+          :steps="currentExecution.steps || []"
+          :attempt-unverified="currentExecution.steps_attempt_unverified"
+          :current-step="currentExecution.current_step || ''"
+          :truncated="currentExecution.steps_truncated || currentExecution.diagnostics_truncated || executionTreeTruncated"
+        />
 
         <ExecutionLineageSummary :metadata="currentExecutionMetadata" />
 
         <!-- 执行元数据 -->
-        <div v-if="hasExecutionMetadata" class="detail-section">
+        <div v-if="metadataSummaryItems.length" class="detail-section">
           <h4>{{ t('monitor.execution.detail.metadata') }}</h4>
           <el-descriptions
             v-if="metadataSummaryItems.length"
@@ -470,31 +453,6 @@
               <span v-else>{{ item.value }}</span>
             </el-descriptions-item>
           </el-descriptions>
-          <el-collapse v-model="metadataExpandedPanels" class="metadata-raw-collapse">
-            <el-collapse-item name="raw">
-              <template #title>
-                <span class="metadata-raw-title">{{ t('monitor.execution.detail.raw_metadata') }}</span>
-              </template>
-              <el-input
-                type="textarea"
-                :value="executionMetadataText"
-                :rows="10"
-                readonly
-                class="metadata-json"
-              />
-            </el-collapse-item>
-          </el-collapse>
-        </div>
-
-        <!-- 执行结果 -->
-        <div v-if="currentExecution.result" class="detail-section">
-          <h4>{{ t('monitor.execution.detail.result') }}</h4>
-          <el-input
-            type="textarea"
-            :value="JSON.stringify(currentExecution.result, null, 2)"
-            :rows="10"
-            readonly
-          />
         </div>
 
         <!-- 错误详情 -->
@@ -503,7 +461,7 @@
           <el-alert
             type="error"
             :closable="false"
-            :description="JSON.stringify(executionErrorDetails, null, 2)"
+            :description="executionErrorSummary"
           />
         </div>
       </div>
@@ -513,6 +471,7 @@
 
 <script setup>
 import { computed, ref, onMounted, onBeforeUnmount, watch } from 'vue'
+import { ExecutionSteps } from '@common-ui'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
@@ -568,7 +527,6 @@ const detailDialogVisible = ref(false)
 const detailLoading = ref(false)
 const detailLoadFailed = ref(false)
 const currentExecution = ref(null)
-const metadataExpandedPanels = ref([])
 const pageVisible = ref(!document.hidden)
 useConsolePageDescriptor(router, 'monitor', {
   title: computed(() => t('monitor.execution.recentDetailTitle')),
@@ -662,11 +620,14 @@ const detailStatusMessage = computed(() => {
   return ''
 })
 
+const executionTreeTruncated = computed(() => {
+  const hasTruncation = nodes => nodes.some(node => node.truncated || hasTruncation(node.children || []))
+  return hasTruncation(executionTreeData.value)
+})
+
 const currentExecutionMetadata = computed(() => normalizeObject(currentExecution.value?.metadata))
 
-const hasExecutionMetadata = computed(() => Object.keys(currentExecutionMetadata.value).length > 0)
 
-const executionMetadataText = computed(() => JSON.stringify(currentExecutionMetadata.value, null, 2))
 
 const executionErrorDetails = computed(() => {
 	const status = currentExecution.value?.status
@@ -675,29 +636,12 @@ const executionErrorDetails = computed(() => {
 	return Object.keys(details).length > 0 ? details : null
 })
 
+const executionErrorSummary = computed(() => {
+  const details = executionErrorDetails.value || {}
+  return [details.category ? t(`common.executionFailure.${details.category}`) : '', details.code || details.error_code].filter(Boolean).join(' · ')
+})
+
 const metadataSummaryItems = computed(() => buildMetadataSummaryItems(currentExecutionMetadata.value))
-const workflowResultPreview = computed(() => currentExecutionMetadata.value?.result?.final_result)
-const hasWorkflowResultPreview = computed(() => workflowResultPreview.value !== undefined && workflowResultPreview.value !== null)
-const workflowResultPersisted = computed(() => {
-  const result = currentExecutionMetadata.value?.result || {}
-  return Array.isArray(result.produced_targets) && result.produced_targets.length > 0 ||
-    result.outputs && Object.keys(result.outputs).length > 0
-})
-const workflowResultScalar = computed(() => (
-  workflowResultPreview.value === null || typeof workflowResultPreview.value !== 'object'
-))
-const workflowResultRows = computed(() => {
-  const result = workflowResultPreview.value
-  if (Array.isArray(result)) return result.filter(item => item && typeof item === 'object' && !Array.isArray(item))
-  if (result && typeof result === 'object') return [result]
-  return []
-})
-const workflowResultColumns = computed(() => {
-  const columns = new Set()
-  workflowResultRows.value.forEach(row => Object.keys(row).forEach(key => columns.add(key)))
-  return Array.from(columns)
-})
-const workflowResultText = computed(() => JSON.stringify(workflowResultPreview.value, null, 2))
 const continuousDiagnostics = computed(() => getContinuousDiagnostics(currentExecutionMetadata.value))
 const continuousCapture = computed(() => getContinuousCapture(currentExecutionMetadata.value))
 const continuousSourceRecovery = computed(() => normalizeObject(continuousCapture.value.source_recovery))
@@ -732,7 +676,7 @@ function continuousSignalDescription(signal) {
     failures: recovery.consecutiveFailures ?? 0,
     nextAttempt: formatDate(recovery.notBefore),
     threshold: formatContinuousDurationSeconds(diagnostics.checkpoint_stale_after_seconds),
-    error: diagnostics.error || '-'
+    error: diagnostics.error ? t(`common.executionFailure.${diagnostics.error}`) : '-'
   })
 }
 
@@ -798,6 +742,13 @@ function buildMetadataSummaryItems(metadata) {
   appendMetadataField(items, 'cached_tiles', metadata.cached_tiles)
   appendMetadataField(items, 'failed_tiles', metadata.failed_tiles)
   appendMetadataField(items, 'stop_reason', metadata.stop_reason)
+  for (const key of ['catalog_nodes_scanned', 'items_scanned', 'fields_scanned', 'finding_count', 'quality_score']) {
+    appendMetadataField(items, key, metadata[key])
+  }
+  const runtime = normalizeObject(metadata.runtime_status)
+  appendMetadataField(items, 'runtime_status', runtime.status)
+  appendMetadataField(items, 'runtime_execution_id', runtime.runtime_execution_id)
+  appendMetadataField(items, 'runtime_error_code', runtime.error_code)
   return dedupeMetadataSummaryItems(items)
 }
 
@@ -1322,13 +1273,6 @@ watch(shouldRefreshOpenedExecution, running => {
   }
 })
 
-watch(
-  () => currentExecution.value?.execution_id,
-  () => {
-    metadataExpandedPanels.value = []
-  }
-)
-
 watch(detailDialogVisible, async visible => {
   if (visible) return
   detailRequestToken += 1
@@ -1396,59 +1340,8 @@ watch(detailDialogVisible, async visible => {
   margin-top: 20px;
 }
 
-.workflow-result-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 12px;
-}
-
-.workflow-result-heading h4 {
-  margin: 0;
-}
-
-.workflow-result-scalar {
-  padding: 18px 20px;
-  color: var(--addp-text-primary);
-  background: var(--addp-bg-secondary);
-  border: 1px solid var(--addp-border-color);
-  border-radius: 4px;
-  font-size: 24px;
-  font-weight: 600;
-  line-height: 1.3;
-  overflow-wrap: anywhere;
-}
-
-.workflow-result-json {
-  max-height: 360px;
-  margin: 0;
-  padding: 12px;
-  overflow: auto;
-  color: var(--addp-text-primary);
-  background: var(--addp-bg-secondary);
-  border: 1px solid var(--addp-border-color);
-  border-radius: 4px;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
 .metadata-summary {
   margin-bottom: 12px;
-}
-
-.metadata-raw-collapse :deep(.el-collapse-item__header),
-.metadata-raw-collapse :deep(.el-collapse-item__wrap) {
-  color: var(--addp-text-primary);
-  background: transparent;
-}
-
-.metadata-raw-collapse :deep(.el-collapse-item__content) {
-  padding-bottom: 0;
-}
-
-.metadata-raw-title {
-  font-weight: 500;
 }
 
 .continuous-heading {

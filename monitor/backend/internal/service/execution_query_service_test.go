@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -92,5 +93,42 @@ func insertExecutionQueryServiceTestRow(t *testing.T, db *gorm.DB, id int, execu
 		100, commonExecution.TriggerTypeManual, "2026-01-01 10:00:00", "2026-01-01 10:00:00",
 	).Error; err != nil {
 		t.Fatalf("insert task execution: %v", err)
+	}
+}
+
+func TestExecutionTreeBudgetMarksOnlyOmittedAccessibleEvidence(t *testing.T) {
+	db := newExecutionQueryServiceTestDB(t)
+	query := NewExecutionQueryService(commonExecution.NewTaskExecutionRepository(db))
+	root := "budget-root"
+	insertExecutionQueryServiceTestRow(t, db, 1000, root, nil)
+	for i := 1; i <= 201; i++ {
+		insertExecutionQueryServiceTestRow(t, db, 1000+i, fmt.Sprintf("budget-child-%d", i), &root)
+	}
+	tree, err := query.GetExecutionTreeByExecutionID(context.Background(), root, 7)
+	if err != nil || !tree.Truncated || len(tree.Children) != 199 {
+		t.Fatalf("tree=%#v err=%v", tree, err)
+	}
+	depthRoot := "depth-root"
+	parent := ""
+	for i := 0; i <= 8; i++ {
+		id := fmt.Sprintf("depth-%d", i)
+		if i == 0 {
+			id = depthRoot
+			insertExecutionQueryServiceTestRow(t, db, 1500+i, id, nil)
+		} else {
+			insertExecutionQueryServiceTestRow(t, db, 1500+i, id, &parent)
+		}
+		parent = id
+	}
+	tree, err = query.GetExecutionTreeByExecutionID(context.Background(), depthRoot, 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	leaf := tree
+	for len(leaf.Children) > 0 {
+		leaf = leaf.Children[0]
+	}
+	if leaf.Truncated {
+		t.Fatal("complete depth-boundary leaf marked as truncated")
 	}
 }

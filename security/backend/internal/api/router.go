@@ -31,6 +31,7 @@ func SetupRouter(svc *service.DefinitionService, enrollments *service.Enrollment
 	accessRequestHandler := NewAccessRequestHandler(accessRequests)
 	api := router.Group("/api/v1/security")
 	api.Use(commonauth.MustNewMiddleware(commonauth.MiddlewareConfig{SystemURL: systemURL}), commonauth.MustNewContextGuard("tenant"))
+	api.GET("/execution-read-scope", GetExecutionReadScope)
 	permission := func(key string) gin.HandlerFunc { return commonauth.MustNewPermissionGuard(key) }
 
 	api.GET("/definition-profiles",

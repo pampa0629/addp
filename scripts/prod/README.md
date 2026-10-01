@@ -382,3 +382,11 @@ docker image prune -a
 
 **Version:** 0.0.12
 **Last Updated:** 2025-12-09
+
+## 模块实例运行日志
+
+模块服务正文统一由共享接收器按进程实例写入节点源，再由 Alloy 发送到 Loki；平台系统管理员在“System → 模块管理 → 服务实例 → 查看日志”读取。Go、Python、Gateway 和 Worker 使用同一条链路，应用重启保留旧实例集中日志。首次接入需要重新登录以获取独立日志读取权限。
+
+本指南中的 `docker logs`、`docker compose logs`、`docker service logs` 用于容器入口与日志设施自身诊断，不再作为模块运行日志正文入口。业务尚未登记就初始化失败时，通过受控节点源 `logs/runtime/<module>/<instance_id>/*.jsonl` 排查；页面不会虚构未登记的实例。
+
+部署、计数、保留、备份和验证入口见 [Infra 运行日志说明](../infra/README.md#模块实例运行日志)。首版允许明确缺口，不承诺零丢失、完整重放或存储高可用。

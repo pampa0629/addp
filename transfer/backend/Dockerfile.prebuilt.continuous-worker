@@ -12,3 +12,6 @@ COPY dist/${BUILD_TYPE}-${GOOS}-${BUILD_ARCH}/transfer-continuous-worker ./worke
 RUN chmod +x ./worker
 
 CMD ["./worker"]
+
+COPY dist/${BUILD_TYPE}-${GOOS}-${BUILD_ARCH}/runtime-log /app/runtime-log
+ENTRYPOINT ["/app/runtime-log", "launch", "--module", "transfer", "--role", "worker", "--"]

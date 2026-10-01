@@ -60,10 +60,10 @@ sys.exit(int(os.environ.get("TEST_GO_STATUS", "0")))
             process.communicate(timeout=5)
         self.temporary.cleanup()
 
-    def run_gate(self, index=1, **overrides):
+    def run_gate(self, index=1, arguments=(), **overrides):
         environment = dict(self.environment, TEST_GO_TRACE=str(self.root / f"trace-{index}"))
         environment.update(overrides)
-        return subprocess.run(["bash", str(self.scripts[index]), "--package", "migration"],
+        return subprocess.run(["bash", str(self.scripts[index]), "--package", "migration", *arguments],
                               env=environment, capture_output=True, text=True, timeout=5)
 
     def start_holder(self):
@@ -96,6 +96,22 @@ sys.exit(int(os.environ.get("TEST_GO_STATUS", "0")))
         self.assertNotEqual(failed.returncode, 0)
         result = self.run_gate()
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_coordination_filter_preserves_complete_default_discovery(self):
+        result = self.run_gate(arguments=("--test", "engine-access-coordination"))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        trace = (self.root / "trace-1").read_text()
+        self.assertIn("./internal/testsupport -run ^TestResetDisposablePostgresForGate$", trace)
+        self.assertIn("./internal/migration -run ^Test(FulfillmentOutcome|ApprovalRequirement|SharingExpiry)ForwardMigrationAgainstPostgres$", trace)
+        (self.root / "trace-1").unlink()
+        result = self.run_gate(arguments=("--package", ""))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        trace = (self.root / "trace-1").read_text()
+        self.assertIn("./internal/migration -run AgainstPostgres$", trace)
+        self.assertIn("./internal/engineaccess -run AgainstPostgres$", trace)
+        result = self.run_gate(arguments=("--package", "iam", "--test", "engine-access-coordination"))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("requires --package migration", result.stderr)
 
     def test_terminated_gate_releases_lock(self):
         first = self.start_holder()

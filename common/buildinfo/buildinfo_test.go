@@ -1,6 +1,8 @@
 package buildinfo
 
 import (
+	"os"
+	"os/exec"
 	"testing"
 	"time"
 )
@@ -29,5 +31,33 @@ func TestHealthIncludesStableBuildAndProcessIdentity(t *testing.T) {
 	}
 	if second := Health("model"); second.StartedAt != response.StartedAt {
 		t.Fatalf("started_at changed: first=%q second=%q", response.StartedAt, second.StartedAt)
+	}
+}
+
+func TestProcessIdentityUsesLaunchEnvironment(t *testing.T) {
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"process-a", "process-b"} {
+		cmd := exec.Command(self, "-test.run=^TestProcessIdentityHelper$")
+		cmd.Env = append(os.Environ(), "ADDP_IDENTITY_HELPER=1", "ADDP_PROCESS_INSTANCE_ID="+id)
+		if output, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("identity helper: %v %s", err, output)
+		}
+	}
+}
+func TestProcessIdentityHelper(t *testing.T) {
+	if os.Getenv("ADDP_IDENTITY_HELPER") != "1" {
+		return
+	}
+	expected := os.Getenv("ADDP_PROCESS_INSTANCE_ID")
+	first := Health("manager")
+	if first.InstanceID != expected || ProcessInstanceID() != expected {
+		t.Fatal("launch identity not consumed")
+	}
+	os.Setenv("ADDP_PROCESS_INSTANCE_ID", "later-environment")
+	if Health("manager").InstanceID != expected {
+		t.Fatal("same process changed registration identity")
 	}
 }

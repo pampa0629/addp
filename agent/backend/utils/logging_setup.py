@@ -2,7 +2,6 @@
 
 import json
 import logging
-from pathlib import Path
 from typing import Any, Dict, List, Union
 
 from langchain_core.callbacks import BaseCallbackHandler
@@ -10,39 +9,11 @@ from langchain_core.messages import BaseMessage
 from langchain_core.outputs import LLMResult
 
 
-# 计算 logs 目录：utils/ -> backend/ -> agent/ -> 项目根/
-_PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
-_LOG_DIR = _PROJECT_ROOT / "logs"
-_LOG_FILE = _LOG_DIR / "agent-backend.log"
-
-_LOG_FORMAT = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
-_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
+from addp_common.runtime_logging import setup_runtime_logging
 
 
 def setup_logging(level: int = logging.INFO) -> None:
-    """
-    初始化日志配置。在 main.py 启动时调用一次。
-    同时输出到文件（logs/agent-backend.log）和 stdout。
-    """
-    _LOG_DIR.mkdir(parents=True, exist_ok=True)
-
-    root_logger = logging.getLogger()
-    # 避免重复添加 handler
-    if root_logger.handlers:
-        return
-
-    root_logger.setLevel(level)
-    formatter = logging.Formatter(_LOG_FORMAT, datefmt=_DATE_FORMAT)
-
-    # 文件 handler
-    file_handler = logging.FileHandler(_LOG_FILE, encoding="utf-8")
-    file_handler.setFormatter(formatter)
-    root_logger.addHandler(file_handler)
-
-    # 控制台 handler
-    console_handler = logging.StreamHandler()
-    console_handler.setFormatter(formatter)
-    root_logger.addHandler(console_handler)
+    setup_runtime_logging(level)
 
 
 def _payload_size(value: Any) -> int:

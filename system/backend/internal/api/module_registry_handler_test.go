@@ -216,6 +216,7 @@ func TestListModuleRuntimeInstancesPlatformUsesPaginatedContract(t *testing.T) {
 			ModuleName: "manager", InstanceID: instanceID, Role: models.ModuleRuntimeRoleBackend,
 			ModuleURL: "http://" + instanceID + ":8081", RoutePrefix: "/manager",
 			HostNodeName: "host-" + instanceID, RuntimeHostname: "container-" + instanceID,
+			HostNodeIPs: []string{"192.0.2.7", "2001:db8::1"},
 		}); err != nil {
 			t.Fatal(err)
 		}
@@ -251,7 +252,7 @@ func TestListModuleRuntimeInstancesPlatformUsesPaginatedContract(t *testing.T) {
 	if payload.Data[0].ModuleName != "manager" || payload.Data[0].RegisteredHost == "" {
 		t.Fatalf("instance identity = %#v", payload.Data[0])
 	}
-	response = performModuleRegistryRequest(router, http.MethodGet, "/platform/module-instances?registered_host=MANAGER-A&node_name=HOST-MANAGER-A&role=backend&status=up&time_from="+
+	response = performModuleRegistryRequest(router, http.MethodGet, "/platform/module-instances?registered_host=MANAGER-A&node_name=HOST-MANAGER-A&node_ip=2001:0DB8::1&role=backend&status=up&time_from="+
 		url.QueryEscape(time.Now().Add(-time.Hour).Format(time.RFC3339))+"&time_to="+
 		url.QueryEscape(time.Now().Add(time.Hour).Format(time.RFC3339)), "")
 	if response.Code != http.StatusOK {
@@ -270,6 +271,11 @@ func TestListModuleRuntimeInstancesPlatformUsesPaginatedContract(t *testing.T) {
 	if payload.Total != 3 {
 		t.Fatalf("cross-module total = %d", payload.Total)
 	}
+	response = performModuleRegistryRequest(router, http.MethodGet, "/platform/module-instances?node_ip=not-an-IP", "")
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("invalid node IP status=%d body=%s", response.Code, response.Body.String())
+	}
+
 	// A process registered a week ago must still be found by its recent offline time.
 	offlineAt := time.Now().Add(-5 * time.Minute).Truncate(time.Second)
 	if err := db.Model(&models.ModuleRuntimeInstance{}).Where("instance_id = ?", "manager-a").Updates(map[string]interface{}{

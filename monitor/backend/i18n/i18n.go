@@ -11,9 +11,11 @@ var localeFS embed.FS
 
 // Monitor 模块消息 key 常量
 const (
+	MsgDiagnosticQueryFailed        = "monitor.err.diagnostic_query_failed"
 	MsgTenantNotFound               = "monitor.auth.tenant_not_found"
 	MsgInvalidExecutionID           = "monitor.execution.invalid_id"
 	MsgExecutionNotFound            = "monitor.execution.not_found"
+	MsgExecutionOwnerUnavailable    = "monitor.execution.owner_unavailable"
 	MsgInvalidRuntimeMetricDuration = "monitor.statistics.invalid_runtime_metric_duration"
 	MsgModuleNotFound               = "monitor.health.module_not_found"
 	MsgInvalidAlertID               = "monitor.alert.invalid_id"

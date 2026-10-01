@@ -264,3 +264,12 @@ other = "The target must be an active tenant user membership and an active engin
 other = "Expired or revoked delegations are read-only and cannot be restored or revoked again"
 [system.engine_access_delegation.expiry_required]
 other = "Explicitly specify a future expiry within the target membership validity"
+
+[system.module.runtime_log_invalid]
+other = "Invalid runtime log query"
+
+[system.module.runtime_log_disabled]
+other = "Runtime logs are not configured"
+
+[system.module.runtime_log_unavailable]
+other = "Runtime log query is temporarily unavailable"

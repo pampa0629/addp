@@ -22,7 +22,6 @@ func LoggingMiddleware() gin.HandlerFunc {
 			"request_id", reqID,
 			"method", c.Request.Method,
 			"path", c.Request.URL.Path,
-			"query", c.Request.URL.RawQuery,
 			"client_ip", c.ClientIP(),
 			"user_agent", c.Request.UserAgent(),
 		)

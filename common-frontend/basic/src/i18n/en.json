@@ -1,5 +1,37 @@
 {
   "common": {
+    "executionFailure": {
+      "permission_denied": "Insufficient read or execution permission",
+      "timeout": "Execution timed out",
+      "cancelled": "Execution cancelled",
+      "connection_failed": "Connection failed",
+      "resource_exhausted": "Runtime resources exhausted",
+      "invalid_input": "Invalid input or syntax",
+      "execution_failed": "Execution failed; inspect domain diagnostics in the task owner"
+    },
+    "executionSteps": {
+      "attemptUnverified": "This execution was retried. Stored steps do not identify their attempt and cannot establish progress for the current attempt",
+      "title": "Execution steps",
+      "current": "Current phase",
+      "unrecorded": "Step history was not recorded",
+      "step": "Step",
+      "status": "Status",
+      "started": "Started at",
+      "ended": "Completed",
+      "duration": "Duration",
+      "error": "Failure reason",
+      "truncated": "Diagnostic records exceed the display budget; only part is shown",
+      "states": {
+        "pending": "Pending",
+        "running": "Running",
+        "success": "Succeeded",
+        "failed": "Failed",
+        "timeout": "Timed out",
+        "cancelled": "Cancelled",
+        "skipped": "Skipped",
+        "unknown": "Not recorded"
+      }
+    },
     "export": {
       "title": "Export All Results",
       "format": "Export format",

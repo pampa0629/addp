@@ -22,7 +22,7 @@ import (
 func main() {
 	// 加载根目录统一的环境变量
 	commonConfig.LoadEnv()
-	commonConfig.InitLogger("gateway.log", nil)
+	commonConfig.InitLogger(nil)
 
 	// 加载配置
 	cfg := config.Load()

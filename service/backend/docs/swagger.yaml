@@ -225,6 +225,28 @@ definitions:
       space:
         type: string
     type: object
+  execution.ReadGrant:
+    properties:
+      own_ad_hoc:
+        type: boolean
+      task_history:
+        type: boolean
+      task_type:
+        type: string
+    type: object
+  execution.ReadScope:
+    properties:
+      grants:
+        items:
+          $ref: '#/definitions/execution.ReadGrant'
+        type: array
+      module:
+        type: string
+      principal_id:
+        type: integer
+      tenant_id:
+        type: integer
+    type: object
   format.Layout:
     enum:
     - single
@@ -2620,6 +2642,27 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - service.definition.read
+  /execution-read-scope:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/execution.ReadScope'
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取执行读取范围 | Get execution read scope
+      tags:
+      - Execution diagnostics
+      x-addp-auth-mode: authenticated
   /graph:
     get:
       parameters:

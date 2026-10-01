@@ -1,4 +1,4 @@
-export async function mockModuleQueryAPI(page) {
+export async function mockModuleQueryAPI(page, { logPermission = false, now = Date.now } = {}) {
   const queries = []
   await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
   await page.route('**/module-health/**', route => route.fulfill({ json: { status: 'ready' } }))
@@ -17,7 +17,7 @@ export async function mockModuleQueryAPI(page) {
     if (url.pathname.endsWith('/users/me')) return reply({ id: '1', display_name: 'Module reader' })
     if (url.pathname.endsWith('/auth/context')) return reply({
       principal: { id: '1', principal_type: 'user' }, context: { type: 'platform' },
-      authorization: { role_assignments: [{ scope: { type: 'platform' }, permissions: ['platform.module.read'] }] }
+      authorization: { role_assignments: [{ scope: { type: 'platform' }, permissions: ['platform.module.read', ...(logPermission ? ['platform.module_log.read'] : [])] }] }
     })
     if (url.pathname.endsWith('/platform/modules')) return reply({ modules: [
       { id: 1, module_name: 'manager', route_prefix: '/manager', enabled: true, version: 1, instances: [] }
@@ -34,8 +34,9 @@ export async function mockModuleQueryAPI(page) {
         module_url: `http://${params.registered_host || 'manager.local'}:8081`,
         host_node_name: params.node_name || 'host-a', status: params.status || 'up',
         stop_reason: params.stop_reason || '',
-        lease_expires_at: new Date(Date.now() + (params.status === 'down' ? -1000 : 60000)).toISOString(),
-        process_started_at: new Date(Date.now() - 65000).toISOString()
+        lease_expires_at: new Date(now() + (params.status === 'down' ? -1000 : 60000)).toISOString(),
+        process_started_at: new Date(now() - 65000).toISOString(),
+        stopped_at: params.status === 'down' ? new Date(now() - 60000).toISOString() : null
       }))
       return reply({ data, total: 45, page: pageNumber, page_size: pageSize })
     }

@@ -2,6 +2,8 @@ package repository
 
 import (
 	"context"
+	"github.com/addp/common/execution"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -78,6 +80,7 @@ WITH windowed AS (
       AND created_at >= ?
       AND created_at <= ?
       AND (? = '' OR module = ?)
+      AND /*EXECUTION_READ_SCOPE*/
 ),
 aggregated AS (
     SELECT
@@ -111,6 +114,7 @@ current_state AS (
     WHERE tenant_id = ?
       AND status IN ('pending', 'running')
       AND (? = '' OR module = ?)
+      AND /*EXECUTION_READ_SCOPE*/
     GROUP BY module, task_type, execution_boundary
 )
 SELECT
@@ -140,8 +144,12 @@ FULL OUTER JOIN current_state c
 ORDER BY module, task_type, execution_boundary`
 
 	var rows []ExecutionRuntimeMetricRow
-	err := r.db.WithContext(ctx).Raw(
-		query,
+	predicate, readArgs := execution.ReadPredicate(ctx)
+	if predicate == "" {
+		predicate = "1 = 1"
+	}
+	scopedQuery := strings.ReplaceAll(query, "/*EXECUTION_READ_SCOPE*/", predicate)
+	args := []interface{}{
 		windowEndedAt.UTC(),
 		windowEndedAt.UTC(),
 		tenantID,
@@ -149,9 +157,14 @@ ORDER BY module, task_type, execution_boundary`
 		windowEndedAt.UTC(),
 		module,
 		module,
+	}
+	args = append(args, readArgs...)
+	args = append(args,
 		tenantID,
 		module,
 		module,
-	).Scan(&rows).Error
+	)
+	args = append(args, readArgs...)
+	err := r.db.WithContext(ctx).Raw(scopedQuery, args...).Scan(&rows).Error
 	return rows, err
 }

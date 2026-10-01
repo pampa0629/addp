@@ -225,3 +225,11 @@ bash scripts/prod/start.sh
 ### Backend 与 Worker 启动顺序
 
 System Backend 先完成公共 schema 初始化。各模块 Backend 并行迁移自身 schema 并达到 `/health/ready` 后，各自的 Worker 才启动；不同模块不互相等待。Compose 使用对应 Backend 的 `service_healthy` 条件，开发脚本使用按模块的并发等待任务。Worker 初始化不执行平台 schema DDL，独立启动时必须通过模块及公共 schema 版本校验。结构升级前先停止相关 Worker 领取任务并结束在途任务，禁止旧 Worker 与新 schema 混跑。
+
+## 模块实例运行日志部署
+
+标准 Infra 包含 Loki、Alloy、独立授权代理和节点源清理器；`scripts/infra/up.sh` 负责初始化独立日志 bucket/账号与 Loki 卷权限，`status.sh` 分别显示组件健康和当前链路探针结果。应用按标准生命周期启动，由共享接收器关联进程身份和输出。Go/Python 应用不再各自写固定模块日志文件。
+
+System 平台系统管理员可在“模块管理 → 服务实例 → 查看日志”按实例查看。权限迁移会失效受影响管理员的旧授权会话，需要重新登录。应用重启不删除日志 Infra；Docker 和本机开发都写受控节点源目录，不通过 Docker Socket 或远端任意路径读取日志。普通 `docker logs` 主要用于容器入口和日志设施自身错误，模块正文以本入口为准。
+
+日志限额、7 天集中保留和已知丢失边界见 [运行日志设计](../next/ADDP模块服务运行日志设计.md)；备份范围和标准验证见 [Infra 指南](../../scripts/infra/README.md#模块实例运行日志)。

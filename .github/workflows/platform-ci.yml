@@ -461,6 +461,7 @@ jobs:
           - module: monitor
             name: Monitor
             target: test-monitor-frontend
+            playwright: true
           # 同时覆盖编排编辑器交互和关联编排路由（根 Makefile 标准入口）。
           - module: ontology
             name: Ontology

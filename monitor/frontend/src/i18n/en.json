@@ -90,7 +90,6 @@
         "completed_at": "Completed At",
         "execution_tree": "Execution Tree",
         "metadata": "Execution Metadata",
-        "raw_metadata": "View Raw Metadata",
         "lineage": {
           "title": "Inputs and Outputs",
           "description": "Resources actually read and results produced by this execution",
@@ -120,6 +119,14 @@
           }
         },
         "metadata_fields": {
+          "catalog_nodes_scanned": "Catalog nodes scanned",
+          "items_scanned": "Items scanned",
+          "fields_scanned": "Fields scanned",
+          "finding_count": "Findings",
+          "quality_score": "Quality score",
+          "runtime_status": "Runtime status",
+          "runtime_execution_id": "Runtime execution ID",
+          "runtime_error_code": "Runtime error code",
           "tile_generation_target": "Tile generation target",
           "vector_materialized_view_target": "Vector materialized view target",
           "geometry_column": "Geometry column",
@@ -252,9 +259,6 @@
           }
         },
         "result": "Execution Result",
-        "workflow_result": "Workflow Calculation Result",
-        "workflow_result_saved": "Saved to data engine",
-        "workflow_result_runtime_only": "This run only",
         "error": "Error Details",
         "open_task_definition": "Open task definition",
         "open_task_unavailable": "No task definition entry is available for this execution"

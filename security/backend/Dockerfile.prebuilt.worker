@@ -7,3 +7,6 @@ WORKDIR /app
 COPY dist/${BUILD_TYPE}-${GOOS}-${BUILD_ARCH}/security-worker ./worker
 RUN chmod +x ./worker
 CMD ["./worker"]
+
+COPY dist/${BUILD_TYPE}-${GOOS}-${BUILD_ARCH}/runtime-log /app/runtime-log
+ENTRYPOINT ["/app/runtime-log", "launch", "--module", "security", "--role", "worker", "--"]

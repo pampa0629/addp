@@ -516,6 +516,9 @@ check_service_changed() {
             fi
 
             comparison_time=$(stat -f "%m" "$binary_path" 2>/dev/null || echo "0")
+            local receiver_time
+            receiver_time=$(stat -f "%m" "dist/${BUILD_TYPE:-release}-linux-${arch}/runtime-log" 2>/dev/null || echo 0)
+            [ "$receiver_time" -le "$comparison_time" ] || comparison_time="$receiver_time"
 
             # Manager backend image also packages declarative preview/content plugins.
             # Rebuild the image when plugin JSON/Dockerfile changes even if the Go binary is cached.
@@ -559,6 +562,16 @@ check_service_changed() {
     esac
 
     # Compare with last build time
+    case "$service" in
+      *-backend|*-worker|gateway)
+        local receiver_arch receiver_path receiver_time
+        receiver_arch=$(echo "$BUILD_PLATFORMS" | sed 's|linux/||' | cut -d',' -f1)
+        receiver_path="dist/${BUILD_TYPE:-release}-linux-${receiver_arch}/runtime-log"
+        [ -f "$receiver_path" ] || return 1
+        receiver_time=$(stat -f "%m" "$receiver_path" 2>/dev/null || echo 0)
+        [ "$receiver_time" -le "$comparison_time" ] || comparison_time="$receiver_time"
+        ;;
+    esac
     if [ "$comparison_time" -gt "$last_build_time" ]; then
         echo -e "${YELLOW}Changes detected (source newer than last build), rebuilding...${NC}"
         return 1  # Need to rebuild

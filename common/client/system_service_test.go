@@ -665,6 +665,7 @@ func TestSystemServiceClientReadsRuntimeDescriptorsWithoutLegacyHeaders(t *testi
 
 func TestModuleLifecycleCollectsRuntimeNodeIdentity(t *testing.T) {
 	t.Setenv("ADDP_HOST_NODE_NAME", " host-a ")
+	t.Setenv("ADDP_HOST_NODE_IPS", "192.0.2.7,2001:db8::1")
 	hostname, err := os.Hostname()
 	if err != nil {
 		t.Fatal(err)
@@ -675,7 +676,10 @@ func TestModuleLifecycleCollectsRuntimeNodeIdentity(t *testing.T) {
 	if registration.HostNodeName != "host-a" || registration.RuntimeHostname != strings.TrimSpace(hostname) {
 		t.Fatalf("node identity = %#v", registration)
 	}
-	if request.HostNodeName != "incorrect-host" {
+	if len(registration.HostNodeIPs) != 2 || registration.HostNodeIPs[1] != "2001:db8::1" {
+		t.Fatalf("IPs=%v", registration.HostNodeIPs)
+	}
+	if request.HostNodeName != "incorrect-host" || len(request.HostNodeIPs) != 0 {
 		t.Fatal("caller request was mutated")
 	}
 	t.Setenv("ADDP_HOST_NODE_NAME", "")

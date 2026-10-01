@@ -141,6 +141,28 @@ definitions:
       valid_until:
         type: string
     type: object
+  execution.ReadGrant:
+    properties:
+      own_ad_hoc:
+        type: boolean
+      task_history:
+        type: boolean
+      task_type:
+        type: string
+    type: object
+  execution.ReadScope:
+    properties:
+      grants:
+        items:
+          $ref: '#/definitions/execution.ReadGrant'
+        type: array
+      module:
+        type: string
+      principal_id:
+        type: integer
+      tenant_id:
+        type: integer
+    type: object
   github_com_addp_security_internal_models.AssessmentComponentOption:
     properties:
       component:
@@ -2616,6 +2638,27 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - security.finding.read
+  /execution-read-scope:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/execution.ReadScope'
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取执行读取范围 | Get execution read scope
+      tags:
+      - Execution diagnostics
+      x-addp-auth-mode: authenticated
   /findings:
     get:
       description: 分页返回当前租户不含原始敏感值的不可变检测发现、目标资源快照、可选初审记录，以及由当前检测绑定、正式评估、默认保护规则和真实出口投影批量组装的只读解释链；当前组件结构仍匹配正式评估时，解释在敏感或已撤销状态下都返回精确

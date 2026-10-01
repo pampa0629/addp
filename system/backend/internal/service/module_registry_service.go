@@ -9,6 +9,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	commonconfig "github.com/addp/common/config"
 	commonconfiguration "github.com/addp/common/configuration"
 	"github.com/addp/common/logger"
 	commonmodels "github.com/addp/common/models"
@@ -41,6 +42,11 @@ func (s *ModuleRegistryService) Register(req *models.ModuleRegistrationRequest) 
 	req.InstanceID = strings.TrimSpace(req.InstanceID)
 	req.HostNodeName = strings.TrimSpace(req.HostNodeName)
 	req.RuntimeHostname = strings.TrimSpace(req.RuntimeHostname)
+	addresses, err := commonconfig.NormalizeHostNodeIPs(req.HostNodeIPs)
+	if err != nil {
+		return fmt.Errorf("%w: invalid host node IP", ErrInvalidModuleRegistration)
+	}
+	req.HostNodeIPs = addresses
 	if utf8.RuneCountInString(req.HostNodeName) > 255 || utf8.RuneCountInString(req.RuntimeHostname) > 255 {
 		return fmt.Errorf("%w: node names must not exceed 255 characters", ErrInvalidModuleRegistration)
 	}
@@ -132,6 +138,14 @@ func (s *ModuleRegistryService) ListModuleRuntimeInstances(
 	filter.ModuleName = strings.TrimSpace(filter.ModuleName)
 	filter.RegisteredHost = strings.ToLower(strings.TrimSpace(filter.RegisteredHost))
 	filter.NodeName = strings.ToLower(strings.TrimSpace(filter.NodeName))
+	filter.NodeIP = strings.TrimSpace(filter.NodeIP)
+	if filter.NodeIP != "" {
+		addresses, err := commonconfig.NormalizeHostNodeIPs([]string{filter.NodeIP})
+		if err != nil {
+			return nil, 0, ErrInvalidModuleRuntimeInstanceQuery
+		}
+		filter.NodeIP = addresses[0]
+	}
 	filter.Role = strings.ToLower(strings.TrimSpace(filter.Role))
 	filter.Status = strings.ToLower(strings.TrimSpace(filter.Status))
 	filter.StopReason = strings.ToLower(strings.TrimSpace(filter.StopReason))
@@ -385,7 +399,8 @@ func convertRuntimeInstanceInfoWithStatus(instance *models.ModuleRuntimeInstance
 		ID: instance.ID, InstanceID: instance.InstanceID, Role: instance.Role,
 		ModuleURL: instance.ModuleURL, HealthCheckURL: instance.HealthCheckURL, RegisteredHost: instance.RegisteredHost,
 		HostNodeName: instance.HostNodeName, RuntimeHostname: instance.RuntimeHostname,
-		Status: status, LastHeartbeat: instance.LastHeartbeat, LeaseExpiresAt: instance.LeaseExpiresAt,
+		HostNodeIPs: append([]string{}, instance.HostNodeIPs...),
+		Status:      status, LastHeartbeat: instance.LastHeartbeat, LeaseExpiresAt: instance.LeaseExpiresAt,
 		ProcessStartedAt: instance.ProcessStartedAt, StoppedAt: instance.StoppedAt, StopReason: instance.StopReason,
 		Metadata: metadata, RegisteredAt: instance.RegisteredAt, UpdatedAt: instance.UpdatedAt,
 	}

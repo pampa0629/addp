@@ -124,6 +124,20 @@ Role、Assignment、Membership、组织关系或 Principal 状态变化时，数
 
 同一 Engine、同一 Membership 的有效区间不得重叠；数据库拒绝身份、范围、期限、授予事实的修改，以及撤销历史的恢复／删除。写入与安全审计在同一事务完成，并通过既有 IAM Repository 推进接收主体授权版本、撤销旧会话。读取派生 `effective/expired/unavailable/revoked`，不得把持久 `active` 等同于当前有效管理资格；尚未实施的源读取规则不能消费此表绕过最终资源授权。
 
+### 源授权办理协调底座
+
+源授权办理协调底座使用 `system.engine_access_fulfillment_outcomes` 保存同次请求唯一、不可改写的 `accepted` 或 `closed` 结果。它不是 Grant、批准要求或访问凭据；没有结果与已关闭严格不同。请求编号绑定租户、机器主体、精确结构化路径、决定引用、批准要求版本及参数；System 数据库墙钟产生受理时间及不超过原授权到期的 5 分钟截止时间。结果与最小审计同事务，重试只返回原结果。内部仓储底座不暴露 HTTP 接口；真实业务决定、资格核验和可信调用贯通前，不能用它签发内容访问。
+
+内部核清读取使用独立只读事务，拒绝在受理写事务中读取自身未提交结果；与仲裁共用唯一的完整绑定匹配路径，不取请求或目标仲裁锁。不存在返回未找到，参数不同返回绑定冲突，数据库错误原样保留；查询均不创建关闭结果、不追加办理审计。退出、更换批准要求版本或原窗口到期不改变历史查询结果，也不因此重新授予或续期。跨模块可信调用与 Catalog 待核清事实的解除消费者尚未实施。
+
+完整 `binding` 同时绑定原操作人的 User Principal、Tenant Membership 和授权版本，以十进制字符串保留 bigint 精度，不保存 User Token 或 Role／Permission／责任副本。首次受理通过 IAM Repository 的事务内 `LockUserAuthorizationSource` 按 Principal → Membership → Tenant 取得共享行锁，再进入请求和目标边界；核验当前对象类型、状态、成员身份范围、授权版本和有效期，业务核验后重新检查数据库墙钟。共享锁既阻止 IAM 状态修改，又兼容审计外键引用检查，避免身份写锁与目标锁的循环等待；原管理委派写事务不改用共享锁。原操作人失效不阻止同参历史核清或持久关闭，但不得据历史结果新建受理。此底线仅核验当前身份，不证明这些字段确实来自该用户操作；owner 持久来源核验及独立功能 Permission／管理委派消费者仍待贯通，无新增身份凭据或接口。
+
+`system.engine_access_approval_requirements` 保存精确源目标的 `catalog/independent` 要求及并发版本，既不是 Grant，也不保存 Catalog 责任副本或审批人白名单。初始化必须显式执行；缺失不能推导为允许独立批准。要求变更与新受理使用同一目标事务锁，新 Catalog 受理必须匹配当前模式和版本；退出不改变之前已受理的原结果，重新启用也不能复用旧版本新建受理。承接账号只写入当次交接审计，后续批准仍须核验当前独立批准 Permission 与有效管理委派。迁移 000168 不自动初始化存量目标、不创建 Permission 或真实 Grant；当前内部核验回调不是已落地的生产资格核验。
+
+迁移 `000170_catalog_sharing_decision_permission` 随 Catalog 真实业务确认 API 发布独立 `catalog.sharing_decision.create`：仅 Tenant Scope、high risk、不可委托、允许租户定制。它只登记功能权限，不默认分配给内置管理员或任何 Role，不新增 Assignment 或数据 Grant、不修改已有主体授权版本。Catalog 仍须以该权限与当前业务负责人资格取交集；System 受理／核清消费者和实际源数据规则尚未贯通。前向升级和重复执行由既有 System IAM PostgreSQL 门禁覆盖，不操作开发业务库的迁移状态。
+
+普通只读共享显式选择 `expiry_mode=at_time|until_revoked`，受理结果和完整 binding 都保存该模式，`grant_expires_at` 在长期有效时为 NULL。指定到期仍须为未来时间；长期有效的自动办理窗口仍严格为原受理时间后 5 分钟。迁移 `000172_engine_access_fulfillment_expiry_mode` 在排他表锁及同一事务内暂时撤下该表 UPDATE/DELETE 不可变保护，将存量限时记录无损标记为 `at_time`、为 binding 补齐模式，再恢复保护及完整日期／截止时间约束；原到期、受理时间、截止时间、身份和审计不变。不改写已执行 167，不增加实际 Grant、默认权限或授权版本变化。长期有效不改变临时接入规则和管理委派的强制到期契约。
+
 ### 6.1 Context Selection
 
 `context_selection_tickets` 保存登录后的短期上下文候选快照。Ticket 只使用一次，消费时必须重新校验 Principal、Membership、Platform Assignment、认证强度和授权版本。

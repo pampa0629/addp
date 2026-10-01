@@ -70,6 +70,10 @@ func RegisterIAMManagementRoutes(api *gin.RouterGroup, runtime *IAMRuntime, modu
 	if err != nil {
 		return err
 	}
+	platformLogRead, err := permission("platform.module_log.read")
+	if err != nil {
+		return err
+	}
 	platformModuleUpdate, err := permission("platform.module.update")
 	if err != nil {
 		return err
@@ -84,6 +88,7 @@ func RegisterIAMManagementRoutes(api *gin.RouterGroup, runtime *IAMRuntime, modu
 		{
 			modules.GET("", platformModuleRead, moduleHandler.ListModulesPlatform)
 			modules.GET("/:module_name", platformModuleRead, moduleHandler.GetModulePlatform)
+			modules.GET("/:module_name/instances/:instance_id/logs", platformLogRead, moduleHandler.GetModuleRuntimeLogs)
 			modules.PUT("/:module_name", platformModuleUpdate, moduleHandler.UpdateModulePlatform)
 		}
 		platform.GET("/module-instances", platformModuleRead, moduleHandler.ListModuleRuntimeInstancesPlatform)

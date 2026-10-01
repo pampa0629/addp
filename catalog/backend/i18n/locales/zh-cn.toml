@@ -1,6 +1,17 @@
 [catalog.error.invalid_params]
 other = "请求参数无效"
 
+[catalog.error.sharing_confirmation_forbidden]
+other = "需要当前有效业务负责人身份及独立共享确认权限；编目维护权限不能替代"
+[catalog.error.sharing_decision_conflict]
+other = "该共享确认编号已绑定其他参数，请读取原记录或使用新的编号"
+[catalog.error.sharing_target_unsupported]
+other = "当前目标须为有效且未弃用的已扫描数据库表，并能核对完整来源路径"
+[permissions.catalog.sharing_decision.create.name]
+other = "确认业务共享"
+[permissions.catalog.sharing_decision.create.description]
+other = "以当前业务负责人身份明确确认一次精确只读共享；不直接授予数据访问"
+
 [catalog.error.entry_not_found]
 other = "企业目录条目不存在"
 

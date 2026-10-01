@@ -51,7 +51,7 @@ class OnlineHostGateTest(unittest.TestCase):
         )
         self._write_executable(
             "scripts/dev/stop-exact-process.sh",
-            '#!/bin/bash\nprintf "stop-exact:%s\\n" "$1" >> "$ADDP_TEST_COMMAND_LOG"\n',
+            '#!/bin/bash\nprintf "stop-exact:%s\\n" "$*" >> "$ADDP_TEST_COMMAND_LOG"\n',
         )
         self._write_executable(
             "scripts/dev/stop.sh",
@@ -169,8 +169,16 @@ class OnlineHostGateTest(unittest.TestCase):
                 report = {
                     "schema_version": "addp.module-lifecycle-process/v1",
                     "phase": phase,
-                    "manager": {"instance_id": "manager-online-process"},
+                    "manager": {"instance_id": "manager-restarted-process" if phase in
+                                {"manager-restarted", "manager-gracefully-stopped"} else "manager-online-process"},
                 }
+                if os.environ.get("ADDP_TEST_FAIL_PHASE") == phase:
+                    raise SystemExit(1)
+                if phase in {"system-recovered", "manager-abnormally-stopped", "manager-restarted", "manager-gracefully-stopped"}:
+                    baseline = pathlib.Path(sys.argv[sys.argv.index("--baseline") + 1])
+                    assert baseline.is_file()
+                if phase == "manager-gracefully-stopped":
+                    assert sys.argv[sys.argv.index("--expected-instance-id") + 1] == "manager-restarted-process"
                 output.write_text(json.dumps(report) + "\\n", encoding="utf-8")
                 with open(os.environ["ADDP_TEST_COMMAND_LOG"], "a", encoding="utf-8") as log:
                     log.write(f"observe:{phase}\\n")
@@ -206,6 +214,8 @@ class OnlineHostGateTest(unittest.TestCase):
                 ASSET_URL=http://127.0.0.1:8086
                 PORTAL_URL=http://127.0.0.1:8088
                 MANAGER_SERVICE_CLIENT_SECRET=manager-online-secret-0123456789abcdef
+                ADDP_HOST_NODE_IPS=192.0.2.10,2001:db8::10
+                ADDP_ONLINE_TEST_PLATFORM_ACCESS_TOKEN=addp_at_online_platform
                 ADDP_ONLINE_TEST_USER_ACCESS_TOKEN=addp_at_online
                 ADDP_ONLINE_TEST_TENANT_ADMIN_ACCESS_TOKEN=addp_at_online_tenant_admin
                 ADDP_ONLINE_TEST_APPROVER_ACCESS_TOKEN=addp_at_online_approver
@@ -328,7 +338,12 @@ class OnlineHostGateTest(unittest.TestCase):
                 "observe:system-interrupted",
                 "start:--exact-process -system",
                 "observe:system-recovered",
+                "stop-exact:--force -manager",
+                "observe:manager-abnormally-stopped",
+                "start:--exact-process -manager",
+                "observe:manager-restarted",
                 "stop-exact:-manager",
+                "observe:manager-gracefully-stopped",
                 "make:test-online:ONLINE_SUITE=module-registry-recovery",
                 "stop",
             ],
@@ -342,6 +357,26 @@ class OnlineHostGateTest(unittest.TestCase):
         self.assertTrue(
             (self.artifacts / "module-lifecycle-system-recovered.json").is_file()
         )
+
+    def test_fault_phase_failure_still_cleans_up_and_fails_report(self):
+        result = self._run("module-registry-recovery", ADDP_TEST_FAIL_PHASE="manager-abnormally-stopped")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.command_log.read_text().splitlines()[-1], "stop")
+        summary = (self.artifacts / "summary.txt").read_text()
+        self.assertIn("result=failed", summary)
+        self.assertIn("cleanup=passed", summary)
+        self.assertNotIn("process_lifecycle=passed", summary)
+
+    def test_module_observer_configuration_required_before_lifecycle(self):
+        original = self.env_file.read_text()
+        for variable in ("ADDP_HOST_NODE_IPS", "ADDP_ONLINE_TEST_PLATFORM_ACCESS_TOKEN"):
+            with self.subTest(variable=variable):
+                self.env_file.write_text("\n".join(line for line in original.splitlines()
+                                                     if not line.startswith(variable + "=")) + "\n")
+                result = self._run("module-registry-recovery")
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(variable, result.stderr)
+                self.assertFalse(self.command_log.exists())
 
     def test_metric_lifecycle_has_no_self_hosted_route(self) -> None:
         result = self._run("metric-service-revision-lifecycle", "--check-only")
@@ -761,14 +796,14 @@ class ExactProcessControlTest(unittest.TestCase):
                 process.wait(timeout=2)
         self.temporary.cleanup()
 
-    def _managed_process(self, module: str) -> subprocess.Popen[bytes]:
+    def _managed_process(self, module: str, *, cwd=None) -> subprocess.Popen[bytes]:
         binary = self.repository / f".dev-bins/addp-{module}"
         binary.write_text(
-            "#!/usr/bin/env bash\ntrap 'exit 0' TERM INT\nwhile true; do sleep 1; done\n",
+            f"#!/usr/bin/env bash\ntrap 'touch {self.repository}/term-observed; exit 0' TERM INT\nwhile true; do sleep 1; done\n",
             encoding="utf-8",
         )
         binary.chmod(0o755)
-        process = subprocess.Popen([str(binary)], cwd=self.repository)
+        process = subprocess.Popen([str(binary)], cwd=cwd or self.repository)
         self.processes.append(process)
         (self.repository / f".dev-pids/{module}.pid").write_text(
             f"{process.pid}\n", encoding="utf-8"
@@ -776,11 +811,11 @@ class ExactProcessControlTest(unittest.TestCase):
         time.sleep(0.05)
         return process
 
-    def _run(self, selector: str, *, online_host: str = "1") -> subprocess.CompletedProcess[str]:
+    def _run(self, selector: str, *, online_host: str = "1", force: bool = False) -> subprocess.CompletedProcess[str]:
         environment = dict(os.environ)
         environment["ADDP_ONLINE_HOST"] = online_host
         return subprocess.run(
-            ["bash", "scripts/dev/stop-exact-process.sh", selector],
+            ["bash", "scripts/dev/stop-exact-process.sh", *(["--force"] if force else []), selector],
             cwd=self.repository,
             env=environment,
             capture_output=True,
@@ -799,6 +834,23 @@ class ExactProcessControlTest(unittest.TestCase):
         self.assertIsNone(system.poll())
         self.assertFalse((self.repository / ".dev-pids/manager.pid").exists())
         self.assertTrue((self.repository / ".dev-pids/system.pid").exists())
+
+    def test_force_stop_skips_term_and_keeps_other_process_alive(self):
+        manager = self._managed_process("manager")
+        gateway = self._managed_process("gateway")
+        result = self._run("-manager", force=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(manager.wait(timeout=2), -9)
+        self.assertFalse((self.repository / "term-observed").exists())
+        self.assertFalse((self.repository / ".dev-pids/manager.pid").exists())
+        self.assertIsNone(gateway.poll())
+
+    def test_force_stop_rejects_managed_name_from_foreign_checkout(self):
+        manager = self._managed_process("manager", cwd=self.repository.parent)
+        result = self._run("-manager", force=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("does not belong to this checkout", result.stderr)
+        self.assertIsNone(manager.poll())
 
     def test_exact_stop_rejects_non_online_host_before_stopping(self) -> None:
         manager = self._managed_process("manager")

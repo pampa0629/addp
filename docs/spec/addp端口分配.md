@@ -312,3 +312,7 @@ make ports-validate
 2. **Standard Frontend (5181)** 和 **Model Frontend (5182)** 开发端口不得冲突
 3. 开发首选端口由 `.env` 与 Vite 配置协调；容器内部端口由 Compose 与 Nginx 路由协调，不要求等于开发首选端口
 4. Gateway 需要正确配置 Standard 和 Model 服务的路由映射
+
+## 运行日志基础设施
+
+日志查询代理内部端口 3100、本地宿主首选 13100（`LOKI_PORT`）；Alloy 内部和宿主首选 12345（`ALLOY_PORT`）。两者宿主机仅绑定回环地址，真实映射由标准 Infra 入口解析。Loki 存储端点只位于专用内部网络，不映射宿主端口。

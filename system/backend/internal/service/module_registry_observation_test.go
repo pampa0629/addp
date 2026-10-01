@@ -332,3 +332,58 @@ func TestRuntimeNodesLocateWorkersWithoutChangingRoutingFacts(t *testing.T) {
 		t.Fatal("backend node change altered module version or routing revision")
 	}
 }
+
+func TestHostNodeIPsAreIndependentCanonicalRuntimeObservations(t *testing.T) {
+	registry, repo, _ := newObservationRegistry(t)
+	request := &models.ModuleRegistrationRequest{ModuleName: "meta", InstanceID: "worker-ip", Role: "worker", RoutePrefix: "/meta", ProcessStartedAt: time.Now(), HostNodeName: "host-a", HostNodeIPs: []string{" 192.0.2.7 ", "2001:0DB8::1", "::ffff:192.0.2.7"}}
+	if err := registry.Register(request); err != nil {
+		t.Fatal(err)
+	}
+	revision, err := repo.GetRegistryRevision()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, address := range []string{"192.0.2.7", "2001:db8::1", "2001:0DB8:0:0::1", "::ffff:192.0.2.7"} {
+		rows, total, err := registry.ListModuleRuntimeInstances(models.ModuleRuntimeInstanceFilter{NodeIP: address, NodeName: "HOST-A", ModuleName: "meta", Role: "worker", Status: "up", Page: 1, PageSize: 10})
+		if err != nil || total != 1 || len(rows) != 1 || len(rows[0].HostNodeIPs) != 2 || rows[0].ModuleURL != "" || rows[0].RegisteredHost != "" {
+			t.Fatalf("IP=%q rows=%#v total=%d err=%v", address, rows, total, err)
+		}
+	}
+	for _, filter := range []models.ModuleRuntimeInstanceFilter{{NodeIP: "192.0.2.70"}, {NodeIP: "192.0.2.7", RegisteredHost: "192.0.2.7"}, {NodeIP: "192.0.2.7", NodeName: "other"}} {
+		filter.Page = 1
+		filter.PageSize = 10
+		_, total, err := registry.ListModuleRuntimeInstances(filter)
+		if err != nil || total != 0 {
+			t.Fatalf("filter=%#v total=%d err=%v", filter, total, err)
+		}
+	}
+	request.HostNodeIPs = []string{"192.0.2.8", "2001:db8::2"}
+	if err := registry.Register(request); err != nil {
+		t.Fatal(err)
+	}
+	_, oldTotal, err := registry.ListModuleRuntimeInstances(models.ModuleRuntimeInstanceFilter{NodeIP: "192.0.2.7", Page: 1, PageSize: 10})
+	if err != nil || oldTotal != 0 {
+		t.Fatalf("old IP remains: %d %v", oldTotal, err)
+	}
+	after, err := repo.GetRegistryRevision()
+	if err != nil || after != revision {
+		t.Fatalf("node IP changed routing revision: %d->%d %v", revision, after, err)
+	}
+	request.HostNodeIPs = nil
+	if err := registry.Register(request); err != nil {
+		t.Fatal(err)
+	}
+	module, err := registry.GetModule("meta")
+	if err != nil || module.Instances[0].HostNodeIPs == nil || len(module.Instances[0].HostNodeIPs) != 0 {
+		t.Fatalf("unknown IP=%#v err=%v", module, err)
+	}
+	for _, invalid := range []string{"localhost", "192.0.2.7:80", "fe80::1%en0", "192.0.2.0/24"} {
+		request.HostNodeIPs = []string{invalid}
+		if err := registry.Register(request); !errors.Is(err, ErrInvalidModuleRegistration) {
+			t.Fatalf("invalid registration %q: %v", invalid, err)
+		}
+		if _, _, err := registry.ListModuleRuntimeInstances(models.ModuleRuntimeInstanceFilter{NodeIP: invalid, Page: 1, PageSize: 10}); !errors.Is(err, ErrInvalidModuleRuntimeInstanceQuery) {
+			t.Fatalf("invalid query %q: %v", invalid, err)
+		}
+	}
+}

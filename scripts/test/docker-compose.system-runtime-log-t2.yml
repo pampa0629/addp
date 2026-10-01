@@ -1,0 +1,90 @@
+services:
+  minio:
+    build:
+      context: ../..
+      dockerfile: scripts/infra/Dockerfile.minio
+    entrypoint: ["minio"]
+    command: ["server", "/data"]
+    environment:
+      MINIO_ROOT_USER: test-admin
+      MINIO_ROOT_PASSWORD: ${LOKI_TEST_SECRET}
+    volumes: ["minio_data:/data"]
+    networks: [backend]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9000/minio/health/live"]
+      interval: 2s
+      timeout: 2s
+      retries: 60
+  runtime-log-store-init:
+    build:
+      context: ../..
+      dockerfile: scripts/infra/Dockerfile.minio
+    entrypoint: ["/bin/sh", "/init-runtime-log-store.sh"]
+    environment:
+      LOKI_S3_ENDPOINT: http://minio:9000
+      LOKI_BUCKET: addp-runtime-logs-test
+      LOKI_S3_ACCESS_KEY: test-logs
+      LOKI_S3_SECRET_KEY: ${LOKI_TEST_SECRET}
+      MINIO_ROOT_USER: test-admin
+      MINIO_ROOT_PASSWORD: ${LOKI_TEST_SECRET}
+    volumes: ["../infra/init-runtime-log-store.sh:/init-runtime-log-store.sh:ro", "loki_data:/loki"]
+    networks: [backend]
+    depends_on:
+      minio:
+        condition: service_healthy
+  loki:
+    extends:
+      file: ../infra/runtime-logs.yml
+      service: loki
+    environment:
+      LOKI_S3_ENDPOINT: http://minio:9000
+      LOKI_BUCKET: addp-runtime-logs-test
+      LOKI_S3_ACCESS_KEY: test-logs
+      LOKI_S3_SECRET_KEY: ${LOKI_TEST_SECRET}
+    volumes: ["loki_data:/loki"]
+    networks: [backend]
+    restart: "no"
+    depends_on:
+      runtime-log-store-init:
+        condition: service_completed_successfully
+  runtime-log-api:
+    extends:
+      file: ../infra/runtime-logs.yml
+      service: runtime-log-api
+    ports: ["127.0.0.1::3100"]
+    networks: [backend, frontend]
+    depends_on: [loki]
+    restart: "no"
+  alloy:
+    ports: ["127.0.0.1::12345"]
+    extends:
+      file: ../infra/runtime-logs.yml
+      service: alloy
+    volumes:
+      - ${LOKI_TEST_SOURCE}:/var/log/addp:ro
+      - alloy_data:/var/lib/alloy
+    networks: [frontend]
+    restart: "no"
+    depends_on:
+      runtime-log-api:
+        condition: service_healthy
+  runtime-log-pruner:
+    build:
+      context: ../..
+      dockerfile: scripts/infra/Dockerfile.runtime-log
+    environment:
+      ADDP_RUNTIME_LOG_ROOT: /var/log/addp
+      ADDP_RUNTIME_LOG_SEGMENT_BYTES: 65536
+      ADDP_RUNTIME_LOG_INSTANCE_BYTES: 131072
+      ADDP_RUNTIME_LOG_NODE_BYTES: 1048576
+      ADDP_RUNTIME_LOG_SOURCE_HOURS: 1
+    volumes: ["${LOKI_TEST_SOURCE}:/var/log/addp"]
+    networks: [frontend]
+volumes:
+  minio_data:
+  loki_data:
+  alloy_data:
+networks:
+  backend:
+    internal: true
+  frontend:

@@ -8,6 +8,7 @@ source "${SCRIPT_DIR}/../infra/ports.sh"
 MOCK_PRESENT=0
 MOCK_FOREIGN=0
 MOCK_EXTRA_BUSY=''
+MOCK_LOGS_DOWN=0
 unset ADDP_ONLINE_HOST
 unset GITHUB_ACTIONS ADDP_LOCAL_CI_POSTGRES
 
@@ -17,6 +18,8 @@ mock_service() {
     addp-redis) echo redis ;;
     addp-falkordb) echo falkordb ;;
     addp-minio) echo minio ;;
+    addp-runtime-log-api) echo runtime-log-api ;;
+    addp-alloy) echo alloy ;;
     addp-meilisearch) echo meilisearch ;;
     addp-redpanda) echo redpanda ;;
     addp-kafka-connect) echo kafka-connect ;;
@@ -45,6 +48,7 @@ docker() {
           fi
           ;;
         *State.Running*)
+          if [ "$MOCK_LOGS_DOWN" = 1 ] && [[ "$service" = alloy || "$service" = runtime-log-api ]]; then echo false:unhealthy; return; fi
           if [[ "$format" == *State.Health* ]]; then echo 'true:healthy'; else echo true; fi
           ;;
       esac
@@ -55,6 +59,8 @@ docker() {
         addp-postgres:5432/tcp) echo '0.0.0.0:25432' ;;
         addp-redis:6379/tcp) echo '0.0.0.0:26379' ;;
         addp-falkordb:6379/tcp) echo '127.0.0.1:16479' ;;
+        addp-runtime-log-api:3100/tcp) echo '127.0.0.1:13100' ;;
+        addp-alloy:12345/tcp) echo '127.0.0.1:12345' ;;
         addp-minio:9000/tcp) echo '0.0.0.0:19000' ;;
         addp-minio:9001/tcp) echo '0.0.0.0:19001' ;;
         addp-meilisearch:7700/tcp) echo '0.0.0.0:17700' ;;
@@ -123,6 +129,14 @@ addp_infra_read_actual_ports
 [ "$POSTGRES_PORT" = 25432 ]
 [ "$REDIS_PORT" = 26379 ]
 addp_infra_ready
+MOCK_LOGS_DOWN=1
+if addp_infra_ready; then echo 'unhealthy logging was considered healthy' >&2; exit 1; fi
+addp_infra_ready core
+addp_infra_read_actual_ports
+[ -z "$LOKI_URL" ]
+[ -z "$LOKI_PORT" ]
+[ -z "$ALLOY_PORT" ]
+MOCK_LOGS_DOWN=0
 
 addp_infra_verify_test_postgres_target localhost 25432 addp_test
 addp_infra_verify_test_postgres_dsn 'postgres://addp:secret@127.0.0.1:25432/addp_iam_test?sslmode=disable'

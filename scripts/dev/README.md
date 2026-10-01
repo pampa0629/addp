@@ -83,7 +83,7 @@ bash scripts/dev/modtidy.sh
 
 指定单个模块启动时，脚本仍会统一启动公共依赖：System Backend、Meta Backend、Meta Worker、Gateway 和 Console。模块自己的前端和真实模块依赖在此基础上按需启动，例如 `-manager` 会额外启动 Transfer Backend / Worker。Engine Runtime 不属于模块启动依赖：`-manager`、`-develop`、`-service`、`-agent`、`-copilot`、`-gateway`、`-console` 都不会隐式拉起 DuckDB、Inference、Workflow 或 Jupyter Runtime；需要本地运行某个 Runtime 时使用其显式参数。无参数全量启动仍包含默认部署的 Runtime。SuperMap Workflow Engine 依赖预先构建的 iObjects C++ 基础镜像和许可，当前通过 System 引擎管理手动登记。
 
-`--exact-process` 与 `--wait-live` 不是日常开发参数，只允许 `ADDP_ONLINE_HOST=1` 的专用 Runner 使用。它们复用同一构建和正式二进制入口，只为 T4 控制 Manager → System → Gateway 的真实乱序；`stop-exact-process.sh` 同样受专用主机开关保护，并在发信号前验证 PID 对应目标 ADDP 二进制。普通模块启动仍只有上述自动依赖路径。
+`--exact-process` 与 `--wait-live` 不是日常开发参数，只允许 `ADDP_ONLINE_HOST=1` 的专用 Runner 使用。它们复用同一构建和正式二进制入口，只为 T4 控制 Manager → System → Gateway 的真实乱序；`stop-exact-process.sh` 同样受专用主机开关保护，并在发信号前验证 PID 对应当前 checkout 的目标 ADDP 二进制。`stop-exact-process.sh --force -manager` 直接发出 SIGKILL，用于异常退出验收；省略 `--force` 时先发送 SIGTERM，等待优雅退出。强制停止仅用于专用 Runner 的故障阶段。普通模块启动仍只有上述自动依赖路径。
 
 **执行步骤**:
 1. **Step 0**: Go 依赖检查(`go mod tidy`,可跳过)
@@ -110,8 +110,8 @@ SKIP_MODTIDY=1 bash scripts/dev/start.sh
 ```
 
 **日志位置**:
-- 所有日志: `logs/*.log`
-- 示例: `logs/system-backend.log`, `logs/manager-backend.log`, `logs/transfer-bounded-worker.log`, `logs/transfer-continuous-worker.log`, `logs/develop-backend.log`
+- 模块服务运行日志: `logs/runtime/<module>/<instance_id>/*.jsonl`；引擎和前端启动输出保留各自日志
+- 示例: `logs/runtime/system/<instance_id>/*.jsonl`、`logs/runtime/manager/<instance_id>/*.jsonl`；Worker 同样按独立实例分目录
 
 **PID 文件**:
 - 所有 PID: `.dev-pids/*.pid`
@@ -140,6 +140,7 @@ SKIP_MODTIDY=1 bash scripts/dev/start.sh
 **功能**: 智能重启服务。
 
 - 无参数、`-all` 或指定 Go 模块时：保持原有全局重启语义，先 `stop.sh` 再 `start.sh`。
+- 全局重启通过 `stop.sh` 统一停止 Python、Go 和 Runtime，保留 System 供注销；只有优雅退出超时后才强制终止工作区所属进程。
 - 只指定扩展服务参数时：只重启对应扩展服务，不停止整套 ADDP 环境。
 - `-all`、无参数和指定 Go 模块参数保留已有二进制及 Go 包缓存。Swagger 同步后，统一比较完整构建指纹：源码、共享依赖、嵌入资源、Go 版本、平台或构建参数变化才重新编译。服务进程仍全部按所选范围重启，未变化产物保留构建身份，新进程具有新的启动时间。
 - Swagger 对未变化的 Go 工作区输入和完整产物复用文档，输入或产物变化时重新生成；FastAPI 实时导出。需要生成的模块批量并行执行，并输出耗时，路由覆盖校验仍执行。所有生成任务结束后才进入编译，因为 `docs.go` 本身参与 Go 编译，不能与同一模块的生成任务同时执行。
@@ -258,8 +259,8 @@ Gateway (8000) - API 路由
 ### 服务启动失败
 
 ```bash
-# 1. 查看日志
-tail -f logs/system-backend.log
+# 1. 查看日志（INSTANCE_ID 设置为服务实例页面中的实际 ID）
+tail -f "logs/runtime/system/${INSTANCE_ID}"/*.jsonl
 
 # 2. 检查基础设施
 bash scripts/infra/status.sh
@@ -282,8 +283,8 @@ ps aux | grep "go run"
 # 2. 手动测试健康检查
 curl http://localhost:8180/health/ready
 
-# 3. 查看服务日志
-cat logs/system-backend.log
+# 3. 查看服务日志（INSTANCE_ID 设置为实际实例 ID）
+cat "logs/runtime/system/${INSTANCE_ID}"/*.jsonl
 ```
 
 ### 前端启动失败
@@ -326,7 +327,7 @@ vim system/backend/internal/service/user_service.go
 bash scripts/dev/restart.sh
 
 # 4. 查看日志
-tail -f logs/system-backend.log
+tail -f "logs/runtime/system/${INSTANCE_ID}"/*.jsonl
 
 # 5. 停止环境
 bash scripts/dev/stop.sh
@@ -366,7 +367,7 @@ bash scripts/dev/start.sh
 
 - **run.sh** (已删除): 早期轻量级启动脚本,已被 `start.sh` 替代
   - 原因: 缺少健康检查、日志管理、PID 管理
-  - 替代方案: 使用 `start.sh` + `tail -f logs/*.log` 查看日志
+  - 替代方案: 使用 `start.sh` + System 服务实例的“查看日志”入口 查看日志
 
 ## 相关文档
 

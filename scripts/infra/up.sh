@@ -44,6 +44,47 @@ if [ "${INFRA_FALKORDB_PASSWORD}" = "${REDIS_PASSWORD:-}" ]; then
   exit 1
 fi
 
+# Only initialize new development logging secrets; never rotate existing secrets.
+if [ "${ENV:-development}" != production ]; then
+  python3 - <<'PYLOGENV'
+from pathlib import Path
+import os, re, secrets
+p=Path('.env')
+s=p.read_text() if p.exists() else ''
+for key in ['LOKI_READ_TOKEN','LOKI_WRITE_TOKEN','LOKI_S3_SECRET_KEY']:
+    if os.environ.get(key):
+        continue
+    value=secrets.token_hex(32)
+    pattern=re.compile(r'^'+key+r'=.*$', re.M)
+    line=key+'='+value
+    s=pattern.sub(line,s) if pattern.search(s) else s.rstrip()+'\n'+line+'\n'
+if not re.search(r'^LOKI_S3_ACCESS_KEY=',s,re.M):
+    s=s.rstrip()+'\nLOKI_S3_ACCESS_KEY=addp-runtime-logs\n'
+temporary=p.with_name(p.name+'.runtime-log.tmp')
+with temporary.open('w') as output:
+    temporary.chmod(0o600)
+    output.write(s)
+    output.flush()
+    os.fsync(output.fileno())
+temporary.replace(p)
+PYLOGENV
+  set -a
+  source ./.env
+  set +a
+fi
+for token_name in LOKI_READ_TOKEN LOKI_WRITE_TOKEN; do
+  token_value="${!token_name:-}"
+  if [[ ! "$token_value" =~ ^[a-zA-Z0-9_-]{32,128}$ ]]; then
+    echo "Invalid runtime log API token: $token_name" >&2
+    exit 1
+  fi
+done
+
+if [ "$LOKI_READ_TOKEN" = "$LOKI_WRITE_TOKEN" ]; then
+  echo "Runtime log read/write tokens must be different" >&2
+  exit 1
+fi
+
 # Detect CPU architecture and select the single supported PostgreSQL image path.
 if [ -z "${POSTGRES_IMAGE:-}" ]; then
     ARCH=$(uname -m)
@@ -123,17 +164,15 @@ if [ "$BUILD_REPOSITORY_POSTGRES_IMAGE" = "true" ] &&
     --tag "$POSTGRES_IMAGE" scripts/infra
 fi
 
+# Build every repository-owned service before checking remotely published images.
+# Compose-generated image names are local build artifacts, never registry pulls.
+compose build
 # Images to check
 COMPOSE_IMAGES=$(compose config --images)
 while IFS= read -r image; do
   if ! docker image inspect "$image" >/dev/null 2>&1; then
-    if [ "$image" = "addp-minio:RELEASE.2025-10-15T17-29-55Z" ]; then
-      echo -e "  ${BLUE}从固定 MinIO 源码构建镜像: $image${NC}"
-      compose build minio
-    else
-      echo -e "  ${BLUE}拉取镜像: $image${NC}"
-      docker pull "$image"
-    fi
+    echo -e "  ${BLUE}拉取镜像: $image${NC}"
+    docker pull "$image"
   else
     echo -e "  ${GREEN}✓ $image 已存在${NC}"
   fi
@@ -148,7 +187,7 @@ RUNNING_SERVICES=$(compose ps --status running --format "{{.Service}}" 2>/dev/nu
 if echo "$RUNNING_SERVICES" | grep -qE "postgres|redis|falkordb|minio|meilisearch|redpanda|kafka-connect"; then
   echo -e "  ${GREEN}检测到部分服务已在运行${NC}"
   echo "  运行中的服务:"
-  for svc in postgres redis falkordb minio meilisearch redpanda kafka-connect; do
+  for svc in postgres redis falkordb minio meilisearch redpanda kafka-connect loki alloy runtime-log-api runtime-log-pruner; do
     if echo "$RUNNING_SERVICES" | grep -q "^${svc}$"; then
       echo -e "    ${GREEN}✓ $svc${NC}"
     fi
@@ -321,3 +360,8 @@ echo "  - Infra Kafka: localhost:${INFRA_KAFKA_PORT}  Redpanda / SASL_PLAINTEXT/
 echo "  - Kafka Connect:http://localhost:${KAFKA_CONNECT_PORT}  内部控制面"
 echo ""
 echo -e "${YELLOW}提示：修改默认密码可通过根目录 .env 覆盖相应变量。${NC}"
+
+# Ready probes do not imply delivery completeness.
+curl -fsS --retry 30 --retry-delay 2 --retry-connrefused "http://127.0.0.1:${LOKI_PORT}/ready" >/dev/null
+curl -fsS --retry 30 --retry-delay 2 --retry-connrefused "http://127.0.0.1:${ALLOY_PORT}/-/ready" >/dev/null
+echo "Runtime log query and collector ready; delivery completeness requires a probe"

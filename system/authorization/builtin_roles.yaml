@@ -271,6 +271,7 @@ roles:
       - monitor.configuration.update
       - platform.module.read
       - platform.module.update
+      - platform.module_log.read
       - platform.tenant.close
       - platform.tenant.create
       - platform.tenant.initialize
