@@ -68,7 +68,18 @@ class FrontendCIRegistrationTest(unittest.TestCase):
             self.workflow.read_text().replace(
                 "          target: test-sample-frontend\n",
                 "          target: test-sample-frontend\n          playwright: true\n",
-            ) + "      - if: matrix.playwright == true\n        run: npx playwright install --with-deps chromium\n",
+            ) + (
+                "      - if: matrix.playwright == true\n        run: npx playwright install --with-deps chromium\n"
+                "      - name: Run frontend gate\n"
+                "        env:\n"
+                "          TMPDIR: ${{ runner.temp }}\n"
+                "        run: make ${{ matrix.target }}\n"
+                "      - name: Upload browser failure evidence\n"
+                "        if: failure() && matrix.playwright == true && steps.selection.outputs.run == 'true'\n"
+                "        uses: actions/upload-artifact@fixed-test-ref\n"
+                "        with:\n"
+                "          path: ${{ runner.temp }}/addp-${{ matrix.module }}-playwright-results/\n"
+            ),
             encoding="utf-8",
         )
 
@@ -93,6 +104,20 @@ class FrontendCIRegistrationTest(unittest.TestCase):
         package["scripts"]["dev"] = "vite"
         package_path.write_text(json.dumps(package))
         subprocess.run(["git", "add", "."], cwd=self.repository, check=True)
+
+    def test_browser_failure_evidence_matches_the_gate_and_matrix(self) -> None:
+        self.enable_browser_suite()
+        original = self.workflow.read_text()
+        self.assertEqual([], MODULE.validate_registration(self.repository))
+        for old, new, message in [
+            ("          TMPDIR: ${{ runner.temp }}\n", "", "TMPDIR must match"),
+            ("TMPDIR: ${{ runner.temp }}", "TMPDIR: /tmp", "TMPDIR must match"),
+            ("matrix.playwright == true", "matrix.module == 'security'", "cover the Playwright matrix"),
+            ("uses: actions/upload-artifact@fixed-test-ref", "run: true", "must upload browser failure evidence"),
+        ]:
+            with self.subTest(message=message, replacement=new):
+                self.workflow.write_text(original.replace(old, new))
+                self.assertTrue(any(message in error for error in MODULE.validate_registration(self.repository)))
 
     def test_rejects_unsafe_browser_isolation(self) -> None:
         cases = [

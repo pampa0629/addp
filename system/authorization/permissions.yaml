@@ -1,6 +1,6 @@
 schema_version: addp.permission_manifest/v1
 owner_module: system
-manifest_version: 22
+manifest_version: 23
 permissions:
   - key: audit.event.export
     allowed_scope_types: [platform]
@@ -970,6 +970,30 @@ permissions:
     status: active
     name_i18n_key: permissions.system.engine.update.name
     description_i18n_key: permissions.system.engine.update.description
+  - key: system.engine_access_delegation.create
+    allowed_scope_types: [tenant]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.system.engine_access_delegation.create.name
+    description_i18n_key: permissions.system.engine_access_delegation.create.description
+  - key: system.engine_access_delegation.read
+    allowed_scope_types: [tenant]
+    risk_level: low
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.system.engine_access_delegation.read.name
+    description_i18n_key: permissions.system.engine_access_delegation.read.description
+  - key: system.engine_access_delegation.revoke
+    allowed_scope_types: [tenant]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.system.engine_access_delegation.revoke.name
+    description_i18n_key: permissions.system.engine_access_delegation.revoke.description
   - key: system.engine_catalog.read
     allowed_scope_types: [tenant, department, project_group]
     risk_level: low

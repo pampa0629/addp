@@ -254,3 +254,13 @@ other = "The service account was changed by another user. Refresh and try again"
 
 [system.iam.role_key_invalid]
 other = "Role key must use namespace.name (e.g. custom.ontology_manager); each segment must start with a lowercase letter and contain only lowercase letters, digits, and underscores."
+[system.engine_access_delegation.version_conflict]
+other = "The delegation changed; refresh and retry"
+[system.engine_access_delegation.overlap]
+other = "This account already has an overlapping management delegation for this engine"
+[system.engine_access_delegation.unavailable]
+other = "The target must be an active tenant user membership and an active engine with real-time catalog capability"
+[system.engine_access_delegation.history_read_only]
+other = "Expired or revoked delegations are read-only and cannot be restored or revoked again"
+[system.engine_access_delegation.expiry_required]
+other = "Explicitly specify a future expiry within the target membership validity"

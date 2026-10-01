@@ -519,6 +519,7 @@
           "element": "Data Element",
           "engine": "Engine",
           "engine_catalog": "Engine Catalog",
+          "engine_access_delegation": "Engine Access Management Delegation",
           "engine_descriptor": "Engine Descriptor",
           "enrollment": "Data Protection Enrollment",
           "entity": "Business Entity",

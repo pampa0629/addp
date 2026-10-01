@@ -254,3 +254,13 @@ other = "服务账号已被其他用户修改，请刷新后重试"
 
 [system.iam.role_key_invalid]
 other = "角色标识须为“命名空间.名称”（例如 custom.ontology_manager）；两段均以小写英文字母开头，仅允许小写英文字母、数字和下划线。"
+[system.engine_access_delegation.version_conflict]
+other = "委派已被修改，请刷新后重试"
+[system.engine_access_delegation.overlap]
+other = "该账号在此引擎上已有有效期重叠的管理委派"
+[system.engine_access_delegation.unavailable]
+other = "委派目标必须是当前租户的有效用户成员和具备实时目录能力的有效引擎"
+[system.engine_access_delegation.history_read_only]
+other = "已到期或已撤销的委派只读，不能恢复或再次撤销"
+[system.engine_access_delegation.expiry_required]
+other = "请显式指定未来的到期时间，且不得超过目标成员关系的有效期"

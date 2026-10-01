@@ -13,6 +13,7 @@ export default defineConfig({
     baseURL: 'http://127.0.0.1:4173',
     headless: true,
     locale: 'zh-CN',
+    trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     viewport: { width: 1440, height: 900 }
   },

@@ -519,6 +519,7 @@
           "element": "数据元",
           "engine": "引擎",
           "engine_catalog": "引擎目录",
+          "engine_access_delegation": "引擎授权管理委派",
           "engine_descriptor": "引擎描述",
           "enrollment": "数据保护纳管",
           "entity": "业务实体",

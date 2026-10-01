@@ -189,6 +189,16 @@ Portal 是同步 BFF 和消费界面，只展示 Asset 返回的履约状态；�
 
 #### 5.5.2 接入阶段与 Catalog 独立性
 
+引擎授权管理委派的第一阶段契约：
+
+- 办理资格分别使用 `system.engine_access_delegation.create/read/revoke`，只接受当前 Tenant 的 User 和 Tenant Scope。通过既有自定义 Role 与 Role Assignment 显式分配，不自动加入内置 Role、不回填现有账号。
+- 每份委派只绑定一个当前 Tenant 的有效 Engine 和一个有效 User Tenant Membership。管理范围为该 Engine，不包含内容读取、写入、DDL 或转委派；后续访问规则仍须逐项选定逻辑资源并验证业务依据。
+- 创建必须提供非空原因与未来的 `expires_at`；不使用默认期限、不创建永久委派，期限不得超过目标 Membership 的有效期。尚未确认期限上限，不据此扩展普通读取 Grant 的期限。新建资格只面向具备实时目录能力的引擎，不根据引擎类型猜测能力。
+- 唯一管理路径为 `GET/POST /api/v1/system/engines/:id/access_delegations`、`GET /api/v1/system/engines/:id/access_delegations/:delegation_id` 和 `POST .../:delegation_id/revoke`。撤销要求正整数 `version` 与原因，冲突返回 `resource_version_conflict`；无更新、恢复、续期或物理删除路线。
+- 持久状态为 `active/revoked`，当前状态还需结合数据库时间、Tenant、Principal、Membership、Engine 生命周期判断；同一 Engine、同一 Membership 不允许重叠委派。撤销后历史只读，续期必须创建新记录。
+- 写入在同一事务中复核当前操作账号的有效功能权限、目标身份和范围，保存委派与安全审计并推进接收主体授权版本、撤销旧会话。该接口不连接业务源库，也不向 Catalog 写入副本。
+- 本阶段仅落地管理委派，不把存在委派视为任何源数据访问的 Allow；源读取规则及真实消费者的表级校验另行贯通。
+
 - 引擎登记、实时发现、Meta 扫描和内容访问是不同动作。System 的实时 Engine Catalog 允许在 Meta 扫描前选择资源；发现本身也必须受控，不能凭实时接口泄露未授权名称和结构。Meta Worker 的服务身份不能扩张任务授权，读取文件头或内容样本也不得借结构发现权限绕过访问检查。
 - 接入 Engine 不构成修改源库的授权。登记、发现、扫描和只读访问不得擅自安装触发器、创建源端角色、写入身份记录或执行其他非只读操作；写入、建表等能力必须有用户针对对应操作及资源范围的明确授权。源数据访问规则保存在 ADDP 的权威方，不因登记连接自动向源库写入规则。
 - 尚未确定业务责任时，显式指定且具备对应管理范围的接入授权主体，可以向指定账号或项目组授予明确选中资源的限时只读；不包含全租户公开、写入或 DDL。初始管理资格不能从登记人、角色名称或连接成功自动推导，必须有显式委派依据。

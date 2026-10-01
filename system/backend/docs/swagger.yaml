@@ -1571,6 +1571,19 @@ definitions:
         - suspended
         type: string
     type: object
+  internal_api.CreateEngineAccessDelegationRequest:
+    properties:
+      expires_at:
+        type: string
+      reason:
+        type: string
+      tenant_membership_id:
+        type: string
+    required:
+    - expires_at
+    - reason
+    - tenant_membership_id
+    type: object
   internal_api.CreateExecuteTaskRequest:
     properties:
       based_on_scan:
@@ -1612,6 +1625,41 @@ definitions:
     properties:
       task_id:
         type: string
+    type: object
+  internal_api.EngineAccessDelegationResponse:
+    properties:
+      display_name:
+        type: string
+      effective_state:
+        type: string
+      engine_id:
+        type: string
+      engine_name:
+        type: string
+      expires_at:
+        type: string
+      grant_reason:
+        type: string
+      granted_at:
+        type: string
+      granted_by_principal_id:
+        type: string
+      id:
+        type: string
+      principal_id:
+        type: string
+      revoked_at:
+        type: string
+      revoked_by_principal_id:
+        type: string
+      revoked_reason:
+        type: string
+      status:
+        type: string
+      tenant_membership_id:
+        type: string
+      version:
+        type: integer
     type: object
   internal_api.GetTaskHistoryResponse:
     properties:
@@ -4682,6 +4730,240 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - system.engine.update
+  /engines/{id}/access_delegations:
+    get:
+      description: 当前租户的管理资格及历史，不返回连接凭据或内容授权 | Current tenant management qualification
+        and history, without connection credentials or content grants
+      parameters:
+      - description: 引擎 ID | Engine ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 页码，默认 1 | Page, default 1
+        in: query
+        name: page
+        type: integer
+      - description: 每页数量，默认 10，最多 100 | Page size, default 10, maximum 100
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 委派列表 | Delegations
+          schema:
+            properties:
+              data:
+                items:
+                  $ref: '#/definitions/internal_api.EngineAccessDelegationResponse'
+                type: array
+              page:
+                type: integer
+              page_size:
+                type: integer
+              total:
+                type: integer
+              total_pages:
+                type: integer
+            type: object
+        "400":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "401":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "403":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "404":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "500":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 查询引擎授权管理委派 | List engine access management delegations
+      tags:
+      - 引擎授权管理委派 | Engine Access Management Delegations
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.engine_access_delegation.read
+    post:
+      consumes:
+      - application/json
+      description: 显式选取有效用户成员、到期时间与原因；不授予数据读取、写入、DDL 或转委派 | Explicit active user membership,
+        expiry and reason; grants no data read, write, DDL or redelegation
+      parameters:
+      - description: 引擎 ID | Engine ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 委派信息 | Delegation definition
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.CreateEngineAccessDelegationRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: 已创建 | Created
+          schema:
+            $ref: '#/definitions/internal_api.EngineAccessDelegationResponse'
+        "400":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "401":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "403":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "404":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "409":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "500":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 创建引擎授权管理委派 | Create engine access management delegation
+      tags:
+      - 引擎授权管理委派 | Engine Access Management Delegations
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.engine_access_delegation.create
+  /engines/{id}/access_delegations/{delegation_id}:
+    get:
+      description: 按租户和引擎隔离读取，不存在与跨租户均返回 404 | Tenant and engine scoped lookup; missing
+        and cross-tenant IDs return 404
+      parameters:
+      - description: 引擎 ID | Engine ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 委派 ID | Delegation ID
+        in: path
+        name: delegation_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 委派详情 | Delegation
+          schema:
+            $ref: '#/definitions/internal_api.EngineAccessDelegationResponse'
+        "400":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "401":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "403":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "404":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "500":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 读取引擎授权管理委派 | Get engine access management delegation
+      tags:
+      - 引擎授权管理委派 | Engine Access Management Delegations
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.engine_access_delegation.read
+  /engines/{id}/access_delegations/{delegation_id}/revoke:
+    post:
+      consumes:
+      - application/json
+      description: 版本化撤销并保留历史；不允许恢复或修改已到期记录 | Versioned revocation preserves history;
+        no restore or expired record mutation
+      parameters:
+      - description: 引擎 ID | Engine ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 委派 ID | Delegation ID
+        in: path
+        name: delegation_id
+        required: true
+        type: string
+      - description: 版本与原因 | Version and reason
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMVersionedLifecycleRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 已撤销 | Revoked
+          schema:
+            $ref: '#/definitions/internal_api.EngineAccessDelegationResponse'
+        "400":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "401":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "403":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "404":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "409":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "500":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 撤销引擎授权管理委派 | Revoke engine access management delegation
+      tags:
+      - 引擎授权管理委派 | Engine Access Management Delegations
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.engine_access_delegation.revoke
   /engines/{id}/catalog/children:
     post:
       consumes:

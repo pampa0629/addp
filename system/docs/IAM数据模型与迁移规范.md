@@ -118,6 +118,12 @@ Role、Assignment、Membership、组织关系或 Principal 状态变化时，数
 
 ## 六、会话与令牌
 
+### 引擎访问控制领域的管理委派
+
+`system.engine_access_delegations` 由 System 引擎访问控制领域独立维护，不是 Role Assignment 或全平台中央 ACL。它绑定同 Tenant 的 Engine 和 User Membership，保存显式到期时间、授予原因／操作者／时间、版本，以及撤销原因／操作者／时间；无源端写入、无默认角色授权、无 Catalog 副本。只允许创建、读取和版本化撤销；授权范围及接口以 `docs/spec/addp授权上下文规范.md` 5.5.2 为准。
+
+同一 Engine、同一 Membership 的有效区间不得重叠；数据库拒绝身份、范围、期限、授予事实的修改，以及撤销历史的恢复／删除。写入与安全审计在同一事务完成，并通过既有 IAM Repository 推进接收主体授权版本、撤销旧会话。读取派生 `effective/expired/unavailable/revoked`，不得把持久 `active` 等同于当前有效管理资格；尚未实施的源读取规则不能消费此表绕过最终资源授权。
+
 ### 6.1 Context Selection
 
 `context_selection_tickets` 保存登录后的短期上下文候选快照。Ticket 只使用一次，消费时必须重新校验 Principal、Membership、Platform Assignment、认证强度和授权版本。

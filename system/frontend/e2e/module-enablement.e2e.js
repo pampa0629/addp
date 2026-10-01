@@ -174,3 +174,94 @@ test('System and Gateway stay enabled while a business module can be disabled', 
   await expect(page.getByPlaceholder('宿主节点或运行环境主机名')).toHaveValue('')
   await expect(page.locator('.module-instances .el-table__body tr')).toHaveCount(1)
 })
+
+test('instance queries renew leases without losing filters or accepting an older refresh', async ({ page }) => {
+  const started = Date.now()
+  await page.clock.install({ time: new Date(started) })
+  let leaseExpiresAt = new Date(started + 20_000).toISOString()
+  const instanceQueries = []
+  let holdNextQuery = false
+  let releaseRefresh
+  await page.route('**/api/v1/system/**', async route => {
+    const request = route.request()
+    const url = new URL(request.url())
+    if (request.method() === 'OPTIONS') return fulfillJSON(route, 204, {})
+    if (url.pathname.endsWith('/refresh')) return fulfillJSON(route, 401, {})
+    if (url.pathname.endsWith('/login')) return fulfillJSON(route, 200, {
+      next_action: 'session_issued', session: { access_token: 'instance-refresh-test', expires_in: 3600 }
+    })
+    if (url.pathname.endsWith('/users/me')) return fulfillJSON(route, 200, { id: '1', display_name: 'Test reader' })
+    if (url.pathname.endsWith('/auth/context')) return fulfillJSON(route, 200, {
+      principal: { id: '1', principal_type: 'user' }, context: { type: 'platform' },
+      authorization: { role_assignments: [{ scope: { type: 'platform' }, permissions: ['platform.module.read'] }] }
+    })
+    if (url.pathname.endsWith('/platform/modules')) return fulfillJSON(route, 200, { modules: [
+      { module_name: 'manager', enabled: true, instances: [] }
+    ] })
+    if (url.pathname.endsWith('/platform/module-instances')) {
+      const params = Object.fromEntries(url.searchParams)
+      instanceQueries.push(params)
+      const data = Array.from({ length: 10 }, (_, index) => ({
+        id: index + 1, instance_id: `${params.status}-${params.page}-${index}`, module_name: 'manager',
+        role: 'backend', module_url: 'http://manager.local:8081',
+        process_started_at: new Date(started - 65_000).toISOString(),
+        status: params.status,
+        lease_expires_at: params.status === 'down' ? new Date(started).toISOString() : leaseExpiresAt,
+        ...(params.status === 'down' ? { stop_reason: 'lease_expired' } : {})
+      }))
+      if (holdNextQuery) {
+        holdNextQuery = false
+        await new Promise(resolve => { releaseRefresh = resolve })
+      }
+      return fulfillJSON(route, 200, { data, total: 25, page: Number(params.page), page_size: 10 })
+    }
+    throw new Error(`Unexpected request: ${url.pathname}`)
+  })
+  await page.goto('/login?redirect=%2Fmodules')
+  await page.locator('input[autocomplete="username"]').fill('test-reader')
+  await page.locator('input[autocomplete="current-password"]').fill('fixture-only')
+  await page.locator('button.auth-login-primary').click()
+  await page.getByRole('tab', { name: '服务实例' }).click()
+  const query = page.locator('.module-instances')
+  await query.getByPlaceholder('登记主机名或 IP').fill('manager.local')
+  await query.getByPlaceholder('登记主机名或 IP').press('Enter')
+  await expect.poll(() => instanceQueries.at(-1)?.registered_host).toBe('manager.local')
+  await query.locator('.el-pagination .btn-next').click()
+  await expect.poll(() => instanceQueries.at(-1)?.page).toBe('2')
+  await expect(query.getByText('up-2-0', { exact: true })).toBeVisible()
+  const applied = { ...instanceQueries.at(-1) }
+  const before = instanceQueries.length
+  leaseExpiresAt = new Date(started + 300_000).toISOString()
+  await page.clock.fastForward(30_000)
+  await expect.poll(() => instanceQueries.length).toBeGreaterThan(before)
+  await expect(query.locator('.el-tag').filter({ hasText: 'UP · 在线' })).toHaveCount(10)
+  await expect(query.getByText('up-2-0', { exact: true })).toBeVisible()
+  expect(instanceQueries.at(-1)).toEqual(applied)
+  await expect(query.locator('.el-table__body tr').first()).toContainText('1 分钟')
+
+  holdNextQuery = true
+  const pendingStart = instanceQueries.length
+  await page.clock.fastForward(10_000)
+  await expect.poll(() => instanceQueries.length).toBe(pendingStart + 1)
+  await expect(query.locator('.el-loading-mask')).toHaveCount(0)
+  await page.clock.fastForward(20_000)
+  expect(instanceQueries.length).toBe(pendingStart + 1)
+  await query.locator('.el-select').filter({
+    has: page.getByRole('combobox', { name: '运行状态', exact: true })
+  }).locator('.el-select__wrapper').click()
+  await page.getByRole('option', { name: 'DOWN · 离线', exact: true }).click()
+  await expect(query.getByText('down-1-0', { exact: true })).toBeVisible()
+  const oldResponse = page.waitForResponse(response => {
+    const url = new URL(response.url())
+    return url.pathname.endsWith('/platform/module-instances') && url.searchParams.get('status') === 'up'
+  })
+  releaseRefresh()
+  await (await oldResponse).finished()
+  await expect(query.getByText('down-1-0', { exact: true })).toBeVisible()
+  await expect(query.getByText('up-2-0', { exact: true })).toHaveCount(0)
+
+  await page.getByRole('tab', { name: '模块概览' }).click()
+  const afterLeave = instanceQueries.length
+  await page.clock.fastForward(20_000)
+  expect(instanceQueries.length).toBe(afterLeave)
+})

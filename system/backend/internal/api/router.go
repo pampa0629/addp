@@ -11,6 +11,7 @@ import (
 	requestidmiddleware "github.com/addp/common/middleware/requestid"
 	"github.com/addp/common/modulelifecycle"
 	"github.com/addp/system/internal/config"
+	"github.com/addp/system/internal/engineaccess"
 	"github.com/addp/system/internal/iam"
 	"github.com/addp/system/internal/middleware"
 	"github.com/addp/system/internal/repository"
@@ -119,6 +120,11 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	})
 
 	api := router.Group("/api/v1/system")
+	if err := RegisterEngineAccessDelegationRoutes(api, runtime, NewEngineAccessDelegationHandler(
+		engineaccess.NewService(engineaccess.NewRepository(db), hasLiveEngineCatalogCapability),
+	)); err != nil {
+		panic(fmt.Errorf("注册引擎授权管理委派路由失败: %w", err))
+	}
 	if err := RegisterIAMRoutes(api, runtime, redisClient); err != nil {
 		panic(fmt.Errorf("注册 IAM 路由失败: %w", err))
 	}

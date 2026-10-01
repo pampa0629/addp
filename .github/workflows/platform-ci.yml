@@ -395,6 +395,8 @@ jobs:
 
       - name: Run Model frontend gate
         if: steps.selection.outputs.run == 'true'
+        env:
+          TMPDIR: ${{ runner.temp }}
         run: make test-model-frontend
 
       - name: Upload Model browser failure evidence
@@ -538,10 +540,12 @@ jobs:
 
       - name: Run ${{ matrix.name }} frontend gate
         if: steps.selection.outputs.run == 'true'
+        env:
+          TMPDIR: ${{ runner.temp }}
         run: make ${{ matrix.target }}
 
       - name: Upload browser failure evidence
-        if: failure() && (matrix.module == 'security' || matrix.module == 'workbench') && steps.selection.outputs.run == 'true'
+        if: failure() && matrix.playwright == true && steps.selection.outputs.run == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: ${{ matrix.module }}-browser-failure-${{ github.run_id }}-${{ github.run_attempt }}

@@ -225,6 +225,26 @@ def validate_registration(repository: Path) -> list[str]:
                 )
                 if not entry or not re.search(r"(?m)^\s*playwright:\s*true\s*$", entry.group("body")):
                     errors.append(f"{module}: frontend CI matrix must enable Playwright")
+            steps = re.split(r"(?m)^      - ", target_job)
+            artifact_steps = [step for step in steps if "actions/upload-artifact@" in step
+                              and "playwright-results/" in step]
+            if matrix_selector and not artifact_steps:
+                errors.append(f"{module}: frontend Playwright matrix must upload browser failure evidence")
+            for artifact_step in artifact_steps:
+                if matrix_selector and not re.search(
+                    r"(?m)^\s*if:\s*failure\(\)\s*&&\s*matrix\.playwright\s*==\s*true\s*&&",
+                    artifact_step,
+                ):
+                    errors.append(f"{module}: browser failure evidence must cover the Playwright matrix")
+                if "runner.temp" in artifact_step:
+                    gate_steps = [step for step in steps if re.search(
+                        rf"(?m)^\s*run:\s*make\s+(?:{re.escape(target)}|\$\{{\{{\s*matrix\.target\s*\}}\}})\s*$",
+                        step,
+                    )]
+                    if not gate_steps or any(not re.search(
+                        r"(?m)^\s*TMPDIR:\s*\$\{\{\s*runner.temp\s*\}\}\s*$", step
+                    ) for step in gate_steps):
+                        errors.append(f"{module}: browser gate TMPDIR must match the artifact runner.temp directory")
         test_target = re.search(r"(?m)^test\s*:(?P<dependencies>[^\n]*)", logical_makefile)
         if (
             test_target is None

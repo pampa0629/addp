@@ -139,6 +139,8 @@ const loading = ref(false)
 const error = ref('')
 let generation = 0
 let searchTimer = null
+let refreshTimer = null
+let requestsInFlight = 0
 
 function roleLabel(value) {
   return t(`system.module.roles.${value}`)
@@ -179,10 +181,12 @@ function currentParams() {
   return params
 }
 
-async function load() {
+async function load({ silent = false } = {}) {
   if (period.value === 'custom' && !validCustomRange.value) return
+  if (silent && (requestsInFlight > 0 || searchTimer !== null || document.hidden)) return
   const requestGeneration = ++generation
-  loading.value = true
+  requestsInFlight += 1
+  if (!silent) loading.value = true
   error.value = ''
   try {
     const response = await modulesAPI.listInstances(currentParams())
@@ -193,6 +197,7 @@ async function load() {
     if (requestGeneration !== generation) return
     error.value = failure.response?.data?.error || failure.message || t('system.module.query.loadFailed')
   } finally {
+    requestsInFlight -= 1
     if (requestGeneration === generation) loading.value = false
   }
 }
@@ -253,8 +258,15 @@ watch(() => props.initialModuleName, value => {
   moduleName.value = value
   search()
 })
-onMounted(search)
-onUnmounted(() => { clearTimeout(searchTimer); generation += 1 })
+onMounted(() => {
+  search()
+  refreshTimer = window.setInterval(() => load({ silent: true }), 10000)
+})
+onUnmounted(() => {
+  clearTimeout(searchTimer)
+  window.clearInterval(refreshTimer)
+  generation += 1
+})
 </script>
 
 <style scoped>

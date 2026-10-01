@@ -1549,16 +1549,37 @@ D1-D3 业务边界已确认，并已固化到正式规范。剩余工作是精�
 - `make test-changed` 计算共享工作区 40 个变更文件、26 个注册模块，在测试执行前因缺少 owner PostgreSQL DSN 和 MySQL／OceanBase 等必需 T2 条件退出 2，不能计为全量通过。共享工作区另有前端镜像构建及 IAM 页面并行变更，不属于本轮修改。
 - 本轮没有运行完整 `make test-common-postgres` 或真实 C/D 授权 T4；完整 Common PostgreSQL 仍由既有 CI `common-postgres` 作业调用标准入口覆盖。更名后的定位案例命中原有正则，不新增测试路线、外部依赖或空壳 CI 登记。未重启 ADDP 服务，未修改业务源库或运行中的权限。
 
-### 26.10 第一份管理委派的最小建议（待确认，不是当前权限）
+### 26.10 第一份管理委派（后端已落地，源读取消费者待贯通）
 
 2026-09-30 继续核对现有 Permission Manifest、内置 Role 和 Role Assignment 规范：System 已有引擎登记／发现和租户角色分配能力，但没有源数据授权管理委派 Permission 或引擎资源管理范围事实。现有 Role Assignment Scope 只有 platform、tenant、department、project_group；Role 只组合功能 Permission，不能把 Engine ID 或表路径塞进 Role，冒充资源管理范围。`tenant.security_manager` 是 Security 业务治理角色，也不是源数据授权管理的隐含权威。
 
-建议先确认下面这条最小路线，避免为了首份委派再建一套组织或责任体系：
+已确认采用下面这条最小路线，不为首份委派再建一套组织或责任体系：
 
-1. **谁有资格委派**：设置独立、精确的 Tenant 功能 Permission，表示“办理引擎授权管理委派”；通过现有 IAM Role／Role Assignment 显式授予账号。具体 Permission key、风险等级和内置 Role 分配仍待确认，不按管理员名称、引擎登记人或 Catalog 责任自动放行，也不自动给现有账号回填。
-2. **委派什么**：有上述资格的账号在 System 中，显式选择同 Tenant 的 Engine、接入授权账号和限定管理范围；这是一份可到期、可撤销的管理资格，不是对源数据的读取 Grant。明确引擎级管理范围可以支持扫描前实时发现和选取叶子，但不能因此向普通使用者授予整库读取；后续只读 Grant 仍逐项选择逻辑资源。范围是否允许 namespace 层级及期限上限需确认，不先实现通配符或递归继承。
-3. **管理账号能做什么**：首轮仅在被委派范围内，向指定账号／项目组办理明确资源的限时只读；不自动获得内容读取、写入、DDL 或向他人转委派管理资格。已经明确业务责任的目标仍要求当前业务确认，不能继续独立批准共享。
+1. **谁有资格委派**：设置独立、精确的 Tenant 功能 Permission `system.engine_access_delegation.create/read/revoke`，通过现有 IAM 自定义 Role／Role Assignment 显式授予账号。创建、撤销为 high 风险，读取为 low；不分配给内置 Role，不按管理员名称、引擎登记人或 Catalog 责任自动放行，也不自动给现有账号回填。
+2. **委派什么**：有上述资格的账号在 System 中，显式选择同 Tenant 的 Engine 与有效用户成员。这是一份引擎级、可到期、可撤销的管理资格，不是对源数据的读取 Grant。该范围为后续扫描前实时发现和选取叶子提供管理依据，但不表示本轮已接入扫描出口，也不能因此向普通使用者授予整库读取；后续只读 Grant 仍逐项选择逻辑资源。首版不实现 namespace、通配符或递归继承，必须填写有限到期时间且不得超过成员关系期限，不设默认期限或额外期限上限。
+3. **管理账号后续能做什么**：首次源读取授权贯通后，仅在被委派范围内，向指定账号／项目组办理明确资源的限时只读；不自动获得内容读取、写入、DDL 或向他人转委派管理资格。已经明确业务责任的目标仍要求当前业务确认，不能继续独立批准共享。本轮不包含这些实际读取规则。
 4. **三类责任如何参与**：Catalog 的业务责任人负责已确认的业务共享决定；数据管理员协助界定范围、维护编目；技术维护者维护技术链路。谁实际办理规则，仍独立检查功能 Permission 与 System 当前管理委派，不能用责任身份替代。Catalog 不新增第四类“授权管理员”责任，不保存管理委派副本。
 5. **唯一办理路径**：System 保存管理委派、实际读取规则和履约证据；Catalog 后续仅组合现有责任与同一办理能力。先贯通 System → Manager 预览 → 受控 SQL 的 C/D 闭环，不先扩大至全部数据出口或把尚未实现的检查接成 Allow。
 
-这里需要用户决定的是首份管理委派的办理资格、允许范围和期限，不是重新讨论同名重建。确认后再确定精确 Permission、数据契约、迁移和接口，并按既有 System IAM／Common PostgreSQL 门禁及真实消费者测试一次贯通；未确认前不更改运行中的权限或上线默认放行。
+用户已确认以上路线。首版精确契约已纳入授权上下文规范：独立的 create/read/revoke Tenant Permission，通过既有自定义 Role 显式分配；一个 Engine 对一个有效 User Membership，必须显式指定到期时间与原因，不设默认期限、不实现 namespace 递归、不自动给内置 Role 或账号赋权。本轮先实现 System 的委派管理接口、版本化迁移与事务审计，不将其描述为表级读取授权完成。
+
+本轮验收清单：
+
+- [x] 引擎访问控制领域持久化委派，支持创建、分页读取、详情与版本化撤销；历史不可恢复／删除。
+- [x] 当前 Tenant、User 类型、有效成员关系、引擎实时目录能力、有限期限、重叠委派、并发版本与事务审计测试。
+- [x] Permission Manifest、生成常量、向前迁移 `000166`、Swagger 与中文／英文权限展示词汇同次发布；不自动授权内置 Role。
+- [x] `make test-authorization`、全部 Go T1 与最终完整 `make test-system-iam-postgres`（IAM、OAuth、API、迁移包）通过。
+- [ ] 完整 `make test-module MODULE=system` 与 `make test-changed` 通过。未通过原因分别记录，不用分项通过替代全量通过。
+- [ ] 委派管理的前端办理入口、实际源读取规则、业务确认及真实消费者授权闭环。当前只有后端管理资格，不是用户已可办理或读取的证明。
+
+2026-10-01 本轮落地记录：
+
+- 唯一事实表为 `system.engine_access_delegations`，由 System 的 `internal/engineaccess` 维护；不写 Catalog 副本。新增四个 API 方法，Tenant 从当前认证上下文取得，拒绝请求另传 `tenant_id`；列表复用共享分页（默认 10，最多 100），不返回引擎连接凭据。
+- 创建和撤销在同一事务中校验当前 IAM 功能权限、主体／成员／引擎状态与期限，保存安全审计、推进接收账号授权版本并撤销旧会话。角色名称、登记身份和 Catalog 责任不产生隐含资格。撤销须匹配版本；到期、撤销及身份失效通过当前状态呈现，不设置“恢复历史”的旁路。
+- `TestEngineAccessDelegationAgainstPostgres` 已由既有 `system-iam-postgres-gate.sh` API 包的 `AgainstPostgres` 发现规则自动覆盖，不新增临时脚本或第二套测试入口。验证包含跨租户拒绝、缺少权限、失效身份／期限、并发创建与撤销、历史不可改写、审计失败整笔回滚、旧会话失效以及测试 schema 清理；使用标准隔离库 `addp_iam_test`，不连接业务源库。
+- `make test-go`、`make test-authorization` 和 System 前端 `npm run build` 通过。完整 System 模块门禁的 Go T1 与 18 个前端测试文件／84 个用例通过，Playwright 14/15 通过，服务账号生命周期用例失败（授权原因填写后的按钮可用性检查，输出含 `diagnostic artifact validation only`）；该用例及运行配置存在并行修改，本轮不覆盖修改或宣称整个前端门禁通过。
+- 完整 System PostgreSQL 首次运行的 IAM、OAuth、API 包通过，迁移包发现旧断言仍期望 137 个 System Permission；本轮新增三项后应为 140，已同步修正。`bash scripts/test/system-iam-postgres-gate.sh --package migration` 重跑通过；随后最终完整 `make test-system-iam-postgres` 退出 0，IAM、OAuth、API 与迁移四包全部通过，无跳过，包含迁移首次运行／重复运行以及新接口分页契约断言。
+- `make test-changed` 在执行测试前因缺少多个模块的 PostgreSQL、MySQL、OceanBase T2 连接条件退出，不能计为全量通过。现有 `.github/workflows/release-and-t2-gates.yml` 的 System IAM PostgreSQL 作业调用 `make test-system-iam-postgres`，覆盖本轮迁移和 API；其他模块 T2 仍由各自既有 CI 作业覆盖。
+- 未重启或接管用户的 ADDP 服务，未修改业务源库、生产／开发业务权限或现有账号授权；迁移仅在标准测试数据库中验证，未提交代码。
+
+后续仍需：源逻辑资源限时只读规则、业务责任确认依据，以及 Manager 预览／受控 SQL 对完整 C/D 读取集合的最终校验。管理委派接口不是上述消费者已经实施的证明。
