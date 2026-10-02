@@ -10,9 +10,28 @@ definitions:
         type: string
       id:
         type: string
+      phase:
+        type: string
       started_at:
         type: string
       status:
+        type: string
+    type: object
+  execution.Event:
+    properties:
+      attempt:
+        type: integer
+      counters:
+        $ref: '#/definitions/github_com_addp_common_models.JSONMap'
+      execution_id:
+        type: string
+      id:
+        type: integer
+      kind:
+        type: string
+      occurred_at:
+        type: string
+      step_id:
         type: string
     type: object
   execution.ReadGrant:
@@ -455,8 +474,6 @@ definitions:
         type: string
       id:
         type: integer
-      logs:
-        type: string
       metadata:
         $ref: '#/definitions/github_com_addp_transfer_internal_models.JSONMap'
       records_read:
@@ -933,6 +950,19 @@ definitions:
         description: Valid is true if Time is not NULL
         type: boolean
     type: object
+  internal_api.ExecutionEventPage:
+    properties:
+      has_more:
+        type: boolean
+      items:
+        items:
+          $ref: '#/definitions/execution.Event'
+        type: array
+      next_cursor:
+        type: integer
+      retained_after:
+        type: string
+    type: object
   internal_api.ProviderExecuteRequest:
     properties:
       parameters:
@@ -1336,16 +1366,26 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - transfer.task.read
-  /executions/{execution_id}/logs:
+  /executions/{execution_id}/events:
     get:
+      description: 按 ID 游标读取最近 30 天结构化事件，每页最多 100 条。| Read safe structured events
+        retained for 30 days with an ID cursor, up to 100 per page.
       parameters:
       - description: 执行ID | Execution ID
         in: path
         name: execution_id
         required: true
         type: string
-      - description: 最多返回行数 | Line limit
+      - description: 上一页末尾事件 ID | Last event ID
         in: query
+        minimum: 0
+        name: after
+        type: integer
+      - default: 100
+        description: 每页事件数 | Page size
+        in: query
+        maximum: 100
+        minimum: 1
         name: limit
         type: integer
       produces:
@@ -1354,9 +1394,19 @@ paths:
         "200":
           description: OK
           schema:
-            items:
+            $ref: '#/definitions/internal_api.ExecutionEventPage'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
               type: string
-            type: array
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
         "500":
           description: Internal Server Error
           schema:
@@ -1365,7 +1415,7 @@ paths:
             type: object
       security:
       - BearerAuth: []
-      summary: 获取执行日志 | Get execution logs
+      summary: 获取执行过程事件 | Get execution process events
       tags:
       - 执行管理 | Execution Management
       x-addp-auth-mode: permission

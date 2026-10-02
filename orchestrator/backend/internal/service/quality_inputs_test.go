@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	commonClient "github.com/addp/common/client"
+	execution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/orchestrator/internal/models"
 	"net/http"
@@ -44,8 +45,20 @@ func TestQualityPlanReceivesResolvedUpstreamTargets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := executor.executeWithTaskProvider(context.Background(), &models.Step{Provider: "quality", TaskType: "quality_plan", TaskID: 42, Timeout: 10}, resolved, time.Now(), "parent", "manual", 7)
-	if err != nil || result.Status != "success" {
+	db := newOrchestratorExecutionServiceTestDB(t)
+	config, _ := freezeExecutionPlan(models.Steps{{ID: "s1", Name: "Step", Provider: "quality", TaskType: "quality_plan", TaskID: 42}})
+	item := execution.TaskExecution{TenantID: 7, ExecutionID: "parent", Module: execution.ModuleOrchestrator, TaskType: execution.TaskTypeOrchestration, Source: execution.ModuleOrchestrator, Status: "pending", TriggerType: "manual", ExecutionBoundary: "bounded", ExecutionConfig: config}
+	if err := db.Create(&item).Error; err != nil {
+		t.Fatal(err)
+	}
+	executor.executionService = NewExecutionService(db)
+	_, lease, err := executor.executionService.ClaimNext(context.Background(), "quality-inputs-owner", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := execution.ContextWithLease(context.Background(), *lease)
+	result, err := executor.submitTaskProviderStep(ctx, &models.Step{Provider: "quality", TaskType: "quality_plan", TaskID: 42, Timeout: 10}, resolved, time.Now(), "parent", "manual", 7)
+	if err != nil || result.Status != "running" {
 		t.Fatalf("execution %+v %v", result, err)
 	}
 	if received["parent_execution_id"] != "parent" || received["source"] != "orchestrator" {

@@ -10,6 +10,8 @@ definitions:
         type: string
       id:
         type: string
+      phase:
+        type: string
       started_at:
         type: string
       status:
@@ -652,11 +654,16 @@ paths:
       produces:
       - application/json
       responses:
-        "200":
-          description: OK
+        "202":
+          description: 已创建冻结计划的待执行记录 | A pending execution with a frozen plan was
+            created
           schema:
             additionalProperties: true
             type: object
+        "400":
+          description: 编排步骤定义无效 | The orchestration step definition is invalid
+          schema:
+            $ref: '#/definitions/github_com_addp_orchestrator_internal_models.ErrorResponse'
         "403":
           description: 当前身份未绑定租户 | Current identity is not bound to a tenant
           schema:

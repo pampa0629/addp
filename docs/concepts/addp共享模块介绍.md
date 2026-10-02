@@ -199,3 +199,7 @@ ResourceTree 是树展示组件；ResourceTreePicker 是表单级资源选择封
 **另请参阅**: [common-frontend/README.md](../../common-frontend/README.md), [common-frontend/docs/ARCHITECTURE.md](../../common-frontend/docs/ARCHITECTURE.md)
 
 共享执行记录和后台心跳的 schema 初始化由 System Backend 独占调用，领域模型及迁移实现仍归 `common/execution`、`common/runtimehealth`。其他 Backend 和 Worker 通过 `common/schema.Require` 只读校验版本；业务 schema 版本由各模块独立声明。数据库连接本身不得隐式触发 Worker 迁移。
+
+### 不透明查询令牌
+
+`common/opaquetoken` 唯一承载用途隔离的 JSON AES-GCM 编解码。Service 查询游标/Feature ID 和 System 运行日志游标复用它；版本、身份、查询绑定和过期校验留在领域 owner，不能将成功解密当作授权。敏感配置值加解密仍由 `common/secretcipher` 承载。

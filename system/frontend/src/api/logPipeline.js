@@ -12,5 +12,6 @@ export const logPipelineAPI = {
   credential: (row, secret) => client.put(`${base}/log-notification-destinations/${row.id}/credential`, { version: row.version, secret }),
   deleteDestination: row => client.delete(`${base}/log-notification-destinations/${row.id}`, { data: { version: row.version } }),
   testDestination: row => client.post(`${base}/log-notification-destinations/${row.id}/test`),
-  deliveries: (page = 1) => client.get(`${base}/log-notification-deliveries`, { params: { page, page_size: 20 } })
+  deliveries: (page = 1) => client.get(`${base}/log-notification-deliveries`, { params: { page, page_size: 20 } }),
+  retryDelivery: row => client.post(`${base}/log-notification-deliveries/${row.id}/retry`, { expected_manual_retry_count: row.manual_retry_count, destination_version: row.destination_version })
 }

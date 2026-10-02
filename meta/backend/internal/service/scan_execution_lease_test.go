@@ -16,7 +16,7 @@ func TestMetaBoundedClaimAndExpiredRecoveryAreLeaseFenced(t *testing.T) {
 	db := openObjectCatalogScanTestDB(t)
 	createTaskExecutionTable(t, db)
 	createScanTaskTable(t, db)
-	now := time.Date(2026, 8, 20, 8, 0, 0, 0, time.UTC)
+	now := time.Now().UTC()
 	task := &models.ScanTask{TenantID: 7, EngineID: 9, Name: "lease scan", CreatedAt: now, UpdatedAt: now}
 	if err := db.Create(task).Error; err != nil {
 		t.Fatalf("create scan task: %v", err)

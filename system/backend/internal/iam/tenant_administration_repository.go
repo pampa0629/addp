@@ -353,12 +353,24 @@ func (r *Repository) replaceTenantRolePermissions(ctx context.Context, roleID in
 	return nil
 }
 
+func (r *Repository) GetTenantRole(ctx context.Context, tenantID, roleID int64) (*Role, error) {
+	var role Role
+	err := r.db.WithContext(ctx).Where("id = ? AND tenant_id = ?", roleID, tenantID).Take(&role).Error
+	return &role, wrapRepositoryError(err)
+}
+
+func (r *Repository) GetTenantRoleAssignment(ctx context.Context, tenantID, assignmentID int64) (*RoleAssignment, error) {
+	var assignment RoleAssignment
+	err := r.db.WithContext(ctx).Where("id = ? AND tenant_id = ?", assignmentID, tenantID).Take(&assignment).Error
+	return &assignment, wrapRepositoryError(err)
+}
+
 func (r *Repository) ListActiveRoleHolderPrincipalIDs(ctx context.Context, roleID int64) ([]int64, error) {
 	var ids []int64
 	err := r.db.WithContext(ctx).Raw(`SELECT principal.id FROM system.principals principal
 		WHERE EXISTS (SELECT 1 FROM system.role_assignments assignment
 		WHERE assignment.role_id = ? AND assignment.principal_id = principal.id AND assignment.status = 'active')
-		ORDER BY principal.id FOR UPDATE OF principal`, roleID).Scan(&ids).Error
+		ORDER BY principal.id`, roleID).Scan(&ids).Error
 	return ids, wrapRepositoryError(err)
 }
 

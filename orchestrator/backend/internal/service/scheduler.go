@@ -20,7 +20,6 @@ const orchestrationSchedulePollInterval = time.Minute
 type Scheduler struct {
 	orchRepo         *repository.OrchestrationRepository
 	executionService *ExecutionService
-	executor         *Executor
 	systemClient     *commonClient.SystemServiceClient
 	log              *slog.Logger
 	claimGate        func() bool
@@ -38,13 +37,11 @@ func (s *Scheduler) SetClaimGate(claimGate func() bool) {
 func NewScheduler(
 	orchRepo *repository.OrchestrationRepository,
 	executionService *ExecutionService,
-	executor *Executor,
 	systemClient *commonClient.SystemServiceClient,
 ) *Scheduler {
 	return &Scheduler{
 		orchRepo:         orchRepo,
 		executionService: executionService,
-		executor:         executor,
 		systemClient:     systemClient,
 		log:              logger.With("component", "orchestrator_scheduler"),
 		stopCh:           make(chan struct{}),
@@ -52,8 +49,7 @@ func NewScheduler(
 }
 
 // Start 启动调度器。
-func (s *Scheduler) Start() error {
-	ctx := context.Background()
+func (s *Scheduler) Start(ctx context.Context) error {
 	if err := s.ensureNextRuns(ctx); err != nil {
 		return err
 	}
@@ -97,7 +93,7 @@ func (s *Scheduler) ensureNextRuns(ctx context.Context) error {
 func (s *Scheduler) scheduledLoop(ctx context.Context) {
 	defer s.wg.Done()
 
-	s.runDue(context.Background())
+	s.runDue(ctx)
 	ticker := time.NewTicker(orchestrationSchedulePollInterval)
 	defer ticker.Stop()
 
@@ -108,7 +104,7 @@ func (s *Scheduler) scheduledLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			s.runDue(context.Background())
+			s.runDue(ctx)
 		}
 	}
 }
@@ -135,20 +131,11 @@ func (s *Scheduler) claimAndExecute(ctx context.Context, id uint, now time.Time)
 	if err != nil || orch == nil {
 		return err
 	}
+	if !orch.Enabled {
+		return nil
+	}
 	nextOrch := *orch
 	if err := ApplyOrchestrationSchedule(&nextOrch, now); err != nil {
-		return err
-	}
-	claimed, err := s.orchRepo.ClaimDue(ctx, id, orch.Schedule, now, nextOrch.NextRunAt)
-	if err != nil || claimed == nil {
-		return err
-	}
-	return s.triggerOrchestration(ctx, claimed.ID)
-}
-
-func (s *Scheduler) triggerOrchestration(ctx context.Context, orchID uint) error {
-	orch, err := s.orchRepo.GetByIDInternal(orchID)
-	if err != nil || !orch.Enabled {
 		return err
 	}
 	if s.systemClient == nil || orch.AuthorizationSubjectID == nil || orch.AuthorizationRef == nil ||
@@ -181,9 +168,8 @@ func (s *Scheduler) triggerOrchestration(ctx context.Context, orchID uint) error
 		return err
 	}
 
-	execution, err := s.executionService.CreateExecutionWithContext(
-		ctx, orchID, orch.TenantID, commonExecution.TriggerTypeScheduled,
-		commonExecution.ModuleOrchestrator, nil, ExecutionActor{
+	_, err = s.executionService.CreateScheduled(
+		ctx, orch, now, nextOrch.NextRunAt, ExecutionActor{
 			PrincipalID: principalID, TenantMembershipID: membershipID,
 			AuthorizationVersion: authorizationVersion,
 		},
@@ -191,7 +177,6 @@ func (s *Scheduler) triggerOrchestration(ctx context.Context, orchID uint) error
 	if err != nil {
 		return fmt.Errorf("create scheduled orchestration execution: %w", err)
 	}
-	s.executor.ExecuteAsync(uint(execution.ID))
 	return nil
 }
 

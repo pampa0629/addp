@@ -73,7 +73,7 @@ func newModuleRegistryRuntimeTestRouter(t *testing.T, clientID string) *gin.Engi
 		t.Fatal(err)
 	}
 	registry := service.NewModuleRegistryService(repository.NewModuleRegistryRepository(db))
-	handler := NewModuleRegistryHandler(registry)
+	handler := NewModuleRegistryHandler(registry, []byte("test-key"))
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
 		if err := sharedauth.SetAuthContextForGin(c, testIAMServiceActorContext("platform", clientID)); err != nil {
@@ -130,7 +130,7 @@ func TestUpdateModulePlatformUsesOptimisticVersion(t *testing.T) {
 
 	router := gin.New()
 	router.Use(commoni18n.I18nMiddleware())
-	router.PUT("/platform/modules/:module_name", NewModuleRegistryHandler(registry).UpdateModulePlatform)
+	router.PUT("/platform/modules/:module_name", NewModuleRegistryHandler(registry, []byte("test-key")).UpdateModulePlatform)
 
 	response := updatePlatformModule(t, router, `{"enabled":false,"version":1}`)
 	if response.Code != http.StatusOK {
@@ -180,7 +180,7 @@ func TestUpdateModulePlatformRejectsSystem(t *testing.T) {
 	}
 	router := gin.New()
 	router.Use(commoni18n.I18nMiddleware())
-	router.PUT("/platform/modules/:module_name", NewModuleRegistryHandler(registry).UpdateModulePlatform)
+	router.PUT("/platform/modules/:module_name", NewModuleRegistryHandler(registry, []byte("test-key")).UpdateModulePlatform)
 	for _, enabled := range []bool{false, true} {
 		payload := `{"enabled":false,"version":1}`
 		if enabled {
@@ -227,7 +227,7 @@ func TestListModuleRuntimeInstancesPlatformUsesPaginatedContract(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	handler := NewModuleRegistryHandler(registry)
+	handler := NewModuleRegistryHandler(registry, []byte("test-key"))
 	router := gin.New()
 	router.Use(commoni18n.I18nMiddleware())
 	router.GET("/platform/module-instances", handler.ListModuleRuntimeInstancesPlatform)

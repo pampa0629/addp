@@ -10,6 +10,7 @@ import (
 	"github.com/addp/monitor/internal/models"
 	"github.com/addp/monitor/internal/service"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"io"
 	"net/http"
 	"strconv"
@@ -324,6 +325,52 @@ func (h *LogPipelineHandler) Deliveries(c *gin.Context) {
 	logRespond(c, result, err)
 }
 
+// RetryDelivery godoc
+// @Summary 重新入队最终失败的平台日志通知 | Requeue a failed platform log notification
+// @Description 保留原投递及事件身份，允许补发已恢复告警的历史消息；200 仅表示重新入队。 | Retains delivery/event identities and permits historical messages for resolved incidents; 200 means requeued, not delivered.
+// @Tags 平台日志链路 | Platform Log Pipeline
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "投递 UUID | Delivery UUID"
+// @Param request body service.LogDeliveryRetryInput true "预期重投次数和目标版本 | Expected retry count and destination version"
+// @Success 200 {object} service.LogDeliveryView
+// @Failure 400 {object} ErrorResponse
+// @Failure 401 {object} ErrorResponse
+// @Failure 403 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Failure 409 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["monitor.log_notification.update"]
+// @Router /platform/log-notification-deliveries/{id}/retry [post]
+func (h *LogPipelineHandler) RetryDelivery(c *gin.Context) {
+	identity, ok := commonAuth.AuthContextFromGin(c)
+	if !ok || identity.Principal.Type != "user" {
+		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": commoni18n.T(c, commoni18n.MsgForbidden), "error_code": "permission_denied"})
+		return
+	}
+	id := c.Param("id")
+	parsed, err := uuid.Parse(id)
+	if err != nil || parsed.String() != id {
+		logRespond(c, nil, service.ErrLogInvalid)
+		return
+	}
+	var input service.LogDeliveryRetryInput
+	if !logBind(c, &input) {
+		return
+	}
+	result, err := h.notifications.Retry(c.Request.Context(), id, input, time.Now().UTC())
+	if err == nil {
+		c.Set(logRetryAuditKey, logRetryAuditFacts{DeliveryID: id, EventID: result.EventID, DestinationID: result.DestinationID, Before: result.ManualRetryCount - 1, After: result.ManualRetryCount})
+	}
+	if errors.Is(err, service.ErrLogConflict) {
+		c.JSON(http.StatusConflict, gin.H{"error": commoni18n.T(c, monitori18n.MsgLogRetryConflict), "error_code": "resource_version_conflict"})
+		return
+	}
+	logRespond(c, result, err)
+}
+
 func (h *LogPipelineHandler) manageIncident(c *gin.Context, action string) {
 	id, ok := logID(c)
 	if !ok {
@@ -373,6 +420,10 @@ func logRespond(c *gin.Context, v any, err error) {
 	key := monitori18n.MsgDiagnosticQueryFailed
 	code := "platform_log_operation_failed"
 	switch {
+	case errors.Is(err, service.ErrLogRetryUnavailable):
+		status = 409
+		key = monitori18n.MsgLogRetryUnavailable
+		code = "platform_log_retry_unavailable"
 	case errors.Is(err, service.ErrLogInvalid):
 		status = 400
 		key = monitori18n.MsgConfigurationInvalid

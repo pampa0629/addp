@@ -72,16 +72,13 @@ Transfer 将 checkpoint 观测信息写入 `metadata`：
 4. Transfer 只保存 `resume_marker` / `commit_marker`，不解析 marker 内部位置字段。
 5. 保存 marker 不表示当前执行可从 checkpoint 后自动恢复。
 
-## 四、执行日志和错误
+## 四、执行过程事件和错误
 
-Transfer 将简短执行日志写入 `metadata.execution_logs`，只把真实失败、超时或取消信息写入 `error_details`：
+bounded 执行的开始、批次计数和终态写入共享 `common.execution_events`，按 execution + attempt 关联，并在当前有效租约下写入。事件只保存闭合类型和非负整数计数，不保存 source offset、checkpoint marker、自由文本或业务数据。每个 attempt 每 UTC 日最多 1000 条（含截断标记）；接口使用 ID 游标，每页最多 100 条。Monitor 和 Transfer 复用共享运行过程组件，不从日志文字推断后处理结果。
 
-| 字段 | 说明 |
-|---|---|
-| `metadata.execution_logs` | 执行过程中的简短日志。 |
-| `error_details.message` | 失败、超时或取消的错误消息。 |
+过程事件保留 30 天，由 System 的公共存储维护循环分批清理。概览和步骤暂不自动删除；180 天概览目标仍待 Owner 引用裁决落地。连续执行暂未接入事件，不允许绕过既有 fencing 写入。错误事实继续位于 `error_details`，Monitor 只提供安全投影，领域诊断由 Transfer 负责。
 
-成功 execution 的 `error_details` 必须为空。Monitor 将 `metadata.execution_logs` 作为中性“执行日志”展示，只对真实 `error_details` 使用错误样式。如果后续日志量增大，应拆到独立日志表或对象存储；当前表内日志只作为执行详情辅助信息。
+Backend schema 版本 2 单向删除历史 `metadata.execution_logs` 和 `error_details.logs`，保留其他字段。旧文本不转换为结构化事实，不再保留日志 API 或追加路径。
 
 ## 五、恢复语义
 
@@ -114,5 +111,5 @@ Transfer 当前恢复能力分三档：
 | `GET` | `/executions/:execution_id` | TaskProvider 标准执行详情入口，按统一 `common.task_executions.execution_id` 查询。 |
 | `POST` | `/executions/:execution_id/retry` | 按统一 `common.task_executions.execution_id` 和 restartable 语义重试失败执行。 |
 | `GET` | `/executions/:execution_id/progress` | 按统一 `common.task_executions.execution_id` 查询执行进度。 |
-| `GET` | `/executions/:execution_id/logs` | 按统一 `common.task_executions.execution_id` 查询执行日志。 |
+| `GET` | `/executions/:execution_id/events` | 按统一 `common.task_executions.execution_id` 查询安全过程事件。 |
 | `GET` | `/task-definitions/:id/executions` | 查询某个任务的执行记录。 |

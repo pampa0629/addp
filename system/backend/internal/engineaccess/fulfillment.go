@@ -143,9 +143,12 @@ func (r *Repository) findFulfillment(ctx context.Context, request fulfillmentReq
 // settleFulfillment must be called on the owner's transaction Repository.
 // verify rechecks locally locked authority facts; it must not acquire earlier
 // IAM locks or perform network IO. nil cannot create an accepted outcome.
+// confirmation identifies the original confirmer from owner-persisted history;
+// its audit version is not compared to current IAM. Supplying it does not prove
+// Catalog responsibility or trusted provenance, which verify must establish.
 // The row and audit commit or roll back with that transaction, not this method.
 func (r *Repository) settleFulfillment(ctx context.Context, request fulfillmentRequest, accept bool,
-	verify func(*Repository) error,
+	confirmation userProvenance, verify func(*Repository) error,
 ) (*fulfillmentOutcome, error) {
 	if _, ok := r.db.Statement.ConnPool.(gorm.TxCommitter); !ok {
 		return nil, errFulfillmentBinding
@@ -156,12 +159,31 @@ func (r *Repository) settleFulfillment(ctx context.Context, request fulfillmentR
 	}
 	var operator *lockedUserProvenance
 	var scope *lockedManagementScope
+	var recipient *lockedFulfillmentRecipient
+	var confirmer *lockedBusinessConfirmer
 	if accept {
 		// Observe without arbitration locks first, so IAM always precedes the
 		// request/target boundary. An existing immutable outcome is historical
 		// recovery, not a new acceptance. A miss is NOT a close or acceptance.
 		_, err := r.findFulfillment(ctx, request, path, binding)
 		if errors.Is(err, gorm.ErrRecordNotFound) {
+			if !confirmation.valid() {
+				return nil, errFulfillmentBinding
+			}
+			accountIDs := []int64{request.Operator.PrincipalID, confirmation.PrincipalID}
+			if request.RecipientType == "user" {
+				accountIDs = append(accountIDs, request.RecipientID)
+			}
+			principals, err := r.identity().LockUserAuthorizationPrincipals(ctx, accountIDs...)
+			if err != nil {
+				return nil, err
+			}
+			if request.RecipientType == "user" {
+				recipient, err = r.lockFulfillmentRecipient(ctx, request, principals)
+				if err != nil {
+					return nil, err
+				}
+			}
 			operator, err = r.lockUserProvenance(ctx, request.TenantID, request.Operator)
 			if err != nil {
 				return nil, err
@@ -171,6 +193,32 @@ func (r *Repository) settleFulfillment(ctx context.Context, request fulfillmentR
 				return nil, err
 			}
 			if err := operator.check(now); err != nil {
+				return nil, err
+			}
+			// All accounts were locked above, before any lower IAM facts. The
+			// original confirmer membership cannot be replaced by a new one.
+			confirmer, err = r.loadBusinessConfirmer(ctx, confirmation, request.TenantID)
+			if err != nil {
+				return nil, err
+			}
+			now, err = r.wallClock(ctx)
+			if err != nil {
+				return nil, err
+			}
+			if err := confirmer.check(now); err != nil {
+				return nil, err
+			}
+			if recipient == nil {
+				recipient, err = r.lockFulfillmentRecipient(ctx, request, principals)
+				if err != nil {
+					return nil, err
+				}
+			}
+			now, err = r.wallClock(ctx)
+			if err != nil {
+				return nil, err
+			}
+			if err := recipient.check(now); err != nil {
 				return nil, err
 			}
 			scope, err = r.lockManagementScope(ctx, request.TenantID, int64(request.Path.EngineID), request.Operator.MembershipID)
@@ -235,6 +283,14 @@ func (r *Repository) settleFulfillment(ctx context.Context, request fulfillmentR
 			return nil, err
 		}
 		if err := scope.check(now); err != nil {
+			return nil, err
+		}
+		if err := recipient.check(now); err != nil {
+			return nil, err
+		}
+		// Principal locks stabilize IAM writes, not naturally expiring roles.
+		// Recheck Permission validity at the post-verification wall clock.
+		if err := confirmer.check(now); err != nil {
 			return nil, err
 		}
 		if !authorization.SharingExpiryFuture(request.ExpiryMode, expiresAt, now) {

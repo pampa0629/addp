@@ -425,6 +425,7 @@
         </div>
 
         <ExecutionSteps
+          :execution-status="currentExecution.status"
           :steps="currentExecution.steps || []"
           :attempt-unverified="currentExecution.steps_attempt_unverified"
           :current-step="currentExecution.current_step || ''"
@@ -610,8 +611,12 @@ const hasRunningListExecution = computed(() => (
 ))
 
 const hasRunningOpenedExecution = computed(() => (
-  detailDialogVisible.value && isRunningStatus(executionTreeData.value[0]?.execution?.status)
+  detailDialogVisible.value && hasRunningTreeExecution(executionTreeData.value)
 ))
+
+function hasRunningTreeExecution(nodes) {
+  return nodes.some(node => isRunningStatus(node.execution?.status) || hasRunningTreeExecution(node.children || []))
+}
 
 const shouldRefreshExecutionList = computed(() => (
   pageVisible.value && hasRunningListExecution.value
@@ -1110,12 +1115,20 @@ async function refreshOpenedExecution() {
     return
   }
   const executionID = openedExecutionID.value
+  const requestToken = detailRequestToken
   executionDetailRefreshInFlight = true
   try {
     const data = await getExecutionTreeByExecutionID(executionID)
-    if (!detailDialogVisible.value || openedExecutionID.value !== executionID) return
+    if (!detailDialogVisible.value || openedExecutionID.value !== executionID || requestToken !== detailRequestToken) return
     openExecutionTree(data)
   } catch (error) {
+    if (!detailDialogVisible.value || openedExecutionID.value !== executionID || requestToken !== detailRequestToken) return
+    if ([403, 404].includes(error.response?.status)) {
+      currentExecution.value = null
+      executionTreeData.value = []
+      openedExecutionID.value = ''
+      detailLoadFailed.value = true
+    }
     console.error(error)
   } finally {
     executionDetailRefreshInFlight = false

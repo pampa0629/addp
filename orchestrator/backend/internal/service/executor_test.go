@@ -9,6 +9,7 @@ import (
 	"time"
 
 	commonClient "github.com/addp/common/client"
+	execution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/taskprovider"
 	"github.com/addp/orchestrator/internal/models"
@@ -278,8 +279,9 @@ func TestExecuteWithTaskProviderUsesTenantServiceBearer(t *testing.T) {
 		}),
 	}
 
-	result, err := executor.executeWithTaskProvider(
-		context.Background(),
+	ctx := submissionLeaseForTest(t, executor)
+	result, err := executor.submitTaskProviderStep(
+		ctx,
 		&models.Step{Provider: "quality", TaskType: "check", TaskID: 42, Timeout: 10},
 		map[string]interface{}{},
 		time.Now(),
@@ -289,8 +291,10 @@ func TestExecuteWithTaskProviderUsesTenantServiceBearer(t *testing.T) {
 	)
 
 	assert.NoError(t, err)
-	assert.Equal(t, "success", result.Status)
+	assert.Equal(t, "running", result.Status)
 	assert.Equal(t, "Bearer addp_at_orchestrator", executeAuthorization)
+	_, err = executor.observeChild(ctx, &models.Step{Provider: "quality"}, "child-exec", 7)
+	assert.NoError(t, err)
 	assert.Equal(t, "Bearer addp_at_orchestrator", statusAuthorization)
 }
 
@@ -335,8 +339,9 @@ func TestExecuteWithTaskProviderForwardsScheduledExistingResultActionWithoutOwne
 		}),
 	}
 
-	result, err := executor.executeWithTaskProvider(
-		context.Background(),
+	ctx := submissionLeaseForTest(t, executor)
+	result, err := executor.submitTaskProviderStep(
+		ctx,
 		&models.Step{Provider: "manager", TaskType: "vector_tile_cache_generation", TaskID: 42, Timeout: 10},
 		map[string]interface{}{"existing_result_action": "overwrite"},
 		time.Now(),
@@ -346,7 +351,7 @@ func TestExecuteWithTaskProviderForwardsScheduledExistingResultActionWithoutOwne
 	)
 
 	assert.NoError(t, err)
-	assert.Equal(t, "success", result.Status)
+	assert.Equal(t, "running", result.Status)
 	assert.Equal(t, "scheduled", executePayload["trigger_type"])
 	assert.Equal(t, "orchestrator", executePayload["source"])
 	assert.Equal(t, "parent-exec", executePayload["parent_execution_id"])
@@ -375,7 +380,7 @@ func TestExecuteWithTaskProviderRejectsDeprecatedTaskTypeBeforeHTTPCall(t *testi
 		}, `{"type":"object","additionalProperties":false}`),
 	}
 
-	result, err := executor.executeWithTaskProvider(
+	result, err := executor.submitTaskProviderStep(
 		context.Background(),
 		&models.Step{Provider: "develop", TaskType: "workflow", TaskID: 42, Timeout: 10},
 		map[string]interface{}{},
@@ -410,7 +415,7 @@ func TestExecuteWithTaskProviderRejectsDisallowedParametersBeforeHTTPCall(t *tes
 		}, `{"type":"object","additionalProperties":false}`),
 	}
 
-	result, err := executor.executeWithTaskProvider(
+	result, err := executor.submitTaskProviderStep(
 		context.Background(),
 		&models.Step{Provider: "meta", TaskType: "scan", TaskID: 42, Timeout: 10},
 		map[string]interface{}{"force": true},
@@ -450,7 +455,7 @@ func TestExecuteWithTaskProviderStrictlyValidatesResolvedParametersBeforeHTTPCal
 		}, executionSchema),
 	}
 
-	result, err := executor.executeWithTaskProvider(
+	result, err := executor.submitTaskProviderStep(
 		context.Background(),
 		&models.Step{Provider: "develop", TaskType: "query", TaskID: 42, Timeout: 10},
 		map[string]interface{}{"limit": "100"},
@@ -655,17 +660,6 @@ func TestResolveStringTemplate(t *testing.T) {
 	}
 }
 
-func TestProviderExecutionErrorMessage(t *testing.T) {
-	got := providerExecutionErrorMessage(map[string]interface{}{
-		"status": "failed",
-		"error_details": map[string]interface{}{
-			"message": "boom",
-		},
-	})
-
-	assert.Equal(t, "boom", got)
-}
-
 func TestTopologicalSortExecutesDependenciesBeforeDependents(t *testing.T) {
 	graph := buildDAG(models.Steps{
 		{ID: "query"},
@@ -682,4 +676,23 @@ func TestTopologicalSortExecutesDependenciesBeforeDependents(t *testing.T) {
 func jsonStringPtr(value string) *commonModels.JSONString {
 	jsonString := commonModels.JSONString(value)
 	return &jsonString
+}
+
+func submissionLeaseForTest(t *testing.T, executor *Executor) context.Context {
+	t.Helper()
+	db := newOrchestratorExecutionServiceTestDB(t)
+	config, err := freezeExecutionPlan(models.Steps{{ID: "s1", Name: "Step", Provider: "quality", TaskType: "check", TaskID: 42}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	item := execution.TaskExecution{TenantID: 7, ExecutionID: "parent-exec", Module: execution.ModuleOrchestrator, TaskType: execution.TaskTypeOrchestration, Source: execution.ModuleOrchestrator, Status: "pending", TriggerType: "manual", ExecutionBoundary: "bounded", ExecutionConfig: config}
+	if err := db.Create(&item).Error; err != nil {
+		t.Fatal(err)
+	}
+	executor.executionService = NewExecutionService(db)
+	_, lease, err := executor.executionService.ClaimNext(context.Background(), "submission-test", time.Minute)
+	if err != nil || lease == nil {
+		t.Fatalf("claim: %v", err)
+	}
+	return execution.ContextWithLease(context.Background(), *lease)
 }

@@ -1,11 +1,18 @@
 package service
 
 import (
+	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -21,6 +28,23 @@ import (
 type emptyLogRegistry struct{}
 
 func (emptyLogRegistry) ListModules(context.Context) ([]*client.ModuleInfo, error) { return nil, nil }
+
+type receivedPlatformLogWebhook struct {
+	id, timestamp string
+	body          []byte
+	payload       struct {
+		Schema     string    `json:"schema"`
+		EventID    string    `json:"event_id"`
+		EventType  string    `json:"event_type"`
+		IncidentID uint      `json:"incident_id"`
+		Node       string    `json:"node"`
+		Signal     string    `json:"signal"`
+		InstanceID string    `json:"instance_id"`
+		Severity   string    `json:"severity"`
+		OccurredAt time.Time `json:"occurred_at"`
+	}
+}
+
 func TestIntegrationPostgresPlatformLogLifecycleOutboxAndIsolation(t *testing.T) {
 	if os.Getenv("ADDP_POSTGRES_INTEGRATION") != "1" {
 		t.Skip("PostgreSQL owner gate required")
@@ -38,11 +62,43 @@ func TestIntegrationPostgresPlatformLogLifecycleOutboxAndIsolation(t *testing.T)
 	now := time.Now().UTC()
 	var accepted atomic.Int64
 	var fail atomic.Bool
+	const signingSecret = "fixture-secret-0123456789"
+	var receivedMu sync.Mutex
+	var received []receivedPlatformLogWebhook
 	fail.Store(true)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("X-ADDP-Webhook-Signature") == "" || r.Header.Get("X-ADDP-Webhook-ID") == "" {
-			t.Error("missing signature or id")
+		message := receivedPlatformLogWebhook{id: r.Header.Get("X-ADDP-Webhook-ID"), timestamp: r.Header.Get("X-ADDP-Webhook-Timestamp")}
+		body, err := io.ReadAll(io.LimitReader(r.Body, 8193))
+		if err != nil || len(body) > 8192 || r.Method != http.MethodPost || r.Header.Get("Content-Type") != "application/json" {
+			t.Error("invalid webhook request")
+			w.WriteHeader(http.StatusBadRequest)
+			return
 		}
+		message.body = body
+		// Verify at the receiver against the raw bytes, independently of the sender's signing helper.
+		mac := hmac.New(sha256.New, []byte(signingSecret))
+		_, _ = mac.Write([]byte(message.timestamp + "."))
+		_, _ = mac.Write(body)
+		if !hmac.Equal([]byte(r.Header.Get("X-ADDP-Webhook-Signature")), []byte("v1="+hex.EncodeToString(mac.Sum(nil)))) {
+			t.Error("webhook signature does not authenticate the received timestamp and body")
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		if _, err = uuid.Parse(message.id); err != nil {
+			t.Error("invalid delivery identity")
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		decoder := json.NewDecoder(bytes.NewReader(body))
+		decoder.DisallowUnknownFields()
+		if err = decoder.Decode(&message.payload); err != nil || decoder.Decode(new(any)) != io.EOF {
+			t.Error("webhook contains fields outside the safe platform alert contract")
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		receivedMu.Lock()
+		received = append(received, message)
+		receivedMu.Unlock()
 		if fail.Load() {
 			w.WriteHeader(500)
 			return
@@ -81,7 +137,7 @@ func TestIntegrationPostgresPlatformLogLifecycleOutboxAndIsolation(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	destination, err = notifications.SetSecret(ctx, destination.ID, destination.Version, "fixture-secret-0123456789")
+	destination, err = notifications.SetSecret(ctx, destination.ID, destination.Version, signingSecret)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,6 +230,47 @@ func TestIntegrationPostgresPlatformLogLifecycleOutboxAndIsolation(t *testing.T)
 	}
 	if accepted.Load() != 2 {
 		t.Fatalf("accepted deliveries %d, expected one opened and one resolved", accepted.Load())
+	}
+	receivedMu.Lock()
+	messages := append([]receivedPlatformLogWebhook(nil), received...)
+	receivedMu.Unlock()
+	if len(messages) != 3 {
+		t.Fatalf("received requests=%d, expected failure, retry and recovery", len(messages))
+	}
+	opened, retried, resolved := messages[0], messages[1], messages[2]
+	if opened.id != retried.id || !bytes.Equal(opened.body, retried.body) || resolved.id == opened.id {
+		t.Fatal("retry changed delivery identity/payload or recovery reused the opened delivery identity")
+	}
+	if opened.payload.EventType != "opened" || resolved.payload.EventType != "resolved" || opened.payload.EventID == resolved.payload.EventID {
+		t.Fatal("received lifecycle event identities are not distinct opened/resolved events")
+	}
+	for _, message := range messages {
+		if message.payload.Schema != "addp.platform-log-alert/v1" || message.payload.IncidentID != incident.ID || message.payload.Node != nodeID || message.payload.Signal != "collector_dropped" || message.payload.Severity != "critical" || message.payload.InstanceID != "" {
+			t.Fatal("received webhook does not identify the platform incident")
+		}
+		var delivery models.PlatformLogDelivery
+		if err := db.First(&delivery, "id=?", message.id).Error; err != nil {
+			t.Fatal(err)
+		}
+		if delivery.EventID != message.payload.EventID || delivery.DestinationID != destination.ID || delivery.Status != "delivered" || delivery.SecretCiphertext != "" || delivery.NextAttemptAt != nil || delivery.ClaimID != "" {
+			t.Fatal("received webhook does not match the completed outbox record")
+		}
+		public, err := json.Marshal(delivery)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var fields map[string]json.RawMessage
+		if err = json.Unmarshal(public, &fields); err != nil {
+			t.Fatal(err)
+		}
+		for _, private := range []string{"url", "recipients", "payload", "secret_ciphertext", "claim_id", "lease_expires_at"} {
+			if _, exists := fields[private]; exists {
+				t.Fatalf("public delivery exposes %s", private)
+			}
+		}
+	}
+	if opened.timestamp != strconv.FormatInt(opened.payload.OccurredAt.Unix(), 10) || retried.timestamp != strconv.FormatInt(opened.payload.OccurredAt.Add(2*time.Second).Unix(), 10) || resolved.timestamp != strconv.FormatInt(now.Unix(), 10) || !resolved.payload.OccurredAt.Equal(now) {
+		t.Fatal("retry did not re-sign with its send time or lifecycle occurrence time changed")
 	}
 	// A duplicate report and repeated stale sweeps never manufacture duplicate lifecycle events.
 	if err = pipeline.Ingest(ctx, obs, now); err != nil {

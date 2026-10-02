@@ -280,6 +280,8 @@ WHERE id = $2 AND tenant_id = $3 AND version = $4;
 
 OGC API Features 继续遵循协议参数和响应结构，但 Items 的 `next` link 应携带同一查询游标；`numberReturned` 必须准确，`numberMatched` 只有在已取得低成本精确值时才返回，不得为每个 Items 请求强制执行 `COUNT(*)`。
 
+模块实例运行日志采用固定时间窗口的游标分页，返回 `entries/returned/has_more/next_cursor`，不执行精确计数。游标绑定 Platform User、实例、时间范围、筛选和接收排序边界，30 分钟有效；查询不保证存储快照，迟到记录需刷新补查。同时间戳候选无法在安全查询上限内完整取得时明确返回 422，不跨过未读记录。详见运行日志设计。
+
 **请求参数：**
 
 ```

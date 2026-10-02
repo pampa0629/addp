@@ -72,7 +72,7 @@
         <el-button size="small" text @click="resetConnectionFocus">{{ t('orchestrator.dagEditor.clearFocus') }}</el-button>
       </div>
       <div v-if="focusedExecution" class="node-execution-detail" :aria-label="t('orchestrator.liveExecution.nodeExecution')">
-        <el-tag :type="executionStatusType(focusedExecution.status)">{{ t(`orchestrator.liveExecution.status.${focusedExecution.status}`) }}</el-tag>
+        <el-tag :type="focusedExecution.observationStopped ? 'info' : executionStatusType(focusedExecution.status)">{{ executionStateLabel(focusedExecution) }}</el-tag>
         <span v-if="focusedExecution.duration != null">{{ t('orchestrator.liveExecution.duration', { duration: focusedExecution.duration }) }}</span>
         <el-button v-if="focusedExecution.executionId" size="small" text @click="openMonitorExecution(focusedExecution.executionId)">{{ t('orchestrator.liveExecution.childExecution') }}</el-button>
         <p v-if="focusedExecution.error" class="node-execution-error">{{ focusedExecution.error }}</p>
@@ -330,9 +330,13 @@ const focusedExecution = computed(() => {
 function renderExecutionStates() {
   for (const node of graph.value?.getNodes?.() || []) {
     const state = props.executionStates[node.getID()]
-    renderOrchestrationNodeExecution(node, state, state ? t(`orchestrator.liveExecution.status.${state.status}`) : '')
+    renderOrchestrationNodeExecution(node, state, state ? executionStateLabel(state) : '')
   }
   graph.value?.paint?.()
+}
+function executionStateLabel(state) {
+  const status = t(`orchestrator.liveExecution.status.${state.status}`)
+  return state.observationStopped ? t('common.executionSteps.lastRecorded', { status }) : status
 }
 watch([() => props.executionStates, locale], renderExecutionStates)
 const canCopyNode = computed(() => selectedItem.value?.getType?.() === 'node')

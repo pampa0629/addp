@@ -60,6 +60,12 @@ var ontologyPermissions = []string{
 	"system.execution_authorization.create",
 }
 
+var orchestratorPermissions = []string{
+	"orchestrator.workflow.read", "orchestrator.workflow.create", "orchestrator.workflow.delete", "orchestrator.workflow.execute",
+	"meta.scan_task.read", "meta.scan_task.create", "meta.scan_task.delete", "meta.scan_task.execute",
+	"monitor.execution.read", "system.execution_authorization.create",
+}
+
 var publicOriginReadPermissions = []string{
 	"meta.catalog.read", "manager.data_item.read",
 	"transfer.task.read", "orchestrator.workflow.read",
@@ -78,6 +84,8 @@ func suitePermissions(suite string) ([]string, error) {
 		return metricPermissions, nil
 	case "ontology-revision-lifecycle":
 		return ontologyPermissions, nil
+	case "orchestrator-execution":
+		return orchestratorPermissions, nil
 	case "compose-public-origin":
 		return nil, nil
 	default:
@@ -86,7 +94,7 @@ func suitePermissions(suite string) ([]string, error) {
 }
 
 func needsEngineProvisioner(suite string) bool {
-	return suite == "opengauss-consumer-flow" || suite == "kingbase-consumer-flow" || suite == "metric-service-revision-lifecycle"
+	return suite == "opengauss-consumer-flow" || suite == "kingbase-consumer-flow" || suite == "metric-service-revision-lifecycle" || suite == "orchestrator-execution"
 }
 
 func main() {
@@ -279,6 +287,21 @@ func run(args []string, environment []string) error {
 		values["ADDP_ONLINE_OWN_ASSIGNMENT_ID"] = fmt.Sprintf("%d", ownAssignmentID)
 		values["ADDP_ONLINE_CROSS_TENANT_ASSIGNMENT_ID"] = fmt.Sprintf("%d", reserveAssignments[0].ID)
 	}
+	if *suite == "orchestrator-execution" {
+		reader, _, err := createPermissionFixture(ctx, identity, membershipService, roleService, selectionService,
+			tenant.ID, administrator.PrincipalID, "external-online-monitor-only", []string{"monitor.execution.read"})
+		if err != nil {
+			return err
+		}
+		foreign, _, err := createPermissionFixture(ctx, identity, membershipService, roleService, selectionService,
+			reserveTenant.ID, reserve.PrincipalID, "external-online-foreign-reader",
+			[]string{"monitor.execution.read", "orchestrator.workflow.read", "meta.scan_task.read"})
+		if err != nil {
+			return err
+		}
+		values["ADDP_ONLINE_READ_USER_ACCESS_TOKEN"] = reader.AccessToken
+		values["ADDP_ONLINE_FOREIGN_USER_ACCESS_TOKEN"] = foreign.AccessToken
+	}
 	if needsEngineProvisioner(*suite) {
 		provisioner, err := createUser(ctx, identity, "external-online-engine-provisioner")
 		if err != nil {
@@ -448,6 +471,7 @@ func writeEnvironmentFile(path string, values map[string]string) error {
 		"ADDP_ONLINE_CREATE_USER_ACCESS_TOKEN",
 		"ADDP_ONLINE_CROSS_TENANT_ASSIGNMENT_ID",
 		"ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN",
+		"ADDP_ONLINE_FOREIGN_USER_ACCESS_TOKEN",
 		"ADDP_ONLINE_OWN_ASSIGNMENT_ID",
 		"ADDP_ONLINE_READ_USER_ACCESS_TOKEN",
 		"ADDP_ONLINE_TEST_TENANT_ID",

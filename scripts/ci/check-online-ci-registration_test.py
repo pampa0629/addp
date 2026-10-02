@@ -1,5 +1,6 @@
 import importlib.util
 import re
+import shutil
 import sys
 import tempfile
 import textwrap
@@ -142,6 +143,39 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         self.assertEqual(
             profiles["hosted-suite"], "github-hosted-linux-x86_64"
         )
+
+    def prepare_orchestrator_profile(self):
+        root = SCRIPT.parents[2]
+        for relative in (
+            "scripts/test/online-hosted-orchestrator-gate.sh",
+            "scripts/test/orchestrator-execution-online.py",
+            "scripts/test/orchestrator-execution-online_test.py",
+            "scripts/test/online-hosted-orchestrator-gate_test.py",
+            "business/scripts/online-metric-postgres-fixture.sh",
+            ".github/workflows/online-t4-gates.yml",
+        ):
+            target = self.repository / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(root / relative, target)
+
+    def test_orchestrator_profile_is_hosted_manual_and_uses_real_owners(self):
+        self.prepare_orchestrator_profile()
+        CHECK.validate_orchestrator_execution_profile(self.repository, {"orchestrator-execution"})
+        gate = self.repository / "scripts/test/online-hosted-orchestrator-gate.sh"
+        gate.write_text(gate.read_text().replace("-meta -orchestrator -monitor", "-orchestrator"))
+        with self.assertRaisesRegex(CHECK.RegistrationError, "-meta -orchestrator -monitor"):
+            CHECK.validate_orchestrator_execution_profile(self.repository, {"orchestrator-execution"})
+
+    def test_orchestrator_cannot_start_nightly_or_also_target_personal_runner(self):
+        self.prepare_orchestrator_profile()
+        original = self.workflow.read_text()
+        manual = "    if: github.event_name == 'workflow_dispatch' && inputs.suite == 'orchestrator-execution'"
+        self.workflow.write_text(original.replace(manual, "    if: github.event_name == 'schedule'"))
+        with self.assertRaisesRegex(CHECK.RegistrationError, "manual Hosted"):
+            CHECK.validate_orchestrator_execution_profile(self.repository, {"orchestrator-execution"})
+        self.workflow.write_text(original.replace("&& inputs.suite != 'orchestrator-execution'", ""))
+        with self.assertRaisesRegex(CHECK.RegistrationError, "self-hosted"):
+            CHECK.validate_orchestrator_execution_profile(self.repository, {"orchestrator-execution"})
 
     def test_discovers_owner_managed_profile_from_metadata(self) -> None:
         owner_managed = self.repository / "scripts/test/online-owner-managed-example-gate.sh"

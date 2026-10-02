@@ -266,10 +266,13 @@ other = "已到期或已撤销的委派只读，不能恢复或再次撤销"
 other = "请显式指定未来的到期时间，且不得超过目标成员关系的有效期"
 
 [system.module.runtime_log_invalid]
-other = "运行日志查询条件无效"
+other = "日志筛选无效，或分页游标已过期、与当前查询不匹配。请回到最新后重新查询。"
 
 [system.module.runtime_log_disabled]
 other = "运行日志尚未接入"
 
 [system.module.runtime_log_unavailable]
 other = "运行日志查询暂不可用"
+
+[system.module.runtime_log_boundary]
+other = "同一时间戳的日志超过安全查询上限，无法继续。请收紧时间、级别或关键字后重试；系统未跳过更早记录。"

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ADDP_T2_OWNED_SERVICES=minio,runtime-log-store-init,loki,runtime-log-api,alloy,runtime-log-pruner
 # ADDP_T2_COMPOSE_FILE=scripts/test/docker-compose.system-runtime-log-t2.yml
-# ADDP_T2_INPUT_FILES=scripts/infra/Dockerfile.minio scripts/infra/Dockerfile.runtime-log scripts/infra/runtime-logs.yml scripts/infra/loki.yml scripts/infra/runtime-logs.alloy scripts/infra/runtime-log-api.conf.template scripts/infra/init-runtime-log-store.sh common/ scripts/test/runtime-log-observer-fixture.py
+# ADDP_T2_INPUT_FILES=scripts/infra/Dockerfile.minio scripts/infra/Dockerfile.runtime-log scripts/infra/runtime-logs.yml scripts/infra/loki.yml scripts/infra/runtime-logs.alloy scripts/infra/runtime-log-api.conf.template scripts/infra/init-runtime-log-store.sh common/ system/backend/internal/service/module_runtime_logs.go system/backend/internal/service/module_runtime_logs_test.go system/backend/internal/service/module_runtime_logs_loki_integration_test.go scripts/test/runtime-log-observer-fixture.py
 # Own disposable Compose startup, source files and teardown.
 set -euo pipefail
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
@@ -33,7 +33,7 @@ cleanup(){
    python3 - "$WORK_DIR" <<'PYERROR'
 from pathlib import Path
 import os,sys
-for name in ['build.log','start.log','restart.log','producer.log','container.log','cleanup.log','outage.log','observer.log','observer-fixture.log']:
+for name in ['build.log','start.log','restart.log','producer.log','container.log','cleanup.log','outage.log','observer.log','observer-fixture.log','paging.log']:
  p=Path(sys.argv[1])/name
  if not p.exists():continue
  text=p.read_text(errors='replace')[-4000:]
@@ -59,6 +59,11 @@ observe_once(){
  python3 "$ROOT_DIR/scripts/test/runtime-log-observer-fixture.py" "$WORK_DIR" >>"$WORK_DIR/observer.log" 2>&1
 }
 observe_once
+query_paging(){
+ (cd "$ROOT_DIR/system/backend"; ADDP_RUNTIME_LOG_INTEGRATION=1 ADDP_RUNTIME_LOG_PHASE="$1" go test ./internal/service -run '^TestRuntimeLogsAgainstLoki$' -count=1 -v) >>"$WORK_DIR/paging.log" 2>&1
+ if grep -q -- '--- SKIP:' "$WORK_DIR/paging.log";then echo "Runtime log paging gate refuses skipped tests" >&2; exit 1;fi
+}
+query_paging ready
 compose run --rm --no-deps runtime-log-pruner launch --module manager --role backend -- sh -c 'printf "{\"level\":\"error\",\"msg\":\"runtime-t2-first password=sample-secret\"}\n"; printf "plain stderr\n" >&2; sleep 2' >"$WORK_DIR/producer.log" 2>&1 || exit 1
 python3 "$ROOT_DIR/scripts/test/runtime-log-probe.py" "$LOKI_TEST_SOURCE" first
 compose up -d --force-recreate --wait --wait-timeout 90 loki runtime-log-api alloy >"$WORK_DIR/restart.log" 2>&1 || exit 1
@@ -69,12 +74,14 @@ python3 "$ROOT_DIR/scripts/test/runtime-log-probe.py" "$LOKI_TEST_SOURCE" restar
 export ALLOY_TEST_URL="http://$(compose port alloy 12345)"
 python3 "$ROOT_DIR/scripts/test/runtime-log-probe.py" "$LOKI_TEST_SOURCE" retry-baseline >"$WORK_DIR/retries"
 compose stop runtime-log-api >"$WORK_DIR/outage.log" 2>&1 || exit 1
+query_paging outage
 compose run --rm --no-deps runtime-log-pruner launch --module manager --role backend -- sh -c 'printf "runtime-t2-outage\n"; sleep 2' >"$WORK_DIR/producer.log" 2>&1 || exit 1
 python3 "$ROOT_DIR/scripts/test/runtime-log-probe.py" "$LOKI_TEST_SOURCE" retry-observed "$(cat "$WORK_DIR/retries")"
 observe_once
 compose up -d --wait --wait-timeout 60 runtime-log-api >>"$WORK_DIR/outage.log" 2>&1 || exit 1
 export LOKI_TEST_URL="http://$(compose port runtime-log-api 3100)"
 python3 "$ROOT_DIR/scripts/test/runtime-log-probe.py" "$LOKI_TEST_SOURCE" outage-recovered
+query_paging recovered
 observe_once
 python3 - "$WORK_DIR" <<'PYOBS'
 from pathlib import Path
@@ -86,4 +93,5 @@ assert sum(not o['api_ready'] and not o['probe_delivered'] for o in observations
 assert len({o['boot_id'] for o in observations})==3
 print('Real observer OAuth, source counters, delivery failure and recovery passed')
 PYOBS
+cat "$WORK_DIR/paging.log"
 echo "Runtime log identity, authorization, collection, persistence and old-instance isolation passed"

@@ -1,3 +1,5 @@
+import { isStepObservationStopped } from '../../../../common-frontend/basic/src/utils/executionStepObservation.mjs'
+
 export const isActiveExecution = execution => ['pending', 'running'].includes(execution?.status)
 
 export function executionStepStates(execution, steps) {
@@ -10,6 +12,7 @@ export function executionStepStates(execution, steps) {
       ? 'running' : active ? 'pending' : 'not_started')
     return [step.id, {
       status,
+      observationStopped: isStepObservationStopped(execution.status, result?.status),
       error: result?.error || '',
       duration: result?.duration,
       executionId: result?.result?.execution_id || ''

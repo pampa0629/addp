@@ -105,3 +105,6 @@ other = "持续任务配置无效"
 other = "需要身份认证"
 [transfer.configuration.version_conflict]
 other = "持续任务配置已被其他管理员更新"
+
+["transfer.execution.events_unavailable"]
+other = "执行过程事件暂不可用"

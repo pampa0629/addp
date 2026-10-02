@@ -110,6 +110,7 @@ func SetupRouter(
 		platform.DELETE("/platform/log-notification-destinations/:id", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorLogNotificationUpdate), handler.DeleteDestination)
 		platform.POST("/platform/log-notification-destinations/:id/test", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorLogNotificationUpdate), handler.TestDestination)
 		platform.GET("/platform/log-notification-deliveries", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorLogNotificationRead), handler.Deliveries)
+		platform.POST("/platform/log-notification-deliveries/:id/retry", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorLogNotificationUpdate), handler.RetryDelivery)
 
 	}
 

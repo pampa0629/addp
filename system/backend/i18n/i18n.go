@@ -11,6 +11,7 @@ var localeFS embed.FS
 
 // 消息 key 常量
 const (
+	MsgRuntimeLogBoundary                            = "system.module.runtime_log_boundary"
 	MsgRuntimeLogInvalid                             = "system.module.runtime_log_invalid"
 	MsgRuntimeLogDisabled                            = "system.module.runtime_log_disabled"
 	MsgRuntimeLogUnavailable                         = "system.module.runtime_log_unavailable"

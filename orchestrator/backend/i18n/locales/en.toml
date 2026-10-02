@@ -195,3 +195,54 @@ other = "null"
 
 [orchestrator.success.deleted]
 other = "Deleted successfully"
+
+[orchestrator.execution.plan_invalid]
+other = "The execution snapshot is invalid."
+
+[orchestrator.execution.step_state_invalid]
+other = "The stored step state is invalid."
+
+[orchestrator.execution.dispatch_uncertain]
+other = "The downstream submission outcome is uncertain. No automatic replay was attempted; check existing child executions."
+
+[orchestrator.execution.step_timeout]
+other = "Waiting for the child execution timed out; this orchestration did not send a cancellation request."
+
+[orchestrator.execution.child_failed]
+other = "The child execution did not succeed; inspect the child execution."
+
+[orchestrator.execution.binding_invalid]
+other = "The upstream output binding could not be resolved."
+
+[orchestrator.execution.contract_invalid]
+other = "The step execution contract is invalid."
+
+[orchestrator.execution.dispatch_rejected]
+other = "The downstream owner rejected the execution request."
+
+[orchestrator.execution.lease_expired]
+other = "The orchestration coordinator lost its lease. No automatic replay was attempted; check existing child executions."
+
+[orchestrator.execution.coordinator_stopped]
+other = "The orchestration coordinator stopped; check existing child executions."
+
+[orchestrator.execution.plan_missing]
+other = "The legacy execution has no trusted snapshot. No automatic replay was attempted."
+
+[orchestrator.execution.lease_missing]
+other = "The legacy execution has no coordinator lease. No automatic replay was attempted; check existing child executions."
+
+[orchestrator.error.execution_admission_failed]
+other = "Could not create this execution. Please try again later."
+
+[orchestrator.execution.provider_unavailable]
+other = "The task owner is unavailable. No downstream execution request was submitted."
+
+[orchestrator.execution.contract_unavailable]
+other = "The child task execution contract could not be read. No downstream execution request was submitted."
+
+[orchestrator.execution.service_auth_unavailable]
+other = "The service identity is unavailable. No downstream execution request was submitted."
+
+[orchestrator.execution.dispatch_denied]
+other = "The downstream identity or execution authorization check failed; this step was not accepted."

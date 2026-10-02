@@ -107,7 +107,7 @@ export const executionAPI = {
   },
 
   // 获取执行日志
-  logs(executionId, params) {
-    return client.get(`/transfer/executions/${executionId}/logs`, { params })
+  events(executionId, params) {
+    return client.get(`/transfer/executions/${executionId}/events`, { params })
   }
 }

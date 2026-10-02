@@ -117,7 +117,7 @@ continuous 当前有两类实现路径：业务 Kafka keyed JSON record -> Postg
 - `GET /executions/:execution_id`
 - `POST /executions/:execution_id/retry`
 - `GET /executions/:execution_id/progress`
-- `GET /executions/:execution_id/logs`
+- `GET /executions/:execution_id/events`
 
 `GET /task-provider/executions/:execution_id` 是只允许 Orchestrator Runtime 使用的 TaskProvider 标准执行状态入口；用户执行详情继续使用 `GET /executions/:execution_id`。两者都按统一 `common.task_executions.execution_id` 查询，但权限和调用主体不共用。重试、进度和日志入口也按 `execution_id` 定位执行记录。私有 task-definition `stop` 只控制 continuous runtime；bounded worker 仍不支持真实中断，因此 TaskProvider 保持 `supports_cancel=false`，不注册标准 execution cancel endpoint。
 

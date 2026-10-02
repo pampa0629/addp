@@ -292,6 +292,9 @@ func (s *PlatformTenantService) Update(ctx context.Context, input UpdateTenantIn
 	}
 	description := strings.TrimSpace(input.Description)
 	err := s.repository.Transaction(ctx, func(tx *Repository) error {
+		if _, err := tx.lockPrincipalsInOrder(ctx, mutationActorIDs(input.Audit)...); err != nil {
+			return err
+		}
 		tenant, err := tx.LockTenantForUpdate(ctx, input.TenantID)
 		if err != nil {
 			return err
@@ -355,6 +358,14 @@ func (s *PlatformTenantService) changeStatus(
 	now := s.now().UTC()
 	var changed *TenantStatusChangeResult
 	err := s.repository.Transaction(ctx, func(tx *Repository) error {
+		principalIDs, err := tx.ListTenantPrincipalIDs(ctx, input.TenantID)
+		if err != nil {
+			return err
+		}
+		lockIDs := append(mutationActorIDs(input.Audit), principalIDs...)
+		if _, err := tx.lockPrincipalsInOrder(ctx, lockIDs...); err != nil {
+			return err
+		}
 		tenant, err := tx.LockTenantForUpdate(ctx, input.TenantID)
 		if err != nil {
 			return err
@@ -362,8 +373,8 @@ func (s *PlatformTenantService) changeStatus(
 		if err := validateTenantStatusTransition(tenant.Status, target); err != nil {
 			return err
 		}
-		principalIDs, err := tx.LockTenantPrincipalIDs(ctx, tenant.ID)
-		if err != nil {
+		currentIDs, err := tx.ListTenantPrincipalIDs(ctx, tenant.ID)
+		if err := verifyMutationPrincipalSet(principalIDs, currentIDs, err); err != nil {
 			return err
 		}
 		if err := tx.UpdateTenantStatus(ctx, tenant.ID, target); err != nil {

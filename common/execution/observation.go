@@ -54,6 +54,7 @@ type Observation struct {
 type DiagnosticStep struct {
 	ID        string `json:"id"`
 	Status    string `json:"status"`
+	Phase     string `json:"phase,omitempty"`
 	StartedAt string `json:"started_at,omitempty"`
 	EndedAt   string `json:"ended_at,omitempty"`
 	Duration  *int64 `json:"duration,omitempty"`
@@ -322,7 +323,13 @@ func diagnosticSteps(value interface{}) ([]DiagnosticStep, bool) {
 			}
 		}
 		if v, ok := entry["error"].(string); ok && (step.Status == "failed" || step.Status == "timeout" || step.Status == "cancelled") {
-			step.ErrorCode = FailureCategory(models.JSONMap{"message": v})
+			step.ErrorCode = FailureCategory(models.JSONMap{"code": entry["error_code"], "message": v})
+		}
+		if phase, ok := entry["phase"].(string); ok {
+			switch phase {
+			case "dispatching", "waiting", "terminal":
+				step.Phase = phase
+			}
 		}
 		for _, key := range []string{"started_at", "ended_at"} {
 			if v := diagnosticScalar(entry[key]); v != nil {
@@ -384,12 +391,16 @@ func FailureCategory(details models.JSONMap) string {
 		category string
 		patterns []string
 	}{
-		{"permission_denied", []string{"permission denied", "access denied", "unauthorized", "forbidden", "权限不足", "无权限"}},
+		{"owner_unavailable", []string{"provider_unavailable", "contract_unavailable", "service_auth_unavailable"}},
+		{"submission_uncertain", []string{"dispatch_uncertain"}},
+		{"coordinator_lost", []string{"lease_expired", "lease_missing", "coordinator_stopped"}},
+		{"child_failed", []string{"child_failed"}},
+		{"permission_denied", []string{"dispatch_denied", "permission denied", "access denied", "unauthorized", "forbidden", "权限不足", "无权限"}},
 		{"timeout", []string{"deadline exceeded", "timed out", "timeout", "超时"}},
 		{"cancelled", []string{"context canceled", "context cancelled", "取消"}},
 		{"connection_failed", []string{"connection refused", "connection reset", "connection failed", "connect failed", "连接失败", "连接中断"}},
 		{"resource_exhausted", []string{"out of memory", "no space left", "resource exhausted", "内存不足", "空间不足"}},
-		{"invalid_input", []string{"invalid parameter", "invalid input", "syntax error", "参数无效", "语法错误"}},
+		{"invalid_input", []string{"invalid parameter", "invalid input", "syntax error", "plan_invalid", "plan_missing", "step_state_invalid", "binding_invalid", "contract_invalid", "参数无效", "语法错误"}},
 	} {
 		for _, pattern := range rule.patterns {
 			if strings.Contains(text, pattern) {

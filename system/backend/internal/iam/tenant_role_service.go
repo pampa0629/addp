@@ -199,13 +199,7 @@ func (s *TenantRoleService) UpdateRole(ctx context.Context, input UpdateTenantRo
 	}
 	description := strings.TrimSpace(input.Description)
 	err = s.repository.Transaction(ctx, func(tx *Repository) error {
-		if _, err := tx.LockPrincipal(ctx, input.ActorPrincipalID); err != nil {
-			return err
-		}
-		if _, err := tx.LockTenantForUpdate(ctx, input.TenantID); err != nil {
-			return err
-		}
-		role, err := tx.LockTenantRole(ctx, input.TenantID, input.RoleID)
+		role, holders, err := tx.lockRoleMutationPrincipals(ctx, input.TenantID, input.RoleID, input.ActorPrincipalID)
 		if err != nil {
 			return err
 		}
@@ -213,10 +207,6 @@ func (s *TenantRoleService) UpdateRole(ctx context.Context, input UpdateTenantRo
 			return commonapi.ErrForbidden
 		}
 		if err := validateCustomizablePermissions(ctx, tx, scopes, permissions); err != nil {
-			return err
-		}
-		holders, err := tx.ListActiveRoleHolderPrincipalIDs(ctx, role.ID)
-		if err != nil {
 			return err
 		}
 		if err := tx.UpdateTenantCustomRole(ctx, role.ID, name, description, scopes, permissions, input.ActorPrincipalID); err != nil {
@@ -240,22 +230,12 @@ func (s *TenantRoleService) DeleteRole(ctx context.Context, input DeleteTenantRo
 	}
 	now := s.now().UTC()
 	return s.repository.Transaction(ctx, func(tx *Repository) error {
-		if _, err := tx.LockPrincipal(ctx, input.ActorPrincipalID); err != nil {
-			return err
-		}
-		if _, err := tx.LockTenantForUpdate(ctx, input.TenantID); err != nil {
-			return err
-		}
-		role, err := tx.LockTenantRole(ctx, input.TenantID, input.RoleID)
+		role, holders, err := tx.lockRoleMutationPrincipals(ctx, input.TenantID, input.RoleID, input.ActorPrincipalID)
 		if err != nil {
 			return err
 		}
 		if role.Immutable || role.RoleType != "tenant_custom" || role.Status != "active" {
 			return commonapi.ErrForbidden
-		}
-		holders, err := tx.ListActiveRoleHolderPrincipalIDs(ctx, role.ID)
-		if err != nil {
-			return err
 		}
 		if err := tx.DisableTenantCustomRole(ctx, role.ID, input.ActorPrincipalID, strings.TrimSpace(input.Reason), now); err != nil {
 			return err
@@ -312,7 +292,8 @@ func (s *TenantRoleService) CreateAssignments(ctx context.Context, input CreateT
 	}
 	assignments := make([]*RoleAssignment, 0, len(roleIDs))
 	err = s.repository.Transaction(ctx, func(tx *Repository) error {
-		if _, err := tx.LockPrincipal(ctx, input.ActorPrincipalID); err != nil {
+		membership, err := tx.lockMembershipPrincipal(ctx, input.TenantID, input.MembershipID, input.ActorPrincipalID)
+		if err != nil {
 			return err
 		}
 		if _, err := tx.LockTenantForUpdate(ctx, input.TenantID); err != nil {
@@ -321,17 +302,13 @@ func (s *TenantRoleService) CreateAssignments(ctx context.Context, input CreateT
 		if err := validateAssignmentScopeTarget(ctx, tx, input.TenantID, input.ScopeType, input.DepartmentID, input.ProjectGroupID); err != nil {
 			return err
 		}
-		membership, err := tx.LockTenantMembershipByID(ctx, input.MembershipID)
-		if err != nil {
-			return err
-		}
 		if membership.TenantID != input.TenantID || membership.Status != TenantMembershipStatusActive || (membership.ExpiresAt != nil && !membership.ExpiresAt.After(now)) {
 			return commonapi.ErrForbidden
 		}
 		if err := validateAssignmentScopeMembership(ctx, tx, input.TenantID, membership.ID, input.ScopeType, input.DepartmentID, input.ProjectGroupID); err != nil {
 			return err
 		}
-		targetPrincipal, err := tx.LockPrincipal(ctx, membership.PrincipalID)
+		targetPrincipal, err := tx.GetPrincipal(ctx, membership.PrincipalID)
 		if err != nil {
 			return err
 		}
@@ -431,13 +408,16 @@ func (s *TenantRoleService) RevokeAssignment(ctx context.Context, input RevokeTe
 	now := s.now().UTC()
 	var assignment *RoleAssignment
 	err := s.repository.Transaction(ctx, func(tx *Repository) error {
-		if _, err := tx.LockPrincipal(ctx, input.ActorPrincipalID); err != nil {
+		source, err := tx.GetTenantRoleAssignment(ctx, input.TenantID, input.AssignmentID)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.lockPrincipalsInOrder(ctx, input.ActorPrincipalID, source.PrincipalID); err != nil {
 			return err
 		}
 		if _, err := tx.LockTenantForUpdate(ctx, input.TenantID); err != nil {
 			return err
 		}
-		var err error
 		assignment, err = tx.LockTenantRoleAssignment(ctx, input.TenantID, input.AssignmentID)
 		if err != nil {
 			return err
@@ -448,8 +428,8 @@ func (s *TenantRoleService) RevokeAssignment(ctx context.Context, input RevokeTe
 		if assignment.ValidUntil != nil && !assignment.ValidUntil.After(now) {
 			return ErrTenantRoleAssignmentExpired
 		}
-		if _, err := tx.LockPrincipal(ctx, assignment.PrincipalID); err != nil {
-			return err
+		if assignment.PrincipalID != source.PrincipalID {
+			return commonapi.ErrConflict
 		}
 		revokedReason := strings.TrimSpace(input.Reason)
 		if err := tx.RevokeTenantRoleAssignment(ctx, assignment.ID, input.ActorPrincipalID, revokedReason, now); err != nil {

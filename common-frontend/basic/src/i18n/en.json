@@ -7,9 +7,15 @@
       "connection_failed": "Connection failed",
       "resource_exhausted": "Runtime resources exhausted",
       "invalid_input": "Invalid input or syntax",
-      "execution_failed": "Execution failed; inspect domain diagnostics in the task owner"
+      "execution_failed": "Execution failed; inspect domain diagnostics in the task owner",
+      "submission_uncertain": "Submission outcome is uncertain; no replay was attempted. Check child executions.",
+      "coordinator_lost": "The execution coordinator stopped or lost its lease; inspect the owner module.",
+      "child_failed": "A child execution did not succeed; inspect the child execution.",
+      "owner_unavailable": "The owner, execution contract or service identity is unavailable; no child request was submitted."
     },
     "executionSteps": {
+      "lastRecorded": "Last recorded: {status}",
+      "observationStopped": "This execution has ended. Unfinished steps show their last recorded state; open the child execution to check whether it has ended.",
       "attemptUnverified": "This execution was retried. Stored steps do not identify their attempt and cannot establish progress for the current attempt",
       "title": "Execution steps",
       "current": "Current phase",
@@ -30,6 +36,10 @@
         "cancelled": "Cancelled",
         "skipped": "Skipped",
         "unknown": "Not recorded"
+      },
+      "phases": {
+        "dispatching": "Submitting the child task",
+        "waiting": "Waiting for the child execution"
       }
     },
     "export": {

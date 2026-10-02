@@ -88,7 +88,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	apiConsumerService := service.NewAPIConsumerService(apiConsumerRepo)
 	moduleRegistryService := service.NewModuleRegistryService(moduleRegistryRepo)
 	taskProviderService := service.NewTaskProviderService(moduleRegistryService)
-	moduleRegistryHandler := NewModuleRegistryHandler(moduleRegistryService)
+	moduleRegistryHandler := NewModuleRegistryHandler(moduleRegistryService, cfg.EncryptionKey)
 	taskExecutionRepo := commonExecution.NewTaskExecutionRepository(db)
 	cleanupService := service.NewCleanupOrchestratorService(
 		redisClient, taskExecutionRepo, auditWriter, moduleRegistryService,

@@ -144,7 +144,7 @@ func (r *Repository) UpdateTenantStatus(ctx context.Context, tenantID int64, sta
 	return nil
 }
 
-func (r *Repository) LockTenantPrincipalIDs(ctx context.Context, tenantID int64) ([]int64, error) {
+func (r *Repository) ListTenantPrincipalIDs(ctx context.Context, tenantID int64) ([]int64, error) {
 	var principalIDs []int64
 	err := r.db.WithContext(ctx).Raw(`
 		SELECT principal.id
@@ -156,7 +156,6 @@ func (r *Repository) LockTenantPrincipalIDs(ctx context.Context, tenantID int64)
 			  AND membership.principal_id = principal.id
 		)
 		ORDER BY principal.id
-		FOR UPDATE OF principal
 	`, tenantID).Scan(&principalIDs).Error
 	return principalIDs, wrapRepositoryError(err)
 }

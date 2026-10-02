@@ -27,8 +27,6 @@ type ExecutionService struct {
 	activeLeases      sync.Map
 }
 
-const executionLogsMetadataKey = "execution_logs"
-
 func (s *ExecutionService) BindBoundedLease(executionID uint, lease commonExecution.Lease) {
 	s.activeLeases.Store(executionID, lease)
 }
@@ -81,9 +79,6 @@ func (s *ExecutionService) convertToTransferExecution(exec *commonExecution.Task
 	// checkpoint 数据存在 metadata JSONB 中
 	if exec.Metadata != nil {
 		transferExec.Metadata = exec.Metadata
-		if logs, ok := exec.Metadata[executionLogsMetadataKey].(string); ok {
-			transferExec.Logs = logs
-		}
 		if offset, ok := exec.Metadata["checkpoint_offset"].(float64); ok {
 			v := int64(offset)
 			transferExec.CheckpointOffset = v
@@ -494,7 +489,7 @@ func (s *ExecutionService) FinishExecution(ctx context.Context, id uint, status 
 		delete(updates, "status")
 		delete(updates, "completed_at")
 		return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-			if err := commonExecution.CompleteWithLease(ctx, tx, lease, string(status), now, updates); err != nil {
+			if err := commonExecution.CompleteWithEvent(ctx, tx, lease, string(status), now, updates); err != nil {
 				return err
 			}
 			if execution.SourceTaskID == nil || isReplayExecutionConfig(execution.ExecutionConfig) {
@@ -659,23 +654,9 @@ func (s *ExecutionService) GetExecutionProgress(ctx context.Context, id, tenantI
 	return progress, nil
 }
 
-// GetExecutionLogs 获取执行日志
-func (s *ExecutionService) GetExecutionLogs(ctx context.Context, id, tenantID uint) (string, error) {
-	execution, err := s.GetExecution(ctx, id, tenantID)
-	if err != nil {
-		return "", err
-	}
-
-	logs := strings.TrimSpace(execution.Logs)
-	errorMsg := strings.TrimSpace(execution.ErrorMsg)
-	if errorMsg == "" {
-		return logs, nil
-	}
-	errorLine := "ERROR " + errorMsg
-	if logs == "" {
-		return errorLine, nil
-	}
-	return logs + "\n" + errorLine, nil
+// GetExecutionEvents reuses the execution authorization scope.
+func (s *ExecutionService) GetExecutionEvents(ctx context.Context, executionID string, tenantID uint, after int64, limit int) (*commonExecution.EventPage, error) {
+	return s.taskExecutionRepo.ListEvents(ctx, executionID, int(tenantID), after, limit)
 }
 
 // GetExecutionStatistics 获取执行统计信息
@@ -699,30 +680,17 @@ func (s *ExecutionService) GetExecutionStatistics(ctx context.Context, tenantID 
 	}, nil
 }
 
-// AppendLog 追加日志到执行记录（用于实时日志更新）
-func (s *ExecutionService) AppendLog(ctx context.Context, id uint, logLine string) error {
-	// 获取执行记录
-	execution, err := s.taskExecutionRepo.GetByID(ctx, int64(id), 0) // tenant_id 传 0 不过滤
+// AppendProgressEvent records only bounded facts under the current worker lease.
+func (s *ExecutionService) AppendProgressEvent(ctx context.Context, id uint, input commonExecution.EventInput) error {
+	item, err := s.taskExecutionRepo.GetByID(ctx, int64(id), 0)
 	if err != nil {
 		return err
 	}
-
-	// 正常进度日志属于执行元数据；error_details 只保存真实错误。
-	metadata := execution.Metadata
-	if metadata == nil {
-		metadata = commonModels.JSONMap{}
+	lease, ok := s.leaseForExecution(ctx, id, item.ExecutionID)
+	if !ok || item.Module != commonExecution.ModuleTransfer {
+		return fmt.Errorf("transfer event requires the active bounded lease")
 	}
-
-	existingLogs := ""
-	if logs, ok := metadata[executionLogsMetadataKey].(string); ok {
-		existingLogs = logs
-	}
-
-	metadata[executionLogsMetadataKey] = existingLogs + logLine + "\n"
-
-	return s.updateExecutionFields(ctx, execution, map[string]interface{}{
-		"metadata": metadata,
-	})
+	return commonExecution.AppendBoundedEvent(ctx, s.db, lease, input)
 }
 
 // UpdateMetrics 更新执行指标（用于实时指标更新）

@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	sharedauth "github.com/addp/common/middleware/auth"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	sysi18n "github.com/addp/system/i18n"
 	"github.com/addp/system/internal/models"
@@ -17,7 +18,7 @@ import (
 
 // GetModuleRuntimeLogs godoc
 // @Summary 查看指定模块实例运行日志 | Read runtime logs of a module instance
-// @Description 有界查询已登记实例的日志；采集完整性未知，离线实例也可读取 | Bounded logs for a registered instance, including offline instances; collection completeness is unknown
+// @Description 固定窗口游标分页；30 分钟有效，非存储快照，采集完整性未知，离线实例也可读取 | Fixed-window cursor paging; valid for 30 minutes, not a storage snapshot, collection completeness unknown; offline instances supported
 // @Tags 平台模块管理 | Platform Module Management
 // @Produce json
 // @Security BearerAuth
@@ -27,12 +28,14 @@ import (
 // @Param to query string true "UTC RFC3339 结束时间（不含） | Exclusive UTC RFC3339 end"
 // @Param level query string false "日志级别 | Log level" Enums(debug,info,warn,error,unknown)
 // @Param keyword query string false "字面量关键字，最多 128 字符 | Literal keyword, at most 128 characters"
-// @Param limit query int false "返回上限，默认 200，最多 1000 | Limit, default 200, maximum 1000"
+// @Param limit query int false "每批上限，默认 200，最多 1000 | Batch limit, default 200, maximum 1000"
+// @Param cursor query string false "服务端产生的续查游标；须保留同一筛选与窗口 | Server-issued cursor; retain the same filters and window"
 // @Success 200 {object} service.RuntimeLogResult
 // @Failure 400 {object} models.ErrorResponse
 // @Failure 401 {object} models.ErrorResponse
 // @Failure 403 {object} models.ErrorResponse
 // @Failure 404 {object} models.ErrorResponse
+// @Failure 422 {object} models.ErrorResponse
 // @Failure 500 {object} models.ErrorResponse
 // @Failure 502 {object} models.ErrorResponse
 // @Failure 503 {object} models.ErrorResponse
@@ -42,8 +45,8 @@ import (
 // @Router /platform/modules/{module_name}/instances/{instance_id}/logs [get]
 func (h *ModuleRegistryHandler) GetModuleRuntimeLogs(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	q := service.RuntimeLogQuery{Level: c.Query("level"), Keyword: c.Query("keyword"), Limit: 200}
-	allowed := map[string]bool{"from": true, "to": true, "level": true, "keyword": true, "limit": true}
+	q := service.RuntimeLogQuery{Level: c.Query("level"), Keyword: c.Query("keyword"), Limit: 200, Cursor: c.Query("cursor"), UserID: sharedauth.GetUserID(c)}
+	allowed := map[string]bool{"from": true, "to": true, "level": true, "keyword": true, "limit": true, "cursor": true}
 	for key, values := range c.Request.URL.Query() {
 		if !allowed[key] || len(values) != 1 {
 			runtimeLogError(c, 400, sysi18n.MsgRuntimeLogInvalid)
@@ -94,6 +97,14 @@ func (h *ModuleRegistryHandler) GetModuleRuntimeLogs(c *gin.Context) {
 	}
 	result, err := h.runtimeLogs.Query(c.Request.Context(), module.ModuleName, c.Param("instance_id"), q)
 	if err != nil {
+		if errors.Is(err, service.ErrRuntimeLogsInvalid) {
+			runtimeLogError(c, 400, sysi18n.MsgRuntimeLogInvalid)
+			return
+		}
+		if errors.Is(err, service.ErrRuntimeLogsBoundary) {
+			runtimeLogError(c, 422, sysi18n.MsgRuntimeLogBoundary)
+			return
+		}
 		status := 502
 		key := sysi18n.MsgRuntimeLogUnavailable
 		if errors.Is(err, service.ErrRuntimeLogsDisabled) {

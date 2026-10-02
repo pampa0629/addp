@@ -148,6 +148,24 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 		return r
 	}
 	repo := NewRepository(db)
+	confirmation, _ := newOperator(t, time.Hour)
+	confirmationRole, err := iam.NewTenantRoleService(identity, time.Now).CreateRole(ctx, iam.CreateTenantRoleInput{
+		TenantID: tenant.ID, RoleKey: "custom.fulfillment_confirmation", Name: "Explicit business confirmation fixture",
+		ScopeTypes: []string{"tenant"}, PermissionKeys: []string{"catalog.entry.read", "catalog.sharing_decision.create"},
+		ActorPrincipalID: user.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := iam.NewTenantRoleService(identity, time.Now).CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{
+		TenantID: tenant.ID, MembershipID: confirmation.MembershipID, RoleIDs: []int64{confirmationRole.ID},
+		ScopeType: "tenant", ActorPrincipalID: user.ID, Reason: "Explicit fixture confirmation permission"}); err != nil {
+		t.Fatal(err)
+	}
+	confirmedPrincipal, err := identity.GetPrincipal(ctx, confirmation.PrincipalID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	confirmation.AuthorizationVersion = confirmedPrincipal.AuthorizationVersion
 	// Only coordination predicates are tested here. This is NOT a production
 	// business approval or approval-requirement service.
 	verified := func(*Repository) error { return nil }
@@ -169,15 +187,43 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 	if _, err := change(newRequest().Path, approvalModeCatalog, 0, verified); err != nil {
 		t.Fatal(err)
 	}
+	t.Run("real IAM role assignment does not deadlock qualification", func(t *testing.T) {
+		operator, _ := newOperator(t, time.Hour)
+		roles := iam.NewTenantRoleService(identity, time.Now)
+		role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: tenant.ID,
+			RoleKey: "custom.qualification_reader", Name: "Qualification fixture", ScopeTypes: []string{"tenant"},
+			PermissionKeys: []string{"catalog.entry.read"}, ActorPrincipalID: user.ID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		assertIAMQualificationRace(t, db, tenant.ID, operator, func(raceCtx context.Context) error {
+			_, err := roles.CreateAssignments(raceCtx, iam.CreateTenantRoleAssignmentsInput{TenantID: tenant.ID,
+				MembershipID: operator.MembershipID, RoleIDs: []int64{role.ID}, ScopeType: "tenant",
+				ActorPrincipalID: user.ID, Reason: "Concurrency fixture"})
+			return err
+		})
+	})
+	t.Run("real IAM writers share qualification lock order", func(t *testing.T) {
+		exerciseIAMQualificationWriters(t, db, identity, tenant.ID, user.ID, newOperator)
+	})
+	t.Run("batch IAM mutation rechecks affected account set", func(t *testing.T) {
+		exerciseIAMMutationSetChanges(t, db, identity, tenant.ID, user.ID, newOperator)
+	})
 	settle := func(r fulfillmentRequest, accept bool) (*fulfillmentOutcome, error) {
 		var result *fulfillmentOutcome
 		err := repo.transaction(ctx, func(tx *Repository) error {
 			var err error
-			result, err = tx.settleFulfillment(ctx, r, accept, verified)
+			result, err = tx.settleFulfillment(ctx, r, accept, confirmation, verified)
 			return err
 		})
 		return result, err
 	}
+	t.Run("recipient qualification and historical recovery", func(t *testing.T) {
+		exerciseFulfillmentRecipients(t, db, identity, newRequest, newOperator, seedDelegation, confirmation)
+	})
+	t.Run("business confirmer current qualification", func(t *testing.T) {
+		exerciseFulfillmentConfirmers(t, db, identity, newRequest, newOperator, seedDelegation)
+	})
 	t.Run("long-term read still has original five-minute automatic window", func(t *testing.T) {
 		r := newRequest()
 		r.ExpiryMode, r.ExpiresAt = authorization.SharingExpiryUntilRevoked, nil
@@ -300,7 +346,7 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 		r.Operator = limitedOperator(time.Second)
 		verifiedBusiness := false
 		err := repo.transaction(ctx, func(tx *Repository) error {
-			_, err := tx.settleFulfillment(ctx, r, true, func(tx *Repository) error {
+			_, err := tx.settleFulfillment(ctx, r, true, confirmation, func(tx *Repository) error {
 				verifiedBusiness = true
 				return tx.db.Exec("SELECT pg_sleep(1.05)").Error
 			})
@@ -401,7 +447,7 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 		seedDelegation(t, r.Operator.MembershipID, now.Add(time.Second))
 		verifiedBusiness := false
 		err = repo.transaction(ctx, func(tx *Repository) error {
-			_, err := tx.settleFulfillment(ctx, r, true, func(tx *Repository) error {
+			_, err := tx.settleFulfillment(ctx, r, true, confirmation, func(tx *Repository) error {
 				verifiedBusiness = true
 				return tx.db.Exec("SELECT pg_sleep(1.05)").Error
 			})
@@ -430,7 +476,7 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 			if err := tx.db.Exec("UPDATE system.engines SET lifecycle_state = 'deleting' WHERE id = ?", engine.ID).Error; err != nil {
 				return err
 			}
-			_, err := tx.settleFulfillment(ctx, newRequest(), true, verified)
+			_, err := tx.settleFulfillment(ctx, newRequest(), true, confirmation, verified)
 			return err
 		})
 		if !errors.Is(err, commonapi.ErrForbidden) {
@@ -467,7 +513,7 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 					return err
 				}
 				started <- pid
-				_, err := tx.settleFulfillment(bounded, r, true, verified)
+				_, err := tx.settleFulfillment(bounded, r, true, confirmation, verified)
 				return err
 			})
 		}()
@@ -523,7 +569,7 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 			t.Fatal(tx.Error)
 		}
 		defer tx.Rollback()
-		if _, err := NewRepository(tx).settleFulfillment(ctx, r, true, verified); err != nil {
+		if _, err := NewRepository(tx).settleFulfillment(ctx, r, true, confirmation, verified); err != nil {
 			t.Fatal(err)
 		}
 		// The first transaction remains uncommitted and holds all source locks.
@@ -539,7 +585,7 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 			if _, err := second.changeApprovalRequirement(bounded, input, verified); err != nil {
 				return err
 			}
-			_, err := second.settleFulfillment(bounded, other, true, verified)
+			_, err := second.settleFulfillment(bounded, other, true, confirmation, verified)
 			return err
 		})
 		if err != nil {
@@ -602,7 +648,7 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 			t.Fatal(tx.Error)
 		}
 		defer tx.Rollback()
-		first, err := NewRepository(tx).settleFulfillment(ctx, r, true, verified)
+		first, err := NewRepository(tx).settleFulfillment(ctx, r, true, confirmation, verified)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -804,7 +850,10 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 			hold := func(*Repository) error { close(held); <-release; return nil }
 			go func() {
 				if acceptFirst {
-					done <- repo.transaction(ctx, func(tx *Repository) error { _, err := tx.settleFulfillment(ctx, r, true, hold); return err })
+					done <- repo.transaction(ctx, func(tx *Repository) error {
+						_, err := tx.settleFulfillment(ctx, r, true, confirmation, hold)
+						return err
+					})
 				} else {
 					_, err := change(r.Path, approvalModeIndependent, 1, hold)
 					done <- err
@@ -825,7 +874,7 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 					}
 					waitingPID <- pid
 					if !acceptFirst {
-						_, err := tx.settleFulfillment(ctx, r, true, verified)
+						_, err := tx.settleFulfillment(ctx, r, true, confirmation, verified)
 						return err
 					}
 					input := approvalRequirementChange{TenantID: tenant.ID, Path: r.Path, ExpectedVersion: 1, Mode: approvalModeIndependent,
@@ -894,7 +943,7 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 	})
 	t.Run("no owner transaction cannot create a result", func(t *testing.T) {
 		r := newRequest()
-		if _, err := repo.settleFulfillment(ctx, r, true, verified); !errors.Is(err, errFulfillmentBinding) {
+		if _, err := repo.settleFulfillment(ctx, r, true, confirmation, verified); !errors.Is(err, errFulfillmentBinding) {
 			t.Fatalf("nontransactional acceptance: %v", err)
 		}
 		var rows int64
@@ -957,7 +1006,7 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 	t.Run("missing verification cannot accept", func(t *testing.T) {
 		r := newRequest()
 		err := repo.transaction(ctx, func(tx *Repository) error {
-			_, err := tx.settleFulfillment(ctx, r, true, nil)
+			_, err := tx.settleFulfillment(ctx, r, true, confirmation, nil)
 			return err
 		})
 		if !errors.Is(err, errFulfillmentBinding) {
@@ -1008,7 +1057,7 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 					}
 					return nil
 				}
-				if _, err := tx.settleFulfillment(ctx, r, true, verify); err != nil {
+				if _, err := tx.settleFulfillment(ctx, r, true, confirmation, verify); err != nil {
 					return err
 				}
 				return failure
@@ -1033,7 +1082,7 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 		}
 		r.ExpiresAt = testFulfillmentExpiry(now.Add(100 * time.Millisecond))
 		err := repo.transaction(ctx, func(tx *Repository) error {
-			_, err := tx.settleFulfillment(ctx, r, true, func(tx *Repository) error { return tx.db.Exec("SELECT pg_sleep(0.15)").Error })
+			_, err := tx.settleFulfillment(ctx, r, true, confirmation, func(tx *Repository) error { return tx.db.Exec("SELECT pg_sleep(0.15)").Error })
 			return err
 		})
 		if !errors.Is(err, errFulfillmentExpired) {

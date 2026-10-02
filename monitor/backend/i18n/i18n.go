@@ -11,6 +11,8 @@ var localeFS embed.FS
 
 // Monitor 模块消息 key 常量
 const (
+	MsgLogRetryUnavailable          = "monitor.platform_log.retry_unavailable"
+	MsgLogRetryConflict             = "monitor.platform_log.retry_conflict"
 	MsgDiagnosticQueryFailed        = "monitor.err.diagnostic_query_failed"
 	MsgTenantNotFound               = "monitor.auth.tenant_not_found"
 	MsgInvalidExecutionID           = "monitor.execution.invalid_id"

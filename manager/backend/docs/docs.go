@@ -5813,6 +5813,9 @@ const docTemplate = `{
                 "id": {
                     "type": "string"
                 },
+                "phase": {
+                    "type": "string"
+                },
                 "started_at": {
                     "type": "string"
                 },

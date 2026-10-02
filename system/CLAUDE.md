@@ -20,6 +20,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
+内部业务确认资格（2026-10-02）：首次受理还须从 owner 业务决定获取原确认人的身份引用，与办理人及接收账号共同去重升序共享锁定。确认人的历史授权版本只作审计，实时核验原 Tenant Membership、当前身份及 `catalog.entry.read`／`catalog.sharing_decision.create` 的有效 Tenant Scope 授权；原办理人仍严格匹配请求版本。权限和成员自然到期在业务核验后按数据库墙钟复核。历史核清及未受理关闭不重新要求确认资格；内部入参不构成可信 owner 证明，真实机器调用、Catalog 原责任依据及独立办理 Permission 尚待贯通，仍无公开受理或 Grant 接口。
+
 **全域数据平台 (All Domain Data Platform)** 是企业级数据平台的核心能力模块，提供基础系统功能：
 - 统一 IAM（全局 User、Tenant Membership、组织、角色、权限和平台三员分立）
 - 日志管理（审计日志存储和查询、统计分析、导出）
@@ -59,6 +61,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Tenant Context 的 Tenant 和 Membership 由 AuthContext 提供，客户端不得自报；
 - 引擎、日志等业务事实关联 Tenant ID；
 - API 先执行 Context 与 Permission Guard，再由 owner 查询和资源策略完成最终隔离。
+
+## 平台模块运行日志
+
+- 模块管理的服务实例页提供正文查询，日志链路页提供 Monitor 拥有的观测、告警和通知管理。正文读取与链路/通知权限独立，不由页面推断租户执行事实。
+- 通知投递列表使用 Monitor 返回的当前目标名称/版本、原事件类型/发生时间和告警当前状态。最终失败记录可由 `monitor.log_notification.update` 管理者重新入队；只读权限不显示操作。
+- 重投确认包含历史恢复提示，提交仅带预期人工重投次数与目标版本，保持原投递身份。成功表示已重新入队，刷新当前页；冲突保留失败信息并要求刷新。累计、本轮和人工次数分别展示，不把累计领取次数解释为实际网络请求次数。
 
 ## 常用命令
 
@@ -441,7 +449,7 @@ API 消费方不是 Principal，不能分配 Role。首期只绑定 Service Cons
 
 System 平台的“模块管理 → 服务实例”提供已登记 UP/DOWN 实例的日志抽屉。独立 Permission `platform.module_log.read` 默认只授予平台系统管理员；租户、Runtime Service Principal 和仅有模块读取权限的用户不能读取正文。
 
-API 为 `GET /api/v1/system/platform/modules/{module_name}/instances/{instance_id}/logs`，参数 `from/to/level/keyword/limit`。固定实例、字面量关键字、有界时间窗口；默认 200 条，最多 1000 条且响应不超过 2 MiB，不提供虚构总数或完整分页。System 只访问受控 Loki 查询代理，不接收客户端文件路径、LogQL 或远端地址。失败返回明确错误，采集完整性始终标为未知。
+API 为 `GET /api/v1/system/platform/modules/{module_name}/instances/{instance_id}/logs`，参数 `from/to/level/keyword/limit/cursor`。固定实例、字面量关键字、有界时间窗口；每批默认 200 条，最多 1000 条且响应不超过 2 MiB。历史分页固定首批窗口，不提供虚构总数；游标绑定当前 Platform User 与筛选，30 分钟有效。正文按接收时间和精确 uint64 序号排序。同时间戳候选达到 Loki 1001 条单次安全限额时返回 422，不能悄悄跳过。抽屉提供更早、返回和回到最新，历史浏览暂停跟随，翻页失败保留当前批；筛选变化清除旧结果，迟到记录刷新补查。本次查询不是存储快照，末页不表示采集完整。System 只访问受控 Loki 查询代理，不接收客户端文件路径、LogQL 或远端地址。失败返回明确错误，采集完整性始终标为未知。
 
 正文由 Alloy/Loki/MinIO 保存，不写入 IAM 审计表。标准开发和容器启动通过 `common/cmd/runtime-log` 生成并传递进程身份。重启产生新身份，原有 DOWN 登记事实保留，便于查询集中保留期内的旧日志。尚未登记的启动失败只保留节点源，不虚构服务实例。
 

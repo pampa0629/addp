@@ -8,9 +8,11 @@ import (
 
 	commonAPI "github.com/addp/common/api"
 	commonAuthorization "github.com/addp/common/authorization"
+	commonExecution "github.com/addp/common/execution"
 	commonAuth "github.com/addp/common/middleware/auth"
 	i18nmiddleware "github.com/addp/common/middleware/i18n"
 	"github.com/addp/common/taskprovider"
+	transferi18n "github.com/addp/transfer/i18n"
 	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/service"
 	"github.com/gin-gonic/gin"
@@ -315,52 +317,50 @@ func (h *ExecutionHandler) GetExecutionProgress(c *gin.Context) {
 	c.JSON(http.StatusOK, progress)
 }
 
-// GetExecutionLogs 获取执行日志
-// @Summary 获取执行日志 | Get execution logs
+// ExecutionEventPage is the shared safe event response.
+type ExecutionEventPage = commonExecution.EventPage
+
+// GetExecutionEvents 获取安全过程事件
+// @Summary 获取执行过程事件 | Get execution process events
+// @Description 按 ID 游标读取最近 30 天结构化事件，每页最多 100 条。| Read safe structured events retained for 30 days with an ID cursor, up to 100 per page.
 // @Tags 执行管理 | Execution Management
 // @Produce json
 // @Param execution_id path string true "执行ID | Execution ID"
-// @Param limit query int false "最多返回行数 | Line limit"
-// @Success 200 {array} string
+// @Param after query int false "上一页末尾事件 ID | Last event ID" minimum(0)
+// @Param limit query int false "每页事件数 | Page size" default(100) minimum(1) maximum(100)
+// @Success 200 {object} ExecutionEventPage
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]string
 // @Failure 500 {object} map[string]string
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["transfer.task.read"]
-// @Router /executions/{execution_id}/logs [get]
+// @Router /executions/{execution_id}/events [get]
 // @Security BearerAuth
-func (h *ExecutionHandler) GetExecutionLogs(c *gin.Context) {
+func (h *ExecutionHandler) GetExecutionEvents(c *gin.Context) {
+	scope, authorized := commonExecution.OwnerReadScopeFromGin(c, commonExecution.ModuleTransfer, executionReadPermissions)
+	if !authorized {
+		commonAPI.ForbiddenError(c, i18nmiddleware.T(c, i18nmiddleware.MsgForbidden))
+		return
+	}
+	c.Request = c.Request.WithContext(commonExecution.WithReadScopes(c.Request.Context(), []commonExecution.ReadScope{*scope}))
+
 	tenantID := commonAuth.GetTenantID(c)
 	execution, ok := h.getExecutionByExecutionID(c, tenantID)
 	if !ok {
 		return
 	}
-
-	// 获取完整日志字符串
-	logs, err := h.executionService.GetExecutionLogs(c.Request.Context(), execution.ID, tenantID)
-	if err != nil {
-		commonAPI.InternalServerError(c, err.Error())
+	after, afterErr := strconv.ParseInt(c.DefaultQuery("after", "0"), 10, 64)
+	limit, limitErr := strconv.Atoi(c.DefaultQuery("limit", "100"))
+	if afterErr != nil || limitErr != nil || after < 0 || limit < 1 || limit > 100 {
+		commonAPI.BadRequestError(c, i18nmiddleware.T(c, i18nmiddleware.MsgInvalidParams))
 		return
 	}
-
-	// 拆分为行，并根据可选的 limit 参数进行裁剪
-	lines := []string{}
-	if logs != "" {
-		// 使用 \n 拆分，并去掉可能的末尾空行
-		raw := strings.Split(logs, "\n")
-		for _, line := range raw {
-			if line != "" {
-				lines = append(lines, line)
-			}
-		}
+	page, err := h.executionService.GetExecutionEvents(c.Request.Context(), execution.ExecutionID, tenantID, after, limit)
+	if err != nil {
+		commonAPI.InternalServerError(c, i18nmiddleware.T(c, transferi18n.MsgExecutionEventsUnavailable))
+		return
 	}
-
-	if limitStr := c.Query("limit"); limitStr != "" {
-		if limit, err := strconv.Atoi(limitStr); err == nil && limit > 0 && len(lines) > limit {
-			lines = lines[len(lines)-limit:]
-		}
-	}
-
-	// 返回数组，前端按行渲染
-	c.JSON(http.StatusOK, lines)
+	c.JSON(http.StatusOK, page)
 }
 
 func (h *ExecutionHandler) getExecutionByExecutionID(c *gin.Context, tenantID uint) (*models.TaskExecution, bool) {

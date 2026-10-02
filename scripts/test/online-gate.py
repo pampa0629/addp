@@ -45,6 +45,11 @@ class Suite:
 # Only executable owner-maintained Online suites belong here. Do not register
 # placeholders: an entry means the suite is ready for real Online acceptance.
 SUITES: Mapping[str, Suite] = {
+    "orchestrator-execution": Suite(
+        command=(sys.executable, "-m", "scripts.test.orchestrator-execution-online"),
+        services=(("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL"),
+                  ("meta", "META_URL"), ("orchestrator", "ORCHESTRATOR_URL"), ("monitor", "MONITOR_URL")),
+    ),
     "compose-public-origin": Suite(
         command=(sys.executable, "scripts/test/compose-public-origin-online.py"),
         services=(("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL")),

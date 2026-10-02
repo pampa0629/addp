@@ -77,69 +77,37 @@ func TestUpdateStatusStartsPendingExecution(t *testing.T) {
 	}
 }
 
-func TestGetExecutionLogsIncludesTerminalFailure(t *testing.T) {
+func TestProgressEventsRequireCurrentLeaseAndDoNotStoreText(t *testing.T) {
 	ctx := context.Background()
 	db := newExecutionServiceTestDB(t)
 	task := createExecutionServiceTestTask(t, db)
-	execution := createExecutionServiceTestExecution(t, db, task, commonExecution.ExecutionStatusFailed)
-	execution.ErrorDetails = commonModels.JSONMap{
-		"message": "failed to write target geometry",
-	}
-	execution.Metadata = commonModels.JSONMap{executionLogsMetadataKey: "2026-07-31T22:38:05Z batch=0\n"}
-	if err := db.Save(&execution).Error; err != nil {
-		t.Fatalf("save execution error details: %v", err)
-	}
+	item := createExecutionServiceTestExecution(t, db, task, commonExecution.ExecutionStatusRunning)
 	service := NewExecutionService(db, commonExecution.NewTaskExecutionRepository(db))
-
-	logs, err := service.GetExecutionLogs(ctx, uint(execution.ID), uint(task.TenantID))
-	if err != nil {
-		t.Fatalf("GetExecutionLogs() error = %v", err)
+	input := commonExecution.EventInput{Kind: "progress", Counters: map[string]int64{"records_written": 100}}
+	if err := service.AppendProgressEvent(ctx, uint(item.ID), input); err == nil {
+		t.Fatal("unleased append succeeded")
 	}
-	want := "2026-07-31T22:38:05Z batch=0\nERROR failed to write target geometry"
-	if logs != want {
-		t.Fatalf("logs = %q, want %q", logs, want)
-	}
-}
-
-func TestAppendLogKeepsErrorDetailsEmpty(t *testing.T) {
-	ctx := context.Background()
-	db := newExecutionServiceTestDB(t)
-	task := createExecutionServiceTestTask(t, db)
-	execution := createExecutionServiceTestExecution(t, db, task, commonExecution.ExecutionStatusPending)
-	service := NewExecutionService(db, commonExecution.NewTaskExecutionRepository(db))
-
-	if err := service.AppendLog(ctx, uint(execution.ID), "batch=1 records_written=100"); err != nil {
-		t.Fatalf("AppendLog() error = %v", err)
-	}
-	var stored commonExecution.TaskExecution
-	if err := db.First(&stored, execution.ID).Error; err != nil {
+	bindExecutionServiceTestLease(t, db, service, &item)
+	if err := service.AppendProgressEvent(ctx, uint(item.ID), input); err != nil {
 		t.Fatal(err)
 	}
-	if len(stored.ErrorDetails) != 0 {
-		t.Fatalf("error_details = %#v, want empty", stored.ErrorDetails)
+	var events []commonExecution.Event
+	if err := db.Where("execution_id = ?", item.ExecutionID).Find(&events).Error; err != nil {
+		t.Fatal(err)
 	}
-	if stored.Metadata[executionLogsMetadataKey] != "batch=1 records_written=100\n" {
-		t.Fatalf("metadata = %#v", stored.Metadata)
+	if len(events) != 1 || events[0].Kind != "progress" {
+		t.Fatalf("events=%#v", events)
 	}
-}
-
-func TestGetExecutionLogsUsesTerminalFailureWhenProgressLogsAreEmpty(t *testing.T) {
-	ctx := context.Background()
-	db := newExecutionServiceTestDB(t)
-	task := createExecutionServiceTestTask(t, db)
-	execution := createExecutionServiceTestExecution(t, db, task, commonExecution.ExecutionStatusFailed)
-	execution.ErrorDetails = commonModels.JSONMap{"message": "failed before first batch"}
-	if err := db.Save(&execution).Error; err != nil {
-		t.Fatalf("save execution error details: %v", err)
+	var stored commonExecution.TaskExecution
+	if err := db.First(&stored, item.ID).Error; err != nil {
+		t.Fatal(err)
 	}
-	service := NewExecutionService(db, commonExecution.NewTaskExecutionRepository(db))
-
-	logs, err := service.GetExecutionLogs(ctx, uint(execution.ID), uint(task.TenantID))
-	if err != nil {
-		t.Fatalf("GetExecutionLogs() error = %v", err)
+	if len(stored.ErrorDetails) != 0 || stored.Metadata["execution_logs"] != nil {
+		t.Fatalf("unexpected text evidence: %#v", stored)
 	}
-	if logs != "ERROR failed before first batch" {
-		t.Fatalf("logs = %q, want terminal failure log", logs)
+	service.UnbindBoundedLease(uint(item.ID))
+	if err := service.AppendProgressEvent(ctx, uint(item.ID), input); err == nil {
+		t.Fatal("released worker append succeeded")
 	}
 }
 
@@ -307,36 +275,17 @@ func TestGetOwnedExecutionByExecutionIDRequiresMatchingAdHocSource(t *testing.T)
 	}
 }
 
-func TestFinishErrorDetailsPreservesLogsOnSuccess(t *testing.T) {
-	details, changed := finishErrorDetails(commonModels.JSONMap{
-		"logs":    "batch=1\n",
-		"message": "old error",
-	}, models.ExecutionStatusSuccess, "")
-
-	if !changed {
-		t.Fatal("finishErrorDetails changed = false, want true")
-	}
-	if got := details["logs"]; got != "batch=1\n" {
-		t.Fatalf("logs = %#v, want preserved logs", got)
-	}
-	if _, ok := details["message"]; ok {
-		t.Fatalf("message still exists in details: %#v", details)
+func TestFinishErrorDetailsClearsPriorMessageOnSuccess(t *testing.T) {
+	details, changed := finishErrorDetails(commonModels.JSONMap{"message": "old error"}, models.ExecutionStatusSuccess, "")
+	if !changed || len(details) != 0 {
+		t.Fatalf("details=%#v changed=%t", details, changed)
 	}
 }
 
-func TestFinishErrorDetailsPreservesLogsOnFailure(t *testing.T) {
-	details, changed := finishErrorDetails(commonModels.JSONMap{
-		"logs": "batch=1\n",
-	}, models.ExecutionStatusFailed, "failed to write target")
-
-	if !changed {
-		t.Fatal("finishErrorDetails changed = false, want true")
-	}
-	if got := details["logs"]; got != "batch=1\n" {
-		t.Fatalf("logs = %#v, want preserved logs", got)
-	}
-	if got := details["message"]; got != "failed to write target" {
-		t.Fatalf("message = %#v, want failure message", got)
+func TestFinishErrorDetailsPreservesFailureCode(t *testing.T) {
+	details, changed := finishErrorDetails(commonModels.JSONMap{"code": "TARGET_WRITE_FAILED"}, models.ExecutionStatusFailed, "failed to write target")
+	if !changed || details["code"] != "TARGET_WRITE_FAILED" || details["message"] != "failed to write target" {
+		t.Fatalf("details=%#v changed=%t", details, changed)
 	}
 }
 

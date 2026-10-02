@@ -2,12 +2,15 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/addp/common/schema"
 
@@ -60,14 +63,16 @@ func main() {
 		log.Fatalf("统一执行记录存储初始化失败: %v", err)
 	}
 
-	// 自动迁移
-	if err := db.AutoMigrate(
-		&models.Orchestration{},
-	); err != nil {
-		log.Fatalf("数据库迁移失败: %v", err)
-	}
-	if err := repository.ApplySQLMigrations(db); err != nil {
-		log.Fatalf("SQL 迁移失败: %v", err)
+	if err := schema.Migrate(db, "orchestrator", repository.StartupSchemaVersion, func(tx *gorm.DB) error {
+		if err := tx.AutoMigrate(&models.Orchestration{}); err != nil {
+			return err
+		}
+		if err := service.ReconcileLegacyExecutions(tx); err != nil {
+			return err
+		}
+		return repository.ApplySQLMigrations(tx)
+	}); err != nil {
+		log.Fatalf("编排存储迁移失败: %v", err)
 	}
 
 	log.Println("✅ 数据库连接成功")
@@ -85,7 +90,7 @@ func main() {
 	orchRepo := repository.NewOrchestrationRepository(db)
 
 	// 初始化 ExecutionService（使用统一执行表）
-	executionService := service.NewExecutionService(db, orchRepo)
+	executionService := service.NewExecutionService(db)
 	serviceTokenSource, err := commonClient.NewOAuthServiceTokenSource(
 		cfg.SystemServiceURL, "addp-orchestrator", cfg.ServiceClientSecret, nil,
 	)
@@ -99,17 +104,17 @@ func main() {
 	taskProviderResolver := service.NewTaskProviderResolver(systemServiceClient)
 
 	// 初始化 Executor（通过 TaskProvider 引用任务）
-	executor := service.NewExecutor(executionService, orchRepo, taskProviderResolver, serviceTokenSource)
+	executor := service.NewExecutor(executionService, taskProviderResolver, serviceTokenSource)
 
 	// 初始化 Scheduler（使用统一执行服务）
 	var registration *commonClient.ModuleRegistrationLifecycle
-	scheduler := service.NewScheduler(orchRepo, executionService, executor, systemServiceClient)
+	scheduler := service.NewScheduler(orchRepo, executionService, systemServiceClient)
 	log.Println("✅ TaskProvider 动态解析器已初始化")
 
 	// 设置路由（传递 taskProviderResolver、systemURL、redisClient 和 systemClient）
 	lifecycleController := modulelifecycle.NewBusiness("orchestrator", commonClient.ModuleRuntimeRoleBackend)
 	router := api.SetupRouter(
-		orchRepo, executionService, executor, taskProviderResolver,
+		orchRepo, executionService, taskProviderResolver,
 		cfg.SystemServiceURL, redisClient, systemServiceClient, taskAuthorizationClient, serviceTokenSource, lifecycleController,
 	)
 	addr := fmt.Sprintf(":%s", cfg.ServerPort)
@@ -135,21 +140,43 @@ func main() {
 		modulelifecycle.CancelRuntimeOnFatal(registration, stopRuntime)
 	}
 	scheduler.SetClaimGate(func() bool { return registration != nil && registration.IsRegistered() })
-	if err := scheduler.Start(); err != nil {
+	if err := scheduler.Start(runtimeContext); err != nil {
 		log.Fatalf("调度器启动失败: %v", err)
 	}
 	defer scheduler.Stop()
 	log.Println("✅ 调度器启动成功")
+	supervisor, err := service.NewExecutionSupervisor(executionService, executor, service.DefaultExecutionSupervisorConfig())
+	if err != nil {
+		log.Fatalf("执行监管器配置无效: %v", err)
+	}
+	supervisorDone := make(chan struct{})
+	go func() {
+		defer close(supervisorDone)
+		supervisor.Run(runtimeContext, func() bool { return registration != nil && registration.IsRegistered() })
+		// A failed renewal stops the runtime rather than leaving an unowned executor ready.
+		stopRuntime()
+	}()
 
 	// 启动服务器
 	log.Printf("🚀 Orchestrator 服务启动: %s", addr)
+	server := &http.Server{Handler: router, ReadHeaderTimeout: 10 * time.Second}
+	serverDone := make(chan struct{})
 	go func() {
-		if err := router.RunListener(listener); err != nil {
+		defer close(serverDone)
+		if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Printf("服务器启动失败: %v", err)
 			stopRuntime()
 		}
 	}()
 	<-runtimeContext.Done()
+	shutdownContext, cancelShutdown := context.WithTimeout(context.Background(), 10*time.Second)
+	if err := server.Shutdown(shutdownContext); err != nil {
+		_ = server.Close()
+	}
+	cancelShutdown()
+	scheduler.Stop()
+	<-supervisorDone
+	<-serverDone
 	if registration != nil {
 		<-registration.Done()
 	}

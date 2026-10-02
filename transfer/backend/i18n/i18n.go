@@ -10,6 +10,7 @@ import (
 var localeFS embed.FS
 
 const (
+	MsgExecutionEventsUnavailable     = "transfer.execution.events_unavailable"
 	MsgReplayInvalid                  = "transfer.replay.invalid"
 	MsgReplayRangeUnavailable         = "transfer.replay.range_unavailable"
 	MsgReplayTargetExists             = "transfer.replay.target_exists"

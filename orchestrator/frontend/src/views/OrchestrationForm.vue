@@ -62,6 +62,7 @@
         <el-button v-if="!activeExecution" size="small" text @click="clearExecution">{{ t('orchestrator.liveExecution.dismiss') }}</el-button>
       </div>
       <p v-if="execution.error_details?.message" class="execution-error">{{ execution.error_details.message }}</p>
+      <p v-if="executionMatchesDefinition && Object.values(executionStates).some(step => step.observationStopped)" class="execution-step-observation-ended" role="status">{{ t('common.executionSteps.observationStopped') }}</p>
       <p v-if="!executionMatchesDefinition">{{ t('orchestrator.liveExecution.definitionChanged') }}</p>
       <div v-if="executionRefreshFailed" class="execution-refresh-error" role="alert">
         {{ t('orchestrator.liveExecution.refreshFailed') }}

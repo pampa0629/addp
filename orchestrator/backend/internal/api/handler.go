@@ -29,7 +29,6 @@ import (
 type OrchestrationHandler struct {
 	orchRepo                *repository.OrchestrationRepository
 	executionService        *service.ExecutionService
-	executor                *service.Executor
 	taskProviderResolver    *service.TaskProviderResolver
 	httpClient              *http.Client
 	taskAuthorizationClient *commonClient.SystemExecutionAuthorizationClient
@@ -52,7 +51,6 @@ type orchestrationTaskProviderExecuteResponse struct {
 func NewOrchestrationHandler(
 	orchRepo *repository.OrchestrationRepository,
 	executionService *service.ExecutionService,
-	executor *service.Executor,
 	taskProviderResolver *service.TaskProviderResolver,
 	httpClient *http.Client,
 	taskAuthorizationClient *commonClient.SystemExecutionAuthorizationClient,
@@ -65,7 +63,6 @@ func NewOrchestrationHandler(
 	return &OrchestrationHandler{
 		orchRepo:                orchRepo,
 		executionService:        executionService,
-		executor:                executor,
 		taskProviderResolver:    taskProviderResolver,
 		httpClient:              httpClient,
 		taskAuthorizationClient: taskAuthorizationClient,
@@ -336,7 +333,8 @@ func (h *OrchestrationHandler) Delete(c *gin.Context) {
 // @Summary 执行编排 | Execute orchestration
 // @Tags Orchestrator
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Success 202 {object} map[string]interface{} "已创建冻结计划的待执行记录 | A pending execution with a frozen plan was created"
+// @Failure 400 {object} models.ErrorResponse "编排步骤定义无效 | The orchestration step definition is invalid"
 // @Failure 403 {object} models.ErrorResponse "当前身份未绑定租户 | Current identity is not bound to a tenant"
 // @Failure 404 {object} models.ErrorResponse "编排不存在 | Orchestration not found"
 // @x-addp-auth-mode "permission"
@@ -372,11 +370,9 @@ func (h *OrchestrationHandler) Execute(c *gin.Context) {
 		executionActorFromGin(c),
 	)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondExecutionAdmissionError(c, err)
 		return
 	}
-
-	h.executor.ExecuteAsync(uint(execution.ID))
 
 	c.JSON(http.StatusAccepted, gin.H{
 		"id":           execution.ID,
@@ -427,7 +423,7 @@ func (h *OrchestrationHandler) ListExecutions(c *gin.Context) {
 		totalPages++
 	}
 	c.JSON(http.StatusOK, gin.H{
-		"data":        execs,
+		"data":        localizedExecutionList(c, execs),
 		"total":       total,
 		"page":        page,
 		"page_size":   pageSize,
@@ -468,7 +464,7 @@ func (h *OrchestrationHandler) ListAllExecutions(c *gin.Context) {
 		totalPages2++
 	}
 	c.JSON(http.StatusOK, gin.H{
-		"data":        execs,
+		"data":        localizedExecutionList(c, execs),
 		"total":       total,
 		"page":        page,
 		"page_size":   pageSize,
@@ -507,7 +503,7 @@ func (h *OrchestrationHandler) GetExecution(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, exec)
+	c.JSON(http.StatusOK, localizeExecutionFailure(c, exec))
 }
 
 // ListTaskProviders 列出所有已声明 TaskProvider 角色的模块及其当前可用性。
@@ -882,10 +878,9 @@ func (h *OrchestrationHandler) ExecuteProviderOrchestrationTask(c *gin.Context) 
 		executionActorFromGin(c),
 	)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondExecutionAdmissionError(c, err)
 		return
 	}
-	h.executor.ExecuteAsync(uint(execution.ID))
 
 	c.JSON(http.StatusAccepted, orchestrationTaskProviderExecuteResponse{
 		ExecutionID: execution.ExecutionID,
@@ -916,7 +911,7 @@ func (h *OrchestrationHandler) GetProviderExecution(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, "orchestrator.error.execution_not_found")})
 		return
 	}
-	c.JSON(http.StatusOK, exec)
+	c.JSON(http.StatusOK, localizeExecutionFailure(c, exec))
 }
 
 // GetTaskProviderExecution 获取 TaskProvider 编排执行状态。

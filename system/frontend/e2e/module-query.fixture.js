@@ -1,4 +1,4 @@
-export async function mockModuleQueryAPI(page, { logPermission = false, pipelinePermission = false, now = Date.now } = {}) {
+export async function mockModuleQueryAPI(page, { logPermission = false, pipelinePermission = false, pipelineManagement = true, now = Date.now } = {}) {
   const queries = []
   await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
   await page.route('**/module-health/**', route => route.fulfill({ json: { status: 'ready' } }))
@@ -17,7 +17,7 @@ export async function mockModuleQueryAPI(page, { logPermission = false, pipeline
     if (url.pathname.endsWith('/users/me')) return reply({ id: '1', display_name: 'Module reader' })
     if (url.pathname.endsWith('/auth/context')) return reply({
       principal: { id: '1', principal_type: 'user' }, context: { type: 'platform' },
-      authorization: { role_assignments: [{ scope: { type: 'platform' }, permissions: ['platform.module.read', ...(logPermission ? ['platform.module_log.read'] : []), ...(pipelinePermission ? ['monitor.log_pipeline.read', 'monitor.log_pipeline.update', 'monitor.log_notification.read', 'monitor.log_notification.update'] : [])] }] }
+      authorization: { role_assignments: [{ scope: { type: 'platform' }, permissions: ['platform.module.read', ...(logPermission ? ['platform.module_log.read'] : []), ...(pipelinePermission ? ['monitor.log_pipeline.read', 'monitor.log_notification.read', ...(pipelineManagement ? ['monitor.log_pipeline.update', 'monitor.log_notification.update'] : [])] : [])] }] }
     })
     if (url.pathname.endsWith('/platform/modules')) return reply({ modules: [
       { id: 1, module_name: 'manager', route_prefix: '/manager', enabled: true, version: 1, instances: [] }

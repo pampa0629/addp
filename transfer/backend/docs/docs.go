@@ -305,20 +305,21 @@ const docTemplate = `{
                 ]
             }
         },
-        "/executions/{execution_id}/logs": {
+        "/executions/{execution_id}/events": {
             "get": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
+                "description": "按 ID 游标读取最近 30 天结构化事件，每页最多 100 条。| Read safe structured events retained for 30 days with an ID cursor, up to 100 per page.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "执行管理 | Execution Management"
                 ],
-                "summary": "获取执行日志 | Get execution logs",
+                "summary": "获取执行过程事件 | Get execution process events",
                 "parameters": [
                     {
                         "type": "string",
@@ -328,8 +329,18 @@ const docTemplate = `{
                         "required": true
                     },
                     {
+                        "minimum": 0,
                         "type": "integer",
-                        "description": "最多返回行数 | Line limit",
+                        "description": "上一页末尾事件 ID | Last event ID",
+                        "name": "after",
+                        "in": "query"
+                    },
+                    {
+                        "maximum": 100,
+                        "minimum": 1,
+                        "type": "integer",
+                        "default": 100,
+                        "description": "每页事件数 | Page size",
                         "name": "limit",
                         "in": "query"
                     }
@@ -338,8 +349,23 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "array",
-                            "items": {
+                            "$ref": "#/definitions/internal_api.ExecutionEventPage"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
                                 "type": "string"
                             }
                         }
@@ -2139,10 +2165,39 @@ const docTemplate = `{
                 "id": {
                     "type": "string"
                 },
+                "phase": {
+                    "type": "string"
+                },
                 "started_at": {
                     "type": "string"
                 },
                 "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "execution.Event": {
+            "type": "object",
+            "properties": {
+                "attempt": {
+                    "type": "integer"
+                },
+                "counters": {
+                    "$ref": "#/definitions/github_com_addp_common_models.JSONMap"
+                },
+                "execution_id": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "kind": {
+                    "type": "string"
+                },
+                "occurred_at": {
+                    "type": "string"
+                },
+                "step_id": {
                     "type": "string"
                 }
             }
@@ -2788,9 +2843,6 @@ const docTemplate = `{
                 },
                 "id": {
                     "type": "integer"
-                },
-                "logs": {
-                    "type": "string"
                 },
                 "metadata": {
                     "$ref": "#/definitions/github_com_addp_transfer_internal_models.JSONMap"
@@ -3474,6 +3526,26 @@ const docTemplate = `{
                 "valid": {
                     "description": "Valid is true if Time is not NULL",
                     "type": "boolean"
+                }
+            }
+        },
+        "internal_api.ExecutionEventPage": {
+            "type": "object",
+            "properties": {
+                "has_more": {
+                    "type": "boolean"
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/execution.Event"
+                    }
+                },
+                "next_cursor": {
+                    "type": "integer"
+                },
+                "retained_after": {
+                    "type": "string"
                 }
             }
         },

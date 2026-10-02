@@ -85,7 +85,7 @@ func TestRegisterIAMServiceRuntimeRoutesRejectsMissingAuthorizationHandlers(t *t
 	if err := RegisterIAMServiceRuntimeRoutes(
 		api,
 		runtime,
-		NewModuleRegistryHandler(nil),
+		NewModuleRegistryHandler(nil, []byte("test-key")),
 		NewTaskProviderHandler(nil),
 		&EngineHandler{},
 	); err == nil {
@@ -162,7 +162,7 @@ func newEngineDescriptorServiceRuntimeRouter(t *testing.T, authContext commonaut
 	if err := RegisterIAMServiceRuntimeRoutes(
 		api,
 		runtime,
-		NewModuleRegistryHandler(nil),
+		NewModuleRegistryHandler(nil, []byte("test-key")),
 		NewTaskProviderHandler(nil),
 		engineHandler,
 	); err != nil {

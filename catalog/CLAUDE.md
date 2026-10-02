@@ -22,6 +22,7 @@ Catalog 是企业资源目录的唯一事实源，负责稳定目录身份、来
 - `reconcileSharingFulfillment` 仅消费已提交的原待核清记录，事务外先查询，明确未找到才关闭原请求；关闭可能返回已受理结果。完整绑定一致且结果为 accepted／closed 后，条目→待核清记录锁内填写一次本地数据库核清时间。错误或未知结果保留保护，历史恢复不要求原责任／操作人／期限仍有效，不恢复新办理资格。当前只有内部接口和受控测试替身，没有可信 System 客户端、公开 API 或自动恢复调度；不能声称真实跨模块恢复已接通。
 - 待核清目标的有效叶子、正 int64 Engine ID、64 个 segment 和完整 JSON 16 KiB 边界只由 `common/authorization.EncodeSharingTarget` 校验，与 System 仲裁复用；首次登记前拒绝不满足该边界的目标，不先冻结条目。节点身份完整保留，无效 UTF-8 不允许被 JSON 替换字符静默修正。该纯值校验不代替真实来源、认证和办理资格，也不改变现有业务确认 API。
 - 跨模块只走公开 API 和 Tenant Service Access Token，不跨 Schema 查询。
+- 业务决定的确认人授权版本是当时审计事实，不因无关角色调整自动作废；首次受理由 System 实时核验原账号／Membership 和当前确认权限，Catalog 保证原业务负责人责任关系及来源依据仍有效。同账号重新接任不能复活旧决定；原办理请求仍严格绑定办理人授权版本。不得让普通历史读取重新要求确认人资格，也不得把内部资格测试当成已接通可信业务依据接口。
 - `/entries` 的业务域上下文用 `catalog.entry.read` 动态发现 Standard Domain 的名称、编码、定义和层级，仅投影本次响应；独立前端业务域页已删除，Standard / Model 专业详情仍由 owner 对当前 User Token 判权，不能以 Catalog 运行身份代查。
 - 除 System 注册和本模块必需基础设施外，任何业务模块不可达都不能阻止进程启动；Meta / Model / Standard / Service / Develop 同步失败只产生滞后并后台重试，各 owner 使用独立 checkpoint。
 - `CatalogEntry` UUID 是企业稳定身份；Meta fingerprint 只是来源身份。

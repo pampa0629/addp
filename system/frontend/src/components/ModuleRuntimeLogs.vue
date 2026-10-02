@@ -29,14 +29,21 @@
       <el-date-picker v-if="period === 'custom'" v-model="customRange" type="datetimerange" :start-placeholder="t('system.module.query.from')" :end-placeholder="t('system.module.query.to')" @change="changed" />
       <div class="log-actions">
         <el-button @click="reset">{{ t('system.module.query.reset') }}</el-button>
-        <el-button :loading="loading" @click="changed">{{ t('system.module.refresh') }}</el-button>
+        <el-button :loading="loading" @click="refresh">{{ t('system.module.refresh') }}</el-button>
         <el-switch v-model="follow" :active-text="t('system.module.logs.follow')" />
       </div>
       <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon />
       <el-alert v-if="error && result" :title="t('system.module.logs.stale')" type="warning" :closable="false" />
-      <el-alert v-if="result?.limited" :title="t('system.module.logs.limited')" type="warning" :closable="false" />
       <el-alert v-if="result?.outside_retention" :title="t('system.module.logs.retention')" type="warning" :closable="false" />
       <p v-if="result" class="log-hint">{{ t('system.module.logs.summary', { n: result.returned, time: date(result.queried_at) }) }} · {{ t('system.module.logs.coverageUnknown') }}</p>
+      <div class="log-actions" v-if="result">
+        <el-button :disabled="loading || pageIndex === 0" @click="previous">{{ t('system.module.logs.previous') }}</el-button>
+        <el-button :disabled="loading || !result.has_more" @click="earlier">{{ t('system.module.logs.earlier') }}</el-button>
+        <el-button :disabled="loading" @click="latest()">{{ t('system.module.logs.latest') }}</el-button>
+        <span class="log-hint">{{ t('system.module.logs.batch', { n: pageIndex + 1 }) }}</span>
+      </div>
+      <p v-if="result" class="log-hint">{{ t('system.module.logs.window', { from: date(result.from), to: date(result.to) }) }} · {{ t('system.module.logs.lateArrival') }}</p>
+      <p v-if="result && !result.has_more" class="log-hint">{{ t('system.module.logs.end') }}</p>
       <div v-loading="loading" class="log-output" data-testid="runtime-log-output">
         <el-empty v-if="result && !result.entries.length" :description="t('system.module.logs.empty')" />
         <article v-for="entry in result?.entries || []" :key="entry.entry_id" class="log-entry">
@@ -73,6 +80,8 @@ const authStore = useAuthStore()
 const levels = ['debug', 'info', 'warn', 'error', 'unknown']
 const period = ref('15m'), level = ref(''), keyword = ref(''), limit = ref(200), customRange = ref(null)
 const follow = ref(false), loading = ref(false), result = ref(null), error = ref('')
+const pageIndex = ref(0)
+let positions = [''], fixedWindow = null
 let timer = null, generation = 0, controller = null
 const durations = { '15m': 900000, '30m': 1800000, '1h': 3600000, '6h': 21600000, '12h': 43200000, '24h': 86400000, '7d': 604800000 }
 function date(value) { return value ? new Date(value).toLocaleString() : '—' }
@@ -92,32 +101,58 @@ function range() {
   return [now - durations[period.value], now]
 }
 function invalidate() { generation++; controller?.abort(); controller = null; clearTimeout(timer); timer = null; loading.value = false }
-async function load() {
+async function loadPage(index, window, cursor = '', fresh = false) {
   if (!props.modelValue || !props.instance || document.hidden) return
-  const window = range()
   if (!window) { error.value = t('system.module.logs.invalidRange'); return }
   const id = ++generation
   controller?.abort(); controller = new AbortController()
   loading.value = true; error.value = ''
   try {
     const data = await modulesAPI.logs(props.instance.module_name, props.instance.instance_id, {
-      from: new Date(window[0]).toISOString(), to: new Date(window[1]).toISOString(), level: level.value, keyword: keyword.value, limit: limit.value
+      from: window[0], to: window[1], level: level.value, keyword: keyword.value, limit: limit.value, ...(cursor ? { cursor } : {})
     }, controller.signal)
-    if (id === generation) result.value = data
+    if (id === generation) {
+      result.value = data
+      fixedWindow = [data.from, data.to]
+      if (fresh) positions = ['']
+      positions[index] = cursor
+      positions.splice(index + 1)
+      pageIndex.value = index
+    }
   } catch (e) {
     if (id === generation && e.code !== 'ERR_CANCELED') error.value = e.response?.data?.error || t('system.module.logs.failed')
   } finally { if (id === generation) loading.value = false }
 }
-function changed() { invalidate(); load() }
-function schedule() { invalidate(); timer = setTimeout(() => { timer = null; load() }, 300) }
+function latest(clear = false) {
+  invalidate()
+  if (clear) { result.value = null; positions = ['']; pageIndex.value = 0; fixedWindow = null }
+  const window = range()?.map(value => new Date(value).toISOString())
+  loadPage(0, window, '', true)
+}
+function refresh() {
+  if (pageIndex.value === 0) latest()
+  else { invalidate(); loadPage(pageIndex.value, fixedWindow, positions[pageIndex.value]) }
+}
+function earlier() {
+  if (!result.value?.has_more || !result.value.next_cursor || loading.value) return
+  follow.value = false
+  invalidate(); loadPage(pageIndex.value + 1, fixedWindow, result.value.next_cursor)
+}
+function previous() {
+  if (pageIndex.value === 0 || loading.value) return
+  invalidate(); loadPage(pageIndex.value - 1, fixedWindow, positions[pageIndex.value - 1])
+}
+function changed() { latest(true) }
+function schedule() { invalidate(); result.value = null; positions = ['']; pageIndex.value = 0; fixedWindow = null; timer = setTimeout(() => { timer = null; latest(true) }, 300) }
 function reset() { period.value = isRuntimeInstanceOnline(props.instance) || !props.instance.stopped_at ? '15m' : 'offline'; level.value = ''; keyword.value = ''; limit.value = 200; customRange.value = null; changed() }
 async function copy(entry) {
   try { await navigator.clipboard.writeText(JSON.stringify(entry, null, 2)); ElMessage.success(t('system.module.logs.copied')) }
   catch { ElMessage.error(t('system.module.logs.copyFailed')) }
 }
 watch(() => [props.modelValue, props.instance?.instance_id], () => { invalidate(); result.value = null; error.value = ''; follow.value = false; if (props.modelValue && props.instance) reset() }, { immediate: true })
-const polling = setInterval(() => { if (follow.value && !loading.value && !timer) load() }, 3000)
-function visibility() { if (!document.hidden && follow.value) changed(); else if (document.hidden) invalidate() }
+watch(follow, value => { if (value) latest() })
+const polling = setInterval(() => { if (follow.value && !loading.value && !timer) latest() }, 3000)
+function visibility() { if (!document.hidden && follow.value) latest(); else if (document.hidden) invalidate() }
 document.addEventListener('visibilitychange', visibility)
 onUnmounted(() => { invalidate(); clearInterval(polling); document.removeEventListener('visibilitychange', visibility) })
 </script>

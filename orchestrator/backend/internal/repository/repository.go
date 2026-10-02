@@ -2,12 +2,10 @@ package repository
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"github.com/addp/orchestrator/internal/models"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 // OrchestrationRepository 编排数据访问
@@ -103,31 +101,6 @@ func (r *OrchestrationRepository) ListDueIDs(ctx context.Context, now time.Time,
 	return ids, err
 }
 
-func (r *OrchestrationRepository) ClaimDue(ctx context.Context, id uint, schedule string, now time.Time, nextRunAt *time.Time) (*models.Orchestration, error) {
-	var claimed *models.Orchestration
-	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var orch models.Orchestration
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
-			Where("id = ? AND enabled = ? AND schedule = ? AND next_run_at IS NOT NULL AND next_run_at <= ?", id, true, schedule, now).
-			First(&orch).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return nil
-			}
-			return err
-		}
-
-		if err := tx.Model(&models.Orchestration{}).
-			Where("id = ?", orch.ID).
-			Updates(map[string]interface{}{"next_run_at": nextRunAt}).Error; err != nil {
-			return err
-		}
-		claimed = &orch
-		return nil
-	})
-	return claimed, err
-}
-
-// UpdateForTenant updates only user-editable orchestration fields within one tenant.
 func (r *OrchestrationRepository) UpdateForTenant(orch *models.Orchestration) error {
 	result := r.db.Model(&models.Orchestration{}).
 		Where("id = ? AND tenant_id = ?", orch.ID, orch.TenantID).

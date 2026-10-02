@@ -95,10 +95,13 @@ T2 使用真实但可丢弃的基础设施，并满足：
 - 门禁拒绝意外 Skip，避免“命令成功但测试未运行”。
 - Common PostgreSQL 的默认 `make test-common-postgres` 保持完整门禁。仅验证查询读取集合及输出血缘时，可在同样的显式测试连接条件下运行 `bash scripts/test/common-postgres-gate.sh --test query-read-set`；该分组包含真实资源改名及同名重建的定位身份案例，保留数据库身份检查、Skip 拒绝和场景清理。分组结果只证明所选范围，不替代完整 T2 门禁；CI 继续使用无分组选项的默认入口。
 - Manager 派生任务定义、语义唯一约束、资源绑定与资源回收的持久化契约由 `make test-manager-postgres` 在真实 PostgreSQL 中覆盖；该门禁只允许本地 `addp_test` 或 CI 随 Job 销毁的 disposable database。
+- Orchestrator 的独立进程故障回归归入既有 `make test-orchestrator-postgres`：测试进程运行正式监督器，在提交与等待阶段分别强制终止持有租约的运行者，再由新进程验证过期失败收敛、不重发请求、旧租约写入拒绝、子执行引用保留及唯一终态事件。HTTP Provider 是受控夹具，因此不作为 T4 真实拓扑验收。Go 测试自动发现和现有 Hosted PostgreSQL Job 覆盖同一入口，无新增基础设施依赖；子进程和当次数据库事实必须在成功、失败路径清理并核对残留。
 
 ### 4.3 T3
 
 T3 的 PR 主路径使用独立端口、受控 API 夹具和非个人登录态。真实 System、Gateway、owner Backend、真实身份与数据源的浏览器链路归入 T4，不与确定性浏览器测试混跑。
+
+租户执行过程事件的真实 PostgreSQL 事务、并发限额、租约过期、Owner 范围分页和清理锁竞争由 `make test-common-postgres` 的 `TestExecutionEventsAgainstPostgres` 覆盖；Transfer 历史自由文本移除由 `make test-transfer-postgres` 的 `TestIntegrationPostgresExecutionEventsRemoveRetiredText` 覆盖。两者均已登记标准入口，Common 的全量门禁包含该执行事件组。共享运行过程组件的唯一所有权由 `make test-common-frontend` 自动发现，Monitor 的事件分页、截断及撤权清除回归由 `make test-monitor-frontend` 的确定性 Playwright 覆盖。上述测试不替代真实 User、Gateway、Owner 与 Worker 的 Online T4，也不代表个人环境已部署新的迁移和保留维护循环。
 
 确定性 Playwright 的每个 Vite `webServer` 必须显式设置 `ADDP_E2E=1`、回环 host、独立端口及 `--strictPort`，并设置 `reuseExistingServer: false` 与带正数超时的 `gracefulShutdown: { signal: 'SIGTERM', timeout: 5000 }`，使缓存清理钩子能够执行。被启动的前端统一使用 `common-frontend/basic/src/utils/viteTestIsolation.mjs` 的 `withFrontendTestIsolation` 包装 Vite 配置：测试关闭 HMR，依赖缓存按模块和进程隔离到操作系统临时目录，Vite 关闭、进程正常退出及收到 `SIGTERM` / `SIGINT` 时清理；开发配置不启用该隔离。模块不得另行维护测试缓存或 HMR 分支。现有前端 CI 登记检查自动发现确定性 Playwright 配置及跨模块夹具服务，在 `make test-platform` 中拒绝遗漏隔离、复用开发服务、端口漂移或地址不一致。Online T4 的专用部署配置不套用此 Vite 夹具规则。
 
@@ -133,6 +136,8 @@ T4 只在隔离的 ADDP 测试部署执行，并按运行条件选择唯一部�
 对外 Nginx 使用非默认回环端口；仅 T4 Compose 覆盖文件允许 System Backend 和 Gateway 额外发布回环诊断端口供通用构建身份预检，正式 Compose 保持只有 Nginx 对外发布。未参与验收的 Nginx 静态 upstream 只提供当次网络名称占位，不模拟参与断言的服务。业务断言必须从公开入口检查 Console、System、Meta、Manager、Transfer、Orchestrator Frontend 及其构建资源，并使用当次一次性 Tenant 的零权限、只读、仅创建 User 验证 System AuthContext 的精确 Permission 集合；System、Meta、Manager、Transfer、Orchestrator 的 API 分别验证未认证 401、无权 403，以及已授权读取。Meta、Transfer、Orchestrator 的写入入口还需用无效请求体证明仅创建权限可越过功能守卫但被参数校验拒绝，且只读账号不能写入；System Role Assignment 详情需证明本租户授权可读、另一租户的授权 ID 返回 404。无效请求体不得创建业务资源。测试还需核对 System 对外 origin、Meta、Manager、Transfer 和 Orchestrator Backend 的就绪与内部地址以及容器实际端口；全部退出路径分别销毁 Runtime、Business MinIO、平台应用、占位容器、镜像仓库和 Infra，核对四个 project 的容器、网络、卷零残留。Transfer Worker 的数据执行和 Orchestrator 的 DAG 执行分别由 owner T4 验收，不以本套入口检查代替。[Hosted T4 run 36141592135](https://github.com/pampa0629/addp/actions/runs/36141592135) 已通过此前的 Transfer 覆盖验收；扩展后的权限矩阵及 Orchestrator 覆盖须在更新提交上手工运行成功后才能计为通过。
 
 质量动态绑定 T4 `quality-dynamic-binding` 使用专用 Tenant 的两个已审批 Model 物化任务作为永久夹具；两个 PostgreSQL 目标表必须预先存在、结构相同、行数稳定且非零。每轮经正式 API 创建带 Run ID 的规则、方案和编排，验证 Model 默认版本输入、上游 `target_locator` 动态绑定、失败阻断、重复失败工单去重、两个目标的结果与工单隔离，以及显式升级规则修订后逐目标恢复。方案默认绑定不得被执行覆盖，Model 定义和物理数据不得修改。清理只删除本轮编排、方案及规则并确认 404；执行审计保留，方案关联工单由 Quality 删除方案事务清理。执行未终结或创建响应丢失时不得报告零残留。入口和确定性脚本测试分别为 `make test-online ONLINE_SUITE=quality-dynamic-binding`、`make test-online-runner`；只登记手工 T4，首次专用环境真实通过前不加入夜间调度。
+
+Orchestrator 执行 T4 `orchestrator-execution` 复用 Hosted 生命周期、System owner 身份夹具和既有一次性 PostgreSQL 样例源，正式启动 System、Gateway、Meta、Orchestrator、Monitor。每轮经 API 创建扫描任务和嵌套串行 DAG，核对父子执行、成功进度、真实数据源中断后的失败阻断、安全步骤/事件以及跨 Tenant 与缺少 Owner 权限时的不可见性。故障操作必须核对当次源容器标签，恢复后删除本轮任务；原始执行历史由 Hosted Infra 销毁，凭据不归档。入口为 `make test-online ONLINE_SUITE=orchestrator-execution`，准备和退出由 `scripts/test/online-hosted-orchestrator-gate.sh` 负责，确定性测试进入 `make test-online-runner` 与 T0。首次真实通过前只允许手动 `workflow_dispatch`。该轮不声称已覆盖后端进程崩溃、POST 响应丢失或续租故障；这些边界的 T1/T2 回归不能替代后续 T4。
 
 ### 5.2 开关、身份与拓扑预检
 

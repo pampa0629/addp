@@ -117,3 +117,7 @@ other = "统计窗口无效，仅支持 24h、7d 或 30d"
 
 ["monitor.err.diagnostic_query_failed"]
 other = "读取执行诊断失败，请稍后重试"
+[monitor.platform_log.retry_unavailable]
+other = "当前无法重投，请检查通知目标、渠道配置和告警抑制状态"
+[monitor.platform_log.retry_conflict]
+other = "投递状态、重投次数或通知目标版本已变化，请刷新后重新确认"

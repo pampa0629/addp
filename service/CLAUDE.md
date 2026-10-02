@@ -72,6 +72,7 @@ Service 是 `service.definition.*`、`service.external_registration.*` 和 `serv
 - 已有服务切换指标来源继续只走 `PUT /query/:id/metric-source`：携带精确实现修订和 正整数 version（查询服务聚合根版本，不依赖可执行快照），在行锁事务内核对后原子替换来源与消费契约；保留服务身份、访问设置和当前版本规则，清除旧来源专用字段。旧冻结 SQL 不能与新包并行执行，消费方仍须显式应用新契约。
 - 每次指标查询先向 Model 验证指定修订与依赖，再校验当前引擎能力、本地 CompilerIdentity、请求参数和服务消费版本；撤回、漂移或实现版本不匹配即拒绝，不选最新版。MODEL_URL 与现有 Tenant Service Token 路径保留。
 - 指标的结果筛选、选择、排序及 keyset 分页由 Service 校验后形成中立 ResultRequest，Common 包装计划根节点再交给引擎编译；结果筛选不能改变原指标分母，分页不能裁剪原计划断言。参数值（包括结果过滤及 keyset 值）继续单次绑定；cursor 加密、limit+1、保护门禁及输出格式仍沿既有契约。不得进入旧指标 SQL 包装或拉回全量数据后在 Service 中补算。
+- Query Cursor 和 Feature ID 的通用 JSON AES-GCM 编解码唯一归 `common/opaquetoken`；Service 封装只持有发布版本、查询指纹和领域载荷校验，不保留私有加密实现。共享抽取沿现有 Service Go T1、PostgreSQL T2 和 Common Go 门禁验证。
 - analytical 来源的可筛选字段唯一来自冻结计划的输出字段，Consumer Descriptor 与执行校验共用此投影，操作符沿用中立结果筛选支持的类型规则；不保存 `filterable_fields` 副本、不将来源表字段开放给消费端。该投影适用于汇总和明细，消费者契约指纹变化后应用需显式更新绑定。验证纳入现有 Service Go T1、PostgreSQL T2 及模块门禁。
 - 指标服务管理端可通过 `POST /query/:id/execution-query` 只读预览当前请求的生成查询和类型化参数；租户隔离与 `service.definition.read` 权限必需，复用实际编译路径并校验 Model 依赖，不执行 PrepareQuery/Execute，不返回连接配置或保存 SQL 副本。详见 Service 核心架构文档。
 - TiDB 指标绑定、结果编译由 Service T1 覆盖；发布持久化沿 `make test-service-postgres` 覆盖 PG/MySQL/TiDB 包；TiDB 实库执行沿 `make test-common-tidb` 覆盖来源解析、参数绑定、结果筛选及保护拒绝。后者的 Model/System HTTP 响应为受控夹具，不代替 `metric-service-revision-lifecycle` Hosted T4 的完整发布链路验收。

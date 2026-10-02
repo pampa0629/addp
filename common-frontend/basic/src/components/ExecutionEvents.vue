@@ -38,7 +38,7 @@ const props = defineProps({
 const { t } = useI18n()
 const items = ref([]), hasMore = ref(false), loading = ref(false), error = ref(false)
 const cursor = ref(0)
-let generation = 0, timer
+let generation = 0, timer, finalRefresh = false
 const truncated = computed(() => items.value.some(item => item.kind === 'truncated') || (hasMore.value && items.value.length >= 1000))
 function stopTimer() { clearTimeout(timer); timer = undefined }
 async function loadNext() {
@@ -61,12 +61,14 @@ async function loadNext() {
   } finally {
     if (current === generation) {
       loading.value = false
+      if (finalRefresh && !error.value && !hasMore.value) { finalRefresh = false; loadNext(); return }
+      finalRefresh = false
       if (props.running && !error.value && !hasMore.value && items.value.length < 1000) timer = setTimeout(loadNext, 5000)
     }
   }
 }
 function reload() {
-  generation++; stopTimer()
+  generation++; stopTimer(); finalRefresh = false
   items.value = []; cursor.value = 0; hasMore.value = false; error.value = false; loading.value = false
   loadNext()
 }
@@ -74,6 +76,7 @@ watch(() => props.executionId, reload, { immediate: true })
 watch(() => props.running, running => {
   stopTimer()
   if (running && !error.value && !hasMore.value && !loading.value) timer = setTimeout(loadNext, 5000)
+  if (!running && loading.value) finalRefresh = true
   if (!running && !loading.value && !error.value && !hasMore.value) loadNext()
 })
 onBeforeUnmount(() => { generation++; stopTimer() })

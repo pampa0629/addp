@@ -12,6 +12,10 @@ import (
 )
 
 func ApplySQLMigrations(db *gorm.DB) error {
+	return db.Transaction(func(tx *gorm.DB) error { return applySQLMigrations(tx) })
+}
+
+func applySQLMigrations(db *gorm.DB) error {
 	if err := ensureMigrationTable(db); err != nil {
 		return err
 	}
@@ -36,7 +40,10 @@ func ApplySQLMigrations(db *gorm.DB) error {
 		}
 
 		log.Printf("[Orchestrator Migration] ▶ Applying SQL migration: %s", name)
-		if err := db.Exec(string(content)).Error; err != nil {
+		sql := strings.TrimSpace(string(content))
+		sql = strings.TrimSpace(strings.TrimPrefix(sql, "BEGIN;"))
+		sql = strings.TrimSpace(strings.TrimSuffix(sql, "COMMIT;"))
+		if err := db.Exec(sql).Error; err != nil {
 			return fmt.Errorf("failed to apply orchestrator migration %s: %w", name, err)
 		}
 		if err := recordMigration(db, name); err != nil {

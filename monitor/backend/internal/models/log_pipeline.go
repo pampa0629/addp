@@ -90,22 +90,24 @@ type PlatformLogDestination struct {
 func (PlatformLogDestination) TableName() string { return "monitor.platform_log_destinations" }
 
 type PlatformLogDelivery struct {
-	ID               string     `gorm:"primaryKey;size:36" json:"id"`
-	EventID          string     `gorm:"not null;size:36;uniqueIndex:uq_platform_log_event_destination,priority:1" json:"event_id"`
-	DestinationID    uint       `gorm:"not null;uniqueIndex:uq_platform_log_event_destination,priority:2" json:"destination_id"`
-	Channel          string     `gorm:"not null;size:20" json:"channel"`
-	URL              string     `gorm:"size:2048" json:"-"`
-	SecretCiphertext string     `gorm:"type:text" json:"-"`
-	Recipients       StringList `gorm:"type:jsonb;not null" json:"-"`
-	Payload          string     `gorm:"type:text;not null" json:"-"`
-	Status           string     `gorm:"not null;size:20;index" json:"status"`
-	AttemptCount     int        `gorm:"not null" json:"attempt_count"`
-	NextAttemptAt    *time.Time `json:"next_attempt_at,omitempty"`
-	ClaimID          string     `gorm:"size:36" json:"-"`
-	LeaseExpiresAt   *time.Time `json:"-"`
-	LastError        string     `gorm:"size:100" json:"last_error,omitempty"`
-	DeliveredAt      *time.Time `json:"delivered_at,omitempty"`
-	CreatedAt        time.Time  `gorm:"index" json:"created_at"`
+	ID                    string     `gorm:"primaryKey;size:36" json:"id"`
+	EventID               string     `gorm:"not null;size:36;uniqueIndex:uq_platform_log_event_destination,priority:1" json:"event_id"`
+	DestinationID         uint       `gorm:"not null;uniqueIndex:uq_platform_log_event_destination,priority:2" json:"destination_id"`
+	Channel               string     `gorm:"not null;size:20" json:"channel"`
+	URL                   string     `gorm:"size:2048" json:"-"`
+	SecretCiphertext      string     `gorm:"type:text" json:"-"`
+	Recipients            StringList `gorm:"type:jsonb;not null" json:"-"`
+	Payload               string     `gorm:"type:text;not null" json:"-"`
+	Status                string     `gorm:"not null;size:20;index" json:"status"`
+	AttemptCount          int        `gorm:"not null" json:"attempt_count"`
+	RetryBaseAttemptCount int        `gorm:"not null;default:0" json:"-"`
+	ManualRetryCount      int        `gorm:"not null;default:0" json:"manual_retry_count"`
+	NextAttemptAt         *time.Time `json:"next_attempt_at,omitempty"`
+	ClaimID               string     `gorm:"size:36" json:"-"`
+	LeaseExpiresAt        *time.Time `json:"-"`
+	LastError             string     `gorm:"size:100" json:"last_error,omitempty"`
+	DeliveredAt           *time.Time `json:"delivered_at,omitempty"`
+	CreatedAt             time.Time  `gorm:"index" json:"created_at"`
 }
 
 func (PlatformLogDelivery) TableName() string { return "monitor.platform_log_deliveries" }

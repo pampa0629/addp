@@ -25,6 +25,9 @@ func (r *TaskRepository) ClaimNextBoundedExecution(ctx context.Context, workerID
 		if err != nil || execution == nil {
 			return err
 		}
+		if err := commonExecution.AppendBoundedEvent(ctx, tx, *lease, commonExecution.EventInput{Kind: "started"}); err != nil {
+			return err
+		}
 		if execution.SourceTaskID == nil {
 			return nil
 		}

@@ -34,6 +34,7 @@ func TestFixtureAuthorizationContractMatchesPublishedCatalog(t *testing.T) {
 		permissions[permission.Key] = permission
 	}
 	allPermissions := append(append(append(append(append([]string{}, consumerPermissions...), metricPermissions...), ontologyPermissions...), publicOriginReadPermissions...), publicOriginCreatePermissions...)
+	allPermissions = append(allPermissions, orchestratorPermissions...)
 	for _, key := range allPermissions {
 		permission, exists := permissions[key]
 		if !exists {
@@ -122,6 +123,7 @@ func TestWriteEnvironmentFileUsesOwnerOnlyPermissionsAndShellQuoting(t *testing.
 		"ADDP_ONLINE_CREATE_USER_ACCESS_TOKEN":    "addp_at_creator",
 		"ADDP_ONLINE_CROSS_TENANT_ASSIGNMENT_ID":  "86",
 		"ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN": "addp_at_engine",
+		"ADDP_ONLINE_FOREIGN_USER_ACCESS_TOKEN":   "addp_at_foreign",
 		"ADDP_ONLINE_OWN_ASSIGNMENT_ID":           "84",
 		"ADDP_ONLINE_READ_USER_ACCESS_TOKEN":      "addp_at_reader",
 		"ADDP_ONLINE_TEST_TENANT_ID":              "42",
@@ -144,7 +146,7 @@ func TestWriteEnvironmentFileUsesOwnerOnlyPermissionsAndShellQuoting(t *testing.
 	if !strings.Contains(string(content), "addp_at_user'\"'\"'quoted") {
 		t.Fatalf("fixture environment is not shell quoted: %s", content)
 	}
-	for _, value := range []string{"addp_at_admin", "addp_at_creator", "addp_at_reader", "84", "86"} {
+	for _, value := range []string{"addp_at_admin", "addp_at_creator", "addp_at_reader", "addp_at_foreign", "84", "86"} {
 		if !strings.Contains(string(content), value) {
 			t.Fatalf("fixture environment omitted %q", value)
 		}
@@ -164,7 +166,7 @@ func TestSuitePermissionsAreExplicitAndSeparate(t *testing.T) {
 			t.Fatalf("missing ontology permission %s", key)
 		}
 	}
-	for _, suite := range []string{"opengauss-consumer-flow", "kingbase-consumer-flow", "metric-service-revision-lifecycle"} {
+	for _, suite := range []string{"opengauss-consumer-flow", "kingbase-consumer-flow", "metric-service-revision-lifecycle", "orchestrator-execution"} {
 		if !needsEngineProvisioner(suite) {
 			t.Fatalf("Engine suite %s lost its provisioner", suite)
 		}
@@ -207,5 +209,22 @@ func TestOntologyEnvironmentDoesNotExportAnEngineCredential(t *testing.T) {
 	}
 	if strings.Contains(string(data), "ENGINE") {
 		t.Fatal("Ontology exported an unnecessary Engine credential")
+	}
+}
+
+func TestOrchestratorFixtureHasOnlyRequiredOwnerPermissions(t *testing.T) {
+	permissions, err := suitePermissions("orchestrator-execution")
+	if err != nil || len(permissions) != 10 || !needsEngineProvisioner("orchestrator-execution") {
+		t.Fatalf("Orchestrator fixture contract: %v, %v", permissions, err)
+	}
+	for _, key := range []string{"monitor.execution.read", "meta.scan_task.read", "meta.scan_task.execute", "orchestrator.workflow.execute", "system.execution_authorization.create"} {
+		if !contains(permissions, key) {
+			t.Fatalf("missing execution permission %s", key)
+		}
+	}
+	for _, key := range permissions {
+		if strings.HasPrefix(key, "system.engine.") || strings.HasPrefix(key, "iam.") || key == "orchestrator.workflow.cancel" {
+			t.Fatalf("unnecessary control-plane permission %s", key)
+		}
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	commonauth "github.com/addp/common/authorization"
 	sharedauth "github.com/addp/common/middleware/auth"
+	"github.com/addp/common/runtimelog"
 	"github.com/addp/system/internal/middleware"
 	"github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/repository"
@@ -13,6 +14,7 @@ import (
 	"gorm.io/gorm"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -20,9 +22,19 @@ import (
 
 func TestRuntimeLogRouteEnforcesIndependentPlatformPermissionAndOfflineIdentity(t *testing.T) {
 	upstreamCalls := 0
+	populated := false
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		upstreamCalls++
-		w.Write([]byte(`{"status":"success","data":{"resultType":"streams","result":[]}}`))
+		if !populated {
+			w.Write([]byte(`{"status":"success","data":{"resultType":"streams","result":[]}}`))
+			return
+		}
+		values := [][]string{}
+		for _, id := range []string{"old:1", "old:2"} {
+			body, _ := json.Marshal(runtimelog.Entry{InstanceID: "old", Module: "manager", ID: id, Timestamp: "2026-10-01T00:00:01Z", Level: "info"})
+			values = append(values, []string{"1790812801000000000", string(body)})
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"status": "success", "data": map[string]any{"resultType": "streams", "result": []any{map[string]any{"values": values}}}})
 	}))
 	defer upstream.Close()
 	for _, tc := range []struct {
@@ -77,8 +89,8 @@ func TestRuntimeLogRouteEnforcesIndependentPlatformPermissionAndOfflineIdentity(
 			if err != nil {
 				t.Fatal(err)
 			}
-			handler := NewModuleRegistryHandler(registry)
-			handler.runtimeLogs = service.NewRuntimeLogService(upstream.URL, "test-read")
+			handler := NewModuleRegistryHandler(registry, []byte("test-key"))
+			handler.runtimeLogs = service.NewRuntimeLogService(upstream.URL, "test-read", []byte("test-key"))
 			router := gin.New()
 			if err = RegisterIAMManagementRoutes(router.Group("/api/v1/system"), runtime, handler); err != nil {
 				t.Fatal(err)
@@ -99,6 +111,25 @@ func TestRuntimeLogRouteEnforcesIndependentPlatformPermissionAndOfflineIdentity(
 				if value.CollectionState != "unknown" || value.Returned != 0 {
 					t.Fatal(value)
 				}
+				populated = true
+				queryURL := "/api/v1/system/platform/modules/manager/instances/old/logs?from=2026-10-01T00:00:00Z&to=2026-10-01T01:00:00Z&limit=1"
+				first := performModuleRegistryRequest(router, "GET", queryURL, "")
+				var page service.RuntimeLogResult
+				if first.Code != 200 || json.Unmarshal(first.Body.Bytes(), &page) != nil || page.NextCursor == "" {
+					t.Fatalf("no legitimate cursor: %s", first.Body.String())
+				}
+				actor.Authorization.RoleAssignments[0].Permissions = []string{"platform.module.read"}
+				before := upstreamCalls
+				denied := performModuleRegistryRequest(router, "GET", queryURL+"&cursor="+url.QueryEscape(page.NextCursor), "")
+				if denied.Code != 403 || upstreamCalls != before {
+					t.Fatal("prior cursor bypassed current permission")
+				}
+				actor.Authorization.RoleAssignments[0].Permissions = []string{"platform.module_log.read"}
+				invalid := performModuleRegistryRequest(router, "GET", queryURL+"&cursor=invalid", "")
+				if invalid.Code != 400 || upstreamCalls != before {
+					t.Fatal("invalid cursor reached storage")
+				}
+				populated = false
 			}
 		})
 	}

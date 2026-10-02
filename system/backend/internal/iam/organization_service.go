@@ -124,6 +124,9 @@ func (s *OrganizationService) CreateDepartment(ctx context.Context, input Create
 	}
 	department := &Department{TenantID: input.TenantID, ParentID: input.ParentID, Code: code, Name: name, Status: DepartmentStatusActive, Version: 1}
 	err = s.repository.Transaction(ctx, func(tx *Repository) error {
+		if _, err := tx.lockPrincipalsInOrder(ctx, input.ActorPrincipalID); err != nil {
+			return err
+		}
 		if err := tx.LockDepartmentStructure(ctx, input.TenantID); err != nil {
 			return err
 		}
@@ -153,6 +156,9 @@ func (s *OrganizationService) UpdateDepartment(ctx context.Context, input Update
 		return nil, commonapi.ErrBadRequest
 	}
 	err := s.repository.Transaction(ctx, func(tx *Repository) error {
+		if _, err := tx.lockPrincipalsInOrder(ctx, input.ActorPrincipalID); err != nil {
+			return err
+		}
 		if err := tx.LockDepartmentStructure(ctx, input.TenantID); err != nil {
 			return err
 		}
@@ -204,6 +210,13 @@ func (s *OrganizationService) changeDepartmentStatus(ctx context.Context, input 
 		return nil, commonapi.ErrBadRequest
 	}
 	err := s.repository.Transaction(ctx, func(tx *Repository) error {
+		ids, err := tx.listOrganizationPrincipalIDs(ctx, input.TenantID, input.DepartmentID, true)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.lockPrincipalsInOrder(ctx, append([]int64{input.ActorPrincipalID}, ids...)...); err != nil {
+			return err
+		}
 		if err := tx.LockDepartmentStructure(ctx, input.TenantID); err != nil {
 			return err
 		}
@@ -213,6 +226,10 @@ func (s *OrganizationService) changeDepartmentStatus(ctx context.Context, input 
 		}
 		if current.Status != from {
 			return fmt.Errorf("%w: invalid department lifecycle transition", commonapi.ErrConflict)
+		}
+		currentIDs, err := tx.listOrganizationPrincipalIDs(ctx, input.TenantID, input.DepartmentID, true)
+		if err := verifyMutationPrincipalSet(ids, currentIDs, err); err != nil {
+			return err
 		}
 		if to == DepartmentStatusDisabled {
 			children, err := tx.CountActiveDepartmentChildren(ctx, input.TenantID, input.DepartmentID)
@@ -258,6 +275,9 @@ func (s *OrganizationService) CreateDepartmentMembership(ctx context.Context, in
 	}
 	membership := &DepartmentMembership{TenantID: input.TenantID, DepartmentID: input.DepartmentID, TenantMembershipID: input.TenantMembershipID, MembershipType: input.MembershipType, RelationRole: input.RelationRole, Status: OrganizationMembershipStatusActive, Version: 1}
 	err := s.repository.Transaction(ctx, func(tx *Repository) error {
+		if _, err := tx.lockMembershipPrincipal(ctx, input.TenantID, input.TenantMembershipID, input.ActorPrincipalID); err != nil {
+			return err
+		}
 		department, err := tx.LockDepartment(ctx, input.TenantID, input.DepartmentID)
 		if err != nil {
 			return err
@@ -275,9 +295,6 @@ func (s *OrganizationService) CreateDepartmentMembership(ctx context.Context, in
 		if tenantMembership.PrincipalType != PrincipalTypeUser {
 			return ErrOrganizationMembershipPrincipalTypeNotAllowed
 		}
-		if _, err := tx.LockPrincipal(ctx, tenantMembership.PrincipalID); err != nil {
-			return err
-		}
 		if err := tx.CreateDepartmentMembership(ctx, membership); err != nil {
 			return err
 		}
@@ -294,6 +311,10 @@ func (s *OrganizationService) UpdateDepartmentMembership(ctx context.Context, in
 		return nil, commonapi.ErrBadRequest
 	}
 	err := s.repository.Transaction(ctx, func(tx *Repository) error {
+		source, err := tx.lockOrganizationMembershipPrincipals(ctx, input.TenantID, input.DepartmentID, input.MembershipID, input.ActorPrincipalID, true)
+		if err != nil {
+			return err
+		}
 		department, err := tx.LockDepartment(ctx, input.TenantID, input.DepartmentID)
 		if err != nil {
 			return err
@@ -305,8 +326,8 @@ func (s *OrganizationService) UpdateDepartmentMembership(ctx context.Context, in
 		if err != nil {
 			return err
 		}
-		if _, err := tx.LockPrincipal(ctx, current.PrincipalID); err != nil {
-			return err
+		if current.PrincipalID != source.PrincipalID || current.TenantMembershipID != source.TenantMembershipID {
+			return commonapi.ErrConflict
 		}
 		if err := tx.UpdateDepartmentMembership(ctx, input.TenantID, input.DepartmentID, input.MembershipID, input.Version, input.MembershipType, input.RelationRole); err != nil {
 			return err
@@ -347,6 +368,9 @@ func (s *OrganizationService) CreateProjectGroup(ctx context.Context, input Crea
 	}
 	group := &ProjectGroup{TenantID: input.TenantID, Code: code, Name: name, Description: "", Status: ProjectGroupStatusActive, Version: 1}
 	err = s.repository.Transaction(ctx, func(tx *Repository) error {
+		if _, err := tx.lockPrincipalsInOrder(ctx, input.ActorPrincipalID); err != nil {
+			return err
+		}
 		if err := tx.CreateProjectGroup(ctx, group); err != nil {
 			return err
 		}
@@ -364,6 +388,9 @@ func (s *OrganizationService) UpdateProjectGroup(ctx context.Context, input Upda
 		return nil, commonapi.ErrBadRequest
 	}
 	err := s.repository.Transaction(ctx, func(tx *Repository) error {
+		if _, err := tx.lockPrincipalsInOrder(ctx, input.ActorPrincipalID); err != nil {
+			return err
+		}
 		current, err := tx.LockProjectGroup(ctx, input.TenantID, input.ProjectGroupID)
 		if err != nil {
 			return err
@@ -388,12 +415,23 @@ func (s *OrganizationService) CloseProjectGroup(ctx context.Context, input Close
 		return nil, commonapi.ErrBadRequest
 	}
 	err := s.repository.Transaction(ctx, func(tx *Repository) error {
+		ids, err := tx.listOrganizationPrincipalIDs(ctx, input.TenantID, input.ProjectGroupID, false)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.lockPrincipalsInOrder(ctx, append([]int64{input.ActorPrincipalID}, ids...)...); err != nil {
+			return err
+		}
 		current, err := tx.LockProjectGroup(ctx, input.TenantID, input.ProjectGroupID)
 		if err != nil {
 			return err
 		}
 		if current.Status == ProjectGroupStatusClosed {
 			return fmt.Errorf("%w: project group is already closed", commonapi.ErrConflict)
+		}
+		currentIDs, err := tx.listOrganizationPrincipalIDs(ctx, input.TenantID, input.ProjectGroupID, false)
+		if err := verifyMutationPrincipalSet(ids, currentIDs, err); err != nil {
+			return err
 		}
 		if err := tx.CloseProjectGroup(ctx, input.TenantID, input.ProjectGroupID, input.Version); err != nil {
 			return err
@@ -422,6 +460,9 @@ func (s *OrganizationService) CreateProjectGroupMembership(ctx context.Context, 
 	}
 	membership := &ProjectGroupMembership{TenantID: input.TenantID, ProjectGroupID: input.ProjectGroupID, TenantMembershipID: input.TenantMembershipID, RelationRole: input.RelationRole, Status: OrganizationMembershipStatusActive, Version: 1}
 	err := s.repository.Transaction(ctx, func(tx *Repository) error {
+		if _, err := tx.lockMembershipPrincipal(ctx, input.TenantID, input.TenantMembershipID, input.ActorPrincipalID); err != nil {
+			return err
+		}
 		group, err := tx.LockProjectGroup(ctx, input.TenantID, input.ProjectGroupID)
 		if err != nil {
 			return err
@@ -439,9 +480,6 @@ func (s *OrganizationService) CreateProjectGroupMembership(ctx context.Context, 
 		if tenantMembership.PrincipalType != PrincipalTypeUser {
 			return ErrOrganizationMembershipPrincipalTypeNotAllowed
 		}
-		if _, err := tx.LockPrincipal(ctx, tenantMembership.PrincipalID); err != nil {
-			return err
-		}
 		if err := tx.CreateProjectGroupMembership(ctx, membership); err != nil {
 			return err
 		}
@@ -458,6 +496,10 @@ func (s *OrganizationService) UpdateProjectGroupMembership(ctx context.Context, 
 		return nil, commonapi.ErrBadRequest
 	}
 	err := s.repository.Transaction(ctx, func(tx *Repository) error {
+		source, err := tx.lockOrganizationMembershipPrincipals(ctx, input.TenantID, input.ProjectGroupID, input.MembershipID, input.ActorPrincipalID, false)
+		if err != nil {
+			return err
+		}
 		group, err := tx.LockProjectGroup(ctx, input.TenantID, input.ProjectGroupID)
 		if err != nil {
 			return err
@@ -469,8 +511,8 @@ func (s *OrganizationService) UpdateProjectGroupMembership(ctx context.Context, 
 		if err != nil {
 			return err
 		}
-		if _, err := tx.LockPrincipal(ctx, current.PrincipalID); err != nil {
-			return err
+		if current.PrincipalID != source.PrincipalID || current.TenantMembershipID != source.TenantMembershipID {
+			return commonapi.ErrConflict
 		}
 		if err := tx.UpdateProjectGroupMembership(ctx, input.TenantID, input.ProjectGroupID, input.MembershipID, input.Version, input.RelationRole); err != nil {
 			return err
@@ -494,8 +536,11 @@ func (s *OrganizationService) closeOrganizationMembership(ctx context.Context, i
 	}
 	now := s.now().UTC()
 	err := s.repository.Transaction(ctx, func(tx *Repository) error {
+		source, err := tx.lockOrganizationMembershipPrincipals(ctx, input.TenantID, input.OrganizationID, input.MembershipID, input.ActorPrincipalID, department)
+		if err != nil {
+			return err
+		}
 		var current *ManagedOrganizationMembership
-		var err error
 		if department {
 			if _, err = tx.LockDepartment(ctx, input.TenantID, input.OrganizationID); err != nil {
 				return err
@@ -510,8 +555,8 @@ func (s *OrganizationService) closeOrganizationMembership(ctx context.Context, i
 		if err != nil {
 			return err
 		}
-		if _, err := tx.LockPrincipal(ctx, current.PrincipalID); err != nil {
-			return err
+		if current.PrincipalID != source.PrincipalID || current.TenantMembershipID != source.TenantMembershipID {
+			return commonapi.ErrConflict
 		}
 		entityType, event := "project_group_membership", "iam.project_group_membership.closed"
 		if department {

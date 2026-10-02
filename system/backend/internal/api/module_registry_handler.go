@@ -35,8 +35,8 @@ const (
 )
 
 // NewModuleRegistryHandler 创建模块注册Handler
-func NewModuleRegistryHandler(registry *service.ModuleRegistryService) *ModuleRegistryHandler {
-	return &ModuleRegistryHandler{service: registry, runtimeLogs: service.NewRuntimeLogService(os.Getenv("LOKI_URL"), os.Getenv("LOKI_READ_TOKEN"))}
+func NewModuleRegistryHandler(registry *service.ModuleRegistryService, encryptionKey []byte) *ModuleRegistryHandler {
+	return &ModuleRegistryHandler{service: registry, runtimeLogs: service.NewRuntimeLogService(os.Getenv("LOKI_URL"), os.Getenv("LOKI_READ_TOKEN"), encryptionKey)}
 }
 
 // RegisterService godoc

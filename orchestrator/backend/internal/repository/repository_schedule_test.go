@@ -1,11 +1,9 @@
 package repository
 
 import (
-	"context"
 	"errors"
 	"strings"
 	"testing"
-	"time"
 
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/orchestrator/internal/models"
@@ -78,51 +76,6 @@ func TestOrchestrationRepositoryEnforcesTenantOnCRUD(t *testing.T) {
 	}
 	if _, err := repo.GetByIDAndTenant(tenantSeven.ID, 7); !errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Fatalf("deleted tenant get error = %v, want record not found", err)
-	}
-}
-
-func TestClaimDueAdvancesNextRunAt(t *testing.T) {
-	db := newOrchestrationScheduleTestDB(t)
-	repo := NewOrchestrationRepository(db)
-
-	dueAt := time.Now().Add(-time.Minute)
-	nextRunAt := time.Now().Add(time.Hour)
-	orch := models.Orchestration{
-		TenantID:  7,
-		Name:      "nightly",
-		Steps:     models.Steps{{ID: "s1", Name: "step", Provider: "meta", TaskType: "scan", TaskID: 1}},
-		Enabled:   true,
-		Schedule:  "0 2 * * *",
-		NextRunAt: &dueAt,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
-	}
-	if err := repo.Create(&orch); err != nil {
-		t.Fatalf("Create() error = %v", err)
-	}
-
-	ids, err := repo.ListDueIDs(context.Background(), time.Now(), 100)
-	if err != nil {
-		t.Fatalf("ListDueIDs() error = %v", err)
-	}
-	if len(ids) != 1 || ids[0] != orch.ID {
-		t.Fatalf("due ids = %#v, want [%d]", ids, orch.ID)
-	}
-
-	claimed, err := repo.ClaimDue(context.Background(), orch.ID, orch.Schedule, time.Now(), &nextRunAt)
-	if err != nil {
-		t.Fatalf("ClaimDue() error = %v", err)
-	}
-	if claimed == nil || claimed.ID != orch.ID {
-		t.Fatalf("claimed = %#v, want orchestration %d", claimed, orch.ID)
-	}
-
-	refreshed, err := repo.GetByIDInternal(orch.ID)
-	if err != nil {
-		t.Fatalf("GetByID() error = %v", err)
-	}
-	if refreshed.NextRunAt == nil || !refreshed.NextRunAt.After(dueAt) {
-		t.Fatalf("next_run_at = %#v, want after %s", refreshed.NextRunAt, dueAt)
 	}
 }
 

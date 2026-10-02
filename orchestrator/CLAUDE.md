@@ -36,7 +36,7 @@ orchestrator/
 
 ## 核心 API
 
-Orchestrator 是 `orchestrator.workflow.*` 的 Permission owner；定义只存在于 `authorization/permissions.yaml`，通过 `common/authorization` 发布期聚合，不在服务启动时动态注册。`orchestrator.workflow.cancel` 是 IAM 目标目录能力，当前真实执行取消入口仍待路由覆盖阶段确认。
+Orchestrator 是 `orchestrator.workflow.*` 的 Permission owner；定义只存在于 `authorization/permissions.yaml`，通过 `common/authorization` 发布期聚合，不在服务启动时动态注册。`orchestrator.workflow.cancel` 是 IAM 目标目录能力，当前 TaskProvider 明确声明 `supports_cancel=false`，没有用户取消入口；停机与失联收敛不等同于用户取消。
 
 路由前缀：`/api/v1/orchestrator`。
 
@@ -79,7 +79,6 @@ curl http://localhost:8084/health/ready
 - `orchestrator/docs/数据库架构.md`
 - `orchestrator/docs/参数化模板说明.md`
 - `orchestrator/docs/tables/orchestrations表.md`
-- `orchestrator/docs/tables/executions表.md`
 - `docs/spec/addp引擎能力声明规范.md`
 - `docs/spec/addp工作流计算引擎接口规范.md`
 
@@ -95,6 +94,8 @@ Model 可在页内通过共享关联流程对话框消费现有 list/get/execute
 
 编辑页手动执行后，使用返回的执行记录 ID 查询现有执行详情，每两秒刷新一次；请求串行，终态停止刷新，离页清理请求，刷新失败保留最后一次状态并提供重试。步骤状态取自 `metadata.step_results`，串行执行中的当前节点由 `current_step` 标识；终态未开始的节点展示“未执行”，不得推测为成功。执行器每完成一个步骤即持久化结果，再进入下一步骤。运行中节点用主题高亮边框作缓慢呼吸动画，步骤结束或状态清除时移除；减少动态效果偏好下使用静态高亮。状态标签和动画只属于画布展示，不进入编排定义、布局或撤销历史；修改执行配置后隐藏本次节点状态，避免把旧执行结果映射到新配置。执行概览保留本次记录、总体状态、进度及 Monitor 入口。
 
+父编排终态下保留的运行中步骤只表示最后记录，不能继续呼吸动画，也不得推断其子执行已失败或取消。状态判断复用共享前端能力，画布和节点详情标注最后记录，概览提示核对子执行。确定性映射和真实画布回归由既有 `make test-orchestrator-frontend` 自动覆盖，无新增后端契约或 CI 入口。
+
 编排编辑器通过共享 `useUnsavedChangesGuard` 保护未保存的定义和节点位置；缩放和平移不触发离页提醒。保存成功更新基线，失败保留保护；切换编排身份时重新加载编辑器。
 
 创建或保存编排失败时优先展示 owner 返回的 `error` 文本，让用户能定位参数、输出绑定或权限错误；没有有效错误文本时使用本地化的通用失败提示。失败不清空草稿、不解除离页保护。该行为由 `make test-orchestrator-frontend` 的浏览器回归覆盖。
@@ -102,3 +103,5 @@ Model 可在页内通过共享关联流程对话框消费现有 list/get/execute
 保存和执行前的参数校验共用同一路径，使用具体任务的 `input_defaults` 补齐未覆盖的顶层参数，再执行严格 Schema 校验；不把默认值写入 Step 或 owner 请求。缺少默认值的必填项、显式错误值以及不完整的显式资源对象仍拒绝。验证入口为 `make test-module MODULE=orchestrator`，覆盖平台 T0、后端 Go T1 与前端 T1/T3；现有 Platform CI 的 Go 自动发现和 Orchestrator 前端矩阵直接覆盖，无新增门禁或服务依赖。
 
 节点执行状态验证覆盖后端 SQLite/HTTP 受控集成（下一步骤启动前检查前一步结果与进度）、前端状态映射和浏览器执行链路；由既有 Go 模块测试和 `make test-orchestrator-frontend` 自动发现。Swagger 执行详情说明同步逐步更新语义。
+
+Orchestrator 执行可靠性遵循任务体系规范的“Orchestrator 执行可靠性”节：Backend 内嵌监督器是唯一执行者，API/Scheduler 只入队；冻结本次 Steps，按步骤推进和等待，不持有整条流程执行槽；Common lease 约束步骤、进度、终态和事件。失联、停机和不确定提交不自动重放，用户取消仍不支持。模块启动迁移由 Backend 在模块 schema 锁下执行。验证入口为 `make test-module MODULE=orchestrator`；新增 `make test-orchestrator-postgres` 验证真实领取、原子调度、失联恢复和一次性迁移，Hosted T2 同次登记。真实执行与诊断权限首轮验收使用手动 Hosted T4 `orchestrator-execution`，由 `scripts/test/online-hosted-orchestrator-gate.sh` 管理隔离生命周期；本地 `make test-online-runner` 只验证套件确定性逻辑，不作为真实 T4 通过证据。

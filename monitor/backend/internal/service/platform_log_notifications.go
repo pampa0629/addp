@@ -282,7 +282,8 @@ func (n *PlatformLogNotifications) DispatchOnce(ctx context.Context, now time.Ti
 		return false, err
 	}
 	d := deliveries[0]
-	if d.AttemptCount > n.maxAttempts {
+	cycleAttempt := d.AttemptCount - d.RetryBaseAttemptCount
+	if cycleAttempt > n.maxAttempts {
 		result := n.db.WithContext(ctx).Model(&models.PlatformLogDelivery{}).Where("id=? AND status='delivering' AND claim_id=?", d.ID, claim).Updates(map[string]any{"status": "dead", "last_error": "notification_attempt_limit", "secret_ciphertext": "", "claim_id": "", "lease_expires_at": nil, "next_attempt_at": nil})
 		return true, result.Error
 	}
@@ -315,12 +316,12 @@ func (n *PlatformLogNotifications) DispatchOnce(ctx context.Context, now time.Ti
 			updates["secret_ciphertext"] = ""
 		} else {
 			updates["last_error"] = "notification_send_failed"
-			if d.AttemptCount >= n.maxAttempts {
+			if cycleAttempt >= n.maxAttempts {
 				updates["status"] = "dead"
 				updates["secret_ciphertext"] = ""
 			} else {
 				updates["status"] = "pending"
-				updates["next_attempt_at"] = now.Add(notificationBackoff(n.retryInitial, n.retryMax, d.AttemptCount))
+				updates["next_attempt_at"] = now.Add(notificationBackoff(n.retryInitial, n.retryMax, cycleAttempt))
 			}
 		}
 	}
@@ -352,15 +353,15 @@ func (n *PlatformLogNotifications) Run(ctx context.Context) {
 }
 
 type LogDeliveryList struct {
-	Data       []models.PlatformLogDelivery `json:"data"`
-	Total      int64                        `json:"total"`
-	Page       int                          `json:"page"`
-	PageSize   int                          `json:"page_size"`
-	TotalPages int                          `json:"total_pages"`
+	Data       []LogDeliveryView `json:"data"`
+	Total      int64             `json:"total"`
+	Page       int               `json:"page"`
+	PageSize   int               `json:"page_size"`
+	TotalPages int               `json:"total_pages"`
 }
 
 func (n *PlatformLogNotifications) Deliveries(ctx context.Context, page, size int) (LogDeliveryList, error) {
-	r := LogDeliveryList{Data: []models.PlatformLogDelivery{}, Page: page, PageSize: size}
+	r := LogDeliveryList{Data: []LogDeliveryView{}, Page: page, PageSize: size}
 	if page < 1 || page > 10000 || size < 1 || size > 100 {
 		return r, ErrLogInvalid
 	}
@@ -369,6 +370,6 @@ func (n *PlatformLogNotifications) Deliveries(ctx context.Context, page, size in
 		return r, err
 	}
 	r.TotalPages = int((r.Total + int64(size) - 1) / int64(size))
-	err := q.Order("created_at DESC,id DESC").Offset((page - 1) * size).Limit(size).Find(&r.Data).Error
+	err := logDeliveryQuery(n.db.WithContext(ctx)).Order("d.created_at DESC,d.id DESC").Offset((page - 1) * size).Limit(size).Scan(&r.Data).Error
 	return r, err
 }

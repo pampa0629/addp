@@ -266,10 +266,13 @@ other = "Expired or revoked delegations are read-only and cannot be restored or 
 other = "Explicitly specify a future expiry within the target membership validity"
 
 [system.module.runtime_log_invalid]
-other = "Invalid runtime log query"
+other = "Invalid log filters or expired/mismatched paging cursor. Return to the latest batch and query again."
 
 [system.module.runtime_log_disabled]
 other = "Runtime logs are not configured"
 
 [system.module.runtime_log_unavailable]
 other = "Runtime log query is temporarily unavailable"
+
+[system.module.runtime_log_boundary]
+other = "Too many logs share one timestamp to continue safely. Narrow the time range, level or keyword and retry; earlier records have not been skipped."

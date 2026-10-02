@@ -4,10 +4,10 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/execution/executiontest"
-	"github.com/addp/orchestrator/internal/repository"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -16,10 +16,10 @@ func TestExecutionLifecycleUsesRealStartAndTerminalTimes(t *testing.T) {
 	db := newOrchestratorExecutionServiceTestDB(t)
 	if err := db.Exec(`INSERT INTO orchestrator.orchestrations
 		(id, tenant_id, name, steps, enabled, schedule, created_at, updated_at)
-		VALUES (11, 7, 'daily orchestration', '[]', false, '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`).Error; err != nil {
+		VALUES (11, 7, 'daily orchestration', CAST('[{"id":"s1","name":"Step","provider":"meta","task_type":"scan","task_id":1}]' AS BLOB), false, '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`).Error; err != nil {
 		t.Fatalf("insert orchestration: %v", err)
 	}
-	service := NewExecutionService(db, repository.NewOrchestrationRepository(db))
+	service := NewExecutionService(db)
 	actor := ExecutionActor{PrincipalID: 9, TenantMembershipID: 19, AuthorizationVersion: 3}
 	if _, err := service.CreateExecutionWithContext(context.Background(), 11, 8, commonExecution.TriggerTypeManual, commonExecution.ModuleOrchestrator, nil, actor); !errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Fatalf("cross-tenant CreateExecution error = %v, want record not found", err)
@@ -55,12 +55,10 @@ func TestExecutionLifecycleUsesRealStartAndTerminalTimes(t *testing.T) {
 	if _, err := service.GetExecutionByExecutionID(context.Background(), execution.ExecutionID, 8); err == nil {
 		t.Fatal("cross-tenant GetExecutionByExecutionID error is nil")
 	}
-	if _, err := service.getExecutionInternal(context.Background(), uint(execution.ID)); err != nil {
-		t.Fatalf("getExecutionInternal: %v", err)
-	}
 
-	if err := service.UpdateStatus(context.Background(), uint(execution.ID), commonExecution.ExecutionStatusRunning); err != nil {
-		t.Fatalf("UpdateStatus(running): %v", err)
+	_, lease, err := service.ClaimNext(context.Background(), "test-owner", time.Minute)
+	if err != nil || lease == nil {
+		t.Fatalf("claim=%v err=%v", lease, err)
 	}
 	started, err := service.GetExecution(context.Background(), uint(execution.ID), 7)
 	if err != nil {
@@ -70,7 +68,7 @@ func TestExecutionLifecycleUsesRealStartAndTerminalTimes(t *testing.T) {
 		t.Fatalf("running execution status=%s started_at=%v", started.Status, started.StartedAt)
 	}
 
-	if err := service.FinishExecution(context.Background(), uint(execution.ID), commonExecution.ExecutionStatusFailed, "step failed", nil); err != nil {
+	if err := service.FinishExecution(context.Background(), *lease, commonExecution.ExecutionStatusFailed, "orchestrator.execution.child_failed"); err != nil {
 		t.Fatalf("FinishExecution: %v", err)
 	}
 	finished, err := service.GetExecution(context.Background(), uint(execution.ID), 7)
@@ -80,7 +78,7 @@ func TestExecutionLifecycleUsesRealStartAndTerminalTimes(t *testing.T) {
 	if finished.CompletedAt == nil || finished.ExecutionTimeMs == nil || *finished.ExecutionTimeMs < 0 {
 		t.Fatalf("terminal times completed_at=%v execution_time_ms=%v", finished.CompletedAt, finished.ExecutionTimeMs)
 	}
-	if finished.ErrorDetails["message"] != "step failed" {
+	if finished.ErrorDetails["message"] != executionFailureMessage("orchestrator.execution.child_failed") {
 		t.Fatalf("error_details = %#v", finished.ErrorDetails)
 	}
 }
@@ -89,8 +87,8 @@ func TestCreateExecutionWithContextInheritsActorFromRunningOrchestratorParent(t 
 	db := newOrchestratorExecutionServiceTestDB(t)
 	if err := db.Exec(`INSERT INTO orchestrator.orchestrations
 		(id, tenant_id, name, steps, enabled, schedule, created_at, updated_at)
-		VALUES (11, 7, 'parent orchestration', '[]', false, '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-		       (12, 7, 'child orchestration', '[]', false, '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`).Error; err != nil {
+		VALUES (11, 7, 'parent orchestration', CAST('[{"id":"s1","name":"Step","provider":"meta","task_type":"scan","task_id":1}]' AS BLOB), false, '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+		       (12, 7, 'child orchestration', CAST('[{"id":"s1","name":"Step","provider":"meta","task_type":"scan","task_id":1}]' AS BLOB), false, '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`).Error; err != nil {
 		t.Fatalf("insert orchestrations: %v", err)
 	}
 	principalID := int64(41)
@@ -108,7 +106,7 @@ func TestCreateExecutionWithContextInheritsActorFromRunningOrchestratorParent(t 
 		t.Fatalf("create parent execution: %v", err)
 	}
 
-	executionService := NewExecutionService(db, repository.NewOrchestrationRepository(db))
+	executionService := NewExecutionService(db)
 	child, err := executionService.CreateExecutionWithContext(
 		context.Background(), 12, 7, commonExecution.TriggerTypeManual,
 		commonExecution.ModuleOrchestrator, &parent.ExecutionID, ExecutionActor{},
@@ -136,11 +134,18 @@ func newOrchestratorExecutionServiceTestDB(t *testing.T) *gorm.DB {
 	if err := executiontest.EnsureSQLiteStore(db); err != nil {
 		t.Fatalf("ensure SQLite execution store: %v", err)
 	}
+	connection, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	connection.SetMaxOpenConns(1)
+	t.Cleanup(func() { _ = connection.Close() })
 	statements := []string{
 		`CREATE TABLE orchestrator.orchestrations (
 			id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, name TEXT NOT NULL, description TEXT,
 			steps JSON NOT NULL, editor_layout JSON NOT NULL DEFAULT '{}', enabled BOOLEAN, schedule TEXT, last_run_at DATETIME, next_run_at DATETIME,
 			last_execution_id TEXT, last_execution_status TEXT, created_by INTEGER,
+ authorization_ref TEXT, authorization_subject_id INTEGER, authorization_definition_hash TEXT, authorization_principal_id INTEGER, authorization_membership_id INTEGER, authorization_version INTEGER, authorized_at DATETIME,
 			created_at DATETIME, updated_at DATETIME, deleted_at DATETIME
 		)`,
 	}

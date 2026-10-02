@@ -8,6 +8,7 @@
 
 ```text
 common/
+├── opaquetoken/    # 用途隔离的 JSON 不透明令牌编解码，领域绑定由调用方校验
 ├── api/            # 统一响应、错误和 handler 辅助
 ├── buildinfo/      # Go 服务统一构建身份和健康响应
 ├── authorization/  # Permission/内置 Role Manifest Schema、共享授权契约及 authtest
@@ -30,6 +31,8 @@ common/
 ├── query/          # 查询参数绑定、SQL 副作用分析和跨引擎 SQL 方言
 └── secretcipher/   # 跨模块 AES-256-GCM 敏感配置值加解密
 ```
+
+`common/opaquetoken` 是 Service 查询游标/Feature ID 与 System 日志游标的唯一通用编解码所有者；采用用途派生 AES-GCM，不持有权限、存储边界或领域过期策略。由 `make test` 的 Common `./...` 自动发现。
 
 ## 开发规则
 

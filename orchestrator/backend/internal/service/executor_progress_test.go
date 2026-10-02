@@ -9,12 +9,12 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	commonClient "github.com/addp/common/client"
 	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/orchestrator/internal/models"
-	"github.com/addp/orchestrator/internal/repository"
 )
 
 func TestExecutorPublishesCompletedStepBeforeStartingNext(t *testing.T) {
@@ -27,8 +27,7 @@ func TestExecutorPublishesCompletedStepBeforeStartingNext(t *testing.T) {
 	if err := db.Exec(`INSERT INTO orchestrator.orchestrations (id, tenant_id, name, steps, enabled, schedule) VALUES (11, 7, 'progress', ?, false, '')`, encoded).Error; err != nil {
 		t.Fatal(err)
 	}
-	repo := repository.NewOrchestrationRepository(db)
-	service := NewExecutionService(db, repo)
+	service := NewExecutionService(db)
 	execution, err := service.CreateExecutionWithContext(context.Background(), 11, 7, "manual", "orchestrator", nil,
 		ExecutionActor{PrincipalID: 9, TenantMembershipID: 19, AuthorizationVersion: 3})
 	if err != nil {
@@ -63,7 +62,7 @@ func TestExecutorPublishesCompletedStepBeforeStartingNext(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	executor := &Executor{executionService: service, orchRepo: repo,
+	executor := &Executor{executionService: service,
 		taskProviderResolver: taskProviderResolverWithProvider(&commonModels.TaskProvider{
 			ModuleName: "quality", Backends: taskProviderBackendsForTest(server.URL), Available: true,
 			TaskProviderDeclaration: commonModels.TaskProviderDeclaration{
@@ -73,9 +72,16 @@ func TestExecutorPublishesCompletedStepBeforeStartingNext(t *testing.T) {
 		}, `{"type":"object","additionalProperties":false}`),
 		serviceTokens: commonClient.ServiceTokenProviderFunc(func(context.Context, uint) (string, error) { return "token", nil }),
 	}
-	if err := executor.executeSync(context.Background(), uint(execution.ID)); err != nil {
-		t.Fatal(err)
+	_, lease, err := service.ClaimNext(context.Background(), "progress-owner", time.Minute)
+	if err != nil || lease == nil {
+		t.Fatalf("claim=%v err=%v", lease, err)
 	}
+	for i := 0; i < 5; i++ {
+		if err := executor.Advance(context.Background(), *lease); err != nil {
+			t.Fatal(err)
+		}
+	}
+
 	if !observed.Load() {
 		t.Fatal("second step never observed")
 	}

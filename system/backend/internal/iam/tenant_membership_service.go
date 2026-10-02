@@ -111,7 +111,7 @@ func (s *TenantMembershipService) UpdateManagedMembership(
 	}
 	var changed *TenantMembershipChangeResult
 	err := s.repository.Transaction(ctx, func(tx *Repository) error {
-		membership, err := tx.LockTenantMembershipByID(ctx, input.MembershipID)
+		membership, err := tx.lockMembershipPrincipal(ctx, input.TenantID, input.MembershipID, mutationActorIDs(input.Audit)...)
 		if err != nil {
 			return err
 		}
@@ -153,7 +153,11 @@ func (s *TenantMembershipService) EstablishMembership(
 
 	var changed *TenantMembershipChangeResult
 	err := s.repository.Transaction(ctx, func(tx *Repository) error {
-		principal, tenant, err := lockActiveMembershipTarget(ctx, tx, input.PrincipalID, input.TenantID)
+		ids := mutationActorIDs(input.Audit)
+		if input.CreatedByPrincipalID != nil {
+			ids = append(ids, *input.CreatedByPrincipalID)
+		}
+		principal, tenant, err := lockActiveMembershipTarget(ctx, tx, input.PrincipalID, input.TenantID, ids...)
 		if err != nil {
 			return err
 		}
@@ -217,10 +221,11 @@ func (s *TenantMembershipService) changeMembership(
 
 	var changed *TenantMembershipChangeResult
 	err := s.repository.Transaction(ctx, func(tx *Repository) error {
-		principal, err := tx.LockPrincipal(ctx, input.PrincipalID)
+		principals, err := tx.lockPrincipalsInOrder(ctx, mutationActorIDs(input.Audit, input.PrincipalID)...)
 		if err != nil {
 			return err
 		}
+		principal := principals[input.PrincipalID]
 		tenant, err := tx.LockTenant(ctx, input.TenantID)
 		if err != nil {
 			return err
@@ -357,11 +362,13 @@ func lockActiveMembershipTarget(
 	tx *Repository,
 	principalID int64,
 	tenantID int64,
+	actorIDs ...int64,
 ) (*Principal, *Tenant, error) {
-	principal, err := tx.LockPrincipal(ctx, principalID)
+	principals, err := tx.lockPrincipalsInOrder(ctx, append(actorIDs, principalID)...)
 	if err != nil {
 		return nil, nil, err
 	}
+	principal := principals[principalID]
 	if principal.Status != PrincipalStatusActive {
 		return nil, nil, fmt.Errorf("%w: principal must be active", commonapi.ErrConflict)
 	}

@@ -274,16 +274,17 @@ export function renderOrchestrationNodeExecution(item, state, label) {
     group.find(shape => shape.get('name') === name)?.remove()
   }
   const existingPulse = group.find(shape => shape.get('name') === 'execution-pulse')
-  if (state?.status !== 'running' && existingPulse) {
+  const running = state?.status === 'running' && !state.observationStopped
+  if (!running && existingPulse) {
     existingPulse.stopAnimate()
     existingPulse.remove()
   }
   if (!state) return
   const colors = themeColors()
-  const color = ({ running: colors.warning, success: colors.success, failed: colors.danger,
-    timeout: colors.danger })[state.status] || colors.textSecondary
+  const color = state.observationStopped ? colors.textSecondary : (({ running: colors.warning, success: colors.success, failed: colors.danger,
+    timeout: colors.danger })[state.status] || colors.textSecondary)
   const height = orchestrationNodeSize(item.getModel())[1]
-  if (state.status === 'running') {
+  if (running) {
     const attrs = { x: -NODE_WIDTH / 2 - 5, y: -height / 2 - 5,
       width: NODE_WIDTH + 10, height: height + 10, radius: 10,
       stroke: color, lineWidth: 4 }

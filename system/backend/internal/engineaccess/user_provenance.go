@@ -48,9 +48,22 @@ func (r *Repository) lockUserProvenance(ctx context.Context, tenantID int64, sou
 // same identity predicate in synchronous delegation management and acceptance.
 // This predicate deliberately grants no Permission or engine delegation.
 func (p *lockedUserProvenance) check(now time.Time) error {
+	if err := p.checkIdentity(now); err != nil {
+		return err
+	}
+	if p.principal.AuthorizationVersion != p.source.AuthorizationVersion {
+		return commonapi.ErrForbidden
+	}
+	return nil
+}
+
+// Identity continuity is independent of a historical authorization version.
+// Operators use check above; business confirmers additionally require current
+// confirmation Permissions, not equality with their audit-time version.
+func (p *lockedUserProvenance) checkIdentity(now time.Time) error {
 	if p == nil || !p.source.valid() || p.principal == nil || p.member == nil || p.tenant == nil ||
 		p.principal.ID != p.source.PrincipalID || p.principal.PrincipalType != iam.PrincipalTypeUser ||
-		p.principal.Status != iam.PrincipalStatusActive || p.principal.AuthorizationVersion != p.source.AuthorizationVersion ||
+		p.principal.Status != iam.PrincipalStatusActive ||
 		p.member.ID != p.source.MembershipID || p.member.TenantID != p.tenantID || p.member.PrincipalID != p.source.PrincipalID ||
 		p.member.Status != iam.TenantMembershipStatusActive || (p.member.ExpiresAt != nil && !p.member.ExpiresAt.After(now)) ||
 		p.tenant.ID != p.tenantID || p.tenant.Status != iam.TenantStatusActive {

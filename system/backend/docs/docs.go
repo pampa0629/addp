@@ -4082,7 +4082,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "有界查询已登记实例的日志；采集完整性未知，离线实例也可读取 | Bounded logs for a registered instance, including offline instances; collection completeness is unknown",
+                "description": "固定窗口游标分页；30 分钟有效，非存储快照，采集完整性未知，离线实例也可读取 | Fixed-window cursor paging; valid for 30 minutes, not a storage snapshot, collection completeness unknown; offline instances supported",
                 "produces": [
                     "application/json"
                 ],
@@ -4140,8 +4140,14 @@ const docTemplate = `{
                     },
                     {
                         "type": "integer",
-                        "description": "返回上限，默认 200，最多 1000 | Limit, default 200, maximum 1000",
+                        "description": "每批上限，默认 200，最多 1000 | Batch limit, default 200, maximum 1000",
                         "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "服务端产生的续查游标；须保留同一筛选与窗口 | Server-issued cursor; retain the same filters and window",
+                        "name": "cursor",
                         "in": "query"
                     }
                 ],
@@ -4172,6 +4178,12 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
                         }
@@ -12489,8 +12501,11 @@ const docTemplate = `{
                 "from": {
                     "type": "string"
                 },
-                "limited": {
+                "has_more": {
                     "type": "boolean"
+                },
+                "next_cursor": {
+                    "type": "string"
                 },
                 "outside_retention": {
                     "type": "boolean"

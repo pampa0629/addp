@@ -23,7 +23,6 @@ import (
 func SetupRouter(
 	orchRepo *repository.OrchestrationRepository,
 	executionService *service.ExecutionService,
-	executor *service.Executor,
 	taskProviderResolver *service.TaskProviderResolver,
 	systemURL string,
 	redisClient *redis.Client,
@@ -57,7 +56,7 @@ func SetupRouter(
 	httpClient := &http.Client{Timeout: 30 * time.Second}
 
 	handler := NewOrchestrationHandler(
-		orchRepo, executionService, executor, taskProviderResolver, httpClient,
+		orchRepo, executionService, taskProviderResolver, httpClient,
 		taskAuthorizationClient,
 		serviceTokens,
 	)

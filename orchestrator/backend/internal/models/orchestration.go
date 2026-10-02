@@ -315,6 +315,8 @@ func (r *StepResults) Scan(value interface{}) error {
 
 // StepResult 单个步骤结果
 type StepResult struct {
+ Phase string `json:"phase,omitempty"`
+ ErrorCode string `json:"error_code,omitempty"`
 	Status    string                 `json:"status"` // "success"/"failed"
 	Result    map[string]interface{} `json:"result"`
 	Error     string                 `json:"error,omitempty"`

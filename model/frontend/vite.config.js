@@ -5,6 +5,7 @@ import Components from 'unplugin-vue-components/vite'
 import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
 import path from 'path'
 import { resolve } from 'path'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 
 const ENTRY_CHUNK_LIMIT_BYTES = 500 * 1024
 
@@ -27,6 +28,21 @@ export default defineConfig(withFrontendTestIsolation('model', {
     Components({ resolvers: [ElementPlusResolver({ importStyle: false })] }),
     enforceEntryChunkBudget()
   ],
+  // Component auto-imports appear after Vite's initial source scan. Prebundle
+  // the declared dependencies and deep entries once; later discovery must not
+  // replace optimized Vue URLs while fixture HMR is disabled.
+  ...(process.env.ADDP_E2E === '1' ? {
+    optimizeDeps: {
+      noDiscovery: true,
+      include: [
+        ...Object.keys(JSON.parse(readFileSync(resolve(__dirname, 'package.json'), 'utf8')).dependencies),
+        'element-plus/es',
+        ...readdirSync(resolve(__dirname, 'node_modules/element-plus/es/components'))
+          .filter(name => existsSync(resolve(__dirname, `node_modules/element-plus/es/components/${name}/index.mjs`)))
+          .map(name => `element-plus/es/components/${name}/index`)
+      ]
+    }
+  } : {}),
   resolve: {
     alias: {
       '@': path.resolve(__dirname, 'src'),

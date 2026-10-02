@@ -1382,6 +1382,92 @@ const docTemplate = `{
                 ]
             }
         },
+        "/platform/log-notification-deliveries/{id}/retry": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "保留原投递及事件身份，允许补发已恢复告警的历史消息；200 仅表示重新入队。 | Retains delivery/event identities and permits historical messages for resolved incidents; 200 means requeued, not delivered.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "平台日志链路 | Platform Log Pipeline"
+                ],
+                "summary": "重新入队最终失败的平台日志通知 | Requeue a failed platform log notification",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "投递 UUID | Delivery UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "预期重投次数和目标版本 | Expected retry count and destination version",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_monitor_internal_service.LogDeliveryRetryInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_monitor_internal_service.LogDeliveryView"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "monitor.log_notification.update"
+                ]
+            }
+        },
         "/platform/log-notification-destinations": {
             "get": {
                 "security": [
@@ -2914,6 +3000,9 @@ const docTemplate = `{
                 "id": {
                     "type": "string"
                 },
+                "phase": {
+                    "type": "string"
+                },
                 "started_at": {
                     "type": "string"
                 },
@@ -3165,41 +3254,6 @@ const docTemplate = `{
                 },
                 "tenant_id": {
                     "type": "integer"
-                }
-            }
-        },
-        "github_com_addp_monitor_internal_models.PlatformLogDelivery": {
-            "type": "object",
-            "properties": {
-                "attempt_count": {
-                    "type": "integer"
-                },
-                "channel": {
-                    "type": "string"
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "delivered_at": {
-                    "type": "string"
-                },
-                "destination_id": {
-                    "type": "integer"
-                },
-                "event_id": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "last_error": {
-                    "type": "string"
-                },
-                "next_attempt_at": {
-                    "type": "string"
-                },
-                "status": {
-                    "type": "string"
                 }
             }
         },
@@ -3751,7 +3805,7 @@ const docTemplate = `{
                 "data": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/github_com_addp_monitor_internal_models.PlatformLogDelivery"
+                        "$ref": "#/definitions/github_com_addp_monitor_internal_service.LogDeliveryView"
                     }
                 },
                 "page": {
@@ -3765,6 +3819,83 @@ const docTemplate = `{
                 },
                 "total_pages": {
                     "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_monitor_internal_service.LogDeliveryRetryInput": {
+            "type": "object",
+            "required": [
+                "destination_version",
+                "expected_manual_retry_count"
+            ],
+            "properties": {
+                "destination_version": {
+                    "type": "integer"
+                },
+                "expected_manual_retry_count": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_monitor_internal_service.LogDeliveryView": {
+            "type": "object",
+            "properties": {
+                "attempt_count": {
+                    "type": "integer"
+                },
+                "channel": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "cycle_attempt_count": {
+                    "type": "integer"
+                },
+                "delivered_at": {
+                    "type": "string"
+                },
+                "destination_id": {
+                    "type": "integer"
+                },
+                "destination_name": {
+                    "type": "string"
+                },
+                "destination_version": {
+                    "type": "integer"
+                },
+                "event_id": {
+                    "type": "string"
+                },
+                "event_type": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "incident_id": {
+                    "type": "integer"
+                },
+                "incident_status": {
+                    "type": "string"
+                },
+                "last_error": {
+                    "type": "string"
+                },
+                "manual_retry_count": {
+                    "type": "integer"
+                },
+                "next_attempt_at": {
+                    "type": "string"
+                },
+                "occurred_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "suppressed_until": {
+                    "type": "string"
                 }
             }
         },

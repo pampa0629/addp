@@ -105,7 +105,7 @@ graph TB
 
 ### 执行运行时角色矩阵
 
-`common.task_executions` 统一记录执行事实。Quality、Meta、Security 和 Transfer bounded 的独立 execution worker，以及 Develop Query、Manager bounded 和 Model materialization 的 Backend 内嵌 execution supervisor，使用相同的 PostgreSQL claim + execution lease 所有权协议；continuous runtime、dispatcher 和 maintenance loop 保持各自专用机制。下面的矩阵区分这些角色，避免把名称相同的后台组件误认为同一机制。
+`common.task_executions` 统一记录执行事实。Quality、Meta、Security 和 Transfer bounded 的独立 execution worker，以及 Develop Query、Manager bounded、Orchestrator orchestration 和 Model materialization 的 Backend 内嵌 execution supervisor，使用相同的 PostgreSQL claim + execution lease 所有权协议；continuous runtime、dispatcher 和 maintenance loop 保持各自专用机制。下面的矩阵区分这些角色，避免把名称相同的后台组件误认为同一机制。
 
 | 运行时角色 | 所属模块 | 进程边界 | 领取/投递事实 | 并发与恢复 | 与 `common.task_executions` 的关系 |
 |---|---|---|---|---|---|
@@ -114,6 +114,7 @@ graph TB
 | Security discovery worker | Security | 独立 `security-worker` | PostgreSQL claim `security/sensitive_data_discovery/pending` execution | 有界槽位；lease token、heartbeat；仅扫描显式纳管目标 | 生成 Security Finding 并带所有权条件写终态，不承担全量 Meta 遍历 |
 | Transfer bounded worker | Transfer | 独立 `transfer-bounded-worker` | PostgreSQL claim `transfer/sync/pending` bounded execution | 有界槽位；lease token、heartbeat；仅对明确可安全重放的模式自动恢复 | 承担 snapshot、watermark 和 bounded replay，不承载 continuous session |
 | Develop query execution supervisor | Develop | 内嵌 `develop-backend` | PostgreSQL claim 全部 `develop/query/pending` bounded execution | 固定有界槽位；lease token、heartbeat；租约失效后收敛失败 | 同一路径执行 Workbench、手动任务与 Orchestrator query；不启动独立 Query Worker |
+| Orchestrator execution supervisor | Orchestrator | 内嵌 `orchestrator-backend` | PostgreSQL claim 冻结计划的 `orchestrator/orchestration/pending` execution | 有界步骤推进；等待释放槽位；lease、独立续租；失联及不确定提交不重放 | 保存步骤阶段、进度和子执行引用，复用 Common 安全过程事件；不代替下游 Owner 执行或取消任务 |
 | Transfer continuous worker | Transfer | 独立 `transfer-continuous-worker` 进程 | `transfer.runtime_leases`、Kafka/CDC position | capacity、heartbeat、fencing；恢复创建新的 recovery execution | 承担 continuous runtime session；`sync_states` 是业务 committed position，不替代 execution 历史 |
 | Webhook/Email dispatcher | Monitor | 内嵌 `monitor-backend` | Monitor delivery outbox + `SKIP LOCKED` | 投递 lease、至少一次语义、指数退避和 dead 终态 | 消费告警生命周期 delivery，不创建或改写业务 execution |
 
@@ -337,4 +338,6 @@ Webhook 目标运维不改变告警事实边界。测试投递使用独立 `moni
 
 ## 平台日志链路告警（2026-10-01 已确认）
 
-Infra 节点观测器独立于业务进程定时读取采集计数、Alloy 指标、源容量并执行端到端投递探针；使用专用 Service Principal 上报有界安全事实。Monitor 以接收时间检查过期，按计数基线、连续失败及恢复阈值裁决平台日志链路告警，独立保存平台 incident/event/delivery 与通知目标，不借用租户任务身份。System 模块管理提供健康摘要及告警处理入口。平台告警通知复用 Monitor 的 Webhook 签名、安全网络连接、SMTP Relay 与有界重试能力，故障事实不依赖 Loki；日志异常不改变业务 Ready 或 UP/DOWN。细节见 [运行日志设计](../next/ADDP模块服务运行日志设计.md#十一平台日志链路健康与告警已确认实施中)。
+Infra 节点观测器独立于业务进程定时读取采集计数、Alloy 指标、源容量并执行端到端投递探针；使用专用 Service Principal 上报有界安全事实。Monitor 以接收时间检查过期，按计数基线、连续失败及恢复阈值裁决平台日志链路告警，独立保存平台 incident/event/delivery 与通知目标，不借用租户任务身份。System 模块管理提供健康摘要及告警处理入口。平台告警通知复用 Monitor 的 Webhook 签名、安全网络连接、SMTP Relay 与有界重试能力，故障事实不依赖 Loki；日志异常不改变业务 Ready 或 UP/DOWN。细节见 [运行日志设计](../next/ADDP模块服务运行日志设计.md#十一平台日志链路健康与告警已实现验收边界见-117)。
+
+平台通知手动重投仅处理 dead 投递，保留原投递和事件身份，使用目标当前配置重新入队，按新周期限制尝试次数并保留累计计数。允许补发已恢复告警的历史消息，发生时间与正文不可改写；不能把入队成功表述为送达，也不能覆盖当前告警状态。目标版本与人工重投次数共同拒绝过期或重复操作，目标停用和抑制继续有效；操作沿用 System 平台审计，不新增租户事实或独立发送路径。

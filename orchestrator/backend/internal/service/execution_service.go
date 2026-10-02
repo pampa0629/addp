@@ -3,14 +3,13 @@ package service
 import (
 	"context"
 	"fmt"
-	commonExecution "github.com/addp/common/execution"
-	"log/slog"
 	"time"
 
-	"github.com/addp/common/logger"
+	commonExecution "github.com/addp/common/execution"
+	"gorm.io/gorm/clause"
+
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/orchestrator/internal/models"
-	"github.com/addp/orchestrator/internal/repository"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -19,8 +18,6 @@ import (
 type ExecutionService struct {
 	db                *gorm.DB
 	taskExecutionRepo *commonExecution.TaskExecutionRepository
-	orchRepo          *repository.OrchestrationRepository
-	logger            *slog.Logger
 }
 
 type ExecutionActor struct {
@@ -32,87 +29,69 @@ type ExecutionActor struct {
 // NewExecutionService 创建执行服务
 func NewExecutionService(
 	db *gorm.DB,
-	orchRepo *repository.OrchestrationRepository,
 ) *ExecutionService {
 	return &ExecutionService{
 		db:                db,
 		taskExecutionRepo: commonExecution.NewTaskExecutionRepository(db),
-		orchRepo:          orchRepo,
-		logger:            logger.With("component", "execution_service"),
 	}
 }
 
-// CreateExecution 创建执行记录
 // CreateExecutionWithContext 创建带标准 TaskProvider 上下文的编排执行记录。
 func (s *ExecutionService) CreateExecutionWithContext(ctx context.Context, orchestrationID, tenantID uint, triggerType, source string, parentExecutionID *string, actor ExecutionActor) (*commonExecution.TaskExecution, error) {
 	if tenantID == 0 {
 		return nil, fmt.Errorf("tenant_id is required")
 	}
-	// 获取编排信息
-	orch, err := s.orchRepo.GetByIDAndTenant(orchestrationID, tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("orchestration not found: %w", err)
-	}
+	var execution *commonExecution.TaskExecution
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var orch models.Orchestration
+		query := tx.Where("id = ? AND tenant_id = ?", orchestrationID, tenantID)
+		if tx.Dialector.Name() == "postgres" {
+			query = query.Clauses(clause.Locking{Strength: "UPDATE"})
+		}
+		if err := query.First(&orch).Error; err != nil {
+			return err
+		}
+		var err error
+		execution, err = createOrchestrationExecution(ctx, tx, &orch, triggerType, source, parentExecutionID, actor)
+		return err
+	})
+	return execution, err
+}
 
-	normalizedTriggerType, err := commonExecution.NormalizeTriggerType(triggerType)
+func createOrchestrationExecution(ctx context.Context, tx *gorm.DB, orch *models.Orchestration, triggerType, source string, parent *string, actor ExecutionActor) (*commonExecution.TaskExecution, error) {
+	normalized, err := commonExecution.NormalizeTriggerType(triggerType)
 	if err != nil {
 		return nil, err
 	}
 	if source == "" {
 		source = commonExecution.ModuleOrchestrator
 	}
-	if parentExecutionID == nil {
-		if actor.PrincipalID <= 0 || actor.TenantMembershipID <= 0 || actor.AuthorizationVersion <= 0 {
-			return nil, fmt.Errorf("execution actor facts are required")
-		}
-	} else if source != commonExecution.ModuleOrchestrator {
+	if parent == nil && (actor.PrincipalID <= 0 || actor.TenantMembershipID <= 0 || actor.AuthorizationVersion <= 0) {
+		return nil, fmt.Errorf("execution actor facts are required")
+	}
+	if parent != nil && source != commonExecution.ModuleOrchestrator {
 		return nil, fmt.Errorf("orchestrator child execution source must be orchestrator")
 	}
-
-	// 创建统一执行记录
-	now := time.Now()
-	orchName := orch.Name
-	var triggeredByPtr *int
-	value := int(actor.PrincipalID)
-	triggeredByPtr = &value
-	principalID := actor.PrincipalID
-	membershipID := actor.TenantMembershipID
-	authorizationVersion := actor.AuthorizationVersion
-
-	execution := &commonExecution.TaskExecution{
-		TenantID:                   int(tenantID),
-		ExecutionID:                uuid.New().String(),
-		Module:                     commonExecution.ModuleOrchestrator,
-		TaskType:                   commonExecution.TaskTypeOrchestration,
-		Source:                     source,
-		SourceTaskID:               commonExecution.NewSourceTaskIDFromUint(orchestrationID),
-		SourceTaskName:             &orchName,
-		ParentExecutionID:          parentExecutionID,
-		Status:                     commonExecution.ExecutionStatusPending,
-		Progress:                   0,
-		TriggerType:                normalizedTriggerType,
-		TriggeredBy:                triggeredByPtr,
-		ActorPrincipalID:           &principalID,
-		ActorTenantMembershipID:    &membershipID,
-		IssuedAuthorizationVersion: &authorizationVersion,
-		Metadata:                   make(commonModels.JSONMap),
-		CreatedAt:                  now,
-		UpdatedAt:                  now,
+	config, err := freezeExecutionPlan(orch.Steps)
+	if err != nil {
+		return nil, err
 	}
-
-	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if parentExecutionID != nil {
-			if err := commonExecution.InheritOrchestratorActor(tx, execution); err != nil {
-				return err
-			}
+	now := time.Now().UTC()
+	triggered := int(actor.PrincipalID)
+	name := orch.Name
+	item := &commonExecution.TaskExecution{TenantID: int(orch.TenantID), ExecutionID: uuid.NewString(), Module: commonExecution.ModuleOrchestrator, TaskType: commonExecution.TaskTypeOrchestration,
+		Source: source, SourceTaskID: commonExecution.NewSourceTaskIDFromUint(orch.ID), SourceTaskName: &name, ParentExecutionID: parent, Status: commonExecution.ExecutionStatusPending,
+		ExecutionBoundary: commonExecution.ExecutionBoundaryBounded, TriggerType: normalized, TriggeredBy: &triggered, ActorPrincipalID: &actor.PrincipalID, ActorTenantMembershipID: &actor.TenantMembershipID, IssuedAuthorizationVersion: &actor.AuthorizationVersion,
+		ExecutionConfig: config, Metadata: commonModels.JSONMap{}, CreatedAt: now, UpdatedAt: now}
+	if parent != nil {
+		if err := commonExecution.InheritOrchestratorActor(tx, item); err != nil {
+			return nil, err
 		}
-		return tx.Create(execution).Error
-	}); err != nil {
-		return nil, fmt.Errorf("failed to create execution: %w", err)
 	}
-
-	s.logger.Info("execution created", "execution_id", execution.ExecutionID, "orchestration_id", orchestrationID)
-	return execution, nil
+	if err := tx.WithContext(ctx).Create(item).Error; err != nil {
+		return nil, err
+	}
+	return item, nil
 }
 
 // GetExecution 获取执行记录
@@ -153,141 +132,6 @@ func (s *ExecutionService) GetExecutionByExecutionID(ctx context.Context, execut
 		return nil, fmt.Errorf("execution not found or access denied")
 	}
 	return execution, nil
-}
-
-// getExecutionInternal 按全局主键读取执行，仅供 Orchestrator 内部执行循环推进状态。
-func (s *ExecutionService) getExecutionInternal(ctx context.Context, id uint) (*commonExecution.TaskExecution, error) {
-	execution, err := s.taskExecutionRepo.GetByID(ctx, int64(id), 0)
-	if err != nil {
-		return nil, err
-	}
-	if execution.Module != commonExecution.ModuleOrchestrator {
-		return nil, fmt.Errorf("execution not found")
-	}
-	return execution, nil
-}
-
-// UpdateStatus 更新执行状态
-func (s *ExecutionService) UpdateStatus(ctx context.Context, id uint, status string) error {
-	// 获取执行记录
-	execution, err := s.getExecutionInternal(ctx, id)
-	if err != nil {
-		return err
-	}
-
-	updates := map[string]interface{}{
-		"status": status,
-	}
-
-	// 如果状态是运行中，更新 started_at
-	if status == commonExecution.ExecutionStatusRunning {
-		return s.taskExecutionRepo.StartExecution(ctx, execution.ExecutionID, execution.TenantID, time.Now())
-	}
-
-	// 如果状态是完成或失败，更新 completed_at
-	if status == commonExecution.ExecutionStatusSuccess || status == commonExecution.ExecutionStatusFailed || status == commonExecution.ExecutionStatusTimeout || status == commonExecution.ExecutionStatusCancelled {
-		now := time.Now()
-		updates["completed_at"] = now
-	}
-
-	return s.taskExecutionRepo.UpdateFields(ctx, execution.ExecutionID, execution.TenantID, updates)
-}
-
-// UpdateCurrentStep 更新当前步骤
-func (s *ExecutionService) UpdateCurrentStep(ctx context.Context, id uint, currentStep string) error {
-	execution, err := s.getExecutionInternal(ctx, id)
-	if err != nil {
-		return err
-	}
-
-	return s.taskExecutionRepo.UpdateFields(ctx, execution.ExecutionID, execution.TenantID, map[string]interface{}{
-		"current_step": currentStep,
-	})
-}
-
-// UpdateStepResults 更新步骤结果
-func (s *ExecutionService) UpdateStepResults(ctx context.Context, id uint, stepResults models.StepResults) error {
-	execution, err := s.getExecutionInternal(ctx, id)
-	if err != nil {
-		return err
-	}
-
-	// 转换为 map，存入 metadata["step_results"]
-	stepResultsMap := make(map[string]interface{})
-	for k, v := range stepResults {
-		stepResultsMap[k] = v
-	}
-
-	metadata := execution.Metadata
-	if metadata == nil {
-		metadata = commonModels.JSONMap{}
-	}
-	metadata["step_results"] = stepResultsMap
-
-	// 计算进度（已完成步骤数 / 总步骤数 * 100）
-	progress := 0
-	if len(stepResults) > 0 {
-		if execution.SourceTaskID != nil {
-			orchestrationID, parseErr := commonExecution.ParseSourceTaskIDUint(execution.SourceTaskID)
-			if parseErr != nil {
-				return parseErr
-			}
-			orch, err := s.orchRepo.GetByIDAndTenant(orchestrationID, uint(execution.TenantID))
-			if err == nil && len(orch.Steps) > 0 {
-				progress = int(float64(len(stepResults)) / float64(len(orch.Steps)) * 100)
-			}
-		}
-	}
-
-	return s.taskExecutionRepo.UpdateFields(ctx, execution.ExecutionID, execution.TenantID, map[string]interface{}{
-		"metadata": metadata,
-		"progress": progress,
-	})
-}
-
-// FinishExecution 完成执行（成功或失败）
-func (s *ExecutionService) FinishExecution(ctx context.Context, id uint, status, errorMsg string, stepResults models.StepResults) error {
-	execution, err := s.getExecutionInternal(ctx, id)
-	if err != nil {
-		return err
-	}
-
-	now := time.Now()
-	updates := map[string]interface{}{
-		"status":       status,
-		"completed_at": now,
-		"progress":     100,
-	}
-	if execution.StartedAt != nil {
-		updates["execution_time_ms"] = now.Sub(*execution.StartedAt).Milliseconds()
-	}
-
-	// 更新步骤结果
-	if stepResults != nil {
-		stepResultsMap := make(map[string]interface{})
-		for k, v := range stepResults {
-			stepResultsMap[k] = v
-		}
-		execution, err := s.getExecutionInternal(ctx, id)
-		if err != nil {
-			return err
-		}
-		metadata := execution.Metadata
-		if metadata == nil {
-			metadata = commonModels.JSONMap{}
-		}
-		metadata["step_results"] = stepResultsMap
-		updates["metadata"] = metadata
-	}
-
-	// 更新错误信息
-	if errorMsg != "" {
-		updates["error_details"] = commonModels.JSONMap{
-			"message": errorMsg,
-		}
-	}
-
-	return s.taskExecutionRepo.UpdateFields(ctx, execution.ExecutionID, execution.TenantID, updates)
 }
 
 // ListExecutions 列出执行记录

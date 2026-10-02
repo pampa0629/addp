@@ -116,3 +116,7 @@ other = "Invalid observation window; supported values are 24h, 7d, and 30d"
 
 ["monitor.err.diagnostic_query_failed"]
 other = "Cannot read execution diagnostics; retry later"
+[monitor.platform_log.retry_unavailable]
+other = "Cannot retry now; check the target, channel configuration and incident suppression"
+[monitor.platform_log.retry_conflict]
+other = "Delivery state, retry count or target version changed; refresh and confirm again"

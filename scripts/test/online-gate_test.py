@@ -84,6 +84,7 @@ class OnlineGateTest(unittest.TestCase):
                 "manager-hybrid-search",
                 "metric-service-revision-lifecycle",
                 "ontology-revision-lifecycle",
+                "orchestrator-execution",
                 "module-registry-recovery",
                 "oceanbase-consumer-flow",
                 "opengauss-consumer-flow",

@@ -313,7 +313,7 @@ func connectDatabase(cfg *config.Config) (*gorm.DB, error) {
 		if err := transferRepo.MigrateCaptureProviderResources(tx); err != nil {
 			return err
 		}
-		if err := transferRepo.MigrateExecutionLogs(tx); err != nil {
+		if err := transferRepo.RemoveExecutionLogs(tx); err != nil {
 			return err
 		}
 		if err := tx.AutoMigrate(transferSchemaModels()...); err != nil {

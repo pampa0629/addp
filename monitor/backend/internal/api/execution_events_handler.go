@@ -1,9 +1,11 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
+	commonapi "github.com/addp/common/api"
 	"github.com/addp/common/execution"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	moni18n "github.com/addp/monitor/i18n"
@@ -31,7 +33,9 @@ type ExecutionEventPage = execution.EventPage
 // @Security BearerAuth
 func (h *ExecutionHandler) GetExecutionEvents(c *gin.Context) {
 	tenant, ok := requireTenantID(c)
-	if !ok { return }
+	if !ok {
+		return
+	}
 	after, afterErr := strconv.ParseInt(c.DefaultQuery("after", "0"), 10, 64)
 	limit, limitErr := strconv.Atoi(c.DefaultQuery("limit", "100"))
 	if afterErr != nil || limitErr != nil || after < 0 || limit < 1 || limit > 100 {
@@ -40,7 +44,11 @@ func (h *ExecutionHandler) GetExecutionEvents(c *gin.Context) {
 	}
 	page, err := h.queryService.GetExecutionEvents(c.Request.Context(), c.Param("execution_id"), tenant, after, limit)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error_code": "execution_events_unavailable", "error": commoni18n.T(c, moni18n.MsgExecutionNotFound)})
+		if errors.Is(err, commonapi.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error_code": "execution_not_found", "error": commoni18n.T(c, moni18n.MsgExecutionNotFound)})
+		} else {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error_code": "execution_events_unavailable", "error": commoni18n.T(c, moni18n.MsgDiagnosticQueryFailed)})
+		}
 		return
 	}
 	c.JSON(http.StatusOK, page)

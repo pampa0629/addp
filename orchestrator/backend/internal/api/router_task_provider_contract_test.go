@@ -18,7 +18,7 @@ func TestOrchestratorTaskProviderRoutesRequireRuntimeIdentity(t *testing.T) {
 	})
 	defer authServer.Close()
 
-	router := SetupRouter(nil, nil, nil, nil, authServer.URL, nil, nil, nil, nil, modulelifecycle.NewStandalone("orchestrator"))
+	router := SetupRouter(nil, nil, nil, authServer.URL, nil, nil, nil, nil, modulelifecycle.NewStandalone("orchestrator"))
 
 	for _, test := range []struct {
 		name, path, token string

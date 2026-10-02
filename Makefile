@@ -256,6 +256,7 @@ test-business-config: ## 校验 Business Compose 和服务管理脚本（不启�
 test-integration: ## 严格串行运行所有本地可执行的 disposable 基础设施集成门禁
 	@$(MAKE) test-common-postgres
 	@$(MAKE) test-monitor-postgres
+	@$(MAKE) test-orchestrator-postgres
 	@$(MAKE) test-common-mysql-data-protection
 	@$(MAKE) test-model-mysql
 	@$(MAKE) test-common-oceanbase
@@ -286,6 +287,10 @@ test-integration-hosted: test-integration ## 严格串行追加 hosted-only disp
 
 test-integration-owner-managed: ## 仅在具备合法凭据的 owner 受控 Linux 主机人工串行运行门禁
 	@$(MAKE) test-common-kingbase
+
+.PHONY: test-orchestrator-postgres
+test-orchestrator-postgres: ## 使用隔离 PostgreSQL 验证 Orchestrator 领取、调度事务及失联收敛
+	@bash scripts/test/orchestrator-postgres-gate.sh
 
 .PHONY: test-monitor-postgres
 test-monitor-postgres: ## 使用隔离 PostgreSQL 验证 Monitor 读取隔离、执行聚合及通知链路
@@ -403,6 +408,7 @@ test-online: ## 运行指定 Online suite（必须设置 ONLINE_SUITE 和 ADDP_O
 	@python3 scripts/test/online-gate.py --repository "$(CURDIR)" --suite "$(ONLINE_SUITE)"
 
 test-online-runner: ## 运行 Online 分发器和预检器的确定性测试
+	@python3 -m unittest scripts/test/orchestrator-execution-online_test.py scripts/test/online-hosted-orchestrator-gate_test.py
 	@python3 -m unittest scripts/test/compose-public-origin-online_test.py scripts/test/online-hosted-public-origin-gate_test.py
 	@python3 -m unittest scripts/test/ontology-revision-lifecycle-online_test.py scripts/test/online-hosted-ontology-gate_test.py
 	@python3 -m unittest scripts/test/quality-dynamic-binding-online_test.py

@@ -21,7 +21,7 @@ func TestRegisterIAMManagementRoutes(t *testing.T) {
 	}
 	router := gin.New()
 	api := router.Group("/api/v1/system")
-	if err := RegisterIAMManagementRoutes(api, runtime, NewModuleRegistryHandler(nil)); err != nil {
+	if err := RegisterIAMManagementRoutes(api, runtime, NewModuleRegistryHandler(nil, []byte("test-key"))); err != nil {
 		t.Fatalf("RegisterIAMManagementRoutes() error = %v", err)
 	}
 

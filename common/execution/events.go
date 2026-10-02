@@ -3,8 +3,9 @@ package execution
 import (
 	"context"
 	"fmt"
-	"regexp"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	commonapi "github.com/addp/common/api"
 	"github.com/addp/common/models"
@@ -38,7 +39,20 @@ type EventInput struct {
 	Counters map[string]int64
 }
 
-var eventStepID = regexp.MustCompile(`^[A-Za-z0-9_.:-]{1,128}$`)
+// SafeEventStepID projects an existing identity without imposing new rules on owner tasks.
+// Unsafe or oversized identities are omitted from events; the progress fact still records.
+func SafeEventStepID(value string) string {
+	if !utf8.ValidString(value) || utf8.RuneCountInString(value) > 128 || SafeDiagnosticText(value) != value {
+		return ""
+	}
+	for _, r := range value {
+		if unicode.IsControl(r) {
+			return ""
+		}
+	}
+	return value
+}
+
 var eventCounterKeys = map[string]bool{
 	"progress": true, "batch_index": true, "batch_records": true,
 	"records_read": true, "records_written": true, "bytes_read": true, "bytes_written": true,
@@ -51,7 +65,7 @@ func validateEvent(input EventInput) error {
 	default:
 		return fmt.Errorf("invalid execution event kind")
 	}
-	if input.StepID != "" && !eventStepID.MatchString(input.StepID) {
+	if input.StepID != "" && SafeEventStepID(input.StepID) != input.StepID {
 		return fmt.Errorf("invalid execution event step identity")
 	}
 	for key, value := range input.Counters {
@@ -85,14 +99,46 @@ func CompleteWithEvent(ctx context.Context, db *gorm.DB, lease Lease, status str
 	})
 }
 
+// FailExpiredWithEvent records recovery evidence without granting the expired
+// worker permission to append. The expired row lock fences renewal and recovery.
+func FailExpiredWithEvent(ctx context.Context, db *gorm.DB, lease Lease, at time.Time, fields map[string]interface{}) error {
+	if err := validateEventLease(db, lease); err != nil {
+		return err
+	}
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var item TaskExecution
+		query := ownedExpiredExecution(tx, lease, at).Where("execution_boundary = ? AND lease_owner = ?", ExecutionBoundaryBounded, lease.Owner)
+		if tx.Dialector.Name() == "postgres" {
+			query = query.Clauses(clause.Locking{Strength: "UPDATE"})
+		}
+		if err := query.First(&item).Error; err != nil {
+			if err == gorm.ErrRecordNotFound {
+				return fmt.Errorf("%w: execution recovery lease is no longer current", commonapi.ErrConflict)
+			}
+			return err
+		}
+		if err := appendLockedEvent(tx, item, EventInput{Kind: "failed"}, at.UTC()); err != nil {
+			return err
+		}
+		return FailExpired(ctx, tx, lease, at, fields)
+	})
+}
+
+func validateEventLease(db *gorm.DB, lease Lease) error {
+	if db == nil || lease.TenantID <= 0 || lease.Attempt <= 0 || lease.Owner == "" || lease.Token == "" {
+		return fmt.Errorf("execution event requires a valid bounded lease")
+	}
+	return nil
+}
+
 // AppendBoundedEvent serializes admission against completion, recovery and other writers.
 // A stale owner cannot append, even when its old token is still known.
 func AppendBoundedEvent(ctx context.Context, db *gorm.DB, lease Lease, input EventInput) error {
 	if err := validateEvent(input); err != nil {
 		return err
 	}
-	if db == nil || lease.TenantID <= 0 || lease.Attempt <= 0 || lease.Owner == "" || lease.Token == "" {
-		return fmt.Errorf("execution event requires a valid bounded lease")
+	if err := validateEventLease(db, lease); err != nil {
+		return err
 	}
 	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		now := time.Now().UTC()
@@ -107,25 +153,41 @@ func AppendBoundedEvent(ctx context.Context, db *gorm.DB, lease Lease, input Eve
 			}
 			return err
 		}
-		var count int64
-		dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
-		if err := tx.Model(&Event{}).Where("execution_id = ? AND attempt = ? AND occurred_at >= ?", item.ExecutionID, item.Attempt, dayStart).Count(&count).Error; err != nil {
-			return err
+		now = time.Now().UTC()
+		if item.LeaseExpiresAt == nil || item.LeaseExpiresAt.Before(now) {
+			return fmt.Errorf("%w: execution event lease expired while acquiring ownership", commonapi.ErrConflict)
 		}
-		if count >= MaxDailyAttemptEvents {
-			return nil
-		}
-		event := Event{ExecutionID: item.ExecutionID, TenantID: item.TenantID, Module: item.Module, TaskType: item.TaskType, Attempt: item.Attempt, OccurredAt: now, Kind: input.Kind, StepID: input.StepID, Counters: models.JSONMap{}}
-		for key, value := range input.Counters {
-			event.Counters[key] = value
-		}
-		if count == MaxDailyAttemptEvents-1 {
-			event.Kind = "truncated"
-			event.StepID = ""
-			event.Counters = models.JSONMap{}
-		}
-		return tx.Create(&event).Error
+		return appendLockedEvent(tx, item, input, now)
 	})
+}
+
+// The caller holds the execution row lock and has checked its active or expired lease.
+// Admission, daily budget and closed event storage are shared by both transitions.
+func appendLockedEvent(tx *gorm.DB, item TaskExecution, input EventInput, now time.Time) error {
+	if input.StepID != "" {
+		steps, _ := asDiagnosticObject(item.Metadata["step_results"])
+		if _, found := steps[input.StepID]; !found {
+			return fmt.Errorf("execution event step is not recorded")
+		}
+	}
+	var count int64
+	dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	if err := tx.Model(&Event{}).Where("execution_id = ? AND attempt = ? AND occurred_at >= ?", item.ExecutionID, item.Attempt, dayStart).Count(&count).Error; err != nil {
+		return err
+	}
+	if count >= MaxDailyAttemptEvents {
+		return nil
+	}
+	event := Event{ExecutionID: item.ExecutionID, TenantID: item.TenantID, Module: item.Module, TaskType: item.TaskType, Attempt: item.Attempt, OccurredAt: now, Kind: input.Kind, StepID: input.StepID, Counters: models.JSONMap{}}
+	for key, value := range input.Counters {
+		event.Counters[key] = value
+	}
+	if count == MaxDailyAttemptEvents-1 {
+		event.Kind = "truncated"
+		event.StepID = ""
+		event.Counters = models.JSONMap{}
+	}
+	return tx.Create(&event).Error
 }
 
 type EventPage struct {

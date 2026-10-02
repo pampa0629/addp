@@ -465,7 +465,6 @@ type TaskExecution struct {
 	BytesRead        int64           `json:"bytes_read"`
 	BytesWritten     int64           `json:"bytes_written"`
 	ErrorMsg         string          `json:"error_msg,omitempty"`
-	Logs             string          `json:"logs,omitempty"`
 	CheckpointOffset int64           `json:"checkpoint_offset"`
 	CheckpointState  JSONMap         `json:"checkpoint_state,omitempty"`
 	Metadata         JSONMap         `json:"metadata,omitempty"`

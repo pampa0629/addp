@@ -126,12 +126,12 @@ func SetupRouter(
 	{
 		executions.POST("", permission(transferauthorization.PermissionTransferExecutionCreate), executionHandler.CreateExecution)                           // 创建一次性同步执行
 		executions.GET("/:execution_id/result", permission(transferauthorization.PermissionTransferExecutionRead), executionHandler.GetOwnedExecutionResult) // 回查当前模块自己创建的一次性执行
-		executions.GET("", permission(transferauthorization.PermissionTransferTaskRead), executionHandler.ListExecutions)                              // 获取执行记录列表
-		executions.GET("/statistics", permission(transferauthorization.PermissionTransferTaskRead), executionHandler.GetExecutionStatistics)           // 获取执行统计
-		executions.GET("/:execution_id", permission(transferauthorization.PermissionTransferTaskRead), executionHandler.GetExecution)                  // 获取执行详情
-		executions.POST("/:execution_id/retry", permission(transferauthorization.PermissionTransferTaskExecute), executionHandler.RetryExecution)      // 重试执行
-		executions.GET("/:execution_id/progress", permission(transferauthorization.PermissionTransferTaskRead), executionHandler.GetExecutionProgress) // 获取执行进度
-		executions.GET("/:execution_id/logs", permission(transferauthorization.PermissionTransferTaskRead), executionHandler.GetExecutionLogs)         // 获取执行日志
+		executions.GET("", permission(transferauthorization.PermissionTransferTaskRead), executionHandler.ListExecutions)                                    // 获取执行记录列表
+		executions.GET("/statistics", permission(transferauthorization.PermissionTransferTaskRead), executionHandler.GetExecutionStatistics)                 // 获取执行统计
+		executions.GET("/:execution_id", permission(transferauthorization.PermissionTransferTaskRead), executionHandler.GetExecution)                        // 获取执行详情
+		executions.POST("/:execution_id/retry", permission(transferauthorization.PermissionTransferTaskExecute), executionHandler.RetryExecution)            // 重试执行
+		executions.GET("/:execution_id/progress", permission(transferauthorization.PermissionTransferTaskRead), executionHandler.GetExecutionProgress)       // 获取执行进度
+		executions.GET("/:execution_id/events", permission(transferauthorization.PermissionTransferTaskRead), executionHandler.GetExecutionEvents)           // 获取安全过程事件
 	}
 
 	return router

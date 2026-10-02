@@ -1423,6 +1423,40 @@ test('live execution displays running and completed nodes, exposes failure, and 
   await expect.poll(() => executionLabels(page)).toEqual({ [SOURCE_NODE_ID]: '', [TARGET_NODE_ID]: '' })
 })
 
+test('a stopped parent preserves child evidence but removes its live pulse', async ({ page }) => {
+  const fixture = createInteractionFixture()
+  fixture.steps[1].depends_on = [SOURCE_NODE_ID]
+  await installMockBackend(page, fixture)
+  let requests = 0
+  let state = { id: EXECUTION_ID, execution_id: 'orchestration-execution-e2e', status: 'running', progress: 50, current_step: TARGET_NODE_ID, metadata: { step_results: {
+    [SOURCE_NODE_ID]: { status: 'success' }, [TARGET_NODE_ID]: { status: 'running', phase: 'waiting', result: { execution_id: 'child-after-stop' } }
+  } } }
+  await page.route('**/api/v1/orchestrator/orch-executions/' + EXECUTION_ID, route => { requests++; return fulfillJSON(route, state) })
+  await page.goto(`/orchestrations/${fixture.id}/edit`)
+  await startLiveExecution(page)
+  await expect.poll(() => executionLabels(page)).toEqual({ [SOURCE_NODE_ID]: '成功', [TARGET_NODE_ID]: '运行中' })
+  await expect.poll(async () => Object.keys(await executionPulses(page))).toEqual([TARGET_NODE_ID])
+  state = { ...state, status: 'failed', current_step: null, error_details: { code: 'orchestrator.execution.coordinator_stopped' } }
+  await expect.poll(() => executionLabels(page)).toEqual({ [SOURCE_NODE_ID]: '成功', [TARGET_NODE_ID]: '最后记录：运行中' })
+  await expect.poll(() => executionPulses(page)).toEqual({})
+  await expect(page.locator('.execution-summary .execution-step-observation-ended')).toBeVisible()
+  await expect(page.locator('.execution-summary')).toContainText('已结束 1/2 个步骤')
+  await page.locator('#dag-container').evaluate((el, id) => {
+    const setup = el.__vueParentComponent.setupState
+    setup.selectItem(setup.graph.findById(id))
+  }, TARGET_NODE_ID)
+  await expect(page.locator('.node-execution-detail')).toContainText('最后记录：运行中')
+  await expect(page.locator('.node-execution-detail').getByRole('button', { name: '查看子任务执行', exact: true })).toBeVisible()
+  const terminalCount = requests
+  await page.waitForTimeout(2300)
+  expect(requests).toBe(terminalCount)
+  const modelJSON = await page.locator('#dag-container').evaluate(el => JSON.stringify(el.__vueParentComponent.setupState.graph.save()))
+  expect(modelJSON).not.toContain('observationStopped')
+  expect(modelJSON).not.toContain('child-after-stop')
+  await page.setViewportSize({ width: 620, height: 560 })
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false)
+})
+
 test('live execution retains last state on refresh failure, retries, and hides stale labels when the definition changes', async ({ page }) => {
   const fixture = createInteractionFixture()
   await installMockBackend(page, fixture)

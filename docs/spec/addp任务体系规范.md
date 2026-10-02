@@ -36,7 +36,7 @@
 9. Monitor 只聚合观察，不成为任务 owner。
 10. ad-hoc-only execution type 可以写入统一执行记录，但在没有持久任务定义前不得声明为 TaskProvider 能力或进入 Orchestrator 任务选择。
 11. 真实读写 owner 必须在 execution 结果中写入版本化 `lineage_facts`；Meta 负责消费并维护血缘关系，Orchestrator 不重复生成资源血缘。
-12. Quality `quality_plan`、Meta `scan` 和 Transfer bounded `sync` 的 execution worker 必须是 owner 模块附属的独立进程；Develop 全部 `query`、Manager bounded execution 与 Model `logical_table_materialization` 分别由各自 Backend 内嵌的有界执行监督器运行。两种部署形态都必须使用 PostgreSQL execution claim + lease，部署形态不能改变 execution 所有权协议。
+12. Quality `quality_plan`、Meta `scan` 和 Transfer bounded `sync` 的 execution worker 必须是 owner 模块附属的独立进程；Develop 全部 `query`、Manager bounded execution、Orchestrator `orchestration` 与 Model `logical_table_materialization` 分别由各自 Backend 内嵌的有界执行监督器运行。两种部署形态都必须使用 PostgreSQL execution claim + lease，部署形态不能改变 execution 所有权协议。
 13. owner scheduler 运行在 owner Backend，只负责按任务定义发现到期任务并创建 durable `pending` execution；Worker 不可用不得阻止 scheduler 创建 execution。dispatcher 只负责 outbox/delivery 投递，二者都不得替代 execution worker 成为业务执行事实源。
 14. bounded runtime queue 的唯一主路线是 `common.task_executions` PostgreSQL claim，不保留 Redis/Asynq、请求内 goroutine 或进程内 channel。独立 Worker 与 owner Backend 内嵌监督器是明确的模块级部署选择，不得在同一模块内双轨消费；continuous runtime、dispatcher 和 maintenance loop 继续使用各自专用协议，不强行迁入 bounded claim。
 15. Manager `pptx_pdf_generation` 是 bounded 预览生成任务：任务定义统一归 `manager.task_definitions`，结果归 `manager.pptx_pdf`。Manager 领域执行器通过 Common `WorkflowRuntimeProvider` direct 调用 `document_workflow/document_to_pdf`；Document Workflow 是纯执行层，LibreOffice 只作为其内部依赖，不拥有 Manager 任务、execution 或 artifact 状态。
@@ -911,6 +911,24 @@ Step v1 只允许以下字段：
 14. Orchestrator Create/Update 必须使用严格 JSON 解码并拒绝未知字段；Step 结构、DAG、模板依赖、TaskProvider 引用、编排递归引用和调度表达式校验必须返回稳定的结构化领域错误，由同一 Handler 校验路径按 `Accept-Language` 映射为 `{error}` 响应，不得直接暴露 Go、JSON、Cron 或 Repository 的原始英文错误。
 15. 编排定义和执行记录是 Tenant 资源。用户 HTTP 请求必须使用 System AuthContext 的 `tenant` 会话模式和唯一当前 Tenant；服务间调用必须使用调用模块自己的 Confidential OAuth Client，通过 Client Credentials 获取 Tenant Service Access Token，并只发送 Bearer。`platform` 模式、客户端 query/body/header `tenant_id` 和缺失 Tenant 上下文均不得解释为默认 Tenant 或全 Tenant 访问。Create/Update 请求只允许用户可编辑字段，Get/Update/Delete/Execute 和执行查询必须在 Repository 或统一执行仓储中同时限定资源 ID 与 Tenant ID；跨 Tenant 访问统一表现为资源不存在。
 
+### Orchestrator 执行可靠性（2026-10-02 已确认）
+
+Orchestrator 保留 v1 串行 DAG、任务引用、Owner 授权和输出绑定语义。唯一执行路线为 Backend 内嵌监督器消费 PostgreSQL execution claim + Common lease；HTTP 和 Scheduler 只创建持久 `pending`，不启动临时执行 goroutine。Scheduler 在验证当前 Task Authorization Subject 后，在同一数据库事务核验定义版本、创建执行快照并推进该次到期时间；验证失败不消费到期时间。
+
+每次入队把本次编排 Steps（引用、依赖、覆盖参数和 timeout）冻结到私有 `execution_config`，版本固定为 `orchestrator.execution/v1`；私有快照中的任务 ID 使用十进制文本，避免通用 JSON 解码丢失整数精度。运行时不再读取可变编排定义来决定步骤或进度；各业务 Owner 仍在被调用时验证执行契约并冻结自身配置。进度为成功步骤数 / 快照总步骤数，失败不得强制写 100%。
+
+监督器按步骤推进：提交下游请求前先在当前 lease 下持久化步骤 `running + phase=dispatching`；收到合法 execution_id 后立即持久化 `phase=waiting` 和 `result.execution_id`，随后单次状态查询推进步骤。等待状态存在数据库中，不占用整条工作流的执行槽；推进请求有并发和批次预算，续租独立进行，嵌套编排必须通过父等待子执行的回归。步骤终态、进度和安全事件原子提交。Monitor 的安全步骤投影只接受闭合 phase，区分正在提交与等待下游，并从稳定错误码生成失败分类；不暴露私有参数或结果。事件引用现有安全步骤身份，不因展示预算截断阻止执行。
+
+每次推进和提交前检查当前 lease；续租失败或进程停止后停止本地推进。无法确认续租时停止本运行者及其请求；不继续提供仍在推进的假象，由进程退出或恢复机制收敛。首次实现不自动重放已领取的编排：过期 running 收敛为带稳定错误码的 failed，保留步骤和子执行引用；提交后响应丢失、execution_id 不明或 dispatching 中断时标记 dispatch_uncertain，不自动重新发送 POST。已被下游接受的请求和执行不因父失败而伪装成已取消，租约不承诺跨系统 exactly-once、回滚或断点恢复。timeout 表示父编排停止等待，不表示下游已经停止。
+
+父执行达到终态后，仍记录为 `pending|running` 的步骤状态和提交/等待阶段只表示最后一次记录。Monitor 与编排画布必须明确标注“最后记录”，停止该编排节点的运行动画，并提示用户通过子执行详情核对下游是否结束；不得将这些步骤改写为失败、取消或成功。该判断由共享前端能力按父执行终态与已记录步骤状态派生，不新增持久状态，也不推测未记录的步骤。
+
+过期失败收敛通过 Common 的事件事务同时写入失败状态与闭合 `failed` 事件，复用每次 attempt 每日 1000 条的统一预算（达到上限时仍正常完成失败收敛，事件以既有截断语义为准）。该入口只能操作被锁定、身份和 attempt/token/owner 匹配的已过期 running；不得借此延长租约或向旧运行者开放事件追加。事件写入失败必须回滚本次状态收敛，已终态的记录不得再次生成失败事件。
+
+部署前停止新触发并尽量排空旧运行；一次性模块迁移把没有可信快照的旧 pending 和缺少完整 lease 的旧 running 收敛为 failed，保留其他事实，不猜测快照或重放。合法新 pending 可被新实例领取，旧租约在过期后由监督器收敛。优雅停机停止新领取、取消本地请求、等待推进退出，并在有效租约下把未完成的父编排标记失败；不声称支持用户取消。过程事件继续使用 Common 的闭合安全结构和 30 天保留策略，平台进程日志及操作审计保持原边界。
+
+执行可靠性的 T4 首轮套件为 `orchestrator-execution`，仅在干净的 Hosted Linux 独立部署中运行。复用真实 System IAM、Gateway、Meta、Monitor 和既有一次性 PostgreSQL 样例夹具；通过正式 API 创建扫描任务和串行嵌套编排，验证成功进度、父子执行身份、失败子任务阻断依赖、Monitor 的安全步骤和过程事件。故障仅停止本轮新建且所有权核对通过的业务数据库容器，恢复后再清理任务；不得操作个人开发服务。套件同时核对跨 Tenant 不可见、同 Tenant 只有 Monitor 权限而没有 Owner 权限时不可见，证据只保存执行身份与闭合检查结果，不保存令牌、连接参数、原始结果或异常响应。首轮真实执行通过前只登记手动 CI，不能计为已通过 T4；后端进程崩溃、POST 响应丢失和续租故障仍需后续独立进程验收。
+
 ### 编排调度与子任务自身调度
 
 Orchestrator 的调度和 Step 引用任务的自身调度不是继承关系，也不是覆盖关系。
@@ -985,7 +1003,7 @@ Orchestrator 的调度和 Step 引用任务的自身调度不是继承关系，�
 7. 分期：第一期完成安全 DTO、Owner 读取裁决、既有步骤与诊断展示；第二期落地有界过程事件、Orchestrator/Transfer/Meta 接入及保留清理；第三期完善专业运行时节点历史和其他 Owner 阶段事件，按实测评估规模。已确认目标契约不代表后续阶段已经实现。
 8. 验收覆盖跨租户、同租户无 Owner 权限、父可读子不可读、撤权、一次性执行、已删除任务历史、Owner 不可用、安全投影、状态真实性、分页与截断。新增 PostgreSQL 测试必须确认标准门禁名称筛选命中；新增浏览器回归同步接入根 Makefile 与 CI。真实认证、Gateway、Owner 和 Worker 链路归 T4。现有 Manager 血缘 T4 分别核对 Owner 的完整血缘事实和 Monitor 的安全资源投影，不要求两者完整响应相同；Monitor 不得包含血缘 operations、schema snapshot、专业结果、执行配置或授权引用。
 
-过程事件首个实现切片使用闭合结构：`kind` 为 `started|progress|completed|failed|cancelled|timeout|truncated`，`step_id` 只保存已有步骤身份，`counters` 只接受非负整数进度计数；不接受自由文本消息、参数、业务值、checkpoint 或授权引用。事件时间由写入端生成，Tenant、module、task type 和 attempt 从锁定的 execution 派生。bounded 写入必须在同一事务锁定并验证当前有效 lease（含 owner）；每个 execution + attempt 每 UTC 日最多 1000 条，最后一条为截断标记。读取使用 ID 游标，每页最多 100 条，复用 execution 的 Owner 读取裁决，并返回 30 天保留窗口。事件按写入时间滚动清理；System 的公共存储维护循环分批执行，不删除 execution 概览、步骤结果、专业结果或操作审计。Orchestrator lease 收敛及概览引用裁决的范围尚待本轮确认，不能借此增加无 lease 写入或直接删除概览的路径。
+过程事件首个实现切片使用闭合结构：`kind` 为 `started|progress|completed|failed|cancelled|timeout|truncated`，`step_id` 只保存已有步骤身份，`counters` 只接受非负整数进度计数；不接受自由文本消息、参数、业务值、checkpoint 或授权引用。事件时间由写入端生成，Tenant、module、task type 和 attempt 从锁定的 execution 派生。bounded 写入必须在同一事务锁定并验证当前有效 lease（含 owner）；每个 execution + attempt 每 UTC 日最多 1000 条，最后一条为截断标记。读取使用 ID 游标，每页最多 100 条，复用 execution 的 Owner 读取裁决，并返回 30 天保留窗口。事件按写入时间滚动清理；System 的公共存储维护循环分批执行，不删除 execution 概览、步骤结果、专业结果或操作审计。Orchestrator lease 收敛已于 2026-10-02 确认；概览引用裁决的范围尚待确认，不能借此增加无 lease 写入或直接删除概览的路径。
 
 Monitor 不拥有任务定义。Monitor 聚合观察：
 

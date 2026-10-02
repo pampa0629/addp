@@ -195,3 +195,54 @@ other = "空值"
 
 [orchestrator.success.deleted]
 other = "删除成功"
+
+[orchestrator.execution.plan_invalid]
+other = "本次执行快照无效。"
+
+[orchestrator.execution.step_state_invalid]
+other = "已保存的步骤状态无效。"
+
+[orchestrator.execution.dispatch_uncertain]
+other = "下游提交结果不确定，未自动重放；请核对已有子执行。"
+
+[orchestrator.execution.step_timeout]
+other = "等待下游执行超时；本编排未向下游发出取消请求。"
+
+[orchestrator.execution.child_failed]
+other = "下游执行未成功，请查看对应子执行。"
+
+[orchestrator.execution.binding_invalid]
+other = "上游输出绑定无法解析。"
+
+[orchestrator.execution.contract_invalid]
+other = "步骤执行契约校验失败。"
+
+[orchestrator.execution.dispatch_rejected]
+other = "下游拒绝本次执行请求。"
+
+[orchestrator.execution.lease_expired]
+other = "编排运行者已失联，未自动重放；请核对已有子执行。"
+
+[orchestrator.execution.coordinator_stopped]
+other = "编排运行者已停止；请核对已有子执行。"
+
+[orchestrator.execution.plan_missing]
+other = "旧执行缺少可信快照，未自动重放。"
+
+[orchestrator.execution.lease_missing]
+other = "旧执行缺少运行者租约，未自动重放；请核对已有子执行。"
+
+[orchestrator.error.execution_admission_failed]
+other = "无法创建本次执行，请稍后重试。"
+
+[orchestrator.execution.provider_unavailable]
+other = "任务所属模块不可用，本步骤未提交下游执行请求。"
+
+[orchestrator.execution.contract_unavailable]
+other = "无法读取下游任务执行契约，本步骤未提交下游执行请求。"
+
+[orchestrator.execution.service_auth_unavailable]
+other = "服务身份不可用，本步骤未提交下游执行请求。"
+
+[orchestrator.execution.dispatch_denied]
+other = "下游身份或执行授权校验未通过，本步骤未被接受。"

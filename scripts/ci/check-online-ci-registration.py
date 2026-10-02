@@ -1336,6 +1336,39 @@ def validate_metric_engine_variant(repository: Path, registered: set[str]) -> No
         raise RegistrationError("Hosted metric T4 must schedule both engines and dispatch only the selected engine")
 
 
+def validate_orchestrator_execution_profile(repository: Path, registered: set[str]) -> None:
+    if "orchestrator-execution" not in registered:
+        return
+    gate = repository / "scripts/test/online-hosted-orchestrator-gate.sh"
+    required_files = (
+        "scripts/test/orchestrator-execution-online.py",
+        "scripts/test/orchestrator-execution-online_test.py",
+        "scripts/test/online-hosted-orchestrator-gate_test.py",
+        "business/scripts/online-metric-postgres-fixture.sh",
+    )
+    for relative in required_files:
+        if not (repository / relative).is_file():
+            raise RegistrationError(f"orchestrator-execution requires {relative}")
+    text = gate.read_text(encoding="utf-8")
+    for fragment in (
+        'source "$ROOT_DIR/scripts/utils/hosted-online.sh"',
+        "for start_target in -meta -orchestrator -monitor",
+        "bash business/scripts/online-metric-postgres-fixture.sh start",
+        "bash business/scripts/online-metric-postgres-fixture.sh stop",
+        "--suite orchestrator-execution",
+        "python3 scripts/test/online-engine-registration.py",
+        'make test-online "ONLINE_SUITE=$ONLINE_SUITE"',
+    ):
+        if fragment not in text:
+            raise RegistrationError(f"orchestrator-execution Hosted profile is missing {fragment}")
+    workflow = (repository / ".github/workflows/online-t4-gates.yml").read_text(encoding="utf-8")
+    job = re.search(r"(?ms)^  orchestrator-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)", workflow)
+    if job is None or "    if: github.event_name == 'workflow_dispatch' && inputs.suite == 'orchestrator-execution'\n" not in job.group("body"):
+        raise RegistrationError("orchestrator-execution must remain a manual Hosted T4 job before its first real pass")
+    if "&& inputs.suite != 'orchestrator-execution'" not in workflow:
+        raise RegistrationError("orchestrator-execution must not also dispatch on the self-hosted deployment")
+
+
 def check_registration(repository: Path) -> None:
     registry = load_suite_registry(repository)
     registered = load_registered_suites(registry)
@@ -1351,6 +1384,7 @@ def check_registration(repository: Path) -> None:
             f"Online workflow choices {sorted(workflow)} do not match registered suites {sorted(registered)}"
         )
     validate_metric_engine_variant(repository, registered)
+    validate_orchestrator_execution_profile(repository, registered)
     validate_module_registry_process_profile(repository, registered)
     validate_consumer_engine_recovery_profile(repository, registered)
     validate_enterprise_catalog_publishing_profile(repository, registered)

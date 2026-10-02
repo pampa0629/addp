@@ -63,12 +63,33 @@
         </template></el-table-column>
       </el-table>
       <h3>{{ t('system.module.pipeline.deliveries') }}</h3>
-      <el-table :data="deliveries.data">
+      <el-table :data="deliveries.data" data-testid="pipeline-deliveries">
+        <el-table-column type="expand" width="60">
+          <template #default="{ row }">
+            <el-descriptions :column="2" border class="delivery-diagnostics" data-testid="delivery-diagnostics">
+              <el-descriptions-item :label="t('system.module.pipeline.eventID')">{{ row.event_id }}</el-descriptions-item>
+              <el-descriptions-item :label="t('system.module.pipeline.targetID')">{{ row.destination_id }}</el-descriptions-item>
+              <el-descriptions-item :label="t('system.module.pipeline.eventType')">{{ t(`system.module.pipeline.eventsLabel.${row.event_type}`) }}</el-descriptions-item>
+              <el-descriptions-item :label="t('system.module.pipeline.occurredAt')">{{ date(row.occurred_at) }}</el-descriptions-item>
+              <el-descriptions-item :label="t('system.module.pipeline.incidentID')">{{ row.incident_id }}</el-descriptions-item>
+              <el-descriptions-item :label="t('system.module.pipeline.incidentStatus')">{{ t(`system.module.pipeline.statuses.${row.incident_status}`) }}</el-descriptions-item>
+              <el-descriptions-item :label="t('system.module.pipeline.nextAttemptAt')">{{ date(row.next_attempt_at) }}</el-descriptions-item>
+              <el-descriptions-item :label="t('system.module.pipeline.deliveredAt')">{{ date(row.delivered_at) }}</el-descriptions-item>
+            </el-descriptions>
+          </template>
+        </el-table-column>
         <el-table-column prop="id" :label="t('system.module.pipeline.deliveryID')" min-width="160" show-overflow-tooltip />
+        <el-table-column :label="t('system.module.pipeline.target')" min-width="160" show-overflow-tooltip><template #default="{ row }">{{ destinationLabel(row) }}</template></el-table-column>
         <el-table-column prop="channel" :label="t('system.module.pipeline.channel')" />
         <el-table-column :label="t('system.module.pipeline.status')"><template #default="{ row }">{{ t(`system.module.pipeline.deliveryStatuses.${row.status}`) }}</template></el-table-column>
         <el-table-column prop="attempt_count" :label="t('system.module.pipeline.attempts')" />
+        <el-table-column prop="cycle_attempt_count" :label="t('system.module.pipeline.cycleAttempts')" />
+        <el-table-column prop="manual_retry_count" :label="t('system.module.pipeline.manualRetries')" />
+        <el-table-column :label="t('system.module.pipeline.deliveryError')" min-width="180" show-overflow-tooltip><template #default="{ row }">{{ deliveryError(row.last_error) }}</template></el-table-column>
         <el-table-column :label="t('system.module.pipeline.createdAt')" min-width="160"><template #default="{ row }">{{ date(row.created_at) }}</template></el-table-column>
+        <el-table-column v-if="canUpdateNotifications" :label="t('system.module.pipeline.actions')" width="110" fixed="right"><template #default="{ row }">
+          <el-button v-if="row.status === 'dead'" size="small" :disabled="busy || !row.destination_version || (row.suppressed_until && new Date(row.suppressed_until) > new Date())" @click="retryDelivery(row)">{{ t('system.module.pipeline.retry') }}</el-button>
+        </template></el-table-column>
       </el-table>
       <el-pagination layout="total, prev, pager, next" :total="deliveries.total" :page-size="20" :current-page="deliveryPage" @current-change="changeDeliveryPage" />
     </el-drawer>
@@ -113,6 +134,12 @@ const policyFields = [
   { key: 'capacity_percent', min: 50, max: 95 }, { key: 'recovery_percent', min: 20, max: 94 }
 ]
 const date = v => v ? new Date(v).toLocaleString() : '—'
+const destinationLabel = row => row.destination_name || t('system.module.pipeline.unavailableTarget', { id: row.destination_id })
+const deliveryError = code => {
+  if (!code) return '—'
+  const known = ['notification_send_failed', 'notification_attempt_limit']
+  return t(`system.module.pipeline.deliveryErrors.${known.includes(code) ? code : 'unknown'}`)
+}
 const fact = v => t(`system.module.pipeline.facts.${v ? 'yes' : 'no'}`)
 const signalLabel = v => t(`system.module.pipeline.signals.${v.split(':')[0]}`)
 const errorText = e => e.response?.data?.error || t('system.module.pipeline.failed')
@@ -169,6 +196,20 @@ async function saveDestination() {
   } catch (e) { editError.value = errorText(e) } finally { busy.value = false }
 }
 async function testDestination(row) { busy.value = true; try { await logPipelineAPI.testDestination(row); ElMessage.success(t('system.module.pipeline.testSent')) } catch (e) { ElMessage.error(errorText(e)) } finally { busy.value = false } }
+async function retryDelivery(row) {
+  if (busy.value) return
+  busy.value = true
+  try {
+    const history = row.incident_status === 'resolved' ? `${t('system.module.pipeline.retryHistorical')} ` : ''
+    await ElMessageBox.confirm(history + t('system.module.pipeline.retryConfirm', { target: destinationLabel(row), event: t(`system.module.pipeline.eventsLabel.${row.event_type}`), time: date(row.occurred_at), status: t(`system.module.pipeline.statuses.${row.incident_status}`) }), t('system.module.pipeline.retry'))
+    notificationError.value = ''
+    await logPipelineAPI.retryDelivery(row)
+    ElMessage.success(t('system.module.pipeline.requeued'))
+    await loadNotifications(); await load()
+  } catch (e) {
+    if (e !== 'cancel' && e !== 'close') notificationError.value = errorText(e)
+  } finally { busy.value = false }
+}
 async function deleteDestination(row) {
   try { await ElMessageBox.confirm(t('system.module.pipeline.deleteConfirm', { name: row.name }), t('system.module.pipeline.delete')); await logPipelineAPI.deleteDestination(row); await loadNotifications(); await load() }
   catch (e) { if (e !== 'cancel' && e !== 'close') ElMessage.error(errorText(e)) }
@@ -180,5 +221,6 @@ onUnmounted(() => { disposed = true; generation++; controller?.abort(); clearInt
 .pipeline { margin: 16px 0; }
 .pipeline-heading { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
 .pipeline-hint, small { color: var(--addp-text-secondary); }
+.delivery-diagnostics { margin: 12px; }
 small { display: block; margin-top: 6px; }
 </style>

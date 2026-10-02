@@ -12,6 +12,7 @@ import (
 	"github.com/addp/common/execution"
 	"github.com/addp/common/execution/executiontest"
 	auth "github.com/addp/common/middleware/auth"
+	"github.com/addp/common/models"
 	"github.com/gin-gonic/gin"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -174,5 +175,30 @@ func TestOwnerReadScopeDoesNotPromoteDepartmentPermission(t *testing.T) {
 	var scope execution.ReadScope
 	if response.Code != 200 || json.Unmarshal(response.Body.Bytes(), &scope) != nil || len(scope.Grants) != 0 {
 		t.Fatalf("department grant promoted: status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestStepProjectionShowsClosedPhaseAndFailureCause(t *testing.T) {
+	item := &execution.TaskExecution{Metadata: models.JSONMap{"step_results": map[string]interface{}{
+		"uncertain": map[string]interface{}{"status": "failed", "phase": "terminal", "error_code": "orchestrator.execution.dispatch_uncertain", "error": "password=private", "result": map[string]interface{}{"execution_id": "private-child"}},
+		"waiting":   map[string]interface{}{"status": "running", "phase": "waiting"},
+		"unsafe":    map[string]interface{}{"status": "running", "phase": "password=private"},
+	}}}
+	observed := execution.Observe(item)
+	for _, step := range observed.Steps {
+		switch step.ID {
+		case "uncertain":
+			if step.ErrorCode != "submission_uncertain" || step.Phase != "terminal" {
+				t.Fatalf("step=%+v", step)
+			}
+		case "waiting":
+			if step.Phase != "waiting" {
+				t.Fatalf("step=%+v", step)
+			}
+		case "unsafe":
+			if step.Phase != "" {
+				t.Fatal("private phase leaked")
+			}
+		}
 	}
 }

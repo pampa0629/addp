@@ -1241,20 +1241,10 @@ func (s *ExecutionEngineService) tableProgressCallback(task *models.TransferTask
 				s.logger.Warn("failed to update task progress", "error", err, "task_id", task.ID, "progress", progress)
 			}
 		}
-		logLine := fmt.Sprintf(
-			"%s batch=%d source_offset=%d batch_rows=%d records_read=%d records_written=%d target_committed=true final=%t resume_marker=%t commit_marker=%t",
-			time.Now().Format(time.RFC3339),
-			event.BatchIndex,
-			event.SourceOffset,
-			event.BatchRows,
-			event.RecordsRead,
-			event.RecordsWritten,
-			event.Final,
-			event.ResumeMarker != nil,
-			event.CommitMarker != nil,
-		)
-		if err := s.executionService.AppendLog(ctx, executionID, logLine); err != nil {
-			return fmt.Errorf("append progress log: %w", err)
+		if err := s.executionService.AppendProgressEvent(ctx, executionID, commonExecution.EventInput{Kind: "progress", Counters: map[string]int64{
+			"batch_index": event.BatchIndex, "batch_records": int64(event.BatchRows), "records_read": event.RecordsRead, "records_written": event.RecordsWritten,
+		}}); err != nil {
+			return fmt.Errorf("append progress event: %w", err)
 		}
 		return nil
 	}
@@ -1300,17 +1290,10 @@ func (s *ExecutionEngineService) rawCopyProgressCallback(task *models.TransferTa
 				s.logger.Warn("failed to update raw copy task progress", "error", err, "task_id", task.ID, "progress", progress)
 			}
 		}
-		logLine := fmt.Sprintf(
-			"%s raw_copy bytes_read=%d bytes_written=%d records_read=%d records_written=%d target_committed=true final=%t",
-			time.Now().Format(time.RFC3339),
-			event.BytesRead,
-			event.BytesWritten,
-			event.RecordsRead,
-			event.RecordsWritten,
-			event.Final,
-		)
-		if err := s.executionService.AppendLog(ctx, executionID, logLine); err != nil {
-			return fmt.Errorf("append raw copy progress log: %w", err)
+		if err := s.executionService.AppendProgressEvent(ctx, executionID, commonExecution.EventInput{Kind: "progress", Counters: map[string]int64{
+			"bytes_read": event.BytesRead, "bytes_written": event.BytesWritten, "records_read": event.RecordsRead, "records_written": event.RecordsWritten,
+		}}); err != nil {
+			return fmt.Errorf("append raw copy event: %w", err)
 		}
 		return nil
 	}
@@ -1351,11 +1334,9 @@ func (s *ExecutionEngineService) encodedRecordExportProgressCallback(task *model
 				s.logger.Warn("failed to update encoded record export task progress", "error", err, "task_id", task.ID)
 			}
 		}
-		return s.executionService.AppendLog(ctx, executionID, fmt.Sprintf(
-			"%s batch=%d source_offset=%d batch_records=%d records_read=%d records_written=%d bytes_written=%d target_committed=%t final=%t",
-			time.Now().Format(time.RFC3339), event.BatchIndex, event.SourceOffset, event.BatchRecords,
-			event.RecordsRead, event.RecordsWritten, event.BytesWritten, event.Final, event.Final,
-		))
+		return s.executionService.AppendProgressEvent(ctx, executionID, commonExecution.EventInput{Kind: "progress", Counters: map[string]int64{
+			"batch_index": event.BatchIndex, "batch_records": int64(event.BatchRecords), "records_read": event.RecordsRead, "records_written": event.RecordsWritten, "bytes_read": event.BytesRead, "bytes_written": event.BytesWritten,
+		}})
 	}
 }
 
