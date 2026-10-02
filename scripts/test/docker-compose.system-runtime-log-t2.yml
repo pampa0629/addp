@@ -74,6 +74,7 @@ services:
       context: ../..
       dockerfile: scripts/infra/Dockerfile.runtime-log
     environment:
+      ADDP_HOST_NODE_NAME: observer-t2
       ADDP_RUNTIME_LOG_ROOT: /var/log/addp
       ADDP_RUNTIME_LOG_SEGMENT_BYTES: 65536
       ADDP_RUNTIME_LOG_INSTANCE_BYTES: 131072

@@ -5,14 +5,16 @@
         <el-descriptions-item :label="t('system.module.columns.name')">{{ resolveIAMModuleName(instance.module_name, t, te) }}</el-descriptions-item>
         <el-descriptions-item :label="t('system.module.instances.id')">{{ instance.instance_id }}</el-descriptions-item>
         <el-descriptions-item :label="t('system.module.instances.role')">{{ t(`system.module.roles.${instance.role}`) }}</el-descriptions-item>
-        <el-descriptions-item :label="t('system.module.instances.node')"><ModuleInstanceNode :instance="instance" /></el-descriptions-item>
-        <el-descriptions-item :label="t('system.module.instances.processStartedAt')">{{ date(instance.process_started_at) }}</el-descriptions-item>
-        <el-descriptions-item :label="t('system.module.instances.offlineDeterminedAt')">{{ date(instance.stopped_at) }}</el-descriptions-item>
+        <el-descriptions-item :label="t('system.module.instances.node')"><span v-if="isSource">{{ instance.host_node_name }}</span><ModuleInstanceNode v-else :instance="instance" /></el-descriptions-item>
+        <el-descriptions-item :label="t(isSource ? 'system.module.sources.captureStartedAt' : 'system.module.instances.processStartedAt')">{{ date(isSource ? instance.capture_started_at : instance.process_started_at) }}</el-descriptions-item>
+        <el-descriptions-item :label="t(isSource ? 'system.module.sources.observedAt' : 'system.module.instances.offlineDeterminedAt')">{{ date(isSource ? instance.observed_at : instance.stopped_at) }}</el-descriptions-item>
       </el-descriptions>
-      <ModuleLogPipeline v-if="modelValue && authStore.hasPermission('monitor.log_pipeline.read')" compact :instance="instance" />
+      <el-alert v-if="isSource" :title="t('system.module.sources.hint')" type="info" :closable="false" />
+      <ModuleLogPipeline v-if="!isSource && modelValue && authStore.hasPermission('monitor.log_pipeline.read')" compact :instance="instance" />
       <p v-if="instance.stop_reason === 'lease_expired'" class="log-hint">{{ t('system.module.instances.leaseExpiredHint') }}</p>
       <div class="log-controls">
         <el-select v-model="period" :aria-label="t('system.module.query.timeRange')" @change="changed">
+          <el-option v-if="isSource" value="source" :label="t('system.module.sources.sourceWindow')" />
           <el-option v-if="instance.stopped_at" value="offline" :label="t('system.module.logs.offlineWindow')" />
           <el-option v-for="item in MODULE_INSTANCE_PERIODS" :key="item.value" :value="item.value" :label="t(item.label)" />
           <el-option value="custom" :label="t('system.module.query.custom')" />
@@ -63,7 +65,7 @@
 </template>
 
 <script setup>
-import { onUnmounted, ref, watch } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { modulesAPI } from '../api/modules'
@@ -77,6 +79,7 @@ const props = defineProps({ modelValue: Boolean, instance: { type: Object, defau
 const emit = defineEmits(['update:modelValue'])
 const { t, te } = useI18n()
 const authStore = useAuthStore()
+const isSource = computed(() => Boolean(props.instance?.capture_started_at))
 const levels = ['debug', 'info', 'warn', 'error', 'unknown']
 const period = ref('15m'), level = ref(''), keyword = ref(''), limit = ref(200), customRange = ref(null)
 const follow = ref(false), loading = ref(false), result = ref(null), error = ref('')
@@ -92,6 +95,10 @@ function range() {
     if (!Array.isArray(customRange.value) || customRange.value.length !== 2) return null
     const [from, to] = customRange.value.map(v => new Date(v).getTime())
     return from < to && to - from <= durations['7d'] ? [from, to] : null
+  }
+  if (period.value === 'source') {
+    const to = Math.min(now, new Date(props.instance.observed_at).getTime() + 60000)
+    return [Math.min(new Date(props.instance.capture_started_at).getTime() - 1000, to - 1), to].map((value, index) => index === 0 ? Math.max(value, to - durations['15m']) : value)
   }
   if (period.value === 'offline') {
     const stopped = new Date(props.instance.stopped_at).getTime()
@@ -144,7 +151,7 @@ function previous() {
 }
 function changed() { latest(true) }
 function schedule() { invalidate(); result.value = null; positions = ['']; pageIndex.value = 0; fixedWindow = null; timer = setTimeout(() => { timer = null; latest(true) }, 300) }
-function reset() { period.value = isRuntimeInstanceOnline(props.instance) || !props.instance.stopped_at ? '15m' : 'offline'; level.value = ''; keyword.value = ''; limit.value = 200; customRange.value = null; changed() }
+function reset() { period.value = isSource.value ? 'source' : isRuntimeInstanceOnline(props.instance) || !props.instance.stopped_at ? '15m' : 'offline'; level.value = ''; keyword.value = ''; limit.value = 200; customRange.value = null; changed() }
 async function copy(entry) {
   try { await navigator.clipboard.writeText(JSON.stringify(entry, null, 2)); ElMessage.success(t('system.module.logs.copied')) }
   catch { ElMessage.error(t('system.module.logs.copyFailed')) }

@@ -18,7 +18,7 @@ import (
 
 // GetModuleRuntimeLogs godoc
 // @Summary 查看指定模块实例运行日志 | Read runtime logs of a module instance
-// @Description 固定窗口游标分页；30 分钟有效，非存储快照，采集完整性未知，离线实例也可读取 | Fixed-window cursor paging; valid for 30 minutes, not a storage snapshot, collection completeness unknown; offline instances supported
+// @Description 固定窗口游标分页；30 分钟有效，非存储快照，采集完整性未知，离线实例与可信未登记来源均可读取 | Fixed-window cursor paging; valid for 30 minutes, not a storage snapshot, collection completeness unknown; offline instances and trusted unregistered sources supported
 // @Tags 平台模块管理 | Platform Module Management
 // @Produce json
 // @Security BearerAuth
@@ -75,27 +75,19 @@ func (h *ModuleRegistryHandler) GetModuleRuntimeLogs(c *gin.Context) {
 		runtimeLogError(c, 400, sysi18n.MsgRuntimeLogInvalid)
 		return
 	}
-	module, err := h.service.GetModule(c.Param("module_name"))
+	node, err := h.service.ResolveLogIdentity(c.Request.Context(), c.Param("module_name"), c.Param("instance_id"))
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			runtimeLogError(c, 404, sysi18n.MsgModuleRuntimeInstanceMissing)
+		} else if errors.Is(err, service.ErrRuntimeLogsInvalid) {
+			runtimeLogError(c, 400, sysi18n.MsgRuntimeLogInvalid)
 		} else {
 			runtimeLogError(c, 500, sysi18n.MsgRuntimeLogUnavailable)
 		}
 		return
 	}
-	found := false
-	for _, instance := range module.Instances {
-		if instance.InstanceID == c.Param("instance_id") {
-			found = true
-			break
-		}
-	}
-	if !found {
-		runtimeLogError(c, 404, sysi18n.MsgModuleRuntimeInstanceMissing)
-		return
-	}
-	result, err := h.runtimeLogs.Query(c.Request.Context(), module.ModuleName, c.Param("instance_id"), q)
+	q.Node = node
+	result, err := h.runtimeLogs.Query(c.Request.Context(), c.Param("module_name"), c.Param("instance_id"), q)
 	if err != nil {
 		if errors.Is(err, service.ErrRuntimeLogsInvalid) {
 			runtimeLogError(c, 400, sysi18n.MsgRuntimeLogInvalid)

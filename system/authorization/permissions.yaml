@@ -1,6 +1,6 @@
 schema_version: addp.permission_manifest/v1
 owner_module: system
-manifest_version: 24
+manifest_version: 28
 permissions:
   - key: audit.event.create
     allowed_scope_types: [platform]
@@ -986,6 +986,22 @@ permissions:
     status: active
     name_i18n_key: permissions.system.engine.update.name
     description_i18n_key: permissions.system.engine.update.description
+  - key: system.engine_access_approval_requirement.initialize
+    allowed_scope_types: [tenant]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.system.engine_access_approval_requirement.initialize.name
+    description_i18n_key: permissions.system.engine_access_approval_requirement.initialize.description
+  - key: system.engine_access_approval_requirement.read
+    allowed_scope_types: [tenant]
+    risk_level: low
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.system.engine_access_approval_requirement.read.name
+    description_i18n_key: permissions.system.engine_access_approval_requirement.read.description
   - key: system.engine_access_delegation.create
     allowed_scope_types: [tenant]
     risk_level: high
@@ -1010,6 +1026,22 @@ permissions:
     status: active
     name_i18n_key: permissions.system.engine_access_delegation.revoke.name
     description_i18n_key: permissions.system.engine_access_delegation.revoke.description
+  - key: system.engine_access_fulfillment.create
+    allowed_scope_types: [tenant]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.system.engine_access_fulfillment.create.name
+    description_i18n_key: permissions.system.engine_access_fulfillment.create.description
+  - key: system.engine_access_fulfillment.execute
+    allowed_scope_types: [tenant]
+    risk_level: high
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.system.engine_access_fulfillment.execute.name
+    description_i18n_key: permissions.system.engine_access_fulfillment.execute.description
   - key: system.engine_catalog.read
     allowed_scope_types: [tenant, department, project_group]
     risk_level: low
@@ -1042,6 +1074,14 @@ permissions:
     status: active
     name_i18n_key: permissions.system.execution_authorization.execute.name
     description_i18n_key: permissions.system.execution_authorization.execute.description
+  - key: system.module_log_source.create
+    allowed_scope_types: [platform]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.system.module_log_source.create.name
+    description_i18n_key: permissions.system.module_log_source.create.description
   - key: system.notebook_session_authorization.execute
     allowed_scope_types: [tenant]
     risk_level: low

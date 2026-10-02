@@ -230,7 +230,7 @@ func TestRuntimeLogsCursorBindingsExpiryAndLateArrival(t *testing.T) {
 		name       string
 		change     func(*RuntimeLogQuery)
 		module, id string
-	}{{"tamper", func(q *RuntimeLogQuery) { q.Cursor = "x" + q.Cursor }, "manager", "instance"}, {"user", func(q *RuntimeLogQuery) { q.UserID = 2 }, "manager", "instance"}, {"filter", func(q *RuntimeLogQuery) { q.Keyword = "new" }, "manager", "instance"}, {"limit", func(q *RuntimeLogQuery) { q.Limit = 3 }, "manager", "instance"}, {"window", func(q *RuntimeLogQuery) { q.From = q.From.Add(time.Nanosecond) }, "manager", "instance"}, {"module", func(*RuntimeLogQuery) {}, "meta", "instance"}, {"instance", func(*RuntimeLogQuery) {}, "manager", "other"}} {
+	}{{"tamper", func(q *RuntimeLogQuery) { q.Cursor = "x" + q.Cursor }, "manager", "instance"}, {"user", func(q *RuntimeLogQuery) { q.UserID = 2 }, "manager", "instance"}, {"filter", func(q *RuntimeLogQuery) { q.Keyword = "new" }, "manager", "instance"}, {"node", func(q *RuntimeLogQuery) { q.Node = "foreign" }, "manager", "instance"}, {"limit", func(q *RuntimeLogQuery) { q.Limit = 3 }, "manager", "instance"}, {"window", func(q *RuntimeLogQuery) { q.From = q.From.Add(time.Nanosecond) }, "manager", "instance"}, {"module", func(*RuntimeLogQuery) {}, "meta", "instance"}, {"instance", func(*RuntimeLogQuery) {}, "manager", "other"}} {
 		t.Run(tc.name, func(t *testing.T) {
 			changed := q
 			tc.change(&changed)

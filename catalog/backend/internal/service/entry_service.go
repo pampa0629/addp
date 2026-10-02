@@ -294,6 +294,7 @@ type EntryService struct {
 	metaFields         MetaFieldResolver
 	elementRevisions   StandardElementRevisionResolver
 	sharingTargets     SharingTargetResolver
+	sharingHandling    SharingHandlingScopeReader
 }
 
 func (s *EntryService) WithQualitySummaryResolver(resolver QualitySummaryResolver) *EntryService {

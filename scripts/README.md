@@ -643,7 +643,9 @@ GitHub Actions 的 IAM/CLI 发布工作流并行运行 macOS CLI 产品门禁和
 
 版本改动提交并推送到 `main`、同 SHA 的 Platform CI 成功后，创建 Tag 前必须运行 `make check-cli-release RELEASE_TAG=v<version>`。该入口会更新远端 `main` 与 Tag 引用，要求目标 Tag 尚不存在、当前 `HEAD` 等于最新 `origin/main`、版本与包事实源一致，并确认同 SHA 的 Platform CI 已成功；通过后才执行 `git tag` 和 `git push origin <tag>`。公开仓库可匿名查询 Actions 结果，设置 `GITHUB_TOKEN` 时会使用 Token 提高 API 限额。
 
-System IAM 和 Fosite 正式发布使用 `make test-system-iam-postgres`，必须显式提供唯一变量 `ADDP_SYSTEM_POSTGRES_TEST_DSN`，且数据库名包含独立的 `test` 或 `disposable` 段。门禁先清理一次性数据库中的 `system` 和 `common` Schema，再串行运行 IAM Domain、Fosite Storage、IAM API 和 Migration 的全部 PostgreSQL `AgainstPostgres` 测试；缺少 DSN、指向非一次性数据库或测试被阻断时立即失败。该入口只能指向专用临时数据库。
+System IAM 和 Fosite 正式发布使用 `make test-system-iam-postgres`，必须显式提供唯一变量 `ADDP_SYSTEM_POSTGRES_TEST_DSN`，且数据库名包含独立的 `test` 或 `disposable` 段。门禁先清理一次性数据库中的 `system` 和 `common` Schema，再串行运行 IAM Domain、Fosite Storage、IAM API、Migration、Engine Access 和 Repository 的全部 PostgreSQL `AgainstPostgres` 测试；缺少 DSN、指向非一次性数据库或测试被阻断时立即失败。该入口只能指向专用临时数据库。
+
+浏览器凭据上下文故障可用 `bash scripts/test/system-iam-postgres-gate.sh --package iam --test credential-context` 聚焦验证 Delegation、Execution Authorization、Notebook Session Authorization 及原始失败证据回归，仍使用相同 DSN 校验、共享互斥锁和测试库清理。失败诊断只从实际校验返回的内部错误读取原始数据库时间、创建／认证时间、过期边界及固定触发条件，不再用失败后的新查询代替原始快照，不输出令牌、Hash 或完整凭据快照。证据回归新建一次性测试凭据，利用事务时间固定而墙钟前进的边界，验证三个消费方均保留原始证据；关闭原事务后新读取已有效，也不覆盖旧失败证据。不改写不可变凭据，不修改主机或数据库时钟。该筛选不替代完整发布门禁，也不从默认 PostgreSQL 自动发现中移除任何测试。
 
 Standard 的正式集成门禁使用 `make test-standard-postgres`，必须显式提供 `STANDARD_POSTGRES_TEST_DSN`；本地共享 PostgreSQL 仅使用 `addp_test`，CI 使用独占测试库。门禁验证 Standard migration、删除约束、引用删除协调、四类修订流转及 PostgreSQL＋MinIO 文档文件联测，并拒绝任何测试 Skip。MinIO 由门禁复用 `scripts/infra/Dockerfile.minio` 构建，每次使用独立 Compose 项目、临时凭据、回环随机端口和临时卷，结束核验容器、网络、卷和构建镜像零残留；不连接或停止现有 Infra / Business MinIO。文档夹具在事务内创建，验证替换、草稿删除及发布后撤回下载，再清理自身对象并回滚数据库事实。Standard ↔ Model 的生产调用通过 `common/client`，不允许使用跨 Schema SQL 模拟 Online 验收。
 

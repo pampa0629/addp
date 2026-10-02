@@ -104,8 +104,8 @@ func (r *Repository) lockFulfillmentTarget(ctx context.Context, tenantID int64, 
 
 // readFulfillment only observes a committed immutable outcome. A missing row
 // is NOT a closed request: an in-flight accept may still commit afterwards.
-// Authentication and current caller qualification remain the future service's
-// responsibility; this private repository method is not a public recovery API.
+// Authentication and current caller qualification belong to the runtime
+// recovery service; this private method cannot be called as a public API.
 func (r *Repository) readFulfillment(ctx context.Context, request fulfillmentRequest) (*fulfillmentOutcome, error) {
 	path, binding, err := request.encode()
 	if err != nil {

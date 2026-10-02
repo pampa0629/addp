@@ -63,10 +63,14 @@ func (s *EntryService) WithSharingTargetResolver(resolver SharingTargetResolver)
 // No browser-supplied identity fields are accepted by this command. Its
 // AuthContext must come from the existing System-authenticated middleware.
 func sharingConfirmer(auth authorization.AuthContext, tenantID int64) (principal, membership, version int64, err error) {
+	return sharingUserProvenance(auth, tenantID, catalogauthorization.PermissionCatalogEntryRead, catalogauthorization.PermissionCatalogSharingDecisionCreate)
+}
+
+func sharingUserProvenance(auth authorization.AuthContext, tenantID int64, permissions ...string) (principal, membership, version int64, err error) {
 	if auth.Principal.Type != "user" || auth.Context.Type != "tenant" || auth.Context.TenantID == nil ||
 		*auth.Context.TenantID != strconv.FormatInt(tenantID, 10) || auth.Context.TenantMembershipID == nil || auth.Delegation != nil ||
 		(auth.Token.Type != "first_party_access_token" && auth.Token.Type != "oauth_access_token") ||
-		!sharingPermissionsAt(auth, time.Now().UTC()) {
+		!sharingUserPermissionsAt(auth, time.Now().UTC(), permissions...) {
 		return 0, 0, 0, ErrSharingConfirmationForbidden
 	}
 	values := []string{auth.Principal.ID, *auth.Context.TenantMembershipID, auth.Authorization.AuthorizationVersion}
@@ -84,6 +88,10 @@ func sharingConfirmer(auth authorization.AuthContext, tenantID int64) (principal
 // AuthContext is verified by System. A role can nevertheless expire while this
 // command waits for the aggregate lock; never extend its validity locally.
 func sharingPermissionsAt(auth authorization.AuthContext, now time.Time) bool {
+	return sharingUserPermissionsAt(auth, now, catalogauthorization.PermissionCatalogEntryRead, catalogauthorization.PermissionCatalogSharingDecisionCreate)
+}
+
+func sharingUserPermissionsAt(auth authorization.AuthContext, now time.Time, permissions ...string) bool {
 	current := auth
 	current.Authorization.RoleAssignments = nil
 	for _, assignment := range auth.Authorization.RoleAssignments {
@@ -92,8 +100,7 @@ func sharingPermissionsAt(auth authorization.AuthContext, now time.Time) bool {
 		}
 		current.Authorization.RoleAssignments = append(current.Authorization.RoleAssignments, assignment)
 	}
-	return auth.Token.ExpiresAt.After(now) && authorization.HasContextPermissions(current,
-		catalogauthorization.PermissionCatalogEntryRead, catalogauthorization.PermissionCatalogSharingDecisionCreate)
+	return auth.Token.ExpiresAt.After(now) && len(permissions) > 0 && authorization.HasContextPermissions(current, permissions...)
 }
 
 func (s *EntryService) GetSharingDecision(ctx context.Context, tenantID int64, access EntryAccess, entryID, decisionID uuid.UUID, auth authorization.AuthContext) (*SharingDecisionResult, error) {

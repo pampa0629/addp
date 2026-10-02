@@ -55,20 +55,6 @@ func (c *lockedBusinessConfirmer) check(now time.Time) error {
 }
 
 func hasBusinessConfirmationPermissions(rows []iam.RoleAssignmentPermissionProjection, tenantID int64, now time.Time) bool {
-	read, confirm := false, false
-	for _, row := range rows {
-		// Existing generic Tenant guards bind functional Permissions to Tenant
-		// Scope. Organization assignments cannot imply a Tenant-wide Allow.
-		if row.ScopeType != "tenant" || row.TenantID == nil || *row.TenantID != tenantID ||
-			row.ValidFrom.After(now) || (row.ValidUntil != nil && !row.ValidUntil.After(now)) {
-			continue
-		}
-		switch row.PermissionKey {
-		case "catalog.entry.read":
-			read = true
-		case "catalog.sharing_decision.create":
-			confirm = true
-		}
-	}
-	return read && confirm
+	return hasCurrentTenantPermission(rows, tenantID, "catalog.entry.read", now) &&
+		hasCurrentTenantPermission(rows, tenantID, "catalog.sharing_decision.create", now)
 }

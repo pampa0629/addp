@@ -91,6 +91,7 @@ func RegisterIAMManagementRoutes(api *gin.RouterGroup, runtime *IAMRuntime, modu
 			modules.GET("/:module_name/instances/:instance_id/logs", platformLogRead, moduleHandler.GetModuleRuntimeLogs)
 			modules.PUT("/:module_name", platformModuleUpdate, moduleHandler.UpdateModulePlatform)
 		}
+		platform.GET("/module-log-sources", platformLogRead, moduleHandler.ListLogSources)
 		platform.GET("/module-instances", platformModuleRead, moduleHandler.ListModuleRuntimeInstancesPlatform)
 		platform.GET("/tenant_administrator_candidates", platformTenantPermissions["platform.tenant.create"], runtime.PlatformTenantHandler.ListAdministratorCandidates)
 		tenants := platform.Group("/tenants")

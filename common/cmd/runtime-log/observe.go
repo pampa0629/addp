@@ -55,44 +55,12 @@ func observe() error {
 	defer ticker.Stop()
 	for {
 		seq++
+		catalog := runtimelog.DiscoverSources(o, node, boot, seq)
+		catalogAccepted := deliverReport(ctx, httpClient, source, strings.TrimRight(os.Getenv("SYSTEM_URL"), "/")+"/api/v1/system/runtime/module-log-source-observations", catalog)
 		obs := runtimelog.Observe(ctx, o, node, boot, seq, os.Getenv("LOKI_URL"), os.Getenv("LOKI_READ_TOKEN"), os.Getenv("ALLOY_URL"))
-		body, _ := json.Marshal(obs)
-		accepted := false
-		for attempt := 0; attempt < 2; attempt++ {
-			token, err := source.PlatformToken(ctx)
-			if err != nil {
-				fmt.Fprintln(os.Stderr, "log observation authentication unavailable")
-				break
-			}
-			req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint+"/api/v1/monitor/platform/log-observations", bytes.NewReader(body))
-			if err != nil {
-				return err
-			}
-			req.Header.Set("Authorization", "Bearer "+token)
-			req.Header.Set("Content-Type", "application/json")
-			res, err := httpClient.Do(req)
-			if err == nil {
-				io.Copy(io.Discard, io.LimitReader(res.Body, 4096))
-				res.Body.Close()
-				if res.StatusCode == 200 {
-					accepted = true
-					break
-				}
-				if res.StatusCode == 401 {
-					source.InvalidatePlatformToken(token)
-					continue
-				}
-				if res.StatusCode < 500 {
-					fmt.Fprintln(os.Stderr, "log observation rejected")
-					break
-				}
-			}
-			if attempt == 1 {
-				fmt.Fprintln(os.Stderr, "log observation delivery unavailable")
-			}
-		}
+		accepted := deliverReport(ctx, httpClient, source, endpoint+"/api/v1/monitor/platform/log-observations", obs)
 		if *once {
-			if !accepted {
+			if !accepted || !catalogAccepted {
 				return fmt.Errorf("log observation not accepted")
 			}
 			return nil
@@ -103,4 +71,43 @@ func observe() error {
 		case <-ticker.C:
 		}
 	}
+}
+
+// Metadata and health delivery remain independent; errors never include the body or credentials.
+func deliverReport(ctx context.Context, httpClient *http.Client, source *client.OAuthServiceTokenSource, endpoint string, value any) bool {
+	body, err := json.Marshal(value)
+	if err != nil {
+		return false
+	}
+	for attempt := 0; attempt < 2; attempt++ {
+		token, err := source.PlatformToken(ctx)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "log observer authentication unavailable")
+			break
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+		if err != nil {
+			break
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Content-Type", "application/json")
+		res, err := httpClient.Do(req)
+		if err == nil {
+			io.Copy(io.Discard, io.LimitReader(res.Body, 4096))
+			res.Body.Close()
+			if res.StatusCode == 200 {
+				return true
+			}
+			if res.StatusCode == 401 {
+				source.InvalidatePlatformToken(token)
+				continue
+			}
+			if res.StatusCode < 500 {
+				fmt.Fprintln(os.Stderr, "log observer report rejected")
+				break
+			}
+		}
+	}
+	fmt.Fprintln(os.Stderr, "log observer report not accepted")
+	return false
 }

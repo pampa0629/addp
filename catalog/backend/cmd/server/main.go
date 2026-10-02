@@ -63,6 +63,8 @@ func main() {
 	workbenchSyncService := service.NewProfessionalSourceSyncService(db, service.NewTenantWorkbenchChangeSource(workbenchClient))
 	syncRunner := service.NewSourceSyncRunner(db, cfg.SourceSyncInterval, systemClient, metaSyncService, modelSyncService, standardSyncService, serviceSyncService, developSyncService, workbenchSyncService)
 	syncRunner.Start(runtimeContext)
+	fulfillmentClient := commonClient.NewSystemFulfillmentClient(cfg.SystemURL, tokenSource, nil)
+	service.NewSharingFulfillmentReconciliationRunner(db, syncRunner, fulfillmentClient, cfg.SourceSyncInterval).Start(runtimeContext)
 	searchIndex, err := service.NewMeilisearchCatalogIndex(cfg.MeilisearchURL, cfg.MeilisearchAPIKey, cfg.MeilisearchIndex)
 	if err != nil {
 		log.Fatalf("Failed to initialize Catalog search projection: %v", err)
@@ -87,7 +89,7 @@ func main() {
 		service.NewServiceClientSourceResolver(serviceClient),
 		service.NewDevelopClientSourceResolver(developClient),
 		service.NewWorkbenchClientSourceResolver(workbenchClient),
-	).WithSharingTargetResolver(service.NewSharingTargetResolver(metaClient, systemClient)).WithQualitySummaryResolver(service.NewQualityClientSummaryResolver(qualityClient)).WithDataDictionaryResolvers(
+	).WithSharingHandlingScopeReader(systemClient).WithSharingTargetResolver(service.NewSharingTargetResolver(metaClient, systemClient)).WithQualitySummaryResolver(service.NewQualityClientSummaryResolver(qualityClient)).WithDataDictionaryResolvers(
 		service.NewMetaClientFieldResolver(metaClient),
 		service.NewStandardClientElementRevisionResolver(standardClient),
 	)

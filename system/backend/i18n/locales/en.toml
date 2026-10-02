@@ -254,6 +254,9 @@ other = "The service account was changed by another user. Refresh and try again"
 
 [system.iam.role_key_invalid]
 other = "Role key must use namespace.name (e.g. custom.ontology_manager); each segment must start with a lowercase letter and contain only lowercase letters, digits, and underscores."
+[system.engine_access_approval_requirement.already_initialized]
+other = "This source target already has an approval requirement. Initialization cannot replace it; check the current requirement."
+
 [system.engine_access_delegation.version_conflict]
 other = "The delegation changed; refresh and retry"
 [system.engine_access_delegation.overlap]
@@ -276,3 +279,16 @@ other = "Runtime log query is temporarily unavailable"
 
 [system.module.runtime_log_boundary]
 other = "Too many logs share one timestamp to continue safely. Narrow the time range, level or keyword and retry; earlier records have not been skipped."
+
+[system.module.log_source_invalid]
+other = "Invalid log source report or filters"
+
+[system.module.log_source_forbidden]
+other = "Only the controlled log observer may report sources"
+
+[system.module.log_source_conflict]
+other = "Stale report or conflicting log source identity"
+[permissions.system.engine_access_fulfillment.create.name]
+other = "Handle source-read authorization"
+[permissions.system.engine_access_fulfillment.create.description]
+other = "Check source-read handling eligibility with an effective engine management delegation; read candidate summaries for currently visible entries without automatic business confirmation or data access"

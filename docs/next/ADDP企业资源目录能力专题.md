@@ -1958,6 +1958,8 @@ Catalog 的来源解析面向当前绑定与当前用户可见条目，返回 Me
 
 #### 实施与验收清单
 
+2026-10-02 接入顺序：先接通生产 Runtime 只读核清／关闭、真实 Bearer 客户端及 Catalog 已提交待核清请求的后台消费者；不提前开放缺少可信 owner 依据的新受理。随后补齐准备与受理的完整身份链。核清服务使用现有 `addp-catalog` 身份，不需要等待 `addp-system` 反查身份配置，因此可独立验证故障恢复，不能据此宣称整个工作包完成。
+
 - [x] 最小批准要求、权威归属、模块可选性与明确退出原则已确认，并同步术语表及规范。
 - [x] 核对现有 System 委派与 Catalog 两条责任写路径，确认它们尚无批准要求及 Grant 消费链路。
 - [x] 确认首次启用资格与退出时已接受办理的处理；唯一请求、版本、同次参数及可信调用契约仍待落实。
@@ -2534,3 +2536,97 @@ System 回执只承载本次精确办理编号、目标与参数绑定、被消�
 下一优先项仍是 §26.38 的真实准备→受理→核清工作包：补齐独立 Runtime 身份、可信 owner 持久依据、原办理人来源与独立办理权限，再接通真实客户端和恢复消费者。当前内部资格门禁不代表用户已能完成生产授权，受理回执也不代表已写入 Grant 或已能读取数据。
 
 本轮未接管或重启用户服务，未操作开发业务数据库或源端，未提交代码。
+
+### 26.40 精确目标批准要求的显式初始化与管理读取（2026-10-02，管理 API 与标准门禁已完成，完整授权链路未接通）
+
+真实首次受理必须消费 System 当前精确目标的批准要求；只保留内部仓储无法在生产中显式建立这项事实。本轮先补齐此前置，不以已部署 Catalog、自动扫描或已有目录条目推导批准方式，也不把初始化当作业务确认或实际数据授权。
+
+- [x] 正式授权上下文规范 5.5.5 明确首次初始化、管理读取、独立功能权限与有效管理委派的交集，以及不覆盖既有要求的边界。
+- [x] 发布单一 POST 初始化、GET 分页和 GET 详情契约：`/api/v1/system/engines/:id/access_approval_requirements`。只接受当前 User Tenant 身份；请求体只声明精确路径和原因；固定创建 `catalog` 模式、版本 1。错误跨租户／引擎引用返回 404，已有要求返回 409，不自动启用或覆盖退出后的模式。
+- [x] 000174 发布 `.initialize`（high risk）与 `.read`（low risk），均 Tenant Scope、不可委托、允许租户自定义。无内置 Role 默认授权，无 Assignment、授权版本或 Grant 变更；清单、生成常量、中英文本和 Swagger 同步。
+- [x] 复用 IAM 当前角色权限及管理委派，按身份 → 引擎／委派 → 精确目标排序；目标锁等待后复核数据库墙钟期限。初始化和审计同事务，失败不留配置半成品；不读取或写入源数据、不复制 Catalog 责任。
+- [x] 用例并入既有 System T1、API PostgreSQL T2 及迁移前向升级 T2；自动发现仍由 `make test-module MODULE=system` 和既有 IAM CI 覆盖，不新增测试数据库或第二套入口。
+- [x] 完成本轮标准门禁与人工审查，真实结果、修复过程及未验证范围如下。
+
+本轮验证与收口：
+
+- 平台 T0 和 System 后端 Go T1 已在本轮 `make test-module MODULE=system` 的对应阶段通过。组合入口随后因另一份测试 Vite 占用 4173 中断；没有停止或复用它，端口释放后使用原有分项入口补齐剩余门禁，不把组合入口的失败退出码记为通过。
+- `make test-system-frontend` 最终退出码 0：91 个单元测试、38 个 Playwright 用例和生产构建通过；仅有既有大包体积告警。中间曾因并行日志页面用例在抽屉关闭动画结束前点击同名按钮而失败；该会话补齐抽屉隐藏等待后，完整前端门禁重跑通过，本轮未修改日志页面业务实现。
+- 注入经 `scripts/infra/status.sh` 核实端口的 `addp_iam_test` 测试 DSN，`make test-system-iam-postgres` 最终退出码 0，覆盖 IAM、OAuth、API、全部前向迁移、engineaccess 及日志来源仓储。新 API 用例覆盖功能权限与管理委派的交集、跨租户隐藏、重复／并发初始化、不同精确路径隔离、权限和委派撤销、目标锁等待后 Token 到期，以及审计失败整事务回滚；000174 前向迁移验证无内置默认授权、无 Assignment 或授权版本变化且可重复运行。
+- 全量迁移回归发现 System Permission 旧数量断言仍为 142；本轮两个 Permission 加并行日志来源一个 Permission 后实际为 145，已同步精确断言并重跑通过，没有放宽断言、跳过迁移或操作开发库 dirty 状态。
+- `make test-authorization`、`bash scripts/swagger/check-route-coverage.sh system` 最终退出码 0，System 184 个公开路由方法覆盖一致；`make test-system-runtime-log` 隔离门禁退出码 0，真实投递故障／恢复、Loki 查询边界和测试资源自动清理通过。复用已有自动发现与 CI，没有新增旁路门禁。
+- Go 格式、`git diff --check` 和身份／权限、锁顺序、到期、事务回滚及模块边界人工审查通过。以上只覆盖本轮 System owner 和授权清单校验，不宣称其他并行模块改动或真实跨模块源授权 T4 已通过。
+
+未接管、停止或重启用户服务；没有执行开发业务数据库迁移，没有访问或写入源端，没有提交代码。
+
+这不是完整纳管或源授权闭环：当前只有受保护的管理 API，没有前端配置入口；Catalog 首次责任纳管的生产协调、可信 Runtime owner 依据、准备→受理→核清消费者、退出／重新启用和实际 Grant 写入仍未完成。下一优先项回到 §26.38 的可信生产调用工作包，不能继续把内部回调或受理回执当成业务授权完成。
+
+### 26.41 生产核清接口、共享客户端与 Catalog 故障恢复消费者（2026-10-02，恢复子链路已实施，首次受理与 Grant 尚未接通）
+
+本轮先接通 §26.38 工作包中的故障恢复部分，避免将新受理发布建立在只能内部调用的恢复原语上。先同步授权上下文规范 5.5.5、企业资源目录实现规范和 System IAM 迁移说明；这里只消费已提交的原请求，不创建新办理或实际内容授权。
+
+- [x] System 发布单一 Runtime `POST /runtime/engine-access-fulfillments/:request_id/resolve` 与 `/close`，使用当前 `addp-catalog` Tenant Service 身份和独立 `system.engine_access_fulfillment.execute`。Tenant、Principal、Membership、授权版本和 Token 期限均取可信 AuthContext；不接受正文 Tenant 或伪造调用主体。
+- [x] 只读查询返回已提交、完整绑定一致的原结果；只有显式 `found=false` 才能进入同编号关闭。404、绑定冲突、鉴权失败、通信或解析错误均保留为错误，不解释为关闭。失效调用服务不能借绑定冲突探测历史。
+- [x] 关闭复用同请求／精确目标竞争边界，返回胜出的原不可变结果；调用服务 IAM、授权版本、Permission 和 Token 期限须保持有效至提交。原人员或接收主体后来失效不阻断历史核清；等待目标锁后 Token 到期会回滚关闭及审计。关闭不能生成 Grant。
+- [x] `common/authorization` 统一传输原绑定与原结果，身份与版本按十进制字符串传输；`common/client` 复用现有 Tenant Service Token 客户端，不透传 User Token 或 `X-Tenant-ID`。没有新增 Token 类型、业务事实副本或旁路请求路径。
+- [x] Catalog 服务组合接入真实 System 客户端和后台恢复消费者，复用来源同步周期。仅处理提交至少一分钟的未核清原请求，每批 100 条按创建时间和请求编号游标推进；旧请求持续失败不饿死下一批。单项远端调用限时 30 秒，故障保留原保护并延后重试，不门控 Ready、不刷新五分钟办理窗口。
+- [x] 000176 仅新增核清机器 Permission 并显式授予内置 `tenant.catalog_runtime`，推进受影响 Runtime Principal 授权版本并撤销其活动会话族。无 User Role 默认授予、无新 Assignment、无 Grant。清单、生成常量、双语文本、Swagger 与精确快照断言同步。
+- [x] 用例并入既有 Catalog／System T1 与 PostgreSQL T2 自动发现，CI 沿用 `catalog-postgres` 和 `system-iam-postgres-verification`；没有新增测试库、第二套入口或绕过路由覆盖扫描。
+
+验收记录：Catalog 完整模块门禁 `make test-module MODULE=catalog`、共享全仓 `make test-go` 已通过；System 组合入口的 T0、Go T1、前端 91 个单元测试、39 个 Playwright 用例及构建通过，但组合入口首轮在数据库阶段失败，不将整次入口记为通过。修正后完整 `make test-system-iam-postgres` 已通过 IAM、OAuth、API、迁移、源访问协调与仓储用例；`make test-system-runtime-log`、`make test-system-iam-runner` 和 `make test-authorization` 分项通过。全量 `make test-changed` 因其他受影响 owner 所需 PostgreSQL／MySQL／OceanBase 测试连接配置缺失在预检失败，未执行，不计为通过。
+
+修复与复跑记录：000176 新增角色权限会由现有 IAM 触发器推进持有者授权版本，因此删除迁移中的重复手动递增，保留“仅推进一次”的精确断言；前向迁移分项和完整数据库门禁均验证通过。处理了测试身份的空角色数组契约、权限快照和唯一路由登记遗漏，没有放宽鉴权或路由扫描。首轮 IAM 的 `context_invalid` 未在随后复跑重现，未确认根因，也未据此修改生产身份实现。完整平台门禁另有既有 Online 脚本测试 20 秒超时；`make test-online-runner` 和完整 `make test-platform` 串行复跑均以退出码 0 通过，没有修改超时阈值，不推断未确认的超时原因。最终 `git diff --check` 通过。
+
+本轮回归特别覆盖：关闭已提交但响应丢失后重启取回原结果；HTTP 错误不清保护；完整绑定冲突；原请求参数中大整数身份不丢精度；连续失败 100 条仍处理第 101 条；等待目标锁期间服务 Token 到期整事务回滚；000176 前向迁移的机器权限边界、授权版本仅推进一次和重复运行安全。
+
+下一优先项是可信原办理人来源与 Catalog owner 持久依据，接通正式准备→首次受理；随后才是明确退出及实际 Grant 写入／执行侧裁决。尚未建立 `addp-system` 独立 Runtime 身份，未发布正式准备或新受理入口，未运行真实 OAuth 双服务 Online T4，不能宣称完整生产源授权闭环。§26.38 的完整工作包清单仍保持未完成。
+
+未接管、停止或重启用户服务；000176 仅在允许的测试库验证，未执行开发业务数据库迁移，未访问或写入源端，未提交代码。
+
+### 26.42 正式办理前的业务决定读取边界（2026-10-02，用户已确认）
+
+继续 §26.38 的真实准备→首次受理工作包时，发现人类办理入口还缺少一项权限语义，必须先确认，不能通过删除过滤条件或复用业务确认权限来绕过。
+
+当前事实：
+
+- `GET /entries/:id/sharing_decisions/:decision_id` 是“读取本人共享确认记录”，路由要求 `catalog.entry.read` 与 `catalog.sharing_decision.create`；`EntryService.GetSharingDecision` 在当前可见条目内另以 `confirmed_by=当前 User` 精确过滤。该契约允许原确认人读取自己的历史，不是授权办理人的候选查询。
+- 已确认业务确认人与授权办理人可以是不同账号，两人的功能权限、责任资格及目标管理范围分别核验。因此，不能为了办理而要求另一名办理人同时取得业务确认权，也不能直接删除 `confirmed_by` 限制，使所有业务确认者读取全部决定。
+- System 的可信机器反查与人的浏览是两个契约。Runtime 反查只为同次已持久待核清请求核验完整绑定、原操作身份及当前业务依据；机器 Role 不能转化为人的目录读取权，不得用机器反查接口提供未经授权的决定列表。
+
+已确认边界（已同步授权上下文与企业资源目录实现规范）：
+
+1. 在 Catalog 办理入口，当前 User 须同时满足条目可见、独立源读取授权办理 Permission 及该精确目标所属引擎的有效管理委派，才能取得这个条目下仍可办理的业务决定摘要。部门、项目组成员、编目权限或资源责任身份不自动满足办理资格。
+2. 摘要只提供办理所需的决定引用、精确目标、接收主体、动作、有效期和确认信息；不提供全租户历史枚举，不默认开放业务用途等完整历史正文。选择与提交时均重新核验，不把候选摘要视为正式受理依据。
+3. 取得摘要不授予创建、修改或重新确认决定的权限，不改变原确认人读取本人历史的现有语义。旧历史读取与办理候选是不同职责，不增加旧接口的宽松身份分支。
+4. System 引擎管理中的 Catalog 模式办理也不能借机器反查泄露 Catalog 人类不可见的事实；不部署 Catalog 或完成明确退出后的独立批准入口沿用其独立资格，不因此引入 Catalog 目录读取前置。
+
+用户已确认上述人类读取范围，解除依赖该决定的暂停。先接通人类候选读取与 System 真实资格核验，再贯通 §26.38 的正式准备／新受理；新权限必须有当前真实消费入口，不先发布无消费者的服务身份或只有测试回调的办理接口。已完成的 §26.41 核清恢复链路不受影响。
+
+独立收口：纠正 `catalog/CLAUDE.md` 中“核清只有测试替身”的过时说明，使其与生产客户端、后台恢复、正式规范及 §26.41 实施状态一致。没有修改业务代码、角色、权限、迁移、密钥或运行中的服务。
+
+本轮验证：`make test-authorization` 退出码 0，授权清单及 Swagger 覆盖一致；`git diff --check` 通过。按默认入口运行 `make test-changed`，当前共享工作区命中 96 个变更文件、23 个受影响 owner；由于未注入 PostgreSQL／MySQL／OceanBase 所需测试连接参数，在门禁预检阶段退出，未执行各 owner 的完整门禁，不计为通过。本轮仅修改上述说明和待确认计划，不以这些检查宣称首次受理已实现。
+
+### 26.43 人类办理候选与 System 当前管理范围（2026-10-02，后端子链路已实施并通过对应门禁）
+
+落实 §26.42 已确认边界，先接通另一名人类办理人的摘要读取，避免把“同一个人既确认又办理”变成实现前提。这里只实现首次受理之前的浏览与当次资格观察，没有发布正式准备／新受理入口。
+
+- [x] Catalog 单一 `GET /entries/:id/sharing_decision_candidates`：当前 User、条目可见、`catalog.entry.read` 与独立 `system.engine_access_fulfillment.create` 取交集。只返回当前条目下来源、原责任关系及期限有效的分页摘要；不返回业务用途正文或全租户历史，不放宽原确认人本人历史读取。
+- [x] System 单一 `GET /engines/:id/access_handling_scope`：从当前 User AuthContext 取得原账号、Tenant Membership、授权版本和 Token 期限，以真实 IAM 与有效引擎管理委派核验。使用身份→引擎／委派共享锁，等待后按数据库墙钟复核；只返回当次观察，不签发新凭据，不创建受理或 Grant，也不依赖 Catalog 在线。
+- [x] Catalog 使用本次已验证的 User Bearer 调用 System；不保留 Token，不替换为 Service 凭据，不在 401 时机器重试。Bearer 语法由共享认证 helper 唯一提供；不同大小写和合法分隔符使用同一解析路径。
+- [x] 远端资格读取不持有 Catalog 锁。返回后使用新的只读快照复核条目可见性、来源版本、原责任关系及有效期，按同一快照计数和分页；请求期间到期的 Token、办理权限或盘点权限不能沿用。候选查询不建立待核清保护，业务责任移交与换源不会因为浏览而冻结。
+- [x] 000178 只登记 Tenant Scope、高风险、不可委托、可租户定制的独立人类办理 Permission。没有默认角色授予、Assignment、数据 Grant 或现有账号授权版本变化；机器 `.execute`、编目权、确认权和引擎管理委派都不能替代独立功能权限。
+- [x] 清单、生成常量、双语文本、Swagger、路由覆盖、模块职责与迁移说明同步；新用例并入既有 Catalog／System／Common T1、Catalog PostgreSQL T2、System IAM PostgreSQL T2。000178 纳入原 `engine-access-coordination` 分组及其入口测试，完整 CI 自动发现仍使用既有 owner 门禁，没有另建测试库或测试路线。
+- [ ] 正式准备→可信 owner 依据→System 首次受理仍待贯通；尚无前端办理入口，尚未创建 `addp-system` 独立 Runtime 身份，没有实际 Grant 或执行侧数据访问结果。候选摘要不能代替正式受理依据，提交仍须核验确认人当前 IAM、接收主体及精确目标批准要求。
+
+回归重点：不同办理人不能取得确认权；权限／管理委派撤销、跨 Tenant、过时授权版本、真实锁等待期间 Token 到期均拒绝；System 鉴权或通信失败不返回摘要；责任移交、同账号重新接任、换源、弃用、可见性改变及决定到期后旧候选不继续出现。摘要只读，不产生新的待核清记录。
+
+验证记录：先通过 `bash scripts/infra/status.sh` 核实 PostgreSQL 实际宿主机端口为 25432；Catalog 使用 `addp_test`，System 使用 `addp_iam_test`，由既有标准门禁负责夹具与清理。以下最终结果退出码均为 0：
+
+- `make test-module MODULE=catalog`：平台 T0、Catalog Go T1、前端单元／Playwright／构建与真实 PostgreSQL T2 全部通过，包含本轮新增候选、到期及可见性竞争用例。前端仍有既有包体积告警，不是失败。
+- `make test-system-iam-postgres`：完整 IAM、OAuth、API、迁移、engineaccess 与 repository 分组均通过。不同办理人的实际权限／管理委派交集、撤销及真实引擎锁等待期间 Token 到期已验证；000178 前向迁移、重复运行、无默认授予及没有改变无关主体授权版本已验证。
+- `make test-go`：当前共享后端改动的全仓 Go T1 通过；`make test-authorization`：权限清单、生成产物及 Swagger 路由覆盖一致；`make test-system-iam-runner`：标准数据库门禁的入口与互斥测试通过。
+- `git diff --check` 通过。`make test-changed` 识别当前共享工作区 126 个变更文件、23 个受影响 owner，但因其他受影响门禁所需 PostgreSQL／MySQL／OceanBase 测试连接未注入而在预检失败，未执行全套 owner 门禁，不计为通过。本轮没有运行真实 OAuth 双服务 Online T4，也没有验证实际 Grant 或执行侧内容读取；既有 CI 自动发现覆盖已完成的 T0-T2，不能用它们冒充 T4 结果。
+
+修复与复跑记录：轻量 SQLite 复用既有 attached-schema 建表 helper，不能用 GORM 在 main 中创建索引；可见性竞争须先进入已编目状态，不能制造非法的“已发现且租户可见”记录；同账号重新接任须替换旧关系，不能违反关系唯一约束重复插入；手工 AuthContext 的 Permission 数组保持规范排序。新增权限后，System 全迁移权限数量快照同步由 146 更新为 147；完整数据库门禁重新运行并通过。没有放宽数据库约束、认证或生产权限来使测试通过。
+
+下一优先项：接通 §26.38 的正式准备与可信 owner 持久依据，再复用 §26.41 已接通的核清恢复。当前子链路不代表生产源授权闭环完成。本轮不接管、停止或重启用户服务，不操作开发业务数据库或源端，不提交代码。

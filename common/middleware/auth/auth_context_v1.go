@@ -59,7 +59,7 @@ func NewMiddleware(config MiddlewareConfig) (gin.HandlerFunc, error) {
 			c.Next()
 			return
 		}
-		accessToken := canonicalBearerToken(c.GetHeader("Authorization"))
+		accessToken := CanonicalBearerToken(c.GetHeader("Authorization"))
 		if accessToken == "" {
 			abortAuthenticationRequired(c)
 			return
@@ -421,7 +421,9 @@ func canonicalAuthContextEndpoint(systemURL string) (string, error) {
 	return parsed.JoinPath("api/v1/system/auth/context").String(), nil
 }
 
-func canonicalBearerToken(header string) string {
+// CanonicalBearerToken extracts a Bearer value using the same syntax accepted
+// by AuthContext middleware. Extraction is not authentication or permission.
+func CanonicalBearerToken(header string) string {
 	parts := strings.Fields(header)
 	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
 		return ""

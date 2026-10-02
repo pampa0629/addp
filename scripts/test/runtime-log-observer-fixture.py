@@ -27,6 +27,20 @@ class Handler(BaseHTTPRequestHandler):
             if self.headers.get('Authorization') != expected or data != {'grant_type':['client_credentials'], 'scope':['addp.api'], 'audience':['addp.api'], 'context_type':['platform']}:
                 self.send_error(403); return
             reply = {'access_token':token, 'token_type':'Bearer', 'expires_in':300, 'scope':'addp.api'}
+        elif self.path == '/api/v1/system/runtime/module-log-source-observations':
+            if self.headers.get('Authorization') != 'Bearer '+token:
+                self.send_error(403); return
+            data = json.loads(body)
+            assert data['schema'] == 'addp.log-sources/v2' and data['node'] == 'observer-t2'
+            assert data['sequence'] == 1
+            if os.environ.get('LOKI_TEST_DISCOVERY_CASE') == 'metadata_missing':
+                assert not data['complete'] and data['issues'] == [{'code':'metadata_missing','count':1}], data['issues']
+            else:
+                assert data['complete'] and data['issues'] == []
+            assert all(s['host_node_name'] == 'observer-t2' and s['capture_started_at'] for s in data['sources'])
+            assert 'message' not in json.dumps(data) and 'token' not in data
+            (root / ('sources-'+data['boot_id']+'.json')).write_text(json.dumps(data))
+            reply = {'accepted':True}
         elif self.path == '/api/v1/monitor/platform/log-observations':
             if self.headers.get('Authorization') != 'Bearer '+token:
                 self.send_error(403); return

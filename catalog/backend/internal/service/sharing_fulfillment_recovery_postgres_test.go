@@ -78,6 +78,7 @@ func TestPostgresSharingFulfillmentRecovery(t *testing.T) {
 		}
 	}
 	assertProtected()
+	exerciseCatalogRuntimeRecovery(t, db, check)
 	rollback := errors.New("local completion interrupted")
 	if err := db.Transaction(func(tx *gorm.DB) error {
 		if _, err := resolveSharingFulfillment(context.Background(), tx, 7, entry.ID, check.RequestID, binding); err != nil {

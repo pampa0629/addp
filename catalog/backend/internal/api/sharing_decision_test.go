@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -14,6 +15,7 @@ import (
 	"github.com/addp/catalog/internal/models"
 	"github.com/addp/catalog/internal/repository"
 	"github.com/addp/catalog/internal/service"
+	"github.com/addp/common/authorization"
 	"github.com/addp/common/authorization/authtest"
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/engine/plugin"
@@ -115,22 +117,40 @@ func TestPostgresSharingDecisionRoutesUseExplicitPermissionAndUserIdentity(t *te
 	}
 	permissions := []string{"catalog.entry.read"}
 	tenant, user := "7", "40"
+	scopeStatus, scopeCalls := http.StatusOK, 0
+	bearerHeader := "Bearer addp_at_test"
 	system := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/v1/system/auth/context" {
-			t.Errorf("unexpected System request %s", r.URL.Path)
+		if r.Header.Get("Authorization") != "Bearer addp_at_test" || r.Header.Get("X-Tenant-ID") != "" {
+			t.Error("human handling substituted credentials or tenant headers")
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(authtest.NewTenantUserAuthContext(tenant, user, permissions))
+		auth := authtest.NewTenantUserAuthContext(tenant, user, permissions)
+		switch r.URL.Path {
+		case "/api/v1/system/auth/context":
+			_ = json.NewEncoder(w).Encode(auth)
+		case "/api/v1/system/engines/12/access_handling_scope":
+			scopeCalls++
+			w.WriteHeader(scopeStatus)
+			p, _ := strconv.ParseInt(auth.Principal.ID, 10, 64)
+			m, _ := strconv.ParseInt(*auth.Context.TenantMembershipID, 10, 64)
+			v, _ := strconv.ParseInt(auth.Authorization.AuthorizationVersion, 10, 64)
+			_ = json.NewEncoder(w).Encode(authorization.EngineAccessHandlingScope{TenantID: 7, EngineID: 12,
+				Operator: authorization.SharingFulfillmentOperator{PrincipalID: p, MembershipID: m, AuthorizationVersion: v}, VerifiedAt: time.Now().UTC()})
+		default:
+			t.Errorf("unexpected System request %s", r.URL.Path)
+			w.WriteHeader(404)
+		}
 	}))
 	defer system.Close()
-	entries := service.NewEntryService(db, nil, sharingRouteReferences{}).WithSharingTargetResolver(sharingRouteTarget{})
+	entries := service.NewEntryService(db, nil, sharingRouteReferences{}).WithSharingTargetResolver(sharingRouteTarget{}).
+		WithSharingHandlingScopeReader(commonClient.NewSystemServiceClient(system.URL, nil, system.Client()))
 	router := SetupRouter(system.URL, modulelifecycle.NewStandalone("catalog"), entries, nil, nil, nil, nil, nil)
 	path := "/api/v1/catalog/entries/" + id.String() + "/sharing_decisions"
 	body := fmt.Sprintf(`{"decision_id":%q,"version":"1","recipient_type":"user","recipient_id":"40","expiry_mode":"at_time","expires_at":%q,"reason":"Explicit self read"}`, decisionID.String(), time.Now().UTC().AddDate(8, 0, 0).Format(time.RFC3339Nano))
 	request := func(method, url, data string, want int) string {
 		t.Helper()
 		req := httptest.NewRequest(method, url, strings.NewReader(data))
-		req.Header.Set("Authorization", "Bearer addp_at_test")
+		req.Header.Set("Authorization", bearerHeader)
 		req.Header.Set("Content-Type", "application/json")
 		response := httptest.NewRecorder()
 		router.ServeHTTP(response, req)
@@ -176,4 +196,31 @@ func TestPostgresSharingDecisionRoutesUseExplicitPermissionAndUserIdentity(t *te
 	tenant, user = "7", "40"
 	permissions = []string{"catalog.entry.read"}
 	request(http.MethodGet, path+"/"+decisionID.String(), "", http.StatusForbidden)
+	candidatesPath := "/api/v1/catalog/entries/" + id.String() + "/sharing_decision_candidates"
+	request(http.MethodGet, candidatesPath, "", http.StatusForbidden)
+	permissions = []string{"catalog.entry.read", "catalog.inventory.read", "system.engine_access_fulfillment.create"}
+	user = "41"
+	data := request(http.MethodGet, candidatesPath+"?page=1&page_size=1", "", http.StatusOK)
+	var summaries struct {
+		Data  []service.SharingDecisionCandidate `json:"data"`
+		Total int64                              `json:"total"`
+	}
+	if err := json.Unmarshal([]byte(data), &summaries); err != nil || summaries.Total != 2 || len(summaries.Data) != 1 || summaries.Data[0].ConfirmedBy != 40 || strings.Contains(data, `"reason"`) || scopeCalls != 1 {
+		t.Fatalf("candidate response=%s calls=%d err=%v", data, scopeCalls, err)
+	}
+	bearerHeader = "bearer\taddp_at_test"
+	request(http.MethodGet, candidatesPath, "", http.StatusOK)
+	bearerHeader = "Bearer addp_at_test"
+	request(http.MethodGet, path+"/"+decisionID.String(), "", http.StatusForbidden)
+	request(http.MethodPost, path, body, http.StatusForbidden)
+	scopeStatus = http.StatusForbidden
+	request(http.MethodGet, candidatesPath, "", http.StatusForbidden)
+	scopeStatus = http.StatusInternalServerError
+	request(http.MethodGet, candidatesPath, "", http.StatusServiceUnavailable)
+	tenant = "8"
+	beforeCalls := scopeCalls
+	request(http.MethodGet, candidatesPath, "", http.StatusNotFound)
+	if scopeCalls != beforeCalls {
+		t.Fatal("cross-tenant candidate queried handling scope")
+	}
 }

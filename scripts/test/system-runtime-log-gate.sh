@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ADDP_T2_OWNED_SERVICES=minio,runtime-log-store-init,loki,runtime-log-api,alloy,runtime-log-pruner
 # ADDP_T2_COMPOSE_FILE=scripts/test/docker-compose.system-runtime-log-t2.yml
-# ADDP_T2_INPUT_FILES=scripts/infra/Dockerfile.minio scripts/infra/Dockerfile.runtime-log scripts/infra/runtime-logs.yml scripts/infra/loki.yml scripts/infra/runtime-logs.alloy scripts/infra/runtime-log-api.conf.template scripts/infra/init-runtime-log-store.sh common/ system/backend/internal/service/module_runtime_logs.go system/backend/internal/service/module_runtime_logs_test.go system/backend/internal/service/module_runtime_logs_loki_integration_test.go scripts/test/runtime-log-observer-fixture.py
+# ADDP_T2_INPUT_FILES=scripts/infra/Dockerfile.minio scripts/infra/Dockerfile.runtime-log scripts/infra/runtime-logs.yml scripts/infra/loki.yml scripts/infra/runtime-logs.alloy scripts/infra/runtime-log-api.conf.template scripts/infra/init-runtime-log-store.sh common/ system/backend/internal/api/module_log_source_handler.go system/backend/internal/api/module_log_source_handler_test.go system/backend/internal/repository/module_log_source_repository_test.go system/backend/internal/repository/module_log_source_repository.go system/backend/internal/service/module_log_sources.go system/backend/internal/models/module_log_source.go system/backend/internal/service/module_runtime_logs.go system/backend/internal/service/module_runtime_logs_test.go system/backend/internal/service/module_runtime_logs_loki_integration_test.go scripts/test/runtime-log-observer-fixture.py
 # Own disposable Compose startup, source files and teardown.
 set -euo pipefail
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
@@ -33,7 +33,7 @@ cleanup(){
    python3 - "$WORK_DIR" <<'PYERROR'
 from pathlib import Path
 import os,sys
-for name in ['build.log','start.log','restart.log','producer.log','container.log','cleanup.log','outage.log','observer.log','observer-fixture.log','paging.log']:
+for name in ['build.log','start.log','restart.log','producer.log','container.log','cleanup.log','outage.log','observer.log','observer-fixture.log','paging.log','source-contract.log']:
  p=Path(sys.argv[1])/name
  if not p.exists():continue
  text=p.read_text(errors='replace')[-4000:]
@@ -49,6 +49,8 @@ PYERROR
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
+echo "Runtime log: validate source authorization and retained catalog identity (T1)"
+(cd "$ROOT_DIR/system/backend"; go test ./internal/api ./internal/repository -run '^Test(LogSourceReportRequiresObserverPermissionAndBoundNode|LogSourceCatalogRetentionIdentityAndRegistration|RuntimeLogRouteEnforcesIndependentPlatformPermissionAndOfflineIdentity)$' -count=1 -v) >"$WORK_DIR/source-contract.log" 2>&1 || { cat "$WORK_DIR/source-contract.log"; exit 1; }
 echo "Runtime log T2: build owned components"
 compose build minio runtime-log-store-init runtime-log-pruner >"$WORK_DIR/build.log" 2>&1 || exit 1
 echo "Runtime log T2: owned image build passed"
@@ -88,10 +90,23 @@ from pathlib import Path
 import json,sys
 observations=[json.loads(p.read_text()) for p in Path(sys.argv[1]).glob('observation-*.json')]
 assert len(observations)==3, len(observations)
+catalogs=[json.loads(p.read_text()) for p in Path(sys.argv[1]).glob('sources-*.json')]
+assert len(catalogs)==3 and all(c['complete'] for c in catalogs)
+assert any(s['module_name']=='manager' for c in catalogs for s in c['sources']), 'startup log source was not discovered'
 assert sum(bool(o['api_ready'] and o['probe_delivered']) for o in observations)==2, observations
 assert sum(not o['api_ready'] and not o['probe_delivered'] for o in observations)==1, observations
 assert len({o['boot_id'] for o in observations})==3
 print('Real observer OAuth, source counters, delivery failure and recovery passed')
 PYOBS
+python3 - "$LOKI_TEST_SOURCE" <<'PYISSUES'
+from pathlib import Path
+import json,sys
+source=next(Path(sys.argv[1]).glob('manager/*/status.json'))
+body=json.loads(source.read_text())
+del body['capture_started_at']
+source.write_text(json.dumps(body))
+PYISSUES
+LOKI_TEST_DISCOVERY_CASE=metadata_missing observe_once
+echo "Real observer reports missing metadata without treating the scan as complete"
 cat "$WORK_DIR/paging.log"
 echo "Runtime log identity, authorization, collection, persistence and old-instance isolation passed"

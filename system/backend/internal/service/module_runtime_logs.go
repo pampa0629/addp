@@ -29,6 +29,7 @@ var ErrRuntimeLogsBusy = errors.New("runtime log query capacity exhausted")
 type RuntimeLogQuery struct {
 	From, To       time.Time
 	Level, Keyword string
+	Node           string
 	Limit          int
 	Cursor         string
 	UserID         uint
@@ -97,7 +98,7 @@ type runtimeLogCandidate struct {
 }
 
 func runtimeLogQueryHash(module, id string, q RuntimeLogQuery) string {
-	body, _ := json.Marshal([]any{module, id, q.From.UTC(), q.To.UTC(), q.Level, q.Keyword, q.Limit})
+	body, _ := json.Marshal([]any{module, id, q.From.UTC(), q.To.UTC(), q.Level, q.Keyword, q.Limit, q.Node})
 	return fmt.Sprintf("%x", sha256.Sum256(body))
 }
 func (s *RuntimeLogService) Query(ctx context.Context, module, id string, q RuntimeLogQuery) (*RuntimeLogResult, error) {
@@ -258,6 +259,9 @@ func (s *RuntimeLogService) fetch(ctx context.Context, module, id string, q Runt
 	}
 	target.Path = strings.TrimRight(target.Path, "/") + "/loki/api/v1/query_range"
 	logql := fmt.Sprintf(`{deployment="addp",module_name=%s} | instance_id=%s`, strconv.Quote(module), strconv.Quote(id))
+	if q.Node != "" {
+		logql += " | node_name=" + strconv.Quote(q.Node)
+	}
 	if q.Level != "" {
 		logql += " | level=" + strconv.Quote(q.Level)
 	}
@@ -313,7 +317,7 @@ func (s *RuntimeLogService) fetch(ctx context.Context, module, id string, q Runt
 				return nil, false, ErrRuntimeLogsUpstream
 			}
 			var entry runtimelog.Entry
-			if json.Unmarshal([]byte(line), &entry) != nil || entry.InstanceID != id || entry.Module != module {
+			if json.Unmarshal([]byte(line), &entry) != nil || entry.InstanceID != id || entry.Module != module || (q.Node != "" && entry.Node != q.Node) {
 				return nil, false, ErrRuntimeLogsUpstream
 			}
 			parsed, err := time.Parse(time.RFC3339Nano, entry.Timestamp)

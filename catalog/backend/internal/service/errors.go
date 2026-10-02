@@ -3,9 +3,10 @@ package service
 import "errors"
 
 var (
-	ErrSharingConfirmationForbidden = errors.New("sharing confirmation requires current business ownership and an explicit permission")
-	ErrSharingDecisionConflict = errors.New("sharing decision identifier is already bound to different parameters")
-	ErrSharingTargetUnsupported = errors.New("sharing target requires a current supported database table")
+	ErrSharingHandlingForbidden              = errors.New("sharing handling requires an independent permission and effective engine management delegation")
+	ErrSharingConfirmationForbidden          = errors.New("sharing confirmation requires current business ownership and an explicit permission")
+	ErrSharingDecisionConflict               = errors.New("sharing decision identifier is already bound to different parameters")
+	ErrSharingTargetUnsupported              = errors.New("sharing target requires a current supported database table")
 	ErrEntryNotFound                         = errors.New("catalog entry not found")
 	ErrInvalidPage                           = errors.New("invalid catalog page")
 	ErrInvalidSourceChange                   = errors.New("invalid source change")

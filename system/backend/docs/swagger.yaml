@@ -109,6 +109,19 @@ definitions:
       relation_role:
         type: string
     type: object
+  authorization.EngineAccessHandlingScope:
+    properties:
+      engine_id:
+        example: ""
+        type: string
+      operator:
+        $ref: '#/definitions/authorization.SharingFulfillmentOperator'
+      tenant_id:
+        example: ""
+        type: string
+      verified_at:
+        type: string
+    type: object
   authorization.OrganizationContext:
     properties:
       departments:
@@ -146,6 +159,67 @@ definitions:
       valid_from:
         type: string
       valid_until:
+        type: string
+    type: object
+  authorization.SharingFulfillmentBinding:
+    properties:
+      action:
+        type: string
+      caller_principal_id:
+        example: ""
+        type: string
+      decision_id:
+        type: string
+      expires_at:
+        type: string
+      expiry_mode:
+        type: string
+      operator:
+        $ref: '#/definitions/authorization.SharingFulfillmentOperator'
+      path:
+        $ref: '#/definitions/plugin.EngineCatalogPath'
+      recipient_id:
+        example: ""
+        type: string
+      recipient_type:
+        type: string
+      requirement_version:
+        example: ""
+        type: string
+    type: object
+  authorization.SharingFulfillmentLookup:
+    properties:
+      found:
+        type: boolean
+      resolution:
+        $ref: '#/definitions/authorization.SharingFulfillmentResolution'
+    type: object
+  authorization.SharingFulfillmentOperator:
+    properties:
+      authorization_version:
+        example: ""
+        type: string
+      principal_id:
+        example: ""
+        type: string
+      tenant_membership_id:
+        example: ""
+        type: string
+    type: object
+  authorization.SharingFulfillmentResolution:
+    properties:
+      binding:
+        $ref: '#/definitions/authorization.SharingFulfillmentBinding'
+      deadline:
+        type: string
+      outcome:
+        type: string
+      recorded_at:
+        type: string
+      request_id:
+        type: string
+      tenant_id:
+        example: ""
         type: string
     type: object
   authorization.TokenFacts:
@@ -568,6 +642,22 @@ definitions:
         type: integer
       protocol:
         type: string
+    type: object
+  github_com_addp_system_internal_engineaccess.ApprovalRequirementView:
+    properties:
+      catalog_path:
+        type: object
+      engine_id:
+        example: ""
+        type: string
+      id:
+        type: string
+      mode:
+        type: string
+      updated_at:
+        type: string
+      version:
+        type: integer
     type: object
   github_com_addp_system_internal_iam.AuditResult:
     enum:
@@ -1414,6 +1504,59 @@ definitions:
       updated_at:
         type: string
       version:
+        type: integer
+    type: object
+  github_com_addp_system_internal_models.ModuleLogSource:
+    properties:
+      capture_started_at:
+        type: string
+      host_node_name:
+        type: string
+      instance_id:
+        type: string
+      module_name:
+        type: string
+      observed_at:
+        type: string
+      role:
+        type: string
+    type: object
+  github_com_addp_system_internal_models.ModuleLogSourceNode:
+    properties:
+      complete:
+        type: boolean
+      node:
+        type: string
+      received_at:
+        type: string
+      sampled_at:
+        type: string
+      scan_issues:
+        items:
+          $ref: '#/definitions/runtimelog.SourceIssue'
+        type: array
+    type: object
+  github_com_addp_system_internal_models.ModuleLogSourcePage:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/github_com_addp_system_internal_models.ModuleLogSource'
+        type: array
+      discovery_issues:
+        items:
+          $ref: '#/definitions/runtimelog.SourceIssue'
+        type: array
+      discovery_state:
+        type: string
+      observation:
+        $ref: '#/definitions/github_com_addp_system_internal_models.ModuleLogSourceNode'
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+      total_pages:
         type: integer
     type: object
   github_com_addp_system_internal_models.ModuleRegistrationRequest:
@@ -3183,6 +3326,16 @@ definitions:
       version:
         type: integer
     type: object
+  internal_api.InitializeEngineAccessApprovalRequirementRequest:
+    properties:
+      catalog_path:
+        $ref: '#/definitions/plugin.EngineCatalogPath'
+      reason:
+        type: string
+    required:
+    - catalog_path
+    - reason
+    type: object
   internal_api.RuntimeEngineRegistrationRequest:
     properties:
       capabilities:
@@ -3945,6 +4098,51 @@ definitions:
         type: string
       truncated:
         type: boolean
+    type: object
+  runtimelog.Source:
+    properties:
+      capture_started_at:
+        type: string
+      host_node_name:
+        type: string
+      instance_id:
+        type: string
+      module_name:
+        type: string
+      observed_at:
+        type: string
+      role:
+        type: string
+    type: object
+  runtimelog.SourceIssue:
+    properties:
+      code:
+        type: string
+      count:
+        type: integer
+    type: object
+  runtimelog.SourceReport:
+    properties:
+      boot_id:
+        type: string
+      complete:
+        type: boolean
+      issues:
+        items:
+          $ref: '#/definitions/runtimelog.SourceIssue'
+        type: array
+      node:
+        type: string
+      sampled_at:
+        type: string
+      schema:
+        type: string
+      sequence:
+        type: integer
+      sources:
+        items:
+          $ref: '#/definitions/runtimelog.Source'
+        type: array
     type: object
 host: localhost:8180
 info:
@@ -4816,6 +5014,183 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - system.engine.update
+  /engines/{id}/access_approval_requirements:
+    get:
+      description: 当前租户及当前管理委派范围内的配置事实，不包含连接信息或内容授权 | Configuration facts in the current
+        tenant and management delegation, without connection information or content
+        grants
+      parameters:
+      - description: 引擎 ID | Engine ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 页码，默认 1 | Page, default 1
+        in: query
+        name: page
+        type: integer
+      - description: 每页数量，默认 10，最多 100 | Page size, default 10, maximum 100
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 批准要求列表 | Approval requirements
+          schema:
+            properties:
+              data:
+                items:
+                  $ref: '#/definitions/github_com_addp_system_internal_engineaccess.ApprovalRequirementView'
+                type: array
+              page:
+                type: integer
+              page_size:
+                type: integer
+              total:
+                type: integer
+              total_pages:
+                type: integer
+            type: object
+        "400":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "401":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "403":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "404":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "500":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 查询引擎源授权批准要求 | List source access approval requirements for an engine
+      tags:
+      - 源授权批准要求 | Source Access Approval Requirements
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.engine_access_approval_requirement.read
+    post:
+      consumes:
+      - application/json
+      description: 当前用户需独立初始化权限和有效引擎管理委派；只新建精确目标的 Catalog 要求，不覆盖已有要求，不授予内容访问 | Requires
+        independent initialization permission and current engine management delegation;
+        creates only the exact target's Catalog requirement without replacing existing
+        facts or granting content access
+      parameters:
+      - description: 引擎 ID | Engine ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 精确源路径与原因 | Exact source path and reason
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.InitializeEngineAccessApprovalRequirementRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: 已初始化 | Initialized
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_engineaccess.ApprovalRequirementView'
+        "400":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "401":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "403":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "404":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "409":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "500":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 初始化源目标 Catalog 批准要求 | Initialize Catalog approval requirement for a
+        source target
+      tags:
+      - 源授权批准要求 | Source Access Approval Requirements
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.engine_access_approval_requirement.initialize
+  /engines/{id}/access_approval_requirements/{requirement_id}:
+    get:
+      description: 按当前租户及引擎隔离，并核验当前管理委派；不存在及跨租户均返回 404 | Scoped to current tenant
+        and engine with current delegation checks; missing and cross-tenant IDs return
+        404
+      parameters:
+      - description: 引擎 ID | Engine ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 批准要求 UUID | Approval requirement UUID
+        in: path
+        name: requirement_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 批准要求 | Approval requirement
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_engineaccess.ApprovalRequirementView'
+        "400":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "401":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "403":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "404":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "500":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 读取源授权批准要求 | Get a source access approval requirement
+      tags:
+      - 源授权批准要求 | Source Access Approval Requirements
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.engine_access_approval_requirement.read
   /engines/{id}/access_delegations:
     get:
       description: 当前租户的管理资格及历史，不返回连接凭据或内容授权 | Current tenant management qualification
@@ -5050,6 +5425,54 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - system.engine_access_delegation.revoke
+  /engines/{id}/access_handling_scope:
+    get:
+      description: 当前 Tenant User 需独立办理 Permission 和有效引擎管理委派，等待锁后重新检查资格与到期；只返回当次观察，不授予读取、业务确认、委派、受理或
+        Grant，不是可复用凭据 | The current Tenant User needs independent handling permission
+        and an effective engine management delegation. Eligibility and expiry are
+        rechecked after lock waits. This is an observation, not read access, business
+        confirmation, delegation, acceptance, a Grant or a reusable credential
+      parameters:
+      - description: 引擎 ID | Engine ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 当前办理范围观察 | Current handling scope observation
+          schema:
+            $ref: '#/definitions/authorization.EngineAccessHandlingScope'
+        "400":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "401":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "403":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "404":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "500":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 核验当前源读取授权办理范围 | Check current source-read authorization handling scope
+      tags:
+      - 源授权办理 | Source Access Fulfillment
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.engine_access_fulfillment.create
   /engines/{id}/catalog/children:
     post:
       consumes:
@@ -6534,6 +6957,79 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - platform.module.read
+  /platform/module-log-sources:
+    get:
+      description: 未登记不代表启动失败；发现状态 unknown 不代表空目录；discovery_issues 区分观测超时和扫描问题 | Unregistered
+        does not mean startup failure; unknown discovery does not mean an empty catalog;
+        discovery_issues separates stale reports from scan issues
+      parameters:
+      - description: 模块名 | Module name
+        in: query
+        name: module_name
+        type: string
+      - description: 节点名精确匹配 | Exact node name
+        in: query
+        name: node_name
+        type: string
+      - description: 角色 | Role
+        enum:
+        - backend
+        - worker
+        - scheduler
+        - ingress
+        in: query
+        name: role
+        type: string
+      - description: 首次采集起始时间（含） | Inclusive first capture time
+        in: query
+        name: time_from
+        type: string
+      - description: 首次采集结束时间（不含） | Exclusive first capture time
+        in: query
+        name: time_to
+        type: string
+      - default: 1
+        description: 页码 | Page number
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: 每页条数 | Page size
+        in: query
+        maximum: 100
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ModuleLogSourcePage'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 查询未登记实例的运行日志来源 | List runtime log sources without a current registration
+      tags:
+      - 平台模块管理 | Platform Module Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - platform.module_log.read
   /platform/modules:
     get:
       description: 平台系统管理员读取持久模块定义及 Backend、Worker、Scheduler 当前租约投影 | A platform system
@@ -6667,9 +7163,9 @@ paths:
       - platform.module.update
   /platform/modules/{module_name}/instances/{instance_id}/logs:
     get:
-      description: 固定窗口游标分页；30 分钟有效，非存储快照，采集完整性未知，离线实例也可读取 | Fixed-window cursor paging;
-        valid for 30 minutes, not a storage snapshot, collection completeness unknown;
-        offline instances supported
+      description: 固定窗口游标分页；30 分钟有效，非存储快照，采集完整性未知，离线实例与可信未登记来源均可读取 | Fixed-window
+        cursor paging; valid for 30 minutes, not a storage snapshot, collection completeness
+        unknown; offline instances and trusted unregistered sources supported
       parameters:
       - description: 模块名 | Module name
         in: path
@@ -7594,6 +8090,113 @@ paths:
       - iam.department.read
       - iam.project_group.read
       - iam.tenant_membership.read
+  /runtime/engine-access-fulfillments/{request_id}/close:
+    post:
+      consumes:
+      - application/json
+      description: 关闭与受理串行；若受理已胜出返回原回执，不重新办理或写 Grant | Serializes with acceptance;
+        returns the winning original receipt, without new acceptance or Grant
+      parameters:
+      - description: 原请求 UUID | Original request UUID
+        in: path
+        name: request_id
+        required: true
+        type: string
+      - description: 原完整绑定 | Original complete binding
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/authorization.SharingFulfillmentBinding'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 原不可变结果 | Original immutable outcome
+          schema:
+            $ref: '#/definitions/authorization.SharingFulfillmentResolution'
+        "400":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "401":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "403":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "409":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "500":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 核清并关闭未受理的原办理请求 | Settle and close an unaccepted original fulfillment
+        request
+      tags:
+      - 源授权办理核清 | Source Access Fulfillment Recovery
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.engine_access_fulfillment.execute
+  /runtime/engine-access-fulfillments/{request_id}/resolve:
+    post:
+      consumes:
+      - application/json
+      description: 仅 Catalog 租户服务身份；精确匹配原绑定，只读未找到不表示关闭 | Catalog tenant service only;
+        exact original binding; a read-only miss is not closure
+      parameters:
+      - description: 原请求 UUID | Original request UUID
+        in: path
+        name: request_id
+        required: true
+        type: string
+      - description: 原完整绑定 | Original complete binding
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/authorization.SharingFulfillmentBinding'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 权威查询结果 | Authoritative lookup
+          schema:
+            $ref: '#/definitions/authorization.SharingFulfillmentLookup'
+        "400":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "401":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "403":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "409":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "500":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 核清原办理请求结果 | Resolve the original fulfillment outcome
+      tags:
+      - 源授权办理核清 | Source Access Fulfillment Recovery
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.engine_access_fulfillment.execute
   /runtime/engine-descriptors:
     get:
       description: 返回同 Tenant 可见的脱敏控制面投影；工作流、脚本、联邦查询和 AI 推理运行时包含 protocol/host/port，数据引擎不返回
@@ -7849,6 +8452,62 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - system.execution_authorization.execute
+  /runtime/module-log-source-observations:
+    post:
+      consumes:
+      - application/json
+      description: 来源元数据不裁决业务启动结果；仅绑定节点的观察服务可调用；v2 必须提供有界扫描问题 | Source metadata does
+        not determine startup outcome; bound observer service only; v2 requires bounded
+        scan issues
+      parameters:
+      - description: 有界来源报告 | Bounded source report
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/runtimelog.SourceReport'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              accepted:
+                type: boolean
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 上报受控运行日志来源 | Report controlled runtime log sources
+      tags:
+      - 运行时注册 | Runtime Registry
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.module_log_source.create
   /runtime/modules:
     get:
       description: 平台 Service Principal 查询持久模块定义及运行实例；status=up 仅返回已启用且存在有效 Backend

@@ -254,6 +254,9 @@ other = "服务账号已被其他用户修改，请刷新后重试"
 
 [system.iam.role_key_invalid]
 other = "角色标识须为“命名空间.名称”（例如 custom.ontology_manager）；两段均以小写英文字母开头，仅允许小写英文字母、数字和下划线。"
+[system.engine_access_approval_requirement.already_initialized]
+other = "该源目标已存在批准要求；首次初始化不能覆盖，请核对当前要求。"
+
 [system.engine_access_delegation.version_conflict]
 other = "委派已被修改，请刷新后重试"
 [system.engine_access_delegation.overlap]
@@ -276,3 +279,16 @@ other = "运行日志查询暂不可用"
 
 [system.module.runtime_log_boundary]
 other = "同一时间戳的日志超过安全查询上限，无法继续。请收紧时间、级别或关键字后重试；系统未跳过更早记录。"
+
+[system.module.log_source_invalid]
+other = "日志来源报告或筛选无效"
+
+[system.module.log_source_forbidden]
+other = "仅受控日志观察服务可以上报来源"
+
+[system.module.log_source_conflict]
+other = "日志来源报告过期或身份冲突"
+[permissions.system.engine_access_fulfillment.create.name]
+other = "办理源读取授权"
+[permissions.system.engine_access_fulfillment.create.description]
+other = "结合有效引擎管理委派核验源读取授权办理资格；可读取当前可见条目的候选摘要，不自动取得业务确认或数据访问权"

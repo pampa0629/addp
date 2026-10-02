@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"time"
 
 	"github.com/addp/catalog/internal/models"
 	"github.com/addp/common/authorization"
@@ -20,11 +19,7 @@ import (
 // must derive Operator from verified User AuthContext, establish the calling
 // service identity and check current Permissions/delegation/recipient before
 // preparing. These well-formed IDs are not evidence of those qualifications.
-type sharingFulfillmentOperator struct {
-	PrincipalID          int64 `json:"principal_id,string"`
-	MembershipID         int64 `json:"tenant_membership_id,string"`
-	AuthorizationVersion int64 `json:"authorization_version,string"`
-}
+type sharingFulfillmentOperator = authorization.SharingFulfillmentOperator
 
 type sharingFulfillmentPreparation struct {
 	RequestID          uuid.UUID
@@ -34,18 +29,7 @@ type sharingFulfillmentPreparation struct {
 	Path               plugin.EngineCatalogPath
 }
 
-type sharingFulfillmentBinding struct {
-	CallerPrincipalID  int64                      `json:"caller_principal_id,string"`
-	Operator           sharingFulfillmentOperator `json:"operator"`
-	Path               plugin.EngineCatalogPath   `json:"path"`
-	DecisionID         uuid.UUID                  `json:"decision_id"`
-	RequirementVersion int64                      `json:"requirement_version,string"`
-	RecipientType      string                     `json:"recipient_type"`
-	RecipientID        int64                      `json:"recipient_id,string"`
-	Action             string                     `json:"action"`
-	ExpiryMode         string                     `json:"expiry_mode"`
-	ExpiresAt          *time.Time                 `json:"expires_at"`
-}
+type sharingFulfillmentBinding = authorization.SharingFulfillmentBinding
 
 // prepareSharingFulfillment has no network IO or acceptance side effect. The
 // caller must commit this owner transaction before sending, and must not treat

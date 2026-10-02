@@ -9,6 +9,8 @@ import (
 	"testing/fstest"
 	"time"
 
+	commonExecution "github.com/addp/common/execution"
+	orchestratorMigrations "github.com/addp/orchestrator/migrations"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -113,6 +115,10 @@ func openOrchestratorMigrationIntegrationDB(t *testing.T) *gorm.DB {
 	if err := db.Exec("SELECT 1").Error; err != nil {
 		t.Skipf("PostgreSQL is not available: %v", err)
 	}
+	// Match production startup: module migrations depend on the shared store.
+	if err := commonExecution.EnsureStore(db); err != nil {
+		t.Fatalf("prepare shared execution store: %v", err)
+	}
 	return db
 }
 
@@ -152,14 +158,11 @@ func clearOrchestratorMigrationRecords(t *testing.T, db *gorm.DB) {
 	if err := ensureMigrationTable(db); err != nil {
 		t.Fatalf("ensure migration table: %v", err)
 	}
-	if err := db.Exec(`
-		DELETE FROM orchestrator.schema_migrations
-		WHERE version IN (
-			'001_add_basetask_fields.sql',
-			'002_drop_old_executions.sql',
-			'003_drop_legacy_step_orchestrations.sql'
-		)
-	`).Error; err != nil {
+	names, err := migrationNames(orchestratorMigrations.FS, ".")
+	if err != nil {
+		t.Fatalf("list module migrations: %v", err)
+	}
+	if err := db.Exec("DELETE FROM orchestrator.schema_migrations WHERE version IN ?", names).Error; err != nil {
 		t.Fatalf("clear migration records: %v", err)
 	}
 }

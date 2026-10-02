@@ -98,6 +98,7 @@ func TestDelegationServiceAgainstPostgres(t *testing.T) {
 		Audit:             audit,
 	})
 	if err != nil {
+		logCredentialValidationBoundaries(t, err)
 		t.Fatalf("issue first-party delegation: %#v", err)
 	}
 	if !strings.HasPrefix(issued.AccessToken, "addp_dat_") || issued.TokenType != "Bearer" ||

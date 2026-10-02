@@ -13,8 +13,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		t.Fatalf("LoadRepositoryAuthorizationCatalog() error = %v", err)
 	}
 	descriptors := report.Permissions
-	if len(descriptors) != 462 {
-		t.Fatalf("descriptor count = %d, want 462", len(descriptors))
+	if len(descriptors) != 467 {
+		t.Fatalf("descriptor count = %d, want 467", len(descriptors))
 	}
 	for _, descriptor := range descriptors {
 		if descriptor.OwnerModule == "security" && !reflect.DeepEqual(descriptor.AllowedScopeTypes, []string{"tenant"}) {
@@ -28,6 +28,12 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	roles := report.Roles
 	for _, role := range roles {
 		for _, key := range role.Permissions {
+			if key == "system.engine_access_fulfillment.execute" && role.Key != "tenant.catalog_runtime" {
+				t.Fatalf("built-in role %q unexpectedly grants Catalog recovery", role.Key)
+			}
+			if key == "system.engine_access_approval_requirement.initialize" || key == "system.engine_access_approval_requirement.read" {
+				t.Fatalf("built-in role %q unexpectedly grants approval requirement permission %q", role.Key, key)
+			}
 			if key == "catalog.sharing_decision.create" {
 				t.Fatalf("built-in role %q unexpectedly grants business confirmation", role.Key)
 			}
@@ -44,7 +50,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	}
 	assertRepositoryRolePermissions(t, roles, "platform.inference_runtime", []string{"system.runtime_registry.update"})
 	assertRepositoryRolePermissions(t, roles, "platform.catalog_runtime", []string{"platform.tenant.read", "system.runtime_registry.update"})
-	assertRepositoryRolePermissions(t, roles, "tenant.catalog_runtime", []string{"develop.catalog.read", "iam.department.read", "iam.tenant_membership.read", "meta.catalog.read", "model.catalog.read", "quality.catalog.read", "service.catalog.read", "standard.catalog.read", "standard.domain.read", "standard.element.read", "standard.glossary.read", "workbench.catalog.read"})
+	assertRepositoryRolePermissions(t, roles, "tenant.catalog_runtime", []string{"develop.catalog.read", "iam.department.read", "iam.tenant_membership.read", "meta.catalog.read", "model.catalog.read", "quality.catalog.read", "service.catalog.read", "standard.catalog.read", "standard.domain.read", "standard.element.read", "standard.glossary.read", "system.engine_access_fulfillment.execute", "workbench.catalog.read"})
 	assertRepositoryRolePermissions(t, roles, "platform.duckdb_runtime", []string{"system.runtime_registry.update"})
 	assertRepositoryRolePermissions(t, roles, "tenant.duckdb_runtime", []string{"system.execution_authorization.execute"})
 	assertRepositoryRolePermissions(t, roles, "tenant.ontology_runtime", []string{"system.execution_authorization.execute"})

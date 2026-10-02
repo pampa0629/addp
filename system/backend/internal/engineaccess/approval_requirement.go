@@ -39,9 +39,30 @@ type approvalRequirement struct {
 
 func (approvalRequirement) TableName() string { return "system.engine_access_approval_requirements" }
 
+func (r *Repository) listApprovalRequirements(ctx context.Context, tenantID, engineID int64, page, size int) ([]approvalRequirement, int64, error) {
+	query := r.db.WithContext(ctx).Model(&approvalRequirement{}).Where("tenant_id = ? AND engine_id = ?", tenantID, engineID)
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var rows []approvalRequirement
+	if err := query.Order("id ASC").Offset((page - 1) * size).Limit(size).Find(&rows).Error; err != nil {
+		return nil, 0, err
+	}
+	return rows, total, nil
+}
+
+func (r *Repository) getApprovalRequirement(ctx context.Context, tenantID, engineID int64, id uuid.UUID) (*approvalRequirement, error) {
+	var row approvalRequirement
+	if err := r.db.WithContext(ctx).Where("tenant_id = ? AND engine_id = ? AND id = ?", tenantID, engineID, id).Take(&row).Error; err != nil {
+		return nil, mapError(err)
+	}
+	return &row, nil
+}
+
 // Private transaction command, not an HTTP DTO. Zero ExpectedVersion denotes
 // explicit initialization only; changing an existing fact requires its version.
-// The future owner service must authenticate the user and lock current IAM and
+// The owner service must authenticate the user and lock current IAM and
 // engine/delegation qualifications BEFORE entering this target boundary.
 type approvalRequirementChange struct {
 	TenantID, ExpectedVersion, SuccessorPrincipalID int64
@@ -74,8 +95,8 @@ func (r *Repository) requireCatalogApproval(ctx context.Context, request fulfill
 // Called only on the owner's transaction repository. verify must recheck local
 // prelocked governance/delegation facts and, for independent mode, the current
 // successor qualification. It must not acquire earlier locks or perform IO.
-// nil cannot initialize or change a requirement. No production consumer is
-// published until those qualification checks and trusted provenance are wired.
+// nil cannot initialize or change a requirement. Public initialization supplies
+// current local IAM/delegation checks; handoff has no public consumer yet.
 func (r *Repository) changeApprovalRequirement(ctx context.Context, input approvalRequirementChange, verify func(*Repository) error) (*approvalRequirement, error) {
 	if _, ok := r.db.Statement.ConnPool.(gorm.TxCommitter); !ok {
 		return nil, errApprovalRequirementInput
@@ -104,11 +125,13 @@ func (r *Repository) changeApprovalRequirement(ctx context.Context, input approv
 	if (creating && input.ExpectedVersion != 0) || (!creating && row.Version != input.ExpectedVersion) {
 		return nil, errApprovalRequirementVersion
 	}
-	if err := verify(r); err != nil {
-		return nil, err
-	}
 	now, err := r.wallClock(ctx)
 	if err != nil {
+		return nil, err
+	}
+	// Qualification is the final read after target-lock waits. Do not perform
+	// another clock read between its expiry check and the write.
+	if err := verify(r); err != nil {
 		return nil, err
 	}
 	if creating {

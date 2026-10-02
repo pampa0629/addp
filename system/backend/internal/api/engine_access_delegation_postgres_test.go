@@ -417,6 +417,8 @@ func TestEngineAccessDelegationAgainstPostgres(t *testing.T) {
 	if finalAudits != initialAudits+6 {
 		t.Fatalf("audit count=%d want=%d", finalAudits, initialAudits+6)
 	}
+	exerciseApprovalRequirementAPI(t, db, identity, service, actor, engine, otherTenant.ID)
+	exerciseHandlingScopeAPI(t, db, identity, service, actor, engine, otherTenant.ID)
 }
 
 func engineDelegationTestRouter(t *testing.T, service engineAccessDelegationService, projection *commonauth.AuthContext) *gin.Engine {

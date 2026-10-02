@@ -316,6 +316,61 @@
         "sourceUsage": "Source usage / quota (bytes)",
         "collectorCounters": "Cumulative send retries / dropped entries",
         "earlyCleaning": "Files cleaned early in latest cleanup cycle"
+      },
+      "sources": {
+        "title": "Unregistered instance runtime logs",
+        "hint": "These sources have no matching current instance registration. Startup outcome is unconfirmed; a source record does not prove delivery of log content.",
+        "permissionDenied": "Platform runtime log permission required",
+        "coverageUnknown": "Source discovery is incomplete or stale. The list may omit sources; no results do not prove absence of startup logs.",
+        "sampledAt": "Last source catalog observation",
+        "captureStartedAt": "First capture time",
+        "observedAt": "Last source observation",
+        "startupResult": "Startup outcome",
+        "unconfirmed": "Unconfirmed",
+        "timeRange": "First capture time range",
+        "allTimes": "All capture times",
+        "sourceWindow": "Around last source observation",
+        "node": "Exact host node name",
+        "issueCount": "{count} occurrences in this scan",
+        "issues": {
+          "metadata_missing": {
+            "title": "Required capture metadata is missing",
+            "action": "Confirm that capture components are updated. Historical files may lack required fields; newly started instances produce complete metadata."
+          },
+          "metadata_invalid": {
+            "title": "Invalid metadata or inconsistent identity",
+            "action": "Check for damaged metadata and mismatched module, instance, node or capture times."
+          },
+          "entry_unreadable": {
+            "title": "A file or directory could not be read",
+            "action": "Check the log directory mount, access permissions and node storage."
+          },
+          "unsafe_entry": {
+            "title": "Unsafe file or path detected",
+            "action": "Check symbolic links, unusual file types and capture directory configuration."
+          },
+          "scan_limit": {
+            "title": "Scan entry limit reached",
+            "action": "Check file growth and retention. This count does not estimate unscanned files."
+          },
+          "source_limit": {
+            "title": "Source count limit reached",
+            "action": "Check instance restart frequency and source retention; refresh after resolving excessive source growth."
+          },
+          "observer_unobserved": {
+            "title": "No source observation received",
+            "action": "Check the observer process, node configuration, System connectivity and service authentication."
+          },
+          "observer_stale": {
+            "title": "Source observation is stale",
+            "action": "Check the observer process, System connectivity and service authentication; refresh after recovery."
+          },
+          "diagnostics_unavailable": {
+            "title": "No scan diagnostic evidence recorded",
+            "action": "Update the log observer and refresh. Retained sources remain available for log queries."
+          }
+        },
+        "diagnosticScope": "Node source discovery diagnostics; counts cover issues actually found in this scan"
       }
     },
     "iam": {
@@ -713,6 +768,8 @@
           "element": "Data Element",
           "engine": "Engine",
           "engine_catalog": "Engine Catalog",
+          "engine_access_approval_requirement": "Source Access Approval Requirement",
+          "engine_access_fulfillment": "Source Access Fulfillment",
           "engine_access_delegation": "Engine Access Management Delegation",
           "engine_descriptor": "Engine Descriptor",
           "enrollment": "Data Protection Enrollment",
@@ -815,7 +872,8 @@
           "module_log": "Module runtime logs",
           "log_pipeline": "Log pipeline",
           "log_observation": "Log observation",
-          "log_notification": "Platform log notifications"
+          "log_notification": "Platform log notifications",
+          "module_log_source": "Log source"
         },
         "types": {
           "tenant_builtin": "Tenant Built-in Role",

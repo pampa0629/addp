@@ -2,7 +2,6 @@ package repository
 
 import (
 	"encoding/json"
-	commonExecution "github.com/addp/common/execution"
 	migrations "github.com/addp/orchestrator/migrations"
 	"github.com/google/uuid"
 	"strings"
@@ -11,9 +10,6 @@ import (
 
 func TestIntegrationPostgresQualityPlanReferences(t *testing.T) {
 	db := openOrchestratorMigrationIntegrationDB(t)
-	if err := commonExecution.EnsureStore(db); err != nil {
-		t.Fatal(err)
-	}
 	raw, err := migrations.FS.ReadFile("005_quality_plan_references.sql")
 	if err != nil {
 		t.Fatal(err)

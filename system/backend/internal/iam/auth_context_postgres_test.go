@@ -21,6 +21,22 @@ import (
 	"gorm.io/gorm/logger"
 )
 
+// Log only validation boundaries; credentials and complete snapshots stay private.
+func logCredentialValidationBoundaries(t *testing.T, err error) {
+	t.Helper()
+	var validation *CredentialValidationError
+	if !errors.As(err, &validation) || validation.diagnostic == nil {
+		t.Log("original credential time evidence unavailable; no later database query substituted")
+		return
+	}
+	d := validation.diagnostic
+	t.Logf("original credential validation evidence: condition=%s database_time=%s credential_created_at=%s family_authenticated_at=%s credential_expires_at=%s family_expires_at=%s step_up_expires_at=%s created_minus_database=%s authenticated_minus_database=%s credential_expiry_minus_family=%s",
+		d.condition, d.databaseTime.UTC().Format(time.RFC3339Nano), d.credentialCreatedAt.UTC().Format(time.RFC3339Nano),
+		d.familyAuthenticatedAt.UTC().Format(time.RFC3339Nano), d.credentialExpiresAt.UTC().Format(time.RFC3339Nano),
+		d.familyExpiresAt.UTC().Format(time.RFC3339Nano), d.stepUpExpiresAt.UTC().Format(time.RFC3339Nano),
+		d.credentialCreatedAt.Sub(d.databaseTime), d.familyAuthenticatedAt.Sub(d.databaseTime), d.credentialExpiresAt.Sub(d.familyExpiresAt))
+}
+
 func TestAuthContextServiceAgainstPostgres(t *testing.T) {
 	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
 	if dsn == "" {

@@ -18,7 +18,7 @@ while [ "$#" -gt 0 ]; do
             shift 2
             ;;
         *)
-            echo "usage: $0 [--package iam|oauth|api|migration|engineaccess] [--test engine-access-coordination|service-account|tenant-invitation|catalog-reference-candidates|catalog-integrity|standard-collection-removal|invitation-enrollment-removal|execution-audience|duckdb-runtime-catalog|security-module-repair|security-access-request-repair|execution-authorization-lease-boundary|internal-task-authorization|portal-runtime-removal|service-execution-audit|develop-execution-audit|workbench-runtime|workbench-data-application|workbench-catalog-read|workbench-resource-grant|model-catalog-read|standard-catalog-read|service-catalog-read|develop-catalog-read|develop-transfer-execution|quality-catalog-read|quality-plans|model-writer-decoupling|catalog-engine-descriptor-read|catalog-project-group-read|transfer-task-provider]" >&2
+            echo "usage: $0 [--package iam|oauth|api|migration|engineaccess|repository] [--test credential-context|engine-access-coordination|service-account|tenant-invitation|catalog-reference-candidates|catalog-integrity|standard-collection-removal|invitation-enrollment-removal|execution-audience|duckdb-runtime-catalog|security-module-repair|security-access-request-repair|execution-authorization-lease-boundary|internal-task-authorization|portal-runtime-removal|service-execution-audit|develop-execution-audit|workbench-runtime|workbench-data-application|workbench-catalog-read|workbench-resource-grant|model-catalog-read|standard-catalog-read|service-catalog-read|develop-catalog-read|develop-transfer-execution|quality-catalog-read|quality-plans|model-writer-decoupling|catalog-engine-descriptor-read|catalog-project-group-read|transfer-task-provider]" >&2
             exit 2
             ;;
     esac
@@ -71,11 +71,12 @@ run_without_skips() {
 
 run_without_skips ./internal/testsupport '^TestResetDisposablePostgresForGate$'
 case "$PACKAGE_FILTER" in
-    "") packages=(./internal/iam ./internal/iam/oauth ./internal/api ./internal/migration ./internal/engineaccess) ;;
+    "") packages=(./internal/iam ./internal/iam/oauth ./internal/api ./internal/migration ./internal/engineaccess ./internal/repository) ;;
     iam) packages=(./internal/iam) ;;
     oauth) packages=(./internal/iam/oauth) ;;
     api) packages=(./internal/api) ;;
     migration) packages=(./internal/migration) ;;
+    repository) packages=(./internal/repository) ;;
     engineaccess) packages=(./internal/engineaccess) ;;
     *)
         echo "unsupported System IAM PostgreSQL gate package: $PACKAGE_FILTER" >&2
@@ -85,12 +86,19 @@ esac
 test_pattern='AgainstPostgres$'
 case "$TEST_FILTER" in
     "") ;;
+    credential-context)
+        if [ "$PACKAGE_FILTER" != "iam" ]; then
+            echo "credential-context test requires --package iam" >&2
+            exit 2
+        fi
+        test_pattern='^Test(DelegationService|ExecutionAuthorizationService|NotebookSessionAuthorizationService|CredentialValidationEvidence)AgainstPostgres$'
+        ;;
     engine-access-coordination)
         if [ "$PACKAGE_FILTER" != "migration" ]; then
             echo "engine-access-coordination test requires --package migration" >&2
             exit 2
         fi
-        test_pattern='^Test(FulfillmentOutcome|ApprovalRequirement|SharingExpiry)ForwardMigrationAgainstPostgres$'
+        test_pattern='^Test(FulfillmentOutcome|FulfillmentRecoveryPermission|FulfillmentHandlingPermission|ApprovalRequirement|SharingExpiry)ForwardMigrationAgainstPostgres$'
         ;;
     ontology-backend)
         if [ "$PACKAGE_FILTER" != "migration" ]; then

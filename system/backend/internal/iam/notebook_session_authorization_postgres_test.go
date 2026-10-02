@@ -106,6 +106,7 @@ func TestNotebookSessionAuthorizationServiceAgainstPostgres(t *testing.T) {
 		ExpiresIn: 10 * time.Minute, Audit: issueAudit,
 	})
 	if err != nil || issued.ID == uuid.Nil || issued.SessionID != sessionID || issued.TaskID != 42 {
+		logCredentialValidationBoundaries(t, err)
 		t.Fatalf("Issue() result=%#v error=%v", issued, err)
 	}
 	authorized, err := service.Authorize(ctx, serviceActor(issued.ID, sessionID))

@@ -1459,6 +1459,10 @@ func respondError(c *gin.Context, status int, err error) {
 	message := commoni18n.T(c, catalogi18n.MsgOperationFailed)
 	errorCode := "catalog_operation_failed"
 	switch {
+	case errors.Is(err, service.ErrSharingHandlingForbidden):
+		status = http.StatusForbidden
+		message = commoni18n.T(c, catalogi18n.MsgSharingHandlingForbidden)
+		errorCode = "catalog_sharing_handling_forbidden"
 	case errors.Is(err, service.ErrSharingConfirmationForbidden):
 		status = http.StatusForbidden
 		message = commoni18n.T(c, catalogi18n.MsgSharingConfirmationForbidden)

@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	sharedauth "github.com/addp/common/middleware/auth"
 
 	"github.com/addp/system/internal/middleware"
 	"github.com/gin-gonic/gin"
@@ -109,6 +110,11 @@ func RegisterIAMServiceRuntimeRoutes(
 		tenantEngineRoutes.GET("", engineHandler.ListRuntimeDescriptors)
 		tenantEngineRoutes.GET("/:id", engineHandler.GetRuntimeDescriptor)
 	}
+	logSourceCreate, err := middleware.NewIAMPermissionGuard("system.module_log_source.create")
+	if err != nil {
+		return err
+	}
+	runtimeRoutes.POST("/module-log-source-observations", platformContext, logSourceCreate, sharedauth.MustNewServiceClientGuard("addp-log-observer"), moduleHandler.ReportLogSources)
 	runtimeRoutes.POST("/execution-authorizations", tenantContext, executionAuthorizationIssue, runtime.ExecutionAuthorizationHandler.IssueFromExecution)
 	runtimeRoutes.POST("/execution-authorizations/service-definitions", tenantContext, executionAuthorizationIssue, runtime.ExecutionAuthorizationHandler.IssueFromServiceDefinition)
 	runtimeRoutes.POST("/task-authorization-subjects/:id/resolve", tenantContext, taskAuthorizationResolve, runtime.TaskAuthorizationSubjectHandler.Resolve)

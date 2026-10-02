@@ -33,7 +33,20 @@ const (
 )
 
 type CredentialValidationError struct {
-	Reason CredentialInvalidReason
+	Reason     CredentialInvalidReason
+	diagnostic *credentialValidationDiagnostic
+}
+
+// This private value copies only the failed validation's time evidence.
+// It must never retain a credential snapshot or appear in an HTTP response.
+type credentialValidationDiagnostic struct {
+	condition             string
+	databaseTime          time.Time
+	credentialCreatedAt   time.Time
+	familyAuthenticatedAt time.Time
+	credentialExpiresAt   time.Time
+	familyExpiresAt       time.Time
+	stepUpExpiresAt       time.Time
 }
 
 func (e *CredentialValidationError) Error() string {
@@ -662,24 +675,29 @@ func validateSessionCredentialSnapshot(snapshot *SessionCredentialAuthSnapshot) 
 	if snapshot.FamilyAuthorizationVersion != snapshot.PrincipalAuthorizationVersion {
 		return invalidCredential(CredentialInvalidAuthorizationVersion)
 	}
-	if snapshot.CredentialCreatedAt.After(now) || snapshot.FamilyAuthenticatedAt.After(now) ||
-		snapshot.CredentialExpiresAt.After(snapshot.FamilyExpiresAt) {
-		return invalidCredential(CredentialInvalidContext)
+	if snapshot.CredentialCreatedAt.After(now) {
+		return invalidCredentialContext(snapshot, "credential_created_after_database")
+	}
+	if snapshot.FamilyAuthenticatedAt.After(now) {
+		return invalidCredentialContext(snapshot, "family_authenticated_after_database")
+	}
+	if snapshot.CredentialExpiresAt.After(snapshot.FamilyExpiresAt) {
+		return invalidCredentialContext(snapshot, "credential_exceeds_family")
 	}
 	if snapshot.FamilyStepUpExpiresAt != nil && snapshot.FamilyStepUpExpiresAt.After(snapshot.FamilyExpiresAt) {
-		return invalidCredential(CredentialInvalidContext)
+		return invalidCredentialContext(snapshot, "step_up_exceeds_family")
 	}
 
 	switch snapshot.FamilyContextType {
 	case ContextTypePlatform:
 		if snapshot.FamilyTenantMembershipID != nil || snapshot.TenantMembershipID != nil ||
 			!validPlatformContextAssurance(snapshot.PrincipalType, snapshot.FamilyAssuranceLevel) {
-			return invalidCredential(CredentialInvalidContext)
+			return invalidCredentialContext(snapshot, "platform_context_invalid")
 		}
 	case ContextTypeTenant:
 		if snapshot.FamilyTenantMembershipID == nil || snapshot.TenantMembershipID == nil || snapshot.TenantID == nil ||
 			*snapshot.FamilyTenantMembershipID != *snapshot.TenantMembershipID {
-			return invalidCredential(CredentialInvalidContext)
+			return invalidCredentialContext(snapshot, "tenant_membership_binding_invalid")
 		}
 		if snapshot.TenantMembershipStatus == nil || *snapshot.TenantMembershipStatus != TenantMembershipStatusActive ||
 			snapshot.TenantMembershipJoinedAt == nil || snapshot.TenantMembershipJoinedAt.After(now) ||
@@ -690,7 +708,7 @@ func validateSessionCredentialSnapshot(snapshot *SessionCredentialAuthSnapshot) 
 			return invalidCredential(CredentialInvalidTenantInactive)
 		}
 	default:
-		return invalidCredential(CredentialInvalidContext)
+		return invalidCredentialContext(snapshot, "context_type_invalid")
 	}
 	return nil
 }
@@ -805,6 +823,18 @@ func buildAssignmentScope(row RoleAssignmentPermissionProjection) (commonauth.As
 
 func invalidCredential(reason CredentialInvalidReason) error {
 	return &CredentialValidationError{Reason: reason}
+}
+
+func invalidCredentialContext(snapshot *SessionCredentialAuthSnapshot, condition string) error {
+	diagnostic := &credentialValidationDiagnostic{
+		condition: condition, databaseTime: snapshot.DatabaseTime,
+		credentialCreatedAt: snapshot.CredentialCreatedAt, familyAuthenticatedAt: snapshot.FamilyAuthenticatedAt,
+		credentialExpiresAt: snapshot.CredentialExpiresAt, familyExpiresAt: snapshot.FamilyExpiresAt,
+	}
+	if snapshot.FamilyStepUpExpiresAt != nil {
+		diagnostic.stepUpExpiresAt = *snapshot.FamilyStepUpExpiresAt
+	}
+	return &CredentialValidationError{Reason: CredentialInvalidContext, diagnostic: diagnostic}
 }
 
 func formatIAMID(value int64) string {

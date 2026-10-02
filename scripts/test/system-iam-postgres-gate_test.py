@@ -102,7 +102,7 @@ sys.exit(int(os.environ.get("TEST_GO_STATUS", "0")))
         self.assertEqual(result.returncode, 0, result.stderr)
         trace = (self.root / "trace-1").read_text()
         self.assertIn("./internal/testsupport -run ^TestResetDisposablePostgresForGate$", trace)
-        self.assertIn("./internal/migration -run ^Test(FulfillmentOutcome|ApprovalRequirement|SharingExpiry)ForwardMigrationAgainstPostgres$", trace)
+        self.assertIn("./internal/migration -run ^Test(FulfillmentOutcome|FulfillmentRecoveryPermission|FulfillmentHandlingPermission|ApprovalRequirement|SharingExpiry)ForwardMigrationAgainstPostgres$", trace)
         (self.root / "trace-1").unlink()
         result = self.run_gate(arguments=("--package", ""))
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -120,6 +120,15 @@ sys.exit(int(os.environ.get("TEST_GO_STATUS", "0")))
         self.assertNotEqual(first.returncode, 0)
         result = self.run_gate()
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_credential_context_filter_runs_shared_validation_consumers(self):
+        result = self.run_gate(arguments=("--package", "iam", "--test", "credential-context"))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        trace = (self.root / "trace-1").read_text()
+        self.assertIn("./internal/iam -run ^Test(DelegationService|ExecutionAuthorizationService|NotebookSessionAuthorizationService|CredentialValidationEvidence)AgainstPostgres$", trace)
+        result = self.run_gate(arguments=("--test", "credential-context"))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("requires --package iam", result.stderr)
 
 
 if __name__ == "__main__":

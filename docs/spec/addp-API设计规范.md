@@ -280,6 +280,8 @@ WHERE id = $2 AND tenant_id = $3 AND version = $4;
 
 OGC API Features 继续遵循协议参数和响应结构，但 Items 的 `next` link 应携带同一查询游标；`numberReturned` 必须准确，`numberMatched` 只有在已取得低成本精确值时才返回，不得为每个 Items 请求强制执行 `COUNT(*)`。
 
+未登记实例的运行日志来源使用 GET `/api/v1/system/platform/module-log-sources` 的管理列表分页，沿用 `platform.module_log.read`。可信 Infra 来源报告使用 POST `/api/v1/system/runtime/module-log-source-observations`，最多 2048 个来源与 2 MiB 请求，只允许绑定节点的 `addp-log-observer` 平台服务凭据及 `system.module_log_source.create`，拒绝委托身份、未知字段和重复/旧序号冲突。来源身份不生成登记实例，不表示启动失败；正文复用既有模块实例日志路由，按登记或可信保留来源核验模块／实例与节点。来源报告仅接受 `addp.log-sources/v2`，必需 `issues` 数组：完整扫描为空，不完整扫描包含合法原因及有界正整数次数；不发送文件路径或错误原文。列表返回 `discovery_issues` 区分未收到观测、观测超时、缺少诊断证据与本次扫描问题；诊断针对绑定节点整次扫描，不受列表的模块、角色或时间筛选影响。过期报告的扫描问题不作为当前证据。
+
 模块实例运行日志采用固定时间窗口的游标分页，返回 `entries/returned/has_more/next_cursor`，不执行精确计数。游标绑定 Platform User、实例、时间范围、筛选和接收排序边界，30 分钟有效；查询不保证存储快照，迟到记录需刷新补查。同时间戳候选无法在安全查询上限内完整取得时明确返回 422，不跨过未读记录。详见运行日志设计。
 
 **请求参数：**

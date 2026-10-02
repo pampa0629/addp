@@ -109,3 +109,5 @@ other = "将新的技术来源显式重绑到既有企业目录身份"
 other = "查看企业目录审计"
 [permissions.catalog.audit.read.description]
 other = "查看企业目录治理、责任和来源重绑审计"
+[catalog.error.sharing_handling_forbidden]
+other = "读取共享决定摘要需要独立的源读取授权办理权限和当前有效的引擎管理委派；责任身份或编目权限不能代替"

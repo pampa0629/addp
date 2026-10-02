@@ -36,7 +36,8 @@ type sharingFulfillmentAuthority interface {
 // reconcileSharingFulfillment consumes committed preparation history only.
 // Network IO cannot occur under Catalog locks or within a caller transaction.
 // It does not accept, approve, send a new request, grant access or authenticate
-// its adapter. No production scheduler/API is wired to this internal command.
+// its adapter. The runtime reconciliation runner supplies that authenticated
+// adapter; this command itself remains independent of HTTP and scheduling.
 func reconcileSharingFulfillment(ctx context.Context, db *gorm.DB, tenantID int64, entryID, requestID uuid.UUID,
 	authority sharingFulfillmentAuthority,
 ) (*models.FulfillmentCheck, error) {
@@ -152,12 +153,7 @@ func decodeSharingFulfillmentBinding(raw json.RawMessage) (sharingFulfillmentBin
 	if err := decoder.Decode(new(any)); !errors.Is(err, io.EOF) {
 		return binding, ErrSharingDecisionConflict
 	}
-	if binding.CallerPrincipalID <= 0 || binding.Operator.PrincipalID <= 0 || binding.Operator.MembershipID <= 0 ||
-		binding.Operator.AuthorizationVersion <= 0 || binding.DecisionID == uuid.Nil || binding.RequirementVersion <= 0 ||
-		binding.RecipientID <= 0 || (binding.RecipientType != "user" && binding.RecipientType != "project_group") || binding.Action != "read" {
-		return binding, ErrSharingDecisionConflict
-	}
-	if _, err := authorization.EncodeSharingTarget(binding.Path); err != nil {
+	if err := binding.Validate(); err != nil {
 		return binding, ErrSharingDecisionConflict
 	}
 	expiresAt, err := authorization.NormalizeSharingExpiry(binding.ExpiryMode, binding.ExpiresAt)

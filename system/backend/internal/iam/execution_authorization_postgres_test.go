@@ -112,6 +112,7 @@ func TestExecutionAuthorizationServiceAgainstPostgres(t *testing.T) {
 		Accesses: executionAccessScopes([]int64{builtinEngineID, tenantEngineID}, "read"), ExpiresIn: 10 * time.Minute, Audit: audit,
 	})
 	if err != nil {
+		logCredentialValidationBoundaries(t, err)
 		t.Fatalf("issue execution authorization: %#v", err)
 	}
 	if issued.ID <= 0 || issued.TenantID != tenant.ID || issued.TenantMembershipID != membership.Membership.ID ||

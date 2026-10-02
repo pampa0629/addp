@@ -46,6 +46,7 @@ func TestRuntimeLogRouteEnforcesIndependentPlatformPermissionAndOfflineIdentity(
 		{"tenant denied", "tenant", "platform.module_log.read", "old", false, 403},
 		{"service credential denied", "platform", "platform.module_log.read", "old", true, 403},
 		{"unknown instance denied", "platform", "platform.module_log.read", "foreign", false, 404},
+		{"unregistered source allowed", "platform", "platform.module_log.read", "startup", false, 200},
 		{"offline instance allowed", "platform", "platform.module_log.read", "old", false, 200},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -53,10 +54,13 @@ func TestRuntimeLogRouteEnforcesIndependentPlatformPermissionAndOfflineIdentity(
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err = db.AutoMigrate(&models.ModuleDefinition{}, &models.ModuleRuntimeInstance{}, &models.ModuleRegistryState{}); err != nil {
+			if err = db.AutoMigrate(&models.ModuleDefinition{}, &models.ModuleRuntimeInstance{}, &models.ModuleRegistryState{}, &models.ModuleLogSource{}); err != nil {
 				t.Fatal(err)
 			}
 			if err = db.Create(&models.ModuleRegistryState{ID: 1, Revision: 1}).Error; err != nil {
+				t.Fatal(err)
+			}
+			if err = db.Create(&models.ModuleLogSource{InstanceID: "startup", ModuleName: "manager", Role: "backend", HostNodeName: "host", CaptureStartedAt: time.Now().Add(-time.Minute), ObservedAt: time.Now(), ExpiresAt: time.Now().Add(time.Hour)}).Error; err != nil {
 				t.Fatal(err)
 			}
 			registry := service.NewModuleRegistryService(repository.NewModuleRegistryRepository(db))

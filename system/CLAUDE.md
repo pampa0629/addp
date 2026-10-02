@@ -14,11 +14,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 > 内部目标管理底线：首次受理在 IAM 身份锁之后、请求／目标锁之前，以共享行锁读取本租户目标引擎及原操作账号 Membership 的有效管理委派，业务核验后再次按数据库墙钟检查。不同目标可并行，提交前的引擎状态变更和委派撤销须等待；失效资格不能产生新回执，但不阻断关闭或历史核清。管理委派不授予内容读取，不代替独立办理 Permission、可信业务决定或 Grant 写入时的当前核验，仍不发布实际办理接口。
 
+人类办理范围观察（2026-10-02）：`GET /engines/:id/access_handling_scope` 使用当前 Tenant User 身份、独立 `system.engine_access_fulfillment.create` 与有效引擎管理委派；按身份→引擎／委派共享锁核验当前 IAM、Token 及到期，等待后按数据库墙钟复核。000178 只登记该 Tenant Scope、高风险、不可委托、可租户定制的权限，不默认授予角色，不新增 Assignment 或 Grant。观察可供 Catalog 的人类候选摘要读取，不是可复用凭据，不授予确认或内容访问，不依赖 Catalog 在线，也不是首次受理接口。
+
 > 内部操作来源底线：完整请求不可变绑定 User Principal、Tenant Membership 和授权版本；首次受理按身份 → 请求 → 目标顺序，在 IAM 共享行锁下核验当前身份、成员关系、租户及成员到期时间，业务核验后再查数据库墙钟。共享锁与审计外键引用兼容，不阻塞不同目标的独立读取核验；现有管理委派写入仍保留原写锁。关闭与只读历史核清不要求原操作人仍有效，不由历史结果恢复新办理资格。该身份引用并非可信来源证明，不代替后续 owner 持久事实核验、独立 Permission、管理委派或 Catalog 业务决定，仍无公开受理或 Grant 接口。
 
 > 普通只读共享有效期：每次显式选择 `at_time`（未来绝对到期时间）或 `until_revoked`（无到期日期，直至撤销）；遗漏模式或矛盾参数拒绝，模式与日期均绑定不可变请求。自动办理窗口仍为原受理时间起 5 分钟；限时共享另受授权到期时间截断，长期有效不延长办理窗口。000172 在排他锁与同一事务内将历史有限期回执无损标为 `at_time`、补齐绑定并恢复不可变触发器，不创建 Grant 或改变历史时间。临时接入、管理委派和敏感操作规则不变。
 
 ## 项目概述
+
+精确目标批准要求初始化（2026-10-02）：User 在当前 Tenant Context 中通过 `POST /api/v1/system/engines/:id/access_approval_requirements` 显式建立版本 1 的 `catalog` 要求；只接受完整结构化路径和原因，不接受模式、版本或操作者身份。独立 `system.engine_access_approval_requirement.initialize` 与当前引擎管理委派取交集；读取使用独立 `.read` 与当前委派。两项权限由 000174 登记，均不默认分配给内置角色。身份 → 引擎／委派 → 精确目标锁，等待后按数据库墙钟再核验资格，配置和审计同事务。重复初始化返回 409，不覆盖既有模式，也不创建 Grant。退出、重新启用、可信跨模块受理及实际授权消费者仍未开放；不存在批准要求不能视为独立批准。此入口不依赖 Catalog 在线，没有前端配置入口。
 
 内部业务确认资格（2026-10-02）：首次受理还须从 owner 业务决定获取原确认人的身份引用，与办理人及接收账号共同去重升序共享锁定。确认人的历史授权版本只作审计，实时核验原 Tenant Membership、当前身份及 `catalog.entry.read`／`catalog.sharing_decision.create` 的有效 Tenant Scope 授权；原办理人仍严格匹配请求版本。权限和成员自然到期在业务核验后按数据库墙钟复核。历史核清及未受理关闭不重新要求确认资格；内部入参不构成可信 owner 证明，真实机器调用、Catalog 原责任依据及独立办理 Permission 尚待贯通，仍无公开受理或 Grant 接口。
 
@@ -451,6 +455,10 @@ System 平台的“模块管理 → 服务实例”提供已登记 UP/DOWN 实�
 
 API 为 `GET /api/v1/system/platform/modules/{module_name}/instances/{instance_id}/logs`，参数 `from/to/level/keyword/limit/cursor`。固定实例、字面量关键字、有界时间窗口；每批默认 200 条，最多 1000 条且响应不超过 2 MiB。历史分页固定首批窗口，不提供虚构总数；游标绑定当前 Platform User 与筛选，30 分钟有效。正文按接收时间和精确 uint64 序号排序。同时间戳候选达到 Loki 1001 条单次安全限额时返回 422，不能悄悄跳过。抽屉提供更早、返回和回到最新，历史浏览暂停跟随，翻页失败保留当前批；筛选变化清除旧结果，迟到记录刷新补查。本次查询不是存储快照，末页不表示采集完整。System 只访问受控 Loki 查询代理，不接收客户端文件路径、LogQL 或远端地址。失败返回明确错误，采集完整性始终标为未知。
 
-正文由 Alloy/Loki/MinIO 保存，不写入 IAM 审计表。标准开发和容器启动通过 `common/cmd/runtime-log` 生成并传递进程身份。重启产生新身份，原有 DOWN 登记事实保留，便于查询集中保留期内的旧日志。尚未登记的启动失败只保留节点源，不虚构服务实例。
+正文由 Alloy/Loki/MinIO 保存，不写入 IAM 审计表。标准开发和容器启动通过 `common/cmd/runtime-log` 生成并传递进程身份。重启产生新身份，原有 DOWN 登记事实保留，便于查询集中保留期内的旧日志。尚未登记的进程使用可信来源目录提供日志入口，不虚构登记实例或启动失败状态。
 
 标准验证：`make test-module MODULE=system`（显式注入允许的 IAM 测试 DSN），`make test-system-runtime-log`。设计与限制见 [模块服务运行日志设计](../docs/next/ADDP模块服务运行日志设计.md)，设施运维见 [Infra 指南](../scripts/infra/README.md)。
+
+### 未登记实例的运行日志
+
+System 唯一拥有 `module_log_sources` 保留目录。Infra `addp-log-observer` 使用独立 `system.module_log_source.create` Permission 与绑定节点上报有界元数据；Monitor 健康接收器列表不承载历史目录。Platform User 的 `platform.module_log.read` 同时用于目录和单实例正文。GET `/platform/module-log-sources` 排除当前登记关联；既有正文路由同时验证登记身份或保留来源，按可信节点筛选、绑定分页游标。未登记不是 DOWN 或启动失败，采集时间不代表业务启动时间。目录按最后来源观测加实际集中保留时长过期，不因重复扫描延长。数据库门禁新增 repository 分组，由 `scripts/test/system-iam-postgres-gate.sh --package repository` 运行，纳入既有 System IAM CI。

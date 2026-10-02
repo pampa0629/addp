@@ -909,6 +909,34 @@ definitions:
       total_pages:
         type: integer
     type: object
+  github_com_addp_catalog_internal_service.SharingDecisionCandidate:
+    properties:
+      action:
+        type: string
+      confirmed_at:
+        type: string
+      confirmed_by:
+        example: ""
+        type: string
+      expires_at:
+        format: date-time
+        type: string
+        x-nullable: true
+      expiry_mode:
+        enum:
+        - at_time
+        - until_revoked
+        type: string
+      id:
+        type: string
+      recipient_id:
+        example: ""
+        type: string
+      recipient_type:
+        type: string
+      target:
+        $ref: '#/definitions/github_com_addp_catalog_internal_service.SharingDecisionTarget'
+    type: object
   github_com_addp_catalog_internal_service.SharingDecisionResult:
     properties:
       action:
@@ -2353,6 +2381,88 @@ paths:
       x-addp-required-permissions:
       - catalog.entry.read
       - catalog.entry.update
+  /entries/{id}/sharing_decision_candidates:
+    get:
+      description: 当前 Tenant User 需条目读取、独立源授权办理权限与目标引擎管理委派。只返回当前来源、原负责人关系及期限有效的分页摘要，不返回完整业务用途或全租户历史；不是受理依据，不授予确认或数据访问，提交仍须重新核验确认人的当前
+        IAM 资格 | The current Tenant User needs entry read, independent source authorization
+        handling permission and target engine management delegation. Returns paginated
+        summaries with a current source, original owner relation and valid expiry,
+        not purpose text or tenant-wide history. Not acceptance evidence, confirmation
+        permission or data access; submission still rechecks the confirmer's current
+        IAM eligibility
+      parameters:
+      - description: 条目 UUID | Entry UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 页码，默认 1 | Page, default 1
+        in: query
+        name: page
+        type: integer
+      - description: 每页数量，默认 10，最多 100 | Page size, default 10, maximum 100
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 当前候选摘要 | Current candidate summaries
+          schema:
+            properties:
+              data:
+                items:
+                  $ref: '#/definitions/github_com_addp_catalog_internal_service.SharingDecisionCandidate'
+                type: array
+              page:
+                type: integer
+              page_size:
+                type: integer
+              total:
+                type: integer
+              total_pages:
+                type: integer
+            type: object
+        "400":
+          description: 请求、资格或依赖错误 | Request, eligibility or dependency error
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: 请求、资格或依赖错误 | Request, eligibility or dependency error
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: 请求、资格或依赖错误 | Request, eligibility or dependency error
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 请求、资格或依赖错误 | Request, eligibility or dependency error
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 请求、资格或依赖错误 | Request, eligibility or dependency error
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: 请求、资格或依赖错误 | Request, eligibility or dependency error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 读取可见条目的共享办理候选 | Read sharing handling candidates for a visible entry
+      tags:
+      - Catalog Sharing
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - catalog.entry.read
+      - system.engine_access_fulfillment.create
   /entries/{id}/sharing_decisions:
     post:
       consumes:

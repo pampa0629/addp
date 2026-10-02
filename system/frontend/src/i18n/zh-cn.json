@@ -316,6 +316,61 @@
         "sourceUsage": "源文件占用 / 额度（字节）",
         "collectorCounters": "发送重试 / 丢弃累计次数",
         "earlyCleaning": "最近清理轮次的提前清理文件数"
+      },
+      "sources": {
+        "title": "未登记实例的运行日志",
+        "hint": "这些来源尚未关联当前服务实例登记，启动结果未确认；目录存在不代表日志正文已送达。",
+        "permissionDenied": "无权查看平台运行日志",
+        "coverageUnknown": "日志来源发现不完整或已失联，当前列表可能有遗漏；没有结果不能证明没有启动日志。",
+        "sampledAt": "来源目录最近观测时间",
+        "captureStartedAt": "首次采集时间",
+        "observedAt": "来源最后观测时间",
+        "startupResult": "启动结果",
+        "unconfirmed": "未确认",
+        "timeRange": "首次采集时间范围",
+        "allTimes": "全部采集时间",
+        "sourceWindow": "来源最后观测附近",
+        "node": "宿主节点名（精确匹配）",
+        "issueCount": "本次发现 {count} 处",
+        "issues": {
+          "metadata_missing": {
+            "title": "缺少必需采集元数据",
+            "action": "确认采集组件已更新。更新前的历史文件可能缺少字段，新启动实例会生成完整元数据。"
+          },
+          "metadata_invalid": {
+            "title": "元数据无效或身份不一致",
+            "action": "检查采集文件是否损坏，以及模块、实例、节点和采集时间是否一致。"
+          },
+          "entry_unreadable": {
+            "title": "文件或目录读取失败",
+            "action": "检查日志目录挂载、访问权限和节点存储状态。"
+          },
+          "unsafe_entry": {
+            "title": "发现不安全文件或路径",
+            "action": "检查采集目录中的符号链接和异常文件类型，确认目录配置。"
+          },
+          "scan_limit": {
+            "title": "达到本次扫描项上限",
+            "action": "检查采集目录的文件增长与保留策略；当前次数不代表未扫描文件的数量。"
+          },
+          "source_limit": {
+            "title": "达到本次来源数量上限",
+            "action": "检查实例重启频率与来源保留策略，处理来源异常增长后刷新。"
+          },
+          "observer_unobserved": {
+            "title": "尚未收到来源观测报告",
+            "action": "检查日志观察进程、节点配置、System 连通性和服务身份认证。"
+          },
+          "observer_stale": {
+            "title": "来源观测报告已超时",
+            "action": "检查日志观察进程、System 连通性和服务身份认证；修复后刷新确认恢复。"
+          },
+          "diagnostics_unavailable": {
+            "title": "尚无来源扫描诊断证据",
+            "action": "更新日志观察组件后刷新；已有来源记录仍可查询日志。"
+          }
+        },
+        "diagnosticScope": "节点来源发现诊断；次数仅表示本次扫描实际发现的问题"
       }
     },
     "iam": {
@@ -713,6 +768,8 @@
           "element": "数据元",
           "engine": "引擎",
           "engine_catalog": "引擎目录",
+          "engine_access_approval_requirement": "源授权批准要求",
+          "engine_access_fulfillment": "源授权办理",
           "engine_access_delegation": "引擎授权管理委派",
           "engine_descriptor": "引擎描述",
           "enrollment": "数据保护纳管",
@@ -815,7 +872,8 @@
           "module_log": "模块运行日志",
           "log_pipeline": "日志链路",
           "log_observation": "日志链路观测",
-          "log_notification": "平台日志通知"
+          "log_notification": "平台日志通知",
+          "module_log_source": "日志来源"
         },
         "types": {
           "tenant_builtin": "租户内置角色",

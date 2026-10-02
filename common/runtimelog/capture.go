@@ -281,7 +281,8 @@ func Capture(o Options, stdout, stderr io.Reader) error {
 		}(channel, reader)
 	}
 	go func() { readers.Wait(); close(queue.entries) }()
-	w := &segmentWriter{o: o, metrics: metrics}
+	w := &segmentWriter{o: o, metrics: metrics, captureStartedAt: time.Now().UTC().Truncate(time.Microsecond)}
+	w.status()
 	defer w.close()
 	statusTicker := time.NewTicker(time.Second)
 	defer statusTicker.Stop()
@@ -339,11 +340,12 @@ func Capture(o Options, stdout, stderr io.Reader) error {
 }
 
 type segmentWriter struct {
-	o       Options
-	metrics *Metrics
-	file    *os.File
-	size    int64
-	segment uint64
+	o                Options
+	metrics          *Metrics
+	file             *os.File
+	size             int64
+	segment          uint64
+	captureStartedAt time.Time
 }
 
 func (w *segmentWriter) dir() string { return filepath.Join(w.o.Root, w.o.Module, w.o.InstanceID) }
@@ -393,7 +395,7 @@ func (w *segmentWriter) status() {
 	if os.MkdirAll(w.dir(), 0700) != nil {
 		return
 	}
-	body, _ := json.Marshal(map[string]any{"instance_id": w.o.InstanceID, "observed_at": time.Now().UTC(), "received": w.metrics.Received.Load(), "written": w.metrics.Written.Load(), "parse_failures": w.metrics.ParseFailures.Load(), "truncated": w.metrics.Truncated.Load(), "dropped": w.metrics.Dropped.Load(), "write_failures": w.metrics.WriteFailures.Load(), "source_files_cleaned": w.metrics.Cleaned.Load(), "source_files_early_cleaned": w.metrics.EarlyCleaned.Load()})
+	body, _ := json.Marshal(map[string]any{"module_name": w.o.Module, "role": w.o.Role, "host_node_name": w.o.Node, "capture_started_at": w.captureStartedAt, "instance_id": w.o.InstanceID, "observed_at": time.Now().UTC().Truncate(time.Microsecond), "received": w.metrics.Received.Load(), "written": w.metrics.Written.Load(), "parse_failures": w.metrics.ParseFailures.Load(), "truncated": w.metrics.Truncated.Load(), "dropped": w.metrics.Dropped.Load(), "write_failures": w.metrics.WriteFailures.Load(), "source_files_cleaned": w.metrics.Cleaned.Load(), "source_files_early_cleaned": w.metrics.EarlyCleaned.Load()})
 	tmp := filepath.Join(w.dir(), "status.tmp")
 	if os.WriteFile(tmp, body, 0600) == nil {
 		_ = os.Rename(tmp, filepath.Join(w.dir(), "status.json"))

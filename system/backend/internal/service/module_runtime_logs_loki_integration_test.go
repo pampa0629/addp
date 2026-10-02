@@ -42,6 +42,7 @@ func TestRuntimeLogsAgainstLoki(t *testing.T) {
 		e.InstanceID = instance
 		e.ID = fmt.Sprintf("%s:%d", instance, seq)
 		e.Role = "backend"
+		e.Node = "trusted-test-node"
 		return e
 	}
 	entries := []runtimelog.Entry{}
@@ -66,7 +67,7 @@ func TestRuntimeLogsAgainstLoki(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				values = append(values, []any{strconv.FormatInt(ts.UnixNano(), 10), string(body), map[string]string{"instance_id": e.InstanceID, "level": e.Level, "entry_id": e.ID}})
+				values = append(values, []any{strconv.FormatInt(ts.UnixNano(), 10), string(body), map[string]string{"instance_id": e.InstanceID, "level": e.Level, "entry_id": e.ID, "node_name": e.Node}})
 			}
 			streams = append(streams, map[string]any{"stream": map[string]string{"deployment": "addp", "module_name": "manager", "role": []string{"backend", "worker"}[roleIndex]}, "values": values})
 		}
@@ -151,6 +152,17 @@ func TestRuntimeLogsAgainstLoki(t *testing.T) {
 	if err != nil || latest.Entries[len(latest.Entries)-1].ID != fmt.Sprintf("%s:6000", instance) {
 		t.Fatalf("refresh did not recover late record: %v", err)
 	}
+	q.Node = "foreign-node"
+	wrongNode, err := s.Query(context.Background(), "manager", instance, q)
+	if err != nil || len(wrongNode.Entries) != 0 {
+		t.Fatal("foreign node matched trusted source", err)
+	}
+	q.Node = "trusted-test-node"
+	boundNode, err := s.Query(context.Background(), "manager", instance, q)
+	if err != nil || len(boundNode.Entries) == 0 {
+		t.Fatal("trusted node logs unavailable", err)
+	}
+	q.Node = ""
 	// Exercise real LogQL literal escaping and structured metadata filtering.
 	literal := `"} |~ ".*`
 	filtered := makeEntry(6001, stamp.Add(time.Nanosecond))

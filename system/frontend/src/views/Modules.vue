@@ -40,6 +40,7 @@
       />
 
       <el-alert v-if="activeTab === 'log-pipeline' && !canReadPipeline" :title="t('system.module.pipeline.permissionDenied')" type="error" :closable="false" show-icon />
+      <el-alert v-if="activeTab === 'unregistered-logs' && !canReadLogs" :title="t('system.module.sources.permissionDenied')" type="error" :closable="false" />
       <el-tabs v-model="activeTab" class="module-tabs">
         <el-tab-pane :label="t('system.module.tabs.overview')" name="overview">
           <div class="summary-grid">
@@ -205,6 +206,9 @@
         <el-tab-pane :label="t('system.module.tabs.instances')" name="instances">
           <ModuleInstances v-if="activeTab === 'instances'" :modules="modules" />
         </el-tab-pane>
+        <el-tab-pane v-if="canReadLogs" :label="t('system.module.sources.title')" name="unregistered-logs">
+          <ModuleLogSources v-if="activeTab === 'unregistered-logs'" :modules="modules" />
+        </el-tab-pane>
         <el-tab-pane v-if="canReadPipeline" :label="t('system.module.pipeline.title')" name="log-pipeline">
           <ModuleLogPipeline v-if="activeTab === 'log-pipeline'" />
         </el-tab-pane>
@@ -228,12 +232,14 @@ import { resolveIAMModuleName } from '../utils/iamPresentation'
 import { getModuleAvailability, isModuleRoutable, isRuntimeInstanceOnline, moduleNeedsAttention } from '../utils/moduleRegistry'
 import { formatRuntimeUptime, getRegisteredEndpoint } from '../utils/moduleRuntimePresentation'
 import ModuleInstanceNode from '../components/ModuleInstanceNode.vue'
+import ModuleLogSources from '../components/ModuleLogSources.vue'
 import ModuleInstances from '../components/ModuleInstances.vue'
 import { resolveModulesRouteState } from '../utils/routeState'
 import { navigateSystemRoute } from '../utils/moduleNavigation'
 
 const { t, te } = useI18n()
 const authStore = useAuthStore()
+const canReadLogs = computed(() => authStore.hasPermission('platform.module_log.read'))
 const canReadPipeline = computed(() => authStore.hasPermission('monitor.log_pipeline.read'))
 const modules = ref([])
 const attentionOnly = ref(false)

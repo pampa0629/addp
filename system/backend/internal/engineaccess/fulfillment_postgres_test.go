@@ -148,6 +148,7 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 		return r
 	}
 	repo := NewRepository(db)
+	exerciseFulfillmentRuntimeRecovery(t, db, newRequest())
 	confirmation, _ := newOperator(t, time.Hour)
 	confirmationRole, err := iam.NewTenantRoleService(identity, time.Now).CreateRole(ctx, iam.CreateTenantRoleInput{
 		TenantID: tenant.ID, RoleKey: "custom.fulfillment_confirmation", Name: "Explicit business confirmation fixture",

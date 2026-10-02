@@ -109,3 +109,5 @@ other = "Explicitly bind a new technical source to an existing enterprise catalo
 other = "View catalog audit"
 [permissions.catalog.audit.read.description]
 other = "View enterprise catalog governance, responsibility, and source rebind audit events"
+[catalog.error.sharing_handling_forbidden]
+other = "Reading sharing decision summaries requires independent source-read handling permission and a currently effective engine management delegation; responsibility or curation permission is insufficient"
