@@ -433,6 +433,13 @@
 
         <ExecutionLineageSummary :metadata="currentExecutionMetadata" />
 
+        <ExecutionEvents
+          v-if="detailDialogVisible && currentExecution.execution_id"
+          :execution-id="currentExecution.execution_id"
+          :load-page="getExecutionEvents"
+          :running="isRunningStatus(currentExecution.status)"
+        />
+
         <!-- 执行元数据 -->
         <div v-if="metadataSummaryItems.length" class="detail-section">
           <h4>{{ t('monitor.execution.detail.metadata') }}</h4>
@@ -471,7 +478,7 @@
 
 <script setup>
 import { computed, ref, onMounted, onBeforeUnmount, watch } from 'vue'
-import { ExecutionSteps } from '@common-ui'
+import { ExecutionSteps, ExecutionEvents } from '@common-ui'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
@@ -491,7 +498,7 @@ import {
   StatusAnnouncer,
   useConsolePageDescriptor
 } from '@common-ui'
-import { listExecutions, getExecutionTreeByExecutionID, listTaskProviders } from '@/api/monitor'
+import { listExecutions, getExecutionTreeByExecutionID, listTaskProviders, getExecutionEvents } from '@/api/monitor'
 import ExecutionLineageSummary from '@/components/ExecutionLineageSummary.vue'
 import ExecutionTable from '@/components/ExecutionTable.vue'
 import { executionDetailLocation } from '@/utils/executionNavigation'

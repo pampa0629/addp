@@ -71,7 +71,19 @@ func NewSMTPEmailSender(config SMTPEmailSenderConfig) (*SMTPEmailSender, error) 
 	}, nil
 }
 
+type EmailMessage struct {
+	DeliveryID                  string
+	Recipients                  []string
+	Subject, TextBody, HTMLBody string
+}
+type EmailTransport interface {
+	SendMessage(context.Context, EmailMessage, time.Time) error
+}
+
 func (s *SMTPEmailSender) Send(ctx context.Context, delivery monitorModels.EmailDelivery, now time.Time) error {
+	return s.SendMessage(ctx, EmailMessage{DeliveryID: delivery.DeliveryID, Recipients: delivery.Recipients, Subject: delivery.Subject, TextBody: delivery.TextBody, HTMLBody: delivery.HTMLBody}, now)
+}
+func (s *SMTPEmailSender) SendMessage(ctx context.Context, delivery EmailMessage, now time.Time) error {
 	message := mail.NewMsg()
 	var err error
 	if s.fromName == "" {

@@ -39,6 +39,7 @@
         :closable="false"
       />
 
+      <el-alert v-if="activeTab === 'log-pipeline' && !canReadPipeline" :title="t('system.module.pipeline.permissionDenied')" type="error" :closable="false" show-icon />
       <el-tabs v-model="activeTab" class="module-tabs">
         <el-tab-pane :label="t('system.module.tabs.overview')" name="overview">
           <div class="summary-grid">
@@ -204,6 +205,9 @@
         <el-tab-pane :label="t('system.module.tabs.instances')" name="instances">
           <ModuleInstances v-if="activeTab === 'instances'" :modules="modules" />
         </el-tab-pane>
+        <el-tab-pane v-if="canReadPipeline" :label="t('system.module.pipeline.title')" name="log-pipeline">
+          <ModuleLogPipeline v-if="activeTab === 'log-pipeline'" />
+        </el-tab-pane>
       </el-tabs>
     </el-card>
 
@@ -217,6 +221,7 @@ import { Refresh } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { StatusAnnouncer } from '@common-ui'
+import ModuleLogPipeline from '../components/ModuleLogPipeline.vue'
 import { modulesAPI } from '../api/modules'
 import { useAuthStore } from '../store/auth'
 import { resolveIAMModuleName } from '../utils/iamPresentation'
@@ -229,6 +234,7 @@ import { navigateSystemRoute } from '../utils/moduleNavigation'
 
 const { t, te } = useI18n()
 const authStore = useAuthStore()
+const canReadPipeline = computed(() => authStore.hasPermission('monitor.log_pipeline.read'))
 const modules = ref([])
 const attentionOnly = ref(false)
 const loading = ref(false)
@@ -242,7 +248,7 @@ const router = useRouter()
 const routeState = computed(() => resolveModulesRouteState(route.query))
 const activeTab = computed({
   get: () => routeState.value.tab,
-  set: tab => navigateSystemRoute(router, { name: 'Modules', query: tab === 'instances' ? { tab } : {} }, { history: 'replace' })
+  set: tab => navigateSystemRoute(router, { name: 'Modules', query: tab !== 'overview' ? { tab } : {} }, { history: 'replace' })
 })
 watch(() => route.fullPath, () => {
   if (routeState.value.changed) {

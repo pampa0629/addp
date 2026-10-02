@@ -4,11 +4,14 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/addp/common/authorization/authtest"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/execution/executiontest"
+	commonAuth "github.com/addp/common/middleware/auth"
 	"github.com/addp/develop/backend/internal/models"
 	"github.com/addp/develop/backend/internal/service"
 	"github.com/gin-gonic/gin"
@@ -107,9 +110,26 @@ func TestProviderExecutionUsesOnlyStableMetadataOutputs(t *testing.T) {
 		t.Fatal(err)
 	}
 	repo := commonExecution.NewTaskExecutionRepository(db)
+	parent := &commonExecution.TaskExecution{TenantID: 7, ExecutionID: "orchestrator-parent", Module: "orchestrator", TaskType: "orchestration", Source: "orchestrator", Status: "running", TriggerType: "manual"}
+	if err := repo.Create(t.Context(), parent); err != nil {
+		t.Fatal(err)
+	}
+	foreignParent := *parent
+	foreignParent.ID = 0
+	foreignParent.ExecutionID = "foreign-orchestrator-parent"
+	foreignParent.TenantID = 8
+	wrongModuleParent := *parent
+	wrongModuleParent.ID = 0
+	wrongModuleParent.ExecutionID = "develop-parent"
+	wrongModuleParent.Module = commonExecution.ModuleDevelop
+	for _, record := range []*commonExecution.TaskExecution{&foreignParent, &wrongModuleParent} {
+		if err := repo.Create(t.Context(), record); err != nil {
+			t.Fatal(err)
+		}
+	}
 	execution := &commonExecution.TaskExecution{
 		TenantID: 7, ExecutionID: "develop-output-execution", Module: commonExecution.ModuleDevelop,
-		TaskType: commonExecution.TaskTypeWorkflow, Source: commonExecution.ModuleOrchestrator,
+		TaskType: commonExecution.TaskTypeWorkflow, Source: commonExecution.ModuleOrchestrator, ParentExecutionID: &parent.ExecutionID,
 		Status: commonExecution.ExecutionStatusSuccess, TriggerType: commonExecution.TriggerTypeManual,
 		Metadata: map[string]interface{}{
 			"outputs": map[string]interface{}{"target_locator": "addp://engine/2/path/public/result?type=table"},
@@ -122,14 +142,18 @@ func TestProviderExecutionUsesOnlyStableMetadataOutputs(t *testing.T) {
 	executor := service.NewDevExecutor(nil, repo, nil, nil, nil, nil, nil, nil)
 	handler := NewExecutionHandler(executor, nil, nil)
 	router := gin.New()
-	router.Use(func(c *gin.Context) {
-		setTenantAuthContextForTest(c, 7, 1)
-		c.Next()
+	system := authtest.NewTenantServiceAuthContextServer(t, "7", map[string]authtest.TenantServiceIdentity{
+		"Bearer provider":      {ClientID: "addp-orchestrator", Permissions: []string{"develop.task_provider.read"}},
+		"Bearer other-service": {ClientID: "addp-transfer", Permissions: []string{"develop.task_provider.read"}},
 	})
+	defer system.Close()
+	router.Use(commonAuth.MustNewMiddleware(commonAuth.MiddlewareConfig{SystemURL: system.URL}))
 	router.GET("/task-provider/executions/:execution_id", handler.ProviderGetExecution)
 
 	response := httptest.NewRecorder()
-	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/task-provider/executions/develop-output-execution", nil))
+	request := httptest.NewRequest(http.MethodGet, "/task-provider/executions/develop-output-execution", nil)
+	request.Header.Set("Authorization", "Bearer provider")
+	router.ServeHTTP(response, request)
 	if response.Code != http.StatusOK {
 		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 	}
@@ -140,6 +164,43 @@ func TestProviderExecutionUsesOnlyStableMetadataOutputs(t *testing.T) {
 	outputs, ok := body["outputs"].(map[string]interface{})
 	if !ok || outputs["target_locator"] == nil || outputs["legacy"] != nil {
 		t.Fatalf("outputs=%#v", body["outputs"])
+	}
+
+	if strings.Contains(response.Body.String(), "legacy") || strings.Contains(response.Body.String(), "execution_config") {
+		t.Fatalf("provider exposed professional payload: %s", response.Body.String())
+	}
+	for _, test := range []struct {
+		id, source string
+		parent     *string
+	}{
+		{id: "manual-source", source: "develop", parent: &parent.ExecutionID},
+		{id: "missing-parent", source: "orchestrator"},
+		{id: "nonexistent-parent", source: "orchestrator", parent: func() *string { v := "nonexistent"; return &v }()},
+		{id: "foreign-parent", source: "orchestrator", parent: &foreignParent.ExecutionID},
+		{id: "wrong-parent-module", source: "orchestrator", parent: &wrongModuleParent.ExecutionID},
+	} {
+		child := *execution
+		child.ID = 0
+		child.ExecutionID = test.id
+		child.Source = test.source
+		child.ParentExecutionID = test.parent
+		if err := repo.Create(t.Context(), &child); err != nil {
+			t.Fatal(err)
+		}
+		request := httptest.NewRequest("GET", "/task-provider/executions/"+test.id, nil)
+		request.Header.Set("Authorization", "Bearer provider")
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, request)
+		if response.Code != 404 {
+			t.Fatalf("provider read %s: %d %s", test.id, response.Code, response.Body.String())
+		}
+	}
+	request = httptest.NewRequest(http.MethodGet, "/task-provider/executions/develop-output-execution", nil)
+	request.Header.Set("Authorization", "Bearer other-service")
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusForbidden || strings.Contains(response.Body.String(), "target_locator") {
+		t.Fatalf("other service read provider outputs: %d %s", response.Code, response.Body.String())
 	}
 }
 

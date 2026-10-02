@@ -57,3 +57,30 @@ func TestIAMServiceAuditOverridesCallerIdentityAndTenant(t *testing.T) {
 		t.Fatalf("audit identity metadata = %#v", writer.event.Metadata)
 	}
 }
+
+func TestPlatformServiceAuditCannotInjectTenantOrUserIdentity(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	writer := &capturingServiceAuditWriter{}
+	handler, err := NewIAMInternalAuditHandler(writer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		if err := sharedauth.SetAuthContextForGin(c, testIAMServiceActorContext("platform", "addp-monitor")); err != nil {
+			t.Fatal(err)
+		}
+		c.Next()
+	})
+	router.POST("/audit", handler.CreatePlatformService)
+	req := httptest.NewRequest(http.MethodPost, "/audit", bytes.NewBufferString(`{"principal_id":"999","principal_type":"user","context_type":"tenant","tenant_id":"999","event_name":"platform.log_pipeline.manage","result":"succeeded","risk_level":"medium","module_name":"monitor","entity_type":"log_pipeline","entity_id":"platform","details":{}}`))
+	req.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, req)
+	if response.Code != 201 {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	if writer.event.Metadata.TenantID != nil || writer.event.Metadata.PrincipalType == nil || *writer.event.Metadata.PrincipalType != iam.PrincipalTypeServicePrincipal || writer.event.Metadata.ContextType == nil || *writer.event.Metadata.ContextType != iam.ContextTypePlatform {
+		t.Fatalf("injected identity %#v", writer.event.Metadata)
+	}
+}

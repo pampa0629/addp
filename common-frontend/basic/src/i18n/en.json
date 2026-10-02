@@ -156,6 +156,40 @@
       "edit": "Edit workflow",
       "steps": "Execution scope: all {count} steps",
       "viewExecution": "View this execution"
+    },
+    "executionEvents": {
+      "title": "Run process",
+      "retention": "Process events are retained for 30 days. Earlier events may have expired.",
+      "unavailable": "Process events are unavailable. Refresh to retry.",
+      "unrecorded": "No process events recorded in the retention window.",
+      "time": "Event time",
+      "attempt": "Attempt",
+      "kind": "Event",
+      "counters": "Counters",
+      "truncated": "Collection or display limit reached. This process history is incomplete.",
+      "refresh": "Refresh process",
+      "more": "Load subsequent events",
+      "kinds": {
+        "started": "Started",
+        "progress": "Progress summary",
+        "completed": "Completed",
+        "failed": "Failed",
+        "cancelled": "Cancelled",
+        "timeout": "Timed out",
+        "truncated": "Collection truncated"
+      },
+      "fields": {
+        "progress": "Progress",
+        "batch_index": "Batch",
+        "batch_records": "Batch records",
+        "records_read": "Records read",
+        "records_written": "Records written",
+        "bytes_read": "Bytes read",
+        "bytes_written": "Bytes written",
+        "items_scanned": "Items scanned",
+        "catalog_nodes_scanned": "Catalog nodes scanned",
+        "fields_scanned": "Fields scanned"
+      }
     }
   },
   "auth": {

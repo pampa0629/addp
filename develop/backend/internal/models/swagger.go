@@ -1,6 +1,7 @@
 package models
 
 import (
+	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/taskprovider"
 )
@@ -228,42 +229,12 @@ type NotebookSessionSwaggerResponse struct {
 	ExpiresAt string `json:"expires_at" format:"date-time" example:"2026-08-02T12:00:00Z"`
 }
 
-// TaskExecutionSwagger 统一执行记录 Swagger 响应摘要。
-type TaskExecutionSwagger struct {
-	ID                int64                  `json:"id" example:"1"`
-	TenantID          int                    `json:"tenant_id" example:"1"`
-	ExecutionID       string                 `json:"execution_id" example:"550e8400-e29b-41d4-a716-446655440000"`
-	Module            string                 `json:"module" example:"develop"`
-	TaskType          string                 `json:"task_type" enums:"query,workflow,script" example:"workflow"`
-	Source            string                 `json:"source" example:"develop"`
-	SourceTaskID      *string                `json:"source_task_id,omitempty" example:"12"`
-	SourceTaskName    *string                `json:"source_task_name,omitempty" example:"city_buffer_workflow"`
-	ParentExecutionID *string                `json:"parent_execution_id,omitempty" example:"parent-execution-id"`
-	Status            string                 `json:"status" enums:"pending,running,success,failed,timeout,cancelled" example:"success"`
-	Progress          int                    `json:"progress" example:"100"`
-	CurrentStep       *string                `json:"current_step,omitempty" example:"执行工作流"`
-	TriggerType       string                 `json:"trigger_type" enums:"manual,scheduled,event" example:"manual"`
-	TriggeredBy       *int                   `json:"triggered_by,omitempty" example:"1"`
-	ExecutionConfig   map[string]interface{} `json:"execution_config,omitempty" swaggertype:"object"`
-	ErrorDetails      map[string]interface{} `json:"error_details,omitempty" swaggertype:"object"`
-	Metadata          map[string]interface{} `json:"metadata,omitempty" swaggertype:"object"`
-	ExecutionTimeMs   *int64                 `json:"execution_time_ms,omitempty" example:"1200"`
-	RowsAffected      *int64                 `json:"rows_affected,omitempty" example:"42"`
-	RecordsRead       *int64                 `json:"records_read,omitempty" example:"100"`
-	RecordsWritten    *int64                 `json:"records_written,omitempty" example:"100"`
-	BytesRead         *int64                 `json:"bytes_read,omitempty" example:"1024"`
-	BytesWritten      *int64                 `json:"bytes_written,omitempty" example:"2048"`
-	StartedAt         string                 `json:"started_at,omitempty" example:"2026-06-24T12:00:00Z"`
-	CompletedAt       string                 `json:"completed_at,omitempty" example:"2026-06-24T12:00:02Z"`
-	CreatedAt         string                 `json:"created_at" example:"2026-06-24T12:00:00Z"`
-	UpdatedAt         string                 `json:"updated_at" example:"2026-06-24T12:00:02Z"`
-}
-
 // ExecutionWithDevTaskSwagger 执行记录和开发任务关联 Swagger 响应。
 type ExecutionWithDevTaskSwagger struct {
-	TaskExecutionSwagger
-	DevTask *DevTaskSwagger      `json:"dev_task,omitempty"`
-	Outputs commonModels.JSONMap `json:"outputs,omitempty"`
+	commonExecution.Observation
+	ExecutionConfig map[string]interface{} `json:"execution_config,omitempty"`
+	DevTask         *DevTaskSwagger        `json:"dev_task,omitempty"`
+	Outputs         commonModels.JSONMap   `json:"outputs,omitempty"`
 }
 
 // ListExecutionsSwaggerResponse 执行列表 Swagger 响应。

@@ -8,18 +8,19 @@ import (
 // ExecutionStatusResponse is the canonical TaskProvider execution status response.
 // Outputs is a top-level HTTP projection of the durable metadata.outputs fact.
 type ExecutionStatusResponse struct {
-	*commonExecution.TaskExecution
+	*commonExecution.Observation
 	Outputs commonModels.JSONMap `json:"outputs" binding:"required"`
 }
 
 // NewExecutionStatusResponse builds the canonical TaskProvider execution response.
 func NewExecutionStatusResponse(execution *commonExecution.TaskExecution) ExecutionStatusResponse {
 	response := ExecutionStatusResponse{
-		TaskExecution: execution,
-		Outputs:       commonModels.JSONMap{},
+		Observation: commonExecution.Observe(execution),
+		Outputs:     commonModels.JSONMap{},
 	}
 	if execution != nil {
 		response.Outputs = ExecutionOutputs(execution.Metadata)
+		response.Metadata = commonModels.JSONMap{"outputs": response.Outputs}
 	}
 	return response
 }

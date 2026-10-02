@@ -30,6 +30,8 @@ func SetupRouter(
 	redisClient *redis.Client,
 	systemClient *commonClient.SystemServiceClient,
 	lifecycle *modulelifecycle.Controller,
+	logPipeline *service.LogPipelineService,
+	logNotifications *service.PlatformLogNotifications,
 	runtimeHealthServices ...*service.RuntimeHealthService,
 ) *gin.Engine {
 	router := gin.Default()
@@ -75,6 +77,7 @@ func SetupRouter(
 	platform.Use(
 		commonAuth.MustNewMiddleware(commonAuth.MiddlewareConfig{SystemURL: systemURL}),
 		commonAuth.MustNewContextGuard("platform"),
+		logPipelineAudit(systemClient),
 	)
 	if systemClient != nil {
 		platform.Use(audit.ServiceAuditMiddleware("monitor", systemClient))
@@ -90,6 +93,24 @@ func SetupRouter(
 		platform.PUT("/settings/smtp-relay", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorConfigurationUpdate), handler.Update)
 		platform.PUT("/settings/smtp-relay/credential", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorConfigurationUpdate), handler.SetCredential)
 		platform.DELETE("/settings/smtp-relay/credential", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorConfigurationUpdate), handler.DeleteCredential)
+	}
+
+	if logPipeline != nil && logNotifications != nil {
+		handler := NewLogPipelineHandler(logPipeline, logNotifications)
+		platform.GET("/platform/log-pipeline", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorLogPipelineRead), handler.Summary)
+		platform.GET("/platform/log-pipeline/policy", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorLogPipelineRead), handler.Policy)
+		platform.PUT("/platform/log-pipeline/policy", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorLogPipelineUpdate), handler.UpdatePolicy)
+		platform.POST("/platform/log-observations", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorLogObservationCreate), commonAuth.MustNewServiceClientGuard("addp-log-observer"), handler.Observe)
+		platform.POST("/platform/log-pipeline/incidents/:id/acknowledge", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorLogPipelineUpdate), handler.Acknowledge)
+		platform.POST("/platform/log-pipeline/incidents/:id/suppress", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorLogPipelineUpdate), handler.Suppress)
+		platform.GET("/platform/log-notification-destinations", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorLogNotificationRead), handler.Destinations)
+		platform.POST("/platform/log-notification-destinations", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorLogNotificationUpdate), handler.CreateDestination)
+		platform.PUT("/platform/log-notification-destinations/:id", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorLogNotificationUpdate), handler.UpdateDestination)
+		platform.PUT("/platform/log-notification-destinations/:id/credential", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorLogNotificationUpdate), handler.SetCredential)
+		platform.DELETE("/platform/log-notification-destinations/:id", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorLogNotificationUpdate), handler.DeleteDestination)
+		platform.POST("/platform/log-notification-destinations/:id/test", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorLogNotificationUpdate), handler.TestDestination)
+		platform.GET("/platform/log-notification-deliveries", commonAuth.MustNewPermissionGuard(monitorauthorization.PermissionMonitorLogNotificationRead), handler.Deliveries)
+
 	}
 
 	api.Use(
@@ -115,6 +136,7 @@ func SetupRouter(
 
 		api.GET("/executions/by-execution-id/:execution_id/tree", permission(monitorauthorization.PermissionMonitorExecutionRead), executionReadMiddleware(queryService), executionHandler.GetExecutionTreeByExecutionID)
 		api.GET("/executions/by-execution-id/:execution_id", permission(monitorauthorization.PermissionMonitorExecutionRead), executionReadMiddleware(queryService), executionHandler.GetExecutionByExecutionID)
+		api.GET("/executions/by-execution-id/:execution_id/events", permission(monitorauthorization.PermissionMonitorExecutionRead), executionReadMiddleware(queryService), executionHandler.GetExecutionEvents)
 		api.GET("/executions/:id/tree", permission(monitorauthorization.PermissionMonitorExecutionRead), executionReadMiddleware(queryService), executionHandler.GetExecutionTree)
 		api.GET("/executions/:id", permission(monitorauthorization.PermissionMonitorExecutionRead), executionReadMiddleware(queryService), executionHandler.GetExecution)
 

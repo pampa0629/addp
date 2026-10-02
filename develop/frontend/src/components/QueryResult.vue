@@ -185,7 +185,7 @@ const statusLabel = computed(() => {
   if (props.result?.success && Number(props.result?.rows_count || 0) === 0) return t('develop.queryResult.successNoData')
   return props.result?.success ? t('develop.queryResult.success') : t('develop.queryResult.failed')
 })
-const errorMessage = computed(() => queryErrorMessage(props.result?.error_code, props.result?.error, t))
+const errorMessage = computed(() => queryErrorMessage(props.result?.error_code, props.result?.error, t, props.result?.error_category))
 const noDataHint = computed(() => t('develop.queryResult.noDataHint'))
 const truncatedMessage = computed(() => t('develop.queryResult.truncated', {
   limit: props.result?.result_limit

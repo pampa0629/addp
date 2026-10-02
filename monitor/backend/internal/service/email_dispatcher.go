@@ -134,17 +134,7 @@ func (d *EmailDispatcher) finishAttempt(ctx context.Context, delivery monitorMod
 }
 
 func (d *EmailDispatcher) retryBackoff(attempt int) time.Duration {
-	backoff := d.config.RetryInitial
-	for current := 1; current < attempt && backoff < d.config.RetryMax; current++ {
-		if backoff > d.config.RetryMax/2 {
-			return d.config.RetryMax
-		}
-		backoff *= 2
-	}
-	if backoff > d.config.RetryMax {
-		return d.config.RetryMax
-	}
-	return backoff
+	return notificationBackoff(d.config.RetryInitial, d.config.RetryMax, attempt)
 }
 
 func truncateEmailError(message string) string {

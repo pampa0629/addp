@@ -81,6 +81,13 @@ class ChangedGateTest(unittest.TestCase):
         self.assertEqual(["sample"], MODULE.affected_modules(self.repository, ["docker-compose.infra.yml"]))
         self.assertEqual(["sample"], MODULE.affected_modules(self.repository, [".env.example"]))
 
+    def test_declared_subtree_selects_owner_for_deleted_input_without_prefix_collision(self) -> None:
+        path = self.repository / "scripts/test/sample-graph-gate.sh"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("# ADDP_T2_INPUT_FILES=shared-input/\n")
+        self.assertEqual(["sample"], MODULE.affected_modules(self.repository, ["shared-input/deleted.txt"]))
+        self.assertEqual([], MODULE.affected_modules(self.repository, ["shared-input-other/other.txt"]))
+
     def test_orchestrator_changes_include_quality_reference_gate(self) -> None:
         for name in ("quality", "orchestrator"):
             path = self.repository / name / "backend" / "go.mod"

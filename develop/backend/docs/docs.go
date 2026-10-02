@@ -360,6 +360,7 @@ const docTemplate = `{
         },
         "/executions": {
             "get": {
+                "description": "专业读取仅本人执行，当前租户成员身份和授权版本须匹配；query/workflow 要求 data_read.execute，script 要求 notebook.read。| Professional reads require own execution, matching current membership and authorization version; query/workflow require data_read.execute and script require notebook.read.",
                 "produces": [
                     "application/json"
                 ],
@@ -423,9 +424,31 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ListExecutionsSwaggerResponse"
                         }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
+                "x-addp-conditional-permissions": [
+                    "develop.data_read.execute",
+                    "develop.notebook.read"
+                ],
                 "x-addp-required-permissions": [
                     "develop.task.read"
                 ]
@@ -506,6 +529,7 @@ const docTemplate = `{
         },
         "/executions/statistics": {
             "get": {
+                "description": "专业读取仅本人执行，当前租户成员身份和授权版本须匹配；query/workflow 要求 data_read.execute，script 要求 notebook.read。| Professional reads require own execution, matching current membership and authorization version; query/workflow require data_read.execute and script require notebook.read.",
                 "produces": [
                     "application/json"
                 ],
@@ -539,9 +563,31 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ExecutionStatistics"
                         }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
+                "x-addp-conditional-permissions": [
+                    "develop.data_read.execute",
+                    "develop.notebook.read"
+                ],
                 "x-addp-required-permissions": [
                     "develop.task.read"
                 ]
@@ -549,6 +595,7 @@ const docTemplate = `{
         },
         "/executions/{execution_id}": {
             "get": {
+                "description": "专业读取仅本人执行，当前租户成员身份和授权版本须匹配；query/workflow 要求 data_read.execute，script 要求 notebook.read。| Professional reads require own execution, matching current membership and authorization version; query/workflow require data_read.execute and script require notebook.read.",
                 "produces": [
                     "application/json"
                 ],
@@ -571,9 +618,31 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ExecutionWithDevTaskSwagger"
                         }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
+                "x-addp-conditional-permissions": [
+                    "develop.data_read.execute",
+                    "develop.notebook.read"
+                ],
                 "x-addp-required-permissions": [
                     "develop.task.read"
                 ]
@@ -647,6 +716,7 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
+                    "develop.task.read",
                     "develop.task.execute",
                     "develop.data_read.execute"
                 ]
@@ -654,6 +724,7 @@ const docTemplate = `{
         },
         "/executions/{execution_id}/logs": {
             "get": {
+                "description": "专业读取仅本人执行，当前租户成员身份和授权版本须匹配；query/workflow 要求 data_read.execute，script 要求 notebook.read。| Professional reads require own execution, matching current membership and authorization version; query/workflow require data_read.execute and script require notebook.read.",
                 "produces": [
                     "application/json"
                 ],
@@ -677,9 +748,31 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
+                "x-addp-conditional-permissions": [
+                    "develop.data_read.execute",
+                    "develop.notebook.read"
+                ],
                 "x-addp-required-permissions": [
                     "develop.task.read"
                 ]
@@ -687,6 +780,7 @@ const docTemplate = `{
         },
         "/executions/{execution_id}/retry": {
             "post": {
+                "description": "必须先具有本人原执行的专业读取权，再以当前执行授权重试。| Requires professional read access to own original execution before retrying with current execution authorization.",
                 "tags": [
                     "Execution"
                 ],
@@ -726,6 +820,7 @@ const docTemplate = `{
         },
         "/exports/{id}": {
             "get": {
+                "description": "复核原查询 execution 的当前本人专业读取权。| Recheck current professional read access to the original own query execution.",
                 "produces": [
                     "application/json"
                 ],
@@ -760,6 +855,9 @@ const docTemplate = `{
                     }
                 },
                 "x-addp-auth-mode": "permission",
+                "x-addp-conditional-permissions": [
+                    "develop.data_read.execute"
+                ],
                 "x-addp-required-permissions": [
                     "develop.task.read"
                 ]
@@ -767,6 +865,7 @@ const docTemplate = `{
         },
         "/exports/{id}/file": {
             "get": {
+                "description": "路径绑定 Resource Ticket 验证后，仍复核原查询 execution 的当前本人专业读取权。| After route-bound Resource Ticket validation, recheck current professional read access to the original own query execution.",
                 "produces": [
                     "application/octet-stream"
                 ],
@@ -808,7 +907,8 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "resource_ticket",
                 "x-addp-required-permissions": [
-                    "develop.task.read"
+                    "develop.task.read",
+                    "develop.data_read.execute"
                 ]
             }
         },
@@ -2887,6 +2987,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "仅 Orchestrator Service 可读取同租户、来源为 orchestrator 且父执行属于 Orchestrator 的子执行；只返回安全状态和稳定 outputs。| Orchestrator Service only; read same-tenant orchestrator-origin child executions with an Orchestrator parent; return safe status and stable outputs only.",
                 "produces": [
                     "application/json"
                 ],
@@ -2908,6 +3009,24 @@ const docTemplate = `{
                         "description": "TaskProvider 执行状态 | TaskProvider execution status",
                         "schema": {
                             "$ref": "#/definitions/taskprovider.ExecutionStatusResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
                         }
                     }
                 },
@@ -3532,6 +3651,29 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "execution.DiagnosticStep": {
+            "type": "object",
+            "properties": {
+                "duration": {
+                    "type": "integer"
+                },
+                "ended_at": {
+                    "type": "string"
+                },
+                "error_code": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "status": {
                     "type": "string"
                 }
             }
@@ -4201,134 +4343,117 @@ const docTemplate = `{
         "github_com_addp_develop_backend_internal_models.ExecutionWithDevTaskSwagger": {
             "type": "object",
             "properties": {
+                "attempt": {
+                    "type": "integer"
+                },
                 "bytes_read": {
-                    "type": "integer",
-                    "example": 1024
+                    "type": "integer"
                 },
                 "bytes_written": {
-                    "type": "integer",
-                    "example": 2048
+                    "type": "integer"
                 },
                 "completed_at": {
-                    "type": "string",
-                    "example": "2026-06-24T12:00:02Z"
+                    "type": "string"
                 },
                 "created_at": {
-                    "type": "string",
-                    "example": "2026-06-24T12:00:00Z"
+                    "type": "string"
                 },
                 "current_step": {
-                    "type": "string",
-                    "example": "执行工作流"
+                    "type": "string"
                 },
                 "dev_task": {
                     "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.DevTaskSwagger"
                 },
+                "diagnostics_truncated": {
+                    "type": "boolean"
+                },
                 "error_details": {
-                    "type": "object"
+                    "$ref": "#/definitions/models.JSONMap"
+                },
+                "execution_boundary": {
+                    "type": "string"
                 },
                 "execution_config": {
-                    "type": "object"
+                    "type": "object",
+                    "additionalProperties": true
                 },
                 "execution_id": {
-                    "type": "string",
-                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                    "type": "string"
                 },
                 "execution_time_ms": {
-                    "type": "integer",
-                    "example": 1200
+                    "type": "integer"
                 },
                 "id": {
-                    "type": "integer",
-                    "example": 1
+                    "type": "integer"
+                },
+                "max_attempts": {
+                    "type": "integer"
                 },
                 "metadata": {
-                    "type": "object"
+                    "$ref": "#/definitions/models.JSONMap"
                 },
                 "module": {
-                    "type": "string",
-                    "example": "develop"
+                    "type": "string"
                 },
                 "outputs": {
                     "$ref": "#/definitions/models.JSONMap"
                 },
                 "parent_execution_id": {
-                    "type": "string",
-                    "example": "parent-execution-id"
+                    "type": "string"
                 },
                 "progress": {
-                    "type": "integer",
-                    "example": 100
+                    "type": "integer"
                 },
                 "records_read": {
-                    "type": "integer",
-                    "example": 100
+                    "type": "integer"
                 },
                 "records_written": {
-                    "type": "integer",
-                    "example": 100
+                    "type": "integer"
+                },
+                "retry_of_execution_id": {
+                    "type": "string"
                 },
                 "rows_affected": {
-                    "type": "integer",
-                    "example": 42
+                    "type": "integer"
                 },
                 "source": {
-                    "type": "string",
-                    "example": "develop"
+                    "type": "string"
                 },
                 "source_task_id": {
-                    "type": "string",
-                    "example": "12"
+                    "type": "string"
                 },
                 "source_task_name": {
-                    "type": "string",
-                    "example": "city_buffer_workflow"
+                    "type": "string"
                 },
                 "started_at": {
-                    "type": "string",
-                    "example": "2026-06-24T12:00:00Z"
+                    "type": "string"
                 },
                 "status": {
-                    "type": "string",
-                    "enum": [
-                        "pending",
-                        "running",
-                        "success",
-                        "failed",
-                        "timeout",
-                        "cancelled"
-                    ],
-                    "example": "success"
+                    "type": "string"
+                },
+                "steps": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/execution.DiagnosticStep"
+                    }
+                },
+                "steps_attempt_unverified": {
+                    "type": "boolean"
+                },
+                "steps_truncated": {
+                    "type": "boolean"
                 },
                 "task_type": {
-                    "type": "string",
-                    "enum": [
-                        "query",
-                        "workflow",
-                        "script"
-                    ],
-                    "example": "workflow"
-                },
-                "tenant_id": {
-                    "type": "integer",
-                    "example": 1
+                    "type": "string"
                 },
                 "trigger_type": {
-                    "type": "string",
-                    "enum": [
-                        "manual",
-                        "scheduled",
-                        "event"
-                    ],
-                    "example": "manual"
+                    "type": "string"
                 },
                 "triggered_by": {
-                    "type": "integer",
-                    "example": 1
+                    "type": "integer"
                 },
                 "updated_at": {
-                    "type": "string",
-                    "example": "2026-06-24T12:00:02Z"
+                    "type": "string"
                 }
             }
         },
@@ -5868,25 +5993,13 @@ const docTemplate = `{
                 "outputs"
             ],
             "properties": {
-                "actor_principal_id": {
-                    "description": "User-derived execution authorization facts. The raw User/Service tokens\nand engine connection details are never persisted in task executions.",
-                    "type": "integer"
-                },
-                "actor_tenant_membership_id": {
-                    "type": "integer"
-                },
                 "attempt": {
                     "type": "integer"
                 },
-                "authorization_expires_at": {
-                    "type": "string"
-                },
                 "bytes_read": {
-                    "description": "Transfer 读取字节数",
                     "type": "integer"
                 },
                 "bytes_written": {
-                    "description": "Transfer 写入字节数",
                     "type": "integer"
                 },
                 "completed_at": {
@@ -5896,120 +6009,90 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "current_step": {
-                    "description": "当前步骤（Orchestrator/Workflow）",
                     "type": "string"
+                },
+                "diagnostics_truncated": {
+                    "type": "boolean"
                 },
                 "error_details": {
-                    "description": "错误详情（仅失败时有值）",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/models.JSONMap"
-                        }
-                    ]
-                },
-                "execution_authorization_id": {
-                    "type": "integer"
+                    "$ref": "#/definitions/models.JSONMap"
                 },
                 "execution_boundary": {
-                    "description": "ExecutionBoundary separates finite queue work from long-running runtime sessions.",
                     "type": "string"
                 },
-                "execution_config": {
-                    "description": "JSONB 字段",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/models.JSONMap"
-                        }
-                    ]
-                },
                 "execution_id": {
-                    "description": "执行标识",
                     "type": "string"
                 },
                 "execution_time_ms": {
-                    "description": "性能指标",
                     "type": "integer"
                 },
                 "id": {
-                    "type": "integer"
-                },
-                "issued_authorization_version": {
                     "type": "integer"
                 },
                 "max_attempts": {
                     "type": "integer"
                 },
                 "metadata": {
-                    "description": "模块特有扩展数据（结果、断点、步骤结果等）",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/models.JSONMap"
-                        }
-                    ]
+                    "$ref": "#/definitions/models.JSONMap"
                 },
                 "module": {
-                    "description": "模块标识",
                     "type": "string"
                 },
                 "outputs": {
                     "$ref": "#/definitions/models.JSONMap"
                 },
                 "parent_execution_id": {
-                    "description": "父执行（Orchestrator 子步骤追踪父编排）",
                     "type": "string"
                 },
                 "progress": {
-                    "description": "0-100",
                     "type": "integer"
                 },
                 "records_read": {
-                    "description": "Transfer 读取记录数",
                     "type": "integer"
                 },
                 "records_written": {
-                    "description": "Transfer 写入记录数",
                     "type": "integer"
                 },
                 "retry_of_execution_id": {
                     "type": "string"
                 },
                 "rows_affected": {
-                    "description": "SQL 影响行数",
                     "type": "integer"
                 },
                 "source": {
-                    "description": "触发来源模块",
                     "type": "string"
                 },
                 "source_task_id": {
-                    "description": "关联原始任务",
                     "type": "string"
                 },
                 "source_task_name": {
-                    "description": "任务名称（冗余，便于查询）",
                     "type": "string"
                 },
                 "started_at": {
-                    "description": "时间戳",
                     "type": "string"
                 },
                 "status": {
-                    "description": "执行状态",
                     "type": "string"
+                },
+                "steps": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/execution.DiagnosticStep"
+                    }
+                },
+                "steps_attempt_unverified": {
+                    "type": "boolean"
+                },
+                "steps_truncated": {
+                    "type": "boolean"
                 },
                 "task_type": {
-                    "description": "稳定执行类型；可来自任务定义或 ad-hoc execution",
                     "type": "string"
                 },
-                "tenant_id": {
-                    "type": "integer"
-                },
                 "trigger_type": {
-                    "description": "触发信息",
                     "type": "string"
                 },
                 "triggered_by": {
-                    "description": "触发用户ID",
                     "type": "integer"
                 },
                 "updated_at": {

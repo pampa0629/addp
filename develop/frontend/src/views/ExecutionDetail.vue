@@ -310,18 +310,22 @@ const workflowFinalResultScalar = computed(() => (
 ))
 const workflowFinalResultText = computed(() => JSON.stringify(workflowFinalResult.value, null, 2))
 const executionErrorMessage = computed(() => queryErrorMessage(
-  execution.value?.error_details?.error_code,
+  execution.value?.error_details?.error_code || execution.value?.error_details?.category,
   execution.value?.error_details?.message || execution.value?.error_details?.error || '',
-  t
+  t,
+  execution.value?.error_details?.category
 ))
 
 let refreshTimer = null
+let executionReadGeneration = 0
 const executionId = computed(() => route.params.execution_id)
 
 // 加载执行详情
 const loadExecution = async (silent = false) => {
+  const generation = ++executionReadGeneration
   try {
     const data = await getExecution(executionId.value)
+    if (generation !== executionReadGeneration) return
     execution.value = data
 
     const result = data.metadata?.result
@@ -331,6 +335,13 @@ const loadExecution = async (silent = false) => {
       logs.value = []
     }
   } catch (error) {
+    if (generation !== executionReadGeneration) return
+    if ([403, 404].includes(error.response?.status)) {
+      executionReadGeneration++
+      execution.value = null
+      logs.value = []
+      stopAutoRefresh()
+    }
     console.error('加载执行详情失败:', error)
     if (!silent) {
       ElMessage.error(t('develop.executionDetail.loadFailed') + (error.response?.data?.error || error.message))
@@ -340,6 +351,8 @@ const loadExecution = async (silent = false) => {
 
 // 加载执行日志
 const loadLogs = async () => {
+  const generation = executionReadGeneration
+  if (!execution.value) return
   if (executionResult.value?.logs) {
     logs.value = executionResult.value.logs
     return
@@ -347,7 +360,7 @@ const loadLogs = async () => {
 
   try {
     const data = await getExecutionLogs(executionId.value)
-    logs.value = data.logs || []
+    if (generation === executionReadGeneration && execution.value) logs.value = data.logs || []
   } catch (error) {
     console.error('加载日志失败:', error)
   }

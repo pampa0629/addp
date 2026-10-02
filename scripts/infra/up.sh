@@ -51,7 +51,7 @@ from pathlib import Path
 import os, re, secrets
 p=Path('.env')
 s=p.read_text() if p.exists() else ''
-for key in ['LOKI_READ_TOKEN','LOKI_WRITE_TOKEN','LOKI_S3_SECRET_KEY']:
+for key in ['LOKI_READ_TOKEN','LOKI_WRITE_TOKEN','LOKI_S3_SECRET_KEY','LOG_OBSERVER_SERVICE_CLIENT_SECRET']:
     if os.environ.get(key):
         continue
     value=secrets.token_hex(32)
@@ -60,6 +60,15 @@ for key in ['LOKI_READ_TOKEN','LOKI_WRITE_TOKEN','LOKI_S3_SECRET_KEY']:
     s=pattern.sub(line,s) if pattern.search(s) else s.rstrip()+'\n'+line+'\n'
 if not re.search(r'^LOKI_S3_ACCESS_KEY=',s,re.M):
     s=s.rstrip()+'\nLOKI_S3_ACCESS_KEY=addp-runtime-logs\n'
+# A node identity is deployment configuration shared by all local processes.
+if not os.environ.get('ADDP_HOST_NODE_NAME'):
+    import socket
+    node=socket.gethostname().split('.')[0]
+    if not re.fullmatch(r'[a-zA-Z0-9][a-zA-Z0-9_.-]{0,99}',node):
+        raise SystemExit('Set ADDP_HOST_NODE_NAME explicitly')
+    pattern=re.compile(r'^ADDP_HOST_NODE_NAME=.*$',re.M)
+    line='ADDP_HOST_NODE_NAME='+node
+    s=pattern.sub(line,s) if pattern.search(s) else s.rstrip()+'\n'+line+'\n'
 temporary=p.with_name(p.name+'.runtime-log.tmp')
 with temporary.open('w') as output:
     temporary.chmod(0o600)
@@ -187,7 +196,7 @@ RUNNING_SERVICES=$(compose ps --status running --format "{{.Service}}" 2>/dev/nu
 if echo "$RUNNING_SERVICES" | grep -qE "postgres|redis|falkordb|minio|meilisearch|redpanda|kafka-connect"; then
   echo -e "  ${GREEN}检测到部分服务已在运行${NC}"
   echo "  运行中的服务:"
-  for svc in postgres redis falkordb minio meilisearch redpanda kafka-connect loki alloy runtime-log-api runtime-log-pruner; do
+  for svc in postgres redis falkordb minio meilisearch redpanda kafka-connect loki alloy runtime-log-api runtime-log-pruner runtime-log-observer; do
     if echo "$RUNNING_SERVICES" | grep -q "^${svc}$"; then
       echo -e "    ${GREEN}✓ $svc${NC}"
     fi

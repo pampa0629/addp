@@ -10,14 +10,9 @@ import (
 	"github.com/addp/common/runtimelog"
 	"github.com/google/uuid"
 	"golang.org/x/sys/unix"
-	"io"
-	"net/http"
-	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
-	"strconv"
-	"strings"
 	"syscall"
 	"time"
 )
@@ -33,6 +28,9 @@ func run() error {
 		return fmt.Errorf("usage: runtime-log launch|capture --module name --role role -- command")
 	}
 	mode := os.Args[1]
+	if mode == "observe" {
+		return observe()
+	}
 	if mode == "probe" {
 		return probe()
 	}
@@ -122,35 +120,15 @@ func run() error {
 }
 
 func probe() error {
-	id := uuid.NewString()
-	o, err := runtimelog.FromEnvironment("runtime-probe", "backend", id)
+	o, err := runtimelog.FromEnvironment("runtime-probe", "backend", uuid.NewString())
 	if err != nil {
 		return err
 	}
-	started := time.Now()
-	if err = runtimelog.Capture(o, strings.NewReader("runtime-log-delivery-probe\n"), strings.NewReader("")); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	delay, err := runtimelog.Probe(ctx, o, os.Getenv("LOKI_URL"), os.Getenv("LOKI_READ_TOKEN"))
+	if err != nil {
 		return err
 	}
-	endpoint := os.Getenv("LOKI_URL")
-	target, err := url.Parse(endpoint)
-	if err != nil || target.Host == "" {
-		return fmt.Errorf("runtime log probe endpoint unavailable")
-	}
-	target.Path = "/loki/api/v1/query_range"
-	client := &http.Client{Timeout: 3 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	for time.Since(started) < 20*time.Second {
-		target.RawQuery = url.Values{"query": {`{deployment="addp",module_name="runtime-probe"} | instance_id=` + strconv.Quote(id)}, "start": {strconv.FormatInt(started.Add(-time.Second).UnixNano(), 10)}, "end": {strconv.FormatInt(time.Now().UnixNano(), 10)}, "limit": {"10"}}.Encode()
-		req, _ := http.NewRequest(http.MethodGet, target.String(), nil)
-		req.Header.Set("Authorization", "Bearer "+os.Getenv("LOKI_READ_TOKEN"))
-		res, e := client.Do(req)
-		if e == nil {
-			body, _ := io.ReadAll(io.LimitReader(res.Body, 1<<20))
-			res.Body.Close()
-			if res.StatusCode == 200 && strings.Contains(string(body), id) {
-				return json.NewEncoder(os.Stdout).Encode(map[string]any{"observed_at": time.Now().UTC(), "probe_delivered": true, "delay_ms": time.Since(started).Milliseconds()})
-			}
-		}
-		time.Sleep(time.Second)
-	}
-	return fmt.Errorf("runtime log delivery probe failed; collection completeness unknown")
+	return json.NewEncoder(os.Stdout).Encode(map[string]any{"observed_at": time.Now().UTC(), "probe_delivered": true, "delay_ms": delay.Milliseconds()})
 }

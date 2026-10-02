@@ -56,6 +56,12 @@ Develop 模块按具体工作流运行时实例聚合算子定义，用于工作
 
 **注意**：Meta、Transfer、Manager 模块提供的是**任务**（Tasks），不是算子，它们主要用于 Orchestrator 工作流编排。
 
+### 专业执行结果读取
+
+Monitor 提供租户通用执行历史。Develop 专业详情、轮询、列表、日志与查询导出只读取当前 User 本人的 execution；Tenant、Principal、Membership 和授权版本必须与持久来源事实一致。query/workflow 额外要求当前 `develop.data_read.execute`，script 要求 `develop.notebook.read`，入口仍要求 `develop.task.read`。旧记录无可信主体或授权变化后返回不可见，不回查当前任务定义猜测历史权限；不增加结果分享或重授权路径。新 Script execution 从已验证 AuthContext 保存来源事实。专业响应不暴露执行授权引用；列表不混入同租户其他人的配置及结果。
+
+TaskProvider 状态读取只接受 addp-orchestrator Service，限定 source=orchestrator 且父执行属于同 Tenant 的 Orchestrator。共享状态响应使用安全投影和稳定 outputs，不包含专业结果。标准验证使用 `make test-module MODULE=develop`；Common 变更另运行 `make test-go`，Swagger 生成与覆盖同步。真实认证/Gateway/Worker 联调属于 T4，未运行不能计为通过。
+
 ### TaskProvider 边界
 
 Develop 在模块定义中声明 TaskProvider 角色，发布 `query`、`workflow`、`script` 三种任务类型。算子工作流必须先在 Develop 中保存为 `dev_tasks.dev_type=workflow` 的任务定义，再以 `provider=develop, task_type=workflow, task_id=...` 被 Orchestrator 引用。Notebook 是 `script` 任务的当前实现形态和 UI 入口，不作为独立 `task_type`。当前 Develop 不具备 owner scheduler / `next_run_at` due claim 闭环，因此不声明定时能力，不保存或暴露 `schedule`、`enabled`、`next_run_at`。
@@ -354,12 +360,7 @@ GeoPython Workflow 运行时在内存中处理空间数据（GeoDataFrame）：
 
 执行记录会不断累积，建议定期清理：
 
-```sql
--- 删除 30 天前的执行记录
-DELETE FROM common.task_executions
-WHERE module = 'develop'
-  AND created_at < NOW() - INTERVAL '30 days';
-```
+执行摘要的目标保留期为 180 天，被专业结果、授权或告警引用时须延长。过程事件的目标保留期为 30 天；清理按统一维护入口实施，未落地前不得直接删除 `common.task_executions`。详见 `docs/spec/addp任务体系规范.md` 的租户执行诊断规则。
 
 如果需要清理旧开发任务，需单独确认任务保留策略后再处理 `develop.dev_tasks`。
 

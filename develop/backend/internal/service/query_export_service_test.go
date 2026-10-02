@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/addp/common/authorization/authtest"
 	commonClient "github.com/addp/common/client"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/execution/executiontest"
@@ -96,13 +97,22 @@ func TestQueryExportUsesFrozenSuccessfulExecutionSnapshot(t *testing.T) {
 		},
 		CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}
+	actor, membership, version, triggered := int64(9), int64(1), int64(1), 9
+	execution.ActorPrincipalID = &actor
+	execution.ActorTenantMembershipID = &membership
+	execution.IssuedAuthorizationVersion = &version
+	execution.TriggeredBy = &triggered
 	if err := repository.Create(context.Background(), execution); err != nil {
 		t.Fatalf("create query execution: %v", err)
 	}
 	transfer := &queryExportTransferClientStub{}
 	exporter := newQueryExportServiceForTest(t, db, repository, transfer)
 
-	result, err := exporter.Create(context.Background(), execution.ExecutionID, models.CreateQueryExportRequest{
+	denied := WithExecutionAuthContext(t.Context(), authtest.NewTenantUserAuthContext("7", "10", []string{"develop.task.read", "develop.data_read.execute"}))
+	if _, err := exporter.Create(denied, execution.ExecutionID, models.CreateQueryExportRequest{Format: "csv", FileName: "stolen"}, 7, 10); !errors.Is(err, ErrQueryExportNotFound) || transfer.request != nil {
+		t.Fatalf("unauthorized export started: err=%v request=%#v", err, transfer.request)
+	}
+	result, err := exporter.Create(WithExecutionAuthContext(context.Background(), authtest.NewTenantUserAuthContext("7", "9", []string{"develop.task.read", "develop.data_read.execute"})), execution.ExecutionID, models.CreateQueryExportRequest{
 		Format: "csv", FileName: "orders",
 	}, 7, 9)
 	if err != nil {
@@ -110,6 +120,30 @@ func TestQueryExportUsesFrozenSuccessfulExecutionSnapshot(t *testing.T) {
 	}
 	if result.TransferExecutionID != "transfer-export-1" || result.Status != "pending" {
 		t.Fatalf("result = %#v", result)
+	}
+	revoked := authtest.NewTenantUserAuthContext("7", "9", []string{"develop.task.read", "develop.data_read.execute"})
+	revoked.Authorization.AuthorizationVersion = "2"
+	revokedCtx := WithExecutionAuthContext(t.Context(), revoked)
+	if _, err := exporter.Get(revokedCtx, result.ID, 7, 9); !errors.Is(err, exportartifact.ErrSessionNotFound) {
+		t.Fatalf("revoked export session readable: %v", err)
+	}
+	if _, err := exporter.Open(revokedCtx, result.ID, 7, 9); !errors.Is(err, exportartifact.ErrSessionNotFound) {
+		t.Fatalf("revoked export file opened: %v", err)
+	}
+	current := authtest.NewTenantUserAuthContext("7", "9", []string{"develop.task.read", "develop.data_read.execute"})
+	if _, err := exporter.Get(WithExecutionAuthContext(t.Context(), current), result.ID, 7, 9); err != nil {
+		t.Fatalf("own export session denied: %v", err)
+	}
+	current.Token.Type = "resource_access_ticket"
+	current.Client.Audiences = []string{"develop"}
+	current.Client.ScopeMode = "restricted"
+	current.Client.Scopes = []string{"resource:read"}
+	ticketCtx := WithExecutionAuthContext(t.Context(), current)
+	if _, err := exporter.Get(ticketCtx, result.ID, 7, 9); !errors.Is(err, exportartifact.ErrSessionNotFound) {
+		t.Fatalf("unbound ticket readable: %v", err)
+	}
+	if _, err := exporter.Get(WithExportResourceRead(ticketCtx), result.ID, 7, 9); err != nil {
+		t.Fatalf("route-bound ticket denied: %v", err)
 	}
 	request := transfer.request
 	if request == nil || request.TenantID != 7 {
@@ -168,11 +202,16 @@ func TestQueryExportRejectsUnsuccessfulExecution(t *testing.T) {
 		Status: commonExecution.ExecutionStatusFailed, ExecutionBoundary: commonExecution.ExecutionBoundaryBounded,
 		TriggerType: commonExecution.TriggerTypeManual, CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}
+	actor, membership, version, triggered := int64(9), int64(1), int64(1), 9
+	execution.ActorPrincipalID = &actor
+	execution.ActorTenantMembershipID = &membership
+	execution.IssuedAuthorizationVersion = &version
+	execution.TriggeredBy = &triggered
 	if err := repository.Create(context.Background(), execution); err != nil {
 		t.Fatal(err)
 	}
 	exporter := newQueryExportServiceForTest(t, db, repository, &queryExportTransferClientStub{})
-	if _, err := exporter.Create(context.Background(), execution.ExecutionID, models.CreateQueryExportRequest{
+	if _, err := exporter.Create(WithExecutionAuthContext(context.Background(), authtest.NewTenantUserAuthContext("7", "9", []string{"develop.task.read", "develop.data_read.execute"})), execution.ExecutionID, models.CreateQueryExportRequest{
 		Format: "csv", FileName: "orders.csv",
 	}, 7, 9); err == nil || !errors.Is(err, ErrQueryExportInvalid) {
 		t.Fatalf("Create() error = %v", err)

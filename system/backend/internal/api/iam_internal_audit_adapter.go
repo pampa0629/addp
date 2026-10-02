@@ -159,3 +159,52 @@ func internalAuditEvent(request commonmodels.AuditLogCreateRequest) (iam.AuditEv
 		Details: request.Details,
 	}, nil
 }
+
+// CreatePlatformService godoc
+// @Summary 追加平台服务审计事件 | Append platform service audit event
+// @Description 平台身份来自服务凭据，且只能记录自身模块 | Platform identity derives from service credentials and the event must belong to the caller module
+// @Tags 平台审计 | Platform Audit
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body models.AuditLogCreateRequest true "审计事件 | Audit event"
+// @Success 201 {object} object{message=string}
+// @Failure 400 {object} IAMErrorResponse
+// @Failure 403 {object} IAMErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["audit.event.create"]
+// @Router /platform/audit/events [post]
+func (h *IAMInternalAuditHandler) CreatePlatformService(c *gin.Context) {
+	var request commonmodels.AuditLogCreateRequest
+	if err := commonapi.BindOptionalJSONStrict(c, &request); err != nil {
+		respondIAMError(c, fmt.Errorf("%w: invalid audit event", commonapi.ErrBadRequest))
+		return
+	}
+	if err := iamServiceOwnsModule(c, request.ModuleName); err != nil {
+		respondIAMError(c, err)
+		return
+	}
+	authContext, exists := middleware.IAMAuthContextFromGin(c)
+	if !exists || authContext.Context.Type != "platform" {
+		respondIAMError(c, commonapi.ErrUnauthorized)
+		return
+	}
+	principalID := authContext.Principal.ID
+	principalType := authContext.Principal.Type
+	contextType := authContext.Context.Type
+	request.PrincipalID = &principalID
+	request.PrincipalType = &principalType
+	request.ContextType = &contextType
+	request.TenantID = nil
+
+	event, err := internalAuditEvent(request)
+	if err != nil {
+		respondIAMError(c, err)
+		return
+	}
+	if err := h.writer.Write(c.Request.Context(), event); err != nil {
+		respondIAMError(c, err)
+		return
+	}
+	c.JSON(http.StatusCreated, gin.H{"message": "audit event appended"})
+}

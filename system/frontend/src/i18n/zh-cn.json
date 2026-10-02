@@ -180,6 +180,115 @@
           "error": "ERROR",
           "unknown": "未知级别"
         }
+      },
+      "pipeline": {
+        "title": "日志链路",
+        "policy": "检测规则",
+        "notifications": "通知管理",
+        "unconfigured": "日志链路观测尚未配置，请配置部署节点与观测器。",
+        "nodeUnconfirmed": "无法确认此实例与观测节点的对应关系。",
+        "node": "节点",
+        "observed": "最近观测",
+        "delay": "探针投递延迟",
+        "probe": "探针成功",
+        "registry": "实例登记观测有效",
+        "coverage": "链路健康仅说明近期观测成功，不能证明历史日志完整。",
+        "signal": "异常原因",
+        "severity": "严重级别",
+        "status": "状态",
+        "openedAt": "发现时间",
+        "actions": "操作",
+        "acknowledge": "确认",
+        "suppress": "抑制1小时",
+        "suppressedUntil": "通知抑制至 {time}",
+        "save": "保存",
+        "newDestination": "新增通知目标",
+        "name": "名称",
+        "channel": "渠道",
+        "target": "通知目标",
+        "enabled": "启用",
+        "edit": "编辑",
+        "test": "测试",
+        "delete": "删除",
+        "deliveries": "投递记录",
+        "deliveryID": "投递 ID",
+        "attempts": "尝试次数",
+        "createdAt": "创建时间",
+        "destination": "通知目标配置",
+        "email": "邮件",
+        "url": "Webhook 地址",
+        "recipients": "收件地址（逗号分隔）",
+        "secret": "签名密钥（留空保持当前值）",
+        "events": "订阅事件",
+        "failed": "日志链路查询失败",
+        "testSent": "测试通知已发送",
+        "deleteConfirm": "删除通知目标“{name}”？未发送通知将取消。",
+        "health": {
+          "healthy": "健康",
+          "alert": "告警",
+          "unknown": "未知"
+        },
+        "facts": {
+          "yes": "是",
+          "no": "否"
+        },
+        "severities": {
+          "critical": "严重",
+          "warning": "警告"
+        },
+        "statuses": {
+          "open": "未处理",
+          "acknowledged": "已确认",
+          "resolved": "已恢复"
+        },
+        "eventsLabel": {
+          "opened": "打开",
+          "escalated": "升级",
+          "resolved": "恢复"
+        },
+        "notificationState": {
+          "configured": "已配置",
+          "unconfigured": "未配置通知",
+          "smtp_unconfigured": "SMTP 未配置",
+          "delivery_failed": "存在投递失败",
+          "unknown": "未知"
+        },
+        "deliveryStatuses": {
+          "pending": "等待投递",
+          "delivering": "投递中",
+          "delivered": "已投递",
+          "dead": "最终失败",
+          "suppressed": "已抑制",
+          "cancelled": "已取消"
+        },
+        "fields": {
+          "failure_samples": "触发所需连续失败轮数",
+          "recovery_samples": "恢复所需连续成功轮数",
+          "stale_seconds": "观测失联阈值（秒）",
+          "delay_ms": "投递延迟阈值（毫秒）",
+          "capacity_percent": "容量告警阈值（%）",
+          "recovery_percent": "容量恢复阈值（%）"
+        },
+        "signals": {
+          "observation_missing": "观测器失联",
+          "log_api": "日志查询入口不可用",
+          "delivery_probe": "端到端投递失败",
+          "delivery_delay": "投递延迟升高",
+          "collector_metrics": "采集器指标不可用",
+          "collector_dropped": "采集器新增丢弃",
+          "collector_retries": "采集器持续重试",
+          "source_observation": "日志源观测失败",
+          "housekeeping": "源清理观测异常",
+          "source_quota": "源容量耗尽或清理失败",
+          "source_capacity": "源容量接近额度",
+          "receiver_missing": "在线实例的接收器观测缺失",
+          "receiver_loss": "接收器新增丢弃或写入失败",
+          "source_early_cleaning": "源文件提前清理风险"
+        },
+        "permissionDenied": "当前账号没有查看平台日志链路的权限",
+        "sourceUsage": "源文件占用 / 额度（字节）",
+        "collectorCounters": "发送重试 / 丢弃累计次数",
+        "earlyCleaning": "最近清理轮次的提前清理文件数"
       }
     },
     "iam": {
@@ -676,7 +785,10 @@
           "user": "用户账号",
           "workflow": "工作流",
           "metric_implementation": "指标实现",
-          "module_log": "模块运行日志"
+          "module_log": "模块运行日志",
+          "log_pipeline": "日志链路",
+          "log_observation": "日志链路观测",
+          "log_notification": "平台日志通知"
         },
         "types": {
           "tenant_builtin": "租户内置角色",

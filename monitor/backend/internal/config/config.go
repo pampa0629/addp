@@ -12,7 +12,8 @@ import (
 
 type Config struct {
 	// 服务配置
-	ServerPort string
+	ServerPort      string
+	LogObserverNode string
 
 	// 数据库配置
 	DatabaseHost     string
@@ -91,7 +92,8 @@ func LoadConfig() (*Config, error) {
 	emailMaxAttempts := 8
 
 	cfg := &Config{
-		ServerPort: getEnvOrDefault("MONITOR_BACKEND_PORT", "8100"),
+		LogObserverNode: os.Getenv("ADDP_HOST_NODE_NAME"),
+		ServerPort:      getEnvOrDefault("MONITOR_BACKEND_PORT", "8100"),
 
 		DatabaseHost:     getEnvOrDefault("POSTGRES_HOST", "localhost"),
 		DatabasePort:     getEnvOrDefault("POSTGRES_PORT", "15432"),

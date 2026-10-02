@@ -283,6 +283,16 @@ services:
     depends_on:
       runtime-log-store-init:
         condition: service_completed_successfully
+  runtime-log-observer:
+    extends:
+      file: scripts/infra/runtime-logs.yml
+      service: runtime-log-observer
+    container_name: addp-runtime-log-observer
+    volumes:
+      - ${ADDP_RUNTIME_LOG_ROOT:-./logs/runtime}:/var/log/addp
+    networks: [addp-network]
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    depends_on: [alloy, runtime-log-api, runtime-log-pruner]
   runtime-log-api:
     extends:
       file: scripts/infra/runtime-logs.yml

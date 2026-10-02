@@ -329,6 +329,51 @@ def validate_lineage(
     return facts
 
 
+def validate_monitor_lineage(
+    execution: dict[str, object], owner_facts: dict[str, object]
+) -> None:
+    forbidden_fields = {
+        "execution_config", "execution_authorization_id", "actor_principal_id",
+        "actor_tenant_membership_id", "issued_authorization_version",
+        "lease_token", "lease_owner", "lease_expires_at",
+    }
+    if forbidden_fields.intersection(execution):
+        raise SuiteError("Monitor exposes private execution fields")
+    metadata = _object(execution.get("metadata"), "Monitor execution metadata")
+    if {"result", "outputs", "step_results"}.intersection(metadata):
+        raise SuiteError("Monitor exposes private execution metadata")
+    facts = _object(metadata.get("lineage_facts"), "Monitor lineage facts")
+    if facts.get("schema_version") != LINEAGE_SCHEMA:
+        raise SuiteError("Monitor lineage schema_version is invalid")
+    if facts.get("operations") not in (None, []):
+        raise SuiteError("Monitor exposes lineage operations")
+    resource_fields = {
+        "port", "locator", "item_id", "item_fingerprint", "field_name", "write_mode",
+    }
+    for direction in ("inputs", "outputs"):
+        resources = _array(facts.get(direction), f"Monitor lineage {direction}")
+        expected_resources = _array(owner_facts.get(direction), f"Owner lineage {direction}")
+        if len(resources) != len(expected_resources):
+            raise SuiteError(f"Monitor lineage {direction} count differs from Owner")
+        for resource, expected in zip(resources, expected_resources):
+            actual = dict(_object(resource, "Monitor lineage resource"))
+            owner = _object(expected, "Owner lineage resource")
+            if set(actual) - resource_fields:
+                raise SuiteError("Monitor exposes private lineage resource fields")
+            projected = {key: value for key, value in owner.items() if key in resource_fields}
+            for candidate in (actual, projected):
+                locator = candidate.get("locator")
+                if not isinstance(locator, str):
+                    raise SuiteError("Monitor lineage resource locator is missing")
+                uri = urllib.parse.urlsplit(locator)
+                query = urllib.parse.parse_qs(uri.query, keep_blank_values=True)
+                if uri.username is not None or uri.fragment or set(query) - {"type", "item_id"}:
+                    raise SuiteError("Monitor lineage locator contains private context")
+                candidate["locator"] = (uri.scheme, uri.netloc, uri.path, query)
+            if actual != projected:
+                raise SuiteError("Monitor lineage resource differs from Owner safe projection")
+
+
 def validate_browser_report(
     report: object,
     *,
@@ -515,19 +560,7 @@ def run_scenario(
             ).payload,
             "Monitor execution",
         )
-        pointcloud_monitor_facts = validate_lineage(
-            monitor_execution,
-            item_locator=pointcloud_locator,
-            item_id=pointcloud_item_id,
-            fingerprint=pointcloud_fingerprint,
-            tenant_id=tenant_id,
-            task_type=POINTCLOUD_TASK_TYPE,
-            output_prefix="point-cloud-copc",
-            output_suffix=".copc.laz",
-            output_label="COPC",
-        )
-        if pointcloud_monitor_facts != pointcloud_manager_facts:
-            raise SuiteError("Monitor lineage facts differ from the Manager owner facts")
+        validate_monitor_lineage(monitor_execution, pointcloud_manager_facts)
 
         query = urllib.parse.urlencode({"task_id": pointcloud_task_id, "page": 1, "page_size": 20})
         results = _object(
@@ -592,19 +625,7 @@ def run_scenario(
             ).payload,
             "Monitor PPTX execution",
         )
-        pptx_monitor_facts = validate_lineage(
-            pptx_monitor_execution,
-            item_locator=pptx_locator,
-            item_id=pptx_item_id,
-            fingerprint=pptx_fingerprint,
-            tenant_id=tenant_id,
-            task_type=PPTX_TASK_TYPE,
-            output_prefix="document-preview",
-            output_suffix=".pdf",
-            output_label="PDF",
-        )
-        if pptx_monitor_facts != pptx_manager_facts:
-            raise SuiteError("Monitor PPTX lineage facts differ from the Manager owner facts")
+        validate_monitor_lineage(pptx_monitor_execution, pptx_manager_facts)
 
         cached_capability = _object(
             client.request(

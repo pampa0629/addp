@@ -22,6 +22,9 @@ func (s *ScanExecutionService) ClaimNextBoundedExecution(ctx context.Context, wo
 			Module: commonExecution.ModuleMeta, TaskType: commonExecution.TaskTypeScan,
 			WorkerID: workerID, Now: now, LeaseDuration: leaseDuration,
 		})
+		if err == nil && execution != nil {
+			err = commonExecution.AppendBoundedEvent(ctx, tx, *lease, commonExecution.EventInput{Kind: "started"})
+		}
 		if err != nil || execution == nil || execution.SourceTaskID == nil {
 			return err
 		}
@@ -113,7 +116,7 @@ func (s *ScanExecutionService) completeBoundedExecution(ctx context.Context, exe
 	delete(fields, "completed_at")
 	delete(fields, "updated_at")
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := commonExecution.CompleteWithLease(ctx, tx, lease, status, completedAt, fields); err != nil {
+		if err := commonExecution.CompleteWithEvent(ctx, tx, lease, status, completedAt, fields); err != nil {
 			return err
 		}
 		return updateScanTaskSummary(tx, execution, status, completedAt)

@@ -439,6 +439,16 @@ class T2CIRegistrationTest(unittest.TestCase):
         script.write_text(original.replace("scripts/test/build/Dockerfile", "scripts/test/build/Dockerfile scripts/test/build/input.txt"))
         self.assertEqual([], MODULE.validate_registration(self.repository))
 
+    def test_owned_build_directory_input_covers_only_declared_subtree(self) -> None:
+        dockerfile = self._add_owned_source_build()
+        script = self.repository / "scripts/test/common-tidb-gate.sh"
+        (dockerfile.parent / "input.txt").write_text("source")
+        dockerfile.write_text(dockerfile.read_text() + "COPY input.txt /input.txt\n")
+        script.write_text(script.read_text().replace("scripts/test/build/Dockerfile", "scripts/test/build/"))
+        self.assertEqual([], MODULE.validate_registration(self.repository))
+        self.assertFalse(MODULE.MODULE_GATE.gate_input_covers(["scripts/test/build/"], "scripts/test/build-other/input.txt"))
+        self.assertTrue(MODULE.MODULE_GATE.gate_input_covers(["scripts/test/build/"], "scripts/test/build/deleted.txt"))
+
     def test_rejects_build_parameter_override_and_external_context(self) -> None:
         self._add_owned_source_build()
         compose = self.repository / "scripts/test/docker-compose.tidb-t2.yml"

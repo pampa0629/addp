@@ -186,7 +186,7 @@ def dockerfile_build_is_pinned(repository: Path, context: Path, dockerfile: Path
     root, context, dockerfile = repository.resolve(), context.resolve(), dockerfile.resolve()
     if not context.is_relative_to(root) or not context.is_dir() or not dockerfile.is_relative_to(context) or not dockerfile.is_file():
         raise RegistrationError("owned build must use an existing repository context and Dockerfile")
-    if dockerfile.relative_to(root).as_posix() not in declared_inputs:
+    if not MODULE_GATE.gate_input_covers(declared_inputs, dockerfile.relative_to(root).as_posix()):
         raise RegistrationError("owned build Dockerfile must be declared in ADDP_T2_INPUT_FILES")
     stages: set[str] = set()
     external_base_count = 0
@@ -247,7 +247,7 @@ def dockerfile_build_is_pinned(repository: Path, context: Path, dockerfile: Path
                         resolved = file.resolve()
                         if not resolved.is_relative_to(context):
                             return False
-                        if resolved.is_file() and resolved.relative_to(root).as_posix() not in declared_inputs:
+                        if resolved.is_file() and not MODULE_GATE.gate_input_covers(declared_inputs, resolved.relative_to(root).as_posix()):
                             raise RegistrationError("owned build COPY/ADD inputs must be declared in ADDP_T2_INPUT_FILES")
     return external_base_count > 0
 

@@ -110,6 +110,7 @@ func SetupRouter(
 			},
 		}),
 	)
+	api.Use(executionAuthContextMiddleware)
 	api.GET("/execution-read-scope", GetExecutionReadScope)
 	permission := func(keys ...string) gin.HandlerFunc {
 		return commonAuth.MustNewPermissionGuard(keys...)
@@ -161,6 +162,7 @@ func SetupRouter(
 			executions.POST(
 				"/:execution_id/exports",
 				permission(
+					developauthorization.PermissionDevelopTaskRead,
 					developauthorization.PermissionDevelopTaskExecute,
 					developauthorization.PermissionDevelopDataReadExecute,
 				),

@@ -84,13 +84,8 @@ func (request fulfillmentRequest) encode() (json.RawMessage, json.RawMessage, er
 }
 
 func encodeFulfillmentPath(path engineplugin.EngineCatalogPath) (json.RawMessage, error) {
-	if _, err := engineplugin.NewQueryReadSet(path); err != nil || len(path.Segments) > 64 || uint64(path.EngineID) > uint64(^uint64(0)>>1) {
-		return nil, errFulfillmentBinding
-	}
-	// Exact names, case, whitespace and delimiters; never a display path or
-	// fingerprint. Digest indexes/locks do not replace complete JSON equality.
-	encoded, err := json.Marshal(path)
-	if err != nil || len(encoded) > 16384 {
+	encoded, err := authorization.EncodeSharingTarget(path)
+	if err != nil {
 		return nil, errFulfillmentBinding
 	}
 	return encoded, nil
@@ -160,6 +155,7 @@ func (r *Repository) settleFulfillment(ctx context.Context, request fulfillmentR
 		return nil, err
 	}
 	var operator *lockedUserProvenance
+	var scope *lockedManagementScope
 	if accept {
 		// Observe without arbitration locks first, so IAM always precedes the
 		// request/target boundary. An existing immutable outcome is historical
@@ -175,6 +171,17 @@ func (r *Repository) settleFulfillment(ctx context.Context, request fulfillmentR
 				return nil, err
 			}
 			if err := operator.check(now); err != nil {
+				return nil, err
+			}
+			scope, err = r.lockManagementScope(ctx, request.TenantID, int64(request.Path.EngineID), request.Operator.MembershipID)
+			if err != nil {
+				return nil, err
+			}
+			now, err = r.wallClock(ctx)
+			if err != nil {
+				return nil, err
+			}
+			if err := scope.check(now); err != nil {
 				return nil, err
 			}
 		} else if err != nil {
@@ -225,6 +232,9 @@ func (r *Repository) settleFulfillment(ctx context.Context, request fulfillmentR
 		CatalogPath: path, Binding: binding, ExpiryMode: request.ExpiryMode, GrantExpiresAt: expiresAt, Outcome: "closed", RecordedAt: now}
 	if accept {
 		if err := operator.check(now); err != nil {
+			return nil, err
+		}
+		if err := scope.check(now); err != nil {
 			return nil, err
 		}
 		if !authorization.SharingExpiryFuture(request.ExpiryMode, expiresAt, now) {

@@ -493,6 +493,7 @@ func testBuiltinServiceClientSecrets(prefix string) map[string]string {
 		"addp-model":        prefix + "-model-0123456789abcdef0123456789abcdef",
 		"addp-model3d":      prefix + "-model3d-0123456789abcdef0123456789abcdef",
 		"addp-monitor":      prefix + "-monitor-0123456789abcdef0123456789abcdef",
+		"addp-log-observer": prefix + "-log-observer-0123456789abcdef0123456789",
 		"addp-orchestrator": prefix + "-orchestrator-0123456789abcdef0123456789abcdef",
 		"addp-portal":       prefix + "-portal-0123456789abcdef0123456789abcdef",
 		"addp-quality":      prefix + "-quality-0123456789abcdef0123456789abcdef",

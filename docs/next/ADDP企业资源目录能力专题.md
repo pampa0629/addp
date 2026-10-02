@@ -2307,3 +2307,90 @@ System 回执只承载本次精确办理编号、目标与参数绑定、被消�
 本轮未执行整个共享工作区的 `make test-changed`，未验证尚未实现的跨模块真实受理／Grant T4 链路；上述通过仅对应本轮 Catalog owner 范围。未重启服务、未修改开发业务库或并行日志／IP 实现。
 
 下一步以这一 owner 核验为基础，落实持久待核清准备与 System 可信消费的同次绑定，再贯通受理、核清和实际 Grant；仍不能将本地核验返回的决定对象当作访问凭据。
+
+### 26.31 持久决定到待核清请求的内部登记（2026-10-01，生产消费未接通）
+
+本轮补齐 Catalog 内部事务登记原语 `prepareSharingFulfillment`，不是公开办理服务：
+
+- 首次登记读取持久决定，按条目→来源→原责任锁核验当前依据；精确 EngineCatalogPath 必须与决定一致，包括节点原名、大小写和层级。接收主体、动作和期限仅从决定派生，不能传入另一份决定正文。
+- 不可变请求绑定调用 Service Principal、原操作 User Principal／Membership／授权版本、批准要求版本、完整目标和决定引用。结构有效不等于身份可信；未来生产消费者仍须从真实认证上下文派生来源并独立核验当前 Permission、管理委派及接收主体。
+- 同编号重试比较完整绑定并返回原记录和创建时间；不刷新期限、不重开已核清请求，也不把历史恢复当成当前资格核验。换参拒绝，首次登记失败整体回滚。数据库已有的待核清保护继续覆盖责任、来源和弃用写入，普通说明编辑仍允许。
+- 原语只在调用方 Catalog 事务内工作，无网络 IO、无 System 受理时间／窗口副本、无 Grant；发送必须在事务提交后进行。未增加 HTTP 路由或占位 Permission，现有业务确认 API 不自动建立待核清事实，不冻结用户的正常编目操作。
+
+新增 Go T1 覆盖完整绑定、换参、同参及已核清恢复、失效决定的新请求拒绝、错误引用和事务回滚；既有 `TestPostgresSharingDecisionIsAtomicImmutableAndRetryable` 增加实际登记后的 JSONB 同参恢复、责任／来源／弃用保护、普通名称编辑及嵌套回滚验证。沿用 Catalog 自动发现和已登记 PostgreSQL T2，不新增测试路线或 CI 占位。
+
+验证结果：
+
+- `make test-module MODULE=catalog` 在公共 `make test-platform` 阶段失败：并行运行日志工作中的 `scripts/test/system-runtime-log-gate.sh` 缺少 owned build COPY／ADD 输入登记。本轮没有改动该工作或将失败计为通过。
+- 随后复用 `scripts/test/module-gate.py` 的 Catalog 标准计划（`plan_module(..., include_platform=False)`、`run_steps(..., dry_run=False)`），Catalog 完整 Go T1、前端 94 项测试与构建、既有 `make test-catalog-postgres` 全部通过，最终退出码 0。首次 Go T1 中新夹具的 SQLite attached-schema AutoMigrate 索引错误已按现有服务测试夹具方式修正；最终门禁覆盖修正后文件。
+- 格式与本轮文档差异检查通过。没有执行全共享工作区的 `make test-changed`；公共 T0 未通过，生产跨模块 T4 未运行，不能宣称整体验收通过。
+
+下一步优先贯通真实办理消费者的认证来源和 System 独立资格核验，再接入提交后发送、只读核清与关闭竞争；不能用内部测试参数或仓储回调代替可信跨模块调用。未重启服务、未写开发业务数据库或源端、未提交代码；真实跨模块 T4 和实际 Grant 尚未验证。
+
+### 26.32 待核清请求的内部故障恢复消费（2026-10-01，真实 System 调用未接通）
+
+本轮补齐 `reconcileSharingFulfillment` 的内部恢复流程，不开放授权、核清 API 或自动恢复任务：
+
+- 只消费已经提交的 Catalog 原待核清记录，拒绝在调用方事务内运行；远端查询、关闭均在 Catalog 锁与事务之外进行。
+- 先查询原结果；仅明确的权威“未找到”进入同编号、同参数关闭，超时、拒绝或其他错误不进入关闭。关闭可能返回竞争中已先提交的 `accepted`，不能假定返回值一定为 `closed`。
+- 核对请求编号、Tenant 和完整绑定，包括原调用主体、User／Membership／授权版本、精确路径、决定、批准要求版本、接收主体、动作和期限；未知结果或任何错配都保留待核清保护。
+- 验证原结果后，在条目→待核清记录锁内使用数据库墙钟填写一次核清时间。同参及并发恢复保留原时间；本地提交失败仍保留原请求，可以继续查询原结果。恢复不要求原账号、原责任或拟授权期限仍有效，不复活旧批准，也不建立 System 受理时间、截止时间或 Grant 副本。
+- 共用严格类型解码和绑定比较，拒绝不完整／额外字段／拼接 JSON，保留大整数身份精度。集成测试发现并修复了规范化时间后仍以原 JSON 字节比较的错误：同一绝对时间不同 UTC offset 应相同，实际相差一微秒则拒绝；沿用共享有效期规范，不新增兼容字段或第二条时间路线。
+
+新增 Go T1 覆盖受理／关闭结果、响应丢失、错配、失效历史、重复完成、禁止事务内远端调用、适配器参数隔离及本地取消后的同参恢复。新增 `TestPostgresSharingFulfillmentRecovery` 覆盖真正提交的准备记录、核清事务回滚后的保护、未知关闭结果保留保护、远端调用期间另一个事务可更新条目、两个完成事务竞争保留同一时间、核清提交后责任变更恢复，以及恢复后原责任失效的历史读取。
+
+测试已纳入既有 `scripts/test/catalog-postgres-gate.sh` 和 `make test-catalog-postgres`；既有 `.github/workflows/release-and-t2-gates.yml` 的 Catalog PostgreSQL Job 调用同一入口，模块影响自动发现已覆盖本轮文件，无需新增 CI 路线。没有 API 契约、Permission 或 Schema 变更，不修改 Swagger 或创建 migration。
+
+验证结果：
+
+- `make test-module MODULE=catalog` 在公共 T0 失败：当时并行基础设施改动中的 `docker-compose.infra.yml` 存在重复 `extends`，`test-ontology-infra-config` 无法解析 Compose。本轮未修改该文件，不将公共门禁计为通过。
+- 随后复用 `scripts/test/module-gate.py` 的标准 Catalog owner 计划（`include_platform=False`），最终完整 Go T1、前端 94 项测试与构建、完整 `make test-catalog-postgres` 均通过，退出码 0。追加本地取消恢复用例后，再通过同一标准计划单独重跑 Go T1，退出码 0；没有以旧结果覆盖新增用例。
+- 初次 PostgreSQL 验证发现的本轮时间比较回归已修复；最终 T2 覆盖修正后的准备与恢复代码，拒绝意外 Skip，并清理新增场景拥有的 Catalog 测试 Schema。格式及差异检查通过。
+- 没有执行全共享工作区 `make test-changed`，公共 T0 未通过；真实跨模块 T4、实际办理与 Grant 均未验证，不能宣称整体授权闭环完成。
+
+下一步优先把原操作账号的可信来源、System 独立办理 Permission／有效引擎管理委派及 owner 持久事实核验接入同一真实消费链，再接入本轮恢复流程的可信 System 客户端和生产调度。当前只有内部接口及受控测试替身；恢复逻辑通过不等于已认证的跨模块调用已具备。未重启或停止用户服务、未写开发业务数据库或源端、未提交代码。
+
+### 26.33 统一待核清准备与权威仲裁的精确目标边界（2026-10-02，生产授权闭环仍未完成）
+
+本轮检查真实消费前的失败路径，发现 Catalog 内部准备原语只核对路径一致，而 System 仲裁另有限定：若双方接受的目标集合不同，可能先登记待核清、阻止责任或来源变更，随后却无法被 System 受理或关闭。为避免该问题，在首次登记前共用同一值边界：
+
+- `common/authorization.EncodeSharingTarget` 唯一校验带结构根的有效叶子路径、正 int64 Engine ID、最多 64 个 segment（含根）、完整 JSON 最多 16 KiB；沿用 System 已有的内部限制，不改变引擎路径模型、Meta 扫描层级或现有业务确认 API。
+- Catalog 准备和恢复绑定读取、System 受理／关闭及精确批准要求均复用该实现，删除 System 本地重复校验。不能消费的目标在首次登记待核清之前拒绝，不以先冻结再重试远端作为处理方式。
+- 保留节点原名、大小写、空白和分隔符，无效 UTF-8 字符串明确拒绝，避免 JSON 编码悄然替换为同一字符。按完整编码后的字节数限制，不以字符数或编码前长度替代。
+- 共享库只负责值契约，不核验来源存在性、身份、责任、Permission、委派或批准要求；没有新增公开 API、占位 Permission、Schema／migration、授权或后台任务。内部测试通过不证明跨模块调用已认证，也不证明 Grant 已生效。
+
+测试沿现有 Common／Catalog／System Go T1 自动发现，Catalog PostgreSQL 和 System engineaccess PostgreSQL 使用已登记标准入口；`.github/workflows/platform-ci.yml` 的 `make test-go` 与既有 `release-and-t2-gates.yml` owner T2 已覆盖，无需增加旁路 CI。新增边界用例覆盖 64／65 层、16 KiB／超限、大 Engine ID、中文与 JSON 转义的实际字节数、无效 UTF-8、精确身份保留，以及 Catalog 拒绝后零待核清记录。正式实现规范和 Catalog 模块说明同步更新。
+
+本轮验证记录：
+
+- 通过 `scripts/test/module-gate.py` 的已登记 owner 计划运行 Catalog 与 System 完整 Go T1，退出码 0；本轮共享值校验的两组测试及全部子场景在 Common 完整 Go T1 的 verbose 输出中通过。
+- `make test-catalog-postgres` 全部通过，包括待核清数据库保护、事务回滚、恢复竞争与历史读取。随后追加真实 PostgreSQL 的 65 层／16 KiB 超限目标用例，在不可变历史触发器保持开启的情况下，证明拒绝准备后零待核清、责任仍可转移，整个夹具事务回滚；追加后再次通过 Catalog 完整 Go T1 和完整 PostgreSQL T2，退出码均为 0。没有使用开发业务库；测试只使用允许的 `addp_test`，由标准入口管理测试 Schema。
+- Common 完整 Go T1 与重新执行的 `make test-go` 均未通过：当前内置角色 Manifest 版本实际 105、断言仍为 104，Permission 实际 462、断言仍为 456；Develop `GET /exports/{id}/file` 的 `resource_ticket` Swagger 声明出现不允许的 conditional Permission。这些与并行日志／Develop 改动对应，本轮未修改其实现或基线，不能将新增用例通过推广为 Common 或全 Go 门禁通过。
+- `make test-platform` 已执行，最后在 `test-online-runner` 的三个 Hosted public-origin 脚本夹具 20 秒超时处失败；未修改超时或以先前成功的子门禁冒充公共 T0 通过。
+- `make test-changed` 已执行，标准预检识别全部受影响模块，但因缺少多项 PostgreSQL、MySQL、OceanBase T2 环境参数而退出，未进入全工作区执行；不把本轮 owner 结果推广到全部并行变更。
+- System engineaccess PostgreSQL 首次调用因测试 DSN 环境变量名不正确未进入测试；修正为入口规定的 `ADDP_SYSTEM_POSTGRES_TEST_DSN` 后，标准入口因另一套 IAM PostgreSQL 门禁正在运行而拒绝抢锁。本轮未完成该项验证，不计为通过；后续复核使用 `bash scripts/test/system-iam-postgres-gate.sh --package engineaccess`，CI 由既有 System IAM PostgreSQL Job 验证。未中断另一套门禁或绕过共享测试库锁。
+- 本轮 Go 格式、相关已跟踪文件 `git diff --check` 和新增文件行尾空白检查通过。已审查值校验、原身份保留、登记之前拒绝及失败事务边界；没有发现需要更改既定授权方案的问题。真实跨模块 T4、实际办理及 Grant 尚未实现和验证。
+
+下一步优先接通真实办理消费的可信操作账号来源、owner 持久依据和 System 独立资格核验，再贯通提交后发送及权威核清；仍不先开放只靠内部参数或测试回调工作的授权页面。未重启或停止用户服务，未写开发业务数据库或源端，未提交代码。
+
+### 26.34 首次受理消费当前引擎管理委派（2026-10-02，仍为内部事务能力）
+
+本轮把已确认的目标管理资格底线接入 System `settleFulfillment` 的首次受理路径，未新增公开办理 API、Permission、Grant 或 migration：
+
+- 当前 User／Membership／Tenant 核验后，按引擎→委派顺序锁定本租户目标引擎及原操作账号 Membership 的有效委派；不从租户管理员角色、其他账号的委派或 Catalog 责任身份推导该范围。
+- 引擎与委派均使用共享行锁，再进入请求／精确目标边界。同一引擎不同目标仍可并行；引擎退出或委派撤销不能越过已持锁的受理事务。业务核验后再次按数据库墙钟检查引擎状态、委派生效及到期时间，行锁不冻结期限。
+- 缺少委派、其他引擎／Membership 的委派、已撤销或已到期委派拒绝新受理，失败不保存回执或办理审计。原结果同参读取与关闭不重新要求历史操作人的资格，撤销不能改写旧回执或刷新原窗口；新编号仍须满足当前资格。
+- 这是引擎管理范围检查，不是内容读取授权，也不替代独立办理 Permission、可信 owner 持久事实、接收主体或 Catalog 当前业务依据。真实 Grant 写入时仍须核验当前资格。内部业务核验测试回调不作为生产消费者，不改变 Catalog 现有业务确认 API。
+
+规范先补入 `docs/spec/addp授权上下文规范.md` 5.5.5，再落实代码；`system/CLAUDE.md` 同步说明实现范围。测试沿既有 System Go T1 自动发现及 `system-iam-postgres-gate.sh --package engineaccess`；已有 `platform-ci.yml` 的 Go 门禁与 `release-and-t2-gates.yml` 的 System IAM PostgreSQL Job 覆盖，无新增 CI 路线或占位登记。
+
+验证结果：
+
+- System 完整 Go T1 通过：复用 `scripts/test/module-gate.py` 的已登记 owner 计划选择 Go T1，最终退出码 0。新增值检查覆盖有效状态、精确 Tenant／Engine／Membership、缺失事实、非有效引擎、已撤销及到期边界。
+- `bash scripts/test/system-iam-postgres-gate.sh --package engineaccess` 完整通过，追加竞争用例后再次通过，最后退出码 0、无意外 Skip。实际覆盖委派缺失、跨 Membership／引擎拒绝、核验期间到期回滚、撤销后历史核清／关闭、撤销先持写锁并提交后等待受理被拒绝、受理持共享锁阻止撤销和引擎退出，以及不同目标并行。只使用允许的 `addp_iam_test`，标准入口重置并清理 owner 测试 Schema，未绕过测试库锁。
+- 初次夹具调用漏传撤销版本参数导致编译失败，已纠正；短期成员夹具的建立与到期断言统一使用数据库时间，避免两种时间来源影响一秒边界。以上通过结果均覆盖修正后文件。
+- `make test-platform` 本轮完整通过，退出码 0，包含 CI 登记、授权清单及 Swagger 覆盖检查；本轮没有 API 契约变化，不修改 Swagger。
+- `make test-module MODULE=system` 首次未注入 PostgreSQL DSN，在统一预检退出，没有执行完整模块计划。随后显式核实 Infra 实际端口并使用上述标准 owner Go T1／PostgreSQL T2 与公共 T0；未运行 System 前端或其他 System T2，不把该范围计为完整模块验收。
+- 全共享工作区的 `make test-changed` 已执行，受影响模块被识别，但缺少其他 owner 的 PostgreSQL、MySQL、OceanBase 环境参数，预检拒绝，未进入执行。无关并行变更的完整门禁不计为通过。Go 格式与本轮相关文件 `git diff --check` 通过。
+
+下一步优先把真实操作账号来源、独立办理 Permission 与 Catalog 持久业务依据核验接入可信跨模块消费，再贯通已实现的提交后发送和核清原语；这些条件齐备前不开放实际受理／源数据 Grant 接口。真实跨模块 T4、表级 Grant、Manager／SQL 执行侧的统一资源裁决尚未实现和验证。未重启或停止用户服务，未写开发业务数据库或源端，未提交代码。

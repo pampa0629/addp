@@ -149,6 +149,13 @@ func TestIndependentPruneEnforcesEachInactiveInstanceQuota(t *testing.T) {
 	if err := Prune(o); err != nil {
 		t.Fatal(err)
 	}
+	var status struct {
+		EarlyCleaned uint64 `json:"source_files_early_cleaned"`
+	}
+	body, err := os.ReadFile(filepath.Join(o.Root, "housekeeping-status.json"))
+	if err != nil || json.Unmarshal(body, &status) != nil || status.EarlyCleaned != 2 {
+		t.Fatalf("early cleanup not reported: %s, %v", body, err)
+	}
 	for _, id := range []string{"one", "two"} {
 		files, _ := filepath.Glob(filepath.Join(o.Root, o.Module, id, "*.jsonl"))
 		if len(files) != 2 {

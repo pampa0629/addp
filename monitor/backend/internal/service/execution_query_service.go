@@ -12,6 +12,10 @@ import (
 
 const maxExecutionTreeDepth = 8
 
+func (s *ExecutionQueryService) GetExecutionEvents(ctx context.Context, executionID string, tenantID int, after int64, limit int) (*commonExecution.EventPage, error) {
+	return s.repo.ListEvents(ctx, executionID, tenantID, after, limit)
+}
+
 // ExecutionQueryService 执行查询服务
 type ExecutionQueryService struct {
 	repo         *commonExecution.TaskExecutionRepository

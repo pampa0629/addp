@@ -254,3 +254,9 @@ other = "查询策略读取或更新失败"
 
 [develop.query_policy.conflict]
 other = "查询策略已被修改，请刷新后重试"
+
+[develop.execution.read_failed]
+other = "读取执行记录失败"
+
+[develop.execution.not_found]
+other = "执行记录不存在或不可见"

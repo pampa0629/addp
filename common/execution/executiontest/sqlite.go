@@ -73,7 +73,12 @@ func migrateSQLiteStore(db *gorm.DB) error {
 			return err
 		}
 	}
-	return nil
+	return db.Exec(`CREATE TABLE IF NOT EXISTS common.execution_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, execution_id TEXT NOT NULL,
+        tenant_id INTEGER NOT NULL, module TEXT NOT NULL, task_type TEXT NOT NULL,
+        attempt INTEGER NOT NULL, occurred_at DATETIME NOT NULL,
+        kind TEXT NOT NULL, step_id TEXT NOT NULL DEFAULT '', counters TEXT NOT NULL
+    )`).Error
 }
 
 func createSQLiteIndex(db *gorm.DB, index *schema.Index) error {

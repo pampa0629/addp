@@ -11,7 +11,7 @@ import (
 )
 
 // CommonVersion must increase when the shared execution/runtime-health schema changes.
-const CommonVersion int64 = 1
+const CommonVersion int64 = 2
 
 var namePattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 

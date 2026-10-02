@@ -13,8 +13,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		t.Fatalf("LoadRepositoryAuthorizationCatalog() error = %v", err)
 	}
 	descriptors := report.Permissions
-	if len(descriptors) != 456 {
-		t.Fatalf("descriptor count = %d, want 456", len(descriptors))
+	if len(descriptors) != 462 {
+		t.Fatalf("descriptor count = %d, want 462", len(descriptors))
 	}
 	for _, descriptor := range descriptors {
 		if descriptor.OwnerModule == "security" && !reflect.DeepEqual(descriptor.AllowedScopeTypes, []string{"tenant"}) {
@@ -36,8 +36,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 			}
 		}
 	}
-	if len(roles) != 69 {
-		t.Fatalf("role count = %d, want 69", len(roles))
+	if len(roles) != 70 {
+		t.Fatalf("role count = %d, want 70", len(roles))
 	}
 	if roles[0].Key != "platform.agent_runtime" || roles[len(roles)-1].Key != "tenant.transfer_runtime" {
 		t.Fatalf("role boundary keys = %q, %q", roles[0].Key, roles[len(roles)-1].Key)
@@ -194,6 +194,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"system.runtime_registry.update",
 	})
 	assertRepositoryRolePermissions(t, roles, "platform.monitor_runtime", []string{
+		"audit.event.create",
 		"system.runtime_registry.read",
 		"system.runtime_registry.update",
 	})

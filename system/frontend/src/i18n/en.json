@@ -180,6 +180,115 @@
           "error": "ERROR",
           "unknown": "Unknown"
         }
+      },
+      "pipeline": {
+        "title": "Log pipeline",
+        "policy": "Detection policy",
+        "notifications": "Notifications",
+        "unconfigured": "Log observation is not configured. Configure the deployment node and observer.",
+        "nodeUnconfirmed": "This instance cannot be linked to the observed node.",
+        "node": "Node",
+        "observed": "Last observation",
+        "delay": "Probe delivery delay",
+        "probe": "Probe successful",
+        "registry": "Instance registry observation valid",
+        "coverage": "Healthy observations do not prove historical log completeness.",
+        "signal": "Signal",
+        "severity": "Severity",
+        "status": "Status",
+        "openedAt": "Opened at",
+        "actions": "Actions",
+        "acknowledge": "Acknowledge",
+        "suppress": "Suppress for 1 hour",
+        "suppressedUntil": "Notifications suppressed until {time}",
+        "save": "Save",
+        "newDestination": "New notification target",
+        "name": "Name",
+        "channel": "Channel",
+        "target": "Target",
+        "enabled": "Enabled",
+        "edit": "Edit",
+        "test": "Test",
+        "delete": "Delete",
+        "deliveries": "Deliveries",
+        "deliveryID": "Delivery ID",
+        "attempts": "Attempts",
+        "createdAt": "Created at",
+        "destination": "Notification target",
+        "email": "Email",
+        "url": "Webhook URL",
+        "recipients": "Recipients (comma separated)",
+        "secret": "Signing secret (leave blank to keep current)",
+        "events": "Subscribed events",
+        "failed": "Failed to load log pipeline",
+        "testSent": "Test notification sent",
+        "deleteConfirm": "Delete notification target \"{name}\"? Pending deliveries will be cancelled.",
+        "health": {
+          "healthy": "Healthy",
+          "alert": "Alert",
+          "unknown": "Unknown"
+        },
+        "facts": {
+          "yes": "Yes",
+          "no": "No"
+        },
+        "severities": {
+          "critical": "Critical",
+          "warning": "Warning"
+        },
+        "statuses": {
+          "open": "Open",
+          "acknowledged": "Acknowledged",
+          "resolved": "Resolved"
+        },
+        "eventsLabel": {
+          "opened": "Opened",
+          "escalated": "Escalated",
+          "resolved": "Resolved"
+        },
+        "notificationState": {
+          "configured": "Configured",
+          "unconfigured": "Notifications not configured",
+          "smtp_unconfigured": "SMTP not configured",
+          "delivery_failed": "Delivery failure recorded",
+          "unknown": "Unknown"
+        },
+        "deliveryStatuses": {
+          "pending": "Pending",
+          "delivering": "Delivering",
+          "delivered": "Delivered",
+          "dead": "Failed",
+          "suppressed": "Suppressed",
+          "cancelled": "Cancelled"
+        },
+        "fields": {
+          "failure_samples": "Consecutive failing samples",
+          "recovery_samples": "Consecutive recovery samples",
+          "stale_seconds": "Observation stale threshold (seconds)",
+          "delay_ms": "Delivery delay threshold (milliseconds)",
+          "capacity_percent": "Capacity alert threshold (%)",
+          "recovery_percent": "Capacity recovery threshold (%)"
+        },
+        "signals": {
+          "observation_missing": "Observer missing",
+          "log_api": "Log API unavailable",
+          "delivery_probe": "End-to-end delivery failed",
+          "delivery_delay": "Delivery delay elevated",
+          "collector_metrics": "Collector metrics unavailable",
+          "collector_dropped": "Collector dropped entries increased",
+          "collector_retries": "Collector retries continuing",
+          "source_observation": "Source observation failed",
+          "housekeeping": "Housekeeping observation unavailable",
+          "source_quota": "Source quota exhausted or cleanup failed",
+          "source_capacity": "Source capacity approaching limit",
+          "receiver_missing": "Online instance receiver observation missing",
+          "receiver_loss": "Receiver dropped entries or write failures increased",
+          "source_early_cleaning": "Source files cleaned before retention"
+        },
+        "permissionDenied": "This account cannot view the platform log pipeline",
+        "sourceUsage": "Source usage / quota (bytes)",
+        "collectorCounters": "Cumulative send retries / dropped entries",
+        "earlyCleaning": "Files cleaned early in latest cleanup cycle"
       }
     },
     "iam": {
@@ -676,7 +785,10 @@
           "user": "User Account",
           "workflow": "Workflow",
           "metric_implementation": "Metric implementation",
-          "module_log": "Module runtime logs"
+          "module_log": "Module runtime logs",
+          "log_pipeline": "Log pipeline",
+          "log_observation": "Log observation",
+          "log_notification": "Platform log notifications"
         },
         "types": {
           "tenant_builtin": "Tenant Built-in Role",

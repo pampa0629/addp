@@ -1188,4 +1188,4 @@ ADDP 部署按以下顺序使实例进入 Ready。业务进程可以在 System �
 
 ## 模块服务运行日志边界
 
-System 提供 Platform 实例运行日志的授权查询和页面入口；Infra 的 Alloy 采集受控实例文件，Loki 保存日志，使用独立 MinIO bucket。Monitor 继续拥有任务执行监控，不读取业务节点文件。日志设施故障不作为业务 Ready 前置条件，也不改写模块租约状态。详细契约见 [运行日志设计](../next/ADDP模块服务运行日志设计.md)。
+System 提供 Platform 实例运行日志的授权查询和页面入口；Infra 的 Alloy 采集受控实例文件，Loki 保存日志，使用独立 MinIO bucket。Monitor 拥有任务执行监控及独立的平台日志链路告警域；Infra 定时采集节点安全计数并通过受认证观测协议上报，Monitor 判定、持久保存并复用通知传输能力，System 提供平台链路摘要和处理入口。Monitor 不读取业务节点文件，平台事件不绑定虚构 Tenant 或任务。日志设施故障不作为业务 Ready 前置条件，也不改写模块租约状态。详细契约见 [运行日志设计](../next/ADDP模块服务运行日志设计.md)。

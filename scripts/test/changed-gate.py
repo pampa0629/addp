@@ -103,7 +103,7 @@ def affected_modules(repository: Path, files: list[str]) -> list[str]:
         if compose and compose.group(1) in files:
             affected.add(Path(script).name.split("-", 1)[0])
         inputs = re.search(r"(?m)^# ADDP_T2_INPUT_FILES=([^\n]+)$", content)
-        if inputs and set(inputs.group(1).split()).intersection(files):
+        if inputs and any(MODULE_GATE.gate_input_covers(inputs.group(1).split(), path) for path in files):
             affected.add(Path(script).name.split("-", 1)[0])
 
     # Agent loads platform Skill bodies, references, and runtime configuration from skills/.

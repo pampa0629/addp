@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/addp/common/buildinfo"
 	"github.com/addp/common/schema"
 	"github.com/addp/quality/internal/migration"
 
@@ -50,7 +51,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	registrationDone := systemServiceClient.RegisterAndHeartbeat(ctx, &commonClient.ModuleRegistrationRequest{
-		ModuleName: commonExecution.ModuleQuality, InstanceID: executor.WorkerID(),
+		ModuleName: commonExecution.ModuleQuality, InstanceID: buildinfo.ProcessInstanceID(),
 		Role: commonClient.ModuleRuntimeRoleWorker, RoutePrefix: "/quality",
 		Metadata: map[string]interface{}{
 			"runtime_name": "quality-bounded",

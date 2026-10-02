@@ -34,7 +34,13 @@ func (s *QueryExportService) Create(ctx context.Context, executionID string, req
 	if s == nil || s.executor == nil || s.executor.taskExecutionRepo == nil || s.artifacts == nil {
 		return nil, fmt.Errorf("%w: service is not configured", ErrQueryExportUnavailable)
 	}
-	execution, err := s.executor.taskExecutionRepo.GetByExecutionID(ctx, strings.TrimSpace(executionID), int(tenantID))
+	facts, validUser := executionUserFacts(ctx)
+	_, principal, _, _ := executionActorIDs(facts)
+	if !validUser || principal != int64(userID) {
+		return nil, ErrQueryExportNotFound
+	}
+	repo, readCtx := s.executor.professionalExecutionRepository(ctx, tenantID)
+	execution, err := repo.GetByExecutionID(readCtx, strings.TrimSpace(executionID), int(tenantID))
 	if err != nil || execution.Module != commonExecution.ModuleDevelop || execution.TaskType != commonExecution.TaskTypeQuery {
 		return nil, ErrQueryExportNotFound
 	}
@@ -124,10 +130,16 @@ func (s *QueryExportService) Get(ctx context.Context, id, tenantID, userID uint)
 	if err != nil {
 		return nil, err
 	}
+	if _, err := s.executor.GetExecution(ctx, response.SourceRef, tenantID); err != nil {
+		return nil, exportartifact.ErrSessionNotFound
+	}
 	return queryExportResponse(response), nil
 }
 
 func (s *QueryExportService) Open(ctx context.Context, id, tenantID, userID uint) (*exportartifact.File, error) {
+	if _, err := s.Get(ctx, id, tenantID, userID); err != nil {
+		return nil, err
+	}
 	return s.artifacts.Open(ctx, id, tenantID, userID)
 }
 

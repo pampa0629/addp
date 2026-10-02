@@ -720,7 +720,7 @@ Quality `quality_plan` 是纯手动/Orchestrator 显式执行类型，当前不�
 
 Develop 查询任务的 `content.query_parameters[]` 是全部查询参数的唯一定义事实源，每项固定包含唯一参数名 `name` 和 `type`，可选包含 `description` 与 `default`，不得再保存 `title`、显示名称或第二套引用标识。值参数类型固定为 `string`、`integer`、`number`、`boolean`，分别与 SQL `:name`、Cypher `$name` 或 MQL `{"$param":"name"}` 引用完全一致。关系参数固定使用 `type=relation`，当前只允许 PostgreSQL SQL 以未加引号、未限定 schema 的裸 `name` 引用；其可选 `default` 固定为 `{ "locator": "<ResourceLocator>" }`，只能指向与 `execution_config.engine_id` 相同的已有表。全部参数共享同一命名空间、名称唯一，且每个定义必须被查询引用、每个引用必须有定义；关系参数名不得与同一作用域的 CTE 重名。所有参数类型的 `default` 都是可选字段：已保存默认值进入 `input_defaults`，没有默认值的参数由 `input_schema.required` 声明为执行必填；布尔 `false`、数字 `0` 和空字符串都是明确默认值，不能与字段缺失混淆。`query_parameters[]` 的保存顺序决定 `input_ui_schema.<name>.order`。Copilot 查询草稿可以提议任意参数子集及可选默认值，但它必须与候选文本在同一响应中一起校验和回填；只有用户保存后才成为 Develop 任务事实。查询任务详情必须从该定义派生 `execution_contract`；未定义查询参数时返回闭合空契约。即时查询、手动任务执行和 Orchestrator 都使用“本次覆盖 > 保存默认值 > 缺失则拒绝执行”的同一解析规则，且不能把执行值写回 `content.query_parameters` 或查询文本；关系参数先经同一 AST 编译器变为只读预览查询，Orchestrator 另行提交写入目标 `target_locator`。
 
-`GET /executions/{execution_id}` 直接返回统一 execution 对象，`execution_id` 必须是 `common.task_executions.execution_id`。TaskProvider 声明的稳定输出只允许持久化在 `common.task_executions.metadata.outputs`，状态接口必须把该对象同时投影为响应顶层必填 `outputs`；没有稳定输出时返回闭合空对象 `{}`，不得省略、返回 `null`，也不得把 `metadata.result.outputs`、模块私有结果或整个 `metadata` 解释为稳定输出。
+`GET /executions/{execution_id}` 直接返回统一 execution 的显式安全状态投影（复用 Common Observation，不序列化 TaskExecution），`execution_id` 必须是 `common.task_executions.execution_id`。TaskProvider 声明的稳定输出只允许持久化在 `common.task_executions.metadata.outputs`，状态接口的 metadata 只保存该 outputs 投影，并把该对象同时投影为响应顶层必填 `outputs`；没有稳定输出时返回闭合空对象 `{}`，不得省略、返回 `null`，也不得把 `metadata.result.outputs`、模块私有结果或整个 `metadata` 解释为稳定输出。
 
 ```json
 {
@@ -983,7 +983,9 @@ Orchestrator 的调度和 Step 引用任务的自身调度不是继承关系，�
 5. 过程事件使用 PostgreSQL `common.execution_events`，可信 Tenant/module/task type 从 execution 派生。事件按 execution + attempt 关联；bounded 写入校验有效 lease，continuous 写入校验 Owner 既有 fencing。已有文本过程日志替换后删除旧追加路径，不长期双写；已有步骤结果和领域结果不迁入事件表。第一版不接 Alloy/Loki。
 6. 过程事件按事件时间保留 30 天（continuous 也滚动清理）。终态概览、步骤摘要及安全错误的目标保留期是 180 天；被领域历史、授权或告警依赖时必须按 Owner 引用约束延长，不能直接删除。专业结果、产物与操作审计使用各自生命周期。清理必须走标准维护入口，明确记录过期、截断、清理失败和保留原因；未接入清理前不得宣称保留策略已执行。
 7. 分期：第一期完成安全 DTO、Owner 读取裁决、既有步骤与诊断展示；第二期落地有界过程事件、Orchestrator/Transfer/Meta 接入及保留清理；第三期完善专业运行时节点历史和其他 Owner 阶段事件，按实测评估规模。已确认目标契约不代表后续阶段已经实现。
-8. 验收覆盖跨租户、同租户无 Owner 权限、父可读子不可读、撤权、一次性执行、已删除任务历史、Owner 不可用、安全投影、状态真实性、分页与截断。新增 PostgreSQL 测试必须确认标准门禁名称筛选命中；新增浏览器回归同步接入根 Makefile 与 CI。真实认证、Gateway、Owner 和 Worker 链路归 T4。
+8. 验收覆盖跨租户、同租户无 Owner 权限、父可读子不可读、撤权、一次性执行、已删除任务历史、Owner 不可用、安全投影、状态真实性、分页与截断。新增 PostgreSQL 测试必须确认标准门禁名称筛选命中；新增浏览器回归同步接入根 Makefile 与 CI。真实认证、Gateway、Owner 和 Worker 链路归 T4。现有 Manager 血缘 T4 分别核对 Owner 的完整血缘事实和 Monitor 的安全资源投影，不要求两者完整响应相同；Monitor 不得包含血缘 operations、schema snapshot、专业结果、执行配置或授权引用。
+
+过程事件首个实现切片使用闭合结构：`kind` 为 `started|progress|completed|failed|cancelled|timeout|truncated`，`step_id` 只保存已有步骤身份，`counters` 只接受非负整数进度计数；不接受自由文本消息、参数、业务值、checkpoint 或授权引用。事件时间由写入端生成，Tenant、module、task type 和 attempt 从锁定的 execution 派生。bounded 写入必须在同一事务锁定并验证当前有效 lease（含 owner）；每个 execution + attempt 每 UTC 日最多 1000 条，最后一条为截断标记。读取使用 ID 游标，每页最多 100 条，复用 execution 的 Owner 读取裁决，并返回 30 天保留窗口。事件按写入时间滚动清理；System 的公共存储维护循环分批执行，不删除 execution 概览、步骤结果、专业结果或操作审计。Orchestrator lease 收敛及概览引用裁决的范围尚待本轮确认，不能借此增加无 lease 写入或直接删除概览的路径。
 
 Monitor 不拥有任务定义。Monitor 聚合观察：
 

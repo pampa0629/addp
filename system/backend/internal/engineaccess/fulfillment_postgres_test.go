@@ -94,6 +94,51 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 	if err := db.Table("system.engines").Create(&engine).Error; err != nil {
 		t.Fatal(err)
 	}
+	seedDelegation := func(t *testing.T, membershipID int64, expires time.Time) *Delegation {
+		t.Helper()
+		var now time.Time
+		if err := db.Raw("SELECT clock_timestamp()").Scan(&now).Error; err != nil {
+			t.Fatal(err)
+		}
+		delegation := &Delegation{TenantID: tenant.ID, EngineID: int64(engine.ID), TenantMembershipID: membershipID,
+			Status: "active", Version: 1, GrantedByPrincipalID: user.ID, GrantedAt: now, ExpiresAt: expires,
+			GrantReason: "Disposable coordination fixture only"}
+		if err := db.Create(delegation).Error; err != nil {
+			t.Fatal(err)
+		}
+		return delegation
+	}
+	baseDelegation := seedDelegation(t, member.ID, time.Now().Add(time.Hour))
+	newOperator := func(t *testing.T, lifetime time.Duration) (userProvenance, time.Time) {
+		t.Helper()
+		principal := &iam.Principal{PrincipalType: iam.PrincipalTypeUser, Status: iam.PrincipalStatusActive, AuthorizationVersion: 1}
+		if err := identity.Transaction(ctx, func(tx *iam.Repository) error {
+			if err := tx.CreatePrincipal(ctx, principal); err != nil {
+				return err
+			}
+			return tx.CreateUser(ctx, &iam.User{ID: principal.ID, DisplayName: "Limited fulfillment operator"})
+		}); err != nil {
+			t.Fatal(err)
+		}
+		var now time.Time
+		if err := db.Raw("SELECT clock_timestamp()").Scan(&now).Error; err != nil {
+			t.Fatal(err)
+		}
+		expires := now.Add(lifetime)
+		// Fixture setup uses the same database clock as the expiry assertion;
+		// host/container clock drift must not change a one-second test boundary.
+		result, err := iam.NewTenantMembershipService(identity, func() time.Time { return now }).EstablishMembership(ctx,
+			iam.EstablishTenantMembershipInput{TenantID: tenant.ID, PrincipalID: principal.ID,
+				SourceType: iam.TenantMembershipSourceManual, ExpiresAt: &expires})
+		if err != nil {
+			t.Fatal(err)
+		}
+		current, err := identity.GetPrincipal(ctx, principal.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return userProvenance{PrincipalID: principal.ID, MembershipID: result.Membership.ID, AuthorizationVersion: current.AuthorizationVersion}, expires
+	}
 	newRequest := func() fulfillmentRequest {
 		r := testFulfillmentRequest()
 		r.TenantID, r.CallerPrincipalID, r.Path = tenant.ID, callerID, engineplugin.TabularItemPath(engine.ID, "schema", "public", "fixture")
@@ -247,31 +292,9 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 	t.Run("membership expiry after business verification rejects acceptance but cannot strand recovery", func(t *testing.T) {
 		limitedOperator := func(lifetime time.Duration) userProvenance {
 			t.Helper()
-			principal := &iam.Principal{PrincipalType: iam.PrincipalTypeUser, Status: iam.PrincipalStatusActive, AuthorizationVersion: 1}
-			if err := identity.Transaction(ctx, func(tx *iam.Repository) error {
-				if err := tx.CreatePrincipal(ctx, principal); err != nil {
-					return err
-				}
-				return tx.CreateUser(ctx, &iam.User{ID: principal.ID, DisplayName: "Limited fulfillment operator"})
-			}); err != nil {
-				t.Fatal(err)
-			}
-			var now time.Time
-			if err := db.Raw("SELECT clock_timestamp()").Scan(&now).Error; err != nil {
-				t.Fatal(err)
-			}
-			expires := now.Add(lifetime)
-			result, err := iam.NewTenantMembershipService(identity, time.Now).EstablishMembership(ctx,
-				iam.EstablishTenantMembershipInput{TenantID: tenant.ID, PrincipalID: principal.ID,
-					SourceType: iam.TenantMembershipSourceManual, ExpiresAt: &expires})
-			if err != nil {
-				t.Fatal(err)
-			}
-			current, err := identity.GetPrincipal(ctx, principal.ID)
-			if err != nil {
-				t.Fatal(err)
-			}
-			return userProvenance{PrincipalID: principal.ID, MembershipID: result.Membership.ID, AuthorizationVersion: current.AuthorizationVersion}
+			operator, expires := newOperator(t, lifetime)
+			seedDelegation(t, operator.MembershipID, expires)
+			return operator
 		}
 		r := newRequest()
 		r.Operator = limitedOperator(time.Second)
@@ -315,9 +338,180 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 			t.Fatalf("history restored expired operator qualification: %v", err)
 		}
 	})
-	t.Run("shared identity locks allow independent targets and block IAM qualification writes", func(t *testing.T) {
+	t.Run("current delegation is required and expiry or revocation cannot strand history", func(t *testing.T) {
+		assertRejected := func(r fulfillmentRequest) {
+			t.Helper()
+			if row, err := settle(r, true); row != nil || !errors.Is(err, commonapi.ErrForbidden) {
+				t.Fatalf("unqualified management scope accepted: %+v %v", row, err)
+			}
+			if row, err := readOnly(r); row != nil || !errors.Is(err, gorm.ErrRecordNotFound) {
+				t.Fatalf("rejected scope persisted an outcome: %+v %v", row, err)
+			}
+			var audits int64
+			if err := db.Table("system.audit_logs").Where("entity_type = ? AND entity_id = ?",
+				"engine_access_fulfillment", r.RequestID.String()).Count(&audits).Error; err != nil || audits != 0 {
+				t.Fatalf("rejected scope persisted audits=%d error=%v", audits, err)
+			}
+		}
+		r := newRequest()
+		r.Operator, _ = newOperator(t, time.Hour)
+		// Another membership's valid delegation, including the fixture tenant
+		// administrator's, never supplies this operator's target scope.
+		assertRejected(r)
+		if row, err := settle(r, false); err != nil || row.Outcome != "closed" {
+			t.Fatalf("missing delegation stranded closure: %+v %v", row, err)
+		}
+		r = newRequest()
+		operator, expires := newOperator(t, time.Hour)
+		r.Operator = operator
+		delegation := seedDelegation(t, operator.MembershipID, expires)
+		accepted, err := settle(r, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := repo.transaction(ctx, func(tx *Repository) error {
+			now, err := tx.wallClock(ctx)
+			if err != nil {
+				return err
+			}
+			return tx.revoke(ctx, delegation, delegation.Version, user.ID, "Fixture scope revoked", now)
+		}); err != nil {
+			t.Fatal(err)
+		}
+		for _, accept := range []bool{false, true} {
+			row, err := settle(r, accept)
+			if err != nil || row.Outcome != "accepted" || !row.RecordedAt.Equal(accepted.RecordedAt) || !row.Deadline.Equal(*accepted.Deadline) {
+				t.Fatalf("revocation changed historical arbitration: %+v %v", row, err)
+			}
+		}
+		if row, err := readOnly(r); err != nil || row.Outcome != "accepted" {
+			t.Fatalf("revocation stranded read-only recovery: %+v %v", row, err)
+		}
+		r.RequestID = uuid.New()
+		assertRejected(r)
+		if row, err := settle(r, false); err != nil || row.Outcome != "closed" {
+			t.Fatalf("revoked scope stranded closure: %+v %v", row, err)
+		}
+		r = newRequest()
+		r.Operator, _ = newOperator(t, time.Hour)
+		var now time.Time
+		if err := db.Raw("SELECT clock_timestamp()").Scan(&now).Error; err != nil {
+			t.Fatal(err)
+		}
+		seedDelegation(t, r.Operator.MembershipID, now.Add(time.Second))
+		verifiedBusiness := false
+		err = repo.transaction(ctx, func(tx *Repository) error {
+			_, err := tx.settleFulfillment(ctx, r, true, func(tx *Repository) error {
+				verifiedBusiness = true
+				return tx.db.Exec("SELECT pg_sleep(1.05)").Error
+			})
+			return err
+		})
+		if !verifiedBusiness || !errors.Is(err, commonapi.ErrForbidden) {
+			t.Fatalf("delegation expired during verification: reached=%t error=%v", verifiedBusiness, err)
+		}
+		assertRejected(r)
+		if row, err := settle(r, false); err != nil || row.Outcome != "closed" {
+			t.Fatalf("expired scope stranded closure: %+v %v", row, err)
+		}
+		// A second registered engine cannot inherit the original engine's scope.
+		otherEngine := engine
+		otherEngine.ID, otherEngine.Name = 0, "Other scope"
+		otherEngine.IdentityKey = models.JSONString(`{"host":"fulfillment.invalid","database":"other"}`)
+		if err := db.Table("system.engines").Create(&otherEngine).Error; err != nil {
+			t.Fatal(err)
+		}
+		r = newRequest()
+		r.Path = engineplugin.TabularItemPath(otherEngine.ID, "schema", "public", "fixture")
+		assertRejected(r)
+		// Engine lifecycle is independently required even when the delegation
+		// remains active; roll back this probe to preserve the shared fixture.
+		err = repo.transaction(ctx, func(tx *Repository) error {
+			if err := tx.db.Exec("UPDATE system.engines SET lifecycle_state = 'deleting' WHERE id = ?", engine.ID).Error; err != nil {
+				return err
+			}
+			_, err := tx.settleFulfillment(ctx, newRequest(), true, verified)
+			return err
+		})
+		if !errors.Is(err, commonapi.ErrForbidden) {
+			t.Fatalf("inactive engine accepted: %v", err)
+		}
+	})
+	t.Run("revocation committed before a waiting acceptance wins", func(t *testing.T) {
+		r := newRequest()
+		operator, expires := newOperator(t, time.Hour)
+		r.Operator = operator
+		delegation := seedDelegation(t, operator.MembershipID, expires)
+		writer := db.Begin()
+		if writer.Error != nil {
+			t.Fatal(writer.Error)
+		}
+		defer writer.Rollback()
+		writerRepo := NewRepository(writer)
+		now, err := writerRepo.wallClock(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Scope storage probe only, not a production API/Permission test. The
+		// uncommitted revocation makes acceptance wait on the delegation row.
+		if err := writerRepo.revoke(ctx, delegation, delegation.Version, user.ID, "Concurrent fixture revocation", now); err != nil {
+			t.Fatal(err)
+		}
+		bounded, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		started, done := make(chan int, 1), make(chan error, 1)
+		go func() {
+			done <- repo.transaction(bounded, func(tx *Repository) error {
+				var pid int
+				if err := tx.db.Raw("SELECT pg_backend_pid()").Scan(&pid).Error; err != nil {
+					return err
+				}
+				started <- pid
+				_, err := tx.settleFulfillment(bounded, r, true, verified)
+				return err
+			})
+		}()
+		var pid int
+		select {
+		case pid = <-started:
+		case err := <-done:
+			t.Fatalf("acceptance did not start: %v", err)
+		case <-bounded.Done():
+			t.Fatal(bounded.Err())
+		}
+		blocked := false
+		deadline := time.Now().Add(2 * time.Second)
+		for time.Now().Before(deadline) {
+			if err := db.Raw("SELECT EXISTS(SELECT 1 FROM pg_locks WHERE pid = ? AND NOT granted AND locktype IN ('transactionid', 'tuple'))", pid).Scan(&blocked).Error; err != nil {
+				t.Fatal(err)
+			}
+			if blocked {
+				break
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		if !blocked {
+			t.Fatal("acceptance did not wait for the uncommitted delegation revocation")
+		}
+		if err := writer.Commit().Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := <-done; !errors.Is(err, commonapi.ErrForbidden) {
+			t.Fatalf("committed revocation lost to waiting acceptance: %v", err)
+		}
+		if row, err := readOnly(r); row != nil || !errors.Is(err, gorm.ErrRecordNotFound) {
+			t.Fatalf("revocation-first race persisted acceptance: %+v %v", row, err)
+		}
+		if row, err := settle(r, false); err != nil || row.Outcome != "closed" {
+			t.Fatalf("revocation-first race stranded closure: %+v %v", row, err)
+		}
+	})
+	t.Run("shared qualification locks allow independent targets and block authority writes", func(t *testing.T) {
 		if _, _, _, err := identity.LockUserAuthorizationSource(ctx, user.ID, member.ID, tenant.ID); !errors.Is(err, commonapi.ErrBadRequest) {
 			t.Fatalf("qualification lock outside transaction: %v", err)
+		}
+		if _, err := repo.lockManagementScope(ctx, tenant.ID, int64(engine.ID), member.ID); !errors.Is(err, errFulfillmentBinding) {
+			t.Fatalf("management scope lock outside transaction: %v", err)
 		}
 		r := newRequest()
 		r.Path = engineplugin.TabularItemPath(engine.ID, "schema", "public", uuid.NewString())
@@ -357,19 +551,30 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 			"UPDATE system.principals SET authorization_version = authorization_version + 1 WHERE id = ?",
 			"UPDATE system.tenant_memberships SET expires_at = expires_at WHERE id = ?",
 			"UPDATE system.tenants SET name = name WHERE id = ?",
+			"UPDATE system.engines SET lifecycle_state = 'deleting' WHERE id = ?",
+			"UPDATE system.engine_access_delegations SET status = 'revoked', version = version + 1, revoked_by_principal_id = ?, " +
+				"revoked_at = clock_timestamp(), revoked_reason = 'Fixture revocation' WHERE id = ?",
 		} {
 			id := user.ID
 			if strings.Contains(statement, "tenant_memberships") {
 				id = member.ID
 			} else if strings.Contains(statement, "system.tenants") {
 				id = tenant.ID
+			} else if strings.Contains(statement, "system.engines") {
+				id = int64(engine.ID)
+			} else if strings.Contains(statement, "engine_access_delegations") {
+				id = baseDelegation.ID
+			}
+			args := []any{id}
+			if strings.Contains(statement, "engine_access_delegations") {
+				args = []any{user.ID, id}
 			}
 			var lockError interface{ SQLState() string }
 			err := db.Transaction(func(writer *gorm.DB) error {
 				if err := writer.Exec("SET LOCAL lock_timeout = '100ms'").Error; err != nil {
 					return err
 				}
-				if err := writer.Exec(statement, id).Error; err != nil {
+				if err := writer.Exec(statement, args...).Error; err != nil {
 					return err
 				}
 				return errors.New("qualification write unexpectedly passed held identity locks")

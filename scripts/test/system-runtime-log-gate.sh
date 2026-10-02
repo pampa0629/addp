@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ADDP_T2_OWNED_SERVICES=minio,runtime-log-store-init,loki,runtime-log-api,alloy,runtime-log-pruner
 # ADDP_T2_COMPOSE_FILE=scripts/test/docker-compose.system-runtime-log-t2.yml
-# ADDP_T2_INPUT_FILES=scripts/infra/Dockerfile.minio scripts/infra/Dockerfile.runtime-log scripts/infra/runtime-logs.yml scripts/infra/loki.yml scripts/infra/runtime-logs.alloy scripts/infra/runtime-log-api.conf.template scripts/infra/init-runtime-log-store.sh common/go.mod common/go.sum common/runtimelog/capture.go common/runtimelog/capture_test.go common/cmd/runtime-log/main.go common/cmd/runtime-log/main_test.go
+# ADDP_T2_INPUT_FILES=scripts/infra/Dockerfile.minio scripts/infra/Dockerfile.runtime-log scripts/infra/runtime-logs.yml scripts/infra/loki.yml scripts/infra/runtime-logs.alloy scripts/infra/runtime-log-api.conf.template scripts/infra/init-runtime-log-store.sh common/ scripts/test/runtime-log-observer-fixture.py
 # Own disposable Compose startup, source files and teardown.
 set -euo pipefail
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
@@ -16,6 +16,7 @@ mkdir -p "$LOKI_TEST_SOURCE"
 compose(){ docker compose --env-file /dev/null -p "$COMPOSE_PROJECT" -f "$COMPOSE_FILE" "$@"; }
 cleanup(){
  local result=$?
+ echo "Runtime log T2: cleanup after status $result"
  trap - EXIT INT TERM
  set +e
  if [ "$result" -ne 0 ];then compose logs --no-color >"$WORK_DIR/container.log" 2>&1; fi
@@ -32,7 +33,7 @@ cleanup(){
    python3 - "$WORK_DIR" <<'PYERROR'
 from pathlib import Path
 import os,sys
-for name in ['build.log','start.log','restart.log','producer.log','container.log','cleanup.log','outage.log']:
+for name in ['build.log','start.log','restart.log','producer.log','container.log','cleanup.log','outage.log','observer.log','observer-fixture.log']:
  p=Path(sys.argv[1])/name
  if not p.exists():continue
  text=p.read_text(errors='replace')[-4000:]
@@ -50,8 +51,14 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 echo "Runtime log T2: build owned components"
 compose build minio runtime-log-store-init runtime-log-pruner >"$WORK_DIR/build.log" 2>&1 || exit 1
+echo "Runtime log T2: owned image build passed"
 compose up -d --wait --wait-timeout 180 minio loki runtime-log-api alloy runtime-log-pruner >"$WORK_DIR/start.log" 2>&1 || exit 1
 export LOKI_TEST_URL="http://$(compose port runtime-log-api 3100)"
+export LOKI_TEST_PROJECT="$COMPOSE_PROJECT" LOKI_TEST_COMPOSE="$COMPOSE_FILE"
+observe_once(){
+ python3 "$ROOT_DIR/scripts/test/runtime-log-observer-fixture.py" "$WORK_DIR" >>"$WORK_DIR/observer.log" 2>&1
+}
+observe_once
 compose run --rm --no-deps runtime-log-pruner launch --module manager --role backend -- sh -c 'printf "{\"level\":\"error\",\"msg\":\"runtime-t2-first password=sample-secret\"}\n"; printf "plain stderr\n" >&2; sleep 2' >"$WORK_DIR/producer.log" 2>&1 || exit 1
 python3 "$ROOT_DIR/scripts/test/runtime-log-probe.py" "$LOKI_TEST_SOURCE" first
 compose up -d --force-recreate --wait --wait-timeout 90 loki runtime-log-api alloy >"$WORK_DIR/restart.log" 2>&1 || exit 1
@@ -64,7 +71,19 @@ python3 "$ROOT_DIR/scripts/test/runtime-log-probe.py" "$LOKI_TEST_SOURCE" retry-
 compose stop runtime-log-api >"$WORK_DIR/outage.log" 2>&1 || exit 1
 compose run --rm --no-deps runtime-log-pruner launch --module manager --role backend -- sh -c 'printf "runtime-t2-outage\n"; sleep 2' >"$WORK_DIR/producer.log" 2>&1 || exit 1
 python3 "$ROOT_DIR/scripts/test/runtime-log-probe.py" "$LOKI_TEST_SOURCE" retry-observed "$(cat "$WORK_DIR/retries")"
+observe_once
 compose up -d --wait --wait-timeout 60 runtime-log-api >>"$WORK_DIR/outage.log" 2>&1 || exit 1
 export LOKI_TEST_URL="http://$(compose port runtime-log-api 3100)"
 python3 "$ROOT_DIR/scripts/test/runtime-log-probe.py" "$LOKI_TEST_SOURCE" outage-recovered
+observe_once
+python3 - "$WORK_DIR" <<'PYOBS'
+from pathlib import Path
+import json,sys
+observations=[json.loads(p.read_text()) for p in Path(sys.argv[1]).glob('observation-*.json')]
+assert len(observations)==3, len(observations)
+assert sum(bool(o['api_ready'] and o['probe_delivered']) for o in observations)==2, observations
+assert sum(not o['api_ready'] and not o['probe_delivered'] for o in observations)==1, observations
+assert len({o['boot_id'] for o in observations})==3
+print('Real observer OAuth, source counters, delivery failure and recovery passed')
+PYOBS
 echo "Runtime log identity, authorization, collection, persistence and old-instance isolation passed"

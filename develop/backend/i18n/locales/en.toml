@@ -254,3 +254,9 @@ other = "Failed to read or update query policy"
 
 [develop.query_policy.conflict]
 other = "Query policy changed; reload before saving"
+
+[develop.execution.read_failed]
+other = "Failed to read execution records"
+
+[develop.execution.not_found]
+other = "Execution not found or not visible"

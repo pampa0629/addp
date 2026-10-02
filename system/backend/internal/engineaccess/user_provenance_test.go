@@ -9,6 +9,7 @@ import (
 
 	commonapi "github.com/addp/common/api"
 	"github.com/addp/system/internal/iam"
+	"github.com/addp/system/internal/models"
 )
 
 func TestUserProvenanceIdentityPredicate(t *testing.T) {
@@ -72,5 +73,51 @@ func TestUserProvenanceBindingPreservesBigintAndHasNoCredential(t *testing.T) {
 		if strings.Contains(string(encoded), forbidden) {
 			t.Fatalf("provenance copied credential or authority snapshot: %s", encoded)
 		}
+	}
+}
+
+func TestManagementScopePredicate(t *testing.T) {
+	now := time.Now().UTC()
+	valid := func() *lockedManagementScope {
+		tenantID := uint(9)
+		return &lockedManagementScope{tenantID: 9, engineID: 10, membershipID: 8,
+			engine: &models.Engine{ID: 10, TenantID: &tenantID, LifecycleState: models.EngineLifecycleActive},
+			delegation: &Delegation{ID: 11, TenantID: 9, EngineID: 10, TenantMembershipID: 8,
+				Status: "active", GrantedAt: now, ExpiresAt: now.Add(time.Minute)}}
+	}
+	if err := valid().check(now); err != nil {
+		t.Fatal(err)
+	}
+	for name, mutate := range map[string]func(*lockedManagementScope){
+		"invalid tenant":      func(s *lockedManagementScope) { s.tenantID = 0 },
+		"invalid engine":      func(s *lockedManagementScope) { s.engineID = 0 },
+		"invalid membership":  func(s *lockedManagementScope) { s.membershipID = 0 },
+		"missing engine":      func(s *lockedManagementScope) { s.engine = nil },
+		"missing tenant":      func(s *lockedManagementScope) { s.engine.TenantID = nil },
+		"other tenant engine": func(s *lockedManagementScope) { v := uint(12); s.engine.TenantID = &v },
+		"other engine":        func(s *lockedManagementScope) { s.engine.ID++ },
+		"deleting engine":     func(s *lockedManagementScope) { s.engine.LifecycleState = models.EngineLifecycleDeleting },
+		"missing delegation":  func(s *lockedManagementScope) { s.delegation = nil },
+		"invalid delegation":  func(s *lockedManagementScope) { s.delegation.ID = 0 },
+		"other tenant":        func(s *lockedManagementScope) { s.delegation.TenantID++ },
+		"other target":        func(s *lockedManagementScope) { s.delegation.EngineID++ },
+		"other membership":    func(s *lockedManagementScope) { s.delegation.TenantMembershipID++ },
+		"revoked":             func(s *lockedManagementScope) { s.delegation.Status = "revoked" },
+		"not yet effective":   func(s *lockedManagementScope) { s.delegation.GrantedAt = now.Add(time.Second) },
+		"deadline reached":    func(s *lockedManagementScope) { s.delegation.ExpiresAt = now },
+	} {
+		t.Run(name, func(t *testing.T) {
+			s := valid()
+			mutate(s)
+			if err := s.check(now); !errors.Is(err, commonapi.ErrForbidden) {
+				t.Fatalf("invalid management scope allowed: %+v error=%v", s, err)
+			}
+		})
+	}
+	if err := (*lockedManagementScope)(nil).check(now); !errors.Is(err, commonapi.ErrForbidden) {
+		t.Fatal("nil scope must fail closed")
+	}
+	if err := valid().check(now.Add(time.Minute)); !errors.Is(err, commonapi.ErrForbidden) {
+		t.Fatal("a row lock must not freeze delegation time validity")
 	}
 }

@@ -43,6 +43,10 @@ func RegisterIAMServiceRuntimeRoutes(
 	if err != nil {
 		return err
 	}
+	platformAuditCreate, err := middleware.NewIAMPermissionGuard("audit.event.create")
+	if err != nil {
+		return err
+	}
 	tenantAuditCreate, err := middleware.NewIAMPermissionGuard("audit.tenant_event.create")
 	if err != nil {
 		return err
@@ -112,6 +116,7 @@ func RegisterIAMServiceRuntimeRoutes(
 	runtimeRoutes.GET("/catalog-references/candidates", tenantContext, catalogReferenceCandidateRead, runtime.CatalogReferenceHandler.ListCandidates)
 	runtimeRoutes.POST("/security-access-actors/resolve", tenantContext, securityAccessActorRead, runtime.CatalogReferenceHandler.ResolveSecurityAccessActors)
 
+	api.POST("/platform/audit/events", runtime.Authentication, runtime.ServiceCredential, platformContext, platformAuditCreate, runtime.InternalAuditHandler.CreatePlatformService)
 	api.POST("/tenant/audit/events", runtime.Authentication, runtime.ServiceCredential, tenantContext, tenantAuditCreate, runtime.InternalAuditHandler.CreateService)
 	return nil
 }

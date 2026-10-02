@@ -18,6 +18,9 @@ Catalog 是企业资源目录的唯一事实源，负责稳定目录身份、来
 - 业务共享确认和源读取授权办理使用独立功能 Permission，首版仅通过角色显式分配，不默认授予内置管理员，不从编目权限、责任身份或引擎管理委派推导。Permission 与真实消费入口同时发布，不能先启用占位权限。
 - `POST /entries/:id/sharing_decisions` 已提供普通只读业务确认生产入口，须同时具备条目读取与 `catalog.sharing_decision.create`，并是当前业务负责人；本人或所在项目组受益可以显式确认。首版只支持 Meta 当前扫描的数据库 table，以实时祖先链和 System 引擎层级能力核对完整目标，不拆 `full_name`、不读取源数据。每次必须显式选择 `expiry_mode=at_time|until_revoked` 并填写用途：前者填写未来绝对到期时间（微秒精度，无统一天数上限），后者无到期日期；不默认永久、不使用日期哨兵。`sharing_decisions` 是不可修改的决定历史，不是 Grant 或受理回执；同参重试必须匹配模式及日期，恢复原记录。该 API 尚无前端入口，System 正式消费、受理与实际授权仍待贯通。
 - `lockCurrentSharingDecisionBasis` 只在 Catalog 本地事务中读取持久决定、按条目→当前来源→原责任关系锁定并核验当前依据；业务确认创建在提交前复用该核验。历史读取不调用它，普通名称／说明修改不使决定仅因聚合版本增加而失效；换源、原责任失效或同账号重新接任不能复活旧决定。它不核验 System 当前身份／功能权限／委派，不调用远端、不建立待核清、不构成受理依据或跨模块可信接口；后续办理消费者须补齐这些门禁后使用。
+- `prepareSharingFulfillment` 是内部事务登记原语：首次登记复用当前决定依据核验，从持久决定派生业务参数，并不可变绑定本次调用主体、原操作账号来源、批准要求版本和完整目标。同参重试返回原待核清记录；已核清记录不重新打开，不建立 System 结果副本。调用方须在事务提交后发送。当前没有生产办理消费者，该原语不证明输入可信或办理资格，不作为新的公开 API、Permission 或自动后台发送入口。
+- `reconcileSharingFulfillment` 仅消费已提交的原待核清记录，事务外先查询，明确未找到才关闭原请求；关闭可能返回已受理结果。完整绑定一致且结果为 accepted／closed 后，条目→待核清记录锁内填写一次本地数据库核清时间。错误或未知结果保留保护，历史恢复不要求原责任／操作人／期限仍有效，不恢复新办理资格。当前只有内部接口和受控测试替身，没有可信 System 客户端、公开 API 或自动恢复调度；不能声称真实跨模块恢复已接通。
+- 待核清目标的有效叶子、正 int64 Engine ID、64 个 segment 和完整 JSON 16 KiB 边界只由 `common/authorization.EncodeSharingTarget` 校验，与 System 仲裁复用；首次登记前拒绝不满足该边界的目标，不先冻结条目。节点身份完整保留，无效 UTF-8 不允许被 JSON 替换字符静默修正。该纯值校验不代替真实来源、认证和办理资格，也不改变现有业务确认 API。
 - 跨模块只走公开 API 和 Tenant Service Access Token，不跨 Schema 查询。
 - `/entries` 的业务域上下文用 `catalog.entry.read` 动态发现 Standard Domain 的名称、编码、定义和层级，仅投影本次响应；独立前端业务域页已删除，Standard / Model 专业详情仍由 owner 对当前 User Token 判权，不能以 Catalog 运行身份代查。
 - 除 System 注册和本模块必需基础设施外，任何业务模块不可达都不能阻止进程启动；Meta / Model / Standard / Service / Develop 同步失败只产生滞后并后台重试，各 owner 使用独立 checkpoint。

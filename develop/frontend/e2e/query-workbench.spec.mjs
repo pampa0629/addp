@@ -306,6 +306,21 @@ test('defines a query parameter, inserts its reference, and submits an execution
   await expect(page.getByText('Ada', { exact: true })).toBeVisible()
 })
 
+test('clears cached professional results when execution access is revoked', async ({ page }) => {
+  await installMockBackend(page, { resultKind: 'table' })
+  let revoked = false
+  await page.route(`**/api/v1/develop/executions/${EXECUTION_ID}`, route => {
+    if (revoked) return route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: '执行记录不可见', error_code: 'execution_not_found' }) })
+    return fulfillJSON(route, { ...executionResult('table'), task_type: 'query', execution_config: { inputs: { private_parameter: 'private-result-sentinel' } } })
+  })
+  await page.goto(`/executions/${EXECUTION_ID}?tab=inputs`)
+  await expect(page.getByText('private-result-sentinel', { exact: false })).toBeVisible()
+  revoked = true
+  await page.getByRole('button', { name: '刷新', exact: true }).click()
+  await expect(page.getByText('private-result-sentinel', { exact: false })).toHaveCount(0)
+  await expect(page.getByText('Ada', { exact: true })).toHaveCount(0)
+})
+
 async function installMockBackend(page, {
   resultKind,
   engines = [ENGINE],

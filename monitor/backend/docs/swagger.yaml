@@ -15,6 +15,23 @@ definitions:
       status:
         type: string
     type: object
+  execution.Event:
+    properties:
+      attempt:
+        type: integer
+      counters:
+        $ref: '#/definitions/models.JSONMap'
+      execution_id:
+        type: string
+      id:
+        type: integer
+      kind:
+        type: string
+      occurred_at:
+        type: string
+      step_id:
+        type: string
+    type: object
   github_com_addp_monitor_internal_models.AlertIncident:
     properties:
       acknowledged_at:
@@ -113,6 +130,38 @@ definitions:
       updated_at:
         type: string
     type: object
+  github_com_addp_monitor_internal_models.LogPipelineNode:
+    properties:
+      node:
+        type: string
+      observation:
+        $ref: '#/definitions/logpipeline.Observation'
+      received_at:
+        type: string
+      registry_valid:
+        type: boolean
+      started_at:
+        type: string
+    type: object
+  github_com_addp_monitor_internal_models.LogPipelinePolicy:
+    properties:
+      capacity_percent:
+        type: integer
+      delay_ms:
+        type: integer
+      failure_samples:
+        type: integer
+      recovery_percent:
+        type: integer
+      recovery_samples:
+        type: integer
+      stale_seconds:
+        type: integer
+      updated_at:
+        type: string
+      version:
+        type: integer
+    type: object
   github_com_addp_monitor_internal_models.NotificationRoute:
     properties:
       alert_rule_id:
@@ -126,6 +175,87 @@ definitions:
       id:
         type: integer
       tenant_id:
+        type: integer
+    type: object
+  github_com_addp_monitor_internal_models.PlatformLogDelivery:
+    properties:
+      attempt_count:
+        type: integer
+      channel:
+        type: string
+      created_at:
+        type: string
+      delivered_at:
+        type: string
+      destination_id:
+        type: integer
+      event_id:
+        type: string
+      id:
+        type: string
+      last_error:
+        type: string
+      next_attempt_at:
+        type: string
+      status:
+        type: string
+    type: object
+  github_com_addp_monitor_internal_models.PlatformLogDestination:
+    properties:
+      channel:
+        type: string
+      created_at:
+        type: string
+      enabled:
+        type: boolean
+      event_types:
+        items:
+          type: string
+        type: array
+      id:
+        type: integer
+      name:
+        type: string
+      recipients:
+        items:
+          type: string
+        type: array
+      secret_configured:
+        type: boolean
+      updated_at:
+        type: string
+      url:
+        type: string
+      version:
+        type: integer
+    type: object
+  github_com_addp_monitor_internal_models.PlatformLogIncident:
+    properties:
+      acknowledged_at:
+        type: string
+      acknowledged_by:
+        type: integer
+      id:
+        type: integer
+      instance_id:
+        type: string
+      last_observed_at:
+        type: string
+      node:
+        type: string
+      opened_at:
+        type: string
+      resolved_at:
+        type: string
+      severity:
+        type: string
+      signal:
+        type: string
+      status:
+        type: string
+      suppressed_until:
+        type: string
+      version:
         type: integer
     type: object
   github_com_addp_monitor_internal_models.WebhookDelivery:
@@ -426,6 +556,61 @@ definitions:
         type: integer
       total_pages:
         type: integer
+    type: object
+  github_com_addp_monitor_internal_service.LogDeliveryList:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/github_com_addp_monitor_internal_models.PlatformLogDelivery'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+  github_com_addp_monitor_internal_service.LogDestinationInput:
+    properties:
+      channel:
+        type: string
+      enabled:
+        type: boolean
+      event_types:
+        items:
+          type: string
+        type: array
+      name:
+        type: string
+      recipients:
+        items:
+          type: string
+        type: array
+      url:
+        type: string
+      version:
+        type: integer
+    required:
+    - channel
+    - event_types
+    - name
+    type: object
+  github_com_addp_monitor_internal_service.LogPipelineSummary:
+    properties:
+      configured:
+        type: boolean
+      health:
+        type: string
+      incidents:
+        items:
+          $ref: '#/definitions/github_com_addp_monitor_internal_models.PlatformLogIncident'
+        type: array
+      node:
+        $ref: '#/definitions/github_com_addp_monitor_internal_models.LogPipelineNode'
+      notifications:
+        type: string
     type: object
   github_com_addp_monitor_internal_service.ProviderBackendHealthStatus:
     properties:
@@ -962,6 +1147,38 @@ definitions:
         example: 告警不存在或已经恢复
         type: string
     type: object
+  internal_api.ExecutionEventPage:
+    properties:
+      has_more:
+        type: boolean
+      items:
+        items:
+          $ref: '#/definitions/execution.Event'
+        type: array
+      next_cursor:
+        type: integer
+      retained_after:
+        type: string
+    type: object
+  internal_api.LogCredentialInput:
+    properties:
+      secret:
+        type: string
+      version:
+        type: integer
+    required:
+    - secret
+    - version
+    type: object
+  internal_api.LogIncidentAction:
+    properties:
+      suppressed_until:
+        type: string
+      version:
+        type: integer
+    required:
+    - version
+    type: object
   internal_api.SuppressAlertRequest:
     properties:
       suppressed_until:
@@ -1140,6 +1357,81 @@ definitions:
         type: string
     required:
     - credential
+    type: object
+  logpipeline.Collector:
+    properties:
+      dropped:
+        type: integer
+      retries:
+        type: integer
+      sent:
+        type: integer
+      started_at:
+        type: number
+      valid:
+        type: boolean
+    type: object
+  logpipeline.Observation:
+    properties:
+      api_ready:
+        type: boolean
+      boot_id:
+        type: string
+      collector:
+        $ref: '#/definitions/logpipeline.Collector'
+      housekeeping_at:
+        type: string
+      housekeeping_valid:
+        type: boolean
+      node:
+        type: string
+      probe_delay_ms:
+        type: integer
+      probe_delivered:
+        type: boolean
+      quota_exhausted:
+        type: boolean
+      receivers:
+        items:
+          $ref: '#/definitions/logpipeline.Receiver'
+        type: array
+      sampled_at:
+        type: string
+      schema:
+        type: string
+      sequence:
+        type: integer
+      source_bytes:
+        type: integer
+      source_files_early_cleaned:
+        type: integer
+      source_limit_bytes:
+        type: integer
+      sources_valid:
+        type: boolean
+    type: object
+  logpipeline.Receiver:
+    properties:
+      dropped:
+        type: integer
+      instance_id:
+        type: string
+      module:
+        type: string
+      observed_at:
+        type: string
+      parse_failures:
+        type: integer
+      received:
+        type: integer
+      source_files_early_cleaned:
+        type: integer
+      truncated:
+        type: integer
+      write_failures:
+        type: integer
+      written:
+        type: integer
     type: object
   models.JSONMap:
     additionalProperties: true
@@ -1830,6 +2122,55 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - monitor.execution.read
+  /executions/by-execution-id/{execution_id}/events:
+    get:
+      description: 复用执行读取范围，按 ID 游标读取最近 30 天安全事件；每页最多 100 条。| Uses execution read
+        scope; ID cursor over safe events retained for 30 days, up to 100 per page.
+      parameters:
+      - description: 执行 UUID | Execution UUID
+        in: path
+        name: execution_id
+        required: true
+        type: string
+      - description: 上一页末尾事件 ID | Last event ID from previous page
+        in: query
+        minimum: 0
+        name: after
+        type: integer
+      - default: 100
+        description: 每页事件数 | Page size
+        in: query
+        maximum: 100
+        minimum: 1
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.ExecutionEventPage'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 获取执行过程事件 | Get execution process events
+      tags:
+      - Monitor
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.execution.read
   /executions/by-execution-id/{execution_id}/tree:
     get:
       parameters:
@@ -1952,6 +2293,496 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - monitor.statistics.read
+  /platform/log-notification-deliveries:
+    get:
+      parameters:
+      - default: 1
+        description: 页码 | Page
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: 每页条数 | Page size
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_monitor_internal_service.LogDeliveryList'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 查询平台日志通知投递记录 | List platform log notification deliveries
+      tags:
+      - 平台日志链路 | Platform Log Pipeline
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.log_notification.read
+  /platform/log-notification-destinations:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_addp_monitor_internal_models.PlatformLogDestination'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 查询平台日志通知目标 | List platform log notification destinations
+      tags:
+      - 平台日志链路 | Platform Log Pipeline
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.log_notification.read
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 请求 | Request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_monitor_internal_service.LogDestinationInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_monitor_internal_models.PlatformLogDestination'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 创建平台日志通知目标 | Create platform log notification destination
+      tags:
+      - 平台日志链路 | Platform Log Pipeline
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.log_notification.update
+  /platform/log-notification-destinations/{id}:
+    delete:
+      consumes:
+      - application/json
+      parameters:
+      - description: 资源 ID | Resource ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 请求 | Request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.LogIncidentAction'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 删除平台日志通知目标 | Delete platform log notification destination
+      tags:
+      - 平台日志链路 | Platform Log Pipeline
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.log_notification.update
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 资源 ID | Resource ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 请求 | Request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_monitor_internal_service.LogDestinationInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_monitor_internal_models.PlatformLogDestination'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 更新平台日志通知目标 | Update platform log notification destination
+      tags:
+      - 平台日志链路 | Platform Log Pipeline
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.log_notification.update
+  /platform/log-notification-destinations/{id}/credential:
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 资源 ID | Resource ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 请求 | Request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.LogCredentialInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_monitor_internal_models.PlatformLogDestination'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 设置平台日志通知签名凭据 | Set platform log notification signing credential
+      tags:
+      - 平台日志链路 | Platform Log Pipeline
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.log_notification.update
+  /platform/log-notification-destinations/{id}/test:
+    post:
+      parameters:
+      - description: 资源 ID | Resource ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 测试平台日志通知目标 | Test platform log notification destination
+      tags:
+      - 平台日志链路 | Platform Log Pipeline
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.log_notification.update
+  /platform/log-observations:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 请求 | Request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/logpipeline.Observation'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 上报平台日志链路观测 | Report platform log observation
+      tags:
+      - 平台日志链路 | Platform Log Pipeline
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.log_observation.create
+  /platform/log-pipeline:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_monitor_internal_service.LogPipelineSummary'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 获取平台日志链路状态 | Get platform log pipeline state
+      tags:
+      - 平台日志链路 | Platform Log Pipeline
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.log_pipeline.read
+  /platform/log-pipeline/incidents/{id}/acknowledge:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 资源 ID | Resource ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 请求 | Request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.LogIncidentAction'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_monitor_internal_models.PlatformLogIncident'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 确认平台日志链路告警 | Acknowledge platform log incident
+      tags:
+      - 平台日志链路 | Platform Log Pipeline
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.log_pipeline.update
+  /platform/log-pipeline/incidents/{id}/suppress:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 资源 ID | Resource ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 请求 | Request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.LogIncidentAction'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_monitor_internal_models.PlatformLogIncident'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 限时抑制平台日志告警通知 | Suppress platform log notifications
+      tags:
+      - 平台日志链路 | Platform Log Pipeline
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.log_pipeline.update
+  /platform/log-pipeline/policy:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_monitor_internal_models.LogPipelinePolicy'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 获取平台日志链路策略 | Get platform log pipeline policy
+      tags:
+      - 平台日志链路 | Platform Log Pipeline
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.log_pipeline.read
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 请求 | Request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_monitor_internal_models.LogPipelinePolicy'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_monitor_internal_models.LogPipelinePolicy'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 更新平台日志链路策略 | Update platform log pipeline policy
+      tags:
+      - 平台日志链路 | Platform Log Pipeline
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - monitor.log_pipeline.update
   /providers/{module}/health:
     get:
       description: 从 System 读取指定 TaskProvider 及其当前有效 Backend 实例池，逐实例探测模块 /health/ready

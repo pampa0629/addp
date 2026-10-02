@@ -131,6 +131,10 @@ Grant 或 Resource Ticket 独立判断。
 
 Monitor 租户任务执行诊断遵循 5.1 的同步 BFF 规则：只能在已验证的当前 User 请求调用栈内转发 Bearer 给任务 Owner 的读取范围接口，不保存、缓存或后台使用该 Token。Owner 重新认证和裁决；读取范围不能由浏览器指定主体或 Tenant。Monitor 的功能 Permission 不替代 Owner 读取 Permission，历史 Execution Authorization 不授予当前诊断读取权。第一版只支持 Owner 明确的 Tenant 级任务历史和本人一次性 execution 范围；无可信资源归属时不推断组织范围权限。平台服务进程日志仍由 System 在 Platform Context 下授权，操作审计保持独立。
 
+Develop 专业执行结果读取与 Monitor 通用历史读取分开裁决。专业列表、详情、轮询、日志和基于原 execution 的导出只允许当前 User 读取本人执行；保存任务或任务定义已删除均不扩大该范围。当前 Tenant、Principal、Tenant Membership、授权版本必须与执行保存的来源事实完全一致，缺失来源事实或版本已变化时拒绝；历史 Execution Authorization 的到期时间不作为已完成结果的 TTL，也不能代替当前授权。当前 `develop.task.read` 是入口条件，query/workflow 专业结果还要求 `develop.data_read.execute`，script 要求 `develop.notebook.read`；无可信组织资源归属时不推断 Department/Project Group 范围。OAuth 和 Delegated User 仍须先经过现有 Client Scope / Tool 路由裁决，Service Principal 不进入专业结果接口。查询导出会话和文件下载必须回到原 execution 复核当前专业读取权；路径绑定 Browser Resource Access Ticket 只在既有下载路由验证后进入该复核，不能用于其他专业接口。Script 新执行从已验证的当前 AuthContext 保存同一来源事实，不补造旧执行主体。源数据和身份授权变化推进授权版本后，专业结果拒绝继续读取；安全历史仍按 Monitor 契约读取。暂不提供结果分享或跨主体重授权。
+
+TaskProvider 的 Service 状态读取使用独立契约：Develop 只允许已认证的 `addp-orchestrator` 读取 `source=orchestrator` 且关联同 Tenant Orchestrator 父 execution 的子执行。共享 TaskProvider 响应只投影状态、安全诊断和 `metadata.outputs` 中的稳定交接输出，不回传 execution_config、原始 metadata/result 或执行授权引用。输出引用不授予对应产物的数据读取权。
+
 SQL、Workflow、Jupyter 以及 Service 查询服务发布前的样例验收等用户计算入口，必须先在当前 User AuthContext 下完成两层判断：一是入口自身的功能 Permission，二是本次执行涉及资源与 `read | write | ddl | external_effect` 效果的 owner 决策。Service 样例验收使用 `service.definition.create + service.data_read.execute`，普通 SQL 的 Execution Authorization audience 为 `service`，联邦 SQL 的 audience 为 `duckdb`。已发布查询服务由 Service 根据不可变服务定义、数据源依赖快照、公开/私有访问策略和当前请求上下文作出 owner 决策。两类入口通过后都由 System 创建绑定唯一 execution 的 Execution Authorization。
 
 Execution Authorization 的来源固定为互斥的 `user` 或 `service_definition`。用户来源包含当前 Principal、Tenant Membership 和 `authorization_version`；其中由 Notebook Session 派生的用户来源还必须保存 `source_notebook_session_authorization_id`，不能退化为不受 Session 和 Token Family 生命周期约束的普通用户来源。服务定义来源包含 owner module、definition ID、definition version/hash 和签发 Service Principal。两者都必须包含 owner audience、execution ID、不可变操作范围、签发时间和到期时间；业务引擎任务逐 Source Engine 保存 Engine Access Scope。每个 scope 由唯一 `engine_id` 和该引擎允许的非空效果集合组成；禁止以独立 `engine_ids` 与 `effects` 集合表达授权，因为两者笛卡尔积会扩大权限。查询服务定义的 version/hash 必须覆盖发布时冻结的 Source Engine ID，Service 不得在请求期按当前 Engine 名称重新绑定数据源。服务定义来源第一阶段只允许 `addp-service` 为本 Tenant 的已发布查询服务签发逐引擎 `read` scope，System 不接受客户端自报其他 owner、效果或 audience。
@@ -271,6 +275,8 @@ System 在批准要求变更与新 Grant 写入时使用同一精确目标并发
 
 办理请求还必须不可变绑定原操作账号的 Principal、当前 Tenant Membership 和授权版本，机器调用主体不能替代该账号。此最小来源只由 owner 从已验证的 User AuthContext 派生并持久化；结构完整的身份字段本身不是可信来源证明，System 后续仍须通过 owner 的持久事实核验其来源，不能信任浏览器正文自报。首次受理的身份底线在 System 自身事务内检查当前 User、Membership、Tenant、授权版本和成员有效期；按 Principal → Membership → Tenant → 请求／目标的顺序锁定，等待及业务核验后重新检查数据库墙钟，不能借排队越过到期。身份只读核验使用共享行锁，既阻止状态和授权版本在受理提交前被修改，又与审计外键的引用检查兼容；不能在持有目标边界时反向获取身份写锁。关闭未受理请求和只读核清历史不要求原操作人仍有效，否则失效账号会使待核清依据永久无法解除。历史结果查询不恢复该账号的新办理资格。此身份底线不代替独立功能 Permission、有效目标管理委派或 Catalog 当前业务依据；这些消费者贯通前仍不发布受理或 Grant 接口，不保存 User Token 或可编辑 Role／责任副本。
 
+首次受理还须在同一 System 事务内核验原操作账号对目标引擎的当前有效管理委派。锁顺序为 Principal → Membership → Tenant → Engine → Delegation → 请求／精确目标；引擎与委派采用共享行锁，使同一引擎不同目标的核验可以并行，同时阻止受理提交前的引擎状态变更和委派撤销。委派仅匹配本租户、本引擎及该账号当前 Membership；等待和业务核验后按数据库墙钟再次检查生效及到期时间。资格失效拒绝新受理，不阻断原回执读取或未受理请求关闭。此目标管理范围检查不授予内容访问、不替代独立办理 Permission、接收主体核验或可信业务决定；实际 Grant 写入时仍须核验当前资格。
+
 重新部署 Catalog、恢复心跳、回放旧来源同步或只保留历史责任记录，都不得自动撤销此前明确完成的退出安排。重新启用业务确认要求必须是新的明确治理操作，使用当前版本并留审计。对账用于发现待修复情况，不取得放宽、重新接管或发放内容访问的权限。
 
 交接时必须核验承接账号及其独立批准功能和目标委派当前有效；不能只指定一个无人拥有的角色。此后承接资格失效，只拒绝无有效办理人的新授权，不把旧责任或模块状态当成自动补权依据。通过现有 IAM 角色分配和引擎管理委派入口显式修复，不能靠停用 Catalog 修复权限。
@@ -352,3 +358,9 @@ cd ../../common-python && .venv/bin/pytest -q
 ## 平台模块运行日志读取
 
 System 实例日志查询只接受 Platform Context 和 `platform.module_log.read`。该 Permission 默认归平台系统管理员，不由模块读取、操作审计或租户管理员权限推导；Runtime Principal 不获得正文读取能力。System 校验登记实例归属后生成受限查询，不接受客户端提供文件路径、原始 LogQL 或目标服务器。运行日志正文必须在生产与采集边界限制敏感内容；读取审计只包含操作者、实例、时间范围及结果，不包含正文或关键字。
+
+## 平台日志链路观测和告警
+
+Monitor 拥有 `monitor.log_pipeline.read/update`、`monitor.log_observation.create` 及 `monitor.log_notification.read/update`，只在 Platform Context 使用。平台系统管理员默认获得查看、处理、规则与通知目标管理能力；观测上报仅允许独立 `addp-log-observer` Service Principal，节点名必须匹配部署绑定，委托凭据和用户凭据不能上报。日志正文仍单独检查 `platform.module_log.read`。平台事件没有 Tenant ID 或任务身份，不进入租户接口；统一操作审计不保存观测载荷、正文或通知 secret。
+
+Monitor 平台告警读取与管理操作通过唯一 System 平台审计追加接口记录安全请求事实。`audit.event.create` 默认只授予 `platform.monitor_runtime`，服务主体与 Platform Context 从凭据派生，模块必须属于调用服务；被验证的用户身份只作为最小操作来源记录，不覆盖审计的服务主体。观测上报不逐次产生操作审计。

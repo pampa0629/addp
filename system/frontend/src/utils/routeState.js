@@ -82,7 +82,7 @@ export function resolveModulesRouteState(routeQuery = {}) {
     }
   }
   const state = resolveCanonicalTabRouteState({
-    allowedTabs: ['overview', 'instances'], defaultTab: 'overview',
+    allowedTabs: ['overview', 'instances', 'log-pipeline'], defaultTab: 'overview',
     routeQuery: Array.isArray(routeQuery.tab) ? { ...routeQuery, tab: '' } : routeQuery, preservedQuery
   })
   const queryKeys = Object.keys(state.query)

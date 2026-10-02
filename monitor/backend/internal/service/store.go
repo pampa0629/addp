@@ -20,7 +20,17 @@ func EnsureMonitorStore(db *gorm.DB) error {
 		&monitorModels.EmailDelivery{},
 		&monitorModels.RuntimePolicy{},
 		&monitorModels.SMTPRelay{},
+		&monitorModels.LogPipelinePolicy{}, &monitorModels.LogPipelineNode{}, &monitorModels.LogObserverBoot{},
+		&monitorModels.PlatformLogIncident{}, &monitorModels.PlatformLogEvent{}, &monitorModels.PlatformLogDestination{}, &monitorModels.PlatformLogDelivery{},
 	); err != nil {
+		return err
+	}
+	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS uq_monitor_platform_log_active
+ ON monitor.platform_log_incidents(node, signal) WHERE status IN ('open','acknowledged')`).Error; err != nil {
+		return err
+	}
+	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_monitor_platform_log_due
+ ON monitor.platform_log_deliveries(next_attempt_at, id) WHERE status IN ('pending','delivering')`).Error; err != nil {
 		return err
 	}
 	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS uq_monitor_active_alert_fingerprint

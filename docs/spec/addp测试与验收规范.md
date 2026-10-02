@@ -84,7 +84,7 @@ T2 使用真实但可丢弃的基础设施，并满足：
 
 - CI Job 使用独占 Service 和随 Job 销毁的数据库。
 - 托管外部服务的 owner gate 必须在脚本头声明 `# ADDP_T2_SERVICES=<service,...>`；模块门禁、CI 注册和后续新增数据库类型都消费该声明，不按数据库名称维护发现分支。
-- owner 自建的临时服务通过 `ADDP_T2_OWNED_SERVICES` 和 `ADDP_T2_COMPOSE_FILE` 登记，必须拥有独立 Compose 项目、回环随机端口以及退出清理和零残留检查。镜像使用固定 tag 与 digest；需要沿用仓库源码构建时，允许引用仓库内的单一 Dockerfile，但外部基础镜像须固定 tag 与 digest，Git 源码须在同一构建步骤中核对固定提交，构建上下文须位于仓库内，Dockerfile 与本地复制输入须登记到 `ADDP_T2_INPUT_FILES`。登记检查拒绝仓库外路径、构建参数覆盖和未固定源码；门禁必须实际构建，不接受开发环境已有同名镜像作为构建证据。
+- owner 自建的临时服务通过 `ADDP_T2_OWNED_SERVICES` 和 `ADDP_T2_COMPOSE_FILE` 登记，必须拥有独立 Compose 项目、回环随机端口以及退出清理和零残留检查。镜像使用固定 tag 与 digest；需要沿用仓库源码构建时，允许引用仓库内的单一 Dockerfile，但外部基础镜像须固定 tag 与 digest，Git 源码须在同一构建步骤中核对固定提交，构建上下文须位于仓库内，Dockerfile 与本地复制输入须登记到 `ADDP_T2_INPUT_FILES`；目录声明以 `/` 结尾，递归覆盖该仓库子树的新增、修改和删除，构建检查与变更选择共用同一覆盖判定。登记检查拒绝仓库外路径、构建参数覆盖和未固定源码；门禁必须实际构建，不接受开发环境已有同名镜像作为构建证据。
 - 必须由调用方注入连接条件的 owner gate 同时声明 `# ADDP_T2_REQUIRED_ENV=<name[|alternative],...>`，逗号表示“同时需要”，竖线表示等价的安全前置条件。`make test-module` 与 `make test-changed` 必须在执行任何 T0/T1 前一次性检查全部所需条件，缺失时失败关闭并给出 owner、变量及安全测试环境提示；`--dry-run` 仅展示计划，不要求真实连接条件。CI 登记检查必须确认对应 Job 显式提供每组条件中的至少一个变量。
 - 需要 owner 持有合法 License 或受控介质的门禁必须声明 `# ADDP_T2_OWNER_MANAGED=<runtime>`，只通过 owner 受控 Linux 主机上的 `make test-integration-owner-managed` 人工执行，不进入 GitHub Actions、普通 `make test-integration` 或 macOS 定时巡检。登记检查必须拒绝 workflow 调用这类目标及其聚合入口。脚本必须验证官方介质与 License SHA-256、拥有 disposable 容器全生命周期并验证零残留。
 - 本地共享 `addp-postgres` 只允许使用 `addp_test` 与 `addp_iam_test`，并且只能通过根 `Makefile` 或 `scripts/test/` 的标准入口操作。

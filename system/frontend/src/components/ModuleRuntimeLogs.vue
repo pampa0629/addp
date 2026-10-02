@@ -9,6 +9,7 @@
         <el-descriptions-item :label="t('system.module.instances.processStartedAt')">{{ date(instance.process_started_at) }}</el-descriptions-item>
         <el-descriptions-item :label="t('system.module.instances.offlineDeterminedAt')">{{ date(instance.stopped_at) }}</el-descriptions-item>
       </el-descriptions>
+      <ModuleLogPipeline v-if="modelValue && authStore.hasPermission('monitor.log_pipeline.read')" compact :instance="instance" />
       <p v-if="instance.stop_reason === 'lease_expired'" class="log-hint">{{ t('system.module.instances.leaseExpiredHint') }}</p>
       <div class="log-controls">
         <el-select v-model="period" :aria-label="t('system.module.query.timeRange')" @change="changed">
@@ -62,10 +63,13 @@ import { modulesAPI } from '../api/modules'
 import { resolveIAMModuleName } from '../utils/iamPresentation'
 import { isRuntimeInstanceOnline } from '../utils/moduleRegistry'
 import { MODULE_INSTANCE_PERIODS } from '../utils/routeState'
+import ModuleLogPipeline from './ModuleLogPipeline.vue'
+import { useAuthStore } from '../store/auth'
 import ModuleInstanceNode from './ModuleInstanceNode.vue'
 const props = defineProps({ modelValue: Boolean, instance: { type: Object, default: null } })
 const emit = defineEmits(['update:modelValue'])
 const { t, te } = useI18n()
+const authStore = useAuthStore()
 const levels = ['debug', 'info', 'warn', 'error', 'unknown']
 const period = ref('15m'), level = ref(''), keyword = ref(''), limit = ref(200), customRange = ref(null)
 const follow = ref(false), loading = ref(false), result = ref(null), error = ref('')

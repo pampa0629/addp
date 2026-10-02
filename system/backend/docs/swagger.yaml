@@ -6087,6 +6087,44 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - audit.event.read
+    post:
+      consumes:
+      - application/json
+      description: 平台身份来自服务凭据，且只能记录自身模块 | Platform identity derives from service credentials
+        and the event must belong to the caller module
+      parameters:
+      - description: 审计事件 | Audit event
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.AuditLogCreateRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            properties:
+              message:
+                type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 追加平台服务审计事件 | Append platform service audit event
+      tags:
+      - 平台审计 | Platform Audit
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - audit.event.create
   /platform/audit/events/{id}:
     get:
       parameters:

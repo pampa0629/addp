@@ -45,3 +45,19 @@ services:
       ADDP_RUNTIME_LOG_INSTANCE_BYTES: ${ADDP_RUNTIME_LOG_INSTANCE_BYTES:-1073741824}
       ADDP_RUNTIME_LOG_NODE_BYTES: ${ADDP_RUNTIME_LOG_NODE_BYTES:-10737418240}
     restart: unless-stopped
+  runtime-log-observer:
+    build:
+      context: ../..
+      dockerfile: scripts/infra/Dockerfile.runtime-log
+    command: ["observe"]
+    environment:
+      ADDP_RUNTIME_LOG_ROOT: /var/log/addp
+      ADDP_HOST_NODE_NAME: ${ADDP_HOST_NODE_NAME:-}
+      ADDP_RUNTIME_LOG_NODE_BYTES: ${ADDP_RUNTIME_LOG_NODE_BYTES:-10737418240}
+      LOG_OBSERVER_SERVICE_CLIENT_SECRET: ${LOG_OBSERVER_SERVICE_CLIENT_SECRET:-}
+      SYSTEM_URL: ${LOG_OBSERVER_SYSTEM_URL:-http://host.docker.internal:8180}
+      MONITOR_URL: ${LOG_OBSERVER_MONITOR_URL:-http://host.docker.internal:8100}
+      ALLOY_URL: http://alloy:12345
+      LOKI_URL: http://runtime-log-api:3100
+      LOKI_READ_TOKEN: ${LOKI_READ_TOKEN:?runtime log read token required}
+    restart: unless-stopped

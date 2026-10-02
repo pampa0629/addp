@@ -3202,6 +3202,64 @@ const docTemplate = `{
                 "x-addp-required-permissions": [
                     "audit.event.read"
                 ]
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "平台身份来自服务凭据，且只能记录自身模块 | Platform identity derives from service credentials and the event must belong to the caller module",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "平台审计 | Platform Audit"
+                ],
+                "summary": "追加平台服务审计事件 | Append platform service audit event",
+                "parameters": [
+                    {
+                        "description": "审计事件 | Audit event",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.AuditLogCreateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "message": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "audit.event.create"
+                ]
             }
         },
         "/platform/audit/events/export": {

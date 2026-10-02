@@ -55,7 +55,7 @@ func NewExecutionHandler(devExecutor *service.DevExecutor, approvalService *serv
 // @Failure 404 {object} map[string]string
 // @Failure 503 {object} map[string]string
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["develop.task.execute","develop.data_read.execute"]
+// @x-addp-required-permissions ["develop.task.read","develop.task.execute","develop.data_read.execute"]
 // @Router /executions/{execution_id}/exports [post]
 func (h *ExecutionHandler) CreateQueryExport(c *gin.Context) {
 	if h == nil || h.queryExports == nil {
@@ -94,6 +94,7 @@ func (h *ExecutionHandler) CreateQueryExport(c *gin.Context) {
 
 // GetQueryExport 获取当前用户的查询导出会话。
 // @Summary 获取查询导出会话 | Get query export session
+// @Description 复核原查询 execution 的当前本人专业读取权。| Recheck current professional read access to the original own query execution.
 // @Tags Execution
 // @Produce json
 // @Param id path int true "导出会话 ID | Export session ID"
@@ -101,6 +102,7 @@ func (h *ExecutionHandler) CreateQueryExport(c *gin.Context) {
 // @Failure 404 {object} map[string]string
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["develop.task.read"]
+// @x-addp-conditional-permissions ["develop.data_read.execute"]
 // @Router /exports/{id} [get]
 func (h *ExecutionHandler) GetQueryExport(c *gin.Context) {
 	id, ok := queryExportSessionID(c)
@@ -117,6 +119,7 @@ func (h *ExecutionHandler) GetQueryExport(c *gin.Context) {
 
 // DownloadQueryExport 下载当前用户已完成的查询导出文件。
 // @Summary 下载查询导出文件 | Download query export file
+// @Description 路径绑定 Resource Ticket 验证后，仍复核原查询 execution 的当前本人专业读取权。| After route-bound Resource Ticket validation, recheck current professional read access to the original own query execution.
 // @Tags Execution
 // @Produce octet-stream
 // @Param id path int true "导出会话 ID | Export session ID"
@@ -124,7 +127,7 @@ func (h *ExecutionHandler) GetQueryExport(c *gin.Context) {
 // @Failure 404 {object} map[string]string
 // @Failure 409 {object} map[string]string
 // @x-addp-auth-mode "resource_ticket"
-// @x-addp-required-permissions ["develop.task.read"]
+// @x-addp-required-permissions ["develop.task.read","develop.data_read.execute"]
 // @Router /exports/{id}/file [get]
 func (h *ExecutionHandler) DownloadQueryExport(c *gin.Context) {
 	id, ok := queryExportSessionID(c)
@@ -407,6 +410,7 @@ func writeToolApprovalError(c *gin.Context, err error) {
 
 // GetExecution 获取执行详情
 // @Summary 获取执行详情 | Get execution details
+// @Description 专业读取仅本人执行，当前租户成员身份和授权版本须匹配；query/workflow 要求 data_read.execute，script 要求 notebook.read。| Professional reads require own execution, matching current membership and authorization version; query/workflow require data_read.execute and script require notebook.read.
 // @Tags Execution
 // @Produce json
 // @Param execution_id path string true "执行ID（UUID）| Execution ID (UUID)"
@@ -414,12 +418,18 @@ func writeToolApprovalError(c *gin.Context, err error) {
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["develop.task.read"]
 // @Router /executions/{execution_id} [get]
+// @Failure 403 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @x-addp-conditional-permissions ["develop.data_read.execute","develop.notebook.read"]
 func (h *ExecutionHandler) GetExecution(c *gin.Context) {
 	h.getExecution(c, tenantIDValue(c))
 }
 
 // ProviderGetExecution 返回 TaskProvider 内部调用的执行状态。
 // @Summary 获取 TaskProvider 执行状态 | Get TaskProvider execution status
+// @Description 仅 Orchestrator Service 可读取同租户、来源为 orchestrator 且父执行属于 Orchestrator 的子执行；只返回安全状态和稳定 outputs。| Orchestrator Service only; read same-tenant orchestrator-origin child executions with an Orchestrator parent; return safe status and stable outputs only.
+// @Failure 403 {object} map[string]string
+// @Failure 404 {object} map[string]string
 // @Tags Execution
 // @Produce json
 // @Param execution_id path string true "执行ID（UUID）| Execution ID (UUID)"
@@ -429,9 +439,14 @@ func (h *ExecutionHandler) GetExecution(c *gin.Context) {
 // @x-addp-required-permissions ["develop.task_provider.read"]
 // @Router /task-provider/executions/{execution_id} [get]
 func (h *ExecutionHandler) ProviderGetExecution(c *gin.Context) {
-	execution, err := h.devExecutor.GetTaskProviderExecution(c.Param("execution_id"), tenantIDValue(c))
+	facts, ok := commonAuth.AuthContextFromGin(c)
+	if !ok || facts.Principal.Type != "service_principal" || facts.Client.ClientID == nil || *facts.Client.ClientID != "addp-orchestrator" {
+		c.JSON(http.StatusForbidden, gin.H{"error": commoni18n.T(c, commoni18n.MsgForbidden), "error_code": "permission_denied"})
+		return
+	}
+	execution, err := h.devExecutor.GetTaskProviderExecution(c.Request.Context(), c.Param("execution_id"), tenantIDValue(c))
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, developi18n.MsgExecutionNotFound), "error_code": "execution_not_found"})
 		return
 	}
 	c.JSON(http.StatusOK, taskprovider.NewExecutionStatusResponse(execution))
@@ -440,9 +455,9 @@ func (h *ExecutionHandler) ProviderGetExecution(c *gin.Context) {
 func (h *ExecutionHandler) getExecution(c *gin.Context, tenantID uint) {
 	executionID := c.Param("execution_id")
 
-	execution, err := h.devExecutor.GetExecution(executionID, tenantID)
+	execution, err := h.devExecutor.GetExecution(c.Request.Context(), executionID, tenantID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, developi18n.MsgExecutionNotFound), "error_code": "execution_not_found"})
 		return
 	}
 
@@ -451,6 +466,7 @@ func (h *ExecutionHandler) getExecution(c *gin.Context, tenantID uint) {
 
 // ListExecutions 查询执行列表
 // @Summary 查询执行列表 | List executions
+// @Description 专业读取仅本人执行，当前租户成员身份和授权版本须匹配；query/workflow 要求 data_read.execute，script 要求 notebook.read。| Professional reads require own execution, matching current membership and authorization version; query/workflow require data_read.execute and script require notebook.read.
 // @Tags Execution
 // @Produce json
 // @Param page query int false "页码 | Page number"
@@ -465,18 +481,21 @@ func (h *ExecutionHandler) getExecution(c *gin.Context, tenantID uint) {
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["develop.task.read"]
 // @Router /executions [get]
+// @Failure 403 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @x-addp-conditional-permissions ["develop.data_read.execute","develop.notebook.read"]
 func (h *ExecutionHandler) ListExecutions(c *gin.Context) {
-	var req models.ListExecutionsRequest
+	req := models.ListExecutionsRequest{Page: 1, PageSize: 20}
 	if err := c.ShouldBindQuery(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, commoni18n.MsgInvalidParams), "error_code": "invalid_params"})
 		return
 	}
 
 	tenantID := tenantIDValue(c)
 
-	executions, total, err := h.devExecutor.ListExecutions(&req, tenantID)
+	executions, total, err := h.devExecutor.ListExecutions(c.Request.Context(), &req, tenantID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.T(c, developi18n.MsgExecutionReadFailed), "error_code": "execution_read_failed"})
 		return
 	}
 
@@ -516,6 +535,7 @@ func writeExecutionAuthorizationError(c *gin.Context, err error) bool {
 
 // RetryExecution 重试执行
 // @Summary 重试执行 | Retry execution
+// @Description 必须先具有本人原执行的专业读取权，再以当前执行授权重试。| Requires professional read access to own original execution before retrying with current execution authorization.
 // @Tags Execution
 // @Param execution_id path string true "执行ID（UUID）| Execution ID (UUID)"
 // @Success 200 {object} map[string]string "重试已启动 | Retry started"
@@ -527,7 +547,7 @@ func (h *ExecutionHandler) RetryExecution(c *gin.Context) {
 	executionID := c.Param("execution_id")
 	tenantID := tenantIDValue(c)
 	userID := userIDValue(c)
-	taskType, err := h.devExecutor.GetExecutionTaskType(executionID, tenantID)
+	taskType, err := h.devExecutor.GetExecutionTaskType(c.Request.Context(), executionID, tenantID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
@@ -541,7 +561,7 @@ func (h *ExecutionHandler) RetryExecution(c *gin.Context) {
 		return
 	}
 
-	newExecutionID, err := h.devExecutor.RetryExecution(executionID, tenantID, userID, userAccessToken)
+	newExecutionID, err := h.devExecutor.RetryExecution(c.Request.Context(), executionID, tenantID, userID, userAccessToken)
 	if err != nil {
 		if writeExecutionAuthorizationError(c, err) {
 			return
@@ -572,6 +592,7 @@ func requireNotebookExecutionPermission(c *gin.Context, taskType string) bool {
 
 // GetExecutionStatistics 获取执行统计
 // @Summary 获取执行统计 | Get execution statistics
+// @Description 专业读取仅本人执行，当前租户成员身份和授权版本须匹配；query/workflow 要求 data_read.execute，script 要求 notebook.read。| Professional reads require own execution, matching current membership and authorization version; query/workflow require data_read.execute and script require notebook.read.
 // @Tags Execution
 // @Produce json
 // @Param source_task_id query string false "任务定义 ID | Source task ID"
@@ -581,6 +602,9 @@ func requireNotebookExecutionPermission(c *gin.Context, taskType string) bool {
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["develop.task.read"]
 // @Router /executions/statistics [get]
+// @Failure 403 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @x-addp-conditional-permissions ["develop.data_read.execute","develop.notebook.read"]
 func (h *ExecutionHandler) GetExecutionStatistics(c *gin.Context) {
 	tenantID := tenantIDValue(c)
 
@@ -588,9 +612,9 @@ func (h *ExecutionHandler) GetExecutionStatistics(c *gin.Context) {
 	startDate := c.Query("start_date")
 	endDate := c.Query("end_date")
 
-	stats, err := h.devExecutor.GetStatistics(tenantID, sourceTaskID, startDate, endDate)
+	stats, err := h.devExecutor.GetStatistics(c.Request.Context(), tenantID, sourceTaskID, startDate, endDate)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.T(c, developi18n.MsgExecutionReadFailed), "error_code": "execution_read_failed"})
 		return
 	}
 
@@ -599,6 +623,7 @@ func (h *ExecutionHandler) GetExecutionStatistics(c *gin.Context) {
 
 // GetExecutionLogs 获取执行日志（占位）
 // @Summary 获取执行日志 | Get execution logs
+// @Description 专业读取仅本人执行，当前租户成员身份和授权版本须匹配；query/workflow 要求 data_read.execute，script 要求 notebook.read。| Professional reads require own execution, matching current membership and authorization version; query/workflow require data_read.execute and script require notebook.read.
 // @Tags Execution
 // @Produce json
 // @Param execution_id path string true "执行ID（UUID）| Execution ID (UUID)"
@@ -606,8 +631,16 @@ func (h *ExecutionHandler) GetExecutionStatistics(c *gin.Context) {
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["develop.task.read"]
 // @Router /executions/{execution_id}/logs [get]
+// @Failure 403 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @x-addp-conditional-permissions ["develop.data_read.execute","develop.notebook.read"]
 func (h *ExecutionHandler) GetExecutionLogs(c *gin.Context) {
 	executionID := c.Param("execution_id")
+
+	if _, err := h.devExecutor.GetExecution(c.Request.Context(), executionID, tenantIDValue(c)); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, developi18n.MsgExecutionNotFound), "error_code": "execution_not_found"})
+		return
+	}
 
 	// 暂时返回占位响应
 	c.JSON(http.StatusOK, gin.H{

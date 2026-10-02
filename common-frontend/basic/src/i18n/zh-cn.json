@@ -156,6 +156,40 @@
       "edit": "编辑流程",
       "steps": "执行范围：全部 {count} 个步骤",
       "viewExecution": "查看本次执行"
+    },
+    "executionEvents": {
+      "title": "运行过程",
+      "retention": "过程事件保留 30 天，早期事件可能已过期。",
+      "unavailable": "过程事件暂不可读，请刷新重试。",
+      "unrecorded": "保留窗口内未记录过程事件。",
+      "time": "事件时间",
+      "attempt": "尝试次数",
+      "kind": "事件",
+      "counters": "计数汇总",
+      "truncated": "事件已达到采集或展示上限，当前过程记录不完整。",
+      "refresh": "刷新过程",
+      "more": "加载后续事件",
+      "kinds": {
+        "started": "开始执行",
+        "progress": "进度汇总",
+        "completed": "执行完成",
+        "failed": "执行失败",
+        "cancelled": "执行取消",
+        "timeout": "执行超时",
+        "truncated": "采集截断"
+      },
+      "fields": {
+        "progress": "进度",
+        "batch_index": "批次",
+        "batch_records": "批次记录数",
+        "records_read": "读取记录",
+        "records_written": "写入记录",
+        "bytes_read": "读取字节",
+        "bytes_written": "写入字节",
+        "items_scanned": "扫描条目",
+        "catalog_nodes_scanned": "扫描目录",
+        "fields_scanned": "扫描字段"
+      }
     }
   },
   "auth": {

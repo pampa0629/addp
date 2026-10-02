@@ -107,6 +107,11 @@ func main() {
 
 	runtimeContext, stopRuntime := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stopRuntime()
+	executionMaintenanceDone := make(chan struct{})
+	go func() {
+		defer close(executionMaintenanceDone)
+		service.RunExecutionEventMaintenance(runtimeContext, db, logger.L())
+	}()
 
 	// 在 goroutine 中启动服务器
 	go func() {
@@ -158,6 +163,7 @@ func main() {
 		<-registrationDone
 	}
 	<-cleanupDone
+	<-executionMaintenanceDone
 
 	// 关闭 HTTP 服务器，设置 5 秒超时
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

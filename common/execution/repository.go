@@ -22,6 +22,19 @@ func NewTaskExecutionRepository(db *gorm.DB) *TaskExecutionRepository {
 	return &TaskExecutionRepository{db: db}
 }
 
+// ForCurrentActor restricts every read, including list totals and statistics,
+// to immutable execution origin facts matched against the current identity.
+// Invalid or missing facts produce an empty scope, never an internal read.
+func (r *TaskExecutionRepository) ForCurrentActor(tenantID int, principalID, membershipID, version int64) *TaskExecutionRepository {
+	query := r.db
+	if tenantID <= 0 || principalID <= 0 || membershipID <= 0 || version <= 0 {
+		query = query.Where("1 = 0")
+	} else {
+		query = query.Where("tenant_id = ? AND triggered_by = ? AND actor_principal_id = ? AND actor_tenant_membership_id = ? AND issued_authorization_version = ?", tenantID, principalID, principalID, membershipID, version)
+	}
+	return NewTaskExecutionRepository(query)
+}
+
 // Create 创建执行记录
 func (r *TaskExecutionRepository) Create(ctx context.Context, exec *TaskExecution) error {
 	return r.db.WithContext(ctx).Create(exec).Error

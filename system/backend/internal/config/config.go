@@ -130,6 +130,7 @@ func Load() *Config {
 			"addp-model":        getEnv("MODEL_SERVICE_CLIENT_SECRET", ""),
 			"addp-ontology":     getEnv("ONTOLOGY_SERVICE_CLIENT_SECRET", ""),
 			"addp-model3d":      getEnv("MODEL3D_WORKFLOW_SERVICE_CLIENT_SECRET", ""),
+			"addp-log-observer": getEnv("LOG_OBSERVER_SERVICE_CLIENT_SECRET", ""),
 			"addp-monitor":      getEnv("MONITOR_SERVICE_CLIENT_SECRET", ""),
 			"addp-orchestrator": getEnv("ORCHESTRATOR_SERVICE_CLIENT_SECRET", ""),
 			"addp-portal":       getEnv("PORTAL_SERVICE_CLIENT_SECRET", ""),

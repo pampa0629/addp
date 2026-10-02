@@ -115,15 +115,18 @@ func main() {
 	webhookSender := service.NewHTTPWebhookSender(cfg.WebhookHTTPTimeout, cfg.WebhookAllowPrivate)
 	webhookService := service.NewWebhookService(db, cfg.EncryptionKey, cfg.WebhookAllowPrivate, cfg.ConsoleBaseURL, webhookSender)
 	var emailSender service.EmailSender
+	var platformMail service.EmailTransport
 	if cfg.EmailSMTPConfigured() {
-		emailSender, err = service.NewSMTPEmailSender(service.SMTPEmailSenderConfig{
+		smtpSender, smtpErr := service.NewSMTPEmailSender(service.SMTPEmailSenderConfig{
 			Host: cfg.EmailSMTPHost, Port: cfg.EmailSMTPPort, Username: cfg.EmailSMTPUsername,
 			Password: cfg.EmailSMTPPassword, TLSMode: cfg.EmailSMTPTLSMode,
 			FromAddress: cfg.EmailFromAddress, FromName: cfg.EmailFromName, Timeout: cfg.EmailSMTPTimeout,
 		})
-		if err != nil {
-			log.Fatalf("Failed to configure email sender: %v", err)
+		if smtpErr != nil {
+			log.Fatalf("Failed to configure email sender: %v", smtpErr)
 		}
+		emailSender = smtpSender
+		platformMail = smtpSender
 	}
 	emailService := service.NewEmailService(db, cfg.ConsoleBaseURL, emailSender)
 	notificationService := service.NewNotificationService(webhookService, emailService)
@@ -139,6 +142,14 @@ func main() {
 			RetryInitial: cfg.WebhookRetryInitial, RetryMax: cfg.WebhookRetryMax, EncryptionKey: cfg.EncryptionKey,
 		},
 	)
+
+	logNotifications := service.NewPlatformLogNotifications(db, cfg.EncryptionKey, cfg.WebhookAllowPrivate, webhookSender, platformMail, cfg.WebhookMaxAttempts, cfg.WebhookLeaseDuration, cfg.WebhookRetryInitial, cfg.WebhookRetryMax)
+	logPipeline := service.NewLogPipelineService(db, cfg.LogObserverNode, systemServiceClient, logNotifications)
+	if err := logPipeline.Initialize(runtimeContext, time.Now().UTC()); err != nil {
+		log.Fatalf("Failed to initialize platform log pipeline: %v", err)
+	}
+	go logPipeline.Run(runtimeContext)
+	go logNotifications.Run(runtimeContext)
 
 	// 设置路由
 	lifecycleController := modulelifecycle.NewBusiness("monitor", commonClient.ModuleRuntimeRoleBackend)
@@ -156,6 +167,7 @@ func main() {
 		redisClient,
 		systemServiceClient,
 		lifecycleController,
+		logPipeline, logNotifications,
 		runtimeHealthService,
 	)
 

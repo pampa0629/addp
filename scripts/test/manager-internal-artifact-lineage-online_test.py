@@ -1,3 +1,4 @@
+import copy
 import importlib.util
 import sys
 import tempfile
@@ -88,6 +89,11 @@ class FakeGatewayClient:
             )
         return result
 
+    def monitor_execution(self, task_type):
+        execution = self.lineage_execution(task_type)
+        execution["metadata"]["lineage_facts"]["operations"] = None
+        return execution
+
     def _request(self, method, path, body, headers):
         if path == "/api/v1/system/auth/context":
             return response(200, {
@@ -138,7 +144,7 @@ class FakeGatewayClient:
         if path == "/api/v1/manager/executions/manager-execution-1":
             return response(200, self.lineage_execution(SUITE.POINTCLOUD_TASK_TYPE))
         if path == "/api/v1/monitor/executions/by-execution-id/manager-execution-1":
-            return response(200, self.lineage_execution(SUITE.POINTCLOUD_TASK_TYPE))
+            return response(200, self.monitor_execution(SUITE.POINTCLOUD_TASK_TYPE))
         if path == "/api/v1/manager/point_cloud_copc?task_id=201&page=1&page_size=20":
             data = ([{"id": 301, "file_name": self.pointcloud_output_name}]
                     if self.pointcloud_result_exists else [])
@@ -182,7 +188,7 @@ class FakeGatewayClient:
         if path == "/api/v1/manager/executions/manager-execution-2":
             return response(200, self.lineage_execution(SUITE.PPTX_TASK_TYPE))
         if path == "/api/v1/monitor/executions/by-execution-id/manager-execution-2":
-            return response(200, self.lineage_execution(SUITE.PPTX_TASK_TYPE))
+            return response(200, self.monitor_execution(SUITE.PPTX_TASK_TYPE))
         if path == "/api/v1/manager/pptx_pdf/302/content":
             if self.pptx_result_exists:
                 if headers != {"Accept": "application/pdf", "Range": "bytes=0-63"}:
@@ -360,6 +366,54 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
         self.assertEqual(facts["schema_version"], SUITE.LINEAGE_SCHEMA)
         self.assertEqual(facts["inputs"][0]["port"], "source")
         self.assertEqual(facts["outputs"][0]["port"], "result")
+
+    def test_monitor_accepts_safe_projection_without_changing_owner_or_response(self) -> None:
+        owner = self.execution()["metadata"]["lineage_facts"]
+        owner["inputs"][0]["schema_snapshot"] = {"private_column": "private_type"}
+        execution = copy.deepcopy(self.execution())
+        facts = execution["metadata"]["lineage_facts"]
+        facts["operations"] = None
+        facts["inputs"][0]["locator"] = facts["inputs"][0]["locator"].replace(
+            "type=object&item_id=91", "item_id=91&type=object"
+        )
+        before = copy.deepcopy(execution)
+        SUITE.validate_monitor_lineage(execution, owner)
+        self.assertEqual(execution, before)
+        self.assertIn("schema_snapshot", owner["inputs"][0])
+
+    def test_monitor_rejects_private_payload_and_changed_resource_identity(self) -> None:
+        owner = self.execution()["metadata"]["lineage_facts"]
+        safe = self.execution()
+        safe["metadata"]["lineage_facts"]["operations"] = None
+        for field, value in {
+            "execution_config": {"query": "private SQL"},
+            "actor_principal_id": 51,
+            "execution_authorization_id": "private-reference",
+            "lease_token": "private-token",
+        }.items():
+            with self.subTest(field=field):
+                execution = copy.deepcopy(safe)
+                execution[field] = value
+                with self.assertRaisesRegex(SUITE.SuiteError, "private execution fields"):
+                    SUITE.validate_monitor_lineage(execution, owner)
+        for field in ("result", "outputs", "step_results"):
+            with self.subTest(metadata=field):
+                execution = copy.deepcopy(safe)
+                execution["metadata"][field] = {"private": "value"}
+                with self.assertRaisesRegex(SUITE.SuiteError, "private execution metadata"):
+                    SUITE.validate_monitor_lineage(execution, owner)
+        for field, value, reason in (
+            ("schema_snapshot", {"private_column": "type"}, "private lineage resource"),
+            ("item_id", 92, "differs from Owner"),
+            ("locator", owner["inputs"][0]["locator"] + "&token=private", "private context"),
+        ):
+            with self.subTest(resource=field):
+                execution = copy.deepcopy(safe)
+                execution["metadata"]["lineage_facts"]["inputs"][0][field] = value
+                with self.assertRaisesRegex(SUITE.SuiteError, reason):
+                    SUITE.validate_monitor_lineage(execution, owner)
+        with self.assertRaisesRegex(SUITE.SuiteError, "lineage operations"):
+            SUITE.validate_monitor_lineage(self.execution(), owner)
 
     def test_rejects_business_output_instead_of_manager_internal_artifact(self) -> None:
         with self.assertRaisesRegex(SUITE.SuiteError, "not the Manager infra COPC artifact"):

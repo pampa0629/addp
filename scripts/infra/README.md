@@ -881,10 +881,12 @@ Common PostgreSQL 门禁同时验证正式表结果的覆盖事务：重复覆�
 - `loki_data` 保存 WAL、索引缓存和 Compactor 状态；`alloy_data` 保存读取位置；MinIO 数据卷保存集中日志。普通应用停止、重启和 `infra/down.sh` 不删除这些卷。
 - 只在回环地址发布查询代理和 Alloy 健康端口；实际端口由 `ports.sh` 分配并由 `status.sh` 读取，Loki 本体没有宿主机端口。
 - `bash scripts/infra/status.sh` 分别报告组件健康，并运行一次从源文件到查询结果的独立探针。成功只证明当前节点这一条测试消息送达，不能证明历史日志完整。
-- 接收器的 `status.json` 提供接收、写入、解析失败、截断、写失败及丢弃计数；独立清理器的 `housekeeping-status.json` 提供清理结果。Alloy 的 `/-/ready` 和 `/metrics` 提供采集器健康及发送重试、丢弃指标。进程输出普通文本标为 `unknown`，stderr 不自动标为 ERROR。
+- 接收器的 `status.json` 提供接收、写入、解析失败、截断、写失败及丢弃计数；独立清理器的 `housekeeping-status.json` 提供清理结果；接收器与清理器另记录源文件提前清理数量，不把该风险直接当作 Loki 已丢失正文。Alloy 的 `/-/ready` 和 `/metrics` 提供采集器健康及发送重试、丢弃指标。进程输出普通文本标为 `unknown`，stderr 不自动标为 ERROR。
 
 节点源默认保留最长 48 小时，段/实例/节点数据额度默认 50 MiB/1 GiB/10 GiB。清理器每分钟检查关闭的分段，活动分段由锁保护；额度不足时丢弃新输出并计数。Loki 保留默认 7 天，Compactor 异步删除，不给 bucket 配置粗粒度生命周期过期。源文件、positions、探针结果都不是远端完整持久化回执。
 
 本地源码输出和 Docker 输出共用同一受控源目录。首版只部署一个应用节点；跨节点认证与 TLS 接入另行验收。日志属于可丢失的运维资料；没有自动备份和零丢失归档承诺。若需要灾备，必须协调备份 MinIO 日志 bucket 和 Loki WAL/Compactor 状态，不能只复制活动段文件或 Alloy positions。
 
 集成验证入口：`make test-system-runtime-log`。该入口创建自己的 disposable MinIO/Alloy/Loki，使用随机回环端口、临时凭据和源目录；退出时销毁自建容器、网络、数据卷并检查零残留，不接管开发 Infra。
+
+平台日志链路由独立 `runtime-log-observer` 每 30 秒观测并使用最小 Platform 服务凭据上报 Monitor；它不登记成业务模块。节点绑定、控制面地址、Secret 与通知配置见 [配置规范](../../docs/spec/addp配置介绍.md#平台日志链路观测与通知)。Monitor 持久化告警及通知，System 模块管理“日志链路”展示结果；Loki 不承担告警事实存储。`runtime-log observe --once` 运行单次真实采样并上报，失败返回非零，不是完整日志归档证明。T2 门禁同时验证实际观测器 OAuth 上报、日志接口中断及恢复，并清理其自建 HTTP 夹具。

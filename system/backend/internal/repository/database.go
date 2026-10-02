@@ -25,7 +25,7 @@ func InitDB(dbPath string) (*gorm.DB, error) {
 		host, port, user, password, dbname, commonConfig.GetTimezone())
 
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Info),
+		Logger: logger.Default.LogMode(logger.Warn),
 	})
 	if err != nil {
 		return nil, err

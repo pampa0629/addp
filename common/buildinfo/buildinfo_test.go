@@ -1,11 +1,58 @@
 package buildinfo
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"testing"
 	"time"
 )
+
+func TestWorkerRegistrationUsesProcessIdentity(t *testing.T) {
+	paths, err := filepath.Glob("../../*/backend/cmd/worker/main.go")
+	if err != nil || len(paths) == 0 {
+		t.Fatalf("worker entrypoints: %v", err)
+	}
+	for _, path := range paths {
+		file, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ast.Inspect(file, func(node ast.Node) bool {
+			literal, ok := node.(*ast.CompositeLit)
+			if !ok {
+				return true
+			}
+			typeName, ok := literal.Type.(*ast.SelectorExpr)
+			if !ok || typeName.Sel.Name != "ModuleRegistrationRequest" {
+				return true
+			}
+			for _, element := range literal.Elts {
+				field, ok := element.(*ast.KeyValueExpr)
+				if !ok {
+					continue
+				}
+				key, ok := field.Key.(*ast.Ident)
+				if !ok || key.Name != "InstanceID" {
+					continue
+				}
+				call, ok := field.Value.(*ast.CallExpr)
+				if !ok {
+					t.Errorf("%s: registry identity must consume the shared process identity, not an execution lease owner", path)
+					continue
+				}
+				function, ok := call.Fun.(*ast.SelectorExpr)
+				if !ok || function.Sel.Name != "ProcessInstanceID" || len(call.Args) != 0 {
+					t.Errorf("%s: unexpected registry identity source", path)
+				}
+			}
+			return true
+		})
+	}
+}
 
 func TestHealthIncludesStableBuildAndProcessIdentity(t *testing.T) {
 	originalBuildID, originalCommit := BuildID, GitCommit

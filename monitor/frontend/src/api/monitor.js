@@ -15,6 +15,10 @@ export function getExecutionByExecutionID(executionId) {
   return client.get(`/monitor/executions/by-execution-id/${executionId}`)
 }
 
+export function getExecutionEvents(executionId, params) {
+  return client.get(`/monitor/executions/by-execution-id/${executionId}/events`, { params })
+}
+
 // 获取执行记录树
 export function getExecutionTree(id) {
   return client.get(`/monitor/executions/${id}/tree`)

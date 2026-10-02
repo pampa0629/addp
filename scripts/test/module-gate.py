@@ -47,6 +47,17 @@ T2_REQUIRED_ENVIRONMENT_DECLARATION_PATTERN = re.compile(
 )
 
 
+def gate_input_covers(declarations, candidate: str) -> bool:
+    """Input paths ending in / declare one repository subtree, including deletions."""
+    for declaration in declarations:
+        path = declaration.rstrip("/")
+        if not path or path.startswith("/") or "\\" in path or any(part in {"", ".", ".."} for part in path.split("/")):
+            raise ModuleGateError("gate input must be a normalized repository-relative path")
+        if candidate == path or declaration.endswith("/") and candidate.startswith(path + "/"):
+            return True
+    return False
+
+
 def step_environment(step: Step, base: dict[str, str] | None = None) -> dict[str, str]:
     environment = dict(os.environ if base is None else base)
     for pattern in step.excluded_environment:

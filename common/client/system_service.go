@@ -223,6 +223,11 @@ func (c *SystemServiceClient) ListEngineRuntimeDescriptors(
 	}
 }
 
+// AppendPlatformAuditEvent records a trusted platform service operation without a Tenant identity.
+func (c *SystemServiceClient) AppendPlatformAuditEvent(ctx context.Context, request *models.AuditLogCreateRequest) error {
+	return c.doPlatformJSON(ctx, http.MethodPost, "/api/v1/system/platform/audit/events", request, nil)
+}
+
 func (c *SystemServiceClient) AppendTenantAuditEvent(ctx context.Context, request *models.AuditLogCreateRequest) error {
 	return c.doTenantJSON(ctx, http.MethodPost, "/api/v1/system/tenant/audit/events", request, nil)
 }

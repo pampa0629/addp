@@ -425,12 +425,16 @@ export function queryResultFromExecution(execution) {
     truncated: result.truncated === true,
     diagnostics: Array.isArray(result.diagnostics) ? result.diagnostics : [],
     graph_data: result.graph_data || null,
-    error_code: success ? '' : (execution?.error_details?.error_code || ''),
+    error_category: success ? '' : (execution?.error_details?.category || ''),
+    error_code: success ? '' : (execution?.error_details?.error_code || execution?.error_details?.category || ''),
     error: success ? '' : (execution?.error_details?.message || execution?.error_details?.error || '')
   }
 }
 
-export function queryErrorMessage(errorCode, fallback, translate) {
+export function queryErrorMessage(errorCode, fallback, translate, category = '') {
+  if (['permission_denied', 'timeout', 'cancelled', 'connection_failed', 'resource_exhausted', 'invalid_input', 'execution_failed'].includes(errorCode) && typeof translate === 'function') {
+    return translate(`common.executionFailure.${errorCode}`)
+  }
   if (errorCode === 'mongodb_database_required' && typeof translate === 'function') {
     return translate('develop.queryResult.mongodbDatabaseRequired')
   }
@@ -438,5 +442,6 @@ export function queryErrorMessage(errorCode, fallback, translate) {
   if (undefinedColumn && typeof translate === 'function') {
     return translate('develop.queryResult.postgresqlUndefinedColumn', { field: undefinedColumn[1] })
   }
+  if (!fallback && category && typeof translate === 'function') return translate(`common.executionFailure.${category}`)
   return fallback || ''
 }

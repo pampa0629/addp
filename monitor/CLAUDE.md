@@ -2,7 +2,7 @@
 
 ## 模块定位
 
-Monitor 模块是 ADDP 的统一执行监控中心，负责查询和展示各模块写入 `common.task_executions` 的任务执行记录、统计趋势和模块健康状态。
+Monitor 模块是 ADDP 的统一执行监控中心，负责查询和展示各模块写入 `common.task_executions` 的任务执行记录、统计趋势和模块健康状态，同时拥有独立的 Platform 日志链路健康与告警域。
 
 ## 技术栈与端口
 
@@ -81,3 +81,11 @@ bash scripts/swagger/check-route-coverage.sh monitor
 - `docs/spec/addp任务体系规范.md`
 - `docs/spec/addp-API设计规范.md`
 - `docs/spec/addp-Swagger集成指南.md`
+
+## 平台日志链路
+
+- Infra 使用独立 `addp-log-observer` Service Principal 上报有界安全观测；Monitor 只接收绑定节点的非委托 Platform 服务令牌。不上传日志正文，不访问接收器宿主机文件，不使用虚构租户或任务身份。
+- 唯一路由位于 `/api/v1/monitor/platform/log-*`。`monitor.log_pipeline.read/update`、`monitor.log_notification.read/update` 只用于 Platform；`monitor.log_observation.create` 仅授予观测器。System 模块管理提供页面，正文读取仍由 `platform.module_log.read` 独立控制。
+- 持久表为 `monitor.log_pipeline_policy/log_pipeline_nodes`、`log_observer_boots`、`platform_log_incidents/events/destinations/deliveries`。单一活动告警按节点、信号及有证据的实例去重，开告警/升级/恢复与通知 outbox 同事务；未知事实不能恢复告警，首次累计计数只建立基线。
+- Webhook/SMTP 复用中立发送接口和统一重试算法，至少一次投递；确认/抑制不改写业务实例状态。读取与管理通过 Monitor 服务账号向 System 独立 Platform 审计接口追加最小操作事实。
+- 门禁：`make test-go`、`make test-monitor-postgres`、`make test-system-iam-postgres`、`make test-system-runtime-log`、`make test-system-frontend` 和 `make test-platform`；数据库及故障注入必须使用标准 disposable 入口。完整设计见 `docs/next/ADDP模块服务运行日志设计.md` 第十一节。

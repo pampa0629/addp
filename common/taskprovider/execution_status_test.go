@@ -2,6 +2,7 @@ package taskprovider
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	commonExecution "github.com/addp/common/execution"
@@ -70,5 +71,30 @@ func TestNewExecutionStatusResponseReturnsClosedEmptyOutputs(t *testing.T) {
 	}
 	if object, ok := outputs.(map[string]interface{}); !ok || len(object) != 0 {
 		t.Fatalf("serialized outputs = %#v, want {}", outputs)
+	}
+}
+
+func TestExecutionStatusResponseNeverSerializesProfessionalPayloads(t *testing.T) {
+	actor := int64(9)
+	token := "lease-secret"
+	execution := &commonExecution.TaskExecution{ExecutionID: "safe", Status: "failed", ActorPrincipalID: &actor, ExecutionAuthorizationID: &actor, LeaseToken: &token,
+		ExecutionConfig: commonModels.JSONMap{"password": "config-secret"},
+		Metadata:        commonModels.JSONMap{"result": map[string]interface{}{"rows": "result-secret"}, "outputs": map[string]interface{}{"target_locator": "addp://engine/2/path/public/result?type=table"}, "unknown": "metadata-secret"},
+		ErrorDetails:    commonModels.JSONMap{"message": "password=error-secret", "stack": "stack-secret"},
+	}
+	payload, err := json.Marshal(NewExecutionStatusResponse(execution))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{"config-secret", "result-secret", "metadata-secret", "error-secret", "stack-secret", "lease-secret", "execution_config", "actor_principal_id", "execution_authorization_id"} {
+		if strings.Contains(string(payload), field) {
+			t.Fatalf("exposed %s: %s", field, payload)
+		}
+	}
+	var decoded map[string]interface{}
+	_ = json.Unmarshal(payload, &decoded)
+	metadata := decoded["metadata"].(map[string]interface{})
+	if len(metadata) != 1 || metadata["outputs"] == nil {
+		t.Fatalf("metadata=%#v", metadata)
 	}
 }

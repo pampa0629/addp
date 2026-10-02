@@ -58,7 +58,19 @@ func NewHTTPWebhookSender(timeout time.Duration, allowPrivate bool) *HTTPWebhook
 	return sender
 }
 
+type WebhookMessage struct {
+	DeliveryID string
+	RequestURL string
+	Payload    any
+}
+type WebhookTransport interface {
+	SendMessage(context.Context, WebhookMessage, string, time.Time) (WebhookSendResult, error)
+}
+
 func (s *HTTPWebhookSender) Send(ctx context.Context, delivery monitorModels.WebhookDelivery, secret string, now time.Time) (WebhookSendResult, error) {
+	return s.SendMessage(ctx, WebhookMessage{DeliveryID: delivery.DeliveryID, RequestURL: delivery.RequestURL, Payload: delivery.Payload}, secret, now)
+}
+func (s *HTTPWebhookSender) SendMessage(ctx context.Context, delivery WebhookMessage, secret string, now time.Time) (WebhookSendResult, error) {
 	ctx, cancel := context.WithTimeout(ctx, s.client.Timeout)
 	defer cancel()
 	if err := ValidateWebhookURL(ctx, delivery.RequestURL, s.allowPrivate); err != nil {

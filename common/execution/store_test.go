@@ -15,7 +15,7 @@ func TestEmbeddedMigrationsContainQualityQueueIndexes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("executionMigrationNames() error = %v", err)
 	}
-	if got := names[len(names)-1]; got != "012_allow_event_trigger_type.sql" {
+	if got := names[len(names)-1]; got != "013_execution_events.sql" {
 		t.Fatalf("latest execution migration = %q", got)
 	}
 	eventTrigger, err := migrationFiles.ReadFile("migrations/012_allow_event_trigger_type.sql")

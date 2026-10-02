@@ -330,6 +330,7 @@ func (e *DevExecutor) prepareContentExecutionWithConfirmation(
 	}
 	applySQLExecutionAuthorizationFacts(execution, sqlAuthorization)
 	applyWorkflowExecutionAuthorizationFacts(execution, workflowAuthorization)
+	applyScriptExecutionActor(ctx, execution)
 	if devType == commonExecution.TaskTypeQuery {
 		execution.ExecutionBoundary = commonExecution.ExecutionBoundaryBounded
 		execution.MaxAttempts = 1
@@ -1224,19 +1225,17 @@ func (e *DevExecutor) executeScript(ctx context.Context, devTask *models.DevTask
 }
 
 // GetExecution 获取执行详情
-func (e *DevExecutor) GetExecution(executionID string, tenantID uint) (*models.ExecutionWithDevTask, error) {
-	execution, err := e.GetTaskProviderExecution(executionID, tenantID)
+func (e *DevExecutor) GetExecution(ctx context.Context, executionID string, tenantID uint) (*models.ExecutionWithDevTask, error) {
+	repo, readCtx := e.professionalExecutionRepository(ctx, tenantID)
+	execution, err := repo.GetByExecutionID(readCtx, executionID, int(tenantID))
 	if err != nil {
 		return nil, err
 	}
 
-	result := &models.ExecutionWithDevTask{
-		TaskExecution: execution,
-		Outputs:       taskprovider.ExecutionOutputs(execution.Metadata),
-	}
+	result := professionalExecutionResponse(execution)
 
 	// 加载关联的开发任务
-	if execution.SourceTaskID != nil {
+	if execution.SourceTaskID != nil && e.devTaskRepo != nil {
 		if taskID, parseErr := commonExecution.ParseSourceTaskIDUint(execution.SourceTaskID); parseErr == nil {
 			devTask, err := e.devTaskRepo.FindByID(taskID, tenantID)
 			if err == nil {
@@ -1249,9 +1248,13 @@ func (e *DevExecutor) GetExecution(executionID string, tenantID uint) (*models.E
 }
 
 // GetTaskProviderExecution 返回 Develop 的统一执行记录，供 TaskProvider 状态接口使用。
-func (e *DevExecutor) GetTaskProviderExecution(executionID string, tenantID uint) (*commonExecution.TaskExecution, error) {
-	execution, err := e.taskExecutionRepo.GetByExecutionID(context.Background(), executionID, int(tenantID))
-	if err != nil || execution.Module != commonExecution.ModuleDevelop {
+func (e *DevExecutor) GetTaskProviderExecution(ctx context.Context, executionID string, tenantID uint) (*commonExecution.TaskExecution, error) {
+	execution, err := e.taskExecutionRepo.GetByExecutionID(ctx, executionID, int(tenantID))
+	if err != nil || execution.Module != commonExecution.ModuleDevelop || execution.Source != commonExecution.ModuleOrchestrator || execution.ParentExecutionID == nil {
+		return nil, fmt.Errorf("执行记录不存在")
+	}
+	parent, err := e.taskExecutionRepo.GetByExecutionID(ctx, *execution.ParentExecutionID, int(tenantID))
+	if err != nil || parent.Module != commonExecution.ModuleOrchestrator {
 		return nil, fmt.Errorf("执行记录不存在")
 	}
 	return execution, nil
@@ -1268,11 +1271,12 @@ func (e *DevExecutor) GetDevTaskType(taskID, tenantID uint) (string, error) {
 	return task.DevType, nil
 }
 
-func (e *DevExecutor) GetExecutionTaskType(executionID string, tenantID uint) (string, error) {
+func (e *DevExecutor) GetExecutionTaskType(ctx context.Context, executionID string, tenantID uint) (string, error) {
 	if e == nil || e.taskExecutionRepo == nil || strings.TrimSpace(executionID) == "" || tenantID == 0 {
 		return "", fmt.Errorf("执行查询上下文无效")
 	}
-	execution, err := e.taskExecutionRepo.GetByExecutionID(context.Background(), executionID, int(tenantID))
+	repo, readCtx := e.professionalExecutionRepository(ctx, tenantID)
+	execution, err := repo.GetByExecutionID(readCtx, executionID, int(tenantID))
 	if err != nil {
 		return "", fmt.Errorf("执行记录不存在")
 	}
@@ -1280,10 +1284,13 @@ func (e *DevExecutor) GetExecutionTaskType(executionID string, tenantID uint) (s
 }
 
 // ListExecutions 查询执行列表
-func (e *DevExecutor) ListExecutions(req *models.ListExecutionsRequest, tenantID uint) ([]models.ExecutionWithDevTask, int64, error) {
+func (e *DevExecutor) ListExecutions(ctx context.Context, req *models.ListExecutionsRequest, tenantID uint) ([]models.ExecutionWithDevTask, int64, error) {
 	// 设置默认分页
 	if req.Page <= 0 {
 		req.Page = 1
+	}
+	if req.PageSize > 100 {
+		req.PageSize = 100
 	}
 	if req.PageSize <= 0 {
 		req.PageSize = 20
@@ -1316,7 +1323,8 @@ func (e *DevExecutor) ListExecutions(req *models.ListExecutionsRequest, tenantID
 	}
 
 	// 查询统一表
-	executions, total, err := e.taskExecutionRepo.List(context.Background(), filter)
+	repo, readCtx := e.professionalExecutionRepository(ctx, tenantID)
+	executions, total, err := repo.List(readCtx, filter)
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to list executions: %w", err)
 	}
@@ -1324,12 +1332,10 @@ func (e *DevExecutor) ListExecutions(req *models.ListExecutionsRequest, tenantID
 	// 直接映射，加载关联开发任务
 	result := make([]models.ExecutionWithDevTask, len(executions))
 	for i, exec := range executions {
-		result[i] = models.ExecutionWithDevTask{
-			TaskExecution: exec,
-		}
+		result[i] = *professionalExecutionResponse(exec)
 
 		// 加载关联的开发任务
-		if exec.SourceTaskID != nil {
+		if exec.SourceTaskID != nil && e.devTaskRepo != nil {
 			if taskID, parseErr := commonExecution.ParseSourceTaskIDUint(exec.SourceTaskID); parseErr == nil {
 				devTask, err := e.devTaskRepo.FindByID(taskID, tenantID)
 				if err == nil {
@@ -1343,9 +1349,10 @@ func (e *DevExecutor) ListExecutions(req *models.ListExecutionsRequest, tenantID
 }
 
 // RetryExecution 重试执行
-func (e *DevExecutor) RetryExecution(executionID string, tenantID uint, userID uint, userAccessToken string) (string, error) {
+func (e *DevExecutor) RetryExecution(ctx context.Context, executionID string, tenantID uint, userID uint, userAccessToken string) (string, error) {
 	// 获取原执行记录
-	execution, err := e.taskExecutionRepo.GetByExecutionID(context.Background(), executionID, int(tenantID))
+	repo, readCtx := e.professionalExecutionRepository(ctx, tenantID)
+	execution, err := repo.GetByExecutionID(readCtx, executionID, int(tenantID))
 	if err != nil {
 		return "", fmt.Errorf("执行记录不存在")
 	}
@@ -1356,7 +1363,7 @@ func (e *DevExecutor) RetryExecution(executionID string, tenantID uint, userID u
 		if err != nil {
 			return "", err
 		}
-		return e.ExecuteDevTask(context.Background(), taskID, tenantID, userID, userAccessToken, "manual")
+		return e.ExecuteDevTask(ctx, taskID, tenantID, userID, userAccessToken, "manual")
 	}
 
 	// 否则报错（临时内容不支持重试）
@@ -1364,7 +1371,7 @@ func (e *DevExecutor) RetryExecution(executionID string, tenantID uint, userID u
 }
 
 // GetStatistics 获取执行统计信息
-func (e *DevExecutor) GetStatistics(tenantID uint, sourceTaskID string, startDate, endDate string) (*models.ExecutionStatistics, error) {
+func (e *DevExecutor) GetStatistics(ctx context.Context, tenantID uint, sourceTaskID string, startDate, endDate string) (*models.ExecutionStatistics, error) {
 	var startDatePtr, endDatePtr *time.Time
 	if startDate != "" {
 		if t, err := time.Parse("2006-01-02", startDate); err == nil {
@@ -1387,7 +1394,8 @@ func (e *DevExecutor) GetStatistics(tenantID uint, sourceTaskID string, startDat
 		filter.SourceTaskID = &sourceTaskID
 	}
 
-	stats, err := e.taskExecutionRepo.GetStatistics(context.Background(), filter)
+	repo, readCtx := e.professionalExecutionRepository(ctx, tenantID)
+	stats, err := repo.GetStatistics(readCtx, filter)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get statistics: %w", err)
 	}
@@ -1485,6 +1493,7 @@ func (e *DevExecutor) ExecuteWithParamsWithContext(
 	}
 	applySQLExecutionAuthorizationFacts(execution, sqlAuthorization)
 	applyWorkflowExecutionAuthorizationFacts(execution, workflowAuthorization)
+	applyScriptExecutionActor(ctx, execution)
 
 	if err := e.taskExecutionRepo.Create(ctx, execution); err != nil {
 		return "", fmt.Errorf("failed to create execution record: %w", err)

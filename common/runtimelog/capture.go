@@ -202,6 +202,7 @@ type Metrics struct {
 	Dropped       atomic.Uint64
 	WriteFailures atomic.Uint64
 	Cleaned       atomic.Uint64
+	EarlyCleaned  atomic.Uint64
 }
 type sourceLine struct {
 	channel   string
@@ -392,7 +393,7 @@ func (w *segmentWriter) status() {
 	if os.MkdirAll(w.dir(), 0700) != nil {
 		return
 	}
-	body, _ := json.Marshal(map[string]any{"instance_id": w.o.InstanceID, "observed_at": time.Now().UTC(), "received": w.metrics.Received.Load(), "written": w.metrics.Written.Load(), "parse_failures": w.metrics.ParseFailures.Load(), "truncated": w.metrics.Truncated.Load(), "dropped": w.metrics.Dropped.Load(), "write_failures": w.metrics.WriteFailures.Load(), "source_files_cleaned": w.metrics.Cleaned.Load()})
+	body, _ := json.Marshal(map[string]any{"instance_id": w.o.InstanceID, "observed_at": time.Now().UTC(), "received": w.metrics.Received.Load(), "written": w.metrics.Written.Load(), "parse_failures": w.metrics.ParseFailures.Load(), "truncated": w.metrics.Truncated.Load(), "dropped": w.metrics.Dropped.Load(), "write_failures": w.metrics.WriteFailures.Load(), "source_files_cleaned": w.metrics.Cleaned.Load(), "source_files_early_cleaned": w.metrics.EarlyCleaned.Load()})
 	tmp := filepath.Join(w.dir(), "status.tmp")
 	if os.WriteFile(tmp, body, 0600) == nil {
 		_ = os.Rename(tmp, filepath.Join(w.dir(), "status.json"))
@@ -474,6 +475,9 @@ func (w *segmentWriter) cleanLocked(projected int64) error {
 			nodeSize -= f.size
 			sizes[dir] -= f.size
 			w.metrics.Cleaned.Add(1)
+			if time.Since(f.modified) <= w.o.SourceAge {
+				w.metrics.EarlyCleaned.Add(1)
+			}
 		}
 	}
 	if nodeSize > w.o.NodeBytes || sizes[w.dir()] > w.o.InstanceBytes {
@@ -493,8 +497,14 @@ func Prune(o Options) error {
 	if err == nil {
 		err = pruneExpiredMetadata(o)
 	}
-	body, _ := json.Marshal(map[string]any{"observed_at": time.Now().UTC(), "source_files_cleaned": w.metrics.Cleaned.Load(), "quota_exhausted": err != nil})
-	_ = os.WriteFile(filepath.Join(o.Root, "housekeeping-status.json"), body, 0600)
+	body, _ := json.Marshal(map[string]any{"observed_at": time.Now().UTC(), "source_files_cleaned": w.metrics.Cleaned.Load(), "source_files_early_cleaned": w.metrics.EarlyCleaned.Load(), "quota_exhausted": err != nil})
+	statusPath := filepath.Join(o.Root, "housekeeping-status.json")
+	if writeErr := os.WriteFile(statusPath+".tmp", body, 0600); writeErr != nil {
+		return writeErr
+	}
+	if writeErr := os.Rename(statusPath+".tmp", statusPath); writeErr != nil {
+		return writeErr
+	}
 	return err
 }
 

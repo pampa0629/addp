@@ -11,6 +11,8 @@ var localeFS embed.FS
 
 // Develop 模块消息 key 常量
 const (
+	MsgExecutionNotFound                      = "develop.execution.not_found"
+	MsgExecutionReadFailed                    = "develop.execution.read_failed"
 	MsgQueryPolicyInvalid                     = "develop.query_policy.invalid"
 	MsgQueryPolicyConflict                    = "develop.query_policy.conflict"
 	MsgExecutionStarted                       = "develop.execution.started"

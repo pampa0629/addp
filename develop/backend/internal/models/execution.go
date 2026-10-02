@@ -88,9 +88,10 @@ type ListExecutionsRequest struct {
 
 // ExecutionWithDevTask 执行记录和开发任务关联
 type ExecutionWithDevTask struct {
-	*commonExecution.TaskExecution
-	DevTask *DevTask             `json:"dev_task,omitempty"`
-	Outputs commonModels.JSONMap `json:"outputs,omitempty"`
+	*commonExecution.Observation
+	ExecutionConfig commonModels.JSONMap `json:"execution_config,omitempty"`
+	DevTask         *DevTask             `json:"dev_task,omitempty"`
+	Outputs         commonModels.JSONMap `json:"outputs,omitempty"`
 }
 
 // ListExecutionsResponse 执行列表响应

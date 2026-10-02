@@ -211,3 +211,8 @@ assert.equal(result.truncated, true)
 assert.equal(result.effect, 'read')
 
 console.log('query workbench tests passed')
+
+assert.equal(queryErrorMessage('permission_denied', '', key => key), 'common.executionFailure.permission_denied')
+assert.equal(queryResultFromExecution({ status: 'failed', error_details: { category: 'timeout' } }).error_code, 'timeout')
+
+assert.equal(queryErrorMessage('query_execution_failed', '', key => key, 'connection_failed'), 'common.executionFailure.connection_failed')

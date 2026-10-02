@@ -12,6 +12,7 @@ import (
 )
 
 var builtinServiceClientIDs = []string{
+	"addp-log-observer",
 	"addp-ontology",
 	"addp-agent",
 	"addp-asset",

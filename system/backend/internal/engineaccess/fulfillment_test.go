@@ -1,6 +1,7 @@
 package engineaccess
 
 import (
+	"bytes"
 	"encoding/json"
 	"testing"
 	"time"
@@ -83,5 +84,21 @@ func TestFulfillmentBindingRejectsIncompleteInputs(t *testing.T) {
 		if _, _, err := r.encode(); err == nil {
 			t.Fatalf("invalid request accepted: %#v", r)
 		}
+	}
+}
+
+func TestFulfillmentTargetUsesSharedValueContract(t *testing.T) {
+	path := testFulfillmentRequest().Path
+	shared, err := authorization.EncodeSharingTarget(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	local, err := encodeFulfillmentPath(path)
+	if err != nil || !bytes.Equal(local, shared) {
+		t.Fatalf("arbitration target differs from preparation contract: %s %v", local, err)
+	}
+	path.Segments[2].Name = "invalid\xff"
+	if _, err := encodeFulfillmentPath(path); err != errFulfillmentBinding {
+		t.Fatalf("lossy target accepted by authority: %v", err)
 	}
 }

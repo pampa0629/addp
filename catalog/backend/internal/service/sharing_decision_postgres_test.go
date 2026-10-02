@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/addp/catalog/internal/models"
 	"github.com/addp/catalog/internal/repository"
 	"github.com/addp/common/authorization"
+	"github.com/addp/common/engine/plugin"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -85,6 +87,118 @@ func TestPostgresSharingDecisionIsAtomicImmutableAndRetryable(t *testing.T) {
 					reader := NewEntryService(tx, nil, nil)
 					if _, err := reader.GetSharingDecision(context.Background(), 7, EntryAccess{Inventory: true}, entry.ID, result.ID, auth); err != nil {
 						t.Fatalf("historical decision lost: %v", err)
+					}
+					return rollback
+				})
+				if !errors.Is(err, rollback) {
+					t.Fatal(err)
+				}
+			})
+		}
+	})
+	t.Run("preparation binds persisted decision and protects basis", func(t *testing.T) {
+		rollback := errors.New("rollback pending preparation fixture")
+		err := db.Transaction(func(tx *gorm.DB) error {
+			request := preparationFixture(t, result)
+			first, created, err := prepareSharingFulfillment(context.Background(), tx, 7, entry.ID, result.ID, request)
+			if err != nil || !created || first.ResolvedAt != nil {
+				t.Fatalf("prepare=%+v created=%v err=%v", first, created, err)
+			}
+			// JSONB reorders keys. Recovery must compare typed exact values,
+			// not serialized bytes or a float64-rounded identifier.
+			retry, created, err := prepareSharingFulfillment(context.Background(), tx, 7, entry.ID, result.ID, request)
+			if err != nil || created || !retry.CreatedAt.Equal(first.CreatedAt) {
+				t.Fatalf("retry=%+v created=%v err=%v", retry, created, err)
+			}
+			for _, statement := range []struct {
+				sql string
+				id  uuid.UUID
+			}{
+				{"UPDATE catalog.responsibilities SET status = 'needs_transfer' WHERE id = ?", result.ResponsibilityID},
+				{"UPDATE catalog.source_bindings SET source_version = '00000000000000000002' WHERE id = ?", result.SourceBindingID},
+				{"UPDATE catalog.entries SET governance_status = 'deprecated' WHERE id = ?", entry.ID},
+			} {
+				err := tx.Transaction(func(change *gorm.DB) error { return change.Exec(statement.sql, statement.id).Error })
+				var pgErr *pgconn.PgError
+				if !errors.As(err, &pgErr) || pgErr.ConstraintName != "catalog_fulfillment_unresolved" {
+					t.Fatalf("pending basis not protected: %v", err)
+				}
+			}
+			if err := tx.Exec("UPDATE catalog.entries SET business_name = 'Pending prose edit', version = version + 1 WHERE id = ?", entry.ID).Error; err != nil {
+				return err
+			}
+			changed := request
+			changed.RequirementVersion++
+			if _, _, err := prepareSharingFulfillment(context.Background(), tx, 7, entry.ID, result.ID, changed); !errors.Is(err, ErrSharingDecisionConflict) {
+				t.Fatalf("changed requirement reused request: %v", err)
+			}
+			// Failure of a later attempt rolls back only that attempt, not the
+			// already persisted pending check in this owner fixture transaction.
+			failure := errors.New("later consumer failure")
+			if err := tx.Transaction(func(attempt *gorm.DB) error {
+				if _, _, err := prepareSharingFulfillment(context.Background(), attempt, 7, entry.ID, result.ID, request); err != nil {
+					return err
+				}
+				return failure
+			}); !errors.Is(err, failure) {
+				return err
+			}
+			var count int64
+			if err := tx.Model(&models.FulfillmentCheck{}).Where("request_id = ?", first.RequestID).Count(&count).Error; err != nil || count != 1 {
+				t.Fatalf("later rollback erased pending: count=%d err=%v", count, err)
+			}
+			return rollback
+		})
+		if !errors.Is(err, rollback) {
+			t.Fatal(err)
+		}
+		var count int64
+		if err := db.Model(&models.FulfillmentCheck{}).Where("catalog_entry_id = ?", entry.ID).Count(&count).Error; err != nil || count != 0 {
+			t.Fatalf("preparation rollback left pending: count=%d err=%v", count, err)
+		}
+	})
+	t.Run("authority unsupported targets never freeze current basis", func(t *testing.T) {
+		for name, mutate := range map[string]func(*plugin.EngineCatalogPath){
+			"65 segments": func(path *plugin.EngineCatalogPath) {
+				leaf := path.Segments[len(path.Segments)-1]
+				path.Segments = append([]plugin.EngineCatalogSegment(nil), path.Segments[:1]...)
+				for len(path.Segments) < 64 {
+					path.Segments = append(path.Segments, plugin.EngineCatalogSegment{Term: "directory", Kind: "directory", Name: "node"})
+				}
+				path.Segments = append(path.Segments, leaf)
+			},
+			"encoded bytes exceed 16 KiB": func(path *plugin.EngineCatalogPath) { path.Segments[2].Name = strings.Repeat("甲", 6000) },
+		} {
+			t.Run(name, func(t *testing.T) {
+				rollback := errors.New("rollback unsupported target fixture")
+				err := db.Transaction(func(tx *gorm.DB) error {
+					request := preparationFixture(t, result)
+					mutate(&request.Path)
+					// Seed a business decision under the unchanged Catalog history
+					// constraints. No UPDATE, disabled trigger or remote source write:
+					// a recorded business decision is not a consumable System target.
+					decision := result.SharingDecision
+					decision.ID, decision.EntryVersion = uuid.New(), result.EntryVersion+1
+					encoded, err := json.Marshal(request.Path)
+					if err != nil {
+						return err
+					}
+					decision.CatalogPath = encoded
+					if err := tx.Create(&decision).Error; err != nil {
+						return err
+					}
+					if err := tx.Model(&models.Entry{}).Where("id = ?", entry.ID).Update("version", decision.EntryVersion).Error; err != nil {
+						return err
+					}
+					if check, created, err := prepareSharingFulfillment(context.Background(), tx, 7, entry.ID, decision.ID, request); !errors.Is(err, ErrSharingDecisionConflict) || check != nil || created {
+						t.Fatalf("unsupported target prepared: check=%+v created=%v err=%v", check, created, err)
+					}
+					var count int64
+					if err := tx.Model(&models.FulfillmentCheck{}).Where("catalog_entry_id = ?", entry.ID).Count(&count).Error; err != nil || count != 0 {
+						t.Fatalf("unsupported target left protection: count=%d err=%v", count, err)
+					}
+					if err := tx.Model(&models.Responsibility{}).Where("id = ?", decision.ResponsibilityID).Update("status", "needs_transfer").Error; err != nil {
+						return err
 					}
 					return rollback
 				})
