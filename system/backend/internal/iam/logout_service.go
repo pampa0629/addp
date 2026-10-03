@@ -83,7 +83,10 @@ func (s *LogoutService) LogoutBrowserSession(ctx context.Context, input LogoutBr
 			return err
 		}
 
-		now := s.tokenService.now().UTC()
+		now, err := s.tokenService.now(ctx, tx)
+		if err != nil {
+			return err
+		}
 		if err := validateBrowserLogout(
 			principal,
 			family,

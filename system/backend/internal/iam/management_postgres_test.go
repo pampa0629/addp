@@ -37,7 +37,7 @@ func TestIAMManagementServicesAgainstPostgres(t *testing.T) {
 	repository := NewRepository(db)
 	currentTime := time.Now().UTC().Truncate(time.Microsecond)
 	now := func() time.Time { return currentTime }
-	identityService := NewIdentityService(repository, now)
+	identityService := NewIdentityService(repository, testDatabaseTime(now))
 	userService := NewPlatformUserService(repository, identityService, now)
 	tenantService := NewPlatformTenantService(repository, now)
 	membershipService := NewTenantMembershipService(repository, now)

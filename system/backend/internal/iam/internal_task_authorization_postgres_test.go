@@ -60,7 +60,7 @@ func TestInternalTaskAuthorizationAgainstPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tokens, err := NewTokenFamilyService(repo, BrowserSessionConfig{ResourceTicketOwners: []string{"manager"}}, nil, time.Now)
+	tokens, err := NewTokenFamilyService(repo, BrowserSessionConfig{ResourceTicketOwners: []string{"manager"}}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,7 +69,7 @@ func TestInternalTaskAuthorizationAgainstPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	audit := AuditMetadata{RequestID: stringPointer("internal-task-test")}
-	user := createContextSelectionUser(t, ctx, NewIdentityService(repo, time.Now), "ontology-publisher", audit)
+	user := createContextSelectionUser(t, ctx, NewIdentityService(repo, nil), "ontology-publisher", audit)
 	members := NewTenantMembershipService(repo, time.Now)
 	tenant := createContextSelectionTenant(t, ctx, members, "ontology-auth", audit)
 	membership := establishContextSelectionMembership(t, ctx, members, tenant.ID, user.PrincipalID, audit)

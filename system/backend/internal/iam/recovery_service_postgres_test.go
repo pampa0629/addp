@@ -42,7 +42,7 @@ func TestRecoveryServiceAgainstPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	bootstrapService, err := NewBootstrapService(
-		repository, NewIdentityService(repository, now), cipher, time.Hour,
+		repository, NewIdentityService(repository, testDatabaseTime(now)), cipher, time.Hour,
 		func(prefix string) (string, error) { return prefix + "recovery-bootstrap-test", nil }, now,
 	)
 	if err != nil {

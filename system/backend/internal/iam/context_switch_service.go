@@ -78,7 +78,10 @@ func (s *ContextSwitchService) SwitchBrowserContext(
 	if err != nil {
 		return nil, hideTokenLookupError(err)
 	}
-	now := s.tokenService.now().UTC()
+	now, err := s.tokenService.now(ctx, s.repository)
+	if err != nil {
+		return nil, err
+	}
 	if accessSnapshot.RevokedAt != nil || !accessSnapshot.ExpiresAt.After(now) ||
 		refreshSnapshot.UsedAt != nil || refreshSnapshot.RevokedAt != nil || !refreshSnapshot.ExpiresAt.After(now) ||
 		familySnapshot.RevokedAt != nil || !familySnapshot.ExpiresAt.After(now) ||
@@ -95,11 +98,6 @@ func (s *ContextSwitchService) SwitchBrowserContext(
 		if err != nil {
 			return hideTokenLookupError(err)
 		}
-		now := s.tokenService.now().UTC()
-		targetContext, err := s.resolveTargetContext(ctx, tx, principal, familySnapshot, input.Target, now)
-		if err != nil {
-			return err
-		}
 
 		family, err := tx.LockRefreshTokenFamily(ctx, familySnapshot.ID)
 		if err != nil {
@@ -114,6 +112,15 @@ func (s *ContextSwitchService) SwitchBrowserContext(
 			return hideTokenLookupError(err)
 		}
 		if _, err := tx.LockActiveResourceAccessTickets(ctx, family.ID); err != nil {
+			return err
+		}
+
+		now, err := s.tokenService.now(ctx, tx)
+		if err != nil {
+			return err
+		}
+		targetContext, err := s.resolveTargetContext(ctx, tx, principal, familySnapshot, input.Target, now)
+		if err != nil {
 			return err
 		}
 

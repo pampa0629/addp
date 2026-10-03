@@ -60,12 +60,12 @@ var (
 
 type IdentityService struct {
 	repository *Repository
-	now        func() time.Time
+	now        DatabaseTimeReader
 }
 
-func NewIdentityService(repository *Repository, now func() time.Time) *IdentityService {
+func NewIdentityService(repository *Repository, now DatabaseTimeReader) *IdentityService {
 	if now == nil {
-		now = time.Now
+		now = readDatabaseTime
 	}
 	return &IdentityService{repository: repository, now: now}
 }
@@ -91,9 +91,12 @@ func (s *IdentityService) CreateLocalUser(
 		return nil, fmt.Errorf("%w: hash password: %v", commonapi.ErrBadRequest, err)
 	}
 
-	now := s.now().UTC()
 	var created *CreatedLocalUser
 	err = s.repository.Transaction(ctx, func(tx *Repository) error {
+		now, err := s.now(ctx, tx)
+		if err != nil {
+			return err
+		}
 		var createErr error
 		created, createErr = s.createLocalUserTx(ctx, tx, input, passwordHash, now)
 		return createErr
@@ -206,7 +209,10 @@ func (s *IdentityService) AuthenticateLocalAccount(
 			))
 		}
 
-		authenticatedAt := s.now().UTC()
+		authenticatedAt, err := s.now(ctx, tx)
+		if err != nil {
+			return err
+		}
 		if err := tx.UpdateLocalAccountLastAuthenticated(ctx, lockedAccount.ID, authenticatedAt); err != nil {
 			return err
 		}
@@ -365,7 +371,10 @@ func (s *IdentityService) rotatePasswordTx(
 		return nil, ErrPasswordUnchanged, auditErr
 	}
 
-	changedAt := s.now().UTC()
+	changedAt, err := s.now(ctx, tx)
+	if err != nil {
+		return nil, nil, err
+	}
 	if err := tx.UpdateLocalAccountPassword(ctx, account.ID, newPasswordHash, changedAt); err != nil {
 		return nil, nil, err
 	}

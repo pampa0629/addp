@@ -37,7 +37,7 @@ func TestOrganizationServiceAgainstPostgres(t *testing.T) {
 
 	repository := NewRepository(db)
 	now := time.Now().UTC().Truncate(time.Microsecond)
-	identityService := NewIdentityService(repository, func() time.Time { return now })
+	identityService := NewIdentityService(repository, testDatabaseTime(func() time.Time { return now }))
 	membershipService := NewTenantMembershipService(repository, func() time.Time { return now })
 	organizationService := NewOrganizationService(repository, func() time.Time { return now })
 	bootstrapAudit := AuditMetadata{RequestID: stringPointer("organization-bootstrap")}

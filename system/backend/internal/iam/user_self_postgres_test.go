@@ -46,7 +46,7 @@ func TestUserSelfServiceAgainstPostgres(t *testing.T) {
 	now := func() time.Time { return currentTime }
 	tokenService, err := NewTokenFamilyService(repository, BrowserSessionConfig{
 		ResourceTicketOwners: []string{"manager", "standard"},
-	}, nil, now)
+	}, nil, testDatabaseTime(now))
 	if err != nil {
 		t.Fatalf("create TokenFamilyService: %v", err)
 	}
@@ -54,13 +54,13 @@ func TestUserSelfServiceAgainstPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create ContextSelectionService: %v", err)
 	}
-	identityService := NewIdentityService(repository, now)
+	identityService := NewIdentityService(repository, testDatabaseTime(now))
 	membershipService := NewTenantMembershipService(repository, now)
 	mfaCipher, err := NewMFACredentialCipher([]byte("0123456789abcdef0123456789abcdef"))
 	if err != nil {
 		t.Fatalf("create MFA cipher: %v", err)
 	}
-	mfaService, err := NewMFAService(repository, mfaCipher, MFAServiceConfig{}, nil, now)
+	mfaService, err := NewMFAService(repository, mfaCipher, MFAServiceConfig{}, nil, testDatabaseTime(now))
 	if err != nil {
 		t.Fatalf("create MFA service: %v", err)
 	}

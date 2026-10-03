@@ -132,7 +132,7 @@ func (r *Repository) getAccessTokenAuthSnapshot(
 			membership.joined_at AS tenant_membership_joined_at,
 			membership.expires_at AS tenant_membership_expires_at,
 			tenant.status AS tenant_status,
-			transaction_timestamp() AS database_time
+			statement_timestamp() AS database_time
 		FROM system.access_tokens access_token
 		JOIN system.refresh_token_families family ON family.id = access_token.family_id
 		JOIN system.principals principal ON principal.id = family.principal_id
@@ -186,7 +186,7 @@ func (r *Repository) GetResourceAccessTicketAuthSnapshot(
 			membership.joined_at AS tenant_membership_joined_at,
 			membership.expires_at AS tenant_membership_expires_at,
 			tenant.status AS tenant_status,
-			transaction_timestamp() AS database_time
+			statement_timestamp() AS database_time
 		FROM system.resource_access_tickets ticket
 		JOIN system.refresh_token_families family ON family.id = ticket.family_id
 		JOIN system.principals principal ON principal.id = family.principal_id
@@ -246,7 +246,7 @@ func (r *Repository) GetDelegatedAccessTokenAuthSnapshot(
 			membership.joined_at AS tenant_membership_joined_at,
 			membership.expires_at AS tenant_membership_expires_at,
 			tenant.status AS tenant_status,
-			transaction_timestamp() AS database_time
+			statement_timestamp() AS database_time
 		FROM system.delegated_access_tokens delegated
 		JOIN system.access_tokens source ON source.id = delegated.source_access_token_id
 		JOIN system.refresh_token_families family ON family.id = source.family_id

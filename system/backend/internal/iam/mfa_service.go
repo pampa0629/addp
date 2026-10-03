@@ -45,7 +45,7 @@ type MFAService struct {
 	cipher     *MFACredentialCipher
 	config     MFAServiceConfig
 	generate   OpaqueTokenGenerator
-	now        func() time.Time
+	now        DatabaseTimeReader
 }
 
 func NewMFAService(
@@ -53,7 +53,7 @@ func NewMFAService(
 	cipher *MFACredentialCipher,
 	config MFAServiceConfig,
 	generate OpaqueTokenGenerator,
-	now func() time.Time,
+	now DatabaseTimeReader,
 ) (*MFAService, error) {
 	if repository == nil || cipher == nil {
 		return nil, fmt.Errorf("%w: MFA dependencies are required", commonapi.ErrBadRequest)
@@ -71,7 +71,7 @@ func NewMFAService(
 		generate = generateOpaqueToken
 	}
 	if now == nil {
-		now = time.Now
+		now = readDatabaseTime
 	}
 	return &MFAService{repository: repository, cipher: cipher, config: config, generate: generate, now: now}, nil
 }
@@ -95,8 +95,7 @@ func (s *MFAService) BeginChallenge(
 	if err != nil {
 		return nil, fmt.Errorf("generate MFA challenge: %w", err)
 	}
-	now := s.now().UTC()
-	expiresAt := now.Add(s.config.ChallengeTTL)
+	var expiresAt time.Time
 	err = s.repository.Transaction(ctx, func(tx *Repository) error {
 		principal, err := tx.LockPrincipal(ctx, authenticated.PrincipalID)
 		if err != nil {
@@ -109,6 +108,11 @@ func (s *MFAService) BeginChallenge(
 		if _, err := tx.LockActiveMFACredential(ctx, principal.ID); err != nil {
 			return hideMFAStorageError(err)
 		}
+		now, err := s.now(ctx, tx)
+		if err != nil {
+			return err
+		}
+		expiresAt = now.Add(s.config.ChallengeTTL)
 		challenge := &MFAChallenge{
 			TokenHash:                  hashOpaqueToken(plainToken),
 			PrincipalID:                principal.ID,
@@ -162,17 +166,20 @@ func (s *MFAService) VerifyChallenge(
 		if err != nil {
 			return hideMFAStorageError(err)
 		}
-		now := s.now().UTC()
+		credential, err := tx.LockActiveMFACredential(ctx, principal.ID)
+		if err != nil {
+			return hideMFAStorageError(err)
+		}
+		now, err := s.now(ctx, tx)
+		if err != nil {
+			return err
+		}
 		if challenge.ID != snapshot.ID || challenge.PrincipalID != principal.ID || challenge.Purpose != "login" ||
 			challenge.SourceFamilyID != nil || challenge.ConsumedAt != nil ||
 			!challenge.ExpiresAt.After(now) || challenge.FailedAttempts >= maxMFAFailedAttempts ||
 			principal.PrincipalType != PrincipalTypeUser || principal.Status != PrincipalStatusActive ||
 			principal.AuthorizationVersion != challenge.IssuedAuthorizationVersion {
 			return commonapi.ErrUnauthorized
-		}
-		credential, err := tx.LockActiveMFACredential(ctx, principal.ID)
-		if err != nil {
-			return hideMFAStorageError(err)
 		}
 		secret, err := s.cipher.DecryptTOTPSecret(credential)
 		if err != nil {

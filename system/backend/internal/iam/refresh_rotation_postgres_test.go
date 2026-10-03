@@ -49,7 +49,7 @@ func TestRefreshTokenRotationServiceAgainstPostgres(t *testing.T) {
 	now := func() time.Time { return currentTime }
 	tokenService, err := NewTokenFamilyService(repository, BrowserSessionConfig{
 		ResourceTicketOwners: []string{"standard", "manager"},
-	}, nil, now)
+	}, nil, testDatabaseTime(now))
 	if err != nil {
 		t.Fatalf("create TokenFamilyService: %v", err)
 	}
@@ -57,7 +57,7 @@ func TestRefreshTokenRotationServiceAgainstPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create ContextSelectionService: %v", err)
 	}
-	identityService := NewIdentityService(repository, now)
+	identityService := NewIdentityService(repository, testDatabaseTime(now))
 	membershipService := NewTenantMembershipService(repository, now)
 	authentication := SessionAuthentication{
 		Methods:         []string{"password"},

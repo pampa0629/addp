@@ -75,7 +75,7 @@ type MFASessionService struct {
 	tokenService *TokenFamilyService
 	config       MFAServiceConfig
 	generate     OpaqueTokenGenerator
-	now          func() time.Time
+	now          DatabaseTimeReader
 }
 
 func NewMFASessionService(
@@ -84,7 +84,7 @@ func NewMFASessionService(
 	tokenService *TokenFamilyService,
 	config MFAServiceConfig,
 	generate OpaqueTokenGenerator,
-	now func() time.Time,
+	now DatabaseTimeReader,
 ) (*MFASessionService, error) {
 	if repository == nil || cipher == nil || tokenService == nil {
 		return nil, fmt.Errorf("%w: MFA session dependencies are required", commonapi.ErrBadRequest)
@@ -102,7 +102,7 @@ func NewMFASessionService(
 		generate = generateOpaqueToken
 	}
 	if now == nil {
-		now = time.Now
+		now = readDatabaseTime
 	}
 	return &MFASessionService{
 		repository: repository, cipher: cipher, tokenService: tokenService,
@@ -136,7 +136,7 @@ func (s *MFASessionService) BeginEnrollment(
 	var issued *IssuedMFAEnrollment
 	var outcomeErr error
 	err = s.repository.Transaction(ctx, func(tx *Repository) error {
-		principal, family, _, _, err := s.lockSource(ctx, tx, source)
+		principal, family, refresh, access, err := s.lockSource(ctx, tx, source)
 		if err != nil {
 			return err
 		}
@@ -165,7 +165,10 @@ func (s *MFASessionService) BeginEnrollment(
 		if err != nil {
 			return err
 		}
-		now := s.now().UTC()
+		now, err := s.validateSource(ctx, tx, source, principal, family, refresh, access)
+		if err != nil {
+			return err
+		}
 		expiresAt := now.Add(s.config.ChallengeTTL)
 		enrollment := &MFAEnrollment{
 			TokenHash: hashOpaqueToken(plainToken), PrincipalID: principal.ID, SourceFamilyID: family.ID,
@@ -215,7 +218,7 @@ func (s *MFASessionService) CompleteEnrollment(
 	var session *IssuedBrowserSession
 	var outcomeErr error
 	err = s.repository.Transaction(ctx, func(tx *Repository) error {
-		principal, family, _, _, err := s.lockSource(ctx, tx, source)
+		principal, family, refresh, access, err := s.lockSource(ctx, tx, source)
 		if err != nil {
 			return err
 		}
@@ -223,7 +226,10 @@ func (s *MFASessionService) CompleteEnrollment(
 		if err != nil {
 			return hideMFAStorageError(err)
 		}
-		now := s.now().UTC()
+		now, err := s.validateSource(ctx, tx, source, principal, family, refresh, access)
+		if err != nil {
+			return err
+		}
 		if enrollment.ID != snapshot.ID || enrollment.PrincipalID != principal.ID ||
 			enrollment.SourceFamilyID != family.ID || enrollment.IssuedAuthorizationVersion != principal.AuthorizationVersion ||
 			enrollment.ConsumedAt != nil || !enrollment.ExpiresAt.After(now) || enrollment.FailedAttempts >= maxMFAFailedAttempts {
@@ -293,7 +299,7 @@ func (s *MFASessionService) BeginStepUp(ctx context.Context, input BeginMFAStepU
 	}
 	var issued *IssuedMFAChallenge
 	err = s.repository.Transaction(ctx, func(tx *Repository) error {
-		principal, family, _, _, err := s.lockSource(ctx, tx, source)
+		principal, family, refresh, access, err := s.lockSource(ctx, tx, source)
 		if err != nil {
 			return err
 		}
@@ -303,7 +309,10 @@ func (s *MFASessionService) BeginStepUp(ctx context.Context, input BeginMFAStepU
 			}
 			return err
 		}
-		now := s.now().UTC()
+		now, err := s.validateSource(ctx, tx, source, principal, family, refresh, access)
+		if err != nil {
+			return err
+		}
 		expiresAt := now.Add(s.config.ChallengeTTL)
 		familyID := family.ID
 		challenge := &MFAChallenge{
@@ -344,7 +353,7 @@ func (s *MFASessionService) CompleteStepUp(ctx context.Context, input CompleteMF
 	var session *IssuedBrowserSession
 	var outcomeErr error
 	err = s.repository.Transaction(ctx, func(tx *Repository) error {
-		principal, family, _, _, err := s.lockSource(ctx, tx, source)
+		principal, family, refresh, access, err := s.lockSource(ctx, tx, source)
 		if err != nil {
 			return err
 		}
@@ -352,16 +361,19 @@ func (s *MFASessionService) CompleteStepUp(ctx context.Context, input CompleteMF
 		if err != nil {
 			return hideMFAStorageError(err)
 		}
-		now := s.now().UTC()
+		credential, err := tx.LockActiveMFACredential(ctx, principal.ID)
+		if err != nil {
+			return hideMFAStorageError(err)
+		}
+		now, err := s.validateSource(ctx, tx, source, principal, family, refresh, access)
+		if err != nil {
+			return err
+		}
 		if challenge.ID != snapshot.ID || challenge.Purpose != "step_up" || challenge.SourceFamilyID == nil ||
 			*challenge.SourceFamilyID != family.ID || challenge.PrincipalID != principal.ID ||
 			challenge.IssuedAuthorizationVersion != principal.AuthorizationVersion || challenge.ConsumedAt != nil ||
 			!challenge.ExpiresAt.After(now) || challenge.FailedAttempts >= maxMFAFailedAttempts {
 			return commonapi.ErrUnauthorized
-		}
-		credential, err := tx.LockActiveMFACredential(ctx, principal.ID)
-		if err != nil {
-			return hideMFAStorageError(err)
 		}
 		secret, err := s.cipher.DecryptTOTPSecret(credential)
 		if err != nil {
@@ -465,17 +477,34 @@ func (s *MFASessionService) lockSource(
 	if err != nil {
 		return nil, nil, nil, nil, hideTokenLookupError(err)
 	}
-	if err := validateContextSwitchSource(principal, family, source.family, access, source.access, refresh, source.refresh, s.now().UTC()); err != nil {
+	if _, err := tx.LockActiveResourceAccessTickets(ctx, family.ID); err != nil {
 		return nil, nil, nil, nil, err
 	}
-	active, err := tx.RefreshTokenFamilyContextIsActive(ctx, principal, family, s.now().UTC())
-	if err != nil {
+	if _, err := s.validateSource(ctx, tx, source, principal, family, refresh, access); err != nil {
 		return nil, nil, nil, nil, err
-	}
-	if !active {
-		return nil, nil, nil, nil, commonapi.ErrUnauthorized
 	}
 	return principal, family, refresh, access, nil
+}
+
+func (s *MFASessionService) validateSource(
+	ctx context.Context, tx *Repository, source *mfaBrowserSource,
+	principal *Principal, family *RefreshTokenFamily, refresh *RefreshToken, access *AccessToken,
+) (time.Time, error) {
+	now, err := s.now(ctx, tx)
+	if err != nil {
+		return time.Time{}, err
+	}
+	if err := validateContextSwitchSource(principal, family, source.family, access, source.access, refresh, source.refresh, now); err != nil {
+		return time.Time{}, err
+	}
+	active, err := tx.RefreshTokenFamilyContextIsActive(ctx, principal, family, now)
+	if err != nil {
+		return time.Time{}, err
+	}
+	if !active {
+		return time.Time{}, commonapi.ErrUnauthorized
+	}
+	return now, nil
 }
 
 func (s *MFASessionService) replaceSourceWithAAL2(
@@ -488,9 +517,6 @@ func (s *MFASessionService) replaceSourceWithAAL2(
 	revocationReason string,
 	mode BrowserSessionIssueMode,
 ) (*IssuedBrowserSession, error) {
-	if _, err := tx.LockActiveResourceAccessTickets(ctx, family.ID); err != nil {
-		return nil, err
-	}
 	if err := tx.RevokeTokenFamily(ctx, family.ID, now, revocationReason); err != nil {
 		return nil, err
 	}

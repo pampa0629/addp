@@ -2630,3 +2630,30 @@ System 回执只承载本次精确办理编号、目标与参数绑定、被消�
 修复与复跑记录：轻量 SQLite 复用既有 attached-schema 建表 helper，不能用 GORM 在 main 中创建索引；可见性竞争须先进入已编目状态，不能制造非法的“已发现且租户可见”记录；同账号重新接任须替换旧关系，不能违反关系唯一约束重复插入；手工 AuthContext 的 Permission 数组保持规范排序。新增权限后，System 全迁移权限数量快照同步由 146 更新为 147；完整数据库门禁重新运行并通过。没有放宽数据库约束、认证或生产权限来使测试通过。
 
 下一优先项：接通 §26.38 的正式准备与可信 owner 持久依据，再复用 §26.41 已接通的核清恢复。当前子链路不代表生产源授权闭环完成。本轮不接管、停止或重启用户服务，不操作开发业务数据库或源端，不提交代码。
+
+### 26.44 System 反查身份的部署边界（2026-10-03，待确认，不发布身份或受理入口）
+
+继续 §26.38 完整工作包前，核对独立 Runtime 身份的现有部署路线，发现一项需要先确认的启动策略。不是重新讨论 Catalog／System 的授权职责，也不改变已确认的办理资格。
+
+源码事实：
+
+- `system/backend/internal/iam/service_credential_provisioner.go` 的 `Apply` 在任何凭据写入前校验全部内置服务 Secret；缺失任一项返回错误。当前内置 Client 与 Tenant Runtime Client 清单均没有 `addp-system`。
+- System 配置及根 `.env.example` 没有 `SYSTEM_SERVICE_CLIENT_SECRET`；生产 Compose 尚未注入该项。`scripts/prod/setup-env.sh` 对全新配置生成独立随机 Secret，对已有配置只校验，不自动增加或轮换 Secret。
+- 正式配置规范将每个内置模块的独立 Service Client Secret 规定为生产必需项。若简单把 `addp-system` 加入现有必填集合，已有部署缺少新凭据就会导致 System 启动失败；不能只补 OAuth Client／Permission 而遗漏这一后果。
+- §26.41 已发布的历史核清／关闭使用 `addp-catalog`，不需要 System 反查 Catalog 的新身份。其恢复能力不应因为新的受理前置尚未配置而被关闭。
+
+待确认建议：独立 `addp-system` 凭据用于可信新受理，不成为所有部署的 System Ready 前置。未配置该凭据时，System 及既有模块仍可启动，正式新受理明确返回能力未配置；不得借用其他模块 Secret、User Token 或管理员身份反查，也不得退回独立批准、取消 Catalog 批准要求或放宽已有访问规则。配置后仅启用同一条 OAuth Client Credentials 路线，不增加认证 fallback 或第二条受理路径。新增身份只获得当前 Tenant、精确持久请求的 owner 依据读取权，不获得源数据读取或业务确认权。
+
+这个建议与当前“全部内置服务 Secret 必填”有策略差异，需要用户确认后才能写入正式规范。当前暂停依赖它的身份发布、配置加载及正式受理实现；不先发布无生产消费者的占位 Permission、Role 或迁移，不修改 `.env` 或运行中的服务。既有候选与核清链路保持原样。
+
+确认后的同次交付要求：
+
+- [ ] 正式规范明确未配置新身份时的 Ready、接口错误和既有核清行为；配置缺失不能解释为 Catalog 已退出。
+- [ ] 单一凭据配置／Provisioner 路线同时覆盖全新与已有 Tenant、独立 Secret 注入、生产 Compose 和配置初始化；已有配置不静默轮换。
+- [ ] 一次贯通人类正式准备、提交后发送、专用 Runtime owner 依据、System 首次受理及已有核清恢复；网络调用必须在数据库锁外，参与主体按同一稳定顺序锁定。
+- [ ] T0 复验 Permission／Role／Swagger／部署契约；现有 Common、Catalog、System T1 与 PostgreSQL T2 覆盖未配置可启动、错身份／跨 Tenant 拒绝、完整绑定、自然到期、响应丢失及受理／关闭竞争。复用原 Make／CI 自动发现，不另建本地测试库。
+- [ ] 真实 OAuth 双服务链仍由 Online T4 证明，受控 Transport／认证夹具不算 T4；受理回执、Grant 写入和实际内容读取分别验收。
+
+本节只记录调查与待确认方案，不代表正式准备、首次受理或数据授权已经实现。
+
+本轮验证：`make test-authorization` 通过，权限生成产物与全部模块 Swagger 路由覆盖一致；`git diff --check` 通过。`make test-changed` 识别共享工作区 45 个变更文件、System owner，但因未注入 `ADDP_SYSTEM_POSTGRES_TEST_DSN` 在 T2 环境预检失败，尚未执行受影响模块门禁，不计为通过。本轮仅新增本节专题记录，没有修改生产代码；未运行 PostgreSQL T2 或真实 OAuth 双服务 Online T4，没有接管或重启服务。

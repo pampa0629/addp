@@ -7,6 +7,7 @@
 - System IAM 是 User、账号、外部身份、Tenant Membership、Role 和会话状态的唯一逻辑事实源。
 - System 只签发随机 opaque 用户访问令牌，不签发或解析用户 JWT。
 - `GET /api/v1/system/auth/context` 是用户访问令牌到权威 AuthContext 的唯一接口。
+- 浏览器登录、MFA、上下文选择／切换、会话签发及刷新使用数据库权威时间。需要取锁的操作必须在取得相关事实锁后读取当前语句时间并复核过期；不使用应用时间或等待锁前的事务开始时间。数据库取时失败不签发、不消费、不回退其他时间源。凭据快照校验使用同一数据库时间源，继续严格拒绝未来创建、过期或非法凭据；Family 最终期限及 TOTP 防重放规则保持不变。
 - 业务模块不解析令牌，不从 `/users/me` 推断身份，只消费 AuthContext。
 - Web、CLI 和外部 Agent 的令牌模型见 `docs/spec/addp OAuth授权规范.md`。
 

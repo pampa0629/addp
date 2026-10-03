@@ -69,9 +69,18 @@ type BuiltinServiceRuntimeBinding struct {
 	RoleKey     string `gorm:"column:role_key"`
 }
 
+// DatabaseTimeReader reads the authority clock from the repository used by the
+// current operation. Tests may explicitly supply controlled reads; production
+// uses readDatabaseTime and never falls back to the application clock.
+type DatabaseTimeReader func(context.Context, *Repository) (time.Time, error)
+
+func readDatabaseTime(ctx context.Context, repository *Repository) (time.Time, error) {
+	return repository.CurrentDatabaseTime(ctx)
+}
+
 func (r *Repository) CurrentDatabaseTime(ctx context.Context) (time.Time, error) {
 	var current time.Time
-	if err := r.db.WithContext(ctx).Raw("SELECT now()").Scan(&current).Error; err != nil {
+	if err := r.db.WithContext(ctx).Raw("SELECT statement_timestamp()").Scan(&current).Error; err != nil {
 		return time.Time{}, wrapRepositoryError(err)
 	}
 	return current.UTC(), nil

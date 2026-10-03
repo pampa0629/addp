@@ -21,6 +21,12 @@ import (
 	"gorm.io/gorm/logger"
 )
 
+func testDatabaseTime(clock func() time.Time) DatabaseTimeReader {
+	return func(_ context.Context, _ *Repository) (time.Time, error) {
+		return clock().UTC(), nil
+	}
+}
+
 // Log only validation boundaries; credentials and complete snapshots stay private.
 func logCredentialValidationBoundaries(t *testing.T, err error) {
 	t.Helper()
@@ -62,7 +68,7 @@ func TestAuthContextServiceAgainstPostgres(t *testing.T) {
 	now := func() time.Time { return currentTime }
 	tokenService, err := NewTokenFamilyService(repository, BrowserSessionConfig{
 		ResourceTicketOwners: []string{"manager", "standard"},
-	}, nil, now)
+	}, nil, testDatabaseTime(now))
 	if err != nil {
 		t.Fatalf("create TokenFamilyService: %v", err)
 	}
@@ -74,7 +80,7 @@ func TestAuthContextServiceAgainstPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create AuthContextService: %v", err)
 	}
-	identityService := NewIdentityService(repository, now)
+	identityService := NewIdentityService(repository, testDatabaseTime(now))
 	membershipService := NewTenantMembershipService(repository, now)
 
 	t.Run("tenant projection isolates context and filters effective facts", func(t *testing.T) {

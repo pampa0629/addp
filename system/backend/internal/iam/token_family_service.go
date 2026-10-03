@@ -105,14 +105,14 @@ type TokenFamilyService struct {
 	repository *Repository
 	config     BrowserSessionConfig
 	generate   OpaqueTokenGenerator
-	now        func() time.Time
+	now        DatabaseTimeReader
 }
 
 func NewTokenFamilyService(
 	repository *Repository,
 	config BrowserSessionConfig,
 	generate OpaqueTokenGenerator,
-	now func() time.Time,
+	now DatabaseTimeReader,
 ) (*TokenFamilyService, error) {
 	if repository == nil {
 		return nil, fmt.Errorf("%w: IAM repository is required", commonapi.ErrBadRequest)
@@ -125,7 +125,7 @@ func NewTokenFamilyService(
 		generate = generateOpaqueToken
 	}
 	if now == nil {
-		now = time.Now
+		now = readDatabaseTime
 	}
 	return &TokenFamilyService{
 		repository: repository,
@@ -197,7 +197,20 @@ func (s *TokenFamilyService) RotateBrowserRefreshToken(
 		if err != nil {
 			return hideTokenLookupError(err)
 		}
-		now := s.now().UTC()
+		accessToken, err := tx.LockAccessToken(ctx, token.IssuedAccessTokenID)
+		if err != nil {
+			return hideTokenLookupError(err)
+		}
+		if accessToken.FamilyID != family.ID {
+			return commonapi.ErrUnauthorized
+		}
+		if _, err := tx.LockActiveResourceAccessTickets(ctx, family.ID); err != nil {
+			return err
+		}
+		now, err := s.now(ctx, tx)
+		if err != nil {
+			return err
+		}
 		if err := validateRefreshTokenForRotation(principal, family, token, tokenSnapshot, now); err != nil {
 			return err
 		}
@@ -215,16 +228,6 @@ func (s *TokenFamilyService) RotateBrowserRefreshToken(
 			return fmt.Errorf("refresh token %d is used without a replacement", token.ID)
 		}
 
-		accessToken, err := tx.LockAccessToken(ctx, token.IssuedAccessTokenID)
-		if err != nil {
-			return hideTokenLookupError(err)
-		}
-		if accessToken.FamilyID != family.ID {
-			return commonapi.ErrUnauthorized
-		}
-		if _, err := tx.LockActiveResourceAccessTickets(ctx, family.ID); err != nil {
-			return err
-		}
 		previousAuthorizationVersion := family.IssuedAuthorizationVersion
 		if family.IssuedAuthorizationVersion < principal.AuthorizationVersion {
 			if err := tx.AdvanceRefreshTokenFamilyAuthorizationVersion(ctx, family.ID, principal.AuthorizationVersion); err != nil {
@@ -339,7 +342,10 @@ func (s *TokenFamilyService) handleBrowserRefreshTokenReuse(
 		if err != nil {
 			return hideTokenLookupError(err)
 		}
-		now := s.now().UTC()
+		now, err := s.now(ctx, tx)
+		if err != nil {
+			return err
+		}
 		if err := validateRefreshTokenForRotation(principal, family, token, tokenSnapshot, now); err != nil {
 			return err
 		}
@@ -535,7 +541,10 @@ func (s *TokenFamilyService) createBrowserSessionTx(
 	if err := validateAssuranceLevel(input.Authentication.AssuranceLevel); err != nil {
 		return nil, err
 	}
-	now := s.now().UTC()
+	now, err := s.now(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
 	if input.Authentication.AuthenticatedAt.IsZero() || input.Authentication.AuthenticatedAt.After(now) {
 		return nil, fmt.Errorf("%w: authenticated time must not be in the future", commonapi.ErrBadRequest)
 	}

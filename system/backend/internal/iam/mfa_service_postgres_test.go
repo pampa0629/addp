@@ -36,12 +36,12 @@ func TestMFAServiceAgainstPostgres(t *testing.T) {
 	repository := NewRepository(db)
 	currentTime := time.Now().UTC().Truncate(time.Second)
 	now := func() time.Time { return currentTime }
-	identityService := NewIdentityService(repository, now)
+	identityService := NewIdentityService(repository, testDatabaseTime(now))
 	cipher, err := NewMFACredentialCipher([]byte("0123456789abcdef0123456789abcdef"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	mfaService, err := NewMFAService(repository, cipher, MFAServiceConfig{}, nil, now)
+	mfaService, err := NewMFAService(repository, cipher, MFAServiceConfig{}, nil, testDatabaseTime(now))
 	if err != nil {
 		t.Fatal(err)
 	}

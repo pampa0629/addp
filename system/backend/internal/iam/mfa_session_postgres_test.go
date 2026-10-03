@@ -38,8 +38,8 @@ func TestMFASessionClosureAgainstPostgres(t *testing.T) {
 	repository := NewRepository(db)
 	currentTime := time.Now().UTC().Truncate(time.Second)
 	now := func() time.Time { return currentTime }
-	identityService := NewIdentityService(repository, now)
-	tokenService, err := NewTokenFamilyService(repository, BrowserSessionConfig{ResourceTicketOwners: []string{"system"}}, nil, now)
+	identityService := NewIdentityService(repository, testDatabaseTime(now))
+	tokenService, err := NewTokenFamilyService(repository, BrowserSessionConfig{ResourceTicketOwners: []string{"system"}}, nil, testDatabaseTime(now))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +47,7 @@ func TestMFASessionClosureAgainstPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := NewMFASessionService(repository, cipher, tokenService, MFAServiceConfig{}, nil, now)
+	service, err := NewMFASessionService(repository, cipher, tokenService, MFAServiceConfig{}, nil, testDatabaseTime(now))
 	if err != nil {
 		t.Fatal(err)
 	}

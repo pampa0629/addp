@@ -39,7 +39,7 @@ func TestTenantAdministrationClosureAgainstPostgres(t *testing.T) {
 	repository := NewRepository(db)
 	currentTime := time.Now().UTC().Truncate(time.Microsecond)
 	now := func() time.Time { return currentTime }
-	identityService := NewIdentityService(repository, now)
+	identityService := NewIdentityService(repository, testDatabaseTime(now))
 	userService := NewPlatformUserService(repository, identityService, now)
 	tenantService := NewPlatformTenantService(repository, now)
 	membershipService := NewTenantMembershipService(repository, now)
@@ -47,7 +47,7 @@ func TestTenantAdministrationClosureAgainstPostgres(t *testing.T) {
 	organizationService := NewOrganizationService(repository, now)
 	tokenService, err := NewTokenFamilyService(repository, BrowserSessionConfig{
 		ResourceTicketOwners: []string{"system"},
-	}, nil, now)
+	}, nil, testDatabaseTime(now))
 	if err != nil {
 		t.Fatalf("create tenant administration TokenFamilyService: %v", err)
 	}
@@ -59,7 +59,7 @@ func TestTenantAdministrationClosureAgainstPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create tenant administration MFA cipher: %v", err)
 	}
-	mfaService, err := NewMFAService(repository, mfaCipher, MFAServiceConfig{}, nil, now)
+	mfaService, err := NewMFAService(repository, mfaCipher, MFAServiceConfig{}, nil, testDatabaseTime(now))
 	if err != nil {
 		t.Fatalf("create tenant administration MFA service: %v", err)
 	}

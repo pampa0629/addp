@@ -44,11 +44,11 @@ func TestTenantInvitationServiceAgainstPostgres(t *testing.T) {
 		RefreshTokenFamilyTTL:     30 * 24 * time.Hour,
 		ResourceAccessTicketTTL:   15 * time.Minute,
 		ResourceTicketOwners:      []string{"manager"},
-	}, nil, now)
+	}, nil, testDatabaseTime(now))
 	if err != nil {
 		t.Fatalf("create token family service: %v", err)
 	}
-	identityService := NewIdentityService(repository, now)
+	identityService := NewIdentityService(repository, testDatabaseTime(now))
 	membershipService := NewTenantMembershipService(repository, now)
 	tenantService := NewPlatformTenantService(repository, now)
 	invitationService, err := NewTenantInvitationService(repository, identityService, tokenService, TenantInvitationServiceConfig{

@@ -42,7 +42,7 @@ func TestCredentialValidationEvidenceAgainstPostgres(t *testing.T) {
 	}
 	now := databaseNow.UTC().Add(-time.Second).Truncate(time.Microsecond)
 	clock := func() time.Time { return now }
-	tokens, err := NewTokenFamilyService(repository, BrowserSessionConfig{ResourceTicketOwners: []string{"manager"}}, nil, clock)
+	tokens, err := NewTokenFamilyService(repository, BrowserSessionConfig{ResourceTicketOwners: []string{"manager"}}, nil, testDatabaseTime(clock))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,7 +50,7 @@ func TestCredentialValidationEvidenceAgainstPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fixture := issueResourceTicketInvalidationFixture(t, ctx, NewIdentityService(repository, clock),
+	fixture := issueResourceTicketInvalidationFixture(t, ctx, NewIdentityService(repository, testDatabaseTime(clock)),
 		NewTenantMembershipService(repository, clock), selection, db, now, "original-evidence")
 	original, err := repository.GetAccessTokenAuthSnapshot(ctx, hashOpaqueToken(fixture.Session.AccessToken))
 	if err != nil {

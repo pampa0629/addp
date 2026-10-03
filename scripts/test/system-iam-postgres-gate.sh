@@ -91,7 +91,7 @@ case "$TEST_FILTER" in
             echo "credential-context test requires --package iam" >&2
             exit 2
         fi
-        test_pattern='^Test(DelegationService|ExecutionAuthorizationService|NotebookSessionAuthorizationService|CredentialValidationEvidence)AgainstPostgres$'
+        test_pattern='^Test(DelegationService|ExecutionAuthorizationService|NotebookSessionAuthorizationService|CredentialValidationEvidence|BrowserAuthenticationClock)AgainstPostgres$'
         ;;
     engine-access-coordination)
         if [ "$PACKAGE_FILTER" != "migration" ]; then

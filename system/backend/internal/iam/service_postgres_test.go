@@ -44,7 +44,7 @@ func TestIAMServicesAgainstPostgres(t *testing.T) {
 	// cannot accidentally rely on database defaults or test execution speed.
 	currentTime := time.Now().UTC().Add(-time.Hour).Truncate(time.Microsecond)
 	now := func() time.Time { return currentTime }
-	identityService := NewIdentityService(repository, now)
+	identityService := NewIdentityService(repository, testDatabaseTime(now))
 	membershipService := NewTenantMembershipService(repository, now)
 	validAudit := AuditMetadata{RequestID: stringPointer("iam-service-test")}
 

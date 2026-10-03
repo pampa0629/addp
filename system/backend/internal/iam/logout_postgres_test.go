@@ -46,7 +46,7 @@ func TestLogoutServiceAgainstPostgres(t *testing.T) {
 	now := func() time.Time { return currentTime }
 	tokenService, err := NewTokenFamilyService(repository, BrowserSessionConfig{
 		ResourceTicketOwners: []string{"manager", "standard"},
-	}, nil, now)
+	}, nil, testDatabaseTime(now))
 	if err != nil {
 		t.Fatalf("create TokenFamilyService: %v", err)
 	}
@@ -62,7 +62,7 @@ func TestLogoutServiceAgainstPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create LogoutService: %v", err)
 	}
-	identityService := NewIdentityService(repository, now)
+	identityService := NewIdentityService(repository, testDatabaseTime(now))
 	membershipService := NewTenantMembershipService(repository, now)
 
 	t.Run("logout revokes the complete family exactly once", func(t *testing.T) {

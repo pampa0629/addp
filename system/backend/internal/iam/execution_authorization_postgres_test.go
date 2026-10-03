@@ -64,7 +64,7 @@ func TestExecutionAuthorizationServiceAgainstPostgres(t *testing.T) {
 	repository := NewRepository(db)
 	tokenService, err := NewTokenFamilyService(repository, BrowserSessionConfig{
 		ResourceTicketOwners: []string{"manager"},
-	}, nil, time.Now)
+	}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +76,7 @@ func TestExecutionAuthorizationServiceAgainstPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	identityService := NewIdentityService(repository, time.Now)
+	identityService := NewIdentityService(repository, nil)
 	membershipService := NewTenantMembershipService(repository, time.Now)
 	audit := AuditMetadata{RequestID: stringPointer("execution-authorization-postgres")}
 	user := createContextSelectionUser(t, ctx, identityService, "execution-authorization-user", audit)

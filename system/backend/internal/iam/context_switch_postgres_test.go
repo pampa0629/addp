@@ -47,7 +47,7 @@ func TestContextSwitchServiceAgainstPostgres(t *testing.T) {
 	now := func() time.Time { return currentTime }
 	tokenService, err := NewTokenFamilyService(repository, BrowserSessionConfig{
 		ResourceTicketOwners: []string{"manager", "standard"},
-	}, nil, now)
+	}, nil, testDatabaseTime(now))
 	if err != nil {
 		t.Fatalf("create TokenFamilyService: %v", err)
 	}
@@ -59,7 +59,7 @@ func TestContextSwitchServiceAgainstPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create ContextSwitchService: %v", err)
 	}
-	identityService := NewIdentityService(repository, now)
+	identityService := NewIdentityService(repository, testDatabaseTime(now))
 	membershipService := NewTenantMembershipService(repository, now)
 
 	t.Run("tenant switch is atomic and preserves family deadline", func(t *testing.T) {

@@ -191,7 +191,7 @@ func newBootstrapPostgresTestService(t *testing.T, db *gorm.DB) (*BootstrapServi
 		t.Fatal(err)
 	}
 	service, err := NewBootstrapService(
-		repository, NewIdentityService(repository, now), cipher, time.Hour,
+		repository, NewIdentityService(repository, testDatabaseTime(now)), cipher, time.Hour,
 		func(prefix string) (string, error) { return prefix + "bootstrap-postgres-test", nil },
 		now,
 	)

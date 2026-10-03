@@ -89,8 +89,7 @@ func (s *ContextSelectionService) BeginContextSelection(
 	if err := validateAssuranceLevel(input.Authentication.AssuranceLevel); err != nil {
 		return nil, err
 	}
-	now := s.tokenService.now().UTC()
-	if input.Authentication.AuthenticatedAt.IsZero() || input.Authentication.AuthenticatedAt.After(now) {
+	if input.Authentication.AuthenticatedAt.IsZero() {
 		return nil, fmt.Errorf("%w: authenticated time must not be in the future", commonapi.ErrBadRequest)
 	}
 	if input.Authentication.StepUpExpiresAt != nil && input.Authentication.StepUpExpiresAt.Before(input.Authentication.AuthenticatedAt) {
@@ -105,6 +104,13 @@ func (s *ContextSelectionService) BeginContextSelection(
 		principal, err := tx.LockPrincipal(ctx, input.PrincipalID)
 		if err != nil {
 			return err
+		}
+		now, err := s.tokenService.now(ctx, tx)
+		if err != nil {
+			return err
+		}
+		if authentication.AuthenticatedAt.After(now) {
+			return fmt.Errorf("%w: authenticated time must not be in the future", commonapi.ErrBadRequest)
 		}
 		if principal.PrincipalType != PrincipalTypeUser || principal.Status != PrincipalStatusActive {
 			return fmt.Errorf("%w: context selection requires an active user", commonapi.ErrForbidden)
@@ -231,7 +237,10 @@ func (s *ContextSelectionService) ConsumeContextSelection(
 		if err != nil {
 			return err
 		}
-		now := s.tokenService.now().UTC()
+		now, err := s.tokenService.now(ctx, tx)
+		if err != nil {
+			return err
+		}
 		if ticket.ID != ticketSnapshot.ID || ticket.PrincipalID != principal.ID {
 			return commonapi.ErrUnauthorized
 		}
