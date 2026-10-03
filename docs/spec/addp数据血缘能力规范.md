@@ -259,7 +259,7 @@ Develop Query Execution Supervisor 必须在业务写入事务成功提交后，
 - 统一 `GET /lineage/graph` 增加 `subject_kind=field_ref`、`field_name` 和可选 `schema_snapshot_hash`；省略 hash 时依据 Meta 当前结构定位，指定 hash 时使用对应执行证据。字段图按字段身份沿固定方向遍历，保留租户、深度、数量和端点完整性约束；as_of 沿冻结快照查询已观察的写入事实，stale 标记仍保留在历史关系上，不因当前结构变化删除历史来源，也不反推未观察的外部变更时间；首期字段视图不接受数据项 ID 的局部展开参数。字段视图返回 `field_lineage_status=complete|unavailable`，complete 且无入边可表示已证明的 generated 字段；unavailable 不等于没有来源。
 - `common-frontend/graph` 统一管理字段选择与字段节点展示。宿主传入根数据项的字段名并请求同一 API，字段名称作为精确标识传递，不拆分点号。节点详情提供字段名、所属数据项及结构快照 hash，关系详情提供转换语义和执行证据。
 
-首期跨模块验收复用 `transfer-relational-sql-etl` Online suite，覆盖真实 Transfer 原生表字段映射、replace 与两跳自动采集，以及 Console 中 Manager 共享字段视图；同一 suite 的 SQL 查询源验证 unavailable。确定性脚本通过不等于真实 T4 通过，具体身份、夹具、报告和清理契约见《ADDP 测试与验收规范》5.2。
+首期跨模块验收复用 `transfer-relational-sql-etl` Online suite，唯一运行于 GitHub Hosted Ubuntu x86_64 临时部署，覆盖真实 Transfer 原生表字段映射、replace 与两跳自动采集，以及 Console 中 Manager 共享字段视图；同一 suite 的 SQL 查询源验证 unavailable。每轮创建隔离身份与 PostgreSQL Engine Instance，退出时随整套部署销毁，不依赖永久账号或自托管 Runner。确定性脚本通过不等于真实 T4 通过，具体身份、夹具、报告和清理契约见《ADDP 测试与验收规范》5.2。
 
 ### 6.2 图数据库评估边界
 

@@ -58,6 +58,12 @@ var securityInitializerPermissions = []string{
 	"security.sensitive_data_type.read", "security.sensitive_data_type.create", "security.detector.read", "security.detector.create",
 }
 
+var transferLineagePermissions = []string{
+	"manager.content.read", "manager.data_item.read", "meta.catalog.read", "meta.lineage.read",
+	"meta.scan_task.execute", "meta.scan_task.read",
+	"transfer.task.create", "transfer.task.delete", "transfer.task.execute", "transfer.task.read",
+}
+
 var metricPermissions = []string{
 	"meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read",
 	"standard.metric.create", "standard.metric.read", "standard.metric.update", "standard.metric.publish",
@@ -107,6 +113,8 @@ func suitePermissions(suite string) ([]string, error) {
 		return consumerPermissions, nil
 	case "redis-consumer-flow":
 		return redisConsumerPermissions, nil
+	case "transfer-relational-sql-etl":
+		return transferLineagePermissions, nil
 	case "metric-service-revision-lifecycle":
 		return metricPermissions, nil
 	case "ontology-revision-lifecycle":
@@ -123,7 +131,7 @@ func suitePermissions(suite string) ([]string, error) {
 }
 
 func needsEngineProvisioner(suite string) bool {
-	return suite == "security-mysql-owner-protection" || suite == "redis-consumer-flow" || suite == "manager-internal-artifact-lineage" || suite == "opengauss-consumer-flow" || suite == "kingbase-consumer-flow" || suite == "metric-service-revision-lifecycle" || suite == "orchestrator-execution"
+	return suite == "transfer-relational-sql-etl" || suite == "security-mysql-owner-protection" || suite == "redis-consumer-flow" || suite == "manager-internal-artifact-lineage" || suite == "opengauss-consumer-flow" || suite == "kingbase-consumer-flow" || suite == "metric-service-revision-lifecycle" || suite == "orchestrator-execution"
 }
 
 func main() {
@@ -274,7 +282,7 @@ func run(args []string, environment []string) error {
 		"ADDP_ONLINE_TEST_TENANT_ID":         fmt.Sprintf("%d", tenant.ID),
 		"ADDP_ONLINE_TEST_USER_ACCESS_TOKEN": consumerSession.AccessToken,
 	}
-	if *suite == "redis-consumer-flow" || *suite == "manager-internal-artifact-lineage" {
+	if *suite == "redis-consumer-flow" || *suite == "manager-internal-artifact-lineage" || *suite == "transfer-relational-sql-etl" {
 		values["ADDP_ONLINE_TEST_USER_USERNAME"] = "external-online-consumer"
 		values["ADDP_ONLINE_TEST_USER_PASSWORD"] = consumerPassword
 	}

@@ -71,6 +71,7 @@ func TestFixtureAuthorizationContractMatchesPublishedCatalog(t *testing.T) {
 	}
 	allPermissions := append(append(append(append(append([]string{}, consumerPermissions...), metricPermissions...), ontologyPermissions...), publicOriginReadPermissions...), publicOriginCreatePermissions...)
 	allPermissions = append(allPermissions, orchestratorPermissions...)
+	allPermissions = append(allPermissions, transferLineagePermissions...)
 	allPermissions = append(allPermissions, securityPermissions...)
 	allPermissions = append(allPermissions, securityInitializerPermissions...)
 	allPermissions = append(allPermissions, redisConsumerPermissions...)
@@ -326,6 +327,22 @@ func TestSecurityFixtureSeparatesPreparationFromOwnerPermissions(t *testing.T) {
 	for _, key := range []string{"security.classification.create", "security.grade.create", "security.detector.create", "system.engine.create"} {
 		if contains(permissions, key) {
 			t.Fatalf("preparation permission leaked into consumer: %s", key)
+		}
+	}
+}
+
+func TestTransferLineageFixtureUsesExactConsumerPermissions(t *testing.T) {
+	permissions, err := suitePermissions("transfer-relational-sql-etl")
+	if err != nil || len(permissions) != 10 || !needsEngineProvisioner("transfer-relational-sql-etl") {
+		t.Fatalf("invalid transfer identity contract: %v %v", permissions, err)
+	}
+	for _, required := range []string{
+		"manager.content.read", "manager.data_item.read", "meta.catalog.read", "meta.lineage.read",
+		"meta.scan_task.execute", "meta.scan_task.read",
+		"transfer.task.create", "transfer.task.delete", "transfer.task.execute", "transfer.task.read",
+	} {
+		if !contains(permissions, required) {
+			t.Fatalf("missing transfer consumer permission %s", required)
 		}
 	}
 }

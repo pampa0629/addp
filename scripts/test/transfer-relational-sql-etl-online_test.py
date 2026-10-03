@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 
 SCRIPT = Path(__file__).with_name("transfer-relational-sql-etl-online.py")
@@ -23,7 +23,7 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
         result = subprocess.run(["node", "--check", str(browser)], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
 
-    def test_validates_postgresql_engine_through_formal_connection_check(self) -> None:
+    def test_validates_same_engine_through_read_only_meta_projection(self) -> None:
         class Client:
             def __init__(self):
                 self.calls = []
@@ -31,13 +31,13 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
             def request(self, method, path, expected):
                 self.calls.append((method, path, expected))
                 return SimpleNamespace(
-                    payload={
+                    payload=[{
                         "id": 7,
                         "name": "Online PostgreSQL Fixture",
-                        "engine_type": "postgresql",
+                        "resource_type": "postgresql",
                         "lifecycle_state": "active",
                         "connection_status": "online",
-                    }
+                    }]
                 )
 
         client = Client()
@@ -48,10 +48,29 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
         self.assertEqual(
             client.calls,
             [
-                ("POST", "/api/v1/system/engines/7/test", (200,)),
-                ("GET", "/api/v1/system/engines/7", (200,)),
+                ("GET", "/api/v1/meta/engines", (200,)),
             ],
         )
+
+    def test_meta_projection_rejects_wrong_engine_and_duplicate_identity(self):
+        engine = {"id": 7, "name": "fixture", "resource_type": "postgresql",
+                  "lifecycle_state": "active", "connection_status": "online"}
+        for projection in ([dict(engine, resource_type="mysql")], [dict(engine, name="other")],
+                           [dict(engine, lifecycle_state="deleted")], [engine, engine]):
+            client = SimpleNamespace(request=lambda *args: SimpleNamespace(payload=projection))
+            with patch.object(ONLINE.time, "monotonic", return_value=1.0), self.assertRaises(ONLINE.SuiteError):
+                ONLINE.validate_engine(client, 7, "fixture", 10.0)
+
+    def test_meta_projection_waits_for_same_id_without_control_plane_calls(self):
+        engine = {"id": 7, "name": "fixture", "resource_type": "postgresql",
+                  "lifecycle_state": "active", "connection_status": "online"}
+        client = SimpleNamespace(request=Mock(side_effect=[SimpleNamespace(payload=[dict(engine, id=8)]),
+                                                          SimpleNamespace(payload=[engine])]))
+        with patch.object(ONLINE.time, "monotonic", return_value=1.0), patch.object(ONLINE.time, "sleep"):
+            report = ONLINE.validate_engine(client, 7, "fixture", 10.0)
+        self.assertEqual(report["verification_owner"], "deployment_profile")
+        for call in client.request.call_args_list:
+            self.assertEqual(call.args, ("GET", "/api/v1/meta/engines", (200,)))
 
     def test_task_name_is_stable_and_fits_ui_limit(self) -> None:
         first = ONLINE.task_name("run-123")
@@ -202,11 +221,16 @@ class TransferRelationalSQLETLOnlineTest(unittest.TestCase):
         self.assertEqual(ONLINE.suite_task_ids(client, exact_name=name), [1, 2, 3, 4])
 
     def test_online_identity_requires_lineage_and_manager_permissions(self):
+        self.assertFalse(any(key.startswith("system.engine.") for key in ONLINE.REQUIRED_PERMISSIONS))
         permissions = sorted(ONLINE.REQUIRED_PERMISSIONS)
         context = {"principal": {"type": "user", "id": "1"}, "context": {"type": "tenant", "tenant_id": "42"},
                    "token": {"type": "first_party_access_token"}, "authorization": {"role_assignments": [{"role_key": "online_operator", "permissions": permissions}]}}
         client = SimpleNamespace(request=lambda *args: SimpleNamespace(payload=context))
         ONLINE.validate_user_identity(client, 42)
+        permissions.append("system.engine.execute")
+        with self.assertRaisesRegex(ONLINE.SuiteError, "exceeds minimum permissions"):
+            ONLINE.validate_user_identity(client, 42)
+        permissions.remove("system.engine.execute")
         permissions.remove("meta.lineage.read")
         with self.assertRaisesRegex(ONLINE.SuiteError, "meta.lineage.read"):
             ONLINE.validate_user_identity(client, 42)

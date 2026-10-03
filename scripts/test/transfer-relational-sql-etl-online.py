@@ -46,8 +46,6 @@ REQUIRED_PERMISSIONS = {
     "meta.lineage.read",
     "meta.scan_task.execute",
     "meta.scan_task.read",
-    "system.engine.execute",
-    "system.engine.read",
     "transfer.task.create",
     "transfer.task.delete",
     "transfer.task.execute",
@@ -233,6 +231,9 @@ def validate_user_identity(client: GatewayClient, tenant_id: int) -> dict[str, o
     missing = REQUIRED_PERMISSIONS - permissions
     if missing:
         raise SuiteError("Online Transfer SQL ETL token is missing required permissions: " + ", ".join(sorted(missing)))
+    unexpected = permissions - REQUIRED_PERMISSIONS
+    if unexpected:
+        raise SuiteError("Online Transfer SQL ETL consumer exceeds minimum permissions: " + ", ".join(sorted(unexpected)))
     return {
         "principal_id": str(principal_id),
         "principal_type": "user",
@@ -243,11 +244,19 @@ def validate_user_identity(client: GatewayClient, tenant_id: int) -> dict[str, o
 
 
 def validate_engine(client: GatewayClient, engine_id: int, expected_name: str, deadline: float) -> dict[str, object]:
-    client.request("POST", f"/api/v1/system/engines/{engine_id}/test", (200,))
+    # Engine registration and connection testing belong to the Hosted Provisioner.
+    # The consumer verifies the same tenant-visible Meta projection used by the UI.
     while time.monotonic() < deadline:
-        engine = _object(client.request("GET", f"/api/v1/system/engines/{engine_id}", (200,)).payload, "Engine Instance")
-        if engine.get("engine_type") != "postgresql":
-            raise SuiteError(f"configured Engine Instance {engine_id} must use engine_type=postgresql")
+        engines = _array(client.request("GET", "/api/v1/meta/engines", (200,)).payload, "Meta Engines")
+        matches = [engine for engine in engines if isinstance(engine, dict) and engine.get("id") == engine_id]
+        if len(matches) > 1:
+            raise SuiteError("Meta returned duplicate Engine identities")
+        if not matches:
+            time.sleep(1)
+            continue
+        engine = matches[0]
+        if engine.get("resource_type") != "postgresql":
+            raise SuiteError(f"configured Engine Instance {engine_id} must use resource_type=postgresql")
         if engine.get("name") != expected_name:
             raise SuiteError(f"configured Engine Instance {engine_id} has an unexpected name")
         if engine.get("lifecycle_state") != "active":
@@ -258,9 +267,10 @@ def validate_engine(client: GatewayClient, engine_id: int, expected_name: str, d
                 "engine_type": "postgresql",
                 "engine_name": expected_name,
                 "connection_status": "online",
+                "verification_owner": "deployment_profile",
             }
         time.sleep(1)
-    raise SuiteError(f"configured Engine Instance {engine_id} did not become online")
+    raise SuiteError(f"configured Engine Instance {engine_id} did not become visible and online")
 
 
 def suite_task_ids(client: GatewayClient, exact_name: str | None = None) -> list[int]:

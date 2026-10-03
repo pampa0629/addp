@@ -149,8 +149,6 @@ test('browser executes SQL ETL and verifies native field lineage in Manager', as
       'meta.lineage.read',
       'manager.data_item.read',
       'manager.content.read',
-      'system.engine.execute',
-      'system.engine.read',
       'transfer.task.create',
       'transfer.task.delete',
       'transfer.task.execute',

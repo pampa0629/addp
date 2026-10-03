@@ -589,6 +589,8 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         root = SCRIPT.parents[2]
         relatives = (
             "scripts/test/online-gate.py", "scripts/test/online-host-gate.sh",
+            "scripts/test/online-hosted-transfer-gate.sh", "scripts/test/online-hosted-transfer-gate_test.py",
+            ".github/workflows/online-t4-gates.yml", "Makefile",
             "scripts/test/transfer-relational-sql-etl-online.py", "scripts/test/transfer-relational-sql-etl-online_test.py",
             "scripts/test/online-transfer-relational-sql-etl-fixture_test.py",
             "business/scripts/online-transfer-relational-sql-etl-fixture.sh",
@@ -614,9 +616,23 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                 with self.assertRaisesRegex(CHECK.RegistrationError, "contract is missing"):
                     CHECK.validate_transfer_relational_sql_etl_profile(self.repository, registered)
                 path.write_text(original, encoding="utf-8")
+        for relative, fragment, message in (
+            ("scripts/test/online-hosted-transfer-gate.sh", "CONSOLE_URL=", "Hosted profile is missing"),
+            ("scripts/test/online-hosted-transfer-gate.sh", "unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN", "Hosted profile is missing"),
+            (".github/workflows/online-t4-gates.yml", "&& inputs.suite != 'transfer-relational-sql-etl'", "must not also dispatch"),
+            (".github/workflows/online-t4-gates.yml", "    if: github.event_name == 'workflow_dispatch' && inputs.suite == 'transfer-relational-sql-etl'", "manual Ubuntu"),
+            ("Makefile", "scripts/test/online-hosted-transfer-gate_test.py", "regression must enter"),
+        ):
+            with self.subTest(fragment=fragment):
+                path = self.repository / relative
+                original = path.read_text()
+                path.write_text(original.replace(fragment, ""))
+                with self.assertRaisesRegex(CHECK.RegistrationError, message):
+                    CHECK.validate_transfer_relational_sql_etl_profile(self.repository, registered)
+                path.write_text(original)
         host = self.repository / "scripts/test/online-host-gate.sh"
-        host.write_text(host.read_text().replace("SYSTEM_URL GATEWAY_URL META_URL TRANSFER_URL MANAGER_URL CONSOLE_URL", "SYSTEM_URL GATEWAY_URL META_URL TRANSFER_URL CONSOLE_URL"))
-        with self.assertRaisesRegex(CHECK.RegistrationError, "profile requires MANAGER_URL"):
+        host.write_text(host.read_text() + "\n# transfer-relational-sql-etl\n")
+        with self.assertRaisesRegex(CHECK.RegistrationError, "must not keep a self-hosted"):
             CHECK.validate_transfer_relational_sql_etl_profile(self.repository, registered)
 
     def test_requires_manager_internal_artifact_lineage_fixture_and_browser_suite(self) -> None:

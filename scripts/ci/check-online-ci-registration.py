@@ -1160,10 +1160,39 @@ def validate_transfer_relational_sql_etl_profile(repository: Path, registered: s
     suite = load_suite_registry(repository)["transfer-relational-sql-etl"]
     if ("manager", "MANAGER_URL") not in suite.services:
         raise RegistrationError("transfer-relational-sql-etl must preflight Manager")
+    hosted_path = repository / "scripts/test/online-hosted-transfer-gate.sh"
+    if not hosted_path.is_file():
+        raise RegistrationError("transfer-relational-sql-etl requires Hosted lifecycle")
+    hosted = hosted_path.read_text(encoding="utf-8")
+    for fragment in (
+        'source "$ROOT_DIR/scripts/utils/hosted-online.sh"',
+        'for start_target in -transfer -manager', 'CONSOLE_URL=',
+        'bash business/scripts/online-transfer-relational-sql-etl-fixture.sh start',
+        'bash business/scripts/online-transfer-relational-sql-etl-fixture.sh stop',
+        'bash business/scripts/online-transfer-relational-sql-etl-fixture.sh verify',
+        '--suite transfer-relational-sql-etl', 'scripts/test/online-engine-registration.py',
+        'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN',
+        'export ADDP_ONLINE_TEST_ENGINE_ID="$ADDP_ONLINE_CONSUMER_ENGINE_ID"',
+        'playwright install --with-deps chromium',
+        'make test-online "ONLINE_SUITE=$ONLINE_SUITE"',
+    ):
+        if fragment not in hosted:
+            raise RegistrationError(f"transfer-relational-sql-etl Hosted profile is missing {fragment}")
     host = (repository / "scripts/test/online-host-gate.sh").read_text(encoding="utf-8")
-    profile = re.search(r"(?ms)^  transfer-relational-sql-etl\)\n.*?(?=^  [a-z][a-z0-9-]*\)|\Z)", host)
-    if profile is None or "MANAGER_URL" not in profile.group():
-        raise RegistrationError("transfer-relational-sql-etl profile requires MANAGER_URL")
+    if "transfer-relational-sql-etl" in host:
+        raise RegistrationError("transfer-relational-sql-etl must not keep a self-hosted route")
+    workflow = (repository / ".github/workflows/online-t4-gates.yml").read_text(encoding="utf-8")
+    job = re.search(r"(?ms)^  transfer-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)", workflow)
+    if (job is None or "runs-on: ubuntu-24.04" not in job.group("body")
+            or "    if: github.event_name == 'workflow_dispatch' && inputs.suite == 'transfer-relational-sql-etl'\n" not in job.group("body")
+            or "ONLINE_SUITE_INPUT: transfer-relational-sql-etl" not in job.group("body")):
+        raise RegistrationError("transfer-relational-sql-etl requires a manual Ubuntu Hosted job")
+    if "&& inputs.suite != 'transfer-relational-sql-etl'" not in workflow:
+        raise RegistrationError("transfer-relational-sql-etl must not also dispatch on self-hosted")
+    makefile = (repository / "Makefile").read_text(encoding="utf-8")
+    aggregate = re.search(r"(?ms)^test-online-runner:[^\n]*\n(?P<body>.*?)(?=^[^\t\n#]|\Z)", makefile)
+    if aggregate is None or "scripts/test/online-hosted-transfer-gate_test.py" not in aggregate.group("body"):
+        raise RegistrationError("transfer-relational-sql-etl Hosted regression must enter test-online-runner")
     contracts = {
         "scripts/test/transfer-relational-sql-etl-online.py": (
             '"manager.data_item.read"', '"manager.content.read"', '"meta.lineage.read"',
@@ -1172,9 +1201,9 @@ def validate_transfer_relational_sql_etl_profile(repository: Path, registered: s
             "addp.transfer-relational-sql-etl-browser/v2",
         ),
         "business/scripts/online-transfer-relational-sql-etl-fixture.sh": (
-            "ADDP_ONLINE_HOST", "NATIVE_TARGET", "NATIVE_DOWNSTREAM", "DROP TABLE IF EXISTS public.${NATIVE_TARGET}",
+            "ADDP_ONLINE_HOSTED", "GITHUB_ACTIONS", "NATIVE_TARGET", "NATIVE_DOWNSTREAM", "DROP TABLE IF EXISTS public.${NATIVE_TARGET}",
             "DROP TABLE IF EXISTS public.${NATIVE_DOWNSTREAM}", "numeric_precision, numeric_scale", "generated_label",
-            "owned tables remain after cleanup",
+            "container remains after cleanup", "container ownership mismatch", "--tmpfs /var/lib/postgresql/data",
         ),
         "console/frontend/e2e/online/transfer-relational-sql-etl.spec.js": (
             "/manager/data-explorer", "field_ref", "schema_snapshot_hash", "lineage-field", "lineage-canvas",
@@ -1182,6 +1211,7 @@ def validate_transfer_relational_sql_etl_profile(repository: Path, registered: s
             "addp.transfer-relational-sql-etl-browser/v2",
         ),
         "scripts/test/transfer-relational-sql-etl-online_test.py": ("test_rejects_wrong_fields_versions_and_execution_proofs",),
+        "scripts/test/online-hosted-transfer-gate_test.py": ("test_failures_destroy_owned_resources",),
         "scripts/test/online-transfer-relational-sql-etl-fixture_test.py": ("test_rejects_native_rows",),
     }
     for relative, fragments in contracts.items():

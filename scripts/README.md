@@ -451,6 +451,8 @@ scripts/test/
 ├── online-host-gate.sh # 专用 addp-online Runner 生命周期编排
 ├── online-host-gate_test.py # 专用主机边界、启动映射与清理回归测试
 ├── online-hosted-opengauss-gate.sh # GitHub Hosted Linux x86_64 openGauss T4 disposable 编排
+├── online-hosted-transfer-gate.sh # GitHub Hosted PostgreSQL SQL ETL 与字段血缘临时部署
+├── online-hosted-transfer-gate_test.py # Transfer Hosted 生命周期与失败清理回归
 ├── online-hosted-security-gate.sh # Security 四出口 Hosted 一次性部署
 ├── online-hosted-security-gate_test.py # Security Hosted 准入、准备身份隔离及失败清理
 ├── online-security-owner-fixture_test.py # Security MySQL/PostGIS 物理夹具归属与清理验证
@@ -577,6 +579,10 @@ bash scripts/test/online-host-gate.sh --check-only
 
 仓库外 `quality-dynamic-binding.json` 逐步记录创建资源 ID、父执行 ID、断言和清理状态，不记录 Token 或数据正文。执行终结后按逆序删除临时编排、方案和规则并逐一验证 404；方案工单由正式删除事务清理，已完成执行审计保留。HTTP 最多 30 秒、单次编排等待 120 秒、场景 600 秒，清理等待每个已知执行最多 60 秒。若创建或执行请求丢失响应、执行未终结、强制终止或删除失败，门禁失败且不能声称零残留；须依据 Run ID 与证据 ID 经正式 API 核查处理，禁止直接 SQL 清理或删除永久夹具。
 
+`transfer-relational-sql-etl` 唯一使用 GitHub Hosted `ubuntu-24.04` x86_64 临时部署，在 `Online T4 gates` 手工选择该 suite 即可，不需要自托管 Runner、永久账号或外部环境文件。`online-hosted-transfer-gate.sh` 复用 Hosted 公共生命周期，建立独立 Infra、非默认 Tenant、具备精确 10 项 Permission 的真实测试 User，并通过独立 Provisioner 和 System API 注册当次 PostgreSQL Engine Instance。Business Fixture 使用本轮独占的 tmpfs 容器；数据库用户只读取源表并在指定 schema 创建自己的目标表。正式启动脚本启动 Transfer、Meta、Manager、System、Gateway 和 Console，业务断言仍只有 `make test-online ONLINE_SUITE=transfer-relational-sql-etl` 一条入口。
+
+同一 suite 验证原生表字段改名、decimal 精度转换、常量生成、replace 旧入边关闭和两跳自动采集，并从 Console Manager iframe 验证字段图与结构快照；SQL 查询源由真实浏览器构造投影和参数化过滤，验证 2 行结果及字段血缘 unavailable。四个临时任务通过正式 API 删除，Business owner 校验三个目标表的数据与精度。成功、失败和中断路径均销毁业务容器、Infra 数据卷及 owner-only 凭据目录，残留使门禁失败；强制终止不能声称清理完成。Actions Artifact 仅归档报告、截图、脱敏日志和清理证据。确定性验证使用 `make test-online-runner` 与 `make test-platform`；首次真实 T4 成功前只登记手工触发。
+
 `metric-service-revision-lifecycle` 唯一运行于 GitHub Hosted `ubuntu-24.04`，从 `Online T4 gates` 手工选择同名 suite，并用 `metric_engine` 选择 `postgresql` 或 `tidb`；手工运行只验收所选引擎，每日夜间调度分别验收两个引擎，无需专用 Mac、预置 Tenant 或仓库 Secret。`online-hosted-metric-gate.sh` 复用 Hosted 生命周期及 System 临时身份入口，启动独立 Infra 与所选只读业务引擎。TiDB 使用固定 digest 的 PD/TiKV/TiDB 临时 Compose 集群；两种引擎均通过真实 API 扫描并建立 Standard 定义、逻辑表、关系和指标修订，复用同一指标契约和确定性结果。仅当次身份凭据与引擎描述写入 `runner.temp` 的 owner-only 文件，不接受永久业务环境提供的 ID 或数据。
 
 业务断言仍只走 `make test-online ONLINE_SUITE=metric-service-revision-lifecycle`：首次查询得到非空确定结果；发布新修订不自动重绑；旧修订撤回后 Model 返回 `409 metric_implementation_state_conflict`、Service 返回 `500 query_execution_failed` 且服务仍 active、绑定不变；显式重绑后恢复相同数据。临时服务按 ID 删除并确认 404；指标历史在运行期间保留，随后与整套临时部署共同销毁，无历史记录强删旁路。
@@ -607,7 +613,7 @@ bash scripts/test/online-host-gate.sh --check-only
 
 分发器对同一 `suite + Run ID` 使用操作系统临时目录进程锁，锁覆盖预检、场景和报告写入。成功或失败均生成 `addp.online-gate/v1` 的 `online-report.json`：专用 Runner 写入仓库外 `ADDP_ONLINE_ARTIFACT_DIR` 并由 workflow 归档，本地直接执行则写入操作系统临时目录。报告包含构建身份、脱敏服务地址、Tenant、`addp_online` 数据库类别、阶段耗时、稳定错误码及 owner suite 的身份/创建/清理/残留证据，不保存 Token、Secret 或完整错误响应正文。
 
-专用部署默认只允许由 `.github/workflows/online-t4-gates.yml` 的手工 `workflow_dispatch` 触发；在正式 Suite 注册表声明 `nightly=True` 的已毕业 suite 还接受每日 `20:30 UTC` 的 `schedule`。常规 suite 在带 `self-hosted`、`macOS`、`addp-online` 标签的 Runner 上调用 `online-host-gate.sh`，并显式排除定时事件；`compose-public-origin`、`opengauss-consumer-flow`、`metric-service-revision-lifecycle` 和 `security-mysql-owner-protection` 在 GitHub Hosted Linux x86_64 Runner 上分别调用 `online-hosted-public-origin-gate.sh`、`online-hosted-opengauss-gate.sh`、`online-hosted-metric-gate.sh`、`online-hosted-security-gate.sh`，共用 `scripts/utils/hosted-online.sh` 生命周期；`kingbase-consumer-flow` 只在带 `self-hosted`、`Linux`、`X64`、`addp-kingbase` 标签且受 `addp-kingbase` Environment 审批的 owner-managed Runner 上调用 `online-owner-managed-kingbase-gate.sh`。三种 profile 都在生命周期操作前验证仓库外 artifact/secret 分区、无根 `.env`、无容器冲突和干净 checkout，产出不含密钥内容的 `readiness.txt`，共用唯一 `make test-online` 分发入口。常规 self-hosted 只从 `ADDP_ONLINE_ENV_FILE` 加载专用外部环境；KingbaseES 只从 owner-only `ADDP_KINGBASE_GATE_ENV_FILE` 加载 License 路径、License SHA-256 等受控事实；Hosted 与 KingbaseES profile 必须额外销毁当次业务引擎、Infra 和凭据目录。`scripts/ci/check-online-ci-registration.py` 要求 suite、部署 profile、Runner 预检、workflow choices 与夜间登记完全一致，拒绝未毕业的定时 suite、非每日 cron、未固定 suite 输入或可能被定时事件误触发的其他 Job。
+专用部署默认只允许由 `.github/workflows/online-t4-gates.yml` 的手工 `workflow_dispatch` 触发；在正式 Suite 注册表声明 `nightly=True` 的已毕业 suite 还接受每日 `20:30 UTC` 的 `schedule`。常规 suite 在带 `self-hosted`、`macOS`、`addp-online` 标签的 Runner 上调用 `online-host-gate.sh`，并显式排除定时事件；`compose-public-origin`、`opengauss-consumer-flow`、`metric-service-revision-lifecycle`、`transfer-relational-sql-etl` 和 `security-mysql-owner-protection` 在 GitHub Hosted Linux x86_64 Runner 上分别调用 `online-hosted-public-origin-gate.sh`、`online-hosted-opengauss-gate.sh`、`online-hosted-metric-gate.sh`、`online-hosted-transfer-gate.sh`、`online-hosted-security-gate.sh`，共用 `scripts/utils/hosted-online.sh` 生命周期；`kingbase-consumer-flow` 只在带 `self-hosted`、`Linux`、`X64`、`addp-kingbase` 标签且受 `addp-kingbase` Environment 审批的 owner-managed Runner 上调用 `online-owner-managed-kingbase-gate.sh`。三种 profile 都在生命周期操作前验证仓库外 artifact/secret 分区、无根 `.env`、无容器冲突和干净 checkout，产出不含密钥内容的 `readiness.txt`，共用唯一 `make test-online` 分发入口。常规 self-hosted 只从 `ADDP_ONLINE_ENV_FILE` 加载专用外部环境；KingbaseES 只从 owner-only `ADDP_KINGBASE_GATE_ENV_FILE` 加载 License 路径、License SHA-256 等受控事实；Hosted 与 KingbaseES profile 必须额外销毁当次业务引擎、Infra 和凭据目录。`scripts/ci/check-online-ci-registration.py` 要求 suite、部署 profile、Runner 预检、workflow choices 与夜间登记完全一致，拒绝未毕业的定时 suite、非每日 cron、未固定 suite 输入或可能被定时事件误触发的其他 Job。
 
 `compose-public-origin` 还在同一隔离 Runner 上以 `addp-runtimes` 启动 GeoPython、以 `business` 启动 MinIO；断言两个真实容器的 project 标签、网络归属、健康状态和宿主机端口边界，并验证 Runtime 能访问 System、Business MinIO 的宿主机入口使用选定回环端口。退出时分别清理 `addp-runtimes`、`business`、`addp-platform` 和 `addp-infra`，核对容器、网络、卷零残留。
 

@@ -114,10 +114,6 @@ class OnlineHostGateTest(unittest.TestCase):
             '#!/bin/bash\nprintf "transfer-insert-only-fixture:%s\\n" "$1" >> "$ADDP_TEST_COMMAND_LOG"\n',
         )
         self._write_executable(
-            "business/scripts/online-transfer-relational-sql-etl-fixture.sh",
-            '#!/bin/bash\nprintf "transfer-sql-etl-fixture:%s\\n" "$1" >> "$ADDP_TEST_COMMAND_LOG"\n',
-        )
-        self._write_executable(
             "business/scripts/online-manager-minio-fixture.sh",
             '#!/bin/bash\nprintf "manager-fixture:%s\\n" "$1" >> "$ADDP_TEST_COMMAND_LOG"\n',
         )
@@ -505,24 +501,10 @@ class OnlineHostGateTest(unittest.TestCase):
             ],
         )
 
-    def test_runs_transfer_relational_sql_etl_with_owned_browser_fixture(self) -> None:
-        result = self._run("transfer-relational-sql-etl")
-
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(
-            self.command_log.read_text(encoding="utf-8").splitlines(),
-            [
-                "stop",
-                "infra-up",
-                "transfer-sql-etl-fixture:stop",
-                "transfer-sql-etl-fixture:start",
-                "start:-all",
-                "npm:--prefix console/frontend exec -- playwright install chromium",
-                "make:test-online:ONLINE_SUITE=transfer-relational-sql-etl",
-                "transfer-sql-etl-fixture:stop",
-                "stop",
-            ],
-        )
+    def test_transfer_relational_sql_etl_has_no_self_hosted_route(self) -> None:
+        result = self._run("transfer-relational-sql-etl", "--check-only")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.command_log.exists())
 
     def test_runs_oceanbase_consumer_flow_with_owned_fixture(self) -> None:
         result = self._run("oceanbase-consumer-flow")

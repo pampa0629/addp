@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
-# Lifecycle owner for the PostgreSQL -> PostgreSQL relational SQL ETL T4 fixture.
+# Disposable PostgreSQL owner for Hosted SQL ETL and field lineage acceptance.
 
 set -euo pipefail
-
-SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
+umask 077
 
 SOURCE_TABLE=addp_online_transfer_sql_etl_source
 TARGET_TABLE=addp_online_transfer_sql_etl_target
@@ -15,9 +14,14 @@ fail() {
   exit 1
 }
 
-[ "${ADDP_ONLINE_HOST:-}" = "1" ] || fail "ADDP_ONLINE_HOST must be exactly 1"
-[ "$(uname -s)" = "Darwin" ] || fail "the Online Transfer relational SQL ETL fixture requires macOS"
+[ "${GITHUB_ACTIONS:-}" = true ] && [ "${RUNNER_OS:-}" = Linux ] &&
+  [ "${ADDP_ONLINE_HOSTED:-}" = 1 ] && [ "${ADDP_ONLINE_HOST:-}" = 1 ] &&
+  [ "${ADDP_ONLINE_OWNER_MANAGED:-0}" != 1 ] &&
+  [ "$(uname -s)" = Linux ] && [ "$(uname -m)" = x86_64 ] || fail "GitHub Hosted Linux x86_64 Online is required"
 
+container=addp-transfer-online-disposable
+database=transfer_fixture
+owner=transfer-relational-sql-etl
 action=${1:-}
 case "$action" in
   start|verify|stop|status) ;;
@@ -25,23 +29,14 @@ case "$action" in
 esac
 [ "$#" -eq 1 ] || fail "exactly one action is required"
 
-required=(
-  ADDP_ONLINE_TEST_ENGINE_USER
-  ADDP_ONLINE_TEST_ENGINE_DATABASE
-)
-for variable in "${required[@]}"; do
-  [ -n "${!variable:-}" ] || fail "$variable is required"
-done
-
-postgres_running() {
-  [ "$(docker inspect --format '{{.State.Running}}' business-postgres 2>/dev/null || true)" = "true" ]
+assert_owned() {
+  [ "$(docker inspect --format '{{ index .Config.Labels "com.addp.online-fixture" }}' "$container")" = "$owner" ] || fail "container ownership mismatch"
 }
-
+postgres_running() {
+  [ "$(docker inspect --format '{{.State.Running}}' "$container")" = true ]
+}
 postgres_sql() {
-  docker exec business-postgres psql \
-    -v ON_ERROR_STOP=1 \
-    -U "$ADDP_ONLINE_TEST_ENGINE_USER" \
-    -d "$ADDP_ONLINE_TEST_ENGINE_DATABASE" "$@"
+  docker exec -i "$container" psql -v ON_ERROR_STOP=1 -U postgres -d "$database" "$@"
 }
 
 reset_fixture() {
@@ -87,27 +82,68 @@ verify_fixture() {
 
 case "$action" in
   start)
-    bash "$SCRIPT_DIR/online-engine-fixture.sh" start
-    postgres_running || fail "business-postgres is not running"
+    ! docker container inspect "$container" >/dev/null 2>&1 || fail "refusing an existing source container"
+    [ -d "${ADDP_ONLINE_SECRET_DIR:?}" ] || fail "Hosted secret directory is missing"
+    case "$ADDP_ONLINE_SECRET_DIR" in
+      "${RUNNER_TEMP:?}"/addp-online-secret-*) ;;
+      *) fail "secret directory must be in Runner temporary storage" ;;
+    esac
+    [ "${ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE:?}" = "$ADDP_ONLINE_SECRET_DIR/transfer-engine.json" ] || fail "descriptor must use the Hosted secret directory"
+    export TRANSFER_FIXTURE_PASSWORD
+    TRANSFER_FIXTURE_PASSWORD=$(python3 -c 'import secrets; print(secrets.token_hex(32))')
+    env POSTGRES_PASSWORD="$TRANSFER_FIXTURE_PASSWORD" docker run -d --name "$container" \
+      --label "com.addp.online-fixture=$owner" --tmpfs /var/lib/postgresql/data \
+      -p 127.0.0.1:55433:5432 -e POSTGRES_PASSWORD -e POSTGRES_DB="$database" \
+      addp-postgres-pgvector:latest >/dev/null
+    ready=0
+    for _ in $(seq 1 60); do
+      if docker exec "$container" pg_isready -U postgres -d "$database" >/dev/null 2>&1; then ready=1; break; fi
+      sleep 1
+    done
+    [ "$ready" = 1 ] || fail "source PostgreSQL did not become ready"
     reset_fixture
+    if ! postgres_sql -v writer_password="$TRANSFER_FIXTURE_PASSWORD" >/dev/null 2>"$ADDP_ONLINE_SECRET_DIR/fixture-error.log" <<'SQL'
+CREATE ROLE transfer_writer LOGIN PASSWORD :'writer_password';
+GRANT CONNECT ON DATABASE transfer_fixture TO transfer_writer;
+GRANT USAGE, CREATE ON SCHEMA public TO transfer_writer;
+GRANT SELECT ON public.addp_online_transfer_sql_etl_source TO transfer_writer;
+SQL
+    then
+      fail "source permissions could not be initialized"
+    fi
+    python3 - <<'PY_DESCRIPTOR'
+import json, os
+path = os.environ['ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE']
+fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+with os.fdopen(fd, 'w') as output:
+    json.dump({'name':'Hosted Transfer PostgreSQL', 'engine_type':'postgresql', 'engine_origin':'general',
+               'description':'Disposable SQL ETL and field lineage acceptance', 'connection_info':{
+                   'host':'127.0.0.1', 'port':55433, 'database':'transfer_fixture', 'user':'transfer_writer',
+                   'password':os.environ['TRANSFER_FIXTURE_PASSWORD'], 'sslmode':'disable'}}, output)
+PY_DESCRIPTOR
+    unset TRANSFER_FIXTURE_PASSWORD
     echo "Online Transfer relational SQL ETL fixture is ready"
     ;;
   verify)
-    postgres_running || fail "business-postgres is not running"
+    assert_owned
+    postgres_running || fail "source PostgreSQL is not running"
     verify_fixture
     echo "Online Transfer relational SQL ETL target is verified"
     ;;
   stop)
-    if postgres_running; then
-      postgres_sql -c "DROP TABLE IF EXISTS public.${NATIVE_DOWNSTREAM}; DROP TABLE IF EXISTS public.${NATIVE_TARGET}; DROP TABLE IF EXISTS public.${TARGET_TABLE}; DROP TABLE IF EXISTS public.${SOURCE_TABLE}" >/dev/null
-      remaining=$(postgres_sql -Atc "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name IN ('${SOURCE_TABLE}', '${TARGET_TABLE}', '${NATIVE_TARGET}', '${NATIVE_DOWNSTREAM}')")
-      [ "$remaining" = "0" ] || fail "owned tables remain after cleanup: $remaining"
+    if docker container inspect "$container" >/dev/null 2>&1; then
+      assert_owned
+      # Removing the exclusive tmpfs container also removes all four owned tables,
+      # including partial output after a failed task or interrupted startup.
+      docker rm -fv "$container" >/dev/null
     fi
-    bash "$SCRIPT_DIR/online-engine-fixture.sh" stop
-    echo "Online Transfer relational SQL ETL fixture is stopped"
+    remaining=$(docker ps -aq --filter "name=^/${container}$") || fail "cannot verify container cleanup"
+    [ -z "$remaining" ] || fail "container remains after cleanup"
+    echo "Online Transfer relational SQL ETL fixture is stopped; zero residuals"
     ;;
   status)
-    postgres_running || fail "business-postgres is not running"
+    assert_owned
+    postgres_running || fail "source PostgreSQL is not running"
     postgres_sql -Atc "SELECT COUNT(*) FROM public.${SOURCE_TABLE}" | grep -qx '5' || fail "source table is not ready"
     echo "Online Transfer relational SQL ETL fixture is ready"
     ;;
