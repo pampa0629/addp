@@ -144,6 +144,22 @@ def _validate_draw_count(primitive: dict, count: int) -> None:
         raise ValueError("primitive draw count does not match mode")
 
 
+def _validate_vertex_storage(accessor: dict, views: list, component_size: int, components: int, label: str) -> None:
+    view = _index(accessor.get("bufferView"), views, f"{label} bufferView")
+    offset = _integer(accessor.get("byteOffset", 0), f"{label} byteOffset")
+    if offset % 4 or (view.get("byteOffset", 0) + offset) % component_size:
+        raise ValueError(f"{label} byteOffset must satisfy vertex and component alignment")
+    element_size = components * component_size
+    stride = _integer(view.get("byteStride", element_size), f"{label} stride", element_size)
+    if "byteStride" in view:
+        if stride % 4 or not 4 <= stride <= min(252, view["byteLength"]):
+            raise ValueError(f"{label} stride must be aligned and within 4..252 and bufferView")
+    elif component_size % 4:
+        raise ValueError(f"{label} integer vertex attributes require explicit stride")
+    if offset + (accessor["count"] - 1) * stride + element_size > view["byteLength"]:
+        raise ValueError(f"{label} accessor exceeds bufferView")
+
+
 def _validate_texture_coordinates(primitive: dict, texture: dict, accessors: list, views: list, vertex_count: int) -> None:
     extensions = texture.get("extensions", {})
     if not isinstance(extensions, dict):
@@ -160,12 +176,7 @@ def _validate_texture_coordinates(primitive: dict, texture: dict, accessors: lis
         raise ValueError("integer texture coordinates must be normalized")
     if _integer(uv.get("count"), "texture coordinate count", 1) != vertex_count:
         raise ValueError("texture coordinate count must match POSITION count")
-    view = _index(uv.get("bufferView"), views, "texture coordinate bufferView")
-    offset = _integer(uv.get("byteOffset", 0), "texture coordinate byteOffset")
-    element_size = 2 * component_size
-    stride = _integer(view.get("byteStride", element_size), "texture coordinate stride", element_size)
-    if offset + (vertex_count - 1) * stride + element_size > view["byteLength"]:
-        raise ValueError("texture coordinate accessor exceeds bufferView")
+    _validate_vertex_storage(uv, views, component_size, 2, "texture coordinate")
 
 
 def validate_glb(path: Path, *, basic_static: bool = False) -> dict[str, Any]:
@@ -237,11 +248,7 @@ def validate_glb(path: Path, *, basic_static: bool = False) -> dict[str, Any]:
             _integer(accessor.get("count"), "POSITION count", 1)
             if accessor.get("type") != "VEC3" or accessor.get("componentType") != 5126:
                 raise ValueError("POSITION must be float VEC3")
-            view = _index(accessor.get("bufferView"), views, "POSITION bufferView")
-            offset = _integer(accessor.get("byteOffset", 0), "POSITION byteOffset")
-            stride = _integer(view.get("byteStride", 12), "POSITION stride", 12)
-            if offset + (accessor["count"] - 1) * stride + 12 > view["byteLength"]:
-                raise ValueError("POSITION accessor exceeds bufferView")
+            _validate_vertex_storage(accessor, views, 4, 3, "POSITION")
             draw_count = _validate_primitive_indices(primitive, accessors, views, binary, accessor["count"])
             _validate_draw_count(primitive, draw_count)
             if "material" in primitive:

@@ -8,6 +8,100 @@ from operators import ConverterError, CommandResult, invoke_operator
 from .test_operators import file_plan
 
 
+def vertex_storage_fixture(attribute, failure):
+    doc, binary = triangle_doc("PNG")
+    accessor = doc["accessors"][0 if attribute == "POSITION" else 1]
+    view = doc["bufferViews"][accessor["bufferView"]]
+    element_size = 12 if attribute == "POSITION" else 8
+    # Keep the bytes in bounds so these cases specifically exercise alignment/stride.
+    view["byteLength"] = 1024
+    binary += b"\0" * 1024
+    doc["buffers"][0]["byteLength"] = len(binary)
+    if failure == "accessor_alignment": accessor["byteOffset"] = 1
+    if failure == "view_alignment": view["byteOffset"] = view.get("byteOffset", 0) + 1
+    if failure == "stride_alignment": view["byteStride"] = element_size + 1
+    if failure == "stride_limit": view["byteStride"] = 256
+    if failure == "stride_short": view["byteStride"] = element_size - 4
+    if failure == "stride_exceeds_view":
+        accessor["count"] = 1
+        view.update(byteLength=element_size, byteStride=element_size + 4)
+        doc["accessors"][0]["count"] = doc["accessors"][1]["count"] = 1
+        doc["meshes"][0]["primitives"][0]["mode"] = 0
+    if failure == "integer_without_stride":
+        accessor.update(componentType=5123, normalized=True)
+    return doc, binary
+
+
+@pytest.mark.parametrize("attribute", ["POSITION", "TEXCOORD_0"])
+@pytest.mark.parametrize("failure", ["accessor_alignment", "view_alignment", "stride_alignment", "stride_limit",
+                                     "stride_short", "stride_exceeds_view"])
+def test_invalid_vertex_storage_is_rejected(tmp_path, attribute, failure):
+    doc, binary = vertex_storage_fixture(attribute, failure)
+    path = tmp_path / "bad-vertices.glb"
+    path.write_bytes(glb_bytes(doc, binary))
+    with pytest.raises(ValueError):
+        validate_glb(path, basic_static=True)
+
+
+def test_integer_uv_requires_explicit_stride(tmp_path):
+    doc, binary = vertex_storage_fixture("TEXCOORD_0", "integer_without_stride")
+    path = tmp_path / "bad-uv.glb"
+    path.write_bytes(glb_bytes(doc, binary))
+    with pytest.raises(ValueError):
+        validate_glb(path, basic_static=True)
+
+
+@pytest.mark.parametrize("component_type", [5121, 5123, 5126])
+@pytest.mark.parametrize("stride", [24, 252])
+def test_interleaved_position_and_uv_storage_is_accepted(tmp_path, component_type, stride):
+    doc, binary = triangle_doc("PNG")
+    binary += b"\0" * (-len(binary) % 4)
+    start = len(binary)
+    interleaved = b"\0" * 4
+    encoding, maximum = {5121: ("B", 255), 5123: ("H", 65535), 5126: ("f", 1)}[component_type]
+    for position, uv in zip(((0, 0, 0), (1, 0, 0), (0, 1, 0)), ((0, 0), (maximum, 0), (0, maximum))):
+        record = struct.pack("<3f", *position) + struct.pack("<2" + encoding, *uv)
+        interleaved += record + b"\0" * (stride - len(record))
+    view_index = len(doc["bufferViews"])
+    doc["bufferViews"].append({"buffer": 0, "byteOffset": start, "byteLength": len(interleaved),
+                               "byteStride": stride, "target": 34962})
+    binary += interleaved
+    doc["buffers"][0]["byteLength"] = len(binary)
+    doc["accessors"][0].update(bufferView=view_index, byteOffset=4)
+    doc["accessors"][1].update(bufferView=view_index, byteOffset=16, componentType=component_type,
+                               normalized=component_type != 5126)
+    path = tmp_path / "interleaved.glb"
+    path.write_bytes(glb_bytes(doc, binary))
+    validate_glb(path, basic_static=True)
+
+
+@pytest.mark.parametrize("source_format", ["stl", "dae", "3ds"])
+def test_misaligned_vertices_never_replace_published_target(tmp_path, source_format):
+    from .test_exchange_model import dae, three_ds
+    from .test_operators import directory_plan
+    doc, binary = vertex_storage_fixture("POSITION", "accessor_alignment")
+    folder = tmp_path / "source"
+    folder.mkdir()
+    source = folder / f"model.{source_format}"
+    source.write_bytes({"stl": b"mesh", "dae": dae(), "3ds": three_ds()}[source_format])
+    (folder / "texture.png").write_bytes(b"source texture")
+    target = tmp_path / "published.glb"
+    target.write_bytes(b"previous valid artifact")
+    plan = (file_plan(source, target, "stl", "glb") if source_format == "stl"
+            else directory_plan(folder, target, source_format, "glb", entrypoint=source.name))
+    plan["target"]["write_mode"] = "replace"
+
+    def runner(command, timeout_seconds):
+        from pathlib import Path
+        Path(command[-2]).write_bytes(glb_bytes(doc, binary))
+        return CommandResult(0)
+
+    with pytest.raises(ConverterError) as error:
+        invoke_operator(f"{source_format}_to_glb", {"access_plan": plan}, runner=runner)
+    assert error.value.error_code == "INVALID_GLB"
+    assert target.read_bytes() == b"previous valid artifact"
+
+
 def indexed_triangle(component_type=5123, values=(0, 1, 2), texture_format=None):
     doc, binary = triangle_doc(texture_format)
     binary += b"\x00" * (-len(binary) % 4)
