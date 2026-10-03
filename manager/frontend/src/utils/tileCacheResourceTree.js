@@ -177,7 +177,7 @@ function sameResourceNode(a, b) {
   return Boolean(aRootKey && bRootKey && aRootKey === bRootKey)
 }
 
-function mergeResourceNodeFacts(existing, incoming) {
+export function mergeResourceNodeFacts(existing, incoming) {
   const existingChildren = Array.isArray(existing?.children) ? existing.children : []
   const incomingChildren = Array.isArray(incoming?.children) ? incoming.children : []
   return {

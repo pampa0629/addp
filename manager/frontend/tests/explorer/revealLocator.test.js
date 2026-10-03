@@ -154,4 +154,31 @@ describe('explorer revealLocator', () => {
     expect(store.selectedLocator).toBe(target.locator)
     expect(mocks.refreshNode).not.toHaveBeenCalled()
   })
+
+  it('preserves loaded descendant siblings when filling the root child list', async () => {
+    const store = useExplorerStore()
+    const root = 'addp://engine/2/path/?type=server&node_id=10'
+    const schema = 'addp://engine/2/path/public?type=schema&node_id=11'
+    const other = 'addp://engine/2/path/other?type=schema&node_id=12'
+    const item = name => ({ locator: `addp://engine/2/path/${name === 'other' ? 'other' : 'public'}/${name}?type=table&item_id=${{ target: 1, sibling: 2, other: 3 }[name]}`,
+      type: 'table', label: name, hasChildren: false, children: [] })
+    const target = item('target')
+    const siblings = [target, item('sibling')]
+    const node = (locator, type, children = []) => ({ id: locator, locator, type, hasChildren: true, children, loaded: true })
+    store.engines = [{ id: 2, name: 'PostgreSQL', engine_type: 'postgresql', connection_status: 'online' }]
+    store.engineTrees[2] = node(root, 'server', [node(schema, 'schema', siblings), node(other, 'schema', [item('other')])])
+    store.nodeChildrenCache[schema] = { children: siblings, timestamp: Date.now() }
+    mocks.getTreeAncestors.mockResolvedValue({ target_locator: target.locator,
+      ancestors: [node(root, 'server'), node(schema, 'schema'), target] })
+    mocks.getNodeChildren.mockResolvedValue({ ...node(root, 'server'),
+      children: [{ ...node(schema, 'schema'), loaded: false }, { ...node(other, 'schema'), loaded: false }] })
+
+    await store.revealLocator(target.locator)
+
+    expect(store.engineTrees[2].children[0].children.map(child => child.locator)).toEqual(siblings.map(child => child.locator))
+    expect(store.engineTrees[2].children[1].children).toHaveLength(1)
+    expect(store.selectedNode.locator).toBe(target.locator)
+    expect(mocks.getNodeChildren).toHaveBeenCalledTimes(1)
+    expect(mocks.refreshNode).not.toHaveBeenCalled()
+  })
 })

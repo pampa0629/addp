@@ -9,7 +9,7 @@ import {
 } from '@addp/common-frontend'
 import client from '@/api/client'
 import { dataExplorerAPI } from '@/api/dataExplorer'
-import { mergeAncestorChainIntoResourceTree } from '@/utils/tileCacheResourceTree'
+import { mergeAncestorChainIntoResourceTree, mergeResourceNodeFacts } from '@/utils/tileCacheResourceTree'
 
 const SCAN_RUN_POLL_INTERVAL_MS = 2000
 const ACTIVE_SCAN_STATUSES = new Set(['pending', 'running'])
@@ -619,13 +619,21 @@ export const useExplorerStore = defineStore('explorer', {
         const response = await dataExplorerAPI.getNodeChildren(loc.engineId, locator)
         // API 客户端已经通过 extractData 提取了 response.data。
         // 后端返回当前节点的权威事实及其直接子资源。
-        const children = response.children || []
+        let children = response.children || []
 
         if (response?.locator) {
           this.normalizeResourceSubtree(response)
         } else if (children.length > 0) {
           children.forEach(child => this.normalizeResourceSubtree(child))
         }
+
+        // 直接子资源响应不包含孙辈事实；保留仍存在容器的已加载子树。
+        const currentParent = findNodeByLocator(this.engineTrees[loc.engineId], locator)
+        const existingChildren = new Map((currentParent?.children || []).map(child => [child.locator || child.id, child]))
+        children = children.map(child => {
+          const existing = existingChildren.get(child.locator || child.id)
+          return existing && child.hasChildren ? mergeResourceNodeFacts(existing, child) : child
+        })
 
         // 4. 更新缓存
         this.nodeChildrenCache[locator] = {
