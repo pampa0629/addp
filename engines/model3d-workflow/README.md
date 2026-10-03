@@ -28,6 +28,8 @@ export MODEL3D_GAUSSIAN_SPLAT_NODE_BIN=/path/to/node
 
 开发环境的三个 wrapper 及共享 Docker 调用脚本必须受 Git 版本管理，不依赖被忽略的本机 `bin/` 目录；容器内继续绑定 `/opt/addp/model3d-workflow/bin/` 的原生转换器。
 
+Docker wrapper 从 Runtime 传入的绝对输入、输出路径确定挂载范围：文件挂载其父目录，目录挂载自身，同一路径只挂载一次，以保持贴图等同目录依赖可见。不得仅因目录存在而挂载 `/home`、`/Users`、`/Volumes` 或 `/private` 等宿主机整根目录，避免无关路径触发 Docker Desktop 文件共享错误。三个 wrapper 共用同一挂载逻辑，修改后宿主机 Python Runtime 无需重启即可使用。
+
 本运行时的稳定集成面是 ADDP operator 契约，不是转换器内部 SDK。转换器缺失、执行失败或输出缺失时，`/health` 会标记 `conversion_ready=false`，引擎连接测试和 operator 发现会失败，不生成伪结果。
 
 ## 启动

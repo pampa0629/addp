@@ -14,6 +14,40 @@ SCRIPT = ROOT / 'engines/model3d-workflow/scripts/build-linux-images.sh'
 
 
 class Model3DLinuxImagesTest(unittest.TestCase):
+    def test_converter_mounts_only_input_output_directories(self):
+        with tempfile.TemporaryDirectory(prefix='addp-model3d-mounts-') as directory:
+            root = Path(directory)
+            for name, source in {
+                'docker': '#!/usr/bin/env python3\nimport json, os, sys\nfrom pathlib import Path\nPath(os.environ["ADDP_TEST_TRACE"]).write_text(json.dumps(sys.argv[1:]))\n',
+            }.items():
+                command = root / name
+                command.write_text(source)
+                command.chmod(0o755)
+            source_directory = root / '模型 source'
+            source_directory.mkdir()
+            source_file = source_directory / 'model.dae'
+            source_file.write_text('model fixture')
+            output_directory = root / 'output directory'
+            output_directory.mkdir()
+            for source in (source_directory, source_file):
+                for converter in ('_3dtile', 'assimp', 'IfcConvert'):
+                    with self.subTest(source=source, converter=converter):
+                        env = dict(os.environ, PATH=f'{root}:{os.environ["PATH"]}', ADDP_TEST_TRACE=str(root / 'trace'))
+                        command = ROOT / 'engines/model3d-workflow/scripts/converters' / converter
+                        output = output_directory / 'model.glb'
+                        result = subprocess.run(['bash', str(command), str(source), str(output), '--help'], env=env, capture_output=True)
+                        self.assertEqual(result.returncode, 0, result.stderr)
+                        args = json.loads((root / 'trace').read_text())
+                        mounts = [args[index + 1] for index, arg in enumerate(args) if arg == '-v']
+                        self.assertEqual(mounts, [f'{source_directory}:{source_directory}', f'{output_directory}:{output_directory}'])
+                        self.assertEqual(args[-3:], [str(source), str(output), '--help'])
+                        # Files sharing a directory need one mount; help requires none.
+                        same_directory = source_directory / 'out.glb'
+                        result = subprocess.run(['bash', str(command), str(source), str(same_directory)], env=env, capture_output=True)
+                        self.assertEqual(result.returncode, 0, result.stderr)
+                        args = json.loads((root / 'trace').read_text())
+                        self.assertEqual(args.count('-v'), 1)
+
     def test_tinygltf_overlay_pins_verified_source_and_installs_header(self):
         converter = ROOT / 'engines/model3d-workflow/docker/converter'
         dockerfile = (converter / 'Dockerfile').read_text()
