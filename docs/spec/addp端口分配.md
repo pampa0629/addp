@@ -23,13 +23,15 @@ Infra 宿主机绑定地址由 `INFRA_BIND_HOST` 指定，默认 `0.0.0.0`；Hos
 
 自动选端口只适用于本地基础设施宿主机映射。生产部署与 `addp-online` 专用 Runner 按其显式环境配置运行。Docker 最终绑定仍可能遇到检查后的并发抢占；启动失败时报告实际冲突，不连接占用该端口的其他服务。
 
+开发生命周期判定 Runtime 端口归属时必须核对 Compose 标签和工作区。bridge 模式核对 Docker 发布端口；Hosted 宿主网络模式核对实际网络模式、回环监听配置、容器声明端口，以及监听进程是否为容器主进程或其子进程。Hosted Runner 通过 `sudo -n lsof` 读取不同容器 UID 的监听进程；查询失败不能认定归属。不得因容器存在或端口已监听就认定归属，后续模块启动也不得把本轮宿主网络 Runtime 误判为外部服务。
+
 容器部署按生命周期划分四个 Compose project：`addp-infra` 管理平台基础设施，`business` 管理独立业务数据引擎，`addp-platform` 管理 System、其他业务模块、Gateway、Console、模块 Frontend 和 Nginx，`addp-runtimes` 管理 ADDP 内置计算与 Notebook Runtime。业务模块不再按单个模块拆 Compose project；Runtime 可独立启停，不作为业务模块的启动依赖。`addp-platform` 使用根 `docker-compose.yml`，`addp-runtimes` 使用根 `docker-compose.runtimes.yml`；两者和 Infra 通过外部 `addp-network` 使用稳定服务名与固定容器端口通信。Compose project 仅决定容器生命周期与 Docker Desktop 分组，不改变 System 的模块注册或 Engine Instance 身份。
 
 `addp-platform` 只向宿主机发布 Nginx 统一入口 `${NGINX_BIND_HOST:-0.0.0.0}:${NGINX_PORT:-80}:80`；Console、模块 Frontend、Gateway、Backend 和内置 Runtime 不单独发布宿主机端口。Nginx 按路径转发前端与 `/api/`，Gateway 从 System 的 Backend 实例注册事实发现业务路由；Frontend 端口不注册到 System。宿主机入口端口由部署配置明确指定，冲突时启动失败，不在生产环境自动漂移。容器部署的对外 origin 由 `ADDP_PUBLIC_ORIGIN` 指定；未设置时按 `http://localhost:${NGINX_PORT:-80}` 构造，System 的 `PUBLIC_API_URL`、`CONSOLE_URL` 和 Monitor 的告警链接均使用此 origin。经域名、TLS 或上级反向代理发布时必须显式指定用户实际访问的 origin。模块 standalone 模式仍可单独部署，但不通过根 Compose 再发布一组固定的宿主机端口。
 
 本地开发的 Gateway、各模块 Backend/Frontend 与工作流 Runtime 同样以本表开发端口为首选值。`scripts/dev/start.sh` 在 Infra 就绪后统一检查监听者；首选端口被其他服务占用时选取空闲端口，将最终端口注入模块进程、Gateway URL、Console 代理、iframe 地址、CORS 来源及 Vite HMR。运行中的本工作区服务沿用原端口；解析结果保存在忽略版本控制的 `.dev-state/ports.env`，仅作为本地运行状态，不改写根 `.env`。显式 `addp-online` Runner 仍使用配置端口并在冲突时失败。端口检查与监听之间仍可能出现并发抢占，实际绑定失败必须明确报错。
 
-容器化工作流 Runtime 仍在内部固定端口监听。开发模式的独立 Runtime 向 System 自注册时使用实际宿主机映射端口，开发启动通过 `RUNTIME_PUBLIC_PORT` 向 GeoPython、PointCloud、Document Runtime 传递该端口；`addp-runtimes` Compose 部署则使用 Docker 服务名和固定容器端口。SuperMap Runtime 不自注册，需要按相应部署模式的实际可达地址登记。
+普通本地开发的 GeoPython、PointCloud、Document 容器 Runtime 使用 bridge 网络，在内部固定端口监听，通过 `host.docker.internal` 访问宿主机服务；向 System 自注册时，开发启动通过 `RUNTIME_PUBLIC_PORT` 传递实际宿主机映射端口。Hosted Online 的原生 Linux Runner（`ADDP_ONLINE_HOSTED=1`）统一使用宿主网络：Runtime 通过 `WORKFLOW_BIND_HOST=127.0.0.1` 只监听回环地址与配置的开发端口，通过 `127.0.0.1` 访问 System、Infra 和 Business 服务，不发布 Docker 端口映射、不改写为 host gateway。两套 MinIO 仍各自只发布回环端口，源数据和平台内部产物的存储域保持独立。Hosted 标记用于非 Linux 宿主机时启动失败。`addp-runtimes` Compose 部署继续使用 Docker 服务名和固定容器端口。SuperMap Runtime 不自注册，需要按相应部署模式的实际可达地址登记。
 
 `13306` 和 `12881` 由 `scripts/test/docker-compose.local-macos-ci.yml` 中的固定 digest MySQL 8 与 OceanBase CE 4.4.2 LTS 使用，不属于 System 或 Business 长期基础设施。两个服务都无数据卷，只绑定 `127.0.0.1`，在本地巡检的确定性门禁和编译开始前完成健康检查，并在巡检的统一退出清理中删除。
 

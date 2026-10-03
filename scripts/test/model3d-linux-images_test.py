@@ -1,5 +1,8 @@
 """Verify target selection and converter smoke checks without changing Docker state."""
 import os
+import hashlib
+import json
+import re
 import shutil
 import subprocess
 import tempfile
@@ -11,6 +14,56 @@ SCRIPT = ROOT / 'engines/model3d-workflow/scripts/build-linux-images.sh'
 
 
 class Model3DLinuxImagesTest(unittest.TestCase):
+    def test_tinygltf_overlay_pins_verified_source_and_installs_header(self):
+        converter = ROOT / 'engines/model3d-workflow/docker/converter'
+        dockerfile = (converter / 'Dockerfile').read_text()
+        self.assertIn('COPY vcpkg-overlays/ /opt/addp/vcpkg-overlays/', dockerfile)
+        self.assertIn('ENV VCPKG_OVERLAY_PORTS=/opt/addp/vcpkg-overlays', dockerfile)
+        self.assertLess(dockerfile.index('ENV VCPKG_OVERLAY_PORTS='), dockerfile.index('cargo build'))
+        port = converter / 'vcpkg-overlays/tinygltf'
+        manifest = json.loads((port / 'vcpkg.json').read_text())
+        self.assertEqual(manifest['name'], 'tinygltf')
+        self.assertEqual(manifest['version'], '2.9.7')
+        self.assertEqual(set(manifest['dependencies']), {'nlohmann-json', 'stb'})
+        source = (port / 'portfile.cmake').read_text()
+        commit = re.search(r'REF ([0-9a-f]{40})', source).group(1)
+        sha512 = re.search(r'SHA512 ([0-9a-f]{128})', source).group(1)
+        self.assertEqual(commit, '488a70a3df62a4df1a736e9e56fb8836580c4888')
+        archive = os.environ.get('MODEL3D_TINYGLTF_SOURCE_ARCHIVE')
+        if archive:
+            self.assertEqual(hashlib.sha512(Path(archive).read_bytes()).hexdigest(), sha512)
+        with tempfile.TemporaryDirectory(prefix='addp-tinygltf-port-') as directory:
+            root = Path(directory)
+            original = root / 'source'
+            original.mkdir()
+            (original / 'tiny_gltf.h').write_text('#include "json.hpp"\n')
+            (original / 'LICENSE').write_text('tinygltf license fixture')
+            harness = root / 'install.cmake'
+            harness.write_text('''
+function(vcpkg_from_github)
+  cmake_parse_arguments(P "" "OUT_SOURCE_PATH;REPO;REF;SHA512" "" ${ARGN})
+  if(NOT P_REPO STREQUAL "syoyo/tinygltf" OR NOT P_REF STREQUAL "''' + commit + '''" OR NOT P_SHA512 STREQUAL "''' + sha512 + '''")
+    message(FATAL_ERROR "unverified source coordinates")
+  endif()
+  set(${P_OUT_SOURCE_PATH} "''' + original.as_posix() + '''" PARENT_SCOPE)
+endfunction()
+function(vcpkg_replace_string path old new)
+  file(READ "${path}" content)
+  string(REPLACE "${old}" "${new}" content "${content}")
+  file(WRITE "${path}" "${content}")
+endfunction()
+function(vcpkg_install_copyright)
+  cmake_parse_arguments(P "" "" "FILE_LIST" ${ARGN})
+  file(INSTALL ${P_FILE_LIST} DESTINATION "${CURRENT_PACKAGES_DIR}/share/tinygltf" RENAME copyright)
+endfunction()
+set(CURRENT_PACKAGES_DIR "''' + (root / 'package').as_posix() + '''")
+include("''' + (port / 'portfile.cmake').as_posix() + '''")
+''')
+            result = subprocess.run(['cmake', '-P', str(harness)], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual((root / 'package/include/tiny_gltf.h').read_text(), '#include <nlohmann/json.hpp>\n')
+            self.assertEqual((root / 'package/share/tinygltf/copyright').read_text(), 'tinygltf license fixture')
+
     def run_build(self, architecture, platform=None, fail_build=False):
         with tempfile.TemporaryDirectory(prefix='addp-model3d-build-') as temporary:
             root = Path(temporary)

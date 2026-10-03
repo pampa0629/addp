@@ -66,27 +66,42 @@ addp_dev_saved_port() {
 }
 
 addp_dev_owned_listener() {
-  local name="$1" port="$2" pidfile owner listener
+  local name="$1" port="$2" pidfile owner listener listeners
   pidfile="${ROOT_DIR}/.dev-pids/${name}.pid"
   case "$name" in
     geopython-workflow|pointcloud-workflow|document-workflow|supermap-workflow)
-      local container="${name}-engine" labels mapping
+      local container="${name}-engine" labels mapping mode
       labels=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}|{{index .Config.Labels "com.docker.compose.service"}}|{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$container" 2>/dev/null) || return 1
       [ "$labels" = "addp-runtimes|${container}|${ROOT_DIR}" ] || return 1
       [ "$(docker inspect --format '{{.State.Running}}' "$container")" = true ] || return 1
-      mapping=$(docker port "$container" 2>/dev/null | awk -v port="$port" '$0 ~ ":" port "$" { found=1 } END { exit !found }') || return 1
-      return 0
+      mode=$(docker inspect --format '{{.HostConfig.NetworkMode}}' "$container") || return 1
+      if [ "$mode" = host ]; then
+        [ "${ADDP_ONLINE_HOSTED:-}" = 1 ] && [ "$(uname -s)" = Linux ] || return 1
+        docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$container" |
+          awk -v port="$port" '$0 == "PORT=" port { correct_port=1 } $0 == "WORKFLOW_BIND_HOST=127.0.0.1" { loopback=1 } END { exit !(correct_port && loopback) }' || return 1
+        owner=$(docker inspect --format '{{.State.Pid}}' "$container") || return 1
+        [[ "$owner" =~ ^[0-9]+$ ]] && [ "$owner" -gt 1 ] || return 1
+        listeners=$(sudo -n lsof -nP -t -iTCP:"$port" -sTCP:LISTEN 2>/dev/null) || return 1
+      else
+        mapping=$(docker port "$container" 2>/dev/null | awk -v port="$port" '$0 ~ ":" port "$" { found=1 } END { exit !found }') || return 1
+        return 0
+      fi
       ;;
   esac
-  [ -f "$pidfile" ] || return 1
-  owner=$(cat "$pidfile")
-  [[ "$owner" =~ ^[0-9]+$ ]] && kill -0 "$owner" 2>/dev/null || return 1
+  if [ -z "${owner:-}" ]; then
+    [ -f "$pidfile" ] || return 1
+    owner=$(cat "$pidfile")
+    [[ "$owner" =~ ^[0-9]+$ ]] && kill -0 "$owner" 2>/dev/null || return 1
+  fi
+  if [ -z "${listeners:-}" ]; then
+    listeners=$(lsof -nP -t -iTCP:"$port" -sTCP:LISTEN 2>/dev/null | sort -u)
+  fi
   while read -r listener; do
     [ -n "$listener" ] || continue
     if [ "$listener" = "$owner" ] || addp_process_is_descendant_of "$listener" "$owner"; then
       return 0
     fi
-  done < <(lsof -nP -t -iTCP:"$port" -sTCP:LISTEN 2>/dev/null | sort -u)
+  done <<< "$listeners"
   return 1
 }
 

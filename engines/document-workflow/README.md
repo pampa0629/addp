@@ -22,6 +22,10 @@ bash scripts/dev/restart.sh -document-workflow
 - `DOCUMENT_CONVERSION_CONCURRENCY`：单 Runtime 转换并发，默认 `1`。
 - `DOCUMENT_OBJECT_STORE_LOOPBACK_HOST`：容器访问宿主机对象存储时替换 loopback host。
 
+普通本地开发容器使用 bridge 网络，经 `host.docker.internal` 访问宿主机 System 和对象存储。Hosted Online 原生 Linux 使用宿主网络，通过 `WORKFLOW_BIND_HOST=127.0.0.1` 只监听回环地址与 `DOCUMENT_WORKFLOW_PORT`，System 和对象存储均通过 `127.0.0.1` 访问，两套 MinIO 继续各自只发布回环端口。非 root、只读根文件系统及临时目录限制继续由启动入口执行。完整契约见 [端口分配规范](../../docs/spec/addp端口分配.md)。
+
+Hosted 开发入口从镜像读取非 root 用户的 UID，并将当次 Document 工作目录的所有者设为该 UID，使 Linux bind mount 可供转换进程写入；不使用放开所有用户写权限的方式。
+
 ## 测试
 
 ```bash

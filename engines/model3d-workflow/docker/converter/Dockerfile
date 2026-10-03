@@ -35,6 +35,9 @@ RUN git clone https://github.com/microsoft/vcpkg.git /opt/vcpkg \
   && git checkout "${VCPKG_COMMIT}" \
   && ./bootstrap-vcpkg.sh
 
+COPY vcpkg-overlays/ /opt/addp/vcpkg-overlays/
+ENV VCPKG_OVERLAY_PORTS=/opt/addp/vcpkg-overlays
+
 WORKDIR /src/3dtiles
 ENV CARGO_TERM_COLOR=always
 ENV VCPKG_HAS_BEEN_INSTALLED=1

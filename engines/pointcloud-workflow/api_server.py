@@ -285,6 +285,7 @@ if __name__ == "__main__":
     registration_thread.start()
 
     port = int(os.getenv("PORT", 8102))
-    logger.info("PointCloud Workflow Engine listening on http://0.0.0.0:%s", port)
+    bind_host = os.getenv("WORKFLOW_BIND_HOST", "0.0.0.0")
+    logger.info("PointCloud Workflow Engine listening on http://%s:%s", bind_host, port)
     logger.info("Operators: %s", len(list_operators()))
-    app.run(host="0.0.0.0", port=port, debug=False)
+    app.run(host=bind_host, port=port, debug=False)

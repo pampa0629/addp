@@ -69,7 +69,7 @@ esac
 [ "${ADDP_ONLINE_OWNER_MANAGED:-0}" != "1" ] || fail "Hosted and owner-managed profiles are mutually exclusive"
 
 
-for command in bash curl docker git go make node npm python3; do
+for command in bash curl docker git go lsof make node npm python3 sudo; do
   command -v "$command" >/dev/null 2>&1 || fail "missing required command: $command"
 done
 docker compose version >/dev/null 2>&1 || fail "docker compose is required"

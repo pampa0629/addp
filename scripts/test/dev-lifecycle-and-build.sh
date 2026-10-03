@@ -696,6 +696,47 @@ test_dev_runtime_owned_listeners_match_pidfiles() {
   ' || fail "runtime port ownership did not match the startup PID files"
 }
 
+test_hosted_runtime_owned_listener() {
+  local workspace="${TEST_ROOT}/hosted-runtime-owned-listener"
+  mkdir -p "$workspace"
+  ROOT_DIR="$workspace" PORT_SCRIPT="$PORT_SCRIPT" LOCK_SCRIPT="$LOCK_SCRIPT" bash -c '
+    set -euo pipefail
+    source "$PORT_SCRIPT"
+    export ADDP_ONLINE_HOSTED=1
+    source "$LOCK_SCRIPT"
+    mock_mode=host mock_port=18102 mock_bind=127.0.0.1 mock_foreign=0 mock_labels=owned
+    uname() { printf "%s\n" Linux; }
+    docker() {
+      if [ "$1" = port ]; then printf "%s\n" "8102/tcp -> 0.0.0.0:18102"; return; fi
+      case "$3" in
+        *Config.Labels*)
+          if [ "$mock_labels" = owned ]; then printf "addp-runtimes|pointcloud-workflow-engine|%s\n" "$ROOT_DIR";
+          else printf "foreign|pointcloud-workflow-engine|%s\n" "$ROOT_DIR"; fi ;;
+        *State.Running*) printf "%s\n" true ;;
+        *NetworkMode*) printf "%s\n" "$mock_mode" ;;
+        *State.Pid*) printf "%s\n" "$$" ;;
+        *Config.Env*) printf "PORT=%s\nWORKFLOW_BIND_HOST=%s\n" "$mock_port" "$mock_bind" ;;
+        *) return 2 ;;
+      esac
+    }
+    lsof() { if [ "$mock_foreign" = 1 ]; then printf "%s\n" 1; else printf "%s\n" "$$"; fi; }
+    sudo() { [ "$1" = -n ] && [ "$2" = lsof ] || return 2; shift; "$@"; }
+    addp_dev_owned_listener pointcloud-workflow 18102
+    mock_port=8102
+    if addp_dev_owned_listener pointcloud-workflow 18102; then exit 11; fi
+    mock_port=18102 mock_bind=0.0.0.0
+    if addp_dev_owned_listener pointcloud-workflow 18102; then exit 12; fi
+    mock_bind=127.0.0.1 mock_foreign=1
+    if addp_dev_owned_listener pointcloud-workflow 18102; then exit 13; fi
+    mock_foreign=0 mock_labels=foreign
+    if addp_dev_owned_listener pointcloud-workflow 18102; then exit 14; fi
+    mock_labels=owned ADDP_ONLINE_HOSTED=0
+    if addp_dev_owned_listener pointcloud-workflow 18102; then exit 15; fi
+    mock_mode=bridge
+    addp_dev_owned_listener pointcloud-workflow 18102
+  ' || fail "Hosted Runtime ownership must match network, binding, port, labels and listener PID"
+}
+
 test_runtime_host_port_advertisement() {
   python3 - "$ROOT_DIR" <<'PY'
 from pathlib import Path
@@ -714,6 +755,128 @@ for name, variable in (
 supermap = (root / 'scripts/dev/supermap-workflow.sh').read_text()
 assert 'ADDP_DEV_PORTS_RESOLVED' in supermap
 print('PASS: container Runtime host ports reach System registration')
+PY
+}
+
+test_hosted_runtime_network() {
+  python3 - "$ROOT_DIR" "$TEST_ROOT" <<'PY'
+from pathlib import Path
+import ast
+import os
+import re
+import subprocess
+import sys
+import threading
+from unittest.mock import Mock, patch
+
+root, temporary = map(Path, sys.argv[1:])
+source = (root / 'scripts/dev/start.sh').read_text()
+def function(name):
+    match = re.search(r'^' + name + r'\(\) \{.*?^\}', source, re.M | re.S)
+    assert match, f'missing startup function: {name}'
+    return match.group()
+
+helper = function('configure_workflow_container_network')
+for runtime, port in [('geopython', 8099), ('pointcloud', 8102), ('document', 8105)]:
+    fixture = temporary / ('runtime-network-' + runtime)
+    fixture.mkdir()
+    for hosted, kernel in [('1', 'Linux'), ('0', 'Linux'), ('0', 'Darwin'), ('1', 'Darwin')]:
+        arguments = fixture / 'arguments'
+        arguments.unlink(missing_ok=True)
+        public_port = port + 10000
+        env = {**os.environ, 'ROOT_DIR': str(fixture), 'ARGUMENTS': str(arguments),
+               'ADDP_ONLINE_HOSTED': hosted, 'MOCK_KERNEL': kernel,
+               runtime.upper() + '_WORKFLOW_PORT': str(public_port),
+               'SYSTEM_BACKEND_PORT': '18180', 'POSTGRES_PORT': '25432',
+               'POINTCLOUD_OBJECT_STORE_LOOPBACK_HOST': 'custom-host',
+               'DOCUMENT_OBJECT_STORE_LOOPBACK_HOST': 'custom-host'}
+        mocks = '''
+set -euo pipefail
+RED= GREEN= YELLOW= NC=
+uname() { printf '%s\\n' "$MOCK_KERNEL"; }
+docker() {
+  [ "$1" = run ] || return 2
+  if [ "$2" = --rm ]; then [ "$3" = --entrypoint ] && [ "$4" = id ] || return 2; printf '%s\\n' 10001; return; fi
+  printf '%s\\n' "$@" > "$ARGUMENTS"
+  printf '%s\\n' mock-container
+}
+sudo() { [ "$1" = -n ] && [ "$2" = chown ] && [ "$3" = 10001 ] && [ -d "$4" ]; }
+curl() { printf '%s\\n' '{"status":"healthy"}'; }
+addp_dev_remove_owned_container() { :; }
+ensure_geopython_workflow_image() { :; }
+ensure_pointcloud_workflow_image() { :; }
+ensure_document_workflow_image() { :; }
+'''
+        script = mocks + helper + '\n' + function('start_' + runtime + '_workflow_engine_process')
+        script += '\nstart_' + runtime + '_workflow_engine_process\n'
+        result = subprocess.run(['bash', '-c', script], cwd=fixture, env=env,
+                                text=True, capture_output=True, timeout=10)
+        if hosted == '1' and kernel != 'Linux':
+            assert result.returncode != 0, result
+            assert not arguments.exists(), 'unsupported host must fail before docker run'
+            continue
+        assert result.returncode == 0, (runtime, hosted, kernel, result.stdout, result.stderr)
+        args = arguments.read_text().splitlines()
+        envs = {args[i + 1].split('=', 1)[0]: args[i + 1].split('=', 1)[1]
+                for i, arg in enumerate(args[:-1]) if arg == '-e'}
+        assert envs['RUNTIME_PUBLIC_PORT'] == str(public_port), envs
+        bind_host = '127.0.0.1' if hosted == '1' else '0.0.0.0'
+        assert envs['WORKFLOW_BIND_HOST'] == bind_host, envs
+        # Execute the production main block without opening sockets or registering a real engine.
+        module = ast.parse((root / f'engines/{runtime}-workflow/api_server.py').read_text())
+        main = next(node for node in module.body if isinstance(node, ast.If)
+                    and ast.unparse(node.test) == "__name__ == '__main__'")
+        app = Mock()
+        namespace = {'app': app, 'os': os, 'threading': threading, 'logger': Mock(),
+                     'register_to_system_with_retry': lambda: None, 'list_operators': lambda: []}
+        with patch.dict(os.environ, envs), patch('threading.Thread'):
+            exec(compile(ast.Module(body=main.body, type_ignores=[]), '<runtime-main>', 'exec'), namespace)
+        app.run.assert_called_once_with(host=bind_host, port=int(envs['PORT']), debug=False)
+        loopback_key = {'geopython': 'GEOPYTHON_WORKFLOW_LOOPBACK_HOST',
+                        'pointcloud': 'POINTCLOUD_OBJECT_STORE_LOOPBACK_HOST',
+                        'document': 'DOCUMENT_OBJECT_STORE_LOOPBACK_HOST'}[runtime]
+        if hosted == '1':
+            assert args[args.index('--network') + 1] == 'host', args
+            assert '-p' not in args and not any(arg.startswith('--add-host') for arg in args), args
+            assert envs['PORT'] == str(public_port), envs
+            assert envs['SYSTEM_URL'] == 'http://127.0.0.1:18180', envs
+            assert envs[loopback_key] == '127.0.0.1', envs
+        else:
+            assert '--network' not in args, args
+            assert args[args.index('-p') + 1] == f'{public_port}:{port}', args
+            assert '--add-host=host.docker.internal:host-gateway' in args, args
+            assert envs['PORT'] == str(port), envs
+            assert envs['SYSTEM_URL'] == 'http://host.docker.internal:18180', envs
+            assert envs[loopback_key] == ('host.docker.internal' if runtime == 'geopython' else 'custom-host'), envs
+        if runtime == 'geopython':
+            assert envs['POSTGRES_HOST'] == ('127.0.0.1' if hosted == '1' else 'host.docker.internal'), envs
+            assert envs['POSTGRES_PORT'] == '25432', envs
+            # GeoPython's Docker CMD uses Gunicorn rather than the Flask main block.
+            commands = fixture / 'commands'
+            commands.mkdir(exist_ok=True)
+            gunicorn_args, health_url = fixture / 'gunicorn-args', fixture / 'health-url'
+            gunicorn = commands / 'gunicorn'
+            gunicorn.write_text('#!/bin/sh\nprintf "%s\\n" "$@" > "$GUNICORN_ARGS"\n')
+            gunicorn.chmod(0o755)
+            python = commands / 'python'
+            python.write_text('#!' + sys.executable + '\nimport os, sys, urllib.request\nfrom pathlib import Path\n'
+                              'urllib.request.urlopen = lambda url, timeout: Path(os.environ["HEALTH_URL"]).write_text(url)\n'
+                              'if "urllib.request" in sys.argv[2]: exec(sys.argv[2])\n')
+            python.chmod(0o755)
+            environment = {**os.environ, **envs, 'PATH': str(commands) + ':' + os.environ['PATH'],
+                           'GUNICORN_ARGS': str(gunicorn_args), 'HEALTH_URL': str(health_url)}
+            entrypoint = root / 'engines/geopython-workflow/container_entrypoint.sh'
+            result = subprocess.run(['sh', str(entrypoint)], env=environment, capture_output=True, text=True, timeout=10)
+            assert result.returncode == 0, result.stderr
+            gunicorn_cli = gunicorn_args.read_text().splitlines()
+            assert gunicorn_cli[gunicorn_cli.index('--bind') + 1] == f'{bind_host}:{envs["PORT"]}', gunicorn_cli
+            assert health_url.read_text() == f'http://127.0.0.1:{envs["PORT"]}/health'
+        if runtime == 'document':
+            assert '--read-only' in args and '--cap-drop=ALL' in args, args
+            assert '--security-opt=no-new-privileges' in args and '--tmpfs' in args, args
+        assert 'com.docker.compose.project=addp-runtimes' in args, args
+        assert 'com.docker.compose.project.working_dir=' + str(fixture) in args, args
+print('PASS: Hosted Linux Runtime network, ports, service access, ownership and Document restrictions')
 PY
 }
 
@@ -1360,7 +1523,9 @@ test_dev_port_resolution
 test_dev_real_listener_collision
 test_dev_owned_listener_matches_recorded_pid
 test_dev_runtime_owned_listeners_match_pidfiles
+test_hosted_runtime_owned_listener
 test_runtime_host_port_advertisement
+test_hosted_runtime_network
 test_compose_public_port_policy
 test_local_stop_rejects_volume_deletion
 test_prod_compose_init_health

@@ -688,5 +688,6 @@ if __name__ == '__main__':
 
     # 启动 Flask 服务
     port = int(os.getenv('PORT', 8099))
+    bind_host = os.getenv('WORKFLOW_BIND_HOST', '0.0.0.0')
     logger.info(f"🚀 Starting GeoPython Workflow on port {port}")
-    app.run(host='0.0.0.0', port=port, debug=False)
+    app.run(host=bind_host, port=port, debug=False)

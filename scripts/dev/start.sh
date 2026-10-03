@@ -1807,6 +1807,25 @@ start_runtime_duckdb() (
   echo ""
 )
 
+# 三类容器 Runtime 共用同一部署网络契约；Hosted 必须能访问回环发布的 Infra/Business。
+configure_workflow_container_network() {
+  local public_port="$1" internal_port="$2"
+  WORKFLOW_CONTAINER_HOST=host.docker.internal
+  WORKFLOW_CONTAINER_BIND_HOST=0.0.0.0
+  WORKFLOW_CONTAINER_PORT="$internal_port"
+  WORKFLOW_CONTAINER_NETWORK_ARGS=(--add-host=host.docker.internal:host-gateway -p "${public_port}:${internal_port}")
+  if [ "${ADDP_ONLINE_HOSTED:-}" = "1" ]; then
+    if [ "$(uname -s)" != "Linux" ]; then
+      echo "Hosted Runtime 宿主网络只支持原生 Linux Runner" >&2
+      return 1
+    fi
+    WORKFLOW_CONTAINER_HOST=127.0.0.1
+    WORKFLOW_CONTAINER_BIND_HOST=127.0.0.1
+    WORKFLOW_CONTAINER_PORT="$public_port"
+    WORKFLOW_CONTAINER_NETWORK_ARGS=(--network host)
+  fi
+}
+
 start_runtime_geopython() (
   echo -e "${YELLOW}Step 4/5: 启动 GeoPython Workflow...${NC}"
 
@@ -1866,6 +1885,7 @@ start_geopython_workflow_engine_process() {
   local container_source_dir="${ROOT_DIR}/business/nfs/data"
   local system_port="${SYSTEM_BACKEND_PORT:-8180}"
 
+  configure_workflow_container_network "$GEOPYTHON_WORKFLOW_PORT" 8099 || return 1
   ensure_geopython_workflow_image "$image"
 
   echo "启动 GeoPython Workflow Docker runtime..."
@@ -1878,14 +1898,14 @@ start_geopython_workflow_engine_process() {
       --label com.docker.compose.project.config_files="${ROOT_DIR}/docker-compose.runtimes.yml" \
       --label com.docker.compose.service=geopython-workflow-engine \
       --label com.docker.compose.project.working_dir="${ROOT_DIR}" \
-      --add-host=host.docker.internal:host-gateway \
-      -p "${GEOPYTHON_WORKFLOW_PORT}:8099" \
-      -e PORT=8099 \
+      "${WORKFLOW_CONTAINER_NETWORK_ARGS[@]}" \
+      -e PORT="${WORKFLOW_CONTAINER_PORT}" \
+      -e WORKFLOW_BIND_HOST="${WORKFLOW_CONTAINER_BIND_HOST}" \
       -e RUNTIME_PUBLIC_PORT="${GEOPYTHON_WORKFLOW_PORT}" \
-      -e SYSTEM_URL="http://host.docker.internal:${system_port}" \
+      -e SYSTEM_URL="http://${WORKFLOW_CONTAINER_HOST}:${system_port}" \
       -e GEOPYTHON_WORKFLOW_SERVICE_CLIENT_SECRET="${GEOPYTHON_WORKFLOW_SERVICE_CLIENT_SECRET:-}" \
-      -e GEOPYTHON_WORKFLOW_LOOPBACK_HOST=host.docker.internal \
-      -e POSTGRES_HOST=host.docker.internal \
+      -e GEOPYTHON_WORKFLOW_LOOPBACK_HOST="${WORKFLOW_CONTAINER_HOST}" \
+      -e POSTGRES_HOST="${WORKFLOW_CONTAINER_HOST}" \
       -e POSTGRES_PORT="${POSTGRES_PORT:-15432}" \
       -e POSTGRES_USER="${POSTGRES_USER:-addp}" \
       -e POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-}" \
@@ -2162,6 +2182,9 @@ start_pointcloud_workflow_engine_process() {
   local work_dir="${POINTCLOUD_WORK_HOST_PATH:-${ROOT_DIR}/data/pointcloud-work}"
   local system_port="${SYSTEM_BACKEND_PORT:-8180}"
 
+  configure_workflow_container_network "$POINTCLOUD_WORKFLOW_PORT" 8102 || return 1
+  local object_store_host="${POINTCLOUD_OBJECT_STORE_LOOPBACK_HOST:-$WORKFLOW_CONTAINER_HOST}"
+  if [ "${ADDP_ONLINE_HOSTED:-}" = "1" ]; then object_store_host="$WORKFLOW_CONTAINER_HOST"; fi
   ensure_pointcloud_workflow_image "$image"
 
   echo "启动 PointCloud Workflow Engine Docker runtime..."
@@ -2175,17 +2198,17 @@ start_pointcloud_workflow_engine_process() {
       --label com.docker.compose.project.config_files="${ROOT_DIR}/docker-compose.runtimes.yml" \
       --label com.docker.compose.service=pointcloud-workflow-engine \
       --label com.docker.compose.project.working_dir="${ROOT_DIR}" \
-      --add-host=host.docker.internal:host-gateway \
-      -p "${POINTCLOUD_WORKFLOW_PORT}:8102" \
-      -e PORT=8102 \
+      "${WORKFLOW_CONTAINER_NETWORK_ARGS[@]}" \
+      -e PORT="${WORKFLOW_CONTAINER_PORT}" \
+      -e WORKFLOW_BIND_HOST="${WORKFLOW_CONTAINER_BIND_HOST}" \
       -e RUNTIME_PUBLIC_PORT="${POINTCLOUD_WORKFLOW_PORT}" \
-      -e SYSTEM_URL="http://host.docker.internal:${system_port}" \
+      -e SYSTEM_URL="http://${WORKFLOW_CONTAINER_HOST}:${system_port}" \
       -e POINTCLOUD_WORKFLOW_SERVICE_CLIENT_SECRET="${POINTCLOUD_WORKFLOW_SERVICE_CLIENT_SECRET:-}" \
       -e POINTCLOUD_PDAL_BIN=/opt/conda/bin/pdal \
       -e POINTCLOUD_WORK_DIR=/work/pointcloud \
       -e CPL_TMPDIR=/work/pointcloud \
       -e RUNTIME_HOST=localhost \
-      -e POINTCLOUD_OBJECT_STORE_LOOPBACK_HOST="${POINTCLOUD_OBJECT_STORE_LOOPBACK_HOST:-host.docker.internal}" \
+      -e POINTCLOUD_OBJECT_STORE_LOOPBACK_HOST="${object_store_host}" \
       -v "${ROOT_DIR}/logs:/app/logs" \
       -v "${work_dir}:/work/pointcloud" \
       -v "${ROOT_DIR}/engines/pointcloud-workflow/api_server.py:/app/api_server.py:ro" \
@@ -2299,9 +2322,18 @@ start_document_workflow_engine_process() {
   local container_source_dir="${DOCUMENT_DATA_CONTAINER_PATH:-${ROOT_DIR}/business/nfs/data}"
   local work_dir="${DOCUMENT_WORK_HOST_PATH:-${ROOT_DIR}/data/document-work}"
   local system_port="${SYSTEM_BACKEND_PORT:-8180}"
+  configure_workflow_container_network "$DOCUMENT_WORKFLOW_PORT" 8105 || return 1
+  local object_store_host="${DOCUMENT_OBJECT_STORE_LOOPBACK_HOST:-$WORKFLOW_CONTAINER_HOST}"
+  if [ "${ADDP_ONLINE_HOSTED:-}" = "1" ]; then object_store_host="$WORKFLOW_CONTAINER_HOST"; fi
   ensure_document_workflow_image "$image"
   addp_dev_remove_owned_container document-workflow-engine
   mkdir -p "$work_dir" .dev-pids
+  if [ "${ADDP_ONLINE_HOSTED:-}" = "1" ]; then
+    local runtime_uid
+    runtime_uid=$(docker run --rm --entrypoint id "$image" -u) || return 1
+    [[ "$runtime_uid" =~ ^[0-9]+$ ]] && [ "$runtime_uid" -gt 0 ] || return 1
+    sudo -n chown "$runtime_uid" "$work_dir" || return 1
+  fi
   DOCUMENT_WORKFLOW_PID=$(
     docker run -d \
       --name document-workflow-engine \
@@ -2313,17 +2345,17 @@ start_document_workflow_engine_process() {
       --tmpfs /tmp:rw,nosuid,nodev,size=67108864 \
       --cap-drop=ALL \
       --security-opt=no-new-privileges \
-      --add-host=host.docker.internal:host-gateway \
-      -p "${DOCUMENT_WORKFLOW_PORT}:8105" \
-      -e PORT=8105 \
+      "${WORKFLOW_CONTAINER_NETWORK_ARGS[@]}" \
+      -e PORT="${WORKFLOW_CONTAINER_PORT}" \
+      -e WORKFLOW_BIND_HOST="${WORKFLOW_CONTAINER_BIND_HOST}" \
       -e RUNTIME_PUBLIC_PORT="${DOCUMENT_WORKFLOW_PORT}" \
-      -e SYSTEM_URL="http://host.docker.internal:${system_port}" \
+      -e SYSTEM_URL="http://${WORKFLOW_CONTAINER_HOST}:${system_port}" \
       -e DOCUMENT_WORKFLOW_SERVICE_CLIENT_SECRET="${DOCUMENT_WORKFLOW_SERVICE_CLIENT_SECRET:-}" \
       -e DOCUMENT_LIBREOFFICE_BIN=/usr/bin/soffice \
       -e DOCUMENT_WORK_DIR=/work/document \
       -e DOCUMENT_CONVERSION_CONCURRENCY="${DOCUMENT_CONVERSION_CONCURRENCY:-1}" \
       -e DOCUMENT_CONVERSION_TIMEOUT_SECONDS="${DOCUMENT_CONVERSION_TIMEOUT_SECONDS:-600}" \
-      -e DOCUMENT_OBJECT_STORE_LOOPBACK_HOST="${DOCUMENT_OBJECT_STORE_LOOPBACK_HOST:-host.docker.internal}" \
+      -e DOCUMENT_OBJECT_STORE_LOOPBACK_HOST="${object_store_host}" \
       -e RUNTIME_HOST=localhost \
       -v "${ROOT_DIR}/logs:/app/logs" \
       -v "${work_dir}:/work/document" \

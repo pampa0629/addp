@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-gunicorn --bind 0.0.0.0:8099 \
+gunicorn --bind "${WORKFLOW_BIND_HOST:-0.0.0.0}:${PORT:-8099}" \
   --workers 4 \
   --timeout "${GEOPYTHON_WORKFLOW_GUNICORN_TIMEOUT:-7200}" \
   api_server:app &
@@ -16,7 +16,7 @@ trap cleanup INT TERM
 ready=0
 attempt=0
 while [ "$attempt" -lt 60 ]; do
-  if python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8099/health', timeout=3)" >/dev/null 2>&1; then
+  if python -c "import os, urllib.request; urllib.request.urlopen('http://127.0.0.1:' + os.getenv('PORT', '8099') + '/health', timeout=3)" >/dev/null 2>&1; then
     ready=1
     break
   fi

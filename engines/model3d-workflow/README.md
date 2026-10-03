@@ -56,6 +56,8 @@ cd engines/model3d-workflow
 
 默认上游引用固定为 `fanvanzh/3dtiles@acbcf603f33fdfe3c34b704a8b019c4fd32a8376`。如需临时验证其他上游版本，可通过 `THREE_DTILES_REF=<commit-or-branch>` 覆盖，但生产镜像应使用固定 commit。
 
+vcpkg baseline 保持上游固定版本。tinygltf `2.9.7` 通过唯一的 overlay port 固定到发布提交 `488a70a3df62a4df1a736e9e56fb8836580c4888`，下载提交归档并执行 SHA-512 校验，替换 baseline 中已无法通过校验的 tag 归档；不关闭完整性检查，也不升级其他原生依赖。构建入口与 overlay 安装契约由 `make test-dev-lifecycle` 验证，完整 Linux amd64 编译及实际转换由 Hosted Manager T4 验收。
+
 运行时镜像内固定绑定：
 
 ```text

@@ -15,6 +15,8 @@ ADDP 的配置按事实来源和生命周期分层管理，不建立由 System �
 
 ## 配置分类与事实来源
 
+GeoPython、PointCloud、Document 的 HTTP 监听地址由部署入口通过 `WORKFLOW_BIND_HOST` 注入，默认 `0.0.0.0`，用于普通 bridge/Compose 容器内监听。Hosted Online 原生 Linux 使用宿主网络时，标准开发入口固定注入 `127.0.0.1`，并以 `PORT` 指定实际开发端口；`RUNTIME_HOST` 与 `RUNTIME_PUBLIC_PORT` 仍只负责自注册地址，不用于控制监听。该配置随进程启动生效，不保存到业务配置或根 `.env`。
+
 | 类别 | 典型内容 | 事实来源 | 维护者 |
 | --- | --- | --- | --- |
 | 部署配置 | 端口、数据库、Redis、MinIO、Kafka、模块间地址、启动开关 | ADDP 根 `.env`、本地 Business `business/.env`、容器 environment 或部署系统，按部署单元归属 | 部署运维人员 |

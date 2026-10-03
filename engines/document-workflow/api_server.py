@@ -255,6 +255,7 @@ def _timeout_seconds(value: Any) -> int | None:
 if __name__ == "__main__":
     threading.Thread(target=register_to_system_with_retry, daemon=True).start()
     port = int(os.getenv("PORT", 8105))
-    logger.info("Document Workflow Engine listening on http://0.0.0.0:%s", port)
+    bind_host = os.getenv("WORKFLOW_BIND_HOST", "0.0.0.0")
+    logger.info("Document Workflow Engine listening on http://%s:%s", bind_host, port)
     logger.info("Operators: %s", len(list_operators()))
-    app.run(host="0.0.0.0", port=port, debug=False)
+    app.run(host=bind_host, port=port, debug=False)
