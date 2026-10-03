@@ -85,6 +85,8 @@ var orchestratorPermissions = []string{
 	"monitor.execution.read", "system.execution_authorization.create",
 }
 
+var orchestratorPeerPermissions = []string{"monitor.execution.read", "meta.scan_task.read"}
+
 var managerArtifactPermissions = []string{
 	"manager.data_item.read", "manager.derived_artifact.create", "manager.derived_artifact.delete", "manager.derived_artifact.read",
 	"meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read", "monitor.execution.read",
@@ -352,6 +354,12 @@ func run(args []string, environment []string) error {
 		if err != nil {
 			return err
 		}
+		peer, _, _, err := createPermissionFixture(ctx, identity, membershipService, roleService, selectionService,
+			tenant.ID, administrator.PrincipalID, "external-online-meta-peer", orchestratorPeerPermissions)
+		if err != nil {
+			return err
+		}
+		values["ADDP_ONLINE_PEER_USER_ACCESS_TOKEN"] = peer.AccessToken
 		values["ADDP_ONLINE_READ_USER_ACCESS_TOKEN"] = reader.AccessToken
 		values["ADDP_ONLINE_FOREIGN_USER_ACCESS_TOKEN"] = foreign.AccessToken
 		parentReader, ownerAssignmentID, password, err := createPermissionFixture(ctx, identity, membershipService, roleService, selectionService,
@@ -629,6 +637,7 @@ func writeEnvironmentFile(path string, values map[string]string) error {
 		"ADDP_ONLINE_PARENT_USER_ACCESS_TOKEN",
 		"ADDP_ONLINE_PARENT_USER_USERNAME",
 		"ADDP_ONLINE_PARENT_USER_PASSWORD",
+		"ADDP_ONLINE_PEER_USER_ACCESS_TOKEN",
 		"ADDP_ONLINE_READ_USER_ACCESS_TOKEN",
 		"ADDP_ONLINE_TEST_TENANT_ID",
 		"ADDP_ONLINE_TEST_USER_ACCESS_TOKEN",

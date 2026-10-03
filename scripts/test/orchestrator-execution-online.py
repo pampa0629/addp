@@ -70,16 +70,16 @@ def source_action(action):
         raise SuiteError("restored source did not become ready")
 
 
-def wait_execution(client, execution_id, timeout=120):
+def wait_execution(client, execution_id, timeout=120, module=ORCH):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        item = client.request("GET", f"{ORCH}/executions/{execution_id}", (200,)).payload
+        item = client.request("GET", f"{module}/executions/{execution_id}", (200,)).payload
         require(item.get("execution_id") == execution_id, "execution identity changed")
         if item.get("status") in TERMINAL:
             return item
         require(item.get("status") in {"pending", "running"}, "unknown execution status")
         time.sleep(1)
-    raise SuiteError("orchestration did not finish within the convergence deadline")
+    raise SuiteError("execution did not finish within the convergence deadline")
 
 
 def step(name, provider, task_type, task_id, dependencies=()):
@@ -278,6 +278,89 @@ def invisible_projection(client, execution_id, status):
         require(set(payload) <= {"error", "error_code"}, "invisible execution returned diagnostic data")
 
 
+class AdHocCases:
+    """Prove actor isolation with the same Owner read capability in a real Tenant."""
+
+    def __init__(self, initiator, peer, tenant):
+        self.initiator, self.peer, self.tenant = initiator, peer, tenant
+        required = {"monitor.execution.read", "meta.scan_task.read"}
+        self.peer_identity = API.validate_user_identity(peer, tenant, required)
+        contexts = [client.request("GET", AUTH_CONTEXT, (200,)).payload for client in (initiator, peer)]
+        bindings = [user_binding(context, tenant) for context in contexts]
+        require(bindings[0][0] != bindings[1][0] and bindings[0][1] != bindings[1][1],
+                "ad-hoc initiator and peer must be different Tenant Users")
+        for context in contexts:
+            require(context.get("token", {}).get("type") == "first_party_access_token"
+                    and context.get("client", {}).get("scope_mode") == "unrestricted",
+                    "ad-hoc acceptance requires ordinary first-party User sessions")
+        require(role_permissions(contexts[1])[1] == required, "ad-hoc peer must have only Owner and Monitor read permissions")
+        self.principal_id = int(bindings[0][0])
+
+    def listing(self, client):
+        payload = client.request("GET", "/api/v1/monitor/executions?module=meta&task_type=scan&page=1&page_size=100", (200,)).payload
+        assert_safe(payload)
+        items = payload.get("executions")
+        require(isinstance(items, list) and payload.get("page") == 1 and payload.get("page_size") == 100
+                and type(payload.get("total")) is int and payload["total"] == len(items),
+                "ad-hoc acceptance requires a complete bounded execution list and exact count")
+        identities = [item.get("execution_id") for item in items if isinstance(item, dict)]
+        require(len(identities) == len(items) and all(isinstance(i, str) and i for i in identities)
+                and len(set(identities)) == len(items), "invalid ad-hoc execution list identities")
+        return set(identities)
+
+    def run(self, engine_id, visible, denied, foreign, report, checkpoint):
+        defined = {identity for identity, item in visible.items() if item.get("module") == "meta"}
+        require(len(defined) == 2, "ad-hoc positive control requires the real successful Meta children")
+        before = self.listing(self.initiator)
+        peer_before = self.listing(self.peer)
+        require(defined <= before and defined <= peer_before, "peer Owner read permission was not proven on task history")
+        for identity in defined:
+            detail = self.peer.request("GET", f"{MONITOR}/{identity}", (200,)).payload
+            assert_safe(detail)
+            require(detail == visible[identity], "peer cannot read the real defined scan history")
+        report["checks"].append("ad_hoc_peer_owner_read_proven")
+        report["uncertain_mutation"] = True
+        checkpoint()
+        item = self.initiator.request("POST", f"{META}/scan/run/manual", (201,),
+            {"engine_id": engine_id, "catalog_paths": ["public"], "scan_depth": "basic", "force": True}).payload
+        identity = item.get("execution_id")
+        require(isinstance(identity, str) and re.fullmatch(r"[0-9a-f-]{36}", identity), "missing ad-hoc execution identity")
+        report["ad_hoc_execution_id"] = identity
+        require(item.get("status") == "pending", "ad-hoc scan did not admit a pending execution")
+        API.assert_tenant(item, self.tenant, "ad-hoc execution")
+        self.assert_actor(item, identity)
+        report["uncertain_mutation"] = False
+        checkpoint()
+        terminal = wait_execution(self.initiator, identity, module=META)
+        API.assert_tenant(terminal, self.tenant, "ad-hoc execution")
+        self.assert_actor(terminal, identity)
+        require(terminal.get("status") == "success" and terminal.get("progress") == 100, "ad-hoc scan did not succeed")
+        detail = self.initiator.request("GET", f"{MONITOR}/{identity}", (200,)).payload
+        assert_safe(detail)
+        self.assert_actor(detail, identity)
+        require(detail.get("status") == "success" and detail.get("progress") == 100, "Monitor lost ad-hoc terminal facts")
+        tree = self.initiator.request("GET", f"{MONITOR}/{identity}/tree", (200,)).payload
+        assert_safe(tree)
+        require(tree_ids(tree) == {identity: detail}, "ad-hoc scan tree changed its detail or invented lineage")
+        report["ad_hoc_event_count"] = assert_events(self.initiator, identity, "completed")
+        report["checks"].append("ad_hoc_initiator_diagnostics")
+        require(self.listing(self.initiator) == before | {identity} and identity not in before,
+                "initiator list lost or duplicated the ad-hoc execution")
+        require(self.listing(self.peer) == peer_before and identity not in peer_before,
+                "peer list or count leaked another User's ad-hoc execution")
+        report["checks"].append("ad_hoc_list_count_isolated")
+        for reader in (self.peer, denied, foreign):
+            invisible_projection(reader, identity, 404)
+        report["checks"].append("ad_hoc_other_user_invisible")
+        checkpoint()
+
+    def assert_actor(self, item, identity):
+        require(item.get("execution_id") == identity and item.get("module") == "meta" and item.get("task_type") == "scan"
+                and item.get("source_task_id") is None and item.get("parent_execution_id") is None
+                and type(item.get("triggered_by")) is int and item["triggered_by"] == self.principal_id
+                and item.get("trigger_type") == "manual", "ad-hoc execution actor or definition binding changed")
+
+
 class PermissionCases:
     """IAM controller is used only for revocation; every diagnostic read uses a normal User."""
 
@@ -387,7 +470,7 @@ def owner_unavailable(client, execution_id, visible, scan, faults, report):
     report["checks"].append("owner_recovery_restores_access")
 
 
-def run_suite(client, denied, foreign, tenant, run_id, engine_id, report, control=source_action, checkpoint=lambda: None, faults=None, permissions=None):
+def run_suite(client, denied, foreign, tenant, run_id, engine_id, report, control=source_action, checkpoint=lambda: None, faults=None, permissions=None, ad_hoc=None):
     report.update(schema_version="addp.online-suite/v1", suite=SUITE, run_id=run_id,
                   tenant_id=str(tenant), result="failed", checks=[], resources=[], executions=[],
                   cleanup="not_started", history_cleanup="pending_deployment_destruction", uncertain_mutation=False)
@@ -486,6 +569,8 @@ def run_suite(client, denied, foreign, tenant, run_id, engine_id, report, contro
         if source_stopped:
             control("start")
             source_stopped = False
+        if ad_hoc is not None:
+            ad_hoc.run(engine_id, visible, denied, foreign, report, checkpoint)
         snapshots = {identity: history_snapshot(client, identity, family)
                      for identity, family in ((success_id, visible), (failure_id, failed_visible))}
         require(snapshots[success_id]["owner_steps"] == successful_steps
@@ -539,6 +624,13 @@ def run_suite(client, denied, foreign, tenant, run_id, engine_id, report, contro
                         "execution is still active")
             except Exception:
                 failures.append("unfinished_execution")
+        if report.get("ad_hoc_execution_id"):
+            try:
+                item = client.request("GET", f"{META}/executions/{report['ad_hoc_execution_id']}", (200,)).payload
+                require(item.get("execution_id") == report["ad_hoc_execution_id"] and item.get("status") in TERMINAL,
+                        "ad-hoc execution is still active")
+            except Exception:
+                failures.append("unfinished_ad_hoc_execution")
         if report["cleanup"] == "deleting_definitions":
             failures.append("definition_deletion_incomplete")
         report["cleanup_failures"] = failures
@@ -606,13 +698,18 @@ def main():
             API.GatewayClient(gateway, admin_token, timeout), API.GatewayClient(gateway, "", timeout),
             tenant, os.environ["ADDP_ONLINE_PARENT_ASSIGNMENT_ID"],
             os.environ["ADDP_ONLINE_PARENT_USER_USERNAME"], os.environ["ADDP_ONLINE_PARENT_USER_PASSWORD"])
+        peer_token = os.environ["ADDP_ONLINE_PEER_USER_ACCESS_TOKEN"]
+        require(bool(peer_token) and len({token, denied_token, foreign_token, parent_token, admin_token, peer_token}) == 6,
+                "six distinct fixture User credentials are required")
+        ad_hoc = AdHocCases(API.GatewayClient(gateway, token, timeout), API.GatewayClient(gateway, peer_token, timeout), tenant)
+        report["peer_identity"] = ad_hoc.peer_identity
         for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGALRM):
             signal.signal(signum, interrupted)
         signal.alarm(600)
         run_suite(API.GatewayClient(os.environ["GATEWAY_URL"], token, timeout),
                   API.GatewayClient(os.environ["GATEWAY_URL"], denied_token, timeout),
                   API.GatewayClient(os.environ["GATEWAY_URL"], foreign_token, timeout),
-                  tenant, run_id, engine, report, checkpoint=checkpoint, faults=FAULTS.HostedFaults(), permissions=permissions)
+                  tenant, run_id, engine, report, checkpoint=checkpoint, faults=FAULTS.HostedFaults(), permissions=permissions, ad_hoc=ad_hoc)
     except (KeyError, ValueError, SuiteError, subprocess.SubprocessError) as error:
         report["result"] = "failed"
         # Raw transport/process exceptions can contain secrets; evidence stores no response body.

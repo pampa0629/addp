@@ -427,6 +427,12 @@ func TestOrchestratorParentReaderKeepsMonitorAssignmentIndependentAndIssuesCurre
 	}
 }
 
+func TestOrchestratorPeerHasExactlyOwnerAndMonitorReadPermissions(t *testing.T) {
+	if len(orchestratorPeerPermissions) != 2 || !contains(orchestratorPeerPermissions, "meta.scan_task.read") || !contains(orchestratorPeerPermissions, "monitor.execution.read") {
+		t.Fatalf("peer must only read Owner scan history and Monitor diagnostics: %v", orchestratorPeerPermissions)
+	}
+}
+
 func TestOrchestratorReloginCredentialsRemainInOwnerOnlyEnvironment(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "credentials", "fixture.env")
 	values := map[string]string{
@@ -434,6 +440,7 @@ func TestOrchestratorReloginCredentialsRemainInOwnerOnlyEnvironment(t *testing.T
 		"ADDP_ONLINE_PARENT_USER_ACCESS_TOKEN": "private-reader-token",
 		"ADDP_ONLINE_PARENT_USER_USERNAME":     "external-online-parent-reader",
 		"ADDP_ONLINE_PARENT_USER_PASSWORD":     "private'password",
+		"ADDP_ONLINE_PEER_USER_ACCESS_TOKEN":   "private-peer-token",
 	}
 	if err := writeEnvironmentFile(path, values); err != nil {
 		t.Fatal(err)

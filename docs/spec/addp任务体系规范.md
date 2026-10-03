@@ -941,6 +941,8 @@ Orchestrator 保留 v1 串行 DAG、任务引用、Owner 授权和输出绑定�
 
 已删除任务历史扩展已在提交 `a5d8428ad` 的 [Hosted T4 37129222858](https://github.com/pampa0629/addp/actions/runs/37129222858) 真实通过，共 24 项检查。四个临时任务定义经正式 API 确认删除；删除前后，成功与失败执行共七条记录的安全概览、步骤、错误和父子树保持一致，两个根执行的事件及 Owner 保存的步骤事实也保持一致。删除后，跨 Tenant 和缺少 Owner 权限的读者对七条记录的详情、树和事件均不可见；父读取者仍可读取两层编排，Meta 子执行仍不可见。随后正式撤销 Owner 读取分配，旧令牌为 401，重新登录保留 Monitor 权限时，已保留的父执行详情、树和事件为 404。业务源中断、响应丢失、Backend 崩溃及 Owner 不可用检查同时通过；两个派发故障仍各只有一次请求和一个真实子执行，无重放。System、Gateway、Meta、Orchestrator、Monitor 的构建身份均匹配该提交，生命周期清理通过，Infra 容器、网络和数据卷零残留。55 个归档文件未包含凭据环境文件、代理控制或诊断快照，未检出标准令牌和夹具密码模式。同一提交的 [Platform CI 37129088307](https://github.com/pampa0629/addp/actions/runs/37129088307) 全部通过，其中所有者测试 45 项、Online 聚合测试 333 项；Orchestrator PostgreSQL 可靠性门禁也已通过。此结果不包含一次性执行的真实权限验收与续租故障。
 
+一次性执行权限扩展沿用同一 `orchestrator-execution` 手动 Hosted T4。通过现有 Meta 手动扫描 API 创建无任务定义的真实执行，核对 `source_task_id` 为空、发起主体与当前普通 User 一致、执行收敛成功，Monitor 详情、树和过程事件可读且只含安全投影。System 正式 IAM 夹具增加同 Tenant 的另一普通 User，仅授予 Meta 扫描历史与 Monitor 执行读取权限；先证明该读者能读取已有任务定义的扫描执行，再确认其列表及总数不包含其他 User 的一次性执行，详情、树和事件返回无执行数据的 404。发起人的列表仅增加该执行；跨 Tenant 与缺少 Owner 权限时仍不可见。未知创建结果不重试，已知一次性执行必须收敛为终态，历史随 Hosted Infra 销毁。报告仅增加安全执行 UUID、事件数量、身份权限摘要和闭合检查名，不保存配置、主体编号或响应快照。复用既有 `make test-orchestrator-online-runner`、`make test-online-runner` 与 Platform CI 登记；公开 API、平台进程日志和审计路径不变，扩展尚待更新提交的真实 T4 验收。
+
 ### 编排调度与子任务自身调度
 
 Orchestrator 的调度和 Step 引用任务的自身调度不是继承关系，也不是覆盖关系。

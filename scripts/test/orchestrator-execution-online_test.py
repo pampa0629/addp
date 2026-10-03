@@ -548,5 +548,169 @@ class OwnerUnavailableTest(unittest.TestCase):
                 self.assertTrue(faults.released)
 
 
+class AdHocGateway:
+    def __init__(self, owner, actor):
+        self.owner, self.actor = owner, actor
+        self.token = actor
+
+    def context(self):
+        peer = self.actor == "peer"
+        fault = self.owner.fault
+        return {"principal": {"type": "user", "id": "7" if not peer or fault == "same_actor" else "8"},
+                "context": {"type": "tenant", "tenant_id": "99" if peer and fault == "foreign_peer" else "42",
+                            "tenant_membership_id": "17" if not peer else "18"},
+                "token": {"type": "oauth_access_token" if fault == "oauth_peer" and peer else "first_party_access_token"},
+                "client": {"scope_mode": "restricted" if fault == "restricted_peer" and peer else "unrestricted"},
+                "authorization": {"role_assignments": [{"role_key": "tenant.administrator" if peer and fault == "admin_peer" else "online.meta_reader",
+                    "permissions": ["monitor.execution.read", "meta.scan_task.read"] +
+                                   (["meta.scan_task.execute"] if not peer or fault == "peer_write" else [])}]}}
+
+    def detail(self):
+        item = {"execution_id": execution_id(9), "module": "meta", "task_type": "scan",
+                "status": "success", "progress": 100, "trigger_type": "manual", "triggered_by": 7, "steps": []}
+        changes = {"wrong_actor": {"triggered_by": 8}, "missing_actor": {"triggered_by": None},
+                   "has_definition": {"source_task_id": "11"}, "has_parent": {"parent_execution_id": execution_id(1)},
+                   "adhoc_failed": {"status": "failed"}, "adhoc_unfinished": {"status": "running"}, "adhoc_private": {"execution_config": {"password": "never-print"}}}
+        item.update(changes.get(self.owner.fault, {}))
+        return item
+
+    def request(self, method, path, expected, body=None, *, response_type=dict):
+        self.owner.calls.append((method, path, body))
+        fault, peer = self.owner.fault, self.actor == "peer"
+        status, payload = 200, {}
+        if path == ONLINE.AUTH_CONTEXT:
+            payload = self.context()
+        elif method == "POST" and path == ONLINE.META + "/scan/run/manual":
+            self.owner.ad_hoc_created = True
+            if fault == "lost_adhoc_create":
+                raise API.SuiteError("ad-hoc response unavailable")
+            status, payload = 201, {**self.detail(), "tenant_id": 99 if fault == "foreign_execution" else 42, "status": "pending"}
+        elif path.startswith("/api/v1/monitor/executions?"):
+            items = list(ONLINE.tree_ids(self.owner.tree(False)).values())
+            items = [item for item in items if item["module"] == "meta"]
+            if fault == "peer_no_history" and peer:
+                items = []
+            if getattr(self.owner, "ad_hoc_created", False) and (not peer or fault == "peer_list_leak"):
+                items.append(self.detail())
+            payload = {"executions": items, "total": len(items) + (1 if fault == "wrong_list_total" else 0), "page": 1, "page_size": 100}
+        elif execution_id(9) in path:
+            if peer:
+                status = 200 if fault == "peer_detail_leak" else 404
+                payload = self.detail() if fault in {"peer_detail_leak", "denial_payload_leak"} else {}
+            elif path.startswith(ONLINE.META):
+                payload = {**self.detail(), "tenant_id": 42}
+            elif path.endswith("/tree"):
+                payload = {"execution": self.detail(), "children": [], "truncated": False}
+                if fault == "adhoc_lineage":
+                    payload["children"] = [self.owner.tree(False)]
+            elif "/events?" in path:
+                payload = self.owner.request(method, path, expected).payload
+                if fault == "adhoc_missing_events":
+                    payload["items"] = []
+            else:
+                payload = self.detail()
+        else:
+            return self.owner.request(method, path, expected, body, response_type=response_type)
+        if status not in expected:
+            raise API.SuiteError("real response status rejected by ad-hoc assertion")
+        return API.Response(status, payload)
+
+
+class AdHocCasesTest(unittest.TestCase):
+    def cases(self, fault=None):
+        self.owner = FakeOwner(fault)
+        self.initiator, self.peer = AdHocGateway(self.owner, "initiator"), AdHocGateway(self.owner, "peer")
+        return ONLINE.AdHocCases(self.initiator, self.peer, 42)
+
+    def run_case(self, fault=None):
+        case = self.cases(fault)
+        self.report, self.checkpoints = {"checks": [], "uncertain_mutation": False}, []
+        case.run(9, ONLINE.tree_ids(self.owner.tree(False)), DeniedReader(), DeniedReader(), self.report,
+                 lambda: self.checkpoints.append(copy.deepcopy(self.report)))
+        return self.report
+
+    def test_initiator_visible_peer_has_owner_read_but_not_actor_access(self):
+        report = self.run_case()
+        self.assertEqual(report["checks"], ["ad_hoc_peer_owner_read_proven", "ad_hoc_initiator_diagnostics",
+                                          "ad_hoc_list_count_isolated", "ad_hoc_other_user_invisible"])
+        self.assertEqual(report["ad_hoc_execution_id"], execution_id(9))
+        self.assertEqual(report["ad_hoc_event_count"], 2)
+        self.assertFalse(report["uncertain_mutation"])
+        self.assertEqual(sum(method == "POST" for method, _, _ in self.owner.calls), 1)
+        self.assertTrue(any(item["uncertain_mutation"] for item in self.checkpoints))
+        for private in ("triggered_by", "execution_config", "never-print", "principal_id"):
+            self.assertNotIn(private, json.dumps(report))
+
+    def test_fixture_must_be_distinct_ordinary_same_tenant_read_only_user(self):
+        for fault in ("same_actor", "foreign_peer", "oauth_peer", "restricted_peer", "admin_peer", "peer_write"):
+            with self.subTest(fault=fault), self.assertRaises(API.SuiteError):
+                self.cases(fault)
+            self.assertFalse(any(method == "POST" for method, _, _ in self.owner.calls))
+
+    def test_positive_control_and_exact_count_required_before_mutation(self):
+        for fault in ("peer_no_history", "wrong_list_total"):
+            with self.subTest(fault=fault), self.assertRaises(API.SuiteError):
+                self.run_case(fault)
+            self.assertFalse(any(method == "POST" for method, _, _ in self.owner.calls))
+
+    def test_ad_hoc_actor_definition_terminal_and_safe_facts_cannot_be_substituted(self):
+        for fault in ("foreign_execution", "wrong_actor", "missing_actor", "has_definition", "has_parent", "adhoc_failed", "adhoc_private",
+                      "adhoc_lineage", "adhoc_missing_events"):
+            with self.subTest(fault=fault), self.assertRaises(API.SuiteError):
+                self.run_case(fault)
+            self.assertNotIn("ad_hoc_other_user_invisible", self.report["checks"])
+            self.assertNotIn("never-print", json.dumps(self.report))
+
+    def test_peer_list_count_detail_or_denial_payload_leak_fails(self):
+        for fault in ("peer_list_leak", "peer_detail_leak", "denial_payload_leak"):
+            with self.subTest(fault=fault), self.assertRaises(API.SuiteError):
+                self.run_case(fault)
+            self.assertNotIn("ad_hoc_other_user_invisible", self.report["checks"])
+
+    def test_unknown_creation_not_retried_and_cleanup_fails_closed(self):
+        case = self.cases("lost_adhoc_create")
+        report = {}
+        with self.assertRaisesRegex(API.SuiteError, "cleanup failed"):
+            ONLINE.run_suite(self.initiator, DeniedReader(), DeniedReader(), 42, "run-test", 9, report,
+                             control=lambda _: None, ad_hoc=case)
+        self.assertTrue(report["uncertain_mutation"])
+        self.assertEqual(report["cleanup_failures"], ["unknown_mutation_outcome"])
+        self.assertEqual(sum(method == "POST" and path.endswith("/manual") for method, path, _ in self.owner.calls), 1)
+        self.assertFalse(any(method == "DELETE" for method, _, _ in self.owner.calls))
+
+    def test_known_unfinished_ad_hoc_execution_cannot_report_cleanup_success(self):
+        case = self.cases("adhoc_unfinished")
+        report = {}
+        original_wait = ONLINE.wait_execution
+
+        def wait(client, identity, timeout=120, module=ONLINE.ORCH):
+            if module == ONLINE.META:
+                raise API.SuiteError("ad-hoc deadline exceeded")
+            return original_wait(client, identity, timeout, module)
+
+        with patch.object(ONLINE, "wait_execution", side_effect=wait), self.assertRaisesRegex(API.SuiteError, "cleanup failed"):
+            ONLINE.run_suite(self.initiator, DeniedReader(), DeniedReader(), 42, "run-test", 9, report,
+                             control=lambda _: None, ad_hoc=case)
+        self.assertFalse(report["uncertain_mutation"])
+        self.assertEqual(report["ad_hoc_execution_id"], execution_id(9))
+        self.assertEqual(report["cleanup_failures"], ["unfinished_ad_hoc_execution"])
+        self.assertEqual(report["result"], "failed")
+        self.assertFalse(any(method == "DELETE" for method, _, _ in self.owner.calls))
+
+    def test_same_suite_runs_after_source_restore_and_before_history_deletion(self):
+        case = self.cases()
+        report, controls = {}, []
+        ONLINE.run_suite(self.initiator, DeniedReader(), DeniedReader(), 42, "run-test", 9, report,
+                         control=controls.append, ad_hoc=case)
+        self.assertEqual(report["result"], "passed")
+        self.assertEqual(report["cleanup"], "definitions_deleted")
+        self.assertEqual(len(report["checks"]), 18)
+        self.assertEqual(report["deleted_definition_count"], 3)
+        self.assertEqual(controls, ["stop", "start"])
+        paths = [(method, path) for method, path, _ in self.owner.calls]
+        admission = paths.index(("POST", ONLINE.META + "/scan/run/manual"))
+        self.assertLess(admission, next(i for i, (method, _) in enumerate(paths) if method == "DELETE"))
+        self.assertEqual(paths[-1], ("GET", ONLINE.META + "/executions/" + execution_id(9)))
+
 if __name__ == "__main__":
     unittest.main()
