@@ -287,7 +287,7 @@ type StoreProvider interface {
 - `SpatialFeatureReadProvider.ReadSpatialFeature()`：按一个精确 identity field 读取单个空间要素，统一返回 geometry EWKB、centroid EWKB、SRID 和空间事实。Manager 的要素定位与高亮只消费该 Provider，不得在 Handler 中拼接 PostGIS、MySQL 等原生空间 SQL；Provider 必须校验 geometry field 和 identity field 后再引用标识符。
 - `BatchWritableProvider.WriteBatch()`：批量写入表或集合数据；图写入应由图模块或专用 graph provider 明确建模。
 - `TableWriteSessionProvider.OpenTableWriteSession()`：打开表写入会话，连续写入批次；适合 PostgreSQL COPY、JDBC bulk load 等避免每批重复建立写入会话的实现。
-- `TableWritePreparer.PrepareTableWrite()`：执行表级写入前准备动作，例如 ensure database / schema、create table、校验目标表结构和安全 schema evolution。该能力不写入数据行，也不承载 Transfer 的 replace / append policy。
+- `TableWritePreparer.PrepareTableWrite()`：执行表级写入前准备动作，例如 ensure database / schema、create table、校验目标表结构和安全 schema evolution。已存在且当前连接可使用的目标命名空间必须直接复用，仅在缺失且当前连接具备创建权限时创建；不得因重复执行命名空间创建语句而要求已有目标写入方额外持有数据库级 CREATE 权限。该能力不写入数据行，也不承载 Transfer 的 replace / append policy。
 - `BoundedWatermarkReadProvider.OpenBoundedWatermarkRead()`：在引擎一致性读边界内冻结单字段或复合 watermark 上界，按稳定顺序读取 `(start, upper_bound]`。session 必须返回上界，并能从已读取行生成 provider 可解释的完整位置；普通 batch reader 不得被推断为具备该语义。
 - `TableUpsertProvider.PrepareTableUpsert()` / `UpsertBatch()`：按显式稳定键准备目标并幂等应用 insert/update。Provider 必须校验键字段和唯一约束；普通 `BatchWritableProvider` 或 COPY session 不得被推断为 upsert。
 - `ChangeStreamReaderProvider.OpenChangeStream()`：打开 partitioned change stream，按 provider position seek、poll 原始记录并支持受控 pause/resume/close。Kafka topic 不能伪装成 `BatchReadableProvider` 或 content `stream_read`。

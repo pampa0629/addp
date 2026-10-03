@@ -38,17 +38,16 @@ func createPostgresTable(ctx context.Context, db *sql.DB, schema, table string, 
 		return fmt.Errorf("postgresql table write prepare requires table fields")
 	}
 	dialect := commonquery.ForDialect("postgresql")
-	if ifNotExists {
+	var schemaExists bool
+	if err := db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name=$1)`, schema).Scan(&schemaExists); err != nil {
+		return fmt.Errorf("check postgresql target schema %s: %w", schema, err)
+	}
+	if !schemaExists {
+		if !ifNotExists {
+			return fmt.Errorf("postgresql replay target schema %s does not exist", schema)
+		}
 		if _, err := db.ExecContext(ctx, "CREATE SCHEMA IF NOT EXISTS "+dialect.QuoteIdentifier(schema)); err != nil {
 			return fmt.Errorf("create postgresql schema %s: %w", schema, err)
-		}
-	} else {
-		var schemaExists bool
-		if err := db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name=$1)`, schema).Scan(&schemaExists); err != nil {
-			return fmt.Errorf("check postgresql target schema %s: %w", schema, err)
-		}
-		if !schemaExists {
-			return fmt.Errorf("postgresql replay target schema %s does not exist", schema)
 		}
 	}
 

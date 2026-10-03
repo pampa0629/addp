@@ -2,7 +2,9 @@ package postgresql
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -11,8 +13,91 @@ import (
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
-	_ "github.com/lib/pq"
+	"github.com/lib/pq"
 )
+
+func TestIntegrationPostgresPrepareTableWriteUsesSchemaOnlyPrivileges(t *testing.T) {
+	db, pg, connInfo := openPostgresPrepareIntegration(t, false)
+	defer db.Close()
+	ctx := context.Background()
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+	roleName := "prepare_writer_" + suffix
+	schemaName := "prepare_existing_" + suffix
+	missingSchema := "prepare_missing_" + suffix
+	password := rand.Text()
+	if _, err := db.ExecContext(ctx, fmt.Sprintf(`CREATE ROLE "%s" LOGIN PASSWORD '%s'`, roleName, password)); err != nil {
+		t.Fatalf("create writer role: %v", err)
+	}
+	defer func() {
+		for _, statement := range []string{
+			fmt.Sprintf(`DROP SCHEMA IF EXISTS "%s" CASCADE`, schemaName),
+			fmt.Sprintf(`DROP OWNED BY "%s"`, roleName),
+			fmt.Sprintf(`DROP ROLE "%s"`, roleName),
+		} {
+			if _, err := db.ExecContext(ctx, statement); err != nil {
+				t.Errorf("clean up owned writer fixture: %v", err)
+			}
+		}
+		var remaining bool
+		if err := db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname=$1)
+			OR EXISTS (SELECT 1 FROM pg_namespace WHERE nspname IN ($2,$3))`, roleName, schemaName, missingSchema).Scan(&remaining); err != nil || remaining {
+			t.Errorf("writer fixture cleanup not proven: remaining=%v error=%v", remaining, err)
+		}
+	}()
+	if _, err := db.ExecContext(ctx, fmt.Sprintf(`CREATE SCHEMA "%s"; GRANT USAGE, CREATE ON SCHEMA "%s" TO "%s"`, schemaName, schemaName, roleName)); err != nil {
+		t.Fatalf("grant existing schema permissions: %v", err)
+	}
+	writerInfo := make(plugin.ConnectionInfo, len(connInfo))
+	for key, value := range connInfo {
+		writerInfo[key] = value
+	}
+	writerInfo["user"], writerInfo["password"] = roleName, password
+	dsn, err := pg.BuildDSN(writerInfo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writer, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer writer.Close()
+	var databaseCreate, schemaCreate bool
+	if err := writer.QueryRowContext(ctx, `SELECT has_database_privilege(current_database(),'CREATE'), has_schema_privilege($1,'CREATE')`, schemaName).Scan(&databaseCreate, &schemaCreate); err != nil || databaseCreate || !schemaCreate {
+		t.Fatalf("writer must have schema-only CREATE: database=%v schema=%v error=%v", databaseCreate, schemaCreate, err)
+	}
+	fields := []datatype.FieldInfo{{Name: "id", Type: datatype.FieldTypeBigInt, PrimaryKey: true}}
+	t.Run("existing schema table creation and evolution", func(t *testing.T) {
+		path := postgresPrepareTablePath(schemaName, "target")
+		if err := pg.PrepareTableWrite(ctx, writerInfo, path, plugin.TableWriteOptions{Fields: fields}); err != nil {
+			t.Fatal(err)
+		}
+		evolved := append(append([]datatype.FieldInfo{}, fields...), datatype.FieldInfo{Name: "label", Type: datatype.FieldTypeString, Nullable: true})
+		if err := pg.PrepareTableWrite(ctx, writerInfo, path, plugin.TableWriteOptions{Fields: evolved}); err != nil {
+			t.Fatal(err)
+		}
+		assertPostgresPrepareColumn(t, ctx, db, schemaName, "target", "label", "text", "YES", "")
+	})
+	t.Run("existing schema upsert preparation", func(t *testing.T) {
+		if err := pg.PrepareTableUpsert(ctx, writerInfo, postgresPrepareTablePath(schemaName, "upsert_target"), plugin.TableUpsertOptions{Fields: fields, Keys: []string{"id"}}); err != nil {
+			t.Fatal(err)
+		}
+	})
+	t.Run("missing schema requires database CREATE", func(t *testing.T) {
+		err := pg.PrepareTableWrite(ctx, writerInfo, postgresPrepareTablePath(missingSchema, "target"), plugin.TableWriteOptions{Fields: fields})
+		var permissionError *pq.Error
+		if !errors.As(err, &permissionError) || permissionError.Code != "42501" {
+			t.Fatalf("missing schema must preserve permission denial: %v", err)
+		}
+	})
+	t.Run("authorized missing schema creation", func(t *testing.T) {
+		if _, err := db.ExecContext(ctx, fmt.Sprintf(`GRANT CREATE ON DATABASE "%s" TO "%s"`, connInfo["database"], roleName)); err != nil {
+			t.Fatal(err)
+		}
+		if err := pg.PrepareTableWrite(ctx, writerInfo, postgresPrepareTablePath(missingSchema, "target"), plugin.TableWriteOptions{Fields: fields}); err != nil {
+			t.Fatal(err)
+		}
+	})
+}
 
 func TestIntegrationPostgresPrepareTableWriteEvolvesSafeMissingColumns(t *testing.T) {
 	db, pg, connInfo := openPostgresPrepareIntegration(t, false)
