@@ -1454,4 +1454,6 @@ DAE 不接受 XML DTD、实体声明或外部 DTD 引用。此限制由 XML 解�
 
 所有 Model3D Runtime 单体 GLB 快显转换产物在发布前必须通过 GLB 2.0 chunk、内嵌 buffer / bufferView 和图片校验；禁止外部 URI。图片仅允许实际可解码且与 MIME 一致的 PNG/JPEG。DAE / 3DS 转换产物必须含静态网格，复杂贴图超出范围时明确失败，不以缺贴图白模作为成功结果。
 
+网格索引 accessor 必须使用 SCALAR 和无符号 8/16/32 位整数，读取偏移、对齐和范围必须合法；有效索引值必须小于 POSITION 顶点数，且不得使用该整数类型的最大值。普通索引与稀疏索引均按 glTF 2.0 校验，稀疏替换位置必须严格递增且位于 accessor 内，范围判断以替换后的有效索引为准。primitive 的绘制模式和有效索引数量（无索引时为顶点数量）必须满足对应点、线或三角形的数量要求。非法产物在上传或替换已有快显文件前拒绝。
+
 DAE / 3DS 的贴图必须由网格 primitive 实际使用的基础颜色材质引用，不能仅在产物中保留未使用的 image 或 material。该材质选择的 `TEXCOORD_n`（包括 `KHR_texture_transform.texCoord` 覆盖值）必须存在，其 accessor 使用 VEC2、合法的浮点或归一化无符号整数编码，顶点数与 POSITION 一致，且读取范围位于内嵌 bufferView 内；缺失、非法索引或越界均在发布前拒绝。

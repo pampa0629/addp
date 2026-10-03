@@ -8,6 +8,192 @@ from operators import ConverterError, CommandResult, invoke_operator
 from .test_operators import file_plan
 
 
+def indexed_triangle(component_type=5123, values=(0, 1, 2), texture_format=None):
+    doc, binary = triangle_doc(texture_format)
+    binary += b"\x00" * (-len(binary) % 4)
+    payload = struct.pack("<" + {5121: "B", 5123: "H", 5125: "I"}[component_type] * len(values), *values)
+    view_index = len(doc["bufferViews"])
+    doc["bufferViews"].append({"buffer": 0, "byteOffset": len(binary), "byteLength": len(payload)})
+    binary += payload
+    doc["buffers"][0]["byteLength"] = len(binary)
+    accessor_index = len(doc["accessors"])
+    doc["accessors"].append({"bufferView": view_index, "componentType": component_type,
+                             "count": len(values), "type": "SCALAR"})
+    doc["meshes"][0]["primitives"][0]["indices"] = accessor_index
+    return doc, binary
+
+
+@pytest.mark.parametrize("source_format", ["stl", "dae", "3ds"])
+def test_out_of_bounds_index_never_replaces_published_target(tmp_path, source_format):
+    from .test_exchange_model import dae, three_ds
+    from .test_operators import directory_plan
+    doc, binary = indexed_triangle(values=(0, 1, 3), texture_format="PNG")
+    folder = tmp_path / "source"
+    folder.mkdir()
+    source = folder / f"model.{source_format}"
+    source.write_bytes({"stl": b"mesh", "dae": dae(), "3ds": three_ds()}[source_format])
+    (folder / "texture.png").write_bytes(b"source texture")
+    target = tmp_path / "published.glb"
+    target.write_bytes(b"previous valid artifact")
+    plan = (file_plan(source, target, "stl", "glb") if source_format == "stl"
+            else directory_plan(folder, target, source_format, "glb", entrypoint=source.name))
+    plan["target"]["write_mode"] = "replace"
+
+    def runner(command, timeout_seconds):
+        from pathlib import Path
+        Path(command[-2]).write_bytes(glb_bytes(doc, binary))
+        return CommandResult(0)
+
+    with pytest.raises(ConverterError) as error:
+        invoke_operator(f"{source_format}_to_glb", {"access_plan": plan}, runner=runner)
+    assert error.value.error_code == "INVALID_GLB"
+    assert target.read_bytes() == b"previous valid artifact"
+
+
+@pytest.mark.parametrize("component_type", [5121, 5123, 5125])
+def test_unsigned_index_encodings_with_accessor_offset_are_accepted(tmp_path, component_type):
+    doc, binary = indexed_triangle(component_type, (99, 0, 1, 2))
+    doc["accessors"][1].update(byteOffset={5121: 1, 5123: 2, 5125: 4}[component_type], count=3)
+    doc["bufferViews"][1]["target"] = 34963
+    path = tmp_path / "indexed.glb"
+    path.write_bytes(glb_bytes(doc, binary))
+    validate_glb(path)
+
+
+@pytest.mark.parametrize("failure", ["reference", "boolean_reference", "type", "signed", "float", "normalized",
+                                     "zero_count", "short_view", "offset", "view_alignment", "stride", "target"])
+def test_invalid_index_storage_is_rejected(tmp_path, failure):
+    doc, binary = indexed_triangle()
+    accessor, view = doc["accessors"][1], doc["bufferViews"][1]
+    if failure == "reference": doc["meshes"][0]["primitives"][0]["indices"] = 9
+    if failure == "boolean_reference": doc["meshes"][0]["primitives"][0]["indices"] = True
+    if failure == "type": accessor["type"] = "VEC2"
+    if failure == "signed": accessor["componentType"] = 5122
+    if failure == "float": accessor["componentType"] = 5126
+    if failure == "normalized": accessor["normalized"] = True
+    if failure == "zero_count": accessor["count"] = 0
+    if failure == "short_view": view["byteLength"] -= 1
+    if failure == "offset": accessor["byteOffset"] = 1
+    if failure == "view_alignment": view["byteOffset"] -= 1
+    if failure == "stride": view["byteStride"] = 4
+    if failure == "target": view["target"] = 34962
+    path = tmp_path / "bad-indices.glb"
+    path.write_bytes(glb_bytes(doc, binary))
+    with pytest.raises(ValueError):
+        validate_glb(path)
+
+
+def test_restart_sentinel_is_rejected_even_when_below_vertex_count(tmp_path):
+    doc, binary = indexed_triangle(5121, (0, 1, 255))
+    positions = binary[:36] + bytes(253 * 12)
+    doc["accessors"][0]["count"] = 256
+    doc["bufferViews"][0]["byteLength"] = len(positions)
+    doc["bufferViews"][1]["byteOffset"] = len(positions)
+    binary = positions + binary[36:]
+    doc["buffers"][0]["byteLength"] = len(binary)
+    path = tmp_path / "restart.glb"
+    path.write_bytes(glb_bytes(doc, binary))
+    with pytest.raises(ValueError, match="restart"):
+        validate_glb(path)
+
+
+def sparse_triangle(*, dense=False, positions=(1, 2), values=(1, 2), position_type=5121):
+    doc, binary = indexed_triangle(values=(0, 99, 99))
+    accessor = doc["accessors"][1]
+    if not dense:
+        del accessor["bufferView"]
+    sparse = {"count": len(positions)}
+    for key, component_type, items in (("indices", position_type, positions), ("values", 5123, values)):
+        binary += b"\x00" * (-len(binary) % 4)
+        payload = struct.pack("<" + {5121: "B", 5123: "H", 5125: "I"}[component_type] * len(items), *items)
+        sparse[key] = {"bufferView": len(doc["bufferViews"])}
+        if key == "indices":
+            sparse[key]["componentType"] = component_type
+        doc["bufferViews"].append({"buffer": 0, "byteOffset": len(binary), "byteLength": len(payload)})
+        binary += payload
+    accessor["sparse"] = sparse
+    doc["buffers"][0]["byteLength"] = len(binary)
+    return doc, binary
+
+
+@pytest.mark.parametrize("dense", [False, True])
+@pytest.mark.parametrize("position_type", [5121, 5123, 5125])
+def test_sparse_replacements_validate_effective_indices(tmp_path, dense, position_type):
+    doc, binary = sparse_triangle(dense=dense, position_type=position_type)
+    path = tmp_path / "sparse.glb"
+    path.write_bytes(glb_bytes(doc, binary))
+    validate_glb(path)
+
+
+def test_index_accessor_without_storage_uses_implicit_zeros(tmp_path):
+    doc, binary = indexed_triangle()
+    del doc["accessors"][1]["bufferView"]
+    path = tmp_path / "implicit.glb"
+    path.write_bytes(glb_bytes(doc, binary))
+    validate_glb(path)
+
+
+@pytest.mark.parametrize("dense", [False, True])
+@pytest.mark.parametrize("positions,values", [((2, 1), (2, 1)), ((1, 1), (1, 2)), ((1, 3), (1, 2)), ((1, 2), (1, 3))])
+def test_invalid_sparse_replacements_are_rejected(tmp_path, dense, positions, values):
+    doc, binary = sparse_triangle(dense=dense, positions=positions, values=values)
+    path = tmp_path / "sparse.glb"
+    path.write_bytes(glb_bytes(doc, binary))
+    with pytest.raises(ValueError):
+        validate_glb(path)
+
+
+@pytest.mark.parametrize("failure", ["count", "zero_count", "missing_values", "position_type", "short_values",
+                                     "values_alignment", "positions_stride", "values_target", "offset_without_base"])
+def test_invalid_sparse_storage_is_rejected(tmp_path, failure):
+    doc, binary = sparse_triangle()
+    accessor = doc["accessors"][1]
+    sparse = accessor["sparse"]
+    positions_view = doc["bufferViews"][sparse["indices"]["bufferView"]]
+    values_view = doc["bufferViews"][sparse["values"]["bufferView"]]
+    if failure == "count": sparse["count"] = 4
+    if failure == "zero_count": sparse["count"] = 0
+    if failure == "missing_values": del sparse["values"]
+    if failure == "position_type": sparse["indices"]["componentType"] = 5126
+    if failure == "short_values": values_view["byteLength"] -= 1
+    if failure == "values_alignment": values_view["byteOffset"] -= 1
+    if failure == "positions_stride": positions_view["byteStride"] = 4
+    if failure == "values_target": values_view["target"] = 34963
+    if failure == "offset_without_base": accessor["byteOffset"] = 0
+    path = tmp_path / "sparse.glb"
+    path.write_bytes(glb_bytes(doc, binary))
+    with pytest.raises(ValueError):
+        validate_glb(path)
+
+
+@pytest.mark.parametrize("mode,count", [(0, 1), (1, 2), (2, 2), (3, 2), (4, 3), (5, 3), (6, 3)])
+def test_supported_draw_modes_are_accepted(tmp_path, mode, count):
+    doc, binary = indexed_triangle(values=(0, 1, 2)[:count])
+    doc["meshes"][0]["primitives"][0]["mode"] = mode
+    path = tmp_path / "mode.glb"
+    path.write_bytes(glb_bytes(doc, binary))
+    validate_glb(path)
+
+
+@pytest.mark.parametrize("mode,count", [(1, 3), (2, 1), (3, 1), (4, 2), (5, 2), (6, 2), (7, 3), (True, 3)])
+def test_invalid_draw_counts_and_modes_are_rejected(tmp_path, mode, count):
+    doc, binary = indexed_triangle(values=(0, 1, 2)[:count])
+    doc["meshes"][0]["primitives"][0]["mode"] = mode
+    path = tmp_path / "mode.glb"
+    path.write_bytes(glb_bytes(doc, binary))
+    with pytest.raises(ValueError, match="draw"):
+        validate_glb(path)
+
+
+def test_nonindexed_draw_count_is_checked(tmp_path):
+    doc, binary = triangle_doc()
+    doc["accessors"][0]["count"] = 2
+    path = tmp_path / "nonindexed.glb"
+    path.write_bytes(glb_bytes(doc, binary))
+    with pytest.raises(ValueError, match="draw count"):
+        validate_glb(path)
+
+
 @pytest.mark.parametrize("encoding", ["PNG", "JPEG"])
 def test_real_embedded_image_is_decoded(tmp_path, encoding):
     path = tmp_path / "model.glb"

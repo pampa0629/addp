@@ -61,6 +61,89 @@ def _entries(doc: dict, key: str) -> list:
     return value
 
 
+def _unsigned_values(binding: dict, component_type: int, count: int, views: list, binary: bytes, *, sparse: bool = False):
+    if type(component_type) is not int or component_type not in (5121, 5123, 5125):
+        raise ValueError("indices must use unsigned 8/16/32-bit integers")
+    encoding, width = {5121: ("B", 1), 5123: ("H", 2), 5125: ("I", 4)}[component_type]
+    view = _index(binding.get("bufferView"), views, "indices bufferView")
+    if "byteStride" in view or (sparse and "target" in view):
+        raise ValueError("index bufferView must be tightly packed; sparse views cannot have target")
+    if not sparse and "target" in view and view["target"] != 34963:
+        raise ValueError("index bufferView target must be ELEMENT_ARRAY_BUFFER")
+    offset = _integer(binding.get("byteOffset", 0), "indices byteOffset")
+    start = view.get("byteOffset", 0) + offset
+    if offset % width or start % width:
+        raise ValueError("indices byteOffset must be component-aligned")
+    if offset + count * width > view["byteLength"]:
+        raise ValueError("indices accessor exceeds bufferView")
+    return (value[0] for value in struct.iter_unpack("<" + encoding, memoryview(binary)[start:start + count * width]))
+
+
+def _validate_primitive_indices(primitive: dict, accessors: list, views: list, binary: bytes, vertex_count: int) -> int:
+    if "indices" not in primitive:
+        return vertex_count
+    accessor = _index(primitive["indices"], accessors, "primitive.indices accessor")
+    component_type = accessor.get("componentType")
+    if (accessor.get("type") != "SCALAR" or accessor.get("normalized", False) is not False
+            or type(component_type) is not int or component_type not in (5121, 5123, 5125)):
+        raise ValueError("indices must be non-normalized unsigned SCALAR")
+    count = _integer(accessor.get("count"), "indices count", 1)
+    maximum = {5121: 255, 5123: 65535, 5125: 4294967295}[component_type]
+
+    def check_value(value: int) -> None:
+        if value >= vertex_count or value == maximum:
+            raise ValueError("index exceeds POSITION count or uses reserved primitive restart value")
+
+    replacements = iter(())
+    if "sparse" in accessor:
+        sparse = accessor["sparse"]
+        if not isinstance(sparse, dict):
+            raise ValueError("invalid sparse indices accessor")
+        sparse_count = _integer(sparse.get("count"), "sparse count", 1)
+        if sparse_count > count:
+            raise ValueError("sparse count exceeds indices count")
+        positions, values = sparse.get("indices"), sparse.get("values")
+        if not isinstance(positions, dict) or not isinstance(values, dict):
+            raise ValueError("invalid sparse indices or values")
+        positions_iter = _unsigned_values(positions, positions.get("componentType"), sparse_count, views, binary, sparse=True)
+        values_iter = _unsigned_values(values, component_type, sparse_count, views, binary, sparse=True)
+
+        def checked_replacements():
+            previous = -1
+            for position, value in zip(positions_iter, values_iter):
+                if position <= previous or position >= count:
+                    raise ValueError("sparse indices positions must be strictly increasing within accessor")
+                previous = position
+                check_value(value)
+                yield position, value
+
+        replacements = checked_replacements()
+    if "bufferView" not in accessor:
+        if "byteOffset" in accessor:
+            raise ValueError("indices byteOffset requires bufferView")
+        # Unspecified base storage is all zero; validate only its sparse replacements.
+        for _ in replacements:
+            pass
+        return count
+    base = _unsigned_values(accessor, component_type, count, views, binary)
+    replacement = next(replacements, None)
+    for position, value in enumerate(base):
+        if replacement is not None and replacement[0] == position:
+            value = replacement[1]
+            replacement = next(replacements, None)
+        check_value(value)
+    return count
+
+
+def _validate_draw_count(primitive: dict, count: int) -> None:
+    mode = primitive.get("mode", 4)
+    if type(mode) is not int or mode not in range(7):
+        raise ValueError("invalid primitive draw mode")
+    minimum = (1, 2, 2, 2, 3, 3, 3)[mode]
+    if count < minimum or (mode == 1 and count % 2) or (mode == 4 and count % 3):
+        raise ValueError("primitive draw count does not match mode")
+
+
 def _validate_texture_coordinates(primitive: dict, texture: dict, accessors: list, views: list, vertex_count: int) -> None:
     extensions = texture.get("extensions", {})
     if not isinstance(extensions, dict):
@@ -159,6 +242,8 @@ def validate_glb(path: Path, *, basic_static: bool = False) -> dict[str, Any]:
             stride = _integer(view.get("byteStride", 12), "POSITION stride", 12)
             if offset + (accessor["count"] - 1) * stride + 12 > view["byteLength"]:
                 raise ValueError("POSITION accessor exceeds bufferView")
+            draw_count = _validate_primitive_indices(primitive, accessors, views, binary, accessor["count"])
+            _validate_draw_count(primitive, draw_count)
             if "material" in primitive:
                 material = _index(primitive["material"], materials, "primitive.material")
                 if basic_static:

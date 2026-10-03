@@ -115,7 +115,7 @@ engines/model3d-workflow/.venv/bin/python -m pip install -r engines/model3d-work
 make test-model3d-workflow
 ```
 
-DAE / 3DS 的源引用必须是模型目录内大小写一致的相对路径，缺失贴图、动画及复杂贴图明确拒绝。全部单体 GLB 快显转换产物发布前统一校验容器结构、自包含资源以及 PNG/JPEG 实际解码；转换器退出码为零不代表校验通过。该确定性门禁通过根 `make test-model3d-workflow`、`make test-module MODULE=engines` 和 Platform CI 注册；真实转换器及整个平台快显验收属于另行执行的集成验证。
+DAE / 3DS 的源引用必须是模型目录内大小写一致的相对路径，缺失贴图、动画及复杂贴图明确拒绝。全部单体 GLB 快显转换产物发布前统一校验容器结构、自包含资源、PNG/JPEG 实际解码，以及网格索引编码、对齐、范围和绘制数量；稀疏索引按替换后的有效值校验。转换器退出码为零不代表校验通过，校验失败时保留已有快显文件。该确定性门禁通过根 `make test-model3d-workflow`、`make test-module MODULE=engines` 和 Platform CI 注册；真实转换器及整个平台快显验收属于另行执行的集成验证。
 
 DAE / 3DS 的基础颜色贴图还必须关联到网格实际使用的材质和有效 `TEXCOORD_n`：仅嵌入图片、未绑定材质、UV 缺失、顶点数不匹配或越界，都不能发布为成功产物。发布失败保留之前有效的目标文件。
 
