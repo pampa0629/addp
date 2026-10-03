@@ -617,31 +617,28 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         host = self.repository / "scripts/test/online-host-gate.sh"
         host.write_text(
             host.read_text(encoding="utf-8").replace(
-                "first-suite)\n    START_TARGET=-system",
-                "manager-internal-artifact-lineage)\n    START_TARGET=-all",
-            )
-            + "\nSYSTEM_URL GATEWAY_URL META_URL MANAGER_URL MONITOR_URL CONSOLE_URL\n"
-            + "ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID ADDP_ONLINE_MANAGER_MINIO_PORT "
-            + "ADDP_ONLINE_MANAGER_MINIO_ACCESS_KEY ADDP_ONLINE_MANAGER_MINIO_SECRET_KEY "
-            + "ADDP_ONLINE_MANAGER_MINIO_BUCKET ADDP_ONLINE_MANAGER_MINIO_POINTCLOUD_OBJECT "
-            + "ADDP_ONLINE_MANAGER_MINIO_PPTX_OBJECT\n"
-            + "bash business/scripts/online-manager-minio-fixture.sh start\n"
-            + "bash business/scripts/online-manager-minio-fixture.sh stop\n"
-            + 'bash scripts/dev/start.sh "$START_TARGET"\n'
-            + "playwright install chromium\n",
-            encoding="utf-8",
-        )
-        self.workflow.write_text(
-            self.workflow.read_text(encoding="utf-8").replace(
-                "first-suite", "manager-internal-artifact-lineage"
+                "  first-suite)\n    START_TARGET=-system\n    ;;\n", ""
             ),
             encoding="utf-8",
         )
+        hosted = self.repository / "scripts/test/online-hosted-manager-gate.sh"
+        hosted.write_text((SCRIPT.parents[2] / "scripts/test/online-hosted-manager-gate.sh").read_text(), encoding="utf-8")
+        workflow = (SCRIPT.parents[2] / ".github/workflows/online-t4-gates.yml").read_text()
+        import re
+        job = re.search(r"(?ms)^  manager-hosted-t4:\n.*?(?=^  [a-z][a-z0-9-]*:\n|\Z)", workflow).group()
+        self.workflow.write_text(self.workflow.read_text().replace("first-suite", "manager-internal-artifact-lineage").replace(
+            "if: github.event_name == 'workflow_dispatch'", "if: github.event_name == 'workflow_dispatch' && inputs.suite != 'manager-internal-artifact-lineage'")
+            + job, encoding="utf-8")
+        for name in ("_3dtile", "assimp", "IfcConvert", "docker-converter.sh"):
+            wrapper = self.repository / "engines/model3d-workflow/scripts/converters" / name
+            wrapper.parent.mkdir(parents=True, exist_ok=True)
+            wrapper.write_text("tracked converter wrapper\n")
         fixture = self.repository / "business/scripts/online-manager-minio-fixture.sh"
         fixture.parent.mkdir(parents=True, exist_ok=True)
         fixture.write_text(
             "ADDP_ONLINE_HOST --env-file /dev/null business-minio "
-            "pdal_las12_format0.las addp_online_preview_fixture.pptx MC_HOST_fixture\n",
+            "pdal_las12_format0.las addp_online_preview_fixture.pptx MC_HOST_fixture "
+            "dae/model.dae 3ds/model.3ds texture.png\n",
             encoding="utf-8",
         )
         owner = self.repository / "scripts/test/manager-internal-artifact-lineage-online.py"
@@ -651,7 +648,8 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             "addp-infra://minio/manager/tenant_ /api/v1/manager/point_cloud_copc/ "
             "/api/v1/manager/quick-view/capability /api/v1/manager/quick-view/actions "
             "/api/v1/manager/tasks/{PPTX_TASK_TYPE}/ "
-            '"cache_reused": True\n',
+            '"cache_reused": True model_3d_glb_generation /api/v1/manager/model_3d_glb/ '
+            'validate_model_glb cleanup_model_glb\n',
             encoding="utf-8",
         )
         browser = self.repository / "console/frontend/e2e/online/manager-internal-artifact-lineage.spec.js"
@@ -659,34 +657,28 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         browser.write_text(
             ".execution-lineage__group .execution-lineage__resource-action "
             "平台内部产物|Platform-internal artifact platform_internal_outputs "
-            ".pptx-preview .pdf-preview pptx_page_after_engine_refresh pptx_generation_requests\n",
+            ".pptx-preview .pdf-preview pptx_page_after_engine_refresh pptx_generation_requests "
+            ".model-preview model_loaded content_loaded addp.manager-internal-artifact-lineage-browser/v2\n",
             encoding="utf-8",
         )
         config = self.repository / "console/frontend/playwright.online.config.js"
-        config.write_text("fixture\n", encoding="utf-8")
-        start_script = self.repository / "scripts/dev/start.sh"
-        start_script.parent.mkdir(parents=True, exist_ok=True)
-        start_script.write_text(
-            "case $1 in -all) START_POINTCLOUD_WORKFLOW=true START_DOCUMENT_WORKFLOW=true ;; esac\n",
-            encoding="utf-8",
-        )
-
+        config.write_text("--use-gl=angle --use-angle=swiftshader-webgl --enable-unsafe-swiftshader\n", encoding="utf-8")
         CHECK.check_registration(self.repository)
+        for file, fragment, reason in (
+            (hosted, "-model3d-workflow", "Hosted profile"),
+            (fixture, "texture.png", "fixture contract"),
+            (config, "--enable-unsafe-swiftshader", "software WebGL"),
+            (owner, "validate_model_glb", "owner contract"),
+            (browser, ".model-preview", "browser contract"),
+        ):
+            with self.subTest(fragment=fragment):
+                original = file.read_text(encoding="utf-8")
+                file.write_text(original.replace(fragment, ""), encoding="utf-8")
+                with self.assertRaisesRegex(CHECK.RegistrationError, reason):
+                    CHECK.check_registration(self.repository)
+                file.write_text(original, encoding="utf-8")
         browser.unlink()
         with self.assertRaisesRegex(CHECK.RegistrationError, "requires"):
-            CHECK.check_registration(self.repository)
-
-        browser.write_text(
-            ".execution-lineage__group .execution-lineage__resource-action "
-            "平台内部产物|Platform-internal artifact platform_internal_outputs "
-            ".pptx-preview .pdf-preview pptx_page_after_engine_refresh pptx_preview_requests\n",
-            encoding="utf-8",
-        )
-        start_script.write_text(
-            "case $1 in -all) START_POINTCLOUD_WORKFLOW=false ;; esac\n",
-            encoding="utf-8",
-        )
-        with self.assertRaisesRegex(CHECK.RegistrationError, "full start contract"):
             CHECK.check_registration(self.repository)
 
     def test_requires_manager_hybrid_search_fixture_and_owner_suite(self) -> None:

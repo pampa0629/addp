@@ -25,6 +25,11 @@ require (
 
 require (
 	github.com/dolthub/vitess v0.0.0-20250512224608-8fb9c6ea092c // indirect
+	github.com/elastic/elastic-transport-go/v8 v8.8.0 // indirect
+	github.com/elastic/go-elasticsearch/v9 v9.3.0 // indirect
+	github.com/emmansun/gmsm v0.34.1 // indirect
+	github.com/go-logr/logr v1.4.3 // indirect
+	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/gogama/flatgeobuf v1.0.1 // indirect
 	github.com/jonas-p/go-shp v0.1.1 // indirect
 	github.com/parquet-go/parquet-go v0.25.1 // indirect
@@ -34,6 +39,8 @@ require (
 	github.com/xuri/efp v0.0.1 // indirect
 	github.com/xuri/excelize/v2 v2.10.0 // indirect
 	github.com/xuri/nfp v0.0.2-0.20250530014748-2ddeb826f9a9 // indirect
+	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
+	go.opentelemetry.io/otel/metric v1.40.0 // indirect
 	golang.org/x/image v0.25.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20251029180050-ab9386a59fda // indirect
 	google.golang.org/grpc v1.78.0 // indirect

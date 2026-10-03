@@ -45,7 +45,7 @@ type EnginePlugin interface {
 - 商业数据库插件若受官方驱动平台与再分发限制，可以把不含驱动的插件控制面代码编入 System，同时通过专用 build tag 只在获准平台加载官方驱动。此时无驱动进程只允许登记和展示，不得执行 `TestConnection` 或任何数据面 Provider；调用必须返回明确的执行边界错误，不能退化为 TCP 探活、CLI 代调或第三方驱动。
 - `DefaultPort()`、`RequiredFields()`、`SensitiveFields()` 与 `ConnectionIdentityFields()` 是现有运行时接口方法；内置可注册插件的这些方法必须从 `ConnectionSpec()` 派生，不能重复保存常量或字段列表。`ValidateConnectionInfo()` 负责协议级及条件级校验，`TestConnection()` 负责真实只读连接验证。
 - `ConnectionSpec` 中 `identity=true` 的非敏感字段决定当前连接地址去重键，不决定永久 `engine_id`。MongoDB 的地址键是服务端点 `host`、`port` 与认证主体 `user`、`auth_source`；`database` 只是可选的工作台初始数据库，不是身份或权限边界。其他数据库插件按自身协议声明端点字段；对象存储声明 `endpoint`；NFS 声明 `server`、`export_path`。
-- `GET /api/v1/system/engine-types` 返回当前编译进 System 且 `origin=general` 的描述数组，并同时投影 capabilities 与 Engine Catalog Model。该接口不返回连接值或凭据；新增国产或其他数据库后，注册入口必须由插件描述自动出现，不允许同步修改前端类型列表或表单分支。
+- `GET /api/v1/system/engine-types` 返回当前编译进 System 且 `origin=general` 的描述数组，并投影 capabilities，以及插件真实声明的可选 Engine Catalog Model。该接口不返回连接值或凭据；新增国产或其他数据库后，注册入口必须由插件描述自动出现，不允许同步修改前端类型列表或表单分支。
 - 有 `system.engine.update` 权限的用户确认同一实际引擎搬迁后，可在现有更新接口修改地址键字段并保留 `engine_id` 与已有引用；请求必须显式确认这一事实。System 校验连接配置、拒绝其他非删除实例占用的新地址，重置连接观测并发布更新事件。地址变化不自动证明源数据相同；要改接不同实际引擎必须新建实例并由各 owner 重绑。默认端口按插件语义归一化后比较。
 - System 使用插件声明的地址键字段在 Tenant 与 `engine_type` 范围内对非删除实例强制唯一。相同地址重复注册返回现有非删除 Engine Instance；`deleted` 墓碑不占用地址。恢复墓碑须用户显式确认同一实际引擎，提交完整连接配置并检查地址冲突。名称、描述、密码、capabilities 和连接状态不参与地址键。
 - `engine_id` 只由数据库 identity sequence 分配且永久不复用。删除完成后 System 保留 `deleted` 墓碑和非敏感连接字段，清除 `ConnectionSpec` 中 `sensitive=true` 的凭据；插件和上层调用方不得通过物理删除、重置 sequence 或按名称新建来改变这一语义。
@@ -863,6 +863,7 @@ type InferenceRuntimeProvider interface {
 | Oracle | 通用 tabular 组合 + `SpatialFeatureReadProvider` + `PartitionedTableChangeApplyProvider`；普通 Store 不声明 CDC |
 | Doris / ClickHouse | 非空间通用 tabular 组合；不声明 `BoundedWatermarkReadProvider`、`TableUpsertProvider` 或 CDC |
 | Spark SQL | `EnginePlugin` + `EngineCatalogModelProvider` + `EngineCatalogProvider` + `EngineCatalogFactsProvider` + `SQLQueryRuntimeProvider` + `ConnectionPoolPlugin` |
+| Redis（连接首版） | `EnginePlugin` + `ConnectionSpecProvider`；`key_value` 存储族，不实现 Engine Catalog、Facts、Store 或 Query Provider。认证后的 HELLO 必须报告 standalone 模式，再执行 SELECT 与 DBSIZE。 |
 | MongoDB | `EnginePlugin` + `EngineCatalogModelProvider` + `EngineCatalogProvider` + `EngineCatalogFactsProvider` + `DynamicSchemaSamplingProvider` + `RecordReadSessionProvider` + `EncodedRecordReadSessionProvider` + `QueryRuntimeProvider` + `QueryReadSessionProvider` |
 | Neo4j | `EnginePlugin` + `EngineCatalogModelProvider` + `EngineCatalogProvider` + `EngineCatalogFactsProvider` + `GraphSampleProvider` + `QueryRuntimeProvider` + `GraphQueryProvider` |
 | MinIO / S3 | `EnginePlugin` + `EngineCatalogModelProvider` + `EngineCatalogProvider` + `EngineCatalogFactsProvider` + `ContentReadableProvider` + `RangeReadableProvider` + `ContentWritableProvider` + `ResourceDeleteProvider` |
@@ -918,3 +919,19 @@ type InferenceRuntimeProvider interface {
 - 不得在 capabilities 中保存任务级运行参数。
 - 不得在 `EngineCatalogProvider` / `EngineCatalogFactsProvider` 中执行写入、DDL、统计刷新等有外部副作用的操作；连接测试也必须保持只读。
 - 不得按 Provider 或 driver 错误字符串推断 Engine Catalog HTTP 状态码、`error_code` 或 SDK 异常类型。
+
+## 文档记录集合的统一读取与 Elasticsearch 首版
+
+MongoDB collection 与 Elasticsearch index 均通过 `RecordReadSessionProvider` 提供记录读取；Manager 的文档集合预览按结构化 EngineCatalogPath 打开会话、有限读取并关闭，不拼接 MQL/Query DSL，不改写引擎连接信息。协议解析、原生游标与数据转换由插件拥有。
+
+Elasticsearch 独立插件使用 `service -> index` Catalog Model、Catalog/Facts、RecordReadSession 和 QueryRuntimeProvider。Mapping 字段写入 TableInfo，Native 保留紧凑映射事实；QueryAnalysis 的结构覆盖保持 unknown，不能把 Mapping 等同于完整 `_source` schema。查询语言为 `es_dsl`，首版固定一个具体索引与受控的只读 JSON 查询子集：match_all、term、字面量数组 terms、range、exists、match、bool；支持有限排序与 `_source` 字段选择。脚本、terms lookup、跨索引、聚合、用户提供 PIT/游标及未知节点明确拒绝。
+
+PreparedQuery 冻结同一请求，提供读取集合、输出血缘及一次性执行；PIT 与 search_after 由 Provider 持有并在结束、失败或取消时关闭。返回超时、分片失败及未完成读取不能伪装成完整成功。原生数值使用保留精度的 JSON 解析，缺失字段不填成 null。
+
+Meta 的 direct-leaf 扫描按 Catalog/Facts capability 读取声明的字段事实并落库；没有字段事实能力的直接叶子继续只记录目录。不得按 Elasticsearch 类型增加扫描分支。
+
+ES 文档解码使用 `UseNumber`。超出 JavaScript 安全整数范围的整数在记录输出中使用十进制字符串，避免查询结果持久化和浏览器解析造成精度损失；Mapping 中仍保留其原生数值类型。JSON 查询格式化必须保留原始数值词法。
+
+ES PIT 打开前后核对具体索引的原生 `index.uuid`，并核对每条命中的 `_index`，防止索引在解析与读取之间被删除、替换为别名后读取其他索引。原生 UUID 仅作为读取一致性检查，不改变 ADDP 的路径身份和指纹算法。
+
+Mapping 不声明 `_source` 字段的单值/数组基数，`nested` 也不直接视为完整数组结构证明。首版字段保护复用现有结构指纹校验；不能由 Mapping 证明的数组组件、未映射字段及运行时结构不匹配继续按既有保护门禁拒绝，不能借采样或猜测绕过。

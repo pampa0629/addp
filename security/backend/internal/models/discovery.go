@@ -89,13 +89,13 @@ type SensitiveFindingExplanation struct {
 }
 
 type FindingProtectionBaseline struct {
-	ID                 int64  `json:"id,string"`
-	Version            int64  `json:"version,string"`
-	Effect             string `json:"effect"`
-	Algorithm          string `json:"algorithm,omitempty"`
-	KeepPrefix         int    `json:"keep_prefix"`
-	KeepSuffix         int    `json:"keep_suffix"`
-	InvalidValueEffect string `json:"invalid_value_effect"`
+	ID                 int64          `json:"id,string"`
+	Version            int64          `json:"version,string"`
+	Effect             string         `json:"effect"`
+	Algorithm          string         `json:"algorithm,omitempty"`
+	Parameters         map[string]any `json:"parameters"`
+	AllowedAlgorithms  []string       `json:"allowed_algorithms"`
+	InvalidValueEffect string         `json:"invalid_value_effect"`
 }
 
 type FindingOutletProtection struct {

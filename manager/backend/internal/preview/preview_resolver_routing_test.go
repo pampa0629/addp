@@ -148,7 +148,7 @@ func TestLoadPreviewPluginsRegistersBuiltinDefaultsWithoutFiles(t *testing.T) {
 
 	for _, name := range []string{
 		"builtin:database-table",
-		"builtin:dynamic-schema-collection",
+		"builtin:document-record-set",
 		"builtin:graph",
 		"builtin:event-stream-topic",
 		"builtin:scope-table",
@@ -477,7 +477,7 @@ func TestResolveProviderByMetaUsesFileTableForFileCatalogTableFormat(t *testing.
 
 func TestResolveProviderByMetaUsesDynamicSchemaCollectionForCollectionItem(t *testing.T) {
 	registry := NewPreviewRegistry()
-	registry.Register(namedPreviewProvider{name: "builtin:dynamic-schema-collection"})
+	registry.Register(namedPreviewProvider{name: "builtin:document-record-set"})
 	resolver := NewPreviewResolver(registry, nil, nil)
 
 	req := &PreviewResolverRequest{
@@ -495,8 +495,8 @@ func TestResolveProviderByMetaUsesDynamicSchemaCollectionForCollectionItem(t *te
 	if err != nil {
 		t.Fatalf("resolveProviderByMeta() error = %v", err)
 	}
-	if provider.Name() != "builtin:dynamic-schema-collection" {
-		t.Fatalf("provider = %q, want builtin:dynamic-schema-collection", provider.Name())
+	if provider.Name() != "builtin:document-record-set" {
+		t.Fatalf("provider = %q, want builtin:document-record-set", provider.Name())
 	}
 }
 

@@ -9,13 +9,15 @@
 - `fbx_to_glb`：FBX 单体网格模型转换为持久化 GLB。
 - `obj_to_glb`：OBJ 单体网格模型转换为持久化 GLB。
 - `stl_to_glb`：STL 单体网格模型转换为持久化 GLB。
+- `dae_to_glb`：Collada 1.4.0 / 1.4.1 静态模型及 PNG/JPEG 漫反射贴图转换为自包含 GLB。
+- `3ds_to_glb`：3DS 静态网格及 PNG/JPEG 漫反射贴图转换为自包含 GLB。
 - `ifc_to_glb`：IFC BIM 模型转换为持久化 GLB。
 - `osgb_scene_to_3dtiles`：一套 OSGB 倾斜摄影数据集转换为 3D Tiles，支持 NFS/localfs/MinIO/S3 source 输出到 NFS/localfs/MinIO/S3 target。
 - `gaussian_splat_to_ksplat`：`gaussian_splat` 的 `ply` / `splat` 源转换为持久化 `.ksplat` 文件。源格式已经是 `ksplat` 时直接读取，不进入转换算子。
 
 Runtime Operator Spec 统一消费 `addp.workflow.access-plan/v1`。Manager direct 调用选择 infra 目标并登记私有快显 artifact；Develop workflow 调用保存公开 ResourceLocator 参数、选择业务目标，并在成功后触发 Meta scan。Runtime 不解析 ADDP locator，也不决定产物归属。
 
-运行时通过随引擎绑定的专业转换器执行实际转换。OSGB / OSGB Scene 默认使用 `engines/model3d-workflow/bin/_3dtile`，glTF / FBX / OBJ / STL 这类 mesh 模型转 GLB 默认使用 `engines/model3d-workflow/bin/assimp`。IFC 已由 common format 识别为 `data_type=model_3d + format=ifc + layout=single`，BIM 语义不进入 mesh converter，`ifc_to_glb` 默认使用 `engines/model3d-workflow/bin/IfcConvert`。glTF / FBX / OBJ / STL 生成的 GLB artifact 必须自包含；其中 glTF / FBX / OBJ 必须嵌入纹理，避免前端从原始源目录相对加载贴图。IFC 生成 GLB 时默认传入 `--center-model`，避免大坐标直接影响前端初始观察。`gaussian_splat_to_ksplat` 使用运行时内置 Node 脚本 `create_ksplat.mjs` 和 `@mkkellogg/gaussian-splats-3d` 生成 `.ksplat`，不调用 mesh / OSGB / IFC 转换器；生成时优先使用 `options.scene_center`，否则由 `options.bounds_3d` / `options.sampled_bounds_3d` 推导中心，并默认使用 `section_size=262144`、`block_size=5.0`、`bucket_size=256` 组织 KSplat section，让渐进加载尽量先显示模型中心区域。`.ksplat` 源已经是前端目标渲染格式，不进入该 operator；其视角状态由 `manager.preview_state` 保存。可用环境变量覆盖到同一运行时部署中的实际可执行文件路径，但不能只写 `_3dtile`、`assimp` 或 `IfcConvert` 这类依赖系统 `PATH` 的命令名：
+运行时通过随引擎绑定的专业转换器执行实际转换。OSGB / OSGB Scene 默认使用 `engines/model3d-workflow/scripts/converters/_3dtile`，glTF / FBX / OBJ / STL / DAE / 3DS 这类 mesh 模型转 GLB 默认使用 `engines/model3d-workflow/scripts/converters/assimp`。IFC 已由 common format 识别为 `data_type=model_3d + format=ifc + layout=single`，BIM 语义不进入 mesh converter，`ifc_to_glb` 默认使用 `engines/model3d-workflow/scripts/converters/IfcConvert`。glTF / FBX / OBJ / STL / DAE / 3DS 生成的 GLB artifact 必须自包含；其中 glTF / FBX / OBJ 必须嵌入纹理，避免前端从原始源目录相对加载贴图。IFC 生成 GLB 时默认传入 `--center-model`，避免大坐标直接影响前端初始观察。`gaussian_splat_to_ksplat` 使用运行时内置 Node 脚本 `create_ksplat.mjs` 和 `@mkkellogg/gaussian-splats-3d` 生成 `.ksplat`，不调用 mesh / OSGB / IFC 转换器；生成时优先使用 `options.scene_center`，否则由 `options.bounds_3d` / `options.sampled_bounds_3d` 推导中心，并默认使用 `section_size=262144`、`block_size=5.0`、`bucket_size=256` 组织 KSplat section，让渐进加载尽量先显示模型中心区域。`.ksplat` 源已经是前端目标渲染格式，不进入该 operator；其视角状态由 `manager.preview_state` 保存。可用环境变量覆盖到同一运行时部署中的实际可执行文件路径，但不能只写 `_3dtile`、`assimp` 或 `IfcConvert` 这类依赖系统 `PATH` 的命令名：
 
 ```bash
 export MODEL3D_CONVERTER_BIN=/path/to/_3dtile
@@ -23,6 +25,8 @@ export MODEL3D_MESH_CONVERTER_BIN=/path/to/assimp
 export MODEL3D_IFC_CONVERTER_BIN=/path/to/IfcConvert
 export MODEL3D_GAUSSIAN_SPLAT_NODE_BIN=/path/to/node
 ```
+
+开发环境的三个 wrapper 及共享 Docker 调用脚本必须受 Git 版本管理，不依赖被忽略的本机 `bin/` 目录；容器内继续绑定 `/opt/addp/model3d-workflow/bin/` 的原生转换器。
 
 本运行时的稳定集成面是 ADDP operator 契约，不是转换器内部 SDK。转换器缺失、执行失败或输出缺失时，`/health` 会标记 `conversion_ready=false`，引擎连接测试和 operator 发现会失败，不生成伪结果。
 
@@ -34,18 +38,20 @@ pip install -r requirements.txt
 PORT=8101 python api_server.py
 ```
 
-## Apple Silicon / Linux arm64 容器
+## Linux amd64 / arm64 容器
 
 Apple Silicon 本机优先使用 Docker Desktop 的 Linux arm64 后端运行 `model3d_workflow`，不要在 macOS host 上原生构建或执行 `_3dtile`。
 
 ```bash
 cd engines/model3d-workflow
-./scripts/build-linux-arm64-images.sh
+./scripts/build-linux-images.sh
 ```
 
-该脚本会构建两个镜像：
+统一构建入口按宿主机 CPU 选择 `linux/amd64` 或 `linux/arm64`，也可通过 `MODEL3D_DOCKER_PLATFORM` 显式选择这两种架构；其他平台直接拒绝。GitHub Hosted Ubuntu x86_64 使用 amd64，不通过 QEMU 运行 arm64 转换器。IfcConvert 固定同一上游版本，按 Docker 目标架构下载官方二进制；两个架构共用一个 Dockerfile 和 Linux 构建 patch。
 
-- `addp/model3d-converter:linux-arm64`：基于 `fanvanzh/3dtiles` 源码构建 Linux arm64 `_3dtile`，并应用 ADDP 的 arm64-linux patch，同时绑定 Linux arm64 `IfcConvert`。
+该脚本会构建两个镜像（以下为 arm64 示例，amd64 使用相应 tag）：
+
+- `addp/model3d-converter:linux-arm64`：基于 `fanvanzh/3dtiles` 源码构建 对应目标架构的 `_3dtile`，并应用 ADDP 的 Linux patch，同时绑定同架构 `IfcConvert`。
 - `addp/model3d-workflow:linux-arm64`：内置 Python `model3d_workflow` runtime、Linux arm64 `_3dtile`、`IfcConvert` 和 `assimp`。
 
 默认上游引用固定为 `fanvanzh/3dtiles@acbcf603f33fdfe3c34b704a8b019c4fd32a8376`。如需临时验证其他上游版本，可通过 `THREE_DTILES_REF=<commit-or-branch>` 覆盖，但生产镜像应使用固定 commit。
@@ -92,16 +98,23 @@ OSGB Scene 的对象存储 source 由运行时 staging：先递归下载到本�
 bash scripts/build/build-images.sh --services model3d-workflow-engine --force
 ```
 
-该入口会调用本目录的 `scripts/build-linux-arm64-images.sh`，并生成：
+该入口会调用本目录的 `scripts/build-linux-images.sh`，并生成：
 
 - `${REGISTRY}/addp-model3d-converter:${IMAGE_TAG}`
 - `${REGISTRY}/addp-model3d-workflow-engine:${IMAGE_TAG}`
 
-随后 `scripts/local/start.sh` 和 `scripts/prod/start.sh` 会通过 `docker-compose.yml` 启动 `model3d-workflow-engine`，端口为 `8101`，服务启动后自动向 System 注册 `model3d_workflow` 引擎。Manager 只通过 common engine 的 `WorkflowRuntimeProvider` 调用 `osgb_to_glb`、`gltf_to_glb`、`fbx_to_glb`、`obj_to_glb`、`stl_to_glb`、`ifc_to_glb`、`osgb_scene_to_3dtiles` 和 `gaussian_splat_to_ksplat`，不直接调用 `_3dtile`、`assimp`、`IfcConvert` 或其他转换器。
+随后 `scripts/local/start.sh` 和 `scripts/prod/start.sh` 会通过 `docker-compose.yml` 启动 `model3d-workflow-engine`，端口为 `8101`，服务启动后自动向 System 注册 `model3d_workflow` 引擎。Manager 只通过 common engine 的 `WorkflowRuntimeProvider` 调用 `osgb_to_glb`、`gltf_to_glb`、`fbx_to_glb`、`obj_to_glb`、`stl_to_glb`、`dae_to_glb`、`3ds_to_glb`、`ifc_to_glb`、`osgb_scene_to_3dtiles` 和 `gaussian_splat_to_ksplat`，不直接调用 `_3dtile`、`assimp`、`IfcConvert` 或其他转换器。
 
 ## 测试
 
 ```bash
-python -m pip install -r engines/model3d-workflow/requirements-dev.txt
-PYTHONPATH=engines/model3d-workflow:engines/docs pytest engines/model3d-workflow
+python3 -m venv engines/model3d-workflow/.venv
+engines/model3d-workflow/.venv/bin/python -m pip install -r engines/model3d-workflow/requirements-dev.txt -e ./common-python
+make test-model3d-workflow
 ```
+
+DAE / 3DS 的源引用必须是模型目录内大小写一致的相对路径，缺失贴图、动画及复杂贴图明确拒绝。全部单体 GLB 快显转换产物发布前统一校验容器结构、自包含资源以及 PNG/JPEG 实际解码；转换器退出码为零不代表校验通过。该确定性门禁通过根 `make test-model3d-workflow`、`make test-module MODULE=engines` 和 Platform CI 注册；真实转换器及整个平台快显验收属于另行执行的集成验证。
+
+DAE / 3DS 的基础颜色贴图还必须关联到网格实际使用的材质和有效 `TEXCOORD_n`：仅嵌入图片、未绑定材质、UV 缺失、顶点数不匹配或越界，都不能发布为成功产物。发布失败保留之前有效的目标文件。
+
+DAE 的 XML 解析器直接拒绝 DTD 和实体声明，UTF-8 / UTF-16 下执行相同边界；普通注释中的声明字面文本不会误判为 DTD。相应测试自动进入同一 Model3D 门禁。

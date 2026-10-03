@@ -805,7 +805,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "创建 bounded、业务 Kafka continuous 或数据库 CDC 任务。业务 Kafka continuous 必须显式使用 runtime.record_failure.mode=block|dead_letter；dead_letter 只处理确定性记录级数据错误。数据库 CDC 支持 PostgreSQL/MySQL/Oracle 单表 initial_snapshot、block 和 PostgreSQL/MySQL/Oracle 新目标表 upsert_delete；Oracle Spatial 由 generation-owned WKB 镜像捕获，Oracle 目标首期支持 XY geometry，普通 Oracle LOB/RAC 与 ArcGIS SDE 不支持。旧 mode/write_mode 字段会被拒绝。| Create a bounded, business Kafka continuous, or database CDC task. Business Kafka continuous tasks must explicitly use runtime.record_failure.mode=block|dead_letter; dead_letter only handles deterministic record-level data errors. Database CDC supports a single PostgreSQL, MySQL, or Oracle source table with initial_snapshot, block policy, and a new PostgreSQL, MySQL, or Oracle upsert_delete target; Oracle Spatial uses a generation-owned WKB mirror, Oracle targets initially support XY geometry, while regular Oracle LOB/RAC and ArcGIS SDE remain unsupported. Legacy mode/write_mode fields are rejected.",
+                "description": "创建 bounded、业务 Kafka continuous 或数据库 CDC 任务。业务 Kafka continuous 必须显式使用 runtime.record_failure.mode=block|dead_letter；dead_letter 只处理确定性记录级数据错误。数据库 CDC 支持 PostgreSQL/MySQL/Oracle 单表 initial_snapshot、block 和 PostgreSQL/MySQL/Oracle 新目标表 upsert_delete；Oracle Spatial 由 generation-owned WKB 镜像捕获，Oracle 目标首期支持 XY geometry，普通 Oracle LOB/RAC 与 ArcGIS SDE 不支持。旧 mode/write_mode 字段会被拒绝。| Create a bounded, business Kafka continuous, or database CDC task. Business Kafka continuous tasks must explicitly use runtime.record_failure.mode=block|dead_letter; dead_letter only handles deterministic record-level data errors. Database CDC supports a single PostgreSQL, MySQL, or Oracle source table with initial_snapshot, block policy, and a new PostgreSQL, MySQL, or Oracle upsert_delete target; Oracle Spatial uses a generation-owned WKB mirror, Oracle targets initially support XY geometry, while regular Oracle LOB/RAC and ArcGIS SDE remain unsupported. Legacy mode/write_mode fields are rejected.\n委托 transfer.task.create 仅允许租户范围内创建 bounded/snapshot/native table 任务，必须显式禁用任务及自动扫描且不设调度；不创建 execution | Delegated transfer.task.create only creates tenant-scoped bounded/snapshot/native table tasks with explicit disabled task and auto-scan, no schedule and no execution",
                 "consumes": [
                     "application/json"
                 ],
@@ -852,6 +852,15 @@ const docTemplate = `{
                             }
                         }
                     },
+                    "403": {
+                        "description": "无权访问 | Access denied",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
                     "500": {
                         "description": "服务器内部错误 | Internal server error",
                         "schema": {
@@ -862,7 +871,7 @@ const docTemplate = `{
                         }
                     }
                 },
-                "x-addp-auth-mode": "permission",
+                "x-addp-auth-mode": "delegated_tool",
                 "x-addp-required-permissions": [
                     "transfer.task.create"
                 ]

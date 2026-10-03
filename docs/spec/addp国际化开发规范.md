@@ -47,6 +47,8 @@ common-frontend/basic/src/i18n/
 
 模块前端必须使用 `common-frontend/basic/src/composables/useAddpI18n.js` 中的 `createAddpI18n()` 初始化 Vue I18n。
 
+公共翻译与模块翻译按完整词条路径合并。模块只覆盖自己声明的同名词条，不能因声明同一命名空间而删除公共词条；每个 i18n 实例使用独立的消息对象。
+
 ```javascript
 import { createAddpI18n } from '@common-ui/composables/useAddpI18n'
 import zhCnMessages from './i18n/zh-cn.json'
@@ -319,4 +321,3 @@ Swagger 验证：
 ```bash
 bash scripts/swagger/check-route-coverage.sh all
 ```
-

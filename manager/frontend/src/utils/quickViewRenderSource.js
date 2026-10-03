@@ -34,9 +34,9 @@ export function isModel3DQuickViewSource(previewData = {}, node = {}, selectedNo
   if (format === 'osgb_scene' && (!layout || layout === 'whole')) return true
   if (dataType === 'model_3d' && format === 'osgb' && (!layout || layout === 'single')) return true
   if (dataType === 'model_3d' && format === 'gltf' && layout === 'multi') return true
-  if (dataType === 'model_3d' && ['fbx', 'obj', 'stl', 'ifc'].includes(format) && (!layout || layout === 'single')) return true
-  if (['osgb', 'gltf', 'fbx', 'obj', 'stl', 'ifc'].includes(format)) return true
-  return /\.(osgb|gltf|fbx|obj|stl|ifc)$/i.test(String(selectedNodePath || ''))
+  if (dataType === 'model_3d' && ['fbx', 'obj', 'stl', 'ifc', 'dae', '3ds'].includes(format) && (!layout || layout === 'single')) return true
+  if (['osgb', 'gltf', 'fbx', 'obj', 'stl', 'ifc', 'dae', '3ds'].includes(format)) return true
+  return /\.(osgb|gltf|fbx|obj|stl|ifc|dae|3ds)$/i.test(String(selectedNodePath || ''))
 }
 
 export function resolveQuickViewRenderSource(status = {}) {

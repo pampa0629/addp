@@ -5,7 +5,6 @@ import (
 	"time"
 
 	commonapi "github.com/addp/common/api"
-	"github.com/addp/common/dataprotection"
 	commonexecution "github.com/addp/common/execution"
 	"github.com/addp/security/internal/models"
 	"github.com/addp/security/internal/repository"
@@ -161,11 +160,10 @@ func (s *DefinitionService) CreateType(req models.CreateSensitiveDataTypeRequest
 		return nil, commonapi.ErrBadRequest
 	}
 	baselineRequest := models.ProtectionBaselineRequest{
-		SecurityGradeID:    req.DefaultSecurityGradeID,
-		Effect:             strings.TrimSpace(req.DefaultProtection.Effect),
-		Algorithm:          strings.TrimSpace(req.DefaultProtection.Algorithm),
-		KeepPrefix:         req.DefaultProtection.KeepPrefix,
-		KeepSuffix:         req.DefaultProtection.KeepSuffix,
+		SecurityGradeID: req.DefaultSecurityGradeID,
+		Effect:          strings.TrimSpace(req.DefaultProtection.Effect),
+		Algorithm:       strings.TrimSpace(req.DefaultProtection.Algorithm),
+		Parameters:      req.DefaultProtection.Parameters, AllowedAlgorithms: req.DefaultProtection.AllowedAlgorithms,
 		InvalidValueEffect: strings.TrimSpace(req.DefaultProtection.InvalidValueEffect),
 	}
 	err := s.db.Transaction(func(tx *gorm.DB) error {
@@ -183,11 +181,11 @@ func (s *DefinitionService) CreateType(req models.CreateSensitiveDataTypeRequest
 		baseline := &models.ProtectionBaseline{
 			TenantID: tenantID, SensitiveDataTypeID: row.ID, SecurityGradeID: row.DefaultSecurityGradeID,
 			Effect: baselineRequest.Effect, Algorithm: baselineRequest.Algorithm,
-			KeepPrefix: baselineRequest.KeepPrefix, KeepSuffix: baselineRequest.KeepSuffix,
+			Parameters: baselineRequest.Parameters, AllowedAlgorithms: baselineRequest.AllowedAlgorithms,
 			InvalidValueEffect: baselineRequest.InvalidValueEffect, Enabled: true, CreatedBy: userID,
 		}
 		if baseline.InvalidValueEffect == "" {
-			baseline.InvalidValueEffect = dataprotection.EffectSuppress
+			baseline.InvalidValueEffect = policyDecision(baseline.Effect, "", nil, "").InvalidValueEffect
 		}
 		return definitions.baselines.Create(baseline)
 	})
@@ -427,9 +425,9 @@ func (s *DefinitionService) CreateBaseline(req models.ProtectionBaselineRequest,
 	if req.Enabled != nil {
 		enabled = *req.Enabled
 	}
-	row := &models.ProtectionBaseline{TenantID: tenantID, SensitiveDataTypeID: req.SensitiveDataTypeID, SecurityGradeID: req.SecurityGradeID, Effect: req.Effect, Algorithm: req.Algorithm, KeepPrefix: req.KeepPrefix, KeepSuffix: req.KeepSuffix, InvalidValueEffect: req.InvalidValueEffect, Enabled: enabled, CreatedBy: userID}
+	row := &models.ProtectionBaseline{TenantID: tenantID, SensitiveDataTypeID: req.SensitiveDataTypeID, SecurityGradeID: req.SecurityGradeID, Effect: req.Effect, Algorithm: req.Algorithm, Parameters: req.Parameters, AllowedAlgorithms: req.AllowedAlgorithms, InvalidValueEffect: req.InvalidValueEffect, Enabled: enabled, CreatedBy: userID}
 	if row.InvalidValueEffect == "" {
-		row.InvalidValueEffect = "suppress"
+		row.InvalidValueEffect = policyDecision(row.Effect, "", nil, "").InvalidValueEffect
 	}
 	err := s.db.Transaction(func(tx *gorm.DB) error {
 		definitions := s.withDB(tx)
@@ -471,9 +469,9 @@ func (s *DefinitionService) UpdateBaseline(id, tenantID, userID int64, req model
 		}
 		invalid := req.InvalidValueEffect
 		if invalid == "" {
-			invalid = "suppress"
+			invalid = policyDecision(req.Effect, "", nil, "").InvalidValueEffect
 		}
-		if err := definitions.baselines.Update(id, tenantID, req.Version, map[string]interface{}{"sensitive_data_type_id": req.SensitiveDataTypeID, "security_grade_id": req.SecurityGradeID, "effect": req.Effect, "algorithm": req.Algorithm, "keep_prefix": req.KeepPrefix, "keep_suffix": req.KeepSuffix, "invalid_value_effect": invalid, "enabled": enabled, "updated_by": userID}); err != nil {
+		if err := definitions.baselines.Update(id, tenantID, req.Version, map[string]interface{}{"sensitive_data_type_id": req.SensitiveDataTypeID, "security_grade_id": req.SecurityGradeID, "effect": req.Effect, "algorithm": req.Algorithm, "parameters": jsonText(req.Parameters), "allowed_algorithms": jsonText(req.AllowedAlgorithms), "invalid_value_effect": invalid, "enabled": enabled, "updated_by": userID}); err != nil {
 			return err
 		}
 		updated, err = definitions.baselines.Get(id, tenantID)
@@ -525,29 +523,7 @@ func (s *DefinitionService) validateBaseline(req models.ProtectionBaselineReques
 	if _, err := s.grades.Get(req.SecurityGradeID, tenantID); err != nil {
 		return err
 	}
-	if req.KeepPrefix < 0 || req.KeepSuffix < 0 {
-		return commonapi.ErrBadRequest
-	}
-	switch req.Effect {
-	case dataprotection.EffectMask:
-		if req.Algorithm != dataprotection.AlgorithmKeepPrefixSuffixV2 {
-			return commonapi.ErrBadRequest
-		}
-	case dataprotection.EffectSuppress, dataprotection.EffectDeny:
-		if req.Algorithm != "" || req.KeepPrefix != 0 || req.KeepSuffix != 0 {
-			return commonapi.ErrBadRequest
-		}
-	default:
-		return commonapi.ErrBadRequest
-	}
-	invalidEffect := req.InvalidValueEffect
-	if invalidEffect == "" {
-		invalidEffect = dataprotection.EffectSuppress
-	}
-	if invalidEffect != dataprotection.EffectSuppress && invalidEffect != dataprotection.EffectDeny {
-		return commonapi.ErrBadRequest
-	}
-	if req.Effect == dataprotection.EffectDeny && invalidEffect != dataprotection.EffectDeny {
+	if err := validateBaselineConfiguration(req); err != nil {
 		return commonapi.ErrBadRequest
 	}
 	return nil

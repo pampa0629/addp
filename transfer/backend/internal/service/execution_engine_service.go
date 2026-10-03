@@ -303,14 +303,12 @@ func (s *ExecutionEngineService) executeWatermarkIncrementalTask(ctx context.Con
 	if task.AutoScanMetadata && metrics.RecordsWritten > 0 {
 		s.triggerMetadataScan(task, executionID, spec, build.Plan.Target, nil)
 	}
-	if err := s.writeTransferLineageFacts(ctx, task, executionID, spec.Source, spec.Target.Locator, spec.Target.ParentLocator, spec.Target.Name, spec.Target.Policy); err != nil {
-		s.logger.Warn("failed to persist transfer lineage facts", "error", err, "execution_id", executionID)
-	}
+	lineageMetadata := s.transferLineageMetadata(ctx, task, executionID, spec.Source, spec.Target.Locator, spec.Target.ParentLocator, spec.Target.Name, spec.Target.Policy, nil)
 	if err := s.writeBoundedExecutionOutputs(ctx, executionID, spec.Target.Locator, spec.Target.ParentLocator, spec.Target.Name, metrics.RecordsWritten); err != nil {
 		s.updateExecutionError(ctx, task, executionID, err)
 		return err
 	}
-	if err := s.executionService.FinishExecution(ctx, executionID, models.ExecutionStatusSuccess, ""); err != nil {
+	if err := s.executionService.FinishExecution(ctx, executionID, models.ExecutionStatusSuccess, "", lineageMetadata); err != nil {
 		return err
 	}
 	return nil
@@ -449,14 +447,12 @@ func (s *ExecutionEngineService) executeCommonTableTransferTask(ctx context.Cont
 	if task.AutoScanMetadata {
 		s.triggerMetadataScan(task, executionID, spec, buildResult.Plan.Target, metrics.TargetRefs)
 	}
-	if err := s.writeTransferLineageFacts(ctx, task, executionID, spec.Source, spec.Target.Locator, spec.Target.ParentLocator, spec.Target.Name, spec.Target.Policy); err != nil {
-		s.logger.Warn("failed to persist transfer lineage facts", "error", err, "execution_id", executionID)
-	}
+	lineageMetadata := s.transferLineageMetadata(ctx, task, executionID, spec.Source, spec.Target.Locator, spec.Target.ParentLocator, spec.Target.Name, spec.Target.Policy, metrics.FieldLineage)
 	if err := s.writeBoundedExecutionOutputs(ctx, executionID, spec.Target.Locator, spec.Target.ParentLocator, spec.Target.Name, metrics.RecordsWritten); err != nil {
 		s.updateExecutionError(ctx, task, executionID, err)
 		return err
 	}
-	if err := s.executionService.FinishExecution(ctx, executionID, models.ExecutionStatusSuccess, ""); err != nil {
+	if err := s.executionService.FinishExecution(ctx, executionID, models.ExecutionStatusSuccess, "", lineageMetadata); err != nil {
 		return err
 	}
 	return nil
@@ -632,13 +628,11 @@ func (s *ExecutionEngineService) executeTargetOverrideTableTransferTask(
 	if err != nil {
 		return s.failTargetOverrideTransfer(ctx, task, executionID, err)
 	}
-	if err := s.writeTransferLineageFacts(ctx, task, executionID, resolvedSpec.Source, resolvedSpec.Target.Locator, resolvedSpec.Target.ParentLocator, resolvedSpec.Target.Name, resolvedSpec.Target.Policy); err != nil {
-		s.logger.Warn("failed to persist target-override transfer lineage facts", "error", err, "execution_id", executionID)
-	}
+	lineageMetadata := s.transferLineageMetadata(ctx, task, executionID, resolvedSpec.Source, resolvedSpec.Target.Locator, resolvedSpec.Target.ParentLocator, resolvedSpec.Target.Name, resolvedSpec.Target.Policy, metrics.FieldLineage)
 	if err := s.writeBoundedExecutionOutputs(ctx, executionID, targetLocator, "", "", metrics.RecordsWritten); err != nil {
 		return s.failTargetOverrideTransfer(ctx, task, executionID, err)
 	}
-	if err := s.executionService.FinishExecution(ctx, executionID, models.ExecutionStatusSuccess, ""); err != nil {
+	if err := s.executionService.FinishExecution(ctx, executionID, models.ExecutionStatusSuccess, "", lineageMetadata); err != nil {
 		return err
 	}
 	return nil
@@ -926,14 +920,12 @@ func (s *ExecutionEngineService) executeCommonRawCopyTask(ctx context.Context, t
 	if task.AutoScanMetadata {
 		s.triggerRawCopyMetadataScan(task, executionID, spec, buildResult.Plan.Target)
 	}
-	if err := s.writeTransferLineageFacts(ctx, task, executionID, spec.Source, spec.Target.Locator, spec.Target.ParentLocator, spec.Target.Name, spec.Target.Policy); err != nil {
-		s.logger.Warn("failed to persist raw copy lineage facts", "error", err, "execution_id", executionID)
-	}
+	lineageMetadata := s.transferLineageMetadata(ctx, task, executionID, spec.Source, spec.Target.Locator, spec.Target.ParentLocator, spec.Target.Name, spec.Target.Policy, nil)
 	if err := s.writeBoundedExecutionOutputs(ctx, executionID, spec.Target.Locator, spec.Target.ParentLocator, spec.Target.Name, metrics.RecordsWritten); err != nil {
 		s.updateExecutionError(ctx, task, executionID, err)
 		return err
 	}
-	if err := s.executionService.FinishExecution(ctx, executionID, models.ExecutionStatusSuccess, ""); err != nil {
+	if err := s.executionService.FinishExecution(ctx, executionID, models.ExecutionStatusSuccess, "", lineageMetadata); err != nil {
 		return err
 	}
 	return nil
@@ -977,20 +969,18 @@ func (s *ExecutionEngineService) executeCommonEncodedRecordExportTask(ctx contex
 		return wrapped
 	}
 	s.updateEncodedRecordExportMetrics(executionID, metrics)
-	if err := s.writeTransferLineageFacts(ctx, task, executionID, spec.Source, spec.Target.Locator, spec.Target.ParentLocator, spec.Target.Name, spec.Target.Policy); err != nil {
-		s.logger.Warn("failed to persist encoded record export lineage facts", "error", err, "execution_id", executionID)
-	}
+	lineageMetadata := s.transferLineageMetadata(ctx, task, executionID, spec.Source, spec.Target.Locator, spec.Target.ParentLocator, spec.Target.Name, spec.Target.Policy, nil)
 	if err := s.writeBoundedExecutionOutputs(ctx, executionID, spec.Target.Locator, spec.Target.ParentLocator, spec.Target.Name, metrics.RecordsWritten); err != nil {
 		s.updateExecutionError(ctx, task, executionID, err)
 		return err
 	}
-	if err := s.executionService.FinishExecution(ctx, executionID, models.ExecutionStatusSuccess, ""); err != nil {
+	if err := s.executionService.FinishExecution(ctx, executionID, models.ExecutionStatusSuccess, "", lineageMetadata); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (s *ExecutionEngineService) writeTransferLineageFacts(ctx context.Context, task *models.TransferTask, executionID uint, source planner.EndpointSpec, targetLocator, targetParentLocator, targetName string, targetPolicy map[string]interface{}) error {
+func (s *ExecutionEngineService) transferLineageMetadata(ctx context.Context, task *models.TransferTask, executionID uint, source planner.EndpointSpec, targetLocator, targetParentLocator, targetName string, targetPolicy map[string]interface{}, fieldLineage *executor.TableFieldLineage) commonModels.JSONMap {
 	if s == nil || s.executionService == nil || task == nil {
 		return nil
 	}
@@ -1017,7 +1007,14 @@ func (s *ExecutionEngineService) writeTransferLineageFacts(ctx context.Context, 
 		Operations:         []commonExecution.LineageOperation{{Kind: "derive", Operator: "transfer", InputPorts: lineageInputPorts(inputs), OutputPorts: []string{"target"}}},
 		RuntimeExecutionID: executionIDString(s, ctx, executionID),
 	}
-	return s.executionService.UpdateExecution(ctx, executionID, map[string]interface{}{"metadata": map[string]interface{}{"lineage_facts": facts}})
+	facts.Operations[0].FieldLineageStatus = "unavailable"
+	if fieldLineage != nil && len(inputs) == 1 && inputs[0].Port == "source" {
+		facts.Inputs[0].SchemaSnapshot = fieldLineage.Source
+		facts.Outputs[0].SchemaSnapshot = fieldLineage.Target
+		facts.Operations[0].FieldLineageStatus = "complete"
+		facts.Operations[0].FieldMappings = fieldLineage.Mappings
+	}
+	return commonModels.JSONMap{"lineage_facts": facts}
 }
 
 func transferLineageInputs(source planner.EndpointSpec) []commonExecution.LineageResourceRef {
@@ -1118,7 +1115,7 @@ func (s *ExecutionEngineService) updateExecutionError(ctx context.Context, task 
 		return
 	}
 
-	if err := s.executionService.FinishExecution(ctx, executionID, models.ExecutionStatusFailed, execErr.Error()); err != nil {
+	if err := s.executionService.FinishExecution(ctx, executionID, models.ExecutionStatusFailed, execErr.Error(), nil); err != nil {
 		s.logger.Error("CRITICAL: failed to mark execution as failed - status inconsistency may occur",
 			"error", err,
 			"execution_id", executionID,

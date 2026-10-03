@@ -163,7 +163,7 @@ IMAGE_TAG=v1.0.0 ./scripts/build/build-images.sh \
 基础镜像预热只处理所选服务实际引用的镜像：优先复用本机同架构镜像，否则最多尝试拉取三次；拉取或推送到临时 Registry 失败仍会使构建失败。
 前端 Dockerfile 必须根据容器的 `process.arch` 选择 Rollup musl 原生包，禁止写死 arm64 或 x64；该约束由 `make test-platform` 自动检查。
 
-Platform CI 通过 `make select-image-services` 保留 System Backend、Agent Backend、Console 和 Nginx 四类构建基线，再自动追加本次改动影响的模块镜像。`common/`、`common-frontend/`、`common-python/` 按实际消费者扩散，`.dockerignore` 变更扩散到全部 Hosted Runner 可构建镜像。SuperMap 私有 arm64 基础镜像和 Model3D arm64 专用构建不在 GitHub amd64 Runner 范围内。
+Platform CI 通过 `make select-image-services` 保留 System Backend、Agent Backend、Console 和 Nginx 四类构建基线，再自动追加本次改动影响的模块镜像。`common/`、`common-frontend/`、`common-python/` 按实际消费者扩散，`.dockerignore` 变更扩散到全部 Hosted Runner 可构建镜像。Model3D 统一 Linux 构建支持 amd64/arm64，Model3D 或其 common-python 依赖变化会进入 Hosted amd64 镜像验证。只有 SuperMap 私有 arm64 基础镜像不在 GitHub amd64 Runner 范围内。
 
 ### 环境变量
 

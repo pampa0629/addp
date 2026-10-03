@@ -70,6 +70,8 @@
 | STL | `single` | `model_3d` | `stl` | STL 单体网格模型；支持识别、轻量摘要和 GLB 快显 |
 | PLY | `single` | `model_3d` | `ply` | PLY 单文件三维模型 / 点集合；第一阶段支持 header 识别和轻量摘要 |
 | FBX | `single` | `model_3d` | `fbx` | FBX 单体网格模型；快显通过 GLB artifact 实现 |
+| DAE / Collada | `single` | `model_3d` | `dae` | Collada 1.4.0 / 1.4.1；摘要记录版本、单位、上轴、网格和贴图引用；静态模型经 Assimp 生成 GLB 快显 |
+| 3DS | `single` | `model_3d` | `3ds` | 3DS chunk 模型；摘要记录网格、顶点、三角面、材质和贴图引用；静态模型经 Assimp 生成 GLB 快显 |
 | IFC | `single` | `model_3d` | `ifc` | IFC BIM 模型；第一阶段支持识别和轻量 BIM 摘要 |
 | 3D Tiles | `whole` | `model_3d` | `3dtiles` | 由 `tileset.json` manifest 声明的分块三维场景 |
 | OSGB | `single` | `model_3d` | `osgb` | 单个 `.osgb` 三维模型文件；快显通过 GLB artifact 实现 |
@@ -1441,3 +1443,15 @@ Transfer、Search 等模块不得因为 `data_type=document` 就假设存在可�
 - 不得给 DOC / DOCX / RTF / PPTX / WPS 写入 `type_info.table.fields`。
 - 不得在没有后端解析事实时虚报 `type_info.document`、`DocumentInfoProvider` 或 `DocumentTextReader` 能力。
 - 不得为了 Manager 预览默认全量读取大文档并返回 base64。
+
+### DAE / 3DS 首期快显边界
+
+DAE、3DS 保持 `layout=single`；主模型声明的本地相对贴图作为 related refs，由 Meta 精确匹配并认领，不将同目录所有图片合并。缺失引用保留在 `format_info.<format>.texture_refs` 中，转换时失败；文件名大小写必须一致。引用不得越出模型所在目录，不接受 `..` 路径段、绝对路径、网络 URI、嵌入图片或外部模型依赖。3DS 贴图文件名按 UTF-8/ASCII 读取，不猜测旧系统代码页。
+
+首期转换支持静态网格、基础颜色和 PNG/JPEG 漫反射贴图。DAE 的动画、骨骼控制器、复杂材质贴图，以及 3DS 的多帧动画、非漫反射贴图不进入首期转换。DAE 源单位和上轴由 Assimp 转换，摘要只记录源声明；3DS master scale 不推断为物理单位或地理坐标。源摘要解析预算为 64 MiB，超出预算明确失败。
+
+DAE 不接受 XML DTD、实体声明或外部 DTD 引用。此限制由 XML 解析器执行，不依赖原始字节编码或字符串搜索；普通注释中出现这些字面文本不视为声明。
+
+所有 Model3D Runtime 单体 GLB 快显转换产物在发布前必须通过 GLB 2.0 chunk、内嵌 buffer / bufferView 和图片校验；禁止外部 URI。图片仅允许实际可解码且与 MIME 一致的 PNG/JPEG。DAE / 3DS 转换产物必须含静态网格，复杂贴图超出范围时明确失败，不以缺贴图白模作为成功结果。
+
+DAE / 3DS 的贴图必须由网格 primitive 实际使用的基础颜色材质引用，不能仅在产物中保留未使用的 image 或 material。该材质选择的 `TEXCOORD_n`（包括 `KHR_texture_transform.texCoord` 覆盖值）必须存在，其 accessor 使用 VEC2、合法的浮点或归一化无符号整数编码，顶点数与 POSITION 一致，且读取范围位于内嵌 bufferView 内；缺失、非法索引或越界均在发布前拒绝。

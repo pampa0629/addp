@@ -470,6 +470,8 @@ func TestModel3DGLBOperatorForFormat(t *testing.T) {
 		{formatName: "obj", operator: "obj_to_glb"},
 		{formatName: "stl", operator: "stl_to_glb"},
 		{formatName: "ifc", operator: "ifc_to_glb"},
+		{formatName: "dae", operator: "dae_to_glb"},
+		{formatName: "3ds", operator: "3ds_to_glb"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.formatName, func(t *testing.T) {
@@ -648,4 +650,18 @@ func writeModel3DOperatorList(w http.ResponseWriter, engineType string, executio
 		"count": 8,
 	}
 	_ = json.NewEncoder(w).Encode(payload)
+}
+
+func TestExchangeModelQuickViewRequiresGLBArtifact(t *testing.T) {
+	for _, sourceFormat := range []string{"dae", "3ds"} {
+		if !isModel3DGLBTaskSourceFormat(sourceFormat) || !isModel3DQuickViewSourceFormat(sourceFormat, "single") || isModel3DQuickViewSourceFormat(sourceFormat, "multi") {
+			t.Fatalf("invalid source route for %s", sourceFormat)
+		}
+		if !model3DGLBUsesDirectorySource(sourceFormat) {
+			t.Fatalf("missing resource directory for %s", sourceFormat)
+		}
+		if isSourceModel3DDirectPreview(&Model3DGLBSource{Format: sourceFormat}) {
+			t.Fatalf("%s must use generated GLB", sourceFormat)
+		}
+	}
 }

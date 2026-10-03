@@ -78,6 +78,7 @@ class OnlineGateTest(unittest.TestCase):
             {
                 "compose-public-origin",
                 "consumer-engine-recovery",
+                "elasticsearch-consumer-flow",
                 "enterprise-catalog-publishing",
                 "kingbase-consumer-flow",
                 "manager-internal-artifact-lineage",
@@ -100,6 +101,18 @@ class OnlineGateTest(unittest.TestCase):
             },
         )
         suite = ONLINE_GATE.SUITES["standard-model-reference-deletion"]
+        elasticsearch_suite = ONLINE_GATE.SUITES["elasticsearch-consumer-flow"]
+        self.assertEqual(
+            elasticsearch_suite.services,
+            (
+                ("gateway", "GATEWAY_URL"),
+                ("system", "SYSTEM_URL"),
+                ("meta", "META_URL"),
+                ("manager", "MANAGER_URL"),
+                ("develop", "DEVELOP_URL"),
+            ),
+        )
+        self.assertFalse(elasticsearch_suite.nightly)
         self.assertEqual(
             suite.services,
             (
@@ -176,6 +189,7 @@ class OnlineGateTest(unittest.TestCase):
             ),
         )
         catalog_suite = ONLINE_GATE.SUITES["enterprise-catalog-publishing"]
+        self.assertFalse(catalog_suite.nightly, "new real acceptance case remains manually dispatched until first pass")
         self.assertEqual(
             catalog_suite.services,
             (

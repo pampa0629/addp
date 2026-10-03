@@ -5,13 +5,14 @@ from __future__ import annotations
 
 import json
 import os
+import struct
 import subprocess
 import sys
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping
 
@@ -19,8 +20,10 @@ from typing import Any, Callable, Iterable, Mapping
 TERMINAL_STATUSES = {"success", "failed", "timeout", "cancelled"}
 POINTCLOUD_TASK_TYPE = "point_cloud_copc_generation"
 PPTX_TASK_TYPE = "pptx_pdf_generation"
+MODEL_TASK_TYPE = "model_3d_glb_generation"
 LINEAGE_SCHEMA = "addp.lineage-facts/v1"
 REQUIRED_PERMISSIONS = {
+    "manager.data_item.read",
     "manager.derived_artifact.create",
     "manager.derived_artifact.delete",
     "manager.derived_artifact.read",
@@ -47,6 +50,25 @@ class Response:
     payload: Any
     headers: Mapping[str, str]
     raw: bytes = b""
+
+
+@dataclass
+class ModelFixture:
+    format: str
+    item: dict[str, object]
+    locator: str
+    task_id: int | None = None
+    execution_id: str = ""
+    result_id: int | None = None
+    previous_mode: str = "basic_preview"
+    mode_changed: bool = False
+    artifact: dict[str, object] = field(default_factory=dict)
+    cleanup: dict[str, object] = field(default_factory=lambda: {
+        "result_deleted": False, "task_deleted": False,
+        "content_unavailable": False, "preview_mode_restored": False,
+        "residual_resources": -1,
+    })
+
 
 
 class GatewayClient:
@@ -374,6 +396,188 @@ def validate_monitor_lineage(
                 raise SuiteError("Monitor lineage resource differs from Owner safe projection")
 
 
+def prepare_model_fixture(client: GatewayClient, engine_id: int, bucket: str, format_name: str) -> ModelFixture:
+    full_name = f"{bucket}/model3d/{format_name}/model.{format_name}"
+    item = find_fixture_item(client, engine_id, full_name, format_name.upper())
+    attributes = _object(item.get("attributes"), f"{format_name} attributes")
+    facts = _object(attributes.get("item"), f"{format_name} item facts")
+    if any(facts.get(key) != value for key, value in {
+        "data_type": "model_3d", "format": format_name, "layout": "single",
+    }.items()):
+        raise SuiteError(f"{format_name} fixture must be scanned as model_3d/single")
+    format_info = _object(attributes.get("format_info"), f"{format_name} format_info")
+    native = _object(format_info.get(format_name), f"{format_name} native metadata")
+    if native.get("texture_refs") != ["texture.png"] or native.get("scan_complete") is not True:
+        raise SuiteError(f"{format_name} scan must preserve its declared PNG texture")
+    if format_name == "dae" and native.get("unit_meter") != 0.01:
+        raise SuiteError("DAE fixture must preserve centimeter units")
+    query = urllib.parse.urlencode({"item_fingerprint": item["fingerprint"], "page": 1, "page_size": 100})
+    results = _object(client.request("GET", f"/api/v1/manager/model_3d_glb?{query}", (200,)).payload, "initial model results")
+    if non_negative_int(results.get("total"), "initial model result total") != 0:
+        raise SuiteError(f"a stale {format_name} GLB exists for the dedicated fixture")
+    query = urllib.parse.urlencode({"task_type": MODEL_TASK_TYPE, "page": 1, "page_size": 100})
+    tasks = _object(client.request("GET", f"/api/v1/manager/tasks?{query}", (200,)).payload, "initial model tasks")
+    rows = _array(tasks.get("items"), "initial model task items")
+    if non_negative_int(tasks.get("total"), "initial model task total") != len(rows):
+        raise SuiteError("model task preflight must inspect the complete task list")
+    for row in rows:
+        task = _object(row, "initial model task")
+        source = _object(_object(task.get("config"), "model task config").get("source"), "model task source")
+        if source.get("item_fingerprint") == item["fingerprint"]:
+            raise SuiteError(f"a stale {format_name} task exists for the dedicated fixture")
+    return ModelFixture(format_name, item, build_item_locator(engine_id, item))
+
+
+def validate_model_glb(raw: bytes) -> dict[str, object]:
+    if not 20 <= len(raw) <= 2 * 1024 * 1024:
+        raise SuiteError("fixture GLB content must be nonempty and bounded to 2 MiB")
+    magic, version, total = struct.unpack_from("<4sII", raw)
+    json_size, json_kind = struct.unpack_from("<I4s", raw, 12)
+    if magic != b"glTF" or version != 2 or total != len(raw) or json_kind != b"JSON":
+        raise SuiteError("fixture content must be GLB 2 with a leading JSON chunk")
+    binary_offset = 20 + json_size
+    if json_size % 4 or binary_offset + 8 > len(raw):
+        raise SuiteError("fixture GLB JSON chunk is truncated or unaligned")
+    doc = _object(json.loads(raw[20:binary_offset]), "fixture GLB document")
+    binary_size, binary_kind = struct.unpack_from("<I4s", raw, binary_offset)
+    binary = raw[binary_offset + 8:]
+    if binary_kind != b"BIN\0" or binary_size != len(binary):
+        raise SuiteError("fixture GLB must contain exactly one embedded BIN chunk")
+    buffers = _array(doc.get("buffers"), "fixture GLB buffers")
+    if len(buffers) != 1 or "uri" in _object(buffers[0], "fixture GLB buffer"):
+        raise SuiteError("fixture GLB must not depend on external buffers")
+    images = _array(doc.get("images"), "fixture GLB images")
+    if len(images) != 1:
+        raise SuiteError("fixture GLB must preserve exactly one embedded PNG image")
+    image = _object(images[0], "fixture GLB image")
+    views = _array(doc.get("bufferViews"), "fixture GLB bufferViews")
+    image_view = non_negative_int(image.get("bufferView"), "fixture PNG bufferView")
+    if image_view >= len(views) or "uri" in image or image.get("mimeType") != "image/png":
+        raise SuiteError("fixture GLB image must be an embedded PNG bufferView")
+    view = _object(views[image_view], "fixture PNG bufferView")
+    start = non_negative_int(view.get("byteOffset", 0), "fixture PNG offset")
+    length = positive_int(view.get("byteLength"), "fixture PNG length")
+    if view.get("buffer") != 0 or start + length > len(binary) or binary[start:start + 8] != b"\x89PNG\r\n\x1a\n":
+        raise SuiteError("fixture PNG bufferView must contain real embedded PNG bytes")
+    textures = _array(doc.get("textures"), "fixture GLB textures")
+    materials = _array(doc.get("materials"), "fixture GLB materials")
+    accessors = _array(doc.get("accessors"), "fixture GLB accessors")
+    meshes = _array(doc.get("meshes"), "fixture GLB meshes")
+    for mesh in meshes:
+        for primitive in _array(_object(mesh, "fixture mesh").get("primitives"), "fixture primitives"):
+            primitive = _object(primitive, "fixture primitive")
+            attributes = _object(primitive.get("attributes"), "fixture vertex attributes")
+            position_index = non_negative_int(attributes.get("POSITION"), "fixture POSITION accessor")
+            material_index = non_negative_int(primitive.get("material"), "fixture primitive material")
+            if position_index >= len(accessors) or material_index >= len(materials):
+                raise SuiteError("fixture GLB mesh references invalid accessors or materials")
+            position = _object(accessors[position_index], "fixture POSITION")
+            material = _object(materials[material_index], "fixture material")
+            pbr = _object(material.get("pbrMetallicRoughness"), "fixture PBR material")
+            texture = _object(pbr.get("baseColorTexture"), "fixture diffuse texture")
+            texture_index = non_negative_int(texture.get("index"), "fixture diffuse texture index")
+            if texture_index >= len(textures) or _object(textures[texture_index], "fixture texture").get("source") != 0:
+                raise SuiteError("fixture diffuse material must use the embedded PNG")
+            if position.get("type") == "VEC3" and position.get("componentType") == 5126 and position.get("count") == 3 and "TEXCOORD_0" in attributes:
+                return {"vertex_count": 3, "embedded_images": 1, "image_mime_type": "image/png", "size_bytes": len(raw)}
+    raise SuiteError("fixture GLB must contain a textured three-vertex mesh")
+
+
+def generate_model_glb(client: GatewayClient, model: ModelFixture, tenant_id: int, timeout: float) -> None:
+    query = urllib.parse.urlencode({"locator": model.locator})
+    capability = _object(client.request("GET", f"/api/v1/manager/quick-view/capability?{query}", (200,)).payload, "initial model capability")
+    if "generate_model_3d_glb" not in _array(capability.get("available_actions"), "initial model actions"):
+        raise SuiteError(f"{model.format} capability must declare generate_model_3d_glb")
+    model.previous_mode = str(capability.get("preferred_mode"))
+    if model.previous_mode not in {"basic_preview", "map_quick_view"}:
+        raise SuiteError("model capability preferred_mode is missing or invalid")
+    started = _object(client.request("POST", "/api/v1/manager/quick-view/actions", (202,), {
+        "locator": model.locator, "action": "generate_model_3d_glb",
+    }).payload, "model GLB generation")
+    model.task_id = positive_int(started.get("task_id"), "model task id")
+    execution_id = started.get("execution_id")
+    if started.get("task_type") != MODEL_TASK_TYPE or not isinstance(execution_id, str) or not execution_id:
+        raise SuiteError("model generation must return its task type and execution_id")
+    model.execution_id = execution_id
+    execution = wait_for_manager_execution(client, execution_id, time.monotonic() + timeout, model.format.upper())
+    owner_facts = validate_lineage(
+        execution, item_locator=model.locator,
+        item_id=positive_int(model.item["id"], "model item id"), fingerprint=str(model.item["fingerprint"]),
+        tenant_id=tenant_id, task_type=MODEL_TASK_TYPE,
+        output_prefix="model3d-quick-view", output_suffix=".glb", output_label="GLB",
+    )
+    monitor = _object(client.request("GET", f"/api/v1/monitor/executions/by-execution-id/{urllib.parse.quote(execution_id)}", (200,)).payload, "Monitor model execution")
+    validate_monitor_lineage(monitor, owner_facts)
+    ready = _object(client.request("GET", f"/api/v1/manager/quick-view/capability?{query}", (200,)).payload, "ready model capability")
+    result = _object(ready.get("model_3d"), "ready model GLB")
+    model.result_id = positive_int(result.get("result_id"), "model result id")
+    expected_url = f"/api/v1/manager/model_3d_glb/{model.result_id}/content"
+    if (ready.get("can_use_quick_view") is not True or ready.get("render_source") != "model_3d_glb"
+            or result.get("task_id") != model.task_id or result.get("last_execution_id") != model.execution_id
+            or result.get("format") != model.format or result.get("preview_url") != expected_url):
+        raise SuiteError("ready GLB capability must match this model generation")
+    ranged = client.request("GET", expected_url, (206,), headers={"Accept": "model/gltf-binary", "Range": "bytes=0-63"})
+    if not ranged.raw.startswith(b"glTF") or len(ranged.raw) != 64:
+        raise SuiteError("model GLB Range response must be a 64-byte GLB prefix")
+    content = client.request("GET", expected_url, (200,), headers={"Accept": "model/gltf-binary"})
+    model.artifact = {**validate_model_glb(content.raw), "range_bytes": len(ranged.raw), "storage_domain": "addp-infra", "preview_url": expected_url}
+    model.mode_changed = True
+    client.request("PATCH", "/api/v1/manager/preview-state/preferred-mode", (200,), {"locator": model.locator, "preferred_mode": "map_quick_view"})
+
+
+def cleanup_model_glb(client: GatewayClient, model: ModelFixture, timeout: float) -> None:
+    restore_error: SuiteError | None = None
+    if model.mode_changed:
+        try:
+            client.request("PATCH", "/api/v1/manager/preview-state/preferred-mode", (200,), {"locator": model.locator, "preferred_mode": model.previous_mode})
+            query = urllib.parse.urlencode({"locator": model.locator})
+            state = _object(client.request("GET", f"/api/v1/manager/preview-state?{query}", (200,)).payload, "restored model preview state")
+            if state.get("preferred_mode") != model.previous_mode:
+                raise SuiteError("model preview mode restoration was not verified")
+        except SuiteError as error:
+            restore_error = error
+    model.cleanup["preview_mode_restored"] = restore_error is None
+    if model.task_id is None:
+        if restore_error:
+            raise restore_error
+        return
+    if not model.execution_id:
+        raise SuiteError(f"{model.format} execution identity is unknown; task retained")
+    deadline = time.monotonic() + timeout
+    while True:
+        execution = _object(client.request("GET", f"/api/v1/manager/executions/{urllib.parse.quote(model.execution_id)}", (200,)).payload, "model cleanup execution")
+        if execution.get("status") in TERMINAL_STATUSES:
+            break
+        if time.monotonic() >= deadline:
+            raise SuiteError(f"{model.format} execution is still active; resources retained")
+        time.sleep(1)
+    query = urllib.parse.urlencode({"task_id": model.task_id, "page": 1, "page_size": 100})
+    results = _object(client.request("GET", f"/api/v1/manager/model_3d_glb?{query}", (200,)).payload, "model cleanup results")
+    rows = _array(results.get("data"), "model cleanup result rows")
+    if non_negative_int(results.get("total"), "model cleanup total") != len(rows):
+        raise SuiteError("model cleanup must inspect all results")
+    for value in rows:
+        result = _object(value, "model cleanup result")
+        if result.get("task_id") != model.task_id or result.get("item_fingerprint") != model.item["fingerprint"]:
+            raise SuiteError("model cleanup result is not owned by this run")
+        result_id = positive_int(result.get("id"), "model cleanup result id")
+        client.request("DELETE", f"/api/v1/manager/model_3d_glb/{result_id}", (200,))
+        client.request("GET", f"/api/v1/manager/model_3d_glb/{result_id}/content", (404,))
+    model.cleanup["result_deleted"] = True
+    model.cleanup["content_unavailable"] = True
+    task_path = f"/api/v1/manager/tasks/{MODEL_TASK_TYPE}/{model.task_id}"
+    client.request("DELETE", task_path, (204,))
+    client.request("GET", task_path, (404,))
+    model.cleanup["task_deleted"] = True
+    remaining = _object(client.request("GET", f"/api/v1/manager/model_3d_glb?{query}", (200,)).payload, "model residual results")
+    residual = non_negative_int(remaining.get("total"), "model residual result total")
+    model.cleanup["residual_resources"] = residual
+    if residual:
+        raise SuiteError(f"{model.format} GLB cleanup has {residual} residual results")
+    if restore_error:
+        raise restore_error
+
+
 def validate_browser_report(
     report: object,
     *,
@@ -383,10 +587,11 @@ def validate_browser_report(
     output_name: str,
     pptx_item_id: int,
     pptx_page_count: int,
+    models: list[dict[str, object]],
 ) -> dict[str, object]:
     payload = _object(report, "Manager lineage browser report")
     expected = {
-        "schema_version": "addp.manager-internal-artifact-lineage-browser/v1",
+        "schema_version": "addp.manager-internal-artifact-lineage-browser/v2",
         "suite": "manager-internal-artifact-lineage",
         "run_id": run_id,
         "result": "passed",
@@ -399,12 +604,15 @@ def validate_browser_report(
         "pptx_item_id": pptx_item_id,
         "pptx_page_count": pptx_page_count,
         "pptx_page_after_engine_refresh": 2,
-        "pptx_preview_requests": 1,
+        "pptx_generation_requests": 0,
+        "model_generation_requests": 0,
+        "models": [{**model, "model_loaded": True, "content_loaded": True} for model in models],
         "browser_warning_errors": 0,
     }
     mismatches = [key for key, value in expected.items() if payload.get(key) != value]
     if mismatches:
         raise SuiteError("Manager lineage browser report contract mismatch: " + ", ".join(mismatches))
+    non_negative_int(payload.get("gpu_performance_warnings"), "browser GPU performance warning count")
     return payload
 
 
@@ -419,6 +627,7 @@ def run_browser(
     pptx_item_locator: str,
     pptx_item_id: int,
     pptx_page_count: int,
+    models: list[dict[str, object]],
 ) -> dict[str, object]:
     artifact_dir = Path(environment["ADDP_ONLINE_ARTIFACT_DIR"])
     report_path = artifact_dir / "manager-internal-artifact-lineage-browser.json"
@@ -433,13 +642,12 @@ def run_browser(
             "ADDP_ONLINE_MANAGER_PPTX_ITEM_LOCATOR": pptx_item_locator,
             "ADDP_ONLINE_MANAGER_PPTX_ITEM_ID": str(pptx_item_id),
             "ADDP_ONLINE_MANAGER_PPTX_PAGE_COUNT": str(pptx_page_count),
+            "ADDP_ONLINE_MANAGER_MODELS_JSON": json.dumps(models),
         }
     )
     result = subprocess.run(
         [
             "npm",
-            "--prefix",
-            "console/frontend",
             "exec",
             "--",
             "playwright",
@@ -447,7 +655,7 @@ def run_browser(
             "e2e/online/manager-internal-artifact-lineage.spec.js",
             "--config=playwright.online.config.js",
         ],
-        cwd=repository,
+        cwd=repository / "console/frontend",
         env=browser_environment,
         check=False,
     )
@@ -463,6 +671,7 @@ def run_browser(
         output_name=output_name,
         pptx_item_id=pptx_item_id,
         pptx_page_count=pptx_page_count,
+        models=models,
     )
 
 
@@ -485,6 +694,7 @@ def run_scenario(
     scan_execution_id = wait_for_meta_scan(client, engine_id, deadline)
     pointcloud_item = find_fixture_item(client, engine_id, pointcloud_full_name, "point-cloud")
     pptx_item = find_fixture_item(client, engine_id, pptx_full_name, "PPTX")
+    model_fixtures = [prepare_model_fixture(client, engine_id, bucket, format_name) for format_name in ("dae", "3ds")]
     pointcloud_item_id = positive_int(pointcloud_item.get("id"), "point-cloud fixture id")
     pointcloud_fingerprint = str(pointcloud_item["fingerprint"])
     pointcloud_size_bytes = positive_int(pointcloud_item.get("size_bytes"), "point-cloud fixture size_bytes")
@@ -657,6 +867,13 @@ def run_scenario(
         if not pptx_content.raw.startswith(b"%PDF") or len(pptx_content.raw) > 64:
             raise SuiteError("PPTX PDF Range response is not a bounded PDF prefix")
 
+        for model in model_fixtures:
+            generate_model_glb(client, model, tenant_id, timeout)
+        browser_models = [{
+            "format": model.format, "locator": model.locator,
+            "item_id": model.item["id"], "result_id": model.result_id,
+            "preview_url": model.artifact["preview_url"],
+        } for model in model_fixtures]
         browser_evidence: dict[str, object] = {}
         if browser_runner is not None:
             browser_evidence = browser_runner(
@@ -669,9 +886,10 @@ def run_scenario(
                 pptx_item_locator=pptx_locator,
                 pptx_item_id=pptx_item_id,
                 pptx_page_count=pptx_page_count,
+                models=browser_models,
             )
         return {
-            "schema_version": "addp.manager-internal-artifact-lineage/v1",
+            "schema_version": "addp.manager-internal-artifact-lineage/v2",
             "suite": "manager-internal-artifact-lineage",
             "scenario": "business-object-to-manager-infra-lineage",
             "run_id": environment["ADDP_ONLINE_TEST_RUN_ID"],
@@ -683,21 +901,29 @@ def run_scenario(
             "sources": {
                 "point_cloud": {"item_id": pointcloud_item_id, "fingerprint": pointcloud_fingerprint, "locator": pointcloud_locator},
                 "pptx": {"item_id": pptx_item_id, "fingerprint": pptx_fingerprint, "locator": pptx_locator},
+                **{model.format: {"item_id": model.item["id"], "fingerprint": model.item["fingerprint"], "locator": model.locator} for model in model_fixtures},
             },
             "created": {
                 "point_cloud": {"task_id": pointcloud_task_id, "execution_id": pointcloud_execution_id, "result_id": pointcloud_result_id},
                 "pptx_pdf": {"task_id": pptx_task_id, "execution_id": pptx_execution_id, "result_id": pptx_result_id},
+                **{model.format: {"task_id": model.task_id, "execution_id": model.execution_id, "result_id": model.result_id} for model in model_fixtures},
             },
-            "lineage": {"schema_version": LINEAGE_SCHEMA, "inputs": 2, "outputs": 2, "manager_monitor_equal": True},
+            "lineage": {"schema_version": LINEAGE_SCHEMA, "inputs": 4, "outputs": 4, "manager_monitor_equal": True},
             "artifacts": {
                 "point_cloud": {"name": pointcloud_output_name, "range_bytes": len(pointcloud_content.raw), "storage_domain": "addp-infra"},
                 "pptx_pdf": {"page_count": pptx_page_count, "size_bytes": pptx_size_bytes, "range_bytes": len(pptx_content.raw), "storage_domain": "addp-infra", "cache_reused": True},
+                **{model.format: model.artifact for model in model_fixtures},
             },
             "browser": browser_evidence,
-            "cleanup": {"point_cloud": pointcloud_cleanup, "pptx_pdf": pptx_cleanup},
+            "cleanup": {"point_cloud": pointcloud_cleanup, "pptx_pdf": pptx_cleanup, **{model.format: model.cleanup for model in model_fixtures}},
         }
     finally:
         cleanup_errors: list[str] = []
+        for model in reversed(model_fixtures):
+            try:
+                cleanup_model_glb(client, model, timeout)
+            except SuiteError as error:
+                cleanup_errors.append(str(error))
         if pptx_result_id is not None:
             try:
                 client.request("DELETE", f"/api/v1/manager/pptx_pdf/{pptx_result_id}", (200,))

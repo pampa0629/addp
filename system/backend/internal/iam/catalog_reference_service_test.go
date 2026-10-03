@@ -97,6 +97,10 @@ func TestCatalogReferenceServiceListsCandidatesForCatalogOnly(t *testing.T) {
 	if _, _, err := service.ListCandidates(context.Background(), 7, "addp-asset", CatalogSubjectTypeUser, "", 1, 20); !errors.Is(err, ErrInvalidCatalogReferenceRequest) {
 		t.Fatalf("other client error = %v", err)
 	}
+	groups, total, err := service.ListCandidates(context.Background(), 7, "addp-catalog", CatalogSubjectTypeProjectGroup, "", 1, 20)
+	if err != nil || total != 1 || len(groups) != 1 || groups[0].SubjectType != CatalogSubjectTypeProjectGroup {
+		t.Fatalf("groups=%+v total=%d err=%v", groups, total, err)
+	}
 }
 
 type fakeCatalogReferenceRepository struct {
@@ -124,5 +128,10 @@ func (r *fakeCatalogReferenceRepository) ListCatalogDepartmentCandidates(context
 
 func (r *fakeCatalogReferenceRepository) ListCatalogUserCandidates(context.Context, int64, string, int, int) ([]CatalogReferenceCandidate, int64, error) {
 	items := []CatalogReferenceCandidate{{SubjectType: CatalogSubjectTypeUser, ID: 3, Name: "Alice", Code: "alice", Status: "active"}}
+	return items, int64(len(items)), nil
+}
+
+func (r *fakeCatalogReferenceRepository) ListCatalogProjectGroupCandidates(context.Context, int64, string, int, int) ([]CatalogReferenceCandidate, int64, error) {
+	items := []CatalogReferenceCandidate{{SubjectType: CatalogSubjectTypeProjectGroup, ID: 5, Name: "Delivery", Code: "delivery", Status: "active"}}
 	return items, int64(len(items)), nil
 }

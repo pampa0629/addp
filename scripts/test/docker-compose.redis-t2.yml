@@ -1,0 +1,23 @@
+services:
+  redis:
+    image: public.ecr.aws/docker/library/redis:7.2.13@sha256:37aa82f9fdff30517603b2e2c5376b34b106d353c2b508262260d3bb0d2c21ba
+    command: ["sh", "/addp/redis/start.sh"]
+    environment:
+      BUSINESS_REDIS_ADMIN_PASSWORD: ${BUSINESS_REDIS_ADMIN_PASSWORD:?T2 admin password required}
+      BUSINESS_REDIS_READER_PASSWORD: ${BUSINESS_REDIS_READER_PASSWORD:?T2 reader password required}
+    ports:
+      - "127.0.0.1::6379"
+    volumes:
+      - redis_data:/data
+      - ../../business/redis:/addp/redis:ro
+    tmpfs:
+      - /run/addp-redis:mode=0700
+    healthcheck:
+      test: ["CMD-SHELL", 'REDISCLI_AUTH="$$BUSINESS_REDIS_ADMIN_PASSWORD" redis-cli --user addp_business_admin -e ping | grep -qx PONG']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    mem_limit: 512m
+    restart: "no"
+volumes:
+  redis_data:

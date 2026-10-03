@@ -261,8 +261,8 @@ export function createProtectionEnrollmentGovernancePresentation({
   function baselineDescription(finding) {
     const baseline = finding?.explanation?.baseline
     if (!baseline) return t('security.finding.noEffectiveBaseline')
-    if (baseline.effect === 'mask') {
-      return t('security.finding.baselineMask', { prefix: baseline.keep_prefix, suffix: baseline.keep_suffix })
+    if (baseline.effect === 'mask' && baseline.algorithm === 'addp.mask.keep_prefix_suffix/v2') {
+      return t('security.finding.baselineMask', { prefix: baseline.parameters?.prefix_runes, suffix: baseline.parameters?.suffix_runes })
     }
     return t('security.finding.baselineEffect', { effect: effectLabel(baseline.effect) })
   }

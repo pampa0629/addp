@@ -7,6 +7,7 @@
 | 英文术语 | 中文术语 | 定义 | 备注 |
 |---|---|---|---|
 | engine | 引擎 | ADDP 连接和访问外部数据系统的能力入口。 | 例如 PostgreSQL、MinIO、NFS、Neo4j。 |
+| key_value engine family | 键值存储引擎族 | 以原生 key 定位值的存储引擎粗分类，能力声明值为 `key_value`。 | 粗分类不推导目录、扫描、查询或预览能力；Redis 独立引擎类型为 `redis`，首版仅登记单端点、ACL 账号和逻辑数据库连接。 |
 | Oracle Engine | Oracle 引擎 | 通过 `engine_type=oracle` 登记的 Oracle 数据库 Engine Instance；普通表 Engine Catalog / 查询 / 读取与基础 Oracle Spatial（`MDSYS.SDO_GEOMETRY`、SpatialInfo、EWKB）能力以 `service_name` 所指服务为连接边界，以 schema/table 为业务路径。 | Oracle CDC 和 ArcGIS SDE 逻辑变化源分别扩展，不因共用 Oracle 连接而合并为同一能力。 |
 | OceanBase Engine | OceanBase 引擎 | 通过 `engine_type=oceanbase` 登记的 OceanBase Community Edition 数据库 Engine Instance；首版使用 MySQL 模式协议与 SQL 方言，以 database/table 为 Engine Catalog 业务路径。 | OceanBase 是独立引擎类型，不登记为 MySQL；`user` 使用 `user@tenant` 完整账号表达租户边界。MySQL 协议兼容只是插件内部复用事实。 |
 | openGauss Engine | openGauss 引擎 | 通过 `engine_type=opengauss` 登记的 openGauss 6.0.6 LTS 数据库 Engine Instance；首版使用 PG 兼容 database，以 schema/table 为 Engine Catalog 业务路径。 | openGauss 是独立引擎类型，不登记为 PostgreSQL；PostgreSQL wire protocol、驱动和 SQL 方言兼容只是插件内部复用事实，不自动获得 PostGIS、CDC 或 PostgreSQL 扩展能力。 |
@@ -194,6 +195,8 @@
 | vector tile set | 矢量瓦片集 | 以 PMTiles v3 单文件封装、可作为业务数据长期保存和跨平台交换的二维矢量瓦片 data item。 | 统一使用 `data_type=media`、`format=pmtiles`、`layout=single`；当前瓦片编码固定为 MVT。 |
 | PMTiles | PMTiles | 面向 HTTP Range Read 的单文件瓦片归档格式。 | ADDP 业务矢量瓦片集固定使用 PMTiles v3；PMTiles 是归档格式，MVT 是归档内单瓦片编码。 |
 | model_3d | 三维模型数据 | 以三维空间对象、场景、网格、构件或三维可视化结构为核心消费对象的数据类型。 | 覆盖 GLB / glTF、单 OSGB、OSGB Scene 倾斜摄影、S3M、3D Tiles 场景、IFC / Revit BIM 等；具体子形态由 `type_info.model_3d.model_kind`、format、layout 和 capabilities 表达。 |
+| Collada / DAE | Collada 三维交换格式 | 以 XML 描述几何、场景、材质及资源引用的三维交换格式，文件扩展名为 `.dae`。 | ADDP 使用 `format=dae`、`data_type=model_3d`、`layout=single`；首期转换为静态 GLB。 |
+| 3DS | 3DS 三维模型格式 | 以二进制 chunk 存储网格、材质和关键帧等内容的三维模型格式。 | ADDP 使用 `format=3ds`、`data_type=model_3d`、`layout=single`；不与 3D Tiles 或 S3M 混用。 |
 | point_cloud | 点云数据 | 以三维点集合、点属性、空间范围和抽样 / LOD 预览为核心消费对象的数据类型。 | 覆盖 LAS / LAZ / COPC、PCD、点云型 PLY、EPT / Potree 等；点属性不是普通表字段，不能仅因可列化而归为 `table`。 |
 | gaussian_splat | 高斯泼溅数据 | 以三维高斯基元、尺度、旋转、不透明度和视角相关颜色为核心消费对象的数据类型。 | 覆盖 3D Gaussian Splatting PLY 以及后续 `.splat`、`.ksplat`、`.spz` 等格式；不是普通点云，也不走传统 mesh / GLB 模型路线。 |
 | detector | 探测器 / 探测 | 从资源候选集合中识别数据项边界、数据类型和文件格式的过程或组件。 | 归属 Meta 模块。 |
@@ -221,7 +224,7 @@
 | query service contract version | 查询服务计算契约版本 | Service 由有效发布依赖、稳定键与参数契约派生的 `service_version`。 | 用于查询、游标和消费契约；缺少执行契约时为空，不能用作管理端重新绑定的并发标识。 |
 | service dependency | 服务依赖 | 已发布服务读取、发布或暴露某个 data item 的来源事实。 | 在血缘中表现为 `data item --serve--> published service`；`dependency_hash` 只是快照版本摘要，不是具体血缘边。 |
 | reusable development artifact | 可复用开发成果 | Develop 中已持久化、可被重复编辑或稳定引用的 `query` 或 `workflow` DevTask。 | 可作为 `development_artifact` CatalogEntry 的专业来源；不包含 `script` / Notebook、即时查询、execution、运行结果或 ToolApproval。 |
-| field ref | 字段引用 | 绑定到 data item 及其 schema snapshot 的字段级引用。 | 作为字段级血缘预留主体；字段默认不是独立 data item。 |
+| field ref | 字段引用 | 绑定到 data item 及其 schema snapshot 的字段级引用。 | 身份为 data item、精确字段名与执行结构快照 hash；字段默认不是独立 data item。字段值来源关系与过滤、连接等影响依赖语义分开。 |
 | queryable field path | 可查询字段路径 | 从记录根到具体值字段的结构化路径事实，用于动态 schema 记录集合的字段发现、查询生成和校验。 | MongoDB 示例为 `path=["members","userInfo","nickName"]`，MQL 投影为 `members.userInfo.nickName`；路径各层的 object / array 类型由同一组字段事实表达，不传递原始样本值。 |
 | output contract snapshot | 输出契约快照 | 对没有单一 Meta item 身份的查询或计算结果，保存其已检测输出字段、主键、空间信息等契约事实。 | SQL 查询服务使用该快照；查询结果未物化并经 Meta 扫描前，不创建或伪造 Meta item。 |
 | query service | 查询服务 | Service 将一个受治理的数据源或固定查询发布为稳定数据 API 的业务定义。 | 表、固定 SQL 和联邦 SQL 是来源表达；REST Query、OGC API Features、WFS 是协议投影，不是不同的查询执行路径。 |
@@ -610,8 +613,12 @@
 | 英文术语 | 中文术语 | 定义 | 备注 |
 |---|---|---|---|
 | domain ontology | 领域本体 | Tenant 对领域类、属性、关系特征和分类条件形成的显式语义体系。 | 目标由 Ontology 管理自有事实并引用 Standard、Model 权威定义；不要求 RDF/OWL，不复制业务数据。 |
+| platform capability semantics | 平台能力语义 | ADDP 平台概念、功能、操作及其关联的语义说明，用于将用户意图对应到 Skill、Tool 和模块能力。 | 当前由平台文档、Skill、Tool Manifest 和接口契约承载；平台本体尚未实现。定义中的能力必须结合当前模块可用性和用户权限判断，不能据此认定可执行。 |
+| tenant domain semantics | 租户领域语义 | Tenant 明确建设或从专业 owner 引用的业务概念、关系、口径和规则。 | 可在 Ontology 自有建模，也可引用 Standard、Model 等 owner；Meta 结构、Quality 结果和 Catalog 责任是相关专业事实，不自动成为本体定义。其他业务模块均不是领域本体建模的前置。 |
+| runtime business fact | 运行时业务事实 | 在确定授权、读取时点和观察范围内，由数据读取 owner 提供的具体对象值、状态或关系观察。 | 必须保留对象身份、来源与覆盖范围；动态事实不属于本体定义修订，不要求复制到 Infra 图库。未读取、无权限和未完整观察不能当作不存在。 |
 | ontology class | 本体类 | 本体中可被属性、关系和分类规则引用的类型概念。 | 基础定义只能为本体自有或来自明确 owner 的引用；地点实例“北京”不是本体类。 |
 | ontology revision | 本体修订 | 同一本体成员集合、来源依赖和规则环境的确定版本；发布后内容不可变。 | 不等于资源并发 version；published 不代表图投影已经 ready 或已激活。 |
+| ontology data binding | 本体数据绑定 | 将确定本体修订中的类或属性与数据读取 owner 的确定来源、对象身份和类型化输出显式连接的版本化契约。 | 目标由 Ontology 唯一管理；不以 CatalogEntry 为必填身份，不授予数据权限、不执行取数，也不复制 Catalog StandardMapping 或 Model 概念实现映射。当前尚未实现。 |
 | semantic projection | 语义投影 | 从本体确定修订构建、用于关系查询的可重建派生数据。 | 目标存于 Infra FalkorDB；无独立编辑权，修订与构建 generation 必须可追溯。 |
 | classification rule | 分类规则 | 根据显式业务条件及有界事实判断对象是否满足某类定义的确定性规则。 | 不满足分类不等于数据质量不合格；未知、否定和执行错误分别表达。 |
 | semantic context | 语义上下文 | 一次消费固定的本体修订、投影批次、相关定义与数据映射版本集合。 | 不等于业务数据快照，不授予数据访问权，也不能替代取数范围和完整性证据。 |
@@ -652,3 +659,16 @@
 ### 未登记实例的运行日志
 
 由受控接收器采集、具有模块／节点／角色／进程实例身份，但查询时尚未关联 System 登记事实的运行日志。未登记不是启动失败或 DOWN；首次采集时间不等于业务启动时间。System 保存有保留期的可信来源目录，Infra 上报元数据，Monitor 健康观测保持独立；正文仍使用集中日志查询路径和平台日志正文 Permission。
+
+## Elasticsearch 索引与记录集合
+
+| 英文 | 中文 | 定义 | 边界 |
+| --- | --- | --- | --- |
+| Elasticsearch index | Elasticsearch 索引 | Elasticsearch 中容纳文档的原生数据集，是 `service -> index` Engine Catalog 的叶子。 | `meta_item.item_type=index`；文档是索引内容，不逐条创建 Meta item；别名、data stream、分片不是首版叶子。 |
+| Mapping | 字段映射 | 引擎声明的字段路径、原生类型及 object/nested、多字段关系。 | 映射字段事实不等于 `_source` 内容结构完整，不能据此断言未映射字段不存在。 |
+
+## 结构化字段保护算法
+
+| 英文 | 中文 | 定义 | 边界 |
+| --- | --- | --- | --- |
+| protection algorithm | 保护算法 | 平台代码提供的版本化脱敏实现，声明适用字段类型、参数和输出类型。 | 当前内置前后掩码、固定值替换和普通 SM3；基线显式许可算法，字段策略按许可及参数边界配置。图层属性按空间表字段处理，几何不执行字符串算法。 |

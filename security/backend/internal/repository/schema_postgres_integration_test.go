@@ -42,6 +42,7 @@ func TestSecurityMigrateAgainstPostgres(t *testing.T) {
 	if err := schema.Migrate(tx, "security", SchemaVersion, func(*gorm.DB) error { t.Error("same version reapplied"); return nil }); err != nil {
 		t.Fatal(err)
 	}
+	verifyStructuredParametersMigration(t, tx)
 	now := time.Now().UTC().Truncate(time.Second)
 	legacyPayload, err := json.Marshal(legacyProjectionV1{
 		SchemaVersion: legacyProjectionSchemaV1,

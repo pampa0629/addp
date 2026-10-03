@@ -35,6 +35,7 @@ Infra 宿主机绑定地址由 `INFRA_BIND_HOST` 指定，默认 `0.0.0.0`；Hos
 
 ## Business (业务库)
 
+- Redis: `6380`（容器端口 `6379`，独立 Business 实例，只开放 DB 0）
 - PostgreSQL: `5433`
 - Oracle Free: `15210`（容器端口 `1521`，service name `FREEPDB1`）
 - SuperMap SDX+ for PostgreSQL 专用 PostgreSQL: `5434`
@@ -54,7 +55,7 @@ Infra 宿主机绑定地址由 `INFRA_BIND_HOST` 指定，默认 `0.0.0.0`；Hos
 
 来源：`business/docker-compose.yml`。常规 Business 服务可通过 `business/.env` 指定首选宿主机端口；KingbaseES 与 DM8 技术夹具不进入该文件，只分别接受调用独立 profile 时当前 shell 中的 `KINGBASE_PORT`、`DAMENG_PORT`。
 
-本地 `business/scripts/start.sh` 对 Business PostgreSQL、MySQL 和 MinIO 的首次启动检查实际监听端口，首选值被占用时选择空闲宿主机端口。成功启动后把实际 Compose 映射保存到忽略版本控制的 `business/.business-state/ports.env`。再次启动和重启必须沿用该端口；已保存端口被其他服务占用时直接失败，不自动漂移已登记的 Engine Instance 物理端点。运行中的本工作区容器以实际 Compose 映射为准，容器内部端口始终不变。其他 Business 服务当前仍使用显式配置端口，冲突时不能视为已自动适配。
+本地 `business/scripts/start.sh` 对 Business PostgreSQL、MySQL、MinIO、Elasticsearch 和 Redis 的首次启动检查实际监听端口，首选值被占用时选择空闲宿主机端口。成功启动后把实际 Compose 映射保存到忽略版本控制的 `business/.business-state/ports.env`。再次启动和重启必须沿用该端口；已保存端口被其他服务占用时直接失败，不自动漂移已登记的 Engine Instance 物理端点。运行中的本工作区容器以实际 Compose 映射为准，容器内部端口始终不变。其他 Business 服务当前仍使用显式配置端口，冲突时不能视为已自动适配。
 
 本机开发进程连接 Business Engine 时应登记 `127.0.0.1` 和该服务的实际宿主机端口；同一 Docker 网络内的 ADDP 进程应登记 `business-*` 服务名和固定内部端口。同一实际 Business Engine 搬迁到新宿主机端口时，有权限的用户在 System 引擎编辑页确认后更新地址，保留原 `engine_id` 和引用；不同实际引擎仍须创建新实例并显式迁移绑定。
 
@@ -316,3 +317,5 @@ make ports-validate
 ## 运行日志基础设施
 
 日志查询代理内部端口 3100、本地宿主首选 13100（`LOKI_PORT`）；Alloy 内部和宿主首选 12345（`ALLOY_PORT`）。两者宿主机仅绑定回环地址，真实映射由标准 Infra 入口解析。Loki 存储端点只位于专用内部网络，不映射宿主端口。
+
+Elasticsearch Business 首选宿主机端口为 `9200`，仅绑定 `127.0.0.1`，实际端口由 `business/scripts/ports.sh` 解析并保存到 `business/.business-state/ports.env`。容器服务端口为 `9200`；T2 夹具使用 Docker 分配的独占回环端口。

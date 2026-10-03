@@ -109,7 +109,7 @@ func TestDefaultProtectionHTTPAgainstPostgres(t *testing.T) {
 		Code: "email", Name: "电子邮箱", SecurityClassificationID: classification.ID,
 		DefaultSecurityGradeID: initialGrade.ID,
 		DefaultProtection: &models.DefaultProtectionRequest{Effect: dataprotection.EffectMask,
-			Algorithm: dataprotection.AlgorithmKeepPrefixSuffixV2, KeepPrefix: 2, KeepSuffix: 3},
+			Algorithm: dataprotection.AlgorithmKeepPrefixSuffixV2, Parameters: map[string]any{"prefix_runes": 2, "suffix_runes": 3, "mask_rune": "*"}, AllowedAlgorithms: []string{dataprotection.AlgorithmKeepPrefixSuffixV2}},
 	}
 	invalid := command
 	invalid.Code = "invalid_email"
@@ -127,7 +127,7 @@ func TestDefaultProtectionHTTPAgainstPostgres(t *testing.T) {
 	initial := initialRules[0]
 	if initial.SensitiveDataTypeID != createdType.ID || initial.SecurityGradeID != initialGrade.ID || !initial.Enabled || initial.Version != 1 ||
 		initial.Effect != dataprotection.EffectMask || initial.Algorithm != dataprotection.AlgorithmKeepPrefixSuffixV2 ||
-		initial.KeepPrefix != 2 || initial.KeepSuffix != 3 || initial.InvalidValueEffect != dataprotection.EffectSuppress {
+		initial.Parameters["prefix_runes"] != float64(2) || initial.Parameters["suffix_runes"] != float64(3) || initial.InvalidValueEffect != dataprotection.EffectSuppress {
 		t.Fatalf("initial baseline=%#v", initial)
 	}
 	call(http.MethodDelete, initial.ID, models.DeleteProtectionBaselineRequest{Version: initial.Version}, "7", handler.DeleteBaseline, http.StatusConflict)
@@ -135,17 +135,17 @@ func TestDefaultProtectionHTTPAgainstPostgres(t *testing.T) {
 		t.Fatal("refused deletion modified the initial default protection")
 	}
 	request := models.ProtectionBaselineRequest{SensitiveDataTypeID: createdType.ID, SecurityGradeID: extraGrade.ID,
-		Effect: dataprotection.EffectMask, Algorithm: dataprotection.AlgorithmKeepPrefixSuffixV2, KeepPrefix: 2, KeepSuffix: 4}
+		Effect: dataprotection.EffectMask, Algorithm: dataprotection.AlgorithmKeepPrefixSuffixV2, Parameters: map[string]any{"prefix_runes": 2, "suffix_runes": 4, "mask_rune": "*"}, AllowedAlgorithms: []string{dataprotection.AlgorithmKeepPrefixSuffixV2}}
 	created := decodeDefinitionResponse[models.ProtectionBaseline](t, call(http.MethodPost, 0, request, "7", handler.CreateBaseline, http.StatusCreated))
 	if created.ID <= 0 || created.Version != 1 || created.TenantID != 7 || created.CreatedBy != 11 ||
 		created.SensitiveDataTypeID != createdType.ID || created.SecurityGradeID != extraGrade.ID ||
-		created.Effect != request.Effect || created.Algorithm != request.Algorithm || created.KeepPrefix != 2 || created.KeepSuffix != 4 ||
+		created.Effect != request.Effect || created.Algorithm != request.Algorithm || created.Parameters["prefix_runes"] != float64(2) || created.Parameters["suffix_runes"] != float64(4) ||
 		created.InvalidValueEffect != dataprotection.EffectSuppress || !created.Enabled || created.CreatedAt.IsZero() || created.UpdatedAt.IsZero() {
 		t.Fatalf("create must return the complete canonical rule, including defaulted fields: %#v", created)
 	}
-	request.Version, request.KeepSuffix = created.Version, 6
+	request.Version, request.Parameters["suffix_runes"] = created.Version, 6
 	updated := decodeDefinitionResponse[models.ProtectionBaseline](t, call(http.MethodPut, created.ID, request, "7", handler.UpdateBaseline, http.StatusOK))
-	if updated.ID != created.ID || updated.Version != 2 || updated.KeepSuffix != 6 || updated.UpdatedBy == nil || *updated.UpdatedBy != 11 {
+	if updated.ID != created.ID || updated.Version != 2 || updated.Parameters["suffix_runes"] != float64(6) || updated.UpdatedBy == nil || *updated.UpdatedBy != 11 {
 		t.Fatalf("update must return the new version and saved input: %#v", updated)
 	}
 	if !reflect.DeepEqual(get(created.ID), updated) {
@@ -175,9 +175,9 @@ func TestDefaultProtectionHTTPAgainstPostgres(t *testing.T) {
 	}
 	// Explicit reload supplies the only version used for the next write.
 	latest := get(created.ID)
-	request.Version, request.KeepSuffix = latest.Version, 7
+	request.Version, request.Parameters["suffix_runes"] = latest.Version, 7
 	retried := decodeDefinitionResponse[models.ProtectionBaseline](t, call(http.MethodPut, created.ID, request, "7", handler.UpdateBaseline, http.StatusOK))
-	if retried.Version != 3 || retried.KeepSuffix != 7 || !reflect.DeepEqual(get(created.ID), retried) {
+	if retried.Version != 3 || retried.Parameters["suffix_runes"] != float64(7) || !reflect.DeepEqual(get(created.ID), retried) {
 		t.Fatalf("save after explicit reload=%#v", retried)
 	}
 	call(http.MethodDelete, created.ID, map[string]any{}, "7", handler.DeleteBaseline, http.StatusBadRequest)

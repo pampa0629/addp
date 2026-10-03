@@ -16,6 +16,7 @@ const requiredNames = [
   'ADDP_ONLINE_MANAGER_PPTX_ITEM_LOCATOR',
   'ADDP_ONLINE_MANAGER_PPTX_ITEM_ID',
   'ADDP_ONLINE_MANAGER_PPTX_PAGE_COUNT',
+  'ADDP_ONLINE_MANAGER_MODELS_JSON',
   'GATEWAY_URL'
 ]
 
@@ -57,7 +58,7 @@ async function login(page, username, password, redirect) {
   return browserAccessToken
 }
 
-test('Manager lineage and cached PPTX preview remain stable across engine refresh', async ({ page }) => {
+test('Manager lineage, cached PPTX and textured DAE/3DS GLB load through Console', async ({ page }) => {
   const env = environment()
   const itemID = Number(env.ADDP_ONLINE_MANAGER_LINEAGE_ITEM_ID)
   if (!Number.isInteger(itemID) || itemID <= 0) throw new Error('Manager lineage item ID must be positive')
@@ -65,25 +66,40 @@ test('Manager lineage and cached PPTX preview remain stable across engine refres
   const pptxPageCount = Number(env.ADDP_ONLINE_MANAGER_PPTX_PAGE_COUNT)
   if (!Number.isInteger(pptxItemID) || pptxItemID <= 0) throw new Error('Manager PPTX item ID must be positive')
   if (pptxPageCount !== 3) throw new Error('Manager PPTX fixture must have exactly 3 pages')
+  const models = JSON.parse(env.ADDP_ONLINE_MANAGER_MODELS_JSON)
+  expect(models.map(model => model.format)).toEqual(['dae', '3ds'])
+  for (const model of models) {
+    expect(Number.isInteger(model.item_id) && model.item_id > 0).toBe(true)
+    expect(Number.isInteger(model.result_id) && model.result_id > 0).toBe(true)
+    expect(model.preview_url).toBe(`/api/v1/manager/model_3d_glb/${model.result_id}/content`)
+  }
   const executionPath = `/monitor/executions?execution_id=${encodeURIComponent(env.ADDP_ONLINE_MANAGER_LINEAGE_EXECUTION_ID)}`
   const api = await request.newContext({
     baseURL: env.GATEWAY_URL,
     extraHTTPHeaders: { Authorization: `Bearer ${env.ADDP_ONLINE_TEST_USER_ACCESS_TOKEN}` }
   })
   const browserMessages = []
+  let gpuPerformanceWarnings = 0
   const failedBusinessResponses = []
   let pptxGenerationRequests = 0
+  let modelGenerationRequests = 0
   let managerEngineRequests = 0
   page.on('request', requestEvent => {
     const pathname = new URL(requestEvent.url()).pathname
     if (requestEvent.method() === 'POST' && pathname === '/api/v1/manager/quick-view/actions') {
-      pptxGenerationRequests += 1
+      const action = requestEvent.postDataJSON()?.action
+      if (action === 'generate_pptx_pdf') pptxGenerationRequests += 1
+      if (action === 'generate_model_3d_glb') modelGenerationRequests += 1
     }
     if (requestEvent.method() === 'GET' && pathname === '/api/v1/manager/engines') {
       managerEngineRequests += 1
     }
   })
   page.on('console', message => {
+    if (message.type() === 'warning' && /^\[\.WebGL-0x[0-9a-f]+\]GL Driver Message \(OpenGL, Performance, GL_CLOSE_PATH_NV, High\): GPU stall due to ReadPixels(?: \(this message will no longer repeat\))?$/.test(message.text())) {
+      gpuPerformanceWarnings += 1
+      return
+    }
     if (['warning', 'error'].includes(message.type())) {
       browserMessages.push({ type: message.type(), text: message.text() })
     }
@@ -145,11 +161,30 @@ test('Manager lineage and cached PPTX preview remain stable across engine refres
     await expect.poll(() => managerEngineRequests, { timeout: 25_000 }).toBeGreaterThan(engineRequestsAfterPreviewReady)
     await expect(currentPageInput).toHaveValue('2')
     expect(pptxGenerationRequests).toBe(0)
+
+    const modelEvidence = []
+    for (const model of models) {
+      const contentResponse = page.waitForResponse(response =>
+        new URL(response.url()).pathname === model.preview_url && response.status() === 200
+      )
+      await page.goto(`/manager/data-explorer?locator=${encodeURIComponent(model.locator)}`)
+      const modelFrame = page.frameLocator('iframe[data-testid="module-iframe"]')
+      await expect(modelFrame.getByRole('button', { name: /生成 GLB 快显|Generate GLB Quick View/ })).toBeVisible()
+      const preview = modelFrame.locator('.model-preview')
+      await expect(preview).toBeVisible({ timeout: 60_000 })
+      await expect(preview.locator('canvas')).toBeVisible()
+      const response = await contentResponse
+      expect((await response.body()).subarray(0, 4).toString('ascii')).toBe('glTF')
+      await expect(preview.locator('.three-status')).toHaveCount(0, { timeout: 60_000 })
+      await preview.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, `model-${model.format}-preview.png`) })
+      modelEvidence.push({ ...model, model_loaded: true, content_loaded: true })
+    }
+    expect(modelGenerationRequests).toBe(0)
     expect(failedBusinessResponses).toEqual([])
     expect(browserMessages).toEqual([])
 
     const report = {
-      schema_version: 'addp.manager-internal-artifact-lineage-browser/v1',
+      schema_version: 'addp.manager-internal-artifact-lineage-browser/v2',
       suite: 'manager-internal-artifact-lineage',
       run_id: env.ADDP_ONLINE_TEST_RUN_ID,
       result: 'passed',
@@ -163,6 +198,9 @@ test('Manager lineage and cached PPTX preview remain stable across engine refres
       pptx_page_count: pptxPageCount,
       pptx_page_after_engine_refresh: 2,
       pptx_generation_requests: pptxGenerationRequests,
+      model_generation_requests: modelGenerationRequests,
+      models: modelEvidence,
+      gpu_performance_warnings: gpuPerformanceWarnings,
       browser_warning_errors: 0
     }
     writeFileSync(

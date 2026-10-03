@@ -1,13 +1,49 @@
 package main
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	commonauthorization "github.com/addp/common/authorization"
+	"github.com/addp/system/internal/iam"
 )
+
+func TestOrchestratorForeignTenantIsCreatedSeparatelyAndFailsClosed(t *testing.T) {
+	for _, id := range []int64{1, 2, 3} {
+		t.Run(fmt.Sprintf("tenant_%d", id), func(t *testing.T) {
+			calls := 0
+			tenant, err := createOrchestratorForeignTenant(t.Context(), func(ctx context.Context, input iam.CreateTenantInput) (*iam.ManagedTenant, error) {
+				calls++
+				if input.Code != "external-online-foreign" || input.InitialAdministratorPrincipalID != 7 || input.ActorPrincipalID != 7 {
+					t.Fatalf("foreign Tenant creation lost its dedicated identity: %#v", input)
+				}
+				return &iam.ManagedTenant{Tenant: iam.Tenant{ID: id}}, nil
+			}, 7, 2)
+			if calls != 1 {
+				t.Fatalf("creation calls = %d", calls)
+			}
+			if id == 3 {
+				if err != nil || tenant == nil || tenant.ID != id {
+					t.Fatalf("distinct Tenant rejected: %v", err)
+				}
+			} else if err == nil || tenant != nil {
+				t.Fatal("default or consumer Tenant accepted as the foreign Tenant")
+			}
+		})
+	}
+	failure := errors.New("creation failed")
+	tenant, err := createOrchestratorForeignTenant(t.Context(), func(context.Context, iam.CreateTenantInput) (*iam.ManagedTenant, error) {
+		return nil, failure
+	}, 7, 2)
+	if tenant != nil || !errors.Is(err, failure) {
+		t.Fatal("creation failure was replaced with a reserve Tenant")
+	}
+}
 
 func TestFixtureRolesKeepSystemEngineControlPlaneOutOfConsumerIdentity(t *testing.T) {
 	if engineProvisionerRoleKey != "tenant.infrastructure_administrator" {
@@ -226,5 +262,28 @@ func TestOrchestratorFixtureHasOnlyRequiredOwnerPermissions(t *testing.T) {
 		if strings.HasPrefix(key, "system.engine.") || strings.HasPrefix(key, "iam.") || key == "orchestrator.workflow.cancel" {
 			t.Fatalf("unnecessary control-plane permission %s", key)
 		}
+	}
+}
+
+func TestManagerArtifactFixtureUsesMinimumPermissionsAndBrowserCredentials(t *testing.T) {
+	permissions, err := suitePermissions("manager-internal-artifact-lineage")
+	if err != nil || len(permissions) != 8 || !needsEngineProvisioner("manager-internal-artifact-lineage") {
+		t.Fatalf("Manager fixture contract: %v, %v", permissions, err)
+	}
+	for _, key := range permissions {
+		if strings.HasPrefix(key, "system.") || strings.HasPrefix(key, "iam.") {
+			t.Fatalf("consumer gained control-plane permission %s", key)
+		}
+	}
+	path := filepath.Join(t.TempDir(), "identity.env")
+	if err := writeEnvironmentFile(path, map[string]string{
+		"ADDP_ONLINE_TEST_USER_USERNAME": "external-online-consumer",
+		"ADDP_ONLINE_TEST_USER_PASSWORD": "Random-secret-123",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || !strings.Contains(string(data), "export ADDP_ONLINE_TEST_USER_PASSWORD='Random-secret-123'") {
+		t.Fatalf("browser credentials were not written to the owner-only environment: %v", err)
 	}
 }

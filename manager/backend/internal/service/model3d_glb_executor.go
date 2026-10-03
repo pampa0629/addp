@@ -200,7 +200,7 @@ func (e *ManagerModel3DGLBExecutor) prepareSource(ctx context.Context, tenantID 
 
 func model3DGLBUsesDirectorySource(sourceFormat string) bool {
 	switch format.NormalizeFormat(sourceFormat) {
-	case format.FormatGLTF, format.FormatFBX, format.FormatOBJ:
+	case format.FormatGLTF, format.FormatFBX, format.FormatOBJ, format.FormatDAE, format.Format3DS:
 		return true
 	default:
 		return false
@@ -219,6 +219,10 @@ func model3DGLBOperatorForFormat(sourceFormat string) (operatorName string, norm
 		return "obj_to_glb", string(format.FormatOBJ), nil
 	case format.FormatSTL:
 		return "stl_to_glb", string(format.FormatSTL), nil
+	case format.FormatDAE:
+		return "dae_to_glb", string(format.FormatDAE), nil
+	case format.Format3DS:
+		return "3ds_to_glb", string(format.Format3DS), nil
 	case format.FormatIFC:
 		return "ifc_to_glb", string(format.FormatIFC), nil
 	default:

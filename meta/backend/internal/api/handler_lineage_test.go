@@ -111,8 +111,8 @@ func openLineageRouteTestDB(t *testing.T) *gorm.DB {
 	statements := []string{
 		`CREATE TABLE meta.lineage_item_relations (
 			id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, source_item_id INTEGER NOT NULL,
-			target_item_id INTEGER NOT NULL, relation_kind TEXT NOT NULL, granularity TEXT NOT NULL,
-			write_mode TEXT, status TEXT NOT NULL, first_observed_at DATETIME NOT NULL,
+			target_item_id INTEGER NOT NULL, relation_kind TEXT NOT NULL, granularity TEXT NOT NULL, source_field_name TEXT NOT NULL DEFAULT '', target_field_name TEXT NOT NULL DEFAULT '', source_schema_hash TEXT NOT NULL DEFAULT '', target_schema_hash TEXT NOT NULL DEFAULT '',
+			write_mode TEXT, transformation TEXT NOT NULL DEFAULT '', status TEXT NOT NULL, first_observed_at DATETIME NOT NULL,
 			last_observed_at DATETIME NOT NULL, closed_at DATETIME, closed_by_observation_id INTEGER,
 			created_at DATETIME, updated_at DATETIME)`,
 		`CREATE TABLE meta.lineage_service_dependencies (
@@ -123,7 +123,7 @@ func openLineageRouteTestDB(t *testing.T) *gorm.DB {
 			closed_at DATETIME, created_at DATETIME, updated_at DATETIME)`,
 		`CREATE TABLE meta.lineage_observations (
 			id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, relation_kind TEXT NOT NULL,
-			granularity TEXT NOT NULL, source_item_id INTEGER, target_item_id INTEGER, service_id INTEGER,
+			granularity TEXT NOT NULL, source_field_name TEXT NOT NULL DEFAULT '', target_field_name TEXT NOT NULL DEFAULT '', source_schema_hash TEXT NOT NULL DEFAULT '', target_schema_hash TEXT NOT NULL DEFAULT '', source_item_id INTEGER, target_item_id INTEGER, service_id INTEGER,
 			published_revision TEXT, execution_id TEXT, producer_module TEXT NOT NULL, capture_method TEXT NOT NULL,
 			source_snapshot JSON NOT NULL, target_snapshot JSON, evidence JSON NOT NULL,
 			observed_at DATETIME NOT NULL, created_at DATETIME)`,
@@ -183,6 +183,29 @@ func TestLineageGraphRequestExpansion(t *testing.T) {
 		}
 		if err == nil && req.Depth != 2 {
 			t.Fatalf("default depth = %d", req.Depth)
+		}
+	}
+}
+
+func TestLineageGraphFieldRequestKeepsExactNames(t *testing.T) {
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest("GET", "/graph?subject_kind=field_ref&item_id=3&field_name=a.b&schema_snapshot_hash=snapshot", nil)
+	request, err := parseLineageGraphRequest(c)
+	if err != nil || request.FieldName != "a.b" || request.SchemaSnapshotHash != "snapshot" {
+		t.Fatalf("field request=%+v %v", request, err)
+	}
+}
+
+func TestLineageGraphFieldParametersReturnBadRequest(t *testing.T) {
+	db := openLineageRouteTestDB(t)
+	handler := &Handler{lineageService: service.NewLineageService(db, service.NewEngineService(db, nil))}
+	router := gin.New()
+	router.GET("/graph", handler.GetLineageGraph)
+	for _, query := range []string{"subject_kind=field_ref&item_id=3", "subject_kind=field_ref&item_id=3&field_name=id&expand_upstream=1", "subject_kind=data_item&item_id=3&field_name=id"} {
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, httptest.NewRequest("GET", "/graph?"+query, nil))
+		if response.Code != http.StatusBadRequest {
+			t.Fatalf("query=%s status=%d body=%s", query, response.Code, response.Body.String())
 		}
 	}
 }

@@ -177,6 +177,11 @@ func (r Rule) Validate() error {
 	if err := r.Decision.validate(); err != nil {
 		return err
 	}
+	if r.Component.Key != DocumentTextComponentKey {
+		if err := ValidateStructuredDecision(r.Decision, r.Component.ValueType); err != nil {
+			return err
+		}
+	}
 	seenSubjects := make(map[string]struct{}, len(r.Authorizations))
 	for _, authorization := range r.Authorizations {
 		if err := authorization.Validate(); err != nil {
@@ -201,6 +206,14 @@ func (d Decision) validate() error {
 			if err := validateKeepPrefixSuffixV2Parameters(d.Parameters); err != nil {
 				return err
 			}
+		case AlgorithmConstantV1:
+			if err := validateConstantParameters(d.Parameters); err != nil {
+				return err
+			}
+		case AlgorithmSM3V1:
+			if len(d.Parameters) != 0 {
+				return errors.New("SM3 accepts no parameters")
+			}
 		case AlgorithmPhoneOccurrencesV1:
 			if err := validatePhoneOccurrencesV1Parameters(d.Parameters); err != nil {
 				return err
@@ -209,7 +222,7 @@ func (d Decision) validate() error {
 			return errors.New("unsupported masking algorithm")
 		}
 	}
-	if d.Effect != EffectMask && d.Algorithm != "" {
+	if d.Effect != EffectMask && (d.Algorithm != "" || len(d.Parameters) != 0) {
 		return errors.New("algorithm is only valid for mask effect")
 	}
 	if d.InvalidValueEffect != "" {

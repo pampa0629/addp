@@ -174,7 +174,7 @@ func TestManualAssessmentUsesCurrentMetaComponentAndCanBeRevoked(t *testing.T) {
 	if _, err := definitions.CreateDetector(models.DetectorRequest{CapabilityKey: models.FindingDetectorPhoneMetadataV2, SensitiveDataTypeID: dataType.ID, ConfidenceThreshold: 0.9}, 7, 11); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := definitions.CreateBaseline(models.ProtectionBaselineRequest{SensitiveDataTypeID: dataType.ID, SecurityGradeID: grade.ID, Effect: dataprotection.EffectMask, Algorithm: dataprotection.AlgorithmKeepPrefixSuffixV2, KeepPrefix: 3, KeepSuffix: 4, InvalidValueEffect: dataprotection.EffectSuppress}, 7, 11); err != nil {
+	if _, err := definitions.CreateBaseline(models.ProtectionBaselineRequest{SensitiveDataTypeID: dataType.ID, SecurityGradeID: grade.ID, Effect: dataprotection.EffectMask, Algorithm: dataprotection.AlgorithmKeepPrefixSuffixV2, Parameters: map[string]any{"prefix_runes": 3, "suffix_runes": 4, "mask_rune": "*"}, AllowedAlgorithms: []string{dataprotection.AlgorithmKeepPrefixSuffixV2}, InvalidValueEffect: dataprotection.EffectSuppress}, 7, 11); err != nil {
 		t.Fatal(err)
 	}
 
@@ -330,7 +330,11 @@ func TestManualAssessmentUsesCurrentMetaComponentAndCanBeRevoked(t *testing.T) {
 
 func prepareReviewablePhoneFinding(t *testing.T) (*gorm.DB, *EnrollmentService, models.SensitiveFinding, *models.SensitiveDataType, *models.SecurityGrade) {
 	t.Helper()
-	db := openSecurityTestDB(t)
+	return prepareReviewablePhoneFindingOnDB(t, openSecurityTestDB(t))
+}
+
+func prepareReviewablePhoneFindingOnDB(t *testing.T, db *gorm.DB) (*gorm.DB, *EnrollmentService, models.SensitiveFinding, *models.SensitiveDataType, *models.SecurityGrade) {
+	t.Helper()
 	definitions := newTestDefinitionService(db)
 	classification, err := definitions.CreateClassification(models.DefinitionRequest{Code: "personal", Name: "个人信息"}, 7, 11)
 	if err != nil {
@@ -344,7 +348,7 @@ func prepareReviewablePhoneFinding(t *testing.T) (*gorm.DB, *EnrollmentService, 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := definitions.CreateBaseline(models.ProtectionBaselineRequest{SensitiveDataTypeID: dataType.ID, SecurityGradeID: grade.ID, Effect: dataprotection.EffectMask, Algorithm: dataprotection.AlgorithmKeepPrefixSuffixV2, KeepPrefix: 3, KeepSuffix: 4, InvalidValueEffect: dataprotection.EffectSuppress}, 7, 11); err != nil {
+	if _, err := definitions.CreateBaseline(models.ProtectionBaselineRequest{SensitiveDataTypeID: dataType.ID, SecurityGradeID: grade.ID, Effect: dataprotection.EffectMask, Algorithm: dataprotection.AlgorithmKeepPrefixSuffixV2, Parameters: map[string]any{"prefix_runes": 3, "suffix_runes": 4, "mask_rune": "*"}, AllowedAlgorithms: []string{dataprotection.AlgorithmKeepPrefixSuffixV2}, InvalidValueEffect: dataprotection.EffectSuppress}, 7, 11); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := definitions.CreateDetector(models.DetectorRequest{CapabilityKey: models.FindingDetectorPhoneMetadataV2, SensitiveDataTypeID: dataType.ID, ConfidenceThreshold: 0.9}, 7, 11); err != nil {

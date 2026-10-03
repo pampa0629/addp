@@ -15,6 +15,7 @@ export const getEngineIconName = (engine = {}) => {
     object: 'FolderOpen',
     file: 'FolderOpen',
     dynamic_schema: 'DocumentText',
+    key_value: 'Database',
     document: 'DocumentText',
     graph: 'Share',
     workflow: 'Grid',
@@ -54,6 +55,7 @@ export const getEngineFamilyLabelKey = (family = '') => {
     object: 'system.engine.capabilities.objectStorage',
     file: 'system.engine.capabilities.file',
     dynamic_schema: 'system.engine.capabilities.dynamicSchema',
+    key_value: 'system.engine.capabilities.keyValue',
     document: 'system.engine.capabilities.document',
     graph: 'system.engine.capabilities.graphDb'
   }

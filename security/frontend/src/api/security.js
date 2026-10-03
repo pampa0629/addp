@@ -20,6 +20,7 @@ export const detectorAPI = {
   ...resource('detectors'),
   delete: (id, data) => client.delete(`/security/detectors/${id}`, { data })
 }
+export const protectionAlgorithmAPI = { list: () => client.get('/security/protection-algorithms') }
 export const protectionBaselineAPI = {
   ...resource('protection-baselines'),
   delete: (id, data) => client.delete(`/security/protection-baselines/${id}`, { data })

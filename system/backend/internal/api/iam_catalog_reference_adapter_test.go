@@ -110,6 +110,27 @@ func TestIAMCatalogReferenceHandlerSecurityAccessActorsAreSecurityOnly(t *testin
 	}
 }
 
+func TestIAMCatalogReferenceHandlerProjectGroupCandidatesAreCatalogOnly(t *testing.T) {
+	service := &fakeIAMCatalogReferenceService{candidateResults: []iam.CatalogReferenceCandidate{{SubjectType: iam.CatalogSubjectTypeProjectGroup, ID: 50, Name: "Delivery", Code: "delivery", Status: "active"}}, candidateTotal: 1}
+	handler, err := NewIAMCatalogReferenceHandler(service)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, client := range []string{"addp-catalog", "addp-asset"} {
+		router := gin.New()
+		router.GET("/candidates", withCatalogReferenceAuthContext(t, client), handler.ListCandidates)
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/candidates?subject_type=project_group&search=delivery", nil))
+		if client == "addp-catalog" {
+			if response.Code != http.StatusOK || service.candidateSubjectType != iam.CatalogSubjectTypeProjectGroup || !strings.Contains(response.Body.String(), `"id":"50"`) {
+				t.Fatalf("project group response=%d %s", response.Code, response.Body.String())
+			}
+		} else if response.Code != http.StatusForbidden {
+			t.Fatalf("non-Catalog enumeration allowed: %d %s", response.Code, response.Body.String())
+		}
+	}
+}
+
 type fakeIAMCatalogReferenceService struct {
 	called               bool
 	tenantID             int64

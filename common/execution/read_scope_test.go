@@ -142,7 +142,7 @@ func TestDiagnosticCredentialsWithQuotedSpacesAreRemoved(t *testing.T) {
 func TestObservationBoundsHistoryAndPreservesOnlyCanonicalResourceContext(t *testing.T) {
 	inputs := make([]execution.LineageResourceRef, 101)
 	for i := range inputs {
-		inputs[i] = execution.LineageResourceRef{Locator: "addp://engine/1/path/public/roads?type=table&password=private-sentinel", SchemaSnapshot: map[string]interface{}{"row": "private-sentinel"}}
+		inputs[i] = execution.LineageResourceRef{Locator: "addp://engine/1/path/public/roads?type=table&password=private-sentinel", SchemaSnapshot: &execution.LineageSchemaSnapshot{Hash: "private-sentinel"}}
 	}
 	observation := execution.Observe(&execution.TaskExecution{Status: "failed", Metadata: map[string]interface{}{
 		"lineage_facts": execution.LineageFacts{SchemaVersion: execution.LineageFactsSchemaVersion, Inputs: inputs},

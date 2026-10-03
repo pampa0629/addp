@@ -44,7 +44,7 @@ class ToolAuth(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     type: Literal["delegated_access_token"]
-    audience: Literal["system", "manager", "meta", "develop", "copilot", "ontology"]
+    audience: Literal["system", "manager", "meta", "develop", "copilot", "ontology", "transfer"]
     required_scopes: list[str]
     required_permissions: list[str]
 

@@ -15,7 +15,7 @@ import (
 	"github.com/addp/common/dataprotection/projectionstore"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
-	_ "github.com/addp/common/engine/plugins/mongodb"
+	"github.com/addp/common/engine/plugins/mongodb"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/dataprofile"
 	"github.com/addp/manager/internal/models"
@@ -31,13 +31,14 @@ func TestIntegrationManagerMongoOutdoorPersonsPreviewMasksPhone(t *testing.T) {
 		t.Skip("set ADDP_MONGODB_SECURITY_E2E=1 to run the MongoDB protection integration gate")
 	}
 	connInfo := ensureMongoOutdoorPersonsFixture(t)
-	provider := preview.NewDynamicSchemaCollectionPreviewProvider()
+	provider := preview.NewDocumentRecordSetPreviewProvider()
 	table, err := provider.Preview(t.Context(), &preview.PreviewRequest{
 		Engine: &models.Engine{
 			ID: 11, EngineType: "mongodb",
 			ConnectionInfo: models.ConnectionInfo(connInfo),
 		},
-		Schema: "Outdoor", Table: "Persons", Page: 1, PageSize: 50,
+		EnginePlugin: &mongodb.MongoDBPlugin{},
+		Schema:       "Outdoor", Table: "Persons", Page: 1, PageSize: 50,
 		ProviderPath: plugin.EngineCatalogPath{
 			Version: plugin.EngineCatalogPathVersion, EngineID: 11,
 			Segments: []plugin.EngineCatalogSegment{

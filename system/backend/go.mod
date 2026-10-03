@@ -58,7 +58,10 @@ require (
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/dolthub/vitess v0.0.0-20250512224608-8fb9c6ea092c // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
+	github.com/elastic/elastic-transport-go/v8 v8.8.0 // indirect
+	github.com/elastic/go-elasticsearch/v9 v9.3.0 // indirect
 	github.com/emirpasic/gods v1.18.1 // indirect
+	github.com/emmansun/gmsm v0.34.1 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/fsnotify/fsnotify v1.6.0 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.12 // indirect

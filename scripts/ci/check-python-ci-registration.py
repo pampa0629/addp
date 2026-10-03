@@ -34,6 +34,12 @@ def discover_python_modules(repository: Path) -> list[tuple[str, str]]:
     for path in git_files(repository, "*/pyproject.toml", "*/backend/requirements.txt"):
         owner = path.split("/", 1)[0]
         discovered[owner] = (owner, path)
+    # A named engine Make target opts the runtime into the deterministic gate contract.
+    makefile = (repository / "Makefile").read_text(encoding="utf-8")
+    for path in git_files(repository, "engines/*/requirements.txt"):
+        runtime = Path(path).parent.name
+        if make_dependencies(makefile, f"test-{runtime}") is not None:
+            discovered[runtime] = (runtime, path)
     if not discovered:
         raise RegistrationError("no tracked Python module manifests found")
     return [discovered[owner] for owner in sorted(discovered)]
@@ -86,8 +92,9 @@ def validate_registration(repository: Path) -> list[str]:
             continue
         if PYTHON_GATE_ACTION not in target_job:
             errors.append(f"{manifest}: Python gate setup action is missing from {target} job")
+        selector_owner = manifest.split("/", 1)[0]
         if not re.search(
-            rf"{re.escape(MODULE_GATE_SELECTOR)}\s+--module\s+['\"]?{re.escape(owner)}['\"]?",
+            rf"{re.escape(MODULE_GATE_SELECTOR)}\s+--module\s+['\"]?{re.escape(selector_owner)}['\"]?",
             target_job,
         ):
             errors.append(f"{manifest}: shared module change selector is missing")

@@ -143,7 +143,7 @@ func TestDefinitionImpactAgainstPostgres(t *testing.T) {
 	baseline, err := definitions.CreateBaseline(models.ProtectionBaselineRequest{
 		SensitiveDataTypeID: phoneType.ID, SecurityGradeID: grade.ID,
 		Effect: dataprotection.EffectMask, Algorithm: dataprotection.AlgorithmKeepPrefixSuffixV2,
-		KeepPrefix: 3, KeepSuffix: 4, InvalidValueEffect: dataprotection.EffectSuppress,
+		Parameters: map[string]any{"prefix_runes": 3, "suffix_runes": 4, "mask_rune": "*"}, AllowedAlgorithms: []string{dataprotection.AlgorithmKeepPrefixSuffixV2}, InvalidValueEffect: dataprotection.EffectSuppress,
 	}, 7, 11)
 	if err != nil {
 		t.Fatal(err)
@@ -238,7 +238,7 @@ func TestProtectionExemptionAssessmentRevisionAgainstPostgres(t *testing.T) {
 	if _, err := definitions.CreateBaseline(models.ProtectionBaselineRequest{
 		SensitiveDataTypeID: phoneType.ID, SecurityGradeID: grade.ID,
 		Effect: dataprotection.EffectMask, Algorithm: dataprotection.AlgorithmKeepPrefixSuffixV2,
-		KeepPrefix: 3, KeepSuffix: 4, InvalidValueEffect: dataprotection.EffectSuppress,
+		Parameters: map[string]any{"prefix_runes": 3, "suffix_runes": 4, "mask_rune": "*"}, AllowedAlgorithms: []string{dataprotection.AlgorithmKeepPrefixSuffixV2}, InvalidValueEffect: dataprotection.EffectSuppress,
 	}, 7, 11); err != nil {
 		t.Fatal(err)
 	}

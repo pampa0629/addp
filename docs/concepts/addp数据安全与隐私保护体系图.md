@@ -56,7 +56,7 @@ flowchart TB
 - `SensitiveDiscoveryQualitySummary` 不是新领域事实，而是根据 Finding、不可变复核和 Assessment 当前修订即时形成的只读质量摘要，用于判断识别方式是否值得优化。
 - `ResourceSecurityAssessment` 是安全治理人员对确定专业资源或组件做出的正式分类分级结论。它既可由 Finding 复核形成，也可在自动发现漏检时从 Meta 当前字段清单中人工指定；不得接受自由文本字段路径。人工指定候选只包含尚未形成任何正式 Assessment 的当前组件，已经确认、调整或撤销过的组件都在既有 Assessment 上继续治理，不得重新混入“遗漏字段”选择器。
 - `ProtectionBaseline` 定义某类型和等级的最低保护意图。
-- `ProtectionPolicy` 针对正式评估、消费 Owner 和动作显式收紧保护结果；没有显式 Policy 时，Assessment 对应的 ProtectionBaseline 仍是有效最低保护意图。
+- `ProtectionPolicy` 针对正式评估、消费 Owner 和动作保存字段独立保护规则：算法必须被 ProtectionBaseline 明确许可，掩码保留量不得超过基线上限，抑制或拒绝基线不能降为脱敏。没有显式 Policy 时，Assessment 对应的 ProtectionBaseline 仍是有效最低保护意图。
 - `ProtectionAccessRequest` 由用户在实际数据出口发起，只保存申请人、正式评估、Owner 动作、申请期限和业务依据；审批前不改变任何保护效果。
 - `ProtectionExemption` 是审批后形成的按用户临时原值授权；它不授予资源访问权，只有当前 Owner 已授权且调用主体与授权主体完全匹配时才生效，到期、撤销或 Assessment 产生新修订后自动回落到 ProtectionPolicy 与 ProtectionBaseline。
 - `ProtectionProjection` 是交付给数据出口 owner 的最小、版本化、可校验执行契约，不是策略业务对象副本。

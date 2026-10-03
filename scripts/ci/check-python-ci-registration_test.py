@@ -46,6 +46,21 @@ class PythonCIRegistrationTest(unittest.TestCase):
     def test_accepts_complete_registration(self) -> None:
         self.assertEqual([], MODULE.validate_registration(self.repository))
 
+    def test_registered_engine_target_requires_root_and_own_ci_job(self) -> None:
+        manifest = self.repository / "engines/model3d-workflow/requirements.txt"
+        manifest.parent.mkdir(parents=True)
+        manifest.write_text("Pillow==12.3.0\n", encoding="utf-8")
+        subprocess.run(["git", "add", str(manifest.relative_to(self.repository))], cwd=self.repository, check=True)
+        makefile = self.repository / "Makefile"
+        makefile.write_text(makefile.read_text() + "\ntest-model3d-workflow:\n\t@true\n")
+        errors = MODULE.validate_registration(self.repository)
+        self.assertIn("engines/model3d-workflow/requirements.txt: root test dependency test-model3d-workflow is missing", errors)
+        self.assertIn("engines/model3d-workflow/requirements.txt: GitHub Actions target test-model3d-workflow is missing", errors)
+        makefile.write_text(makefile.read_text().replace("test: test-sample", "test: test-sample test-model3d-workflow"))
+        workflow = self.repository / ".github/workflows/platform-ci.yml"
+        workflow.write_text(workflow.read_text() + "  model3d-tests:\n    steps:\n      - run: python3 scripts/ci/select-module-gate.py --module engines\n      - uses: ./.github/actions/prepare-python-gate\n      - run: make test-model3d-workflow\n")
+        self.assertEqual([], MODULE.validate_registration(self.repository))
+
     def test_rejects_missing_root_and_workflow_registration(self) -> None:
         (self.repository / "Makefile").write_text(
             "test:\n\ntest-sample:\n\t@true\n", encoding="utf-8"

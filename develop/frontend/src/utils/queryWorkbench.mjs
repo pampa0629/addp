@@ -108,7 +108,7 @@ const MQL_PRIMARY_COMMANDS = ['find', 'aggregate', 'count', 'distinct']
 export function mqlPrimaryCollection(query) {
   let command
   try {
-    command = JSON.parse(String(query || ''))
+    command = JSON.parse(String(query || ''), (_key, value, context) => typeof value === 'number' ? JSON.rawJSON(context.source) : value)
   } catch {
     return ''
   }
@@ -123,7 +123,7 @@ export function mqlPrimaryCollection(query) {
 export function mqlCollectionReferences(query) {
   let command
   try {
-    command = JSON.parse(String(query || ''))
+    command = JSON.parse(String(query || ''), (_key, value, context) => typeof value === 'number' ? JSON.rawJSON(context.source) : value)
   } catch {
     return []
   }
@@ -241,7 +241,7 @@ export function extractQueryParameterReferences(language, query) {
   const normalizedLanguage = String(language || '').trim().toLowerCase()
   if (normalizedLanguage === 'mql') {
     try {
-      const value = JSON.parse(String(query || ''))
+      const value = JSON.parse(String(query || ''), (_key, value, context) => typeof value === 'number' ? JSON.rawJSON(context.source) : value)
       const references = []
       const seen = new Set()
       const visit = current => {
@@ -382,21 +382,21 @@ export function buildQueryExecutionContract(definitions = [], { engineId = null 
 
 export function monacoLanguageForQuery(language) {
   const normalized = String(language || '').trim().toLowerCase()
-  return normalized || 'plaintext'
+  return normalized === 'es_dsl' ? 'json' : (normalized || 'plaintext')
 }
 
 export function formatterLanguageForQuery(language) {
   const normalized = String(language || '').trim().toLowerCase()
-  return normalized === 'sql' || normalized === 'mql' ? normalized : ''
+  return normalized === 'es_dsl' ? 'json' : (normalized === 'sql' || normalized === 'mql' ? normalized : '')
 }
 
-export function formatMQLQuery(query) {
-  return JSON.stringify(JSON.parse(String(query || '')), null, 2)
+export function formatJSONQuery(query) {
+  return JSON.stringify(JSON.parse(String(query || ''), (_key, value, context) => typeof value === 'number' ? JSON.rawJSON(context.source) : value), null, 2)
 }
 
 export function formatGeneratedQueryForEditor(query, language) {
-  return String(language || '').trim().toLowerCase() === 'mql'
-    ? formatMQLQuery(query)
+  return ['mql', 'es_dsl'].includes(String(language || '').trim().toLowerCase())
+    ? formatJSONQuery(query)
     : String(query || '')
 }
 

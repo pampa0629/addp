@@ -193,7 +193,7 @@ func TestCandidateCompilerUsesDetectorBindingConfidenceThreshold(t *testing.T) {
 	updated, err := svc.UpdateBaseline(baseline.ID, 7, 31, models.ProtectionBaselineRequest{
 		SensitiveDataTypeID: dataType.ID, SecurityGradeID: grade.ID,
 		Effect: dataprotection.EffectMask, Algorithm: dataprotection.AlgorithmKeepPrefixSuffixV2,
-		KeepPrefix: 3, KeepSuffix: 4, InvalidValueEffect: dataprotection.EffectSuppress,
+		Parameters: map[string]any{"prefix_runes": 3, "suffix_runes": 4, "mask_rune": "*"}, AllowedAlgorithms: []string{dataprotection.AlgorithmKeepPrefixSuffixV2}, InvalidValueEffect: dataprotection.EffectSuppress,
 		Version: baseline.Version,
 	})
 	if err != nil {
@@ -209,7 +209,7 @@ func TestCandidateCompilerUsesDetectorBindingConfidenceThreshold(t *testing.T) {
 	if _, err := svc.UpdateBaseline(updated.ID, 7, 31, models.ProtectionBaselineRequest{
 		SensitiveDataTypeID: dataType.ID, SecurityGradeID: grade.ID,
 		Effect: dataprotection.EffectMask, Algorithm: dataprotection.AlgorithmKeepPrefixSuffixV2,
-		KeepPrefix: 3, KeepSuffix: 4, InvalidValueEffect: dataprotection.EffectSuppress,
+		Parameters: map[string]any{"prefix_runes": 3, "suffix_runes": 4, "mask_rune": "*"}, AllowedAlgorithms: []string{dataprotection.AlgorithmKeepPrefixSuffixV2}, InvalidValueEffect: dataprotection.EffectSuppress,
 		Version: updated.Version,
 	}); err != nil {
 		t.Fatal(err)
@@ -227,7 +227,7 @@ func TestSensitiveDataTypeDefaultGradeChangeRecompilesOnlyCandidateFinding(t *te
 	if _, err := svc.CreateBaseline(models.ProtectionBaselineRequest{
 		SensitiveDataTypeID: dataType.ID, SecurityGradeID: newGrade.ID,
 		Effect: dataprotection.EffectMask, Algorithm: dataprotection.AlgorithmKeepPrefixSuffixV2,
-		KeepPrefix: 3, KeepSuffix: 4, InvalidValueEffect: dataprotection.EffectSuppress,
+		Parameters: map[string]any{"prefix_runes": 3, "suffix_runes": 4, "mask_rune": "*"}, AllowedAlgorithms: []string{dataprotection.AlgorithmKeepPrefixSuffixV2}, InvalidValueEffect: dataprotection.EffectSuppress,
 	}, 7, 31); err != nil {
 		t.Fatal(err)
 	}
@@ -356,7 +356,7 @@ func TestDefinitionServiceBuildsPhoneProtectionBaselineWithoutStandardIDs(t *tes
 		Code: "phone_number", Name: "手机号码", SecurityClassificationID: classification.ID, DefaultSecurityGradeID: grade.ID,
 		DefaultProtection: &models.DefaultProtectionRequest{
 			Effect: dataprotection.EffectMask, Algorithm: dataprotection.AlgorithmKeepPrefixSuffixV2,
-			KeepPrefix: 3, KeepSuffix: 4, InvalidValueEffect: dataprotection.EffectSuppress,
+			Parameters: map[string]any{"prefix_runes": 3, "suffix_runes": 4, "mask_rune": "*"}, AllowedAlgorithms: []string{dataprotection.AlgorithmKeepPrefixSuffixV2}, InvalidValueEffect: dataprotection.EffectSuppress,
 		},
 	}, 7, 11)
 	if err != nil {
@@ -366,7 +366,7 @@ func TestDefinitionServiceBuildsPhoneProtectionBaselineWithoutStandardIDs(t *tes
 	if err := db.Where("tenant_id = ? AND sensitive_data_type_id = ? AND security_grade_id = ?", 7, dataType.ID, grade.ID).First(&baseline).Error; err != nil {
 		t.Fatalf("initial baseline query error = %v", err)
 	}
-	if baseline.KeepPrefix != 3 || baseline.KeepSuffix != 4 || !baseline.Enabled {
+	if baseline.Parameters["prefix_runes"] != float64(3) || baseline.Parameters["suffix_runes"] != float64(4) || !baseline.Enabled {
 		t.Fatalf("baseline = %#v", baseline)
 	}
 }
@@ -413,7 +413,7 @@ func TestDefinitionServiceRejectsDeletingReferencedDefinitions(t *testing.T) {
 	classification, _ := svc.CreateClassification(models.DefinitionRequest{Code: "personal", Name: "个人信息"}, 7, 11)
 	grade, _ := svc.CreateGrade(models.DefinitionRequest{Code: "l3", Name: "三级", RiskOrder: 3}, 7, 11)
 	dataType, _ := svc.createTypeWithoutBaseline(models.SensitiveDataTypeRequest{Code: "phone", Name: "手机号码", SecurityClassificationID: classification.ID, DefaultSecurityGradeID: grade.ID}, 7, 11)
-	_, _ = svc.CreateBaseline(models.ProtectionBaselineRequest{SensitiveDataTypeID: dataType.ID, SecurityGradeID: grade.ID, Effect: dataprotection.EffectMask, Algorithm: dataprotection.AlgorithmKeepPrefixSuffixV2, KeepPrefix: 3, KeepSuffix: 4}, 7, 11)
+	_, _ = svc.CreateBaseline(models.ProtectionBaselineRequest{SensitiveDataTypeID: dataType.ID, SecurityGradeID: grade.ID, Effect: dataprotection.EffectMask, Algorithm: dataprotection.AlgorithmKeepPrefixSuffixV2, Parameters: map[string]any{"prefix_runes": 3, "suffix_runes": 4, "mask_rune": "*"}, AllowedAlgorithms: []string{dataprotection.AlgorithmKeepPrefixSuffixV2}}, 7, 11)
 
 	for name, deleteDefinition := range map[string]func() error{
 		"classification": func() error { return svc.DeleteClassification(classification.ID, 7) },
@@ -442,7 +442,7 @@ func TestDefinitionServiceRequiresStableMaskingAlgorithm(t *testing.T) {
 	grade, _ := svc.CreateGrade(models.DefinitionRequest{Code: "l3", Name: "三级", RiskOrder: 3}, 7, 11)
 	dataType, _ := svc.createTypeWithoutBaseline(models.SensitiveDataTypeRequest{Code: "phone", Name: "手机号码", SecurityClassificationID: classification.ID, DefaultSecurityGradeID: grade.ID}, 7, 11)
 
-	_, err := svc.CreateBaseline(models.ProtectionBaselineRequest{SensitiveDataTypeID: dataType.ID, SecurityGradeID: grade.ID, Effect: dataprotection.EffectMask, Algorithm: "mask.keep_prefix_suffix", KeepPrefix: 3, KeepSuffix: 4}, 7, 11)
+	_, err := svc.CreateBaseline(models.ProtectionBaselineRequest{SensitiveDataTypeID: dataType.ID, SecurityGradeID: grade.ID, Effect: dataprotection.EffectMask, Algorithm: "mask.keep_prefix_suffix", Parameters: map[string]any{"prefix_runes": 3, "suffix_runes": 4, "mask_rune": "*"}, AllowedAlgorithms: []string{dataprotection.AlgorithmKeepPrefixSuffixV2}}, 7, 11)
 	if !errors.Is(err, commonapi.ErrBadRequest) {
 		t.Fatalf("unstable algorithm error = %v, want ErrBadRequest", err)
 	}

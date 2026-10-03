@@ -2,7 +2,7 @@
         build-iam-bootstrap build-iam-recovery build-iam-migration-repair \
         dev-start dev-restart dev-stop infra-up infra-down infra-restart infra-status infra-backup infra-restore-drill infra-cloud-backup test-infra-backup prod-start prod-restart prod-stop prod-health ports-validate
 
-.PHONY: test-business-config test-common-oceanbase test-common-opengauss test-common-tidb test-common-kingbase test-common-dameng test-common-oracle-decimal test-common-doris-decimal test-common-clickhouse-decimal test-opengauss-official-media-release test-kingbase-official-media-release test-dameng-official-media-release test-integration-owner-managed
+.PHONY: test-business-config test-common-oceanbase test-common-opengauss test-common-tidb test-common-elasticsearch test-common-elasticsearch-unit test-common-kingbase test-common-dameng test-common-oracle-decimal test-common-doris-decimal test-common-clickhouse-decimal test-opengauss-official-media-release test-kingbase-official-media-release test-dameng-official-media-release test-integration-owner-managed
 
 # 默认目标
 .DEFAULT_GOAL := help
@@ -132,6 +132,11 @@ DOCUMENT_WORKFLOW_PYTHON ?= engines/document-workflow/.venv/bin/python
 test-document-workflow: ## 运行 Document Workflow Engine 确定性测试
 	@cd engines/document-workflow && $(abspath $(DOCUMENT_WORKFLOW_PYTHON)) -m pytest -q tests
 
+MODEL3D_WORKFLOW_PYTHON ?= engines/model3d-workflow/.venv/bin/python
+.PHONY: test-model3d-workflow
+test-model3d-workflow: ## 运行 Model3D Runtime 格式边界和 GLB 发布校验测试
+	@cd engines/model3d-workflow && $(abspath $(MODEL3D_WORKFLOW_PYTHON)) -m pytest -q tests
+
 GEOPYTHON_WORKFLOW_PYTHON ?= engines/geopython-workflow/.venv/bin/python
 .PHONY: test-geopython-workflow
 test-geopython-workflow: ## 运行 GeoPython GDAL 确定性回归测试
@@ -171,6 +176,12 @@ test-infra-postgresql-init: ## 校验本地 PostgreSQL 保留测试库及扩展�
 	@python3 scripts/infra/init-postgresql_test.py
 
 test-business-config: ## 校验 Business Compose 和服务管理脚本（不启动容器）
+	@sh -n business/redis/start.sh business/redis/init.sh
+	@bash -n scripts/test/business-redis-gate.sh scripts/test/common-redis-gate.sh scripts/test/redis-owned-fixture.sh scripts/test/common-redis-contract.sh
+	@docker compose --env-file business/.env.example -f business/docker-compose.yml config --format json | python3 -c 'import json,sys; s=json.load(sys.stdin)["services"]["redis"]; assert s["ports"][0]["host_ip"] == "127.0.0.1"; assert "@sha256:" in s["image"]; assert "redis_data" == s["volumes"][0]["source"]'
+	@bash -n business/scripts/start.sh business/scripts/stop.sh business/scripts/restart.sh business/scripts/ports.sh scripts/test/common-elasticsearch-gate.sh
+	@docker compose --env-file business/.env.example -f business/docker-compose.yml config --services | grep -Fxq elasticsearch
+	@docker compose --env-file business/.env.example -f business/docker-compose.yml config --format json | python3 -c 'import json,sys; s=json.load(sys.stdin)["services"]["elasticsearch"]; assert s["environment"]["xpack.security.enabled"] == "true"; assert s["ports"][0]["host_ip"] == "127.0.0.1"; assert "@sha256:" in s["image"]'
 	@bash -n scripts/utils/register-business.sh scripts/infra/status.sh scripts/test/certify-infra-kafka.sh scripts/test/certify-infra-kafka-ha.sh
 	@! rg -q '^BUSINESS_(PG|MINIO|ORACLE)_' .env.example
 	@docker compose --env-file business/.env.example -f business/docker-compose.yml config --quiet
@@ -254,6 +265,8 @@ test-business-config: ## 校验 Business Compose 和服务管理脚本（不启�
 	@python3 -m unittest scripts/test/common-doris-decimal-gate_test.py
 
 test-integration: ## 严格串行运行所有本地可执行的 disposable 基础设施集成门禁
+	@$(MAKE) test-business-redis
+	@$(MAKE) test-common-redis
 	@$(MAKE) test-common-postgres
 	@$(MAKE) test-monitor-postgres
 	@$(MAKE) test-orchestrator-postgres
@@ -261,6 +274,7 @@ test-integration: ## 严格串行运行所有本地可执行的 disposable 基�
 	@$(MAKE) test-model-mysql
 	@$(MAKE) test-common-oceanbase
 	@$(MAKE) test-common-tidb
+	@$(MAKE) test-common-elasticsearch
 	@$(MAKE) test-manager-postgres
 	@$(MAKE) test-manager-mongodb-security
 	@$(MAKE) test-system-iam-postgres
@@ -408,7 +422,9 @@ test-online: ## 运行指定 Online suite（必须设置 ONLINE_SUITE 和 ADDP_O
 	@python3 scripts/test/online-gate.py --repository "$(CURDIR)" --suite "$(ONLINE_SUITE)"
 
 test-online-runner: ## 运行 Online 分发器和预检器的确定性测试
-	@python3 -m unittest scripts/test/orchestrator-execution-online_test.py scripts/test/online-hosted-orchestrator-gate_test.py
+	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
+	@python3 -m unittest scripts/test/elasticsearch-consumer-flow-online_test.py
+	@python3 -m unittest scripts/test/orchestrator-execution-online_test.py scripts/test/online-hosted-orchestrator-gate_test.py scripts/test/online-hosted-manager-gate_test.py
 	@python3 -m unittest scripts/test/compose-public-origin-online_test.py scripts/test/online-hosted-public-origin-gate_test.py
 	@python3 -m unittest scripts/test/ontology-revision-lifecycle-online_test.py scripts/test/online-hosted-ontology-gate_test.py
 	@python3 -m unittest scripts/test/quality-dynamic-binding-online_test.py
@@ -429,7 +445,7 @@ test-release-runner: ## 运行 T5 分发器和 CI 登记检查的确定性测试
 .PHONY: test-dev-lifecycle
 test-dev-lifecycle: ## 验证 Swagger 增量、增量重启、批量端口检查、构建指纹、Runtime 并发与安装锁
 	@bash -n scripts/dev/restart.sh scripts/dev/start.sh scripts/dev/stop.sh scripts/dev/ports.sh scripts/dev/lifecycle-lock.sh scripts/dev/build-identity.sh scripts/dev/jupyter-env.sh scripts/infra/ports.sh scripts/infra/up.sh scripts/utils/runtime-log-env.sh scripts/test/infra-port-resolution.sh scripts/swagger/gen-swagger.sh scripts/test/dev-lifecycle-and-build.sh
-	@python3 -m unittest scripts/test/infra-runtime-log-lifecycle_test.py
+	@python3 -m unittest scripts/test/infra-runtime-log-lifecycle_test.py scripts/test/model3d-linux-images_test.py
 	@bash scripts/test/infra-port-resolution.sh
 	@bash scripts/test/dev-lifecycle-and-build.sh
 	@cd common && go test ./schema ./repository ./dataprotection/projectionstore
@@ -461,8 +477,7 @@ test-platform: ## 运行无外部服务依赖的平台一致性门禁
 	@python3 scripts/ci/select-image-services_test.py
 	@python3 scripts/ci/check-build-registration.py --repository "$(CURDIR)"
 	@$(MAKE) test-frontend-ci-registration
-	@python3 scripts/ci/check-python-ci-registration_test.py
-	@python3 scripts/ci/check-python-ci-registration.py --repository "$(CURDIR)"
+	@$(MAKE) test-python-ci-registration
 	@python3 scripts/ci/check-t2-ci-registration_test.py
 	@python3 scripts/ci/check-t2-ci-registration.py --repository "$(CURDIR)"
 	@python3 scripts/ci/check-release-eligibility_test.py
@@ -478,6 +493,11 @@ test-platform: ## 运行无外部服务依赖的平台一致性门禁
 	@$(MAKE) test-projection-store-ownership
 	@$(MAKE) test-online-runner
 	@$(MAKE) test-authorization
+
+.PHONY: test-python-ci-registration
+test-python-ci-registration: ## 校验 Python 模块与已登记引擎 Runtime 的 Make / CI 一致性
+	@python3 scripts/ci/check-python-ci-registration_test.py
+	@python3 scripts/ci/check-python-ci-registration.py --repository "$(CURDIR)"
 
 test-frontend-ci-registration: ## 校验前端 CI 登记和浏览器夹具隔离
 	@python3 scripts/ci/check-frontend-ci-registration_test.py
@@ -660,6 +680,7 @@ test-authorization: ## 校验 IAM Manifest、生成常量和授权覆盖报告
 	@SWAGGER_COVERAGE_WARN_ONLY=1 bash scripts/swagger/check-route-coverage.sh all
 
 test: test-platform test-go test-common-python test-agent-eval test-copilot \
+	test-document-workflow test-geopython-workflow test-model3d-workflow \
 	test-agent-frontend test-asset-frontend test-catalog-frontend test-console-frontend test-develop-frontend \
 	test-graph-frontend test-inference-frontend test-manager-frontend test-meta-frontend \
 	test-model-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend \
@@ -698,3 +719,24 @@ prod-health: ## 检查生产环境服务健康状态
 .PHONY: test-system-runtime-log
 test-system-runtime-log: ## 隔离验证模块运行日志采集、授权、持久化和实例隔离
 	@bash scripts/test/system-runtime-log-gate.sh
+
+test-common-elasticsearch-unit: ## ES 插件、通用文档预览和单层目录扫描确定性测试
+	@cd common && GOWORK=off go test ./engine/plugins/elasticsearch ./resourcetree -count=1
+	@cd manager/backend && GOWORK=off go test ./internal/preview -count=1
+	@cd meta/backend && GOWORK=off go test ./internal/scanruntime -count=1
+	@cd develop/backend && GOWORK=off go test ./internal/service -count=1
+
+test-common-elasticsearch: ## 使用独占 ES 容器验证插件、Manager 预览与 Meta 扫描并清理资源
+	@bash scripts/test/common-elasticsearch-gate.sh
+
+.PHONY: test-business-redis
+test-business-redis: ## 独占 Redis 验证 Business 认证、原生样例、幂等与重启持久化
+	@bash scripts/test/business-redis-gate.sh
+
+.PHONY: test-common-redis test-common-redis-unit
+test-common-redis-unit: ## Redis 连接配置、认证、TLS 与 System 加密登记确定性测试
+	@cd common && GOWORK=off go test ./engine/plugins/redis -run '^Test(ConnectionValidation|AuthenticatedConnection|TLS|ConnectionRejects)' -count=1
+	@cd system/backend && GOWORK=off go test ./internal/service -run '^TestRedisRegistration' -count=1
+
+test-common-redis: ## 独占 Redis 验证 Common 插件和 System 连接登记消费链路
+	@bash scripts/test/common-redis-gate.sh

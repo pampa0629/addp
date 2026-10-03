@@ -2,7 +2,19 @@
 
 Ontology 管理租户领域本体的形式化语义，不接管 Standard、Model、Catalog 的事实所有权，也不读取业务数据库。总体边界见 [最小设计契约](../docs/next/ADDP%20Ontology最小设计契约.md)。
 
+## 已确认的设计与依赖边界
+
+2026-10-03 明确三层：平台能力语义辅助 Agent 选择功能，租户领域语义说明业务概念与规则，运行时业务事实支撑具体对象判断。当前覆盖原生 Tenant 定义、手工假设性试算及首个代码发布的平台 Transfer 能力定义；PG/FalkorDB 平台本体管理、专业来源引用、本体数据绑定和可信业务事实求值仍未实现。
+
+Ontology 自身 PG、FalkorDB 和 System 当前注册构成 Ready 前置；除 System 外，不假定任何业务模块存在或被用户使用。Meta、Standard、Model、Quality、Catalog、Manager、Develop、Service、Agent 等只在使用其能力的请求中经正式 Client SDK/API 协作，不进入启动/Ready 检查。远端不可达、无权限、没有内容和版本变化按 owner 契约明确表达，不自动换源、不把错误当作无数据。
+
+本体数据绑定目标由 Ontology 唯一管理，固定本体修订与类/属性、读取 owner 来源及输出契约、对象身份、类型化路径、转换语义和绑定版本；Catalog 提供可选企业身份、责任与治理关联，不维护第二份可编辑绑定。Catalog StandardMapping 与 Model 概念实现映射仍属于各自 owner。绑定不持有业务凭据、不执行查询、不代表事实已观察；用户业务数据继续由数据读取 owner 授权访问。首个真实切片为单条 Outdoor 活动的有效性判断，正式契约见设计文档 2.3、6.2 与 10 节，不能把当前试算接口当作真实求值入口。
+
 ## 当前交付范围
+
+`internal/platform` 唯一管理代码发布的 Transfer 能力定义，包含概念、关系、前置条件、效果、修订与摘要。`platform.capability.context` 通过 `GET /platform/capabilities/transfer.task.create` 返回 `knowledge_kind=platform_definition`；不伪造 Tenant 本体或运行可用性，不查询业务数据。现有 `ontology.semantic.read` 与精确 Tool scope 控制读取。定义中的 Tool/Skill 引用由 Manifest 和根 Skill 校验，不复制权限、HTTP 地址或凭据。
+
+`skills/transfer-generation` 先消费平台语义，再经事实 owner 确认引擎、源结构与目标父节点，信息不足要求澄清。新增 `transfer.task.create` 仅创建 bounded/snapshot/native table、无计划、未启用且不自动扫描的任务定义，返回 idle/stopped；不能运行任务。System 迁移 181 只开放已有创建权限的委托标志，不给角色增加权限。确定性 Agent 场景 `platform-transfer-create`、Common Python HTTP 契约、Transfer owner 拒绝与零 execution 断言沿现有标准门禁执行；真实用户/LLM 对话验收待新服务加载后进行。
 
 `backend/internal/semantic` 是正式 Go 语义内核；`internal/service`、`internal/repository` 管理原生定义的 PG 修订生命周期。`cmd/server` 已装配统一 Lifecycle、管理 HTTP API 和投影 Supervisor；FalkorDB 是私有 Infra。`frontend` 提供 Console 原生定义建模与修订管理页面；两个只读 Agent Tool 提供激活定义消费，不影响 Graph 的当前功能。2026-09-18 已在用户启动的个人开发环境完成真实用户的建模、发布激活和 Agent 定义读取联调；不把本地手工联调或 T1/T2/T3 当作正式隔离 T4 上线验收。
 
@@ -67,6 +79,8 @@ System 的 `ontology` 内部执行授权固定绑定 semantic_projection、修�
 - System 向前迁移 `000153` 登记 read/update 与 Platform Runtime，既有角色绑定触发器推进授权版本；不修改已发布迁移。Ontology owner 仍使用 schema v3。
 
 ### 标准门禁
+
+平台 Transfer 切片另用 `ADDP_SYSTEM_POSTGRES_TEST_DSN=<已核实端口的 addp_iam_test PostgreSQL URL> bash scripts/test/system-iam-postgres-gate.sh --package migration --test transfer-task-create` 精确验证迁移 181；默认 System IAM 门禁仍由 `AgainstPostgres$` 自动发现此测试，不将精确选择器视为全量通过。`make test-system-iam-runner` 验证选择器、默认发现和跨进程测试库互斥。
 
 前端复用共享认证、主题、国际化、导航和离页保护；类型/属性/关系/规则编辑同一原生 definition，服务端独占校验与 CEL 编译。页面提供列表、修订历史、创建/保存/审核/发布/撤回及失败投影重建。精确 version 冲突或结果不确定时锁定后续写入且不覆盖编辑，显式重新加载后才解除；发布受理与当前 active 指针分开显示。原生成员移除只修改本地草稿，不级联删除引用，保存时由后端拒绝悬空引用。
 

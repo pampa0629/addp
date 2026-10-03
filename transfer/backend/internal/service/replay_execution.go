@@ -146,7 +146,7 @@ func (s *ExecutionEngineService) executeBoundedReplay(ctx context.Context, task 
 	}); err != nil {
 		return s.failReplayExecution(executionID, err)
 	}
-	return s.executionService.FinishExecution(ctx, executionID, models.ExecutionStatusSuccess, "")
+	return s.executionService.FinishExecution(ctx, executionID, models.ExecutionStatusSuccess, "", nil)
 }
 
 func (s *ExecutionEngineService) updateReplayMetadata(ctx context.Context, executionID uint, updates map[string]interface{}) error {
@@ -176,7 +176,7 @@ func (s *ExecutionEngineService) failReplayExecution(executionID uint, execution
 	}); err != nil {
 		s.logger.Error("failed to update bounded replay failure metadata", "error", err, "execution_id", executionID)
 	}
-	if err := s.executionService.FinishExecution(ctx, executionID, models.ExecutionStatusFailed, executionErr.Error()); err != nil {
+	if err := s.executionService.FinishExecution(ctx, executionID, models.ExecutionStatusFailed, executionErr.Error(), nil); err != nil {
 		s.logger.Error("failed to mark bounded replay execution failed", "error", err, "execution_id", executionID)
 	}
 	return executionErr

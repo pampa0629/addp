@@ -13,6 +13,10 @@
           </span>
         </div>
         <div class="lineage-tools">
+          <el-select v-if="fields.length" :model-value="field" :aria-label="t('lineage.field')" class="lineage-field" size="small" filterable @update:model-value="emit('update:field', $event)">
+            <el-option value="" :label="t('lineage.granularities.item')" />
+            <el-option v-for="name in fields" :key="name" :value="name" :label="name" />
+          </el-select>
           <span class="lineage-depth-label">{{ t('lineage.depth') }}</span>
           <el-select :model-value="depth" :aria-label="t('lineage.depth')" class="lineage-depth" size="small" @update:model-value="emit('update:depth', $event)">
             <el-option v-for="value in [1, 2, 3, 5, 10, 20]" :key="value" :value="value" :label="t('lineage.layers', { count: value })" />
@@ -36,6 +40,8 @@
       </div>
 
       <div v-if="graph.truncated" class="lineage-truncated" role="status">{{ t('lineage.truncated') }}</div>
+      <div v-if="graph.field_lineage_status === 'unavailable'" class="lineage-truncated" role="status">{{ t('lineage.fieldUnavailable') }}</div>
+      <div v-else-if="graph.field_lineage_status === 'complete' && !edges.length" class="lineage-truncated" role="status">{{ t('lineage.fieldNoDependencies') }}</div>
       <div class="lineage-stage">
         <el-empty v-if="!nodes.length" :description="t('lineage.noData')" :image-size="56" />
         <div
@@ -57,6 +63,8 @@
           <el-button v-for="direction in ['upstream', 'downstream']" v-show="selectedNode[`hidden_${direction}_count`] > 0" :key="direction" size="small" :disabled="graph.truncated" @click="expandNode(selectedNode, direction)">{{ t(`lineage.expand.${direction}`, { count: selectedNode[`hidden_${direction}_count`] }) }}</el-button>
         </div>
         <dl class="lineage-inspector-fields">
+          <div v-if="selectedNode.field_name"><dt>{{ t('lineage.field') }}</dt><dd>{{ selectedNode.field_name }}</dd></div>
+          <div v-if="selectedNode.schema_snapshot_hash" class="lineage-inspector-field-wide"><dt>{{ t('lineage.schemaSnapshot') }}</dt><dd class="lineage-mono">{{ selectedNode.schema_snapshot_hash }}</dd></div>
           <div v-if="selectedNode.engine_name">
             <dt>{{ t('lineage.engine') }}</dt>
             <dd>{{ selectedNode.engine_name }}</dd>
@@ -94,6 +102,7 @@
             <dt>{{ t('lineage.granularity') }}</dt>
             <dd>{{ granularityLabel(selectedEdge.granularity) }}</dd>
           </div>
+          <div v-if="selectedEdge.transformation"><dt>{{ t('lineage.transformation') }}</dt><dd>{{ t(`lineage.transformations.${selectedEdge.transformation}`) }}</dd></div>
           <div v-if="selectedEdge.last_observed_at">
             <dt>{{ t('lineage.lastObservedAt') }}</dt>
             <dd>{{ formatDateTime(selectedEdge.last_observed_at) }}</dd>
@@ -113,6 +122,7 @@ import { useI18n } from 'vue-i18n'
 import { FullScreen, ZoomIn, ZoomOut } from '@element-plus/icons-vue'
 import G6 from '@antv/g6'
 import { focusDAGConnections } from '../../dag/src/utils/connections.js'
+import { lineageNodeId as nodeId } from './lineageApi.js'
 
 const LINEAGE_NODE_TYPE = 'addp-lineage-card'
 const LINEAGE_EDGE_TYPE = 'addp-lineage-link'
@@ -123,10 +133,12 @@ const FIT_PADDING = 48
 const { t, locale } = useI18n()
 const props = defineProps({
   graph: { type: Object, default: () => ({ nodes: [], edges: [] }) },
-  depth: { type: Number, default: 2 }
+  depth: { type: Number, default: 2 },
+  fields: { type: Array, default: () => [] },
+  field: { type: String, default: '' }
 })
 
-const emit = defineEmits(['update:depth', 'expand', 'view-execution'])
+const emit = defineEmits(['update:depth', 'update:field', 'expand', 'view-execution'])
 const canvasRef = ref(null)
 const selectedNode = ref(null)
 const selectedEdge = ref(null)
@@ -137,11 +149,6 @@ let observedCanvas
 let expansionAnchor
 let renderSequence = 0
 
-function nodeId(node) {
-  if (!node) return ''
-  if (node.kind === 'published_service') return `service:${node.service_id}:${node.published_revision}`
-  return node.item_id ? `item:${node.item_id}` : ''
-}
 
 const nodes = computed(() => {
   const unique = new Map()
@@ -180,11 +187,11 @@ function themePalette() {
 }
 
 function nodeDisplayName(node) {
-  return String(node?.name || node?.full_name || nodeTypeLabel(node))
+  return String(node?.field_name || node?.name || node?.full_name || nodeTypeLabel(node))
 }
 
 function nodeQualifiedName(node) {
-  return String(node?.full_name || nodeDisplayName(node))
+  return node?.kind === 'field_ref' ? `${node.full_name} · ${node.field_name}` : String(node?.full_name || nodeDisplayName(node))
 }
 
 function nodePath(node) {
@@ -193,6 +200,7 @@ function nodePath(node) {
 }
 
 function nodeTypeLabel(node) {
+  if (node?.kind === 'field_ref') return t('lineage.types.field')
   if (node?.kind === 'published_service') return t('lineage.types.publishedService')
   const key = {
     table: 'table',
@@ -765,6 +773,7 @@ watch(() => props.depth, () => { expansionAnchor = null })
   background: var(--el-color-primary);
 }
 
+.lineage-field { width: 180px; margin-right: 8px; }
 .lineage-depth { width: 94px; margin-right: 8px; }
 .lineage-depth-label { margin-right: 6px; white-space: nowrap; }
 .lineage-truncated { padding: 6px 12px; color: var(--el-color-warning); font-size: 12px; }

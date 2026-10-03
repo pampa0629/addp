@@ -2,6 +2,13 @@ package models
 
 import "time"
 
+type LineageFieldEndpoints struct {
+	SourceFieldName  string `gorm:"not null;default:''" json:"source_field_name,omitempty"`
+	TargetFieldName  string `gorm:"not null;default:''" json:"target_field_name,omitempty"`
+	SourceSchemaHash string `gorm:"not null;default:''" json:"source_schema_hash,omitempty"`
+	TargetSchemaHash string `gorm:"not null;default:''" json:"target_schema_hash,omitempty"`
+}
+
 type LineageCollectionResult struct {
 	Observed int `json:"observed"`
 	Skipped  int `json:"skipped"`
@@ -9,6 +16,8 @@ type LineageCollectionResult struct {
 
 // LineageItemRelation 是 data item 到 data item 的当前关系投影。
 type LineageItemRelation struct {
+	LineageFieldEndpoints
+	Transformation        string     `gorm:"not null;default:''" json:"transformation,omitempty"`
 	ID                    uint       `gorm:"primaryKey" json:"id"`
 	TenantID              uint       `gorm:"not null;index" json:"tenant_id"`
 	SourceItemID          uint       `gorm:"not null;index" json:"source_item_id"`
@@ -52,6 +61,7 @@ func (LineageServiceDependency) TableName() string { return "meta.lineage_servic
 
 // LineageObservation 是由执行事实或服务发布事实解析出的不可变证据。
 type LineageObservation struct {
+	LineageFieldEndpoints
 	ID                uint      `gorm:"primaryKey" json:"id"`
 	TenantID          uint      `gorm:"not null;index" json:"tenant_id"`
 	RelationKind      string    `gorm:"size:32;not null" json:"relation_kind"`

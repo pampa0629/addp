@@ -60,6 +60,47 @@ function json(route, body) {
   return route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) })
 }
 
+test('selects an exact field and distinguishes unavailable evidence from recorded dependencies', async ({ page }) => {
+  const requests = []
+  const errors = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
+  await page.route('**/plugins/manifest.json', route => json(route, { scripts: [] }))
+  await page.route('**/api/v1/**', route => {
+    const url = new URL(route.request().url())
+    const path = url.pathname
+    if (path.endsWith('/system/refresh')) return json(route, { access_token: 'lineage-e2e-token', expires_in: 3600 })
+    if (path.endsWith('/system/users/me')) return json(route, { id: 1, username: 'lineage-e2e' })
+    if (path.endsWith('/system/auth/context')) return json(route, managerAuthContext)
+    if (path.endsWith('/manager/engines')) return json(route, { data: [{ id: 9, name: 'Lineage PostgreSQL', engine_type: 'postgresql', lifecycle_state: 'active', connection_status: 'online' }] })
+    if (path.endsWith('/ancestors')) return json(route, { target_locator: locator, ancestors: [{ id: locator, locator, label: 'current', type: 'table', metadata: { item_id: 3 } }] })
+    if (path.endsWith('/meta/items/3')) return json(route, { ...node(3), attributes: { type_info: { table: { fields: [{ name: 'client.id', type: 'string' }, { name: 'generated', type: 'string' }] } } } })
+    if (path.endsWith('/meta/lineage/graph')) {
+      requests.push(Object.fromEntries(url.searchParams))
+      const field = url.searchParams.get('field_name')
+      if (!field) return json(route, { subject: node(3), nodes: [node(3)], edges: [] })
+      const root = { ...node(3), kind: 'field_ref', field_name: field, schema_snapshot_hash: 'sha256:target' }
+      return json(route, { subject: root, nodes: [root], edges: [], field_lineage_status: field === 'generated' ? 'complete' : 'unavailable' })
+    }
+    return json(route, {})
+  })
+  await page.goto(`/data-explorer?locator=${encodeURIComponent(locator)}&tab=lineage`)
+  await expect(page.locator('.lineage-field')).toBeVisible()
+  await page.locator('.lineage-field .el-select__wrapper').click()
+  await page.getByRole('option', { name: 'client.id', exact: true }).click()
+  await expect.poll(() => requests.at(-1).subject_kind).toBe('field_ref')
+  expect(requests.at(-1).field_name).toBe('client.id')
+  await expect(page.getByRole('status')).toContainText('当前字段尚无可用血缘证据')
+  await page.locator('.lineage-field .el-select__wrapper').click()
+  await page.getByRole('option', { name: 'generated', exact: true }).click()
+  await expect(page.getByRole('status')).toContainText('已记录的字段血缘中没有关联字段')
+  await page.locator('.lineage-field .el-select__wrapper').click()
+  await page.getByRole('option', { name: '数据项级', exact: true }).click()
+  await expect.poll(() => requests.at(-1).subject_kind).toBe('data_item')
+  expect(requests.at(-1).field_name).toBeUndefined()
+  expect(errors).toEqual([])
+})
+
 test('expands a single direction from a node while keeping the current table and viewport', async ({ page }) => {
  const queries=[]
  await page.addInitScript(()=>localStorage.setItem('addp-lang','zh-cn'))

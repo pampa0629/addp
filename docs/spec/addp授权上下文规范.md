@@ -189,6 +189,7 @@ Portal 是同步 BFF 和消费界面，只展示 Asset 返回的履约状态；�
 - Catalog `POST /runtime/sharing-fulfillments/:request_id/basis` 只允许独立 `addp-system` Tenant Service 与不可委托、不可租户定制的 `catalog.sharing_fulfillment.read`。只反查精确已提交且尚待核清的持久请求，匹配完整绑定并复核原来源、业务负责人责任连续性；返回确认人的原身份引用，不返回用途正文或资格缓存。请求体不是证明；System 在本地 IAM、请求、目标锁之前反查，不在锁内跨模块联网。
 - System `POST /runtime/engine-access-fulfillments/:request_id/accept` 只允许当前 `addp-catalog` Tenant Service 与 `system.engine_access_fulfillment.execute`。首次受理要求可信持久依据、当前原办理人的严格授权版本及独立办理 Permission、确认人的当前 IAM 资格、接收主体、引擎管理委派和精确目标批准要求版本。全部 Principal 去重按 ID 升序锁定，先于 Membership/Tenant/请求/目标；提交前按数据库墙钟重核自然到期。
 - 同参既有结果优先走历史核清，不要求旧业务依据仍有效，不刷新五分钟窗口。首次请求失败或响应丢失不释放 Catalog pending 保护；已有 resolve/close 串行核清才可解除。未配置独立 System 反查凭据只拒绝新受理，历史恢复保持可用。当前回执只表示 `accepted|closed`，没有 Grant 或内容访问结果；实际授权仍须后续独立交付。
+- 原办理请求只读找回（2026-10-03 已确认）使用 Catalog 人类 GET，不直接开放 Runtime 给人：仅本人原办理、当前条目仍可见、具备条目读取和独立办理 Permission，并按每个原请求的引擎核验当前管理范围。历史授权版本仅匹配原绑定，不能替代当前资格；同部门、项目组或编目维护权不开放他人请求。分页列表不复制受理状态；详情以持久完整绑定向 System 只读反查，`pending` 只表示权威未找到，依赖失败仍报错。查询不提交、关闭、写核清、延期或授予 Grant；显式 POST 重试另沿用原请求编号及原参数。
 
 本节是 2026-09-30 已确认的目标规范，不表示当前实现已具备源数据表级授权。实施进度及剩余契约见 `docs/next/ADDP企业资源目录能力专题.md` 第 26 节；具体 API、Permission key、资源身份契约和执行范围必须先定义，再统一实施，不保留旧租户级放行作为兼容路径。
 
@@ -204,6 +205,7 @@ Portal 是同步 BFF 和消费界面，只展示 Asset 返回的履约状态；�
 - 业务共享确认与源读取授权办理使用独立功能 Permission，不复用编目维护或引擎管理委派 Permission。首版仅通过既有自定义 Role／Role Assignment 显式分配，不默认授予内置管理员、不随责任指定自动补权，也不为已有账号回填。Permission 随真实接口及其守卫、审计、测试和 migration 一起发布，不先启用无人消费的权限；本条不表示已有表级办理入口。
 - 2026-10-02 已确认：不同于原确认人的历史读取，授权办理人读取业务决定摘要须同时满足当前 Catalog 条目可见、独立源读取授权办理 Permission 和目标所属 Engine 的当前有效管理委派。独立人类权限使用 `system.engine_access_fulfillment.create`，仅允许显式 Tenant Role Assignment；机器核清的 `.execute` 不满足它。System 的 `GET /engines/:id/access_handling_scope` 以当前 User Token 核验人类资格，仅返回当前身份及引擎范围的观察结果，不产生委派、受理、Grant 或可复用资格凭据。
 - Catalog 的 `GET /entries/:id/sharing_decision_candidates` 在上述交集内提供分页候选摘要，只包含决定引用、完整目标、接收主体、动作、有效期和确认信息，不返回业务用途正文或全租户历史。候选以 Catalog 当前来源、原责任关系、条目及期限过滤；确认人的实时 IAM 资格、接收主体和批准要求仍在正式提交时重新核验。选择时的摘要不代表 System 已受理，也不保证后续仍可办理。原确认人的本人历史接口保持原权限和过滤，不要求办理资格。System 的 Catalog 模式入口也不得借机器核验绕过人的条目可见性；明确退出或不使用 Catalog 的独立批准入口不新增 Catalog 可见性前提。
+- 2026-10-03 已确认：本条目当前业务负责人具备 `catalog.entry.read` 与独立 `catalog.sharing_decision.create` 时，可通过条目级共享接收方候选选择同 Tenant 的有效账号或项目组，包括本人未加入的项目组。只暴露最小名称、编码、稳定 ID 和状态，不提供成员、角色或源数据；普通条目读取不获得全 Tenant 项目组枚举。办理人若需要接收方名称，只能解析已经有权读取的候选决定指向的主体，不据此取得全 Tenant 候选枚举。组织事实仍归 System，候选读取不创建决定、受理或 Grant。
 - Catalog 可提供业务入口，System 引擎管理必须能够独立办理；两个入口使用同一权威写路径。System 不维护可独立编辑的业务责任副本，Catalog 不维护源数据 Grant 副本。
 - System 针对精确源数据目标持久维护“源数据授权批准要求”，表达新授权是否需要 Catalog 的业务确认。该事实归引擎访问控制领域，包含目标、当前批准要求、并发版本及变更审计，不包含可编辑的 Catalog 责任人、部门或历史副本。Catalog 唯一维护业务责任、业务决定和当前业务核验；System 唯一保存正式受理回执及实际 Grant，不在 Catalog 另存第二份可编辑接受状态。
 

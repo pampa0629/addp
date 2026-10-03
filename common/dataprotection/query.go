@@ -8,6 +8,13 @@ import (
 	"github.com/addp/common/engine/plugin"
 )
 
+// PreparedTableProtection binds transformation metadata to the same prepared rules as Apply.
+// DerivedFields contains top-level value components and no policy or protected values.
+type PreparedTableProtection struct {
+	Apply         func(*plugin.QueryResult) error
+	DerivedFields []string
+}
+
 // ProtectQueryResultSource applies already schema-validated rules to every
 // value output from one QueryOutputSource. It mutates the result in place and
 // never includes protected values in errors.

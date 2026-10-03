@@ -74,6 +74,7 @@ func SetupRouter(svc *service.DefinitionService, enrollments *service.Enrollment
 	detectors.PUT("/:id", permission(securityauthorization.PermissionSecurityDetectorUpdate), detectorHandler.Update)
 	detectors.DELETE("/:id", permission(securityauthorization.PermissionSecurityDetectorDelete), detectorHandler.Delete)
 
+	api.GET("/protection-algorithms", permission(securityauthorization.PermissionSecurityProtectionBaselineRead), ListProtectionAlgorithms)
 	baselines := api.Group("/protection-baselines")
 	baselines.GET("", permission(securityauthorization.PermissionSecurityProtectionBaselineRead), h.ListBaselines)
 	baselines.GET("/:id", permission(securityauthorization.PermissionSecurityProtectionBaselineRead), h.GetBaseline)

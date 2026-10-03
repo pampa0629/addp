@@ -156,6 +156,8 @@ System 的 Department / Project Group 管理契约以 `system/docs/IAM数据模�
 
 `GET /entries/:id/sharing_decisions/:decision_id` 使用相同功能权限，仅返回当前可见条目下由当前 User 确认的不可变原记录，不进行再次确认、不延期、不返回 System Grant 或受理状态。历史读取不要求 User 仍为当前业务负责人；未找到、跨租户、他人记录或不可见统一 404。生产入口不创建待核清事实、不冻结责任；待核清只在后续真实办理准备时建立。已提交原请求的 System 核清／关闭及 Catalog 后台恢复已接通；可信正式准备与首次受理已接通；实际 Grant 与执行侧读取仍须另行贯通后才能宣称闭环。
 
+共享接收方选择（2026-10-03 已确认）：`GET /entries/:id/sharing_recipient_candidates` 与业务确认使用相同的两个独立功能权限，并核验当前 Tenant User 是本条目的有效业务负责人；条目须可见、active、未弃用且具有 active Meta DataItem 来源。`recipient_type=user|project_group`、`search`、`page`、`page_size` 使用有界分页（每页最多 50 项）。允许选择本 Tenant 的有效账号或项目组，包括确认人未加入的项目组；只返回类型、稳定字符串 ID、名称、编码和状态，不返回成员、角色或数据。System 通过既有专用 Catalog Runtime 组织候选提供最小事实，Catalog 不复制组织；网络调用不持 Catalog 锁，返回前复核同一来源、同一责任关系、可见性和权限期限。候选不是共享决定、批准依据或数据访问权，正式提交仍须重新核验。通用 `/reference-candidates` 不新增项目组枚举，`/me/project-groups` 仍只表达本人有效成员关系；不得借组织管理权限或手填 ID 绕过这一入口。
+
 授权办理人的候选读取独立使用 `GET /entries/:id/sharing_decision_candidates`，同时要求 `catalog.entry.read` 与 `system.engine_access_fulfillment.create`。只接受 System 已验证的当前 Tenant User，使用本次 User Token 向 System 的 `GET /engines/:id/access_handling_scope` 核验原身份、授权版本、有效功能权限和引擎管理委派；不使用 Catalog 机器身份代查人的资格。网络核验不得置于 Catalog 行锁事务内，返回前再次检查条目可见性、当前来源绑定和版本、原业务负责人关系及有效期。分页只针对本条目当前来源和原责任仍有效的候选，不提供全租户枚举、完整用途正文或既有决定的编辑能力。弃用、失效、移交和换源后的旧决定不进入候选，同账号重新接任也不复活旧决定。候选只是当前观察，正式准备和 System 首次受理仍须重新核验确认人的当前 IAM 资格、接收主体及批准要求；读取不创建待核清记录、不冻结条目、不产生受理或 Grant。System 失联、鉴权拒绝或响应绑定错误不降级放行。
 
 正式办理准备所用的 Catalog 当前依据核验必须读取已持久决定，而非调用方传入的决定正文，并在本模块事务内按条目→当前来源→原责任关系顺序锁定。必须核对同租户、同条目、同一个仍为当前且有效的 Meta 来源绑定及版本，以及同一个仍为 active 的业务负责人关系 ID 和确认账号。移交后重新把同一账号设为负责人形成的新关系，不复活旧关系上的决定。只修改业务名称、说明或其他非批准依据而推进聚合版本，不单凭版本不相等使决定失效；聚合版本倒退则拒绝。到期判断在锁定后使用数据库墙钟，长期有效仍不能绕过当前依据核验。该内部核验不获取远端事实，不创建待核清、受理或 Grant；还须由后续可信消费者另外核验实时源路径、System 当前身份和 Permission、办理委派及接收主体，不能以返回决定对象替代这些门禁。
@@ -189,6 +191,10 @@ Meta 和专业来源新建条目时显式写入 `false`；完整责任替换路�
 故障核清消费只读取已提交的原待核清记录，在 Catalog 事务外查询 System 原结果；仅当权威查询明确未找到时，才请求关闭同编号、同参数的原请求。关闭可能返回先提交的受理结果，不能假定它一定关闭成功。超时、拒绝、绑定冲突或数据库错误不等于未找到，不得解除本地保护。收到可信权威结果后，完整核对请求编号、Tenant 和不可变绑定，仅接受 `accepted` 或 `closed`，再按条目→待核清记录顺序使用本地短事务填写一次数据库墙钟核清时间。并发／重复核清保留原时间，不复制 System 受理时间、截止时间或 Grant，不依赖原操作账号、原责任或拟授权期限仍有效；历史核清不恢复新办理资格。
 
 正式准备使用 `POST /entries/:id/sharing_fulfillments`，仅接受请求编号、决定编号及批准要求版本。当前 User 须具备条目可见、`catalog.entry.read`、独立 `system.engine_access_fulfillment.create` 及有效引擎管理委派；操作身份从可信 AuthContext 派生，调用服务身份由当前 Tenant Service AuthContext 核验，不接受正文覆盖。远端资格查询不持 Catalog 行锁，本地条目锁内按数据库墙钟复核权限／可见性并登记完整绑定；必须提交后才发送 System `/runtime/engine-access-fulfillments/:request_id/accept`。通信错误或未知响应保留 `pending`，不回滚已提交保护，也不把错误当作关闭；同参受理／关闭结果按原绑定核清，不在 Catalog 落受理结果副本。
+
+原办理请求只读找回（2026-10-03 已确认）：同一路径的分页 GET 只列当前 Tenant、当前仍可见条目下由本人原先办理、且本人当前仍有对应原引擎管理范围的请求；详情 GET `/entries/:id/sharing_fulfillments/:request_id` 按持久完整绑定向 System 查询原结果。两者均要求当前 Tenant User、`catalog.entry.read` 与独立 `system.engine_access_fulfillment.create`，部门、项目组和编目维护权不能替代。管理范围逐一以原请求的 Engine 为准，不以条目换源后的 Engine 代替；列表在资格过滤后计数、稳定分页，不返回他人请求或机器调用身份／历史授权版本。原操作身份仅用于识别本人的历史与匹配权威查询，不要求历史授权版本等于当前版本，也不能恢复当前资格。
+
+列表只返回原编号、决定引用、批准要求版本、原目标、接收方、动作、期限及创建时间，不从 Catalog 核清时间推断受理。详情结果只读消费 System 原回执，`pending` 表示权威明确尚未找到结果，`accepted`／`closed` 表示不可变历史受理／关闭；依赖失败或绑定错误返回 503，不能伪装为 pending、closed 或数据已授权。即使原窗口到期或条目已弃用，仍可在当前读取资格内查询历史，不重新核验为新的业务批准。所有网络调用在 Catalog 事务外，返回前重新检查权限期限、条目可见性、原绑定和当前原引擎管理资格。查询不提交、不关闭、不填写核清时间、不新增审计或 Grant、不延长窗口；不能复用正式准备 POST 或会关闭未受理请求的后台恢复命令。显式重试另用原编号及原三个参数，不自动生成新编号、补新版本或续期。
 
 可信 owner 依据使用 `POST /runtime/sharing-fulfillments/:request_id/basis`，只允许 `addp-system` 当前 Tenant Service OAuth 身份和独立 `catalog.sharing_fulfillment.read`，不用于人的候选浏览。精确匹配已提交且未核清的完整请求绑定，在条目→来源→原责任关系锁内核验当前决定依据，等待条目锁后再次检查仍待核清；只返回原绑定及确认身份，不返回业务用途正文。System 在自身数据库锁外反查，随后独立核验当前 IAM、权限、委派、接收主体及批准要求。可选 System 反查凭据缺失只阻断新受理，不影响 Ready、历史核清／关闭，不推断 Catalog 退出。受理回执不是 Grant 或内容访问权。
 
@@ -587,6 +593,8 @@ GET /api/v1/catalog/entries/{id}/data-dictionary/export?as_of={RFC3339}
 - 同步导出只面向单个 DataItem 的有界字段集合。未来若出现批量发布、长期托管、审批或外部分发需求，应另行定义 Asset 发布物及保留策略，不能把本同步下载接口扩展成隐式发布流程。
 - Meta 或 Standard 不可达时返回 `503 catalog_data_dictionary_dependency_unavailable`，仅影响本次字典查询，不影响 Catalog 详情、Alive 或 Ready。条目来源不适用时返回 `409 catalog_data_dictionary_not_applicable`，不返回空数据伪装成功。
 
+办理人候选的接收方名称只按本次可读分页中已经绑定的 `recipient_type + recipient_id` 向 System 精确批量解析，返回 `recipient_name`、可选 `recipient_code` 与 `recipient_label_status=resolved|not_found`。它们是当前显示观察，不保存到决定、不返回成员／角色、不授予组织或数据访问权。解析后再以新只读快照核验同一分页的可见性、权限期限与决定依据；分页变化返回冲突供用户重新读取，不把旧名称贴到新决定上。System 无法解析时返回依赖不可用；明确不存在的主体只显示 `not_found`，不得用 ID 或旧快照伪造名称。
+
 ## 六、Catalog API 契约
 
 BasePath 固定为 `/api/v1/catalog`。第一阶段公开单一路由集合：
@@ -599,6 +607,13 @@ BasePath 固定为 `/api/v1/catalog`。第一阶段公开单一路由集合：
 | POST | `/entries/resolve-sources` | 把专业关系节点的精确来源身份批量解析为当前可见 CatalogEntry，不复制 owner 关系 |
 | POST | `/entries/batch_governance` | 对显式选择的 CatalogEntry 原子批量分配主业务域或责任部门 |
 | GET | `/reference-candidates` | 按名称分页查询当前可建立语义或责任关联的 owner 候选 |
+| GET | `/entries/:id/sharing_recipient_candidates` | 当前业务负责人按本条目资格选择同 Tenant 的有效账号或项目组最小显示摘要 |
+| POST | `/entries/:id/sharing_decisions` | 显式确认普通只读共享，保存不可变业务决定；不授予源访问 |
+| GET | `/entries/:id/sharing_decisions/:decision_id` | 当前 User 读取本人在可见条目下的原决定 |
+| GET | `/entries/:id/sharing_decision_candidates` | 有源办理资格的当前 User 读取仍有效的决定摘要，精确解析其接收方名称 |
+| POST | `/entries/:id/sharing_fulfillments` | 根据持久决定和批准要求版本正式准备并触发 System 首次受理；不等于 Grant 已生效 |
+| GET | `/entries/:id/sharing_fulfillments` | 按本人当前原引擎管理范围过滤、分页找回本人原办理请求；不提交或核清 |
+| GET | `/entries/:id/sharing_fulfillments/:request_id` | 按持久完整绑定只读查询本人原受理／关闭结果；不重试、延期或授予源访问 |
 | GET | `/entries/:id` | 读取聚合详情、来源、语义和责任 |
 | GET | `/entries/:id/data-dictionary` | 组合 Meta 当前物理字段、Catalog 已审核 StandardMapping 与其冻结的 Standard 修订 |
 | GET | `/entries/:id/data-dictionary/export` | 重新组合一次联邦数据字典并下载不可变 JSON 快照，不在服务端留存副本 |

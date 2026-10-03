@@ -5,9 +5,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENGINE_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 ROOT_DIR="$(cd "${ENGINE_DIR}/../.." && pwd)"
 
-PLATFORM="${MODEL3D_DOCKER_PLATFORM:-linux/arm64}"
-CONVERTER_IMAGE="${MODEL3D_CONVERTER_IMAGE:-addp/model3d-converter:linux-arm64}"
-RUNTIME_IMAGE="${MODEL3D_RUNTIME_IMAGE:-addp/model3d-workflow:linux-arm64}"
+case "$(uname -m)" in
+  arm64|aarch64) native_arch=arm64 ;;
+  x86_64) native_arch=amd64 ;;
+  *) echo "unsupported Model3D host architecture" >&2; exit 1 ;;
+esac
+PLATFORM="${MODEL3D_DOCKER_PLATFORM:-linux/$native_arch}"
+CONVERTER_IMAGE="${MODEL3D_CONVERTER_IMAGE:-addp/model3d-converter:linux-${PLATFORM#linux/}}"
+RUNTIME_IMAGE="${MODEL3D_RUNTIME_IMAGE:-addp/model3d-workflow:linux-${PLATFORM#linux/}}"
 THREE_DTILES_REF="${THREE_DTILES_REF:-acbcf603f33fdfe3c34b704a8b019c4fd32a8376}"
 
 if [[ "${PLATFORM}" == *,* ]]; then
@@ -20,10 +25,10 @@ if [[ "${PLATFORM}" != linux/* ]]; then
   exit 1
 fi
 
-if [[ "${PLATFORM}" != "linux/arm64" ]]; then
-  echo "model3d converter build currently binds Linux arm64 IfcConvert, got: ${PLATFORM}" >&2
-  exit 1
-fi
+case "$PLATFORM" in
+  linux/amd64|linux/arm64) ;;
+  *) echo "model3d converter requires linux/amd64 or linux/arm64, got: $PLATFORM" >&2; exit 1 ;;
+esac
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "docker is required" >&2

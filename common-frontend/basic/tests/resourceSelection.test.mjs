@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { formatLocatorDisplayPath } from '../src/types/resourceLocator.js'
+import { formatLocatorDisplayPath, getParentLocator, parseLocator } from '../src/types/resourceLocator.js'
 import { geometryColumnFactsFromSelection, selectionFromResourceTreeNode } from '../src/utils/resourceSelection.js'
 
 test('resource selection carries engine identity, native database path, and spatial facts', () => {
@@ -38,6 +38,14 @@ test('native path formatting preserves slash semantics for object and file engin
     formatLocatorDisplayPath('addp://engine/4/path/gis/roads.shp?type=file', { engineType: 'nfs' }),
     'gis/roads.shp'
   )
+})
+
+test('index selection preserves dotted native names and returns its service root', () => {
+  const uri = 'addp://engine/14/path/addp_orders.v1?type=index&item_id=15'
+  assert.equal(formatLocatorDisplayPath(uri), 'addp_orders.v1')
+  assert.deepEqual(getParentLocator(parseLocator(uri)), {
+    engineId: 14, path: [], type: 'service'
+  })
 })
 
 test('resource spatial facts do not infer undeclared geometry field names', () => {

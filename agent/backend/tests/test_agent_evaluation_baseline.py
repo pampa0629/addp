@@ -394,6 +394,38 @@ class AgentEvaluationBaselineTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(EvaluationFailure):
             evaluate_trace(scenario, trace)
 
+    async def test_platform_transfer_create_is_not_execution(self):
+        scenario = load_scenario(SCENARIOS_ROOT / "platform-transfer-create")
+        names = ["platform.capability.context", "engine.list", "resource.facts.get", "resource.children.list", "transfer.task.create"]
+        # Scripted LLM verifies the runtime contract, not real model planning.
+        results = [
+            {"knowledge_kind": "platform_definition", "capability": "transfer.task.create", "availability": "not_observed"},
+            {"engines": [{"id": 1, "engine_type": "mongodb"}, {"id": 2, "engine_type": "postgresql"}]},
+            {"locator": "addp://engine/1/path/Outdoor/Activities?type=collection"},
+            {"locator": "addp://engine/2/path/demo?type=schema", "children": []},
+            {"id": 41, "name": "Outdoor fixture", "status": "idle", "desired_state": "stopped", "enabled": False, "schedule": ""},
+        ]
+        events = await self._run_factory(
+            agent_run_id="run-platform-transfer",
+            tools=[_Tool(name, result) for name, result in zip(names, results)],
+            responses=[_Response(tool_calls=[_tool_call(name, call_id=f"call-{index}")]) for index, name in enumerate(names)]
+            + [_Response(content="任务 41 已创建，尚未执行。")],
+            allowed_tools=names,
+            skill_name="transfer-generation",
+        )
+        phase = phase_from_events("create", "run-platform-transfer", "completed", events,
+                                  owner_effects={"tasks_created": 1, "approvals_created": 0, "executions_created": 0, "business_rows_written": 0},
+                                  persisted_state={"task_id": 41})
+        trace = {"skill": "transfer-generation", "phases": [phase]}
+        evaluate_trace(scenario, trace)
+        phase["owner_effects"]["executions_created"] = 1
+        with self.assertRaises(EvaluationFailure):
+            evaluate_trace(scenario, trace)
+        phase["owner_effects"]["executions_created"] = 0
+        phase["tools"] = [tool for tool in phase["tools"] if tool["name"] != "platform.capability.context"]
+        with self.assertRaises(EvaluationFailure):
+            evaluate_trace(scenario, trace)
+
     async def _run_factory(self, *, agent_run_id, tools, responses, allowed_tools, skill_name="workflow-analysis"):
         context = {
             "skill_name": skill_name,

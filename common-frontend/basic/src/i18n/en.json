@@ -1,4 +1,5 @@
 {
+  "engine": {"term": {"index": "Index"}},
   "common": {
     "executionFailure": {
       "permission_denied": "Insufficient read or execution permission",
@@ -70,6 +71,7 @@
       "noDefault": "Not configured",
       "resourceTypes": {
         "table": "Table",
+        "index": "Index",
         "collection": "Collection",
         "graph": "Graph",
         "object": "Object",
@@ -352,6 +354,7 @@
     "clientIdPlaceholder": "addp-system",
     "securityProtocol": "Security Protocol",
     "saslMechanism": "SASL Mechanism",
+    "databaseIndex": "Database Index",
     "tlsCaCertOptional": "CA Certificate (optional)",
     "tlsClientCertOptional": "Client Certificate (optional)",
     "tlsClientKeyOptional": "Client Private Key (optional)",

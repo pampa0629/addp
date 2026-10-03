@@ -16,6 +16,7 @@ import (
 )
 
 type TablePipelineMetrics struct {
+	FieldLineage   *TableFieldLineage
 	RecordsRead    int64
 	RecordsWritten int64
 	Batches        int64
@@ -94,6 +95,7 @@ func (d *multiTargetResourceDeleter) DeleteTarget(ctx context.Context) error {
 }
 
 type TablePipeline struct {
+	ObserveFieldLineage      func(context.Context, *datatype.TableInfo, *datatype.TableInfo) *TableFieldLineage
 	Source                   TableBatchSource
 	Target                   TableBatchTarget
 	Transforms               []TableTransformPlan
@@ -142,6 +144,7 @@ func (p *TablePipeline) Execute(ctx context.Context) (*TablePipelineMetrics, err
 			}
 		}
 	}
+	sourceInfo := tableInfo.Clone()
 	tableInfo, spatialInfo, err = applyTableInfoTransforms(tableInfo, spatialInfo, transforms)
 	if err != nil {
 		return nil, fmt.Errorf("transform table info: %w", err)
@@ -161,6 +164,18 @@ func (p *TablePipeline) Execute(ctx context.Context) (*TablePipelineMetrics, err
 	}()
 
 	metrics := &TablePipelineMetrics{}
+	if p.ObserveFieldLineage != nil {
+		metrics.FieldLineage = p.ObserveFieldLineage(ctx, sourceInfo, tableInfo)
+		if protected, ok := reader.(*protectedTableBatchReader); ok && metrics.FieldLineage != nil {
+			for i := range metrics.FieldLineage.Mappings {
+				for _, name := range protected.derivedFields {
+					if metrics.FieldLineage.Mappings[i].SourceField == name {
+						metrics.FieldLineage.Mappings[i].Transformation = "derived"
+					}
+				}
+			}
+		}
+	}
 	var lastSourceOffset int64
 	for {
 		batch := firstBatch
@@ -276,7 +291,7 @@ func (s *queryTableBatchSource) Open(ctx context.Context) (TableBatchReader, err
 		return nil, fmt.Errorf("open query read session: %w", err)
 	}
 	reader := TableBatchReader(&queryTableBatchReader{session: session, tableInfo: s.tableInfo})
-	return protectTableBatchReader(reader, protect)
+	return protectTableBatchReader(reader, protect, nil)
 }
 
 func validateExpectedQueryReadSet(expected, actual *engineplugin.QueryReadSet) error {
@@ -374,13 +389,19 @@ func (r *queryTableBatchReader) ResumeMarker() *resume.Marker { return nil }
 
 func (s *nativeTableBatchSource) Open(ctx context.Context) (TableBatchReader, error) {
 	var protect func(*engineplugin.QueryResult) error
+	var derivedFields []string
 	var err error
 	if s.protector != nil {
 		fields := []datatype.FieldInfo(nil)
 		if s.tableInfo != nil {
 			fields = s.tableInfo.Fields
 		}
-		protect, err = s.protector.PrepareCatalogTableProtection(ctx, s.path, fields)
+		prepared, prepareErr := s.protector.PrepareCatalogTableProtection(ctx, s.path, fields)
+		err = prepareErr
+		if prepared != nil {
+			protect = prepared.Apply
+			derivedFields = prepared.DerivedFields
+		}
 		if err != nil {
 			return nil, fmt.Errorf("prepare native table source protection: %w", err)
 		}
@@ -395,7 +416,7 @@ func (s *nativeTableBatchSource) Open(ctx context.Context) (TableBatchReader, er
 			return nil, fmt.Errorf("open native table read session: %w", err)
 		}
 		reader := TableBatchReader(&nativeTableSessionBatchReader{session: session, tableInfo: s.tableInfo, spatialInfo: s.spatialInfo})
-		return protectTableBatchReader(reader, protect)
+		return protectTableBatchReader(reader, protect, derivedFields)
 	}
 	if s.reader == nil {
 		return nil, fmt.Errorf("native table source requires batch reader")
@@ -409,7 +430,7 @@ func (s *nativeTableBatchSource) Open(ctx context.Context) (TableBatchReader, er
 		tableInfo:   s.tableInfo,
 		spatialInfo: s.spatialInfo,
 	})
-	return protectTableBatchReader(reader, protect)
+	return protectTableBatchReader(reader, protect, derivedFields)
 }
 
 type nativeTableSessionBatchReader struct {

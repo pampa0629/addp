@@ -2682,6 +2682,105 @@ System 回执只承载本次精确办理编号、目标与参数绑定、被消�
 - 全仓 `make test-go` 最终复跑退出码 0，Catalog、Common、System 及其余已登记 Go 模块通过。一次共享工作区复跑曾遇到并行日志改动 `common/cmd/runtime-log` 的 `receiverCredential` 尚未定义编译错误；未修改或覆盖该并行工作，核对当前文件后重新运行并通过，不将失败记为通过。最后的 `make test-authorization` 与 `git diff --check` 也通过。
 - 默认 `make test-changed` 首次识别共享工作区 72 个变更文件和 26 个受影响模块，但 PostgreSQL／MySQL／OceanBase 多 owner 测试连接参数未注入，在预检失败，未执行全套门禁，不计为通过。上述本轮 owner PostgreSQL 门禁使用已核实宿主机 25432 的 `addp_test`／`addp_iam_test`，由标准入口隔离夹具并清理；不改变生产／开发迁移状态。各已登记 owner CI 承担尚未本地完成的扩散门禁，不宣称全部并行工作已验收。
 
-下一优先项：在既有 Online T4 体系补齐真实 OAuth 双服务首次受理与响应丢失恢复用例；证明链路后再推进实际 Grant 写入及只读执行侧裁决。业务决定、已受理、已写入 Grant、实际可读必须分别验收。
+下一优先项：在既有 Online T4 体系补齐真实 OAuth 双服务首次受理与响应丢失恢复用例；证明链路后再推进实际 Grant 写入及只读执行侧裁决。业务决定、已受理、已写入 Grant、实际可读必须分别验收。后续用例与门禁接入进度见 §26.46，尚无真实 T4 通过证据。
 
 本轮没有启动、停止、接管或重启 ADDP 应用服务；没有操作开发业务库迁移状态、访问或写入源端、读取或改写工作区 `.env`，没有提交代码。000180 仅在允许的测试库验证。
+
+### 26.46 正式受理纳入现有 Online 体系（2026-10-03，用例已接入，真实 T4 未运行）
+
+承接 §26.45，复用现有 `enterprise-catalog-publishing` suite、专用 macOS profile 和 `make test-online`，不另建脚本、测试库或 workflow。实施前明确本轮属于验收脚本、T0／脚本确定性验证及 T4 用例接入，不修改生产授权算法、公开 API 或 Swagger；确认原 Make 登记、Platform CI 和手工 `Online T4 gates` 已覆盖修改文件。
+
+- [x] 在原企业目录发布链中增加 `ECV-10`：同一专用 User 显式确认限时只读共享，通过 Catalog 正式准备接口触发真实 Catalog→System→Catalog 的 Tenant Service OAuth 反查与首次受理。必须核对决定、目标、接收方、原办理身份、批准要求版本及完整回执；`pending`、`closed` 或响应绑定错误不计成功。
+- [x] 复用永久数据源对应的业务负责人，不自动移交责任或赋权。测试 User 另需确认、独立办理、批准要求初始化／读取 Permission 及当前引擎管理委派。首次仅通过正式 API 初始化精确 fixture 表的 Catalog 批准要求；已有独立批准模式停止，不覆盖或降级。
+- [x] 专用 Runner 的准入新增独立 `SYSTEM_SERVICE_CLIENT_SECRET` 非空检查，在任何服务生命周期动作前拒绝缺失配置。此为该 T4 的前置，不改变普通部署允许留空的 System Ready 边界；脚本不读取工作区 `.env`，不自行签发或打印 Service Token。
+- [x] 调用方丢弃首次已提交响应作为可用结果，再仅用原三个输入重放，核对完整回执、原受理时间与最多五分钟截止完全不变；决定明确十分钟到期且不得在恢复时续期。两个机器接口使用人类 Token 均须返回 403。
+- [x] 主验收报告升级为 `addp.enterprise-catalog-publishing/v3`，浏览器协议仍为 v2。不可变业务决定、已核清请求和 System 回执单列为长期审计事实，不直接删除，也不混入临时 Asset／AssetCategory 的残留数量。成功路径仍恢复完整编目聚合；不确定提交与待核清保护使清理失败时，同时保留原请求编号、原失败原因和清理错误，不清保护或伪报零残留。
+- [x] 同步测试与验收规范、`scripts/README.md` 的案例／环境／证据边界。原 `make test-online-runner` 自动执行新增正常、错误绑定、跨 Tenant 回执、错误办理身份、窗口非法／续期、错误决定期限、机器身份隔离、分页批准要求、缺业务负责人及失败清理证据用例。仍保持手工调度，首次真实通过前不加入夜间任务。
+- [ ] 在专用干净部署运行 `make test-online ONLINE_SUITE=enterprise-catalog-publishing` 并取得真实双服务证据。本轮没有执行该项：个人共享工作区不是专用 Online 部署，不能接管现有服务或绕过仓库外凭据／隔离库准入。
+- [ ] Catalog→System 之间真实网络中断、跨进程重启后恢复的 T4 尚未覆盖。调用方同参重放不冒充这些故障；现有 T1／PostgreSQL T2 的受控 Transport 及核清竞争仍与 T4 分开报告。
+- [ ] Grant 写入、执行侧只读裁决和正式人类办理 UI 仍未贯通；本轮不创建或验证源 Grant，不把回执等同数据可访问。
+
+最终验证：
+
+- `make test-online-runner` 最终退出码 0；全部既有脚本组、新增企业目录用例和 Online CI 登记一致性检查通过。这是确定性脚本验证，不是真实 T4 结果。
+- `make test-platform` 最终退出码 0，包含上述 Online 脚本验证、现有平台一致性与 Permission／Swagger 门禁。没有新公开接口，不需要生成新的 Swagger。
+- `git diff --check` 通过。默认 `make test-changed` 当时识别共享工作区 17 个变更文件、22 个受影响 owner，但并行共享依赖改动需要的 PostgreSQL／MySQL／OceanBase 测试参数未注入，在 T2 环境预检失败，未运行全套 owner 门禁，不计为通过；未覆盖的扩散验证仍由原 owner CI 承担。
+
+下一优先项：在现有专用 Runner 上手工执行 `Online T4 gates / enterprise-catalog-publishing`，先取得 `ECV-10` 的真实 OAuth 首次受理证据，再推进实际 Grant 写入与执行侧验收。首次接入需管理员在专用环境预置上述 Permission／管理委派和独立机器凭据；不能通过放宽权限或改变开发配置来让验收通过。本轮没有启动、停止、重启或接管用户 ADDP 服务，没有访问源端、操作开发库或迁移状态，没有修改 `.env`、提交代码或覆盖并行引擎研发。
+
+### 26.47 人类办理入口接入盘点与同编号拒绝换参（2026-10-03，接收方候选范围已确认）
+
+继续接入人类页面前先核对权限与恢复契约，不把只有 API 的能力误记为用户已经能完成办理。本机未配置 `ADDP_ONLINE_ENV_FILE`，共享工作区也不是专用干净部署；真实 T4 仍未执行，不启动或接管用户服务。
+
+发现的页面前置缺口：共享确认支持同 Tenant 的有效 User／Project Group，而 Catalog 现有通用候选仅支持 Domain／Glossary／Element／Department／User；`GET /me/project-groups` 只提供当前账号的有效成员项目组，不能用它代表全部可接收共享的项目组。System 的 Catalog Runtime 候选也没有 Project Group 分支。若限制为本人项目组，会无依据缩小已确认的共享接收范围；若直接枚举全 Tenant，又会扩大组织信息读取范围，需要先确认。
+
+当时提出并随后获确认的范围：具有独立共享确认权的当前业务负责人，可为本条目选择本 Tenant 的有效账号或项目组，包括本人未加入的项目组；只返回名称、编码、稳定 ID 和状态，不返回项目组成员、角色或数据。此候选读取不授予共享权，更不授予源访问；提交仍由 Catalog／System 核验。复用既有 System 组织事实、分页协议和鉴权能力，消费者明确限定条目范围；不把现有 `catalog.entry.read` 的通用候选接口直接扩大为全 Tenant 项目组枚举，不借用组织管理权限，不添加手填 ID 或第二套组织副本。当时依赖它的页面暂停；确认后的后端实现及剩余页面前置见 §26.48。
+
+办理人展示接收方名称是不同的读取需求：应只解析其已经有权读取的候选决定所指向的主体，沿用独立办理权和当前引擎管理委派核验，不据此获得全 Tenant 候选枚举或业务用途正文。正式办理所需批准要求版本已有独立 `system.engine_access_approval_requirement.read` 读取接口；页面不能从独立办理权推导该权限，也不能让用户手填版本。这些契约须在正式页面交付前落实，不以浏览器缓存制造权威事实。
+
+独立可继续的验证工作：在原 `ECV-10` 补齐同一决定编号改用途、同一办理编号改批准要求版本的 `409 catalog_sharing_decision_conflict` 拒绝；拒绝后读取／同参恢复必须仍返回原不可变决定和回执，不能新增办理编号或延长窗口。仅扩展现有脚本与标准门禁，不改变生产权限、公开 API、Swagger、Grant 或生命周期。沿用 `make test-online-runner`、`make test-platform` 及现有手工 Online CI；新拒绝请求本身允许留存操作审计，不能将场景预期数量冒充数据库审计计数核验。
+
+本轮实施及验证：
+
+- [x] 两种同编号换参拒绝、规范状态／错误码、拒绝后原决定／回执不变和原三参数重放已加入现有脚本及报告；新增测试覆盖错误接受、错误冲突码、拒绝后篡改和 int64 最大批准要求版本。不采用加一制造非法溢出版本。
+- [x] 同步测试与验收规范及 scripts 案例表；没有新公开接口或 CI 入口，原自动发现覆盖本轮改动。
+- `python3 -m unittest scripts/test/enterprise-catalog-publishing-online_test.py`：27 项退出码 0。这是根 Make 中已有脚本组的定位复验，不是真实 T4。
+- `make test-online-runner` 最终复跑退出码 2，末组 275 项仅剩并行 Elasticsearch 注册表与清单断言不同步：`online-gate.py` 已注册 `elasticsearch-consumer-flow`，`online-gate_test.py:76` 的精确预期集合未包含它。本轮 Catalog 用例通过；不覆盖并行引擎研发，也不把整体失败记为通过。
+- `make test-platform` 最终退出码 2，同样在上述 Online 组失败；未执行的后续步骤不记为通过。早期复跑曾发现既有回执篡改夹具误把新增 409 当成功回执解析，已修正为只对 200 注入篡改，最终上述两次完整门禁均不再有该错误。
+- 默认 `make test-changed` 识别共享工作区 95 个变更文件、26 个 owner，因 PostgreSQL／MySQL／OceanBase 所需参数未注入在预检失败，未执行全套 owner 门禁。原 owner CI 继续承担未完成的扩散验证，不修改开发配置补齐测试条件。
+- `git diff --check` 通过；真实双服务 T4、跨进程恢复、实际 Grant 和正式办理 UI 均未完成。没有启停用户服务、修改开发数据库／源端、改写 `.env` 或提交代码。
+
+接续确认：用户同意上述条目级接收方候选读取范围。当前按该范围实现最小候选链路，不扩大通用条目读取或本人项目组接口；办理人的接收方名称仍须按已有可读决定限定。正式人类页面和真实 T4 尚未完成，真实 T4 仍是实际 Grant 写入前的独立验收前置，不能以页面或脚本替身绕过。
+
+### 26.48 条目级接收方候选与办理摘要名称（2026-10-03，后端已实施，页面尚未接入）
+
+按 §26.47 用户确认的范围，先同步企业资源目录实现规范与授权上下文规范，再实现唯一候选链路；没有新增组织副本或扩大通用候选接口。
+
+- [x] Catalog 单一 `GET /entries/:id/sharing_recipient_candidates`：当前 Tenant User 同时具备 `catalog.entry.read`、独立 `catalog.sharing_decision.create`，且是可见有效 Meta 数据项的当前有效业务负责人，才能取得同 Tenant 的有效 User／Project Group 最小分页候选。支持空关键词浏览及名称／编码查询，不要求本人加入接收项目组，不返回成员、角色或数据。
+- [x] System 原 Catalog Runtime 候选链增加 Project Group：沿用可信 Tenant Service 身份与组织读取交集，不开放人类通用组织枚举。`tenant.catalog_runtime` 清单补齐既有 000102 已登记的 `iam.project_group.read`，清单版本推进至 109；不修改已发布迁移，不添加新 Permission、人类 Role Assignment 或数据 Grant。
+- [x] 办理候选只对当前可读决定里的接收主体精确批量解析，增加 `recipient_name`、`recipient_code` 与 `recipient_label_status=resolved|not_found`。缺失名称不以 ID 冒充；依赖失败或错误身份绑定返回错误，不降级为未经核验的候选。没有扩大业务用途正文或全租户历史读取范围。
+- [x] Catalog 在锁外调用 System，返回后用新只读快照复核权限期限、条目可见性、来源版本和原责任关系；查询期间换源、移交、同账号重新接任、弃用、Token／盘点权限到期均不沿用旧资格。办理摘要名称解析后还重读同一分页，候选变化拒绝返回旧摘要。候选查询不创建决定、待核清保护、受理或 Grant。
+- [x] 同步 Common 客户端、System Runtime 守卫、清单与双语 Swagger；用例并入原 Catalog／System／Common Go T1、Catalog PostgreSQL T2、System IAM PostgreSQL T2，原 Make 与 CI 自动发现覆盖，无新增测试库或旁路入口。
+- [x] System 完整模块门禁发现前一轮 `tenant.system_runtime` 与 `sharing_fulfillment` 的角色管理页中英文标签遗漏；按现有后端事实补齐前端词条，不放宽清单覆盖测试或权限。
+- [ ] 共享确认与正式办理页面尚未接入，实际 Grant 和执行侧数据读取尚未实现，真实双服务 Online T4 尚未运行。
+
+实施回归范围包括非成员项目组、有效账号、跨 Tenant 隔离、维护权不能替代确认权、确认权不能替代条目读取、非业务负责人拒绝、非法分页／重复身份／停用主体／错误绑定拒绝，以及网络调用期间责任、来源、可见性和期限变化。到期测试首次曾偶发失败，随后原样复测通过；最终等待测试夹具的宿主机和 PostgreSQL 墙钟都越过原截止点后再断言，消除跨时钟边界竞争，不增加生产宽限期。
+
+当前验证证据：
+
+- `make test-module MODULE=catalog` 退出码 0，平台 T0、Catalog Go T1、前端 94 项单元测试及构建、PostgreSQL T2 通过；随后新增的有效账号和盘点权限到期用例又由 `make test-catalog-postgres` 与最终 `make test-go` 覆盖，退出码均为 0。当前 Catalog 前端标准入口是单元测试和构建，不把本轮结果写成新增页面的浏览器验收。
+- System 原 `catalog-reference-candidates` PostgreSQL 标准分组退出码 0，真实迁移与非成员／空成员项目组、停用和跨 Tenant 用例通过。首次 `make test-module MODULE=system` 在上述双语标签检查失败，后续步骤未运行、不计为通过；修复后完整复跑退出码 0，平台 T0、System Go T1、91 项前端单元测试、39 项 Playwright 用例、构建、完整 IAM PostgreSQL T2 与运行日志 T2 均通过。运行日志标准门禁确认自建容器／网络／卷和临时源目录已清理，不涉及用户 ADDP 服务。
+- `make test-authorization` 退出码 0，权限／角色生成产物与全部 Swagger 路由覆盖一致。最新 `make test-go` 退出码 0，覆盖共享消费者及新增 System Runtime 三项组织 Permission 缺一拒绝测试。
+- 默认 `make test-changed` 识别共享工作区 164 个变更文件、26 个 owner，但其他 owner 所需 PostgreSQL／MySQL／OceanBase 参数未注入，在预检失败；未运行全套扩散门禁、不计为通过，仍由现有 owner CI 验证。Catalog／System 数据库验证只使用已核实宿主机 25432 的 `addp_test`／`addp_iam_test`，夹具及清理由标准入口管理。
+- 最终 `git diff --check` 通过；本轮权限边界与最小 DTO 已按实现规范复核。真实双服务 Online T4、正式办理页面及实际 Grant 验证未执行，不以已有 T0-T2 结果冒充。
+
+下一项需确认的页面契约：目前人类只有正式准备 POST，没有原办理请求的只读查询／找回接口。Runtime 的反查、核清接口只面向机器，不能直接给人调用；正式准备 POST 可能首次受理，不能当作页面刷新 GET，也不能依靠浏览器缓存成为唯一请求记录。现有后台恢复命令在权威明确未受理时会申请关闭原请求，也不能直接复用为人的只读刷新。
+
+当时建议首版只读查询限定为：当前 User 在仍可见条目下，仅查看本人作为原办理人的请求；同时核验独立办理功能 Permission 和当前引擎管理范围。不因同项目组、责任部门或编目维护权开放他人办理历史；请求编号与原参数来自后端持久记录，结果由 System 精确查询，不新增受理／关闭／Grant。同参重试另由用户显式触发，沿用原请求编号和参数；查询失败不能解释为已关闭或已授权。该范围已获用户“同意，继续”确认，实施与验证进度见 §26.49；不再把它列为待确认的页面契约。
+
+本轮没有启动、停止、接管或重启用户服务，没有访问或修改源端、开发业务数据库迁移状态或工作区 `.env`，没有提交代码，也没有覆盖并行 Elasticsearch／三维及其他模块研发。
+
+### 26.49 原办理请求只读找回（2026-10-03，后端已编写，运行门禁暂阻塞）
+
+用户已确认 §26.48 的首版人类只读范围。本轮先完善持久请求找回与刷新契约，不把正式准备 POST、机器 Runtime 或后台关闭／核清消费者复用为人的刷新入口。
+
+- [x] 先更新企业目录实现规范和授权上下文规范，再增加 `GET /entries/:id/sharing_fulfillments` 与 `GET /entries/:id/sharing_fulfillments/:request_id`；复用当前条目读取及独立 `system.engine_access_fulfillment.create`，无新 Permission、迁移、Role Assignment 或 Grant。
+- [x] 分页找回仅查询当前 Tenant、本人原办理且当前仍可见条目下的请求。逐个按原完整绑定中的引擎核验当前管理范围，再计数和稳定分页；不能用条目换源后的新引擎资格查看旧引擎请求。没有资格的原引擎不暴露条目或数量，依赖查询失败仍报错，不伪装为空列表。每页最多 100 条，拒绝非法、空值、重复及未知 query。
+- [x] 详情按原持久完整绑定向 System 只读反查；原操作身份和历史授权版本只匹配原请求，不替换为当前版本，也不能恢复当前资格。权威明确未找到才返回 `pending`；`accepted`／`closed` 保留原受理时点及窗口，过期历史不刷新。错误身份、绑定、结果形状或不一致历史拒绝返回。
+- [x] 网络调用在 Catalog 只读快照之外；返回前复核当前权限期限、条目可见、原绑定和原引擎管理资格。查询不持条目写锁，不新增请求、业务审计，不填写 `resolved_at`、提交、关闭、续期或写 Grant；本地已核清而权威反查未找到属于错误，不重新变成 pending。
+- [x] 最小返回保留原请求编号、决定编号、批准要求版本、目标、接收方、动作和拟授权期限；版本／整数 ID 保持字符串精度，不向人返回机器调用身份、原 IAM 授权版本或业务用途正文。详情只追加动态权威状态，不落受理状态副本。
+- [x] 新用例自动进入 Catalog Go T1；真实 PostgreSQL 复用 `TestPostgresSharingFulfillmentRecovery` 和现有 API 路由测试，因此既有 `make test-module MODULE=catalog`、`make test-catalog-postgres` 及 Hosted PostgreSQL CI 覆盖，无新入口、测试数据库或 workflow 旁路。Swagger 三份产物已同步。
+- [ ] 本轮 Go T1／新增服务和 API PostgreSQL T2 尚未取得通过证据；详见当前阻塞。共享确认、正式办理页面、实际 Grant 及执行侧只读裁决仍未贯通，真实双服务 T4 未执行。
+
+验证用例已编写：本人分页及跨人／跨 Tenant 隔离、原引擎资格过滤后计数、维护权不能替代独立办理权、原 IAM 版本变化后按当前资格读取、机器身份拒绝、非法分页和未知 query、pending／accepted／closed 精确反查、错误绑定和依赖故障拒绝、查询期间撤销管理范围／隐藏条目／权限到期、已弃用已核清历史可读、权威历史不一致拒绝、网络期间不持条目写锁和查询零写入。这里列的是已纳入门禁的案例，不是通过报告。
+
+当前验证证据与阻塞：
+
+- `make test-authorization` 退出码 0，权限／角色生成一致、新增 GET 的独立功能 Permission 与 Catalog 43 个公开路由方法的 Swagger 覆盖通过。
+- 使用 `bash scripts/infra/status.sh` 核实 PostgreSQL 实际映射为 25432，随后通过标准入口注入 `addp_test` 的 Catalog 测试 DSN。`make test-module MODULE=catalog` 在平台 T0 的共享 Go 编译步骤失败，后续 Catalog T1、前端与 T2 未运行；`make test-catalog-postgres` 的 Repository 组通过，但 Service 组编译失败，新增 History 和 API 用例未运行，不能记为 T2 通过。
+- 两个入口均报告 `common/execution/observation.go:365: ref.FieldName undefined`：共享工作区另一个并行血缘改动已从 `LineageResourceRef` 移除 `FieldName`，现有安全摘要调用尚未同步。只读比较 HEAD 与工作区已确认其来源；本轮不恢复旧字段或覆盖并行 owner 的修改来绕过门禁。
+- 默认 `make test-changed` 识别共享工作区 278 个变更文件、27 个受影响 owner，但未注入整套 PostgreSQL／MySQL／OceanBase T2 环境，在预检拒绝执行，未计为通过。新 History 输入以最终 Catalog 专属门禁为验收前置；本轮尚未完成，不把既往轮次的通过证据复用为本轮结果。
+
+下一优先项：先在并行 owner 完成共享编译契约后复跑 Catalog 标准门禁，取得 History 服务和真实 API 的通过证据，再接正式人类共享确认／办理页面。页面刷新只用这两个 GET，显式提交或同参重试另走正式准备 POST；当前不宣称 accepted 代表实际数据已经可访问。
+
+本轮没有启动、停止、接管或重启用户 ADDP 服务，没有修改源端、开发业务数据库、迁移 dirty 状态或 `.env`，没有提交代码或新增长期脚本。

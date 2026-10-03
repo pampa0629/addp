@@ -19,6 +19,35 @@ with open(sys.argv[1], "a") as lock:
 PY
 }
 
+# 宿主机 Python Runtime 按完整声明同步依赖；启动与局部重启共用。
+addp_sync_python_dependencies() {
+  local project_root="$1"
+  local runtime_dir="$2"
+  local label="$3"
+  local python_bin="$runtime_dir/venv/bin/python"
+  local pip_args=(-m pip install -r "$runtime_dir/requirements.txt" -e "$project_root/common-python")
+
+  if [ ! -x "$python_bin" ]; then
+    echo "✗ $label 虚拟环境不存在或不可执行，请先使用 start.sh 创建环境" >&2
+    return 1
+  fi
+
+  if [ -n "${PIP_INDEX_URL:-}" ]; then
+    pip_args+=(-i "$PIP_INDEX_URL")
+    if [ -n "${PIP_TRUSTED_HOST:-}" ]; then
+      pip_args+=(--trusted-host "$PIP_TRUSTED_HOST")
+    fi
+  fi
+
+  echo "同步 $label Python 依赖..."
+  if ! addp_with_python_dependency_lock "$project_root" "$python_bin" "${pip_args[@]}" ||
+     ! "$python_bin" -m pip check; then
+    echo "✗ $label Python 依赖同步失败" >&2
+    return 1
+  fi
+  echo "✓ $label Python 依赖同步完成"
+}
+
 addp_process_is_descendant_of() {
   local process_pid="$1"
   local ancestor_pid="$2"

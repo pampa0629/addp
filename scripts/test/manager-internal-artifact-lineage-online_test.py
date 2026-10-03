@@ -1,8 +1,12 @@
 import copy
 import importlib.util
+import json
+import struct
 import sys
 import tempfile
 import unittest
+import urllib.parse
+import zlib
 from pathlib import Path
 from unittest import mock
 
@@ -17,6 +21,39 @@ SPEC.loader.exec_module(SUITE)
 
 def response(status, payload=None, *, raw=b""):
     return SUITE.Response(status, payload if payload is not None else {}, {}, raw)
+
+
+def textured_glb():
+    def chunk(kind, data):
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+    png = (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">2I5B", 1, 1, 8, 2, 0, 0, 0))
+           + chunk(b"IDAT", zlib.compress(b"\x00\xff\x40\x20")) + chunk(b"IEND", b""))
+    binary = struct.pack("<9f", 0, 0, 0, 1, 0, 0, 0, 2, 0) + struct.pack("<6f", 0, 0, 1, 0, 0, 1) + png
+    doc = {
+        "asset": {"version": "2.0"}, "scene": 0, "scenes": [{"nodes": [0]}], "nodes": [{"mesh": 0}],
+        "buffers": [{"byteLength": len(binary)}],
+        "bufferViews": [{"buffer": 0, "byteOffset": 0, "byteLength": 36}, {"buffer": 0, "byteOffset": 36, "byteLength": 24}, {"buffer": 0, "byteOffset": 60, "byteLength": len(png)}],
+        "accessors": [{"bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3", "min": [0, 0, 0], "max": [1, 2, 0]}, {"bufferView": 1, "componentType": 5126, "count": 3, "type": "VEC2"}],
+        "meshes": [{"primitives": [{"attributes": {"POSITION": 0, "TEXCOORD_0": 1}, "material": 0}]}],
+        "images": [{"bufferView": 2, "mimeType": "image/png"}], "textures": [{"source": 0}],
+        "materials": [{"pbrMetallicRoughness": {"baseColorTexture": {"index": 0}}}],
+    }
+    encoded = json.dumps(doc).encode()
+    encoded += b" " * (-len(encoded) % 4)
+    binary += b"\0" * (-len(binary) % 4)
+    return (struct.pack("<4sII", b"glTF", 2, 28 + len(encoded) + len(binary))
+            + struct.pack("<I4s", len(encoded), b"JSON") + encoded
+            + struct.pack("<I4s", len(binary), b"BIN\0") + binary)
+
+
+def alter_glb(raw, change):
+    size = struct.unpack_from("<I", raw, 12)[0]
+    doc = json.loads(raw[20:20 + size])
+    change(doc)
+    encoded = json.dumps(doc).encode()
+    encoded += b" " * (-len(encoded) % 4)
+    tail = raw[20 + size:]
+    return struct.pack("<4sII", b"glTF", 2, 20 + len(encoded) + len(tail)) + struct.pack("<I4s", len(encoded), b"JSON") + encoded + tail
 
 
 class FakeGatewayClient:
@@ -40,9 +77,23 @@ class FakeGatewayClient:
             "addp_online_preview_fixture.pptx?type=object&item_id=92"
         )
         self.pointcloud_output_name = "pdal_las12_format0.copc.laz"
+        self.models = {
+            format_name: {"item_id": item_id, "task_id": item_id + 110, "result_id": item_id + 210,
+                          "fingerprint": fingerprint * 64, "task_exists": False, "result_exists": False,
+                          "locator": f"addp://engine/27/path/addp-online/model3d/{format_name}/model.{format_name}?type=object&item_id={item_id}"}
+            for format_name, item_id, fingerprint in (("dae", 93, "c"), ("3ds", 94, "d"))
+        }
+        self.glb = textured_glb()
+        self.model_modes = {"dae": "basic_preview", "3ds": "basic_preview"}
 
-    def lineage_execution(self, task_type):
-        if task_type == SUITE.PPTX_TASK_TYPE:
+    def lineage_execution(self, task_type, format_name=None):
+        if task_type == SUITE.MODEL_TASK_TYPE:
+            model = self.models[format_name]
+            item_id = model["item_id"]
+            fingerprint = model["fingerprint"]
+            locator = model["locator"]
+            output = f"addp-infra://minio/manager/tenant_42/model3d-quick-view/{fingerprint}/model.glb?type=object"
+        elif task_type == SUITE.PPTX_TASK_TYPE:
             item_id = self.pptx_item_id
             fingerprint = self.pptx_fingerprint
             locator = self.pptx_locator
@@ -89,8 +140,8 @@ class FakeGatewayClient:
             )
         return result
 
-    def monitor_execution(self, task_type):
-        execution = self.lineage_execution(task_type)
+    def monitor_execution(self, task_type, format_name=None):
+        execution = self.lineage_execution(task_type, format_name)
         execution["metadata"]["lineage_facts"]["operations"] = None
         return execution
 
@@ -126,7 +177,58 @@ class FakeGatewayClient:
                     "fingerprint": self.pptx_fingerprint,
                     "size_bytes": 16575,
                 },
-            ])
+            ] + [{
+                "id": model["item_id"], "full_name": f"addp-online/model3d/{format_name}/model.{format_name}",
+                "item_type": "object", "fingerprint": model["fingerprint"], "size_bytes": 1024,
+                "attributes": {"item": {"data_type": "model_3d", "format": format_name, "layout": "single"},
+                               "format_info": {format_name: {"texture_refs": ["texture.png"], "scan_complete": True, "unit_meter": 0.01}}},
+            } for format_name, model in self.models.items()])
+        parsed = urllib.parse.urlsplit(path)
+        query = urllib.parse.parse_qs(parsed.query)
+        if parsed.path == "/api/v1/manager/tasks" and method == "GET":
+            rows = [{"id": model["task_id"], "config": {"source": {"item_fingerprint": model["fingerprint"]}}}
+                    for model in self.models.values() if model["task_exists"]]
+            return response(200, {"items": rows, "total": len(rows)})
+        if parsed.path == "/api/v1/manager/model_3d_glb" and method == "GET":
+            rows = [{"id": model["result_id"], "task_id": model["task_id"], "item_fingerprint": model["fingerprint"]}
+                    for model in self.models.values() if model["result_exists"]
+                    and ("task_id" not in query or str(model["task_id"]) == query["task_id"][0])
+                    and ("item_fingerprint" not in query or model["fingerprint"] == query["item_fingerprint"][0])]
+            return response(200, {"data": rows, "total": len(rows)})
+        for format_name, model in self.models.items():
+            if parsed.path == "/api/v1/manager/quick-view/capability" and query.get("locator") == [model["locator"]]:
+                if not model["result_exists"]:
+                    return response(200, {"available_actions": ["generate_model_3d_glb"], "preferred_mode": self.model_modes[format_name]})
+                return response(200, {"can_use_quick_view": True, "render_source": "model_3d_glb", "model_3d": {
+                    "format": format_name, "task_id": model["task_id"], "result_id": model["result_id"],
+                    "last_execution_id": f"model-{format_name}", "preview_url": f"/api/v1/manager/model_3d_glb/{model['result_id']}/content",
+                }})
+            if path == "/api/v1/manager/quick-view/actions" and method == "POST" and body.get("locator") == model["locator"]:
+                if body.get("action") != "generate_model_3d_glb":
+                    raise AssertionError("model action must be generate_model_3d_glb")
+                model["task_exists"] = model["result_exists"] = True
+                return response(202, {"task_type": SUITE.MODEL_TASK_TYPE, "task_id": model["task_id"], "execution_id": f"model-{format_name}"})
+            if path == f"/api/v1/manager/executions/model-{format_name}":
+                return response(200, self.lineage_execution(SUITE.MODEL_TASK_TYPE, format_name))
+            if path == f"/api/v1/monitor/executions/by-execution-id/model-{format_name}":
+                return response(200, self.monitor_execution(SUITE.MODEL_TASK_TYPE, format_name))
+            if path == f"/api/v1/manager/model_3d_glb/{model['result_id']}/content":
+                if not model["result_exists"]:
+                    return response(404)
+                return response(206 if headers.get("Range") else 200, raw=self.glb[:64] if headers.get("Range") else self.glb)
+            if path == f"/api/v1/manager/model_3d_glb/{model['result_id']}" and method == "DELETE":
+                model["result_exists"] = False
+                return response(200)
+            if path == f"/api/v1/manager/tasks/{SUITE.MODEL_TASK_TYPE}/{model['task_id']}":
+                if method == "DELETE":
+                    model["task_exists"] = False
+                    return response(204)
+                return response(200 if model["task_exists"] else 404)
+            if path == "/api/v1/manager/preview-state/preferred-mode" and body.get("locator") == model["locator"]:
+                self.model_modes[format_name] = body["preferred_mode"]
+                return response(200)
+            if parsed.path == "/api/v1/manager/preview-state" and query.get("locator") == [model["locator"]]:
+                return response(200, {"preferred_mode": self.model_modes[format_name]})
         if path == "/api/v1/manager/point_cloud_copc_tasks?page=1&page_size=100":
             return response(200, {"data": [], "total": 0})
         if path.startswith("/api/v1/manager/point_cloud_copc?item_fingerprint="):
@@ -252,9 +354,15 @@ def scenario_environment(artifact_dir: str):
 
 
 class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
+    def browser_models(self):
+        client = FakeGatewayClient()
+        return [{"format": format_name, "locator": model["locator"], "item_id": model["item_id"],
+                 "result_id": model["result_id"], "preview_url": f"/api/v1/manager/model_3d_glb/{model['result_id']}/content"}
+                for format_name, model in client.models.items()]
+
     def browser_report(self, environment, evidence):
         return {
-            "schema_version": "addp.manager-internal-artifact-lineage-browser/v1",
+            "schema_version": "addp.manager-internal-artifact-lineage-browser/v2",
             "suite": "manager-internal-artifact-lineage",
             "run_id": environment["ADDP_ONLINE_TEST_RUN_ID"],
             "result": "passed",
@@ -267,11 +375,14 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
             "pptx_item_id": evidence["pptx_item_id"],
             "pptx_page_count": evidence["pptx_page_count"],
             "pptx_page_after_engine_refresh": 2,
-            "pptx_preview_requests": 1,
+            "pptx_generation_requests": 0,
+            "model_generation_requests": 0,
+            "models": [{**model, "model_loaded": True, "content_loaded": True} for model in evidence["models"]],
+            "gpu_performance_warnings": 0,
             "browser_warning_errors": 0,
         }
 
-    def test_runs_both_owner_routes_and_verifies_zero_residual_resources(self) -> None:
+    def test_runs_all_owner_routes_and_verifies_zero_residual_resources(self) -> None:
         client = FakeGatewayClient()
         browser_calls = []
 
@@ -285,8 +396,8 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
                     Path("/repository"), scenario_environment(artifact_dir), browser
                 )
 
-        self.assertEqual(report["lineage"]["inputs"], 2)
-        self.assertEqual(report["lineage"]["outputs"], 2)
+        self.assertEqual(report["lineage"]["inputs"], 4)
+        self.assertEqual(report["lineage"]["outputs"], 4)
         self.assertTrue(report["artifacts"]["pptx_pdf"]["cache_reused"])
         expected_cleanup = {
             "result_deleted": True,
@@ -296,10 +407,19 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
         }
         self.assertEqual(report["cleanup"]["point_cloud"], expected_cleanup)
         self.assertEqual(report["cleanup"]["pptx_pdf"], expected_cleanup)
+        for format_name, model in client.models.items():
+            self.assertEqual(report["cleanup"][format_name], {**expected_cleanup, "preview_mode_restored": True})
+            self.assertFalse(model["task_exists"])
+            self.assertFalse(model["result_exists"])
+            self.assertEqual(client.model_modes[format_name], "basic_preview")
+            self.assertEqual(report["artifacts"][format_name]["embedded_images"], 1)
+            self.assertEqual(report["artifacts"][format_name]["vertex_count"], 3)
         self.assertFalse(client.pointcloud_task_exists)
         self.assertFalse(client.pointcloud_result_exists)
         self.assertFalse(client.pptx_task_exists)
         self.assertFalse(client.pptx_result_exists)
+        self.assertTrue(all(not model["task_exists"] and not model["result_exists"] for model in client.models.values()))
+        self.assertEqual(client.model_modes, {"dae": "basic_preview", "3ds": "basic_preview"})
         self.assertEqual(client.pptx_capability_calls, 2)
         self.assertEqual(browser_calls[0][1]["pptx_page_count"], 3)
         self.assertLess(
@@ -307,7 +427,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
             client.calls.index(("DELETE", "/api/v1/manager/tasks/pptx_pdf_generation/202")),
         )
 
-    def test_browser_failure_still_deletes_both_results_and_tasks(self) -> None:
+    def test_browser_failure_still_deletes_all_results_and_tasks(self) -> None:
         client = FakeGatewayClient()
 
         def browser(*_args, **_kwargs):
@@ -324,6 +444,105 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
         self.assertFalse(client.pointcloud_result_exists)
         self.assertFalse(client.pptx_task_exists)
         self.assertFalse(client.pptx_result_exists)
+        self.assertTrue(all(not model["task_exists"] and not model["result_exists"] for model in client.models.values()))
+        self.assertEqual(client.model_modes, {"dae": "basic_preview", "3ds": "basic_preview"})
+
+    def test_rejects_missing_scanned_texture_before_manager_writes(self):
+        client = FakeGatewayClient()
+        original = client._request
+
+        def missing_texture(method, path, body, headers):
+            result = original(method, path, body, headers)
+            if path == "/api/v1/meta/engines/27/items":
+                result.payload[-1]["attributes"]["format_info"]["3ds"]["texture_refs"] = []
+            return result
+
+        with mock.patch.object(client, "_request", side_effect=missing_texture), mock.patch.object(SUITE, "GatewayClient", return_value=client):
+            with self.assertRaisesRegex(SUITE.SuiteError, "declared PNG texture"):
+                SUITE.run_scenario(Path("/repository"), scenario_environment("/tmp"))
+        self.assertFalse(any(method == "POST" and path.startswith("/api/v1/manager") for method, path in client.calls))
+
+    def test_failed_model_execution_deletes_its_failed_result_and_other_completed_results(self):
+        client = FakeGatewayClient()
+        original = client._request
+
+        def failed_model(method, path, body, headers):
+            if path == "/api/v1/manager/executions/model-3ds":
+                return response(200, {"status": "failed"})
+            return original(method, path, body, headers)
+
+        with mock.patch.object(client, "_request", side_effect=failed_model), mock.patch.object(SUITE, "GatewayClient", return_value=client):
+            with self.assertRaisesRegex(SUITE.SuiteError, "3DS execution ended with status failed"):
+                SUITE.run_scenario(Path("/repository"), scenario_environment("/tmp"))
+        self.assertTrue(all(not model["task_exists"] and not model["result_exists"] for model in client.models.values()))
+        self.assertFalse(client.pptx_task_exists or client.pptx_result_exists or client.pointcloud_task_exists or client.pointcloud_result_exists)
+        self.assertEqual(client.model_modes, {"dae": "basic_preview", "3ds": "basic_preview"})
+
+    def test_active_execution_is_retained_and_cannot_report_zero_residuals(self):
+        client = FakeGatewayClient()
+        model = SUITE.prepare_model_fixture(client, 27, "addp-online", "dae")
+        model.task_id = 203
+        model.execution_id = "model-dae"
+        client.models["dae"]["task_exists"] = client.models["dae"]["result_exists"] = True
+        original = client._request
+
+        def active(method, path, body, headers):
+            if path == "/api/v1/manager/executions/model-dae":
+                return response(200, {"status": "running"})
+            return original(method, path, body, headers)
+
+        with mock.patch.object(client, "_request", side_effect=active):
+            with self.assertRaisesRegex(SUITE.SuiteError, "still active; resources retained"):
+                SUITE.cleanup_model_glb(client, model, 0)
+        self.assertFalse(any(method == "DELETE" for method, _ in client.calls))
+        self.assertEqual(model.cleanup["residual_resources"], -1)
+
+    def test_foreign_result_is_never_deleted(self):
+        client = FakeGatewayClient()
+        model = SUITE.prepare_model_fixture(client, 27, "addp-online", "dae")
+        model.task_id = 203
+        model.execution_id = "model-dae"
+        original = client._request
+
+        def foreign(method, path, body, headers):
+            if path.startswith("/api/v1/manager/model_3d_glb?task_id="):
+                return response(200, {"data": [{"id": 999, "task_id": 203, "item_fingerprint": "foreign"}], "total": 1})
+            return original(method, path, body, headers)
+
+        with mock.patch.object(client, "_request", side_effect=foreign):
+            with self.assertRaisesRegex(SUITE.SuiteError, "not owned by this run"):
+                SUITE.cleanup_model_glb(client, model, 0)
+        self.assertFalse(any(method == "DELETE" for method, _ in client.calls))
+        self.assertEqual(model.cleanup["residual_resources"], -1)
+
+    def test_preview_restoration_failure_still_deletes_owned_artifact_and_task(self):
+        client = FakeGatewayClient()
+        model = SUITE.prepare_model_fixture(client, 27, "addp-online", "dae")
+        SUITE.generate_model_glb(client, model, 42, 1)
+        original = client._request
+        def wrong_state(method, path, body, headers):
+            if path.startswith("/api/v1/manager/preview-state?"):
+                return response(200, {"preferred_mode": "map_quick_view"})
+            return original(method, path, body, headers)
+        with mock.patch.object(client, "_request", side_effect=wrong_state):
+            with self.assertRaisesRegex(SUITE.SuiteError, "restoration was not verified"):
+                SUITE.cleanup_model_glb(client, model, 1)
+        self.assertFalse(client.models["dae"]["task_exists"] or client.models["dae"]["result_exists"])
+        self.assertFalse(model.cleanup["preview_mode_restored"])
+        self.assertEqual(model.cleanup["residual_resources"], 0)
+
+    def test_glb_requires_a_textured_mesh_and_embedded_image(self):
+        self.assertEqual(SUITE.validate_model_glb(textured_glb())["embedded_images"], 1)
+        for change, reason in (
+            (lambda doc: doc.update(images=[]), "exactly one embedded PNG"),
+            (lambda doc: doc["images"][0].update(uri="texture.png"), "embedded PNG bufferView"),
+            (lambda doc: doc["buffers"][0].update(uri="mesh.bin"), "external buffers"),
+            (lambda doc: doc["accessors"][0].update(count=0), "textured three-vertex mesh"),
+            (lambda doc: doc["meshes"][0]["primitives"][0]["attributes"].pop("TEXCOORD_0"), "textured three-vertex mesh"),
+            (lambda doc: doc["textures"][0].update(source=1), "must use the embedded PNG"),
+        ):
+            with self.subTest(reason=reason), self.assertRaisesRegex(SUITE.SuiteError, reason):
+                SUITE.validate_model_glb(alter_glb(textured_glb(), change))
 
     def execution(self, output_locator: str | None = None):
         return {
@@ -444,6 +663,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
             "output_name": "source.copc.laz",
             "pptx_item_id": 92,
             "pptx_page_count": 3,
+            "models": self.browser_models(),
         }
         report = self.browser_report({"ADDP_ONLINE_TEST_RUN_ID": "run-1"}, evidence)
         validated = SUITE.validate_browser_report(
@@ -454,6 +674,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
             output_name="source.copc.laz",
             pptx_item_id=92,
             pptx_page_count=3,
+            models=evidence["models"],
         )
         self.assertEqual(validated, report)
 
@@ -464,6 +685,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
             "output_name": "source.copc.laz",
             "pptx_item_id": 92,
             "pptx_page_count": 3,
+            "models": self.browser_models(),
         }
         report = self.browser_report({"ADDP_ONLINE_TEST_RUN_ID": "run-1"}, evidence)
         report["pptx_page_after_engine_refresh"] = 1
@@ -476,7 +698,39 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
                 output_name="source.copc.laz",
                 pptx_item_id=92,
                 pptx_page_count=3,
+                models=evidence["models"],
             )
+
+    def test_browser_model_report_must_match_both_artifacts_and_loaded_content(self):
+        evidence = {"execution_id": "execution-1", "item_id": 91, "output_name": "source.copc.laz",
+                    "pptx_item_id": 92, "pptx_page_count": 3, "models": self.browser_models()}
+        for change in (
+            lambda report: report.pop("models"),
+            lambda report: report["models"][0].update(result_id=999),
+            lambda report: report["models"][1].update(content_loaded=False),
+            lambda report: report.update(model_generation_requests=1),
+        ):
+            report = self.browser_report({"ADDP_ONLINE_TEST_RUN_ID": "run-1"}, evidence)
+            change(report)
+            with self.assertRaisesRegex(SUITE.SuiteError, "report contract mismatch"):
+                SUITE.validate_browser_report(report, run_id="run-1", **evidence)
+
+    def test_browser_runner_uses_frontend_working_directory_and_current_report_contract(self):
+        evidence = {"execution_id": "execution-1", "item_id": 91, "output_name": "source.copc.laz",
+                    "pptx_item_id": 92, "pptx_page_count": 3, "models": self.browser_models()}
+        with tempfile.TemporaryDirectory() as directory:
+            environment = {"ADDP_ONLINE_ARTIFACT_DIR": directory, "ADDP_ONLINE_TEST_RUN_ID": "run-1"}
+            def browser(*args, **kwargs):
+                self.assertEqual(kwargs["cwd"], Path("/repository/console/frontend"))
+                self.assertEqual(args[0][:4], ["npm", "exec", "--", "playwright"])
+                self.assertIn("--config=playwright.online.config.js", args[0])
+                self.assertEqual(json.loads(kwargs["env"]["ADDP_ONLINE_MANAGER_MODELS_JSON"]), evidence["models"])
+                Path(directory, "manager-internal-artifact-lineage-browser.json").write_text(json.dumps(self.browser_report(environment, evidence)))
+                return mock.Mock(returncode=0)
+            with mock.patch.object(SUITE.subprocess, "run", side_effect=browser):
+                report = SUITE.run_browser(Path("/repository"), environment,
+                                          source_name="source.las", pptx_item_locator="addp://engine/27/path/slides.pptx?type=object&item_id=92", **evidence)
+            self.assertEqual(report["schema_version"], "addp.manager-internal-artifact-lineage-browser/v2")
 
 
 if __name__ == "__main__":

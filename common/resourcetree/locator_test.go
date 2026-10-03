@@ -586,3 +586,15 @@ func equalResourceLocator(a, b *ResourceLocator) bool {
 
 	return true
 }
+
+func TestIndexFullNameKeepsDotsAsOnePathSegment(t *testing.T) {
+	segments := ParseFullNamePath("elasticsearch", "index", "orders.v1")
+	if len(segments) != 1 || segments[0] != "orders.v1" {
+		t.Fatal(segments)
+	}
+	loc := &ResourceLocator{EngineID: 91, Path: segments, Type: TypeIndex}
+	parsed, err := ParseURI(loc.ToURI())
+	if err != nil || len(parsed.Path) != 1 || parsed.Path[0] != "orders.v1" {
+		t.Fatal(parsed, err)
+	}
+}

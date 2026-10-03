@@ -1,5 +1,5 @@
 schema_version: addp.builtin_roles/v1
-manifest_version: 108
+manifest_version: 109
 roles:
   - key: platform.agent_runtime
     role_type: platform_builtin
@@ -543,6 +543,7 @@ roles:
     permissions:
       - develop.catalog.read
       - iam.department.read
+      - iam.project_group.read
       - iam.tenant_membership.read
       - meta.catalog.read
       - model.catalog.read

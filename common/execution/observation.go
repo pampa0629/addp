@@ -362,7 +362,6 @@ func diagnosticSteps(value interface{}) ([]DiagnosticStep, bool) {
 func safeLineageResource(ref LineageResourceRef) LineageResourceRef {
 	ref.SchemaSnapshot = nil
 	ref.Port = SafeDiagnosticText(ref.Port)
-	ref.FieldName = SafeDiagnosticText(ref.FieldName)
 	ref.ItemFingerprint = SafeDiagnosticText(ref.ItemFingerprint)
 	ref.WriteMode = SafeDiagnosticText(ref.WriteMode)
 	if ref.Locator != "" {

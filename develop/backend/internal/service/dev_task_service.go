@@ -567,7 +567,7 @@ func validateDevTaskContent(devType string, content map[string]interface{}) erro
 			return fmt.Errorf("query 类型必须在 content.query_type 中提供查询类型")
 		}
 		switch strings.ToLower(strings.TrimSpace(queryType)) {
-		case "sql", "mql", "cypher":
+		case "sql", "mql", "cypher", "es_dsl":
 		default:
 			return fmt.Errorf("不支持的查询类型: %s", queryType)
 		}

@@ -471,6 +471,34 @@ class T2CIRegistrationTest(unittest.TestCase):
         dockerfile.write_text(dockerfile.read_text().replace('test "$(git -C source rev-parse HEAD)"', 'echo "unverified"'))
         self.assertTrue(MODULE.validate_registration(self.repository))
 
+    def test_shared_owned_lifecycle_requires_registered_invocation_and_compose(self) -> None:
+        self._add_owned_service_gate("pingcap/tidb:v8.5.8@sha256:" + "d" * 64)
+        gate = self.repository / "scripts/test/common-tidb-gate.sh"
+        helper = self.repository / "scripts/test/owned-fixture.sh"
+        helper.write_text(
+            "# disposable lifecycle\n"
+            "docker compose -f scripts/test/docker-compose.tidb-t2.yml up -d\n"
+            "docker compose down --volumes --remove-orphans\n"
+        )
+        original = gate.read_text()
+        declaration = (
+            "# ADDP_T2_LIFECYCLE_SCRIPT=scripts/test/owned-fixture.sh\n"
+            "# ADDP_T2_INPUT_FILES=scripts/test/owned-fixture.sh\n"
+        )
+        owner = original.split("database=", 1)[0] + declaration
+        invocation = 'bash "$ROOT_DIR/scripts/test/owned-fixture.sh"\n'
+        gate.write_text(owner + invocation)
+        self.assertEqual([], MODULE.validate_registration(self.repository))
+        gate.write_text(owner)
+        self.assertTrue(any("shared lifecycle" in error for error in MODULE.validate_registration(self.repository)))
+        gate.write_text((owner + invocation).replace("# ADDP_T2_INPUT_FILES=scripts/test/owned-fixture.sh\n", ""))
+        self.assertTrue(any("shared lifecycle" in error for error in MODULE.validate_registration(self.repository)))
+        gate.write_text(owner + invocation)
+        helper.write_text(helper.read_text().replace("scripts/test/docker-compose.tidb-t2.yml", "other.yml"))
+        self.assertTrue(any("declared Compose" in error for error in MODULE.validate_registration(self.repository)))
+        helper.unlink()
+        self.assertTrue(any("shared lifecycle" in error for error in MODULE.validate_registration(self.repository)))
+
     def test_resolves_owned_compose_image_extends_without_weakening_pin(self) -> None:
         self._add_owned_service_gate("pingcap/tidb:v8.5.8@sha256:" + "d" * 64)
         compose = self.repository / "scripts/test/docker-compose.tidb-t2.yml"

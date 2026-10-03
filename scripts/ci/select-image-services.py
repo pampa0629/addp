@@ -18,7 +18,6 @@ BASELINE_SERVICES = {
     "nginx",
 }
 HOSTED_RUNNER_EXCLUSIONS = {
-    "model3d-workflow-engine",
     "supermap-workflow-engine",
 }
 

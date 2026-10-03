@@ -15,7 +15,10 @@ func Migrate(db *gorm.DB) error {
 		if err := migrateProtectionProjectionSchemaV2(db); err != nil {
 			return err
 		}
-		return migrateKeepPrefixSuffixAlgorithmV2(db)
+		if err := migrateKeepPrefixSuffixAlgorithmV2(db); err != nil {
+			return err
+		}
+		return migrateStructuredProtectionParameters(db)
 	}
 	if db.Dialector.Name() == "postgres" {
 		if err := db.Exec("CREATE SCHEMA IF NOT EXISTS security").Error; err != nil {
@@ -76,7 +79,10 @@ func Migrate(db *gorm.DB) error {
 	if err := migrateProtectionProjectionSchemaV2(db); err != nil {
 		return err
 	}
-	return migrateKeepPrefixSuffixAlgorithmV2(db)
+	if err := migrateKeepPrefixSuffixAlgorithmV2(db); err != nil {
+		return err
+	}
+	return migrateStructuredProtectionParameters(db)
 }
 
 func migrateSQLite(db *gorm.DB) error {
@@ -85,7 +91,7 @@ func migrateSQLite(db *gorm.DB) error {
 		`CREATE TABLE IF NOT EXISTS security.security_grades (id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, code TEXT NOT NULL, name TEXT NOT NULL, description TEXT, risk_order INTEGER NOT NULL, version INTEGER NOT NULL DEFAULT 1, created_by INTEGER NOT NULL, updated_by INTEGER, created_at DATETIME, updated_at DATETIME, UNIQUE (tenant_id, code))`,
 		`CREATE TABLE IF NOT EXISTS security.sensitive_data_types (id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, code TEXT NOT NULL, name TEXT NOT NULL, description TEXT, security_classification_id INTEGER NOT NULL, default_security_grade_id INTEGER NOT NULL, version INTEGER NOT NULL DEFAULT 1, created_by INTEGER NOT NULL, updated_by INTEGER, created_at DATETIME, updated_at DATETIME, UNIQUE (tenant_id, code))`,
 		`CREATE TABLE IF NOT EXISTS security.detectors (id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, capability_key TEXT NOT NULL, sensitive_data_type_id INTEGER NOT NULL, confidence_threshold REAL NOT NULL DEFAULT 0.9, enabled NUMERIC NOT NULL DEFAULT 1, version INTEGER NOT NULL DEFAULT 1, created_by INTEGER NOT NULL, updated_by INTEGER, created_at DATETIME, updated_at DATETIME, UNIQUE (tenant_id, capability_key))`,
-		`CREATE TABLE IF NOT EXISTS security.protection_baselines (id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, sensitive_data_type_id INTEGER NOT NULL, security_grade_id INTEGER NOT NULL, effect TEXT NOT NULL, algorithm TEXT, keep_prefix INTEGER NOT NULL DEFAULT 0, keep_suffix INTEGER NOT NULL DEFAULT 0, invalid_value_effect TEXT NOT NULL DEFAULT 'suppress', enabled NUMERIC NOT NULL DEFAULT 1, version INTEGER NOT NULL DEFAULT 1, created_by INTEGER NOT NULL, updated_by INTEGER, created_at DATETIME, updated_at DATETIME, UNIQUE (tenant_id, sensitive_data_type_id, security_grade_id))`,
+		`CREATE TABLE IF NOT EXISTS security.protection_baselines (id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, sensitive_data_type_id INTEGER NOT NULL, security_grade_id INTEGER NOT NULL, effect TEXT NOT NULL, algorithm TEXT, parameters TEXT, allowed_algorithms TEXT, invalid_value_effect TEXT NOT NULL DEFAULT 'suppress', enabled NUMERIC NOT NULL DEFAULT 1, version INTEGER NOT NULL DEFAULT 1, created_by INTEGER NOT NULL, updated_by INTEGER, created_at DATETIME, updated_at DATETIME, UNIQUE (tenant_id, sensitive_data_type_id, security_grade_id))`,
 		`CREATE TABLE IF NOT EXISTS security.protection_enrollments (id TEXT PRIMARY KEY, tenant_id INTEGER NOT NULL, target_owner TEXT NOT NULL, target_type TEXT NOT NULL, target_identity TEXT NOT NULL, target_engine_id INTEGER NOT NULL, target_item_type TEXT NOT NULL, target_full_name TEXT NOT NULL, state TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 1, release_reason TEXT NOT NULL DEFAULT '', release_basis TEXT NOT NULL DEFAULT '', release_requested_by INTEGER, release_requested_at DATETIME, release_source_snapshot_hash TEXT NOT NULL DEFAULT '', latest_source_snapshot_hash TEXT NOT NULL DEFAULT '', latest_discovery_execution_id TEXT NOT NULL DEFAULT '', last_discovered_at DATETIME, created_by INTEGER NOT NULL, released_at DATETIME, created_at DATETIME, updated_at DATETIME)`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS security.uq_security_live_enrollment_target ON protection_enrollments (tenant_id, target_owner, target_type, target_identity) WHERE state <> 'released'`,
 		`CREATE TABLE IF NOT EXISTS security.protection_projections (id TEXT PRIMARY KEY, tenant_id INTEGER NOT NULL, enrollment_id TEXT NOT NULL, consumer_owner TEXT NOT NULL, revision TEXT NOT NULL, state TEXT NOT NULL, projection_payload TEXT NOT NULL, published_sequence INTEGER NOT NULL, release_sequence INTEGER, created_at DATETIME, updated_at DATETIME, UNIQUE (tenant_id, enrollment_id, consumer_owner))`,
@@ -100,7 +106,7 @@ func migrateSQLite(db *gorm.DB) error {
 		`CREATE TABLE IF NOT EXISTS security.resource_security_assessment_revisions (id TEXT PRIMARY KEY, tenant_id INTEGER NOT NULL, assessment_id TEXT NOT NULL, revision INTEGER NOT NULL, source_kind TEXT NOT NULL DEFAULT 'finding', conclusion TEXT NOT NULL DEFAULT 'sensitive', source_finding_id TEXT, source_review_id TEXT, sensitive_data_type_id INTEGER NOT NULL, security_classification_id INTEGER NOT NULL, security_grade_id INTEGER NOT NULL, source_snapshot_hash TEXT NOT NULL, component TEXT NOT NULL, rationale TEXT NOT NULL, created_by INTEGER NOT NULL, created_at DATETIME NOT NULL, UNIQUE (assessment_id, revision))`,
 		`CREATE TABLE IF NOT EXISTS security.protection_policies (id TEXT PRIMARY KEY, tenant_id INTEGER NOT NULL, assessment_id TEXT NOT NULL, consumer_owner TEXT NOT NULL, action TEXT NOT NULL, state TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 1, current_revision INTEGER NOT NULL, created_by INTEGER NOT NULL, created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL, UNIQUE (tenant_id, assessment_id, consumer_owner, action))`,
 		`CREATE INDEX IF NOT EXISTS security.idx_security_policies_assessment ON protection_policies (tenant_id, assessment_id, updated_at DESC)`,
-		`CREATE TABLE IF NOT EXISTS security.protection_policy_revisions (id TEXT PRIMARY KEY, tenant_id INTEGER NOT NULL, policy_id TEXT NOT NULL, revision INTEGER NOT NULL, state TEXT NOT NULL, effect TEXT NOT NULL, rationale TEXT NOT NULL, created_by INTEGER NOT NULL, created_at DATETIME NOT NULL, UNIQUE (policy_id, revision))`,
+		`CREATE TABLE IF NOT EXISTS security.protection_policy_revisions (id TEXT PRIMARY KEY, tenant_id INTEGER NOT NULL, policy_id TEXT NOT NULL, revision INTEGER NOT NULL, state TEXT NOT NULL, effect TEXT NOT NULL, algorithm TEXT, parameters TEXT, invalid_value_effect TEXT, rationale TEXT NOT NULL, created_by INTEGER NOT NULL, created_at DATETIME NOT NULL, UNIQUE (policy_id, revision))`,
 		`CREATE TABLE IF NOT EXISTS security.protection_exemptions (id TEXT PRIMARY KEY, tenant_id INTEGER NOT NULL, assessment_id TEXT NOT NULL, consumer_owner TEXT NOT NULL, action TEXT NOT NULL, subject_type TEXT NOT NULL, subject_id TEXT NOT NULL, state TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 1, current_revision INTEGER NOT NULL, created_by INTEGER NOT NULL, created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL, UNIQUE (tenant_id, assessment_id, consumer_owner, action, subject_type, subject_id))`,
 		`CREATE INDEX IF NOT EXISTS security.idx_security_exemptions_assessment ON protection_exemptions (tenant_id, assessment_id, updated_at DESC)`,
 		`CREATE TABLE IF NOT EXISTS security.protection_exemption_revisions (id TEXT PRIMARY KEY, tenant_id INTEGER NOT NULL, exemption_id TEXT NOT NULL, revision INTEGER NOT NULL, assessment_revision INTEGER NOT NULL, source_request_id TEXT NOT NULL, state TEXT NOT NULL, expires_at DATETIME NOT NULL, rationale TEXT NOT NULL, created_by INTEGER NOT NULL, created_at DATETIME NOT NULL, UNIQUE (exemption_id, revision))`,

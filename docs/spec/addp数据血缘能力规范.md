@@ -1,7 +1,7 @@
 # ADDP 数据血缘能力规范
 
-**状态**：正式规范（阶段 1 已实现）
-**更新时间**：2026-08-10
+**状态**：正式规范（数据项级已实现，字段级首期范围见 6.1）
+**更新时间**：2026-10-03
 **适用范围**：Meta、Transfer、Develop、Manager、Service、Asset、Graph、Orchestrator 及 `common` / `common-frontend`
 
 ## 一、定位与边界
@@ -37,7 +37,7 @@
 | `data_item` | `meta_item.id`，跨模块使用 ResourceLocator / fingerprint | 表、视图、文件、对象、collection、graph 或 whole dataset |
 | `published_service` | Service 的 `service_id + published_revision` | 已发布的数据查询、瓦片或图查询服务版本 |
 | `execution` | `common.task_executions.execution_id` | 只作为证据和展示上下文，不是数据资源 |
-| `field_ref` | `data_item + field_name + schema_snapshot` | 数据项内部字段，第一阶段只预留模型 |
+| `field_ref` | `item_id + field_name + schema_snapshot_hash` | 数据项内部字段，按冻结结构定位 |
 
 `node` 资源树节点不是血缘主体，除非它本身被规范识别为 data item。
 
@@ -75,7 +75,7 @@ Meta item 的 fingerprint upsert 和软删除恢复规则保证同一资源重�
 
 ### 3.1 存储选择
 
-第一阶段使用 Infra PostgreSQL 的普通关系表和递归 CTE：
+血缘使用 Infra PostgreSQL 的普通关系表；当前图查询按固定方向执行有界分层遍历，可在同一关系事实源上优化为递归 CTE：
 
 - 不新增 Infra Neo4j。
 - 不依赖 Apache AGE 或其他 PostgreSQL 图扩展。
@@ -245,7 +245,25 @@ Develop Query Execution Supervisor 必须在业务写入事务成功提交后，
 2. Transfer 显式 field mapping 先产生字段级关系。
 3. 再按引擎方言实现 SQL 字段解析，并结合 Meta 字段事实处理 CTE、别名、`*` 和表达式。
 
-字段不是默认的独立 data item，字段引用使用 `item_id + field_name + schema_snapshot`。无法可靠解析的 SQL 不得保存猜测边，也不使用任意浮点 `confidence` 伪装确定性。
+字段不是默认的独立 data item，字段引用使用 `item_id + field_name + schema_snapshot_hash`，完整结构快照保存在执行事实和不可变证据中。无法可靠解析的 SQL 不得保存猜测边，也不使用任意浮点 `confidence` 伪装确定性。
+
+### 6.1 字段级首期契约
+
+首期支持 Transfer bounded native table -> native table 的实际字段映射。字段血缘回答目标字段值来自哪些源字段；过滤、JOIN 条件、排序及行数影响不混入值来源关系。SQL query source、continuous/CDC、encoded 输出及空间重投影暂不声明完整字段血缘，继续记录数据项级事实，字段视图明确显示证据不可用。
+
+- `lineage_facts` 保持 `addp.lineage-facts/v1`；资源引用的 `schema_snapshot` 使用 `{hash, fields}`，fields 来自同一次真实读取和目标写入结构，hash 复用 Common 的 `TableSchemaSnapshotHash`。不回查当前结构补造执行快照。
+- operation 增加 `field_lineage_status=complete|unavailable` 和 `field_mappings`。每条映射明确 `input_port`、`output_port`、`source_field`、`target_field` 和 `transformation=direct|derived|generated`。generated 没有输入端口或源字段，只证明常量/默认值生成，不生成虚假的字段来源边。非空默认值会改变源值语义，记为 derived；数据保护准备阶段同时返回实际受转换影响的字段名，脱敏字段记为 derived，受抑制字段不产生目标映射；按运行时顺序组合多步映射与覆盖，透传字段来自实际源结构。
+- 成功执行才采集；字段快照与映射必须校验哈希、端口和字段存在性。无法证明时记录 unavailable，不按同名字段猜测。缺少字段契约的其他 owner 事实也属于 unavailable，而不是 complete 或无依赖。
+- `lineage_item_relations` 统一存储 item 和 field 两种粒度，field 行保存两端字段名与结构快照 hash；唯一键包含两端字段身份。observation 保存对应快照和转换语义。字段不是新增 DataItem，不新增第二套 collector。
+- replace 在一次目标更新中关闭旧字段入边，即使两端仍是同两张表、字段映射已经改变；append/upsert 合并。未知写入模式只保存证据。迟到执行与重复采集不能恢复已关闭关系。字段快照不匹配时禁止跨版本串接；当前结构变化后旧快照关系标记 stale，重新扫描不重新激活。
+- 统一 `GET /lineage/graph` 增加 `subject_kind=field_ref`、`field_name` 和可选 `schema_snapshot_hash`；省略 hash 时依据 Meta 当前结构定位，指定 hash 时使用对应执行证据。字段图按字段身份沿固定方向遍历，保留租户、深度、数量和端点完整性约束；as_of 沿冻结快照查询已观察的写入事实，stale 标记仍保留在历史关系上，不因当前结构变化删除历史来源，也不反推未观察的外部变更时间；首期字段视图不接受数据项 ID 的局部展开参数。字段视图返回 `field_lineage_status=complete|unavailable`，complete 且无入边可表示已证明的 generated 字段；unavailable 不等于没有来源。
+- `common-frontend/graph` 统一管理字段选择与字段节点展示。宿主传入根数据项的字段名并请求同一 API，字段名称作为精确标识传递，不拆分点号。节点详情提供字段名、所属数据项及结构快照 hash，关系详情提供转换语义和执行证据。
+
+### 6.2 图数据库评估边界
+
+字段级粒度本身不构成引入 Neo4j / FalkorDB 的理由。PostgreSQL 继续唯一拥有血缘证据和当前投影。现有有界上下游查询先优化方向索引、批量取证与查询计划；不能用图数据库掩盖缺失或错误的字段事实。
+
+只有实际负载已需要高并发深层遍历、复杂路径模式或全图算法，并且 PostgreSQL 优化后仍无法达到已确定的延迟、吞吐和内存目标，才进行同一真实数据集的对照评测。评测同时计入快照/历史语义、租户可见性、一致性恢复和运维成本，不以固定边数作为迁移阈值。若评测确认有收益，须另行确认唯一查询路线与可重建投影方案，禁止向 PostgreSQL 和图数据库双写事实或并行保留两套正式查询实现。
 
 UDBX Dataset、GeoPackage layer 等容器内部对象只有在数据项体系为其确定稳定可寻址身份后，才能进入正式资源血缘。
 
@@ -350,7 +368,7 @@ Service 发布事实同时传递人类可读的 `service_name` 和单调递增�
 
 后续能力必须先更新本规范和术语表，再单一路线实现：
 
-- 字段级血缘和显式 field mapping。
+- SQL 方言的字段级自动解析；Transfer 显式 field mapping 的首期范围见 6.1。
 - SQL 方言解析及无法可靠解析时的“不完整依赖”表达。
 - UDBX Dataset 等容器内部对象的稳定 data item 身份。
 - Model / Quality 独立关系图层。

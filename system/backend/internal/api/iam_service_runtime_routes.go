@@ -68,7 +68,7 @@ func RegisterIAMServiceRuntimeRoutes(
 	if err != nil {
 		return err
 	}
-	catalogReferenceCandidateRead, err := middleware.NewIAMPermissionGuard("iam.department.read", "iam.tenant_membership.read")
+	catalogReferenceCandidateRead, err := middleware.NewIAMPermissionGuard("iam.department.read", "iam.project_group.read", "iam.tenant_membership.read")
 	if err != nil {
 		return err
 	}

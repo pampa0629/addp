@@ -124,3 +124,22 @@ func (r *Repository) ListCatalogUserCandidates(
 		Order("LOWER(user_profile.display_name) ASC, user_profile.id ASC").Offset((page - 1) * pageSize).Limit(pageSize).Scan(&items).Error
 	return items, total, wrapRepositoryError(err)
 }
+
+// Recipient selection is not a membership view: an active group can receive a
+// decision even if the confirmer is not a member. Never join or expose members.
+func (r *Repository) ListCatalogProjectGroupCandidates(ctx context.Context, tenantID int64, search string, page, pageSize int) ([]CatalogReferenceCandidate, int64, error) {
+	query := r.db.WithContext(ctx).Table("system.project_groups").
+		Where("tenant_id = ? AND status = ?", tenantID, ProjectGroupStatusActive)
+	if search = strings.TrimSpace(search); search != "" {
+		pattern := "%" + search + "%"
+		query = query.Where("name ILIKE ? OR code ILIKE ?", pattern, pattern)
+	}
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, wrapRepositoryError(err)
+	}
+	items := make([]CatalogReferenceCandidate, 0)
+	err := query.Select("'project_group' AS subject_type, id, name, code, status").
+		Order("LOWER(name) ASC, id ASC").Offset((page - 1) * pageSize).Limit(pageSize).Scan(&items).Error
+	return items, total, wrapRepositoryError(err)
+}

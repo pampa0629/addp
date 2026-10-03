@@ -112,7 +112,7 @@ func TestPrepareTableProtectionMasksManagedNativeRows(t *testing.T) {
 		t.Fatal(err)
 	}
 	result := &plugin.QueryResult{Rows: []map[string]interface{}{{"userInfo": map[string]interface{}{"phone": "13661384499"}}}}
-	if err := protect(result); err != nil {
+	if err := protect.Apply(result); err != nil {
 		t.Fatal(err)
 	}
 	if got := result.Rows[0]["userInfo"].(map[string]interface{})["phone"]; got != "136****4499" {
@@ -141,7 +141,7 @@ func TestPrepareTableProtectionDoesNotValidateUnmanagedPathFields(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := protect(&plugin.QueryResult{}); err != nil {
+	if err := protect.Apply(&plugin.QueryResult{}); err != nil {
 		t.Fatal(err)
 	}
 }

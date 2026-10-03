@@ -12,7 +12,7 @@ description: 发现、校验并确认 ADDP 任务需要读取的输入数据资�
 1. 把需求拆成独立输入角色。角色描述业务用途，不使用表名、字段名或固定数据集充当角色。
 2. 根据当前宿主范围选择候选来源：普通场景使用 `data.search`；宿主已经限定 Session Catalog 时只使用宿主提供的候选，不扩大到租户搜索。
 3. 使用用户原始业务词和常见跨语言技术名称检索。零召回时只为缺失角色补充尚未尝试的直接同义词，再检索一次。
-4. 对 Tool 搜索候选调用 `resource.ancestors.get` 确认 locator，再调用 `data.preview` 收敛字段、几何列、几何类型和 CRS。Session Catalog 候选由宿主 owner 按同等要求重新校验。
+4. 对 Tool 搜索候选调用 `resource.ancestors.get` 确认 locator，再调用 `resource.facts.get` 收敛字段、几何列、几何类型和 CRS，不读取原始行。Session Catalog 候选由宿主 owner 按同等要求重新校验。`data.preview` 只在明确需要查看样本时使用，不能代替结构事实。
 5. 可以基于已验证事实排序和标记推荐项，但不得删除仍合理的候选，也不得让模型生成资源身份。
 6. 每个角色只有一个候选且领域 Skill 允许自动确认时可以继续；存在多个候选或领域策略要求显式确认时，创建 clarification 等待用户选择。
 7. 在进入领域生成或执行前重新校验用户确认的资源，输出受限 `ResourceFact`，不输出连接信息、Token 或完整样本。

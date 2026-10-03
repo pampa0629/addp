@@ -35,6 +35,54 @@ definitions:
       version:
         type: integer
     type: object
+  github_com_addp_ontology_internal_platform.Concept:
+    properties:
+      id:
+        type: string
+      name:
+        additionalProperties:
+          type: string
+        type: object
+    type: object
+  github_com_addp_ontology_internal_platform.Operation:
+    properties:
+      effects:
+        items:
+          type: string
+        type: array
+      excluded_effects:
+        items:
+          type: string
+        type: array
+      inputs_required:
+        items:
+          type: string
+        type: array
+      owner:
+        type: string
+      skill:
+        type: string
+      tool:
+        type: string
+    type: object
+  github_com_addp_ontology_internal_platform.Relation:
+    properties:
+      from:
+        type: string
+      kind:
+        type: string
+      to:
+        type: string
+    type: object
+  github_com_addp_ontology_internal_platform.Requirement:
+    properties:
+      id:
+        type: string
+      tools:
+        items:
+          type: string
+        type: array
+    type: object
   github_com_addp_ontology_internal_semantic.AbsencePolicy:
     enum:
     - unknown
@@ -300,6 +348,35 @@ definitions:
       last_revision:
         type: integer
       ontology_id:
+        type: string
+    type: object
+  internal_api.PlatformCapabilityContextResponse:
+    properties:
+      availability:
+        type: string
+      capability:
+        type: string
+      concepts:
+        items:
+          $ref: '#/definitions/github_com_addp_ontology_internal_platform.Concept'
+        type: array
+      digest:
+        type: string
+      knowledge_kind:
+        type: string
+      operation:
+        $ref: '#/definitions/github_com_addp_ontology_internal_platform.Operation'
+      relations:
+        items:
+          $ref: '#/definitions/github_com_addp_ontology_internal_platform.Relation'
+        type: array
+      requirements:
+        items:
+          $ref: '#/definitions/github_com_addp_ontology_internal_platform.Requirement'
+        type: array
+      revision:
+        type: integer
+      schema_version:
         type: string
     type: object
   internal_api.ProjectionResponse:
@@ -1429,6 +1506,58 @@ paths:
       tags:
       - Ontology
       x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - ontology.semantic.read
+  /platform/capabilities/{capability}:
+    get:
+      description: 首个能力仅为 Transfer 任务创建；不表示模块可用、有权限或已经执行，不读取租户定义或业务数据。 | The first
+        capability is Transfer task creation; it does not assert availability, permission
+        or execution, and reads no Tenant definitions or business data.
+      parameters:
+      - description: 平台能力标识 | Platform capability identifier
+        enum:
+        - transfer.task.create
+        in: path
+        name: capability
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 平台定义上下文 | Platform definition context
+          schema:
+            $ref: '#/definitions/internal_api.PlatformCapabilityContextResponse'
+        "400":
+          description: 无效请求 | Invalid request
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "401":
+          description: 未认证 | Unauthenticated
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "403":
+          description: 禁止访问 | Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "404":
+          description: 未提供此能力 | Capability not provided
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "500":
+          description: 读取失败 | Read failed
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+        "503":
+          description: 尚未就绪 | Not ready
+          schema:
+            $ref: '#/definitions/internal_api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 获取平台能力语义 | Get platform capability semantics
+      tags:
+      - Ontology
+      x-addp-auth-mode: delegated_tool
       x-addp-required-permissions:
       - ontology.semantic.read
 securityDefinitions:

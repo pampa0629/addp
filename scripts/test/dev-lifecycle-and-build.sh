@@ -920,6 +920,126 @@ INSTALL
   echo "PASS: Python dependency installs serialize and release on failure"
 }
 
+test_model3d_python_dependency_sync() {
+  python3 - "$ROOT_DIR" "$TEST_ROOT" <<'PY'
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+
+root, temporary = map(Path, sys.argv[1:])
+source = (root/'scripts/dev/start.sh').read_text()
+start = source.index('start_runtime_model3d() (')
+preparation = source[start:source.index('\nensure_model3d_node_dependencies', start)]
+workspace = temporary/'model3d workspace with spaces'
+engine = workspace/'engines/model3d-workflow'
+engine.mkdir(parents=True)
+(workspace/'common-python').mkdir()
+requirements = engine/'requirements.txt'
+requirements.write_text('Flask==3.0.0\nPillow==12.3.0\n')
+fake_python = workspace/'fake-python'
+fake_python.write_text('''#!/usr/bin/env python3
+import json, os, pathlib, shutil, sys
+root = pathlib.Path(os.environ['ROOT_DIR'])
+args = sys.argv[1:]
+with (root/'calls.jsonl').open('a') as stream:
+    stream.write(json.dumps(args)+'\\n')
+if args[:2] == ['-m', 'venv']:
+    target = pathlib.Path(args[2])/'bin/python'
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(root/'fake-python', target)
+elif args[:3] == ['-m', 'pip', 'install']:
+    if os.environ.get('FAIL_INSTALL') == '1': sys.exit(17)
+    requirement = pathlib.Path(args[args.index('-r')+1])
+    (root/'installed.txt').write_text(requirement.read_text())
+elif args[:3] == ['-m', 'pip', 'check']:
+    if os.environ.get('FAIL_CHECK') == '1': sys.exit(19)
+elif args == ['--version']:
+    print('Python 3.11')
+elif args[:1] == ['-c']:
+    pass # 旧入口的 Flask/common import 成功，但不代表 Pillow 已安装。
+else:
+    raise SystemExit('unexpected Python invocation: '+str(args))
+''')
+fake_python.chmod(0o755)
+runner = f'''
+set -eu
+BLUE= RED= GREEN= NC=
+cd "$ROOT_DIR"
+source "{root}/scripts/dev/lifecycle-lock.sh"
+select_python() {{ printf '%s\\n' "$ROOT_DIR/fake-python"; }}
+{preparation}
+printf 'ready\\n' > "$ROOT_DIR/prepared"
+)
+start_runtime_model3d
+'''
+environment = dict(os.environ, ROOT_DIR=str(workspace), PIP_INDEX_URL='https://index.example/simple', PIP_TRUSTED_HOST='index.example')
+calls = workspace/'calls.jsonl'
+prepared = workspace/'prepared'
+
+def run(**flags):
+    calls.unlink(missing_ok=True)
+    prepared.unlink(missing_ok=True)
+    result = subprocess.run(['bash', '-c', runner], env=dict(environment, **flags), capture_output=True, text=True)
+    arguments = [json.loads(line) for line in calls.read_text().splitlines()] if calls.exists() else []
+    return result, arguments
+
+# 新虚拟环境走标准创建和同步；含空格路径、镜像参数保持一个实参。
+result, arguments = run()
+assert result.returncode == 0 and prepared.exists(), result.stdout+result.stderr
+assert any(args[:2] == ['-m', 'venv'] for args in arguments), arguments
+installs = [args for args in arguments if args[:3] == ['-m', 'pip', 'install']]
+assert len(installs) == 1, arguments
+assert installs[0] == ['-m', 'pip', 'install', '-r', str(requirements), '-e', str(workspace/'common-python'), '-i', environment['PIP_INDEX_URL'], '--trusted-host', environment['PIP_TRUSTED_HOST']], installs
+
+# 已有 venv 且旧 import 检查通过，也必须同步新增或升级的 Pillow 声明。
+requirements.write_text('Flask==3.0.0\nPillow==12.4.0\n')
+(workspace/'installed.txt').write_text('Flask==3.0.0\n')
+result, arguments = run()
+assert result.returncode == 0 and prepared.exists(), result.stdout+result.stderr
+assert (workspace/'installed.txt').read_text() == requirements.read_text(), 'existing venv skipped changed dependency declarations'
+assert not any(args[:2] == ['-m', 'venv'] for args in arguments), arguments
+assert arguments[-1] == ['-m', 'pip', 'check'], arguments
+
+result, arguments = run(FAIL_INSTALL='1')
+assert result.returncode != 0 and not prepared.exists(), result.stdout+result.stderr
+assert not any(args[:3] == ['-m', 'pip', 'check'] for args in arguments), arguments
+result, arguments = run(FAIL_CHECK='1')
+assert result.returncode != 0 and not prepared.exists(), result.stdout+result.stderr
+
+# 局部重启也执行同一同步函数，安装失败不能继续启动进程。
+restart_source = (root/'scripts/dev/restart.sh').read_text()
+restart_function = restart_source[restart_source.index('restart_model3d_workflow_service() {'):restart_source.index('pointcloud_workflow_source_fingerprint() {')]
+runner = f'''
+set -eu
+cd "$ROOT_DIR"
+source "{root}/scripts/dev/lifecycle-lock.sh"
+stop_pidfile_process() {{ :; }}
+stop_matching_port_process() {{ :; }}
+ensure_model3d_node_dependencies() {{ :; }}
+start_background_process() {{ printf 'ready\\n' > "$ROOT_DIR/prepared"; }}
+wait_http_ready() {{ :; }}
+verify_pidfile_process_alive() {{ :; }}
+{restart_function}
+restart_model3d_workflow_service
+'''
+result, arguments = run()
+assert result.returncode == 0 and prepared.exists(), result.stdout+result.stderr
+assert arguments[-1] == ['-m', 'pip', 'check'], arguments
+result, arguments = run(FAIL_INSTALL='1')
+assert result.returncode != 0 and not prepared.exists(), result.stdout+result.stderr
+result, arguments = run(PIP_INDEX_URL='', PIP_TRUSTED_HOST='')
+assert result.returncode == 0 and prepared.exists(), result.stdout+result.stderr
+installs = [args for args in arguments if args[:3] == ['-m', 'pip', 'install']]
+assert len(installs) == 1 and '-i' not in installs[0] and '--trusted-host' not in installs[0], installs
+(engine/'venv/bin/python').unlink()
+result, arguments = run()
+assert result.returncode != 0 and not prepared.exists() and not arguments, result.stdout+result.stderr
+print('PASS: Model3D start/restart syncs full declarations in new/existing venv; failures block startup')
+PY
+}
+
 test_start_batches_listening_ports() {
   python3 - "$ROOT_DIR" "$TEST_ROOT" <<'PY'
 import os
@@ -1235,6 +1355,7 @@ test_swagger_incremental_generation
 test_start_batches_listening_ports
 test_parallel_runtime_startup
 test_python_dependency_install_lock
+test_model3d_python_dependency_sync
 test_dev_port_resolution
 test_dev_real_listener_collision
 test_dev_owned_listener_matches_recorded_pid

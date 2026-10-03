@@ -66,6 +66,11 @@ var orchestratorPermissions = []string{
 	"monitor.execution.read", "system.execution_authorization.create",
 }
 
+var managerArtifactPermissions = []string{
+	"manager.data_item.read", "manager.derived_artifact.create", "manager.derived_artifact.delete", "manager.derived_artifact.read",
+	"meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read", "monitor.execution.read",
+}
+
 var publicOriginReadPermissions = []string{
 	"meta.catalog.read", "manager.data_item.read",
 	"transfer.task.read", "orchestrator.workflow.read",
@@ -86,6 +91,8 @@ func suitePermissions(suite string) ([]string, error) {
 		return ontologyPermissions, nil
 	case "orchestrator-execution":
 		return orchestratorPermissions, nil
+	case "manager-internal-artifact-lineage":
+		return managerArtifactPermissions, nil
 	case "compose-public-origin":
 		return nil, nil
 	default:
@@ -94,7 +101,7 @@ func suitePermissions(suite string) ([]string, error) {
 }
 
 func needsEngineProvisioner(suite string) bool {
-	return suite == "opengauss-consumer-flow" || suite == "kingbase-consumer-flow" || suite == "metric-service-revision-lifecycle" || suite == "orchestrator-execution"
+	return suite == "manager-internal-artifact-lineage" || suite == "opengauss-consumer-flow" || suite == "kingbase-consumer-flow" || suite == "metric-service-revision-lifecycle" || suite == "orchestrator-execution"
 }
 
 func main() {
@@ -203,7 +210,7 @@ func run(args []string, environment []string) error {
 		return errors.New("External Online tenant must not use the default Tenant ID")
 	}
 
-	consumer, err := createUser(ctx, identity, "external-online-consumer")
+	consumer, consumerPassword, err := createUserCredentials(ctx, identity, "external-online-consumer")
 	if err != nil {
 		return err
 	}
@@ -244,6 +251,10 @@ func run(args []string, environment []string) error {
 	values := map[string]string{
 		"ADDP_ONLINE_TEST_TENANT_ID":         fmt.Sprintf("%d", tenant.ID),
 		"ADDP_ONLINE_TEST_USER_ACCESS_TOKEN": consumerSession.AccessToken,
+	}
+	if *suite == "manager-internal-artifact-lineage" {
+		values["ADDP_ONLINE_TEST_USER_USERNAME"] = "external-online-consumer"
+		values["ADDP_ONLINE_TEST_USER_PASSWORD"] = consumerPassword
 	}
 	if *suite == "compose-public-origin" {
 		readerSession, _, err := createPermissionFixture(ctx, identity, membershipService, roleService, selectionService,
@@ -288,13 +299,17 @@ func run(args []string, environment []string) error {
 		values["ADDP_ONLINE_CROSS_TENANT_ASSIGNMENT_ID"] = fmt.Sprintf("%d", reserveAssignments[0].ID)
 	}
 	if *suite == "orchestrator-execution" {
+		foreignTenant, err := createOrchestratorForeignTenant(ctx, tenantService.Create, reserve.PrincipalID, tenant.ID)
+		if err != nil {
+			return err
+		}
 		reader, _, err := createPermissionFixture(ctx, identity, membershipService, roleService, selectionService,
 			tenant.ID, administrator.PrincipalID, "external-online-monitor-only", []string{"monitor.execution.read"})
 		if err != nil {
 			return err
 		}
 		foreign, _, err := createPermissionFixture(ctx, identity, membershipService, roleService, selectionService,
-			reserveTenant.ID, reserve.PrincipalID, "external-online-foreign-reader",
+			foreignTenant.ID, reserve.PrincipalID, "external-online-foreign-reader",
 			[]string{"monitor.execution.read", "orchestrator.workflow.read", "meta.scan_task.read"})
 		if err != nil {
 			return err
@@ -364,10 +379,33 @@ func validateExternalEnvironment(environment []string, output string) error {
 	return nil
 }
 
+// The reserve Tenant occupies ID 1 on a fresh database; it cannot serve as
+// the nondefault foreign Tenant required by execution isolation acceptance.
+func createOrchestratorForeignTenant(ctx context.Context, create func(context.Context, iam.CreateTenantInput) (*iam.ManagedTenant, error), administratorID, consumerTenantID int64) (*iam.ManagedTenant, error) {
+	tenant, err := create(ctx, iam.CreateTenantInput{
+		Code: "external-online-foreign", Name: "External Online Foreign",
+		InitialAdministratorPrincipalID: administratorID,
+		ActorPrincipalID:                administratorID,
+		Audit:                           audit("external-online-foreign-tenant"),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create foreign execution Tenant: %w", err)
+	}
+	if tenant == nil || tenant.ID <= 1 || tenant.ID == consumerTenantID {
+		return nil, errors.New("foreign execution Tenant must be distinct and nondefault")
+	}
+	return tenant, nil
+}
+
 func createUser(ctx context.Context, service *iam.IdentityService, username string) (*iam.CreatedLocalUser, error) {
+	created, _, err := createUserCredentials(ctx, service, username)
+	return created, err
+}
+
+func createUserCredentials(ctx context.Context, service *iam.IdentityService, username string) (*iam.CreatedLocalUser, string, error) {
 	passwordBytes := make([]byte, 32)
 	if _, err := rand.Read(passwordBytes); err != nil {
-		return nil, fmt.Errorf("generate disposable password: %w", err)
+		return nil, "", fmt.Errorf("generate disposable password: %w", err)
 	}
 	password := "External-" + base64.RawURLEncoding.EncodeToString(passwordBytes)
 	created, err := service.CreateLocalUser(ctx, iam.CreateLocalUserInput{
@@ -375,9 +413,9 @@ func createUser(ctx context.Context, service *iam.IdentityService, username stri
 		Audit: audit(username),
 	})
 	if err != nil {
-		return nil, fmt.Errorf("create %s: %w", username, err)
+		return nil, "", fmt.Errorf("create %s: %w", username, err)
 	}
-	return created, nil
+	return created, password, nil
 }
 
 func createPermissionFixture(
@@ -476,6 +514,8 @@ func writeEnvironmentFile(path string, values map[string]string) error {
 		"ADDP_ONLINE_READ_USER_ACCESS_TOKEN",
 		"ADDP_ONLINE_TEST_TENANT_ID",
 		"ADDP_ONLINE_TEST_USER_ACCESS_TOKEN",
+		"ADDP_ONLINE_TEST_USER_USERNAME",
+		"ADDP_ONLINE_TEST_USER_PASSWORD",
 	} {
 		raw, exists := values[key]
 		if !exists {

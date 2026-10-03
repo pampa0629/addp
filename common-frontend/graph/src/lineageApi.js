@@ -17,6 +17,15 @@ export function normalizeLineageGraph(payload) {
     nodes: Array.isArray(payload?.nodes) ? payload.nodes : [],
     edges: Array.isArray(payload?.edges) ? payload.edges : [],
     truncated: Boolean(payload?.truncated),
+    field_lineage_status: payload?.field_lineage_status || '',
     as_of: payload?.as_of || null
   }
+}
+
+export function lineageNodeId(node) {
+  if (!node) return ''
+  if (node.kind === 'published_service') return `service:${node.service_id}:${node.published_revision}`
+  if (node.kind === 'field_ref') return node.item_id && node.field_name && node.schema_snapshot_hash
+    ? `field:${node.item_id}:${JSON.stringify(node.field_name)}:${node.schema_snapshot_hash}` : ''
+  return node.item_id ? `item:${node.item_id}` : ''
 }

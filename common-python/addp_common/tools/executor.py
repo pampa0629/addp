@@ -4,7 +4,7 @@ from typing import Any, Awaitable, Callable
 import httpx
 from jsonschema import Draft202012Validator
 
-from addp_common.client import CopilotClient, DevelopClient, ManagerClient, MetaClient, OntologyClient, SystemClient
+from addp_common.client import CopilotClient, DevelopClient, ManagerClient, MetaClient, OntologyClient, SystemClient, TransferClient
 
 from .manifest import ToolDefinition, get_tool
 
@@ -49,6 +49,8 @@ class ToolExecutor:
             "execution.get": self._execution_get,
             "ontology.classes.list": self._ontology_classes_list,
             "ontology.class.context": self._ontology_class_context,
+            "platform.capability.context": self._platform_capability_context,
+            "transfer.task.create": self._transfer_task_create,
         }
 
     async def call(
@@ -166,6 +168,14 @@ class ToolExecutor:
     def _client(self, client_type, delegated_token: str):
         return client_type(base_url=self.base_url, user_token=delegated_token)
 
+    async def _platform_capability_context(self, arguments: dict[str, Any], delegated_token: str) -> Any:
+        async with self._client(OntologyClient, delegated_token) as client:
+            return await client.platform_capability_context(arguments["capability"])
+
+    async def _transfer_task_create(self, arguments: dict[str, Any], delegated_token: str) -> Any:
+        async with self._client(TransferClient, delegated_token) as client:
+            return await client.create_task(**arguments)
+
     async def _ontology_classes_list(self, arguments: dict[str, Any], delegated_token: str) -> Any:
         async with self._client(OntologyClient, delegated_token) as client:
             return await client.list_classes(arguments["ontology_id"])
@@ -195,6 +205,8 @@ class ToolExecutor:
 
     async def _resource_children_list(self, arguments: dict[str, Any], delegated_token: str) -> Any:
         async with self._client(MetaClient, delegated_token) as client:
+            if "parent_locator" not in arguments:
+                return await client.get_resource_tree(arguments["engine_id"], expand_depth=1)
             return await client.get_resource_tree_node(
                 arguments["engine_id"],
                 arguments["parent_locator"],

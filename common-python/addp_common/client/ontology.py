@@ -5,6 +5,9 @@ from .base import BaseClient
 
 
 class OntologyClient(BaseClient):
+    async def platform_capability_context(self, capability: str) -> dict:
+        return await self.get(f"/api/v1/ontology/platform/capabilities/{quote(capability, safe='')}")
+
     async def list_classes(self, ontology_id: str) -> dict:
         return await self.get(f"/api/v1/ontology/ontologies/{quote(ontology_id, safe='')}/semantic/classes")
 

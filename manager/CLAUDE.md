@@ -12,7 +12,7 @@ Manager 的一次性数据库 item 导出通过 Common 强类型 Client 直接�
 
 Manager 拥有的成功 execution 必须在 `common.task_executions.metadata.lineage_facts` 写入 `addp.lineage-facts/v1` 事实：输入使用执行时已冻结的 ResourceLocator、item ID 和 fingerprint，业务输出使用目标 ResourceLocator，Manager 私有快显产物使用 `addp-infra://` Locator；触发的 Meta scan execution ID 写入 `meta_scan_refs`。任务服务只提供自身输入输出事实，统一结构由 Manager service 公共构造器生成，不得各自拼装 JSON。清理 execution 不表达数据派生血缘；Manager 调用 Transfer 的导入导出由 Transfer execution 作为唯一血缘 owner，Manager 不重复写入。
 
-跨模块验收使用唯一 T4 suite `manager-internal-artifact-lineage`：专用 Business MinIO 的 LAS 与多页 PPTX 经同一次 Meta scan，分别通过 Manager `point_cloud_copc_generation` + PointCloud Runtime 与按需 `pptx_pdf_generation` + Document Workflow/LibreOffice 发布 infra 产物，并由 Monitor、Data Explorer 和正式清理 API 形成完整证据；不得用数据库夹具、伪 Runtime 或前端 mock 代替该链路。
+跨模块验收使用唯一 T4 suite `manager-internal-artifact-lineage`：专用 Business MinIO 的 LAS、多页 PPTX、带 PNG 漫反射贴图的 DAE 与 3DS 经同一次 Meta scan，通过 Manager `point_cloud_copc_generation`、`pptx_pdf_generation`、`model_3d_glb_generation` 及各自真实 Runtime 发布 infra 产物，并由 Monitor、Data Explorer 和正式清理 API 形成完整证据；不得用数据库夹具、伪 Runtime 或前端 mock 代替该链路。DAE、3DS 必须核对 `model_3d/single` 分类、关联贴图、GLB 内嵌图像与非空网格、Console 加载完成及删除后的内容 404。
 
 混合检索跨模块验收使用独立 T4 suite `manager-hybrid-search`：专用 Business MinIO Fixture 幂等发布仓库内确定性 JPG，真实 Meta scan 建立全文索引，Manager 通过预置 `semantic_search_embedding` 场景绑定调用 Inference Model Profile 完成图片和查询文本向量化，并由真实 pgvector 与 Meilisearch 验证统一 RRF 排名、去重和分页。专用 Runner 的 Model Profile 与场景绑定是长期前置事实，suite 不创建或改写 Provider、Deployment、Profile、Credential 或绑定；每轮只创建并经 Manager 正式 API 删除该图片的 embedding 结果。
 
@@ -173,3 +173,5 @@ curl http://localhost:8081/health/ready
 - `manager/docs/tables/search_history表.md`
 - `common-frontend/CLAUDE.md`
 - `meta/CLAUDE.md`
+
+Manager 内部产物验收 `manager-internal-artifact-lineage` 使用 GitHub Hosted Ubuntu x86_64 临时部署，由 `scripts/test/online-hosted-manager-gate.sh` 从零建立最小权限身份、Business MinIO 与真实 Runtime，复用 `make test-online` 业务断言并在退出时销毁环境；无需永久账号或自备 Runner。首次真实运行成功前只登记手工触发，不计为 T4 通过。

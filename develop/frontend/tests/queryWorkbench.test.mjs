@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import {
   buildQueryExecutionContract,
   formatGeneratedQueryForEditor,
-  formatMQLQuery,
+  formatJSONQuery,
   formatterLanguageForQuery,
   monacoLanguageForQuery,
   nativeCatalogPathText,
@@ -121,7 +121,7 @@ assert.equal(monacoLanguageForQuery('cypher'), 'cypher')
 assert.equal(formatterLanguageForQuery('sql'), 'sql')
 assert.equal(formatterLanguageForQuery('mql'), 'mql')
 assert.equal(formatterLanguageForQuery('cypher'), '')
-assert.equal(formatMQLQuery('{"find":"Persons","filter":{},"limit":10}'), `{
+assert.equal(formatJSONQuery('{"find":"Persons","filter":{},"limit":10}'), `{
   "find": "Persons",
   "filter": {},
   "limit": 10
@@ -134,7 +134,7 @@ assert.equal(
 }`
 )
 assert.equal(formatGeneratedQueryForEditor('SELECT * FROM users', 'sql'), 'SELECT * FROM users')
-assert.throws(() => formatMQLQuery('db.Persons.find({})'))
+assert.throws(() => formatJSONQuery('db.Persons.find({})'))
 assert.equal(
   queryErrorMessage('mongodb_database_required', 'raw provider error', key => key),
   'develop.queryResult.mongodbDatabaseRequired'
@@ -216,3 +216,8 @@ assert.equal(queryErrorMessage('permission_denied', '', key => key), 'common.exe
 assert.equal(queryResultFromExecution({ status: 'failed', error_details: { category: 'timeout' } }).error_code, 'timeout')
 
 assert.equal(queryErrorMessage('query_execution_failed', '', key => key, 'connection_failed'), 'common.executionFailure.connection_failed')
+
+assert.equal(monacoLanguageForQuery('es_dsl'), 'json')
+assert.equal(formatterLanguageForQuery('es_dsl'), 'json')
+assert.equal(formatGeneratedQueryForEditor('{"query":{"match_all":{}}}', 'es_dsl'), '{\n  "query": {\n    "match_all": {}\n  }\n}')
+assert.equal(formatJSONQuery('{"id":9007199254740993}'), '{\n  "id": 9007199254740993\n}')

@@ -50,7 +50,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	}
 	assertRepositoryRolePermissions(t, roles, "platform.inference_runtime", []string{"system.runtime_registry.update"})
 	assertRepositoryRolePermissions(t, roles, "platform.catalog_runtime", []string{"platform.tenant.read", "system.runtime_registry.update"})
-	assertRepositoryRolePermissions(t, roles, "tenant.catalog_runtime", []string{"develop.catalog.read", "iam.department.read", "iam.tenant_membership.read", "meta.catalog.read", "model.catalog.read", "quality.catalog.read", "service.catalog.read", "standard.catalog.read", "standard.domain.read", "standard.element.read", "standard.glossary.read", "system.engine_access_fulfillment.execute", "workbench.catalog.read"})
+	assertRepositoryRolePermissions(t, roles, "tenant.catalog_runtime", []string{"develop.catalog.read", "iam.department.read", "iam.project_group.read", "iam.tenant_membership.read", "meta.catalog.read", "model.catalog.read", "quality.catalog.read", "service.catalog.read", "standard.catalog.read", "standard.domain.read", "standard.element.read", "standard.glossary.read", "system.engine_access_fulfillment.execute", "workbench.catalog.read"})
 	assertRepositoryRolePermissions(t, roles, "tenant.system_runtime", []string{"catalog.sharing_fulfillment.read"})
 	assertRepositoryRolePrincipalTypes(t, roles, "tenant.system_runtime", []string{"service_principal"})
 	assertRepositoryRolePermissions(t, roles, "platform.duckdb_runtime", []string{"system.runtime_registry.update"})

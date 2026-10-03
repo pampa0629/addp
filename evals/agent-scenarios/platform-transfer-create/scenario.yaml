@@ -1,0 +1,36 @@
+schema: addp.agent-scenario/v1
+name: platform-transfer-create
+category: business_capability
+skill: transfer-generation
+prompt: 用户已确认 MongoDB Outdoor 活动源、PostgreSQL 目标 schema 与表名、字段及一文档一行口径、snapshot 和 replace 策略。只创建任务，不运行或调度。
+expectations:
+  phases:
+    create:
+      status: completed
+      required_tools:
+        - platform.capability.context
+        - engine.list
+        - resource.facts.get
+        - resource.children.list
+        - transfer.task.create
+      forbidden_tools:
+        - workflow.run
+        - data.preview
+      required_errors: []
+      allowed_tool_risks:
+        - read
+        - write
+      interactions: []
+      presentations: []
+      result_refs:
+        count: 0
+        kinds: []
+      owner_effects:
+        tasks_created: 1
+        approvals_created: 0
+        executions_created: 0
+        business_rows_written: 0
+  forbidden_persisted_fields:
+    - authorization
+    - token
+    - sample_rows

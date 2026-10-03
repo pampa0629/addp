@@ -1,8 +1,13 @@
+import json
 import os
+import re
 import shutil
+import struct
 import subprocess
 import tempfile
 import unittest
+import xml.etree.ElementTree as ET
+import zlib
 from pathlib import Path
 
 
@@ -28,7 +33,7 @@ class OnlineManagerMinIOFixtureTest(unittest.TestCase):
         (self.business / "nfs/data/点云/pdal_las12_format0.las").write_bytes(b"LAS fixture")
         (self.business / "fixtures/manager/addp_online_preview_fixture.pptx").write_bytes(b"PPTX fixture")
         (self.business / "nfs/data/3d/stl/Print Light Gun/images/Autocop_4X3.jpg").write_bytes(b"JPEG fixture")
-        self._executable("uname", "#!/bin/bash\necho Darwin\n")
+        self._executable("uname", '#!/bin/bash\nif [ "$1" = -m ]; then echo x86_64; else echo "${ADDP_TEST_OS:-Darwin}"; fi\n')
         self._executable(
             "curl",
             "#!/bin/bash\n[ -f \"$ADDP_TEST_CONTAINER_STATE\" ]\n",
@@ -42,6 +47,7 @@ case "$1" in
     case " $* " in
       *" build minio "*) touch "$ADDP_TEST_IMAGE_STATE" ;;
       *" up -d minio "*) touch "$ADDP_TEST_CONTAINER_STATE" ;;
+      *" down --volumes --remove-orphans "*) rm -f "$ADDP_TEST_CONTAINER_STATE" ;;
       *" rm -sf minio "*) rm -f "$ADDP_TEST_CONTAINER_STATE" ;;
     esac
     ;;
@@ -56,8 +62,32 @@ case "$1" in
       *) echo true ;;
     esac
     ;;
+  ps|network|volume) exit 0 ;;
   run)
     [ -f "$ADDP_TEST_CONTAINER_STATE" ] || exit 1
+    case " $* " in
+      *" cp --quiet /fixture/source.las "*)
+        for argument in "$@"; do
+          case "$argument" in
+            *:/fixture/source.las:ro)
+              mkdir -p "$ADDP_TEST_MODEL_FIXTURE_CAPTURE_DIR"
+              cp "${argument%:/fixture/source.las:ro}" "$ADDP_TEST_MODEL_FIXTURE_CAPTURE_DIR/pdal_las12_format0.las" ;;
+          esac
+        done
+        ;;
+      *" cp --quiet /fixture/dae/"*|*" cp --quiet /fixture/3ds/"*)
+        mount=""
+        source=""
+        for argument in "$@"; do
+          case "$argument" in
+            *:/fixture:ro) mount="${argument%:/fixture:ro}" ;;
+            /fixture/dae/*|/fixture/3ds/*) source="${argument#/fixture/}" ;;
+          esac
+        done
+        mkdir -p "$ADDP_TEST_MODEL_FIXTURE_CAPTURE_DIR/$(dirname "$source")"
+        cp "$mount/$source" "$ADDP_TEST_MODEL_FIXTURE_CAPTURE_DIR/$source" || exit 1
+        ;;
+    esac
     ;;
 esac
 """,
@@ -77,6 +107,7 @@ esac
                 "ADDP_TEST_CONTAINER_STATE": str(self.state),
                 "ADDP_TEST_IMAGE_STATE": str(self.image),
                 "ADDP_TEST_DOCKER_LOG": str(self.log),
+                "ADDP_TEST_MODEL_FIXTURE_CAPTURE_DIR": str(self.root / "model-fixtures"),
                 "MINIO_API_PORT": "9002",
                 "MINIO_ROOT_USER": "personal",
                 "MINIO_ROOT_PASSWORD": "personal-secret",
@@ -119,10 +150,76 @@ esac
         self.assertIn("addp-minio:RELEASE.2025-10-15T17-29-55Z cp --quiet /fixture/source.las fixture/addp-online/pointcloud/pdal_las12_format0.las", commands)
         self.assertIn("addp-minio:RELEASE.2025-10-15T17-29-55Z cp --quiet /fixture/source.pptx fixture/addp-online/document/addp_online_preview_fixture.pptx", commands)
         self.assertIn("addp-minio:RELEASE.2025-10-15T17-29-55Z cp --quiet /fixture/source.jpg fixture/addp-online/hybrid-search/purple-gaming-light-gun.jpg", commands)
+        for model_object in ("dae/model.dae", "dae/texture.png", "3ds/model.3ds", "3ds/texture.png"):
+            self.assertIn(f"cp --quiet /fixture/{model_object} fixture/addp-online/model3d/{model_object}", commands)
+            self.assertIn(f"stat fixture/addp-online/model3d/{model_object}", commands)
+        for directory in re.findall(r"-v (\S+):/fixture:ro", commands):
+            self.assertFalse(Path(directory).exists(), "temporary generated source directory must be removed")
         self.assertIn("|59002|online-manager|manager-secret-1234", commands)
         self.assertNotIn("|9002|personal|personal-secret", commands)
         self.assertFalse((self.business / ".env").exists())
         self.assertFalse(self.state.exists())
+
+    def test_generated_models_and_png_are_deterministic_valid_source_files(self) -> None:
+        first = self.run_fixture("start")
+        self.assertEqual(first.returncode, 0, first.stderr)
+        root = self.root / "model-fixtures"
+        baseline = {str(path.relative_to(root)): path.read_bytes() for path in root.rglob("*") if path.is_file()}
+        las = baseline["pdal_las12_format0.las"]
+        self.assertEqual(las[:4], b"LASF")
+        self.assertEqual(las[24:26], bytes((1, 2)))
+        offset = struct.unpack_from("<I", las, 96)[0]
+        self.assertEqual(struct.unpack_from("<BHI", las, 104), (0, 20, 3))
+        self.assertEqual(len(las), offset + 3 * 20)
+        self.assertEqual(struct.unpack_from("<iii", las, offset + 20), (100, 100, 50))
+        self.assertEqual(struct.unpack_from("<16H", las, 281)[11], 3857)
+        dae = ET.fromstring(baseline["dae/model.dae"])
+        ns = "{http://www.collada.org/2005/11/COLLADASchema}"
+        self.assertEqual(dae.tag, ns + "COLLADA")
+        self.assertEqual(dae.get("version"), "1.4.1")
+        self.assertEqual(dae.find(ns + "asset/" + ns + "unit").get("meter"), "0.01")
+        self.assertEqual(dae.find(ns + "library_images/" + ns + "image/" + ns + "init_from").text, "texture.png")
+        model = baseline["3ds/model.3ds"]
+        self.assertEqual(struct.unpack_from("<HI", model), (0x4D4D, len(model)))
+        self.assertIn(b"texture.png\0", model)
+        png = baseline["dae/texture.png"]
+        self.assertEqual(png, baseline["3ds/texture.png"])
+        self.assertEqual(png[:8], b"\x89PNG\r\n\x1a\n")
+        offset = 8
+        while offset < len(png):
+            size, kind = struct.unpack_from(">I4s", png, offset)
+            data = png[offset + 8:offset + 8 + size]
+            crc = struct.unpack_from(">I", png, offset + 8 + size)[0]
+            self.assertEqual(crc, zlib.crc32(kind + data))
+            if kind == b"IDAT":
+                self.assertEqual(len(zlib.decompress(data)), 14)
+            offset += 12 + size
+        second = self.run_fixture("start")
+        self.assertEqual(second.returncode, 0, second.stderr)
+        current = {str(path.relative_to(root)): path.read_bytes() for path in root.rglob("*") if path.is_file()}
+        self.assertEqual(current, baseline)
+
+    def test_hosted_profile_creates_owner_only_descriptor_and_removes_volumes(self) -> None:
+        descriptor = self.root / "manager-engine.json"
+        overrides = dict(ADDP_TEST_OS="Linux", ADDP_ONLINE_HOSTED="1", GITHUB_ACTIONS="true",
+                         RUNNER_OS="Linux", ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE=str(descriptor))
+        shutil.rmtree(self.business / "nfs")
+        result = self.run_fixture("start", **overrides)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(descriptor.stat().st_mode & 0o777, 0o600)
+        data = json.loads(descriptor.read_text())
+        self.assertEqual(data["engine_type"], "minio")
+        self.assertEqual(data["connection_info"]["endpoint"], "127.0.0.1:59002")
+        self.assertEqual(data["connection_info"]["secret_key"], self.environment["ADDP_ONLINE_MANAGER_MINIO_SECRET_KEY"])
+        stopped = self.run_fixture("stop", **overrides)
+        self.assertEqual(stopped.returncode, 0, stopped.stderr)
+        self.assertIn("down --volumes --remove-orphans", self.log.read_text())
+        self.assertFalse(self.state.exists())
+
+    def test_hosted_profile_rejects_non_github_environment_before_docker(self) -> None:
+        result = self.run_fixture("start", ADDP_TEST_OS="Linux", ADDP_ONLINE_HOSTED="1", GITHUB_ACTIONS="false")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.log.exists())
 
     def test_rejects_unsafe_secret_before_docker(self) -> None:
         result = self.run_fixture("start", ADDP_ONLINE_MANAGER_MINIO_SECRET_KEY="bad secret")

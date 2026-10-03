@@ -18,8 +18,8 @@ var builtinProviderFactoriesWithContent = map[string]func(*repository.MetadataRe
 	"database-table": func(repo *repository.MetadataRepository, metaClient *commonClient.MetaClient, _ *objectcontent.ObjectContentRegistry) (PreviewProvider, error) {
 		return NewDatabaseTablePreviewProvider(repo, metaClient), nil
 	},
-	"dynamic-schema-collection": func(_ *repository.MetadataRepository, _ *commonClient.MetaClient, _ *objectcontent.ObjectContentRegistry) (PreviewProvider, error) {
-		return NewDynamicSchemaCollectionPreviewProvider(), nil
+	"document-record-set": func(_ *repository.MetadataRepository, _ *commonClient.MetaClient, _ *objectcontent.ObjectContentRegistry) (PreviewProvider, error) {
+		return NewDocumentRecordSetPreviewProvider(), nil
 	},
 	"graph": func(_ *repository.MetadataRepository, _ *commonClient.MetaClient, _ *objectcontent.ObjectContentRegistry) (PreviewProvider, error) {
 		return NewGraphPreviewProvider(), nil
@@ -88,7 +88,7 @@ func registerBuiltinPreviewProviders(registry *PreviewRegistry, metadataRepo *re
 func fallbackBuiltinPreviewPlugins() []PluginConfig {
 	return []PluginConfig{
 		{Name: "builtin:database-table", Type: "builtin", Builtin: "database-table"},
-		{Name: "builtin:dynamic-schema-collection", Type: "builtin", Builtin: "dynamic-schema-collection"},
+		{Name: "builtin:document-record-set", Type: "builtin", Builtin: "document-record-set"},
 		{Name: "builtin:graph", Type: "builtin", Builtin: "graph"},
 		{Name: "builtin:event-stream-topic", Type: "builtin", Builtin: "event-stream-topic"},
 		{Name: "builtin:scope-table", Type: "builtin", Builtin: "scope-table"},

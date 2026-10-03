@@ -2024,47 +2024,21 @@ fi
 start_runtime_model3d() (
   echo -e "${BLUE}Step 4.3/5: 启动 Model3D Workflow Engine${NC}"
 
-NEED_INSTALL=false
-if [ ! -d "engines/model3d-workflow/venv" ]; then
+MODEL3D_ENGINE_DIR="$ROOT_DIR/engines/model3d-workflow"
+MODEL3D_PYTHON="$MODEL3D_ENGINE_DIR/venv/bin/python"
+if [ ! -x "$MODEL3D_PYTHON" ]; then
     echo "首次启动，创建 Python 虚拟环境..."
-    cd engines/model3d-workflow
     SELECTED_PYTHON=$(select_python)
-    PYTHON_VER=$($SELECTED_PYTHON --version)
+    PYTHON_VER=$("$SELECTED_PYTHON" --version)
     echo "  使用 $PYTHON_VER"
-    $SELECTED_PYTHON -m venv venv
-    NEED_INSTALL=true
-else
-    if ! ./engines/model3d-workflow/venv/bin/python -c "import flask, addp_common.workflow_runtime" &> /dev/null; then
-        echo "检测到虚拟环境缺少依赖，重新安装..."
-        cd engines/model3d-workflow
-        NEED_INSTALL=true
-    else
-        echo "虚拟环境已存在且依赖完整，跳过安装"
+    if ! "$SELECTED_PYTHON" -m venv "$MODEL3D_ENGINE_DIR/venv"; then
+        echo -e "${RED}✗ Model3D Python 虚拟环境创建失败${NC}"
+        exit 1
     fi
 fi
 
-if [ "$NEED_INSTALL" = true ]; then
-    echo "使用 pip 安装依赖..."
-    PIP_CMD="./venv/bin/python -m pip install"
-    if [ -n "$PIP_INDEX_URL" ]; then
-        echo "  使用镜像源: $PIP_INDEX_URL"
-        PIP_CMD="$PIP_CMD -i $PIP_INDEX_URL"
-        if [ -n "$PIP_TRUSTED_HOST" ]; then
-            PIP_CMD="$PIP_CMD --trusted-host $PIP_TRUSTED_HOST"
-        fi
-    fi
-
-    addp_with_python_dependency_lock "$ROOT_DIR" $PIP_CMD --upgrade pip
-    addp_with_python_dependency_lock "$ROOT_DIR" $PIP_CMD -r requirements.txt
-    addp_with_python_dependency_lock "$ROOT_DIR" $PIP_CMD -e ../../common-python
-
-    if [ $? -eq 0 ]; then
-        echo -e "${GREEN}✓ Python 依赖安装完成${NC}"
-    else
-        echo -e "${RED}✗ Python 依赖安装失败${NC}"
-        exit 1
-    fi
-    cd ../..
+if ! addp_sync_python_dependencies "$ROOT_DIR" "$MODEL3D_ENGINE_DIR" "Model3D"; then
+    exit 1
 fi
 
 ensure_model3d_node_dependencies
@@ -3032,7 +3006,7 @@ for config in "${FRONTEND_CONFIGS[@]}"; do
     (
       ensure_node_modules "$dir"
       cd "$dir"
-      npm run dev -- --host 0.0.0.0 --port "$port" --strictPort > "../../logs/${name}-frontend.log" 2>&1
+      npm run dev -- --host "${SERVICE_HOST:-0.0.0.0}" --port "$port" --strictPort > "../../logs/${name}-frontend.log" 2>&1
     ) &
 
     pid=$!

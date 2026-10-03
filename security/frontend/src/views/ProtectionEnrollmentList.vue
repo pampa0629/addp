@@ -569,6 +569,7 @@ const {
   assessmentChangeDialogView,
   assessmentHistoryView,
   policyForAssessment,
+  baselineForAssessment,
   stricterPolicyEffects,
   canConfigurePolicy,
   protectionPolicyDialogView,
@@ -795,6 +796,7 @@ const {
   dispose: disposeProtectionPolicyChange
 } = useProtectionPolicyChange({
   policyForAssessment,
+  baselineForAssessment,
   stricterEffects: stricterPolicyEffects,
   getPolicy: id => protectionPolicyAPI.get(id),
   getAssessment: id => assessmentAPI.get(id),

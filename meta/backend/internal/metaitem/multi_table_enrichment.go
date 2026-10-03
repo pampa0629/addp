@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"io"
+	"net/url"
 	"path"
 	"sort"
 	"strconv"
@@ -55,6 +56,9 @@ func (d *commonDataItemResolver) ResolveItems(ctx context.Context, input Directo
 		}
 	}
 
+	for _, item := range resolveExchangeModelResourceItems(ctx, input, files) {
+		appendResolvedDetection(input, result, item)
+	}
 	for _, item := range resolveOBJResourceItems(ctx, input, files) {
 		appendResolvedDetection(input, result, item)
 	}
@@ -284,7 +288,7 @@ func resolveSingleOBJResourceItem(ctx context.Context, input DirectoryResolveInp
 	roleCounts := map[string]int{}
 
 	for _, materialRef := range materialRefs {
-		materialPath, materialFile, ok := resolveLocalOBJResourcePath(objFile.Path, materialRef, byPath)
+		materialPath, materialFile, ok := resolveLocalModelResourcePath(objFile.Path, materialRef, byPath)
 		if !ok || seen[materialPath] {
 			continue
 		}
@@ -299,7 +303,7 @@ func resolveSingleOBJResourceItem(ctx context.Context, input DirectoryResolveInp
 		seen[materialPath] = true
 
 		for _, textureRef := range scanMTLTextureRefs(ctx, input, materialPath) {
-			texturePath, textureFile, ok := resolveLocalOBJResourcePath(materialPath, textureRef, byPath)
+			texturePath, textureFile, ok := resolveLocalModelResourcePath(materialPath, textureRef, byPath)
 			if !ok || seen[texturePath] {
 				continue
 			}
@@ -403,9 +407,9 @@ func stripOBJComment(line string) string {
 	return strings.TrimSpace(line)
 }
 
-func resolveLocalOBJResourcePath(basePath, ref string, byPath map[string]StorageFileRef) (string, StorageFileRef, bool) {
+func resolveLocalModelResourcePath(basePath, ref string, byPath map[string]StorageFileRef) (string, StorageFileRef, bool) {
 	ref = strings.TrimSpace(strings.ReplaceAll(ref, "\\", "/"))
-	if ref == "" || strings.HasPrefix(ref, "/") || strings.Contains(ref, "://") {
+	if ref == "" || strings.HasPrefix(ref, "/") || strings.Contains(ref, ":") {
 		return "", StorageFileRef{}, false
 	}
 	baseDir := path.Dir(basePath)
@@ -803,4 +807,75 @@ func EnrichKnownMultiTableItem(
 	}
 	upsertRefTableInfo(item, tableInfo)
 	return item, true, nil
+}
+
+// The provider owns format parsing; Meta owns resource lookup and claims.
+func resolveExchangeModelResourceItems(ctx context.Context, input DirectoryResolveInput, files []StorageFileRef) []dataitem.ResolvedItem {
+	if input.ContentReader == nil {
+		return nil
+	}
+	byPath := map[string]StorageFileRef{}
+	for _, file := range files {
+		byPath[file.Path] = file
+	}
+	var items []dataitem.ResolvedItem
+	for _, file := range files {
+		formatType := format.DetectFormat(file.Path, nil)
+		if formatType != format.FormatDAE && formatType != format.Format3DS {
+			continue
+		}
+		provider, err := format.GetModel3DInfoProvider(formatType)
+		if err != nil {
+			continue
+		}
+		reader, err := input.ContentReader.OpenContent(ctx, input.ConnInfo, resolveCatalogPath(input.EngineID, file.Path, input.EngineCatalogPathFor), plugin.ReadOptions{Length: 64<<20 + 1})
+		if err != nil {
+			continue
+		}
+		described, err := provider.DescribeModel3D(ctx, reader, nil)
+		reader.Close()
+		if err != nil || described == nil {
+			continue
+		}
+		refs, ok := described.FormatInfo["texture_refs"].([]string)
+		if !ok || len(refs) == 0 {
+			continue
+		}
+		refList := []dataitem.ItemRef{{Role: "model", Path: file.Path, Required: true, Primary: true, Extension: strings.ToLower(path.Ext(file.Path))}}
+		claims := []string{file.Path}
+		seen := map[string]bool{file.Path: true}
+		counts := map[string]int{}
+		total := file.Size
+		for _, ref := range refs {
+			if formatType == format.FormatDAE {
+				ref, err = url.PathUnescape(ref)
+				if err != nil {
+					continue
+				}
+			}
+			unsafe := false
+			for _, part := range strings.Split(strings.ReplaceAll(ref, "\\", "/"), "/") {
+				if part == ".." {
+					unsafe = true
+					break
+				}
+			}
+			if unsafe {
+				continue
+			}
+			resolved, texture, ok := resolveLocalModelResourcePath(file.Path, ref, byPath)
+			if !ok || seen[resolved] {
+				continue
+			}
+			refList = append(refList, dataitem.ItemRef{Role: uniqueRefRole("texture", counts), Path: resolved, Required: true, Extension: strings.ToLower(path.Ext(resolved))})
+			claims = append(claims, resolved)
+			seen[resolved] = true
+			total += texture.Size
+		}
+		if len(refList) == 1 {
+			continue
+		}
+		items = append(items, dataitem.ResolvedItem{Name: file.Name, FullName: file.Path, Layout: format.LayoutSingle, DataType: datatype.Model3D, Format: string(formatType), PrimaryContentPath: file.Path, RefList: refList, ClaimPaths: claims, SizeBytes: &total, DetectionReason: "model_declared_textures"})
+	}
+	return items
 }

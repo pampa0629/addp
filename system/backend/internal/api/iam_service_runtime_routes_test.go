@@ -10,6 +10,7 @@ import (
 	commonauth "github.com/addp/common/authorization"
 	engineplugin "github.com/addp/common/engine/plugin"
 	sharedauth "github.com/addp/common/middleware/auth"
+	"github.com/addp/system/internal/iam"
 	"github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/repository"
 	"github.com/addp/system/internal/service"
@@ -93,7 +94,36 @@ func TestRegisterIAMServiceRuntimeRoutesRejectsMissingAuthorizationHandlers(t *t
 	}
 }
 
-func newEngineDescriptorServiceRuntimeRouter(t *testing.T, authContext commonauth.AuthContext) *gin.Engine {
+func TestCatalogRecipientRuntimeRouteRequiresAllOrganizationPermissions(t *testing.T) {
+	service := &fakeIAMCatalogReferenceService{candidateResults: []iam.CatalogReferenceCandidate{{SubjectType: iam.CatalogSubjectTypeProjectGroup, ID: 50, Name: "Delivery", Code: "delivery", Status: "active"}}, candidateTotal: 1}
+	handler, err := NewIAMCatalogReferenceHandler(service)
+	if err != nil {
+		t.Fatal(err)
+	}
+	permissions := []string{"iam.department.read", "iam.project_group.read", "iam.tenant_membership.read"}
+	for missing := -1; missing < len(permissions); missing++ {
+		auth := testIAMServiceActorContext("tenant", "addp-catalog")
+		keys := make([]string, 0, len(permissions))
+		for i, permission := range permissions {
+			if i != missing {
+				keys = append(keys, permission)
+			}
+		}
+		auth.Authorization.RoleAssignments = []commonauth.RoleAssignment{{AssignmentID: "901", RoleKey: "tenant.catalog_runtime", Scope: commonauth.AssignmentScope{Type: "tenant", TenantID: auth.Context.TenantID}, Permissions: keys, SourceType: "bootstrap", ValidFrom: auth.Token.IssuedAt}}
+		router := newEngineDescriptorServiceRuntimeRouter(t, auth, handler)
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/system/runtime/catalog-references/candidates?subject_type=project_group", nil))
+		want := http.StatusForbidden
+		if missing == -1 {
+			want = http.StatusOK
+		}
+		if response.Code != want {
+			t.Fatalf("missing permission %d: status=%d want=%d body=%s", missing, response.Code, want, response.Body.String())
+		}
+	}
+}
+
+func newEngineDescriptorServiceRuntimeRouter(t *testing.T, authContext commonauth.AuthContext, catalogHandlers ...*IAMCatalogReferenceHandler) *gin.Engine {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	db, err := gorm.Open(sqlite.Open("file:"+strings.NewReplacer("/", "_").Replace(t.Name())+"?mode=memory&cache=shared"), &gorm.Config{})
@@ -155,6 +185,9 @@ func newEngineDescriptorServiceRuntimeRouter(t *testing.T, authContext commonaut
 		TaskAuthorizationSubjectHandler: &IAMTaskAuthorizationSubjectHandler{},
 		CatalogReferenceHandler:         &IAMCatalogReferenceHandler{},
 		PlatformTenantHandler:           &IAMPlatformTenantHandler{},
+	}
+	if len(catalogHandlers) > 0 {
+		runtime.CatalogReferenceHandler = catalogHandlers[0]
 	}
 	router := gin.New()
 	api := router.Group("/api/v1/system")

@@ -106,6 +106,43 @@ func TestLineageLifecycleMigrationAgainstPostgres(t *testing.T) {
 	if err := tx.Exec("UPDATE meta.lineage_service_dependencies SET service_name = '指标服务', service_updated_at = NOW() WHERE service_id = 103").Error; err != nil {
 		t.Fatal(err)
 	}
+	if err := tx.Exec("ALTER TABLE meta.meta_item ADD COLUMN attributes JSONB").Error; err != nil {
+		t.Fatal(err)
+	}
+	fieldMigration, err := metaMigrations.FS.ReadFile("026_field_lineage.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Exec(string(fieldMigration)).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Exec(`UPDATE meta.meta_item SET attributes = '{"type_info":{"table":{"fields":[{"name":"id","type":"string","nullable":false},{"name":"name","type":"string","nullable":true}]}}}' WHERE id IN (1,3)`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Exec(`INSERT INTO meta.lineage_item_relations
+		(tenant_id,source_item_id,target_item_id,relation_kind,granularity,source_field_name,target_field_name,source_schema_hash,target_schema_hash,transformation,status,first_observed_at,last_observed_at)
+		VALUES (7,1,3,'derive','field','id','id','source-hash','target-hash','direct','active',NOW(),NOW()),
+		(7,1,3,'derive','field','name','name','source-hash','target-hash','derived','active',NOW(),NOW())`).Error; err != nil {
+		t.Fatal(err)
+	}
+	// Display changes and ordering do not alter the structural field identity.
+	if err := tx.Exec(`UPDATE meta.meta_item SET attributes = '{"type_info":{"table":{"fields":[{"name":"name","type":"string","nullable":true,"comment":"display"},{"name":"id","type":"string","nullable":false}]}}}' WHERE id = 3`).Error; err != nil {
+		t.Fatal(err)
+	}
+	var active int64
+	if err := tx.Table("meta.lineage_item_relations").Where("granularity = 'field' AND status = 'active'").Count(&active).Error; err != nil || active != 2 {
+		t.Fatalf("display change invalidated field lineage: %d %v", active, err)
+	}
+	if err := tx.Exec(`UPDATE meta.meta_item SET attributes = '{"type_info":{"table":{"fields":[{"name":"renamed","type":"string","nullable":false}]}}}' WHERE id = 3`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Table("meta.lineage_item_relations").Where("granularity = 'field' AND status = 'stale'").Count(&active).Error; err != nil || active != 2 {
+		t.Fatalf("schema change did not stale field lineage: %d %v", active, err)
+	}
+	var itemStatus string
+	if err := tx.Raw("SELECT status FROM meta.lineage_item_relations WHERE target_item_id = 3 AND granularity = 'item'").Scan(&itemStatus).Error; err != nil || itemStatus != "active" {
+		t.Fatalf("field schema change altered item projection: %s %v", itemStatus, err)
+	}
 }
 
 func assertLineageRelationStatus(t *testing.T, db *gorm.DB, targetItemID uint, want string) {

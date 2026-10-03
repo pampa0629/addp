@@ -913,7 +913,7 @@ func (e *DevExecutor) executeQuery(ctx context.Context, devTask *models.DevTask,
 
 	// 根据 query_type 路由到不同执行器
 	switch queryType {
-	case "sql", "mql", "cypher":
+	case "sql", "mql", "cypher", "es_dsl":
 		return e.executeSQL(ctx, devTask, executionID, tenantID, authorization)
 	default:
 		return nil, fmt.Sprintf("不支持的查询类型: %s", queryType), nil, ""

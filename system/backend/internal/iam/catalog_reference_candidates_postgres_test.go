@@ -74,4 +74,25 @@ func TestCatalogReferenceCandidatesAgainstPostgres(t *testing.T) {
 	if err != nil || len(projectGroups) != 1 || projectGroups[0].ID != projectGroup.ID || projectGroups[0].Name != "Delivery" || projectGroups[0].Status != string(ProjectGroupStatusActive) {
 		t.Fatalf("projectGroups=%#v err=%v", projectGroups, err)
 	}
+	// No Project Group membership was created. Empty active groups remain
+	// valid recipients; membership is not inferred from candidate discovery.
+	groups, total, err := repository.ListCatalogProjectGroupCandidates(ctx, tenant.ID, " delivery ", 1, 1)
+	if err != nil || total != 1 || len(groups) != 1 || groups[0].ID != projectGroup.ID || groups[0].SubjectType != CatalogSubjectTypeProjectGroup {
+		t.Fatalf("group candidates=%+v total=%d err=%v", groups, total, err)
+	}
+	groups, total, err = repository.ListCatalogProjectGroupCandidates(ctx, tenant.ID, "delivery", 2, 1)
+	if err != nil || total != 1 || len(groups) != 0 {
+		t.Fatalf("group page2=%+v total=%d err=%v", groups, total, err)
+	}
+	groups, total, err = repository.ListCatalogProjectGroupCandidates(ctx, tenant.ID+1, "delivery", 1, 1)
+	if err != nil || total != 0 || len(groups) != 0 {
+		t.Fatalf("cross-tenant groups=%+v total=%d err=%v", groups, total, err)
+	}
+	if err := db.Model(&ProjectGroup{}).Where("id = ?", projectGroup.ID).Update("status", ProjectGroupStatusClosed).Error; err != nil {
+		t.Fatal(err)
+	}
+	groups, total, err = repository.ListCatalogProjectGroupCandidates(ctx, tenant.ID, "delivery", 1, 1)
+	if err != nil || total != 0 || len(groups) != 0 {
+		t.Fatalf("closed groups=%+v total=%d err=%v", groups, total, err)
+	}
 }

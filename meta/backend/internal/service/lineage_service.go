@@ -86,7 +86,18 @@ func (s *LineageService) CollectExecution(ctx context.Context, tenantID uint, ex
 	if err != nil {
 		return LineageCollectionResult{}, err
 	}
-	return s.collectFacts(ctx, tenantID, executionID, execution.Module, facts)
+	observedAt := execution.UpdatedAt
+	if execution.CompletedAt != nil {
+		observedAt = *execution.CompletedAt
+	}
+	var result LineageCollectionResult
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		collector := &LineageService{db: tx, engineCatalog: s.engineCatalog}
+		var collectErr error
+		result, collectErr = collector.collectFacts(ctx, tenantID, executionID, execution.Module, facts, observedAt)
+		return collectErr
+	})
+	return result, err
 }
 
 // RecordServicePublication records one immutable publication observation and updates the active projection.
@@ -182,7 +193,7 @@ func decodeLineageFacts(metadata commonModels.JSONMap) (*models.LineageFacts, er
 	return &facts, nil
 }
 
-func (s *LineageService) collectFacts(ctx context.Context, tenantID uint, executionID, producer string, facts *models.LineageFacts) (LineageCollectionResult, error) {
+func (s *LineageService) collectFacts(ctx context.Context, tenantID uint, executionID, producer string, facts *models.LineageFacts, observedAt time.Time) (LineageCollectionResult, error) {
 	result := LineageCollectionResult{}
 	inputs, err := s.resolveRefs(ctx, tenantID, facts.Inputs)
 	if err != nil {
@@ -192,17 +203,25 @@ func (s *LineageService) collectFacts(ctx context.Context, tenantID uint, execut
 	if err != nil {
 		return result, err
 	}
-	if len(inputs) == 0 || len(outputs) == 0 {
+	if len(inputs) != len(facts.Inputs) || len(outputs) != len(facts.Outputs) || len(inputs) == 0 || len(outputs) == 0 {
 		return result, nil
 	}
 
 	pairs := operationPairs(inputs, outputs, facts.Operations)
+	fieldPairs, err := fieldOperationPairs(inputs, outputs, facts.Operations)
+	if err != nil {
+		return result, err
+	}
+	pairs = append(pairs, fieldPairs...)
+	if err := s.prepareLineageProjection(ctx, tenantID, executionID, outputs, observedAt); err != nil {
+		return result, err
+	}
 	for _, pair := range pairs {
 		if pair.source == nil || pair.target == nil {
 			result.Skipped++
 			continue
 		}
-		observed, err := s.persistItemRelation(ctx, tenantID, executionID, producer, pair)
+		observed, err := s.persistItemRelation(ctx, tenantID, executionID, producer, pair, observedAt)
 		if err != nil {
 			return result, err
 		}
@@ -212,16 +231,22 @@ func (s *LineageService) collectFacts(ctx context.Context, tenantID uint, execut
 			result.Skipped++
 		}
 	}
-	if err := s.closeReplacedInputs(ctx, tenantID, pairs, outputs); err != nil {
+	if err := s.closeReplacedInputs(ctx, tenantID, executionID, pairs, outputs, observedAt); err != nil {
 		return result, err
 	}
 	return result, nil
 }
 
-func (s *LineageService) closeReplacedInputs(ctx context.Context, tenantID uint, pairs []relationPair, outputs []*resolvedRef) error {
-	now := time.Now().UTC()
+func (s *LineageService) closeReplacedInputs(ctx context.Context, tenantID uint, executionID string, pairs []relationPair, outputs []*resolvedRef, now time.Time) error {
 	for _, output := range outputs {
 		if output.ref.WriteMode != "replace" {
+			continue
+		}
+		newer, err := s.hasNewerTargetObservation(ctx, tenantID, output.item.ID, now)
+		if err != nil {
+			return err
+		}
+		if newer {
 			continue
 		}
 		currentSources := make([]uint, 0)
@@ -231,7 +256,7 @@ func (s *LineageService) closeReplacedInputs(ctx context.Context, tenantID uint,
 			}
 		}
 		query := s.db.WithContext(ctx).Model(&models.LineageItemRelation{}).
-			Where("tenant_id = ? AND target_item_id = ? AND relation_kind = 'derive' AND status <> 'closed'", tenantID, output.item.ID)
+			Where("tenant_id = ? AND target_item_id = ? AND relation_kind = 'derive' AND granularity = 'item' AND status <> 'closed' AND last_observed_at <= ?", tenantID, output.item.ID, now)
 		if len(currentSources) > 0 {
 			query = query.Where("source_item_id NOT IN ?", currentSources)
 		}
@@ -248,9 +273,12 @@ type resolvedRef struct {
 }
 
 type relationPair struct {
-	source *resolvedRef
-	target *resolvedRef
-	kind   string
+	source         *resolvedRef
+	target         *resolvedRef
+	kind           string
+	fields         models.LineageFieldEndpoints
+	transformation string
+	operation      *models.LineageOperation
 }
 
 func (s *LineageService) resolveRefs(ctx context.Context, tenantID uint, refs []models.LineageResourceRef) ([]*resolvedRef, error) {
@@ -311,7 +339,7 @@ func operationPairs(inputs, outputs []*resolvedRef, operations []models.LineageO
 			for _, outputPort := range operation.OutputPorts {
 				for _, input := range byInputPort[inputPort] {
 					for _, output := range byOutputPort[outputPort] {
-						pairs = append(pairs, relationPair{source: input, target: output, kind: kind})
+						pairs = append(pairs, relationPair{source: input, target: output, kind: kind, operation: &operation})
 					}
 				}
 			}
@@ -320,12 +348,12 @@ func operationPairs(inputs, outputs []*resolvedRef, operations []models.LineageO
 	return pairs
 }
 
-func (s *LineageService) persistItemRelation(ctx context.Context, tenantID uint, executionID, producer string, pair relationPair) (bool, error) {
-	now := time.Now().UTC()
+func (s *LineageService) persistItemRelation(ctx context.Context, tenantID uint, executionID, producer string, pair relationPair, now time.Time) (bool, error) {
+	granularity := pair.granularity()
 	var existing models.LineageObservation
 	err := s.db.WithContext(ctx).Where(
-		"tenant_id = ? AND execution_id = ? AND relation_kind = ? AND source_item_id = ? AND target_item_id = ?",
-		tenantID, executionID, pair.kind, pair.source.item.ID, pair.target.item.ID,
+		"tenant_id = ? AND execution_id = ? AND relation_kind = ? AND source_item_id = ? AND target_item_id = ? AND granularity = ? AND source_field_name = ? AND target_field_name = ? AND source_schema_hash = ? AND target_schema_hash = ?",
+		tenantID, executionID, pair.kind, pair.source.item.ID, pair.target.item.ID, granularity, pair.fields.SourceFieldName, pair.fields.TargetFieldName, pair.fields.SourceSchemaHash, pair.fields.TargetSchemaHash,
 	).First(&existing).Error
 	if err == nil {
 		return false, nil
@@ -335,34 +363,50 @@ func (s *LineageService) persistItemRelation(ctx context.Context, tenantID uint,
 	}
 
 	observation := models.LineageObservation{
-		TenantID:       tenantID,
-		RelationKind:   pair.kind,
-		Granularity:    "item",
-		SourceItemID:   uintPtr(pair.source.item.ID),
-		TargetItemID:   uintPtr(pair.target.item.ID),
-		ExecutionID:    stringPtr(executionID),
-		ProducerModule: producer,
-		CaptureMethod:  "declared",
-		SourceSnapshot: itemSnapshot(pair.source.item),
-		TargetSnapshot: itemSnapshot(pair.target.item),
+		TenantID:              tenantID,
+		RelationKind:          pair.kind,
+		Granularity:           granularity,
+		LineageFieldEndpoints: pair.fields,
+		SourceItemID:          uintPtr(pair.source.item.ID),
+		TargetItemID:          uintPtr(pair.target.item.ID),
+		ExecutionID:           stringPtr(executionID),
+		ProducerModule:        producer,
+		CaptureMethod:         "declared",
+		SourceSnapshot:        lineageRefSnapshot(pair.source),
+		TargetSnapshot:        lineageRefSnapshot(pair.target),
 		Evidence: commonModels.JSONMap{
 			"execution_id": executionID,
+			"write_mode":   pair.target.ref.WriteMode,
 		},
 		ObservedAt: now,
+	}
+	if pair.operation != nil {
+		observation.Evidence["field_lineage_status"] = pair.operation.FieldLineageStatus
+		observation.Evidence["field_mappings"] = pair.operation.FieldMappings
+	}
+	if granularity == "field" {
+		observation.Evidence["transformation"] = pair.transformation
 	}
 	return true, s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(&observation).Error; err != nil {
 			return err
 		}
+		newer, err := s.hasNewerTargetObservation(ctx, tenantID, pair.target.item.ID, now)
+		if err != nil {
+			return err
+		}
+		if pair.kind == "derive" && (!knownLineageWriteMode(pair.target.ref.WriteMode) || newer) {
+			return nil
+		}
 		var relation models.LineageItemRelation
 		relationErr := tx.Where(
-			"tenant_id = ? AND source_item_id = ? AND target_item_id = ? AND relation_kind = ? AND granularity = ? AND status <> 'closed'",
-			tenantID, pair.source.item.ID, pair.target.item.ID, pair.kind, "item",
+			"tenant_id = ? AND source_item_id = ? AND target_item_id = ? AND relation_kind = ? AND granularity = ? AND source_field_name = ? AND target_field_name = ? AND source_schema_hash = ? AND target_schema_hash = ? AND status <> 'closed'",
+			tenantID, pair.source.item.ID, pair.target.item.ID, pair.kind, granularity, pair.fields.SourceFieldName, pair.fields.TargetFieldName, pair.fields.SourceSchemaHash, pair.fields.TargetSchemaHash,
 		).First(&relation).Error
 		if errors.Is(relationErr, gorm.ErrRecordNotFound) {
 			relation = models.LineageItemRelation{
 				TenantID: tenantID, SourceItemID: pair.source.item.ID, TargetItemID: pair.target.item.ID,
-				RelationKind: pair.kind, Granularity: "item", Status: "active", FirstObservedAt: now, LastObservedAt: now,
+				LineageFieldEndpoints: pair.fields, Transformation: pair.transformation, RelationKind: pair.kind, Granularity: granularity, Status: fieldProjectionStatus(pair), FirstObservedAt: now, LastObservedAt: now,
 			}
 			if pair.target.ref.WriteMode != "" {
 				relation.WriteMode = stringPtr(pair.target.ref.WriteMode)
@@ -372,7 +416,10 @@ func (s *LineageService) persistItemRelation(ctx context.Context, tenantID uint,
 		if relationErr != nil {
 			return relationErr
 		}
-		updates := map[string]interface{}{"last_observed_at": now, "status": "active", "updated_at": now}
+		updates := map[string]interface{}{"last_observed_at": now, "status": fieldProjectionStatus(pair), "updated_at": now}
+		if granularity == "field" {
+			updates["transformation"] = pair.transformation
+		}
 		if pair.target.ref.WriteMode != "" {
 			updates["write_mode"] = pair.target.ref.WriteMode
 		}
@@ -401,8 +448,8 @@ func (s *LineageService) GetGraph(ctx context.Context, tenantID uint, request mo
 	if request.Direction != "upstream" && request.Direction != "downstream" && request.Direction != "both" {
 		return models.LineageGraphResponse{}, fmt.Errorf("direction must be upstream, downstream or both")
 	}
-	if request.SubjectKind != "data_item" && request.SubjectKind != "published_service" {
-		return models.LineageGraphResponse{}, fmt.Errorf("subject_kind must be data_item or published_service")
+	if request.SubjectKind != "data_item" && request.SubjectKind != "published_service" && request.SubjectKind != "field_ref" {
+		return models.LineageGraphResponse{}, fmt.Errorf("subject_kind must be data_item, field_ref or published_service")
 	}
 	if request.SubjectKind == "data_item" && request.ItemID == nil {
 		return models.LineageGraphResponse{}, fmt.Errorf("item_id is required for data_item")
@@ -411,6 +458,15 @@ func (s *LineageService) GetGraph(ctx context.Context, tenantID uint, request mo
 		return models.LineageGraphResponse{}, fmt.Errorf("service_id and revision are required for published_service")
 	}
 
+	if request.SubjectKind == "field_ref" {
+		if request.ItemID == nil || request.FieldName == "" || len(request.ExpandUpstream)+len(request.ExpandDownstream) > 0 {
+			return models.LineageGraphResponse{}, fmt.Errorf("field_ref item_id and field_name are required; item expansions are invalid")
+		}
+		return s.buildFieldLineageGraph(ctx, tenantID, request)
+	}
+	if request.FieldName != "" || request.SchemaSnapshotHash != "" {
+		return models.LineageGraphResponse{}, fmt.Errorf("field parameters must be used with field_ref")
+	}
 	return s.buildLineageGraph(ctx, tenantID, request)
 }
 
@@ -455,6 +511,7 @@ func (s *LineageService) latestEvidence(ctx context.Context, tenantID uint, rela
 	var observation models.LineageObservation
 	err := s.db.WithContext(ctx).
 		Where("tenant_id = ? AND relation_kind = ? AND source_item_id = ? AND target_item_id = ?", tenantID, relation.RelationKind, relation.SourceItemID, relation.TargetItemID).
+		Where("granularity = ? AND source_field_name = ? AND target_field_name = ? AND source_schema_hash = ? AND target_schema_hash = ?", relation.Granularity, relation.SourceFieldName, relation.TargetFieldName, relation.SourceSchemaHash, relation.TargetSchemaHash).
 		Order("observed_at DESC, id DESC").First(&observation).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil

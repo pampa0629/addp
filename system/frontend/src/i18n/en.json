@@ -777,6 +777,7 @@
           "entity_relation": "Entity Relation",
           "entry": "Catalog Entry",
           "sharing_decision": "Business Sharing Decision",
+          "sharing_fulfillment": "Persisted Fulfillment Basis",
           "event": "Audit Event",
           "execution": "Execution Record",
           "execution_authorization": "Execution Authorization",
@@ -1105,6 +1106,7 @@
       },
       "capabilities": {
         "tabular": "Tabular",
+        "keyValue": "Key-value Storage",
         "objectStorage": "Object Storage",
         "file": "File System",
         "document": "Document",
@@ -1495,6 +1497,7 @@
           "tabular": "Tabular",
           "object": "Object Storage",
           "file": "File System",
+          "keyValue": "Key-value Storage",
           "dynamicSchema": "Dynamic Schema Data",
           "document": "Document",
           "graph": "Graph DB",
@@ -2013,6 +2016,10 @@
       "catalog_runtime": {
         "name": "Catalog Sync Runtime",
         "description": "Lets Catalog read tenant-scoped Meta changes and Standard semantic summaries."
+      },
+      "system_runtime": {
+        "name": "System Trusted Fulfillment Basis Reader",
+        "description": "Reads only exact persisted Catalog fulfillment basis in the current tenant, without granting data access."
       },
       "auditor": {
         "name": "Tenant Auditor",

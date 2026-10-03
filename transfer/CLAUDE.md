@@ -57,6 +57,8 @@ transfer/
 
 ## 核心 API
 
+Agent `transfer.task.create` 沿唯一任务创建 API 委托，要求精确 scope/audience 和当前 Tenant 范围的创建权限；不沿用运行授权。owner 拒绝调度、启用、自动扫描、continuous、incremental 和非 native table 配置；成功只持久化 idle/stopped 任务，不创建 execution、不访问或写入业务数据。所有其他 Transfer 路由默认拒绝该委托令牌。Permission Manifest 7 与 System 向前迁移 181 只开放创建权限的委托标志，不增加角色权限。平台能力定义由 Ontology 提供，源/目标事实经其 owner 获取，不在 Transfer 保存第二份平台定义。
+
 Transfer 是 `transfer.execution.*`、`transfer.task.*` 和 `transfer.task_provider.*` 的 Permission owner；定义只存在于 `authorization/permissions.yaml`，通过 `common/authorization` 发布期聚合，不在服务启动时动态注册。模块 Runtime 创建一次性执行使用不可委派的 `transfer.execution.create`，按来源隔离回查结果使用不可委派的 `transfer.execution.read`；用户任务管理只使用 `transfer.task.*`；Orchestrator Runtime 只使用 `transfer.task_provider.read|execute`，并由固定 `addp-orchestrator` Service Client Guard 收窄。`transfer.task.cancel` 是 IAM 目标目录能力，当前真实执行取消仍未实现，首次 SQL seed 前必须通过路由覆盖门禁处理。
 
 路由前缀：`/api/v1/transfer`。

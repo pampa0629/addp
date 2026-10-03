@@ -32,7 +32,7 @@
             <div class="primary-text">{{ effectLabel(row.effect) }}</div>
             <div class="secondary-text">{{ t(`security.baseline.effectImpact.${row.effect}`) }}</div>
             <div v-if="row.effect === 'mask'" class="secondary-text">
-              {{ t('security.baseline.maskSummary', { prefix: row.keep_prefix, suffix: row.keep_suffix }) }}
+              {{ algorithmSummary(row) }}
             </div>
           </template>
         </el-table-column>
@@ -91,17 +91,7 @@
           </div>
         </el-form-item>
         <template v-if="form.effect === 'mask'">
-          <el-form-item :label="t('security.fields.algorithm')">
-            <el-input :model-value="t('security.options.algorithms.keepPrefixSuffix')" disabled />
-          </el-form-item>
-          <div class="form-grid">
-            <el-form-item :label="t('security.fields.keep_prefix')" prop="keep_prefix" required>
-              <el-input-number v-model="form.keep_prefix" :min="0" controls-position="right" />
-            </el-form-item>
-            <el-form-item :label="t('security.fields.keep_suffix')" prop="keep_suffix" required>
-              <el-input-number v-model="form.keep_suffix" :min="0" controls-position="right" />
-            </el-form-item>
-          </div>
+          <ProtectionAlgorithmEditor ref="algorithmEditor" :configuration="form" defaults />
           <el-form-item :label="t('security.fields.invalid_value_effect')" prop="invalid_value_effect" required>
             <el-select v-model="form.invalid_value_effect" class="wide">
               <el-option value="suppress" :label="effectLabel('suppress')" />
@@ -123,13 +113,15 @@
 </template>
 
 <script setup>
+import ProtectionAlgorithmEditor from '../components/ProtectionAlgorithmEditor.vue'
+import { initialProtectionConfiguration, algorithmNameKey, prefixAlgorithm } from '../utils/protectionAlgorithm.mjs'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { gradeAPI, protectionBaselineAPI } from '../api/security'
 import { useAuthStore } from '../store/auth'
 import { confirmDangerousAction } from '../utils/confirmation.mjs'
-import { createNonNegativeIntegerRule, createRequiredRule, protectionEffectI18nKey } from '../utils/foundationForm.mjs'
+import { createRequiredRule, protectionEffectI18nKey } from '../utils/foundationForm.mjs'
 import { isResourceVersionConflict } from '../utils/protectionEnrollment.mjs'
 
 const props = defineProps({ sensitiveType: { type: Object, required: true } })
@@ -152,7 +144,8 @@ const formRef = ref(null)
 const editing = ref(null)
 let dialogTrigger = null
 let disposed = false
-const form = reactive({ security_grade_id: null, effect: 'mask', keep_prefix: 3, keep_suffix: 4, invalid_value_effect: 'suppress', enabled: true, version: 0 })
+const algorithmEditor = ref(null)
+const form = reactive({ ...initialProtectionConfiguration(), security_grade_id: null, effect: 'mask', invalid_value_effect: 'suppress', enabled: true, version: 0 })
 const orderedGrades = computed(() => [...grades.value].sort((left, right) => Number(left.risk_order) - Number(right.risk_order)))
 const unusedGrades = computed(() => orderedGrades.value.filter(item => !rows.value.some(row => String(row.security_grade_id) === String(item.id))))
 const availableGrades = computed(() => editing.value
@@ -163,12 +156,14 @@ const formRules = computed(() => ({
   security_grade_id: [createRequiredRule(t('security.common.requiredField', { name: t('security.fields.security_grade_id') }))],
   effect: [createRequiredRule(t('security.common.requiredField', { name: t('security.fields.effect') }))],
   ...(form.effect === 'mask' ? {
-    keep_prefix: [createNonNegativeIntegerRule(t('security.common.requiredField', { name: t('security.fields.keep_prefix') }))],
-    keep_suffix: [createNonNegativeIntegerRule(t('security.common.requiredField', { name: t('security.fields.keep_suffix') }))],
     invalid_value_effect: [createRequiredRule(t('security.common.requiredField', { name: t('security.fields.invalid_value_effect') }))]
   } : {})
 }))
 
+function algorithmSummary(row) {
+  if (row.algorithm === prefixAlgorithm) return t('security.baseline.maskSummary', {prefix:row.parameters?.prefix_runes,suffix:row.parameters?.suffix_runes,mask:row.parameters?.mask_rune})
+  return t(algorithmNameKey(row.algorithm))
+}
 function can(action) { return auth.hasPermission(`security.protection_baseline.${action}`) }
 function definitionLabel(item) { return t('security.common.referenceOption', { name: item.name, code: item.code }) }
 function referenceLabel(items, id) {
@@ -209,8 +204,7 @@ async function load({ afterWrite = false } = {}) {
 function reset(row = {}) {
   form.security_grade_id = row.security_grade_id ? Number(row.security_grade_id) : (availableGrades.value[0] ? Number(availableGrades.value[0].id) : null)
   form.effect = row.effect || 'mask'
-  form.keep_prefix = Number(row.keep_prefix ?? 3)
-  form.keep_suffix = Number(row.keep_suffix ?? 4)
+  Object.assign(form, initialProtectionConfiguration(), { algorithm: row.algorithm || initialProtectionConfiguration().algorithm, parameters: row.parameters ? { ...row.parameters } : initialProtectionConfiguration().parameters, allowed_algorithms: row.allowed_algorithms ? [...row.allowed_algorithms] : initialProtectionConfiguration().allowed_algorithms })
   form.invalid_value_effect = row.invalid_value_effect || 'suppress'
   form.enabled = row.enabled === undefined ? true : Boolean(row.enabled)
   form.version = Number(row.version || 0)
@@ -289,15 +283,15 @@ async function save() {
   saving.value = true
   try {
     const valid = await formRef.value?.validate().catch(() => false)
-    if (disposed || !valid) return
+    if (disposed || !valid || (form.effect === 'mask' && !algorithmEditor.value?.validate())) return
     const mask = form.effect === 'mask'
     const payload = {
       sensitive_data_type_id: Number(props.sensitiveType.id),
       security_grade_id: Number(form.security_grade_id),
       effect: form.effect,
-      algorithm: mask ? 'addp.mask.keep_prefix_suffix/v2' : '',
-      keep_prefix: mask ? Number(form.keep_prefix) : 0,
-      keep_suffix: mask ? Number(form.keep_suffix) : 0,
+      algorithm: mask ? form.algorithm : '',
+      parameters: mask ? form.parameters : {},
+      allowed_algorithms: mask ? form.allowed_algorithms : [],
       invalid_value_effect: mask ? form.invalid_value_effect : form.effect,
       enabled: isEditingInitial.value ? true : Boolean(form.enabled)
     }

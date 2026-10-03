@@ -75,3 +75,10 @@ func TestQueryConfirmationTokenIsBoundToRequest(t *testing.T) {
 		t.Fatal("token should be bound to query fingerprint")
 	}
 }
+
+func TestESDSLPreflightRequiresProviderReadOnlyClassification(t *testing.T) {
+	result, err := AnalyzeQuery("es_dsl", `{"query":{"match_all":{}}}`)
+	if err != nil || result.Effect != string(SQLExecutionEffectRead) || result.ClassificationConfidence != "provider_read_only" {
+		t.Fatal(result, err)
+	}
+}

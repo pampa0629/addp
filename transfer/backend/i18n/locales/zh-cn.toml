@@ -108,3 +108,5 @@ other = "持续任务配置已被其他管理员更新"
 
 ["transfer.execution.events_unavailable"]
 other = "执行过程事件暂不可用"
+[transfer.task.delegated_invalid]
+other = "智能体只能创建无计划、未启动的 bounded snapshot 原生表任务；不允许启用调度或自动扫描。"

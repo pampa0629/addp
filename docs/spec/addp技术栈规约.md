@@ -30,6 +30,7 @@
 
 - **用户令牌**: System 生成随机 opaque Token，只保存 SHA-256 Hash
 - **密码学**: `golang.org/x/crypto@v0.47.0`
+- **SM3**: `github.com/emmansun/gmsm@v0.34.1`，仅 Common 保护执行器使用 SM3，不改变 Go 或现有密码学依赖版本。
 
 #### 数据库驱动
 
@@ -164,3 +165,14 @@
   }
   ```
 - 安装依赖前需确保删除 `common-frontend/node_modules` 和 `common-frontend/package-lock.json`
+
+### Business Redis 运行基线
+
+Business Redis 使用 `public.ecr.aws/docker/library/redis:7.2.13@sha256:37aa82f9fdff30517603b2e2c5376b34b106d353c2b508262260d3bb0d2c21ba`，由 Docker 官方账号发布，固定多架构 manifest（AMD64、ARM64）。现有 Infra Redis 版本不在该变更范围内；平台 Redis 业务引擎首版通过现有 `go-redis/v9@v9.17.2` 支持单端点 ACL 连接登记、逻辑数据库选择和 TLS 验证；不声明 Cluster、Sentinel 或 key 级数据访问能力。
+
+### Elasticsearch 接入依赖
+
+- **Elasticsearch Go 客户端**：`github.com/elastic/go-elasticsearch/v9@v9.3.0`，使用官方低层 HTTP 客户端；该版本要求 Go 1.24，保持当前 Common 的 Go 1.24.2 基线。
+- **Elasticsearch Business/T2**：官方 `docker.elastic.co/elasticsearch/elasticsearch:9.5.4@sha256:82ac14f43fe701992e601f4cc81e1c0d7dbc5a2576d8cd736006452925df4026`，同一 manifest 支持 linux/amd64 与 linux/arm64。首版仅认证这组服务端与客户端，不启用旧主版本兼容路线。
+
+Model3D Workflow Runtime 使用 `Pillow==12.3.0` 校验生成 GLB 中的 PNG/JPEG 编码和实际解码，Python 版本遵循统一 Python runtime 规约。

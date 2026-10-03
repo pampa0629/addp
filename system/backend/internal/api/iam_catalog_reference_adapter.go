@@ -188,12 +188,12 @@ type IAMCatalogReferenceCandidateResponse struct {
 }
 
 // ListCandidates godoc
-// @Summary      查询 Catalog 责任主体候选 | List Catalog responsibility candidates
-// @Description  仅 addp-catalog Tenant Service Principal 可按名称或编码分页查询当前可引用的 Department 或 User；只返回最小显示摘要 | Only the addp-catalog tenant service principal may search currently referenceable departments or users by name or code; only minimal display summaries are returned
+// @Summary      查询 Catalog 主体引用候选 | List Catalog subject reference candidates
+// @Description  仅 addp-catalog Tenant Service Principal 可分页查询当前 Tenant 有效的 Department、User 或 Project Group；只返回名称、编码、稳定 ID 和状态，不返回成员、角色或数据。Catalog 须在人的消费入口独立核验条目与责任资格 | Only the addp-catalog tenant service principal may page active departments, users or project groups in the current tenant. Returns only names, codes, stable IDs and statuses, never members, roles or data. Catalog independently checks entry and responsibility eligibility at human consumption boundaries
 // @Tags         Runtime Catalog References
 // @Produce      json
 // @Security     BearerAuth
-// @Param        subject_type query string true "主体类型 | Subject type" Enums(department,user)
+// @Param        subject_type query string true "主体类型 | Subject type" Enums(department,user,project_group)
 // @Param        search query string false "名称或编码，最多 100 字符 | Name or code, maximum 100 characters"
 // @Param        page query int false "页码，默认 1 | Page number, default 1"
 // @Param        page_size query int false "每页数量，默认 20，最大 50 | Page size, default 20 and maximum 50"
@@ -202,7 +202,7 @@ type IAMCatalogReferenceCandidateResponse struct {
 // @Failure      401 {object} IAMErrorResponse
 // @Failure      403 {object} IAMErrorResponse
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["iam.department.read","iam.tenant_membership.read"]
+// @x-addp-required-permissions ["iam.department.read","iam.project_group.read","iam.tenant_membership.read"]
 // @Router       /runtime/catalog-references/candidates [get]
 func (h *IAMCatalogReferenceHandler) ListCandidates(c *gin.Context) {
 	if err := iamServiceOwnsModule(c, "catalog"); err != nil {

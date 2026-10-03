@@ -9,6 +9,8 @@ require (
 	github.com/apache/arrow-go/v18 v18.5.1
 	github.com/beltran/gohive v1.8.1
 	github.com/dolthub/vitess v0.0.0-20250512224608-8fb9c6ea092c
+	github.com/elastic/go-elasticsearch/v9 v9.3.0
+	github.com/emmansun/gmsm v0.34.1
 	github.com/gin-gonic/gin v1.11.0
 	github.com/go-sql-driver/mysql v1.9.3
 	github.com/godoes/gorm-oracle v1.6.20
@@ -46,6 +48,11 @@ require (
 )
 
 require (
+	github.com/elastic/elastic-transport-go/v8 v8.8.0 // indirect
+	github.com/go-logr/logr v1.4.3 // indirect
+	github.com/go-logr/stdr v1.2.2 // indirect
+	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
+	go.opentelemetry.io/otel/metric v1.39.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20251029180050-ab9386a59fda // indirect
 	google.golang.org/grpc v1.78.0 // indirect
 )
@@ -106,7 +113,6 @@ require (
 	github.com/rasky/go-xdr v0.0.0-20170124162913-1a41d1a06c93 // indirect
 	github.com/richardlehane/mscfb v1.0.4 // indirect
 	github.com/richardlehane/msoleps v1.0.4 // indirect
-	github.com/rogpeppe/go-internal v1.14.1 // indirect
 	github.com/rs/xid v1.6.0 // indirect
 	github.com/segmentio/asm v1.2.1 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect

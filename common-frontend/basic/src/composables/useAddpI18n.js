@@ -52,10 +52,10 @@ export function createAddpI18n(options = {}) {
 
   const locale = ref(readStoredLang())
 
-  // 合并公共翻译 + 模块翻译（模块翻译可覆盖公共翻译中的同名 key）
+  // 各实例独立保存公共翻译，模块只覆盖同名词条。
   const messages = {
-    'zh-cn': { ...zhCnCommon, ...(moduleMessages['zh-cn'] || {}) },
-    'en': { ...enCommon, ...(moduleMessages['en'] || {}) }
+    'zh-cn': structuredClone(zhCnCommon),
+    'en': structuredClone(enCommon)
   }
 
   const i18n = createI18n({
@@ -64,6 +64,10 @@ export function createAddpI18n(options = {}) {
     fallbackLocale: DEFAULT_LANG,
     messages,
   })
+
+  for (const lang of SUPPORTED_LANGS) {
+    i18n.global.mergeLocaleMessage(lang, moduleMessages[lang] || {})
+  }
 
   // 同步外部 locale ref 与 i18n 实例的 locale
   watch(locale, (newLang) => {

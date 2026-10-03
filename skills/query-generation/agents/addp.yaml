@@ -5,6 +5,7 @@ required_tools:
   - engine.list
   - data.search
   - resource.ancestors.get
+  - resource.facts.get
   - data.preview
   - query.draft.generate
 max_iterations: 7

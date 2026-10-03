@@ -12,6 +12,8 @@ for parent in Path(__file__).resolve().parents:
         sys.path.insert(0, str(contract_path.parent))
         break
 
+from .glb_fixture import glb_bytes as _glb_bytes, triangle_doc
+
 import operators
 from operators import CommandResult, ConverterError, converter_status, invoke_operator, list_operators
 from workflow_operator_contract import assert_operator_metadata_contract
@@ -56,20 +58,6 @@ def directory_plan(source: Path, target: Path, source_format: str, target_format
     }
 
 
-def _glb_bytes(doc: dict, binary: bytes = b"") -> bytes:
-    json_bytes = json.dumps(doc, separators=(",", ":")).encode("utf-8")
-    json_bytes += b" " * ((4 - len(json_bytes) % 4) % 4)
-    chunks = [(b"JSON", json_bytes)]
-    if binary:
-        binary += b"\x00" * ((4 - len(binary) % 4) % 4)
-        chunks.append((b"BIN\x00", binary))
-    total = 12 + sum(8 + len(data) for _, data in chunks)
-    result = bytearray(struct.pack("<4sII", b"glTF", 2, total))
-    for kind, data in chunks:
-        result += struct.pack("<I4s", len(data), kind) + data
-    return bytes(result)
-
-
 def _glb_json(data: bytes) -> dict:
     length, kind = struct.unpack_from("<I4s", data, 12)
     assert kind == b"JSON"
@@ -80,7 +68,7 @@ def test_operator_metadata_contract_and_modes():
     ops = list_operators()
     assert [operator["name"] for operator in ops] == [
         "osgb_to_glb", "gltf_to_glb", "fbx_to_glb", "obj_to_glb", "stl_to_glb", "ifc_to_glb",
-        "osgb_scene_to_3dtiles", "gaussian_splat_to_ksplat",
+        "dae_to_glb", "3ds_to_glb", "osgb_scene_to_3dtiles", "gaussian_splat_to_ksplat",
     ]
     assert_operator_metadata_contract(ops, expected_engine_type="model3d_workflow")
     assert all(operator["execution_modes"] == ["workflow", "direct"] for operator in ops)
@@ -90,9 +78,9 @@ def test_operator_metadata_contract_and_modes():
 def test_converter_status_defaults_to_bound_binaries():
     status = converter_status(env={})
     assert status["binding"] == "model3d_workflow"
-    assert status["path"].endswith("engines/model3d-workflow/bin/_3dtile")
-    assert status["mesh_converter"]["path"].endswith("engines/model3d-workflow/bin/assimp")
-    assert status["ifc_converter"]["path"].endswith("engines/model3d-workflow/bin/IfcConvert")
+    assert status["path"].endswith("engines/model3d-workflow/scripts/converters/_3dtile")
+    assert status["mesh_converter"]["path"].endswith("engines/model3d-workflow/scripts/converters/assimp")
+    assert status["ifc_converter"]["path"].endswith("engines/model3d-workflow/scripts/converters/IfcConvert")
 
 
 def test_gaussian_splat_to_ksplat_uses_v1_plan(tmp_path):
@@ -137,7 +125,7 @@ def test_osgb_to_glb_publishes_mounted_file(tmp_path):
     target = tmp_path / "out" / "model.glb"
 
     def fake_runner(command, timeout_seconds):
-        Path(command[-1]).write_bytes(_glb_bytes({"asset": {"version": "2.0"}}))
+        Path(command[-1]).write_bytes(_glb_bytes())
         return CommandResult(returncode=0)
 
     facts = invoke_operator(
@@ -167,7 +155,7 @@ def test_mesh_converters_publish_glb(tmp_path, operator_name, suffix, source_for
     target = tmp_path / "out" / f"{source_format}.glb"
 
     def fake_runner(command, timeout_seconds):
-        Path(command[-2]).write_bytes(_glb_bytes({"asset": {"version": "2.0"}}))
+        Path(command[-2]).write_bytes(_glb_bytes())
         return CommandResult(returncode=0)
 
     plan = directory_plan(source_dir, target, source_format, "glb", entrypoint=source.name)
@@ -194,7 +182,7 @@ def test_ifc_to_glb_defaults_to_center_model(tmp_path):
 
     def fake_runner(command, timeout_seconds):
         captured["command"] = command
-        Path(command[-1]).write_bytes(_glb_bytes({"asset": {"version": "2.0"}}))
+        Path(command[-1]).write_bytes(_glb_bytes())
         return CommandResult(returncode=0)
 
     invoke_operator(
@@ -224,15 +212,9 @@ def test_obj_transparent_textured_material_is_repaired(tmp_path):
     target = tmp_path / "model.glb"
 
     def fake_runner(command, timeout_seconds):
-        Path(command[-2]).write_bytes(_glb_bytes({
-            "asset": {"version": "2.0"},
-            "materials": [{
-                "pbrMetallicRoughness": {"baseColorTexture": {"index": 0}, "baseColorFactor": [1, 1, 1, 0]},
-                "alphaMode": "BLEND",
-            }],
-            "textures": [{"source": 0}],
-            "images": [{"bufferView": 0, "mimeType": "image/jpeg"}],
-        }, b"jpg"))
+        doc, binary = triangle_doc("JPEG")
+        doc["materials"] = [{"pbrMetallicRoughness": {"baseColorTexture": {"index": 0}, "baseColorFactor": [1, 1, 1, 0]}, "alphaMode": "BLEND"}]
+        Path(command[-2]).write_bytes(_glb_bytes(doc, binary))
         return CommandResult(returncode=0)
 
     plan = directory_plan(source_dir, target, "obj", "glb", entrypoint=source.name)

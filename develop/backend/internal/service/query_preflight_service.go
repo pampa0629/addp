@@ -222,7 +222,7 @@ func AnalyzeQuery(queryType, query string) (*QueryPreflightResult, error) {
 	if language == "" {
 		language = "sql"
 	}
-	if language != "sql" && language != "mql" && language != "cypher" {
+	if language != "sql" && language != "mql" && language != "cypher" && language != "es_dsl" {
 		return nil, fmt.Errorf("不支持的查询语言: %s", language)
 	}
 	if language != "sql" {

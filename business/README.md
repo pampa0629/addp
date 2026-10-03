@@ -262,7 +262,7 @@ bash scripts/online-tidb-consumer-fixture.sh stop
 
 ### scripts/online-manager-minio-fixture.sh - Manager 内部产物血缘 T4 Fixture
 
-该入口只允许 `ADDP_ONLINE_HOST=1` 的 macOS 专用 Runner 使用。它通过 `business/minio` Compose service 管理独立 Business MinIO，将仓库已有的小型 `pdal_las12_format0.las` 与确定性的 3 页 `addp_online_preview_fixture.pptx` 幂等写入配置的两个 object，供同一个永久 MinIO Engine Instance 扫描。脚本只接受仓库外 `ADDP_ONLINE_MANAGER_MINIO_*` 变量，不读取或生成 `business/.env`，也不接触 Manager infra MinIO。个人开发环境不得调用该脚本。
+该入口要求 `ADDP_ONLINE_HOST=1`：Manager 内部产物套件由 GitHub Hosted Linux x86_64 运行，混合检索套件仍由 macOS 专用 Runner 运行。它通过 `business/minio` Compose service 管理独立 Business MinIO，用 Python 标准库在临时目录确定性生成 LAS 1.2 三点 EPSG:3857 夹具，并发布仓库已跟踪的 3 页 PPTX；Hosted 套件无需本机 NFS 样例或永久 Engine Instance，退出时销毁业务容器、网络和数据卷。只有混合检索套件额外发布专用部署中的 JPG。模型夹具由脚本在操作系统临时目录用 Python 标准库确定性生成：`model3d/dae/model.dae` 和 `model3d/3ds/model.3ds` 各包含一个带 UV 的静态三角形，并引用同目录的 `texture.png`；两者不引入外部下载或长期二进制样例。DAE 使用厘米单位，生成后的两类模型均为 1 × 2 的三角形。模型 object 路径固定为该专用夹具的协议，不增加部署配置。脚本只接受仓库外 `ADDP_ONLINE_MANAGER_MINIO_*` 变量，不读取或生成 `business/.env`，也不接触 Manager infra MinIO。个人开发环境不得调用该脚本。
 
 ```bash
 bash scripts/online-manager-minio-fixture.sh start
@@ -446,3 +446,29 @@ A: 可以！支持 AWS RDS/S3、阿里云 RDS/OSS 等云服务。
 
 **Q: 脚本可以重复执行吗？**  
 A: 可以！所有脚本都是幂等的。
+
+## Elasticsearch
+
+通过 `bash business/scripts/start.sh -elasticsearch` 按需启动官方 Elasticsearch 9.5.4 单节点，支持 ARM64 和 AMD64。停止和重启使用同目录 `stop.sh -elasticsearch`、`restart.sh -elasticsearch`，数据卷保留。镜像固定 manifest digest，内存上限 2 GiB。宿主机只开放回环 HTTP，启用 Basic 认证；远程环境使用 HTTPS，插件允许提供 PEM CA，验证服务器证书。
+
+配置位于 `business/.env` 的 `ELASTICSEARCH_PORT`、`ELASTICSEARCH_PASSWORD`、`ELASTICSEARCH_READER_USER`、`ELASTICSEARCH_READER_PASSWORD`；实际端口查看 `business/.business-state/ports.env`。初始化使用管理员，仅创建/更新固定 ID 的样例记录，不删除已有索引；创建 `addp_orders.v1` 和空索引 `addp_empty.v1`，内容包括对象、nested、multi-field、数组、null、缺失字段和超出安全整数范围的 long。注册 ADDP 引擎时使用只读用户，该角色仅有 `addp_*` 的 `read` 与 `view_index_metadata`，没有写入及集群管理权限。
+
+本机标准 `scripts/utils/register-business.sh` 在 ES 容器运行时会读取实际端口并注册只读接入。System 新增 `elasticsearch` 引擎填写 `endpoint`、`user`、`password`，按需填写 `tls_ca_cert`。目录仅展示普通、打开、非隐藏的具体索引；Meta 获取 Mapping；Manager 读取文档；Develop 在选定索引后使用 `es_dsl`。首版不提供聚合、脚本、别名、数据流、跨索引查询或 Transfer 写入/同步。
+
+验证入口：`make test-business-config`、`make test-common-elasticsearch-unit`、`make test-common-elasticsearch`。后者创建独占容器、认证用户及样例索引，验证 Common、Manager、Meta 后删除容器、卷和网络，不使用现有 Business 实例。
+
+## Business Redis
+
+`bash business/scripts/start.sh -redis` 按需启动 Redis 7.2.13 单机；停止和重启使用 `stop.sh -redis`、`restart.sh -redis`，保留独立 `redis_data` 卷。镜像统一使用 Docker 官方发布的 ECR Public 多架构镜像并固定 OCI digest，支持 AMD64 和 ARM64，不复用 Infra Redis 容器、账号或数据。Business 首选回环端口为 `6380`，首次启动解析空闲端口，后续沿用 `business/.business-state/ports.env` 中的实际映射。
+
+配置项为 `BUSINESS_REDIS_PORT`、`BUSINESS_REDIS_ADMIN_PASSWORD`、`BUSINESS_REDIS_READER_PASSWORD`，避免与 Infra `REDIS_*` 混淆。关闭匿名 default 用户，管理员为 `addp_business_admin`，只读用户为 `addp_business_reader`；角色使用显式命令白名单。该实例只开放 DB 0，读取账号可读取实例内全部业务 key，但不能执行写入、脚本、CONFIG、ACL 或 FLUSHALL。ACL 文件在容器 tmpfs 中由密码哈希生成；数据使用 AOF 持久化。
+
+启动后仅补齐缺失的 `addp:sample:*` 固定样例，包含 string、大整数计数、hash、list、set、zset、stream、TTL 和带非 UTF-8 字节的 key/value。重复初始化不重复追加 list/stream、不重置仍存在的 TTL、不删除或覆盖既有 key；样例出现不符的原生类型时先整体拒绝初始化。初始化脚本只能由管理员执行，不属于读取账号的查询能力。
+
+已实现独立 Business 部署、原生数据夹具、Redis Engine Plugin 与 System 连接注册。System 通用表单按 ConnectionSpec 配置 ACL 用户、数据库编号与 TLS，注册脚本读取真实容器映射并使用只读账号登记数据库 0；连接检测执行 SELECT 和 DBSIZE，不读写业务 key。Meta key 级目录、Manager 原生预览及 Develop 查询尚未实现；不能把各原生类型统一伪装为 document collection，也不能把 SCAN 当成一致性快照或将分页 COUNT 当成返回条数保证。
+
+验证入口为 `make test-business-config` 和 `make test-business-redis`。后者创建独占 Compose project、随机回环端口和随机密码，核验认证拒绝、只读权限、原生类型、精确字节、初始化幂等和重启持久化，退出后检查容器、数据卷和网络零残留。该入口已纳入 `make test-integration`、模块/变更自动发现和 `release-and-t2-gates.yml`，不连接 Infra 或现有 Business Redis。
+
+Redis 插件与 System 消费契约验证入口：`make test-common-redis-unit`、`make test-common-redis`。后者复用同一独占夹具生命周期，验证真实 ACL 凭据、数据库选择、权限不足、System 密码加密/脱敏与在线状态更新，并已登记 Common/System/Business 变更触发的 CI 门禁。
+
+Manager 内部产物验收 `manager-internal-artifact-lineage` 使用 GitHub Hosted Ubuntu x86_64 临时部署，由 `scripts/test/online-hosted-manager-gate.sh` 从零建立最小权限身份、Business MinIO 与真实 Runtime，复用 `make test-online` 业务断言并在退出时销毁环境；无需永久账号或自备 Runner。首次真实运行成功前只登记手工触发，不计为 T4 通过。

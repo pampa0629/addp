@@ -1,0 +1,41 @@
+{
+  "schema_version": "addp.platform-capability-context/v1",
+  "knowledge_kind": "platform_definition",
+  "capability": "transfer.task.create",
+  "revision": 1,
+  "digest": "",
+  "availability": "not_observed",
+  "concepts": [
+    {"id": "transfer_task", "name": {"zh-cn": "传输任务定义", "en": "Transfer task definition"}},
+    {"id": "source", "name": {"zh-cn": "已有源数据项", "en": "Existing source data item"}},
+    {"id": "target", "name": {"zh-cn": "目标父节点与资源名称", "en": "Target parent node and resource name"}},
+    {"id": "runtime_boundary", "name": {"zh-cn": "执行边界", "en": "Runtime boundary"}},
+    {"id": "load_mode", "name": {"zh-cn": "装载模式", "en": "Load mode"}},
+    {"id": "apply_policy", "name": {"zh-cn": "目标写入策略", "en": "Target apply policy"}},
+    {"id": "field_mapping", "name": {"zh-cn": "实际输出到目标字段的映射", "en": "Actual output to target field mapping"}},
+    {"id": "execution", "name": {"zh-cn": "一次实际运行", "en": "An actual execution"}}
+  ],
+  "relations": [
+    {"from": "transfer_task", "kind": "reads_from", "to": "source"},
+    {"from": "transfer_task", "kind": "writes_to", "to": "target"},
+    {"from": "transfer_task", "kind": "has", "to": "runtime_boundary"},
+    {"from": "transfer_task", "kind": "has", "to": "load_mode"},
+    {"from": "target", "kind": "has", "to": "apply_policy"},
+    {"from": "transfer_task", "kind": "has", "to": "field_mapping"},
+    {"from": "execution", "kind": "runs", "to": "transfer_task"}
+  ],
+  "operation": {
+    "owner": "transfer",
+    "skill": "transfer-generation",
+    "tool": "transfer.task.create",
+    "inputs_required": ["confirmed_source", "confirmed_target_parent_and_name", "bounded", "snapshot", "explicit_apply_policy", "confirmed_row_grain_and_fields", "user_review"],
+    "effects": ["task_definition.persisted", "status.idle", "desired_state.stopped"],
+    "excluded_effects": ["execution.created", "schedule.enabled", "business_data.written", "metadata.scan_started", "permission.granted"]
+  },
+  "requirements": [
+    {"id": "accessible_engines", "tools": ["engine.list"]},
+    {"id": "source_discovery", "tools": ["data.search", "resource.ancestors.get", "resource.facts.get"]},
+    {"id": "target_parent_discovery", "tools": ["resource.children.list", "resource.ancestors.get"]},
+    {"id": "optional_draft_assistance", "tools": ["transfer.draft.generate"]}
+  ]
+}

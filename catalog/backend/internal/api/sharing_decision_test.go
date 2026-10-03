@@ -35,6 +35,16 @@ func (sharingRouteTarget) ResolveSharingTarget(context.Context, int64, int64, st
 
 type sharingRouteReferences struct{}
 
+type sharingRouteRecipientCandidates struct{ calls int }
+
+func (r *sharingRouteRecipientCandidates) ListReferenceCandidates(_ context.Context, tenant int64, kind, search string, page, size int) (*service.ReferenceCandidateList, error) {
+	r.calls++
+	if tenant != 7 || kind != "project_group" || search != "delivery" || page != 1 || size != 20 {
+		return nil, fmt.Errorf("incorrect recipient candidate request")
+	}
+	return &service.ReferenceCandidateList{Data: []service.ReferenceCandidate{{ReferenceType: kind, ID: "50", Name: "Delivery", Code: "delivery", Status: "active"}}, Total: 1, Page: page, PageSize: size, TotalPages: 1}, nil
+}
+
 func TestSharingDecisionSwaggerRequiresModeAndAllowsExplicitNullDate(t *testing.T) {
 	data, err := os.ReadFile("../../docs/swagger.json")
 	if err != nil {
@@ -77,7 +87,7 @@ func TestSharingDecisionSwaggerRequiresModeAndAllowsExplicitNullDate(t *testing.
 func (sharingRouteReferences) ResolveSystemReferences(_ context.Context, _ int64, refs []commonClient.SystemCatalogReference) ([]commonClient.SystemCatalogReferenceResolution, error) {
 	result := make([]commonClient.SystemCatalogReferenceResolution, len(refs))
 	for i, ref := range refs {
-		result[i] = commonClient.SystemCatalogReferenceResolution{SubjectType: ref.SubjectType, ID: ref.ID, Found: true, Referenceable: true}
+		result[i] = commonClient.SystemCatalogReferenceResolution{SubjectType: ref.SubjectType, ID: ref.ID, Found: true, Referenceable: true, Name: "Recipient"}
 	}
 	return result, nil
 }
@@ -142,7 +152,9 @@ func TestPostgresSharingDecisionRoutesUseExplicitPermissionAndUserIdentity(t *te
 		}
 	}))
 	defer system.Close()
+	recipients := &sharingRouteRecipientCandidates{}
 	entries := service.NewEntryService(db, nil, sharingRouteReferences{}).WithSharingTargetResolver(sharingRouteTarget{}).
+		WithReferenceCandidateResolvers(nil, recipients).
 		WithSharingHandlingScopeReader(commonClient.NewSystemServiceClient(system.URL, nil, system.Client()))
 	router := SetupRouter(system.URL, modulelifecycle.NewStandalone("catalog"), entries, nil, nil, nil, nil, nil)
 	path := "/api/v1/catalog/entries/" + id.String() + "/sharing_decisions"
@@ -160,9 +172,31 @@ func TestPostgresSharingDecisionRoutesUseExplicitPermissionAndUserIdentity(t *te
 		return response.Body.String()
 	}
 	request(http.MethodPost, path, body, http.StatusForbidden)
+	recipientPath := "/api/v1/catalog/entries/" + id.String() + "/sharing_recipient_candidates"
+	recipientQuery := "?recipient_type=project_group&search=delivery&page=1&page_size=20"
+	request(http.MethodGet, recipientPath+recipientQuery, "", http.StatusForbidden)
 	permissions = append(permissions, "catalog.entry.update")
 	request(http.MethodPost, path, body, http.StatusForbidden)
 	permissions = []string{"catalog.entry.read", "catalog.inventory.read", "catalog.sharing_decision.create"}
+	for _, query := range []string{"?recipient_type=department", "?recipient_type=user&page=oops", "?recipient_type=user&page=0", "?recipient_type=user&page_size=51", "?recipient_type=user&search=%00"} {
+		request(http.MethodGet, recipientPath+query, "", http.StatusBadRequest)
+	}
+	user = "41"
+	request(http.MethodGet, recipientPath+recipientQuery, "", http.StatusForbidden)
+	tenant = "8"
+	request(http.MethodGet, recipientPath+recipientQuery, "", http.StatusNotFound)
+	tenant, user = "7", "40"
+	if recipients.calls != 0 {
+		t.Fatal("unqualified recipient query reached System")
+	}
+	recipientData := request(http.MethodGet, recipientPath+recipientQuery, "", http.StatusOK)
+	var recipientView struct {
+		Data  []map[string]any `json:"data"`
+		Total int64            `json:"total"`
+	}
+	if err := json.Unmarshal([]byte(recipientData), &recipientView); err != nil || recipientView.Total != 1 || len(recipientView.Data) != 1 || len(recipientView.Data[0]) != 5 || recipientView.Data[0]["id"] != "50" {
+		t.Fatalf("recipient response=%s err=%v", recipientData, err)
+	}
 	for _, invalid := range []string{
 		strings.Replace(body, `"expiry_mode":"at_time",`, "", 1),
 		strings.Replace(body, `"expiry_mode":"at_time"`, `"expiry_mode":"until_revoked"`, 1),
@@ -233,4 +267,104 @@ func TestPostgresSharingDecisionRoutesUseExplicitPermissionAndUserIdentity(t *te
 		request(http.MethodPost, preparePath, invalid, http.StatusBadRequest)
 	}
 	request(http.MethodPost, preparePath, prepareBody, http.StatusServiceUnavailable)
+
+	// History uses its own read-only route, not preparation POST as refresh.
+	historyID := uuid.New()
+	binding := authorization.SharingFulfillmentBinding{
+		CallerPrincipalID: 60,
+		Operator:          authorization.SharingFulfillmentOperator{PrincipalID: 41, MembershipID: 51, AuthorizationVersion: 9007199254740993},
+		Path:              plugin.EngineCatalogBranchLeafPath(plugin.TabularCatalogModel("schema"), 12, "schema", "public", "table", "table", "orders"),
+		DecisionID:        longID, RequirementVersion: 9007199254740993, RecipientType: "user", RecipientID: 40,
+		Action: "read", ExpiryMode: authorization.SharingExpiryUntilRevoked,
+	}
+	raw, err := json.Marshal(binding)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&models.FulfillmentCheck{RequestID: historyID, TenantID: 7, CatalogEntryID: id, RequestBinding: raw}).Error; err != nil {
+		t.Fatal(err)
+	}
+	historyPath := preparePath + "/" + historyID.String()
+	permissions = []string{"catalog.entry.read", "catalog.entry.update", "catalog.inventory.read"}
+	request(http.MethodGet, preparePath, "", http.StatusForbidden)
+	request(http.MethodGet, historyPath, "", http.StatusForbidden)
+	permissions = []string{"system.engine_access_fulfillment.create", "catalog.inventory.read"}
+	request(http.MethodGet, preparePath, "", http.StatusForbidden)
+	request(http.MethodGet, historyPath, "", http.StatusForbidden)
+	permissions = []string{"catalog.entry.read", "catalog.inventory.read", "system.engine_access_fulfillment.create"}
+	scopeStatus = http.StatusOK
+	for _, invalid := range []string{"?page=0", "?page_size=101", "?page=oops", "?page=1&page=2", "?operator=40", "?page_size=0", "?page=", "?page=%zz"} {
+		request(http.MethodGet, preparePath+invalid, "", http.StatusBadRequest)
+	}
+	request(http.MethodGet, historyPath+"?retry=true", "", http.StatusBadRequest)
+	request(http.MethodGet, preparePath+"/not-a-uuid", "", http.StatusBadRequest)
+	user = "40"
+	otherHistory := request(http.MethodGet, preparePath, "", http.StatusOK)
+	if !strings.Contains(otherHistory, `"total":0`) || !strings.Contains(otherHistory, `"data":[]`) {
+		t.Fatalf("other operator history exposed: %s", otherHistory)
+	}
+	request(http.MethodGet, historyPath, "", http.StatusNotFound)
+	user = "41"
+	myHistory := request(http.MethodGet, preparePath+"?page=1&page_size=1", "", http.StatusOK)
+	var found struct {
+		Data  []service.SharingFulfillmentRequest `json:"data"`
+		Total int64                               `json:"total"`
+	}
+	if err := json.Unmarshal([]byte(myHistory), &found); err != nil || found.Total != 1 || len(found.Data) != 1 || found.Data[0].RequestID != historyID || !strings.Contains(myHistory, `"requirement_version":"9007199254740993"`) {
+		t.Fatalf("my original request=%s err=%v", myHistory, err)
+	}
+	// An absent authority client is an error, not an inferred pending/closed result.
+	request(http.MethodGet, historyPath, "", http.StatusServiceUnavailable)
+	runtimeCalls := 0
+	runtime := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		runtimeCalls++
+		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/system/runtime/engine-access-fulfillments/"+historyID.String()+"/resolve" || r.Header.Get("Authorization") != "Bearer fixture-runtime" || r.Header.Get("X-Tenant-ID") != "" {
+			t.Error("history GET triggered a mutation or substituted credentials")
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		var original authorization.SharingFulfillmentBinding
+		if err := json.NewDecoder(r.Body).Decode(&original); err != nil {
+			t.Error(err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		actual, err := json.Marshal(original)
+		if err != nil || string(actual) != string(raw) {
+			t.Error("history replaced original binding with current IAM version")
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(authorization.SharingFulfillmentLookup{Found: false})
+	}))
+	defer runtime.Close()
+	tokens := commonClient.ServiceTokenProviderFunc(func(_ context.Context, tenantID uint) (string, error) {
+		if tenantID != 7 {
+			return "", fmt.Errorf("unexpected runtime tenant")
+		}
+		return "fixture-runtime", nil
+	})
+	entries.WithSharingFulfillmentClient(commonClient.NewSystemFulfillmentClient(runtime.URL, tokens, runtime.Client()))
+	pending := request(http.MethodGet, historyPath, "", http.StatusOK)
+	if !strings.Contains(pending, `"state":"pending"`) || strings.Contains(pending, `"operator"`) || strings.Contains(pending, `"caller_principal_id"`) || runtimeCalls != 1 {
+		t.Fatalf("read-only pending=%s calls=%d", pending, runtimeCalls)
+	}
+	var stored models.FulfillmentCheck
+	if err := db.Where("request_id = ?", historyID).Take(&stored).Error; err != nil || stored.ResolvedAt != nil {
+		t.Fatalf("history GET settled the request: %+v %v", stored, err)
+	}
+	scopeStatus = http.StatusForbidden
+	request(http.MethodGet, historyPath, "", http.StatusForbidden)
+	unmanaged := request(http.MethodGet, preparePath, "", http.StatusOK)
+	if !strings.Contains(unmanaged, `"total":0`) {
+		t.Fatalf("unmanaged original engine affected total: %s", unmanaged)
+	}
+	scopeStatus = http.StatusServiceUnavailable
+	request(http.MethodGet, preparePath, "", http.StatusServiceUnavailable)
+	tenant = "8"
+	request(http.MethodGet, preparePath, "", http.StatusNotFound)
+	request(http.MethodGet, historyPath, "", http.StatusNotFound)
+	if runtimeCalls != 1 {
+		t.Fatal("denied reads reached runtime authority")
+	}
 }

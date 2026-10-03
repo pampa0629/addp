@@ -2,8 +2,12 @@ schema: addp.skill-runtime/v1
 required_skills:
   - data-discovery
 required_tools:
+  - platform.capability.context
+  - engine.list
   - data.search
+  - resource.children.list
   - resource.ancestors.get
-  - data.preview
+  - resource.facts.get
   - transfer.draft.generate
-max_iterations: 7
+  - transfer.task.create
+max_iterations: 14

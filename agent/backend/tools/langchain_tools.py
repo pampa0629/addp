@@ -29,7 +29,7 @@ def _python_type(schema: dict[str, Any]):
     }.get(schema_type, Any)
 
 
-def _arguments_model(tool_name: str, schema: dict[str, Any]) -> type[BaseModel]:
+def _arguments_model(tool_name: str, schema: dict[str, Any], *, injected_id: bool = True) -> type[BaseModel]:
     required = set(schema.get("required") or [])
     fields: dict[str, tuple[Any, Any]] = {}
     for name, property_schema in (schema.get("properties") or {}).items():
@@ -45,14 +45,27 @@ def _arguments_model(tool_name: str, schema: dict[str, Any]) -> type[BaseModel]:
                 ge=property_schema.get("minimum"),
                 le=property_schema.get("maximum"),
                 min_length=property_schema.get("minLength"),
+                json_schema_extra=property_schema,
             ),
         )
-    fields["tool_call_id"] = (Annotated[str, InjectedToolCallId], ...)
+    if injected_id:
+        fields["tool_call_id"] = (Annotated[str, InjectedToolCallId], ...)
     return create_model(
         f"{tool_name.replace('.', '_').title()}Arguments",
         __config__=ConfigDict(extra="forbid"),
         **fields,
     )
+
+
+class ManifestStructuredTool(StructuredTool):
+    # LangChain's Pydantic subset drops json_schema_extra. Publish a separate
+    # public model from the same Manifest, preserving nested contracts without
+    # exposing the runtime-injected ToolCall identity to the model.
+    public_args_schema: type[BaseModel] = Field(exclude=True)
+
+    @property
+    def tool_call_schema(self) -> type[BaseModel]:
+        return self.public_args_schema
 
 
 def _runtime_name(stable_name: str) -> str:
@@ -84,11 +97,12 @@ def create_agent_tools(token: str, agent_run_id: str) -> list[StructuredTool]:
             return json.dumps(result, ensure_ascii=False, separators=(",", ":"))
 
         tools.append(
-            StructuredTool.from_function(
+            ManifestStructuredTool.from_function(
                 coroutine=call_tool,
                 name=_runtime_name(stable_name),
                 description=f"ADDP Tool `{stable_name}`：{definition.description}",
                 args_schema=_arguments_model(stable_name, definition.input_schema),
+                public_args_schema=_arguments_model(stable_name, definition.input_schema, injected_id=False),
                 metadata={"addp_tool_name": stable_name},
             )
         )

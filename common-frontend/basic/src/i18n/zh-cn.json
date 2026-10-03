@@ -1,4 +1,5 @@
 {
+  "engine": {"term": {"index": "索引"}},
   "common": {
     "executionFailure": {
       "permission_denied": "读取或执行权限不足",
@@ -70,6 +71,7 @@
       "noDefault": "未配置",
       "resourceTypes": {
         "table": "数据表",
+        "index": "索引",
         "collection": "集合",
         "graph": "图",
         "object": "对象",
@@ -352,6 +354,7 @@
     "clientIdPlaceholder": "addp-system",
     "securityProtocol": "安全协议",
     "saslMechanism": "SASL 机制",
+    "databaseIndex": "逻辑数据库编号",
     "tlsCaCertOptional": "CA 证书（可选）",
     "tlsClientCertOptional": "客户端证书（可选）",
     "tlsClientKeyOptional": "客户端私钥（可选）",

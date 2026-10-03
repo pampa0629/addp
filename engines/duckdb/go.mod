@@ -24,6 +24,7 @@ require (
 	github.com/duckdb/duckdb-go-bindings/lib/linux-arm64 v0.3.5 // indirect
 	github.com/duckdb/duckdb-go-bindings/lib/windows-amd64 v0.3.5 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
+	github.com/emmansun/gmsm v0.34.1 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.12 // indirect
 	github.com/gin-contrib/sse v1.1.0 // indirect
 	github.com/go-ini/ini v1.67.0 // indirect

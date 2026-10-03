@@ -2966,7 +2966,7 @@ func isModel3DQuickViewSourceFormat(itemFormat, itemLayout string) bool {
 		return itemLayout == "" || itemLayout == string(format.LayoutSingle)
 	case string(format.FormatSTL):
 		return itemLayout == "" || itemLayout == string(format.LayoutSingle)
-	case string(format.FormatIFC):
+	case string(format.FormatIFC), string(format.FormatDAE), string(format.Format3DS):
 		return itemLayout == "" || itemLayout == string(format.LayoutSingle)
 	default:
 		return false

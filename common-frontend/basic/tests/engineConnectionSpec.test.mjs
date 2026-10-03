@@ -6,6 +6,7 @@ import {
   buildConnectionRules,
   visibleConnectionFields
 } from '../src/utils/engineConnectionSpec.js'
+import { getEngineFamily, getEngineFamilyLabelKey } from '../src/utils/engineDisplay.js'
 
 const connectionSpec = {
   fields: [
@@ -21,6 +22,18 @@ const connectionSpec = {
     }
   ]
 }
+
+test('Redis connection preserves database zero and false TLS through form defaults', () => {
+  const spec = { fields: [
+    { key: 'database', input: 'number', default: 0, min: 0 },
+    { key: 'use_ssl', input: 'boolean', default: false }
+  ] }
+  assert.deepEqual(applyConnectionSpecDefaults(spec, {}), { database: 0, use_ssl: false })
+  assert.deepEqual(applyConnectionSpecDefaults(spec, { database: 0, use_ssl: false }), { database: 0, use_ssl: false })
+  const family = getEngineFamily({ capabilities_view: { summary: [{ id: 'engine_family', value_key: 'system.engine.capabilityView.engineFamily.keyValue' }] } })
+  assert.equal(family, 'key_value')
+  assert.equal(getEngineFamilyLabelKey(family), 'system.engine.capabilities.keyValue')
+})
 
 test('connection spec applies defaults without engine-type branches', () => {
   assert.deepEqual(applyConnectionSpecDefaults(connectionSpec, {}), {

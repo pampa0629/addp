@@ -153,7 +153,7 @@ func (s *LineageService) buildLineageGraph(ctx context.Context, tenantID uint, r
 			query := active(s.db.WithContext(ctx).Table("meta.lineage_item_relations AS r").Select("r.*").
 				Joins("JOIN meta.meta_item AS source ON source.id = r.source_item_id AND source.tenant_id = r.tenant_id AND source.deleted_at IS NULL").
 				Joins("JOIN meta.meta_item AS target ON target.id = r.target_item_id AND target.tenant_id = r.tenant_id AND target.deleted_at IS NULL").
-				Where("r.tenant_id = ? AND "+column+" IN ?", tenantID, frontier))
+				Where("r.tenant_id = ? AND r.granularity = 'item' AND "+column+" IN ?", tenantID, frontier))
 			var relations []models.LineageItemRelation
 			if err := query.Order("r.id").Limit(request.Limit + 1).Find(&relations).Error; err != nil {
 				return response, err
@@ -220,7 +220,7 @@ func (s *LineageService) buildLineageGraph(ctx context.Context, tenantID uint, r
 		query := active(s.db.WithContext(ctx).Table("meta.lineage_item_relations AS r").
 			Joins("JOIN meta.meta_item AS source ON source.id = r.source_item_id AND source.tenant_id = r.tenant_id AND source.deleted_at IS NULL").
 			Joins("JOIN meta.meta_item AS target ON target.id = r.target_item_id AND target.tenant_id = r.tenant_id AND target.deleted_at IS NULL").
-			Where("r.tenant_id = ? AND "+current+" IN ? AND "+neighbour+" NOT IN ?", tenantID, eligible, ids))
+			Where("r.tenant_id = ? AND r.granularity = 'item' AND "+current+" IN ? AND "+neighbour+" NOT IN ?", tenantID, eligible, ids))
 		if err := query.Select(current + " AS item_id, COUNT(DISTINCT " + neighbour + ") AS count").Group(current).Scan(&counts).Error; err != nil {
 			return response, err
 		}

@@ -52,6 +52,7 @@ func SetupRouter(
 	platform.Use(
 		commonAuth.MustNewMiddleware(commonAuth.MiddlewareConfig{SystemURL: systemURL}),
 		commonAuth.MustNewContextGuard("platform"),
+		commonAuth.MustNewDelegatedPolicyGuard("transfer", transferDelegatedToolPolicies()),
 	)
 	if systemClient != nil {
 		platform.Use(audit.ServiceAuditMiddleware("transfer", systemServiceClient))
@@ -73,6 +74,7 @@ func SetupRouter(
 	protected.Use(
 		commonAuth.MustNewMiddleware(commonAuth.MiddlewareConfig{SystemURL: systemURL}),
 		commonAuth.MustNewContextGuard("tenant"),
+		commonAuth.MustNewDelegatedPolicyGuard("transfer", transferDelegatedToolPolicies()),
 	)
 	protected.GET("/execution-read-scope", GetExecutionReadScope)
 	permission := func(keys ...string) gin.HandlerFunc {
@@ -135,6 +137,15 @@ func SetupRouter(
 	}
 
 	return router
+}
+
+func transferDelegatedToolPolicies() map[string]commonAuth.DelegatedRoutePolicyEntry {
+	return map[string]commonAuth.DelegatedRoutePolicyEntry{
+		"POST /api/v1/transfer/task-definitions": {
+			RequiredScopes:      []string{"transfer.task.create"},
+			RequiredPermissions: []string{transferauthorization.PermissionTransferTaskCreate},
+		},
+	}
 }
 
 // ping 服务连通性检查

@@ -112,7 +112,7 @@ def compiled_binary_name(service: str) -> str:
 def image_build_definition(service: str, directory: str) -> tuple[str, str | None, str | None]:
     """返回构建定义、预编译二进制名和 Docker build context。"""
     if service == "model3d-workflow-engine":
-        return f"{directory}/scripts/build-linux-arm64-images.sh", None, None
+        return f"{directory}/scripts/build-linux-images.sh", None, None
     if service == "supermap-workflow-engine":
         return f"{directory}/Dockerfile", None, directory
     if service in {"transfer-bounded-worker", "meta-worker", "quality-worker", "security-worker"}:

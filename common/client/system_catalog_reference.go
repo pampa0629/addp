@@ -115,7 +115,7 @@ func (c *SystemServiceClient) ListCatalogReferenceCandidates(
 	page, pageSize int,
 ) (*SystemCatalogReferenceCandidateList, error) {
 	if c == nil || c.tenantID == nil || *c.tenantID == 0 ||
-		(subjectType != "department" && subjectType != "user") ||
+		(subjectType != "department" && subjectType != "user" && subjectType != "project_group") ||
 		page < 1 || pageSize < 1 || pageSize > 50 || len([]rune(strings.TrimSpace(search))) > 100 {
 		return nil, errors.New("System list catalog reference candidates contains invalid parameters")
 	}

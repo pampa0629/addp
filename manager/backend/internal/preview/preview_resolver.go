@@ -551,7 +551,7 @@ func isContentFileItemType(itemType string) bool {
 
 func isPreviewItemType(itemType string) bool {
 	switch itemType {
-	case "table", "view", "materialized_view", "collection", "graph", "topic", "object", "file":
+	case "table", "view", "materialized_view", "collection", "index", "graph", "topic", "object", "file":
 		return true
 	default:
 		return false
@@ -639,6 +639,10 @@ func (r *PreviewResolver) buildProviderRequest(ctx context.Context, req *Preview
 	modelProvider, ok := plug.(plugin.EngineCatalogModelProvider)
 	if !ok {
 		return nil, fmt.Errorf("engine %s does not implement EngineCatalogModelProvider", req.Engine.EngineType)
+	}
+	levels := modelProvider.EngineCatalogModel().Levels
+	if len(levels) == 1 && levels[0].Role == plugin.EngineCatalogRoleLeaf && len(req.Locator.Path) == 1 {
+		schema, table = "", req.Locator.Path[0]
 	}
 	providerPath, err = resourcetree.EngineCatalogPathFromLocator(modelProvider.EngineCatalogModel(), req.Locator)
 	if err != nil {
@@ -735,8 +739,8 @@ func providerNamesForMeta(req *PreviewResolverRequest, providerReq *PreviewReque
 	layout := itemLayoutFromMetaAttributes(attrs)
 
 	switch itemType {
-	case "collection":
-		return []string{"builtin:dynamic-schema-collection"}
+	case "collection", "index":
+		return []string{"builtin:document-record-set"}
 	case "graph":
 		return []string{"builtin:graph"}
 	case "topic":
@@ -967,7 +971,10 @@ func schemaCoverage(req *PreviewResolverRequest) string {
 		return "unknown"
 	}
 	if registered, err := plugin.Get(req.Engine.EngineType); err == nil && registered.Capabilities().EngineFamily == "dynamic_schema" {
-		return "sampled"
+		if registered.Capabilities().Storage != nil && registered.Capabilities().Storage.Facts != nil && registered.Capabilities().Storage.Facts.Sampling {
+			return "sampled"
+		}
+		return "unknown"
 	}
 	if strings.TrimSpace(req.scannedDepth()) == "" || strings.EqualFold(req.scannedDepth(), "none") {
 		return "unknown"

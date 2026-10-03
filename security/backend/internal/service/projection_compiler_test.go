@@ -103,7 +103,7 @@ func TestManagerProfileDecisionIsSystemDerivedAndNeverMasks(t *testing.T) {
 func TestProtectionDecisionFromBaselineUsesLengthAdaptiveStructuredMask(t *testing.T) {
 	decision, err := protectionDecisionFromBaseline(models.ProtectionBaseline{
 		Effect: dataprotection.EffectMask, Algorithm: dataprotection.AlgorithmKeepPrefixSuffixV2,
-		KeepPrefix: 3, KeepSuffix: 4, InvalidValueEffect: dataprotection.EffectSuppress,
+		Parameters: map[string]any{"prefix_runes": 3, "suffix_runes": 4, "mask_rune": "*"}, AllowedAlgorithms: []string{dataprotection.AlgorithmKeepPrefixSuffixV2}, InvalidValueEffect: dataprotection.EffectSuppress,
 	})
 	if err != nil {
 		t.Fatal(err)

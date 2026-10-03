@@ -131,6 +131,8 @@ T4 只在隔离的 ADDP 测试部署执行，并按运行条件选择唯一部�
 
 三种 profile 共用同一个 `make test-online` 分发器和 owner 业务断言，生命周期脚本只负责当次环境和夹具。编排只调用现有 Infra、开发生命周期脚本和 `make test-online`，不得在 workflow 中复制模块启动逻辑或业务断言。退出路径必须停止本次应用进程并报告清理结果；常规 macOS self-hosted Infra 可在专用 Runner 常驻，Hosted 与 License 受控 owner-managed profile 的 Infra 必须随 Job 销毁。
 
+Manager 内部产物 T4 使用 `manager-internal-artifact-lineage` 单一 suite 和 GitHub Hosted Linux x86_64 disposable profile，不再由 macOS self-hosted 分发。`online-hosted-manager-gate.sh` 复用共享 Hosted 生命周期，从零建立 Infra、最小权限 User、Tenant 和 Business MinIO Engine；浏览器登录凭据只保存到当次仓库外 owner-only Secret 目录。通过正式构建入口构建 Linux amd64 Model3D 转换器，由标准开发生命周期启动 System、Gateway、Meta、Manager、Monitor、Console、PointCloud、Document 和 Model3D Runtime；不启动无关模块或模拟转换器。退出时停止应用并销毁 Business MinIO 容器、网络、数据卷及当次 Infra，检查零残留。Business MinIO 的确定性生成 LAS、仓库已跟踪的 3 页 PPTX、带 PNG 贴图的 DAE 与 3DS 必须经过同一次真实 Meta 深度扫描，再通过对应 Manager owner action/task 与真实 Runtime 生成 COPC、PDF、GLB。模型断言覆盖 `model_3d + single` 分类、贴图资源引用、自包含 GLB 的内嵌 PNG 与非空网格、Manager/Monitor 血缘一致，以及 Console iframe 中 GLB 请求成功、模型加载完成和截图。Online Chromium 统一显式使用 SwiftShader 软件 WebGL，在无独立 GPU 的 Hosted Runner 上仍执行真实模型绘制；不屏蔽业务警告或用截图占位。浏览器报告 v2 单列 Chromium 截图产生的精确 `ReadPixels` GPU 性能诊断计数；页面警告、错误及失败的业务请求仍使验收失败。临时产物及任务按本轮捕获 ID 删除，内容和任务分别确认 404，模型源的用户预览模式恢复原值；执行尚未终结或无法确认资源归属时不得报告零残留。确定性脚本测试沿用 `make test-online-runner`，真实运行沿用 `make test-online ONLINE_SUITE=manager-internal-artifact-lineage`；本次模型扩展首次在 Hosted 环境通过前不计为已完成 T4，也不增加定时调度。
+
 生产 Compose 单入口 T4 使用 Hosted disposable profile：在全新 Runner 上用正式构建入口生成 System Backend、Gateway、Meta Backend、Manager Backend、Transfer Backend、Orchestrator Backend、Console、System Frontend、Meta Frontend、Manager Frontend、Transfer Frontend、Orchestrator Frontend 和 Nginx 镜像，以 `addp-platform` project 启动这些真实容器及当次 Infra。Meta、Manager、Transfer 与 Orchestrator Backend 向 System 自注册，Gateway 从有效 Backend 实例发现对应的 `/api/v1/:module/*`；四个模块的 Frontend 分别由 Nginx `/meta/`、`/manager/`、`/transfer/` 和 `/orchestrator/` 转发。内置 Runtime 属于独立 `addp-runtimes` project，不参与公开入口的业务断言；同一 Runner 额外启动一个真实 GeoPython Runtime 和一个真实 Business MinIO，验证 `addp-runtimes`、`business` 的独立生命周期、Compose project 标签、网络归属和宿主机端口边界。
 
 对外 Nginx 使用非默认回环端口；仅 T4 Compose 覆盖文件允许 System Backend 和 Gateway 额外发布回环诊断端口供通用构建身份预检，正式 Compose 保持只有 Nginx 对外发布。未参与验收的 Nginx 静态 upstream 只提供当次网络名称占位，不模拟参与断言的服务。业务断言必须从公开入口检查 Console、System、Meta、Manager、Transfer、Orchestrator Frontend 及其构建资源，并使用当次一次性 Tenant 的零权限、只读、仅创建 User 验证 System AuthContext 的精确 Permission 集合；System、Meta、Manager、Transfer、Orchestrator 的 API 分别验证未认证 401、无权 403，以及已授权读取。Meta、Transfer、Orchestrator 的写入入口还需用无效请求体证明仅创建权限可越过功能守卫但被参数校验拒绝，且只读账号不能写入；System Role Assignment 详情需证明本租户授权可读、另一租户的授权 ID 返回 404。无效请求体不得创建业务资源。测试还需核对 System 对外 origin、Meta、Manager、Transfer 和 Orchestrator Backend 的就绪与内部地址以及容器实际端口；全部退出路径分别销毁 Runtime、Business MinIO、平台应用、占位容器、镜像仓库和 Infra，核对四个 project 的容器、网络、卷零残留。Transfer Worker 的数据执行和 Orchestrator 的 DAG 执行分别由 owner T4 验收，不以本套入口检查代替。[Hosted T4 run 36141592135](https://github.com/pampa0629/addp/actions/runs/36141592135) 已通过此前的 Transfer 覆盖验收；扩展后的权限矩阵及 Orchestrator 覆盖须在更新提交上手工运行成功后才能计为通过。
@@ -175,6 +177,8 @@ API 消费方数据面边界由 `workbench-service-consumption` 复用同一 Bus
 企业资源目录发布类 T4 使用同一永久 PostgreSQL Engine Instance 及其 owner 生命周期入口创建的稳定表 `public.addp_online_catalog_fixture`。专用环境必须预置可引用的 Standard Domain 和 Department；首次运行可将该永久数据源对应的 `discovered` CatalogEntry 初始化为稳定 `curated` fixture，后续运行必须在验收后恢复其编目聚合。同一 suite 必须重复执行真实 Meta 扫描并证明 fingerprint 与 CatalogEntry UUID 幂等，验证 `inventory` / `governance` 视图、治理覆盖率固定维度和精确来源身份解析；真实浏览器使用同一专用 User 登录 Console，验证覆盖率页、目录详情与 Domain / Department / Engine 名称选择器，并将浏览器 warning/error 计入失败。每轮创建的 Asset 和 AssetCategory 必须经正式 API 下架、删除并证明零残留；不得直接 SQL 清理。
 
 该 suite 同时在上述专用 Catalog fixture 上验证 `curated → deprecated → curated`，以及已弃用阶段的责任子资源更新。使用现有专用 User 增加或移除可选技术负责人，使责任集合发生实际变化；不为验收新增账号、部门或赋权。断言移交仍保持弃用、业务定义、语义、可见范围设置和来源身份，撤销弃用不恢复认证，旧版本请求返回 `409 catalog_entry_version_conflict` 且无副作用。成功和失败路径都经正式 API 恢复完整编目聚合并重新读取核对；写响应丢失时先读当前状态，不重试原命令，恢复失败使整个门禁失败。审计和并发版本不回滚，跨部门移交后的可发现范围及权限交集继续由 Catalog T2 验证，不以单账号 T4 冒充。
+
+该 suite 还验证普通只读共享的正式准备、真实双服务 OAuth 反查与首次受理。专用 User 必须是 fixture 的当前业务负责人，显式具备共享确认、独立办理和批准要求初始化／读取 Permission，并由管理员预置当前有效的引擎管理委派；测试不自动赋权或创建委派。专用部署须配置独立 `SYSTEM_SERVICE_CLIENT_SECRET`，未配置在生命周期启动前拒绝验收，不改变普通部署允许留空的 Ready 边界。只为上述精确稳定表通过正式 API 初始化尚不存在的 Catalog 批准要求，已有独立批准模式拒绝而不覆盖；不可变业务决定、已核清的办理记录与 System 回执属于专用 Tenant 的长期审计事实，单列证据，不按临时资源删除。正式请求显式限时十分钟，办理窗口仍从首次受理起最多五分钟。同编号换用途或批准要求版本须返回 `409 catalog_sharing_decision_conflict`，拒绝后原决定／原回执必须不变；不新增决定或办理编号。此拒绝允许产生操作审计，不能以场景预期数量代替数据库计数验证。同参重放必须保持完整绑定、受理时间及截止时间不变；调用方丢弃已提交响应后恢复只证明调用方边界，不冒充 Catalog→System 网络中断或进程重启。人类 Token 访问机器反查／受理接口必须拒绝；`pending`、绑定错误或恢复失败不能计为通过。受理不等于 Grant 写入或实际可读，本 suite 不验证或创建源访问 Grant。
 
 Manager 平台内部产物类 T4 使用专用 Business MinIO Fixture 和永久 MinIO Engine Instance。Fixture owner 幂等写入仓库内确定性小型 LAS 与多页 PPTX 样本；suite 经 Gateway 触发真实 Meta scan，并使用扫描所得的 ResourceLocator、item ID 和 fingerprint 验证两条正式链路：`point_cloud_copc_generation` 必须由 PointCloud Runtime 从业务对象存储读取源文件、向 Manager infra MinIO 发布 COPC，并由 Manager execution 写入 `addp.lineage-facts/v1`；PPTX 预览必须由 Quick View Capability 声明 `generate_pptx_pdf`，并通过统一 action 入口首次触发 `pptx_pdf_generation`，由 Document Workflow / LibreOffice 发布多页静态 PDF，同源再次读取 Capability 只复用同一任务与结果，不创建第二次 execution。Monitor API 与真实浏览器必须展示同一业务输入和 `addp-infra://` 输出；浏览器还必须在 Data Explorer 翻到后续 PDF 页，跨过 Engine 状态周期刷新后仍保持当前页。退出路径通过 Manager 正式 API 删除两类结果与任务、验证对象不可再读取及临时资源零残留；不得直接操作数据库或 infra MinIO 清理。
 
@@ -297,3 +301,19 @@ make test-changed
 3. 本地标准入口、CI 编排、登记检查和文档同步。
 4. 最小充分门禁真实执行，未以 Skip、旧进程或错误环境冒充通过。
 5. 运行产物位于操作系统临时目录或 CI artifact，仓库无残留。
+
+### Business Redis 门禁
+
+`make test-business-config` 覆盖脚本语法、固定官方镜像、回环绑定及实际端口首次避让与重启复用。`make test-business-redis` 属于 Business owner 的独占 Compose T2：随机密码、随机回环端口、私有数据卷，实际验证 ACL、string/hash/list/set/zset/stream、TTL、二进制 key/value、大整数文本、幂等初始化、类型冲突拒绝和 AOF 重启持久化，退出核对容器、卷、网络零残留。新 owner 从 `ADDP_T2_OWNED_SERVICES` 声明自动发现，不要求为了测试创建新的服务模块或维护第二份 owner 清单。该门禁已登记 `make test-integration` 和 `release-and-t2-gates.yml`；它不证明 Redis Engine Plugin、Meta/Manager/Develop 或 T4 业务链路已经实现。
+
+### Elasticsearch 门禁
+
+- T1：`make test-common-elasticsearch-unit` 验证受限 DSL、精确读集、HTTPS CA/认证、PIT 部分失败/取消清理及通用记录预览。
+- T2：`make test-common-elasticsearch` 使用固定官方镜像、独占 Compose project 与随机回环端口，创建只读用户和幂等样例，实际验证 Common、Manager、Meta，完成后检查容器和卷零残留。该脚本已注册根 Makefile、模块/变更自动发现及 `release-and-t2-gates.yml`。
+- T4：`make test-online ONLINE_SUITE=elasticsearch-consumer-flow` 通过 System、Meta、Manager、Develop 验证同一索引、空索引、数值精度和来源投影。必须使用标准专用 Online 部署与非默认测试租户，常规用户凭据，以及该租户中已注册的只读 ES 引擎 `ADDP_ONLINE_ELASTICSEARCH_ENGINE_ID`，其中需存在 Business 样例索引。套件已注册 `online-host-gate.sh` 和 `online-t4-gates.yml` 的人工触发选项；禁止在本地共享 PostgreSQL 中创建 Online database。
+
+### Model3D Runtime 确定性门禁
+
+`make test-model3d-workflow` 覆盖 DAE / 3DS 首期源引用和动画边界、GLB 自包含结构、真实 PNG/JPEG 解码以及校验失败时不发布或替换已有 artifact。该入口由 `make test`、`make test-module MODULE=engines` 自动发现和 Platform CI 的 `model3d-workflow-tests` 执行；可通过 `MODEL3D_WORKFLOW_PYTHON` 指定已安装 requirements-dev 的隔离解释器。测试使用受控 converter runner，不计为专业转换器或平台真实链路验收。已登记 Make 入口的 Python engine runtime 由 Python CI 登记检查统一核对根聚合、标准环境准备、共享模块影响选择与 CI Job。
+
+Redis 连接首版门禁：`make test-common-redis-unit` 验证严格配置、认证、取消、TLS 信任链与主机名；`make test-common-redis` 使用独占真实 Redis 验证 Common 插件和 System 登记、密码加密/脱敏与连接状态。与 `make test-business-redis` 共用 `redis-owned-fixture.sh` 生命周期和固定官方镜像，分别验证两个消费边界；均使用随机密码、随机回环端口并检查容器/卷/网络清理，不访问已有 Business 或 Infra Redis。两项 T2 均登记根 Makefile、模块/变更发现和 `release-and-t2-gates.yml`。共享生命周期通过 `ADDP_T2_LIFECYCLE_SCRIPT` 显式登记，CI 检查必须同时确认 owner 脚本调用、变更输入覆盖、Compose 归属和真实启动/清理逻辑，不能以未调用的 helper 冒充门禁。

@@ -1,4 +1,4 @@
 interface:
-  display_name: "Transfer 草稿生成"
-  short_description: "确认源和目标后生成无副作用 Transfer 草稿"
-  default_prompt: "使用 $transfer-generation 根据我的需求确认数据源并生成 Transfer 任务草稿。"
+  display_name: "Transfer 任务生成与创建"
+  short_description: "理解平台能力，确认配置后创建未启动的 Transfer 任务"
+  default_prompt: "使用 $transfer-generation 理解我的传输需求，确认源和目标及完整配置，经我复核后创建未启动的任务。"

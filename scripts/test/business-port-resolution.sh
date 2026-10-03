@@ -8,7 +8,7 @@ PROJECT_ROOT=$(mktemp -d)
 trap 'rm -rf "$PROJECT_ROOT"' EXIT
 MOCK_RUNNING=0
 MOCK_FOREIGN=0
-MOCK_BUSY='9002 9003'
+MOCK_BUSY='9002 9003 6380'
 MOCK_NETWORK_EXISTS=0
 MOCK_NETWORK_SUBNET=172.19.0.0/16
 MOCK_NETWORK_IP_OWNER=''
@@ -23,6 +23,7 @@ docker() {
       case "$container" in
         business-postgres) service=postgres ;;
         business-mysql) service=mysql ;;
+        business-redis) service=redis ;;
         business-minio) service=minio ;;
         *) return 1 ;;
       esac
@@ -42,6 +43,7 @@ docker() {
       case "$2:$3" in
         business-postgres:5432/tcp) echo 0.0.0.0:5433 ;;
         business-mysql:3306/tcp) echo 0.0.0.0:3306 ;;
+        business-redis:6379/tcp) echo 127.0.0.1:16380 ;;
         business-minio:9000/tcp) echo 0.0.0.0:19002 ;;
         business-minio:9001/tcp) echo 0.0.0.0:19003 ;;
         *) return 1 ;;
@@ -88,17 +90,31 @@ POSTGRES_PORT=5433
 MYSQL_PORT=3306
 MINIO_API_PORT=9002
 MINIO_CONSOLE_PORT=9003
-addp_business_resolve_ports postgres mysql minio >/dev/null
+BUSINESS_REDIS_PORT=6380
+addp_business_resolve_ports postgres mysql minio redis >/dev/null
 [ "$POSTGRES_PORT" = 5433 ]
 [ "$MYSQL_PORT" = 3306 ]
 [ "$MINIO_API_PORT" = 19002 ]
 [ "$MINIO_CONSOLE_PORT" = 19003 ]
+[ "$BUSINESS_REDIS_PORT" = 16380 ]
 
 MOCK_RUNNING=1
 addp_business_save_actual_ports
 state=$(addp_business_port_state)
 grep -Fxq 'MINIO_API_PORT=19002' "$state"
 grep -Fxq 'MINIO_CONSOLE_PORT=19003' "$state"
+grep -Fxq 'BUSINESS_REDIS_PORT=16380' "$state"
+
+MOCK_RUNNING=0
+MOCK_BUSY='16380'
+if addp_business_resolve_ports redis >/dev/null 2>&1; then
+  echo 'fixed Business Redis endpoint moved after another service claimed its port' >&2
+  exit 1
+fi
+MOCK_BUSY='6380'
+BUSINESS_REDIS_PORT=6380
+addp_business_resolve_ports redis >/dev/null
+[ "$BUSINESS_REDIS_PORT" = 16380 ]
 
 MOCK_RUNNING=0
 MOCK_BUSY='9002 9003 19002'

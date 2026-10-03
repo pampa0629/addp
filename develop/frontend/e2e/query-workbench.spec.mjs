@@ -182,6 +182,35 @@ test('generates a query template for the selected data item and confirms engine 
   await expect.poll(() => sampleRequests.at(-1)?.searchParams.get('locator')).toContain('addp://engine/11/path/public/customers')
 })
 
+test('formats ES DSL without rounding a long and submits the selected index', async ({ page }) => {
+  const engine = {
+    ...ENGINE, id: 14, name: 'Elasticsearch Demo', engine_type: 'elasticsearch',
+    capabilities: { compute: { query: { supported: true, languages: ['es_dsl'], default_language: 'es_dsl', result_kinds: ['table'], read_only: true } } }
+  }
+  const executionRequests = []
+  await installMockBackend(page, { resultKind: 'table', engines: [engine], metaEngines: [engine], executionRequests })
+  const indexLocator = 'addp://engine/14/path/orders.v1?type=index&item_id=1401'
+  await page.route('**/api/v1/meta/resource-tree/14**', route => fulfillJSON(route, {
+    id: 'addp://engine/14/path?type=service', locator: 'addp://engine/14/path?type=service', type: 'service', label: engine.name,
+    children: [{ id: indexLocator, locator: indexLocator, label: 'orders.v1', type: 'index', children: [] }]
+  }))
+  await page.route('**/sample-query**', route => fulfillJSON(route, {
+    query: '{"query":{"term":{"order_id":9007199254740993}},"size":10}', language: 'es_dsl'
+  }))
+  await page.goto('/sql')
+  const resources = page.locator('.catalog-panel')
+  await resources.getByRole('treeitem', { name: engine.name, exact: true }).click()
+  await resources.getByRole('treeitem', { name: 'orders.v1', exact: true }).click()
+  await resources.getByRole('button', { name: '生成查询模板', exact: true }).click()
+  await expect(page.locator('.toolbar-primary').getByText('ES_DSL', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '格式化', exact: true }).click()
+  await page.getByRole('button', { name: '执行', exact: true }).click()
+  await expect.poll(() => executionRequests.length).toBe(1)
+  expect(executionRequests[0].content.query_type).toBe('es_dsl')
+  expect(executionRequests[0].content.target_locator).toBe(indexLocator)
+  expect(executionRequests[0].content.query).toContain('9007199254740993')
+})
+
 test('uses tenant source-engine catalogs for the DuckDB federated runtime', async ({ page }) => {
   const resourceTreeRequests = []
   await installMockBackend(page, {

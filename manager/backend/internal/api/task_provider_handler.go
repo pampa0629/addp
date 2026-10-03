@@ -2805,7 +2805,7 @@ func (h *TaskProviderHandler) DeleteModel3DTilesResult(c *gin.Context) {
 
 // ListModel3DGLBTasks GET /api/v1/manager/model_3d_glb_tasks
 // @Summary 列出三维模型 GLB 快显任务配置 | List model 3D GLB generation task configurations
-// @Description 列出 Manager 模块的 OSGB / glTF / FBX / OBJ / STL / IFC 转 GLB 快显任务配置。该私有入口固定返回 task_type=model_3d_glb_generation；编排模块应使用标准 /tasks 入口。| List Manager model 3D GLB generation task configurations.
+// @Description 列出 Manager 模块的 OSGB / glTF / FBX / OBJ / STL / DAE / 3DS / IFC 转 GLB 快显任务配置。该私有入口固定返回 task_type=model_3d_glb_generation；编排模块应使用标准 /tasks 入口。| List Manager model 3D GLB generation task configurations.
 // @Tags Manager
 // @Produce json
 // @Param page query int false "页码，默认1 | Page number, default 1"
@@ -2833,7 +2833,7 @@ func (h *TaskProviderHandler) ListModel3DGLBTasks(c *gin.Context) {
 
 // CreateModel3DGLBTask POST /api/v1/manager/model_3d_glb_tasks
 // @Summary 创建三维模型 GLB 快显任务配置 | Create model 3D GLB generation task configuration
-// @Description 创建新的 OSGB / glTF / FBX / OBJ / STL / IFC 转 GLB 快显任务配置。任务从 OSGB、glTF、FBX、OBJ、STL 或 IFC model_3d item 读取源数据，并将 GLB artifact 写入 Manager infra MinIO。| Create a model 3D GLB task from an OSGB, glTF, FBX, OBJ, STL or IFC model item into Manager infra MinIO.
+// @Description 创建新的 OSGB / glTF / FBX / OBJ / STL / DAE / 3DS / IFC 转 GLB 快显任务配置。任务从 OSGB、glTF、FBX、OBJ、STL、DAE、3DS 或 IFC model_3d item 读取源数据，并将 GLB artifact 写入 Manager infra MinIO。| Create a model 3D GLB task from an OSGB, glTF, FBX, OBJ, STL, DAE, 3DS or IFC model item into Manager infra MinIO.
 // @Tags Manager
 // @Accept json
 // @Produce json

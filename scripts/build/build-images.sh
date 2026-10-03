@@ -603,7 +603,7 @@ build_service() {
     if [ "$service" = "model3d-workflow-engine" ]; then
         if [[ "$BUILD_PLATFORMS" == *,* ]]; then
             echo -e "${RED}Error: model3d-workflow-engine currently supports one Linux platform per build${NC}"
-            echo -e "${YELLOW}Hint: build linux/arm64 on Apple Silicon with the default native build path${NC}"
+            echo -e "${YELLOW}Hint: build one native Linux amd64 or arm64 platform${NC}"
             return 1
         fi
 
@@ -611,7 +611,7 @@ build_service() {
         if MODEL3D_DOCKER_PLATFORM="${BUILD_PLATFORMS}" \
             MODEL3D_CONVERTER_IMAGE="${converter_image}" \
             MODEL3D_RUNTIME_IMAGE="${image_name}" \
-            "${service_dir}/scripts/build-linux-arm64-images.sh"; then
+            "${service_dir}/scripts/build-linux-images.sh"; then
             if [ "$MULTI_ARCH" = false ] && [ "$VERIFY_ONLY" = false ]; then
                 echo -e "${YELLOW}Pushing ${converter_image} to registry...${NC}"
                 docker push "${converter_image}"

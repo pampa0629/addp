@@ -1834,6 +1834,119 @@
             }
         },
         "/entries/{id}/sharing_fulfillments": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "当前 Tenant User 须具备条目读取、独立办理权及原引擎当前管理范围。仅列本人在仍可见条目下的原参数，资格过滤后分页，不查询他人历史；不提交、关闭、核清或授权 | Requires current tenant user entry-read and independent fulfillment permissions plus current management scope for each original engine. Paginate only my original parameters under a still-visible entry after scope filtering; never submit, close, settle or grant access",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Catalog Sharing"
+                ],
+                "summary": "找回本人原办理请求 | Find my original fulfillment requests",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "条目 UUID | Entry UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "页码，默认 1 | Page, default 1",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "每页数量，默认 20，最多 100 | Page size, default 20, maximum 100",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "本人原请求 | My original requests",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "data": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/definitions/github_com_addp_catalog_internal_service.SharingFulfillmentRequest"
+                                    }
+                                },
+                                "page": {
+                                    "type": "integer"
+                                },
+                                "page_size": {
+                                    "type": "integer"
+                                },
+                                "total": {
+                                    "type": "integer"
+                                },
+                                "total_pages": {
+                                    "type": "integer"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "请求、资格或依赖错误 | Request, eligibility or dependency error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "请求、资格或依赖错误 | Request, eligibility or dependency error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "请求、资格或依赖错误 | Request, eligibility or dependency error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "请求、资格或依赖错误 | Request, eligibility or dependency error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "请求、资格或依赖错误 | Request, eligibility or dependency error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "请求、资格或依赖错误 | Request, eligibility or dependency error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "catalog.entry.read",
+                    "system.engine_access_fulfillment.create"
+                ]
+            },
             "post": {
                 "security": [
                     {
@@ -1936,6 +2049,238 @@
                 "x-addp-required-permissions": [
                     "catalog.entry.read",
                     "system.engine_access_fulfillment.create"
+                ]
+            }
+        },
+        "/entries/{id}/sharing_fulfillments/{request_id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "按持久完整绑定读取 System 权威结果；仅本人、当前条目可见、独立办理权及原引擎当前管理范围。pending 表示权威未找到，不等于关闭；accepted 是历史受理而非 Grant。查询不提交、关闭或延长窗口 | Resolve the persisted exact binding against System; requires original operator, current entry visibility, independent fulfillment permission and original-engine management scope. Pending means authoritatively not found, not closed; accepted is historical acceptance, not a Grant. Never submits, closes or renews the window",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Catalog Sharing"
+                ],
+                "summary": "只读查询本人原办理结果 | Read my original fulfillment outcome",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "条目 UUID | Entry UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "原请求 UUID，由本人原请求列表取得 | Original request UUID from my request list",
+                        "name": "request_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "原请求及只读权威结果，不是 Grant | Original request and read-only authoritative outcome, not a Grant",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_catalog_internal_service.SharingFulfillmentHistory"
+                        }
+                    },
+                    "400": {
+                        "description": "请求、资格、绑定或依赖错误 | Request, eligibility, binding or dependency error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "请求、资格、绑定或依赖错误 | Request, eligibility, binding or dependency error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "请求、资格、绑定或依赖错误 | Request, eligibility, binding or dependency error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "请求、资格、绑定或依赖错误 | Request, eligibility, binding or dependency error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "请求、资格、绑定或依赖错误 | Request, eligibility, binding or dependency error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "请求、资格、绑定或依赖错误 | Request, eligibility, binding or dependency error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "请求、资格、绑定或依赖错误 | Request, eligibility, binding or dependency error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "catalog.entry.read",
+                    "system.engine_access_fulfillment.create"
+                ]
+            }
+        },
+        "/entries/{id}/sharing_recipient_candidates": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "当前 Tenant User 须具备条目读取及独立共享确认权限，并是可见有效 Meta 数据项的当前业务负责人。可选择同 Tenant 的有效账号或项目组，不要求本人加入该组；仅返回最小显示摘要，不返回成员、角色或数据，不授予共享或访问 | The current tenant user needs entry read, independent sharing confirmation permission and current business ownership of a visible active Meta data item. Active users or project groups in this tenant may be selected without group membership. Only minimal labels are returned, never members, roles, data or access grants",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Catalog Sharing"
+                ],
+                "summary": "查询本条目的共享接收方候选 | List sharing recipient candidates for this entry",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "条目 UUID | Entry UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "enum": [
+                            "user",
+                            "project_group"
+                        ],
+                        "type": "string",
+                        "description": "接收主体类型 | Recipient type",
+                        "name": "recipient_type",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "名称或编码，最多 100 字符 | Name or code, maximum 100 characters",
+                        "name": "search",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "页码，默认 1 | Page, default 1",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量，默认 20，最多 50 | Page size, default 20, maximum 50",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "data": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/definitions/github_com_addp_catalog_internal_service.SharingRecipientCandidate"
+                                    }
+                                },
+                                "page": {
+                                    "type": "integer"
+                                },
+                                "page_size": {
+                                    "type": "integer"
+                                },
+                                "total": {
+                                    "type": "integer"
+                                },
+                                "total_pages": {
+                                    "type": "integer"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "请求、资格、来源变化或依赖错误 | Request, eligibility, source change or dependency error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "请求、资格、来源变化或依赖错误 | Request, eligibility, source change or dependency error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "请求、资格、来源变化或依赖错误 | Request, eligibility, source change or dependency error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "请求、资格、来源变化或依赖错误 | Request, eligibility, source change or dependency error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "请求、资格、来源变化或依赖错误 | Request, eligibility, source change or dependency error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "请求、资格、来源变化或依赖错误 | Request, eligibility, source change or dependency error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "请求、资格、来源变化或依赖错误 | Request, eligibility, source change or dependency error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "catalog.entry.read",
+                    "catalog.sharing_decision.create"
                 ]
             }
         },
@@ -4771,9 +5116,22 @@
                 "id": {
                     "type": "string"
                 },
+                "recipient_code": {
+                    "type": "string"
+                },
                 "recipient_id": {
                     "type": "string",
                     "example": ""
+                },
+                "recipient_label_status": {
+                    "type": "string",
+                    "enum": [
+                        "resolved",
+                        "not_found"
+                    ]
+                },
+                "recipient_name": {
+                    "type": "string"
                 },
                 "recipient_type": {
                     "type": "string"
@@ -4877,6 +5235,110 @@
                 }
             }
         },
+        "github_com_addp_catalog_internal_service.SharingFulfillmentHistory": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "deadline": {
+                    "type": "string",
+                    "format": "date-time",
+                    "x-nullable": true
+                },
+                "decision_id": {
+                    "type": "string"
+                },
+                "expires_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "x-nullable": true
+                },
+                "expiry_mode": {
+                    "type": "string",
+                    "enum": [
+                        "at_time",
+                        "until_revoked"
+                    ]
+                },
+                "recipient_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "recipient_type": {
+                    "type": "string"
+                },
+                "recorded_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "x-nullable": true
+                },
+                "request_id": {
+                    "type": "string"
+                },
+                "requirement_version": {
+                    "type": "string",
+                    "example": ""
+                },
+                "state": {
+                    "type": "string",
+                    "enum": [
+                        "pending",
+                        "accepted",
+                        "closed"
+                    ]
+                },
+                "target": {
+                    "$ref": "#/definitions/github_com_addp_catalog_internal_service.SharingDecisionTarget"
+                }
+            }
+        },
+        "github_com_addp_catalog_internal_service.SharingFulfillmentRequest": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "decision_id": {
+                    "type": "string"
+                },
+                "expires_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "x-nullable": true
+                },
+                "expiry_mode": {
+                    "type": "string",
+                    "enum": [
+                        "at_time",
+                        "until_revoked"
+                    ]
+                },
+                "recipient_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "recipient_type": {
+                    "type": "string"
+                },
+                "request_id": {
+                    "type": "string"
+                },
+                "requirement_version": {
+                    "type": "string",
+                    "example": ""
+                },
+                "target": {
+                    "$ref": "#/definitions/github_com_addp_catalog_internal_service.SharingDecisionTarget"
+                }
+            }
+        },
         "github_com_addp_catalog_internal_service.SharingFulfillmentResult": {
             "type": "object",
             "properties": {
@@ -4887,6 +5349,30 @@
                     "$ref": "#/definitions/authorization.SharingFulfillmentResolution"
                 },
                 "state": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_catalog_internal_service.SharingRecipientCandidate": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "recipient_type": {
+                    "type": "string",
+                    "enum": [
+                        "user",
+                        "project_group"
+                    ]
+                },
+                "status": {
                     "type": "string"
                 }
             }

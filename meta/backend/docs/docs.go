@@ -791,7 +791,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "按数据项或已发布服务版本查询当前血缘关系 | Query current lineage for a data item or published service revision",
+                "description": "按数据项、精确字段引用或已发布服务版本查询血缘关系 | Query lineage for a data item, exact field reference or published service revision",
                 "produces": [
                     "application/json"
                 ],
@@ -802,14 +802,26 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "主体类型：data_item 或 published_service | Subject kind: data_item or published_service",
+                        "description": "主体类型：data_item、field_ref 或 published_service | Subject kind: data_item, field_ref or published_service",
                         "name": "subject_kind",
                         "in": "query",
                         "required": true
                     },
                     {
+                        "type": "string",
+                        "description": "精确字段名，field_ref 时必填 | Exact field name, required for field_ref",
+                        "name": "field_name",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "字段结构快照 hash；省略时使用当前 Meta 结构 | Field schema snapshot hash; defaults to current Meta schema",
+                        "name": "schema_snapshot_hash",
+                        "in": "query"
+                    },
+                    {
                         "type": "integer",
-                        "description": "数据项 ID，subject_kind=data_item 时必填 | Item ID, required for data_item",
+                        "description": "数据项 ID，data_item 或 field_ref 时必填 | Item ID, required for data_item or field_ref",
                         "name": "item_id",
                         "in": "query"
                     },
@@ -1232,7 +1244,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "获取指定引擎的标准资源树视图，返回 common/resourcetree.TreeNode | Get standard resource tree for an engine",
+                "description": "获取指定引擎的标准资源树视图，返回 common/resourcetree.TreeNode | Get standard resource tree for an engine\n委托 resource.children.list 仅允许 expand_depth=1 且没有其他查询参数 | Delegated resource.children.list requires expand_depth=1 and no other query parameters",
                 "produces": [
                     "application/json"
                 ],
@@ -1291,7 +1303,7 @@ const docTemplate = `{
                         }
                     }
                 },
-                "x-addp-auth-mode": "permission",
+                "x-addp-auth-mode": "delegated_tool",
                 "x-addp-required-permissions": [
                     "meta.catalog.read"
                 ]
@@ -3131,6 +3143,9 @@ const docTemplate = `{
                 },
                 "target": {
                     "$ref": "#/definitions/github_com_addp_meta_internal_models.LineageNode"
+                },
+                "transformation": {
+                    "type": "string"
                 }
             }
         },
@@ -3157,6 +3172,9 @@ const docTemplate = `{
                         "$ref": "#/definitions/github_com_addp_meta_internal_models.LineageEdge"
                     }
                 },
+                "field_lineage_status": {
+                    "type": "string"
+                },
                 "nodes": {
                     "type": "array",
                     "items": {
@@ -3178,6 +3196,9 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "engine_name": {
+                    "type": "string"
+                },
+                "field_name": {
                     "type": "string"
                 },
                 "full_name": {
@@ -3205,6 +3226,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "published_revision": {
+                    "type": "string"
+                },
+                "schema_snapshot_hash": {
                     "type": "string"
                 },
                 "service_id": {

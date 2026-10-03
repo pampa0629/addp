@@ -24,6 +24,15 @@
         </el-radio-group>
         <div class="field-help">{{ selectedEffectImpact }}</div>
       </el-form-item>
+      <template v-if="form.effect === 'mask'">
+        <ProtectionAlgorithmEditor ref="algorithmEditor" :configuration="form" :baseline="presentation.baseline" :field-type="presentation.fieldType" />
+        <el-form-item :label="t('security.fields.invalid_value_effect')" required>
+          <el-select v-model="form.invalid_value_effect">
+            <el-option v-if="presentation.baseline?.invalid_value_effect !== 'deny'" value="suppress" :label="t('security.options.effects.suppress')" />
+            <el-option value="deny" :label="t('security.options.effects.deny')" />
+          </el-select>
+        </el-form-item>
+      </template>
       <el-form-item :label="t('security.policy.rationale')" prop="rationale" required>
         <el-input v-model="form.rationale" type="textarea" :rows="4" maxlength="2000" show-word-limit :placeholder="t('security.policy.rationalePlaceholder')" />
       </el-form-item>
@@ -42,6 +51,7 @@
 </template>
 
 <script setup>
+import ProtectionAlgorithmEditor from '../ProtectionAlgorithmEditor.vue'
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
@@ -57,6 +67,7 @@ const props = defineProps({
 const emit = defineEmits(['reload'])
 const { t } = useI18n()
 const formRef = ref(null)
+const algorithmEditor = ref(null)
 const hintKey = computed(() => props.mode === 'restore' ? 'security.policy.restoreHint' : 'security.policy.hint')
 const conflictKey = computed(() => props.mode === 'restore' ? 'security.policy.restoreVersionConflict' : 'security.policy.versionConflict')
 const reloadKey = computed(() => props.mode === 'restore' ? 'security.policy.reloadLatestForRestore' : 'security.policy.reloadLatest')
@@ -64,6 +75,7 @@ const selectedEffectImpact = computed(() => props.presentation.effectOptions
   .find(option => option.value === props.form.effect)?.impact || '')
 
 function validate() {
+  if (props.mode === 'tighten' && props.form.effect === 'mask' && !algorithmEditor.value?.validate()) return Promise.resolve(false)
   return formRef.value?.validate() ?? Promise.resolve(false)
 }
 

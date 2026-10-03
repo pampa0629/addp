@@ -214,6 +214,7 @@ class OnlineHostGateTest(unittest.TestCase):
                 ASSET_URL=http://127.0.0.1:8086
                 PORTAL_URL=http://127.0.0.1:8088
                 MANAGER_SERVICE_CLIENT_SECRET=manager-online-secret-0123456789abcdef
+                SYSTEM_SERVICE_CLIENT_SECRET=system-online-secret-0123456789abcdef
                 ADDP_HOST_NODE_IPS=192.0.2.10,2001:db8::10
                 ADDP_ONLINE_TEST_PLATFORM_ACCESS_TOKEN=addp_at_online_platform
                 ADDP_ONLINE_TEST_USER_ACCESS_TOKEN=addp_at_online
@@ -456,6 +457,16 @@ class OnlineHostGateTest(unittest.TestCase):
             ],
         )
 
+    def test_catalog_missing_basis_secret_fails_before_lifecycle(self) -> None:
+        contents = self.env_file.read_text(encoding="utf-8")
+        self.env_file.write_text(contents.replace(
+            "SYSTEM_SERVICE_CLIENT_SECRET=system-online-secret-0123456789abcdef",
+            "SYSTEM_SERVICE_CLIENT_SECRET="), encoding="utf-8")
+        result = self._run("enterprise-catalog-publishing")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("SYSTEM_SERVICE_CLIENT_SECRET", result.stderr)
+        self.assertFalse(self.command_log.exists())
+
     def test_runs_workbench_suite_with_read_only_mysql_fixture(self) -> None:
         result = self._run("workbench-service-consumption")
 
@@ -561,24 +572,10 @@ class OnlineHostGateTest(unittest.TestCase):
         self.assertIn("result=passed", summary)
         self.assertIn("cleanup=passed", summary)
 
-    def test_runs_manager_lineage_suite_with_manager_minio_fixture(self) -> None:
+    def test_manager_lineage_rejects_removed_self_hosted_profile_before_mutation(self) -> None:
         result = self._run("manager-internal-artifact-lineage")
-
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(
-            self.command_log.read_text(encoding="utf-8").splitlines(),
-            [
-                "stop",
-                "infra-up",
-                "manager-fixture:stop",
-                "manager-fixture:start",
-                "start:-all",
-                "npm:--prefix console/frontend exec -- playwright install chromium",
-                "make:test-online:ONLINE_SUITE=manager-internal-artifact-lineage",
-                "manager-fixture:stop",
-                "stop",
-            ],
-        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.command_log.exists())
 
     def test_runs_manager_hybrid_search_suite_with_manager_minio_fixture(self) -> None:
         result = self._run("manager-hybrid-search")

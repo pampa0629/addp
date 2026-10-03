@@ -559,3 +559,5 @@ go test ./manager/backend/internal/preview ./manager/backend/internal/objectcont
 - `docs/spec/addp数据类型与文件格式扩展指南.md`
 - `docs/spec/addp内容IO抽象规范.md`
 - Manager 内容展示边界文档由 Manager 模块维护，不能反向约束 `common/format`。
+
+DAE / 3DS 的 `Model3DInfoProvider` 解析预算为 64 MiB；模型字段写入 `type_info.model_3d`，源版本、单位、上轴与声明贴图引用写入 `format_info.dae` / `format_info.3ds`。Meta 消费 `texture_refs` 精确认领资源，格式插件不访问存储目录。二者保持 `layout=single`，GLB 转换边界见内置格式规范。

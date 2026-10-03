@@ -240,6 +240,7 @@ graph TB
 - **企业目录主线**: Meta 维护 DataItem 技术事实并提供可恢复变化；Catalog 建立企业目录身份、业务语义关联、责任和搜索；Asset 从 Catalog 选择并组合目录对象；Portal 只消费已发布资产。图中的虚线业务调用都是运行软依赖，不构成启动或 Ready 条件。
 - **源数据授权主线（已确认，表级贯通待实现）**: Catalog 维护企业责任与业务关联，System 引擎访问控制领域唯一维护物理源数据规则，Manager、Develop、Quality、Transfer 等执行相同权威规则；专业模型、服务、应用等对象的授权仍归各自 owner。责任不自动赋予访问或办理权限，业务确认不等于授权生效，Catalog 不是实际访问的运行前提。分工、接入限时只读与责任移交遵循 `docs/spec/addp授权上下文规范.md` 5.5，不新增 System IAM 中央业务 ACL。
 - **数据标准主线**: Standard 拥有业务域、术语、数据元、码值集、单位、指标定义和标准来源文档等语义契约；Model 拥有逻辑模型、公共/一致性维度、维度层级和指标实现，并冻结采用的 Standard 修订；Catalog 拥有实际字段/组件到标准修订的映射；Quality 拥有规则应用、执行、符合性结果和问题。Standard 可以聚合展示落标与符合性，但不复制后三者的事实。
+- **领域本体主线**: 平台能力语义、租户领域语义和运行时业务事实分层组合。Ontology 管理自有本体定义、修订、规则及未来的本体专用数据绑定；已有专业定义和映射仍引用各 owner。除 System 和自身 PG/FalkorDB Infra 外，不假定其他业务模块存在；按需通过正式 Client SDK/API 协作，失败只影响依赖该能力的请求。Catalog 提供可选企业身份、责任和治理关联，不是本体建模或真实事实判断的必经入口。当前已实现原生 Tenant 定义、发布、Agent 定义读取与手工试算，平台本体、数据绑定及真实事实求值尚未实现；详见 [Ontology 最小设计契约](../next/ADDP%20Ontology最小设计契约.md)。
 - **数据安全主线**: Security 与 Catalog 并行消费 Meta 事实，但只精确读取已显式纳管目标；Security 编译 Owner-specific 保护投影，Manager、Transfer、Develop 和 Service 后台拉取后在本模块服务端出口执行。Catalog 只联邦展示 Security 专业事实，不是安全发现或保护生效的前置。
 - **Worker运行时**: Quality、Meta、Security 与 Transfer bounded execution 使用 owner 模块附属的独立 Worker；Develop Query、Manager bounded 与 Model logical table materialization 使用 owner Backend 内嵌 Supervisor。每种 task type 只能选择其中一条路线。
   - **Transfer Bounded Worker**: 从 `common.task_executions` PostgreSQL claim snapshot、watermark 和 bounded replay execution。
@@ -267,6 +268,7 @@ graph TB
 | **Catalog** | 企业资源目录：稳定目录身份、来源绑定、业务语义关联、责任、治理和企业元数据搜索 | 8192 / 8192 | Go, Gin, GORM, Meilisearch |
 | **Workbench** | 数据应用工作台：直接把已发布数据服务配置为 Data Application Component，支持动态参数、结构化查询、参数绑定、选择联动、桌面与大屏展示、大屏前台刷新、不可变发布修订和最终运行 | 8193 / 8193 | Go, Gin, GORM, Vue 3 |
 | **Security** | 数据安全：敏感类型、安全分类分级、显式纳管、敏感发现、资源评估、保护策略与 Owner-specific 保护投影 | 8194 / 8194 | Go, Gin, GORM, Vue 3 |
+| **Ontology** | 租户领域本体：原生类、属性、关系、规则、修订发布及假设性试算；本体专用数据绑定与真实事实求值待实现 | 8195 / 8195 | Go, Gin, GORM, CEL, Vue 3；Infra PG / FalkorDB |
 | **Security Worker** | 已纳管资源的有界敏感数据发现执行器 | - | Go, PostgreSQL claim/lease |
 | **Meta Worker** | Meta 扫描任务处理器 | - | Go, PostgreSQL claim/lease |
 | **Transfer** | 数据传输:同步、搬运、格式转换任务 | 8083 / 8083 | Go, Gin, GORM |
@@ -1162,6 +1164,7 @@ ADDP 部署按以下顺序使实例进入 Ready。业务进程可以在 System �
 | **扩展运行时与 Engine Instance** | Runtime 自身就绪后异步注册；零个 Engine Instance 是合法状态，业务模块启动不得依赖任何内置或外部引擎存在。 |
 | **Agent / Copilot 独立进程** | Python 应用与 Go 模块共用同一模块注册和 Ready 契约；进程可以在任意时刻创建，但 System 注册成功前不得接受业务流量。运行时调用其他业务模块时仍只失败当前请求，不改变本模块 Ready。 |
 | **Catalog ↔ 专业模块** | Catalog 拉取 Meta DataItem 变化并按需读取 Standard、System 等 owner 事实；这些调用失败只造成同步滞后或当前业务请求失败，不改变 Catalog Ready。Manager、Asset 调用 Catalog 也遵循同一软依赖边界，禁止回退旧发现路径。 |
+| **Ontology ↔ 专业模块** | 除 System 外所有业务模块均为按需协作来源，不影响 Ontology Ready。自有定义可独立建模、发布和试算；显式引用或读取 owner 不可用时只阻断本次依赖操作，保留来源身份及错误，不切换到同名来源。数据绑定不要求先建立 CatalogEntry；运行事实须来自授权读取，不能由 LLM 或目录摘要代替。 |
 | **Security ↔ 专业模块** | Security 只精确读取显式纳管目标的 Meta / Owner 必要事实，不全量扫描；参与 Owner 后台拉取投影变化并本地执行。这些调用是运行软依赖，不改变任一模块 Ready；已纳管资源投影失效时 Owner 必须拒绝，不回退明文。Catalog Frontend 可按当前 User AuthContext 直读 Security 摘要，Catalog Backend 不代理、不复制且不依赖 Security Ready。 |
 | **前端无严格顺序约束** | Console 通过 iframe 动态加载各模块前端（用户访问时才加载），各前端可完全并行启动 |
 

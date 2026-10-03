@@ -599,3 +599,44 @@ func bindExecutionServiceTestLease(t *testing.T, db *gorm.DB, service *Execution
 	}
 	service.BindBoundedLease(uint(execution.ID), commonExecution.Lease{ExecutionID: execution.ExecutionID, TenantID: execution.TenantID, Attempt: 1, Token: token, Owner: owner})
 }
+
+func TestFinishExecutionCommitsFactsOnlyWithCurrentLease(t *testing.T) {
+	for _, leaseState := range []string{"current", "replaced", "unbound"} {
+		t.Run(leaseState, func(t *testing.T) {
+			loseLease := leaseState != "current"
+			db := newExecutionServiceTestDB(t)
+			task := createExecutionServiceTestTask(t, db)
+			item := createExecutionServiceTestExecution(t, db, task, commonExecution.ExecutionStatusRunning)
+			item.Metadata = commonModels.JSONMap{"output_refs": "kept"}
+			item.SourceTaskID = nil
+			service := NewExecutionService(db, commonExecution.NewTaskExecutionRepository(db))
+			bindExecutionServiceTestLease(t, db, service, &item)
+			if leaseState == "unbound" {
+				service.UnbindBoundedLease(uint(item.ID))
+			}
+			if leaseState == "replaced" {
+				if err := db.Model(&item).Update("lease_token", "00000000-0000-0000-0000-000000000002").Error; err != nil {
+					t.Fatal(err)
+				}
+			}
+			err := service.FinishExecution(context.Background(), uint(item.ID), models.ExecutionStatusSuccess, "", commonModels.JSONMap{"lineage_facts": map[string]interface{}{"schema_version": "v1"}})
+			if (err != nil) != loseLease {
+				t.Fatalf("finish error=%v loseLease=%v", err, loseLease)
+			}
+			var stored commonExecution.TaskExecution
+			if err := db.First(&stored, item.ID).Error; err != nil {
+				t.Fatal(err)
+			}
+			if stored.Metadata["output_refs"] != "kept" {
+				t.Fatal("completion discarded output metadata")
+			}
+			if loseLease {
+				if stored.Status != commonExecution.ExecutionStatusRunning || stored.Metadata["lineage_facts"] != nil {
+					t.Fatal("lost lease stored success or facts")
+				}
+			} else if stored.Status != commonExecution.ExecutionStatusSuccess || stored.Metadata["lineage_facts"] == nil {
+				t.Fatal("completion did not atomically persist facts")
+			}
+		})
+	}
+}

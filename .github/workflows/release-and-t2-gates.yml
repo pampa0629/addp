@@ -22,6 +22,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
+      business: ${{ steps.business.outputs.run }}
       asset: ${{ steps.asset.outputs.run }}
       catalog: ${{ steps.catalog.outputs.run }}
       cli: ${{ steps.cli.outputs.run }}
@@ -46,6 +47,16 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+
+      - name: Select Business Redis gate
+        id: business
+        env:
+          ADDP_CI_BEFORE: ${{ github.event.before }}
+          ADDP_CI_EVENT: ${{ github.event_name }}
+          ADDP_CI_FORCE: ${{ startsWith(github.ref, 'refs/tags/v') }}
+          ADDP_CI_HEAD: ${{ github.sha }}
+          ADDP_CI_PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: python3 scripts/ci/select-module-gate.py --module business
 
       - name: Select CLI product gate
         id: cli
@@ -877,6 +888,79 @@ jobs:
         uses: ./.github/actions/ci-gate-summary
         with:
           gate: Common, Model and Service metric contracts (TiDB 8.5.8)
+          status: ${{ job.status }}
+
+  business-redis:
+    name: Business Redis native fixture contracts (Redis 7.2.13)
+    needs: selection
+    if: needs.selection.outputs.business == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Run Business Redis gate
+        run: make test-business-redis
+      - name: Summarize Business Redis gate
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: Business Redis native fixture contracts (Redis 7.2.13)
+          status: ${{ job.status }}
+
+  common-redis:
+    name: Common and System connection contracts (Redis 7.2.13)
+    needs: selection
+    if: needs.selection.outputs.common == 'true' || needs.selection.outputs.system == 'true' || needs.selection.outputs.business == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: common/go.mod
+          cache: false
+      - name: Run Redis connection gate
+        run: make test-common-redis
+      - name: Summarize Redis connection gate
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: Common and System connection contracts (Redis 7.2.13)
+          status: ${{ job.status }}
+
+  common-elasticsearch:
+    name: Common, Manager and Meta document contracts (Elasticsearch 9.5.4)
+    needs: selection
+    if: needs.selection.outputs.meta == 'true' || needs.selection.outputs.common == 'true' || needs.selection.outputs.develop == 'true' || needs.selection.outputs.manager == 'true' || needs.selection.outputs.transfer == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: common/go.mod
+          cache: false
+
+      - name: Run Elasticsearch gate
+        run: make test-common-elasticsearch
+
+      - name: Summarize Elasticsearch gate
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: Common, Manager and Meta document contracts (Elasticsearch 9.5.4)
           status: ${{ job.status }}
 
   common-mysql-data-protection:

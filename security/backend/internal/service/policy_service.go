@@ -40,7 +40,8 @@ func (s *PolicyService) Create(ctx context.Context, tenantID, userID int64, requ
 		if err != nil {
 			return err
 		}
-		if protectionEffectRank(request.Effect) < protectionEffectRank(baseline.Effect) {
+		decision := policyDecision(request.Effect, request.Algorithm, request.Parameters, request.InvalidValueEffect)
+		if err := validatePolicyDecision(baseline, current.Component.ValueType, decision); err != nil {
 			return commonapi.ErrBadRequest
 		}
 		now := s.now().UTC()
@@ -56,6 +57,7 @@ func (s *PolicyService) Create(ctx context.Context, tenantID, userID int64, requ
 		revision := models.ProtectionPolicyRevision{
 			ID: uuid.NewString(), TenantID: tenantID, PolicyID: policy.ID, Revision: 1,
 			State: models.ProtectionPolicyStateActive, Effect: request.Effect,
+			Algorithm: decision.Algorithm, Parameters: decision.Parameters, InvalidValueEffect: decision.InvalidValueEffect,
 			Rationale: request.Rationale, CreatedBy: userID, CreatedAt: now,
 		}
 		if err := tx.Create(&revision).Error; err != nil {
@@ -76,7 +78,7 @@ func (s *PolicyService) Update(ctx context.Context, tenantID, userID int64, poli
 	if tenantID <= 0 || userID <= 0 || uuid.Validate(policyID) != nil || request.Version <= 0 || !validPolicyEffect(request.Effect) || !validPolicyRationale(request.Rationale) {
 		return nil, commonapi.ErrBadRequest
 	}
-	return s.appendRevision(ctx, tenantID, userID, policyID, request.Version, models.ProtectionPolicyStateActive, request.Effect, request.Rationale)
+	return s.appendRevision(ctx, tenantID, userID, policyID, request.Version, models.ProtectionPolicyStateActive, policyDecision(request.Effect, request.Algorithm, request.Parameters, request.InvalidValueEffect), request.Rationale)
 }
 
 func (s *PolicyService) Revoke(ctx context.Context, tenantID, userID int64, policyID string, request models.RevokeProtectionPolicyRequest) (*models.ProtectionPolicyResponse, error) {
@@ -84,10 +86,10 @@ func (s *PolicyService) Revoke(ctx context.Context, tenantID, userID int64, poli
 	if tenantID <= 0 || userID <= 0 || uuid.Validate(policyID) != nil || request.Version <= 0 || !validPolicyRationale(request.Rationale) {
 		return nil, commonapi.ErrBadRequest
 	}
-	return s.appendRevision(ctx, tenantID, userID, policyID, request.Version, models.ProtectionPolicyStateRevoked, "", request.Rationale)
+	return s.appendRevision(ctx, tenantID, userID, policyID, request.Version, models.ProtectionPolicyStateRevoked, dataprotection.Decision{}, request.Rationale)
 }
 
-func (s *PolicyService) appendRevision(ctx context.Context, tenantID, userID int64, policyID string, version int64, state, effect, rationale string) (*models.ProtectionPolicyResponse, error) {
+func (s *PolicyService) appendRevision(ctx context.Context, tenantID, userID int64, policyID string, version int64, state string, decision dataprotection.Decision, rationale string) (*models.ProtectionPolicyResponse, error) {
 	var result *models.ProtectionPolicyResponse
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var policy models.ProtectionPolicy
@@ -113,15 +115,15 @@ func (s *PolicyService) appendRevision(ctx context.Context, tenantID, userID int
 			if err := tx.Where("tenant_id = ? AND policy_id = ? AND revision = ?", tenantID, policy.ID, policy.CurrentRevision).First(&previous).Error; err != nil {
 				return err
 			}
-			effect = previous.Effect
-		} else if protectionEffectRank(effect) < protectionEffectRank(baseline.Effect) {
+			decision = dataprotection.Decision{Effect: previous.Effect, Algorithm: previous.Algorithm, Parameters: previous.Parameters, InvalidValueEffect: previous.InvalidValueEffect}
+		} else if err := validatePolicyDecision(baseline, current.Component.ValueType, decision); err != nil {
 			return commonapi.ErrBadRequest
 		}
 		now := s.now().UTC()
 		revisionNumber := policy.CurrentRevision + 1
 		revision := models.ProtectionPolicyRevision{
 			ID: uuid.NewString(), TenantID: tenantID, PolicyID: policy.ID, Revision: revisionNumber,
-			State: state, Effect: effect, Rationale: rationale, CreatedBy: userID, CreatedAt: now,
+			State: state, Effect: decision.Effect, Algorithm: decision.Algorithm, Parameters: decision.Parameters, InvalidValueEffect: decision.InvalidValueEffect, Rationale: rationale, CreatedBy: userID, CreatedAt: now,
 		}
 		if err := tx.Create(&revision).Error; err != nil {
 			return policyDBError(err)

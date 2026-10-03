@@ -86,11 +86,13 @@ func (h *Handler) RecordServicePublication(c *gin.Context) {
 
 // GetLineageGraph 查询数据项或已发布服务版本的血缘图。
 // @Summary 查询数据血缘图 | Get lineage graph
-// @Description 按数据项或已发布服务版本查询当前血缘关系 | Query current lineage for a data item or published service revision
+// @Description 按数据项、精确字段引用或已发布服务版本查询血缘关系 | Query lineage for a data item, exact field reference or published service revision
 // @Tags Meta Lineage
 // @Produce json
-// @Param subject_kind query string true "主体类型：data_item 或 published_service | Subject kind: data_item or published_service"
-// @Param item_id query int false "数据项 ID，subject_kind=data_item 时必填 | Item ID, required for data_item"
+// @Param subject_kind query string true "主体类型：data_item、field_ref 或 published_service | Subject kind: data_item, field_ref or published_service"
+// @Param field_name query string false "精确字段名，field_ref 时必填 | Exact field name, required for field_ref"
+// @Param schema_snapshot_hash query string false "字段结构快照 hash；省略时使用当前 Meta 结构 | Field schema snapshot hash; defaults to current Meta schema"
+// @Param item_id query int false "数据项 ID，data_item 或 field_ref 时必填 | Item ID, required for data_item or field_ref"
 // @Param service_id query int false "服务 ID，subject_kind=published_service 时必填 | Service ID, required for published_service"
 // @Param revision query string false "服务发布版本，subject_kind=published_service 时必填 | Published revision, required for published_service"
 // @Param direction query string false "方向：upstream、downstream 或两者有向遍历并集 both，不含旁系 | Direction: upstream, downstream or their directed union both; excludes sibling branches" default(both)
@@ -132,10 +134,12 @@ func (h *Handler) GetLineageGraph(c *gin.Context) {
 
 func parseLineageGraphRequest(c *gin.Context) (models.LineageGraphRequest, error) {
 	request := models.LineageGraphRequest{
-		SubjectKind: c.Query("subject_kind"),
-		Direction:   c.DefaultQuery("direction", "both"),
-		Depth:       2,
-		Limit:       100,
+		FieldName:          c.Query("field_name"),
+		SchemaSnapshotHash: c.Query("schema_snapshot_hash"),
+		SubjectKind:        c.Query("subject_kind"),
+		Direction:          c.DefaultQuery("direction", "both"),
+		Depth:              2,
+		Limit:              100,
 	}
 	var err error
 	for key, target := range map[string]*[]uint{"expand_upstream": &request.ExpandUpstream, "expand_downstream": &request.ExpandDownstream} {

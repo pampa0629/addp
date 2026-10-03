@@ -53,6 +53,12 @@ func TestPostgresSharingDecisionIsAtomicImmutableAndRetryable(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
+	t.Run("recipient candidates require current owner and independent authority", func(t *testing.T) {
+		rollback := errors.New("rollback sharing recipients fixture")
+		if err := db.Transaction(func(tx *gorm.DB) error { exerciseSharingRecipients(t, tx); return rollback }); !errors.Is(err, rollback) {
+			t.Fatal(err)
+		}
+	})
 	entry, input := seedSharingEntry(t, db)
 	s := NewEntryService(db, nil, &fakeSystemReferenceResolver{}).WithSharingTargetResolver(&fakeSharingTargetResolver{})
 	auth := sharingAuth()

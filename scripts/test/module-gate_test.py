@@ -69,6 +69,15 @@ class ModuleGateTest(unittest.TestCase):
 
         self.assertIn(("make", "test-runtime"), [step.command for step in steps])
 
+    def test_discovers_owner_with_only_an_owned_service_gate(self) -> None:
+        gate = self.repository / 'scripts/test/business-redis-gate.sh'
+        gate.write_text('#!/bin/bash\n# ADDP_T2_OWNED_SERVICES=redis\n')
+        makefile = self.repository / 'Makefile'
+        makefile.write_text(makefile.read_text() + 'test-business-redis:\n\t@true\n')
+        self.assertIn('business', MODULE.discover_modules(self.repository))
+        steps = MODULE.plan_module(self.repository, 'business', include_platform=False)
+        self.assertEqual([step.command for step in steps], [('make', 'test-business-redis')])
+
     def test_plans_platform_and_discovered_module_gates(self) -> None:
         steps = MODULE.plan_module(self.repository, "sample")
         self.assertEqual(

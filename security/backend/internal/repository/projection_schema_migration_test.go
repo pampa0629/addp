@@ -191,7 +191,7 @@ func TestKeepPrefixSuffixV2MigrationRewritesBaselineAndCurrentFeed(t *testing.T)
 	now := time.Date(2026, 9, 10, 10, 0, 0, 0, time.UTC)
 	baseline := models.ProtectionBaseline{
 		TenantID: 7, SensitiveDataTypeID: 11, SecurityGradeID: 13, Effect: dataprotection.EffectMask,
-		Algorithm: legacyKeepPrefixSuffixAlgorithmV1, KeepPrefix: 3, KeepSuffix: 4,
+		Algorithm: legacyKeepPrefixSuffixAlgorithmV1, Parameters: map[string]any{"prefix_runes": 3, "suffix_runes": 4, "mask_rune": "*"}, AllowedAlgorithms: []string{dataprotection.AlgorithmKeepPrefixSuffixV2},
 		InvalidValueEffect: dataprotection.EffectSuppress, Enabled: true, Version: 1, CreatedBy: 41,
 	}
 	if err := db.Create(&baseline).Error; err != nil {

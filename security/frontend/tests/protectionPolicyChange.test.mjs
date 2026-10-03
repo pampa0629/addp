@@ -103,6 +103,7 @@ describe('protection policy change sessions', () => {
       consumer_owner: 'manager',
       action: 'preview',
       effect: 'deny',
+      algorithm: '', parameters: {}, invalid_value_effect: 'deny',
       rationale: 'required by owner'
     })
     expect(dependencies.updatePolicy).not.toHaveBeenCalled()
@@ -125,6 +126,7 @@ describe('protection policy change sessions', () => {
     expect(dependencies.updatePolicy).toHaveBeenCalledWith('policy-1', {
       version: 2,
       effect: 'deny',
+      algorithm: '', parameters: {}, invalid_value_effect: 'deny',
       rationale: 'confirmed against opened baseline'
     })
   })
@@ -170,6 +172,7 @@ describe('protection policy change sessions', () => {
     expect(dependencies.updatePolicy).toHaveBeenLastCalledWith('policy-1', {
       version: 3,
       effect: 'deny',
+      algorithm: '', parameters: {}, invalid_value_effect: 'deny',
       rationale: 'retry with latest'
     })
   })

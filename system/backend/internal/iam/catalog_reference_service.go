@@ -73,6 +73,7 @@ type catalogReferenceRepository interface {
 	ResolveCatalogProjectGroups(context.Context, int64, []int64) ([]CatalogProjectGroupProjection, error)
 	ListCatalogDepartmentCandidates(context.Context, int64, string, int, int) ([]CatalogReferenceCandidate, int64, error)
 	ListCatalogUserCandidates(context.Context, int64, string, int, int) ([]CatalogReferenceCandidate, int64, error)
+	ListCatalogProjectGroupCandidates(context.Context, int64, string, int, int) ([]CatalogReferenceCandidate, int64, error)
 }
 
 type CatalogReferenceService struct {
@@ -205,6 +206,8 @@ func (s *CatalogReferenceService) ListCandidates(
 		return s.repository.ListCatalogDepartmentCandidates(ctx, tenantID, search, page, pageSize)
 	case CatalogSubjectTypeUser:
 		return s.repository.ListCatalogUserCandidates(ctx, tenantID, search, page, pageSize)
+	case CatalogSubjectTypeProjectGroup:
+		return s.repository.ListCatalogProjectGroupCandidates(ctx, tenantID, search, page, pageSize)
 	default:
 		return nil, 0, ErrInvalidCatalogReferenceRequest
 	}

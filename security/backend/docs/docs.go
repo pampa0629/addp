@@ -2855,6 +2855,56 @@ const docTemplate = `{
                 ]
             }
         },
+        "/protection-algorithms": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回版本、适用字段类型、参数名和输出类型，不允许上传可执行代码 | Returns versions, supported field types, parameter names and output types; executable uploads are not supported",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ProtectionAlgorithms"
+                ],
+                "summary": "查看内置脱敏算法 | List built-in protection algorithms",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/dataprotection.Algorithm"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "security.protection_baseline.read"
+                ]
+            }
+        },
         "/protection-baselines": {
             "get": {
                 "security": [
@@ -5263,6 +5313,35 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "dataprotection.Algorithm": {
+            "type": "object",
+            "properties": {
+                "description_i18n_key": {
+                    "type": "string"
+                },
+                "key": {
+                    "type": "string"
+                },
+                "name_i18n_key": {
+                    "type": "string"
+                },
+                "output_type": {
+                    "type": "string"
+                },
+                "parameters": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "supported_field_types": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
         "dataprotection.Component": {
             "type": "object",
             "properties": {
@@ -5583,17 +5662,21 @@ const docTemplate = `{
                 "algorithm": {
                     "type": "string"
                 },
+                "allowed_algorithms": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "effect": {
                     "type": "string"
                 },
                 "invalid_value_effect": {
                     "type": "string"
                 },
-                "keep_prefix": {
-                    "type": "integer"
-                },
-                "keep_suffix": {
-                    "type": "integer"
+                "parameters": {
+                    "type": "object",
+                    "additionalProperties": {}
                 }
             }
         },
@@ -5853,6 +5936,12 @@ const docTemplate = `{
                 "algorithm": {
                     "type": "string"
                 },
+                "allowed_algorithms": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "effect": {
                     "type": "string"
                 },
@@ -5863,11 +5952,9 @@ const docTemplate = `{
                 "invalid_value_effect": {
                     "type": "string"
                 },
-                "keep_prefix": {
-                    "type": "integer"
-                },
-                "keep_suffix": {
-                    "type": "integer"
+                "parameters": {
+                    "type": "object",
+                    "additionalProperties": {}
                 },
                 "version": {
                     "type": "string",
@@ -6014,6 +6101,12 @@ const docTemplate = `{
                 "algorithm": {
                     "type": "string"
                 },
+                "allowed_algorithms": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "created_at": {
                     "type": "string"
                 },
@@ -6034,11 +6127,9 @@ const docTemplate = `{
                 "invalid_value_effect": {
                     "type": "string"
                 },
-                "keep_prefix": {
-                    "type": "integer"
-                },
-                "keep_suffix": {
-                    "type": "integer"
+                "parameters": {
+                    "type": "object",
+                    "additionalProperties": {}
                 },
                 "security_grade_id": {
                     "type": "string",
@@ -6076,6 +6167,12 @@ const docTemplate = `{
                 "algorithm": {
                     "type": "string"
                 },
+                "allowed_algorithms": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "effect": {
                     "type": "string"
                 },
@@ -6085,11 +6182,9 @@ const docTemplate = `{
                 "invalid_value_effect": {
                     "type": "string"
                 },
-                "keep_prefix": {
-                    "type": "integer"
-                },
-                "keep_suffix": {
-                    "type": "integer"
+                "parameters": {
+                    "type": "object",
+                    "additionalProperties": {}
                 },
                 "security_grade_id": {
                     "type": "integer"
@@ -6413,6 +6508,9 @@ const docTemplate = `{
         "github_com_addp_security_internal_models.ProtectionPolicyRevision": {
             "type": "object",
             "properties": {
+                "algorithm": {
+                    "type": "string"
+                },
                 "created_at": {
                     "type": "string"
                 },
@@ -6425,6 +6523,13 @@ const docTemplate = `{
                 },
                 "id": {
                     "type": "string"
+                },
+                "invalid_value_effect": {
+                    "type": "string"
+                },
+                "parameters": {
+                    "type": "object",
+                    "additionalProperties": {}
                 },
                 "policy_id": {
                     "type": "string"
@@ -7040,6 +7145,9 @@ const docTemplate = `{
                 "action": {
                     "type": "string"
                 },
+                "algorithm": {
+                    "type": "string"
+                },
                 "assessment_id": {
                     "type": "string"
                 },
@@ -7048,6 +7156,13 @@ const docTemplate = `{
                 },
                 "effect": {
                     "type": "string"
+                },
+                "invalid_value_effect": {
+                    "type": "string"
+                },
+                "parameters": {
+                    "type": "object",
+                    "additionalProperties": {}
                 },
                 "rationale": {
                     "type": "string"
@@ -7603,8 +7718,18 @@ const docTemplate = `{
                 "version"
             ],
             "properties": {
+                "algorithm": {
+                    "type": "string"
+                },
                 "effect": {
                     "type": "string"
+                },
+                "invalid_value_effect": {
+                    "type": "string"
+                },
+                "parameters": {
+                    "type": "object",
+                    "additionalProperties": {}
                 },
                 "rationale": {
                     "type": "string"

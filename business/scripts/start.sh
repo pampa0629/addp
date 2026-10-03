@@ -15,6 +15,8 @@
 #   bash scripts/start.sh -minio             # 只启动 MinIO
 #   bash scripts/start.sh -clickhouse        # 只启动 ClickHouse
 #   bash scripts/start.sh -mongodb           # 只启动 MongoDB
+#   bash scripts/start.sh -elasticsearch     # 只启动 Elasticsearch
+#   bash scripts/start.sh -redis             # 只启动 Business Redis
 #   bash scripts/start.sh -doris             # 只启动 Doris
 #   bash scripts/start.sh -spark             # 只启动 Spark
 #   bash scripts/start.sh -neo4j             # 只启动 Neo4j
@@ -60,6 +62,8 @@ ENABLE_SUPERMAP_PG=false
 ENABLE_MINIO=false
 ENABLE_CLICKHOUSE=false
 ENABLE_MONGODB=false
+ENABLE_ELASTICSEARCH=false
+ENABLE_REDIS=false
 ENABLE_DORIS=false
 ENABLE_SPARK=false
 ENABLE_NEO4J=false
@@ -81,6 +85,8 @@ for arg in "$@"; do
             ENABLE_MINIO=true
             ENABLE_CLICKHOUSE=true
             ENABLE_MONGODB=true
+            ENABLE_ELASTICSEARCH=true
+            ENABLE_REDIS=true
             ENABLE_DORIS=true
             ENABLE_SPARK=true
             ENABLE_NEO4J=true
@@ -105,6 +111,12 @@ for arg in "$@"; do
             ;;
         -clickhouse)
             ENABLE_CLICKHOUSE=true
+            ;;
+        -elasticsearch)
+            ENABLE_ELASTICSEARCH=true
+            ;;
+        -redis)
+            ENABLE_REDIS=true
             ;;
         -mongodb)
             ENABLE_MONGODB=true
@@ -145,6 +157,8 @@ for arg in "$@"; do
             echo "  bash scripts/start.sh -supermap-postgresql  # 只启动 SuperMap SDX+ for PostgreSQL 专用实例"
             echo "  bash scripts/start.sh -minio                # 只启动 MinIO"
             echo "  bash scripts/start.sh -clickhouse           # 只启动 ClickHouse"
+            echo "  bash scripts/start.sh -elasticsearch        # 只启动 Elasticsearch"
+            echo "  bash scripts/start.sh -redis                # 只启动 Business Redis"
             echo "  bash scripts/start.sh -mongodb              # 只启动 MongoDB"
             echo "  bash scripts/start.sh -doris                # 只启动 Doris"
             echo "  bash scripts/start.sh -spark                # 只启动 Spark"
@@ -209,6 +223,16 @@ if [ "$ENABLE_MONGODB" = true ]; then
     echo -e "  MongoDB: ✓"
 else
     echo -e "  MongoDB: ✗ (使用 -mongodb 启用)"
+fi
+if [ "$ENABLE_ELASTICSEARCH" = true ]; then
+    echo -e "  Elasticsearch: ✓"
+else
+    echo -e "  Elasticsearch: ✗ (使用 -elasticsearch 启用)"
+fi
+if [ "$ENABLE_REDIS" = true ]; then
+    echo -e "  Business Redis: ✓"
+else
+    echo -e "  Business Redis: ✗ (使用 -redis 启用)"
 fi
 if [ "$ENABLE_DORIS" = true ]; then
     echo -e "  Doris: ✓"
@@ -311,6 +335,8 @@ SELECTED_PORT_SERVICES=()
 [ "$ENABLE_PG" = true ] && SELECTED_PORT_SERVICES+=(postgres)
 [ "$ENABLE_MYSQL" = true ] && SELECTED_PORT_SERVICES+=(mysql)
 [ "$ENABLE_MINIO" = true ] && SELECTED_PORT_SERVICES+=(minio)
+[ "$ENABLE_ELASTICSEARCH" = true ] && SELECTED_PORT_SERVICES+=(elasticsearch)
+[ "$ENABLE_REDIS" = true ] && SELECTED_PORT_SERVICES+=(redis)
 addp_business_resolve_ports "${SELECTED_PORT_SERVICES[@]}"
 
 # 其余 Business 服务仍使用显式端口；启动前提示当前占用。
@@ -427,7 +453,7 @@ if [ "$ENABLE_OCEANBASE" = true ]; then
 fi
 
 for service_flag in ENABLE_PG ENABLE_ORACLE ENABLE_SUPERMAP_PG ENABLE_MINIO ENABLE_CLICKHOUSE \
-                    ENABLE_MONGODB ENABLE_DORIS ENABLE_SPARK ENABLE_NEO4J ENABLE_MYSQL \
+                    ENABLE_MONGODB ENABLE_ELASTICSEARCH ENABLE_REDIS ENABLE_DORIS ENABLE_SPARK ENABLE_NEO4J ENABLE_MYSQL \
                     ENABLE_OCEANBASE ENABLE_TIDB ENABLE_OPENGAUSS ENABLE_REDPANDA; do
     if [ "${!service_flag}" = true ]; then
         addp_business_ensure_network "$OCEANBASE_PERSISTED_IP" || exit 1
@@ -494,6 +520,24 @@ if [ "$ENABLE_CLICKHOUSE" = true ]; then
         docker compose up -d clickhouse
         echo -e "${GREEN}✓ ClickHouse 已启动${NC}"
     fi
+fi
+
+# Redis
+if [ "$ENABLE_REDIS" = true ]; then
+    docker compose up -d --wait --wait-timeout 120 redis
+    docker compose exec -T redis sh /addp/redis/init.sh
+    echo "✓ Business Redis 已就绪，只读账号 addp_business_reader"
+fi
+
+# Elasticsearch
+if [ "$ENABLE_ELASTICSEARCH" = true ]; then
+    docker compose up -d --wait --wait-timeout 180 elasticsearch
+    ELASTICSEARCH_ENDPOINT="http://127.0.0.1:${ELASTICSEARCH_PORT:-9200}" \
+    ELASTICSEARCH_PASSWORD="${ELASTICSEARCH_PASSWORD:-addp_business_elastic_admin}" \
+    ELASTICSEARCH_READER_USER="${ELASTICSEARCH_READER_USER:-addp_business_reader}" \
+    ELASTICSEARCH_READER_PASSWORD="${ELASTICSEARCH_READER_PASSWORD:-addp_business_elastic_reader}" \
+        python3 elasticsearch/init.py
+    echo "✓ Elasticsearch 已就绪，ADDP 接入请使用只读用户 ${ELASTICSEARCH_READER_USER:-addp_business_reader}"
 fi
 
 # MongoDB
@@ -1140,3 +1184,10 @@ fi
 echo ""
 echo -e "查看日志: docker-compose logs -f"
 echo -e "停止服务: bash scripts/stop.sh"
+
+if [ "$ENABLE_ELASTICSEARCH" = true ]; then
+    echo "Elasticsearch: http://127.0.0.1:${ELASTICSEARCH_PORT:-9200}（只读用户 ${ELASTICSEARCH_READER_USER:-addp_business_reader}）"
+fi
+if [ "$ENABLE_REDIS" = true ]; then
+    echo "Business Redis: 127.0.0.1:${BUSINESS_REDIS_PORT:-6380}，DB 0（只读用户 addp_business_reader）"
+fi

@@ -5764,19 +5764,20 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "仅 addp-catalog Tenant Service Principal 可按名称或编码分页查询当前可引用的 Department 或 User；只返回最小显示摘要 | Only the addp-catalog tenant service principal may search currently referenceable departments or users by name or code; only minimal display summaries are returned",
+                "description": "仅 addp-catalog Tenant Service Principal 可分页查询当前 Tenant 有效的 Department、User 或 Project Group；只返回名称、编码、稳定 ID 和状态，不返回成员、角色或数据。Catalog 须在人的消费入口独立核验条目与责任资格 | Only the addp-catalog tenant service principal may page active departments, users or project groups in the current tenant. Returns only names, codes, stable IDs and statuses, never members, roles or data. Catalog independently checks entry and responsibility eligibility at human consumption boundaries",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Runtime Catalog References"
                 ],
-                "summary": "查询 Catalog 责任主体候选 | List Catalog responsibility candidates",
+                "summary": "查询 Catalog 主体引用候选 | List Catalog subject reference candidates",
                 "parameters": [
                     {
                         "enum": [
                             "department",
-                            "user"
+                            "user",
+                            "project_group"
                         ],
                         "type": "string",
                         "description": "主体类型 | Subject type",
@@ -5852,6 +5853,7 @@ const docTemplate = `{
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "iam.department.read",
+                    "iam.project_group.read",
                     "iam.tenant_membership.read"
                 ]
             }

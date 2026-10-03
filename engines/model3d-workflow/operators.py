@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import copy
 import json
 import shutil
 import struct
@@ -10,6 +11,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urlparse
+
+from exchange_model import validate_source
+from glb_validation import read_glb as _read_glb, validate_glb
 
 from addp_common.workflow_access import (
     publish_target_directory,
@@ -24,11 +28,11 @@ from addp_common.workflow_access import (
 
 ENGINE_TYPE = "model3d_workflow"
 ENGINE_ROOT = Path(__file__).resolve().parent
-DEFAULT_CONVERTER_BIN = str(ENGINE_ROOT / "bin" / "_3dtile")
+DEFAULT_CONVERTER_BIN = str(ENGINE_ROOT / "scripts" / "converters" / "_3dtile")
 CONVERTER_ENV = "MODEL3D_CONVERTER_BIN"
-DEFAULT_MESH_CONVERTER_BIN = str(ENGINE_ROOT / "bin" / "assimp")
+DEFAULT_MESH_CONVERTER_BIN = str(ENGINE_ROOT / "scripts" / "converters" / "assimp")
 MESH_CONVERTER_ENV = "MODEL3D_MESH_CONVERTER_BIN"
-DEFAULT_IFC_CONVERTER_BIN = str(ENGINE_ROOT / "bin" / "IfcConvert")
+DEFAULT_IFC_CONVERTER_BIN = str(ENGINE_ROOT / "scripts" / "converters" / "IfcConvert")
 IFC_CONVERTER_ENV = "MODEL3D_IFC_CONVERTER_BIN"
 GAUSSIAN_SPLAT_CONVERTER_SCRIPT = str(ENGINE_ROOT / "create_ksplat.mjs")
 GAUSSIAN_SPLAT_NODE_ENV = "MODEL3D_GAUSSIAN_SPLAT_NODE_BIN"
@@ -115,7 +119,7 @@ def converter_status(env: dict[str, str] | None = None) -> dict[str, Any]:
 
 
 def list_operators() -> list[dict[str, Any]]:
-    return [
+    operators = [
         {
             "id": "osgb_to_glb",
             "name": "osgb_to_glb",
@@ -387,6 +391,16 @@ def list_operators() -> list[dict[str, Any]]:
             ],
         },
     ]
+    # The static exchange formats use the existing mesh operator contract.
+    template = next(op for op in operators if op["name"] == "stl_to_glb")
+    for source_format in ("dae", "3ds"):
+        op = copy.deepcopy(template)
+        op["id"] = op["name"] = f"{source_format}_to_glb"
+        op["display_name"] = f"{source_format.upper()} 转 GLB"
+        op["description"] = f"将 {source_format.upper()} 静态网格与 PNG/JPEG 漫反射贴图转换为自包含 GLB。"
+        op["parameters"][0]["description"] = "源模型资源目录与目标 GLB 的 addp.workflow.access-plan/v1 访问计划。"
+        operators.insert(-2, op)
+    return operators
 
 
 def get_operator(name: str) -> dict[str, Any] | None:
@@ -413,6 +427,8 @@ def invoke_operator(
         return obj_to_glb(params, runner=runner, env=env, timeout_seconds=timeout_seconds)
     if name == "stl_to_glb":
         return stl_to_glb(params, runner=runner, env=env, timeout_seconds=timeout_seconds)
+    if name in {"dae_to_glb", "3ds_to_glb"}:
+        return _mesh_model_to_glb(params, source_label=name.removesuffix("_to_glb"), runner=runner, env=env, timeout_seconds=timeout_seconds)
     if name == "ifc_to_glb":
         return ifc_to_glb(params, runner=runner, env=env, timeout_seconds=timeout_seconds)
     if name == "osgb_scene_to_3dtiles":
@@ -540,6 +556,7 @@ def _single_model_to_glb(
                 http_status=500,
             )
 
+        _validate_glb_artifact(target_file)
         publish_result = publish_target_file(target_file, access_plan)
         return {
             "glb_uri": _published_uri(publish_result),
@@ -650,6 +667,7 @@ def ifc_to_glb(
                 http_status=500,
             )
 
+        _validate_glb_artifact(target_file)
         publish_result = publish_target_file(target_file, access_plan)
         return {
             "glb_uri": _published_uri(publish_result),
@@ -684,6 +702,12 @@ def _mesh_model_to_glb(
         source_path = str(_stage_model_source(access_plan, temp_dir))
         if source_label.lower() == "obj":
             _validate_obj_material_libraries(Path(source_path))
+        source_texture_refs = []
+        if source_label.lower() in {"dae", "3ds"}:
+            try:
+                source_texture_refs = validate_source(Path(source_path), source_label.lower())
+            except (ValueError, OSError) as error:
+                raise ConverterError("UNSUPPORTED_MODEL_SOURCE", "Source model is outside supported conversion scope", details=str(error)) from error
         converter = _mesh_converter_bin(env)
         command = [converter, "export", source_path, str(target_file), "-embtex"]
         result = _run_executable(command, runner=runner, env_name=MESH_CONVERTER_ENV, timeout_seconds=timeout_seconds)
@@ -695,10 +719,20 @@ def _mesh_model_to_glb(
                 http_status=500,
             )
 
+        doc = _validate_glb_artifact(target_file, basic_static=source_label.lower() in {"dae", "3ds"})
+        if source_texture_refs:
+            uses_color_texture = any(
+                "material" in primitive and doc["materials"][primitive["material"]].get("pbrMetallicRoughness", {}).get("baseColorTexture")
+                for mesh in doc["meshes"] for primitive in mesh["primitives"]
+            )
+            if not doc.get("images") or not uses_color_texture:
+                raise ConverterError("INVALID_GLB", "Converter dropped declared model textures", http_status=500)
         postprocess = {}
         if source_label.lower() == "obj":
             postprocess = _repair_obj_glb_fully_transparent_textured_materials(target_file)
 
+        if postprocess:
+            _validate_glb_artifact(target_file)
         publish_result = publish_target_file(target_file, access_plan)
         facts = {
             "glb_uri": _published_uri(publish_result),
@@ -716,6 +750,13 @@ def _mesh_model_to_glb(
         return facts
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+def _validate_glb_artifact(path: Path, *, basic_static: bool = False) -> dict[str, Any]:
+    try:
+        return validate_glb(path, basic_static=basic_static)
+    except (ValueError, OSError, TypeError, AttributeError) as error:
+        raise ConverterError("INVALID_GLB", "GLB output failed artifact validation", details=str(error), http_status=500) from error
 
 
 def _validate_obj_material_libraries(source_path: Path) -> None:
@@ -845,30 +886,6 @@ def _float(value: Any, default: float) -> float:
         return float(value)
     except (TypeError, ValueError):
         return default
-
-
-def _read_glb(glb_path: Path) -> tuple[dict[str, Any], list[tuple[bytes, bytes]]]:
-    data = glb_path.read_bytes()
-    if len(data) < 20:
-        raise ConverterError("INVALID_GLB", "GLB output is too small", details=str(glb_path), http_status=500)
-    magic, version, total_length = struct.unpack_from("<4sII", data, 0)
-    if magic != b"glTF" or version != 2 or total_length != len(data):
-        raise ConverterError("INVALID_GLB", "GLB output header is invalid", details=str(glb_path), http_status=500)
-
-    offset = 12
-    chunks: list[tuple[bytes, bytes]] = []
-    json_doc: dict[str, Any] | None = None
-    while offset + 8 <= len(data):
-        chunk_length, chunk_type = struct.unpack_from("<I4s", data, offset)
-        offset += 8
-        chunk_data = data[offset : offset + chunk_length]
-        offset += chunk_length
-        chunks.append((chunk_type, chunk_data))
-        if chunk_type == b"JSON":
-            json_doc = json.loads(chunk_data.decode("utf-8").rstrip(" \t\r\n\0"))
-    if json_doc is None:
-        raise ConverterError("INVALID_GLB", "GLB output has no JSON chunk", details=str(glb_path), http_status=500)
-    return json_doc, chunks
 
 
 def _write_glb(glb_path: Path, doc: dict[str, Any], chunks: list[tuple[bytes, bytes]]) -> None:

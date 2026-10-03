@@ -77,6 +77,8 @@ func TestDescriptorsKeepOnlyStaticFactsForBuiltinFormats(t *testing.T) {
 		{FormatOBJ, datatype.Model3D, LayoutSingle},
 		{FormatSTL, datatype.Model3D, LayoutSingle},
 		{FormatFBX, datatype.Model3D, LayoutSingle},
+		{FormatDAE, datatype.Model3D, LayoutSingle},
+		{Format3DS, datatype.Model3D, LayoutSingle},
 		{FormatIFC, datatype.Model3D, LayoutSingle},
 		{FormatPLY, datatype.Model3D, LayoutSingle},
 		{FormatSplat, datatype.GaussianSplat, LayoutSingle},

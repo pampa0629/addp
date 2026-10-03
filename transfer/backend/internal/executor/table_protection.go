@@ -11,13 +11,14 @@ import (
 )
 
 type protectedTableBatchReader struct {
-	inner       TableBatchReader
-	protect     func(*engineplugin.QueryResult) error
-	tableInfo   *datatype.TableInfo
-	spatialInfo *datatype.SpatialInfo
+	inner         TableBatchReader
+	protect       func(*engineplugin.QueryResult) error
+	tableInfo     *datatype.TableInfo
+	spatialInfo   *datatype.SpatialInfo
+	derivedFields []string
 }
 
-func protectTableBatchReader(inner TableBatchReader, protect func(*engineplugin.QueryResult) error) (TableBatchReader, error) {
+func protectTableBatchReader(inner TableBatchReader, protect func(*engineplugin.QueryResult) error, derivedFields []string) (TableBatchReader, error) {
 	if inner == nil || protect == nil {
 		return inner, nil
 	}
@@ -27,7 +28,7 @@ func protectTableBatchReader(inner TableBatchReader, protect func(*engineplugin.
 		return nil, err
 	}
 	return &protectedTableBatchReader{
-		inner: inner, protect: protect, tableInfo: tableInfo,
+		inner: inner, protect: protect, tableInfo: tableInfo, derivedFields: append([]string(nil), derivedFields...),
 		spatialInfo: filterProtectedSpatialInfo(inner.SpatialInfo(), visible),
 	}, nil
 }

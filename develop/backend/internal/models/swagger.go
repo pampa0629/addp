@@ -23,7 +23,7 @@ type SuccessResponse struct {
 // 实际运行时仍由 DevTaskService 按 dev_type 做强校验；此结构用于让 Swagger 展示 query/workflow/script 的规范字段。
 type DevTaskContentSwagger struct {
 	Query              string                     `json:"query,omitempty" example:"SELECT * FROM source"`
-	QueryType          string                     `json:"query_type,omitempty" enums:"sql,mql,cypher" example:"sql"`
+	QueryType          string                     `json:"query_type,omitempty" enums:"sql,mql,cypher,es_dsl" example:"sql"`
 	TargetLocator      string                     `json:"target_locator,omitempty" example:"addp://engine/11/path/Outdoor/Persons?type=collection&item_id=51657"`
 	QueryParameters    []QueryParameterSwagger    `json:"query_parameters,omitempty"`
 	WorkflowDefinition *WorkflowDefinitionSwagger `json:"workflow_definition,omitempty"`

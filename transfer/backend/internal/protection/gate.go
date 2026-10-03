@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/dataprotection/projectionstore"
 	"github.com/addp/common/datatype"
 	engineplugin "github.com/addp/common/engine/plugin"
@@ -96,7 +97,7 @@ func (g *Gate) PrepareBoundedEncodedRecordProtection(
 	}
 	return func(document map[string]interface{}) error {
 		result := &engineplugin.QueryResult{Rows: []map[string]interface{}{document}}
-		return protect(result)
+		return protect.Apply(result)
 	}, nil
 }
 
@@ -135,7 +136,7 @@ type boundedTableProtection struct {
 	sourcePath engineplugin.EngineCatalogPath
 }
 
-func (p *boundedTableProtection) PrepareCatalogTableProtection(ctx context.Context, path engineplugin.EngineCatalogPath, fields []datatype.FieldInfo) (func(*engineplugin.QueryResult) error, error) {
+func (p *boundedTableProtection) PrepareCatalogTableProtection(ctx context.Context, path engineplugin.EngineCatalogPath, fields []datatype.FieldInfo) (*dataprotection.PreparedTableProtection, error) {
 	if p == nil || !sameCatalogPath(p.sourcePath, path) {
 		return nil, fmt.Errorf("%w: native source path does not match task source", ErrSourceRequired)
 	}

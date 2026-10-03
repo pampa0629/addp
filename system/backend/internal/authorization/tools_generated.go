@@ -48,6 +48,12 @@ var toolAuthorizations = map[string]commonauth.ToolAuthorization{
 		RequiredScopes:      []string{"ontology.classes.list"},
 		RequiredPermissions: []string{"ontology.semantic.read"},
 	},
+	"platform.capability.context": {
+		Name:                "platform.capability.context",
+		Owner:               "ontology",
+		RequiredScopes:      []string{"platform.capability.context"},
+		RequiredPermissions: []string{"ontology.semantic.read"},
+	},
 	"query.draft.generate": {
 		Name:                "query.draft.generate",
 		Owner:               "copilot",
@@ -77,6 +83,12 @@ var toolAuthorizations = map[string]commonauth.ToolAuthorization{
 		Owner:               "copilot",
 		RequiredScopes:      []string{"transfer.draft.generate"},
 		RequiredPermissions: []string{"copilot.transfer.execute"},
+	},
+	"transfer.task.create": {
+		Name:                "transfer.task.create",
+		Owner:               "transfer",
+		RequiredScopes:      []string{"transfer.task.create"},
+		RequiredPermissions: []string{"transfer.task.create"},
 	},
 	"workflow.draft.generate": {
 		Name:                "workflow.draft.generate",

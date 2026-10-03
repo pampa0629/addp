@@ -18,7 +18,7 @@ while [ "$#" -gt 0 ]; do
             shift 2
             ;;
         *)
-            echo "usage: $0 [--package iam|oauth|api|migration|engineaccess|repository] [--test credential-context|engine-access-coordination|service-account|tenant-invitation|catalog-reference-candidates|catalog-integrity|standard-collection-removal|invitation-enrollment-removal|execution-audience|duckdb-runtime-catalog|security-module-repair|security-access-request-repair|execution-authorization-lease-boundary|internal-task-authorization|portal-runtime-removal|service-execution-audit|develop-execution-audit|workbench-runtime|workbench-data-application|workbench-catalog-read|workbench-resource-grant|model-catalog-read|standard-catalog-read|service-catalog-read|develop-catalog-read|develop-transfer-execution|quality-catalog-read|quality-plans|model-writer-decoupling|catalog-engine-descriptor-read|catalog-project-group-read|transfer-task-provider]" >&2
+            echo "usage: $0 [--package iam|oauth|api|migration|engineaccess|repository] [--test credential-context|engine-access-coordination|service-account|tenant-invitation|catalog-reference-candidates|catalog-integrity|standard-collection-removal|invitation-enrollment-removal|execution-audience|duckdb-runtime-catalog|security-module-repair|security-access-request-repair|execution-authorization-lease-boundary|internal-task-authorization|portal-runtime-removal|service-execution-audit|develop-execution-audit|workbench-runtime|workbench-data-application|workbench-catalog-read|workbench-resource-grant|model-catalog-read|standard-catalog-read|service-catalog-read|develop-catalog-read|develop-transfer-execution|quality-catalog-read|quality-plans|model-writer-decoupling|catalog-engine-descriptor-read|catalog-project-group-read|transfer-task-provider|transfer-task-create]" >&2
             exit 2
             ;;
     esac
@@ -316,6 +316,13 @@ case "$TEST_FILTER" in
             exit 2
         fi
         test_pattern='^TestTransferTaskProviderForwardMigrationAgainstPostgres$'
+        ;;
+    transfer-task-create)
+        if [ "$PACKAGE_FILTER" != "migration" ]; then
+            echo "transfer-task-create test requires --package migration" >&2
+            exit 2
+        fi
+        test_pattern='^TestTransferTaskCreateDelegationMigrationAgainstPostgres$'
         ;;
     *)
         echo "unsupported System IAM PostgreSQL gate test: $TEST_FILTER" >&2

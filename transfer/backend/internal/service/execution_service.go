@@ -461,7 +461,7 @@ func (s *ExecutionService) UpdateExecution(ctx context.Context, id uint, updates
 }
 
 // FinishExecution 完成执行（设置结束时间和状态）
-func (s *ExecutionService) FinishExecution(ctx context.Context, id uint, status models.ExecutionStatus, errorMsg string) error {
+func (s *ExecutionService) FinishExecution(ctx context.Context, id uint, status models.ExecutionStatus, errorMsg string, resultMetadata commonModels.JSONMap) error {
 	now := time.Now()
 	updates := map[string]interface{}{
 		"status":       string(status),
@@ -473,6 +473,16 @@ func (s *ExecutionService) FinishExecution(ctx context.Context, id uint, status 
 	execution, err := s.taskExecutionRepo.GetByID(ctx, int64(id), 0)
 	if err != nil {
 		return err
+	}
+	if len(resultMetadata) > 0 {
+		metadata := execution.Metadata
+		if metadata == nil {
+			metadata = commonModels.JSONMap{}
+		}
+		for key, value := range resultMetadata {
+			metadata[key] = value
+		}
+		updates["metadata"] = metadata
 	}
 	if errorDetails, changed := finishErrorDetails(execution.ErrorDetails, status, errorMsg); changed {
 		updates["error_details"] = errorDetails
@@ -518,6 +528,9 @@ func (s *ExecutionService) FinishExecution(ctx context.Context, id uint, status 
 			return nil
 		})
 	}
+	if execution.ExecutionBoundary == commonExecution.ExecutionBoundaryBounded {
+		return fmt.Errorf("bounded execution %s completion requires the active lease", execution.ExecutionID)
+	}
 	return s.taskExecutionRepo.UpdateFields(ctx, execution.ExecutionID, execution.TenantID, updates)
 }
 
@@ -533,9 +546,9 @@ func (s *ExecutionService) FinishIfRunning(ctx context.Context, id uint, execErr
 		return fmt.Errorf("bounded execution %s is not running", execution.ExecutionID)
 	}
 	if execErr != nil {
-		return s.FinishExecution(ctx, id, models.ExecutionStatusFailed, execErr.Error())
+		return s.FinishExecution(ctx, id, models.ExecutionStatusFailed, execErr.Error(), nil)
 	}
-	return s.FinishExecution(ctx, id, models.ExecutionStatusSuccess, "")
+	return s.FinishExecution(ctx, id, models.ExecutionStatusSuccess, "", nil)
 }
 
 func finishErrorDetails(existing commonModels.JSONMap, status models.ExecutionStatus, errorMsg string) (commonModels.JSONMap, bool) {

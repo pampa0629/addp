@@ -43,7 +43,8 @@
       "object": "对象",
       "topic": "主题",
       "collection": "集合",
-      "publishedService": "数据服务"
+      "publishedService": "数据服务",
+      "field": "字段"
     },
     "relations": {
       "derive": "派生",
@@ -60,6 +61,16 @@
       "upstream": "上游 +{count}",
       "downstream": "下游 +{count}"
     },
-    "viewExecution": "查看来源执行"
+    "viewExecution": "查看来源执行",
+    "field": "字段",
+    "schemaSnapshot": "结构快照",
+    "transformation": "转换方式",
+    "fieldUnavailable": "当前字段尚无可用血缘证据。",
+    "fieldNoDependencies": "已记录的字段血缘中没有关联字段。",
+    "transformations": {
+      "direct": "直接映射",
+      "derived": "派生转换",
+      "generated": "生成值"
+    }
   }
 }

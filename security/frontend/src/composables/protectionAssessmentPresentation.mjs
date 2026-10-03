@@ -102,7 +102,7 @@ export function createProtectionAssessmentPresentation({
   }
 
   function stricterPolicyEffectsForBaseline(baseline) {
-    return ['mask', 'suppress', 'deny'].filter(effect => isProtectionEffectStricter(effect, baseline?.effect))
+    return ['mask', 'suppress', 'deny'].filter(effect => isProtectionEffectStricter(effect, baseline?.effect) || (effect === 'mask' && baseline?.effect === 'mask'))
   }
 
   function canConfigurePolicyFromContext(baseline, policy) {
@@ -112,7 +112,7 @@ export function createProtectionAssessmentPresentation({
 
   function protectionSummaryFromContext(baseline, policy) {
     if (!baseline) return t('security.policy.baselineMissing')
-    if (policy?.state === 'active' && isProtectionEffectStricter(policy.current?.effect, baseline.effect)) {
+    if (policy?.state === 'active' && (isProtectionEffectStricter(policy.current?.effect, baseline.effect) || policy.current?.effect === 'mask')) {
       return t('security.policy.activeSummary', { baseline: effectLabel(baseline.effect), policy: effectLabel(policy.current?.effect) })
     }
     return t('security.policy.defaultSummary', { baseline: effectLabel(baseline.effect) })
@@ -133,6 +133,8 @@ export function createProtectionAssessmentPresentation({
   function protectionPolicyDialogView(assessment, context = {}) {
     const effects = Array.isArray(context.effects) ? context.effects : []
     return {
+      baseline: baselineForAssessment(assessment),
+      fieldType: assessment?.current?.component?.value_type,
       componentKey: assessment?.component_key,
       assessmentSummary: assessmentSummary(assessment),
       protectionSummary: assessmentProtectionSummary(assessment),

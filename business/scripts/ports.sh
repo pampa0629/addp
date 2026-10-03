@@ -134,6 +134,8 @@ addp_business_port_specs() {
   cat <<'EOF'
 postgres POSTGRES_PORT 5432 5433 business-postgres
 mysql MYSQL_PORT 3306 3306 business-mysql
+redis BUSINESS_REDIS_PORT 6379 6380 business-redis
+elasticsearch ELASTICSEARCH_PORT 9200 9200 business-elasticsearch
 minio MINIO_API_PORT 9000 9002 business-minio
 minio MINIO_CONSOLE_PORT 9001 9003 business-minio
 EOF

@@ -27,6 +27,12 @@ validate_business_pins() (
   if docker ps --format '{{.Names}}' | grep -qx 'business-mysql'; then
     services+=(mysql)
   fi
+  if docker ps --format '{{.Names}}' | grep -qx 'business-elasticsearch'; then
+    services+=(elasticsearch)
+  fi
+  if docker ps --format '{{.Names}}' | grep -qx 'business-redis'; then
+    services+=(redis)
+  fi
   PROJECT_ROOT="${PROJECT_ROOT}/business"
   addp_business_resolve_ports "${services[@]}" >/dev/null
 )
@@ -110,6 +116,21 @@ BUSINESS_OPENGAUSS_DATABASE="${OPENGAUSS_DATABASE:-business}"
 BUSINESS_OPENGAUSS_USER=gaussdb
 BUSINESS_OPENGAUSS_PASSWORD="${OPENGAUSS_PASSWORD:-AddpGauss606@}"
 BUSINESS_OPENGAUSS_AVAILABLE=false
+
+# Elasticsearch 接入使用独立只读用户与容器实际映射。
+BUSINESS_ELASTICSEARCH_AVAILABLE=false
+if docker ps --format '{{.Names}}' | grep -qx 'business-elasticsearch'; then
+  BUSINESS_ELASTICSEARCH_PORT=$(business_mapped_port elasticsearch business-elasticsearch 9200)
+  BUSINESS_ELASTICSEARCH_ENDPOINT="http://127.0.0.1:${BUSINESS_ELASTICSEARCH_PORT}"
+  BUSINESS_ELASTICSEARCH_AVAILABLE=true
+fi
+
+# Redis 使用独立 Business 只读账号，逻辑数据库固定为 0。
+BUSINESS_REDIS_AVAILABLE=false
+if docker ps --format '{{.Names}}' | grep -qx 'business-redis'; then
+  BUSINESS_REDIS_PORT=$(business_mapped_port redis business-redis 6379)
+  BUSINESS_REDIS_AVAILABLE=true
+fi
 
 # Business MinIO 配置
 BUSINESS_MINIO_PORT=$(business_mapped_port minio business-minio 9000) || {
@@ -360,6 +381,22 @@ if [ "${BUSINESS_OPENGAUSS_AVAILABLE}" = true ]; then
 fi
 
 # 注册 Business MinIO
+if [ "$BUSINESS_ELASTICSEARCH_AVAILABLE" = true ]; then
+  register_engine \
+    "Business Elasticsearch (${BUSINESS_ELASTICSEARCH_PORT})" \
+    "elasticsearch" \
+    "$(jq -nc --arg endpoint "$BUSINESS_ELASTICSEARCH_ENDPOINT" --arg user "${ELASTICSEARCH_READER_USER:-addp_business_reader}" --arg password "${ELASTICSEARCH_READER_PASSWORD:-addp_business_elastic_reader}" '{endpoint:$endpoint,user:$user,password:$password}')" \
+    "Business Elasticsearch 文档样例（只读接入）"
+fi
+
+if [ "$BUSINESS_REDIS_AVAILABLE" = true ]; then
+  register_engine \
+    "Business Redis (${BUSINESS_REDIS_PORT})" \
+    "redis" \
+    "$(jq -nc --arg host "127.0.0.1" --argjson port "$BUSINESS_REDIS_PORT" --arg user "addp_business_reader" --arg password "${BUSINESS_REDIS_READER_PASSWORD:-addp_business_redis_reader}" '{host:$host,port:$port,user:$user,password:$password,database:0,use_ssl:false}')" \
+    "Business Redis 原生键值样例（只读连接，尚无目录或预览）"
+fi
+
 register_engine \
   "Business MinIO (${BUSINESS_MINIO_PORT})" \
   "minio" \

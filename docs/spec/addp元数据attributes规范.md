@@ -517,3 +517,9 @@ WGS84 bounds、SRID 和 CRS 属于 `capabilities.spatial`，不重复写入 `for
 - Manager 普通空间预览只返回源坐标 geometry 表达和 CRS 元数据；不得为了普通预览隐式调用后端 PROJ 或 PostGIS `ST_Transform` 转成 WGS84。
 - `srid=0` 且 `crs_ref` / `crs_definitions` 缺失时必须按 `unknown_crs` 处理，不得默认解释为 `EPSG:4326`。如果 `srid=0` 但存在有效 `crs_ref` 和 CRS 定义，表示“无数字 SRID 但 CRS 已知”。
 - 如果某条路径已经由具体引擎能力完成转换，例如 MVT / 矢量物化视图，应在该路径响应中明确 `target_srid`、`transform_status=engine_transformed` 和 `transform_engine`；该事实不得反向改写源数据的 `capabilities.spatial`。
+
+## Elasticsearch Mapping 字段事实
+
+Elasticsearch index 的 `item_type=index`，记录集合消费语义写入 `item.data_type=table`，字段写入 `type_info.table.fields`。Mapping 的 object/nested 原生类型、子字段路径及 multi-field 的原生关联由`TableInfo.Native.mapping` 承载，multi-field 不是 `_source` 的新增属性。Mapping 的紧凑来源事实保留于 `type_info.table.native`，其中 `schema_type=mapping`、`is_sampled=false`；它们不是 Manager 剖析结果，也不表示原文档全部字段已声明。精确文档数只在显式请求统计时读取，未知保持缺失。
+
+ES 文档解码使用 `UseNumber`。超出 JavaScript 安全整数范围的整数在记录输出中使用十进制字符串，避免查询结果持久化和浏览器解析造成精度损失；Mapping 中仍保留其原生数值类型。JSON 查询格式化必须保留原始数值词法。

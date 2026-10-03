@@ -40,6 +40,9 @@ OWNED_SERVICES_PATTERN = re.compile(
 COMPOSE_FILE_PATTERN = re.compile(
     r"(?m)^#\s*ADDP_T2_COMPOSE_FILE=(?P<path>[^\s]+)\s*$"
 )
+LIFECYCLE_SCRIPT_PATTERN = re.compile(
+    r"(?m)^#\s*ADDP_T2_LIFECYCLE_SCRIPT=(?P<path>[^\s]+)\s*$"
+)
 
 
 def gate_requires_explicit_disposable_database(content: str) -> bool:
@@ -503,6 +506,20 @@ def validate_registration(repository: Path) -> list[str]:
                         f"{script}: tidb-tikv must set nofile soft/hard limits to at least 1000000 in {compose_path}"
                     )
         script_content = (repository / script).read_text(encoding="utf-8")
+        lifecycle = LIFECYCLE_SCRIPT_PATTERN.search(script_content)
+        if lifecycle:
+            helper_path = lifecycle.group("path")
+            helper = repository / helper_path
+            normalized = not Path(helper_path).is_absolute() and all(
+                part not in {"", ".", ".."} for part in helper_path.split("/")
+            ) and helper_path.startswith("scripts/test/") and helper_path.endswith(".sh")
+            invocation = f'bash "$ROOT_DIR/{helper_path}"'
+            if not normalized or not helper.is_file() or not MODULE_GATE.gate_input_covers(declared_inputs, helper_path) or invocation not in script_content:
+                errors.append(f"{script}: shared lifecycle must be a declared repository script invoked by its owner gate")
+            else:
+                script_content = helper.read_text(encoding="utf-8")
+                if compose_path not in script_content:
+                    errors.append(f"{script}: shared lifecycle must use its declared Compose file")
         if "docker compose" not in script_content or "down --volumes --remove-orphans" not in script_content or "disposable" not in script_content:
             errors.append(f"{script}: owned-service gate must own disposable Compose startup and cleanup")
         if source_builds and not re.search(r"(?m)^(?:docker )?compose build\s", script_content):

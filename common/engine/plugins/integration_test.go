@@ -68,8 +68,12 @@ func TestRegisterableEngineDescriptorsArePluginOwned(t *testing.T) {
 		if descriptor.Capabilities.EngineType != descriptor.Type {
 			t.Fatalf("%s capability engine_type = %q", descriptor.Type, descriptor.Capabilities.EngineType)
 		}
-		if descriptor.CatalogModel == nil {
-			t.Fatalf("%s has no catalog model", descriptor.Type)
+		if provider, ok := enginePlugin.(plugin.EngineCatalogModelProvider); ok {
+			if descriptor.CatalogModel == nil || !reflect.DeepEqual(*descriptor.CatalogModel, provider.EngineCatalogModel()) {
+				t.Fatalf("%s catalog model is not derived from its provider", descriptor.Type)
+			}
+		} else if descriptor.CatalogModel != nil {
+			t.Fatalf("%s advertises a catalog model without a provider", descriptor.Type)
 		}
 		if enginePlugin.DefaultPort() != descriptor.ConnectionSpec.DefaultPortValue() {
 			t.Fatalf("%s default port is not derived from connection spec", descriptor.Type)

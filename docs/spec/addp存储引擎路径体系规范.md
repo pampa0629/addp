@@ -524,3 +524,7 @@ addp-infra://minio/manager/tenant_7/export/20260622/execution-id?type=prefix
 - 对象存储和文件系统不得共享 Engine Catalog Model 或 Engine Catalog 拼装实现。
 - 二者可以共享内容流读写接口、MIME 推断、格式解析、preview composer 等底层能力。
 - Linux / macOS 本地文件系统后续也必须有结构性 root meta_node，用于容纳根目录下文件；展示名可另行确认，但不得省略 root。
+
+## Elasticsearch 首版路径
+
+Elasticsearch 使用 `service(root) -> index(leaf)`，root 的 `full_name` 为空；index 的 `full_name` 等于完整索引名。索引名中的 `.` 不分层，ResourceLocator 只有一个业务路径段，例如 `addp://engine/31/path/orders.v1?type=index`。连接端点和认证主体属于 ConnectionSpec，不进入数据路径。首版只列出当前身份可见的普通、打开、非隐藏索引；别名、data stream、隐藏/系统索引不投影为普通索引。解析明确的 index 路径必须验证它是具体索引，不允许别名或通配符扩大读取范围。

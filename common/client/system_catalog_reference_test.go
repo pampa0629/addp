@@ -83,3 +83,18 @@ func TestSystemServiceClientResolvesSecurityAccessActors(t *testing.T) {
 		t.Fatalf("actors = %#v", actors)
 	}
 }
+
+func TestSystemServiceClientListsProjectGroupRecipientCandidates(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/system/runtime/catalog-references/candidates" || r.URL.Query().Get("subject_type") != "project_group" || r.Header.Get("Authorization") != "Bearer tenant-token" || r.Header.Get("X-Tenant-ID") != "" {
+			t.Errorf("unexpected candidate request %s", r.URL)
+		}
+		_, _ = w.Write([]byte(`{"data":[{"subject_type":"project_group","id":"11","name":"Delivery","code":"delivery","status":"active"}],"total":1,"page":1,"page_size":20,"total_pages":1}`))
+	}))
+	defer server.Close()
+	client := NewSystemServiceClient(server.URL, staticSystemServiceTokenSource("tenant-token"), server.Client()).WithTenantID(3)
+	result, err := client.ListCatalogReferenceCandidates(context.Background(), "project_group", "", 1, 20)
+	if err != nil || len(result.Data) != 1 || result.Data[0].ID != "11" {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+}

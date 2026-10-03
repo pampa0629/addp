@@ -46,6 +46,7 @@ SQL 引擎必须通过 `SQLDialectProvider.SQLDialect()` 声明稳定方言，`S
 | --- | --- | --- |
 | 关系型 / SQL 表格型 | `EnginePlugin`、`ConnectionSpecProvider`、`EngineCatalogModelProvider`、`EngineCatalogProvider`、`EngineCatalogFactsProvider`、`SQLQueryRuntimeProvider` | `ConnectionPoolPlugin` |
 | 动态 schema 记录集合型 | `EnginePlugin`、`ConnectionSpecProvider`、`EngineCatalogModelProvider`、`EngineCatalogProvider`、`EngineCatalogFactsProvider`、`QueryRuntimeProvider` | `DynamicSchemaSamplingProvider` |
+| 键值存储（Redis 连接首版） | `EnginePlugin`、`ConnectionSpecProvider` | 尚无数据访问 Provider，不能按其他存储族补齐空实现。 |
 | 图数据库 | `EnginePlugin`、`ConnectionSpecProvider`、`EngineCatalogModelProvider`、`EngineCatalogProvider`、`EngineCatalogFactsProvider`、`QueryRuntimeProvider` | `GraphSampleProvider`、`GraphQueryProvider` |
 | 对象存储 | `EnginePlugin`、`ConnectionSpecProvider`、`EngineCatalogModelProvider`、`EngineCatalogProvider`、`EngineCatalogFactsProvider` | `ContentReadableProvider`、`ContentWritableProvider` |
 | 文件系统 | `EnginePlugin`、`ConnectionSpecProvider`、`EngineCatalogModelProvider`、`EngineCatalogProvider`、`EngineCatalogFactsProvider` | `ContentReadableProvider`、`ContentWritableProvider` |
@@ -150,3 +151,9 @@ openGauss 的完成证据必须同时包含上述官方介质认证、常规 T2 
 TiDB 的完成证据必须同时包含固定三组件官方镜像 digest、Linux x86_64 GitHub Hosted 与 macOS Docker Desktop 均可执行的常规 T2 disposable Provider 集成门禁、Business 幂等样例，以及 macOS 专用 Runner 上 `tidb-consumer-flow` 的 Manager / Transfer / Develop / Service 跨模块 T4 与三组件清理零残留证据；T2 与 T4 复用同一个无卷 Compose，不得用 MySQL 门禁或单组件 SQL 连接冒充 TiDB 验收。T4 首次真实成功前只允许手工 `workflow_dispatch`，不得增加 schedule。
 
 KingbaseES 的完成证据必须同时包含固定官方介质 SHA-256、owner 提供 License 文件的 SHA-256 与有效性校验、Linux x86_64 T5 官方介质协议认证、同环境真实 T2 disposable Provider 门禁、Business 幂等样例，以及 `kingbase-consumer-flow` 的 Manager / Transfer / Develop / Service 跨模块 T4 与容器零残留证据。三层门禁只在带 `self-hosted`、`Linux`、`X64`、`addp-kingbase` 标签的受保护 Runner 上执行，首次真实通过前只登记手工 `workflow_dispatch`，不得增加 schedule。
+
+### Redis 连接首版
+
+`redis` 插件复用固定版本 `go-redis/v9@v9.17.2`，只支持单端点 ACL 认证和一个逻辑数据库；不声明 Cluster、Sentinel、目录、内容读取、查询或扫描能力。ConnectionSpec 使用 `host`、`port`（默认 6379）、`user`（默认 default）、`password`、`database`（从 0 开始，默认 0）、`use_ssl` 和可选 PEM `tls_ca_cert`。TLS 必须验证证书链与连接主机，不能关闭证书验证。连接检测以配置的凭据执行 HELLO（必须为 standalone）、SELECT 和 DBSIZE，拒绝错误凭据、无权限账号和不可选数据库；不读写业务 key。DBSIZE 需要数据库级读取权限，不表示该账号对所有 key 都有访问权。
+
+最小验证为 `make test-common-redis`（独占真实 Redis + Common/System 消费契约）、`make test-business-redis`（原生夹具）、`make test-engine-plugin-registration`、`make test-common-frontend test-system-frontend`；共享聚合依赖由 `make test-go` 验证。

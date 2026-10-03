@@ -130,6 +130,19 @@ sys.exit(int(os.environ.get("TEST_GO_STATUS", "0")))
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("requires --package iam", result.stderr)
 
+    def test_transfer_create_filter_keeps_default_migration_discovery(self):
+        result = self.run_gate(arguments=("--test", "transfer-task-create"))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        trace = (self.root / "trace-1").read_text()
+        self.assertIn("./internal/migration -run ^TestTransferTaskCreateDelegationMigrationAgainstPostgres$", trace)
+        (self.root / "trace-1").unlink()
+        result = self.run_gate()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("./internal/migration -run AgainstPostgres$", (self.root / "trace-1").read_text())
+        result = self.run_gate(arguments=("--package", "iam", "--test", "transfer-task-create"))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("requires --package migration", result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

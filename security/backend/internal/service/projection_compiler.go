@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/addp/common/dataprotection"
@@ -94,6 +95,11 @@ func compileProtectionProjections(tx *gorm.DB, enrollment models.ProtectionEnrol
 		if err != nil {
 			return err
 		}
+		if candidate.Component.Key != dataprotection.DocumentTextComponentKey {
+			if err := dataprotection.ValidateStructuredDecision(baselineDecision, candidate.Component.ValueType); err != nil {
+				baselineDecision = dataprotection.Decision{Effect: baseline.InvalidValueEffect}
+			}
+		}
 		managerDecision := baselineDecision
 		if candidate.AssessmentID != "" && candidate.Component.Key != dataprotection.DocumentTextComponentKey {
 			managerDecision, err = applyManagerPolicy(tx, enrollment.TenantID, candidate.AssessmentID, baselineDecision)
@@ -149,6 +155,15 @@ func compileProtectionProjections(tx *gorm.DB, enrollment models.ProtectionEnrol
 func managerSearchIndexDecision(baseline dataprotection.Decision) (dataprotection.Decision, error) {
 	switch baseline.Effect {
 	case dataprotection.EffectMask:
+		if baseline.Algorithm != dataprotection.AlgorithmKeepPrefixSuffixV2 {
+			return dataprotection.Decision{Effect: dataprotection.EffectSuppress}, nil
+		}
+		prefix, _ := parameterInteger(baseline.Parameters["prefix_runes"])
+		suffix, _ := parameterInteger(baseline.Parameters["suffix_runes"])
+		if prefix+suffix >= 11 {
+			return dataprotection.Decision{Effect: dataprotection.EffectSuppress}, nil
+		}
+		baseline.Parameters = map[string]any{"prefix_runes": prefix, "suffix_runes": suffix, "replacement": strings.Repeat(baseline.Parameters["mask_rune"].(string), 11-int(prefix+suffix)), "exact_runes": 11, "character_class": "ascii_digit"}
 		baseline.Algorithm = dataprotection.AlgorithmPhoneOccurrencesV1
 		return baseline, nil
 	case dataprotection.EffectSuppress, dataprotection.EffectDeny:
@@ -251,47 +266,40 @@ func resolveProtectionCandidateFromFacts(
 }
 
 func protectionDecisionFromBaseline(baseline models.ProtectionBaseline) (dataprotection.Decision, error) {
-	switch baseline.Effect {
-	case dataprotection.EffectMask:
-		if baseline.Algorithm != dataprotection.AlgorithmKeepPrefixSuffixV2 || baseline.KeepPrefix < 0 || baseline.KeepSuffix < 0 {
-			return dataprotection.Decision{}, errors.New("structured field protection baseline is invalid")
-		}
-		return dataprotection.Decision{
-			Effect: baseline.Effect, Algorithm: baseline.Algorithm, InvalidValueEffect: baseline.InvalidValueEffect,
-			Parameters: map[string]any{"prefix_runes": baseline.KeepPrefix, "suffix_runes": baseline.KeepSuffix, "mask_rune": "*"},
-		}, nil
-	case dataprotection.EffectSuppress:
-		return dataprotection.Decision{Effect: dataprotection.EffectSuppress, InvalidValueEffect: dataprotection.EffectSuppress}, nil
-	case dataprotection.EffectDeny:
-		return dataprotection.Decision{Effect: dataprotection.EffectDeny, InvalidValueEffect: dataprotection.EffectDeny}, nil
-	default:
-		return dataprotection.Decision{}, errors.New("structured field protection baseline is invalid")
+	decision := dataprotection.Decision{Effect: baseline.Effect, Algorithm: baseline.Algorithm, Parameters: baseline.Parameters, InvalidValueEffect: baseline.InvalidValueEffect}
+	if err := decision.Validate(); err != nil {
+		return dataprotection.Decision{}, err
 	}
+	return decision, nil
 }
 
 func applyManagerPolicy(tx *gorm.DB, tenantID int64, assessmentID string, baseline dataprotection.Decision) (dataprotection.Decision, error) {
 	var policy models.ProtectionPolicy
-	err := tx.Where("tenant_id = ? AND assessment_id = ? AND consumer_owner = ? AND action = ?", tenantID, assessmentID, managerProtectionOwner, managerPreviewAction).First(&policy).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) || (err == nil && policy.State == models.ProtectionPolicyStateRevoked) {
-		return baseline, nil
-	}
-	if err != nil {
+	if err := tx.Where("tenant_id = ? AND assessment_id = ? AND consumer_owner = ? AND action = ?", tenantID, assessmentID, managerProtectionOwner, managerPreviewAction).First(&policy).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return baseline, nil
+		}
 		return dataprotection.Decision{}, err
+	}
+	if policy.State != models.ProtectionPolicyStateActive {
+		return baseline, nil
 	}
 	var revision models.ProtectionPolicyRevision
 	if err := tx.Where("tenant_id = ? AND policy_id = ? AND revision = ?", tenantID, policy.ID, policy.CurrentRevision).First(&revision).Error; err != nil {
 		return dataprotection.Decision{}, err
 	}
-	if revision.State != models.ProtectionPolicyStateActive || protectionEffectRank(revision.Effect) < 0 {
-		return dataprotection.Decision{}, errors.New("protection policy is invalid")
-	}
-	if protectionEffectRank(revision.Effect) < protectionEffectRank(baseline.Effect) {
+	if revision.State != models.ProtectionPolicyStateActive {
 		return baseline, nil
 	}
-	if revision.Effect == dataprotection.EffectMask {
+	_, current, _, definition, err := policyDependencies(tx, tenantID, assessmentID)
+	if err != nil {
+		return dataprotection.Decision{}, err
+	}
+	decision := dataprotection.Decision{Effect: revision.Effect, Algorithm: revision.Algorithm, Parameters: revision.Parameters, InvalidValueEffect: revision.InvalidValueEffect}
+	if err := validatePolicyDecision(definition, current.Component.ValueType, decision); err != nil {
 		return baseline, nil
 	}
-	return dataprotection.Decision{Effect: revision.Effect, InvalidValueEffect: revision.Effect}, nil
+	return decision, nil
 }
 
 func protectionAuthorizations(tx *gorm.DB, tenantID int64, assessmentID string, assessmentRevision int64, consumerOwner, action string, now time.Time) ([]dataprotection.TemporaryAuthorization, error) {

@@ -1,9 +1,11 @@
+import { initialProtectionConfiguration } from '../utils/protectionAlgorithm.mjs'
 import { computed, nextTick, reactive, ref } from 'vue'
 import { createRequiredRule } from '../utils/foundationForm.mjs'
 import { isResourceVersionConflict } from '../utils/protectionEnrollment.mjs'
 
 export function useProtectionPolicyChange({
   policyForAssessment,
+  baselineForAssessment = () => null,
   stricterEffects,
   getPolicy,
   getAssessment,
@@ -34,7 +36,7 @@ export function useProtectionPolicyChange({
   const editConflict = ref(false)
   const editAssessment = ref(null)
   const editPolicy = ref(null)
-  const editForm = reactive({ effect: '', rationale: '' })
+  const editForm = reactive({ ...initialProtectionConfiguration(), effect: '', rationale: '', invalid_value_effect: 'suppress' })
 
   const restoreDialog = ref(false)
   const restoreDialogRef = ref(null)
@@ -84,6 +86,9 @@ export function useProtectionPolicyChange({
     editForm.effect = policy?.state === 'active' && effects.includes(policy.current?.effect)
       ? policy.current.effect
       : effects[0]
+    const baseline = baselineForAssessment(assessment)
+    const source = policy?.state === 'active' && policy.current?.effect === 'mask' ? policy.current : baseline
+    Object.assign(editForm, initialProtectionConfiguration(), source ? { algorithm: source.algorithm, parameters: JSON.parse(JSON.stringify(source.parameters || {})), invalid_value_effect: source.invalid_value_effect || 'suppress' } : {})
     editForm.rationale = policy?.state === 'active' ? String(policy.current?.rationale || '') : ''
     return true
   }
@@ -164,6 +169,9 @@ export function useProtectionPolicyChange({
         await updatePolicy(existingPolicy.id, {
           version: Number(existingPolicy.version),
           effect: editForm.effect,
+          algorithm: editForm.effect === 'mask' ? editForm.algorithm : '',
+          parameters: editForm.effect === 'mask' ? editForm.parameters : {},
+          invalid_value_effect: editForm.effect === 'mask' ? editForm.invalid_value_effect : editForm.effect,
           rationale: editForm.rationale.trim()
         })
       } else {
@@ -172,6 +180,9 @@ export function useProtectionPolicyChange({
           consumer_owner: 'manager',
           action: 'preview',
           effect: editForm.effect,
+          algorithm: editForm.effect === 'mask' ? editForm.algorithm : '',
+          parameters: editForm.effect === 'mask' ? editForm.parameters : {},
+          invalid_value_effect: editForm.effect === 'mask' ? editForm.invalid_value_effect : editForm.effect,
           rationale: editForm.rationale.trim()
         })
       }

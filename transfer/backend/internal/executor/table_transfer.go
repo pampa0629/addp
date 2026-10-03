@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/contentadapter"
 	engineplugin "github.com/addp/common/engine/plugin"
@@ -75,7 +76,7 @@ type TableProgressCallback func(context.Context, TableProgressEvent) error
 // The executor owns placement of the returned protector before transforms and
 // target writes; Security policy state never enters this package.
 type TableSourceProtector interface {
-	PrepareCatalogTableProtection(context.Context, engineplugin.EngineCatalogPath, []datatype.FieldInfo) (func(*engineplugin.QueryResult) error, error)
+	PrepareCatalogTableProtection(context.Context, engineplugin.EngineCatalogPath, []datatype.FieldInfo) (*dataprotection.PreparedTableProtection, error)
 	PrepareQueryProtection(context.Context, engineplugin.PreparedQuery) (func(*engineplugin.QueryResult) error, error)
 }
 
@@ -127,6 +128,8 @@ type FieldMappingFieldPlan struct {
 }
 
 type TableTransferExecutor struct {
+	SourceCatalogFacts         engineplugin.EngineCatalogFactsProvider
+	TargetCatalogFacts         engineplugin.EngineCatalogFactsProvider
 	SourceNativeReader         engineplugin.BatchReadableProvider
 	SourceTableSessionProvider engineplugin.TableReadSessionProvider
 	SourceQuerySessionProvider engineplugin.QueryReadSessionProvider
@@ -160,6 +163,8 @@ func NewTableTransferExecutor(sourceEngineType, targetEngineType string, sourceF
 	}
 
 	executor := &TableTransferExecutor{}
+	executor.SourceCatalogFacts, _ = sourcePlugin.(engineplugin.EngineCatalogFactsProvider)
+	executor.TargetCatalogFacts, _ = targetPlugin.(engineplugin.EngineCatalogFactsProvider)
 	if reader, ok := sourcePlugin.(engineplugin.BatchReadableProvider); ok {
 		executor.SourceNativeReader = reader
 	}
@@ -213,6 +218,9 @@ func (e *TableTransferExecutor) Execute(ctx context.Context, plan TableTransferP
 		return nil, err
 	}
 	return (&TablePipeline{
+		ObserveFieldLineage: func(ctx context.Context, read, written *datatype.TableInfo) *TableFieldLineage {
+			return e.observeFieldLineage(ctx, plan, read, written)
+		},
 		Source:                   source,
 		Target:                   target,
 		Transforms:               plan.Transforms,

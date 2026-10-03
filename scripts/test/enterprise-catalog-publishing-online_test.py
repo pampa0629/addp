@@ -37,11 +37,70 @@ class FakeClient:
         self.calls: list[tuple[str, str]] = []
         self.writes: list[tuple[str, dict]] = []
         self.execution_count = 0
+        self.target = {"version": "v1", "engine_id": 7, "segments": [
+            {"term": "schema", "kind": "schema", "name": "public"},
+            {"term": "table", "kind": "table", "name": SUITE.FIXTURE_TABLE},
+        ]}
+        self.requirement = {"id": "20000000-0000-0000-0000-000000000001", "engine_id": "7",
+                            "catalog_path": copy.deepcopy(self.target), "mode": "catalog", "version": 1}
+        self.decisions = {}
+        self.receipts = {}
+        self.operator = {"principal_id": "51", "tenant_membership_id": "61", "authorization_version": "2"}
 
     def request(self, method, path, expected, body=None):
         self.calls.append((method, path))
         if body is not None:
             self.writes.append((path, copy.deepcopy(body)))
+        entry_path = f"/api/v1/catalog/entries/{self.entry['id']}"
+        if path == "/api/v1/system/engines/7/access_handling_scope":
+            return SUITE.Response(200, {"tenant_id": "42", "engine_id": "7", "operator": self.operator})
+        requirement_path = "/api/v1/system/engines/7/access_approval_requirements"
+        if path.startswith(requirement_path + "?"):
+            return SUITE.Response(200, {"data": [self.requirement] if self.requirement else [],
+                                        "total": 1 if self.requirement else 0})
+        if path == requirement_path and method == "POST":
+            assert self.requirement is None
+            self.requirement = {"id": "20000000-0000-0000-0000-000000000001", "engine_id": "7",
+                                "catalog_path": copy.deepcopy(body["catalog_path"]), "mode": "catalog", "version": 1}
+            return SUITE.Response(201, copy.deepcopy(self.requirement))
+        if path == entry_path + "/sharing_decisions":
+            created = body["decision_id"] not in self.decisions
+            if not created and any(self.decisions[body["decision_id"]].get(key) != value
+                                   for key, value in body.items()):
+                return SUITE.Response(409, {"error_code": "catalog_sharing_decision_conflict"})
+            if created:
+                self.entry["version"] += 1
+                self.decisions[body["decision_id"]] = {
+                    **copy.deepcopy(body), "id": body["decision_id"], "catalog_entry_id": self.entry["id"],
+                    "confirmed_by": "51", "action": "read",
+                    "confirmer_membership_id": "61", "authorization_version": "2", "self_beneficiary": True,
+                    "entry_version": str(self.entry["version"]),
+                    "target": {**copy.deepcopy(self.target), "engine_id": "7"},
+                }
+            return SUITE.Response(201 if created else 200, copy.deepcopy(self.decisions[body["decision_id"]]))
+        if path.startswith(entry_path + "/sharing_decisions/"):
+            return SUITE.Response(200, copy.deepcopy(self.decisions[path.rsplit("/", 1)[-1]]))
+        if path == entry_path + "/sharing_fulfillments":
+            request_id = body["request_id"]
+            if request_id in self.receipts and any(self.receipts[request_id]["binding"][key] != body[key]
+                                                  for key in ("decision_id", "requirement_version")):
+                return SUITE.Response(409, {"error_code": "catalog_sharing_decision_conflict"})
+            if request_id not in self.receipts:
+                now = SUITE.datetime.now(SUITE.timezone.utc)
+                self.receipts[request_id] = {
+                    "request_id": request_id, "tenant_id": "42", "outcome": "accepted",
+                    "recorded_at": now.isoformat(), "deadline": (now + SUITE.timedelta(minutes=5)).isoformat(),
+                    "binding": {"caller_principal_id": "71", "operator": copy.deepcopy(self.operator),
+                                "path": copy.deepcopy(self.target), "decision_id": body["decision_id"],
+                                "requirement_version": body["requirement_version"], "recipient_type": "user",
+                                "recipient_id": "51", "action": "read", "expiry_mode": "at_time",
+                                "expires_at": self.decisions[body["decision_id"]]["expires_at"]},
+                }
+            return SUITE.Response(200, {"request_id": request_id, "state": "accepted",
+                                        "resolution": copy.deepcopy(self.receipts[request_id])})
+        if path.startswith("/api/v1/catalog/runtime/sharing-fulfillments/") or path.startswith(
+                "/api/v1/system/runtime/engine-access-fulfillments/"):
+            return SUITE.Response(403, {"error_code": "forbidden"})
         if path == "/api/v1/meta/scan/run/manual":
             self.execution_count += 1
             return SUITE.Response(201, {"execution_id": f"execution-{self.execution_count}", "status": "pending"})
@@ -246,7 +305,7 @@ class EnterpriseCatalogPublishingOnlineTest(unittest.TestCase):
 
         report = SUITE.run_suite(client, 42, 7, "run-1", 31, 41, 51, 10, browser)
 
-        self.assertEqual(report["schema_version"], "addp.enterprise-catalog-publishing/v2")
+        self.assertEqual(report["schema_version"], "addp.enterprise-catalog-publishing/v3")
         self.assertEqual(report["route"], ["meta", "catalog", "asset", "portal"])
         self.assertEqual(report["meta_execution_ids"], ["execution-1", "execution-2"])
         self.assertEqual(report["cases"]["scan_idempotency"], "passed")
@@ -256,6 +315,10 @@ class EnterpriseCatalogPublishingOnlineTest(unittest.TestCase):
         self.assertEqual(report["catalog_lifecycle"]["states"], ["curated", "deprecated", "deprecated", "curated"])
         self.assertEqual(report["cases"]["browser"], "passed")
         self.assertEqual(report["cases"]["asset_category_portal_navigation"], "passed")
+        self.assertEqual(report["cases"]["oauth_formal_fulfillment_acceptance"], "passed")
+        self.assertEqual(report["catalog_sharing"]["retained_audit_facts"]["system_receipts"], 1)
+        self.assertEqual(len(client.decisions), 1)
+        self.assertEqual(len(client.receipts), 1)
         self.assertEqual(
             browser_calls,
             [(client.entry["id"], "fingerprint-1", "ADDP Online Catalog Fixture run-1", 1, 20, 30)],
@@ -272,6 +335,221 @@ class EnterpriseCatalogPublishingOnlineTest(unittest.TestCase):
         )
         self.assertIn(("GET", "/api/v1/portal/categories"), client.calls)
         self.assertIn(("GET", "/api/v1/portal/categories/20/assets?page=1&page_size=100"), client.calls)
+
+    def test_sharing_replays_original_inputs_without_copying_receipt_or_extending_window(self) -> None:
+        client = FakeClient()
+        report = SUITE.validate_fixture_sharing(client, client.entry["id"], 42, 7, 51, "run-1")
+        prepares = [body for path, body in client.writes if path.endswith("/sharing_fulfillments")]
+        self.assertEqual(len(prepares), 3)
+        self.assertEqual(prepares[0], prepares[2])
+        self.assertEqual(prepares[0]["request_id"], prepares[1]["request_id"])
+        self.assertEqual(prepares[1]["requirement_version"], "2" if prepares[0]["requirement_version"] == "1" else "1")
+        self.assertEqual(set(prepares[0]), {"request_id", "decision_id", "requirement_version"})
+        self.assertEqual(report["receipt"], next(iter(client.receipts.values())))
+        self.assertEqual(report["recovery_boundary"], "caller_response_discard_after_commit")
+        self.assertEqual(report["grant_write"], "not-run")
+        self.assertEqual(report["source_content_read"], "not-run")
+        self.assertEqual(len(client.receipts), 1)
+        self.assertFalse(any("/access_delegations" in path for _, path in client.calls))
+
+    def test_changed_parameter_reuse_requires_canonical_conflict_at_each_boundary(self) -> None:
+        for suffix in ("/sharing_decisions", "/sharing_fulfillments"):
+            for status, code in ((200, "catalog_sharing_decision_conflict"), (409, "wrong_conflict")):
+                with self.subTest(suffix=suffix, status=status, code=code):
+                    class BrokenConflictClient(FakeClient):
+                        def request(self, method, path, expected, body=None):
+                            response = super().request(method, path, expected, body)
+                            if path.endswith(suffix) and response.status == 409:
+                                return SUITE.Response(status, {"error_code": code})
+                            return response
+                    client = BrokenConflictClient()
+                    with self.assertRaisesRegex(SUITE.SuiteError, "not rejected canonically"):
+                        SUITE.validate_fixture_sharing(client, client.entry["id"], 42, 7, 51, "run-1")
+
+    def test_changed_requirement_version_stays_canonical_at_int64_boundary(self) -> None:
+        for version in (2, 9223372036854775807):
+            with self.subTest(version=version):
+                client = FakeClient()
+                client.requirement["version"] = version
+                SUITE.validate_fixture_sharing(client, client.entry["id"], 42, 7, 51, "run-1")
+                prepares = [body for path, body in client.writes if path.endswith("/sharing_fulfillments")]
+                self.assertEqual([body["requirement_version"] for body in prepares], [str(version), "1", str(version)])
+                self.assertEqual(len(client.receipts), 1)
+
+    def test_rejected_reuse_cannot_change_original_decision_or_receipt(self) -> None:
+        for suffix in ("/sharing_decisions", "/sharing_fulfillments"):
+            with self.subTest(suffix=suffix):
+                class MutatingConflictClient(FakeClient):
+                    def request(self, method, path, expected, body=None):
+                        response = super().request(method, path, expected, body)
+                        if path.endswith(suffix) and response.status == 409:
+                            if suffix == "/sharing_decisions":
+                                self.decisions[body["decision_id"]]["reason"] = "unexpected changed purpose"
+                            else:
+                                self.receipts[body["request_id"]]["recorded_at"] = (
+                                    SUITE.datetime.now(SUITE.timezone.utc) + SUITE.timedelta(seconds=1)).isoformat()
+                        return response
+                client = MutatingConflictClient()
+                with self.assertRaisesRegex(SUITE.SuiteError, "changed.*immutable|retry changed"):
+                    SUITE.validate_fixture_sharing(client, client.entry["id"], 42, 7, 51, "run-1")
+                self.assertEqual(len(client.decisions), 1)
+                self.assertLessEqual(len(client.receipts), 1)
+
+    def test_sharing_initializes_only_missing_exact_fixture_requirement(self) -> None:
+        for initialized in (False, True):
+            with self.subTest(initialized=initialized):
+                client = FakeClient()
+                if initialized:
+                    client.requirement = None
+                report = SUITE.validate_fixture_sharing(client, client.entry["id"], 42, 7, 51, "run-1")
+                self.assertEqual(report["approval_requirement_initialized"], initialized)
+                writes = [(path, body) for path, body in client.writes if path.endswith("/access_approval_requirements")]
+                self.assertEqual(len(writes), int(initialized))
+                if writes:
+                    self.assertEqual(set(writes[0][1]), {"catalog_path", "reason"})
+                    self.assertEqual(writes[0][1]["catalog_path"], client.target)
+
+    def test_existing_independent_mode_is_not_overwritten_or_prepared(self) -> None:
+        client = FakeClient()
+        client.requirement["mode"] = "independent"
+        with self.assertRaisesRegex(SUITE.SuiteError, "Catalog mode; no overwrite"):
+            SUITE.validate_fixture_sharing(client, client.entry["id"], 42, 7, 51, "run-1")
+        self.assertFalse(any(path.endswith(("/access_approval_requirements", "/sharing_fulfillments"))
+                             for path, _ in client.writes))
+
+    def test_paged_requirement_lookup_finds_exact_target_without_reinitializing(self) -> None:
+        class PagedClient(FakeClient):
+            def request(self, method, path, expected, body=None):
+                if "access_approval_requirements?page=" in path:
+                    self.calls.append((method, path))
+                    row = copy.deepcopy(self.requirement)
+                    if "?page=1&" in path:
+                        row["catalog_path"]["segments"][-1]["name"] = "other_table"
+                    return SUITE.Response(200, {"data": [row], "total": 2})
+                return super().request(method, path, expected, body)
+        client = PagedClient()
+        requirement, initialized = SUITE.fixture_approval_requirement(client, 7, client.target, "run-1")
+        self.assertFalse(initialized)
+        self.assertEqual(requirement, client.requirement)
+        self.assertEqual(len(client.calls), 2)
+        self.assertEqual(client.writes, [])
+
+    def test_missing_business_owner_does_not_reassign_or_create_decision(self) -> None:
+        client = FakeClient()
+        client.entry["responsibilities"] = []
+        with self.assertRaisesRegex(SUITE.SuiteError, "already be the fixture business owner"):
+            SUITE.validate_fixture_sharing(client, client.entry["id"], 42, 7, 51, "run-1")
+        self.assertEqual(client.writes, [])
+
+    def test_receipt_binding_and_time_errors_fail_and_restore_mutable_fixture(self) -> None:
+        corruptions = {
+            "recipient": lambda r: r["binding"].update(recipient_id="52"),
+            "operator": lambda r: r["binding"]["operator"].update(authorization_version="99"),
+            "target": lambda r: r["binding"]["path"].update(engine_id=8),
+            "decision": lambda r: r["binding"].update(decision_id="20000000-0000-0000-0000-000000000002"),
+            "requirement": lambda r: r["binding"].update(requirement_version="99"),
+            "human-caller": lambda r: r["binding"].update(caller_principal_id="51"),
+            "tenant": lambda r: r.update(tenant_id="43"),
+            "grant-copy": lambda r: r["binding"].update(grant_id="91"),
+            "extended-deadline": lambda r: r.update(deadline=(SUITE.datetime.fromisoformat(
+                r["recorded_at"]) + SUITE.timedelta(minutes=6)).isoformat()),
+            "missing-deadline": lambda r: r.update(deadline=None),
+            "naive-time": lambda r: r.update(recorded_at="2026-10-03T00:00:00"),
+        }
+        for name, corrupt in corruptions.items():
+            with self.subTest(name=name):
+                class CorruptReceiptClient(FakeClient):
+                    def request(self, method, path, expected, body=None):
+                        response = super().request(method, path, expected, body)
+                        if path.endswith("/sharing_fulfillments"):
+                            corrupt(response.payload["resolution"])
+                        return response
+                client = CorruptReceiptClient()
+                original = SUITE.catalog_fixture_facts(client.entry)
+                with self.assertRaisesRegex(SUITE.SuiteError, "binding mismatch|invalid acceptance window"):
+                    SUITE.run_suite(client, 42, 7, "run-1", 31, 41, 51, 10)
+                self.assertEqual(SUITE.catalog_fixture_facts(client.entry), original)
+                self.assertEqual(len(client.receipts), 1, "immutable history must not be deleted during cleanup")
+                self.assertFalse(client.asset_exists)
+
+    def test_pending_or_closed_is_never_reported_as_acceptance(self) -> None:
+        for state, status in (("pending", 202), ("closed", 200)):
+            with self.subTest(state=state):
+                class UnacceptedClient(FakeClient):
+                    def request(self, method, path, expected, body=None):
+                        if path.endswith("/sharing_fulfillments"):
+                            return SUITE.Response(status, {"request_id": body["request_id"], "state": state,
+                                                           "resolution": None})
+                        return super().request(method, path, expected, body)
+                with self.assertRaisesRegex(SUITE.SuiteError, "pending/closed is not success"):
+                    client = UnacceptedClient()
+                    SUITE.validate_fixture_sharing(client, client.entry["id"], 42, 7, 51, "run-1")
+
+    def test_replay_cannot_change_recorded_time_even_inside_valid_window(self) -> None:
+        class ChangedReceiptClient(FakeClient):
+            prepares = 0
+            def request(self, method, path, expected, body=None):
+                response = super().request(method, path, expected, body)
+                if path.endswith("/sharing_fulfillments") and response.status == 200:
+                    self.prepares += 1
+                    if self.prepares == 2:
+                        receipt = response.payload["resolution"]
+                        receipt["recorded_at"] = (SUITE.datetime.fromisoformat(
+                            receipt["recorded_at"]) + SUITE.timedelta(seconds=1)).isoformat()
+                return response
+        client = ChangedReceiptClient()
+        with self.assertRaisesRegex(SUITE.SuiteError, "retry changed its immutable receipt"):
+            SUITE.validate_fixture_sharing(client, client.entry["id"], 42, 7, 51, "run-1")
+
+    def test_uncertain_submission_and_protected_cleanup_keep_request_id_in_failure_evidence(self) -> None:
+        class ProtectedFixtureClient(FakeClient):
+            uncertain_request = None
+            def request(self, method, path, expected, body=None):
+                if path.endswith("/sharing_fulfillments"):
+                    self.uncertain_request = body["request_id"]
+                    # The test transport cannot tell whether the server committed. Do not retry
+                    # or remove protection to make cleanup look successful.
+                    raise SUITE.SuiteError("injected transport uncertainty")
+                if self.uncertain_request and method == "PUT" and path.endswith(self.entry["id"]):
+                    raise SUITE.SuiteError("fixture remains protected by pending fulfillment")
+                return super().request(method, path, expected, body)
+        client = ProtectedFixtureClient()
+        with self.assertRaises(SUITE.SuiteError) as result:
+            SUITE.run_suite(client, 42, 7, "run-1", 31, 41, 51, 10)
+        self.assertIn("cleanup failed", str(result.exception))
+        self.assertIn("original failure", str(result.exception))
+        self.assertIn(client.uncertain_request, str(result.exception))
+        self.assertIn("transport uncertainty", str(result.exception))
+        self.assertEqual(len(client.decisions), 1)
+        self.assertFalse(client.asset_exists)
+
+    def test_sharing_decision_must_preserve_requested_expiry_and_confirmation_identity(self) -> None:
+        for key, value in (("expires_at", "2099-01-01T00:00:00Z"),
+                           ("confirmer_membership_id", "62"), ("authorization_version", "3"),
+                           ("self_beneficiary", False)):
+            with self.subTest(key=key):
+                class ChangedDecisionClient(FakeClient):
+                    def request(self, method, path, expected, body=None):
+                        response = super().request(method, path, expected, body)
+                        if method == "POST" and path.endswith("/sharing_decisions"):
+                            response.payload[key] = value
+                        return response
+                client = ChangedDecisionClient()
+                with self.assertRaisesRegex(SUITE.SuiteError, "explicit confirmation"):
+                    SUITE.validate_fixture_sharing(client, client.entry["id"], 42, 7, 51, "run-1")
+                self.assertEqual(len(client.receipts), 0)
+
+    def test_runtime_user_token_must_be_denied_at_both_boundaries(self) -> None:
+        for owner in ("catalog", "system"):
+            with self.subTest(owner=owner):
+                class OpenRuntimeClient(FakeClient):
+                    def request(self, method, path, expected, body=None):
+                        if path.startswith(f"/api/v1/{owner}/runtime/"):
+                            return SUITE.Response(200, {})
+                        return super().request(method, path, expected, body)
+                client = OpenRuntimeClient()
+                with self.assertRaisesRegex(SUITE.SuiteError, "machine-only boundary"):
+                    SUITE.validate_fixture_sharing(client, client.entry["id"], 42, 7, 51, "run-1")
 
     def test_first_discovered_fixture_is_curated_to_stable_permanent_state(self) -> None:
         client = FakeClient()

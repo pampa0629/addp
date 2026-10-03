@@ -290,29 +290,35 @@ def validate_workbench_service_consumption_profile(repository: Path, registered:
 def validate_manager_internal_artifact_lineage_profile(repository: Path, registered: set[str]) -> None:
     if "manager-internal-artifact-lineage" not in registered:
         return
-    host_gate = (repository / "scripts/test/online-host-gate.sh").read_text(encoding="utf-8")
-    required_fragments = (
-        "manager-internal-artifact-lineage)",
-        "START_TARGET=-all",
-        "SYSTEM_URL GATEWAY_URL META_URL MANAGER_URL MONITOR_URL CONSOLE_URL",
-        "ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID",
-        "ADDP_ONLINE_MANAGER_MINIO_PORT",
-        "ADDP_ONLINE_MANAGER_MINIO_ACCESS_KEY",
-        "ADDP_ONLINE_MANAGER_MINIO_SECRET_KEY",
-        "ADDP_ONLINE_MANAGER_MINIO_BUCKET",
-        "ADDP_ONLINE_MANAGER_MINIO_POINTCLOUD_OBJECT",
-        "ADDP_ONLINE_MANAGER_MINIO_PPTX_OBJECT",
-        "bash business/scripts/online-manager-minio-fixture.sh start",
-        "bash business/scripts/online-manager-minio-fixture.sh stop",
-        'bash scripts/dev/start.sh "$START_TARGET"',
-        "playwright install chromium",
-    )
-    missing = [fragment for fragment in required_fragments if fragment not in host_gate]
-    if missing:
-        raise RegistrationError(
-            "manager-internal-artifact-lineage profile is missing: " + ", ".join(missing)
-        )
+    hosted_path = repository / "scripts/test/online-hosted-manager-gate.sh"
+    if not hosted_path.is_file():
+        raise RegistrationError("manager-internal-artifact-lineage requires Hosted lifecycle")
+    hosted = hosted_path.read_text(encoding="utf-8")
+    for fragment in (
+        'source "$ROOT_DIR/scripts/utils/hosted-online.sh"',
+        'MODEL3D_CONVERTER_PLATFORM=linux/amd64',
+        'scripts/build/build-images.sh --verify',
+        '-meta -manager -monitor -pointcloud-workflow -document-workflow -model3d-workflow',
+        'ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID',
+        'bash business/scripts/online-manager-minio-fixture.sh start',
+        'bash business/scripts/online-manager-minio-fixture.sh stop',
+        'go run ./cmd/online-test-fixture --suite manager-internal-artifact-lineage',
+        'scripts/test/online-engine-registration.py',
+        'playwright install --with-deps chromium',
+    ):
+        if fragment not in hosted:
+            raise RegistrationError(f"manager-internal-artifact-lineage Hosted profile is missing {fragment}")
+    workflow = (repository / ".github/workflows/online-t4-gates.yml").read_text(encoding="utf-8")
+    job = re.search(r"(?ms)^  manager-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)", workflow)
+    if not job or "runs-on: ubuntu-24.04" not in job.group("body"):
+        raise RegistrationError("manager-internal-artifact-lineage requires Ubuntu Hosted job")
+    if "inputs.suite != 'manager-internal-artifact-lineage'" not in workflow:
+        raise RegistrationError("manager-internal-artifact-lineage must not also dispatch on self-hosted")
     for relative in (
+        "engines/model3d-workflow/scripts/converters/_3dtile",
+        "engines/model3d-workflow/scripts/converters/assimp",
+        "engines/model3d-workflow/scripts/converters/IfcConvert",
+        "engines/model3d-workflow/scripts/converters/docker-converter.sh",
         "business/scripts/online-manager-minio-fixture.sh",
         "scripts/test/manager-internal-artifact-lineage-online.py",
         "console/frontend/playwright.online.config.js",
@@ -320,17 +326,10 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
     ):
         if not (repository / relative).is_file():
             raise RegistrationError(f"manager-internal-artifact-lineage requires {relative}")
-    start_script_path = repository / "scripts/dev/start.sh"
-    if not start_script_path.is_file():
-        raise RegistrationError(
-            "manager-internal-artifact-lineage requires scripts/dev/start.sh"
-        )
-    start_script = start_script_path.read_text(encoding="utf-8")
-    for fragment in ("-all)", "START_POINTCLOUD_WORKFLOW=true", "START_DOCUMENT_WORKFLOW=true"):
-        if fragment not in start_script:
-            raise RegistrationError(
-                f"manager-internal-artifact-lineage full start contract is missing {fragment}"
-            )
+    browser_config = (repository / "console/frontend/playwright.online.config.js").read_text(encoding="utf-8")
+    for flag in ("--use-gl=angle", "--use-angle=swiftshader-webgl", "--enable-unsafe-swiftshader"):
+        if flag not in browser_config:
+            raise RegistrationError("manager-internal-artifact-lineage Hosted browser requires software WebGL")
     fixture = (repository / "business/scripts/online-manager-minio-fixture.sh").read_text(encoding="utf-8")
     for fragment in (
         "ADDP_ONLINE_HOST",
@@ -339,6 +338,9 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
         "pdal_las12_format0.las",
         "addp_online_preview_fixture.pptx",
         "MC_HOST_fixture",
+        "dae/model.dae",
+        "3ds/model.3ds",
+        "texture.png",
     ):
         if fragment not in fixture:
             raise RegistrationError(
@@ -357,6 +359,10 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
         "/api/v1/manager/quick-view/actions",
         "/api/v1/manager/tasks/{PPTX_TASK_TYPE}/",
         '"cache_reused": True',
+        "model_3d_glb_generation",
+        "/api/v1/manager/model_3d_glb/",
+        "validate_model_glb",
+        "cleanup_model_glb",
     ):
         if fragment not in owner:
             raise RegistrationError(
@@ -374,6 +380,10 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
         ".pptx-preview .pdf-preview",
         "pptx_page_after_engine_refresh",
         "pptx_generation_requests",
+        ".model-preview",
+        "model_loaded",
+        "content_loaded",
+        "addp.manager-internal-artifact-lineage-browser/v2",
     ):
         if fragment not in browser:
             raise RegistrationError(

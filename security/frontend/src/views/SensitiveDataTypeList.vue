@@ -79,28 +79,18 @@
         <template v-if="!editing">
           <el-divider content-position="left">{{ t('security.sensitiveType.initialProtection') }}</el-divider>
           <el-alert :title="t('security.sensitiveType.initialProtectionHelp')" type="info" :closable="false" show-icon />
-          <el-form-item class="initial-protection-field" :label="t('security.fields.effect')" prop="default_effect" required>
-            <el-radio-group v-model="form.default_effect">
+          <el-form-item class="initial-protection-field" :label="t('security.fields.effect')" prop="default_protection.effect" required>
+            <el-radio-group v-model="form.default_protection.effect">
               <el-radio-button value="mask">{{ effectLabel('mask') }}</el-radio-button>
               <el-radio-button value="suppress">{{ effectLabel('suppress') }}</el-radio-button>
               <el-radio-button value="deny">{{ effectLabel('deny') }}</el-radio-button>
             </el-radio-group>
-            <div class="field-help">{{ t(`security.baseline.effectImpact.${form.default_effect}`) }}</div>
+            <div class="field-help">{{ t(`security.baseline.effectImpact.${form.default_protection.effect}`) }}</div>
           </el-form-item>
-          <template v-if="form.default_effect === 'mask'">
-            <el-form-item :label="t('security.fields.algorithm')">
-              <el-input :model-value="t('security.options.algorithms.keepPrefixSuffix')" disabled />
-            </el-form-item>
-            <div class="form-grid">
-              <el-form-item :label="t('security.fields.keep_prefix')" prop="default_keep_prefix" required>
-                <el-input-number v-model="form.default_keep_prefix" :min="0" controls-position="right" />
-              </el-form-item>
-              <el-form-item :label="t('security.fields.keep_suffix')" prop="default_keep_suffix" required>
-                <el-input-number v-model="form.default_keep_suffix" :min="0" controls-position="right" />
-              </el-form-item>
-            </div>
-            <el-form-item :label="t('security.fields.invalid_value_effect')" prop="default_invalid_value_effect" required>
-              <el-select v-model="form.default_invalid_value_effect" class="wide">
+          <template v-if="form.default_protection.effect === 'mask'">
+            <ProtectionAlgorithmEditor ref="algorithmEditor" :configuration="form.default_protection" path="default_protection" defaults />
+            <el-form-item :label="t('security.fields.invalid_value_effect')" prop="default_protection.invalid_value_effect" required>
+              <el-select v-model="form.default_protection.invalid_value_effect" class="wide">
                 <el-option value="suppress" :label="effectLabel('suppress')" />
                 <el-option value="deny" :label="effectLabel('deny')" />
               </el-select>
@@ -146,9 +136,11 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { classificationAPI, detectorAPI, gradeAPI, protectionBaselineAPI, sensitiveDataTypeAPI } from '../api/security'
 import { useAuthStore } from '../store/auth'
 import { confirmDangerousAction } from '../utils/confirmation.mjs'
+import ProtectionAlgorithmEditor from '../components/ProtectionAlgorithmEditor.vue'
+import { initialProtectionConfiguration } from '../utils/protectionAlgorithm.mjs'
 import DetectorBindings from './DetectorBindings.vue'
 import ProtectionBaselineBindings from './ProtectionBaselineBindings.vue'
-import { createNonNegativeIntegerRule, createRequiredRule, protectionEffectI18nKey } from '../utils/foundationForm.mjs'
+import { createRequiredRule, protectionEffectI18nKey } from '../utils/foundationForm.mjs'
 
 const { t } = useI18n()
 const auth = useAuthStore()
@@ -161,6 +153,7 @@ const loading = ref(false)
 const saving = ref(false)
 const dialog = ref(false)
 const formRef = ref(null)
+const algorithmEditor = ref(null)
 const detectorDrawer = ref(false)
 const detectorDrawerRevision = ref(0)
 const baselineDrawer = ref(false)
@@ -170,7 +163,7 @@ const selectedType = ref(null)
 const selectedBaselineType = ref(null)
 const form = reactive({
   code: '', name: '', description: '', security_classification_id: null, default_security_grade_id: null, version: 0,
-  default_effect: 'mask', default_keep_prefix: 3, default_keep_suffix: 4, default_invalid_value_effect: 'suppress'
+  default_protection: { ...initialProtectionConfiguration(), effect: 'mask', invalid_value_effect: 'suppress' }
 })
 const orderedGrades = computed(() => [...grades.value].sort((left, right) => Number(left.risk_order) - Number(right.risk_order)))
 const selectableGrades = computed(() => {
@@ -188,11 +181,10 @@ const formRules = computed(() => ({
   security_classification_id: [createRequiredRule(t('security.common.requiredField', { name: t('security.fields.security_classification_id') }))],
   default_security_grade_id: [createRequiredRule(t('security.common.requiredField', { name: t('security.fields.default_security_grade_id') }))],
   ...(!editing.value ? {
-    default_effect: [createRequiredRule(t('security.common.requiredField', { name: t('security.fields.effect') }))],
-    ...(form.default_effect === 'mask' ? {
-      default_keep_prefix: [createNonNegativeIntegerRule(t('security.common.requiredField', { name: t('security.fields.keep_prefix') }))],
-      default_keep_suffix: [createNonNegativeIntegerRule(t('security.common.requiredField', { name: t('security.fields.keep_suffix') }))],
-      default_invalid_value_effect: [createRequiredRule(t('security.common.requiredField', { name: t('security.fields.invalid_value_effect') }))]
+    'default_protection.effect': [createRequiredRule(t('security.common.requiredField', { name: t('security.fields.effect') }))],
+    ...(form.default_protection.effect === 'mask' ? {
+
+      'default_protection.invalid_value_effect': [createRequiredRule(t('security.common.requiredField', { name: t('security.fields.invalid_value_effect') }))]
     } : {})
   } : {})
 }))
@@ -260,10 +252,9 @@ function reset(row = {}) {
   form.security_classification_id = row.security_classification_id ? Number(row.security_classification_id) : (classifications.value[0] ? Number(classifications.value[0].id) : null)
   form.default_security_grade_id = row.default_security_grade_id ? Number(row.default_security_grade_id) : (orderedGrades.value[0] ? Number(orderedGrades.value[0].id) : null)
   form.version = Number(row.version || 0)
-  form.default_effect = 'mask'
-  form.default_keep_prefix = 3
-  form.default_keep_suffix = 4
-  form.default_invalid_value_effect = 'suppress'
+  form.default_protection.effect = 'mask'
+  Object.assign(form.default_protection, initialProtectionConfiguration())
+  form.default_protection.invalid_value_effect = 'suppress'
 }
 function openCreate() {
   editing.value = null
@@ -288,14 +279,14 @@ function openBaselines(row) {
   baselineDrawer.value = true
 }
 
-watch(() => form.default_effect, effect => {
-  if (effect === 'deny') form.default_invalid_value_effect = 'deny'
-  if (effect === 'suppress') form.default_invalid_value_effect = 'suppress'
+watch(() => form.default_protection.effect, effect => {
+  if (effect === 'deny') form.default_protection.invalid_value_effect = 'deny'
+  if (effect === 'suppress') form.default_protection.invalid_value_effect = 'suppress'
 })
 
 async function save() {
   const valid = await formRef.value?.validate().catch(() => false)
-  if (valid === false) return
+  if (valid === false || (!editing.value && form.default_protection.effect === 'mask' && !algorithmEditor.value?.validate())) return
   saving.value = true
   try {
     const payload = {
@@ -307,13 +298,13 @@ async function save() {
       payload.version = form.version
       await sensitiveDataTypeAPI.update(editing.value.id, payload)
     } else {
-      const mask = form.default_effect === 'mask'
+      const mask = form.default_protection.effect === 'mask'
       payload.default_protection = {
-        effect: form.default_effect,
-        algorithm: mask ? 'addp.mask.keep_prefix_suffix/v2' : '',
-        keep_prefix: mask ? Number(form.default_keep_prefix) : 0,
-        keep_suffix: mask ? Number(form.default_keep_suffix) : 0,
-        invalid_value_effect: mask ? form.default_invalid_value_effect : form.default_effect
+        effect: form.default_protection.effect,
+        algorithm: mask ? form.default_protection.algorithm : '',
+        parameters: mask ? form.default_protection.parameters : {},
+        allowed_algorithms: mask ? form.default_protection.allowed_algorithms : [],
+        invalid_value_effect: mask ? form.default_protection.invalid_value_effect : form.default_protection.effect
       }
       await sensitiveDataTypeAPI.create(payload)
     }

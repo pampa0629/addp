@@ -81,6 +81,18 @@ func TestIntegrationPostgresBoundedExportMasksBeforeTargetWrite(t *testing.T) {
 	if metrics.RecordsRead != 1 || metrics.RecordsWritten != 1 {
 		t.Fatalf("metrics = %#v", metrics)
 	}
+	if metrics.FieldLineage == nil || metrics.FieldLineage.Source.Validate() != nil || metrics.FieldLineage.Target.Validate() != nil || len(metrics.FieldLineage.Mappings) != 2 {
+		t.Fatalf("native export field evidence = %#v", metrics.FieldLineage)
+	}
+	for _, mapping := range metrics.FieldLineage.Mappings {
+		want := "direct"
+		if mapping.SourceField == "phone" {
+			want = "derived"
+		}
+		if mapping.SourceField != mapping.TargetField || mapping.Transformation != want {
+			t.Fatalf("masked mapping = %#v, want %s", mapping, want)
+		}
+	}
 	var phone string
 	if err := db.QueryRowContext(ctx, fmt.Sprintf(`SELECT phone FROM "%s"."%s" WHERE id = 1`, schema, targetTable)).Scan(&phone); err != nil {
 		t.Fatal(err)
@@ -118,6 +130,9 @@ func TestIntegrationPostgresBoundedExportMasksBeforeTargetWrite(t *testing.T) {
 	}
 	if metrics.RecordsRead != 1 || metrics.RecordsWritten != 1 {
 		t.Fatalf("query metrics = %#v", metrics)
+	}
+	if metrics.FieldLineage != nil {
+		t.Fatal("query source declared complete field lineage")
 	}
 	if err := db.QueryRowContext(ctx, fmt.Sprintf(`SELECT contact_phone FROM "%s"."%s" WHERE id = 1`, schema, queryTargetTable)).Scan(&phone); err != nil {
 		t.Fatal(err)

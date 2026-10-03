@@ -60,12 +60,17 @@ func SetupRouter(systemURL string, lifecycle *modulelifecycle.Controller, entrie
 	api.GET("/reference-candidates", updatePermission, handler.ListReferenceCandidates)
 	api.GET("/entries/:id", readPermission, handler.GetEntry)
 	sharingPermission := commonAuth.MustNewPermissionGuard(catalogauthorization.PermissionCatalogSharingDecisionCreate)
+	api.GET("/entries/:id/sharing_recipient_candidates", readPermission, sharingPermission, handler.ListSharingRecipientCandidates)
 	api.POST("/entries/:id/sharing_decisions", readPermission, sharingPermission, handler.CreateSharingDecision)
 	api.GET("/entries/:id/sharing_decisions/:decision_id", readPermission, sharingPermission, handler.GetSharingDecision)
 	api.GET("/entries/:id/sharing_decision_candidates", readPermission,
 		commonAuth.MustNewPermissionGuard("system.engine_access_fulfillment.create"), handler.ListSharingDecisionCandidates)
 	api.POST("/entries/:id/sharing_fulfillments", readPermission,
 		commonAuth.MustNewPermissionGuard("system.engine_access_fulfillment.create"), handler.PrepareSharingFulfillment)
+	api.GET("/entries/:id/sharing_fulfillments", readPermission,
+		commonAuth.MustNewPermissionGuard("system.engine_access_fulfillment.create"), handler.ListSharingFulfillments)
+	api.GET("/entries/:id/sharing_fulfillments/:request_id", readPermission,
+		commonAuth.MustNewPermissionGuard("system.engine_access_fulfillment.create"), handler.GetSharingFulfillment)
 	api.POST("/runtime/sharing-fulfillments/:request_id/basis", commonAuth.MustNewServiceClientGuard("addp-system"),
 		commonAuth.MustNewPermissionGuard("catalog.sharing_fulfillment.read"), handler.ReadSharingFulfillmentBasis)
 	api.GET("/entries/:id/data-dictionary", readPermission, handler.GetEntryDataDictionary)

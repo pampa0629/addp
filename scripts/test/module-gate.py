@@ -105,6 +105,16 @@ def hosted_t2_scripts(repository: Path) -> list[str]:
     ]
 
 
+def owned_t2_scripts(repository: Path) -> list[str]:
+    return [
+        path
+        for path in repository_files(repository, "scripts/test/*-gate.sh")
+        if T2_OWNED_SERVICES_PATTERN.search(
+            (repository / path).read_text(encoding="utf-8")
+        )
+    ]
+
+
 def required_t2_environment(script: str) -> tuple[tuple[str, ...], ...]:
     declarations = T2_REQUIRED_ENVIRONMENT_DECLARATION_PATTERN.findall(script)
     if len(declarations) > 1:
@@ -145,7 +155,7 @@ def discover_modules(repository: Path) -> set[str]:
         )
         if not path.startswith("scripts/test/")
     }
-    for path in hosted_t2_scripts(repository):
+    for path in sorted(set(hosted_t2_scripts(repository)) | set(owned_t2_scripts(repository))):
         modules.add(Path(path).name.split("-", 1)[0])
     return modules
 
@@ -210,10 +220,7 @@ def plan_module(repository: Path, module: str, include_platform: bool = True) ->
         if make_target(makefile, target) is not None:
             steps.append(Step(f"{module} Python T1 ({runtime})", ("make", target), repository))
 
-    integration_scripts = sorted(set(hosted_t2_scripts(repository)) | {
-        path for path in repository_files(repository, "scripts/test/*-gate.sh")
-        if T2_OWNED_SERVICES_PATTERN.search((repository / path).read_text(encoding="utf-8"))
-    })
+    integration_scripts = sorted(set(hosted_t2_scripts(repository)) | set(owned_t2_scripts(repository)))
     registered_targets: set[str] = set()
     for path in integration_scripts:
         name = Path(path).name.removesuffix("-gate.sh")

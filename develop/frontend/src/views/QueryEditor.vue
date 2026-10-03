@@ -797,7 +797,7 @@ import { useAuthStore } from '../store/auth'
 import {
   formatterLanguageForQuery,
   formatGeneratedQueryForEditor,
-  formatMQLQuery,
+  formatJSONQuery,
   buildQueryExecutionContract,
   isTerminalExecutionStatus,
   monacoLanguageForQuery,
@@ -1692,8 +1692,8 @@ const submitQuery = async (parameters = {}) => {
 const formatQuery = () => {
   if (!formatterLanguage.value || !queryContent.value) return
   try {
-    queryContent.value = formatterLanguage.value === 'mql'
-      ? formatMQLQuery(queryContent.value)
+    queryContent.value = ['mql', 'json'].includes(formatterLanguage.value)
+      ? formatJSONQuery(queryContent.value)
       : format(queryContent.value, {
           language: formatterLanguage.value,
           indent: '  ',
@@ -1771,7 +1771,7 @@ const fieldInsertionText = fieldName => {
   const text = String(fieldName || '').trim()
   if (!text) return ''
   const language = String(currentQueryLanguage.value || '').toLowerCase()
-  if (language === 'mql') return text
+  if (language === 'mql' || language === 'es_dsl') return text
   return nativeCatalogSegmentText(text, selectedCapability.value, language)
 }
 

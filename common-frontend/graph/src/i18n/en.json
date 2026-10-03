@@ -43,7 +43,8 @@
       "object": "Object",
       "topic": "Topic",
       "collection": "Collection",
-      "publishedService": "Data service"
+      "publishedService": "Data service",
+      "field": "Field"
     },
     "relations": {
       "derive": "Derives",
@@ -60,6 +61,16 @@
       "upstream": "Up +{count}",
       "downstream": "Down +{count}"
     },
-    "viewExecution": "View source execution"
+    "viewExecution": "View source execution",
+    "field": "Field",
+    "schemaSnapshot": "Schema snapshot",
+    "transformation": "Transformation",
+    "fieldUnavailable": "Lineage evidence is unavailable for this field.",
+    "fieldNoDependencies": "No related fields appear in the recorded lineage.",
+    "transformations": {
+      "direct": "Direct mapping",
+      "derived": "Derived transformation",
+      "generated": "Generated value"
+    }
   }
 }

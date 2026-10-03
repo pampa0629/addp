@@ -134,8 +134,6 @@ const treeRef = ref(null)
 // 控制搜索显示：资源树搜索只用于数据探查页内的资源定位
 const showSearch = ref(true)
 
-const itemTypes = new Set(['table', 'view', 'collection', 'graph', 'topic', 'file', 'object'])
-const nodeTypes = new Set(['schema', 'database', 'bucket', 'prefix', 'directory', 'root', 'dir', 'server', 'service'])
 const hasLocatorIdentity = (loc) => !!(loc?.itemId || loc?.nodeId)
 
 const nodeContextFromLocator = (locator, baseNode = {}) => {
@@ -205,8 +203,7 @@ const selectedEngineStatusLabel = computed(() => (
 const panelType = computed(() => {
   const node = store.selectedNode
   if (!node) return 'item'
-  if (nodeTypes.has(node.type)) return 'node'
-  return 'item'
+  return parseLocator(store.selectedLocator).nodeId ? 'node' : 'item'
 })
 
 const currentNodeChildren = computed(() => {
@@ -230,17 +227,17 @@ const replaceDataExplorerRoute = async (locator, tab = activeTab.value) => {
 // 事件处理：节点选择（从 ExplorerTree 组件触发）
 const handleNodeSelect = async ({ node, locator }, options = {}) => {
   try {
+    const loc = parseLocator(locator)
     if (options.updateRoute !== false) {
       activeTab.value = 'preview'
       await replaceDataExplorerRoute(locator, activeTab.value)
     }
 
-    if (nodeTypes.has(node.type) && node.hasChildren && !node.loaded) {
+    if (loc.nodeId && node.hasChildren && !node.loaded) {
       await store.loadNodeChildren(locator)
     }
 
-    if (itemTypes.has(node.type)) {
-      const loc = parseLocator(locator)
+    if (loc.itemId) {
       if (!store.isEngineAvailable(loc.engineId)) {
         store.selectNodeContext(node, locator)
         store.clearPreview()

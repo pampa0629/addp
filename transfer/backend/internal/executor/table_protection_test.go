@@ -39,7 +39,7 @@ func TestProtectedTableBatchReaderProtectsRowsAndSchemaBeforeConsumption(t *test
 		return nil
 	}
 
-	reader, err := protectTableBatchReader(inner, protect)
+	reader, err := protectTableBatchReader(inner, protect, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,7 +69,7 @@ func TestProtectedTableBatchReaderLeavesSpatialMetadataWhenSchemaIsDeferred(t *t
 		spatial: datatype.NewSingleGeometrySpatialInfo("geom", "Point", 4326, 2),
 		batch:   &engineplugin.BatchData{Rows: []map[string]interface{}{{"geom": "POINT (1 2)"}}},
 	}
-	reader, err := protectTableBatchReader(inner, func(*engineplugin.QueryResult) error { return nil })
+	reader, err := protectTableBatchReader(inner, func(*engineplugin.QueryResult) error { return nil }, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

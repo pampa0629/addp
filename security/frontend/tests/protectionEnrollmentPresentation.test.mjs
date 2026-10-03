@@ -542,7 +542,7 @@ describe('protected-resource presentation model', () => {
 
     expect(presentation.baselineForAssessment(assessment)?.id).toBe(15)
     expect(presentation.policyForAssessment(assessment)?.id).toBe('policy-1')
-    expect(presentation.stricterPolicyEffects(assessment)).toEqual(['suppress', 'deny'])
+    expect(presentation.stricterPolicyEffects(assessment)).toEqual(['mask', 'suppress', 'deny'])
     expect(presentation.activeGradesForType(11).map(item => item.id)).toEqual([13])
     expect(presentation.canConfigurePolicy(assessment)).toBe(true)
 

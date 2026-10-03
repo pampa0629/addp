@@ -18,6 +18,7 @@
 export const ResourceType = {
   TABLE: 'table',
   COLLECTION: 'collection',
+  INDEX: 'index',
   GRAPH: 'graph',
   OBJECT: 'object',
   FILE: 'file',
@@ -348,6 +349,9 @@ export function getParentLocator(locator) {
       break
     case ResourceType.COLLECTION:
       parentType = ResourceType.DATABASE
+      break
+    case ResourceType.INDEX:
+      parentType = ResourceType.SERVICE
       break
     case ResourceType.OBJECT:
     case ResourceType.FILE:

@@ -3,11 +3,13 @@ package api
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
 	commonExecution "github.com/addp/common/execution"
 	commonAuth "github.com/addp/common/middleware/auth"
+	commoni18n "github.com/addp/common/middleware/i18n"
 	"github.com/addp/common/resourcetree"
 	metaErrors "github.com/addp/meta/internal/errors"
 	"github.com/addp/meta/internal/models"
@@ -25,6 +27,7 @@ var (
 // GetResourceTree 获取标准资源树
 // @Summary 获取标准资源树 | Get resource tree
 // @Description 获取指定引擎的标准资源树视图，返回 common/resourcetree.TreeNode | Get standard resource tree for an engine
+// @Description 委托 resource.children.list 仅允许 expand_depth=1 且没有其他查询参数 | Delegated resource.children.list requires expand_depth=1 and no other query parameters
 // @Tags Meta Resource Tree
 // @Produce json
 // @Param engine_id path int true "存储引擎ID | Engine ID"
@@ -34,11 +37,18 @@ var (
 // @Failure 403 {object} map[string]interface{} "无权访问 | Access denied"
 // @Failure 404 {object} map[string]interface{} "资源不存在 | Resource not found"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
-// @x-addp-auth-mode "permission"
+// @x-addp-auth-mode "delegated_tool"
 // @x-addp-required-permissions ["meta.catalog.read"]
 // @Router /resource-tree/{engine_id} [get]
 // @Security BearerAuth
 func (h *Handler) GetResourceTree(c *gin.Context) {
+	if a, ok := commonAuth.AuthContextFromGin(c); ok && a.Token.Type == "delegated_access_token" {
+		q, err := url.ParseQuery(c.Request.URL.RawQuery)
+		if err != nil || len(q) != 1 || len(q["expand_depth"]) != 1 || q.Get("expand_depth") != "1" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, commoni18n.MsgInvalidParams)})
+			return
+		}
+	}
 	engineID, ok := parseUintPath(c, "engine_id")
 	if !ok {
 		return

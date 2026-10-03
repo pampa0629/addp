@@ -2,8 +2,14 @@ package scanruntime
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"github.com/addp/common/datatype"
+	es "github.com/addp/common/engine/plugins/elasticsearch"
 	"io"
 	"log/slog"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/addp/common/engine/plugin"
@@ -148,3 +154,58 @@ func directLeafRuntimeTestEntry(engineID uint, name, term string) plugin.EngineC
 
 var _ plugin.EngineCatalogModelProvider = (*directLeafRuntimeTestPlugin)(nil)
 var _ plugin.EngineCatalogProvider = (*directLeafRuntimeTestPlugin)(nil)
+
+func TestIntegrationElasticsearchMappingScan(t *testing.T) {
+	if os.Getenv("ADDP_ELASTICSEARCH_INTEGRATION") != "1" {
+		t.Skip("owned T2 required")
+	}
+	db := metatest.OpenMetadataDB(t)
+	repo := metaRepo.NewScanRepository(db)
+	p := &es.ElasticsearchPlugin{}
+	resource := &commonModels.Engine{ID: 91, Name: "ES T2", EngineType: p.Type(), ConnectionInfo: commonModels.ConnectionInfo{"endpoint": os.Getenv("ELASTICSEARCH_ENDPOINT"), "user": os.Getenv("ELASTICSEARCH_READER_USER"), "password": os.Getenv("ELASTICSEARCH_READER_PASSWORD")}}
+	runtime := NewDirectLeafRuntime(slog.New(slog.NewTextHandler(io.Discard, nil)), repo)
+	count, err := runtime.ScanRoot(context.Background(), p, resource, 1, models.ScannedDepthDeep, true)
+	if err != nil || count != 2 {
+		t.Fatal(count, err)
+	}
+	item, exists, err := repo.FindItemByFullName(1, 91, "addp_empty.v1")
+	if err != nil || !exists || item.ItemType != "index" {
+		t.Fatal(item, exists, err)
+	}
+	encoded, _ := json.Marshal(item.Attributes)
+	if !strings.Contains(string(encoded), `"schema_type":"mapping"`) || !strings.Contains(string(encoded), `"is_sampled":false`) || !strings.Contains(string(encoded), `"fields"`) {
+		t.Fatal(string(encoded))
+	}
+}
+
+type directLeafFactsTestPlugin struct {
+	directLeafRuntimeTestPlugin
+	fail bool
+}
+
+func (p *directLeafFactsTestPlugin) DescribeEngineCatalogFacts(context.Context, plugin.ConnectionInfo, plugin.EngineCatalogPath, plugin.EngineCatalogFactsOptions) (*plugin.EngineCatalogFacts, error) {
+	if p.fail {
+		return nil, fmt.Errorf("facts unavailable")
+	}
+	return &plugin.EngineCatalogFacts{Table: &datatype.TableInfo{Fields: []datatype.FieldInfo{{Name: "id", Type: datatype.FieldTypeBigInt}}, Native: map[string]interface{}{"schema_type": "mapping", "is_sampled": false}}}, nil
+}
+func TestDirectLeafFactsFailurePreservesPreviouslyScannedItems(t *testing.T) {
+	db := metatest.OpenMetadataDB(t)
+	repo := metaRepo.NewScanRepository(db)
+	p := &directLeafFactsTestPlugin{directLeafRuntimeTestPlugin: directLeafRuntimeTestPlugin{entries: []plugin.EngineCatalogEntry{directLeafRuntimeTestEntry(41, "orders", "topic"), directLeafRuntimeTestEntry(41, "events", "topic")}}}
+	runtime := NewDirectLeafRuntime(slog.New(slog.NewTextHandler(io.Discard, nil)), repo)
+	resource := &commonModels.Engine{ID: 41, Name: "facts test", EngineType: p.Type()}
+	if _, err := runtime.ScanRoot(context.Background(), p, resource, 1, models.ScannedDepthDeep, true); err != nil {
+		t.Fatal(err)
+	}
+	p.entries = p.entries[:1]
+	p.fail = true
+	if _, err := runtime.ScanRoot(context.Background(), p, resource, 1, models.ScannedDepthDeep, true); err == nil {
+		t.Fatal("facts failure accepted")
+	}
+	for _, name := range []string{"orders", "events"} {
+		if _, exists, err := repo.FindItemByFullName(1, 41, name); err != nil || !exists {
+			t.Fatal("existing item deleted during failed scan", name, err)
+		}
+	}
+}

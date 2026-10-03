@@ -86,13 +86,15 @@ type DecimalFieldLimits struct {
 | --- | --- | --- |
 | `schema_version` | 能力声明结构版本，必须为 `engine.capabilities/v1`。 | 必须保留。 |
 | `engine_type` | 插件类型，如 `postgresql`、`minio`、`neo4j`、`inference_runtime`。 | 必须保留。 |
-| `engine_family` | 主引擎族，如 `tabular`、`dynamic_schema`、`graph`、`object`、`file`、`event_stream`、`workflow`、`script`、`inference`。 | 必须保留，但只作为粗分类。 |
+| `engine_family` | 主引擎族，如 `tabular`、`dynamic_schema`、`key_value`、`graph`、`object`、`file`、`event_stream`、`workflow`、`script`、`inference`。 | 必须保留，但只作为粗分类。 |
 | `storage` | 存储、目录、元数据、内容访问能力。 | 具备存储能力的引擎必须声明。 |
 | `compute` | 查询、工作流、脚本运行能力。 | 具备计算能力的引擎必须声明。 |
 | `limits` | Provider 执行面的结构化边界；当前只定义 `table_write.decimal`。 | 可选，有真实调用方时声明。 |
 | `extensions` | 引擎特有扩展。 | 可选，不得替代核心字段。 |
 
 `engine_family` 只表达粗粒度引擎族，不能替代 `storage.catalog_model`、provider 组合或模块自身策略。尤其对 Meta 而言，是否走 namespace/leaf catalog、是否需要内容读取、是否可做动态 schema 采样，必须由 `EngineCatalogModelSpec` 与已实现 provider 一起决定；不得把 `engine_family` 当作扫描策略事实源。
+
+Redis 连接首版声明 `engine_family=key_value` 和空的 `storage`，不声明 Catalog Model、Catalog、Facts、Store 或 Compute Provider。连接可登记不代表已有 key 级资源模型；Meta、Manager、Develop 必须按真实能力决定入口。
 
 ### 2.1 Limits
 
@@ -705,3 +707,7 @@ Kafka 示例（插件实现完成后才允许落库声明）：
   }
 }
 ```
+
+## Elasticsearch 首版能力边界
+
+独立 `engine_type=elasticsearch`，粗分类为 dynamic_schema，但 Catalog Model 必须是 `service -> index`，不得套用 MongoDB database/collection 模型。首版只声明经真实验证的目录、Mapping 字段 Facts、精确计数（显式请求）、RecordReadSession 与 `es_dsl` 查询；不声明写入、CDC、查询结果搬运、空间服务或动态采样。Mapping native 的 `schema_type=mapping`、`is_sampled=false` 表达字段来源，不证明 `_source` 结构完整。

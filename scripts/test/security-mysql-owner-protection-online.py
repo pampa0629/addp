@@ -263,8 +263,8 @@ def default_protection_probe_payload(
         "default_protection": {
             "effect": "mask",
             "algorithm": algorithm,
-            "keep_prefix": 2,
-            "keep_suffix": 2,
+            "parameters": {"prefix_runes": 2, "suffix_runes": 2, "mask_rune": "*"},
+            "allowed_algorithms": [STRUCTURED_MASK_ALGORITHM],
             "invalid_value_effect": "suppress",
         },
     }
@@ -320,8 +320,8 @@ def exercise_default_protection_transaction(
             str(baseline.get("security_grade_id")) != str(grade_id)
             or baseline.get("effect") != "mask"
             or baseline.get("algorithm") != STRUCTURED_MASK_ALGORITHM
-            or baseline.get("keep_prefix") != 2
-            or baseline.get("keep_suffix") != 2
+            or baseline.get("parameters", {}).get("prefix_runes") != 2
+            or baseline.get("parameters", {}).get("suffix_runes") != 2
             or baseline.get("invalid_value_effect") != "suppress"
             or baseline.get("enabled") is not True
         ):

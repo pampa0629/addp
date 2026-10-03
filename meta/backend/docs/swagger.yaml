@@ -297,6 +297,8 @@ definitions:
         type: string
       target:
         $ref: '#/definitions/github_com_addp_meta_internal_models.LineageNode'
+      transformation:
+        type: string
     type: object
   github_com_addp_meta_internal_models.LineageErrorResponse:
     properties:
@@ -313,6 +315,8 @@ definitions:
         items:
           $ref: '#/definitions/github_com_addp_meta_internal_models.LineageEdge'
         type: array
+      field_lineage_status:
+        type: string
       nodes:
         items:
           $ref: '#/definitions/github_com_addp_meta_internal_models.LineageNode'
@@ -327,6 +331,8 @@ definitions:
       engine_id:
         type: integer
       engine_name:
+        type: string
+      field_name:
         type: string
       full_name:
         type: string
@@ -345,6 +351,8 @@ definitions:
       name:
         type: string
       published_revision:
+        type: string
+      schema_snapshot_hash:
         type: string
       service_id:
         type: integer
@@ -1490,16 +1498,26 @@ paths:
       - meta.lineage.create
   /lineage/graph:
     get:
-      description: 按数据项或已发布服务版本查询当前血缘关系 | Query current lineage for a data item or
-        published service revision
+      description: 按数据项、精确字段引用或已发布服务版本查询血缘关系 | Query lineage for a data item, exact
+        field reference or published service revision
       parameters:
-      - description: '主体类型：data_item 或 published_service | Subject kind: data_item
-          or published_service'
+      - description: '主体类型：data_item、field_ref 或 published_service | Subject kind:
+          data_item, field_ref or published_service'
         in: query
         name: subject_kind
         required: true
         type: string
-      - description: 数据项 ID，subject_kind=data_item 时必填 | Item ID, required for data_item
+      - description: 精确字段名，field_ref 时必填 | Exact field name, required for field_ref
+        in: query
+        name: field_name
+        type: string
+      - description: 字段结构快照 hash；省略时使用当前 Meta 结构 | Field schema snapshot hash; defaults
+          to current Meta schema
+        in: query
+        name: schema_snapshot_hash
+        type: string
+      - description: 数据项 ID，data_item 或 field_ref 时必填 | Item ID, required for data_item
+          or field_ref
         in: query
         name: item_id
         type: integer
@@ -1791,8 +1809,9 @@ paths:
       - meta.catalog.read
   /resource-tree/{engine_id}:
     get:
-      description: 获取指定引擎的标准资源树视图，返回 common/resourcetree.TreeNode | Get standard resource
-        tree for an engine
+      description: |-
+        获取指定引擎的标准资源树视图，返回 common/resourcetree.TreeNode | Get standard resource tree for an engine
+        委托 resource.children.list 仅允许 expand_depth=1 且没有其他查询参数 | Delegated resource.children.list requires expand_depth=1 and no other query parameters
       parameters:
       - description: 存储引擎ID | Engine ID
         in: path
@@ -1835,7 +1854,7 @@ paths:
       summary: 获取标准资源树 | Get resource tree
       tags:
       - Meta Resource Tree
-      x-addp-auth-mode: permission
+      x-addp-auth-mode: delegated_tool
       x-addp-required-permissions:
       - meta.catalog.read
   /resource-tree/{engine_id}/ancestors:

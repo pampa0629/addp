@@ -777,6 +777,7 @@
           "entity_relation": "实体关系",
           "entry": "目录条目",
           "sharing_decision": "业务共享决定",
+          "sharing_fulfillment": "持久办理依据",
           "event": "审计事件",
           "execution": "执行记录",
           "execution_authorization": "执行授权",
@@ -1105,6 +1106,7 @@
       },
       "capabilities": {
         "tabular": "表格数据",
+        "keyValue": "键值存储",
         "objectStorage": "对象存储",
         "file": "文件系统",
         "document": "文档数据",
@@ -1495,6 +1497,7 @@
           "tabular": "表格数据",
           "object": "对象存储",
           "file": "文件系统",
+          "keyValue": "键值存储",
           "dynamicSchema": "动态 Schema 数据",
           "document": "文档数据",
           "graph": "图数据库",
@@ -2013,6 +2016,10 @@
       "catalog_runtime": {
         "name": "企业目录同步运行时",
         "description": "供 Catalog 按租户读取 Meta 变化和 Standard 语义摘要。"
+      },
+      "system_runtime": {
+        "name": "System 可信办理反查",
+        "description": "仅反查当前租户中精确持久办理请求的 Catalog 依据，不授予数据访问。"
       },
       "auditor": {
         "name": "租户审计员",

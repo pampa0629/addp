@@ -327,7 +327,7 @@
           style="margin-bottom: 12px"
         />
         <div v-loading="lineageLoading" class="lineage-panel">
-          <LineageViewer :graph="lineageGraph" v-model:depth="lineageDepth" @expand="expandLineage" @view-execution="openMonitorExecution" />
+          <LineageViewer :graph="lineageGraph" :fields="lineageFieldNames" :field="lineageField" @update:field="changeLineageField" v-model:depth="lineageDepth" @expand="expandLineage" @view-execution="openMonitorExecution" />
         </div>
       </div>
     </div>
@@ -441,6 +441,11 @@ const lineageLoading = ref(false)
 const lineageError = ref('')
 const lineageGraph = ref(normalizeLineageGraph())
 const lineageDepth = ref(2)
+const lineageField = ref('')
+const lineageFieldNames = computed(() => {
+  const fields = itemAttributesMap.value?.type_info?.table?.fields
+  return Array.isArray(fields) ? fields.map(field => field.name).filter(name => typeof name === 'string' && name.length > 0) : []
+})
 const lineageExpansion = { upstream: [], downstream: [] }
 // 模块 client 已将 /api/v1 作为 baseURL，这里只提供模块路径前缀。
 const lineageApi = createLineageApi({ request: client, baseUrl: '/meta' })
@@ -463,7 +468,8 @@ const loadLineage = async () => {
   lineageLoading.value = true
   try {
     const response = await lineageApi.getGraph({
-      subject_kind: 'data_item',
+      subject_kind: lineageField.value ? 'field_ref' : 'data_item',
+      field_name: lineageField.value || undefined,
       item_id: itemId,
       direction: 'both',
       depth: lineageDepth.value,
@@ -480,6 +486,7 @@ const loadLineage = async () => {
 }
 
 const resetLineageExpansion = () => { lineageExpansion.upstream = []; lineageExpansion.downstream = [] }
+const changeLineageField = field => { lineageField.value = field; resetLineageExpansion(); loadLineage() }
 const expandLineage = async ({ item_id, direction }) => {
   if (lineageLoading.value || !['upstream', 'downstream'].includes(direction)) return
   if (!lineageExpansion[direction].includes(item_id)) lineageExpansion[direction].push(item_id)
@@ -715,6 +722,7 @@ watch(() => props.activeTab, (tab) => {
 }, { immediate: true })
 
 watch(() => props.selectedNode?.locator, () => {
+  lineageField.value = ''
   lineageVisited.value = false
   lineageRequestSeq += 1
   lineageLoading.value = false

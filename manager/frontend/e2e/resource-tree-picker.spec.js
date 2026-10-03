@@ -25,6 +25,36 @@ const SLIDES_LOCATOR = 'addp://engine/12/path/doc/slides.pptx?type=file&item_id=
 const TILES_LOCATOR = 'addp://engine/12/path/tiles?type=directory&node_id=230'
 const TILE_SET_LOCATOR = 'addp://engine/12/path/tiles/farmland.pmtiles?type=file&item_id=1301'
 
+for (const [type, rows] of [
+  ['index', [{ order_id: '9007199254740993', customer: { name: 'customer-0' }, items: [{ sku: 'SKU-001', quantity: 1 }] }]],
+  ['index', []],
+  ['directory', [{ order_id: '9007199254740993' }]]
+]) {
+  test(`previews ${type} item identity with ${rows.length} records`, async ({ page }) => {
+    const locator = `addp://engine/12/path/sample?type=${type}&item_id=1204`
+    const backend = await installMockBackend(page, { recordSet: { type, locator, rows } })
+    await page.goto(`/data-explorer?locator=${encodeURIComponent(locator)}`)
+
+    await expect.poll(() => backend.previewLocators).toEqual([locator])
+    if (rows.length) {
+      await expect(page.getByText('9007199254740993', { exact: true }).first()).toBeVisible()
+    } else {
+      await expect(page.getByText('暂无数据', { exact: true })).toBeVisible()
+    }
+  })
+}
+
+for (const format of ['dae', '3ds']) {
+  test(`offers GLB generation for an unsupported direct ${format.toUpperCase()} preview`, async ({ page }) => {
+    const locator = `addp://engine/12/path/doc/model.${format}?type=file&item_id=1203`
+    const backend = await installMockBackend(page, { exchangeModel: { format, locator } })
+    await page.goto(`/data-explorer?locator=${encodeURIComponent(locator)}`)
+
+    await expect.poll(() => backend.capabilityLocators).toContain(locator)
+    await expect(page.getByRole('button', { name: '生成 GLB 快显', exact: true })).toBeVisible()
+  })
+}
+
 test('selects a spatial table through the shared picker and applies capability facts', async ({ page }) => {
   const backend = await installMockBackend(page)
   await page.goto('/tasks/spatial?task_type=vector_tile_set_generation&create=1')
@@ -302,10 +332,29 @@ function escapeRegExp(value) {
 }
 
 async function installMockBackend(page, options = {}) {
+  const recordSet = options.recordSet
+  const recordNode = recordSet && {
+    id: recordSet.locator, locator: recordSet.locator, label: 'sample', type: recordSet.type,
+    children: [], metadata: { item_id: 1204, data_type: 'table', layout: 'single' }
+  }
+  const recordTree = recordNode && { ...nfsTree(), children: [recordNode] }
+  const exchangeModel = options.exchangeModel
+  const modelNode = exchangeModel && {
+    id: exchangeModel.locator,
+    locator: exchangeModel.locator,
+    label: `model.${exchangeModel.format}`,
+    type: 'file',
+    path: `doc/model.${exchangeModel.format}`,
+    children: [],
+    metadata: { item_id: 1203, data_type: 'model_3d', format: exchangeModel.format, layout: 'single' }
+  }
+  const modelDirectory = modelNode && { ...nfsDocNode(), children: [modelNode] }
+  const modelTree = modelNode && { ...nfsTree(), children: [modelDirectory] }
   const tasks = options.includeFailedTasks
     ? failedTaskFixtures()
     : (options.includeResultTask ? [resultTask()] : (options.includeSpatialTask ? [spatialTask()] : []))
   const state = {
+    previewLocators: [],
     capabilityLocators: [],
     quickViewActions: [],
     preferredModeRequests: [],
@@ -325,7 +374,7 @@ async function installMockBackend(page, options = {}) {
     localStorage.setItem('theme-mode', 'light')
   })
 
-  await page.route('**/plugins/manifest.json', route => fulfillJSON(route, { scripts: [] }))
+  await page.route('**/plugins/manifest.json', route => fulfillJSON(route, { scripts: recordSet ? ['/plugins/table-preview.js'] : [] }))
   await page.route('**/api/v1/**', async route => {
     const request = route.request()
     const url = new URL(request.url())
@@ -371,10 +420,17 @@ async function installMockBackend(page, options = {}) {
     }
     if (path === `/api/v1/meta/resource-tree/${NFS_ENGINE.id}`) {
       state.treeRequests += 1
-      return fulfillJSON(route, options.refreshRegression ? nfsShallowTree() : nfsTree())
+      return fulfillJSON(route, recordTree || modelTree || (options.refreshRegression ? nfsShallowTree() : nfsTree()))
     }
     if (path === `/api/v1/meta/resource-tree/${NFS_ENGINE.id}/ancestors`) {
       const locator = url.searchParams.get('locator') || ''
+      if (recordSet) return fulfillJSON(route, { target_locator: recordSet.locator, ancestors: [recordTree, recordNode] })
+      if (exchangeModel) {
+        return fulfillJSON(route, {
+          target_locator: exchangeModel.locator,
+          ancestors: [modelTree, modelDirectory, modelNode]
+        })
+      }
       if (locator === TILE_SET_LOCATOR) {
         return fulfillJSON(route, {
           target_locator: TILE_SET_LOCATOR,
@@ -408,7 +464,33 @@ async function installMockBackend(page, options = {}) {
     }
     if (path === `/api/v1/meta/resource-tree/${NFS_ENGINE.id}/node`) {
       const locator = url.searchParams.get('locator') || ''
+      if (recordSet) return fulfillJSON(route, { children: [recordNode] })
+      if (exchangeModel) return fulfillJSON(route, { children: [modelNode] })
       return fulfillJSON(route, locator === DOC_LOCATOR ? nfsDocNode() : nfsTree())
+    }
+    if (path === '/api/v1/manager/preview' && recordSet) {
+      state.previewLocators.push(url.searchParams.get('locator'))
+      return fulfillJSON(route, {
+        preview_type: 'table',
+        data: { mode: 'table', preview_kind: 'dynamic_schema_record_set', columns: ['order_id', 'customer', 'items'],
+          rows: recordSet.rows, total: recordSet.rows.length, page: 1, page_size: 20 },
+        metadata: { item_id: 1204, meta_scanned: true }
+      })
+    }
+    if (path === '/api/v1/manager/preview' && exchangeModel) {
+      return fulfillJSON(route, {
+        preview_type: 'object',
+        data: {
+          mode: 'object',
+          object: {
+            name: modelNode.label,
+            path: modelNode.path,
+            extension: exchangeModel.format,
+            attributes: { item: { data_type: 'model_3d', format: exchangeModel.format, layout: 'single' } },
+            content: { kind: 'unsupported' }
+          }
+        }
+      })
     }
     if (path === '/api/v1/manager/quick-view/actions' && request.method() === 'POST') {
       const payload = request.postDataJSON()
@@ -424,6 +506,16 @@ async function installMockBackend(page, options = {}) {
     if (path === '/api/v1/manager/quick-view/capability') {
       const locator = url.searchParams.get('locator') || ''
       state.capabilityLocators.push(locator)
+      if (exchangeModel) {
+        return fulfillJSON(route, {
+          locator,
+          source_kind: 'model_3d',
+          source_engine_id: NFS_ENGINE.id,
+          item_fingerprint: `fingerprint-${exchangeModel.format}`,
+          can_use_quick_view: false,
+          available_actions: ['generate_model_3d_glb']
+        })
+      }
       return fulfillJSON(route, quickViewCapability(locator))
     }
     if (path === '/api/v1/manager/preview-state/preferred-mode' && request.method() === 'PATCH') {

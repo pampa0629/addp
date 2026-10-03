@@ -26,6 +26,53 @@
 name: business
 
 services:
+  redis:
+    image: public.ecr.aws/docker/library/redis:7.2.13@sha256:37aa82f9fdff30517603b2e2c5376b34b106d353c2b508262260d3bb0d2c21ba
+    container_name: business-redis
+    command: ["sh", "/addp/redis/start.sh"]
+    environment:
+      BUSINESS_REDIS_ADMIN_PASSWORD: ${BUSINESS_REDIS_ADMIN_PASSWORD:-addp_business_redis_admin}
+      BUSINESS_REDIS_READER_PASSWORD: ${BUSINESS_REDIS_READER_PASSWORD:-addp_business_redis_reader}
+    ports:
+      - "127.0.0.1:${BUSINESS_REDIS_PORT:-6380}:6379"
+    volumes:
+      - redis_data:/data
+      - ./redis:/addp/redis:ro
+    tmpfs:
+      - /run/addp-redis:mode=0700
+    networks:
+      - business-network
+    healthcheck:
+      test: ["CMD-SHELL", 'REDISCLI_AUTH="$$BUSINESS_REDIS_ADMIN_PASSWORD" redis-cli --user addp_business_admin -e ping | grep -qx PONG']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    mem_limit: 512m
+    restart: unless-stopped
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.5.4@sha256:82ac14f43fe701992e601f4cc81e1c0d7dbc5a2576d8cd736006452925df4026
+    container_name: business-elasticsearch
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "true"
+      xpack.security.http.ssl.enabled: "false"
+      ELASTIC_PASSWORD: ${ELASTICSEARCH_PASSWORD:-addp_business_elastic_admin}
+      ES_JAVA_OPTS: -Xms512m -Xmx512m
+    ports:
+      - "127.0.0.1:${ELASTICSEARCH_PORT:-9200}:9200"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    networks:
+      - business-network
+    healthcheck:
+      test: ["CMD-SHELL", 'curl --fail --silent --user "elastic:$$ELASTIC_PASSWORD" http://localhost:9200/_cluster/health > /dev/null']
+      interval: 5s
+      timeout: 5s
+      retries: 60
+    mem_limit: 2g
+    restart: unless-stopped
+
   postgres:
     image: ${POSTGRES_IMAGE:-imresamu/postgis-arm64:15-3.4}
     container_name: business-postgres
@@ -129,8 +176,8 @@ services:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
     ports:
-      - "${MINIO_API_PORT:-9002}:9000"
-      - "${MINIO_CONSOLE_PORT:-9003}:9001"
+      - "${MINIO_BIND_HOST:-0.0.0.0}:${MINIO_API_PORT:-9002}:9000"
+      - "${MINIO_BIND_HOST:-0.0.0.0}:${MINIO_CONSOLE_PORT:-9003}:9001"
     volumes:
       - minio_data:/data
     healthcheck:
@@ -585,6 +632,8 @@ services:
           memory: 2G
 
 volumes:
+  redis_data:
+  elasticsearch_data:
   postgres_data:
   oracle_data:
   supermap_postgresql_data:

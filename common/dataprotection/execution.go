@@ -25,14 +25,14 @@ func ProtectDocument(document map[string]any, action string, rules []Rule, subje
 		if rule.Action != action {
 			continue
 		}
-		if err := protectObjectPath(document, rule.Component.Path, rule.EffectiveDecision(subject, now)); err != nil {
+		if err := protectObjectPath(document, rule.Component.Path, rule.EffectiveDecision(subject, now), rule.Component.ValueType); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func protectObjectPath(object map[string]any, path []PathSegment, decision Decision) error {
+func protectObjectPath(object map[string]any, path []PathSegment, decision Decision, fieldType string) error {
 	if len(path) == 0 {
 		return nil
 	}
@@ -42,7 +42,7 @@ func protectObjectPath(object map[string]any, path []PathSegment, decision Decis
 		return nil
 	}
 	if len(path) == 1 {
-		result, err := protectValue(value, decision)
+		result, err := protectValue(value, decision, fieldType)
 		if err != nil {
 			return err
 		}
@@ -60,7 +60,7 @@ func protectObjectPath(object map[string]any, path []PathSegment, decision Decis
 		if !ok {
 			return applyInvalidContainer(object, segment.Name, decision)
 		}
-		return protectObjectPath(nested, path[1:], decision)
+		return protectObjectPath(nested, path[1:], decision, fieldType)
 	case "array":
 		items, ok := value.([]any)
 		if !ok {
@@ -74,7 +74,7 @@ func protectObjectPath(object map[string]any, path []PathSegment, decision Decis
 				}
 				continue
 			}
-			if err := protectObjectPath(nested, path[1:], decision); err != nil {
+			if err := protectObjectPath(nested, path[1:], decision, fieldType); err != nil {
 				return err
 			}
 		}
@@ -94,7 +94,7 @@ func applyInvalidContainer(object map[string]any, key string, decision Decision)
 	return nil
 }
 
-func protectValue(value any, decision Decision) (valueResult, error) {
+func protectValue(value any, decision Decision, fieldType string) (valueResult, error) {
 	switch decision.Effect {
 	case EffectAllow:
 		return valueResult{value: value}, nil
@@ -103,14 +103,16 @@ func protectValue(value any, decision Decision) (valueResult, error) {
 	case EffectDeny:
 		return valueResult{}, ErrDenied
 	case EffectMask:
-		text, ok := value.(string)
-		if !ok {
+		if err := ValidateStructuredDecision(decision, fieldType); err != nil {
+			return valueResult{}, err
+		}
+		if value == nil {
+			return valueResult{value: nil}, nil
+		}
+		if !scalarMatchesType(value, fieldType) {
 			return invalidValueResult(decision)
 		}
-		if decision.Algorithm != AlgorithmKeepPrefixSuffixV2 {
-			return valueResult{}, errors.New("unsupported structured value masking algorithm")
-		}
-		masked, err := maskKeepPrefixSuffixV2(text, decision.Parameters)
+		masked, err := executeStructuredAlgorithm(value, decision)
 		if err != nil {
 			return invalidValueResult(decision)
 		}

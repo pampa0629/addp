@@ -104,6 +104,8 @@ Manifest 不保存第二套 HTTP 路径事实。ToolExecutor 通过 Python SDK �
 | `execution.get` | Develop | `develop.task.read` | read | none | execution | 128 KiB |
 | `ontology.classes.list` | Ontology | `ontology.semantic.read` | read | none | none | 128 KiB |
 | `ontology.class.context` | Ontology | `ontology.semantic.read` | read | none | none | 128 KiB |
+| `platform.capability.context` | Ontology | `ontology.semantic.read` | read | none | none | 32 KiB |
+| `transfer.task.create` | Transfer | `transfer.task.create` | write | none | none | 256 KiB |
 
 这是当前完整集合。未出现在 Manifest 中的 API 不能被 Adapter 自行包装为 ADDP Tool。
 
@@ -145,7 +147,7 @@ Tool 不同步等待长任务完成。标准路径为 owner 创建 execution，T
 
 ### 4.4 `resource.children.list`
 
-`resource.children.list` 接收 `engine_id + parent_locator`，由 Meta 按当前 Tenant 和 Catalog 事实校验父资源，并返回父资源及其直接子资源的标准资源树投影。它只表达已限定容器内的候选枚举，不递归展开、不接受客户端拼接路径，也不替代 `resource.facts.get` 的具体数据项事实确认。
+`resource.children.list` 接收 `engine_id` 和可选 `parent_locator`；省略父 locator 时由 Meta 返回该引擎根节点及直接子节点，提供真实的根身份，禁止客户端拼接 root locator。指定父 locator 时由 Meta 按当前 Tenant 和 Catalog 事实校验父资源，返回父资源及其直接子资源的标准资源树投影。不递归展开，也不替代 `resource.facts.get` 的具体数据项事实确认。
 
 该 Tool 用于调用方已有明确 Catalog 范围、但尚未确定具体 data item 的场景。父容器 locator 是 discovery scope，不是输入资源或执行目标；具体子资源必须继续通过 `resource.facts.get` 校验后，才能进入生成类 Tool 的 `resources[]`。
 
@@ -166,6 +168,12 @@ Tool 不同步等待长任务完成。标准路径为 owner 创建 execution，T
 MQL 集合比较必须走强类型语义计划和确定性编译器。计划只能引用 owner 已验证的实体字段、数组元素身份字段与两个实体值，比较口径只允许共同元素数量、Jaccard 相似度或以较少一方为分母的重叠系数；编译器统一按身份字段去重后计算交集和并集。用户只表达“重叠度”等未定义口径时必须返回澄清，禁止模型默认选择算法或自由生成 MQL。
 
 Copilot 默认保留 `current_query` 已声明的主 collection，除非用户明确要求修改。合法 MQL 已声明 collection 时不得以 `resources=[]` 跳过字段事实确认；`current_query` 不能替代 metadata。MongoDB database locator 仍不得写入 `resources[]`、`current_query` 或生成的 MQL，只有解析后的具体 collection locator 可以进入 `resources[]`。Copilot 生成前先形成结构化 Query Plan；Plan 的 collection 必须使用已验证资源事实提供的规范查询名，operation 必须使用平台枚举，五类 Plan 字段统一为字符串数组。Plan 解析或校验失败时最多进行一次受限修复；Plan 通过后再生成候选，并校验只读命令、collection、可查询字段路径、参数引用/定义一致性和计划覆盖。MQL 只能通过已验证的字面字段路径取值，不得通过 `$objectToArray` 等记录键枚举绕过字段事实。候选失败时最多进行一次受限重生成，不保留未校验 Plan 或候选旁路。
+
+### 4.7 平台 Transfer 语义与创建
+
+`platform.capability.context` 由 Ontology 提供随代码版本发布的只读概念/关系/操作前置条件，首个 capability 为 `transfer.task.create`。返回 `knowledge_kind=platform_definition`、revision、digest；不返回可变权限、连接信息或模块当前可用性，不将平台定义伪装为 Tenant 原生定义。当前请求的实际可用性、权限和资源事实仍由 System 委托及执行 owner 判定。
+
+`transfer.task.create` 复用 Transfer 的唯一 `POST /task-definitions`，只保存 `bounded + snapshot + native table` 的无计划、未启动任务。SDK 固定发送空 schedule、enabled=false、auto_scan_metadata=false；owner 对 Delegated 请求再次执行同一限制，Manifest 不是唯一安全边界。目标策略与字段映射需显式确定；既不授予 `transfer.task.execute`，也不自动启动、调度、扫描或写入业务库。此元数据创建不要求执行审批，返回实际 task ID、status、desired_state；没有 execution ResultRef。结果不确定时禁止自动重发，必须人工到 Transfer 核对。
 
 ## 五、Adapter 边界
 

@@ -166,6 +166,8 @@ console.log(FormatType.SHAPEFILE) // "shapefile"
 
 `@addp/common-frontend/graph` 提供 `LineageViewer`、`createLineageApi` 和 `normalizeLineageGraph`，消费 Meta `GET /api/v1/meta/lineage/graph` 返回的 `{ nodes, edges }`，可在 Service、Manager、Asset 页面内嵌展示。请求函数由宿主注入，组件不处理 Token。`LineageViewer` 填满宿主容器，宿主须提供有界的 flex 高度；宿主通过 `v-model:depth` 接收层数变化，以同一层数重查 API。未传入层数时组件显示 2 层，宿主可显式指定初始层数。共享组件负责交叉连线隔离、悬停/选中高亮和截断提示。
 
+字段级视图由同一 `LineageViewer` 实现：宿主传入 `fields`（精确字段名数组）、`field` 和 `update:field` 回调，调用原图 API 的 `subject_kind=field_ref` 与 `field_name`。节点 ID 包含数据项、字段名和结构快照 hash，字段名中的点号不拆分；`field_lineage_status=unavailable` 明确表示证据不可用，不能解释为没有依赖。
+
 ### ResourceLocator 定位符系统
 
 统一的资源定位符 URI 系统，支持跨存储引擎的资源标识。

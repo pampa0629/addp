@@ -104,7 +104,7 @@ jobs:
   product-build:
     name: Product binary build
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 180
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -209,7 +209,17 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Select shared module gate
+        id: selection
+        env:
+          ADDP_CI_BEFORE: ${{ github.event.before }}
+          ADDP_CI_EVENT: ${{ github.event_name }}
+          ADDP_CI_HEAD: ${{ github.sha }}
+          ADDP_CI_PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: python3 scripts/ci/select-module-gate.py --module engines
+
       - name: Prepare Document Workflow test environment
+        if: steps.selection.outputs.run == 'true'
         uses: ./.github/actions/prepare-python-gate
         with:
           venv-path: engines/document-workflow/.venv
@@ -221,6 +231,7 @@ jobs:
           editable-install: ./common-python
 
       - name: Run Document Workflow tests
+        if: steps.selection.outputs.run == 'true'
         run: make test-document-workflow
 
       - name: Summarize Document Workflow gate
@@ -228,6 +239,51 @@ jobs:
         uses: ./.github/actions/ci-gate-summary
         with:
           gate: Document Workflow tests
+          selected: ${{ steps.selection.outputs.run }}
+          status: ${{ job.status }}
+
+  model3d-workflow-tests:
+    name: Model3D Workflow tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Select shared module gate
+        id: selection
+        env:
+          ADDP_CI_BEFORE: ${{ github.event.before }}
+          ADDP_CI_EVENT: ${{ github.event_name }}
+          ADDP_CI_HEAD: ${{ github.sha }}
+          ADDP_CI_PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: python3 scripts/ci/select-module-gate.py --module engines
+
+      - name: Prepare Model3D Workflow test environment
+        if: steps.selection.outputs.run == 'true'
+        uses: ./.github/actions/prepare-python-gate
+        with:
+          venv-path: engines/model3d-workflow/.venv
+          cache-dependency-path: |
+            engines/model3d-workflow/requirements-dev.txt
+            engines/model3d-workflow/requirements.txt
+            common-python/pyproject.toml
+          requirements-file: engines/model3d-workflow/requirements-dev.txt
+          editable-install: ./common-python
+
+      - name: Run Model3D Workflow tests
+        if: steps.selection.outputs.run == 'true'
+        run: make test-model3d-workflow
+
+      - name: Summarize Model3D Workflow gate
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: Model3D Workflow tests
+          selected: ${{ steps.selection.outputs.run }}
           status: ${{ job.status }}
 
   geopython-workflow-tests:
@@ -241,12 +297,23 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Select shared module gate
+        id: selection
+        env:
+          ADDP_CI_BEFORE: ${{ github.event.before }}
+          ADDP_CI_EVENT: ${{ github.event_name }}
+          ADDP_CI_HEAD: ${{ github.sha }}
+          ADDP_CI_PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: python3 scripts/ci/select-module-gate.py --module engines
+
       - name: Install GDAL system libraries
+        if: steps.selection.outputs.run == 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y gdal-bin libgdal-dev
 
       - name: Prepare GeoPython test environment
+        if: steps.selection.outputs.run == 'true'
         uses: ./.github/actions/prepare-python-gate
         with:
           venv-path: engines/geopython-workflow/.venv
@@ -257,9 +324,11 @@ jobs:
           editable-install: ./common-python
 
       - name: Install matching GDAL bindings and pytest
+        if: steps.selection.outputs.run == 'true'
         run: engines/geopython-workflow/.venv/bin/python -m pip install "GDAL==$(gdal-config --version)" pytest
 
       - name: Run GeoPython GDAL tests
+        if: steps.selection.outputs.run == 'true'
         run: make test-geopython-workflow
 
       - name: Summarize GeoPython GDAL gate
@@ -267,6 +336,7 @@ jobs:
         uses: ./.github/actions/ci-gate-summary
         with:
           gate: GeoPython GDAL tests
+          selected: ${{ steps.selection.outputs.run }}
           status: ${{ job.status }}
 
   agent-offline-evaluation:

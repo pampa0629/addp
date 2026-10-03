@@ -107,3 +107,5 @@ other = "Continuous task configuration was updated by another administrator"
 
 ["transfer.execution.events_unavailable"]
 other = "Execution process events are temporarily unavailable"
+[transfer.task.delegated_invalid]
+other = "An agent may only create an unscheduled, stopped bounded snapshot native-table task; scheduling and automatic scanning are not allowed."

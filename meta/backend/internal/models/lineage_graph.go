@@ -3,16 +3,18 @@ package models
 import "time"
 
 type LineageGraphRequest struct {
-	SubjectKind      string
-	ItemID           *uint
-	ServiceID        *uint
-	Revision         string
-	Direction        string
-	ExpandUpstream   []uint
-	ExpandDownstream []uint
-	Depth            int
-	Limit            int
-	AsOf             *time.Time
+	SubjectKind        string
+	FieldName          string
+	SchemaSnapshotHash string
+	ItemID             *uint
+	ServiceID          *uint
+	Revision           string
+	Direction          string
+	ExpandUpstream     []uint
+	ExpandDownstream   []uint
+	Depth              int
+	Limit              int
+	AsOf               *time.Time
 }
 
 type LineageServiceDependencyInput struct {
@@ -32,11 +34,12 @@ type RecordServicePublicationRequest struct {
 }
 
 type LineageGraphResponse struct {
-	Subject   LineageNode   `json:"subject"`
-	Nodes     []LineageNode `json:"nodes"`
-	Edges     []LineageEdge `json:"edges"`
-	Truncated bool          `json:"truncated"`
-	AsOf      *time.Time    `json:"as_of,omitempty"`
+	FieldLineageStatus string        `json:"field_lineage_status,omitempty"`
+	Subject            LineageNode   `json:"subject"`
+	Nodes              []LineageNode `json:"nodes"`
+	Edges              []LineageEdge `json:"edges"`
+	Truncated          bool          `json:"truncated"`
+	AsOf               *time.Time    `json:"as_of,omitempty"`
 }
 
 type LineageErrorResponse struct {
@@ -45,6 +48,8 @@ type LineageErrorResponse struct {
 }
 
 type LineageNode struct {
+	FieldName             string `json:"field_name,omitempty"`
+	SchemaSnapshotHash    string `json:"schema_snapshot_hash,omitempty"`
 	HiddenUpstreamCount   int    `json:"hidden_upstream_count"`
 	HiddenDownstreamCount int    `json:"hidden_downstream_count"`
 	Kind                  string `json:"kind"`
@@ -60,6 +65,7 @@ type LineageNode struct {
 }
 
 type LineageEdge struct {
+	Transformation string                 `json:"transformation,omitempty"`
 	Source         LineageNode            `json:"source"`
 	Target         LineageNode            `json:"target"`
 	RelationKind   string                 `json:"relation_kind"`

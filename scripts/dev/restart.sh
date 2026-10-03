@@ -431,7 +431,7 @@ restart_model3d_workflow_service() {
     local port="${MODEL3D_WORKFLOW_PORT:-8101}"
     stop_pidfile_process ".dev-pids/model3d-workflow-engine.pid" "Model3D Workflow Engine"
     stop_matching_port_process "$port" "Model3D Workflow Engine" "python.*api_server\\.py|engines/model3d-workflow"
-    require_service_python "engines/model3d-workflow" "Model3D Workflow Engine" "model3d-workflow"
+    addp_sync_python_dependencies "$ROOT_DIR" "$ROOT_DIR/engines/model3d-workflow" "Model3D" || return 1
     ensure_model3d_node_dependencies
     echo "  启动 Model3D Workflow Engine..."
     (

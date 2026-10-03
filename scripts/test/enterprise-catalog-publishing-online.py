@@ -11,7 +11,9 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
@@ -94,6 +96,10 @@ REQUIRED_PERMISSIONS = {
     "catalog.entry.update",
     "catalog.entry.deprecate",
     "catalog.inventory.read",
+    "catalog.sharing_decision.create",
+    "system.engine_access_fulfillment.create",
+    "system.engine_access_approval_requirement.initialize",
+    "system.engine_access_approval_requirement.read",
     "asset.management.read",
     "asset.category.create",
     "asset.category.delete",
@@ -628,6 +634,179 @@ def curate_fixture_entry(
     return curated, restore, initialized
 
 
+def fixture_approval_requirement(
+    client: GatewayClient, engine_id: int, target: dict[str, object], run_id: str
+) -> tuple[dict[str, object], bool]:
+    """Initialize only the exact permanent fixture; never switch an existing mode."""
+    route = f"/api/v1/system/engines/{engine_id}/access_approval_requirements"
+    matches = []
+    page = 1
+    seen = 0
+    while True:
+        listing = _object(client.request("GET", route + f"?page={page}&page_size=100", (200,)).payload,
+                          "approval requirement listing")
+        rows = _array(listing.get("data"), "approval requirement rows")
+        total = non_negative_int(listing.get("total"), "approval requirement total")
+        for row in rows:
+            row = _object(row, "approval requirement")
+            if row.get("catalog_path") == target:
+                matches.append(row)
+        seen += len(rows)
+        if seen >= total:
+            break
+        if not rows or page >= 100:
+            raise SuiteError("approval requirement pagination did not converge")
+        page += 1
+    if len(matches) > 1:
+        raise SuiteError("duplicate exact fixture approval requirements")
+    initialized = not matches
+    requirement = matches[0] if matches else _object(client.request("POST", route, (201,), {
+        "catalog_path": target, "reason": f"Initialize dedicated Online Catalog fixture for {run_id}",
+    }).payload, "initialized approval requirement")
+    if (requirement.get("engine_id") != str(engine_id) or requirement.get("catalog_path") != target
+            or requirement.get("mode") != "catalog"):
+        raise SuiteError("fixture approval requirement must match the exact target in Catalog mode; no overwrite")
+    positive_int(requirement.get("version"), "approval requirement version")
+    return requirement, initialized
+
+
+def aware_timestamp(value: object, field: str) -> datetime:
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except (AttributeError, TypeError, ValueError) as error:
+        raise SuiteError(f"{field} must be a timezone-aware timestamp") from error
+    if parsed.utcoffset() is None:
+        raise SuiteError(f"{field} must be a timezone-aware timestamp")
+    return parsed
+
+
+def fulfillment_receipt(
+    response: Response, request_id: str, tenant_id: int, decision: dict[str, object],
+    target: dict[str, object], operator: dict[str, object], requirement_version: str,
+) -> dict[str, object]:
+    result = _object(response.payload, "formal fulfillment")
+    if response.status != 200 or result.get("state") != "accepted" or result.get("request_id") != request_id:
+        raise SuiteError(f"formal fulfillment {request_id} is not accepted; pending/closed is not success")
+    receipt = _object(result.get("resolution"), "System fulfillment receipt")
+    binding = _object(receipt.get("binding"), "fulfillment binding")
+    expected = {
+        "operator": operator, "path": target, "decision_id": decision["id"],
+        "requirement_version": requirement_version, "recipient_type": "user",
+        "recipient_id": decision["recipient_id"], "action": "read",
+        "expiry_mode": "at_time", "expires_at": decision["expires_at"],
+    }
+    caller = positive_int(binding.get("caller_principal_id"), "Catalog runtime principal")
+    if (caller == positive_int(operator.get("principal_id"), "operator principal")
+            or set(binding) != set(expected) | {"caller_principal_id"}
+            or any(binding.get(key) != value for key, value in expected.items())
+            or receipt.get("request_id") != request_id or receipt.get("tenant_id") != str(tenant_id)
+            or receipt.get("outcome") != "accepted"):
+        raise SuiteError(f"formal fulfillment {request_id} receipt binding mismatch")
+    try:
+        recorded = aware_timestamp(receipt.get("recorded_at"), "recorded_at")
+        deadline = aware_timestamp(receipt.get("deadline"), "deadline")
+        expires = aware_timestamp(decision.get("expires_at"), "expires_at")
+        valid_window = recorded < deadline <= min(recorded + timedelta(minutes=5), expires)
+    except SuiteError:
+        valid_window = False
+    if not valid_window:
+        raise SuiteError(f"formal fulfillment {request_id} has an invalid acceptance window")
+    return receipt
+
+
+def validate_fixture_sharing(
+    client: GatewayClient, entry_id: str, tenant_id: int, engine_id: int, principal_id: int, run_id: str,
+) -> dict[str, object]:
+    route = f"/api/v1/catalog/entries/{entry_id}"
+    entry = _object(client.request("GET", route, (200,)).payload, "sharing fixture")
+    if not any(row.get("role") == "business_owner" and row.get("subject_type") == "user"
+               and row.get("subject_id") == str(principal_id) for row in entry.get("responsibilities") or []):
+        raise SuiteError("dedicated Online User must already be the fixture business owner; no automatic reassignment")
+    scope = _object(client.request("GET", f"/api/v1/system/engines/{engine_id}/access_handling_scope",
+                                   (200,)).payload, "current handling scope")
+    operator = _object(scope.get("operator"), "current operator")
+    if (scope.get("tenant_id") != str(tenant_id) or scope.get("engine_id") != str(engine_id)
+            or operator.get("principal_id") != str(principal_id)):
+        raise SuiteError("dedicated Online User handling scope mismatch")
+    for key in ("principal_id", "tenant_membership_id", "authorization_version"):
+        positive_int(operator.get(key), "operator " + key)
+    decision_id = str(uuid.uuid4())
+    decision_body = {
+        "decision_id": decision_id, "version": str(positive_int(entry.get("version"), "sharing entry version")),
+        "recipient_type": "user", "recipient_id": str(principal_id), "expiry_mode": "at_time",
+        "expires_at": (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat(),
+        "reason": f"Dedicated Online read-only confirmation for {run_id}; acceptance only, no Grant",
+    }
+    decision = _object(client.request("POST", route + "/sharing_decisions", (201,), decision_body).payload,
+                       "sharing decision")
+    if (decision.get("id") != decision_id or decision.get("catalog_entry_id") != entry_id
+            or decision.get("confirmed_by") != str(principal_id)
+            or decision.get("confirmer_membership_id") != operator["tenant_membership_id"]
+            or decision.get("authorization_version") != operator["authorization_version"]
+            or decision.get("recipient_id") != str(principal_id) or decision.get("recipient_type") != "user"
+            or decision.get("action") != "read" or decision.get("expiry_mode") != "at_time"
+            or decision.get("self_beneficiary") is not True
+            or aware_timestamp(decision.get("expires_at"), "decision expiry") != aware_timestamp(
+                decision_body["expires_at"], "requested expiry")):
+        raise SuiteError("sharing decision does not preserve the explicit confirmation")
+    for response in (
+        client.request("GET", route + "/sharing_decisions/" + decision_id, (200,)),
+        client.request("POST", route + "/sharing_decisions", (200,), decision_body),
+    ):
+        if response.payload != decision:
+            raise SuiteError("sharing decision changed during same-parameter recovery")
+    conflict = client.request("POST", route + "/sharing_decisions", (409,),
+                              dict(decision_body, reason=decision_body["reason"] + "; changed purpose"))
+    if (conflict.status != 409 or _object(conflict.payload, "decision conflict").get("error_code")
+            != "catalog_sharing_decision_conflict"):
+        raise SuiteError("sharing decision reuse with changed purpose was not rejected canonically")
+    unchanged = client.request("GET", route + "/sharing_decisions/" + decision_id, (200,))
+    if unchanged.payload != decision:
+        raise SuiteError("rejected decision reuse changed the original immutable decision")
+    target = dict(_object(decision.get("target"), "sharing target"))
+    if target.get("engine_id") != str(engine_id):
+        raise SuiteError("sharing target belongs to a different engine")
+    target["engine_id"] = engine_id  # EngineCatalogPath owner wire contract uses a numeric engine ID.
+    segments = _array(target.get("segments"), "sharing target segments")
+    if not segments or _object(segments[-1], "sharing target leaf").get("name") != FIXTURE_TABLE:
+        raise SuiteError("sharing target is not the dedicated Online fixture table")
+    requirement, initialized = fixture_approval_requirement(client, engine_id, target, run_id)
+    request_id = str(uuid.uuid4())
+    request = {"request_id": request_id, "decision_id": decision_id,
+               "requirement_version": str(requirement["version"])}
+    try:
+        first = fulfillment_receipt(client.request("POST", route + "/sharing_fulfillments", (200, 202), request),
+                                    request_id, tenant_id, decision, target, operator, request["requirement_version"])
+        conflict = client.request("POST", route + "/sharing_fulfillments", (409,),
+                                  dict(request, requirement_version="2" if request["requirement_version"] == "1" else "1"))
+        if (conflict.status != 409 or _object(conflict.payload, "fulfillment conflict").get("error_code")
+                != "catalog_sharing_decision_conflict"):
+            raise SuiteError("fulfillment reuse with changed requirement version was not rejected canonically")
+        # Discard the acknowledgement as a usable result; keep it only as the test oracle.
+        # Replay contains just the original three inputs. This is not an inter-service outage.
+        recovered = fulfillment_receipt(client.request("POST", route + "/sharing_fulfillments", (200, 202), request),
+                                        request_id, tenant_id, decision, target, operator, request["requirement_version"])
+    except SuiteError as error:
+        raise SuiteError(f"formal fulfillment request={request_id}, decision={decision_id}: {error}") from error
+    if first != recovered:
+        raise SuiteError(f"formal fulfillment {request_id} retry changed its immutable receipt/deadline")
+    for path in (
+        f"/api/v1/catalog/runtime/sharing-fulfillments/{request_id}/basis",
+        f"/api/v1/system/runtime/engine-access-fulfillments/{request_id}/accept",
+    ):
+        denial = client.request("POST", path, (403,), first["binding"])
+        if denial.status != 403:
+            raise SuiteError("human Token was not rejected at the machine-only boundary")
+    return {
+        "decision_id": decision_id, "request_id": request_id, "approval_requirement_id": requirement["id"],
+        "approval_requirement_initialized": initialized, "receipt": recovered,
+        "recovery_boundary": "caller_response_discard_after_commit", "same_parameter_recovery": "passed",
+        "changed_parameter_reuse": "rejected_without_changing_original_results",
+        "human_runtime_denial": "passed", "grant_write": "not-run", "source_content_read": "not-run",
+        "retained_audit_facts": {"sharing_decisions": 1, "settled_requests": 1, "system_receipts": 1},
+    }
+
+
 def run_suite(
     client: GatewayClient,
     tenant_id: int,
@@ -682,6 +861,7 @@ def run_suite(
             raise SuiteError("Catalog curation unexpectedly changed the active entry denominator")
 
         lifecycle = validate_deprecated_fixture_lifecycle(client, curated, run_id, principal_id)
+        sharing = validate_fixture_sharing(client, entry_id, tenant_id, engine_id, principal_id, run_id)
 
         types = _array(client.request("GET", "/api/v1/asset/type-definitions", (200,)).payload, "Asset type definitions")
         enabled_types = [item for item in types if isinstance(item, dict) and item.get("enabled") is True]
@@ -748,7 +928,7 @@ def run_suite(
             )
 
         return {
-            "schema_version": "addp.enterprise-catalog-publishing/v2",
+            "schema_version": "addp.enterprise-catalog-publishing/v3",
             "suite": "enterprise-catalog-publishing",
             "run_id": run_id,
             "tenant_id": str(tenant_id),
@@ -769,6 +949,10 @@ def run_suite(
                 "source_identity_resolution": "passed",
                 "governance_coverage": "passed",
                 "deprecated_responsibility_transfer_and_withdrawal": "passed",
+                "oauth_formal_fulfillment_acceptance": "passed",
+                "same_parameter_receipt_recovery": "passed",
+                "changed_parameter_reuse": "rejected_without_changing_original_results",
+                "human_runtime_denial": "passed",
                 "browser": "passed" if browser_runner is not None else "not-run",
                 "asset_portal_publishing": "passed",
                 "asset_category_portal_navigation": "passed",
@@ -781,12 +965,14 @@ def run_suite(
             },
             "browser": browser_evidence,
             "catalog_lifecycle": lifecycle,
+            "catalog_sharing": sharing,
             "portal_category": portal_category,
             "temporary_resources_created": 2,
             "residual_resources": 0,
             "cleanup": "passed",
         }
     finally:
+        original_failure = sys.exc_info()[1]
         if asset_id is not None:
             try:
                 current_asset = client.request("GET", f"/api/v1/asset/assets/{asset_id}", (200, 404))
@@ -817,7 +1003,8 @@ def run_suite(
             except Exception as error:
                 cleanup_errors.append(f"CatalogEntry: {error}")
         if cleanup_errors:
-            raise SuiteError("cleanup failed: " + "; ".join(cleanup_errors))
+            detail = "; original failure: " + str(original_failure) if original_failure else ""
+            raise SuiteError("cleanup failed: " + "; ".join(cleanup_errors) + detail) from original_failure
 
 
 def required_environment(name: str) -> str:

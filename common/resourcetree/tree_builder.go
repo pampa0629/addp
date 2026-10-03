@@ -555,6 +555,9 @@ func calculateItemDepthForEngine(engineType, itemType, fullName string, attribut
 
 	// 数据库表类型（table）：根据点号数量计算
 	// 例如: "public.users" → depth=2 (schema=1, table=2)
+	if itemType == "index" {
+		return 1
+	}
 	if itemType == "table" {
 		segments := strings.Split(fullName, ".")
 		return len(segments)
@@ -595,7 +598,7 @@ func parsePathForEngine(engineType string, fullName string, nodeType string) []s
 	}
 
 	switch nodeType {
-	case "schema", "database":
+	case "schema", "database", "index", "topic":
 		// PostgreSQL: schema 只有一级路径
 		// MongoDB: database 只有一级路径
 		return []string{fullName}
@@ -639,6 +642,7 @@ func convertNodeType(metaNodeType string) ResourceType {
 		"table":      TypeTable,
 		"collection": TypeCollection,
 		"topic":      TypeTopic,
+		"index":      TypeIndex,
 		"graph":      TypeGraph,
 		"object":     TypeObject,
 		"file":       TypeFile,

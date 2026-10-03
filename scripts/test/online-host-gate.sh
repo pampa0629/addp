@@ -91,6 +91,10 @@ ADDP_ONLINE_ARTIFACT_DIR=$REQUESTED_ARTIFACT_DIR
 export ONLINE_SUITE ADDP_ONLINE_ARTIFACT_DIR
 
 case "$ONLINE_SUITE" in
+  elasticsearch-consumer-flow)
+    START_TARGET=-all
+    REQUIRED_SUITE_ENV=(SYSTEM_URL GATEWAY_URL META_URL MANAGER_URL DEVELOP_URL ADDP_ONLINE_TEST_USER_ACCESS_TOKEN ADDP_ONLINE_TEST_TENANT_ID ADDP_ONLINE_ELASTICSEARCH_ENGINE_ID)
+    ;;
   consumer-engine-recovery)
     START_TARGET=-all
     REQUIRED_SUITE_ENV=(
@@ -123,19 +127,6 @@ case "$ONLINE_SUITE" in
       ADDP_ONLINE_TEST_USER_ACCESS_TOKEN ADDP_ONLINE_TEST_TENANT_ID
       ADDP_ONLINE_TIDB_ENGINE_ID ADDP_ONLINE_TIDB_PORT
       ADDP_ONLINE_TIDB_DATABASE ADDP_ONLINE_TIDB_USER
-    )
-    ;;
-  manager-internal-artifact-lineage)
-    START_TARGET=-all
-    REQUIRED_SUITE_ENV=(
-      SYSTEM_URL GATEWAY_URL META_URL MANAGER_URL MONITOR_URL CONSOLE_URL
-      ADDP_ONLINE_TEST_USER_ACCESS_TOKEN ADDP_ONLINE_TEST_USER_USERNAME
-      ADDP_ONLINE_TEST_USER_PASSWORD ADDP_ONLINE_TEST_TENANT_ID
-      ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID ADDP_ONLINE_MANAGER_MINIO_PORT
-      ADDP_ONLINE_MANAGER_MINIO_ACCESS_KEY ADDP_ONLINE_MANAGER_MINIO_SECRET_KEY
-      ADDP_ONLINE_MANAGER_MINIO_BUCKET ADDP_ONLINE_MANAGER_MINIO_POINTCLOUD_OBJECT
-      ADDP_ONLINE_MANAGER_MINIO_PPTX_OBJECT
-      ADDP_ONLINE_MANAGER_MINIO_HYBRID_SEARCH_IMAGE_OBJECT
     )
     ;;
   manager-hybrid-search)
@@ -240,6 +231,7 @@ case "$ONLINE_SUITE" in
       ADDP_ONLINE_TEST_ENGINE_USER ADDP_ONLINE_TEST_ENGINE_PASSWORD
       ADDP_ONLINE_TEST_ENGINE_DATABASE ADDP_ONLINE_TEST_CATALOG_DOMAIN_ID
       ADDP_ONLINE_TEST_CATALOG_DEPARTMENT_ID
+      SYSTEM_SERVICE_CLIENT_SECRET
     )
     ;;
   workbench-service-consumption)
@@ -562,15 +554,11 @@ elif [ "$ONLINE_SUITE" = "security-mysql-owner-protection" ]; then
   run_logged bash business/scripts/online-engine-fixture.sh start
   run_logged bash business/scripts/online-workbench-mysql-fixture.sh start
   run_daemon_launcher_logged bash scripts/dev/start.sh "$START_TARGET"
-elif [ "$ONLINE_SUITE" = "manager-internal-artifact-lineage" ] ||
-  [ "$ONLINE_SUITE" = "manager-hybrid-search" ]; then
+elif [ "$ONLINE_SUITE" = "manager-hybrid-search" ]; then
   manager_minio_cleanup_required=1
   run_logged bash business/scripts/online-manager-minio-fixture.sh stop
   run_logged bash business/scripts/online-manager-minio-fixture.sh start
   run_daemon_launcher_logged bash scripts/dev/start.sh "$START_TARGET"
-  if [ "$ONLINE_SUITE" = "manager-internal-artifact-lineage" ]; then
-    run_logged npm --prefix console/frontend exec -- playwright install chromium
-  fi
 elif [ "$ONLINE_SUITE" = "security-transfer-protection" ] ||
   [ "$ONLINE_SUITE" = "security-plaintext-access" ]; then
   security_transfer_fixture_cleanup_required=1

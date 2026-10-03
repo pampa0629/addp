@@ -88,21 +88,21 @@ type DetectorCapability struct {
 }
 
 type ProtectionBaseline struct {
-	ID                  int64     `gorm:"primaryKey" json:"id,string"`
-	TenantID            int64     `gorm:"not null;index;uniqueIndex:uq_protection_baselines_target" json:"tenant_id,string"`
-	SensitiveDataTypeID int64     `gorm:"not null;uniqueIndex:uq_protection_baselines_target" json:"sensitive_data_type_id,string"`
-	SecurityGradeID     int64     `gorm:"not null;uniqueIndex:uq_protection_baselines_target" json:"security_grade_id,string"`
-	Effect              string    `gorm:"size:20;not null" json:"effect"`
-	Algorithm           string    `gorm:"size:80" json:"algorithm"`
-	KeepPrefix          int       `gorm:"not null;default:0" json:"keep_prefix"`
-	KeepSuffix          int       `gorm:"not null;default:0" json:"keep_suffix"`
-	InvalidValueEffect  string    `gorm:"size:20;not null;default:suppress" json:"invalid_value_effect"`
-	Enabled             bool      `gorm:"not null;default:true" json:"enabled"`
-	Version             int64     `gorm:"not null;default:1" json:"version,string"`
-	CreatedBy           int64     `gorm:"not null" json:"created_by,string"`
-	UpdatedBy           *int64    `json:"updated_by,omitempty,string"`
-	CreatedAt           time.Time `json:"created_at"`
-	UpdatedAt           time.Time `json:"updated_at"`
+	ID                  int64          `gorm:"primaryKey" json:"id,string"`
+	TenantID            int64          `gorm:"not null;index;uniqueIndex:uq_protection_baselines_target" json:"tenant_id,string"`
+	SensitiveDataTypeID int64          `gorm:"not null;uniqueIndex:uq_protection_baselines_target" json:"sensitive_data_type_id,string"`
+	SecurityGradeID     int64          `gorm:"not null;uniqueIndex:uq_protection_baselines_target" json:"security_grade_id,string"`
+	Effect              string         `gorm:"size:20;not null" json:"effect"`
+	Algorithm           string         `gorm:"size:80" json:"algorithm"`
+	Parameters          map[string]any `gorm:"serializer:json;type:text" json:"parameters"`
+	AllowedAlgorithms   []string       `gorm:"serializer:json;type:text" json:"allowed_algorithms"`
+	InvalidValueEffect  string         `gorm:"size:20;not null;default:suppress" json:"invalid_value_effect"`
+	Enabled             bool           `gorm:"not null;default:true" json:"enabled"`
+	Version             int64          `gorm:"not null;default:1" json:"version,string"`
+	CreatedBy           int64          `gorm:"not null" json:"created_by,string"`
+	UpdatedBy           *int64         `json:"updated_by,omitempty,string"`
+	CreatedAt           time.Time      `json:"created_at"`
+	UpdatedAt           time.Time      `json:"updated_at"`
 }
 
 func (ProtectionBaseline) TableName() string { return "security.protection_baselines" }
@@ -154,11 +154,11 @@ type SensitiveDataTypeRequest struct {
 }
 
 type DefaultProtectionRequest struct {
-	Effect             string `json:"effect" binding:"required"`
-	Algorithm          string `json:"algorithm"`
-	KeepPrefix         int    `json:"keep_prefix"`
-	KeepSuffix         int    `json:"keep_suffix"`
-	InvalidValueEffect string `json:"invalid_value_effect"`
+	Effect             string         `json:"effect" binding:"required"`
+	Algorithm          string         `json:"algorithm"`
+	Parameters         map[string]any `json:"parameters"`
+	AllowedAlgorithms  []string       `json:"allowed_algorithms"`
+	InvalidValueEffect string         `json:"invalid_value_effect"`
 }
 
 type DetectorRequest struct {
@@ -174,15 +174,15 @@ type DeleteDetectorRequest struct {
 }
 
 type ProtectionBaselineRequest struct {
-	SensitiveDataTypeID int64  `json:"sensitive_data_type_id" binding:"required"`
-	SecurityGradeID     int64  `json:"security_grade_id" binding:"required"`
-	Effect              string `json:"effect" binding:"required"`
-	Algorithm           string `json:"algorithm"`
-	KeepPrefix          int    `json:"keep_prefix"`
-	KeepSuffix          int    `json:"keep_suffix"`
-	InvalidValueEffect  string `json:"invalid_value_effect"`
-	Enabled             *bool  `json:"enabled"`
-	Version             int64  `json:"version"`
+	SensitiveDataTypeID int64          `json:"sensitive_data_type_id" binding:"required"`
+	SecurityGradeID     int64          `json:"security_grade_id" binding:"required"`
+	Effect              string         `json:"effect" binding:"required"`
+	Algorithm           string         `json:"algorithm"`
+	Parameters          map[string]any `json:"parameters"`
+	AllowedAlgorithms   []string       `json:"allowed_algorithms"`
+	InvalidValueEffect  string         `json:"invalid_value_effect"`
+	Enabled             *bool          `json:"enabled"`
+	Version             int64          `json:"version"`
 }
 
 type DeleteProtectionBaselineRequest struct {

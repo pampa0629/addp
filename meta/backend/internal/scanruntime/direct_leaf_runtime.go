@@ -86,6 +86,19 @@ func (s *DirectLeafRuntime) ScanRoot(
 			Layout:   "single",
 			DataType: datatype.Unknown,
 		}))
+		var rowCount, sizeBytes *int64
+		if factsProvider, ok := enginePlugin.(plugin.EngineCatalogFactsProvider); ok {
+			facts, factsErr := factsProvider.DescribeEngineCatalogFacts(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), entry.Path, plugin.EngineCatalogFactsOptions{IncludeStatistics: scanDepth == models.ScannedDepthDeep})
+			if factsErr != nil {
+				failures.Add(entry.Name, fmt.Errorf("failed to describe direct catalog leaf: %w", factsErr))
+				continue
+			}
+			if table := plugin.EngineCatalogFactsTableInfo(facts); table != nil {
+				metaattr.ApplyTableItemAttributes(attrs, table)
+				rowCount, sizeBytes = table.RowCount, table.SizeBytes
+			}
+			metaattr.ApplyEngineCatalogFactsCapabilities(attrs, facts)
+		}
 		item, err := s.repo.UpsertItemWithDepth(
 			tenantID,
 			resource.ID,
@@ -94,8 +107,8 @@ func (s *DirectLeafRuntime) ScanRoot(
 			entry.Name,
 			fullName,
 			attrs,
-			nil,
-			nil,
+			rowCount,
+			sizeBytes,
 			entry.UpdatedAt,
 			scanDepth,
 		)
@@ -106,8 +119,10 @@ func (s *DirectLeafRuntime) ScanRoot(
 		keepFingerprints = append(keepFingerprints, item.Fingerprint)
 	}
 
-	if err := s.repo.SoftDeleteItemsNotInList(rootNode.ID, keepFingerprints); err != nil {
-		failures.Add(resource.Name, fmt.Errorf("failed to delete missing direct catalog leaves: %w", err))
+	if err := failures.Err(); err == nil {
+		if err := s.repo.SoftDeleteItemsNotInList(rootNode.ID, keepFingerprints); err != nil {
+			failures.Add(resource.Name, fmt.Errorf("failed to delete missing direct catalog leaves: %w", err))
+		}
 	}
 	if scanErr := failures.Err(); scanErr != nil {
 		_ = s.repo.FinalizeNodeState(rootNode, "failed", scanErr.Error())

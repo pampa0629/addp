@@ -1539,6 +1539,83 @@ const docTemplate = `{
                     "ontology.semantic.read"
                 ]
             }
+        },
+        "/platform/capabilities/{capability}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "首个能力仅为 Transfer 任务创建；不表示模块可用、有权限或已经执行，不读取租户定义或业务数据。 | The first capability is Transfer task creation; it does not assert availability, permission or execution, and reads no Tenant definitions or business data.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Ontology"
+                ],
+                "summary": "获取平台能力语义 | Get platform capability semantics",
+                "parameters": [
+                    {
+                        "enum": [
+                            "transfer.task.create"
+                        ],
+                        "type": "string",
+                        "description": "平台能力标识 | Platform capability identifier",
+                        "name": "capability",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "平台定义上下文 | Platform definition context",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.PlatformCapabilityContextResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "无效请求 | Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Unauthenticated",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "禁止访问 | Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "未提供此能力 | Capability not provided",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "读取失败 | Read failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "尚未就绪 | Not ready",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "delegated_tool",
+                "x-addp-required-permissions": [
+                    "ontology.semantic.read"
+                ]
+            }
         }
     },
     "definitions": {
@@ -1592,6 +1669,80 @@ const docTemplate = `{
                 },
                 "version": {
                     "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_ontology_internal_platform.Concept": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "github_com_addp_ontology_internal_platform.Operation": {
+            "type": "object",
+            "properties": {
+                "effects": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "excluded_effects": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "inputs_required": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "owner": {
+                    "type": "string"
+                },
+                "skill": {
+                    "type": "string"
+                },
+                "tool": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_ontology_internal_platform.Relation": {
+            "type": "object",
+            "properties": {
+                "from": {
+                    "type": "string"
+                },
+                "kind": {
+                    "type": "string"
+                },
+                "to": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_ontology_internal_platform.Requirement": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "tools": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },
@@ -1991,6 +2142,50 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "ontology_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.PlatformCapabilityContextResponse": {
+            "type": "object",
+            "properties": {
+                "availability": {
+                    "type": "string"
+                },
+                "capability": {
+                    "type": "string"
+                },
+                "concepts": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_ontology_internal_platform.Concept"
+                    }
+                },
+                "digest": {
+                    "type": "string"
+                },
+                "knowledge_kind": {
+                    "type": "string"
+                },
+                "operation": {
+                    "$ref": "#/definitions/github_com_addp_ontology_internal_platform.Operation"
+                },
+                "relations": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_ontology_internal_platform.Relation"
+                    }
+                },
+                "requirements": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_ontology_internal_platform.Requirement"
+                    }
+                },
+                "revision": {
+                    "type": "integer"
+                },
+                "schema_version": {
                     "type": "string"
                 }
             }

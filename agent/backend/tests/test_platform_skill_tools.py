@@ -1,11 +1,29 @@
 import unittest
 from unittest.mock import AsyncMock, patch
+from langchain_core.utils.function_calling import convert_to_openai_tool
 
 from agents.main_agent import _load_skill_registry
 from tools.langchain_tools import create_agent_tools, stable_tool_name
 
 
 class PlatformSkillToolTests(unittest.TestCase):
+    def test_transfer_skill_uses_platform_semantics_and_only_metadata_write(self):
+        registry = _load_skill_registry()
+        skill = registry["transfer-generation"]
+        self.assertEqual(skill.tools, ["platform.capability.context", "engine.list", "data.search", "resource.children.list", "resource.ancestors.get", "resource.facts.get", "transfer.draft.generate", "transfer.task.create"])
+        self.assertNotIn("data.preview", skill.tools)
+        self.assertNotIn("workflow.run", skill.tools)
+        self.assertIn("尚未运行", skill.load_body(registry))
+        tools = create_agent_tools("token", "run-transfer")
+        create = next(tool for tool in tools if stable_tool_name(tool) == "transfer.task.create")
+        schema = create.tool_call_schema.model_json_schema()
+        self.assertEqual(schema["properties"]["config"]["properties"]["runtime"]["properties"]["boundary"], {"const": "bounded"})
+        self.assertFalse(schema["properties"]["config"]["additionalProperties"])
+        published = convert_to_openai_tool(create)["function"]["parameters"]
+        self.assertNotIn("tool_call_id", published["properties"])
+        expected_config = {key: value for key, value in schema["properties"]["config"].items() if key != "title"}
+        self.assertEqual(published["properties"]["config"], expected_config)
+
     def test_agent_loads_root_skill_and_addp_runtime_config(self):
         registry = _load_skill_registry()
         skill = registry["workflow-analysis"]
@@ -17,6 +35,7 @@ class PlatformSkillToolTests(unittest.TestCase):
                 "engine.list",
                 "data.search",
                 "resource.ancestors.get",
+                "resource.facts.get",
                 "data.preview",
                 "workflow.operators.list",
                 "workflow.draft.generate",

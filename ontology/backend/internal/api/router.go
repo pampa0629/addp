@@ -27,6 +27,7 @@ func SetupRouter(systemURL string, lifecycle *modulelifecycle.Controller, revisi
 	api := router.Group("/api/v1/ontology")
 	api.Use(commonauth.MustNewMiddleware(commonauth.MiddlewareConfig{SystemURL: systemURL}), commonauth.MustNewContextGuard("tenant"))
 	h := &Handler{revisions: revisions, issuer: issuer}
+	api.GET("/platform/capabilities/:capability", semanticBoundary("platform.capability.context"), tenantPermissions(permissions.PermissionOntologySemanticRead), h.PlatformCapabilityContext)
 	api.GET("/ontologies/:ontology_id/semantic/classes", semanticBoundary("ontology.classes.list"), tenantPermissions(permissions.PermissionOntologySemanticRead), h.ListClasses)
 	api.GET("/ontologies/:ontology_id/semantic/classes/:class_id", semanticBoundary("ontology.class.context"), tenantPermissions(permissions.PermissionOntologySemanticRead), h.ClassContext)
 	api.Use(userBoundary)

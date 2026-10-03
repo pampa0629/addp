@@ -130,6 +130,10 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, engineService *service.EngineS
 
 func metaDelegatedToolPolicies() map[string]auth.DelegatedRoutePolicyEntry {
 	return map[string]auth.DelegatedRoutePolicyEntry{
+		"GET /api/v1/meta/resource-tree/:engine_id": {
+			RequiredScopes:      []string{"resource.children.list"},
+			RequiredPermissions: []string{metaauthorization.PermissionMetaCatalogRead},
+		},
 		"GET /api/v1/meta/resource-tree/:engine_id/node": {
 			RequiredScopes:      []string{"resource.children.list"},
 			RequiredPermissions: []string{metaauthorization.PermissionMetaCatalogRead},

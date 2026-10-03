@@ -28,15 +28,18 @@ func (ProtectionPolicy) TableName() string { return "security.protection_policie
 // ProtectionPolicyRevision is an immutable policy decision. Revoked revisions
 // preserve the previous effect for audit while removing the explicit override.
 type ProtectionPolicyRevision struct {
-	ID        string    `gorm:"type:uuid;primaryKey" json:"id"`
-	TenantID  int64     `gorm:"not null;index" json:"-"`
-	PolicyID  string    `gorm:"type:uuid;not null;index;uniqueIndex:uq_security_policy_revision" json:"policy_id"`
-	Revision  int64     `gorm:"not null;uniqueIndex:uq_security_policy_revision" json:"revision"`
-	State     string    `gorm:"size:16;not null" json:"state"`
-	Effect    string    `gorm:"size:20;not null" json:"effect"`
-	Rationale string    `gorm:"type:text;not null" json:"rationale"`
-	CreatedBy int64     `gorm:"not null" json:"created_by,string"`
-	CreatedAt time.Time `gorm:"not null" json:"created_at"`
+	ID                 string         `gorm:"type:uuid;primaryKey" json:"id"`
+	TenantID           int64          `gorm:"not null;index" json:"-"`
+	PolicyID           string         `gorm:"type:uuid;not null;index;uniqueIndex:uq_security_policy_revision" json:"policy_id"`
+	Revision           int64          `gorm:"not null;uniqueIndex:uq_security_policy_revision" json:"revision"`
+	State              string         `gorm:"size:16;not null" json:"state"`
+	Effect             string         `gorm:"size:20;not null" json:"effect"`
+	Algorithm          string         `gorm:"size:80" json:"algorithm"`
+	Parameters         map[string]any `gorm:"serializer:json;type:text" json:"parameters"`
+	InvalidValueEffect string         `gorm:"size:20" json:"invalid_value_effect"`
+	Rationale          string         `gorm:"type:text;not null" json:"rationale"`
+	CreatedBy          int64          `gorm:"not null" json:"created_by,string"`
+	CreatedAt          time.Time      `gorm:"not null" json:"created_at"`
 }
 
 func (ProtectionPolicyRevision) TableName() string {
@@ -44,17 +47,22 @@ func (ProtectionPolicyRevision) TableName() string {
 }
 
 type CreateProtectionPolicyRequest struct {
-	AssessmentID  string `json:"assessment_id" binding:"required"`
-	ConsumerOwner string `json:"consumer_owner" binding:"required"`
-	Action        string `json:"action" binding:"required"`
-	Effect        string `json:"effect" binding:"required"`
-	Rationale     string `json:"rationale" binding:"required"`
+	AssessmentID       string         `json:"assessment_id" binding:"required"`
+	ConsumerOwner      string         `json:"consumer_owner" binding:"required"`
+	Action             string         `json:"action" binding:"required"`
+	Effect             string         `json:"effect" binding:"required"`
+	Algorithm          string         `json:"algorithm"`
+	Parameters         map[string]any `json:"parameters"`
+	InvalidValueEffect string         `json:"invalid_value_effect"`
+	Rationale          string         `json:"rationale" binding:"required"`
 }
-
 type UpdateProtectionPolicyRequest struct {
-	Version   int64  `json:"version,string" binding:"required"`
-	Effect    string `json:"effect" binding:"required"`
-	Rationale string `json:"rationale" binding:"required"`
+	Version            int64          `json:"version,string" binding:"required"`
+	Effect             string         `json:"effect" binding:"required"`
+	Algorithm          string         `json:"algorithm"`
+	Parameters         map[string]any `json:"parameters"`
+	InvalidValueEffect string         `json:"invalid_value_effect"`
+	Rationale          string         `json:"rationale" binding:"required"`
 }
 
 type RevokeProtectionPolicyRequest struct {

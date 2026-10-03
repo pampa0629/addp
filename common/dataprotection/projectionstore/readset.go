@@ -114,7 +114,7 @@ func (s *Store) PrepareTableProtection(
 	fields []datatype.FieldInfo,
 	action string,
 	now time.Time,
-) (func(*plugin.QueryResult) error, error) {
+) (*dataprotection.PreparedTableProtection, error) {
 	if strings.TrimSpace(action) == "" {
 		return nil, errors.New("protection table gate requires an action")
 	}
@@ -122,7 +122,7 @@ func (s *Store) PrepareTableProtection(
 		return nil, err
 	}
 	if !s.HasManagedTargets(tenantID) {
-		return noQueryProtection, nil
+		return &dataprotection.PreparedTableProtection{Apply: noQueryProtection}, nil
 	}
 	target, err := dataprotection.DataItemTargetFromCatalogPath(model, path)
 	if err != nil {
@@ -130,7 +130,7 @@ func (s *Store) PrepareTableProtection(
 	}
 	gate := s.Gate(tenantID, target, now)
 	if !gate.Managed {
-		return noQueryProtection, nil
+		return &dataprotection.PreparedTableProtection{Apply: noQueryProtection}, nil
 	}
 	if gate.State != dataprotection.ProjectionStateActive || gate.Err != nil {
 		return nil, dataprotection.ErrDenied
@@ -146,12 +146,23 @@ func (s *Store) PrepareTableProtection(
 	source := plugin.QueryOutputSource{
 		Path: path, Fields: append([]datatype.FieldInfo(nil), fields...), IdentityOutput: true,
 	}
-	return func(result *plugin.QueryResult) error {
+	derived := []string{}
+	seen := map[string]bool{}
+	for _, rule := range rules {
+		if rule.Action == action && len(rule.Component.Path) > 0 && rule.EffectiveDecision(dataprotection.SubjectReference{}, now).Effect != dataprotection.EffectAllow {
+			name := rule.Component.Path[0].Name
+			if !seen[name] {
+				derived = append(derived, name)
+				seen[name] = true
+			}
+		}
+	}
+	return &dataprotection.PreparedTableProtection{DerivedFields: derived, Apply: func(result *plugin.QueryResult) error {
 		if err := dataprotection.ProtectQueryResultSource(result, source, action, rules, dataprotection.SubjectReference{}); err != nil {
 			return fmt.Errorf("protect table result: %w", err)
 		}
 		return nil
-	}, nil
+	}}, nil
 }
 
 // RequireCatalogPathUnmanaged gates one concrete provider-owned DataItem leaf.

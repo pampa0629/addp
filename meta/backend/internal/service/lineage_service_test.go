@@ -208,8 +208,8 @@ func openLineageTestDB(t *testing.T) *gorm.DB {
 	statements := []string{
 		`CREATE TABLE meta.lineage_item_relations (
 			id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, source_item_id INTEGER NOT NULL,
-			target_item_id INTEGER NOT NULL, relation_kind TEXT NOT NULL, granularity TEXT NOT NULL,
-			write_mode TEXT, status TEXT NOT NULL, first_observed_at DATETIME NOT NULL,
+			target_item_id INTEGER NOT NULL, relation_kind TEXT NOT NULL, granularity TEXT NOT NULL, source_field_name TEXT NOT NULL DEFAULT '', target_field_name TEXT NOT NULL DEFAULT '', source_schema_hash TEXT NOT NULL DEFAULT '', target_schema_hash TEXT NOT NULL DEFAULT '',
+			write_mode TEXT, transformation TEXT NOT NULL DEFAULT '', status TEXT NOT NULL, first_observed_at DATETIME NOT NULL,
 			last_observed_at DATETIME NOT NULL, closed_at DATETIME, closed_by_observation_id INTEGER,
 			created_at DATETIME, updated_at DATETIME)`,
 		`CREATE TABLE meta.lineage_service_dependencies (
@@ -220,7 +220,7 @@ func openLineageTestDB(t *testing.T) *gorm.DB {
 			closed_at DATETIME, created_at DATETIME, updated_at DATETIME)`,
 		`CREATE TABLE meta.lineage_observations (
 			id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, relation_kind TEXT NOT NULL,
-			granularity TEXT NOT NULL, source_item_id INTEGER, target_item_id INTEGER, service_id INTEGER,
+			granularity TEXT NOT NULL, source_field_name TEXT NOT NULL DEFAULT '', target_field_name TEXT NOT NULL DEFAULT '', source_schema_hash TEXT NOT NULL DEFAULT '', target_schema_hash TEXT NOT NULL DEFAULT '', source_item_id INTEGER, target_item_id INTEGER, service_id INTEGER,
 			published_revision TEXT, execution_id TEXT, producer_module TEXT NOT NULL,
 			capture_method TEXT NOT NULL CHECK (capture_method IN ('declared', 'runtime', 'parsed')),
 			source_snapshot JSON NOT NULL, target_snapshot JSON, evidence JSON NOT NULL,

@@ -22,6 +22,34 @@ type candidateScopeReader struct {
 	scope  *authorization.EngineAccessHandlingScope
 }
 
+type candidateLabelResolver struct {
+	refs              []commonClient.SystemCatalogReference
+	before            func()
+	err               error
+	missing, mismatch bool
+}
+
+func (r *candidateLabelResolver) ResolveSystemReferences(_ context.Context, tenantID int64, refs []commonClient.SystemCatalogReference) ([]commonClient.SystemCatalogReferenceResolution, error) {
+	if tenantID != 7 {
+		return nil, errors.New("incorrect label tenant")
+	}
+	r.refs = append([]commonClient.SystemCatalogReference(nil), refs...)
+	if r.before != nil {
+		r.before()
+	}
+	if r.err != nil {
+		return nil, r.err
+	}
+	rows := make([]commonClient.SystemCatalogReferenceResolution, len(refs))
+	for i, ref := range refs {
+		rows[i] = commonClient.SystemCatalogReferenceResolution{SubjectType: ref.SubjectType, ID: ref.ID, Found: !r.missing, Referenceable: !r.missing, Name: "Recipient", Code: "recipient", Status: "active"}
+		if r.mismatch {
+			rows[i].ID++
+		}
+	}
+	return rows, nil
+}
+
 func (r *candidateScopeReader) GetEngineAccessHandlingScope(_ context.Context, engineID int64, token string) (*authorization.EngineAccessHandlingScope, error) {
 	r.calls++
 	if engineID != 12 || token != "addp_at_handler" {
@@ -41,6 +69,8 @@ func exerciseSharingCandidates(t *testing.T, db *gorm.DB) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	labels := &candidateLabelResolver{}
+	s.system = labels
 	// A distinct human handler has no business-confirmation Permission.
 	auth := authtest.NewTenantUserAuthContext("7", "41", []string{"catalog.entry.read", "catalog.inventory.read", sourceHandlingPermission})
 	p, m, v, err := sharingUserProvenance(auth, 7, "catalog.entry.read", sourceHandlingPermission)
@@ -54,7 +84,7 @@ func exerciseSharingCandidates(t *testing.T, db *gorm.DB) {
 		return s.ListSharingDecisionCandidates(context.Background(), 7, access, entry.ID, auth, "addp_at_handler", 1, 10)
 	}
 	rows, total, err := list(EntryAccess{Inventory: true})
-	if err != nil || total != 1 || len(rows) != 1 || rows[0].ID != decision.ID || rows[0].ConfirmedBy == p {
+	if err != nil || total != 1 || len(rows) != 1 || rows[0].ID != decision.ID || rows[0].ConfirmedBy == p || rows[0].RecipientName != "Recipient" || rows[0].RecipientLabelStatus != "resolved" || len(labels.refs) != 1 || labels.refs[0].ID != input.RecipientID {
 		t.Fatalf("distinct handler list=%+v total=%d err=%v", rows, total, err)
 	}
 	body, err := json.Marshal(rows[0])
@@ -68,6 +98,49 @@ func exerciseSharingCandidates(t *testing.T, db *gorm.DB) {
 			t.Fatalf("history field %s leaked", field)
 		}
 	}
+	labels.missing = true
+	rows, _, err = list(EntryAccess{Inventory: true})
+	if err != nil || len(rows) != 1 || rows[0].RecipientLabelStatus != "not_found" || rows[0].RecipientName != "" || rows[0].RecipientCode != "" {
+		t.Fatalf("missing recipient invented a label: %+v %v", rows, err)
+	}
+	labels.missing, labels.mismatch = false, true
+	if _, _, err := list(EntryAccess{Inventory: true}); !errors.Is(err, ErrReferenceValidationUnavailable) {
+		t.Fatalf("misbound label accepted: %v", err)
+	}
+	labels.mismatch, labels.err = false, errors.New("offline")
+	if _, _, err := list(EntryAccess{Inventory: true}); !errors.Is(err, ErrReferenceValidationUnavailable) {
+		t.Fatalf("offline label fallback: %v", err)
+	}
+	labels.err = nil
+	t.Run("source changes during label resolution", func(t *testing.T) {
+		rollback := errors.New("rollback label fixture")
+		err := db.Transaction(func(tx *gorm.DB) error {
+			local := *s
+			local.db = tx
+			labels.before = func() {
+				if err := tx.Exec("UPDATE catalog.source_bindings SET source_version='00000000000000000002' WHERE catalog_entry_id=?", entry.ID).Error; err != nil {
+					t.Fatal(err)
+				}
+			}
+			defer func() { labels.before = nil }()
+			if _, _, err := local.ListSharingDecisionCandidates(context.Background(), 7, EntryAccess{Inventory: true}, entry.ID, auth, "addp_at_handler", 1, 10); !errors.Is(err, ErrSharingDecisionConflict) {
+				t.Fatalf("stale label returned: %v", err)
+			}
+			return rollback
+		})
+		if !errors.Is(err, rollback) {
+			t.Fatal(err)
+		}
+	})
+	t.Run("token expires during label resolution", func(t *testing.T) {
+		expiring := auth
+		expiring.Token.ExpiresAt = time.Now().UTC().Add(200 * time.Millisecond)
+		labels.before = func() { waitSharingTestExpiry(t, db, expiring.Token.ExpiresAt) }
+		defer func() { labels.before = nil }()
+		if _, _, err := s.ListSharingDecisionCandidates(context.Background(), 7, EntryAccess{Inventory: true}, entry.ID, expiring, "addp_at_handler", 1, 10); !errors.Is(err, ErrSharingHandlingForbidden) {
+			t.Fatalf("expired token leaked labels: %v", err)
+		}
+	})
 	if _, err := s.GetSharingDecision(context.Background(), 7, EntryAccess{Inventory: true}, entry.ID, decision.ID, auth); !errors.Is(err, ErrSharingConfirmationForbidden) {
 		t.Fatalf("handler acquired own-history confirmation permission: %v", err)
 	}
@@ -158,7 +231,7 @@ func exerciseSharingCandidates(t *testing.T, db *gorm.DB) {
 		if _, _, err := s.CreateSharingDecision(context.Background(), 7, EntryAccess{Inventory: true}, shortEntry.ID, shortInput, sharingAuth()); err != nil {
 			t.Fatal(err)
 		}
-		reader.before = func() { <-time.After(time.Until(expires) + time.Millisecond) }
+		reader.before = func() { waitSharingTestExpiry(t, db, expires) }
 		defer func() { reader.before = nil }()
 		rows, total, err := s.ListSharingDecisionCandidates(context.Background(), 7, EntryAccess{Inventory: true}, shortEntry.ID, auth, "addp_at_handler", 1, 10)
 		if err != nil || total != 0 || len(rows) != 0 {
@@ -168,7 +241,7 @@ func exerciseSharingCandidates(t *testing.T, db *gorm.DB) {
 	t.Run("human token expires during remote qualification", func(t *testing.T) {
 		expiring := auth
 		expiring.Token.ExpiresAt = time.Now().UTC().Add(200 * time.Millisecond)
-		reader.before = func() { <-time.After(time.Until(expiring.Token.ExpiresAt) + time.Millisecond) }
+		reader.before = func() { waitSharingTestExpiry(t, db, expiring.Token.ExpiresAt) }
 		defer func() { reader.before = nil }()
 		if _, _, err := s.ListSharingDecisionCandidates(context.Background(), 7, EntryAccess{Inventory: true}, entry.ID, expiring, "addp_at_handler", 1, 10); !errors.Is(err, ErrSharingHandlingForbidden) {
 			t.Fatalf("expired handler token accepted: %v", err)
@@ -183,7 +256,7 @@ func exerciseSharingCandidates(t *testing.T, db *gorm.DB) {
 		inventory.Permissions, inventory.ValidUntil = []string{"catalog.inventory.read"}, &expires
 		expiring.Authorization.RoleAssignments[0].Permissions = []string{"catalog.entry.read", sourceHandlingPermission}
 		expiring.Authorization.RoleAssignments = append(expiring.Authorization.RoleAssignments, inventory)
-		reader.before = func() { <-time.After(time.Until(expires) + time.Millisecond) }
+		reader.before = func() { waitSharingTestExpiry(t, db, expires) }
 		defer func() { reader.before = nil }()
 		if _, _, err := s.ListSharingDecisionCandidates(context.Background(), 7, EntryAccess{Inventory: true}, entry.ID, expiring, "addp_at_handler", 1, 10); !errors.Is(err, ErrEntryNotFound) {
 			t.Fatalf("expired inventory permission kept visibility: %v", err)

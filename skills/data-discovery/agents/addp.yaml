@@ -3,5 +3,6 @@ required_skills: []
 required_tools:
   - data.search
   - resource.ancestors.get
+  - resource.facts.get
   - data.preview
 max_iterations: 6

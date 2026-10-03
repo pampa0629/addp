@@ -731,7 +731,7 @@ func (s *DiscoveryService) buildFindingExplanations(ctx context.Context, tenantI
 			if baseline, exists := baselineByTarget[findingBaselineKey{typeID: candidate.SensitiveDataTypeID, gradeID: candidate.SecurityGradeID}]; exists {
 				explanation.Baseline = &models.FindingProtectionBaseline{
 					ID: baseline.ID, Version: baseline.Version, Effect: baseline.Effect, Algorithm: baseline.Algorithm,
-					KeepPrefix: baseline.KeepPrefix, KeepSuffix: baseline.KeepSuffix, InvalidValueEffect: baseline.InvalidValueEffect,
+					Parameters: baseline.Parameters, AllowedAlgorithms: baseline.AllowedAlgorithms, InvalidValueEffect: baseline.InvalidValueEffect,
 				}
 			} else if decisionState == models.FindingDecisionAutomatic || decisionState == models.FindingDecisionFormal {
 				explanation.DecisionState = models.FindingDecisionBaselineMissing

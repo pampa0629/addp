@@ -227,7 +227,7 @@ tenant + assessment_id + consumer_owner + action
 
 1. 可编辑 Policy 的 `consumer_owner` 只开放已实现字段级执行的 `manager`，`action` 只开放 `preview`；新增可编辑 Owner 或动作必须与对应 Owner 执行能力在同一变更中落地。`manager/profile` 是编译器根据同一敏感组件的有效 `preview` 决策派生的系统动作，不建立第二份可编辑 Policy。
 2. 策略效果只允许 `mask|suppress|deny`，严格度必须大于或等于当前 Assessment 对应的有效 ProtectionBaseline；不得用 Policy 编译 `allow` 或降低保护强度。
-3. `mask` 只表示继续使用 ProtectionBaseline 中已注册的算法和参数；Policy 不复制算法参数，也不接受任意表达式。
+3. `mask` 表示执行平台内置脱敏算法。ProtectionBaseline 保存默认 `algorithm + parameters` 和显式 `allowed_algorithms`；ProtectionPolicy 在正式字段上保存独立算法、参数和异常值效果，只允许基线许可的算法，不接受任意表达式。掩码、固定值替换和普通 SM3 不作跨算法强弱排序。前后掩码的字段参数不得超过基线默认的前、后保留上限；非掩码默认规则不得许可前后掩码。字段规则的异常效果不得弱于基线。基线许可撤回或参数上限收紧时，不再满足约束的既有 Policy 保留历史，由唯一编译器回到最新基线，不执行旧规则。
 4. 同一绑定至多有一个 Policy 聚合。聚合保存资源并发 `version` 和当前修订号；每次创建、更新或撤销追加不可变 revision。
 5. 撤销 Policy 通过 `DELETE` 表达，但不物理删除历史：携带 `version` 和原因，追加 `revoked` 修订。撤销后编译器回落到 Assessment + ProtectionBaseline，不解除纳管、不删除投影、不返回明文。
 6. 没有显式 Policy 不是异常，也不要求用户为每个敏感字段创建策略。Assessment + ProtectionBaseline 是默认且完整的最低保护路径。
@@ -624,7 +624,19 @@ cd common && go run ./authorization/cmd/manifest --coverage-report --repository-
 | `common/dataprotection` | ProtectionProjection 值对象、严格校验、checksum、路径遍历和确定性保护算法 |
 | `common/client/security.go` | Security Bearer-only Client、变化流和 acknowledgement 调用；不实现业务决策 |
 
-`common/dataprotection` 的结构化字段遮盖只开放 `addp.mask.keep_prefix_suffix/v2`，并提供抑制和拒绝执行语义。算法按 Unicode rune 计数；参数非法、值长度不足或不符合投影已确认值类型时执行 `invalid_value_effect`，不返回原值。
+`common/dataprotection` 唯一提供结构化脱敏算法目录、参数校验、类型匹配和执行。平台内置目录通过 Security `GET /protection-algorithms` 只读发布，沿用 `security.protection_baseline.read`，不增加租户可执行代码或第二套算法事实。
+
+| 算法 | 输入与输出 | 参数 |
+| --- | --- | --- |
+| `addp.mask.keep_prefix_suffix/v2` | UTF-8 字符串 → 字符串 | `prefix_runes`、`suffix_runes`、`mask_rune` |
+| `addp.mask.constant/v1` | string、int、bigint、float、double、bool → 同类型固定值 | `value`；字符串值限制 4096 字节，数值必须有限 |
+| `addp.mask.sm3/v1` | UTF-8 字符串 → 64 位小写十六进制字符串 | 空对象；精确对原字符串 UTF-8 字节执行普通 SM3，不 trim、大小写转换、加盐或加密 |
+
+以上是输出端动态保护及现有 Transfer 有界导出，不新增静态脱敏数据集。空值保留为空，不把 null 字面量当作原值计算。算法和类型不匹配、参数非法、值过短或 UTF-8 非法时抑制或拒绝，不返回原值。普通 SM3 没有解密接口但仍可能被枚举匹配，不宣称匿名化或绝对不可重新识别。
+
+“图层”在本轮只指携带 geometry 字段的数据表，属性字段复用同一配置和执行链；geometry 字段只允许抑制或拒绝，不允许字符串掩码、固定值替换或哈希，不硬编码几何字段名。不新增容器 child 纳管、坐标扰动或瓦片脱敏执行器。
+
+ProtectionBaseline 与创建敏感类型的默认保护请求统一使用 `parameters` 和 `allowed_algorithms`，删除 `keep_prefix/keep_suffix` API 与模型字段。字段 Policy 可编辑范围沿用 `manager/preview`，其他现有 Owner 的算法执行来自默认保护，profile 继续派生 suppress/deny，文档 search_index 只接受现有手机号片段算法；无法执行其他算法时保守 suppress/deny。所有存量基线参数与 mask Policy 在 Backend 启动迁移中一次性收敛，删除旧存储列，不保留运行兼容分支。
 
 `addp.mask.keep_prefix_suffix/v2` 不接受宽松或未知参数，固定要求非负整数 `prefix_runes`、非负整数 `suffix_runes` 和恰好一个 Unicode rune 的 `mask_rune`。输入必须是有效 UTF-8 字符串且实际 rune 数严格大于前后保留数之和；算法保留指定前缀和后缀，并按被隐藏 rune 的实际数量重复 `mask_rune`。算法不限定总长度和字符类别，也不承担手机号、邮箱或证件号码格式校验；类型错误、UTF-8 非法或长度不足都是 invalid value，必须执行 `invalid_value_effect`。
 
