@@ -177,6 +177,7 @@ Service 仍由 Service 模块拥有，Meta 只保存用于血缘查询的关系�
 
 - Runtime 只提供节点和端口执行事实，不构造 ADDP 资源身份。
 - owner 负责把 ResourceLocator、`produced_targets` 和实际绑定写入长期 execution 结果。
+- 成功执行的目标写入模式 `create` 属于已知持久化效果，与 `replace/append/upsert/cdc` 一样参与正式派生关系投影。`create` 表示首次创建目标，不关闭其他目标的输入关系；目标尚未完成 Meta scan 时，立即采集保留执行事实，由既有周期 collector 在 DataItem 可解析后复用同一采集方法生成 observation 和当前关系。不得把 `create` 当作未知模式，也不得要求再次覆盖写入才能显示首次创建的血缘。
 - 不保存连接凭据、Token、临时挂载路径或完整大对象。
 - 只有真实读写 owner 可以产生资源级 lineage facts。
 - Orchestrator 只通过 `parent_execution_id` 提供父执行上下文，不重复生成资源边。

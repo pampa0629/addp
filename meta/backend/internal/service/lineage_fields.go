@@ -29,7 +29,7 @@ func lineageRefSnapshot(ref *resolvedRef) commonModels.JSONMap {
 }
 
 func knownLineageWriteMode(mode string) bool {
-	return mode == "replace" || mode == "append" || mode == "upsert" || mode == "cdc"
+	return mode == "create" || mode == "replace" || mode == "append" || mode == "upsert" || mode == "cdc"
 }
 
 func fieldOperationPairs(inputs, outputs []*resolvedRef, operations []models.LineageOperation) ([]relationPair, error) {
