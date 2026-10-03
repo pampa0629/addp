@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strconv"
 
 	"github.com/addp/common/authorization"
 	"github.com/google/uuid"
 )
 
-// SystemFulfillmentClient exposes recovery only, never new acceptance or Grant.
+// SystemFulfillmentClient transports preparation identity, acceptance and
+// recovery. None of these operations writes a resource Grant.
 type SystemFulfillmentClient struct{ tenantHTTPClient }
 
 func NewSystemFulfillmentClient(baseURL string, tokens ServiceTokenProvider, httpClient *http.Client) *SystemFulfillmentClient {
@@ -18,6 +20,37 @@ func NewSystemFulfillmentClient(baseURL string, tokens ServiceTokenProvider, htt
 
 func (c *SystemFulfillmentClient) WithTenantID(id uint) *SystemFulfillmentClient {
 	return &SystemFulfillmentClient{c.tenantHTTPClient.withTenantID(id)}
+}
+
+// CurrentPrincipal derives the caller from System's authoritative AuthContext,
+// not deployment configuration, user input or local token parsing.
+func (c *SystemFulfillmentClient) CurrentPrincipal(ctx context.Context) (int64, error) {
+	var ac authorization.AuthContext
+	if err := c.doJSON(ctx, http.MethodGet, "/api/v1/system/auth/context", nil, &ac); err != nil {
+		return 0, err
+	}
+	if ac.Principal.Type != "service_principal" || ac.Context.Type != "tenant" || ac.Context.TenantID == nil ||
+		ac.Client.ClientID == nil || *ac.Client.ClientID != "addp-catalog" || c.tenantID == nil ||
+		*ac.Context.TenantID != strconv.FormatUint(uint64(*c.tenantID), 10) {
+		return 0, errors.New("unexpected fulfillment caller")
+	}
+	id, err := strconv.ParseInt(ac.Principal.ID, 10, 64)
+	if err != nil || id <= 0 {
+		return 0, errors.New("invalid fulfillment caller")
+	}
+	return id, nil
+}
+
+func (c *SystemFulfillmentClient) Accept(ctx context.Context, id uuid.UUID, binding authorization.SharingFulfillmentBinding) (*authorization.SharingFulfillmentResolution, error) {
+	if id == uuid.Nil || binding.Validate() != nil {
+		return nil, errors.New("invalid fulfillment request")
+	}
+	var result authorization.SharingFulfillmentResolution
+	err := c.doJSON(ctx, http.MethodPost, "/api/v1/system/runtime/engine-access-fulfillments/"+id.String()+"/accept", binding, &result)
+	if err != nil {
+		return nil, err
+	}
+	return &result, nil
 }
 
 func (c *SystemFulfillmentClient) Resolve(ctx context.Context, id uuid.UUID, binding authorization.SharingFulfillmentBinding) (*authorization.SharingFulfillmentLookup, error) {

@@ -35,6 +35,7 @@ services:
       retries: 36
     restart: unless-stopped
   runtime-log-pruner:
+    user: "${ADDP_RUNTIME_LOG_OWNER:-0:0}"
     build:
       context: ../..
       dockerfile: scripts/infra/Dockerfile.runtime-log
@@ -46,6 +47,7 @@ services:
       ADDP_RUNTIME_LOG_NODE_BYTES: ${ADDP_RUNTIME_LOG_NODE_BYTES:-10737418240}
     restart: unless-stopped
   runtime-log-observer:
+    user: "${ADDP_RUNTIME_LOG_OWNER:-0:0}"
     build:
       context: ../..
       dockerfile: scripts/infra/Dockerfile.runtime-log

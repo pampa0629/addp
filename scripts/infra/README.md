@@ -876,6 +876,8 @@ Common PostgreSQL 门禁同时验证正式表结果的覆盖事务：重复覆�
 
 运行日志由共享 `runtime-log` 启动工具捕获，使用“节点分段文件 → Alloy → Loki → Infra MinIO”单一路径。`bash scripts/infra/up.sh` 管理日志设施，开发环境首次启动仅生成缺失的独立读写令牌和 S3 密钥；生产环境使用 `scripts/prod/setup-env.sh` 校验配置，不自动补凭据。读、写令牌不得复用，应用只输出日志，不携带 Loki 写入凭据。
 
+Online 启动只使用仓库外的 `ADDP_ONLINE_ENV_FILE`；Hosted 在不归档的秘密目录内初始化同一组凭据，退出时删除，禁止生成根 `.env`。标准宿主启动在 Compose 前创建日志父目录，并将观察器和清理器的 `ADDP_RUNTIME_LOG_OWNER` 设为调用用户的 UID/GID；root 容器中的独立接收器使用受控源目录所有者身份写入。源目录和文件继续保持 `0700`／`0600`，不通过放宽权限或递归 chown 修复历史目录；个人数据卷删除保护保持不变。
+
 - 源目录 `ADDP_RUNTIME_LOG_ROOT` 默认 `./logs/runtime`，按模块和进程实例保存；相对 bind 路径必须以 `./` 开头。
 - Loki 使用独立 bucket `addp-runtime-logs` 和最小权限账号；初始化容器同时为 UID 10001 准备 `loki_data` 卷权限。
 - `loki_data` 保存 WAL、索引缓存和 Compactor 状态；`alloy_data` 保存读取位置；MinIO 数据卷保存集中日志。普通应用停止、重启和 `infra/down.sh` 不删除这些卷。

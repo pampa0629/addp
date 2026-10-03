@@ -12,6 +12,7 @@ import (
 )
 
 var builtinServiceClientIDs = []string{
+	"addp-system",
 	"addp-log-observer",
 	"addp-ontology",
 	"addp-agent",
@@ -43,6 +44,7 @@ var builtinServiceClientIDs = []string{
 }
 
 var builtinTenantRuntimeServiceClientIDs = []string{
+	"addp-system",
 	"addp-ontology",
 	"addp-agent",
 	"addp-asset",
@@ -115,6 +117,24 @@ func (s *ServiceCredentialProvisioner) applyClient(ctx context.Context, reposito
 	if client.ServicePrincipalID <= 0 {
 		return fmt.Errorf("%w: OAuth client %s is not bound to a service principal", commonapi.ErrConflict, clientID)
 	}
+	// The independent System basis reader is optional. Removing its configured
+	// credential disables only this client, including previously issued tokens.
+	if clientID == "addp-system" && secret == "" {
+		if client.Status == "disabled" {
+			return nil
+		}
+		now := s.now().UTC()
+		if err := repository.db.WithContext(ctx).Model(&serviceOAuthClientCredentialRow{}).Where("client_id = ?", clientID).Updates(map[string]any{"status": "disabled", "updated_at": now}).Error; err != nil {
+			return wrapRepositoryError(err)
+		}
+		if _, err := repository.IncrementPrincipalAuthorizationVersion(ctx, client.ServicePrincipalID); err != nil {
+			return err
+		}
+		if _, err := repository.RevokeActiveTokenFamilies(ctx, client.ServicePrincipalID, now, "service_credential_disabled"); err != nil {
+			return err
+		}
+		return NewAuditWriter(repository).Write(ctx, AuditEvent{EventName: "iam.service_principal.credential.disabled", Result: AuditResultSucceeded, RiskLevel: AuditRiskHigh, ModuleName: "system", EntityType: "service_principal", EntityID: fmt.Sprintf("%d", client.ServicePrincipalID), Details: map[string]any{"client_id": clientID}})
+	}
 	if client.ClientSecretHash != nil && bcrypt.CompareHashAndPassword([]byte(*client.ClientSecretHash), []byte(secret)) == nil {
 		if client.Status == "active" {
 			return nil
@@ -164,6 +184,9 @@ func validateBuiltinServiceSecrets(secrets map[string]string) error {
 	seen := make(map[string]string, len(secrets))
 	for _, clientID := range builtinServiceClientIDs {
 		secret := secrets[clientID]
+		if clientID == "addp-system" && secret == "" {
+			continue
+		}
 		if secret != strings.TrimSpace(secret) || len(secret) < 32 || len(secret) > 72 {
 			return fmt.Errorf("%w: %s secret must contain 32-72 non-whitespace bytes", commonapi.ErrBadRequest, clientID)
 		}

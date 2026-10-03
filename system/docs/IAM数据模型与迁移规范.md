@@ -139,7 +139,11 @@ Role、Assignment、Membership、组织关系或 Principal 状态变化时，数
 
 ### 源授权办理协调底座
 
-源授权办理协调底座使用 `system.engine_access_fulfillment_outcomes` 保存同次请求唯一、不可改写的 `accepted` 或 `closed` 结果。它不是 Grant、批准要求或访问凭据；没有结果与已关闭严格不同。请求编号绑定租户、机器主体、精确结构化路径、决定引用、批准要求版本及参数；System 数据库墙钟产生受理时间及不超过原授权到期的 5 分钟截止时间。结果与最小审计同事务，重试只返回原结果。新受理仍为内部仓储能力，真实业务决定、资格核验和可信调用贯通前，不能用它签发内容访问。
+正式准备→可信反查→首次受理（2026-10-03）：Catalog 人类入口从可信 AuthContext 派生操作人，只接收请求／决定编号和批准要求版本；本地完整待核清绑定提交后才发送。System `POST /runtime/engine-access-fulfillments/:request_id/accept` 限定 `addp-catalog` 当前 Tenant Service 身份及 `.execute`；使用独立 `addp-system` Tenant Service OAuth 在事务锁外反查 Catalog 精确待核清依据。返回后对机器主体、办理人、确认人及接收账号去重升序锁定，事务内核验当前 IAM、独立人类办理权限、管理委派、接收主体及精确批准要求版本。确认人历史授权版本仅供审计，办理人版本必须与请求一致；等待后按数据库墙钟复核权限及期限。反查期间先提交的原受理／关闭结果优先按完整绑定核清，不由旧人员状态阻断历史恢复。
+
+迁移 `000180_catalog_fulfillment_basis_runtime` 登记不可委托、不可租户定制的 `catalog.sharing_fulfillment.read`，只授予内置 `tenant.system_runtime`；为存量已初始化 Tenant 和未来新 Tenant 接入 `addp-system`。OAuth Client 初始停用且 Secret 为空，SQL 不保存明文或借用其他服务 Secret。`SYSTEM_SERVICE_CLIENT_SECRET` 是可选独立配置：缺失不阻断 System Ready，新受理明确返回 503 `fulfillment_capability_unavailable`，历史核清／关闭及同参结果恢复仍可用；移除配置通过既有 Provisioner 停用 Client 并撤销活动 Token Family，不回退独立批准或推断 Catalog 退出。未运行真实 OAuth 双服务 Online T4，不以受控 owner Transport 夹具替代其验收。
+
+源授权办理协调底座使用 `system.engine_access_fulfillment_outcomes` 保存同次请求唯一、不可改写的 `accepted` 或 `closed` 结果。它不是 Grant、批准要求或访问凭据；没有结果与已关闭严格不同。请求编号绑定租户、机器主体、精确结构化路径、决定引用、批准要求版本及参数；System 数据库墙钟产生受理时间及不超过原授权到期的 5 分钟截止时间。结果与最小审计同事务，重试只返回原结果。正式新受理已由专用 Runtime 接口消费该底座，真实业务决定与当前资格独立核验；仍未写入 Grant，不能用受理回执签发内容访问。
 
 核清读取使用独立只读事务，拒绝在受理写事务中读取自身未提交结果；与仲裁共用唯一的完整绑定匹配路径，不取请求或目标仲裁锁。不存在返回未找到，参数不同返回绑定冲突，数据库错误原样保留；查询均不创建关闭结果、不追加办理审计。退出、更换批准要求版本或原窗口到期不改变历史查询结果，也不因此重新授予或续期。
 
@@ -147,13 +151,13 @@ Role、Assignment、Membership、组织关系或 Principal 状态变化时，数
 
 首次受理须在同一事务通过 IAM 仓储核验接收 User 及本 Tenant Membership，或本 Tenant 的 Department／Project Group。共享账号锁先去重并按 ID 升序取得，再读取成员、Tenant 与组织；共享锁保护生命周期至事务结束，业务核验后按数据库墙钟再次检查成员期限。接收组织不要求非空，接收账号不绑定当前授权版本快照；这不代替实际 Grant 写入和访问时的当前核验。历史受理／关闭结果的核清不受后来接收主体失效影响，不产生新授权。
 
-完整 `binding` 同时绑定原操作人的 User Principal、Tenant Membership 和授权版本，以十进制字符串保留 bigint 精度，不保存 User Token 或 Role／Permission／责任副本。首次受理通过 IAM Repository 的事务内 `LockUserAuthorizationSource` 按 Principal → Membership → Tenant 取得共享行锁，再进入请求和目标边界；核验当前对象类型、状态、成员身份范围、授权版本和有效期，业务核验后重新检查数据库墙钟。共享锁既阻止 IAM 状态修改，又兼容审计外键引用检查，避免身份写锁与目标锁的循环等待；原管理委派写事务不改用共享锁。原操作人失效不阻止同参历史核清或持久关闭，但不得据历史结果新建受理。此底线仅核验当前身份，不证明这些字段确实来自该用户操作；owner 持久来源核验及独立功能 Permission／管理委派消费者仍待贯通，无新增身份凭据或接口。
+完整 `binding` 同时绑定原操作人的 User Principal、Tenant Membership 和授权版本，以十进制字符串保留 bigint 精度，不保存 User Token 或 Role／Permission／责任副本。首次受理通过 IAM Repository 的事务内 `LockUserAuthorizationSource` 按 Principal → Membership → Tenant 取得共享行锁，再进入请求和目标边界；核验当前对象类型、状态、成员身份范围、授权版本和有效期，业务核验后重新检查数据库墙钟。共享锁既阻止 IAM 状态修改，又兼容审计外键引用检查，避免身份写锁与目标锁的循环等待；原管理委派写事务不改用共享锁。原操作人失效不阻止同参历史核清或持久关闭，但不得据历史结果新建受理。此底线本身不证明这些字段确实来自该用户操作；正式消费者通过 Catalog 专用 owner 接口核对原操作人持久来源，并独立核验当前功能 Permission 与管理委派，不保存或透传 User Token。
 
-`system.engine_access_approval_requirements` 保存精确源目标的 `catalog/independent` 要求及并发版本，既不是 Grant，也不保存 Catalog 责任副本或审批人白名单。初始化必须显式执行；缺失不能推导为允许独立批准。要求变更与新受理使用同一目标事务锁，新 Catalog 受理必须匹配当前模式和版本；退出不改变之前已受理的原结果，重新启用也不能复用旧版本新建受理。承接账号只写入当次交接审计，后续批准仍须核验当前独立批准 Permission 与有效管理委派。迁移 000168 不自动初始化存量目标、不创建 Permission 或真实 Grant。迁移 000174 随真实初始化／读取 API 发布两个 Tenant Scope、不可委托且允许租户自定义的独立 Permission，不默认分配角色或修改主体授权版本。初始化固定建立版本 1 的 `catalog` 要求，IAM 当前权限与管理委派在同一事务核验，等待目标锁后再次检查期限并写入配置及审计；已有要求返回冲突，不覆盖独立模式。读取同时按当前 Tenant、Engine 及当前委派隔离。退出／重新启用、跨模块受理与 Grant 仍待贯通，内部交接核验回调不视为生产资格证明。
+`system.engine_access_approval_requirements` 保存精确源目标的 `catalog/independent` 要求及并发版本，既不是 Grant，也不保存 Catalog 责任副本或审批人白名单。初始化必须显式执行；缺失不能推导为允许独立批准。要求变更与新受理使用同一目标事务锁，新 Catalog 受理必须匹配当前模式和版本；退出不改变之前已受理的原结果，重新启用也不能复用旧版本新建受理。承接账号只写入当次交接审计，后续批准仍须核验当前独立批准 Permission 与有效管理委派。迁移 000168 不自动初始化存量目标、不创建 Permission 或真实 Grant。迁移 000174 随真实初始化／读取 API 发布两个 Tenant Scope、不可委托且允许租户自定义的独立 Permission，不默认分配角色或修改主体授权版本。初始化固定建立版本 1 的 `catalog` 要求，IAM 当前权限与管理委派在同一事务核验，等待目标锁后再次检查期限并写入配置及审计；已有要求返回冲突，不覆盖独立模式。读取同时按当前 Tenant、Engine 及当前委派隔离。退出／重新启用与 Grant 仍待贯通；跨模块首次受理已接通，内部交接核验回调不视为生产资格证明。
 
-迁移 `000170_catalog_sharing_decision_permission` 随 Catalog 真实业务确认 API 发布独立 `catalog.sharing_decision.create`：仅 Tenant Scope、high risk、不可委托、允许租户定制。它只登记功能权限，不默认分配给内置管理员或任何 Role，不新增 Assignment 或数据 Grant、不修改已有主体授权版本。Catalog 仍须以该权限与当前业务负责人资格取交集；System 新受理消费者和实际源数据规则尚未贯通。前向升级和重复执行由既有 System IAM PostgreSQL 门禁覆盖，不操作开发业务库的迁移状态。
+迁移 `000170_catalog_sharing_decision_permission` 随 Catalog 真实业务确认 API 发布独立 `catalog.sharing_decision.create`：仅 Tenant Scope、high risk、不可委托、允许租户定制。它只登记功能权限，不默认分配给内置管理员或任何 Role，不新增 Assignment 或数据 Grant、不修改已有主体授权版本。Catalog 仍须以该权限与当前业务负责人资格取交集；System 新受理消费者已接通，实际源数据规则尚未贯通。前向升级和重复执行由既有 System IAM PostgreSQL 门禁覆盖，不操作开发业务库的迁移状态。
 
-迁移 `000178_engine_access_fulfillment_handling` 随 System 当前 User 办理范围观察和 Catalog 人类候选摘要读取登记独立 `system.engine_access_fulfillment.create`：仅 Tenant Scope、high risk、不可委托、允许租户定制。没有默认 Role Permission、Assignment 或 Grant，不修改现有主体授权版本。业务确认权、编目权、管理委派或机器 `.execute` 都不能替代它；有效管理委派仍须另外核验。前向迁移与重复运行并入既有 `engine-access-coordination` PostgreSQL 分组和完整迁移门禁。当前不是正式准备／新受理或内容授权入口。
+迁移 `000178_engine_access_fulfillment_handling` 随 System 当前 User 办理范围观察和 Catalog 人类候选摘要读取登记独立 `system.engine_access_fulfillment.create`：仅 Tenant Scope、high risk、不可委托、允许租户定制。没有默认 Role Permission、Assignment 或 Grant，不修改现有主体授权版本。业务确认权、编目权、管理委派或机器 `.execute` 都不能替代它；有效管理委派仍须另外核验。前向迁移与重复运行并入既有 `engine-access-coordination` PostgreSQL 分组和完整迁移门禁。该观察接口本身不是受理或内容授权入口；正式准备与首次受理另通过专用入口消费同一独立 Permission。
 
 普通只读共享显式选择 `expiry_mode=at_time|until_revoked`，受理结果和完整 binding 都保存该模式，`grant_expires_at` 在长期有效时为 NULL。指定到期仍须为未来时间；长期有效的自动办理窗口仍严格为原受理时间后 5 分钟。迁移 `000172_engine_access_fulfillment_expiry_mode` 在排他表锁及同一事务内暂时撤下该表 UPDATE/DELETE 不可变保护，将存量限时记录无损标记为 `at_time`、为 binding 补齐模式，再恢复保护及完整日期／截止时间约束；原到期、受理时间、截止时间、身份和审计不变。不改写已执行 167，不增加实际 Grant、默认权限或授权版本变化。长期有效不改变临时接入规则和管理委派的强制到期契约。
 

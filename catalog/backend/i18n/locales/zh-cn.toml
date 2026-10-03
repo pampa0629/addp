@@ -1,6 +1,11 @@
 [catalog.error.invalid_params]
 other = "请求参数无效"
 
+[permissions.catalog.sharing_fulfillment.read.name]
+other = "反查持久办理依据"
+[permissions.catalog.sharing_fulfillment.read.description]
+other = "仅允许 System 租户服务反查精确待核清请求的当前 Catalog 依据，不授予数据访问"
+
 [catalog.error.sharing_confirmation_forbidden]
 other = "需要当前有效业务负责人身份及独立共享确认权限；编目维护权限不能替代"
 [catalog.error.sharing_decision_conflict]

@@ -15,10 +15,10 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// Internal storage command, not an authenticated service. A future consumer
-// must derive Operator from verified User AuthContext, establish the calling
-// service identity and check current Permissions/delegation/recipient before
-// preparing. These well-formed IDs are not evidence of those qualifications.
+// Internal storage command, not an authenticated service. PrepareSharingFulfillment
+// derives Operator from verified User AuthContext and checks the current handling
+// scope before preparing. System independently checks recipient and IAM at first
+// acceptance. These well-formed IDs alone prove none of those qualifications.
 type sharingFulfillmentOperator = authorization.SharingFulfillmentOperator
 
 type sharingFulfillmentPreparation struct {

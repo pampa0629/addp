@@ -200,5 +200,6 @@ if __name__ == "__main__":
         host="0.0.0.0",
         port=settings.AGENT_BACKEND_PORT,
         reload=False,
+        log_config=None,
         log_level="info",
     )

@@ -46,6 +46,7 @@ type Config struct {
 
 	// 内置模块服务 URL。
 	SystemServiceURL       string
+	CatalogServiceURL      string
 	MetaServiceURL         string
 	TransferServiceURL     string
 	ManagerServiceURL      string
@@ -113,6 +114,7 @@ func Load() *Config {
 		ConsoleURL:                  strings.TrimSuffix(getEnv("CONSOLE_URL", "http://localhost:5170"), "/"),
 		ProjectName:                 getEnv("PROJECT_NAME", "全域数据平台"),
 		ServiceClientSecrets: map[string]string{
+			"addp-system":       getEnv("SYSTEM_SERVICE_CLIENT_SECRET", ""),
 			"addp-agent":        getEnv("AGENT_SERVICE_CLIENT_SECRET", ""),
 			"addp-asset":        getEnv("ASSET_SERVICE_CLIENT_SECRET", ""),
 			"addp-catalog":      getEnv("CATALOG_SERVICE_CLIENT_SECRET", ""),
@@ -165,6 +167,7 @@ func Load() *Config {
 
 		// 内置引擎服务 URL
 		SystemServiceURL:       getEnv("SYSTEM_URL", "http://localhost:8180"),
+		CatalogServiceURL:      getEnv("CATALOG_URL", "http://localhost:8192"),
 		MetaServiceURL:         getEnv("META_URL", "http://localhost:8082"),
 		TransferServiceURL:     getEnv("TRANSFER_URL", "http://localhost:8083"),
 		ManagerServiceURL:      getEnv("MANAGER_URL", "http://localhost:8081"),

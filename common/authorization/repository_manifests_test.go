@@ -13,8 +13,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		t.Fatalf("LoadRepositoryAuthorizationCatalog() error = %v", err)
 	}
 	descriptors := report.Permissions
-	if len(descriptors) != 467 {
-		t.Fatalf("descriptor count = %d, want 467", len(descriptors))
+	if len(descriptors) != 468 {
+		t.Fatalf("descriptor count = %d, want 468", len(descriptors))
 	}
 	for _, descriptor := range descriptors {
 		if descriptor.OwnerModule == "security" && !reflect.DeepEqual(descriptor.AllowedScopeTypes, []string{"tenant"}) {
@@ -42,8 +42,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 			}
 		}
 	}
-	if len(roles) != 70 {
-		t.Fatalf("role count = %d, want 70", len(roles))
+	if len(roles) != 71 {
+		t.Fatalf("role count = %d, want 71", len(roles))
 	}
 	if roles[0].Key != "platform.agent_runtime" || roles[len(roles)-1].Key != "tenant.transfer_runtime" {
 		t.Fatalf("role boundary keys = %q, %q", roles[0].Key, roles[len(roles)-1].Key)
@@ -51,6 +51,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	assertRepositoryRolePermissions(t, roles, "platform.inference_runtime", []string{"system.runtime_registry.update"})
 	assertRepositoryRolePermissions(t, roles, "platform.catalog_runtime", []string{"platform.tenant.read", "system.runtime_registry.update"})
 	assertRepositoryRolePermissions(t, roles, "tenant.catalog_runtime", []string{"develop.catalog.read", "iam.department.read", "iam.tenant_membership.read", "meta.catalog.read", "model.catalog.read", "quality.catalog.read", "service.catalog.read", "standard.catalog.read", "standard.domain.read", "standard.element.read", "standard.glossary.read", "system.engine_access_fulfillment.execute", "workbench.catalog.read"})
+	assertRepositoryRolePermissions(t, roles, "tenant.system_runtime", []string{"catalog.sharing_fulfillment.read"})
+	assertRepositoryRolePrincipalTypes(t, roles, "tenant.system_runtime", []string{"service_principal"})
 	assertRepositoryRolePermissions(t, roles, "platform.duckdb_runtime", []string{"system.runtime_registry.update"})
 	assertRepositoryRolePermissions(t, roles, "tenant.duckdb_runtime", []string{"system.execution_authorization.execute"})
 	assertRepositoryRolePermissions(t, roles, "tenant.ontology_runtime", []string{"system.execution_authorization.execute"})

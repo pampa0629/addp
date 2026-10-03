@@ -24,6 +24,27 @@ class HostedOrchestratorGateTest(unittest.TestCase):
               [ "${ADDP_TEST_FIXTURE_FAIL:-0}" != 1 ] || exit 1
             fi
         ''')
+        self.host._write_repository_script("scripts/infra/up.sh", '''
+            #!/usr/bin/env bash
+            set -euo pipefail
+            [ ! -e .env ]
+            [ "$ADDP_ONLINE_ENV_FILE" = "$ADDP_ONLINE_SECRET_DIR/runtime.env" ]
+            [ -f "$ADDP_ONLINE_ENV_FILE" ]
+            [ "$ADDP_RUNTIME_LOG_OWNER" = "$(id -u):$(id -g)" ]
+            python3 - <<'PYCREDENTIALS'
+            import os
+            from pathlib import Path
+            secret = Path(os.environ['ADDP_ONLINE_ENV_FILE'])
+            assert secret.stat().st_mode & 0o777 == 0o600
+            assert len(os.environ['LOKI_READ_TOKEN']) == 64
+            assert os.environ['LOKI_READ_TOKEN'] != os.environ['LOKI_WRITE_TOKEN']
+            assert not secret.is_relative_to(Path(os.environ['ADDP_ONLINE_ARTIFACT_DIR']))
+            witness = Path(os.environ['ADDP_TEST_RUNTIME_SECRET_WITNESS'])
+            witness.write_text(secret.read_text())
+            witness.chmod(0o600)
+            PYCREDENTIALS
+            echo infra-up >> "$ADDP_TEST_GATE_TRACE"
+        ''')
         self.host._executable("make", '''
             #!/usr/bin/env bash
             echo "make:$*" >> "$ADDP_TEST_GATE_TRACE"
@@ -44,7 +65,8 @@ class HostedOrchestratorGateTest(unittest.TestCase):
                    RUNNER_TEMP=str(self.host.root), ADDP_ONLINE_HOST="1", ADDP_ONLINE_HOSTED="1",
                    ONLINE_SUITE_INPUT="orchestrator-execution", ADDP_ONLINE_ARTIFACT_DIR=str(self.host.artifacts),
                    ADDP_ONLINE_SECRET_DIR=str(self.host.secrets), ADDP_TEST_GATE_TRACE=str(self.host.trace),
-                   ADDP_TEST_BACKGROUND_PIDS=str(self.host.background_pids))
+                   ADDP_TEST_BACKGROUND_PIDS=str(self.host.background_pids),
+                   ADDP_TEST_RUNTIME_SECRET_WITNESS=str(self.host.root / "runtime-secret-witness.env"))
         env.update(overrides)
         return subprocess.run(["bash", "scripts/test/online-hosted-orchestrator-gate.sh"] + (["--check-only"] if check else []),
                               cwd=self.host.repository, env=env, capture_output=True, text=True, timeout=20)
@@ -74,6 +96,14 @@ class HostedOrchestratorGateTest(unittest.TestCase):
         self.assertLess(trace.index("application-stop"), trace.index("source-fixture:stop"))
         self.assertFalse(self.host.secrets.exists())
         self.assertIn("infra_cleanup=zero_residuals", (self.host.artifacts / "summary.txt").read_text())
+        self.assertFalse((self.host.repository / ".env").exists())
+        witness = (self.host.root / "runtime-secret-witness.env").read_text()
+        evidence = result.stdout + result.stderr + "".join(
+            path.read_text() for path in self.host.artifacts.rglob("*") if path.is_file()
+        )
+        for line in witness.splitlines():
+            if line.startswith(("LOKI_READ_TOKEN=", "LOKI_WRITE_TOKEN=", "LOKI_S3_SECRET_KEY=", "LOG_OBSERVER_SERVICE_CLIENT_SECRET=")):
+                self.assertTrue(line.split("=", 1)[1] not in evidence, "runtime credential entered artifact")
 
     def test_suite_failure_still_destroys_owned_source_infra_and_credentials(self):
         result = self.run_gate(ADDP_TEST_SUITE_FAIL="1")

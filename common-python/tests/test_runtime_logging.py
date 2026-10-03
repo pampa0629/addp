@@ -11,6 +11,8 @@ from addp_common.runtime_logging import RuntimeFormatter, setup_runtime_logging
 def runtime_output(level=logging.INFO):
     root = logging.getLogger()
     previous, previous_level = root.handlers[:], root.level
+    server_loggers = [logging.getLogger(name) for name in ("uvicorn", "uvicorn.error", "uvicorn.access")]
+    previous_servers = [(logger.handlers[:], logger.level, logger.propagate, logger.disabled) for logger in server_loggers]
     root.handlers = []
     output = StringIO()
     try:
@@ -22,6 +24,11 @@ def runtime_output(level=logging.INFO):
             handler.close()
         root.handlers = previous
         root.setLevel(previous_level)
+        for logger, (handlers, level, propagate, disabled) in zip(server_loggers, previous_servers):
+            logger.handlers = handlers
+            logger.setLevel(level)
+            logger.propagate = propagate
+            logger.disabled = disabled
 
 class RuntimeLoggingTests(unittest.TestCase):
     def test_stack_is_one_json_event_and_plain_stderr_has_no_implied_level(self):
@@ -38,20 +45,44 @@ class RuntimeLoggingTests(unittest.TestCase):
         self.assertIn("ValueError: diagnostic detail", value["stack"])
 
     def test_setup_has_only_one_stdout_handler_after_reconfiguration(self):
-        root = logging.getLogger()
-        previous, level = root.handlers[:], root.level
-        root.handlers = []
-        output = StringIO()
-        try:
-            with patch("sys.stdout", output):
-                setup_runtime_logging(); setup_runtime_logging()
-                logging.info("one event")
-            self.assertEqual(len(root.handlers), 1)
+        with runtime_output() as output:
+            setup_runtime_logging()
+            logging.info("one event")
+            self.assertEqual(len(logging.getLogger().handlers), 1)
             self.assertEqual(len(output.getvalue().splitlines()), 1)
             self.assertEqual(json.loads(output.getvalue())["message"], "one event")
-        finally:
-            root.handlers = previous
-            root.setLevel(level)
+
+    def test_server_handlers_are_replaced_and_levels_remain_filterable(self):
+        with runtime_output() as output:
+            # Reproduce Uvicorn's independent text handlers, including stderr.
+            legacy = StringIO()
+            for name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
+                logger = logging.getLogger(name)
+                logger.handlers = [logging.StreamHandler(legacy)]
+                logger.propagate = False
+                logger.setLevel(logging.INFO)
+                logger.disabled = True
+            setup_runtime_logging()
+            setup_runtime_logging()
+            logging.getLogger("uvicorn.error").info("Started server process [%d]", 8181)
+            logging.getLogger("uvicorn.access").info('%s - "%s %s HTTP/1.1" %d', "127.0.0.1", "GET", "/test", 200)
+            logging.getLogger("uvicorn").warning("server warning")
+            try:
+                raise ValueError("server failure")
+            except ValueError:
+                logging.getLogger("uvicorn.error").exception("request failed")
+            events = [json.loads(line) for line in output.getvalue().splitlines()]
+            self.assertEqual([event["level"] for event in events], ["info", "info", "warning", "error"])
+            self.assertEqual(events[0]["message"], "Started server process [8181]")
+            self.assertIn("ValueError: server failure", events[3]["stack"])
+            self.assertEqual(legacy.getvalue(), "")
+            output.seek(0)
+            output.truncate(0)
+            setup_runtime_logging(logging.ERROR)
+            logging.getLogger("uvicorn.error").info("must be suppressed")
+            logging.getLogger("uvicorn.access").info("must be suppressed")
+            logging.getLogger("uvicorn.error").error("must be retained")
+            self.assertEqual([json.loads(line)["level"] for line in output.getvalue().splitlines()], ["error"])
 
     def test_launch_identity_is_stable_until_process_changes(self):
         from addp_common.client import module_registry as registry

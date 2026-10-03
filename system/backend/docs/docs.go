@@ -5919,6 +5919,92 @@ const docTemplate = `{
                 ]
             }
         },
+        "/runtime/engine-access-fulfillments/{request_id}/accept": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅 Catalog Tenant Service；锁外可信反查已提交请求，事务内核验当前人类、目标批准要求和期限；回执不是 Grant | Catalog Tenant Service only; trusted committed-basis lookup outside locks and current eligibility/target/expiry verification inside the transaction; receipt is not a Grant",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "源授权办理 | Source Access Fulfillment"
+                ],
+                "summary": "首次受理源读取授权办理 | Accept source-read access fulfillment",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "原请求 UUID | Original request UUID",
+                        "name": "request_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "完整绑定 | Complete binding",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/authorization.SharingFulfillmentBinding"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "不可变回执，不是授权 | Immutable receipt, not granted access",
+                        "schema": {
+                            "$ref": "#/definitions/authorization.SharingFulfillmentResolution"
+                        }
+                    },
+                    "400": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.engine_access_fulfillment.execute"
+                ]
+            }
+        },
         "/runtime/engine-access-fulfillments/{request_id}/close": {
             "post": {
                 "security": [

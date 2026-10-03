@@ -41,6 +41,7 @@ SERVICE_SECRET_KEYS=(
   AGENT_SERVICE_CLIENT_SECRET
   ASSET_SERVICE_CLIENT_SECRET
   CATALOG_SERVICE_CLIENT_SECRET
+  SYSTEM_SERVICE_CLIENT_SECRET
   WORKBENCH_SERVICE_CLIENT_SECRET
   COPILOT_SERVICE_CLIENT_SECRET
   DEVELOP_SERVICE_CLIENT_SECRET
@@ -136,6 +137,9 @@ validate_production_env() {
 
   local seen_secrets=()
   for key in "${SERVICE_SECRET_KEYS[@]}"; do
+    if [ "$key" = "SYSTEM_SERVICE_CLIENT_SECRET" ] && [ -z "$(env_value "$key")" ]; then
+      continue
+    fi
     require_secret "$key" || return 1
     value="$(env_value "$key")"
     if [ "${#value}" -lt 32 ] || [ "${#value}" -gt 72 ]; then

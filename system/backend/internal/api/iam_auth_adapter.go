@@ -15,6 +15,7 @@ import (
 	commoni18n "github.com/addp/common/middleware/i18n"
 	requestidmiddleware "github.com/addp/common/middleware/requestid"
 	sysi18n "github.com/addp/system/i18n"
+	"github.com/addp/system/internal/engineaccess"
 	"github.com/addp/system/internal/iam"
 	"github.com/addp/system/internal/middleware"
 	"github.com/addp/system/internal/models"
@@ -563,6 +564,11 @@ func respondIAMError(c *gin.Context, err error) {
 	messageID := sysi18n.MsgInternalError
 	var errorCode *string
 	switch {
+	case errors.Is(err, engineaccess.ErrFulfillmentCapability):
+		status = http.StatusServiceUnavailable
+		messageID = sysi18n.MsgFulfillmentCapabilityUnavailable
+		code := "fulfillment_capability_unavailable"
+		errorCode = &code
 	case errors.Is(err, iam.ErrTenantRoleKeyInvalid):
 		status = http.StatusBadRequest
 		messageID = sysi18n.MsgRoleKeyInvalid

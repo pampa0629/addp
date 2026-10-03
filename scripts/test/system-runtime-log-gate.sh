@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ADDP_T2_OWNED_SERVICES=minio,runtime-log-store-init,loki,runtime-log-api,alloy,runtime-log-pruner
 # ADDP_T2_COMPOSE_FILE=scripts/test/docker-compose.system-runtime-log-t2.yml
-# ADDP_T2_INPUT_FILES=scripts/infra/Dockerfile.minio scripts/infra/Dockerfile.runtime-log scripts/infra/runtime-logs.yml scripts/infra/loki.yml scripts/infra/runtime-logs.alloy scripts/infra/runtime-log-api.conf.template scripts/infra/init-runtime-log-store.sh common/ system/backend/internal/api/module_log_source_handler.go system/backend/internal/api/module_log_source_handler_test.go system/backend/internal/repository/module_log_source_repository_test.go system/backend/internal/repository/module_log_source_repository.go system/backend/internal/service/module_log_sources.go system/backend/internal/models/module_log_source.go system/backend/internal/service/module_runtime_logs.go system/backend/internal/service/module_runtime_logs_test.go system/backend/internal/service/module_runtime_logs_loki_integration_test.go scripts/test/runtime-log-observer-fixture.py
+# ADDP_T2_INPUT_FILES=scripts/infra/Dockerfile.minio scripts/infra/Dockerfile.runtime-log scripts/infra/runtime-logs.yml scripts/infra/loki.yml scripts/infra/runtime-logs.alloy scripts/infra/runtime-log-api.conf.template scripts/infra/init-runtime-log-store.sh common/ system/backend/internal/api/module_log_source_handler.go system/backend/internal/api/module_log_source_handler_test.go system/backend/internal/repository/module_log_source_repository_test.go system/backend/internal/repository/module_log_source_repository.go system/backend/internal/service/module_log_sources.go system/backend/internal/models/module_log_source.go system/backend/internal/service/module_runtime_logs.go system/backend/internal/service/module_runtime_logs_test.go system/backend/internal/service/module_runtime_logs_loki_integration_test.go scripts/test/runtime-log-observer-fixture.py scripts/infra/up.sh scripts/utils/runtime-log-env.sh scripts/utils/hosted-online.sh scripts/test/infra-runtime-log-lifecycle_test.py
 # Own disposable Compose startup, source files and teardown.
 set -euo pipefail
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
@@ -11,8 +11,9 @@ COMPOSE_PROJECT="addp-runtime-log-t2-$RUN_ID"
 COMPOSE_FILE="$ROOT_DIR/scripts/test/docker-compose.system-runtime-log-t2.yml"
 export LOKI_TEST_SECRET="$RUN_ID" LOKI_READ_TOKEN="$RUN_ID-read" LOKI_WRITE_TOKEN="$RUN_ID-write"
 export LOKI_S3_ACCESS_KEY=test-logs LOKI_S3_SECRET_KEY="$RUN_ID" LOKI_RETENTION_HOURS=168
+export ADDP_RUNTIME_LOG_OWNER="$(id -u):$(id -g)"
 export LOKI_TEST_SOURCE="$WORK_DIR/source"
-mkdir -p "$LOKI_TEST_SOURCE"
+mkdir -m 700 -p "$LOKI_TEST_SOURCE"
 compose(){ docker compose --env-file /dev/null -p "$COMPOSE_PROJECT" -f "$COMPOSE_FILE" "$@"; }
 cleanup(){
  local result=$?
@@ -23,9 +24,9 @@ cleanup(){
  compose down --volumes --remove-orphans >"$WORK_DIR/cleanup.log" 2>&1 || result=1
  for resource in container network volume; do
   case "$resource" in
-   container) remaining=$(docker ps -aq --filter "label=com.docker.compose.project=$COMPOSE_PROJECT");;
-   network) remaining=$(docker network ls -q --filter "label=com.docker.compose.project=$COMPOSE_PROJECT");;
-   volume) remaining=$(docker volume ls -q --filter "label=com.docker.compose.project=$COMPOSE_PROJECT");;
+   container) remaining=$(docker ps -aq --filter "label=com.docker.compose.project=$COMPOSE_PROJECT") || result=1;;
+   network) remaining=$(docker network ls -q --filter "label=com.docker.compose.project=$COMPOSE_PROJECT") || result=1;;
+   volume) remaining=$(docker volume ls -q --filter "label=com.docker.compose.project=$COMPOSE_PROJECT") || result=1;;
   esac
   [ -z "$remaining" ] || result=1
  done
@@ -33,7 +34,7 @@ cleanup(){
    python3 - "$WORK_DIR" <<'PYERROR'
 from pathlib import Path
 import os,sys
-for name in ['build.log','start.log','restart.log','producer.log','container.log','cleanup.log','outage.log','observer.log','observer-fixture.log','paging.log','source-contract.log']:
+for name in ['build.log','start.log','restart.log','producer.log','container.log','cleanup.log','outage.log','observer.log','observer-fixture.log','paging.log','source-contract.log','receiver-owner.log','receiver-contract.log']:
  p=Path(sys.argv[1])/name
  if not p.exists():continue
  text=p.read_text(errors='replace')[-4000:]
@@ -43,18 +44,51 @@ for name in ['build.log','start.log','restart.log','producer.log','container.log
  print(name+':\n'+text,file=sys.stderr)
 PYERROR
  fi
- rm -rf "$WORK_DIR"
+ rm -rf "$WORK_DIR" || result=1
+ [ ! -e "$WORK_DIR" ] || result=1
+ if [ "$result" -eq 0 ]; then echo "Runtime log T2: zero owned containers/networks/volumes and source directory removed"; fi
  exit "$result"
 }
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
+echo "Runtime log: validate receiver ownership, PID and signal behavior (T1)"
+(cd "$ROOT_DIR/common"; GOWORK=off go test ./cmd/runtime-log ./runtimelog -count=1) >"$WORK_DIR/receiver-contract.log" 2>&1 || { cat "$WORK_DIR/receiver-contract.log"; exit 1; }
 echo "Runtime log: validate source authorization and retained catalog identity (T1)"
 (cd "$ROOT_DIR/system/backend"; go test ./internal/api ./internal/repository -run '^Test(LogSourceReportRequiresObserverPermissionAndBoundNode|LogSourceCatalogRetentionIdentityAndRegistration|RuntimeLogRouteEnforcesIndependentPlatformPermissionAndOfflineIdentity)$' -count=1 -v) >"$WORK_DIR/source-contract.log" 2>&1 || { cat "$WORK_DIR/source-contract.log"; exit 1; }
 echo "Runtime log T2: build owned components"
 compose build minio runtime-log-store-init runtime-log-pruner >"$WORK_DIR/build.log" 2>&1 || exit 1
 echo "Runtime log T2: owned image build passed"
 compose up -d --wait --wait-timeout 180 minio loki runtime-log-api alloy runtime-log-pruner >"$WORK_DIR/start.log" 2>&1 || exit 1
+# Use a container-native private directory so Docker Desktop UID translation
+# cannot conceal a root receiver. Business UID stays 0; only capture uses 11001.
+compose run --rm --no-deps --user 0:0 --entrypoint sh runtime-log-pruner -ec '
+  mkdir -m 700 /tmp/receiver-owned
+  chown 11001:11001 /tmp/receiver-owned
+  export ADDP_RUNTIME_LOG_ROOT=/tmp/receiver-owned
+  exec runtime-log launch --module manager --role backend -- sh -ec "$1"
+' _ '
+  test "$(id -u)" = 0
+  receiver_seen=0
+  for child in $(cat "/proc/$$/task/$$/children"); do
+    [ -r "/proc/$child/status" ] || continue
+    grep -q "^Uid:[[:space:]]*11001[[:space:]]" "/proc/$child/status"
+    receiver_seen=1
+  done
+  test "$receiver_seen" = 1
+  printf "root business with source-owner receiver\n"
+  for attempt in $(seq 1 50); do
+    file=$(find /tmp/receiver-owned -name "*.jsonl" | head -n 1)
+    if [ -n "$file" ]; then
+      test "$(stat -c %u "$file")" = 11001
+      test "$(stat -c %a "$file")" = 600
+      exit 0
+    fi
+    sleep 0.1
+  done
+  exit 4
+' >"$WORK_DIR/receiver-owner.log" 2>&1 || { echo "Root business receiver ownership regression failed" >&2; exit 1; }
+echo "Root business identity and private source-owner receiver passed"
 export LOKI_TEST_URL="http://$(compose port runtime-log-api 3100)"
 export LOKI_TEST_PROJECT="$COMPOSE_PROJECT" LOKI_TEST_COMPOSE="$COMPOSE_FILE"
 observe_once(){
@@ -66,7 +100,34 @@ query_paging(){
  if grep -q -- '--- SKIP:' "$WORK_DIR/paging.log";then echo "Runtime log paging gate refuses skipped tests" >&2; exit 1;fi
 }
 query_paging ready
-compose run --rm --no-deps runtime-log-pruner launch --module manager --role backend -- sh -c 'printf "{\"level\":\"error\",\"msg\":\"runtime-t2-first password=sample-secret\"}\n"; printf "plain stderr\n" >&2; sleep 2' >"$WORK_DIR/producer.log" 2>&1 || exit 1
+compose run --rm --no-deps --user 0:0 runtime-log-pruner launch --module manager --role backend -- sh -c '
+expected_uid=$(stat -c %u /var/log/addp)
+receiver_seen=0
+for child in $(cat "/proc/$$/task/$$/children"); do
+  [ -r "/proc/$child/status" ] || continue
+  grep -q "^Uid:[[:space:]]*$expected_uid[[:space:]]" "/proc/$child/status" || exit 3
+  receiver_seen=1
+done
+test "$receiver_seen" = 1
+test "$(id -u)" = 0
+printf "{\"level\":\"error\",\"msg\":\"runtime-t2-first password=sample-secret\"}\n"; printf "plain stderr\n" >&2; sleep 2' >"$WORK_DIR/producer.log" 2>&1 || exit 1
+# Reading and archiving from the host must work without root or chmod repairs.
+python3 - "$LOKI_TEST_SOURCE" "$WORK_DIR/runtime-sources.zip" <<'PYOWNER'
+from pathlib import Path
+import os, sys, zipfile
+root = Path(sys.argv[1])
+with zipfile.ZipFile(sys.argv[2], 'w') as archive:
+    for path in root.rglob('*'):
+        assert path.stat().st_uid == os.getuid(), 'source owner differs from host lifecycle owner'
+        if path.is_file():
+            assert path.stat().st_mode & 0o077 == 0, 'source file is not private'
+            body = path.read_bytes()
+            for key in ('LOKI_TEST_SECRET', 'LOKI_READ_TOKEN', 'LOKI_WRITE_TOKEN'):
+                assert os.environ[key].encode() not in body, 'credential entered source artifact'
+            archive.write(path, path.relative_to(root))
+    assert archive.namelist(), 'source evidence archive is empty'
+print('Host source ownership, private files and evidence archive passed')
+PYOWNER
 python3 "$ROOT_DIR/scripts/test/runtime-log-probe.py" "$LOKI_TEST_SOURCE" first
 compose up -d --force-recreate --wait --wait-timeout 90 loki runtime-log-api alloy >"$WORK_DIR/restart.log" 2>&1 || exit 1
 export LOKI_TEST_URL="http://$(compose port runtime-log-api 3100)"

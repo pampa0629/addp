@@ -55,3 +55,12 @@ type SharingFulfillmentLookup struct {
 	Found      bool                          `json:"found"`
 	Resolution *SharingFulfillmentResolution `json:"resolution"`
 }
+
+// SharingFulfillmentBasis is returned only by Catalog's dedicated runtime
+// endpoint for an exact committed pending request. It is not an access token.
+type SharingFulfillmentBasis struct {
+	RequestID    uuid.UUID                  `json:"request_id"`
+	TenantID     int64                      `json:"tenant_id,string" swaggertype:"string"`
+	Binding      SharingFulfillmentBinding  `json:"binding"`
+	Confirmation SharingFulfillmentOperator `json:"confirmation"`
+}

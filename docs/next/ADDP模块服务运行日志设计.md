@@ -89,7 +89,7 @@ System 数据库诊断默认使用 GORM Warn 级别，保留错误与慢查询�
 | `instance_id`、`node_name` | 启动身份和受信部署节点信息；作为结构化元数据 |
 | `entry_id` | 实例 ID 与接收序号组合；用于区分真实重复消息和重复采集 |
 | `timestamp` | 接收器 UTC 时间，作为检索时间；应用原始时间另以 `event_time` 保存 |
-| `level` | 结构化日志声明的规范级别；普通文本为 `unknown` |
+| `level` | 结构化日志声明的规范级别；普通文本为 `unknown`，不从通道或正文前缀推断 |
 | `channel` | stdout 或 stderr；stderr 不自动等同 ERROR |
 | `message`、`stack` | 正文及堆栈；结构化堆栈按一个事件保存，普通文本保留通道和顺序 |
 | `request_id` | 可选关联字段；不能放入索引标签 |
@@ -617,3 +617,22 @@ PostgreSQL 回归使用已有正式创建会话函数和一次性身份夹具，
 续验只读结果（2026-10-03）：当前 Copilot 实例 `ab418e79-9791-4076-9129-a7724b514668` 的采集目录包含 9 条合法 JSON 日志，采集状态为 received=written=9，parse_failures=dropped=write_failures=truncated=0。使用配置的只读存储查询入口按模块和实例过滤，Loki 返回的 9 个 entry_id 与源文件逐条一致，源文件中没有未入库记录，也未混入其他实例；该结果仅覆盖当前实例现有记录，不证明其他实例或历史日志完整。
 
 用户手动打开的抽屉实际位于“未登记实例的运行日志”，对应昨天独立验收实例 `85b2fb48-9a8d-4412-b937-179cc1e258af`，查询成功返回原有 before registration 标记，身份、角色、节点、首次采集与来源最后观测信息一致，保留“采集完整性未确认”提示。该页面验证了新代码加载后既有平台会话仍可查询历史未登记来源；当前 Copilot 服务实例的页面正文与真实筛选交互尚待单独核对。页面另显示本次扫描缺少必需采集元数据 218 处，继续使用已有不完整来源提示，不将旧历史缺字段推断为当前实例的日志丢失。
+
+
+### 13.12 Python 服务端日志级别（2026-10-03）
+
+页面截图中的 Uvicorn 启动消息正文为 INFO，但显示未知级别，原因是 Uvicorn 默认的独立文本 Handler 覆盖应用初始化的共享日志输出，接收器正确地将非结构化文本归为 unknown。修复沿用既有结构化契约：`common-python` 统一移除 Uvicorn 的独立 Handler，并让 uvicorn／uvicorn.error／uvicorn.access 传播到共享 JSON 输出；Copilot、Agent 直接启动时禁止 Uvicorn 再装配默认日志配置，容器 CLI 启动则由应用导入时的同一共享配置收敛。不增加正文前缀猜测、前端重新解析或历史日志改写。应用明确传入的日志级别继续控制输出阈值，异常堆栈仍为一个事件。
+
+受影响门禁为共享 Python T1 及 Copilot／Agent 消费方；现有变更影响发现通过 requirements 中 common-python 依赖扩散，沿用标准门禁，不新增外部依赖。开发服务由用户重启，本轮未启动或重启开发环境。
+
+验证结果：新增共享回归先在修复前失败，确认独立 Handler 无法输出共享 JSON；修复后 `make test-changed` 退出码为 0，平台 T0、Agent 离线评测、Agent 前端 40 项测试与构建通过。共享 Python 为 192 项通过、24 项子测试通过、1 项 GeoPandas 测试因本地未安装该可选依赖跳过，该项不计为通过；Copilot 171 项通过，其中新增两项使用真实 Uvicorn 配置，分别验证脚本启动与 ASGI 应用导入路径，未启动监听服务。页面上历史 unknown 记录保持原样；用户下次重启后新实例的启动消息级别和 INFO 筛选尚待实际页面确认。
+
+### 13.13 Hosted 生命周期与日志目录所有权（2026-10-03）
+
+Hosted T4 的启动、归档和退出清理属于平台生命周期。Online 环境禁止生成仓库根 `.env`，日志临时凭据由共享初始化入口写入仓库外的 owner-only `ADDP_ONLINE_ENV_FILE`；Hosted 入口在已准入的秘密目录内创建该文件，并将同一组配置导出给 Infra 与业务进程，退出时随秘密目录删除。开发环境仍使用根 `.env`，已配置的秘密不轮换，配置无新增值时不改写文件。凭据不进入 Artifact，`down.sh` 的个人环境数据卷删除保护不放宽。
+
+标准 Infra 启动先由调用用户创建 `logs` 与日志源目录，再启动 bind mount 容器，避免 Docker 创建 root-owned 父目录。宿主启动模式的观察器和清理器使用调用用户的数值 UID/GID（`ADDP_RUNTIME_LOG_OWNER`），与源接收器及归档进程保持同一所有权；容器部署可显式指定与日志生产者一致的 UID/GID，未覆盖的容器部署保持 root 所有权。容器业务进程以 root 运行时，启动器仅让独立日志接收器降权为受控源目录的 UID/GID；业务进程仍通过 exec 保留原有 UID、PID、退出与信号语义。源目录 `0700`、文件 `0600` 不放宽，不递归修改既有个人目录的所有权。一次性 T2 同样注入调用用户身份，验证宿主可以读取全部源文件并清理临时目录。
+
+受影响门禁：平台 T0 的标准生命周期与 Hosted 编排回归、System runtime log T2 的真实采集和退出零残留、Orchestrator Hosted T4 的启动／证据归档／清理。真实 Hosted 重跑需要 GitHub 已认证的调度能力及包含本轮修复的提交，未运行项不能计为通过。
+
+验证记录：修复前生命周期回归复现 Online 写根 `.env`；另以容器原生目录 UID 11001 验证 root 业务进程与独立接收器，旧启动器未降权时 T2 失败，修复后通过，避免 Docker Desktop 文件共享的 UID 映射掩盖 Linux 权限问题。最终 `make test-dev-lifecycle`（9 项新增回归及已有生命周期门禁）、`make test-online-runner`、`make test-platform`、`make test-go`、`make test-system-runtime-log` 均退出 0。T2 证明 root 业务身份保持、接收器与私有文件归属正确、宿主可读取并打包不含临时凭据的源证据，首条／旧实例／新实例日志可查询，真实断连与恢复通过；两轮 Loki 分页各查询 1004 条不同日志，退出后自建容器／网络／卷零残留且临时源目录删除。Hosted 编排回归同时核对外部 owner-only 凭据、证据无凭据及成功／失败清理。初次完整 T0 曾因其他并行改动的角色版本 108 与测试期望 107 不一致失败；对应回归同步后重跑通过。本轮未重启个人开发服务，真实 Orchestrator Hosted T4 和 Actions Artifact 上传仍未运行，等待修复提交及 GitHub 调度认证。

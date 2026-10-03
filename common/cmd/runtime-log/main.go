@@ -100,6 +100,13 @@ func run() error {
 	capture.ExtraFiles = []*os.File{outR, errR}
 	capture.Stderr = os.Stderr
 	capture.Env = os.Environ()
+	credential, err := receiverCredential(o.Root, os.Geteuid())
+	if err != nil {
+		return err
+	}
+	if credential != nil {
+		capture.SysProcAttr = &syscall.SysProcAttr{Credential: credential}
+	}
 	if err = capture.Start(); err != nil {
 		return err
 	}
@@ -117,6 +124,26 @@ func run() error {
 	// default SIGPIPE action. Writers may still receive EPIPE; logging is best effort.
 	signal.Ignore(syscall.SIGPIPE)
 	return syscall.Exec(program, f.Args(), os.Environ())
+}
+
+// Only the independent receiver adopts the controlled source directory owner.
+// The business process keeps its UID, PID, exit status and signal behavior.
+func receiverCredential(root string, effectiveUID int) (*syscall.Credential, error) {
+	if effectiveUID != 0 {
+		return nil, nil
+	}
+	if err := os.MkdirAll(root, 0700); err != nil {
+		return nil, fmt.Errorf("prepare runtime log source directory: %w", err)
+	}
+	info, err := os.Stat(root)
+	if err != nil {
+		return nil, fmt.Errorf("inspect runtime log source owner: %w", err)
+	}
+	owner, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return nil, fmt.Errorf("runtime log source owner is unavailable")
+	}
+	return &syscall.Credential{Uid: owner.Uid, Gid: owner.Gid}, nil
 }
 
 func probe() error {

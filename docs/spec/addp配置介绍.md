@@ -130,7 +130,8 @@ IAM 环境密钥边界：
 
 - ADDP 只签发随机 opaque Token，不签发或解析用户 JWT，因此禁止配置 `JWT_SECRET`。
 - 三员账号只能通过离线 IAM Bootstrap 建立；Bootstrap Secret、三员密码、TOTP Secret 和验证码均不得进入环境变量。
-- `OAUTH_USER_CODE_PEPPER`、`IAM_MFA_ENCRYPTION_KEY` 和每个内置模块独立的 `*_SERVICE_CLIENT_SECRET` 是生产环境必需的 IAM Secret。
+- `OAUTH_USER_CODE_PEPPER`、`IAM_MFA_ENCRYPTION_KEY` 和各业务模块独立的 `*_SERVICE_CLIENT_SECRET` 是生产环境必需的 IAM Secret。`SYSTEM_SERVICE_CLIENT_SECRET` 是明确的可选项：仅用于 System 以独立 `addp-system` Tenant Service 身份反查 Catalog 的持久办理依据；未配置不阻断 System Ready 或历史核清，但新受理返回 `503 fulfillment_capability_unavailable`。不借用其他 Secret，不改变目标批准要求，不推导 Catalog 已退出。
+- 全新生产配置生成独立 System Secret；已有配置只校验，缺失时不静默增加或轮换。非空值同样必须为独立的 32–72 字节 Secret。移除配置时，启动 Provisioner 将该 OAuth Client 停用并撤销其旧会话；重新配置走同一凭据路线。Catalog URL 来自 `CATALOG_URL`，不作为 System Ready 探测前置。
 - `OAUTH_PREVIOUS_USER_CODE_PEPPER` 只能在受控轮换窗口临时设置，轮换完成后必须删除。
 - `ENCRYPTION_KEY` 用于引擎连接信息等平台数据加密，不是 Token 签名密钥，不得与上述 IAM Secret 复用。
 
@@ -643,6 +644,10 @@ System 的模块登记请求与实例响应统一使用 `host_node_ips: string[]
 `ADDP_PROCESS_INSTANCE_ID` 由标准启动入口生成，不写入 .env；`ADDP_RUNTIME_LOG_ROOT` 指向节点受控日志根目录。日志按实例分段，应用统一 JSON 输出。`ADDP_RUNTIME_LOG_SEGMENT_BYTES`、`ADDP_RUNTIME_LOG_INSTANCE_BYTES`、`ADDP_RUNTIME_LOG_NODE_BYTES` 和 `ADDP_RUNTIME_LOG_SOURCE_HOURS` 分别控制段、实例、节点限额与最长源保留期；额度优先于时长。`LOKI_URL` 是 System 服务端受控查询地址，空值表示未接入；`LOKI_RETENTION_HOURS` 默认 168，须与 Loki Compactor 配置一致。日志存储和源文件不是零丢失归档，不以 positions 证明远端收妥。完整方案见 [运行日志设计](../next/ADDP模块服务运行日志设计.md)。
 
 ### 平台日志链路观测与通知
+
+日志凭据初始化统一使用 `scripts/utils/runtime-log-env.sh`。开发启动将缺失的日志秘密写入根 `.env`；Online 启动必须提供仓库外绝对路径 `ADDP_ONLINE_ENV_FILE`，且该文件不能位于 Artifact 目录。Hosted 在已准入的 owner-only 秘密目录内创建 `runtime.env`，在 Infra 启动前生成并导出凭据，退出时销毁；不生成根 `.env`，不放宽个人环境数据卷删除保护。已配置的秘密不轮换，无新增配置时不改写文件。
+
+`ADDP_RUNTIME_LOG_OWNER` 是日志观察器与清理器的数值 `UID:GID`。标准宿主启动使用调用用户身份并提前创建 `logs` 和源目录；直接容器部署未覆盖时使用 `0:0`，覆盖值须与受控源目录所有者一致。root 业务容器中的独立日志接收器使用源目录所有者身份写入，业务进程身份保持原样；目录 `0700`、文件 `0600` 不放宽，也不自动修改既有目录所有权。
 
 Infra `runtime-log-observer` 与应用接收器共享显式 `ADDP_HOST_NODE_NAME`；Monitor 使用相同节点配置绑定观测来源。缺少节点身份或独立 `LOG_OBSERVER_SERVICE_CLIENT_SECRET` 时观测器拒绝启动，不从载荷自由接入节点。开发 `infra/up.sh` 只生成缺失的凭据，并在没有节点配置时持久化当前宿主机名称；生产部署必须明确设置节点身份和凭据。System 使用这份 Secret 启用 `addp-log-observer` 的独立 Platform 服务账号。
 

@@ -1,6 +1,13 @@
 [system.auth.token_gen_failed]
 other = "生成令牌失败"
 
+[system.engine_access.fulfillment_capability_unavailable]
+other = "新授权办理的可信核验能力尚未配置或暂时不可用；历史核清仍可使用"
+[roles.tenant.system_runtime.name]
+other = "System 可信办理反查"
+[roles.tenant.system_runtime.description]
+other = "仅反查当前租户中精确持久办理请求的 Catalog 依据，不授予数据访问"
+
 [system.auth.register_disabled]
 other = "注册功能已关闭"
 
@@ -291,4 +298,8 @@ other = "日志来源报告过期或身份冲突"
 [permissions.system.engine_access_fulfillment.create.name]
 other = "办理源读取授权"
 [permissions.system.engine_access_fulfillment.create.description]
-other = "结合有效引擎管理委派核验源读取授权办理资格；可读取当前可见条目的候选摘要，不自动取得业务确认或数据访问权"
+other = "结合有效引擎管理委派读取当前可见条目的候选摘要并发起源读取授权办理；不自动取得业务确认或数据访问权"
+[permissions.system.engine_access_fulfillment.execute.name]
+other = "执行源读取授权受理与核清"
+[permissions.system.engine_access_fulfillment.execute.description]
+other = "仅供 Catalog 当前租户运行身份调用源读取授权首次受理、历史核清与关闭；不授予人类办理资格或数据访问权"

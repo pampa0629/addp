@@ -35,7 +35,7 @@ func recoveryRequest(actor FulfillmentRuntimeActor, id uuid.UUID, binding shared
 
 // Caller IAM is current; the original human, recipient and business basis are
 // deliberately historical. Recovery must work after those identities expire.
-func (s *Service) withFulfillmentRuntime(ctx context.Context, actor FulfillmentRuntimeActor, operation func(*Repository, func() error) error) error {
+func (s *Service) withFulfillmentRuntime(ctx context.Context, actor FulfillmentRuntimeActor, operation func(*Repository, func() error) error, humanPrincipals ...int64) error {
 	return s.repository.transaction(ctx, func(tx *Repository) error {
 		// Credential rotation locks OAuth Client before Principal. Match that
 		// order; never acquire these locks after request/target arbitration.
@@ -47,7 +47,8 @@ func (s *Service) withFulfillmentRuntime(ctx context.Context, actor FulfillmentR
 			Where("client_id = ?", actor.ClientID).Clauses(clause.Locking{Strength: "SHARE"}).Take(&client).Error; err != nil {
 			return err
 		}
-		principals, err := tx.identity().LockUserAuthorizationPrincipals(ctx, actor.PrincipalID)
+		// Union service and human principals before any membership/tenant lock.
+		principals, err := tx.identity().LockUserAuthorizationPrincipals(ctx, append(humanPrincipals, actor.PrincipalID)...)
 		if err != nil {
 			return err
 		}

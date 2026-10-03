@@ -89,7 +89,7 @@ func main() {
 		service.NewServiceClientSourceResolver(serviceClient),
 		service.NewDevelopClientSourceResolver(developClient),
 		service.NewWorkbenchClientSourceResolver(workbenchClient),
-	).WithSharingHandlingScopeReader(systemClient).WithSharingTargetResolver(service.NewSharingTargetResolver(metaClient, systemClient)).WithQualitySummaryResolver(service.NewQualityClientSummaryResolver(qualityClient)).WithDataDictionaryResolvers(
+	).WithSharingFulfillmentClient(fulfillmentClient).WithSharingHandlingScopeReader(systemClient).WithSharingTargetResolver(service.NewSharingTargetResolver(metaClient, systemClient)).WithQualitySummaryResolver(service.NewQualityClientSummaryResolver(qualityClient)).WithDataDictionaryResolvers(
 		service.NewMetaClientFieldResolver(metaClient),
 		service.NewStandardClientElementRevisionResolver(standardClient),
 	)

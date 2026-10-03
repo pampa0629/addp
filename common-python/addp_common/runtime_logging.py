@@ -49,3 +49,14 @@ def setup_runtime_logging(level: int = logging.INFO) -> None:
         old.close()
     root.addHandler(handler)
     root.setLevel(level)
+
+    # Uvicorn configures independent text handlers before importing ASGI apps.
+    # Route its records through the same structured handler as application logs.
+    for name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
+        server_logger = logging.getLogger(name)
+        for old in server_logger.handlers[:]:
+            server_logger.removeHandler(old)
+            old.close()
+        server_logger.propagate = True
+        server_logger.disabled = False
+        server_logger.setLevel(level)

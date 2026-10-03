@@ -1833,6 +1833,112 @@
                 ]
             }
         },
+        "/entries/{id}/sharing_fulfillments": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "从当前 User 派生办理人，提交 pending 后发送；202 表示等待权威核清，不表示授权成功 | Derive operator from the current User; send only after pending commits; 202 means awaiting authoritative settlement, not granted access",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Catalog Sharing"
+                ],
+                "summary": "正式准备并发送源读取授权办理 | Prepare and send source-read access fulfillment",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "条目 UUID | Entry UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "准备参数 | Preparation input",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.prepareSharingFulfillmentRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "办理或待核清结果，不是 Grant | Outcome or pending settlement, not a Grant",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_catalog_internal_service.SharingFulfillmentResult"
+                        }
+                    },
+                    "202": {
+                        "description": "办理或待核清结果，不是 Grant | Outcome or pending settlement, not a Grant",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_catalog_internal_service.SharingFulfillmentResult"
+                        }
+                    },
+                    "400": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "catalog.entry.read",
+                    "system.engine_access_fulfillment.create"
+                ]
+            }
+        },
         "/governance/coverage": {
             "get": {
                 "security": [
@@ -2391,6 +2497,98 @@
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "catalog.reference.read"
+                ]
+            }
+        },
+        "/runtime/sharing-fulfillments/{request_id}/basis": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅 addp-system Tenant Service；完整匹配仍待核清的请求，复核原来源和业务责任，不返回用途正文或访问权限 | addp-system Tenant Service only; match the complete pending request and continuous source/ownership; no purpose text or access grant",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Catalog Runtime"
+                ],
+                "summary": "反查精确持久办理依据 | Read exact persisted fulfillment basis",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "请求 UUID | Request UUID",
+                        "name": "request_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "完整原绑定 | Complete original binding",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/authorization.SharingFulfillmentBinding"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "持久依据 | Persisted basis",
+                        "schema": {
+                            "$ref": "#/definitions/authorization.SharingFulfillmentBasis"
+                        }
+                    },
+                    "400": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "catalog.sharing_fulfillment.read"
                 ]
             }
         },
@@ -3108,6 +3306,103 @@
         }
     },
     "definitions": {
+        "authorization.SharingFulfillmentBasis": {
+            "type": "object",
+            "properties": {
+                "binding": {
+                    "$ref": "#/definitions/authorization.SharingFulfillmentBinding"
+                },
+                "confirmation": {
+                    "$ref": "#/definitions/authorization.SharingFulfillmentOperator"
+                },
+                "request_id": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "string",
+                    "example": ""
+                }
+            }
+        },
+        "authorization.SharingFulfillmentBinding": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string"
+                },
+                "caller_principal_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "decision_id": {
+                    "type": "string"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "expiry_mode": {
+                    "type": "string"
+                },
+                "operator": {
+                    "$ref": "#/definitions/authorization.SharingFulfillmentOperator"
+                },
+                "path": {
+                    "$ref": "#/definitions/plugin.EngineCatalogPath"
+                },
+                "recipient_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "recipient_type": {
+                    "type": "string"
+                },
+                "requirement_version": {
+                    "type": "string",
+                    "example": ""
+                }
+            }
+        },
+        "authorization.SharingFulfillmentOperator": {
+            "type": "object",
+            "properties": {
+                "authorization_version": {
+                    "type": "string",
+                    "example": ""
+                },
+                "principal_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "tenant_membership_id": {
+                    "type": "string",
+                    "example": ""
+                }
+            }
+        },
+        "authorization.SharingFulfillmentResolution": {
+            "type": "object",
+            "properties": {
+                "binding": {
+                    "$ref": "#/definitions/authorization.SharingFulfillmentBinding"
+                },
+                "deadline": {
+                    "type": "string"
+                },
+                "outcome": {
+                    "type": "string"
+                },
+                "recorded_at": {
+                    "type": "string"
+                },
+                "request_id": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "string",
+                    "example": ""
+                }
+            }
+        },
         "client.StandardCodeItemSnapshot": {
             "type": "object",
             "properties": {
@@ -4582,6 +4877,20 @@
                 }
             }
         },
+        "github_com_addp_catalog_internal_service.SharingFulfillmentResult": {
+            "type": "object",
+            "properties": {
+                "request_id": {
+                    "type": "string"
+                },
+                "resolution": {
+                    "$ref": "#/definitions/authorization.SharingFulfillmentResolution"
+                },
+                "state": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_catalog_internal_service.SourceEntryResolution": {
             "type": "object",
             "properties": {
@@ -4902,6 +5211,20 @@
                 "version": {
                     "type": "integer",
                     "minimum": 1
+                }
+            }
+        },
+        "internal_api.prepareSharingFulfillmentRequest": {
+            "type": "object",
+            "properties": {
+                "decision_id": {
+                    "type": "string"
+                },
+                "request_id": {
+                    "type": "string"
+                },
+                "requirement_version": {
+                    "type": "string"
                 }
             }
         },
@@ -5236,6 +5559,23 @@
         "models.JSONMap": {
             "type": "object",
             "additionalProperties": true
+        },
+        "plugin.EngineCatalogPath": {
+            "type": "object",
+            "properties": {
+                "engine_id": {
+                    "type": "integer"
+                },
+                "segments": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/plugin.EngineCatalogSegment"
+                    }
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
         },
         "plugin.EngineCatalogSegment": {
             "type": "object",

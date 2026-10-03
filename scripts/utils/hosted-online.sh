@@ -224,3 +224,8 @@ IDENTITY_ENV="$ADDP_ONLINE_SECRET_DIR/identity.env"
 ENGINE_RESULT_ENV="$ADDP_ONLINE_SECRET_DIR/engine.env"
 mkdir -p "$ADDP_ONLINE_SECRET_DIR"
 chmod 700 "$ADDP_ONLINE_SECRET_DIR"
+
+export PROJECT_ROOT="$ROOT_DIR"
+export ADDP_ONLINE_ENV_FILE="$ADDP_ONLINE_SECRET_DIR/runtime.env"
+source "$ROOT_DIR/scripts/utils/runtime-log-env.sh"
+addp_prepare_runtime_log_env "$ADDP_ONLINE_ENV_FILE"

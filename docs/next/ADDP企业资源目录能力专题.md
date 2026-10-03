@@ -2468,7 +2468,7 @@ System 回执只承载本次精确办理编号、目标与参数绑定、被消�
 
 本轮不接管或重启用户的开发服务，不操作开发业务数据库或源端，不提交代码。
 
-### 26.38 可信受理接入盘点与交付顺序（2026-10-02，调查与计划，尚未接通生产调用）
+### 26.38 可信受理接入盘点与交付顺序（2026-10-02，调查时的计划，后续进展见 §26.41—26.45）
 
 本轮回到完整消费链，而不是继续单独增加事务内部检查。源码确认：Catalog 已有真实业务确认 API，双方已有持久请求、受理及核清的内部原语；但尚无完整的可信生产调用。此前 T1／T2 通过不代表用户已能办理源数据授权，更不代表实际数据访问已经生效。
 
@@ -2616,7 +2616,7 @@ System 回执只承载本次精确办理编号、目标与参数绑定、被消�
 - [x] 远端资格读取不持有 Catalog 锁。返回后使用新的只读快照复核条目可见性、来源版本、原责任关系及有效期，按同一快照计数和分页；请求期间到期的 Token、办理权限或盘点权限不能沿用。候选查询不建立待核清保护，业务责任移交与换源不会因为浏览而冻结。
 - [x] 000178 只登记 Tenant Scope、高风险、不可委托、可租户定制的独立人类办理 Permission。没有默认角色授予、Assignment、数据 Grant 或现有账号授权版本变化；机器 `.execute`、编目权、确认权和引擎管理委派都不能替代独立功能权限。
 - [x] 清单、生成常量、双语文本、Swagger、路由覆盖、模块职责与迁移说明同步；新用例并入既有 Catalog／System／Common T1、Catalog PostgreSQL T2、System IAM PostgreSQL T2。000178 纳入原 `engine-access-coordination` 分组及其入口测试，完整 CI 自动发现仍使用既有 owner 门禁，没有另建测试库或测试路线。
-- [ ] 正式准备→可信 owner 依据→System 首次受理仍待贯通；尚无前端办理入口，尚未创建 `addp-system` 独立 Runtime 身份，没有实际 Grant 或执行侧数据访问结果。候选摘要不能代替正式受理依据，提交仍须核验确认人当前 IAM、接收主体及精确目标批准要求。
+- [x] 正式准备→可信 owner 依据→System 首次受理随后在 §26.45 接通，并建立 `addp-system` 最小 Runtime 身份；尚无前端办理入口、实际 Grant 或执行侧数据访问结果。候选摘要不能代替正式受理依据，提交仍须核验确认人当前 IAM、接收主体及精确目标批准要求。
 
 回归重点：不同办理人不能取得确认权；权限／管理委派撤销、跨 Tenant、过时授权版本、真实锁等待期间 Token 到期均拒绝；System 鉴权或通信失败不返回摘要；责任移交、同账号重新接任、换源、弃用、可见性改变及决定到期后旧候选不继续出现。摘要只读，不产生新的待核清记录。
 
@@ -2631,29 +2631,57 @@ System 回执只承载本次精确办理编号、目标与参数绑定、被消�
 
 下一优先项：接通 §26.38 的正式准备与可信 owner 持久依据，再复用 §26.41 已接通的核清恢复。当前子链路不代表生产源授权闭环完成。本轮不接管、停止或重启用户服务，不操作开发业务数据库或源端，不提交代码。
 
-### 26.44 System 反查身份的部署边界（2026-10-03，待确认，不发布身份或受理入口）
+### 26.44 System 反查身份的部署边界（2026-10-03，已确认，实施结果见 §26.45）
 
 继续 §26.38 完整工作包前，核对独立 Runtime 身份的现有部署路线，发现一项需要先确认的启动策略。不是重新讨论 Catalog／System 的授权职责，也不改变已确认的办理资格。
 
-源码事实：
+调查阶段的源码事实（改造前）：
 
 - `system/backend/internal/iam/service_credential_provisioner.go` 的 `Apply` 在任何凭据写入前校验全部内置服务 Secret；缺失任一项返回错误。当前内置 Client 与 Tenant Runtime Client 清单均没有 `addp-system`。
 - System 配置及根 `.env.example` 没有 `SYSTEM_SERVICE_CLIENT_SECRET`；生产 Compose 尚未注入该项。`scripts/prod/setup-env.sh` 对全新配置生成独立随机 Secret，对已有配置只校验，不自动增加或轮换 Secret。
 - 正式配置规范将每个内置模块的独立 Service Client Secret 规定为生产必需项。若简单把 `addp-system` 加入现有必填集合，已有部署缺少新凭据就会导致 System 启动失败；不能只补 OAuth Client／Permission 而遗漏这一后果。
 - §26.41 已发布的历史核清／关闭使用 `addp-catalog`，不需要 System 反查 Catalog 的新身份。其恢复能力不应因为新的受理前置尚未配置而被关闭。
 
-待确认建议：独立 `addp-system` 凭据用于可信新受理，不成为所有部署的 System Ready 前置。未配置该凭据时，System 及既有模块仍可启动，正式新受理明确返回能力未配置；不得借用其他模块 Secret、User Token 或管理员身份反查，也不得退回独立批准、取消 Catalog 批准要求或放宽已有访问规则。配置后仅启用同一条 OAuth Client Credentials 路线，不增加认证 fallback 或第二条受理路径。新增身份只获得当前 Tenant、精确持久请求的 owner 依据读取权，不获得源数据读取或业务确认权。
+已确认部署边界：独立 `addp-system` 凭据用于可信新受理，不成为所有部署的 System Ready 前置。未配置该凭据时，System 及既有模块仍可启动，正式新受理明确返回能力未配置；不得借用其他模块 Secret、User Token 或管理员身份反查，也不得退回独立批准、取消 Catalog 批准要求或放宽已有访问规则。配置后仅启用同一条 OAuth Client Credentials 路线，不增加认证 fallback 或第二条受理路径。新增身份只获得当前 Tenant、精确持久请求的 owner 依据读取权，不获得源数据读取或业务确认权。
 
-这个建议与当前“全部内置服务 Secret 必填”有策略差异，需要用户确认后才能写入正式规范。当前暂停依赖它的身份发布、配置加载及正式受理实现；不先发布无生产消费者的占位 Permission、Role 或迁移，不修改 `.env` 或运行中的服务。既有候选与核清链路保持原样。
+用户已确认此部署边界并授权继续完整工作包。正式规范已明确可选凭据只阻断新受理；实施按同一 OAuth 路线同步配置、身份、准备、反查、首次受理与测试。不修改 `.env` 或运行中的服务，既有候选与核清链路保持可用。
 
 确认后的同次交付要求：
 
-- [ ] 正式规范明确未配置新身份时的 Ready、接口错误和既有核清行为；配置缺失不能解释为 Catalog 已退出。
-- [ ] 单一凭据配置／Provisioner 路线同时覆盖全新与已有 Tenant、独立 Secret 注入、生产 Compose 和配置初始化；已有配置不静默轮换。
-- [ ] 一次贯通人类正式准备、提交后发送、专用 Runtime owner 依据、System 首次受理及已有核清恢复；网络调用必须在数据库锁外，参与主体按同一稳定顺序锁定。
-- [ ] T0 复验 Permission／Role／Swagger／部署契约；现有 Common、Catalog、System T1 与 PostgreSQL T2 覆盖未配置可启动、错身份／跨 Tenant 拒绝、完整绑定、自然到期、响应丢失及受理／关闭竞争。复用原 Make／CI 自动发现，不另建本地测试库。
+- [x] 正式规范明确未配置新身份时的 Ready、接口错误和既有核清行为；配置缺失不能解释为 Catalog 已退出。
+- [x] 单一凭据配置／Provisioner 路线同时覆盖全新与已有 Tenant、独立 Secret 注入、生产 Compose 和配置初始化；已有配置不静默轮换。
+- [x] 一次贯通人类正式准备、提交后发送、专用 Runtime owner 依据、System 首次受理及已有核清恢复；网络调用必须在数据库锁外，参与主体按同一稳定顺序锁定。
+- [x] T0 复验 Permission／Role／Swagger／部署契约；现有 Common、Catalog、System T1 与 PostgreSQL T2 覆盖未配置凭据可继续初始化、错身份／跨 Tenant 拒绝、完整绑定、自然到期、响应丢失及受理／关闭竞争。复用原 Make／CI 自动发现，不另建本地测试库；不将此计为真实部署启动验收。
 - [ ] 真实 OAuth 双服务链仍由 Online T4 证明，受控 Transport／认证夹具不算 T4；受理回执、Grant 写入和实际内容读取分别验收。
 
-本节只记录调查与待确认方案，不代表正式准备、首次受理或数据授权已经实现。
+本节保留部署边界的调查与确认记录；正式准备及首次受理的本轮实现和验证见下一节，数据授权闭环仍未完成。
 
-本轮验证：`make test-authorization` 通过，权限生成产物与全部模块 Swagger 路由覆盖一致；`git diff --check` 通过。`make test-changed` 识别共享工作区 45 个变更文件、System owner，但因未注入 `ADDP_SYSTEM_POSTGRES_TEST_DSN` 在 T2 环境预检失败，尚未执行受影响模块门禁，不计为通过。本轮仅新增本节专题记录，没有修改生产代码；未运行 PostgreSQL T2 或真实 OAuth 双服务 Online T4，没有接管或重启服务。
+调查阶段验证：`make test-authorization` 通过，权限生成产物与全部模块 Swagger 路由覆盖一致；`git diff --check` 通过。`make test-changed` 当时识别共享工作区 45 个变更文件、System owner，但因未注入 `ADDP_SYSTEM_POSTGRES_TEST_DSN` 在 T2 环境预检失败，未执行受影响模块门禁，不计为通过。该调查阶段仅新增本节专题记录，没有修改生产代码；未运行 PostgreSQL T2 或真实 OAuth 双服务 Online T4，没有接管或重启服务。
+
+### 26.45 正式准备→可信反查→首次受理（2026-10-03，后端子链路已实施，非数据授权闭环）
+
+用户确认 §26.44 的可选凭据边界后，一次接通本轮后端消费链。先同步授权上下文、企业资源目录实现规范、配置规范及模块说明，再实现单一公开路径；不把内部回调或请求正文当作可信资格。
+
+- [x] Catalog 人类 `POST /entries/:id/sharing_fulfillments` 只接收请求编号、决定编号和批准要求版本。从可信 User AuthContext 派生原办理身份，通过 System 实时核验独立办理 Permission 与引擎管理委派；从当前 Tenant Service AuthContext 取得调用主体。源目标、接收方、动作及有效期来自持久决定，不接受正文覆盖。
+- [x] 网络资格观察不持 Catalog 锁；本地条目锁内按数据库墙钟复核权限、可见性及当前依据，提交完整不可变待核清绑定后才发送。远端错误、响应丢失或绑定错误保留 `pending`，不回滚已提交保护；复用原核清／关闭及后台恢复消费者，同参结果不延长窗口。
+- [x] Catalog `POST /runtime/sharing-fulfillments/:request_id/basis` 仅允许独立 `addp-system` Tenant Service OAuth 与 `catalog.sharing_fulfillment.read`。精确匹配已提交且未核清的请求，重查当前来源和原业务负责人责任，返回最小原绑定及确认身份；不提供用途正文或跨租户／通用决定枚举。
+- [x] System `POST /runtime/engine-access-fulfillments/:request_id/accept` 仅允许 `addp-catalog` 当前 Tenant Service 身份及 `.execute`。在本地数据库锁外反查，随后按稳定顺序共享锁定参与主体；事务内独立核验当前机器 IAM、原办理人精确授权版本与 `.create`、引擎管理委派、原确认人的当前确认权限、接收主体及批准要求模式／版本。确认人的历史授权版本仍只作审计，不强制与当前版本相等。
+- [x] 原 `accepted/closed` 完整绑定结果可直接恢复，不依赖新凭据、原人员或接收方仍有效。反查期间已有结果先提交时转入历史核清；失效机器调用者不能借冲突探测历史。新受理失败不留下结果／审计半成品，办理窗口仍为原受理时间起最多五分钟，限时共享再受拟授予到期时间截断。
+- [x] 000180 只登记最小机器依据读取权、`tenant.system_runtime` 和 `addp-system`，接入存量已初始化 Tenant 与后续新 Tenant。OAuth Client 初始停用且无 Secret，凭据由唯一 Provisioner 配置；移除可选配置停用 Client、推进其授权版本并撤销活动 Token Family。不新增人类默认权限、平台角色、Grant 或可编辑责任副本。
+- [x] `.env.example`、生产 Compose 和初始化脚本同步可选独立 `SYSTEM_SERVICE_CLIENT_SECRET`。新配置生成独立随机值；已有配置缺失／留空可校验通过且不静默补写，借用其他服务 Secret 拒绝。缺失不阻断 System Ready，只使首次受理明确返回 `503 fulfillment_capability_unavailable`；历史核清／关闭和同参结果恢复仍可用，不推断 Catalog 退出。
+- [x] Swagger、Permission／Role 清单、生成常量、双语错误与权限说明同步。新增用例挂入已有 Catalog PostgreSQL、System IAM PostgreSQL 和 Common Go 入口；000180 加入原迁移协调分组及 runner 登记测试，生产配置测试复用已有平台配置门禁。CI 沿用 `catalog-postgres`、`system-iam-postgres-verification` 和已有 T0/T1 自动发现，不新增本地数据库或旁路入口。
+- [ ] 真实双服务 OAuth、跨进程故障与重启的 Online T4：本轮尚未运行，需纳入既有 `make test-online` 的专用部署验证，不能用 HTTP 替身或 T2 凭据测试冒充。
+- [ ] 人类候选选择／正式办理前端、首次纳管／明确退出的生产协调、实际 Grant 写入与执行侧裁决仍待贯通；不把本轮受理回执等同数据已可访问。
+
+验收范围及结果：
+
+- `make test-module MODULE=catalog` 最终退出码 0：平台 T0、Catalog Go T1、前端单元／Playwright／构建及真实 PostgreSQL T2 通过。新用例覆盖提交后发送、锁外调用、不同确认人／办理人、专用反查守卫、伪造正文、完整绑定、大整数身份和待核清恢复；前端无本轮功能改动，仍有既有包体积告警。
+- `make test-system-iam-postgres` 完整退出码 0，覆盖 IAM、OAuth、API、全部前向迁移、engineaccess 与 repository。新用例验证五分钟／限时截断、缺独立办理权限、确认撤权、伪造 owner 响应、旧要求版本、接收方无效、反查期间关闭先提交、旧人员失效后的同参历史恢复和不可变审计；000180 前向迁移与重复运行安全。
+- 真实 OAuth PostgreSQL T2 验证可选 System 凭据：未配置不能签发，配置后仅得到当前 Tenant 的最小依据读取权，平台 Token 拒绝，移除配置后旧 Token 失效且新签发拒绝。该结果不是双服务 Online T4，也不证明真实开发环境已启动。
+- `make test-authorization test-system-iam-runner test-platform` 退出码 0，权限与角色快照、生成产物、Swagger 路由覆盖、部署及门禁登记一致；`make test-ontology-infra-config` 在补充可选凭据回归后退出码 0。新增或留空的配置仅在操作系统临时目录夹具测试，不读取或写入工作区 `.env`。
+- 全仓 `make test-go` 最终复跑退出码 0，Catalog、Common、System 及其余已登记 Go 模块通过。一次共享工作区复跑曾遇到并行日志改动 `common/cmd/runtime-log` 的 `receiverCredential` 尚未定义编译错误；未修改或覆盖该并行工作，核对当前文件后重新运行并通过，不将失败记为通过。最后的 `make test-authorization` 与 `git diff --check` 也通过。
+- 默认 `make test-changed` 首次识别共享工作区 72 个变更文件和 26 个受影响模块，但 PostgreSQL／MySQL／OceanBase 多 owner 测试连接参数未注入，在预检失败，未执行全套门禁，不计为通过。上述本轮 owner PostgreSQL 门禁使用已核实宿主机 25432 的 `addp_test`／`addp_iam_test`，由标准入口隔离夹具并清理；不改变生产／开发迁移状态。各已登记 owner CI 承担尚未本地完成的扩散门禁，不宣称全部并行工作已验收。
+
+下一优先项：在既有 Online T4 体系补齐真实 OAuth 双服务首次受理与响应丢失恢复用例；证明链路后再推进实际 Grant 写入及只读执行侧裁决。业务决定、已受理、已写入 Grant、实际可读必须分别验收。
+
+本轮没有启动、停止、接管或重启 ADDP 应用服务；没有操作开发业务库迁移状态、访问或写入源端、读取或改写工作区 `.env`，没有提交代码。000180 仅在允许的测试库验证。

@@ -223,4 +223,14 @@ func TestPostgresSharingDecisionRoutesUseExplicitPermissionAndUserIdentity(t *te
 	if scopeCalls != beforeCalls {
 		t.Fatal("cross-tenant candidate queried handling scope")
 	}
+	tenant = "7"
+	preparePath := "/api/v1/catalog/entries/" + id.String() + "/sharing_fulfillments"
+	prepareBody := fmt.Sprintf(`{"request_id":%q,"decision_id":%q,"requirement_version":"1"}`, uuid.NewString(), longID.String())
+	permissions = []string{"catalog.entry.read", "catalog.entry.update"}
+	request(http.MethodPost, preparePath, prepareBody, http.StatusForbidden)
+	permissions = []string{"catalog.entry.read", "system.engine_access_fulfillment.create"}
+	for _, invalid := range []string{`{}`, strings.TrimSuffix(prepareBody, "}") + `,"operator":{"principal_id":"40"}}`, strings.Replace(prepareBody, `"requirement_version":"1"`, `"requirement_version":1`, 1)} {
+		request(http.MethodPost, preparePath, invalid, http.StatusBadRequest)
+	}
+	request(http.MethodPost, preparePath, prepareBody, http.StatusServiceUnavailable)
 }

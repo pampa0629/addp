@@ -188,6 +188,7 @@ func TestIAMOAuthClientCredentialsAuthContextAgainstPostgres(t *testing.T) {
 		t.Fatalf("service token audit count = %d, want 1", tokenAuditCount)
 	}
 	assertMetaServiceEngineDetailAgainstPostgres(t, db, runtime, router, secrets["addp-meta"], tenantID, otherTenantID)
+	exerciseSystemBasisCredential(t, ctx, db, runtime, router, secrets, tenantID)
 
 	platformTokenResponse := performIAMOAuthPlatformClientCredentialsRequest(t, router, "addp-meta", secrets["addp-meta"])
 	if platformTokenResponse.Code != http.StatusOK {
@@ -475,6 +476,7 @@ func performIAMOAuthClientCredentialsFormRequest(t *testing.T, router http.Handl
 
 func testBuiltinServiceClientSecrets(prefix string) map[string]string {
 	return map[string]string{
+		"addp-system":       "",
 		"addp-agent":        prefix + "-agent-0123456789abcdef0123456789abcdef",
 		"addp-asset":        prefix + "-asset-0123456789abcdef0123456789abcdef",
 		"addp-catalog":      prefix + "-catalog-0123456789abcdef0123456789abcdef",

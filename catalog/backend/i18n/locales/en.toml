@@ -1,6 +1,11 @@
 [catalog.error.invalid_params]
 other = "Invalid request parameters"
 
+[permissions.catalog.sharing_fulfillment.read.name]
+other = "Read persisted fulfillment basis"
+[permissions.catalog.sharing_fulfillment.read.description]
+other = "Allow only System tenant service to read current Catalog basis for an exact pending request, without granting data access"
+
 [catalog.error.sharing_confirmation_forbidden]
 other = "Current effective business ownership and an independent sharing confirmation permission are required; curation permission is insufficient"
 [catalog.error.sharing_decision_conflict]

@@ -1,6 +1,6 @@
 schema_version: addp.permission_manifest/v1
 owner_module: catalog
-manifest_version: 7
+manifest_version: 8
 permissions:
   - key: catalog.audit.read
     allowed_scope_types: [tenant]
@@ -82,6 +82,14 @@ permissions:
     status: active
     name_i18n_key: permissions.catalog.sharing_decision.create.name
     description_i18n_key: permissions.catalog.sharing_decision.create.description
+  - key: catalog.sharing_fulfillment.read
+    allowed_scope_types: [tenant]
+    risk_level: high
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.catalog.sharing_fulfillment.read.name
+    description_i18n_key: permissions.catalog.sharing_fulfillment.read.description
   - key: catalog.source.rebind
     allowed_scope_types: [tenant]
     risk_level: high

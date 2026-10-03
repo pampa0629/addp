@@ -249,6 +249,23 @@ class InfraContractTest(unittest.TestCase):
             self.assertEqual(24, len(secret))
             self.assertNotEqual(secret, values["REDIS_PASSWORD"])
             self.assertNotIn(secret, result.stdout + result.stderr)
+            system_secret = values["SYSTEM_SERVICE_CLIENT_SECRET"]
+            self.assertGreaterEqual(len(system_secret), 32)
+            service_secrets = [value for key, value in values.items() if key.endswith("_SERVICE_CLIENT_SECRET")]
+            self.assertEqual(len(service_secrets), len(set(service_secrets)))
+            self.assertNotIn(system_secret, result.stdout + result.stderr)
+            # Existing deployments may omit this independent optional capability.
+            # Validation must neither generate a secret nor borrow Catalog's one.
+            for replacement in ("", values["CATALOG_SERVICE_CLIENT_SECRET"]):
+                current = baseline.replace("SYSTEM_SERVICE_CLIENT_SECRET=" + system_secret,
+                                           "SYSTEM_SERVICE_CLIENT_SECRET=" + replacement)
+                (root / ".env").write_text(current)
+                result = subprocess.run(command, cwd=root, env=env, capture_output=True, text=True, timeout=30)
+                if replacement:
+                    self.assertNotEqual(0, result.returncode, "borrowed service secret was accepted")
+                else:
+                    self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+                self.assertEqual(current, (root / ".env").read_text())
             for invalid in ("", "addp_falkordb", values["REDIS_PASSWORD"]):
                 current = baseline.replace("INFRA_FALKORDB_PASSWORD=" + secret, "INFRA_FALKORDB_PASSWORD=" + invalid)
                 (root / ".env").write_text(current)

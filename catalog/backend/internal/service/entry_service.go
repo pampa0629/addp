@@ -295,6 +295,7 @@ type EntryService struct {
 	elementRevisions   StandardElementRevisionResolver
 	sharingTargets     SharingTargetResolver
 	sharingHandling    SharingHandlingScopeReader
+	sharingFulfillment *commonClient.SystemFulfillmentClient
 }
 
 func (s *EntryService) WithQualitySummaryResolver(resolver QualitySummaryResolver) *EntryService {

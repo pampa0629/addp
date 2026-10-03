@@ -1,6 +1,13 @@
 [system.auth.token_gen_failed]
 other = "Failed to generate token"
 
+[system.engine_access.fulfillment_capability_unavailable]
+other = "Trusted verification for new fulfillment is unconfigured or temporarily unavailable; historical settlement remains available"
+[roles.tenant.system_runtime.name]
+other = "System trusted fulfillment basis reader"
+[roles.tenant.system_runtime.description]
+other = "Read only exact persisted Catalog fulfillment basis in the current tenant, without granting data access"
+
 [system.auth.register_disabled]
 other = "Registration is disabled"
 
@@ -291,4 +298,8 @@ other = "Stale report or conflicting log source identity"
 [permissions.system.engine_access_fulfillment.create.name]
 other = "Handle source-read authorization"
 [permissions.system.engine_access_fulfillment.create.description]
-other = "Check source-read handling eligibility with an effective engine management delegation; read candidate summaries for currently visible entries without automatic business confirmation or data access"
+other = "Read candidate summaries for currently visible entries and initiate source-read fulfillment with an effective engine management delegation; no automatic business confirmation or data access"
+[permissions.system.engine_access_fulfillment.execute.name]
+other = "Execute source-read fulfillment acceptance and settlement"
+[permissions.system.engine_access_fulfillment.execute.description]
+other = "Allow only the current Catalog tenant runtime to request first acceptance, historical settlement and closure; no human handling eligibility or data access"

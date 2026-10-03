@@ -240,5 +240,6 @@ if __name__ == "__main__":
         app,  # 直接使用 app 对象
         host="0.0.0.0",
         port=settings.port,
+        log_config=None,
         log_level="info"
     )

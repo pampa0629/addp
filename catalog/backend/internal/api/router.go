@@ -64,6 +64,10 @@ func SetupRouter(systemURL string, lifecycle *modulelifecycle.Controller, entrie
 	api.GET("/entries/:id/sharing_decisions/:decision_id", readPermission, sharingPermission, handler.GetSharingDecision)
 	api.GET("/entries/:id/sharing_decision_candidates", readPermission,
 		commonAuth.MustNewPermissionGuard("system.engine_access_fulfillment.create"), handler.ListSharingDecisionCandidates)
+	api.POST("/entries/:id/sharing_fulfillments", readPermission,
+		commonAuth.MustNewPermissionGuard("system.engine_access_fulfillment.create"), handler.PrepareSharingFulfillment)
+	api.POST("/runtime/sharing-fulfillments/:request_id/basis", commonAuth.MustNewServiceClientGuard("addp-system"),
+		commonAuth.MustNewPermissionGuard("catalog.sharing_fulfillment.read"), handler.ReadSharingFulfillmentBasis)
 	api.GET("/entries/:id/data-dictionary", readPermission, handler.GetEntryDataDictionary)
 	api.GET("/entries/:id/data-dictionary/export", readPermission, handler.ExportEntryDataDictionary)
 	api.PUT("/entries/:id", updatePermission, handler.UpdateEntry)

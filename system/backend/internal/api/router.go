@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"fmt"
+	commonClient "github.com/addp/common/client"
 	"time"
 
 	commonExecution "github.com/addp/common/execution"
@@ -120,6 +121,17 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	})
 
 	api := router.Group("/api/v1/system")
+	fulfillmentService := engineaccess.NewService(engineaccess.NewRepository(db), nil)
+	if secret := cfg.ServiceClientSecrets["addp-system"]; secret != "" {
+		tokens, err := commonClient.NewOAuthServiceTokenSource(cfg.SystemServiceURL, "addp-system", secret, nil)
+		if err != nil {
+			panic("invalid System fulfillment credential configuration")
+		}
+		fulfillmentService.WithFulfillmentBasisReader(commonClient.NewCatalogFulfillmentClient(cfg.CatalogServiceURL, tokens, nil))
+	}
+	if err := RegisterEngineAccessFulfillmentAcceptanceRoutes(api, runtime, &EngineAccessFulfillmentAcceptanceHandler{service: fulfillmentService}); err != nil {
+		panic(err)
+	}
 	if err := RegisterEngineAccessHandlingScopeRoutes(api, runtime, &EngineAccessHandlingScopeHandler{
 		service: engineaccess.NewService(engineaccess.NewRepository(db), hasLiveEngineCatalogCapability),
 	}); err != nil {

@@ -39,6 +39,7 @@ class OnlineHostedOpenGaussGateTest(unittest.TestCase):
         )
         (self.repository / "scripts/utils").mkdir(parents=True)
         shutil.copy2(SCRIPT.parents[1] / "utils/hosted-online.sh", self.repository / "scripts/utils/hosted-online.sh")
+        shutil.copy2(SCRIPT.parents[1] / "utils/runtime-log-env.sh", self.repository / "scripts/utils/runtime-log-env.sh")
         self._executable(
             "uname",
             """

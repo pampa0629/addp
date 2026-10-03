@@ -11,6 +11,7 @@ var localeFS embed.FS
 
 // 消息 key 常量
 const (
+	MsgFulfillmentCapabilityUnavailable              = "system.engine_access.fulfillment_capability_unavailable"
 	MsgRuntimeLogSourceInvalid                       = "system.module.log_source_invalid"
 	MsgRuntimeLogSourceForbidden                     = "system.module.log_source_forbidden"
 	MsgRuntimeLogSourceConflict                      = "system.module.log_source_conflict"

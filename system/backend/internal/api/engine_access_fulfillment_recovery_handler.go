@@ -18,6 +18,39 @@ type fulfillmentRecoveryService interface {
 }
 type EngineAccessFulfillmentRecoveryHandler struct{ service fulfillmentRecoveryService }
 
+type fulfillmentAcceptanceService interface {
+	AcceptFulfillment(context.Context, engineaccess.FulfillmentRuntimeActor, uuid.UUID, shared.SharingFulfillmentBinding) (*shared.SharingFulfillmentResolution, error)
+}
+
+type EngineAccessFulfillmentAcceptanceHandler struct{ service fulfillmentAcceptanceService }
+
+// Accept godoc
+// @Summary 首次受理源读取授权办理 | Accept source-read access fulfillment
+// @Description 仅 Catalog Tenant Service；锁外可信反查已提交请求，事务内核验当前人类、目标批准要求和期限；回执不是 Grant | Catalog Tenant Service only; trusted committed-basis lookup outside locks and current eligibility/target/expiry verification inside the transaction; receipt is not a Grant
+// @Tags 源授权办理 | Source Access Fulfillment
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request_id path string true "原请求 UUID | Original request UUID"
+// @Param request body authorization.SharingFulfillmentBinding true "完整绑定 | Complete binding"
+// @Success 200 {object} authorization.SharingFulfillmentResolution "不可变回执，不是授权 | Immutable receipt, not granted access"
+// @Failure 400,401,403,409,500,503 {object} IAMErrorResponse "请求失败 | Request failed"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["system.engine_access_fulfillment.execute"]
+// @Router /runtime/engine-access-fulfillments/{request_id}/accept [post]
+func (h *EngineAccessFulfillmentAcceptanceHandler) Accept(c *gin.Context) {
+	a, id, binding, ok := fulfillmentRecoveryInput(c)
+	if !ok {
+		return
+	}
+	result, err := h.service.AcceptFulfillment(c.Request.Context(), a, id, binding)
+	if err != nil {
+		respondIAMError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
 func fulfillmentRecoveryInput(c *gin.Context) (engineaccess.FulfillmentRuntimeActor, uuid.UUID, shared.SharingFulfillmentBinding, bool) {
 	var actor engineaccess.FulfillmentRuntimeActor
 	var binding shared.SharingFulfillmentBinding

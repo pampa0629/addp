@@ -188,6 +188,7 @@ func TestFulfillmentArbitrationAgainstPostgres(t *testing.T) {
 	if _, err := change(newRequest().Path, approvalModeCatalog, 0, verified); err != nil {
 		t.Fatal(err)
 	}
+	exerciseFulfillmentAcceptance(t, db, newRequest(), confirmation, newOperator, seedDelegation)
 	t.Run("real IAM role assignment does not deadlock qualification", func(t *testing.T) {
 		operator, _ := newOperator(t, time.Hour)
 		roles := iam.NewTenantRoleService(identity, time.Now)

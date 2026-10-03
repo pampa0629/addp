@@ -79,6 +79,37 @@ func TestLaunchPreservesPIDExitAndCapturesBeforeRegistration(t *testing.T) {
 	}
 }
 
+func TestReceiverCredentialUsesControlledSourceOwner(t *testing.T) {
+	root := t.TempDir()
+	info, err := os.Stat(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner := info.Sys().(*syscall.Stat_t)
+	credential, err := receiverCredential(root, 0)
+	if err != nil || credential == nil || credential.Uid != owner.Uid || credential.Gid != owner.Gid {
+		t.Fatalf("receiver credential = %+v, error = %v", credential, err)
+	}
+	if len(credential.Groups) != 0 || credential.NoSetGroups {
+		t.Fatal("receiver retained privileged supplementary groups")
+	}
+	missing := filepath.Join(root, "not-created")
+	credential, err = receiverCredential(missing, 1001)
+	if err != nil || credential != nil {
+		t.Fatalf("non-root receiver credential = %+v, error = %v", credential, err)
+	}
+	if _, err := os.Stat(missing); !os.IsNotExist(err) {
+		t.Fatalf("non-root credential selection changed filesystem: %v", err)
+	}
+	file := filepath.Join(root, "invalid-source")
+	if err := os.WriteFile(file, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := receiverCredential(file, 0); err == nil {
+		t.Fatal("file accepted as source directory")
+	}
+}
+
 func TestLaunchSignalReachesBusinessAndReceiverClosesAfterEOF(t *testing.T) {
 	root := t.TempDir()
 	self, _ := os.Executable()

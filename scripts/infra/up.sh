@@ -28,15 +28,17 @@ echo -e "${BLUE}(PostgreSQL/Redis/FalkorDB/MinIO/Meilisearch/Redpanda/Kafka Conn
 echo -e "${BLUE}========================================${NC}"
 echo ""
 
-if [ -f ./.env ]; then
-  set -a
-  # shellcheck disable=SC1091
-  source ./.env || true
-  set +a
+source "${PROJECT_ROOT}/scripts/utils/runtime-log-env.sh"
+if [[ "${ADDP_ONLINE_HOST:-0}" == 1 ]]; then
+  : "${ADDP_ONLINE_ENV_FILE:?Online lifecycle requires ADDP_ONLINE_ENV_FILE outside the repository}"
+  RUNTIME_ENV_FILE="$ADDP_ONLINE_ENV_FILE"
+else
+  RUNTIME_ENV_FILE="$PROJECT_ROOT/.env"
 fi
+addp_prepare_runtime_log_env "$RUNTIME_ENV_FILE"
 
 if [ -z "${INFRA_FALKORDB_PASSWORD:-}" ]; then
-  echo -e "${RED}✗ 请在根 .env 设置独立的 INFRA_FALKORDB_PASSWORD${NC}"
+  echo -e "${RED}✗ 请设置独立的 INFRA_FALKORDB_PASSWORD${NC}"
   exit 1
 fi
 if [ "${INFRA_FALKORDB_PASSWORD}" = "${REDIS_PASSWORD:-}" ]; then
@@ -44,43 +46,23 @@ if [ "${INFRA_FALKORDB_PASSWORD}" = "${REDIS_PASSWORD:-}" ]; then
   exit 1
 fi
 
-# Only initialize new development logging secrets; never rotate existing secrets.
-if [ "${ENV:-development}" != production ]; then
-  python3 - <<'PYLOGENV'
+# Docker must not create host bind-mount parents as root. Do not chown or
+# recursively relax existing private directories belonging to another owner.
+export ADDP_RUNTIME_LOG_ROOT="${ADDP_RUNTIME_LOG_ROOT:-$PROJECT_ROOT/logs/runtime}"
+case "$ADDP_RUNTIME_LOG_ROOT" in /*) ;; *) export ADDP_RUNTIME_LOG_ROOT="$PROJECT_ROOT/$ADDP_RUNTIME_LOG_ROOT" ;; esac
+python3 - "$PROJECT_ROOT/logs" "$ADDP_RUNTIME_LOG_ROOT" "$ADDP_RUNTIME_LOG_OWNER" <<'PYLOGDIR'
 from pathlib import Path
-import os, re, secrets
-p=Path('.env')
-s=p.read_text() if p.exists() else ''
-for key in ['LOKI_READ_TOKEN','LOKI_WRITE_TOKEN','LOKI_S3_SECRET_KEY','LOG_OBSERVER_SERVICE_CLIENT_SECRET']:
-    if os.environ.get(key):
-        continue
-    value=secrets.token_hex(32)
-    pattern=re.compile(r'^'+key+r'=.*$', re.M)
-    line=key+'='+value
-    s=pattern.sub(line,s) if pattern.search(s) else s.rstrip()+'\n'+line+'\n'
-if not re.search(r'^LOKI_S3_ACCESS_KEY=',s,re.M):
-    s=s.rstrip()+'\nLOKI_S3_ACCESS_KEY=addp-runtime-logs\n'
-# A node identity is deployment configuration shared by all local processes.
-if not os.environ.get('ADDP_HOST_NODE_NAME'):
-    import socket
-    node=socket.gethostname().split('.')[0]
-    if not re.fullmatch(r'[a-zA-Z0-9][a-zA-Z0-9_.-]{0,99}',node):
-        raise SystemExit('Set ADDP_HOST_NODE_NAME explicitly')
-    pattern=re.compile(r'^ADDP_HOST_NODE_NAME=.*$',re.M)
-    line='ADDP_HOST_NODE_NAME='+node
-    s=pattern.sub(line,s) if pattern.search(s) else s.rstrip()+'\n'+line+'\n'
-temporary=p.with_name(p.name+'.runtime-log.tmp')
-with temporary.open('w') as output:
-    temporary.chmod(0o600)
-    output.write(s)
-    output.flush()
-    os.fsync(output.fileno())
-temporary.replace(p)
-PYLOGENV
-  set -a
-  source ./.env
-  set +a
-fi
+import os, sys
+for name in sys.argv[1:3]:
+    path = Path(name)
+    path.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if not os.access(path, os.R_OK | os.W_OK | os.X_OK):
+        raise SystemExit('Runtime log directory is not accessible to lifecycle owner: ' + name)
+owner = Path(sys.argv[2]).stat()
+if sys.argv[3] != f'{owner.st_uid}:{owner.st_gid}':
+    raise SystemExit('ADDP_RUNTIME_LOG_OWNER must match source directory ownership')
+PYLOGDIR
+
 for token_name in LOKI_READ_TOKEN LOKI_WRITE_TOKEN; do
   token_value="${!token_name:-}"
   if [[ ! "$token_value" =~ ^[a-zA-Z0-9_-]{32,128}$ ]]; then

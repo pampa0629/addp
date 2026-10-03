@@ -69,6 +69,7 @@ services:
       runtime-log-api:
         condition: service_healthy
   runtime-log-pruner:
+    user: "${ADDP_RUNTIME_LOG_OWNER:?T2 source owner required}"
     extra_hosts: ["host.docker.internal:host-gateway"]
     build:
       context: ../..
