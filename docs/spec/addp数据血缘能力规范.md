@@ -265,6 +265,8 @@ Develop Query Execution Supervisor 必须在业务写入事务成功提交后，
 
 字段级粒度本身不构成引入 Neo4j / FalkorDB 的理由。PostgreSQL 继续唯一拥有血缘证据和当前投影。现有有界上下游查询先优化方向索引、批量取证与查询计划；不能用图数据库掩盖缺失或错误的字段事实。
 
+字段图在每批遍历中统一读取最新关系证据，不逐边查询。证据必须按租户、关系类型、两端字段及结构快照精确匹配，并按 `observed_at`、证据 ID 降序确定唯一记录；历史查询先限定 `as_of` 再选取最新证据，不得引用时间点之后的观察。
+
 只有实际负载已需要高并发深层遍历、复杂路径模式或全图算法，并且 PostgreSQL 优化后仍无法达到已确定的延迟、吞吐和内存目标，才进行同一真实数据集的对照评测。评测同时计入快照/历史语义、租户可见性、一致性恢复和运维成本，不以固定边数作为迁移阈值。若评测确认有收益，须另行确认唯一查询路线与可重建投影方案，禁止向 PostgreSQL 和图数据库双写事实或并行保留两套正式查询实现。
 
 UDBX Dataset、GeoPackage layer 等容器内部对象只有在数据项体系为其确定稳定可寻址身份后，才能进入正式资源血缘。
@@ -281,13 +283,15 @@ GET /api/v1/meta/lineage/graph
 
 | 参数 | 说明 |
 | --- | --- |
-| `subject_kind` | `data_item` 或 `published_service` |
-| `item_id` | `subject_kind=data_item` 时使用 |
+| `subject_kind` | `data_item`、`field_ref` 或 `published_service` |
+| `item_id` | `subject_kind=data_item` 或 `field_ref` 时必须提供 |
+| `field_name` | `subject_kind=field_ref` 时必须提供精确字段名；其他主体不接受此参数，字段名中的点号不拆分 |
+| `schema_snapshot_hash` | 仅 `subject_kind=field_ref` 使用；省略时依据 Meta 当前结构定位，提供时必须有对应执行结构证据 |
 | `service_id` | `subject_kind=published_service` 时使用 |
 | `revision` | 服务发布版本，服务根节点必须明确版本 |
 | `direction` | `upstream` / `downstream` / `both`，默认 `both` |
 | `depth` | 展开深度，服务端限制最大值 |
-| `expand_upstream` / `expand_downstream` | 逗号分隔的 data item ID；在根主体对应方向已可达的节点处额外展开一层，最多各 100 个。不作为新的根，不能借此进入旁系。 |
+| `expand_upstream` / `expand_downstream` | 逗号分隔的 data item ID；在根主体对应方向已可达的节点处额外展开一层，最多各 100 个。不作为新的根，不能借此进入旁系。字段主体不接受这两个参数。 |
 | `limit` | 节点和边上限，超过时返回 `truncated=true` |
 | `as_of` | 可选历史观察时间 |
 

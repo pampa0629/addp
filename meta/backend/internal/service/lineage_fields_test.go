@@ -3,14 +3,139 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/addp/common/datatype"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/meta/internal/models"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
+
+func TestFieldLineageEvidenceAgainstPostgres(t *testing.T) {
+	dsn := os.Getenv("META_POSTGRES_TEST_DSN")
+	if dsn == "" {
+		t.Skip("META_POSTGRES_TEST_DSN is not set")
+	}
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { sqlDB.Close() })
+	tx := db.Begin()
+	if tx.Error != nil {
+		t.Fatal(tx.Error)
+	}
+	t.Cleanup(func() { tx.Rollback() })
+	// As in the Meta migration gate, schema changes are rolled back in addp_test.
+	if err := tx.Exec("DROP SCHEMA IF EXISTS meta CASCADE; CREATE SCHEMA meta").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.AutoMigrate(&models.LineageItemRelation{}, &models.LineageObservation{}); err != nil {
+		t.Fatal(err)
+	}
+	endpoints := models.LineageFieldEndpoints{SourceFieldName: `name.with."quote`, TargetFieldName: "total", SourceSchemaHash: "source", TargetSchemaHash: "target"}
+	relation := models.LineageItemRelation{TenantID: 7, SourceItemID: 1, TargetItemID: 2, RelationKind: "derive", Granularity: "field", LineageFieldEndpoints: endpoints}
+	if err := tx.Create(&relation).Error; err != nil {
+		t.Fatal(err)
+	}
+	at := time.Now().UTC().Truncate(time.Second)
+	for _, entry := range []struct {
+		tenant uint
+		at     time.Time
+		id     string
+	}{{7, at, "old"}, {7, at.Add(time.Minute), "new"}, {7, at.Add(time.Minute), "tie"}, {8, at.Add(2 * time.Minute), "foreign"}, {7, at.Add(-time.Minute), "late-old"}} {
+		observation := models.LineageObservation{TenantID: entry.tenant, SourceItemID: &relation.SourceItemID, TargetItemID: &relation.TargetItemID, RelationKind: "derive", Granularity: "field", LineageFieldEndpoints: endpoints, SourceSnapshot: models.JSONMap{}, Evidence: models.JSONMap{"execution_id": entry.id}, ObservedAt: entry.at}
+		if err := tx.Create(&observation).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	svc := NewLineageService(tx, lineageTestEngineCatalog{})
+	history := at.Add(30 * time.Second)
+	for _, entry := range []struct {
+		asOf *time.Time
+		want string
+	}{{nil, "tie"}, {&history, "old"}} {
+		evidence, err := svc.fieldLineageEvidence(t.Context(), 7, []models.LineageItemRelation{relation}, models.LineageGraphRequest{AsOf: entry.asOf})
+		if err != nil || len(evidence) != 1 || evidence[relation.ID].Evidence["execution_id"] != entry.want {
+			t.Fatalf("evidence = %+v, err = %v, want %s", evidence, err, entry.want)
+		}
+	}
+}
+
+func TestFieldLineageBatchesEvidenceAndPreservesHistory(t *testing.T) {
+	db := openLineageTestDB(t)
+	svc := NewLineageService(db, lineageTestEngineCatalog{})
+	names := []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "name.with.dot", `quoted"field`}
+	sourceSchema := fieldTestSchema(t, names...)
+	targetSchema := fieldTestSchema(t, "total")
+	source := fieldTestItem(t, db, 7, "batch-source", sourceSchema)
+	target := fieldTestItem(t, db, 7, "batch-target", targetSchema)
+	at := time.Now().UTC().Add(-time.Hour)
+	mappings := make([]commonExecution.LineageFieldMapping, 0, len(names))
+	for _, name := range names {
+		mappings = append(mappings, commonExecution.LineageFieldMapping{SourceField: name, TargetField: "total", Transformation: "derived"})
+	}
+	fieldTestExecution(t, db, "batch-old", source, target, sourceSchema, targetSchema, "replace", at, mappings...)
+	if _, err := svc.CollectExecution(t.Context(), 7, "batch-old"); err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range []struct{ id, transformation string }{{"batch-new", "direct"}, {"batch-tie", "derived"}} {
+		fieldTestExecution(t, db, entry.id, source, target, sourceSchema, targetSchema, "append", at.Add(time.Minute),
+			commonExecution.LineageFieldMapping{SourceField: "a", TargetField: "total", Transformation: entry.transformation})
+		if _, err := svc.CollectExecution(t.Context(), 7, entry.id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var foreign models.LineageObservation
+	if err := db.Where("execution_id = ? AND granularity = 'field'", "batch-tie").First(&foreign).Error; err != nil {
+		t.Fatal(err)
+	}
+	foreign.ID, foreign.TenantID, foreign.ObservedAt = 0, 8, at.Add(2*time.Minute)
+	foreign.Evidence = models.JSONMap{"execution_id": "foreign", "transformation": "direct"}
+	if err := db.Create(&foreign).Error; err != nil {
+		t.Fatal(err)
+	}
+	queries := 0
+	const callback = "count-field-lineage-evidence"
+	if err := db.Callback().Query().After("gorm:query").Register(callback, func(db *gorm.DB) {
+		if !db.DryRun && strings.Contains(db.Statement.SQL.String(), "lineage_observations") {
+			queries++
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Callback().Query().Remove(callback) })
+	historical := at.Add(30 * time.Second)
+	for _, asOf := range []*time.Time{nil, &historical} {
+		queries = 0
+		graph, err := svc.GetGraph(t.Context(), 7, models.LineageGraphRequest{
+			SubjectKind: "field_ref", ItemID: &target.ID, FieldName: "total", Direction: "both", Depth: 2, Limit: 30, AsOf: asOf,
+		})
+		if err != nil || graph.Truncated || len(graph.Edges) != len(names) || len(graph.Nodes) != len(names)+1 {
+			t.Fatalf("graph: %+v, %v", graph, err)
+		}
+		for _, edge := range graph.Edges {
+			want := "batch-old"
+			if asOf == nil && edge.Source.FieldName == "a" {
+				want = "batch-tie"
+			}
+			if edge.Transformation != "derived" || edge.Evidence["execution_id"] != want {
+				t.Fatalf("evidence for %q: %+v, want %s", edge.Source.FieldName, edge, want)
+			}
+		}
+		if queries > 2 {
+			t.Errorf("evidence queries = %d for %d edges, want at most one root proof and one batch", queries, len(names))
+		}
+	}
+}
 
 func fieldTestSchema(t *testing.T, names ...string) *commonExecution.LineageSchemaSnapshot {
 	t.Helper()

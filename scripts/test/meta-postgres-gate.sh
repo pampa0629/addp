@@ -23,6 +23,7 @@ addp_infra_verify_test_postgres_dsn "$META_POSTGRES_TEST_DSN"
 
 cd "$ROOT_DIR/meta/backend"
 go test ./internal/repository -run '^(TestDataItemChangeMigrationAgainstPostgres|TestLineageLifecycleMigrationAgainstPostgres|TestNodeStatisticsMigrationAgainstPostgres|TestNodeScanTimeMigrationAgainstPostgres)$' -count=1 -v 2>&1 | tee "$WORK_DIR/meta.log"
+go test ./internal/service -run '^TestFieldLineageEvidenceAgainstPostgres$' -count=1 -v 2>&1 | tee -a "$WORK_DIR/meta.log"
 if grep -q -- '--- SKIP:' "$WORK_DIR/meta.log"; then
     echo "Meta PostgreSQL gate refuses skipped tests" >&2
     exit 1

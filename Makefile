@@ -360,7 +360,7 @@ test-system-iam-runner: ## 验证 System IAM PostgreSQL 门禁跨进程互斥
 test-asset-postgres: ## 使用一次性 PostgreSQL 数据库运行 Asset 授权履约迁移门禁
 	@bash scripts/test/asset-postgres-gate.sh
 
-test-meta-postgres: ## 使用一次性 PostgreSQL 数据库运行 Meta 迁移与目录统计集成门禁
+test-meta-postgres: ## 使用测试 PostgreSQL 数据库运行 Meta 迁移、目录统计与字段血缘取证集成门禁
 	@bash scripts/test/meta-postgres-gate.sh
 
 test-catalog-postgres: ## 使用一次性 PostgreSQL 数据库运行 Catalog 约束集成门禁

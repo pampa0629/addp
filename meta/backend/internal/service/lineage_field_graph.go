@@ -121,6 +121,10 @@ func (s *LineageService) buildFieldLineageGraph(ctx context.Context, tenantID ui
 			if err := query.Where(conditions).Order("r.id").Limit(request.Limit + 1).Find(&relations).Error; err != nil {
 				return response, err
 			}
+			observations, err := s.fieldLineageEvidence(ctx, tenantID, relations, request)
+			if err != nil {
+				return response, err
+			}
 			frontier = nil
 			for _, relation := range relations {
 				source := models.LineageNode{Kind: "field_ref", ItemID: uintPtr(relation.SourceItemID), FieldName: relation.SourceFieldName, SchemaSnapshotHash: relation.SourceSchemaHash}
@@ -138,13 +142,9 @@ func (s *LineageService) buildFieldLineageGraph(ctx context.Context, tenantID ui
 						response.Truncated = true
 						continue
 					}
-					var observation models.LineageObservation
-					evidenceQuery := s.db.WithContext(ctx).Where("tenant_id = ? AND granularity = 'field' AND source_item_id = ? AND target_item_id = ? AND source_field_name = ? AND target_field_name = ? AND source_schema_hash = ? AND target_schema_hash = ? AND relation_kind = ?", tenantID, relation.SourceItemID, relation.TargetItemID, relation.SourceFieldName, relation.TargetFieldName, relation.SourceSchemaHash, relation.TargetSchemaHash, relation.RelationKind)
-					if request.AsOf != nil {
-						evidenceQuery = evidenceQuery.Where("observed_at <= ?", *request.AsOf)
-					}
-					if err := evidenceQuery.Order("observed_at DESC,id DESC").First(&observation).Error; err != nil {
-						return response, err
+					observation, found := observations[relation.ID]
+					if !found {
+						return response, gorm.ErrRecordNotFound
 					}
 					for _, node := range newNodes {
 						nodes[fieldNodeKey(node)] = true
@@ -200,4 +200,38 @@ func (s *LineageService) buildFieldLineageGraph(ctx context.Context, tenantID ui
 	}
 	response.Subject = hydrate(root)
 	return response, nil
+}
+
+func (s *LineageService) fieldLineageEvidence(ctx context.Context, tenantID uint, relations []models.LineageItemRelation, request models.LineageGraphRequest) (map[uint]models.LineageObservation, error) {
+	result := make(map[uint]models.LineageObservation, len(relations))
+	if len(relations) == 0 {
+		return result, nil
+	}
+	ids := make([]uint, 0, len(relations))
+	for _, relation := range relations {
+		ids = append(ids, relation.ID)
+	}
+	query := s.db.WithContext(ctx).Table("meta.lineage_observations AS o").
+		Select("o.*, r.id AS relation_id, ROW_NUMBER() OVER (PARTITION BY r.id ORDER BY o.observed_at DESC, o.id DESC) AS evidence_rank").
+		Joins(`JOIN meta.lineage_item_relations AS r ON r.tenant_id = o.tenant_id
+			AND r.granularity = o.granularity AND r.relation_kind = o.relation_kind
+			AND r.source_item_id = o.source_item_id AND r.target_item_id = o.target_item_id
+			AND r.source_field_name = o.source_field_name AND r.target_field_name = o.target_field_name
+			AND r.source_schema_hash = o.source_schema_hash AND r.target_schema_hash = o.target_schema_hash`).
+		Where("o.tenant_id = ? AND o.granularity = 'field' AND r.id IN ?", tenantID, ids)
+	if request.AsOf != nil {
+		query = query.Where("o.observed_at <= ?", *request.AsOf)
+	}
+	var observations []struct {
+		models.LineageObservation
+		RelationID uint `gorm:"column:relation_id"`
+	}
+	if err := s.db.WithContext(ctx).Table("(?) AS ranked_evidence", query).
+		Where("evidence_rank = 1").Find(&observations).Error; err != nil {
+		return nil, err
+	}
+	for _, observation := range observations {
+		result[observation.RelationID] = observation.LineageObservation
+	}
+	return result, nil
 }
