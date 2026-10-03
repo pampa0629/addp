@@ -849,3 +849,5 @@ bash scripts/prod/stop.sh
 模块实例运行日志 T2 入口为 `make test-system-runtime-log`，由 System owner 自建 disposable MinIO/Alloy/Loki 并清理全部测试资源；构建共享启动工具、身份关联、授权代理和重建保留同次验证，具体范围见 `scripts/infra/README.md`。
 
 Manager 内部产物验收 `manager-internal-artifact-lineage` 使用 GitHub Hosted Ubuntu x86_64 临时部署，由 `scripts/test/online-hosted-manager-gate.sh` 从零建立最小权限身份、Business MinIO 与真实 Runtime，复用 `make test-online` 业务断言并在退出时销毁环境；无需永久账号或自备 Runner。首次真实运行成功前只登记手工触发，不计为 T4 通过。
+
+Redis Online 验收使用 `make test-online ONLINE_SUITE=redis-consumer-flow`，在 `online-t4-gates.yml` 选择该 suite 后由人工 `redis-hosted-t4` Job 执行 `bash scripts/test/online-hosted-redis-gate.sh`。该入口复用 `scripts/utils/hosted-online.sh` 的准入、一次性 Infra、秘密分区及清理；Business owner 脚本 `business/scripts/online-redis-consumer-fixture.sh` 提供固定镜像、只读 ACL 与九个原生样例，System owner helper 创建普通验收用户及独立 Engine provisioner，登记后移除 provisioner 凭据。验收覆盖 System 实时目录、Meta 扫描、Manager 原生预览以及真实 Console Meta 重扫和 Manager 页面，截图、API 与同一 User/Tenant 的浏览器报告归档到仓库外 artifact 目录。脚本/断言确定性门禁是 `make test-online-runner`；登记检查从 Hosted metadata 自动发现 suite 并核对 workflow choice，不需要额外 owner 清单。该 gate 拒绝 macOS、脏 checkout、个人环境与已有资源；首次真实运行前不计为 T4 通过，不纳入夜间执行。

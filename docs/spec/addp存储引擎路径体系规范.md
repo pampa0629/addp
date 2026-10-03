@@ -532,3 +532,5 @@ Redis 的逻辑数据库由 Engine Instance 连接配置固定，目录为显性
 ## Elasticsearch 索引路径
 
 Elasticsearch 使用 `service(root) -> index(leaf)`，root 的 `full_name` 为空；index 的 `full_name` 等于完整索引名。索引名中的 `.` 不分层，ResourceLocator 只有一个业务路径段，例如 `addp://engine/31/path/orders.v1?type=index`。连接端点和认证主体属于 ConnectionSpec，不进入数据路径。首版只列出当前身份可见的普通、打开、非隐藏索引；别名、data stream、隐藏/系统索引不投影为普通索引。解析明确的 index 路径必须验证它是具体索引，不允许别名或通配符扩大读取范围。
+
+Redis key 在资源树、Meta DataItem 与 ResourceLocator 中的目录术语保持 `key`，locator 的 `type=key` 不受 `attributes.item.data_type=unknown` 影响。后者表示未裁决的内容语义，不得用它替换目录术语；规范键名与真实 `item_id` 在重扫和跨 Console/Manager 跳转后必须保持一致。

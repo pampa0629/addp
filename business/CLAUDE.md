@@ -21,7 +21,7 @@
 - MinIO：业务对象存储。
 - ClickHouse、MongoDB、Doris、Spark：可选业务数据源和分析组件。
 - Neo4j：图业务数据测试环境。
-- Redis 7.2.13：独立 Business 单机键值样例，不复用 Infra Redis。使用固定官方多架构镜像、单独数据卷和 ACL 管理/只读账号；ADDP Redis Engine Plugin 首版提供 ACL 连接登记与认证检测，尚无 key 级目录、预览或查询。
+- Redis 7.2.13：独立 Business 单机键值样例，不复用 Infra Redis。使用固定官方多架构镜像、单独数据卷和 ACL 管理/只读账号；ADDP Redis Engine Plugin 提供 ACL 连接登记、认证检测、server → key 目录、Meta unknown 身份扫描与 Manager 原生有限样本预览；Develop 查询尚未实现。
 
 ## 重要目录
 
@@ -75,3 +75,5 @@ bash scripts/stop.sh
 - `business/docs/QUICKSTART-CLICKHOUSE-MONGODB.md`
 - `docs/spec/addp配置介绍.md`
 - `docs/spec/addp端口分配.md`
+
+Redis T4 使用 `scripts/test/online-hosted-redis-gate.sh`，物理夹具由 `business/scripts/online-redis-consumer-fixture.sh` 唯一拥有。仅接受 GitHub Hosted Linux x86_64，复用 Business 官方镜像、ACL 启动和九个样例初始化，随机回环端口及密码、tmpfs 数据，不连接已有 Redis。Business 仅输出 secret 分区内的 owner-only descriptor；System 使用独立身份经正式 API 登记，引擎注册凭据在验收前移除。首次真实 CI 运行前不计为 T4 通过。

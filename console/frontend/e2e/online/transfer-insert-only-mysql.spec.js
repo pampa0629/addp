@@ -76,7 +76,7 @@ test('browser recommends MySQL decimal precision and preserves insert-only water
       expect(apiIdentity.permissions.has(permission), `missing permission ${permission}`).toBe(true)
     }
 
-    const browserAccessToken = await login(page, env.ADDP_ONLINE_TEST_USER_USERNAME, env.ADDP_ONLINE_TEST_USER_PASSWORD)
+    const browserAccessToken = await login(page, env.ADDP_ONLINE_TEST_USER_USERNAME, env.ADDP_ONLINE_TEST_USER_PASSWORD, "/transfer/tasks/create")
     const browserAPI = await request.newContext({
       baseURL: env.GATEWAY_URL,
       extraHTTPHeaders: { Authorization: `Bearer ${browserAccessToken}` }

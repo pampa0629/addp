@@ -426,6 +426,7 @@ test-orchestrator-online-runner: ## 验证 Orchestrator Online 故障、权限�
 	@python3 -m unittest scripts/test/orchestrator-execution-online_test.py scripts/test/orchestrator-execution-faults_test.py scripts/test/online-hosted-orchestrator-gate_test.py
 
 test-online-runner: ## 运行 Online 分发器和预检器的确定性测试
+	@python3 -m unittest scripts/test/redis-consumer-flow-online_test.py scripts/test/online-hosted-redis-gate_test.py scripts/test/online-redis-consumer-fixture_test.py
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
 	@python3 -m unittest scripts/test/elasticsearch-consumer-flow-online_test.py
 	@$(MAKE) test-orchestrator-online-runner
@@ -743,6 +744,7 @@ test-common-redis-unit: ## Redis 连接、原生 key 读取预算与 System 加�
 	@cd common && GOWORK=off go test ./engine/plugin ./resourcetree -count=1
 	@cd common && GOWORK=off go test ./engine/plugins/redis -run '^Test(ConnectionValidation|AuthenticatedConnection|TLS|ConnectionRejects|Redis)' -count=1
 	@cd system/backend && GOWORK=off go test ./internal/service -run '^TestRedisRegistration' -count=1
+	@cd system/backend && GOWORK=off go test ./internal/api -run '^TestRedisCatalogRequests' -count=1
 	@cd manager/backend && GOWORK=off go test ./internal/preview -count=1
 	@cd manager/backend && GOWORK=off go test ./internal/api -run '^TestPreview(Protection|Catalog)' -count=1
 	@cd meta/backend && GOWORK=off go test ./internal/scanruntime -count=1

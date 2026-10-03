@@ -40,7 +40,7 @@ func (p *RedisPlugin) ConnectionIdentityFields() []string { return p.ConnectionS
 func (p *RedisPlugin) Capabilities() plugin.EngineCapabilities {
 	model := p.EngineCatalogModel()
 	return plugin.EngineCapabilities{SchemaVersion: plugin.CapabilitiesSchemaVersion, EngineType: p.Type(), EngineFamily: "key_value", Storage: &plugin.StorageCapabilities{
-		CatalogModel: &model, Catalog: &plugin.EngineCatalogCapability{Supported: true},
+		CatalogModel: &model, Catalog: &plugin.EngineCatalogCapability{Supported: true, RealTime: true},
 		Facts: &plugin.EngineCatalogFactsCapability{Supported: true, NativeFacts: true},
 		Store: &plugin.StoreCapability{KeyValueRead: true},
 	}}

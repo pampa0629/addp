@@ -394,7 +394,7 @@ if [ "$BUSINESS_REDIS_AVAILABLE" = true ]; then
     "Business Redis (${BUSINESS_REDIS_PORT})" \
     "redis" \
     "$(jq -nc --arg host "127.0.0.1" --argjson port "$BUSINESS_REDIS_PORT" --arg user "addp_business_reader" --arg password "${BUSINESS_REDIS_READER_PASSWORD:-addp_business_redis_reader}" '{host:$host,port:$port,user:$user,password:$password,database:0,use_ssl:false}')" \
-    "Business Redis 原生键值样例（只读连接，尚无目录或预览）"
+    "Business Redis 原生键值样例（只读目录与原生有限样本预览）"
 fi
 
 register_engine \

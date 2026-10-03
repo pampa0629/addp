@@ -651,6 +651,7 @@ func convertNodeType(metaNodeType string) ResourceType {
 		"topic":      TypeTopic,
 		"index":      TypeIndex,
 		"graph":      TypeGraph,
+		"key":        TypeKey,
 		"object":     TypeObject,
 		"file":       TypeFile,
 	}

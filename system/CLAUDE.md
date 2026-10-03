@@ -466,3 +466,5 @@ API 为 `GET /api/v1/system/platform/modules/{module_name}/instances/{instance_i
 ### 未登记实例的运行日志
 
 System 唯一拥有 `module_log_sources` 保留目录。Infra `addp-log-observer` 使用独立 `system.module_log_source.create` Permission 与绑定节点上报有界元数据；Monitor 健康接收器列表不承载历史目录。Platform User 的 `platform.module_log.read` 同时用于目录和单实例正文。GET `/platform/module-log-sources` 排除当前登记关联；既有正文路由同时验证登记身份或保留来源，按可信节点筛选、绑定分页游标。未登记不是 DOWN 或启动失败，采集时间不代表业务启动时间。目录按最后来源观测加实际集中保留时长过期，不因重复扫描延长。数据库门禁新增 repository 分组，由 `scripts/test/system-iam-postgres-gate.sh --package repository` 运行，纳入既有 System IAM CI。
+
+`cmd/online-test-fixture` 支持 Redis 的 `redis-consumer-flow` Hosted T4 身份准备：非默认 Tenant 的普通用户仅授予 `system.engine_catalog.read`、Meta 目录/扫描和 Manager 阅读权限，输出浏览器登录凭据到 owner-only Secret 文件；独立 Engine provisioner 经正式 API 登记后由生命周期移除其凭据，不把基础设施管理权限加入消费用户。

@@ -21,14 +21,15 @@ export function identity(payload) {
   }
 }
 
-export async function login(page, username, password) {
+export async function login(page, username, password, redirect) {
+  const expectedRedirect = new URL(redirect, 'http://addp.invalid')
   let browserAccessToken = ''
   page.on('request', requestEvent => {
     if (!requestEvent.url().endsWith('/api/v1/system/auth/context')) return
     browserAccessToken = (requestEvent.headers().authorization || '').replace(/^Bearer\s+/i, '')
   })
 
-  await page.goto('/login?redirect=/transfer/tasks/create')
+  await page.goto(`/login?redirect=${encodeURIComponent(redirect)}`)
   await page.locator('input[autocomplete="username"]').fill(username)
   await page.locator('input[autocomplete="current-password"]').fill(password)
   await page.locator('button.auth-login-primary').click()
@@ -40,7 +41,7 @@ export async function login(page, username, password) {
   if (await page.locator('input[autocomplete="one-time-code"]').isVisible().catch(() => false)) {
     throw new Error('the dedicated Online browser user must not require MFA')
   }
-  await page.waitForURL(url => url.pathname === '/transfer/tasks/create')
+  await page.waitForURL(url => url.pathname === expectedRedirect.pathname && url.search === expectedRedirect.search)
   await expect.poll(() => browserAccessToken, { timeout: 20_000 }).not.toBe('')
   return browserAccessToken
 }

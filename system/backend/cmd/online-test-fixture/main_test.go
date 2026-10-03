@@ -71,6 +71,7 @@ func TestFixtureAuthorizationContractMatchesPublishedCatalog(t *testing.T) {
 	}
 	allPermissions := append(append(append(append(append([]string{}, consumerPermissions...), metricPermissions...), ontologyPermissions...), publicOriginReadPermissions...), publicOriginCreatePermissions...)
 	allPermissions = append(allPermissions, orchestratorPermissions...)
+	allPermissions = append(allPermissions, redisConsumerPermissions...)
 	for _, key := range allPermissions {
 		permission, exists := permissions[key]
 		if !exists {
@@ -285,5 +286,24 @@ func TestManagerArtifactFixtureUsesMinimumPermissionsAndBrowserCredentials(t *te
 	data, err := os.ReadFile(path)
 	if err != nil || !strings.Contains(string(data), "export ADDP_ONLINE_TEST_USER_PASSWORD='Random-secret-123'") {
 		t.Fatalf("browser credentials were not written to the owner-only environment: %v", err)
+	}
+}
+
+func TestRedisFixtureUsesCatalogPermissionWithoutInfrastructureAdministration(t *testing.T) {
+	permissions, err := suitePermissions("redis-consumer-flow")
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := []string{"system.engine_catalog.read", "meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read", "manager.data_item.read", "manager.content.read"}
+	if len(permissions) != len(expected) {
+		t.Fatalf("unexpected Redis permissions: %v", permissions)
+	}
+	for _, permission := range expected {
+		if !contains(permissions, permission) {
+			t.Fatalf("missing %s", permission)
+		}
+	}
+	if !needsEngineProvisioner("redis-consumer-flow") {
+		t.Fatal("fixture must register through the separate infrastructure identity")
 	}
 }

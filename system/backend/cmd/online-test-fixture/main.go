@@ -71,6 +71,11 @@ var managerArtifactPermissions = []string{
 	"meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read", "monitor.execution.read",
 }
 
+var redisConsumerPermissions = []string{
+	"system.engine_catalog.read", "meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read",
+	"manager.data_item.read", "manager.content.read",
+}
+
 var publicOriginReadPermissions = []string{
 	"meta.catalog.read", "manager.data_item.read",
 	"transfer.task.read", "orchestrator.workflow.read",
@@ -85,6 +90,8 @@ func suitePermissions(suite string) ([]string, error) {
 	switch suite {
 	case "opengauss-consumer-flow", "kingbase-consumer-flow":
 		return consumerPermissions, nil
+	case "redis-consumer-flow":
+		return redisConsumerPermissions, nil
 	case "metric-service-revision-lifecycle":
 		return metricPermissions, nil
 	case "ontology-revision-lifecycle":
@@ -101,7 +108,7 @@ func suitePermissions(suite string) ([]string, error) {
 }
 
 func needsEngineProvisioner(suite string) bool {
-	return suite == "manager-internal-artifact-lineage" || suite == "opengauss-consumer-flow" || suite == "kingbase-consumer-flow" || suite == "metric-service-revision-lifecycle" || suite == "orchestrator-execution"
+	return suite == "redis-consumer-flow" || suite == "manager-internal-artifact-lineage" || suite == "opengauss-consumer-flow" || suite == "kingbase-consumer-flow" || suite == "metric-service-revision-lifecycle" || suite == "orchestrator-execution"
 }
 
 func main() {
@@ -252,7 +259,7 @@ func run(args []string, environment []string) error {
 		"ADDP_ONLINE_TEST_TENANT_ID":         fmt.Sprintf("%d", tenant.ID),
 		"ADDP_ONLINE_TEST_USER_ACCESS_TOKEN": consumerSession.AccessToken,
 	}
-	if *suite == "manager-internal-artifact-lineage" {
+	if *suite == "redis-consumer-flow" || *suite == "manager-internal-artifact-lineage" {
 		values["ADDP_ONLINE_TEST_USER_USERNAME"] = "external-online-consumer"
 		values["ADDP_ONLINE_TEST_USER_PASSWORD"] = consumerPassword
 	}

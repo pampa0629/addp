@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	engineplugin "github.com/addp/common/engine/plugin"
+	redisplugin "github.com/addp/common/engine/plugins/redis"
 	sharedauth "github.com/addp/common/middleware/auth"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	"github.com/addp/system/internal/models"
@@ -196,6 +197,34 @@ func TestCatalogSelectorExcludesConnectionAndOtherTenants(t *testing.T) {
 		if _, exists := selectors[0][forbidden]; exists {
 			t.Fatalf("selector exposes %s: %#v", forbidden, selectors[0])
 		}
+	}
+}
+
+func TestRedisCatalogRequestsExposeStructuralRoot(t *testing.T) {
+	tenantID := uint(3)
+	capabilities, err := json.Marshal((&redisplugin.RedisPlugin{}).Capabilities())
+	if err != nil {
+		t.Fatal(err)
+	}
+	declared := models.JSONString(capabilities)
+	router := newEngineListTestRouter(t, models.Engine{
+		TenantID: &tenantID, Name: "Business Redis", EngineType: "redis",
+		EngineOrigin: "general", LifecycleState: models.EngineLifecycleActive,
+		ConnectionStatus: models.EngineConnectionOnline, Capabilities: &declared,
+	})
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/engines/1/catalog/children", strings.NewReader(`{"path":{"version":"catalog.path/v1","segments":[]}}`))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("Redis live catalog root: status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var response models.EngineCatalogListChildrenResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if len(response.Nodes) != 1 || response.Nodes[0].Kind != "server" {
+		t.Fatalf("Redis catalog must expose one server root: %#v", response.Nodes)
 	}
 }
 

@@ -469,6 +469,8 @@ A: 可以！所有脚本都是幂等的。
 
 验证入口为 `make test-business-config` 和 `make test-business-redis`。后者创建独占 Compose project、随机回环端口和随机密码，核验认证拒绝、只读权限、原生类型、精确字节、初始化幂等和重启持久化，退出后检查容器、数据卷和网络零残留。该入口已纳入 `make test-integration`、模块/变更自动发现和 `release-and-t2-gates.yml`，不连接 Infra 或现有 Business Redis。
 
-Redis 插件与 System 消费契约验证入口：`make test-common-redis-unit`、`make test-common-redis`。后者复用同一独占夹具生命周期，验证真实 ACL 凭据、数据库选择、权限不足、System 密码加密/脱敏与在线状态更新，并已登记 Common/System/Business 变更触发的 CI 门禁。
+Redis 插件与消费契约验证入口：`make test-common-redis-unit`、`make test-common-redis`。后者复用同一独占夹具生命周期，验证真实 ACL 凭据、数据库选择、权限不足、System 密码加密/脱敏与在线状态更新，以及 Meta key 扫描和 Manager 原生预览，并已登记 Common/System/Meta/Manager/Business 变更触发的 CI 门禁。
 
 Manager 内部产物验收 `manager-internal-artifact-lineage` 使用 GitHub Hosted Ubuntu x86_64 临时部署，由 `scripts/test/online-hosted-manager-gate.sh` 从零建立最小权限身份、Business MinIO 与真实 Runtime，复用 `make test-online` 业务断言并在退出时销毁环境；无需永久账号或自备 Runner。首次真实运行成功前只登记手工触发，不计为 T4 通过。
+
+Redis 正式 Online 入口为 `make test-online ONLINE_SUITE=redis-consumer-flow`，由 `online-t4-gates.yml` 人工触发 `redis-hosted-t4` Job，经 `scripts/test/online-hosted-redis-gate.sh` 准备一次性 Ubuntu x86_64 部署。物理夹具复用上面的固定镜像、ACL 与九个样例，使用随机回环端口、随机密码和 tmpfs；System helper 建立非默认 Tenant、最小权限普通用户与独立引擎登记身份。断言覆盖 System 实时目录/事实、Meta unknown key 身份及重扫稳定性、Manager 九个原生预览、大整数/二进制/TTL，并实际登录 Console 从 Meta 页面重扫及打开 Manager 预览，归档截图和同一身份的报告。成功、失败及中断都销毁当次业务容器、平台 Infra 和凭据目录；不接管个人开发环境。脚本确定性验证纳入 `make test-online-runner`，实际 Hosted 首跑尚待执行，不登记 schedule。
