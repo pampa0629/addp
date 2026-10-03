@@ -72,6 +72,29 @@ const DUCKDB_RUNTIME = {
 
 const EXECUTION_ID = '11111111-1111-4111-8111-111111111111'
 
+test('submits a complete multiline JSON query from the Monaco editor', async ({ page }) => {
+  const engine = { ...ENGINE, engine_type: 'elasticsearch', capabilities: {
+    compute: { query: { supported: true, languages: ['es_dsl'], default_language: 'es_dsl', result_kinds: ['table'] } }
+  } }
+  await installMockBackend(page, { resultKind: 'table', engines: [engine] })
+  await page.goto('/sql')
+  const catalog = page.locator('.catalog-panel')
+  await catalog.getByRole('treeitem', { name: ENGINE.name, exact: true }).click()
+  await catalog.getByRole('treeitem', { name: 'public', exact: true }).locator('.el-tree-node__expand-icon').click()
+  await catalog.getByRole('treeitem', { name: 'customers', exact: true }).click()
+  const query = { query: { term: { tags: 'sample' } }, size: 25, sort: [{ order_id: 'asc' }], _source: ['order_id', 'customer'] }
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
+  await page.evaluate(text => navigator.clipboard.writeText(text), JSON.stringify(query, null, 2))
+  await page.locator('.monaco-editor').click({ position: { x: 70, y: 20 } })
+  await page.keyboard.press('ControlOrMeta+A')
+  await page.keyboard.press('ControlOrMeta+V')
+  const preflight = page.waitForRequest(request => new URL(request.url()).pathname === '/api/v1/develop/query-preflight')
+  await page.getByRole('button', { name: '执行', exact: true }).click()
+  const submitted = (await preflight).postDataJSON()
+  expect(JSON.parse(submitted.query)).toEqual(query)
+  expect(submitted.query_type).toBe('es_dsl')
+})
+
 test('renders the desktop workbench and a bounded table result without overlap', async ({ page }) => {
   const resultRows = Array.from({ length: 25 }, (_, index) => ({
     id: index + 1,

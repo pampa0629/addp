@@ -63,4 +63,4 @@ Console 通过共享 `useConsoleUnsavedChangesGuard` 拦截活动 iframe 有未�
 
 `registered-service-unsaved.spec.js` 复用同一正式导航夹具，覆盖注册表单的内部返回、Console 菜单、历史与刷新保护，普通字段、关键词及三类认证输入的保留，以及创建/更新失败后继续编辑、提交期间禁用输入、成功后的保护清除，以及确认离开后迟到的创建/更新成功和失败响应不干扰新草稿；所有写请求均由 Playwright 模拟，不写业务数据库。
 
-Elasticsearch 正式 T4 浏览器用例 `e2e/online/elasticsearch-consumer-flow.spec.js` 通过真实 Console 登录同一普通用户，覆盖 Meta 重扫及稳定索引身份、Manager 文档分页与空索引、Develop Monaco 编辑器的 ES DSL 执行。它只由 Hosted Online 专用部署执行，产出四张截图和同一身份的报告，不计入确定性前端夹具 T3。
+Elasticsearch 正式 T4 浏览器用例 `e2e/online/elasticsearch-consumer-flow.spec.js` 通过真实 Console 登录同一普通用户，覆盖 Meta 重扫及稳定索引身份、Manager 文档分页与空索引、Develop Monaco 编辑器的 ES DSL 执行。多行 JSON 使用浏览器剪贴板和粘贴键输入，核对实际预检请求的完整查询及允许结果，避免逐字输入触发括号自动补全。对应编辑器输入回归由 `make test-develop-frontend` 验证；真实部署用例只由 Hosted Online 专用部署执行，产出四张截图和同一身份的报告，不计入确定性前端夹具 T3。

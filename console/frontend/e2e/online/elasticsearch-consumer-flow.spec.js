@@ -89,11 +89,19 @@ test('Elasticsearch scan, document previews and DSL execution converge through C
     await expect(develop.locator('.toolbar-primary .el-tag')).toHaveText('ES_DSL')
     await selectSearchResult(develop.locator('.catalog-panel .resource-tree-picker'), 'addp_orders.v1', 'addp_orders.v1')
     const query = { query: { term: { tags: 'sample' } }, size: 25, sort: [{ order_id: 'asc' }], _source: ['order_id', 'customer'] }
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
+    await page.evaluate(text => navigator.clipboard.writeText(text), JSON.stringify(query, null, 2))
     await develop.locator('.monaco-editor').click({ position: { x: 70, y: 20 } })
     await page.keyboard.press('ControlOrMeta+A')
-    await page.keyboard.insertText(JSON.stringify(query, null, 2))
+    await page.keyboard.press('ControlOrMeta+V')
+    const preflight = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/develop/query-preflight' && response.request().method() === 'POST')
     const created = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/develop/executions' && response.request().method() === 'POST')
     await develop.getByRole('button', { name: /^(执行|Execute)$/i }).click()
+    const analysisResponse = await preflight
+    expect(JSON.parse(analysisResponse.request().postDataJSON().query)).toEqual(query)
+    const analysis = await json(analysisResponse, 'Develop UI preflight')
+    expect(analysis.allowed).toBe(true)
+    expect(analysis.diagnostics.filter(diagnostic => diagnostic.severity === 'error')).toEqual([])
     const creation = await created
     const body = creation.request().postDataJSON()
     expect(body.content.query_type).toBe('es_dsl')
