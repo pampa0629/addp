@@ -1,8 +1,10 @@
 import copy
 import importlib
+import io
+import json
 import subprocess
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 ONLINE = importlib.import_module("scripts.test.orchestrator-execution-online")
 API = ONLINE.API
@@ -18,6 +20,8 @@ class FakeOwner:
         self.launches = 0
         self.definitions = 10
         self.fault = fault
+        self.tasks = {}
+        self.deleted = False
 
     def tree(self, failed):
         root, inner, scan = [execution_id(n) for n in ((5, 6, 7) if failed else (1, 2, 3))]
@@ -45,9 +49,16 @@ class FakeOwner:
             result["truncated"] = True
         if failed and self.fault == "dependent":
             children.append(node(execution_id(8), "meta", root))
+        if self.deleted:
+            if self.fault == "history_tree_lost":
+                result["children"] = []
+            if self.fault == "history_step_changed":
+                result["execution"]["steps"][0]["id"] = "invented"
+            if failed and self.fault == "history_error_changed":
+                result["execution"]["error_details"]["code"] = "invented"
         return result
 
-    def request(self, method, path, expected, body=None):
+    def request(self, method, path, expected, body=None, *, response_type=dict):
         self.calls.append((method, path, body))
         if method == "POST" and path.endswith("/execute"):
             self.launches += 1
@@ -56,26 +67,57 @@ class FakeOwner:
             if self.fault == "lost_create":
                 raise API.SuiteError("create response unavailable")
             self.definitions += 1
-            return API.Response(201, {"id": self.definitions, "tenant_id": 42})
+            payload = {"id": self.definitions, "tenant_id": 42}
+            self.tasks[f"{path}/{self.definitions}"] = payload
+            return API.Response(201, payload)
         if method == "DELETE":
+            if self.fault != "delete_noop" and not (self.fault == "meta_delete_noop" and path.startswith(ONLINE.META)):
+                del self.tasks[path]
+            self.deleted = not self.tasks
+            if self.fault == "lost_delete":
+                raise API.SuiteError("delete response unavailable")
             return API.Response(200, {})
-        if expected == (404,):
-            return API.Response(404, {})
-        failed = execution_id(5) in path
+        if path == f"{ONLINE.META}/scan/tasks":
+            if response_type is not list:
+                raise API.SuiteError("scan task list requires an explicit array contract")
+            if self.fault == "invalid_meta_list":
+                return API.Response(200, {})
+            return API.Response(200, [item for task, item in self.tasks.items() if task.startswith(ONLINE.META)])
+        if path.startswith(f"{ONLINE.ORCH}/orchestrations/"):
+            status = 200 if path in self.tasks else 404
+            if status not in expected:
+                raise API.SuiteError("definition response status rejected")
+            return API.Response(status, self.tasks.get(path, {}))
+        identity = path.split("/by-execution-id/", 1)[-1].split("/executions/", 1)[-1].split("/", 1)[0]
+        failed = identity in {execution_id(n) for n in (5, 6, 7)}
         if path.endswith("/tree"):
             return API.Response(200, self.tree(failed))
         if "/events?" in path:
-            identity = execution_id(5 if failed else 1)
             items = [{"id": n, "execution_id": identity, "attempt": 1, "occurred_at": "2026-10-02T00:00:00Z",
                       "kind": kind, "counters": {}} for n, kind in ((1, "started"), (2, "failed" if failed else "completed"))]
             if self.fault == "event_private":
                 items[0]["message"] = "password=never-print"
             if self.fault == "event_duplicate":
                 items.append({**items[-1], "id": 3})
+            if self.deleted and self.fault == "history_events_changed":
+                items[-1]["counters"] = {"progress": 99}
+            if self.deleted and self.fault == "history_event_missing":
+                items = items[1:]
             return API.Response(200, {"items": items, "next_cursor": items[-1]["id"], "has_more": False, "retained_after": "2026-09-02"})
+        if path.startswith(ONLINE.MONITOR):
+            if self.deleted and self.fault == "history_detail_lost":
+                raise API.SuiteError("historical detail returned 404")
+            detail = copy.deepcopy(ONLINE.tree_ids(self.tree(failed))[identity])
+            if self.deleted and self.fault == "history_private":
+                detail["execution_config"] = {"password": "never-print"}
+            if self.deleted and self.fault == "history_detail_changed":
+                detail["progress"] = 1
+            return API.Response(200, detail)
         steps = {"nested": {"status": "failed" if failed else "success"}}
         if not failed or self.fault == "dependent":
             steps["after"] = {"status": "success"}
+        if self.deleted and self.fault == "history_owner_steps_changed":
+            steps["nested"]["status"] = "pending"
         return API.Response(200, {"execution_id": execution_id(5 if failed else 1), "status": "failed" if failed else "success",
                                 "progress": 100 if not failed or self.fault == "failure_progress" else 0,
                                 "metadata": {"step_results": steps},
@@ -92,6 +134,34 @@ class DeniedReader:
         return API.Response(expected[0], {})
 
 
+class OnlineAPIResponseTest(unittest.TestCase):
+    def test_real_transport_validates_object_and_array_contracts(self):
+        client = API.GatewayClient("http://owned.test", "private-token", 2)
+        for payload, response_type, accepted in (([{"id": 11}], list, True), ([], list, True),
+                                                  ({}, dict, True), ({}, list, False), ([], dict, False),
+                                                  (None, list, False), ("not-a-list", list, False)):
+            response = Mock()
+            response.__enter__ = Mock(return_value=response)
+            response.__exit__ = Mock(return_value=False)
+            response.status, response.read.return_value = 200, json.dumps(payload).encode()
+            with self.subTest(payload=payload, response_type=response_type), patch.object(API.urllib.request, "urlopen", return_value=response):
+                if accepted:
+                    self.assertEqual(client.request("GET", "/tasks", (200,), response_type=response_type).payload, payload)
+                else:
+                    with self.assertRaisesRegex(API.SuiteError, "JSON"):
+                        client.request("GET", "/tasks", (200,), response_type=response_type)
+
+    def test_array_endpoint_http_errors_preserve_safe_error_code(self):
+        error = API.urllib.error.HTTPError("http://owned.test/tasks", 403, "Forbidden", {},
+            io.BytesIO(b'{"error_code":"access_denied","error":"never-print"}'))
+        client = API.GatewayClient("http://owned.test", "private-token", 2)
+        with patch.object(API.urllib.request, "urlopen", side_effect=error):
+            with self.assertRaisesRegex(API.SuiteError, "HTTP 403 \\(access_denied\\)") as raised:
+                client.request("GET", "/tasks", (200,), response_type=list)
+        self.assertNotIn("never-print", str(raised.exception))
+        self.assertNotIn("private-token", str(raised.exception))
+
+
 class OrchestratorOnlineTest(unittest.TestCase):
     def run_owner(self, owner, control=None):
         self.report, self.controls = {}, []
@@ -99,14 +169,15 @@ class OrchestratorOnlineTest(unittest.TestCase):
         return ONLINE.run_suite(owner, self.denied, self.foreign, 42, "run-test", 9, self.report,
                                 control=control or self.controls.append)
 
-    def test_permission_extension_is_required_before_definition_cleanup_and_failure_defers_teardown(self):
+    def test_permissions_are_rechecked_on_deleted_history_before_revocation(self):
         for failed in (False, True):
             owner, report, order = FakeOwner(), {}, []
 
             class Permissions:
-                def parent_read_child_hidden(self, identity, visible, evidence):
-                    order.append("partial")
-                    self_check = len(visible) == 4 and len(evidence["checks"]) == 15
+                def parent_read_child_hidden(self, identity, visible, evidence, check="parent_read_child_hidden"):
+                    history = check == "deleted_parent_read_child_hidden"
+                    order.append("history_partial" if history else "partial")
+                    self_check = len(visible) == 4 and evidence["cleanup"] == ("definitions_deleted" if history else "not_started")
                     if not self_check:
                         raise API.SuiteError("permissions ran before the existing faults and full tree")
 
@@ -128,12 +199,13 @@ class OrchestratorOnlineTest(unittest.TestCase):
                 if failed:
                     with self.assertRaisesRegex(API.SuiteError, "permission assertion"):
                         run()
-                    self.assertEqual(report["cleanup"], "deferred_to_deployment_destruction")
-                    self.assertFalse(any(method == "DELETE" for method, _, _ in owner.calls))
+                    self.assertEqual(report["cleanup"], "definitions_deleted")
+                    self.assertEqual(report["result"], "failed")
                 else:
                     run()
                     self.assertEqual(report["cleanup"], "definitions_deleted")
-                self.assertEqual(order, ["partial", "unavailable", "revoke"])
+                self.assertEqual(order, ["partial", "unavailable", "history_partial", "revoke"])
+                self.assertEqual(sum(method == "DELETE" for method, _, _ in owner.calls), 4)
 
     def test_real_owner_contract_and_closed_report(self):
         owner = FakeOwner()
@@ -142,13 +214,95 @@ class OrchestratorOnlineTest(unittest.TestCase):
         self.assertEqual(self.controls, ["stop", "start"])
         self.assertEqual(report["cleanup"], "definitions_deleted")
         self.assertEqual(report["history_cleanup"], "pending_deployment_destruction")
-        self.assertEqual(len(report["checks"]), 11)
-        self.assertEqual(len(self.denied.calls), 4)
-        self.assertEqual(len(self.foreign.calls), 4)
+        self.assertEqual(len(report["checks"]), 14)
+        self.assertEqual(report["deleted_definition_count"], 3)
+        self.assertEqual(len(self.denied.calls), 27)
+        self.assertEqual(len(self.foreign.calls), 27)
         self.assertEqual([path for method, path, _ in owner.calls if method == "DELETE"], list(reversed(report["resources"])))
         self.assertNotIn("step_results", str(report))
         self.assertNotIn("execution_config", str(report))
         self.assertNotIn("residual_resources", report)
+
+    def test_definition_deletion_cannot_erase_rewrite_or_expose_history(self):
+        for fault in ("history_tree_lost", "history_detail_lost", "history_step_changed", "history_error_changed",
+                      "history_detail_changed", "history_events_changed", "history_event_missing", "history_private",
+                      "history_owner_steps_changed"):
+            with self.subTest(fault=fault), self.assertRaises(API.SuiteError):
+                self.run_owner(FakeOwner(fault))
+            self.assertEqual(self.report["result"], "failed")
+            self.assertEqual(self.report["cleanup"], "definitions_deleted")
+            self.assertNotIn("deleted_history_access_isolated", self.report["checks"])
+            self.assertNotIn("never-print", str(self.report))
+
+    def test_definition_deletion_must_be_verified_and_unknown_outcome_not_retried(self):
+        for fault in ("delete_noop", "meta_delete_noop", "lost_delete", "invalid_meta_list"):
+            owner = FakeOwner(fault)
+            with self.subTest(fault=fault), self.assertRaises(API.SuiteError):
+                self.run_owner(owner)
+            self.assertEqual(self.report["result"], "failed")
+            self.assertNotIn("deleted_success_history_retained", self.report["checks"])
+            deletions = [p for m, p, _ in owner.calls if m == "DELETE"]
+            self.assertEqual(len(deletions), len(set(deletions)))
+            if fault == "lost_delete":
+                self.assertEqual(len(deletions), 1)
+                self.assertTrue(self.report["uncertain_mutation"])
+                self.assertEqual(self.report["cleanup"], "failed")
+
+    def test_deleted_history_denial_must_contain_no_execution_data(self):
+        owner, report = FakeOwner(), {}
+
+        class Reader(DeniedReader):
+            def request(self, method, path, expected):
+                response = super().request(method, path, expected)
+                if owner.deleted and path.startswith(ONLINE.MONITOR):
+                    return API.Response(404, {"execution_id": execution_id(1)})
+                return response
+
+        with self.assertRaisesRegex(API.SuiteError, "diagnostic data"):
+            ONLINE.run_suite(owner, Reader(), DeniedReader(), 42, "run-test", 9, report, control=lambda _: None)
+        self.assertEqual(report["result"], "failed")
+        self.assertEqual(report["cleanup"], "definitions_deleted")
+        self.assertNotIn("deleted_history_access_isolated", report["checks"])
+
+    def test_parent_child_permissions_and_revocation_are_required_after_deletion(self):
+        for leak in (False, True):
+            owner, report, state = FakeOwner(), {}, {}
+
+            class ParentReader(PermissionGateway):
+                def request(self, *args, **kwargs):
+                    state["leak_child"] = leak and owner.deleted
+                    return super().request(*args, **kwargs)
+
+            cases = ONLINE.PermissionCases(ParentReader(state, "reader"), PermissionGateway(state, "admin"),
+                PermissionGateway(state, "login"), 42, "11", "external-online-parent-reader", "private-password")
+
+            def unavailable(*args):
+                args[-1]["checks"].extend(["owner_unavailable_fail_closed", "owner_recovery_restores_access"])
+
+            def fault_case(*args):
+                args[-1]["checks"].extend([args[4], args[4] + "_no_replay"])
+
+            with self.subTest(leak=leak), patch.object(ONLINE, "run_fault_case", side_effect=fault_case), \
+                    patch.object(ONLINE, "owner_unavailable", side_effect=unavailable), \
+                    patch.object(API, "GatewayClient", side_effect=lambda *_: PermissionGateway(state, "fresh")):
+                def run():
+                    return ONLINE.run_suite(owner, DeniedReader(), DeniedReader(), 42, "run-test", 9, report,
+                        control=lambda _: None, faults=object(), permissions=cases)
+                if leak:
+                    with self.assertRaisesRegex(API.SuiteError, "child owners"):
+                        run()
+                    self.assertEqual(report["result"], "failed")
+                    self.assertFalse(state.get("revoked", False))
+                    self.assertNotIn("deleted_parent_read_child_hidden", report["checks"])
+                else:
+                    run()
+                    self.assertEqual(report["result"], "passed")
+                    self.assertEqual(len(report["checks"]), 24)
+                    self.assertTrue(state["revoked"])
+                    self.assertEqual(report["checks"][-3:], ["deleted_parent_read_child_hidden",
+                        "revoked_token_invalid", "revoked_owner_read_invisible"])
+                self.assertEqual(report["cleanup"], "definitions_deleted")
+                self.assertEqual(report["deleted_definition_count"], 4)
 
     def test_rejects_private_projection_or_truncated_tree_before_fault(self):
         for fault in ("private", "truncated", "event_private", "event_duplicate"):

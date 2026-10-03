@@ -103,7 +103,7 @@ def tree_ids(node, parent=None):
     return result
 
 
-def assert_events(client, execution_id, terminal):
+def read_events(client, execution_id, terminal):
     cursor, items = 0, []
     for _ in range(11):
         page = client.request("GET", f"{MONITOR}/{execution_id}/events?after={cursor}&limit=100", (200,)).payload
@@ -125,9 +125,48 @@ def assert_events(client, execution_id, terminal):
             require(items and items[0]["kind"] == "started" and items[-1]["kind"] == terminal, "missing lifecycle events")
             require(sum(x["kind"] in {"completed", "failed", "cancelled", "timeout"} for x in items) == 1,
                     "execution has duplicate terminal events")
-            return len(items)
+            return items
         require(batch, "empty continued event page")
     raise SuiteError("event pagination exceeded the bounded attempt budget")
+
+
+def assert_events(client, execution_id, terminal):
+    return len(read_events(client, execution_id, terminal))
+
+
+def history_snapshot(client, execution_id, visible):
+    """Keep comparisons in memory only; never put Owner results in the evidence."""
+    tree = client.request("GET", f"{MONITOR}/{execution_id}/tree", (200,)).payload
+    assert_safe(tree)
+    require(tree_ids(tree) == visible, "historical execution tree changed")
+    details = {}
+    for identity, item in visible.items():
+        require(item.get("status") in TERMINAL, "historical child execution is still active")
+        detail = client.request("GET", f"{MONITOR}/{identity}", (200,)).payload
+        assert_safe(detail)
+        require(detail == item, "historical execution detail differs from its tree")
+        details[identity] = detail
+    owner = client.request("GET", f"{ORCH}/executions/{execution_id}", (200,)).payload
+    require(owner.get("execution_id") == execution_id and owner.get("status") == visible[execution_id]["status"],
+            "historical Owner execution identity or status changed")
+    terminal = {"success": "completed", "failed": "failed", "cancelled": "cancelled", "timeout": "timeout"}
+    return {"tree": tree, "details": details,
+            "events": read_events(client, execution_id, terminal[owner["status"]]),
+            "owner_steps": owner.get("metadata", {}).get("step_results", {})}
+
+
+def definition_present(client, path, present):
+    identity = int(path.rsplit("/", 1)[1])
+    if path.startswith(ORCH + "/orchestrations/"):
+        payload = client.request("GET", path, (200,) if present else (404,)).payload
+        if present:
+            require(payload.get("id") == identity, "task definition identity changed")
+    else:
+        require(path.startswith(META + "/scan/tasks/"), "unexpected fixture definition owner")
+        # Meta has no GET /scan/tasks/:id; a routing 404 cannot prove deletion.
+        items = client.request("GET", f"{META}/scan/tasks", (200,), response_type=list).payload
+        require(isinstance(items, list) and all(isinstance(item, dict) for item in items), "invalid scan task list")
+        require(any(item.get("id") == identity for item in items) == present, "scan task definition presence mismatch")
 
 
 def run_fault_case(client, launch, task_id, scan_id, case_id, mode, faults, report):
@@ -277,7 +316,7 @@ class PermissionCases:
                 and target.get("scope_type") == "tenant" and target.get("status") == status,
                 "revocation target does not match the dedicated reader Owner assignment")
 
-    def parent_read_child_hidden(self, execution_id, visible, report):
+    def parent_read_child_hidden(self, execution_id, visible, report, check="parent_read_child_hidden"):
         detail = self.reader.request("GET", f"{MONITOR}/{execution_id}", (200,)).payload
         assert_safe(detail)
         require(detail.get("execution_id") == execution_id, "readable parent detail identity changed")
@@ -292,7 +331,7 @@ class PermissionCases:
         for identity, item in visible.items():
             if item["module"] == "meta":
                 invisible_projection(self.reader, identity, 404)
-        report["checks"].append("parent_read_child_hidden")
+        report["checks"].append(check)
 
     def revoke_owner_read(self, execution_id, report, checkpoint):
         # A missing response must never cause a second revoke command or a clean report.
@@ -441,6 +480,46 @@ def run_suite(client, denied, foreign, tenant, run_id, engine_id, report, contro
         if permissions is not None:
             permissions.parent_read_child_hidden(success_id, visible, report)
             owner_unavailable(client, success_id, visible, scan, faults, report)
+
+        # Deletion is a business acceptance phase, with exactly one mutation route.
+        # Restore the owned source and prove every known child terminal beforehand.
+        if source_stopped:
+            control("start")
+            source_stopped = False
+        snapshots = {identity: history_snapshot(client, identity, family)
+                     for identity, family in ((success_id, visible), (failure_id, failed_visible))}
+        require(snapshots[success_id]["owner_steps"] == successful_steps
+                and snapshots[failure_id]["owner_steps"] == failed_steps, "Owner lost the recorded terminal steps")
+        for identity in executions:
+            require(client.request("GET", f"{ORCH}/executions/{identity}", (200,)).payload.get("status") in TERMINAL,
+                    "execution is still active before definition deletion")
+        for path in resources:
+            definition_present(client, path, True)
+        report["cleanup"] = "deleting_definitions"
+        report["deleted_definition_count"] = 0
+        for path in reversed(resources):
+            report["uncertain_mutation"] = True
+            checkpoint()
+            client.request("DELETE", path, (200,))
+            report["uncertain_mutation"] = False
+            definition_present(client, path, False)
+            report["deleted_definition_count"] += 1
+            checkpoint()
+        report["cleanup"] = "definitions_deleted"
+        checkpoint()
+        for identity, family, check in ((success_id, visible, "deleted_success_history_retained"),
+                                        (failure_id, failed_visible, "deleted_failure_history_retained")):
+            require(history_snapshot(client, identity, family) == snapshots[identity],
+                    "definition deletion changed execution history")
+            report["checks"].append(check)
+            for reader in (denied, foreign):
+                for child_id in family:
+                    invisible_projection(reader, child_id, 404)
+            foreign.request("GET", f"{ORCH}/executions/{identity}", (404,))
+            denied.request("GET", f"{ORCH}/executions/{identity}", (403,))
+        report["checks"].append("deleted_history_access_isolated")
+        if permissions is not None:
+            permissions.parent_read_child_hidden(success_id, visible, report, "deleted_parent_read_child_hidden")
             permissions.revoke_owner_read(success_id, report, checkpoint)
             checkpoint()
         report["result"] = "passed"
@@ -460,18 +539,10 @@ def run_suite(client, denied, foreign, tenant, run_id, engine_id, report, contro
                         "execution is still active")
             except Exception:
                 failures.append("unfinished_execution")
-        # Only the fully checked success/failure trees prove every child terminal.
-        # A parent timeout does not establish that its downstream tasks stopped.
-        if not failures and report["result"] == "passed":
-            for path in reversed(resources):
-                try:
-                    client.request("DELETE", path, (200,))
-                    if path.startswith(ORCH):
-                        client.request("GET", path, (404,))
-                except Exception:
-                    failures.append(path)
+        if report["cleanup"] == "deleting_definitions":
+            failures.append("definition_deletion_incomplete")
         report["cleanup_failures"] = failures
-        report["cleanup"] = ("failed" if failures else "definitions_deleted" if report["result"] == "passed"
+        report["cleanup"] = ("failed" if failures else "definitions_deleted" if report["cleanup"] == "definitions_deleted"
                              else "deferred_to_deployment_destruction")
         if failures:
             report["result"] = "failed"

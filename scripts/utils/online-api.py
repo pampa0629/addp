@@ -17,7 +17,7 @@ class SuiteError(RuntimeError):
 @dataclass
 class Response:
     status: int
-    payload: dict[str, object]
+    payload: dict[str, object] | list[object]
 
 
 class GatewayClient:
@@ -35,7 +35,11 @@ class GatewayClient:
         path: str,
         expected: Iterable[int],
         body: dict[str, object] | None = None,
+        *,
+        response_type: type[dict] | type[list] = dict,
     ) -> Response:
+        if response_type not in {dict, list}:
+            raise SuiteError("unsupported JSON response type")
         data = None if body is None else json.dumps(body).encode()
         request = urllib.request.Request(
             self.base_url + path,
@@ -52,19 +56,21 @@ class GatewayClient:
                 status = response.status
                 raw = response.read()
         except urllib.error.HTTPError as error:
-            status = error.code
-            raw = error.read()
+            with error:
+                status = error.code
+                raw = error.read()
         except (urllib.error.URLError, TimeoutError) as error:
             raise SuiteError(f"{method} {path} transport failed: {error}") from error
         try:
             payload = json.loads(raw) if raw else {}
         except json.JSONDecodeError as error:
             raise SuiteError(f"{method} {path} returned invalid JSON") from error
-        if not isinstance(payload, dict):
-            raise SuiteError(f"{method} {path} response must be a JSON object")
         if status not in set(expected):
-            code = payload.get("error_code", "unknown")
+            code = payload.get("error_code", "unknown") if isinstance(payload, dict) else "unknown"
             raise SuiteError(f"{method} {path} returned HTTP {status} ({code})")
+        if not isinstance(payload, response_type):
+            shape = "object" if response_type is dict else "array"
+            raise SuiteError(f"{method} {path} response must be a JSON {shape}")
         return Response(status=status, payload=payload)
 
 
