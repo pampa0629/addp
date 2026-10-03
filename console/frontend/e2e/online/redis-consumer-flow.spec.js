@@ -21,8 +21,12 @@ test('Redis live catalog and scan converge to native key previews through Consol
   expect(apiIdentity.tenantID).toBe(String(expected.tenant_id))
   expect(apiIdentity.principalID).toBe(String(expected.principal_id))
   await api.dispose()
+  // Meta restores the selected engine and loads its catalog during navigation.
+  const catalogResponse = page.waitForResponse(response => response.request().method() === 'POST' &&
+    new URL(response.url()).pathname === `/api/v1/system/engines/${expected.engine_id}/catalog/children` &&
+    response.request().postDataJSON()?.path?.segments?.length > 0)
   const browserToken = await login(page, required('ADDP_ONLINE_TEST_USER_USERNAME'),
-    required('ADDP_ONLINE_TEST_USER_PASSWORD'), '/meta/scan')
+    required('ADDP_ONLINE_TEST_USER_PASSWORD'), `/meta/scan?engine_id=${expected.engine_id}`)
   const browserAPI = await request.newContext({ baseURL: gateway, extraHTTPHeaders: { Authorization: `Bearer ${browserToken}` } })
   try {
     const browserIdentity = identity(await json(await browserAPI.get(contextPath), 'browser AuthContext'))
@@ -34,10 +38,6 @@ test('Redis live catalog and scan converge to native key previews through Consol
     const meta = page.frameLocator('iframe[data-testid="module-iframe"]')
     const engineRow = meta.locator('.left-panel .el-table__body-wrapper tr').filter({ hasText: 'Hosted Redis' })
     await expect(engineRow).toHaveCount(1)
-    const catalogResponse = page.waitForResponse(response => response.request().method() === 'POST' &&
-      new URL(response.url()).pathname === `/api/v1/system/engines/${expected.engine_id}/catalog/children` &&
-      response.request().postDataJSON()?.path?.segments?.length > 0)
-    await engineRow.click()
     const catalog = await json(await catalogResponse, 'Meta UI live System catalog')
     expect(catalog.nodes.map(node => node.name).sort()).toEqual(expected.samples.map(sample => sample.key).sort())
     await expect(meta.locator('.right-panel .el-table__body-wrapper tr')).toHaveCount(9)
