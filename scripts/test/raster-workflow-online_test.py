@@ -2,6 +2,7 @@ import copy
 import importlib
 from pathlib import Path
 import unittest
+import tempfile
 
 m = importlib.import_module('scripts.test.raster-workflow-online')
 
@@ -21,6 +22,23 @@ class Client:
         self.mutate = lambda execution: execution
         self.monitor_mismatch = False
         self.no_graph = False
+
+    @staticmethod
+    def project(execution, professional):
+        result = copy.deepcopy(execution)
+        stored = result.pop('metadata')
+        result['metadata'] = {}
+        if stored.get('lineage_facts'):
+            facts = copy.deepcopy(stored['lineage_facts'])
+            facts.pop('operations', None)
+            result['metadata']['lineage_facts'] = facts
+        if professional:
+            result['outputs'] = stored.get('outputs', {})
+            if 'result' in stored:
+                result['metadata']['result'] = stored['result']
+        if not result['metadata']:
+            result.pop('metadata')
+        return result
 
     def request(self, method, path, expected, body=None):
         self.calls.append((method, path, body))
@@ -54,16 +72,16 @@ class Client:
                            'meta_scan_runs': [{'status': 'submitted', 'target_locator': target, 'execution_id': 'auto-' + identifier}]},
             }
             self.executions[identifier] = self.mutate({'execution_id': identifier, 'module': 'develop', 'status': status, 'metadata': metadata,
-                                                     'error_details': {'message': 'target object already exists'} if status == 'failed' else {}})
+                                                     'error_details': {'category': 'execution_failed'} if status == 'failed' else {}})
             result = {'execution_id': identifier}
         elif path.startswith('/api/v1/develop/executions/'):
-            result = self.executions[path.rsplit('/', 1)[1]]
+            result = self.project(self.executions[path.rsplit('/', 1)[1]], professional=True)
         elif path.startswith('/api/v1/monitor/executions/by-execution-id/'):
-            result = copy.deepcopy(self.executions[path.rsplit('/', 1)[1]])
+            result = self.project(self.executions[path.rsplit('/', 1)[1]], professional=False)
             if self.monitor_mismatch: result['status'] = 'running'
         elif path.startswith('/api/v1/meta/lineage/graph?'):
             result = {'truncated': self.no_graph, 'edges': [{'source': {'item_id': 10}, 'target': {'item_id': 20},
-                      'status': 'active', 'evidence': {'execution_id': 'run-3'}}]}
+                      'status': 'active', 'relation_kind': 'derive', 'evidence': {'execution_id': 'run-3'}}]}
         else:
             raise AssertionError(f'unexpected API: {method} {path}')
         return m.support.Response(200, result, {})
@@ -83,7 +101,9 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
 
     def run_scene(self, physical=None):
         return m.run_scenario(Path('.'), self.env, self.client, physical or self.physical,
-                              lambda repo, env, evidence: evidence)
+                              lambda repo, env, evidence: evidence,
+                              lambda repo, env, identifier, timeout: {'execution_id': identifier,
+                                  'cause': 'target_already_exists', 'source': 'develop_runtime_log'})
 
     def test_complete_chain_only_uses_source_manual_scan_and_owner_automatic_target_scan(self):
         report = self.run_scene()
@@ -120,7 +140,7 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
                         if fault == 'crs': metadata['result']['final_result']['source_crs'] = 'EPSG:3857'
                         if fault == 'nodata': metadata['result']['final_result']['bands'][0]['nodata_is_nan'] = False
                     elif fault == 'failed_output': metadata['outputs'] = {'save': {'resource': {}}}
-                    elif fault == 'wrong_failure': execution['error_details']['message'] = 'unexpected execution failure'
+                    elif fault == 'wrong_failure': execution['error_details']['category'] = 'timeout'
                     return execution
                 self.client.mutate = mutate
                 with self.assertRaises(m.SuiteError): self.run_scene()
@@ -136,6 +156,43 @@ class RasterWorkflowOnlineTest(unittest.TestCase):
                     if len(self.physical_actions) == 2: payload['sha256'] = 'overwritten'
                     return payload
                 with self.assertRaises(m.SuiteError): self.run_scene(physical if fault == 'overwrite' else None)
+
+    def test_public_projection_has_top_level_outputs_and_only_safe_monitor_metadata(self):
+        self.run_scene()
+        execution = self.client.executions['run-1']
+        professional = self.client.project(execution, True)
+        monitor = self.client.project(execution, False)
+        self.assertIn('outputs', professional)
+        self.assertNotIn('outputs', professional['metadata'])
+        self.assertNotIn('operations', professional['metadata']['lineage_facts'])
+        self.assertEqual(set(monitor['metadata']), {'lineage_facts'})
+        self.assertNotIn('outputs', monitor)
+        professional['metadata']['outputs'] = professional.pop('outputs')
+        with self.assertRaises(m.SuiteError):
+            m.validate_success(professional, '', '', 'create')
+
+    def test_duplicate_create_requires_exact_owner_execution_target_and_failure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / 'logs/runtime/develop/instance/events.jsonl'
+            path.parent.mkdir(parents=True)
+            import json
+            for fault in ('execution', 'target', 'cause', 'owner', 'role', None):
+                with self.subTest(fault=fault):
+                    event = {'module_name': 'develop', 'role': 'backend', 'message':
+                        '[DevExecutor] 引擎执行完成: execution_id=run-2 errorMessage=工作流执行失败: '
+                        '工作流运行时执行失败: 任务 save 执行失败: target object already exists: raster-target/result.cog.tif'}
+                    if fault == 'execution': event['message'] = event['message'].replace('run-2', 'other')
+                    if fault == 'target': event['message'] = event['message'].replace('result.cog.tif', 'other.tif')
+                    if fault == 'cause': event['message'] = event['message'].replace('target object already exists', 'permission denied')
+                    if fault == 'owner': event['module_name'] = 'manager'
+                    if fault == 'role': event['role'] = 'frontend'
+                    path.write_text(json.dumps(event) + '\n{')
+                    if fault:
+                        with self.assertRaises(m.SuiteError):
+                            m.duplicate_create_diagnostic(root, {}, 'run-2', .001)
+                    else:
+                        self.assertEqual(m.duplicate_create_diagnostic(root, {}, 'run-2', 1)['cause'], 'target_already_exists')
 
     def test_rejects_incorrect_target_metadata(self):
         self.client.target['attributes']['type_info']['media']['width'] = 1

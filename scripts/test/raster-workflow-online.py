@@ -78,7 +78,7 @@ def submit(client, engine_id, definition):
 
 def validate_success(execution, source_locator, target_locator, mode):
     metadata = obj(execution.get('metadata'), 'Develop metadata')
-    resource = obj(obj(obj(metadata.get('outputs'), 'outputs').get('save'), 'save output').get('resource'), 'resource')
+    resource = obj(obj(obj(execution.get('outputs'), 'outputs').get('save'), 'save output').get('resource'), 'resource')
     if resource != {'locator': target_locator, 'type': 'object', 'write_mode': mode}:
         raise SuiteError('Develop stable output has the wrong locator/type/write_mode')
     facts = obj(metadata.get('lineage_facts'), 'lineage facts')
@@ -89,11 +89,6 @@ def validate_success(execution, source_locator, target_locator, mode):
         raise SuiteError('Develop lineage does not bind the exact source')
     if len(outputs) != 1 or outputs[0].get('locator') != target_locator or outputs[0].get('write_mode') != mode:
         raise SuiteError('Develop lineage does not bind the exact target/write mode')
-    operations = array(facts.get('operations'), 'lineage operations')
-    if len(operations) != 1 or operations[0] != {
-        'kind': 'derive', 'operator': 'develop', 'input_ports': ['input'], 'output_ports': ['output'],
-    }:
-        raise SuiteError('Develop lineage operation does not match the raster derivation')
     result = obj(metadata.get('result'), 'result')
     artifact = obj(result.get('final_result'), 'raster artifact')
     if (artifact.get('artifact_type'), artifact.get('format'), artifact.get('profile')) != ('raster', 'tiff', 'cog'):
@@ -155,10 +150,37 @@ def wait_lineage(client, source_id, target_id, execution_id, timeout):
         edges = array(graph.get('edges'), 'lineage edges')
         for edge in edges:
             if (edge.get('source', {}).get('item_id'), edge.get('target', {}).get('item_id'),
-                edge.get('evidence', {}).get('execution_id'), edge.get('status')) == (source_id, target_id, execution_id, 'active'):
+                edge.get('evidence', {}).get('execution_id'), edge.get('status'), edge.get('relation_kind')) == (source_id, target_id, execution_id, 'active', 'derive'):
                 return {'source_item_id': source_id, 'target_item_id': target_id, 'execution_id': execution_id}
         time.sleep(1)
     raise SuiteError('automatic raster lineage did not converge')
+
+
+def duplicate_create_diagnostic(repository, env, execution_id, timeout):
+    """Confirm the Owner's exact failure in this disposable deployment's logs.
+
+    Tenant observation intentionally omits raw errors. The Hosted harness has
+    access to its own standard runtime logs; only a bounded cause is reported.
+    """
+    root = Path(env.get('ADDP_RUNTIME_LOG_ROOT', repository / 'logs/runtime'))
+    if not root.is_absolute():
+        root = repository / root
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        for path in (root / 'develop').glob('*/*.jsonl'):
+            for line in path.read_text().splitlines():
+                try:
+                    event = json.loads(line)
+                except json.JSONDecodeError:
+                    continue  # The capture process may be appending the last line.
+                message = event.get('message', '')
+                if (event.get('module_name') == 'develop' and event.get('role') == 'backend'
+                    and f'[DevExecutor] 引擎执行完成: execution_id={execution_id} errorMessage=' in message
+                    and message.endswith('任务 save 执行失败: target object already exists: raster-target/result.cog.tif')):
+                    return {'execution_id': execution_id, 'cause': 'target_already_exists',
+                            'source': 'develop_runtime_log'}
+        time.sleep(1)
+    raise SuiteError('duplicate create is missing its exact Owner target-conflict diagnostic')
 
 
 def physical(repository, env, action):
@@ -188,7 +210,7 @@ def browser(repository, env, evidence):
     return report
 
 
-def run_scenario(repository, env, client, physical_runner=physical, browser_runner=browser):
+def run_scenario(repository, env, client, physical_runner=physical, browser_runner=browser, diagnostic_runner=duplicate_create_diagnostic):
     tenant = positive(env['ADDP_ONLINE_TEST_TENANT_ID'], 'tenant')
     if tenant <= 1:
         raise SuiteError('raster acceptance forbids the default Tenant')
@@ -210,18 +232,20 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
     executions = []
     physical_evidence = []
     last_scan = ''
+    conflict_evidence = None
     for mode, expression, status in [('create', 'b2-b1', 'success'), ('create', 'b2+b1', 'failed'), ('replace', 'b2+b1', 'success')]:
         identifier = submit(client, engine_id, workflow(source_locator, target_engine, expression, mode))
         execution = wait_execution(client, 'develop', identifier, timeout, status)
-        metadata = obj(execution.get('metadata'), 'execution metadata')
+        metadata = obj(execution.get('metadata', {}), 'execution metadata')
         if status == 'success':
             facts, last_scan = validate_success(execution, source_locator, target_locator, mode)
             wait_execution(client, 'meta', last_scan, timeout)
         else:
-            if metadata.get('outputs') or metadata.get('lineage_facts'):
+            if execution.get('outputs') or metadata.get('lineage_facts'):
                 raise SuiteError('failed create published stable outputs or success lineage')
-            if 'target object already exists' not in obj(execution.get('error_details'), 'failed create error').get('message', ''):
-                raise SuiteError('duplicate create must fail because the target already exists')
+            if obj(execution.get('error_details'), 'failed create error').get('category') != 'execution_failed':
+                raise SuiteError('duplicate create has an unexpected failure category')
+            conflict_evidence = diagnostic_runner(repository, env, identifier, timeout)
         monitor = obj(client.request('GET', f'/api/v1/monitor/executions/by-execution-id/{identifier}', (200,)).payload, 'Monitor execution')
         if monitor.get('status') != status or monitor.get('module') != 'develop':
             raise SuiteError('Monitor does not match the Develop execution status/owner')
@@ -249,7 +273,7 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
     return {'schema_version': SCHEMA, 'suite': 'raster-workflow', 'result': 'passed',
             'run_id': env['ADDP_ONLINE_TEST_RUN_ID'], 'identity': identity, 'executions': executions,
             'automatic_target_scan_execution_id': last_scan, 'lineage': lineage,
-            'physical': physical_evidence, 'browser': browser_evidence,
+            'physical': physical_evidence, 'browser': browser_evidence, 'duplicate_create': conflict_evidence,
             'cleanup': {'scope': 'disposable-hosted-deployment', 'owner': 'online-hosted-raster-gate.sh'}}
 
 
