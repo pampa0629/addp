@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import math
+import re
 import struct
 import xml.etree.ElementTree as ET
 from pathlib import Path, PurePosixPath
@@ -17,6 +18,8 @@ def validate_source(path: Path, source_format: str) -> list[str]:
     data = path.read_bytes()
     refs = _dae_refs(data) if source_format == "dae" else _three_ds_refs(data)
     for ref in refs:
+        if source_format == "dae" and re.search(r"%(?![0-9A-Fa-f]{2})", ref):
+            raise ValueError(f"invalid DAE texture URI percent escape: {ref}")
         text = unquote(ref) if source_format == "dae" else ref
         text = text.replace("\\", "/")
         if not text or urlsplit(text).scheme or urlsplit(text).netloc or "?" in text or "#" in text:

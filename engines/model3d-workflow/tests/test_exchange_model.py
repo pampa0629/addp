@@ -53,6 +53,64 @@ def test_references_are_exact_local_and_supported(tmp_path, source_format, ref):
     with pytest.raises(ValueError): validate_source(source, source_format)
 
 
+@pytest.mark.parametrize("ref", ["texture%.png", "texture%2.png", "texture%GG.png", "texture%2G.png"])
+def test_malformed_dae_escape_is_rejected_before_converter(tmp_path, ref):
+    source = tmp_path / "model.dae"
+    source.write_bytes(dae(ref))
+    (tmp_path / ref).write_bytes(b"matching literal filename cannot make an invalid URI valid")
+    target = tmp_path / "published.glb"
+    target.write_bytes(b"previous valid artifact")
+    plan = directory_plan(tmp_path, target, "dae", "glb", entrypoint=source.name)
+    plan["target"]["write_mode"] = "replace"
+    calls = []
+
+    def runner(command, timeout_seconds):
+        from .glb_fixture import triangle_doc
+        calls.append(command)
+        Path(command[-2]).write_bytes(glb_bytes(*triangle_doc("PNG")))
+        return CommandResult(0)
+
+    with pytest.raises(ConverterError) as error:
+        invoke_operator("dae_to_glb", {"access_plan": plan}, runner=runner)
+    assert error.value.error_code == "UNSUPPORTED_MODEL_SOURCE"
+    assert not calls
+    assert target.read_bytes() == b"previous valid artifact"
+
+
+@pytest.mark.parametrize("ref,filename", [
+    ("texture%20name.png", "texture name.png"),
+    ("texture%25name.png", "texture%name.png"),
+    ("texture%2bname.png", "texture+name.png"),
+    ("texture+name.png", "texture+name.png"),
+    ("texture%2520name.png", "texture%20name.png"),
+    ("%E5%9B%BE.png", "图.png"),
+    ("%252e%252e/texture.png", "%2e%2e/texture.png"),
+])
+def test_dae_percent_encoding_is_decoded_once_and_source_facts_stay_raw(tmp_path, ref, filename):
+    source = tmp_path / "model.dae"
+    source.write_bytes(dae(ref))
+    texture = tmp_path / filename
+    texture.parent.mkdir(parents=True, exist_ok=True)
+    texture.write_bytes(b"texture")
+    assert validate_source(source, "dae") == [ref]
+
+
+@pytest.mark.parametrize("filename", ["texture%.png", "texture%GG.png", "texture%20.png"])
+def test_3ds_percent_characters_are_literal_filename_characters(tmp_path, filename):
+    source = tmp_path / "model.3ds"
+    source.write_bytes(three_ds(filename))
+    (tmp_path / filename).write_bytes(b"texture")
+    assert validate_source(source, "3ds") == [filename]
+
+
+@pytest.mark.parametrize("ref", ["%2e%2e/texture.png", "%2E%2E/texture.png", "%2ftexture.png"])
+def test_valid_dae_escapes_do_not_bypass_directory_boundaries(tmp_path, ref):
+    source = tmp_path / "model.dae"
+    source.write_bytes(dae(ref))
+    with pytest.raises(ValueError, match="escapes model directory"):
+        validate_source(source, "dae")
+
+
 @pytest.mark.parametrize("data,source_format", [
     (dae(extra="<library_animations><animation/></library_animations>"), "dae"),
     (dae(extra="<library_controllers><controller/></library_controllers>"), "dae"),
