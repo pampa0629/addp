@@ -111,18 +111,3 @@ func TableRules(
 	}
 	return rules, nil
 }
-
-func ProtectRows(rows []map[string]interface{}, action string, rules []dataprotection.Rule, subject dataprotection.SubjectReference) error {
-	if len(rules) == 0 {
-		return nil
-	}
-	for _, row := range rows {
-		if row == nil {
-			return ErrRequired
-		}
-		if err := dataprotection.ProtectDocument(row, action, rules, subject); err != nil {
-			return ErrRequired
-		}
-	}
-	return nil
-}

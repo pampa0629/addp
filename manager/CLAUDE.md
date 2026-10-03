@@ -8,6 +8,8 @@ Manager 模块负责数据探查、数据预览、表格数据剖析、混合检
 
 Manager 通过本地保护投影统一约束预览、剖析和全文索引写入，用户请求不调用 Security。`profile=suppress` 在持久化前删除敏感字段及全部祖先容器的字段剖析对象和对应全局观察，防止父级 Top N 携带敏感叶子值；`search_index=mask` 在写入 Meilisearch 前覆盖正文及所有正文派生字符串。投影变化与历史剖析结果、条件值和既有全文索引记录的清除，以及 cursor 保存共用本地安装屏障；启动时对已安装投影重放清理。
 
+表格预览的 `preview=suppress` 必须同时删除行值、输出列和对应列元数据；空结果页也不得重新暴露被抑制列。响应边界复用 Common 的查询结果保护执行器，Manager 只适配预览协议；临时原值授权命中时，列契约与有效允许决策保持一致，不能按默认规则额外删除已授权列。
+
 Manager 的一次性数据库 item 导出通过 Common 强类型 Client 直接创建 Transfer bounded `sync` ad-hoc execution，不创建临时 `transfer.transfer_tasks`。`manager.export_sessions` 只保存 Transfer 的统一 `execution_id` 和短生命周期下载会话事实，不保存 Transfer task ID；状态回查、artifact manifest、发起用户隔离与 infra 暂存清理由 `common/exportartifact` 提供唯一实现，Manager 只负责资源校验和格式能力适配。Manager 导入保留持久 `sync` 任务语义，不与一次性导出混用。
 
 Manager 拥有的成功 execution 必须在 `common.task_executions.metadata.lineage_facts` 写入 `addp.lineage-facts/v1` 事实：输入使用执行时已冻结的 ResourceLocator、item ID 和 fingerprint，业务输出使用目标 ResourceLocator，Manager 私有快显产物使用 `addp-infra://` Locator；触发的 Meta scan execution ID 写入 `meta_scan_refs`。任务服务只提供自身输入输出事实，统一结构由 Manager service 公共构造器生成，不得各自拼装 JSON。清理 execution 不表达数据派生血缘；Manager 调用 Transfer 的导入导出由 Transfer execution 作为唯一血缘 owner，Manager 不重复写入。

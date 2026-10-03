@@ -4,6 +4,7 @@ import (
 	"errors"
 	"github.com/gin-gonic/gin"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -36,6 +37,63 @@ func TestPreviewProtectionRejectsNativeKeyWithoutFieldAdapter(t *testing.T) {
 	}
 	if err := applyPreviewProtection(result, nil, dataprotection.SubjectReference{}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestPreviewProtectionSuppressesOutputColumnAndMetadata(t *testing.T) {
+	subject := dataprotection.SubjectReference{Type: "user", ID: "41"}
+	now := time.Now().UTC()
+	for _, test := range []struct {
+		name       string
+		empty      bool
+		authorized bool
+	}{
+		{name: "rows"},
+		{name: "empty page", empty: true},
+		{name: "authorized original", authorized: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			rule := dataprotection.Rule{
+				Action:    managerprotection.ActionPreview,
+				Component: dataprotection.Component{Key: "email", Path: []dataprotection.PathSegment{{Name: "email", Container: "scalar"}}, ValueType: "string"},
+				Decision:  dataprotection.Decision{Effect: dataprotection.EffectSuppress, InvalidValueEffect: dataprotection.EffectSuppress},
+			}
+			if test.authorized {
+				rule.Authorizations = []dataprotection.TemporaryAuthorization{{Subject: subject, Effect: dataprotection.EffectAllow, ValidFrom: now.Add(-time.Minute), ValidUntil: now.Add(time.Minute)}}
+			}
+			table := &models.TablePreview{
+				Columns:        []string{"id", "email", "customer_code"},
+				ColumnMetadata: []models.ColumnMetadata{{ColumnName: "id"}, {ColumnName: "email"}, {ColumnName: "customer_code"}},
+				Rows:           []map[string]interface{}{{"id": 1, "email": "private@example.test", "customer_code": "customer-1"}},
+			}
+			if test.empty {
+				table.Rows = nil
+			}
+			result := &preview.PreviewResult{PreviewType: "table", Data: table}
+			if err := applyPreviewProtection(result, []dataprotection.Rule{rule}, subject); err != nil {
+				t.Fatal(err)
+			}
+			want := []string{"id", "customer_code"}
+			if test.authorized {
+				want = []string{"id", "email", "customer_code"}
+			}
+			if !reflect.DeepEqual(table.Columns, want) {
+				t.Fatalf("output columns = %v, want %v", table.Columns, want)
+			}
+			metadata := make([]string, 0, len(table.ColumnMetadata))
+			for _, column := range table.ColumnMetadata {
+				metadata = append(metadata, column.ColumnName)
+			}
+			if !reflect.DeepEqual(metadata, want) {
+				t.Fatalf("column metadata = %v, want %v", metadata, want)
+			}
+			if !test.empty {
+				row := table.Rows[0]
+				if _, present := row["email"]; present != test.authorized || row["id"] != 1 || row["customer_code"] != "customer-1" {
+					t.Fatal("protected preview changed its value contract")
+				}
+			}
+		})
 	}
 }
 
