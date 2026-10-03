@@ -35,9 +35,15 @@ function environment() {
 
 async function chooseSelectOption(frame, select, optionText) {
   await select.click()
-  const option = frame.locator('.el-select-dropdown__item:visible').filter({ hasText: optionText }).first()
+  const combobox = select.getByRole('combobox')
+  await expect(combobox).toHaveAttribute('aria-expanded', 'true')
+  const listboxID = await combobox.getAttribute('aria-controls')
+  expect(listboxID).toBeTruthy()
+  const option = frame.locator(`[id="${listboxID}"]`).getByRole('option', { name: optionText })
   await expect(option).toBeVisible()
   await option.click()
+  await expect(combobox).toHaveAttribute('aria-expanded', 'false')
+  await expect(select).toContainText(optionText)
 }
 
 async function selectOutputField(builder, fieldName) {
