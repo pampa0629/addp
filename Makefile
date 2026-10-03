@@ -432,7 +432,7 @@ test-online-runner: ## 运行 Online 分发器和预检器的确定性测试
 	@$(MAKE) test-raster-online-runner
 	@python3 -m unittest scripts/test/redis-consumer-flow-online_test.py scripts/test/online-hosted-redis-gate_test.py scripts/test/online-redis-consumer-fixture_test.py
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
-	@python3 -m unittest scripts/test/elasticsearch-consumer-flow-online_test.py
+	@python3 -m unittest scripts/test/elasticsearch-consumer-flow-online_test.py scripts/test/online-hosted-elasticsearch-gate_test.py scripts/test/online-elasticsearch-consumer-fixture_test.py
 	@$(MAKE) test-orchestrator-online-runner
 	@python3 -m unittest scripts/test/online-hosted-manager-gate_test.py
 	@python3 -m unittest scripts/test/compose-public-origin-online_test.py scripts/test/online-hosted-public-origin-gate_test.py

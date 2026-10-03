@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import sys
+import subprocess
 import time
 import urllib.parse
 
@@ -79,9 +80,10 @@ def run(client, tenant_id, engine_id, timeout):
     assignments = SUPPORT._array(authorization.get('role_assignments'), 'role assignments')
     if any(role.get('role_key') in SUPPORT.FORBIDDEN_ADMIN_ROLES for role in assignments if isinstance(role, dict)):
         raise SuiteError('Online consumer must use a regular user')
-    engine = SUPPORT._object(client.request('GET', f'/api/v1/system/engines/{engine_id}', (200,)).payload, 'engine')
-    if engine.get('engine_type') != 'elasticsearch' or int(engine.get('tenant_id', 0)) != tenant_id:
-        raise SuiteError('Online engine must be Elasticsearch in the dedicated tenant')
+    engines = SUPPORT._array(client.request('GET', '/api/v1/system/engine-catalog/engines', (200,)).payload, 'catalog engines')
+    selected = [engine for engine in engines if int(engine.get('id', 0)) == engine_id]
+    if len(selected) != 1 or selected[0].get('engine_type') != 'elasticsearch':
+        raise SuiteError('Online catalog must contain the dedicated Elasticsearch engine')
     deadline = time.monotonic() + timeout
     scan = SUPPORT.wait_for_scan(client, engine_id, deadline)
     item = SUPPORT.find_item(client, engine_id, 'addp_orders.v1', 'index')
@@ -97,24 +99,52 @@ def run(client, tenant_id, engine_id, timeout):
         'sort': [{'order_id': 'asc'}], '_source': ['order_id', 'customer'],
     }, deadline)
     validate_rows(queried, 25, projected=True, ordered=True)
-    return {'engine_id': engine_id, 'scan_execution_id': scan, 'query_execution_id': execution,
-            'index_locator': target, 'manager_rows': len(rows), 'develop_rows': len(queried), 'empty_index': True}
+    return {'engine_id': engine_id, 'tenant_id': tenant_id, 'principal_id': str(principal['id']),
+            'scan_execution_id': scan, 'query_execution_id': execution,
+            'index_locator': target, 'empty_index_locator': locator(engine_id, empty),
+            'index_item_id': item['id'], 'empty_item_id': empty['id'],
+            'manager_rows': len(rows), 'develop_rows': len(queried), 'empty_index': True}
+
+
+def run_browser(report):
+    artifacts = Path(SUPPORT.required_environment('ADDP_ONLINE_ARTIFACT_DIR')).resolve()
+    report_file = artifacts / 'elasticsearch-console.json'
+    report_file.unlink(missing_ok=True)
+    environment = dict(os.environ, ADDP_ONLINE_ELASTICSEARCH_EXPECTATIONS=json.dumps(report),
+                       ADDP_ONLINE_ELASTICSEARCH_BROWSER_REPORT=str(report_file))
+    result = subprocess.run(['npm', 'exec', '--', 'playwright', 'test', 'e2e/online/elasticsearch-consumer-flow.spec.js',
+                             '--config=playwright.online.config.js'], cwd=Path(__file__).resolve().parents[2] / 'console/frontend', env=environment)
+    if result.returncode != 0 or not report_file.is_file():
+        raise SuiteError('Real Console Elasticsearch browser acceptance failed or omitted evidence')
+    evidence = json.loads(report_file.read_text())
+    expected = {'run_id': SUPPORT.required_environment('ADDP_ONLINE_TEST_RUN_ID'),
+                'engine_id': report['engine_id'], 'tenant_id': report['tenant_id'], 'principal_id': report['principal_id'],
+                'manager_rows': 25, 'develop_rows': 25, 'empty_index': True, 'meta_ui_scan': True, 'develop_ui_query': True}
+    if evidence != expected:
+        raise SuiteError('Console browser evidence does not match API identity and results')
+    for name in ('meta', 'orders', 'empty', 'query'):
+        if not (artifacts / f'elasticsearch-{name}-console.png').is_file():
+            raise SuiteError('Console Elasticsearch screenshot evidence is missing')
+    return evidence
 
 
 def main():
-    if os.environ.get('ADDP_ONLINE_TEST') != '1':
-        raise SuiteError('ADDP_ONLINE_TEST must be exactly 1')
+    if os.environ.get('ADDP_ONLINE_TEST') != '1' or os.environ.get('ADDP_ONLINE_HOSTED') != '1':
+        raise SuiteError('Elasticsearch suite requires the Hosted Online entry')
     tenant = SUPPORT.positive_int(SUPPORT.required_environment('ADDP_ONLINE_TEST_TENANT_ID'), 'tenant')
     engine = SUPPORT.positive_int(SUPPORT.required_environment('ADDP_ONLINE_ELASTICSEARCH_ENGINE_ID'), 'engine')
     timeout = float(os.environ.get('ADDP_ONLINE_TEST_TIMEOUT_SECONDS', '900'))
     client = SUPPORT.GatewayClient(SUPPORT.required_environment('GATEWAY_URL'), SUPPORT.required_environment('ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'), min(timeout, 30))
-    print(json.dumps(run(client, tenant, engine, timeout), ensure_ascii=False, sort_keys=True))
+    report = run(client, tenant, engine, timeout)
+    report['browser'] = run_browser(report)
+    Path(SUPPORT.required_environment('ADDP_ONLINE_ARTIFACT_DIR'), 'elasticsearch-consumer-flow.json').write_text(json.dumps(report, ensure_ascii=False, indent=2))
+    print(json.dumps(report, ensure_ascii=False, sort_keys=True))
     return 0
 
 
 if __name__ == '__main__':
     try:
         raise SystemExit(main())
-    except SuiteError as error:
+    except (SuiteError, OSError, ValueError, KeyError) as error:
         print(str(error), file=sys.stderr)
         raise SystemExit(1)

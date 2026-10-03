@@ -458,6 +458,8 @@ A: 可以！所有脚本都是幂等的。
 
 验证入口：`make test-business-config`、`make test-common-elasticsearch-unit`、`make test-common-elasticsearch`。后者创建独占容器、认证用户及样例索引，验证 Common、Manager、Meta 后删除容器、卷和网络，不使用现有 Business 实例。
 
+正式 T4 使用 `make test-online ONLINE_SUITE=elasticsearch-consumer-flow`，由 `online-hosted-elasticsearch-gate.sh` 在 Hosted Ubuntu 临时部署运行；物理夹具复用官方镜像、只读账号与 25 条文档/空索引初始化。System 独立身份经正式 API 登记引擎，普通用户从 Console 完成 Meta 重扫、Manager 预览和 Develop DSL 查询，归档同一身份的报告及截图。所有退出路径销毁临时业务容器、Infra 和凭据，核对零残留；首次真实通过前仅人工触发，不登记 schedule。
+
 ## Business Redis
 
 `bash business/scripts/start.sh -redis` 按需启动 Redis 7.2.13 单机；停止和重启使用 `stop.sh -redis`、`restart.sh -redis`，保留独立 `redis_data` 卷。镜像统一使用 Docker 官方发布的 ECR Public 多架构镜像并固定 OCI digest，支持 AMD64 和 ARM64，不复用 Infra Redis 容器、账号或数据。Business 首选回环端口为 `6380`，首次启动解析空闲端口，后续沿用 `business/.business-state/ports.env` 中的实际映射。

@@ -1,6 +1,11 @@
 import importlib.util
 from pathlib import Path
 import unittest
+import json
+import os
+import tempfile
+from unittest.mock import patch
+from types import SimpleNamespace
 
 path = Path(__file__).with_name('elasticsearch-consumer-flow-online.py')
 spec = importlib.util.spec_from_file_location('elasticsearch_online_test_target', path)
@@ -38,6 +43,30 @@ class ElasticsearchConsumerContractTest(unittest.TestCase):
             with self.assertRaises(MODULE.SuiteError):
                 MODULE.validate_rows([dict(row, items=items)], 1)
 
+
+class ElasticsearchBrowserEvidenceTest(unittest.TestCase):
+    def test_browser_requires_success_matching_identity_and_all_screenshots(self):
+        report = {'engine_id': 7, 'tenant_id': 2, 'principal_id': '42'}
+        for failure in ('process', 'missing_report', 'identity', 'missing_screenshot', ''):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as temporary:
+                directory = Path(temporary)
+                evidence = dict(report, run_id='es-run', manager_rows=25, develop_rows=25,
+                                empty_index=True, meta_ui_scan=True, develop_ui_query=True)
+                if failure == 'identity': evidence['principal_id'] = 'other'
+                def browser(command, cwd, env):
+                    self.assertIn('e2e/online/elasticsearch-consumer-flow.spec.js', command)
+                    self.assertEqual(json.loads(env['ADDP_ONLINE_ELASTICSEARCH_EXPECTATIONS']), report)
+                    if failure != 'missing_report':
+                        Path(env['ADDP_ONLINE_ELASTICSEARCH_BROWSER_REPORT']).write_text(json.dumps(evidence))
+                    for name in ('meta', 'orders', 'empty', 'query'):
+                        if failure != 'missing_screenshot' or name != 'query':
+                            (directory / f'elasticsearch-{name}-console.png').write_bytes(b'screenshot')
+                    return SimpleNamespace(returncode=1 if failure == 'process' else 0)
+                with patch.dict(os.environ, ADDP_ONLINE_ARTIFACT_DIR=temporary, ADDP_ONLINE_TEST_RUN_ID='es-run'), patch.object(MODULE.subprocess, 'run', side_effect=browser):
+                    if failure:
+                        with self.assertRaises(MODULE.SuiteError): MODULE.run_browser(report)
+                    else:
+                        self.assertEqual(MODULE.run_browser(report), evidence)
 
 if __name__ == '__main__':
     unittest.main()

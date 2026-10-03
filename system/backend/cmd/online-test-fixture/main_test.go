@@ -73,6 +73,7 @@ func TestFixtureAuthorizationContractMatchesPublishedCatalog(t *testing.T) {
 	allPermissions = append(allPermissions, orchestratorPermissions...)
 	allPermissions = append(allPermissions, transferLineagePermissions...)
 	allPermissions = append(allPermissions, redisConsumerPermissions...)
+	allPermissions = append(allPermissions, elasticsearchConsumerPermissions...)
 	allPermissions = append(allPermissions, rasterWorkflowPermissions...)
 	allPermissions = append(allPermissions, securityPermissions...)
 	allPermissions = append(allPermissions, securityInitializerPermissions...)
@@ -478,6 +479,23 @@ func TestRasterFixtureSeparatesConsumerAndProvisioner(t *testing.T) {
 	for _, permission := range []string{"develop.data_read.execute", "develop.data_write.execute", "monitor.execution.read"} {
 		if !contains(permissions, permission) {
 			t.Fatalf("missing %s", permission)
+		}
+	}
+}
+
+func TestElasticsearchFixtureUsesOnlyReadConsumerAndSeparateProvisioner(t *testing.T) {
+	permissions, err := suitePermissions("elasticsearch-consumer-flow")
+	if err != nil || len(permissions) != 10 || !needsEngineProvisioner("elasticsearch-consumer-flow") {
+		t.Fatalf("unexpected ES fixture: %v %v", permissions, err)
+	}
+	for _, key := range permissions {
+		if strings.HasPrefix(key, "system.engine.") || strings.HasPrefix(key, "iam.") || strings.HasPrefix(key, "transfer.") || key == "develop.task.create" {
+			t.Fatalf("unnecessary permission %s", key)
+		}
+	}
+	for _, key := range []string{"system.engine_catalog.read", "meta.scan_task.execute", "manager.content.read", "develop.data_read.execute", "develop.task.execute", "system.execution_authorization.create"} {
+		if !contains(permissions, key) {
+			t.Fatalf("missing %s", key)
 		}
 	}
 }
