@@ -72,7 +72,7 @@ const DUCKDB_RUNTIME = {
 
 const EXECUTION_ID = '11111111-1111-4111-8111-111111111111'
 
-test('submits a complete multiline JSON query from the Monaco editor', async ({ page }) => {
+test('submits a complete multiline JSON query and observes its browser execution result', async ({ page }) => {
   const engine = { ...ENGINE, engine_type: 'elasticsearch', capabilities: {
     compute: { query: { supported: true, languages: ['es_dsl'], default_language: 'es_dsl', result_kinds: ['table'] } }
   } }
@@ -89,10 +89,22 @@ test('submits a complete multiline JSON query from the Monaco editor', async ({ 
   await page.keyboard.press('ControlOrMeta+A')
   await page.keyboard.press('ControlOrMeta+V')
   const preflight = page.waitForRequest(request => new URL(request.url()).pathname === '/api/v1/develop/query-preflight')
+  const created = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/develop/executions' && response.request().method() === 'POST')
+  const finished = page.waitForResponse(async response => {
+    if (!/^\/api\/v1\/develop\/executions\/[^/]+$/.test(new URL(response.url()).pathname) ||
+      response.request().method() !== 'GET' || !response.ok()) return false
+    return ['success', 'failed', 'timeout', 'cancelled'].includes((await response.json()).status)
+  })
   await page.getByRole('button', { name: '执行', exact: true }).click()
   const submitted = (await preflight).postDataJSON()
   expect(JSON.parse(submitted.query)).toEqual(query)
   expect(submitted.query_type).toBe('es_dsl')
+  const execution = await (await created).json()
+  const resultResponse = await finished
+  expect(new URL(resultResponse.url()).pathname).toBe(`/api/v1/develop/executions/${execution.execution_id}`)
+  const completed = await resultResponse.json()
+  expect(completed.execution_id).toBe(execution.execution_id)
+  expect(completed.status).toBe('success')
 })
 
 test('renders the desktop workbench and a bounded table result without overlap', async ({ page }) => {

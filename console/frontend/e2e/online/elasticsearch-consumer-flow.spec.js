@@ -96,6 +96,11 @@ test('Elasticsearch scan, document previews and DSL execution converge through C
     await page.keyboard.press('ControlOrMeta+V')
     const preflight = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/develop/query-preflight' && response.request().method() === 'POST')
     const created = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/develop/executions' && response.request().method() === 'POST')
+    const finished = page.waitForResponse(async response => {
+      if (!/^\/api\/v1\/develop\/executions\/[^/]+$/.test(new URL(response.url()).pathname) ||
+        response.request().method() !== 'GET' || !response.ok()) return false
+      return ['success', 'failed', 'timeout', 'cancelled'].includes((await response.json()).status)
+    }, { timeout: 120_000 })
     await develop.getByRole('button', { name: /^(执行|Execute)$/i }).click()
     const analysisResponse = await preflight
     expect(JSON.parse(analysisResponse.request().postDataJSON().query)).toEqual(query)
@@ -108,12 +113,11 @@ test('Elasticsearch scan, document previews and DSL execution converge through C
     expect(body.content.target_locator).toBe(expected.index_locator)
     expect(JSON.parse(body.content.query)).toEqual(query)
     const execution = await json(creation, 'Develop UI execution')
-    let completed
-    await expect.poll(async () => {
-      completed = await json(await browserAPI.get(`/api/v1/develop/executions/${encodeURIComponent(execution.execution_id)}`), 'Develop UI result')
-      if (['failed', 'timeout', 'cancelled'].includes(completed.status)) throw new Error('Develop Elasticsearch query failed')
-      return completed.status
-    }, { timeout: 120_000 }).toBe('success')
+    const resultResponse = await finished
+    expect(new URL(resultResponse.url()).pathname).toBe(`/api/v1/develop/executions/${execution.execution_id}`)
+    const completed = await json(resultResponse, 'Develop UI result')
+    expect(completed.execution_id).toBe(execution.execution_id)
+    expect(completed.status).toBe('success')
     validateDocuments(completed.metadata.result.summary.preview_rows, true, true)
     await expect(develop.locator('.query-result .result-summary')).toContainText('25')
     await expect(develop.locator('.query-result .result-table')).toContainText('9007199254740993')
