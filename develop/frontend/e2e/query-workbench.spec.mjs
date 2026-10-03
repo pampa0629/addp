@@ -76,7 +76,7 @@ test('submits a complete multiline JSON query and observes its browser execution
   const engine = { ...ENGINE, engine_type: 'elasticsearch', capabilities: {
     compute: { query: { supported: true, languages: ['es_dsl'], default_language: 'es_dsl', result_kinds: ['table'] } }
   } }
-  await installMockBackend(page, { resultKind: 'table', engines: [engine] })
+  await installMockBackend(page, { resultKind: 'table', engines: [engine], resultRows: [{ id: '9007199254740993', name: 'sample' }] })
   await page.goto('/sql')
   const catalog = page.locator('.catalog-panel')
   await catalog.getByRole('treeitem', { name: ENGINE.name, exact: true }).click()
@@ -105,6 +105,9 @@ test('submits a complete multiline JSON query and observes its browser execution
   const completed = await resultResponse.json()
   expect(completed.execution_id).toBe(execution.execution_id)
   expect(completed.status).toBe('success')
+  const resultTable = page.locator('.query-result .result-table.el-table')
+  await expect(resultTable).toHaveCount(1)
+  await expect(resultTable).toContainText('9007199254740993')
 })
 
 test('renders the desktop workbench and a bounded table result without overlap', async ({ page }) => {

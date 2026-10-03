@@ -120,7 +120,9 @@ test('Elasticsearch scan, document previews and DSL execution converge through C
     expect(completed.status).toBe('success')
     validateDocuments(completed.metadata.result.summary.preview_rows, true, true)
     await expect(develop.locator('.query-result .result-summary')).toContainText('25')
-    await expect(develop.locator('.query-result .result-table')).toContainText('9007199254740993')
+    const resultTable = develop.locator('.query-result .result-table.el-table')
+    await expect(resultTable).toHaveCount(1)
+    await expect(resultTable).toContainText('9007199254740993')
     await screenshot('query')
     writeFileSync(required('ADDP_ONLINE_ELASTICSEARCH_BROWSER_REPORT'), JSON.stringify({
       run_id: required('ADDP_ONLINE_TEST_RUN_ID'), engine_id: expected.engine_id, tenant_id: expected.tenant_id,
