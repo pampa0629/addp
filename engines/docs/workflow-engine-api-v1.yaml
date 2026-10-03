@@ -148,6 +148,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/WorkflowExecuteResponse'
+        '202':
+          description: 异步执行已受理，使用 execution_id 轮询执行状态 / Accepted for asynchronous execution
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowExecuteResponse'
         '400':
           description: 请求参数错误
           content:
@@ -445,6 +451,7 @@ components:
             - object
             - geodataframe
             - dataframe
+            - raster
           example: float
         param_type:
           type: string

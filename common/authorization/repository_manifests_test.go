@@ -13,8 +13,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		t.Fatalf("LoadRepositoryAuthorizationCatalog() error = %v", err)
 	}
 	descriptors := report.Permissions
-	if len(descriptors) != 468 {
-		t.Fatalf("descriptor count = %d, want 468", len(descriptors))
+	if len(descriptors) != 469 {
+		t.Fatalf("descriptor count = %d, want 469", len(descriptors))
 	}
 	for _, descriptor := range descriptors {
 		if descriptor.OwnerModule == "security" && !reflect.DeepEqual(descriptor.AllowedScopeTypes, []string{"tenant"}) {
@@ -28,6 +28,9 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	roles := report.Roles
 	for _, role := range roles {
 		for _, key := range role.Permissions {
+			if key == "system.engine_access_grant.revoke" {
+				t.Fatalf("built-in role %q unexpectedly grants source Grant revocation", role.Key)
+			}
 			if key == "system.engine_access_fulfillment.execute" && role.Key != "tenant.catalog_runtime" {
 				t.Fatalf("built-in role %q unexpectedly grants Catalog recovery", role.Key)
 			}

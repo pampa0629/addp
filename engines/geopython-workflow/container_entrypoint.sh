@@ -2,7 +2,8 @@
 set -eu
 
 gunicorn --bind "${WORKFLOW_BIND_HOST:-0.0.0.0}:${PORT:-8099}" \
-  --workers 4 \
+  --workers 1 \
+  --threads 4 \
   --timeout "${GEOPYTHON_WORKFLOW_GUNICORN_TIMEOUT:-7200}" \
   api_server:app &
 server_pid=$!

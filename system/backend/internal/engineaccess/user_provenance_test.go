@@ -97,6 +97,7 @@ func TestManagementScopePredicate(t *testing.T) {
 		"other tenant engine": func(s *lockedManagementScope) { v := uint(12); s.engine.TenantID = &v },
 		"other engine":        func(s *lockedManagementScope) { s.engine.ID++ },
 		"deleting engine":     func(s *lockedManagementScope) { s.engine.LifecycleState = models.EngineLifecycleDeleting },
+		"deleted engine":      func(s *lockedManagementScope) { s.engine.LifecycleState = models.EngineLifecycleDeleted },
 		"missing delegation":  func(s *lockedManagementScope) { s.delegation = nil },
 		"invalid delegation":  func(s *lockedManagementScope) { s.delegation.ID = 0 },
 		"other tenant":        func(s *lockedManagementScope) { s.delegation.TenantID++ },
@@ -112,6 +113,9 @@ func TestManagementScopePredicate(t *testing.T) {
 			if err := s.check(now); !errors.Is(err, commonapi.ErrForbidden) {
 				t.Fatalf("invalid management scope allowed: %+v error=%v", s, err)
 			}
+			if err := s.checkManagement(now); !errors.Is(err, commonapi.ErrForbidden) {
+				t.Fatalf("invalid withdrawal scope allowed: %+v error=%v", s, err)
+			}
 		})
 	}
 	if err := (*lockedManagementScope)(nil).check(now); !errors.Is(err, commonapi.ErrForbidden) {
@@ -119,5 +123,20 @@ func TestManagementScopePredicate(t *testing.T) {
 	}
 	if err := valid().check(now.Add(time.Minute)); !errors.Is(err, commonapi.ErrForbidden) {
 		t.Fatal("a row lock must not freeze delegation time validity")
+	}
+	disabled := valid()
+	disabled.engine.LifecycleState = models.EngineLifecycleDisabled
+	if err := disabled.checkManagement(now); err != nil {
+		t.Fatalf("disabled engine prevents withdrawal: %v", err)
+	}
+	if err := disabled.check(now); !errors.Is(err, commonapi.ErrForbidden) {
+		t.Fatal("withdrawal qualification must not allow new access on disabled engine")
+	}
+	disabled.delegation.Status = "revoked"
+	if err := disabled.checkManagement(now); !errors.Is(err, commonapi.ErrForbidden) {
+		t.Fatal("disabled engine bypassed delegation revocation")
+	}
+	if err := (*lockedManagementScope)(nil).checkManagement(now); !errors.Is(err, commonapi.ErrForbidden) {
+		t.Fatal("nil withdrawal scope must fail closed")
 	}
 }

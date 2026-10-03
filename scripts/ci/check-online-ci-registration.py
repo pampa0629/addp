@@ -1469,6 +1469,44 @@ def validate_orchestrator_execution_profile(repository: Path, registered: set[st
         raise RegistrationError("orchestrator-execution must not also dispatch on the self-hosted deployment")
 
 
+def validate_raster_workflow_profile(repository: Path, registered: set[str]) -> None:
+    if "raster-workflow" not in registered:
+        return
+    workflow = (repository / ".github/workflows/online-t4-gates.yml").read_text()
+    job = re.search(r"(?ms)^  raster-hosted-t4:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)", workflow)
+    if job is None or "runs-on: ubuntu-24.04" not in job.group("body") or (
+        "    if: github.event_name == 'workflow_dispatch' && inputs.suite == 'raster-workflow'\n" not in job.group("body")
+    ):
+        raise RegistrationError("raster-workflow requires a manual Ubuntu Hosted job")
+    if "&& inputs.suite != 'raster-workflow'" not in workflow:
+        raise RegistrationError("raster-workflow must not also dispatch on self-hosted")
+    if load_suite_registry(repository)["raster-workflow"].nightly:
+        raise RegistrationError("raster-workflow requires real evidence before schedule registration")
+    required = {
+        "scripts/test/online-hosted-raster-gate.sh": (
+            'source "$ROOT_DIR/scripts/utils/hosted-online.sh"', '--suite raster-workflow',
+            'scripts/test/online-engine-registration.py', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN',
+            'env -u POSTGRES_PASSWORD make test-online', '-geopython-workflow',
+            'online-raster-minio-fixture.py stop',
+        ),
+        "business/scripts/online-raster-minio-fixture.py": (
+            "full_check=True", "type=tmpfs,destination=/data", "source_unchanged", "com.addp.online-fixture",
+        ),
+        "scripts/test/raster-workflow-online.py": (
+            "meta_scan_runs", "wait_lineage", "verify-replace", "failed create modified", "browser_runner",
+        ),
+        "console/frontend/e2e/online/raster-workflow.spec.js": (
+            "login(", ".execution-lineage", "auth.principalID", "edge.evidence?.execution_id",
+        ),
+        "Makefile": ("test-raster-online-runner", "scripts/test/raster-workflow-online_test.py",
+                     "scripts/test/online-raster-minio-fixture_test.py", "scripts/test/online-hosted-raster-gate_test.py"),
+    }
+    for relative, fragments in required.items():
+        path = repository / relative
+        if not path.is_file() or any(fragment not in path.read_text() for fragment in fragments):
+            raise RegistrationError(f"raster-workflow owner contract is incomplete: {relative}")
+
+
 def check_registration(repository: Path) -> None:
     registry = load_suite_registry(repository)
     registered = load_registered_suites(registry)
@@ -1484,6 +1522,7 @@ def check_registration(repository: Path) -> None:
             f"Online workflow choices {sorted(workflow)} do not match registered suites {sorted(registered)}"
         )
     validate_metric_engine_variant(repository, registered)
+    validate_raster_workflow_profile(repository, registered)
     validate_orchestrator_execution_profile(repository, registered)
     validate_module_registry_process_profile(repository, registered)
     validate_consumer_engine_recovery_profile(repository, registered)

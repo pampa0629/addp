@@ -423,6 +423,9 @@ func workflowResourceOutputSchema(title string) map[string]interface{} {
 				"properties": map[string]interface{}{
 					"locator": map[string]interface{}{"type": "string", "format": "resource-locator"},
 					"type":    map[string]interface{}{"type": "string"},
+					"write_mode": map[string]interface{}{
+						"type": "string", "enum": []interface{}{"create", "replace", "append", "upsert"},
+					},
 				},
 				"required":             []interface{}{"locator", "type"},
 				"additionalProperties": false,

@@ -91,6 +91,7 @@ class OnlineGateTest(unittest.TestCase):
                 "oceanbase-consumer-flow",
                 "opengauss-consumer-flow",
                 "quality-dynamic-binding",
+                "raster-workflow",
                 "security-mysql-owner-protection",
                 "security-plaintext-access",
                 "security-transfer-protection",

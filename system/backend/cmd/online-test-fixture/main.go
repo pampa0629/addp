@@ -105,8 +105,16 @@ var publicOriginCreatePermissions = []string{
 	"orchestrator.workflow.create", "orchestrator.workflow.execute",
 }
 
+var rasterWorkflowPermissions = []string{
+	"develop.task.read", "develop.task.execute", "develop.data_read.execute", "develop.data_write.execute",
+	"system.execution_authorization.create", "meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read",
+	"meta.lineage.read", "monitor.execution.read",
+}
+
 func suitePermissions(suite string) ([]string, error) {
 	switch suite {
+	case "raster-workflow":
+		return rasterWorkflowPermissions, nil
 	case "security-mysql-owner-protection":
 		return append(append([]string{}, consumerPermissions...), securityPermissions...), nil
 	case "opengauss-consumer-flow", "kingbase-consumer-flow":
@@ -131,7 +139,7 @@ func suitePermissions(suite string) ([]string, error) {
 }
 
 func needsEngineProvisioner(suite string) bool {
-	return suite == "transfer-relational-sql-etl" || suite == "security-mysql-owner-protection" || suite == "redis-consumer-flow" || suite == "manager-internal-artifact-lineage" || suite == "opengauss-consumer-flow" || suite == "kingbase-consumer-flow" || suite == "metric-service-revision-lifecycle" || suite == "orchestrator-execution"
+	return suite == "raster-workflow" || suite == "redis-consumer-flow" || suite == "security-mysql-owner-protection" || suite == "transfer-relational-sql-etl" || suite == "manager-internal-artifact-lineage" || suite == "opengauss-consumer-flow" || suite == "kingbase-consumer-flow" || suite == "metric-service-revision-lifecycle" || suite == "orchestrator-execution"
 }
 
 func main() {
@@ -282,7 +290,7 @@ func run(args []string, environment []string) error {
 		"ADDP_ONLINE_TEST_TENANT_ID":         fmt.Sprintf("%d", tenant.ID),
 		"ADDP_ONLINE_TEST_USER_ACCESS_TOKEN": consumerSession.AccessToken,
 	}
-	if *suite == "redis-consumer-flow" || *suite == "manager-internal-artifact-lineage" || *suite == "transfer-relational-sql-etl" {
+	if *suite == "raster-workflow" || *suite == "redis-consumer-flow" || *suite == "manager-internal-artifact-lineage" || *suite == "transfer-relational-sql-etl" {
 		values["ADDP_ONLINE_TEST_USER_USERNAME"] = "external-online-consumer"
 		values["ADDP_ONLINE_TEST_USER_PASSWORD"] = consumerPassword
 	}

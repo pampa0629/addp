@@ -19,7 +19,8 @@ from .spatial_relations import contains, intersects, distance_to
 from .properties_operators import get_area, get_length, get_bounds
 from .format_operators import load_from_wkt, export_to_wkt
 from .spatial_transform_operators import crs_to_projjson, vector_reproject
-from .raster_operators import build_raster_mosaic, tiff_to_cog
+from .raster_operators import build_raster_mosaic
+from .raster_compute import OPERATORS as RASTER_COMPUTE_OPERATORS
 from .vector_tile_operators import vector_to_pmtiles
 from .gdal_vector_dataset import OPERATORS as GDAL_VECTOR_DATASET_OPERATORS
 from .data_operations import (
@@ -60,6 +61,7 @@ for ops_dict in [
     FORMAT_OPERATORS,
     SPATIAL_TRANSFORM_OPERATORS,
     RASTER_OPERATORS,
+    RASTER_COMPUTE_OPERATORS,
     VECTOR_TILE_OPERATORS,
     GDAL_VECTOR_DATASET_OPERATORS,
     DATA_OPERATORS,
@@ -97,6 +99,8 @@ def list_operators():
         'GeoDataFrame': 'object',
         'list[float]': 'array',
         'list[str]': 'array',
+        'list[int]': 'array',
+        'raster': 'raster',
     }
 
     for name, meta in OPERATORS.items():
@@ -114,8 +118,8 @@ def list_operators():
                 }
 
                 # 数组类型需要指定item_type
-                if param['type'] in ['list[float]', 'list[str]']:
-                    param_meta["item_type"] = "float" if param['type'] == 'list[float]' else "string"
+                if param['type'] in ['list[float]', 'list[str]', 'list[int]']:
+                    param_meta["item_type"] = {'list[float]': 'float', 'list[str]': 'string', 'list[int]': 'integer'}[param['type']]
 
                 if param.get('enum'):
                     param_meta["enum"] = param['enum']
@@ -158,7 +162,7 @@ def list_operators():
             "execution_modes": meta['execution_modes'],
             "effects": meta['effects'],
             "parameters": parameters,
-            "inputs": ["geodataframe"],
+            "inputs": [p['type'] for p in parameters if p['param_type'] == 'input'],
             "output_ports": output_ports
         }
 
@@ -225,7 +229,6 @@ __all__ = [
     'export_to_wkt',
     'crs_to_projjson',
     'vector_reproject',
-    'tiff_to_cog',
     'build_raster_mosaic',
 
     # 数据操作算子

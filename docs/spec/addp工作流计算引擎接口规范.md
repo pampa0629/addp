@@ -272,7 +272,7 @@ Content-Type: application/json
 
 #### 2.2.4 调用单个算子
 
-单算子调用用于业务模块受控消费扩展引擎能力，例如 Manager 触发 `tiff_to_cog` 生成 COG 生成结果。它不是任务执行入口，不创建 Develop 工作流任务，不进入 Orchestrator 编排，也不进入 Monitor 通用任务监控；调用方模块必须负责自己的领域状态、审计和失败处理。
+单算子调用用于业务模块受控消费扩展引擎能力，例如 Manager 触发 `raster_to_cog` 生成 COG 生成结果。它不是任务执行入口，不创建 Develop 工作流任务，不进入 Orchestrator 编排，也不进入 Monitor 通用任务监控；调用方模块必须负责自己的领域状态、审计和失败处理。
 
 只有算子元数据 `execution_modes` 显式包含 `direct` 时，才允许通过该接口调用。未声明 `direct` 的算子只能作为工作流节点执行。
 
@@ -428,7 +428,7 @@ class ParameterDescriptor:
 | `workflow` | 算子可作为工作流节点执行。默认必备。 |
 | `direct` | 算子允许被业务模块通过 `InvokeOperator` / `/api/operators/{name}/invoke` 直接调用；该调用不进入任务体系。 |
 
-未显式声明 `direct` 的算子不得被单算子调用。`direct` 适用于 `tiff_to_cog`、`raster_info`、`validate_cog` 这类模块受控能力；需要调度、重试、跨模块编排或统一监控的场景必须走工作流任务。
+未显式声明 `direct` 的算子不得被单算子调用。`direct` 适用于 `raster_to_cog` 这类模块受控能力；GeoPython 的 `raster_info` 和 `validate_cog` 在工作流中执行；需要调度、重试、跨模块编排或统一监控的场景必须走工作流任务。
 
 对于需要二进制批处理的 direct 算子，建议在 `attributes` 中声明最小调用契约，例如：
 
@@ -748,9 +748,9 @@ PostgreSQL Engine Instance 的 SuperMap 空间工作区只保存 `bound_runtime_
 
 `datasource.upgrade_udbx` 对已有 UDBX 执行原位 schema 升级：运行时先以 SQLite 只读检查 SuperMap 系统表和 `SmRegister` 关键字段，再以可写方式打开数据源，由当前 iObjects C++ SDK 完成官方 schema 迁移，关闭后重新检查并返回 `changed`、`schema_current` 和 `dataset_count`。该算子必须保持幂等；调用方负责权限确认、升级前备份和审计，不得在普通读取链路中隐式触发。ADDP `locator` 只属于 Develop/UI 的资源选择契约，调用方在调用 runtime 前必须把它派生为 `connection_info`、`schema` 和 `table` 并移除，SuperMap runtime 不解析 ADDP locator。完整 SuperMap C++ SDK 作为外部只读母版保存，不进入 ADDP 代码仓库或最终运行镜像；基础镜像从显式指定的母版构建。许可作为受控制品单独注入。运行时未绑定 SDK runtime 或许可时 `/health` 应返回不可用依赖，System 连接测试必须失败并提示具体缺失项。
 
-单算子调用由 Common Engine 的 `WorkflowRuntimeProvider.InvokeOperator()` 统一调用，只允许调用 `execution_modes` 包含 `direct` 的算子。`InvokeOperator()` 是模块受控能力调用，不是任务执行入口；它不创建 Develop 任务，不进入 Orchestrator，也不进入 Monitor 通用执行监控。调用方模块必须持有明确业务目的并管理自身领域状态，例如 Manager 触发 `tiff_to_cog` 后负责记录 COG 生成结果状态、源 item fingerprint、目标 `storage_ref` 和失败原因。凡是需要任务编排、调度、重试、跨模块依赖或统一监控的执行，必须建模为工作流任务并走 `ExecuteWorkflow()`。
+单算子调用由 Common Engine 的 `WorkflowRuntimeProvider.InvokeOperator()` 统一调用，只允许调用 `execution_modes` 包含 `direct` 的算子。`InvokeOperator()` 是模块受控能力调用，不是任务执行入口；它不创建 Develop 任务，不进入 Orchestrator，也不进入 Monitor 通用执行监控。调用方模块必须持有明确业务目的并管理自身领域状态，例如 Manager 触发 `raster_to_cog` 后负责记录 COG 生成结果状态、源 item fingerprint、目标 `storage_ref` 和失败原因。凡是需要任务编排、调度、重试、跨模块依赖或统一监控的执行，必须建模为工作流任务并走 `ExecuteWorkflow()`。
 
-业务模块需要 direct 算子能力时，不得按内置 `engine_type` 硬编码查找运行时，例如不得要求 `geopython_workflow` 必须存在。调用方应声明自己需要的算子名和调用模式，例如 `operator=tiff_to_cog`、`execution_mode=direct`；Common Engine 或调用方模块应在当前租户可见的已启用 workflow 引擎中，通过 `ListOperators()` 查找实际提供该 direct 算子的运行时实例。有可用运行时则调用；没有任何运行时提供该算子时，该业务功能应进入“能力暂不可用”状态或产生明确失败原因，而不是回退到私有 HTTP、单节点 workflow 或固定内置引擎假设。
+业务模块需要 direct 算子能力时，不得按内置 `engine_type` 硬编码查找运行时，例如不得要求 `geopython_workflow` 必须存在。调用方应声明自己需要的算子名和调用模式，例如 `operator=raster_to_cog`、`execution_mode=direct`；Common Engine 或调用方模块应在当前租户可见的已启用 workflow 引擎中，通过 `ListOperators()` 查找实际提供该 direct 算子的运行时实例。有可用运行时则调用；没有任何运行时提供该算子时，该业务功能应进入“能力暂不可用”状态或产生明确失败原因，而不是回退到私有 HTTP、单节点 workflow 或固定内置引擎假设。
 
 调用方模块在 direct 调用前必须通过同一个工作流运行时实例的 `ListOperators()` / `GET /api/operators` 获取算子元数据，并确认目标算子的 `execution_modes` 显式包含 `direct`；不得只依赖运行时 `/api/operators/{name}/invoke` 返回 403 作为权限判断。运行时仍必须保留 `DIRECT_NOT_SUPPORTED` 防线，调用方前置校验和运行时校验共同构成单一路径的能力边界。
 
@@ -767,7 +767,7 @@ Develop 执行工作流时必须把工作流运行时的本地状态收敛为 AD
 - **领域状态**：调用前后的领域对象状态、产物状态、大小/空间事实等可供前端和后续任务消费的结果摘要。
 - **失败信息**：错误码或错误消息、失败阶段、是否可重试；失败不能只留在运行时日志中。
 
-以 Manager COG 生成结果为例，Manager 通过 `InvokeOperator("tiff_to_cog")` 调用实际提供该 direct 算子的工作流运行时，但 COG 是否可用以 `manager.raster_cog.status` 为准；`raster_cog` 记录中应保留源 item fingerprint、源 locator、目标 `storage_ref`、`workflow_runtime.engine_id/name/engine_type/execution_id/operator/mode`、栅格 facts 与失败原因。工作流运行时只负责执行 GDAL 转换，不负责登记 Manager 的 COG 结果生命周期。
+以 Manager COG 生成结果为例，Manager 通过 `InvokeOperator("raster_to_cog")` 调用实际提供该 direct 算子的工作流运行时，但 COG 是否可用以 `manager.raster_cog.status` 为准；`raster_cog` 记录中应保留源 item fingerprint、源 locator、目标 `storage_ref`、`workflow_runtime.engine_id/name/engine_type/execution_id/operator/mode`、栅格 facts 与失败原因。工作流运行时只负责执行 GDAL 转换，不负责登记 Manager 的 COG 结果生命周期。
 
 ### 4.4 工作流算子资源参数
 
@@ -852,7 +852,7 @@ Python 实现的 Workflow Runtime 应共享 `common-python` 中的协议执行�
 
 资源选择参数必须作为一个逻辑参数组进入执行契约。读取资源至少包含 `locator`，可按 `resource_binding` 同时包含 `geometry_column` 等用户需要确认的关联事实；目标资源使用 `parent_locator + name`，并可包含公开 `write_mode`。执行时更换资源后必须重新读取资源事实、刷新关联字段并重新校验，不得沿用旧资源的几何列、类型或格式事实。
 
-跨任务输出只允许声明可持久定位、可序列化且能在任务边界外重新解析的稳定结果，例如保存算子生成的 ResourceLocator。DataFrame、GeoDataFrame、Spark DataFrame、SuperMap 内存句柄和其他 Runtime 私有对象只能通过当前工作流内部连线传递，不得进入 TaskProvider 输出契约。每个可编排输出必须使用稳定输出名而不是数组下标；Develop execution 结果应按产生节点返回命名输出，并继续保留 `produced_targets` 作为产物摘要。
+跨任务输出只允许声明可持久定位、可序列化且能在任务边界外重新解析的稳定结果，例如保存算子生成的 ResourceLocator。DataFrame、GeoDataFrame、Spark DataFrame、SuperMap 内存句柄和其他 Runtime 私有对象只能通过当前工作流内部连线传递，不得进入 TaskProvider 输出契约。每个可编排输出必须使用稳定输出名而不是数组下标；Develop execution 结果应按产生节点返回命名输出，并继续保留 `produced_targets` 作为产物摘要。资源输出的 `resource` 包含 `locator`、`type` 和可选 `write_mode`，输出 Schema 必须声明该已有写入事实以供血缘消费；模式为 `create/replace/append/upsert`，栅格访问计划仅允许 `create/replace`。
 
 Orchestrator 为每个执行输入只允许三种互斥来源：使用任务保存值、设置 Step 固定覆盖值、引用显式 `depends_on` 上游 Step 的已声明稳定输出。不得继续让用户手写未校验的结果路径或把整个上游原始响应作为下游输入。
 
@@ -865,6 +865,38 @@ Orchestrator 为每个执行输入只允许三种互斥来源：使用任务保�
 Copilot 在生成工作流前做数据源理解时也必须遵守同一资源契约：低置信度或未验证的数据源只能返回 `DataSourceCandidate[]` 给调用方澄清，候选项中的位置字段使用 `namespace`、`table`、`bucket`、`path` 作为解释性事实，并提供标准 `locator` 或 `target_parent_locator`；不得把元数据搜索结果中的 `schema` 字段透传为 Copilot 对外模型字段，也不得把存储引擎 `engine_id` 写入工作流任务 params。
 
 ---
+
+### 4.6 栅格计算契约
+
+GeoPython Workflow 使用 GDAL 实现栅格计算。公开输入继续使用 ResourceLocator，`raster_load` 派生 source-only 访问计划，`raster_save` 派生 target-only 访问计划，`raster_to_cog` 使用 source/target 计划；访问协议固定 `addp.workflow.access-plan/v1`。源、目标分别授权，凭据只在执行期传递。输出文件限定 `.tif/.tiff`，COG 是 TIFF 的 profile，不是另一种格式身份。
+
+`RasterDataset` 是执行工作目录内的私有、文件支撑对象，栅格输入/输出端口类型为 `raster`，不得通过 JSON 对象伪造或跨任务保存。公开参数仅经当前 DAG `$ref` 接收该对象。Runtime 对外只投影 width、height、band、CRS、transform、extent、nodata 和 overview 等摘要，不返回像元、临时路径或打开的 GDAL 句柄。成功和失败均清理工作目录；当前公共执行协议没有取消接口，不宣称具备主动取消能力。
+
+加载、信息、COG 校验、重投影、重采样、裁剪、计算镶嵌、波段计算、统计和直方图在工作流中执行。统计与直方图按块全量读取；波段表达式仅允许 band 引用、数值常量和受限数组函数，传播无效像元，不执行任意 Python。空间变换要求可信 CRS 和 geotransform，缺失 CRS 时须明确补充；加载与信息读取保留缺失事实，不按坐标范围猜测。重采样尺寸和分辨率互斥；裁剪必须明确边界 CRS；计算镶嵌指定目标 CRS、分辨率及 first/last 重叠策略，可通过成对镶嵌节点组合多个栅格，输出 Float64，空白区域使用 NaN；复数波段拒绝进入数值分析及计算镶嵌。数值分析不承诺大整数逐位精度。
+
+`raster_to_cog` 是唯一通用 COG 转换入口，声明 workflow/direct；Manager 通过同一访问计划调用并继续管理 `manager.raster_cog`，旧 TIFF 专用算子及 URI 参数契约删除。`build_raster_mosaic` 继续承担 Manager 目录型业务数据集职责。Develop 业务保存沿用 produced_targets、命名 ResourceLocator 输出、血缘与 Meta scan。图片瓦片与 Service 在线发布不属于本次栅格计算范围。
+
+Python Runtime 的领域执行器负责内部对象、资源清理和结果投影；DAG、引用解析和异步状态复用 common-python 的 WorkflowRunner / ExecutionRegistry，不为栅格另建执行核心。
+
+加载接受自包含 TIFF、PNG、JPEG，Develop 使用标准格式识别器从源文件名派生格式，实际 driver 必须匹配源格式；外部 sidecar 和伪装的 VRT 拒绝作为通用栅格输入。以下算子的默认输出端口统一为 `default`，显式或省略 `port` 的引用必须得到同一结果。
+
+| 算子 ID | 核心输入及配置 | 输出端口类型 |
+| --- | --- | --- |
+| `raster_load` | source-only `access_plan`、可选 `source_crs` | `raster` |
+| `raster_save` | `input_raster`、target-only `access_plan`、`profile=geotiff/cog` | `object`，持久成果摘要 |
+| `raster_info` | `input_raster` | `object`，栅格事实 |
+| `validate_cog` | `input_raster` | `object`，完整布局校验问题 |
+| `raster_to_cog` | source/target `access_plan`、`options` | `object`，COG 成果摘要 |
+| `raster_build_overviews` | `input_raster`、递增 `levels`、`resampling` | `raster` |
+| `raster_reproject` | `input_raster`、`target_crs`、可选 `resolution`、`resampling` | `raster` |
+| `raster_resample` | `input_raster`、互斥 `size/resolution`、`resampling` | `raster` |
+| `raster_clip` | `input_raster`、互斥 `bbox/geometry`、`boundary_crs` | `raster` |
+| `raster_mosaic` | `input_raster/other_raster`、`target_crs`、`resolution`、`overlap=first/last`、`resampling` | `raster` |
+| `raster_band_math` | `input_raster`、受限 `expression` | `raster`，Float64 单波段 |
+| `raster_statistics` | `input_raster`、`band` | `object`，全量有效/无效统计 |
+| `raster_histogram` | `input_raster`、`band`、`bins`、可选 `value_range` | `object`，全量计数及范围外计数 |
+
+COG 参数为 `compression`（DEFLATE/LZW/ZSTD/NONE）、`blocksize`（128–4096 内的 16 倍数）、`overview_resampling`；转换入口将其放在 `options` 中，保存入口直接声明。波段表达式支持 `b1/b2/...`、有限常量、加减乘除、-16 到 16 的常数幂与 `abs/sqrt/log/minimum/maximum`。统计忽略 mask、nodata 和非有限像元；标准差为总体标准差，全无效栅格返回 null 统计值。直方图 `bins` 为 1–4096，未指定范围时按有效 min/max 派生。
 
 ## 5. 扩展新引擎指南
 

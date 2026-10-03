@@ -120,3 +120,6 @@ other = "Cannot read execution diagnostics; retry later"
 other = "Cannot retry now; check the target, channel configuration and incident suppression"
 [monitor.platform_log.retry_conflict]
 other = "Delivery state, retry count or target version changed; refresh and confirm again"
+
+[monitor.platform_log.wecom_test_failed]
+other = "WeCom test delivery failed; check the robot URL, network or send rate"

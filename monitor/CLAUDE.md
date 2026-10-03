@@ -94,3 +94,5 @@ bash scripts/swagger/check-route-coverage.sh monitor
 - Webhook/SMTP 复用中立发送接口和统一重试算法，至少一次投递；确认/抑制不改写业务实例状态。读取与管理通过 Monitor 服务账号向 System 独立 Platform 审计接口追加最小操作事实。
 - 最终失败的平台通知通过单条 `POST /platform/log-notification-deliveries/{id}/retry` 重新入队，仅 Platform User 与 `monitor.log_notification.update` 可操作。保留原投递/事件/正文和发生时间，使用原目标当前配置；目标版本与预期人工次数拒绝并发或延迟重复请求，抑制不能绕过。累计次数保留，本轮上限和退避从 `retry_base_attempt_count` 重新计算；历史恢复告警允许补发，界面必须明确提示。
 - 门禁：`make test-go`、`make test-monitor-postgres`、`make test-system-iam-postgres`、`make test-system-runtime-log`、`make test-system-frontend` 和 `make test-platform`；数据库及故障注入必须使用标准 disposable 入口。完整设计见 `docs/next/ADDP模块服务运行日志设计.md` 第十一节。
+
+平台日志通知支持明确的 `wecom` 渠道：固定官方端点、通过既有凭据接口写入完整机器人地址并仅加密保存 key；复用受控 HTTP 客户端，HTTP 2xx 与整数 errcode=0 同时成立才算发送成功。平台 outbox、重试及安全诊断保持同一主路径，租户通知不扩展。Go/PostgreSQL 回归由现有 Monitor owner gate 自动发现，System 配置交互由既有前端门禁覆盖。

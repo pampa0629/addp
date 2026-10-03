@@ -32,6 +32,14 @@ func (s *retryTestWebhook) SendMessage(_ context.Context, m WebhookMessage, secr
 	return WebhookSendResult{HTTPStatus: 202}, nil
 }
 
+func (s *retryTestWebhook) SendWeComMessage(ctx context.Context, m WebhookMessage, secret string, now time.Time) (WebhookSendResult, error) {
+	result, err := s.SendMessage(ctx, m, secret, now)
+	if err != nil {
+		return result, ErrWeComRejected
+	}
+	return result, nil
+}
+
 type retryTestEmail struct{ messages []EmailMessage }
 
 func (s *retryTestEmail) SendMessage(_ context.Context, m EmailMessage, _ time.Time) error {
@@ -97,7 +105,7 @@ func newLogRetryFixture(t *testing.T, channel string) *logRetryFixture {
 	input := LogDestinationInput{Name: f.incident.Node, Channel: channel, EventTypes: []string{"opened", "resolved"}}
 	if channel == "webhook" {
 		input.URL = "http://127.0.0.1:18080/original"
-	} else {
+	} else if channel == "email" {
 		input.Recipients = []string{"original@example.test"}
 		input.Enabled = true
 	}
@@ -105,8 +113,12 @@ func newLogRetryFixture(t *testing.T, channel string) *logRetryFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if channel == "webhook" {
-		f.target, err = f.n.SetSecret(context.Background(), f.target.ID, f.target.Version, "fixture-original-secret")
+	if channel != "email" {
+		secret := "fixture-original-secret"
+		if channel == "wecom" {
+			secret = wecomEndpoint + "?key=" + fixtureWeComKey
+		}
+		f.target, err = f.n.SetSecret(context.Background(), f.target.ID, f.target.Version, secret)
 		if err != nil {
 			t.Fatal(err)
 		}

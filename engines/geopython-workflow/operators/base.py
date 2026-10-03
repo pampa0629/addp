@@ -19,6 +19,7 @@ class OperatorType(str, Enum):
 class OperatorCategory(str, Enum):
     """算子分类枚举"""
     DATA_IO = "数据I/O"
+    RASTER = "栅格计算"
     GEOMETRIC = "几何处理"
     SPATIAL_TRANSFORM = "空间转换"
     SPATIAL_RELATION = "空间关系"

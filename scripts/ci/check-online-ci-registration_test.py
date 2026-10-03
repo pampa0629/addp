@@ -635,6 +635,38 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         with self.assertRaisesRegex(CHECK.RegistrationError, "must not keep a self-hosted"):
             CHECK.validate_transfer_relational_sql_etl_profile(self.repository, registered)
 
+    def test_raster_requires_manual_disposable_profile_and_registered_regressions(self) -> None:
+        root = SCRIPT.parents[2]
+        files = (
+            "scripts/test/online-gate.py", "scripts/test/online-hosted-raster-gate.sh",
+            "business/scripts/online-raster-minio-fixture.py", "scripts/test/raster-workflow-online.py",
+            "console/frontend/e2e/online/raster-workflow.spec.js", "Makefile",
+            ".github/workflows/online-t4-gates.yml",
+        )
+        for relative in files:
+            destination = self.repository / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(root / relative, destination)
+        registered = {"raster-workflow"}
+        CHECK.validate_raster_workflow_profile(self.repository, registered)
+        faults = (
+            (".github/workflows/online-t4-gates.yml", "if: github.event_name == 'workflow_dispatch' && inputs.suite == 'raster-workflow'", "if: github.event_name == 'schedule'"),
+            (".github/workflows/online-t4-gates.yml", "&& inputs.suite != 'raster-workflow'", ""),
+            ("scripts/test/online-hosted-raster-gate.sh", "online-raster-minio-fixture.py stop", "true"),
+            ("scripts/test/online-hosted-raster-gate.sh", "unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN", "true"),
+            ("Makefile", "scripts/test/online-raster-minio-fixture_test.py", ""),
+            ("console/frontend/e2e/online/raster-workflow.spec.js", "auth.principalID", "other"),
+        )
+        for relative, old, new in faults:
+            with self.subTest(relative=relative, fragment=old):
+                path = self.repository / relative
+                original = path.read_text()
+                self.assertIn(old, original)
+                path.write_text(original.replace(old, new))
+                with self.assertRaises(CHECK.RegistrationError):
+                    CHECK.validate_raster_workflow_profile(self.repository, registered)
+                path.write_text(original)
+
     def test_requires_manager_internal_artifact_lineage_fixture_and_browser_suite(self) -> None:
         gate = self.repository / "scripts/test/online-gate.py"
         gate.write_text(

@@ -304,8 +304,8 @@ func TestTestConnectionBeforeCreateProbesCustomWorkflowRuntime(t *testing.T) {
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{
 				"operators": []map[string]interface{}{
 					{
-						"id":              "tiff_to_cog",
-						"name":            "tiff_to_cog",
+						"id":              "raster_to_cog",
+						"name":            "raster_to_cog",
 						"display_name":    "TIFF to COG",
 						"engine_type":     engineType,
 						"type":            "raster",
@@ -385,8 +385,8 @@ func TestProbeWorkflowRuntimeBeforeSaveRejectsMismatchedOperatorEngineType(t *te
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{
 				"operators": []map[string]interface{}{
 					{
-						"id":              "tiff_to_cog",
-						"name":            "tiff_to_cog",
+						"id":              "raster_to_cog",
+						"name":            "raster_to_cog",
 						"display_name":    "TIFF to COG",
 						"engine_type":     "geopython_workflow",
 						"type":            "raster",

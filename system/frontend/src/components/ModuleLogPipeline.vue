@@ -53,7 +53,7 @@
       <el-button @click="loadNotifications">{{ t('system.module.refresh') }}</el-button>
       <el-table :data="destinations">
         <el-table-column prop="name" :label="t('system.module.pipeline.name')" />
-        <el-table-column prop="channel" :label="t('system.module.pipeline.channel')" />
+        <el-table-column :label="t('system.module.pipeline.channel')"><template #default="{ row }">{{ channelLabel(row.channel) }}</template></el-table-column>
         <el-table-column :label="t('system.module.pipeline.target')" min-width="200" show-overflow-tooltip><template #default="{ row }">{{ row.channel === 'email' ? row.recipients.join(', ') : row.url }}</template></el-table-column>
         <el-table-column :label="t('system.module.pipeline.enabled')" width="90"><template #default="{ row }">{{ fact(row.enabled) }}</template></el-table-column>
         <el-table-column v-if="canUpdateNotifications" :label="t('system.module.pipeline.actions')" width="260"><template #default="{ row }">
@@ -80,7 +80,7 @@
         </el-table-column>
         <el-table-column prop="id" :label="t('system.module.pipeline.deliveryID')" min-width="160" show-overflow-tooltip />
         <el-table-column :label="t('system.module.pipeline.target')" min-width="160" show-overflow-tooltip><template #default="{ row }">{{ destinationLabel(row) }}</template></el-table-column>
-        <el-table-column prop="channel" :label="t('system.module.pipeline.channel')" />
+        <el-table-column :label="t('system.module.pipeline.channel')"><template #default="{ row }">{{ channelLabel(row.channel) }}</template></el-table-column>
         <el-table-column :label="t('system.module.pipeline.status')"><template #default="{ row }">{{ t(`system.module.pipeline.deliveryStatuses.${row.status}`) }}</template></el-table-column>
         <el-table-column prop="attempt_count" :label="t('system.module.pipeline.attempts')" />
         <el-table-column prop="cycle_attempt_count" :label="t('system.module.pipeline.cycleAttempts')" />
@@ -97,10 +97,10 @@
       <el-alert v-if="editError" :title="editError" type="error" :closable="false" />
       <el-form label-position="top">
         <el-form-item :label="t('system.module.pipeline.name')"><el-input v-model="destinationDraft.name" maxlength="100" /></el-form-item>
-        <el-form-item :label="t('system.module.pipeline.channel')"><el-select v-model="destinationDraft.channel" :disabled="!!editingID"><el-option label="Webhook" value="webhook" /><el-option :label="t('system.module.pipeline.email')" value="email" /></el-select></el-form-item>
+        <el-form-item :label="t('system.module.pipeline.channel')"><el-select v-model="destinationDraft.channel" :disabled="!!editingID"><el-option label="Webhook" value="webhook" /><el-option :label="t('system.module.pipeline.wecom')" value="wecom" /><el-option :label="t('system.module.pipeline.email')" value="email" /></el-select></el-form-item>
         <el-form-item v-if="destinationDraft.channel === 'webhook'" :label="t('system.module.pipeline.url')"><el-input v-model="destinationDraft.url" maxlength="2048" /></el-form-item>
-        <el-form-item v-else :label="t('system.module.pipeline.recipients')"><el-input v-model="recipientsText" /></el-form-item>
-        <el-form-item v-if="destinationDraft.channel === 'webhook'" :label="t('system.module.pipeline.secret')"><el-input v-model="secret" type="password" show-password autocomplete="new-password" /></el-form-item>
+        <el-form-item v-else-if="destinationDraft.channel === 'email'" :label="t('system.module.pipeline.recipients')"><el-input v-model="recipientsText" /></el-form-item>
+        <el-form-item v-if="destinationDraft.channel !== 'email'" :label="t(destinationDraft.channel === 'wecom' ? 'system.module.pipeline.wecomCredential' : 'system.module.pipeline.secret')"><el-input v-model="secret" type="password" show-password autocomplete="new-password" /></el-form-item>
         <el-form-item :label="t('system.module.pipeline.events')"><el-checkbox-group v-model="destinationDraft.event_types"><el-checkbox v-for="event in ['opened','escalated','resolved']" :key="event" :value="event">{{ t(`system.module.pipeline.eventsLabel.${event}`) }}</el-checkbox></el-checkbox-group></el-form-item>
         <el-form-item :label="t('system.module.pipeline.enabled')"><el-switch v-model="destinationDraft.enabled" /></el-form-item>
       </el-form>
@@ -134,10 +134,11 @@ const policyFields = [
   { key: 'capacity_percent', min: 50, max: 95 }, { key: 'recovery_percent', min: 20, max: 94 }
 ]
 const date = v => v ? new Date(v).toLocaleString() : '—'
+const channelLabel = channel => channel === 'wecom' ? t('system.module.pipeline.wecom') : channel === 'email' ? t('system.module.pipeline.email') : 'Webhook'
 const destinationLabel = row => row.destination_name || t('system.module.pipeline.unavailableTarget', { id: row.destination_id })
 const deliveryError = code => {
   if (!code) return '—'
-  const known = ['notification_send_failed', 'notification_attempt_limit']
+  const known = ['notification_send_failed', 'notification_attempt_limit', 'wecom_rate_limited', 'wecom_rejected', 'wecom_invalid_response', 'wecom_network_failed', 'wecom_http_failed']
   return t(`system.module.pipeline.deliveryErrors.${known.includes(code) ? code : 'unknown'}`)
 }
 const fact = v => t(`system.module.pipeline.facts.${v ? 'yes' : 'no'}`)
@@ -173,24 +174,24 @@ function openNotifications() { notificationsOpen.value = true; loadNotifications
 function changeDeliveryPage(page) { deliveryPage.value = page; loadNotifications() }
 function editDestination(row) {
   editingID.value = row?.id || 0
-  destinationDraft.value = row ? { version: row.version, name: row.name, channel: row.channel, url: row.url || '', recipients: [...row.recipients], event_types: [...row.event_types], enabled: row.enabled } : { name: '', channel: 'webhook', url: '', recipients: [], event_types: ['opened','escalated','resolved'], enabled: false }
+  destinationDraft.value = row ? { version: row.version, name: row.name, channel: row.channel, url: row.channel === 'webhook' ? row.url || '' : '', recipients: [...row.recipients], event_types: [...row.event_types], enabled: row.enabled } : { name: '', channel: 'webhook', url: '', recipients: [], event_types: ['opened','escalated','resolved'], enabled: false }
   recipientsText.value = destinationDraft.value.recipients.join(', '); secret.value = ''; editError.value = ''; destinationOpen.value = true
 }
 async function saveDestination() {
   busy.value = true; editError.value = ''
   try {
     const data = { ...destinationDraft.value, recipients: destinationDraft.value.channel === 'email' ? recipientsText.value.split(',').map(v => v.trim()).filter(Boolean) : [], url: destinationDraft.value.channel === 'webhook' ? destinationDraft.value.url : '' }
-    // A new webhook is created disabled until its independent signing credential exists.
+    // Credential-bearing channels are created disabled before the dedicated credential write.
     const enabled = data.enabled
-    if (!editingID.value && data.channel === 'webhook') data.enabled = false
+    if (!editingID.value && data.channel !== 'email') data.enabled = false
     let row
-    if (editingID.value && secret.value && data.channel === 'webhook') {
+    if (editingID.value && secret.value && data.channel !== 'email') {
       row = await logPipelineAPI.credential({ id: editingID.value, version: data.version }, secret.value)
       secret.value = ''; destinationDraft.value.version = row.version; data.version = row.version
     }
     row = editingID.value ? await logPipelineAPI.updateDestination(editingID.value, data) : await logPipelineAPI.createDestination(data)
     editingID.value = row.id; destinationDraft.value.version = row.version
-    if (secret.value && row.channel === 'webhook') { row = await logPipelineAPI.credential(row, secret.value); secret.value = ''; destinationDraft.value.version = row.version }
+    if (secret.value && row.channel !== 'email') { row = await logPipelineAPI.credential(row, secret.value); secret.value = ''; destinationDraft.value.version = row.version }
     if (enabled && !row.enabled) { row = await logPipelineAPI.updateDestination(row.id, { ...data, version: row.version, enabled }); destinationDraft.value.version = row.version }
     destinationOpen.value = false; await loadNotifications(); await load()
   } catch (e) { editError.value = errorText(e) } finally { busy.value = false }

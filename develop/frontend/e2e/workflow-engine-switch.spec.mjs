@@ -253,8 +253,10 @@ test('renders a visible gap where workflow edges cross', async ({ page }) => {
   expect(edgeRendering.some(edge => edge.pathChanged)).toBe(true)
 })
 
-test('edits port bindings from the parameter panel and persists every input reference', async ({ page }) => {
-  const backend = await installMockBackend(page, { includeInputConnections: true })
+for (const portType of ['number', 'raster']) {
+test(`edits ${portType} port bindings and persists every input reference`, async ({ page }) => {
+  const backend = await installMockBackend(page, { includeInputConnections: true, portType })
+  const inputNames = portType === 'raster' ? ['input_raster', 'other_raster'] : ['left_value', 'right_value']
   await openSavedWorkflow(page)
 
   const canvas = page.locator('#workflow-dag-container canvas')
@@ -263,7 +265,7 @@ test('edits port bindings from the parameter panel and persists every input refe
 
   const panel = page.locator('.right-panel')
   await expect(panel.getByRole('heading', { name: '输入连接', exact: true })).toBeVisible()
-  for (const inputName of ['left_value', 'right_value']) {
+  for (const inputName of inputNames) {
     const field = panel.locator('.input-connection-field').filter({ hasText: inputName })
     await expect(field).toHaveCount(1)
     await field.locator('.el-select__wrapper').click()
@@ -277,12 +279,10 @@ test('edits port bindings from the parameter panel and persists every input refe
   await expect.poll(() => backend.updates.length).toBe(1)
   const target = backend.updates[0].payload.content.workflow_definition.tasks
     .find(task => task.id === 'operator_input_1')
-  expect(target.params).toEqual({
-    left_value: { $ref: 'operator_a_1' },
-    right_value: { $ref: 'operator_a_1' }
-  })
+  expect(target.params).toEqual(Object.fromEntries(inputNames.map(name => [name, { $ref: 'operator_a_1' }])))
   expect(target.depends_on).toEqual(['operator_a_1'])
 })
+}
 
 test('clear and switch detaches the saved task without updating it', async ({ page }) => {
   const backend = await installMockBackend(page)
@@ -676,7 +676,8 @@ async function installMockBackend(page, {
   includeResourcePicker = false,
   includeInputConnections = false,
   includeConnectedEdge = false,
-  includeCrossingEdges = false
+  includeCrossingEdges = false,
+  portType = 'number'
 } = {}) {
   const updates = []
   const creates = []
@@ -745,13 +746,15 @@ async function installMockBackend(page, {
         'Category A',
         ENGINE_A.engine_type,
         [
-          { name: 'left_value', type: 'number', param_type: 'input', required: true },
-          { name: 'right_value', type: 'number', param_type: 'input', required: true }
+          { name: portType === 'raster' ? 'input_raster' : 'left_value', type: portType, param_type: 'input', required: true },
+          { name: portType === 'raster' ? 'other_raster' : 'right_value', type: portType, param_type: 'input', required: true }
         ]
       )] : [])
     ],
     [ENGINE_B.id]: [createOperator('operator_b', 'Operator B', 'Category B', ENGINE_B.engine_type)]
   }
+
+  operatorsByEngine[ENGINE_A.id][0].output_ports[0].type = portType
 
   await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
   await page.route('**/api/v1/**', async route => {

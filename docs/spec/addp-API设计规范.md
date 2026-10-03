@@ -260,6 +260,12 @@ WHERE id = $2 AND tenant_id = $3 AND version = $4;
 
 `error_type` 和 `retry_after` 继续遵守第 13.2 节；同一个 `error_code` 的重试类别必须稳定。简单 CRUD 接口不需要为包装一致性强行增加 `error_code`。
 
+### 平台日志企业微信通知契约
+
+平台通知沿用 Monitor `/api/v1/monitor/platform/log-notification-destinations` 与 `/{id}/credential`，需要 Platform User 与 `monitor.log_notification.read/update`。`channel` 为 `webhook|email|wecom`；`wecom` 创建/更新要求 `url` 空、`recipients` 空，新建目标不得直接启用。凭据接口 `{version, secret}` 的 `secret` 在企业微信渠道中为完整官方机器人 Webhook 地址；仅提取 key 加密保存，普通读取返回固定无 query 端点和 `secret_configured`，不返回完整机器人地址或 key。
+
+测试发送仍使用 `POST /{id}/test`；企业微信 HTTP 与业务响应同时成功才返回成功，测试不建立正式 outbox。发送失败返回安全双语错误和 `wecom_test_failed`，不回显企业微信响应正文。正式投递沿用 outbox 与原重投接口，读取安全失败码 `wecom_rejected|wecom_rate_limited|wecom_invalid_response|wecom_network_failed|wecom_http_failed`，不包含接收地址参数或凭据。企业微信群消息可能重复/乱序，不能承诺接收方按投递 ID 自动去重。
+
 ### 2.4 分页响应格式
 
 本节的 `page/page_size` 用于平台管理列表。已发布查询服务面向业务数据的查询不能默认执行精确计数，也不能以 `OFFSET` 作为深分页主路径，统一使用稳定排序键上的 cursor/keyset 分页：
@@ -1438,6 +1444,7 @@ class DevelopClient(AddpBaseClient):
 - [HTTP 状态码 RFC 9110](https://www.rfc-editor.org/rfc/rfc9110.html)
 
 ---
+
 
 ## 附录：快速对照表
 

@@ -655,4 +655,4 @@ Infra `runtime-log-observer` 与应用接收器共享显式 `ADDP_HOST_NODE_NAME
 
 `LOG_OBSERVER_SYSTEM_URL` / `LOG_OBSERVER_MONITOR_URL` 是 Infra 到控制面的受控地址，默认 `http://host.docker.internal:8180` / `http://host.docker.internal:8100`；使用非默认端口或容器部署时必须按实际地址设置。观测器每 30 秒采样，探针最多 20 秒，上报最多尝试两次，不上传日志正文。监测阈值通过 Monitor 平台规则 API 统一管理。
 
-通知目标由平台管理员在 System 模块管理的“日志链路 → 通知管理”配置，Webhook 签名凭据与目标字段分开写入、加密保存；邮件复用部署 SMTP 配置。未配置目标或 SMTP 时明确显示未配置状态，不计为已通知。通知采用事务 outbox 和至少一次投递，接收方以投递 ID 去重；失败达到尝试上限后保留最终失败记录。
+通知目标由平台管理员在 System 模块管理的“日志链路 → 通知管理”配置，Webhook 签名凭据与目标字段分开写入、加密保存；企业微信 `wecom` 目标的完整机器人地址仅通过凭据接口写入，key 使用现有 ENCRYPTION_KEY 加密，普通目标和投递读取不回显 key。邮件复用 Monitor-owned SMTP Relay。未配置目标或 SMTP 时明确显示未配置状态，不计为已通知。通知采用事务 outbox 和至少一次投递，通用 Webhook 接收方可按投递 ID 去重；企业微信群消息保留投递 ID，但可能重复或乱序，不提供接收方自动去重保证。失败达到尝试上限后保留最终失败记录。

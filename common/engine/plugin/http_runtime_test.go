@@ -205,7 +205,7 @@ func TestHTTPInvokeOperatorUsesCanonicalRequestShape(t *testing.T) {
 	var got map[string]interface{}
 	server := &http.Server{
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != "/api/operators/tiff_to_cog/invoke" {
+			if r.URL.Path != "/api/operators/raster_to_cog/invoke" {
 				t.Fatalf("unexpected path: %s", r.URL.Path)
 			}
 			if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
@@ -234,7 +234,7 @@ func TestHTTPInvokeOperatorUsesCanonicalRequestShape(t *testing.T) {
 		"protocol": "http",
 		"host":     "127.0.0.1",
 		"port":     port,
-	}, "tiff_to_cog", OperatorInvokeRequest{
+	}, "raster_to_cog", OperatorInvokeRequest{
 		Params: map[string]interface{}{
 			"source_uri": "s3://bucket/source.tif",
 		},
@@ -360,7 +360,7 @@ func TestHTTPInvokeOperatorUsesRequestTimeout(t *testing.T) {
 func TestHTTPInvokeOperatorReturnsErrorForFailedStatusWithOKHTTPStatus(t *testing.T) {
 	server := &http.Server{
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != "/api/operators/tiff_to_cog/invoke" {
+			if r.URL.Path != "/api/operators/raster_to_cog/invoke" {
 				t.Fatalf("unexpected path: %s", r.URL.Path)
 			}
 			w.Header().Set("Content-Type", "application/json")
@@ -386,7 +386,7 @@ func TestHTTPInvokeOperatorReturnsErrorForFailedStatusWithOKHTTPStatus(t *testin
 		"protocol": "http",
 		"host":     "127.0.0.1",
 		"port":     port,
-	}, "tiff_to_cog", OperatorInvokeRequest{})
+	}, "raster_to_cog", OperatorInvokeRequest{})
 	if err == nil {
 		t.Fatal("HTTPInvokeOperator returned nil error for failed runtime status")
 	}
@@ -398,7 +398,7 @@ func TestHTTPInvokeOperatorReturnsErrorForFailedStatusWithOKHTTPStatus(t *testin
 func TestHTTPInvokeOperatorParsesErrorDetails(t *testing.T) {
 	server := &http.Server{
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != "/api/operators/tiff_to_cog/invoke" {
+			if r.URL.Path != "/api/operators/raster_to_cog/invoke" {
 				t.Fatalf("unexpected path: %s", r.URL.Path)
 			}
 			w.Header().Set("Content-Type", "application/json")
@@ -425,7 +425,7 @@ func TestHTTPInvokeOperatorParsesErrorDetails(t *testing.T) {
 		"protocol": "http",
 		"host":     "127.0.0.1",
 		"port":     port,
-	}, "tiff_to_cog", OperatorInvokeRequest{})
+	}, "raster_to_cog", OperatorInvokeRequest{})
 	if err == nil {
 		t.Fatal("HTTPInvokeOperator returned nil error for failed status")
 	}

@@ -140,3 +140,34 @@ func TestPrepareWorkflowExecutionAuthorizationRequiresUserToken(t *testing.T) {
 		t.Fatal("prepareWorkflowExecutionAuthorization() error = nil, want User token requirement")
 	}
 }
+
+func TestRasterAuthorizationSeparatesSourceReadAndTargetWrite(t *testing.T) {
+	discovery := newWorkflowValidationTestService(t)
+	getDescriptor := discovery.getRuntimeDescriptor
+	discovery.getRuntimeDescriptor = func(ctx context.Context, tenantID, engineID uint) (*commonModels.EngineRuntimeDescriptor, error) {
+		descriptor, err := getDescriptor(ctx, tenantID, engineID)
+		descriptor.EngineType = "geopython_workflow"
+		return descriptor, err
+	}
+	discovery.listWorkflowOperators = func(context.Context, *commonModels.Engine) ([]commonModels.OperatorDescriptor, error) {
+		return []commonModels.OperatorDescriptor{
+			{ID: "raster_load", Name: "raster_load", EngineType: "geopython_workflow", ExecutionModes: []string{"workflow"}, Effects: []string{"read"}, Parameters: []commonModels.ParameterDescriptor{{Name: "access_plan", Type: "object"}}},
+			{ID: "raster_save", Name: "raster_save", EngineType: "geopython_workflow", ExecutionModes: []string{"workflow"}, Effects: []string{"write"}, Parameters: []commonModels.ParameterDescriptor{{Name: "access_plan", Type: "object"}, {Name: "input_raster", Type: "raster", ParamType: "input"}}},
+		}, nil
+	}
+	executor := &DevExecutor{operatorDiscovery: discovery}
+	plan, err := executor.buildWorkflowExecutionAuthorizationPlan(context.Background(), &models.DevTask{
+		DevType: "workflow", ExecutionConfig: models.DevTaskContent{"engine_id": float64(12)},
+		Content: models.DevTaskContent{"workflow_definition": map[string]interface{}{"tasks": []interface{}{
+			map[string]interface{}{"id": "load", "operator": "raster_load", "params": map[string]interface{}{"locator": "addp://engine/1/path/input.tif?type=file"}},
+			map[string]interface{}{"id": "save", "operator": "raster_save", "params": map[string]interface{}{"target_parent_locator": "addp://engine/2/path/business?type=bucket", "target_name": "result.tif"}},
+		}}},
+	}, 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[uint][]string{1: {"read"}, 2: {"write"}, 12: {"read", "write"}}
+	if !reflect.DeepEqual(plan.engineEffects, want) {
+		t.Fatalf("effects = %#v, want %#v", plan.engineEffects, want)
+	}
+}

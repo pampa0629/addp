@@ -8,6 +8,7 @@ import (
 
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/taskprovider"
+	"github.com/addp/develop/backend/internal/models"
 )
 
 func TestWorkflowExecutionContractExposesOnlySavedUnconnectedPublicParameters(t *testing.T) {
@@ -248,4 +249,43 @@ func assertWorkflowExecutionFieldOrder(t *testing.T, uiSchema map[string]interfa
 
 func floatPointer(value float64) *float64 {
 	return &value
+}
+
+func TestRasterExecutionContractPublishesOnlySavedResource(t *testing.T) {
+	operators := publicWorkflowOperators("geopython_workflow", []commonModels.OperatorDescriptor{
+		{ID: "raster_load", Name: "raster_load", Parameters: []commonModels.ParameterDescriptor{{Name: "access_plan", Type: "object"}, {Name: "source_crs", Type: "string"}}},
+		{ID: "raster_save", Name: "raster_save", Parameters: []commonModels.ParameterDescriptor{{Name: "input_raster", Type: "raster", ParamType: "input"}, {Name: "access_plan", Type: "object"}, {Name: "profile", Type: "string"}}},
+	})
+	workflow := map[string]interface{}{"tasks": []interface{}{
+		map[string]interface{}{"id": "load", "operator": "raster_load", "depends_on": []interface{}{}, "params": map[string]interface{}{"locator": "addp://engine/1/path/input.tif?type=file&item_id=8"}},
+		map[string]interface{}{"id": "save", "operator": "raster_save", "depends_on": []interface{}{"load"}, "params": map[string]interface{}{"input_raster": map[string]interface{}{"$ref": "load"}, "target_parent_locator": "addp://engine/2/path/business?type=bucket", "target_name": "result.tif", "write_mode": "create", "profile": "cog"}},
+	}}
+	contract, err := buildWorkflowExecutionContract(workflow, operators)
+	if err != nil {
+		t.Fatal(err)
+	}
+	outputs := contract.OutputSchema["properties"].(map[string]interface{})
+	if !reflect.DeepEqual(sortedMapKeys(outputs), []string{"save"}) {
+		t.Fatalf("outputs = %#v", outputs)
+	}
+	inputs := contract.InputSchema["properties"].(map[string]interface{})
+	save := inputs["save"].(map[string]interface{})["properties"].(map[string]interface{})
+	for _, private := range []string{"input_raster", "access_plan"} {
+		if _, exists := save[private]; exists {
+			t.Fatalf("private parameter %s exposed: %#v", private, save)
+		}
+	}
+	if _, exists := save["target_resource"]; !exists {
+		t.Fatalf("target picker missing: %#v", save)
+	}
+	stable := workflowExecutionOutputs([]WorkflowProducedTarget{{
+		TaskID: "save", Locator: "addp://engine/2/path/business/result.tif?type=object", Type: "object", WriteMode: "create",
+	}})
+	if err := taskprovider.ValidateExecutionParameters(contract.OutputSchema, stable, taskprovider.ParameterValidationOptions{}); err != nil {
+		t.Fatalf("stable output violates its published schema: %v", err)
+	}
+	facts := developLineageFacts(&models.DevTask{DevType: "workflow", Content: models.DevTaskContent{"workflow_definition": workflow}}, stable)
+	if facts == nil || len(facts.Inputs) != 1 || len(facts.Outputs) != 1 || facts.Outputs[0].WriteMode != "create" {
+		t.Fatalf("raster lineage missing source or target: %#v", facts)
+	}
 }

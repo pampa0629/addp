@@ -15,6 +15,7 @@ import (
 	"github.com/addp/common/engine/plugin"
 	engineselection "github.com/addp/common/engine/selection"
 	"github.com/addp/common/engine/workflowaccess"
+	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
 	"github.com/addp/develop/backend/internal/models"
@@ -647,7 +648,11 @@ func (s *WorkflowEngineService) requireWorkflowResourceInputs(
 	if s.protectionGate == nil {
 		return fmt.Errorf("Develop 工作流保护门禁未配置")
 	}
-	for _, input := range spec.ResourceInputs {
+	inputs := spec.ResourceInputs
+	if spec.AccessPlan != nil && spec.AccessPlan.SourceKind != "" {
+		inputs = append(append([]workflowResourceInputSpec{}, inputs...), workflowResourceInputSpec{PublicParam: "locator"})
+	}
+	for _, input := range inputs {
 		locatorText := strings.TrimSpace(stringParam(params, input.PublicParam))
 		if locatorText == "" {
 			continue
@@ -699,84 +704,121 @@ func (s *WorkflowEngineService) deriveWorkflowAccessPlan(
 	if spec == nil {
 		return nil, fmt.Errorf("access plan spec is required")
 	}
-	sourceURI := strings.TrimSpace(stringParam(params, "locator"))
-	targetParentURI := strings.TrimSpace(stringParam(params, "target_parent_locator"))
-	targetName := strings.TrimSpace(stringParam(params, "target_name"))
-	if sourceURI == "" || targetParentURI == "" || targetName == "" {
-		return nil, fmt.Errorf("locator, target_parent_locator and target_name are required")
-	}
-	if spec.TargetExtension != "" && !strings.HasSuffix(strings.ToLower(targetName), strings.ToLower(spec.TargetExtension)) {
-		return nil, fmt.Errorf("target_name must end with %s", spec.TargetExtension)
-	}
-	sourceLocator, err := resourcetree.ParseURI(sourceURI)
-	if err != nil {
-		return nil, fmt.Errorf("invalid locator: %w", err)
-	}
-	targetParent, err := resourcetree.ParseURI(targetParentURI)
-	if err != nil {
-		return nil, fmt.Errorf("invalid target_parent_locator: %w", err)
-	}
-	sourceEngine, err := resolver.engine(ctx, sourceLocator.EngineID)
-	if err != nil {
-		return nil, fmt.Errorf("get source engine %d: %w", sourceLocator.EngineID, err)
-	}
-	targetEngine, err := resolver.engine(ctx, targetParent.EngineID)
-	if err != nil {
-		return nil, fmt.Errorf("get target engine %d: %w", targetParent.EngineID, err)
-	}
-	if !engineselection.IsAvailable(sourceEngine) {
-		return nil, fmt.Errorf("source engine is unavailable")
-	}
-	if !engineselection.IsAvailable(targetEngine) {
-		return nil, fmt.Errorf("target engine is unavailable")
-	}
-	if err := requireTenantBusinessEngine(sourceEngine, tenantID, "source engine"); err != nil {
-		return nil, err
-	}
-	if err := requireTenantBusinessEngine(targetEngine, tenantID, "target engine"); err != nil {
-		return nil, err
-	}
-
-	resolvedSourceLocator := sourceLocator.Clone()
-	entrypoint := ""
-	if spec.SourceScope == "parent" {
-		if len(resolvedSourceLocator.Path) < 2 {
-			return nil, fmt.Errorf("source locator must include a parent directory")
+	var source workflowaccess.Source
+	var target workflowaccess.Target
+	var targetLocator *resourcetree.ResourceLocator
+	if spec.SourceKind != "" {
+		sourceURI := strings.TrimSpace(stringParam(params, "locator"))
+		if sourceURI == "" {
+			return nil, fmt.Errorf("locator is required")
 		}
-		entrypoint = resolvedSourceLocator.Path[len(resolvedSourceLocator.Path)-1]
-		resolvedSourceLocator.Path = append([]string{}, resolvedSourceLocator.Path[:len(resolvedSourceLocator.Path)-1]...)
-		if isObjectStorageEngine(sourceEngine.EngineType) {
-			resolvedSourceLocator.Type = resourcetree.TypePrefix
-		} else {
-			resolvedSourceLocator.Type = resourcetree.TypeDirectory
+		locator, err := resourcetree.ParseURI(sourceURI)
+		if err != nil {
+			return nil, fmt.Errorf("invalid locator: %w", err)
 		}
-	}
-	sourceFormat := spec.SourceFormat
-	if adapter.OperatorID == "gaussian_splat_to_ksplat" {
-		name := strings.ToLower(lastPathSegment(sourceLocator.Path))
-		if strings.HasSuffix(name, ".splat") {
+		engine, err := resolver.engine(ctx, locator.EngineID)
+		if err != nil {
+			return nil, err
+		}
+		if !engineselection.IsAvailable(engine) {
+			return nil, fmt.Errorf("source engine is unavailable")
+		}
+		if err := requireTenantBusinessEngine(engine, tenantID, "source engine"); err != nil {
+			return nil, err
+		}
+		resolved := locator.Clone()
+		entrypoint := ""
+		if spec.SourceScope == "parent" {
+			if len(resolved.Path) < 2 {
+				return nil, fmt.Errorf("source locator must include a parent directory")
+			}
+			entrypoint = resolved.Path[len(resolved.Path)-1]
+			resolved.Path = append([]string{}, resolved.Path[:len(resolved.Path)-1]...)
+			resolved.Type = resourcetree.TypeDirectory
+			if isObjectStorageEngine(engine.EngineType) {
+				resolved.Type = resourcetree.TypePrefix
+			}
+		}
+		sourceFormat := spec.SourceFormat
+		if len(spec.SourceFormats) > 0 {
+			sourceFormat = string(format.DetectFormat(lastPathSegment(locator.Path), nil))
+			supported := false
+			for _, candidate := range spec.SourceFormats {
+				if candidate == sourceFormat {
+					supported = true
+				}
+			}
+			if !supported {
+				return nil, fmt.Errorf("unsupported source raster format: %s", sourceFormat)
+			}
+		}
+		if adapter.OperatorID == "gaussian_splat_to_ksplat" && strings.HasSuffix(strings.ToLower(lastPathSegment(locator.Path)), ".splat") {
 			sourceFormat = "splat"
 		}
+		source, err = workflowaccess.ResolveSource(workflowaccess.ResourceSpec{
+			Engine: engine, Locator: resolved, Kind: spec.SourceKind, Format: sourceFormat, Entrypoint: entrypoint,
+			Metadata: commonModels.JSONMap{"locator": sourceURI, "engine_id": locator.EngineID},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("resolve source: %w", err)
+		}
 	}
-	source, err := workflowaccess.ResolveSource(workflowaccess.ResourceSpec{
-		Engine: sourceEngine, Locator: resolvedSourceLocator, Kind: spec.SourceKind, Format: sourceFormat, Entrypoint: entrypoint,
-		Metadata: commonModels.JSONMap{"locator": sourceURI, "engine_id": sourceLocator.EngineID},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("resolve source: %w", err)
+	if spec.TargetKind != "" {
+		parentURI, name := strings.TrimSpace(stringParam(params, "target_parent_locator")), strings.TrimSpace(stringParam(params, "target_name"))
+		if parentURI == "" || name == "" {
+			return nil, fmt.Errorf("target_parent_locator and target_name are required")
+		}
+		if spec.TargetExtension != "" && !strings.HasSuffix(strings.ToLower(name), strings.ToLower(spec.TargetExtension)) {
+			return nil, fmt.Errorf("target_name must end with %s", spec.TargetExtension)
+		}
+		if spec.TargetFormat == "tiff" && format.DetectFormat(name, nil) != format.FormatTIFF {
+			return nil, fmt.Errorf("target_name must be a TIFF file")
+		}
+		parent, err := resourcetree.ParseURI(parentURI)
+		if err != nil {
+			return nil, fmt.Errorf("invalid target_parent_locator: %w", err)
+		}
+		engine, err := resolver.engine(ctx, parent.EngineID)
+		if err != nil {
+			return nil, err
+		}
+		if !engineselection.IsAvailable(engine) {
+			return nil, fmt.Errorf("target engine is unavailable")
+		}
+		if err := requireTenantBusinessEngine(engine, tenantID, "target engine"); err != nil {
+			return nil, err
+		}
+		target, targetLocator, err = workflowaccess.ResolveTarget(workflowaccess.ResourceSpec{
+			Engine: engine, Locator: parent, Kind: spec.TargetKind, Format: spec.TargetFormat, Name: name,
+			WriteMode: stringParam(params, "write_mode"), ContentType: spec.TargetContentType,
+			Metadata: commonModels.JSONMap{"parent_locator": parentURI, "engine_id": parent.EngineID},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("resolve target: %w", err)
+		}
 	}
-	target, targetLocator, err := workflowaccess.ResolveTarget(workflowaccess.ResourceSpec{
-		Engine: targetEngine, Locator: targetParent, Kind: spec.TargetKind, Format: spec.TargetFormat,
-		Name: targetName, WriteMode: stringParam(params, "write_mode"), ContentType: spec.TargetContentType,
-		Metadata: commonModels.JSONMap{"parent_locator": targetParentURI, "engine_id": targetParent.EngineID},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("resolve target: %w", err)
-	}
-	writeMode := workflowLineageWriteMode(params)
-	plan, err := workflowaccess.New(source, target)
-	if err != nil {
-		return nil, err
+	var plan commonModels.JSONMap
+	switch {
+	case spec.SourceKind != "" && spec.TargetKind != "":
+		value, err := workflowaccess.New(source, target)
+		if err != nil {
+			return nil, err
+		}
+		plan = value.JSONMap()
+	case spec.SourceKind != "":
+		value, err := workflowaccess.NewSourcePlan(source)
+		if err != nil {
+			return nil, err
+		}
+		plan = value.JSONMap()
+	case spec.TargetKind != "":
+		value, err := workflowaccess.NewTargetPlan(target)
+		if err != nil {
+			return nil, err
+		}
+		plan = value.JSONMap()
+	default:
+		return nil, fmt.Errorf("access plan must declare a source or target")
 	}
 	options := commonModels.JSONMap{}
 	for _, name := range spec.OptionParams {
@@ -785,23 +827,19 @@ func (s *WorkflowEngineService) deriveWorkflowAccessPlan(
 		}
 		delete(params, name)
 	}
-	delete(params, "locator")
-	delete(params, "target_parent_locator")
-	delete(params, "target_name")
-	delete(params, "write_mode")
-	params["access_plan"] = plan.JSONMap()
+	for _, name := range []string{"locator", "target_parent_locator", "target_name", "write_mode"} {
+		delete(params, name)
+	}
+	params["access_plan"] = plan
 	if len(options) > 0 {
 		params["options"] = options
 	}
-	resourceType := resourcetree.TypeFile
-	if spec.TargetKind == workflowaccess.KindDirectory {
-		resourceType = resourcetree.TypeDirectory
-	} else if isObjectStorageEngine(targetEngine.EngineType) {
-		resourceType = resourcetree.TypeObject
+	if targetLocator == nil {
+		return nil, nil
 	}
-	producedTarget := workflowProducedTarget(targetLocator.EngineID, resourceType, targetLocator.Path)
-	producedTarget.WriteMode = writeMode
-	return []WorkflowProducedTarget{producedTarget}, nil
+	produced := workflowProducedTarget(targetLocator.EngineID, targetLocator.Type, targetLocator.Path)
+	produced.WriteMode = target.WriteMode
+	return []WorkflowProducedTarget{produced}, nil
 }
 
 func requireTenantBusinessEngine(engine *commonModels.Engine, tenantID uint, label string) error {

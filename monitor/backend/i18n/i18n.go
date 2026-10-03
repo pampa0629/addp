@@ -54,6 +54,7 @@ const (
 	MsgConfigurationConflict        = "monitor.configuration.version_conflict"
 	MsgSMTPRelayLoadFailed          = "monitor.smtp_relay.load_failed"
 	MsgSMTPRelayInvalid             = "monitor.smtp_relay.invalid"
+	MsgWeComTestFailed              = "monitor.platform_log.wecom_test_failed"
 	MsgSMTPRelayCredentialRequired  = "monitor.smtp_relay.credential_required"
 )
 

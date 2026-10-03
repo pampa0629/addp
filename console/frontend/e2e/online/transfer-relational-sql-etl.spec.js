@@ -41,8 +41,9 @@ async function chooseSelectOption(frame, select, optionText) {
 }
 
 async function selectOutputField(builder, fieldName) {
-  const checkbox = builder.getByTestId(`sql-output-field-${fieldName}`).locator('input[type="checkbox"]')
-  await checkbox.check({ force: true })
+  const field = builder.getByTestId(`sql-output-field-${fieldName}`)
+  await field.click()
+  await expect(field.getByRole('checkbox')).toBeChecked()
 }
 
 async function scanEngine(api, engineID) {
@@ -176,8 +177,9 @@ test('browser executes SQL ETL and verifies native field lineage in Manager', as
       env.ADDP_ONLINE_TEST_ENGINE_NAME
     )
 
-    const queryToggle = frame.getByTestId('task-query-source-toggle').locator('input[type="checkbox"]')
-    await queryToggle.check({ force: true })
+    const queryToggle = frame.getByTestId('task-query-source-toggle')
+    await queryToggle.locator('.el-switch__core').click()
+    await expect(queryToggle.getByRole('switch')).toBeChecked()
     await expect(frame.getByTestId('task-query-language-fixed')).toHaveText('SQL')
     await expect(frame.getByTestId('task-query-language-select')).toHaveCount(0)
     const builder = frame.getByTestId('relational-sql-builder')

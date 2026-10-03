@@ -227,6 +227,11 @@
         "deliveryErrors": {
           "notification_send_failed": "发送失败，请检查接收端和渠道配置",
           "notification_attempt_limit": "尝试次数已达上限",
+          "wecom_rate_limited": "企业微信限流，将按投递策略重试",
+          "wecom_rejected": "企业微信拒收，请核对机器人地址及配置",
+          "wecom_invalid_response": "企业微信响应无效，无法确认送达",
+          "wecom_network_failed": "企业微信连接失败，请检查网络",
+          "wecom_http_failed": "企业微信 HTTP 请求失败",
           "unknown": "投递失败，原因未识别"
         },
         "attempts": "累计尝试次数",
@@ -242,6 +247,8 @@
         "requeued": "已重新入队，送达结果请查看投递记录",
         "createdAt": "创建时间",
         "destination": "通知目标配置",
+        "wecom": "企业微信",
+        "wecomCredential": "机器人 Webhook 地址（留空保持当前值）",
         "email": "邮件",
         "url": "Webhook 地址",
         "recipients": "收件地址（逗号分隔）",
@@ -770,6 +777,7 @@
           "engine_catalog": "引擎目录",
           "engine_access_approval_requirement": "源授权批准要求",
           "engine_access_fulfillment": "源授权办理",
+          "engine_access_grant": "源数据授权",
           "engine_access_delegation": "引擎授权管理委派",
           "engine_descriptor": "引擎描述",
           "enrollment": "数据保护纳管",

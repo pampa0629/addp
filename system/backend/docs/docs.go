@@ -1971,6 +1971,99 @@ const docTemplate = `{
                 ]
             }
         },
+        "/engines/{id}/access_grants/{request_id}/revoke": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "当前租户用户须同时具备有效引擎管理委派和独立撤销权限；停用引擎仍可撤销。只收回此 Grant，同参重试恢复原撤销记录，不影响其他独立授权 | Current tenant user needs an effective engine management delegation and independent revocation Permission, even for disabled engines. Withdraws only this Grant; identical retries return original history without affecting independent Grants",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "源数据授权撤销 | Source Data Grant Revocation"
+                ],
+                "summary": "撤销指定源数据 Grant | Revoke a specific source-data Grant",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "引擎 ID | Engine ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "原办理 UUID | Original fulfillment UUID",
+                        "name": "request_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "撤销原因 | Revocation reason",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.RevokeEngineAccessGrantRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "不可变撤销事实 | Immutable revocation fact",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_engineaccess.GrantRevocation"
+                        }
+                    },
+                    "400": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.engine_access_grant.revoke"
+                ]
+            }
+        },
         "/engines/{id}/access_handling_requirement": {
             "post": {
                 "security": [
@@ -11969,6 +12062,28 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_system_internal_engineaccess.GrantRevocation": {
+            "type": "object",
+            "properties": {
+                "reason": {
+                    "type": "string"
+                },
+                "request_id": {
+                    "type": "string"
+                },
+                "revoked_at": {
+                    "type": "string"
+                },
+                "revoked_by_membership_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "revoked_by_principal_id": {
+                    "type": "string",
+                    "example": ""
+                }
+            }
+        },
         "github_com_addp_system_internal_engineaccess.HandlingRequirementView": {
             "type": "object",
             "properties": {
@@ -16005,6 +16120,17 @@ const docTemplate = `{
                 "catalog_path": {
                     "$ref": "#/definitions/plugin.EngineCatalogPath"
                 },
+                "reason": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.RevokeEngineAccessGrantRequest": {
+            "type": "object",
+            "required": [
+                "reason"
+            ],
+            "properties": {
                 "reason": {
                     "type": "string"
                 }

@@ -74,6 +74,11 @@ func approvalRequirementView(row *approvalRequirement) *ApprovalRequirementView 
 // part of this qualification.
 func (s *Service) withApprovalRequirementScope(ctx context.Context, actor Actor, engineID int64, permission string,
 	operation func(*Repository, func() error) error) error {
+	return s.withEngineManagementScope(ctx, actor, engineID, permission, true, operation)
+}
+
+func (s *Service) withEngineManagementScope(ctx context.Context, actor Actor, engineID int64, permission string,
+	requireLiveCatalog bool, operation func(*Repository, func() error) error) error {
 	if !validActor(actor) || engineID <= 0 {
 		return commonapi.ErrBadRequest
 	}
@@ -106,7 +111,7 @@ func (s *Service) withApprovalRequirementScope(ctx context.Context, actor Actor,
 		if err != nil {
 			return err
 		}
-		if s.catalogEligible == nil || !s.catalogEligible(scope.engine) {
+		if requireLiveCatalog && (s.catalogEligible == nil || !s.catalogEligible(scope.engine)) {
 			return commonapi.ErrForbidden
 		}
 		check := func() error {
@@ -123,7 +128,10 @@ func (s *Service) withApprovalRequirementScope(ctx context.Context, actor Actor,
 			if !hasCurrentTenantPermission(rows, actor.TenantID, permission, now) {
 				return commonapi.ErrForbidden
 			}
-			return scope.check(now)
+			if requireLiveCatalog {
+				return scope.check(now)
+			}
+			return scope.checkManagement(now)
 		}
 		if err := check(); err != nil {
 			return err

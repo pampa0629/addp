@@ -303,3 +303,10 @@ other = "Read candidate summaries for currently visible entries and initiate sou
 other = "Execute source-read fulfillment acceptance and settlement"
 [permissions.system.engine_access_fulfillment.execute.description]
 other = "Allow only the current Catalog tenant runtime to request first acceptance, historical settlement and closure; no human handling eligibility or data access"
+
+[permissions.system.engine_access_grant.revoke.name]
+other = "Revoke a specific source-data Grant"
+[permissions.system.engine_access_grant.revoke.description]
+other = "Withdraw one Grant with a current engine management delegation, even on a disabled engine; no effect on independent Grants or new access"
+[system.engine_access_grant.revocation_conflict]
+other = "This Grant was already revoked by a different actor or with a different reason; consult the original revocation history"

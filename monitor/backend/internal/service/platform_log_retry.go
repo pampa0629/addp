@@ -90,6 +90,14 @@ func (n *PlatformLogNotifications) Retry(ctx context.Context, id string, input L
 			if _, err := DecryptWebhookSecret(target.SecretCiphertext, n.key); err != nil {
 				return ErrLogRetryUnavailable
 			}
+		case "wecom":
+			if n.wecom == nil {
+				return ErrLogRetryUnavailable
+			}
+			key, err := DecryptWebhookSecret(target.SecretCiphertext, n.key)
+			if err != nil || !wecomKeyPattern.MatchString(key) || target.URL != wecomEndpoint {
+				return ErrLogRetryUnavailable
+			}
 		case "email":
 			if n.email == nil {
 				return ErrLogRetryUnavailable

@@ -28,6 +28,8 @@ Hosted Security T4 的一次性 IAM 夹具复用 `backend/cmd/online-test-fixtur
 
 正式 Runtime 首次受理（2026-10-03）：`POST /runtime/engine-access-fulfillments/:request_id/accept` 限定当前 `addp-catalog` Tenant Service 身份及 `.execute`。System 在本地锁外使用独立 `addp-system` Tenant Service OAuth 反查 Catalog 精确待核清依据，再按稳定 IAM 锁顺序核验原办理人、确认人、接收主体、独立办理权限／委派及批准要求版本；结果和审计原子提交。000180 仅给 `tenant.system_runtime` 最小 Catalog 依据读取权。可选 `SYSTEM_SERVICE_CLIENT_SECRET` 缺失不影响 Ready，只阻断新受理并返回明确 503；历史结果恢复和关闭不依赖它。移除配置停用 Client 并撤销原 Token Family，不借用其他模块凭据。此链路不是 Grant，不代表实际源读取或 Online T4 已验收。
 
+内部幂等 Grant 签发（2026-10-03）：000182 的 `system.engine_access_grants` 仅保存唯一原办理编号与数据库签发时刻，精确参数继续引用不可变受理回执。`engineaccess.writeAcceptedGrant` 核验当前机器、原办理人版本／权限、引擎管理委派与接收主体，按身份→引擎／委派→原请求→精确目标排序，写入和审计原子提交。锁等待和审计等待跨过原窗口都回滚；已有签发的同参重试只恢复原历史，不要求原操作人仍有效、不延长任何期限。不重新调用 Catalog 或用后续批准要求否定已经受理的同次请求。当前没有 HTTP 签发入口、Catalog 自动消费、Explicit Deny 或执行侧访问裁决；指定 Grant 撤销另由 000183 与下文独立撤销 API 维护，期限边界的待确认项见专题 §26.55。不得声称源数据访问已经生效。
+
 精确目标批准要求初始化（2026-10-02）：User 在当前 Tenant Context 中通过 `POST /api/v1/system/engines/:id/access_approval_requirements` 显式建立版本 1 的 `catalog` 要求；只接受完整结构化路径和原因，不接受模式、版本或操作者身份。独立 `system.engine_access_approval_requirement.initialize` 与当前引擎管理委派取交集；读取使用独立 `.read` 与当前委派。两项权限由 000174 登记，均不默认分配给内置角色。身份 → 引擎／委派 → 精确目标锁，等待后按数据库墙钟再核验资格，配置和审计同事务。重复初始化返回 409，不覆盖既有模式，也不创建 Grant。退出、重新启用及实际 Grant 消费者仍未开放；可信跨模块首次受理已接通，不存在批准要求不能视为独立批准。此入口不依赖 Catalog 在线，没有前端配置入口。
 
 内部业务确认资格（2026-10-02）：首次受理还须从 owner 业务决定获取原确认人的身份引用，与办理人及接收账号共同去重升序共享锁定。确认人的历史授权版本只作审计，实时核验原 Tenant Membership、当前身份及 `catalog.entry.read`／`catalog.sharing_decision.create` 的有效 Tenant Scope 授权；原办理人仍严格匹配请求版本。权限和成员自然到期在业务核验后按数据库墙钟复核。历史核清及未受理关闭不重新要求确认资格；内部入参不构成可信 owner 证明；正式 Runtime 受理在数据库锁外通过独立 `addp-system` Tenant Service OAuth 反查 Catalog 原责任依据，事务内核验独立办理 Permission。没有实际 Grant 接口。
@@ -404,6 +406,7 @@ frontend/src/
 - `POST /api/v1/system/engines/test-connection` - 创建前测试连接
 - `POST /api/v1/system/engines/:id/catalog/children` - 统一列出实时 Engine Catalog 子节点，支持数据库、对象存储、文件系统和图数据库等多层目录发现；路由中的 `catalog` 已由 Engine 上下文限定
 - `POST /api/v1/system/engines/:id/catalog/facts` - 按结构化 EngineCatalogPath 读取单个叶子的实时结构事实；列表省略的字段等详情从这里按需读取
+- `POST /api/v1/system/engines/:id/access_grants/:request_id/revoke` - 当前 Tenant User 的独立撤销 Permission 与有效引擎管理委派共同核验，只收回指定 Grant；停用引擎仍允许撤销，不依赖 Catalog 在线，不影响其他独立授权。原因必填，历史及审计同事务追加，同参重试恢复原撤销事实，不恢复权限。
 
 `GET /engines` 对 User 和 Service Principal 都返回脱敏列表。`GET /engines/:id` 对 User 返回脱敏连接信息；具有 `system.engine.read` 的 Tenant Service Principal 返回同 Tenant 的解密连接信息，跨 Tenant 返回 403。
 
@@ -454,6 +457,8 @@ API 消费方不是 Principal，不能分配 Role。首期只绑定 Service Cons
 - 服务实例列表显示当前查询最后一次成功获取数据的本地时间，包括成功返回空列表的情况；该时间只表示列表获取时间，不代表实例心跳时间。刷新失败立即提示数据已过期；两个刷新周期（20 秒）没有成功更新时同样提示，保留同一查询的上次结果供查看。重试完成前保留失败及过期提示，只有当前查询成功响应才清除。切换筛选或分页、重置及未完成自定义时间范围时清除上一查询的结果和获取时间；旧响应不得更新获取时间。页面恢复可见时立即检查数据时效并尝试刷新。获取时间和过期状态不写入 URL。
 - 同一实例的租约过期及恢复由确定性浏览器用例连续验证：全部状态列表自动从 UP 更新为 DOWN；已离线实例不出现在 UP 筛选中，恢复实例自动退出 DOWN 筛选；组合条件与 URL 保持不变。租约超时只说明失联，离线时不推断进程持续运行时长；相同进程续租恢复后继续按原启动时间计算。真实 System/Gateway 注册和恢复链路另由隔离部署中的 T4 `module-registry-recovery` 验证，不以受控 API 夹具替代。
 
+
+内部签发结果只读找回（2026-10-03）：`engineaccess.resolveAcceptedGrant` 只观察已提交签发历史，原完整绑定匹配和当前 Runtime 资格均须通过；未找到不是关闭或授权许可。受理与签发历史共用自有只读事务边界，拒绝暴露调用事务自身未提交记录，不取仲裁锁，先结束历史读取再开始资格事务。签发入口复用此找回路径，但新签发仍在权威写事务内查重与重新核验。尚未开放 HTTP 查询或执行侧裁决。
 
 ## 模块实例运行日志
 

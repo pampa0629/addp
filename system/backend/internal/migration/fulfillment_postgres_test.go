@@ -18,6 +18,17 @@ func TestApprovalRequirementForwardMigrationAgainstPostgres(t *testing.T) {
 	testCoordinationForwardMigration(t, "000168_engine_access_approval_requirements.up.sql", 168, "engine_access_approval_requirements", nil)
 }
 
+func TestFulfillmentGrantForwardMigrationAgainstPostgres(t *testing.T) {
+	testCoordinationForwardMigration(t, "000182_engine_access_grants.up.sql", 182, "engine_access_grants", func(db *sql.DB) func() {
+		return func() {
+			var grants int64
+			if err := db.QueryRow("SELECT count(*) FROM system.engine_access_grants").Scan(&grants); err != nil || grants != 0 {
+				t.Fatalf("migration must not issue grants: count=%d err=%v", grants, err)
+			}
+		}
+	})
+}
+
 func testCoordinationForwardMigration(t *testing.T, filename string, expectedVersion int64, table string, fixture func(*sql.DB) func()) {
 	t.Helper()
 	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
@@ -80,7 +91,11 @@ func testCoordinationForwardMigration(t *testing.T, filename string, expectedVer
 	if permissionsBefore != permissionsAfter || versionsBefore != versionsAfter {
 		t.Fatal("coordination migration changed IAM grants or authorization versions")
 	}
-	if err := db.QueryRow("SELECT count(*) FROM pg_trigger WHERE tgrelid = $1::regclass AND NOT tgisinternal", "system."+table).Scan(&triggers); err != nil || triggers != 2 {
+	expectedTriggers := int64(2)
+	if expectedVersion == 182 {
+		expectedTriggers = 3 // insertion window plus immutable row/truncate guards
+	}
+	if err := db.QueryRow("SELECT count(*) FROM pg_trigger WHERE tgrelid = $1::regclass AND NOT tgisinternal", "system."+table).Scan(&triggers); err != nil || triggers != expectedTriggers {
 		t.Fatalf("immutable guards=%d err=%v", triggers, err)
 	}
 	if expectedVersion == 168 {

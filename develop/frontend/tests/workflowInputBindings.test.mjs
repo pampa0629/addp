@@ -159,4 +159,20 @@ assert.equal(mod.isPublicWorkflowParameter({ name: 'locator', type: 'string' }),
 assert.equal(mod.isPublicWorkflowParameter({ name: 'schema', type: 'string' }), true)
 assert.equal(mod.isPublicWorkflowParameter({ name: '数据源', type: 'ui', ui_type: 'resource_tree_picker' }), false)
 
+
+// Raster ports have a distinct contract; plain objects and vectors cannot feed them.
+assert.equal(mod.areWorkflowTypesCompatible('raster', 'raster'), true)
+assert.equal(mod.areWorkflowTypesCompatible('geodataframe', 'raster'), false)
+assert.equal(mod.areWorkflowTypesCompatible('raster', 'object'), false)
+assert.deepEqual(mod.applyWorkflowInputRefs({
+  parameters: [
+    { name: 'input_raster', type: 'raster', param_type: 'input' },
+    { name: 'other_raster', type: 'raster', param_type: 'input' }
+  ],
+  inputEdges: [
+    { sourceId: 'left', sourceType: 'raster', targetParam: 'input_raster' },
+    { sourceId: 'right', sourceType: 'raster', targetParam: 'other_raster' }
+  ]
+}), { input_raster: { $ref: 'left' }, other_raster: { $ref: 'right' } })
+
 console.log('workflowInputBindings tests passed')

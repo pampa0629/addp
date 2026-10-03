@@ -659,6 +659,21 @@ definitions:
       version:
         type: integer
     type: object
+  github_com_addp_system_internal_engineaccess.GrantRevocation:
+    properties:
+      reason:
+        type: string
+      request_id:
+        type: string
+      revoked_at:
+        type: string
+      revoked_by_membership_id:
+        example: ""
+        type: string
+      revoked_by_principal_id:
+        example: ""
+        type: string
+    type: object
   github_com_addp_system_internal_engineaccess.HandlingRequirementView:
     properties:
       mode:
@@ -3359,6 +3374,13 @@ definitions:
     - catalog_path
     - reason
     type: object
+  internal_api.RevokeEngineAccessGrantRequest:
+    properties:
+      reason:
+        type: string
+    required:
+    - reason
+    type: object
   internal_api.RuntimeEngineRegistrationRequest:
     properties:
       capabilities:
@@ -5461,6 +5483,71 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - system.engine_access_delegation.revoke
+  /engines/{id}/access_grants/{request_id}/revoke:
+    post:
+      consumes:
+      - application/json
+      description: 当前租户用户须同时具备有效引擎管理委派和独立撤销权限；停用引擎仍可撤销。只收回此 Grant，同参重试恢复原撤销记录，不影响其他独立授权
+        | Current tenant user needs an effective engine management delegation and
+        independent revocation Permission, even for disabled engines. Withdraws only
+        this Grant; identical retries return original history without affecting independent
+        Grants
+      parameters:
+      - description: 引擎 ID | Engine ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 原办理 UUID | Original fulfillment UUID
+        in: path
+        name: request_id
+        required: true
+        type: string
+      - description: 撤销原因 | Revocation reason
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.RevokeEngineAccessGrantRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 不可变撤销事实 | Immutable revocation fact
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_engineaccess.GrantRevocation'
+        "400":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "401":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "403":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "404":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "409":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "500":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 撤销指定源数据 Grant | Revoke a specific source-data Grant
+      tags:
+      - 源数据授权撤销 | Source Data Grant Revocation
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.engine_access_grant.revoke
   /engines/{id}/access_handling_requirement:
     post:
       consumes:

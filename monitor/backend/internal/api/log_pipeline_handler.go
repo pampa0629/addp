@@ -32,7 +32,7 @@ type LogIncidentAction struct {
 }
 type LogCredentialInput struct {
 	Version uint64 `json:"version" binding:"required"`
-	Secret  string `json:"secret" binding:"required"`
+	Secret  string `json:"secret" binding:"required"` // Webhook HMAC 密钥；企业微信完整机器人地址 | Webhook HMAC secret; WeCom full robot URL.
 }
 
 // Summary godoc
@@ -173,6 +173,7 @@ func (h *LogPipelineHandler) Destinations(c *gin.Context) {
 
 // CreateDestination godoc
 // @Summary 创建平台日志通知目标 | Create platform log notification destination
+// @Description 渠道为 webhook/email/wecom；wecom 的 url 与 recipients 留空，凭据另行设置 | Channels are webhook/email/wecom; wecom requires empty url and recipients with a separate credential write
 // @Tags 平台日志链路 | Platform Log Pipeline
 // @Produce json
 // @Security BearerAuth
@@ -223,7 +224,8 @@ func (h *LogPipelineHandler) UpdateDestination(c *gin.Context) {
 }
 
 // SetCredential godoc
-// @Summary 设置平台日志通知签名凭据 | Set platform log notification signing credential
+// @Summary 设置平台日志通知渠道凭据 | Set platform log notification channel credential
+// @Description Webhook 使用 HMAC 密钥；企业微信使用完整机器人地址，key 加密保存且不回显 | Webhook uses an HMAC secret; WeCom uses the full robot URL, with its key encrypted and never returned
 // @Tags 平台日志链路 | Platform Log Pipeline
 // @Produce json
 // @Security BearerAuth
@@ -288,6 +290,7 @@ func (h *LogPipelineHandler) DeleteDestination(c *gin.Context) {
 // @Failure 400 {object} ErrorResponse
 // @Failure 403 {object} ErrorResponse
 // @Failure 409 {object} ErrorResponse
+// @Failure 502 {object} ErrorResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["monitor.log_notification.update"]
 // @Router /platform/log-notification-destinations/{id}/test [post]
@@ -436,6 +439,10 @@ func logRespond(c *gin.Context, v any, err error) {
 		status = 404
 		key = monitori18n.MsgInvalidAlertID
 		code = "platform_log_not_found"
+	case errors.Is(err, service.ErrWeComRejected), errors.Is(err, service.ErrWeComRateLimited), errors.Is(err, service.ErrWeComResponse), errors.Is(err, service.ErrWeComNetwork), errors.Is(err, service.ErrWeComHTTP):
+		status = 502
+		key = monitori18n.MsgWeComTestFailed
+		code = "wecom_test_failed"
 	case errors.Is(err, service.ErrEmailSenderUnavailable):
 		status = 503
 		key = monitori18n.MsgEmailSenderUnavailable

@@ -1,6 +1,6 @@
 # System IAM 数据模型与迁移规范
 
-更新日期：2026-10-02
+更新日期：2026-10-03
 
 状态：System 模块正式实现规范。本文定义已投入运行的 IAM PostgreSQL 模型、事务边界、迁移路径和安全约束。
 
@@ -9,6 +9,10 @@
 System 是 ADDP 唯一 IAM 逻辑权威，负责 Principal、账号、认证方式、Tenant Membership、组织关系、Role/Permission、会话、OAuth 协议事实和 IAM 安全审计。
 
 业务资源和资源级授权事实仍归对应 owner。System 不复制全平台业务资源，也不建立中央资源 ACL 大表。
+
+System 自身拥有引擎访问控制领域。该领域的 `engine_access_grants` 是精确源数据共享的不可变签发历史：以原办理编号唯一引用 `engine_access_fulfillment_outcomes`，参数仍由已提交的不可变受理回执提供，不复制 Catalog 责任、业务决定或 IAM Role/Permission。迁移 000182 不自动签发、不新增权限或角色分配、不推进 IAM 授权版本；签发不改变 AuthContext 的功能 Permission。内部签发与高风险审计同事务，插入触发器按数据库墙钟检查原 accepted 窗口并拒绝客户端回填时间。当前没有公开签发或执行侧消费入口；签发历史不能代替后续到期、撤销、Deny 和当前接收主体的访问裁决。
+
+迁移 000183 增加 `engine_access_grant_revocations`：以原办理 UUID 唯一引用 Grant，追加撤销者 Principal／Tenant Membership、数据库墙钟与必填原因；不复制或改写原目标、接收主体、动作和期限。行及整表历史不可 UPDATE／DELETE／TRUNCATE，插入核验撤销者为原 Tenant 的 User 成员。真实撤销命令发布独立 `system.engine_access_grant.revoke`，不默认分配 Role 或账号，不推进既有授权版本；服务核验当前账号、Token、Permission 和引擎管理委派，并同事务写入高风险撤销审计。引擎停用或失去实时目录能力仍允许收回旧授权，账号或委派失效则拒绝；不修改新授予的启用条件。撤销历史不是 Explicit Deny，也不表示执行侧数据权限已经接通。
 
 IAM 权威表位于 PostgreSQL `system` schema，只允许 `system/backend/internal/migration/sql/*.up.sql` 单向迁移。IAM 表不得进入 GORM `AutoMigrate`，运行时不得根据表存在性补列、建表或写兼容种子。
 
@@ -143,7 +147,7 @@ Role、Assignment、Membership、组织关系或 Principal 状态变化时，数
 
 迁移 `000180_catalog_fulfillment_basis_runtime` 登记不可委托、不可租户定制的 `catalog.sharing_fulfillment.read`，只授予内置 `tenant.system_runtime`；为存量已初始化 Tenant 和未来新 Tenant 接入 `addp-system`。OAuth Client 初始停用且 Secret 为空，SQL 不保存明文或借用其他服务 Secret。`SYSTEM_SERVICE_CLIENT_SECRET` 是可选独立配置：缺失不阻断 System Ready，新受理明确返回 503 `fulfillment_capability_unavailable`，历史核清／关闭及同参结果恢复仍可用；移除配置通过既有 Provisioner 停用 Client 并撤销活动 Token Family，不回退独立批准或推断 Catalog 退出。未运行真实 OAuth 双服务 Online T4，不以受控 owner Transport 夹具替代其验收。
 
-源授权办理协调底座使用 `system.engine_access_fulfillment_outcomes` 保存同次请求唯一、不可改写的 `accepted` 或 `closed` 结果。它不是 Grant、批准要求或访问凭据；没有结果与已关闭严格不同。请求编号绑定租户、机器主体、精确结构化路径、决定引用、批准要求版本及参数；System 数据库墙钟产生受理时间及不超过原授权到期的 5 分钟截止时间。结果与最小审计同事务，重试只返回原结果。正式新受理已由专用 Runtime 接口消费该底座，真实业务决定与当前资格独立核验；仍未写入 Grant，不能用受理回执签发内容访问。
+源授权办理协调底座使用 `system.engine_access_fulfillment_outcomes` 保存同次请求唯一、不可改写的 `accepted` 或 `closed` 结果。它不是 Grant、批准要求或访问凭据；没有结果与已关闭严格不同。请求编号绑定租户、机器主体、精确结构化路径、决定引用、批准要求版本及参数；System 数据库墙钟产生受理时间及不超过原授权到期的 5 分钟截止时间。结果与最小审计同事务，重试只返回原结果。正式新受理已由专用 Runtime 接口消费该底座，真实业务决定与当前资格独立核验；受理接口本身不写入 Grant，内部签发另由 000182 对应路径落实。受理回执不能代替内容访问裁决。
 
 核清读取使用独立只读事务，拒绝在受理写事务中读取自身未提交结果；与仲裁共用唯一的完整绑定匹配路径，不取请求或目标仲裁锁。不存在返回未找到，参数不同返回绑定冲突，数据库错误原样保留；查询均不创建关闭结果、不追加办理审计。退出、更换批准要求版本或原窗口到期不改变历史查询结果，也不因此重新授予或续期。
 

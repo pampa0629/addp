@@ -29,7 +29,7 @@ from operators.vector_tile_operators import (
     vector_to_pmtiles,
 )
 from operators.spatial_transform_operators import crs_to_projjson, vector_reproject
-from operators.raster_operators import _authority_code_from_wkt, _translate_to_cog, _write_json, build_raster_mosaic, tiff_to_cog
+from operators.raster_operators import _authority_code_from_wkt, _translate_to_cog, _write_json, build_raster_mosaic
 import pyarrow as pa
 from geometry_batches import decode_geometry_batch_arrow, encode_geometry_batch_arrow
 
@@ -145,33 +145,6 @@ def test_operator_metadata_preserves_param_type():
     assert buffer_params["distance"]["param_type"] == "param"
     assert load_params["connection_info"]["param_type"] == "param"
 
-
-def test_tiff_to_cog_metadata_public_contract():
-    operators = {operator["name"]: operator for operator in list_operators()}
-
-    assert "tiff_to_cog" in operators
-
-    params = {param["name"]: param for param in operators["tiff_to_cog"]["parameters"]}
-    runtime_only = {"engine_id", "connection_info", "schema", "table", "path"}
-
-    assert {"source_uri", "target_uri", "gdal_env", "assign_srs", "compression", "blocksize", "overview_resampling", "overwrite"} <= set(params)
-    assert not runtime_only & set(params)
-
-    assert params["source_uri"]["required"] is True
-    assert params["target_uri"]["required"] is True
-    assert params["gdal_env"]["required"] is False
-    assert params["assign_srs"]["required"] is False
-    assert params["compression"]["enum"] == ["DEFLATE", "LZW", "ZSTD", "JPEG", "NONE"]
-    assert params["blocksize"]["type"] == "integer"
-    assert params["overwrite"]["type"] == "boolean"
-
-    example = operators["tiff_to_cog"]["detailed_description"]["workflow_example"]["params"]
-    assert "source_uri" in example
-    assert "target_uri" in example
-    assert "gdal_env" in example
-    assert "assign_srs" in example
-    assert not runtime_only & set(example)
-    assert "direct" in operators["tiff_to_cog"]["execution_modes"]
 
 
 def test_vector_to_pmtiles_metadata_uses_access_plan_contract():
@@ -546,7 +519,9 @@ def test_translate_to_cog_enables_gdal_threads(monkeypatch):
             return kwargs
 
         def Translate(self, target, source, options=None):
-            return object()
+            class Dataset:
+                def FlushCache(self): pass
+            return Dataset()
 
     fake_gdal = FakeGDAL()
     monkeypatch.setattr("operators.raster_operators._import_gdal", lambda: fake_gdal)
@@ -759,7 +734,7 @@ def test_all_operator_metadata_declares_execution_modes_and_effects():
     by_name = {operator["name"]: operator for operator in operators}
     assert by_name["load"]["effects"] == ["read"]
     assert by_name["save"]["effects"] == ["write"]
-    assert by_name["tiff_to_cog"]["effects"] == ["read", "write"]
+    assert by_name["raster_to_cog"]["effects"] == ["read", "write"]
     assert by_name["build_raster_mosaic"]["effects"] == ["read", "write"]
     assert by_name["vector_to_pmtiles"]["effects"] == ["read", "write"]
 
@@ -940,64 +915,6 @@ def test_vector_reproject_direct_rejects_non_ewkb_arrow_schema_encoding():
     result = response.get_json()
     assert result["error_code"] == "INVALID_PARAMS"
     assert "Arrow schema geometry encoding" in result["error"]
-
-
-def test_tiff_to_cog_does_not_pass_gdal_overwrite():
-    calls = []
-
-    def fake_run_command(args, extra_env=None):
-        calls.append(args)
-        class Completed:
-            stdout = "{}"
-        return Completed()
-
-    import operators.raster_operators as raster_operators
-
-    original_run_command = raster_operators._run_command
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        target = Path(tmp_dir) / "target.cog.tif"
-        target.write_text("old")
-        raster_operators._run_command = fake_run_command
-        try:
-            result = tiff_to_cog(
-                source_uri="/tmp/source.tif",
-                target_uri=str(target),
-                overwrite=True,
-            )
-        finally:
-            raster_operators._run_command = original_run_command
-
-    assert result["status"] == "success"
-    assert calls
-    assert "-overwrite" not in calls[0]
-    assert not target.exists()
-
-
-def test_tiff_to_cog_passes_assign_srs_to_gdal_translate():
-    calls = []
-
-    def fake_run_command(args, extra_env=None):
-        calls.append(args)
-        class Completed:
-            stdout = "{}"
-        return Completed()
-
-    import operators.raster_operators as raster_operators
-
-    original_run_command = raster_operators._run_command
-    raster_operators._run_command = fake_run_command
-    try:
-        result = tiff_to_cog(
-            source_uri="/tmp/source.tif",
-            target_uri="/tmp/target.cog.tif",
-            assign_srs="+proj=longlat +datum=WGS84 +no_defs",
-        )
-    finally:
-        raster_operators._run_command = original_run_command
-
-    assert result["status"] == "success"
-    assert "-a_srs" in calls[0]
-    assert calls[0][calls[0].index("-a_srs") + 1] == "+proj=longlat +datum=WGS84 +no_defs"
 
 
 def test_vector_to_pmtiles_uses_source_env_for_ogr_and_target_env_for_publish():

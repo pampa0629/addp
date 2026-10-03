@@ -28,6 +28,7 @@ type workflowOperatorAdapterSpec struct {
 
 type workflowAccessPlanSpec struct {
 	SourceFormat      string
+	SourceFormats     []string
 	SourceKind        string
 	SourceScope       string
 	SourceDataTypes   []string
@@ -40,8 +41,11 @@ type workflowAccessPlanSpec struct {
 
 var workflowOperatorAdapterSpecs = map[string]map[string]workflowOperatorAdapterSpec{
 	"geopython_workflow": {
-		"load": workflowPythonLoadAdapterSpec(),
-		"save": workflowPythonSaveAdapterSpec(),
+		"load":          workflowPythonLoadAdapterSpec(),
+		"raster_load":   workflowRasterAdapterSpec("raster_load"),
+		"raster_save":   workflowRasterAdapterSpec("raster_save"),
+		"raster_to_cog": workflowRasterAdapterSpec("raster_to_cog"),
+		"save":          workflowPythonSaveAdapterSpec(),
 	},
 	"spark_workflow": {
 		"load": workflowLoadAdapterSpec("load"),
@@ -54,6 +58,42 @@ var workflowOperatorAdapterSpecs = map[string]map[string]workflowOperatorAdapter
 	},
 	"model3d_workflow":    model3DWorkflowAdapterSpecs(),
 	"pointcloud_workflow": pointCloudWorkflowAdapterSpecs(),
+}
+
+// Raster IO uses the same access-plan adapter, with source/target independently optional.
+func workflowRasterAdapterSpec(id string) workflowOperatorAdapterSpec {
+	options := []commonModels.ParameterDescriptor(nil)
+	if id == "raster_to_cog" {
+		options = []commonModels.ParameterDescriptor{
+			{Name: "source_crs", Type: "string", Required: false, Description: "缺失时补充源 CRS"},
+			{Name: "compression", Type: "string", Default: "DEFLATE", Description: "COG 压缩算法", Enum: []string{"DEFLATE", "LZW", "ZSTD", "NONE"}},
+			{Name: "blocksize", Type: "integer", Default: 512, Description: "COG 块大小"},
+			{Name: "overview_resampling", Type: "string", Default: "nearest", Description: "COG 金字塔重采样", Enum: []string{"nearest", "bilinear", "cubic", "cubicspline", "lanczos", "average", "mode"}},
+		}
+	}
+	spec := conversionAdapterSpec(id, "栅格", "", "file", "file", nil, "tiff", "file", "", "image/tiff", options)
+	spec.AccessPlan.SourceFormats = []string{"tiff", "png", "jpeg"}
+	for i := range spec.PublicParameters {
+		parameter := &spec.PublicParameters[i]
+		if parameter.Name == "source_resource" {
+			parameter.UIConfig["file_formats"] = spec.AccessPlan.SourceFormats
+			parameter.UIConfig["selectable_node_types"] = []string{"file", "object"}
+		}
+		if parameter.Name == "target_resource" {
+			parameter.UIConfig["target_name_extension"] = ".tif"
+		}
+	}
+	if id == "raster_load" {
+		spec.AccessPlan.TargetKind = ""
+		spec.PublicParameters = spec.PublicParameters[:2]
+	} else if id == "raster_save" {
+		spec.AccessPlan.SourceKind = ""
+		spec.PublicParameters = spec.PublicParameters[2:]
+	}
+	if id != "raster_to_cog" {
+		spec.RuntimeParams = []string{"access_plan"}
+	}
+	return spec
 }
 
 func workflowSuperMapS3MAdapterSpec() workflowOperatorAdapterSpec {

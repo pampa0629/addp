@@ -12,7 +12,9 @@ import (
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/engine/plugins/objectstore"
+	"github.com/addp/common/engine/workflowaccess"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/resourcetree"
 	rastercogref "github.com/addp/manager/internal/cog"
 	"github.com/addp/manager/internal/engineaccess"
 
@@ -75,28 +77,22 @@ func (e *ManagerRasterCOGExecutor) BuildRasterCOG(ctx context.Context, req Raste
 		return nil, errors.New("raster COG source target is incomplete")
 	}
 
-	sourceURI, sourceFacts, err := e.prepareSourceURI(ctx, req.Task.TenantID, req.Config.Target.SourceEngineID, req.Config.Target.FullName)
+	plan, sourceFacts, err := e.prepareAccessPlan(ctx, req)
 	if err != nil {
 		return nil, err
 	}
-	targetURI, gdalEnv, err := e.prepareTargetURI(ctx, req.Config.Result.StorageRef)
-	if err != nil {
-		return nil, err
-	}
-	workflowEngine, workflowOperator, err := e.selectDirectWorkflowRuntime(ctx, req.Task.TenantID, "tiff_to_cog")
+	workflowEngine, workflowOperator, err := e.selectDirectWorkflowRuntime(ctx, req.Task.TenantID, "raster_to_cog")
 	if err != nil {
 		return nil, err
 	}
 	invokeResult, err := dbbridge.InvokeOperator(ctx, &workflowEngine, workflowOperator.Name, plugin.OperatorInvokeRequest{
 		Params: map[string]interface{}{
-			"source_uri":          sourceURI,
-			"target_uri":          targetURI,
-			"gdal_env":            gdalEnv,
-			"assign_srs":          rasterCOGAssignSRS(req.Config.Raster),
-			"compression":         req.Config.COG.Compression,
-			"blocksize":           req.Config.COG.BlockSize,
-			"overview_resampling": req.Config.COG.OverviewResampling,
-			"overwrite":           true,
+			"access_plan": plan.JSONMap(),
+			"options": commonModels.JSONMap{
+				"source_crs":  rasterCOGSourceCRS(req.Config.Raster),
+				"compression": req.Config.COG.Compression, "blocksize": req.Config.COG.BlockSize,
+				"overview_resampling": strings.ToLower(req.Config.COG.OverviewResampling),
+			},
 		},
 	})
 	if err != nil {
@@ -195,73 +191,54 @@ func authoritativeRasterCRS(runtimeCRS, configuredCRS string, sourceSRID int) st
 	return firstNonEmptyConfig(runtimeCRS, configuredCRS, expectedCRS)
 }
 
-func rasterCOGAssignSRS(raster RasterCOGRasterConfig) string {
-	if raster.SourceSRID == 4326 {
-		return "+proj=longlat +datum=WGS84 +no_defs"
-	}
+func rasterCOGSourceCRS(raster RasterCOGRasterConfig) string {
 	if raster.SourceSRID > 0 {
 		return fmt.Sprintf("EPSG:%d", raster.SourceSRID)
 	}
 	return strings.TrimSpace(raster.SourceCRS)
 }
 
-func (e *ManagerRasterCOGExecutor) prepareSourceURI(ctx context.Context, tenantID, engineID uint, fullName string) (string, commonModels.JSONMap, error) {
-	engine, err := e.systemClient.GetEngineForTenant(ctx, tenantID, engineID)
+func (e *ManagerRasterCOGExecutor) prepareAccessPlan(ctx context.Context, req RasterCOGExecutionRequest) (workflowaccess.Plan, commonModels.JSONMap, error) {
+	engine, err := e.systemClient.GetEngineForTenant(ctx, req.Task.TenantID, req.Config.Target.SourceEngineID)
 	if err != nil {
-		return "", nil, fmt.Errorf("get source engine: %w", err)
+		return workflowaccess.Plan{}, nil, fmt.Errorf("get source engine: %w", err)
 	}
 	if err := engineaccess.EnsureAvailable(engine); err != nil {
-		return "", nil, err
+		return workflowaccess.Plan{}, nil, err
 	}
-	if engine.TenantID != nil && *engine.TenantID != tenantID {
-		return "", nil, ErrEngineAccessDenied
+	if engine.TenantID == nil || *engine.TenantID != req.Task.TenantID {
+		return workflowaccess.Plan{}, nil, ErrEngineAccessDenied
 	}
-	engineType := strings.ToLower(strings.TrimSpace(engine.EngineType))
-	connInfo := plugin.ConnectionInfo(engine.ConnectionInfo)
-	switch engineType {
-	case "nfs", "nas", "localfs", "filesystem":
-		basePath := firstNonEmptyConfig(plugin.GetString(connInfo, "mount_path"), plugin.GetString(connInfo, "export_path"), plugin.GetString(connInfo, "base_path"))
-		if basePath == "" {
-			return "", nil, errors.New("source file engine requires mount_path or export_path for GDAL access")
-		}
-		sourcePath := joinFilePath(basePath, fullName)
-		return sourcePath, commonModels.JSONMap{"engine_type": engine.EngineType, "access_method": "mounted_path"}, nil
-	case "minio", "s3":
-		rawURL, err := presignObjectURL(ctx, engineType, connInfo, fullName)
-		if err != nil {
-			return "", nil, err
-		}
-		return "/vsicurl/" + rawURL, commonModels.JSONMap{"engine_type": engine.EngineType, "access_method": "vsicurl_presigned_url"}, nil
-	default:
-		return "", nil, fmt.Errorf("source engine %s is not supported by COG GDAL runtime", engine.EngineType)
-	}
-}
-
-func (e *ManagerRasterCOGExecutor) prepareTargetURI(ctx context.Context, storageRef string) (string, commonModels.JSONMap, error) {
-	bucket, objectName, err := rastercogref.ObjectLocation(storageRef, e.defaultBucket)
+	locator, err := resourcetree.ParseURI(req.Config.Target.Locator)
 	if err != nil {
-		return "", nil, err
+		return workflowaccess.Plan{}, nil, err
+	}
+	if locator.EngineID != engine.ID || locator.FullName() != req.Config.Target.FullName {
+		return workflowaccess.Plan{}, nil, errors.New("source locator does not match COG source")
+	}
+	source, err := workflowaccess.ResolveSource(workflowaccess.ResourceSpec{Engine: engine, Locator: locator, Kind: workflowaccess.KindFile, Format: "tiff"})
+	if err != nil {
+		return workflowaccess.Plan{}, nil, err
+	}
+	bucket, objectName, err := rastercogref.ObjectLocation(req.Config.Result.StorageRef, e.defaultBucket)
+	if err != nil {
+		return workflowaccess.Plan{}, nil, err
 	}
 	if e.infraEndpoint == "" || e.infraAccessKey == "" || e.infraSecretKey == "" {
-		return "", nil, errors.New("infra MinIO config is required for raster COG generation")
+		return workflowaccess.Plan{}, nil, errors.New("infra MinIO config is required for raster COG generation")
 	}
 	if err := e.ensureTargetBucket(ctx, bucket); err != nil {
-		return "", nil, err
+		return workflowaccess.Plan{}, nil, err
 	}
-	gdalEndpoint, gdalUseSSL := objectstore.ParseEndpoint(e.infraEndpoint, e.infraUseSSL)
-	gdalEndpoint = objectstore.NormalizeEndpoint(gdalEndpoint)
-	if gdalEndpoint == "" {
-		return "", nil, errors.New("infra MinIO endpoint is required for COG GDAL environment")
+	access, err := workflowaccess.ResolveObjectStoreTarget(plugin.ConnectionInfo{
+		"endpoint": e.infraEndpoint, "access_key": e.infraAccessKey, "secret_key": e.infraSecretKey, "use_ssl": e.infraUseSSL,
+	}, bucket, objectName, workflowaccess.KindFile)
+	if err != nil {
+		return workflowaccess.Plan{}, nil, err
 	}
-	env := commonModels.JSONMap{
-		"AWS_S3_ENDPOINT":                         gdalEndpoint,
-		"AWS_ACCESS_KEY_ID":                       e.infraAccessKey,
-		"AWS_SECRET_ACCESS_KEY":                   e.infraSecretKey,
-		"AWS_VIRTUAL_HOSTING":                     "FALSE",
-		"AWS_HTTPS":                               gdalHTTPSValue(gdalUseSSL),
-		"CPL_VSIL_USE_TEMP_FILE_FOR_RANDOM_WRITE": "YES",
-	}
-	return "/vsis3/" + strings.Trim(bucket, "/") + "/" + strings.Trim(objectName, "/"), env, nil
+	target := workflowaccess.Target{Kind: workflowaccess.KindFile, Format: "tiff", Name: safeCOGFileName(req.Config.Result.FileName), WriteMode: workflowaccess.WriteModeReplace, ContentType: "image/tiff", Access: access}
+	plan, err := workflowaccess.New(source, target)
+	return plan, commonModels.JSONMap{"engine_type": engine.EngineType, "access_method": source.Access.Method}, err
 }
 
 func (e *ManagerRasterCOGExecutor) ensureTargetBucket(ctx context.Context, bucket string) error {

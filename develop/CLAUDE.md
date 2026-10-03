@@ -26,7 +26,7 @@ DevExecutor（统一执行器）
   │  └─ 返回服务端受限的表格或图结果预览
   ├─ 工作流执行 → WorkflowEngineService
   │  ├─ 解析工作流 JSON（DAG 结构）
-  │  ├─ 调用 GeoPython Workflow 运行时（21 个空间算子）
+  │  ├─ 调用 GeoPython Workflow 运行时（矢量、表格与栅格算子）
   │  ├─ 或调用 Spark Workflow 运行时（大数据空间计算，执行时绑定 Spark 通用引擎资源）
   │  └─ 返回执行结果（GeoJSON/DataFrame）
   └─ Notebook 执行 → NotebookExecutionService

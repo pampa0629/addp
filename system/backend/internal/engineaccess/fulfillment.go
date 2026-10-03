@@ -98,7 +98,17 @@ func oneOfRecipient(value string) bool {
 // lockFulfillmentTarget is the single precise target boundary for future
 // approval requirement changes and Grant writes too. Never call Catalog here.
 func (r *Repository) lockFulfillmentTarget(ctx context.Context, tenantID int64, path json.RawMessage) error {
-	key := fmt.Sprintf("engine_access_target|%d|%s", tenantID, path)
+	// JSONB returns reordered keys/whitespace. Lock identity is the canonical
+	// structured target, never the database's textual representation.
+	var target engineplugin.EngineCatalogPath
+	if err := json.Unmarshal(path, &target); err != nil {
+		return errFulfillmentBinding
+	}
+	canonical, err := authorization.EncodeSharingTarget(target)
+	if err != nil {
+		return err
+	}
+	key := fmt.Sprintf("engine_access_target|%d|%s", tenantID, canonical)
 	return r.db.WithContext(ctx).Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", key).Error
 }
 
@@ -111,21 +121,27 @@ func (r *Repository) readFulfillment(ctx context.Context, request fulfillmentReq
 	if err != nil {
 		return nil, err
 	}
-	// Never expose an arbitration transaction's own uncommitted writes as a
-	// recovery result. Recovery owns a separate read-only transaction.
-	if _, ok := r.db.Statement.ConnPool.(gorm.TxCommitter); ok {
-		return nil, errFulfillmentBinding
-	}
 	var result *fulfillmentOutcome
-	err = r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = r.readCommittedFulfillmentHistory(ctx, func(tx *Repository) error {
 		var err error
-		result, err = NewRepository(tx).findFulfillment(ctx, request, path, binding)
+		result, err = tx.findFulfillment(ctx, request, path, binding)
 		return err
-	}, &sql.TxOptions{ReadOnly: true})
+	})
 	if err != nil {
 		return nil, err
 	}
 	return result, nil
+}
+
+// History owns its read-only transaction, before the caller's qualification
+// transaction. Never expose the caller's own uncommitted arbitration writes.
+func (r *Repository) readCommittedFulfillmentHistory(ctx context.Context, read func(*Repository) error) error {
+	if _, ok := r.db.Statement.ConnPool.(gorm.TxCommitter); ok {
+		return errFulfillmentBinding
+	}
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return read(NewRepository(tx))
+	}, &sql.TxOptions{ReadOnly: true})
 }
 
 func (r *Repository) findFulfillment(ctx context.Context, request fulfillmentRequest, path, binding json.RawMessage) (*fulfillmentOutcome, error) {

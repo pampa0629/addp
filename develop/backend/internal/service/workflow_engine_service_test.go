@@ -1240,3 +1240,50 @@ func uintText(value uint) string {
 	}
 	return string(digits[i:])
 }
+
+func TestRasterAdaptersResolveIndependentSourceAndTarget(t *testing.T) {
+	svc := newWorkflowEngineServiceWithEnginesForTest(t, map[uint]commonModels.Engine{
+		1: {ID: 1, EngineType: "nfs", LifecycleState: "active", ConnectionInfo: commonModels.ConnectionInfo{"mount_path": "/data"}},
+		2: {ID: 2, EngineType: "minio", LifecycleState: "active", ConnectionInfo: commonModels.ConnectionInfo{"endpoint": "target:9000", "access_key": "target-key", "secret_key": "target-secret"}},
+	})
+	workflow := map[string]interface{}{"tasks": []interface{}{
+		map[string]interface{}{"id": "load", "operator": "raster_load", "depends_on": []interface{}{}, "params": map[string]interface{}{"locator": "addp://engine/1/path/image.tif?type=file&item_id=8", "source_crs": "EPSG:4326"}},
+		map[string]interface{}{"id": "save", "operator": "raster_save", "depends_on": []interface{}{"load"}, "params": map[string]interface{}{"input_raster": map[string]interface{}{"$ref": "load"}, "target_parent_locator": "addp://engine/2/path/business/results?type=prefix", "target_name": "image.cog.tif", "write_mode": "create", "profile": "cog"}},
+	}}
+	result, targets, err := svc.preprocessWorkflowParamsWithTargets(context.Background(), 7, "geopython_workflow", workflow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tasks, _ := workflowTasksFromInterface(result["tasks"])
+	loadParams := tasks[0]["params"].(map[string]interface{})
+	saveParams := tasks[1]["params"].(map[string]interface{})
+	sourcePlan := loadParams["access_plan"].(commonModels.JSONMap)
+	targetPlan := saveParams["access_plan"].(commonModels.JSONMap)
+	if sourcePlan["source"] == nil || sourcePlan["target"] != nil || targetPlan["source"] != nil || targetPlan["target"] == nil {
+		t.Fatalf("invalid separate plans: %#v %#v", sourcePlan, targetPlan)
+	}
+	if loadParams["source_crs"] != "EPSG:4326" || saveParams["profile"] != "cog" || saveParams["input_raster"] == nil {
+		t.Fatalf("domain parameters lost: %#v %#v", loadParams, saveParams)
+	}
+	if len(targets) != 1 || targets[0].TaskID != "save" || targets[0].WriteMode != "create" {
+		t.Fatalf("unstable output: %#v", targets)
+	}
+	if targets[0].Locator != "addp://engine/2/path/business/results/image.cog.tif?type=object" {
+		t.Fatalf("locator: %s", targets[0].Locator)
+	}
+}
+
+func TestRasterConversionRejectsRuntimePlanAndUnsupportedFormat(t *testing.T) {
+	svc := newWorkflowEngineServiceWithEnginesForTest(t, map[uint]commonModels.Engine{
+		1: {ID: 1, EngineType: "nfs", LifecycleState: "active", ConnectionInfo: commonModels.ConnectionInfo{"mount_path": "/data"}},
+	})
+	for _, params := range []map[string]interface{}{
+		{"access_plan": commonModels.JSONMap{}},
+		{"locator": "addp://engine/1/path/image.csv?type=file&item_id=8"},
+	} {
+		workflow := map[string]interface{}{"tasks": []interface{}{map[string]interface{}{"id": "load", "operator": "raster_load", "depends_on": []interface{}{}, "params": params}}}
+		if _, _, err := svc.preprocessWorkflowParamsWithTargets(context.Background(), 7, "geopython_workflow", workflow); err == nil {
+			t.Fatalf("unsafe raster source accepted: %#v", params)
+		}
+	}
+}

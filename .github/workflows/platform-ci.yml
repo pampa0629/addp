@@ -319,13 +319,14 @@ jobs:
           venv-path: engines/geopython-workflow/.venv
           cache-dependency-path: |
             engines/geopython-workflow/requirements.txt
+            engines/geopython-workflow/requirements-dev.txt
             common-python/pyproject.toml
-          requirements-file: engines/geopython-workflow/requirements.txt
+          requirements-file: engines/geopython-workflow/requirements-dev.txt
           editable-install: ./common-python
 
-      - name: Install matching GDAL bindings and pytest
+      - name: Install matching GDAL bindings
         if: steps.selection.outputs.run == 'true'
-        run: engines/geopython-workflow/.venv/bin/python -m pip install "GDAL==$(gdal-config --version)" pytest
+        run: engines/geopython-workflow/.venv/bin/python -m pip install "GDAL==$(gdal-config --version)"
 
       - name: Run GeoPython GDAL tests
         if: steps.selection.outputs.run == 'true'

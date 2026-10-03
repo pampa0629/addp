@@ -72,9 +72,10 @@ func TestFixtureAuthorizationContractMatchesPublishedCatalog(t *testing.T) {
 	allPermissions := append(append(append(append(append([]string{}, consumerPermissions...), metricPermissions...), ontologyPermissions...), publicOriginReadPermissions...), publicOriginCreatePermissions...)
 	allPermissions = append(allPermissions, orchestratorPermissions...)
 	allPermissions = append(allPermissions, transferLineagePermissions...)
+	allPermissions = append(allPermissions, redisConsumerPermissions...)
+	allPermissions = append(allPermissions, rasterWorkflowPermissions...)
 	allPermissions = append(allPermissions, securityPermissions...)
 	allPermissions = append(allPermissions, securityInitializerPermissions...)
-	allPermissions = append(allPermissions, redisConsumerPermissions...)
 	for _, key := range allPermissions {
 		permission, exists := permissions[key]
 		if !exists {
@@ -296,22 +297,19 @@ func TestManagerArtifactFixtureUsesMinimumPermissionsAndBrowserCredentials(t *te
 	}
 }
 
-func TestRedisFixtureUsesCatalogPermissionWithoutInfrastructureAdministration(t *testing.T) {
-	permissions, err := suitePermissions("redis-consumer-flow")
-	if err != nil {
-		t.Fatal(err)
+func TestTransferLineageFixtureUsesExactConsumerPermissions(t *testing.T) {
+	permissions, err := suitePermissions("transfer-relational-sql-etl")
+	if err != nil || len(permissions) != 10 || !needsEngineProvisioner("transfer-relational-sql-etl") {
+		t.Fatalf("invalid transfer identity contract: %v %v", permissions, err)
 	}
-	expected := []string{"system.engine_catalog.read", "meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read", "manager.data_item.read", "manager.content.read"}
-	if len(permissions) != len(expected) {
-		t.Fatalf("unexpected Redis permissions: %v", permissions)
-	}
-	for _, permission := range expected {
-		if !contains(permissions, permission) {
-			t.Fatalf("missing %s", permission)
+	for _, required := range []string{
+		"manager.content.read", "manager.data_item.read", "meta.catalog.read", "meta.lineage.read",
+		"meta.scan_task.execute", "meta.scan_task.read",
+		"transfer.task.create", "transfer.task.delete", "transfer.task.execute", "transfer.task.read",
+	} {
+		if !contains(permissions, required) {
+			t.Fatalf("missing transfer consumer permission %s", required)
 		}
-	}
-	if !needsEngineProvisioner("redis-consumer-flow") {
-		t.Fatal("fixture must register through the separate infrastructure identity")
 	}
 }
 
@@ -335,19 +333,22 @@ func TestSecurityFixtureSeparatesPreparationFromOwnerPermissions(t *testing.T) {
 	}
 }
 
-func TestTransferLineageFixtureUsesExactConsumerPermissions(t *testing.T) {
-	permissions, err := suitePermissions("transfer-relational-sql-etl")
-	if err != nil || len(permissions) != 10 || !needsEngineProvisioner("transfer-relational-sql-etl") {
-		t.Fatalf("invalid transfer identity contract: %v %v", permissions, err)
+func TestRedisFixtureUsesCatalogPermissionWithoutInfrastructureAdministration(t *testing.T) {
+	permissions, err := suitePermissions("redis-consumer-flow")
+	if err != nil {
+		t.Fatal(err)
 	}
-	for _, required := range []string{
-		"manager.content.read", "manager.data_item.read", "meta.catalog.read", "meta.lineage.read",
-		"meta.scan_task.execute", "meta.scan_task.read",
-		"transfer.task.create", "transfer.task.delete", "transfer.task.execute", "transfer.task.read",
-	} {
-		if !contains(permissions, required) {
-			t.Fatalf("missing transfer consumer permission %s", required)
+	expected := []string{"system.engine_catalog.read", "meta.catalog.read", "meta.scan_task.execute", "meta.scan_task.read", "manager.data_item.read", "manager.content.read"}
+	if len(permissions) != len(expected) {
+		t.Fatalf("unexpected Redis permissions: %v", permissions)
+	}
+	for _, permission := range expected {
+		if !contains(permissions, permission) {
+			t.Fatalf("missing %s", permission)
 		}
+	}
+	if !needsEngineProvisioner("redis-consumer-flow") {
+		t.Fatal("fixture must register through the separate infrastructure identity")
 	}
 }
 
@@ -454,5 +455,22 @@ func TestOrchestratorReloginCredentialsRemainInOwnerOnlyEnvironment(t *testing.T
 	}
 	if !strings.Contains(string(content), "private'\"'\"'password") {
 		t.Fatal("reader password was not shell quoted")
+	}
+}
+
+func TestRasterFixtureSeparatesConsumerAndProvisioner(t *testing.T) {
+	permissions, err := suitePermissions("raster-workflow")
+	if err != nil || !needsEngineProvisioner("raster-workflow") {
+		t.Fatal("raster fixture registration is incomplete", err)
+	}
+	for _, permission := range permissions {
+		if strings.HasPrefix(permission, "system.engine.") || permission == "meta.lineage.create" {
+			t.Fatalf("consumer has control-plane permission: %s", permission)
+		}
+	}
+	for _, permission := range []string{"develop.data_read.execute", "develop.data_write.execute", "monitor.execution.read"} {
+		if !contains(permissions, permission) {
+			t.Fatalf("missing %s", permission)
+		}
 	}
 }

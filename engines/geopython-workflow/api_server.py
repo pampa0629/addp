@@ -19,8 +19,8 @@ from dotenv import load_dotenv, find_dotenv
 # 自动向上搜索 .env 文件（类似 common/config/loader.go 的 LoadEnv）
 load_dotenv(find_dotenv())
 
-from workflow_engine import execute_workflow, execute_single_operator
-from addp_common.workflow_runtime import validate_execution_authorization
+from workflow_engine import GeoPythonWorkflowRunner, execute_single_operator
+from addp_common.workflow_runtime import ExecutionRegistry, WorkflowValidationError, validate_execution_authorization
 from geometry_batches import (
     GEOMETRY_BATCH_METADATA_PREFIX,
     decode_geometry_batch_arrow,
@@ -44,7 +44,7 @@ CORS(app)  # 启用跨域
 start_time = datetime.now()
 
 # 内存存储（生产环境应使用数据库）
-executions = {}  # {execution_id: {status, result, ...}}
+executions = ExecutionRegistry()
 
 
 # ========================================
@@ -169,154 +169,18 @@ def get_operators():
 # ========================================
 
 @app.route('/api/workflow', methods=['POST'])
-def execute_workflow_endpoint():
-    """
-    即时执行工作流
-    供 Develop 模块即时执行使用
-
-    Request Body:
-        {
-            "workflow_def": {
-                "tasks": [...]
-            },
-            "input_data": {...}  // 可选
-        }
-
-    Response:
-        {
-            "status": "success",
-            "execution_id": "...",
-            "final_result": "...",  // GeoJSON
-            "all_results": {...},
-            "execution_time_ms": 123.45
-        }
-    """
-    start = time.time()
-    execution_id = None
-
+def execute_workflow_api():
+    """Validate authorization, submit asynchronously, then poll the canonical status endpoint."""
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or not isinstance(data.get('input_data', {}), dict):
+        return jsonify(error_response(ErrorCode.INVALID_PARAMS, 'Request and input_data must be objects')), 400
     try:
-        data = request.get_json(silent=True) or {}
-        workflow_def = data.get('workflow_def')
-        input_data = data.get('input_data', {})
-
-        if not workflow_def:
-            response = error_response(
-                ErrorCode.INVALID_PARAMS,
-                "请求体缺少 'workflow_def' 字段"
-            )
-            response["execution_time_ms"] = (time.time() - start) * 1000
-            return jsonify(response), 400
-
-        operators = {
-            op["id"]: op["effects"]
-            for op in list_operators()
-            if "workflow" in op.get("execution_modes", [])
-        }
-        validate_execution_authorization(
-            workflow_def,
-            operator_effects=operators,
-            runtime=data.get("runtime"),
-        )
-
-        # 执行工作流
-        execution_id = str(uuid.uuid4())
-        logger.info(f"Executing workflow {execution_id}")
-
-        result = execute_workflow(workflow_def, input_data)
-
-        execution_time = (time.time() - start) * 1000
-
-        # 存储执行记录
-        executions[execution_id] = {
-            "execution_id": execution_id,
-            "status": result['status'],
-            "result": result.get('final_result'),
-            "all_results": result.get('all_results'),
-            "error": result.get('error'),
-            "error_code": result.get('error_code'),
-            "details": result.get('details') or result.get('traceback'),
-            "started_at": datetime.now().isoformat(),
-            "execution_time_ms": execution_time
-        }
-
-        response = {
-            "status": result['status'],
-            "execution_id": execution_id,
-            "execution_time_ms": execution_time
-        }
-
-        if result['status'] == 'success':
-            response['final_result'] = result['final_result']
-            response['all_results'] = result['all_results']
-            response['logs'] = result.get('logs', [])
-            logger.info(f"Workflow {execution_id} completed successfully in {execution_time:.2f}ms")
-            return jsonify(response), 200
-        else:
-            error_code = result.get('error_code')
-            if error_code == ErrorCode.WORKFLOW_INVALID:
-                response.update(error_response(
-                    ErrorCode.WORKFLOW_INVALID,
-                    result.get('error', '工作流定义无效')
-                ))
-                response['logs'] = result.get('logs', [])
-                response['traceback'] = result.get('traceback', '')
-                return jsonify(response), 400
-
-            response.update(error_response(
-                ErrorCode.EXECUTION_FAILED,
-                result.get('error', '工作流执行失败')
-            ))
-            response['logs'] = result.get('logs', [])
-            response['traceback'] = result.get('traceback', '')
-            return jsonify(response), 500
-
-    except ValueError as e:
-        execution_time = (time.time() - start) * 1000
-        logger.error(f"Workflow validation failed: {e}")
-        if execution_id:
-            executions[execution_id] = {
-                "execution_id": execution_id,
-                "status": "failed",
-                "result": None,
-                "all_results": None,
-                "error": f"工作流定义无效: {str(e)}",
-                "error_code": ErrorCode.WORKFLOW_INVALID,
-                "details": str(e),
-                "started_at": datetime.now().isoformat(),
-                "execution_time_ms": execution_time
-            }
-        response = error_response(
-            ErrorCode.WORKFLOW_INVALID,
-            f"工作流定义无效: {str(e)}"
-        )
-        if execution_id:
-            response["execution_id"] = execution_id
-        response["execution_time_ms"] = execution_time
-        return jsonify(response), 400
-
-    except Exception as e:
-        execution_time = (time.time() - start) * 1000
-        logger.error(f"Workflow execution failed: {e}", exc_info=True)
-        if execution_id:
-            executions[execution_id] = {
-                "execution_id": execution_id,
-                "status": "failed",
-                "result": None,
-                "all_results": None,
-                "error": f"工作流执行失败: {str(e)}",
-                "error_code": ErrorCode.EXECUTION_FAILED,
-                "details": str(e),
-                "started_at": datetime.now().isoformat(),
-                "execution_time_ms": execution_time
-            }
-        response = error_response(
-            ErrorCode.EXECUTION_FAILED,
-            f"工作流执行失败: {str(e)}"
-        )
-        if execution_id:
-            response["execution_id"] = execution_id
-        response["execution_time_ms"] = execution_time
-        return jsonify(response), 500
+        operators = {op['id']: op['effects'] for op in list_operators() if 'workflow' in op['execution_modes']}
+        validate_execution_authorization(data.get('workflow_def'), operator_effects=operators, runtime=data.get('runtime'))
+        snapshot = executions.submit(GeoPythonWorkflowRunner(), data['workflow_def'], data.get('input_data'))
+        return jsonify(snapshot.to_dict()), 202
+    except WorkflowValidationError as exc:
+        return jsonify(error_response(ErrorCode.WORKFLOW_INVALID, str(exc))), 400
 
 
 @app.route('/api/operators/<operator_name>/invoke', methods=['POST'])
@@ -574,38 +438,10 @@ def invoke_operator_endpoint(operator_name):
 
 @app.route('/api/executions/<execution_id>', methods=['GET'])
 def get_execution_status(execution_id):
-    """
-    查询执行状态
-    供 Orchestrator 轮询使用
-
-    Response:
-        {
-            "status": "success",
-            "execution_id": "...",
-            "result": "...",  // GeoJSON
-            "progress": 100
-        }
-    """
-    if execution_id not in executions:
-        return jsonify(error_response(
-            ErrorCode.EXECUTION_NOT_FOUND,
-            "Execution not found"
-        )), 404
-
-    execution = executions[execution_id]
-
-    return jsonify({
-        "status": execution['status'],
-        "execution_id": execution_id,
-        "result": execution.get('result'),
-        "all_results": execution.get('all_results'),
-        "error": execution.get('error'),
-        "error_code": execution.get('error_code'),
-        "details": execution.get('details'),
-        "progress": 100 if execution['status'] in ['success', 'failed'] else 50,
-        "started_at": execution.get('started_at'),
-        "execution_time_ms": execution.get('execution_time_ms')
-    }), 200
+    snapshot = executions.get(execution_id)
+    if snapshot is None:
+        return jsonify(error_response(ErrorCode.EXECUTION_NOT_FOUND, 'Execution not found')), 404
+    return jsonify(snapshot.to_dict()), 200
 
 
 # ========================================

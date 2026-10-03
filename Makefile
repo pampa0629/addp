@@ -1,4 +1,4 @@
-.PHONY: test-frontend-ci-registration help build build-images select-image-services local-ci test test-changed test-module test-platform test-local-ci-runner test-node-dependencies test-infra-postgresql-init test-book test-engine-plugin-registration test-engine-startup-isolation test-integration test-integration-hosted test-online test-online-runner test-release test-release-runner test-go test-agent-frontend test-asset-frontend test-catalog-frontend test-common-frontend test-console-frontend test-copilot test-document-workflow test-develop-frontend test-graph-frontend test-inference-frontend test-manager-frontend test-model-frontend test-quality-frontend test-security-frontend test-meta-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend test-service-frontend test-standard-frontend test-system-frontend test-transfer-frontend test-workbench-frontend test-execution-fixtures test-projection-store-ownership test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release test-common-python test-common-python-cli-release test-common-postgres test-common-mysql-data-protection test-manager-postgres test-manager-mongodb-security test-system-iam-postgres test-asset-postgres test-meta-postgres test-catalog-postgres test-develop-postgres test-model-postgres test-quality-postgres test-security-postgres test-service-postgres test-standard-postgres test-transfer-postgres test-workbench-postgres test-arcgis-open-formats \
+.PHONY: test-raster-online-runner test-frontend-ci-registration help build build-images select-image-services local-ci test test-changed test-module test-platform test-local-ci-runner test-node-dependencies test-infra-postgresql-init test-book test-engine-plugin-registration test-engine-startup-isolation test-integration test-integration-hosted test-online test-online-runner test-release test-release-runner test-go test-agent-frontend test-asset-frontend test-catalog-frontend test-common-frontend test-console-frontend test-copilot test-document-workflow test-develop-frontend test-graph-frontend test-inference-frontend test-manager-frontend test-model-frontend test-quality-frontend test-security-frontend test-meta-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend test-service-frontend test-standard-frontend test-system-frontend test-transfer-frontend test-workbench-frontend test-execution-fixtures test-projection-store-ownership test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release test-common-python test-common-python-cli-release test-common-postgres test-common-mysql-data-protection test-manager-postgres test-manager-mongodb-security test-system-iam-postgres test-asset-postgres test-meta-postgres test-catalog-postgres test-develop-postgres test-model-postgres test-quality-postgres test-security-postgres test-service-postgres test-standard-postgres test-transfer-postgres test-workbench-postgres test-arcgis-open-formats \
         build-iam-bootstrap build-iam-recovery build-iam-migration-repair \
         dev-start dev-restart dev-stop infra-up infra-down infra-restart infra-status infra-backup infra-restore-drill infra-cloud-backup test-infra-backup prod-start prod-restart prod-stop prod-health ports-validate
 
@@ -140,7 +140,7 @@ test-model3d-workflow: ## 运行 Model3D Runtime 格式边界和 GLB 发布校�
 GEOPYTHON_WORKFLOW_PYTHON ?= engines/geopython-workflow/.venv/bin/python
 .PHONY: test-geopython-workflow
 test-geopython-workflow: ## 运行 GeoPython GDAL 确定性回归测试
-	@cd engines/geopython-workflow && PYTHONPATH="$(CURDIR)/common-python" $(abspath $(GEOPYTHON_WORKFLOW_PYTHON)) -m pytest -q test_gdal_vector_dataset.py
+	@cd engines/geopython-workflow && PYTHONPATH="$(CURDIR)/common-python" $(abspath $(GEOPYTHON_WORKFLOW_PYTHON)) -m pytest -q test_gdal_vector_dataset.py test_raster_compute.py test_online_raster_fixture.py test_engine.py test_multiport.py test_operator_metadata.py test_runtime_registration.py test_io_operators.py test_non_spatial_operators.py ../docs
 
 test-copilot: ## 运行 Copilot 后端全量确定性测试
 	@cd copilot/backend && venv/bin/python -m pytest -q tests
@@ -425,7 +425,11 @@ test-online: ## 运行指定 Online suite（必须设置 ONLINE_SUITE 和 ADDP_O
 test-orchestrator-online-runner: ## 验证 Orchestrator Online 故障、权限和隔离生命周期
 	@python3 -m unittest scripts/test/orchestrator-execution-online_test.py scripts/test/orchestrator-execution-faults_test.py scripts/test/online-hosted-orchestrator-gate_test.py
 
+test-raster-online-runner: ## 验证栅格 T4 场景、物理夹具与隔离生命周期
+	@python3 -m unittest scripts/test/raster-workflow-online_test.py scripts/test/online-raster-minio-fixture_test.py scripts/test/online-hosted-raster-gate_test.py
+
 test-online-runner: ## 运行 Online 分发器和预检器的确定性测试
+	@$(MAKE) test-raster-online-runner
 	@python3 -m unittest scripts/test/redis-consumer-flow-online_test.py scripts/test/online-hosted-redis-gate_test.py scripts/test/online-redis-consumer-fixture_test.py
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
 	@python3 -m unittest scripts/test/elasticsearch-consumer-flow-online_test.py

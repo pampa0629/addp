@@ -123,7 +123,7 @@ def test_workflow_engine_json_result():
     from workflow_engine import execute_workflow
 
     operators.OPERATORS["json_facts"] = {
-        "function": lambda **_: {"status": "success", "profile": "cog", "width": 256}
+        "function": lambda **_: {"status": "success", "profile": "cog", "width": 256}, "execution_modes": ["workflow"]
     }
     try:
         result = execute_workflow({
@@ -143,60 +143,13 @@ def test_workflow_engine_json_result():
     assert facts["width"] == 256
 
 def test_workflow_definition_requires_params_object_and_string_dependencies():
-    """测试工作流任务结构严格遵循 addp.workflow/v1。"""
-    from workflow_engine import PythonWorkflowEngine, WorkflowInvalidError
+    from addp_common.workflow_runtime import WorkflowValidationError
+    from workflow_engine import GeoPythonWorkflowRunner
+    import pytest
+    for params, dependencies in [([],[]),({},[1])]:
+        with pytest.raises(WorkflowValidationError):
+            GeoPythonWorkflowRunner().execute({'tasks':[{'id':'invalid','operator':'buffer','params':params,'depends_on':dependencies}]})
 
-    engine = PythonWorkflowEngine()
-    try:
-        engine.load_workflow({
-            "tasks": [{
-                "id": "invalid_params",
-                "operator": "buffer",
-                "params": [],
-                "depends_on": []
-            }]
-        })
-        raise AssertionError("expected invalid params to be rejected")
-    except WorkflowInvalidError as exc:
-        assert "'params' 必须是对象" in str(exc)
-
-    engine = PythonWorkflowEngine()
-    try:
-        engine.load_workflow({
-            "tasks": [{
-                "id": "invalid_dep",
-                "operator": "buffer",
-                "params": {},
-                "depends_on": [1]
-            }]
-        })
-        raise AssertionError("expected invalid depends_on to be rejected")
-    except WorkflowInvalidError as exc:
-        assert "'depends_on' 必须是字符串数组" in str(exc)
-
-    engine = PythonWorkflowEngine()
-    try:
-        engine.load_workflow({
-            "tasks": [
-                {"id": "a", "operator": "buffer", "params": {}, "depends_on": []},
-                {"id": "a", "operator": "buffer", "params": {}, "depends_on": []},
-            ]
-        })
-        raise AssertionError("expected duplicate task id to be rejected")
-    except WorkflowInvalidError as exc:
-        assert "任务 id 重复" in str(exc)
-
-    engine = PythonWorkflowEngine()
-    try:
-        engine.load_workflow({
-            "tasks": [
-                {"id": "a", "operator": "buffer", "params": {}, "depends_on": []},
-                {"id": "b", "operator": "centroid", "params": {"input_gdf": {"$ref": "a"}}, "depends_on": []},
-            ]
-        })
-        raise AssertionError("expected undeclared ref dependency to be rejected")
-    except WorkflowInvalidError as exc:
-        assert "未在 depends_on 中声明" in str(exc)
 
 def test_direct_operator_json_result():
     """测试 direct 算子支持非 GeoDataFrame 的结构化 JSON 输出"""
@@ -205,7 +158,7 @@ def test_direct_operator_json_result():
     from workflow_engine import execute_single_operator
 
     operators.OPERATORS["direct_json_facts"] = {
-        "function": lambda **_: {"status": "success", "profile": "cog", "width": 256}
+        "function": lambda **_: {"status": "success", "profile": "cog", "width": 256}, "execution_modes": ["workflow"]
     }
     try:
         result = execute_single_operator("direct_json_facts", {})

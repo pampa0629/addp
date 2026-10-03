@@ -117,7 +117,7 @@ manager/
 - Manager 受管快显任务的语义身份统一为 `tenant_id + item_fingerprint + artifact_variant`。重复创建必须复用原任务 ID，重复执行必须新建 execution 并刷新同一当前结果；`item_id`、`locator`、`source_engine_id` 只作执行与回查事实。派生变体、并发唯一约束和业务派生任务的例外见 `manager/docs/快显实现规范.md`。
 - Manager 受管快显是来源驱动的只读任务定义：既可从 Data Explorer 当前 item 的 Quick View action 发起，也可从统一“数据任务”页选择一个源 item 后发起；两处必须调用同一 owner 领域动作，由后端按源事实派生任务定义，不提供允许前端提交私有任务配置的创建或更新 API。管理页的 `task_id` 只打开只读任务定义。
 - Manager 受管当前结果任务统一不启动自身定时调度，但允许 Orchestrator 定时 Pipeline 调用。周期性刷新由用户在 Step 参数中显式配置 `existing_result_action=overwrite`；Manager 不得按 scheduled 来源自动补充已有结果动作。Embedding 的逐 item 调度语义独立保留。
-- COG 生成只能由 Manager 任务执行器派生 GDAL 参数后，通过 `WorkflowRuntimeProvider.InvokeOperator("tiff_to_cog")` direct 调用 GeoPython Workflow；不得退回构造单节点 workflow 或直接拼接 GeoPython Workflow 私有 HTTP。
+- COG 生成只能由 Manager 任务执行器构造标准源/目标访问计划后，通过 `WorkflowRuntimeProvider.InvokeOperator("raster_to_cog")` direct 调用 GeoPython Workflow；不得退回构造单节点 workflow 或直接拼接 GeoPython Workflow 私有 HTTP。
 - 瓦片缓存生成任务不得隐式创建 3857 物化视图、空间索引或执行准备动作；需要性能准备时必须显式执行矢量物化视图任务。
 - 自动识别的外部 3857 目标只能只读消费，不写入 `manager.vector_materialized_view`，也不获得 Manager 删除、刷新或 stale 生命周期。
 - 批量矢量瓦片生成按源能力分流且不得交叉：PostgreSQL/PostGIS 空间表必须由 Manager 复用 `common/spatial` 的 `ST_AsMVT` SQL 生成；MySQL、Oracle 等标准 EWKB 可读、但无原生 MVT 输出的数据库空间表必须先流式物化受控临时 FlatGeobuf，再由 GeoPython Workflow `vector_to_pmtiles` 生成；文件和对象来源必须由受控 GDAL 访问计划调用同一 operator。三类来源统一封装为 PMTiles v3，Manager 内部不得恢复松散 MVT 目录、私有 manifest 或同源备用路线。

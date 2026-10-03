@@ -202,6 +202,8 @@ Chat Tool Calling 使用厂商无关的结构：`tools[]` 只包含稳定 `name/
 
 不得把 scope、credential、协议或模型未配置错误转换为空结果。只有明确可重试的 `503/504` 可以由调用方按执行策略重试；第一版不自动切换 Deployment。
 
+上游调用失败时，Inference 记录固定的失败阶段、Provider / Deployment 身份和 HTTP 状态。OpenAI-compatible 错误中的 `code/type/param` 只能以严格允许列表投影到诊断日志，未知值统一为 `unclassified`；不得记录原始错误文案、响应正文、Endpoint、凭据、请求消息或 Tool 参数和结果。诊断不改变公开错误契约，也不触发参数替换、模型切换或额外重试。
+
 ## 七、调用方边界
 
 - Copilot 保存 `resource_resolution`、`query_generation`、`workflow_generation`、`notebook_generation`、`transfer_generation`、`navigation_guide`、`knowledge_graph_extraction` 和 `standard_document_extraction` Scenario Binding，负责领域 prompt、领域上下文、结构化输出校验和有限业务重试。

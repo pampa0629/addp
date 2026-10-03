@@ -1,6 +1,14 @@
 # GeoPython Workflow 算子模块
 
-GeoPython Workflow 的空间算子模块，采用模块化架构设计，底层使用 GeoPandas / Shapely 等库提供空间分析能力。
+GeoPython Workflow 的空间算子模块，采用模块化架构设计，底层使用 GeoPandas / Shapely 与 GDAL 提供矢量和栅格分析能力。
+
+## 栅格计算
+
+`raster_compute.py` 提供 13 个通用栅格算子：加载、保存、信息、COG 校验与转换、金字塔、重投影、重采样、裁剪、计算镶嵌、波段计算、统计及直方图。栅格使用专用 `raster` 端口和 execution 内部文件对象，公开资源统一使用 ResourceLocator，由 Develop 派生执行期访问计划；不能用原始路径或普通 JSON 代替栅格端口。
+
+`raster_to_cog` 是唯一通用 COG 转换入口，支持受控 direct 调用；其余通用栅格算子在工作流中运行。`raster_operators.py` 的 `build_raster_mosaic` 继续服务 Manager 目录型业务数据集，两者复用同一 COG 编码实现。算子契约与使用边界见 [工作流规范](../../../docs/spec/addp工作流计算引擎接口规范.md) 和 [栅格专题](../../../docs/next/栅格算子体系后续专题.md)。
+
+运行 `make test-geopython-workflow` 验证真实 GDAL 栅格、既有矢量、多端口及 API 契约。
 
 ## 目录结构
 

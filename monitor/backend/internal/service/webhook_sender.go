@@ -82,26 +82,36 @@ func (s *HTTPWebhookSender) SendMessage(ctx context.Context, delivery WebhookMes
 	}
 	timestamp := strconv.FormatInt(now.Unix(), 10)
 	signature := signWebhookPayload(secret, timestamp, body)
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, delivery.RequestURL, bytes.NewReader(body))
+	headers := http.Header{}
+	headers.Set("X-ADDP-Webhook-ID", delivery.DeliveryID)
+	headers.Set("X-ADDP-Webhook-Timestamp", timestamp)
+	headers.Set("X-ADDP-Webhook-Signature", "v1="+signature)
+	return s.postJSON(ctx, delivery.RequestURL, body, headers, nil)
+}
+
+// Both notification protocols use the same bounded, TLS-only, redirect-rejecting client.
+func (s *HTTPWebhookSender) postJSON(ctx context.Context, target string, body []byte, headers http.Header, check func(io.Reader) error) (WebhookSendResult, error) {
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, target, bytes.NewReader(body))
 	if err != nil {
 		return WebhookSendResult{}, err
 	}
+	request.Header = headers
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("User-Agent", "ADDP-Monitor-Webhook/1.0")
-	request.Header.Set("X-ADDP-Webhook-ID", delivery.DeliveryID)
-	request.Header.Set("X-ADDP-Webhook-Timestamp", timestamp)
-	request.Header.Set("X-ADDP-Webhook-Signature", "v1="+signature)
-
 	response, err := s.client.Do(request)
 	if err != nil {
 		return WebhookSendResult{}, err
 	}
 	defer response.Body.Close()
-	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4096))
 	result := WebhookSendResult{HTTPStatus: response.StatusCode}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4096))
 		return result, fmt.Errorf("webhook returned HTTP %d", response.StatusCode)
 	}
+	if check != nil {
+		return result, check(response.Body)
+	}
+	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4096))
 	return result, nil
 }
 

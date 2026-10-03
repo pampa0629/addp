@@ -25,7 +25,7 @@ func exerciseFulfillmentAcceptance(t *testing.T, db *gorm.DB, base fulfillmentRe
 	newOperator func(*testing.T, time.Duration) (userProvenance, time.Time), seedDelegation func(*testing.T, int64, time.Time) *Delegation,
 ) {
 	t.Run("production first acceptance and historical retry", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 		defer cancel()
 		hash, err := bcrypt.GenerateFromPassword([]byte(strings.Repeat("accept-fixture-", 3)), bcrypt.MinCost)
 		if err != nil {
@@ -91,6 +91,8 @@ func exerciseFulfillmentAcceptance(t *testing.T, db *gorm.DB, base fulfillmentRe
 		if err != nil || accepted.Outcome != "accepted" || accepted.Deadline == nil || accepted.Deadline.Sub(accepted.RecordedAt) != 5*time.Minute || calls != 1 {
 			t.Fatalf("accepted=%+v calls=%d err=%v", accepted, calls, err)
 		}
+		exerciseFulfillmentGrants(t, db, service, actor, binding, roles, role.ID, base.Operator.PrincipalID, newOperator, seedDelegation)
+		exerciseGrantRevocations(t, db, service, actor, binding, roles, role.ID, base.Operator.PrincipalID, newOperator, seedDelegation)
 		for _, mutate := range []func(*shared.SharingFulfillmentBinding){
 			func(b *shared.SharingFulfillmentBinding) { b.Operator.AuthorizationVersion++ },
 			func(b *shared.SharingFulfillmentBinding) { b.RequirementVersion++ },

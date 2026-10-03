@@ -107,9 +107,22 @@ func (r *Repository) lockManagementScope(ctx context.Context, tenantID, engineID
 }
 
 func (s *lockedManagementScope) check(now time.Time) error {
+	if err := s.checkManagement(now); err != nil {
+		return err
+	}
+	if s.engine.LifecycleState != models.EngineLifecycleActive {
+		return commonapi.ErrForbidden
+	}
+	return nil
+}
+
+// Withdrawing existing access does not require a running engine. The human
+// identity, Permission and management delegation must still be current.
+func (s *lockedManagementScope) checkManagement(now time.Time) error {
 	if s == nil || s.tenantID <= 0 || s.engineID <= 0 || s.membershipID <= 0 ||
 		s.engine == nil || s.engine.TenantID == nil || int64(*s.engine.TenantID) != s.tenantID ||
-		int64(s.engine.ID) != s.engineID || s.engine.LifecycleState != models.EngineLifecycleActive ||
+		int64(s.engine.ID) != s.engineID ||
+		(s.engine.LifecycleState != models.EngineLifecycleActive && s.engine.LifecycleState != models.EngineLifecycleDisabled) ||
 		s.delegation == nil || s.delegation.ID <= 0 || s.delegation.TenantID != s.tenantID ||
 		s.delegation.EngineID != s.engineID || s.delegation.TenantMembershipID != s.membershipID ||
 		s.delegation.Status != "active" || s.delegation.GrantedAt.After(now) || !s.delegation.ExpiresAt.After(now) {

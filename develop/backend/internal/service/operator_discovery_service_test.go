@@ -49,12 +49,13 @@ func TestOperatorDiscoveryReturnsWorkflowCapableOperatorsOnly(t *testing.T) {
 					},
 				},
 				{
-					ID:             "tiff_to_cog",
-					Name:           "tiff_to_cog",
+					ID:             "raster_to_cog",
+					Name:           "raster_to_cog",
 					ExecutionModes: []string{"workflow", "direct"},
 					Effects:        []string{"read"},
 					Parameters: []commonModels.ParameterDescriptor{
-						{Name: "path", Type: "string"},
+						{Name: "access_plan", Type: "object"},
+						{Name: "options", Type: "object"},
 					},
 				},
 				{
@@ -74,7 +75,7 @@ func TestOperatorDiscoveryReturnsWorkflowCapableOperatorsOnly(t *testing.T) {
 	if len(operators) != 2 {
 		t.Fatalf("operators len = %d, want 2: %+v", len(operators), operators)
 	}
-	if operators[0].Name != "load" || operators[1].Name != "tiff_to_cog" {
+	if operators[0].Name != "load" || operators[1].Name != "raster_to_cog" {
 		t.Fatalf("unexpected operators: %+v", operators)
 	}
 	publicNames := map[string]bool{}
@@ -112,8 +113,13 @@ func TestOperatorDiscoveryReturnsWorkflowCapableOperatorsOnly(t *testing.T) {
 	if !ok || len(formats) == 0 {
 		t.Fatalf("load file_formats = %#v, want non-empty string list", loadPicker.UIConfig["file_formats"])
 	}
-	if len(operators[1].PublicParameters) != 1 || operators[1].PublicParameters[0].Name != "path" {
-		t.Fatalf("undeclared operator public parameters = %+v, want explicit runtime path preserved", operators[1].PublicParameters)
+	for _, name := range []string{"locator", "target_parent_locator", "target_name", "write_mode", "source_crs"} {
+		parameterByName(t, operators[1].PublicParameters, name)
+	}
+	for _, parameter := range operators[1].PublicParameters {
+		if parameter.Name == "access_plan" || parameter.Name == "options" {
+			t.Fatalf("raster conversion leaked runtime parameter: %+v", parameter)
+		}
 	}
 }
 
@@ -440,5 +446,34 @@ func newWorkflowValidationTestService(t *testing.T) *OperatorDiscoveryService {
 				}},
 			}}, nil
 		},
+	}
+}
+
+func TestValidateWorkflowRequiresRasterPortReference(t *testing.T) {
+	svc := newWorkflowValidationTestService(t)
+	svc.listWorkflowOperators = func(context.Context, *commonModels.Engine) ([]commonModels.OperatorDescriptor, error) {
+		return []commonModels.OperatorDescriptor{
+			{ID: "source", Name: "source", ExecutionModes: []string{"workflow"}, Effects: []string{"read"}},
+			{ID: "statistics", Name: "statistics", ExecutionModes: []string{"workflow"}, Effects: []string{"read"}, Parameters: []commonModels.ParameterDescriptor{{Name: "input_raster", Type: "raster", ParamType: "input", Required: true}}},
+		}, nil
+	}
+	for _, tc := range []struct {
+		name  string
+		value interface{}
+		valid bool
+	}{
+		{"reference", map[string]interface{}{"$ref": "load", "port": "default"}, true},
+		{"forged", map[string]interface{}{"path": "/etc/input.tif"}, false},
+		{"raw_path", "/etc/input.tif", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := svc.ValidateWorkflowForTenant(context.Background(), 12, map[string]interface{}{"tasks": []interface{}{
+				map[string]interface{}{"id": "load", "operator": "source", "params": map[string]interface{}{}, "depends_on": []interface{}{}},
+				map[string]interface{}{"id": "stats", "operator": "statistics", "params": map[string]interface{}{"input_raster": tc.value}, "depends_on": []interface{}{"load"}},
+			}}, 7)
+			if err != nil || result.Valid != tc.valid {
+				t.Fatalf("result = %+v, err = %v", result, err)
+			}
+		})
 	}
 }

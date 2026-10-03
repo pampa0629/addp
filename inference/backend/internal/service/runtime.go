@@ -16,6 +16,7 @@ import (
 	"time"
 
 	commoninference "github.com/addp/common/inference"
+	"github.com/addp/common/logger"
 	secretcipher "github.com/addp/common/secretcipher"
 	"github.com/addp/inference/internal/models"
 	"github.com/addp/inference/internal/repository"
@@ -245,10 +246,12 @@ func (s *Runtime) Chat(ctx context.Context, req commoninference.ChatRequest) (*c
 		return nil, err
 	}
 	if len(upstream.Choices) == 0 {
+		logUpstreamFailure(ctx, resolved, "empty_chat_choices", 0, nil)
 		return nil, fmt.Errorf("%w: empty chat choices", ErrUpstreamFailed)
 	}
 	message, err := normalizeUpstreamChatMessage(upstream.Choices[0].Message.Role, upstream.Choices[0].Message.Content, upstream.Choices[0].Message.ToolCalls)
 	if err != nil {
+		logUpstreamFailure(ctx, resolved, "invalid_chat_message", 0, nil)
 		return nil, err
 	}
 	return &commoninference.ChatResponse{SchemaVersion: commoninference.SchemaVersion, Message: message, Usage: commoninference.Usage{InputTokens: upstream.Usage.Prompt, OutputTokens: upstream.Usage.Completion, TotalTokens: upstream.Usage.Total}, DeploymentID: resolved.deployment.ID, ProfileVersion: int64(resolved.profile.Version)}, nil
@@ -638,14 +641,20 @@ func (s *Runtime) invokeAt(ctx context.Context, resolved *resolvedModel, endpoin
 	response, err := s.client.Do(request)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			logUpstreamFailure(ctx, resolved, "timeout", 0, nil)
 			return ErrTimeout
 		}
+		logUpstreamFailure(ctx, resolved, "transport", 0, nil)
 		return fmt.Errorf("%w: %v", ErrUpstreamUnavailable, err)
 	}
 	defer response.Body.Close()
 	payload, err := io.ReadAll(io.LimitReader(response.Body, 32<<20))
 	if err != nil {
+		logUpstreamFailure(ctx, resolved, "read_response", response.StatusCode, nil)
 		return fmt.Errorf("%w: read response", ErrUpstreamFailed)
+	}
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		logUpstreamFailure(ctx, resolved, "http_status", response.StatusCode, payload)
 	}
 	if response.StatusCode >= 500 {
 		if response.StatusCode == http.StatusGatewayTimeout {
@@ -657,10 +666,48 @@ func (s *Runtime) invokeAt(ctx context.Context, resolved *resolvedModel, endpoin
 		return fmt.Errorf("%w: HTTP %d", ErrUpstreamFailed, response.StatusCode)
 	}
 	if err := json.Unmarshal(payload, target); err != nil {
+		logUpstreamFailure(ctx, resolved, "decode_response", response.StatusCode, nil)
 		return fmt.Errorf("%w: decode response", ErrUpstreamFailed)
 	}
 	return nil
 }
+
+// Only stable, allowlisted metadata crosses the upstream response/log boundary.
+// In particular, neither error.message nor transport errors (which can contain
+// credentials in URLs) may be emitted here. Status zero means unavailable at
+// this stage, not an assumed HTTP status.
+func logUpstreamFailure(ctx context.Context, resolved *resolvedModel, stage string, status int, payload []byte) {
+	var upstream struct {
+		Error struct {
+			Code  string `json:"code"`
+			Type  string `json:"type"`
+			Param string `json:"param"`
+		} `json:"error"`
+	}
+	if json.Unmarshal(payload, &upstream) != nil {
+		upstream.Error.Code, upstream.Error.Type, upstream.Error.Param = "", "", ""
+	}
+	logger.L().ErrorContext(ctx, "inference upstream invocation failed",
+		"stage", stage, "upstream_http_status", status,
+		"provider_connection_id", resolved.provider.ID, "model_deployment_id", resolved.deployment.ID,
+		"upstream_error_code", allowedDiagnosticValue(upstream.Error.Code,
+			"unsupported_parameter", "unsupported_value", "invalid_parameter", "invalid_value", "invalid_api_key",
+			"model_not_found", "insufficient_quota", "rate_limit_exceeded", "context_length_exceeded", "content_filter"),
+		"upstream_error_type", allowedDiagnosticValue(upstream.Error.Type,
+			"invalid_request_error", "authentication_error", "permission_error", "rate_limit_error", "server_error", "insufficient_quota"),
+		"upstream_error_param", allowedDiagnosticValue(upstream.Error.Param,
+			"model", "messages", "max_tokens", "max_completion_tokens", "temperature", "tools", "tool_choice", "response_format", "stream"))
+}
+
+func allowedDiagnosticValue(value string, allowed ...string) string {
+	for _, candidate := range allowed {
+		if value == candidate {
+			return value
+		}
+	}
+	return "unclassified"
+}
+
 func joinEndpoint(base, path string) (string, error) {
 	parsed, err := url.Parse(strings.TrimRight(base, "/") + "/")
 	if err != nil {

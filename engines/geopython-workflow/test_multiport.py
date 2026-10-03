@@ -8,7 +8,7 @@
 import json
 import unittest
 
-from workflow_engine import PythonWorkflowEngine, execute_workflow
+from workflow_engine import GeoPythonWorkflowRunner, execute_workflow
 
 
 def build_multiport_workflow():
@@ -81,15 +81,10 @@ class MultiPortWorkflowTest(unittest.TestCase):
         self.assertIn("features", final_result)
 
     def test_engine_keeps_split_outputs_by_port_name(self):
-        engine = PythonWorkflowEngine()
-        engine.load_workflow(build_multiport_workflow())
+        result = GeoPythonWorkflowRunner().execute(build_multiport_workflow())
+        assert set(json.loads(result.all_results['split_task'])) == {'large','small'}
+        assert 'process_large' in result.all_results and 'process_small' in result.all_results
 
-        engine.run()
-
-        self.assertIn("split_task", engine.results)
-        self.assertEqual({"large", "small"}, set(engine.results["split_task"].keys()))
-        self.assertIn("process_large", engine.results)
-        self.assertIn("process_small", engine.results)
 
 
 if __name__ == "__main__":

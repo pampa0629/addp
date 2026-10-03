@@ -284,10 +284,10 @@ func TestInvokeOperatorUsesGenericHTTPProviderForCustomWorkflowRuntime(t *testin
 		case r.Method == http.MethodGet && r.URL.Path == "/api/operators":
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{
 				"operators": []map[string]interface{}{
-					testWorkflowOperatorPayload(engineType, "tiff_to_cog", []string{"direct"}),
+					testWorkflowOperatorPayload(engineType, "raster_to_cog", []string{"direct"}),
 				},
 			})
-		case r.Method == http.MethodPost && r.URL.Path == "/api/operators/tiff_to_cog/invoke":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/operators/raster_to_cog/invoke":
 			invoked = true
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{
 				"status":       "success",
@@ -310,7 +310,7 @@ func TestInvokeOperatorUsesGenericHTTPProviderForCustomWorkflowRuntime(t *testin
 		Capabilities:   testWorkflowCapabilities(t, engineType),
 	}
 
-	result, err := InvokeOperator(context.Background(), engine, "tiff_to_cog", plugin.OperatorInvokeRequest{})
+	result, err := InvokeOperator(context.Background(), engine, "raster_to_cog", plugin.OperatorInvokeRequest{})
 	if err != nil {
 		t.Fatalf("InvokeOperator returned error: %v", err)
 	}
@@ -360,7 +360,7 @@ func TestProbeWorkflowRuntimeContractRejectsMismatchedOperatorEngineType(t *test
 		case r.Method == http.MethodGet && r.URL.Path == "/api/operators":
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{
 				"operators": []map[string]interface{}{
-					testWorkflowOperatorPayload("geopython_workflow", "tiff_to_cog", []string{"direct"}),
+					testWorkflowOperatorPayload("geopython_workflow", "raster_to_cog", []string{"direct"}),
 				},
 			})
 		default:
@@ -395,7 +395,7 @@ func TestResolveDirectWorkflowOperatorFindsCustomRuntimeByOperatorCapability(t *
 		}
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"operators": []map[string]interface{}{
-				testWorkflowOperatorPayload(engineType, "tiff_to_cog", []string{"workflow", "direct"}),
+				testWorkflowOperatorPayload(engineType, "raster_to_cog", []string{"workflow", "direct"}),
 			},
 		})
 	}))
@@ -433,13 +433,13 @@ func TestResolveDirectWorkflowOperatorFindsCustomRuntimeByOperatorCapability(t *
 	}
 
 	engine, operator, err := ResolveDirectWorkflowOperator(context.Background(), engines, DirectWorkflowOperatorSelector{
-		OperatorName: "tiff_to_cog",
+		OperatorName: "raster_to_cog",
 		EngineType:   engineType,
 	})
 	if err != nil {
 		t.Fatalf("ResolveDirectWorkflowOperator returned error: %v", err)
 	}
-	if engine.ID != 9 || operator.Name != "tiff_to_cog" || operator.EngineType != engineType {
+	if engine.ID != 9 || operator.Name != "raster_to_cog" || operator.EngineType != engineType {
 		t.Fatalf("unexpected resolved runtime/operator: engine=%+v operator=%+v", engine, operator)
 	}
 }
@@ -473,12 +473,12 @@ func TestResolveDirectWorkflowOperatorDoesNotFallbackToBuiltinWorkflowRuntime(t 
 	}
 
 	_, _, err := ResolveDirectWorkflowOperator(context.Background(), engines, DirectWorkflowOperatorSelector{
-		OperatorName: "tiff_to_cog",
+		OperatorName: "raster_to_cog",
 	})
 	if err == nil {
 		t.Fatal("ResolveDirectWorkflowOperator() error = nil, want missing direct operator")
 	}
-	if !strings.Contains(err.Error(), "direct workflow operator tiff_to_cog is not available") {
+	if !strings.Contains(err.Error(), "direct workflow operator raster_to_cog is not available") {
 		t.Fatalf("error = %v, want direct operator unavailable", err)
 	}
 }

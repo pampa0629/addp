@@ -25,6 +25,7 @@ on:
           - opengauss-consumer-flow
           - redis-consumer-flow
           - quality-dynamic-binding
+          - raster-workflow
           - security-plaintext-access
           - security-mysql-owner-protection
           - security-transfer-protection
@@ -48,7 +49,7 @@ permissions:
 jobs:
   online-t4:
     name: Online T4 (${{ inputs.suite }})
-    if: github.event_name == 'workflow_dispatch' && inputs.suite != 'opengauss-consumer-flow' && inputs.suite != 'kingbase-consumer-flow' && inputs.suite != 'metric-service-revision-lifecycle' && inputs.suite != 'ontology-revision-lifecycle' && inputs.suite != 'compose-public-origin' && inputs.suite != 'orchestrator-execution' && inputs.suite != 'manager-internal-artifact-lineage' && inputs.suite != 'transfer-relational-sql-etl' && inputs.suite != 'redis-consumer-flow' && inputs.suite != 'security-mysql-owner-protection'
+    if: github.event_name == 'workflow_dispatch' && inputs.suite != 'opengauss-consumer-flow' && inputs.suite != 'kingbase-consumer-flow' && inputs.suite != 'metric-service-revision-lifecycle' && inputs.suite != 'ontology-revision-lifecycle' && inputs.suite != 'compose-public-origin' && inputs.suite != 'orchestrator-execution' && inputs.suite != 'manager-internal-artifact-lineage' && inputs.suite != 'transfer-relational-sql-etl' && inputs.suite != 'security-mysql-owner-protection' && inputs.suite != 'redis-consumer-flow' && inputs.suite != 'raster-workflow'
     concurrency:
       group: online-t4-${{ inputs.suite }}
       cancel-in-progress: false
@@ -224,74 +225,6 @@ jobs:
           status: ${{ job.status }}
           details-file: ${{ runner.temp }}/addp-online-${{ github.run_id }}/summary.txt
 
-  redis-hosted-t4:
-    name: Online T4 (redis-consumer-flow, Linux x86_64)
-    if: github.event_name == 'workflow_dispatch' && inputs.suite == 'redis-consumer-flow'
-    concurrency:
-      group: online-t4-redis-consumer-flow
-      cancel-in-progress: false
-    runs-on: ubuntu-24.04
-    timeout-minutes: 90
-    env:
-      ADDP_ONLINE_HOST: "1"
-      ADDP_ONLINE_HOSTED: "1"
-      ONLINE_SUITE_INPUT: redis-consumer-flow
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
-        with:
-          go-version-file: system/backend/go.mod
-          cache: false
-
-      - name: Set up Node.js
-        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
-        with:
-          node-version-file: .node-version
-          cache: npm
-          cache-dependency-path: '**/package-lock.json'
-
-      - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
-        with:
-          python-version: '3.12'
-
-      - name: Validate Hosted Redis readiness
-        env:
-          ADDP_ONLINE_ARTIFACT_DIR: ${{ runner.temp }}/addp-online-${{ github.run_id }}
-          ADDP_ONLINE_SECRET_DIR: ${{ runner.temp }}/addp-online-secret-${{ github.run_id }}
-        run: bash scripts/test/online-hosted-redis-gate.sh --check-only
-
-      - name: Run Hosted Redis Online gate
-        env:
-          ADDP_ONLINE_ARTIFACT_DIR: ${{ runner.temp }}/addp-online-${{ github.run_id }}
-          ADDP_ONLINE_SECRET_DIR: ${{ runner.temp }}/addp-online-secret-${{ github.run_id }}
-        run: bash scripts/test/online-hosted-redis-gate.sh
-
-      - name: Upload Hosted Redis evidence
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: online-t4-redis-consumer-flow-${{ github.run_id }}
-          path: |
-            ${{ runner.temp }}/addp-online-${{ github.run_id }}/
-            logs/
-          if-no-files-found: warn
-          retention-days: 14
-
-      - name: Summarize Hosted Redis T4 gate
-        if: always()
-        uses: ./.github/actions/ci-gate-summary
-        with:
-          gate: Online T4 (redis-consumer-flow, Linux x86_64)
-          status: ${{ job.status }}
-          details-file: ${{ runner.temp }}/addp-online-${{ github.run_id }}/summary.txt
-
   security-hosted-t4:
     name: Online T4 (security-mysql-owner-protection, Linux x86_64)
     if: github.event_name == 'workflow_dispatch' && inputs.suite == 'security-mysql-owner-protection'
@@ -425,6 +358,74 @@ jobs:
         uses: ./.github/actions/ci-gate-summary
         with:
           gate: Online T4 (transfer-relational-sql-etl, Linux x86_64)
+          status: ${{ job.status }}
+          details-file: ${{ runner.temp }}/addp-online-${{ github.run_id }}/summary.txt
+
+  redis-hosted-t4:
+    name: Online T4 (redis-consumer-flow, Linux x86_64)
+    if: github.event_name == 'workflow_dispatch' && inputs.suite == 'redis-consumer-flow'
+    concurrency:
+      group: online-t4-redis-consumer-flow
+      cancel-in-progress: false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      ADDP_ONLINE_HOST: "1"
+      ADDP_ONLINE_HOSTED: "1"
+      ONLINE_SUITE_INPUT: redis-consumer-flow
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: system/backend/go.mod
+          cache: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: '**/package-lock.json'
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.12'
+
+      - name: Validate Hosted Redis readiness
+        env:
+          ADDP_ONLINE_ARTIFACT_DIR: ${{ runner.temp }}/addp-online-${{ github.run_id }}
+          ADDP_ONLINE_SECRET_DIR: ${{ runner.temp }}/addp-online-secret-${{ github.run_id }}
+        run: bash scripts/test/online-hosted-redis-gate.sh --check-only
+
+      - name: Run Hosted Redis Online gate
+        env:
+          ADDP_ONLINE_ARTIFACT_DIR: ${{ runner.temp }}/addp-online-${{ github.run_id }}
+          ADDP_ONLINE_SECRET_DIR: ${{ runner.temp }}/addp-online-secret-${{ github.run_id }}
+        run: bash scripts/test/online-hosted-redis-gate.sh
+
+      - name: Upload Hosted Redis evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: online-t4-redis-consumer-flow-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/addp-online-${{ github.run_id }}/
+            logs/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Summarize Hosted Redis T4 gate
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: Online T4 (redis-consumer-flow, Linux x86_64)
           status: ${{ job.status }}
           details-file: ${{ runner.temp }}/addp-online-${{ github.run_id }}/summary.txt
 
@@ -757,5 +758,73 @@ jobs:
         uses: ./.github/actions/ci-gate-summary
         with:
           gate: Online T4 (kingbase-consumer-flow, owner-managed Linux x86_64)
+          status: ${{ job.status }}
+          details-file: ${{ runner.temp }}/addp-online-${{ github.run_id }}/summary.txt
+
+  raster-hosted-t4:
+    name: Online T4 (raster-workflow, Linux x86_64)
+    if: github.event_name == 'workflow_dispatch' && inputs.suite == 'raster-workflow'
+    concurrency:
+      group: online-t4-raster-workflow
+      cancel-in-progress: false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      ADDP_ONLINE_HOST: "1"
+      ADDP_ONLINE_HOSTED: "1"
+      ONLINE_SUITE_INPUT: raster-workflow
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: system/backend/go.mod
+          cache: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: '**/package-lock.json'
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.12'
+
+      - name: Validate Hosted Raster readiness
+        env:
+          ADDP_ONLINE_ARTIFACT_DIR: ${{ runner.temp }}/addp-online-${{ github.run_id }}
+          ADDP_ONLINE_SECRET_DIR: ${{ runner.temp }}/addp-online-secret-${{ github.run_id }}
+        run: bash scripts/test/online-hosted-raster-gate.sh --check-only
+
+      - name: Run Hosted Raster Online gate
+        env:
+          ADDP_ONLINE_ARTIFACT_DIR: ${{ runner.temp }}/addp-online-${{ github.run_id }}
+          ADDP_ONLINE_SECRET_DIR: ${{ runner.temp }}/addp-online-secret-${{ github.run_id }}
+        run: bash scripts/test/online-hosted-raster-gate.sh
+
+      - name: Upload Hosted Raster evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: online-t4-raster-workflow-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/addp-online-${{ github.run_id }}/
+            logs/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Summarize Hosted Raster T4 gate
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: Online T4 (raster-workflow, Linux x86_64)
           status: ${{ job.status }}
           details-file: ${{ runner.temp }}/addp-online-${{ github.run_id }}/summary.txt

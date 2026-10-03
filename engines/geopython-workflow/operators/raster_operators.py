@@ -1,13 +1,14 @@
 """
 栅格格式算子模块
 
-提供栅格格式优化算子。Manager 负责准备 GDAL source_uri / target_uri /
-access_plan、目标 artifact 或业务数据集生命周期和任务状态；Python workflow
+提供 Manager 目录型栅格镶嵌算子。Manager 负责准备 GDAL 目录访问计划、目标 artifact 或业务数据集生命周期和任务状态；Python workflow
 只负责执行 GDAL 栅格处理。
 """
 
 import json
 import logging
+import threading
+from functools import wraps
 import math
 import os
 import posixpath
@@ -33,6 +34,8 @@ from addp_common.raster_mosaic import (
     build_manifest,
     build_source_index,
 )
+
+from .raster_compute import translate_cog
 
 from .base import (
     OperatorType,
@@ -418,35 +421,15 @@ def _translate_to_cog(
             output_srs = str(_inspect_raster(source, gdal_env).get("source_crs") or "").strip()
         except Exception:
             output_srs = ""
-    creation_options = [
-        f"COMPRESS={compression}",
-        f"BLOCKSIZE={blocksize}",
-        f"OVERVIEW_RESAMPLING={overview_resampling}",
-    ]
-    if num_threads:
-        creation_options.append(f"NUM_THREADS={num_threads}")
     _ensure_gdal_dir(_path_parent(target), gdal_env)
     with _gdal_config_env(gdal_env) as gdal:
         if _is_gdal_virtual_path(target):
-            try:
-                gdal.Unlink(target)
-            except Exception:
-                pass
+            gdal.Unlink(target)
         elif Path(target).exists():
             Path(target).unlink()
-        options = gdal.TranslateOptions(
-            format="COG",
-            creationOptions=creation_options,
-            width=int(width or 0),
-            height=int(height or 0),
-            resampleAlg=str(resampling or "") or None,
-            outputSRS=output_srs or None,
-            callback=callback,
-        )
-        result = gdal.Translate(target, source, options=options)
-        if result is None:
-            raise RuntimeError(f"GDAL failed to create COG: {target}")
-        result = None
+        translate_cog(source, target, compression, blocksize, overview_resampling.lower(),
+                      width=int(width or 0), height=int(height or 0), resampling=resampling or None,
+                      assign_srs=output_srs or None, callback=callback, num_threads=num_threads, gdal_api=gdal)
 
 
 def _leaf_retry_attempts(cog_config: Dict[str, Any]) -> int:
@@ -603,65 +586,20 @@ def _prepare_target_path(target: str, overwrite: bool) -> None:
     target_path.unlink()
 
 
-def tiff_to_cog(
-	source_uri: str,
-	target_uri: str,
-	gdal_env: Dict[str, Any] | None = None,
-    assign_srs: str = "",
-    compression: str = "DEFLATE",
-    blocksize: int = 512,
-    overview_resampling: str = "NEAREST",
-    overwrite: bool = True,
-    **kwargs,
-) -> Dict[str, Any]:
-    """
-    将 TIFF / GeoTIFF 转换为 Cloud Optimized GeoTIFF。
-
-    参数:
-    - source_uri: Manager 预处理后的 GDAL 可读 URI，例如本地挂载路径或 /vsicurl/ URL。
-    - target_uri: Manager 预处理后的 GDAL 可写 URI，例如 infra MinIO /vsis3/bucket/object。
-    - gdal_env: Manager 预处理后的 GDAL 子进程环境变量。
-    - assign_srs: Manager 基于源 Meta facts 派生的 CRS 定义，只写入目标 COG，不重投影。
-    """
-    source = str(source_uri or "").strip()
-    target = str(target_uri or "").strip()
-    if not source:
-        raise ValueError("source_uri is required")
-    if not target:
-        raise ValueError("target_uri is required")
-    _prepare_target_path(target, overwrite)
-
-    cmd = [
-        "gdal_translate",
-        "-of",
-        "COG",
-        "-co",
-        f"COMPRESS={compression}",
-        "-co",
-        f"BLOCKSIZE={int(blocksize)}",
-        "-co",
-        f"OVERVIEW_RESAMPLING={overview_resampling}",
-    ]
-    if str(assign_srs or "").strip():
-        cmd.extend(["-a_srs", str(assign_srs).strip()])
-    cmd.extend([source, target])
-    _run_command(cmd, gdal_env)
-
-    facts = _raster_facts(target, gdal_env)
-    return {
-        "status": "success",
-        "format": "tiff",
-        "profile": "cog",
-        "source_uri": source,
-        "target_uri": target,
-        "compression": compression,
-        "blocksize": int(blocksize),
-        "overview_resampling": overview_resampling,
-        "assign_srs": str(assign_srs or "").strip(),
-		**facts,
-	}
+_MOSAIC_LOCK = threading.RLock()
 
 
+def _serialized_mosaic(function):
+    # Directory mosaic uses GDAL process-global path-specific options. Keep
+    # these operations exclusive in the single-process HTTP runtime.
+    @wraps(function)
+    def execute(*args, **kwargs):
+        with _MOSAIC_LOCK:
+            return function(*args, **kwargs)
+    return execute
+
+
+@_serialized_mosaic
 def build_raster_mosaic(
 	access_plan: Dict[str, Any],
 	placement: Dict[str, Any],
@@ -1139,117 +1077,6 @@ def build_raster_mosaic(
 			cleanup_path_options()
 
 
-TIFF_TO_COG_METADATA = OperatorMetadata(
-	name="tiff_to_cog",
-	type=OperatorType.GENERAL,
-    category=OperatorCategory.FORMAT_CONVERSION,
-    description="TIFF 转 COG",
-    brief_description="将 TIFF / GeoTIFF 转换为 Cloud Optimized GeoTIFF",
-    execution_modes=["workflow", "direct"],
-    effects=["read", "write"],
-    overview="面向 Manager 栅格快显派生产物的窄口径转换算子。Manager 负责将 source locator 和 infra artifact 目标预处理为 GDAL URI / 环境变量；本算子只负责执行 TIFF 到 COG 的格式转换。",
-    params=[
-        OperatorParam(
-            name="source_uri",
-            type="param",
-            data_type="string",
-            required=True,
-            description="源 TIFF GDAL URI",
-            notes="由 Manager 在执行前派生，可以是本地挂载路径、/vsicurl/ URL 等 GDAL 可读 URI。",
-        ),
-        OperatorParam(
-            name="target_uri",
-            type="param",
-            data_type="string",
-            required=True,
-            description="目标 COG GDAL URI",
-            notes="由 Manager 在执行前派生，第一阶段为 infra MinIO /vsis3/bucket/object。",
-        ),
-        OperatorParam(
-            name="gdal_env",
-            type="param",
-            data_type="object",
-            required=False,
-            description="GDAL 子进程环境变量",
-            notes="由 Manager 派生，只作用于 gdal_translate / gdalinfo 子进程。",
-        ),
-        OperatorParam(
-            name="assign_srs",
-            type="param",
-            data_type="string",
-            required=False,
-            description="写入目标 COG 的 CRS 定义",
-            notes="由 Manager 根据源 Meta 空间事实派生；只用于 -a_srs 保留 GeoTIFF CRS authority，不执行坐标转换。",
-        ),
-        OperatorParam(
-            name="compression",
-            type="param",
-            data_type="string",
-            required=False,
-            description="压缩方式",
-            enum=["DEFLATE", "LZW", "ZSTD", "JPEG", "NONE"],
-            default="DEFLATE",
-        ),
-        OperatorParam(
-            name="blocksize",
-            type="param",
-            data_type="int",
-            required=False,
-            description="COG block size",
-            default=512,
-        ),
-        OperatorParam(
-            name="overview_resampling",
-            type="param",
-            data_type="string",
-            required=False,
-            description="概览重采样方法",
-            enum=["NEAREST", "BILINEAR", "CUBIC", "AVERAGE"],
-            default="NEAREST",
-        ),
-        OperatorParam(
-            name="overwrite",
-            type="param",
-            data_type="bool",
-            required=False,
-            description="目标已存在时是否覆盖",
-            default=True,
-        ),
-    ],
-    use_cases=[
-        "Manager 将源 item locator 派生为 GDAL source_uri 后生成 COG 快显 artifact。",
-        "已是 COG 的源文件复制到受管 artifact 位置前，可用该算子重写为规范 COG。",
-        "小 TIFF 自动优化为 COG，提升后续前端 Range 渲染效率。",
-        "大 TIFF 用户手动触发 COG 快显产物生成。",
-    ],
-    notes=[
-        "该算子不是瓦片生成，不输出 PNG/JPEG/WebP tile。",
-        "该算子不直接访问 Manager 数据库，也不登记 artifact state。",
-        "输入输出 GDAL URI 和访问环境由 Manager 在执行前保证。",
-        "第一阶段不承诺所有源格式都能转换；失败应由 Manager execution 记录。",
-    ],
-    workflow_example={
-        "id": "build_cog",
-        "operator": "tiff_to_cog",
-        "params": {
-            "source_uri": "/vsicurl/http://manager/source-presigned.tif",
-            "target_uri": "/vsis3/manager/tenant_7/cog/fp/source.cog.tif",
-            "assign_srs": "+proj=longlat +datum=WGS84 +no_defs",
-            "gdal_env": {
-                "AWS_S3_ENDPOINT": "minio:9000",
-                "AWS_ACCESS_KEY_ID": "minioadmin",
-                "AWS_SECRET_ACCESS_KEY": "minioadmin",
-                "AWS_VIRTUAL_HOSTING": "FALSE",
-                "AWS_HTTPS": "NO"
-            },
-            "compression": "DEFLATE",
-            "blocksize": 512,
-        },
-        "depends_on": [],
-    },
-)
-
-
 BUILD_RASTER_MOSAIC_METADATA = OperatorMetadata(
 	name="build_raster_mosaic",
 	type=OperatorType.GENERAL,
@@ -1373,6 +1200,6 @@ BUILD_RASTER_MOSAIC_METADATA = OperatorMetadata(
 
 
 OPERATORS = dict([
-	register_operator(TIFF_TO_COG_METADATA, tiff_to_cog),
+
 	register_operator(BUILD_RASTER_MOSAIC_METADATA, build_raster_mosaic),
 ])

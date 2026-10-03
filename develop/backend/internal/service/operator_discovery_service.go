@@ -158,11 +158,20 @@ func (s *OperatorDiscoveryService) validateWorkflow(
 			}
 		}
 		for name := range params {
-			if _, ok := parameterByName[name]; !ok {
+			parameter, ok := parameterByName[name]
+			if !ok {
 				result.Errors = append(result.Errors, WorkflowValidationIssue{
 					Code:    "parameter_not_public",
 					Path:    fmt.Sprintf("workflow_definition.tasks[%d].params.%s", index, name),
 					Message: fmt.Sprintf("算子 %s 未声明公开参数: %s", operatorName, name),
+				})
+				continue
+			}
+			if parameter.Type == "raster" && !isWorkflowReference(params[name]) {
+				result.Errors = append(result.Errors, WorkflowValidationIssue{
+					Code:    "raster_reference_required",
+					Path:    fmt.Sprintf("workflow_definition.tasks[%d].params.%s", index, name),
+					Message: fmt.Sprintf("算子 %s 的栅格输入 %s 必须引用当前工作流的栅格端口", operatorName, name),
 				})
 			}
 		}

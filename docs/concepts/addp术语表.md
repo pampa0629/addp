@@ -404,6 +404,9 @@
 | Develop Adapter Spec | Develop 适配规范 | Develop Backend 按工作流引擎类型和算子 ID 选择的显式执行前转换契约，声明公开资源参数如何派生为运行时参数。 | 负责查询 System Engine Instance、派生 `connection_info/schema/table/path` 并移除公开资源参数；不得按参数名隐式触发。 |
 | Runtime Operator Spec | 运行时算子规范 | Workflow Runtime 实际执行算子时消费的内部契约，只声明运行时真实需要的参数、输入输出端口和执行行为。 | 不解析 ADDP `ResourceLocator`，不承载资源树 UI 配置；`connection_info/schema/table/path` 属于适配层到运行时的内部参数。 |
 | Workflow Access Plan | 工作流访问计划 | Develop、Manager 等调用方把已解析的存储资源转换为 Workflow Runtime 可执行读写计划的内部契约。 | 当前版本为 `addp.workflow.access-plan/v1`；只在执行期携带 `mounted_path` 或 `object_store` 访问参数，不作为用户任务定义、资源身份或长期事实源。 |
+| RasterDataset | 栅格数据集对象 | 当前工作流执行目录内的私有、文件支撑栅格对象。 | 只通过 `raster` 端口在当前 DAG 内流转；成功或失败时清理，不返回路径、句柄或像元数组。 |
+| RasterArtifact | 栅格成果 | 已保存到目标存储的栅格及其事实摘要。 | Develop 业务成果使用稳定 ResourceLocator；Manager 私有快显成果仍由 Manager 管理，不新增成果状态 owner。 |
+| RasterRef | 栅格引用 | 对栅格输入或成果的引用语义。 | 公开资源身份仍统一使用 ResourceLocator，不建立第二套身份或持久状态；临时摘要不能重建内部数据集。 |
 | Execution Effect | 执行效果 | 一次计算对数据或外部系统可能产生的效果分类。 | 固定为 `read`、`write`、`ddl`、`external_effect`；工作流按全部算子的最高效果收窄授权，不能由客户端自报后直接信任。 |
 | Engine Access Scope | 引擎访问范围 | Execution Authorization 中一个 Source Engine 与其允许 Execution Effect 集合组成的最小授权单元。 | 授权必须逐引擎保存和校验，不得把独立的 Engine ID 集合与 Effect 集合做笛卡尔积；例如跨引擎传输应分别表达源 `read` 和目标 `write`。 |
 | Internal Task Scope | 内部任务范围 | Execution Authorization 中绑定 owner 内部任务类型、资源修订、摘要与 generation 的不可变操作范围。 | 与 Engine Access Scope 互斥；不授予业务 Engine 访问权。首个消费者为 Ontology 语义投影，使用 Infra FalkorDB，不注册业务 Engine。 |
@@ -483,7 +486,7 @@
 | Role Assignment | 角色分配 | 将 Role 赋予 Principal，并声明 Platform、Tenant、Department 或 Project Group Scope 的授权事实。 | 不使用 `user_type` 同时表达身份类别和完整权限。 |
 | Department | 部门 | Tenant 内表达稳定组织归属的层级组织单元。 | 一个 User 可有一个主部门和多个附加部门；父子部门权限默认不继承。名称表达显示名称；编码由用户创建时必填，同 Tenant 内唯一，创建后不可修改，作为技术身份。 |
 | Project Group | 项目组 | Tenant 内面向跨部门协作的成员集合。 | 严格属于单个 Tenant，第一阶段不嵌套，不改变成员的 Department 归属；创建即启用，关闭后不可恢复。名称表达显示名称；编码由用户创建时必填，同 Tenant 内唯一，创建后不可修改，作为技术身份。 |
-| Resource Grant | 资源授权 | owner 模块将特定资源动作显式授予 User、Department、Project Group、Role 主体集合或 Service Principal 的事实。 | 最终资源访问判断仍由 owner 执行；Asset 的授权记录可以是授权来源。 |
+| Resource Grant | 资源授权 | owner 模块将特定资源动作显式授予 User、Department、Project Group、Role 主体集合或 Service Principal 的事实。 | 最终资源访问判断仍由 owner 执行；Asset 的授权记录可以是授权来源。源数据撤销针对指定 Grant，只收回这一授权来源；其他独立有效 Grant 不受影响。对精确资源动作无条件禁止访问使用 Explicit Deny，不借撤销个人 Grant 删除项目组 Grant。 |
 | source data authorization authority | 源数据授权权威 | 同一源数据逻辑资源访问规则的唯一维护方。 | 已确认由 System 的引擎访问控制领域承担，不是 System IAM 的全平台中央 ACL；访问模块执行其权威规则，不能分别维护源数据授权副本。专业业务对象的授权仍归各自 owner；表级贯通尚未实现。 |
 | source data authorization target | 源数据授权目标 | 在 Tenant 边界内，以已登记 Engine 身份和完整结构化 EngineCatalogPath 确定的源数据逻辑资源。 | 不是物理对象每次创建的身份；没有在 ADDP 中改变资源绑定或授权时，外部同名重建仍按同一逻辑资源处理。不同 Engine 或路径是不同目标，不随 Catalog 重绑自动转移规则；指纹、Meta 行 ID 和 CatalogEntry ID 不代替当前有效访问规则。 |
 | source authorization approval requirement | 源数据授权批准要求 | System 引擎访问控制领域针对一个精确源数据目标保存的、新授权所需批准依据的版本化事实。 | 可要求 Catalog 业务确认，或经明确交接采用 System 独立批准；不复制 Catalog 责任人、部门或责任历史，不是 Resource Grant，也不因模块注册、停用或失联自动切换。交接承接人只用于当前资格核验和审计，不构成永久唯一审批人或第二份账号白名单。未建立权威事实不等于已允许独立批准；首次启用需独立治理配置 Permission 与有效引擎管理委派，不能由编目维护权推导。完整跨模块事务协议待落实。 |
@@ -654,6 +657,8 @@
 运行日志是模块进程的启动输出、运行消息和异常堆栈，由受控启动边界赋予进程实例身份；正文归运行日志存储，不属于操作审计或任务执行记录。日志链路状态与实例 UP/DOWN 分开表达。单实例日志入口由 System 在 Platform Context 下授权。 历史日志分页固定本次查询窗口，按接收时间和实例内精确序号续读；它不表示存储快照或采集完整性，迟到记录由刷新补查。
 
 日志链路观测是 Infra 节点观测器定期产生的有界安全事实，不含日志正文或租户业务数据。平台日志链路告警由 Monitor 根据有效观测判定并持久保存，包含打开、升级和恢复生命周期，与租户任务告警使用独立事实模型和 Platform 权限；System 提供展示入口。健康只证明近期探针与观测成功，不证明历史日志零丢失。
+
+平台日志企业微信通知渠道由 Monitor 消费既有平台告警事件，通过企业微信群机器人发送安全摘要；使用独立 `wecom` 目标类型与加密机器人 key，不采用通用 Webhook 的 HMAC 接收协议。它复用平台通知 outbox 和重试，群内可能重复或乱序，不以通知到达推断当前健康。
 
 平台日志通知手动重投只将最终失败的投递重新入队，保留原投递身份、事件正文和发生时间，使用原目标当前配置开启新的有界尝试周期，保留累计及人工重投次数。允许补发已恢复告警的历史失败通知，不改变告警当前状态，不绕过目标停用或告警抑制。
 

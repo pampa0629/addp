@@ -1522,6 +1522,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "渠道为 webhook/email/wecom；wecom 的 url 与 recipients 留空，凭据另行设置 | Channels are webhook/email/wecom; wecom requires empty url and recipients with a separate credential write",
                 "consumes": [
                     "application/json"
                 ],
@@ -1714,6 +1715,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "Webhook 使用 HMAC 密钥；企业微信使用完整机器人地址，key 加密保存且不回显 | Webhook uses an HMAC secret; WeCom uses the full robot URL, with its key encrypted and never returned",
                 "consumes": [
                     "application/json"
                 ],
@@ -1723,7 +1725,7 @@ const docTemplate = `{
                 "tags": [
                     "平台日志链路 | Platform Log Pipeline"
                 ],
-                "summary": "设置平台日志通知签名凭据 | Set platform log notification signing credential",
+                "summary": "设置平台日志通知渠道凭据 | Set platform log notification channel credential",
                 "parameters": [
                     {
                         "type": "integer",
@@ -1818,6 +1820,12 @@ const docTemplate = `{
                     },
                     "409": {
                         "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ErrorResponse"
+                        }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
                         "schema": {
                             "$ref": "#/definitions/internal_api.ErrorResponse"
                         }
@@ -3908,7 +3916,12 @@ const docTemplate = `{
             ],
             "properties": {
                 "channel": {
-                    "type": "string"
+                    "type": "string",
+                    "enum": [
+                        "webhook",
+                        "email",
+                        "wecom"
+                    ]
                 },
                 "enabled": {
                     "type": "boolean"
@@ -4778,6 +4791,7 @@ const docTemplate = `{
             ],
             "properties": {
                 "secret": {
+                    "description": "Webhook HMAC 密钥；企业微信完整机器人地址 | Webhook HMAC secret; WeCom full robot URL.",
                     "type": "string"
                 },
                 "version": {

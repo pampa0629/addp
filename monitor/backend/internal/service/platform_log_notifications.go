@@ -20,19 +20,21 @@ type PlatformLogNotifications struct {
 	key                           []byte
 	allowPrivate                  bool
 	webhook                       WebhookTransport
+	wecom                         WeComTransport
 	email                         EmailTransport
 	maxAttempts                   int
 	lease, retryInitial, retryMax time.Duration
 }
 
 func NewPlatformLogNotifications(db *gorm.DB, key []byte, allowPrivate bool, webhook WebhookTransport, email EmailTransport, maxAttempts int, lease, retryInitial, retryMax time.Duration) *PlatformLogNotifications {
-	return &PlatformLogNotifications{db: db, key: key, allowPrivate: allowPrivate, webhook: webhook, email: email, maxAttempts: maxAttempts, lease: lease, retryInitial: retryInitial, retryMax: retryMax}
+	wecom, _ := webhook.(WeComTransport)
+	return &PlatformLogNotifications{wecom: wecom, db: db, key: key, allowPrivate: allowPrivate, webhook: webhook, email: email, maxAttempts: maxAttempts, lease: lease, retryInitial: retryInitial, retryMax: retryMax}
 }
 
 type LogDestinationInput struct {
 	Version    uint64   `json:"version"`
 	Name       string   `json:"name" binding:"required"`
-	Channel    string   `json:"channel" binding:"required"`
+	Channel    string   `json:"channel" binding:"required" enums:"webhook,email,wecom"`
 	URL        string   `json:"url"`
 	Recipients []string `json:"recipients"`
 	EventTypes []string `json:"event_types" binding:"required"`
@@ -54,6 +56,11 @@ func (n *PlatformLogNotifications) validate(ctx context.Context, input LogDestin
 		if len(input.Recipients) != 0 || len(d.URL) > 2048 || ValidateWebhookURL(ctx, d.URL, n.allowPrivate) != nil {
 			return d, ErrLogInvalid
 		}
+	case "wecom":
+		if d.URL != "" || len(input.Recipients) != 0 {
+			return d, ErrLogInvalid
+		}
+		d.URL = wecomEndpoint
 	case "email":
 		if d.URL != "" {
 			return d, ErrLogInvalid
@@ -82,7 +89,7 @@ func (n *PlatformLogNotifications) Save(ctx context.Context, id uint, input LogD
 		return d, err
 	}
 	if id == 0 {
-		if input.Version != 0 || d.Enabled && d.Channel == "webhook" {
+		if input.Version != 0 || d.Enabled && (d.Channel == "webhook" || d.Channel == "wecom") {
 			return d, ErrLogInvalid
 		}
 		var count int64
@@ -114,7 +121,7 @@ func (n *PlatformLogNotifications) Save(ctx context.Context, id uint, input LogD
 		if old.Channel != d.Channel {
 			return ErrLogInvalid
 		}
-		if d.Enabled && d.Channel == "webhook" && old.SecretCiphertext == "" {
+		if d.Enabled && (d.Channel == "webhook" || d.Channel == "wecom") && old.SecretCiphertext == "" {
 			return ErrLogInvalid
 		}
 		d.ID = id
@@ -137,18 +144,26 @@ func (n *PlatformLogNotifications) SetSecret(ctx context.Context, id uint, versi
 	if len(secret) < 16 || len(secret) > 256 || version == 0 {
 		return d, ErrLogInvalid
 	}
-	cipher, err := secretcipher.Encrypt(secret, n.key)
-	if err != nil {
-		return d, err
-	}
-	err = n.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=? AND channel='webhook'", id).Take(&d).Error; errors.Is(err, gorm.ErrRecordNotFound) {
+	err := n.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=? AND channel IN ?", id, []string{"webhook", "wecom"}).Take(&d).Error; errors.Is(err, gorm.ErrRecordNotFound) {
 			return ErrLogNotFound
 		} else if err != nil {
 			return err
 		}
 		if d.Version != version {
 			return ErrLogConflict
+		}
+		credential := secret
+		if d.Channel == "wecom" {
+			var err error
+			credential, err = wecomKey(secret)
+			if err != nil {
+				return err
+			}
+		}
+		cipher, err := secretcipher.Encrypt(credential, n.key)
+		if err != nil {
+			return err
 		}
 		d.Version++
 		d.SecretCiphertext = cipher
@@ -191,6 +206,9 @@ func (n *PlatformLogNotifications) Status(ctx context.Context) (string, error) {
 			return "smtp_unconfigured", nil
 		}
 		if dest.Channel == "webhook" && (!dest.SecretConfigured || n.webhook == nil) {
+			return "unconfigured", nil
+		}
+		if dest.Channel == "wecom" && (!dest.SecretConfigured || n.wecom == nil) {
 			return "unconfigured", nil
 		}
 		usable = true
@@ -242,6 +260,21 @@ func stringListContains(v []string, s string) bool {
 	return false
 }
 func (n *PlatformLogNotifications) send(ctx context.Context, d models.PlatformLogDelivery, now time.Time) error {
+	if d.Channel == "wecom" {
+		if n.wecom == nil {
+			return ErrLogInvalid
+		}
+		key, err := DecryptWebhookSecret(d.SecretCiphertext, n.key)
+		if err != nil {
+			return ErrLogInvalid
+		}
+		payload, err := wecomLogPayload(d.Payload, d.ID)
+		if err != nil {
+			return err
+		}
+		_, err = n.wecom.SendWeComMessage(ctx, WebhookMessage{DeliveryID: d.ID, RequestURL: d.URL, Payload: payload}, key, now)
+		return err
+	}
 	if d.Channel == "webhook" {
 		if n.webhook == nil {
 			return ErrLogInvalid
@@ -256,6 +289,9 @@ func (n *PlatformLogNotifications) send(ctx context.Context, d models.PlatformLo
 		}
 		_, err = n.webhook.SendMessage(ctx, WebhookMessage{DeliveryID: d.ID, RequestURL: d.URL, Payload: payload}, secret, now)
 		return err
+	}
+	if d.Channel != "email" {
+		return ErrLogInvalid
 	}
 	if n.email == nil {
 		return ErrEmailSenderUnavailable
@@ -275,9 +311,9 @@ func (n *PlatformLogNotifications) DispatchOnce(ctx context.Context, now time.Ti
 	claim := uuid.NewString()
 	var deliveries []models.PlatformLogDelivery
 	err := n.db.WithContext(ctx).Raw(`WITH candidate AS (
- SELECT id FROM monitor.platform_log_deliveries WHERE ((status='pending' AND next_attempt_at<=?) OR (status='delivering' AND lease_expires_at<=?)) AND (channel='webhook' OR ?)
+ SELECT id FROM monitor.platform_log_deliveries WHERE ((status='pending' AND next_attempt_at<=?) OR (status='delivering' AND lease_expires_at<=?)) AND (channel='webhook' OR (channel='wecom' AND ?) OR (channel='email' AND ?))
  ORDER BY next_attempt_at NULLS FIRST,id LIMIT 1 FOR UPDATE SKIP LOCKED)
- UPDATE monitor.platform_log_deliveries d SET status='delivering',attempt_count=d.attempt_count+1,claim_id=?,lease_expires_at=? FROM candidate WHERE d.id=candidate.id RETURNING d.*`, now, now, n.email != nil, claim, now.Add(n.lease)).Scan(&deliveries).Error
+ UPDATE monitor.platform_log_deliveries d SET status='delivering',attempt_count=d.attempt_count+1,claim_id=?,lease_expires_at=? FROM candidate WHERE d.id=candidate.id RETURNING d.*`, now, now, n.wecom != nil, n.email != nil, claim, now.Add(n.lease)).Scan(&deliveries).Error
 	if err != nil || len(deliveries) == 0 {
 		return false, err
 	}
@@ -315,7 +351,7 @@ func (n *PlatformLogNotifications) DispatchOnce(ctx context.Context, now time.Ti
 			updates["last_error"] = ""
 			updates["secret_ciphertext"] = ""
 		} else {
-			updates["last_error"] = "notification_send_failed"
+			updates["last_error"] = platformNotificationError(sendErr)
 			if cycleAttempt >= n.maxAttempts {
 				updates["status"] = "dead"
 				updates["secret_ciphertext"] = ""
@@ -372,4 +408,19 @@ func (n *PlatformLogNotifications) Deliveries(ctx context.Context, page, size in
 	r.TotalPages = int((r.Total + int64(size) - 1) / int64(size))
 	err := logDeliveryQuery(n.db.WithContext(ctx)).Order("d.created_at DESC,d.id DESC").Offset((page - 1) * size).Limit(size).Scan(&r.Data).Error
 	return r, err
+}
+
+func platformNotificationError(err error) string {
+	for _, entry := range []struct {
+		err  error
+		code string
+	}{
+		{ErrWeComRateLimited, "wecom_rate_limited"}, {ErrWeComRejected, "wecom_rejected"},
+		{ErrWeComResponse, "wecom_invalid_response"}, {ErrWeComNetwork, "wecom_network_failed"}, {ErrWeComHTTP, "wecom_http_failed"},
+	} {
+		if errors.Is(err, entry.err) {
+			return entry.code
+		}
+	}
+	return "notification_send_failed"
 }

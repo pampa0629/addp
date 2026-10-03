@@ -236,36 +236,35 @@ func TestRasterCOGPrepareResultReturnsUpdatedExistingResult(t *testing.T) {
 	}
 }
 
-func TestManagerRasterCOGExecutorPreparesGDALRuntimeAndInvokesPythonWorkflowOperator(t *testing.T) {
+func TestManagerRasterCOGExecutorPreparesAccessPlanAndInvokesPythonWorkflowOperator(t *testing.T) {
 	var invokePayload map[string]interface{}
 	workflowServer := &http.Server{
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.Method == http.MethodGet && r.URL.Path == "/api/operators" {
-				writeTiffToCOGOperatorList(w, testRasterWorkflowEngineType, []string{"workflow", "direct"})
+				writeRasterToCOGOperatorList(w, testRasterWorkflowEngineType, []string{"workflow", "direct"})
 				return
 			}
-			if r.URL.Path != "/api/operators/tiff_to_cog/invoke" {
+			if r.URL.Path != "/api/operators/raster_to_cog/invoke" {
 				t.Fatalf("unexpected workflow path: %s", r.URL.Path)
 			}
 			if err := json.NewDecoder(r.Body).Decode(&invokePayload); err != nil {
 				t.Fatalf("decode operator invoke request: %v", err)
 			}
 			params := invokePayload["params"].(map[string]interface{})
-			if params["source_uri"] != "/mnt/addp-nfs/rasters/large.tif" {
-				t.Fatalf("source_uri = %#v", params["source_uri"])
+			plan := params["access_plan"].(map[string]interface{})
+			source := plan["source"].(map[string]interface{})
+			target := plan["target"].(map[string]interface{})
+			sourceAccess := source["access"].(map[string]interface{})
+			targetAccess := target["access"].(map[string]interface{})
+			if sourceAccess["path"] != "/mnt/addp-nfs/rasters/large.tif" || targetAccess["bucket"] != "manager" || targetAccess["object"] != "tenant_7/cog/fp/large.cog.tif" {
+				t.Fatalf("access_plan = %#v", plan)
 			}
-			if params["target_uri"] != "/vsis3/manager/tenant_7/cog/fp/large.cog.tif" {
-				t.Fatalf("target_uri = %#v", params["target_uri"])
+			if targetAccess["endpoint"] != "minio:9000" || targetAccess["use_ssl"] == true || target["write_mode"] != "replace" {
+				t.Fatalf("target = %#v", target)
 			}
-			gdalEnv := params["gdal_env"].(map[string]interface{})
-			if gdalEnv["AWS_S3_ENDPOINT"] != "minio:9000" || gdalEnv["AWS_HTTPS"] != "NO" {
-				t.Fatalf("gdal_env = %#v", gdalEnv)
-			}
-			if gdalEnv["CPL_VSIL_USE_TEMP_FILE_FOR_RANDOM_WRITE"] != "YES" {
-				t.Fatalf("gdal_env = %#v, want random write temp file enabled", gdalEnv)
-			}
-			if params["assign_srs"] != "+proj=longlat +datum=WGS84 +no_defs" {
-				t.Fatalf("assign_srs = %#v, want WGS84 proj string", params["assign_srs"])
+			options := params["options"].(map[string]interface{})
+			if options["source_crs"] != "EPSG:4326" {
+				t.Fatalf("source_crs = %#v", options["source_crs"])
 			}
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"status":"success","execution_id":"py-1","execution_time_ms":45.5,"result":"{\"profile\":\"cog\",\"width\":256,\"height\":128,\"band_count\":3,\"size_bytes\":12,\"extent\":[110,20,120,30],\"extent_srid\":4326,\"source_crs\":\"EPSG:4326\",\"source_crs_definition\":\"GEOGCS[\\\"WGS 84\\\"]\"}"}`))
@@ -361,7 +360,7 @@ func TestManagerRasterCOGExecutorPreparesGDALRuntimeAndInvokesPythonWorkflowOper
 	if workflowRuntime["engine_id"] != uint(99) || workflowRuntime["engine_name"] != "Tenant Raster Workflow" || workflowRuntime["engine_type"] != testRasterWorkflowEngineType {
 		t.Fatalf("metadata = %#v, want workflow runtime identity", result.Metadata)
 	}
-	if workflowRuntime["operator"] != "tiff_to_cog" || workflowRuntime["mode"] != "direct" {
+	if workflowRuntime["operator"] != "raster_to_cog" || workflowRuntime["mode"] != "direct" {
 		t.Fatalf("metadata = %#v, want direct mode", result.Metadata)
 	}
 	if workflowRuntime["execution_time_ms"] != float64(45.5) {
@@ -401,10 +400,10 @@ func TestManagerRasterCOGExecutorPreservesOperatorErrorDetails(t *testing.T) {
 	workflowServer := &http.Server{
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.Method == http.MethodGet && r.URL.Path == "/api/operators" {
-				writeTiffToCOGOperatorList(w, testRasterWorkflowEngineType, []string{"workflow", "direct"})
+				writeRasterToCOGOperatorList(w, testRasterWorkflowEngineType, []string{"workflow", "direct"})
 				return
 			}
-			if r.URL.Path != "/api/operators/tiff_to_cog/invoke" {
+			if r.URL.Path != "/api/operators/raster_to_cog/invoke" {
 				t.Fatalf("unexpected workflow path: %s", r.URL.Path)
 			}
 			w.Header().Set("Content-Type", "application/json")
@@ -493,7 +492,7 @@ func TestManagerRasterCOGExecutorRejectsOperatorWithoutDirectMode(t *testing.T) 
 	workflowServer := &http.Server{
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.Method == http.MethodGet && r.URL.Path == "/api/operators" {
-				writeTiffToCOGOperatorList(w, testRasterWorkflowEngineType, []string{"workflow"})
+				writeRasterToCOGOperatorList(w, testRasterWorkflowEngineType, []string{"workflow"})
 				return
 			}
 			t.Fatalf("unexpected workflow path: %s", r.URL.Path)
@@ -739,15 +738,15 @@ func waitForRasterCOGTaskExecution(t *testing.T, repo *commonExecution.TaskExecu
 	return nil
 }
 
-func writeTiffToCOGOperatorList(w http.ResponseWriter, engineType string, executionModes []string) {
+func writeRasterToCOGOperatorList(w http.ResponseWriter, engineType string, executionModes []string) {
 	w.Header().Set("Content-Type", "application/json")
 	payload := map[string]interface{}{
 		"status": "success",
 		"operators": []map[string]interface{}{
 			{
-				"id":              "tiff_to_cog",
-				"name":            "tiff_to_cog",
-				"display_name":    "TIFF 转 COG",
+				"id":              "raster_to_cog",
+				"name":            "raster_to_cog",
+				"display_name":    "栅格转 COG",
 				"engine_type":     engineType,
 				"type":            "raster",
 				"category":        "格式转换",

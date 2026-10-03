@@ -88,6 +88,7 @@ def test_workflow_execute_response_allows_async_acceptance_status():
     status_enum = spec["components"]["schemas"]["WorkflowExecuteResponse"]["properties"]["status"]["enum"]
 
     assert {"success", "failed", "running", "pending"}.issubset(status_enum)
+    assert "202" in spec["paths"]["/api/workflow"]["post"]["responses"]
 
 
 def test_workflow_execute_request_requires_execution_authorization():
