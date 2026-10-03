@@ -164,10 +164,23 @@ from pathlib import Path
 import json,sys
 source=next(Path(sys.argv[1]).glob('manager/*/status.json'))
 body=json.loads(source.read_text())
+(Path(sys.argv[1])/'metadata-fixture-backup.json').write_text(json.dumps(body))
 del body['capture_started_at']
 source.write_text(json.dumps(body))
 PYISSUES
 LOKI_TEST_DISCOVERY_CASE=metadata_missing observe_once
 echo "Real observer reports missing metadata without treating the scan as complete"
+python3 - "$LOKI_TEST_SOURCE" <<'PYRESTORE'
+from pathlib import Path
+import sys
+root=Path(sys.argv[1])
+backup=root/'metadata-fixture-backup.json'
+source=next(root.glob('manager/*/status.json'))
+source.write_text(backup.read_text())
+backup.unlink()
+PYRESTORE
+LOKI_TEST_OBSERVER_CASE=repeated observe_once
+echo "Real continuous observer: one source, two delivered events, sequence 1/2, valid collector metrics and clean stop passed"
+
 cat "$WORK_DIR/paging.log"
 echo "Runtime log identity, authorization, collection, persistence and old-instance isolation passed"

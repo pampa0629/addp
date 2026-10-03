@@ -153,7 +153,9 @@ func probe() error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	delay, err := runtimelog.Probe(ctx, o, os.Getenv("LOKI_URL"), os.Getenv("LOKI_READ_TOKEN"))
+	probe := runtimelog.NewProbeReceiver(o)
+	defer probe.Close()
+	delay, err := probe.Probe(ctx, os.Getenv("LOKI_URL"), os.Getenv("LOKI_READ_TOKEN"))
 	if err != nil {
 		return err
 	}

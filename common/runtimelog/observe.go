@@ -17,7 +17,7 @@ import (
 )
 
 // Observe bounds both network reads and source traversal. Missing metrics stay unknown.
-func Observe(ctx context.Context, o Options, node, boot string, sequence uint64, endpoint, token, alloy string) logpipeline.Observation {
+func Observe(ctx context.Context, o Options, probe *ProbeReceiver, node, boot string, sequence uint64, endpoint, token, alloy string) logpipeline.Observation {
 	obs := logpipeline.Observation{Schema: logpipeline.Schema, Node: node, BootID: boot, Sequence: sequence, SourceLimitBytes: o.NodeBytes, Receivers: []logpipeline.Receiver{}}
 	client := &http.Client{Timeout: 3 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	fetch := func(target string) ([]byte, bool) {
@@ -99,7 +99,7 @@ func Observe(ctx context.Context, o Options, node, boot string, sequence uint64,
 	}
 	probeCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	delay, err := Probe(probeCtx, o, endpoint, token)
+	delay, err := probe.Probe(probeCtx, endpoint, token)
 	obs.ProbeDelivered = err == nil
 	obs.ProbeDelayMS = delay.Milliseconds()
 	obs.SampledAt = time.Now().UTC()

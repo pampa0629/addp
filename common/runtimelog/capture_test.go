@@ -2,6 +2,7 @@ package runtimelog
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -300,5 +301,175 @@ func TestStartupBurstUsesByteBudgetAndFlushesEveryAcceptedEntry(t *testing.T) {
 	}
 	if lines != 4001 {
 		t.Fatalf("written lines %d", lines)
+	}
+}
+
+func TestTechnicalProbeRetentionPreservesBusinessAndActiveSources(t *testing.T) {
+	o := options(t)
+	o.SourceAge = 48 * time.Hour
+	past := time.Now().Add(-2 * time.Hour)
+	paths := map[string]string{}
+	for _, name := range []string{"runtime-probe/closed", "runtime-probe/active", "runtime-probe/recent", "manager/business"} {
+		dir := filepath.Join(o.Root, name)
+		if err := os.MkdirAll(dir, 0700); err != nil {
+			t.Fatal(err)
+		}
+		path := filepath.Join(dir, "source.jsonl")
+		paths[name] = path
+		for _, file := range []string{path, filepath.Join(dir, "status.json")} {
+			if err := os.WriteFile(file, []byte("{}"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if name != "runtime-probe/recent" {
+				if err := os.Chtimes(file, past, past); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+	}
+	active, err := os.OpenFile(paths["runtime-probe/active"], os.O_RDWR, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer active.Close()
+	if err := syscall.Flock(int(active.Fd()), syscall.LOCK_EX); err != nil {
+		t.Fatal(err)
+	}
+	if err := Prune(o); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Dir(paths["runtime-probe/closed"])); !os.IsNotExist(err) {
+		t.Fatal("expired technical directory retained")
+	}
+	for _, name := range []string{"runtime-probe/active", "runtime-probe/recent", "manager/business"} {
+		if _, err := os.Stat(paths[name]); err != nil {
+			t.Fatalf("protected source %s removed: %v", name, err)
+		}
+	}
+	var status struct {
+		EarlyCleaned uint64 `json:"source_files_early_cleaned"`
+	}
+	body, _ := os.ReadFile(filepath.Join(o.Root, "housekeeping-status.json"))
+	if err := json.Unmarshal(body, &status); err != nil || status.EarlyCleaned != 0 {
+		t.Fatal("normal technical retention reported as early business loss")
+	}
+}
+
+func TestTechnicalProbeSegmentsRotateByTime(t *testing.T) {
+	for _, module := range []string{"runtime-probe", "manager"} {
+		t.Run(module, func(t *testing.T) {
+			o := options(t)
+			o.Module = module
+			w := &segmentWriter{o: o, metrics: &Metrics{}}
+			defer w.close()
+			if err := w.write([]byte("first\n")); err != nil {
+				t.Fatal(err)
+			}
+			first := w.file.Name()
+			w.segmentOpenedAt = time.Now().Add(-2 * time.Hour)
+			if err := w.write([]byte("second\n")); err != nil {
+				t.Fatal(err)
+			}
+			if (w.file.Name() != first) != (module == "runtime-probe") {
+				t.Fatal("technical rotation changed business segmentation or kept stale probe segment")
+			}
+			if sourceRetention(o, module) > o.SourceAge {
+				t.Fatal("technical retention exceeds configured source retention")
+			}
+		})
+	}
+}
+
+func TestExpiredProbeAccumulationRecoversSourceScanBudget(t *testing.T) {
+	o := options(t)
+	o.Node = "source-node"
+	o.SourceAge = 48 * time.Hour
+	if err := Capture(o, strings.NewReader("business history\n"), strings.NewReader("")); err != nil {
+		t.Fatal(err)
+	}
+	past := time.Now().Add(-2 * time.Hour)
+	for i := 0; i < MaxSourceScanEntries/3+1; i++ {
+		dir := filepath.Join(o.Root, "runtime-probe", fmt.Sprintf("past-%d", i))
+		if err := os.MkdirAll(dir, 0700); err != nil {
+			t.Fatal(err)
+		}
+		for _, name := range []string{"status.json", "source.jsonl"} {
+			path := filepath.Join(dir, name)
+			if err := os.WriteFile(path, []byte("{}"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Chtimes(path, past, past); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	before := DiscoverSources(o, o.Node, "probe-test-boot", 1)
+	if before.Complete {
+		t.Fatal("oversized historical probe tree did not exercise scan limit")
+	}
+	if err := Prune(o); err != nil {
+		t.Fatal(err)
+	}
+	after := DiscoverSources(o, o.Node, "probe-test-boot", 2)
+	if !after.Complete || len(after.Sources) != 1 || after.Sources[0].InstanceID != o.InstanceID {
+		t.Fatalf("technical cleanup did not recover authoritative business discovery: %#v", after)
+	}
+	if files, _ := filepath.Glob(filepath.Join(o.Root, o.Module, o.InstanceID, "*.jsonl")); len(files) != 1 {
+		t.Fatal("business history was deleted")
+	}
+	if _, err := os.Stat(filepath.Join(o.Root, "runtime-probe")); !os.IsNotExist(err) {
+		t.Fatal("closed historical probe directories retained")
+	}
+}
+
+func TestProbeDirectoryCleanupConcurrentWithBusinessCapture(t *testing.T) {
+	o := options(t)
+	o.SourceAge = 48 * time.Hour
+	o.InstanceBytes = 8 << 20
+	o.NodeBytes = 16 << 20
+	past := time.Now().Add(-2 * time.Hour)
+	for i := 0; i < 1500; i++ {
+		dir := filepath.Join(o.Root, "runtime-probe", fmt.Sprintf("closed-%d", i))
+		if err := os.MkdirAll(dir, 0700); err != nil {
+			t.Fatal(err)
+		}
+		path := filepath.Join(dir, "status.json")
+		if err := os.WriteFile(path, []byte("{}"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(path, past, past); err != nil {
+			t.Fatal(err)
+		}
+	}
+	start := make(chan struct{})
+	results := make(chan error, 2)
+	go func() {
+		<-start
+		results <- Capture(o, strings.NewReader(strings.Repeat("business during technical cleanup\n", 2000)), strings.NewReader(""))
+	}()
+	go func() { <-start; results <- Prune(o) }()
+	close(start)
+	for i := 0; i < 2; i++ {
+		if err := <-results; err != nil {
+			t.Fatal(err)
+		}
+	}
+	var status struct {
+		Written       uint64 `json:"written"`
+		Dropped       uint64 `json:"dropped"`
+		WriteFailures uint64 `json:"write_failures"`
+	}
+	body, err := os.ReadFile(filepath.Join(o.Root, o.Module, o.InstanceID, "status.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(body, &status); err != nil {
+		t.Fatal(err)
+	}
+	if status.Written != 2000 || status.Dropped != 0 || status.WriteFailures != 0 {
+		t.Fatalf("technical directory cleanup lost business writes: %s", body)
+	}
+	if dirs, _ := os.ReadDir(filepath.Join(o.Root, "runtime-probe")); len(dirs) != 0 {
+		t.Fatalf("expired technical directories retained: %d", len(dirs))
 	}
 }

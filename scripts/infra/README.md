@@ -891,4 +891,4 @@ Online 启动只使用仓库外的 `ADDP_ONLINE_ENV_FILE`；Hosted 在不归档�
 
 集成验证入口：`make test-system-runtime-log`。该入口创建自己的 disposable MinIO/Alloy/Loki，使用随机回环端口、临时凭据和源目录；退出时销毁自建容器、网络、数据卷并检查零残留，不接管开发 Infra。
 
-平台日志链路由独立 `runtime-log-observer` 每 30 秒观测并使用最小 Platform 服务凭据上报 Monitor；它不登记成业务模块。节点绑定、控制面地址、Secret 与通知配置见 [配置规范](../../docs/spec/addp配置介绍.md#平台日志链路观测与通知)。Monitor 持久化告警及通知，System 模块管理“日志链路”展示结果；Loki 不承担告警事实存储。`runtime-log observe --once` 运行单次真实采样并上报，失败返回非零，不是完整日志归档证明。T2 门禁同时验证实际观测器 OAuth 上报、日志接口中断及恢复，并清理其自建 HTTP 夹具。
+平台日志链路由独立 `runtime-log-observer` 每 30 秒观测并使用最小 Platform 服务凭据上报 Monitor；它不登记成业务模块。节点绑定、控制面地址、Secret 与通知配置见 [配置规范](../../docs/spec/addp配置介绍.md#平台日志链路观测与通知)。Monitor 持久化告警及通知，System 模块管理“日志链路”展示结果；Loki 不承担告警事实存储。`runtime-log observe --once` 运行单次真实采样并上报，失败返回非零，不是完整日志归档证明。常驻观察进程复用一个探针接收器，每轮使用独立消息标记验证投递，日志序号连续；技术探针段按最后写入时间保留一小时并按小时轮转，清理仅处理已关闭段及过期空来源，业务源仍按配置保留。这样避免每 30 秒创建一个目录撑满来源扫描和采集器指标预算。T2 门禁同时验证实际观测器 OAuth 上报、日志接口中断及恢复，并清理其自建 HTTP 夹具。

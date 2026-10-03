@@ -50,6 +50,8 @@ func observe() error {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 	boot := uuid.NewString()
+	probe := runtimelog.NewProbeReceiver(o)
+	defer probe.Close()
 	var seq uint64
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
@@ -57,7 +59,7 @@ func observe() error {
 		seq++
 		catalog := runtimelog.DiscoverSources(o, node, boot, seq)
 		catalogAccepted := deliverReport(ctx, httpClient, source, strings.TrimRight(os.Getenv("SYSTEM_URL"), "/")+"/api/v1/system/runtime/module-log-source-observations", catalog)
-		obs := runtimelog.Observe(ctx, o, node, boot, seq, os.Getenv("LOKI_URL"), os.Getenv("LOKI_READ_TOKEN"), os.Getenv("ALLOY_URL"))
+		obs := runtimelog.Observe(ctx, o, probe, node, boot, seq, os.Getenv("LOKI_URL"), os.Getenv("LOKI_READ_TOKEN"), os.Getenv("ALLOY_URL"))
 		accepted := deliverReport(ctx, httpClient, source, endpoint+"/api/v1/monitor/platform/log-observations", obs)
 		if *once {
 			if !accepted || !catalogAccepted {

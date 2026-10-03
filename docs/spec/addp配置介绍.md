@@ -643,7 +643,7 @@ System 的模块登记请求与实例响应统一使用 `host_node_ips: string[]
 
 ## 模块服务运行日志配置
 
-`ADDP_PROCESS_INSTANCE_ID` 由标准启动入口生成，不写入 .env；`ADDP_RUNTIME_LOG_ROOT` 指向节点受控日志根目录。日志按实例分段，应用统一 JSON 输出。`ADDP_RUNTIME_LOG_SEGMENT_BYTES`、`ADDP_RUNTIME_LOG_INSTANCE_BYTES`、`ADDP_RUNTIME_LOG_NODE_BYTES` 和 `ADDP_RUNTIME_LOG_SOURCE_HOURS` 分别控制段、实例、节点限额与最长源保留期；额度优先于时长。`LOKI_URL` 是 System 服务端受控查询地址，空值表示未接入；`LOKI_RETENTION_HOURS` 默认 168，须与 Loki Compactor 配置一致。日志存储和源文件不是零丢失归档，不以 positions 证明远端收妥。完整方案见 [运行日志设计](../next/ADDP模块服务运行日志设计.md)。
+`ADDP_PROCESS_INSTANCE_ID` 由标准启动入口生成，不写入 .env；`ADDP_RUNTIME_LOG_ROOT` 指向节点受控日志根目录。日志按实例分段，应用统一 JSON 输出。`ADDP_RUNTIME_LOG_SEGMENT_BYTES`、`ADDP_RUNTIME_LOG_INSTANCE_BYTES`、`ADDP_RUNTIME_LOG_NODE_BYTES` 和 `ADDP_RUNTIME_LOG_SOURCE_HOURS` 分别控制段、实例、节点限额与最长源保留期；额度优先于时长。技术探针 `runtime-probe` 的已关闭源段按最后写入时间保留最多一小时（不超过源保留配置），持续探针接收器按小时轮转；业务源仍使用配置时长。`LOKI_URL` 是 System 服务端受控查询地址，空值表示未接入；`LOKI_RETENTION_HOURS` 默认 168，须与 Loki Compactor 配置一致。日志存储和源文件不是零丢失归档，不以 positions 证明远端收妥。完整方案见 [运行日志设计](../next/ADDP模块服务运行日志设计.md)。
 
 ### 平台日志链路观测与通知
 

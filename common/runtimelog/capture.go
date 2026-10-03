@@ -345,6 +345,7 @@ type segmentWriter struct {
 	file             *os.File
 	size             int64
 	segment          uint64
+	segmentOpenedAt  time.Time
 	captureStartedAt time.Time
 }
 
@@ -356,7 +357,7 @@ func (w *segmentWriter) close() {
 	}
 }
 func (w *segmentWriter) write(body []byte) error {
-	if w.file == nil || w.size+int64(len(body)) > w.o.SegmentBytes {
+	if w.file == nil || w.size+int64(len(body)) > w.o.SegmentBytes || (w.o.Module == "runtime-probe" && time.Since(w.segmentOpenedAt) >= sourceRetention(w.o, w.o.Module)) {
 		w.close()
 		if err := os.MkdirAll(w.dir(), 0700); err != nil {
 			return err
@@ -373,6 +374,7 @@ func (w *segmentWriter) write(body []byte) error {
 		}
 		w.file = f
 		w.size = 0
+		w.segmentOpenedAt = time.Now()
 	}
 	// The node lock covers projected quotas and the write. This prevents
 	// simultaneous receivers from each consuming the same remaining capacity.
@@ -425,7 +427,12 @@ func (w *segmentWriter) clean() error {
 		return err
 	}
 	defer lock.Close()
-	return w.cleanLocked(0)
+	if err := w.cleanLocked(0); err != nil {
+		return err
+	}
+	// Quota writers walk the same tree. Keep empty-directory removal inside
+	// the node lock so they cannot scan a directory while it is being removed.
+	return pruneExpiredMetadata(w.o)
 }
 func (w *segmentWriter) cleanLocked(projected int64) error {
 	var files []segment
@@ -460,7 +467,8 @@ func (w *segmentWriter) cleanLocked(projected int64) error {
 		if w.file != nil && f.path == w.file.Name() {
 			continue
 		}
-		if time.Since(f.modified) > w.o.SourceAge || nodeSize > w.o.NodeBytes || sizes[dir] > w.o.InstanceBytes {
+		retention := sourceRetention(w.o, filepath.Base(filepath.Dir(dir)))
+		if time.Since(f.modified) > retention || nodeSize > w.o.NodeBytes || sizes[dir] > w.o.InstanceBytes {
 			active, e := os.OpenFile(f.path, os.O_RDWR, 0)
 			if e != nil {
 				return e
@@ -477,7 +485,7 @@ func (w *segmentWriter) cleanLocked(projected int64) error {
 			nodeSize -= f.size
 			sizes[dir] -= f.size
 			w.metrics.Cleaned.Add(1)
-			if time.Since(f.modified) <= w.o.SourceAge {
+			if time.Since(f.modified) <= retention {
 				w.metrics.EarlyCleaned.Add(1)
 			}
 		}
@@ -488,6 +496,13 @@ func (w *segmentWriter) cleanLocked(projected int64) error {
 	return nil
 }
 
+func sourceRetention(o Options, module string) time.Duration {
+	if module == "runtime-probe" {
+		return min(o.SourceAge, probeSourceAge)
+	}
+	return o.SourceAge
+}
+
 // Prune runs independently of application activity. Active segments are locked
 // by their receiver and cannot be removed even when they have been quiet.
 func Prune(o Options) error {
@@ -496,9 +511,6 @@ func Prune(o Options) error {
 	}
 	w := &segmentWriter{o: o, metrics: &Metrics{}}
 	err := w.clean()
-	if err == nil {
-		err = pruneExpiredMetadata(o)
-	}
 	body, _ := json.Marshal(map[string]any{"observed_at": time.Now().UTC(), "source_files_cleaned": w.metrics.Cleaned.Load(), "source_files_early_cleaned": w.metrics.EarlyCleaned.Load(), "quota_exhausted": err != nil})
 	statusPath := filepath.Join(o.Root, "housekeeping-status.json")
 	if writeErr := os.WriteFile(statusPath+".tmp", body, 0600); writeErr != nil {
@@ -545,7 +557,7 @@ func pruneExpiredMetadata(o Options) error {
 				if err != nil {
 					return err
 				}
-				if time.Since(info.ModTime()) <= o.SourceAge {
+				if time.Since(info.ModTime()) <= sourceRetention(o, module.Name()) {
 					expired = false
 					break
 				}
