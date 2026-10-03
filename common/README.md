@@ -32,6 +32,8 @@ decoded JSON map 的通用读取工具，用于读取嵌套 section、字符串�
 ### query
 查询文本通用能力，包括 SQL / Cypher / MQL 参数绑定、SQL 副作用分析，以及跨 SQL 引擎的标识符引用、基础 SELECT / COUNT 和分页 SQL 生成。
 
+参数引用分析识别 `es_dsl` 为无参数查询语言，返回空引用集；统一定义校验拒绝非空参数定义，ES Provider 继续负责 JSON、只读子集和执行选项校验，不新增 ES 参数绑定能力。
+
 `query` 不承载 Engine Catalog facts 探测或 PostGIS 等特定引擎扩展函数；PostGIS 空间表达式属于 `spatial`。
 
 ### spatial

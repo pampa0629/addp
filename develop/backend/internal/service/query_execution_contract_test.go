@@ -7,6 +7,27 @@ import (
 	"github.com/addp/common/taskprovider"
 )
 
+func TestElasticsearchQueryContractUsesNoParameters(t *testing.T) {
+	content := map[string]interface{}{
+		"query_type": "es_dsl", "query": `{"query":{"term":{"tags":"sample"}},"size":25}`,
+		"query_parameters": []interface{}{},
+	}
+	contract, values, inputs, err := resolveQueryPreviewParameters(content, map[string]interface{}{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(contract.InputSchema["properties"].(map[string]interface{})) != 0 || len(values) != 0 || len(inputs) != 0 {
+		t.Fatalf("ES must have an empty parameter contract: %#v, %#v, %#v", contract, values, inputs)
+	}
+	if _, _, _, err := resolveQueryPreviewParameters(content, map[string]interface{}{"size": 25}); err == nil {
+		t.Fatal("ES runtime parameter override must be rejected")
+	}
+	content["query_parameters"] = []interface{}{map[string]interface{}{"name": "size", "type": "integer", "default": 25}}
+	if _, err := BuildQueryExecutionContract(content); err == nil {
+		t.Fatal("ES parameter definitions must be rejected")
+	}
+}
+
 func TestBuildQueryExecutionContractUsesDefinitionsAndDefaults(t *testing.T) {
 	content := map[string]interface{}{
 		"query_type": "sql",

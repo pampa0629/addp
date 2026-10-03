@@ -731,7 +731,7 @@ test-system-runtime-log: ## 隔离验证模块运行日志采集、授权、持�
 	@bash scripts/test/system-runtime-log-gate.sh
 
 test-common-elasticsearch-unit: ## ES 插件、通用文档预览和单层目录扫描确定性测试
-	@cd common && GOWORK=off go test ./engine/plugins/elasticsearch ./resourcetree -count=1
+	@cd common && GOWORK=off go test ./engine/plugins/elasticsearch ./resourcetree ./query -count=1
 	@cd manager/backend && GOWORK=off go test ./internal/preview -count=1
 	@cd meta/backend && GOWORK=off go test ./internal/scanruntime -count=1
 	@cd develop/backend && GOWORK=off go test ./internal/service -count=1

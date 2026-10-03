@@ -86,6 +86,19 @@ func TestReferencesIgnoreCypherStringsAndComments(t *testing.T) {
 	}
 }
 
+func TestReferencesRecognizesESDSLWithoutParameterBinding(t *testing.T) {
+	names, err := References("es_dsl", `{"query":{"term":{"tags":"sample"}}}`)
+	if err != nil || len(names) != 0 {
+		t.Fatalf("ES DSL has no parameter references: names=%#v, err=%v", names, err)
+	}
+	if err := ValidateDefinitions(names, map[string]interface{}{"tags": "sample"}); err == nil {
+		t.Fatal("ES parameter definitions must be rejected")
+	}
+	if _, err := References("unknown_language", "query"); err == nil {
+		t.Fatal("unknown query language must remain unsupported")
+	}
+}
+
 func TestBindMQLRejectsTrailingJSONValue(t *testing.T) {
 	_, err := BindMQL(`{"find":"members"} {"find":"other"}`, nil)
 	if err == nil {

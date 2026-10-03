@@ -44,6 +44,10 @@ func References(language, query string) ([]string, error) {
 		return mqlReferences(value)
 	case "cypher":
 		return CypherReferences(query)
+	case "es_dsl":
+		// ES DSL has no parameter syntax. Its Provider validates the JSON query;
+		// the shared exact-definition check rejects all parameter definitions.
+		return nil, nil
 	default:
 		return nil, fmt.Errorf("unsupported parameterized query language: %s", language)
 	}
