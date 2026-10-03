@@ -109,7 +109,7 @@ test('browser recommends MySQL decimal precision and preserves insert-only water
       env.ADDP_ONLINE_TRANSFER_MYSQL_DATABASE,
       env.ADDP_ONLINE_TRANSFER_MYSQL_DATABASE
     )
-    await frame.getByTestId('task-target-table').locator('input').fill(env.ADDP_ONLINE_TRANSFER_TARGET_TABLE)
+    await frame.getByTestId('task-target-table').fill(env.ADDP_ONLINE_TRANSFER_TARGET_TABLE)
     await frame.getByTestId('task-wizard-next').click()
     await expect(wizard).toHaveAttribute('data-step', '2')
 
@@ -132,7 +132,7 @@ test('browser recommends MySQL decimal precision and preserves insert-only water
     await frame.getByTestId('task-wizard-next').click()
     await expect(wizard).toHaveAttribute('data-step', '3')
 
-    await frame.getByTestId('task-name').locator('input').fill(env.ADDP_ONLINE_TRANSFER_TASK_NAME)
+    await frame.getByTestId('task-name').fill(env.ADDP_ONLINE_TRANSFER_TASK_NAME)
     await frame.getByTestId('task-load-mode').locator('input[value="insert_only"]').check({ force: true })
     await expect(frame.getByTestId('task-watermark-field').locator('input')).toHaveValue(/id/)
     await expect(frame.getByTestId('task-watermark-target-keys')).toHaveText('id')

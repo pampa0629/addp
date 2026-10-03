@@ -211,7 +211,7 @@ test('browser executes SQL ETL and verifies native field lineage in Manager', as
     await expect(wizard).toHaveAttribute('data-step', '1')
     await chooseSelectOption(frame, frame.getByTestId('task-target-engine'), env.ADDP_ONLINE_TEST_ENGINE_NAME)
     await selectSearchResult(frame.getByTestId('task-target-parent'), 'public', 'public')
-    await frame.getByTestId('task-target-table').locator('input').fill(env.ADDP_ONLINE_TRANSFER_SQL_ETL_TARGET_TABLE)
+    await frame.getByTestId('task-target-table').fill(env.ADDP_ONLINE_TRANSFER_SQL_ETL_TARGET_TABLE)
     await frame.getByTestId('task-wizard-next').click()
     await expect(wizard).toHaveAttribute('data-step', '2')
 
@@ -225,7 +225,7 @@ test('browser executes SQL ETL and verifies native field lineage in Manager', as
     await frame.getByTestId('task-wizard-next').click()
     await expect(wizard).toHaveAttribute('data-step', '3')
 
-    await frame.getByTestId('task-name').locator('input').fill(env.ADDP_ONLINE_TRANSFER_SQL_ETL_TASK_NAME)
+    await frame.getByTestId('task-name').fill(env.ADDP_ONLINE_TRANSFER_SQL_ETL_TASK_NAME)
     await expect(frame.getByTestId('task-load-mode').locator('input[value="snapshot"]')).toBeChecked()
     await frame.getByTestId('task-wizard-next').click()
     await expect(wizard).toHaveAttribute('data-step', '4')
