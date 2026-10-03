@@ -14,9 +14,10 @@ import (
 
 // Preview modes
 const (
-	PreviewModeNode   = "node"
-	PreviewModeTable  = "table"
-	PreviewModeObject = "object"
+	PreviewModeNode     = "node"
+	PreviewModeTable    = "table"
+	PreviewModeObject   = "object"
+	PreviewModeKeyValue = "key_value"
 )
 
 // ErrNoPreviewProvider is returned when no provider can handle the request.
@@ -61,6 +62,9 @@ func (r *PreviewRequest) Mode() string {
 
 	if r.Table == "" {
 		return PreviewModeNode
+	}
+	if r.ItemType == "key" {
+		return PreviewModeKeyValue
 	}
 
 	if r.ItemType == "object" || r.ItemType == "file" {

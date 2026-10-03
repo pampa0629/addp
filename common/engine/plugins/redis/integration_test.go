@@ -2,6 +2,7 @@ package redis
 
 import (
 	"context"
+	"github.com/addp/common/engine/plugin"
 	"os"
 	"strings"
 	"testing"
@@ -45,5 +46,74 @@ func TestIntegrationRedisConnection(t *testing.T) {
 	}
 	if err := admin.Do(ctx, "ACL", "DELUSER", "addp_probe_limited").Err(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestIntegrationRedisNativeAccessAndACL(t *testing.T) {
+	if os.Getenv("ADDP_REDIS_INTEGRATION") != "1" {
+		t.Skip("run make test-common-redis")
+	}
+	ctx := context.Background()
+	p := &RedisPlugin{}
+	c := redisTestConnection(t, os.Getenv("ADDP_REDIS_T2_ENDPOINT"))
+	c["user"] = "addp_business_reader"
+	c["password"] = os.Getenv("BUSINESS_REDIS_READER_PASSWORD")
+	admin := rdb.NewClient(&rdb.Options{Addr: os.Getenv("ADDP_REDIS_T2_ENDPOINT"), Username: "addp_business_admin", Password: os.Getenv("BUSINESS_REDIS_ADMIN_PASSWORD")})
+	defer admin.Close()
+	root := plugin.EngineCatalogRootPath(p.EngineCatalogModel(), 42)
+	entries, err := p.ListChildren(ctx, c, root, plugin.ListOptions{})
+	if err != nil || len(entries) != 9 {
+		t.Fatalf("native catalog %d: %v", len(entries), err)
+	}
+	for _, entry := range entries {
+		v, err := p.ReadKeyValue(ctx, c, entry.Path, plugin.KeyValueReadOptions{})
+		if err != nil || v.Facts.NativeType == "" {
+			t.Fatalf("native preview %s: %v", entry.Name, err)
+		}
+	}
+	if err := admin.Do(ctx, "ACL", "SETUSER", "addp_native_limited", "reset", "on", ">native-limited", "~addp:sample:counter", "+hello", "+select", "+scan", "+type", "+strlen", "+pttl", "+getrange").Err(); err != nil {
+		t.Fatal(err)
+	}
+	defer admin.Do(ctx, "ACL", "DELUSER", "addp_native_limited")
+	limited := plugin.ConnectionInfo{}
+	for k, v := range c {
+		limited[k] = v
+	}
+	limited["user"] = "addp_native_limited"
+	limited["password"] = "native-limited"
+	visible, err := p.ListChildren(ctx, limited, root, plugin.ListOptions{})
+	if err != nil || len(visible) != 1 {
+		t.Fatalf("key ACL catalog %d: %v", len(visible), err)
+	}
+	if raw, err := plugin.DecodeKeyName(visible[0].Name); err != nil || string(raw) != "addp:sample:counter" {
+		t.Fatal(visible, err)
+	}
+	if v, err := p.ReadKeyValue(ctx, limited, keyTestPath(t, p, "addp:sample:hash"), plugin.KeyValueReadOptions{}); err == nil || v != nil {
+		t.Fatal("key permission denial returned data")
+	}
+	if err := admin.Do(ctx, "ACL", "SETUSER", "addp_native_limited", "-type").Err(); err != nil {
+		t.Fatal(err)
+	}
+	if items, err := p.ListChildren(ctx, limited, root, plugin.ListOptions{}); err == nil || items != nil {
+		t.Fatal("command ACL denial treated as empty catalog")
+	}
+	for _, test := range []struct {
+		key  string
+		args []interface{}
+	}{
+		{"addp:sample:budget", []interface{}{"RPUSH", "addp:sample:budget", strings.Repeat("x", 2<<20)}},
+		{"addp:sample:duplicates", []interface{}{"XADD", "addp:sample:duplicates", "1-0", "f", "first", "f", "second"}},
+	} {
+		if err := admin.Do(ctx, test.args...).Err(); err != nil {
+			t.Fatal(err)
+		}
+		defer admin.Del(ctx, test.key)
+	}
+	if v, err := p.ReadKeyValue(ctx, c, keyTestPath(t, p, "addp:sample:budget"), plugin.KeyValueReadOptions{MaxEntries: 1}); err == nil || v != nil || !strings.Contains(err.Error(), "budget") {
+		t.Fatalf("large native allocation accepted: %v", err)
+	}
+	v, err := p.ReadKeyValue(ctx, c, keyTestPath(t, p, "addp:sample:duplicates"), plugin.KeyValueReadOptions{})
+	if err != nil || len(v.Entries) != 1 || len(v.Entries[0].Fields) != 2 || v.Entries[0].Fields[0].Name.Value != "f" || v.Entries[0].Fields[1].Value.Value != "second" {
+		t.Fatalf("stream field pairs lost: %v", err)
 	}
 }

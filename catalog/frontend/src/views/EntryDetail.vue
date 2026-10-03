@@ -135,7 +135,14 @@
         <el-tab-pane :label="t('catalog.entry.tabs.curation')" name="curation" />
         <el-tab-pane :label="t('catalog.entry.tabs.professional')" name="professional" />
         <el-tab-pane :label="t('catalog.entry.tabs.relations')" name="relations" />
+        <el-tab-pane v-if="entry.entry_type === 'data_item'" :label="t('catalog.sharing.title')" name="sharing" />
       </el-tabs>
+
+      <el-alert v-if="!editing && activeDetailTab === 'sharing' && hasInvalidSharingRouteIdentity(route.query)"
+        type="error" :closable="false" :title="t('catalog.sharing.invalidRouteIdentity')" />
+      <SharingPanel v-else-if="!editing && activeDetailTab === 'sharing' && entry.entry_type === 'data_item'" :entry="entry"
+        :decision-i-d="canonicalSharingUUID(route.query.sharing_decision_id)" :record-decision="recordSharingDecision"
+        :request-i-d="canonicalSharingUUID(route.query.sharing_request_id)" :record-request="recordSharingRequest" />
 
       <el-row v-if="!editing && activeDetailTab === 'overview'" :gutter="16" class="detail-grid">
         <el-col :xs="24" :lg="12">
@@ -570,6 +577,8 @@ import { createLineageApi, normalizeLineageGraph } from '@addp/common-frontend/g
 import EntryEditor from '../components/EntryEditor.vue'
 import EntryGovernanceDialog from '../components/EntryGovernanceDialog.vue'
 import StandardMappingPanel from '../components/StandardMappingPanel.vue'
+import SharingPanel from '../components/SharingPanel.vue'
+import { canonicalSharingUUID, hasInvalidSharingRouteIdentity } from '../utils/sharingConfirmation'
 import { exportEntryDataDictionary, getEntry, getEntryDataDictionary, getEntryHistory, getMyEntryMarks, listDomainOverviews, rebindSource, replaceMyEntryMarks, resolveSourceEntries, updateEntry, updateEntryGovernance, transferEntryResponsibilities } from '../api/catalog'
 import client from '../api/client'
 import { useAuthStore } from '../store/auth'
@@ -796,7 +805,7 @@ function openEditor(mode = 'curation') {
 
 function detailTabRouteState(query) {
   return resolveCanonicalTabRouteState({
-    allowedTabs: ['overview', 'curation', 'professional', 'relations'],
+    allowedTabs: ['overview', 'curation', 'professional', 'relations', 'sharing'],
     defaultTab: 'overview',
     routeQuery: query,
     preservedQuery: query
@@ -807,6 +816,16 @@ async function changeDetailTab(tab) {
   const state = detailTabRouteState({ ...route.query, tab })
   activeDetailTab.value = state.tab
   if (state.changed) await router.replace({ query: state.query })
+}
+
+async function recordSharingDecision(id) {
+  await navigateConsoleModuleRoute(router, 'catalog', { path: route.path,
+    query: { ...route.query, tab: 'sharing', sharing_decision_id: id } }, { history: 'replace' })
+}
+
+async function recordSharingRequest(id) {
+  await navigateConsoleModuleRoute(router, 'catalog', { path: route.path,
+    query: { ...route.query, tab: 'sharing', sharing_request_id: id } }, { history: 'replace' })
 }
 
 async function handleMoreAction(command) {

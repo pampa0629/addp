@@ -46,7 +46,7 @@ SQL 引擎必须通过 `SQLDialectProvider.SQLDialect()` 声明稳定方言，`S
 | --- | --- | --- |
 | 关系型 / SQL 表格型 | `EnginePlugin`、`ConnectionSpecProvider`、`EngineCatalogModelProvider`、`EngineCatalogProvider`、`EngineCatalogFactsProvider`、`SQLQueryRuntimeProvider` | `ConnectionPoolPlugin` |
 | 动态 schema 记录集合型 | `EnginePlugin`、`ConnectionSpecProvider`、`EngineCatalogModelProvider`、`EngineCatalogProvider`、`EngineCatalogFactsProvider`、`QueryRuntimeProvider` | `DynamicSchemaSamplingProvider` |
-| 键值存储（Redis 连接首版） | `EnginePlugin`、`ConnectionSpecProvider` | 尚无数据访问 Provider，不能按其他存储族补齐空实现。 |
+| 键值存储（Redis） | `EnginePlugin`、`ConnectionSpecProvider`、Catalog Model/Catalog/Facts、`KeyValueReadableProvider` | 原生 key 值不套用表或记录集合读取契约；Meta 身份扫描与实时预览分开。 |
 | 图数据库 | `EnginePlugin`、`ConnectionSpecProvider`、`EngineCatalogModelProvider`、`EngineCatalogProvider`、`EngineCatalogFactsProvider`、`QueryRuntimeProvider` | `GraphSampleProvider`、`GraphQueryProvider` |
 | 对象存储 | `EnginePlugin`、`ConnectionSpecProvider`、`EngineCatalogModelProvider`、`EngineCatalogProvider`、`EngineCatalogFactsProvider` | `ContentReadableProvider`、`ContentWritableProvider` |
 | 文件系统 | `EnginePlugin`、`ConnectionSpecProvider`、`EngineCatalogModelProvider`、`EngineCatalogProvider`、`EngineCatalogFactsProvider` | `ContentReadableProvider`、`ContentWritableProvider` |
@@ -152,8 +152,16 @@ TiDB 的完成证据必须同时包含固定三组件官方镜像 digest、Linux
 
 KingbaseES 的完成证据必须同时包含固定官方介质 SHA-256、owner 提供 License 文件的 SHA-256 与有效性校验、Linux x86_64 T5 官方介质协议认证、同环境真实 T2 disposable Provider 门禁、Business 幂等样例，以及 `kingbase-consumer-flow` 的 Manager / Transfer / Develop / Service 跨模块 T4 与容器零残留证据。三层门禁只在带 `self-hosted`、`Linux`、`X64`、`addp-kingbase` 标签的受保护 Runner 上执行，首次真实通过前只登记手工 `workflow_dispatch`，不得增加 schedule。
 
-### Redis 连接首版
+### Redis key 扫描与原生预览
 
-`redis` 插件复用固定版本 `go-redis/v9@v9.17.2`，只支持单端点 ACL 认证和一个逻辑数据库；不声明 Cluster、Sentinel、目录、内容读取、查询或扫描能力。ConnectionSpec 使用 `host`、`port`（默认 6379）、`user`（默认 default）、`password`、`database`（从 0 开始，默认 0）、`use_ssl` 和可选 PEM `tls_ca_cert`。TLS 必须验证证书链与连接主机，不能关闭证书验证。连接检测以配置的凭据执行 HELLO（必须为 standalone）、SELECT 和 DBSIZE，拒绝错误凭据、无权限账号和不可选数据库；不读写业务 key。DBSIZE 需要数据库级读取权限，不表示该账号对所有 key 都有访问权。
+`redis` 插件复用固定版本 `go-redis/v9@v9.17.2`，只支持单端点 ACL 认证和一个逻辑数据库。ConnectionSpec 使用 `host`、`port`（默认 6379）、`user`（默认 default）、`password`、`database`（从 0 开始，默认 0）、`use_ssl` 和可选 PEM `tls_ca_cert`。TLS 必须验证证书链与连接主机，不能关闭证书验证。连接检测以配置的凭据执行 HELLO（必须为 standalone）、SELECT 和 DBSIZE；此检测不读写业务 key，也不证明账号有 key 读取权限。
 
-最小验证为 `make test-common-redis`（独占真实 Redis + Common/System 消费契约）、`make test-business-redis`（原生夹具）、`make test-engine-plugin-registration`、`make test-common-frontend test-system-frontend`；共享聚合依赖由 `make test-go` 验证。
+目录模型固定 `server -> key`；数据库属于连接边界，不重复进入业务路径。所有 key（包括空 key、非 UTF-8 和特殊字符）统一用 `k:` 加无填充 Base64URL 原始字节编码定位；显示名称由该编码派生。首期键名最多 189 字节，使编码后的 Meta `name` 不超过既有 255 字符预算；超长键名不能被截断、忽略或改成哈希身份。
+
+插件内部完整推进 SCAN 游标、去重并按编码名称排序，随后应用 ListOptions；不将 SCAN COUNT 当作严格分页。枚举最多 10000 个不同 key、8 MiB 累计键名字节和 1000 次 SCAN，单次操作最长 10 秒；超限、取消或权限探测失败返回失败，不交付半份目录。Meta 只有成功完成范围扫描才清理未见 key；每个 key 只保存 `layout=single + data_type=unknown`，不采样业务值或持久化递减 TTL。
+
+原生 Facts 返回类型、字节长度或元素数与实时 PTTL；读取通过 `KeyValueReadableProvider` 给出 string 字节窗口或 hash/list/set/zset/stream 有限样本，最多 50 项、string 最多 64 KiB、单个 RESP 响应最多 1 MiB。数据读取在 SDK 分配内存前检查 RESP 长度、元素数和嵌套深度；TLS 解密后同样检查。字段和值使用显式 UTF-8/Base64 字节表达，不自动转换数值字符串、JSON 或 stream ID，stream 字段对保留顺序及重复字段名。只读样本不承诺快照、稳定分页或完整导出，key 消失、类型变化和访问拒绝必须明确返回。
+
+System 公开真实能力与 KeyValue Facts；Manager 继续要求 Meta item 身份，并以独立原生键值预览呈现。首期不声明 Cluster、Sentinel、写入、查询、搬运或字段保护适配。
+
+最小验证为 `make test-common-redis-unit`（原生读取、资源路径、预览路由与保护边界）、`make test-common-redis`（独占真实 Redis + Common/System/Meta/Manager 消费契约）、`make test-business-redis`（原生夹具）、`make test-engine-plugin-registration`、`make test-common-frontend test-manager-frontend test-system-frontend test-meta-frontend`；共享聚合依赖由 `make test-go` 验证。现有 Redis T2 job 按 Common/System/Meta/Manager/Business 路径触发，不新增另一套测试生命周期。

@@ -518,6 +518,10 @@ WGS84 bounds、SRID 和 CRS 属于 `capabilities.spatial`，不重复写入 `for
 - `srid=0` 且 `crs_ref` / `crs_definitions` 缺失时必须按 `unknown_crs` 处理，不得默认解释为 `EPSG:4326`。如果 `srid=0` 但存在有效 `crs_ref` 和 CRS 定义，表示“无数字 SRID 但 CRS 已知”。
 - 如果某条路径已经由具体引擎能力完成转换，例如 MVT / 矢量物化视图，应在该路径响应中明确 `target_srid`、`transform_status=engine_transformed` 和 `transform_engine`；该事实不得反向改写源数据的 `capabilities.spatial`。
 
+## Redis key 身份
+
+Redis key 首期仅保存 `item.layout=single` 和 `item.data_type=unknown` 以及既有 item 身份列。string/hash/list/set/zset/stream 是引擎原生类型，不创建 `type_info.key_value` 或 `format_info.redis`；实时长度和 TTL 从 Engine Facts 读取，不持久化值样本或递减 TTL。
+
 ## Elasticsearch Mapping 字段事实
 
 Elasticsearch index 的 `item_type=index`，记录集合消费语义写入 `item.data_type=table`，字段写入 `type_info.table.fields`。Mapping 的 object/nested 原生类型、子字段路径及 multi-field 的原生关联由`TableInfo.Native.mapping` 承载，multi-field 不是 `_source` 的新增属性。Mapping 的紧凑来源事实保留于 `type_info.table.native`，其中 `schema_type=mapping`、`is_sampled=false`；它们不是 Manager 剖析结果，也不表示原文档全部字段已声明。精确文档数只在显式请求统计时读取，未知保持缺失。

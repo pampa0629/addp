@@ -187,6 +187,7 @@ type EngineCatalogFactsCapability struct {
 }
 
 type StoreCapability struct {
+	KeyValueRead                bool                                   `json:"key_value_read,omitempty"`
 	StreamRead                  bool                                   `json:"stream_read,omitempty"`
 	StreamWrite                 bool                                   `json:"stream_write,omitempty"`
 	RangeRead                   bool                                   `json:"range_read,omitempty"`

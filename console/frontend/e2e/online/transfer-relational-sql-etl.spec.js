@@ -19,9 +19,11 @@ const requiredNames = [
   'ADDP_ONLINE_TEST_USER_USERNAME',
   'ADDP_ONLINE_TEST_USER_PASSWORD',
   'ADDP_ONLINE_TEST_ENGINE_NAME',
+  'ADDP_ONLINE_TEST_ENGINE_ID',
   'ADDP_ONLINE_TRANSFER_SQL_ETL_TASK_NAME',
   'ADDP_ONLINE_TRANSFER_SQL_ETL_SOURCE_TABLE',
   'ADDP_ONLINE_TRANSFER_SQL_ETL_TARGET_TABLE',
+  'ADDP_ONLINE_TRANSFER_FIELD_LINEAGE',
   'GATEWAY_URL'
 ]
 
@@ -43,7 +45,78 @@ async function selectOutputField(builder, fieldName) {
   await checkbox.check({ force: true })
 }
 
-test('browser creates and executes PostgreSQL single-table SQL ETL', async ({ page }) => {
+async function scanEngine(api, engineID) {
+  const scan = await json(await api.post('/api/v1/meta/scan/run/manual', {
+    data: { engine_id: Number(engineID), scan_depth: 'deep', trigger_type: 'manual', force: true }
+  }), 'scan SQL target')
+  await expect.poll(async () => {
+    const execution = await json(await api.get(`/api/v1/meta/executions/${encodeURIComponent(scan.execution_id)}`), 'read Meta scan')
+    if (['failed', 'cancelled', 'timeout'].includes(execution.status)) throw new Error(`Meta scan ended with status ${execution.status}`)
+    return execution.status
+  }, { timeout: 120_000, intervals: [500, 1000, 2000] }).toBe('success')
+}
+
+async function managerFieldGraph(page, locator, itemID, field) {
+  await page.goto(`/manager/data-explorer?locator=${encodeURIComponent(locator)}&tab=lineage`)
+  const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
+  await expect(frame.locator('.lineage-field')).toBeVisible()
+  const graphResponse = page.waitForResponse(response => {
+    const url = new URL(response.url())
+    return url.pathname === '/api/v1/meta/lineage/graph' &&
+      url.searchParams.get('subject_kind') === 'field_ref' &&
+      url.searchParams.get('item_id') === String(itemID) &&
+      url.searchParams.get('field_name') === field
+  })
+  await frame.locator('.lineage-field .el-select__wrapper').click()
+  await frame.getByRole('option', { name: field, exact: true }).click()
+  const response = await graphResponse
+  expect(response.status()).toBe(200)
+  const graph = await response.json()
+  expect(graph.subject.kind).toBe('field_ref')
+  expect(String(graph.subject.item_id)).toBe(String(itemID))
+  expect(graph.subject.field_name).toBe(field)
+  expect(graph.subject.schema_snapshot_hash).toBeTruthy()
+  expect(graph.truncated).toBe(false)
+  await expect(frame.locator('.lineage-canvas canvas').first()).toBeVisible()
+  return { graph, frame }
+}
+
+async function verifyManagerLineage(page, api, env, sqlExecution) {
+  const lineage = JSON.parse(env.ADDP_ONLINE_TRANSFER_FIELD_LINEAGE)
+  const native = await managerFieldGraph(page, lineage.target_locator, lineage.target_item_id, 'area')
+  expect(native.graph.field_lineage_status).toBe('complete')
+  expect(native.graph.subject.schema_snapshot_hash).toBe(lineage.schema_snapshot_hash)
+  const edgeIdentity = edge => [edge.source.item_id, edge.source.field_name, edge.target.item_id, edge.target.field_name, edge.transformation, edge.evidence.execution_id]
+  expect(native.graph.edges.map(edgeIdentity).sort()).toEqual(lineage.expected_edges.sort())
+  expect(native.graph.nodes).toHaveLength(3)
+  for (const node of native.graph.nodes) {
+    expect(node.kind).toBe('field_ref')
+    expect(node.schema_snapshot_hash).toBeTruthy()
+  }
+  await expect(native.frame.locator('.lineage-summary')).toContainText('3 个节点 · 2 条关系')
+  await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'transfer-native-field-lineage.png'), fullPage: true })
+
+  await scanEngine(api, env.ADDP_ONLINE_TEST_ENGINE_ID)
+  const items = await json(await api.get(`/api/v1/meta/engines/${env.ADDP_ONLINE_TEST_ENGINE_ID}/items`), 'read SQL target DataItem')
+  const targets = items.filter(item => item.full_name === `public.${env.ADDP_ONLINE_TRANSFER_SQL_ETL_TARGET_TABLE}`)
+  expect(targets).toHaveLength(1)
+  const target = targets[0]
+  const itemQuery = new URLSearchParams({ subject_kind: 'data_item', item_id: String(target.id), direction: 'upstream', depth: '2', limit: '100' })
+  await expect.poll(async () => {
+    const graph = await json(await api.get(`/api/v1/meta/lineage/graph?${itemQuery}`), 'wait for automatic SQL lineage collection')
+    return graph.edges.some(edge => edge.evidence?.execution_id === sqlExecution.execution_id)
+  }, { timeout: 120_000, intervals: [500, 1000, 2000] }).toBe(true)
+  const locator = `addp://engine/${env.ADDP_ONLINE_TEST_ENGINE_ID}/path/public/${env.ADDP_ONLINE_TRANSFER_SQL_ETL_TARGET_TABLE}?type=table&item_id=${target.id}`
+  const query = await managerFieldGraph(page, locator, target.id, 'amount')
+  expect(query.graph.field_lineage_status).toBe('unavailable')
+  expect(query.graph.edges).toEqual([])
+  await expect(query.frame.locator('.lineage-truncated')).toHaveText('当前字段尚无可用血缘证据')
+  await page.screenshot({ path: resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'transfer-query-field-unavailable.png'), fullPage: true })
+}
+
+test('browser executes SQL ETL and verifies native field lineage in Manager', async ({ page }) => {
+  test.setTimeout(360_000)
+  await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
   const env = environment()
   const repository = env.ADDP_ONLINE_REPOSITORY
   const expectedStatement = `SELECT "id", "region", "amount" FROM "public"."${env.ADDP_ONLINE_TRANSFER_SQL_ETL_SOURCE_TABLE}" WHERE "status" = :p1 AND "amount" >= :p2`
@@ -53,6 +126,7 @@ test('browser creates and executes PostgreSQL single-table SQL ETL', async ({ pa
   })
   const failedResponses = []
   const consoleErrors = []
+  page.on('pageerror', error => consoleErrors.push(error.message))
   page.on('response', response => {
     const pathname = new URL(response.url()).pathname
     if (pathname.startsWith('/api/v1/') && response.status() >= 400) {
@@ -72,6 +146,9 @@ test('browser creates and executes PostgreSQL single-table SQL ETL', async ({ pa
     expect(apiIdentity.tenantID).toBe(env.ADDP_ONLINE_TEST_TENANT_ID)
     for (const permission of [
       'meta.catalog.read',
+      'meta.lineage.read',
+      'manager.data_item.read',
+      'manager.content.read',
       'system.engine.execute',
       'system.engine.read',
       'transfer.task.create',
@@ -175,6 +252,7 @@ test('browser creates and executes PostgreSQL single-table SQL ETL', async ({ pa
     expect(mappingsPayload?.map(mapping => mapping.source)).toEqual(['id', 'region', 'amount'])
     expect(taskPayload?.config?.target?.policy?.apply_mode).toBe('replace')
     controlFixture(repository, 'business/scripts/online-transfer-relational-sql-etl-fixture.sh', 'verify')
+    await verifyManagerLineage(page, api, env, execution)
 
     await json(await api.delete(`/api/v1/transfer/task-definitions/${taskID}`), 'delete Transfer task')
     const deleted = await api.get(`/api/v1/transfer/task-definitions/${taskID}`)
@@ -190,7 +268,7 @@ test('browser creates and executes PostgreSQL single-table SQL ETL', async ({ pa
     writeFileSync(
       resolve(env.ADDP_ONLINE_ARTIFACT_DIR, 'transfer-relational-sql-etl-browser.json'),
       `${JSON.stringify({
-        schema_version: 'addp.transfer-relational-sql-etl-browser/v1',
+        schema_version: 'addp.transfer-relational-sql-etl-browser/v2',
         suite: 'transfer-relational-sql-etl',
         run_id: env.ADDP_ONLINE_TEST_RUN_ID,
         result: 'passed',
@@ -203,7 +281,9 @@ test('browser creates and executes PostgreSQL single-table SQL ETL', async ({ pa
         records_read: 2,
         records_written: 2,
         target_row_count: 2,
-        task_deleted: true
+        task_deleted: true,
+        manager_field_graph_verified: true,
+        query_field_unavailable_verified: true
       })}\n`,
       'utf8'
     )

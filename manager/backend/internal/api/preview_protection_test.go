@@ -1,17 +1,43 @@
 package api
 
 import (
+	"errors"
+	"github.com/gin-gonic/gin"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/dataprotection/projectionstore"
 	"github.com/addp/common/datatype"
+	"github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/preview"
 	managerprotection "github.com/addp/manager/internal/protection"
 )
+
+func TestPreviewCatalogErrorDoesNotExposeNativeDetails(t *testing.T) {
+	for kind, status := range map[plugin.EngineCatalogErrorKind]int{plugin.EngineCatalogErrorNotFound: 404, plugin.EngineCatalogErrorInvalidPath: 400, plugin.EngineCatalogErrorUnsupported: 400, plugin.EngineCatalogErrorUnavailable: 503} {
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest("GET", "/preview", nil)
+		if !writeCatalogPreviewError(c, plugin.WrapEngineCatalogError(kind, errors.New("native secret-key-value"))) || w.Code != status || strings.Contains(w.Body.String(), "secret-key-value") {
+			t.Fatal(w.Code, w.Body.String())
+		}
+	}
+}
+
+func TestPreviewProtectionRejectsNativeKeyWithoutFieldAdapter(t *testing.T) {
+	result := &preview.PreviewResult{PreviewType: "key_value", Data: &models.TablePreview{Mode: "key_value", KeyValue: &plugin.KeyValuePreview{}}}
+	if err := applyPreviewProtection(result, []dataprotection.Rule{{}}, dataprotection.SubjectReference{}); err != managerprotection.ErrRequired {
+		t.Fatalf("native protection bypass: %v", err)
+	}
+	if err := applyPreviewProtection(result, nil, dataprotection.SubjectReference{}); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestPreviewProtectionMasksOutdoorPhoneAtResponseBoundary(t *testing.T) {
 	now := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)

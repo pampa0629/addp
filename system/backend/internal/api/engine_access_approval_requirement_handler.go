@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	commonapi "github.com/addp/common/api"
+	commonauthorization "github.com/addp/common/authorization"
 	engineplugin "github.com/addp/common/engine/plugin"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	"github.com/addp/system/internal/engineaccess"
@@ -17,6 +18,7 @@ type engineAccessApprovalRequirementService interface {
 	InitializeApprovalRequirement(context.Context, engineaccess.InitializeApprovalRequirementInput) (*engineaccess.ApprovalRequirementView, error)
 	ListApprovalRequirements(context.Context, engineaccess.Actor, int64, int, int) ([]engineaccess.ApprovalRequirementView, int64, error)
 	GetApprovalRequirement(context.Context, engineaccess.Actor, int64, uuid.UUID) (*engineaccess.ApprovalRequirementView, error)
+	GetHandlingRequirement(context.Context, engineaccess.Actor, engineplugin.EngineCatalogPath) (*engineaccess.HandlingRequirementView, error)
 }
 type EngineAccessApprovalRequirementHandler struct {
 	service engineAccessApprovalRequirementService
@@ -25,6 +27,48 @@ type EngineAccessApprovalRequirementHandler struct {
 type InitializeEngineAccessApprovalRequirementRequest struct {
 	CatalogPath engineplugin.EngineCatalogPath `json:"catalog_path" binding:"required"`
 	Reason      string                         `json:"reason" binding:"required"`
+}
+
+type EngineAccessHandlingRequirementRequest struct {
+	Version  string                              `json:"version" binding:"required"`
+	Segments []engineplugin.EngineCatalogSegment `json:"segments" binding:"required"`
+}
+
+// HandlingRequirement godoc
+// @Summary 观察精确目标的当前批准要求 | Observe the exact target's current approval requirement
+// @Description 只读结构化查询。仅本人办理权限和当前引擎管理委派，不枚举配置、不初始化缺失要求，不授予访问；版本为无损字符串，正式提交仍须核验原预期版本 | Read-only structured query under current human handling permission and engine delegation. No configuration enumeration, initialization or access grant; the version is a lossless string and formal submission rechecks the original expected version
+// @Tags 源授权办理 | Source Access Fulfillment
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "引擎 ID，唯一来源 | Engine ID, sole source"
+// @Param request body EngineAccessHandlingRequirementRequest true "完整结构化叶子路径，含结构根 | Complete structured leaf path including its root"
+// @Success 200 {object} engineaccess.HandlingRequirementView "当前批准要求观察，不是凭据 | Current approval requirement observation, not a credential"
+// @Failure 400,401,403,404,500 {object} IAMErrorResponse "请求失败 | Request failed"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["system.engine_access_fulfillment.create"]
+// @Router /engines/{id}/access_handling_requirement [post]
+func (h *EngineAccessApprovalRequirementHandler) HandlingRequirement(c *gin.Context) {
+	actor, engineID, ok := approvalRequirementActor(c)
+	if !ok {
+		return
+	}
+	var request EngineAccessHandlingRequirementRequest
+	if c.Request.URL.RawQuery != "" || commonapi.BindOptionalJSONStrict(c, &request) != nil {
+		respondIAMError(c, commonapi.ErrBadRequest)
+		return
+	}
+	path := engineplugin.EngineCatalogPath{EngineID: uint(engineID), Version: request.Version, Segments: request.Segments}
+	if _, err := commonauthorization.EncodeSharingTarget(path); err != nil {
+		respondIAMError(c, commonapi.ErrBadRequest)
+		return
+	}
+	row, err := h.service.GetHandlingRequirement(c.Request.Context(), actor, path)
+	if err != nil {
+		respondIAMError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, row)
 }
 
 // Initialize godoc

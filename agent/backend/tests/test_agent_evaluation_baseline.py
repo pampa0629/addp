@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from graph.factory import AgentFactory
+from agents.checkpoint import confirm_selection, normalize_checkpoint
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -23,11 +24,13 @@ class _Response:
 class _ScriptedLLM:
     def __init__(self, responses):
         self.responses = list(responses)
+        self.inputs = []
 
     def bind_tools(self, _tools):
         return self
 
     async def ainvoke(self, _messages):
+        self.inputs.append([getattr(message, "content", "") for message in _messages])
         return self.responses.pop(0)
 
 
@@ -426,7 +429,54 @@ class AgentEvaluationBaselineTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(EvaluationFailure):
             evaluate_trace(scenario, trace)
 
-    async def _run_factory(self, *, agent_run_id, tools, responses, allowed_tools, skill_name="workflow-analysis"):
+    async def test_transfer_target_clarification_restores_source_schema(self):
+        source = "addp://engine/9/path/outdoor/routes?type=collection&item_id=66"
+        target = "addp://engine/12/path/public"
+        events = await self._run_factory(
+            agent_run_id="run-transfer-resume", skill_name="transfer-generation",
+            allowed_tools=["resource.facts.get", "resource.children.list"],
+            tools=[
+                _Tool("resource.facts.get", {
+                    "locator": source, "engine_id": 9, "source_engine_type": "mongodb",
+                    "item_id": 66, "item_type": "collection", "data_type": "table",
+                    "full_name": "outdoor.routes", "item_fingerprint": "fp",
+                    "scanned_depth": "deep", "schema_coverage": "sampled",
+                    "query_names": {"database": "outdoor", "collection": "routes"},
+                    "fields": [{"name": "distance", "path": ["metrics", "distance"], "type": "float"}],
+                }),
+                _Tool("resource.children.list", {
+                    "locator": "addp://engine/12/path", "label": "业务 PostgreSQL",
+                    "children": [{"locator": target, "label": "public", "type": "schema"}],
+                }),
+            ],
+            responses=[
+                _Response(tool_calls=[_tool_call("resource.facts.get", {"locator": source})]),
+                _Response(tool_calls=[_tool_call("resource.children.list", {"engine_id": 12}, "target-1")]),
+                _Response(tool_calls=[_tool_call("request_clarification", {
+                    "prompt": "请选择目标 Schema", "reason": "target_parent_ambiguous",
+                    "options": [{"label": "untrusted", "value": target}],
+                }, "clarify-target")]),
+            ],
+        )
+        interaction = next(event for event in events if event.kind == "interaction_required")
+        self.assertEqual(interaction.payload["candidates"][0]["label"], "public")
+        checkpoint = normalize_checkpoint(next(
+            event.payload["checkpoint"] for event in reversed(events) if event.kind == "checkpoint"
+        ))
+        confirm_selection(checkpoint, interaction.payload["candidates"][0])
+        resumed_llm = _ScriptedLLM([_Response(content="目标已确认，下一步确认字段和写入策略。")])
+        resumed = await self._run_factory(
+            agent_run_id="run-transfer-resume", skill_name="transfer-generation",
+            tools=[], allowed_tools=[], responses=[], checkpoint=checkpoint, llm=resumed_llm,
+        )
+        human_input = resumed_llm.inputs[0][1]
+        restored = json.loads(human_input.split("本 AgentRun 已持久化的受信任状态：\n", 1)[1])
+        self.assertEqual(restored["confirmed"]["resources"][target]["item_type"], "schema")
+        self.assertEqual(restored["observed"]["resources"][source]["fields"][0]["path"], ["metrics", "distance"])
+        self.assertEqual(restored["observed"]["resources"][source]["query_names"]["collection"], "routes")
+        self.assertFalse(any(event.kind in {"tool_start", "interaction_required"} for event in resumed))
+
+    async def _run_factory(self, *, agent_run_id, tools, responses, allowed_tools, skill_name="workflow-analysis", checkpoint=None, llm=None):
         context = {
             "skill_name": skill_name,
             "user_request": "评测请求",
@@ -435,10 +485,11 @@ class AgentEvaluationBaselineTests(unittest.IsolatedAsyncioTestCase):
             "tenant_id": 1,
             "token": "runtime-token",
             "agent_run_id": agent_run_id,
+            "checkpoint": checkpoint,
         }
         with (
             patch("graph.factory.create_agent_tools", return_value=tools),
-            patch("graph.factory.get_llm", return_value=_ScriptedLLM(responses)),
+            patch("graph.factory.get_llm", return_value=llm or _ScriptedLLM(responses)),
         ):
             return [
                 event
@@ -446,7 +497,7 @@ class AgentEvaluationBaselineTests(unittest.IsolatedAsyncioTestCase):
                     task_context=context,
                     skill_body="评测 Skill",
                     allowed_tool_names=allowed_tools,
-                    max_iterations=len(responses),
+                    max_iterations=len(llm.responses) if llm is not None else len(responses),
                 )
             ]
 

@@ -282,3 +282,8 @@ other = "The PPTX static preview task was deleted"
 
 [manager.pptx_pdf.result_deleted]
 other = "The PPTX static preview result was deleted"
+[manager.error.preview_resource_not_found]
+other = "The preview resource no longer exists"
+
+[manager.error.preview_unsupported]
+other = "This resource does not support preview"

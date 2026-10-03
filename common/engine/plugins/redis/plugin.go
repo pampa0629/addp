@@ -1,4 +1,4 @@
-// Package redis provides standalone Redis connection registration.
+// Package redis provides bounded standalone Redis catalog and native value access.
 package redis
 
 import (
@@ -38,7 +38,21 @@ func (p *RedisPlugin) RequiredFields() []string           { return p.ConnectionS
 func (p *RedisPlugin) SensitiveFields() []string          { return p.ConnectionSpec().SensitiveFields() }
 func (p *RedisPlugin) ConnectionIdentityFields() []string { return p.ConnectionSpec().IdentityFields() }
 func (p *RedisPlugin) Capabilities() plugin.EngineCapabilities {
-	return plugin.EngineCapabilities{SchemaVersion: plugin.CapabilitiesSchemaVersion, EngineType: p.Type(), EngineFamily: "key_value", Storage: &plugin.StorageCapabilities{}}
+	model := p.EngineCatalogModel()
+	return plugin.EngineCapabilities{SchemaVersion: plugin.CapabilitiesSchemaVersion, EngineType: p.Type(), EngineFamily: "key_value", Storage: &plugin.StorageCapabilities{
+		CatalogModel: &model, Catalog: &plugin.EngineCatalogCapability{Supported: true},
+		Facts: &plugin.EngineCatalogFactsCapability{Supported: true, NativeFacts: true},
+		Store: &plugin.StoreCapability{KeyValueRead: true},
+	}}
+}
+
+func (*RedisPlugin) EngineCatalogModel() plugin.EngineCatalogModelSpec {
+	return plugin.EngineCatalogModelSpec{PathVersion: plugin.EngineCatalogPathVersion, RootTerm: plugin.EngineCatalogTermServer,
+		Levels: []plugin.EngineCatalogLevelSpec{{Term: plugin.EngineCatalogTermKey, Kinds: []string{plugin.EngineCatalogTermKey}, Role: plugin.EngineCatalogRoleLeaf, I18nKey: "engine.term.key"}}}
+}
+
+func (p *RedisPlugin) StoreSemantics() plugin.StoreSemantics {
+	return plugin.StoreSemanticsFromCapabilities(p.Capabilities())
 }
 
 func connectionInteger(c plugin.ConnectionInfo, key string, fallback, min, max int) (int, error) {
@@ -124,9 +138,9 @@ func (p *RedisPlugin) ValidateConnectionInfo(c plugin.ConnectionInfo) error {
 	return nil
 }
 
-func (p *RedisPlugin) TestConnection(ctx context.Context, c plugin.ConnectionInfo) error {
+func (p *RedisPlugin) client(c plugin.ConnectionInfo) (*rdb.Client, error) {
 	if err := p.ValidateConnectionInfo(c); err != nil {
-		return err
+		return nil, err
 	}
 	port, _ := connectionInteger(c, "port", 6379, 1, 65535)
 	database, _ := connectionInteger(c, "database", 0, 0, 2147483647)
@@ -141,31 +155,60 @@ func (p *RedisPlugin) TestConnection(ctx context.Context, c plugin.ConnectionInf
 		if ca := plugin.GetString(c, "tls_ca_cert"); ca != "" {
 			roots, err := x509.SystemCertPool()
 			if err != nil {
-				return fmt.Errorf("load Redis TLS trust roots: %w", err)
+				return nil, fmt.Errorf("load Redis TLS trust roots: %w", err)
 			}
 			roots.AppendCertsFromPEM([]byte(ca))
 			options.TLSConfig.RootCAs = roots
 		}
 	}
-	client := rdb.NewClient(options)
-	defer client.Close()
+	baseDialer := rdb.NewDialer(options)
+	options.Dialer = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		conn, err := baseDialer(ctx, network, addr)
+		if err != nil {
+			return nil, err
+		}
+		return newBudgetConn(conn), nil
+	}
+	return rdb.NewClient(options), nil
+}
+
+func (p *RedisPlugin) open(ctx context.Context, c plugin.ConnectionInfo) (*rdb.Client, *rdb.Conn, error) {
+	client, err := p.client(c)
+	if err != nil {
+		return nil, nil, err
+	}
+	// Cancellation must interrupt an in-flight socket read, not only its next command.
+	context.AfterFunc(ctx, func() { _ = client.Close() })
 	connection := client.Conn()
-	defer connection.Close()
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	// The SDK has already authenticated this dedicated connection. Do not
-	// resend credentials in the mode probe (including unsupported HELLO errors).
+	fail := func(err error) (*rdb.Client, *rdb.Conn, error) {
+		_ = connection.Close()
+		_ = client.Close()
+		return nil, nil, err
+	}
+	// Probe mode on the authenticated dedicated connection without resending credentials.
 	server, err := connection.Hello(ctx, 2, "", "", "").Result()
 	if err != nil {
-		return fmt.Errorf("Redis authenticated handshake failed: %w", err)
+		return fail(fmt.Errorf("Redis authenticated handshake failed: %w", err))
 	}
 	if server["mode"] != "standalone" {
-		return fmt.Errorf("Redis connection requires standalone server mode")
+		return fail(fmt.Errorf("Redis connection requires standalone server mode"))
 	}
-	// Explicit SELECT also verifies DB 0 permission; the SDK otherwise skips it.
+	database, _ := connectionInteger(c, "database", 0, 0, 2147483647)
 	if err := connection.Select(ctx, database).Err(); err != nil {
-		return fmt.Errorf("Redis database selection failed: %w", err)
+		return fail(fmt.Errorf("Redis database selection failed: %w", err))
 	}
+	return client, connection, nil
+}
+
+func (p *RedisPlugin) TestConnection(ctx context.Context, c plugin.ConnectionInfo) error {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	client, connection, err := p.open(ctx, c)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+	defer connection.Close()
 	if err := connection.DBSize(ctx).Err(); err != nil {
 		return fmt.Errorf("Redis database read failed: %w", err)
 	}

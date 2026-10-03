@@ -261,7 +261,7 @@ Manager 预览和 SQL 对同一表使用同一授权规则；SQL 必须核验实
 
 #### 5.5.5 批准要求、可选治理与明确交接
 
-本节是 2026-10-01 已确认的架构补充。批准要求的首次 Catalog 初始化与管理读取按下述契约实施；退出、重新启用、跨模块受理与表级 Grant 仍须分别完成，不以初始化接口代替。
+本节是 2026-10-01 已确认的架构补充。批准要求的首次 Catalog 初始化、管理读取、正式准备与跨模块首次受理已按下述契约实施；退出、重新启用与表级 Grant 仍须分别完成，不以初始化或受理接口代替实际授权生效。
 
 批准要求针对 `Tenant + Engine + 完整 EngineCatalogPath`，不针对整个平台注册历史，不递归扩展为整库，也不因 CatalogEntry 重绑把旧目标要求搬到新目标。同一目标只能有一份 System 权威批准要求；Catalog 不保存第二份可编辑要求。
 
@@ -278,6 +278,8 @@ Manager 预览和 SQL 对同一表使用同一授权规则；SQL 必须核验实
 首次初始化的唯一公开入口为 `POST /api/v1/system/engines/:id/access_approval_requirements`，只接受精确 `catalog_path` 与非空 `reason`，固定建立 `catalog` 模式、版本 1。请求不接受模式、版本、租户、操作账号或承接人字段，不递归作用于父路径。当前 Tenant User 必须同时具有 `system.engine_access_approval_requirement.initialize` 与该 Engine 的有效管理委派；System 在同一事务内锁定当前身份、读取有效 Tenant Scope Permission、锁定引擎及委派，再进入精确目标边界，等待后按数据库墙钟重新核验期限，并与审计原子提交。已存在要求返回 409，不覆盖、不自动增加版本；不得用此入口把已有 `independent` 要求切回 Catalog。
 
 管理读取使用同一路径的分页 GET 和 `/:requirement_id` 详情 GET，要求独立 `system.engine_access_approval_requirement.read` 及当前有效引擎管理委派，不接受 `tenant_id`。它只读取当前 Tenant、当前 Engine 的权威要求，不返回连接信息、责任副本或内容授权。两个 Permission 均仅允许 Tenant Scope、不可委托、可由租户自定义角色显式分配，不默认授予内置角色。不存在批准要求仍不是独立批准许可。上述入口不建立 Catalog 责任、不完成跨数据库纳管协调、不签发 Grant；Catalog 不可达不影响初始化或管理读取。
+
+办理所需的最小观察（2026-10-03 已确认）使用 `POST /api/v1/system/engines/:id/access_handling_requirement`。结构化路径可能超过安全 URL 长度，因此使用只读 POST，正文只接受路径 `version` 和完整 `segments`，Engine ID 唯一从路径参数取得；不接受 Tenant、操作者、批准模式或预期版本。当前 Tenant User 必须同时具备独立 `system.engine_access_fulfillment.create` 和该引擎的有效管理委派，按现有身份→引擎／委派锁及数据库墙钟复核。仅查询一个精确叶子，不枚举引擎要求、不继承父路径、不初始化缺失要求，缺失返回 404。响应仅含当前 `mode` 和无损十进制字符串 `requirement_version`；既有配置读取权限不因该入口放宽。观察不创建业务决定、待核清、受理、Grant 或批准要求变更审计，沿用 HTTP 请求审计但不保存正文；不是资格凭据。正式提交仍核验当前权限、完整目标及原预期版本，冲突不自动换版本重试。
 
 交接必须区分“设置批准安排”和“批准一次授权”。前者只改变后续办理所需依据；后者还要分别核验接收主体、动作、期限、当前批准／办理资格和目标管理范围，才可能产生 Grant。退出操作人可以与承接人同人，但必须分别满足资格；该兼任不额外扩大 5.5.1 已确认的普通只读自用范围，也不绕过既有敏感动作复核。
 

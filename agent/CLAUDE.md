@@ -144,7 +144,7 @@ python evals/agent-scenarios/gate.py --output /tmp/addp-agent-evaluation-gate.js
 - `request_clarification` 是 Agent Runtime 私有的暂停控制能力，不属于平台 Tool Manifest；触发后必须创建持久 Interaction，并以 AG-UI interrupt 和 A2UI `ClarificationChoice` 返回。
 - `workflow.run` 返回 `approval_required` 时，Agent 只保存 Develop approval ID、open URL、请求指纹和摘要，以 A2UI `ApprovalRequest` 暂停当前 AgentRun。客户端只能打开 Owner 页面或提交 `{action:"check"}`；Agent 必须使用原始 User Access Token 查询 Develop，只有 `approved|consumed` 才恢复同一 AgentRun。
 - `workflow.run` 的完整 workflow payload 不得写入 `agent.interactions`、`agent.run_steps` 或 checkpoint。首次 Tool step 只保存引擎 ID、任务数和是否存在 engine-specific 配置；恢复调用只保存 approval ID 与请求指纹。
-- 工作流引擎澄清选项必须来自当前 run 的 `engine.list`；资源澄清 locator 必须来自当前 run 的 `data.search`、`resource.ancestors.get` 或 `data.preview`。Runtime 使用 owner Tool 事实重建选项，未经观察的候选返回 `clarification_option_not_observed`，不得创建 Interaction。
+- 工作流引擎澄清选项必须来自当前 run 的 `engine.list`；资源澄清 locator 必须来自当前 run 的 `data.search`、`resource.ancestors.get`、`resource.children.list`、`resource.facts.get` 或 `data.preview`。目录 Tool 只投影父节点及直接子节点身份，正式资源事实只保存受限 Schema 和查询信息；具体投影边界以交互协议规范为准。Runtime 使用 owner Tool 事实重建选项，未经观察的候选返回 `clarification_option_not_observed`，不得创建 Interaction。
 - AgentRun 跨初始 AG-UI 调用和 Interaction resume 调用存在；恢复身份只使用 Interaction 的 `agent_run_id`，不得按新的协议 `runId` 创建第二个 AgentRun。
 - Interaction resume 必须沿用该 AgentRun 已记录的 Skill，不重新交给路由模型选择，避免批准后偏离原 Tool 白名单或退化为直接回复。
 - 断线重连按 `agent.run_events` 的 run 内 sequence 回放；事件不得保存 Tool 参数或原始结果。取消只停止内置 Agent Runtime 和 pending Interaction，不取消 owner execution；失败重试在同一 AgentRun 中追加新的协议调用事件。

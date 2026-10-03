@@ -282,3 +282,8 @@ other = "PPTX 静态预览任务已删除"
 
 [manager.pptx_pdf.result_deleted]
 other = "PPTX 静态预览结果已删除"
+[manager.error.preview_resource_not_found]
+other = "预览资源已不存在"
+
+[manager.error.preview_unsupported]
+other = "此资源不支持预览"

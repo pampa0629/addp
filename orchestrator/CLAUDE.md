@@ -1,5 +1,7 @@
 # Orchestrator 模块说明
 
+执行可靠性 T4 的外部故障工具位于 `scripts/test/orchestrator-execution-faults.py`，只允许本轮 Hosted 隔离部署使用。代理转交真实 Meta 请求后丢弃响应，或在步骤已记录 waiting 后暂缓状态读取；SIGKILL 必须用 pidfd 并核验 Backend 的 UID、可执行文件和部署 Secret 目录。替代进程由标准 `scripts/dev/start.sh -orchestrator` 启动。确定性入口 `make test-orchestrator-online-runner` 唯一聚合到 `make test-online-runner` / 平台 T0 / CI；新增故障仍须更新提交的真实手动 T4 通过，不能沿用首轮成功结果。
+
 ## 模块定位
 
 Orchestrator 模块负责任务编排、DAG 执行、定时调度、跨模块任务调用和任务提供者发现。它不直接处理业务数据，而是编排 Meta、Transfer、Manager、Develop 等模块通过 TaskProvider 声明的任务能力。

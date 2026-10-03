@@ -105,6 +105,7 @@ Develop TaskProvider 的 canonical 前端路由为：
 | Security | 受保护资源与待复核候选 | path `/protection-enrollments`；资源详情内统一承载 Assessment 调整和只能收紧的 ProtectionPolicy 编辑；以 `tab=review-queue` 恢复“待复核候选”子视图，默认“受保护资源”省略 `tab`；候选子视图使用 `sensitive_data_type_id`、`detector_version`、`page`、`page_size` 恢复筛选与分页，默认值省略 |
 | Asset | 资产分类、申请与反馈 Tab | `category_id`、`tab` |
 | Catalog | 已治理资源 / 资源盘点筛选、分页与条目详情 | `view`、`search`、`entry_type`、`source_status`、`governance_status`、`visibility`、`primary_domain_id`、`accountable_department_id`、`source_engine_id`、`page`、`page_size`；默认 `view=governance` 省略，资源盘点显式使用 `view=inventory`；详情 path `/entries/:id`，以 `tab=curation\|professional\|relations` 恢复非默认子视图，并以同名列表 query 保留返回上下文 |
+| Catalog | 数据项共享确认与原办理请求 | 详情使用 `tab=sharing`；`sharing_decision_id`／`sharing_request_id` 分别为原确认／原请求 UUID，显式提交前 replace 保存。刷新仅 GET 找回原记录；不把版本、命令正文、审批凭据或待提交参数写入 URL，也不从 URL 恢复 POST |
 | Meta | 扫描引擎与扫描任务入口 | `engine_id`、`task_id`；二者并存时任务所属引擎为事实源 |
 | System | IAM 分类页面、页内对象与审计筛选 | path `/iam/organization\|accounts\|roles\|application-access\|security`、`tab`、`event_name`、`result`、`risk_level`、`module_name`、`principal_id`、`principal_type`、`entity_type`、`entity_id`、`page` |
 | System | 模块管理服务实例筛选与分页 | path `/modules`，实例视图使用 `tab=instances`；`module_name`、`registered_host`、`node_name`、`role`、`status`、`stop_reason`、`time_basis`、`time_period`、`time_from`、`time_to`、`page`、`page_size` |

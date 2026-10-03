@@ -15,6 +15,9 @@ import (
 )
 
 var builtinProviderFactoriesWithContent = map[string]func(*repository.MetadataRepository, *commonClient.MetaClient, *objectcontent.ObjectContentRegistry) (PreviewProvider, error){
+	"key-value": func(_ *repository.MetadataRepository, _ *commonClient.MetaClient, _ *objectcontent.ObjectContentRegistry) (PreviewProvider, error) {
+		return NewKeyValuePreviewProvider(), nil
+	},
 	"database-table": func(repo *repository.MetadataRepository, metaClient *commonClient.MetaClient, _ *objectcontent.ObjectContentRegistry) (PreviewProvider, error) {
 		return NewDatabaseTablePreviewProvider(repo, metaClient), nil
 	},
@@ -87,6 +90,7 @@ func registerBuiltinPreviewProviders(registry *PreviewRegistry, metadataRepo *re
 
 func fallbackBuiltinPreviewPlugins() []PluginConfig {
 	return []PluginConfig{
+		{Name: "builtin:key-value", Type: "builtin", Builtin: "key-value"},
 		{Name: "builtin:database-table", Type: "builtin", Builtin: "database-table"},
 		{Name: "builtin:document-record-set", Type: "builtin", Builtin: "document-record-set"},
 		{Name: "builtin:graph", Type: "builtin", Builtin: "graph"},

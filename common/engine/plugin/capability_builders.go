@@ -349,6 +349,9 @@ func storeCapabilitySemantics(store *StoreCapability) []string {
 	if store.RecordReadSession {
 		semantics = append(semantics, "record_read_session")
 	}
+	if store.KeyValueRead {
+		semantics = append(semantics, "key_value_read")
+	}
 	if store.EncodedRecordReadSession != nil {
 		semantics = append(semantics, "encoded_record_read_session")
 	}

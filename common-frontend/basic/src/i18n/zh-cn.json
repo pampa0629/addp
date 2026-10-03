@@ -1,5 +1,10 @@
 {
-  "engine": {"term": {"index": "索引"}},
+  "engine": {
+    "term": {
+      "index": "索引",
+      "key": "键"
+    }
+  },
   "common": {
     "executionFailure": {
       "permission_denied": "读取或执行权限不足",
@@ -544,5 +549,17 @@
     "message": "离开后将丢失尚未保存的修改。确定离开吗？",
     "leave": "放弃修改并离开",
     "stay": "继续编辑"
+  },
+  "keyValuePreview": {
+    "nativeType": "原生类型",
+    "length": "长度 / 元素数",
+    "ttl": "剩余 TTL",
+    "persistent": "无过期时间",
+    "truncated": "仅显示有限样本，内容已截断",
+    "index": "序号",
+    "field": "字段",
+    "value": "值",
+    "score": "分数",
+    "fields": "有序字段对"
   }
 }

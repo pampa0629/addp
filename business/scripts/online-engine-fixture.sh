@@ -74,6 +74,26 @@ seed_fixture() {
     ON CONFLICT (fixture_key) DO UPDATE
       SET fixture_value = EXCLUDED.fixture_value, updated_at = now();
     CREATE SCHEMA IF NOT EXISTS addp_online_security;
+    CREATE EXTENSION IF NOT EXISTS postgis;
+    CREATE TABLE IF NOT EXISTS addp_online_security.spatial_algorithm_source (
+      id bigint PRIMARY KEY,
+      value_a text,
+      value_b text,
+      value_c text,
+      location_point geometry(Point, 4326) NOT NULL
+    );
+    TRUNCATE addp_online_security.spatial_algorithm_source;
+    INSERT INTO addp_online_security.spatial_algorithm_source
+      SELECT id, value, value, value, ST_SetSRID(ST_MakePoint(100 + id, 20 + id), 4326)
+      FROM (VALUES
+        (1, '"'"'13812345678'"'"'),
+        (2, '"'"'张三abc'"'"'),
+        (3, '"'"'abc'"'"'),
+        (4, NULL::text),
+        (5, '"'"''"'"')
+      ) AS fixture(id, value);
+    DROP TABLE IF EXISTS addp_online_security.spatial_algorithm_transfer;
+    CREATE TABLE addp_online_security.spatial_algorithm_transfer (id bigint PRIMARY KEY);
     DROP TABLE IF EXISTS addp_online_security.mysql_email_transfer;
     CREATE TABLE addp_online_security.mysql_email_transfer (
       id bigint PRIMARY KEY

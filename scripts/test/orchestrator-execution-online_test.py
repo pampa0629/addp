@@ -70,7 +70,9 @@ class FakeOwner:
                       "kind": kind, "counters": {}} for n, kind in ((1, "started"), (2, "failed" if failed else "completed"))]
             if self.fault == "event_private":
                 items[0]["message"] = "password=never-print"
-            return API.Response(200, {"items": items, "next_cursor": 2, "has_more": False, "retained_after": "2026-09-02"})
+            if self.fault == "event_duplicate":
+                items.append({**items[-1], "id": 3})
+            return API.Response(200, {"items": items, "next_cursor": items[-1]["id"], "has_more": False, "retained_after": "2026-09-02"})
         steps = {"nested": {"status": "failed" if failed else "success"}}
         if not failed or self.fault == "dependent":
             steps["after"] = {"status": "success"}
@@ -113,7 +115,7 @@ class OrchestratorOnlineTest(unittest.TestCase):
         self.assertNotIn("residual_resources", report)
 
     def test_rejects_private_projection_or_truncated_tree_before_fault(self):
-        for fault in ("private", "truncated", "event_private"):
+        for fault in ("private", "truncated", "event_private", "event_duplicate"):
             with self.subTest(fault=fault), self.assertRaises(API.SuiteError):
                 self.run_owner(FakeOwner(fault))
             self.assertEqual(self.controls, [])
@@ -186,7 +188,8 @@ class OrchestratorOnlineTest(unittest.TestCase):
     def test_source_fault_only_controls_the_verified_disposable_container(self, run):
         run.return_value = subprocess.CompletedProcess([], 0, '[{"Config":{"Labels":{"com.addp.online-fixture":"metric"}}}]', '')
         ONLINE.source_action("start")
-        self.assertEqual(run.call_args.args[0], ["docker", "start", "addp-metric-online-disposable"])
+        self.assertEqual(run.call_args_list[1].args[0], ["docker", "start", "addp-metric-online-disposable"])
+        self.assertEqual(run.call_args_list[2].args[0], ["docker", "exec", "addp-metric-online-disposable", "pg_isready", "-U", "postgres", "-d", "metric_fixture"])
 
     @patch.object(ONLINE.time, "monotonic", side_effect=[0, 121])
     def test_pending_execution_has_a_bounded_wait(self, clock):

@@ -2493,7 +2493,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "根据资源定位符预览数据内容，支持表格、消息主题、文件等多种资源 | Preview data content by resource locator, including tables, message topics, files, and more",
+                "description": "根据资源定位符预览数据内容，支持表格、消息主题、文件等多种资源 | Preview data content by resource locator, including tables, message topics, files, and more\nRedis key 必须先完成 Meta 身份扫描；响应 preview_type 与 data.mode 为 key_value，data.key_value 包含实时 facts、显式 UTF-8/Base64 的 value 或 entries、truncated；仅 page=1，最多50个元素，无写入或表结构推断 | Redis keys require scanned Meta identity; preview_type and data.mode are key_value, data.key_value contains live facts, explicitly encoded UTF-8/Base64 value or entries, and truncated; page=1 only, at most 50 entries, no writes or table schema inference",
                 "produces": [
                     "application/json"
                 ],

@@ -551,7 +551,7 @@ func isContentFileItemType(itemType string) bool {
 
 func isPreviewItemType(itemType string) bool {
 	switch itemType {
-	case "table", "view", "materialized_view", "collection", "index", "graph", "topic", "object", "file":
+	case "table", "view", "materialized_view", "collection", "index", "graph", "topic", "key", "object", "file":
 		return true
 	default:
 		return false
@@ -739,6 +739,8 @@ func providerNamesForMeta(req *PreviewResolverRequest, providerReq *PreviewReque
 	layout := itemLayoutFromMetaAttributes(attrs)
 
 	switch itemType {
+	case "key":
+		return []string{"builtin:key-value"}
 	case "collection", "index":
 		return []string{"builtin:document-record-set"}
 	case "graph":
@@ -968,6 +970,9 @@ func (r *PreviewResolver) buildMetadata(req *PreviewResolverRequest) *PreviewMet
 
 func schemaCoverage(req *PreviewResolverRequest) string {
 	if req == nil || req.MetaItemID == nil {
+		return "unknown"
+	}
+	if itemDataTypeFromMetaAttributes(req.MetadataAttributes()) == "unknown" {
 		return "unknown"
 	}
 	if registered, err := plugin.Get(req.Engine.EngineType); err == nil && registered.Capabilities().EngineFamily == "dynamic_schema" {

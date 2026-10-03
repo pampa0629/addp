@@ -225,6 +225,7 @@ SUITES: Mapping[str, Suite] = {
             ("system", "SYSTEM_URL"),
             ("meta", "META_URL"),
             ("transfer", "TRANSFER_URL"),
+            ("manager", "MANAGER_URL"),
         ),
     ),
     "enterprise-catalog-publishing": Suite(

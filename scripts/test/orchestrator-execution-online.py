@@ -14,6 +14,7 @@ from importlib import import_module
 from pathlib import Path
 
 API = import_module("scripts.utils.online-api")
+FAULTS = import_module("scripts.test.orchestrator-execution-faults")
 SuiteError = API.SuiteError
 SUITE = "orchestrator-execution"
 ORCH = "/api/v1/orchestrator"
@@ -59,6 +60,14 @@ def source_action(action):
     labels = containers[0].get("Config", {}).get("Labels") or {}
     require(labels.get("com.addp.online-fixture") == "metric", "refusing an unowned source container")
     subprocess.run(["docker", action, SOURCE], check=True, capture_output=True, text=True, timeout=30)
+    if action == "start":
+        for _ in range(30):
+            ready = subprocess.run(["docker", "exec", SOURCE, "pg_isready", "-U", "postgres", "-d", "metric_fixture"],
+                                   capture_output=True, timeout=10)
+            if ready.returncode == 0:
+                return
+            time.sleep(1)
+        raise SuiteError("restored source did not become ready")
 
 
 def wait_execution(client, execution_id, timeout=120):
@@ -114,12 +123,82 @@ def assert_events(client, execution_id, terminal):
         require(isinstance(page.get("has_more"), bool) and page.get("next_cursor") == cursor, "invalid event continuation")
         if not page["has_more"]:
             require(items and items[0]["kind"] == "started" and items[-1]["kind"] == terminal, "missing lifecycle events")
+            require(sum(x["kind"] in {"completed", "failed", "cancelled", "timeout"} for x in items) == 1,
+                    "execution has duplicate terminal events")
             return len(items)
         require(batch, "empty continued event page")
     raise SuiteError("event pagination exceeded the bounded attempt budget")
 
 
-def run_suite(client, denied, foreign, tenant, run_id, engine_id, report, control=source_action, checkpoint=lambda: None):
+def run_fault_case(client, launch, task_id, scan_id, case_id, mode, faults, report):
+    faults.arm(case_id, scan_id, mode)
+    try:
+        identity, _ = launch(task_id, wait=False)
+        if mode == "hold_status":
+            deadline = time.monotonic() + 20
+            while time.monotonic() < deadline:
+                item = client.request("GET", f"{ORCH}/executions/{identity}", (200,)).payload
+                recorded = item.get("metadata", {}).get("step_results", {}).get("probe", {})
+                witness = faults.witness()
+                if recorded.get("phase") == "waiting" and witness.get("child_execution_ids"):
+                    require(item.get("status") == "running" and recorded.get("status") == "running"
+                            and recorded.get("result", {}).get("execution_id") == witness["child_execution_ids"][0]
+                            and witness.get("parent_execution_id") == identity and witness.get("posts") == 1
+                            and not witness.get("error"), "crash precondition did not prove accepted child")
+                    faults.crash()
+                    faults.release()
+                    faults.restart()
+                    break
+                require(item.get("status") not in TERMINAL, "crash fixture terminated before the waiting barrier")
+                time.sleep(0.1)
+            else:
+                raise SuiteError("crash fixture did not reach the persisted waiting barrier")
+        terminal = wait_execution(client, identity, timeout=180)
+        code = "orchestrator.execution.lease_expired" if mode == "hold_status" else "orchestrator.execution.dispatch_uncertain"
+        require(terminal.get("status") == "failed" and terminal.get("error_details", {}).get("code") == code
+                and terminal.get("progress") == 0 and terminal.get("attempt") == 1, "fault parent did not converge truthfully")
+        steps = terminal.get("metadata", {}).get("step_results", {})
+        require(set(steps) == {"probe"}, "fault replayed or dispatched the dependent step")
+        if mode == "hold_status":
+            require(steps["probe"].get("status") == "running" and steps["probe"].get("phase") == "waiting",
+                    "recovery replaced the last recorded step with an invented terminal state")
+        else:
+            require(not steps["probe"].get("result", {}).get("execution_id"), "lost response invented a known child identity")
+        # Check beyond one supervisor pass; the real child must remain visible and finish normally.
+        deadline = time.monotonic() + 120
+        stable_after = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            projection = client.request("GET", f"{MONITOR}/{identity}/tree", (200,)).payload
+            assert_safe(projection)
+            visible, witness = tree_ids(projection), faults.witness()
+            children = [x for x in visible if x != identity]
+            require(witness.get("posts") == 1 and witness.get("parent_execution_id") == identity
+                    and not witness.get("error") and len(witness.get("child_execution_ids", [])) == 1,
+                    "fault witness did not prove one accepted request")
+            child = witness["child_execution_ids"][0]
+            require(children == [child] and visible[child].get("module") == "meta", "fault tree lost or duplicated the real child")
+            safe_steps = visible[identity].get("steps", [])
+            require(len(safe_steps) == 1 and safe_steps[0].get("id") == "probe"
+                    and visible[identity].get("status") == "failed" and visible[identity].get("progress") == 0
+                    and visible[identity].get("error_details", {}).get("code") == code, "fault diagnostics lost its cause or step")
+            if mode == "hold_status":
+                require(safe_steps[0].get("status") == "running" and safe_steps[0].get("phase") == "waiting",
+                        "Monitor misrepresented the historical waiting step")
+            if visible[child].get("status") == "success" and time.monotonic() >= stable_after:
+                break
+            require(visible[child].get("status") in {"pending", "running", "success"}, "parent failure stopped or corrupted its real child")
+            time.sleep(1)
+        else:
+            raise SuiteError("accepted child did not finish normally after its parent failed")
+        event_count = assert_events(client, identity, "failed")
+        report.setdefault("faults", []).append({"kind": case_id, "parent_execution_id": identity,
+            "child_execution_id": child, "posts": 1, "error_code": code, "event_count": event_count})
+        report["checks"].extend([case_id, case_id + "_no_replay"])
+    finally:
+        faults.release()
+
+
+def run_suite(client, denied, foreign, tenant, run_id, engine_id, report, control=source_action, checkpoint=lambda: None, faults=None):
     report.update(schema_version="addp.online-suite/v1", suite=SUITE, run_id=run_id,
                   tenant_id=str(tenant), result="failed", checks=[], resources=[], executions=[],
                   cleanup="not_started", history_cleanup="pending_deployment_destruction", uncertain_mutation=False)
@@ -138,7 +217,7 @@ def run_suite(client, denied, foreign, tenant, run_id, engine_id, report, contro
         checkpoint()
         return identity
 
-    def launch(task_id):
+    def launch(task_id, wait=True):
         report["uncertain_mutation"] = True
         checkpoint()
         response = client.request("POST", f"{ORCH}/orchestrations/{task_id}/execute", (202,)).payload
@@ -148,7 +227,7 @@ def run_suite(client, denied, foreign, tenant, run_id, engine_id, report, contro
         executions.append(identity)
         report["uncertain_mutation"] = False
         checkpoint()
-        return identity, wait_execution(client, identity)
+        return identity, wait_execution(client, identity) if wait else response
 
     try:
         scan = create(f"{META}/scan/tasks", {"name": f"{run_id}-scan", "engine_id": engine_id,
@@ -201,6 +280,14 @@ def run_suite(client, denied, foreign, tenant, run_id, engine_id, report, contro
                 and safe_failure["steps"][0].get("error_code"), "Monitor lost the step failure category")
         report["failure_event_count"] = assert_events(client, failure_id, "failed")
         report["checks"].extend(["real_source_failure", "dependency_blocked", "failure_reason", "failure_progress"])
+        if faults is not None:
+            control("start")
+            source_stopped = False
+            fault_root = create(f"{ORCH}/orchestrations", {"name": f"{run_id}-faults", "enabled": False,
+                "steps": [step("probe", "meta", "scan", scan), step("after", "meta", "scan", scan, ["probe"])]})
+            for case_id, mode in (("response_lost", "lose_response"), ("process_crash", "hold_status")):
+                run_fault_case(client, launch, fault_root, scan, case_id, mode, faults, report)
+                checkpoint()
         report["result"] = "passed"
     finally:
         failures = []
@@ -289,7 +376,7 @@ def main():
         run_suite(API.GatewayClient(os.environ["GATEWAY_URL"], token, timeout),
                   API.GatewayClient(os.environ["GATEWAY_URL"], denied_token, timeout),
                   API.GatewayClient(os.environ["GATEWAY_URL"], foreign_token, timeout),
-                  tenant, run_id, engine, report, checkpoint=checkpoint)
+                  tenant, run_id, engine, report, checkpoint=checkpoint, faults=FAULTS.HostedFaults())
     except (KeyError, ValueError, SuiteError, subprocess.SubprocessError) as error:
         report["result"] = "failed"
         # Raw transport/process exceptions can contain secrets; evidence stores no response body.

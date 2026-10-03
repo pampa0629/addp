@@ -150,8 +150,11 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             "scripts/test/online-hosted-orchestrator-gate.sh",
             "scripts/test/orchestrator-execution-online.py",
             "scripts/test/orchestrator-execution-online_test.py",
+            "scripts/test/orchestrator-execution-faults.py",
+            "scripts/test/orchestrator-execution-faults_test.py",
             "scripts/test/online-hosted-orchestrator-gate_test.py",
             "business/scripts/online-metric-postgres-fixture.sh",
+            "Makefile",
             ".github/workflows/online-t4-gates.yml",
         ):
             target = self.repository / relative
@@ -165,6 +168,16 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         gate.write_text(gate.read_text().replace("-meta -orchestrator -monitor", "-orchestrator"))
         with self.assertRaisesRegex(CHECK.RegistrationError, "-meta -orchestrator -monitor"):
             CHECK.validate_orchestrator_execution_profile(self.repository, {"orchestrator-execution"})
+
+    def test_orchestrator_fault_tests_cannot_be_removed_from_the_owner_entry(self):
+        self.prepare_orchestrator_profile()
+        makefile = self.repository / "Makefile"
+        text = makefile.read_text()
+        for missing in ("$(MAKE) test-orchestrator-online-runner", "scripts/test/orchestrator-execution-faults_test.py"):
+            with self.subTest(missing=missing):
+                makefile.write_text(text.replace(missing, ""))
+                with self.assertRaises(CHECK.RegistrationError):
+                    CHECK.validate_orchestrator_execution_profile(self.repository, {"orchestrator-execution"})
 
     def test_orchestrator_cannot_start_nightly_or_also_target_personal_runner(self):
         self.prepare_orchestrator_profile()
@@ -605,6 +618,40 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         owner.unlink()
         with self.assertRaisesRegex(CHECK.RegistrationError, "requires"):
             CHECK.check_registration(self.repository)
+
+    def test_requires_transfer_field_lineage_services_proofs_and_cleanup(self) -> None:
+        root = SCRIPT.parents[2]
+        relatives = (
+            "scripts/test/online-gate.py", "scripts/test/online-host-gate.sh",
+            "scripts/test/transfer-relational-sql-etl-online.py", "scripts/test/transfer-relational-sql-etl-online_test.py",
+            "scripts/test/online-transfer-relational-sql-etl-fixture_test.py",
+            "business/scripts/online-transfer-relational-sql-etl-fixture.sh",
+            "console/frontend/e2e/online/transfer-relational-sql-etl.spec.js",
+        )
+        for relative in relatives:
+            target = self.repository / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(root / relative, target)
+        registered = {"transfer-relational-sql-etl"}
+        CHECK.validate_transfer_relational_sql_etl_profile(self.repository, registered)
+        for relative, fragment in (
+            ("scripts/test/transfer-relational-sql-etl-online.py", '"meta.lineage.read"'),
+            ("scripts/test/transfer-relational-sql-etl-online.py", "cleanup_tasks(client"),
+            ("business/scripts/online-transfer-relational-sql-etl-fixture.sh", "DROP TABLE IF EXISTS public.${NATIVE_DOWNSTREAM}"),
+            ("console/frontend/e2e/online/transfer-relational-sql-etl.spec.js", "query_field_unavailable_verified: true"),
+            ("console/frontend/e2e/online/transfer-relational-sql-etl.spec.js", "schema_snapshot_hash"),
+        ):
+            with self.subTest(fragment=fragment):
+                path = self.repository / relative
+                original = path.read_text(encoding="utf-8")
+                path.write_text(original.replace(fragment, ""), encoding="utf-8")
+                with self.assertRaisesRegex(CHECK.RegistrationError, "contract is missing"):
+                    CHECK.validate_transfer_relational_sql_etl_profile(self.repository, registered)
+                path.write_text(original, encoding="utf-8")
+        host = self.repository / "scripts/test/online-host-gate.sh"
+        host.write_text(host.read_text().replace("SYSTEM_URL GATEWAY_URL META_URL TRANSFER_URL MANAGER_URL CONSOLE_URL", "SYSTEM_URL GATEWAY_URL META_URL TRANSFER_URL CONSOLE_URL"))
+        with self.assertRaisesRegex(CHECK.RegistrationError, "profile requires MANAGER_URL"):
+            CHECK.validate_transfer_relational_sql_etl_profile(self.repository, registered)
 
     def test_requires_manager_internal_artifact_lineage_fixture_and_browser_suite(self) -> None:
         gate = self.repository / "scripts/test/online-gate.py"

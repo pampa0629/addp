@@ -25,6 +25,33 @@ const SLIDES_LOCATOR = 'addp://engine/12/path/doc/slides.pptx?type=file&item_id=
 const TILES_LOCATOR = 'addp://engine/12/path/tiles?type=directory&node_id=230'
 const TILE_SET_LOCATOR = 'addp://engine/12/path/tiles/farmland.pmtiles?type=file&item_id=1301'
 
+for (const native of [
+  { facts: { native_type: 'string', length: 19, ttl_millis: -1 }, value: { encoding: 'utf8', value: '9223372036854775807', byte_length: 19 }, entries: [], truncated: false },
+  { facts: { native_type: 'string', length: 2, ttl_millis: 5000 }, value: { encoding: 'base64', value: 'AP8=', byte_length: 2 }, entries: [], truncated: true },
+  { facts: { native_type: 'stream', length: 1, ttl_millis: -1 }, entries: [{ id: '1-0', fields: [{ name: { encoding: 'utf8', value: 'name' }, value: { encoding: 'utf8', value: 'first' } }, { name: { encoding: 'utf8', value: 'name' }, value: { encoding: 'utf8', value: 'second' } }] }], truncated: false },
+  { facts: { native_type: 'zset', length: 1, ttl_millis: -1 }, entries: [{ value: { encoding: 'utf8', value: 'member' }, score: '1.2345678901234567' }], truncated: false }
+]) {
+  test(`previews native key ${native.facts.native_type} ${native.value?.encoding || 'entries'} without table semantics`, async ({ page }) => {
+    const locator = 'addp://engine/12/path/k:c2FtcGxl?type=key&item_id=1204'
+    const backend = await installMockBackend(page, { recordSet: { type: 'key', locator, rows: [] }, keyValue: native })
+    await page.goto(`/data-explorer?locator=${encodeURIComponent(locator)}`)
+    await expect.poll(() => backend.previewLocators).toEqual([locator])
+    const preview = page.getByTestId('key-value-preview')
+    await expect(preview).toBeVisible()
+    await expect(preview).toContainText(native.facts.native_type)
+    if (native.value) await expect(page.getByTestId('key-value-string')).toHaveText(native.value.value)
+    if (native.facts.native_type === 'stream') {
+      await expect(preview.locator('.stream-fields li')).toHaveCount(2)
+      await expect(preview.locator('.stream-fields li').nth(0)).toContainText('UTF-8: name : UTF-8: first')
+      await expect(preview.locator('.stream-fields li').nth(1)).toContainText('UTF-8: name : UTF-8: second')
+    }
+    if (native.facts.native_type === 'zset') await expect(preview).toContainText('1.2345678901234567')
+    if (native.truncated) await expect(preview).toContainText('仅显示有限样本，内容已截断')
+    await expect(page.getByRole('tab', { name: '数据剖析', exact: true })).toHaveCount(0)
+    await expect(preview.locator('.el-pagination')).toHaveCount(0)
+  })
+}
+
 for (const [type, rows] of [
   ['index', [{ order_id: '9007199254740993', customer: { name: 'customer-0' }, items: [{ sku: 'SKU-001', quantity: 1 }] }]],
   ['index', []],
@@ -335,7 +362,7 @@ async function installMockBackend(page, options = {}) {
   const recordSet = options.recordSet
   const recordNode = recordSet && {
     id: recordSet.locator, locator: recordSet.locator, label: 'sample', type: recordSet.type,
-    children: [], metadata: { item_id: 1204, data_type: 'table', layout: 'single' }
+    children: [], metadata: { item_id: 1204, data_type: options.keyValue ? 'unknown' : 'table', layout: 'single' }
   }
   const recordTree = recordNode && { ...nfsTree(), children: [recordNode] }
   const exchangeModel = options.exchangeModel
@@ -374,7 +401,7 @@ async function installMockBackend(page, options = {}) {
     localStorage.setItem('theme-mode', 'light')
   })
 
-  await page.route('**/plugins/manifest.json', route => fulfillJSON(route, { scripts: recordSet ? ['/plugins/table-preview.js'] : [] }))
+  await page.route('**/plugins/manifest.json', route => fulfillJSON(route, { scripts: options.keyValue ? ['/plugins/key-value-preview.js'] : recordSet ? ['/plugins/table-preview.js'] : [] }))
   await page.route('**/api/v1/**', async route => {
     const request = route.request()
     const url = new URL(request.url())
@@ -471,8 +498,8 @@ async function installMockBackend(page, options = {}) {
     if (path === '/api/v1/manager/preview' && recordSet) {
       state.previewLocators.push(url.searchParams.get('locator'))
       return fulfillJSON(route, {
-        preview_type: 'table',
-        data: { mode: 'table', preview_kind: 'dynamic_schema_record_set', columns: ['order_id', 'customer', 'items'],
+        preview_type: options.keyValue ? 'key_value' : 'table',
+        data: options.keyValue ? { mode: 'key_value', key_value: options.keyValue, columns: [], rows: [], item_meta: { attributes: [{ key: 'item', value: { data_type: 'unknown', layout: 'single' } }] } } : { mode: 'table', preview_kind: 'dynamic_schema_record_set', columns: ['order_id', 'customer', 'items'],
           rows: recordSet.rows, total: recordSet.rows.length, page: 1, page_size: 20 },
         metadata: { item_id: 1204, meta_scanned: true }
       })

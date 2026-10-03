@@ -1971,6 +1971,86 @@ const docTemplate = `{
                 ]
             }
         },
+        "/engines/{id}/access_handling_requirement": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "只读结构化查询。仅本人办理权限和当前引擎管理委派，不枚举配置、不初始化缺失要求，不授予访问；版本为无损字符串，正式提交仍须核验原预期版本 | Read-only structured query under current human handling permission and engine delegation. No configuration enumeration, initialization or access grant; the version is a lossless string and formal submission rechecks the original expected version",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "源授权办理 | Source Access Fulfillment"
+                ],
+                "summary": "观察精确目标的当前批准要求 | Observe the exact target's current approval requirement",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "引擎 ID，唯一来源 | Engine ID, sole source",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "完整结构化叶子路径，含结构根 | Complete structured leaf path including its root",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.EngineAccessHandlingRequirementRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "当前批准要求观察，不是凭据 | Current approval requirement observation, not a credential",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_engineaccess.HandlingRequirementView"
+                        }
+                    },
+                    "400": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "请求失败 | Request failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.engine_access_fulfillment.create"
+                ]
+            }
+        },
         "/engines/{id}/access_handling_scope": {
             "get": {
                 "security": [
@@ -11889,6 +11969,22 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_system_internal_engineaccess.HandlingRequirementView": {
+            "type": "object",
+            "properties": {
+                "mode": {
+                    "type": "string",
+                    "enum": [
+                        "catalog",
+                        "independent"
+                    ]
+                },
+                "requirement_version": {
+                    "type": "string",
+                    "example": ""
+                }
+            }
+        },
         "github_com_addp_system_internal_iam.AuditResult": {
             "type": "string",
             "enum": [
@@ -13630,6 +13726,24 @@ const docTemplate = `{
                 },
                 "version": {
                     "type": "integer"
+                }
+            }
+        },
+        "internal_api.EngineAccessHandlingRequirementRequest": {
+            "type": "object",
+            "required": [
+                "segments",
+                "version"
+            ],
+            "properties": {
+                "segments": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/plugin.EngineCatalogSegment"
+                    }
+                },
+                "version": {
+                    "type": "string"
                 }
             }
         },
@@ -16411,6 +16525,9 @@ const docTemplate = `{
                         "$ref": "#/definitions/plugin.IndexFacts"
                     }
                 },
+                "key_value": {
+                    "$ref": "#/definitions/plugin.KeyValueFacts"
+                },
                 "kind": {
                     "type": "string"
                 },
@@ -16640,6 +16757,20 @@ const docTemplate = `{
                 }
             }
         },
+        "plugin.KeyValueFacts": {
+            "type": "object",
+            "properties": {
+                "length": {
+                    "type": "integer"
+                },
+                "native_type": {
+                    "type": "string"
+                },
+                "ttl_millis": {
+                    "type": "integer"
+                }
+            }
+        },
         "plugin.NativeTableSpatialEncodingCapability": {
             "type": "object",
             "properties": {
@@ -16857,6 +16988,9 @@ const docTemplate = `{
                 },
                 "encoded_record_read_session": {
                     "$ref": "#/definitions/plugin.EncodedRecordReadSessionCapability"
+                },
+                "key_value_read": {
+                    "type": "boolean"
                 },
                 "partitioned_table_change_apply": {
                     "$ref": "#/definitions/plugin.PartitionedTableChangeApplyCapability"

@@ -95,6 +95,11 @@ func validateStorageCapabilities(p EnginePlugin, storage *StorageCapabilities) e
 }
 
 func validateStoreCapabilities(p EnginePlugin, store *StoreCapability) error {
+	if store.KeyValueRead {
+		if _, ok := p.(KeyValueReadableProvider); !ok {
+			return fmt.Errorf("%s declares key_value_read but does not implement KeyValueReadableProvider", p.Type())
+		}
+	}
 	if store.StreamRead {
 		if _, ok := p.(ContentReadableProvider); !ok {
 			return fmt.Errorf("%s declares stream_read but does not implement ContentReadableProvider", p.Type())
@@ -426,6 +431,9 @@ func validateProviderCapabilities(p EnginePlugin, caps EngineCapabilities) error
 }
 
 func validateStoreProviderCapabilities(p EnginePlugin, storage *StorageCapabilities) error {
+	if _, ok := p.(KeyValueReadableProvider); ok && !declaresStoreCapability(storage, func(store *StoreCapability) bool { return store.KeyValueRead }) {
+		return fmt.Errorf("%s implements KeyValueReadableProvider but does not declare key_value_read", p.Type())
+	}
 	if _, ok := p.(ContentReadableProvider); ok && !declaresStoreCapability(storage, func(store *StoreCapability) bool { return store.StreamRead }) {
 		return fmt.Errorf("%s implements ContentReadableProvider but does not declare stream_read", p.Type())
 	}

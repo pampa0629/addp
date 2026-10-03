@@ -1,5 +1,10 @@
 {
-  "engine": {"term": {"index": "Index"}},
+  "engine": {
+    "term": {
+      "index": "Index",
+      "key": "Key"
+    }
+  },
   "common": {
     "executionFailure": {
       "permission_denied": "Insufficient read or execution permission",
@@ -544,5 +549,17 @@
     "message": "Leaving will discard your unsaved changes. Leave this page?",
     "leave": "Discard and leave",
     "stay": "Keep editing"
+  },
+  "keyValuePreview": {
+    "nativeType": "Native type",
+    "length": "Length / entry count",
+    "ttl": "Remaining TTL",
+    "persistent": "No expiration",
+    "truncated": "Bounded sample; content is truncated",
+    "index": "Index",
+    "field": "Field",
+    "value": "Value",
+    "score": "Score",
+    "fields": "Ordered field pairs"
   }
 }

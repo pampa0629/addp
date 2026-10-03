@@ -421,10 +421,15 @@ test-online: ## 运行指定 Online suite（必须设置 ONLINE_SUITE 和 ADDP_O
 	@test -n "$(ONLINE_SUITE)" || (echo "ONLINE_SUITE is required" >&2; exit 2)
 	@python3 scripts/test/online-gate.py --repository "$(CURDIR)" --suite "$(ONLINE_SUITE)"
 
+.PHONY: test-orchestrator-online-runner
+test-orchestrator-online-runner: ## 验证 Orchestrator Online 故障、权限和隔离生命周期
+	@python3 -m unittest scripts/test/orchestrator-execution-online_test.py scripts/test/orchestrator-execution-faults_test.py scripts/test/online-hosted-orchestrator-gate_test.py
+
 test-online-runner: ## 运行 Online 分发器和预检器的确定性测试
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
 	@python3 -m unittest scripts/test/elasticsearch-consumer-flow-online_test.py
-	@python3 -m unittest scripts/test/orchestrator-execution-online_test.py scripts/test/online-hosted-orchestrator-gate_test.py scripts/test/online-hosted-manager-gate_test.py
+	@$(MAKE) test-orchestrator-online-runner
+	@python3 -m unittest scripts/test/online-hosted-manager-gate_test.py
 	@python3 -m unittest scripts/test/compose-public-origin-online_test.py scripts/test/online-hosted-public-origin-gate_test.py
 	@python3 -m unittest scripts/test/ontology-revision-lifecycle-online_test.py scripts/test/online-hosted-ontology-gate_test.py
 	@python3 -m unittest scripts/test/quality-dynamic-binding-online_test.py
@@ -734,9 +739,13 @@ test-business-redis: ## 独占 Redis 验证 Business 认证、原生样例、幂
 	@bash scripts/test/business-redis-gate.sh
 
 .PHONY: test-common-redis test-common-redis-unit
-test-common-redis-unit: ## Redis 连接配置、认证、TLS 与 System 加密登记确定性测试
-	@cd common && GOWORK=off go test ./engine/plugins/redis -run '^Test(ConnectionValidation|AuthenticatedConnection|TLS|ConnectionRejects)' -count=1
+test-common-redis-unit: ## Redis 连接、原生 key 读取预算与 System 加密登记确定性测试
+	@cd common && GOWORK=off go test ./engine/plugin ./resourcetree -count=1
+	@cd common && GOWORK=off go test ./engine/plugins/redis -run '^Test(ConnectionValidation|AuthenticatedConnection|TLS|ConnectionRejects|Redis)' -count=1
 	@cd system/backend && GOWORK=off go test ./internal/service -run '^TestRedisRegistration' -count=1
+	@cd manager/backend && GOWORK=off go test ./internal/preview -count=1
+	@cd manager/backend && GOWORK=off go test ./internal/api -run '^TestPreview(Protection|Catalog)' -count=1
+	@cd meta/backend && GOWORK=off go test ./internal/scanruntime -count=1
 
-test-common-redis: ## 独占 Redis 验证 Common 插件和 System 连接登记消费链路
+test-common-redis: ## 独占 Redis 验证 Common、System、Meta、Manager 原生 key 消费链路
 	@bash scripts/test/common-redis-gate.sh

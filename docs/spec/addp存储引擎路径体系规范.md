@@ -525,6 +525,10 @@ addp-infra://minio/manager/tenant_7/export/20260622/execution-id?type=prefix
 - 二者可以共享内容流读写接口、MIME 推断、格式解析、preview composer 等底层能力。
 - Linux / macOS 本地文件系统后续也必须有结构性 root meta_node，用于容纳根目录下文件；展示名可另行确认，但不得省略 root。
 
-## Elasticsearch 首版路径
+## Redis key 路径
+
+Redis 的逻辑数据库由 Engine Instance 连接配置固定，目录为显性 `server` root 加一个 `key` leaf。业务 path 和 full_name 均为 `k:<无填充 Base64URL 原始 key 字节>`；空 key 编码为 `k:`。指纹继续使用 engine ID 与该规范 full_name。所有 key 使用同一编码，冒号、斜杠、点、空白、NUL 和非 UTF-8 字节均不增加路径层级；显示标签从编码派生，不能反向用显示标签寻址。首期原始键名最多 189 字节，超额必须失败。`meta_item.item_type=key`、`attributes.item.layout=single`、`attributes.item.data_type=unknown`；原生值类型和 TTL 属于实时 Engine Facts，不作为 type_info 或 format_info 落库。
+
+## Elasticsearch 索引路径
 
 Elasticsearch 使用 `service(root) -> index(leaf)`，root 的 `full_name` 为空；index 的 `full_name` 等于完整索引名。索引名中的 `.` 不分层，ResourceLocator 只有一个业务路径段，例如 `addp://engine/31/path/orders.v1?type=index`。连接端点和认证主体属于 ConnectionSpec，不进入数据路径。首版只列出当前身份可见的普通、打开、非隐藏索引；别名、data stream、隐藏/系统索引不投影为普通索引。解析明确的 index 路径必须验证它是具体索引，不允许别名或通配符扩大读取范围。

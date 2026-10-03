@@ -25,6 +25,11 @@ func RegisterEngineAccessApprovalRequirementRoutes(api *gin.RouterGroup, runtime
 		return err
 	}
 	routes := api.Group("/engines/:id/access_approval_requirements")
+	handling, err := middleware.NewIAMPermissionGuard(authorization.PermissionSystemEngineAccessFulfillmentCreate)
+	if err != nil {
+		return err
+	}
+	api.POST("/engines/:id/access_handling_requirement", runtime.Authentication, runtime.UserAccessCredential, tenant, handling, handler.HandlingRequirement)
 	routes.Use(runtime.Authentication, runtime.UserAccessCredential, tenant)
 	routes.GET("", read, handler.List)
 	routes.GET("/:requirement_id", read, handler.Get)

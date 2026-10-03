@@ -27,7 +27,7 @@ import CadPreview from '@/components/explorer/CadPreview.vue'
 import VectorTilePreview from '@/components/map/VectorTilePreview.vue'
 import { loadRuntimePlugins } from '@/plugins/previews/manifestLoader'
 import {
-  ObjectCatalogPreview, ImagePreview, JsonPreview, PdfPreview, ContainerPreview,
+  KeyValuePreview, ObjectCatalogPreview, ImagePreview, JsonPreview, PdfPreview, ContainerPreview,
   OfficePreview, PptxPreview, TextPreview, UnsupportedPreview, MarkdownPreview, VideoPreview
 } from '@common-ui/previews'
 import {
@@ -87,6 +87,7 @@ if (typeof window !== 'undefined') {
   window.Vue = Object.assign({}, window.Vue, Vue)
 
   window.DataExplorerPluginComponents = {
+    KeyValuePreview,
     TablePreview,
     ContainerPreview,
     ObjectCatalogPreview,

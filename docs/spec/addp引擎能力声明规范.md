@@ -94,7 +94,7 @@ type DecimalFieldLimits struct {
 
 `engine_family` 只表达粗粒度引擎族，不能替代 `storage.catalog_model`、provider 组合或模块自身策略。尤其对 Meta 而言，是否走 namespace/leaf catalog、是否需要内容读取、是否可做动态 schema 采样，必须由 `EngineCatalogModelSpec` 与已实现 provider 一起决定；不得把 `engine_family` 当作扫描策略事实源。
 
-Redis 连接首版声明 `engine_family=key_value` 和空的 `storage`，不声明 Catalog Model、Catalog、Facts、Store 或 Compute Provider。连接可登记不代表已有 key 级资源模型；Meta、Manager、Develop 必须按真实能力决定入口。
+Redis 声明 `engine_family=key_value`、`server -> key` Catalog Model、Catalog/Facts 与 `storage.store.key_value_read`。原生 key 读取必须实现 `KeyValueReadableProvider`；它不声明表、记录集合、查询或写入能力。Meta 对 key 仅登记身份和 `data_type=unknown`，Manager 按原生读取能力提供有限样本预览；连接检测成功不代表 key 权限已经获准。
 
 ### 2.1 Limits
 
@@ -257,6 +257,7 @@ type EngineCatalogFactsCapability struct {
 
 ```go
 type StoreCapability struct {
+    KeyValueRead              bool                                  `json:"key_value_read,omitempty"`
     StreamRead                bool                                  `json:"stream_read,omitempty"`
     StreamWrite               bool                                  `json:"stream_write,omitempty"`
     RangeRead                 bool                                  `json:"range_read,omitempty"`
@@ -313,6 +314,7 @@ type NativeTableSpatialEncodingCapability struct {
 
 | 字段 | 含义 | 必须对应的 Provider |
 | --- | --- | --- |
+| `key_value_read` | 读取一个 key 的有界原生样本和实时类型、长度、TTL，不声明表或记录集合能力。 | `KeyValueReadableProvider`，能力与接口做双向校验 |
 | `stream_read` | 顺序流式读取单个对象、文件或二进制内容。 | `ContentReadableProvider` |
 | `stream_write` | 顺序流式创建或覆盖单个对象、文件内容。 | `ContentWritableProvider` |
 | `range_read` | 从指定 byte range 读取内容。 | `RangeReadableProvider`，或 `OpenContent()` 明确支持 offset / length |

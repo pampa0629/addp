@@ -85,6 +85,44 @@ def _compact_preview_fact(result: dict[str, Any]) -> tuple[str, dict[str, Any]] 
     return fact["locator"], fact
 
 
+def _compact_formal_resource_fact(value: dict[str, Any], locator: str) -> dict[str, Any]:
+    """投影正式 ResourceFacts；不沿任意嵌套对象寻找可持久化事实。"""
+    fact: dict[str, Any] = {"locator": locator}
+    for key in (
+        "engine_name", "source_engine_type", "item_type", "data_type", "full_name",
+        "item_fingerprint", "scanned_depth", "schema_coverage", "geometry_column", "geometry_type", "crs",
+    ):
+        if isinstance(value.get(key), str):
+            fact[key] = value[key]
+    for key in ("engine_id", "item_id"):
+        if type(value.get(key)) is int:
+            fact[key] = value[key]
+    if isinstance(value.get("query_names"), dict):
+        fact["query_names"] = {
+            key: item for key, item in value["query_names"].items() if isinstance(item, str)
+        }
+    if isinstance(value.get("fields"), list):
+        fact["fields"] = []
+        for value_field in value["fields"]:
+            if not isinstance(value_field, dict) or not isinstance(value_field.get("name"), str) or not value_field["name"]:
+                continue
+            field: dict[str, Any] = {"name": value_field["name"]}
+            for key in ("type", "element_type", "native_type", "comment"):
+                if isinstance(value_field.get(key), str):
+                    field[key] = value_field[key]
+            for key in ("nullable", "primary_key", "generated"):
+                if isinstance(value_field.get(key), bool):
+                    field[key] = value_field[key]
+            for key in ("size", "precision", "scale", "ordinal_position"):
+                if type(value_field.get(key)) is int:
+                    field[key] = value_field[key]
+            path = value_field.get("path")
+            if isinstance(path, list) and all(isinstance(segment, str) for segment in path):
+                field["path"] = list(path)
+            fact["fields"].append(field)
+    return fact
+
+
 def _merge_resource_fact(
     resources: dict[str, dict[str, Any]],
     locator: str,
@@ -101,6 +139,9 @@ def _merge_resource_fact(
 def capture_owner_facts(tool_name: str, result: Any, checkpoint: dict[str, Any]) -> dict[str, Any]:
     delta: dict[str, list[dict[str, Any]]] = {"workflow_engines": [], "resources": []}
     observed = checkpoint["observed"]
+
+    if isinstance(result, dict) and isinstance(result.get("error"), dict):
+        return {}
 
     if tool_name == "engine.list":
         for value in _walk_objects(result):
@@ -136,6 +177,26 @@ def capture_owner_facts(tool_name: str, result: Any, checkpoint: dict[str, Any])
             fact = _compact_resource_fact(value, locator)
             _merge_resource_fact(observed["resources"], locator, fact, delta["resources"])
 
+    if tool_name == "resource.children.list" and isinstance(result, dict):
+        children = result.get("children") if isinstance(result.get("children"), list) else []
+        for node in [result, *children]:
+            if not isinstance(node, dict):
+                continue
+            locator = node.get("locator")
+            if not isinstance(locator, str) or not locator.startswith("addp://"):
+                continue
+            fact = {"locator": locator}
+            for source, target in (("label", "name"), ("type", "item_type")):
+                if isinstance(node.get(source), str):
+                    fact[target] = node[source]
+            _merge_resource_fact(observed["resources"], locator, fact, delta["resources"])
+
+    if tool_name == "resource.facts.get" and isinstance(result, dict):
+        locator = result.get("locator")
+        if isinstance(locator, str) and locator.startswith("addp://"):
+            fact = _compact_formal_resource_fact(result, locator)
+            _merge_resource_fact(observed["resources"], locator, fact, delta["resources"])
+
     return {key: facts for key, facts in delta.items() if facts}
 
 
@@ -160,7 +221,12 @@ def canonicalize_clarification_options(
             canonical.append({"label": str(label), "value": engine_id, "candidate": fact})
         return canonical
 
-    if "data_source" in reason or "resource" in reason:
+    has_resource_option = any(
+        isinstance(option.get("value"), str) and option["value"].startswith("addp://")
+        or isinstance(option.get("candidate"), dict) and resource_locator(option["candidate"]) is not None
+        for option in options
+    )
+    if "data_source" in reason or "resource" in reason or has_resource_option:
         for option in options:
             candidate = option.get("candidate") if isinstance(option.get("candidate"), dict) else {}
             locator = option.get("value") if isinstance(option.get("value"), str) else None

@@ -479,8 +479,8 @@ scripts/test/
 ├── security-transfer-protection-online_test.py # Security/Transfer 跨模块保护协议测试
 ├── security-plaintext-access-online.py # Manager 发起、Security 审批的按用户限时原值访问验收
 ├── security-plaintext-access-online_test.py # 原值访问申请与审批 Online 协议测试
-├── security-mysql-owner-protection-online.py # MySQL 邮箱移除在四个 Owner 的真实执行验收
-├── security-mysql-owner-protection-online_test.py # MySQL 四出口保护协议测试
+├── security-mysql-owner-protection-online.py # MySQL 邮箱移除及 PostgreSQL 空间表三类算法的四出口验收
+├── security-mysql-owner-protection-online_test.py # 四出口保护协议及异常清理测试
 ├── develop-postgres-gate.sh # Develop 可复用成果变化源 PostgreSQL 集成门禁
 ├── manager-postgres-gate.sh # Manager 统一派生任务与资源回收 PostgreSQL 集成门禁
 ├── manager-mongodb-security-gate.sh # Manager MongoDB 动态文档保护集成门禁
@@ -597,6 +597,8 @@ bash scripts/test/online-host-gate.sh --check-only
 `security-plaintext-access` 复用同一个复合 Fixture，在固定 PostgreSQL `addp_online_security.exemption_source` 上建立永久 Enrollment 和手机号正式 Assessment。suite 使用两名不同的专用 User：申请人在 Manager 预览确认手机号已遮盖并从该出口提交原值访问申请，审批人在 Security 待审批队列批准；随后只允许申请人的 Manager 预览临时返回原值，审批人仍看到遮盖值，到期后不访问 Security 即验证 Manager 依据本地投影恢复遮盖。固定治理聚合、申请和授权修订作为专用 Tenant 审计事实保留。环境文件必须额外提供 `ADDP_ONLINE_TEST_APPROVER_ACCESS_TOKEN`，且审批用户不得与申请用户相同。
 
 `security-mysql-owner-protection` 同时启动现有专用 MySQL 和 PostgreSQL Engine Fixture，以 MySQL `customers.email` 及 PostgreSQL `addp_online_security.mysql_email_transfer` 为固定数据边界。suite 先校验 Tenant 长期维护的 `email` 敏感类型、`addp.detector.email_metadata/v1` 启用绑定和 `suppress` 默认保护规则，并复用该类型引用的合法分类与等级，经 Gateway 创建一个只供当轮使用的敏感定义，确认 Security 在同一事务生成唯一有效初始 ProtectionBaseline；随后提交非法默认保护并确认 SensitiveDataType 也整体回滚，最后通过正式删除 API 清理事务探针并验证零残留。然后经 Meta 扫描和 Security 正式 API 形成或复用长期 Enrollment/Assessment。Manager 预览、Develop SQL、Service Query 和 Transfer bounded snapshot 均必须返回 5 条非敏感记录，但不得在 schema 或记录中出现 `email`；临时 Query Service 和 Transfer 任务依捕获 ID 清理并确认零残留。该 suite 复用 `ADDP_ONLINE_WORKBENCH_MYSQL_*` 和 `ADDP_ONLINE_TEST_ENGINE_*` 变量，不建立第二套 MySQL Fixture、Engine Instance 或数据库清理旁路。
+
+同一 suite 还使用 PostgreSQL `addp_online_security.spatial_algorithm_source` 与 `spatial_algorithm_transfer` 验收空间表的普通属性脱敏。三个字符串字段通过 Meta 当前组件清单形成或复用长期正式 Assessment，绑定已有 `phone` 类型及其初始等级；空间列名为 `location_point`。依次将该组合的默认保护切换为前后掩码、固定值替换、普通 SM3，等待四个 Owner 确认最新投影后核对五行输出、Unicode、null、空串异常效果和点坐标。掩码阶段还单独为 Manager 三个字段配置全掩码、固定值替换、SM3，验证字段配置只作用于 Manager preview，其他出口仍执行默认保护。测试成功、失败及中断退出时撤销本轮字段策略、删除临时 Service/Transfer 任务，并恢复运行前的完整 phone 默认规则；审计历史与专用 Enrollment/Assessment 作为长期夹具保留。若发现前次遗留的活动字段策略，预检失败，不能替本轮静默接管。专用 User 还需 `security.assessment.create`、`security.policy.read/create/update/delete` 和 `security.protection_baseline.update`，同一专用 Tenant 验收期间不得并行运行其他依赖 phone 默认规则的 suite。确定性协议、失败清理与 Fixture 回归由现有 `make test-online-runner` 和平台 T0 覆盖；真实执行仍使用 `make test-online ONLINE_SUITE=security-mysql-owner-protection`，未真实运行不得标记为 T4 通过。
 
 通用预检由分发器向 `scripts/test/online-preflight.py` 传入参与服务的 `module=http://loopback:port`。预检要求显式非默认 Tenant、安全 Run ID、干净工作区和唯一专用数据库 `POSTGRES_DB=addp_online`，并校验所有 `/health/live` 构建身份与当前 Git commit 一致，再要求 `/health/ready` 已就绪；任何非回环服务地址都会被拒绝。宿主机 `--check-only` 在生命周期操作前调用同一预检器的 `--environment-only`，因此不存在第二套数据库或 Tenant 判定。分发器与预检器的无外部服务回归测试统一使用 `make test-online-runner`，并已纳入 `make test-platform`。两者不执行未登记的业务断言，不读取或保存 Token，也不接管服务生命周期。
 

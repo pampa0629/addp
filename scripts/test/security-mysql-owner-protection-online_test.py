@@ -1,8 +1,12 @@
 import importlib.util
 import sys
+import copy
+import struct
+import time
+import urllib.parse
 import unittest
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 
 SCRIPT = Path(__file__).with_name("security-mysql-owner-protection-online.py")
@@ -63,7 +67,243 @@ class DefinitionProbeClient:
         raise AssertionError(f"unexpected request: {method} {path} {expected} {body}")
 
 
+class SpatialClient:
+    def __init__(self, fail_owner=None):
+        self.baseline = {"id": "41", "sensitive_data_type_id": "11", "security_grade_id": "21",
+                         "version": "1", "effect": "mask", "algorithm": ONLINE.STRUCTURED_MASK_ALGORITHM,
+                         "parameters": {"prefix_runes": 3, "suffix_runes": 4, "mask_rune": "*"},
+                         "allowed_algorithms": [ONLINE.STRUCTURED_MASK_ALGORITHM],
+                         "invalid_value_effect": "deny", "enabled": True}
+        self.original = copy.deepcopy(self.baseline)
+        self.policies = []
+        self.deleted_tasks = []
+        self.service_deleted = False
+        self.fail_owner = fail_owner
+        self.owner_calls = []
+        self.assessments = [{"id": field, "component_key": field, "current": {
+            "conclusion": "sensitive", "sensitive_data_type_id": "11", "security_grade_id": "21"
+        }} for field in ONLINE.SPATIAL_FIELDS[1:4]]
+
+    def rows(self, owner):
+        self.owner_calls.append((self.baseline["algorithm"], owner))
+        if owner == self.fail_owner:
+            raise ONLINE.SuiteError("injected owner failure")
+        mask = {"1": "1*********8", "2": "张***c", "3": "a*c", "4": None, "5": None}
+        constant = {key: None if key == "4" else "已脱敏" for key in ONLINE.EXPECTED_IDS}
+        hashed = dict(ONLINE.SM3_VALUES)
+        by_algorithm = {ONLINE.STRUCTURED_MASK_ALGORITHM: mask, ONLINE.CONSTANT_ALGORITHM: constant, ONLINE.SM3_ALGORITHM: hashed}
+        columns = {field: by_algorithm[self.baseline["algorithm"]] for field in ONLINE.SPATIAL_FIELDS[1:4]}
+        if owner == "manager" and any(policy["state"] == "active" for policy in self.policies):
+            columns = {"value_a": {"1": "###########", "2": "#####", "3": "###", "4": None, "5": None},
+                       "value_b": constant, "value_c": hashed}
+        return [{"id": key, **{field: values[key] for field, values in columns.items()},
+                 "location_point": {"type": "Point", "coordinates": [100 + int(key), 20 + int(key)]}}
+                for key in sorted(ONLINE.EXPECTED_IDS)]
+
+    def request(self, method, path, expected, body=None):
+        response = ONLINE.SUPPORT.Response
+        if method == "GET" and path == "/api/v1/security/sensitive-data-types":
+            return response(200, [{"id": "11", "code": "phone", "default_security_grade_id": "21"}])
+        if path == "/api/v1/security/protection-baselines":
+            return response(200, [copy.deepcopy(self.baseline)])
+        if path == "/api/v1/security/protection-baselines/41":
+            if method == "PUT":
+                assert body["version"] == int(self.baseline["version"])
+                self.baseline.update(copy.deepcopy(body), version=str(body["version"] + 1))
+                for key in ("sensitive_data_type_id", "security_grade_id"):
+                    self.baseline[key] = str(self.baseline[key])
+            return response(200, copy.deepcopy(self.baseline))
+        if path == "/api/v1/meta/engines/17/items":
+            return response(200, [{"id": index + 1, "node_id": 9, "fingerprint": "sha256:fixture",
+                                   "full_name": "addp_online_security." + name, "item_type": "table",
+                                   "attributes": {"type_info": {"table": {"fields": [{"name": "location_point", "type": "geometry"}]}},
+                                                  "capabilities": {"spatial": {"primary_geometry_column": "location_point", "geometry_columns": [{"name": "location_point", "geometry_type": "Point", "srid": 4326}]}}}}
+                                  for index, name in enumerate((ONLINE.SPATIAL_SOURCE, ONLINE.SPATIAL_TARGET))])
+        if path.startswith("/api/v1/security/protection-enrollments?"):
+            return response(200, {"data": [{"id": "enrolled", "target_snapshot": {
+                "engine_id": 17, "full_name": "addp_online_security." + ONLINE.SPATIAL_SOURCE}}], "total_pages": 1})
+        if path == "/api/v1/security/protection-enrollments/enrolled":
+            return response(200, {"id": "enrolled", "version": "1", "state": "active", "latest_source_snapshot_hash": "snapshot",
+                                   "owner_progress": [{"consumer_owner": owner, "projection_state": "active", "acknowledged": True}
+                                                      for owner in ONLINE.OWNER_ACTIONS]})
+        if path == "/api/v1/security/protection-enrollments/enrolled/components":
+            return response(200, {"data": [{"component": {"key": field, "value_type": "geometry" if field == "location_point" else "string"}}
+                                           for field in ONLINE.SPATIAL_FIELDS[1:]]})
+        if path.startswith("/api/v1/security/assessments?"):
+            return response(200, {"data": self.assessments, "total_pages": 1})
+        if method == "POST" and path == "/api/v1/security/assessments":
+            assert body["enrollment_id"] == "enrolled" and body["enrollment_version"] == "1"
+            assert body["component_key"] in ONLINE.SPATIAL_FIELDS[1:4]
+            assessment = {"id": body["component_key"], "component_key": body["component_key"], "current": {
+                "conclusion": "sensitive", "sensitive_data_type_id": body["sensitive_data_type_id"], "security_grade_id": body["security_grade_id"]}}
+            self.assessments.append(assessment)
+            return response(201, assessment)
+        if path.startswith("/api/v1/security/protection-policies?"):
+            return response(200, {"data": copy.deepcopy(self.policies), "total_pages": 1})
+        if method == "POST" and path == "/api/v1/security/protection-policies":
+            assert body["consumer_owner"] == "manager" and body["action"] == "preview"
+            policy = {"id": str(len(self.policies) + 1), "state": "active", "version": "1", **body}
+            self.policies.append(policy)
+            return response(201, copy.deepcopy(policy))
+        if path.startswith("/api/v1/security/protection-policies/"):
+            policy = self.policies[int(path.rsplit("/", 1)[1]) - 1]
+            if method == "DELETE":
+                assert body["version"] == policy["version"]
+                policy.update(state="revoked", version=str(int(policy["version"]) + 1))
+            if method == "PUT":
+                policy.update(body, state="active", version=str(int(policy["version"]) + 1))
+            return response(200, copy.deepcopy(policy))
+        if method == "POST" and path == "/api/v1/service/query":
+            assert body["data_config"]["default_fields"] == ONLINE.SPATIAL_FIELDS
+            return response(201, {"id": 701})
+        if path == "/api/v1/service/query/701":
+            if method == "DELETE":
+                self.service_deleted = True
+            return response(404 if self.service_deleted else 200, {"version": "1"})
+        if path.startswith("/api/v1/manager/preview?"):
+            locator = urllib.parse.parse_qs(urllib.parse.urlsplit(path).query)["locator"][0]
+            owner = "transfer" if ONLINE.SPATIAL_TARGET in locator else "manager"
+            return response(200, {"preview_type": "table", "data": {"columns": ONLINE.SPATIAL_FIELDS, "rows": self.rows(owner)}})
+        if method == "POST" and path == "/api/v1/develop/executions":
+            assert body["content"]["query"] == "SELECT id, value_a, value_b, value_c, location_point FROM addp_online_security.spatial_algorithm_source ORDER BY id"
+            return response(200, {"execution_id": "query"})
+        if path == "/api/v1/develop/executions/query":
+            return response(200, {"status": "success", "metadata": {"result": {"summary": {"preview_rows": self.rows("develop")}}}})
+        if path.startswith("/api/query/"):
+            assert body["select"] == ONLINE.SPATIAL_FIELDS
+            return response(200, {"data": self.rows("service")})
+        raise AssertionError(f"unexpected spatial request {method} {path}")
+
+
 class SecurityMySQLOwnerProtectionOnlineTest(unittest.TestCase):
+    def spatial_run(self, client):
+        def create_task(client, payload, deadline, tasks):
+            self.assertEqual(payload["config"]["transforms"], [])
+            self.assertEqual(payload["config"]["source"]["representation"], "native")
+            self.assertEqual(payload["config"]["target"]["name"], ONLINE.SPATIAL_TARGET)
+            tasks.append(800 + len(tasks))
+            return tasks[-1], {"records_written": 5}
+        with patch.object(ONLINE, "wait_for_scan", return_value="scan"), \
+             patch.object(ONLINE, "create_and_run_task", side_effect=create_task), \
+             patch.object(ONLINE, "cleanup_tasks", side_effect=lambda client, tasks: client.deleted_tasks.extend(tasks)):
+            return ONLINE.exercise_spatial_algorithms(client, 17, "run-1", time.monotonic() + 30, 90)
+
+    def test_spatial_algorithms_cover_four_owners_and_restore_baseline(self):
+        client = SpatialClient()
+        evidence = self.spatial_run(client)
+        self.assertEqual(len(evidence["cases"]), 3)
+        self.assertEqual({owner for _, owner in client.owner_calls}, set(ONLINE.OWNER_ACTIONS))
+        self.assertEqual(len(client.owner_calls), 12)
+        self.assertTrue(evidence["cases"][0]["independent_manager_fields"])
+        self.assertTrue(all(policy["state"] == "revoked" for policy in client.policies))
+        self.assertTrue(client.service_deleted)
+        self.assertEqual(len(client.deleted_tasks), 3)
+        self.assertEqual({k: v for k, v in client.baseline.items() if k != "version"},
+                         {k: v for k, v in client.original.items() if k != "version"})
+
+    def test_owner_failure_still_restores_phone_rule_and_revokes_all_policies(self):
+        client = SpatialClient(fail_owner="service")
+        with self.assertRaisesRegex(ONLINE.SuiteError, "injected owner failure"):
+            self.spatial_run(client)
+        self.assertEqual(client.baseline["parameters"], client.original["parameters"])
+        self.assertEqual(client.baseline["invalid_value_effect"], "deny")
+        self.assertEqual(client.baseline["allowed_algorithms"], client.original["allowed_algorithms"])
+        self.assertTrue(client.service_deleted)
+        self.assertEqual(len(client.policies), 3)
+        self.assertTrue(all(policy["state"] == "revoked" for policy in client.policies))
+
+    def test_spatial_assertions_reject_plaintext_duplicate_rows_and_changed_geometry(self):
+        client = SpatialClient()
+        client.baseline["algorithm"] = ONLINE.SM3_ALGORITHM
+        rows = client.rows("transfer")
+        expected = {field: dict(ONLINE.SM3_VALUES) for field in ONLINE.SPATIAL_FIELDS[1:4]}
+        rows[0]["value_a"] = "13812345678"
+        with self.assertRaisesRegex(ONLINE.SuiteError, "protected value"):
+            ONLINE.assert_spatial_rows(rows, "transfer", expected)
+        rows = client.rows("transfer")
+        rows[-1] = rows[0]
+        with self.assertRaisesRegex(ONLINE.SuiteError, "duplicated"):
+            ONLINE.assert_spatial_rows(rows, "transfer", expected)
+        rows = client.rows("transfer")
+        rows[0]["location_point"]["coordinates"] = [0, 0]
+        with self.assertRaisesRegex(ONLINE.SuiteError, "coordinates"):
+            ONLINE.assert_spatial_rows(rows, "transfer", expected)
+
+    def test_point_coordinates_support_native_ewkb_and_reject_wrong_srid(self):
+        raw = struct.pack("<BIIdd", 1, 0x20000001, 4326, 101, 21)
+        self.assertEqual(ONLINE.point_coordinates(raw.hex()), (101, 21))
+        raw = struct.pack("<BIIdd", 1, 0x20000001, 3857, 101, 21)
+        with self.assertRaises(ONLINE.SuiteError):
+            ONLINE.point_coordinates(raw.hex())
+
+    def test_cleanup_refuses_to_overwrite_external_baseline_change_but_deletes_service(self):
+        client = SpatialClient()
+        client.baseline.update(version="99", parameters={"value": "external"})
+        with self.assertRaisesRegex(ONLINE.SuiteError, "refusing to overwrite"):
+            with patch.object(ONLINE, "cleanup_tasks", side_effect=lambda client, tasks: client.deleted_tasks.extend(tasks)):
+                ONLINE.restore_spatial_state(client, "41", ONLINE.baseline_body(client.original), [], 701, [801], "enrolled", 90, 1)
+        self.assertEqual(client.baseline["parameters"], {"value": "external"})
+        self.assertTrue(client.service_deleted)
+        self.assertEqual(client.deleted_tasks, [801])
+
+    def test_termination_is_caught_by_owned_resource_cleanup(self):
+        client = SpatialClient()
+        with patch.object(ONLINE, "service_rows", side_effect=lambda *args: ONLINE.handle_termination(15, None)):
+            with self.assertRaisesRegex(ONLINE.SuiteError, "interrupted"):
+                self.spatial_run(client)
+        self.assertTrue(client.service_deleted)
+        self.assertTrue(all(policy["state"] == "revoked" for policy in client.policies))
+        self.assertEqual(client.baseline["parameters"], client.original["parameters"])
+
+    def test_second_policy_write_failure_revokes_the_first_policy(self):
+        client = SpatialClient()
+        original_request = client.request
+        def request(method, path, expected, body=None):
+            if method == "POST" and path == "/api/v1/security/protection-policies" and client.policies:
+                raise ONLINE.SuiteError("second Policy failed")
+            return original_request(method, path, expected, body)
+        client.request = request
+        with self.assertRaisesRegex(ONLINE.SuiteError, "second Policy failed"):
+            self.spatial_run(client)
+        self.assertEqual(len(client.policies), 1)
+        self.assertEqual(client.policies[0]["state"], "revoked")
+        self.assertTrue(client.service_deleted)
+        self.assertEqual(client.baseline["parameters"], client.original["parameters"])
+
+    def test_active_policy_is_rejected_before_baseline_mutation(self):
+        client = SpatialClient()
+        client.policies.append({"id": "1", "state": "active", "assessment_id": "value_a", "version": "1"})
+        with self.assertRaisesRegex(ONLINE.SuiteError, "stale active Policy"):
+            self.spatial_run(client)
+        self.assertEqual(client.baseline, client.original)
+        self.assertFalse(client.service_deleted)
+
+    def test_first_run_creates_assessments_from_meta_components(self):
+        client = SpatialClient()
+        client.assessments = []
+        self.spatial_run(client)
+        self.assertEqual({item["component_key"] for item in client.assessments}, set(ONLINE.SPATIAL_FIELDS[1:4]))
+
+    def test_next_run_reuses_revoked_policies_and_preserves_audit_history(self):
+        client = SpatialClient()
+        self.spatial_run(client)
+        client.owner_calls.clear()
+        self.spatial_run(client)
+        self.assertEqual(len(client.policies), 3)
+        self.assertTrue(all(policy["state"] == "revoked" and int(policy["version"]) > 2 for policy in client.policies))
+        self.assertEqual(len(client.owner_calls), 12)
+
+    def test_target_spatial_metadata_rejects_json_type_and_lost_srid(self):
+        item = SpatialClient().request("GET", "/api/v1/meta/engines/17/items", (200,)).payload[1]
+        ONLINE.assert_spatial_item(item)
+        item["attributes"]["type_info"]["table"]["fields"][0]["type"] = "json"
+        with self.assertRaisesRegex(ONLINE.SuiteError, "geometry field type"):
+            ONLINE.assert_spatial_item(item)
+        item["attributes"]["type_info"]["table"]["fields"][0]["type"] = "geometry"
+        item["attributes"]["capabilities"]["spatial"]["geometry_columns"][0]["srid"] = 0
+        with self.assertRaisesRegex(ONLINE.SuiteError, "SRID 4326"):
+            ONLINE.assert_spatial_item(item)
+
     def test_owner_actions_cover_the_four_projection_bindings(self) -> None:
         self.assertEqual(
             ONLINE.OWNER_ACTIONS,

@@ -26,6 +26,8 @@ const (
 	MsgContentProtectionRequired             = "manager.error.content_protection_required"
 	MsgContentIndexUnavailable               = "manager.error.content_index_unavailable"
 	MsgPreviewFailed                         = "manager.error.preview_failed"
+	MsgPreviewResourceNotFound               = "manager.error.preview_resource_not_found"
+	MsgPreviewUnsupported                    = "manager.error.preview_unsupported"
 	MsgMissingEngineIDOrStorageRef           = "manager.error.missing_engine_id_or_storage_ref"
 	MsgSearchKeywordTooShort                 = "manager.error.search_keyword_too_short"
 	MsgSchemaRequired                        = "manager.error.schema_required"

@@ -48,6 +48,10 @@ case "$1" in
     esac
     printf 'stdin:%s\n' "$input" >> "$ADDP_TEST_FIXTURE_LOG"
     case " $* " in
+      *"COUNT(*) FROM information_schema.tables"*) echo "${ADDP_TEST_REMAINING_TABLES:-0}" ;;
+      *"numeric_precision"*) echo '8|2' ;;
+      *"generated_label"*) echo "${ADDP_TEST_NATIVE_VALUES:-5|1411.50|3|2|5}" ;;
+      *"WHERE area"*) echo '5|1411.50|3|2' ;;
       *"CONCAT_WS"*) echo '2|3|4|701.00' ;;
       *"string_agg(column_name"*) echo 'id,region,amount' ;;
       *"COUNT(*) FROM public.addp_online_transfer_sql_etl_source"*) echo 5 ;;
@@ -105,6 +109,9 @@ esac
         )
         self.assertEqual(commands.count("postgres-fixture:start"), 1)
         self.assertEqual(commands.count("postgres-fixture:stop"), 1)
+        for table in ("addp_online_transfer_field_lineage_target", "addp_online_transfer_field_lineage_downstream"):
+            self.assertGreaterEqual(commands.count("DROP TABLE IF EXISTS public." + table), 2)
+        self.assertIn("numeric_precision, numeric_scale", commands)
         self.assertFalse(self.postgres_state.exists())
 
     def test_requires_the_dedicated_online_host_marker(self) -> None:
@@ -113,6 +120,19 @@ esac
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("ADDP_ONLINE_HOST", result.stderr)
         self.assertFalse(self.log.exists())
+
+    def test_rejects_native_rows_that_do_not_prove_replace_and_generation(self):
+        self.assertEqual(self.run_fixture("start").returncode, 0)
+        result = self.run_fixture("verify", ADDP_TEST_NATIVE_VALUES="5|1411.50|5|0|5")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("native target does not prove", result.stderr)
+
+    def test_cleanup_fails_if_owned_tables_remain(self):
+        self.assertEqual(self.run_fixture("start").returncode, 0)
+        result = self.run_fixture("stop", ADDP_TEST_REMAINING_TABLES="1")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("owned tables remain", result.stderr)
+        self.assertTrue(self.postgres_state.exists())
 
 
 if __name__ == "__main__":

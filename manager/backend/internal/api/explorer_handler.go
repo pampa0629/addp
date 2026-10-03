@@ -23,6 +23,23 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// writeCatalogPreviewError returns stable localized errors without native key data.
+func writeCatalogPreviewError(c *gin.Context, err error) bool {
+	switch {
+	case plugin.IsEngineCatalogErrorKind(err, plugin.EngineCatalogErrorNotFound):
+		managerError(c, http.StatusNotFound, manageri18n.MsgPreviewResourceNotFound)
+	case plugin.IsEngineCatalogErrorKind(err, plugin.EngineCatalogErrorInvalidPath):
+		managerError(c, http.StatusBadRequest, manageri18n.MsgInvalidParam)
+	case plugin.IsEngineCatalogErrorKind(err, plugin.EngineCatalogErrorUnsupported):
+		managerError(c, http.StatusBadRequest, manageri18n.MsgPreviewUnsupported)
+	case plugin.IsEngineCatalogErrorKind(err, plugin.EngineCatalogErrorUnavailable):
+		engineUnavailable(c)
+	default:
+		return false
+	}
+	return true
+}
+
 // ExplorerHandler 数据探查 API Handler（新版本）
 // 基于 ResourceLocator URI 系统
 type ExplorerHandler struct {
@@ -65,6 +82,7 @@ func bearerToken(c *gin.Context) string {
 // GET /api/explorer/preview?locator=addp://engine/1/path/public/users?type=table&page=1&page_size=20
 // @Summary 数据预览 | Data preview
 // @Description 根据资源定位符预览数据内容，支持表格、消息主题、文件等多种资源 | Preview data content by resource locator, including tables, message topics, files, and more
+// @Description Redis key 必须先完成 Meta 身份扫描；响应 preview_type 与 data.mode 为 key_value，data.key_value 包含实时 facts、显式 UTF-8/Base64 的 value 或 entries、truncated；仅 page=1，最多50个元素，无写入或表结构推断 | Redis keys require scanned Meta identity; preview_type and data.mode are key_value, data.key_value contains live facts, explicitly encoded UTF-8/Base64 value or entries, and truncated; page=1 only, at most 50 entries, no writes or table schema inference
 // @Tags Manager
 // @Produce json
 // @Param locator query string true "资源定位符URI | Resource locator URI"
@@ -151,6 +169,9 @@ func (h *ExplorerHandler) Preview(c *gin.Context) {
 		}
 	}
 	if err != nil {
+		if writeCatalogPreviewError(c, err) {
+			return
+		}
 		if errors.Is(err, engineaccess.ErrUnavailable) {
 			engineUnavailable(c)
 			return

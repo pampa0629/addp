@@ -151,6 +151,7 @@ func TestLoadPreviewPluginsRegistersBuiltinDefaultsWithoutFiles(t *testing.T) {
 		"builtin:document-record-set",
 		"builtin:graph",
 		"builtin:event-stream-topic",
+		"builtin:key-value",
 		"builtin:scope-table",
 		"builtin:container-child",
 		"builtin:ref-file",

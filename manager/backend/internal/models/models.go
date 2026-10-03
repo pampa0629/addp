@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/addp/common/datatype"
+	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/exportartifact"
 	commonModels "github.com/addp/common/models"
 )
@@ -133,6 +134,7 @@ type TablePreview struct {
 	PreviewHint         string                   `json:"preview_hint,omitempty"`
 	Object              *ObjectPreview           `json:"object,omitempty"`
 	Graph               *GraphPreviewData        `json:"graph,omitempty"`
+	KeyValue            *plugin.KeyValuePreview  `json:"key_value,omitempty"`
 	ItemMeta            *EngineCatalogFacts      `json:"item_meta,omitempty"` // 数据项元数据（来自 meta 模块）
 	Advisories          []PreviewAdvisory        `json:"preview_advisories,omitempty"`
 	// MVT preview metadata (for frontend to switch between GeoJSON and MVT rendering)

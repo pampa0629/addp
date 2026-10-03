@@ -23,7 +23,7 @@ func verifyRedisRegistration(t *testing.T, connection models.ConnectionInfo) (*E
 	for _, d := range descriptors {
 		if d.Type == "redis" {
 			found = true
-			if d.Capabilities.EngineFamily != "key_value" || d.CatalogModel != nil {
+			if d.Capabilities.EngineFamily != "key_value" || d.CatalogModel == nil || d.CatalogModel.RootTerm != "server" || d.CatalogModel.Levels[0].Term != "key" {
 				t.Fatal("invalid Redis descriptor")
 			}
 		}
@@ -57,7 +57,7 @@ func verifyRedisRegistration(t *testing.T, connection models.ConnectionInfo) (*E
 	if err := json.Unmarshal([]byte(*stored.Capabilities), &caps); err != nil {
 		t.Fatal(err)
 	}
-	if caps.EngineFamily != "key_value" || caps.Storage == nil || caps.Storage.Catalog != nil || caps.Storage.Facts != nil || caps.Storage.Store != nil || caps.Compute != nil {
+	if caps.EngineFamily != "key_value" || caps.Storage == nil || caps.Storage.Catalog == nil || caps.Storage.Facts == nil || caps.Storage.Store == nil || !caps.Storage.Store.KeyValueRead || caps.Storage.Store.TableReadSession || caps.Compute != nil {
 		t.Fatal("persisted unsupported access capabilities")
 	}
 	again, isNew, err := s.Create(req, 42, 7)
@@ -67,7 +67,7 @@ func verifyRedisRegistration(t *testing.T, connection models.ConnectionInfo) (*E
 	return s, created.ID
 }
 
-func TestRedisRegistrationStoresOnlyConnectionCapabilities(t *testing.T) {
+func TestRedisRegistrationStoresNativeKeyCapabilities(t *testing.T) {
 	verifyRedisRegistration(t, models.ConnectionInfo{"host": "redis.invalid", "user": "default", "password": "secret"})
 }
 

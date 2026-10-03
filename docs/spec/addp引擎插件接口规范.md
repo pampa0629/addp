@@ -263,6 +263,8 @@ type GraphSampleFilter struct {
 
 ### StoreProvider
 
+原生 key 值读取使用 `KeyValueReadableProvider.ReadKeyValue(ctx, connInfo, path, opts)`，返回带实时 `KeyValueFacts`、显式 UTF-8/Base64 字节值和有界条目的 `KeyValuePreview`。`KeyValueReadOptions` 只表达 `MaxEntries` 与 `MaxBytes`；结果的 `truncated` 表示样本不完整，不是可以用于导出的读取游标。EngineCatalogFacts 的 `key_value` 分区表达原生值类型、长度及 TTL，不属于 `common/datatype`，不推导平台 data type。Provider 必须在原生解码前执行预算检查，禁止返回已超预算的半份结果。
+
 表达 item 内容访问能力。Engine Catalog 回答“有什么”，Facts 回答“Engine 直接知道什么”，Store 回答“如何读写内容”。
 
 ```go
@@ -863,7 +865,7 @@ type InferenceRuntimeProvider interface {
 | Oracle | 通用 tabular 组合 + `SpatialFeatureReadProvider` + `PartitionedTableChangeApplyProvider`；普通 Store 不声明 CDC |
 | Doris / ClickHouse | 非空间通用 tabular 组合；不声明 `BoundedWatermarkReadProvider`、`TableUpsertProvider` 或 CDC |
 | Spark SQL | `EnginePlugin` + `EngineCatalogModelProvider` + `EngineCatalogProvider` + `EngineCatalogFactsProvider` + `SQLQueryRuntimeProvider` + `ConnectionPoolPlugin` |
-| Redis（连接首版） | `EnginePlugin` + `ConnectionSpecProvider`；`key_value` 存储族，不实现 Engine Catalog、Facts、Store 或 Query Provider。认证后的 HELLO 必须报告 standalone 模式，再执行 SELECT 与 DBSIZE。 |
+| Redis | `EnginePlugin` + `ConnectionSpecProvider` + Catalog Model/Catalog/Facts + `KeyValueReadableProvider`；`key_value` 存储族，模型为 `server -> key`，不实现表、记录集合或 Query Provider。认证后的 HELLO 必须报告 standalone 模式，再执行 SELECT 与 DBSIZE。 |
 | MongoDB | `EnginePlugin` + `EngineCatalogModelProvider` + `EngineCatalogProvider` + `EngineCatalogFactsProvider` + `DynamicSchemaSamplingProvider` + `RecordReadSessionProvider` + `EncodedRecordReadSessionProvider` + `QueryRuntimeProvider` + `QueryReadSessionProvider` |
 | Neo4j | `EnginePlugin` + `EngineCatalogModelProvider` + `EngineCatalogProvider` + `EngineCatalogFactsProvider` + `GraphSampleProvider` + `QueryRuntimeProvider` + `GraphQueryProvider` |
 | MinIO / S3 | `EnginePlugin` + `EngineCatalogModelProvider` + `EngineCatalogProvider` + `EngineCatalogFactsProvider` + `ContentReadableProvider` + `RangeReadableProvider` + `ContentWritableProvider` + `ResourceDeleteProvider` |

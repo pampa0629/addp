@@ -18,7 +18,7 @@ func applyPreviewProtection(result *preview.PreviewResult, rules []dataprotectio
 		return managerprotection.ErrRequired
 	}
 	table, ok := result.Data.(*models.TablePreview)
-	if !ok || table == nil {
+	if !ok || table == nil || table.KeyValue != nil {
 		return managerprotection.ErrRequired
 	}
 	return managerprotection.ProtectRows(table.Rows, managerprotection.ActionPreview, rules, subject)

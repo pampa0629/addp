@@ -28,6 +28,41 @@ export async function getEntry(id) {
 	return client.get(`/catalog/entries/${encodeURIComponent(id)}`)
 }
 
+export async function listSharingRecipients(id, params) {
+	return client.get(`/catalog/entries/${encodeURIComponent(id)}/sharing_recipient_candidates`, { params })
+}
+
+export async function createSharingDecision(id, payload) {
+	return client.post(`/catalog/entries/${encodeURIComponent(id)}/sharing_decisions`, payload)
+}
+
+export async function getSharingDecision(id, decisionID) {
+	return client.get(`/catalog/entries/${encodeURIComponent(id)}/sharing_decisions/${encodeURIComponent(decisionID)}`)
+}
+
+export async function listSharingRequests(id, params) {
+	return client.get(`/catalog/entries/${encodeURIComponent(id)}/sharing_fulfillments`, { params })
+}
+
+export async function listSharingDecisions(id, params) {
+	return client.get(`/catalog/entries/${encodeURIComponent(id)}/sharing_decision_candidates`, { params })
+}
+
+// Current User client; never use the Catalog runtime identity for this read.
+export async function observeSharingRequirement(target) {
+	return client.post(`/system/engines/${encodeURIComponent(target.engine_id)}/access_handling_requirement`, {
+		version: target.version, segments: target.segments
+	})
+}
+
+export async function prepareSharingRequest(id, payload) {
+	return client.post(`/catalog/entries/${encodeURIComponent(id)}/sharing_fulfillments`, payload)
+}
+
+export async function getSharingRequest(id, requestID) {
+	return client.get(`/catalog/entries/${encodeURIComponent(id)}/sharing_fulfillments/${encodeURIComponent(requestID)}`)
+}
+
 export async function getEntryDataDictionary(id, asOf) {
 	const params = asOf ? { as_of: asOf } : undefined
 	return client.get(`/catalog/entries/${encodeURIComponent(id)}/data-dictionary`, { params })

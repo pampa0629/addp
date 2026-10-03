@@ -1,3 +1,4 @@
+import json
 import unittest
 
 from agents.checkpoint import (
@@ -97,6 +98,102 @@ class AgentCheckpointTests(unittest.TestCase):
         checkpoint = normalize_checkpoint({"schema": "unknown", "observed": {"resources": {"x": {}}}})
 
         self.assertEqual(checkpoint, new_checkpoint())
+
+    def test_target_directory_options_only_use_parent_and_direct_children(self):
+        checkpoint = new_checkpoint()
+        parent = "addp://engine/12/path"
+        child = "addp://engine/12/path/public"
+        descendant = "addp://engine/12/path/public/outdoor"
+        hidden = "addp://engine/99/path/hidden"
+        capture_owner_facts(
+            "resource.children.list",
+            {
+                "locator": parent, "label": "业务 PostgreSQL", "type": "engine",
+                "metadata": {"locator": hidden, "password": "must-not-persist"},
+                "children": [{
+                    "locator": child, "label": "public", "type": "schema",
+                    "children": [{"locator": descendant, "label": "outdoor"}],
+                }],
+            },
+            checkpoint,
+        )
+        restored = normalize_checkpoint(checkpoint)
+        self.assertEqual(set(restored["observed"]["resources"]), {parent, child})
+        options = canonicalize_clarification_options(
+            "target_parent_ambiguous",
+            [{"label": "untrusted", "value": child}], restored,
+        )
+        self.assertEqual(options[0]["label"], "public")
+        self.assertEqual(options[0]["candidate"]["item_type"], "schema")
+        confirm_selection(restored, options[0])
+        self.assertEqual(restored["confirmed"]["resources"][child]["name"], "public")
+        for locator in (descendant, hidden):
+            with self.assertRaisesRegex(ValueError, "未由 owner Tool 返回"):
+                canonicalize_clarification_options(
+                    "target_parent_ambiguous", [{"value": locator}], restored,
+                )
+        self.assertNotIn("must-not-persist", json.dumps(restored))
+
+    def test_candidate_locator_cannot_bypass_observation_with_generic_reason(self):
+        locator = "addp://engine/99/path/hidden"
+        with self.assertRaisesRegex(ValueError, "未由 owner Tool 返回"):
+            canonicalize_clarification_options(
+                "missing_input",
+                [{"label": "fabricated", "value": "choice", "candidate": {"locator": locator}}],
+                new_checkpoint(),
+            )
+
+    def test_formal_resource_facts_survive_resume_without_rows_or_expressions(self):
+        checkpoint = new_checkpoint()
+        locator = "addp://engine/9/path/outdoor/routes?type=collection&item_id=66"
+        capture_owner_facts(
+            "data.search", {"results": [{"name": "routes", "location": {"locator": locator}}]},
+            checkpoint,
+        )
+        result = {
+            "locator": locator, "engine_id": 9, "engine_name": "业务 MongoDB",
+            "source_engine_type": "mongodb", "item_id": 66, "item_type": "collection",
+            "data_type": "table", "full_name": "outdoor.routes", "item_fingerprint": "fp",
+            "scanned_depth": "deep", "schema_coverage": "sampled",
+            "query_names": {"database": "outdoor", "collection": "routes"},
+            "fields": [{
+                "name": "distance", "path": ["metrics", "distance"], "type": "float",
+                "native_type": "double", "nullable": True, "primary_key": False,
+                "precision": 10, "scale": 2,
+                "default_expression": "must-not-persist-default",
+                "generation_expression": "must-not-persist-expression",
+                "sample": {"secret": "must-not-persist-sample"},
+            }],
+            "rows": [{"secret": "must-not-persist-row"}],
+            "connection_info": {"password": "must-not-persist-password"},
+            "metadata": {"locator": "addp://engine/99/path/hidden"},
+        }
+        delta = capture_owner_facts("resource.facts.get", result, checkpoint)
+        restored = normalize_checkpoint(checkpoint)
+        fact = restored["observed"]["resources"][locator]
+        self.assertEqual(fact["name"], "routes")
+        self.assertEqual(fact["source_engine_type"], "mongodb")
+        self.assertEqual(fact["query_names"], {"database": "outdoor", "collection": "routes"})
+        self.assertEqual(fact["fields"], [{
+            "name": "distance", "path": ["metrics", "distance"], "type": "float",
+            "native_type": "double", "nullable": True, "primary_key": False,
+            "precision": 10, "scale": 2,
+        }])
+        self.assertEqual(delta["resources"], [fact])
+        self.assertEqual(set(restored["observed"]["resources"]), {locator})
+        self.assertNotIn("must-not-persist", checkpoint_prompt(restored))
+        result["fields"][0]["path"].append("not-observed")
+        self.assertEqual(fact["fields"][0]["path"], ["metrics", "distance"])
+
+    def test_failed_resource_tools_do_not_capture_partial_facts(self):
+        for tool in ("resource.children.list", "resource.facts.get"):
+            checkpoint = new_checkpoint()
+            delta = capture_owner_facts(tool, {
+                "error": {"code": "invalid_owner_response"},
+                "locator": "addp://engine/99/path/hidden", "children": [], "fields": [],
+            }, checkpoint)
+            self.assertEqual(delta, {})
+            self.assertEqual(checkpoint, new_checkpoint())
 
     def test_preview_checkpoint_keeps_schema_facts_without_rows(self):
         checkpoint = new_checkpoint()

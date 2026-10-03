@@ -911,9 +911,9 @@ jobs:
           status: ${{ job.status }}
 
   common-redis:
-    name: Common and System connection contracts (Redis 7.2.13)
+    name: Common, System, Meta and Manager key contracts (Redis 7.2.13)
     needs: selection
-    if: needs.selection.outputs.common == 'true' || needs.selection.outputs.system == 'true' || needs.selection.outputs.business == 'true'
+    if: needs.selection.outputs.common == 'true' || needs.selection.outputs.system == 'true' || needs.selection.outputs.business == 'true' || needs.selection.outputs.manager == 'true' || needs.selection.outputs.meta == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -926,13 +926,13 @@ jobs:
         with:
           go-version-file: common/go.mod
           cache: false
-      - name: Run Redis connection gate
+      - name: Run Redis native key gate
         run: make test-common-redis
-      - name: Summarize Redis connection gate
+      - name: Summarize Redis native key gate
         if: always()
         uses: ./.github/actions/ci-gate-summary
         with:
-          gate: Common and System connection contracts (Redis 7.2.13)
+          gate: Common, System, Meta and Manager key contracts (Redis 7.2.13)
           status: ${{ job.status }}
 
   common-elasticsearch:

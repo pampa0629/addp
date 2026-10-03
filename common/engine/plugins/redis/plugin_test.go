@@ -71,8 +71,8 @@ func TestConnectionValidationAndIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if descriptor.CatalogModel != nil || descriptor.Capabilities.Compute != nil || descriptor.Capabilities.Storage.Catalog != nil || descriptor.Capabilities.Storage.Store != nil {
-		t.Fatal("connection-only plugin declared data access")
+	if descriptor.CatalogModel == nil || descriptor.Capabilities.Compute != nil || descriptor.Capabilities.Storage.Catalog == nil || !descriptor.Capabilities.Storage.Store.KeyValueRead || descriptor.Capabilities.Storage.Store.TableReadSession || descriptor.Capabilities.Storage.Store.RecordReadSession {
+		t.Fatal("native key capabilities are inconsistent")
 	}
 }
 

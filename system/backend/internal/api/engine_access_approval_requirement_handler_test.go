@@ -2,10 +2,12 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
 	commonauth "github.com/addp/common/authorization"
+	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/system/internal/engineaccess"
 	"github.com/addp/system/internal/middleware"
 	"github.com/gin-gonic/gin"
@@ -13,6 +15,10 @@ import (
 )
 
 type unusedApprovalRequirementService struct{}
+
+func (unusedApprovalRequirementService) GetHandlingRequirement(context.Context, engineaccess.Actor, engineplugin.EngineCatalogPath) (*engineaccess.HandlingRequirementView, error) {
+	panic("denied request reached handling observation")
+}
 
 func (unusedApprovalRequirementService) InitializeApprovalRequirement(context.Context, engineaccess.InitializeApprovalRequirementInput) (*engineaccess.ApprovalRequirementView, error) {
 	panic("denied request reached service")
@@ -89,4 +95,49 @@ func TestApprovalRequirementRoutesRejectUnqualifiedContextsAndBodyAuthority(t *t
 	router = approvalRequirementTestRouter(t, unusedApprovalRequirementService{}, &auth)
 	engineDelegationTestRequest(t, router, "POST", path, nil, 403)
 	engineDelegationTestRequest(t, router, "GET", path, nil, 403)
+}
+
+func TestHandlingRequirementRejectsUnqualifiedContextsAndInvalidTargets(t *testing.T) {
+	const route = "/api/v1/system/engines/12/access_handling_requirement"
+	path := engineplugin.TabularItemPath(12, "schema", "public", "exact.table")
+	body := EngineAccessHandlingRequirementRequest{Version: path.Version, Segments: path.Segments}
+	for _, auth := range []commonauth.AuthContext{testIAMActorContext("tenant"), testIAMActorContext("platform"), testIAMServiceActorContext("tenant", "addp-catalog")} {
+		router := approvalRequirementTestRouter(t, unusedApprovalRequirementService{}, &auth)
+		engineDelegationTestRequest(t, router, "POST", route, body, 403)
+	}
+	auth := testIAMActorContext("tenant")
+	auth.Authorization.RoleAssignments = []commonauth.RoleAssignment{{AssignmentID: "1", RoleKey: "custom.handler", SourceType: "manual", ValidFrom: time.Now().Add(-time.Minute), Scope: commonauth.AssignmentScope{Type: "tenant", TenantID: auth.Context.TenantID}, Permissions: []string{"system.engine_access_fulfillment.create"}}}
+	router := approvalRequirementTestRouter(t, unusedApprovalRequirementService{}, &auth)
+	for _, field := range []string{"engine_id", "tenant_id", "principal_id", "mode", "requirement_version"} {
+		engineDelegationTestRequest(t, router, "POST", route, map[string]any{"version": path.Version, "segments": path.Segments, field: "1"}, 400)
+	}
+	for _, input := range []any{nil, map[string]any{}, map[string]any{"version": "wrong", "segments": path.Segments}, map[string]any{"version": path.Version, "segments": path.Segments[:1]}} {
+		engineDelegationTestRequest(t, router, "POST", route, input, 400)
+	}
+	engineDelegationTestRequest(t, router, "POST", route+"?anything=1", body, 400)
+	engineDelegationTestRequest(t, router, "GET", route, nil, 404)
+}
+
+type handlingRequirementFixture struct {
+	unusedApprovalRequirementService
+	t *testing.T
+}
+
+func (f handlingRequirementFixture) GetHandlingRequirement(_ context.Context, _ engineaccess.Actor, path engineplugin.EngineCatalogPath) (*engineaccess.HandlingRequirementView, error) {
+	if uint64(path.EngineID) != 9007199254740993 || path.Segments[len(path.Segments)-1].Name != "exact.table" {
+		f.t.Fatalf("lossy target: %+v", path)
+	}
+	return &engineaccess.HandlingRequirementView{Mode: "catalog", RequirementVersion: 9007199254740993}, nil
+}
+
+func TestHandlingRequirementPreservesExactDecimalPrecision(t *testing.T) {
+	auth := testIAMActorContext("tenant")
+	auth.Authorization.RoleAssignments = []commonauth.RoleAssignment{{AssignmentID: "1", RoleKey: "custom.handler", SourceType: "manual", ValidFrom: time.Now().Add(-time.Minute), Scope: commonauth.AssignmentScope{Type: "tenant", TenantID: auth.Context.TenantID}, Permissions: []string{"system.engine_access_fulfillment.create"}}}
+	router := approvalRequirementTestRouter(t, handlingRequirementFixture{t: t}, &auth)
+	path := engineplugin.TabularItemPath(1, "schema", "public", "exact.table")
+	response := engineDelegationTestRequest(t, router, "POST", "/api/v1/system/engines/9007199254740993/access_handling_requirement", EngineAccessHandlingRequirementRequest{Version: path.Version, Segments: path.Segments}, 200)
+	var result map[string]any
+	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil || len(result) != 2 || result["requirement_version"] != "9007199254740993" {
+		t.Fatalf("minimal precision result=%v err=%v", result, err)
+	}
 }

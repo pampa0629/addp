@@ -34,6 +34,36 @@ type InitializeApprovalRequirementInput struct {
 	Audit       iam.AuditMetadata
 }
 
+// A single target observation, not an engine configuration resource. A
+// browser must never round the expected version.
+type HandlingRequirementView struct {
+	Mode               string `json:"mode" enums:"catalog,independent"`
+	RequirementVersion int64  `json:"requirement_version,string" swaggertype:"string"`
+}
+
+func (s *Service) GetHandlingRequirement(ctx context.Context, actor Actor, path engineplugin.EngineCatalogPath) (*HandlingRequirementView, error) {
+	encoded, err := encodeFulfillmentPath(path)
+	if err != nil {
+		return nil, commonapi.ErrBadRequest
+	}
+	var result *HandlingRequirementView
+	err = s.withApprovalRequirementScope(ctx, actor, int64(path.EngineID), authorization.PermissionSystemEngineAccessFulfillmentCreate,
+		func(tx *Repository, check func() error) error {
+			row, err := tx.approvalRequirement(ctx, actor.TenantID, int64(path.EngineID), encoded)
+			// Even a missing-target observation must not outlive the caller's
+			// permission, token or management-delegation window.
+			if qualificationErr := check(); qualificationErr != nil {
+				return qualificationErr
+			}
+			if err != nil {
+				return mapError(err)
+			}
+			result = &HandlingRequirementView{Mode: row.Mode, RequirementVersion: row.Version}
+			return nil
+		})
+	return result, err
+}
+
 func approvalRequirementView(row *approvalRequirement) *ApprovalRequirementView {
 	return &ApprovalRequirementView{ID: row.ID, EngineID: row.EngineID, CatalogPath: row.CatalogPath,
 		Mode: row.Mode, Version: row.Version, UpdatedAt: row.UpdatedAt}

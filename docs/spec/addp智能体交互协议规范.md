@@ -48,6 +48,8 @@ running|waiting -> cancelled
 
 语义检查点 Schema 固定为 `addp.agent-checkpoint/v1`，只保存已经观察和用户确认的紧凑事实，不保存模型私有状态、Token、完整 Tool 结果或审批 payload。检查点最大 256 KiB。
 
+资源事实只由 owner Tool 返回值投影：`data.search`、`resource.ancestors.get`、`resource.children.list`、`resource.facts.get` 和 `data.preview`。其中 `resource.children.list` 只采集返回的父节点和直接子节点身份，不递归采集后代或 metadata 中的 locator；`resource.facts.get` 保存正式资源身份、字段名称及路径、类型、空值和主键等结构信息、Schema 覆盖状态及查询名称，不保存样本行、连接信息、字段默认值或生成表达式。资源澄清选项必须从检查点中已观察的 owner 事实重建；选项值或候选事实包含 locator 时，不得因模型填写的 reason 名称不同而跳过校验。恢复同一 AgentRun 时复用这些事实和用户已确认选择，不依赖上一轮模型私有消息栈。
+
 AgentRunStep 记录稳定 Tool 或 Runtime 动作、协议调用 ID、ToolCall ID、受限输入投影、输出摘要、事实投影、错误归因和时间。step facts 最大 128 KiB；输出摘要最大 2000 字符。
 
 ## 四、AG-UI 事件流

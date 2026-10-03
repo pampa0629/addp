@@ -2760,7 +2760,7 @@ System 回执只承载本次精确办理编号、目标与参数绑定、被消�
 
 本轮没有启动、停止、接管或重启用户服务，没有访问或修改源端、开发业务数据库迁移状态或工作区 `.env`，没有提交代码，也没有覆盖并行 Elasticsearch／三维及其他模块研发。
 
-### 26.49 原办理请求只读找回（2026-10-03，后端已编写，运行门禁暂阻塞）
+### 26.49 原办理请求只读找回（2026-10-03，共享编译阻塞已解除，PostgreSQL 专项已通过）
 
 用户已确认 §26.48 的首版人类只读范围。本轮先完善持久请求找回与刷新契约，不把正式准备 POST、机器 Runtime 或后台关闭／核清消费者复用为人的刷新入口。
 
@@ -2770,17 +2770,56 @@ System 回执只承载本次精确办理编号、目标与参数绑定、被消�
 - [x] 网络调用在 Catalog 只读快照之外；返回前复核当前权限期限、条目可见、原绑定和原引擎管理资格。查询不持条目写锁，不新增请求、业务审计，不填写 `resolved_at`、提交、关闭、续期或写 Grant；本地已核清而权威反查未找到属于错误，不重新变成 pending。
 - [x] 最小返回保留原请求编号、决定编号、批准要求版本、目标、接收方、动作和拟授权期限；版本／整数 ID 保持字符串精度，不向人返回机器调用身份、原 IAM 授权版本或业务用途正文。详情只追加动态权威状态，不落受理状态副本。
 - [x] 新用例自动进入 Catalog Go T1；真实 PostgreSQL 复用 `TestPostgresSharingFulfillmentRecovery` 和现有 API 路由测试，因此既有 `make test-module MODULE=catalog`、`make test-catalog-postgres` 及 Hosted PostgreSQL CI 覆盖，无新入口、测试数据库或 workflow 旁路。Swagger 三份产物已同步。
-- [ ] 本轮 Go T1／新增服务和 API PostgreSQL T2 尚未取得通过证据；详见当前阻塞。共享确认、正式办理页面、实际 Grant 及执行侧只读裁决仍未贯通，真实双服务 T4 未执行。
+- [x] 恢复轮次的 Go T1、新增服务和 API PostgreSQL T2 已通过，原共享编译阻塞解除。共享确认及原请求查询界面见 §26.50；新办理页面、实际 Grant 及执行侧只读裁决仍未贯通，真实双服务 T4 未执行。
 
-验证用例已编写：本人分页及跨人／跨 Tenant 隔离、原引擎资格过滤后计数、维护权不能替代独立办理权、原 IAM 版本变化后按当前资格读取、机器身份拒绝、非法分页和未知 query、pending／accepted／closed 精确反查、错误绑定和依赖故障拒绝、查询期间撤销管理范围／隐藏条目／权限到期、已弃用已核清历史可读、权威历史不一致拒绝、网络期间不持条目写锁和查询零写入。这里列的是已纳入门禁的案例，不是通过报告。
+验证用例：本人分页及跨人／跨 Tenant 隔离、原引擎资格过滤后计数、维护权不能替代独立办理权、原 IAM 版本变化后按当前资格读取、机器身份拒绝、非法分页和未知 query、pending／accepted／closed 精确反查、错误绑定和依赖故障拒绝、查询期间撤销管理范围／隐藏条目／权限到期、已弃用已核清历史可读、权威历史不一致拒绝、网络期间不持条目写锁和查询零写入。编写轮次未执行，恢复轮次已由下述标准门禁通过。
 
-当前验证证据与阻塞：
+前轮验证证据与阻塞（历史记录，编译问题现已解除）：
 
 - `make test-authorization` 退出码 0，权限／角色生成一致、新增 GET 的独立功能 Permission 与 Catalog 43 个公开路由方法的 Swagger 覆盖通过。
 - 使用 `bash scripts/infra/status.sh` 核实 PostgreSQL 实际映射为 25432，随后通过标准入口注入 `addp_test` 的 Catalog 测试 DSN。`make test-module MODULE=catalog` 在平台 T0 的共享 Go 编译步骤失败，后续 Catalog T1、前端与 T2 未运行；`make test-catalog-postgres` 的 Repository 组通过，但 Service 组编译失败，新增 History 和 API 用例未运行，不能记为 T2 通过。
 - 两个入口均报告 `common/execution/observation.go:365: ref.FieldName undefined`：共享工作区另一个并行血缘改动已从 `LineageResourceRef` 移除 `FieldName`，现有安全摘要调用尚未同步。只读比较 HEAD 与工作区已确认其来源；本轮不恢复旧字段或覆盖并行 owner 的修改来绕过门禁。
 - 默认 `make test-changed` 识别共享工作区 278 个变更文件、27 个受影响 owner，但未注入整套 PostgreSQL／MySQL／OceanBase T2 环境，在预检拒绝执行，未计为通过。新 History 输入以最终 Catalog 专属门禁为验收前置；本轮尚未完成，不把既往轮次的通过证据复用为本轮结果。
 
-下一优先项：先在并行 owner 完成共享编译契约后复跑 Catalog 标准门禁，取得 History 服务和真实 API 的通过证据，再接正式人类共享确认／办理页面。页面刷新只用这两个 GET，显式提交或同参重试另走正式准备 POST；当前不宣称 accepted 代表实际数据已经可访问。
+本轮恢复验证：用户已修复共享编译。以实际 25432 映射和 `addp_test` 显式 DSN 运行 `make test-catalog-postgres`，退出码 0；Repository、Service（包含 History）及实际 API 路由组均通过。`make test-module MODULE=catalog` 退出码 0，平台 T0、Go T1、前端测试／构建和 Catalog PostgreSQL T2 均通过；最终界面证据见 §26.50。
+
+当前优先项转到人类界面及办理查询契约，见 §26.50。页面刷新只用只读 GET，当前仍不宣称 accepted 代表实际数据已经可访问。
 
 本轮没有启动、停止、接管或重启用户 ADDP 服务，没有修改源端、开发业务数据库、迁移 dirty 状态或 `.env`，没有提交代码或新增长期脚本。
+
+### 26.50 人类共享确认及原请求查询界面（2026-10-03）
+
+- [x] 数据项详情增加“共享确认与请求” Tab，复用既有 Console 模块路由；公开 URL 保存本人原确认编号，刷新 GET 找回，不自动 POST，不写浏览器审批凭据或第二份授权状态。
+- [x] 当前业务负责人及独立确认 Permission 同时满足才可新确认。接收方使用条目专用候选下拉，支持按名称或编码搜索；用途、有效期方式均必填，永久必须显式选择，指定日期须为未来日期。不手填主体 ID，不由编目维护权推导共享资格。
+- [x] 提交前冻结原编号和参数，并先同步公开 URL；重复点击只发送一次。通信失败后显式同参重试保留原编号、版本、日期和用途；刷新／恢复只读本人原确认。没有原参数时不根据现状态重构旧命令。
+- [x] 原办理请求分页和权威结果通过 §26.49 两个 GET 消费；权限撤销或切换账号清除旧记录，过期返回忽略；网络失败不显示为 pending，accepted 明示不等于数据访问生效。
+- [x] `SharingPanel` 是领域组合，使用既有 Element Plus 表单、选择、日期及分页；中文、英文文案同步。测试采用实际 SFC 挂载与受控 API，覆盖默认候选加载、连续点击防重、原参数重试、刷新只读、撤权清除与迟到响应、失败不伪装为 pending。复用仓库已有 `jsdom@26.1.0` 测试版本，新增到 Catalog devDependencies 和锁文件，不建立共享 node_modules。
+- [x] 根 `make test-catalog-frontend` 自动发现新增测试并构建；既有 Platform CI frontend matrix 的 Catalog 行调用同一入口并按锁文件安装，因此无需新 workflow 或旁路脚本。
+- [x] 本节发现的人类办理入口缺口已转入 §26.51：用户确认精确目标最小观察契约，不放宽既有配置读取 Permission，不手填、默认或舍入批准要求版本。
+- [ ] 实际 Grant 写入、执行侧裁决与真实双服务 Online T4 仍未贯通；组件测试不是浏览器 T3 或 Online T4，不把已有 API 测试冒充实际用户授权。
+
+本轮门禁：`CATALOG_POSTGRES_TEST_DSN='postgres://addp:addp_password@127.0.0.1:25432/addp_test?sslmode=disable' make test-module MODULE=catalog` 与同连接的 `make test-catalog-postgres` 均退出码 0；`make test-catalog-frontend` 23 个测试文件、104 个用例通过并完成 Vite 生产构建（保留既有 chunk 大小提示）。新增测试由既有 CI 标准入口自动执行，不新增测试库或运行服务。浏览器 T3 和真实双服务 Online T4 本轮未运行，不能计为通过。共享工作区另有 Agent 等并行改动，本轮只验收 Catalog owner，不把 Catalog 结果外推为整套工作区验收。
+
+本节提出的“办理人读取精确目标当前批准要求”已获用户确认，后续实现与验证见 §26.51；本人当前办理资格与引擎委派用于核验，不通过 Catalog 机器身份代替人，也不隐式扩大为整个引擎配置列表读取权。
+
+### 26.51 精确目标批准要求观察与人类正式办理（2026-10-03）
+
+用户已确认 §26.50 的最小读取范围。本轮沿用现有权限及管理委派，不新增 Permission、默认授权或迁移。
+
+- [x] System 只读 POST `/engines/:id/access_handling_requirement`：完整结构路径精确查询，正文无 Engine／Tenant／操作者覆盖，版本以字符串无损返回；缺失不初始化，无要求枚举及内容授权。
+- [x] Catalog 复用本条目候选分页，在共享 Tab 中下拉选择，自动读取目标要求；正式提交固定原编号、决定及版本，显式同参重试，刷新只读原请求。pending 仍可同参显式重试；GET 找到 accepted／closed 后结束不确定重试。切换账号、撤权或切换公开原请求身份时清理旧命令，迟到响应不复活旧状态。
+- [x] System T1 守卫、T2 真实数据库验证精确身份、无配置读取扩权、撤权／到期复核与零批准写副作用；Catalog 实际组件交互验证固定参数、防重、恢复、撤权和旧响应隔离。原请求 URL 身份无效时明确报错，不退回新办理表单；另一名合格办理人不因缺少业务负责人身份或确认 Permission 而被界面误挡。
+- [x] System Swagger 生成与覆盖检查通过，189 个公开路由方法一致；Catalog 模块门禁、System 完整 PostgreSQL 门禁及前端门禁通过。测试继续由现有自动发现与 CI owner Job 执行，不新建库或旁路脚本。
+- [ ] System 完整模块门禁：并行 Redis 能力变更与既有注册测试断言不一致，完整 Go T1 未通过；本轮不修改该并行变更。
+
+本轮不接实际 Grant，受理成功仍不表示实际访问生效；不启停用户服务，不提交代码。
+
+界面使用路径：先由具备当前业务负责人身份和确认权限的账号，在有效数据库数据项的“共享确认与请求”中明确接收方、用途和有效期；办理人另需 `catalog.entry.read`、`system.engine_access_fulfillment.create` 及当前有效引擎管理委派。打开本条目的共享确认下拉后，选择一个当前候选，System 自动返回该精确目标的批准模式及无损版本，再显式提交。精确目标须已有明确的 Catalog 批准要求；没有要求时显示查询失败，不能靠此页面自动纳管或初始化。原编号通过公开 URL 保留，刷新只读找回；原命令参数丢失后不从当前状态重构旧 POST。
+
+已完成前端最小门禁：`make test-catalog-frontend` 退出码 0，23 个文件／119 个用例及 Vite 生产构建通过（既有 chunk 大小提示保留）。新增交互实际挂载 SFC，API 合约覆盖结构路径、无损 Engine ID、字符串版本及三字段正式正文。该证据属于确定性前端测试，不是本次新办理链路的浏览器 T3 或真实双服务 Online T4。
+
+本轮模块证据：使用 Infra 实际映射 25432 及 `addp_test` 显式 DSN 运行 `make test-module MODULE=catalog`，退出码 0，平台 T0、Go T1、当时 118 个前端用例／构建及全部 Catalog PostgreSQL T2 通过；之后仅补充公开编号错误态，最新前端门禁为上面的 119 个用例。`make test-module MODULE=system` 的平台 T0、API 与 engineaccess Go T1 通过，但完整 Go T1 被既有 `TestRedisRegistrationStoresOnlyConnectionCapabilities` 阻断：并行 Redis 插件已声明目录／原生读取能力，测试仍断言 `CatalogModel == nil`。未改动该并行能力或测试，不将完整 System 模块门禁标为通过。另以 `addp_iam_test` 运行标准 `system-iam-postgres-gate.sh --package api`，退出码 0，本轮精确观察、真实授权／管理委派及锁等待到期用例通过。
+
+补充门禁：`ADDP_SYSTEM_POSTGRES_TEST_DSN='postgres://addp:addp_password@127.0.0.1:25432/addp_iam_test?sslmode=disable' make test-system-iam-postgres` 退出码 0，IAM、OAuth、API、迁移、engineaccess 及 repository 的完整 PostgreSQL T2 通过；`make test-system-frontend` 退出码 0，18 个文件／91 个单元用例、39 个既有浏览器用例及 Vite 构建通过。该 System 浏览器证据不能外推为 Catalog 新办理界面的 T3；本次新办理链路的 Catalog 浏览器 T3 与真实双服务 Online T4 未运行，不能计为通过。
+
+后续优先恢复 System 完整模块门禁：由并行 Redis 能力变更同步其注册契约测试。业务主线下一阶段是以 System 原受理回执推进幂等 Grant 写入，仍须核验原五分钟窗口、拟授予期限及当前办理资格，不能把本轮的 accepted 显示当作内容访问已经生效。

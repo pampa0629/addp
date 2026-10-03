@@ -7,6 +7,8 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 
 SOURCE_TABLE=addp_online_transfer_sql_etl_source
 TARGET_TABLE=addp_online_transfer_sql_etl_target
+NATIVE_TARGET=addp_online_transfer_field_lineage_target
+NATIVE_DOWNSTREAM=addp_online_transfer_field_lineage_downstream
 
 fail() {
   echo "Online Transfer relational SQL ETL fixture failed: $*" >&2
@@ -45,6 +47,8 @@ postgres_sql() {
 reset_fixture() {
   postgres_sql <<SQL >/dev/null
 DROP TABLE IF EXISTS public.${TARGET_TABLE};
+DROP TABLE IF EXISTS public.${NATIVE_DOWNSTREAM};
+DROP TABLE IF EXISTS public.${NATIVE_TARGET};
 DROP TABLE IF EXISTS public.${SOURCE_TABLE};
 CREATE TABLE public.${SOURCE_TABLE} (
   id bigint PRIMARY KEY,
@@ -70,6 +74,15 @@ verify_fixture() {
   columns=$(postgres_sql -Atc \
     "SELECT string_agg(column_name, ',' ORDER BY ordinal_position) FROM information_schema.columns WHERE table_schema = 'public' AND table_name = '${TARGET_TABLE}'")
   [ "$columns" = "id,region,amount" ] || fail "target columns do not prove SQL projection semantics: $columns"
+  values=$(postgres_sql -Atc \
+    "SELECT CONCAT_WS('|', COUNT(*), SUM(amount)::numeric(12,2), COUNT(*) FILTER (WHERE region_name = 'active'), COUNT(*) FILTER (WHERE region_name = 'inactive'), COUNT(*) FILTER (WHERE generated_label = 'online')) FROM public.${NATIVE_TARGET}")
+  [ "$values" = "5|1411.50|3|2|5" ] || fail "native target does not prove replace, precision and generated values: $values"
+  values=$(postgres_sql -Atc \
+    "SELECT CONCAT_WS('|', COUNT(*), SUM(amount)::numeric(12,2), COUNT(*) FILTER (WHERE area = 'active'), COUNT(*) FILTER (WHERE area = 'inactive')) FROM public.${NATIVE_DOWNSTREAM}")
+  [ "$values" = "5|1411.50|3|2" ] || fail "downstream does not prove two-hop native mapping: $values"
+  columns=$(postgres_sql -Atc \
+    "SELECT CONCAT_WS('|', numeric_precision, numeric_scale) FROM information_schema.columns WHERE table_schema = 'public' AND table_name = '${NATIVE_TARGET}' AND column_name = 'amount'")
+  [ "$columns" = "8|2" ] || fail "native target decimal definition differs from mapping: $columns"
 }
 
 case "$action" in
@@ -86,7 +99,9 @@ case "$action" in
     ;;
   stop)
     if postgres_running; then
-      postgres_sql -c "DROP TABLE IF EXISTS public.${TARGET_TABLE}; DROP TABLE IF EXISTS public.${SOURCE_TABLE}" >/dev/null
+      postgres_sql -c "DROP TABLE IF EXISTS public.${NATIVE_DOWNSTREAM}; DROP TABLE IF EXISTS public.${NATIVE_TARGET}; DROP TABLE IF EXISTS public.${TARGET_TABLE}; DROP TABLE IF EXISTS public.${SOURCE_TABLE}" >/dev/null
+      remaining=$(postgres_sql -Atc "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name IN ('${SOURCE_TABLE}', '${TARGET_TABLE}', '${NATIVE_TARGET}', '${NATIVE_DOWNSTREAM}')")
+      [ "$remaining" = "0" ] || fail "owned tables remain after cleanup: $remaining"
     fi
     bash "$SCRIPT_DIR/online-engine-fixture.sh" stop
     echo "Online Transfer relational SQL ETL fixture is stopped"

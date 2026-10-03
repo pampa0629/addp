@@ -465,7 +465,7 @@ A: 可以！所有脚本都是幂等的。
 
 启动后仅补齐缺失的 `addp:sample:*` 固定样例，包含 string、大整数计数、hash、list、set、zset、stream、TTL 和带非 UTF-8 字节的 key/value。重复初始化不重复追加 list/stream、不重置仍存在的 TTL、不删除或覆盖既有 key；样例出现不符的原生类型时先整体拒绝初始化。初始化脚本只能由管理员执行，不属于读取账号的查询能力。
 
-已实现独立 Business 部署、原生数据夹具、Redis Engine Plugin 与 System 连接注册。System 通用表单按 ConnectionSpec 配置 ACL 用户、数据库编号与 TLS，注册脚本读取真实容器映射并使用只读账号登记数据库 0；连接检测执行 SELECT 和 DBSIZE，不读写业务 key。Meta key 级目录、Manager 原生预览及 Develop 查询尚未实现；不能把各原生类型统一伪装为 document collection，也不能把 SCAN 当成一致性快照或将分页 COUNT 当成返回条数保证。
+已实现独立 Business 部署、原生数据夹具、Redis Engine Plugin、System 连接注册、Meta key 身份扫描与 Manager 原生有限样本预览。System 通用表单按 ConnectionSpec 配置 ACL 用户、数据库编号与 TLS，注册脚本读取真实容器映射并使用只读账号登记数据库 0；连接检测执行 SELECT 和 DBSIZE，不读写业务 key。Catalog 为 `server -> key`，键名使用 `k:` 加无填充 Base64URL 的唯一编码；Meta 首期保持 `data_type=unknown`，原生类型、长度和 TTL 实时读取，不能伪装为 document collection。SCAN 是有预算的弱一致遍历，COUNT 不保证返回条数；扫描失败保留既有目录。Develop 查询、写入、迁移及 Cluster/Sentinel 尚未实现。消费链路验证使用 `make test-common-redis-unit` 与 `make test-common-redis`。
 
 验证入口为 `make test-business-config` 和 `make test-business-redis`。后者创建独占 Compose project、随机回环端口和随机密码，核验认证拒绝、只读权限、原生类型、精确字节、初始化幂等和重启持久化，退出后检查容器、数据卷和网络零残留。该入口已纳入 `make test-integration`、模块/变更自动发现和 `release-and-t2-gates.yml`，不连接 Infra 或现有 Business Redis。
 

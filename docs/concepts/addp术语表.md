@@ -7,7 +7,8 @@
 | 英文术语 | 中文术语 | 定义 | 备注 |
 |---|---|---|---|
 | engine | 引擎 | ADDP 连接和访问外部数据系统的能力入口。 | 例如 PostgreSQL、MinIO、NFS、Neo4j。 |
-| key_value engine family | 键值存储引擎族 | 以原生 key 定位值的存储引擎粗分类，能力声明值为 `key_value`。 | 粗分类不推导目录、扫描、查询或预览能力；Redis 独立引擎类型为 `redis`，首版仅登记单端点、ACL 账号和逻辑数据库连接。 |
+| key_value engine family | 键值存储引擎族 | 以原生 key 定位值的存储引擎粗分类，能力声明值为 `key_value`。 | 不是 data type；目录、事实与读取能力必须由对应 Provider 声明。Redis 首期支持单端点、ACL 账号、一个逻辑数据库以及有预算的 key 扫描和只读预览。 |
+| key catalog leaf | 键目录叶子 | 键值引擎中以完整原始 key 字节定位的独立资源，`item_type=key`。 | 冒号不产生目录。Meta 首期只登记身份，`data_type=unknown`；原生 string/hash/list/set/zset/stream 类型由实时 Engine Facts 表达，不据此新增 datatype。 |
 | Oracle Engine | Oracle 引擎 | 通过 `engine_type=oracle` 登记的 Oracle 数据库 Engine Instance；普通表 Engine Catalog / 查询 / 读取与基础 Oracle Spatial（`MDSYS.SDO_GEOMETRY`、SpatialInfo、EWKB）能力以 `service_name` 所指服务为连接边界，以 schema/table 为业务路径。 | Oracle CDC 和 ArcGIS SDE 逻辑变化源分别扩展，不因共用 Oracle 连接而合并为同一能力。 |
 | OceanBase Engine | OceanBase 引擎 | 通过 `engine_type=oceanbase` 登记的 OceanBase Community Edition 数据库 Engine Instance；首版使用 MySQL 模式协议与 SQL 方言，以 database/table 为 Engine Catalog 业务路径。 | OceanBase 是独立引擎类型，不登记为 MySQL；`user` 使用 `user@tenant` 完整账号表达租户边界。MySQL 协议兼容只是插件内部复用事实。 |
 | openGauss Engine | openGauss 引擎 | 通过 `engine_type=opengauss` 登记的 openGauss 6.0.6 LTS 数据库 Engine Instance；首版使用 PG 兼容 database，以 schema/table 为 Engine Catalog 业务路径。 | openGauss 是独立引擎类型，不登记为 PostgreSQL；PostgreSQL wire protocol、驱动和 SQL 方言兼容只是插件内部复用事实，不自动获得 PostGIS、CDC 或 PostgreSQL 扩展能力。 |

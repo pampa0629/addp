@@ -659,6 +659,17 @@ definitions:
       version:
         type: integer
     type: object
+  github_com_addp_system_internal_engineaccess.HandlingRequirementView:
+    properties:
+      mode:
+        enum:
+        - catalog
+        - independent
+        type: string
+      requirement_version:
+        example: ""
+        type: string
+    type: object
   github_com_addp_system_internal_iam.AuditResult:
     enum:
     - succeeded
@@ -1860,6 +1871,18 @@ definitions:
         type: string
       version:
         type: integer
+    type: object
+  internal_api.EngineAccessHandlingRequirementRequest:
+    properties:
+      segments:
+        items:
+          $ref: '#/definitions/plugin.EngineCatalogSegment'
+        type: array
+      version:
+        type: string
+    required:
+    - segments
+    - version
     type: object
   internal_api.GetTaskHistoryResponse:
     properties:
@@ -3681,6 +3704,8 @@ definitions:
         items:
           $ref: '#/definitions/plugin.IndexFacts'
         type: array
+      key_value:
+        $ref: '#/definitions/plugin.KeyValueFacts'
       kind:
         type: string
       partitioning:
@@ -3830,6 +3855,15 @@ definitions:
       supported:
         type: boolean
     type: object
+  plugin.KeyValueFacts:
+    properties:
+      length:
+        type: integer
+      native_type:
+        type: string
+      ttl_millis:
+        type: integer
+    type: object
   plugin.NativeTableSpatialEncodingCapability:
     properties:
       geometry_read_encodings:
@@ -3973,6 +4007,8 @@ definitions:
         type: boolean
       encoded_record_read_session:
         $ref: '#/definitions/plugin.EncodedRecordReadSessionCapability'
+      key_value_read:
+        type: boolean
       partitioned_table_change_apply:
         $ref: '#/definitions/plugin.PartitionedTableChangeApplyCapability'
       range_read:
@@ -5425,6 +5461,64 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - system.engine_access_delegation.revoke
+  /engines/{id}/access_handling_requirement:
+    post:
+      consumes:
+      - application/json
+      description: 只读结构化查询。仅本人办理权限和当前引擎管理委派，不枚举配置、不初始化缺失要求，不授予访问；版本为无损字符串，正式提交仍须核验原预期版本
+        | Read-only structured query under current human handling permission and engine
+        delegation. No configuration enumeration, initialization or access grant;
+        the version is a lossless string and formal submission rechecks the original
+        expected version
+      parameters:
+      - description: 引擎 ID，唯一来源 | Engine ID, sole source
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 完整结构化叶子路径，含结构根 | Complete structured leaf path including its
+          root
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.EngineAccessHandlingRequirementRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 当前批准要求观察，不是凭据 | Current approval requirement observation, not
+            a credential
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_engineaccess.HandlingRequirementView'
+        "400":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "401":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "403":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "404":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "500":
+          description: 请求失败 | Request failed
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 观察精确目标的当前批准要求 | Observe the exact target's current approval requirement
+      tags:
+      - 源授权办理 | Source Access Fulfillment
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.engine_access_fulfillment.create
   /engines/{id}/access_handling_scope:
     get:
       description: 当前 Tenant User 需独立办理 Permission 和有效引擎管理委派，等待锁后重新检查资格与到期；只返回当次观察，不授予读取、业务确认、委派、受理或

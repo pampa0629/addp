@@ -16,9 +16,37 @@ import { listDomainQualityIssues, listDomainQualityPlans, listDomainQualityRules
 import { domainStandardQuery } from '../src/utils/domainStandardSummary'
 import { domainQualityQuery } from '../src/utils/domainQualitySummary'
 import { transferEntryResponsibilities } from '../src/api/catalog'
+import { createSharingDecision, getSharingDecision, getSharingRequest, listSharingRecipients, listSharingRequests, listSharingDecisions, observeSharingRequirement, prepareSharingRequest } from '../src/api/catalog'
 
 describe('catalog frontend API paths', () => {
   beforeEach(() => vi.clearAllMocks())
+
+  it('observes only the exact target under the User client before a separate explicit preparation command', async () => {
+    const target = { engine_id: '9007199254740993', version: 'v1', segments: [{ name: 'root' }, { name: 'table' }] }
+    const payload = { request_id: 'request', decision_id: 'decision', requirement_version: '9007199254740993' }
+    await listSharingDecisions('entry/id', { page: 2, page_size: 20 })
+    await observeSharingRequirement(target)
+    await prepareSharingRequest('entry/id', payload)
+    expect(client.get).toHaveBeenCalledExactlyOnceWith('/catalog/entries/entry%2Fid/sharing_decision_candidates', { params: { page: 2, page_size: 20 } })
+    expect(client.post.mock.calls).toEqual([
+      ['/system/engines/9007199254740993/access_handling_requirement', { version: target.version, segments: target.segments }],
+      ['/catalog/entries/entry%2Fid/sharing_fulfillments', payload]
+    ])
+  })
+
+  it('separates explicit confirmation POST from read-only confirmation and request recovery', async () => {
+    const payload = { decision_id: 'opaque', version: '9007199254740993' }
+    await createSharingDecision('entry/id', payload)
+    await listSharingRecipients('entry/id', { recipient_type: 'project_group', page: 1 })
+    await getSharingDecision('entry/id', 'decision/id')
+    await listSharingRequests('entry/id', { page: 2, page_size: 20 })
+    await getSharingRequest('entry/id', 'request/id')
+    expect(client.post).toHaveBeenCalledExactlyOnceWith('/catalog/entries/entry%2Fid/sharing_decisions', payload)
+    expect(client.get).toHaveBeenCalledWith('/catalog/entries/entry%2Fid/sharing_recipient_candidates', { params: { recipient_type: 'project_group', page: 1 } })
+    expect(client.get).toHaveBeenCalledWith('/catalog/entries/entry%2Fid/sharing_decisions/decision%2Fid')
+    expect(client.get).toHaveBeenCalledWith('/catalog/entries/entry%2Fid/sharing_fulfillments', { params: { page: 2, page_size: 20 } })
+    expect(client.get).toHaveBeenCalledWith('/catalog/entries/entry%2Fid/sharing_fulfillments/request%2Fid')
+  })
 
   it('uses a responsibility-only subresource for deprecated entries', async () => {
     const payload = { version: 3, reason: 'Transfer', responsibilities: [] }

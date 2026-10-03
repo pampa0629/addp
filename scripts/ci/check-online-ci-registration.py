@@ -1148,6 +1148,46 @@ def validate_transfer_insert_only_mysql_profile(
             )
 
 
+def validate_transfer_relational_sql_etl_profile(repository: Path, registered: set[str]) -> None:
+    if "transfer-relational-sql-etl" not in registered:
+        return
+    suite = load_suite_registry(repository)["transfer-relational-sql-etl"]
+    if ("manager", "MANAGER_URL") not in suite.services:
+        raise RegistrationError("transfer-relational-sql-etl must preflight Manager")
+    host = (repository / "scripts/test/online-host-gate.sh").read_text(encoding="utf-8")
+    profile = re.search(r"(?ms)^  transfer-relational-sql-etl\)\n.*?(?=^  [a-z][a-z0-9-]*\)|\Z)", host)
+    if profile is None or "MANAGER_URL" not in profile.group():
+        raise RegistrationError("transfer-relational-sql-etl profile requires MANAGER_URL")
+    contracts = {
+        "scripts/test/transfer-relational-sql-etl-online.py": (
+            '"manager.data_item.read"', '"manager.content.read"', '"meta.lineage.read"',
+            "run_native_lineage", "wait_field_graph", "execution_schema_hashes", "validate_graph_snapshots", "generated_label", '"_replace"', '"_hop"',
+            '"residual_resources": 0', "cleanup_tasks(client", "owned_task_names", "schema_snapshot_hash",
+            "addp.transfer-relational-sql-etl-browser/v2",
+        ),
+        "business/scripts/online-transfer-relational-sql-etl-fixture.sh": (
+            "ADDP_ONLINE_HOST", "NATIVE_TARGET", "NATIVE_DOWNSTREAM", "DROP TABLE IF EXISTS public.${NATIVE_TARGET}",
+            "DROP TABLE IF EXISTS public.${NATIVE_DOWNSTREAM}", "numeric_precision, numeric_scale", "generated_label",
+            "owned tables remain after cleanup",
+        ),
+        "console/frontend/e2e/online/transfer-relational-sql-etl.spec.js": (
+            "/manager/data-explorer", "field_ref", "schema_snapshot_hash", "lineage-field", "lineage-canvas",
+            "manager_field_graph_verified: true", "query_field_unavailable_verified: true", "toBe('unavailable')",
+            "addp.transfer-relational-sql-etl-browser/v2",
+        ),
+        "scripts/test/transfer-relational-sql-etl-online_test.py": ("test_rejects_wrong_fields_versions_and_execution_proofs",),
+        "scripts/test/online-transfer-relational-sql-etl-fixture_test.py": ("test_rejects_native_rows",),
+    }
+    for relative, fragments in contracts.items():
+        path = repository / relative
+        if not path.is_file():
+            raise RegistrationError(f"transfer-relational-sql-etl requires {relative}")
+        content = path.read_text(encoding="utf-8")
+        for fragment in fragments:
+            if fragment not in content:
+                raise RegistrationError(f"transfer-relational-sql-etl {relative} contract is missing {fragment}")
+
+
 def load_workflow_suites(
     repository: Path, nightly_suites: set[str]
 ) -> set[str]:
@@ -1353,12 +1393,22 @@ def validate_orchestrator_execution_profile(repository: Path, registered: set[st
     required_files = (
         "scripts/test/orchestrator-execution-online.py",
         "scripts/test/orchestrator-execution-online_test.py",
+        "scripts/test/orchestrator-execution-faults.py",
+        "scripts/test/orchestrator-execution-faults_test.py",
         "scripts/test/online-hosted-orchestrator-gate_test.py",
         "business/scripts/online-metric-postgres-fixture.sh",
     )
     for relative in required_files:
         if not (repository / relative).is_file():
             raise RegistrationError(f"orchestrator-execution requires {relative}")
+    makefile = (repository / "Makefile").read_text(encoding="utf-8")
+    owned = re.search(r"(?ms)^test-orchestrator-online-runner:[^\n]*\n(?P<body>.*?)(?=^[^\t\n#]|\Z)", makefile)
+    aggregate = re.search(r"(?ms)^test-online-runner:[^\n]*\n(?P<body>.*?)(?=^[^\t\n#]|\Z)", makefile)
+    if owned is None or aggregate is None or "$(MAKE) test-orchestrator-online-runner" not in aggregate.group("body"):
+        raise RegistrationError("orchestrator-execution requires its owner T1 entry in test-online-runner")
+    for test in ("orchestrator-execution-online_test.py", "orchestrator-execution-faults_test.py", "online-hosted-orchestrator-gate_test.py"):
+        if test not in owned.group("body"):
+            raise RegistrationError(f"orchestrator-execution owner T1 entry is missing {test}")
     text = gate.read_text(encoding="utf-8")
     for fragment in (
         'source "$ROOT_DIR/scripts/utils/hosted-online.sh"',
@@ -1366,6 +1416,10 @@ def validate_orchestrator_execution_profile(repository: Path, registered: set[st
         "bash business/scripts/online-metric-postgres-fixture.sh start",
         "bash business/scripts/online-metric-postgres-fixture.sh stop",
         "--suite orchestrator-execution",
+        "orchestrator-execution-faults.py alias-add",
+        "orchestrator-execution-faults.py alias-remove",
+        'HTTP_PROXY="$ADDP_ONLINE_ORCHESTRATOR_PROXY_URL"',
+        "SERVICE_HOST=addp-orchestrator-meta.test",
         "python3 scripts/test/online-engine-registration.py",
         'make test-online "ONLINE_SUITE=$ONLINE_SUITE"',
     ):
@@ -1409,6 +1463,7 @@ def check_registration(repository: Path) -> None:
     validate_opengauss_consumer_flow_profile(repository, registered)
     validate_kingbase_consumer_flow_profile(repository, registered)
     validate_transfer_insert_only_mysql_profile(repository, registered)
+    validate_transfer_relational_sql_etl_profile(repository, registered)
 
 
 def main() -> int:

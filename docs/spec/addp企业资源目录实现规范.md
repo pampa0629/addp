@@ -202,6 +202,8 @@ Meta 和专业来源新建条目时显式写入 `false`；完整责任替换路�
 
 普通只读办理的目标值校验与编码统一归 `common/authorization.EncodeSharingTarget`，Catalog 待核清准备／绑定读取和 System 受理／关闭／批准要求边界复用同一实现：必须是带结构根的有效叶子 `EngineCatalogPath`，Engine ID 为正且可精确表示为 int64，最多 64 个 segment（含结构根），编码后的完整 JSON 不超过 16 KiB。该限制沿用 System 内部边界，不改变引擎路径模型、Meta 扫描层级或现有业务确认 API；Catalog 必须在首次登记待核清前拒绝不满足同一边界的目标，不能先冻结依据再等 System 拒绝。编码完整保留节点原名、大小写、空白和分隔符；无效 UTF-8 明确拒绝，不允许 JSON 替换字符悄然合并不同身份。不修剪、不合并、不回退到 fingerprint 或 display path。共享库不核验身份、责任、Permission、批准要求或实际源端存在性。
 
+人类界面（2026-10-03）：数据项详情通过“共享确认与请求” Tab 组合专用接收方候选、显式业务确认、本人原确认查询、正式办理和本人原办理请求查询，不新建独立入口或可编辑决定副本。确认表单要求接收方下拉选择、明确有效期模式和用途；新确认需要当前业务负责人及独立确认 Permission，编目权限不能替代。页面先固定同一次决定编号与参数，再将编号写入公开 URL，随后发送 POST；通信不确定后只允许原参数显式重试。重载按 URL 编号 GET 查询，不从浏览器重构或自动发送决定；本地丢失原参数时不能假造原重试。办理人从本条目分页候选选择决定，以本人 User Token 将原结构化目标交给 System 的 `POST /engines/:id/access_handling_requirement` 只读观察，只有明确的 `catalog` 模式及字符串版本才可显式提交。原请求编号、决定编号及预期版本固定一次，提交前保存原请求编号到公开 URL；重复点击及显式同参重试不换编号、不补新版本，刷新仅查询原请求。批准要求缺失、资格不足或不可达不自动初始化，也不让用户手填 ID 或版本。原请求的列表及结果均只读，查询错误清除旧结果但不伪装为 pending；accepted 不表示实际 Grant 生效。
+
 ### 3.3 个人目录视图、收藏与关注
 
 第一阶段不新增 `PersonalWorkspace`。`catalog.entry_marks` 以 `{tenant_id, user_id, catalog_entry_id, mark_type}` 保存当前 User 对 CatalogEntry 的个人关系，`mark_type` 只允许：
